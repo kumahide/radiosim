@@ -257,8 +257,6 @@ class _GraphWindow:
 
     def _update_panel(self, r: models.LinkBudgetResult) -> None:
         model_label  = "Deygout" if r.diff_method == "deygout" else "Single"
-        rain_label   = f"Rain Loss : {r.rain_loss:.1f} dB"
-        rain_note    = " (*)" if self._params.freq_mhz < 6000.0 else ""
         self._res_text.set_text(
             "[Link Budget]\n"
             f"EIRP      : {r.eirp:.1f} dBm\n"
@@ -266,7 +264,7 @@ class _GraphWindow:
             f"Diff Loss : {r.diff_loss:.1f} dB\n"
             f"Veg Loss  : {r.veg_loss:.1f} dB\n"
             f"Env Loss  : {r.env_loss:.1f} dB\n"
-            f"{rain_label}{rain_note}\n"
+            f"Rain Loss : {r.rain_loss:.1f} dB\n"
             f"Gas Loss  : {r.gas_loss:.1f} dB\n"
             f"Total Loss: {r.total_loss:.1f} dB\n"
             f"RX Ant.G  : +{self._params.gain_rx:.1f} dBi\n"

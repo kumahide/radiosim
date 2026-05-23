@@ -1,0 +1,6 @@
+2026-05-23 21:22:59,651 [INFO] radiosim: Simulation started: start=(34.5429,132.4118) end=(34.5389,132.405) freq=2400.0 MHz samples=200
+2026-05-23 21:23:00,564 [INFO] radiosim: Terrain fetch complete: 200 samples
+2026-05-23 21:26:11,519 [INFO] radiosim: Simulation started: start=(34.5429,132.4118) end=(34.5389,132.405) freq=2400.0 MHz samples=200
+2026-05-23 21:26:12,236 [INFO] radiosim: Terrain fetch complete: 200 samples
+2026-05-23 21:27:34,544 [INFO] radiosim: Simulation started: start=(34.5429,132.4118) end=(34.5389,132.405) freq=2400.0 MHz samples=200
+2026-05-23 21:27:35,229 [INFO] radiosim: Terrain fetch complete: 200 samples
