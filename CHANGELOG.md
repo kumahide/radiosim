@@ -22,6 +22,11 @@
 - バッチ CSV のパス別設定（`env_type` / `rain_rate` / `diff_method`）を廃止し、Common Settings に一本化。`PathRow` フィールドと `export_csv()` ヘッダーを整理。
 - `infrastructure.py` に `_enumerate_bbox` / `_download_tile_set` / `count_bbox_tiles` を追加（次期タイル管理メニュー向け流用可能 API）。
 
+### 修正（2026-06-06 追記）
+- **連続シミュレーション時のプログレスバー表示崩れ**: `_download_tile_set` の `_worker` で `work_q.task_done()` を `progress_cb` より先に呼んでいたため、`work_q.join()` が最後のコールバック発火前に返る競合があった。`task_done()` を `progress_cb` の後に移動し、Phase 1 の全 `root.after()` が確実にキューに積まれてから Phase 2 が開始されるよう修正。
+- **`radiosim.spec` の truststore hiddenimports 更新**: truststore がモジュール名を変更（`_api_windows` → `_api`、`_stdlib_ssl` → `_windows`）。旧名のまま残っていたためビルドログに ERROR が出ていた。現行名に修正し `_ssl_constants` を追加。
+- **バッチ Common Settings ラベルの残留記述を削除**: `batch_common_cfg` に「経路別設定が優先」と記載されていたが、当該機能（PathRow の env_type / rain_rate / diff_method）は廃止済みのため除去。
+
 ### 修正（2026-06-06）
 - **Kファクターの概念混在を解消**: ランチャーの `k_factor` はライスKファクター（見通し/散乱電力比、表示専用）であり、リンクバジェット計算には影響しない。等価地球半径係数は内部で 4/3（標準大気）固定に変更。`graph.py` / `batch.py` の `calculate_terrain_profile` 呼び出しから `k_factor=params.k_factor` を削除。
 - **`DEFAULT_CONFIG["k_factor"]` のデフォルト値修正**: 誤って設定されていた `"1.333"`（等価地球半径係数の値）を `"10.0"`（ライスKとして適切な初期値）に修正。
