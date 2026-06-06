@@ -148,8 +148,9 @@ hiddenimports = [
     "certifi",
     # truststore（OS 証明書ストア連携・企業プロキシ SSL 対策）
     "truststore",
-    "truststore._api_windows",
-    "truststore._stdlib_ssl",
+    "truststore._api",
+    "truststore._windows",
+    "truststore._ssl_constants",
     # pyparsing（matplotlib の依存）
     "pyparsing",
     "pyparsing.testing",
