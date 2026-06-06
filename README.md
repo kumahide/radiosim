@@ -10,7 +10,25 @@ Automatically fetches GSI (Geospatial Information Authority of Japan) DEM data t
 
 ---
 
-[日本語ドキュメント](README_ja.md) | [English Documentation](README_en.md)
+## ダウンロード / Download
+
+[Releases](https://github.com/kumahide/radiosim/releases) から最新版の `RadioSimPro.zip` をダウンロードしてください。  
+Download the latest `RadioSimPro.zip` from [Releases](https://github.com/kumahide/radiosim/releases).
+
+## 使い方 / Getting Started
+
+1. `RadioSimPro.zip` を任意のフォルダに展開します。  
+   Extract `RadioSimPro.zip` to any folder.
+2. `RadioSimPro.exe` をダブルクリックして起動します。  
+   Double-click `RadioSimPro.exe` to launch.
+
+> **Windows SmartScreen 警告 / SmartScreen Warning**  
+> 署名なし EXE のため警告が表示される場合があります。「詳細情報」→「実行」をクリックしてください。  
+> The executable is unsigned and may trigger a SmartScreen warning. Click "More info" → "Run anyway".
+
+---
+
+[日本語ドキュメント（開発者向け）](README_ja.md) | [English Documentation (for developers)](README_en.md)
 
 ---
 
