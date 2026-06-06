@@ -8,18 +8,19 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Requirements](#requirements)
-3. [File Structure](#file-structure)
-4. [Installation &amp; Launch](#installation--launch)
-5. [Usage — Single Mode](#usage--single-mode)
-6. [Usage — Batch Mode](#usage--batch-mode)
-7. [Input Parameters](#input-parameters)
-8. [Calculation Models](#calculation-models)
-9. [DEM Retrieval Logic](#dem-retrieval-logic)
-10. [Save Package](#save-package)
-11. [Architecture](#architecture)
-12. [Testing](#testing)
-13. [Known Limitations](#known-limitations)
+2. [Windows Binary (No Installation Required)](#windows-binary-no-installation-required)
+3. [Requirements](#requirements)
+4. [File Structure](#file-structure)
+5. [Installation &amp; Launch (from source)](#installation--launch-from-source)
+6. [Usage — Single Mode](#usage--single-mode)
+7. [Usage — Batch Mode](#usage--batch-mode)
+8. [Input Parameters](#input-parameters)
+9. [Calculation Models](#calculation-models)
+10. [DEM Retrieval Logic](#dem-retrieval-logic)
+11. [Save Package](#save-package)
+12. [Architecture](#architecture)
+13. [Testing](#testing)
+14. [Known Limitations](#known-limitations)
 
 ---
 
@@ -46,6 +47,44 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss.
 This tool is intended solely for screening purposes — determining whether a field survey is necessary — and must not be used as the basis for final link design decisions.
+
+---
+
+## Windows Binary (No Installation Required)
+
+No Python or library installation needed. Just extract the ZIP and run.
+
+### Download
+
+Download the latest `RadioSimPro.zip` from [GitHub Releases](https://github.com/kumahide/radiosim/releases).
+
+### Extract and Launch
+
+1. Extract `RadioSimPro.zip` to any folder.
+2. Double-click `RadioSimPro.exe` inside the extracted folder.
+
+### Windows SmartScreen Warning
+
+Because the executable is unsigned, Windows Defender SmartScreen may show a warning on first launch:
+
+> "Windows protected your PC"
+
+Click **"More info" → "Run anyway"** to proceed.
+
+### Antivirus False Positives
+
+Executables built with PyInstaller are occasionally flagged as false positives by some antivirus software. If this happens, add the folder to your antivirus exclusion list.
+
+### First Launch Behavior
+
+The following directories are created automatically in the same folder as `RadioSimPro.exe`:
+
+| Directory        | Contents                              |
+| ---------------- | ------------------------------------- |
+| `terrain_cache/` | Disk cache for DEM tiles              |
+| `results/`       | Output destination for saved packages |
+
+A settings file `radiosim_conf.json` is also created automatically and restored on the next launch.
 
 ---
 
@@ -102,7 +141,7 @@ radiosim/
 
 ---
 
-## Installation & Launch
+## Installation & Launch (from source)
 
 ```bash
 # Install dependencies
