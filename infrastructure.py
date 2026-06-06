@@ -471,11 +471,11 @@ def _download_tile_set(
                 with lock:
                     counts["failed"] += 1
             finally:
-                work_q.task_done()
                 with lock:
                     counts["done"] += 1
                     if progress_cb:
                         progress_cb(counts["done"], total)
+                work_q.task_done()
 
     num_workers = min(_MAX_PREFETCH_WORKERS, total)
     threads = [threading.Thread(target=_worker, daemon=True) for _ in range(num_workers)]
