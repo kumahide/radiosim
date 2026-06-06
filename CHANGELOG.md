@@ -22,6 +22,12 @@
 - バッチ CSV のパス別設定（`env_type` / `rain_rate` / `diff_method`）を廃止し、Common Settings に一本化。`PathRow` フィールドと `export_csv()` ヘッダーを整理。
 - `infrastructure.py` に `_enumerate_bbox` / `_download_tile_set` / `count_bbox_tiles` を追加（次期タイル管理メニュー向け流用可能 API）。
 
+### 修正（2026-06-06）
+- **Kファクターの概念混在を解消**: ランチャーの `k_factor` はライスKファクター（見通し/散乱電力比、表示専用）であり、リンクバジェット計算には影響しない。等価地球半径係数は内部で 4/3（標準大気）固定に変更。`graph.py` / `batch.py` の `calculate_terrain_profile` 呼び出しから `k_factor=params.k_factor` を削除。
+- **`DEFAULT_CONFIG["k_factor"]` のデフォルト値修正**: 誤って設定されていた `"1.333"`（等価地球半径係数の値）を `"10.0"`（ライスKとして適切な初期値）に修正。
+- **`i18n.py` ラベル修正**: ランチャーの k_factor ラベル「等価地球半径係数（K）」→「初期Kファクター（ライス）」、英語も同様に修正。ツールチップも Rician K-factor の説明に変更。
+- **`_get_session()` の User-Agent をセッションレベルに移動**: `_fetch_tile` のリクエスト単位ではなく、セッション生成時に `headers.update()` で設定するよう変更。将来のエンドポイント追加でもヘッダー漏れが発生しない。
+
 ---
 
 ## [2.0RC2] — 2026-05

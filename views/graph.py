@@ -71,7 +71,6 @@ def show_graph(params: sim.SimParams, raw_elevs: np.ndarray) -> None:
         lon_tx    = params.lon_tx,
         lat_rx    = params.lat_rx,
         lon_rx    = params.lon_rx,
-        k_factor  = params.k_factor,
     )
     _GraphWindow(params, terrain).show()
 

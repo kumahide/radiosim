@@ -267,7 +267,6 @@ def _process_one(
             lon_tx    = params.lon_tx,
             lat_rx    = params.lat_rx,
             lon_rx    = params.lon_rx,
-            k_factor  = params.k_factor,
         )
         result = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
 

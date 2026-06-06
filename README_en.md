@@ -32,7 +32,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 ### Key Features
 
 - Automatic terrain profile generation from GSI DEM PNG tiles (5 m / 10 m mesh)
-- Earth curvature correction with configurable K-factor
+- Earth curvature correction (standard atmosphere K = 4/3, fixed)
 - Diffraction loss calculation using Deygout / Fresnel-Kirchhoff methods
 - Vegetation attenuation (LoS intrusion depth model)
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
@@ -241,7 +241,7 @@ An input form is displayed on startup.
 | --------------------- | --------------------------------------------------------------------------------------- |
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
-| Initial K-Factor      | Effective Earth radius factor (standard atmosphere = 1.333)                             |
+| Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
 | Sampling Points       | Number of terrain sample points (10–2000; more = higher accuracy but longer retrieval) |
 
 ### 2. Single Mode Button
@@ -364,16 +364,16 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ### Earth Curvature Correction
 
-Radio waves are refracted by the atmosphere and bend more than the Earth's curvature alone. This is modeled using the effective Earth radius factor K.
+Radio waves are refracted by the atmosphere and bend more than the Earth's curvature alone. This is modeled using the effective Earth radius factor K. This tool uses the standard atmosphere value (K = 4/3 ≈ 1.333) as a fixed internal constant.
 
 ```
-Effective Earth radius  Re = R_earth × K
+Effective Earth radius  Re = R_earth × K  (K = 4/3, fixed)
 Curvature correction   Δh(d) = d × (D - d) / (2 × Re)  [m]
 ```
 
 | K value      | Meaning                                     |
 | ------------ | ------------------------------------------- |
-| 4/3 ≈ 1.333 | Standard atmosphere (default)               |
+| 4/3 ≈ 1.333 | Standard atmosphere (value used by this tool) |
 | K > 4/3      | Atmospheric duct (waves bend more strongly) |
 | K < 4/3      | Sub-refractive conditions                   |
 

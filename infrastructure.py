@@ -242,6 +242,7 @@ def _get_session() -> "requests.Session":
     with _session_lock:
         if _http_session is None:
             s = requests.Session()
+            s.headers.update({"User-Agent": version.USER_AGENT})
             if _proxy_url:
                 s.proxies = {"http": _proxy_url, "https": _proxy_url}
             else:
@@ -360,14 +361,12 @@ def _fetch_tile(
     if os.path.exists(cache_path):
         return np.array(Image.open(cache_path).convert("RGB"))
 
-    headers = {"User-Agent": version.USER_AGENT}
-
     try:
         logger.debug(
             "Fetching DEM tile: layer=%s zoom=%d x=%d y=%d",
             layer_id, zoom, xtile, ytile,
         )
-        res = _get_session().get(url, timeout=5, headers=headers)
+        res = _get_session().get(url, timeout=5)
 
         if res.status_code == 200:
             img_data = res.content
