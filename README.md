@@ -10,16 +10,9 @@ Automatically fetches GSI (Geospatial Information Authority of Japan) DEM data t
 
 ---
 
-## 入手方法 / Getting Started
+## Python スクリプト版（正式版）
 
-| | Python スクリプト版（正式版） | Windows バイナリ版（簡易） |
-|---|---|---|
-| 対象 | 開発者・上級ユーザー | Windows ユーザー（手軽に試したい方） |
-| 必要環境 | Python 3.10+ | 不要 |
-| 入手 | このリポジトリをクローン | [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro.zip` をDL |
-| 起動 | `python main.py` | `RadioSimPro.exe` をダブルクリック |
-
-**Python スクリプト版のセットアップ / Python setup:**
+Python 3.10+ がインストールされた環境で動作します。
 
 ```bash
 git clone https://github.com/kumahide/radiosim.git
@@ -28,9 +21,15 @@ pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststo
 python main.py
 ```
 
-> **Windows SmartScreen 警告 / SmartScreen Warning**  
-> バイナリは署名なしのため警告が表示される場合があります。「詳細情報」→「実行」をクリックしてください。  
-> The binary is unsigned and may trigger a SmartScreen warning. Click "More info" → "Run anyway".
+## Windows バイナリ版（手軽に使いたい方向け）
+
+Python 不要。Windows 環境で手軽に試したい場合はこちら。
+
+1. [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro.zip` をダウンロード
+2. ZIP を展開し `RadioSimPro.exe` をダブルクリック
+
+> 署名なし EXE のため SmartScreen 警告が出る場合があります。「詳細情報」→「実行」をクリックしてください。  
+> The binary is unsigned and may trigger a SmartScreen warning — click "More info" → "Run anyway".
 
 ---
 
