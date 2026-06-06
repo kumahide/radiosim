@@ -79,7 +79,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== Batch Builder =====
         "batch_title":          "Batch Mode",
-        "batch_common_cfg":     " Common Settings (per-path overrides take precedence) ",
+        "batch_common_cfg":     " Common Settings ",
         "col_id":               "ID",
         "col_start":            "Start (lat, lon)",
         "col_end":              "End (lat, lon)",
@@ -355,7 +355,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== Batch Builder =====
         "batch_title":          "一括シミュレーション",
-        "batch_common_cfg":     " 共通設定（経路別設定が優先） ",
+        "batch_common_cfg":     " 共通設定 ",
         "col_id":               "ID",
         "col_start":            "送信座標（緯度, 経度）",
         "col_end":              "受信座標（緯度, 経度）",
