@@ -1,0 +1,33 @@
+# Build output
+dist/
+build/
+
+# Generated icons
+icon.ico
+
+# Runtime data
+results/
+terrain_cache/
+
+# User settings & logs
+radiosim_conf.json
+radiosim.log
+
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+.venv/
+
+# Testing
+.coverage
+htmlcov/
+.pytest_cache/
+
+# IDE
+.vscode/
+.idea/
+
+# Claude Code
+.claude/

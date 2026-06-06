@@ -1,0 +1,10 @@
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+addopts   = "--tb=short -q"
+
+[tool.coverage.run]
+source = ["models", "simulation", "infrastructure"]
+omit   = ["views/*", "main.py"]   # GUI層はカバレッジ対象外
+
+[tool.coverage.report]
+show_missing = true
