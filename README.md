@@ -2,6 +2,8 @@
 
 # RadioSim Pro
 
+[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
+
 **地上無線回線伝搬シミュレーター** — Desktop propagation simulator for land mobile radio links
 
 国土地理院 DEM（数値標高モデル）を自動取得し、地形断面・回折損・植生減衰・リンクバジェットをリアルタイムに計算します。現地調査前のスクリーニングに特化したツールです。
