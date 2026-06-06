@@ -8,7 +8,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 ## Table of Contents
 
 1. [Overview](#overview)
-2. [Windows Binary (No Installation Required)](#windows-binary-no-installation-required)
+2. [Building the Windows Binary](#building-the-windows-binary)
 3. [Requirements](#requirements)
 4. [File Structure](#file-structure)
 5. [Installation &amp; Launch (from source)](#installation--launch-from-source)
@@ -50,41 +50,68 @@ This tool is intended solely for screening purposes — determining whether a fi
 
 ---
 
-## Windows Binary (No Installation Required)
+## Building the Windows Binary
 
-No Python or library installation needed. Just extract the ZIP and run.
+Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requires no Python installation on the target machine.
 
-### Download
+### Prerequisites
 
-Download the latest `RadioSimPro.zip` from [GitHub Releases](https://github.com/kumahide/radiosim/releases).
+- Python 3.10 or later must be on `PATH`
+- PyInstaller and all dependencies are installed automatically by `build.bat`
 
-### Extract and Launch
+### Build Steps
 
-1. Extract `RadioSimPro.zip` to any folder.
-2. Double-click `RadioSimPro.exe` inside the extracted folder.
+```bat
+build.bat
+```
 
-### Windows SmartScreen Warning
+`build.bat` performs the following steps automatically:
 
-Because the executable is unsigned, Windows Defender SmartScreen may show a warning on first launch:
+| Step | Action |
+| --- | --- |
+| 1 | Verify Python / PyInstaller are available; install if missing |
+| 2 | Update dependencies (`pip install ...`) |
+| 3 | Remove old build artifacts (`build/` and `dist/RadioSimPro/`) |
+| 4 | Run `python -m PyInstaller radiosim.spec --noconfirm` |
+| 5 | Create `terrain_cache/` and `results/` in the output folder |
+| 6 | Open `dist/RadioSimPro/` in Explorer on completion |
 
-> "Windows protected your PC"
+### Output
 
-Click **"More info" → "Run anyway"** to proceed.
+```
+dist/
+└── RadioSimPro/
+    ├── RadioSimPro.exe   ← launch this
+    ├── _internal/        ← Python runtime and dependencies
+    ├── terrain_cache/
+    └── results/
+```
 
-### Antivirus False Positives
+### Creating a Distribution Package
 
-Executables built with PyInstaller are occasionally flagged as false positives by some antivirus software. If this happens, add the folder to your antivirus exclusion list.
+ZIP the entire `dist/RadioSimPro/` folder:
 
-### First Launch Behavior
+```bat
+powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSimPro.zip -Force
+```
 
-The following directories are created automatically in the same folder as `RadioSimPro.exe`:
+### Key `radiosim.spec` Settings
 
-| Directory        | Contents                              |
-| ---------------- | ------------------------------------- |
-| `terrain_cache/` | Disk cache for DEM tiles              |
-| `results/`       | Output destination for saved packages |
+| Setting | Details |
+| --- | --- |
+| `icon.png` → `icon.ico` | Auto-converted at build time; skipped if `icon.png` is absent |
+| EXE file properties | Auto-generated from `APP_VERSION` / `COPYRIGHT` in `version.py` |
+| `console=False` | No console window shown to the user |
+| UPX compression | Enabled only when UPX is installed |
+| `README_binary_*.md` / `logo.png` | Bundled into the binary; accessed via `sys._MEIPASS` |
 
-A settings file `radiosim_conf.json` is also created automatically and restored on the next launch.
+### Troubleshooting
+
+| Symptom | Fix |
+| --- | --- |
+| `ModuleNotFoundError` on launch | Remove the module from `excludes`, or add it to `hiddenimports` in `radiosim.spec`, then rebuild |
+| Error messages not visible | Change `console=False` to `console=True` in `radiosim.spec` and rebuild |
+| SmartScreen warning on target machine | Expected for unsigned executables — click "More info" → "Run anyway" |
 
 ---
 
