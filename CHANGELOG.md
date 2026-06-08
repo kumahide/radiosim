@@ -6,7 +6,6 @@
 
 ## [Unreleased] — 2.0 正式リリースへの残作業
 
-- プロキシ環境での SSL 動作確認（truststore）
 - `version.py` の `APP_VERSION` を `"2.0RC3"` → `"2.0"` に変更
 - `build.bat` による再ビルド・配布物確認
 
@@ -21,6 +20,10 @@
 ### 変更
 - バッチ CSV のパス別設定（`env_type` / `rain_rate` / `diff_method`）を廃止し、Common Settings に一本化。`PathRow` フィールドと `export_csv()` ヘッダーを整理。
 - `infrastructure.py` に `_enumerate_bbox` / `_download_tile_set` / `count_bbox_tiles` を追加（次期タイル管理メニュー向け流用可能 API）。
+
+### 修正（2026-06-08 追記）
+- **プロキシ設定後にキャンセルすると次回起動時に設定が消える**: `_on_run` で `save_config(c)` に渡す dict に `proxy_url` が含まれておらず、シミュレーション実行のたびに config ファイルから `proxy_url` が除去されていた。`proxy_url` を `self.config` からコピーするよう修正。
+- **プロキシ未設定で実行後にプロキシを設定しても地形が 0m のまま**: `set_proxy()` でセッションをリセットしても `_failed_tiles`（タイル取得失敗セット）がクリアされないため、失敗したタイルが再取得されなかった。また `_terrain_cache`（地形プロファイルキャッシュ）に 0m で保存された結果が残り続けた。`set_proxy()` 内で `_failed_tiles.clear()` を追加し、プロキシダイアログの OK 時に `sim.clear_terrain_cache()` を呼ぶよう修正。
 
 ### 修正（2026-06-06 追記）
 - **連続シミュレーション時のプログレスバー表示崩れ**: `_download_tile_set` の `_worker` で `work_q.task_done()` を `progress_cb` より先に呼んでいたため、`work_q.join()` が最後のコールバック発火前に返る競合があった。`task_done()` を `progress_cb` の後に移動し、Phase 1 の全 `root.after()` が確実にキューに積まれてから Phase 2 が開始されるよう修正。

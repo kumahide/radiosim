@@ -234,6 +234,8 @@ def set_proxy(url: str) -> None:
         if _http_session is not None:
             _http_session.close()
         _http_session = None
+    with _cache_lock:
+        _failed_tiles.clear()
     logger.info("Proxy configured: %r", _proxy_url or "(system)")
 
 

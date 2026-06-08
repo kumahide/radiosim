@@ -212,6 +212,7 @@ class SimLauncher:
             self.config["proxy_url"] = url
             infra.save_config(self.config)
             infra.set_proxy(url)
+            sim.clear_terrain_cache()
             dlg.destroy()
 
         ttk.Button(dlg, text=i18n.t("btn_clear"),  command=_on_clear).grid(
@@ -395,8 +396,9 @@ class SimLauncher:
             self._alert(i18n.t("dlg_error"), str(ex))
             return
 
-        c["theme"] = self.config.get("theme", "system")
-        c["lang"]  = self.config.get("lang",  "en")
+        c["theme"]     = self.config.get("theme",     "system")
+        c["lang"]      = self.config.get("lang",       "en")
+        c["proxy_url"] = self.config.get("proxy_url",  "")
         infra.save_config(c)
         self.run_btn.config(state="disabled")
 
