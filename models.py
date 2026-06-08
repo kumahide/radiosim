@@ -104,7 +104,7 @@ class TerrainProfile:
     d_km_axis:         np.ndarray   # 各サンプル点の水平距離 [km]
     horiz_dist_km:     float        # 水平総距離 [km]
     num_samples:       int
-    k_factor:          float = 4/3  # 曲率補正に使用した K ファクター
+    earth_k:           float = 4/3  # 等価地球半径係数（ライスKとは無関係）
 
 
 @dataclass
@@ -117,7 +117,7 @@ class PropagationResult:
     gas_loss:      float   # 大気減衰 [dB]  (ITU-R P.676-13 Annex 2)
     blocked_ratio: float   # Fresnel 第1ゾーン遮蔽率 [%]
     slant_dist_km: float   # スラント距離 [km]
-    current_k:     float   # 実効 K ファクタ
+    current_k:     float   # 推定ライスKファクター（表示専用、計算不使用）
     diff_method:   str     # 使用した回折モデル ("single" | "deygout")
     env_type:      str     # 環境区分 ("urban"|"suburban"|"rural"|"los")
 
@@ -153,21 +153,22 @@ def calculate_terrain_profile(
     lon_tx: float,
     lat_rx: float,
     lon_rx: float,
-    k_factor: float = 4 / 3,
+    earth_k: float = 4 / 3,
 ) -> TerrainProfile:
     """
     生標高配列から TerrainProfile を生成する。
 
-    地球曲率補正に等価地球半径係数 k_factor（K ファクター）を使用する。
-    K ファクターが大きいほど電波は大きく曲がり、地形の見かけの凸量が減る。
+    地球曲率補正に等価地球半径係数 earth_k を使用する。
+    earth_k が大きいほど等価地球半径が大きくなり、地形の見かけの凸量が減る。
+    ライスKファクター（SimParams.k_factor）とは別物。
 
     Args:
-        k_factor: 等価地球半径係数。標準大気 = 4/3 ≈ 1.333。
-                  ダクト条件では大きく（10 以上）、負の屈折では小さくなる。
-                  デフォルトは標準大気（4/3）。
+        earth_k: 等価地球半径係数。標準大気 = 4/3 ≈ 1.333。
+                 ダクト条件では大きく（10 以上）、負の屈折では小さくなる。
+                 デフォルトは標準大気（4/3）。
     """
     R_earth = 6371.0
-    Re      = R_earth * max(k_factor, 0.1)  # 0 除算防止
+    Re      = R_earth * max(earth_k, 0.1)  # 0 除算防止
 
     dlat = math.radians(lat_rx - lat_tx)
     dlon = math.radians(lon_rx - lon_tx)
@@ -192,7 +193,7 @@ def calculate_terrain_profile(
         d_km_axis        = d_km_axis,
         horiz_dist_km    = horiz_dist_km,
         num_samples      = num_samples,
-        k_factor         = k_factor,
+        earth_k          = earth_k,
     )
 
 
@@ -226,7 +227,7 @@ def calculate_propagation(
     h_rx: float,
     freq_mhz: float,
     veg_h: float,
-    k_factor: float,
+    initial_k: float,
     diff_method: str = "deygout",
     env_type: str = ENV_DEFAULT,
     rain_rate: float = 0.0,
@@ -310,7 +311,7 @@ def calculate_propagation(
     # ライスファクター K は見通し成分と散乱成分の電力比 [dB] であり、
     # 障害物による回折損が増えると見通し成分が失われ K が低下する。
     # diff_loss / 3 は経験的な低下量の近似係数（計算には使用しない）。
-    current_k = max(0.0, k_factor - (diff_loss / 3))
+    current_k = max(0.0, initial_k - (diff_loss / 3))
 
     # 降雨減衰・大気減衰
     rain_loss = calculate_rain_loss(freq_mhz, slant_dist_km, rain_rate)

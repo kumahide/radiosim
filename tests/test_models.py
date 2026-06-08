@@ -115,13 +115,13 @@ class TestCalculateTerrainProfile:
     def test_num_samples(self, flat_terrain):
         assert flat_terrain.num_samples == 100
 
-    def test_k_factor_stored_in_profile(self):
-        """calculate_terrain_profile に渡した k_factor が TerrainProfile に保持されること。"""
+    def test_earth_k_stored_in_profile(self):
+        """calculate_terrain_profile に渡した earth_k が TerrainProfile に保持されること。"""
         raw = np.zeros(100)
         for k in [1.0, 4/3, 10.0]:
             t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46,
-                                                  k_factor=k)
-            assert t.k_factor == pytest.approx(k)
+                                                  earth_k=k)
+            assert t.earth_k == pytest.approx(k)
 
     def test_larger_k_reduces_curvature_correction(self):
         """
@@ -132,7 +132,7 @@ class TestCalculateTerrainProfile:
         corrections = []
         for k in [1.0, 4/3, 5.0, 10.0]:
             t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46,
-                                                  k_factor=k)
+                                                  earth_k=k)
             # 曲率補正量 = elevs_with_curve - raw_elevs の最大値（中央付近）
             correction_max = float((t.elevs_with_curve - t.raw_elevs).max())
             corrections.append(correction_max)
@@ -142,11 +142,11 @@ class TestCalculateTerrainProfile:
                 f"K 増加で曲率補正が減少しない: {corrections}"
             )
 
-    def test_default_k_factor_is_standard_atmosphere(self):
-        """k_factor のデフォルトは標準大気（4/3）。"""
+    def test_default_earth_k_is_standard_atmosphere(self):
+        """earth_k のデフォルトは標準大気（4/3）。"""
         raw = np.zeros(100)
         t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
-        assert t.k_factor == pytest.approx(4/3, rel=1e-6)
+        assert t.earth_k == pytest.approx(4/3, rel=1e-6)
 
 
 # ================================================================
@@ -155,7 +155,7 @@ class TestCalculateTerrainProfile:
 class TestCalculatePropagation:
     """single / deygout 両モデルの共通挙動 + モデル固有の挙動。"""
 
-    PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=2400.0, veg_h=5.0, k_factor=10.0)
+    PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=2400.0, veg_h=5.0, initial_k=10.0)
 
     # ── 共通: フィールドの存在と型 ──────────────────────────────
     @pytest.mark.parametrize("method", ["single", "deygout"])
@@ -211,7 +211,7 @@ class TestCalculatePropagation:
             h_tx=0.0, h_rx=0.0,
             freq_mhz=2400.0,
             veg_h=10.0,
-            k_factor=10.0,
+            initial_k=10.0,
         )
         assert r.veg_loss > 0.0, (
             "植生がLoSを遮っているにもかかわらず Veg Loss = 0.0 になっている"
@@ -230,7 +230,7 @@ class TestCalculatePropagation:
             h_tx=100.0, h_rx=100.0,
             freq_mhz=2400.0,
             veg_h=5.0,
-            k_factor=10.0,
+            initial_k=10.0,
         )
         assert r.veg_loss == pytest.approx(0.0, abs=1e-6)
 
@@ -392,7 +392,7 @@ class TestCalculateLinkBudget:
 # ================================================================
 class TestEnvCoeffs:
 
-    PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=2400.0, veg_h=5.0, k_factor=10.0)
+    PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=2400.0, veg_h=5.0, initial_k=10.0)
 
     def test_all_env_types_defined(self):
         """4つの環境区分がすべて ENV_COEFFS に定義されている。"""
@@ -550,7 +550,7 @@ class TestCalculateGasLoss:
 class TestPropagationRainGas:
 
     PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=11000.0,
-                  veg_h=5.0, k_factor=10.0)
+                  veg_h=5.0, initial_k=10.0)
 
     def test_rain_loss_zero_when_no_rain(self, flat_terrain):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS, rain_rate=0.0)

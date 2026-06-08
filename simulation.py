@@ -226,7 +226,7 @@ def run_calculation(
         h_rx        = h_rx,
         freq_mhz    = params.freq_mhz,
         veg_h       = params.veg_h,
-        k_factor    = params.k_factor,
+        initial_k   = params.k_factor,
         diff_method = params.diff_method,
         env_type    = params.env_type,
         rain_rate   = _rain,
