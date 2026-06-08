@@ -336,7 +336,7 @@ def calculate_propagation(
 # ──────────────────────────────────────────────────────────────
 
 # Deygout 再帰の打ち切り閾値
-_NU_THRESHOLD:    float = -0.8   # これ以下は見通しとみなす
+_NU_THRESHOLD:    float = -0.8   # これ以下は回折損 0 dB として打ち切る（ITU-R P.526 の見通し判定相当）
 _MIN_SEGMENT_M:   float = 50.0   # セグメント幅がこれ未満なら打ち切る
 _MAX_DEPTH:       int   = 20     # 再帰上限（無限ループ防止）
 
