@@ -21,6 +21,11 @@
 - バッチ CSV のパス別設定（`env_type` / `rain_rate` / `diff_method`）を廃止し、Common Settings に一本化。`PathRow` フィールドと `export_csv()` ヘッダーを整理。
 - `infrastructure.py` に `_enumerate_bbox` / `_download_tile_set` / `count_bbox_tiles` を追加（次期タイル管理メニュー向け流用可能 API）。
 
+### 変更（2026-06-08 追記）
+- **k_factor 命名の曖昧さを解消**: 同一ファイル内で「等価地球半径係数」と「ライスKファクター」が同じ名前 `k_factor` を共有していた問題を修正。`TerrainProfile.k_factor` および `calculate_terrain_profile` の引数を `earth_k`（等価地球半径係数・4/3 固定）に、`calculate_propagation` の引数を `initial_k`（入力ライスK）に改名。`PropagationResult` / `LinkBudgetResult` の `current_k` フィールドコメントを「推定ライスKファクター（表示専用、計算不使用）」に更新。
+- **i18n ラベルのライスK表記を統一**: バッチ入力欄 `lbl_b_k_factor` を "K係数" / "K-Factor" から "Kファクター（ライス）" / "Rician K-Factor" に変更。グラフパネル・HTML レポートの `pl_k_factor` / `html_k_factor` を "Kファクター" / "K-Factor" から "ライスK（推定）" / "K-Factor (est.)" に変更。
+- **`_NU_THRESHOLD` コメント修正**: 「見通しとみなす」という曖昧な表現を「回折損 0 dB として打ち切る（ITU-R P.526 の見通し判定相当）」に変更し、コードの動作を直接説明するよう修正。
+
 ### 修正（2026-06-08 追記）
 - **プロキシ設定後にキャンセルすると次回起動時に設定が消える**: `_on_run` で `save_config(c)` に渡す dict に `proxy_url` が含まれておらず、シミュレーション実行のたびに config ファイルから `proxy_url` が除去されていた。`proxy_url` を `self.config` からコピーするよう修正。
 - **プロキシ未設定で実行後にプロキシを設定しても地形が 0m のまま**: `set_proxy()` でセッションをリセットしても `_failed_tiles`（タイル取得失敗セット）がクリアされないため、失敗したタイルが再取得されなかった。また `_terrain_cache`（地形プロファイルキャッシュ）に 0m で保存された結果が残り続けた。`set_proxy()` 内で `_failed_tiles.clear()` を追加し、プロキシダイアログの OK 時に `sim.clear_terrain_cache()` を呼ぶよう修正。
