@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# RadioSim Pro 2.0RC2 - PyInstaller spec ファイル
+# RadioSim Pro 2.0 - PyInstaller spec ファイル
 #
 # ビルド方法:
 #   pyinstaller radiosim.spec
@@ -64,7 +64,7 @@ from PyInstaller.utils.win32.versioninfo import (
 import version as _ver
 
 def _to_ver_tuple(v: str) -> tuple:
-    """'2.0RC2' → (2, 0, 0, 2)、'2.1.3' → (2, 1, 3, 0)"""
+    """'2.0' → (2, 0, 0, 0)、'2.1.3' → (2, 1, 3, 0)、'2.0RC2' → (2, 0, 0, 2)"""
     m = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?(?:RC(\d+))?", v)
     if not m:
         return (0, 0, 0, 0)
