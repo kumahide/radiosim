@@ -158,6 +158,11 @@ class SimLauncher:
             label   = i18n.t("menu_proxy_settings"),
             command = self._on_proxy_settings,
         )
+        settings_menu.add_separator()
+        settings_menu.add_command(
+            label   = i18n.t("menu_tile_manager"),
+            command = self._on_tile_manager,
+        )
         menubar.add_cascade(label=i18n.t("menu_settings"), menu=settings_menu)
 
         help_menu = tk.Menu(menubar, tearoff=False)
@@ -507,6 +512,13 @@ class SimLauncher:
         c["rain_rate"]   = self.config.get("rain_rate",   "0.0")
         c["diff_method"] = self.config.get("diff_method", "deygout")
         return c
+
+    def _on_tile_manager(self) -> None:
+        from views.tile_manager import TileManagerWindow
+        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
+            self._tile_mgr_win._win.focus()
+            return
+        self._tile_mgr_win = TileManagerWindow(self.root, self.config)
 
     def _on_about(self) -> None:
         self._alert(

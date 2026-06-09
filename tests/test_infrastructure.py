@@ -493,93 +493,151 @@ class TestEnumerateBbox:
 
 class TestCountBboxTiles:
 
-    def test_matches_enumerate_bbox_length(self):
+    def test_returns_zoom14_position_count(self):
+        """count_bbox_tiles は zoom-14 位置数（エリア数）を返す。"""
         lat1, lon1, lat2, lon2 = 34.54, 132.41, 34.53, 132.40
-        assert infra.count_bbox_tiles(lat1, lon1, lat2, lon2) == \
-               len(infra._enumerate_bbox(lat1, lon1, lat2, lon2))
+        count = infra.count_bbox_tiles(lat1, lon1, lat2, lon2)
+        positions = list(infra._iter_dem_positions(lat1, lon1, lat2, lon2))
+        assert count == len(positions)
 
     def test_returns_positive_integer(self):
         count = infra.count_bbox_tiles(34.54, 132.41, 34.53, 132.40)
         assert isinstance(count, int)
         assert count > 0
 
+    def test_inverted_coords_same_result(self):
+        """入力座標の順序に依存しないこと。"""
+        assert infra.count_bbox_tiles(34.54, 132.41, 34.53, 132.40) == \
+               infra.count_bbox_tiles(34.53, 132.40, 34.54, 132.41)
+
 
 # ============================================================
-# _download_tile_set
+# _iter_dem_positions
 # ============================================================
-class TestDownloadTileSet:
+class TestIterDemPositions:
 
-    def test_empty_tiles_returns_zero_stats(self):
-        result = infra._download_tile_set([])
-        assert result == {"total": 0, "downloaded": 0, "cached": 0, "failed": 0}
+    def test_yields_tuples_with_correct_structure(self):
+        """各 yield 値が (x14, y14, subdir, path, zoom15_tiles) の構造を持つ。"""
+        positions = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        assert len(positions) > 0
+        for x14, y14, subdir, path, zoom15_tiles in positions:
+            assert isinstance(x14, int)
+            assert isinstance(y14, int)
+            assert path.endswith(f"{y14}.png")
+            assert str(x14) in path
+            assert len(zoom15_tiles) >= 1
 
-    def test_downloaded_count_on_new_tile(self, tmp_path, monkeypatch):
-        """ディスクキャッシュなし・fetch成功 → downloaded が増える。"""
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
+    def test_zoom15_tiles_are_sub_tiles_of_zoom14(self):
+        """zoom-15 サブタイルが対応する zoom-14 の子タイル範囲内に収まること。"""
+        positions = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        for x14, y14, _, _, zoom15_tiles in positions:
+            for x15, y15, *_ in zoom15_tiles:
+                assert x14 * 2 <= x15 <= x14 * 2 + 1
+                assert y14 * 2 <= y15 <= y14 * 2 + 1
 
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png"))]
-        result = infra._download_tile_set(tiles)
-        assert result["downloaded"] == 1
-        assert result["cached"] == 0
-        assert result["failed"] == 0
-        assert result["total"] == 1
+    def test_inverted_coords_same_result(self):
+        pos_ab = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        pos_ba = list(infra._iter_dem_positions(34.53, 132.40, 34.54, 132.41))
+        assert [(x, y) for x, y, *_ in pos_ab] == [(x, y) for x, y, *_ in pos_ba]
 
-    def test_cached_count_when_file_already_exists(self, tmp_path, monkeypatch):
-        """ディスクキャッシュあり → cached が増える。"""
+
+# ============================================================
+# _process_position
+# ============================================================
+class TestProcessPosition:
+
+    def _make_counts(self):
+        return {"downloaded_5a": 0, "downloaded_5b": 0, "downloaded_dem": 0,
+                "skipped": 0, "failed": 0}
+
+    def test_skips_when_dem_cached_and_no_force(self, tmp_path, monkeypatch):
+        """dem_png キャッシュあり・force=False → skipped。"""
+        import threading
         from PIL import Image
-
-        cache_path = tmp_path / "0.png"
-        Image.new("RGB", (256, 256), (0, 39, 16)).save(str(cache_path))
-
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
-
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(cache_path))]
-        result = infra._download_tile_set(tiles)
-        assert result["cached"] == 1
-        assert result["downloaded"] == 0
-        assert result["failed"] == 0
-
-    def test_failed_count_when_fetch_returns_none(self, tmp_path, monkeypatch):
-        """_fetch_tile が None を返したとき failed が増える。"""
+        dem_path = tmp_path / "dem.png"
+        Image.new("RGB", (256, 256)).save(str(dem_path))
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: None)
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(dem_path), [], False, counts, lock)
+        assert counts["skipped"] == 1
+        assert counts["downloaded_5a"] == counts["downloaded_5b"] == counts["downloaded_dem"] == 0
 
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png"))]
-        result = infra._download_tile_set(tiles)
-        assert result["failed"] == 1
-        assert result["downloaded"] == 0
+    def test_downloads_5a_when_available(self, tmp_path, monkeypatch):
+        """5a DL 成功 → downloaded_5a 増加・5b/dem は試みない。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        fetch_calls = []
 
-    def test_total_equals_sum_of_counts(self, tmp_path, monkeypatch):
-        """downloaded + cached + failed の合計が total に一致すること。"""
+        def mock_fetch(layer_id, *a, **kw):
+            fetch_calls.append(layer_id)
+            return tile_arr if layer_id == "dem5a_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        subdir5a = str(tmp_path / "5a" / "0"); subdir5b = str(tmp_path / "5b" / "0")
+        zoom15 = [(0, 0, subdir5a, str(tmp_path / "5a.png"),
+                         subdir5b, str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 0
+        assert "dem5b_png" not in fetch_calls
+
+    def test_falls_back_to_5b_when_5a_fails(self, tmp_path, monkeypatch):
+        """5a 失敗 → 5b 試みる → downloaded_5b 増加。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem5b_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 0
+
+    def test_falls_back_to_dem_when_both_5m_fail(self, tmp_path, monkeypatch):
+        """5a・5b 両方失敗 → dem_png DL。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_dem"] == 1
+        assert counts["failed"] == 0
+
+    def test_force_ignores_existing_cache(self, tmp_path, monkeypatch):
+        """force=True: dem_png キャッシュがあっても再取得する。"""
+        import threading
         from PIL import Image
-
+        dem_path = tmp_path / "dem.png"
+        Image.new("RGB", (256, 256)).save(str(dem_path))
         tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
 
-        cached_path = tmp_path / "1.png"
-        Image.new("RGB", (256, 256)).save(str(cached_path))
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem5a_png" else None
 
-        tiles = [
-            ("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png")),  # new
-            ("dem_png", 14, 101, 0, str(tmp_path), str(cached_path)),          # cached
-        ]
-        result = infra._download_tile_set(tiles)
-        assert result["total"] == 2
-        assert result["downloaded"] + result["cached"] + result["failed"] == 2
-
-    def test_progress_callback_called_for_each_tile(self, tmp_path, monkeypatch):
-        """progress_cb がタイル数ぶん呼ばれ、最終的に done==total になること。"""
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
-
-        calls = []
-        tiles = [
-            ("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "a.png")),
-            ("dem_png", 14, 101, 0, str(tmp_path), str(tmp_path / "b.png")),
-        ]
-        infra._download_tile_set(tiles, progress_cb=lambda d, t: calls.append((d, t)))
-
-        assert len(calls) == 2
-        assert all(t == 2 for _, t in calls)   # total は常に 2
-        assert {d for d, _ in calls} == {1, 2} # done は 1, 2 の組
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(dem_path),
+                                 zoom15, True, counts, lock)
+        assert counts["skipped"] == 0
+        assert counts["downloaded_5a"] == 1

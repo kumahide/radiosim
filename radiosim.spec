@@ -166,6 +166,12 @@ hiddenimports = [
     # numpy の内部モジュール
     "numpy.core._multiarray_umath",
     "numpy.core._multiarray_tests",
+    # tkintermapview（タイルキャッシュ管理ウィンドウ）
+    "tkintermapview",
+    "customtkinter",
+    "geocoder",
+    "pyperclip",
+    "pywin32",
 ]
 
 # ============================================================
