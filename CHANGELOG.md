@@ -4,10 +4,12 @@
 
 ---
 
-## [Unreleased] — 2.0 正式リリースへの残作業
+## [2.0] — 2026-06-09
 
-- `version.py` の `APP_VERSION` を `"2.0RC3"` → `"2.0"` に変更
-- `build.bat` による再ビルド・配布物確認
+### 変更
+- `APP_VERSION` を `"2.0RC3"` → `"2.0"` に変更（正式リリース）
+- プロキシ環境での SSL 動作確認済み（`truststore` + Windows 証明書ストア）
+- `dist/RadioSimPro/RadioSimPro.exe` 動作確認・ファイルプロパティ確認済み
 
 ---
 
