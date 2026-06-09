@@ -1,4 +1,4 @@
-# RadioSim Pro 2.0 RC3
+# RadioSim Pro 2.0
 
 ![RadioSim Pro](logo.png)
 
@@ -68,11 +68,11 @@ This tool is intended solely for screening purposes — determining whether a fi
 1. Extract the distribution ZIP file to any folder.
 2. Place the extracted folder wherever you like. The app can be moved freely.
 
-> **Note**: Do not modify the folder structure. `RadioSim.exe` cannot run as a standalone file.
+> **Note**: Do not modify the folder structure. `RadioSimPro.exe` cannot run as a standalone file.
 
 ### Launch
 
-Double-click `RadioSim.exe`.
+Double-click `RadioSimPro.exe`.
 
 On first launch, the following directories and files are created automatically in the same folder as the exe:
 

@@ -1,4 +1,4 @@
-# RadioSim Pro 2.0 RC3
+# RadioSim Pro 2.0
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
