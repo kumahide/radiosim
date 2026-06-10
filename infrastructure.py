@@ -628,56 +628,226 @@ def tile_to_latlng(x: int, y: int, zoom: int) -> tuple[float, float]:
 # タイルキャッシュ管理
 # ============================================================
 
-def check_cache_coverage(
+# 精度レベルの優先順位（大きいほど高精度）: (layer_id, tile_zoom, level, priority)
+_OVERLAY_LAYERS: list[tuple[str, int, str, int]] = [
+    ("dem5a_png", 15, "5a",  3),
+    ("dem5b_png", 15, "5b",  2),
+    ("dem_png",   14, "dem", 1),
+]
+_PRIORITY_TO_LEVEL: dict[int, str] = {3: "5a", 2: "5b", 1: "dem"}
+
+
+def _scan_cached_positions(
+    lat_n: float, lat_s: float,
+    lon_w: float, lon_e: float,
+) -> dict[tuple[int, int], int]:
+    """表示範囲内のキャッシュ済みタイルを zoom-14 セル単位で集約する。
+
+    実在するキャッシュファイルだけを走査するため計算量はキャッシュ量に比例し、
+    地理的範囲には比例しない。各レイヤーの x ディレクトリ一覧を起点に走査し、
+    表示範囲外を間引く。
+
+    Returns: {(x14, y14): 最高 priority}
+    """
+    base: dict[tuple[int, int], int] = {}
+    for layer_id, tile_zoom, _level, priority in _OVERLAY_LAYERS:
+        layer_dir = os.path.join(CACHE_DIR, layer_id)
+        if not os.path.isdir(layer_dir):
+            continue
+        x_min, y_min, _, _ = _tile_coords(lat_n, lon_w, tile_zoom)
+        x_max, y_max, _, _ = _tile_coords(lat_s, lon_e, tile_zoom)
+        shift = tile_zoom - 14    # zoom-15(5a/5b)→1, zoom-14(dem)→0
+        try:
+            x_names = os.listdir(layer_dir)
+        except OSError:
+            continue
+        for x_name in x_names:
+            try:
+                x = int(x_name)
+            except ValueError:
+                continue
+            if x < x_min or x > x_max:
+                continue
+            x_dir = os.path.join(layer_dir, x_name)
+            try:
+                y_names = os.listdir(x_dir)
+            except OSError:
+                continue
+            for fname in y_names:
+                if not fname.endswith(".png"):
+                    continue
+                try:
+                    y = int(fname[:-4])
+                except ValueError:
+                    continue
+                if y < y_min or y > y_max:
+                    continue
+                key = (x >> shift, y >> shift)
+                if base.get(key, 0) < priority:
+                    base[key] = priority
+    return base
+
+
+def count_cached_areas(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
-) -> dict:
-    """bbox 内のキャッシュカバレッジを確認する（ネットワーク通信なし）。
+) -> int:
+    """bbox 内で実際にキャッシュ済みの zoom-14 エリア数を返す（削除対象の件数表示用）。
 
-    zoom-14 位置を管理単位とし、各位置の最高精度レベルを返す。
+    count_bbox_tiles が範囲内の全エリア（未取得含む）を数えるのに対し、本関数は
+    実在キャッシュのみを数える。
+    """
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+    return len(_scan_cached_positions(lat_n, lat_s, lon_w, lon_e))
+
+
+def scan_cache_overlay(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    overlay_zoom: int,
+) -> list[dict]:
+    """表示範囲内のキャッシュを「適応的粒度」のセルに集約して返す（自動表示用）。
+
+    クアッドツリー方式: zoom-14 を最小単位とし、2×2 の子がすべて存在し
+    かつ同一精度レベルのときだけ親セルに統合する。これを overlay_zoom まで
+    繰り返す。完全に埋まった領域の内部は大きなセル（ポリゴン少）になり、
+    部分的にしか埋まっていない領域（＝カバレッジのエッジ）は細かいセルの
+    まま残るため、粗い表示でもカバレッジ範囲を過大に見せない。
+
+    キャッシュ済みセルのみを返す（"none" は返さない）。
 
     Returns:
-        {
-            "area_total": int,
-            "area_5a":    int,   # 5m航空（dem5a_png）がキャッシュ済みのエリア数
-            "area_5b":    int,   # 5m写真（dem5b_png）のみのエリア数
-            "area_dem":   int,   # 10m（dem_png）のみのエリア数
-            "area_none":  int,   # 何もキャッシュなしのエリア数
-            "positions":  [{"x14": int, "y14": int, "level": str}, ...]
-                          level: "5a" | "5b" | "dem" | "none"
-        }
+        [{"x": int, "y": int, "zoom": int, "level": str}, ...]
+        zoom はセルごとに異なる（overlay_zoom 〜 14）。
+        level は "5a" | "5b" | "dem"。
     """
-    area_5a = area_5b = area_dem = area_none = 0
-    positions: list[dict] = []
+    # dem_png は zoom-14 が上限のため overlay_zoom は 14 以下に丸める。
+    overlay_zoom = max(2, min(14, overlay_zoom))
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
 
-    for x14, y14, _, dem14_path, zoom15_tiles in _iter_dem_positions(lat1, lon1, lat2, lon2):
-        has_5a  = any(os.path.exists(path5a) for _, _, _, path5a, _, _    in zoom15_tiles)
-        has_5b  = any(os.path.exists(path5b) for _, _, _, _, _, path5b    in zoom15_tiles)
-        has_dem = os.path.exists(dem14_path)
+    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)   # zoom-14 base
+    result: list[dict] = []
 
-        if has_5a:
-            area_5a  += 1
-            level = "5a"
-        elif has_5b:
-            area_5b  += 1
-            level = "5b"
-        elif has_dem:
-            area_dem += 1
-            level = "dem"
+    # 14 → overlay_zoom へ向けてボトムアップに統合する。
+    # 親に統合できない（=部分的な）セルはその時点の zoom で確定出力する。
+    zoom = 14
+    while zoom > overlay_zoom and current:
+        groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for (x, y) in current:
+            groups.setdefault((x >> 1, y >> 1), []).append((x, y))
+
+        promoted: dict[tuple[int, int], int] = {}
+        for parent, children in groups.items():
+            levels = {current[c] for c in children}
+            if len(children) == 4 and len(levels) == 1:
+                # 4 子すべて存在・同一レベル → 親へ統合してさらに上を狙う
+                promoted[parent] = next(iter(levels))
+            else:
+                # 部分的 or レベル混在 → このセル群は現 zoom で確定（エッジ）
+                for c in children:
+                    result.append(
+                        {"x": c[0], "y": c[1], "zoom": zoom,
+                         "level": _PRIORITY_TO_LEVEL[current[c]]}
+                    )
+        current = promoted
+        zoom -= 1
+
+    # 最後まで統合された（=完全に埋まった）セルを overlay_zoom で出力
+    for (x, y), prio in current.items():
+        result.append({"x": x, "y": y, "zoom": zoom, "level": _PRIORITY_TO_LEVEL[prio]})
+
+    return result
+
+
+def _simplify_grid_loop(pts: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """格子座標の閉ループから一直線上の中間点を除く（角だけ残す）。"""
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    n = len(pts)
+    if n < 3:
+        return pts
+    out: list[tuple[int, int]] = []
+    for i in range(n):
+        prev = pts[(i - 1) % n]
+        cur  = pts[i]
+        nxt  = pts[(i + 1) % n]
+        # 外積 0 = 3 点が一直線 → cur は角ではないので捨てる
+        if (cur[0] - prev[0]) * (nxt[1] - cur[1]) - (cur[1] - prev[1]) * (nxt[0] - cur[0]) == 0:
+            continue
+        out.append(cur)
+    return out
+
+
+def coverage_outline(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+) -> list[list[tuple[float, float]]]:
+    """キャッシュ済み領域の和集合の外周（と穴の境界）を緯度経度ループで返す。
+
+    zoom-14 単位セルの境界辺を「有向辺の相殺」で求める。隣接する 2 セルが
+    共有する辺は逆向きの有向辺として打ち消し合い、残った辺が領域の外周
+    （および内側の穴の境界）になる。これにより内部のグリッド線は出ず、
+    外周線だけが得られる。
+
+    Returns:
+        [[(lat, lon), ...], ...]  各ループは閉路（始点と終点は重複しない）。
+    """
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+    base = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)
+
+    # 各セルの 4 辺を一定の回転方向で有向辺として登録し、逆向きがあれば相殺する。
+    edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+
+    def _toggle(a: tuple[int, int], b: tuple[int, int]) -> None:
+        if (b, a) in edges:
+            edges.discard((b, a))
         else:
-            area_none += 1
-            level = "none"
+            edges.add((a, b))
 
-        positions.append({"x14": x14, "y14": y14, "level": level})
+    for (x, y) in base:
+        _toggle((x, y),         (x + 1, y))
+        _toggle((x + 1, y),     (x + 1, y + 1))
+        _toggle((x + 1, y + 1), (x, y + 1))
+        _toggle((x, y + 1),     (x, y))
 
-    return {
-        "area_total": len(positions),
-        "area_5a":    area_5a,
-        "area_5b":    area_5b,
-        "area_dem":   area_dem,
-        "area_none":  area_none,
-        "positions":  positions,
-    }
+    # 残った有向辺を始点でインデックス化し、連結してループを作る。
+    successors: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for a, b in edges:
+        successors.setdefault(a, []).append(b)
+
+    remaining = set(edges)
+    loops: list[list[tuple[int, int]]] = []
+    for start in list(edges):
+        if start not in remaining:
+            continue
+        cur = start
+        pts: list[tuple[int, int]] = [cur[0]]
+        while cur in remaining:
+            remaining.discard(cur)
+            pts.append(cur[1])
+            nxt = None
+            for cand in successors.get(cur[1], ()):
+                if (cur[1], cand) in remaining:
+                    nxt = (cur[1], cand)
+                    break
+            if nxt is None:
+                break
+            cur = nxt
+        simplified = _simplify_grid_loop(pts)
+        if len(simplified) >= 3:
+            loops.append(simplified)
+
+    # 格子点 (col, row) はその zoom-14 タイルの NW 角に対応する。
+    return [[tile_to_latlng(c, r, 14) for (c, r) in loop] for loop in loops]
 
 
 def delete_tile_cache(

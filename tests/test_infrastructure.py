@@ -641,3 +641,163 @@ class TestProcessPosition:
                                  zoom15, True, counts, lock)
         assert counts["skipped"] == 0
         assert counts["downloaded_5a"] == 1
+
+
+# ============================================================
+# scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）
+# ============================================================
+
+class TestScanCacheOverlay:
+
+    # 走査対象の代表座標（広島県付近）
+    LAT, LON = 34.54, 132.41
+
+    def _touch(self, root, layer_id, x, y):
+        d = os.path.join(root, layer_id, str(x))
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{y}.png"), "wb") as f:
+            f.write(b"\x89PNG")
+
+    def test_empty_cache_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.scan_cache_overlay(
+            self.LAT, self.LON, self.LAT - 0.01, self.LON + 0.01, 14
+        ) == []
+
+    def test_5a_wins_over_dem_at_same_cell(self, tmp_path, monkeypatch):
+        """同じ zoom-14 セルに 5a と dem があれば最高精度 5a を返す。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        x15, y15, _, _ = infra._tile_coords(self.LAT, self.LON, 15)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem5a_png", x15, y15)
+        cells = infra.scan_cache_overlay(
+            self.LAT + 0.01, self.LON - 0.01,
+            self.LAT - 0.01, self.LON + 0.01, 14,
+        )
+        match = [c for c in cells if c["x"] == x14 and c["y"] == y14]
+        assert len(match) == 1
+        assert match[0]["level"] == "5a"
+        assert match[0]["zoom"] == 14
+
+    def test_dem_only_area(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        cells = infra.scan_cache_overlay(
+            self.LAT + 0.01, self.LON - 0.01,
+            self.LAT - 0.01, self.LON + 0.01, 14,
+        )
+        assert all(c["level"] == "dem" for c in cells)
+        assert any(c["x"] == x14 and c["y"] == y14 for c in cells)
+
+    def test_tiles_outside_view_excluded(self, tmp_path, monkeypatch):
+        """表示範囲外のキャッシュは返さない。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        # はるか遠方の小範囲を指定（対象タイルを含まない）
+        cells = infra.scan_cache_overlay(43.07, 141.34, 43.06, 141.35, 14)
+        assert cells == []
+
+    # 日本全域を覆う bbox（filtering の端数で対象タイルを落とさないため広めに取る）
+    WIDE = (46.0, 128.0, 30.0, 146.0)
+
+    def _aligned_block_origin(self, span):
+        """span×span に整列した zoom-14 ブロックの原点 (x0, y0) を返す。"""
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        return (x14 // span) * span, (y14 // span) * span
+
+    def test_full_aligned_block_merges_to_single_coarse_cell(self, tmp_path, monkeypatch):
+        """完全に埋まった整列 4×4 ブロックは zoom-12 の単一セルへ統合される。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x0, y0 = self._aligned_block_origin(4)   # 4 = 2^(14-12)
+        for dx in range(4):
+            for dy in range(4):
+                self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
+        cells = infra.scan_cache_overlay(*self.WIDE, 12)
+        assert len(cells) == 1
+        assert cells[0]["zoom"] == 12
+        assert cells[0]["level"] == "dem"
+
+    def test_partial_block_keeps_edges_fine(self, tmp_path, monkeypatch):
+        """欠けのあるブロックは粗く統合されず、エッジは zoom-14 のまま残る。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x0, y0 = self._aligned_block_origin(4)
+        for dx in range(4):
+            for dy in range(4):
+                if dx == 0 and dy == 0:
+                    continue   # 1 隅を欠けさせる → 全体統合は不可
+                self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
+        cells = infra.scan_cache_overlay(*self.WIDE, 12)
+        # 単一の粗いセルにはならない（過大表示を防ぐ）
+        assert len(cells) > 1
+        # 細粒度（zoom-14）のセルが残る
+        assert any(c["zoom"] == 14 for c in cells)
+        # 欠けた隅 (x0, y0) は covered として返らない
+        assert not any(c["zoom"] == 14 and c["x"] == x0 and c["y"] == y0 for c in cells)
+
+    def test_count_cached_areas_counts_only_cached(self, tmp_path, monkeypatch):
+        """count_cached_areas は実在キャッシュのみ数える（未取得は含めない）。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        # 2 エリアだけキャッシュ
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem_png", x14 + 1, y14)
+        wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
+        cached = infra.count_cached_areas(*wide)
+        total = infra.count_bbox_tiles(*wide)
+        assert cached == 2
+        assert total > cached   # 範囲総数は未取得を含むので多い
+
+    def test_count_cached_areas_zero_when_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.count_cached_areas(*self.WIDE) == 0
+
+
+class TestCoverageOutline:
+
+    LAT, LON = 34.54, 132.41
+    WIDE = (46.0, 128.0, 30.0, 146.0)
+
+    def _touch(self, root, layer_id, x, y):
+        d = os.path.join(root, layer_id, str(x))
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{y}.png"), "wb") as f:
+            f.write(b"\x89PNG")
+
+    def test_empty_cache_no_loops(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.coverage_outline(*self.WIDE) == []
+
+    def test_single_cell_is_rectangle(self, tmp_path, monkeypatch):
+        """単一セル → 4 頂点の矩形ループ1個。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 4
+
+    def test_adjacent_cells_merge_to_one_outline(self, tmp_path, monkeypatch):
+        """隣接2セルは内部線なしの単一矩形（4頂点）になる。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem_png", x14 + 1, y14)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 4   # 内部の共有辺は相殺され角は4つ
+
+    def test_l_shape_has_six_corners(self, tmp_path, monkeypatch):
+        """L字（2×2 から1セル欠け）は6頂点のループ。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        for dx in (0, 1):
+            for dy in (0, 1):
+                if dx == 1 and dy == 1:
+                    continue
+                self._touch(tmp_path, "dem_png", x14 + dx, y14 + dy)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 6
