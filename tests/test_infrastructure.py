@@ -642,6 +642,87 @@ class TestProcessPosition:
         assert counts["skipped"] == 0
         assert counts["downloaded_5a"] == 1
 
+    @staticmethod
+    def _void_tile(void=True):
+        """全画素 (128,0,0) の欠損タイル、または全画素有効(0,0,0)のタイル。"""
+        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        if void:
+            arr[:, :, 0] = 128
+        return arr
+
+    def test_descends_to_5b_when_5a_has_void(self, tmp_path, monkeypatch):
+        """5a 取得成功だが欠損あり・5b が補完 → 5b も取得し dem は不要。"""
+        import threading
+        valid = np.zeros((256, 256, 3), dtype=np.uint8)
+
+        def mock_fetch(layer_id, *a, **kw):
+            if layer_id == "dem5a_png":
+                return self._void_tile(void=True)    # 5a は全欠損
+            if layer_id == "dem5b_png":
+                return valid                          # 5b が補完
+            return None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 0
+
+    def test_descends_to_dem_when_5a_and_5b_void(self, tmp_path, monkeypatch):
+        """5a・5b とも同一画素が欠損 → dem_png まで降りる（終端確定）。"""
+        import threading
+
+        def mock_fetch(layer_id, *a, **kw):
+            if layer_id in ("dem5a_png", "dem5b_png"):
+                return self._void_tile(void=True)    # 両方とも全欠損
+            if layer_id == "dem_png":
+                return np.zeros((256, 256, 3), dtype=np.uint8)
+            return None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 1
+
+    def test_no_descent_when_5a_void_free(self, tmp_path, monkeypatch):
+        """5a が欠損なし → 5b/dem は一切試みない（DL 最小）。"""
+        import threading
+        fetch_calls = []
+
+        def mock_fetch(layer_id, *a, **kw):
+            fetch_calls.append(layer_id)
+            return np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert fetch_calls == ["dem5a_png"]
+        assert counts["downloaded_dem"] == 0
+
+    def test_void_mask_matches_decode_semantics(self):
+        """_void_mask が (128,0,0) のみを True とすること。"""
+        arr = np.zeros((2, 2, 3), dtype=np.uint8)
+        arr[0, 0] = (128, 0, 0)   # 無効値
+        arr[0, 1] = (0, 0, 1)     # 標高 0.01m（有効）
+        arr[1, 0] = (128, 0, 1)   # 有効（b!=0）
+        mask = infra._void_mask(arr)
+        assert mask[0, 0] and not mask[0, 1] and not mask[1, 0] and not mask[1, 1]
+
 
 # ============================================================
 # scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）

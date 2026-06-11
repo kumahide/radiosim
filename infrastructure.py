@@ -406,6 +406,15 @@ def _decode_elevation(rgb: np.ndarray) -> float:
     return float((x - 16777216) * 0.01)
 
 
+def _void_mask(arr: np.ndarray) -> np.ndarray:
+    """無効値ピクセル (128, 0, 0) = 海・データ欠損 の真偽マスクを返す。
+
+    arr は (H, W, 3) の RGB 配列。get_elevation の実行時フォールバックと
+    同一のセマンティクスで「無効」を定義し、プリフェッチの降下判定に使う。
+    """
+    return (arr[:, :, 0] == 128) & (arr[:, :, 1] == 0) & (arr[:, :, 2] == 0)
+
+
 # ============================================================
 # タイル事前取得
 # ============================================================
@@ -490,7 +499,17 @@ def _process_position(
     """1 zoom-14 位置の優先順位付きダウンロード処理。
 
     優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
-    force=False かつ dem_png がキャッシュ済みなら位置全体をスキップ。
+
+    実行時 get_elevation はピクセル単位で無効値 (128,0,0) を下位レイヤーへ
+    フォールバックする。これと整合させるため、上位レイヤーのタイルが取得でき
+    ても内部に欠損ピクセルが残る限り下位レイヤーを取得する（欠損が解消した分
+    だけ降りるので DL は最小）。dem_png（最下層）まで降りればそれ以上の手段は
+    無く、残った欠損は恒久的な無効値（海など）として確定する。
+
+    force=False かつ dem_png がキャッシュ済みなら位置全体をスキップする。
+    dem_png の存在は「最下層まで降下済み＝解決済み」の終端マーカーであり、
+    欠損のある位置は必ず dem_png までキャッシュされるため、この早期リターンが
+    再プリフェッチ時の「解決済みは無視」を成立させる。
     """
     if not force and os.path.exists(dem14_path):
         with lock:
@@ -499,18 +518,32 @@ def _process_position(
 
     need_dem = False
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
+        # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
+        # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
+        # スキップしてよい（DL build 前の旧キャッシュは force 再取得で healing）。
         if not force and (os.path.exists(path5a) or os.path.exists(path5b)):
             continue
-        arr = _fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a)
-        if arr is not None:
+
+        arr5a = _fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a)
+        if arr5a is not None:
             with lock:
                 counts["downloaded_5a"] += 1
-            continue
-        arr = _fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b)
-        if arr is not None:
+            remaining = _void_mask(arr5a)
+            if not remaining.any():
+                continue   # 欠損なし: この位置は 5a で完結
+        else:
+            remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
+
+        # 5a に欠損が残る（または 5a 不在）→ 5b で埋まる分を解消
+        arr5b = _fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b)
+        if arr5b is not None:
             with lock:
                 counts["downloaded_5b"] += 1
-            continue
+            void5b = _void_mask(arr5b)
+            still_void = void5b if remaining is None else (remaining & void5b)
+            if not still_void.any():
+                continue   # 5a の欠損を 5b が完全に補完
+        # 5b 不在、または 5a∩5b に欠損が残る → dem_png へ降りる
         need_dem = True
 
     if need_dem:
