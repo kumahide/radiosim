@@ -66,8 +66,4 @@ echo.
 echo Zip the dist\RadioSimPro\ folder for distribution.
 echo ============================================================
 echo.
-
-explorer dist\RadioSimPro
-
-pause
 endlocal
