@@ -39,6 +39,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
+- Tile Cache Manager — visualize, prefetch, and delete DEM cache on a map
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -195,6 +196,8 @@ The menu bar provides the following options. Settings are saved to `radiosim_con
 | Settings > Theme        | System / Light / Dark | Window color theme                                                       |
 | Settings > Language     | English / 日本語      | UI language (requires restart)                                           |
 | Settings > Proxy        | URL entry             | Explicit HTTP proxy URL (leave blank to use OS proxy settings)           |
+| Settings > Tile Cache Manager | —              | Opens a window to visualize and manage the DEM cache on a map            |
+| Settings > Delete All Cache | —                | Deletes all downloaded DEM/map tiles (with confirmation)                 |
 | Help > Open README      | —                    | Opens this document in a browser                                         |
 
 #### Proxy Settings
@@ -208,6 +211,14 @@ http://proxy.example.com:8080
 - Changes take effect immediately — no restart required
 - Leaving the field blank and clicking OK reverts to OS proxy settings (system settings / environment variables)
 - `truststore` integration with the Windows certificate store is also active to handle corporate SSL inspection
+
+#### Tile Cache Manager
+
+**Settings > Tile Cache Manager** (`views/tile_manager.py`) shows the DEM tile cache on the GSI pale map and lets you prefetch or delete tiles for any area. It is a convenience for downloading the areas you need before going offline; normal simulations already cache tiles around each path, so **you do not need to open this window for everyday use**.
+
+- **Coverage display (automatic)**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m aerial / yellow = 5 m photogrammetry / cyan = 10 m). Unshaded areas are not cached.
+- **Gestures**: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area. Downloads and deletions show a confirmation dialog (area count, estimated size).
+- Implemented on top of `infrastructure.prefetch_tiles` and related public APIs. Tiles are always disk-cached and never re-downloaded once present (to be considerate of the public tile server).
 
 ---
 

@@ -40,6 +40,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
+- Tile Cache Manager — visualize, prefetch, and delete DEM cache on a map
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -93,11 +94,43 @@ The menu bar provides the following options. Settings are saved to `radiosim_con
 | Settings > Theme     | System / Light / Dark | Window color theme                                                |
 | Settings > Language  | English / 日本語      | UI language (requires restart)                                    |
 | Settings > Proxy     | URL entry             | Explicit HTTP proxy URL (blank = use OS proxy settings)           |
+| Settings > Tile Cache Manager | —            | Opens a window to visualize and manage the DEM cache on a map     |
+| Settings > Delete All Cache | —              | Deletes all downloaded DEM/map tiles (with confirmation)          |
 | Help > Open README   | —                    | Opens this document in a browser                                  |
 
 ### Proxy Settings
 
 If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL (e.g. `http://proxy.example.com:8080`). Changes take effect immediately. Leave blank and click OK to revert to OS proxy settings.
+
+### Tile Cache Manager
+
+**Settings > Tile Cache Manager** opens a window where you can review the DEM tile cache on the GSI pale map, and prefetch or delete tiles for any area. This is intended for downloading the areas you need for offline use before heading to a site with poor connectivity.
+
+Normal simulations already cache the tiles around each path automatically, so **you do not need to open this window for everyday use** — it is a convenience for fetching wider areas in advance.
+
+**Coverage display (automatic)**
+As you pan or zoom the map, cached areas are continuously shaded. The color reflects the highest accuracy already cached.
+
+| Color  | Accuracy                        |
+| ------ | ------------------------------- |
+| Green  | 5 m mesh (from aerial imagery)  |
+| Yellow | 5 m mesh (from photogrammetry)  |
+| Cyan   | 10 m mesh                       |
+
+Unshaded areas are not yet cached.
+
+**Controls (mouse gestures)**
+
+| Gesture                       | Action                                  |
+| ----------------------------- | --------------------------------------- |
+| Drag                          | Pan the map                             |
+| Ctrl + drag                   | Select an area and download             |
+| Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
+| Shift + Ctrl + drag           | Delete the cache for an area            |
+
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar at the bottom of the window.
+
+> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers. Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 
 ---
 
