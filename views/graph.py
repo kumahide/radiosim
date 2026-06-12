@@ -86,6 +86,8 @@ class _GraphWindow:
 
     _PANEL_X  = 0.79
     _PANEL_W  = 0.18
+    # 等価地球曲率注記を出す最小経路長 [km]（これ未満はふくらみが視認できず注記不要）
+    _CURVE_NOTE_MIN_KM = 30.0
 
     def __init__(self, params: sim.SimParams, terrain: models.TerrainProfile) -> None:
         self._params  = params
@@ -124,6 +126,17 @@ class _GraphWindow:
         self._ax.set_xlabel(i18n.t("graph_dist_axis"))
         self._ax.set_ylabel(i18n.t("graph_alt_axis"))
         self._ax.grid(True, alpha=0.2)
+
+        # 等価地球曲率補正で地形が実標高から乖離するため、ふくらみが視認できる
+        # 距離（≈30km〜）でのみ「補正済み座標」と明示し、実地形との誤読を防ぐ。
+        if t.horiz_dist_km >= self._CURVE_NOTE_MIN_KM:
+            bulge = float(np.max(t.elevs_with_curve - t.raw_elevs))
+            self._ax.text(
+                0.012, 0.985,
+                i18n.t("graph_curve_note").format(k=t.earth_k, bulge=bulge),
+                transform=self._ax.transAxes, va="top", ha="left",
+                fontsize=8, style="italic", color="0.45",
+            )
 
     def _build_panels(self) -> None:
         # リンクバジェットパネル（[Diff Model] 行を含めた高さに拡張）
