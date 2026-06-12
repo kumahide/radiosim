@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# RadioSim Pro 2.0 - PyInstaller spec ファイル
+# RadioSim Pro 2.1 - PyInstaller spec ファイル
 #
 # ビルド方法:
 #   pyinstaller radiosim.spec
@@ -166,6 +166,12 @@ hiddenimports = [
     # numpy の内部モジュール
     "numpy.core._multiarray_umath",
     "numpy.core._multiarray_tests",
+    # tkintermapview（タイルキャッシュ管理ウィンドウ）
+    "tkintermapview",
+    "customtkinter",
+    "geocoder",
+    "pyperclip",
+    "pywin32",
 ]
 
 # ============================================================

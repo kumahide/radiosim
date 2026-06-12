@@ -19,6 +19,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_changed_msg":     "Restart the app to apply the language change.",
         "menu_settings":        "Settings",
         "menu_proxy_settings":  "Proxy Settings...",
+        "menu_tile_manager":    "Tile Cache Manager...",
+        "menu_delete_all_cache":"Delete All Cache...",
         "dlg_proxy_title":      "Proxy Settings",
         "dlg_proxy_url_label":  "Proxy URL",
         "dlg_proxy_hint":       "Leave blank to use system proxy settings.",
@@ -33,6 +35,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
         "dlg_ok":               "OK",
+        "dlg_yes":              "Yes",
+        "dlg_no":               "No",
 
         # ===== Launcher =====
         "grp_site_info":        " Site Info ",
@@ -128,6 +132,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Graph =====
         "graph_dist_axis":      "Distance [km]",
         "graph_alt_axis":       "Altitude [m]",
+        "graph_curve_note":     "Terrain shown with equivalent-earth (k={k:.2f}) curvature: not true elevation (mid-path bulge +{bulge:.0f} m)",
         "legend_terrain":       "Terrain",
         "legend_vegetation":    "Vegetation",
         "legend_los":           "Line of Sight",
@@ -240,6 +245,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_note":        "Note",
         "html_col_graph":       "Graph",
 
+        # ===== Tile Manager =====
+        "tm_title":             "Tile Cache Manager",
+        "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
+        "tm_dl_title":          "Download",
+        "tm_dl_confirm":        "Download DEM for {n} areas?",
+        "tm_dl_force_title":    "Force Re-download",
+        "tm_dl_force_confirm":  "Force re-download DEM for {n} areas (ignore cache)?",
+        "tm_dl_size_hint":      "Estimated size: ~{mb} MB (varies by resolution)",
+        "tm_downloading":       "Downloading…",
+        "tm_dl_progress":       "Downloading… {done}/{total} ({pct}%)",
+        "tm_dl_done":           "Done: 5m-aerial {dl5a}, 5m-photo {dl5b}, 10m {dl_dem} downloaded  /  skipped {skipped}, failed {failed}",
+        "tm_delete_title":      "Delete Range",
+        "tm_delete_confirm":    "Delete cached tiles for {n} areas? This cannot be undone.",
+        "tm_delete_done":       "{deleted} tiles deleted.",
+        "tm_delete_all_title":  "Delete All Cache",
+        "tm_delete_all_confirm":"Delete ALL cached tiles? This cannot be undone.",
+        "tm_delete_all_done":   "All cache deleted: {deleted} tiles.",
+        "tm_stats":             "Total cache: {count} tiles / {mb} MB",
+        "tm_attribution":       "Source: GSI Tiles (Pale map)",
+
         # ===== Validation (infrastructure) =====
         "err_freq":             "Frequency must be between 1 and 100000 MHz",
         "err_p_tx":             "TX Power must be between -30 and 60 dBm",
@@ -276,9 +301,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_h_tx":            "[{pid}] h_tx out of range (0–500): {val}",
         "verr_h_rx":            "[{pid}] h_rx out of range (0–500): {val}",
         "verr_freq":            "[{pid}] freq out of range (1–100000): {val}",
-        "verr_rain_rate":       "[{pid}] rain_rate out of range (0–200): {val}",
-        "verr_env_type":        "[{pid}] Invalid env_type: '{val}'",
-        "verr_diff_method":     "[{pid}] Invalid diff_method: '{val}'",
     },
 
     "ja": {
@@ -295,6 +317,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_changed_msg":     "アプリを再起動すると言語が切り替わります。",
         "menu_settings":        "設定",
         "menu_proxy_settings":  "プロキシ設定...",
+        "menu_tile_manager":    "タイルキャッシュ管理...",
+        "menu_delete_all_cache":"全キャッシュ削除...",
         "dlg_proxy_title":      "プロキシ設定",
         "dlg_proxy_url_label":  "プロキシ URL",
         "dlg_proxy_hint":       "空白にするとシステム設定を使用します",
@@ -309,6 +333,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
         "dlg_ok":               "OK",
+        "dlg_yes":              "はい",
+        "dlg_no":               "いいえ",
 
         # ===== Launcher =====
         "grp_site_info":        " サイト情報 ",
@@ -404,6 +430,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Graph =====
         "graph_dist_axis":      "距離 [km]",
         "graph_alt_axis":       "高度 [m]",
+        "graph_curve_note":     "地形は等価地球(k={k:.2f})曲率補正込み・実標高ではありません（中央ふくらみ +{bulge:.0f} m）",
         "legend_terrain":       "地形",
         "legend_vegetation":    "植生",
         "legend_los":           "見通し線",
@@ -515,6 +542,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_note":        "備考",
         "html_col_graph":       "グラフ",
 
+        # ===== Tile Manager =====
+        "tm_title":             "タイルキャッシュ管理",
+        "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
+        "tm_dl_title":          "ダウンロード",
+        "tm_dl_confirm":        "対象 {n} エリアの DEM をダウンロードしますか？",
+        "tm_dl_force_title":    "強制再取得",
+        "tm_dl_force_confirm":  "対象 {n} エリアの DEM を強制再取得しますか？（キャッシュ無視）",
+        "tm_dl_size_hint":      "目安: 約 {mb} MB（精度により変動）",
+        "tm_downloading":       "ダウンロード中…",
+        "tm_dl_progress":       "ダウンロード中… {done}/{total} ({pct}%)",
+        "tm_dl_done":           "完了: 5m航空 {dl5a}, 5m写真 {dl5b}, 10m {dl_dem} DL  /  スキップ {skipped}, 失敗 {failed}",
+        "tm_delete_title":      "範囲削除",
+        "tm_delete_confirm":    "対象 {n} エリアのキャッシュを削除しますか？この操作は元に戻せません。",
+        "tm_delete_done":       "{deleted}枚削除しました。",
+        "tm_delete_all_title":  "全キャッシュ削除",
+        "tm_delete_all_confirm":"全キャッシュタイルを削除しますか？この操作は元に戻せません。",
+        "tm_delete_all_done":   "全キャッシュを削除しました: {deleted}枚",
+        "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
+        "tm_attribution":       "出典: 地理院タイル（淡色地図）",
+
         # ===== Validation (infrastructure) =====
         "err_freq":             "周波数は 1〜100000 MHz の範囲で入力してください",
         "err_p_tx":             "送信電力は −30〜60 dBm の範囲で入力してください",
@@ -551,9 +598,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_h_tx":            "[{pid}] h_tx が範囲外 (0〜500): {val}",
         "verr_h_rx":            "[{pid}] h_rx が範囲外 (0〜500): {val}",
         "verr_freq":            "[{pid}] 周波数が範囲外 (1〜100000): {val}",
-        "verr_rain_rate":       "[{pid}] 降雨強度が範囲外 (0〜200): {val}",
-        "verr_env_type":        "[{pid}] 無効な env_type: '{val}'",
-        "verr_diff_method":     "[{pid}] 無効な diff_method: '{val}'",
     },
 }
 

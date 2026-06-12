@@ -12,6 +12,7 @@ terrain_cache/
 # User settings & logs
 radiosim_conf.json
 radiosim.log
+build_log*.txt
 
 # Python
 __pycache__/

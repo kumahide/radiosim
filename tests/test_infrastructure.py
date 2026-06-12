@@ -493,93 +493,392 @@ class TestEnumerateBbox:
 
 class TestCountBboxTiles:
 
-    def test_matches_enumerate_bbox_length(self):
+    def test_returns_zoom14_position_count(self):
+        """count_bbox_tiles は zoom-14 位置数（エリア数）を返す。"""
         lat1, lon1, lat2, lon2 = 34.54, 132.41, 34.53, 132.40
-        assert infra.count_bbox_tiles(lat1, lon1, lat2, lon2) == \
-               len(infra._enumerate_bbox(lat1, lon1, lat2, lon2))
+        count = infra.count_bbox_tiles(lat1, lon1, lat2, lon2)
+        positions = list(infra._iter_dem_positions(lat1, lon1, lat2, lon2))
+        assert count == len(positions)
 
     def test_returns_positive_integer(self):
         count = infra.count_bbox_tiles(34.54, 132.41, 34.53, 132.40)
         assert isinstance(count, int)
         assert count > 0
 
+    def test_inverted_coords_same_result(self):
+        """入力座標の順序に依存しないこと。"""
+        assert infra.count_bbox_tiles(34.54, 132.41, 34.53, 132.40) == \
+               infra.count_bbox_tiles(34.53, 132.40, 34.54, 132.41)
+
 
 # ============================================================
-# _download_tile_set
+# _iter_dem_positions
 # ============================================================
-class TestDownloadTileSet:
+class TestIterDemPositions:
 
-    def test_empty_tiles_returns_zero_stats(self):
-        result = infra._download_tile_set([])
-        assert result == {"total": 0, "downloaded": 0, "cached": 0, "failed": 0}
+    def test_yields_tuples_with_correct_structure(self):
+        """各 yield 値が (x14, y14, subdir, path, zoom15_tiles) の構造を持つ。"""
+        positions = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        assert len(positions) > 0
+        for x14, y14, subdir, path, zoom15_tiles in positions:
+            assert isinstance(x14, int)
+            assert isinstance(y14, int)
+            assert path.endswith(f"{y14}.png")
+            assert str(x14) in path
+            assert len(zoom15_tiles) >= 1
 
-    def test_downloaded_count_on_new_tile(self, tmp_path, monkeypatch):
-        """ディスクキャッシュなし・fetch成功 → downloaded が増える。"""
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
+    def test_zoom15_tiles_are_sub_tiles_of_zoom14(self):
+        """zoom-15 サブタイルが対応する zoom-14 の子タイル範囲内に収まること。"""
+        positions = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        for x14, y14, _, _, zoom15_tiles in positions:
+            for x15, y15, *_ in zoom15_tiles:
+                assert x14 * 2 <= x15 <= x14 * 2 + 1
+                assert y14 * 2 <= y15 <= y14 * 2 + 1
 
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png"))]
-        result = infra._download_tile_set(tiles)
-        assert result["downloaded"] == 1
-        assert result["cached"] == 0
-        assert result["failed"] == 0
-        assert result["total"] == 1
+    def test_inverted_coords_same_result(self):
+        pos_ab = list(infra._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        pos_ba = list(infra._iter_dem_positions(34.53, 132.40, 34.54, 132.41))
+        assert [(x, y) for x, y, *_ in pos_ab] == [(x, y) for x, y, *_ in pos_ba]
 
-    def test_cached_count_when_file_already_exists(self, tmp_path, monkeypatch):
-        """ディスクキャッシュあり → cached が増える。"""
+
+# ============================================================
+# _process_position
+# ============================================================
+class TestProcessPosition:
+
+    def _make_counts(self):
+        return {"downloaded_5a": 0, "downloaded_5b": 0, "downloaded_dem": 0,
+                "skipped": 0, "failed": 0}
+
+    def test_skips_when_dem_cached_and_no_force(self, tmp_path, monkeypatch):
+        """dem_png キャッシュあり・force=False → skipped。"""
+        import threading
         from PIL import Image
-
-        cache_path = tmp_path / "0.png"
-        Image.new("RGB", (256, 256), (0, 39, 16)).save(str(cache_path))
-
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
-
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(cache_path))]
-        result = infra._download_tile_set(tiles)
-        assert result["cached"] == 1
-        assert result["downloaded"] == 0
-        assert result["failed"] == 0
-
-    def test_failed_count_when_fetch_returns_none(self, tmp_path, monkeypatch):
-        """_fetch_tile が None を返したとき failed が増える。"""
+        dem_path = tmp_path / "dem.png"
+        Image.new("RGB", (256, 256)).save(str(dem_path))
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: None)
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(dem_path), [], False, counts, lock)
+        assert counts["skipped"] == 1
+        assert counts["downloaded_5a"] == counts["downloaded_5b"] == counts["downloaded_dem"] == 0
 
-        tiles = [("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png"))]
-        result = infra._download_tile_set(tiles)
-        assert result["failed"] == 1
-        assert result["downloaded"] == 0
+    def test_downloads_5a_when_available(self, tmp_path, monkeypatch):
+        """5a DL 成功 → downloaded_5a 増加・5b/dem は試みない。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        fetch_calls = []
 
-    def test_total_equals_sum_of_counts(self, tmp_path, monkeypatch):
-        """downloaded + cached + failed の合計が total に一致すること。"""
+        def mock_fetch(layer_id, *a, **kw):
+            fetch_calls.append(layer_id)
+            return tile_arr if layer_id == "dem5a_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        subdir5a = str(tmp_path / "5a" / "0"); subdir5b = str(tmp_path / "5b" / "0")
+        zoom15 = [(0, 0, subdir5a, str(tmp_path / "5a.png"),
+                         subdir5b, str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 0
+        assert "dem5b_png" not in fetch_calls
+
+    def test_falls_back_to_5b_when_5a_fails(self, tmp_path, monkeypatch):
+        """5a 失敗 → 5b 試みる → downloaded_5b 増加。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem5b_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 0
+
+    def test_falls_back_to_dem_when_both_5m_fail(self, tmp_path, monkeypatch):
+        """5a・5b 両方失敗 → dem_png DL。"""
+        import threading
+        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_dem"] == 1
+        assert counts["failed"] == 0
+
+    def test_force_ignores_existing_cache(self, tmp_path, monkeypatch):
+        """force=True: dem_png キャッシュがあっても再取得する。"""
+        import threading
         from PIL import Image
-
+        dem_path = tmp_path / "dem.png"
+        Image.new("RGB", (256, 256)).save(str(dem_path))
         tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
 
-        cached_path = tmp_path / "1.png"
-        Image.new("RGB", (256, 256)).save(str(cached_path))
+        def mock_fetch(layer_id, *a, **kw):
+            return tile_arr if layer_id == "dem5a_png" else None
 
-        tiles = [
-            ("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "0.png")),  # new
-            ("dem_png", 14, 101, 0, str(tmp_path), str(cached_path)),          # cached
-        ]
-        result = infra._download_tile_set(tiles)
-        assert result["total"] == 2
-        assert result["downloaded"] + result["cached"] + result["failed"] == 2
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(dem_path),
+                                 zoom15, True, counts, lock)
+        assert counts["skipped"] == 0
+        assert counts["downloaded_5a"] == 1
 
-    def test_progress_callback_called_for_each_tile(self, tmp_path, monkeypatch):
-        """progress_cb がタイル数ぶん呼ばれ、最終的に done==total になること。"""
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **kw: tile_arr)
+    @staticmethod
+    def _void_tile(void=True):
+        """全画素 (128,0,0) の欠損タイル、または全画素有効(0,0,0)のタイル。"""
+        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        if void:
+            arr[:, :, 0] = 128
+        return arr
 
-        calls = []
-        tiles = [
-            ("dem_png", 14, 100, 0, str(tmp_path), str(tmp_path / "a.png")),
-            ("dem_png", 14, 101, 0, str(tmp_path), str(tmp_path / "b.png")),
-        ]
-        infra._download_tile_set(tiles, progress_cb=lambda d, t: calls.append((d, t)))
+    def test_descends_to_5b_when_5a_has_void(self, tmp_path, monkeypatch):
+        """5a 取得成功だが欠損あり・5b が補完 → 5b も取得し dem は不要。"""
+        import threading
+        valid = np.zeros((256, 256, 3), dtype=np.uint8)
 
-        assert len(calls) == 2
-        assert all(t == 2 for _, t in calls)   # total は常に 2
-        assert {d for d, _ in calls} == {1, 2} # done は 1, 2 の組
+        def mock_fetch(layer_id, *a, **kw):
+            if layer_id == "dem5a_png":
+                return self._void_tile(void=True)    # 5a は全欠損
+            if layer_id == "dem5b_png":
+                return valid                          # 5b が補完
+            return None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 0
+
+    def test_descends_to_dem_when_5a_and_5b_void(self, tmp_path, monkeypatch):
+        """5a・5b とも同一画素が欠損 → dem_png まで降りる（終端確定）。"""
+        import threading
+
+        def mock_fetch(layer_id, *a, **kw):
+            if layer_id in ("dem5a_png", "dem5b_png"):
+                return self._void_tile(void=True)    # 両方とも全欠損
+            if layer_id == "dem_png":
+                return np.zeros((256, 256, 3), dtype=np.uint8)
+            return None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert counts["downloaded_5a"] == 1
+        assert counts["downloaded_5b"] == 1
+        assert counts["downloaded_dem"] == 1
+
+    def test_no_descent_when_5a_void_free(self, tmp_path, monkeypatch):
+        """5a が欠損なし → 5b/dem は一切試みない（DL 最小）。"""
+        import threading
+        fetch_calls = []
+
+        def mock_fetch(layer_id, *a, **kw):
+            fetch_calls.append(layer_id)
+            return np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", mock_fetch)
+        zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
+                         str(tmp_path), str(tmp_path / "5b.png"))]
+        counts = self._make_counts()
+        lock = threading.Lock()
+        infra._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+                                 zoom15, False, counts, lock)
+        assert fetch_calls == ["dem5a_png"]
+        assert counts["downloaded_dem"] == 0
+
+    def test_void_mask_matches_decode_semantics(self):
+        """_void_mask が (128,0,0) のみを True とすること。"""
+        arr = np.zeros((2, 2, 3), dtype=np.uint8)
+        arr[0, 0] = (128, 0, 0)   # 無効値
+        arr[0, 1] = (0, 0, 1)     # 標高 0.01m（有効）
+        arr[1, 0] = (128, 0, 1)   # 有効（b!=0）
+        mask = infra._void_mask(arr)
+        assert mask[0, 0] and not mask[0, 1] and not mask[1, 0] and not mask[1, 1]
+
+
+# ============================================================
+# scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）
+# ============================================================
+
+class TestScanCacheOverlay:
+
+    # 走査対象の代表座標（広島県付近）
+    LAT, LON = 34.54, 132.41
+
+    def _touch(self, root, layer_id, x, y):
+        d = os.path.join(root, layer_id, str(x))
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{y}.png"), "wb") as f:
+            f.write(b"\x89PNG")
+
+    def test_empty_cache_returns_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.scan_cache_overlay(
+            self.LAT, self.LON, self.LAT - 0.01, self.LON + 0.01, 14
+        ) == []
+
+    def test_5a_wins_over_dem_at_same_cell(self, tmp_path, monkeypatch):
+        """同じ zoom-14 セルに 5a と dem があれば最高精度 5a を返す。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        x15, y15, _, _ = infra._tile_coords(self.LAT, self.LON, 15)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem5a_png", x15, y15)
+        cells = infra.scan_cache_overlay(
+            self.LAT + 0.01, self.LON - 0.01,
+            self.LAT - 0.01, self.LON + 0.01, 14,
+        )
+        match = [c for c in cells if c["x"] == x14 and c["y"] == y14]
+        assert len(match) == 1
+        assert match[0]["level"] == "5a"
+        assert match[0]["zoom"] == 14
+
+    def test_dem_only_area(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        cells = infra.scan_cache_overlay(
+            self.LAT + 0.01, self.LON - 0.01,
+            self.LAT - 0.01, self.LON + 0.01, 14,
+        )
+        assert all(c["level"] == "dem" for c in cells)
+        assert any(c["x"] == x14 and c["y"] == y14 for c in cells)
+
+    def test_tiles_outside_view_excluded(self, tmp_path, monkeypatch):
+        """表示範囲外のキャッシュは返さない。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        # はるか遠方の小範囲を指定（対象タイルを含まない）
+        cells = infra.scan_cache_overlay(43.07, 141.34, 43.06, 141.35, 14)
+        assert cells == []
+
+    # 日本全域を覆う bbox（filtering の端数で対象タイルを落とさないため広めに取る）
+    WIDE = (46.0, 128.0, 30.0, 146.0)
+
+    def _aligned_block_origin(self, span):
+        """span×span に整列した zoom-14 ブロックの原点 (x0, y0) を返す。"""
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        return (x14 // span) * span, (y14 // span) * span
+
+    def test_full_aligned_block_merges_to_single_coarse_cell(self, tmp_path, monkeypatch):
+        """完全に埋まった整列 4×4 ブロックは zoom-12 の単一セルへ統合される。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x0, y0 = self._aligned_block_origin(4)   # 4 = 2^(14-12)
+        for dx in range(4):
+            for dy in range(4):
+                self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
+        cells = infra.scan_cache_overlay(*self.WIDE, 12)
+        assert len(cells) == 1
+        assert cells[0]["zoom"] == 12
+        assert cells[0]["level"] == "dem"
+
+    def test_partial_block_keeps_edges_fine(self, tmp_path, monkeypatch):
+        """欠けのあるブロックは粗く統合されず、エッジは zoom-14 のまま残る。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x0, y0 = self._aligned_block_origin(4)
+        for dx in range(4):
+            for dy in range(4):
+                if dx == 0 and dy == 0:
+                    continue   # 1 隅を欠けさせる → 全体統合は不可
+                self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
+        cells = infra.scan_cache_overlay(*self.WIDE, 12)
+        # 単一の粗いセルにはならない（過大表示を防ぐ）
+        assert len(cells) > 1
+        # 細粒度（zoom-14）のセルが残る
+        assert any(c["zoom"] == 14 for c in cells)
+        # 欠けた隅 (x0, y0) は covered として返らない
+        assert not any(c["zoom"] == 14 and c["x"] == x0 and c["y"] == y0 for c in cells)
+
+    def test_count_cached_areas_counts_only_cached(self, tmp_path, monkeypatch):
+        """count_cached_areas は実在キャッシュのみ数える（未取得は含めない）。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        # 2 エリアだけキャッシュ
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem_png", x14 + 1, y14)
+        wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
+        cached = infra.count_cached_areas(*wide)
+        total = infra.count_bbox_tiles(*wide)
+        assert cached == 2
+        assert total > cached   # 範囲総数は未取得を含むので多い
+
+    def test_count_cached_areas_zero_when_empty(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.count_cached_areas(*self.WIDE) == 0
+
+
+class TestCoverageOutline:
+
+    LAT, LON = 34.54, 132.41
+    WIDE = (46.0, 128.0, 30.0, 146.0)
+
+    def _touch(self, root, layer_id, x, y):
+        d = os.path.join(root, layer_id, str(x))
+        os.makedirs(d, exist_ok=True)
+        with open(os.path.join(d, f"{y}.png"), "wb") as f:
+            f.write(b"\x89PNG")
+
+    def test_empty_cache_no_loops(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        assert infra.coverage_outline(*self.WIDE) == []
+
+    def test_single_cell_is_rectangle(self, tmp_path, monkeypatch):
+        """単一セル → 4 頂点の矩形ループ1個。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 4
+
+    def test_adjacent_cells_merge_to_one_outline(self, tmp_path, monkeypatch):
+        """隣接2セルは内部線なしの単一矩形（4頂点）になる。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)
+        self._touch(tmp_path, "dem_png", x14 + 1, y14)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 4   # 内部の共有辺は相殺され角は4つ
+
+    def test_l_shape_has_six_corners(self, tmp_path, monkeypatch):
+        """L字（2×2 から1セル欠け）は6頂点のループ。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = infra._tile_coords(self.LAT, self.LON, 14)
+        for dx in (0, 1):
+            for dy in (0, 1):
+                if dx == 1 and dy == 1:
+                    continue
+                self._touch(tmp_path, "dem_png", x14 + dx, y14 + dy)
+        loops = infra.coverage_outline(*self.WIDE)
+        assert len(loops) == 1
+        assert len(loops[0]) == 6

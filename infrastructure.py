@@ -406,6 +406,15 @@ def _decode_elevation(rgb: np.ndarray) -> float:
     return float((x - 16777216) * 0.01)
 
 
+def _void_mask(arr: np.ndarray) -> np.ndarray:
+    """無効値ピクセル (128, 0, 0) = 海・データ欠損 の真偽マスクを返す。
+
+    arr は (H, W, 3) の RGB 配列。get_elevation の実行時フォールバックと
+    同一のセマンティクスで「無効」を定義し、プリフェッチの降下判定に使う。
+    """
+    return (arr[:, :, 0] == 128) & (arr[:, :, 1] == 0) & (arr[:, :, 2] == 0)
+
+
 # ============================================================
 # タイル事前取得
 # ============================================================
@@ -435,39 +444,174 @@ def _enumerate_bbox(
     return tasks
 
 
-def _download_tile_set(
-    tiles: list[tuple],
-    progress_cb=None,  # callback(done: int, total: int) | None
-) -> dict[str, int]:
-    """タイル座標セットを並列 DL してディスクキャッシュに保存する共通コア。
+def _iter_dem_positions(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+):
+    """bbox 内の zoom-14 位置を順次 yield する。
+
+    Yields:
+        (x14, y14, dem14_subdir, dem14_path, zoom15_tiles)
+        zoom15_tiles = [(x15, y15, subdir5a, path5a, subdir5b, path5b), ...]
+
+    zoom-15 sub-tiles は bbox にクリップされる（端の zoom-14 位置では最大4枚→1〜4枚）。
+    """
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+
+    x14_nw, y14_nw, _, _ = _tile_coords(lat_n, lon_w, 14)
+    x14_se, y14_se, _, _ = _tile_coords(lat_s, lon_e, 14)
+    x15_nw, y15_nw, _, _ = _tile_coords(lat_n, lon_w, 15)
+    x15_se, y15_se, _, _ = _tile_coords(lat_s, lon_e, 15)
+
+    for x14 in range(x14_nw, x14_se + 1):
+        for y14 in range(y14_nw, y14_se + 1):
+            dem14_subdir = os.path.join(CACHE_DIR, "dem_png", str(x14))
+            dem14_path   = os.path.join(dem14_subdir, f"{y14}.png")
+
+            x15_lo = max(x14 * 2,     x15_nw)
+            x15_hi = min(x14 * 2 + 1, x15_se)
+            y15_lo = max(y14 * 2,     y15_nw)
+            y15_hi = min(y14 * 2 + 1, y15_se)
+
+            zoom15_tiles = []
+            for x15 in range(x15_lo, x15_hi + 1):
+                for y15 in range(y15_lo, y15_hi + 1):
+                    subdir5a = os.path.join(CACHE_DIR, "dem5a_png", str(x15))
+                    path5a   = os.path.join(subdir5a, f"{y15}.png")
+                    subdir5b = os.path.join(CACHE_DIR, "dem5b_png", str(x15))
+                    path5b   = os.path.join(subdir5b, f"{y15}.png")
+                    zoom15_tiles.append((x15, y15, subdir5a, path5a, subdir5b, path5b))
+
+            yield x14, y14, dem14_subdir, dem14_path, zoom15_tiles
+
+
+def _process_position(
+    x14: int, y14: int,
+    dem14_subdir: str, dem14_path: str,
+    zoom15_tiles: list,
+    force: bool,
+    counts: dict,
+    lock: threading.Lock,
+) -> None:
+    """1 zoom-14 位置の優先順位付きダウンロード処理。
+
+    優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
+
+    実行時 get_elevation はピクセル単位で無効値 (128,0,0) を下位レイヤーへ
+    フォールバックする。これと整合させるため、上位レイヤーのタイルが取得でき
+    ても内部に欠損ピクセルが残る限り下位レイヤーを取得する（欠損が解消した分
+    だけ降りるので DL は最小）。dem_png（最下層）まで降りればそれ以上の手段は
+    無く、残った欠損は恒久的な無効値（海など）として確定する。
+
+    force=False かつ dem_png がキャッシュ済みなら位置全体をスキップする。
+    dem_png の存在は「最下層まで降下済み＝解決済み」の終端マーカーであり、
+    欠損のある位置は必ず dem_png までキャッシュされるため、この早期リターンが
+    再プリフェッチ時の「解決済みは無視」を成立させる。
+    """
+    if not force and os.path.exists(dem14_path):
+        with lock:
+            counts["skipped"] += 1
+        return
+
+    need_dem = False
+    for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
+        # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
+        # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
+        # スキップしてよい（DL build 前の旧キャッシュは force 再取得で healing）。
+        if not force and (os.path.exists(path5a) or os.path.exists(path5b)):
+            continue
+
+        arr5a = _fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a)
+        if arr5a is not None:
+            with lock:
+                counts["downloaded_5a"] += 1
+            remaining = _void_mask(arr5a)
+            if not remaining.any():
+                continue   # 欠損なし: この位置は 5a で完結
+        else:
+            remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
+
+        # 5a に欠損が残る（または 5a 不在）→ 5b で埋まる分を解消
+        arr5b = _fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b)
+        if arr5b is not None:
+            with lock:
+                counts["downloaded_5b"] += 1
+            void5b = _void_mask(arr5b)
+            still_void = void5b if remaining is None else (remaining & void5b)
+            if not still_void.any():
+                continue   # 5a の欠損を 5b が完全に補完
+        # 5b 不在、または 5a∩5b に欠損が残る → dem_png へ降りる
+        need_dem = True
+
+    if need_dem:
+        arr = _fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path)
+        with lock:
+            if arr is not None:
+                counts["downloaded_dem"] += 1
+            else:
+                counts["failed"] += 1
+
+
+def count_bbox_tiles(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+) -> int:
+    """bbox 内の zoom-14 位置数を返す（プログレスバーの maximum 設定等に使う）。"""
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+    x14_nw, y14_nw, _, _ = _tile_coords(lat_n, lon_w, 14)
+    x14_se, y14_se, _, _ = _tile_coords(lat_s, lon_e, 14)
+    return (x14_se - x14_nw + 1) * (y14_se - y14_nw + 1)
+
+
+def prefetch_tiles(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    progress_cb=None,   # callback(done: int, total: int) | None
+    force: bool = False,
+) -> dict:
+    """bbox 内の DEM タイルを優先順位付きでダウンロードしてキャッシュに保存する。
+
+    優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
+    force=False のとき、既にキャッシュ済みの位置はスキップする。
 
     Returns:
-        {"total": int, "downloaded": int, "cached": int, "failed": int}
+        {"area_total": int, "downloaded_5a": int, "downloaded_5b": int,
+         "downloaded_dem": int, "skipped": int, "failed": int}
     """
-    total = len(tiles)
+    positions = list(_iter_dem_positions(lat1, lon1, lat2, lon2))
+    total = len(positions)
     if total == 0:
-        return {"total": 0, "downloaded": 0, "cached": 0, "failed": 0}
+        return {
+            "area_total": 0, "downloaded_5a": 0, "downloaded_5b": 0,
+            "downloaded_dem": 0, "skipped": 0, "failed": 0,
+        }
 
-    counts = {"done": 0, "downloaded": 0, "cached": 0, "failed": 0}
+    counts = {
+        "done": 0, "downloaded_5a": 0, "downloaded_5b": 0,
+        "downloaded_dem": 0, "skipped": 0, "failed": 0,
+    }
     lock   = threading.Lock()
     work_q: queue.Queue = queue.Queue()
-    for t in tiles:
-        work_q.put(t)
+    for pos in positions:
+        work_q.put(pos)
 
     def _worker() -> None:
         while True:
             try:
-                layer_id, zoom, x, y, subdir, cache_path = work_q.get_nowait()
+                x14, y14, dem14_subdir, dem14_path, zoom15_tiles = work_q.get_nowait()
             except queue.Empty:
                 return
-            already = os.path.exists(cache_path)
             try:
-                arr = _fetch_tile(layer_id, zoom, x, y, subdir, cache_path)
-                with lock:
-                    if arr is not None:
-                        counts["cached" if already else "downloaded"] += 1
-                    else:
-                        counts["failed"] += 1
+                _process_position(
+                    x14, y14, dem14_subdir, dem14_path, zoom15_tiles,
+                    force, counts, lock,
+                )
             except Exception as e:
                 logger.warning("prefetch worker error: %s", e)
                 with lock:
@@ -475,8 +619,9 @@ def _download_tile_set(
             finally:
                 with lock:
                     counts["done"] += 1
-                    if progress_cb:
-                        progress_cb(counts["done"], total)
+                    done_snap = counts["done"]
+                if progress_cb:
+                    progress_cb(done_snap, total)
                 work_q.task_done()
 
     num_workers = min(_MAX_PREFETCH_WORKERS, total)
@@ -486,34 +631,326 @@ def _download_tile_set(
     work_q.join()
 
     logger.info(
-        "Prefetch complete: total=%d downloaded=%d cached=%d failed=%d",
-        total, counts["downloaded"], counts["cached"], counts["failed"],
+        "prefetch complete: total=%d 5a=%d 5b=%d dem=%d skipped=%d failed=%d",
+        total, counts["downloaded_5a"], counts["downloaded_5b"],
+        counts["downloaded_dem"], counts["skipped"], counts["failed"],
     )
     return {
-        "total"     : total,
-        "downloaded": counts["downloaded"],
-        "cached"    : counts["cached"],
-        "failed"    : counts["failed"],
+        "area_total":     total,
+        "downloaded_5a":  counts["downloaded_5a"],
+        "downloaded_5b":  counts["downloaded_5b"],
+        "downloaded_dem": counts["downloaded_dem"],
+        "skipped":        counts["skipped"],
+        "failed":         counts["failed"],
     }
 
 
-def count_bbox_tiles(
+# ============================================================
+# タイル座標変換（逆変換）
+# ============================================================
+
+def tile_to_latlng(x: int, y: int, zoom: int) -> tuple[float, float]:
+    """タイル座標 (x, y, zoom) の NW コーナーの緯度経度を返す。"""
+    n = 2 ** zoom
+    lon = x / n * 360.0 - 180.0
+    lat_rad = math.atan(math.sinh(math.pi * (1 - 2 * y / n)))
+    return math.degrees(lat_rad), lon
+
+
+# ============================================================
+# タイルキャッシュ管理
+# ============================================================
+
+# 精度レベルの優先順位（大きいほど高精度）: (layer_id, tile_zoom, level, priority)
+_OVERLAY_LAYERS: list[tuple[str, int, str, int]] = [
+    ("dem5a_png", 15, "5a",  3),
+    ("dem5b_png", 15, "5b",  2),
+    ("dem_png",   14, "dem", 1),
+]
+_PRIORITY_TO_LEVEL: dict[int, str] = {3: "5a", 2: "5b", 1: "dem"}
+
+
+def _scan_cached_positions(
+    lat_n: float, lat_s: float,
+    lon_w: float, lon_e: float,
+) -> dict[tuple[int, int], int]:
+    """表示範囲内のキャッシュ済みタイルを zoom-14 セル単位で集約する。
+
+    実在するキャッシュファイルだけを走査するため計算量はキャッシュ量に比例し、
+    地理的範囲には比例しない。各レイヤーの x ディレクトリ一覧を起点に走査し、
+    表示範囲外を間引く。
+
+    Returns: {(x14, y14): 最高 priority}
+    """
+    base: dict[tuple[int, int], int] = {}
+    for layer_id, tile_zoom, _level, priority in _OVERLAY_LAYERS:
+        layer_dir = os.path.join(CACHE_DIR, layer_id)
+        if not os.path.isdir(layer_dir):
+            continue
+        x_min, y_min, _, _ = _tile_coords(lat_n, lon_w, tile_zoom)
+        x_max, y_max, _, _ = _tile_coords(lat_s, lon_e, tile_zoom)
+        shift = tile_zoom - 14    # zoom-15(5a/5b)→1, zoom-14(dem)→0
+        try:
+            x_names = os.listdir(layer_dir)
+        except OSError:
+            continue
+        for x_name in x_names:
+            try:
+                x = int(x_name)
+            except ValueError:
+                continue
+            if x < x_min or x > x_max:
+                continue
+            x_dir = os.path.join(layer_dir, x_name)
+            try:
+                y_names = os.listdir(x_dir)
+            except OSError:
+                continue
+            for fname in y_names:
+                if not fname.endswith(".png"):
+                    continue
+                try:
+                    y = int(fname[:-4])
+                except ValueError:
+                    continue
+                if y < y_min or y > y_max:
+                    continue
+                key = (x >> shift, y >> shift)
+                if base.get(key, 0) < priority:
+                    base[key] = priority
+    return base
+
+
+def count_cached_areas(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
 ) -> int:
-    """bbox 内のタイル総枚数を返す。プログレスバーの maximum 設定等に使う。"""
-    return len(_enumerate_bbox(lat1, lon1, lat2, lon2))
+    """bbox 内で実際にキャッシュ済みの zoom-14 エリア数を返す（削除対象の件数表示用）。
+
+    count_bbox_tiles が範囲内の全エリア（未取得含む）を数えるのに対し、本関数は
+    実在キャッシュのみを数える。
+    """
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+    return len(_scan_cached_positions(lat_n, lat_s, lon_w, lon_e))
 
 
-def prefetch_tiles(
+def scan_cache_overlay(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
-    progress_cb=None,  # callback(done: int, total: int) | None
-) -> dict[str, int]:
-    """bbox 内の全 DEM タイルをダウンロードしてディスクキャッシュに保存する。
+    overlay_zoom: int,
+) -> list[dict]:
+    """表示範囲内のキャッシュを「適応的粒度」のセルに集約して返す（自動表示用）。
+
+    クアッドツリー方式: zoom-14 を最小単位とし、2×2 の子がすべて存在し
+    かつ同一精度レベルのときだけ親セルに統合する。これを overlay_zoom まで
+    繰り返す。完全に埋まった領域の内部は大きなセル（ポリゴン少）になり、
+    部分的にしか埋まっていない領域（＝カバレッジのエッジ）は細かいセルの
+    まま残るため、粗い表示でもカバレッジ範囲を過大に見せない。
+
+    キャッシュ済みセルのみを返す（"none" は返さない）。
 
     Returns:
-        {"total": int, "downloaded": int, "cached": int, "failed": int}
+        [{"x": int, "y": int, "zoom": int, "level": str}, ...]
+        zoom はセルごとに異なる（overlay_zoom 〜 14）。
+        level は "5a" | "5b" | "dem"。
+    """
+    # dem_png は zoom-14 が上限のため overlay_zoom は 14 以下に丸める。
+    overlay_zoom = max(2, min(14, overlay_zoom))
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+
+    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)   # zoom-14 base
+    result: list[dict] = []
+
+    # 14 → overlay_zoom へ向けてボトムアップに統合する。
+    # 親に統合できない（=部分的な）セルはその時点の zoom で確定出力する。
+    zoom = 14
+    while zoom > overlay_zoom and current:
+        groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
+        for (x, y) in current:
+            groups.setdefault((x >> 1, y >> 1), []).append((x, y))
+
+        promoted: dict[tuple[int, int], int] = {}
+        for parent, children in groups.items():
+            levels = {current[c] for c in children}
+            if len(children) == 4 and len(levels) == 1:
+                # 4 子すべて存在・同一レベル → 親へ統合してさらに上を狙う
+                promoted[parent] = next(iter(levels))
+            else:
+                # 部分的 or レベル混在 → このセル群は現 zoom で確定（エッジ）
+                for c in children:
+                    result.append(
+                        {"x": c[0], "y": c[1], "zoom": zoom,
+                         "level": _PRIORITY_TO_LEVEL[current[c]]}
+                    )
+        current = promoted
+        zoom -= 1
+
+    # 最後まで統合された（=完全に埋まった）セルを overlay_zoom で出力
+    for (x, y), prio in current.items():
+        result.append({"x": x, "y": y, "zoom": zoom, "level": _PRIORITY_TO_LEVEL[prio]})
+
+    return result
+
+
+def _simplify_grid_loop(pts: list[tuple[int, int]]) -> list[tuple[int, int]]:
+    """格子座標の閉ループから一直線上の中間点を除く（角だけ残す）。"""
+    if len(pts) > 1 and pts[0] == pts[-1]:
+        pts = pts[:-1]
+    n = len(pts)
+    if n < 3:
+        return pts
+    out: list[tuple[int, int]] = []
+    for i in range(n):
+        prev = pts[(i - 1) % n]
+        cur  = pts[i]
+        nxt  = pts[(i + 1) % n]
+        # 外積 0 = 3 点が一直線 → cur は角ではないので捨てる
+        if (cur[0] - prev[0]) * (nxt[1] - cur[1]) - (cur[1] - prev[1]) * (nxt[0] - cur[0]) == 0:
+            continue
+        out.append(cur)
+    return out
+
+
+def coverage_outline(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+) -> list[list[tuple[float, float]]]:
+    """キャッシュ済み領域の和集合の外周（と穴の境界）を緯度経度ループで返す。
+
+    zoom-14 単位セルの境界辺を「有向辺の相殺」で求める。隣接する 2 セルが
+    共有する辺は逆向きの有向辺として打ち消し合い、残った辺が領域の外周
+    （および内側の穴の境界）になる。これにより内部のグリッド線は出ず、
+    外周線だけが得られる。
+
+    Returns:
+        [[(lat, lon), ...], ...]  各ループは閉路（始点と終点は重複しない）。
+    """
+    lat_n = max(lat1, lat2)
+    lat_s = min(lat1, lat2)
+    lon_w = min(lon1, lon2)
+    lon_e = max(lon1, lon2)
+    base = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)
+
+    # 各セルの 4 辺を一定の回転方向で有向辺として登録し、逆向きがあれば相殺する。
+    edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
+
+    def _toggle(a: tuple[int, int], b: tuple[int, int]) -> None:
+        if (b, a) in edges:
+            edges.discard((b, a))
+        else:
+            edges.add((a, b))
+
+    for (x, y) in base:
+        _toggle((x, y),         (x + 1, y))
+        _toggle((x + 1, y),     (x + 1, y + 1))
+        _toggle((x + 1, y + 1), (x, y + 1))
+        _toggle((x, y + 1),     (x, y))
+
+    # 残った有向辺を始点でインデックス化し、連結してループを作る。
+    successors: dict[tuple[int, int], list[tuple[int, int]]] = {}
+    for a, b in edges:
+        successors.setdefault(a, []).append(b)
+
+    remaining = set(edges)
+    loops: list[list[tuple[int, int]]] = []
+    for start in list(edges):
+        if start not in remaining:
+            continue
+        cur = start
+        pts: list[tuple[int, int]] = [cur[0]]
+        while cur in remaining:
+            remaining.discard(cur)
+            pts.append(cur[1])
+            nxt = None
+            for cand in successors.get(cur[1], ()):
+                if (cur[1], cand) in remaining:
+                    nxt = (cur[1], cand)
+                    break
+            if nxt is None:
+                break
+            cur = nxt
+        simplified = _simplify_grid_loop(pts)
+        if len(simplified) >= 3:
+            loops.append(simplified)
+
+    # 格子点 (col, row) はその zoom-14 タイルの NW 角に対応する。
+    return [[tile_to_latlng(c, r, 14) for (c, r) in loop] for loop in loops]
+
+
+def delete_tile_cache(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+) -> dict:
+    """bbox 内のキャッシュファイルを削除し、メモリキャッシュも消去する。
+
+    Returns:
+        {"deleted": int, "errors": int}
     """
     tiles = _enumerate_bbox(lat1, lon1, lat2, lon2)
-    return _download_tile_set(tiles, progress_cb)
+    deleted = 0
+    errors  = 0
+    keys_to_clear: set[tuple] = set()
+    for layer_id, _, x, y, _, cache_path in tiles:
+        if os.path.exists(cache_path):
+            try:
+                os.remove(cache_path)
+                deleted += 1
+                keys_to_clear.add((layer_id, x, y))
+            except OSError as e:
+                logger.warning("delete_tile_cache: %s", e)
+                errors += 1
+    with _cache_lock:
+        for key in keys_to_clear:
+            _tile_cache.pop(key, None)
+            _failed_tiles.discard(key)
+    logger.info("delete_tile_cache: deleted=%d errors=%d", deleted, errors)
+    return {"deleted": deleted, "errors": errors}
+
+
+def get_cache_stats() -> dict:
+    """キャッシュディレクトリ全体の枚数と総バイト数を返す。
+
+    Returns:
+        {"count": int, "size_bytes": int}
+    """
+    count = 0
+    size  = 0
+    if os.path.exists(CACHE_DIR):
+        for dirpath, _, filenames in os.walk(CACHE_DIR):
+            for fname in filenames:
+                if fname.endswith(".png"):
+                    count += 1
+                    try:
+                        size += os.path.getsize(os.path.join(dirpath, fname))
+                    except OSError:
+                        pass
+    return {"count": count, "size_bytes": size}
+
+
+def delete_all_tile_cache() -> dict:
+    """全キャッシュファイルを削除し、メモリキャッシュも消去する。
+
+    Returns:
+        {"deleted": int}
+    """
+    deleted = 0
+    if os.path.exists(CACHE_DIR):
+        for dirpath, _, filenames in os.walk(CACHE_DIR):
+            for fname in filenames:
+                if fname.endswith(".png"):
+                    try:
+                        os.remove(os.path.join(dirpath, fname))
+                        deleted += 1
+                    except OSError as e:
+                        logger.warning("delete_all_tile_cache: %s", e)
+    with _cache_lock:
+        _tile_cache.clear()
+        _failed_tiles.clear()
+    logger.info("delete_all_tile_cache: deleted=%d", deleted)
+    return {"deleted": deleted}
