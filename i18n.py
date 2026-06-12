@@ -20,6 +20,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_settings":        "Settings",
         "menu_proxy_settings":  "Proxy Settings...",
         "menu_tile_manager":    "Tile Cache Manager...",
+        "menu_delete_all_cache":"Delete All Cache...",
         "dlg_proxy_title":      "Proxy Settings",
         "dlg_proxy_url_label":  "Proxy URL",
         "dlg_proxy_hint":       "Leave blank to use system proxy settings.",
@@ -34,6 +35,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
         "dlg_ok":               "OK",
+        "dlg_yes":              "Yes",
+        "dlg_no":               "No",
 
         # ===== Launcher =====
         "grp_site_info":        " Site Info ",
@@ -244,8 +247,6 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== Tile Manager =====
         "tm_title":             "Tile Cache Manager",
-        "tm_tile_count":        "{n} areas",
-        "tm_btn_delete_all":    "Delete All Cache",
         "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
         "tm_dl_title":          "Download",
         "tm_dl_confirm":        "Download DEM for {n} areas?",
@@ -261,7 +262,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_title":  "Delete All Cache",
         "tm_delete_all_confirm":"Delete ALL cached tiles? This cannot be undone.",
         "tm_delete_all_done":   "All cache deleted: {deleted} tiles.",
-        "tm_stats":             "Cache: {count} tiles / {mb} MB",
+        "tm_stats":             "Total cache: {count} tiles / {mb} MB",
         "tm_attribution":       "Source: GSI Tiles (Pale map)",
 
         # ===== Validation (infrastructure) =====
@@ -300,9 +301,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_h_tx":            "[{pid}] h_tx out of range (0–500): {val}",
         "verr_h_rx":            "[{pid}] h_rx out of range (0–500): {val}",
         "verr_freq":            "[{pid}] freq out of range (1–100000): {val}",
-        "verr_rain_rate":       "[{pid}] rain_rate out of range (0–200): {val}",
-        "verr_env_type":        "[{pid}] Invalid env_type: '{val}'",
-        "verr_diff_method":     "[{pid}] Invalid diff_method: '{val}'",
     },
 
     "ja": {
@@ -320,6 +318,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_settings":        "設定",
         "menu_proxy_settings":  "プロキシ設定...",
         "menu_tile_manager":    "タイルキャッシュ管理...",
+        "menu_delete_all_cache":"全キャッシュ削除...",
         "dlg_proxy_title":      "プロキシ設定",
         "dlg_proxy_url_label":  "プロキシ URL",
         "dlg_proxy_hint":       "空白にするとシステム設定を使用します",
@@ -334,6 +333,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
         "dlg_ok":               "OK",
+        "dlg_yes":              "はい",
+        "dlg_no":               "いいえ",
 
         # ===== Launcher =====
         "grp_site_info":        " サイト情報 ",
@@ -543,8 +544,6 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== Tile Manager =====
         "tm_title":             "タイルキャッシュ管理",
-        "tm_tile_count":        "{n} エリア",
-        "tm_btn_delete_all":    "全キャッシュ削除",
         "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
         "tm_dl_title":          "ダウンロード",
         "tm_dl_confirm":        "対象 {n} エリアの DEM をダウンロードしますか？",
@@ -560,7 +559,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_title":  "全キャッシュ削除",
         "tm_delete_all_confirm":"全キャッシュタイルを削除しますか？この操作は元に戻せません。",
         "tm_delete_all_done":   "全キャッシュを削除しました: {deleted}枚",
-        "tm_stats":             "キャッシュ: {count}枚 / {mb} MB",
+        "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
         "tm_attribution":       "出典: 地理院タイル（淡色地図）",
 
         # ===== Validation (infrastructure) =====
@@ -599,9 +598,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_h_tx":            "[{pid}] h_tx が範囲外 (0〜500): {val}",
         "verr_h_rx":            "[{pid}] h_rx が範囲外 (0〜500): {val}",
         "verr_freq":            "[{pid}] 周波数が範囲外 (1〜100000): {val}",
-        "verr_rain_rate":       "[{pid}] 降雨強度が範囲外 (0〜200): {val}",
-        "verr_env_type":        "[{pid}] 無効な env_type: '{val}'",
-        "verr_diff_method":     "[{pid}] 無効な diff_method: '{val}'",
     },
 }
 

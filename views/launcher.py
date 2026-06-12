@@ -163,6 +163,10 @@ class SimLauncher:
             label   = i18n.t("menu_tile_manager"),
             command = self._on_tile_manager,
         )
+        settings_menu.add_command(
+            label   = i18n.t("menu_delete_all_cache"),
+            command = self._on_delete_all_cache,
+        )
         menubar.add_cascade(label=i18n.t("menu_settings"), menu=settings_menu)
 
         help_menu = tk.Menu(menubar, tearoff=False)
@@ -378,6 +382,51 @@ class SimLauncher:
         y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
         dlg.geometry(f"+{x}+{y}")
         dlg.wait_window()
+
+    def _confirm(self, title: str, message: str) -> bool:
+        """ランチャー中央に Yes/No 確認ダイアログを表示し、Yes なら True を返す。"""
+        dlg = tk.Toplevel(self.root)
+        dlg.transient(self.root)
+        dlg.title(title)
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        result = {"ok": False}
+        ttk.Label(
+            dlg, text=message, wraplength=340, justify="left", padding=(20, 16, 20, 12)
+        ).pack()
+        btns = ttk.Frame(dlg)
+        btns.pack(pady=(0, 12))
+
+        def _yes() -> None:
+            result["ok"] = True
+            dlg.destroy()
+
+        ttk.Button(btns, text=i18n.t("dlg_yes"), command=_yes).pack(side="left", padx=6)
+        ttk.Button(btns, text=i18n.t("dlg_no"), command=dlg.destroy).pack(side="left", padx=6)
+
+        dlg.update_idletasks()
+        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
+        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
+        dlg.geometry(f"+{x}+{y}")
+        dlg.wait_window()
+        return result["ok"]
+
+    def _on_delete_all_cache(self) -> None:
+        """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
+        if not self._confirm(
+            i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm")
+        ):
+            return
+        result = infra.delete_all_tile_cache()
+        # タイル管理ウィンドウが開いていれば表示を更新する。
+        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
+            self._tile_mgr_win.on_external_delete_all(result["deleted"])
+        else:
+            self._alert(
+                i18n.t("tm_delete_all_title"),
+                i18n.t("tm_delete_all_done").format(deleted=result["deleted"]),
+            )
 
     # ----------------------------------------------------------
     # イベントハンドラ

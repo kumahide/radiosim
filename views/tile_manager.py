@@ -19,12 +19,13 @@ import i18n
 import infrastructure as infra
 from tkintermapview import TkinterMapView
 
-# zoom-14 オーバーレイの色（最高精度レベルで色分け）
+# zoom-14 オーバーレイの色（最高精度レベルで色分け）。
+# scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
+# ここに含めるのは 5a/5b/dem の 3 レベルだけ。
 _LEVEL_COLORS: dict[str, str] = {
     "5a":   "#90EE90",  # 緑: 5m航空（dem5a_png）
     "5b":   "#FFD700",  # 黄: 5m写真（dem5b_png）
     "dem":  "#87CEEB",  # 水色: 10m（dem_png）
-    "none": "#FFB6C1",  # ピンク: キャッシュなし
 }
 
 # キャッシュ済み領域の外周線の色
@@ -53,8 +54,9 @@ class TileManagerWindow:
         self._lat2_var = tk.StringVar()
         self._lon2_var = tk.StringVar()
 
-        self._action_btns: list[ttk.Button] = []
+        self._busy = False              # DL 実行中フラグ（多重操作防止）
         self._overlay_after_id = None   # 自動カバレッジ表示のデバウンス用
+        self._status_clear_id = None    # 結果文の自動クリア用 after ID
 
         self._build_ui()
         self._refresh_stats()
@@ -107,52 +109,53 @@ class TileManagerWindow:
         cv.bind("<Shift-Control-ButtonRelease-1>",
                 lambda e: self._sel_release(e, "delete"), add="+")
 
+        # 出典表記（GSI 帰属）は地図右下にオーバーレイ表示する（地図出典の慣例位置）。
+        # ウィジェットでは背景を透過できないため、canvas に直接テキスト描画する。
+        self._attribution = cv.create_text(
+            0, 0, text=i18n.t("tm_attribution"),
+            anchor="se", fill="gray", tags="attribution",
+        )
+        cv.bind("<Configure>", self._reposition_attribution, add="+")
+
+        # ---- 下部ステータスバー（1 本に集約）----------------------------
+        # 出没でレイアウトが動かないよう、各要素の高さを予約して配置する。
         bottom = ttk.Frame(self._win)
-        bottom.pack(fill="x", padx=6, pady=4)
+        bottom.pack(fill="x", padx=6, pady=(2, 4))
 
-        # 選択範囲のエリア数表示（範囲は Ctrl＋ドラッグで指定）
-        coord_row = ttk.Frame(bottom)
-        coord_row.pack(fill="x", pady=(0, 4))
+        statusbar = ttk.Frame(bottom)
+        statusbar.pack(fill="x")
 
-        self._tile_count_label = ttk.Label(coord_row, text="")
-        self._tile_count_label.pack(side="left")
+        # 右: キャッシュ統計（常時表示のアンカー）
+        self._stats_var = tk.StringVar(value="")
+        ttk.Label(statusbar, textvariable=self._stats_var, anchor="e").pack(side="right")
 
-        # ボタン行: DL/範囲削除/強制再取得はすべてジェスチャ化したため、
-        # 残るのは範囲を持たない「全削除」のみ。
-        btn_row = ttk.Frame(bottom)
-        btn_row.pack(fill="x", pady=(0, 4))
-
-        b_all = ttk.Button(btn_row, text=i18n.t("tm_btn_delete_all"), command=self._on_delete_all)
-        b_all.pack(side="right", padx=(4, 0))
-        self._action_btns.append(b_all)
-
-        # プログレスバー
-        self._progress_var = tk.IntVar(value=0)
-        self._progress = ttk.Progressbar(bottom, variable=self._progress_var, maximum=100)
-        self._progress.pack(fill="x", pady=(0, 2))
-
-        # ステータス（カバレッジ確認・DL 結果を集約。複数行になるため justify=left）
+        # 左: 動的メッセージ（アイドル時=操作ヒント / 操作中・直後=状態・結果）。
+        # 複数行になり得るため justify=left。アイドル時はグレー表示。
         self._status_var = tk.StringVar(value="")
         self._status_label = ttk.Label(
-            bottom, textvariable=self._status_var, anchor="w", justify="left",
-            wraplength=860,
+            statusbar, textvariable=self._status_var, anchor="w", justify="left",
+            wraplength=600,
         )
-        self._status_label.pack(fill="x")
-        # ウィンドウ幅に追従して折り返し幅を更新する。
-        self._status_label.bind(
+        self._status_label.pack(side="left", fill="x", expand=True)
+        # 幅に追従して折り返し幅を更新（統計表示分を右に確保する）。
+        statusbar.bind(
             "<Configure>",
-            lambda e: self._status_label.config(wraplength=max(200, e.width - 8)),
+            lambda e: self._status_label.config(wraplength=max(200, e.width - 200)),
         )
 
-        # キャッシュ統計
-        self._stats_var = tk.StringVar(value="")
-        ttk.Label(bottom, textvariable=self._stats_var, anchor="w").pack(fill="x")
+        # プログレスバー: 細線。アイドル時も高さを予約して畳み、DL 中のみ表示する。
+        style = ttk.Style()
+        style.configure("Thin.Horizontal.TProgressbar", thickness=6)
+        self._progress_holder = ttk.Frame(bottom, height=8)
+        self._progress_holder.pack(fill="x", pady=(2, 0))
+        self._progress_holder.pack_propagate(False)   # 中身の有無に関わらず高さ固定
+        self._progress_var = tk.IntVar(value=0)
+        self._progress = ttk.Progressbar(
+            self._progress_holder, variable=self._progress_var, maximum=100,
+            style="Thin.Horizontal.TProgressbar",
+        )
 
-        # 操作ヒント + 出典表記（GSI 帰属）
-        ttk.Label(bottom, text=i18n.t("tm_hint"),
-                  foreground="gray").pack(anchor="w")
-        ttk.Label(bottom, text=i18n.t("tm_attribution"),
-                  foreground="gray").pack(anchor="w")
+        self._set_idle()   # 起動時はヒントを表示
 
     # ----------------------------------------------------------
     # Ctrl＋ドラッグによる矩形選択
@@ -163,6 +166,8 @@ class TileManagerWindow:
     # ドラッグ＝範囲選択」が両立する。
     # ----------------------------------------------------------
     def _sel_press(self, event) -> None:
+        if self._busy:
+            return   # DL 実行中は新たな範囲選択を開始しない
         self._sel_start = self._map.convert_canvas_coords_to_decimal_coords(event.x, event.y)
 
     def _sel_drag(self, event) -> None:
@@ -198,7 +203,7 @@ class TileManagerWindow:
         self._lat2_var.set(f"{lat_s:.6f}")
         self._lon2_var.set(f"{lon_e:.6f}")
         self._draw_bbox_rect()
-        self._update_tile_count()
+        # 選択エリア数はこの直後の確認ダイアログが必ず提示するため、別途の表示はしない。
 
         bbox = (lat_n, lon_w, lat_s, lon_e)
         if action in ("download", "download_force"):
@@ -227,7 +232,7 @@ class TileManagerWindow:
                 self._clear_selection()
 
     # ----------------------------------------------------------
-    # bbox 矩形描画 / タイル枚数更新
+    # bbox 矩形描画
     # ----------------------------------------------------------
     def _draw_bbox_rect(self) -> None:
         try:
@@ -248,17 +253,11 @@ class TileManagerWindow:
             border_width=2,
         )
 
-    def _update_tile_count(self) -> None:
-        try:
-            lat1 = float(self._lat1_var.get())
-            lon1 = float(self._lon1_var.get())
-            lat2 = float(self._lat2_var.get())
-            lon2 = float(self._lon2_var.get())
-        except ValueError:
-            self._tile_count_label.config(text="")
-            return
-        n = infra.count_bbox_tiles(lat1, lon1, lat2, lon2)
-        self._tile_count_label.config(text=i18n.t("tm_tile_count").format(n=n))
+    def _reposition_attribution(self, event=None) -> None:
+        """出典テキストを地図右下に再配置し、最前面へ持ち上げる。"""
+        cv = self._map.canvas
+        cv.coords(self._attribution, cv.winfo_width() - 4, cv.winfo_height() - 4)
+        cv.tag_raise(self._attribution)
 
     # ----------------------------------------------------------
     # タイルオーバーレイ
@@ -324,6 +323,8 @@ class TileManagerWindow:
                 border_width=2,
             )
             self._tile_polygons.append(p)
+        # カバレッジ描画でタイル/ポリゴンが上に来るため出典を持ち上げ直す。
+        self._reposition_attribution()
 
     # ----------------------------------------------------------
     # ダウンロード（Ctrl＋ドラッグ → 確認 → 実行）
@@ -339,65 +340,92 @@ class TileManagerWindow:
         mb = n_areas * self._TILES_PER_AREA * avg / (1024 * 1024)
         return f"{mb:.1f}"
 
+    # ----------------------------------------------------------
+    # ステータス表示ヘルパー
+    # ----------------------------------------------------------
+    _STATUS_CLEAR_MS = 8000   # 結果文を自動的に消すまでの時間
+
+    def _show_progress(self) -> None:
+        """細線プログレスバーを高さ予約済みのホルダー内に表示する。"""
+        if not self._progress.winfo_ismapped():
+            self._progress.pack(fill="x")
+
+    def _hide_progress(self) -> None:
+        # ホルダーは pack_propagate(False) で高さを保つため、外してもリフローしない。
+        if self._progress.winfo_ismapped():
+            self._progress.pack_forget()
+
+    def _set_idle(self) -> None:
+        """アイドル状態: 操作ヒントをグレーで表示する。"""
+        self._status_clear_id = None
+        self._status_label.config(foreground="gray")
+        self._status_var.set(i18n.t("tm_hint"))
+
+    def _set_status(self, text: str, auto_clear: bool = False) -> None:
+        """状態・結果文を通常色で設定。auto_clear=True なら一定時間後にヒントへ戻す。"""
+        if self._status_clear_id is not None:
+            self._win.after_cancel(self._status_clear_id)
+            self._status_clear_id = None
+        self._status_label.config(foreground="")   # テーマ既定色に戻す
+        self._status_var.set(text)
+        if auto_clear and text:
+            self._status_clear_id = self._win.after(self._STATUS_CLEAR_MS, self._set_idle)
+
     def _start_download(self, bbox: tuple, force: bool) -> None:
         self._set_busy(True)
         self._progress_var.set(0)
-        self._status_var.set(i18n.t("tm_downloading"))
+        self._show_progress()
+        self._set_status(i18n.t("tm_downloading"))
         threading.Thread(target=self._download_worker, args=(bbox, force), daemon=True).start()
 
     def _download_worker(self, bbox: tuple, force: bool) -> None:
         def progress_cb(done: int, total: int) -> None:
             pct = int(done / total * 100) if total else 0
             self._win.after(0, self._progress_var.set, pct)
-            self._win.after(0, self._status_var.set,
+            self._win.after(0, self._set_status,
                 i18n.t("tm_dl_progress").format(done=done, total=total, pct=pct))
         dl_result = infra.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
         self._win.after(0, self._on_download_done, dl_result)
 
     def _on_download_done(self, dl_result: dict) -> None:
         self._set_busy(False)
-        self._progress_var.set(100)
-        self._status_var.set(i18n.t("tm_dl_done").format(
+        self._hide_progress()
+        self._set_status(i18n.t("tm_dl_done").format(
             dl5a=dl_result["downloaded_5a"],
             dl5b=dl_result["downloaded_5b"],
             dl_dem=dl_result["downloaded_dem"],
             skipped=dl_result["skipped"],
             failed=dl_result["failed"],
-        ))
+        ), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # DL 結果を自動カバレッジ表示に反映
         self._clear_selection()   # DL 完了後は選択枠を消す
 
     def _clear_selection(self) -> None:
-        """選択枠・座標・エリア数表示をクリアする。"""
+        """選択枠と座標をクリアする（ステータス文には触れない）。"""
         if self._bbox_polygon is not None:
             self._bbox_polygon.delete()
             self._bbox_polygon = None
         for var in (self._lat1_var, self._lon1_var, self._lat2_var, self._lon2_var):
             var.set("")
-        self._tile_count_label.config(text="")
 
     # ----------------------------------------------------------
     # 範囲削除（Shift+Ctrl＋ドラッグ → 確認 → 実行）
     # ----------------------------------------------------------
     def _do_delete(self, bbox: tuple) -> None:
         result = infra.delete_tile_cache(*bbox)
-        self._status_var.set(i18n.t("tm_delete_done").format(deleted=result["deleted"]))
+        self._set_status(i18n.t("tm_delete_done").format(deleted=result["deleted"]), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 削除結果を自動表示に反映
         self._clear_selection()   # 削除後は選択枠を消す
 
     # ----------------------------------------------------------
-    # 全削除
+    # 全削除（実行はランチャーの設定メニュー側。ここは外部削除後の再描画のみ）
     # ----------------------------------------------------------
-    def _on_delete_all(self) -> None:
-        if not messagebox.askyesno(
-            i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm"), parent=self._win
-        ):
-            return
-        result = infra.delete_all_tile_cache()
+    def on_external_delete_all(self, deleted: int) -> None:
+        """ランチャーから全キャッシュ削除された後、開いている管理画面を更新する。"""
         self._clear_tile_overlays()
-        self._status_var.set(i18n.t("tm_delete_all_done").format(deleted=result["deleted"]))
+        self._set_status(i18n.t("tm_delete_all_done").format(deleted=deleted), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 全削除後の状態を自動表示に反映
 
@@ -410,9 +438,7 @@ class TileManagerWindow:
         self._stats_var.set(i18n.t("tm_stats").format(count=stats["count"], mb=f"{mb:.1f}"))
 
     # ----------------------------------------------------------
-    # ビジー状態制御（アクションボタンのみ）
+    # ビジー状態制御（DL 実行中は新たなジェスチャ操作を受け付けない）
     # ----------------------------------------------------------
     def _set_busy(self, busy: bool) -> None:
-        state = "disabled" if busy else "normal"
-        for btn in self._action_btns:
-            btn.config(state=state)
+        self._busy = busy
