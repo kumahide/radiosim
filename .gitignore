@@ -1,6 +1,7 @@
 # Build output
 dist/
 build/
+RadioSimPro-*.zip
 
 # Generated icons
 icon.ico
