@@ -475,12 +475,14 @@ class SimLauncher:
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs) -> None:
         self.run_btn.config(state="normal")
         self.prog_label.config(text=i18n.t("status_ready"))
+        self.prog_bar.config(value=0)
         show_graph(params, raw_elevs)
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._alert(i18n.t("dlg_error"), str(ex))
         self.run_btn.config(state="normal")
         self.prog_label.config(text=i18n.t("status_ready"))
+        self.prog_bar.config(value=0)
 
     def _on_load_settings(self) -> None:
         file_path = filedialog.askopenfilename(
