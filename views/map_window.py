@@ -85,6 +85,13 @@ class MapWindow:
     # ----------------------------------------------------------
     # モード切替（Phase A はキャッシュ管理のみ。Phase B で分岐を追加）
     # ----------------------------------------------------------
+    def _select_mode(self, value: str) -> None:
+        """モードを選択し、セグメントボタンのスタイルを更新する。"""
+        self._mode.set(value)
+        for v, btn in self._mode_buttons.items():
+            btn.configure(style="Accent.TButton" if v == value else "TButton")
+        self._on_mode_change()
+
     def _on_mode_change(self) -> None:
         # 現状は単一モードのため何もしない。Phase B 以降、ジェスチャの意味づけや
         # ステータス表示をモードに応じて切り替えるフックとして使う。
@@ -94,17 +101,22 @@ class MapWindow:
     # UI 構築
     # ----------------------------------------------------------
     def _build_ui(self) -> None:
-        # ---- 上部モードセレクタ ------------------------------------------
-        # 地図を軸にした補助機能のモードを切り替える。Phase A はキャッシュ管理の
-        # 1 つのみ。Phase B で「座標入力」モードを add_radiobutton で追加する。
+        # ---- 上部モードセレクタ（セグメントボタン列）---------------------
+        # 地図を軸にした補助機能のモードを切り替える。選択中モードは Accent
+        # （青塗り）で押下状態を表し、ボタンとして明確に認識できるようにする。
+        # Phase A はキャッシュ管理の 1 つのみ。Phase B でリストに「座標入力」を足す。
         modebar = ttk.Frame(self._win)
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
+        self._mode_buttons: dict[str, ttk.Button] = {}
         for value, key in [("cache", "map_mode_cache")]:
-            ttk.Radiobutton(
-                modebar, text=i18n.t(key), value=value, variable=self._mode,
-                style="Toolbutton", command=self._on_mode_change,
-            ).pack(side="left", padx=2)
+            b = ttk.Button(
+                modebar, text=i18n.t(key),
+                command=lambda v=value: self._select_mode(v),
+            )
+            b.pack(side="left", padx=2)
+            self._mode_buttons[value] = b
+        self._select_mode(self._mode.get())   # 初期選択のスタイルを反映
 
         self._map = TkinterMapView(self._win, corner_radius=0)
         # 地図タイルは GSI 淡色地図に統一（DEM 出典と揃え、外部 API を GSI 一本化）。
