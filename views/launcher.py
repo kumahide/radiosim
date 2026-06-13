@@ -19,6 +19,7 @@ import infrastructure as infra
 import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_LABELS
+from views import dialogs
 from views.graph import show_graph
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -158,11 +159,11 @@ class SimLauncher:
             label   = i18n.t("menu_proxy_settings"),
             command = self._on_proxy_settings,
         )
-        settings_menu.add_separator()
         settings_menu.add_command(
-            label   = i18n.t("menu_tile_manager"),
-            command = self._on_tile_manager,
+            label   = i18n.t("menu_load_app_settings"),
+            command = self._on_load_app_settings,
         )
+        settings_menu.add_separator()
         settings_menu.add_command(
             label   = i18n.t("menu_delete_all_cache"),
             command = self._on_delete_all_cache,
@@ -186,11 +187,11 @@ class SimLauncher:
     def _on_theme_select(self, mode: str) -> None:
         self.config["theme"] = mode
         self._on_theme(mode)
-        infra.save_config(self.config)
+        infra.save_app(self.config)
 
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
-        infra.save_config(self.config)
+        infra.save_app(self.config)
         self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
 
     def _on_proxy_settings(self) -> None:
@@ -219,7 +220,7 @@ class SimLauncher:
         def _on_ok() -> None:
             url = url_var.get().strip()
             self.config["proxy_url"] = url
-            infra.save_config(self.config)
+            infra.save_app(self.config)
             infra.set_proxy(url)
             sim.clear_terrain_cache()
             dlg.destroy()
@@ -316,11 +317,13 @@ class SimLauncher:
         btn_batch    = ttk.Button(frame, text=i18n.t("btn_batch_mode"),    command=self._on_batch,          style="Accent.TButton")
         btn_load     = ttk.Button(frame, text=i18n.t("btn_load_settings"), command=self._on_load_settings)
         btn_open     = ttk.Button(frame, text=i18n.t("btn_open_results"),  command=self._on_open_results)
+        btn_map      = ttk.Button(frame, text=i18n.t("btn_open_map"),      command=self._on_open_map)
 
         self.run_btn.grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0, 4), ipady=10)
         btn_batch.grid   (row=0, column=1, sticky="ew", padx=(2, 0), pady=(0, 4), ipady=10)
         btn_load.grid    (row=1, column=0, sticky="ew", padx=(0, 2),               ipady=6)
         btn_open.grid    (row=1, column=1, sticky="ew", padx=(2, 0),               ipady=6)
+        btn_map.grid     (row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0),  ipady=6)
 
     def _build_logo(self, parent: tk.Misc) -> None:
         """logo.png をボタン下の余白に表示する。ファイルがなければ何もしない。"""
@@ -363,54 +366,12 @@ class SimLauncher:
     # ダイアログ位置制御
     # ----------------------------------------------------------
     def _alert(self, title: str, message: str) -> None:
-        """ランチャー中央にモーダルダイアログを表示する。
-        messagebox はWindowsネイティブAPIで位置を制御できないため
-        tk.Toplevel で実装し geometry() で明示的に中央配置する。"""
-        dlg = tk.Toplevel(self.root)
-        dlg.transient(self.root)
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.grab_set()
-
-        ttk.Label(
-            dlg, text=message, wraplength=340, justify="left", padding=(20, 16, 20, 12)
-        ).pack()
-        ttk.Button(dlg, text=i18n.t("dlg_ok"), command=dlg.destroy).pack(pady=(0, 12))
-
-        dlg.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{x}+{y}")
-        dlg.wait_window()
+        """ランチャー中央にモーダルダイアログを表示する。"""
+        dialogs.alert(self.root, title, message)
 
     def _confirm(self, title: str, message: str) -> bool:
         """ランチャー中央に Yes/No 確認ダイアログを表示し、Yes なら True を返す。"""
-        dlg = tk.Toplevel(self.root)
-        dlg.transient(self.root)
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.grab_set()
-
-        result = {"ok": False}
-        ttk.Label(
-            dlg, text=message, wraplength=340, justify="left", padding=(20, 16, 20, 12)
-        ).pack()
-        btns = ttk.Frame(dlg)
-        btns.pack(pady=(0, 12))
-
-        def _yes() -> None:
-            result["ok"] = True
-            dlg.destroy()
-
-        ttk.Button(btns, text=i18n.t("dlg_yes"), command=_yes).pack(side="left", padx=6)
-        ttk.Button(btns, text=i18n.t("dlg_no"), command=dlg.destroy).pack(side="left", padx=6)
-
-        dlg.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{x}+{y}")
-        dlg.wait_window()
-        return result["ok"]
+        return dialogs.confirm(self.root, title, message)
 
     def _on_delete_all_cache(self) -> None:
         """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
@@ -419,9 +380,9 @@ class SimLauncher:
         ):
             return
         result = infra.delete_all_tile_cache()
-        # タイル管理ウィンドウが開いていれば表示を更新する。
-        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
-            self._tile_mgr_win.on_external_delete_all(result["deleted"])
+        # マップウィンドウが開いていれば表示を更新する。
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_external_delete_all(result["deleted"])
         else:
             self._alert(
                 i18n.t("tm_delete_all_title"),
@@ -450,10 +411,8 @@ class SimLauncher:
             self._alert(i18n.t("dlg_error"), str(ex))
             return
 
-        c["theme"]     = self.config.get("theme",     "system")
-        c["lang"]      = self.config.get("lang",       "en")
-        c["proxy_url"] = self.config.get("proxy_url",  "")
-        infra.save_config(c)
+        # sim キーのみ保存。app 設定（theme/lang/proxy_url）は save_sim 内で保持される。
+        infra.save_sim(c)
         self.run_btn.config(state="disabled")
 
         # Phase 1: bbox 内の DEM タイルを事前取得
@@ -516,12 +475,14 @@ class SimLauncher:
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs) -> None:
         self.run_btn.config(state="normal")
         self.prog_label.config(text=i18n.t("status_ready"))
+        self.prog_bar.config(value=0)
         show_graph(params, raw_elevs)
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._alert(i18n.t("dlg_error"), str(ex))
         self.run_btn.config(state="normal")
         self.prog_label.config(text=i18n.t("status_ready"))
+        self.prog_bar.config(value=0)
 
     def _on_load_settings(self) -> None:
         file_path = filedialog.askopenfilename(
@@ -535,6 +496,8 @@ class SimLauncher:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 new_conf = json.load(f)
+            # sim キーのみ取り込む（app 設定 theme/lang/proxy_url は無視する）。
+            new_conf = infra.select_sim(new_conf)
             for k, v in new_conf.items():
                 if k in self.entries:
                     self.entries[k].delete(0, tk.END)
@@ -550,6 +513,56 @@ class SimLauncher:
         except Exception as e:
             self._alert(i18n.t("dlg_error"), str(e))
 
+    def _on_load_app_settings(self) -> None:
+        """ファイルから app 設定（theme/lang/proxy_url）のみ取り込む。
+
+        sim パラメータは無視する（select_app）。settings.json を読んでも
+        シミュレーション条件は変わらない。_on_load_settings と対称。
+        """
+        file_path = filedialog.askopenfilename(
+            title     = i18n.t("dlg_select_app_settings"),
+            filetypes = [("JSON files", "*.json")],
+            parent    = self.root,
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                app = infra.select_app(json.load(f))
+            # 実際に1つでも app 設定を適用したか。未適用なら成功表示しない。
+            applied = False
+            # 不正値は無視して安全に適用する（テーマ/言語は既知値のみ）。
+            if app.get("theme") in ("system", "light", "dark"):
+                self.config["theme"] = app["theme"]
+                self._theme_var.set(app["theme"])
+                self._on_theme(app["theme"])
+                applied = True
+            if "proxy_url" in app:
+                self.config["proxy_url"] = str(app["proxy_url"])
+                infra.set_proxy(self.config["proxy_url"])
+                sim.clear_terrain_cache()
+                applied = True
+            lang_changed = app.get("lang") in ("en", "ja") and \
+                app["lang"] != self.config.get("lang")
+            if app.get("lang") in ("en", "ja"):
+                self.config["lang"] = app["lang"]
+                self._lang_var.set(app["lang"])
+                applied = True
+
+            if not applied:
+                # ファイルに有効な app 設定がない＝何も取り込んでいない。誤解を招く
+                # 成功表示を避け、その旨を伝える（save_app も呼ばない）。
+                self._alert(i18n.t("dlg_app_settings_none_title"),
+                            i18n.t("dlg_app_settings_none"))
+                return
+            infra.save_app(self.config)
+            if lang_changed:
+                self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
+            else:
+                self._alert(i18n.t("dlg_success"), i18n.t("dlg_app_settings_ok"))
+        except Exception as e:
+            self._alert(i18n.t("dlg_error"), str(e))
+
     def _on_open_results(self) -> None:
         if os.path.exists(infra.RESULTS_DIR):
             os.startfile(infra.RESULTS_DIR)
@@ -562,12 +575,12 @@ class SimLauncher:
         c["diff_method"] = self.config.get("diff_method", "deygout")
         return c
 
-    def _on_tile_manager(self) -> None:
-        from views.tile_manager import TileManagerWindow
-        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
-            self._tile_mgr_win._win.focus()
+    def _on_open_map(self) -> None:
+        from views.map_window import MapWindow
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win._win.focus()
             return
-        self._tile_mgr_win = TileManagerWindow(self.root, self.config)
+        self._map_win = MapWindow(self.root, self.config)
 
     def _on_about(self) -> None:
         self._alert(

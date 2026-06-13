@@ -1,9 +1,12 @@
 """
-views/tile_manager.py
-=====================
-タイルキャッシュ管理ウィンドウ。
+views/map_window.py
+===================
+マップウィンドウ。地図を軸にした補助レイヤ機能のホスト。
 
-地図上でbbox を指定し、DEMタイルの
+上部のモードセレクタでモードを切り替える（Phase A 時点はキャッシュ管理のみ。
+座標入力モードは Phase B で追加予定）。
+
+キャッシュ管理モードでは、地図上で bbox を指定し DEM タイルの
   - カバレッジ確認（色付きオーバーレイ表示）
   - 不足タイルのダウンロード
   - 範囲削除 / 全削除
@@ -13,11 +16,12 @@ views/tile_manager.py
 import os
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 import i18n
 import infrastructure as infra
 from tkintermapview import TkinterMapView
+from views import dialogs
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -32,15 +36,18 @@ _LEVEL_COLORS: dict[str, str] = {
 _OUTLINE_COLOR = "#0066CC"
 
 
-class TileManagerWindow:
+class MapWindow:
     def __init__(self, parent: tk.Misc, config: dict) -> None:
         self._config = config
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
-        self._win.title(i18n.t("tm_title"))
+        self._win.title(i18n.t("map_title"))
         self._win.geometry("900x680")
         self._win.minsize(720, 520)
+
+        # 現在のモード。Phase A はキャッシュ管理のみ。Phase B で "coords" 等を追加する。
+        self._mode = tk.StringVar(value="cache")
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
@@ -76,9 +83,41 @@ class TileManagerWindow:
             os.environ.pop("HTTPS_PROXY", None)
 
     # ----------------------------------------------------------
+    # モード切替（Phase A はキャッシュ管理のみ。Phase B で分岐を追加）
+    # ----------------------------------------------------------
+    def _select_mode(self, value: str) -> None:
+        """モードを選択し、セグメントボタンのスタイルを更新する。"""
+        self._mode.set(value)
+        for v, btn in self._mode_buttons.items():
+            btn.configure(style="Accent.TButton" if v == value else "TButton")
+        self._on_mode_change()
+
+    def _on_mode_change(self) -> None:
+        # 現状は単一モードのため何もしない。Phase B 以降、ジェスチャの意味づけや
+        # ステータス表示をモードに応じて切り替えるフックとして使う。
+        pass
+
+    # ----------------------------------------------------------
     # UI 構築
     # ----------------------------------------------------------
     def _build_ui(self) -> None:
+        # ---- 上部モードセレクタ（セグメントボタン列）---------------------
+        # 地図を軸にした補助機能のモードを切り替える。選択中モードは Accent
+        # （青塗り）で押下状態を表し、ボタンとして明確に認識できるようにする。
+        # Phase A はキャッシュ管理の 1 つのみ。Phase B でリストに「座標入力」を足す。
+        modebar = ttk.Frame(self._win)
+        modebar.pack(fill="x", padx=4, pady=(4, 0))
+        ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
+        self._mode_buttons: dict[str, ttk.Button] = {}
+        for value, key in [("cache", "map_mode_cache")]:
+            b = ttk.Button(
+                modebar, text=i18n.t(key),
+                command=lambda v=value: self._select_mode(v),
+            )
+            b.pack(side="left", padx=2)
+            self._mode_buttons[value] = b
+        self._select_mode(self._mode.get())   # 初期選択のスタイルを反映
+
         self._map = TkinterMapView(self._win, corner_radius=0)
         # 地図タイルは GSI 淡色地図に統一（DEM 出典と揃え、外部 API を GSI 一本化）。
         self._map.set_tile_server(
@@ -216,16 +255,16 @@ class TileManagerWindow:
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
             msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
-            if messagebox.askyesno(title, msg, parent=self._win):
+            if dialogs.confirm(self._win, title, msg):
                 self._start_download(bbox, force)
             else:
                 self._clear_selection()
         else:   # delete
             # 削除は実際にキャッシュ済みのエリアのみが対象
             n = infra.count_cached_areas(*bbox)
-            if messagebox.askyesno(
-                i18n.t("tm_delete_title"),
-                i18n.t("tm_delete_confirm").format(n=n), parent=self._win,
+            if dialogs.confirm(
+                self._win, i18n.t("tm_delete_title"),
+                i18n.t("tm_delete_confirm").format(n=n),
             ):
                 self._do_delete(bbox)
             else:

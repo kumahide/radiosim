@@ -189,6 +189,87 @@ class TestConfigIO:
 
 
 # ============================================================
+# save_sim / save_app（キー群の論理分離・部分保存）
+# ============================================================
+class TestPartialConfigSave:
+
+    def test_app_and_sim_keys_are_disjoint_and_cover_defaults(self):
+        assert infra.APP_KEYS.isdisjoint(infra.SIM_KEYS)
+        assert infra.APP_KEYS | infra.SIM_KEYS == frozenset(infra.DEFAULT_CONFIG)
+
+    def test_save_sim_preserves_app_keys(self, tmp_path):
+        """sim キー保存で app 設定（theme/lang/proxy_url）が消えないこと。"""
+        path = str(tmp_path / "conf.json")
+        seed = infra.DEFAULT_CONFIG.copy()
+        seed["theme"] = "dark"
+        seed["proxy_url"] = "http://proxy:8080"
+        infra.save_config(seed, path)
+
+        infra.save_sim({"freq": "5800.0", "theme": "light"}, path)  # theme は無視される
+        loaded = infra.load_config(path)
+        assert loaded["freq"] == "5800.0"          # sim キーは更新
+        assert loaded["theme"] == "dark"           # app キーは保持（light で上書きされない）
+        assert loaded["proxy_url"] == "http://proxy:8080"
+
+    def test_save_app_preserves_sim_keys(self, tmp_path):
+        """app キー保存で直近の sim パラメータが消えないこと。"""
+        path = str(tmp_path / "conf.json")
+        seed = infra.DEFAULT_CONFIG.copy()
+        seed["freq"] = "900.0"
+        infra.save_config(seed, path)
+
+        infra.save_app({"theme": "dark", "freq": "1.0"}, path)      # freq は無視される
+        loaded = infra.load_config(path)
+        assert loaded["theme"] == "dark"           # app キーは更新
+        assert loaded["freq"] == "900.0"           # sim キーは保持
+
+
+# ============================================================
+# select_sim（「パラメータ読込」は sim 限定）
+# ============================================================
+class TestSelectSim:
+
+    def test_drops_app_keys(self):
+        """app キー（theme/lang/proxy_url）は取り込まれない。"""
+        incoming = {
+            "freq": "5800.0", "h_tx": "40.0", "env_type": "rural",
+            "theme": "dark", "lang": "ja", "proxy_url": "http://evil:8080",
+        }
+        out = infra.select_sim(incoming)
+        assert out == {"freq": "5800.0", "h_tx": "40.0", "env_type": "rural"}
+        assert infra.APP_KEYS.isdisjoint(out)
+
+    def test_keeps_all_sim_keys_and_ignores_unknown(self):
+        full = {k: infra.DEFAULT_CONFIG[k] for k in infra.SIM_KEYS}
+        full["bogus"] = "x"                        # 未知キーも落ちる
+        out = infra.select_sim(full)
+        assert set(out) == set(infra.SIM_KEYS)
+
+
+# ============================================================
+# select_app（「アプリ設定読込」は app 限定）
+# ============================================================
+class TestSelectApp:
+
+    def test_drops_sim_keys(self):
+        """sim キー（freq/env_type 等）は取り込まれない。"""
+        incoming = {
+            "theme": "dark", "lang": "ja", "proxy_url": "http://p:8080",
+            "freq": "5800.0", "env_type": "rural", "bogus": "x",
+        }
+        out = infra.select_app(incoming)
+        assert out == {"theme": "dark", "lang": "ja", "proxy_url": "http://p:8080"}
+        assert infra.SIM_KEYS.isdisjoint(out)
+
+    def test_select_sim_and_select_app_partition_inputs(self):
+        """同一入力に対し select_sim と select_app は素集合かつ既知キーを網羅。"""
+        full = dict(infra.DEFAULT_CONFIG)
+        sim, app = infra.select_sim(full), infra.select_app(full)
+        assert set(sim).isdisjoint(app)
+        assert set(sim) | set(app) == set(infra.DEFAULT_CONFIG)
+
+
+# ============================================================
 # _decode_elevation
 # ============================================================
 class TestDecodeElevation:
