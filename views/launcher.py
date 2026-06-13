@@ -531,6 +531,8 @@ class SimLauncher:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 new_conf = json.load(f)
+            # sim キーのみ取り込む（app 設定 theme/lang/proxy_url は無視する）。
+            new_conf = infra.select_sim(new_conf)
             for k, v in new_conf.items():
                 if k in self.entries:
                     self.entries[k].delete(0, tk.END)

@@ -161,6 +161,15 @@ def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> None:
     _save_subset(values, APP_KEYS, path)
 
 
+def select_sim(values: dict) -> dict:
+    """入力 dict から sim キーだけを抜き出す（app キーは捨てる）。
+
+    「パラメータ読込」が他人の設定ファイル（app キー混在の radiosim_conf.json 等）を
+    読んでも theme/lang/proxy_url を取り込まないことを、呼び出し側に依存せず保証する。
+    """
+    return {k: v for k, v in values.items() if k in SIM_KEYS}
+
+
 # バリデーション用許容値セット（validate_config で参照）
 _VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
 _VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
