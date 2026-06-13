@@ -16,11 +16,12 @@ views/map_window.py
 import os
 import threading
 import tkinter as tk
-from tkinter import messagebox, ttk
+from tkinter import ttk
 
 import i18n
 import infrastructure as infra
 from tkintermapview import TkinterMapView
+from views import dialogs
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -242,16 +243,16 @@ class MapWindow:
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
             msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
-            if messagebox.askyesno(title, msg, parent=self._win):
+            if dialogs.confirm(self._win, title, msg):
                 self._start_download(bbox, force)
             else:
                 self._clear_selection()
         else:   # delete
             # 削除は実際にキャッシュ済みのエリアのみが対象
             n = infra.count_cached_areas(*bbox)
-            if messagebox.askyesno(
-                i18n.t("tm_delete_title"),
-                i18n.t("tm_delete_confirm").format(n=n), parent=self._win,
+            if dialogs.confirm(
+                self._win, i18n.t("tm_delete_title"),
+                i18n.t("tm_delete_confirm").format(n=n),
             ):
                 self._do_delete(bbox)
             else:

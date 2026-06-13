@@ -19,6 +19,7 @@ import infrastructure as infra
 import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_LABELS
+from views import dialogs
 from views.graph import show_graph
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -365,54 +366,12 @@ class SimLauncher:
     # ダイアログ位置制御
     # ----------------------------------------------------------
     def _alert(self, title: str, message: str) -> None:
-        """ランチャー中央にモーダルダイアログを表示する。
-        messagebox はWindowsネイティブAPIで位置を制御できないため
-        tk.Toplevel で実装し geometry() で明示的に中央配置する。"""
-        dlg = tk.Toplevel(self.root)
-        dlg.transient(self.root)
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.grab_set()
-
-        ttk.Label(
-            dlg, text=message, wraplength=340, justify="left", padding=(20, 16, 20, 12)
-        ).pack()
-        ttk.Button(dlg, text=i18n.t("dlg_ok"), command=dlg.destroy).pack(pady=(0, 12))
-
-        dlg.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{x}+{y}")
-        dlg.wait_window()
+        """ランチャー中央にモーダルダイアログを表示する。"""
+        dialogs.alert(self.root, title, message)
 
     def _confirm(self, title: str, message: str) -> bool:
         """ランチャー中央に Yes/No 確認ダイアログを表示し、Yes なら True を返す。"""
-        dlg = tk.Toplevel(self.root)
-        dlg.transient(self.root)
-        dlg.title(title)
-        dlg.resizable(False, False)
-        dlg.grab_set()
-
-        result = {"ok": False}
-        ttk.Label(
-            dlg, text=message, wraplength=340, justify="left", padding=(20, 16, 20, 12)
-        ).pack()
-        btns = ttk.Frame(dlg)
-        btns.pack(pady=(0, 12))
-
-        def _yes() -> None:
-            result["ok"] = True
-            dlg.destroy()
-
-        ttk.Button(btns, text=i18n.t("dlg_yes"), command=_yes).pack(side="left", padx=6)
-        ttk.Button(btns, text=i18n.t("dlg_no"), command=dlg.destroy).pack(side="left", padx=6)
-
-        dlg.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{x}+{y}")
-        dlg.wait_window()
-        return result["ok"]
+        return dialogs.confirm(self.root, title, message)
 
     def _on_delete_all_cache(self) -> None:
         """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
