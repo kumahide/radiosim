@@ -247,6 +247,29 @@ class TestSelectSim:
 
 
 # ============================================================
+# select_app（「アプリ設定読込」は app 限定）
+# ============================================================
+class TestSelectApp:
+
+    def test_drops_sim_keys(self):
+        """sim キー（freq/env_type 等）は取り込まれない。"""
+        incoming = {
+            "theme": "dark", "lang": "ja", "proxy_url": "http://p:8080",
+            "freq": "5800.0", "env_type": "rural", "bogus": "x",
+        }
+        out = infra.select_app(incoming)
+        assert out == {"theme": "dark", "lang": "ja", "proxy_url": "http://p:8080"}
+        assert infra.SIM_KEYS.isdisjoint(out)
+
+    def test_select_sim_and_select_app_partition_inputs(self):
+        """同一入力に対し select_sim と select_app は素集合かつ既知キーを網羅。"""
+        full = dict(infra.DEFAULT_CONFIG)
+        sim, app = infra.select_sim(full), infra.select_app(full)
+        assert set(sim).isdisjoint(app)
+        assert set(sim) | set(app) == set(infra.DEFAULT_CONFIG)
+
+
+# ============================================================
 # _decode_elevation
 # ============================================================
 class TestDecodeElevation:

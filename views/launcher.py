@@ -158,6 +158,10 @@ class SimLauncher:
             label   = i18n.t("menu_proxy_settings"),
             command = self._on_proxy_settings,
         )
+        settings_menu.add_command(
+            label   = i18n.t("menu_load_app_settings"),
+            command = self._on_load_app_settings,
+        )
         settings_menu.add_separator()
         settings_menu.add_command(
             label   = i18n.t("menu_delete_all_cache"),
@@ -545,6 +549,45 @@ class SimLauncher:
                 if key in new_conf:
                     self.config[key] = str(new_conf[key])
             self._alert(i18n.t("dlg_success"), i18n.t("dlg_settings_ok"))
+        except Exception as e:
+            self._alert(i18n.t("dlg_error"), str(e))
+
+    def _on_load_app_settings(self) -> None:
+        """ファイルから app 設定（theme/lang/proxy_url）のみ取り込む。
+
+        sim パラメータは無視する（select_app）。settings.json を読んでも
+        シミュレーション条件は変わらない。_on_load_settings と対称。
+        """
+        file_path = filedialog.askopenfilename(
+            title     = i18n.t("dlg_select_app_settings"),
+            filetypes = [("JSON files", "*.json")],
+            parent    = self.root,
+        )
+        if not file_path:
+            return
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                app = infra.select_app(json.load(f))
+            # 不正値は無視して安全に適用する（テーマ/言語は既知値のみ）。
+            if app.get("theme") in ("system", "light", "dark"):
+                self.config["theme"] = app["theme"]
+                self._theme_var.set(app["theme"])
+                self._on_theme(app["theme"])
+            if "proxy_url" in app:
+                self.config["proxy_url"] = str(app["proxy_url"])
+                infra.set_proxy(self.config["proxy_url"])
+                sim.clear_terrain_cache()
+            lang_changed = app.get("lang") in ("en", "ja") and \
+                app["lang"] != self.config.get("lang")
+            if app.get("lang") in ("en", "ja"):
+                self.config["lang"] = app["lang"]
+                self._lang_var.set(app["lang"])
+
+            infra.save_app(self.config)
+            if lang_changed:
+                self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
+            else:
+                self._alert(i18n.t("dlg_success"), i18n.t("dlg_app_settings_ok"))
         except Exception as e:
             self._alert(i18n.t("dlg_error"), str(e))
 
