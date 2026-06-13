@@ -225,6 +225,28 @@ class TestPartialConfigSave:
 
 
 # ============================================================
+# select_sim（「パラメータ読込」は sim 限定）
+# ============================================================
+class TestSelectSim:
+
+    def test_drops_app_keys(self):
+        """app キー（theme/lang/proxy_url）は取り込まれない。"""
+        incoming = {
+            "freq": "5800.0", "h_tx": "40.0", "env_type": "rural",
+            "theme": "dark", "lang": "ja", "proxy_url": "http://evil:8080",
+        }
+        out = infra.select_sim(incoming)
+        assert out == {"freq": "5800.0", "h_tx": "40.0", "env_type": "rural"}
+        assert infra.APP_KEYS.isdisjoint(out)
+
+    def test_keeps_all_sim_keys_and_ignores_unknown(self):
+        full = {k: infra.DEFAULT_CONFIG[k] for k in infra.SIM_KEYS}
+        full["bogus"] = "x"                        # 未知キーも落ちる
+        out = infra.select_sim(full)
+        assert set(out) == set(infra.SIM_KEYS)
+
+
+# ============================================================
 # _decode_elevation
 # ============================================================
 class TestDecodeElevation:
