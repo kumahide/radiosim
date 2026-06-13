@@ -147,6 +147,22 @@ class LinkBudgetResult:
 # ============================================================
 # 地形プロファイル
 # ============================================================
+def horizontal_distance_km(
+    lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float
+) -> float:
+    """2地点間の水平距離 [km]（haversine, 球面半径 6371km）。"""
+    R_earth = 6371.0
+    dlat = math.radians(lat_rx - lat_tx)
+    dlon = math.radians(lon_rx - lon_tx)
+    a = (
+        math.sin(dlat / 2) ** 2
+        + math.cos(math.radians(lat_tx))
+        * math.cos(math.radians(lat_rx))
+        * math.sin(dlon / 2) ** 2
+    )
+    return 2 * R_earth * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+
+
 def calculate_terrain_profile(
     raw_elevs: np.ndarray,
     lat_tx: float,
@@ -170,15 +186,7 @@ def calculate_terrain_profile(
     R_earth = 6371.0
     Re      = R_earth * max(earth_k, 0.1)  # 0 除算防止
 
-    dlat = math.radians(lat_rx - lat_tx)
-    dlon = math.radians(lon_rx - lon_tx)
-    a = (
-        math.sin(dlat / 2) ** 2
-        + math.cos(math.radians(lat_tx))
-        * math.cos(math.radians(lat_rx))
-        * math.sin(dlon / 2) ** 2
-    )
-    horiz_dist_km = 2 * R_earth * math.atan2(math.sqrt(a), math.sqrt(1 - a))
+    horiz_dist_km = horizontal_distance_km(lat_tx, lon_tx, lat_rx, lon_rx)
 
     num_samples = len(raw_elevs)
     d_km_axis   = np.linspace(0, horiz_dist_km, num_samples)

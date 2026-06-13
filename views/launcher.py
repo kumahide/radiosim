@@ -580,7 +580,38 @@ class SimLauncher:
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win._win.focus()
             return
-        self._map_win = MapWindow(self.root, self.config)
+        # launcher=self を渡すと座標入力モードのピック結果を数値欄へ書き戻せる。
+        self._map_win = MapWindow(self.root, self.config, launcher=self)
+
+    # ----------------------------------------------------------
+    # マップウィンドウ（座標入力モード）との連携
+    # 数値欄が常に source of truth。地図はピッカーとして書き戻すだけ。
+    # ----------------------------------------------------------
+    def apply_map_pick(self, role: str, lat: float, lon: float) -> None:
+        """地図でピックした TX/RX 座標を対応する数値欄へ書き戻す。
+
+        role は "tx"（start 欄）/ "rx"（end 欄）。形式は既存の "lat, lon"。
+        """
+        key = "start" if role == "tx" else "end"
+        entry = self.entries.get(key)
+        if entry is None:
+            return
+        entry.delete(0, tk.END)
+        entry.insert(0, f"{lat:.6f}, {lon:.6f}")
+
+    def current_path_coords(self) -> dict:
+        """数値欄の TX/RX 座標を {"tx": (lat, lon)|None, "rx": ...} で返す。
+
+        マップウィンドウが開いた時点で既存座標のマーカーを表示するために使う。
+        パースできない欄は None（地図側は無視する）。
+        """
+        def _parse(key: str):
+            try:
+                lat_s, lon_s = self.entries[key].get().split(",")
+                return (float(lat_s), float(lon_s))
+            except (ValueError, KeyError):
+                return None
+        return {"tx": _parse("start"), "rx": _parse("end")}
 
     def _on_about(self) -> None:
         self._alert(
