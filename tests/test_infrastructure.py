@@ -189,6 +189,42 @@ class TestConfigIO:
 
 
 # ============================================================
+# save_sim / save_app（キー群の論理分離・部分保存）
+# ============================================================
+class TestPartialConfigSave:
+
+    def test_app_and_sim_keys_are_disjoint_and_cover_defaults(self):
+        assert infra.APP_KEYS.isdisjoint(infra.SIM_KEYS)
+        assert infra.APP_KEYS | infra.SIM_KEYS == frozenset(infra.DEFAULT_CONFIG)
+
+    def test_save_sim_preserves_app_keys(self, tmp_path):
+        """sim キー保存で app 設定（theme/lang/proxy_url）が消えないこと。"""
+        path = str(tmp_path / "conf.json")
+        seed = infra.DEFAULT_CONFIG.copy()
+        seed["theme"] = "dark"
+        seed["proxy_url"] = "http://proxy:8080"
+        infra.save_config(seed, path)
+
+        infra.save_sim({"freq": "5800.0", "theme": "light"}, path)  # theme は無視される
+        loaded = infra.load_config(path)
+        assert loaded["freq"] == "5800.0"          # sim キーは更新
+        assert loaded["theme"] == "dark"           # app キーは保持（light で上書きされない）
+        assert loaded["proxy_url"] == "http://proxy:8080"
+
+    def test_save_app_preserves_sim_keys(self, tmp_path):
+        """app キー保存で直近の sim パラメータが消えないこと。"""
+        path = str(tmp_path / "conf.json")
+        seed = infra.DEFAULT_CONFIG.copy()
+        seed["freq"] = "900.0"
+        infra.save_config(seed, path)
+
+        infra.save_app({"theme": "dark", "freq": "1.0"}, path)      # freq は無視される
+        loaded = infra.load_config(path)
+        assert loaded["theme"] == "dark"           # app キーは更新
+        assert loaded["freq"] == "900.0"           # sim キーは保持
+
+
+# ============================================================
 # _decode_elevation
 # ============================================================
 class TestDecodeElevation:

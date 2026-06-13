@@ -182,11 +182,11 @@ class SimLauncher:
     def _on_theme_select(self, mode: str) -> None:
         self.config["theme"] = mode
         self._on_theme(mode)
-        infra.save_config(self.config)
+        infra.save_app(self.config)
 
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
-        infra.save_config(self.config)
+        infra.save_app(self.config)
         self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
 
     def _on_proxy_settings(self) -> None:
@@ -215,7 +215,7 @@ class SimLauncher:
         def _on_ok() -> None:
             url = url_var.get().strip()
             self.config["proxy_url"] = url
-            infra.save_config(self.config)
+            infra.save_app(self.config)
             infra.set_proxy(url)
             sim.clear_terrain_cache()
             dlg.destroy()
@@ -448,10 +448,8 @@ class SimLauncher:
             self._alert(i18n.t("dlg_error"), str(ex))
             return
 
-        c["theme"]     = self.config.get("theme",     "system")
-        c["lang"]      = self.config.get("lang",       "en")
-        c["proxy_url"] = self.config.get("proxy_url",  "")
-        infra.save_config(c)
+        # sim キーのみ保存。app 設定（theme/lang/proxy_url）は save_sim 内で保持される。
+        infra.save_sim(c)
         self.run_btn.config(state="disabled")
 
         # Phase 1: bbox 内の DEM タイルを事前取得

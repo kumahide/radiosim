@@ -126,6 +126,41 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
         logger.warning("Config save error: %s", e)
 
 
+# ------------------------------------------------------------
+# 設定キーの論理分類（案1: ファイルは flat のまま、コードで責務分離）
+#   APP_KEYS … アプリ環境設定（ユーザー全体・メニューで変更・永続）
+#   SIM_KEYS … 直近のシミュレーションパラメータ（実行ごとにフォームから更新）
+# 将来マップウィンドウ設定を足すときは APP_KEYS に追加し DEFAULT_CONFIG にも
+# 既定値を1行加える（段階移行で app/sim ネスト構造へ昇格する余地は残す）。
+# ------------------------------------------------------------
+APP_KEYS: frozenset[str] = frozenset({"theme", "lang", "proxy_url"})
+SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
+
+
+def _save_subset(values: dict[str, str], keys: frozenset[str],
+                 path: str = CONFIG_FILE) -> None:
+    """指定キー群だけを更新して保存する。他のキーは既存ファイルの値を保持する。
+
+    これにより「フォームから sim キーを保存しても app キーは消えない」「メニューで
+    app キーを変えても sim キーは保持される」を、呼び出し側の手動再合流なしで実現する。
+    """
+    merged = load_config(path)
+    for k in keys:
+        if k in values:
+            merged[k] = values[k]
+    save_config(merged, path)
+
+
+def save_sim(values: dict[str, str], path: str = CONFIG_FILE) -> None:
+    """シミュレーションパラメータのみ保存（app 設定は保持）。"""
+    _save_subset(values, SIM_KEYS, path)
+
+
+def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> None:
+    """アプリ環境設定のみ保存（直近の sim パラメータは保持）。"""
+    _save_subset(values, APP_KEYS, path)
+
+
 # バリデーション用許容値セット（validate_config で参照）
 _VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
 _VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
