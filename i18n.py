@@ -76,6 +76,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_load_settings":    "Load Parameters",
         "btn_open_results":     "Open Results",
         "btn_batch_mode":       "Batch Mode",
+        "btn_open_map":         "Map…",
         "dlg_input_error":      "Input Error",
         "dlg_settings_ok":      "Settings imported.",
         "dlg_select_settings":  "Select settings.json",
@@ -246,6 +247,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_graph":       "Graph",
 
         # ===== Tile Manager =====
+        "map_title":            "Map",
+        "map_mode_label":       "Mode:",
+        "map_mode_cache":       "Cache Management",
         "tm_title":             "Tile Cache Manager",
         "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
         "tm_dl_title":          "Download",
@@ -374,6 +378,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_load_settings":    "パラメータを読込む",
         "btn_open_results":     "結果フォルダを開く",
         "btn_batch_mode":       "一括シミュレーション",
+        "btn_open_map":         "地図…",
         "dlg_input_error":      "入力エラー",
         "dlg_settings_ok":      "設定を読み込みました。",
         "dlg_select_settings":  "settings.json を選択",
@@ -543,6 +548,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_graph":       "グラフ",
 
         # ===== Tile Manager =====
+        "map_title":            "地図",
+        "map_mode_label":       "モード:",
+        "map_mode_cache":       "キャッシュ管理",
         "tm_title":             "タイルキャッシュ管理",
         "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
         "tm_dl_title":          "ダウンロード",

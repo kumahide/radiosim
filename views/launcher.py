@@ -160,10 +160,6 @@ class SimLauncher:
         )
         settings_menu.add_separator()
         settings_menu.add_command(
-            label   = i18n.t("menu_tile_manager"),
-            command = self._on_tile_manager,
-        )
-        settings_menu.add_command(
             label   = i18n.t("menu_delete_all_cache"),
             command = self._on_delete_all_cache,
         )
@@ -316,11 +312,13 @@ class SimLauncher:
         btn_batch    = ttk.Button(frame, text=i18n.t("btn_batch_mode"),    command=self._on_batch,          style="Accent.TButton")
         btn_load     = ttk.Button(frame, text=i18n.t("btn_load_settings"), command=self._on_load_settings)
         btn_open     = ttk.Button(frame, text=i18n.t("btn_open_results"),  command=self._on_open_results)
+        btn_map      = ttk.Button(frame, text=i18n.t("btn_open_map"),      command=self._on_open_map)
 
         self.run_btn.grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0, 4), ipady=10)
         btn_batch.grid   (row=0, column=1, sticky="ew", padx=(2, 0), pady=(0, 4), ipady=10)
         btn_load.grid    (row=1, column=0, sticky="ew", padx=(0, 2),               ipady=6)
         btn_open.grid    (row=1, column=1, sticky="ew", padx=(2, 0),               ipady=6)
+        btn_map.grid     (row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0),  ipady=6)
 
     def _build_logo(self, parent: tk.Misc) -> None:
         """logo.png をボタン下の余白に表示する。ファイルがなければ何もしない。"""
@@ -419,9 +417,9 @@ class SimLauncher:
         ):
             return
         result = infra.delete_all_tile_cache()
-        # タイル管理ウィンドウが開いていれば表示を更新する。
-        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
-            self._tile_mgr_win.on_external_delete_all(result["deleted"])
+        # マップウィンドウが開いていれば表示を更新する。
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_external_delete_all(result["deleted"])
         else:
             self._alert(
                 i18n.t("tm_delete_all_title"),
@@ -562,12 +560,12 @@ class SimLauncher:
         c["diff_method"] = self.config.get("diff_method", "deygout")
         return c
 
-    def _on_tile_manager(self) -> None:
-        from views.tile_manager import TileManagerWindow
-        if hasattr(self, "_tile_mgr_win") and self._tile_mgr_win._win.winfo_exists():
-            self._tile_mgr_win._win.focus()
+    def _on_open_map(self) -> None:
+        from views.map_window import MapWindow
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win._win.focus()
             return
-        self._tile_mgr_win = TileManagerWindow(self.root, self.config)
+        self._map_win = MapWindow(self.root, self.config)
 
     def _on_about(self) -> None:
         self._alert(
