@@ -1,9 +1,12 @@
 """
-views/tile_manager.py
-=====================
-タイルキャッシュ管理ウィンドウ。
+views/map_window.py
+===================
+マップウィンドウ。地図を軸にした補助レイヤ機能のホスト。
 
-地図上でbbox を指定し、DEMタイルの
+上部のモードセレクタでモードを切り替える（Phase A 時点はキャッシュ管理のみ。
+座標入力モードは Phase B で追加予定）。
+
+キャッシュ管理モードでは、地図上で bbox を指定し DEM タイルの
   - カバレッジ確認（色付きオーバーレイ表示）
   - 不足タイルのダウンロード
   - 範囲削除 / 全削除
@@ -32,15 +35,18 @@ _LEVEL_COLORS: dict[str, str] = {
 _OUTLINE_COLOR = "#0066CC"
 
 
-class TileManagerWindow:
+class MapWindow:
     def __init__(self, parent: tk.Misc, config: dict) -> None:
         self._config = config
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
-        self._win.title(i18n.t("tm_title"))
+        self._win.title(i18n.t("map_title"))
         self._win.geometry("900x680")
         self._win.minsize(720, 520)
+
+        # 現在のモード。Phase A はキャッシュ管理のみ。Phase B で "coords" 等を追加する。
+        self._mode = tk.StringVar(value="cache")
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
@@ -76,9 +82,29 @@ class TileManagerWindow:
             os.environ.pop("HTTPS_PROXY", None)
 
     # ----------------------------------------------------------
+    # モード切替（Phase A はキャッシュ管理のみ。Phase B で分岐を追加）
+    # ----------------------------------------------------------
+    def _on_mode_change(self) -> None:
+        # 現状は単一モードのため何もしない。Phase B 以降、ジェスチャの意味づけや
+        # ステータス表示をモードに応じて切り替えるフックとして使う。
+        pass
+
+    # ----------------------------------------------------------
     # UI 構築
     # ----------------------------------------------------------
     def _build_ui(self) -> None:
+        # ---- 上部モードセレクタ ------------------------------------------
+        # 地図を軸にした補助機能のモードを切り替える。Phase A はキャッシュ管理の
+        # 1 つのみ。Phase B で「座標入力」モードを add_radiobutton で追加する。
+        modebar = ttk.Frame(self._win)
+        modebar.pack(fill="x", padx=4, pady=(4, 0))
+        ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
+        for value, key in [("cache", "map_mode_cache")]:
+            ttk.Radiobutton(
+                modebar, text=i18n.t(key), value=value, variable=self._mode,
+                style="Toolbutton", command=self._on_mode_change,
+            ).pack(side="left", padx=2)
+
         self._map = TkinterMapView(self._win, corner_radius=0)
         # 地図タイルは GSI 淡色地図に統一（DEM 出典と揃え、外部 API を GSI 一本化）。
         self._map.set_tile_server(
