@@ -76,7 +76,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_load_settings":    "Load Parameters",
         "btn_open_results":     "Open Results",
         "btn_batch_mode":       "Batch Mode",
-        "btn_open_map":         "Map…",
+        "btn_open_map":         "Map Window",
         "dlg_input_error":      "Input Error",
         "dlg_settings_ok":      "Settings imported.",
         "dlg_app_settings_ok":  "App settings imported.",
@@ -249,7 +249,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_graph":       "Graph",
 
         # ===== Tile Manager =====
-        "map_title":            "Map",
+        "map_title":            "Map Window",
         "map_mode_label":       "Mode:",
         "map_mode_cache":       "Cache Management",
         "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
@@ -376,10 +376,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "status_fetching":      "地形データ取得中…",
         "status_fetching_pct":  "地形データ取得中… {pct}%",
         "btn_run_sim":          "個別シミュレーション",
-        "btn_load_settings":    "パラメータを読込む",
-        "btn_open_results":     "結果フォルダを開く",
+        "btn_load_settings":    "パラメータ読込",
+        "btn_open_results":     "結果フォルダ",
         "btn_batch_mode":       "一括シミュレーション",
-        "btn_open_map":         "地図…",
+        "btn_open_map":         "マップウィンドウ",
         "dlg_input_error":      "入力エラー",
         "dlg_settings_ok":      "設定を読み込みました。",
         "dlg_app_settings_ok":  "アプリ設定を読み込みました。",
@@ -551,7 +551,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_graph":       "グラフ",
 
         # ===== Tile Manager =====
-        "map_title":            "地図",
+        "map_title":            "マップウィンドウ",
         "map_mode_label":       "モード:",
         "map_mode_cache":       "キャッシュ管理",
         "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
