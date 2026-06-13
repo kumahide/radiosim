@@ -96,10 +96,11 @@ class MapWindow:
 
         self._build_ui()
         self._refresh_stats()
-        # 既存の TX/RX 座標（数値欄）があればマーカー表示＋センタリングする。
+        # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_launcher_coords()
-        # 地図のレイアウト確定後に初回カバレッジを自動描画する。
-        self._win.after(600, self._refresh_overlay)
+        # 地図レイアウト確定後に現在モードのレイヤを描画する
+        # （cache=カバレッジ / coords=経路。既定は cache）。
+        self._win.after(600, self._apply_mode_visibility)
 
     # ----------------------------------------------------------
     # プロキシ env 変数同期
@@ -127,8 +128,40 @@ class MapWindow:
         # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
         if not hasattr(self, "_status_label"):
             return
+        self._apply_mode_visibility()
         # モードに応じてアイドルヒントを切り替える（_set_idle がモードを見る）。
         self._set_idle()
+
+    def _apply_mode_visibility(self) -> None:
+        """各モードは自分の関心レイヤだけを表示する（モードが見た目を決める）。
+
+        - cache  : キャッシュカバレッジを描画し、経路レイヤ（マーカー/線/距離）は隠す。
+        - coords : 経路レイヤを描画し、カバレッジ塗りは隠す。
+        座標値（_tx_coord/_rx_coord）は保持するのでモードを往復しても失われない。
+        """
+        if self._mode.get() == "coords":
+            self._clear_tile_overlays()
+            self._show_coord_visuals()
+        else:
+            self._clear_coord_visuals()
+            self._refresh_overlay()
+
+    def _show_coord_visuals(self) -> None:
+        """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
+        if self._tx_coord is not None:
+            self._set_pick_marker("tx", *self._tx_coord)
+        if self._rx_coord is not None:
+            self._set_pick_marker("rx", *self._rx_coord)
+
+    def _clear_coord_visuals(self) -> None:
+        """マーカー・経路・距離ラベルを地図から消す（座標値は保持する）。"""
+        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
+            if obj is not None:
+                obj.delete()
+        self._tx_marker = None
+        self._rx_marker = None
+        self._path_line = None
+        self._dist_label = None
 
     # ----------------------------------------------------------
     # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
@@ -252,15 +285,16 @@ class MapWindow:
             )
 
     def _load_launcher_coords(self) -> None:
-        """ランチャー数値欄の既存 TX/RX をマーカー表示し、地図を合わせる。"""
+        """ランチャー数値欄の既存 TX/RX を取り込み、地図中心を合わせる。
+
+        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う
+        （cache モードで開いたときは経路レイヤを出さない＝モード対称）。
+        """
         if self._launcher is None:
             return
         coords = self._launcher.current_path_coords()
         tx, rx = coords.get("tx"), coords.get("rx")
-        if tx is not None:
-            self._set_pick_marker("tx", *tx)
-        if rx is not None:
-            self._set_pick_marker("rx", *rx)
+        self._tx_coord, self._rx_coord = tx, rx
         # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
         self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
         # 既存座標があれば中心を合わせる（両方あれば中点）。
@@ -488,12 +522,16 @@ class MapWindow:
     # ----------------------------------------------------------
     def _schedule_overlay_refresh(self, event=None) -> None:
         """パン/ズーム連打をデバウンスして再描画する。"""
+        if self._mode.get() == "coords":
+            return   # 座標入力モードではカバレッジを描かない（無駄なタイマーも張らない）
         if self._overlay_after_id is not None:
             self._win.after_cancel(self._overlay_after_id)
         self._overlay_after_id = self._win.after(300, self._refresh_overlay)
 
     def _refresh_overlay(self) -> None:
         self._overlay_after_id = None
+        if self._mode.get() == "coords":
+            return   # 座標入力モードではカバレッジ描画をスキップ
         try:
             w = self._map.canvas.winfo_width()
             h = self._map.canvas.winfo_height()
@@ -515,6 +553,8 @@ class MapWindow:
         self._win.after(0, self._draw_overlay_cells, cells, outline)
 
     def _draw_overlay_cells(self, cells: list, outline: list) -> None:
+        if self._mode.get() == "coords":
+            return   # モード切替後に届いた旧ワーカー結果は捨てる（描画しない）
         self._clear_tile_overlays()
         # 半透明塗り（stipple はライブラリ既定）。セル境界線は描かず、
         # 隣接セルの塗りを繋げて内部グリッド線を出さない。
