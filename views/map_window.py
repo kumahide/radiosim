@@ -20,10 +20,19 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+from PIL import Image, ImageDraw, ImageFont, ImageTk
+
 import i18n
 import infrastructure as infra
+import models
 from tkintermapview import TkinterMapView
 from views import dialogs
+
+# 座標入力モードのマーカー配色（UISP / Ubiquiti 風）。
+# シアンのノード＋半透明ハロー（電波点の表現）。TX=塗り / RX=白抜きで区別する。
+_UISP_CYAN      = (25, 181, 230)     # ノード・パス線・ハローの基調色（RGB）
+_UISP_CYAN_HEX  = "#19B5E6"
+_MARKER_TEXT    = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -60,6 +69,14 @@ class MapWindow:
         self._tx_marker = None
         self._rx_marker = None
         self._path_line = None
+        self._dist_label = None         # path 中点の水平距離ラベル（マーカー）
+        # UISP 風ノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
+        # PhotoImage は GC されると消えるためインスタンスに保持する。
+        self._tx_icon = self._make_node_icon(hollow=False)
+        self._rx_icon = self._make_node_icon(hollow=True)
+        # 距離ラベルのバッジ画像（テキスト＋半透明ピル背景）。距離ごとに作り直す。
+        # PhotoImage は GC されると消えるためインスタンスに保持する。
+        self._dist_badge = None
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
@@ -129,27 +146,110 @@ class MapWindow:
         self._pick_next = "rx" if role == "tx" else "tx"
         self._set_idle()   # 次のピック対象をヒントに反映
 
+    def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
+        """UISP 風のノードアイコンを生成する。
+
+        半透明シアンのハロー（電波点の表現）＋白縁取りのシアンノード。
+        hollow=False（TX）は塗りつぶし、hollow=True（RX）は白抜きで区別する。
+        supersample → 縮小でアンチエイリアスし、端点を座標に正確に重ねる。
+        """
+        size, scale = 26, 4
+        s = size * scale
+        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        c = s / 2
+        r, g, b = _UISP_CYAN
+
+        def disc(radius: float, **kw) -> None:
+            d.ellipse([c - radius, c - radius, c + radius, c + radius], **kw)
+
+        # ハロー（半透明・大）→ 電波を発する点という UISP の雰囲気を出す。
+        disc(s * 0.46, fill=(r, g, b, 55))
+        disc(s * 0.34, fill=(r, g, b, 90))
+        # ノード本体（白縁取りで地図上のコントラストを確保）。
+        node_r = s * 0.22
+        if hollow:   # RX: 白抜き（受信側）
+            disc(node_r, fill=(255, 255, 255, 255),
+                 outline=(r, g, b, 255), width=int(2.2 * scale))
+        else:        # TX: 塗り（送信側）
+            disc(node_r, fill=(r, g, b, 255),
+                 outline=(255, 255, 255, 255), width=int(1.4 * scale))
+        return ImageTk.PhotoImage(img.resize((size, size), Image.Resampling.LANCZOS))
+
+    def _make_distance_badge(self, text: str) -> ImageTk.PhotoImage:
+        """距離テキストを半透明の角丸ピル背景に載せたバッジ画像を生成する。
+
+        tkintermapview のマーカーテキストは背景を持てず淡色地図上で読みにくいため、
+        テキストごと PIL で描いてアイコンとして使う（pan/zoom 追従はマーカーと同じ）。
+        """
+        scale = 2
+        try:
+            font = ImageFont.truetype("arialbd.ttf", 13 * scale)
+        except OSError:
+            try:
+                font = ImageFont.truetype("arial.ttf", 13 * scale)
+            except OSError:
+                font = ImageFont.load_default()
+        # テキスト寸法を計測してパディング込みのバッジサイズを決める。
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        l, t, r, b = probe.textbbox((0, 0), text, font=font)
+        tw, th = r - l, b - t
+        padx, pady = 8 * scale, 4 * scale
+        w, h = int(tw + padx * 2), int(th + pady * 2)
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        # 半透明の白ピル＋淡シアン枠。淡色地図でも経路線上で読める。
+        d.rounded_rectangle(
+            [0, 0, w - 1, h - 1], radius=h / 2,
+            fill=(255, 255, 255, 215), outline=_UISP_CYAN + (255,), width=scale,
+        )
+        d.text((padx - l, pady - t), text, font=font, fill=_MARKER_TEXT)
+        img = img.resize((w // scale, h // scale), Image.Resampling.LANCZOS)  # type: ignore[arg-type]
+        return ImageTk.PhotoImage(img)
+
     def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
         """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
         if role == "tx":
             if self._tx_marker is not None:
                 self._tx_marker.delete()
             self._tx_coord = (lat, lon)
-            self._tx_marker = self._map.set_marker(lat, lon, text=i18n.t("map_marker_tx"))
+            self._tx_marker = self._map.set_marker(
+                lat, lon, text=i18n.t("map_marker_tx"),
+                icon=self._tx_icon, icon_anchor="center",
+                text_color=_MARKER_TEXT,
+            )
         else:
             if self._rx_marker is not None:
                 self._rx_marker.delete()
             self._rx_coord = (lat, lon)
-            self._rx_marker = self._map.set_marker(lat, lon, text=i18n.t("map_marker_rx"))
+            self._rx_marker = self._map.set_marker(
+                lat, lon, text=i18n.t("map_marker_rx"),
+                icon=self._rx_icon, icon_anchor="center",
+                text_color=_MARKER_TEXT,
+            )
         self._redraw_path()
 
     def _redraw_path(self) -> None:
-        """TX/RX が揃っていれば 2 点を結ぶパス線を引き直す。"""
+        """TX/RX が揃っていれば 2 点を結ぶパス線と中点の距離ラベルを引き直す。"""
         if self._path_line is not None:
             self._path_line.delete()
             self._path_line = None
+        if self._dist_label is not None:
+            self._dist_label.delete()
+            self._dist_label = None
         if self._tx_coord is not None and self._rx_coord is not None:
-            self._path_line = self._map.set_path([self._tx_coord, self._rx_coord])
+            # 既定 width=9 は太いので細線に。色は UISP 風シアンでノードと揃える。
+            self._path_line = self._map.set_path(
+                [self._tx_coord, self._rx_coord], color=_UISP_CYAN_HEX, width=3)
+            # 水平距離ラベルを中点に重ねる（半透明ピル背景つき＝pan/zoom 追従）。
+            mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
+                   (self._tx_coord[1] + self._rx_coord[1]) / 2)
+            km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
+            text = f"{km * 1000:.0f} m" if km < 1 else f"{km:.2f} km"
+            self._dist_badge = self._make_distance_badge(text)
+            self._dist_label = self._map.set_marker(
+                mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
+            )
 
     def _load_launcher_coords(self) -> None:
         """ランチャー数値欄の既存 TX/RX をマーカー表示し、地図を合わせる。"""
