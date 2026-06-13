@@ -3,14 +3,16 @@ views/map_window.py
 ===================
 マップウィンドウ。地図を軸にした補助レイヤ機能のホスト。
 
-上部のモードセレクタでモードを切り替える（Phase A 時点はキャッシュ管理のみ。
-座標入力モードは Phase B で追加予定）。
+上部のモードセレクタでモードを切り替える。
 
-キャッシュ管理モードでは、地図上で bbox を指定し DEM タイルの
-  - カバレッジ確認（色付きオーバーレイ表示）
-  - 不足タイルのダウンロード
-  - 範囲削除 / 全削除
-を行う。
+- キャッシュ管理モード: 地図上で bbox を指定し DEM タイルの
+    - カバレッジ確認（色付きオーバーレイ表示）
+    - 不足タイルのダウンロード
+    - 範囲削除 / 全削除
+  を行う。
+- 座標入力モード（Phase B）: 地図を素クリックして TX→RX を交互にピックし、
+  ランチャーの座標欄（start/end）へ書き戻す。数値欄が常に source of truth で、
+  地図はピッカーに徹する。
 """
 
 import os
@@ -37,8 +39,10 @@ _OUTLINE_COLOR = "#0066CC"
 
 
 class MapWindow:
-    def __init__(self, parent: tk.Misc, config: dict) -> None:
+    def __init__(self, parent: tk.Misc, config: dict, launcher=None) -> None:
         self._config = config
+        # 座標入力モードのピック結果を書き戻す先（SimLauncher）。None なら書き戻さない。
+        self._launcher = launcher
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
@@ -46,8 +50,16 @@ class MapWindow:
         self._win.geometry("900x680")
         self._win.minsize(720, 520)
 
-        # 現在のモード。Phase A はキャッシュ管理のみ。Phase B で "coords" 等を追加する。
+        # 現在のモード。"cache"=キャッシュ管理 / "coords"=座標入力（Phase B）。
         self._mode = tk.StringVar(value="cache")
+
+        # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
+        self._pick_next = "tx"
+        self._tx_coord: tuple | None = None
+        self._rx_coord: tuple | None = None
+        self._tx_marker = None
+        self._rx_marker = None
+        self._path_line = None
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
@@ -67,6 +79,8 @@ class MapWindow:
 
         self._build_ui()
         self._refresh_stats()
+        # 既存の TX/RX 座標（数値欄）があればマーカー表示＋センタリングする。
+        self._load_launcher_coords()
         # 地図のレイアウト確定後に初回カバレッジを自動描画する。
         self._win.after(600, self._refresh_overlay)
 
@@ -93,9 +107,69 @@ class MapWindow:
         self._on_mode_change()
 
     def _on_mode_change(self) -> None:
-        # 現状は単一モードのため何もしない。Phase B 以降、ジェスチャの意味づけや
-        # ステータス表示をモードに応じて切り替えるフックとして使う。
-        pass
+        # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
+        if not hasattr(self, "_status_label"):
+            return
+        # モードに応じてアイドルヒントを切り替える（_set_idle がモードを見る）。
+        self._set_idle()
+
+    # ----------------------------------------------------------
+    # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
+    # 数値欄が source of truth。地図は交互ピッカーに徹する。
+    # ----------------------------------------------------------
+    def _on_map_click(self, coords: tuple) -> None:
+        """地図の素クリック。座標入力モードのときだけ TX→RX を交互にピックする。"""
+        if self._mode.get() != "coords" or self._busy:
+            return
+        lat, lon = coords
+        role = self._pick_next
+        self._set_pick_marker(role, lat, lon)
+        if self._launcher is not None:
+            self._launcher.apply_map_pick(role, lat, lon)
+        self._pick_next = "rx" if role == "tx" else "tx"
+        self._set_idle()   # 次のピック対象をヒントに反映
+
+    def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
+        """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
+        if role == "tx":
+            if self._tx_marker is not None:
+                self._tx_marker.delete()
+            self._tx_coord = (lat, lon)
+            self._tx_marker = self._map.set_marker(lat, lon, text=i18n.t("map_marker_tx"))
+        else:
+            if self._rx_marker is not None:
+                self._rx_marker.delete()
+            self._rx_coord = (lat, lon)
+            self._rx_marker = self._map.set_marker(lat, lon, text=i18n.t("map_marker_rx"))
+        self._redraw_path()
+
+    def _redraw_path(self) -> None:
+        """TX/RX が揃っていれば 2 点を結ぶパス線を引き直す。"""
+        if self._path_line is not None:
+            self._path_line.delete()
+            self._path_line = None
+        if self._tx_coord is not None and self._rx_coord is not None:
+            self._path_line = self._map.set_path([self._tx_coord, self._rx_coord])
+
+    def _load_launcher_coords(self) -> None:
+        """ランチャー数値欄の既存 TX/RX をマーカー表示し、地図を合わせる。"""
+        if self._launcher is None:
+            return
+        coords = self._launcher.current_path_coords()
+        tx, rx = coords.get("tx"), coords.get("rx")
+        if tx is not None:
+            self._set_pick_marker("tx", *tx)
+        if rx is not None:
+            self._set_pick_marker("rx", *rx)
+        # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
+        self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
+        # 既存座標があれば中心を合わせる（両方あれば中点）。
+        if tx is not None and rx is not None:
+            self._map.set_position((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
+        elif tx is not None:
+            self._map.set_position(*tx)
+        elif rx is not None:
+            self._map.set_position(*rx)
 
     # ----------------------------------------------------------
     # UI 構築
@@ -109,7 +183,7 @@ class MapWindow:
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
         self._mode_buttons: dict[str, ttk.Button] = {}
-        for value, key in [("cache", "map_mode_cache")]:
+        for value, key in [("cache", "map_mode_cache"), ("coords", "map_mode_coords")]:
             b = ttk.Button(
                 modebar, text=i18n.t(key),
                 command=lambda v=value: self._select_mode(v),
@@ -126,6 +200,9 @@ class MapWindow:
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)
         self._map.set_zoom(8)
+        # 座標入力モードでの素クリック → ピック。ライブラリがドラッグ（パン）と
+        # クリックを内部で区別するため、キャッシュ管理の修飾キー操作とは競合しない。
+        self._map.add_left_click_map_command(self._on_map_click)
 
         cv = self._map.canvas
         # パン/ズーム終了時にカバレッジを自動再描画する。
@@ -395,10 +472,14 @@ class MapWindow:
             self._progress.pack_forget()
 
     def _set_idle(self) -> None:
-        """アイドル状態: 操作ヒントをグレーで表示する。"""
+        """アイドル状態: モードに応じた操作ヒントをグレーで表示する。"""
         self._status_clear_id = None
         self._status_label.config(foreground="gray")
-        self._status_var.set(i18n.t("tm_hint"))
+        if self._mode.get() == "coords":
+            key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
+            self._status_var.set(i18n.t(key))
+        else:
+            self._status_var.set(i18n.t("tm_hint"))
 
     def _set_status(self, text: str, auto_clear: bool = False) -> None:
         """状態・結果文を通常色で設定。auto_clear=True なら一定時間後にヒントへ戻す。"""
