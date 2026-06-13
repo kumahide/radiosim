@@ -529,21 +529,32 @@ class SimLauncher:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 app = infra.select_app(json.load(f))
+            # 実際に1つでも app 設定を適用したか。未適用なら成功表示しない。
+            applied = False
             # 不正値は無視して安全に適用する（テーマ/言語は既知値のみ）。
             if app.get("theme") in ("system", "light", "dark"):
                 self.config["theme"] = app["theme"]
                 self._theme_var.set(app["theme"])
                 self._on_theme(app["theme"])
+                applied = True
             if "proxy_url" in app:
                 self.config["proxy_url"] = str(app["proxy_url"])
                 infra.set_proxy(self.config["proxy_url"])
                 sim.clear_terrain_cache()
+                applied = True
             lang_changed = app.get("lang") in ("en", "ja") and \
                 app["lang"] != self.config.get("lang")
             if app.get("lang") in ("en", "ja"):
                 self.config["lang"] = app["lang"]
                 self._lang_var.set(app["lang"])
+                applied = True
 
+            if not applied:
+                # ファイルに有効な app 設定がない＝何も取り込んでいない。誤解を招く
+                # 成功表示を避け、その旨を伝える（save_app も呼ばない）。
+                self._alert(i18n.t("dlg_app_settings_none_title"),
+                            i18n.t("dlg_app_settings_none"))
+                return
             infra.save_app(self.config)
             if lang_changed:
                 self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
