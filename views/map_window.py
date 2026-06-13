@@ -3,14 +3,16 @@ views/map_window.py
 ===================
 マップウィンドウ。地図を軸にした補助レイヤ機能のホスト。
 
-上部のモードセレクタでモードを切り替える（Phase A 時点はキャッシュ管理のみ。
-座標入力モードは Phase B で追加予定）。
+上部のモードセレクタでモードを切り替える。
 
-キャッシュ管理モードでは、地図上で bbox を指定し DEM タイルの
-  - カバレッジ確認（色付きオーバーレイ表示）
-  - 不足タイルのダウンロード
-  - 範囲削除 / 全削除
-を行う。
+- キャッシュ管理モード: 地図上で bbox を指定し DEM タイルの
+    - カバレッジ確認（色付きオーバーレイ表示）
+    - 不足タイルのダウンロード
+    - 範囲削除 / 全削除
+  を行う。
+- 座標入力モード（Phase B）: 地図を素クリックして TX→RX を交互にピックし、
+  ランチャーの座標欄（start/end）へ書き戻す。数値欄が常に source of truth で、
+  地図はピッカーに徹する。
 """
 
 import os
@@ -18,10 +20,19 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
+from PIL import Image, ImageDraw, ImageFont, ImageTk
+
 import i18n
 import infrastructure as infra
+import models
 from tkintermapview import TkinterMapView
 from views import dialogs
+
+# 座標入力モードのマーカー配色（UISP / Ubiquiti 風）。
+# シアンのノード＋半透明ハロー（電波点の表現）。TX=塗り / RX=白抜きで区別する。
+_UISP_CYAN      = (25, 181, 230)     # ノード・パス線・ハローの基調色（RGB）
+_UISP_CYAN_HEX  = "#19B5E6"
+_MARKER_TEXT    = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -37,8 +48,10 @@ _OUTLINE_COLOR = "#0066CC"
 
 
 class MapWindow:
-    def __init__(self, parent: tk.Misc, config: dict) -> None:
+    def __init__(self, parent: tk.Misc, config: dict, launcher=None) -> None:
         self._config = config
+        # 座標入力モードのピック結果を書き戻す先（SimLauncher）。None なら書き戻さない。
+        self._launcher = launcher
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
@@ -46,8 +59,24 @@ class MapWindow:
         self._win.geometry("900x680")
         self._win.minsize(720, 520)
 
-        # 現在のモード。Phase A はキャッシュ管理のみ。Phase B で "coords" 等を追加する。
+        # 現在のモード。"cache"=キャッシュ管理 / "coords"=座標入力（Phase B）。
         self._mode = tk.StringVar(value="cache")
+
+        # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
+        self._pick_next = "tx"
+        self._tx_coord: tuple | None = None
+        self._rx_coord: tuple | None = None
+        self._tx_marker = None
+        self._rx_marker = None
+        self._path_line = None
+        self._dist_label = None         # path 中点の水平距離ラベル（マーカー）
+        # UISP 風ノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
+        # PhotoImage は GC されると消えるためインスタンスに保持する。
+        self._tx_icon = self._make_node_icon(hollow=False)
+        self._rx_icon = self._make_node_icon(hollow=True)
+        # 距離ラベルのバッジ画像（テキスト＋半透明ピル背景）。距離ごとに作り直す。
+        # PhotoImage は GC されると消えるためインスタンスに保持する。
+        self._dist_badge = None
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
@@ -67,8 +96,11 @@ class MapWindow:
 
         self._build_ui()
         self._refresh_stats()
-        # 地図のレイアウト確定後に初回カバレッジを自動描画する。
-        self._win.after(600, self._refresh_overlay)
+        # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
+        self._load_launcher_coords()
+        # 地図レイアウト確定後に現在モードのレイヤを描画する
+        # （cache=カバレッジ / coords=経路。既定は cache）。
+        self._win.after(600, self._apply_mode_visibility)
 
     # ----------------------------------------------------------
     # プロキシ env 変数同期
@@ -93,9 +125,185 @@ class MapWindow:
         self._on_mode_change()
 
     def _on_mode_change(self) -> None:
-        # 現状は単一モードのため何もしない。Phase B 以降、ジェスチャの意味づけや
-        # ステータス表示をモードに応じて切り替えるフックとして使う。
-        pass
+        # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
+        if not hasattr(self, "_status_label"):
+            return
+        self._apply_mode_visibility()
+        # モードに応じてアイドルヒントを切り替える（_set_idle がモードを見る）。
+        self._set_idle()
+
+    def _apply_mode_visibility(self) -> None:
+        """各モードは自分の関心レイヤだけを表示する（モードが見た目を決める）。
+
+        - cache  : キャッシュカバレッジを描画し、経路レイヤ（マーカー/線/距離）は隠す。
+        - coords : 経路レイヤを描画し、カバレッジ塗りは隠す。
+        座標値（_tx_coord/_rx_coord）は保持するのでモードを往復しても失われない。
+        """
+        if self._mode.get() == "coords":
+            self._clear_tile_overlays()
+            self._show_coord_visuals()
+        else:
+            self._clear_coord_visuals()
+            self._refresh_overlay()
+
+    def _show_coord_visuals(self) -> None:
+        """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
+        if self._tx_coord is not None:
+            self._set_pick_marker("tx", *self._tx_coord)
+        if self._rx_coord is not None:
+            self._set_pick_marker("rx", *self._rx_coord)
+
+    def _clear_coord_visuals(self) -> None:
+        """マーカー・経路・距離ラベルを地図から消す（座標値は保持する）。"""
+        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
+            if obj is not None:
+                obj.delete()
+        self._tx_marker = None
+        self._rx_marker = None
+        self._path_line = None
+        self._dist_label = None
+
+    # ----------------------------------------------------------
+    # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
+    # 数値欄が source of truth。地図は交互ピッカーに徹する。
+    # ----------------------------------------------------------
+    def _on_map_click(self, coords: tuple) -> None:
+        """地図の素クリック。座標入力モードのときだけ TX→RX を交互にピックする。"""
+        if self._mode.get() != "coords" or self._busy:
+            return
+        lat, lon = coords
+        role = self._pick_next
+        self._set_pick_marker(role, lat, lon)
+        if self._launcher is not None:
+            self._launcher.apply_map_pick(role, lat, lon)
+        self._pick_next = "rx" if role == "tx" else "tx"
+        self._set_idle()   # 次のピック対象をヒントに反映
+
+    def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
+        """UISP 風のノードアイコンを生成する。
+
+        半透明シアンのハロー（電波点の表現）＋白縁取りのシアンノード。
+        hollow=False（TX）は塗りつぶし、hollow=True（RX）は白抜きで区別する。
+        supersample → 縮小でアンチエイリアスし、端点を座標に正確に重ねる。
+        """
+        size, scale = 26, 4
+        s = size * scale
+        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        c = s / 2
+        r, g, b = _UISP_CYAN
+
+        def disc(radius: float, **kw) -> None:
+            d.ellipse([c - radius, c - radius, c + radius, c + radius], **kw)
+
+        # ハロー（半透明・大）→ 電波を発する点という UISP の雰囲気を出す。
+        disc(s * 0.46, fill=(r, g, b, 55))
+        disc(s * 0.34, fill=(r, g, b, 90))
+        # ノード本体（白縁取りで地図上のコントラストを確保）。
+        node_r = s * 0.22
+        if hollow:   # RX: 白抜き（受信側）
+            disc(node_r, fill=(255, 255, 255, 255),
+                 outline=(r, g, b, 255), width=int(2.2 * scale))
+        else:        # TX: 塗り（送信側）
+            disc(node_r, fill=(r, g, b, 255),
+                 outline=(255, 255, 255, 255), width=int(1.4 * scale))
+        return ImageTk.PhotoImage(img.resize((size, size), Image.Resampling.LANCZOS))
+
+    def _make_distance_badge(self, text: str) -> ImageTk.PhotoImage:
+        """距離テキストを半透明の角丸ピル背景に載せたバッジ画像を生成する。
+
+        tkintermapview のマーカーテキストは背景を持てず淡色地図上で読みにくいため、
+        テキストごと PIL で描いてアイコンとして使う（pan/zoom 追従はマーカーと同じ）。
+        """
+        scale = 2
+        try:
+            font = ImageFont.truetype("arialbd.ttf", 13 * scale)
+        except OSError:
+            try:
+                font = ImageFont.truetype("arial.ttf", 13 * scale)
+            except OSError:
+                font = ImageFont.load_default()
+        # テキスト寸法を計測してパディング込みのバッジサイズを決める。
+        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+        l, t, r, b = probe.textbbox((0, 0), text, font=font)
+        tw, th = r - l, b - t
+        padx, pady = 8 * scale, 4 * scale
+        w, h = int(tw + padx * 2), int(th + pady * 2)
+        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        d = ImageDraw.Draw(img)
+        # 半透明の白ピル＋淡シアン枠。淡色地図でも経路線上で読める。
+        d.rounded_rectangle(
+            [0, 0, w - 1, h - 1], radius=h / 2,
+            fill=(255, 255, 255, 215), outline=_UISP_CYAN + (255,), width=scale,
+        )
+        d.text((padx - l, pady - t), text, font=font, fill=_MARKER_TEXT)
+        img = img.resize((w // scale, h // scale), Image.Resampling.LANCZOS)  # type: ignore[arg-type]
+        return ImageTk.PhotoImage(img)
+
+    def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
+        """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
+        if role == "tx":
+            if self._tx_marker is not None:
+                self._tx_marker.delete()
+            self._tx_coord = (lat, lon)
+            self._tx_marker = self._map.set_marker(
+                lat, lon, text=i18n.t("map_marker_tx"),
+                icon=self._tx_icon, icon_anchor="center",
+                text_color=_MARKER_TEXT,
+            )
+        else:
+            if self._rx_marker is not None:
+                self._rx_marker.delete()
+            self._rx_coord = (lat, lon)
+            self._rx_marker = self._map.set_marker(
+                lat, lon, text=i18n.t("map_marker_rx"),
+                icon=self._rx_icon, icon_anchor="center",
+                text_color=_MARKER_TEXT,
+            )
+        self._redraw_path()
+
+    def _redraw_path(self) -> None:
+        """TX/RX が揃っていれば 2 点を結ぶパス線と中点の距離ラベルを引き直す。"""
+        if self._path_line is not None:
+            self._path_line.delete()
+            self._path_line = None
+        if self._dist_label is not None:
+            self._dist_label.delete()
+            self._dist_label = None
+        if self._tx_coord is not None and self._rx_coord is not None:
+            # 既定 width=9 は太いので細線に。色は UISP 風シアンでノードと揃える。
+            self._path_line = self._map.set_path(
+                [self._tx_coord, self._rx_coord], color=_UISP_CYAN_HEX, width=3)
+            # 水平距離ラベルを中点に重ねる（半透明ピル背景つき＝pan/zoom 追従）。
+            mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
+                   (self._tx_coord[1] + self._rx_coord[1]) / 2)
+            km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
+            text = f"{km * 1000:.0f} m" if km < 1 else f"{km:.2f} km"
+            self._dist_badge = self._make_distance_badge(text)
+            self._dist_label = self._map.set_marker(
+                mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
+            )
+
+    def _load_launcher_coords(self) -> None:
+        """ランチャー数値欄の既存 TX/RX を取り込み、地図中心を合わせる。
+
+        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う
+        （cache モードで開いたときは経路レイヤを出さない＝モード対称）。
+        """
+        if self._launcher is None:
+            return
+        coords = self._launcher.current_path_coords()
+        tx, rx = coords.get("tx"), coords.get("rx")
+        self._tx_coord, self._rx_coord = tx, rx
+        # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
+        self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
+        # 既存座標があれば中心を合わせる（両方あれば中点）。
+        if tx is not None and rx is not None:
+            self._map.set_position((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
+        elif tx is not None:
+            self._map.set_position(*tx)
+        elif rx is not None:
+            self._map.set_position(*rx)
 
     # ----------------------------------------------------------
     # UI 構築
@@ -109,7 +317,7 @@ class MapWindow:
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
         self._mode_buttons: dict[str, ttk.Button] = {}
-        for value, key in [("cache", "map_mode_cache")]:
+        for value, key in [("cache", "map_mode_cache"), ("coords", "map_mode_coords")]:
             b = ttk.Button(
                 modebar, text=i18n.t(key),
                 command=lambda v=value: self._select_mode(v),
@@ -126,6 +334,9 @@ class MapWindow:
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)
         self._map.set_zoom(8)
+        # 座標入力モードでの素クリック → ピック。ライブラリがドラッグ（パン）と
+        # クリックを内部で区別するため、キャッシュ管理の修飾キー操作とは競合しない。
+        self._map.add_left_click_map_command(self._on_map_click)
 
         cv = self._map.canvas
         # パン/ズーム終了時にカバレッジを自動再描画する。
@@ -311,12 +522,16 @@ class MapWindow:
     # ----------------------------------------------------------
     def _schedule_overlay_refresh(self, event=None) -> None:
         """パン/ズーム連打をデバウンスして再描画する。"""
+        if self._mode.get() == "coords":
+            return   # 座標入力モードではカバレッジを描かない（無駄なタイマーも張らない）
         if self._overlay_after_id is not None:
             self._win.after_cancel(self._overlay_after_id)
         self._overlay_after_id = self._win.after(300, self._refresh_overlay)
 
     def _refresh_overlay(self) -> None:
         self._overlay_after_id = None
+        if self._mode.get() == "coords":
+            return   # 座標入力モードではカバレッジ描画をスキップ
         try:
             w = self._map.canvas.winfo_width()
             h = self._map.canvas.winfo_height()
@@ -338,6 +553,8 @@ class MapWindow:
         self._win.after(0, self._draw_overlay_cells, cells, outline)
 
     def _draw_overlay_cells(self, cells: list, outline: list) -> None:
+        if self._mode.get() == "coords":
+            return   # モード切替後に届いた旧ワーカー結果は捨てる（描画しない）
         self._clear_tile_overlays()
         # 半透明塗り（stipple はライブラリ既定）。セル境界線は描かず、
         # 隣接セルの塗りを繋げて内部グリッド線を出さない。
@@ -395,10 +612,14 @@ class MapWindow:
             self._progress.pack_forget()
 
     def _set_idle(self) -> None:
-        """アイドル状態: 操作ヒントをグレーで表示する。"""
+        """アイドル状態: モードに応じた操作ヒントをグレーで表示する。"""
         self._status_clear_id = None
         self._status_label.config(foreground="gray")
-        self._status_var.set(i18n.t("tm_hint"))
+        if self._mode.get() == "coords":
+            key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
+            self._status_var.set(i18n.t(key))
+        else:
+            self._status_var.set(i18n.t("tm_hint"))
 
     def _set_status(self, text: str, auto_clear: bool = False) -> None:
         """状態・結果文を通常色で設定。auto_clear=True なら一定時間後にヒントへ戻す。"""

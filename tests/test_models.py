@@ -85,6 +85,28 @@ class TestDiffractionLossFk:
 # ================================================================
 # _deygout_loss
 # ================================================================
+class TestHorizontalDistanceKm:
+    def test_zero_for_same_point(self):
+        assert models.horizontal_distance_km(35.0, 139.0, 35.0, 139.0) == pytest.approx(0.0)
+
+    def test_one_degree_latitude(self):
+        # 緯度1度 ≈ 111.19 km（球面 R=6371）。
+        d = models.horizontal_distance_km(35.0, 139.0, 36.0, 139.0)
+        assert d == pytest.approx(111.19, abs=0.1)
+
+    def test_symmetric(self):
+        a = models.horizontal_distance_km(35.6, 139.7, 34.7, 135.5)
+        b = models.horizontal_distance_km(34.7, 135.5, 35.6, 139.7)
+        assert a == pytest.approx(b)
+
+    def test_matches_profile_horiz_dist(self, flat_terrain):
+        # calculate_terrain_profile が同じ haversine を使う（リファクタの同値性）。
+        # flat_terrain は (34.54, 132.41)→(34.54, 132.46)。
+        assert flat_terrain.horiz_dist_km == pytest.approx(
+            models.horizontal_distance_km(34.54, 132.41, 34.54, 132.46), rel=1e-9
+        )
+
+
 class TestCalculateTerrainProfile:
     def test_shape_matches_input(self, flat_terrain):
         assert len(flat_terrain.raw_elevs) == 100
