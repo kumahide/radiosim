@@ -170,6 +170,15 @@ def select_sim(values: dict) -> dict:
     return {k: v for k, v in values.items() if k in SIM_KEYS}
 
 
+def select_app(values: dict) -> dict:
+    """入力 dict から app キーだけを抜き出す（sim キーは捨てる）。
+
+    「アプリ設定読込」が settings.json（sim 限定）を読んでも sim パラメータを
+    取り込まないことを、呼び出し側に依存せず保証する。select_sim と対称。
+    """
+    return {k: v for k, v in values.items() if k in APP_KEYS}
+
+
 # バリデーション用許容値セット（validate_config で参照）
 _VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
 _VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})

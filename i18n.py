@@ -19,6 +19,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_changed_msg":     "Restart the app to apply the language change.",
         "menu_settings":        "Settings",
         "menu_proxy_settings":  "Proxy Settings...",
+        "menu_load_app_settings":"Load App Settings...",
         "menu_tile_manager":    "Tile Cache Manager...",
         "menu_delete_all_cache":"Delete All Cache...",
         "dlg_proxy_title":      "Proxy Settings",
@@ -79,7 +80,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_open_map":         "Map…",
         "dlg_input_error":      "Input Error",
         "dlg_settings_ok":      "Settings imported.",
+        "dlg_app_settings_ok":  "App settings imported.",
         "dlg_select_settings":  "Select settings.json",
+        "dlg_select_app_settings": "Select a settings file (app settings only)",
         "dlg_success":          "Success",
 
         # ===== Batch Builder =====
@@ -321,6 +324,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_changed_msg":     "アプリを再起動すると言語が切り替わります。",
         "menu_settings":        "設定",
         "menu_proxy_settings":  "プロキシ設定...",
+        "menu_load_app_settings":"アプリ設定を読込む...",
         "menu_tile_manager":    "タイルキャッシュ管理...",
         "menu_delete_all_cache":"全キャッシュ削除...",
         "dlg_proxy_title":      "プロキシ設定",
@@ -381,7 +385,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_open_map":         "地図…",
         "dlg_input_error":      "入力エラー",
         "dlg_settings_ok":      "設定を読み込みました。",
+        "dlg_app_settings_ok":  "アプリ設定を読み込みました。",
         "dlg_select_settings":  "settings.json を選択",
+        "dlg_select_app_settings": "設定ファイルを選択（アプリ設定のみ）",
         "dlg_success":          "完了",
 
         # ===== Batch Builder =====
