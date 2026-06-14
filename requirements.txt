@@ -8,3 +8,5 @@ sv-ttk
 darkdetect
 markdown
 truststore
+tkintermapview
+
