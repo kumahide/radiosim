@@ -17,7 +17,6 @@ from tkinter import filedialog, messagebox, ttk
 
 import batch
 import i18n
-import infrastructure as infra
 import simulation as sim
 from models import ENV_LABELS
 

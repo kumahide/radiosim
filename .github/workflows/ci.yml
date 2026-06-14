@@ -1,0 +1,42 @@
+name: CI
+
+# Minimal CI: headless checks on the non-GUI code (models / simulation /
+# infrastructure / batch). The tkinter GUI layer (views/*) can't run on a
+# headless runner, so it is exercised only by pyright's static check, not pytest.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    env:
+      MPLBACKEND: Agg   # matplotlib must not try to open a display
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+          cache: pip
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install pytest pyright ruff
+
+      - name: Ruff (syntax + pyflakes)
+        run: ruff check --select E9,F .
+
+      - name: Pyright (type check, app modules)
+        run: >-
+          pyright
+          batch.py models.py simulation.py infrastructure.py version.py
+          i18n.py main.py
+          views/launcher.py views/graph.py views/batch_builder.py
+
+      - name: Pytest
+        run: python -m pytest
