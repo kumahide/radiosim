@@ -1,0 +1,10 @@
+# Runtime dependencies (see README for details). Unpinned to track upstream;
+# CI installs the latest compatible wheels. Pin here if a release needs locking.
+numpy
+matplotlib
+requests
+Pillow
+sv-ttk
+darkdetect
+markdown
+truststore
