@@ -48,7 +48,7 @@ numpy / math のみに依存し、matplotlib / tkinter / requests を一切 impo
 
 import bisect
 import math
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 import numpy as np
 
