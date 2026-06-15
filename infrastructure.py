@@ -271,6 +271,12 @@ DEM_LAYERS: list[tuple[str, int]] = [
 
 _MAX_PREFETCH_WORKERS: int = 8
 
+# 淡色地図（レポート添付の経路オーバーレイ地図 = report_map.py が使用）。
+# DEM レイヤーと違いズームが可変なので、キャッシュパスにズームを含めて
+# 異なるズームの同一 (x, y) が衝突しないようにする（DEM は層ごとズーム固定）。
+BASEMAP_LAYER:  str = "pale"
+BASEMAP_SUBDIR: str = "basemap_pale"
+
 # ============================================================
 # HTTP セッション管理
 # ============================================================
@@ -316,31 +322,13 @@ _cache_lock = threading.Lock()
 _failed_tiles: set[tuple] = set()
 
 
-def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]:
-    """緯度・経度・ズームレベルからタイル座標とピクセル座標を返す。"""
-    n       = 2.0 ** zoom
-    xtile_f = (lon + 180.0) / 360.0 * n
-    ytile_f = (
-        1.0
-        - math.log(
-            math.tan(math.radians(lat))
-            + 1 / math.cos(math.radians(lat))
-        ) / math.pi
-    ) / 2.0 * n
-    xtile = min(int(xtile_f), int(n) - 1)
-    ytile = min(int(ytile_f), int(n) - 1)
-    px    = min(255, max(0, int((xtile_f - xtile) * 256)))
-    py    = min(255, max(0, int((ytile_f - ytile) * 256)))
-    return xtile, ytile, px, py
-
-
 def lonlat_to_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
     """緯度・経度を指定ズームの「グローバルピクセル座標」（小数）に変換する。
 
-    `_tile_coords` と同一の Web Mercator 射影だが、タイル境界で floor せず
-    小数のまま `(world_px_x, world_px_y)` を返す。各タイルは 256px 四方なので
-    `tile_x * 256 = タイル左端の world_px_x`。レポート地図（report_map.py）で
-    経路端点を画像内ピクセルへ正確に投影するために使う。
+    Web Mercator 順射影。タイル境界で floor せず小数のまま `(world_px_x,
+    world_px_y)` を返す。各タイルは 256px 四方なので `tile_x * 256 = タイル
+    左端の world_px_x`。タイル選択（_tile_coords）と、レポート地図
+    （report_map.py）の経路端点ピクセル投影の双方がこの 1 つの式を使う。
     """
     n       = 2.0 ** zoom
     xtile_f = (lon + 180.0) / 360.0 * n
@@ -352,6 +340,19 @@ def lonlat_to_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
         ) / math.pi
     ) / 2.0 * n
     return xtile_f * 256.0, ytile_f * 256.0
+
+
+def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]:
+    """緯度・経度・ズームレベルからタイル座標とタイル内ピクセル座標を返す。"""
+    n       = 2.0 ** zoom
+    wx, wy  = lonlat_to_pixel(lat, lon, zoom)
+    xtile_f = wx / 256.0
+    ytile_f = wy / 256.0
+    xtile = min(int(xtile_f), int(n) - 1)
+    ytile = min(int(ytile_f), int(n) - 1)
+    px    = min(255, max(0, int((xtile_f - xtile) * 256)))
+    py    = min(255, max(0, int((ytile_f - ytile) * 256)))
+    return xtile, ytile, px, py
 
 
 def get_elevation(lat: float, lon: float) -> float:
@@ -719,6 +720,59 @@ def prefetch_tiles(
 
 
 # ============================================================
+# 淡色地図（basemap）タイル取得 — レポート添付の経路地図用
+# ============================================================
+
+def _basemap_tile_path(zoom: int, x: int, y: int) -> tuple[str, str]:
+    """淡色地図タイルのキャッシュ (subdir, path) を返す（ズーム別ディレクトリ）。"""
+    subdir = os.path.join(CACHE_DIR, BASEMAP_SUBDIR, str(zoom), str(x))
+    return subdir, os.path.join(subdir, f"{y}.png")
+
+
+def fetch_basemap_tiles(
+    tiles: list[tuple[int, int]], zoom: int,
+) -> dict[tuple[int, int], np.ndarray]:
+    """淡色地図タイル群 (x, y) を **並列** 取得し {(x, y): RGB配列} を返す。
+
+    レポート保存（メインスレッド）から呼ばれるため、逐次取得で GUI を固めない
+    よう prefetch_tiles と同じワーカープール方式で並列化する。取得・キャッシュ
+    の所在（layer/subdir/path）はこの層が所有する（呼び出し側は座標だけ渡す）。
+    取得できなかったタイルは結果に含めない（呼び出し側が欠損として扱う）。
+    """
+    results: dict[tuple[int, int], np.ndarray] = {}
+    if not tiles:
+        return results
+    lock   = threading.Lock()
+    work_q: queue.Queue = queue.Queue()
+    for t in tiles:
+        work_q.put(t)
+
+    def _worker() -> None:
+        while True:
+            try:
+                x, y = work_q.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                subdir, path = _basemap_tile_path(zoom, x, y)
+                arr = _fetch_tile(BASEMAP_LAYER, zoom, x, y, subdir, path)
+                if arr is not None:
+                    with lock:
+                        results[(x, y)] = arr
+            except Exception as e:
+                logger.warning("basemap tile worker error: %s", e)
+            finally:
+                work_q.task_done()
+
+    num_workers = min(_MAX_PREFETCH_WORKERS, len(tiles))
+    threads = [threading.Thread(target=_worker, daemon=True) for _ in range(num_workers)]
+    for th in threads:
+        th.start()
+    work_q.join()
+    return results
+
+
+# ============================================================
 # タイル座標変換（逆変換）
 # ============================================================
 
@@ -982,6 +1036,33 @@ def delete_tile_cache(
         for key in keys_to_clear:
             _tile_cache.pop(key, None)
             _failed_tiles.discard(key)
+
+    # 淡色地図（basemap）タイルも同じ bbox を削除する。ズーム別ディレクトリを
+    # 走査し、各ズームで bbox に重なるタイルを消す（エリア削除UIから回収可能に）。
+    basemap_root = os.path.join(CACHE_DIR, BASEMAP_SUBDIR)
+    if os.path.isdir(basemap_root):
+        lat_n = max(lat1, lat2)
+        lat_s = min(lat1, lat2)
+        lon_w = min(lon1, lon2)
+        lon_e = max(lon1, lon2)
+        for zdir in os.listdir(basemap_root):
+            try:
+                z = int(zdir)
+            except ValueError:
+                continue
+            x0, y0, _, _ = _tile_coords(lat_n, lon_w, z)
+            x1, y1, _, _ = _tile_coords(lat_s, lon_e, z)
+            for x in range(x0, x1 + 1):
+                for y in range(y0, y1 + 1):
+                    p = os.path.join(basemap_root, zdir, str(x), f"{y}.png")
+                    if os.path.exists(p):
+                        try:
+                            os.remove(p)
+                            deleted += 1
+                        except OSError as e:
+                            logger.warning("delete_tile_cache (basemap): %s", e)
+                            errors += 1
+
     logger.info("delete_tile_cache: deleted=%d errors=%d", deleted, errors)
     return {"deleted": deleted, "errors": errors}
 

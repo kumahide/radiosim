@@ -963,3 +963,49 @@ class TestCoverageOutline:
         loops = infra.coverage_outline(*self.WIDE)
         assert len(loops) == 1
         assert len(loops[0]) == 6
+
+
+class TestBasemapTiles:
+    """淡色地図（レポート地図）タイルの取得・キャッシュ・削除。"""
+
+    LAT, LON = 34.54, 132.41
+    WIDE = (34.6, 132.3, 34.4, 132.5)
+
+    def test_tile_path_includes_zoom(self):
+        """キャッシュパスにズームが入る（異なるズームの同一(x,y)が衝突しない）。"""
+        subdir, path = infra._basemap_tile_path(14, 100, 200)
+        assert os.path.join(infra.BASEMAP_SUBDIR, "14", "100") in subdir
+        assert path.endswith(os.path.join("100", "200.png"))
+        # ズーム違いはパスが異なる。
+        _, path15 = infra._basemap_tile_path(15, 100, 200)
+        assert path != path15
+
+    def test_fetch_basemap_tiles_parallel_returns_dict(self, monkeypatch):
+        """並列取得が成功タイルだけを {(x,y):配列} で返す。"""
+        def fake(layer_id, zoom, x, y, subdir, path):
+            return np.full((256, 256, 3), 100, dtype=np.uint8)
+        monkeypatch.setattr(infra, "_fetch_tile", fake)
+        tiles = [(1, 2), (3, 4), (5, 6)]
+        out = infra.fetch_basemap_tiles(tiles, 14)
+        assert set(out.keys()) == set(tiles)
+
+    def test_fetch_basemap_tiles_empty_input(self):
+        assert infra.fetch_basemap_tiles([], 14) == {}
+
+    def test_fetch_basemap_tiles_skips_failures(self, monkeypatch):
+        """取得失敗（None）のタイルは結果に含めない。"""
+        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
+        assert infra.fetch_basemap_tiles([(1, 2)], 14) == {}
+
+    def test_delete_tile_cache_removes_basemap(self, tmp_path, monkeypatch):
+        """エリア範囲削除が basemap タイル（ズーム別）も回収する。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        z = 14
+        x, y, _, _ = infra._tile_coords(self.LAT, self.LON, z)
+        subdir, path = infra._basemap_tile_path(z, x, y)
+        os.makedirs(subdir, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"\x89PNG")
+        assert os.path.exists(path)
+        infra.delete_tile_cache(*self.WIDE)
+        assert not os.path.exists(path)
