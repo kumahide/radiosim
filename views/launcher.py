@@ -20,7 +20,6 @@ import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_LABELS
 from views import dialogs
-from views.graph import show_graph
 
 # 入力キー → i18n ツールチップキーのマッピング
 _TIP_KEYS: dict[str, str] = {
@@ -476,6 +475,9 @@ class SimLauncher:
         self.run_btn.config(state="normal")
         self.prog_label.config(text=i18n.t("status_ready"))
         self.prog_bar.config(value=0)
+        # matplotlib/pyplot/TkAgg/numpy はここで初めて要る（ランチャー表示前に
+        # ロードしないため遅延 import。MapWindow/BatchBuilder と同じ方針）
+        from views.graph import show_graph
         show_graph(params, raw_elevs)
 
     def _on_fetch_error(self, ex: Exception) -> None:
