@@ -1,3 +1,4 @@
+
 """
 views/map_window.py
 ===================
@@ -20,19 +21,18 @@ import threading
 import tkinter as tk
 from tkinter import ttk
 
-from PIL import Image, ImageDraw, ImageFont, ImageTk
+from PIL import ImageTk
 
 import i18n
 import infrastructure as infra
+import map_graphics
 import models
 from tkintermapview import TkinterMapView
 from views import dialogs
 
-# 座標入力モードのマーカー配色（UISP / Ubiquiti 風）。
-# シアンのノード＋半透明ハロー（電波点の表現）。TX=塗り / RX=白抜きで区別する。
-_UISP_CYAN      = (25, 181, 230)     # ノード・パス線・ハローの基調色（RGB）
-_UISP_CYAN_HEX  = "#19B5E6"
-_MARKER_TEXT    = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
+# マーカー配色は map_graphics に集約（レポート地図生成 report_map.py と共通）。
+_UISP_CYAN_HEX = map_graphics.UISP_CYAN_HEX
+_MARKER_TEXT   = map_graphics.MARKER_TEXT
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -180,65 +180,12 @@ class MapWindow:
         self._set_idle()   # 次のピック対象をヒントに反映
 
     def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
-        """UISP 風のノードアイコンを生成する。
-
-        半透明シアンのハロー（電波点の表現）＋白縁取りのシアンノード。
-        hollow=False（TX）は塗りつぶし、hollow=True（RX）は白抜きで区別する。
-        supersample → 縮小でアンチエイリアスし、端点を座標に正確に重ねる。
-        """
-        size, scale = 26, 4
-        s = size * scale
-        img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        c = s / 2
-        r, g, b = _UISP_CYAN
-
-        def disc(radius: float, **kw) -> None:
-            d.ellipse([c - radius, c - radius, c + radius, c + radius], **kw)
-
-        # ハロー（半透明・大）→ 電波を発する点という UISP の雰囲気を出す。
-        disc(s * 0.46, fill=(r, g, b, 55))
-        disc(s * 0.34, fill=(r, g, b, 90))
-        # ノード本体（白縁取りで地図上のコントラストを確保）。
-        node_r = s * 0.22
-        if hollow:   # RX: 白抜き（受信側）
-            disc(node_r, fill=(255, 255, 255, 255),
-                 outline=(r, g, b, 255), width=int(2.2 * scale))
-        else:        # TX: 塗り（送信側）
-            disc(node_r, fill=(r, g, b, 255),
-                 outline=(255, 255, 255, 255), width=int(1.4 * scale))
-        return ImageTk.PhotoImage(img.resize((size, size), Image.Resampling.LANCZOS))
+        """UISP 風のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
+        return ImageTk.PhotoImage(map_graphics.node_icon(hollow))
 
     def _make_distance_badge(self, text: str) -> ImageTk.PhotoImage:
-        """距離テキストを半透明の角丸ピル背景に載せたバッジ画像を生成する。
-
-        tkintermapview のマーカーテキストは背景を持てず淡色地図上で読みにくいため、
-        テキストごと PIL で描いてアイコンとして使う（pan/zoom 追従はマーカーと同じ）。
-        """
-        scale = 2
-        try:
-            font = ImageFont.truetype("arialbd.ttf", 13 * scale)
-        except OSError:
-            try:
-                font = ImageFont.truetype("arial.ttf", 13 * scale)
-            except OSError:
-                font = ImageFont.load_default()
-        # テキスト寸法を計測してパディング込みのバッジサイズを決める。
-        probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
-        l, t, r, b = probe.textbbox((0, 0), text, font=font)
-        tw, th = r - l, b - t
-        padx, pady = 8 * scale, 4 * scale
-        w, h = int(tw + padx * 2), int(th + pady * 2)
-        img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
-        d = ImageDraw.Draw(img)
-        # 半透明の白ピル＋淡シアン枠。淡色地図でも経路線上で読める。
-        d.rounded_rectangle(
-            [0, 0, w - 1, h - 1], radius=h / 2,
-            fill=(255, 255, 255, 215), outline=_UISP_CYAN + (255,), width=scale,
-        )
-        d.text((padx - l, pady - t), text, font=font, fill=_MARKER_TEXT)
-        img = img.resize((w // scale, h // scale), Image.Resampling.LANCZOS)  # type: ignore[arg-type]
-        return ImageTk.PhotoImage(img)
+        """距離バッジを Tk 用にラップして返す（描画は map_graphics）。"""
+        return ImageTk.PhotoImage(map_graphics.distance_badge(text))
 
     def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
         """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
@@ -278,7 +225,7 @@ class MapWindow:
             mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
                    (self._tx_coord[1] + self._rx_coord[1]) / 2)
             km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
-            text = f"{km * 1000:.0f} m" if km < 1 else f"{km:.2f} km"
+            text = map_graphics.distance_text(km)
             self._dist_badge = self._make_distance_badge(text)
             self._dist_label = self._map.set_marker(
                 mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",

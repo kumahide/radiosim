@@ -24,6 +24,7 @@ import numpy as np
 import i18n
 import infrastructure as infra
 import models
+import report_map
 import simulation as sim
 import version
 
@@ -452,7 +453,13 @@ def save_profile_png(
     fig.clf()
     del canvas, fig
 
-    save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64)
+    # 経路オーバーレイ地図（ヘッドレス・ベストエフォート）。タイル取得に失敗
+    # したら None を返し、レポートは地図なし＋注記で生成される。
+    map_b64 = report_map.render_path_map_b64(
+        (params.lat_tx, params.lon_tx), (params.lat_rx, params.lon_rx)
+    )
+
+    save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64)
 
 
 def save_path_html(
@@ -463,8 +470,12 @@ def save_path_html(
     h_rx:     float,
     save_dir: str,
     img_b64:  str,
+    map_b64:  "str | None" = None,
 ) -> None:
-    """per-path の report.html を生成する（グラフは Base64 埋め込み）。"""
+    """per-path の report.html を生成する（グラフ・地図は Base64 埋め込み）。
+
+    map_b64 が None のとき（タイル取得失敗）は地図を省き注記を表示する。
+    """
     path_id     = os.path.basename(save_dir)
     path_id_esc = _html.escape(path_id)
     status_cls  = "ok" if result.status == "OK" else "ng"
@@ -475,6 +486,18 @@ def save_path_html(
         f"<tr><td>{d:.4f}</td><td>{h:.2f}</td></tr>"
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs)
     )
+
+    # 経路オーバーレイ地図セクション。map_b64 が無い（タイル取得失敗）ときは
+    # 地図を省いて注記を表示する（レポート自体は必ず生成される）。
+    if map_b64:
+        map_block = (
+            f'<img class="graph" src="data:image/png;base64,{map_b64}" '
+            f'alt="{_html.escape(i18n.t("html_map_title"))}">'
+        )
+    else:
+        map_block = (
+            f'<p class="map-note">{_html.escape(i18n.t("html_map_unavailable"))}</p>'
+        )
 
     html = f"""<!DOCTYPE html>
 <html lang="{i18n.t('html_lang')}">
@@ -491,6 +514,7 @@ p.sub{{color:#888;font-size:11px;margin:0 0 14px}}
 .card .val{{font-size:22px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}
 .graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:16px}}
+.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}}
 .cols{{display:flex;gap:16px;margin-bottom:16px}}
 .col{{flex:1;background:white;border-radius:8px;padding:14px 18px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
 .col h3{{margin:0 0 10px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:6px}}
@@ -517,6 +541,7 @@ footer{{margin-top:14px;color:#bbb;font-size:10px}}
 </div>
 
 <img class="graph" src="data:image/png;base64,{img_b64}" alt="Terrain Profile">
+{map_block}
 
 <div class="cols">
   <div class="col">

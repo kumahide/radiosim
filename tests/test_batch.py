@@ -14,6 +14,8 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import batch
+import i18n
+import models
 import simulation as sim
 from batch import _find_obs_segments, _make_params
 
@@ -377,3 +379,44 @@ class TestExportCsvRoundtrip:
         assert reloaded[0].note     == "Main"
         assert reloaded[1].freq_mhz is None
         assert reloaded[1].note     == ""
+
+
+# ============================================================
+# save_path_html の地図埋め込み（map_b64）
+# ============================================================
+def _make_result():
+    return models.LinkBudgetResult(
+        eirp=23.0, fspl=100.0, diff_loss=0.0, veg_loss=0.0,
+        env_loss=6.0, rain_loss=0.0, gas_loss=0.0,
+        total_loss=106.0, p_rx=-83.0,
+        actual_margin=2.0, status="OK",
+        current_k=10.0, blocked_ratio=0.0, slant_dist_km=1.0,
+        diff_method="single", env_type="los",
+    )
+
+
+class TestSavePathHtmlMap:
+
+    def _render(self, tmp_path, flat_terrain, default_params_dict, map_b64):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        batch.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=map_b64,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_map_present_embeds_second_image(self, tmp_path, flat_terrain,
+                                              default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, "MAPB64DATA")
+        assert "data:image/png;base64,MAPB64DATA" in html
+        assert "Map unavailable" not in html
+
+    def test_map_none_shows_note_and_no_map_image(self, tmp_path, flat_terrain,
+                                                  default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, None)
+        assert "Map unavailable" in html
+        assert "data:image/png;base64,MAPB64DATA" not in html
+        # 地形グラフ自体は常に埋め込まれる。
+        assert "data:image/png;base64,TERRAINB64" in html
