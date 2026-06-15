@@ -334,6 +334,26 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
     return xtile, ytile, px, py
 
 
+def lonlat_to_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
+    """緯度・経度を指定ズームの「グローバルピクセル座標」（小数）に変換する。
+
+    `_tile_coords` と同一の Web Mercator 射影だが、タイル境界で floor せず
+    小数のまま `(world_px_x, world_px_y)` を返す。各タイルは 256px 四方なので
+    `tile_x * 256 = タイル左端の world_px_x`。レポート地図（report_map.py）で
+    経路端点を画像内ピクセルへ正確に投影するために使う。
+    """
+    n       = 2.0 ** zoom
+    xtile_f = (lon + 180.0) / 360.0 * n
+    ytile_f = (
+        1.0
+        - math.log(
+            math.tan(math.radians(lat))
+            + 1 / math.cos(math.radians(lat))
+        ) / math.pi
+    ) / 2.0 * n
+    return xtile_f * 256.0, ytile_f * 256.0
+
+
 def get_elevation(lat: float, lon: float) -> float:
     """
     国土地理院 DEM PNG から標高 [m] を取得する。
