@@ -35,7 +35,7 @@ jobs:
         run: >-
           pyright
           batch.py models.py simulation.py infrastructure.py version.py
-          i18n.py main.py
+          i18n.py main.py report_map.py map_graphics.py
           views/launcher.py views/graph.py views/batch_builder.py
 
       - name: Pytest
