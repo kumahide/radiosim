@@ -168,10 +168,11 @@ hiddenimports = [
     "numpy.core._multiarray_tests",
     # tkintermapview（タイルキャッシュ管理ウィンドウ）
     "tkintermapview",
-    "customtkinter",
-    "geocoder",
-    "pyperclip",
-    "pywin32",
+    "geocoder",   # tkintermapview がトップレベルで無条件 import
+    "pyperclip",  # 同上
+    # ※ customtkinter は tkintermapview が hasattr ダックタイピングで参照するだけで
+    #   実 import しないため hiddenimports から除外（excludes でバンドルも防ぐ）。
+    # ※ "pywin32" は import 可能な実体ではない（win32api 等が実モジュール）ため no-op。削除。
 ]
 
 # ============================================================
@@ -196,6 +197,11 @@ a = Analysis(
         "pandas",
         "sklearn",
         "cv2",
+        # requests の診断用 optional 依存（requests/help.py が try/except で参照。
+        # 実行時は不要だが ~8.7MB バンドルされるため除外）
+        "cryptography",
+        # tkintermapview は customtkinter を実 import しない（hasattr 判定のみ）
+        "customtkinter",
         # GUI フレームワーク（tkinter のみ使用）
         "wx",
         "PyQt5",
@@ -265,6 +271,23 @@ a = Analysis(
     cipher=block_cipher,
     noarchive=False,
 )
+
+# ============================================================
+# 同梱データの間引き（AV スキャン面＝ファイル数削減・起動高速化）
+# ------------------------------------------------------------
+# Tcl の tzdata（タイムゾーンDB・約600ファイル）と msgs（locale メッセージ
+# カタログ・約130ファイル）は Tcl の clock/msgcat 用で、GUI 用 tkinter では
+# 未使用。時刻・多言語はすべて Python 側で処理しているため安全に除去できる。
+# 合わせて全同梱ファイル数の約半分を占めるため、起動時のオンアクセス AV
+# スキャン面を大きく削減する（実機ログでファイル数が起動律速と確定）。
+# ============================================================
+def _keep_data(dest: str) -> bool:
+    p = dest.replace("\\", "/").lower()
+    if "tcl" not in p:            # Tcl 同梱データ以外は一切触らない
+        return True
+    return ("/tzdata/" not in p) and ("/msgs/" not in p)
+
+a.datas = [d for d in a.datas if _keep_data(d[0])]
 
 # ============================================================
 # PYZ（Python アーカイブ）
