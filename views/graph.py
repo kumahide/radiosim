@@ -131,9 +131,23 @@ class _GraphWindow:
         # 距離（≈30km〜）でのみ「補正済み座標」と明示し、実地形との誤読を防ぐ。
         if t.horiz_dist_km >= self._CURVE_NOTE_MIN_KM:
             bulge = float(np.max(t.elevs_with_curve - t.raw_elevs))
+            # 縦倍率＝見かけの誇張の主因。横軸 数万m を縦軸 数百m と同程度の画面
+            # 幅に詰めるため曲率のふくらみがドーム状に見える。軸の描画ピクセルは
+            # 図サイズと axes 位置から算出（draw 前でも確定・リサイズ前提の概算）。
+            fig_w_in, fig_h_in = self._fig.get_size_inches()
+            pos = self._ax.get_position()
+            w_px = fig_w_in * self._fig.dpi * pos.width
+            h_px = fig_h_in * self._fig.dpi * pos.height
+            vexag = models.vertical_exaggeration(
+                t.horiz_dist_km * 1000.0,
+                float(np.max(veg_top)) - y_min,
+                w_px, h_px,
+            )
             self._ax.text(
                 0.012, 0.985,
-                i18n.t("graph_curve_note").format(k=t.earth_k, bulge=bulge),
+                i18n.t("graph_curve_note").format(
+                    k=t.earth_k, bulge=bulge, vexag=vexag
+                ),
                 transform=self._ax.transAxes, va="top", ha="left",
                 fontsize=8, style="italic", color="0.45",
             )
