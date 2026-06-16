@@ -95,13 +95,65 @@ class MapWindow:
         self._overlay_after_id = None   # 自動カバレッジ表示のデバウンス用
         self._status_clear_id = None    # 結果文の自動クリア用 after ID
 
+        self._closing = False
+        self._init_after_id = None      # 初回レイヤ描画の after ID（早期クローズ対策）
         self._build_ui()
         self._refresh_stats()
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_launcher_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
         # （cache=カバレッジ / coords=経路。既定は coords）。
-        self._win.after(600, self._apply_mode_visibility)
+        self._init_after_id = self._win.after(600, self._apply_mode_visibility)
+        # 閉じるときは after ループを止めてから破棄する（下記 _on_close 参照）。
+        self._win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ----------------------------------------------------------
+    # クローズ処理（tkintermapview の after ループを安全に停止）
+    # ----------------------------------------------------------
+    def _on_close(self) -> None:
+        """ウィンドウを閉じる。tkintermapview の自己再スケジュール after を止めて
+        から破棄し、終了時の `invalid command name ...update_canvas_tile_images`
+        を防ぐ。
+
+        tkintermapview は `update_canvas_tile_images` を 10ms ごとに self.after で
+        回す。`destroy()` は running=False にするが**既にキュー済みの直近 after は
+        取り消さない**ため、破棄後に発火して Tcl エラーになる。そこでまず running
+        を落として再スケジュールを断ち、直近の after が無害に消化されるだけの時間を
+        おいてから実体を破棄する。
+        """
+        if self._closing:
+            return
+        self._closing = True
+        # 自前の after ジョブを取り消す。
+        for aid in (self._overlay_after_id, self._status_clear_id,
+                    self._init_after_id):
+            if aid is not None:
+                try:
+                    self._win.after_cancel(aid)
+                except Exception:
+                    pass
+        self._overlay_after_id = self._status_clear_id = None
+        self._init_after_id = None
+        # tkintermapview の再スケジュールを停止（widget はまだ破棄しない）。
+        try:
+            self._map.running = False
+        except Exception:
+            pass
+        # 直近の after(<=10ms) が再スケジュールせず消化されてから破棄する。
+        try:
+            self._win.after(60, self._destroy)
+        except Exception:
+            self._destroy()
+
+    def _destroy(self) -> None:
+        try:
+            self._map.destroy()
+        except Exception:
+            pass
+        try:
+            self._win.destroy()
+        except Exception:
+            pass
 
     # ----------------------------------------------------------
     # プロキシ env 変数同期
