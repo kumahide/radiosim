@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import infrastructure as infra
@@ -80,24 +81,30 @@ class TestLonLatToPixel:
 
 
 # ============================================================
-# _padded_bbox / choose_zoom（純関数）
+# _band_px / _coverage_tiles / choose_zoom（純関数）
 # ============================================================
-class TestPaddedBbox:
+class TestBandPx:
 
-    def test_normal_orders_corners_and_pads(self):
-        tx, rx = (34.54, 132.41), (34.53, 132.40)
-        lat_n, lat_s, lon_w, lon_e = report_map._padded_bbox(tx, rx, 0.15)
-        assert lat_n > lat_s
-        assert lon_e > lon_w
-        # 余白込みで元の範囲を必ず内包する。
-        assert lat_n > max(tx[0], rx[0])
-        assert lat_s < min(tx[0], rx[0])
+    def test_band_contains_tx_rx_within_half_extent(self):
+        # TX/RX は中点からバンド長手方向に ±path_len/2＝必ず half_w 以内に収まる。
+        band = report_map._band_px((34.54, 132.41), (34.40, 132.20), 14, 0.15)
+        for px, py in ((band.ax, band.ay), (band.bx, band.by)):
+            along = (px - band.mx) * band.ux + (py - band.my) * band.uy
+            perp  = (px - band.mx) * band.px + (py - band.my) * band.py
+            assert abs(along) <= band.half_w + 1e-6
+            assert abs(perp) <= band.half_h + 1e-6
 
-    def test_degenerate_point_still_has_span(self):
-        p = (34.54, 132.41)
-        lat_n, lat_s, lon_w, lon_e = report_map._padded_bbox(p, p, 0.15)
-        assert lat_n - lat_s >= report_map._MIN_SPAN_DEG
-        assert lon_e - lon_w >= report_map._MIN_SPAN_DEG
+    def test_unit_vectors_are_orthonormal(self):
+        band = report_map._band_px((34.54, 132.41), (34.40, 132.20), 14, 0.15)
+        assert band.ux * band.ux + band.uy * band.uy == pytest.approx(1.0)
+        assert band.ux * band.px + band.uy * band.py == pytest.approx(0.0)
+
+    def test_degenerate_point_has_minimum_extent(self):
+        # TX==RX でも最小半幅/半高が確保され（東向きに固定）破綻しない。
+        band = report_map._band_px((34.54, 132.41), (34.54, 132.41), 14, 0.15)
+        assert band.half_w >= report_map._MIN_HALF_PX
+        assert band.half_h >= report_map._MIN_HALF_PX
+        assert (band.ux, band.uy) == (1.0, 0.0)
 
 
 class TestChooseZoom:
@@ -105,8 +112,9 @@ class TestChooseZoom:
     def test_tile_count_within_cap(self):
         tx, rx = (34.54, 132.41), (34.40, 132.20)
         z = report_map.choose_zoom(tx, rx, max_tiles=16)
-        bbox = report_map._padded_bbox(tx, rx, 0.15)
-        x0, x1, y0, y1 = report_map._tile_range(bbox, z)
+        x0, x1, y0, y1 = report_map._coverage_tiles(
+            report_map._band_px(tx, rx, z, 0.15)
+        )
         assert (x1 - x0 + 1) * (y1 - y0 + 1) <= 16
 
     def test_closer_path_gets_higher_or_equal_zoom(self):
@@ -141,6 +149,15 @@ class TestRenderPathMap:
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
         assert isinstance(img, Image.Image)
         assert img.width > img.height
+
+    def test_no_gray_fill_after_rotation(self, monkeypatch):
+        # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない
+        # （バンドの north-up 外接矩形ぶん取得＋数 px インセットで隅も埋まる）。
+        # _fake_tile は全画素 200 なので 229=_MISSING_RGB は必ず埋め色。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
+        assert int(fill.sum()) == 0
 
     def test_returns_none_when_all_tiles_fail(self, monkeypatch):
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
