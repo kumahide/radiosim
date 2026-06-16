@@ -60,7 +60,8 @@ class MapWindow:
         self._win.minsize(720, 520)
 
         # 現在のモード。"cache"=キャッシュ管理 / "coords"=座標入力（Phase B）。
-        self._mode = tk.StringVar(value="cache")
+        # 既定は coords＝座標入力（マップ連携の主機能。タイル管理は補助レイヤ）。
+        self._mode = tk.StringVar(value="coords")
 
         # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
         self._pick_next = "tx"
@@ -99,7 +100,7 @@ class MapWindow:
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_launcher_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
-        # （cache=カバレッジ / coords=経路。既定は cache）。
+        # （cache=カバレッジ / coords=経路。既定は coords）。
         self._win.after(600, self._apply_mode_visibility)
 
     # ----------------------------------------------------------
@@ -167,9 +168,31 @@ class MapWindow:
     # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
     # 数値欄が source of truth。地図は交互ピッカーに徹する。
     # ----------------------------------------------------------
+    def _click_on_zoom_button(self) -> bool:
+        """直近の押下ピクセルが地図の +/- ズームボタン矩形内かを判定する。
+
+        tkintermapview のズームボタンは canvas 埋込の CanvasButton で、自前の
+        tag_bind とは別に canvas 全体の <Button-1>/<ButtonRelease-1> も発火する
+        ため、ボタン上クリックが「移動なしクリック」として map_click_callback に
+        流れ込み座標ピックされてしまう。押下位置がボタン矩形内なら無視する。"""
+        pos = getattr(self._map, "last_mouse_down_position", None)
+        if not pos:
+            return False
+        px, py = pos
+        for name in ("button_zoom_in", "button_zoom_out"):
+            btn = getattr(self._map, name, None)
+            if btn is None:
+                continue
+            bx, by = btn.canvas_position
+            if bx <= px <= bx + btn.width and by <= py <= by + btn.height:
+                return True
+        return False
+
     def _on_map_click(self, coords: tuple) -> None:
         """地図の素クリック。座標入力モードのときだけ TX→RX を交互にピックする。"""
         if self._mode.get() != "coords" or self._busy:
+            return
+        if self._click_on_zoom_button():
             return
         lat, lon = coords
         role = self._pick_next
