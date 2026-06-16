@@ -163,6 +163,20 @@ def horizontal_distance_km(
     return 2 * R_earth * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def vertical_exaggeration(
+    x_span_m: float, y_span_m: float, width_px: float, height_px: float
+) -> float:
+    """縦倍率＝縦方向が横方向に対し何倍に引き伸ばされて描画されるか。
+
+    長距離プロファイルは横軸 数万m に対し縦軸 数百m を同程度の画面幅に詰める
+    ため、わずかな地球曲率のふくらみがドーム状に誇張されて見える。その誇張倍率
+    を数値化する（≈ ×N の注記用）。x/y のデータ範囲は同一単位（m）、width/height
+    は軸の描画ピクセル。算出不能時は 0.0。"""
+    if y_span_m <= 0 or width_px <= 0 or height_px <= 0:
+        return 0.0
+    return (x_span_m / y_span_m) * (height_px / width_px)
+
+
 def calculate_terrain_profile(
     raw_elevs: np.ndarray,
     lat_tx: float,

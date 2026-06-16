@@ -137,7 +137,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Graph =====
         "graph_dist_axis":      "Distance [km]",
         "graph_alt_axis":       "Altitude [m]",
-        "graph_curve_note":     "Terrain shown with equivalent-earth (k={k:.2f}) curvature: not true elevation (mid-path bulge +{bulge:.0f} m)",
+        "graph_curve_note":     "Terrain shown with equivalent-earth (k={k:.2f}) curvature: not true elevation (mid-path bulge +{bulge:.0f} m; vertical exaggeration approx x{vexag:.0f})",
         "legend_terrain":       "Terrain",
         "legend_vegetation":    "Vegetation",
         "legend_los":           "Line of Sight",
@@ -449,7 +449,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Graph =====
         "graph_dist_axis":      "距離 [km]",
         "graph_alt_axis":       "高度 [m]",
-        "graph_curve_note":     "地形は等価地球(k={k:.2f})曲率補正込み・実標高ではありません（中央ふくらみ +{bulge:.0f} m）",
+        "graph_curve_note":     "地形は等価地球(k={k:.2f})曲率補正込み・実標高ではありません（中央ふくらみ +{bulge:.0f} m・縦倍率 約×{vexag:.0f}）",
         "legend_terrain":       "地形",
         "legend_vegetation":    "植生",
         "legend_los":           "見通し線",
