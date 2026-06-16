@@ -287,7 +287,8 @@ class MapWindow:
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
         self._mode_buttons: dict[str, ttk.Button] = {}
-        for value, key in [("cache", "map_mode_cache"), ("coords", "map_mode_coords")]:
+        # 座標入力＝主機能なので左に並べる。
+        for value, key in [("coords", "map_mode_coords"), ("cache", "map_mode_cache")]:
             b = ttk.Button(
                 modebar, text=i18n.t(key),
                 command=lambda v=value: self._select_mode(v),
