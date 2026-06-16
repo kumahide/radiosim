@@ -100,11 +100,19 @@ class TestBandPx:
         assert band.ux * band.px + band.uy * band.py == pytest.approx(0.0)
 
     def test_degenerate_point_has_minimum_extent(self):
-        # TX==RX でも最小半幅/半高が確保され（東向きに固定）破綻しない。
+        # TX==RX でも最小半幅が確保され（東向きに固定）破綻しない。
         band = report_map._band_px((34.54, 132.41), (34.54, 132.41), 14, 0.15)
         assert band.half_w >= report_map._MIN_HALF_PX
-        assert band.half_h >= report_map._MIN_HALF_PX
+        assert band.half_h > 0
         assert (band.ux, band.uy) == (1.0, 0.0)
+
+    def test_band_aspect_matches_requested(self):
+        # half_w/half_h = aspect（出力比を固定＝レポート断面図と高さを揃える）。
+        for aspect in (15 / 6, 2.0, 1.0):
+            band = report_map._band_px(
+                (34.54, 132.41), (34.40, 132.20), 14, 0.15, aspect
+            )
+            assert band.half_w / band.half_h == pytest.approx(aspect)
 
 
 class TestChooseZoom:
@@ -149,6 +157,12 @@ class TestRenderPathMap:
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
         assert isinstance(img, Image.Image)
         assert img.width > img.height
+
+    def test_output_aspect_matches_profile(self, monkeypatch):
+        # 出力の幅/高さ ≈ 15:6（断面図と同じ＝レポートで高さが揃う）。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        assert img.width / img.height == pytest.approx(15 / 6, rel=0.03)
 
     def test_no_gray_fill_after_rotation(self, monkeypatch):
         # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない
