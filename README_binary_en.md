@@ -1,4 +1,4 @@
-# RadioSim Pro 2.1
+# RadioSim Pro 2.2
 
 ![RadioSim Pro](logo.png)
 
@@ -40,7 +40,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
-- Tile Cache Manager — visualize, prefetch, and delete DEM cache on a map
+- Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
+- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -94,22 +95,34 @@ The menu bar provides the following options. Settings are saved to `radiosim_con
 | Settings > Theme     | System / Light / Dark | Window color theme                                                |
 | Settings > Language  | English / 日本語      | UI language (requires restart)                                    |
 | Settings > Proxy     | URL entry             | Explicit HTTP proxy URL (blank = use OS proxy settings)           |
-| Settings > Tile Cache Manager | —            | Opens a window to visualize and manage the DEM cache on a map     |
+| Settings > Load App Settings | —             | Imports only theme/language/proxy from a settings file (leaves simulation parameters unchanged)|
 | Settings > Delete All Cache | —              | Deletes all downloaded DEM/map tiles (with confirmation)          |
 | Help > Open README   | —                    | Opens this document in a browser                                  |
+
+> The **Map Window** is opened from the **"Map Window" button** at the bottom of the launcher (not the menu) — see below.
 
 ### Proxy Settings
 
 If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL (e.g. `http://proxy.example.com:8080`). Changes take effect immediately. Leave blank and click OK to revert to OS proxy settings.
 
-### Tile Cache Manager
+### Map Window
 
-**Settings > Tile Cache Manager** opens a window where you can review the DEM tile cache on the GSI pale map, and prefetch or delete tiles for any area. This is intended for downloading the areas you need for offline use before heading to a site with poor connectivity.
+The **"Map Window" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. A **mode selector** at the top switches between two modes. The core simulation works without ever opening the map; the Map Window is a convenience layer.
 
-Normal simulations already cache the tiles around each path automatically, so **you do not need to open this window for everyday use** — it is a convenience for fetching wider areas in advance.
+> On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
 
-**Coverage display (automatic)**
-As you pan or zoom the map, cached areas are continuously shaded. The color reflects the highest accuracy already cached.
+#### Pick Coordinates mode (default)
+
+Click the map to set **TX → RX** alternately; the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Click again at any time to re-place a point.
+
+- Shows UISP-style markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
+- Dragging pans the map (coordinates update only on a committed click).
+
+#### Cache Management mode
+
+Review the DEM tile cache and prefetch or delete tiles for any area — intended for downloading what you need for offline use before heading to a site with poor connectivity. Normal simulations already cache the tiles around each path automatically, so **you do not need to open this for everyday use**.
+
+**Coverage display (automatic)** — As you pan or zoom, cached areas are continuously shaded. The color reflects the highest accuracy already cached.
 
 | Color  | Accuracy                        |
 | ------ | ------------------------------- |
@@ -128,7 +141,7 @@ Unshaded areas are not yet cached.
 | Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
 | Shift + Ctrl + drag           | Delete the cache for an area            |
 
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar at the bottom of the window.
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache.
 
 > **Be considerate of the tile server**: Tiles are fetched from GSI's public servers. Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 
@@ -254,7 +267,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
-| `{id}/report.html`         | Per-path detailed report (graph embedded)                        |
+| `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
 | `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
 | `{id}/settings.json`       | Per-path input parameters                                        |
@@ -413,11 +426,13 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | File                    | Contents                                                 |
 | ----------------------- | -------------------------------------------------------- |
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report with embedded graph                      |
+| `report.html`         | Detailed report with the terrain graph and a path map embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
 | `settings.json`       | Complete input parameters (reloadable via Load Settings) |
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
+
+> **Path map**: `report.html` embeds a static map with TX/RX, the path, and the distance overlaid on the GSI pale map. It auto-rotates so the path is horizontal (TX left / RX right) with a north arrow. Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 
 ### Batch Mode
 
