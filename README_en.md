@@ -1,4 +1,4 @@
-# RadioSim Pro 2.1
+# RadioSim Pro 2.2
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -39,7 +39,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
-- Tile Cache Manager — visualize, prefetch, and delete DEM cache on a map
+- Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
+- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -150,13 +151,17 @@ radiosim/
 ├── main.py               # Entry point
 ├── models.py             # Pure calculation logic (no side effects)
 ├── simulation.py         # ViewModel / orchestrator
-├── infrastructure.py     # External dependencies (DEM, config I/O, validation)
+├── infrastructure.py     # External dependencies (DEM/pale tiles, config I/O, validation)
 ├── batch.py              # Batch simulation engine and HTML/KML output
+├── report_map.py         # Headless path-overlay map generation for reports
+├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
 ├── views/
 │   ├── launcher.py       # Launcher window
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
+│   ├── map_window.py     # Map window (Pick Coordinates / Cache Management modes)
+│   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -196,9 +201,11 @@ The menu bar provides the following options. Settings are saved to `radiosim_con
 | Settings > Theme        | System / Light / Dark | Window color theme                                                       |
 | Settings > Language     | English / 日本語      | UI language (requires restart)                                           |
 | Settings > Proxy        | URL entry             | Explicit HTTP proxy URL (leave blank to use OS proxy settings)           |
-| Settings > Tile Cache Manager | —              | Opens a window to visualize and manage the DEM cache on a map            |
+| Settings > Load App Settings | —               | Imports only app settings (theme/language/proxy) from a settings file   |
 | Settings > Delete All Cache | —                | Deletes all downloaded DEM/map tiles (with confirmation)                 |
 | Help > Open README      | —                    | Opens this document in a browser                                         |
+
+The Map Window is opened from the **"Map Window" button** at the bottom of the launcher (not the menu).
 
 #### Proxy Settings
 
@@ -212,13 +219,12 @@ http://proxy.example.com:8080
 - Leaving the field blank and clicking OK reverts to OS proxy settings (system settings / environment variables)
 - `truststore` integration with the Windows certificate store is also active to handle corporate SSL inspection
 
-#### Tile Cache Manager
+#### Map Window
 
-**Settings > Tile Cache Manager** (`views/tile_manager.py`) shows the DEM tile cache on the GSI pale map and lets you prefetch or delete tiles for any area. It is a convenience for downloading the areas you need before going offline; normal simulations already cache tiles around each path, so **you do not need to open this window for everyday use**.
+The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map, with a mode selector at the top. The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
-- **Coverage display (automatic)**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m aerial / yellow = 5 m photogrammetry / cyan = 10 m). Unshaded areas are not cached.
-- **Gestures**: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area. Downloads and deletions show a confirmation dialog (area count, estimated size).
-- Implemented on top of `infrastructure.prefetch_tiles` and related public APIs. Tiles are always disk-cached and never re-downloaded once present (to be considerate of the public tile server).
+- **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
+- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m aerial / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
 
@@ -342,7 +348,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
-| `{id}/report.html`         | Per-path detailed report (graph embedded)                        |
+| `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
 | `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
 | `{id}/settings.json`       | Per-path input parameters                                        |
@@ -502,7 +508,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | File                    | Contents                                                 |
 | ----------------------- | -------------------------------------------------------- |
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report with embedded graph                      |
+| `report.html`         | Detailed report with the terrain graph and a path map embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
 | `settings.json`       | Complete input parameters (reloadable via Load Settings) |
 | `terrain_profile.csv` | Terrain profile data                                     |
