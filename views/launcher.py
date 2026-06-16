@@ -94,6 +94,20 @@ class SimLauncher:
         self._on_theme = on_theme
 
         self._build_ui()
+        # 終了時、開いたままのマップウィンドウの after ループを止めてから破棄する
+        # （tkintermapview の `invalid command name ...update_canvas_tile_images`
+        # 対策。MapWindow._on_close と対）。
+        root.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
+    def _on_app_close(self) -> None:
+        win = getattr(self, "_map_win", None)
+        if win is not None:
+            try:
+                if win._win.winfo_exists():
+                    win._map.running = False
+            except Exception:
+                pass
+        self.root.destroy()
 
     # ----------------------------------------------------------
     # UI 構築
