@@ -37,6 +37,17 @@ class TestMapGraphics:
         assert isinstance(img, Image.Image)
         assert img.width > 0 and img.height > 0
 
+    def test_north_arrow_returns_rgba_image(self):
+        img = map_graphics.north_arrow(0.0, -1.0)
+        assert isinstance(img, Image.Image)
+        assert img.mode == "RGBA"
+        assert img.width > 0 and img.height > 0
+
+    def test_north_arrow_handles_zero_vector(self):
+        # 退化（北ベクトル 0）でも例外なく描く。
+        img = map_graphics.north_arrow(0.0, 0.0)
+        assert isinstance(img, Image.Image)
+
     def test_distance_text_meters_below_1km(self):
         assert map_graphics.distance_text(0.5) == "500 m"
 
@@ -123,6 +134,13 @@ class TestRenderPathMap:
         assert isinstance(img, Image.Image)
         assert img.mode == "RGB"
         assert img.width > 0 and img.height > 0
+
+    def test_diagonal_path_is_rotated_to_landscape(self, monkeypatch):
+        # 経路を水平化するため、対角の経路でも横長（width > height）になる。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        assert isinstance(img, Image.Image)
+        assert img.width > img.height
 
     def test_returns_none_when_all_tiles_fail(self, monkeypatch):
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
