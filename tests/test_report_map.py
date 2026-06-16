@@ -129,6 +129,26 @@ class TestRenderPathMap:
         img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
         assert img is None
 
+    def test_returns_none_when_fetch_rate_below_threshold(self, monkeypatch):
+        # タイルの約半分だけ取得成功 → 閾値 0.6 未満なので地図なし（注記に委ねる）。
+        # 並列ワーカーから呼ばれるため、共有カウンタではなくタイル座標で決定的に分岐。
+        def _half(layer, zoom, x, y, *args, **kwargs):
+            return self._fake_tile() if (x + y) % 2 == 0 else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", _half)
+        img = report_map.render_path_map(
+            (34.6, 132.5), (34.4, 132.3), min_fetch_frac=0.6
+        )
+        assert img is None
+
+    def test_partial_fetch_above_threshold_renders(self, monkeypatch):
+        # 全取得成功でも閾値を下げれば当然描画。閾値境界の健全性確認。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map(
+            (34.54, 132.41), (34.53, 132.40), min_fetch_frac=0.6
+        )
+        assert isinstance(img, Image.Image)
+
     def test_b64_wrapper_none_when_render_fails(self, monkeypatch):
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
         assert report_map.render_path_map_b64((34.54, 132.41), (34.53, 132.40)) is None
