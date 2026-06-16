@@ -46,6 +46,11 @@ _LEVEL_COLORS: dict[str, str] = {
 # キャッシュ済み領域の外周線の色
 _OUTLINE_COLOR = "#0066CC"
 
+# 開いたとき設定中 TX/RX を収めるよう自動ズームする際のパラメータ。
+_FIT_MARGIN   = 0.25    # bbox を広げる余白（経路が縁に張り付かないように）
+_FIT_MIN_SPAN = 0.002   # 退化（同緯度/同経度の経路）回避の最小スパン（度）
+_SINGLE_ZOOM  = 13      # TX/RX 片方だけ設定済みのときの初期ズーム
+
 
 class MapWindow:
     def __init__(self, parent: tk.Misc, config: dict, launcher=None) -> None:
@@ -307,10 +312,11 @@ class MapWindow:
             )
 
     def _load_launcher_coords(self) -> None:
-        """ランチャー数値欄の既存 TX/RX を取り込み、地図中心を合わせる。
+        """ランチャー数値欄の既存 TX/RX を取り込み、地図の中心とズームを合わせる。
 
-        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う
-        （cache モードで開いたときは経路レイヤを出さない＝モード対称）。
+        両方そろっていれば経路長に合わせて自動ズーム（fit_bounding_box）し、片方
+        だけなら近接ズームでその点に寄せる。マーカー・経路の実描画はモードに応じて
+        _apply_mode_visibility が行う（cache モードでは経路レイヤを出さない）。
         """
         if self._launcher is None:
             return
@@ -319,13 +325,34 @@ class MapWindow:
         self._tx_coord, self._rx_coord = tx, rx
         # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
         self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
-        # 既存座標があれば中心を合わせる（両方あれば中点）。
+        # 既存座標があれば中心とズームを合わせる。
         if tx is not None and rx is not None:
-            self._map.set_position((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
+            self._fit_to_path(tx, rx)
         elif tx is not None:
+            self._map.set_zoom(_SINGLE_ZOOM)
             self._map.set_position(*tx)
         elif rx is not None:
+            self._map.set_zoom(_SINGLE_ZOOM)
             self._map.set_position(*rx)
+
+    def _fit_to_path(self, tx: tuple, rx: tuple) -> None:
+        """TX/RX を余白込みで収める bbox に地図をフィット（経路長に応じ自動ズーム）。
+
+        tkintermapview の fit_bounding_box は top_left=(緯度大, 経度小) /
+        bottom_right=(緯度小, 経度大) で、かつ両者が厳密に大小である必要がある。
+        純東西/南北の経路は span が 0 で退化するため最小スパンと余白でパディングする。
+        （内部で after(100) し寸法確定後にズーム決定される。）
+        """
+        lat_n, lat_s = max(tx[0], rx[0]), min(tx[0], rx[0])
+        lon_w, lon_e = min(tx[1], rx[1]), max(tx[1], rx[1])
+        span_lat = max(lat_n - lat_s, _FIT_MIN_SPAN)
+        span_lon = max(lon_e - lon_w, _FIT_MIN_SPAN)
+        cy, cx = (lat_n + lat_s) / 2, (lon_w + lon_e) / 2
+        half_lat = span_lat / 2 * (1 + _FIT_MARGIN)
+        half_lon = span_lon / 2 * (1 + _FIT_MARGIN)
+        self._map.fit_bounding_box(
+            (cy + half_lat, cx - half_lon), (cy - half_lat, cx + half_lon)
+        )
 
     # ----------------------------------------------------------
     # UI 構築
