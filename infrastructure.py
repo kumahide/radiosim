@@ -439,7 +439,7 @@ def _fetch_tile(
 
     try:
         logger.debug(
-            "Fetching DEM tile: layer=%s zoom=%d x=%d y=%d",
+            "Fetching tile: layer=%s zoom=%d x=%d y=%d",
             layer_id, zoom, xtile, ytile,
         )
         res = _get_session().get(url, timeout=5)
@@ -453,14 +453,14 @@ def _fetch_tile(
             return arr
 
         logger.warning(
-            "DEM tile: unexpected status %d layer=%s tile=(%d,%d)",
+            "tile: unexpected status %d layer=%s tile=(%d,%d)",
             res.status_code, layer_id, xtile, ytile,
         )
         return None
 
     except requests.RequestException as e:
         logger.warning(
-            "DEM tile download failed: layer=%s tile=(%d,%d) error=%s",
+            "tile download failed: layer=%s tile=(%d,%d) error=%s",
             layer_id, xtile, ytile, e,
         )
         if os.path.exists(cache_path):

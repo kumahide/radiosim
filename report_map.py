@@ -83,8 +83,13 @@ def render_path_map(
     tx: _LatLon, rx: _LatLon, *,
     max_tiles: int = 16, margin_frac: float = 0.15,
     min_zoom: int = 5, max_zoom: int = 18,
+    min_fetch_frac: float = 0.6,
 ) -> "Image.Image | None":
-    """経路オーバーレイ地図を生成して PIL Image で返す。失敗時は None。"""
+    """経路オーバーレイ地図を生成して PIL Image で返す。失敗時は None。
+
+    取得できたタイルの割合が min_fetch_frac 未満なら「地図取得不可」として
+    None を返す（灰色の欠けが目立つ中途半端な地図を黙って埋め込まない）。
+    """
     try:
         bbox = _padded_bbox(tx, rx, margin_frac)
         zoom = choose_zoom(tx, rx, max_tiles, min_zoom, max_zoom, margin_frac)
@@ -96,8 +101,12 @@ def render_path_map(
         tiles = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
         fetched = infra.fetch_basemap_tiles(tiles, zoom)
 
-        if not fetched:            # 全滅 → 地図なし（呼び出し側が注記を出す）
-            logger.warning("report_map: all basemap tiles failed; skipping map")
+        if len(fetched) < max(1, round(len(tiles) * min_fetch_frac)):
+            # 取得率が閾値未満（全滅含む）→ 地図なし（呼び出し側が注記を出す）
+            logger.warning(
+                "report_map: only %d/%d basemap tiles fetched; skipping map",
+                len(fetched), len(tiles),
+            )
             return None
 
         w = (x1 - x0 + 1) * _TILE_PX
