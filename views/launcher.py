@@ -18,7 +18,7 @@ import i18n
 import infrastructure as infra
 import simulation as sim
 import version
-from models import ENV_DEFAULT, ENV_LABELS
+from models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -289,16 +289,19 @@ class SimLauncher:
         ttk.Label(
             f_env, text=i18n.t("lbl_env_type"), width=22, anchor="w", font=("Arial", 9)
         ).pack(side="left")
-        env_labels    = list(ENV_LABELS.keys())
-        _key_to_label = {v: k for k, v in ENV_LABELS.items()}
+        # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
+        self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
+        self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
         saved_key     = self.config.get("env_type", ENV_DEFAULT)
-        saved_label   = _key_to_label.get(saved_key, "Suburban")
+        saved_label   = self._env_key_to_label.get(
+            saved_key, self._env_key_to_label[ENV_DEFAULT]
+        )
 
         self._env_var = tk.StringVar(value=saved_label)
         ttk.Combobox(
             f_env,
             textvariable = self._env_var,
-            values       = env_labels,
+            values       = list(self._env_key_to_label.values()),
             state        = "readonly",
             font         = ("Arial", 9),
             width        = 16,
@@ -407,7 +410,7 @@ class SimLauncher:
     # ----------------------------------------------------------
     def _on_run(self) -> None:
         c = {k: self.entries[k].get() for k in self.entries}
-        c["env_type"] = ENV_LABELS.get(self._env_var.get(), "suburban")
+        c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
         # rain_rate と diff_method は UI に Entry がないため config から補完する
         c.setdefault("rain_rate",   self.config.get("rain_rate",   "0.0"))
         c.setdefault("diff_method", self.config.get("diff_method", "deygout"))
@@ -519,8 +522,9 @@ class SimLauncher:
                     self.entries[k].delete(0, tk.END)
                     self.entries[k].insert(0, str(v))
             if "env_type" in new_conf:
-                _key_to_label = {v: k for k, v in ENV_LABELS.items()}
-                label = _key_to_label.get(new_conf["env_type"], "Suburban")
+                label = self._env_key_to_label.get(
+                    new_conf["env_type"], self._env_key_to_label["suburban"]
+                )
                 self._env_var.set(label)
             for key in ("rain_rate", "diff_method"):
                 if key in new_conf:
@@ -586,7 +590,7 @@ class SimLauncher:
     def _current_config(self) -> dict[str, str]:
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
         c = {k: self.entries[k].get() for k in self.entries}
-        c["env_type"]    = ENV_LABELS.get(self._env_var.get(), "los")
+        c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
         c["rain_rate"]   = self.config.get("rain_rate",   "0.0")
         c["diff_method"] = self.config.get("diff_method", "deygout")
         return c

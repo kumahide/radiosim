@@ -82,12 +82,10 @@ ENV_COEFFS: dict[str, tuple] = {
 }
 
 # ランチャー表示用ラベル → env_type キーのマッピング
-ENV_LABELS: dict[str, str] = {
-    "Urban"   : "urban",
-    "Suburban": "suburban",
-    "Rural"   : "rural",
-    "LoS"     : "los",
-}
+# 環境区分の内部キー（ドロップダウン表示順）。表示ラベルは i18n の
+# "env_<key>" を単一ソースとし、言語連動させる（地形ウィンドウ・HTML レポート・
+# ドロップダウンで表記を統一する）。
+ENV_KEYS: list[str] = ["urban", "suburban", "rural", "los"]
 
 # デフォルト環境区分
 ENV_DEFAULT: str = "los"
