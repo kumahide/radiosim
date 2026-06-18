@@ -18,7 +18,7 @@ from tkinter import filedialog, ttk
 import batch
 import i18n
 import simulation as sim
-from models import ENV_LABELS
+from models import ENV_KEYS
 from views import dialogs
 
 
@@ -103,12 +103,17 @@ class BatchBuilderWindow(tk.Toplevel):
         f_env = ttk.Frame(row1)
         f_env.pack(side="left", padx=6)
         ttk.Label(f_env, text=i18n.t("lbl_b_env_type"), font=("Arial", 8)).pack(side="left")
-        _key_to_label = {v: k for k, v in ENV_LABELS.items()}
+        # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
+        self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
+        self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
         self._env_var = tk.StringVar(
-            value=_key_to_label.get(self._base_params.env_type, "LoS")
+            value=self._env_key_to_label.get(
+                self._base_params.env_type, self._env_key_to_label["los"]
+            )
         )
         ttk.Combobox(
-            f_env, textvariable=self._env_var, values=list(ENV_LABELS.keys()),
+            f_env, textvariable=self._env_var,
+            values=list(self._env_key_to_label.values()),
             state="readonly", font=("Arial", 8), width=9,
         ).pack(side="left", padx=(2, 0))
 
@@ -559,7 +564,7 @@ class BatchBuilderWindow(tk.Toplevel):
             "k_factor"   : self._common_vars["k_factor"].get(),
             "samples"    : self._common_vars["num"].get(),
             "rain_rate"  : self._common_vars["rain_rate"].get(),
-            "env_type"   : ENV_LABELS.get(self._env_var.get(), "los"),
+            "env_type"   : self._env_label_to_key.get(self._env_var.get(), "los"),
             "diff_method": self._diff_var.get(),
         }
         return sim.SimParams(c)

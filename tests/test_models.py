@@ -438,10 +438,10 @@ class TestEnvCoeffs:
         for key in ["urban", "suburban", "rural", "los"]:
             assert key in models.ENV_COEFFS
 
-    def test_env_labels_keys_match_coeffs(self):
-        """ENV_LABELS の値がすべて ENV_COEFFS のキーと一致する。"""
-        for label, key in models.ENV_LABELS.items():
-            assert key in models.ENV_COEFFS, f"'{key}' (from label '{label}') not in ENV_COEFFS"
+    def test_env_keys_match_coeffs(self):
+        """ENV_KEYS がすべて ENV_COEFFS のキーと一致する。"""
+        for key in models.ENV_KEYS:
+            assert key in models.ENV_COEFFS, f"'{key}' not in ENV_COEFFS"
 
     def test_env_default_in_coeffs(self):
         """ENV_DEFAULT が ENV_COEFFS に存在する。"""

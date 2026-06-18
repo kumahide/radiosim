@@ -342,8 +342,7 @@ class _GraphWindow:
             return sum(2 if unicodedata.east_asian_width(c) in ("W", "F") else 1 for c in s)
 
         model_label = i18n.t("html_model_deygout") if r.diff_method == "deygout" else i18n.t("html_model_single")
-        _key_to_label = {v: k for k, v in models.ENV_LABELS.items()}
-        env_label     = _key_to_label.get(r.env_type, r.env_type)
+        env_label   = i18n.t(f"env_{r.env_type}")   # HTML レポートと同じ言語連動ラベル
 
         budget_rows: list[tuple[str, str]] = [
             (i18n.t("pl_eirp"),      f"{r.eirp:8.1f} dBm"),
