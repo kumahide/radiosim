@@ -107,6 +107,14 @@ class SimLauncher:
                     win._map.running = False
             except Exception:
                 pass
+        # 地形グラフ（matplotlib pyplot）は独自の Tk ルートとネストした mainloop を
+        # 持つため、ランチャーを閉じても plt.show() のループが残りプロセスが終了
+        # しない。全 Figure を閉じてループを抜けさせる（matplotlib は遅延 import）。
+        try:
+            import matplotlib.pyplot as plt
+            plt.close("all")
+        except Exception:
+            pass
         self.root.destroy()
 
     # ----------------------------------------------------------
