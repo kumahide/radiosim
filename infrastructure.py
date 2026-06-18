@@ -1037,32 +1037,12 @@ def delete_tile_cache(
             _tile_cache.pop(key, None)
             _failed_tiles.discard(key)
 
-    # 淡色地図（basemap）タイルも同じ bbox を削除する。ズーム別ディレクトリを
-    # 走査し、各ズームで bbox に重なるタイルを消す（エリア削除UIから回収可能に）。
-    basemap_root = os.path.join(CACHE_DIR, BASEMAP_SUBDIR)
-    if os.path.isdir(basemap_root):
-        lat_n = max(lat1, lat2)
-        lat_s = min(lat1, lat2)
-        lon_w = min(lon1, lon2)
-        lon_e = max(lon1, lon2)
-        for zdir in os.listdir(basemap_root):
-            try:
-                z = int(zdir)
-            except ValueError:
-                continue
-            x0, y0, _, _ = _tile_coords(lat_n, lon_w, z)
-            x1, y1, _, _ = _tile_coords(lat_s, lon_e, z)
-            for x in range(x0, x1 + 1):
-                for y in range(y0, y1 + 1):
-                    p = os.path.join(basemap_root, zdir, str(x), f"{y}.png")
-                    if os.path.exists(p):
-                        try:
-                            os.remove(p)
-                            deleted += 1
-                        except OSError as e:
-                            logger.warning("delete_tile_cache (basemap): %s", e)
-                            errors += 1
-
+    # 淡色地図（basemap）タイルは範囲削除の対象にしない。範囲削除はマップ
+    # ウィンドウで可視化される DEM カバレッジに対する操作であり、basemap は
+    # そこに表示されない（背景地図は tkintermapview 自前タイル・カバレッジ塗りは
+    # DEM のみ）。見えないものを範囲指定で黙って消すのを避け、件数表示
+    # （count_cached_areas=DEM のみ）とも整合させる。basemap は「全キャッシュ
+    # 削除」（delete_all_tile_cache）でのみ消える。
     logger.info("delete_tile_cache: deleted=%d errors=%d", deleted, errors)
     return {"deleted": deleted, "errors": errors}
 
