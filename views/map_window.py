@@ -739,6 +739,12 @@ class MapWindow:
         self._refresh_stats()
         self._refresh_overlay()   # 全削除後の状態を自動表示に反映
 
+    def on_external_cache_change(self) -> None:
+        """ランチャーのシミュレーション等で外部からキャッシュが増減した後、
+        開いている管理画面の統計とカバレッジ表示を更新する。"""
+        self._refresh_stats()
+        self._refresh_overlay()   # cache モードのみ反映（coords は早期 return）
+
     # ----------------------------------------------------------
     # キャッシュ統計
     # ----------------------------------------------------------

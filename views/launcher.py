@@ -397,6 +397,12 @@ class SimLauncher:
         """ランチャー中央に Yes/No 確認ダイアログを表示し、Yes なら True を返す。"""
         return dialogs.confirm(self.root, title, message)
 
+    def _notify_map_cache_change(self) -> None:
+        """シミュレーションのプリフェッチでキャッシュが増えた後、開いている
+        マップウィンドウの統計・カバレッジ表示を更新する。"""
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_external_cache_change()
+
     def _on_delete_all_cache(self) -> None:
         """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
         if not self._confirm(
@@ -465,6 +471,7 @@ class SimLauncher:
                 )
             except Exception as ex:
                 infra.logger.warning("Prefetch error (continuing): %s", ex)
+            self.root.after(0, self._notify_map_cache_change)
             self.root.after(0, lambda: self._start_simulation(params))
 
         threading.Thread(target=_run_prefetch, daemon=True).start()

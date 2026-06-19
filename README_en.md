@@ -224,7 +224,7 @@ http://proxy.example.com:8080
 The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map, with a mode selector at the top. The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
 - **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
-- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m aerial / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
+- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
 
