@@ -126,7 +126,7 @@ Review the DEM tile cache and prefetch or delete tiles for any area — intended
 
 | Color  | Accuracy                        |
 | ------ | ------------------------------- |
-| Green  | 5 m mesh (from aerial imagery)  |
+| Green  | 5 m mesh (from airborne LiDAR)  |
 | Yellow | 5 m mesh (from photogrammetry)  |
 | Cyan   | 10 m mesh                       |
 
