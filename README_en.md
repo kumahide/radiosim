@@ -172,7 +172,8 @@ radiosim/
     ├── test_infrastructure.py
     ├── test_batch.py
     ├── test_report_map.py
-    └── test_map_window.py
+    ├── test_map_window.py
+    └── test_docs_consistency.py
 ```
 
 ---
@@ -571,7 +572,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (296 tests)
+### Test Suite (305 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
@@ -581,6 +582,7 @@ python -m pytest tests/ --cov
 | `test_batch.py`          | 56    | CSV parse, validation, _make_params behavior, export roundtrip                  |
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
+| `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 
 ---
 

@@ -172,7 +172,8 @@ radiosim/
     ├── test_infrastructure.py
     ├── test_batch.py
     ├── test_report_map.py
-    └── test_map_window.py
+    ├── test_map_window.py
+    └── test_docs_consistency.py
 ```
 
 ---
@@ -574,7 +575,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（296 件）
+### テスト構成（305 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
@@ -584,6 +585,7 @@ python -m pytest tests/ --cov
 | `test_batch.py`          | 56   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
 | `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
+| `test_docs_consistency.py` | 9 | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 
 ---
 
