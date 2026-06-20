@@ -1,4 +1,4 @@
-# RadioSim Pro 2.1
+# RadioSim Pro 2.2
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -39,7 +39,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
-- Tile Cache Manager — visualize, prefetch, and delete DEM cache on a map
+- Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
+- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -127,7 +128,7 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### Dependencies
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 ```
 
 | Library    | Purpose                                                                                     |
@@ -140,6 +141,7 @@ pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststo
 | darkdetect | System dark mode detection                                                                  |
 | markdown   | README viewer (optional — the app works without it)                                        |
 | truststore | SSL certificate verification in corporate proxy environments (optional — works without it) |
+| tkintermapview | Map window tile display (GSI pale map; the map feature degrades gracefully if absent) |
 
 ---
 
@@ -150,13 +152,17 @@ radiosim/
 ├── main.py               # Entry point
 ├── models.py             # Pure calculation logic (no side effects)
 ├── simulation.py         # ViewModel / orchestrator
-├── infrastructure.py     # External dependencies (DEM, config I/O, validation)
+├── infrastructure.py     # External dependencies (DEM/pale tiles, config I/O, validation)
 ├── batch.py              # Batch simulation engine and HTML/KML output
+├── report_map.py         # Headless path-overlay map generation for reports
+├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
 ├── views/
 │   ├── launcher.py       # Launcher window
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
+│   ├── map_window.py     # Map window (Pick Coordinates / Cache Management modes)
+│   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -164,7 +170,10 @@ radiosim/
     ├── test_models.py
     ├── test_simulation.py
     ├── test_infrastructure.py
-    └── test_batch.py
+    ├── test_batch.py
+    ├── test_report_map.py
+    ├── test_map_window.py
+    └── test_docs_consistency.py
 ```
 
 ---
@@ -173,7 +182,7 @@ radiosim/
 
 ```bash
 # Install dependencies
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 
 # Launch
 cd radiosim
@@ -196,9 +205,11 @@ The menu bar provides the following options. Settings are saved to `radiosim_con
 | Settings > Theme        | System / Light / Dark | Window color theme                                                       |
 | Settings > Language     | English / 日本語      | UI language (requires restart)                                           |
 | Settings > Proxy        | URL entry             | Explicit HTTP proxy URL (leave blank to use OS proxy settings)           |
-| Settings > Tile Cache Manager | —              | Opens a window to visualize and manage the DEM cache on a map            |
+| Settings > Load App Settings | —               | Imports only app settings (theme/language/proxy) from a settings file   |
 | Settings > Delete All Cache | —                | Deletes all downloaded DEM/map tiles (with confirmation)                 |
 | Help > Open README      | —                    | Opens this document in a browser                                         |
+
+The Map Window is opened from the **"Map Window" button** at the bottom of the launcher (not the menu).
 
 #### Proxy Settings
 
@@ -212,13 +223,12 @@ http://proxy.example.com:8080
 - Leaving the field blank and clicking OK reverts to OS proxy settings (system settings / environment variables)
 - `truststore` integration with the Windows certificate store is also active to handle corporate SSL inspection
 
-#### Tile Cache Manager
+#### Map Window
 
-**Settings > Tile Cache Manager** (`views/tile_manager.py`) shows the DEM tile cache on the GSI pale map and lets you prefetch or delete tiles for any area. It is a convenience for downloading the areas you need before going offline; normal simulations already cache tiles around each path, so **you do not need to open this window for everyday use**.
+The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map, with a mode selector at the top. The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
-- **Coverage display (automatic)**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m aerial / yellow = 5 m photogrammetry / cyan = 10 m). Unshaded areas are not cached.
-- **Gestures**: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area. Downloads and deletions show a confirmation dialog (area count, estimated size).
-- Implemented on top of `infrastructure.prefetch_tiles` and related public APIs. Tiles are always disk-cached and never re-downloaded once present (to be considerate of the public tile server).
+- **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
+- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
 
@@ -342,7 +352,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
-| `{id}/report.html`         | Per-path detailed report (graph embedded)                        |
+| `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
 | `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
 | `{id}/settings.json`       | Per-path input parameters                                        |
@@ -502,7 +512,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | File                    | Contents                                                 |
 | ----------------------- | -------------------------------------------------------- |
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report with embedded graph                      |
+| `report.html`         | Detailed report with the terrain graph and a path map embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
 | `settings.json`       | Complete input parameters (reloadable via Load Settings) |
 | `terrain_profile.csv` | Terrain profile data                                     |
@@ -529,7 +539,9 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [View layer]
   views/launcher.py       Launcher window
   views/graph.py          Graph window
+  views/map_window.py     Map window (Pick Coordinates / Cache Management)
   views/batch_builder.py  Batch Mode window
+  views/dialogs.py        Shared modal dialogs centered on the parent
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -538,13 +550,17 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [Orchestrator layer]
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, batch execution engine, HTML/KML output
+  report_map.py   Headless path-overlay map generation (tile fetch + compositing)
 
           |
           +---> [Pure calc. layer]  models.py
           |     Propagation calc. (no side effects)
           |
+          +---> [Pure rendering layer]  map_graphics.py
+          |     PIL drawing of markers/distance/north arrow (shared by UI and reports)
+          |
           +---> [External dependency layer]  infrastructure.py
-                DEM HTTP fetch, config I/O, validation
+                DEM/pale tile HTTP fetch, config I/O, validation
 ```
 
 ---
@@ -556,14 +572,17 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (226 tests)
+### Test Suite (305 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
-| `test_models.py`         | 75    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 35    | DEM fetch (parallel, cache, error handling), calculation, save                  |
-| `test_infrastructure.py` | 62    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
-| `test_batch.py`          | 54    | CSV parse, validation, _make_params behavior, export roundtrip                  |
+| `test_infrastructure.py` | 94    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
+| `test_batch.py`          | 56    | CSV parse, validation, _make_params behavior, export roundtrip                  |
+| `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
+| `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
+| `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 
 ---
 

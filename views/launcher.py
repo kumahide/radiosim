@@ -18,7 +18,7 @@ import i18n
 import infrastructure as infra
 import simulation as sim
 import version
-from models import ENV_DEFAULT, ENV_LABELS
+from models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -94,6 +94,36 @@ class SimLauncher:
         self._on_theme = on_theme
 
         self._build_ui()
+        # 終了時、開いたままのマップウィンドウの after ループを止めてから破棄する
+        # （tkintermapview の `invalid command name ...update_canvas_tile_images`
+        # 対策。MapWindow._on_close と対）。
+        root.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
+    def _on_app_close(self) -> None:
+        map_widget = None
+        win = getattr(self, "_map_win", None)
+        if win is not None:
+            try:
+                if win._win.winfo_exists():
+                    map_widget = win._map
+            except Exception:
+                pass
+        # 地形グラフ（matplotlib pyplot）は独自の Tk ルートとネストした mainloop を
+        # 持つため、ランチャーを閉じても plt.show() のループが残りプロセスが終了
+        # しない。全 Figure を閉じてループを抜けさせる（matplotlib は遅延 import）。
+        try:
+            import matplotlib.pyplot as plt
+            plt.close("all")
+        except Exception:
+            pass
+        # マップが開いたままなら、再スケジュールを止めてから猶予をおいて root を
+        # 破棄する（破棄手順は map_window.close_map_safely に集約。直後に destroy
+        # すると tkintermapview の `...update_canvas_tile_images` が破棄後に発火する）。
+        if map_widget is not None:
+            from views.map_window import close_map_safely
+            close_map_safely(self.root, map_widget, self.root.destroy)
+            return
+        self.root.destroy()
 
     # ----------------------------------------------------------
     # UI 構築
@@ -275,16 +305,19 @@ class SimLauncher:
         ttk.Label(
             f_env, text=i18n.t("lbl_env_type"), width=22, anchor="w", font=("Arial", 9)
         ).pack(side="left")
-        env_labels    = list(ENV_LABELS.keys())
-        _key_to_label = {v: k for k, v in ENV_LABELS.items()}
+        # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
+        self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
+        self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
         saved_key     = self.config.get("env_type", ENV_DEFAULT)
-        saved_label   = _key_to_label.get(saved_key, "Suburban")
+        saved_label   = self._env_key_to_label.get(
+            saved_key, self._env_key_to_label[ENV_DEFAULT]
+        )
 
         self._env_var = tk.StringVar(value=saved_label)
         ttk.Combobox(
             f_env,
             textvariable = self._env_var,
-            values       = env_labels,
+            values       = list(self._env_key_to_label.values()),
             state        = "readonly",
             font         = ("Arial", 9),
             width        = 16,
@@ -372,6 +405,12 @@ class SimLauncher:
         """ランチャー中央に Yes/No 確認ダイアログを表示し、Yes なら True を返す。"""
         return dialogs.confirm(self.root, title, message)
 
+    def _notify_map_cache_change(self) -> None:
+        """シミュレーションのプリフェッチでキャッシュが増えた後、開いている
+        マップウィンドウの統計・カバレッジ表示を更新する。"""
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_external_cache_change()
+
     def _on_delete_all_cache(self) -> None:
         """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
         if not self._confirm(
@@ -393,7 +432,7 @@ class SimLauncher:
     # ----------------------------------------------------------
     def _on_run(self) -> None:
         c = {k: self.entries[k].get() for k in self.entries}
-        c["env_type"] = ENV_LABELS.get(self._env_var.get(), "suburban")
+        c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
         # rain_rate と diff_method は UI に Entry がないため config から補完する
         c.setdefault("rain_rate",   self.config.get("rain_rate",   "0.0"))
         c.setdefault("diff_method", self.config.get("diff_method", "deygout"))
@@ -440,6 +479,7 @@ class SimLauncher:
                 )
             except Exception as ex:
                 infra.logger.warning("Prefetch error (continuing): %s", ex)
+            self.root.after(0, self._notify_map_cache_change)
             self.root.after(0, lambda: self._start_simulation(params))
 
         threading.Thread(target=_run_prefetch, daemon=True).start()
@@ -505,8 +545,9 @@ class SimLauncher:
                     self.entries[k].delete(0, tk.END)
                     self.entries[k].insert(0, str(v))
             if "env_type" in new_conf:
-                _key_to_label = {v: k for k, v in ENV_LABELS.items()}
-                label = _key_to_label.get(new_conf["env_type"], "Suburban")
+                label = self._env_key_to_label.get(
+                    new_conf["env_type"], self._env_key_to_label["suburban"]
+                )
                 self._env_var.set(label)
             for key in ("rain_rate", "diff_method"):
                 if key in new_conf:
@@ -572,7 +613,7 @@ class SimLauncher:
     def _current_config(self) -> dict[str, str]:
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
         c = {k: self.entries[k].get() for k in self.entries}
-        c["env_type"]    = ENV_LABELS.get(self._env_var.get(), "los")
+        c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
         c["rain_rate"]   = self.config.get("rain_rate",   "0.0")
         c["diff_method"] = self.config.get("diff_method", "deygout")
         return c

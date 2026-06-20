@@ -9,6 +9,8 @@ map_graphics.py
 呼び出し側の UI 層で行う。これにより同じ見た目をヘッドレスでも再現できる。
 """
 
+import math
+
 from PIL import Image, ImageDraw, ImageFont
 
 # UISP/Ubiquiti 風の基調色（ノード・パス線・ハロー・距離バッジ枠で共通）。
@@ -76,6 +78,48 @@ def distance_badge(text: str) -> Image.Image:
     )
     d.text((padx - l, pady - t), text, font=font, fill=MARKER_TEXT)
     return img.resize((w // scale, h // scale), Image.Resampling.LANCZOS)
+
+
+def north_arrow(dx: float, dy: float) -> Image.Image:
+    """北方向ベクトル (dx, dy)（画像座標・y 下向き）を指す方位記号（RGBA）を返す。
+
+    レポート地図は経路を水平にするため回転され「北が上」でなくなる。方角の
+    手がかりとして、半透明の白円板に矢印と「N」を載せた小記号を返す（呼び出し
+    側が画像の隅に貼る）。supersample → 縮小でアンチエイリアスする。
+    """
+    size, scale = 46, 4
+    s = size * scale
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = s / 2
+    norm = math.hypot(dx, dy) or 1.0
+    ux, uy = dx / norm, dy / norm
+    ink = (40, 40, 40, 255)
+
+    # 半透明の白円板（淡色地図上で記号を読みやすく）。
+    d.ellipse(
+        [c - s * 0.40, c - s * 0.40, c + s * 0.40, c + s * 0.40],
+        fill=(255, 255, 255, 180), outline=UISP_CYAN + (255,), width=scale,
+    )
+    r = s * 0.26
+    tip  = (c + ux * r, c + uy * r)
+    tail = (c - ux * r, c - uy * r)
+    d.line([tail, tip], fill=ink, width=int(2.2 * scale))
+    # 矢じり（tip に三角）。
+    ang = math.atan2(uy, ux)
+    for da in (math.radians(148), math.radians(-148)):
+        hx = tip[0] + math.cos(ang + da) * s * 0.11
+        hy = tip[1] + math.sin(ang + da) * s * 0.11
+        d.line([tip, (hx, hy)], fill=ink, width=int(2.2 * scale))
+    # "N" を北（tip）側に置く。
+    try:
+        font = ImageFont.truetype("arialbd.ttf", int(s * 0.22))
+    except OSError:
+        font = ImageFont.load_default()
+    nl_x, nl_y = c + ux * r * 1.55, c + uy * r * 1.55
+    l, t, rr, bb = d.textbbox((0, 0), "N", font=font)
+    d.text((nl_x - (rr - l) / 2 - l, nl_y - (bb - t) / 2 - t), "N", font=font, fill=ink)
+    return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
 def distance_text(km: float) -> str:

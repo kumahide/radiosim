@@ -997,8 +997,12 @@ class TestBasemapTiles:
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
         assert infra.fetch_basemap_tiles([(1, 2)], 14) == {}
 
-    def test_delete_tile_cache_removes_basemap(self, tmp_path, monkeypatch):
-        """エリア範囲削除が basemap タイル（ズーム別）も回収する。"""
+    def test_delete_tile_cache_keeps_basemap(self, tmp_path, monkeypatch):
+        """エリア範囲削除は basemap タイルを消さない（DEM カバレッジ専用の操作）。
+
+        basemap はマップウィンドウで可視化されないため、範囲指定で黙って消すのを
+        避ける。basemap は「全キャッシュ削除」でのみ消える（下記テスト参照）。
+        """
         monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = infra._tile_coords(self.LAT, self.LON, z)
@@ -1008,4 +1012,17 @@ class TestBasemapTiles:
             f.write(b"\x89PNG")
         assert os.path.exists(path)
         infra.delete_tile_cache(*self.WIDE)
+        assert os.path.exists(path)
+
+    def test_delete_all_tile_cache_removes_basemap(self, tmp_path, monkeypatch):
+        """全キャッシュ削除は basemap タイルも消す。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        z = 14
+        x, y, _, _ = infra._tile_coords(self.LAT, self.LON, z)
+        subdir, path = infra._basemap_tile_path(z, x, y)
+        os.makedirs(subdir, exist_ok=True)
+        with open(path, "wb") as f:
+            f.write(b"\x89PNG")
+        assert os.path.exists(path)
+        infra.delete_all_tile_cache()
         assert not os.path.exists(path)

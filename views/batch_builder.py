@@ -13,12 +13,13 @@ views/batch_builder.py
 import os
 import queue
 import tkinter as tk
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, ttk
 
 import batch
 import i18n
 import simulation as sim
-from models import ENV_LABELS
+from models import ENV_KEYS
+from views import dialogs
 
 
 class BatchBuilderWindow(tk.Toplevel):
@@ -102,12 +103,17 @@ class BatchBuilderWindow(tk.Toplevel):
         f_env = ttk.Frame(row1)
         f_env.pack(side="left", padx=6)
         ttk.Label(f_env, text=i18n.t("lbl_b_env_type"), font=("Arial", 8)).pack(side="left")
-        _key_to_label = {v: k for k, v in ENV_LABELS.items()}
+        # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
+        self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
+        self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
         self._env_var = tk.StringVar(
-            value=_key_to_label.get(self._base_params.env_type, "LoS")
+            value=self._env_key_to_label.get(
+                self._base_params.env_type, self._env_key_to_label["los"]
+            )
         )
         ttk.Combobox(
-            f_env, textvariable=self._env_var, values=list(ENV_LABELS.keys()),
+            f_env, textvariable=self._env_var,
+            values=list(self._env_key_to_label.values()),
             state="readonly", font=("Arial", 8), width=9,
         ).pack(side="left", padx=(2, 0))
 
@@ -389,7 +395,8 @@ class BatchBuilderWindow(tk.Toplevel):
         """テーブルの全行を削除する（確認ダイアログあり）。"""
         if not self._row_frames:
             return
-        if messagebox.askyesno(
+        if dialogs.confirm(
+            self,
             i18n.t("dlg_clear_title"),
             i18n.t("dlg_clear_msg").format(n=len(self._row_frames)),
         ):
@@ -451,6 +458,7 @@ class BatchBuilderWindow(tk.Toplevel):
     # ----------------------------------------------------------
     def _import_csv(self) -> None:
         path = filedialog.askopenfilename(
+            parent=self,
             title=i18n.t("select_batch_csv"),
             filetypes=[("CSV files", "*.csv"), ("All files", "*.*")],
         )
@@ -459,11 +467,12 @@ class BatchBuilderWindow(tk.Toplevel):
         try:
             rows = batch.parse_csv(path)
         except Exception as e:
-            messagebox.showerror(i18n.t("dlg_import_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_import_error"), str(e))
             return
 
         if self._row_entries:
-            if not messagebox.askyesno(
+            if not dialogs.confirm(
+                self,
                 i18n.t("dlg_import_title"),
                 i18n.t("dlg_import_confirm").format(n=len(self._row_entries)),
             ):
@@ -476,7 +485,8 @@ class BatchBuilderWindow(tk.Toplevel):
 
         for row in rows:
             self._add_row(row)
-        messagebox.showinfo(
+        dialogs.alert(
+            self,
             i18n.t("dlg_import_title"),
             i18n.t("dlg_import_success").format(n=len(rows)),
         )
@@ -484,9 +494,10 @@ class BatchBuilderWindow(tk.Toplevel):
     def _export_csv(self) -> None:
         rows = self._read_table_rows()
         if not rows:
-            messagebox.showwarning(i18n.t("dlg_export_title"), i18n.t("dlg_export_empty"))
+            dialogs.alert(self, i18n.t("dlg_export_title"), i18n.t("dlg_export_empty"))
             return
         path = filedialog.asksaveasfilename(
+            parent=self,
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
             initialfile="batch_paths.csv",
@@ -495,16 +506,18 @@ class BatchBuilderWindow(tk.Toplevel):
             return
         try:
             batch.export_csv(rows, path)
-            messagebox.showinfo(
+            dialogs.alert(
+                self,
                 i18n.t("dlg_export_title"),
                 i18n.t("dlg_export_saved").format(path=path),
             )
         except Exception as e:
-            messagebox.showerror(i18n.t("dlg_export_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_export_error"), str(e))
 
     def _save_template(self) -> None:
         """ランチャーの現在値を 1 行目に書いたテンプレート CSV を保存する。"""
         path = filedialog.asksaveasfilename(
+            parent=self,
             defaultextension=".csv",
             filetypes=[("CSV files", "*.csv")],
             initialfile="batch_template.csv",
@@ -524,12 +537,13 @@ class BatchBuilderWindow(tk.Toplevel):
         )
         try:
             batch.export_csv([template], path)
-            messagebox.showinfo(
+            dialogs.alert(
+                self,
                 i18n.t("dlg_template_title"),
                 i18n.t("dlg_template_saved").format(path=path),
             )
         except Exception as e:
-            messagebox.showerror(i18n.t("dlg_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_error"), str(e))
 
     # ----------------------------------------------------------
     # 実行
@@ -550,7 +564,7 @@ class BatchBuilderWindow(tk.Toplevel):
             "k_factor"   : self._common_vars["k_factor"].get(),
             "samples"    : self._common_vars["num"].get(),
             "rain_rate"  : self._common_vars["rain_rate"].get(),
-            "env_type"   : ENV_LABELS.get(self._env_var.get(), "los"),
+            "env_type"   : self._env_label_to_key.get(self._env_var.get(), "los"),
             "diff_method": self._diff_var.get(),
         }
         return sim.SimParams(c)
@@ -562,13 +576,13 @@ class BatchBuilderWindow(tk.Toplevel):
         rows = self._read_table_rows()
         errors = batch.validate_rows(rows)
         if errors:
-            messagebox.showerror(i18n.t("dlg_validation_error"), "\n".join(errors[:10]))
+            dialogs.alert(self, i18n.t("dlg_validation_error"), "\n".join(errors[:10]))
             return
 
         try:
             base_params = self._read_base_params()
         except Exception as e:
-            messagebox.showerror(i18n.t("dlg_common_cfg_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_common_cfg_error"), str(e))
             return
 
         self._running   = True
@@ -647,7 +661,8 @@ class BatchBuilderWindow(tk.Toplevel):
         tot = len(results)
         self._prog_label.config(text=f"Done: {os.path.basename(batch_dir)}")
         self._prog_count_label.config(text=f"{tot} / {tot}  (100%)")
-        if messagebox.askyesno(
+        if dialogs.confirm(
+            self,
             i18n.t("dlg_batch_complete"),
             i18n.t("dlg_batch_complete_msg").format(dir=batch_dir),
         ):
@@ -657,4 +672,4 @@ class BatchBuilderWindow(tk.Toplevel):
         self._running = False
         self._run_btn.config(state="normal")
         self._prog_label.config(text=i18n.t("batch_error_msg"))
-        messagebox.showerror(i18n.t("dlg_batch_error"), str(ex))
+        dialogs.alert(self, i18n.t("dlg_batch_error"), str(ex))

@@ -13,6 +13,7 @@ import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
+import pytest
 from PIL import Image
 
 import infrastructure as infra
@@ -36,6 +37,17 @@ class TestMapGraphics:
         img = map_graphics.distance_badge("1.23 km")
         assert isinstance(img, Image.Image)
         assert img.width > 0 and img.height > 0
+
+    def test_north_arrow_returns_rgba_image(self):
+        img = map_graphics.north_arrow(0.0, -1.0)
+        assert isinstance(img, Image.Image)
+        assert img.mode == "RGBA"
+        assert img.width > 0 and img.height > 0
+
+    def test_north_arrow_handles_zero_vector(self):
+        # 退化（北ベクトル 0）でも例外なく描く。
+        img = map_graphics.north_arrow(0.0, 0.0)
+        assert isinstance(img, Image.Image)
 
     def test_distance_text_meters_below_1km(self):
         assert map_graphics.distance_text(0.5) == "500 m"
@@ -69,24 +81,38 @@ class TestLonLatToPixel:
 
 
 # ============================================================
-# _padded_bbox / choose_zoom（純関数）
+# _band_px / _coverage_tiles / choose_zoom（純関数）
 # ============================================================
-class TestPaddedBbox:
+class TestBandPx:
 
-    def test_normal_orders_corners_and_pads(self):
-        tx, rx = (34.54, 132.41), (34.53, 132.40)
-        lat_n, lat_s, lon_w, lon_e = report_map._padded_bbox(tx, rx, 0.15)
-        assert lat_n > lat_s
-        assert lon_e > lon_w
-        # 余白込みで元の範囲を必ず内包する。
-        assert lat_n > max(tx[0], rx[0])
-        assert lat_s < min(tx[0], rx[0])
+    def test_band_contains_tx_rx_within_half_extent(self):
+        # TX/RX は中点からバンド長手方向に ±path_len/2＝必ず half_w 以内に収まる。
+        band = report_map._band_px((34.54, 132.41), (34.40, 132.20), 14, 0.15)
+        for px, py in ((band.ax, band.ay), (band.bx, band.by)):
+            along = (px - band.mx) * band.ux + (py - band.my) * band.uy
+            perp  = (px - band.mx) * band.px + (py - band.my) * band.py
+            assert abs(along) <= band.half_w + 1e-6
+            assert abs(perp) <= band.half_h + 1e-6
 
-    def test_degenerate_point_still_has_span(self):
-        p = (34.54, 132.41)
-        lat_n, lat_s, lon_w, lon_e = report_map._padded_bbox(p, p, 0.15)
-        assert lat_n - lat_s >= report_map._MIN_SPAN_DEG
-        assert lon_e - lon_w >= report_map._MIN_SPAN_DEG
+    def test_unit_vectors_are_orthonormal(self):
+        band = report_map._band_px((34.54, 132.41), (34.40, 132.20), 14, 0.15)
+        assert band.ux * band.ux + band.uy * band.uy == pytest.approx(1.0)
+        assert band.ux * band.px + band.uy * band.py == pytest.approx(0.0)
+
+    def test_degenerate_point_has_minimum_extent(self):
+        # TX==RX でも最小半幅が確保され（東向きに固定）破綻しない。
+        band = report_map._band_px((34.54, 132.41), (34.54, 132.41), 14, 0.15)
+        assert band.half_w >= report_map._MIN_HALF_PX
+        assert band.half_h > 0
+        assert (band.ux, band.uy) == (1.0, 0.0)
+
+    def test_band_aspect_matches_requested(self):
+        # half_w/half_h = aspect（出力比を固定＝レポート断面図と高さを揃える）。
+        for aspect in (15 / 6, 2.0, 1.0):
+            band = report_map._band_px(
+                (34.54, 132.41), (34.40, 132.20), 14, 0.15, aspect
+            )
+            assert band.half_w / band.half_h == pytest.approx(aspect)
 
 
 class TestChooseZoom:
@@ -94,8 +120,9 @@ class TestChooseZoom:
     def test_tile_count_within_cap(self):
         tx, rx = (34.54, 132.41), (34.40, 132.20)
         z = report_map.choose_zoom(tx, rx, max_tiles=16)
-        bbox = report_map._padded_bbox(tx, rx, 0.15)
-        x0, x1, y0, y1 = report_map._tile_range(bbox, z)
+        x0, x1, y0, y1 = report_map._coverage_tiles(
+            report_map._band_px(tx, rx, z, 0.15)
+        )
         assert (x1 - x0 + 1) * (y1 - y0 + 1) <= 16
 
     def test_closer_path_gets_higher_or_equal_zoom(self):
@@ -124,10 +151,52 @@ class TestRenderPathMap:
         assert img.mode == "RGB"
         assert img.width > 0 and img.height > 0
 
+    def test_diagonal_path_is_rotated_to_landscape(self, monkeypatch):
+        # 経路を水平化するため、対角の経路でも横長（width > height）になる。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        assert isinstance(img, Image.Image)
+        assert img.width > img.height
+
+    def test_output_aspect_matches_profile(self, monkeypatch):
+        # 出力の幅/高さ ≈ 15:6（断面図と同じ＝レポートで高さが揃う）。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        assert img.width / img.height == pytest.approx(15 / 6, rel=0.03)
+
+    def test_no_gray_fill_after_rotation(self, monkeypatch):
+        # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない
+        # （バンドの north-up 外接矩形ぶん取得＋数 px インセットで隅も埋まる）。
+        # _fake_tile は全画素 200 なので 229=_MISSING_RGB は必ず埋め色。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
+        fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
+        assert int(fill.sum()) == 0
+
     def test_returns_none_when_all_tiles_fail(self, monkeypatch):
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
         img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
         assert img is None
+
+    def test_returns_none_when_fetch_rate_below_threshold(self, monkeypatch):
+        # タイルの約半分だけ取得成功 → 閾値 0.6 未満なので地図なし（注記に委ねる）。
+        # 並列ワーカーから呼ばれるため、共有カウンタではなくタイル座標で決定的に分岐。
+        def _half(layer, zoom, x, y, *args, **kwargs):
+            return self._fake_tile() if (x + y) % 2 == 0 else None
+
+        monkeypatch.setattr(infra, "_fetch_tile", _half)
+        img = report_map.render_path_map(
+            (34.6, 132.5), (34.4, 132.3), min_fetch_frac=0.6
+        )
+        assert img is None
+
+    def test_partial_fetch_above_threshold_renders(self, monkeypatch):
+        # 全取得成功でも閾値を下げれば当然描画。閾値境界の健全性確認。
+        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map(
+            (34.54, 132.41), (34.53, 132.40), min_fetch_frac=0.6
+        )
+        assert isinstance(img, Image.Image)
 
     def test_b64_wrapper_none_when_render_fails(self, monkeypatch):
         monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
