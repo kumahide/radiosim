@@ -1,4 +1,4 @@
-# RadioSim Pro 2.1
+# RadioSim Pro 2.2
 
 地上無線回線の伝搬特性を現地調査前にスクリーニングするデスクトップシミュレーターです。
 国土地理院 DEM（数値標高モデル）を自動取得し、地形断面・回折損・植生減衰・リンクバジェットをリアルタイムに可視化します。
@@ -35,11 +35,12 @@ TX（送信局）と RX（受信局）の座標・アンテナ高・無線設定
 - 地球曲率補正（標準大気 K = 4/3 固定）
 - Deygout 法 / Fresnel-Kirchhoff 法による回折損計算
 - 植生減衰（LoS 侵入深さモデル）
-- 環境損失（Urban / Suburban / Rural / LoS の 4 区分）
+- 環境損失（市街地 / 郊外 / 農村 / 見通し の 4 区分）
 - 降雨減衰（ITU-R P.838-3）・大気減衰（ITU-R P.676-13 Annex 2）
 - グラフウィンドウでのアンテナ高・降雨強度リアルタイムスライダー
 - 一括シミュレーション（複数経路を CSV で一括処理）
-- タイルキャッシュ管理ウィンドウ（地図上で DEM キャッシュを可視化・事前取得・削除）
+- マップウィンドウ（地図クリックで座標入力／DEM キャッシュの可視化・事前取得・削除）
+- HTML レポートへの経路地図の自動添付（TX/RX・経路・距離を地図に重ねて埋め込み）
 - 結果のパッケージ保存（PNG / CSV / JSON / HTML / KML）
 - 日本語 / 英語 UI 切替
 - システム連動ダークモード（ライト / ダーク / システム自動）
@@ -127,7 +128,7 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### 必要ライブラリ
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 ```
 
 | ライブラリ | 用途                                                              |
@@ -140,6 +141,7 @@ pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststo
 | darkdetect | システムのダークモード設定検出                                    |
 | markdown   | README ビューア（省略可、なくても動作します）                     |
 | truststore | 企業プロキシ環境での SSL 証明書検証（省略可、なくても動作します） |
+| tkintermapview | マップウィンドウの地図タイル表示（GSI 淡色地図。無い場合は地図機能のみ自動的に無効化） |
 
 ---
 
@@ -150,13 +152,17 @@ radiosim/
 ├── main.py               # エントリーポイント
 ├── models.py             # 純粋計算ロジック（副作用ゼロ）
 ├── simulation.py         # ViewModel / オーケストレーター
-├── infrastructure.py     # 外部依存（DEM 取得・設定 I/O・バリデーション）
+├── infrastructure.py     # 外部依存（DEM/淡色タイル取得・設定 I/O・バリデーション）
 ├── batch.py              # 一括シミュレーションエンジン・HTML/KML 出力
+├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
+├── map_graphics.py       # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
 ├── i18n.py               # 多言語文字列テーブル
 ├── version.py            # バージョン情報
 ├── views/
 │   ├── launcher.py       # ランチャーウィンドウ
 │   ├── graph.py          # グラフウィンドウ（matplotlib + tkinter）
+│   ├── map_window.py     # マップウィンドウ（座標入力 / キャッシュ管理モード）
+│   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
 │   └── batch_builder.py  # 一括シミュレーションウィンドウ
 ├── README_ja.md          # このファイル
 ├── README_en.md          # 英語版 README
@@ -164,7 +170,10 @@ radiosim/
     ├── test_models.py
     ├── test_simulation.py
     ├── test_infrastructure.py
-    └── test_batch.py
+    ├── test_batch.py
+    ├── test_report_map.py
+    ├── test_map_window.py
+    └── test_docs_consistency.py
 ```
 
 ---
@@ -173,7 +182,7 @@ radiosim/
 
 ```bash
 # 依存ライブラリのインストール
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 
 # 起動
 cd radiosim
@@ -196,9 +205,11 @@ python main.py
 | 設定 > テーマ      | システム / ライト / ダーク | ウィンドウのカラーテーマ                                                 |
 | 設定 > 言語        | 日本語 / English           | UI の表示言語（再起動で反映）                                            |
 | 設定 > プロキシ設定 | URL 入力                   | HTTP プロキシを明示指定（空白 = OS のプロキシ設定を使用）                |
-| 設定 > タイルキャッシュ管理 | —              | 地図上で DEM キャッシュを可視化・管理するウィンドウを開く                |
+| 設定 > アプリ設定を読込む | —                  | 設定ファイルから app 設定（テーマ/言語/プロキシ）のみ取り込む            |
 | 設定 > 全キャッシュ削除 | —                 | 取得済みの全 DEM/地図タイルを削除（確認あり）                            |
 | ヘルプ > README    | —                         | このドキュメントをブラウザで表示                                         |
+
+マップウィンドウはランチャー下部の**「マップウィンドウ」ボタン**から開きます（メニューではありません）。
 
 #### プロキシ設定について
 
@@ -212,13 +223,12 @@ http://proxy.example.com:8080
 - 空欄で OK を押すと OS のプロキシ設定（システム設定 / 環境変数）に戻ります
 - SSL インターセプトを行う企業プロキシ向けに `truststore` による Windows 証明書ストア連携も有効です
 
-#### タイルキャッシュ管理について
+#### マップウィンドウについて
 
-**設定 > タイルキャッシュ管理**（`views/tile_manager.py`）で、国土地理院の淡色地図上に DEM タイルのキャッシュ状況を表示し、任意エリアの事前取得（プリフェッチ）・削除を行えます。オフライン現場へ行く前に必要範囲をまとめて取得する補助機能で、通常のシミュレーションでも経路周辺は自動キャッシュされるため**この画面を開かなくても支障はありません**。
+ランチャーの**「マップウィンドウ」ボタン**（`views/map_window.py`）で、国土地理院の淡色地図を使う補助ウィンドウを開きます。上部のモードセレクタで 2 モードを切り替えます。コアのシミュレーションは地図なしで完結し、マップウィンドウは便利機能です。開いたとき設定中 TX/RX の経路長に合わせて自動ズーム・センタリングします。
 
-- **カバレッジ表示（自動）**: パン/ズームに追従し、キャッシュ済み領域を最高精度で色分け表示（緑=5m航空 / 黄=5m写真 / 水色=10m）。未取得は無着色。
-- **操作（ジェスチャ）**: ドラッグ=地図移動 / Ctrl+ドラッグ=DL / Ctrl+Alt+ドラッグ=強制再取得 / Shift+Ctrl+ドラッグ=範囲削除。DL・削除は確認ダイアログ（エリア数・容量目安）あり。
-- 実装は `infrastructure.prefetch_tiles` ほかの公開 API を使用。タイルは必ずディスクキャッシュされ、取得済みは再 DL しない（外部サーバー配慮）。
+- **座標入力モード（既定）**: 地図クリックで TX→RX を交互に指定し、ランチャーの座標欄（start/end）へ書き戻す（数値欄が source of truth）。UISP 風マーカー・経路ライン・距離ラベルを表示。`apply_map_pick`/`current_path_coords` で連携。
+- **キャッシュ管理モード**: パン/ズーム追従でキャッシュ済み領域を最高精度で色分け表示（緑=5m航空レーザ / 黄=5m写真測量 / 水色=10m）。ジェスチャ＝ドラッグ=移動 / Ctrl+ドラッグ=DL / Ctrl+Alt+ドラッグ=強制再取得 / Shift+Ctrl+ドラッグ=範囲削除。DL・削除は確認ダイアログあり。実装は `infrastructure.prefetch_tiles` ほかの公開 API。取得済みは再 DL しない（外部サーバー配慮）。全キャッシュ削除は **設定 > 全キャッシュ削除**。
 
 ---
 
@@ -250,7 +260,7 @@ http://proxy.example.com:8080
 
 | フィールド            | 説明                                       |
 | --------------------- | ------------------------------------------ |
-| 環境区分              | Urban / Suburban / Rural / LoS の 4 区分   |
+| 環境区分              | 市街地 / 郊外 / 農村 / 見通し の 4 区分   |
 | 植生高（m）           | 樹木・建物等の平均高さ                     |
 | ライスKファクター（初期値） | 見通し/散乱電力比の初期値。表示用のみで計算には影響しない（デフォルト = 10.0） |
 | 地形サンプル数        | 10〜2000（多いほど精度向上・取得時間増加） |
@@ -343,7 +353,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,サブ回線
 | `summary.html`             | 全経路のサマリーレポート（グラフのサムネイル付き） |
 | `summary.csv`              | 全経路の数値結果（スプレッドシートで開けます）     |
 | `summary.kml`              | OK / NG / エラーを色分けした Google Earth 用 KML   |
-| `{id}/report.html`         | 経路ごとの詳細レポート（グラフ埋め込み）           |
+| `{id}/report.html`         | 経路ごとの詳細レポート（地形断面グラフ＋経路地図を埋め込み）|
 | `{id}/profile.png`         | 地形断面グラフ                                     |
 | `{id}/path.kml`            | 地形・LoS・Fresnel ゾーン・遮蔽区間の 3D KML       |
 | `{id}/settings.json`       | 経路ごとの入力パラメータ                           |
@@ -367,7 +377,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,サブ回線
 | K ファクター | 0                              | 30      | —   |
 | サンプル数   | 10                             | 2,000   | 点   |
 | 降雨強度     | 0                              | 200     | mm/h |
-| 環境区分     | Urban / Suburban / Rural / LoS | —      |      |
+| 環境区分     | 市街地 / 郊外 / 農村 / 見通し | —      |      |
 | 回折モデル   | deygout / single               | —      |      |
 
 ---
@@ -441,10 +451,10 @@ Env Loss = base + blocked_ratio × blk_c + slant_dist × dist_c + diff_loss × d
 
 | 環境区分 | base | blk_c | dist_c | diff_c | min | max  |
 | -------- | ---- | ----- | ------ | ------ | --- | ---- |
-| Urban    | 10.0 | 0.08  | 1.20   | 0.15   | 6.0 | 30.0 |
-| Suburban | 6.0  | 0.05  | 0.80   | 0.10   | 3.0 | 30.0 |
-| Rural    | 4.0  | 0.03  | 0.50   | 0.08   | 2.0 | 25.0 |
-| LoS      | 2.0  | 0.01  | 0.30   | 0.05   | 1.0 | 15.0 |
+| 市街地   | 10.0 | 0.08  | 1.20   | 0.15   | 6.0 | 30.0 |
+| 郊外     | 6.0  | 0.05  | 0.80   | 0.10   | 3.0 | 30.0 |
+| 農村     | 4.0  | 0.03  | 0.50   | 0.08   | 2.0 | 25.0 |
+| 見通し   | 2.0  | 0.01  | 0.30   | 0.05   | 1.0 | 15.0 |
 
 ### 降雨減衰（ITU-R P.838-3）
 
@@ -505,7 +515,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 | ファイル                | 内容                                   |
 | ----------------------- | -------------------------------------- |
 | `profile.png`         | 地形断面グラフ（150 dpi）              |
-| `report.html`         | 詳細レポート（グラフ埋め込み HTML）    |
+| `report.html`         | 詳細レポート（地形断面グラフ＋経路地図を埋め込んだ HTML）|
 | `path.kml`            | Google Earth 用 3D KML                 |
 | `settings.json`       | 入力パラメータ一式（再読み込み可）     |
 | `terrain_profile.csv` | 地形断面データ                         |
@@ -532,7 +542,9 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [表示層]
   views/launcher.py       ランチャーウィンドウ
   views/graph.py          グラフウィンドウ
+  views/map_window.py     マップウィンドウ（座標入力 / キャッシュ管理）
   views/batch_builder.py  一括シミュレーションウィンドウ
+  views/dialogs.py        親中央表示の共通モーダルダイアログ
   -> 副作用あり。計算・I/O は下位層に委譲。
 
           |
@@ -541,13 +553,17 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [オーケストレーター層]
   simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
   batch.py        CSV I/O・一括実行エンジン・HTML/KML 出力
+  report_map.py   レポート用 経路地図のヘッドレス生成（タイル取得＋合成）
 
           |
           +---> [純粋計算層]  models.py
           |     伝搬計算（副作用ゼロ）
           |
+          +---> [純粋描画層]  map_graphics.py
+          |     マーカー/距離/北矢印の PIL 描画（UI とレポートで共有）
+          |
           +---> [外部依存層]  infrastructure.py
-                DEM HTTP 取得・設定 I/O・バリデーション
+                DEM/淡色タイル HTTP 取得・設定 I/O・バリデーション
 ```
 
 ---
@@ -559,14 +575,17 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（226 件）
+### テスト構成（305 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
-| `test_models.py`         | 75   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
+| `test_models.py`         | 82   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
 | `test_simulation.py`     | 35   | DEM 取得（並列・キャッシュ・エラー）・計算・保存                           |
-| `test_infrastructure.py` | 62   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
-| `test_batch.py`          | 54   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
+| `test_infrastructure.py` | 94   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
+| `test_batch.py`          | 56   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
+| `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
+| `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
+| `test_docs_consistency.py` | 9 | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 
 ---
 

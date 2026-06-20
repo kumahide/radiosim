@@ -107,6 +107,23 @@ class TestHorizontalDistanceKm:
         )
 
 
+class TestVerticalExaggeration:
+    def test_unity_when_balanced(self):
+        # データ範囲・ピクセルとも縦横同比なら誇張なし（×1）。
+        assert models.vertical_exaggeration(1000.0, 1000.0, 100.0, 100.0) == pytest.approx(1.0)
+
+    def test_long_path_is_exaggerated(self):
+        # 横 50km・縦 500m を 800x300px に詰めると大きく誇張される。
+        v = models.vertical_exaggeration(50_000.0, 500.0, 800.0, 300.0)
+        assert v == pytest.approx((50_000.0 / 500.0) * (300.0 / 800.0))
+        assert v > 1.0
+
+    def test_zero_on_degenerate_inputs(self):
+        assert models.vertical_exaggeration(1000.0, 0.0, 100.0, 100.0) == 0.0
+        assert models.vertical_exaggeration(1000.0, 100.0, 0.0, 100.0) == 0.0
+        assert models.vertical_exaggeration(1000.0, 100.0, 100.0, 0.0) == 0.0
+
+
 class TestCalculateTerrainProfile:
     def test_shape_matches_input(self, flat_terrain):
         assert len(flat_terrain.raw_elevs) == 100
@@ -421,10 +438,10 @@ class TestEnvCoeffs:
         for key in ["urban", "suburban", "rural", "los"]:
             assert key in models.ENV_COEFFS
 
-    def test_env_labels_keys_match_coeffs(self):
-        """ENV_LABELS の値がすべて ENV_COEFFS のキーと一致する。"""
-        for label, key in models.ENV_LABELS.items():
-            assert key in models.ENV_COEFFS, f"'{key}' (from label '{label}') not in ENV_COEFFS"
+    def test_env_keys_match_coeffs(self):
+        """ENV_KEYS がすべて ENV_COEFFS のキーと一致する。"""
+        for key in models.ENV_KEYS:
+            assert key in models.ENV_COEFFS, f"'{key}' not in ENV_COEFFS"
 
     def test_env_default_in_coeffs(self):
         """ENV_DEFAULT が ENV_COEFFS に存在する。"""

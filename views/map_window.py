@@ -46,6 +46,46 @@ _LEVEL_COLORS: dict[str, str] = {
 # キャッシュ済み領域の外周線の色
 _OUTLINE_COLOR = "#0066CC"
 
+# 開いたとき設定中 TX/RX を収めるよう自動ズームする際のパラメータ。
+_FIT_MARGIN   = 0.25    # bbox を広げる余白（経路が縁に張り付かないように）
+_FIT_MIN_SPAN = 0.002   # 退化（同緯度/同経度の経路）回避の最小スパン（度）
+_SINGLE_ZOOM  = 13      # TX/RX 片方だけ設定済みのときの初期ズーム
+
+# tkintermapview の after ループを止めてからウィジェットを破棄するまでの猶予 [ms]。
+# キュー済みの直近 after（10ms 周期）が widget 生存中に消化される時間。
+_MAP_DRAIN_MS = 60
+
+
+def close_map_safely(scheduler, map_widget, destroy) -> None:
+    """TkinterMapView を抱えるウィンドウを安全に閉じる**唯一の手順**。
+
+    tkintermapview は `update_canvas_tile_images` を 10ms ごとに自己再スケジュール
+    する。`destroy()` は `running=False` にするが**既にキュー済みの直近 after は
+    取り消さない**ため、破棄直後に発火して
+    `invalid command name ...update_canvas_tile_images` を出す。そこで
+
+      1. `running=False` で再スケジュールを断ち、
+      2. `_MAP_DRAIN_MS` だけ待って（キュー済み after が widget 生存中に無害消化
+         されるのを待って）から `destroy` を実行する。
+
+    マップを破棄し得る経路（マップウィンドウの×・親ランチャー終了・将来の新規経路）
+    は**必ずこの関数を通すこと**。各所に手順をコピーすると今回のように猶予だけ抜け
+    落ちて再発する（[[feedback-radiosim-rules]]）。
+
+    引数:
+      scheduler  : `.after(ms, cb)` を持つ生存中の tk ウィジェット（破棄予定の親など）。
+      map_widget : TkinterMapView 実体（`running` 属性を持つ）。
+      destroy    : 猶予後に呼ぶ実破棄クロージャ。
+    """
+    try:
+        map_widget.running = False
+    except Exception:
+        pass
+    try:
+        scheduler.after(_MAP_DRAIN_MS, destroy)
+    except Exception:
+        destroy()
+
 
 class MapWindow:
     def __init__(self, parent: tk.Misc, config: dict, launcher=None) -> None:
@@ -60,7 +100,8 @@ class MapWindow:
         self._win.minsize(720, 520)
 
         # 現在のモード。"cache"=キャッシュ管理 / "coords"=座標入力（Phase B）。
-        self._mode = tk.StringVar(value="cache")
+        # 既定は coords＝座標入力（マップ連携の主機能。タイル管理は補助レイヤ）。
+        self._mode = tk.StringVar(value="coords")
 
         # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
         self._pick_next = "tx"
@@ -94,13 +135,48 @@ class MapWindow:
         self._overlay_after_id = None   # 自動カバレッジ表示のデバウンス用
         self._status_clear_id = None    # 結果文の自動クリア用 after ID
 
+        self._closing = False
+        self._init_after_id = None      # 初回レイヤ描画の after ID（早期クローズ対策）
         self._build_ui()
         self._refresh_stats()
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_launcher_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
-        # （cache=カバレッジ / coords=経路。既定は cache）。
-        self._win.after(600, self._apply_mode_visibility)
+        # （cache=カバレッジ / coords=経路。既定は coords）。
+        self._init_after_id = self._win.after(600, self._apply_mode_visibility)
+        # 閉じるときは after ループを止めてから破棄する（下記 _on_close 参照）。
+        self._win.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ----------------------------------------------------------
+    # クローズ処理（tkintermapview の after ループを安全に停止）
+    # ----------------------------------------------------------
+    def _on_close(self) -> None:
+        """ウィンドウを閉じる。マップの after ループを止めてから破棄する手順は
+        `close_map_safely` に集約（[[feedback-radiosim-rules]]）。"""
+        if self._closing:
+            return
+        self._closing = True
+        # 自前の after ジョブを取り消す。
+        for aid in (self._overlay_after_id, self._status_clear_id,
+                    self._init_after_id):
+            if aid is not None:
+                try:
+                    self._win.after_cancel(aid)
+                except Exception:
+                    pass
+        self._overlay_after_id = self._status_clear_id = None
+        self._init_after_id = None
+        close_map_safely(self._win, self._map, self._destroy)
+
+    def _destroy(self) -> None:
+        try:
+            self._map.destroy()
+        except Exception:
+            pass
+        try:
+            self._win.destroy()
+        except Exception:
+            pass
 
     # ----------------------------------------------------------
     # プロキシ env 変数同期
@@ -167,9 +243,31 @@ class MapWindow:
     # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
     # 数値欄が source of truth。地図は交互ピッカーに徹する。
     # ----------------------------------------------------------
+    def _click_on_zoom_button(self) -> bool:
+        """直近の押下ピクセルが地図の +/- ズームボタン矩形内かを判定する。
+
+        tkintermapview のズームボタンは canvas 埋込の CanvasButton で、自前の
+        tag_bind とは別に canvas 全体の <Button-1>/<ButtonRelease-1> も発火する
+        ため、ボタン上クリックが「移動なしクリック」として map_click_callback に
+        流れ込み座標ピックされてしまう。押下位置がボタン矩形内なら無視する。"""
+        pos = getattr(self._map, "last_mouse_down_position", None)
+        if not pos:
+            return False
+        px, py = pos
+        for name in ("button_zoom_in", "button_zoom_out"):
+            btn = getattr(self._map, name, None)
+            if btn is None:
+                continue
+            bx, by = btn.canvas_position
+            if bx <= px <= bx + btn.width and by <= py <= by + btn.height:
+                return True
+        return False
+
     def _on_map_click(self, coords: tuple) -> None:
         """地図の素クリック。座標入力モードのときだけ TX→RX を交互にピックする。"""
         if self._mode.get() != "coords" or self._busy:
+            return
+        if self._click_on_zoom_button():
             return
         lat, lon = coords
         role = self._pick_next
@@ -232,10 +330,11 @@ class MapWindow:
             )
 
     def _load_launcher_coords(self) -> None:
-        """ランチャー数値欄の既存 TX/RX を取り込み、地図中心を合わせる。
+        """ランチャー数値欄の既存 TX/RX を取り込み、地図の中心とズームを合わせる。
 
-        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う
-        （cache モードで開いたときは経路レイヤを出さない＝モード対称）。
+        両方そろっていれば経路長に合わせて自動ズーム（fit_bounding_box）し、片方
+        だけなら近接ズームでその点に寄せる。マーカー・経路の実描画はモードに応じて
+        _apply_mode_visibility が行う（cache モードでは経路レイヤを出さない）。
         """
         if self._launcher is None:
             return
@@ -244,13 +343,34 @@ class MapWindow:
         self._tx_coord, self._rx_coord = tx, rx
         # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
         self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
-        # 既存座標があれば中心を合わせる（両方あれば中点）。
+        # 既存座標があれば中心とズームを合わせる。
         if tx is not None and rx is not None:
-            self._map.set_position((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
+            self._fit_to_path(tx, rx)
         elif tx is not None:
+            self._map.set_zoom(_SINGLE_ZOOM)
             self._map.set_position(*tx)
         elif rx is not None:
+            self._map.set_zoom(_SINGLE_ZOOM)
             self._map.set_position(*rx)
+
+    def _fit_to_path(self, tx: tuple, rx: tuple) -> None:
+        """TX/RX を余白込みで収める bbox に地図をフィット（経路長に応じ自動ズーム）。
+
+        tkintermapview の fit_bounding_box は top_left=(緯度大, 経度小) /
+        bottom_right=(緯度小, 経度大) で、かつ両者が厳密に大小である必要がある。
+        純東西/南北の経路は span が 0 で退化するため最小スパンと余白でパディングする。
+        （内部で after(100) し寸法確定後にズーム決定される。）
+        """
+        lat_n, lat_s = max(tx[0], rx[0]), min(tx[0], rx[0])
+        lon_w, lon_e = min(tx[1], rx[1]), max(tx[1], rx[1])
+        span_lat = max(lat_n - lat_s, _FIT_MIN_SPAN)
+        span_lon = max(lon_e - lon_w, _FIT_MIN_SPAN)
+        cy, cx = (lat_n + lat_s) / 2, (lon_w + lon_e) / 2
+        half_lat = span_lat / 2 * (1 + _FIT_MARGIN)
+        half_lon = span_lon / 2 * (1 + _FIT_MARGIN)
+        self._map.fit_bounding_box(
+            (cy + half_lat, cx - half_lon), (cy - half_lat, cx + half_lon)
+        )
 
     # ----------------------------------------------------------
     # UI 構築
@@ -264,7 +384,8 @@ class MapWindow:
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
         self._mode_buttons: dict[str, ttk.Button] = {}
-        for value, key in [("cache", "map_mode_cache"), ("coords", "map_mode_coords")]:
+        # 座標入力＝主機能なので左に並べる。
+        for value, key in [("coords", "map_mode_coords"), ("cache", "map_mode_cache")]:
             b = ttk.Button(
                 modebar, text=i18n.t(key),
                 command=lambda v=value: self._select_mode(v),
@@ -635,6 +756,12 @@ class MapWindow:
         self._set_status(i18n.t("tm_delete_all_done").format(deleted=deleted), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 全削除後の状態を自動表示に反映
+
+    def on_external_cache_change(self) -> None:
+        """ランチャーのシミュレーション等で外部からキャッシュが増減した後、
+        開いている管理画面の統計とカバレッジ表示を更新する。"""
+        self._refresh_stats()
+        self._refresh_overlay()   # cache モードのみ反映（coords は早期 return）
 
     # ----------------------------------------------------------
     # キャッシュ統計

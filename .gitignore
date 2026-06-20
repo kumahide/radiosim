@@ -27,6 +27,15 @@ __pycache__/
 htmlcov/
 .pytest_cache/
 
+# Local dev QA environment (intentionally NOT committed — see decision 2026-06-14):
+# local-LLM review scaffolding (Ollama/Qwen) + its project MCP registration.
+# Activation lives in .claude/ (ignored) and .git/hooks/ (not cloned).
+tools/
+.mcp.json
+
+# Local-LLM QA Stop-hook output (review reports + dedup state)
+.qa/
+
 # IDE
 .vscode/
 .idea/

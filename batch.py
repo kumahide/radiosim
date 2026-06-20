@@ -417,8 +417,8 @@ def save_profile_png(
     )
 
     ax.set_title(f"{params.freq_mhz} MHz", fontsize=13, loc="left")
-    ax.set_xlabel("Distance [km]", fontsize=11)
-    ax.set_ylabel("Altitude [m]",  fontsize=11)
+    ax.set_xlabel(i18n.t("graph_dist_axis"), fontsize=11)
+    ax.set_ylabel(i18n.t("graph_alt_axis"),  fontsize=11)
     ax.grid(True, alpha=0.2)
 
     # 統一凡例: 枠外・右上・横1列
@@ -426,10 +426,10 @@ def save_profile_png(
     # bbox_to_anchor=(1.0, 1.02) → 軸の右端・上端の少し外側
     ax.legend(
         handles=[
-            Patch(facecolor="#8B4513", alpha=0.4, label="Terrain"),
-            Patch(facecolor="green",   alpha=0.3, label="Vegetation"),
-            Line2D([0], [0], color="red", linestyle="--", lw=1.5, label="Line of Sight"),
-            Patch(facecolor="cyan",    alpha=0.25, label="1st Fresnel Zone"),
+            Patch(facecolor="#8B4513", alpha=0.4, label=i18n.t("legend_terrain")),
+            Patch(facecolor="green",   alpha=0.3, label=i18n.t("legend_vegetation")),
+            Line2D([0], [0], color="red", linestyle="--", lw=1.5, label=i18n.t("legend_los")),
+            Patch(facecolor="cyan",    alpha=0.25, label=i18n.t("legend_fresnel")),
         ],
         loc="lower right",
         bbox_to_anchor=(1.0, 1.02),
