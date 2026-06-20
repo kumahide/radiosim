@@ -100,11 +100,12 @@ class SimLauncher:
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
 
     def _on_app_close(self) -> None:
+        map_widget = None
         win = getattr(self, "_map_win", None)
         if win is not None:
             try:
                 if win._win.winfo_exists():
-                    win._map.running = False
+                    map_widget = win._map
             except Exception:
                 pass
         # 地形グラフ（matplotlib pyplot）は独自の Tk ルートとネストした mainloop を
@@ -115,6 +116,13 @@ class SimLauncher:
             plt.close("all")
         except Exception:
             pass
+        # マップが開いたままなら、再スケジュールを止めてから猶予をおいて root を
+        # 破棄する（破棄手順は map_window.close_map_safely に集約。直後に destroy
+        # すると tkintermapview の `...update_canvas_tile_images` が破棄後に発火する）。
+        if map_widget is not None:
+            from views.map_window import close_map_safely
+            close_map_safely(self.root, map_widget, self.root.destroy)
+            return
         self.root.destroy()
 
     # ----------------------------------------------------------
