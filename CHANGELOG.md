@@ -16,6 +16,7 @@
   - 依存ライブラリに `tkintermapview`（マップウィンドウ用）が未記載だったのを README 群の `pip install` 行・依存表へ追記（`requirements.txt` とも一致）。
   - 開発者向け README のテスト件数が古かった（226 件）のを実数 296 件へ更新し、欠落していた `test_report_map.py` / `test_map_window.py` の行とファイル構成の記載を追加。
   - アーキテクチャのレイヤー構成図に 2.2 の新モジュール（`views/map_window.py` / `views/dialogs.py` / `report_map.py` / `map_graphics.py`）が未反映だったのを、各層（表示／オーケストレーター／純粋描画）へ追記。
+  - **再発防止**: ドキュメントのドリフトを自動検出する `tests/test_docs_consistency.py` を追加。コードから生成した正準リスト（モジュール／テストファイル／依存）に対し、README の各構造セクション（ファイル構成ツリー・アーキテクチャ層構成図・テスト表・`pip install` 行）を**個別に**照合する。今回見落とした「図にだけ無い」型のセクション固有ドリフトを CI で捕捉できる。
 
 ---
 
