@@ -1,12 +1,15 @@
-# Runtime dependencies (see README for details). Unpinned to track upstream;
-# CI installs the latest compatible wheels. Pin here if a release needs locking.
-numpy
-matplotlib
-requests
-Pillow
-sv-ttk
-darkdetect
-markdown
-truststore
-tkintermapview
-
+# Runtime dependencies (see README for details).
+# Pinned to known-good versions for reproducible CI runs and binary builds —
+# an unpinned upstream bump (e.g. numpy/matplotlib) can silently break the
+# packaged app that ships to users. To refresh: bump a pin, run the full test
+# suite + a build, then commit. Transitive deps are not locked here; add a
+# full lockfile only if bit-exact reproducibility becomes necessary.
+numpy==2.4.4
+matplotlib==3.10.9
+requests==2.33.1
+Pillow==12.2.0
+sv-ttk==2.6.1
+darkdetect==0.8.0
+markdown==3.10.2
+truststore==0.10.4
+tkintermapview==1.29
