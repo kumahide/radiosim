@@ -541,7 +541,9 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [表示層]
   views/launcher.py       ランチャーウィンドウ
   views/graph.py          グラフウィンドウ
+  views/map_window.py     マップウィンドウ（座標入力 / キャッシュ管理）
   views/batch_builder.py  一括シミュレーションウィンドウ
+  views/dialogs.py        親中央表示の共通モーダルダイアログ
   -> 副作用あり。計算・I/O は下位層に委譲。
 
           |
@@ -550,13 +552,17 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [オーケストレーター層]
   simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
   batch.py        CSV I/O・一括実行エンジン・HTML/KML 出力
+  report_map.py   レポート用 経路地図のヘッドレス生成（タイル取得＋合成）
 
           |
           +---> [純粋計算層]  models.py
           |     伝搬計算（副作用ゼロ）
           |
+          +---> [純粋描画層]  map_graphics.py
+          |     マーカー/距離/北矢印の PIL 描画（UI とレポートで共有）
+          |
           +---> [外部依存層]  infrastructure.py
-                DEM HTTP 取得・設定 I/O・バリデーション
+                DEM/淡色タイル HTTP 取得・設定 I/O・バリデーション
 ```
 
 ---
