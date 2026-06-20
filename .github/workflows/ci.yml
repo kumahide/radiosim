@@ -26,7 +26,7 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install pytest pyright ruff
+          pip install pytest pytest-cov pyright ruff
 
       - name: Ruff (syntax + pyflakes)
         run: ruff check --select E9,F .
@@ -37,6 +37,7 @@ jobs:
           batch.py models.py simulation.py infrastructure.py version.py
           i18n.py main.py report_map.py map_graphics.py
           views/launcher.py views/graph.py views/batch_builder.py
+          views/map_window.py views/dialogs.py
 
-      - name: Pytest
-        run: python -m pytest
+      - name: Pytest (with coverage gate)
+        run: python -m pytest --cov
