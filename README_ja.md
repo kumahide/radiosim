@@ -128,7 +128,7 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### 必要ライブラリ
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 ```
 
 | ライブラリ | 用途                                                              |
@@ -141,6 +141,7 @@ pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststo
 | darkdetect | システムのダークモード設定検出                                    |
 | markdown   | README ビューア（省略可、なくても動作します）                     |
 | truststore | 企業プロキシ環境での SSL 証明書検証（省略可、なくても動作します） |
+| tkintermapview | マップウィンドウの地図タイル表示（GSI 淡色地図。無い場合は地図機能のみ自動的に無効化） |
 
 ---
 
@@ -169,7 +170,9 @@ radiosim/
     ├── test_models.py
     ├── test_simulation.py
     ├── test_infrastructure.py
-    └── test_batch.py
+    ├── test_batch.py
+    ├── test_report_map.py
+    └── test_map_window.py
 ```
 
 ---
@@ -178,7 +181,7 @@ radiosim/
 
 ```bash
 # 依存ライブラリのインストール
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 
 # 起動
 cd radiosim
@@ -565,14 +568,16 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（226 件）
+### テスト構成（296 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
-| `test_models.py`         | 75   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
+| `test_models.py`         | 82   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
 | `test_simulation.py`     | 35   | DEM 取得（並列・キャッシュ・エラー）・計算・保存                           |
-| `test_infrastructure.py` | 62   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
-| `test_batch.py`          | 54   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
+| `test_infrastructure.py` | 94   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
+| `test_batch.py`          | 56   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
+| `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
+| `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
 
 ---
 
