@@ -128,7 +128,7 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### Dependencies
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 ```
 
 | Library    | Purpose                                                                                     |
@@ -141,6 +141,7 @@ pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststo
 | darkdetect | System dark mode detection                                                                  |
 | markdown   | README viewer (optional — the app works without it)                                        |
 | truststore | SSL certificate verification in corporate proxy environments (optional — works without it) |
+| tkintermapview | Map window tile display (GSI pale map; the map feature degrades gracefully if absent) |
 
 ---
 
@@ -169,7 +170,9 @@ radiosim/
     ├── test_models.py
     ├── test_simulation.py
     ├── test_infrastructure.py
-    └── test_batch.py
+    ├── test_batch.py
+    ├── test_report_map.py
+    └── test_map_window.py
 ```
 
 ---
@@ -178,7 +181,7 @@ radiosim/
 
 ```bash
 # Install dependencies
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore
+pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
 
 # Launch
 cd radiosim
@@ -562,14 +565,16 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (226 tests)
+### Test Suite (296 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
-| `test_models.py`         | 75    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 35    | DEM fetch (parallel, cache, error handling), calculation, save                  |
-| `test_infrastructure.py` | 62    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
-| `test_batch.py`          | 54    | CSV parse, validation, _make_params behavior, export roundtrip                  |
+| `test_infrastructure.py` | 94    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
+| `test_batch.py`          | 56    | CSV parse, validation, _make_params behavior, export roundtrip                  |
+| `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
+| `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
 
 ---
 
