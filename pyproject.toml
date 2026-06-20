@@ -8,3 +8,7 @@ omit   = ["views/*", "main.py"]   # GUI層はカバレッジ対象外
 
 [tool.coverage.report]
 show_missing = true
+# CI gate: the calc core (models/simulation/infrastructure) must stay tested.
+# Current ~87%; floor set below it so routine changes don't trip, but a real
+# drop in core coverage fails the build. Raise as coverage improves.
+fail_under = 85
