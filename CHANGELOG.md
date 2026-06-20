@@ -15,6 +15,7 @@
 - **リリース前にソース全体とドキュメント群の記載内容を突き合わせて整合を確認**（バージョン文字列だけでなく内容を監査）。以下の実装との乖離を修正:
   - 依存ライブラリに `tkintermapview`（マップウィンドウ用）が未記載だったのを README 群の `pip install` 行・依存表へ追記（`requirements.txt` とも一致）。
   - 開発者向け README のテスト件数が古かった（226 件）のを実数 296 件へ更新し、欠落していた `test_report_map.py` / `test_map_window.py` の行とファイル構成の記載を追加。
+  - アーキテクチャのレイヤー構成図に 2.2 の新モジュール（`views/map_window.py` / `views/dialogs.py` / `report_map.py` / `map_graphics.py`）が未反映だったのを、各層（表示／オーケストレーター／純粋描画）へ追記。
 
 ---
 

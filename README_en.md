@@ -538,7 +538,9 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [View layer]
   views/launcher.py       Launcher window
   views/graph.py          Graph window
+  views/map_window.py     Map window (Pick Coordinates / Cache Management)
   views/batch_builder.py  Batch Mode window
+  views/dialogs.py        Shared modal dialogs centered on the parent
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -547,13 +549,17 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [Orchestrator layer]
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, batch execution engine, HTML/KML output
+  report_map.py   Headless path-overlay map generation (tile fetch + compositing)
 
           |
           +---> [Pure calc. layer]  models.py
           |     Propagation calc. (no side effects)
           |
+          +---> [Pure rendering layer]  map_graphics.py
+          |     PIL drawing of markers/distance/north arrow (shared by UI and reports)
+          |
           +---> [External dependency layer]  infrastructure.py
-                DEM HTTP fetch, config I/O, validation
+                DEM/pale tile HTTP fetch, config I/O, validation
 ```
 
 ---
