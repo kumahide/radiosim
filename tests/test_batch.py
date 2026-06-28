@@ -118,6 +118,20 @@ class TestValidateRows:
     def test_freq_none_is_valid(self):
         assert batch.validate_rows([_row(freq_mhz=None)]) == []
 
+    def test_gain_tx_out_of_range_high(self):
+        errs = batch.validate_rows([_row(gain_tx=61.0)])
+        assert any("TX gain" in e for e in errs)
+
+    def test_gain_rx_out_of_range_negative(self):
+        errs = batch.validate_rows([_row(gain_rx=-1.0)])
+        assert any("RX gain" in e for e in errs)
+
+    def test_gain_none_is_valid(self):
+        assert batch.validate_rows([_row(gain_tx=None, gain_rx=None)]) == []
+
+    def test_gain_boundary_values_accepted(self):
+        assert batch.validate_rows([_row(gain_tx=0.0, gain_rx=60.0)]) == []
+
     def test_boundary_h_tx_zero(self):
         assert batch.validate_rows([_row(h_tx=0.0)]) == []
 
@@ -192,6 +206,29 @@ class TestParseCsv:
         content = "id,start,end,h_tx,h_rx,note\n" + self._make_row(extra=",test note")
         rows = batch.parse_csv(_csv_file(tmp_path, content))
         assert rows[0].note == "test note"
+
+    def test_optional_gain_parsed(self, tmp_path):
+        content = ("id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note\n"
+                   + self._make_row(extra=",2400,12.5,8.0,note"))
+        rows = batch.parse_csv(_csv_file(tmp_path, content))
+        assert rows[0].gain_tx == pytest.approx(12.5)
+        assert rows[0].gain_rx == pytest.approx(8.0)
+
+    def test_legacy_csv_without_gain_columns(self, tmp_path):
+        """gain 列のない旧 CSV は後方互換で読め、gain は None（base 継承）になること。"""
+        content = "id,start,end,h_tx,h_rx,freq,note\n" + self._make_row(extra=",2400,old")
+        rows = batch.parse_csv(_csv_file(tmp_path, content))
+        assert rows[0].freq_mhz == pytest.approx(2400.0)
+        assert rows[0].gain_tx is None
+        assert rows[0].gain_rx is None
+        assert rows[0].note == "old"
+
+    def test_optional_gain_empty_is_none(self, tmp_path):
+        content = ("id,start,end,h_tx,h_rx,gain_tx,gain_rx\n"
+                   + self._make_row(extra=",,"))
+        rows = batch.parse_csv(_csv_file(tmp_path, content))
+        assert rows[0].gain_tx is None
+        assert rows[0].gain_rx is None
 
     def test_empty_file_raises(self, tmp_path):
         p = tmp_path / "empty.csv"
@@ -354,6 +391,32 @@ class TestMakeParams:
         result = _make_params(row, base)
         assert result.freq_mhz == pytest.approx(5800.0)
 
+    def test_gain_falls_back_to_base_when_none(self):
+        """`gain_tx`/`gain_rx=None` のとき base の利得が使われること（per-row 継承）。"""
+        row = batch.PathRow(
+            path_id="p1",
+            lat_tx=34.54, lon_tx=132.41,
+            lat_rx=34.53, lon_rx=132.40,
+            h_tx=30.0, h_rx=10.0,
+        )
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        result = _make_params(row, base)
+        assert result.gain_tx == pytest.approx(3.0)
+        assert result.gain_rx == pytest.approx(3.0)
+
+    def test_gain_overrides_base_when_set(self):
+        """`gain_tx`/`gain_rx` 指定時は base より優先されること（リンク識別属性）。"""
+        row = batch.PathRow(
+            path_id="p1",
+            lat_tx=34.54, lon_tx=132.41,
+            lat_rx=34.53, lon_rx=132.40,
+            h_tx=30.0, h_rx=10.0, gain_tx=15.0, gain_rx=9.0,
+        )
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        result = _make_params(row, base)
+        assert result.gain_tx == pytest.approx(15.0)
+        assert result.gain_rx == pytest.approx(9.0)
+
 
 # ============================================================
 # export_csv ラウンドトリップ
@@ -363,8 +426,10 @@ class TestExportCsvRoundtrip:
     def test_roundtrip_preserves_values(self, tmp_path):
         """export → parse で全フィールドが保持されること。"""
         rows = [
-            batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0, 2400.0, "Main"),
-            batch.PathRow("p02", 34.55, 132.42, 34.52, 132.39, 20.0, 15.0, None,   ""),
+            batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0,
+                          freq_mhz=2400.0, gain_tx=12.5, gain_rx=8.0, note="Main"),
+            batch.PathRow("p02", 34.55, 132.42, 34.52, 132.39, 20.0, 15.0,
+                          freq_mhz=None, gain_tx=None, gain_rx=None, note=""),
         ]
         csv_path = str(tmp_path / "out.csv")
         batch.export_csv(rows, csv_path)
@@ -376,8 +441,12 @@ class TestExportCsvRoundtrip:
         assert reloaded[0].lon_tx   == pytest.approx(132.41)
         assert reloaded[0].h_tx     == pytest.approx(30.0)
         assert reloaded[0].freq_mhz == pytest.approx(2400.0)
+        assert reloaded[0].gain_tx  == pytest.approx(12.5)
+        assert reloaded[0].gain_rx  == pytest.approx(8.0)
         assert reloaded[0].note     == "Main"
         assert reloaded[1].freq_mhz is None
+        assert reloaded[1].gain_tx  is None
+        assert reloaded[1].gain_rx  is None
         assert reloaded[1].note     == ""
 
 
@@ -443,3 +512,38 @@ class TestSavePathHtmlCoordFormat:
     def test_dms(self, tmp_path, flat_terrain, default_params_dict):
         html = self._render(tmp_path, flat_terrain, default_params_dict, "dms")
         assert "34°32'34.4\"N, 132°24'42.5\"E" in html
+
+
+# ============================================================
+# サマリ出力に gain 列が含まれること（Phase D1）
+# ============================================================
+class TestSummaryGainColumns:
+
+    def _result(self, default_params_dict, gain_tx="9.0", gain_rx="6.0"):
+        d = dict(default_params_dict)
+        d["gain_tx"] = gain_tx
+        d["gain_rx"] = gain_rx
+        params = sim.SimParams(d)
+        row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0,
+                            gain_tx=float(gain_tx), gain_rx=float(gain_rx))
+        return batch.PathResult(row=row, result=_make_result(), params=params)
+
+    def test_summary_csv_has_gain_columns(self, tmp_path, default_params_dict):
+        import csv as _csv
+        batch._save_summary_csv([self._result(default_params_dict)], str(tmp_path))
+        with open(os.path.join(str(tmp_path), "summary.csv"), encoding="utf-8") as f:
+            reader = _csv.reader(f)
+            header = next(reader)
+            data   = next(reader)
+        assert "gain_tx_dbi" in header
+        assert "gain_rx_dbi" in header
+        assert data[header.index("gain_tx_dbi")] == "9.0"
+        assert data[header.index("gain_rx_dbi")] == "6.0"
+
+    def test_summary_html_has_gain_headers(self, tmp_path, default_params_dict):
+        i18n.set_lang("en")
+        batch.save_summary_html([self._result(default_params_dict)], str(tmp_path))
+        with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
+            html = f.read()
+        assert "TX Gain (dBi)" in html
+        assert "RX Gain (dBi)" in html

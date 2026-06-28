@@ -319,9 +319,19 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 Click the **Batch Mode** button in the launcher to open the dedicated window.
 
+### Design: refine in Single, finalize in Batch
+
+**Single (the launcher) is where you refine conditions; Batch is where you produce deliverables from finalized conditions.** The launcher is the single source of truth, and each batch row is a **finalized link frozen by copying the launcher fields at the moment the row is added**.
+
 ### Input Methods
 
-**Manual entry**: Type IDs, coordinates, antenna heights, and frequencies directly into the table. Rows can be added, deleted, and reordered by drag and drop.
+**Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and cells edited in place.
+
+- **+ Add Row**: adds a row frozen from the current launcher fields (coordinates, frequency, gains, antenna heights).
+- **Right-click a row**: opens the per-row menu.
+  - **→ Send to Single**: loads that row's coordinates + RF into the launcher for adjustment.
+  - **⟳ Update RF from Launcher**: writes the launcher's current RF back into that row (**coordinates are preserved**).
+  - Duplicate / Delete.
 
 **CSV import**: Click the Template button to save a sample CSV, edit it, then import.
 
@@ -329,20 +339,21 @@ Click the **Batch Mode** button in the launcher to open the dedicated window.
 
 Required columns: `id, start, end, h_tx, h_rx`
 
-Optional columns: `freq, note`
+Optional columns: `freq, gain_tx, gain_rx, note`
 
 ```csv
-id,start,end,h_tx,h_rx,freq,note
-path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,Main link
-path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,Sub link
+id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note
+path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link
+path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
 ```
 
 - `start` / `end` must be quoted because they contain a comma
-- `freq` falls back to the Common Settings value when omitted. Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
+- `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
+- Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 
-### Common Settings
+### Common Settings (a snapshot of the launcher)
 
-The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified.
+The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only** — a snapshot of the launcher (the source of truth). Use the **↻ From Launcher** button to pull in the launcher's current values.
 
 ### Running and Results
 
@@ -578,14 +589,14 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (346 tests)
+### Test Suite (357 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_infrastructure.py` | 95    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
-| `test_batch.py`          | 58    | CSV parse, validation, _make_params behavior, export roundtrip, HTML coords     |
+| `test_batch.py`          | 69    | CSV parse, validation, _make_params behavior, export roundtrip, HTML coords     |
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
 | `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
