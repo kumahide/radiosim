@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+import version
+
 ROOT = Path(__file__).resolve().parent.parent
 
 # --- 正準リスト（実装＝真実）-------------------------------------------------
@@ -106,3 +108,57 @@ def test_pip_install_line_lists_all_dependencies(doc):
     blob = "\n".join(pip_lines).lower()
     for dep in _deps():
         assert dep.lower() in blob, f"{doc}: pip install line is missing dependency {dep}"
+
+
+# --- 5. バージョン文字列: version.py を単一ソースに各ドキュメントが追従するか --
+#       リリース時に version.APP_VERSION を上げたら README の H1 と CHANGELOG の
+#       見出しも更新することを強制する（最も影響の大きいリリース時ドリフト）。
+VERSION_READMES = [
+    "README_ja.md", "README_en.md",
+    "README_binary_ja.md", "README_binary_en.md",
+]
+
+
+@pytest.mark.parametrize("doc", VERSION_READMES)
+def test_readme_h1_matches_app_version(doc):
+    expected = f"# RadioSim Pro {version.APP_VERSION}"
+    first_line = _read(doc).splitlines()[0].strip()
+    assert first_line == expected, (
+        f"{doc}: H1 is {first_line!r}, expected {expected!r} "
+        f"(version.APP_VERSION={version.APP_VERSION})"
+    )
+
+
+def test_changelog_has_current_version_section():
+    needle = f"## [{version.APP_VERSION}]"
+    assert needle in _read("CHANGELOG.md"), (
+        f"CHANGELOG.md has no '{needle}' section for the current "
+        f"version.APP_VERSION={version.APP_VERSION}"
+    )
+
+
+# --- 6. dev README が参照する .py ファイルが実在するか -----------------------
+#       散文中の `xxx.py` / `views/xxx.py` 参照が、改名・削除されたモジュールを
+#       指していないかを検証する（バックティック内の .py トークンのみ対象）。
+def _repo_py_files() -> tuple[set[str], set[str]]:
+    """リポジトリ内の .py ファイルの (相対パス集合, ベース名集合) を返す。"""
+    skip = {".venv", "build", "dist", "__pycache__", ".git", "tools", ".qa"}
+    paths: set[str] = set()
+    names: set[str] = set()
+    for p in ROOT.rglob("*.py"):
+        if skip & set(p.relative_to(ROOT).parts):
+            continue
+        paths.add(p.relative_to(ROOT).as_posix())
+        names.add(p.name)
+    return paths, names
+
+
+@pytest.mark.parametrize("doc", DEV_READMES)
+def test_dev_readme_py_references_exist(doc):
+    paths, names = _repo_py_files()
+    refs = set(re.findall(r"`([\w/]+\.py)`", _read(doc)))
+    for ref in refs:
+        # パス付き参照は相対パスで、ベース名のみの参照は名前集合で照合する
+        # （テスト表は `test_models.py` のように tests/ 接頭辞なしで列挙される）。
+        ok = (ref in paths) if "/" in ref else (ref in names)
+        assert ok, f"{doc}: references non-existent Python file `{ref}`"
