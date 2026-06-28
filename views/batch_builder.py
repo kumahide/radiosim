@@ -20,6 +20,7 @@ import batch
 import coords
 import i18n
 import infrastructure as infra
+import report
 import simulation as sim
 from models import ENV_KEYS
 from views import dialogs
@@ -782,11 +783,11 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_label.config(text=f"✓ {self._ok_count} OK")
         self._ng_label.config(text=f"✗ {self._ng_count} NG")
         self._err_label.config(text=f"⚠ {self._err_count} ERR")
-        batch.save_path_visuals(pr, self._coord_format)
+        report.save_path_visuals(pr, self._coord_format)
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
-        batch.save_summary_html(results, batch_dir)
-        batch.save_summary_kml(results, batch_dir)
+        report.save_summary_html(results, batch_dir)
+        report.save_summary_kml(results, batch_dir)
         self._running = False
         self._run_btn.config(state="normal")
         tot = len(results)

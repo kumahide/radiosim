@@ -20,11 +20,11 @@ from matplotlib.patches import Rectangle
 from matplotlib.widgets import Button, Slider, TextBox
 from tkinter import messagebox
 
-import batch
 import i18n
 import infrastructure as infra
 import models
 import mpl_fonts
+import report
 import simulation as sim
 import version
 
@@ -432,11 +432,11 @@ class _GraphWindow:
                 h_rx    = h_rx,
                 coord_format = coord_format,
             )
-            batch.save_profile_png(
+            report.save_profile_png(
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir, coord_format,
             )
-            batch.save_path_kml(
+            report.save_path_kml(
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir,
             )

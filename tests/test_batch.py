@@ -16,8 +16,10 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import batch
 import i18n
 import models
+import report
 import simulation as sim
-from batch import _find_obs_segments, _make_params
+from batch import _make_params
+from report import _find_obs_segments
 
 
 # ============================================================
@@ -469,7 +471,7 @@ class TestSavePathHtmlMap:
     def _render(self, tmp_path, flat_terrain, default_params_dict, map_b64):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        batch.save_path_html(
+        report.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=map_b64,
         )
@@ -497,7 +499,7 @@ class TestSavePathHtmlCoordFormat:
     def _render(self, tmp_path, flat_terrain, default_params_dict, coord_format):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        batch.save_path_html(
+        report.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None, coord_format=coord_format,
         )
@@ -530,7 +532,7 @@ class TestSummaryGainColumns:
 
     def test_summary_csv_has_gain_columns(self, tmp_path, default_params_dict):
         import csv as _csv
-        batch._save_summary_csv([self._result(default_params_dict)], str(tmp_path))
+        report._save_summary_csv([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.csv"), encoding="utf-8") as f:
             reader = _csv.reader(f)
             header = next(reader)
@@ -542,7 +544,7 @@ class TestSummaryGainColumns:
 
     def test_summary_html_has_gain_headers(self, tmp_path, default_params_dict):
         i18n.set_lang("en")
-        batch.save_summary_html([self._result(default_params_dict)], str(tmp_path))
+        report.save_summary_html([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             html = f.read()
         assert "TX Gain (dBi)" in html

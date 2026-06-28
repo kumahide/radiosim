@@ -4,7 +4,7 @@ mpl_fonts.py
 matplotlib に日本語対応フォントを適用するヘッドレスヘルパ。
 
 UI 知識ゼロ（matplotlib + i18n のみ依存）。グラフウィンドウ（views/graph.py）と
-バッチのヘッドレス PNG 生成（batch.save_profile_png）の双方から呼ぶ。
+バッチのヘッドレス PNG 生成（report.save_profile_png）の双方から呼ぶ。
 
 背景: 日本語フォントの適用は元々 graph.py の `show_graph` でのみ行われ、その rcParams
 設定がプロセス全体に残ることに依存していた。そのためバッチを個別グラフより先に実行すると
