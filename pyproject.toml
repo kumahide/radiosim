@@ -2,6 +2,23 @@
 testpaths = ["tests"]
 addopts   = "--tb=short -q"
 
+# --- Ruff（lint）-----------------------------------------------------------
+# CI の lint をここに明文化（従来は CI で `--select E9,F` をフラグ指定していた）。
+# E9=構文エラー / F=pyflakes（未使用 import・未定義名）。GUI も静的検査するため
+# 除外なし。CI は `ruff check .` で本設定を単一ソースとして使う。
+[tool.ruff]
+target-version = "py310"
+
+[tool.ruff.lint]
+select = ["E9", "F"]
+
+# --- Bandit（セキュリティ静的解析）----------------------------------------
+# 設定をここに明文化（CI 化は低優先で別途）。テストとビルド生成物は対象外。
+# B101(assert) はテスト方針上許容、B404/B603(subprocess) はビルド補助で意図的。
+[tool.bandit]
+exclude_dirs = ["tests", "build", "dist", ".venv"]
+skips = ["B101"]
+
 [tool.coverage.run]
 source = ["models", "simulation", "infrastructure"]
 omit   = ["views/*", "main.py"]   # GUI層はカバレッジ対象外

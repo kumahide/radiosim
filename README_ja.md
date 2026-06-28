@@ -177,6 +177,7 @@ radiosim/
     ├── test_map_window.py
     ├── test_coords.py
     ├── test_mpl_fonts.py
+    ├── test_smoke.py
     └── test_docs_consistency.py
 ```
 
@@ -594,7 +595,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（357 件）
+### テスト構成（375 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
@@ -606,6 +607,7 @@ python -m pytest tests/ --cov
 | `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
 | `test_coords.py`         | 24   | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
 | `test_mpl_fonts.py`      | 4    | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
+| `test_smoke.py`          | 18   | 全モジュールの import 疎通＋tkinter ルート生成（ヘッドレスは skip）        |
 | `test_docs_consistency.py` | 9 | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 
 ---
