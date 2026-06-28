@@ -25,6 +25,7 @@ import coords
 import i18n
 import infrastructure as infra
 import models
+import mpl_fonts
 import report_map
 import simulation as sim
 import version
@@ -391,11 +392,16 @@ def save_profile_png(
 
     pyplot（TkAgg）を使わず Figure + FigureCanvasAgg を直接使うため
     メインスレッド以外から呼んでも安全。
+
+    日本語ラベルの豆腐化を防ぐため、描画前に日本語フォントを明示適用する
+    （個別グラフを開いていなくてもレポート PNG が正しく描画される）。
     """
     from matplotlib.backends.backend_agg import FigureCanvasAgg
     from matplotlib.figure import Figure
     from matplotlib.lines import Line2D
     from matplotlib.patches import Patch
+
+    mpl_fonts.apply_japanese_font()
 
     t     = terrain
     elevs = t.elevs_with_curve

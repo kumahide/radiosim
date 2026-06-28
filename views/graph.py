@@ -24,37 +24,16 @@ import batch
 import i18n
 import infrastructure as infra
 import models
+import mpl_fonts
 import simulation as sim
 import version
 
 logger = logging.getLogger("radiosim")
 
-_JAPANESE_FONTS = ["Yu Gothic", "Meiryo", "MS Gothic", "BIZ UDGothic", "Hiragino Sans"]
-
-# 等幅パネル用: MS Gothic は半角=全角/2 が保証された真のCJK等幅フォント
-_MONOSPACE_CJK  = ["MS Gothic", "BIZ UDGothic"] + _JAPANESE_FONTS
-
 
 def _apply_font() -> None:
-    """日本語モード時に日本語対応フォントを matplotlib に設定する。"""
-    if i18n.t("html_lang") != "ja":
-        return
-    from matplotlib import font_manager
-    available = {f.name for f in font_manager.fontManager.ttflist}
-
-    # 軸ラベル・タイトル用フォント（モダンな日本語フォントを優先）
-    for font in _JAPANESE_FONTS:
-        if font in available:
-            matplotlib.rcParams["font.family"] = font
-            break
-    else:
-        logger.warning("No Japanese font found for matplotlib; text may appear garbled.")
-        return
-
-    # パネルテキスト用 monospace フォント（半角=全角/2 が保証されるフォントを優先）
-    mono = [f for f in _MONOSPACE_CJK if f in available] + ["Courier New", "DejaVu Sans Mono"]
-    matplotlib.rcParams["font.monospace"]     = mono
-    matplotlib.rcParams["axes.unicode_minus"] = False
+    """日本語フォントを matplotlib に適用する（ヘッドレス共通ヘルパへ委譲）。"""
+    mpl_fonts.apply_japanese_font()
 
 
 def show_graph(params: sim.SimParams, raw_elevs: np.ndarray) -> None:
