@@ -855,10 +855,35 @@ class SimLauncher:
         st.config(state="disabled")
 
     def _on_batch(self) -> None:
-        """Batch Builder ウィンドウを開く。ランチャーの現在値を初期値として引き継ぐ。"""
+        """Batch Builder ウィンドウを開く。ランチャーの現在値を初期値として引き継ぐ。
+
+        config_provider / load_params を注入し、バッチ各行を「ランチャー（source of
+        truth）のスナップショット」として凍結できるようにする（Phase D1）。
+        """
         from views.batch_builder import BatchBuilderWindow
         try:
             params = sim.SimParams(self._current_config())
         except Exception:
             params = sim.SimParams(infra.DEFAULT_CONFIG)
-        BatchBuilderWindow(self.root, params)
+        BatchBuilderWindow(
+            self.root, params,
+            config_provider=self._current_config,
+            load_params=self.load_batch_row,
+        )
+
+    def load_batch_row(self, row: dict) -> None:
+        """バッチ行（座標＋RF）をランチャーの数値欄へロードする（→シングルへ送る）。
+
+        座標は現在の coord_format 表記へ整形して start/end 欄へ、RF/h は対応 Entry へ
+        書き込む。空欄の項目は据え置く。ランチャーを前面化する。
+        """
+        fmt = self._coord_fmt_var.get()
+        for key, val in row.items():
+            entry = self.entries.get(key)
+            if entry is None or val in (None, ""):
+                continue
+            text = coords.reformat(val, fmt) if key in ("start", "end") else str(val)
+            entry.delete(0, tk.END)
+            entry.insert(0, text)
+        self.root.lift()
+        self.root.focus_force()
