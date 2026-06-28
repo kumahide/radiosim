@@ -1,4 +1,4 @@
-# RadioSim Pro 2.2
+# RadioSim Pro 2.3
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -163,7 +163,7 @@ radiosim/
 ├── views/
 │   ├── launcher.py       # Launcher window
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
-│   ├── map_window.py     # Map window (Pick Coordinates / Cache Management modes)
+│   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
@@ -230,9 +230,10 @@ http://proxy.example.com:8080
 
 #### Map Window
 
-The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map, with a mode selector at the top. The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
+The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
 - **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
+- **Append to Batch mode**: selecting it opens (or raises) the batch window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. Committed paths render as **TX = filled dot / RX = bearing arrowhead** plus distance (so TX/RX stay distinguishable even when near/identical). Batch row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths`.
 - **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
@@ -555,7 +556,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [View layer]
   views/launcher.py       Launcher window
   views/graph.py          Graph window
-  views/map_window.py     Map window (Pick Coordinates / Cache Management)
+  views/map_window.py     Map window (Pick Coordinates / Append to Batch / Cache Management)
   views/batch_builder.py  Batch Mode window
   views/dialogs.py        Shared modal dialogs centered on the parent
   -> Has side effects. Delegates calculation and I/O downward.
