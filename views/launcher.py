@@ -890,6 +890,7 @@ class SimLauncher:
             config_provider=self._current_config,
             load_params=self.load_batch_row,
             on_close=self._on_batch_closed,
+            on_paths_changed=self._notify_map_paths_changed,
         )
         return self._batch_win
 
@@ -898,6 +899,11 @@ class SimLauncher:
         self._batch_win = None
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_append_target_closed()
+
+    def _notify_map_paths_changed(self) -> None:
+        """バッチの行が変わったとき、地図の確定パス表示を追従させる。"""
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_paths_changed()
 
     def load_batch_row(self, row: dict) -> None:
         """バッチ行（座標＋RF）をランチャーの数値欄へロードする（→シングルへ送る）。
