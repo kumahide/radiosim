@@ -156,6 +156,7 @@ radiosim/
 ├── report_map.py         # Headless path-overlay map generation for reports
 ├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
+├── mpl_fonts.py          # matplotlib Japanese font application (headless; shared by graph/report)
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
 ├── views/
@@ -174,6 +175,7 @@ radiosim/
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
+    ├── test_mpl_fonts.py
     └── test_docs_consistency.py
 ```
 
@@ -576,7 +578,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (335 tests)
+### Test Suite (346 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
@@ -587,6 +589,7 @@ python -m pytest tests/ --cov
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
 | `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
+| `test_mpl_fonts.py`      | 4     | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 
 ---
