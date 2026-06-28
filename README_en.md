@@ -76,7 +76,6 @@ build.bat
 | 3 | Remove old build artifacts (`build/` and `dist/RadioSimPro/`) |
 | 4 | Run `python -m PyInstaller radiosim.spec --noconfirm` |
 | 5 | Create `terrain_cache/` and `results/` in the output folder |
-| 6 | Open `dist/RadioSimPro/` in Explorer on completion |
 
 ### Output
 
