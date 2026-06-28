@@ -19,21 +19,38 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-# トップレベル（ヘッドレス層）＋ views（GUI 層）を網羅。views も import 自体は
-# ディスプレイ不要（tk.Tk() を作らない限り安全）。
-_MODULES = [
+# ヘッドレスでも import 可能なモジュール（tk.Tk() を作らない限り tkinter import は安全）。
+_HEADLESS_SAFE = [
     "main", "models", "simulation", "infrastructure",
     "batch", "report", "report_map", "map_graphics",
     "coords", "i18n", "mpl_fonts", "version",
-    "views.launcher", "views.graph", "views.batch_builder",
+    "views.launcher", "views.batch_builder",
     "views.map_window", "views.dialogs",
 ]
 
+# import 時に matplotlib の TkAgg バックエンドをロードするためディスプレイを要する。
+# ヘッドレス CI では backend ロードに失敗するので skip する（views は CI では
+# pyright の静的検査でカバー）。
+_DISPLAY_REQUIRED = ["views.graph"]
 
-@pytest.mark.parametrize("mod", _MODULES)
+
+@pytest.mark.parametrize("mod", _HEADLESS_SAFE)
 def test_module_imports(mod):
     """各モジュールが例外なく import できること（壊れた import の早期検出）。"""
     importlib.import_module(mod)
+
+
+@pytest.mark.parametrize("mod", _DISPLAY_REQUIRED)
+def test_gui_module_imports(mod):
+    """ディスプレイ必須の GUI モジュールの import（ヘッドレスは backend 失敗で skip）。"""
+    try:
+        importlib.import_module(mod)
+    except Exception as e:  # noqa: BLE001  backend 起因のみ skip・他は再送出
+        msg = str(e).lower()
+        backend_markers = ("tkagg", "interactive framework", "backend", "headless")
+        if any(k in msg for k in backend_markers):
+            pytest.skip(f"requires display backend: {e}")
+        raise  # 真の import 回帰（モジュール名違い等）は失敗させる
 
 
 def test_tk_root_constructs():
