@@ -38,6 +38,14 @@ class TestMapGraphics:
         assert isinstance(img, Image.Image)
         assert img.width > 0 and img.height > 0
 
+    def test_arrow_icon_returns_rgba_image(self):
+        # 主要4方位＋退化（0°）でも例外なく RGBA を返す。
+        for bearing in (0.0, 90.0, 180.0, 270.0, 359.9):
+            img = map_graphics.arrow_icon(bearing)
+            assert isinstance(img, Image.Image)
+            assert img.mode == "RGBA"
+            assert img.size == (42, 42)
+
     def test_north_arrow_returns_rgba_image(self):
         img = map_graphics.north_arrow(0.0, -1.0)
         assert isinstance(img, Image.Image)

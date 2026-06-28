@@ -54,6 +54,7 @@ class BatchBuilderWindow(tk.Toplevel):
         config_provider: "Callable[[], dict] | None" = None,
         load_params:     "Callable[[dict], None] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
+        on_paths_changed: "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
@@ -66,6 +67,11 @@ class BatchBuilderWindow(tk.Toplevel):
         self._load_params     = load_params
         # 閉じたときにランチャーへ通知するコールバック（地図の連続追加先を手放させる）。
         self._on_close        = on_close
+        # パス集合（行）が変わったときにランチャー→地図へ通知するコールバック。
+        # 地図の確定パス表示をリアルタイムに追従させる（削除・クリア・インポート等）。
+        self._on_paths_changed = on_paths_changed
+        # 一括再構築（並べ替え・インポート）中は逐次通知を抑止し、終了後に1回だけ通知する。
+        self._suspend_notify   = False
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
@@ -371,6 +377,13 @@ class BatchBuilderWindow(tk.Toplevel):
             e.grid(row=0, column=i + 1, padx=2, pady=1, sticky="w")
             entries.append(e)
 
+        # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示を追従させる。
+        # 地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。FocusOut は
+        # 他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
+        for col in (1, 2):
+            entries[col].bind("<FocusOut>", lambda _e: self._notify_paths_changed(), add="+")
+            entries[col].bind("<Return>",   lambda _e: self._notify_paths_changed(), add="+")
+
         def _dup(es=entries):
             self._dup_row(es)
 
@@ -397,6 +410,7 @@ class BatchBuilderWindow(tk.Toplevel):
         self._canvas.yview_moveto(1.0)
         if is_first:
             self.after(100, self._sync_header_columns)
+        self._notify_paths_changed()
 
     def _sync_header_columns(self) -> None:
         """最初の行の実際のグリッド列幅をヘッダに反映してズレを解消する。"""
@@ -415,6 +429,7 @@ class BatchBuilderWindow(tk.Toplevel):
         if frame in self._row_frames:
             self._row_frames.remove(frame)
         frame.destroy()
+        self._notify_paths_changed()
 
     def _dup_row(self, entries: list[tk.Entry]) -> None:
         """選択行の値をコピーして末尾に新しい行を追加する。ID は _copy サフィックスを付与。"""
@@ -512,6 +527,16 @@ class BatchBuilderWindow(tk.Toplevel):
             out.append((tx, rx))
         return out
 
+    def _notify_paths_changed(self) -> None:
+        """パス集合が変わった旨をランチャー→地図へ通知する（確定パス表示の追従）。
+
+        一括再構築中（_suspend_notify）は逐次通知せず、呼び出し側が終了後に1回呼ぶ。
+        地図が連続追加モードでない／閉じている場合は受け側で no-op になる。
+        """
+        if self._suspend_notify or self._on_paths_changed is None:
+            return
+        self._on_paths_changed()
+
     def _on_close_window(self) -> None:
         """ウィンドウを閉じる。閉じる旨をランチャーへ通知する（地図の連携解除）。"""
         cb = self._on_close
@@ -577,12 +602,18 @@ class BatchBuilderWindow(tk.Toplevel):
         item = all_vals.pop(from_idx)
         adjusted = to_idx - 1 if to_idx > from_idx else to_idx
         all_vals.insert(adjusted, item)
-        for f in list(self._row_frames):
-            f.destroy()
-        self._row_frames.clear()
-        self._row_entries.clear()
-        for vals in all_vals:
-            self._add_row(vals)
+        # 並べ替えはパス集合が不変なので地図再描画は不要。逐次通知を抑止して
+        # 再構築し、終了後の通知も行わない（_add_row 側の通知も抑止される）。
+        self._suspend_notify = True
+        try:
+            for f in list(self._row_frames):
+                f.destroy()
+            self._row_frames.clear()
+            self._row_entries.clear()
+            for vals in all_vals:
+                self._add_row(vals)
+        finally:
+            self._suspend_notify = False
 
     def _clear_all(self) -> None:
         """テーブルの全行を削除する（確認ダイアログあり）。"""
@@ -597,6 +628,7 @@ class BatchBuilderWindow(tk.Toplevel):
                 f.destroy()
             self._row_frames.clear()
             self._row_entries.clear()
+            self._notify_paths_changed()
 
     def _read_table_rows(self) -> list[batch.PathRow]:
         """テーブルの入力内容を PathRow リストに変換する。NaN でパース失敗を表現する。"""
@@ -671,13 +703,18 @@ class BatchBuilderWindow(tk.Toplevel):
             ):
                 return
 
-        for f in list(self._row_frames):
-            f.destroy()
-        self._row_frames.clear()
-        self._row_entries.clear()
-
-        for row in rows:
-            self._add_row(row)
+        # 一括入れ替え。逐次通知を抑止して再構築し、終了後に1回だけ地図へ通知する。
+        self._suspend_notify = True
+        try:
+            for f in list(self._row_frames):
+                f.destroy()
+            self._row_frames.clear()
+            self._row_entries.clear()
+            for row in rows:
+                self._add_row(row)
+        finally:
+            self._suspend_notify = False
+        self._notify_paths_changed()
         dialogs.alert(
             self,
             i18n.t("dlg_import_title"),

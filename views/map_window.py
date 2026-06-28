@@ -151,8 +151,8 @@ class MapWindow:
         # 追記モードで既に確定したパスの地図オブジェクト（マーカー・線・距離バッジ）。
         # 座標値は持たない（バッチ表が source of truth）。毎回引き直す。
         self._committed: list = []
-        # 確定パスの距離バッジ PhotoImage 保持リスト（GC されると消えるため）。
-        self._committed_badges: list = []
+        # 確定パスの PhotoImage（距離バッジ・RX 矢じり）保持リスト（GC 防止）。
+        self._committed_images: list = []
         # UISP 風ノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._tx_icon = self._make_node_icon(hollow=False)
@@ -288,6 +288,15 @@ class MapWindow:
         if self._mode.get() == "append":
             self._select_mode("coords")
 
+    def on_paths_changed(self) -> None:
+        """append 先（バッチ）のパス集合が変わったときの通知。確定パス表示を引き直す。
+
+        連続追加モードでないとき（_append_sink is None）は _refresh_committed_paths
+        が早期 return するので no-op。地図側で source of truth を持たないため、毎回
+        バッチの現在の行から描き直すだけ（削除・クリア・インポートに追従する）。
+        """
+        self._refresh_committed_paths()
+
     def _show_coord_visuals(self) -> None:
         """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
         if self._tx_coord is not None:
@@ -313,34 +322,48 @@ class MapWindow:
         for obj in self._committed:
             obj.delete()
         self._committed.clear()
-        self._committed_badges.clear()
+        self._committed_images.clear()
+
+    @staticmethod
+    def _screen_bearing_deg(tx: tuple, rx: tuple) -> float:
+        """TX→RX の方位（真北 0°・東 90°・時計回り）を平面近似で返す。
+
+        地図は北上固定なので矢じりの回転角に使う。緯度差・経度差（緯度補正）から
+        atan2(東, 北) で求める。重い測地計算は不要（描画向きの近似で十分）。
+        """
+        import math
+        dlat = rx[0] - tx[0]
+        dlon = (rx[1] - tx[1]) * math.cos(math.radians((tx[0] + rx[0]) / 2))
+        return math.degrees(math.atan2(dlon, dlat)) % 360
 
     def _refresh_committed_paths(self) -> None:
         """シンクが持つ既存パス（バッチ各行の座標）を地図上に表示する。
 
-        確定パスもアクティブピックと同じ見た目（TX/RX マーカー・経路線・中点の
-        水平距離バッジ）で残す。追記モードでのみ意味を持つ。バッチ表が source of
-        truth なので地図側は毎回引き直すだけ（座標は保持しない）。パース不能な行は
-        シンク側で除外される。
+        確定パスは **TX=塗りドット／RX=方位矢じり** ＋経路線＋中点の水平距離バッジ
+        で残す（TX/RX 文字ラベルは出さない）。形状で送受を区別するため、TX/RX が
+        近接・同一座標でも重なって判別不能にならない。追記モードでのみ意味を持ち、
+        バッチ表が source of truth なので毎回引き直すだけ。パース不能行は除外済み。
         """
         self._clear_committed_paths()
         if self._append_sink is None:
             return
         for tx, rx in self._append_sink.existing_paths():
-            self._committed.append(self._map.set_marker(
-                tx[0], tx[1], text=i18n.t("map_marker_tx"),
-                icon=self._tx_icon, icon_anchor="center", text_color=_MARKER_TEXT,
-            ))
-            self._committed.append(self._map.set_marker(
-                rx[0], rx[1], text=i18n.t("map_marker_rx"),
-                icon=self._rx_icon, icon_anchor="center", text_color=_MARKER_TEXT,
-            ))
             self._committed.append(
                 self._map.set_path([tx, rx], color=_UISP_CYAN_HEX, width=3))
+            # TX = 塗りドット（ラベルなし）。アイコンはアクティブピックと共用。
+            self._committed.append(self._map.set_marker(
+                tx[0], tx[1], icon=self._tx_icon, icon_anchor="center"))
+            # RX = TX→RX 方位を指す矢じり（ラベルなし・別形状で送受を区別）。
+            arrow = ImageTk.PhotoImage(
+                map_graphics.arrow_icon(self._screen_bearing_deg(tx, rx)))
+            self._committed_images.append(arrow)   # GC 防止に保持
+            self._committed.append(self._map.set_marker(
+                rx[0], rx[1], icon=arrow, icon_anchor="center"))
+            # 中点に水平距離バッジ。
             mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
             km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
             badge = self._make_distance_badge(map_graphics.distance_text(km))
-            self._committed_badges.append(badge)   # GC 防止に保持
+            self._committed_images.append(badge)   # GC 防止に保持
             self._committed.append(self._map.set_marker(
                 mid[0], mid[1], icon=badge, icon_anchor="center"))
 
