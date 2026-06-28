@@ -19,6 +19,11 @@
 ### 変更
 - **`batch.py` を分割**: 行数閾値超過（D1 で約1045行）を解消するため、出力生成層（per-path の PNG/HTML/KML・サマリ CSV/HTML/KML、約700行）を新モジュール **`report.py`** へ切り出した。`batch.py` は実行エンジン（CSV I/O・バリデーション・実行）に専念。挙動・公開関数のシグネチャは不変で、純リファクタ（呼び出し元 `views/graph.py`・`views/batch_builder.py`・テストはインポート先の変更のみ）。`report.py` はヘッドレス維持（UI 非依存）。
 
+### 開発環境
+- **Ruff/Bandit 設定を `pyproject.toml` に明文化**: 従来 CI でフラグ指定していた Ruff の lint 選択（`E9`/`F`）を `[tool.ruff.lint]` へ移し、CI は `ruff check .`（pyproject を単一ソース）に簡素化。`[tool.bandit]` 設定も追加（CI 化は別途・低優先）。
+- **CI の Pyright 対象に新モジュールを追加**: 2.3 で増えたが登録漏れだった `report.py` / `mpl_fonts.py` / `coords.py` を型検査リストへ追加。
+- **GUI スモークテスト `tests/test_smoke.py` を追加**: 全モジュールの import 疎通＋tkinter ルート生成を検証（ヘッドレス CI では `tk.Tk()` を skip）。import で壊れる回帰を機能テストより手前で早期検出する。
+
 ### 修正
 - **バッチHTMLレポートの地形グラフが日本語で文字化け（豆腐化）**: 日本語モードで個別グラフを開かずにバッチを実行すると、レポート PNG の軸ラベル・凡例が□で表示される不具合を修正。日本語フォント適用が `views/graph.py` の個別グラフ表示時にしか行われず、その rcParams 設定がプロセスに残ることに依存していたため、操作順によって発生していた。フォント適用を**ヘッドレスな共通ヘルパ `mpl_fonts.py` に単一ソース化**し、バッチのレンダリング（`report.save_profile_png`）でも明示的に適用するようにした（操作順非依存）。`views/graph.py` は同ヘルパへ委譲。
 

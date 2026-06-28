@@ -177,6 +177,7 @@ radiosim/
     ├── test_map_window.py
     ├── test_coords.py
     ├── test_mpl_fonts.py
+    ├── test_smoke.py
     └── test_docs_consistency.py
 ```
 
@@ -591,7 +592,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (357 tests)
+### Test Suite (375 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
@@ -603,6 +604,7 @@ python -m pytest tests/ --cov
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
 | `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_mpl_fonts.py`      | 4     | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
+| `test_smoke.py`          | 18    | Import smoke for all modules + tkinter root construction (skipped when headless) |
 | `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 
 ---

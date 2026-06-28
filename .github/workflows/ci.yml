@@ -29,13 +29,13 @@ jobs:
           pip install pytest pytest-cov pyright ruff
 
       - name: Ruff (syntax + pyflakes)
-        run: ruff check --select E9,F .
+        run: ruff check .          # config from pyproject.toml [tool.ruff]
 
       - name: Pyright (type check, app modules)
         run: >-
           pyright
-          batch.py models.py simulation.py infrastructure.py version.py
-          i18n.py main.py report_map.py map_graphics.py
+          batch.py report.py models.py simulation.py infrastructure.py version.py
+          i18n.py main.py report_map.py map_graphics.py coords.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py
           views/map_window.py views/dialogs.py
 
