@@ -76,7 +76,6 @@ build.bat
 | 3 | 旧ビルド成果物の削除（`build/` `dist/RadioSimPro/`） |
 | 4 | `python -m PyInstaller radiosim.spec --noconfirm` |
 | 5 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
-| 6 | 完了後に `dist/RadioSimPro/` をエクスプローラーで開く |
 
 ### 出力
 
