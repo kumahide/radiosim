@@ -420,3 +420,26 @@ class TestSavePathHtmlMap:
         assert "data:image/png;base64,MAPB64DATA" not in html
         # 地形グラフ自体は常に埋め込まれる。
         assert "data:image/png;base64,TERRAINB64" in html
+
+
+class TestSavePathHtmlCoordFormat:
+    """HTML レポートの座標セルが coord_format に従うこと（既定 DD）。"""
+
+    def _render(self, tmp_path, flat_terrain, default_params_dict, coord_format):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        batch.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None, coord_format=coord_format,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_default_dd(self, tmp_path, flat_terrain, default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, "dd")
+        assert "34.542900, 132.411800" in html
+        assert "°" not in html
+
+    def test_dms(self, tmp_path, flat_terrain, default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, "dms")
+        assert "34°32'34.4\"N, 132°24'42.5\"E" in html
