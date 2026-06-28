@@ -53,6 +53,8 @@ class BatchBuilderWindow(tk.Toplevel):
         base_params: sim.SimParams,
         config_provider: "Callable[[], dict] | None" = None,
         load_params:     "Callable[[dict], None] | None" = None,
+        on_close:        "Callable[[], None] | None" = None,
+        on_paths_changed: "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
@@ -63,6 +65,13 @@ class BatchBuilderWindow(tk.Toplevel):
         # ランチャー連携（凍結方式）。省略時は従来挙動（往復・凍結なし）。
         self._config_provider = config_provider
         self._load_params     = load_params
+        # 閉じたときにランチャーへ通知するコールバック（地図の連続追加先を手放させる）。
+        self._on_close        = on_close
+        # パス集合（行）が変わったときにランチャー→地図へ通知するコールバック。
+        # 地図の確定パス表示をリアルタイムに追従させる（削除・クリア・インポート等）。
+        self._on_paths_changed = on_paths_changed
+        # 一括再構築（並べ替え・インポート）中は逐次通知を抑止し、終了後に1回だけ通知する。
+        self._suspend_notify   = False
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
@@ -80,6 +89,8 @@ class BatchBuilderWindow(tk.Toplevel):
         self._build_ui()
         self._add_row()
         self._poll_queue()
+        # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
+        self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
     # ----------------------------------------------------------
     # UI 構築
@@ -215,7 +226,15 @@ class BatchBuilderWindow(tk.Toplevel):
         self._canvas.itemconfig(self._table_win, width=event.width)
 
     def _on_mousewheel(self, event) -> None:
-        self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+        # bind_all はアプリ全体（子 Toplevel のマップ含む）に効くため、ポインタが
+        # テーブル（_canvas 配下）にある時だけスクロールする。これがないとマップ
+        # ウィンドウのズーム（ホイール）でバッチ表まで一緒にスクロールしてしまう。
+        widget = self.winfo_containing(event.x_root, event.y_root)
+        if widget is None:
+            return
+        path, cpath = str(widget), str(self._canvas)
+        if widget is self._canvas or path == cpath or path.startswith(cpath + "."):
+            self._canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
 
     def _on_destroy(self, event: tk.Event) -> None:
         if event.widget is self:
@@ -274,12 +293,13 @@ class BatchBuilderWindow(tk.Toplevel):
     # ----------------------------------------------------------
     # テーブル行の追加・削除
     # ----------------------------------------------------------
-    def _frozen_defaults(self, idx: int) -> list[str]:
-        """ランチャーの現在値（座標＋RF）を凍結したセル文字列リストを返す。"""
+    def _frozen_row(self, idx: int, start: str, end: str) -> list[str]:
+        """座標 start/end と、その時点のランチャー RF を凍結したセル文字列を返す。
+
+        座標は呼び出し側で整形済み文字列を渡す（ランチャー欄からの凍結も地図からの
+        append も RF の凍結ロジックは同一なのでここに集約する）。
+        """
         c = self._config_provider() if self._config_provider else {}
-        # ランチャー config は座標を DD 正規化済み。バッチ表示の座標形式へ整形する。
-        start = coords.reformat(c.get("start", ""), self._coord_format)
-        end   = coords.reformat(c.get("end", ""),   self._coord_format)
         return [
             f"path{idx + 1:02d}",
             start,
@@ -291,6 +311,14 @@ class BatchBuilderWindow(tk.Toplevel):
             str(c.get("gain_rx", "")),
             "",
         ]
+
+    def _frozen_defaults(self, idx: int) -> list[str]:
+        """ランチャーの現在値（座標＋RF）を凍結したセル文字列リストを返す。"""
+        c = self._config_provider() if self._config_provider else {}
+        # ランチャー config は座標を DD 正規化済み。バッチ表示の座標形式へ整形する。
+        start = coords.reformat(c.get("start", ""), self._coord_format)
+        end   = coords.reformat(c.get("end", ""),   self._coord_format)
+        return self._frozen_row(idx, start, end)
 
     def _add_row(self, row_data: "batch.PathRow | list[str] | None" = None) -> None:
         idx      = len(self._row_frames)
@@ -349,6 +377,13 @@ class BatchBuilderWindow(tk.Toplevel):
             e.grid(row=0, column=i + 1, padx=2, pady=1, sticky="w")
             entries.append(e)
 
+        # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示を追従させる。
+        # 地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。FocusOut は
+        # 他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
+        for col in (1, 2):
+            entries[col].bind("<FocusOut>", lambda _e: self._notify_paths_changed(), add="+")
+            entries[col].bind("<Return>",   lambda _e: self._notify_paths_changed(), add="+")
+
         def _dup(es=entries):
             self._dup_row(es)
 
@@ -375,6 +410,7 @@ class BatchBuilderWindow(tk.Toplevel):
         self._canvas.yview_moveto(1.0)
         if is_first:
             self.after(100, self._sync_header_columns)
+        self._notify_paths_changed()
 
     def _sync_header_columns(self) -> None:
         """最初の行の実際のグリッド列幅をヘッダに反映してズレを解消する。"""
@@ -393,6 +429,7 @@ class BatchBuilderWindow(tk.Toplevel):
         if frame in self._row_frames:
             self._row_frames.remove(frame)
         frame.destroy()
+        self._notify_paths_changed()
 
     def _dup_row(self, entries: list[tk.Entry]) -> None:
         """選択行の値をコピーして末尾に新しい行を追加する。ID は _copy サフィックスを付与。"""
@@ -458,6 +495,56 @@ class BatchBuilderWindow(tk.Toplevel):
                 entries[col].insert(0, str(c[key]))
 
     # ----------------------------------------------------------
+    # 地図連携（座標シンク・Phase D2 連続追加）
+    # 地図（ランチャー所有・唯一インスタンス）の連続追加モードから呼ばれる受け皿。
+    # バッチ表が source of truth。RF はランチャー（config_provider）の現在値で凍結。
+    # ----------------------------------------------------------
+    def append_path(self, tx: tuple, rx: tuple) -> str:
+        """地図で確定した TX→RX ペアをバッチ行として追加し、付与した path_id を返す。
+
+        座標はバッチ表示形式へ整形し、RF はランチャーの現在値で凍結する
+        （_frozen_row に集約）。地図の連続追加モードから呼ばれる。
+        """
+        idx   = len(self._row_frames)
+        start = coords.format_pair(tx[0], tx[1], self._coord_format)
+        end   = coords.format_pair(rx[0], rx[1], self._coord_format)
+        defaults = self._frozen_row(idx, start, end)
+        self._add_row(defaults)
+        return defaults[0]
+
+    def existing_paths(self) -> list[tuple]:
+        """表の各行の TX/RX 座標を [(tx, rx), ...] で返す（パース不能行は除外）。
+
+        地図が確定済みパスを地図上に表示するために引く。
+        """
+        out: list[tuple] = []
+        for entries in self._row_entries:
+            try:
+                tx = coords.parse_pair(entries[1].get())
+                rx = coords.parse_pair(entries[2].get())
+            except ValueError:
+                continue
+            out.append((tx, rx))
+        return out
+
+    def _notify_paths_changed(self) -> None:
+        """パス集合が変わった旨をランチャー→地図へ通知する（確定パス表示の追従）。
+
+        一括再構築中（_suspend_notify）は逐次通知せず、呼び出し側が終了後に1回呼ぶ。
+        地図が連続追加モードでない／閉じている場合は受け側で no-op になる。
+        """
+        if self._suspend_notify or self._on_paths_changed is None:
+            return
+        self._on_paths_changed()
+
+    def _on_close_window(self) -> None:
+        """ウィンドウを閉じる。閉じる旨をランチャーへ通知する（地図の連携解除）。"""
+        cb = self._on_close
+        self.destroy()
+        if cb is not None:
+            cb()
+
+    # ----------------------------------------------------------
     # ドラッグ&ドロップ並び替え
     # ----------------------------------------------------------
     def _drag_start(self, _, frame: ttk.Frame) -> None:
@@ -515,12 +602,18 @@ class BatchBuilderWindow(tk.Toplevel):
         item = all_vals.pop(from_idx)
         adjusted = to_idx - 1 if to_idx > from_idx else to_idx
         all_vals.insert(adjusted, item)
-        for f in list(self._row_frames):
-            f.destroy()
-        self._row_frames.clear()
-        self._row_entries.clear()
-        for vals in all_vals:
-            self._add_row(vals)
+        # 並べ替えはパス集合が不変なので地図再描画は不要。逐次通知を抑止して
+        # 再構築し、終了後の通知も行わない（_add_row 側の通知も抑止される）。
+        self._suspend_notify = True
+        try:
+            for f in list(self._row_frames):
+                f.destroy()
+            self._row_frames.clear()
+            self._row_entries.clear()
+            for vals in all_vals:
+                self._add_row(vals)
+        finally:
+            self._suspend_notify = False
 
     def _clear_all(self) -> None:
         """テーブルの全行を削除する（確認ダイアログあり）。"""
@@ -535,6 +628,7 @@ class BatchBuilderWindow(tk.Toplevel):
                 f.destroy()
             self._row_frames.clear()
             self._row_entries.clear()
+            self._notify_paths_changed()
 
     def _read_table_rows(self) -> list[batch.PathRow]:
         """テーブルの入力内容を PathRow リストに変換する。NaN でパース失敗を表現する。"""
@@ -609,13 +703,18 @@ class BatchBuilderWindow(tk.Toplevel):
             ):
                 return
 
-        for f in list(self._row_frames):
-            f.destroy()
-        self._row_frames.clear()
-        self._row_entries.clear()
-
-        for row in rows:
-            self._add_row(row)
+        # 一括入れ替え。逐次通知を抑止して再構築し、終了後に1回だけ地図へ通知する。
+        self._suspend_notify = True
+        try:
+            for f in list(self._row_frames):
+                f.destroy()
+            self._row_frames.clear()
+            self._row_entries.clear()
+            for row in rows:
+                self._add_row(row)
+        finally:
+            self._suspend_notify = False
+        self._notify_paths_changed()
         dialogs.alert(
             self,
             i18n.t("dlg_import_title"),

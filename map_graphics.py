@@ -50,6 +50,41 @@ def node_icon(hollow: bool) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def arrow_icon(bearing_deg: float) -> Image.Image:
+    """TX→RX の方位（真北 0°・東 90°・時計回り）を指す矢じりアイコン（RGBA）を返す。
+
+    確定パスの RX 端点マーカーに使う。塗りドット（TX）と別形状にすることで、
+    TX/RX が近接・同一座標でも「どちらが受信側か」「向き」を形で判別できる
+    （文字ラベルや塗り/白抜きの重なり問題を回避する）。地図は北上固定なので
+    地理方位≒画面角度として扱う。supersample → 縮小でアンチエイリアスする。
+
+    **矢じりの先端を画像中心に置く**（呼び出し側が icon_anchor="center" で配置する
+    ため、先端が RX 座標に一致する）。本体は中心から後方（TX 側）へ伸びるので、
+    全方位で本体が収まるよう余白込みの正方キャンバスにする。
+    """
+    size, scale = 42, 4
+    s = size * scale
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = s / 2
+    r, g, b = UISP_CYAN
+    # 画面座標（y 下向き）での進行方向ベクトル: 北=上=-y、東=右=+x。
+    rad = math.radians(bearing_deg)
+    ux, uy = math.sin(rad), -math.cos(rad)
+    px, py = -uy, ux                      # 進行方向に直交（矢じりの底辺方向）
+    tip  = (c, c)                         # 先端＝画像中心＝RX 座標位置
+    base = (c - ux * s * 0.405, c - uy * s * 0.405)
+    half = s * 0.16
+    left  = (base[0] + px * half, base[1] + py * half)
+    right = (base[0] - px * half, base[1] - py * half)
+    # 塗りシアンの三角＋白縁（淡色地図上のコントラスト確保）。縁は線で描き
+    # PIL バージョン差（polygon の width 対応）に依存しないようにする。
+    d.polygon([tip, left, right], fill=(r, g, b, 255))
+    d.line([tip, left, right, tip], fill=(255, 255, 255, 255),
+           width=int(1.4 * scale), joint="curve")
+    return img.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def distance_badge(text: str) -> Image.Image:
     """距離テキストを半透明の角丸ピル背景に載せたバッジ画像（RGBA）を生成する。
 
