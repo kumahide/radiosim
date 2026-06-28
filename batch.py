@@ -21,6 +21,7 @@ from typing import Callable
 
 import numpy as np
 
+import coords
 import i18n
 import infrastructure as infra
 import models
@@ -211,12 +212,16 @@ def run_batch(
     on_path_complete:  Callable[[int, int, "PathResult"], None],
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
+    coord_format:      str = "dd",
 ) -> None:
-    """バッチ実行をバックグラウンドスレッドで開始する。"""
+    """バッチ実行をバックグラウンドスレッドで開始する。
+
+    coord_format は per-path report.txt の人が読む座標表記のみに効く（既定 DD）。
+    """
     threading.Thread(
         target = _run_thread,
         args   = (rows, base_params, on_path_start, on_path_progress,
-                  on_path_complete, on_batch_complete, on_error),
+                  on_path_complete, on_batch_complete, on_error, coord_format),
         daemon = True,
     ).start()
 
@@ -229,6 +234,7 @@ def _run_thread(
     on_path_complete:  Callable[[int, int, "PathResult"], None],
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
+    coord_format:      str = "dd",
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -240,7 +246,8 @@ def _run_thread(
 
         for i, row in enumerate(rows):
             on_path_start(i + 1, total, row.path_id)
-            pr = _process_one(row, base_params, batch_dir, on_path_progress)
+            pr = _process_one(row, base_params, batch_dir, on_path_progress,
+                              coord_format)
             path_results.append(pr)
             on_path_complete(i + 1, total, pr)
 
@@ -258,6 +265,7 @@ def _process_one(
     base:        sim.SimParams,
     batch_dir:   str,
     on_progress: Callable[[int], None],
+    coord_format: str = "dd",
 ) -> PathResult:
     try:
         params    = _make_params(row, base)
@@ -275,7 +283,8 @@ def _process_one(
         os.makedirs(path_dir, exist_ok=True)
         sim._save_settings(params, params.h_tx, params.h_rx, path_dir)
         sim._save_terrain_csv(terrain, path_dir)
-        sim._save_report(result, params, params.h_tx, params.h_rx, path_dir)
+        sim._save_report(result, params, params.h_tx, params.h_rx, path_dir,
+                         coord_format)
         # _save_profile_png は matplotlib を使うためメインスレッドで呼ぶ。
         # save_path_visuals() を on_path_complete コールバック内（メインスレッド）で呼ぶこと。
 
@@ -343,20 +352,22 @@ def _fetch_sync(
     return result[0]
 
 
-def save_path_visuals(pr: PathResult) -> None:
+def save_path_visuals(pr: PathResult, coord_format: str = "dd") -> None:
     """
     PNG と HTML をメインスレッドから保存する。
 
     matplotlib の TkAgg バックエンドが初期化されている環境では
     バックグラウンドスレッドから matplotlib を使うと tkinter GC 警告が
     発生するため、この関数は必ずメインスレッド（on_path_complete 内）で呼ぶこと。
+
+    coord_format は HTML レポートの人が読む座標セルのみに効く（既定 DD）。
     """
     if pr.result is None or pr.terrain is None or pr.params is None:
         return
     try:
         save_profile_png(
             pr.terrain, pr.result, pr.params,
-            pr.params.h_tx, pr.params.h_rx, pr.save_dir,
+            pr.params.h_tx, pr.params.h_rx, pr.save_dir, coord_format,
         )
         save_path_kml(
             pr.terrain, pr.result, pr.params,
@@ -373,6 +384,7 @@ def save_profile_png(
     h_tx:     float,
     h_rx:     float,
     save_dir: str,
+    coord_format: str = "dd",
 ) -> None:
     """
     地形断面 PNG をバックグラウンドスレッドから保存する。
@@ -459,7 +471,8 @@ def save_profile_png(
         (params.lat_tx, params.lon_tx), (params.lat_rx, params.lon_rx)
     )
 
-    save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64)
+    save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64,
+                   coord_format)
 
 
 def save_path_html(
@@ -471,11 +484,16 @@ def save_path_html(
     save_dir: str,
     img_b64:  str,
     map_b64:  "str | None" = None,
+    coord_format: str = "dd",
 ) -> None:
     """per-path の report.html を生成する（グラフ・地図は Base64 埋め込み）。
 
     map_b64 が None のとき（タイル取得失敗）は地図を省き注記を表示する。
+    coord_format は人が読む座標セルのみに効く（"dd"|"dms"）。CSV/KML/settings は
+    再読込・規格のため DD 固定。既定 DD でヘッドレス呼び出しは表示設定に非依存。
     """
+    tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
+    rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
     path_id     = os.path.basename(save_dir)
     path_id_esc = _html.escape(path_id)
     status_cls  = "ok" if result.status == "OK" else "ng"
@@ -547,8 +565,8 @@ footer{{margin-top:14px;color:#bbb;font-size:10px}}
   <div class="col">
     <h3>{i18n.t('html_site_info')}</h3>
     <table class="info">
-      <tr><td>{i18n.t('html_tx_coords')}</td><td>{params.lat_tx}, {params.lon_tx}</td></tr>
-      <tr><td>{i18n.t('html_rx_coords')}</td><td>{params.lat_rx}, {params.lon_rx}</td></tr>
+      <tr><td>{i18n.t('html_tx_coords')}</td><td>{tx_coords}</td></tr>
+      <tr><td>{i18n.t('html_rx_coords')}</td><td>{rx_coords}</td></tr>
       <tr><td>{i18n.t('html_tx_height')}</td><td>{h_tx:.1f} m</td></tr>
       <tr><td>{i18n.t('html_rx_height')}</td><td>{h_rx:.1f} m</td></tr>
       <tr><td>{i18n.t('html_slant_dist')}</td><td>{result.slant_dist_km:.3f} km</td></tr>

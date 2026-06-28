@@ -156,6 +156,7 @@ radiosim/
 ├── batch.py              # Batch simulation engine and HTML/KML output
 ├── report_map.py         # Headless path-overlay map generation for reports
 ├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
+├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
 ├── views/
@@ -173,6 +174,7 @@ radiosim/
     ├── test_batch.py
     ├── test_report_map.py
     ├── test_map_window.py
+    ├── test_coords.py
     └── test_docs_consistency.py
 ```
 
@@ -559,6 +561,9 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
           +---> [Pure rendering layer]  map_graphics.py
           |     PIL drawing of markers/distance/north arrow (shared by UI and reports)
           |
+          +---> [Pure conversion layer]  coords.py
+          |     Coordinate notation conversion (DD <-> DMS, no side effects)
+          |
           +---> [External dependency layer]  infrastructure.py
                 DEM/pale tile HTTP fetch, config I/O, validation
 ```
@@ -572,16 +577,17 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (305 tests)
+### Test Suite (335 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
-| `test_simulation.py`     | 35    | DEM fetch (parallel, cache, error handling), calculation, save                  |
-| `test_infrastructure.py` | 94    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
-| `test_batch.py`          | 56    | CSV parse, validation, _make_params behavior, export roundtrip                  |
+| `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
+| `test_infrastructure.py` | 95    | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n        |
+| `test_batch.py`          | 58    | CSV parse, validation, _make_params behavior, export roundtrip, HTML coords     |
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
+| `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 
 ---

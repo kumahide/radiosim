@@ -16,7 +16,9 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 
 import batch
+import coords
 import i18n
+import infrastructure as infra
 import simulation as sim
 from models import ENV_KEYS
 from views import dialogs
@@ -42,6 +44,8 @@ class BatchBuilderWindow(tk.Toplevel):
         self.minsize(720, 420)
 
         self._base_params  = base_params
+        # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
+        self._coord_format = infra.load_config().get("coord_format", "dd")
         self._row_entries: list[list[tk.Entry]] = []
         self._row_frames:  list[ttk.Frame]      = []
         self._running      = False
@@ -237,8 +241,8 @@ class BatchBuilderWindow(tk.Toplevel):
         elif row_data is not None:
             defaults = [
                 row_data.path_id,
-                f"{row_data.lat_tx}, {row_data.lon_tx}",
-                f"{row_data.lat_rx}, {row_data.lon_rx}",
+                coords.format_pair(row_data.lat_tx, row_data.lon_tx, self._coord_format),
+                coords.format_pair(row_data.lat_rx, row_data.lon_rx, self._coord_format),
                 str(row_data.h_tx),
                 str(row_data.h_rx),
                 str(row_data.freq_mhz) if row_data.freq_mhz is not None else "",
@@ -416,11 +420,9 @@ class BatchBuilderWindow(tk.Toplevel):
                 continue  # 完全空行はスキップ
 
             def _parse_coord(s: str) -> tuple[float, float]:
-                parts = s.split(",")
-                if len(parts) != 2:
-                    return float("nan"), float("nan")
+                # DD / DMS のどちらの表記でも受理する（座標形式設定に合わせて入力可能）。
                 try:
-                    return float(parts[0].strip()), float(parts[1].strip())
+                    return coords.parse_pair(s)
                 except ValueError:
                     return float("nan"), float("nan")
 
@@ -606,6 +608,7 @@ class BatchBuilderWindow(tk.Toplevel):
             on_path_complete  = lambda cur, tot, pr,  q=q: q.put(("done",     (cur, tot, pr))),
             on_batch_complete = lambda d,   rs,        q=q: q.put(("complete", (d, rs))),
             on_error          = lambda ex,             q=q: q.put(("error",    (ex,))),
+            coord_format      = self._coord_format,
         )
 
     # ----------------------------------------------------------
@@ -651,7 +654,7 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_label.config(text=f"✓ {self._ok_count} OK")
         self._ng_label.config(text=f"✗ {self._ng_count} NG")
         self._err_label.config(text=f"⚠ {self._err_count} ERR")
-        batch.save_path_visuals(pr)
+        batch.save_path_visuals(pr, self._coord_format)
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
         batch.save_summary_html(results, batch_dir)

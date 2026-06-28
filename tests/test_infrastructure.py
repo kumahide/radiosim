@@ -197,6 +197,14 @@ class TestPartialConfigSave:
         assert infra.APP_KEYS.isdisjoint(infra.SIM_KEYS)
         assert infra.APP_KEYS | infra.SIM_KEYS == frozenset(infra.DEFAULT_CONFIG)
 
+    def test_coord_format_is_app_key(self):
+        """座標形式は表示の好み＝app 設定（sim パラメータには混ざらない）。"""
+        assert "coord_format" in infra.APP_KEYS
+        assert "coord_format" not in infra.SIM_KEYS
+        assert infra.DEFAULT_CONFIG["coord_format"] == "dd"
+        assert "coord_format" in infra.select_app({"coord_format": "dms"})
+        assert "coord_format" not in infra.select_sim({"coord_format": "dms"})
+
     def test_save_sim_preserves_app_keys(self, tmp_path):
         """sim キー保存で app 設定（theme/lang/proxy_url）が消えないこと。"""
         path = str(tmp_path / "conf.json")
