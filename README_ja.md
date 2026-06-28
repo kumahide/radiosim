@@ -152,7 +152,8 @@ radiosim/
 ├── models.py             # 純粋計算ロジック（副作用ゼロ）
 ├── simulation.py         # ViewModel / オーケストレーター
 ├── infrastructure.py     # 外部依存（DEM/淡色タイル取得・設定 I/O・バリデーション）
-├── batch.py              # 一括シミュレーションエンジン・HTML/KML 出力
+├── batch.py              # 一括シミュレーションの実行エンジン（CSV I/O・バリデーション・実行）
+├── report.py             # バッチ結果の出力生成（PNG/HTML/KML・サマリ・ヘッドレス）
 ├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
 ├── map_graphics.py       # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
 ├── coords.py             # 座標表記変換（DD ⇔ DMS・純関数）
@@ -566,7 +567,8 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 [オーケストレーター層]
   simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
-  batch.py        CSV I/O・一括実行エンジン・HTML/KML 出力
+  batch.py        CSV I/O・バリデーション・一括実行エンジン
+  report.py       バッチ結果の出力生成（PNG/HTML/KML・サマリ・ヘッドレス）
   report_map.py   レポート用 経路地図のヘッドレス生成（タイル取得＋合成）
 
           |
