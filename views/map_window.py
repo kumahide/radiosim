@@ -12,14 +12,24 @@ views/map_window.py
     - 範囲削除 / 全削除
   を行う。
 - 座標入力モード（Phase B）: 地図を素クリックして TX→RX を交互にピックし、
-  ランチャーの座標欄（start/end）へ書き戻す。数値欄が常に source of truth で、
-  地図はピッカーに徹する。
+  ランチャーの座標欄（start/end）へ書き戻す。数値欄が常に source of truth。
+- 連続追加モード（Phase D2）: TX→RX ペア成立ごとにバッチへ 1 行を append し自動
+  リセットする。append 先のバッチウィンドウはモード移行時に開く/前面化する。
+
+**MapWindow はアプリ（ランチャー）が持つ唯一のインスタンス**。「バッチからも地図を
+開く」という第2インスタンスは作らない（ランチャーが本筋・バッチは従属する受け皿）。
+ピック結果の宛先は 2 種類の「座標シンク」で表現する：
+- 単一書き戻し（ランチャー）= `_SingleSink`（`apply_map_pick`/`current_path_coords`）。
+  構築時に固定で受け取る。
+- 連続 append（バッチ）= `_AppendSink`（`append_path`/`existing_paths`）。連続追加
+  モードに入ったとき `append_provider()` で受け皿を開いて受け取り、抜けると手放す。
 """
 
 import os
 import threading
 import tkinter as tk
 from tkinter import ttk
+from typing import Callable, Protocol, cast
 
 from PIL import ImageTk
 
@@ -50,6 +60,20 @@ _OUTLINE_COLOR = "#0066CC"
 _FIT_MARGIN   = 0.25    # bbox を広げる余白（経路が縁に張り付かないように）
 _FIT_MIN_SPAN = 0.002   # 退化（同緯度/同経度の経路）回避の最小スパン（度）
 _SINGLE_ZOOM  = 13      # TX/RX 片方だけ設定済みのときの初期ズーム
+
+# 座標シンク（ピック結果の受け手）の 2 形態。実装はランチャー／バッチビルダー。
+# 共有メソッドは無く capability で分岐するため、別々の Protocol として定義する。
+class _SingleSink(Protocol):
+    """単一書き戻しシンク（ランチャー）: ピックごとに start/end 欄へ反映する。"""
+    def apply_map_pick(self, role: str, lat: float, lon: float) -> None: ...
+    def current_path_coords(self) -> dict: ...
+
+
+class _AppendSink(Protocol):
+    """連続 append シンク（バッチ・Phase D2）: ペア成立ごとに 1 行を追加する。"""
+    def append_path(self, tx: tuple, rx: tuple) -> str: ...
+    def existing_paths(self) -> list[tuple]: ...
+
 
 # tkintermapview の after ループを止めてからウィジェットを破棄するまでの猶予 [ms]。
 # キュー済みの直近 after（10ms 周期）が widget 生存中に消化される時間。
@@ -88,10 +112,23 @@ def close_map_safely(scheduler, map_widget, destroy) -> None:
 
 
 class MapWindow:
-    def __init__(self, parent: tk.Misc, config: dict, launcher=None) -> None:
+    def __init__(
+        self,
+        parent: tk.Misc,
+        config: dict,
+        single_sink: object = None,
+        append_provider: "Callable[[], object] | None" = None,
+    ) -> None:
         self._config = config
-        # 座標入力モードのピック結果を書き戻す先（SimLauncher）。None なら書き戻さない。
-        self._launcher = launcher
+        # 座標入力モード（single）の書き戻し先。構築時固定（ランチャー）。
+        self._single_sink: "_SingleSink | None" = (
+            cast("_SingleSink", single_sink) if single_sink is not None else None
+        )
+        # 連続追加モードの append 先を開いて返すプロバイダ（ランチャー → バッチ）。
+        # 連続追加モードに入ったときに呼び、受け皿（_AppendSink）を取得する。
+        self._append_provider = append_provider
+        # 現在保持している append 先（連続追加モードのときのみ非 None）。
+        self._append_sink: "_AppendSink | None" = None
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
@@ -111,6 +148,11 @@ class MapWindow:
         self._rx_marker = None
         self._path_line = None
         self._dist_label = None         # path 中点の水平距離ラベル（マーカー）
+        # 追記モードで既に確定したパスの地図オブジェクト（マーカー・線・距離バッジ）。
+        # 座標値は持たない（バッチ表が source of truth）。毎回引き直す。
+        self._committed: list = []
+        # 確定パスの距離バッジ PhotoImage 保持リスト（GC されると消えるため）。
+        self._committed_badges: list = []
         # UISP 風ノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._tx_icon = self._make_node_icon(hollow=False)
@@ -140,7 +182,7 @@ class MapWindow:
         self._build_ui()
         self._refresh_stats()
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
-        self._load_launcher_coords()
+        self._load_single_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
         # （cache=カバレッジ / coords=経路。既定は coords）。
         self._init_after_id = self._win.after(600, self._apply_mode_visibility)
@@ -204,6 +246,23 @@ class MapWindow:
         # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
         if not hasattr(self, "_status_label"):
             return
+        if self._mode.get() == "append":
+            # 連続追加に入る＝受け皿（バッチ）を開いて append 先を確保する。
+            sink = self._append_provider() if self._append_provider else None
+            if sink is None:
+                # 受け皿が用意できないときは座標入力へ戻す（_select_mode が再入し
+                # 描画・ヒント更新まで行うのでここでは return）。
+                self._select_mode("coords")
+                return
+            self._append_sink = cast("_AppendSink", sink)
+            self._reset_active_pick()           # アクティブピックは持たず TX 待ちから
+            self._fit_to_existing_paths()       # 既存パス群へズームを合わせる
+            self._win.lift()                    # 受け皿を開いた後、地図を前面へ戻す
+        else:
+            self._append_sink = None            # 連続追加を抜けたら append 先を手放す
+            if self._mode.get() == "coords":
+                # 連続追加で消したアクティブピックを、ランチャーの現在値で復元する。
+                self._load_single_coords()
         self._apply_mode_visibility()
         # モードに応じてアイドルヒントを切り替える（_set_idle がモードを見る）。
         self._set_idle()
@@ -211,16 +270,23 @@ class MapWindow:
     def _apply_mode_visibility(self) -> None:
         """各モードは自分の関心レイヤだけを表示する（モードが見た目を決める）。
 
-        - cache  : キャッシュカバレッジを描画し、経路レイヤ（マーカー/線/距離）は隠す。
-        - coords : 経路レイヤを描画し、カバレッジ塗りは隠す。
+        - cache         : キャッシュカバレッジを描画し、経路レイヤは隠す。
+        - coords/append : 経路レイヤ（マーカー/線/距離・確定パス）を描画し、塗りは隠す。
         座標値（_tx_coord/_rx_coord）は保持するのでモードを往復しても失われない。
         """
-        if self._mode.get() == "coords":
-            self._clear_tile_overlays()
-            self._show_coord_visuals()
-        else:
+        if self._mode.get() == "cache":
             self._clear_coord_visuals()
             self._refresh_overlay()
+        else:
+            self._clear_tile_overlays()
+            self._show_coord_visuals()
+            self._refresh_committed_paths()
+
+    def on_append_target_closed(self) -> None:
+        """append 先（バッチ）が閉じたときの通知。連続追加中なら座標入力へ戻す。"""
+        self._append_sink = None
+        if self._mode.get() == "append":
+            self._select_mode("coords")
 
     def _show_coord_visuals(self) -> None:
         """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
@@ -230,7 +296,7 @@ class MapWindow:
             self._set_pick_marker("rx", *self._rx_coord)
 
     def _clear_coord_visuals(self) -> None:
-        """マーカー・経路・距離ラベルを地図から消す（座標値は保持する）。"""
+        """マーカー・経路・距離ラベル・確定パスを地図から消す（座標値は保持する）。"""
         for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
             if obj is not None:
                 obj.delete()
@@ -238,6 +304,45 @@ class MapWindow:
         self._rx_marker = None
         self._path_line = None
         self._dist_label = None
+        self._clear_committed_paths()
+
+    # ----------------------------------------------------------
+    # 追記モード（Phase D2）: 確定済みパスのライン表示
+    # ----------------------------------------------------------
+    def _clear_committed_paths(self) -> None:
+        for obj in self._committed:
+            obj.delete()
+        self._committed.clear()
+        self._committed_badges.clear()
+
+    def _refresh_committed_paths(self) -> None:
+        """シンクが持つ既存パス（バッチ各行の座標）を地図上に表示する。
+
+        確定パスもアクティブピックと同じ見た目（TX/RX マーカー・経路線・中点の
+        水平距離バッジ）で残す。追記モードでのみ意味を持つ。バッチ表が source of
+        truth なので地図側は毎回引き直すだけ（座標は保持しない）。パース不能な行は
+        シンク側で除外される。
+        """
+        self._clear_committed_paths()
+        if self._append_sink is None:
+            return
+        for tx, rx in self._append_sink.existing_paths():
+            self._committed.append(self._map.set_marker(
+                tx[0], tx[1], text=i18n.t("map_marker_tx"),
+                icon=self._tx_icon, icon_anchor="center", text_color=_MARKER_TEXT,
+            ))
+            self._committed.append(self._map.set_marker(
+                rx[0], rx[1], text=i18n.t("map_marker_rx"),
+                icon=self._rx_icon, icon_anchor="center", text_color=_MARKER_TEXT,
+            ))
+            self._committed.append(
+                self._map.set_path([tx, rx], color=_UISP_CYAN_HEX, width=3))
+            mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
+            km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
+            badge = self._make_distance_badge(map_graphics.distance_text(km))
+            self._committed_badges.append(badge)   # GC 防止に保持
+            self._committed.append(self._map.set_marker(
+                mid[0], mid[1], icon=badge, icon_anchor="center"))
 
     # ----------------------------------------------------------
     # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
@@ -264,18 +369,44 @@ class MapWindow:
         return False
 
     def _on_map_click(self, coords: tuple) -> None:
-        """地図の素クリック。座標入力モードのときだけ TX→RX を交互にピックする。"""
-        if self._mode.get() != "coords" or self._busy:
+        """地図の素クリック。座標入力／連続追加モードで TX→RX を交互にピックする。"""
+        if self._mode.get() == "cache" or self._busy:
             return
         if self._click_on_zoom_button():
             return
         lat, lon = coords
         role = self._pick_next
         self._set_pick_marker(role, lat, lon)
-        if self._launcher is not None:
-            self._launcher.apply_map_pick(role, lat, lon)
-        self._pick_next = "rx" if role == "tx" else "tx"
+        if self._append_sink is not None:
+            # 連続追加（Phase D2）: RX 確定でペア成立 → 1 行を append し、
+            # アクティブなピックをリセットして次の TX 待ちに戻す（add 不要）。
+            if role == "rx" and self._tx_coord is not None and self._rx_coord is not None:
+                pid = self._append_sink.append_path(self._tx_coord, self._rx_coord)
+                self._reset_active_pick()
+                self._refresh_committed_paths()
+                if pid:
+                    self._set_status(
+                        i18n.t("map_append_added").format(pid=pid), auto_clear=True)
+            else:
+                self._pick_next = "rx"
+        else:
+            # 単一書き戻し（ランチャー）: ピックごとに start/end 欄へ反映。
+            if self._single_sink is not None:
+                self._single_sink.apply_map_pick(role, lat, lon)
+            self._pick_next = "rx" if role == "tx" else "tx"
         self._set_idle()   # 次のピック対象をヒントに反映
+
+    def _reset_active_pick(self) -> None:
+        """アクティブな TX/RX ピック（マーカー・経路・座標）をクリアし TX 待ちへ戻す。
+
+        確定済みパス（_committed）には触れない＝append 後も軌跡は地図に残る。
+        """
+        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
+            if obj is not None:
+                obj.delete()
+        self._tx_marker = self._rx_marker = self._path_line = self._dist_label = None
+        self._tx_coord = self._rx_coord = None
+        self._pick_next = "tx"
 
     def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
         """UISP 風のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
@@ -329,16 +460,26 @@ class MapWindow:
                 mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
             )
 
-    def _load_launcher_coords(self) -> None:
+    def _fit_to_existing_paths(self) -> None:
+        """append 先（バッチ）の既存パス群の外接 bbox に地図をフィットする。"""
+        if self._append_sink is None:
+            return
+        paths = self._append_sink.existing_paths()
+        if not paths:
+            return
+        lats = [p for tx, rx in paths for p in (tx[0], rx[0])]
+        lons = [p for tx, rx in paths for p in (tx[1], rx[1])]
+        self._fit_to_path((max(lats), min(lons)), (min(lats), max(lons)))
+
+    def _load_single_coords(self) -> None:
         """ランチャー数値欄の既存 TX/RX を取り込み、地図の中心とズームを合わせる。
 
-        両方そろっていれば経路長に合わせて自動ズーム（fit_bounding_box）し、片方
-        だけなら近接ズームでその点に寄せる。マーカー・経路の実描画はモードに応じて
-        _apply_mode_visibility が行う（cache モードでは経路レイヤを出さない）。
+        両方そろっていれば経路長に合わせて自動ズーム、片方だけなら近接ズームで寄せる。
+        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う。
         """
-        if self._launcher is None:
+        if self._single_sink is None:
             return
-        coords = self._launcher.current_path_coords()
+        coords = self._single_sink.current_path_coords()
         tx, rx = coords.get("tx"), coords.get("rx")
         self._tx_coord, self._rx_coord = tx, rx
         # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
@@ -384,8 +525,12 @@ class MapWindow:
         modebar.pack(fill="x", padx=4, pady=(4, 0))
         ttk.Label(modebar, text=i18n.t("map_mode_label")).pack(side="left", padx=(2, 6))
         self._mode_buttons: dict[str, ttk.Button] = {}
-        # 座標入力＝主機能なので左に並べる。
-        for value, key in [("coords", "map_mode_coords"), ("cache", "map_mode_cache")]:
+        # 座標入力＝主機能なので左に並べる。連続追加（バッチへ）はその隣。
+        for value, key in [
+            ("coords", "map_mode_coords"),
+            ("append", "map_mode_append"),
+            ("cache",  "map_mode_cache"),
+        ]:
             b = ttk.Button(
                 modebar, text=i18n.t(key),
                 command=lambda v=value: self._select_mode(v),
@@ -590,16 +735,16 @@ class MapWindow:
     # ----------------------------------------------------------
     def _schedule_overlay_refresh(self, event=None) -> None:
         """パン/ズーム連打をデバウンスして再描画する。"""
-        if self._mode.get() == "coords":
-            return   # 座標入力モードではカバレッジを描かない（無駄なタイマーも張らない）
+        if self._mode.get() != "cache":
+            return   # キャッシュ管理以外ではカバレッジを描かない（無駄なタイマーも張らない）
         if self._overlay_after_id is not None:
             self._win.after_cancel(self._overlay_after_id)
         self._overlay_after_id = self._win.after(300, self._refresh_overlay)
 
     def _refresh_overlay(self) -> None:
         self._overlay_after_id = None
-        if self._mode.get() == "coords":
-            return   # 座標入力モードではカバレッジ描画をスキップ
+        if self._mode.get() != "cache":
+            return   # キャッシュ管理以外ではカバレッジ描画をスキップ
         try:
             w = self._map.canvas.winfo_width()
             h = self._map.canvas.winfo_height()
@@ -621,7 +766,7 @@ class MapWindow:
         self._win.after(0, self._draw_overlay_cells, cells, outline)
 
     def _draw_overlay_cells(self, cells: list, outline: list) -> None:
-        if self._mode.get() == "coords":
+        if self._mode.get() != "cache":
             return   # モード切替後に届いた旧ワーカー結果は捨てる（描画しない）
         self._clear_tile_overlays()
         # 半透明塗り（stipple はライブラリ既定）。セル境界線は描かず、
@@ -683,11 +828,15 @@ class MapWindow:
         """アイドル状態: モードに応じた操作ヒントをグレーで表示する。"""
         self._status_clear_id = None
         self._status_label.config(foreground="gray")
-        if self._mode.get() == "coords":
-            key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
+        mode = self._mode.get()
+        if mode == "cache":
+            self._status_var.set(i18n.t("tm_hint"))
+        elif mode == "append":
+            key = "map_append_hint_tx" if self._pick_next == "tx" else "map_append_hint_rx"
             self._status_var.set(i18n.t(key))
         else:
-            self._status_var.set(i18n.t("tm_hint"))
+            key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
+            self._status_var.set(i18n.t(key))
 
     def _set_status(self, text: str, auto_clear: bool = False) -> None:
         """状態・結果文を通常色で設定。auto_clear=True なら一定時間後にヒントへ戻す。"""

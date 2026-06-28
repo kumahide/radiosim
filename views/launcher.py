@@ -712,8 +712,18 @@ class SimLauncher:
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win._win.focus()
             return
-        # launcher=self を渡すと座標入力モードのピック結果を数値欄へ書き戻せる。
-        self._map_win = MapWindow(self.root, self.config, launcher=self)
+        # 地図はアプリ唯一のインスタンス（ランチャー所有）。座標入力＝ランチャーへの
+        # 単一書き戻し（single_sink=self）、連続追加＝バッチへ append（append_provider
+        # がバッチを開いて受け皿を返す）。バッチからは地図を開かない（本筋はランチャー）。
+        self._map_win = MapWindow(
+            self.root, self.config,
+            single_sink=self,
+            append_provider=self._open_batch_for_append,
+        )
+
+    def _open_batch_for_append(self):
+        """連続追加モードの append 先としてバッチウィンドウを開いて返す。"""
+        return self.ensure_batch_window()
 
     # ----------------------------------------------------------
     # マップウィンドウ（座標入力モード）との連携
@@ -855,21 +865,39 @@ class SimLauncher:
         st.config(state="disabled")
 
     def _on_batch(self) -> None:
-        """Batch Builder ウィンドウを開く。ランチャーの現在値を初期値として引き継ぐ。
+        """Batch Builder ウィンドウを開く（既に開いていれば前面化）。"""
+        self.ensure_batch_window()
 
-        config_provider / load_params を注入し、バッチ各行を「ランチャー（source of
-        truth）のスナップショット」として凍結できるようにする（Phase D1）。
+    def ensure_batch_window(self):
+        """バッチウィンドウを開いて返す（唯一インスタンス。開いていれば前面化）。
+
+        ランチャーの現在値を初期値として引き継ぐ。config_provider / load_params を
+        注入し、バッチ各行を「ランチャー（source of truth）のスナップショット」として
+        凍結できるようにする（Phase D1）。地図の連続追加モードの append 先も兼ねる。
         """
+        win = getattr(self, "_batch_win", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return win
         from views.batch_builder import BatchBuilderWindow
         try:
             params = sim.SimParams(self._current_config())
         except Exception:
             params = sim.SimParams(infra.DEFAULT_CONFIG)
-        BatchBuilderWindow(
+        self._batch_win = BatchBuilderWindow(
             self.root, params,
             config_provider=self._current_config,
             load_params=self.load_batch_row,
+            on_close=self._on_batch_closed,
         )
+        return self._batch_win
+
+    def _on_batch_closed(self) -> None:
+        """バッチが閉じたとき: 参照を手放し、地図が連続追加中なら座標入力へ戻させる。"""
+        self._batch_win = None
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_append_target_closed()
 
     def load_batch_row(self, row: dict) -> None:
         """バッチ行（座標＋RF）をランチャーの数値欄へロードする（→シングルへ送る）。
