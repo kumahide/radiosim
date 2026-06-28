@@ -113,15 +113,33 @@ def test_pip_install_line_lists_all_dependencies(doc):
 # --- 5. バージョン文字列: version.py を単一ソースに各ドキュメントが追従するか --
 #       リリース時に version.APP_VERSION を上げたら README の H1 と CHANGELOG の
 #       見出しも更新することを強制する（最も影響の大きいリリース時ドリフト）。
+#
+#       プレリリース段階の扱い（2026-06-28・feedback_branch_strategy と整合）:
+#       - alpha（`X.YaN`）＝開発着手直後。version.py だけ上げ、README/CHANGELOG は
+#         まだ追従しない軽量段階 → このグループの照合は **skip**。
+#       - beta/RC/正式（`X.YbN`/`X.YRCn`/`X.Y`）＝ドキュメント整備対象 → **base 版**
+#         （`X.Y`）で照合する。プレリリース接尾辞まで README H1 に書かせない
+#         （README は配布版の見え方＝base のみ）。
 VERSION_READMES = [
     "README_ja.md", "README_en.md",
     "README_binary_ja.md", "README_binary_en.md",
 ]
 
+_ALPHA_RE = re.compile(r"^\d+\.\d+a\d+$")
+_BASE_VER_RE = re.compile(r"^(\d+\.\d+(?:\.\d+)?)")
+
+
+def _base_version() -> str:
+    """APP_VERSION の base（a/b/RC 接尾辞を除いた X.Y[.Z]）。"""
+    m = _BASE_VER_RE.match(version.APP_VERSION)
+    return m.group(1) if m else version.APP_VERSION
+
 
 @pytest.mark.parametrize("doc", VERSION_READMES)
 def test_readme_h1_matches_app_version(doc):
-    expected = f"# RadioSim Pro {version.APP_VERSION}"
+    if _ALPHA_RE.match(version.APP_VERSION):
+        pytest.skip(f"alpha 段階（{version.APP_VERSION}）は README 追従免除")
+    expected = f"# RadioSim Pro {_base_version()}"
     first_line = _read(doc).splitlines()[0].strip()
     assert first_line == expected, (
         f"{doc}: H1 is {first_line!r}, expected {expected!r} "
@@ -130,7 +148,9 @@ def test_readme_h1_matches_app_version(doc):
 
 
 def test_changelog_has_current_version_section():
-    needle = f"## [{version.APP_VERSION}]"
+    if _ALPHA_RE.match(version.APP_VERSION):
+        pytest.skip(f"alpha 段階（{version.APP_VERSION}）は CHANGELOG 追従免除")
+    needle = f"## [{_base_version()}]"
     assert needle in _read("CHANGELOG.md"), (
         f"CHANGELOG.md has no '{needle}' section for the current "
         f"version.APP_VERSION={version.APP_VERSION}"
