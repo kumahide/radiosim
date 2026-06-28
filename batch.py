@@ -49,6 +49,8 @@ class PathRow:
     h_tx:     float
     h_rx:     float
     freq_mhz: float | None = None
+    gain_tx:  float | None = None
+    gain_rx:  float | None = None
     note:     str          = ""
 
 
@@ -77,7 +79,7 @@ def parse_csv(csv_path: str) -> list[PathRow]:
     CSV ファイルを PathRow リストに変換する。
 
     必須列: id, start, end, h_tx, h_rx
-    省略可: freq, note
+    省略可: freq, gain_tx, gain_rx, note
     """
     rows: list[PathRow] = []
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
@@ -136,6 +138,8 @@ def _parse_csv_row(raw: dict, line: int) -> PathRow:
         h_tx     = _float("h_tx"),
         h_rx     = _float("h_rx"),
         freq_mhz = _opt_float("freq"),
+        gain_tx  = _opt_float("gain_tx"),
+        gain_rx  = _opt_float("gain_rx"),
         note     = raw.get("note", "").strip(),
     )
 
@@ -144,7 +148,10 @@ def export_csv(rows: list[PathRow], csv_path: str) -> None:
     """PathRow リストを CSV ファイルに書き出す。"""
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["id", "start", "end", "h_tx", "h_rx", "freq", "note"])
+        writer.writerow([
+            "id", "start", "end", "h_tx", "h_rx",
+            "freq", "gain_tx", "gain_rx", "note",
+        ])
         for r in rows:
             writer.writerow([
                 r.path_id,
@@ -153,6 +160,8 @@ def export_csv(rows: list[PathRow], csv_path: str) -> None:
                 r.h_tx,
                 r.h_rx,
                 r.freq_mhz if r.freq_mhz is not None else "",
+                r.gain_tx  if r.gain_tx  is not None else "",
+                r.gain_rx  if r.gain_rx  is not None else "",
                 r.note,
             ])
 
@@ -198,6 +207,10 @@ def validate_rows(rows: list[PathRow]) -> list[str]:
             errors.append(i18n.t("verr_h_rx").format(pid=pid, val=r.h_rx))
         if r.freq_mhz is not None and not (1 <= r.freq_mhz <= 100000):
             errors.append(i18n.t("verr_freq").format(pid=pid, val=r.freq_mhz))
+        if r.gain_tx is not None and not (0 <= r.gain_tx <= 60):
+            errors.append(i18n.t("verr_gain_tx").format(pid=pid, val=r.gain_tx))
+        if r.gain_rx is not None and not (0 <= r.gain_rx <= 60):
+            errors.append(i18n.t("verr_gain_rx").format(pid=pid, val=r.gain_rx))
 
     return errors
 
@@ -311,8 +324,8 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         "h_rx"       : str(row.h_rx),
         "freq"       : str(row.freq_mhz    if row.freq_mhz    is not None else base.freq_mhz),
         "p_tx"       : str(base.p_tx),
-        "gain_tx"    : str(base.gain_tx),
-        "gain_rx"    : str(base.gain_rx),
+        "gain_tx"    : str(row.gain_tx     if row.gain_tx     is not None else base.gain_tx),
+        "gain_rx"    : str(row.gain_rx     if row.gain_rx     is not None else base.gain_rx),
         "sens"       : str(base.sens),
         "veg_h"      : str(base.veg_h),
         "k_factor"   : str(base.k_factor),
@@ -640,21 +653,24 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
         writer.writerow([
-            "id", "status", "freq_mhz", "h_tx", "h_rx",
+            "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
+            "h_tx", "h_rx",
             "rx_dbm", "margin_db",
             "fspl_db", "diff_db", "veg_db", "env_db",
             "rain_db", "gas_db", "total_loss_db",
             "slant_km", "f1_pct", "note", "error",
         ])
         for pr in results:
-            freq_val = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
+            freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
+            gain_tx_val = f"{pr.params.gain_tx:.1f}"  if pr.params else ""
+            gain_rx_val = f"{pr.params.gain_rx:.1f}"  if pr.params else ""
             h_tx_val = f"{pr.row.h_tx:.1f}"
             h_rx_val = f"{pr.row.h_rx:.1f}"
             if pr.result is not None:
                 r = pr.result
                 writer.writerow([
                     pr.row.path_id, r.status,
-                    freq_val, h_tx_val, h_rx_val,
+                    freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
                     f"{r.p_rx:.2f}",          f"{r.actual_margin:.2f}",
                     f"{r.fspl:.2f}",           f"{r.diff_loss:.2f}",
                     f"{r.veg_loss:.2f}",       f"{r.env_loss:.2f}",
@@ -666,7 +682,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
             else:
                 writer.writerow([
                     pr.row.path_id, "ERROR",
-                    freq_val, h_tx_val, h_rx_val,
+                    freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
                     "", "", "", "", "", "", "", "", "", "", "",
                     pr.row.note, str(pr.error),
                 ])
@@ -680,7 +696,9 @@ def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
 
     rows_html = ""
     for pr in results:
-        freq_disp = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
+        freq_disp    = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
+        gain_tx_disp = f"{pr.params.gain_tx:.1f}"  if pr.params else "—"
+        gain_rx_disp = f"{pr.params.gain_rx:.1f}"  if pr.params else "—"
         h_tx_disp = f"{pr.row.h_tx:.1f}"
         h_rx_disp = f"{pr.row.h_rx:.1f}"
         pid_safe  = pr.row.path_id          # validated: [A-Za-z0-9_-]+ — safe for href
@@ -692,7 +710,8 @@ def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
                 f"<tr class='err'>"
                 f"<td>{pid_esc}</td>"
                 f"<td class='s-err'>ERROR</td>"
-                f"<td>{freq_disp}</td><td>{h_tx_disp}</td><td>{h_rx_disp}</td>"
+                f"<td>{freq_disp}</td><td>{gain_tx_disp}</td><td>{gain_rx_disp}</td>"
+                f"<td>{h_tx_disp}</td><td>{h_rx_disp}</td>"
                 f"<td colspan='11'>{error_esc}</td>"
                 f"<td>{note_esc}</td>"
                 f"<td></td></tr>\n"
@@ -705,6 +724,8 @@ def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
             f"<td>{pid_esc}</td>"
             f"<td class='s-{cls}'>{r.status}</td>"
             f"<td>{freq_disp}</td>"
+            f"<td>{gain_tx_disp}</td>"
+            f"<td>{gain_rx_disp}</td>"
             f"<td>{h_tx_disp}</td>"
             f"<td>{h_rx_disp}</td>"
             f"<td>{r.p_rx:.1f}</td>"
@@ -759,7 +780,9 @@ footer{{margin-top:14px;color:#bbb;font-size:10px}}
 <thead>
 <tr>
   <th>{i18n.t('html_col_id')}</th><th>{i18n.t('html_col_status')}</th>
-  <th>{i18n.t('html_col_freq')}</th><th>{i18n.t('html_col_h_tx')}</th><th>{i18n.t('html_col_h_rx')}</th>
+  <th>{i18n.t('html_col_freq')}</th>
+  <th>{i18n.t('html_col_gain_tx')}</th><th>{i18n.t('html_col_gain_rx')}</th>
+  <th>{i18n.t('html_col_h_tx')}</th><th>{i18n.t('html_col_h_rx')}</th>
   <th>{i18n.t('html_col_rx')}</th><th>{i18n.t('html_col_margin')}</th>
   <th>{i18n.t('html_col_fspl')}</th><th>{i18n.t('html_col_diff')}</th>
   <th>{i18n.t('html_col_veg')}</th><th>{i18n.t('html_col_env')}</th>

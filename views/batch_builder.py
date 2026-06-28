@@ -14,6 +14,7 @@ import os
 import queue
 import tkinter as tk
 from tkinter import filedialog, ttk
+from typing import Callable
 
 import batch
 import coords
@@ -27,21 +28,40 @@ from views import dialogs
 class BatchBuilderWindow(tk.Toplevel):
     """バッチ実行用のパス入力ウィンドウ。ランチャーから生成される。"""
 
-    _WIDTHS = [2, 9, 21, 21, 6, 6, 9, 13, 2, 2]
+    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 2, 2]
+
+    # Common Settings の StringVar 属性名 → ランチャー config dict のキー対応。
+    # 共通欄は SimParams の属性名で持つが、ランチャーは config キーで持つため変換が要る。
+    _COMMON_CFG_MAP = {
+        "freq_mhz": "freq",   "p_tx":     "p_tx",   "gain_tx": "gain_tx",
+        "gain_rx":  "gain_rx", "sens":    "sens",   "veg_h":   "veg_h",
+        "k_factor": "k_factor", "num":    "samples", "rain_rate": "rain_rate",
+    }
 
     @property
     def _COLS(self) -> list[str]:
         return [
             "", i18n.t("col_id"), i18n.t("col_start"), i18n.t("col_end"),
-            i18n.t("col_h_tx"), i18n.t("col_h_rx"), i18n.t("col_freq"), i18n.t("col_note"), "", "",
+            i18n.t("col_h_tx"), i18n.t("col_h_rx"), i18n.t("col_freq"),
+            i18n.t("col_gain_tx"), i18n.t("col_gain_rx"), i18n.t("col_note"), "", "",
         ]
 
-    def __init__(self, parent: tk.Tk, base_params: sim.SimParams) -> None:
+    def __init__(
+        self,
+        parent: tk.Tk,
+        base_params: sim.SimParams,
+        config_provider: "Callable[[], dict] | None" = None,
+        load_params:     "Callable[[dict], None] | None" = None,
+    ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
-        self.geometry("930x600")
+        self.geometry("1080x600")
         self.resizable(True, True)
-        self.minsize(720, 420)
+        self.minsize(880, 420)
+
+        # ランチャー連携（凍結方式）。省略時は従来挙動（往復・凍結なし）。
+        self._config_provider = config_provider
+        self._load_params     = load_params
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
@@ -88,9 +108,12 @@ class BatchBuilderWindow(tk.Toplevel):
             ttk.Label(f, text=label, font=("Arial", 8)).pack(side="left")
             var = tk.StringVar(value=str(getattr(self._base_params, attr)))
             self._common_vars[attr] = var
-            tk.Entry(f, textvariable=var, font=("Arial", 8), width=width).pack(
-                side="left", padx=(2, 0)
-            )
+            # 共通設定はランチャー（source of truth）のスナップショット。直接編集
+            # させず「↻ランチャーから更新」で取り込む（凍結方式の対称化）。
+            tk.Entry(
+                f, textvariable=var, font=("Arial", 8), width=width,
+                state="readonly", readonlybackground="#f0f0f0",
+            ).pack(side="left", padx=(2, 0))
 
         _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
         _field(row0, i18n.t("lbl_b_p_tx"),   "p_tx")
@@ -130,6 +153,27 @@ class BatchBuilderWindow(tk.Toplevel):
             f_diff, textvariable=self._diff_var, values=["deygout", "single"],
             state="readonly", font=("Arial", 8), width=9,
         ).pack(side="left", padx=(2, 0))
+
+        # ランチャー（source of truth）から共通設定を取り込む。
+        if self._config_provider is not None:
+            ttk.Button(
+                row1, text=i18n.t("btn_refresh_common"),
+                command=self._refresh_common_from_launcher,
+            ).pack(side="right", padx=6)
+
+    def _refresh_common_from_launcher(self) -> None:
+        """ランチャーの現在値で Common Settings を上書きする（凍結方式の取り込み）。"""
+        if self._config_provider is None:
+            return
+        c = self._config_provider()
+        for attr, ckey in self._COMMON_CFG_MAP.items():
+            if ckey in c and attr in self._common_vars:
+                self._common_vars[attr].set(str(c[ckey]))
+        env = c.get("env_type", "los")
+        self._env_var.set(
+            self._env_key_to_label.get(env, self._env_key_to_label["los"])
+        )
+        self._diff_var.set(c.get("diff_method", self._diff_var.get()))
 
     def _build_table(self) -> None:
         outer = ttk.Frame(self)
@@ -229,6 +273,24 @@ class BatchBuilderWindow(tk.Toplevel):
     # ----------------------------------------------------------
     # テーブル行の追加・削除
     # ----------------------------------------------------------
+    def _frozen_defaults(self, idx: int) -> list[str]:
+        """ランチャーの現在値（座標＋RF）を凍結したセル文字列リストを返す。"""
+        c = self._config_provider() if self._config_provider else {}
+        # ランチャー config は座標を DD 正規化済み。バッチ表示の座標形式へ整形する。
+        start = coords.reformat(c.get("start", ""), self._coord_format)
+        end   = coords.reformat(c.get("end", ""),   self._coord_format)
+        return [
+            f"path{idx + 1:02d}",
+            start,
+            end,
+            str(c.get("h_tx", "")),
+            str(c.get("h_rx", "")),
+            str(c.get("freq", "")),
+            str(c.get("gain_tx", "")),
+            str(c.get("gain_rx", "")),
+            "",
+        ]
+
     def _add_row(self, row_data: "batch.PathRow | list[str] | None" = None) -> None:
         idx      = len(self._row_frames)
         is_first = idx == 0
@@ -246,10 +308,15 @@ class BatchBuilderWindow(tk.Toplevel):
                 str(row_data.h_tx),
                 str(row_data.h_rx),
                 str(row_data.freq_mhz) if row_data.freq_mhz is not None else "",
+                str(row_data.gain_tx) if row_data.gain_tx is not None else "",
+                str(row_data.gain_rx) if row_data.gain_rx is not None else "",
                 row_data.note,
             ]
+        elif self._config_provider is not None:
+            # 凍結方式：その時点のランチャー欄（座標＋RF）を文字列コピーして固定。
+            defaults = self._frozen_defaults(idx)
         else:
-            # 直前行があればその値を引き継ぐ。なければ Common Settings / base_params の値。
+            # ランチャー非連携時のフォールバック：直前行 → Common Settings の値。
             prev = self._row_entries[-1] if self._row_entries else None
             defaults = [
                 f"path{idx + 1:02d}",
@@ -258,6 +325,8 @@ class BatchBuilderWindow(tk.Toplevel):
                 prev[3].get() if prev else str(self._base_params.h_tx),
                 prev[4].get() if prev else str(self._base_params.h_rx),
                 prev[5].get() if prev else self._common_vars["freq_mhz"].get(),
+                prev[6].get() if prev else self._common_vars["gain_tx"].get(),
+                prev[7].get() if prev else self._common_vars["gain_rx"].get(),
                 "",
             ]
 
@@ -291,6 +360,14 @@ class BatchBuilderWindow(tk.Toplevel):
         ttk.Button(
             row_frame, text="×", command=_del, cursor="hand2", width=2,
         ).grid(row=0, column=len(self._WIDTHS) - 1, padx=2, pady=1)
+
+        # 右クリックで per-row 往復メニュー（→シングルへ／⟳RF更新／複製／削除）。
+        def _menu(e, f=row_frame, es=entries):
+            self._show_row_menu(e, f, es)
+        handle.bind("<Button-3>", _menu)
+        row_frame.bind("<Button-3>", _menu)
+        for e in entries:
+            e.bind("<Button-3>", _menu)
 
         self._row_entries.append(entries)
         self._canvas.update_idletasks()
@@ -329,6 +406,55 @@ class BatchBuilderWindow(tk.Toplevel):
         vals = list(vals)
         vals[0] = new_pid
         self._add_row(vals)
+
+    # ----------------------------------------------------------
+    # per-row 往復（右クリックメニュー・案A）
+    # ----------------------------------------------------------
+    def _show_row_menu(self, event, frame: ttk.Frame, entries: list[tk.Entry]) -> None:
+        """行の右クリックメニューを表示する。"""
+        menu = tk.Menu(self, tearoff=0)
+        if self._load_params is not None:
+            menu.add_command(
+                label=i18n.t("menu_send_to_single"),
+                command=lambda: self._send_row_to_single(entries),
+            )
+        if self._config_provider is not None:
+            menu.add_command(
+                label=i18n.t("menu_update_rf"),
+                command=lambda: self._update_row_rf(entries),
+            )
+        if menu.index("end") is not None:
+            menu.add_separator()
+        menu.add_command(label=i18n.t("menu_dup"), command=lambda: self._dup_row(entries))
+        menu.add_command(label=i18n.t("menu_del"),
+                         command=lambda: self._remove_row(frame, entries))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _send_row_to_single(self, entries: list[tk.Entry]) -> None:
+        """行の座標＋RF をランチャー（シングル）へロードして調整できるようにする。"""
+        if self._load_params is None:
+            return
+        v = [e.get() for e in entries]
+        self._load_params({
+            "start":   v[1], "end":     v[2],
+            "h_tx":    v[3], "h_rx":    v[4],
+            "freq":    v[5], "gain_tx": v[6], "gain_rx": v[7],
+        })
+
+    def _update_row_rf(self, entries: list[tk.Entry]) -> None:
+        """ランチャーの現在 RF を行へ書き戻す。座標（start/end）は保持する。"""
+        if self._config_provider is None:
+            return
+        c = self._config_provider()
+        # 列 3=h_tx, 4=h_rx, 5=freq, 6=gain_tx, 7=gain_rx（座標 1/2 は触らない）
+        for col, key in ((3, "h_tx"), (4, "h_rx"), (5, "freq"),
+                         (6, "gain_tx"), (7, "gain_rx")):
+            if key in c:
+                entries[col].delete(0, tk.END)
+                entries[col].insert(0, str(c[key]))
 
     # ----------------------------------------------------------
     # ドラッグ&ドロップ並び替え
@@ -414,7 +540,7 @@ class BatchBuilderWindow(tk.Toplevel):
         rows: list[batch.PathRow] = []
         for entries in self._row_entries:
             vals = [e.get().strip() for e in entries]
-            pid, start, end, h_tx_s, h_rx_s, freq_s, note = vals
+            pid, start, end, h_tx_s, h_rx_s, freq_s, gain_tx_s, gain_rx_s, note = vals
 
             if not pid and not start and not end:
                 continue  # 完全空行はスキップ
@@ -451,6 +577,8 @@ class BatchBuilderWindow(tk.Toplevel):
                 h_tx     = _parse_float(h_tx_s),
                 h_rx     = _parse_float(h_rx_s),
                 freq_mhz = _parse_opt_float(freq_s),
+                gain_tx  = _parse_opt_float(gain_tx_s),
+                gain_rx  = _parse_opt_float(gain_rx_s),
                 note     = note,
             ))
         return rows
