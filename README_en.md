@@ -152,7 +152,8 @@ radiosim/
 ├── models.py             # Pure calculation logic (no side effects)
 ├── simulation.py         # ViewModel / orchestrator
 ├── infrastructure.py     # External dependencies (DEM/pale tiles, config I/O, validation)
-├── batch.py              # Batch simulation engine and HTML/KML output
+├── batch.py              # Batch execution engine (CSV I/O, validation, run)
+├── report.py             # Batch result output generation (PNG/HTML/KML, summaries; headless)
 ├── report_map.py         # Headless path-overlay map generation for reports
 ├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
@@ -563,7 +564,8 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 
 [Orchestrator layer]
   simulation.py   DEM fetch management, terrain cache, calculation calls
-  batch.py        CSV I/O, batch execution engine, HTML/KML output
+  batch.py        CSV I/O, validation, batch execution engine
+  report.py       Batch result output generation (PNG/HTML/KML, summaries; headless)
   report_map.py   Headless path-overlay map generation (tile fetch + compositing)
 
           |
