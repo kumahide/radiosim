@@ -22,6 +22,7 @@ from typing import Callable
 
 import numpy as np
 
+import coords
 import infrastructure as infra
 import models
 
@@ -251,10 +252,15 @@ def save_package(
     params: SimParams,
     h_tx: float,
     h_rx: float,
+    coord_format: str = "dd",
 ) -> str:
     """
     結果一式をタイムスタンプ付きディレクトリに保存する。
     保存先ディレクトリのパスを返す。
+
+    coord_format は **人が読む report.txt の座標表記のみ**に効く（"dd"|"dms"）。
+    settings.json は再読込のため常に DD（[[feedback-radiosim-rules]] のデータ=DD原則）。
+    既定 DD なのでヘッドレス呼び出しは表示設定に非依存。
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
     save_dir  = os.path.join(infra.RESULTS_DIR, timestamp)
@@ -263,7 +269,7 @@ def save_package(
     _save_graph(fig, save_dir)
     _save_settings(params, h_tx, h_rx, save_dir)
     _save_terrain_csv(terrain, save_dir)
-    _save_report(result, params, h_tx, h_rx, save_dir)
+    _save_report(result, params, h_tx, h_rx, save_dir, coord_format)
 
     logger.info("Package saved: %s", save_dir)
     return save_dir
@@ -317,13 +323,16 @@ def _save_report(
     h_tx: float,
     h_rx: float,
     save_dir: str,
+    coord_format: str = "dd",
 ) -> None:
+    tx_site = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
+    rx_site = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
     text = (
         "=== RADIO LINK REPORT ===\n\n"
         f"Date: {datetime.now()}\n\n"
         "[SITE INFO]\n"
-        f"TX Site       : {params.lat_tx}, {params.lon_tx}\n"
-        f"RX Site       : {params.lat_rx}, {params.lon_rx}\n"
+        f"TX Site       : {tx_site}\n"
+        f"RX Site       : {rx_site}\n"
         f"TX Height     : {h_tx:.1f} m\n"
         f"RX Height     : {h_rx:.1f} m\n\n"
         "[RADIO SETTINGS]\n"

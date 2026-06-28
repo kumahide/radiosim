@@ -22,6 +22,7 @@ from tkinter import messagebox
 
 import batch
 import i18n
+import infrastructure as infra
 import models
 import simulation as sim
 import version
@@ -441,6 +442,8 @@ class _GraphWindow:
             self._params.rain_rate = self._slider_rain.val
             h_tx = self._slider_htx.val
             h_rx = self._slider_hrx.val
+            # 座標表記は app 設定に従う（人が読む report.txt のみ。データは DD 固定）
+            coord_format = infra.load_config().get("coord_format", "dd")
             save_dir = sim.save_package(
                 fig     = self._fig,
                 terrain = self._terrain,
@@ -448,10 +451,11 @@ class _GraphWindow:
                 params  = self._params,
                 h_tx    = h_tx,
                 h_rx    = h_rx,
+                coord_format = coord_format,
             )
             batch.save_profile_png(
                 self._terrain, self._last_result, self._params,
-                h_tx, h_rx, save_dir,
+                h_tx, h_rx, save_dir, coord_format,
             )
             batch.save_path_kml(
                 self._terrain, self._last_result, self._params,

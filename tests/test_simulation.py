@@ -408,13 +408,14 @@ class TestSavePackage:
         self.plt = plt
 
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
-                  diff_method="single"):
+                  diff_method="single", coord_format="dd"):
         monkeypatch.setattr(infra, "RESULTS_DIR", str(tmp_path))
         default_params_dict["diff_method"] = diff_method
         params = sim.SimParams(default_params_dict)
         result = _make_result(diff_method)
         fig, _ = self.plt.subplots()
-        save_dir = sim.save_package(fig, flat_terrain, result, params, 30.0, 10.0)
+        save_dir = sim.save_package(fig, flat_terrain, result, params, 30.0, 10.0,
+                                    coord_format=coord_format)
         self.plt.close(fig)
         return save_dir
 
@@ -452,6 +453,34 @@ class TestSavePackage:
         with open(os.path.join(save_dir, "report.txt"), encoding="utf-8") as f:
             content = f.read()
         assert "Diff Model    : deygout" in content
+
+    def test_report_dd_by_default(self, tmp_path, flat_terrain,
+                                  default_params_dict, monkeypatch):
+        """既定では report.txt の座標は DD（度分秒記号を含まない）。"""
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict, monkeypatch)
+        with open(os.path.join(save_dir, "report.txt"), encoding="utf-8") as f:
+            content = f.read()
+        assert "TX Site       : 34.542900, 132.411800" in content
+        assert "°" not in content
+
+    def test_report_honors_dms_coord_format(self, tmp_path, flat_terrain,
+                                            default_params_dict, monkeypatch):
+        """coord_format='dms' のとき report.txt の座標が DMS 表記になる。"""
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch, coord_format="dms")
+        with open(os.path.join(save_dir, "report.txt"), encoding="utf-8") as f:
+            content = f.read()
+        assert "TX Site       : 34°32'34.4\"N, 132°24'42.5\"E" in content
+
+    def test_settings_json_stays_dd_even_in_dms_mode(self, tmp_path, flat_terrain,
+                                                     default_params_dict, monkeypatch):
+        """coord_format='dms' でも settings.json は DD 固定（再読込のため）。"""
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch, coord_format="dms")
+        with open(os.path.join(save_dir, "settings.json"), encoding="utf-8") as f:
+            settings = json.load(f)
+        assert settings["start"] == "34.5429, 132.4118"
+        assert "°" not in settings["start"]
 
     def test_settings_json_contains_diff_method(self, tmp_path, flat_terrain,
                                                 default_params_dict, monkeypatch):

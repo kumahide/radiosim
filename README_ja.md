@@ -155,6 +155,7 @@ radiosim/
 ├── batch.py              # 一括シミュレーションエンジン・HTML/KML 出力
 ├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
 ├── map_graphics.py       # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
+├── coords.py             # 座標表記変換（DD ⇔ DMS・純関数）
 ├── i18n.py               # 多言語文字列テーブル
 ├── version.py            # バージョン情報
 ├── views/
@@ -172,6 +173,7 @@ radiosim/
     ├── test_batch.py
     ├── test_report_map.py
     ├── test_map_window.py
+    ├── test_coords.py
     └── test_docs_consistency.py
 ```
 
@@ -561,6 +563,9 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
           +---> [純粋描画層]  map_graphics.py
           |     マーカー/距離/北矢印の PIL 描画（UI とレポートで共有）
           |
+          +---> [純粋変換層]  coords.py
+          |     座標表記変換（DD ⇔ DMS・副作用ゼロ）
+          |
           +---> [外部依存層]  infrastructure.py
                 DEM/淡色タイル HTTP 取得・設定 I/O・バリデーション
 ```
@@ -574,16 +579,17 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（305 件）
+### テスト構成（335 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 82   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
-| `test_simulation.py`     | 35   | DEM 取得（並列・キャッシュ・エラー）・計算・保存                           |
-| `test_infrastructure.py` | 94   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
-| `test_batch.py`          | 56   | CSV パース・バリデーション・_make_params・ラウンドトリップ                 |
+| `test_simulation.py`     | 38   | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
+| `test_infrastructure.py` | 95   | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性 |
+| `test_batch.py`          | 58   | CSV パース・バリデーション・_make_params・ラウンドトリップ・HTML 座標表記  |
 | `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
+| `test_coords.py`         | 24   | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
 | `test_docs_consistency.py` | 9 | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 
 ---

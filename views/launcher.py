@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import Callable
 
+import coords
 import i18n
 import infrastructure as infra
 import simulation as sim
@@ -35,6 +36,7 @@ _TIP_KEYS: dict[str, str] = {
     "veg_h":    "tip_veg_h",
     "k_factor": "tip_k_factor",
     "samples":  "tip_samples",
+    "rain_rate": "tip_rain_rate",
 }
 
 
@@ -85,7 +87,7 @@ class SimLauncher:
     def __init__(self, root: tk.Tk, on_theme: Callable[[str], None]) -> None:
         self.root = root
         root.title(version.APP_FULL)
-        root.geometry("450x820")
+        root.geometry("450x900")
         root.resizable(False, False)
 
         self.config    = infra.load_config()
@@ -148,6 +150,9 @@ class SimLauncher:
         self._build_env_group(container)
         self._build_status(container)
         self._build_buttons(container)
+
+        # 保存済み座標形式が DMS なら、起動時に start/end 欄を DMS 表記へ整形する。
+        self._refresh_coord_display()
 
     def _build_menu(self) -> None:
         menubar = tk.Menu(self.root)
@@ -275,6 +280,21 @@ class SimLauncher:
     def _build_site_group(self, parent: tk.Widget) -> None:
         g = ttk.LabelFrame(parent, text=i18n.t("grp_site_info"), padding=5)
         g.pack(fill="x", pady=5)
+
+        # 座標形式 DD/DMS 切替（数値欄は常に source of truth。表示 notation のみ変わる）
+        f_fmt = ttk.Frame(g)
+        f_fmt.pack(fill="x", pady=2, padx=10)
+        ttk.Label(
+            f_fmt, text=i18n.t("lbl_coord_format"), width=22, anchor="w",
+            font=("Arial", 9),
+        ).pack(side="left")
+        self._coord_fmt_var = tk.StringVar(value=self.config.get("coord_format", "dd"))
+        for value in ("dms", "dd"):  # side="right" は逆順パックなので dd を左に出す
+            ttk.Radiobutton(
+                f_fmt, text=i18n.t(f"coord_fmt_{value}"), value=value,
+                variable=self._coord_fmt_var, command=self._on_coord_format_change,
+            ).pack(side="right", padx=(8, 0))
+
         for lbl_key, entry_key in [
             ("lbl_start", "start"),
             ("lbl_end",   "end"),
@@ -322,6 +342,38 @@ class SimLauncher:
             font         = ("Arial", 9),
             width        = 16,
         ).pack(side="right", expand=True, fill="x")
+
+        # 降雨強度（方針A: 従来はランチャー欄が無く config 補完だった）
+        self._add_row(g, i18n.t("lbl_rain"), "rain_rate")
+
+        # 回折モデル Combobox（方針A: env_type と同じ readonly 選択式）
+        f_diff = ttk.Frame(g)
+        f_diff.pack(fill="x", pady=2, padx=10)
+        ttk.Label(
+            f_diff, text=i18n.t("lbl_diff_method"), width=22, anchor="w",
+            font=("Arial", 9),
+        ).pack(side="left")
+        self._diff_key_to_label = {
+            "deygout": i18n.t("diff_opt_deygout"),
+            "single":  i18n.t("diff_opt_single"),
+        }
+        self._diff_label_to_key = {v: k for k, v in self._diff_key_to_label.items()}
+        saved_diff = self.config.get("diff_method", "deygout")
+        self._diff_var = tk.StringVar(
+            value=self._diff_key_to_label.get(
+                saved_diff, self._diff_key_to_label["deygout"]
+            )
+        )
+        cb_diff = ttk.Combobox(
+            f_diff,
+            textvariable = self._diff_var,
+            values       = list(self._diff_key_to_label.values()),
+            state        = "readonly",
+            font         = ("Arial", 9),
+            width        = 16,
+        )
+        cb_diff.pack(side="right", expand=True, fill="x")
+        _Tooltip(cb_diff, i18n.t("tip_diff_method"))
 
         for lbl_key, entry_key in [
             ("lbl_veg_h",    "veg_h"),
@@ -395,6 +447,38 @@ class SimLauncher:
             _Tooltip(e, i18n.t(_TIP_KEYS[key]))
 
     # ----------------------------------------------------------
+    # 座標形式（DD/DMS）切替
+    # 数値欄は常に source of truth。表示 notation だけを変える。
+    # ----------------------------------------------------------
+    def _on_coord_format_change(self) -> None:
+        """DD/DMS ラジオ切替時：start/end 欄を新表記へ整形し、選択を永続化する。"""
+        mode = self._coord_fmt_var.get()
+        self._refresh_coord_display()
+        self.config["coord_format"] = mode
+        infra.save_app(self.config)
+
+    def _refresh_coord_display(self) -> None:
+        """start/end 欄の文字列を現在の座標形式へ整形する（パース不能なら原文維持）。"""
+        mode = self._coord_fmt_var.get()
+        for key in ("start", "end"):
+            entry = self.entries.get(key)
+            if entry is None:
+                continue
+            new_text = coords.reformat(entry.get(), mode)
+            entry.delete(0, tk.END)
+            entry.insert(0, new_text)
+
+    def _coords_to_dd(self, c: dict[str, str]) -> None:
+        """config dict 中の start/end を DD 文字列へ正規化する（in-place）。
+
+        DMS 表記で入力されていても downstream（SimParams/validate_config）には
+        常に DD を渡す。不正値は原文のまま残し validate に委ねる。
+        """
+        for key in ("start", "end"):
+            if key in c:
+                c[key] = coords.to_dd_str(c[key])
+
+    # ----------------------------------------------------------
     # ダイアログ位置制御
     # ----------------------------------------------------------
     def _alert(self, title: str, message: str) -> None:
@@ -433,9 +517,8 @@ class SimLauncher:
     def _on_run(self) -> None:
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
-        # rain_rate と diff_method は UI に Entry がないため config から補完する
-        c.setdefault("rain_rate",   self.config.get("rain_rate",   "0.0"))
-        c.setdefault("diff_method", self.config.get("diff_method", "deygout"))
+        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        self._coords_to_dd(c)  # DMS 入力でも downstream には DD を渡す
 
         errors = infra.validate_config(c)
         if errors:
@@ -549,9 +632,15 @@ class SimLauncher:
                     new_conf["env_type"], self._env_key_to_label["suburban"]
                 )
                 self._env_var.set(label)
-            for key in ("rain_rate", "diff_method"):
-                if key in new_conf:
-                    self.config[key] = str(new_conf[key])
+            if "diff_method" in new_conf:
+                self._diff_var.set(
+                    self._diff_key_to_label.get(
+                        str(new_conf["diff_method"]),
+                        self._diff_key_to_label["deygout"],
+                    )
+                )
+            # ファイルの座標は DD。現在の表示形式（DMS かも）へ整形し直す。
+            self._refresh_coord_display()
             self._alert(i18n.t("dlg_success"), i18n.t("dlg_settings_ok"))
         except Exception as e:
             self._alert(i18n.t("dlg_error"), str(e))
@@ -614,8 +703,8 @@ class SimLauncher:
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
-        c["rain_rate"]   = self.config.get("rain_rate",   "0.0")
-        c["diff_method"] = self.config.get("diff_method", "deygout")
+        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        self._coords_to_dd(c)
         return c
 
     def _on_open_map(self) -> None:
@@ -639,8 +728,9 @@ class SimLauncher:
         entry = self.entries.get(key)
         if entry is None:
             return
+        text = coords.format_pair(lat, lon, self._coord_fmt_var.get())
         entry.delete(0, tk.END)
-        entry.insert(0, f"{lat:.6f}, {lon:.6f}")
+        entry.insert(0, text)
 
     def current_path_coords(self) -> dict:
         """数値欄の TX/RX 座標を {"tx": (lat, lon)|None, "rx": ...} で返す。
@@ -650,8 +740,7 @@ class SimLauncher:
         """
         def _parse(key: str):
             try:
-                lat_s, lon_s = self.entries[key].get().split(",")
-                return (float(lat_s), float(lon_s))
+                return coords.parse_pair(self.entries[key].get())
             except (ValueError, KeyError):
                 return None
         return {"tx": _parse("start"), "rx": _parse("end")}
