@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# RadioSim Pro 2.2 - PyInstaller spec ファイル
+# RadioSim Pro 2.3 - PyInstaller spec ファイル
 #
 # ビルド方法:
 #   pyinstaller radiosim.spec
