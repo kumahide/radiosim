@@ -120,7 +120,7 @@ Click the map to set **TX → RX** alternately; the picked points are written ba
 
 #### Continuous Add mode
 
-A mode for stacking paths into Batch Mode straight from the map. Selecting it opens (and raises) the Batch Mode window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
+A mode for stacking paths into Batch Mode straight from the map. Selecting the **Append to Batch** mode opens (and raises) the Batch Mode window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
 
 - Each row's RF settings (frequency, antenna gains, antenna heights) are **frozen from the launcher values at the moment of adding**. The workflow is to fix your conditions in the launcher first, then stack paths.
 - All paths in the batch are drawn on the map. Committed paths use **TX = filled dot / RX = bearing arrowhead** (pointing along TX → RX) plus a distance label, so TX and RX stay distinguishable even when close together or at the same coordinates.
