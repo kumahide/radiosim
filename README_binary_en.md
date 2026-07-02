@@ -40,7 +40,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 - Real-time antenna height and rain rate sliders in the graph window
 - Batch Mode — process multiple paths from a CSV file
-- Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
+- Map Window — pick coordinates by clicking the map / continuously add paths from the map into Batch Mode / visualize, prefetch, and delete DEM cache
 - Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
@@ -107,7 +107,7 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open
 
 ### Map Window
 
-The **"Map Window" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. A **mode selector** at the top switches between two modes. The core simulation works without ever opening the map; the Map Window is a convenience layer.
+The **"Map Window" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the Map Window is a convenience layer.
 
 > On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
 
@@ -117,6 +117,15 @@ Click the map to set **TX → RX** alternately; the picked points are written ba
 
 - Shows UISP-style markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
+
+#### Continuous Add mode
+
+A mode for stacking paths into Batch Mode straight from the map. Selecting the **Append to Batch** mode opens (and raises) the Batch Mode window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
+
+- Each row's RF settings (frequency, antenna gains, antenna heights) are **frozen from the launcher values at the moment of adding**. The workflow is to fix your conditions in the launcher first, then stack paths.
+- All paths in the batch are drawn on the map. Committed paths use **TX = filled dot / RX = bearing arrowhead** (pointing along TX → RX) plus a distance label, so TX and RX stay distinguishable even when close together or at the same coordinates.
+- Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
+- Closing the Batch Mode window returns the map to Pick Coordinates mode.
 
 #### Cache Management mode
 
@@ -231,9 +240,19 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 Click the **Batch Mode** button in the launcher to open the dedicated window.
 
+### Design — refine in Single, commit in Batch
+
+**Single (the launcher) is where you refine conditions; Batch is where you turn committed conditions into deliverables.** The launcher is the single source of truth, and each batch row is a **committed link frozen by copying the launcher fields at the moment the row was added**.
+
 ### Input Methods
 
-**Manual entry**: Type IDs, coordinates, antenna heights, and frequencies directly into the table. Rows can be added, deleted, and reordered by drag and drop.
+**Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and edited cell by cell.
+
+- **+ Add row**: Adds a row that freezes a copy of the current launcher fields (coordinates, frequency, gains, antenna heights).
+- **Right-click a row**: Opens a per-row menu.
+  - **→ Send to Single**: Loads that row's coordinates + RF into the launcher for adjustment.
+  - **⟳ Update RF from Single**: Writes the launcher's current RF back into that row (**coordinates are kept**).
+  - Duplicate / Delete.
 
 **CSV import**: Click the Template button to save a sample CSV, edit it, then import.
 
@@ -241,20 +260,21 @@ Click the **Batch Mode** button in the launcher to open the dedicated window.
 
 Required columns: `id, start, end, h_tx, h_rx`
 
-Optional columns: `freq, note`
+Optional columns: `freq, gain_tx, gain_rx, note`
 
 ```csv
-id,start,end,h_tx,h_rx,freq,note
-path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,Main link
-path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,Sub link
+id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note
+path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link
+path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
 ```
 
 - `start` / `end` must be quoted because they contain a comma
-- Optional columns fall back to the Common Settings values when omitted
+- `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings values when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings
+- Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 
-### Common Settings
+### Common Settings (a snapshot of the launcher)
 
-The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified.
+The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only**, shown as a snapshot of the launcher (the source of truth). Use the **↻ Update from launcher** button to pull in the launcher's current values.
 
 ### Running and Results
 

@@ -23,6 +23,8 @@ from pathlib import Path
 
 import pytest
 
+import batch
+import i18n
 import version
 
 ROOT = Path(__file__).resolve().parent.parent
@@ -182,3 +184,44 @@ def test_dev_readme_py_references_exist(doc):
         # （テスト表は `test_models.py` のように tests/ 接頭辞なしで列挙される）。
         ok = (ref in paths) if "/" in ref else (ref in names)
         assert ok, f"{doc}: references non-existent Python file `{ref}`"
+
+
+# --- 7. 機能スキーマの列挙: 新機能が全 README（バイナリ含む）に載っているか -----
+#       背景（2026-07-02・[[feedback-promote-recurring-checks]]）: 2.3RC1 で開発者
+#       README にだけ 2.3 機能（連続追加モード・per-row 利得）を反映し、**エンド
+#       ユーザー向けのバイナリ README を前版水準のまま配布**した。当時これを止め
+#       うる仕掛けは全て Tier-2（人手の手順・未配線ツール）でスルーされた。そこで
+#       **列挙可能な部分（CSV 列・マップのモード名）を実装を単一ソースに全 README
+#       で照合するブロッキングゲート＝Tier-0** へ昇格させる。振る舞いの散文（概念の
+#       説明が十分か）は引き続き doc-review 助言に委ねる（機械化できる列挙のみ守る）。
+ALL_READMES = ["README_ja.md", "README_en.md",
+               "README_binary_ja.md", "README_binary_en.md"]
+
+
+@pytest.mark.parametrize("doc", ALL_READMES)
+def test_batch_csv_columns_listed(doc):
+    """バッチ CSV の全列（batch.CSV_COLUMNS が単一ソース）が各 README の
+    一括シミュレーション節に載っているか。gain_tx/gain_rx 追加のような
+    スキーマ変更をドキュメント全系統へ反映し忘れるのを捕捉する。"""
+    section = _section(_read(doc), ["一括シミュレーション", "Batch Mode"])
+    for col in batch.CSV_COLUMNS:
+        assert col in section, f"{doc}: batch CSV section is missing column '{col}'"
+
+
+# doc の言語 → i18n の言語キー。バイナリ/開発者の両系統を言語ごとに照合する。
+_MODE_READMES = [
+    ("README_ja.md", "ja"), ("README_en.md", "en"),
+    ("README_binary_ja.md", "ja"), ("README_binary_en.md", "en"),
+]
+_MODE_KEYS = ["map_mode_coords", "map_mode_append", "map_mode_cache"]
+
+
+@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+def test_map_mode_labels_listed(doc, lang):
+    """マップウィンドウの全モードのボタンラベル（i18n が単一ソース）が各 README に
+    載っているか。連続追加モードの追加のようなモード新設を反映し忘れるのを捕捉する
+    （README が実際の UI ボタン名を名乗ることも保証する）。"""
+    text = _read(doc)
+    for key in _MODE_KEYS:
+        label = i18n._STRINGS[lang][key]
+        assert label in text, f"{doc}: map mode label {label!r} ({key}) is not documented"
