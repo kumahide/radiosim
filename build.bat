@@ -87,4 +87,17 @@ echo.
 echo Zip the dist\RadioSimPro\ folder for distribution.
 echo ============================================================
 echo.
+
+rem ---- 版節目 advisory：RC/正式ビルドは gh release create でタグをサーバ側生成し
+rem      pre-push を通らないため、ここ（RC/正式のみ通る確実な決定点）でも発火させる。
+rem      助言専用・ビルド結果に影響しない。ツール未配置/node無しなら静かにスキップ。
+if exist tools\qa-hook\release-check.mjs (
+    where node >nul 2>&1
+    if not errorlevel 1 (
+        node tools\qa-hook\release-check.mjs
+    ) else (
+        echo [INFO] node not found - skipping release advisory.
+    )
+)
+
 endlocal

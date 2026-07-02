@@ -73,7 +73,7 @@ build.bat
 | --- | --- |
 | 1 | Verify Python / PyInstaller are available; install if missing |
 | 2 | Update dependencies (`pip install ...`) |
-| 3 | Remove old build artifacts (`build/` and `dist/RadioSimPro/`) |
+| 3 | Remove old build artifacts (`build/RadioSimPro/` and `dist/RadioSimPro/`) |
 | 4 | Run `python -m PyInstaller radiosim.spec --noconfirm` |
 | 5 | Create `terrain_cache/` and `results/` in the output folder |
 
