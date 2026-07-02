@@ -69,6 +69,11 @@ class PathResult:
 # ============================================================
 _REQUIRED_COLS = {"id", "start", "end", "h_tx", "h_rx"}
 
+# CSV スキーマの正準（出力ヘッダ順）。required の後に optional。
+# ドキュメント整合テストはこの定数を単一ソースに README の CSV 節を照合する。
+CSV_COLUMNS = ["id", "start", "end", "h_tx", "h_rx", "freq", "gain_tx", "gain_rx", "note"]
+OPTIONAL_COLS = [c for c in CSV_COLUMNS if c not in _REQUIRED_COLS]
+
 def parse_csv(csv_path: str) -> list[PathRow]:
     """
     CSV ファイルを PathRow リストに変換する。
@@ -143,10 +148,7 @@ def export_csv(rows: list[PathRow], csv_path: str) -> None:
     """PathRow リストを CSV ファイルに書き出す。"""
     with open(csv_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "id", "start", "end", "h_tx", "h_rx",
-            "freq", "gain_tx", "gain_rx", "note",
-        ])
+        writer.writerow(CSV_COLUMNS)
         for r in rows:
             writer.writerow([
                 r.path_id,

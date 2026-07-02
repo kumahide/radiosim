@@ -15,6 +15,10 @@ radiosim_conf.json
 radiosim.log
 build_log*.txt
 
+# Local beta testing scratchpad (bugs / improvement ideas — not committed)
+BETA_FEEDBACK.md
+beta_evidence/
+
 # Python
 __pycache__/
 *.py[cod]
