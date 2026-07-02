@@ -82,6 +82,8 @@ class BatchBuilderWindow(tk.Toplevel):
         self._event_queue: queue.Queue          = queue.Queue()
         self._drag_row_idx: int | None          = None
         self._drag_indicator: tk.Frame | None   = None
+        # 列幅同期（_sync_header_columns）のデバウンス用 after ID。
+        self._sync_after_id: str | None          = None
         self._ok_count  = 0
         self._ng_count  = 0
         self._err_count = 0
@@ -113,6 +115,10 @@ class BatchBuilderWindow(tk.Toplevel):
         row0.pack(fill="x", pady=2)
         row1 = ttk.Frame(frame)
         row1.pack(fill="x", pady=2)
+        # 「↻ランチャーから更新」用の専用行。row1 は日本語ラベルで横幅が逼迫し、
+        # 右詰めのボタンが窓外へ押し出される（B-002 系）。独立行なら言語に依らず収まる。
+        row2 = ttk.Frame(frame)
+        row2.pack(fill="x", pady=(2, 0))
 
         def _field(parent: tk.Widget, label: str, attr: str, width: int = 8) -> None:
             f = ttk.Frame(parent)
@@ -122,9 +128,12 @@ class BatchBuilderWindow(tk.Toplevel):
             self._common_vars[attr] = var
             # 共通設定はランチャー（source of truth）のスナップショット。直接編集
             # させず「↻ランチャーから更新」で取り込む（凍結方式の対称化）。
-            tk.Entry(
+            # 素の tk.Entry＋背景色ハードコードだと sv_ttk のテーマに追従せず、
+            # ダークモードで薄グレー背景×白文字になり読めない（B-001）。ttk.Entry の
+            # readonly ならライト/ダーク双方でテーマ配色になる。
+            ttk.Entry(
                 f, textvariable=var, font=("Arial", 8), width=width,
-                state="readonly", readonlybackground="#f0f0f0",
+                state="readonly",
             ).pack(side="left", padx=(2, 0))
 
         _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
@@ -166,10 +175,10 @@ class BatchBuilderWindow(tk.Toplevel):
             state="readonly", font=("Arial", 8), width=9,
         ).pack(side="left", padx=(2, 0))
 
-        # ランチャー（source of truth）から共通設定を取り込む。
+        # ランチャー（source of truth）から共通設定を取り込む。専用行に右詰め。
         if self._config_provider is not None:
             ttk.Button(
-                row1, text=i18n.t("btn_refresh_common"),
+                row2, text=i18n.t("btn_refresh_common"),
                 command=self._refresh_common_from_launcher,
             ).pack(side="right", padx=6)
 
@@ -191,13 +200,15 @@ class BatchBuilderWindow(tk.Toplevel):
         outer = ttk.Frame(self)
         outer.pack(fill="both", expand=True, padx=8, pady=6)
 
-        # ヘッダ行（列幅は _sync_header_columns で行の実測値に合わせる）
+        # ヘッダ行（列幅は _sync_header_columns で見出しと行の実測値に合わせる）。
+        # 固定文字幅（width=w）を掛けると日本語見出しが文字数不足で見切れる（B-002）。
+        # 幅は付けず全文を表示させ、列の整合は _sync_header_columns に任せる。
         self._hdr = ttk.Frame(outer)
         self._hdr.pack(fill="x")
-        for col, (label, w) in enumerate(zip(self._COLS, self._WIDTHS)):
+        for col, label in enumerate(self._COLS):
             ttk.Label(
                 self._hdr, text=label,
-                font=("Arial", 9, "bold"), width=w, anchor="w",
+                font=("Arial", 9, "bold"), anchor="w",
             ).grid(row=0, column=col, padx=2, pady=3, sticky="w")
 
         # スクロール可能なテーブル本体
@@ -250,11 +261,13 @@ class BatchBuilderWindow(tk.Toplevel):
         left = ttk.Frame(bottom)
         left.pack(side="left")
 
-        ttk.Button(left, text=i18n.t("btn_add_row"),    command=self._add_row,      width=9 ).pack(side="left", padx=2)
-        ttk.Button(left, text=i18n.t("btn_import_csv"), command=self._import_csv,   width=11).pack(side="left", padx=2)
-        ttk.Button(left, text=i18n.t("btn_export_csv"), command=self._export_csv,   width=11).pack(side="left", padx=2)
-        ttk.Button(left, text=i18n.t("btn_template"),   command=self._save_template, width=9).pack(side="left", padx=2)
-        ttk.Button(left, text=i18n.t("btn_clear_all"),  command=self._clear_all,    width=9 ).pack(side="left", padx=2)
+        # 固定文字幅（width=）は日本語ラベル（例「CSVエクスポート」）が入りきらず
+        # 見切れる（B-002 系）。幅は付けず内容に合わせて自動サイズさせる。
+        ttk.Button(left, text=i18n.t("btn_add_row"),    command=self._add_row     ).pack(side="left", padx=2)
+        ttk.Button(left, text=i18n.t("btn_import_csv"), command=self._import_csv  ).pack(side="left", padx=2)
+        ttk.Button(left, text=i18n.t("btn_export_csv"), command=self._export_csv  ).pack(side="left", padx=2)
+        ttk.Button(left, text=i18n.t("btn_template"),   command=self._save_template).pack(side="left", padx=2)
+        ttk.Button(left, text=i18n.t("btn_clear_all"),  command=self._clear_all   ).pack(side="left", padx=2)
 
         right = ttk.Frame(bottom)
         right.pack(side="right")
@@ -322,7 +335,6 @@ class BatchBuilderWindow(tk.Toplevel):
 
     def _add_row(self, row_data: "batch.PathRow | list[str] | None" = None) -> None:
         idx      = len(self._row_frames)
-        is_first = idx == 0
         row_frame = ttk.Frame(self._table_frame)
         row_frame.pack(fill="x")
         self._row_frames.append(row_frame)
@@ -408,20 +420,42 @@ class BatchBuilderWindow(tk.Toplevel):
         self._row_entries.append(entries)
         self._canvas.update_idletasks()
         self._canvas.yview_moveto(1.0)
-        if is_first:
-            self.after(100, self._sync_header_columns)
+        # 追加した行にも列 minsize を反映するため毎回同期する（新行がヘッダとズレ
+        # ないように）。バルク投入（インポート・並べ替え）はデバウンスで 1 回に畳む。
+        self._schedule_sync()
         self._notify_paths_changed()
 
+    def _schedule_sync(self) -> None:
+        """列幅同期をデバウンスして予約する（連続追加を 1 回に畳む）。"""
+        if self._sync_after_id is not None:
+            self.after_cancel(self._sync_after_id)
+        self._sync_after_id = self.after(100, self._run_sync)
+
+    def _run_sync(self) -> None:
+        self._sync_after_id = None
+        self._sync_header_columns()
+
     def _sync_header_columns(self) -> None:
-        """最初の行の実際のグリッド列幅をヘッダに反映してズレを解消する。"""
+        """ヘッダと各行の列幅を揃えてズレと見出しの見切れを解消する。
+
+        各列の最小幅を「行セルの実測幅」と「見出しの必要幅」の大きい方に合わせ、
+        ヘッダ・全行の両グリッドへ同じ minsize を掛ける。これで日本語見出しが
+        入りきり（B-002）、かつ列がずれない（見出しは別グリッドのため両者に適用）。
+        """
         if not self._row_frames:
             return
         self._table_frame.update_idletasks()
+        self._hdr.update_idletasks()
         for col in range(len(self._WIDTHS)):
-            bbox = self._row_frames[0].grid_bbox(column=col, row=0)
-            if bbox:
-                _, _, col_w, _ = bbox
-                self._hdr.grid_columnconfigure(col, minsize=col_w)
+            bbox   = self._row_frames[0].grid_bbox(column=col, row=0)
+            cell_w = bbox[2] if bbox else 0
+            hdr    = self._hdr.grid_slaves(row=0, column=col)
+            # padx=2 の左右分を見込んで少し余裕を持たせる。
+            hdr_w  = (hdr[0].winfo_reqwidth() + 4) if hdr else 0
+            target = max(cell_w, hdr_w)
+            self._hdr.grid_columnconfigure(col, minsize=target)
+            for frame in self._row_frames:
+                frame.grid_columnconfigure(col, minsize=target)
 
     def _remove_row(self, frame: ttk.Frame, entries: list[tk.Entry]) -> None:
         if entries in self._row_entries:
@@ -889,9 +923,11 @@ class BatchBuilderWindow(tk.Toplevel):
         report.save_summary_kml(results, batch_dir)
         self._running = False
         self._run_btn.config(state="normal")
-        tot = len(results)
+        # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
+        # 進捗カウントもバーに合わせて消し、結果サマリは OK/NG/ERR ラベルに残す。
+        self._prog_bar.config(value=0)
         self._prog_label.config(text=f"Done: {os.path.basename(batch_dir)}")
-        self._prog_count_label.config(text=f"{tot} / {tot}  (100%)")
+        self._prog_count_label.config(text="")
         if dialogs.confirm(
             self,
             i18n.t("dlg_batch_complete"),
@@ -902,5 +938,8 @@ class BatchBuilderWindow(tk.Toplevel):
     def _on_error(self, ex: Exception) -> None:
         self._running = False
         self._run_btn.config(state="normal")
+        # 失敗時もバーを 0 に戻す（シングル側 _on_fetch_error と挙動を揃える）。
+        self._prog_bar.config(value=0)
+        self._prog_count_label.config(text="")
         self._prog_label.config(text=i18n.t("batch_error_msg"))
         dialogs.alert(self, i18n.t("dlg_batch_error"), str(ex))
