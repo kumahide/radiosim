@@ -50,8 +50,13 @@ echo [OK] PyInstaller:
 python -m PyInstaller --version
 
 echo.
-echo [INFO] Checking dependencies...
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore --quiet
+echo [INFO] Checking dependencies (pinned via requirements.txt)...
+pip install -r requirements.txt --quiet
+if errorlevel 1 (
+    echo [ERROR] Failed to install pinned dependencies from requirements.txt.
+    pause
+    exit /b 1
+)
 echo [OK] Dependencies OK
 
 echo.
