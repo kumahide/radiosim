@@ -179,7 +179,8 @@ radiosim/
     ├── test_coords.py
     ├── test_mpl_fonts.py
     ├── test_smoke.py
-    └── test_docs_consistency.py
+    ├── test_docs_consistency.py
+    └── test_env_consistency.py
 ```
 
 ---
@@ -597,7 +598,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（419 件）
+### テスト構成（429 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
@@ -612,6 +613,7 @@ python -m pytest tests/ --cov
 | `test_mpl_fonts.py`      | 4    | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
 | `test_smoke.py`          | 19   | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip） |
 | `test_docs_consistency.py` | 9 | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
+| `test_env_consistency.py` | 10 | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
 
 ---
 

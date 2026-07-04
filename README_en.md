@@ -179,7 +179,8 @@ radiosim/
     ├── test_coords.py
     ├── test_mpl_fonts.py
     ├── test_smoke.py
-    └── test_docs_consistency.py
+    ├── test_docs_consistency.py
+    └── test_env_consistency.py
 ```
 
 ---
@@ -594,7 +595,7 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (419 tests)
+### Test Suite (429 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
@@ -609,6 +610,7 @@ python -m pytest tests/ --cov
 | `test_mpl_fonts.py`      | 4     | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_smoke.py`          | 19    | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) |
 | `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
+| `test_env_consistency.py` | 10   | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 
 ---
 
