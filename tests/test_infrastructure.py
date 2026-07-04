@@ -1034,3 +1034,95 @@ class TestBasemapTiles:
         assert os.path.exists(path)
         infra.delete_all_tile_cache()
         assert not os.path.exists(path)
+
+
+# ============================================================
+# キャッシュ削除・統計（delete_tile_cache / get_cache_stats / delete_all_tile_cache）
+# ============================================================
+class TestCacheDeletion:
+    """ユーザーデータ（DEM キャッシュ）を消す操作の不変条件。
+
+    basemap の扱いは TestBasemapTiles 側で担保済み。ここでは DEM タイルに
+    ついて「bbox 内だけ消える・メモリキャッシュも連動して消える・件数が
+    実削除数を報告する」を守る（削除系は誤ると再取得コストがユーザーに跳ねる）。
+    """
+
+    BBOX = (34.540, 132.410, 34.539, 132.409)
+
+    def _seed_bbox_tiles(self) -> list[tuple]:
+        """bbox 内の全 DEM タイルを実ファイルとして作成し、タイルリストを返す。"""
+        tiles = infra._enumerate_bbox(*self.BBOX)
+        for _, _, _, _, subdir, cache_path in tiles:
+            os.makedirs(subdir, exist_ok=True)
+            with open(cache_path, "wb") as f:
+                f.write(b"\x89PNG")
+        return tiles
+
+    def _fresh_memory_cache(self, monkeypatch):
+        monkeypatch.setattr(infra, "_tile_cache", {})
+        monkeypatch.setattr(infra, "_failed_tiles", set())
+
+    def test_deletes_only_bbox_files_and_memory_keys(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        self._fresh_memory_cache(monkeypatch)
+        tiles = self._seed_bbox_tiles()
+
+        # bbox 外のタイルは残ること（範囲削除が全消しに化けない）。
+        outside_dir = os.path.join(str(tmp_path), "dem_png", "0")
+        os.makedirs(outside_dir, exist_ok=True)
+        outside_file = os.path.join(outside_dir, "0.png")
+        with open(outside_file, "wb") as f:
+            f.write(b"\x89PNG")
+
+        # メモリキャッシュ: bbox 内キーは消え、bbox 外キーは残ること。
+        layer_id, _, x, y, _, _ = tiles[0]
+        infra._tile_cache[(layer_id, x, y)] = np.zeros(1)
+        infra._tile_cache[("dem_png", 0, 0)] = np.zeros(1)
+        infra._failed_tiles.add((layer_id, x, y))
+
+        res = infra.delete_tile_cache(*self.BBOX)
+
+        assert res == {"deleted": len(tiles), "errors": 0}
+        assert all(not os.path.exists(p) for *_, p in tiles)
+        assert os.path.exists(outside_file)
+        assert (layer_id, x, y) not in infra._tile_cache
+        assert ("dem_png", 0, 0) in infra._tile_cache
+        assert (layer_id, x, y) not in infra._failed_tiles
+
+    def test_missing_files_count_zero(self, tmp_path, monkeypatch):
+        """未取得エリアの範囲削除は deleted=0（存在しないものを数えない）。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        self._fresh_memory_cache(monkeypatch)
+        assert infra.delete_tile_cache(*self.BBOX) == {"deleted": 0, "errors": 0}
+
+    def test_get_cache_stats_missing_dir_is_zero(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path / "no_such_dir"))
+        assert infra.get_cache_stats() == {"count": 0, "size_bytes": 0}
+
+    def test_get_cache_stats_counts_png_only(self, tmp_path, monkeypatch):
+        """枚数・総バイト数は .png のみ集計（ログ等の同居ファイルを数えない）。"""
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        d = tmp_path / "dem_png" / "123"
+        d.mkdir(parents=True)
+        (d / "1.png").write_bytes(b"abc")
+        (d / "2.png").write_bytes(b"abcde")
+        (d / "note.txt").write_bytes(b"zz")
+        assert infra.get_cache_stats() == {"count": 2, "size_bytes": 8}
+
+    def test_delete_all_removes_png_and_clears_memory(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(infra, "CACHE_DIR", str(tmp_path))
+        self._fresh_memory_cache(monkeypatch)
+        infra._tile_cache[("dem_png", 1, 2)] = np.zeros(1)
+        infra._failed_tiles.add(("dem_png", 1, 2))
+        d = tmp_path / "dem_png" / "1"
+        d.mkdir(parents=True)
+        (d / "2.png").write_bytes(b"\x89PNG")
+        (tmp_path / "keep.txt").write_bytes(b"keep")
+
+        res = infra.delete_all_tile_cache()
+
+        assert res == {"deleted": 1}
+        assert not (d / "2.png").exists()
+        assert (tmp_path / "keep.txt").exists()   # .png 以外は消さない
+        assert infra._tile_cache == {}
+        assert infra._failed_tiles == set()
