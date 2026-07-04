@@ -72,7 +72,7 @@ build.bat
 | ステップ | 内容 |
 | --- | --- |
 | 1 | Python / PyInstaller の存在確認・自動インストール |
-| 2 | 依存ライブラリの更新（`pip install ...`） |
+| 2 | 依存ライブラリを固定版で導入（`pip install -r requirements.txt`） |
 | 3 | 旧ビルド成果物の削除（`build/RadioSimPro/` `dist/RadioSimPro/`） |
 | 4 | `python -m PyInstaller radiosim.spec --noconfirm` |
 | 5 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
