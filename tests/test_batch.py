@@ -2,9 +2,12 @@
 tests/test_batch.py
 ===================
 batch.py のユニットテスト。
-対象: validate_rows / parse_csv / _find_obs_segments
+対象: validate_rows / parse_csv / _make_params / 実行エンジン
+（run_batch / _process_one / _fetch_sync ＝ DEM 取得を monkeypatch し
+ネットワーク無しで同期検証）
 """
 
+import threading
 from typing import Any
 
 import numpy as np
@@ -15,6 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import batch
 import i18n
+import infrastructure as infra
 import models
 import report
 import simulation as sim
@@ -549,3 +553,155 @@ class TestSummaryGainColumns:
             html = f.read()
         assert "TX Gain (dBi)" in html
         assert "RX Gain (dBi)" in html
+
+
+# ============================================================
+# 実行エンジン（run_batch / _run_thread / _process_one / _fetch_sync）
+# ============================================================
+# sim.fetch_elevations の同期フェイク。バッチはワーカースレッドから呼ぶが、
+# コールバックを即時発火させることで threading.Event の同期化ごと検証する。
+# freq=999.0 の行だけ取得失敗にし、パス単位の失敗系を決定的に再現する。
+_FAIL_FREQ = 999.0
+
+
+def _fake_fetch(params, on_progress, on_complete, on_error):
+    on_progress(50)
+    if params.freq_mhz == _FAIL_FREQ:
+        on_error(RuntimeError("DEM fetch failed (fake)"))
+    else:
+        on_complete(np.zeros(params.num))
+
+
+class TestFetchSync:
+
+    def test_returns_array_on_complete(self, default_params_dict, monkeypatch):
+        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        params = sim.SimParams(default_params_dict)
+        progress: list[int] = []
+        arr = batch._fetch_sync(params, progress.append)
+        assert isinstance(arr, np.ndarray)
+        assert len(arr) == params.num
+        assert progress == [50]   # on_progress が素通しされる
+
+    def test_raises_first_error(self, default_params_dict, monkeypatch):
+        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        d = dict(default_params_dict, freq=str(_FAIL_FREQ))
+        with pytest.raises(RuntimeError, match="DEM fetch failed"):
+            batch._fetch_sync(sim.SimParams(d), lambda p: None)
+
+
+class TestProcessOne:
+
+    def test_success_returns_ok_and_writes_artifacts(
+            self, tmp_path, default_params_dict, monkeypatch):
+        i18n.set_lang("en")
+        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        base = sim.SimParams(default_params_dict)
+        pr = batch._process_one(_row(), base, str(tmp_path), lambda p: None)
+        assert pr.ok and pr.error is None
+        assert pr.terrain is not None and pr.params is not None
+        assert pr.save_dir == os.path.join(str(tmp_path), "path01")
+        produced = set(os.listdir(pr.save_dir))
+        # PNG/HTML/KML はメインスレッド側（save_path_visuals）の責務なのでここには無い。
+        assert {"report.txt", "terrain_profile.csv"} <= produced
+
+    def test_fetch_failure_is_contained_in_result(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """DEM 取得失敗は例外を漏らさず PathResult(error=...) に封じ込める。"""
+        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        base = sim.SimParams(default_params_dict)
+        pr = batch._process_one(
+            _row(path_id="bad", freq_mhz=_FAIL_FREQ), base, str(tmp_path),
+            lambda p: None,
+        )
+        assert not pr.ok
+        assert isinstance(pr.error, RuntimeError)
+        assert pr.save_dir == ""
+        assert not os.path.exists(os.path.join(str(tmp_path), "bad"))
+
+
+class TestRunBatch:
+
+    def _run(self, rows, tmp_path, default_params_dict, monkeypatch):
+        """run_batch を実行し、全コールバックの記録を返す（完了まで待機）。"""
+        i18n.set_lang("en")
+        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        monkeypatch.setattr(infra, "RESULTS_DIR", str(tmp_path))
+        base = sim.SimParams(default_params_dict)
+        ev: dict[str, list] = {"start": [], "complete": [], "batch": [], "error": []}
+        done = threading.Event()
+
+        def _on_batch(batch_dir, results):
+            ev["batch"].append((batch_dir, results))
+            done.set()
+
+        def _on_error(ex):
+            ev["error"].append(ex)
+            done.set()
+
+        batch.run_batch(
+            rows, base,
+            on_path_start    = lambda i, n, pid: ev["start"].append((i, n, pid)),
+            on_path_progress = lambda p: None,
+            on_path_complete = lambda i, n, pr: ev["complete"].append((i, n, pr)),
+            on_batch_complete = _on_batch,
+            on_error          = _on_error,
+        )
+        assert done.wait(timeout=30), "batch thread did not finish in time"
+        return ev
+
+    def test_happy_path_callbacks_and_summary(
+            self, tmp_path, default_params_dict, monkeypatch):
+        rows = [_row(), _row(path_id="path02")]
+        ev = self._run(rows, tmp_path, default_params_dict, monkeypatch)
+        assert ev["error"] == []
+        assert ev["start"] == [(1, 2, "path01"), (2, 2, "path02")]
+        assert [(i, n) for i, n, _ in ev["complete"]] == [(1, 2), (2, 2)]
+        (batch_dir, results), = ev["batch"]
+        assert os.path.dirname(batch_dir) == str(tmp_path)
+        assert os.path.basename(batch_dir).startswith("batch_")
+        assert [pr.ok for pr in results] == [True, True]
+        assert os.path.exists(os.path.join(batch_dir, "summary.csv"))
+
+    def test_per_path_failure_does_not_abort_batch(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """1 パスの失敗は結果に残し、残りのパスとサマリ生成は続行する。"""
+        rows = [_row(), _row(path_id="bad", freq_mhz=_FAIL_FREQ),
+                _row(path_id="path03")]
+        ev = self._run(rows, tmp_path, default_params_dict, monkeypatch)
+        assert ev["error"] == []
+        (batch_dir, results), = ev["batch"]
+        assert [pr.ok for pr in results] == [True, False, True]
+        assert isinstance(results[1].error, RuntimeError)
+        assert os.path.exists(os.path.join(batch_dir, "summary.csv"))
+
+    def test_engine_failure_calls_on_error(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """パス処理より外側の失敗（サマリ書き出し等）は on_error に届く。"""
+        monkeypatch.setattr(
+            report, "_save_summary_csv",
+            lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")),
+        )
+        ev = self._run([_row()], tmp_path, default_params_dict, monkeypatch)
+        assert ev["batch"] == []
+        assert len(ev["error"]) == 1
+        assert "disk full" in str(ev["error"][0])
+
+
+class TestParseCsvOptionalColumns:
+
+    def _raw(self, **overrides) -> dict:
+        raw = {
+            "id": "p1", "start": "34.54, 132.41", "end": "34.53, 132.40",
+            "h_tx": "30", "h_rx": "10",
+        }
+        raw.update(overrides)
+        return raw
+
+    def test_optional_float_bad_value_reports_line_and_key(self):
+        with pytest.raises(ValueError, match=r"Row 2: 'gain_tx'"):
+            batch._parse_csv_row(self._raw(gain_tx="abc"), line=2)
+
+    def test_optional_float_blank_is_none(self):
+        row = batch._parse_csv_row(self._raw(gain_tx="", freq=" "), line=2)
+        assert row.gain_tx is None and row.freq_mhz is None
