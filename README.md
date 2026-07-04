@@ -14,8 +14,8 @@ Automatically fetches GSI (Geospatial Information Authority of Japan) DEM data t
 
 ## Python スクリプト版（正式版） / Python Script (Primary)
 
-Python 3.10+ がインストールされた環境で動作します。  
-Requires Python 3.10 or later.
+Python 3.11+ がインストールされた環境で動作します。  
+Requires Python 3.11 or later.
 
 ```bash
 git clone https://github.com/kumahide/radiosim.git
