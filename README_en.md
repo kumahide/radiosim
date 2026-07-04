@@ -58,7 +58,7 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 
 ### Prerequisites
 
-- Python 3.10 or later must be on `PATH`
+- Python 3.11 or later must be on `PATH` (developed and CI-tested on 3.14)
 - PyInstaller and all dependencies are installed automatically by `build.bat`
 
 ### Build Steps
@@ -121,7 +121,7 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 | Item     | Requirement                                                   |
 | -------- | ------------------------------------------------------------- |
 | OS       | Windows 10/11 (macOS / Linux may work but are untested)       |
-| Python   | 3.10 or later (tested on 3.14)                                |
+| Python   | 3.11 or later — required by pinned numpy 2.4 (tested on 3.14) |
 | Internet | Required for DEM retrieval (fetched tiles are cached locally) |
 
 ### Dependencies
