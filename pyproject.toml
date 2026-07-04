@@ -20,12 +20,18 @@ exclude_dirs = ["tests", "build", "dist", ".venv"]
 skips = ["B101"]
 
 [tool.coverage.run]
-source = ["models", "simulation", "infrastructure"]
-omit   = ["views/*", "main.py"]   # GUI層はカバレッジ対象外
+# ヘッドレス層全体をゲート対象にする（= Web/PWA で再利用予定の資産。
+# 従来はコア3モジュールのみで、report/batch の出力層が死角だった）。
+source = [
+    "models", "simulation", "infrastructure",
+    "batch", "report", "report_map",
+    "coords", "map_graphics", "mpl_fonts", "i18n",
+]
+omit   = ["views/*", "main.py"]   # GUI層（tkinter）はカバレッジ対象外
 
 [tool.coverage.report]
 show_missing = true
-# CI gate: the calc core (models/simulation/infrastructure) must stay tested.
-# Current ~87%; floor set below it so routine changes don't trip, but a real
-# drop in core coverage fails the build. Raise as coverage improves.
+# CI gate: the headless layer must stay tested. Floor is set below the
+# current figure so routine changes don't trip, but a real drop in
+# coverage fails the build. Raise as coverage improves.
 fail_under = 85
