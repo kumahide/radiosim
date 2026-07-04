@@ -594,14 +594,14 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (410 tests)
+### Test Suite (419 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_infrastructure.py` | 100   | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n, cache deletion/stats |
-| `test_batch.py`          | 69    | CSV parse, validation, _make_params behavior, export roundtrip, HTML coords     |
+| `test_batch.py`          | 78    | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
 | `test_report.py`         | 20    | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |

@@ -597,14 +597,14 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### テスト構成（410 件）
+### テスト構成（419 件）
 
 | テストファイル             | 件数 | 主な対象                                                                   |
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 82   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
 | `test_simulation.py`     | 38   | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_infrastructure.py` | 100  | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性・キャッシュ削除/統計 |
-| `test_batch.py`          | 69   | CSV パース・バリデーション・_make_params・ラウンドトリップ・HTML 座標表記  |
+| `test_batch.py`          | 78   | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
 | `test_report.py`         | 20   | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク |
 | `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | 4    | マップウィンドウの安全破棄（after ループ停止の不変条件）                   |
