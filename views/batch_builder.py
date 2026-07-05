@@ -58,9 +58,12 @@ class BatchBuilderWindow(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
-        self.geometry("1080x600")
+        # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
+        # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が
+        # 窓外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
+        self.geometry("1080x700")
         self.resizable(True, True)
-        self.minsize(880, 420)
+        self.minsize(880, 520)
 
         # ランチャー連携（凍結方式）。省略時は従来挙動（往復・凍結なし）。
         self._config_provider = config_provider
@@ -87,6 +90,10 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_count  = 0
         self._ng_count  = 0
         self._err_count = 0
+        # 実行中のパス内進捗（標高取得 done/samples）をバーへ滑らかに反映するための
+        # 実行時状態（_on_path_progress_tick が参照）。
+        self._run_cur     = 0
+        self._run_samples = 0
 
         self._build_ui()
         self._add_row()
@@ -111,14 +118,23 @@ class BatchBuilderWindow(tk.Toplevel):
 
         self._common_vars: dict[str, tk.StringVar] = {}
 
-        row0 = ttk.Frame(frame)
-        row0.pack(fill="x", pady=2)
-        row1 = ttk.Frame(frame)
-        row1.pack(fill="x", pady=2)
+        # RF系／環境系をサブグループ化して境界を明示する（I-003）。見出しは
+        # ランチャー側の同義グループ名（grp_radio_settings/grp_environment）を
+        # 再利用し、アプリ全体で用語を揃える。
+        grp_rf = ttk.LabelFrame(frame, text=i18n.t("grp_radio_settings"), padding=(6, 2))
+        grp_rf.pack(fill="x")
+        grp_env = ttk.LabelFrame(frame, text=i18n.t("grp_environment"), padding=(6, 2))
+        grp_env.pack(fill="x", pady=(4, 0))
+
+        row0 = ttk.Frame(grp_rf)
+        row0.pack(fill="x")
+        row1 = ttk.Frame(grp_env)
+        row1.pack(fill="x")
         # 「↻ランチャーから更新」用の専用行。row1 は日本語ラベルで横幅が逼迫し、
         # 右詰めのボタンが窓外へ押し出される（B-002 系）。独立行なら言語に依らず収まる。
+        # 左には凍結欄の意味（🔒）を説明するヒントを置き、空きスペース化を防ぐ（I-003）。
         row2 = ttk.Frame(frame)
-        row2.pack(fill="x", pady=(2, 0))
+        row2.pack(fill="x", pady=(4, 0))
 
         def _field(parent: tk.Widget, label: str, attr: str, width: int = 8) -> None:
             f = ttk.Frame(parent)
@@ -135,6 +151,9 @@ class BatchBuilderWindow(tk.Toplevel):
                 f, textvariable=var, font=("Arial", 8), width=width,
                 state="readonly",
             ).pack(side="left", padx=(2, 0))
+            # 🔒はテーマ配色に依存しないグリフなので、ライト/ダーク双方で
+            # 「編集不可（ランチャーからの凍結値）」の視覚キューになる（I-004）。
+            ttk.Label(f, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
 
         _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
         _field(row0, i18n.t("lbl_b_p_tx"),   "p_tx")
@@ -175,8 +194,13 @@ class BatchBuilderWindow(tk.Toplevel):
             state="readonly", font=("Arial", 8), width=9,
         ).pack(side="left", padx=(2, 0))
 
-        # ランチャー（source of truth）から共通設定を取り込む。専用行に右詰め。
+        # ランチャー（source of truth）から共通設定を取り込む。専用行に右詰め、
+        # 左には🔒の意味を説明するヒントを添える。
         if self._config_provider is not None:
+            ttk.Label(
+                row2, text=i18n.t("hint_common_readonly"),
+                font=("Arial", 8), foreground="gray",
+            ).pack(side="left", padx=6)
             ttk.Button(
                 row2, text=i18n.t("btn_refresh_common"),
                 command=self._refresh_common_from_launcher,
@@ -215,13 +239,16 @@ class BatchBuilderWindow(tk.Toplevel):
         canvas_frame = ttk.Frame(outer)
         canvas_frame.pack(fill="both", expand=True)
 
-        self._canvas = tk.Canvas(canvas_frame, borderwidth=0)
-        vsb = tk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
+        # tk.Canvas は ttk 管理外でテーマに追従しないため、生成時点の ttk 背景色を
+        # 明示的に合わせる（I-005・sv_ttk のテーマ切替に伴う自動追従はしない）。
+        theme_bg = ttk.Style().lookup("TFrame", "background")
+        self._canvas = tk.Canvas(canvas_frame, borderwidth=0, highlightthickness=0, bg=theme_bg)
+        vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
         self._canvas.pack(side="left", fill="both", expand=True)
 
-        self._table_frame = tk.Frame(self._canvas)
+        self._table_frame = ttk.Frame(self._canvas)
         self._table_win   = self._canvas.create_window(
             (0, 0), window=self._table_frame, anchor="nw"
         )
@@ -286,11 +313,13 @@ class BatchBuilderWindow(tk.Toplevel):
         row1.pack(fill="x")
         self._prog_label = ttk.Label(row1, text="", font=("Arial", 9), anchor="w")  # noqa: E501
         self._prog_label.pack(side="left", fill="x", expand=True)
-        self._ok_label  = tk.Label(row1, text="", fg="#2e7d32", font=("Arial", 9, "bold"))
+        # OK/NG/ERR は個別の色分けをやめ、他の ttk.Label と同一スタイルへ統一する
+        # （I-005・従来の tk.Label＋前景色ハードコードはダークテーマに追従しない）。
+        self._ok_label  = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
         self._ok_label.pack(side="left", padx=(8, 2))
-        self._ng_label  = tk.Label(row1, text="", fg="#e65100", font=("Arial", 9, "bold"))
+        self._ng_label  = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
         self._ng_label.pack(side="left", padx=2)
-        self._err_label = tk.Label(row1, text="", fg="#c62828", font=("Arial", 9, "bold"))
+        self._err_label = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
         self._err_label.pack(side="left", padx=(2, 0))
 
         # 下段: バー (左・伸縮) + N/M (P%) (右)
@@ -371,9 +400,9 @@ class BatchBuilderWindow(tk.Toplevel):
                 "",
             ]
 
-        # col 0: drag handle
-        handle = tk.Label(
-            row_frame, text="≡", fg="#999", cursor="fleur",
+        # col 0: drag handle（他の ttk ウィジェットとスタイルを統一・I-005）
+        handle = ttk.Label(
+            row_frame, text="≡", cursor="fleur",
             font=("Arial", 9, "bold"), width=2,
         )
         handle.grid(row=0, column=0, padx=2, pady=1)
@@ -547,9 +576,12 @@ class BatchBuilderWindow(tk.Toplevel):
         return defaults[0]
 
     def existing_paths(self) -> list[tuple]:
-        """表の各行の TX/RX 座標を [(tx, rx), ...] で返す（パース不能行は除外）。
+        """表の各行の (path_id, TX座標, RX座標) を [(pid, tx, rx), ...] で返す
+        （パース不能行は除外）。
 
-        地図が確定済みパスを地図上に表示するために引く。
+        地図が確定済みパスを地図上に表示するために引く。path_id も返すのは、
+        地図上で「どの行のパスか」を距離バッジへ添えて分かるようにするため
+        （I-001・バッチ表の各pathとマップウィンドウのpathの対応が不明瞭という指摘）。
         """
         out: list[tuple] = []
         for entries in self._row_entries:
@@ -558,7 +590,7 @@ class BatchBuilderWindow(tk.Toplevel):
                 rx = coords.parse_pair(entries[2].get())
             except ValueError:
                 continue
-            out.append((tx, rx))
+            out.append((entries[0].get().strip(), tx, rx))
         return out
 
     def _notify_paths_changed(self) -> None:
@@ -853,6 +885,8 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_count  = 0
         self._ng_count  = 0
         self._err_count = 0
+        self._run_cur     = 0
+        self._run_samples = base_params.num
         self._run_btn.config(state="disabled")
         self._prog_bar.config(maximum=len(rows), value=0)
         self._prog_label.config(text=i18n.t("batch_starting"))
@@ -866,7 +900,7 @@ class BatchBuilderWindow(tk.Toplevel):
             rows              = rows,
             base_params       = base_params,
             on_path_start     = lambda cur, tot, pid, q=q: q.put(("start",    (cur, tot, pid))),
-            on_path_progress  = lambda done: None,
+            on_path_progress  = lambda done, q=q: q.put(("progress", (done,))),
             on_path_complete  = lambda cur, tot, pr,  q=q: q.put(("done",     (cur, tot, pr))),
             on_batch_complete = lambda d,   rs,        q=q: q.put(("complete", (d, rs))),
             on_error          = lambda ex,             q=q: q.put(("error",    (ex,))),
@@ -883,6 +917,8 @@ class BatchBuilderWindow(tk.Toplevel):
                 event, args = self._event_queue.get_nowait()
                 if event == "start":
                     self._on_path_start(*args)
+                elif event == "progress":
+                    self._on_path_progress_tick(*args)
                 elif event == "done":
                     self._on_path_done(*args)
                 elif event == "complete":
@@ -894,10 +930,24 @@ class BatchBuilderWindow(tk.Toplevel):
         self.after(50, self._poll_queue)
 
     def _on_path_start(self, cur: int, tot: int, pid: str) -> None:
+        self._run_cur = cur
         pct = int((cur - 1) / tot * 100) if tot else 0
         self._prog_bar.config(value=cur - 1)
         self._prog_label.config(text=f"▶  {pid}")
         self._prog_count_label.config(text=f"{cur - 1} / {tot}  ({pct}%)")
+
+    def _on_path_progress_tick(self, done: int) -> None:
+        """パス内の標高取得進捗（0..samples）をバーへ小数値として反映する。
+
+        バーの目盛り（maximum）はパス本数のまま、現在パスの内部進捗を小数部として
+        加算する。従来 on_path_progress が no-op でパス境界でしかバーが動かず、
+        DEM キャッシュ済みだと一瞬で完了してバーが「機能していない」ように見えた
+        （β報告）。単発シングル実行（launcher._on_progress）と同じ fetch 進捗を使う。
+        """
+        if not self._running or self._run_samples <= 0:
+            return
+        frac = min(done / self._run_samples, 1.0)
+        self._prog_bar.config(value=(self._run_cur - 1) + frac)
 
     def _on_path_done(self, cur: int, tot: int, pr: batch.PathResult) -> None:
         pct = int(cur / tot * 100) if tot else 0

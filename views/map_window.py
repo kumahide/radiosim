@@ -343,11 +343,13 @@ class MapWindow:
         で残す（TX/RX 文字ラベルは出さない）。形状で送受を区別するため、TX/RX が
         近接・同一座標でも重なって判別不能にならない。追記モードでのみ意味を持ち、
         バッチ表が source of truth なので毎回引き直すだけ。パース不能行は除外済み。
+        距離バッジに path_id を添えて、バッチ表のどの行に対応するパスかを地図上で
+        判別できるようにする（I-001）。
         """
         self._clear_committed_paths()
         if self._append_sink is None:
             return
-        for tx, rx in self._append_sink.existing_paths():
+        for pid, tx, rx in self._append_sink.existing_paths():
             self._committed.append(
                 self._map.set_path([tx, rx], color=_UISP_CYAN_HEX, width=3))
             # TX = 塗りドット（ラベルなし）。アイコンはアクティブピックと共用。
@@ -359,10 +361,11 @@ class MapWindow:
             self._committed_images.append(arrow)   # GC 防止に保持
             self._committed.append(self._map.set_marker(
                 rx[0], rx[1], icon=arrow, icon_anchor="center"))
-            # 中点に水平距離バッジ。
+            # 中点に path_id ＋ 水平距離バッジ。
             mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
             km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
-            badge = self._make_distance_badge(map_graphics.distance_text(km))
+            label = f"{pid}  {map_graphics.distance_text(km)}" if pid else map_graphics.distance_text(km)
+            badge = self._make_distance_badge(label)
             self._committed_images.append(badge)   # GC 防止に保持
             self._committed.append(self._map.set_marker(
                 mid[0], mid[1], icon=badge, icon_anchor="center"))
@@ -490,8 +493,8 @@ class MapWindow:
         paths = self._append_sink.existing_paths()
         if not paths:
             return
-        lats = [p for tx, rx in paths for p in (tx[0], rx[0])]
-        lons = [p for tx, rx in paths for p in (tx[1], rx[1])]
+        lats = [p for _, tx, rx in paths for p in (tx[0], rx[0])]
+        lons = [p for _, tx, rx in paths for p in (tx[1], rx[1])]
         self._fit_to_path((max(lats), min(lons)), (min(lats), max(lons)))
 
     def _load_single_coords(self) -> None:
