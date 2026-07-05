@@ -188,6 +188,17 @@ class SimLauncher:
             )
         settings_menu.add_cascade(label=i18n.t("menu_language"), menu=lang_menu)
 
+        coord_fmt_menu = tk.Menu(settings_menu, tearoff=False)
+        self._coord_fmt_var = tk.StringVar(value=self.config.get("coord_format", "dd"))
+        for value in ("dd", "dms"):
+            coord_fmt_menu.add_radiobutton(
+                label    = i18n.t(f"coord_fmt_{value}"),
+                variable = self._coord_fmt_var,
+                value    = value,
+                command  = self._on_coord_format_change,
+            )
+        settings_menu.add_cascade(label=i18n.t("lbl_coord_format"), menu=coord_fmt_menu)
+
         settings_menu.add_separator()
         settings_menu.add_command(
             label   = i18n.t("menu_proxy_settings"),
@@ -280,20 +291,6 @@ class SimLauncher:
     def _build_site_group(self, parent: tk.Widget) -> None:
         g = ttk.LabelFrame(parent, text=i18n.t("grp_site_info"), padding=5)
         g.pack(fill="x", pady=5)
-
-        # 座標形式 DD/DMS 切替（数値欄は常に source of truth。表示 notation のみ変わる）
-        f_fmt = ttk.Frame(g)
-        f_fmt.pack(fill="x", pady=2, padx=10)
-        ttk.Label(
-            f_fmt, text=i18n.t("lbl_coord_format"), width=22, anchor="w",
-            font=("Arial", 9),
-        ).pack(side="left")
-        self._coord_fmt_var = tk.StringVar(value=self.config.get("coord_format", "dd"))
-        for value in ("dms", "dd"):  # side="right" は逆順パックなので dd を左に出す
-            ttk.Radiobutton(
-                f_fmt, text=i18n.t(f"coord_fmt_{value}"), value=value,
-                variable=self._coord_fmt_var, command=self._on_coord_format_change,
-            ).pack(side="right", padx=(8, 0))
 
         for lbl_key, entry_key in [
             ("lbl_start", "start"),
