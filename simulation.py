@@ -22,8 +22,9 @@ from typing import Callable
 
 import numpy as np
 
+import config
 import coords
-import infrastructure as infra
+import dem
 import models
 
 logger = logging.getLogger("radiosim")
@@ -107,7 +108,7 @@ def fetch_elevations(
 
             def _fetch_one(idx: int, la: float, lo: float) -> None:
                 try:
-                    raw_elevs[idx] = infra.get_elevation(la, lo)
+                    raw_elevs[idx] = dem.get_elevation(la, lo)
                 except Exception as e:
                     with lock:
                         worker_error.append(e)
@@ -263,7 +264,7 @@ def save_package(
     既定 DD なのでヘッドレス呼び出しは表示設定に非依存。
     """
     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S_%f")
-    save_dir  = os.path.join(infra.RESULTS_DIR, timestamp)
+    save_dir  = os.path.join(config.RESULTS_DIR, timestamp)
     os.makedirs(save_dir, exist_ok=True)
 
     _save_graph(fig, save_dir)

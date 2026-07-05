@@ -18,7 +18,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import batch
 import i18n
-import infrastructure as infra
+import config
 import models
 import report
 import simulation as sim
@@ -626,7 +626,7 @@ class TestRunBatch:
         """run_batch を実行し、全コールバックの記録を返す（完了まで待機）。"""
         i18n.set_lang("en")
         monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
-        monkeypatch.setattr(infra, "RESULTS_DIR", str(tmp_path))
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         base = sim.SimParams(default_params_dict)
         ev: dict[str, list] = {"start": [], "complete": [], "batch": [], "error": []}
         done = threading.Event()

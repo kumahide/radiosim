@@ -16,7 +16,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import infrastructure as infra
+import dem
 import map_graphics
 import report_map
 
@@ -72,19 +72,19 @@ class TestLonLatToPixel:
 
     def test_known_value_origin(self):
         # zoom 0: lon=0 → x=128, lat=0 → y=128（世界1タイル 256px の中心）。
-        x, y = infra.lonlat_to_pixel(0.0, 0.0, 0)
+        x, y = dem.lonlat_to_pixel(0.0, 0.0, 0)
         assert x == 128.0
         assert abs(y - 128.0) < 1e-6
 
     def test_x_increases_eastward(self):
-        x_w, _ = infra.lonlat_to_pixel(35.0, 139.0, 12)
-        x_e, _ = infra.lonlat_to_pixel(35.0, 140.0, 12)
+        x_w, _ = dem.lonlat_to_pixel(35.0, 139.0, 12)
+        x_e, _ = dem.lonlat_to_pixel(35.0, 140.0, 12)
         assert x_e > x_w
 
     def test_y_increases_southward(self):
         # 北が上＝緯度が高いほど y は小さい。
-        _, y_n = infra.lonlat_to_pixel(36.0, 139.0, 12)
-        _, y_s = infra.lonlat_to_pixel(35.0, 139.0, 12)
+        _, y_n = dem.lonlat_to_pixel(36.0, 139.0, 12)
+        _, y_s = dem.lonlat_to_pixel(35.0, 139.0, 12)
         assert y_s > y_n
 
 
@@ -153,7 +153,7 @@ class TestRenderPathMap:
         return np.full((256, 256, 3), 200, dtype=np.uint8)
 
     def test_returns_image_when_tiles_available(self, monkeypatch):
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
         assert isinstance(img, Image.Image)
         assert img.mode == "RGB"
@@ -161,14 +161,14 @@ class TestRenderPathMap:
 
     def test_diagonal_path_is_rotated_to_landscape(self, monkeypatch):
         # 経路を水平化するため、対角の経路でも横長（width > height）になる。
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
         assert isinstance(img, Image.Image)
         assert img.width > img.height
 
     def test_output_aspect_matches_profile(self, monkeypatch):
         # 出力の幅/高さ ≈ 15:6（断面図と同じ＝レポートで高さが揃う）。
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
         assert img.width / img.height == pytest.approx(15 / 6, rel=0.03)
 
@@ -176,13 +176,13 @@ class TestRenderPathMap:
         # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない
         # （バンドの north-up 外接矩形ぶん取得＋数 px インセットで隅も埋まる）。
         # _fake_tile は全画素 200 なので 229=_MISSING_RGB は必ず埋め色。
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
         fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
         assert int(fill.sum()) == 0
 
     def test_returns_none_when_all_tiles_fail(self, monkeypatch):
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
         img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
         assert img is None
 
@@ -192,7 +192,7 @@ class TestRenderPathMap:
         def _half(layer, zoom, x, y, *args, **kwargs):
             return self._fake_tile() if (x + y) % 2 == 0 else None
 
-        monkeypatch.setattr(infra, "_fetch_tile", _half)
+        monkeypatch.setattr(dem, "_fetch_tile", _half)
         img = report_map.render_path_map(
             (34.6, 132.5), (34.4, 132.3), min_fetch_frac=0.6
         )
@@ -200,17 +200,17 @@ class TestRenderPathMap:
 
     def test_partial_fetch_above_threshold_renders(self, monkeypatch):
         # 全取得成功でも閾値を下げれば当然描画。閾値境界の健全性確認。
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map(
             (34.54, 132.41), (34.53, 132.40), min_fetch_frac=0.6
         )
         assert isinstance(img, Image.Image)
 
     def test_b64_wrapper_none_when_render_fails(self, monkeypatch):
-        monkeypatch.setattr(infra, "_fetch_tile", lambda *a, **k: None)
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
         assert report_map.render_path_map_b64((34.54, 132.41), (34.53, 132.40)) is None
 
     def test_b64_wrapper_returns_string(self, monkeypatch):
-        monkeypatch.setattr(infra, "_fetch_tile", self._fake_tile)
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         b64 = report_map.render_path_map_b64((34.54, 132.41), (34.53, 132.40))
         assert isinstance(b64, str) and len(b64) > 0

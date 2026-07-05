@@ -4,7 +4,7 @@ views/launcher.py
 入力フォームウィンドウ（SimLauncher）。
 
 計算・通信・ファイル I/O は一切行わない。
-simulation モジュールと infrastructure モジュールを呼ぶだけ。
+simulation・config・dem の各モジュールを呼ぶだけ。
 """
 
 import json
@@ -14,9 +14,10 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import Callable
 
+import config
 import coords
+import dem
 import i18n
-import infrastructure as infra
 import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_KEYS
@@ -90,8 +91,8 @@ class SimLauncher:
         root.geometry("450x900")
         root.resizable(False, False)
 
-        self.config    = infra.load_config()
-        infra.set_proxy(self.config.get("proxy_url", ""))
+        self.config    = config.load_config()
+        dem.set_proxy(self.config.get("proxy_url", ""))
         self.entries:  dict[str, tk.Entry] = {}
         self._on_theme = on_theme
 
@@ -273,11 +274,11 @@ class SimLauncher:
     def _on_theme_select(self, mode: str) -> None:
         self.config["theme"] = mode
         self._on_theme(mode)
-        infra.save_app(self.config)
+        config.save_app(self.config)
 
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
-        infra.save_app(self.config)
+        config.save_app(self.config)
         self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
 
     def _on_proxy_settings(self) -> None:
@@ -306,8 +307,8 @@ class SimLauncher:
         def _on_ok() -> None:
             url = url_var.get().strip()
             self.config["proxy_url"] = url
-            infra.save_app(self.config)
-            infra.set_proxy(url)
+            config.save_app(self.config)
+            dem.set_proxy(url)
             sim.clear_terrain_cache()
             dlg.destroy()
 
@@ -469,7 +470,7 @@ class SimLauncher:
             self._logo_image = ImageTk.PhotoImage(img)
             tk.Label(parent, image=self._logo_image).pack(side="bottom", pady=(4, 8))
         except Exception as e:
-            infra.logger.warning("Logo load failed: %s", e)
+            config.logger.warning("Logo load failed: %s", e)
 
     def _add_row(self, parent: tk.Widget, label: str, key: str) -> None:
         f = ttk.Frame(parent)
@@ -493,7 +494,7 @@ class SimLauncher:
         mode = self._coord_fmt_var.get()
         self._refresh_coord_display()
         self.config["coord_format"] = mode
-        infra.save_app(self.config)
+        config.save_app(self.config)
 
     def _refresh_coord_display(self) -> None:
         """start/end 欄の文字列を現在の座標形式へ整形する（パース不能なら原文維持）。"""
@@ -539,7 +540,7 @@ class SimLauncher:
             i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm")
         ):
             return
-        result = infra.delete_all_tile_cache()
+        result = dem.delete_all_tile_cache()
         # マップウィンドウが開いていれば表示を更新する。
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_external_delete_all(result["deleted"])
@@ -558,10 +559,10 @@ class SimLauncher:
         c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
         self._coords_to_dd(c)  # DMS 入力でも downstream には DD を渡す
 
-        errors = infra.validate_config(c)
+        errors = config.validate_config(c)
         if errors:
             self._alert(i18n.t("dlg_input_error"), "\n".join(errors))
-            infra.logger.warning("Validation failed: %s", errors)
+            config.logger.warning("Validation failed: %s", errors)
             return
 
         try:
@@ -571,11 +572,11 @@ class SimLauncher:
             return
 
         # sim キーのみ保存。app 設定（theme/lang/proxy_url）は save_sim 内で保持される。
-        infra.save_sim(c)
+        config.save_sim(c)
         self.run_btn.config(state="disabled")
 
         # Phase 1: bbox 内の DEM タイルを事前取得
-        tile_count = infra.count_bbox_tiles(
+        tile_count = dem.count_bbox_tiles(
             params.lat_tx, params.lon_tx,
             params.lat_rx, params.lon_rx,
         )
@@ -593,13 +594,13 @@ class SimLauncher:
 
         def _run_prefetch() -> None:
             try:
-                infra.prefetch_tiles(
+                dem.prefetch_tiles(
                     params.lat_tx, params.lon_tx,
                     params.lat_rx, params.lon_rx,
                     progress_cb=_prefetch_progress,
                 )
             except Exception as ex:
-                infra.logger.warning("Prefetch error (continuing): %s", ex)
+                config.logger.warning("Prefetch error (continuing): %s", ex)
             self.root.after(0, self._notify_map_cache_change)
             self.root.after(0, lambda: self._start_simulation(params))
 
@@ -649,7 +650,7 @@ class SimLauncher:
 
     def _on_load_settings(self) -> None:
         file_path = filedialog.askopenfilename(
-            initialdir = infra.RESULTS_DIR,
+            initialdir = config.RESULTS_DIR,
             title      = i18n.t("dlg_select_settings"),
             filetypes  = [("JSON files", "*.json")],
             parent     = self.root,
@@ -660,7 +661,7 @@ class SimLauncher:
             with open(file_path, "r", encoding="utf-8") as f:
                 new_conf = json.load(f)
             # sim キーのみ取り込む（app 設定 theme/lang/proxy_url は無視する）。
-            new_conf = infra.select_sim(new_conf)
+            new_conf = config.select_sim(new_conf)
             for k, v in new_conf.items():
                 if k in self.entries:
                     self.entries[k].delete(0, tk.END)
@@ -698,7 +699,7 @@ class SimLauncher:
             return
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                app = infra.select_app(json.load(f))
+                app = config.select_app(json.load(f))
             # 実際に1つでも app 設定を適用したか。未適用なら成功表示しない。
             applied = False
             # 不正値は無視して安全に適用する（テーマ/言語は既知値のみ）。
@@ -709,7 +710,7 @@ class SimLauncher:
                 applied = True
             if "proxy_url" in app:
                 self.config["proxy_url"] = str(app["proxy_url"])
-                infra.set_proxy(self.config["proxy_url"])
+                dem.set_proxy(self.config["proxy_url"])
                 sim.clear_terrain_cache()
                 applied = True
             lang_changed = app.get("lang") in ("en", "ja") and \
@@ -725,7 +726,7 @@ class SimLauncher:
                 self._alert(i18n.t("dlg_app_settings_none_title"),
                             i18n.t("dlg_app_settings_none"))
                 return
-            infra.save_app(self.config)
+            config.save_app(self.config)
             if lang_changed:
                 self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
             else:
@@ -734,8 +735,8 @@ class SimLauncher:
             self._alert(i18n.t("dlg_error"), str(e))
 
     def _on_open_results(self) -> None:
-        if os.path.exists(infra.RESULTS_DIR):
-            os.startfile(infra.RESULTS_DIR)
+        if os.path.exists(config.RESULTS_DIR):
+            os.startfile(config.RESULTS_DIR)
 
     def _current_config(self) -> dict[str, str]:
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
@@ -877,7 +878,7 @@ class SimLauncher:
         except ImportError:
             pass
         except Exception as ex:
-            infra.logger.warning("README markdown render failed: %s", ex)
+            config.logger.warning("README markdown render failed: %s", ex)
 
         # Tier 2: OS デフォルトアプリで .md を直接開く
         try:
@@ -922,7 +923,7 @@ class SimLauncher:
         try:
             params = sim.SimParams(self._current_config())
         except Exception:
-            params = sim.SimParams(infra.DEFAULT_CONFIG)
+            params = sim.SimParams(config.DEFAULT_CONFIG)
         self._batch_win = BatchBuilderWindow(
             self.root, params,
             config_provider=self._current_config,

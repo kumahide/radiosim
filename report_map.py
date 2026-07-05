@@ -29,7 +29,7 @@ from typing import NamedTuple
 import numpy as np
 from PIL import Image, ImageDraw
 
-import infrastructure as infra
+import dem
 import map_graphics
 import models
 
@@ -86,8 +86,8 @@ def _band_px(
     half_w/aspect で決める。これで出力画像の縦横比が aspect に固定され、レポート
     で地形断面図と同じ width:100% にしたとき高さが揃う。
     """
-    ax, ay = infra.lonlat_to_pixel(tx[0], tx[1], zoom)
-    bx, by = infra.lonlat_to_pixel(rx[0], rx[1], zoom)
+    ax, ay = dem.lonlat_to_pixel(tx[0], tx[1], zoom)
+    bx, by = dem.lonlat_to_pixel(rx[0], rx[1], zoom)
     path_len = math.hypot(bx - ax, by - ay)
     if path_len < 1.0:                       # 退化/極近接 → 東向きに固定
         ux, uy, path_len = 1.0, 0.0, 0.0
@@ -153,11 +153,11 @@ def render_path_map(
         x0, x1, y0, y1 = _coverage_tiles(band)
 
         # --- バンドの north-up 外接矩形ぶんを並列取得してステッチ ---
-        # 取得・キャッシュの所在は infrastructure が所有（並列＝メインスレッドでも
+        # 取得・キャッシュの所在は dem が所有（並列＝メインスレッドでも
         # 逐次待ちで GUI を固めない）。座標だけ渡し、戻りの {(x,y):配列} を貼る。
         # バンドより広く取るので、回転後に切り出してもグレーの欠けが出ない。
         tiles = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
-        fetched = infra.fetch_basemap_tiles(tiles, zoom)
+        fetched = dem.fetch_basemap_tiles(tiles, zoom)
 
         if len(fetched) < max(1, round(len(tiles) * min_fetch_frac)):
             # 取得率が閾値未満（全滅含む）→ 地図なし（呼び出し側が注記を出す）
