@@ -155,11 +155,17 @@ class SimLauncher:
         self._refresh_coord_display()
 
     def _build_menu(self) -> None:
+        # tk.Menu は sv_ttk（ttk 専用）のテーマに追従しないため、生成した全メニューを
+        # 保持し、テーマ変更ごとに配色を明示適用する（_apply_menu_theme・B-004）。
+        self._themed_menus: list[tk.Menu] = []
         menubar = tk.Menu(self.root)
+        self._themed_menus.append(menubar)
 
         settings_menu = tk.Menu(menubar, tearoff=False)
+        self._themed_menus.append(settings_menu)
 
         theme_menu = tk.Menu(settings_menu, tearoff=False)
+        self._themed_menus.append(theme_menu)
         self._theme_var = tk.StringVar(value=self.config.get("theme", "system"))
         for label, value in [
             (i18n.t("menu_system"), "system"),
@@ -175,6 +181,7 @@ class SimLauncher:
         settings_menu.add_cascade(label=i18n.t("menu_theme"), menu=theme_menu)
 
         lang_menu = tk.Menu(settings_menu, tearoff=False)
+        self._themed_menus.append(lang_menu)
         self._lang_var = tk.StringVar(value=self.config.get("lang", "en"))
         for label, value in [
             (i18n.t("lang_en"), "en"),
@@ -189,6 +196,7 @@ class SimLauncher:
         settings_menu.add_cascade(label=i18n.t("menu_language"), menu=lang_menu)
 
         coord_fmt_menu = tk.Menu(settings_menu, tearoff=False)
+        self._themed_menus.append(coord_fmt_menu)
         self._coord_fmt_var = tk.StringVar(value=self.config.get("coord_format", "dd"))
         for value in ("dd", "dms"):
             coord_fmt_menu.add_radiobutton(
@@ -216,6 +224,7 @@ class SimLauncher:
         menubar.add_cascade(label=i18n.t("menu_settings"), menu=settings_menu)
 
         help_menu = tk.Menu(menubar, tearoff=False)
+        self._themed_menus.append(help_menu)
         help_menu.add_command(
             label   = i18n.t("menu_open_readme"),
             command = self._on_open_readme,
@@ -228,6 +237,38 @@ class SimLauncher:
         menubar.add_cascade(label=i18n.t("menu_help"), menu=help_menu)
 
         self.root.configure(menu=menubar)
+
+        # 現在テーマを即反映し、以降のテーマ変更は <<ThemeChanged>> で拾う。これで
+        # メニューからの明示切替も、system 連動（darkdetect の OS 追従）も一括対応。
+        self._apply_menu_theme()
+        self.root.bind("<<ThemeChanged>>", self._apply_menu_theme, add="+")
+
+    def _apply_menu_theme(self, _event: object = None) -> None:
+        """tk.Menu へ現在の ttk テーマ色を明示適用する（B-004）。
+
+        sv_ttk は ttk ウィジェットのみ再スタイルし、ネイティブ tk.Menu は追従しない。
+        特に選択インジケータ色（selectcolor＝ラジオ/チェックの「✓」）は既定のまま
+        だとダーク背景と同化して選択中が判別できない。前景色へ揃えて視認可能にする。
+        """
+        style = ttk.Style()
+        bg = style.lookup("TFrame", "background")
+        fg = style.lookup("TLabel", "foreground")
+        active_bg = style.lookup("Accent.TButton", "background") or bg
+        opts: dict[str, str] = {}
+        if bg:
+            opts["background"] = bg
+            opts["activebackground"] = active_bg or bg
+        if fg:
+            opts["foreground"] = fg
+            opts["activeforeground"] = fg
+            opts["selectcolor"] = fg   # 「✓」を前景色にしてダークでも見えるように
+        if not opts:
+            return
+        for menu in self._themed_menus:
+            try:
+                menu.configure(**opts)
+            except tk.TclError:
+                pass
 
     def _on_theme_select(self, mode: str) -> None:
         self.config["theme"] = mode
