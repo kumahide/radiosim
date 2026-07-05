@@ -161,6 +161,52 @@ def horizontal_distance_km(
     return 2 * R_earth * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+def bearing_deg(
+    lat1: float, lon1: float, lat2: float, lon2: float
+) -> float:
+    """点1から点2への真方位（初期方位）[deg]。0=真北・時計回り・範囲 [0, 360)。
+
+    大圏航法の初期方位角。長距離では経路上で方位が変わるため「点1で相手へ
+    向け始める向き」を返す（アンテナの初期指向＝スクリーニング用途に十分）。
+    両端で別値になる（点2→点1 は逆方位で単純な ±180° にはならない）。
+    """
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dlon = math.radians(lon2 - lon1)
+    y = math.sin(dlon) * math.cos(phi2)
+    x = (
+        math.cos(phi1) * math.sin(phi2)
+        - math.sin(phi1) * math.cos(phi2) * math.cos(dlon)
+    )
+    return (math.degrees(math.atan2(y, x)) + 360.0) % 360.0
+
+
+def elevation_angle_deg(
+    h_near_abs_m: float, h_far_abs_m: float, dist_m: float,
+    earth_k: float = 4 / 3,
+) -> float:
+    """近端アンテナの局所水平面から遠端アンテナを見込む仰角[deg]（初期指向）。
+
+    地球曲率で遠端が沈む分を等価地球半径 Re = 6371km * earth_k で織り込む。
+    earth_k は `calculate_terrain_profile` と同一系（標準大気 4/3）＝ライス K
+    ファクター（SimParams.k_factor・表示専用）とは無関係。両端とも曲率で相手が
+    同じだけ沈むため、EL は単純な符号反転にはならない（高低差項のみ反転）。
+
+    Args:
+        h_near_abs_m: 近端アンテナの絶対高（地表標高＋空中線高）[m]。
+        h_far_abs_m:  遠端アンテナの絶対高 [m]。
+        dist_m:       2 地点の水平距離 [m]。
+    Returns:
+        仰角[deg]。上向き正・下向き負。dist_m<=0 なら 0.0。
+    """
+    if dist_m <= 0:
+        return 0.0
+    Re_m = 6371000.0 * max(earth_k, 0.1)   # 0 除算防止（calculate_terrain_profile と同じ下限）
+    dh   = h_far_abs_m - h_near_abs_m
+    # 局所水平面に対し遠端は地球のふくらみ分だけ低く見える（dist²/2Re）。
+    drop = dist_m ** 2 / (2 * Re_m)
+    return math.degrees(math.atan2(dh - drop, dist_m))
+
+
 def vertical_exaggeration(
     x_span_m: float, y_span_m: float, width_px: float, height_px: float
 ) -> float:
