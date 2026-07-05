@@ -524,6 +524,115 @@ class TestProcessPosition:
 
 
 # ============================================================
+# prefetch_tiles（並列ワーカーで _process_position を束ねる公開 API）
+# ============================================================
+
+class TestPrefetchTiles:
+    """prefetch_tiles の並列オーケストレーション層（ワーカープール・進捗・例外集計）
+    を _fetch_tile の sync-fake で検証する。実行時に確実に走る公開 API だが従来
+    ノーカバレッジだった（batch.run_batch を 100% にした sync-fake 方式と同型）。"""
+
+    # 1 点 bbox に収束させ zoom-14 位置 1・zoom-15 サブタイル 1 枚とし、件数を決定的に。
+    LAT, LON = 35.0, 139.0
+
+    def _tile(self):
+        """欠損(128,0,0)を含まない有効タイル。"""
+        return np.zeros((256, 256, 3), dtype=np.uint8)
+
+    def _run(self, tmp_path, monkeypatch, fetch, **kw):
+        # CACHE_DIR を空の一時ディレクトリにしてスキップ条件（既存キャッシュ）を外す。
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+        return dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, **kw)
+
+    def _seed_dem14(self, tmp_path):
+        """1 点 bbox に対応する dem_png(zoom-14) キャッシュファイルを実パスへ置く。"""
+        from PIL import Image
+        positions = list(dem._iter_dem_positions(self.LAT, self.LON, self.LAT, self.LON))
+        _, _, dem14_subdir, dem14_path, _ = positions[0]
+        os.makedirs(dem14_subdir, exist_ok=True)
+        Image.new("RGB", (256, 256)).save(dem14_path)
+
+    def test_all_resolved_by_5a(self, tmp_path, monkeypatch):
+        """5a が欠損なしで取れれば 5b/dem は取得しない。"""
+        calls = []
+
+        def fetch(layer_id, *a, **kw):
+            calls.append(layer_id)
+            return self._tile() if layer_id == "dem5a_png" else None
+
+        res = self._run(tmp_path, monkeypatch, fetch)
+        assert res["area_total"] == 1
+        assert res["downloaded_5a"] == 1
+        assert res["downloaded_5b"] == 0
+        assert res["downloaded_dem"] == 0
+        assert res["skipped"] == 0
+        assert res["failed"] == 0
+        assert "dem_png" not in calls   # 5a で完結し dem まで降りない
+
+    def test_falls_through_to_dem(self, tmp_path, monkeypatch):
+        """5a・5b 不在 → dem_png まで降りて downloaded_dem に計上。"""
+        def fetch(layer_id, *a, **kw):
+            return self._tile() if layer_id == "dem_png" else None
+
+        res = self._run(tmp_path, monkeypatch, fetch)
+        assert res["downloaded_5a"] == 0
+        assert res["downloaded_5b"] == 0
+        assert res["downloaded_dem"] == 1
+        assert res["failed"] == 0
+
+    def test_skips_cached_dem_without_force(self, tmp_path, monkeypatch):
+        """dem_png キャッシュ済み・force=False → 位置全体を skipped（_fetch_tile 未呼び）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed_dem14(tmp_path)
+        calls = []
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda layer_id, *a, **kw: calls.append(layer_id))
+        res = dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=False)
+        assert res["skipped"] == 1
+        assert res["downloaded_5a"] == res["downloaded_dem"] == 0
+        assert calls == []
+
+    def test_force_ignores_cache(self, tmp_path, monkeypatch):
+        """force=True なら dem_png キャッシュ済みでもスキップせず再取得する。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed_dem14(tmp_path)
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
+        res = dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=True)
+        assert res["skipped"] == 0
+        assert res["downloaded_5a"] == 1
+
+    def test_progress_callback_reports_completion(self, tmp_path, monkeypatch):
+        """progress_cb が (done, total) で呼ばれ、最終 done == total == 件数。"""
+        seen = []
+        self._run(
+            tmp_path, monkeypatch,
+            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None,
+            progress_cb=lambda done, total: seen.append((done, total)),
+        )
+        assert seen                      # 少なくとも 1 回は呼ばれる
+        assert seen[-1] == (1, 1)        # 全件完了で done == total
+        assert all(total == 1 for _, total in seen)
+
+    def test_worker_counts_process_exception_as_failed(self, tmp_path, monkeypatch):
+        """_process_position が例外を投げてもワーカーが握り、failed に計上して継続する。"""
+        def boom(*a, **kw):
+            raise RuntimeError("fetch blew up")
+
+        res = self._run(tmp_path, monkeypatch, boom)
+        assert res["failed"] == 1
+        assert res["area_total"] == 1
+
+    def test_empty_positions_returns_zeros(self, monkeypatch):
+        """対象 zoom-14 位置が無い場合はワーカー開始前にゼロ集計を返す。"""
+        monkeypatch.setattr(dem, "_iter_dem_positions", lambda *a, **kw: iter([]))
+        res = dem.prefetch_tiles(35.0, 139.0, 35.0, 139.0)
+        assert res == {"area_total": 0, "downloaded_5a": 0, "downloaded_5b": 0,
+                       "downloaded_dem": 0, "skipped": 0, "failed": 0}
+
+
+# ============================================================
 # scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）
 # ============================================================
 
