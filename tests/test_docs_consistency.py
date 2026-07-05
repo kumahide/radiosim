@@ -35,7 +35,7 @@ TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
 # 層構成図に必ず現れるべきコアモジュール（i18n/version/main は図の抽象度では
 # 省く設計なので対象外＝図の意図に合わせた allowlist）。
 CORE_ARCH_MODULES = [
-    "models.py", "simulation.py", "infrastructure.py",
+    "models.py", "simulation.py", "config.py", "dem.py",
     "batch.py", "report.py", "report_map.py", "map_graphics.py", "coords.py",
 ]
 

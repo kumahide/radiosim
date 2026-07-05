@@ -1,7 +1,7 @@
 name: CI
 
 # Minimal CI: headless checks on the non-GUI code (models / simulation /
-# infrastructure / batch). The tkinter GUI layer (views/*) can't run on a
+# config / dem / batch). The tkinter GUI layer (views/*) can't run on a
 # headless runner, so it is exercised only by pyright's static check, not pytest.
 
 on:
@@ -39,7 +39,7 @@ jobs:
       - name: Pyright (type check, app modules)
         run: >-
           pyright
-          batch.py report.py models.py simulation.py infrastructure.py version.py
+          batch.py report.py models.py simulation.py config.py dem.py version.py
           i18n.py main.py report_map.py map_graphics.py coords.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py
           views/map_window.py views/dialogs.py

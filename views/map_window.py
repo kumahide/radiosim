@@ -33,8 +33,8 @@ from typing import Callable, Protocol, cast
 
 from PIL import ImageTk
 
+import dem
 import i18n
-import infrastructure as infra
 import map_graphics
 import models
 from tkintermapview import TkinterMapView
@@ -700,8 +700,8 @@ class MapWindow:
             # 表示する対象数は force の有無で変わる:
             #   force ON  → 全エリア再取得（総数）
             #   force OFF → キャッシュ済みはスキップされるので新規分のみ
-            total = infra.count_bbox_tiles(*bbox)
-            n = total if force else total - infra.count_cached_areas(*bbox)
+            total = dem.count_bbox_tiles(*bbox)
+            n = total if force else total - dem.count_cached_areas(*bbox)
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
             msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
@@ -711,7 +711,7 @@ class MapWindow:
                 self._clear_selection()
         else:   # delete
             # 削除は実際にキャッシュ済みのエリアのみが対象
-            n = infra.count_cached_areas(*bbox)
+            n = dem.count_cached_areas(*bbox)
             if dialogs.confirm(
                 self._win, i18n.t("tm_delete_title"),
                 i18n.t("tm_delete_confirm").format(n=n),
@@ -787,8 +787,8 @@ class MapWindow:
         ).start()
 
     def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int) -> None:
-        cells = infra.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
-        outline = infra.coverage_outline(nw[0], nw[1], se[0], se[1])
+        cells = dem.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
+        outline = dem.coverage_outline(nw[0], nw[1], se[0], se[1])
         self._win.after(0, self._draw_overlay_cells, cells, outline)
 
     def _draw_overlay_cells(self, cells: list, outline: list) -> None:
@@ -799,8 +799,8 @@ class MapWindow:
         # 隣接セルの塗りを繋げて内部グリッド線を出さない。
         for c in cells:
             x, y, z = c["x"], c["y"], c["zoom"]
-            lat_n, lon_w = infra.tile_to_latlng(x,     y,     z)
-            lat_s, lon_e = infra.tile_to_latlng(x + 1, y + 1, z)
+            lat_n, lon_w = dem.tile_to_latlng(x,     y,     z)
+            lat_s, lon_e = dem.tile_to_latlng(x + 1, y + 1, z)
             color = _LEVEL_COLORS.get(c["level"], "#CCCCCC")
             p = self._map.set_polygon(
                 [(lat_n, lon_w), (lat_n, lon_e), (lat_s, lon_e), (lat_s, lon_w)],
@@ -830,7 +830,7 @@ class MapWindow:
 
     def _estimate_mb(self, n_areas: int) -> str:
         """DL 容量の目安 [MB] を文字列で返す。平均タイルサイズは実キャッシュから推定。"""
-        stats = infra.get_cache_stats()
+        stats = dem.get_cache_stats()
         avg = stats["size_bytes"] / stats["count"] if stats["count"] else self._DEFAULT_TILE_BYTES
         mb = n_areas * self._TILES_PER_AREA * avg / (1024 * 1024)
         return f"{mb:.1f}"
@@ -887,7 +887,7 @@ class MapWindow:
             self._win.after(0, self._progress_var.set, pct)
             self._win.after(0, self._set_status,
                 i18n.t("tm_dl_progress").format(done=done, total=total, pct=pct))
-        dl_result = infra.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
+        dl_result = dem.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
         self._win.after(0, self._on_download_done, dl_result)
 
     def _on_download_done(self, dl_result: dict) -> None:
@@ -916,7 +916,7 @@ class MapWindow:
     # 範囲削除（Shift+Ctrl＋ドラッグ → 確認 → 実行）
     # ----------------------------------------------------------
     def _do_delete(self, bbox: tuple) -> None:
-        result = infra.delete_tile_cache(*bbox)
+        result = dem.delete_tile_cache(*bbox)
         self._set_status(i18n.t("tm_delete_done").format(deleted=result["deleted"]), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 削除結果を自動表示に反映
@@ -942,7 +942,7 @@ class MapWindow:
     # キャッシュ統計
     # ----------------------------------------------------------
     def _refresh_stats(self) -> None:
-        stats = infra.get_cache_stats()
+        stats = dem.get_cache_stats()
         mb = stats["size_bytes"] / (1024 * 1024)
         self._stats_var.set(i18n.t("tm_stats").format(count=stats["count"], mb=f"{mb:.1f}"))
 
