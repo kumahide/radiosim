@@ -24,7 +24,7 @@ skips = ["B101"]
 # ヘッドレス層全体をゲート対象にする（= Web/PWA で再利用予定の資産。
 # 従来はコア3モジュールのみで、report/batch の出力層が死角だった）。
 source = [
-    "models", "simulation", "infrastructure",
+    "models", "simulation", "config", "dem",
     "batch", "report", "report_map",
     "coords", "map_graphics", "mpl_fonts", "i18n",
 ]

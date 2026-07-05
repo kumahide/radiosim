@@ -302,7 +302,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_stats":             "Total cache: {count} tiles / {mb} MB",
         "tm_attribution":       "Source: GSI Tiles (Pale map)",
 
-        # ===== Validation (infrastructure) =====
+        # ===== Validation (config) =====
         "err_freq":             "Frequency must be between 1 and 100000 MHz",
         "err_p_tx":             "TX Power must be between -30 and 60 dBm",
         "err_gain_tx":          "TX Antenna Gain must be between 0 and 60 dBi",
@@ -638,7 +638,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
         "tm_attribution":       "出典: 地理院タイル（淡色地図）",
 
-        # ===== Validation (infrastructure) =====
+        # ===== Validation (config) =====
         "err_freq":             "周波数は 1〜100000 MHz の範囲で入力してください",
         "err_p_tx":             "送信電力は −30〜60 dBm の範囲で入力してください",
         "err_gain_tx":          "送信アンテナ利得は 0〜60 dBi の範囲で入力してください",

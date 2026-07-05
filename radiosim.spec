@@ -232,7 +232,7 @@ a = Analysis(
         "matplotlib.backends.backend_nbagg",
         "matplotlib.backends.backend_template",
         # B: 標準ライブラリ（本アプリで未使用）
-        # ※ email / html は infrastructure.py / batch.py で使用するため除外しない
+        # ※ email / html は dem.py / batch.py で使用するため除外しない
         # "xml",
         "xmlrpc",
         "ftplib",

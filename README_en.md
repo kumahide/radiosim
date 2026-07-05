@@ -151,7 +151,8 @@ radiosim/
 ├── main.py               # Entry point
 ├── models.py             # Pure calculation logic (no side effects)
 ├── simulation.py         # ViewModel / orchestrator
-├── infrastructure.py     # External dependencies (DEM/pale tiles, config I/O, validation)
+├── config.py             # App config I/O, input validation, logging (minimal external deps)
+├── dem.py                # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
 ├── batch.py              # Batch execution engine (CSV I/O, validation, run)
 ├── report.py             # Batch result output generation (PNG/HTML/KML, summaries; headless)
 ├── report_map.py         # Headless path-overlay map generation for reports
@@ -171,7 +172,8 @@ radiosim/
 └── tests/
     ├── test_models.py
     ├── test_simulation.py
-    ├── test_infrastructure.py
+    ├── test_config.py
+    ├── test_dem.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_report_map.py
@@ -236,7 +238,7 @@ The **"Map Window" button** in the launcher (`views/map_window.py`) opens an aux
 
 - **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
 - **Append to Batch mode**: selecting it opens (or raises) the batch window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. Committed paths render as **TX = filled dot / RX = bearing arrowhead** plus distance (so TX/RX stay distinguishable even when near/identical). Batch row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths`.
-- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `infrastructure.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
+- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `dem.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
 
@@ -582,8 +584,11 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
           +---> [Pure conversion layer]  coords.py
           |     Coordinate notation conversion (DD <-> DMS, no side effects)
           |
-          +---> [External dependency layer]  infrastructure.py
-                DEM/pale tile HTTP fetch, config I/O, validation
+          +---> [Config & validation layer]  config.py
+          |     App config I/O, input validation, logging
+          |
+          +---> [External dependency layer]  dem.py
+                DEM/pale tile HTTP fetch, elevation decode, cache, proxy
 ```
 
 ---
@@ -601,7 +606,8 @@ python -m pytest tests/ --cov
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
-| `test_infrastructure.py` | 100   | Validation, config I/O, DEM decoding, tile prefetch, proxy/session, i18n, cache deletion/stats |
+| `test_config.py`         | 36    | Input validation, config I/O (app/sim split), i18n key coverage                 |
+| `test_dem.py`            | 64    | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
 | `test_batch.py`          | 78    | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
 | `test_report.py`         | 20    | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
 | `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |

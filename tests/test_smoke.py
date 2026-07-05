@@ -22,7 +22,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 # ヘッドレスでも import 可能なモジュール（tk.Tk() を作らない限り tkinter import は安全）。
 _HEADLESS_SAFE = [
-    "main", "models", "simulation", "infrastructure",
+    "main", "models", "simulation", "config", "dem",
     "batch", "report", "report_map", "map_graphics",
     "coords", "i18n", "mpl_fonts", "version",
     "views.launcher", "views.batch_builder",
@@ -59,7 +59,7 @@ def test_gui_module_imports(mod):
 # 本テストプロセス自体は上のスモークで views/tkinter を import 済みのため、
 # 素の子プロセスで検証する（テスト実行順に依存しない）。
 _HEADLESS_CORE = [
-    "models", "simulation", "infrastructure", "batch", "report",
+    "models", "simulation", "config", "dem", "batch", "report",
     "report_map", "map_graphics", "coords", "i18n", "mpl_fonts", "version",
 ]
 
