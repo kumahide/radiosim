@@ -107,6 +107,66 @@ class TestHorizontalDistanceKm:
         )
 
 
+class TestBearingDeg:
+    def test_due_north(self):
+        # 同経度で北へ → 0°。
+        assert models.bearing_deg(35.0, 139.0, 36.0, 139.0) == pytest.approx(0.0, abs=1e-6)
+
+    def test_due_south(self):
+        assert models.bearing_deg(36.0, 139.0, 35.0, 139.0) == pytest.approx(180.0, abs=1e-6)
+
+    def test_due_east(self):
+        # 同緯度で東へ → ほぼ 90°。大圏初期方位は緯線に沿っても厳密には 90°に
+        # ならず極側へ僅かに振れる（この距離で約 0.003°）ため許容 0.01°。
+        assert models.bearing_deg(35.0, 139.0, 35.0, 139.01) == pytest.approx(90.0, abs=1e-2)
+
+    def test_due_west(self):
+        assert models.bearing_deg(35.0, 139.01, 35.0, 139.0) == pytest.approx(270.0, abs=1e-2)
+
+    def test_range_is_0_to_360(self):
+        # 南西向きは第3象限（180〜270）に収まる。
+        b = models.bearing_deg(35.0, 139.0, 34.0, 138.0)
+        assert 180.0 < b < 270.0
+
+    def test_reverse_is_not_plain_180_flip(self):
+        # 大圏では逆方位は単純な ±180° にならない（緯度差のある斜め経路で確認）。
+        fwd = models.bearing_deg(35.6, 139.7, 34.7, 135.5)
+        rev = models.bearing_deg(34.7, 135.5, 35.6, 139.7)
+        assert abs(((fwd + 180.0) % 360.0) - rev) > 0.5
+
+
+class TestElevationAngleDeg:
+    def test_zero_distance_returns_zero(self):
+        assert models.elevation_angle_deg(10.0, 50.0, 0.0) == 0.0
+
+    def test_uphill_positive(self):
+        # 遠端が高い・近距離（曲率無視できる）→ 正の仰角。
+        el = models.elevation_angle_deg(10.0, 110.0, 1000.0)
+        assert el == pytest.approx(math.degrees(math.atan2(100.0, 1000.0)), abs=0.1)
+
+    def test_downhill_negative(self):
+        el = models.elevation_angle_deg(110.0, 10.0, 1000.0)
+        assert el < 0.0
+
+    def test_curvature_lowers_far_end(self):
+        # 同一絶対高でも遠端は地球のふくらみ分だけ沈む → 仰角は負。
+        el = models.elevation_angle_deg(50.0, 50.0, 20000.0)
+        assert el < 0.0
+
+    def test_not_symmetric_between_ends_due_to_curvature(self):
+        # 両端とも相手が曲率で沈むので、EL_near + EL_far は高低差が相殺されても
+        # 0 にならず負側に寄る（曲率項が両端に効く）。
+        near = models.elevation_angle_deg(30.0, 80.0, 15000.0)
+        far  = models.elevation_angle_deg(80.0, 30.0, 15000.0)
+        assert near + far < 0.0
+
+    def test_larger_earth_k_raises_angle(self):
+        # earth_k が大きいほど等価地球半径が大きく＝ふくらみが減り仰角が上がる。
+        low  = models.elevation_angle_deg(50.0, 50.0, 20000.0, earth_k=4 / 3)
+        high = models.elevation_angle_deg(50.0, 50.0, 20000.0, earth_k=10.0)
+        assert high > low
+
+
 class TestVerticalExaggeration:
     def test_unity_when_balanced(self):
         # データ範囲・ピクセルとも縦横同比なら誇張なし（×1）。
