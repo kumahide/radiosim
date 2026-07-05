@@ -17,9 +17,9 @@ from tkinter import filedialog, ttk
 from typing import Callable
 
 import batch
+import config
 import coords
 import i18n
-import infrastructure as infra
 import report
 import simulation as sim
 from models import ENV_KEYS
@@ -78,7 +78,7 @@ class BatchBuilderWindow(tk.Toplevel):
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
-        self._coord_format = infra.load_config().get("coord_format", "dd")
+        self._coord_format = config.load_config().get("coord_format", "dd")
         self._row_entries: list[list[tk.Entry]] = []
         self._row_frames:  list[ttk.Frame]      = []
         self._running      = False

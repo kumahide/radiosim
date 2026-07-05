@@ -20,8 +20,8 @@ from matplotlib.patches import Rectangle
 from matplotlib.widgets import Button, Slider, TextBox
 from tkinter import messagebox
 
+import config
 import i18n
-import infrastructure as infra
 import models
 import mpl_fonts
 import report
@@ -422,7 +422,7 @@ class _GraphWindow:
             h_tx = self._slider_htx.val
             h_rx = self._slider_hrx.val
             # 座標表記は app 設定に従う（人が読む report.txt のみ。データは DD 固定）
-            coord_format = infra.load_config().get("coord_format", "dd")
+            coord_format = config.load_config().get("coord_format", "dd")
             save_dir = sim.save_package(
                 fig     = self._fig,
                 terrain = self._terrain,

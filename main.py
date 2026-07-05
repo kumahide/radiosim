@@ -93,7 +93,7 @@ import darkdetect
 import sv_ttk
 
 import i18n
-import infrastructure as infra
+import config
 from views.launcher import SimLauncher
 
 _prof("top-level imports done")
@@ -167,7 +167,7 @@ def main() -> None:
     _prof("tk.Tk() created")
     _set_window_icon(root)
     manager = _ThemeManager(root)
-    cfg = infra.load_config()
+    cfg = config.load_config()
     i18n.set_lang(cfg.get("lang", "en"))
     _prof("config/i18n done")
     manager.apply(cfg.get("theme", "system"))

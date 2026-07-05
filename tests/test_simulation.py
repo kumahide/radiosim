@@ -19,7 +19,8 @@ import threading
 import numpy as np
 import pytest
 
-import infrastructure as infra
+import config
+import dem
 import models
 import simulation as sim
 
@@ -100,7 +101,7 @@ class TestFetchElevations:
 
     def test_calls_on_complete_with_array(self, default_params_dict, monkeypatch):
         """on_complete が numpy 配列で呼ばれること。"""
-        monkeypatch.setattr(infra, "get_elevation", lambda la, lo: 100.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 100.0)
 
         results = {}
         done    = threading.Event()
@@ -124,7 +125,7 @@ class TestFetchElevations:
 
     def test_on_progress_called_for_each_sample(self, default_params_dict, monkeypatch):
         """on_progress がサンプル数だけ呼ばれること。"""
-        monkeypatch.setattr(infra, "get_elevation", lambda la, lo: 0.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
         default_params_dict["samples"] = "20"
 
         progress_calls = []
@@ -147,7 +148,7 @@ class TestFetchElevations:
     def test_on_error_called_on_exception(self, default_params_dict, monkeypatch):
         """例外発生時に on_error が呼ばれること。"""
         monkeypatch.setattr(
-            infra, "get_elevation",
+            dem, "get_elevation",
             lambda la, lo: (_ for _ in ()).throw(RuntimeError("network fail")),
         )
 
@@ -188,7 +189,7 @@ class TestFetchElevationsCached:
         def counting_get(la, lo):
             call_count["n"] += 1
             return 100.0
-        monkeypatch.setattr(infra, "get_elevation", counting_get)
+        monkeypatch.setattr(dem, "get_elevation", counting_get)
 
         done = threading.Event()
         params = sim.SimParams(default_params_dict)
@@ -207,7 +208,7 @@ class TestFetchElevationsCached:
         def counting_get(la, lo):
             call_count["n"] += 1
             return 100.0
-        monkeypatch.setattr(infra, "get_elevation", counting_get)
+        monkeypatch.setattr(dem, "get_elevation", counting_get)
 
         params = sim.SimParams(default_params_dict)
 
@@ -232,7 +233,7 @@ class TestFetchElevationsCached:
 
     def test_cache_hit_returns_same_array(self, default_params_dict, monkeypatch):
         """キャッシュヒット時に返る配列が1回目と同じ値であること。"""
-        monkeypatch.setattr(infra, "get_elevation", lambda la, lo: 42.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 42.0)
         params = sim.SimParams(default_params_dict)
 
         results = {}
@@ -253,7 +254,7 @@ class TestFetchElevationsCached:
         def counting_get(la, lo):
             call_count["n"] += 1
             return 0.0
-        monkeypatch.setattr(infra, "get_elevation", counting_get)
+        monkeypatch.setattr(dem, "get_elevation", counting_get)
 
         params_a = sim.SimParams(default_params_dict)
 
@@ -274,7 +275,7 @@ class TestFetchElevationsCached:
 
     def test_cache_hit_calls_on_progress_with_total(self, default_params_dict, monkeypatch):
         """キャッシュヒット時は on_progress(num) が呼ばれてプログレスバーが満杯になること。"""
-        monkeypatch.setattr(infra, "get_elevation", lambda la, lo: 0.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
         params = sim.SimParams(default_params_dict)
 
         # 1回目でキャッシュ生成
@@ -409,7 +410,7 @@ class TestSavePackage:
 
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
                   diff_method="single", coord_format="dd"):
-        monkeypatch.setattr(infra, "RESULTS_DIR", str(tmp_path))
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         default_params_dict["diff_method"] = diff_method
         params = sim.SimParams(default_params_dict)
         result = _make_result(diff_method)

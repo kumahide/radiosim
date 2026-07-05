@@ -151,7 +151,8 @@ radiosim/
 ├── main.py               # エントリーポイント
 ├── models.py             # 純粋計算ロジック（副作用ゼロ）
 ├── simulation.py         # ViewModel / オーケストレーター
-├── infrastructure.py     # 外部依存（DEM/淡色タイル取得・設定 I/O・バリデーション）
+├── config.py             # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
+├── dem.py                # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
 ├── batch.py              # 一括シミュレーションの実行エンジン（CSV I/O・バリデーション・実行）
 ├── report.py             # バッチ結果の出力生成（PNG/HTML/KML・サマリ・ヘッドレス）
 ├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
@@ -171,7 +172,8 @@ radiosim/
 └── tests/
     ├── test_models.py
     ├── test_simulation.py
-    ├── test_infrastructure.py
+    ├── test_config.py
+    ├── test_dem.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_report_map.py
@@ -236,7 +238,7 @@ http://proxy.example.com:8080
 
 - **座標入力モード（既定）**: 地図クリックで TX→RX を交互に指定し、ランチャーの座標欄（start/end）へ書き戻す（数値欄が source of truth）。UISP 風マーカー・経路ライン・距離ラベルを表示。`apply_map_pick`/`current_path_coords` で連携。
 - **連続追加モード**（モードセレクタの「バッチへ連続追加」）: 選ぶとバッチウィンドウを開き（前面化し）、地図で TX→RX ペアを置くたびにバッチへ 1 行を自動追加・自動リセットします（+行 追加不要）。RF（周波数・利得・アンテナ高）は追加時点のランチャー値で凍結。確定パスは **TX=塗りドット／RX=方位矢じり**＋距離で表示（近接・同一座標でも形状で送受を判別）。バッチの行変更（削除・編集確定・インポート等）は地図へリアルタイム反映。`append_path`/`existing_paths` で連携。
-- **キャッシュ管理モード**: パン/ズーム追従でキャッシュ済み領域を最高精度で色分け表示（緑=5m航空レーザ / 黄=5m写真測量 / 水色=10m）。ジェスチャ＝ドラッグ=移動 / Ctrl+ドラッグ=DL / Ctrl+Alt+ドラッグ=強制再取得 / Shift+Ctrl+ドラッグ=範囲削除。DL・削除は確認ダイアログあり。実装は `infrastructure.prefetch_tiles` ほかの公開 API。取得済みは再 DL しない（外部サーバー配慮）。全キャッシュ削除は **設定 > 全キャッシュ削除**。
+- **キャッシュ管理モード**: パン/ズーム追従でキャッシュ済み領域を最高精度で色分け表示（緑=5m航空レーザ / 黄=5m写真測量 / 水色=10m）。ジェスチャ＝ドラッグ=移動 / Ctrl+ドラッグ=DL / Ctrl+Alt+ドラッグ=強制再取得 / Shift+Ctrl+ドラッグ=範囲削除。DL・削除は確認ダイアログあり。実装は `dem.prefetch_tiles` ほかの公開 API。取得済みは再 DL しない（外部サーバー配慮）。全キャッシュ削除は **設定 > 全キャッシュ削除**。
 
 ---
 
@@ -585,8 +587,11 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
           +---> [純粋変換層]  coords.py
           |     座標表記変換（DD ⇔ DMS・副作用ゼロ）
           |
-          +---> [外部依存層]  infrastructure.py
-                DEM/淡色タイル HTTP 取得・設定 I/O・バリデーション
+          +---> [設定・検証層]  config.py
+          |     アプリ設定 I/O・入力バリデーション・ロギング
+          |
+          +---> [外部依存層]  dem.py
+                DEM/淡色タイル HTTP 取得・標高デコード・キャッシュ・プロキシ
 ```
 
 ---
@@ -604,7 +609,8 @@ python -m pytest tests/ --cov
 | -------------------------- | ---- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 82   | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
 | `test_simulation.py`     | 38   | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
-| `test_infrastructure.py` | 100  | バリデーション・設定 I/O・DEM デコード・タイル事前取得・プロキシ・i18n網羅性・キャッシュ削除/統計 |
+| `test_config.py`         | 36   | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
+| `test_dem.py`            | 64   | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
 | `test_batch.py`          | 78   | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
 | `test_report.py`         | 20   | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク |
 | `test_report_map.py`     | 25   | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |

@@ -19,8 +19,8 @@ from typing import Callable
 
 import numpy as np
 
+import config
 import i18n
-import infrastructure as infra
 import models
 import report
 import simulation as sim
@@ -249,7 +249,7 @@ def _run_thread(
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        batch_dir = os.path.join(infra.RESULTS_DIR, f"batch_{timestamp}")
+        batch_dir = os.path.join(config.RESULTS_DIR, f"batch_{timestamp}")
         os.makedirs(batch_dir, exist_ok=True)
 
         path_results: list[PathResult] = []
