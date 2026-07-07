@@ -105,9 +105,36 @@ class BatchBuilderWindow(tk.Toplevel):
     # UI 構築
     # ----------------------------------------------------------
     def _build_ui(self) -> None:
+        self._build_case_info()
         self._build_common_settings()
         self._build_table()
         self._build_bottom()
+
+    def _build_case_info(self) -> None:
+        """案件名・自由メモ（レポートの自己同定ヘッダに載る任意メタ情報）。
+
+        RF/環境パラメータと違い計算には影響しない報告書メタなので、ランチャー凍結
+        （🔒）ではなくバッチ側で直接編集する自由文字列。数フィールド＋自由メモに厳格
+        限定（テンプレエディタ化しない）。案件名＝per-path/summary 両ヘッダ、メモ＝
+        summary のみ。sv_ttk テーマ追従のため素 tk でなく ttk.Entry を使う。
+        """
+        frame = ttk.LabelFrame(self, text=i18n.t("batch_case_info"), padding=(8, 4))
+        frame.pack(fill="x", padx=8, pady=(8, 0))
+
+        self._project_name_var = tk.StringVar()
+        self._memo_var         = tk.StringVar()
+
+        f_proj = ttk.Frame(frame)
+        f_proj.pack(side="left", padx=6)
+        ttk.Label(f_proj, text=i18n.t("batch_project_name"), font=("Arial", 8)).pack(side="left")
+        ttk.Entry(f_proj, textvariable=self._project_name_var, font=("Arial", 8),
+                  width=20).pack(side="left", padx=(2, 0))
+
+        f_memo = ttk.Frame(frame)
+        f_memo.pack(side="left", padx=6, fill="x", expand=True)
+        ttk.Label(f_memo, text=i18n.t("batch_memo"), font=("Arial", 8)).pack(side="left")
+        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 8)).pack(
+            side="left", padx=(2, 0), fill="x", expand=True)
 
     def _build_common_settings(self) -> None:
         frame = ttk.LabelFrame(
@@ -966,10 +993,13 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_label.config(text=f"✓ {self._ok_count} OK")
         self._ng_label.config(text=f"✗ {self._ng_count} NG")
         self._err_label.config(text=f"⚠ {self._err_count} ERR")
-        report.save_path_visuals(pr, self._coord_format)
+        report.save_path_visuals(pr, self._coord_format,
+                                 self._project_name_var.get().strip())
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
-        report.save_summary_html(results, batch_dir)
+        report.save_summary_html(results, batch_dir,
+                                 self._project_name_var.get().strip(),
+                                 self._memo_var.get().strip())
         report.save_summary_kml(results, batch_dir)
         self._running = False
         self._run_btn.config(state="normal")

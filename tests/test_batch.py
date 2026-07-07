@@ -609,6 +609,69 @@ class TestReportV2A4Skeleton:
 
 
 # ============================================================
+# レポート v2 ＝ 案件情報の配線（案件名＝両レポート／メモ＝summary のみ）
+# ============================================================
+class TestReportV2CaseInfo:
+
+    def _path_html(self, tmp_path, flat_terrain, default_params_dict, project_name):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None, project_name=project_name,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def _summary_html(self, tmp_path, default_params_dict, project_name="", memo=""):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        pr  = batch.PathResult(row=row, result=_make_result(), params=params)
+        report.save_summary_html([pr], str(tmp_path), project_name=project_name, memo=memo)
+        with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_project_name_in_path_header(self, tmp_path, flat_terrain, default_params_dict):
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict, "Site A Survey")
+        assert '<div class="proj-name">Site A Survey</div>' in html
+
+    def test_project_name_in_summary_header(self, tmp_path, default_params_dict):
+        html = self._summary_html(tmp_path, default_params_dict, project_name="Site A Survey")
+        assert '<div class="proj-name">Site A Survey</div>' in html
+
+    def test_empty_project_name_leaves_slot_empty(self, tmp_path, flat_terrain,
+                                                  default_params_dict):
+        # 空案件名は従来どおり空スロット（:empty で CSS 非表示）
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict, "")
+        assert '<div class="proj-name"></div>' in html
+
+    def test_memo_in_summary_only_when_present(self, tmp_path, default_params_dict):
+        # ".report-memo" は CSS 定義に常在するため、メモ本体の div で判定する。
+        html = self._summary_html(tmp_path, default_params_dict, memo="Rainy season margin")
+        assert '<div class="report-memo">' in html
+        assert "Rainy season margin" in html
+
+    def test_memo_absent_when_empty(self, tmp_path, default_params_dict):
+        html = self._summary_html(tmp_path, default_params_dict, memo="")
+        assert '<div class="report-memo">' not in html
+
+    def test_memo_not_on_per_path(self, tmp_path, flat_terrain, default_params_dict):
+        # メモはサーベイ全体注記＝per-path には出さない
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict, "Site A")
+        assert '<div class="report-memo">' not in html
+
+    def test_project_name_and_memo_are_escaped(self, tmp_path, default_params_dict):
+        html = self._summary_html(
+            tmp_path, default_params_dict,
+            project_name="<b>x</b>", memo="a & <i>b</i>",
+        )
+        assert "<b>x</b>" not in html
+        assert "&lt;b&gt;x&lt;/b&gt;" in html
+        assert "a &amp; &lt;i&gt;b&lt;/i&gt;" in html
+
+
+# ============================================================
 # 実行エンジン（run_batch / _run_thread / _process_one / _fetch_sync）
 # ============================================================
 # sim.fetch_elevations の同期フェイク。バッチはワーカースレッドから呼ぶが、

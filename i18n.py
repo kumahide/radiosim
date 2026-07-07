@@ -98,6 +98,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Batch Builder =====
         "batch_title":          "Batch Mode",
         "batch_common_cfg":     " Common Settings ",
+        "batch_case_info":      " Case Info ",
+        "batch_project_name":   "Project",
+        "batch_memo":           "Note",
         "col_id":               "ID",
         "col_start":            "Start (lat, lon)",
         "col_end":              "End (lat, lon)",
@@ -201,6 +204,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_path_title":      "Radio Link Report",
         "html_generated":       "Generated",
         "html_batch_mode":      "Batch Mode",  # HTML footer
+        "html_report_memo":     "Note:",
 
         "html_status":          "Status",
         "html_rx_level":        "RX Level",
@@ -435,6 +439,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Batch Builder =====
         "batch_title":          "一括シミュレーション",
         "batch_common_cfg":     " 共通設定 ",
+        "batch_case_info":      " 案件情報 ",
+        "batch_project_name":   "案件名",
+        "batch_memo":           "メモ",
         "col_id":               "ID",
         "col_start":            "送信座標（緯度, 経度）",
         "col_end":              "受信座標（緯度, 経度）",
@@ -538,6 +545,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_path_title":      "無線回線レポート",
         "html_generated":       "生成日時",
         "html_batch_mode":      "一括シミュレーション",
+        "html_report_memo":     "メモ:",
         "html_status":          "判定",
         "html_rx_level":        "受信レベル",
         "html_act_margin":      "マージン",
