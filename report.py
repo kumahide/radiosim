@@ -80,18 +80,20 @@ def _a4_base_css() -> str:
 """
 
 
-def _page_header(title_html: str, meta_id_esc: str = "") -> str:
+def _page_header(title_html: str, meta_id_esc: str = "", project_name: str = "") -> str:
     """自己同定ヘッダ（左＝案件名スロット＋タイトル／右＝生成日時・ID・版）。
 
-    案件名は本スライスでは空スロット（`:empty` で非表示）。データ配線は次スライス。
-    meta_id_esc は path_id 等の識別子（エスケープ済み）。空なら省く。
+    project_name はユーザー入力の案件名（自由文字列）。空なら `.proj-name` は
+    `:empty` で非表示になり従来の見た目を保つ。meta_id_esc は path_id 等の
+    識別子（エスケープ済み）。空なら省く。
     """
     gen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     id_line = f"{meta_id_esc}<br>" if meta_id_esc else ""
+    proj_esc = _html.escape(project_name)
     return (
         '<header class="page-header">'
         '<div class="ph-left">'
-        '<div class="proj-name"></div>'
+        f'<div class="proj-name">{proj_esc}</div>'
         f'<p class="ph-title">{title_html}</p>'
         '</div>'
         '<div class="ph-right">'
@@ -111,7 +113,8 @@ def _page_footer() -> str:
     )
 
 
-def save_path_visuals(pr: PathResult, coord_format: str = "dd") -> None:
+def save_path_visuals(pr: PathResult, coord_format: str = "dd",
+                      project_name: str = "") -> None:
     """
     PNG と HTML をメインスレッドから保存する。
 
@@ -120,6 +123,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd") -> None:
     発生するため、この関数は必ずメインスレッド（on_path_complete 内）で呼ぶこと。
 
     coord_format は HTML レポートの人が読む座標セルのみに効く（既定 DD）。
+    project_name はレポートヘッダの案件名（自由文字列・空で従来表示）。
     """
     if pr.result is None or pr.terrain is None or pr.params is None:
         return
@@ -127,6 +131,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd") -> None:
         save_profile_png(
             pr.terrain, pr.result, pr.params,
             pr.params.h_tx, pr.params.h_rx, pr.save_dir, coord_format,
+            project_name,
         )
         save_path_kml(
             pr.terrain, pr.result, pr.params,
@@ -144,6 +149,7 @@ def save_profile_png(
     h_rx:     float,
     save_dir: str,
     coord_format: str = "dd",
+    project_name: str = "",
 ) -> None:
     """
     地形断面 PNG をバックグラウンドスレッドから保存する。
@@ -236,7 +242,7 @@ def save_profile_png(
     )
 
     save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64,
-                   coord_format)
+                   coord_format, project_name)
 
 
 def save_path_html(
@@ -249,12 +255,14 @@ def save_path_html(
     img_b64:  str,
     map_b64:  "str | None" = None,
     coord_format: str = "dd",
+    project_name: str = "",
 ) -> None:
     """per-path の report.html を生成する（グラフ・地図は Base64 埋め込み）。
 
     map_b64 が None のとき（タイル取得失敗）は地図を省き注記を表示する。
     coord_format は人が読む座標セルのみに効く（"dd"|"dms"）。CSV/KML/settings は
     再読込・規格のため DD 固定。既定 DD でヘッドレス呼び出しは表示設定に非依存。
+    project_name はヘッダの案件名（自由文字列・空で従来表示）。
     """
     tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
@@ -311,7 +319,7 @@ table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
 </head>
 <body>
 <div class="sheet">
-{_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc)}
+{_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc, project_name)}
 
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>
@@ -432,7 +440,14 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                 ])
 
 
-def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
+def save_summary_html(results: list[PathResult], batch_dir: str,
+                      project_name: str = "", memo: str = "") -> None:
+    """バッチの summary.html を生成する。
+
+    project_name はヘッダの案件名、memo はサーベイ全体の自由メモ（どちらも
+    ユーザー入力の自由文字列・空で従来表示）。memo は非空時のみ p1 のヘッダ直下に
+    小ブロックとして表示する（サーベイ全体の注記＝summary のみ）。
+    """
     ok_count  = sum(1 for pr in results if pr.result is not None and pr.result.status == "OK")
     ng_count  = sum(1 for pr in results if pr.result is not None and pr.result.status != "OK")
     err_count = sum(1 for pr in results if pr.result is None)
@@ -489,6 +504,16 @@ def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
             f"</a></td></tr>\n"
         )
 
+    # 案件メモ（サーベイ全体の自由注記）。非空時のみヘッダ直下（p1）に小ブロック表示。
+    if memo:
+        memo_block = (
+            f'<div class="report-memo">'
+            f'<span class="rm-label">{i18n.t("html_report_memo")}</span> '
+            f'{_html.escape(memo)}</div>'
+        )
+    else:
+        memo_block = ""
+
     html = f"""<!DOCTYPE html>
 <html lang="{i18n.t('html_lang')}">
 <head>
@@ -508,11 +533,14 @@ table.summary td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:12px;w
 table.summary tr{{break-inside:avoid}}
 tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec}}
 .s-ok{{color:#2e7d32;font-weight:bold}}.s-ng{{color:#c62828;font-weight:bold}}.s-err{{color:#bf360c;font-weight:bold}}
+.report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}}
+.report-memo .rm-label{{color:#90a4ae;font-weight:bold;margin-right:4px}}
 </style>
 </head>
 <body>
 <div class="sheet">
-{_page_header(i18n.t('html_batch_title'))}
+{_page_header(i18n.t('html_batch_title'), project_name=project_name)}
+{memo_block}
 <div class="cards">
   <div class="card"><div class="lbl">{i18n.t('html_total')}</div><div class="val">{total}</div></div>
   <div class="card ok"><div class="lbl">{i18n.t('html_ok')}</div><div class="val">{ok_count}</div></div>
