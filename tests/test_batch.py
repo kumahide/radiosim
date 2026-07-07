@@ -556,6 +556,59 @@ class TestSummaryGainColumns:
 
 
 # ============================================================
+# レポート v2 ＝ A4 ドロップイン骨格（per-path / summary 共通）
+# ============================================================
+class TestReportV2A4Skeleton:
+    """生成 HTML が portrait A4 の印刷確定枠（.sheet＋自己同定ヘッダ/フッタ）を
+    持つこと。骨格土台化スライスの回帰ガード。"""
+
+    def _path_html(self, tmp_path, flat_terrain, default_params_dict):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def _summary_html(self, tmp_path, default_params_dict):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        pr  = batch.PathResult(row=row, result=_make_result(), params=params)
+        report.save_summary_html([pr], str(tmp_path))
+        with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def _assert_a4_frame(self, html):
+        # portrait A4 の @page 宣言
+        assert "@page" in html
+        assert "A4 portrait" in html
+        # 本文が A4 用紙（.sheet）で包まれている
+        assert 'class="sheet"' in html
+        # 自己同定ヘッダ/フッタ
+        assert "page-header" in html
+        assert "page-footer" in html
+        # 案件名は本スライスでは空スロット（データ配線は次スライス）
+        assert 'class="proj-name"' in html
+
+    def test_path_html_has_a4_frame(self, tmp_path, flat_terrain, default_params_dict):
+        self._assert_a4_frame(self._path_html(tmp_path, flat_terrain, default_params_dict))
+
+    def test_summary_html_has_a4_frame(self, tmp_path, default_params_dict):
+        self._assert_a4_frame(self._summary_html(tmp_path, default_params_dict))
+
+    def test_summary_table_repeats_header_and_avoids_row_break(
+        self, tmp_path, default_params_dict
+    ):
+        # 継続ページで thead 反復・行分断防止（1枚厳守が希望・超過時のみ継続）
+        html = self._summary_html(tmp_path, default_params_dict)
+        assert "table-header-group" in html
+        assert "break-inside:avoid" in html
+
+
+# ============================================================
 # 実行エンジン（run_batch / _run_thread / _process_one / _fetch_sync）
 # ============================================================
 # sim.fetch_elevations の同期フェイク。バッチはワーカースレッドから呼ぶが、

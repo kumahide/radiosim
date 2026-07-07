@@ -35,6 +35,82 @@ if TYPE_CHECKING:
 logger = logging.getLogger("radiosim")
 
 
+# ============================================================
+# レポート v2 ＝ A4 ドロップイン骨格（per-path / summary 共通）
+# ------------------------------------------------------------
+# 目的：生成 HTML を「そのまま報告書へ綴じ込める portrait A4 の確定1枚」にする。
+# 画面でも A4 用紙が見える WYSIWYG（.sheet）＋ 印刷は @page A4。PDF 化は
+# ゼロ依存＝ブラウザ Ctrl+P（PDF エンジンは入れない）。ブラウザ挿入の印刷
+# ヘッダ/フッタは CSS で抑制できないため、自前のヘッダ/フッタを持ち、利用者は
+# 印刷時「ヘッダーとフッターをオフ」にする前提とする。
+# ============================================================
+
+def _a4_base_css() -> str:
+    """per-path / summary が共通で使う A4 骨格スタイルを返す。
+
+    画面（screen）では中央に A4 用紙（.sheet）を描いて WYSIWYG に、
+    印刷（print）では余白を @page に委ね .sheet の装飾を外す。
+    """
+    return """
+/* --- A4 骨格（v2 ドロップイン） --- */
+*{box-sizing:border-box}
+.sheet{background:#fff}
+.page-header{display:flex;justify-content:space-between;align-items:flex-end;
+  border-bottom:2px solid #455a64;padding-bottom:6px;margin-bottom:14px}
+.page-header .ph-left{min-width:0}
+.page-header .proj-name{font-size:12px;color:#455a64;font-weight:bold;margin-bottom:2px}
+.page-header .proj-name:empty{display:none}
+.page-header .ph-title{font-size:18px;font-weight:bold;color:#222;margin:0}
+.page-header .ph-right{text-align:right;font-size:10px;color:#888;
+  white-space:nowrap;padding-left:12px}
+.page-footer{margin-top:16px;padding-top:6px;border-top:1px solid #ddd;
+  color:#aaa;font-size:10px;display:flex;justify-content:space-between}
+@media screen{
+  body{background:#e9e9e9;margin:0;padding:0}
+  .sheet{width:210mm;min-height:297mm;padding:14mm;margin:10px auto;
+    box-shadow:0 0 8px rgba(0,0,0,.25)}
+}
+@media print{
+  body{background:#fff;margin:0}
+  .sheet{width:auto;min-height:0;padding:0;margin:0;box-shadow:none}
+  @page{size:A4 portrait;margin:14mm}
+  img{break-inside:avoid}
+  thead{display:table-header-group}
+}
+"""
+
+
+def _page_header(title_html: str, meta_id_esc: str = "") -> str:
+    """自己同定ヘッダ（左＝案件名スロット＋タイトル／右＝生成日時・ID・版）。
+
+    案件名は本スライスでは空スロット（`:empty` で非表示）。データ配線は次スライス。
+    meta_id_esc は path_id 等の識別子（エスケープ済み）。空なら省く。
+    """
+    gen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    id_line = f"{meta_id_esc}<br>" if meta_id_esc else ""
+    return (
+        '<header class="page-header">'
+        '<div class="ph-left">'
+        '<div class="proj-name"></div>'
+        f'<p class="ph-title">{title_html}</p>'
+        '</div>'
+        '<div class="ph-right">'
+        f'{id_line}{i18n.t("html_generated")}: {gen}<br>{version.APP_FULL}'
+        '</div>'
+        '</header>'
+    )
+
+
+def _page_footer() -> str:
+    """自己同定フッタ（版＋バッチモード注記）。"""
+    return (
+        '<footer class="page-footer">'
+        f'<span>{version.APP_FULL}</span>'
+        f'<span>{i18n.t("html_batch_mode")}</span>'
+        '</footer>'
+    )
+
+
 def save_path_visuals(pr: PathResult, coord_format: str = "dd") -> None:
     """
     PNG と HTML をメインスレッドから保存する。
@@ -211,11 +287,10 @@ def save_path_html(
 <meta charset="UTF-8">
 <title>{i18n.t('html_path_title')} — {path_id_esc}</title>
 <style>
-body{{font-family:Arial,sans-serif;font-size:13px;margin:20px;background:#f5f5f5}}
-h1{{color:#333;margin-bottom:4px}}
-p.sub{{color:#888;font-size:11px;margin:0 0 14px}}
-.cards{{display:flex;gap:12px;margin-bottom:16px}}
-.card{{background:white;border-radius:8px;padding:12px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
+{_a4_base_css()}
+body{{font-family:Arial,sans-serif;font-size:13px}}
+.cards{{display:flex;gap:12px;margin-bottom:16px;break-inside:avoid}}
+.card{{background:white;border:1px solid #eee;border-radius:8px;padding:12px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
 .card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
 .card .val{{font-size:22px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}
@@ -232,12 +307,11 @@ summary{{cursor:pointer;font-weight:bold;color:#455a64;font-size:12px}}
 table.terrain{{border-collapse:collapse;width:100%;margin-top:8px;font-size:11px}}
 table.terrain th{{background:#455a64;color:white;padding:4px 8px;text-align:left}}
 table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
-footer{{margin-top:14px;color:#bbb;font-size:10px}}
 </style>
 </head>
 <body>
-<h1>{i18n.t('html_path_title')} — {path_id_esc}</h1>
-<p class="sub">{i18n.t('html_generated')}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} &nbsp;|&nbsp; {version.APP_FULL}</p>
+<div class="sheet">
+{_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc)}
 
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>
@@ -306,7 +380,8 @@ footer{{margin-top:14px;color:#bbb;font-size:10px}}
 </table>
 </details>
 
-<footer>{version.APP_FULL} — {i18n.t('html_batch_mode')}</footer>
+{_page_footer()}
+</div>
 </body>
 </html>"""
 
@@ -420,32 +495,31 @@ def save_summary_html(results: list[PathResult], batch_dir: str) -> None:
 <meta charset="UTF-8">
 <title>{i18n.t('html_batch_title')}</title>
 <style>
-body{{font-family:Arial,sans-serif;font-size:13px;margin:20px;background:#f5f5f5}}
-h1{{color:#333;margin-bottom:4px}}
-p.sub{{color:#888;font-size:11px;margin:0 0 16px}}
-.cards{{display:flex;gap:12px;margin-bottom:20px}}
-.card{{background:white;border-radius:8px;padding:14px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px}}
+{_a4_base_css()}
+body{{font-family:Arial,sans-serif;font-size:13px}}
+.cards{{display:flex;gap:12px;margin-bottom:20px;break-inside:avoid}}
+.card{{background:white;border:1px solid #eee;border-radius:8px;padding:14px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px}}
 .card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
 .card .val{{font-size:28px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}.card.err .val{{color:#e65100}}
-table{{border-collapse:collapse;width:100%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-th{{background:#455a64;color:white;padding:7px 10px;text-align:left;font-size:11px;white-space:nowrap}}
-td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:12px;white-space:nowrap}}
+table.summary{{border-collapse:collapse;width:100%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+table.summary th{{background:#455a64;color:white;padding:7px 10px;text-align:left;font-size:11px;white-space:nowrap}}
+table.summary td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:12px;white-space:nowrap}}
+table.summary tr{{break-inside:avoid}}
 tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec}}
 .s-ok{{color:#2e7d32;font-weight:bold}}.s-ng{{color:#c62828;font-weight:bold}}.s-err{{color:#bf360c;font-weight:bold}}
-footer{{margin-top:14px;color:#bbb;font-size:10px}}
 </style>
 </head>
 <body>
-<h1>{i18n.t('html_batch_title')}</h1>
-<p class="sub">{i18n.t('html_generated')}: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} &nbsp;|&nbsp; {version.APP_FULL}</p>
+<div class="sheet">
+{_page_header(i18n.t('html_batch_title'))}
 <div class="cards">
   <div class="card"><div class="lbl">{i18n.t('html_total')}</div><div class="val">{total}</div></div>
   <div class="card ok"><div class="lbl">{i18n.t('html_ok')}</div><div class="val">{ok_count}</div></div>
   <div class="card ng"><div class="lbl">{i18n.t('html_ng')}</div><div class="val">{ng_count}</div></div>
   <div class="card err"><div class="lbl">{i18n.t('html_error')}</div><div class="val">{err_count}</div></div>
 </div>
-<table>
+<table class="summary">
 <thead>
 <tr>
   <th>{i18n.t('html_col_id')}</th><th>{i18n.t('html_col_status')}</th>
@@ -464,7 +538,8 @@ footer{{margin-top:14px;color:#bbb;font-size:10px}}
 {rows_html}
 </tbody>
 </table>
-<footer>{version.APP_FULL} — {i18n.t('html_batch_mode')}</footer>
+{_page_footer()}
+</div>
 </body>
 </html>"""
 
