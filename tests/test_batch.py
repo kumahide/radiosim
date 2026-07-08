@@ -513,7 +513,10 @@ class TestSavePathHtmlCoordFormat:
     def test_default_dd(self, tmp_path, flat_terrain, default_params_dict):
         html = self._render(tmp_path, flat_terrain, default_params_dict, "dd")
         assert "34.542900, 132.411800" in html
-        assert "°" not in html
+        # DMS 記法（分「'」・秒＋半球「"N」/「"E」）が座標に出ないこと。A-0 の AZ/EL は
+        # 「°」を使うため全文の「°」不在では判定できず、DMS 固有記号で判定する。
+        assert "'" not in html
+        assert '"N' not in html and '"E' not in html
 
     def test_dms(self, tmp_path, flat_terrain, default_params_dict):
         html = self._render(tmp_path, flat_terrain, default_params_dict, "dms")
@@ -669,6 +672,53 @@ class TestReportV2CaseInfo:
         assert "<b>x</b>" not in html
         assert "&lt;b&gt;x&lt;/b&gt;" in html
         assert "a &amp; &lt;i&gt;b&lt;/i&gt;" in html
+
+
+# ============================================================
+# レポート v2 ＝ A-0 アンテナ初期指向 AZ/EL の差し込み（per-path）
+# ============================================================
+class TestReportV2AzEl:
+
+    def _path_html(self, tmp_path, flat_terrain, default_params_dict):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_az_el_labels_and_note_present(self, tmp_path, flat_terrain, default_params_dict):
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict)
+        assert "Initial aim TX&rarr;RX" in html or "Initial aim TX→RX" in html
+        assert "Initial aim RX&rarr;TX" in html or "Initial aim RX→TX" in html
+        # 初期指向注記（哲学：最終調整は現場 RSSI で）
+        assert "maximizing on-site RSSI" in html
+
+    def test_az_el_values_match_models(self, tmp_path, flat_terrain, default_params_dict):
+        # 配線が models の純関数と一致すること（両端で別値＝AZ 逆方位・EL 高低差反転）
+        params = sim.SimParams(default_params_dict)
+        html   = self._path_html(tmp_path, flat_terrain, default_params_dict)
+        tx_abs = float(flat_terrain.raw_elevs[0])  + 30.0
+        rx_abs = float(flat_terrain.raw_elevs[-1]) + 10.0
+        dist_m = flat_terrain.horiz_dist_km * 1000.0
+        az_tx  = models.bearing_deg(params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx)
+        el_tx  = models.elevation_angle_deg(tx_abs, rx_abs, dist_m)
+        az_rx  = models.bearing_deg(params.lat_rx, params.lon_rx, params.lat_tx, params.lon_tx)
+        assert f"{az_tx:.1f}° / {el_tx:+.1f}°" in html
+        # 両端で AZ が別値（逆方位が単純 ±180° にならない一般ケース）
+        assert abs((az_tx - az_rx) % 360.0 - 180.0) > 1e-9
+        assert f"{az_rx:.1f}°" in html
+
+    def test_downhill_elevation_is_negative(self, tmp_path, flat_terrain, default_params_dict):
+        # 高い TX(30m) から低い RX(10m) を見込む → 平地では下り＝EL 負
+        tx_abs = float(flat_terrain.raw_elevs[0])  + 30.0
+        rx_abs = float(flat_terrain.raw_elevs[-1]) + 10.0
+        el_tx  = models.elevation_angle_deg(tx_abs, rx_abs, flat_terrain.horiz_dist_km * 1000.0)
+        assert el_tx < 0
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict)
+        assert f"{el_tx:+.1f}°" in html  # 符号付き（負）で表示
 
 
 # ============================================================
