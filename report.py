@@ -277,6 +277,18 @@ def save_path_html(
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs)
     )
 
+    # A-0 アンテナ初期指向（AZ/EL）。既存データ（座標・アンテナ高・地形標高・地球
+    # 曲率）から幾何計算する純関数の表示（新規入力ゼロ）。両端で別値＝AZ は大圏逆
+    # 方位（単純な ±180° でない）、EL は高低差項のみ反転（曲率で双方同じだけ沈む）。
+    # 曲率は calculate_terrain_profile と同一系の 4/3（models 既定）を使う。
+    tx_abs   = float(terrain.raw_elevs[0])  + h_tx
+    rx_abs   = float(terrain.raw_elevs[-1]) + h_rx
+    dist_m   = terrain.horiz_dist_km * 1000.0
+    az_tx_rx = models.bearing_deg(params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx)
+    el_tx_rx = models.elevation_angle_deg(tx_abs, rx_abs, dist_m)
+    az_rx_tx = models.bearing_deg(params.lat_rx, params.lon_rx, params.lat_tx, params.lon_tx)
+    el_rx_tx = models.elevation_angle_deg(rx_abs, tx_abs, dist_m)
+
     # 経路オーバーレイ地図セクション。map_b64 が無い（タイル取得失敗）ときは
     # 地図を省いて注記を表示する（レポート自体は必ず生成される）。
     if map_b64:
@@ -304,6 +316,7 @@ body{{font-family:Arial,sans-serif;font-size:13px}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}
 .graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:16px}}
 .map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}}
+.aim-note{{margin:6px 2px 0;color:#90a4ae;font-size:10px;font-style:italic}}
 .cols{{display:flex;gap:16px;margin-bottom:16px}}
 .col{{flex:1;background:white;border-radius:8px;padding:14px 18px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
 .col h3{{margin:0 0 10px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:6px}}
@@ -341,7 +354,10 @@ table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
       <tr><td>{i18n.t('html_rx_height')}</td><td>{h_rx:.1f} m</td></tr>
       <tr><td>{i18n.t('html_slant_dist')}</td><td>{result.slant_dist_km:.3f} km</td></tr>
       <tr><td>{i18n.t('html_horiz_dist')}</td><td>{terrain.horiz_dist_km:.3f} km</td></tr>
+      <tr><td>{i18n.t('html_aim_tx')}</td><td>{az_tx_rx:.1f}° / {el_tx_rx:+.1f}°</td></tr>
+      <tr><td>{i18n.t('html_aim_rx')}</td><td>{az_rx_tx:.1f}° / {el_rx_tx:+.1f}°</td></tr>
     </table>
+    <p class="aim-note">{i18n.t('html_aim_note')}</p>
     <h3 style="margin-top:14px">{i18n.t('html_radio_settings')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
