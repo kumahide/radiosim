@@ -364,7 +364,6 @@ table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
       <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
       <tr><td>{i18n.t('html_tx_gain')}</td><td>{params.gain_tx} dBi</td></tr>
       <tr><td>{i18n.t('html_rx_gain')}</td><td>{params.gain_rx} dBi</td></tr>
-      <tr><td>{i18n.t('html_sensitivity')}</td><td>{params.sens} dBm</td></tr>
     </table>
   </div>
   <div class="col">
@@ -387,8 +386,6 @@ table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
     <table class="info">
       <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
       <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
-      <tr><td>{i18n.t('html_k_factor')}</td><td>{result.current_k:.1f}</td></tr>
-      <tr><td>{i18n.t('html_f1_obstruct')}</td><td>{result.blocked_ratio:.1f} %</td></tr>
       <tr><td>{i18n.t('html_rain_rate')}</td><td>{params.rain_rate} mm/h</td></tr>
     </table>
   </div>
