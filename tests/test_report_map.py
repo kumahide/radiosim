@@ -166,11 +166,12 @@ class TestRenderPathMap:
         assert isinstance(img, Image.Image)
         assert img.width > img.height
 
-    def test_output_aspect_matches_profile(self, monkeypatch):
-        # 出力の幅/高さ ≈ 15:6（断面図と同じ＝レポートで高さが揃う）。
+    def test_output_aspect_is_15_5(self, monkeypatch):
+        # 出力の幅/高さ ≈ 15:5（断面図 15:6 より横長＝A4 縦1枚に収めるため地図側を
+        # 詰めた設計。経路の水平/垂直の対応は上下配置で保つ）。
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
-        assert img.width / img.height == pytest.approx(15 / 6, rel=0.03)
+        assert img.width / img.height == pytest.approx(15 / 5, rel=0.03)
 
     def test_no_gray_fill_after_rotation(self, monkeypatch):
         # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない

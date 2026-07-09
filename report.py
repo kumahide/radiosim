@@ -56,14 +56,14 @@ def _a4_base_css() -> str:
 *{box-sizing:border-box}
 .sheet{background:#fff}
 .page-header{display:flex;justify-content:space-between;align-items:flex-end;
-  border-bottom:2px solid #455a64;padding-bottom:6px;margin-bottom:14px}
+  border-bottom:2px solid #455a64;padding-bottom:6px;margin-bottom:12px}
 .page-header .ph-left{min-width:0}
 .page-header .proj-name{font-size:12px;color:#455a64;font-weight:bold;margin-bottom:2px}
 .page-header .proj-name:empty{display:none}
 .page-header .ph-title{font-size:18px;font-weight:bold;color:#222;margin:0}
 .page-header .ph-right{text-align:right;font-size:10px;color:#888;
   white-space:nowrap;padding-left:12px}
-.page-footer{margin-top:16px;padding-top:6px;border-top:1px solid #ddd;
+.page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;
   color:#aaa;font-size:10px;display:flex;justify-content:space-between}
 @media screen{
   body{background:#e9e9e9;margin:0;padding:0}
@@ -111,6 +111,55 @@ def _page_footer() -> str:
         f'<span>{i18n.t("html_batch_mode")}</span>'
         '</footer>'
     )
+
+
+def _fit_to_page_script() -> str:
+    """per-path を A4 縦1枚に収める「縮小フィット」スクリプトを返す。
+
+    ページ読込後（画像レイアウト確定後）に本文 `.fit` の実高を測り、A4 印字域より高い
+    分だけ `transform: scale()` で縮小する。収まる内容なら等倍（無変化）、はみ出す時
+    だけ数 % 縮む。境界ギリギリの内容差・環境差に依らず常に1枚を保証する。
+
+    要点は「transform は見た目だけでレイアウト高＝改ページに効かない」ことへの対策：
+    親 `.fit-outer` の高さを固定し overflow:hidden する。これで親は固定高しか占有せず、
+    印刷の改ページは1頁で確定する（Chromium は流し込みコンテンツ＋zoom を改ページに
+    反映しないため zoom は使わない）。
+
+    縮小は幅を触らない一様スケール（transform-origin 左上）にする。幅を 1/scale に広げて
+    横いっぱいに戻す小細工は、幅 100% の画像（断面図・地図）まで一緒に拡大して縦にも
+    伸び、計測した高さと食い違ってフッタがはみ出す（クリップされる）ため使わない。
+    一様スケール中は右側にわずかな余白が出るが、確実に全要素が1枚に収まる方を採る。
+
+    肝は「縮小目標高」と「クリップ箱高」を分けること。画面 scrollHeight は印刷の実寸
+    より数 mm 低く出るため、縮小は厳しめ（安全 8mm＝261mm 目標）にし、クリップ箱は
+    それより緩い（安全 1mm＝268mm）に取る。こうすると印刷での縮小後コンテンツは箱に
+    収まってクリップされず、箱は印字域（269mm）内なので1頁で確定する。内容が元々収まる
+    時は縮小も箱固定もせず等倍（無変化）。
+    """
+    return '''<script>
+(function(){
+  function fit(){
+    var el=document.querySelector(".fit");
+    if(!el) return;
+    var outer=el.parentNode;
+    el.style.transform="none";
+    outer.style.height=""; outer.style.overflow="";
+    var pxPerMm=96/25.4;
+    var target=(297-28-8)*pxPerMm;   /* 縮小目標高（厳しめ・安全 8mm） */
+    var box=(297-28-1)*pxPerMm;      /* クリップ箱高（緩め・安全 1mm） */
+    var h=el.scrollHeight;
+    if(h>target){
+      var s=target/h;
+      el.style.transformOrigin="top left";
+      el.style.transform="scale("+s+")";
+      outer.style.height=box+"px";
+      outer.style.overflow="hidden";
+    }
+  }
+  if(document.readyState==="complete") fit();
+  else window.addEventListener("load", fit);
+})();
+</script>'''
 
 
 def save_path_visuals(pr: PathResult, coord_format: str = "dd",
@@ -272,11 +321,6 @@ def save_path_html(
     model_label = i18n.t("html_model_deygout") if result.diff_method == "deygout" else i18n.t("html_model_single")
     env_label   = i18n.t(f"env_{result.env_type}")
 
-    terrain_rows = "\n".join(
-        f"<tr><td>{d:.4f}</td><td>{h:.2f}</td></tr>"
-        for d, h in zip(terrain.d_km_axis, terrain.raw_elevs)
-    )
-
     # A-0 アンテナ初期指向（AZ/EL）。既存データ（座標・アンテナ高・地形標高・地球
     # 曲率）から幾何計算する純関数の表示（新規入力ゼロ）。両端で別値＝AZ は大圏逆
     # 方位（単純な ±180° でない）、EL は高低差項のみ反転（曲率で双方同じだけ沈む）。
@@ -309,29 +353,25 @@ def save_path_html(
 <style>
 {_a4_base_css()}
 body{{font-family:Arial,sans-serif;font-size:13px}}
-.cards{{display:flex;gap:12px;margin-bottom:16px;break-inside:avoid}}
-.card{{background:white;border:1px solid #eee;border-radius:8px;padding:12px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
-.card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
-.card .val{{font-size:22px;font-weight:bold;color:#333}}
+.cards{{display:flex;gap:12px;margin-bottom:10px;break-inside:avoid}}
+.card{{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
+.card .lbl{{font-size:9px;color:#999;text-transform:uppercase}}
+.card .val{{font-size:15px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}
-.graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:16px}}
-.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}}
+.graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:10px}}
+.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:10px}}
 .aim-note{{margin:6px 2px 0;color:#90a4ae;font-size:10px;font-style:italic}}
-.cols{{display:flex;gap:16px;margin-bottom:16px}}
-.col{{flex:1;background:white;border-radius:8px;padding:14px 18px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-.col h3{{margin:0 0 10px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:6px}}
+.cols{{display:flex;gap:16px;margin-bottom:10px}}
+.col{{flex:1;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+.col h3{{margin:0 0 8px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:5px}}
 table.info{{border-collapse:collapse;width:100%}}
-table.info td{{padding:4px 6px;border-bottom:1px solid #f0f0f0;font-size:12px}}
+table.info td{{padding:3px 6px;border-bottom:1px solid #f0f0f0;font-size:12px}}
 table.info td:first-child{{color:#888;width:50%}}
-details{{background:white;border-radius:8px;padding:10px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-summary{{cursor:pointer;font-weight:bold;color:#455a64;font-size:12px}}
-table.terrain{{border-collapse:collapse;width:100%;margin-top:8px;font-size:11px}}
-table.terrain th{{background:#455a64;color:white;padding:4px 8px;text-align:left}}
-table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
 </style>
 </head>
 <body>
 <div class="sheet">
+<div class="fit-outer"><div class="fit">
 {_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc, project_name)}
 
 <div class="cards">
@@ -391,18 +431,10 @@ table.terrain td{{padding:3px 8px;border-bottom:1px solid #eee}}
   </div>
 </div>
 
-<details>
-<summary>{i18n.t('html_terrain_data')} ({terrain.num_samples} points)</summary>
-<table class="terrain">
-<thead><tr><th>{i18n.t('html_dist_col')}</th><th>{i18n.t('html_elev_col')}</th></tr></thead>
-<tbody>
-{terrain_rows}
-</tbody>
-</table>
-</details>
-
 {_page_footer()}
+</div></div>
 </div>
+{_fit_to_page_script()}
 </body>
 </html>"""
 
