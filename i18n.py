@@ -242,9 +242,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_type":        "Env Type",
         "html_diff_model":      "Diff Model",
         "html_rain_rate":       "Rain Rate",
-        "html_terrain_data":    "Terrain Profile Data",
-        "html_dist_col":        "Distance (km)",
-        "html_elev_col":        "Elevation (m)",
         "html_model_deygout":   "Deygout",
         "html_model_single":    "Single",
 
@@ -582,9 +579,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_type":        "環境区分",
         "html_diff_model":      "回折モデル",
         "html_rain_rate":       "降雨強度",
-        "html_terrain_data":    "地形断面データ",
-        "html_dist_col":        "距離 (km)",
-        "html_elev_col":        "標高 (m)",
         "html_model_deygout":   "Deygout",
         "html_model_single":    "Single",
 
