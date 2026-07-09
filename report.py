@@ -73,7 +73,7 @@ def _a4_base_css() -> str:
 @media print{
   body{background:#fff;margin:0}
   .sheet{width:auto;min-height:0;padding:0;margin:0;box-shadow:none}
-  @page{size:A4 portrait;margin:14mm}
+  @page{size:A4 portrait;margin:14mm 14mm 8mm}
   img{break-inside:avoid}
   thead{display:table-header-group}
 }
@@ -121,9 +121,13 @@ def _fit_to_page_script() -> str:
     だけ数 % 縮む。境界ギリギリの内容差・環境差に依らず常に1枚を保証する。
 
     要点は「transform は見た目だけでレイアウト高＝改ページに効かない」ことへの対策：
-    親 `.fit-outer` の高さを固定し overflow:hidden する。これで親は固定高しか占有せず、
-    印刷の改ページは1頁で確定する（Chromium は流し込みコンテンツ＋zoom を改ページに
-    反映しないため zoom は使わない）。
+    親 `.fit-outer` の高さを固定し overflow:hidden する。これで親は固定高しか占有せず
+    はみ出しも切られ、改ページは1頁で確定する（Chromium は流し込みコンテンツ＋zoom を
+    改ページに反映しないため zoom は使わない）。
+
+    右寄せは translateX＋scale（左上基点）で行い、右端ピッタリではなく数 px 内側に置く。
+    overflow:hidden は左右もクリップするため、右端ピッタリだと右カラムの枠線・影が切れる。
+    数 px のガター（右）を空けてクリップ境界の内側に収める。横の余白の大半は左に出る。
 
     縮小は幅を触らない一様スケール（transform-origin 左上）にする。幅を 1/scale に広げて
     横いっぱいに戻す小細工は、幅 100% の画像（断面図・地図）まで一緒に拡大して縦にも
@@ -131,10 +135,13 @@ def _fit_to_page_script() -> str:
     一様スケール中は右側にわずかな余白が出るが、確実に全要素が1枚に収まる方を採る。
 
     肝は「縮小目標高」と「クリップ箱高」を分けること。画面 scrollHeight は印刷の実寸
-    より数 mm 低く出るため、縮小は厳しめ（安全 8mm＝261mm 目標）にし、クリップ箱は
-    それより緩い（安全 1mm＝268mm）に取る。こうすると印刷での縮小後コンテンツは箱に
-    収まってクリップされず、箱は印字域（269mm）内なので1頁で確定する。内容が元々収まる
-    時は縮小も箱固定もせず等倍（無変化）。
+    より数 mm 低く出るため、縮小は厳しめ（安全 8mm）にし、クリップ箱はそれより緩い
+    （安全 1mm）に取る。こうすると印刷での縮小後コンテンツは箱に収まってクリップされず、
+    箱は印字域内なので1頁で確定する。内容が元々収まる時は縮小も箱固定もせず等倍。
+
+    印字域は @page 余白（上 14mm・下 8mm）に合わせて 297−14−8=275mm。下余白を詰めた
+    ぶん縮小目標が印字域に近づき、縦の下部余白が減る。transform-origin は top right＝
+    右寄せなので、縮小で生じる横余白は左側に出る。
     """
     return '''<script>
 (function(){
@@ -145,13 +152,15 @@ def _fit_to_page_script() -> str:
     el.style.transform="none";
     outer.style.height=""; outer.style.overflow="";
     var pxPerMm=96/25.4;
-    var target=(297-28-8)*pxPerMm;   /* 縮小目標高（厳しめ・安全 8mm） */
-    var box=(297-28-1)*pxPerMm;      /* クリップ箱高（緩め・安全 1mm） */
+    var target=(297-14-8-8)*pxPerMm;   /* 縮小目標高（印字域275−安全8mm） */
+    var box=(297-14-8-1)*pxPerMm;      /* クリップ箱高（印字域275−安全1mm） */
     var h=el.scrollHeight;
     if(h>target){
       var s=target/h;
+      var gutter=6;                    /* 右枠線・影がクリップされないための右ガター(px) */
+      var tx=outer.clientWidth*(1-s)-gutter;   /* 右寄せ量＝横余白の大半を左へ */
       el.style.transformOrigin="top left";
-      el.style.transform="scale("+s+")";
+      el.style.transform="translateX("+tx+"px) scale("+s+")";
       outer.style.height=box+"px";
       outer.style.overflow="hidden";
     }
