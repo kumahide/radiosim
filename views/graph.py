@@ -27,6 +27,7 @@ import mpl_fonts
 import report
 import simulation as sim
 import version
+from views import dialogs
 
 logger = logging.getLogger("radiosim")
 
@@ -74,6 +75,10 @@ class _GraphWindow:
         self._terrain = terrain
         self._last_result: models.LinkBudgetResult | None = None
         self._pending_timer = None
+        # レポート保存時に入力する任意メタ（案件名・自由メモ）。セッション内の
+        # 直近入力を保持し、次回保存時にプリフィルする。
+        self._report_project = ""
+        self._report_memo    = ""
 
         self._fig, self._ax = plt.subplots(figsize=(15, 8))
         plt.subplots_adjust(left=0.07, right=0.77, top=0.88, bottom=0.26)
@@ -417,6 +422,16 @@ class _GraphWindow:
                 i18n.t("dlg_not_ready_msg"),
             )
             return
+        # 保存前に任意メタ（案件名・自由メモ）を尋ねる。キャンセルなら保存中止。
+        # バックエンドは TkAgg 固定（モジュール冒頭 matplotlib.use）なので canvas は
+        # FigureCanvasTkAgg＝get_tk_widget を持つ（基底型には無いため type: ignore）。
+        tk_parent = self._fig.canvas.get_tk_widget()  # type: ignore[attr-defined]
+        meta = dialogs.prompt_report_meta(
+            tk_parent, self._report_project, self._report_memo
+        )
+        if meta is None:
+            return
+        self._report_project, self._report_memo = meta
         try:
             self._params.rain_rate = self._slider_rain.val
             h_tx = self._slider_htx.val
@@ -435,6 +450,7 @@ class _GraphWindow:
             report.save_profile_png(
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir, coord_format,
+                self._report_project, self._report_memo,
             )
             report.save_path_kml(
                 self._terrain, self._last_result, self._params,
