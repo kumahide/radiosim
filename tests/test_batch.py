@@ -554,8 +554,9 @@ class TestSummaryGainColumns:
         report.save_summary_html([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             html = f.read()
-        assert "TX Gain (dBi)" in html
-        assert "RX Gain (dBi)" in html
+        # 単位は 2 行目（.u span）へ分離されるので、名前と単位を個別に確認する。
+        assert 'TX Gain<span class="u">(dBi)</span>' in html
+        assert 'RX Gain<span class="u">(dBi)</span>' in html
 
 
 # ============================================================
@@ -931,6 +932,16 @@ class TestSummaryPathsMap:
         assert "border-right:1px solid" in html          # 列の縦罫線
         assert ".page-footer{margin-top:auto}" in html   # フッタを下端へ
         assert "flex-direction:column" in html
+
+    def test_summary_header_unit_on_second_line(self, tmp_path, default_params_dict):
+        # ヘッダの単位（"… (dBm)"）は 2 行目（.u span）へ落とす＝ヘッダ幅を名前だけで
+        # 決めさせ、桁の大きい値を含む行でも表が印字域に収まりやすくする。
+        # （_summary_html は en 固定なので英語ヘッダで確認する。）
+        html = self._summary_html(tmp_path, self._results(default_params_dict), None)
+        assert 'RX<span class="u">(dBm)</span>' in html
+        assert "th .u{display:block" in html
+        # 単位の無いヘッダ（ID）は素のまま。
+        assert "<th>ID</th>" in html
 
     def test_specs_carry_coords_status_and_label(self, monkeypatch,
                                                  default_params_dict):
