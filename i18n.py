@@ -37,6 +37,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_ok":               "OK",
         "dlg_yes":              "Yes",
         "dlg_no":               "No",
+        "dlg_cancel":           "Cancel",
+        "dlg_report_meta_title": "Report Info",
 
         # ===== Launcher =====
         "grp_site_info":        " Site Info ",
@@ -377,6 +379,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_ok":               "OK",
         "dlg_yes":              "はい",
         "dlg_no":               "いいえ",
+        "dlg_cancel":           "キャンセル",
+        "dlg_report_meta_title": "レポート情報",
 
         # ===== Launcher =====
         "grp_site_info":        " サイト情報 ",
