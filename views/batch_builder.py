@@ -997,9 +997,12 @@ class BatchBuilderWindow(tk.Toplevel):
                                  self._project_name_var.get().strip())
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
+        # 全パス俯瞰地図（ベストエフォート・失敗時 None → summary は注記のみ）。
+        map_b64 = report.render_summary_map_b64(results)
         report.save_summary_html(results, batch_dir,
                                  self._project_name_var.get().strip(),
-                                 self._memo_var.get().strip())
+                                 self._memo_var.get().strip(),
+                                 map_b64)
         report.save_summary_kml(results, batch_dir)
         self._running = False
         self._run_btn.config(state="normal")
