@@ -621,9 +621,21 @@ body{{font-family:Arial,sans-serif;font-size:13px}}
    折り返してよいのは長いヘッダ（単位付き）と自由文の備考だけ。数値セルは
    overflow-wrap を効かせない（"5800.0" が "5800 / .0" と分断されるのを防ぐ）。 */
 table.summary{{border-collapse:collapse;width:100%;table-layout:fixed;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-table.summary th{{background:#455a64;color:white;padding:5px 3px;text-align:left;font-size:8px;overflow-wrap:anywhere}}
-table.summary td{{padding:4px 3px;border-bottom:1px solid #eee;font-size:9px}}
-table.summary td.c-note{{overflow-wrap:anywhere}}
+/* ヘッダは中央・下揃えで、行の折り返しは text-wrap:balance で均等化する
+   （"受信レ/ベル" のように上下段の字数が偏るのを避ける）。overflow-wrap:anywhere は
+   使わない＝"(dBi)"/"(km)" のラテン単位トークンが途中で割れて読みにくいため。 */
+table.summary th{{background:#455a64;color:white;padding:5px 4px;text-align:center;
+  vertical-align:bottom;line-height:1.25;font-size:8px;text-wrap:balance;
+  border-right:1px solid rgba(255,255,255,.22)}}
+/* 数値セルは右寄せ＋折り返し禁止で列内に整列させ、隣接列とは縦罫線で仕切る
+   （path04 のような桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに
+   見えないようにする）。ID・備考は左寄せ、備考のみ自由文なので折り返し可。 */
+table.summary td{{padding:4px 4px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
+  font-size:8.5px;text-align:right;white-space:nowrap}}
+table.summary th:last-child,table.summary td:last-child{{border-right:none}}
+table.summary td.c-id{{text-align:left}}
+table.summary td.c-status{{text-align:center}}
+table.summary td.c-note{{text-align:left;white-space:normal;overflow-wrap:anywhere}}
 table.summary tr{{break-inside:avoid}}
 /* ID・判定・備考・グラフは固有幅、残る 15 の数値列は均等（fixed の均等割りだと
    最長の "5800.0" が入らないため、周波数だけ少し広げる）。 */
@@ -631,6 +643,13 @@ table.summary col.c-id{{width:5%}}table.summary col.c-status{{width:5.5%}}
 table.summary col.c-freq{{width:5.5%}}
 table.summary col.c-note{{width:8%}}table.summary col.c-graph{{width:8%}}
 table.summary td img{{max-width:100%;height:auto}}
+/* フッタを用紙の最下部へ。.sheet を縦フレックスにして .page-footer を margin-top:auto で
+   押し下げる（画面は .sheet が 297mm 高なので下端へ／印刷は下記 min-height で1枚目を
+   用紙高に合わせる）。summary 専用＝per-path はフッタが縮小フィット .fit の内側にあり
+   別扱い（ページ最下部固定は縮小スケールと競合するため触らない）。 */
+.sheet{{display:flex;flex-direction:column}}
+.page-footer{{margin-top:auto}}
+@media print{{.sheet{{min-height:calc(297mm - 14mm - 8mm)}}}}
 tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec}}
 .s-ok{{color:#2e7d32;font-weight:bold}}.s-ng{{color:#c62828;font-weight:bold}}.s-err{{color:#bf360c;font-weight:bold}}
 .report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}}

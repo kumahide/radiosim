@@ -922,8 +922,17 @@ class TestSummaryPathsMap:
         html = self._summary_html(tmp_path, self._results(default_params_dict), None)
         assert "table-layout:fixed" in html
         assert '<col class="c-id">' in html
-        # 数値セルは折り返さない（"5800.0" が分断されない）＝備考のみ anywhere。
-        assert "table.summary td.c-note{overflow-wrap:anywhere}" in html
+        # 数値セルは折り返さない（"5800.0" が分断されない）＝備考のみ折り返し可。
+        assert "white-space:nowrap" in html
+        assert "text-align:left;white-space:normal;overflow-wrap:anywhere" in html
+
+    def test_summary_columns_are_separated_and_footer_pinned(self, tmp_path,
+                                                             default_params_dict):
+        # 隣接列の値が地続きに見えないよう縦罫線で仕切る／フッタは用紙最下部へ。
+        html = self._summary_html(tmp_path, self._results(default_params_dict), None)
+        assert "border-right:1px solid" in html          # 列の縦罫線
+        assert ".page-footer{margin-top:auto}" in html   # フッタを下端へ
+        assert "flex-direction:column" in html
 
     def test_specs_carry_coords_status_and_label(self, monkeypatch,
                                                  default_params_dict):
