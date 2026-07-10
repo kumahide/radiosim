@@ -614,34 +614,35 @@ body{{font-family:Arial,sans-serif;font-size:13px}}
 .card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
 .card .val{{font-size:28px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}.card.err .val{{color:#e65100}}
-/* 台帳は 20 列あり、A4 印字域（182mm）に必ず収める必要がある。table-layout:fixed
-   ＋ width:100% で列幅を紙幅に従わせ（内容が幅を決めない）。per-path の縮小フィット
-   （transform）は使えない＝transform は改ページに効かず、パス数が多く表が次ページへ
-   流れるケースで内容が切れてしまうため。
-   折り返してよいのは長いヘッダ（単位付き）と自由文の備考だけ。数値セルは
-   overflow-wrap を効かせない（"5800.0" が "5800 / .0" と分断されるのを防ぐ）。 */
-table.summary{{border-collapse:collapse;width:100%;table-layout:fixed;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-/* ヘッダは中央・下揃えで、行の折り返しは text-wrap:balance で均等化する
-   （"受信レ/ベル" のように上下段の字数が偏るのを避ける）。overflow-wrap:anywhere は
-   使わない＝"(dBi)"/"(km)" のラテン単位トークンが途中で割れて読みにくいため。 */
-table.summary th{{background:#455a64;color:white;padding:5px 4px;text-align:center;
-  vertical-align:bottom;line-height:1.25;font-size:8px;text-wrap:balance;
+/* 台帳は 20 列あり A4 印字域（182mm）に収める必要がある。**table-layout:auto**＝
+   各列を内容の実幅（nowrap）に合わせて配分する。以前の table-layout:fixed（等幅）は
+   狭い列にヘッダ日本語が押し込まれて語中で折れ（"受信レ/ベル"）、長い数値
+   （"-1672.4"）がセル幅を超えて罫線からはみ出した。auto＋小さめフォント（ヘッダ 8px／
+   データ 9px）なら、極端値（受信レベル -1871.0 等）を含む行でも 1 行に収まり 1 枚に
+   納まることを実測（Edge --print-to-pdf）。値が空の列は詰まり、桁の大きい列へ幅が回る。
+   なお元のはみ出しバグの主因は「フォントが大きい＋等幅」で、auto 化＋縮小で解消する。
+   per-path の縮小フィット（transform）は使えない＝改ページに効かず表が切れるため。 */
+table.summary{{border-collapse:collapse;width:100%;table-layout:auto;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+/* ヘッダは中央・下揃え・**折り返し禁止**（列幅は内容に追従するので語中で折れない）。 */
+table.summary th{{background:#455a64;color:white;padding:4px 5px;text-align:center;
+  vertical-align:bottom;font-size:8px;white-space:nowrap;
   border-right:1px solid rgba(255,255,255,.22)}}
 /* 数値セルは右寄せ＋折り返し禁止で列内に整列させ、隣接列とは縦罫線で仕切る
-   （path04 のような桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに
-   見えないようにする）。ID・備考は左寄せ、備考のみ自由文なので折り返し可。 */
-table.summary td{{padding:4px 4px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
-  font-size:8.5px;text-align:right;white-space:nowrap}}
+   （桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに見えないように）。
+   ID・判定は左/中央、備考のみ自由文なので折り返し可。 */
+table.summary td{{padding:4px 5px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
+  font-size:9px;text-align:right;white-space:nowrap}}
 table.summary th:last-child,table.summary td:last-child{{border-right:none}}
 table.summary td.c-id{{text-align:left}}
 table.summary td.c-status{{text-align:center}}
-table.summary td.c-note{{text-align:left;white-space:normal;overflow-wrap:anywhere}}
+/* 備考は自由文。overflow-wrap:break-word で**空白で折り返す**（"ridge crossing" が
+   "ridg/e cros/sing" と語中で割れないように）。長い連続語だけ必要時に分割する。 */
+table.summary td.c-note{{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:break-word}}
 table.summary tr{{break-inside:avoid}}
-/* ID・判定・備考・グラフは固有幅、残る 15 の数値列は均等（fixed の均等割りだと
-   最長の "5800.0" が入らないため、周波数だけ少し広げる）。 */
-table.summary col.c-id{{width:5%}}table.summary col.c-status{{width:5.5%}}
-table.summary col.c-freq{{width:5.5%}}
-table.summary col.c-note{{width:8%}}table.summary col.c-graph{{width:8%}}
+/* 備考（自由文）とグラフだけ幅を抑える（auto だと長い備考が幅を奪いすぎるため）。
+   数値・ID 列は幅指定せず内容に追従させる。 */
+table.summary col.c-note{{width:90px}}table.summary col.c-graph{{width:46px}}
 table.summary td img{{max-width:100%;height:auto}}
 /* フッタを用紙の最下部へ。.sheet を縦フレックスにして .page-footer を margin-top:auto で
    押し下げる（画面は .sheet が 297mm 高なので下端へ／印刷は下記 min-height で1枚目を
