@@ -215,3 +215,135 @@ class TestRenderPathMap:
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         b64 = report_map.render_path_map_b64((34.54, 132.41), (34.53, 132.40))
         assert isinstance(b64, str) and len(b64) > 0
+
+
+# ============================================================
+# 全パス1枚地図（_bbox_px / choose_zoom_paths / render_paths_map）
+# ============================================================
+def _specs(*triples) -> list[report_map.PathSpec]:
+    return [report_map.PathSpec(tx=tx, rx=rx, status=st, label=lb)
+            for tx, rx, st, lb in triples]
+
+
+_TWO_PATHS = _specs(
+    ((34.54, 132.41), (34.50, 132.37), "OK", "P1"),
+    ((34.46, 132.30), (34.40, 132.20), "NG", "P2"),
+)
+
+
+class TestBboxPx:
+
+    def test_all_endpoints_inside_box(self):
+        box = report_map._bbox_px(_TWO_PATHS, 13, 0.15)
+        for spec in _TWO_PATHS:
+            for lat, lon in (spec.tx, spec.rx):
+                px, py = dem.lonlat_to_pixel(lat, lon, 13)
+                assert abs(px - box.cx) <= box.half_w + 1e-6
+                assert abs(py - box.cy) <= box.half_h + 1e-6
+
+    def test_box_aspect_matches_requested(self):
+        for aspect in (15 / 7, 2.0, 1.0):
+            box = report_map._bbox_px(_TWO_PATHS, 13, 0.15, aspect)
+            assert box.half_w / box.half_h == pytest.approx(aspect)
+
+    def test_degenerate_single_point_has_minimum_extent(self):
+        # 全端点が同一（退化）でも最小半幅が確保され破綻しない。
+        p = (34.54, 132.41)
+        box = report_map._bbox_px(_specs((p, p, "OK", "P1")), 14, 0.15)
+        assert box.half_w >= report_map._MIN_HALF_PX
+        assert box.half_h > 0
+
+    def test_aspect_fit_only_expands(self):
+        # 縦長に散らばる端点でも、アスペクト合わせは広い側に合わせて拡張する
+        # （縮めない）＝どの端点も枠内に残る。回帰ガード。
+        tall = _specs(((34.30, 132.40), (34.70, 132.40), "OK", "P1"))
+        box  = report_map._bbox_px(tall, 12, 0.15)
+        px, py = dem.lonlat_to_pixel(34.70, 132.40, 12)
+        assert abs(py - box.cy) <= box.half_h + 1e-6
+
+
+class TestChooseZoomPaths:
+
+    def test_tile_count_within_cap(self):
+        z = report_map.choose_zoom_paths(_TWO_PATHS, max_tiles=16)
+        x0, x1, y0, y1 = report_map._bbox_tiles(
+            report_map._bbox_px(_TWO_PATHS, z, 0.15)
+        )
+        assert (x1 - x0 + 1) * (y1 - y0 + 1) <= 16
+
+    def test_tighter_cluster_gets_higher_or_equal_zoom(self):
+        near = report_map.choose_zoom_paths(
+            _specs(((34.540, 132.410), (34.539, 132.409), "OK", "P1")))
+        far = report_map.choose_zoom_paths(
+            _specs(((34.9, 132.9), (34.1, 132.1), "OK", "P1")))
+        assert near >= far
+
+
+class TestRenderPathsMap:
+
+    def _fake_tile(self, *args, **kwargs):
+        return np.full((256, 256, 3), 200, dtype=np.uint8)
+
+    def test_returns_image_with_expected_aspect(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_paths_map(_TWO_PATHS)
+        assert isinstance(img, Image.Image)
+        assert img.mode == "RGB"
+        assert img.width / img.height == pytest.approx(15 / 7, rel=0.03)
+
+    def test_no_gray_fill_in_output(self, monkeypatch):
+        # north-up＝タイル格子と平行に切り出すので欠け（_MISSING_RGB）は出ない。
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_paths_map(_TWO_PATHS)
+        fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
+        assert int(fill.sum()) == 0
+
+    def test_status_colors_are_drawn(self, monkeypatch):
+        # OK（緑）と NG（赤）の線が両方とも画素として現れる＝台帳の行色と対応。
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_paths_map(_TWO_PATHS)
+        arr = np.asarray(img)
+        for status in ("OK", "NG"):
+            rgb = map_graphics.STATUS_RGB[status]
+            assert np.any(np.all(arr == rgb, axis=2)), f"{status} 色の線が無い"
+
+    def test_error_path_is_drawn(self, monkeypatch):
+        # 計算に失敗した ERROR 行も座標は既知なので地図には描く。
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_paths_map(
+            _specs(((34.54, 132.41), (34.50, 132.37), "ERROR", "P1")))
+        arr = np.asarray(img)
+        assert np.any(np.all(arr == map_graphics.STATUS_RGB["ERROR"], axis=2))
+
+    def test_empty_paths_returns_none(self):
+        assert report_map.render_paths_map([]) is None
+
+    def test_returns_none_when_all_tiles_fail(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
+        assert report_map.render_paths_map(_TWO_PATHS) is None
+
+    def test_returns_none_when_fetch_rate_below_threshold(self, monkeypatch):
+        def _half(layer, zoom, x, y, *args, **kwargs):
+            return self._fake_tile() if (x + y) % 2 == 0 else None
+
+        monkeypatch.setattr(dem, "_fetch_tile", _half)
+        assert report_map.render_paths_map(_TWO_PATHS, min_fetch_frac=0.6) is None
+
+    def test_many_paths_render_without_labels(self, monkeypatch):
+        # ラベル上限超過でも例外なく描ける（地図が文字で埋まらないよう落とす）。
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        many = _specs(*[
+            ((34.50 + i * 0.002, 132.40), (34.50 + i * 0.002, 132.41), "OK", f"P{i}")
+            for i in range(report_map._MAX_PATH_LABELS + 2)
+        ])
+        img = report_map.render_paths_map(many)
+        assert isinstance(img, Image.Image)
+
+    def test_b64_wrapper_returns_string(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        b64 = report_map.render_paths_map_b64(_TWO_PATHS)
+        assert isinstance(b64, str) and len(b64) > 0
+
+    def test_b64_wrapper_none_when_render_fails(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
+        assert report_map.render_paths_map_b64(_TWO_PATHS) is None

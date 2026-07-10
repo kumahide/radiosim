@@ -871,3 +871,74 @@ class TestParseCsvOptionalColumns:
     def test_optional_float_blank_is_none(self):
         row = batch._parse_csv_row(self._raw(gain_tx="", freq=" "), line=2)
         assert row.gain_tx is None and row.freq_mhz is None
+
+
+# ============================================================
+# レポート v2 ＝ summary の全パス俯瞰地図（スライス③a）
+# ============================================================
+class TestSummaryPathsMap:
+    """summary.html への地図埋め込みと、PathResult → PathSpec の詰め替え。
+
+    地図生成そのもの（幾何・描画）は tests/test_report_map.py が受け持つ。
+    ここでは配線＝「どの座標・状態・ラベルを渡すか」と HTML の分岐を検証する。
+    """
+
+    def _results(self, default_params_dict) -> list:
+        params = sim.SimParams(default_params_dict)
+        ok_row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        er_row = batch.PathRow("p02", 34.46, 132.30, 34.40, 132.20, 30.0, 10.0)
+        return [
+            batch.PathResult(row=ok_row, result=_make_result(), params=params),
+            batch.PathResult(row=er_row, result=None, params=None,
+                             error=RuntimeError("boom")),
+        ]
+
+    def _summary_html(self, tmp_path, results, map_b64) -> str:
+        i18n.set_lang("en")
+        report.save_summary_html(results, str(tmp_path), map_b64=map_b64)
+        with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_map_embedded_when_available(self, tmp_path, default_params_dict):
+        html = self._summary_html(tmp_path, self._results(default_params_dict), "MAPB64")
+        assert 'class="paths-map" src="data:image/png;base64,MAPB64"' in html
+        assert 'class="map-note"' not in html   # CSS 定義そのものは常にある
+
+    def test_note_shown_when_map_unavailable(self, tmp_path, default_params_dict):
+        html = self._summary_html(tmp_path, self._results(default_params_dict), None)
+        assert "base64,None" not in html
+        assert 'class="map-note"' in html
+
+    def test_map_precedes_table_on_page_one(self, tmp_path, default_params_dict):
+        # 地図は p1 のカード下・台帳の上（表が次ページへ流れても繰り返さない）。
+        html = self._summary_html(tmp_path, self._results(default_params_dict), "MAPB64")
+        assert html.index("paths-map") < html.index('<table class="summary"')
+
+    def test_table_is_width_constrained_to_the_sheet(self, tmp_path,
+                                                     default_params_dict):
+        # 20 列の台帳が A4 印字域を超えて右が切れないこと。列幅を紙幅に従わせる
+        # （table-layout:fixed＋colgroup）のが唯一の担保＝縮小フィット（transform）は
+        # 表が次ページへ流れるケースで使えない。回帰ガード。
+        html = self._summary_html(tmp_path, self._results(default_params_dict), None)
+        assert "table-layout:fixed" in html
+        assert '<col class="c-id">' in html
+        # 数値セルは折り返さない（"5800.0" が分断されない）＝備考のみ anywhere。
+        assert "table.summary td.c-note{overflow-wrap:anywhere}" in html
+
+    def test_specs_carry_coords_status_and_label(self, monkeypatch,
+                                                 default_params_dict):
+        captured = {}
+
+        def _fake(specs, **kwargs):
+            captured["specs"] = specs
+            return "MAPB64"
+
+        monkeypatch.setattr(report.report_map, "render_paths_map_b64", _fake)
+        assert report.render_summary_map_b64(self._results(default_params_dict)) == "MAPB64"
+
+        ok, err = captured["specs"]
+        assert (ok.tx, ok.rx) == ((34.54, 132.41), (34.53, 132.40))
+        assert (ok.status, ok.label) == ("OK", "p01")
+        # 計算に失敗した行も座標は PathRow に凍結済み → 地図には ERROR 色で描く。
+        assert (err.tx, err.rx) == ((34.46, 132.30), (34.40, 132.20))
+        assert (err.status, err.label) == ("ERROR", "p02")
