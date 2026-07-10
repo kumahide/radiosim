@@ -18,6 +18,15 @@ UISP_CYAN     = (25, 181, 230)     # RGB
 UISP_CYAN_HEX = "#19B5E6"
 MARKER_TEXT   = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
 
+# 判定ステータス別の経路色。summary.html の台帳（tr.ok / tr.ng / tr.err と
+# .s-ok / .s-ng / .s-err）と同じ色を使い、全パス地図の線と表の行が同じ色で
+# 対応づくようにする（色の定義は HTML/PIL で二重管理せずここを単一ソースとする）。
+STATUS_RGB = {
+    "OK":    (46, 125, 50),    # #2e7d32
+    "NG":    (198, 40, 40),    # #c62828
+    "ERROR": (191, 54, 12),    # #bf360c
+}
+
 
 def node_icon(hollow: bool) -> Image.Image:
     """UISP 風のノードアイコン（RGBA PIL Image）を生成する。
@@ -90,6 +99,19 @@ def distance_badge(text: str) -> Image.Image:
 
     淡色地図上でテキストを読みやすくするため、テキストごと PIL で描く。
     """
+    return pill_badge(text)
+
+
+def pill_badge(
+    text: str, *,
+    outline: tuple[int, int, int] = UISP_CYAN,
+    text_color: "str | tuple[int, int, int]" = MARKER_TEXT,
+) -> Image.Image:
+    """テキストを半透明の角丸ピル背景に載せたバッジ画像（RGBA）を生成する。
+
+    枠・文字の色を渡せる（既定＝距離バッジの淡シアン）。全パス地図の path_id
+    ラベルはステータス色（STATUS_RGB）を渡して台帳の行色と対応づける。
+    """
     scale = 2
     try:
         font = ImageFont.truetype("arialbd.ttf", 13 * scale)
@@ -106,12 +128,12 @@ def distance_badge(text: str) -> Image.Image:
     w, h = int(tw + padx * 2), int(th + pady * 2)
     img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
-    # 半透明の白ピル＋淡シアン枠。淡色地図でも経路線上で読める。
+    # 半透明の白ピル＋枠。淡色地図でも経路線上で読める。
     d.rounded_rectangle(
         [0, 0, w - 1, h - 1], radius=h / 2,
-        fill=(255, 255, 255, 215), outline=UISP_CYAN + (255,), width=scale,
+        fill=(255, 255, 255, 215), outline=outline + (255,), width=scale,
     )
-    d.text((padx - l, pady - t), text, font=font, fill=MARKER_TEXT)
+    d.text((padx - l, pady - t), text, font=font, fill=text_color)
     return img.resize((w // scale, h // scale), Image.Resampling.LANCZOS)
 
 
