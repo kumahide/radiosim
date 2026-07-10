@@ -208,6 +208,7 @@ def save_profile_png(
     save_dir: str,
     coord_format: str = "dd",
     project_name: str = "",
+    memo: str = "",
 ) -> None:
     """
     地形断面 PNG をバックグラウンドスレッドから保存する。
@@ -300,7 +301,7 @@ def save_profile_png(
     )
 
     save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64,
-                   coord_format, project_name)
+                   coord_format, project_name, memo)
 
 
 def save_path_html(
@@ -314,13 +315,16 @@ def save_path_html(
     map_b64:  "str | None" = None,
     coord_format: str = "dd",
     project_name: str = "",
+    memo: str = "",
 ) -> None:
     """per-path の report.html を生成する（グラフ・地図は Base64 埋め込み）。
 
     map_b64 が None のとき（タイル取得失敗）は地図を省き注記を表示する。
     coord_format は人が読む座標セルのみに効く（"dd"|"dms"）。CSV/KML/settings は
     再読込・規格のため DD 固定。既定 DD でヘッドレス呼び出しは表示設定に非依存。
-    project_name はヘッダの案件名（自由文字列・空で従来表示）。
+    project_name はヘッダの案件名（自由文字列・空で従来表示）。memo は自由メモ
+    （非空時のみヘッダ直下に小ブロック表示）。バッチの per-path は行ごとにメモを持つ
+    設計ではないので既定は空＝従来どおり非表示、単一レポートの保存時のみ使う。
     """
     tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
@@ -354,6 +358,16 @@ def save_path_html(
             f'<p class="map-note">{_html.escape(i18n.t("html_map_unavailable"))}</p>'
         )
 
+    # 自由メモ（非空時のみヘッダ直下に小ブロック表示）。summary と同じ体裁。
+    if memo:
+        memo_block = (
+            f'<div class="report-memo">'
+            f'<span class="rm-label">{i18n.t("html_report_memo")}</span> '
+            f'{_html.escape(memo)}</div>'
+        )
+    else:
+        memo_block = ""
+
     html = f"""<!DOCTYPE html>
 <html lang="{i18n.t('html_lang')}">
 <head>
@@ -362,6 +376,8 @@ def save_path_html(
 <style>
 {_a4_base_css()}
 body{{font-family:Arial,sans-serif;font-size:13px}}
+.report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:6px 10px;margin-bottom:10px;font-size:11px;color:#37474f;break-inside:avoid}}
+.report-memo .rm-label{{color:#90a4ae;font-weight:bold;margin-right:4px}}
 .cards{{display:flex;gap:12px;margin-bottom:10px;break-inside:avoid}}
 .card{{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
 .card .lbl{{font-size:9px;color:#999;text-transform:uppercase}}
@@ -382,7 +398,7 @@ table.info td:first-child{{color:#888;width:50%}}
 <div class="sheet">
 <div class="fit-outer"><div class="fit">
 {_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc, project_name)}
-
+{memo_block}
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>
   <div class="card"><div class="lbl">{i18n.t('html_rx_level')}</div><div class="val">{result.p_rx:.1f} dBm</div></div>

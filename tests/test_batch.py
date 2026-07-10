@@ -664,6 +664,26 @@ class TestReportV2CaseInfo:
         html = self._path_html(tmp_path, flat_terrain, default_params_dict, "")
         assert '<div class="proj-name"></div>' in html
 
+    def test_memo_in_path_report_when_provided(self, tmp_path, flat_terrain,
+                                               default_params_dict):
+        # 単一レポート（save_path_html）に memo を渡すとヘッダ直下に表示される。
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None, memo="ridge line survey",
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            html = f.read()
+        assert '<div class="report-memo">' in html
+        assert "ridge line survey" in html
+
+    def test_no_memo_block_when_empty(self, tmp_path, flat_terrain,
+                                      default_params_dict):
+        # memo 空（既定・バッチの per-path 相当）ではメモブロックを出さない。
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict, "")
+        assert '<div class="report-memo">' not in html
+
     def test_memo_in_summary_only_when_present(self, tmp_path, default_params_dict):
         # ".report-memo" は CSS 定義に常在するため、メモ本体の div で判定する。
         html = self._summary_html(tmp_path, default_params_dict, memo="Rainy season margin")
