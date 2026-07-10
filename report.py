@@ -494,13 +494,35 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                 ])
 
 
+def render_summary_map_b64(results: list[PathResult]) -> "str | None":
+    """全パスを1枚に俯瞰する地図（summary 用）を生成し base64 で返す。失敗時 None。
+
+    座標は PathRow（実行前に凍結済み）から取るため、計算に失敗した ERROR 行も
+    地図には描ける。ステータスは summary 台帳の行色と同じ配色で塗り分ける。
+    """
+    specs = [
+        report_map.PathSpec(
+            tx=(pr.row.lat_tx, pr.row.lon_tx),
+            rx=(pr.row.lat_rx, pr.row.lon_rx),
+            status=(pr.result.status if pr.result is not None else "ERROR"),
+            label=pr.row.path_id,
+        )
+        for pr in results
+    ]
+    return report_map.render_paths_map_b64(specs)
+
+
 def save_summary_html(results: list[PathResult], batch_dir: str,
-                      project_name: str = "", memo: str = "") -> None:
+                      project_name: str = "", memo: str = "",
+                      map_b64: "str | None" = None) -> None:
     """バッチの summary.html を生成する。
 
     project_name はヘッダの案件名、memo はサーベイ全体の自由メモ（どちらも
     ユーザー入力の自由文字列・空で従来表示）。memo は非空時のみ p1 のヘッダ直下に
     小ブロックとして表示する（サーベイ全体の注記＝summary のみ）。
+    map_b64 は全パス俯瞰地図（render_summary_map_b64 の戻り）。None のときは
+    地図を省き注記を表示する（per-path の save_path_html と同じベストエフォート）。
+    地図は p1 のみ＝表が次ページへ流れても繰り返さない。
     """
     ok_count  = sum(1 for pr in results if pr.result is not None and pr.result.status == "OK")
     ng_count  = sum(1 for pr in results if pr.result is not None and pr.result.status != "OK")
@@ -526,7 +548,7 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
                 f"<td>{freq_disp}</td><td>{gain_tx_disp}</td><td>{gain_rx_disp}</td>"
                 f"<td>{h_tx_disp}</td><td>{h_rx_disp}</td>"
                 f"<td colspan='11'>{error_esc}</td>"
-                f"<td>{note_esc}</td>"
+                f"<td class='c-note'>{note_esc}</td>"
                 f"<td></td></tr>\n"
             )
             continue
@@ -552,9 +574,9 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{r.slant_dist_km:.3f}</td>"
             f"<td>{r.blocked_ratio:.1f}</td>"
-            f"<td>{note_esc}</td>"
+            f"<td class='c-note'>{note_esc}</td>"
             f"<td><a href='{pid_safe}/report.html'>"
-            f"<img src='{pid_safe}/profile.png' style='max-height:60px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"
+            f"<img src='{pid_safe}/profile.png' style='max-height:40px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"
             f"</a></td></tr>\n"
         )
 
@@ -567,6 +589,17 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
         )
     else:
         memo_block = ""
+
+    # 全パス俯瞰地図（p1 のみ）。取得失敗時は地図を省いて注記を出す。
+    if map_b64:
+        map_block = (
+            f'<img class="paths-map" src="data:image/png;base64,{map_b64}" '
+            f'alt="{_html.escape(i18n.t("html_map_title"))}">'
+        )
+    else:
+        map_block = (
+            f'<p class="map-note">{_html.escape(i18n.t("html_map_unavailable"))}</p>'
+        )
 
     html = f"""<!DOCTYPE html>
 <html lang="{i18n.t('html_lang')}">
@@ -581,14 +614,29 @@ body{{font-family:Arial,sans-serif;font-size:13px}}
 .card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
 .card .val{{font-size:28px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}.card.err .val{{color:#e65100}}
-table.summary{{border-collapse:collapse;width:100%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-table.summary th{{background:#455a64;color:white;padding:7px 10px;text-align:left;font-size:11px;white-space:nowrap}}
-table.summary td{{padding:5px 10px;border-bottom:1px solid #eee;font-size:12px;white-space:nowrap}}
+/* 台帳は 20 列あり、A4 印字域（182mm）に必ず収める必要がある。table-layout:fixed
+   ＋ width:100% で列幅を紙幅に従わせ（内容が幅を決めない）。per-path の縮小フィット
+   （transform）は使えない＝transform は改ページに効かず、パス数が多く表が次ページへ
+   流れるケースで内容が切れてしまうため。
+   折り返してよいのは長いヘッダ（単位付き）と自由文の備考だけ。数値セルは
+   overflow-wrap を効かせない（"5800.0" が "5800 / .0" と分断されるのを防ぐ）。 */
+table.summary{{border-collapse:collapse;width:100%;table-layout:fixed;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+table.summary th{{background:#455a64;color:white;padding:5px 3px;text-align:left;font-size:8px;overflow-wrap:anywhere}}
+table.summary td{{padding:4px 3px;border-bottom:1px solid #eee;font-size:9px}}
+table.summary td.c-note{{overflow-wrap:anywhere}}
 table.summary tr{{break-inside:avoid}}
+/* ID・判定・備考・グラフは固有幅、残る 15 の数値列は均等（fixed の均等割りだと
+   最長の "5800.0" が入らないため、周波数だけ少し広げる）。 */
+table.summary col.c-id{{width:5%}}table.summary col.c-status{{width:5.5%}}
+table.summary col.c-freq{{width:5.5%}}
+table.summary col.c-note{{width:8%}}table.summary col.c-graph{{width:8%}}
+table.summary td img{{max-width:100%;height:auto}}
 tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec}}
 .s-ok{{color:#2e7d32;font-weight:bold}}.s-ng{{color:#c62828;font-weight:bold}}.s-err{{color:#bf360c;font-weight:bold}}
 .report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}}
 .report-memo .rm-label{{color:#90a4ae;font-weight:bold;margin-right:4px}}
+.paths-map{{display:block;width:100%;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px;break-inside:avoid}}
+.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}}
 </style>
 </head>
 <body>
@@ -601,7 +649,13 @@ tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec
   <div class="card ng"><div class="lbl">{i18n.t('html_ng')}</div><div class="val">{ng_count}</div></div>
   <div class="card err"><div class="lbl">{i18n.t('html_error')}</div><div class="val">{err_count}</div></div>
 </div>
+{map_block}
 <table class="summary">
+<colgroup>
+  <col class="c-id"><col class="c-status"><col class="c-freq">
+  <col><col><col><col><col><col><col><col><col><col><col><col><col><col><col>
+  <col class="c-note"><col class="c-graph">
+</colgroup>
 <thead>
 <tr>
   <th>{i18n.t('html_col_id')}</th><th>{i18n.t('html_col_status')}</th>
