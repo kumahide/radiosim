@@ -494,6 +494,36 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                 ])
 
 
+# 台帳ヘッダの並び（i18n キー・列順は tbody の <td> と一致させること）。
+_SUMMARY_COL_KEYS = (
+    "html_col_id", "html_col_status", "html_col_freq",
+    "html_col_gain_tx", "html_col_gain_rx", "html_col_h_tx", "html_col_h_rx",
+    "html_col_rx", "html_col_margin", "html_col_fspl", "html_col_diff",
+    "html_col_veg", "html_col_env", "html_col_rain", "html_col_gas",
+    "html_col_total_loss", "html_col_slant", "html_col_f1",
+    "html_col_note", "html_col_graph",
+)
+
+
+def _summary_header_cells() -> str:
+    """台帳の <th> 群を返す。単位（"… (dBm)"）は 2 行目へ落とす。
+
+    "受信レベル (dBm)" のように "名前 (単位)" 形式のヘッダは、単位を `.u`（改行＋
+    小さめ）で 2 行目に置く。これで各ヘッダの必要幅が max(名前, 単位) に縮み
+    （名前と単位を横に並べない）、列が横に広がりにくく表が印字域に収まりやすい。
+    単位の無いヘッダ（ID・判定・備考・グラフ等）はそのまま 1 行。
+    """
+    cells = []
+    for key in _SUMMARY_COL_KEYS:
+        label = i18n.t(key)
+        if label.endswith(")") and " (" in label:
+            name, unit = label.split(" (", 1)
+            cells.append(f'<th>{name}<span class="u">({unit}</span></th>')
+        else:
+            cells.append(f"<th>{label}</th>")
+    return "".join(cells)
+
+
 def render_summary_map_b64(results: list[PathResult]) -> "str | None":
     """全パスを1枚に俯瞰する地図（summary 用）を生成し base64 で返す。失敗時 None。
 
@@ -624,13 +654,15 @@ body{{font-family:Arial,sans-serif;font-size:13px}}
    per-path の縮小フィット（transform）は使えない＝改ページに効かず表が切れるため。 */
 table.summary{{border-collapse:collapse;width:100%;table-layout:auto;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
 /* ヘッダは中央・下揃え・**折り返し禁止**（列幅は内容に追従するので語中で折れない）。 */
-table.summary th{{background:#455a64;color:white;padding:4px 5px;text-align:center;
-  vertical-align:bottom;font-size:8px;white-space:nowrap;
+table.summary th{{background:#455a64;color:white;padding:4px 4px;text-align:center;
+  vertical-align:bottom;font-size:8px;white-space:nowrap;line-height:1.2;
   border-right:1px solid rgba(255,255,255,.22)}}
+/* 単位は 2 行目・小さめ・やや淡色（ヘッダ幅を名前だけで決めさせる）。 */
+table.summary th .u{{display:block;font-size:7px;font-weight:normal;opacity:.8}}
 /* 数値セルは右寄せ＋折り返し禁止で列内に整列させ、隣接列とは縦罫線で仕切る
    （桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに見えないように）。
    ID・判定は左/中央、備考のみ自由文なので折り返し可。 */
-table.summary td{{padding:4px 5px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
+table.summary td{{padding:4px 4px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
   font-size:9px;text-align:right;white-space:nowrap}}
 table.summary th:last-child,table.summary td:last-child{{border-right:none}}
 table.summary td.c-id{{text-align:left}}
@@ -677,18 +709,7 @@ tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec
   <col class="c-note"><col class="c-graph">
 </colgroup>
 <thead>
-<tr>
-  <th>{i18n.t('html_col_id')}</th><th>{i18n.t('html_col_status')}</th>
-  <th>{i18n.t('html_col_freq')}</th>
-  <th>{i18n.t('html_col_gain_tx')}</th><th>{i18n.t('html_col_gain_rx')}</th>
-  <th>{i18n.t('html_col_h_tx')}</th><th>{i18n.t('html_col_h_rx')}</th>
-  <th>{i18n.t('html_col_rx')}</th><th>{i18n.t('html_col_margin')}</th>
-  <th>{i18n.t('html_col_fspl')}</th><th>{i18n.t('html_col_diff')}</th>
-  <th>{i18n.t('html_col_veg')}</th><th>{i18n.t('html_col_env')}</th>
-  <th>{i18n.t('html_col_rain')}</th><th>{i18n.t('html_col_gas')}</th>
-  <th>{i18n.t('html_col_total_loss')}</th><th>{i18n.t('html_col_slant')}</th>
-  <th>{i18n.t('html_col_f1')}</th><th>{i18n.t('html_col_note')}</th><th>{i18n.t('html_col_graph')}</th>
-</tr>
+<tr>{_summary_header_cells()}</tr>
 </thead>
 <tbody>
 {rows_html}
