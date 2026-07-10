@@ -52,6 +52,7 @@ class BatchBuilderWindow(tk.Toplevel):
         parent: tk.Tk,
         base_params: sim.SimParams,
         config_provider: "Callable[[], dict] | None" = None,
+        meta_provider:   "Callable[[], dict] | None" = None,
         load_params:     "Callable[[dict], None] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
         on_paths_changed: "Callable[[], None] | None" = None,
@@ -67,6 +68,9 @@ class BatchBuilderWindow(tk.Toplevel):
 
         # ランチャー連携（凍結方式）。省略時は従来挙動（往復・凍結なし）。
         self._config_provider = config_provider
+        # 案件名・自由メモも Common Settings と同じくランチャー（source of truth）の
+        # スナップショット。省略時は空メタ。
+        self._meta_provider   = meta_provider
         self._load_params     = load_params
         # 閉じたときにランチャーへ通知するコールバック（地図の連続追加先を手放させる）。
         self._on_close        = on_close
@@ -113,28 +117,32 @@ class BatchBuilderWindow(tk.Toplevel):
     def _build_case_info(self) -> None:
         """案件名・自由メモ（レポートの自己同定ヘッダに載る任意メタ情報）。
 
-        RF/環境パラメータと違い計算には影響しない報告書メタなので、ランチャー凍結
-        （🔒）ではなくバッチ側で直接編集する自由文字列。数フィールド＋自由メモに厳格
-        限定（テンプレエディタ化しない）。案件名＝per-path/summary 両ヘッダ、メモ＝
-        summary のみ。sv_ttk テーマ追従のため素 tk でなく ttk.Entry を使う。
+        計算に影響しない報告書メタだが、**ランチャーが source of truth**＝Common
+        Settings と同じくランチャーのスナップショットを 🔒 読み取り専用で表示し、
+        「↻ランチャーから更新」で取り込む（シングルもバッチも同じ値を踏襲する）。
+        バッチ側で直接編集はしない（source of truth を2箇所に増やさない）。案件名＝
+        per-path/summary 両ヘッダ、メモ＝summary のみ。
         """
         frame = ttk.LabelFrame(self, text=i18n.t("batch_case_info"), padding=(8, 4))
         frame.pack(fill="x", padx=8, pady=(8, 0))
 
-        self._project_name_var = tk.StringVar()
-        self._memo_var         = tk.StringVar()
+        meta = self._meta_provider() if self._meta_provider is not None else {}
+        self._project_name_var = tk.StringVar(value=meta.get("project_name", ""))
+        self._memo_var         = tk.StringVar(value=meta.get("memo", ""))
 
         f_proj = ttk.Frame(frame)
         f_proj.pack(side="left", padx=6)
         ttk.Label(f_proj, text=i18n.t("batch_project_name"), font=("Arial", 8)).pack(side="left")
         ttk.Entry(f_proj, textvariable=self._project_name_var, font=("Arial", 8),
-                  width=20).pack(side="left", padx=(2, 0))
+                  width=20, state="readonly").pack(side="left", padx=(2, 0))
+        ttk.Label(f_proj, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
 
         f_memo = ttk.Frame(frame)
         f_memo.pack(side="left", padx=6, fill="x", expand=True)
         ttk.Label(f_memo, text=i18n.t("batch_memo"), font=("Arial", 8)).pack(side="left")
-        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 8)).pack(
-            side="left", padx=(2, 0), fill="x", expand=True)
+        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 8),
+                  state="readonly").pack(side="left", padx=(2, 0), fill="x", expand=True)
+        ttk.Label(f_memo, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
 
     def _build_common_settings(self) -> None:
         frame = ttk.LabelFrame(
@@ -234,7 +242,10 @@ class BatchBuilderWindow(tk.Toplevel):
             ).pack(side="right", padx=6)
 
     def _refresh_common_from_launcher(self) -> None:
-        """ランチャーの現在値で Common Settings を上書きする（凍結方式の取り込み）。"""
+        """ランチャーの現在値で Common Settings を上書きする（凍結方式の取り込み）。
+
+        案件名・自由メモ（案件情報）も同じスナップショットとして一緒に取り込む。
+        """
         if self._config_provider is None:
             return
         c = self._config_provider()
@@ -246,6 +257,10 @@ class BatchBuilderWindow(tk.Toplevel):
             self._env_key_to_label.get(env, self._env_key_to_label["los"])
         )
         self._diff_var.set(c.get("diff_method", self._diff_var.get()))
+        if self._meta_provider is not None:
+            meta = self._meta_provider()
+            self._project_name_var.set(meta.get("project_name", ""))
+            self._memo_var.set(meta.get("memo", ""))
 
     def _build_table(self) -> None:
         outer = ttk.Frame(self)
