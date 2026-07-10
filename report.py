@@ -640,9 +640,12 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
 {_a4_base_css()}
 body{{font-family:Arial,sans-serif;font-size:13px}}
 .cards{{display:flex;gap:12px;margin-bottom:20px;break-inside:avoid}}
-.card{{background:white;border:1px solid #eee;border-radius:8px;padding:14px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px}}
-.card .lbl{{font-size:10px;color:#999;text-transform:uppercase}}
-.card .val{{font-size:28px;font-weight:bold;color:#333}}
+/* カードの高さは per-path レポート（save_path_html）と揃える＝高さを決める
+   余白・ラベル/数値のフォントを per-path と同値にする（padding 6px・lbl 9px・
+   val 15px）。件数表示なので数値は小さめでも十分読める。 */
+.card{{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px}}
+.card .lbl{{font-size:9px;color:#999;text-transform:uppercase}}
+.card .val{{font-size:15px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}.card.err .val{{color:#e65100}}
 /* 台帳は 20 列あり A4 印字域（182mm）に収める必要がある。**table-layout:auto**＝
    各列を内容の実幅（nowrap）に合わせて配分する。以前の table-layout:fixed（等幅）は
