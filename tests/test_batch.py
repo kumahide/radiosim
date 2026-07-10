@@ -914,17 +914,15 @@ class TestSummaryPathsMap:
         html = self._summary_html(tmp_path, self._results(default_params_dict), "MAPB64")
         assert html.index("paths-map") < html.index('<table class="summary"')
 
-    def test_table_is_width_constrained_to_the_sheet(self, tmp_path,
-                                                     default_params_dict):
-        # 20 列の台帳が A4 印字域を超えて右が切れないこと。列幅を紙幅に従わせる
-        # （table-layout:fixed＋colgroup）のが唯一の担保＝縮小フィット（transform）は
-        # 表が次ページへ流れるケースで使えない。回帰ガード。
+    def test_table_uses_auto_layout_and_nowrap(self, tmp_path,
+                                               default_params_dict):
+        # 20 列の台帳は table-layout:auto で各列を内容幅に合わせる（ヘッダ・数値とも
+        # nowrap で折り返さない）。等幅 fixed だとヘッダが語中で折れ・長い数値が
+        # はみ出したため auto へ切替。備考のみ折り返し可（空白優先）。回帰ガード。
         html = self._summary_html(tmp_path, self._results(default_params_dict), None)
-        assert "table-layout:fixed" in html
-        assert '<col class="c-id">' in html
-        # 数値セルは折り返さない（"5800.0" が分断されない）＝備考のみ折り返し可。
+        assert "table-layout:auto" in html
         assert "white-space:nowrap" in html
-        assert "text-align:left;white-space:normal;overflow-wrap:anywhere" in html
+        assert "word-break:normal;overflow-wrap:break-word" in html
 
     def test_summary_columns_are_separated_and_footer_pinned(self, tmp_path,
                                                              default_params_dict):
