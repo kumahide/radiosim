@@ -27,7 +27,6 @@ import mpl_fonts
 import report
 import simulation as sim
 import version
-from views import dialogs
 
 logger = logging.getLogger("radiosim")
 
@@ -37,13 +36,18 @@ def _apply_font() -> None:
     mpl_fonts.apply_japanese_font()
 
 
-def show_graph(params: sim.SimParams, raw_elevs: np.ndarray) -> None:
+def show_graph(
+    params: sim.SimParams, raw_elevs: np.ndarray,
+    project_name: str = "", memo: str = "",
+) -> None:
     """
     地形断面グラフウィンドウを開く（ブロッキング）。
 
     Args:
-        params:    シミュレーションパラメータ
-        raw_elevs: 取得済み生標高配列
+        params:       シミュレーションパラメータ
+        raw_elevs:    取得済み生標高配列
+        project_name: レポートの案件名（ランチャーから踏襲・空可）
+        memo:         レポートの自由メモ（ランチャーから踏襲・空可）
     """
     _apply_font()
     terrain = models.calculate_terrain_profile(
@@ -53,7 +57,7 @@ def show_graph(params: sim.SimParams, raw_elevs: np.ndarray) -> None:
         lat_rx    = params.lat_rx,
         lon_rx    = params.lon_rx,
     )
-    _GraphWindow(params, terrain).show()
+    _GraphWindow(params, terrain, project_name, memo).show()
 
 
 # ============================================================
@@ -70,15 +74,18 @@ class _GraphWindow:
     # 等価地球曲率注記を出す最小経路長 [km]（これ未満はふくらみが視認できず注記不要）
     _CURVE_NOTE_MIN_KM = 30.0
 
-    def __init__(self, params: sim.SimParams, terrain: models.TerrainProfile) -> None:
+    def __init__(
+        self, params: sim.SimParams, terrain: models.TerrainProfile,
+        project_name: str = "", memo: str = "",
+    ) -> None:
         self._params  = params
         self._terrain = terrain
         self._last_result: models.LinkBudgetResult | None = None
         self._pending_timer = None
-        # レポート保存時に入力する任意メタ（案件名・自由メモ）。セッション内の
-        # 直近入力を保持し、次回保存時にプリフィルする。
-        self._report_project = ""
-        self._report_memo    = ""
+        # レポートの任意メタ（案件名・自由メモ）はランチャー（source of truth）から
+        # 踏襲する。保存時に自前で聞かず、この値をそのまま使う。
+        self._report_project = project_name
+        self._report_memo    = memo
 
         self._fig, self._ax = plt.subplots(figsize=(15, 8))
         plt.subplots_adjust(left=0.07, right=0.77, top=0.88, bottom=0.26)
@@ -422,16 +429,6 @@ class _GraphWindow:
                 i18n.t("dlg_not_ready_msg"),
             )
             return
-        # 保存前に任意メタ（案件名・自由メモ）を尋ねる。キャンセルなら保存中止。
-        # バックエンドは TkAgg 固定（モジュール冒頭 matplotlib.use）なので canvas は
-        # FigureCanvasTkAgg＝get_tk_widget を持つ（基底型には無いため type: ignore）。
-        tk_parent = self._fig.canvas.get_tk_widget()  # type: ignore[attr-defined]
-        meta = dialogs.prompt_report_meta(
-            tk_parent, self._report_project, self._report_memo
-        )
-        if meta is None:
-            return
-        self._report_project, self._report_memo = meta
         try:
             self._params.rain_rate = self._slider_rain.val
             h_tx = self._slider_htx.val

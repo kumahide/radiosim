@@ -149,6 +149,7 @@ class SimLauncher:
         self._build_site_group(container)
         self._build_radio_group(container)
         self._build_env_group(container)
+        self._build_case_group(container)
         self._build_status(container)
         self._build_buttons(container)
 
@@ -421,6 +422,45 @@ class SimLauncher:
         ]:
             self._add_row(g, i18n.t(lbl_key), entry_key)
 
+    def _build_case_group(self, parent: tk.Widget) -> None:
+        """案件名・自由メモ（レポートの自己同定ヘッダに載る任意メタ情報）。
+
+        RF/環境パラメータと同じく **ランチャーが source of truth**。ここで一度入力すれば
+        シングル（保存時）もバッチ（Common Settings と同じくスナップショット）も同じ値を
+        踏襲する。計算には影響しない報告書メタ（数フィールド＋自由メモに厳格限定＝
+        テンプレエディタ化しない）。セッション内保持で永続化はしない。
+        """
+        g = ttk.LabelFrame(parent, text=i18n.t("batch_case_info"), padding=5)
+        g.pack(fill="x", pady=5)
+
+        self._project_var = tk.StringVar()
+        self._memo_var    = tk.StringVar()
+
+        f_proj = ttk.Frame(g)
+        f_proj.pack(fill="x", pady=2, padx=10)
+        ttk.Label(f_proj, text=i18n.t("batch_project_name"), width=22, anchor="w",
+                  font=("Arial", 9)).pack(side="left")
+        ttk.Entry(f_proj, textvariable=self._project_var, font=("Arial", 9)).pack(
+            side="right", expand=True, fill="x")
+
+        f_memo = ttk.Frame(g)
+        f_memo.pack(fill="x", pady=2, padx=10)
+        ttk.Label(f_memo, text=i18n.t("batch_memo"), width=22, anchor="w",
+                  font=("Arial", 9)).pack(side="left")
+        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 9)).pack(
+            side="right", expand=True, fill="x")
+
+    def _current_meta(self) -> dict[str, str]:
+        """レポート用の任意メタ（案件名・自由メモ）の現在値を返す。
+
+        バッチが Common Settings と同じく「ランチャー（source of truth）の
+        スナップショット」として取り込むための provider。
+        """
+        return {
+            "project_name": self._project_var.get().strip(),
+            "memo":         self._memo_var.get().strip(),
+        }
+
     def _build_status(self, parent: tk.Widget) -> None:
         self.prog_label = ttk.Label(parent, text=i18n.t("status_ready"), font=("Arial", 9))
         self.prog_label.pack(pady=(10, 0))
@@ -640,7 +680,8 @@ class SimLauncher:
         # matplotlib/pyplot/TkAgg/numpy はここで初めて要る（ランチャー表示前に
         # ロードしないため遅延 import。MapWindow/BatchBuilder と同じ方針）
         from views.graph import show_graph
-        show_graph(params, raw_elevs)
+        meta = self._current_meta()
+        show_graph(params, raw_elevs, meta["project_name"], meta["memo"])
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._alert(i18n.t("dlg_error"), str(ex))
@@ -927,6 +968,7 @@ class SimLauncher:
         self._batch_win = BatchBuilderWindow(
             self.root, params,
             config_provider=self._current_config,
+            meta_provider=self._current_meta,
             load_params=self.load_batch_row,
             on_close=self._on_batch_closed,
             on_paths_changed=self._notify_map_paths_changed,
