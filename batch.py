@@ -31,8 +31,8 @@ _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 # path_id・備考の最大文字数。長すぎる値は summary 台帳の列幅を押し広げ A4 レイアウトを
 # 崩すため、実行前の validate_rows で弾く（手入力・CSV 取込の共通チョークポイント）。
-_MAX_PATH_ID_LEN = 24
-_MAX_NOTE_LEN    = 60
+_MAX_PATH_ID_LEN = 16
+_MAX_NOTE_LEN    = 40
 
 
 # ============================================================
