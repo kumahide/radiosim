@@ -148,6 +148,20 @@ class TestValidateRows:
         errs = batch.validate_rows([_row(h_tx=999.0, h_rx=999.0)])
         assert len(errs) >= 2
 
+    def test_path_id_too_long_rejected(self):
+        errs = batch.validate_rows([_row(path_id="p" * (batch._MAX_PATH_ID_LEN + 1))])
+        assert any("too long" in e for e in errs)
+
+    def test_path_id_at_max_length_accepted(self):
+        assert batch.validate_rows([_row(path_id="p" * batch._MAX_PATH_ID_LEN)]) == []
+
+    def test_note_too_long_rejected(self):
+        errs = batch.validate_rows([_row(note="x" * (batch._MAX_NOTE_LEN + 1))])
+        assert any("Note too long" in e for e in errs)
+
+    def test_note_at_max_length_accepted(self):
+        assert batch.validate_rows([_row(note="x" * batch._MAX_NOTE_LEN)]) == []
+
     def test_freq_in_range_boundary_low(self):
         assert batch.validate_rows([_row(freq_mhz=1.0)]) == []
 

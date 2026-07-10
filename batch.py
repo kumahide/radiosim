@@ -29,6 +29,11 @@ logger = __import__("logging").getLogger("radiosim")
 
 _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
+# path_id・備考の最大文字数。長すぎる値は summary 台帳の列幅を押し広げ A4 レイアウトを
+# 崩すため、実行前の validate_rows で弾く（手入力・CSV 取込の共通チョークポイント）。
+_MAX_PATH_ID_LEN = 24
+_MAX_NOTE_LEN    = 60
+
 
 # ============================================================
 # データ構造
@@ -184,6 +189,12 @@ def validate_rows(rows: list[PathRow]) -> list[str]:
         if not _PATH_ID_RE.fullmatch(pid):
             errors.append(i18n.t("verr_invalid_id").format(pid=repr(pid)))
             continue
+        if len(pid) > _MAX_PATH_ID_LEN:
+            errors.append(i18n.t("verr_id_too_long").format(
+                pid=pid, max=_MAX_PATH_ID_LEN, n=len(pid)))
+        if len(r.note) > _MAX_NOTE_LEN:
+            errors.append(i18n.t("verr_note_too_long").format(
+                pid=pid, max=_MAX_NOTE_LEN, n=len(r.note)))
         coords = [r.lat_tx, r.lon_tx, r.lat_rx, r.lon_rx, r.h_tx, r.h_rx]
         if any(math.isnan(v) for v in coords):
             errors.append(i18n.t("verr_invalid_coord").format(pid=pid))
