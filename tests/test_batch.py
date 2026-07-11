@@ -608,14 +608,21 @@ class TestReportV2A4Skeleton:
         # 自己同定ヘッダ/フッタ
         assert "page-header" in html
         assert "page-footer" in html
-        # 案件名は本スライスでは空スロット（データ配線は次スライス）
-        assert 'class="proj-name"' in html
+        # ヘッダのタイトル行（案件名 - タイトルの1行）
+        assert 'class="ph-title"' in html
 
     def test_path_html_has_a4_frame(self, tmp_path, flat_terrain, default_params_dict):
-        self._assert_a4_frame(self._path_html(tmp_path, flat_terrain, default_params_dict))
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict)
+        self._assert_a4_frame(html)
+        # per-path（単一）レポートのフッタは「個別」＝バッチ固定ラベルにしない
+        assert "Single Mode" in html
+        assert "Batch Mode" not in html
 
     def test_summary_html_has_a4_frame(self, tmp_path, default_params_dict):
-        self._assert_a4_frame(self._summary_html(tmp_path, default_params_dict))
+        html = self._summary_html(tmp_path, default_params_dict)
+        self._assert_a4_frame(html)
+        # summary（一括）レポートのフッタはバッチ
+        assert "Batch Mode" in html
 
     def test_summary_table_repeats_header_and_avoids_row_break(
         self, tmp_path, default_params_dict
@@ -652,17 +659,47 @@ class TestReportV2CaseInfo:
 
     def test_project_name_in_path_header(self, tmp_path, flat_terrain, default_params_dict):
         html = self._path_html(tmp_path, flat_terrain, default_params_dict, "Site A Survey")
-        assert '<div class="proj-name">Site A Survey</div>' in html
+        # 案件名 - タイトル の1行表示
+        assert '<p class="ph-title">Site A Survey - Radio Link Report</p>' in html
 
     def test_project_name_in_summary_header(self, tmp_path, default_params_dict):
         html = self._summary_html(tmp_path, default_params_dict, project_name="Site A Survey")
-        assert '<div class="proj-name">Site A Survey</div>' in html
+        assert '<p class="ph-title">Site A Survey - Batch Simulation Report</p>' in html
 
-    def test_empty_project_name_leaves_slot_empty(self, tmp_path, flat_terrain,
-                                                  default_params_dict):
-        # 空案件名は従来どおり空スロット（:empty で CSS 非表示）
+    def test_batch_report_id_in_path_header(self, tmp_path, flat_terrain, default_params_dict):
+        # バッチ per-path は report_id（path_id）をタイトル末尾に残す。単一は付けない。
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None,
+            project_name="Site A Survey", report_id="P1",
+        )
+        html = (tmp_path / "report.html").read_text(encoding="utf-8")
+        assert '<p class="ph-title">Site A Survey - Radio Link Report — P1</p>' in html
+
+    def test_single_doc_title_excludes_save_dir(self, tmp_path, flat_terrain,
+                                                default_params_dict):
+        # <title>（ブラウザタブ／印刷PDF既定名）は「案件名 - タイトル」で、
+        # 単一レポートの save_dir 名（タイムスタンプ）を露出させない。
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        report.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None, project_name="Site A Survey",
+        )
+        html = (tmp_path / "report.html").read_text(encoding="utf-8")
+        assert "<title>Site A Survey - Radio Link Report</title>" in html
+        # save_dir のベース名（実運用ではタイムスタンプ）が <title> に出ない
+        doc_title = html.split("</title>")[0]
+        assert os.path.basename(str(tmp_path)) not in doc_title
+
+    def test_empty_project_name_shows_title_only(self, tmp_path, flat_terrain,
+                                                 default_params_dict):
+        # 空案件名なら「案件名 - 」の接頭辞なし＝タイトルのみ
         html = self._path_html(tmp_path, flat_terrain, default_params_dict, "")
-        assert '<div class="proj-name"></div>' in html
+        assert '<p class="ph-title">Radio Link Report</p>' in html
+        assert " - Radio Link Report" not in html
 
     def test_memo_in_path_report_when_provided(self, tmp_path, flat_terrain,
                                                default_params_dict):
@@ -724,12 +761,22 @@ class TestReportV2AzEl:
         with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
             return f.read()
 
-    def test_az_el_labels_and_note_present(self, tmp_path, flat_terrain, default_params_dict):
+    def test_az_el_labels_and_note_absent(self, tmp_path, flat_terrain, default_params_dict):
         html = self._path_html(tmp_path, flat_terrain, default_params_dict)
-        assert "Initial aim TX&rarr;RX" in html or "Initial aim TX→RX" in html
-        assert "Initial aim RX&rarr;TX" in html or "Initial aim RX→TX" in html
-        # 初期指向注記（哲学：最終調整は現場 RSSI で）
-        assert "maximizing on-site RSSI" in html
+        assert "TX aim" in html
+        assert "RX aim" in html
+        # 注記はレポートから削除（磁北・RSSI の説明は README のみに記載）
+        assert "aim-note" not in html
+        assert "maximizing on-site RSSI" not in html
+
+    def test_link_budget_digit_alignment(self, tmp_path, flat_terrain, default_params_dict):
+        # リンクバジェットの桁揃え＝数値と単位を分離（右寄せ tabular-nums・単位固定幅列）
+        html = self._path_html(tmp_path, flat_terrain, default_params_dict)
+        assert 'td.n{text-align:right' in html            # 数値列は右寄せ
+        assert 'tabular-nums' in html                     # 桁幅を揃える
+        assert '<td class="n">' in html                   # 値セルに桁揃えクラス
+        assert '<span class="u">dBm</span>' in html       # 単位を分離（固定幅列で整列）
+        assert '<span class="u">dB</span>' in html
 
     def test_az_el_values_match_models(self, tmp_path, flat_terrain, default_params_dict):
         # 配線が models の純関数と一致すること（両端で別値＝AZ 逆方位・EL 高低差反転）

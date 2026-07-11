@@ -203,7 +203,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== HTML per-path report =====
         "html_path_title":      "Radio Link Report",
         "html_generated":       "Generated",
-        "html_batch_mode":      "Batch Mode",  # HTML footer
+        "html_batch_mode":      "Batch Mode",  # HTML footer (summary)
+        "html_single_mode":     "Single Mode",  # HTML footer (per-path)
         "html_report_memo":     "Note:",
 
         "html_status":          "Status",
@@ -217,9 +218,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_rx_height":       "RX Height",
         "html_slant_dist":      "Slant Dist",
         "html_horiz_dist":      "Horiz Dist",
-        "html_aim_tx":          "Initial aim TX→RX (AZ/EL)",
-        "html_aim_rx":          "Initial aim RX→TX (AZ/EL)",
-        "html_aim_note":        "Initial pointing only — do final alignment by maximizing on-site RSSI.",
+        "html_aim_tx":          "TX aim (AZ/EL)",
+        "html_aim_rx":          "RX aim (AZ/EL)",
         "html_map_title":       "Path Map",
         "html_map_unavailable": "Map unavailable (tiles could not be fetched).",
         "html_radio_settings":  "Radio Settings",
@@ -235,7 +235,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_loss":        "Env Loss",
         "html_rain_loss":       "Rain Loss",
         "html_gas_loss":        "Gas Loss",
-        "html_total_loss_row":  "Total Loss",
         "html_rx_ant_gain":     "RX Ant. Gain",
         "html_threshold":       "Threshold",
         "html_environment":     "Environment",
@@ -544,6 +543,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_path_title":      "無線回線レポート",
         "html_generated":       "生成日時",
         "html_batch_mode":      "一括シミュレーション",
+        "html_single_mode":     "個別シミュレーション",
         "html_report_memo":     "メモ:",
         "html_status":          "判定",
         "html_rx_level":        "受信レベル",
@@ -556,9 +556,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_rx_height":       "受信アンテナ高",
         "html_slant_dist":      "斜距離",
         "html_horiz_dist":      "水平距離",
-        "html_aim_tx":          "初期指向 TX→RX (AZ/EL)",
-        "html_aim_rx":          "初期指向 RX→TX (AZ/EL)",
-        "html_aim_note":        "初期指向の目安です。最終調整は現場で RSSI が最大になる向きに合わせてください。",
+        "html_aim_tx":          "TX指向 (AZ/EL)",
+        "html_aim_rx":          "RX指向 (AZ/EL)",
         "html_map_title":       "経路地図",
         "html_map_unavailable": "地図は取得できませんでした（タイル未取得）。",
         "html_radio_settings":  "無線設定",
@@ -574,7 +573,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_loss":        "環境損失",
         "html_rain_loss":       "降雨損失",
         "html_gas_loss":        "大気損失",
-        "html_total_loss_row":  "総損失",
         "html_rx_ant_gain":     "受信アンテナ利得",
         "html_threshold":       "受信感度",
         "html_environment":     "伝搬環境",

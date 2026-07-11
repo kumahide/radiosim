@@ -57,16 +57,16 @@ def _a4_base_css() -> str:
 .sheet{background:#fff}
 .page-header{display:flex;justify-content:space-between;align-items:flex-end;
   border-bottom:2px solid #455a64;padding-bottom:6px;margin-bottom:12px}
-.page-header .ph-left{min-width:0}
-.page-header .proj-name{font-size:12px;color:#455a64;font-weight:bold;margin-bottom:2px}
-.page-header .proj-name:empty{display:none}
-.page-header .ph-title{font-size:18px;font-weight:bold;color:#222;margin:0}
+.page-header .ph-title{font-size:18px;font-weight:bold;color:#222;margin:0;min-width:0}
 .page-header .ph-right{text-align:right;font-size:10px;color:#888;
   white-space:nowrap;padding-left:12px}
 .page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;
   color:#aaa;font-size:10px;display:flex;justify-content:space-between}
 @media screen{
-  body{background:#e9e9e9;margin:0;padding:0}
+  /* min-width:max-content ＝ 窓が A4 幅(210mm)より狭くても body が内容幅まで広がり、
+     中央寄せシートが左へはみ出して左端が見切れる（水平スクロールで届かない）のを防ぐ。
+     広い窓では width:auto がビューポート幅になり背景は従来どおり全面に出る。 */
+  body{background:#e9e9e9;margin:0;padding:0;min-width:max-content}
   .sheet{width:210mm;min-height:297mm;padding:14mm;margin:10px auto;
     box-shadow:0 0 8px rgba(0,0,0,.25)}
 }
@@ -80,35 +80,40 @@ def _a4_base_css() -> str:
 """
 
 
-def _page_header(title_html: str, meta_id_esc: str = "", project_name: str = "") -> str:
-    """自己同定ヘッダ（左＝案件名スロット＋タイトル／右＝生成日時・ID・版）。
+def _page_header(title: str, project_name: str = "", report_id: str = "") -> str:
+    """自己同定ヘッダ（左＝「案件名 - タイトル」の1行／右＝生成日時のみ）。
 
-    project_name はユーザー入力の案件名（自由文字列）。空なら `.proj-name` は
-    `:empty` で非表示になり従来の見た目を保つ。meta_id_esc は path_id 等の
-    識別子（エスケープ済み）。空なら省く。
+    project_name（案件名・自由文字列）が非空なら「案件名 - タイトル」、空なら
+    「タイトル」のみを1行で表示する。report_id はバッチ per-path の識別子（path_id）で、
+    非空ならタイトル末尾に「 — path_id」を付す＝バッチはどの経路かを残す。単一レポートは
+    save_dir のタイムスタンプを ID にしないよう空で呼ぶ（露出していた不具合の修正）。版は
+    フッタで自己同定するのでヘッダ右は生成日時のみ。title は翻訳済み文字列（エスケープ
+    不要）、project_name / report_id はユーザー由来なのでエスケープする。
     """
     gen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    id_line = f"{meta_id_esc}<br>" if meta_id_esc else ""
-    proj_esc = _html.escape(project_name)
+    proj = _html.escape(project_name)
+    title_line = f"{proj} - {title}" if proj else title
+    if report_id:
+        title_line += f" — {_html.escape(report_id)}"
     return (
         '<header class="page-header">'
-        '<div class="ph-left">'
-        f'<div class="proj-name">{proj_esc}</div>'
-        f'<p class="ph-title">{title_html}</p>'
-        '</div>'
-        '<div class="ph-right">'
-        f'{id_line}{i18n.t("html_generated")}: {gen}<br>{version.APP_FULL}'
-        '</div>'
+        f'<p class="ph-title">{title_line}</p>'
+        f'<div class="ph-right">{i18n.t("html_generated")}: {gen}</div>'
         '</header>'
     )
 
 
-def _page_footer() -> str:
-    """自己同定フッタ（版＋バッチモード注記）。"""
+def _page_footer(mode_label: str) -> str:
+    """自己同定フッタ（版＋レポート種別ラベル）。
+
+    per-path と summary で共有するため種別ラベルは引数で受ける（per-path＝個別／
+    summary＝一括）。以前はバッチ固定ラベルを出力し、単一レポートのフッタまで
+    「一括シミュレーション」になっていた不具合を修正。
+    """
     return (
         '<footer class="page-footer">'
         f'<span>{version.APP_FULL}</span>'
-        f'<span>{i18n.t("html_batch_mode")}</span>'
+        f'<span>{mode_label}</span>'
         '</footer>'
     )
 
@@ -152,13 +157,17 @@ def _fit_to_page_script() -> str:
     el.style.transform="none";
     outer.style.height=""; outer.style.overflow="";
     var pxPerMm=96/25.4;
-    var target=(297-14-8-8)*pxPerMm;   /* 縮小目標高（印字域275−安全8mm） */
-    var box=(297-14-8-1)*pxPerMm;      /* クリップ箱高（印字域275−安全1mm） */
+    /* フッタは .fit の外（.sheet 直下・最下部固定）へ出したので、その高さ分(約6mm)を
+       印字域から引いて .fit の縮小目標/クリップ箱を決める。 */
+    var target=(297-14-8-8-6)*pxPerMm;   /* 縮小目標高（印字域275−安全8mm−フッタ6mm） */
+    var box=(297-14-8-1-6)*pxPerMm;      /* クリップ箱高（印字域275−安全1mm−フッタ6mm） */
     var h=el.scrollHeight;
     if(h>target){
       var s=target/h;
       var gutter=6;                    /* 右枠線・影がクリップされないための右ガター(px) */
-      var tx=outer.clientWidth*(1-s)-gutter;   /* 右寄せ量＝横余白の大半を左へ */
+      /* 右寄せ量＝横余白の大半を左へ。ただし僅少スケール時に負値になると左端が
+         クリップされる（見切れ）ため 0 未満にしない。 */
+      var tx=Math.max(0, outer.clientWidth*(1-s)-gutter);
       el.style.transformOrigin="top left";
       el.style.transform="translateX("+tx+"px) scale("+s+")";
       outer.style.height=box+"px";
@@ -189,7 +198,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
         save_profile_png(
             pr.terrain, pr.result, pr.params,
             pr.params.h_tx, pr.params.h_rx, pr.save_dir, coord_format,
-            project_name,
+            project_name, report_id=pr.row.path_id,
         )
         save_path_kml(
             pr.terrain, pr.result, pr.params,
@@ -209,6 +218,7 @@ def save_profile_png(
     coord_format: str = "dd",
     project_name: str = "",
     memo: str = "",
+    report_id: str = "",
 ) -> None:
     """
     地形断面 PNG をバックグラウンドスレッドから保存する。
@@ -232,12 +242,14 @@ def save_profile_png(
     y_min = float(np.min(t.raw_elevs)) - 30
 
     fig    = Figure(figsize=(15, 6))
-    fig.patch.set_facecolor("#EAEAEA")
+    fig.patch.set_facecolor("white")
     canvas = FigureCanvasAgg(fig)
 
-    # 地形断面軸
-    ax = fig.add_axes((0.06, 0.11, 0.90, 0.78))
-    ax.set_facecolor("#F2F2F2")
+    # 地形断面軸。図は A4 幅（約7inch）へ縮小表示されるため、視認性確保に
+    # フォント・目盛りを大きめにする。背景は白（灰色下地は付けない）。
+    ax = fig.add_axes((0.065, 0.14, 0.90, 0.74))
+    ax.set_facecolor("white")
+    ax.tick_params(labelsize=15)
 
     veg_top = elevs + params.veg_h
     ax.fill_between(t.d_km_axis, elevs,   y_min,   color="#8B4513", alpha=0.4)
@@ -257,9 +269,9 @@ def save_profile_png(
         color="black", lw=3,
     )
 
-    ax.set_title(f"{params.freq_mhz} MHz", fontsize=13, loc="left")
-    ax.set_xlabel(i18n.t("graph_dist_axis"), fontsize=11)
-    ax.set_ylabel(i18n.t("graph_alt_axis"),  fontsize=11)
+    ax.set_title(f"{params.freq_mhz} MHz", fontsize=19, loc="left")
+    ax.set_xlabel(i18n.t("graph_dist_axis"), fontsize=17)
+    ax.set_ylabel(i18n.t("graph_alt_axis"),  fontsize=17)
     ax.grid(True, alpha=0.2)
 
     # 統一凡例: 枠外・右上・横1列
@@ -275,7 +287,7 @@ def save_profile_png(
         loc="lower right",
         bbox_to_anchor=(1.0, 1.02),
         ncol=4,
-        fontsize=11,
+        fontsize=15,
         framealpha=0.9,
         borderaxespad=0,
     )
@@ -301,7 +313,7 @@ def save_profile_png(
     )
 
     save_path_html(terrain, result, params, h_tx, h_rx, save_dir, img_b64, map_b64,
-                   coord_format, project_name, memo)
+                   coord_format, project_name, memo, report_id)
 
 
 def save_path_html(
@@ -316,6 +328,7 @@ def save_path_html(
     coord_format: str = "dd",
     project_name: str = "",
     memo: str = "",
+    report_id: str = "",
 ) -> None:
     """per-path の report.html を生成する（グラフ・地図は Base64 埋め込み）。
 
@@ -328,8 +341,15 @@ def save_path_html(
     """
     tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
-    path_id     = os.path.basename(save_dir)
-    path_id_esc = _html.escape(path_id)
+    # ブラウザタブ／印刷 PDF の既定ファイル名になる <title>。ヘッダと同じ
+    # 「案件名 - タイトル（バッチは — path_id）」にする＝単一レポートで save_dir の
+    # タイムスタンプを露出させない。
+    _doc_title = i18n.t("html_path_title")
+    if project_name:
+        _doc_title = f"{project_name} - {_doc_title}"
+    if report_id:
+        _doc_title = f"{_doc_title} — {report_id}"
+    doc_title = _html.escape(_doc_title)
     status_cls  = "ok" if result.status == "OK" else "ng"
     model_label = i18n.t("html_model_deygout") if result.diff_method == "deygout" else i18n.t("html_model_single")
     env_label   = i18n.t(f"env_{result.env_type}")
@@ -372,32 +392,40 @@ def save_path_html(
 <html lang="{i18n.t('html_lang')}">
 <head>
 <meta charset="UTF-8">
-<title>{i18n.t('html_path_title')} — {path_id_esc}</title>
+<title>{doc_title}</title>
 <style>
 {_a4_base_css()}
 body{{font-family:Arial,sans-serif;font-size:13px}}
-.report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:6px 10px;margin-bottom:10px;font-size:11px;color:#37474f;break-inside:avoid}}
+/* per-path はヘッダ/フッタの余白を詰めて縮小フィットの余地を増やす（summary は据え置き） */
+.page-header{{padding-bottom:4px;margin-bottom:7px}}
+/* フッタは summary 同様に用紙最下部へ固定（.sheet を縦フレックス＋margin-top:auto）。
+   .fit の外に出したので縮小フィットの transform/clip の影響を受けない。 */
+.sheet{{display:flex;flex-direction:column}}
+.page-footer{{margin-top:auto;padding-top:4px}}
+@media print{{.sheet{{min-height:calc(297mm - 14mm - 8mm)}}}}
+.report-memo{{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f;break-inside:avoid}}
 .report-memo .rm-label{{color:#90a4ae;font-weight:bold;margin-right:4px}}
-.cards{{display:flex;gap:12px;margin-bottom:10px;break-inside:avoid}}
-.card{{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
+.cards{{display:flex;gap:12px;margin-bottom:6px;break-inside:avoid}}
+.card{{background:white;border:1px solid #eee;border-radius:8px;padding:4px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}}
 .card .lbl{{font-size:9px;color:#999;text-transform:uppercase}}
 .card .val{{font-size:15px;font-weight:bold;color:#333}}
 .card.ok .val{{color:#2e7d32}}.card.ng .val{{color:#c62828}}
-.graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:10px}}
-.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:10px}}
-.aim-note{{margin:6px 2px 0;color:#90a4ae;font-size:10px;font-style:italic}}
-.cols{{display:flex;gap:16px;margin-bottom:10px}}
-.col{{flex:1;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
-.col h3{{margin:0 0 8px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:5px}}
+.graph{{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:6px}}
+.map-note{{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:10px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:6px}}
+.cols{{display:flex;gap:16px;margin-bottom:2px}}
+.col{{flex:1;background:white;border-radius:8px;padding:8px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+.col h3{{margin:0 0 5px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:3px}}
 table.info{{border-collapse:collapse;width:100%}}
-table.info td{{padding:3px 6px;border-bottom:1px solid #f0f0f0;font-size:12px}}
+table.info td{{padding:2px 6px;border-bottom:1px solid #f0f0f0;font-size:12px}}
 table.info td:first-child{{color:#888;width:50%}}
+table.info td.n{{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}}
+table.info td.n .u{{color:#999;display:inline-block;width:2.6em;text-align:left;margin-left:6px}}
 </style>
 </head>
 <body>
 <div class="sheet">
 <div class="fit-outer"><div class="fit">
-{_page_header(f"{i18n.t('html_path_title')} — {path_id_esc}", path_id_esc, project_name)}
+{_page_header(i18n.t('html_path_title'), project_name, report_id)}
 {memo_block}
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>
@@ -422,8 +450,7 @@ table.info td:first-child{{color:#888;width:50%}}
       <tr><td>{i18n.t('html_aim_tx')}</td><td>{az_tx_rx:.1f}° / {el_tx_rx:+.1f}°</td></tr>
       <tr><td>{i18n.t('html_aim_rx')}</td><td>{az_rx_tx:.1f}° / {el_rx_tx:+.1f}°</td></tr>
     </table>
-    <p class="aim-note">{i18n.t('html_aim_note')}</p>
-    <h3 style="margin-top:14px">{i18n.t('html_radio_settings')}</h3>
+    <h3 style="margin-top:9px">{i18n.t('html_radio_settings')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
       <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
@@ -434,20 +461,19 @@ table.info td:first-child{{color:#888;width:50%}}
   <div class="col">
     <h3>{i18n.t('html_link_budget')}</h3>
     <table class="info">
-      <tr><td>{i18n.t('html_eirp')}</td><td>{result.eirp:.2f} dBm</td></tr>
-      <tr><td>{i18n.t('html_fspl')}</td><td>{result.fspl:.2f} dB</td></tr>
-      <tr><td>{i18n.t('html_diff_loss')}</td><td>{result.diff_loss:.2f} dB</td></tr>
-      <tr><td>{i18n.t('html_veg_loss')}</td><td>{result.veg_loss:.2f} dB</td></tr>
-      <tr><td>{i18n.t('html_env_loss')}</td><td>{result.env_loss:.2f} dB</td></tr>
-      <tr><td>{i18n.t('html_rain_loss')}</td><td>{result.rain_loss:.2f} dB</td></tr>
-      <tr><td>{i18n.t('html_gas_loss')}</td><td>{result.gas_loss:.2f} dB</td></tr>
-      <tr><td><b>{i18n.t('html_total_loss_row')}</b></td><td><b>{result.total_loss:.2f} dB</b></td></tr>
-      <tr><td>{i18n.t('html_rx_ant_gain')}</td><td>+{params.gain_rx:.2f} dBi</td></tr>
-      <tr><td><b>{i18n.t('html_rx_level')}</b></td><td><b>{result.p_rx:.2f} dBm</b></td></tr>
-      <tr><td>{i18n.t('html_threshold')}</td><td>{params.sens:.2f} dBm</td></tr>
-      <tr><td><b>{i18n.t('html_act_margin')}</b></td><td><b>{result.actual_margin:+.2f} dB</b></td></tr>
+      <tr><td>{i18n.t('html_eirp')}</td><td class="n">{result.eirp:.2f}<span class="u">dBm</span></td></tr>
+      <tr><td>{i18n.t('html_fspl')}</td><td class="n">{result.fspl:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_diff_loss')}</td><td class="n">{result.diff_loss:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_veg_loss')}</td><td class="n">{result.veg_loss:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_env_loss')}</td><td class="n">{result.env_loss:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_rain_loss')}</td><td class="n">{result.rain_loss:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_gas_loss')}</td><td class="n">{result.gas_loss:.2f}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_rx_ant_gain')}</td><td class="n">+{params.gain_rx:.2f}<span class="u">dBi</span></td></tr>
+      <tr><td><b>{i18n.t('html_rx_level')}</b></td><td class="n"><b>{result.p_rx:.2f}<span class="u">dBm</span></b></td></tr>
+      <tr><td>{i18n.t('html_threshold')}</td><td class="n">{params.sens:.2f}<span class="u">dBm</span></td></tr>
+      <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{result.actual_margin:+.2f}<span class="u">dB</span></b></td></tr>
     </table>
-    <h3 style="margin-top:14px">{i18n.t('html_environment')}</h3>
+    <h3 style="margin-top:9px">{i18n.t('html_environment')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
       <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
@@ -455,9 +481,8 @@ table.info td:first-child{{color:#888;width:50%}}
     </table>
   </div>
 </div>
-
-{_page_footer()}
 </div></div>
+{_page_footer(i18n.t("html_single_mode"))}
 </div>
 {_fit_to_page_script()}
 </body>
@@ -734,7 +759,7 @@ tr.ok{{background:#f1f8e9}}tr.ng{{background:#fff8e1}}tr.err{{background:#fce4ec
 {rows_html}
 </tbody>
 </table>
-{_page_footer()}
+{_page_footer(i18n.t("html_batch_mode"))}
 </div>
 </body>
 </html>"""
