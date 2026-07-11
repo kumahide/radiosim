@@ -13,6 +13,7 @@ terrain_cache/
 # User settings & logs
 radiosim_conf.json
 radiosim.log
+radiosim_profile.log
 build_log*.txt
 
 # Local beta testing scratchpad (bugs / improvement ideas — not committed)
