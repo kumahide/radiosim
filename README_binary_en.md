@@ -1,4 +1,4 @@
-# RadioSim Pro 2.3
+# RadioSim Pro 2.4
 
 ![RadioSim Pro](logo.png)
 
@@ -42,6 +42,10 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Batch Mode — process multiple paths from a CSV file
 - Map Window — pick coordinates by clicking the map / continuously add paths from the map into Batch Mode / visualize, prefetch, and delete DEM cache
 - Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
+- **A4 reports (v2)**: per-path / summary rendered as a single print-ready A4 page. Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
+- **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
+- **All-paths overview map** in the summary report (color-coded by verdict)
+- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
@@ -188,6 +192,15 @@ An input form is displayed on startup.
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
 | Sampling Points       | Number of terrain sample points (10–2000; more = higher accuracy but longer retrieval) |
+
+#### Project Info (optional)
+
+| Field   | Description                                                             |
+| ------- | ---------------------------------------------------------------------- |
+| Project | Project name shown in the report header (applies to both Single and Batch reports) |
+| Note    | Free note shown in the report (per-path report / batch summary)        |
+
+> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Batch Mode inherit these values. In Batch Mode they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
 
 ### 2. Single Mode Button
 
@@ -446,13 +459,17 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | File                    | Contents                                                 |
 | ----------------------- | -------------------------------------------------------- |
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report with the terrain graph and a path map embedded |
+| `report.html`         | Detailed report (single A4 page) with the terrain graph, a path map, and antenna initial aim AZ/EL embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
 | `settings.json`       | Complete input parameters (reloadable via Load Settings) |
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
-> **Path map**: `report.html` embeds a static map with TX/RX, the path, and the distance overlaid on the GSI pale map. It auto-rotates so the path is horizontal (TX left / RX right) with a north arrow. Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
+> **A4 reports (v2)**: `report.html` / `summary.html` are rendered as a single print-ready A4 page (`@page A4` / `@media print`). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
+>
+> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
+>
+> **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI).
 
 ### Batch Mode
 
