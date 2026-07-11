@@ -1,4 +1,4 @@
-# RadioSim Pro 2.3
+# RadioSim Pro 2.4
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -41,6 +41,10 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Batch Mode — process multiple paths from a CSV file
 - Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
 - Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
+- **A4 reports (v2)**: per-path / summary as a single print-ready A4 page (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer)
+- **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
+- **All-paths overview map** in the summary report (color-coded by verdict)
+- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
