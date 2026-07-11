@@ -98,3 +98,33 @@ def test_tk_root_constructs():
         root.withdraw()
     finally:
         root.destroy()
+
+
+def test_report_meta_flows_from_launcher():
+    """レポートの案件名・メモがランチャー（source of truth）→バッチへ伝播すること。
+
+    「ランチャー＝source of truth／シングル・バッチはそこから踏襲」の配線が黙って
+    壊れるのを検出する回帰ガード（feedback-design-philosophy ⑦）。ディスプレイの
+    ない環境では skip する。
+    """
+    tk = pytest.importorskip("tkinter")
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"no display available: {e}")
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        app._project_var.set("Proj-A")
+        app._memo_var.set("memo-A")
+        # バッチはランチャーのスナップショットを引き継ぐ
+        bw = app.ensure_batch_window()
+        assert bw._project_name_var.get() == "Proj-A"
+        assert bw._memo_var.get() == "memo-A"
+        # ランチャー変更 → ↻更新でバッチへ反映
+        app._project_var.set("Proj-B")
+        bw._refresh_common_from_launcher()
+        assert bw._project_name_var.get() == "Proj-B"
+    finally:
+        root.destroy()
