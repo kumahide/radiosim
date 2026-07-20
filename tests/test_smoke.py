@@ -179,9 +179,14 @@ def test_network_guard_allows_localhost():
 def test_progress_poll_does_not_overwrite_completion_state():
     """完了表示が積み残しの進捗で上書きされないこと（2.4b2 実機βの回帰ガード）。
 
-    _progress_stop の時点で after(50) 済みのポーリングが 1 回残るため、
-    停止後に _poll_progress が走っても描画してはいけない。実機では
-    描画完了後もラベルが「地形データ取得中… 100%」のまま残った。
+    停止した時点で after(50) 済みのポーリングが 1 回残るため、停止後に
+    ポーリングが走っても描画してはいけない。実機では描画完了後もラベルが
+    「地形データ取得中… 100%」のまま残った。
+
+    不変条件そのものは ProgressPump 側（tests/test_progress.py）で
+    フェイクを使って検証している。ここは**実物のランチャーに正しく配線
+    されているか**を実 Tk で確認する（2.4b3 で進捗トランスポートを
+    ProgressPump へ一本化した）。
     """
     import tkinter as tk
 
@@ -195,23 +200,147 @@ def test_progress_poll_does_not_overwrite_completion_state():
         app = SimLauncher(root, lambda _t: None)
 
         # 取得中の状態を作り、進捗を積んでから停止する。
-        app._prog_active = True
+        app._pump.start()
         app._progress_push(200, "地形データ取得中… 100%")
         app._progress_stop()
         app.prog_label.config(text="準備完了")
         app.prog_bar.config(value=0)
 
         # 停止後に残存ポーリングが 1 回発火しても表示は変わらない。
-        app._poll_progress()
+        app._pump._poll()
         assert app.prog_label.cget("text") == "準備完了"
         assert float(app.prog_bar.cget("value")) == 0.0
 
         # ワーカースレッドは停止後にも進捗を push しうる（取得完了の通知と
         # 最後のサンプルの push は競合する）。その分も描画してはいけない
-        # ＝キュー破棄だけでなく _poll_progress の早期 return が要る。
+        # ＝キュー破棄だけでなくポーリング側の早期 return が要る。
         app._progress_push(200, "地形データ取得中… 100%")
-        app._poll_progress()
+        app._pump._poll()
         assert app.prog_label.cget("text") == "準備完了"
         assert float(app.prog_bar.cget("value")) == 0.0
+    finally:
+        root.destroy()
+
+
+# ============================================================
+# スレッド生成規約の静的ガード（Tier-0）
+# ============================================================
+# 「ThreadPoolExecutor は使用禁止・daemon=True の Thread を使う」は従来メモリ上の
+# 規約でしかなく、コードにも痕跡が無かった。ThreadPoolExecutor のワーカーは
+# daemon=False のため、ウィンドウクローズ時に tkinter が
+# `RuntimeError: main thread is not in main loop` を出す。実装が規約に従っている
+# 今のうちにゲート化する（[[feedback-radiosim-rules]]）。
+_APP_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+# アプリ本体のソース（tests / .venv / build 成果物は対象外）。
+_SKIP_DIRS = {".venv", "build", "dist", "tests", "tools", "__pycache__",
+              ".git", "results", "terrain_cache", "basemap_pale", "beta_evidence"}
+
+
+def _app_sources():
+    for dirpath, dirnames, filenames in os.walk(_APP_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for name in sorted(filenames):
+            if name.endswith(".py"):
+                yield os.path.join(dirpath, name)
+
+
+def test_thread_pool_executor_is_not_used():
+    """ThreadPoolExecutor を使わないこと（ワーカーが非 daemon＝終了時に tkinter が落ちる）。"""
+    import ast
+
+    offenders = []
+    for path in _app_sources():
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            name = None
+            if isinstance(node, ast.Attribute):
+                name = node.attr
+            elif isinstance(node, ast.alias):
+                name = node.name.rsplit(".", 1)[-1]
+            elif isinstance(node, ast.Name):
+                name = node.id
+            if name == "ThreadPoolExecutor":
+                offenders.append(f"{os.path.relpath(path, _APP_ROOT)}:{node.lineno}")
+    assert not offenders, (
+        "ThreadPoolExecutor は使用禁止（daemon=True の threading.Thread を使う）: "
+        f"{offenders}"
+    )
+
+
+def test_all_threads_are_daemon():
+    """threading.Thread は必ず daemon=True で生成すること。
+
+    非 daemon スレッドが残るとウィンドウを閉じてもプロセスが終わらず、
+    tkinter が破棄済みのメインループへ触れて RuntimeError を出す。
+    """
+    import ast
+
+    offenders = []
+    for path in _app_sources():
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            target = func.attr if isinstance(func, ast.Attribute) else (
+                func.id if isinstance(func, ast.Name) else None
+            )
+            if target != "Thread":
+                continue
+            daemon = next((kw.value for kw in node.keywords if kw.arg == "daemon"), None)
+            if not (isinstance(daemon, ast.Constant) and daemon.value is True):
+                offenders.append(f"{os.path.relpath(path, _APP_ROOT)}:{node.lineno}")
+    assert not offenders, f"daemon=True でない Thread 生成: {offenders}"
+
+
+# ============================================================
+# 進捗トランスポートの配線（2.4b3）
+# ============================================================
+# 不変条件そのものは tests/test_progress.py がフェイクで検証する。ここは
+# 「単一とバッチが同じ部品を、同じライフサイクルで使っているか」＝配線を見る。
+# B-006 の停止バグは実装の中身ではなくライフサイクルの非対称から生まれた。
+
+
+def test_single_and_batch_share_the_progress_transport():
+    """単一・バッチとも ProgressPump を使い、実行中だけ回すこと。
+
+    従来バッチのポーラは __init__ で起動して永久に回り、単一は実行ごとに
+    起動・停止していた。この非対称が B-006 の停止バグを生んだので、
+    「生成時は止まっている」ことを両者で固定する。
+    """
+    import tkinter as tk
+
+    from views.progress import ProgressPump
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"no display available: {e}")
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+
+        app = SimLauncher(root, lambda _t: None)
+        assert isinstance(app._pump, ProgressPump)
+        assert not app._pump.is_running, "ランチャーが実行前からポーリングしている"
+
+        win = app.ensure_batch_window()
+        try:
+            assert isinstance(win._pump, ProgressPump)
+            assert not win._pump.is_running, \
+                "バッチが生成時からポーリングしている（B-006 のライフサイクル非対称）"
+
+            # 閉じたらポーリングは止まる（破棄済みウィジェットへ after しない）。
+            win._pump.start()
+            win._on_close_window()
+            assert not win._pump.is_running, "閉じてもポーリングが残っている"
+        finally:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass          # _on_close_window で破棄済み
     finally:
         root.destroy()

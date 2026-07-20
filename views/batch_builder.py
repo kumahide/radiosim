@@ -11,7 +11,6 @@ views/batch_builder.py
 """
 
 import os
-import queue
 import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import Callable
@@ -23,6 +22,7 @@ import i18n
 import simulation as sim
 from models import ENV_KEYS
 from views import dialogs
+from views.progress import ProgressPump
 
 # 1 パスの進捗区間のうち、標高取得が占める割合。残りはレポート描画に充てる。
 # 実測（2.4b1・200 サンプル）では取得 ≒35ms に対し描画はその数十倍で、取得を
@@ -90,7 +90,12 @@ class BatchBuilderWindow(tk.Toplevel):
         self._row_entries: list[list[tk.Entry]] = []
         self._row_frames:  list[ttk.Frame]      = []
         self._running      = False
-        self._event_queue: queue.Queue          = queue.Queue()
+        # 進捗・イベントの受け渡しは単一実行と同じ部品を使う（views/progress.py）。
+        # バッチのイベントは done/complete が結果を運ぶので 1 件も落とせない
+        # ＝latest_only は使わない。実行ごとに start/stop する（従来は __init__ で
+        # 起動して永久に回っており、単一実行とのライフサイクル非対称が B-006 の
+        # 停止バグを生んだ）。
+        self._pump = ProgressPump(self, self._dispatch_event)
         self._drag_row_idx: int | None          = None
         self._drag_indicator: tk.Frame | None   = None
         # 列幅同期（_sync_header_columns）のデバウンス用 after ID。
@@ -105,7 +110,6 @@ class BatchBuilderWindow(tk.Toplevel):
 
         self._build_ui()
         self._add_row()
-        self._poll_queue()
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
@@ -652,6 +656,11 @@ class BatchBuilderWindow(tk.Toplevel):
     def _on_close_window(self) -> None:
         """ウィンドウを閉じる。閉じる旨をランチャーへ通知する（地図の連携解除）。"""
         cb = self._on_close
+        # 破棄前にポーリングを止める。実行中に閉じられると、破棄済みウィジェットへ
+        # after し続けて `invalid command name` になる（マップ破棄と同じクラスの
+        # 失敗＝map_window.close_map_safely 参照）。ワーカースレッドは走り続けるが、
+        # 成果物生成はワーカー内で完結するので実行そのものは完走する。
+        self._pump.stop()
         self.destroy()
         if cb is not None:
             cb()
@@ -941,17 +950,19 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ng_label.config(text="✗ 0 NG")
         self._err_label.config(text="⚠ 0 ERR")
 
-        q = self._event_queue
+        # ポンプは実行のあいだだけ回す（完了・エラーのハンドラで停止する）。
+        self._pump.start()
+        push = self._pump.push
         batch.run_batch(
             rows              = rows,
             base_params       = base_params,
-            on_path_start     = lambda cur, tot, pid, q=q: q.put(("start",    (cur, tot, pid))),
-            on_path_progress  = lambda done, q=q: q.put(("progress", (done,))),
-            on_path_complete  = lambda cur, tot, pr,  q=q: q.put(("done",     (cur, tot, pr))),
-            on_batch_complete = lambda d,   rs,        q=q: q.put(("complete", (d, rs))),
-            on_error          = lambda ex,             q=q: q.put(("error",    (ex,))),
+            on_path_start     = lambda cur, tot, pid, p=push: p(("start",    (cur, tot, pid))),
+            on_path_progress  = lambda done, p=push: p(("progress", (done,))),
+            on_path_complete  = lambda cur, tot, pr,  p=push: p(("done",     (cur, tot, pr))),
+            on_batch_complete = lambda d,   rs,        p=push: p(("complete", (d, rs))),
+            on_error          = lambda ex,             p=push: p(("error",    (ex,))),
             coord_format      = self._coord_format,
-            on_path_stage     = lambda stage, q=q: q.put(("stage", (stage,))),
+            on_path_stage     = lambda stage, p=push: p(("stage", (stage,))),
             project_name      = self._project_name_var.get().strip(),
             memo              = self._memo_var.get().strip(),
         )
@@ -959,26 +970,24 @@ class BatchBuilderWindow(tk.Toplevel):
     # ----------------------------------------------------------
     # コールバック（メインスレッドから呼ばれる）
     # ----------------------------------------------------------
-    def _poll_queue(self) -> None:
-        """メインスレッドでキューを消費する（50ms ポーリング）。"""
-        try:
-            while True:
-                event, args = self._event_queue.get_nowait()
-                if event == "start":
-                    self._on_path_start(*args)
-                elif event == "progress":
-                    self._on_path_progress_tick(*args)
-                elif event == "stage":
-                    self._on_path_stage(*args)
-                elif event == "done":
-                    self._on_path_done(*args)
-                elif event == "complete":
-                    self._on_batch_complete(*args)
-                elif event == "error":
-                    self._on_error(*args)
-        except queue.Empty:
-            pass
-        self.after(50, self._poll_queue)
+    def _dispatch_event(self, item: tuple) -> None:
+        """ポンプから届いた 1 イベントを対応するハンドラへ振り分ける。
+
+        complete / error のハンドラがポンプを停止する（実行の終わり）。
+        """
+        event, args = item
+        if event == "start":
+            self._on_path_start(*args)
+        elif event == "progress":
+            self._on_path_progress_tick(*args)
+        elif event == "stage":
+            self._on_path_stage(*args)
+        elif event == "done":
+            self._on_path_done(*args)
+        elif event == "complete":
+            self._on_batch_complete(*args)
+        elif event == "error":
+            self._on_error(*args)
 
     def _on_path_start(self, cur: int, tot: int, pid: str) -> None:
         self._run_cur = cur
@@ -1040,6 +1049,9 @@ class BatchBuilderWindow(tk.Toplevel):
         # ワーカースレッドで生成済み。ここは UI 更新のみ＝メインスレッドを
         # 塞がない（従来はここで地図のネットワーク取得まで走り GUI が固まった）。
         self._running = False
+        # 実行の終わり＝ポンプを止める。停止後にワーカーが押した分は捨てられ、
+        # 残存ポーリングも早期 return するので完了表示は上書きされない。
+        self._pump.stop()
         self._run_btn.config(state="normal")
         # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
         # 進捗カウントもバーに合わせて消し、結果サマリは OK/NG/ERR ラベルに残す。
@@ -1055,6 +1067,7 @@ class BatchBuilderWindow(tk.Toplevel):
 
     def _on_error(self, ex: Exception) -> None:
         self._running = False
+        self._pump.stop()
         self._run_btn.config(state="normal")
         # 失敗時もバーを 0 に戻す（シングル側 _on_fetch_error と挙動を揃える）。
         self._prog_bar.config(value=0)

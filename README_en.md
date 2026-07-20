@@ -170,6 +170,7 @@ radiosim/
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
 │   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
+│   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -184,6 +185,7 @@ radiosim/
     ├── test_map_window.py
     ├── test_coords.py
     ├── test_mpl_fonts.py
+    ├── test_progress.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     └── test_env_consistency.py
@@ -567,6 +569,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
   views/map_window.py     Map window (Pick Coordinates / Append to Batch / Cache Management)
   views/batch_builder.py  Batch Mode window
   views/dialogs.py        Shared modal dialogs centered on the parent
+  views/progress.py       Progress transport (queue + polling, shared by single/batch)
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -604,23 +607,24 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (499 tests)
+### Test Suite
 
-| File                       | Count | Coverage                                                                        |
-| -------------------------- | ----- | ------------------------------------------------------------------------------- |
-| `test_models.py`         | 94    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
-| `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
-| `test_config.py`         | 36    | Input validation, config I/O (app/sim split), i18n key coverage                 |
-| `test_dem.py`            | 71    | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
-| `test_batch.py`          | 108    | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
-| `test_report.py`         | 20    | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
-| `test_report_map.py`     | 42    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
-| `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
-| `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
-| `test_mpl_fonts.py`      | 4     | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
-| `test_smoke.py`          | 24    | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check |
-| `test_docs_consistency.py` | 24   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
-| `test_env_consistency.py` | 10   | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
+| File                       | Coverage                                                                        |
+| -------------------------- | ------------------------------------------------------------------------------- |
+| `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
+| `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
+| `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
+| `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
+| `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
+| `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
+| `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
+| `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
+| `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
+| `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
+| `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
+| `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
+| `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 
 ---
 

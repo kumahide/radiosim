@@ -99,6 +99,8 @@ def _get_session() -> "requests.Session":
 # キャッシュキーは (layer_id, xtile, ytile) の 3 要素
 # _cache_lock は _tile_cache と _failed_tiles の両方を保護する。
 # ロック保持中にネットワーク取得を行ってはいけない（並列化が無効になる）。
+# ガード: tests/test_dem.py::TestGetElevation
+#         ::test_network_fetch_runs_without_holding_the_cache_lock
 _tile_cache: dict[tuple, np.ndarray] = {}
 _cache_lock = threading.Lock()
 
