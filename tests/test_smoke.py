@@ -215,3 +215,77 @@ def test_progress_poll_does_not_overwrite_completion_state():
         assert float(app.prog_bar.cget("value")) == 0.0
     finally:
         root.destroy()
+
+
+# ============================================================
+# スレッド生成規約の静的ガード（Tier-0）
+# ============================================================
+# 「ThreadPoolExecutor は使用禁止・daemon=True の Thread を使う」は従来メモリ上の
+# 規約でしかなく、コードにも痕跡が無かった。ThreadPoolExecutor のワーカーは
+# daemon=False のため、ウィンドウクローズ時に tkinter が
+# `RuntimeError: main thread is not in main loop` を出す。実装が規約に従っている
+# 今のうちにゲート化する（[[feedback-radiosim-rules]]）。
+_APP_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
+# アプリ本体のソース（tests / .venv / build 成果物は対象外）。
+_SKIP_DIRS = {".venv", "build", "dist", "tests", "tools", "__pycache__",
+              ".git", "results", "terrain_cache", "basemap_pale", "beta_evidence"}
+
+
+def _app_sources():
+    for dirpath, dirnames, filenames in os.walk(_APP_ROOT):
+        dirnames[:] = [d for d in dirnames if d not in _SKIP_DIRS]
+        for name in sorted(filenames):
+            if name.endswith(".py"):
+                yield os.path.join(dirpath, name)
+
+
+def test_thread_pool_executor_is_not_used():
+    """ThreadPoolExecutor を使わないこと（ワーカーが非 daemon＝終了時に tkinter が落ちる）。"""
+    import ast
+
+    offenders = []
+    for path in _app_sources():
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            name = None
+            if isinstance(node, ast.Attribute):
+                name = node.attr
+            elif isinstance(node, ast.alias):
+                name = node.name.rsplit(".", 1)[-1]
+            elif isinstance(node, ast.Name):
+                name = node.id
+            if name == "ThreadPoolExecutor":
+                offenders.append(f"{os.path.relpath(path, _APP_ROOT)}:{node.lineno}")
+    assert not offenders, (
+        "ThreadPoolExecutor は使用禁止（daemon=True の threading.Thread を使う）: "
+        f"{offenders}"
+    )
+
+
+def test_all_threads_are_daemon():
+    """threading.Thread は必ず daemon=True で生成すること。
+
+    非 daemon スレッドが残るとウィンドウを閉じてもプロセスが終わらず、
+    tkinter が破棄済みのメインループへ触れて RuntimeError を出す。
+    """
+    import ast
+
+    offenders = []
+    for path in _app_sources():
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        for node in ast.walk(tree):
+            if not isinstance(node, ast.Call):
+                continue
+            func = node.func
+            target = func.attr if isinstance(func, ast.Attribute) else (
+                func.id if isinstance(func, ast.Name) else None
+            )
+            if target != "Thread":
+                continue
+            daemon = next((kw.value for kw in node.keywords if kw.arg == "daemon"), None)
+            if not (isinstance(daemon, ast.Constant) and daemon.value is True):
+                offenders.append(f"{os.path.relpath(path, _APP_ROOT)}:{node.lineno}")
+    assert not offenders, f"daemon=True でない Thread 生成: {offenders}"

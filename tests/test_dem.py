@@ -119,6 +119,28 @@ class TestGetElevation:
         dem.get_elevation(34.5429, 132.4118)
         assert call_count["n"] == 1
 
+    def test_network_fetch_runs_without_holding_the_cache_lock(self, monkeypatch):
+        """_fetch_tile 実行中に _cache_lock を保持しないこと（dem.py の制約）。
+
+        保持したままネットワーク取得を行うと、並列ワーカー（prefetch_tiles /
+        fetch_elevations）が全員このロックで待たされ並列化が無効になる。
+        _cache_lock は非再帰なので「同一スレッドで再取得できる＝未保持」。
+        """
+        tile = np.full((256, 256, 3), [0, 39, 16], dtype=np.uint8)
+        was_held: list[bool] = []
+
+        def fake_fetch(*a, **kw):
+            acquired = dem._cache_lock.acquire(blocking=False)
+            was_held.append(not acquired)
+            if acquired:
+                dem._cache_lock.release()
+            return tile
+
+        monkeypatch.setattr(dem, "_fetch_tile", fake_fetch)
+        dem.get_elevation(34.5429, 132.4118)
+        assert was_held, "_fetch_tile が呼ばれていない（キャッシュミスになっていない）"
+        assert not any(was_held), "ロック保持中にネットワーク取得が行われた"
+
 
 class TestFetchTile:
 

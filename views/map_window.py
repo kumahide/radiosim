@@ -94,7 +94,9 @@ def close_map_safely(scheduler, map_widget, destroy) -> None:
 
     マップを破棄し得る経路（マップウィンドウの×・親ランチャー終了・将来の新規経路）
     は**必ずこの関数を通すこと**。各所に手順をコピーすると今回のように猶予だけ抜け
-    落ちて再発する（[[feedback-radiosim-rules]]）。
+    落ちて再発する（[[feedback-radiosim-rules]]）。破棄経路が増えていないことは
+    tests/test_map_window.py::test_map_widget_is_destroyed_only_through_close_map_safely
+    が静的に検査する（新経路を足すときは _ALLOWED_MAP_DESTROY も更新すること）。
 
     引数:
       scheduler  : `.after(ms, cb)` を持つ生存中の tk ウィジェット（破棄予定の親など）。

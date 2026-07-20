@@ -8,6 +8,7 @@ batch.py のユニットテスト。
 """
 
 import threading
+import time
 from typing import Any
 
 import numpy as np
@@ -955,6 +956,37 @@ class TestRunBatch:
         main_name = threading.main_thread().name
         assert all(name != main_name for name in seen), \
             f"成果物生成がメインスレッドで実行された: {seen}"
+
+    def test_path_rendering_is_never_parallel(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """レポート描画を並列化しないことを固定する（batch.py / report.py の制約）。
+
+        mpl_fonts.apply_japanese_font() が matplotlib.rcParams（プロセス共有）を
+        書き換えるため、パス描画が重なるとフォント設定が競合する。将来 _process_one
+        をワーカープール化したらこのテストが落ちる。
+        """
+        gate     = threading.Lock()
+        inflight = {"now": 0, "max": 0}
+        real_visuals = report.save_path_visuals
+
+        def _spy(pr, coord_format="dd", project_name=""):
+            with gate:
+                inflight["now"] += 1
+                inflight["max"] = max(inflight["max"], inflight["now"])
+            try:
+                # 並列化されていれば重なりが観測できる幅の窓を作る。
+                time.sleep(0.05)
+                return real_visuals(pr, coord_format, project_name)
+            finally:
+                with gate:
+                    inflight["now"] -= 1
+
+        monkeypatch.setattr(report, "save_path_visuals", _spy)
+        rows = [_row(), _row(path_id="path02"), _row(path_id="path03")]
+        ev = self._run(rows, tmp_path, default_params_dict, monkeypatch)
+        assert ev["error"] == []
+        assert inflight["max"] == 1, \
+            f"レポート描画が並列実行された（同時 {inflight['max']} 本）"
 
     def test_engine_failure_calls_on_error(
             self, tmp_path, default_params_dict, monkeypatch):
