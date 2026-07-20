@@ -744,13 +744,34 @@ class SimLauncher:
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs) -> None:
         self._progress_stop()
         self.run_btn.config(state="normal")
-        self.prog_label.config(text=i18n.t("status_ready"))
-        self.prog_bar.config(value=0)
+        # ここから先（matplotlib の遅延 import＋グラフ構築）が単一実行の体感時間の
+        # 大半を占める。実測（キャッシュ暖機済み・200 サンプル）で取得 0.035s に対し
+        # import 0.26s＋構築 0.34s ＝ 約 0.6s。従来はこの直前に「準備完了」へ戻して
+        # いたため、**実際にはメインスレッドが固まっている 0.6 秒のあいだ「準備完了」と
+        # 表示していた**（B-006 と同じ配分ミスが単一側に残っていた）。
+        #
+        # グラフは pyplot/TkAgg なのでワーカースレッドへは出せない＝ここは本物の
+        # メインスレッド制約。したがって偽の進捗は出さず、バッチの段階ラベルと同じく
+        # 「何をしているか」だけを示す（→ batch の batch_stage_render）。
+        self.prog_label.config(text=i18n.t("status_rendering"))
+        self.root.update_idletasks()   # 描画に入る前にラベルを実際に出す
+
         # matplotlib/pyplot/TkAgg/numpy はここで初めて要る（ランチャー表示前に
         # ロードしないため遅延 import。MapWindow/BatchBuilder と同じ方針）
         from views.graph import show_graph
         meta = self._current_meta()
-        show_graph(params, raw_elevs, meta["project_name"], meta["memo"])
+        # show_graph は plt.show() の入れ子 mainloop でブロックするので、戻り値を
+        # 待って表示を戻すと**グラフを閉じるまで「準備中」が残る**。表示直前に
+        # 呼ばれる on_ready で戻す。
+        show_graph(
+            params, raw_elevs, meta["project_name"], meta["memo"],
+            on_ready = self._on_graph_ready,
+        )
+
+    def _on_graph_ready(self) -> None:
+        """グラフが画面に出る直前に進捗表示を待機状態へ戻す。"""
+        self.prog_label.config(text=i18n.t("status_ready"))
+        self.prog_bar.config(value=0)
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._progress_stop()

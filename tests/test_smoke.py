@@ -380,3 +380,44 @@ def test_launcher_window_fits_its_content():
         )
     finally:
         root.destroy()
+
+
+def test_graph_signals_ready_before_blocking_show():
+    """グラフは plt.show() でブロックする前に on_ready を呼ぶこと。
+
+    単一実行では「グラフを準備中…」の表示をこのフックで待機状態へ戻す。
+    show_graph は plt.show() の入れ子 mainloop でブロックするので、戻り値を
+    待って戻すとグラフを閉じるまでラベルが「準備中」のまま残る（2.4b3）。
+    """
+    import numpy as np
+
+    try:
+        import views.graph as graph          # import 時に TkAgg を要求する
+    except Exception as e:                   # noqa: BLE001
+        pytest.skip(f"requires display backend: {e}")
+
+    import matplotlib.pyplot as plt
+    import simulation as sim
+
+    order: list[str] = []
+    real_show = plt.show
+    real_close = plt.close
+    plt.show = lambda *a, **k: order.append("show")
+    try:
+        params = sim.SimParams({
+            "start": "35.4258, 139.2131", "end": "35.4175, 139.2137",
+            "h_tx": "30", "h_rx": "30", "freq": "2400", "p_tx": "13",
+            "gain_tx": "2", "gain_rx": "2", "sens": "-90", "veg_h": "20",
+            "k_factor": "10", "samples": "50", "env_type": "los",
+            "rain_rate": "0", "diff_method": "deygout",
+        })
+        graph.show_graph(
+            params, np.zeros(50), "", "",
+            on_ready=lambda: order.append("ready"),
+        )
+        assert order == ["ready", "show"], (
+            f"on_ready が plt.show() の前に呼ばれていない: {order}"
+        )
+    finally:
+        plt.show = real_show
+        real_close("all")

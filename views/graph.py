@@ -10,6 +10,7 @@ views/graph.py
 import gc
 import logging
 import os
+from typing import Callable
 
 import matplotlib
 matplotlib.use("TkAgg")
@@ -39,6 +40,7 @@ def _apply_font() -> None:
 def show_graph(
     params: sim.SimParams, raw_elevs: np.ndarray,
     project_name: str = "", memo: str = "",
+    on_ready: "Callable[[], None] | None" = None,
 ) -> None:
     """
     地形断面グラフウィンドウを開く（ブロッキング）。
@@ -48,6 +50,10 @@ def show_graph(
         raw_elevs:    取得済み生標高配列
         project_name: レポートの案件名（ランチャーから踏襲・空可）
         memo:         レポートの自由メモ（ランチャーから踏襲・空可）
+        on_ready:     グラフが画面に出る直前に呼ばれる（呼び出し元の「準備中」
+                      表示を戻すためのフック）。この関数は plt.show() の入れ子
+                      mainloop でブロックするので、**戻り値を待って表示を戻すと
+                      グラフを閉じるまで「準備中」が残る**。
     """
     _apply_font()
     terrain = models.calculate_terrain_profile(
@@ -57,7 +63,7 @@ def show_graph(
         lat_rx    = params.lat_rx,
         lon_rx    = params.lon_rx,
     )
-    _GraphWindow(params, terrain, project_name, memo).show()
+    _GraphWindow(params, terrain, project_name, memo).show(on_ready)
 
 
 # ============================================================
@@ -473,10 +479,16 @@ class _GraphWindow:
     # ----------------------------------------------------------
     # 表示
     # ----------------------------------------------------------
-    def show(self) -> None:
-        """初期計算を実行し、ウィンドウを表示する（ブロッキング）。"""
+    def show(self, on_ready: "Callable[[], None] | None" = None) -> None:
+        """初期計算を実行し、ウィンドウを表示する（ブロッキング）。
+
+        on_ready は描画が済んで表示に入る直前に呼ぶ（呼び出し元の進捗表示を
+        戻すため）。plt.show() から先はブロックするのでここが最後の機会。
+        """
         self._update_core()
         self._fig.canvas.draw()
         self._fig.canvas.flush_events()
+        if on_ready is not None:
+            on_ready()
         plt.show()
         gc.collect()  # force cycle GC in main thread; prevents Python 3.14 bg-thread __del__
