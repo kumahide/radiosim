@@ -875,10 +875,13 @@ class TestProcessOne:
 
 class TestRunBatch:
 
-    def _run(self, rows, tmp_path, default_params_dict, monkeypatch):
-        """run_batch を実行し、全コールバックの記録を返す（完了まで待機）。"""
+    def _run(self, rows, tmp_path, default_params_dict, monkeypatch, fetch=None):
+        """run_batch を実行し、全コールバックの記録を返す（完了まで待機）。
+
+        fetch を渡すと標高取得のフェイクを差し替えられる（呼び出し回数の観測用）。
+        """
         i18n.set_lang("en")
-        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+        monkeypatch.setattr(sim, "fetch_elevations", fetch or _fake_fetch)
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         # サマリ地図は淡色地図タイルを GSI から取得する唯一の経路。run_batch が
         # これをワーカースレッドで呼ぶようになった（B-006）ため、塞がないと
@@ -924,7 +927,11 @@ class TestRunBatch:
     def test_per_path_failure_does_not_abort_batch(
             self, tmp_path, default_params_dict, monkeypatch):
         """1 パスの失敗は結果に残し、残りのパスとサマリ生成は続行する。"""
-        rows = [_row(), _row(path_id="bad", freq_mhz=_FAIL_FREQ),
+        # 失敗行は座標も変える。フェイクは freq で失敗を通知するが、地形キャッシュ
+        # のキーは座標＋サンプル数（freq は地形に影響しないので含まない＝正しい）
+        # ため、同一座標のままだと先行行のキャッシュにヒットして取得自体が走らない。
+        rows = [_row(), _row(path_id="bad", freq_mhz=_FAIL_FREQ,
+                             lat_tx=35.10, lon_tx=133.10),
                 _row(path_id="path03")]
         ev = self._run(rows, tmp_path, default_params_dict, monkeypatch)
         assert ev["error"] == []
@@ -987,6 +994,30 @@ class TestRunBatch:
         assert ev["error"] == []
         assert inflight["max"] == 1, \
             f"レポート描画が並列実行された（同時 {inflight['max']} 本）"
+
+    def test_reuses_terrain_cache_across_runs(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """同一条件の再実行で DEM を取り直さないこと（単一実行と同じキャッシュ）。
+
+        バッチは長らく素の fetch_elevations を呼んでおり、キャッシュを素通り
+        していた（2.4b3 で fetch_elevations_cached へ統一）。
+        """
+        fetches: list[tuple] = []
+
+        def _counting_fetch(params, on_progress, on_complete, on_error):
+            fetches.append((params.lat_tx, params.lon_tx))
+            _fake_fetch(params, on_progress, on_complete, on_error)
+
+        rows = [_row(), _row(path_id="path02", lat_tx=35.10, lon_tx=133.10)]
+
+        self._run(rows, tmp_path, default_params_dict, monkeypatch,
+                  fetch=_counting_fetch)
+        assert len(fetches) == 2, "初回は各パスぶん取得する"
+
+        # 同じ行構成でもう一度まわす＝実取得はゼロ回であるべき。
+        self._run(rows, tmp_path, default_params_dict, monkeypatch,
+                  fetch=_counting_fetch)
+        assert len(fetches) == 2, f"再実行で DEM を取り直している: {fetches}"
 
     def test_engine_failure_calls_on_error(
             self, tmp_path, default_params_dict, monkeypatch):

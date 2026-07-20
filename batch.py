@@ -401,7 +401,12 @@ def _fetch_sync(
     params:      sim.SimParams,
     on_progress: Callable[[int], None],
 ) -> np.ndarray:
-    """fetch_elevations の非同期コールバックを threading.Event で同期化する。"""
+    """標高取得の非同期コールバックを threading.Event で同期化する。
+
+    単一実行と同じく **キャッシュ付き**（fetch_elevations_cached）を使う。同一
+    バッチの再実行や 1 行だけ直しての再実行で DEM 取得がまるごと消える。キーは
+    座標＋サンプル数なので、行が違えばキャッシュも別（誤ヒットしない）。
+    """
     result: list[np.ndarray] = []
     error:  list[Exception]  = []
     done = threading.Event()
@@ -414,7 +419,7 @@ def _fetch_sync(
         error.append(ex)
         done.set()
 
-    sim.fetch_elevations(
+    sim.fetch_elevations_cached(
         params,
         on_progress = on_progress,
         on_complete = _on_complete,
