@@ -170,6 +170,7 @@ radiosim/
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
 │   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
+│   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -184,6 +185,7 @@ radiosim/
     ├── test_map_window.py
     ├── test_coords.py
     ├── test_mpl_fonts.py
+    ├── test_progress.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     └── test_env_consistency.py
@@ -567,6 +569,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
   views/map_window.py     Map window (Pick Coordinates / Append to Batch / Cache Management)
   views/batch_builder.py  Batch Mode window
   views/dialogs.py        Shared modal dialogs centered on the parent
+  views/progress.py       Progress transport (queue + polling, shared by single/batch)
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -618,6 +621,7 @@ python -m pytest tests/ --cov
 | `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
+| `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
