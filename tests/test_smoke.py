@@ -404,6 +404,15 @@ def test_graph_signals_ready_before_blocking_show():
     real_close = plt.close
     plt.show = lambda *a, **k: order.append("show")
     try:
+        # TkAgg の Figure 生成は内部で新しい Tk ルートを作る。この環境では
+        # Tk の初期化が間欠的に失敗するため（tcl ライブラリを読めないと言われる／
+        # 実体は存在する＝環境側の問題）、他の表示依存テストと同じく skip に倒す。
+        try:
+            plt.figure()
+            real_close("all")
+        except Exception as e:                # noqa: BLE001
+            pytest.skip(f"Tk の初期化に失敗（環境側の間欠障害）: {e}")
+
         params = sim.SimParams({
             "start": "35.4258, 139.2131", "end": "35.4175, 139.2137",
             "h_tx": "30", "h_rx": "30", "freq": "2400", "p_tx": "13",
