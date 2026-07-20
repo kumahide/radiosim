@@ -128,3 +128,90 @@ def test_report_meta_flows_from_launcher():
         assert bw._project_name_var.get() == "Proj-B"
     finally:
         root.destroy()
+
+
+# ============================================================
+# ネットワーク遮断ゲートの自己検査
+# ============================================================
+# conftest の _block_network が「効かなくなったこと」に気づけるようにする。
+# ゲートは沈黙して失効しうる（テストは緑のまま外部 API を叩き始める）ため、
+# ゲート自身にもガードを付ける。詳細な経緯は conftest.py の同節を参照。
+
+def test_network_guard_blocks_external_connections():
+    """外部宛の接続が NetworkAccessBlocked で止まる（実通信は発生しない）。"""
+    import socket
+
+    from conftest import NetworkAccessBlocked
+
+    with pytest.raises(NetworkAccessBlocked):
+        socket.create_connection(("cyberjapandata.gsi.go.jp", 443), timeout=1)
+
+    s = socket.socket()
+    try:
+        with pytest.raises(NetworkAccessBlocked):
+            s.connect(("93.184.216.34", 80))   # 外部 IP（DNS も引かない）
+    finally:
+        s.close()
+
+
+def test_network_guard_allows_localhost():
+    """localhost は遮断しない（将来のローカルサーバ系テストを巻き込まない）。
+
+    接続の成否は問わない。遮断ゲートが誤って localhost を止めていないこと
+    ＝ NetworkAccessBlocked が飛ばないことだけを確認する。
+    """
+    import socket
+
+    from conftest import NetworkAccessBlocked
+
+    s = socket.socket()
+    s.settimeout(0.2)
+    try:
+        s.connect(("127.0.0.1", 1))   # 通常は誰も listen していない
+    except NetworkAccessBlocked:
+        pytest.fail("ゲートが localhost を遮断している")
+    except OSError:
+        pass   # 接続拒否・タイムアウトは想定内（遮断されていないことが要点）
+    finally:
+        s.close()
+
+
+def test_progress_poll_does_not_overwrite_completion_state():
+    """完了表示が積み残しの進捗で上書きされないこと（2.4b2 実機βの回帰ガード）。
+
+    _progress_stop の時点で after(50) 済みのポーリングが 1 回残るため、
+    停止後に _poll_progress が走っても描画してはいけない。実機では
+    描画完了後もラベルが「地形データ取得中… 100%」のまま残った。
+    """
+    import tkinter as tk
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"no display available: {e}")
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+
+        # 取得中の状態を作り、進捗を積んでから停止する。
+        app._prog_active = True
+        app._progress_push(200, "地形データ取得中… 100%")
+        app._progress_stop()
+        app.prog_label.config(text="準備完了")
+        app.prog_bar.config(value=0)
+
+        # 停止後に残存ポーリングが 1 回発火しても表示は変わらない。
+        app._poll_progress()
+        assert app.prog_label.cget("text") == "準備完了"
+        assert float(app.prog_bar.cget("value")) == 0.0
+
+        # ワーカースレッドは停止後にも進捗を push しうる（取得完了の通知と
+        # 最後のサンプルの push は競合する）。その分も描画してはいけない
+        # ＝キュー破棄だけでなく _poll_progress の早期 return が要る。
+        app._progress_push(200, "地形データ取得中… 100%")
+        app._poll_progress()
+        assert app.prog_label.cget("text") == "準備完了"
+        assert float(app.prog_bar.cget("value")) == 0.0
+    finally:
+        root.destroy()

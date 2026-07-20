@@ -183,11 +183,15 @@ def _fit_to_page_script() -> str:
 def save_path_visuals(pr: PathResult, coord_format: str = "dd",
                       project_name: str = "") -> None:
     """
-    PNG と HTML をメインスレッドから保存する。
+    PNG と HTML を保存する（バックグラウンドスレッドから呼んでよい）。
 
-    matplotlib の TkAgg バックエンドが初期化されている環境では
-    バックグラウンドスレッドから matplotlib を使うと tkinter GC 警告が
-    発生するため、この関数は必ずメインスレッド（on_path_complete 内）で呼ぶこと。
+    以前は「メインスレッド必須」としていたが、save_profile_png が pyplot
+    （TkAgg）ではなく Figure + FigureCanvasAgg を直接使う実装に変わった時点で
+    その制約は消えている（Tk オブジェクトを一切生成しない）。所要時間の大半を
+    占めるため、GUI を固めないようワーカースレッドから呼ぶこと（batch._process_one）。
+
+    ⚠️ 描画前に mpl_fonts.apply_japanese_font() が matplotlib.rcParams
+    （プロセス共有）を書き換えるので、複数パスの並列描画は不可（逐次実行前提）。
 
     coord_format は HTML レポートの人が読む座標セルのみに効く（既定 DD）。
     project_name はレポートヘッダの案件名（自由文字列・空で従来表示）。

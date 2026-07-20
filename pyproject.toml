@@ -1,6 +1,11 @@
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 addopts   = "--tb=short -q"
+# network: 外部ネットワークへの実アクセスを許可する（既定は conftest の
+# _block_network で遮断。理由は conftest.py の同節を参照）。
+markers = [
+    "network: 外部ネットワークアクセスを行うテスト（既定の遮断を解除する）",
+]
 
 # --- Ruff（lint）-----------------------------------------------------------
 # CI の lint をここに明文化（従来は CI で `--select E9,F` をフラグ指定していた）。
