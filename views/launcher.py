@@ -9,7 +9,6 @@ simulation・config・dem の各モジュールを呼ぶだけ。
 
 import json
 import os
-import queue
 import threading
 import tkinter as tk
 from tkinter import filedialog, ttk
@@ -23,6 +22,7 @@ import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs
+from views.progress import ProgressPump
 
 # 入力キー → i18n ツールチップキーのマッピング
 _TIP_KEYS: dict[str, str] = {
@@ -104,6 +104,8 @@ class SimLauncher:
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
 
     def _on_app_close(self) -> None:
+        # 破棄前にポーリングを止める（破棄済み root への after を避ける）。
+        self._pump.stop()
         map_widget = None
         win = getattr(self, "_map_win", None)
         if win is not None:
@@ -471,13 +473,22 @@ class SimLauncher:
         )
         self.prog_bar.pack(pady=5, fill="x")
 
-        # 進捗はワーカースレッドからキュー経由で受け取る（下記 _progress_push）。
-        self._prog_queue: queue.Queue = queue.Queue()
-        self._prog_active = False
+        # 進捗はワーカースレッドから ProgressPump 経由で受け取る。バーとラベルは
+        # 「最新の状態」だけが意味を持つので latest_only（中間値を全部描いても
+        # 見えないうえ、取得は 1 サンプルごとに push される）。
+        self._pump = ProgressPump(
+            self.root, self._render_progress, latest_only=True
+        )
 
     # ----------------------------------------------------------
-    # 進捗表示（ワーカースレッド → キュー → メインスレッド）
+    # 進捗表示（ワーカースレッド → ProgressPump → メインスレッド）
     # ----------------------------------------------------------
+    def _render_progress(self, item: tuple) -> None:
+        """ポンプから届いた進捗を描画する（メインスレッドで呼ばれる）。"""
+        value, text = item
+        self.prog_bar.config(value=value)
+        self.prog_label.config(text=text)
+
     def _progress_push(self, value: float, text: str) -> None:
         """ワーカースレッドから進捗を送る。Tk には一切触れない。
 
@@ -485,11 +496,9 @@ class SimLauncher:
         simulation.fetch_elevations は on_progress を**グローバルロック保持中**に
         呼ぶ（simulation.py の _fetch_one）ため、Tcl 呼び出しのコストが全ワーカーを
         直列化し取得時間そのものを支配していた。実測（2.4b1・200 サンプル・
-        キャッシュ暖機済み）で約 1.0s → キュー化で約 0.035s。バッチ側
-        （batch_builder）は元からこの方式で、単一実行だけが取り残されていた。
-        ワーカースレッドから Tcl を呼ばなくなる点でもこちらが正しい。
+        キャッシュ暖機済み）で約 1.0s → キュー化で約 0.035s。
         """
-        self._prog_queue.put((value, text))
+        self._pump.push((value, text))
 
     def _progress_reset(self, maximum: int, text: str) -> None:
         """バーの目盛りを切り替える（メインスレッドから呼ぶ）。
@@ -497,51 +506,13 @@ class SimLauncher:
         フェーズ切替時に前フェーズの積み残しが新しい maximum で描画されるのを
         避けるため、キューを捨ててから設定する。
         """
-        while True:
-            try:
-                self._prog_queue.get_nowait()
-            except queue.Empty:
-                break
+        self._pump.clear()
         self.prog_bar.config(maximum=max(maximum, 1), value=0)
         self.prog_label.config(text=text)
 
     def _progress_stop(self) -> None:
-        """進捗ポーリングを止め、積み残しを捨てる（メインスレッドから呼ぶ）。
-
-        キューを空にするのは、停止後に古い進捗が完了表示を上書きしないため。
-        _poll_progress 側の早期 return と合わせた二重の防御。
-        """
-        self._prog_active = False
-        while True:
-            try:
-                self._prog_queue.get_nowait()
-            except queue.Empty:
-                break
-
-    def _poll_progress(self) -> None:
-        """進捗キューを消費する（50ms 間隔・最新値のみ描画）。
-
-        バーとラベルは「最新の状態」だけが意味を持つので、溜まった分は
-        捨てて最後の 1 件だけ反映する（中間値を全部描いても見えない）。
-
-        ⚠️ 停止済みなら**何も描かずに戻る**。_progress_stop の時点で
-        after(50) 済みのポーリングが 1 回残っており、それが積み残しの
-        「地形データ取得中… 100%」を描いて完了表示を上書きしてしまうため
-        （2.4b2 実機βで発生）。
-        """
-        if not self._prog_active:
-            return
-        latest = None
-        while True:
-            try:
-                latest = self._prog_queue.get_nowait()
-            except queue.Empty:
-                break
-        if latest is not None:
-            value, text = latest
-            self.prog_bar.config(value=value)
-            self.prog_label.config(text=text)
-        self.root.after(50, self._poll_progress)
+        """進捗ポーリングを止め、積み残しを捨てる（メインスレッドから呼ぶ）。"""
+        self._pump.stop()
 
     def _build_buttons(self, parent: tk.Widget) -> None:
         frame = ttk.Frame(parent)
@@ -694,8 +665,7 @@ class SimLauncher:
             params.lat_rx, params.lon_rx,
         )
         self._progress_reset(tile_count, i18n.t("status_prefetch"))
-        self._prog_active = True
-        self._poll_progress()
+        self._pump.start()
 
         def _prefetch_progress(done: int, total: int) -> None:
             pct = int(done / total * 100)
@@ -719,6 +689,9 @@ class SimLauncher:
 
     def _start_simulation(self, params: sim.SimParams) -> None:
         """Phase 2: 標高取得 → グラフ表示。"""
+        # 通常は Phase 1 で開始済みだが、start は冪等なので各フェーズが自前で
+        # 開始してよい（この相だけを呼ぶ経路が増えても進捗が黙って消えない）。
+        self._pump.start()
         self._progress_reset(params.num, i18n.t("status_fetching"))
 
         def _on_progress(v: int) -> None:

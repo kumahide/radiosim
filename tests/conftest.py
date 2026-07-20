@@ -13,6 +13,7 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import models
+import simulation as sim
 
 
 # ============================================================
@@ -82,6 +83,24 @@ def _block_network(request):
     finally:
         socket.socket.connect = _real_socket_connect
         socket.create_connection = _real_create_connection
+
+
+# ============================================================
+# プロセス横断状態のリセット
+# ============================================================
+@pytest.fixture(autouse=True)
+def _clear_terrain_cache():
+    """テスト間で地形キャッシュを空にする。
+
+    `simulation._terrain_cache` はプロセス全体で共有され、キーは座標＋サンプル数
+    のみ（周波数等は地形に影響しないので含まない）。テストの多くが同一座標を
+    使うため、消さないと前のテストの結果が次のテストへ漏れる。実際、バッチを
+    キャッシュ付き取得へ切り替えた際、取得失敗を検証するテストが「前のテストの
+    キャッシュにヒットして取得自体が走らない」ため緑になってしまった。
+    """
+    sim.clear_terrain_cache()
+    yield
+    sim.clear_terrain_cache()
 
 
 @pytest.fixture
