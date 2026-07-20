@@ -1,8 +1,10 @@
 """
 tests/conftest.py
 =================
-test_models.py / test_simulation.py で共有するフィクスチャ。
+共有フィクスチャと、外部ネットワークアクセスの遮断ゲート。
 """
+
+import socket
 
 import numpy as np
 import pytest
@@ -11,6 +13,75 @@ import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import models
+
+
+# ============================================================
+# 外部ネットワーク遮断ゲート
+# ============================================================
+# ユニットテストから GSI（cyberjapandata.gsi.go.jp）へ実リクエストが飛ぶのを
+# 止める。注意書きではなくゲートにしてあるのは、この混入が「失敗せずに」
+# 起きるため（→ [[feedback-promote-recurring-checks]]）。
+#
+# 実例（B-006・2026-07-20）: バッチの成果物生成をワーカースレッドへ移した際、
+# run_batch がサマリ地図の淡色地図タイル取得を含むようになり、ユニットテストが
+# 実ネットワークを叩き始めた。report_map はベストエフォート設計で取得失敗を
+# None に落として続行するため、オンラインでもオフラインでもテストは緑のまま
+# 通る。所要時間の変化に気づかない限り検出できない。
+#
+# 遮断は socket 層で行う。requests / urllib / tkintermapview のどの経路から
+# 来ても最終的にここへ落ちるため、呼び出し側を個別に塞ぐ必要がない。
+# localhost は通す（将来のローカルサーバ系テストを巻き込まないため）。
+# 正当な理由で外部通信するテストは @pytest.mark.network を付けて明示する。
+
+_real_socket_connect     = socket.socket.connect
+_real_create_connection  = socket.create_connection
+
+
+def _is_local(address) -> bool:
+    """接続先が localhost / UNIX ソケットなら True。"""
+    if not isinstance(address, tuple) or not address:
+        return True   # AF_UNIX 等はアドレスがタプルでない＝外部通信ではない
+    host = address[0]
+    return host in ("127.0.0.1", "::1", "localhost", "0.0.0.0", "")
+
+
+class NetworkAccessBlocked(RuntimeError):
+    """テスト中に外部ネットワークアクセスが試みられた。"""
+
+
+def _blocked(address):
+    raise NetworkAccessBlocked(
+        f"テストから外部ネットワークへの接続が試みられました: {address}\n"
+        "ユニットテストは外部 API（GSI 等）を叩いてはいけません。"
+        "取得層を monkeypatch するか、意図的な通信なら "
+        "@pytest.mark.network を付けてください。"
+    )
+
+
+@pytest.fixture(autouse=True)
+def _block_network(request):
+    """全テストで外部ネットワークを遮断する（@pytest.mark.network で解除）。"""
+    if request.node.get_closest_marker("network"):
+        yield
+        return
+
+    def _guarded_connect(self, address):
+        if not _is_local(address):
+            _blocked(address)
+        return _real_socket_connect(self, address)
+
+    def _guarded_create_connection(address, *args, **kwargs):
+        if not _is_local(address):
+            _blocked(address)
+        return _real_create_connection(address, *args, **kwargs)
+
+    socket.socket.connect = _guarded_connect
+    socket.create_connection = _guarded_create_connection
+    try:
+        yield
+    finally:
+        socket.socket.connect = _real_socket_connect
+        socket.create_connection = _real_create_connection
 
 
 @pytest.fixture

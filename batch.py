@@ -235,15 +235,28 @@ def run_batch(
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
     coord_format:      str = "dd",
+    on_path_stage:     "Callable[[str], None] | None" = None,
+    project_name:      str = "",
+    memo:              str = "",
 ) -> None:
     """バッチ実行をバックグラウンドスレッドで開始する。
 
     coord_format は per-path report.txt の人が読む座標表記のみに効く（既定 DD）。
+
+    成果物生成（PNG/HTML/KML・サマリ地図）もこのスレッド内で行う。report と
+    report_map は Figure+FigureCanvasAgg と PIL のみで tkinter に触れないため
+    ワーカースレッドから安全に呼べる（→ save_profile_png の docstring）。GUI を
+    固めないために必ずここで生成すること。project_name / memo はレポートの
+    ヘッダに載る自由文字列。
+
+    on_path_stage は 1 パス内の段階通知（"fetch" / "render"）。所要時間の大半は
+    "render"（matplotlib 描画）なので、呼び出し側はこれで表示を切り替える。
     """
     threading.Thread(
         target = _run_thread,
         args   = (rows, base_params, on_path_start, on_path_progress,
-                  on_path_complete, on_batch_complete, on_error, coord_format),
+                  on_path_complete, on_batch_complete, on_error, coord_format,
+                  on_path_stage, project_name, memo),
         daemon = True,
     ).start()
 
@@ -257,6 +270,9 @@ def _run_thread(
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
     coord_format:      str = "dd",
+    on_path_stage:     "Callable[[str], None] | None" = None,
+    project_name:      str = "",
+    memo:              str = "",
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -269,10 +285,20 @@ def _run_thread(
         for i, row in enumerate(rows):
             on_path_start(i + 1, total, row.path_id)
             pr = _process_one(row, base_params, batch_dir, on_path_progress,
-                              coord_format)
+                              coord_format, on_path_stage, project_name)
             path_results.append(pr)
             on_path_complete(i + 1, total, pr)
 
+        # サマリ生成もここ（ワーカースレッド）で行う。render_summary_map_b64 は
+        # 淡色地図タイルをネットワーク取得するため、GUI スレッドで呼ぶと数秒
+        # 固まる（basemap は DEM と別キャッシュなので DEM が暖まっていても
+        # コールドになりうる）。
+        if on_path_stage:
+            on_path_stage("summary")
+        map_b64 = report.render_summary_map_b64(path_results)
+        report.save_summary_html(path_results, batch_dir, project_name, memo,
+                                 map_b64)
+        report.save_summary_kml(path_results, batch_dir)
         report._save_summary_csv(path_results, batch_dir)
         logger.info("Batch complete: %d paths → %s", total, batch_dir)
         on_batch_complete(batch_dir, path_results)
@@ -288,9 +314,13 @@ def _process_one(
     batch_dir:   str,
     on_progress: Callable[[int], None],
     coord_format: str = "dd",
+    on_stage:     "Callable[[str], None] | None" = None,
+    project_name: str = "",
 ) -> PathResult:
     try:
         params    = _make_params(row, base)
+        if on_stage:
+            on_stage("fetch")
         raw_elevs = _fetch_sync(params, on_progress)
         terrain   = models.calculate_terrain_profile(
             raw_elevs = raw_elevs,
@@ -307,16 +337,25 @@ def _process_one(
         sim._save_terrain_csv(terrain, path_dir)
         sim._save_report(result, params, params.h_tx, params.h_rx, path_dir,
                          coord_format)
-        # _save_profile_png は matplotlib を使うためメインスレッドで呼ぶ。
-        # save_path_visuals() を on_path_complete コールバック内（メインスレッド）で呼ぶこと。
-
-        return PathResult(
+        pr = PathResult(
             row      = row,
             result   = result,
             terrain  = terrain,
             params   = params,
             save_dir = path_dir,
         )
+
+        # PNG/HTML/KML の生成はこのスレッドで行う（メインスレッド制約は無い＝
+        # save_profile_png が pyplot ではなく FigureCanvasAgg を使うため）。
+        # 1 パスの所要時間はほぼここが占めるので、GUI スレッドに載せると
+        # ウィンドウごと固まりプログレスバーの再描画も止まる。
+        # ⚠️ mpl_fonts.apply_japanese_font() が matplotlib.rcParams（グローバル）を
+        # 書き換えるため、パスの描画を並列化してはいけない（逐次実行を維持）。
+        if on_stage:
+            on_stage("render")
+        report.save_path_visuals(pr, coord_format, project_name)
+
+        return pr
 
     except Exception as ex:
         logger.error("Path '%s' failed: %s", row.path_id, ex)

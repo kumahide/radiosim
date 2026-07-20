@@ -850,8 +850,12 @@ class TestProcessOne:
         assert pr.terrain is not None and pr.params is not None
         assert pr.save_dir == os.path.join(str(tmp_path), "path01")
         produced = set(os.listdir(pr.save_dir))
-        # PNG/HTML/KML はメインスレッド側（save_path_visuals）の責務なのでここには無い。
+        # 成果物は _process_one（ワーカースレッド）で生成しきる。以前は
+        # save_path_visuals だけメインスレッド側の責務としていたが、それが
+        # バッチ実行中に GUI を固める原因だった（B-006）。
         assert {"report.txt", "terrain_profile.csv"} <= produced
+        assert any(f.endswith(".png") for f in produced), "断面 PNG が無い"
+        assert any(f.endswith(".kml") for f in produced), "KML が無い"
 
     def test_fetch_failure_is_contained_in_result(
             self, tmp_path, default_params_dict, monkeypatch):
@@ -875,6 +879,11 @@ class TestRunBatch:
         i18n.set_lang("en")
         monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        # サマリ地図は淡色地図タイルを GSI から取得する唯一の経路。run_batch が
+        # これをワーカースレッドで呼ぶようになった（B-006）ため、塞がないと
+        # ユニットテストが実ネットワークを叩く。地図なし（None）は
+        # save_summary_html のベストエフォート分岐で正規にサポートされる。
+        monkeypatch.setattr(report, "render_summary_map_b64", lambda results: None)
         base = sim.SimParams(default_params_dict)
         ev: dict[str, list] = {"start": [], "complete": [], "batch": [], "error": []}
         done = threading.Event()
@@ -922,6 +931,30 @@ class TestRunBatch:
         assert [pr.ok for pr in results] == [True, False, True]
         assert isinstance(results[1].error, RuntimeError)
         assert os.path.exists(os.path.join(batch_dir, "summary.csv"))
+
+    def test_artifacts_are_generated_off_the_main_thread(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """成果物生成が GUI スレッドに戻らないことを固定する（B-006 の回帰ガード）。
+
+        以前は save_path_visuals とサマリ地図生成を GUI の on_path_complete /
+        on_batch_complete で呼んでおり、バッチ実行中ウィンドウごと固まっていた。
+        メインスレッドで呼ばれたらここで落ちる。
+        """
+        seen: list[str] = []
+        real_visuals = report.save_path_visuals
+
+        def _spy(pr, coord_format="dd", project_name=""):
+            seen.append(threading.current_thread().name)
+            return real_visuals(pr, coord_format, project_name)
+
+        monkeypatch.setattr(report, "save_path_visuals", _spy)
+        ev = self._run([_row(), _row(path_id="path02")], tmp_path,
+                       default_params_dict, monkeypatch)
+        assert ev["error"] == []
+        assert len(seen) == 2, "パスごとに成果物生成が走っていない"
+        main_name = threading.main_thread().name
+        assert all(name != main_name for name in seen), \
+            f"成果物生成がメインスレッドで実行された: {seen}"
 
     def test_engine_failure_calls_on_error(
             self, tmp_path, default_params_dict, monkeypatch):
