@@ -13,6 +13,7 @@ import math
 import os
 import re
 import threading
+import time
 from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
@@ -281,6 +282,8 @@ def _run_thread(
 
         path_results: list[PathResult] = []
         total = len(rows)
+        t_batch = time.perf_counter()
+        logger.info("Batch started: %d paths → %s", total, batch_dir)
 
         for i, row in enumerate(rows):
             on_path_start(i + 1, total, row.path_id)
@@ -295,12 +298,16 @@ def _run_thread(
         # コールドになりうる）。
         if on_path_stage:
             on_path_stage("summary")
+        t_sum = time.perf_counter()
         map_b64 = report.render_summary_map_b64(path_results)
+        logger.info("Summary map complete in %.2fs", time.perf_counter() - t_sum)
         report.save_summary_html(path_results, batch_dir, project_name, memo,
                                  map_b64)
         report.save_summary_kml(path_results, batch_dir)
         report._save_summary_csv(path_results, batch_dir)
-        logger.info("Batch complete: %d paths → %s", total, batch_dir)
+        logger.info("Batch complete: %d paths in %.2fs (summary %.2fs) → %s",
+                    total, time.perf_counter() - t_batch,
+                    time.perf_counter() - t_sum, batch_dir)
         on_batch_complete(batch_dir, path_results)
 
     except Exception as ex:
@@ -351,9 +358,15 @@ def _process_one(
         # ウィンドウごと固まりプログレスバーの再描画も止まる。
         # ⚠️ mpl_fonts.apply_japanese_font() が matplotlib.rcParams（グローバル）を
         # 書き換えるため、パスの描画を並列化してはいけない（逐次実行を維持）。
+        # ガード: tests/test_batch.py::TestRunBatch::test_path_rendering_is_never_parallel
         if on_stage:
             on_stage("render")
+        # phase 境界ログ。B-006 の診断では「バッチで最も時間を食う区間」に
+        # ログ行が1つも無く、所要時間が最後まで測れなかった（→ 開発環境 C-b3②）。
+        t0 = time.perf_counter()
         report.save_path_visuals(pr, coord_format, project_name)
+        logger.info("Path '%s' render complete in %.2fs",
+                    row.path_id, time.perf_counter() - t0)
 
         return pr
 

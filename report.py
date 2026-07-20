@@ -192,6 +192,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
 
     ⚠️ 描画前に mpl_fonts.apply_japanese_font() が matplotlib.rcParams
     （プロセス共有）を書き換えるので、複数パスの並列描画は不可（逐次実行前提）。
+    ガード: tests/test_batch.py::TestRunBatch::test_path_rendering_is_never_parallel
 
     coord_format は HTML レポートの人が読む座標セルのみに効く（既定 DD）。
     project_name はレポートヘッダの案件名（自由文字列・空で従来表示）。
