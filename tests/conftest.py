@@ -5,6 +5,7 @@ tests/conftest.py
 """
 
 import socket
+import time
 
 import numpy as np
 import pytest
@@ -130,3 +131,36 @@ def flat_terrain():
     """平坦地形（標高 0m 均一、100 サンプル）。"""
     raw = np.zeros(100)
     return models.calculate_terrain_profile(raw, 34.5429, 132.4118, 34.5389, 132.4050)
+
+
+# ============================================================
+# Tk ルート生成（間欠的な初期化失敗のリトライ）
+# ============================================================
+# この環境では Tk の初期化が間欠的に失敗する。**毎回違う .tcl が「読めない」と
+# 言われ、errno が "No error" や実在ファイルへの "no such file" になる**のが特徴で、
+# ファイル自体は存在しディスクにも余裕がある（実測）。リアルタイムスキャン等に
+# よる一過性の read 失敗と考えられ、アプリ側では根治できない。
+#
+# 放置すると表示依存テストが **黙って skip** される＝「緑に見えて実は GUI 配線を
+# 1つも検証していない」状態になり、本プロジェクトが最も警戒する失効ゲートそのもの
+# （[[feedback-promote-recurring-checks]]）。一過性なら再試行で通るので、skip へ
+# 倒す前に数回やり直す。それでも駄目なら従来どおり skip。
+
+_TK_INIT_ATTEMPTS = 5
+
+
+def make_tk_root(pytest_module=None):
+    """tkinter のルートを生成する。間欠的な初期化失敗は数回リトライする。
+
+    全て失敗したときだけ skip する（ヘッドレス CI もここに落ちる）。
+    """
+    import tkinter as tk
+
+    last = None
+    for _ in range(_TK_INIT_ATTEMPTS):
+        try:
+            return tk.Tk()
+        except tk.TclError as e:
+            last = e
+            time.sleep(0.05)
+    pytest.skip(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
