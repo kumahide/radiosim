@@ -344,3 +344,39 @@ def test_single_and_batch_share_the_progress_transport():
                 pass          # _on_close_window で破棄済み
     finally:
         root.destroy()
+
+
+def test_launcher_window_fits_its_content():
+    """ランチャーの全ウィジェットがウィンドウ内に収まること。
+
+    ウィンドウは resizable(False, False) の固定サイズなので、高さが足りないと
+    最下段のウィジェットが黙って切り落とされ、ユーザーはリサイズで回避すら
+    できない。実際 2.4 で「案件情報」グループを足したとき必要高さが 931px に
+    なり、900px 固定のままだったため「マップウィンドウ」ボタンが丸ごと
+    見えなくなっていた（ユーザー報告・2026-07-20）。
+
+    入力欄を1グループ足すだけで再発する類なので、注意書きではなくゲートで守る。
+
+    ⚠️ 検証するのは**選ばれた高さ**（_window_height）であって実現後のサイズでは
+    ない。ウィンドウが未表示のあいだ `geometry()` は設定値ではなく自然サイズを
+    返すため、それと比べるテストは壊れた実装でも緑になる（実際に一度そう書いた）。
+    """
+    import tkinter as tk
+
+    try:
+        root = tk.Tk()
+    except tk.TclError as e:
+        pytest.skip(f"no display available: {e}")
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        root.update_idletasks()
+
+        needed = root.winfo_reqheight()
+        assert app._window_height >= needed, (
+            f"ランチャーの中身がウィンドウに収まっていない（必要 {needed}px / "
+            f"ウィンドウ {app._window_height}px）。下端のウィジェットが切れる。"
+        )
+    finally:
+        root.destroy()

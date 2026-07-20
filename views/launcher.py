@@ -86,10 +86,13 @@ class _Tooltip:
 class SimLauncher:
     """メインウィンドウ：入力フォーム・進捗バー・実行ボタン。"""
 
+    # ウィンドウ幅（固定）と、内容が少ないときでも下回らない高さ。
+    _WIN_WIDTH  = 450
+    _MIN_HEIGHT = 900
+
     def __init__(self, root: tk.Tk, on_theme: Callable[[str], None]) -> None:
         self.root = root
         root.title(version.APP_FULL)
-        root.geometry("450x900")
         root.resizable(False, False)
 
         self.config    = config.load_config()
@@ -98,10 +101,35 @@ class SimLauncher:
         self._on_theme = on_theme
 
         self._build_ui()
+        self._fit_window_to_content()
         # 終了時、開いたままのマップウィンドウの after ループを止めてから破棄する
         # （tkintermapview の `invalid command name ...update_canvas_tile_images`
         # 対策。MapWindow._on_close と対）。
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
+
+    def _fit_window_to_content(self) -> None:
+        """ウィンドウ高さを中身の必要量に合わせる（下端の切り落とし防止）。
+
+        ウィンドウは `resizable(False, False)` の固定サイズなので、**高さを
+        リテラルで持つと入力欄を1グループ足すたびに下端が黙って切れる**。実際
+        2.4 で「案件情報」グループ（案件名・メモ）を足したとき必要高さが 931px に
+        なり、900px 固定のままだったため最下段の「マップウィンドウ」ボタンが
+        丸ごと見えなくなっていた（ユーザー報告・2026-07-20）。ユーザーは
+        リサイズもできないので回避手段が無い。
+
+        高さは実測（`winfo_reqheight`）から決めるので、以後グループを足しても
+        追随する。画面からはみ出さないよう画面高さの 92% で頭打ちにする。
+        ガード＝tests/test_smoke.py::test_launcher_window_fits_its_content。
+        """
+        self.root.update_idletasks()
+        needed = max(self.root.winfo_reqheight(), self._MIN_HEIGHT)
+        limit  = int(self.root.winfo_screenheight() * 0.92)
+        # 選んだ高さを残す。ウィンドウが未表示のあいだ `geometry()` は設定値では
+        # なく自然サイズを返すため、テストから実現後のサイズは当てにできない
+        # （最初に書いたガードはこれで壊れた実装でも緑になった）。決定した値を
+        # そのまま検証できるようにしておく。
+        self._window_height = min(needed, limit)
+        self.root.geometry(f"{self._WIN_WIDTH}x{self._window_height}")
 
     def _on_app_close(self) -> None:
         # 破棄前にポーリングを止める（破棄済み root への after を避ける）。
