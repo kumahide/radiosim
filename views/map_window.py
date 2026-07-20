@@ -27,6 +27,7 @@ views/map_window.py
 
 import os
 import threading
+import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Callable, Protocol, cast
@@ -39,6 +40,9 @@ import map_graphics
 import models
 from tkintermapview import TkinterMapView
 from views import dialogs
+from views.progress import ProgressPump
+
+logger = __import__("logging").getLogger("radiosim")
 
 # マーカー配色は map_graphics に集約（レポート地図生成 report_map.py と共通）。
 _UISP_CYAN_HEX = map_graphics.UISP_CYAN_HEX
@@ -135,6 +139,8 @@ class MapWindow:
 
         self._win = tk.Toplevel(parent)
         self._win.title(i18n.t("map_title"))
+        # タイル取得の進捗は単一/バッチと同じ部品で受ける（実行のあいだだけ回す）。
+        self._pump = ProgressPump(self._win, self._render_progress, latest_only=True)
         self._win.geometry("900x680")
         self._win.minsize(720, 520)
 
@@ -200,6 +206,8 @@ class MapWindow:
         if self._closing:
             return
         self._closing = True
+        # 進捗ポーリングを止める（破棄済みウィジェットへの after を避ける）。
+        self._pump.stop()
         # 自前の after ジョブを取り消す。
         for aid in (self._overlay_after_id, self._status_clear_id,
                     self._init_after_id):
@@ -881,18 +889,34 @@ class MapWindow:
         self._progress_var.set(0)
         self._show_progress()
         self._set_status(i18n.t("tm_downloading"))
+        self._pump.start()
         threading.Thread(target=self._download_worker, args=(bbox, force), daemon=True).start()
 
     def _download_worker(self, bbox: tuple, force: bool) -> None:
+        # 進捗はポンプ経由で渡す。従来はタイルごとに `after(0, ...)` を2回呼んで
+        # おり、ワーカースレッドから Tcl を叩く点でも他フローで廃した書き方だった
+        # （単一実行では同じ形が取得時間そのものを支配していた＝B-006）。ここは
+        # progress_cb がロック外で呼ばれるので直列化の実害は無かったが、書き方は
+        # 3フローで揃える。
         def progress_cb(done: int, total: int) -> None:
             pct = int(done / total * 100) if total else 0
-            self._win.after(0, self._progress_var.set, pct)
-            self._win.after(0, self._set_status,
-                i18n.t("tm_dl_progress").format(done=done, total=total, pct=pct))
+            self._pump.push((pct, i18n.t("tm_dl_progress").format(
+                done=done, total=total, pct=pct)))
+
+        t0 = time.perf_counter()
         dl_result = dem.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
+        logger.info("Tile download complete in %.2fs: %s",
+                    time.perf_counter() - t0, dl_result)
         self._win.after(0, self._on_download_done, dl_result)
 
+    def _render_progress(self, item: tuple) -> None:
+        """ポンプから届いた進捗を描画する（メインスレッドで呼ばれる）。"""
+        pct, text = item
+        self._progress_var.set(pct)
+        self._set_status(text)
+
     def _on_download_done(self, dl_result: dict) -> None:
+        self._pump.stop()
         self._set_busy(False)
         self._hide_progress()
         self._set_status(i18n.t("tm_dl_done").format(
@@ -902,9 +926,16 @@ class MapWindow:
             skipped=dl_result["skipped"],
             failed=dl_result["failed"],
         ), auto_clear=True)
+        # ⚠️ ここから先は進捗表示を消した後にメインスレッドで走る区間。
+        # _refresh_stats はキャッシュ全体を走査するのでファイル数に比例して伸びる
+        # （B-006／I-008 と同型の「進捗を消してから重い処理」）。所要をログに残し、
+        # 無視できない大きさになったら段階ラベルを出す判断ができるようにする。
+        t0 = time.perf_counter()
         self._refresh_stats()
         self._refresh_overlay()   # DL 結果を自動カバレッジ表示に反映
         self._clear_selection()   # DL 完了後は選択枠を消す
+        logger.info("Post-download refresh complete in %.2fs",
+                    time.perf_counter() - t0)
 
     def _clear_selection(self) -> None:
         """選択枠と座標をクリアする（ステータス文には触れない）。"""

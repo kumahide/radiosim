@@ -421,3 +421,41 @@ def test_graph_signals_ready_before_blocking_show():
     finally:
         plt.show = real_show
         real_close("all")
+
+
+def test_all_execution_flows_use_the_progress_pump():
+    """実行フロー3つがいずれも ProgressPump で進捗を渡すこと。
+
+    このアプリの「実行フロー」は 単一（launcher）／バッチ（batch_builder）／
+    地図のタイル取得（map_window）の3つ。B-006（バッチ）と I-008（単一）は
+    同じ欠陥クラスが別フローで再発したもので、原因の1つは**報告された1件だけ
+    直してクラスとして直さなかった**こと。ここで3フローを固定し、進捗の受け渡し
+    が各所で再発明されるのを防ぐ。
+
+    ⚠️ このガードは**既知の3フローを固定するだけ**で、4つ目のフローが
+    ProgressPump を使わずに増えるのは検出できない（2.5 の scenario.py が
+    それにあたる。相の宣言を共有ランナーへ組み込む予定＝ロードマップ参照）。
+    """
+    import ast
+
+    flows = {
+        "views/launcher.py":      "単一実行",
+        "views/batch_builder.py": "バッチ",
+        "views/map_window.py":    "地図タイル取得",
+    }
+    missing = []
+    for rel, label in flows.items():
+        path = os.path.join(_APP_ROOT, rel)
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        used = any(
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "ProgressPump"
+            for node in ast.walk(tree)
+        )
+        if not used:
+            missing.append(f"{rel}（{label}）")
+    assert not missing, (
+        f"進捗の受け渡しが ProgressPump を通っていないフロー: {missing}"
+    )
