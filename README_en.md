@@ -604,22 +604,22 @@ python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
 
-### Test Suite (429 tests)
+### Test Suite (499 tests)
 
 | File                       | Count | Coverage                                                                        |
 | -------------------------- | ----- | ------------------------------------------------------------------------------- |
-| `test_models.py`         | 82    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_models.py`         | 94    | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_simulation.py`     | 38    | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | 36    | Input validation, config I/O (app/sim split), i18n key coverage                 |
-| `test_dem.py`            | 64    | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
-| `test_batch.py`          | 78    | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
+| `test_dem.py`            | 71    | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
+| `test_batch.py`          | 108    | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
 | `test_report.py`         | 20    | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
-| `test_report_map.py`     | 25    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
+| `test_report_map.py`     | 42    | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | 4     | Map window safe teardown (after-loop stop invariants)                           |
 | `test_coords.py`         | 24    | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_mpl_fonts.py`      | 4     | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
-| `test_smoke.py`          | 19    | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) |
-| `test_docs_consistency.py` | 9   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
+| `test_smoke.py`          | 24    | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check |
+| `test_docs_consistency.py` | 24   | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | 10   | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 
 ---

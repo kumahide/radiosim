@@ -20,10 +20,14 @@ import batch
 import config
 import coords
 import i18n
-import report
 import simulation as sim
 from models import ENV_KEYS
 from views import dialogs
+
+# 1 パスの進捗区間のうち、標高取得が占める割合。残りはレポート描画に充てる。
+# 実測（2.4b1・200 サンプル）では取得 ≒35ms に対し描画はその数十倍で、取得を
+# 区間全体に割り当てるとバーが即座に振り切れて実態と乖離する。
+_FETCH_FRAC = 0.15
 
 
 class BatchBuilderWindow(tk.Toplevel):
@@ -947,6 +951,9 @@ class BatchBuilderWindow(tk.Toplevel):
             on_batch_complete = lambda d,   rs,        q=q: q.put(("complete", (d, rs))),
             on_error          = lambda ex,             q=q: q.put(("error",    (ex,))),
             coord_format      = self._coord_format,
+            on_path_stage     = lambda stage, q=q: q.put(("stage", (stage,))),
+            project_name      = self._project_name_var.get().strip(),
+            memo              = self._memo_var.get().strip(),
         )
 
     # ----------------------------------------------------------
@@ -961,6 +968,8 @@ class BatchBuilderWindow(tk.Toplevel):
                     self._on_path_start(*args)
                 elif event == "progress":
                     self._on_path_progress_tick(*args)
+                elif event == "stage":
+                    self._on_path_stage(*args)
                 elif event == "done":
                     self._on_path_done(*args)
                 elif event == "complete":
@@ -988,8 +997,25 @@ class BatchBuilderWindow(tk.Toplevel):
         """
         if not self._running or self._run_samples <= 0:
             return
-        frac = min(done / self._run_samples, 1.0)
+        frac = min(done / self._run_samples, 1.0) * _FETCH_FRAC
         self._prog_bar.config(value=(self._run_cur - 1) + frac)
+
+    def _on_path_stage(self, stage: str) -> None:
+        """パス内の段階（取得 / 描画 / サマリ）をラベルとバーへ反映する。
+
+        実測（2.4b1）では 200 サンプルの取得が約 35ms に対しレポート描画は
+        その数十倍かかる。取得だけを 100% として描くと「一瞬で終わって残りは
+        無反応」に見えるため、取得はパス区間の先頭 _FETCH_FRAC までに抑える。
+        描画は matplotlib から下位進捗を取れないので、バーは止めたまま
+        ラベルで何をしているかを示す（偽の進捗は出さない）。
+        """
+        if not self._running:
+            return
+        if stage == "render":
+            self._prog_bar.config(value=(self._run_cur - 1) + _FETCH_FRAC)
+            self._prog_label.config(text=i18n.t("batch_stage_render"))
+        elif stage == "summary":
+            self._prog_label.config(text=i18n.t("batch_stage_summary"))
 
     def _on_path_done(self, cur: int, tot: int, pr: batch.PathResult) -> None:
         pct = int(cur / tot * 100) if tot else 0
@@ -1008,17 +1034,11 @@ class BatchBuilderWindow(tk.Toplevel):
         self._ok_label.config(text=f"✓ {self._ok_count} OK")
         self._ng_label.config(text=f"✗ {self._ng_count} NG")
         self._err_label.config(text=f"⚠ {self._err_count} ERR")
-        report.save_path_visuals(pr, self._coord_format,
-                                 self._project_name_var.get().strip())
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
-        # 全パス俯瞰地図（ベストエフォート・失敗時 None → summary は注記のみ）。
-        map_b64 = report.render_summary_map_b64(results)
-        report.save_summary_html(results, batch_dir,
-                                 self._project_name_var.get().strip(),
-                                 self._memo_var.get().strip(),
-                                 map_b64)
-        report.save_summary_kml(results, batch_dir)
+        # 成果物（per-path PNG/HTML/KML・サマリ地図/HTML/KML）は batch 側の
+        # ワーカースレッドで生成済み。ここは UI 更新のみ＝メインスレッドを
+        # 塞がない（従来はここで地図のネットワーク取得まで走り GUI が固まった）。
         self._running = False
         self._run_btn.config(state="normal")
         # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
