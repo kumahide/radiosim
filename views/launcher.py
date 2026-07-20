@@ -10,6 +10,7 @@ simulation・config・dem の各モジュールを呼ぶだけ。
 import json
 import os
 import threading
+import time
 import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import Callable
@@ -756,6 +757,10 @@ class SimLauncher:
         self.prog_label.config(text=i18n.t("status_rendering"))
         self.root.update_idletasks()   # 描画に入る前にラベルを実際に出す
 
+        # phase 境界ログ。バッチには b3 で入れたが単一側は無く、この 0.6 秒が
+        # ログ上まったく見えなかった（→ 開発環境 C-b3② を3フロー対称化）。
+        self._t_render = time.perf_counter()
+
         # matplotlib/pyplot/TkAgg/numpy はここで初めて要る（ランチャー表示前に
         # ロードしないため遅延 import。MapWindow/BatchBuilder と同じ方針）
         from views.graph import show_graph
@@ -770,6 +775,10 @@ class SimLauncher:
 
     def _on_graph_ready(self) -> None:
         """グラフが画面に出る直前に進捗表示を待機状態へ戻す。"""
+        config.logger.info(
+            "Graph render complete in %.2fs",
+            time.perf_counter() - self._t_render,
+        )
         self.prog_label.config(text=i18n.t("status_ready"))
         self.prog_bar.config(value=0)
 
