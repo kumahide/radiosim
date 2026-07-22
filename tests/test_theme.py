@@ -150,6 +150,58 @@ def test_menu_colors_are_legible(root, name):
     assert options["activeforeground"] == options["foreground"]
 
 
+@pytest.mark.parametrize("name", _THEMES)
+def test_tooltip_colors_are_legible(root, name):
+    """ツールチップの文字が背景から読めること。
+
+    B-008 の掃き出しで見つかった同型の欠陥（2026-07-22）：背景だけ
+    `bg="SystemButtonFace"` で固定し、前景は sv_ttk の `tk_setPalette` に
+    追従させていたため、ダークでは #fafafa の文字が #f0f0f0 の背景に載って
+    **コントラスト 1.06:1＝判読不能**だった。
+    """
+    set_theme(name)
+    options = theme.tooltip_options(root)
+    ratio = _contrast(options["foreground"], options["background"])
+    assert ratio >= 4.5, f"{name} テーマのツールチップのコントラスト不足（{ratio:.2f}:1）"
+
+
+def test_tooltip_takes_both_colors_from_theme():
+    """ランチャーのツールチップが前景・背景の両方をテーマから取ること。
+
+    **この欠陥の型＝前景と背景を別々の出所から取ること**（片方だけテーマに
+    追従すると、もう片方と衝突して必ずどこかのテーマで溶ける）。実物の
+    ツールチップを生成し、システム色（SystemButtonFace 等）が残っていないこと、
+    および実効色のコントラストを検証する。
+    """
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        set_theme("dark")
+        from views.launcher import _Tooltip
+        target = tk.Entry(root)
+        target.pack()
+        root.update_idletasks()
+
+        tip = _Tooltip(target, "テスト")
+        tip._show()
+        assert tip._tip is not None
+        label = tip._tip.winfo_children()[0]
+
+        for option in ("background", "foreground"):
+            value = str(label.cget(option))
+            assert not value.startswith("System"), (
+                f"ツールチップの {option} がシステム色 {value} のまま＝テーマ非追従"
+            )
+        to_hex = lambda spec: "#%02x%02x%02x" % tuple(  # noqa: E731
+            c // 257 for c in root.winfo_rgb(spec)
+        )
+        ratio = _contrast(to_hex(str(label.cget("foreground"))),
+                          to_hex(str(label.cget("background"))))
+        assert ratio >= 4.5, f"ツールチップの実効コントラストが不足（{ratio:.2f}:1）"
+    finally:
+        root.destroy()
+
+
 def test_apply_menu_theme_actually_sets_colors(root):
     """apply_menu_theme が tk.Menu に実際の色を設定すること。
 

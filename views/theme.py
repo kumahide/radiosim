@@ -47,7 +47,7 @@ _NAMESPACE = {"light": "sv_light", "dark": "sv_dark"}
 _THEME_NAME = {"sun-valley-light": "light", "sun-valley-dark": "dark"}
 
 # sv_ttk が読めなかった場合の控え。**値の正しさはテストが sv_ttk 実値と突合する**
-# （tests/test_theme.py::test_fallback_matches_sv_ttk）。
+# （tests/test_theme.py::test_palette_comes_from_sv_ttk_not_fallback）。
 _FALLBACK: dict[str, dict[str, str]] = {
     "light": {
         "fg": "#1c1c1c", "bg": "#fafafa", "selfg": "#ffffff",
@@ -120,6 +120,24 @@ def menu_options(widget: tk.Misc) -> dict[str, str]:
         "activeforeground"  : fg,
         "disabledforeground": colors["disfg"],
         "selectcolor"       : fg,   # ラジオ/チェックの「✓」（B-004）
+    }
+
+
+def tooltip_options(widget: tk.Misc) -> dict[str, str]:
+    """ツールチップ（`tk.Label`）へ渡す配色オプション。
+
+    B-008 の掃き出しで見つかった同型の欠陥（2026-07-22）：背景を
+    `bg="SystemButtonFace"` で固定し前景だけテーマに追従させていたため、
+    ダークでは `#fafafa` の文字が `#f0f0f0` の背景に載り**コントラスト 1.06:1
+    ＝完全に読めない**状態だった。前景・背景は必ず同じ出所から取る。
+
+    地の色より少し浮かせて「窓の上に乗った面」に見せる（メニューのアクティブ
+    背景と同じ濃淡の作り方）。
+    """
+    colors = palette(widget)
+    return {
+        "background": _mix(colors["bg"], colors["fg"], _ACTIVE_MIX),
+        "foreground": colors["fg"],
     }
 
 
