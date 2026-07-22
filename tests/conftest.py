@@ -164,3 +164,25 @@ def make_tk_root(pytest_module=None):
             last = e
             time.sleep(0.05)
     pytest.skip(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
+
+
+def set_theme(name: str) -> None:
+    """sv_ttk のテーマを適用する。`sv.tcl` の間欠的な読み込み失敗を再試行する。
+
+    上の `make_tk_root` と同じ一過性の read 失敗（"couldn't read file ...: No error"）が
+    テーマ tcl の source でも起きる。ここで諦めると配色テストが落ちるので、
+    Tk 初期化と同じくリトライで吸収する。
+    """
+    import tkinter as tk
+
+    import sv_ttk
+
+    last = None
+    for _ in range(_TK_INIT_ATTEMPTS):
+        try:
+            sv_ttk.set_theme(name)
+            return
+        except tk.TclError as e:
+            last = e
+            time.sleep(0.05)
+    pytest.skip(f"sv_ttk テーマを読み込めない（{_TK_INIT_ATTEMPTS} 回試行）: {last}")

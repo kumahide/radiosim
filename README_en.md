@@ -171,6 +171,7 @@ radiosim/
 │   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
+│   ├── theme.py          # Theme colors for plain tk widgets (sourced from sv_ttk)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -186,6 +187,7 @@ radiosim/
     ├── test_coords.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
+    ├── test_theme.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     └── test_env_consistency.py
@@ -570,6 +572,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
   views/batch_builder.py  Batch Mode window
   views/dialogs.py        Shared modal dialogs centered on the parent
   views/progress.py       Progress transport (queue + polling, shared by single/batch)
+  views/theme.py          Single source of theme colors (for tk.Menu / tk.Canvas outside ttk)
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -622,6 +625,7 @@ python -m pytest tests/ --cov
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
+| `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |

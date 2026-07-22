@@ -21,7 +21,7 @@ import coords
 import i18n
 import simulation as sim
 from models import ENV_KEYS
-from views import dialogs
+from views import dialogs, theme
 from views.progress import ProgressPump
 
 # 1 パスの進捗区間のうち、標高取得が占める割合。残りはレポート描画に充てる。
@@ -289,9 +289,11 @@ class BatchBuilderWindow(tk.Toplevel):
         canvas_frame = ttk.Frame(outer)
         canvas_frame.pack(fill="both", expand=True)
 
-        # tk.Canvas は ttk 管理外でテーマに追従しないため、生成時点の ttk 背景色を
+        # tk.Canvas は ttk 管理外でテーマに追従しないため、生成時点のテーマ背景色を
         # 明示的に合わせる（I-005・sv_ttk のテーマ切替に伴う自動追従はしない）。
-        theme_bg = ttk.Style().lookup("TFrame", "background")
+        # 色の出所は [views/theme.py](views/theme.py)＝ttk.Style().lookup は
+        # sun-valley では常に空を返し、黙って無指定になっていた（B-008）。
+        theme_bg = theme.palette(canvas_frame)["bg"]
         self._canvas = tk.Canvas(canvas_frame, borderwidth=0, highlightthickness=0, bg=theme_bg)
         vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
@@ -579,6 +581,8 @@ class BatchBuilderWindow(tk.Toplevel):
         menu.add_command(label=i18n.t("menu_dup"), command=lambda: self._dup_row(entries))
         menu.add_command(label=i18n.t("menu_del"),
                          command=lambda: self._remove_row(frame, entries))
+        # ランチャーのメニューと同じくテーマ非追従なので配色を明示する（B-008）。
+        theme.apply_menu_theme([menu], self)
         try:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
