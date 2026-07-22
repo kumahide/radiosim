@@ -42,7 +42,7 @@ jobs:
           batch.py report.py models.py simulation.py config.py dem.py version.py
           i18n.py main.py report_map.py map_graphics.py coords.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py
-          views/map_window.py views/dialogs.py views/progress.py
+          views/map_window.py views/dialogs.py views/progress.py views/theme.py
 
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov
