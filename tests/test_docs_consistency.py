@@ -225,3 +225,28 @@ def test_map_mode_labels_listed(doc, lang):
     for key in _MODE_KEYS:
         label = i18n._STRINGS[lang][key]
         assert label in text, f"{doc}: map mode label {label!r} ({key}) is not documented"
+
+
+# --- CI ゲートの対象網羅 -----------------------------------------------------
+# pyright の対象は CI ワークフローにモジュール名を**べた書き**している。新しい
+# アプリモジュールを足したときリストへの追記を忘れると、そのファイルだけ静的検査を
+# すり抜ける（2026-07-23 の 2.4RC1 移行時に `views/theme.py` で実際に発生）。
+# ドキュメントと同じく「実装＝真実」で照合し、追記漏れを落とす。
+CI_WORKFLOW = ".github/workflows/ci.yml"
+
+# 型検査から意図的に外すもの（テスト・ビルド定義・ツール類）。
+_PYRIGHT_EXEMPT = {"radiosim.spec"}
+
+
+def test_ci_pyright_covers_all_app_modules():
+    """CI の pyright 対象に、ルート直下と views/ の全モジュールが載っていること。"""
+    workflow = _read(CI_WORKFLOW)
+    listed = set(re.findall(r"[\w/]+\.py", workflow))
+    app_modules = {p.name for p in ROOT.glob("*.py")} | {
+        f"views/{name}" for name in VIEW_MODULES
+    }
+    missing = sorted(m for m in app_modules - listed if m not in _PYRIGHT_EXEMPT)
+    assert not missing, (
+        f"{CI_WORKFLOW} の pyright 対象に未登録のモジュール: {missing}。"
+        "CI がこのファイルを型検査していない（追記すること）。"
+    )
