@@ -22,7 +22,7 @@ import i18n
 import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_KEYS
-from views import dialogs
+from views import dialogs, theme
 from views.progress import ProgressPump
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -278,31 +278,13 @@ class SimLauncher:
         self.root.bind("<<ThemeChanged>>", self._apply_menu_theme, add="+")
 
     def _apply_menu_theme(self, _event: object = None) -> None:
-        """tk.Menu へ現在の ttk テーマ色を明示適用する（B-004）。
+        """tk.Menu へ現在のテーマ色を明示適用する（B-004・B-008）。
 
-        sv_ttk は ttk ウィジェットのみ再スタイルし、ネイティブ tk.Menu は追従しない。
-        特に選択インジケータ色（selectcolor＝ラジオ/チェックの「✓」）は既定のまま
-        だとダーク背景と同化して選択中が判別できない。前景色へ揃えて視認可能にする。
+        sv_ttk は ttk ウィジェットのみ再スタイルし、ネイティブ tk.Menu は追従しない
+        ため、選択インジケータ（✓）もカスケードの ▶ も既定色のままだと背景と同化
+        する。色の出所と配色の決め方は [views/theme.py](views/theme.py)。
         """
-        style = ttk.Style()
-        bg = style.lookup("TFrame", "background")
-        fg = style.lookup("TLabel", "foreground")
-        active_bg = style.lookup("Accent.TButton", "background") or bg
-        opts: dict[str, str] = {}
-        if bg:
-            opts["background"] = bg
-            opts["activebackground"] = active_bg or bg
-        if fg:
-            opts["foreground"] = fg
-            opts["activeforeground"] = fg
-            opts["selectcolor"] = fg   # 「✓」を前景色にしてダークでも見えるように
-        if not opts:
-            return
-        for menu in self._themed_menus:
-            try:
-                menu.configure(**opts)
-            except tk.TclError:
-                pass
+        theme.apply_menu_theme(self._themed_menus, self.root)
 
     def _on_theme_select(self, mode: str) -> None:
         self.config["theme"] = mode
