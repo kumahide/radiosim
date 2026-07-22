@@ -69,9 +69,14 @@ class _Tooltip:
         self._tip = tk.Toplevel(self._widget)
         self._tip.wm_overrideredirect(True)
         self._tip.wm_geometry(f"+{x}+{y}")
+        # 配色は前景・背景をまとめて theme から取る。以前は bg だけ
+        # "SystemButtonFace" 固定で、fg は sv_ttk の tk_setPalette に追従したため、
+        # ダークで白文字×淡い背景（コントラスト 1.06:1）＝判読不能だった（B-008 の同型）。
+        colors = theme.tooltip_options(self._widget)
         tk.Label(
             self._tip, text=self._text,
-            bg="SystemButtonFace", relief="solid", borderwidth=1,
+            background=colors["background"], foreground=colors["foreground"],
+            relief="solid", borderwidth=1,
             font=("Arial", 8), padx=5, pady=3,
         ).pack()
 
