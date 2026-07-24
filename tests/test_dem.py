@@ -227,6 +227,113 @@ class TestFetchTile:
 
 
 # ============================================================
+# 失敗タイルの負キャッシュ（_failed_tiles）— B-010 回帰ガード
+# ============================================================
+class TestFailedTileNegativeCache:
+    """一時失敗（タイムアウト・接続エラー・5xx）で取得に失敗したタイルを
+    _failed_tiles に入れてはならない。入れると回復後もそのタイルを無視し続け、
+    標高が 0.0 や粗レイヤ値に化けたまま黙って誤る（B-010）。恒久欠落（404）
+    だけは負キャッシュに入れて再リクエストを抑止する。
+    """
+
+    @pytest.fixture(autouse=True)
+    def isolate_state(self, tmp_path, monkeypatch):
+        """メモリキャッシュを空にし、ディスクキャッシュを一時ディレクトリへ隔離。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def _mock_session(self, monkeypatch, get_impl):
+        fake_session = mock.Mock()
+        fake_session.get.side_effect = get_impl
+        monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
+        return fake_session
+
+    @staticmethod
+    def _png_200(elev_pixel=(0, 39, 16)):
+        """指定ピクセル（既定 = 100.0 m）を返す HTTP 200 レスポンス。"""
+        import io
+        from PIL import Image
+
+        img = Image.new("RGB", (256, 256), tuple(elev_pixel))
+        buf = io.BytesIO()
+        img.save(buf, format="PNG")
+        resp = mock.Mock()
+        resp.status_code = 200
+        resp.content     = buf.getvalue()
+        return resp
+
+    @staticmethod
+    def _status(code):
+        resp = mock.Mock()
+        resp.status_code = code
+        return resp
+
+    # ── _fetch_tile 単体：404 だけが負キャッシュに入る ────────────────
+    def test_404_populates_failed_tiles(self, tmp_path, monkeypatch):
+        self._mock_session(monkeypatch, lambda *a, **k: self._status(404))
+        result = dem._fetch_tile(
+            "dem_png", 14, 111, 222, str(tmp_path), str(tmp_path / "a.png")
+        )
+        assert result is None
+        assert ("dem_png", 111, 222) in dem._failed_tiles
+
+    def test_transient_5xx_does_not_populate_failed_tiles(self, tmp_path, monkeypatch):
+        self._mock_session(monkeypatch, lambda *a, **k: self._status(503))
+        result = dem._fetch_tile(
+            "dem_png", 14, 111, 222, str(tmp_path), str(tmp_path / "a.png")
+        )
+        assert result is None
+        assert ("dem_png", 111, 222) not in dem._failed_tiles
+
+    def test_transient_exception_does_not_populate_failed_tiles(self, tmp_path, monkeypatch):
+        self._mock_session(
+            monkeypatch,
+            lambda *a, **k: (_ for _ in ()).throw(requests.RequestException("timeout")),
+        )
+        result = dem._fetch_tile(
+            "dem_png", 14, 111, 222, str(tmp_path), str(tmp_path / "a.png")
+        )
+        assert result is None
+        assert ("dem_png", 111, 222) not in dem._failed_tiles
+
+    # ── get_elevation 統合：一時失敗 → 回復で取得し直せる（B-010 本丸）──
+    def test_transient_failure_then_recovery_refetches(self, monkeypatch):
+        """一時失敗の後で通信が回復したら、同一プロセスでも標高を取得し直す。"""
+        state = {"recovered": False}
+
+        def get_impl(*a, **k):
+            if not state["recovered"]:
+                raise requests.RequestException("timeout")
+            return self._png_200()
+
+        self._mock_session(monkeypatch, get_impl)
+
+        # 1回目：全レイヤが一時失敗 → 0.0、負キャッシュは汚れない。
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert not dem._failed_tiles, "一時失敗を負キャッシュに入れてはならない"
+
+        # 2回目：回復後は正しい標高（100.0 m）を取得できる。
+        state["recovered"] = True
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+
+    def test_404_is_remembered_and_skips_refetch(self, monkeypatch):
+        """恒久欠落（404）は負キャッシュに入り、2回目はネットワークを叩かない。"""
+        fake = self._mock_session(monkeypatch, lambda *a, **k: self._status(404))
+
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        calls_after_first = fake.get.call_count
+        assert calls_after_first >= 1
+
+        # 2回目：全レイヤが負キャッシュ済み → _fetch_tile を呼ばず get 追加なし。
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert fake.get.call_count == calls_after_first
+
+
+# ============================================================
 # プロキシ / セッション管理
 # ============================================================
 class TestProxy:

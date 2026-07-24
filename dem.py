@@ -104,7 +104,14 @@ def _get_session() -> "requests.Session":
 _tile_cache: dict[tuple, np.ndarray] = {}
 _cache_lock = threading.Lock()
 
-# 取得失敗タイルのセット（再リクエスト防止）。_cache_lock で保護する。
+# 恒久的に存在しないタイル（HTTP 404）のセット。再リクエスト防止のための
+# 負キャッシュ。_cache_lock で保護する。
+#   ★ここに入れてよいのは「取得しても永久に無い」タイルだけ（日本域外・海上で
+#     GSI が 404 を返すもの）。タイムアウト・接続エラー・5xx/429 のような
+#     "一時失敗" を入れてはならない（回復後もそのタイルを無視し続け、標高が
+#     0.0 や粗レイヤ値に化けたまま黙って誤るため = B-010）。登録は _fetch_tile が
+#     HTTP ステータスを見て 404 のときだけ行う（唯一ステータスを知る場所）。
+# ガード: tests/test_dem.py::TestFailedTileNegativeCache
 _failed_tiles: set[tuple] = set()
 
 
@@ -176,9 +183,10 @@ def get_elevation(lat: float, lon: float) -> float:
             arr = _fetch_tile(layer_id, zoom, xtile, ytile, cache_subdir, cache_path)
 
             # ── 取得結果を書き込み ────────────────────────────────────
+            #   arr is None のときの負キャッシュ登録は _fetch_tile 側で行う
+            #   （404 = 恒久欠落のときだけ。一時失敗は登録しない = B-010）。
             with _cache_lock:
                 if arr is None:
-                    _failed_tiles.add(tile_key)
                     logger.debug(
                         "DEM layer '%s' unavailable at tile(%d,%d), trying next",
                         layer_id, xtile, ytile,
@@ -215,7 +223,15 @@ def _fetch_tile(
     cache_subdir: str,
     cache_path: str,
 ) -> "np.ndarray | None":
-    """タイル画像を取得して numpy 配列で返す。失敗時は None。"""
+    """タイル画像を取得して numpy 配列で返す。失敗時は None。
+
+    失敗には2種類あり、負キャッシュ（_failed_tiles）の扱いが異なる:
+      - 恒久欠落（HTTP 404）: このタイルは取得しても永久に無い（日本域外・
+        海上）。_failed_tiles に登録し、以後の再リクエストを抑止する。
+      - 一時失敗（タイムアウト・接続エラー・5xx/429 等）: 回復し得るので
+        _failed_tiles には登録しない。登録すると回復後もそのタイルを無視し
+        続け、標高が誤る（= B-010）。
+    """
     url     = (
         f"https://cyberjapandata.gsi.go.jp/xyz/{layer_id}"
         f"/{zoom}/{xtile}/{ytile}.png"
@@ -238,6 +254,18 @@ def _fetch_tile(
                 f.write(img_data)
             return arr
 
+        if res.status_code == 404:
+            # 恒久欠落 = 負キャッシュに登録して再リクエストを抑止。
+            with _cache_lock:
+                _failed_tiles.add((layer_id, xtile, ytile))
+            logger.debug(
+                "tile absent (404) layer=%s tile=(%d,%d)",
+                layer_id, xtile, ytile,
+            )
+            return None
+
+        # 404 以外の非 200（5xx/429 等）は一時失敗として扱い、負キャッシュには
+        # 登録しない（次回リトライで取得し直せるようにする）。
         logger.warning(
             "tile: unexpected status %d layer=%s tile=(%d,%d)",
             res.status_code, layer_id, xtile, ytile,
@@ -245,6 +273,7 @@ def _fetch_tile(
         return None
 
     except requests.RequestException as e:
+        # 一時失敗。負キャッシュには登録しない。
         logger.warning(
             "tile download failed: layer=%s tile=(%d,%d) error=%s",
             layer_id, xtile, ytile, e,
