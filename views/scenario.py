@@ -51,8 +51,18 @@ _COMPARE_FIELDS: tuple[tuple[str, str], ...] = (
     ("rain_rate", "num"), ("env_type", "env"), ("diff_method", "diff"),
 )
 
-_ENV_VALUES  = ("los", "rural", "suburban", "urban")
-_DIFF_VALUES = ("deygout", "single")
+# 選択肢は**内部キーで持ち、表示は i18n ラベル**（ランチャーと同じ流儀）。
+# 以前はキー（los / deygout …）をそのまま見せており、ja でも英語のままだった。
+_ENV_KEYS  = ("los", "rural", "suburban", "urban")
+_DIFF_KEYS = ("deygout", "single")
+
+
+def _env_labels() -> dict[str, str]:
+    return {k: i18n.t(f"env_{k}") for k in _ENV_KEYS}
+
+
+def _diff_labels() -> dict[str, str]:
+    return {k: i18n.t(f"diff_opt_{k}") for k in _DIFF_KEYS}
 
 # 結果一覧の見える行数（超えた分はスクロール）。窓の高さを点数から切り離す。
 _RESULT_ROWS = 8
@@ -93,6 +103,55 @@ class ScenarioWindow(tk.Toplevel):
         self._fit_initial_height()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _update_path_label(self) -> None:
+        p = self._base_params
+        self._path_label.config(
+            text=(f'{i18n.t("scn_fixed_path")}: '
+                  f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'
+                  f'　/　{i18n.t("scn_samples")}: {p.num}'))
+
+    def _refresh_from_launcher(self) -> None:
+        """ランチャーの現在値（**座標を含む**）を取り込み直す。
+
+        取り込むのは経路表示とベース列、そして比較条件の初期値。条件列で編集済みの
+        値まで巻き戻すと編集内容が消えるので、**ベースと同じ値だった欄だけ**を
+        追従させる（触った欄はユーザーの意図として残す）。
+        """
+        if self._config_provider is None:
+            return
+        try:
+            new_base = sim.SimParams(self._config_provider())
+        except Exception as ex:
+            dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
+            return
+        old_base = self._base_params
+        self._base_params = new_base
+        self._update_path_label()
+        for key, _kind in _COMPARE_FIELDS:
+            new_val = getattr(new_base, key)
+            self._base_vars[key].set(self._display(key, new_val))
+            for cvars in self._cmp_cols:
+                if cvars[key].get() == self._display(key, getattr(old_base, key)):
+                    cvars[key].set(self._display(key, new_val))
+
+    @staticmethod
+    def _display(key: str, value) -> str:
+        """内部値 → 画面表示（環境・回折モデルは i18n ラベル）。"""
+        if key == "env_type":
+            return _env_labels().get(str(value), str(value))
+        if key == "diff_method":
+            return _diff_labels().get(str(value), str(value))
+        return str(value)
+
+    @staticmethod
+    def _to_value(key: str, text: str) -> "float | str":
+        """画面表示 → 内部値（i18n ラベルをキーへ戻す）。"""
+        if key == "env_type":
+            return {v: k for k, v in _env_labels().items()}.get(text, text)
+        if key == "diff_method":
+            return {v: k for k, v in _diff_labels().items()}.get(text, text)
+        return float(text)
+
     def _fit_initial_height(self) -> None:
         """**中身に合わせて開く**（比較モードは 11 行 × 列で背が高い）。
 
@@ -112,14 +171,17 @@ class ScenarioWindow(tk.Toplevel):
         outer.pack(fill="both", expand=True)
 
         # 経路（固定された前提）＝ランチャーのスナップショット。
-        p = self._base_params
-        self._path_label = ttk.Label(
-            outer,
-            text=(f'{i18n.t("scn_fixed_path")}: '
-                  f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'
-                  f'　/　{i18n.t("scn_samples")}: {p.num}'),
-        )
-        self._path_label.pack(anchor="w", pady=(0, 8))
+        # ⚠️ **実行はここに出ている値で行う**（黙って読み直さない）。以前は実行時に
+        # config_provider を読み直しており、ランチャーで座標を変えると「画面の経路と
+        # 計算した経路が違う」状態になり得た。更新は ↻ ボタンで明示的に行う
+        # （バッチの Common Settings と同じ流儀＝ランチャーが source of truth）。
+        head = ttk.Frame(outer)
+        head.pack(fill="x", pady=(0, 8))
+        self._path_label = ttk.Label(head, text="")
+        self._path_label.pack(side="left")
+        ttk.Button(head, text=i18n.t("scn_refresh"), width=18,
+                   command=self._refresh_from_launcher).pack(side="right")
+        self._update_path_label()
 
         # モード切替＝**表示中のフレームだけを pack する**。ttk.Notebook は
         # 「一番背の高いタブ」に合わせて全タブの高さが決まるため、行数の多い比較タブに
@@ -148,9 +210,6 @@ class ScenarioWindow(tk.Toplevel):
         self._run_btn = ttk.Button(bar, text=i18n.t("scn_run"), command=self._on_run,
                                    style="Accent.TButton")
         self._run_btn.pack(side="left")
-        self._open_btn = ttk.Button(bar, text=i18n.t("scn_open_report"),
-                                    command=self._open_report, state="disabled")
-        self._open_btn.pack(side="left", padx=(6, 0))
         self._prog_label = ttk.Label(bar, text="")
         self._prog_label.pack(side="right")
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
@@ -205,14 +264,17 @@ class ScenarioWindow(tk.Toplevel):
         return frame
 
     def _build_compare_grid(self) -> None:
-        """項目名の列とベース列（読み取り専用）を作る。"""
+        """項目名の列とベース列（読み取り専用・↻ で更新される）を作る。"""
         ttk.Label(self._cmp_grid, text="").grid(row=0, column=0)
         ttk.Label(self._cmp_grid, text=i18n.t("scn_base")).grid(
             row=0, column=1, padx=6)
+        self._base_vars: dict[str, tk.StringVar] = {}
         for row, (key, _kind) in enumerate(_COMPARE_FIELDS, start=1):
             ttk.Label(self._cmp_grid, text=i18n.t(f"scn_axis_{key}")).grid(
                 row=row, column=0, sticky="w", pady=1)
-            ttk.Label(self._cmp_grid, text=str(getattr(self._base_params, key)),
+            var = tk.StringVar(value=self._display(key, getattr(self._base_params, key)))
+            self._base_vars[key] = var
+            ttk.Label(self._cmp_grid, textvariable=var,
                       anchor="e", width=11).grid(row=row, column=1, padx=6, pady=1)
 
     def _add_condition_column(self) -> None:
@@ -223,14 +285,16 @@ class ScenarioWindow(tk.Toplevel):
             row=0, column=col, padx=6)
         cvars: dict[str, tk.StringVar] = {}
         for row, (key, kind) in enumerate(_COMPARE_FIELDS, start=1):
-            var = tk.StringVar(value=str(getattr(self._base_params, key)))
+            var = tk.StringVar(
+                value=self._display(key, getattr(self._base_params, key)))
             cvars[key] = var
             if kind == "num":
                 w = ttk.Entry(self._cmp_grid, textvariable=var, width=11)
             else:
-                values = _ENV_VALUES if kind == "env" else _DIFF_VALUES
+                labels = (_env_labels() if kind == "env" else _diff_labels())
                 w = ttk.Combobox(self._cmp_grid, textvariable=var,
-                                 values=list(values), state="readonly", width=9)
+                                 values=list(labels.values()),
+                                 state="readonly", width=9)
             w.grid(row=row, column=col, padx=6, pady=1)
         self._cmp_cols.append(cvars)
         self._sync_cond_buttons()
@@ -281,15 +345,6 @@ class ScenarioWindow(tk.Toplevel):
     # ----------------------------------------------------------
     # 実行
     # ----------------------------------------------------------
-    def _current_base(self) -> sim.SimParams:
-        """ランチャーの現在値で base を作り直す（開いている間の変更に追従）。"""
-        if self._config_provider is None:
-            return self._base_params
-        try:
-            return sim.SimParams(self._config_provider())
-        except Exception:
-            return self._base_params
-
     def _on_mode_changed(self) -> None:
         """選ばれたモードのパネルだけを表示する（余白を作らない）。"""
         for panel in (self._compare_panel, self._sweep_panel):
@@ -309,9 +364,8 @@ class ScenarioWindow(tk.Toplevel):
         conds = [scn.Condition(label=i18n.t("scn_base"), overrides={})]
         for i, cvars in enumerate(self._cmp_cols, start=1):
             overrides: dict[str, float | str] = {}
-            for key, kind in _COMPARE_FIELDS:
-                raw = cvars[key].get().strip()
-                overrides[key] = raw if kind != "num" else float(raw)
+            for key, _kind in _COMPARE_FIELDS:
+                overrides[key] = self._to_value(key, cvars[key].get().strip())
             conds.append(scn.Condition(
                 label=i18n.t("scn_cond_n").format(n=i), overrides=overrides))
         return conds
@@ -334,7 +388,7 @@ class ScenarioWindow(tk.Toplevel):
             dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
             return
 
-        base = self._current_base()
+        base = self._base_params
         kind = "sweep" if axis else "compare"
         meta = self._meta_provider() if self._meta_provider else {}
         project = str(meta.get("project_name", ""))
@@ -348,7 +402,6 @@ class ScenarioWindow(tk.Toplevel):
 
         self._running = True
         self._run_btn.config(state="disabled")
-        self._open_btn.config(state="disabled")
         self._prog_bar.config(value=0)
         self._prog_label.config(text=i18n.t("scn_phase_fetch"))
         self._tree.delete(*self._tree.get_children())
@@ -390,10 +443,11 @@ class ScenarioWindow(tk.Toplevel):
         self._running = False
         self._pump.stop()
         self._run_btn.config(state="normal")
-        self._prog_bar.config(value=100)
+        # 完了時はバーを 0 に戻す（単一・バッチと挙動を揃える）。結果はダイアログと
+        # 下の一覧が伝えるので、バーに完了状態を残さない。
+        self._prog_bar.config(value=0)
         self._prog_label.config(text="")
         self._last_run = run
-        self._open_btn.config(state="normal")
         self._fill_results(run)
 
         # 単一・バッチと同じ流儀＝保存先を告げてから開くか尋ねる
@@ -407,13 +461,9 @@ class ScenarioWindow(tk.Toplevel):
         self._result_box.config(
             text=i18n.t("scn_sweep_title") if run.kind == "sweep"
             else i18n.t("scn_compare_title"))
-        summary = (f'{i18n.t("html_horiz_dist")}: '
-                   f'{units.format_distance(run.terrain.horiz_dist_km)}')
-        idx = run.first_ok_index()
-        if run.kind == "sweep" and idx >= 0:
-            summary += "　/　" + i18n.t("scn_first_ok").format(
-                value=run.points[idx].label)
-        self._summary_label.config(text=summary)
+        self._summary_label.config(
+            text=f'{i18n.t("html_horiz_dist")}: '
+                 f'{units.format_distance(run.terrain.horiz_dist_km)}')
 
         self._tree.delete(*self._tree.get_children())
         self._tree.tag_configure("ok", foreground="#2e7d32")

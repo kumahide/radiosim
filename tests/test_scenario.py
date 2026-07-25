@@ -319,27 +319,6 @@ class TestRunScenario:
         assert seen and seen[0] != threading.main_thread().name
 
 
-class TestScenarioRun:
-
-    def test_first_ok_index_finds_the_threshold(self, terrain, base):
-        conds = scn.sweep_conditions("h_tx", [1.0, 2.0, 200.0, 300.0])
-        points = scn.evaluate(terrain, base, conds)
-        run = scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
-                              points=points, axis="h_tx",
-                              axis_values=[1.0, 2.0, 200.0, 300.0])
-        idx = run.first_ok_index()
-        assert idx >= 0
-        assert all(not p.ok for p in points[:idx])
-        assert points[idx].ok
-
-    def test_first_ok_index_is_minus_one_when_all_ng(self, terrain, base):
-        points = scn.evaluate(terrain, base,
-                              [scn.Condition("x", {"sens": -10.0})])
-        run = scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain,
-                              points=points)
-        assert run.first_ok_index() == -1
-
-
 # ============================================================
 # レポート（A4 シート・CSV）
 # ============================================================
@@ -597,14 +576,38 @@ class TestScenarioResultsAndDialog:
         finally:
             win.destroy(); root.destroy()
 
-    def test_action_buttons_are_outside_the_scrolling_area(self, default_params_dict):
-        """実行・レポートのボタンは常に見える帯に置く（見切れない）。"""
+    def test_run_button_is_outside_the_scrolling_area(self, default_params_dict):
+        """実行ボタンは常に見える帯に置く（一覧が伸びても見切れない）。"""
         root, win = self._win(default_params_dict)
         try:
             root.update_idletasks()
-            # ボタンの親は結果パネルではない＝一覧が伸びても押せる位置にある
-            assert win._open_btn.winfo_parent() != str(win._result_box)
-            assert win._run_btn.winfo_parent() == win._open_btn.winfo_parent()
+            assert win._run_btn.winfo_parent() != str(win._result_box)
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_no_standalone_open_button(self, default_params_dict):
+        """レポートを開く導線は完了ダイアログ 1 本（バッチと対称・2026-07-25 決定）。
+
+        条件探索にだけ常設ボタンがあるのは非対称で、「常設ボタンを増やさず
+        完了時に選ばせる」というバッチ側の決定とも食い違っていた。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            assert not hasattr(win, "_open_btn")
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_progress_bar_resets_on_completion(
+            self, default_params_dict, terrain, base, monkeypatch):
+        """完了時にバーを 0 へ戻す（単一・バッチと挙動を揃える）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            import views.scenario as vs
+            monkeypatch.setattr(vs.dialogs, "confirm", lambda *a, **k: False)
+            win._last_dir = "d"
+            win._on_complete(self._run(terrain, base, 3))
+            assert win._prog_bar["value"] == 0
+            assert win._prog_label["text"] == ""
         finally:
             win.destroy(); root.destroy()
 
@@ -638,7 +641,182 @@ class TestScenarioResultsAndDialog:
             win._last_dir = "some_dir"
             win._on_complete(self._run(terrain, base, 3))
             assert opened == []
-            # あとから開けること（ボタンは有効化されている）
-            assert str(win._open_btn["state"]) == "normal"
+        finally:
+            win.destroy(); root.destroy()
+
+
+# ============================================================
+# 実機フィードバック 第 2 弾（2026-07-25）のガード
+# ============================================================
+class TestBaseValuesAndLabels:
+    """レポート単体で条件を再現できること・内部キーを見せないこと。"""
+
+    @pytest.fixture(autouse=True)
+    def _ja(self):
+        prev = i18n._lang
+        i18n.set_lang("ja")
+        yield
+        i18n.set_lang(prev)
+
+    def _compare_run(self, terrain, base):
+        conds = [
+            scn.Condition("ベース", {}),
+            scn.Condition("条件 1", {"freq_mhz": 5600.0, "env_type": "urban",
+                                     "diff_method": "single"}),
+        ]
+        return scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain,
+                               points=scn.evaluate(terrain, base, conds))
+
+    def test_base_column_shows_real_values_not_dashes(self, terrain, base):
+        """ベース列は上書きを持たないが、**基準の実値**を出すこと。
+
+        overrides から引くと全部「—」になり、表だけ見て条件を再現できない
+        （実機で発覚）。
+        """
+        html = report_scenario.scenario_sheet_html(self._compare_run(terrain, base))
+        row = [ln for ln in html.splitlines()
+               if "cond" in ln and i18n.t("scn_axis_freq_mhz") in ln]
+        assert row, "周波数の条件行が無い"
+        assert f"{base.freq_mhz:g}" in row[0], f"ベースの実値が出ていない: {row[0]}"
+        assert "—" not in row[0]
+
+    def test_categorical_values_use_localized_labels(self, terrain, base):
+        """環境・回折モデルは内部キー（los / deygout）でなく i18n ラベルで出す。"""
+        html = report_scenario.scenario_sheet_html(self._compare_run(terrain, base))
+        assert i18n.t("env_urban") in html
+        assert i18n.t("html_model_single") in html
+        for raw in (">urban<", ">single<", ">los<", ">deygout<"):
+            assert raw not in html, f"内部キーが露出している: {raw}"
+
+
+class TestSweepFitsOnOnePage:
+    """点数を増やしても A4 1 枚に収める（縮小フィットで文字を潰さない）。"""
+
+    def _run(self, terrain, base, n):
+        values = scn.linspace_values(10, 10 + n - 1, n)
+        pts = scn.evaluate(terrain, base, scn.sweep_conditions("h_tx", values))
+        return scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
+                               points=pts, axis="h_tx", axis_values=values)
+
+    def test_small_sweep_is_a_single_block(self, terrain, base):
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base, 11))
+        assert html.count("<table class=\"scn\">") == 1
+        assert 'class="tables split"' not in html
+
+    def test_large_sweep_splits_into_side_by_side_blocks(self, terrain, base):
+        """41 点は横 2 ブロックに割る＝縦に積むと印字域を超えて全体が縮む。"""
+        run = self._run(terrain, base, scn.MAX_SWEEP_POINTS)
+        html = report_scenario.scenario_sheet_html(run)
+        assert 'class="tables split"' in html
+        assert html.count("<table class=\"scn\">") == 2
+        # 全点が載っている（分割で落ちない）
+        for p in run.points:
+            assert f"<td>{p.label}</td>" in html
+
+    def test_rows_per_block_never_exceed_the_limit(self, terrain, base):
+        """1 ブロックの行数が上限内＝A4 の高さ計算の前提が崩れない。"""
+        for n in (2, 21, 22, 41):
+            run = self._run(terrain, base, n)
+            html = report_scenario.scenario_sheet_html(run)
+            for block in html.split("<tbody>")[1:]:
+                rows = block.count("<tr class=")
+                assert rows <= report_scenario._SWEEP_ROWS_PER_BLOCK, \
+                    f"{n} 点でブロックに {rows} 行（上限 " \
+                    f"{report_scenario._SWEEP_ROWS_PER_BLOCK}）"
+
+    def test_no_first_ok_annotation(self, terrain, base):
+        """「初めて OK」の明示は出さない（2026-07-25 ユーザー判断）。"""
+        i18n.set_lang("ja")
+        html = report_scenario.scenario_sheet_html(
+            self._run(terrain, base, 11),
+            chart_b64=report_scenario.render_sweep_png_b64(self._run(terrain, base, 11)))
+        assert "◀" not in html
+        assert "初めて" not in html
+
+
+class TestLauncherSnapshot:
+    """ランチャー（source of truth）の取り込みは**明示的**に行う。
+
+    以前は実行時に config_provider を黙って読み直しており、ランチャーで座標を
+    変えると「画面に出ている経路」と「実際に計算した経路」が食い違い得た
+    （表示 ≠ 計算＝気づけない種類の欠陥）。バッチの Common Settings と同じく
+    開窓時スナップショット＋↻ ボタンに揃える。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+
+    def _win(self, cfg, provider):
+        from conftest import make_tk_root
+        root = make_tk_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        from views.scenario import ScenarioWindow
+        return root, ScenarioWindow(root, sim.SimParams(cfg),
+                                    config_provider=provider)
+
+    def test_refresh_pulls_coordinates_and_params(self, default_params_dict):
+        cfg = dict(default_params_dict)
+        live = dict(cfg)
+        root, win = self._win(cfg, lambda: dict(live))
+        try:
+            live["start"] = "35.10000, 139.20000"
+            live["freq"]  = "15000"
+            win._refresh_from_launcher()
+            assert win._base_params.lat_tx == pytest.approx(35.1)
+            assert win._base_params.freq_mhz == 15000.0
+            assert "35.10000" in win._path_label["text"], "経路表示が追従していない"
+            assert win._base_vars["freq_mhz"].get() == "15000.0"
+            # 触っていない条件欄はベースに追従する
+            assert win._cmp_cols[0]["freq_mhz"].get() == "15000.0"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_refresh_keeps_edited_condition_fields(self, default_params_dict):
+        cfg = dict(default_params_dict)
+        live = dict(cfg)
+        root, win = self._win(cfg, lambda: dict(live))
+        try:
+            win._cmp_cols[0]["freq_mhz"].set("2400")     # ユーザーが編集した欄
+            live["freq"] = "15000"
+            win._refresh_from_launcher()
+            assert win._cmp_cols[0]["freq_mhz"].get() == "2400", \
+                "編集した条件が ↻ で巻き戻された"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_run_uses_the_displayed_snapshot_not_a_silent_reread(
+            self, default_params_dict, monkeypatch):
+        """実行は画面に出ている値で行う（↻ を押すまでランチャーの変更は入らない）。"""
+        cfg = dict(default_params_dict)
+        live = dict(cfg)
+        root, win = self._win(cfg, lambda: dict(live))
+        try:
+            import views.scenario as vs
+            seen = {}
+            monkeypatch.setattr(vs.scn, "run_scenario",
+                                lambda base, conds, **k: seen.update(base=base))
+            monkeypatch.setattr(vs.os, "makedirs", lambda *a, **k: None)
+            live["start"] = "35.10000, 139.20000"        # ↻ を押さずに変更
+            win._on_run()
+            assert seen["base"].lat_tx == pytest.approx(
+                sim.SimParams(cfg).lat_tx), "画面と違う座標で計算している"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_categorical_fields_show_localized_labels_in_the_window(
+            self, default_params_dict):
+        root, win = self._win(dict(default_params_dict), None)
+        try:
+            base = sim.SimParams(default_params_dict)
+            shown = win._cmp_cols[0]["env_type"].get()
+            assert shown == i18n.t(f"env_{base.env_type}")
+            assert shown != base.env_type, "内部キーがそのまま出ている"
+            # 表示ラベルは内部キーへ戻して条件になる
+            conds = win._compare_conditions()
+            assert conds[1].overrides["env_type"] == base.env_type
         finally:
             win.destroy(); root.destroy()
