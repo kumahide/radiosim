@@ -11,8 +11,9 @@ report_scenario.py
 出力形式の決定（2026-07-25・ユーザー選択）:
   - スイープは **折れ線＋表の両方**。折れ線は「どこで判定が反転するか」を一目で、
     表は報告書へ数値を載せるため（設計哲学②＝別ソフトへ貼る手順を残さない）。
-  - 比較は**ベース 1 個＋比較条件 N 個**を横に並べた差分表（差が出た行を強調し、
-    Δ はセル内に併記＝列数を倍にしない）。
+  - 比較は**ベース 1 個＋比較条件 N 個**を横に並べた差分表。Δ はセル内に併記
+    （列数を倍にしない）、**変えた入力のセルだけ**色を付ける（→ _compare_table の
+    「視覚の文法」）。
 """
 
 from __future__ import annotations
@@ -167,8 +168,8 @@ def scenario_sheet_css() -> str:
 .sheet.scenario table.scn.dense td{font-size:9px;padding:1px 5px;line-height:1.15}
 .sheet.scenario tr.ok{background:#f1f8e9}.sheet.scenario tr.ng{background:#fff8e1}
 .sheet.scenario .s-ok{color:#2e7d32;font-weight:bold}.sheet.scenario .s-ng{color:#c62828;font-weight:bold}
-/* 比較シート：差の出た行だけ地の色を変えて目を誘導する（セル内 Δ と対） */
-.sheet.scenario tr.diff td{background:#fffde7}
+/* 比較シート：数値行に地の色は付けない（→ _compare_table の「視覚の文法」）。
+   差の在処と大きさはセル内の Δ が示す。 */
 .sheet.scenario .delta{color:#00695c;font-weight:bold;font-size:9px;margin-left:2px}
 /* 条件そのものの行（何を変えたか）は下段にまとめ、地の色で数値行と見分ける。
    **ベースと違うセルだけ**さらに色を付ける＝条件が 3〜5 個あるとき「どの列の
@@ -200,6 +201,14 @@ def _compare_table(run: scn.ScenarioRun) -> str:
     **Δ は専用の列でなくセル内に併記する**（`-83.85 (+4.20)`）。ベース 1 個に対し
     比較対象が 3〜5 個という使い方（2026-07-25 ユーザー要望）だと、Δ を列にすると
     列数が倍になって A4 幅に収まらない。基準は常に**先頭列（ベース）**。
+
+    **視覚の文法（2026-07-26 確定）**:
+      - オレンジのセル ＝ 自分が**変えた入力**（下段の条件行・離散的な事実）
+      - 緑の `(+x.xx)` ＝ その結果が**どれだけ動いたか**（数値行・連続量）
+      - 地の色は付けない。以前は「差が出た行」を網掛けしていたが、パラメータを
+        1 つ変えると損失の内訳が連鎖して動くため**ほぼ全行が着色されて情報を
+        持たなかった**（実測 11 行中 9 行）。2 条件時代（行が違う＝そのセルが違う）
+        の名残で、N 条件では Δ の下位互換にしかならないので撤去した。
     """
     pts = run.points
     head = "".join(f"<th>{_html.escape(p.label)}</th>" for p in pts)
@@ -214,7 +223,6 @@ def _compare_table(run: scn.ScenarioRun) -> str:
             cells = "".join(
                 f"<td class='s-{'ok' if v == 'OK' else 'ng'}'>{v}</td>" for v in vals
             )
-            differs = len(set(vals)) > 1
         else:
             base = vals[0]
             cells = f"<td>{_num(base, key)}</td>"
@@ -223,10 +231,8 @@ def _compare_table(run: scn.ScenarioRun) -> str:
                 delta = (f"<span class='delta'>({d:+.2f})</span>"
                          if abs(d) > 0.005 else "")
                 cells += f"<td>{_num(v, key)} {delta}</td>"
-            differs = max(vals) - min(vals) > 0.005
         label = i18n.t(key) + (f" ({unit})" if unit else "")
-        cls = " class='diff'" if differs else ""
-        rows += f"<tr{cls}><td class='name'>{label}</td>{cells}</tr>\n"
+        rows += f"<tr><td class='name'>{label}</td>{cells}</tr>\n"
 
     # 条件そのもの（何を変えたか）を下段に出す＝表だけ見て再現できるように。
     # ⚠️ **ベース列は上書きを持たない**ので overrides から引くと全部「—」になる

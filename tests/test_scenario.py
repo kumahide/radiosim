@@ -344,11 +344,24 @@ class TestScenarioReport:
         assert "data:image/png;base64," in html      # 折れ線
         assert html.count("<tr class='") >= 3        # 表（1 行 = 1 点）
 
-    def test_compare_sheet_marks_rows_that_differ(self, terrain, base):
+    def test_compare_sheet_shows_deltas_in_cells(self, terrain, base):
+        """差の在処と大きさはセル内の Δ が示す。"""
         i18n.set_lang("ja")
         html = report_scenario.scenario_sheet_html(self._run(terrain, base, "compare"))
-        assert "class='diff'" in html, "差の出た行が強調されていない"
-        assert "class='delta'" in html, "2 条件のとき Δ 列が無い"
+        assert "class='delta'" in html, "Δ の併記が無い"
+
+    def test_metric_rows_have_no_row_tint(self, terrain, base):
+        """数値行に地の色を付けない（2026-07-26 撤去）。
+
+        パラメータを 1 つ変えると損失の内訳が連鎖して動くため、行網掛けは
+        **ほぼ全行が着色されて情報を持たなかった**（実測 11 行中 9 行）。
+        2 条件時代（行が違う＝そのセルが違う）の名残で、N 条件では Δ の
+        下位互換にしかならない。
+        """
+        i18n.set_lang("ja")
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base, "compare"))
+        assert "class='diff'" not in html
+        assert "tr.diff" not in report_scenario.scenario_sheet_css()
 
     def test_compare_sheet_lists_the_changed_conditions(self, terrain, base):
         """表だけ見て再現できること（何を変えたかが載る）。"""
@@ -878,7 +891,8 @@ class TestChangedParametersAreHighlighted:
     """ベースと違うパラメータの**セル**に印を付ける（2026-07-26 ユーザー要望）。
 
     条件が 3〜5 個あると「どの列のどの欄を変えたのか」が拾えない。数値行の
-    行網掛け（tr.diff）は列を特定できないので、条件行はセル単位で示す。
+    行網掛けは列を特定できないうえ、ほぼ全行が着色されて情報を持たなかったので
+    撤去した（2026-07-26）。入力の変更はセル単位で示す。
     """
 
     @pytest.fixture(autouse=True)
