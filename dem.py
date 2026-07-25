@@ -25,13 +25,14 @@ import requests
 from PIL import Image
 
 import version
-from config import logger
+from config import app_path, logger
 
 # ============================================================
 # DEM タイルキャッシュのルートディレクトリ
+#   基準は config.app_path（＝exe／スクリプトの位置）で cwd に依存しない（B-014）。
 #   テストは dem.CACHE_DIR を monkeypatch して一時ディレクトリへ差し替える。
 # ============================================================
-CACHE_DIR = "terrain_cache"
+CACHE_DIR = app_path("terrain_cache")
 
 # ============================================================
 # DEM タイルクライアント

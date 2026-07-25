@@ -67,9 +67,12 @@ def _prof_flush() -> None:
         prev = t
     text = "\n".join(lines) + "\n"
     try:
-        base = _os.path.dirname(sys.executable if getattr(sys, "frozen", False)
-                                else _os.path.abspath(__file__))
-        with open(_os.path.join(base, "radiosim_profile.log"), "a", encoding="utf-8") as f:
+        # 書き込み先の基準は config の解決器へ一本化する（B-014）。ここで判定を
+        # 再実装しない。**遅延 import 必須**＝モジュール先頭で config を読むと、
+        # 下の truststore 注入（他の import より先に実行する必要がある）より
+        # 前に import 連鎖が走ってしまう。この関数は実行時にしか呼ばれない。
+        from config import app_path
+        with open(app_path("radiosim_profile.log"), "a", encoding="utf-8") as f:
             f.write(text)
     except Exception:
         pass

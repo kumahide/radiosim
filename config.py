@@ -15,15 +15,43 @@ config.py（本体）＋ dem.py へ分割した際に切り出した設定・検
 import json
 import logging
 import os
+import sys
 
 import i18n
 
 # ============================================================
+# パス解決
+#   アプリが書き込むもの（設定・結果・ログ・DEM キャッシュ）の基準を1箇所に
+#   固定する。基準は「実行ファイル／スクリプトの位置」であって
+#   **カレントディレクトリではない**。裸の相対パスだと、ショートカットの作業
+#   フォルダやコマンドラインの cwd 次第で保存先が黙って変わる（B-014）。
+#
+#   ⚠️ sys._MEIPASS と混同しないこと。あれは PyInstaller が同梱リソースを
+#      展開する一時ディレクトリ＝読み出し専用で、プロセス終了時に消える。
+#      書き込み先には絶対に使わない（同梱 README やアイコンの読み出しは
+#      views/launcher.py が _MEIPASS を使う＝そちらが正しい用途）。
+#
+#   OS 標準の場所（%APPDATA% 等）への移設は将来版（3.0）の仕事。ここでは
+#   基準を固定するだけで、通常起動時の保存先は従来と完全に同じになる。
+# ============================================================
+def app_base_dir() -> str:
+    """アプリが書き込む先の基準ディレクトリ（凍結時は exe の隣、そうでなければソースの隣）。"""
+    if getattr(sys, "frozen", False):
+        return os.path.dirname(sys.executable)
+    return os.path.dirname(os.path.abspath(__file__))
+
+
+def app_path(*parts: str) -> str:
+    """`app_base_dir()` を基準に絶対パスを組み立てる。書き込み先はすべてこれを通す。"""
+    return os.path.join(app_base_dir(), *parts)
+
+
+# ============================================================
 # 定数
 # ============================================================
-CONFIG_FILE = "radiosim_conf.json"
-RESULTS_DIR = "results"
-LOG_FILE    = "radiosim.log"
+CONFIG_FILE = app_path("radiosim_conf.json")
+RESULTS_DIR = app_path("results")
+LOG_FILE    = app_path("radiosim.log")
 
 # ============================================================
 # ロギング設定
