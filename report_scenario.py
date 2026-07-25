@@ -53,6 +53,16 @@ _COMPARE_ROWS = (
 )
 
 
+def _param_text(key: str, value) -> str:
+    """パラメータ値の表示（環境・回折モデルは内部キーでなく i18n ラベル）。"""
+    if key == "env_type":
+        return i18n.t(f"env_{value}")
+    if key == "diff_method":
+        return i18n.t("html_model_deygout" if value == "deygout"
+                      else "html_model_single")
+    return f"{value:g}" if isinstance(value, (int, float)) else str(value)
+
+
 def axis_label(axis: str) -> str:
     """スイープ軸の見出し（例: ``送信アンテナ高 (m)``）を返す。"""
     name = i18n.t(f"scn_axis_{axis}")
@@ -66,9 +76,9 @@ def axis_label(axis: str) -> str:
 def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
     """スイープの折れ線（横軸＝振った量／縦軸＝マージン）を base64 PNG で返す。
 
-    しきい値（マージン 0 dB）に水平線を引き、**初めて OK になる点**へ注記を出す
-    ＝スイープの主眼は「どこで足りるようになるか」なので、読み手に数えさせない。
-    判定の反転位置は `ScenarioRun.first_ok_index()` が単一の規則（View と同じ）。
+    しきい値（マージン 0 dB）に水平線を引き、点は判定で塗り分ける（OK=緑 / NG=橙）。
+    どこで足りるようになるかは色の変わり目と表で読む（注記は出さない＝2026-07-25
+    ユーザー判断で「初めて OK」の明示は不要）。
 
     pyplot を使わず Figure + FigureCanvasAgg で描くのでワーカースレッド可
     （report_path.save_profile_png と同じ理由）。
@@ -81,7 +91,8 @@ def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
     xs = run.axis_values or list(range(len(run.points)))
     ys = run.margins()
 
-    fig = Figure(figsize=(11, 4.2))
+    # 点数が多いときは図を低くして表に高さを譲る（1 枚に収めるため）。
+    fig = Figure(figsize=(11, 3.4 if len(run.points) > _SWEEP_ROWS_PER_BLOCK else 4.2))
     fig.patch.set_facecolor("white")
     canvas = FigureCanvasAgg(fig)
     ax = fig.add_axes((0.085, 0.17, 0.895, 0.76))
@@ -103,15 +114,6 @@ def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
     if max(ys) - min(ys) > 200:
         ax.set_yscale("symlog", linthresh=10)
     ax.margins(y=0.15)          # 注記が上端で切れないよう余白を作る
-
-    idx = run.first_ok_index()
-    if idx >= 0:
-        ax.axvline(xs[idx], color="#2e7d32", lw=1.0, linestyle=":")
-        ax.annotate(
-            i18n.t("scn_first_ok").format(value=f"{xs[idx]:g}"),
-            xy=(xs[idx], ys[idx]), xytext=(6, 12), textcoords="offset points",
-            fontsize=12, color="#2e7d32", annotation_clip=False,
-        )
 
     ax.set_xlabel(axis_label(run.axis), fontsize=13)
     ax.set_ylabel(i18n.t("scn_margin_axis"), fontsize=13)
@@ -152,6 +154,11 @@ def scenario_sheet_css() -> str:
 .sheet.scenario table.scn td.name{text-align:left;color:#666}
 .sheet.scenario table.scn th:last-child,.sheet.scenario table.scn td:last-child{border-right:none}
 .sheet.scenario table.scn tr{break-inside:avoid}
+/* 点数が多いときは表を横に分割して並べる（縮小フィットで全体を縮めない）。 */
+.sheet.scenario .tables{display:flex;gap:8px;align-items:flex-start}
+.sheet.scenario .tables table.scn{flex:1;min-width:0}
+.sheet.scenario .tables.split table.scn th{font-size:8px;padding:3px 3px}
+.sheet.scenario .tables.split table.scn td{font-size:8.5px;padding:2px 3px}
 .sheet.scenario tr.ok{background:#f1f8e9}.sheet.scenario tr.ng{background:#fff8e1}
 .sheet.scenario .s-ok{color:#2e7d32;font-weight:bold}.sheet.scenario .s-ng{color:#c62828;font-weight:bold}
 /* 比較シート：差の出た行だけ地の色を変えて目を誘導する（セル内 Δ と対） */
@@ -213,12 +220,13 @@ def _compare_table(run: scn.ScenarioRun) -> str:
         rows += f"<tr{cls}><td class='name'>{label}</td>{cells}</tr>\n"
 
     # 条件そのもの（何を変えたか）を下段に出す＝表だけ見て再現できるように。
+    # ⚠️ **ベース列は上書きを持たない**ので overrides から引くと全部「—」になる
+    # （実機で発覚）。基準の実値は base_params にあるので、そこへフォールバックする
+    # ＝レポート単体で条件を再現できることが、この表の存在理由。
     changed = sorted({k for p in pts for k in p.overrides})
     for key in changed:
-        vals = [p.overrides.get(key, "—") for p in pts]
-        cells = "".join(
-            f"<td>{v if isinstance(v, str) else f'{v:g}'}</td>" for v in vals
-        )
+        vals = [p.overrides.get(key, getattr(run.base_params, key)) for p in pts]
+        cells = "".join(f"<td>{_param_text(key, v)}</td>" for v in vals)
         unit = AXIS_UNITS.get(key, "")
         label = i18n.t(f"scn_axis_{key}") + (f" ({unit})" if unit else "")
         rows += f"<tr class='cond'><td class='name'>{label}</td>{cells}</tr>\n"
@@ -229,32 +237,47 @@ def _compare_table(run: scn.ScenarioRun) -> str:
     )
 
 
+# 1 ブロックに積む最大行数。これを超えたら**表を横に分割**して並べる。
+# A4 縦 1 枚（印字域 275mm）に折れ線＋表を収めるための値＝41 点でも 2 ブロック
+# （21 行ずつ）で収まる。**縮小フィット（.fit）に頼って全体を縮めると文字が
+# 潰れる**（実機で発覚）ので、レイアウトの側で収める。
+_SWEEP_ROWS_PER_BLOCK = 21
+
+
+def _sweep_row(p: scn.ScenarioPoint) -> str:
+    r = p.result
+    cls = "ok" if p.ok else "ng"
+    return (
+        f"<tr class='{cls}'>"
+        f"<td>{p.label}</td>"
+        f"<td>{r.p_rx:.2f}</td>"
+        f"<td>{r.actual_margin:+.2f}</td>"
+        f"<td>{r.total_loss:.2f}</td>"
+        f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
+        f"<td class='s-{cls}'>{r.status}</td></tr>\n"
+    )
+
+
 def _sweep_table(run: scn.ScenarioRun) -> str:
-    """スイープ表（1 行＝1 点）。判定で行色を塗り、初 OK 点を強調する。"""
-    idx = run.first_ok_index()
+    """スイープ表（1 行＝1 点）。点数が多いときは横に分割して 1 枚に収める。
+
+    判定で行色を塗る（OK=緑 / NG=橙）＝どこで足りるようになるかは色の変わり目で読む。
+    """
     head = "".join(f"<th>{h}</th>" for h in (
         axis_label(run.axis), i18n.t("html_rx_level") + " (dBm)",
         i18n.t("html_act_margin") + " (dB)", i18n.t("html_total_loss") + " (dB)",
         i18n.t("html_col_f1"), i18n.t("html_status"),
     ))
-    rows = ""
-    for i, p in enumerate(run.points):
-        r = p.result
-        cls = "ok" if p.ok else "ng"
-        mark = " ◀" if i == idx else ""
-        rows += (
-            f"<tr class='{cls}'>"
-            f"<td>{p.label}</td>"
-            f"<td>{r.p_rx:.2f}</td>"
-            f"<td>{r.actual_margin:+.2f}</td>"
-            f"<td>{r.total_loss:.2f}</td>"
-            f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
-            f"<td class='s-{cls}'>{r.status}{mark}</td></tr>\n"
-        )
-    return (
-        f'<table class="scn"><thead><tr>{head}</tr></thead>'
-        f'<tbody>\n{rows}</tbody></table>'
-    )
+    pts = run.points
+    blocks = max(1, -(-len(pts) // _SWEEP_ROWS_PER_BLOCK))   # 切り上げ
+    per = -(-len(pts) // blocks)                             # 均等割り
+    tables = []
+    for i in range(blocks):
+        rows = "".join(_sweep_row(p) for p in pts[i * per:(i + 1) * per])
+        tables.append(f'<table class="scn"><thead><tr>{head}</tr></thead>'
+                      f'<tbody>\n{rows}</tbody></table>')
+    cls = "tables split" if blocks > 1 else "tables"
+    return f'<div class="{cls}">' + "".join(tables) + "</div>"
 
 
 def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",

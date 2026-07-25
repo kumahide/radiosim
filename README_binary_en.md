@@ -313,7 +313,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and sample count are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
 
-The toggle at the top switches between two modes.
+The toggle at the top switches between two modes. After changing coordinates or parameters in the launcher, press **"↻ From Launcher"** at the top right to pull them in (**until you do, the run uses the values shown on screen** — what you see is what is computed).
 
 ### Compare (base + N conditions)
 
@@ -325,12 +325,12 @@ The toggle at the top switches between two modes.
 ### Sweep (one axis, N points)
 
 - Pick an **axis** (antenna height, frequency, rain rate, ...) plus **From / To / Points** (2-41).
-- The report contains **a line chart and a numeric table**. The chart marks the verdict threshold (0 dB margin) and **the first point that turns OK**, so "how high does the antenna need to be" can be read directly.
+- The report contains **a line chart and a numeric table**. The chart draws the verdict threshold (0 dB margin) and colours each point by verdict (OK = green / NG = orange); the colour change is where the link starts to close. Even at the maximum 41 points the report stays on **a single A4 page** (the table is split into side-by-side blocks automatically).
 - When the margin spans a huge range (deeply obstructed paths), the vertical axis switches to a log-like scale so the region around the threshold stays readable.
 
 ### Running and results
 
-**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (the "Open report" button reopens it later).
+**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (same flow as Single and Batch). To look at it later, use "Open Results" in the launcher.
 
 The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 

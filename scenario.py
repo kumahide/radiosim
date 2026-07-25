@@ -123,17 +123,6 @@ class ScenarioRun:
     def margins(self) -> list[float]:
         return [p.result.actual_margin for p in self.points]
 
-    def first_ok_index(self) -> int:
-        """判定が初めて OK になる点の位置（無ければ -1）。
-
-        スイープの主眼は「どこで足りるようになるか」なので、しきい値を
-        レポートと View が同じ規則で指す（各所で別々に判定させない）。
-        """
-        for i, p in enumerate(self.points):
-            if p.ok:
-                return i
-        return -1
-
 
 # ============================================================
 # 進捗の「相」の宣言
