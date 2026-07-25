@@ -37,10 +37,15 @@ class TestResolver:
         assert config.app_base_dir() == REPO_ROOT
 
     def test_base_dir_is_executable_dir_when_frozen(self, monkeypatch):
-        """凍結時（exe）は exe の隣。sys.executable の dir を使う。"""
+        """凍結時（exe）は exe の隣。sys.executable の dir を使う。
+
+        パスは `os.path.join` で組む＝Windows のリテラル（`C:\\Apps\\...`）を
+        直書きすると、区切り文字を認識しない CI（Linux）で `dirname` が空を返す。
+        """
+        base = os.path.join(os.sep, "Apps", "RadioSimPro")
         monkeypatch.setattr(config.sys, "frozen", True, raising=False)
-        monkeypatch.setattr(config.sys, "executable", r"C:\Apps\RadioSimPro\RadioSimPro.exe")
-        assert config.app_base_dir() == r"C:\Apps\RadioSimPro"
+        monkeypatch.setattr(config.sys, "executable", os.path.join(base, "RadioSimPro.exe"))
+        assert config.app_base_dir() == base
 
     def test_app_path_joins_under_base(self):
         assert config.app_path("a", "b.txt") == os.path.join(config.app_base_dir(), "a", "b.txt")
