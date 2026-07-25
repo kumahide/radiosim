@@ -66,6 +66,11 @@ SWEEP_AXES: tuple[str, ...] = (
 # 上限＝設計哲学①）ため、器の側で上限を持つ。
 MAX_SWEEP_POINTS = 41
 
+# 比較（A-1）で並べられる比較条件の数（ベースを除く）。ベース 1 個に対し 3〜5 個を
+# 見たいという実務要望（2026-07-25）に合わせた上限で、これ以上増やすと A4 の表が
+# 横に収まらない（列数＝1+1+N）。
+MAX_COMPARE_CONDITIONS = 5
+
 
 @dataclass(frozen=True)
 class Condition:

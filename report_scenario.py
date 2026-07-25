@@ -11,7 +11,8 @@ report_scenario.py
 出力形式の決定（2026-07-25・ユーザー選択）:
   - スイープは **折れ線＋表の両方**。折れ線は「どこで判定が反転するか」を一目で、
     表は報告書へ数値を載せるため（設計哲学②＝別ソフトへ貼る手順を残さない）。
-  - 比較は条件を横に並べた**差分表**（差が出た行だけ強調・Δ 列つき）。
+  - 比較は**ベース 1 個＋比較条件 N 個**を横に並べた差分表（差が出た行を強調し、
+    Δ はセル内に併記＝列数を倍にしない）。
 """
 
 from __future__ import annotations
@@ -153,9 +154,9 @@ def scenario_sheet_css() -> str:
 .sheet.scenario table.scn tr{break-inside:avoid}
 .sheet.scenario tr.ok{background:#f1f8e9}.sheet.scenario tr.ng{background:#fff8e1}
 .sheet.scenario .s-ok{color:#2e7d32;font-weight:bold}.sheet.scenario .s-ng{color:#c62828;font-weight:bold}
-/* 比較シート：差の出た行だけ地の色を変えて目を誘導する（Δ 列と対） */
+/* 比較シート：差の出た行だけ地の色を変えて目を誘導する（セル内 Δ と対） */
 .sheet.scenario tr.diff td{background:#fffde7}
-.sheet.scenario td.delta{color:#00695c;font-weight:bold}
+.sheet.scenario .delta{color:#00695c;font-weight:bold;font-size:9px;margin-left:2px}
 /* 条件そのものの行（何を変えたか）は下段にまとめ、地の色で数値行と見分ける */
 .sheet.scenario tr.cond td{background:#fafbfc;color:#546e7a}
 .sheet.scenario tr.cond:first-of-type td{border-top:2px solid #cfd8dc}
@@ -178,12 +179,17 @@ def _meta_block(run: scn.ScenarioRun) -> str:
 
 
 def _compare_table(run: scn.ScenarioRun) -> str:
-    """比較表（行＝項目・列＝条件）。2 条件のときは Δ 列を足す。"""
+    """比較表（行＝項目・列＝ベース＋比較条件）。
+
+    **Δ は専用の列でなくセル内に併記する**（`-83.85 (+4.20)`）。ベース 1 個に対し
+    比較対象が 3〜5 個という使い方（2026-07-25 ユーザー要望）だと、Δ を列にすると
+    列数が倍になって A4 幅に収まらない。基準は常に**先頭列（ベース）**。
+    """
     pts = run.points
-    show_delta = len(pts) == 2
     head = "".join(f"<th>{_html.escape(p.label)}</th>" for p in pts)
-    if show_delta:
-        head += f"<th>{i18n.t('scn_delta')}</th>"
+
+    def _num(v: float, key: str) -> str:
+        return f"{v:+.2f}" if key.endswith("margin") else f"{v:.2f}"
 
     rows = ""
     for key, getter, unit in _COMPARE_ROWS:
@@ -192,19 +198,19 @@ def _compare_table(run: scn.ScenarioRun) -> str:
             cells = "".join(
                 f"<td class='s-{'ok' if v == 'OK' else 'ng'}'>{v}</td>" for v in vals
             )
-            delta = "<td></td>" if show_delta else ""
             differs = len(set(vals)) > 1
         else:
-            cells = "".join(f"<td>{v:+.2f}</td>" if unit == "dB" and key.endswith("margin")
-                            else f"<td>{v:.2f}</td>" for v in vals)
+            base = vals[0]
+            cells = f"<td>{_num(base, key)}</td>"
+            for v in vals[1:]:
+                d = v - base
+                delta = (f"<span class='delta'>({d:+.2f})</span>"
+                         if abs(d) > 0.005 else "")
+                cells += f"<td>{_num(v, key)} {delta}</td>"
             differs = max(vals) - min(vals) > 0.005
-            delta = ""
-            if show_delta:
-                d = vals[1] - vals[0]
-                delta = f"<td class='delta'>{d:+.2f}</td>" if differs else "<td>—</td>"
         label = i18n.t(key) + (f" ({unit})" if unit else "")
         cls = " class='diff'" if differs else ""
-        rows += f"<tr{cls}><td class='name'>{label}</td>{cells}{delta}</tr>\n"
+        rows += f"<tr{cls}><td class='name'>{label}</td>{cells}</tr>\n"
 
     # 条件そのもの（何を変えたか）を下段に出す＝表だけ見て再現できるように。
     changed = sorted({k for p in pts for k in p.overrides})
@@ -213,10 +219,9 @@ def _compare_table(run: scn.ScenarioRun) -> str:
         cells = "".join(
             f"<td>{v if isinstance(v, str) else f'{v:g}'}</td>" for v in vals
         )
-        delta = "<td></td>" if show_delta else ""
         unit = AXIS_UNITS.get(key, "")
         label = i18n.t(f"scn_axis_{key}") + (f" ({unit})" if unit else "")
-        rows += f"<tr class='cond'><td class='name'>{label}</td>{cells}{delta}</tr>\n"
+        rows += f"<tr class='cond'><td class='name'>{label}</td>{cells}</tr>\n"
 
     return (
         f'<table class="scn"><thead><tr><th></th>{head}</tr></thead>'

@@ -568,6 +568,15 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
 | `report_all.html` | Summary + every path in one printable document |
+
+### Condition Explorer (compare / sweep)
+
+Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
+
+| File              | Contents                                                     |
+| ----------------- | ------------------------------------------------------------ |
+| `scenario.html` | Single-page A4 (compare = difference table with in-cell deltas / sweep = chart + table) |
+| `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ---
