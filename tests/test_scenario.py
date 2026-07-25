@@ -835,3 +835,40 @@ class TestLauncherSnapshot:
             assert conds[1].overrides["env_type"] == base.env_type
         finally:
             win.destroy(); root.destroy()
+
+
+class TestSweepAxisSelection:
+    """軸に並ぶのは**リンクバジェットに効く量だけ**。"""
+
+    def test_k_factor_is_not_a_sweep_axis(self):
+        """ライス K は表示上の current_k にしか入らない＝振っても判定が動かない。
+
+        効かない軸を並べると「効くはず」と誤読させる（2026-07-25 ユーザー指摘）。
+        """
+        assert "k_factor" not in scn.SWEEP_AXES
+        with pytest.raises(ValueError, match="スイープできない"):
+            scn.sweep_conditions("k_factor", [1.0, 2.0])
+
+    def test_k_factor_really_does_not_move_the_link_budget(self, terrain, base):
+        """上の判断の根拠を数値で固定する（モデル側が変わったら気づけるように）。"""
+        low  = scn.evaluate(terrain, base, [scn.Condition("l", {"k_factor": 1.0})])[0]
+        high = scn.evaluate(terrain, base, [scn.Condition("h", {"k_factor": 20.0})])[0]
+        assert low.result.p_rx == high.result.p_rx
+        assert low.result.actual_margin == high.result.actual_margin
+        assert low.result.status == high.result.status
+
+    def test_every_axis_moves_something(self, terrain, base):
+        """並んでいる軸はすべて受信レベルか判定を動かすこと。"""
+        for axis in scn.SWEEP_AXES:
+            lo, hi = {
+                "freq_mhz": (400.0, 15000.0), "p_tx": (0.0, 40.0),
+                "gain_tx": (0.0, 30.0), "gain_rx": (0.0, 30.0),
+                "sens": (-120.0, -60.0), "h_tx": (2.0, 200.0),
+                "h_rx": (2.0, 200.0), "veg_h": (0.0, 40.0),
+                "rain_rate": (0.0, 150.0),
+            }[axis]
+            a = scn.evaluate(terrain, base, [scn.Condition("a", {axis: lo})])[0]
+            b = scn.evaluate(terrain, base, [scn.Condition("b", {axis: hi})])[0]
+            moved = (a.result.p_rx != b.result.p_rx
+                     or a.result.actual_margin != b.result.actual_margin)
+            assert moved, f"軸 {axis} は結果を動かさない（軸に並べる意味がない）"

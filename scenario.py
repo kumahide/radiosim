@@ -46,6 +46,8 @@ logger = logging.getLogger("radiosim")
 # 条件（1 条件＝ベース SimParams への上書き）
 # ============================================================
 # 上書きできる項目＝**terrain を作り直さずに効く**もの（＝座標とサンプル数以外）。
+# k_factor はリンクバジェットには効かない（表示上の current_k のみ）が、値としては
+# 上書きできる＝レポートの「環境」欄に出る。スイープ軸からは外してある（下記）。
 # 座標/samples を変えると DEM 取得が要り「同一経路を掘る」という前提から外れる
 # ため、ここには含めない（経路自体の比較はバッチの仕事＝2026-07-25 決定）。
 OVERRIDABLE: tuple[str, ...] = (
@@ -54,11 +56,16 @@ OVERRIDABLE: tuple[str, ...] = (
     "env_type", "diff_method",
 )
 
-# スイープの軸に選べる項目＝上書き可能なもののうち**連続量**。
-# env_type / diff_method は離散の選択肢なので軸にせず、比較（A-1）で扱う。
+# スイープの軸に選べる項目＝上書き可能なもののうち**連続量、かつリンクバジェットに
+# 効くもの**。
+#   - env_type / diff_method は離散の選択肢なので軸にせず、比較（A-1）で扱う。
+#   - **k_factor（ライス K）は軸にしない**＝[models.calculate_propagation] で
+#     `current_k = initial_k - diff_loss/3`（表示・参考値）にしか入らず、損失にも
+#     判定にも効かない。振っても p_rx / margin が動かない軸を並べると「効くはず」と
+#     誤読させる（2026-07-25 ユーザー指摘）。上書き自体は OVERRIDABLE に残る。
 SWEEP_AXES: tuple[str, ...] = (
     "freq_mhz", "p_tx", "gain_tx", "gain_rx", "sens",
-    "h_tx", "h_rx", "veg_h", "k_factor", "rain_rate",
+    "h_tx", "h_rx", "veg_h", "rain_rate",
 )
 
 # 1 回のスイープで許す点数の上限。純計算なので速いが、レポートの表が A4 に
