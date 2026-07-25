@@ -25,7 +25,7 @@ import config
 import i18n
 import models
 import mpl_fonts
-import report
+import report_path
 import simulation as sim
 import units
 import version
@@ -435,12 +435,12 @@ class _GraphWindow:
                 h_rx    = h_rx,
                 coord_format = coord_format,
             )
-            report.save_profile_png(
+            report_path.save_profile_png(
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir, coord_format,
                 self._report_project, self._report_memo,
             )
-            report.save_path_kml(
+            report_path.save_path_kml(
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir,
             )

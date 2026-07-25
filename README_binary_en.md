@@ -45,6 +45,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **A4 reports (v2)**: per-path / summary rendered as a single print-ready A4 page. Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
 - **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
 - **All-paths overview map** in the summary report (color-coded by verdict)
+- **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
@@ -296,6 +297,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
+| `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
 | `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
 | `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
@@ -463,6 +465,8 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 
 > **A4 reports (v2)**: `report.html` / `summary.html` are rendered as a single print-ready A4 page (`@page A4` / `@media print`). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
+> **Print all at once (`report_all.html`)**: batch runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking a thumbnail in the ledger jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
+>
 > **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
 > **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI). AZ is a **true** azimuth — to aim with a magnetic compass, correct for local declination (in Japan magnetic north is ~7-9° west of true north, varies by region).
@@ -476,6 +480,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html` | All-path summary with thumbnails                 |
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
+| `report_all.html` | Summary + every path in one printable document |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ---

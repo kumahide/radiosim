@@ -248,6 +248,9 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== HTML summary report =====
         "html_batch_title":     "Batch Simulation Report",
+        # report_all.html（summary + all per-path sheets in one document）
+        "html_all_title":       "Batch Report (All Pages)",
+        "html_all_link":        "Print all pages at once (report_all.html)",
         "html_total":           "Total",
         "html_ok":              "OK",
         "html_ng":              "NG",
@@ -588,6 +591,9 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== HTML summary report =====
         "html_batch_title":     "一括シミュレーションレポート",
+        # report_all.html（サマリ＋全 per-path を 1 文書へ連結）
+        "html_all_title":       "一括レポート（全ページ）",
+        "html_all_link":        "全ページをまとめて印刷（report_all.html）",
         "html_total":           "合計",
         "html_ok":              "OK",
         "html_ng":              "NG",

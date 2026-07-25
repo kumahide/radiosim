@@ -158,7 +158,9 @@ radiosim/
 ├── config.py             # App config I/O, input validation, logging (minimal external deps)
 ├── dem.py                # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
 ├── batch.py              # Batch execution engine (CSV I/O, validation, run)
-├── report.py             # Batch result output generation (PNG/HTML/KML, summaries; headless)
+├── report_common.py      # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
+├── report_path.py        # Per-path output generation (PNG/HTML/KML; headless)
+├── report_summary.py     # Batch summary output generation (CSV/HTML/KML, all-pages document; headless)
 ├── report_map.py         # Headless path-overlay map generation for reports
 ├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
@@ -383,6 +385,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
+| `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
 | `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
 | `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
@@ -558,6 +561,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.html` | All-path summary with thumbnails                 |
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
+| `report_all.html` | Summary + every path in one printable document |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ---
@@ -583,7 +587,9 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [Orchestrator layer]
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, validation, batch execution engine
-  report.py       Batch result output generation (PNG/HTML/KML, summaries; headless)
+  report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)
+  report_path.py    Per-path output generation (PNG/HTML/KML; headless)
+  report_summary.py Summary output generation (CSV/HTML/KML, all-pages document; headless)
   report_map.py   Headless path-overlay map generation (tile fetch + compositing)
 
           |
@@ -621,7 +627,7 @@ python -m pytest tests/ --cov
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
 | `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
-| `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke |
+| `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke, combined report (sheet CSS scoping, in-document anchors) |
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|

@@ -158,7 +158,9 @@ radiosim/
 ├── config.py             # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
 ├── dem.py                # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
 ├── batch.py              # 一括シミュレーションの実行エンジン（CSV I/O・バリデーション・実行）
-├── report.py             # バッチ結果の出力生成（PNG/HTML/KML・サマリ・ヘッドレス）
+├── report_common.py      # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
+├── report_path.py        # 経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
+├── report_summary.py     # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
 ├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
 ├── map_graphics.py       # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
 ├── coords.py             # 座標表記変換（DD ⇔ DMS・純関数）
@@ -383,6 +385,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線
 | `summary.html`             | 全経路のサマリーレポート（グラフのサムネイル付き） |
 | `summary.csv`              | 全経路の数値結果（スプレッドシートで開けます）     |
 | `summary.kml`              | OK / NG / エラーを色分けした Google Earth 用 KML   |
+| `report_all.html`          | サマリ＋全経路を 1 文書へ連結（Ctrl+P 一発で全ページ分の PDF）|
 | `{id}/report.html`         | 経路ごとの詳細レポート（地形断面グラフ＋経路地図を埋め込み）|
 | `{id}/profile.png`         | 地形断面グラフ                                     |
 | `{id}/path.kml`            | 地形・LoS・Fresnel ゾーン・遮蔽区間の 3D KML       |
@@ -560,6 +563,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 | `summary.html` | 全経路サマリー（サムネイル付き）     |
 | `summary.csv`  | 全経路の数値結果                     |
 | `summary.kml`  | 全経路の Google Earth 用 KML         |
+| `report_all.html` | サマリ＋全経路の連結レポート（一括印刷用）|
 | `{id}/`        | 経路ごとのパッケージ（個別と同構成） |
 
 ---
@@ -585,7 +589,9 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [オーケストレーター層]
   simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
   batch.py        CSV I/O・バリデーション・一括実行エンジン
-  report.py       バッチ結果の出力生成（PNG/HTML/KML・サマリ・ヘッドレス）
+  report_common.py  レポート共有部品（A4 骨格・ヘッダ/フッタ・文書外枠）
+  report_path.py    経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
+  report_summary.py サマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
   report_map.py   レポート用 経路地図のヘッドレス生成（タイル取得＋合成）
 
           |
@@ -623,7 +629,7 @@ python -m pytest tests/ --cov
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
 | `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
-| `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク |
+| `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
 | `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | マップウィンドウの安全破棄（after ループ停止の不変条件）＋破棄経路が close_map_safely に集約されていることの静的ガード |
 | `test_coords.py`         | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
