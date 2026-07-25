@@ -16,9 +16,13 @@ radiosim.log
 radiosim_profile.log
 build_log*.txt
 
-# Local beta testing scratchpad (bugs / improvement ideas — not committed)
-BETA_FEEDBACK.md
-beta_evidence/
+# Local issue tracker (bugs / improvement ideas) and its evidence files.
+# NOT ignored because it is a scratchpad — it is a long-lived ledger. It is
+# untracked because this repository is PUBLIC and the ledger holds things that
+# must not be published: unfixed vulnerabilities and screenshots of real runs.
+# Do not start tracking these without revisiting that constraint.
+ISSUES.md
+issue_evidence/
 
 # Python
 __pycache__/

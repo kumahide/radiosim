@@ -229,7 +229,7 @@ _APP_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 # アプリ本体のソース（tests / .venv / build 成果物は対象外）。
 _SKIP_DIRS = {".venv", "build", "dist", "tests", "tools", "__pycache__",
-              ".git", "results", "terrain_cache", "basemap_pale", "beta_evidence"}
+              ".git", "results", "terrain_cache", "basemap_pale", "issue_evidence"}
 
 
 def _app_sources():
