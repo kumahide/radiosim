@@ -368,7 +368,7 @@ class _GraphWindow:
             (i18n.t("pl_env_type"),   f"{env_label:>{_ONES_W}}"),
             (i18n.t("pl_diff_model"), f"{model_label:>{_ONES_W}}"),
             (i18n.t("pl_k_factor"),   f"{r.current_k:8.1f}"),
-            (i18n.t("pl_f1_obs"),     f"{r.blocked_ratio:8.1f} %"),
+            (i18n.t("pl_f1_obs"),     f"{units.format_blocked_ratio(r.blocked_ratio):>10}"),
             (i18n.t("pl_slant_dist"), f"{units.format_distance(r.slant_dist_km):>8}"),
         ]
 

@@ -1,7 +1,7 @@
 """
 units.py
 ========
-人が読む距離表記の単一ソース。純関数・副作用ゼロ。
+人が読む数値表記（距離・F1 遮蔽率）の単一ソース。純関数・副作用ゼロ。
 GUI・ネットワーク・ファイル I/O を一切持たない（models.py / coords.py と同じ制約）。
 
 方針（2.5a1 / I-014）:
@@ -58,3 +58,39 @@ def csv_distance(km: float, *, decimals: int = 0) -> str:
     if decimals <= 0:
         return f"{round(m)}"
     return f"{m:.{decimals}f}"
+
+
+# ============================================================
+# F1 遮蔽率（2.5a3 / I-018）
+# ------------------------------------------------------------
+# models.calculate_propagation の blocked_ratio は「フレネル第1ゾーン半径に対して
+# 障害物がどれだけ食い込んでいるか」で、**上限が無い**（深い山越えでは 7000% に
+# なる＝実測）。これは侵入深さであって率ではないので、「率(%)」と名乗って出す面
+# では 100% で頭打ちにする＝100% は「完全遮蔽」の意味。
+#
+# ⚠️ 打ち切るのは表示だけで **models の値は生のまま**（環境損失は既に
+# `min(blocked_ratio, 100.0)` で内部的に扱っており、計算は生値の情報を使える）。
+# 生の侵入深さを出したくなったら「×F1」という別の量として足す（→ 3.2 出力契約）。
+# ============================================================
+
+BLOCKED_RATIO_MAX = 100.0
+
+
+def format_blocked_ratio(pct: float, *, unit: bool = True) -> str:
+    """F1 遮蔽率 [%] を人が読む表記へ整形する（100% で頭打ち）。
+
+    Args:
+        pct:  models の blocked_ratio（上限なしの生値）
+        unit: 単位 ``%`` を付けるか（列見出しに単位がある表では False）
+    """
+    v = min(float(pct), BLOCKED_RATIO_MAX)
+    return f"{v:.1f} %" if unit else f"{v:.1f}"
+
+
+def csv_blocked_ratio(pct: float) -> str:
+    """F1 遮蔽率 [%] を CSV 用へ整形する（100% で頭打ち・単位なし）。
+
+    表示と CSV で値が食い違うほうが混乱するので、CSV も同じ上限にする
+    （生の侵入深さが要るなら別列として足す＝出力契約の話）。
+    """
+    return format_blocked_ratio(pct, unit=False)

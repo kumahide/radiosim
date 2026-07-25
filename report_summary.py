@@ -61,7 +61,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     f"{r.veg_loss:.2f}",       f"{r.env_loss:.2f}",
                     f"{r.rain_loss:.2f}",      f"{r.gas_loss:.2f}",
                     f"{r.total_loss:.2f}",
-                    units.csv_distance(r.slant_dist_km),  f"{r.blocked_ratio:.1f}",
+                    units.csv_distance(r.slant_dist_km),
+                    units.csv_blocked_ratio(r.blocked_ratio),
                     pr.row.note, "",
                 ])
             else:
@@ -259,7 +260,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"<td>{r.gas_loss:.1f}</td>"
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
-            f"<td>{r.blocked_ratio:.1f}</td>"
+            f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
             f"<td class='c-note'>{note_esc}</td>"
             f"<td><a href='{href}'>"
             f"<img src='{pid_safe}/profile.png' style='max-height:40px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"

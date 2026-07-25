@@ -66,3 +66,78 @@ class TestCsvDistance:
 
     def test_decimals_keep_sub_meter_resolution(self):
         assert units.csv_distance(0.0123, decimals=1) == "12.3"
+
+
+# ============================================================
+# F1 遮蔽率の表示クランプ（I-018 / 2.5a3）
+# ============================================================
+class TestFormatBlockedRatio:
+    """「率(%)」と名乗る面では 100% を超えさせない（表示のみ・models は生値）。"""
+
+    def test_normal_value_passes_through(self):
+        assert units.format_blocked_ratio(63.2) == "63.2 %"
+
+    def test_zero(self):
+        assert units.format_blocked_ratio(0.0) == "0.0 %"
+
+    @pytest.mark.parametrize("raw", [100.0001, 150.0, 7109.9, 1e6])
+    def test_clamped_at_100(self, raw):
+        """深い山越えは F1 半径の数十倍食い込む＝率として出すと誤読される。"""
+        assert units.format_blocked_ratio(raw) == "100.0 %"
+
+    def test_exactly_100_is_not_altered(self):
+        assert units.format_blocked_ratio(100.0) == "100.0 %"
+
+    def test_no_unit_variant_for_tables_with_unit_in_header(self):
+        assert units.format_blocked_ratio(7109.9, unit=False) == "100.0"
+
+    def test_csv_matches_display(self):
+        """CSV と台帳で値が食い違わないこと（同じ上限を通す）。"""
+        for raw in (12.3, 100.0, 7109.9):
+            assert units.csv_blocked_ratio(raw) == \
+                units.format_blocked_ratio(raw, unit=False)
+
+    def test_csv_has_no_unit_or_grouping(self):
+        assert units.csv_blocked_ratio(7109.9) == "100.0"
+
+
+class TestBlockedRatioFormattingIsNotScattered:
+    """遮蔽率の書式が表示側のインライン f-string へ戻らないこと。
+
+    距離書式（I-014）と同じ再発の型＝置き場が無いと次の表示追加でまた散り、
+    ある面だけクランプされない状態が生まれる。**models は生値のままにする**
+    設計なので、素の `blocked_ratio` を直接書式化する面が 1 つでもあると
+    そこだけ 7109.9% が出る。
+    """
+
+    _DISPLAY_MODULES = [
+        "report_summary.py", "simulation.py", "views/graph.py", "report_path.py",
+    ]
+
+    @pytest.mark.parametrize("mod", _DISPLAY_MODULES)
+    def test_no_inline_format_of_blocked_ratio(self, mod):
+        import re
+        root = os.path.join(os.path.dirname(__file__), "..")
+        text = open(os.path.join(root, mod), encoding="utf-8").read()
+        # `{...blocked_ratio...:...}` のうち units を通していないものを検出
+        # （units.format_blocked_ratio(...) の結果に幅指定を足すのは整形ではない）。
+        bad = [m for m in re.findall(r"\{[^{}]*blocked_ratio[^{}]*:[^{}]*\}", text)
+               if "units." not in m]
+        assert not bad, f"{mod}: 遮蔽率をインライン整形している {bad}（units へ寄せる）"
+
+    def test_models_keeps_the_raw_value(self):
+        """クランプは表示だけ＝models の値は生のまま（情報を捨てない）。"""
+        import numpy as np
+
+        import models
+        raw = np.zeros(120)
+        raw[55:65] = 400.0          # 深い尾根＝F1 半径を大きく超える
+        terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.53, 132.40)
+        prop = models.calculate_propagation(
+            terrain=terrain, h_tx=5.0, h_rx=5.0, freq_mhz=2400.0,
+            veg_h=0.0, initial_k=1.33, diff_method="deygout",
+            env_type="rural", rain_rate=0.0,
+        )
+        assert prop.blocked_ratio > units.BLOCKED_RATIO_MAX, \
+            "テスト地形が浅すぎる（クランプの検証にならない）"
+        assert units.format_blocked_ratio(prop.blocked_ratio) == "100.0 %"

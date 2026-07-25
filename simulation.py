@@ -361,7 +361,7 @@ def _save_report(
         "[ENVIRONMENT]\n"
         f"Initial K     : {params.k_factor:.2f}\n"
         f"Rice K (est.) : {result.current_k:.2f}\n"
-        f"F1 Obstruct   : {result.blocked_ratio:.1f} %\n"
+        f"F1 Obstruct   : {units.format_blocked_ratio(result.blocked_ratio)}\n"
         f"Slant Dist    : {units.format_distance(result.slant_dist_km)}\n"
     )
     path = os.path.join(save_dir, "report.txt")
