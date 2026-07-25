@@ -39,11 +39,13 @@ jobs:
       - name: Pyright (type check, app modules)
         run: >-
           pyright
-          batch.py models.py simulation.py config.py dem.py version.py
-          report_common.py report_path.py report_summary.py report_map.py
+          batch.py scenario.py models.py simulation.py config.py dem.py version.py
+          report_common.py report_path.py report_summary.py report_scenario.py
+          report_map.py
           i18n.py main.py map_graphics.py coords.py units.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py
           views/map_window.py views/dialogs.py views/progress.py views/theme.py
+          views/scenario.py
 
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov
