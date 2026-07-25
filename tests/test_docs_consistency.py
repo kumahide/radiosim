@@ -36,7 +36,8 @@ TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
 # 省く設計なので対象外＝図の意図に合わせた allowlist）。
 CORE_ARCH_MODULES = [
     "models.py", "simulation.py", "config.py", "dem.py",
-    "batch.py", "report.py", "report_map.py", "map_graphics.py", "coords.py",
+    "batch.py", "report_common.py", "report_path.py", "report_summary.py",
+    "report_map.py", "map_graphics.py", "coords.py",
     "units.py",
 ]
 

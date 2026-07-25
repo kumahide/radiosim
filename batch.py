@@ -5,7 +5,8 @@ batch.py
 
 UI 知識ゼロ — PathRow リストを受け取って全パスを順次処理する。
 CSV パース・エクスポート・バリデーション・実行を担う。
-出力生成（PNG/HTML/KML/サマリ）は report.py へ分離した。
+出力生成は report_path.py（per-path）と report_summary.py（サマリ・連結）へ
+分離した（A4 骨格の共有部品は report_common.py）。
 """
 
 import csv
@@ -23,7 +24,8 @@ import numpy as np
 import config
 import i18n
 import models
-import report
+import report_path
+import report_summary
 import simulation as sim
 
 logger = __import__("logging").getLogger("radiosim")
@@ -64,6 +66,9 @@ class PathResult:
     params:  sim.SimParams           | None = None
     save_dir: str                           = ""
     error:   Exception               | None = None
+    # 生成済みの A4 シート断片（report_path が詰める）。バッチ完了時に
+    # report_all.html へ連結するための保持で、失敗したパスは空のまま。
+    sheet_html: str                         = ""
 
     @property
     def ok(self) -> bool:
@@ -244,7 +249,7 @@ def run_batch(
 
     coord_format は per-path report.txt の人が読む座標表記のみに効く（既定 DD）。
 
-    成果物生成（PNG/HTML/KML・サマリ地図）もこのスレッド内で行う。report と
+    成果物生成（PNG/HTML/KML・サマリ地図）もこのスレッド内で行う。report_* と
     report_map は Figure+FigureCanvasAgg と PIL のみで tkinter に触れないため
     ワーカースレッドから安全に呼べる（→ save_profile_png の docstring）。GUI を
     固めないために必ずここで生成すること。project_name / memo はレポートの
@@ -299,12 +304,16 @@ def _run_thread(
         if on_path_stage:
             on_path_stage("summary")
         t_sum = time.perf_counter()
-        map_b64 = report.render_summary_map_b64(path_results)
+        map_b64 = report_summary.render_summary_map_b64(path_results)
         logger.info("Summary map complete in %.2fs", time.perf_counter() - t_sum)
-        report.save_summary_html(path_results, batch_dir, project_name, memo,
-                                 map_b64)
-        report.save_summary_kml(path_results, batch_dir)
-        report._save_summary_csv(path_results, batch_dir)
+        report_summary.save_summary_html(path_results, batch_dir, project_name,
+                                         memo, map_b64)
+        # 全ページ連結レポート（Ctrl+P 一発で全パスぶんの PDF）。per-path の
+        # シート断片は実行中に PathResult へ溜めてあるので追加コストは連結のみ。
+        report_summary.save_report_all_html(path_results, batch_dir,
+                                            project_name, memo, map_b64)
+        report_summary.save_summary_kml(path_results, batch_dir)
+        report_summary._save_summary_csv(path_results, batch_dir)
         logger.info("Batch complete: %d paths in %.2fs (summary %.2fs) → %s",
                     total, time.perf_counter() - t_batch,
                     time.perf_counter() - t_sum, batch_dir)
@@ -364,7 +373,7 @@ def _process_one(
         # phase 境界ログ。B-006 の診断では「バッチで最も時間を食う区間」に
         # ログ行が1つも無く、所要時間が最後まで測れなかった（→ 開発環境 C-b3②）。
         t0 = time.perf_counter()
-        report.save_path_visuals(pr, coord_format, project_name)
+        report_path.save_path_visuals(pr, coord_format, project_name)
         logger.info("Path '%s' render complete in %.2fs",
                     row.path_id, time.perf_counter() - t0)
 

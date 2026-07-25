@@ -21,10 +21,11 @@ import batch
 import i18n
 import config
 import models
-import report
+import report_path
+import report_summary
 import simulation as sim
 from batch import _make_params
-from report import _find_obs_segments
+from report_path import _find_obs_segments
 
 
 # ============================================================
@@ -490,7 +491,7 @@ class TestSavePathHtmlMap:
     def _render(self, tmp_path, flat_terrain, default_params_dict, map_b64):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=map_b64,
         )
@@ -518,7 +519,7 @@ class TestSavePathHtmlCoordFormat:
     def _render(self, tmp_path, flat_terrain, default_params_dict, coord_format):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None, coord_format=coord_format,
         )
@@ -554,7 +555,7 @@ class TestSummaryGainColumns:
 
     def test_summary_csv_has_gain_columns(self, tmp_path, default_params_dict):
         import csv as _csv
-        report._save_summary_csv([self._result(default_params_dict)], str(tmp_path))
+        report_summary._save_summary_csv([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.csv"), encoding="utf-8") as f:
             reader = _csv.reader(f)
             header = next(reader)
@@ -566,7 +567,7 @@ class TestSummaryGainColumns:
 
     def test_summary_html_has_gain_headers(self, tmp_path, default_params_dict):
         i18n.set_lang("en")
-        report.save_summary_html([self._result(default_params_dict)], str(tmp_path))
+        report_summary.save_summary_html([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             html = f.read()
         # 単位は 2 行目（.u span）へ分離されるので、名前と単位を個別に確認する。
@@ -584,7 +585,7 @@ class TestReportV2A4Skeleton:
     def _path_html(self, tmp_path, flat_terrain, default_params_dict):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None,
         )
@@ -596,16 +597,17 @@ class TestReportV2A4Skeleton:
         params = sim.SimParams(default_params_dict)
         row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
         pr  = batch.PathResult(row=row, result=_make_result(), params=params)
-        report.save_summary_html([pr], str(tmp_path))
+        report_summary.save_summary_html([pr], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             return f.read()
 
-    def _assert_a4_frame(self, html):
+    def _assert_a4_frame(self, html, kind):
         # portrait A4 の @page 宣言
         assert "@page" in html
         assert "A4 portrait" in html
-        # 本文が A4 用紙（.sheet）で包まれている
-        assert 'class="sheet"' in html
+        # 本文が A4 用紙（.sheet）で包まれている。種別クラス（path/summary）は
+        # 連結文書で両者の CSS を共存させるためのスコープ（report_common 参照）。
+        assert f'class="sheet {kind}"' in html
         # 自己同定ヘッダ/フッタ
         assert "page-header" in html
         assert "page-footer" in html
@@ -614,14 +616,14 @@ class TestReportV2A4Skeleton:
 
     def test_path_html_has_a4_frame(self, tmp_path, flat_terrain, default_params_dict):
         html = self._path_html(tmp_path, flat_terrain, default_params_dict)
-        self._assert_a4_frame(html)
+        self._assert_a4_frame(html, "path")
         # per-path（単一）レポートのフッタは「個別」＝バッチ固定ラベルにしない
         assert "Single Mode" in html
         assert "Batch Mode" not in html
 
     def test_summary_html_has_a4_frame(self, tmp_path, default_params_dict):
         html = self._summary_html(tmp_path, default_params_dict)
-        self._assert_a4_frame(html)
+        self._assert_a4_frame(html, "summary")
         # summary（一括）レポートのフッタはバッチ
         assert "Batch Mode" in html
 
@@ -642,7 +644,7 @@ class TestReportV2CaseInfo:
     def _path_html(self, tmp_path, flat_terrain, default_params_dict, project_name):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None, project_name=project_name,
         )
@@ -654,7 +656,7 @@ class TestReportV2CaseInfo:
         params = sim.SimParams(default_params_dict)
         row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
         pr  = batch.PathResult(row=row, result=_make_result(), params=params)
-        report.save_summary_html([pr], str(tmp_path), project_name=project_name, memo=memo)
+        report_summary.save_summary_html([pr], str(tmp_path), project_name=project_name, memo=memo)
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             return f.read()
 
@@ -671,7 +673,7 @@ class TestReportV2CaseInfo:
         # バッチ per-path は report_id（path_id）をタイトル末尾に残す。単一は付けない。
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None,
             project_name="Site A Survey", report_id="P1",
@@ -685,7 +687,7 @@ class TestReportV2CaseInfo:
         # 単一レポートの save_dir 名（タイムスタンプ）を露出させない。
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None, project_name="Site A Survey",
         )
@@ -707,7 +709,7 @@ class TestReportV2CaseInfo:
         # 単一レポート（save_path_html）に memo を渡すとヘッダ直下に表示される。
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None, memo="ridge line survey",
         )
@@ -755,7 +757,7 @@ class TestReportV2AzEl:
     def _path_html(self, tmp_path, flat_terrain, default_params_dict):
         i18n.set_lang("en")
         params = sim.SimParams(default_params_dict)
-        report.save_path_html(
+        report_path.save_path_html(
             flat_terrain, _make_result(), params, 30.0, 10.0,
             str(tmp_path), "TERRAINB64", map_b64=None,
         )
@@ -887,7 +889,8 @@ class TestRunBatch:
         # これをワーカースレッドで呼ぶようになった（B-006）ため、塞がないと
         # ユニットテストが実ネットワークを叩く。地図なし（None）は
         # save_summary_html のベストエフォート分岐で正規にサポートされる。
-        monkeypatch.setattr(report, "render_summary_map_b64", lambda results: None)
+        monkeypatch.setattr(report_summary, "render_summary_map_b64",
+                            lambda results: None)
         base = sim.SimParams(default_params_dict)
         ev: dict[str, list] = {"start": [], "complete": [], "batch": [], "error": []}
         done = threading.Event()
@@ -923,6 +926,11 @@ class TestRunBatch:
         assert os.path.basename(batch_dir).startswith("batch_")
         assert [pr.ok for pr in results] == [True, True]
         assert os.path.exists(os.path.join(batch_dir, "summary.csv"))
+        # 全ページ連結レポート（I-013）＝実行のたびに必ず出る成果物。
+        all_html = os.path.join(batch_dir, "report_all.html")
+        assert os.path.exists(all_html)
+        text = open(all_html, encoding="utf-8").read()
+        assert text.count('class="sheet path"') == 2, "連結文書に全パスが載っていない"
 
     def test_per_path_failure_does_not_abort_batch(
             self, tmp_path, default_params_dict, monkeypatch):
@@ -949,13 +957,13 @@ class TestRunBatch:
         メインスレッドで呼ばれたらここで落ちる。
         """
         seen: list[str] = []
-        real_visuals = report.save_path_visuals
+        real_visuals = report_path.save_path_visuals
 
         def _spy(pr, coord_format="dd", project_name=""):
             seen.append(threading.current_thread().name)
             return real_visuals(pr, coord_format, project_name)
 
-        monkeypatch.setattr(report, "save_path_visuals", _spy)
+        monkeypatch.setattr(report_path, "save_path_visuals", _spy)
         ev = self._run([_row(), _row(path_id="path02")], tmp_path,
                        default_params_dict, monkeypatch)
         assert ev["error"] == []
@@ -966,7 +974,7 @@ class TestRunBatch:
 
     def test_path_rendering_is_never_parallel(
             self, tmp_path, default_params_dict, monkeypatch):
-        """レポート描画を並列化しないことを固定する（batch.py / report.py の制約）。
+        """レポート描画を並列化しないことを固定する（batch.py / report_path.py の制約）。
 
         mpl_fonts.apply_japanese_font() が matplotlib.rcParams（プロセス共有）を
         書き換えるため、パス描画が重なるとフォント設定が競合する。将来 _process_one
@@ -974,7 +982,7 @@ class TestRunBatch:
         """
         gate     = threading.Lock()
         inflight = {"now": 0, "max": 0}
-        real_visuals = report.save_path_visuals
+        real_visuals = report_path.save_path_visuals
 
         def _spy(pr, coord_format="dd", project_name=""):
             with gate:
@@ -988,7 +996,7 @@ class TestRunBatch:
                 with gate:
                     inflight["now"] -= 1
 
-        monkeypatch.setattr(report, "save_path_visuals", _spy)
+        monkeypatch.setattr(report_path, "save_path_visuals", _spy)
         rows = [_row(), _row(path_id="path02"), _row(path_id="path03")]
         ev = self._run(rows, tmp_path, default_params_dict, monkeypatch)
         assert ev["error"] == []
@@ -1023,7 +1031,7 @@ class TestRunBatch:
             self, tmp_path, default_params_dict, monkeypatch):
         """パス処理より外側の失敗（サマリ書き出し等）は on_error に届く。"""
         monkeypatch.setattr(
-            report, "_save_summary_csv",
+            report_summary, "_save_summary_csv",
             lambda *a, **k: (_ for _ in ()).throw(RuntimeError("disk full")),
         )
         ev = self._run([_row()], tmp_path, default_params_dict, monkeypatch)
@@ -1073,7 +1081,7 @@ class TestSummaryPathsMap:
 
     def _summary_html(self, tmp_path, results, map_b64) -> str:
         i18n.set_lang("en")
-        report.save_summary_html(results, str(tmp_path), map_b64=map_b64)
+        report_summary.save_summary_html(results, str(tmp_path), map_b64=map_b64)
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             return f.read()
 
@@ -1128,8 +1136,8 @@ class TestSummaryPathsMap:
             captured["specs"] = specs
             return "MAPB64"
 
-        monkeypatch.setattr(report.report_map, "render_paths_map_b64", _fake)
-        assert report.render_summary_map_b64(self._results(default_params_dict)) == "MAPB64"
+        monkeypatch.setattr(report_summary.report_map, "render_paths_map_b64", _fake)
+        assert report_summary.render_summary_map_b64(self._results(default_params_dict)) == "MAPB64"
 
         ok, err = captured["specs"]
         assert (ok.tx, ok.rx) == ((34.54, 132.41), (34.53, 132.40))
