@@ -35,6 +35,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
         "dlg_ok":               "OK",
+        "dlg_close":            "Close",
+        "dlg_open_summary":     "Open summary",
+        "dlg_open_all":         "Open all pages",
         "dlg_yes":              "Yes",
         "dlg_no":               "No",
 
@@ -154,7 +157,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_validation_error": "Validation Error",
         "dlg_common_cfg_error": "Common Settings Error",
         "dlg_batch_complete":   "Batch Mode",
-        "dlg_batch_complete_msg": "Batch Mode complete.\nSaved to: {dir}\n\nOpen summary.html?",
+        "dlg_batch_complete_msg": "Batch Mode complete.\nSaved to: {dir}\n\n\"Open all pages\" opens report_all.html (Ctrl+P prints every page).",
         "dlg_batch_error":      "Batch Mode Error",
         "select_batch_csv":     "Select batch CSV",
 
@@ -419,6 +422,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
         "dlg_ok":               "OK",
+        "dlg_close":            "閉じる",
+        "dlg_open_summary":     "サマリを開く",
+        "dlg_open_all":         "全ページを開く",
         "dlg_yes":              "はい",
         "dlg_no":               "いいえ",
 
@@ -538,7 +544,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_validation_error": "入力エラー",
         "dlg_common_cfg_error": "共通設定エラー",
         "dlg_batch_complete":   "一括シミュレーション",
-        "dlg_batch_complete_msg": "一括シミュレーションが完了しました。\n保存先: {dir}\n\nsummary.html を開きますか？",
+        "dlg_batch_complete_msg": "一括シミュレーションが完了しました。\n保存先: {dir}\n\n「全ページを開く」は report_all.html（Ctrl+P で全ページ分の PDF）です。",
         "dlg_batch_error":      "一括シミュレーション エラー",
         "select_batch_csv":     "バッチCSVを選択",
 

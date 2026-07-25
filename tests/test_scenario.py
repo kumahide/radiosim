@@ -430,6 +430,13 @@ class TestScenarioWindowSmoke:
     make_tk_root が skip する。
     """
 
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        """言語を戻す（i18n はプロセス共有＝戻さないと後続テストを汚す）。"""
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+
     def _win(self, default_params_dict):
         from conftest import make_tk_root
         root = make_tk_root()

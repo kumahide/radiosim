@@ -1209,3 +1209,67 @@ class TestBatchRowDistanceColumn:
     def test_blank_while_input_is_incomplete(self, start, end):
         # 入力途中に赤字やエラーを出して編集を邪魔しない（検証は実行時の責務）。
         assert self._run(start, end) == ""
+
+
+# ============================================================
+# 完了後の導線（サマリ / 全ページ連結レポート）
+# ============================================================
+class TestBatchCompletionOpensChosenReport:
+    """バッチ完了時に**閲覧用サマリと印刷用の連結レポートを選んで開ける**こと。
+
+    背景（2.5a3・ユーザー報告）: `report_all.html`（I-013）は生成していたが、
+    完了ダイアログは summary.html しか開けず、**アプリからは到達できなかった**。
+    生成しているのに導線が無い成果物は「無い」のと同じ、という型の欠陥。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        """言語を戻す（このクラスは ja でウィンドウを組むため）。
+
+        戻さないと後続の test_config が英語メッセージを assert して落ちる
+        ＝テスト間の状態汚染。i18n はプロセス共有のグローバル。
+        """
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+
+    def _win(self, monkeypatch, default_params_dict):
+        from conftest import make_tk_root
+        import views.batch_builder as bb
+
+        root = make_tk_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        win = bb.BatchBuilderWindow(root, sim.SimParams(default_params_dict))
+        opened: list[str] = []
+        monkeypatch.setattr(bb.os, "startfile", lambda p: opened.append(str(p)),
+                            raising=False)
+        return root, win, bb, opened
+
+    def _complete(self, win, bb, monkeypatch, choice, batch_dir):
+        monkeypatch.setattr(bb.dialogs, "choose",
+                            lambda *a, **k: choice)
+        win._pump.start()
+        win._on_batch_complete(str(batch_dir), [])
+
+    @pytest.mark.parametrize("choice,expected", [
+        ("summary", "summary.html"),
+        ("all", "report_all.html"),
+    ])
+    def test_opens_the_chosen_report(self, monkeypatch, tmp_path, default_params_dict,
+                                     choice, expected):
+        root, win, bb, opened = self._win(monkeypatch, default_params_dict)
+        try:
+            self._complete(win, bb, monkeypatch, choice, tmp_path)
+            assert opened and opened[0].endswith(expected), opened
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_opens_nothing_when_dismissed(self, monkeypatch, tmp_path,
+                                          default_params_dict):
+        root, win, bb, opened = self._win(monkeypatch, default_params_dict)
+        try:
+            self._complete(win, bb, monkeypatch, None, tmp_path)
+            assert opened == []
+        finally:
+            win.destroy(); root.destroy()

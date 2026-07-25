@@ -58,3 +58,31 @@ def confirm(parent: tk.Misc, title: str, message: str) -> bool:
     _center_on(parent, dlg)
     dlg.wait_window()
     return result["ok"]
+
+
+def choose(parent: tk.Misc, title: str, message: str,
+           options: "list[tuple[str, str]]",
+           cancel_label: "str | None" = None) -> "str | None":
+    """選択肢が 3 つ以上あるときのダイアログ。選ばれたキーを返す（閉じたら None）。
+
+    `options` は ``[(キー, ボタンのラベル), …]``。左から順に並べ、最後に
+    キャンセル（`cancel_label`・既定は「閉じる」相当）を置く。
+
+    Yes/No で足りない場面はここに集約する＝**呼び出し側で Toplevel を組み直さない**
+    （ダイアログの見た目・中央配置・モーダル制御を 1 か所に保つ）。
+    """
+    dlg, btns = _make(parent, title, message)
+    result: dict[str, "str | None"] = {"key": None}
+
+    def _pick(key: str) -> None:
+        result["key"] = key
+        dlg.destroy()
+
+    for key, label in options:
+        ttk.Button(btns, text=label, command=lambda k=key: _pick(k)).pack(
+            side="left", padx=6)
+    ttk.Button(btns, text=cancel_label or i18n.t("dlg_close"),
+               command=dlg.destroy).pack(side="left", padx=6)
+    _center_on(parent, dlg)
+    dlg.wait_window()
+    return result["key"]

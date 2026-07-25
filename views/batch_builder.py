@@ -1130,12 +1130,22 @@ class BatchBuilderWindow(tk.Toplevel):
         self._prog_bar.config(value=0)
         self._prog_label.config(text=f"Done: {os.path.basename(batch_dir)}")
         self._prog_count_label.config(text="")
-        if dialogs.confirm(
+        # 成果物は 2 種類ある＝**閲覧用のサマリ**（台帳・サムネイル・各経路への
+        # リンク）と**印刷用の連結レポート**（report_all.html＝Ctrl+P で全ページ分の
+        # PDF）。どちらを開きたいかは場面で変わるので、完了時にその場で選ばせる
+        # （ウィンドウに常設ボタンを増やさない＝設計哲学⑤）。閉じたあとは
+        # 保存先フォルダから開ける。
+        choice = dialogs.choose(
             self,
             i18n.t("dlg_batch_complete"),
             i18n.t("dlg_batch_complete_msg").format(dir=batch_dir),
-        ):
+            [("summary", i18n.t("dlg_open_summary")),
+             ("all", i18n.t("dlg_open_all"))],
+        )
+        if choice == "summary":
             os.startfile(os.path.join(batch_dir, "summary.html"))
+        elif choice == "all":
+            os.startfile(os.path.join(batch_dir, "report_all.html"))
 
     def _on_error(self, ex: Exception) -> None:
         self._running = False
