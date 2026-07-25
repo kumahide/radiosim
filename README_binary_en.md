@@ -15,13 +15,14 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 4. [UI Settings](#ui-settings)
 5. [Usage — Single Mode](#usage--single-mode)
 6. [Usage — Batch Mode](#usage--batch-mode)
-7. [Input Parameters](#input-parameters)
-8. [Calculation Models](#calculation-models)
-9. [DEM Retrieval Logic](#dem-retrieval-logic)
-10. [Save Package](#save-package)
-11. [Uninstall](#uninstall)
-12. [Known Limitations](#known-limitations)
-13. [Copyright](#copyright)
+7. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
+8. [Input Parameters](#input-parameters)
+9. [Calculation Models](#calculation-models)
+10. [DEM Retrieval Logic](#dem-retrieval-logic)
+11. [Save Package](#save-package)
+12. [Uninstall](#uninstall)
+13. [Known Limitations](#known-limitations)
+14. [Copyright](#copyright)
 
 ---
 
@@ -45,6 +46,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **A4 reports (v2)**: per-path / summary rendered as a single print-ready A4 page. Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
 - **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
 - **All-paths overview map** in the summary report (color-coded by verdict)
+- **Condition Explorer (compare / sweep)**: for a single path, line up results under different conditions (base + up to 5) or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once
 - **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
@@ -304,6 +306,38 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `{id}/settings.json`       | Per-path input parameters                                        |
 | `{id}/terrain_profile.csv` | Terrain profile data                                             |
 | `{id}/report.txt`          | Text-format link budget report                                   |
+
+---
+
+## Usage — Condition Explorer (Compare / Sweep)
+
+A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and sample count are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
+
+The toggle at the top switches between two modes.
+
+### Compare (base + N conditions)
+
+- The leftmost **Base** column is the launcher's current values (read-only) — the reference never moves.
+- In columns **Cond 1 ... Cond 5**, change only the fields you care about (they start as copies of the base). "+ Condition" adds up to 5 columns.
+- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and sample count cannot be varied** (comparing different paths is what Batch Mode is for).
+- The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.44 (+13.56)`). Rows that differ are tinted.
+
+### Sweep (one axis, N points)
+
+- Pick an **axis** (antenna height, frequency, rain rate, ...) plus **From / To / Points** (2-41).
+- The report contains **a line chart and a numeric table**. The chart marks the verdict threshold (0 dB margin) and **the first point that turns OK**, so "how high does the antenna need to be" can be read directly.
+- When the margin spans a huge range (deeply obstructed paths), the vertical axis switches to a log-like scale so the region around the threshold stays readable.
+
+### Running and results
+
+**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (the "Open report" button reopens it later).
+
+The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
+
+| File              | Contents                                                          |
+| ----------------- | ----------------------------------------------------------------- |
+| `scenario.html` | Single-page A4 report (compare = difference table / sweep = chart + table) |
+| `scenario.csv`  | Numbers for every condition / point (spreadsheet-compatible)      |
 
 ---
 

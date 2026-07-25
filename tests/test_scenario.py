@@ -445,25 +445,75 @@ class TestScenarioWindowSmoke:
         win = ScenarioWindow(root, sim.SimParams(default_params_dict))
         return root, win
 
-    def test_builds_both_tabs(self, default_params_dict):
+    def test_builds_both_modes(self, default_params_dict):
         i18n.set_lang("ja")
         root, win = self._win(default_params_dict)
         try:
-            assert len(win._tabs.tabs()) == 2
+            assert win._mode.get() == "compare"
             assert win._axis_box.get() == i18n.t("scn_axis_h_tx")
         finally:
             win.destroy(); root.destroy()
 
-    def test_compare_fields_start_from_launcher_values(self, default_params_dict):
+    def test_only_the_active_panel_is_shown(self, default_params_dict):
+        """ttk.Notebook を使わない理由＝行数の多い比較側に引きずられて
+        スイープ側に死んだ余白ができる（2026-07-25 実機フィードバック）。
+        表示中のパネルだけ pack し、空いた高さは結果一覧が使う。"""
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            root.update_idletasks()
+            # pack されているのは表示中のパネルだけ（未表示は manager 無し）
+            assert win._compare_panel.winfo_manager() == "pack"
+            assert win._sweep_panel.winfo_manager() == ""
+            win._mode.set("sweep"); win._on_mode_changed()
+            root.update_idletasks()
+            assert win._sweep_panel.winfo_manager() == "pack"
+            assert win._compare_panel.winfo_manager() == ""
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_compare_starts_with_base_and_one_condition(self, default_params_dict):
+        """既定はベース＋比較条件 1 列。ベースは編集させない（基準を動かさない）。"""
         i18n.set_lang("ja")
         root, win = self._win(default_params_dict)
         try:
             base = sim.SimParams(default_params_dict)
-            va, vb = win._cmp_vars["freq_mhz"]
-            assert va.get() == str(base.freq_mhz) == vb.get()
+            assert len(win._cmp_cols) == 1
+            assert win._cmp_cols[0]["freq_mhz"].get() == str(base.freq_mhz)
             conds = win._compare_conditions()
-            assert len(conds) == 2
-            assert conds[0].overrides["freq_mhz"] == base.freq_mhz
+            assert len(conds) == 2                      # ベース＋条件1
+            assert conds[0].overrides == {}, "ベースは上書きを持たない"
+            assert conds[1].overrides["freq_mhz"] == base.freq_mhz
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_conditions_can_be_added_up_to_the_limit(self, default_params_dict):
+        """ベース 1 個に対し比較対象を 3〜5 個並べられること（2026-07-25 要望）。"""
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            for _ in range(scn.MAX_COMPARE_CONDITIONS + 2):   # 上限超えを押しても増えない
+                win._add_condition_column()
+            assert len(win._cmp_cols) == scn.MAX_COMPARE_CONDITIONS
+            assert str(win._add_btn["state"]) == "disabled"
+            assert len(win._compare_conditions()) == scn.MAX_COMPARE_CONDITIONS + 1
+            for _ in range(scn.MAX_COMPARE_CONDITIONS + 2):   # 0 列にはならない
+                win._remove_condition_column()
+            assert len(win._cmp_cols) == 1
+            assert str(win._del_btn["state"]) == "disabled"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_added_condition_columns_are_independent(self, default_params_dict):
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            win._add_condition_column()
+            win._cmp_cols[0]["freq_mhz"].set("900")
+            win._cmp_cols[1]["freq_mhz"].set("15000")
+            conds = win._compare_conditions()
+            assert conds[1].overrides["freq_mhz"] == 900.0
+            assert conds[2].overrides["freq_mhz"] == 15000.0
         finally:
             win.destroy(); root.destroy()
 
@@ -471,6 +521,7 @@ class TestScenarioWindowSmoke:
         i18n.set_lang("ja")
         root, win = self._win(default_params_dict)
         try:
+            win._mode.set("sweep"); win._on_mode_changed()
             win._from_var.set("10"); win._to_var.set("50"); win._points_var.set("5")
             conds, axis, values = win._sweep_conditions()
             assert axis == "h_tx"
@@ -486,5 +537,108 @@ class TestScenarioWindowSmoke:
             win._from_var.set("30"); win._to_var.set("30")
             with pytest.raises(ValueError):
                 win._sweep_conditions()
+        finally:
+            win.destroy(); root.destroy()
+
+
+# ============================================================
+# 結果表示と完了後の導線（2026-07-25 実機フィードバック）
+# ============================================================
+class TestScenarioResultsAndDialog:
+    """窓の高さを点数から切り離し、完了時の挙動を単一/バッチと揃える。
+
+    実機フィードバックの内容:
+      - スイープ点数が多いと縦長にしないと表示できない（FHD に収まらない）
+      - 保存ボタンが窓から見切れる
+      - 保存後にダイアログが出ない＝単一/バッチと挙動が違う
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+
+    def _win(self, default_params_dict):
+        from conftest import make_tk_root
+        root = make_tk_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        from views.scenario import ScenarioWindow
+        return root, ScenarioWindow(root, sim.SimParams(default_params_dict))
+
+    def _run(self, terrain, base, points):
+        values = scn.linspace_values(10, 10 + points - 1, points)
+        pts = scn.evaluate(terrain, base, scn.sweep_conditions("h_tx", values))
+        return scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
+                               points=pts, axis="h_tx", axis_values=values)
+
+    def test_window_height_is_independent_of_point_count(
+            self, default_params_dict, terrain, base, monkeypatch):
+        """41 点でも窓の要求高は変わらない（一覧はスクロールする）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            import views.scenario as vs
+            monkeypatch.setattr(vs.dialogs, "confirm", lambda *a, **k: False)
+            win._last_dir = "dummy"
+            root.update_idletasks()
+            win._on_complete(self._run(terrain, base, 3))
+            root.update_idletasks()
+            small = win.winfo_reqheight()
+            win._on_complete(self._run(terrain, base, scn.MAX_SWEEP_POINTS))
+            root.update_idletasks()
+            large = win.winfo_reqheight()
+            assert large == small, (
+                f"点数で窓の高さが変わる（{small}px → {large}px）＝"
+                "一覧がスクロールせず伸びている"
+            )
+            # 全点は一覧に載る（スクロールで届く）
+            assert len(win._tree.get_children()) == scn.MAX_SWEEP_POINTS
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_action_buttons_are_outside_the_scrolling_area(self, default_params_dict):
+        """実行・レポートのボタンは常に見える帯に置く（見切れない）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            root.update_idletasks()
+            # ボタンの親は結果パネルではない＝一覧が伸びても押せる位置にある
+            assert win._open_btn.winfo_parent() != str(win._result_box)
+            assert win._run_btn.winfo_parent() == win._open_btn.winfo_parent()
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_completion_asks_before_opening_like_single_and_batch(
+            self, default_params_dict, terrain, base, monkeypatch):
+        root, win = self._win(default_params_dict)
+        try:
+            import views.scenario as vs
+            asked, opened = [], []
+            monkeypatch.setattr(vs.dialogs, "confirm",
+                                lambda *a, **k: (asked.append(a[2]), True)[1])
+            monkeypatch.setattr(vs.os, "startfile", lambda p: opened.append(str(p)),
+                                raising=False)
+            win._last_dir = str(tmp := "some_dir")
+            win._on_complete(self._run(terrain, base, 3))
+            assert asked, "完了時に保存先を告げるダイアログが出ていない"
+            assert tmp in asked[0]
+            assert opened and opened[0].endswith("scenario.html")
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_declining_the_dialog_opens_nothing(
+            self, default_params_dict, terrain, base, monkeypatch):
+        root, win = self._win(default_params_dict)
+        try:
+            import views.scenario as vs
+            opened = []
+            monkeypatch.setattr(vs.dialogs, "confirm", lambda *a, **k: False)
+            monkeypatch.setattr(vs.os, "startfile", lambda p: opened.append(str(p)),
+                                raising=False)
+            win._last_dir = "some_dir"
+            win._on_complete(self._run(terrain, base, 3))
+            assert opened == []
+            # あとから開けること（ボタンは有効化されている）
+            assert str(win._open_btn["state"]) == "normal"
         finally:
             win.destroy(); root.destroy()
