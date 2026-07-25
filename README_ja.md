@@ -158,6 +158,8 @@ radiosim/
 ├── config.py             # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
 ├── dem.py                # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
 ├── batch.py              # 一括シミュレーションの実行エンジン（CSV I/O・バリデーション・実行）
+├── scenario.py           # 条件探索の共有ランナー（A-1 比較 / A-2 スイープ・相の宣言・ヘッドレス）
+├── report_scenario.py    # 条件探索の出力生成（A4 の折れ線＋表・CSV・ヘッドレス）
 ├── report_common.py      # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
 ├── report_path.py        # 経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
 ├── report_summary.py     # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
@@ -175,6 +177,7 @@ radiosim/
 │   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
 │   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
 │   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色（sv_ttk 由来）
+│   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
 │   └── batch_builder.py  # 一括シミュレーションウィンドウ
 ├── README_ja.md          # このファイル
 ├── README_en.md          # 英語版 README
@@ -187,6 +190,7 @@ radiosim/
     ├── test_dem.py
     ├── test_batch.py
     ├── test_report.py
+    ├── test_scenario.py
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
@@ -583,6 +587,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
   views/dialogs.py        親中央表示の共通モーダルダイアログ
   views/progress.py       進捗トランスポート（キュー＋ポーリング・単一/バッチ共用）
   views/theme.py          テーマ色の単一ソース（ttk 管理外の tk.Menu / tk.Canvas 用）
+  views/scenario.py       条件探索ウィンドウ（比較 / スイープ）
   -> 副作用あり。計算・I/O は下位層に委譲。
 
           |
@@ -591,6 +596,8 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 [オーケストレーター層]
   simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
   batch.py        CSV I/O・バリデーション・一括実行エンジン
+  scenario.py     条件探索の共有ランナー（terrain 固定・N 条件・相の宣言）
+  report_scenario.py 条件探索の出力生成（折れ線＋表・CSV・ヘッドレス）
   report_common.py  レポート共有部品（A4 骨格・ヘッダ/フッタ・文書外枠）
   report_path.py    経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
   report_summary.py サマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
@@ -627,6 +634,7 @@ python -m pytest tests/ --cov
 | テストファイル             | 主な対象                                                                   |
 | -------------------------- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
+| `test_scenario.py`       | 条件探索（DEM 取得 1 回 + N 条件・相の進捗・上書きの非破壊・A4 シート/CSV 出力）|
 | `test_golden_links.py`   | 回帰コーパス＝代表回線 26 本の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |

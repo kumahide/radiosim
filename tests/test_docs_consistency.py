@@ -36,7 +36,9 @@ TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
 # 省く設計なので対象外＝図の意図に合わせた allowlist）。
 CORE_ARCH_MODULES = [
     "models.py", "simulation.py", "config.py", "dem.py",
-    "batch.py", "report_common.py", "report_path.py", "report_summary.py",
+    "batch.py", "scenario.py",
+    "report_common.py", "report_path.py", "report_summary.py",
+    "report_scenario.py",
     "report_map.py", "map_graphics.py", "coords.py",
     "units.py",
 ]
@@ -303,3 +305,30 @@ def test_doc_links_point_to_existing_files(doc):
         if not (path.parent / rel).exists():
             broken.append(f"L{lineno} [{label}] -> {target}")
     assert not broken, f"{doc}: リンク切れ {len(broken)} 件\n  " + "\n  ".join(broken)
+
+
+# --- 10. カバレッジ対象の網羅（2.5a3 追加） -----------------------------------
+#       背景: `[tool.coverage.run] source` はモジュール名のべた書きで、**分割・改名で
+#       黙って死角ができる**。実際 2.5a2 で `report.py` を report_common/path/summary へ
+#       割ったとき source に "report" が残り、出力層がまるごと計測外のまま
+#       カバレッジ 95% が報告されていた（気づいたのは 2.5a3 で新モジュールを足した時）。
+#       CI の pyright 対象と同じ型の穴なので、同じやり方でゲート化する。
+_COVERAGE_EXEMPT = {
+    # GUI（views/*）と起動口は omit 済み。version は定数のみ。
+    "main", "version", "radiosim",
+}
+
+
+def test_coverage_source_lists_all_headless_modules():
+    """ルート直下の全ヘッドレスモジュールがカバレッジ計測の対象であること。"""
+    text = _read("pyproject.toml")
+    block = re.search(r"\[tool\.coverage\.run\].*?source\s*=\s*\[(.*?)\]",
+                      text, re.S)
+    assert block, "pyproject.toml に [tool.coverage.run] source が無い"
+    listed = set(re.findall(r'"([\w_]+)"', block.group(1)))
+    modules = {p.stem for p in ROOT.glob("*.py")} - _COVERAGE_EXEMPT
+    missing = sorted(modules - listed)
+    assert not missing, (
+        f"カバレッジ計測から漏れているモジュール: {missing}。"
+        "pyproject.toml の [tool.coverage.run] source に追記すること。"
+    )

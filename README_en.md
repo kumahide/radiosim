@@ -158,6 +158,8 @@ radiosim/
 ├── config.py             # App config I/O, input validation, logging (minimal external deps)
 ├── dem.py                # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
 ├── batch.py              # Batch execution engine (CSV I/O, validation, run)
+├── scenario.py           # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
+├── report_scenario.py    # Condition explorer output (A4 line chart + table, CSV; headless)
 ├── report_common.py      # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
 ├── report_path.py        # Per-path output generation (PNG/HTML/KML; headless)
 ├── report_summary.py     # Batch summary output generation (CSV/HTML/KML, all-pages document; headless)
@@ -175,6 +177,7 @@ radiosim/
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   ├── theme.py          # Theme colors for plain tk widgets (sourced from sv_ttk)
+│   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -187,6 +190,7 @@ radiosim/
     ├── test_dem.py
     ├── test_batch.py
     ├── test_report.py
+    ├── test_scenario.py
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
@@ -581,6 +585,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
   views/dialogs.py        Shared modal dialogs centered on the parent
   views/progress.py       Progress transport (queue + polling, shared by single/batch)
   views/theme.py          Single source of theme colors (for tk.Menu / tk.Canvas outside ttk)
+  views/scenario.py       Condition explorer window (compare / sweep)
   -> Has side effects. Delegates calculation and I/O downward.
 
           |
@@ -589,6 +594,8 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 [Orchestrator layer]
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, validation, batch execution engine
+  scenario.py     Condition explorer runner (fixed terrain, N conditions, phases)
+  report_scenario.py Condition explorer output (line chart + table, CSV; headless)
   report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)
   report_path.py    Per-path output generation (PNG/HTML/KML; headless)
   report_summary.py Summary output generation (CSV/HTML/KML, all-pages document; headless)
@@ -625,6 +632,7 @@ python -m pytest tests/ --cov
 | File                       | Coverage                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |

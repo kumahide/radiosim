@@ -28,10 +28,16 @@ skips = ["B101"]
 [tool.coverage.run]
 # ヘッドレス層全体をゲート対象にする（= Web/PWA で再利用予定の資産。
 # 従来はコア3モジュールのみで、report/batch の出力層が死角だった）。
+# ⚠️ ここは手で書くリストなので、モジュールを増やす/割ると黙って死角が生まれる
+# （2.5a2 で report.py を 3 分割したとき "report" が残り、出力層がまるごと
+# 計測外になっていた）。tests/test_docs_consistency.py がルート直下の
+# ヘッドレスモジュール全件との一致を検査する。
 source = [
     "models", "simulation", "config", "dem",
-    "batch", "report", "report_map",
-    "coords", "map_graphics", "mpl_fonts", "i18n",
+    "batch", "scenario",
+    "report_common", "report_path", "report_summary", "report_scenario",
+    "report_map",
+    "coords", "units", "map_graphics", "mpl_fonts", "i18n",
 ]
 omit   = ["views/*", "main.py"]   # GUI層（tkinter）はカバレッジ対象外
 

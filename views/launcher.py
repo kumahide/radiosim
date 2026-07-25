@@ -542,12 +542,14 @@ class SimLauncher:
         btn_load     = ttk.Button(frame, text=i18n.t("btn_load_settings"), command=self._on_load_settings)
         btn_open     = ttk.Button(frame, text=i18n.t("btn_open_results"),  command=self._on_open_results)
         btn_map      = ttk.Button(frame, text=i18n.t("btn_open_map"),      command=self._on_open_map)
+        btn_scenario = ttk.Button(frame, text=i18n.t("scn_open_btn"),      command=self._on_open_scenario)
 
         self.run_btn.grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0, 4), ipady=10)
         btn_batch.grid   (row=0, column=1, sticky="ew", padx=(2, 0), pady=(0, 4), ipady=10)
         btn_load.grid    (row=1, column=0, sticky="ew", padx=(0, 2),               ipady=6)
         btn_open.grid    (row=1, column=1, sticky="ew", padx=(2, 0),               ipady=6)
-        btn_map.grid     (row=2, column=0, columnspan=2, sticky="ew", pady=(4, 0),  ipady=6)
+        btn_map.grid     (row=2, column=0, sticky="ew", padx=(0, 2), pady=(4, 0),  ipady=6)
+        btn_scenario.grid(row=2, column=1, sticky="ew", padx=(2, 0), pady=(4, 0),  ipady=6)
 
     def _build_logo(self, parent: tk.Misc) -> None:
         """logo.png をボタン下の余白に表示する。ファイルがなければ何もしない。"""
@@ -892,6 +894,33 @@ class SimLauncher:
     def _open_batch_for_append(self):
         """連続追加モードの append 先としてバッチウィンドウを開いて返す。"""
         return self.ensure_batch_window()
+
+    def _on_open_scenario(self) -> None:
+        """条件探索ウィンドウを開く（唯一インスタンス。開いていれば前面化）。
+
+        バッチ・地図と同じく**ランチャーが source of truth**で、経路とパラメータは
+        現在値のスナップショットを渡す（実行のたびに config_provider で取り直す）。
+        起動時の import を増やさないため遅延 import（MapWindow/BatchBuilder と同方針）。
+        """
+        win = getattr(self, "_scenario_win", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return
+        from views.scenario import ScenarioWindow
+        try:
+            params = sim.SimParams(self._current_config())
+        except Exception:
+            params = sim.SimParams(config.DEFAULT_CONFIG)
+        self._scenario_win = ScenarioWindow(
+            self.root, params,
+            config_provider=self._current_config,
+            meta_provider=self._current_meta,
+            on_close=self._on_scenario_closed,
+        )
+
+    def _on_scenario_closed(self) -> None:
+        self._scenario_win = None
 
     # ----------------------------------------------------------
     # マップウィンドウ（座標入力モード）との連携
