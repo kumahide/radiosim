@@ -1,4 +1,4 @@
-# RadioSim Pro 2.4
+# RadioSim Pro 2.5
 
 ![RadioSim Pro](logo.png)
 
@@ -260,6 +260,8 @@ Click the **Batch Mode** button in the launcher to open the dedicated window.
 
 **Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and edited cell by cell.
 
+The **Dist (m)** column on the right is read-only and computed from the TX/RX coordinates (updated whenever a coordinate is committed). A mistyped coordinate shows up as an absurd distance, so it can be caught before running.
+
 - **+ Add row**: Adds a row that freezes a copy of the current launcher fields (coordinates, frequency, gains, antenna heights).
 - **Right-click a row**: Opens a per-row menu.
   - **→ Send to Single**: Loads that row's coordinates + RF into the launcher for adjustment.
@@ -297,7 +299,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | File                         | Contents                                                         |
 | ---------------------------- | ---------------------------------------------------------------- |
 | `summary.html`             | Summary report for all paths (with graph thumbnails)             |
-| `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
+| `summary.csv`              | Numerical results for all paths (spreadsheet-compatible; distances in metres) |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
 | `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
 | `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
