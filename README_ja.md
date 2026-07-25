@@ -190,7 +190,8 @@ radiosim/
     ├── test_theme.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
-    └── test_env_consistency.py
+    ├── test_env_consistency.py
+    └── test_claude_hooks.py
 ```
 
 ---
@@ -632,6 +633,7 @@ python -m pytest tests/ --cov
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
+| `test_claude_hooks.py`   | ローカル開発フック（`.claude/`）の課題台帳パース。状態の註釈・ID 000・アーカイブ節の置き場・済の裏取り（コミット参照）を検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 
 ---
 

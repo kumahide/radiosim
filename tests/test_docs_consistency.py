@@ -250,3 +250,54 @@ def test_ci_pyright_covers_all_app_modules():
         f"{CI_WORKFLOW} の pyright 対象に未登録のモジュール: {missing}。"
         "CI がこのファイルを型検査していない（追記すること）。"
     )
+
+
+# --- 9. ドキュメント内リンクの実在（2026-07-25 追加） ---------------------------
+#       背景: 課題台帳の末尾に `[design_philosophy]: memory/feedback_design_philosophy.md`
+#       という参照定義があり、**memory はリポジトリ外にあるので常にリンク切れ**だった
+#       （全 I- 項目の「設計方針との整合」欄が参照するラベルなので影響は広い）。人手の
+#       doc 点検で見つけるまで誰も踏まなかった＝機械化できる面なのに無ガードだった。
+#       同種のドリフト源（ファイル改名でリンクが腐る）はこれから増える見込みなので
+#       Tier-0 に落とす。**リンク切れの検出だけを見る**（リンクの妥当性＝指し先が適切か
+#       は散文の判断なので doc-review 助言に委ねる）。
+_LINK_RE = re.compile(r"\[([^\]]+)\]\(([^)]+)\)")          # インラインリンク
+_REFDEF_RE = re.compile(r"^\[([^\]]+)\]:\s*(\S+)")          # 参照定義
+_FENCE_RE = re.compile(r"^\s*(```|~~~)")
+
+# 非追跡ゆえ CI には存在しないが、ローカルでは検査したいドキュメント。
+_LOCAL_ONLY_DOCS = ["ISSUES.md", "issue_evidence/README.md"]
+_LINK_DOCS = ["README.md", *ALL_READMES, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
+
+
+def _iter_links(text: str):
+    """(行番号, ラベル, ターゲット) を返す。コードフェンス内は対象外。"""
+    in_fence = False
+    for lineno, line in enumerate(text.splitlines(), 1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence:
+            continue
+        d = _REFDEF_RE.match(line)
+        if d:
+            yield lineno, d.group(1), d.group(2)
+        for m in _LINK_RE.finditer(line):
+            yield lineno, m.group(1), m.group(2)
+
+
+@pytest.mark.parametrize("doc", _LINK_DOCS)
+def test_doc_links_point_to_existing_files(doc):
+    """ドキュメントの相対リンク・参照定義の指し先が実在すること。"""
+    path = ROOT / doc
+    if not path.exists():
+        pytest.skip(f"{doc} は git-ignore（CI には存在しない）")
+    broken = []
+    for lineno, label, target in _iter_links(path.read_text(encoding="utf-8")):
+        if target.startswith(("http://", "https://", "mailto:", "data:", "#")):
+            continue
+        rel = target.split("#", 1)[0]          # 行アンカー（#L42）は落として実体を見る
+        if not rel:
+            continue
+        if not (path.parent / rel).exists():
+            broken.append(f"L{lineno} [{label}] -> {target}")
+    assert not broken, f"{doc}: リンク切れ {len(broken)} 件\n  " + "\n  ".join(broken)
