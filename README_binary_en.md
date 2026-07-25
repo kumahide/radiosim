@@ -325,7 +325,7 @@ The toggle at the top switches between two modes. After changing coordinates or 
 ### Sweep (one axis, N points)
 
 - Pick an **axis** (antenna height, frequency, rain rate, ...) plus **From / To / Points** (2-41).
-- The report contains **a line chart and a numeric table**. The chart draws the verdict threshold (0 dB margin) and colours each point by verdict (OK = green / NG = orange); the colour change is where the link starts to close. Even at the maximum 41 points the report stays on **a single A4 page** (the table is split into side-by-side blocks automatically).
+- The report contains **a line chart and a numeric table**. The chart draws the verdict threshold (0 dB margin) and colours each point by verdict (OK = green / NG = orange); the colour change is where the link starts to close. Even at the maximum 41 points the report stays on **a single A4 page** — the table stays a single column (rows are simply tightened), so the progression can be read straight down.
 - When the margin spans a huge range (deeply obstructed paths), the vertical axis switches to a log-like scale so the region around the threshold stays readable.
 
 ### Running and results

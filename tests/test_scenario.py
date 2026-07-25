@@ -690,7 +690,13 @@ class TestBaseValuesAndLabels:
 
 
 class TestSweepFitsOnOnePage:
-    """点数を増やしても A4 1 枚に収める（縮小フィットで文字を潰さない）。"""
+    """点数を増やしても **1 列のまま** A4 1 枚に収める。
+
+    スイープ表は「上から下へ連続的な変化を追う」のが価値なので、横に分割すると
+    読み筋が切れる（2026-07-25 ユーザー判断で分割を撤回）。代わりに点数が多いときは
+    行を詰める（dense）＋図を低くする。実測＝41 点で Edge print-to-pdf が 1 ページ、
+    縮小フィットは未発動（文字サイズはそのまま）。
+    """
 
     def _run(self, terrain, base, n):
         values = scn.linspace_values(10, 10 + n - 1, n)
@@ -698,38 +704,47 @@ class TestSweepFitsOnOnePage:
         return scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
                                points=pts, axis="h_tx", axis_values=values)
 
-    def test_small_sweep_is_a_single_block(self, terrain, base):
-        html = report_scenario.scenario_sheet_html(self._run(terrain, base, 11))
-        assert html.count("<table class=\"scn\">") == 1
-        assert 'class="tables split"' not in html
+    @pytest.mark.parametrize("n", [2, 11, 21, 41])
+    def test_table_is_always_a_single_column(self, terrain, base, n):
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base, n))
+        assert html.count("<table class=") == 1, "表が分割されている（連続性が切れる）"
+        assert "tables split" not in html
 
-    def test_large_sweep_splits_into_side_by_side_blocks(self, terrain, base):
-        """41 点は横 2 ブロックに割る＝縦に積むと印字域を超えて全体が縮む。"""
+    def test_all_points_are_listed(self, terrain, base):
         run = self._run(terrain, base, scn.MAX_SWEEP_POINTS)
         html = report_scenario.scenario_sheet_html(run)
-        assert 'class="tables split"' in html
-        assert html.count("<table class=\"scn\">") == 2
-        # 全点が載っている（分割で落ちない）
         for p in run.points:
             assert f"<td>{p.label}</td>" in html
 
-    def test_rows_per_block_never_exceed_the_limit(self, terrain, base):
-        """1 ブロックの行数が上限内＝A4 の高さ計算の前提が崩れない。"""
-        for n in (2, 21, 22, 41):
-            run = self._run(terrain, base, n)
-            html = report_scenario.scenario_sheet_html(run)
-            for block in html.split("<tbody>")[1:]:
-                rows = block.count("<tr class=")
-                assert rows <= report_scenario._SWEEP_ROWS_PER_BLOCK, \
-                    f"{n} 点でブロックに {rows} 行（上限 " \
-                    f"{report_scenario._SWEEP_ROWS_PER_BLOCK}）"
+    def test_dense_mode_kicks_in_only_when_needed(self, terrain, base):
+        """行を詰めるのは収まらなくなる点数から（少ない点数は読みやすさ優先）。"""
+        few = report_scenario.scenario_sheet_html(
+            self._run(terrain, base, report_scenario._SWEEP_DENSE_ROWS))
+        many = report_scenario.scenario_sheet_html(
+            self._run(terrain, base, report_scenario._SWEEP_DENSE_ROWS + 1))
+        assert 'class="scn"' in few and "dense" not in few
+        assert 'class="scn dense"' in many
+        # 断片に付くクラスへ対応するスタイルが CSS 側にあること（片方だけの改名を防ぐ）
+        assert ".sheet.scenario table.scn.dense td{" in report_scenario.scenario_sheet_css()
+
+    def test_chart_is_shorter_when_many_points(self, terrain, base):
+        """図を低くして表に高さを譲る（1 枚に収めるための配分）。"""
+        small = report_scenario.render_sweep_png_b64(self._run(terrain, base, 5))
+        large = report_scenario.render_sweep_png_b64(
+            self._run(terrain, base, scn.MAX_SWEEP_POINTS))
+        import base64
+        import io
+        from PIL import Image
+        h_small = Image.open(io.BytesIO(base64.b64decode(small))).height
+        h_large = Image.open(io.BytesIO(base64.b64decode(large))).height
+        assert h_large < h_small, f"点数が多いのに図が低くなっていない（{h_small} → {h_large}）"
 
     def test_no_first_ok_annotation(self, terrain, base):
         """「初めて OK」の明示は出さない（2026-07-25 ユーザー判断）。"""
         i18n.set_lang("ja")
+        run = self._run(terrain, base, 11)
         html = report_scenario.scenario_sheet_html(
-            self._run(terrain, base, 11),
-            chart_b64=report_scenario.render_sweep_png_b64(self._run(terrain, base, 11)))
+            run, chart_b64=report_scenario.render_sweep_png_b64(run))
         assert "◀" not in html
         assert "初めて" not in html
 
