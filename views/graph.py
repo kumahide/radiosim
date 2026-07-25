@@ -27,6 +27,7 @@ import models
 import mpl_fonts
 import report
 import simulation as sim
+import units
 import version
 
 logger = logging.getLogger("radiosim")
@@ -111,12 +112,15 @@ class _GraphWindow:
 
         veg_top = t.elevs_with_curve + self._params.veg_h
 
+        # 距離軸は表示のみ m へ換算する（内部・物理式は km 据え置き＝units 参照）。
+        d_m = units.km_to_m(t.d_km_axis)
+
         self._ax.fill_between(
-            t.d_km_axis, t.elevs_with_curve, y_min,
+            d_m, t.elevs_with_curve, y_min,
             color="#8B4513", alpha=0.4,
         )
         self._ax.fill_between(
-            t.d_km_axis, veg_top, t.elevs_with_curve,
+            d_m, veg_top, t.elevs_with_curve,
             color="green", alpha=0.3,
         )
 
@@ -173,18 +177,12 @@ class _GraphWindow:
         legend_ax.set_ylim(0, 1)
         self._draw_legend(legend_ax)
 
-        # 回折モデル切り替えボタン
-        ax_model = self._fig.add_axes((self._PANEL_X, 0.13, self._PANEL_W, 0.055))
-        self._btn_model = Button(
-            ax_model,
-            self._model_label(),
-            color="lightgrey",
-            hovercolor="white",
-        )
-        self._btn_model.on_clicked(self._on_toggle_model)
-
         # 保存ボタン
-        ax_save = self._fig.add_axes((self._PANEL_X, 0.06, self._PANEL_W, 0.055))
+        # 回折モデルは launcher（source of truth）でのみ選ぶ。ここに切替ボタンを
+        # 置くと _params.diff_method をその場で書き換えられ、「ランチャーで Single
+        # を選んだのに保存レポートは Deygout」という齟齬を作れる（2.5 で撤去）。
+        # 読み取り専用表示はパネルの pl_diff_model が担う。
+        ax_save = self._fig.add_axes((self._PANEL_X, 0.13, self._PANEL_W, 0.055))
         self._btn_save = Button(ax_save, i18n.t("btn_save_pkg"), color="lightgrey", hovercolor="white")
         self._btn_save.on_clicked(self._on_save)
 
@@ -306,7 +304,8 @@ class _GraphWindow:
         rx_abs = float(elevs[-1]) + h_rx
         los_vals = np.linspace(tx_abs, rx_abs, N)
 
-        self._los_line.set_data(t.d_km_axis, los_vals)
+        d_m = units.km_to_m(t.d_km_axis)
+        self._los_line.set_data(d_m, los_vals)
 
         # Fresnel ゾーン（再計算）
         f1 = models.fresnel_zone_radii(t.d_km_axis, t.horiz_dist_km, self._params.freq_mhz)
@@ -317,7 +316,7 @@ class _GraphWindow:
             except Exception:
                 pass
         self._fresnel_fill = self._ax.fill_between(
-            t.d_km_axis, los_vals - f1, los_vals + f1, color="cyan", alpha=0.25
+            d_m, los_vals - f1, los_vals + f1, color="cyan", alpha=0.25
         )
 
         # アンテナバー
@@ -327,7 +326,7 @@ class _GraphWindow:
             except Exception:
                 pass
         self._antenna_bars = self._ax.vlines(
-            [0, t.horiz_dist_km],
+            [0, units.km_to_m(t.horiz_dist_km)],
             [float(elevs[0]),  float(elevs[-1])],
             [tx_abs, rx_abs],
             color="black", lw=3,
@@ -370,7 +369,7 @@ class _GraphWindow:
             (i18n.t("pl_diff_model"), f"{model_label:>{_ONES_W}}"),
             (i18n.t("pl_k_factor"),   f"{r.current_k:8.1f}"),
             (i18n.t("pl_f1_obs"),     f"{r.blocked_ratio:8.1f} %"),
-            (i18n.t("pl_slant_dist"), f"{r.slant_dist_km:8.3f} km"),
+            (i18n.t("pl_slant_dist"), f"{units.format_distance(r.slant_dist_km):>8}"),
         ]
 
         w = max(_dw(label) for label, _ in budget_rows + sep_rows + status_rows + env_rows)
@@ -412,20 +411,6 @@ class _GraphWindow:
         except ValueError:
             tb.set_val(f"{slider.val:{fmt}}")
             self._fig.canvas.draw()
-
-    def _model_label(self) -> str:
-        if self._params.diff_method == "deygout":
-            return i18n.t("diff_deygout")
-        return i18n.t("diff_single")
-
-    def _on_toggle_model(self, _) -> None:
-        """回折モデルを single ↔ deygout で切り替えて再計算する。"""
-        if self._params.diff_method == "single":
-            self._params.diff_method = "deygout"
-        else:
-            self._params.diff_method = "single"
-        self._btn_model.label.set_text(self._model_label())
-        self._request_update()
 
     def _on_save(self, _) -> None:
         self._update_core()   # flush any pending slider changes before saving

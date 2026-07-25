@@ -26,6 +26,7 @@ import i18n
 import models
 import mpl_fonts
 import report_map
+import units
 import version
 
 if TYPE_CHECKING:
@@ -257,18 +258,20 @@ def save_profile_png(
     ax.tick_params(labelsize=15)
 
     veg_top = elevs + params.veg_h
-    ax.fill_between(t.d_km_axis, elevs,   y_min,   color="#8B4513", alpha=0.4)
-    ax.fill_between(t.d_km_axis, veg_top, elevs,   color="green",   alpha=0.3)
+    # 距離軸は表示のみ m へ換算する（内部・物理式は km 据え置き＝units 参照）。
+    d_m = units.km_to_m(t.d_km_axis)
+    ax.fill_between(d_m, elevs,   y_min,   color="#8B4513", alpha=0.4)
+    ax.fill_between(d_m, veg_top, elevs,   color="green",   alpha=0.3)
 
     tx_abs = float(elevs[0])  + h_tx
     rx_abs = float(elevs[-1]) + h_rx
     los    = np.linspace(tx_abs, rx_abs, N)
     f1     = models.fresnel_zone_radii(t.d_km_axis, t.horiz_dist_km, params.freq_mhz)
 
-    ax.plot(t.d_km_axis, los, color="red", linestyle="--", lw=1.5)
-    ax.fill_between(t.d_km_axis, los - f1, los + f1, color="cyan", alpha=0.25)
+    ax.plot(d_m, los, color="red", linestyle="--", lw=1.5)
+    ax.fill_between(d_m, los - f1, los + f1, color="cyan", alpha=0.25)
     ax.vlines(
-        [0, t.horiz_dist_km],
+        [0, units.km_to_m(t.horiz_dist_km)],
         [float(elevs[0]),  float(elevs[-1])],
         [tx_abs, rx_abs],
         color="black", lw=3,
@@ -450,8 +453,8 @@ table.info td.n .u{{color:#999;display:inline-block;width:2.6em;text-align:left;
       <tr><td>{i18n.t('html_rx_coords')}</td><td>{rx_coords}</td></tr>
       <tr><td>{i18n.t('html_tx_height')}</td><td>{h_tx:.1f} m</td></tr>
       <tr><td>{i18n.t('html_rx_height')}</td><td>{h_rx:.1f} m</td></tr>
-      <tr><td>{i18n.t('html_slant_dist')}</td><td>{result.slant_dist_km:.3f} km</td></tr>
-      <tr><td>{i18n.t('html_horiz_dist')}</td><td>{terrain.horiz_dist_km:.3f} km</td></tr>
+      <tr><td>{i18n.t('html_slant_dist')}</td><td>{units.format_distance(result.slant_dist_km)}</td></tr>
+      <tr><td>{i18n.t('html_horiz_dist')}</td><td>{units.format_distance(terrain.horiz_dist_km)}</td></tr>
       <tr><td>{i18n.t('html_aim_tx')}</td><td>{az_tx_rx:.1f}° / {el_tx_rx:+.1f}°</td></tr>
       <tr><td>{i18n.t('html_aim_rx')}</td><td>{az_rx_tx:.1f}° / {el_rx_tx:+.1f}°</td></tr>
     </table>
@@ -510,7 +513,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
             "rx_dbm", "margin_db",
             "fspl_db", "diff_db", "veg_db", "env_db",
             "rain_db", "gas_db", "total_loss_db",
-            "slant_km", "f1_pct", "note", "error",
+            "slant_m", "f1_pct", "note", "error",
         ])
         for pr in results:
             freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
@@ -528,7 +531,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     f"{r.veg_loss:.2f}",       f"{r.env_loss:.2f}",
                     f"{r.rain_loss:.2f}",      f"{r.gas_loss:.2f}",
                     f"{r.total_loss:.2f}",
-                    f"{r.slant_dist_km:.3f}",  f"{r.blocked_ratio:.1f}",
+                    units.csv_distance(r.slant_dist_km),  f"{r.blocked_ratio:.1f}",
                     pr.row.note, "",
                 ])
             else:
@@ -648,7 +651,7 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
             f"<td>{r.rain_loss:.1f}</td>"
             f"<td>{r.gas_loss:.1f}</td>"
             f"<td>{r.total_loss:.1f}</td>"
-            f"<td>{r.slant_dist_km:.3f}</td>"
+            f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{r.blocked_ratio:.1f}</td>"
             f"<td class='c-note'>{note_esc}</td>"
             f"<td><a href='{pid_safe}/report.html'>"

@@ -531,5 +531,5 @@ class TestSavePackage:
         with open(os.path.join(save_dir, "terrain_profile.csv"),
                   newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        assert rows[0] == ["Distance_km", "Elevation_m"]
+        assert rows[0] == ["Distance_m", "Elevation_m"]
         assert len(rows) - 1 == flat_terrain.num_samples

@@ -62,6 +62,13 @@ _FALLBACK: dict[str, dict[str, str]] = {
 # アクティブ背景を作るときに前景側へ寄せる割合。
 _ACTIVE_MIX = 0.12
 
+# 補助テキスト（コピーライト・ヒント・注記・地図のステータス）を地の色へ寄せる割合。
+# 「補助情報は落として見せる」というテーマの設計言語に従いつつ、実測コントラストが
+# 従来の固定色 `gray`（#808080＝ライト 3.78:1 / ダーク 4.32:1）を下回らない値を選ぶ
+# （0.40 でライト 4.41:1 / ダーク 6.60:1）。sv_ttk の disabled（2.4〜2.5:1）とは
+# はっきり差をつける＝補助テキストは「無効」ではなく「読めるが主役でない」。
+_MUTED_MIX = 0.40
+
 
 def current_theme(widget: tk.Misc) -> str:
     """現在の sv_ttk テーマ名（"light" / "dark"）を返す。"""
@@ -139,6 +146,22 @@ def tooltip_options(widget: tk.Misc) -> dict[str, str]:
         "background": _mix(colors["bg"], colors["fg"], _ACTIVE_MIX),
         "foreground": colors["fg"],
     }
+
+
+def muted_foreground(widget: tk.Misc) -> str:
+    """補助テキスト（コピーライト・ヒント・注記・地図のステータス）の前景色。
+
+    I-009（2.5a1）：これらは `foreground="gray"`（#808080）で**固定**されており、
+    テーマ色一本化の方針から外れていた（配色の出所が theme.py でない＝B-008 と
+    同じクラス）。ここで地の色を出所にし、テーマごとに前景を作る。
+
+    **WCAG AA（4.5:1）を機械適用しない**のは意図的：sv_ttk 自身の disabled 色は
+    2.4〜2.5:1 で、「補助情報は落として見せる」がテーマの設計言語だから。基準に
+    合わせて全部を主文と同じ強さにすると設計意図と衝突する。代わりに
+    **従来の固定色より暗く（読みにくく）しない**ことをテストで固定している。
+    """
+    colors = palette(widget)
+    return _mix(colors["fg"], colors["bg"], _MUTED_MIX)
 
 
 def apply_menu_theme(menus: "list[tk.Menu]", widget: tk.Misc) -> None:

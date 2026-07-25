@@ -37,6 +37,7 @@ TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
 CORE_ARCH_MODULES = [
     "models.py", "simulation.py", "config.py", "dem.py",
     "batch.py", "report.py", "report_map.py", "map_graphics.py", "coords.py",
+    "units.py",
 ]
 
 DEV_READMES = ["README_ja.md", "README_en.md"]

@@ -20,7 +20,8 @@ import config
 import coords
 import i18n
 import simulation as sim
-from models import ENV_KEYS
+import units
+from models import ENV_KEYS, horizontal_distance_km
 from views import dialogs, theme
 from views.progress import ProgressPump
 
@@ -33,7 +34,10 @@ _FETCH_FRAC = 0.15
 class BatchBuilderWindow(tk.Toplevel):
     """バッチ実行用のパス入力ウィンドウ。ランチャーから生成される。"""
 
-    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 2, 2]
+    # 末尾から3列目＝水平距離（読み取り専用ラベル）。_add_row の Entry 生成は
+    # zip(_WIDTHS[1:-2], defaults) で defaults 側（9列）に切られるため、この
+    # 列に Entry は作られない。
+    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 2, 2]
 
     # Common Settings の StringVar 属性名 → ランチャー config dict のキー対応。
     # 共通欄は SimParams の属性名で持つが、ランチャーは config キーで持つため変換が要る。
@@ -48,7 +52,8 @@ class BatchBuilderWindow(tk.Toplevel):
         return [
             "", i18n.t("col_id"), i18n.t("col_start"), i18n.t("col_end"),
             i18n.t("col_h_tx"), i18n.t("col_h_rx"), i18n.t("col_freq"),
-            i18n.t("col_gain_tx"), i18n.t("col_gain_rx"), i18n.t("col_note"), "", "",
+            i18n.t("col_gain_tx"), i18n.t("col_gain_rx"), i18n.t("col_note"),
+            i18n.t("col_dist"), "", "",
         ]
 
     def __init__(
@@ -242,7 +247,7 @@ class BatchBuilderWindow(tk.Toplevel):
         if self._config_provider is not None:
             ttk.Label(
                 row2, text=i18n.t("hint_common_readonly"),
-                font=("Arial", 8), foreground="gray",
+                font=("Arial", 8), foreground=theme.muted_foreground(row2),
             ).pack(side="left", padx=6)
             ttk.Button(
                 row2, text=i18n.t("btn_refresh_common"),
@@ -470,12 +475,23 @@ class BatchBuilderWindow(tk.Toplevel):
             e.grid(row=0, column=i + 1, padx=2, pady=1, sticky="w")
             entries.append(e)
 
-        # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示を追従させる。
-        # 地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。FocusOut は
-        # 他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
+        # 水平距離（読み取り専用・I-000）。座標の打ち間違いは距離が極端な値（0 や
+        # 数千 km）になって現れるので、一覧に出しておくと実行前に気づける。
+        # 表示は m 固定（units.format_distance＝I-014 で決めた表示単位の単一源泉）。
+        dist_lbl = ttk.Label(row_frame, font=("Arial", 9), anchor="e", width=self._WIDTHS[-3])
+        dist_lbl.grid(row=0, column=len(self._WIDTHS) - 3, padx=2, pady=1, sticky="w")
+
+        # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示と水平距離を
+        # 追従させる。地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。
+        # FocusOut は他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
+        def _coords_committed(_e=None, es=entries, lbl=dist_lbl):
+            self._update_row_distance(es, lbl)
+            self._notify_paths_changed()
+
         for col in (1, 2):
-            entries[col].bind("<FocusOut>", lambda _e: self._notify_paths_changed(), add="+")
-            entries[col].bind("<Return>",   lambda _e: self._notify_paths_changed(), add="+")
+            entries[col].bind("<FocusOut>", _coords_committed, add="+")
+            entries[col].bind("<Return>",   _coords_committed, add="+")
+        self._update_row_distance(entries, dist_lbl)
 
         def _dup(es=entries):
             self._dup_row(es)
@@ -505,6 +521,21 @@ class BatchBuilderWindow(tk.Toplevel):
         # ないように）。バルク投入（インポート・並べ替え）はデバウンスで 1 回に畳む。
         self._schedule_sync()
         self._notify_paths_changed()
+
+    def _update_row_distance(self, entries: list[tk.Entry], label: ttk.Label) -> None:
+        """行の TX/RX 座標から水平距離を計算して読み取り専用ラベルへ反映する。
+
+        座標が未入力・不正な間は空欄にする（バリデーションは実行時に行う設計
+        なので、ここでエラーを出して編集を邪魔しない）。表示単位は units 一任。
+        """
+        try:
+            lat_tx, lon_tx = coords.parse_pair(entries[1].get())
+            lat_rx, lon_rx = coords.parse_pair(entries[2].get())
+        except Exception:            # noqa: BLE001 — 入力途中は日常的に不正
+            label.config(text="")
+            return
+        km = horizontal_distance_km(lat_tx, lon_tx, lat_rx, lon_rx)
+        label.config(text=units.format_distance(km))
 
     def _schedule_sync(self) -> None:
         """列幅同期をデバウンスして予約する（連続追加を 1 回に畳む）。"""

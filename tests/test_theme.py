@@ -297,3 +297,82 @@ def test_batch_canvas_uses_theme_background():
         )
     finally:
         root.destroy()
+
+
+# ============================================================
+# 補助テキスト（I-009 / 2.5a1）
+# ============================================================
+# 旧実装の固定色。ここを基準に「読みにくくしていない」ことを固定する。
+_LEGACY_MUTED = "#808080"
+
+
+@pytest.mark.parametrize("name", _THEMES)
+def test_muted_text_is_not_less_legible_than_the_old_fixed_gray(root, name):
+    """補助テキストが従来の固定色 `gray` より読みにくくなっていないこと。
+
+    I-009 の判断（2026-07-25）＝**WCAG AA の 4.5:1 は機械適用しない**。sv_ttk 自身の
+    disabled 色が 2.4〜2.5:1 で、「補助情報は落として見せる」がテーマの設計言語だから。
+    代わりに守るのは「テーマ色を出所にすること」と「従来より暗くしないこと」で、
+    後者をここで数値として固定する（gray = ライト 3.78:1 / ダーク 4.32:1）。
+    """
+    set_theme(name)
+    bg = theme.palette(root)["bg"]
+    now = _contrast(theme.muted_foreground(root), bg)
+    legacy = _contrast(_LEGACY_MUTED, bg)
+    assert now >= legacy, (
+        f"{name} テーマの補助テキストが従来の gray より読みにくい"
+        f"（{now:.2f}:1 < {legacy:.2f}:1）"
+    )
+
+
+@pytest.mark.parametrize("name", _THEMES)
+def test_muted_text_is_clearly_above_disabled(root, name):
+    """補助テキストが「無効」に見えないこと。
+
+    補助情報は落として見せるが、**読める**ことは要件（無効表示との差が消えると
+    「押せない/使えない」という別の意味になる）。sv_ttk の disabled より明確に
+    高いコントラストを保つ。
+    """
+    set_theme(name)
+    colors = theme.palette(root)
+    muted = _contrast(theme.muted_foreground(root), colors["bg"])
+    disabled = _contrast(colors["disfg"], colors["bg"])
+    assert muted >= disabled + 1.0, (
+        f"{name} テーマで補助テキスト（{muted:.2f}:1）が disabled"
+        f"（{disabled:.2f}:1）と区別できない"
+    )
+
+
+def test_muted_foreground_follows_the_theme(root):
+    """補助テキスト色がテーマごとに変わること（固定色への逆戻り検出）。"""
+    seen = {}
+    for name in _THEMES:
+        set_theme(name)
+        seen[name] = theme.muted_foreground(root)
+    assert seen["light"] != seen["dark"], f"テーマを変えても補助テキスト色が同じ: {seen}"
+
+
+def test_no_hardcoded_gray_foreground_in_views():
+    """補助テキストの配色が views の中で直書きへ戻っていないこと。
+
+    B-008 と同じクラス（配色の出所が theme.py でない）なので、注意書きでなく
+    構造で固定する。`foreground="gray"` / `fg="gray"` は theme.muted_foreground へ。
+    """
+    import re
+
+    views_dir = os.path.join(os.path.dirname(__file__), "..", "views")
+    pattern = re.compile(r'(?:fg|foreground)\s*=\s*["\']gray["\']')
+    offenders = []
+    for fname in sorted(os.listdir(views_dir)):
+        # theme.py は色の出所そのもの（docstring で旧実装の直書きを説明している）。
+        if not fname.endswith(".py") or fname == "theme.py":
+            continue
+        path = os.path.join(views_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            for lineno, line in enumerate(f, 1):
+                if pattern.search(line):
+                    offenders.append(f"{fname}:{lineno}")
+    assert not offenders, (
+        f"補助テキストの色が直書きされている: {offenders}。"
+        "views/theme.py の muted_foreground() から取ること。"
+    )

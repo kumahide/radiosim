@@ -162,6 +162,7 @@ radiosim/
 ├── report_map.py         # Headless path-overlay map generation for reports
 ├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
 ├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
+├── units.py              # Distance display formatting (internal km -> displayed m, pure functions)
 ├── mpl_fonts.py          # matplotlib Japanese font application (headless; shared by graph/report)
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
@@ -185,6 +186,7 @@ radiosim/
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
+    ├── test_units.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_theme.py
@@ -316,10 +318,6 @@ After retrieval completes, the terrain cross-section graph is displayed.
 
 Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
-#### Diffraction Model Button
-
-Toggles between Deygout (multiple diffraction) and Single (single obstacle). Deygout is the default (more conservative and realistic).
-
 #### Save Button
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
@@ -343,6 +341,8 @@ Click the **Batch Mode** button in the launcher to open the dedicated window.
 ### Input Methods
 
 **Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and cells edited in place.
+
+The **Dist(m)** column on the right is read-only and is computed from the TX/RX coordinates (refreshed whenever coordinates are committed). A mistyped coordinate shows up as an absurd distance, so the error is visible before you run the batch.
 
 - **+ Add Row**: adds a row frozen from the current launcher fields (coordinates, frequency, gains, antenna heights).
 - **Right-click a row**: opens the per-row menu.
@@ -593,8 +593,8 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
           +---> [Pure rendering layer]  map_graphics.py
           |     PIL drawing of markers/distance/north arrow (shared by UI and reports)
           |
-          +---> [Pure conversion layer]  coords.py
-          |     Coordinate notation conversion (DD <-> DMS, no side effects)
+          +---> [Pure conversion layer]  coords.py / units.py
+          |     Coordinate notation (DD <-> DMS) and distance display formatting (km -> m), no side effects
           |
           +---> [Config & validation layer]  config.py
           |     App config I/O, input validation, logging
@@ -625,6 +625,7 @@ python -m pytest tests/ --cov
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
+| `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) |

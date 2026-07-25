@@ -468,3 +468,43 @@ def test_all_execution_flows_use_the_progress_pump():
     assert not missing, (
         f"進捗の受け渡しが ProgressPump を通っていないフロー: {missing}"
     )
+
+
+def test_graph_does_not_rewrite_the_diffraction_model():
+    """グラフ画面は回折モデルを書き換える入力面を持たないこと（I-012 / 2.5a1）。
+
+    回折モデルの source of truth はランチャー（`SimParams` を組む場所）。
+    かつて断面グラフに切替ボタンがあり `self._params.diff_method` をその場で
+    書き換えていたため、「ランチャーで Single を選んだのに保存レポートは
+    Deygout」という齟齬が作れた。撤去したので、同じ経路が戻らないよう構造で
+    固定する。
+
+    ⚠️ rain_rate / h_tx / h_rx の what-if は残す設計なので対象外
+    （値の書き換えを保存時に明示反映する＝モデル選択とは性質が違う）。
+    """
+    import ast
+
+    path = os.path.join(_APP_ROOT, "views", "graph.py")
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    offenders = []
+    for node in ast.walk(tree):
+        targets = []
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        for t in targets:
+            if (
+                isinstance(t, ast.Attribute)
+                and t.attr == "diff_method"
+                and isinstance(t.value, ast.Attribute)
+                and t.value.attr == "_params"
+            ):
+                offenders.append(getattr(node, "lineno", -1))
+
+    assert not offenders, (
+        "views/graph.py が params.diff_method を書き換えている"
+        f"（行 {offenders}）。回折モデルの入力源はランチャー1箇所に保つこと。"
+    )

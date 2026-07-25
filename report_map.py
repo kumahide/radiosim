@@ -37,6 +37,7 @@ from PIL import Image, ImageDraw
 import dem
 import map_graphics
 import models
+import units
 
 logger = logging.getLogger(__name__)
 
@@ -245,7 +246,7 @@ def render_path_map(
             )
 
         km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
-        badge = map_graphics.distance_badge(map_graphics.distance_text(km))
+        badge = map_graphics.distance_badge(units.format_distance(km))
         mid_x, mid_y = (tx_px[0] + rx_px[0]) // 2, (tx_px[1] + rx_px[1]) // 2
         cropped.paste(badge, (mid_x - badge.width // 2, mid_y - badge.height // 2), badge)
 

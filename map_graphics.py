@@ -179,6 +179,3 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
-def distance_text(km: float) -> str:
-    """水平距離 [km] を表示用テキストに整形する（1km 未満は m 表記）。"""
-    return f"{km * 1000:.0f} m" if km < 1 else f"{km:.2f} km"

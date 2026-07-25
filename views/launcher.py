@@ -175,7 +175,7 @@ class SimLauncher:
         tk.Label(
             self.root,
             text=version.COPYRIGHT,
-            fg="gray",
+            fg=theme.muted_foreground(self.root),
             font=("Arial", 8),
         ).pack(side="bottom", pady=(0, 6))
         self._build_logo(self.root)
@@ -316,7 +316,8 @@ class SimLauncher:
         entry = ttk.Entry(dlg, textvariable=url_var, width=46)
         entry.grid(row=1, column=0, columnspan=3, padx=16, pady=(0, 4))
 
-        ttk.Label(dlg, text=i18n.t("dlg_proxy_hint"), foreground="gray").grid(
+        ttk.Label(dlg, text=i18n.t("dlg_proxy_hint"),
+                  foreground=theme.muted_foreground(dlg)).grid(
             row=2, column=0, columnspan=3, sticky="w", padx=16, pady=(0, 12),
         )
 

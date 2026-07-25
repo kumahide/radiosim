@@ -38,8 +38,9 @@ import dem
 import i18n
 import map_graphics
 import models
+import units
 from tkintermapview import TkinterMapView
-from views import dialogs
+from views import dialogs, theme
 from views.progress import ProgressPump
 
 logger = __import__("logging").getLogger("radiosim")
@@ -374,7 +375,8 @@ class MapWindow:
             # 中点に path_id ＋ 水平距離バッジ。
             mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
             km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
-            label = f"{pid}  {map_graphics.distance_text(km)}" if pid else map_graphics.distance_text(km)
+            dist_text = units.format_distance(km)
+            label = f"{pid}  {dist_text}" if pid else dist_text
             badge = self._make_distance_badge(label)
             self._committed_images.append(badge)   # GC 防止に保持
             self._committed.append(self._map.set_marker(
@@ -490,7 +492,7 @@ class MapWindow:
             mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
                    (self._tx_coord[1] + self._rx_coord[1]) / 2)
             km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
-            text = map_graphics.distance_text(km)
+            text = units.format_distance(km)
             self._dist_badge = self._make_distance_badge(text)
             self._dist_label = self._map.set_marker(
                 mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
@@ -863,7 +865,9 @@ class MapWindow:
     def _set_idle(self) -> None:
         """アイドル状態: モードに応じた操作ヒントをグレーで表示する。"""
         self._status_clear_id = None
-        self._status_label.config(foreground="gray")
+        # MapWindow は tk ウィジェットではない（ウィンドウを内包する素のクラス）ので、
+        # テーマ問い合わせにはラベル自身を渡す。
+        self._status_label.config(foreground=theme.muted_foreground(self._status_label))
         mode = self._mode.get()
         if mode == "cache":
             self._status_var.set(i18n.t("tm_hint"))

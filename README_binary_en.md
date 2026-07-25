@@ -233,10 +233,6 @@ After retrieval completes, the terrain cross-section graph is displayed.
 
 Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
-#### Diffraction Model Button
-
-Toggles between Deygout (multiple diffraction) and Single (single obstacle). Deygout is the default (more conservative and realistic).
-
 #### Save Button
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).

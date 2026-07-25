@@ -26,6 +26,7 @@ import config
 import coords
 import dem
 import models
+import units
 
 logger = logging.getLogger("radiosim")
 
@@ -313,9 +314,9 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
     path = os.path.join(save_dir, "terrain_profile.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Distance_km", "Elevation_m"])
+        writer.writerow(["Distance_m", "Elevation_m"])
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs):
-            writer.writerow([round(float(d), 4), round(float(h), 2)])
+            writer.writerow([round(units.km_to_m(float(d)), 1), round(float(h), 2)])
 
 
 def _save_report(
@@ -361,7 +362,7 @@ def _save_report(
         f"Initial K     : {params.k_factor:.2f}\n"
         f"Rice K (est.) : {result.current_k:.2f}\n"
         f"F1 Obstruct   : {result.blocked_ratio:.1f} %\n"
-        f"Slant Dist    : {result.slant_dist_km:.3f} km\n"
+        f"Slant Dist    : {units.format_distance(result.slant_dist_km)}\n"
     )
     path = os.path.join(save_dir, "report.txt")
     with open(path, "w", encoding="utf-8") as f:

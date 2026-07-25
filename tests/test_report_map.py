@@ -57,12 +57,15 @@ class TestMapGraphics:
         img = map_graphics.north_arrow(0.0, 0.0)
         assert isinstance(img, Image.Image)
 
-    def test_distance_text_meters_below_1km(self):
-        assert map_graphics.distance_text(0.5) == "500 m"
+    def test_distance_formatting_does_not_live_here(self):
+        """距離の書式は units.py の担当（I-014 / 2.5a1）。
 
-    def test_distance_text_km_at_and_above_1km(self):
-        assert map_graphics.distance_text(1.0) == "1.00 km"
-        assert map_graphics.distance_text(2.345) == "2.35 km"
+        以前は PIL 描画モジュールである map_graphics に distance_text があり、
+        書式が report.py / views/graph.py のインライン f-string にも散っていた。
+        置き場が無いと次の距離表示追加でまた散るので、この層へ戻らないよう
+        構造で固定する。描画（distance_badge）はここ、書式は units。
+        """
+        assert not hasattr(map_graphics, "distance_text")
 
 
 # ============================================================

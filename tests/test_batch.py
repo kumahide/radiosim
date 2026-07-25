@@ -1137,3 +1137,67 @@ class TestSummaryPathsMap:
         # 計算に失敗した行も座標は PathRow に凍結済み → 地図には ERROR 色で描く。
         assert (err.tx, err.rx) == ((34.46, 132.30), (34.40, 132.20))
         assert (err.status, err.label) == ("ERROR", "p02")
+
+
+# ============================================================
+# バッチ表の水平距離列（I-000 / 2.5a1）
+# ============================================================
+class TestBatchRowDistanceColumn:
+    """行の TX/RX 座標から水平距離を出す読み取り専用列。
+
+    座標の打ち間違いは距離が極端な値（0 や数千 km）になって現れるので、
+    実行前に一覧で気づけることが目的。表示単位は units 一任（I-014）。
+
+    `_update_row_distance` は self を参照しない（ウィジェット2つの受け渡しのみ）
+    ので、Tk を立てずに直接呼んで検証できる。
+    """
+
+    class _FakeEntry:
+        def __init__(self, text: str) -> None:
+            self._text = text
+
+        def get(self) -> str:
+            return self._text
+
+    class _FakeLabel:
+        def __init__(self) -> None:
+            self.text: str | None = None
+
+        def config(self, **kw: Any) -> None:
+            self.text = kw["text"]
+
+    def _run(self, start: str, end: str) -> "str | None":
+        from views.batch_builder import BatchBuilderWindow
+
+        entries = [self._FakeEntry(""), self._FakeEntry(start), self._FakeEntry(end)]
+        label = self._FakeLabel()
+        BatchBuilderWindow._update_row_distance(None, entries, label)  # type: ignore[arg-type]
+        return label.text
+
+    def test_shows_distance_in_meters_with_grouping(self):
+        # 緯度 0.09 度 ≈ 10km 相当。単位は m 固定（km へ切り替わらない＝I-014）。
+        text = self._run("34.5400, 132.4100", "34.6300, 132.4100")
+        assert text is not None and text.endswith(" m") and "km" not in text
+        meters = int(text.removesuffix(" m").replace(",", ""))
+        assert 9_500 <= meters <= 10_500
+
+    def test_typo_shows_up_as_an_absurd_distance(self):
+        # 経度を打ち間違えて別地方を指した例＝一覧で気づける（この列の存在理由）。
+        text = self._run("34.5400, 132.4100", "34.5400, 139.4100")
+        assert text is not None
+        meters = int(text.removesuffix(" m").replace(",", ""))
+        assert meters > 500_000
+
+    def test_dms_notation_is_accepted(self):
+        # 座標表記は DD/DMS 両方あり得る（設定メニューで切替＝I-015）。
+        assert self._run("34°32'24.0\"N, 132°24'36.0\"E",
+                         "34°37'48.0\"N, 132°24'36.0\"E") is not None
+
+    @pytest.mark.parametrize("start,end", [
+        ("", ""),
+        ("34.54, 132.41", ""),
+        ("not a coord", "34.54, 132.41"),
+    ])
+    def test_blank_while_input_is_incomplete(self, start, end):
+        # 入力途中に赤字やエラーを出して編集を邪魔しない（検証は実行時の責務）。
+        assert self._run(start, end) == ""
