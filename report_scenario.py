@@ -92,7 +92,7 @@ def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
     ys = run.margins()
 
     # 点数が多いときは図を低くして表に高さを譲る（1 枚に収めるため）。
-    fig = Figure(figsize=(11, 3.4 if len(run.points) > _SWEEP_ROWS_PER_BLOCK else 4.2))
+    fig = Figure(figsize=(11, 3.6 if len(run.points) > _SWEEP_DENSE_ROWS else 4.2))
     fig.patch.set_facecolor("white")
     canvas = FigureCanvasAgg(fig)
     ax = fig.add_axes((0.085, 0.17, 0.895, 0.76))
@@ -154,11 +154,10 @@ def scenario_sheet_css() -> str:
 .sheet.scenario table.scn td.name{text-align:left;color:#666}
 .sheet.scenario table.scn th:last-child,.sheet.scenario table.scn td:last-child{border-right:none}
 .sheet.scenario table.scn tr{break-inside:avoid}
-/* 点数が多いときは表を横に分割して並べる（縮小フィットで全体を縮めない）。 */
-.sheet.scenario .tables{display:flex;gap:8px;align-items:flex-start}
-.sheet.scenario .tables table.scn{flex:1;min-width:0}
-.sheet.scenario .tables.split table.scn th{font-size:8px;padding:3px 3px}
-.sheet.scenario .tables.split table.scn td{font-size:8.5px;padding:2px 3px}
+/* 点数が多いときは**行を詰めて 1 列のまま**収める（横分割も全体縮小もしない）。
+   1 行 ≒ 15px に収まる値＝41 点でも A4 縦 1 枚（→ _SWEEP_DENSE_ROWS の見積り）。 */
+.sheet.scenario table.scn.dense th{font-size:8px;padding:2px 4px}
+.sheet.scenario table.scn.dense td{font-size:9px;padding:1px 5px;line-height:1.15}
 .sheet.scenario tr.ok{background:#f1f8e9}.sheet.scenario tr.ng{background:#fff8e1}
 .sheet.scenario .s-ok{color:#2e7d32;font-weight:bold}.sheet.scenario .s-ng{color:#c62828;font-weight:bold}
 /* 比較シート：差の出た行だけ地の色を変えて目を誘導する（セル内 Δ と対） */
@@ -237,11 +236,15 @@ def _compare_table(run: scn.ScenarioRun) -> str:
     )
 
 
-# 1 ブロックに積む最大行数。これを超えたら**表を横に分割**して並べる。
-# A4 縦 1 枚（印字域 275mm）に折れ線＋表を収めるための値＝41 点でも 2 ブロック
-# （21 行ずつ）で収まる。**縮小フィット（.fit）に頼って全体を縮めると文字が
-# 潰れる**（実機で発覚）ので、レイアウトの側で収める。
-_SWEEP_ROWS_PER_BLOCK = 21
+# この行数を超えたら表を**高密度モード**（詰めた行・小さめの文字）にし、図も低くする。
+# 狙いは **1 列のまま A4 縦 1 枚に収める**こと＝スイープは値の連続的な変化を追う
+# 表なので、横に分割すると読み筋が切れる（2026-07-25 ユーザー判断）。
+#
+# 高さの見積り（印字域 275mm ≒ 1039px @96dpi）:
+#   ヘッダ 40 + 案件メモ 24 + 経路 26 + 図 226（figsize 3.6）+ フッタ 22
+#   ＋ 表 42 行 × 15px ＝ 630  →  合計 ≒ 968px（余裕 ≒ 70px）
+# 縮小フィット（.fit）は**保険**で、この見積りどおりなら発動しない。
+_SWEEP_DENSE_ROWS = 20
 
 
 def _sweep_row(p: scn.ScenarioPoint) -> str:
@@ -259,25 +262,21 @@ def _sweep_row(p: scn.ScenarioPoint) -> str:
 
 
 def _sweep_table(run: scn.ScenarioRun) -> str:
-    """スイープ表（1 行＝1 点）。点数が多いときは横に分割して 1 枚に収める。
+    """スイープ表（1 行＝1 点・**常に 1 列**）。
 
     判定で行色を塗る（OK=緑 / NG=橙）＝どこで足りるようになるかは色の変わり目で読む。
+    点数が多いときは高密度モード（`dense`）にして 1 枚へ収める。**横に分割しない**
+    ＝連続的な変化を上から下へ追えることがスイープ表の価値だから。
     """
     head = "".join(f"<th>{h}</th>" for h in (
         axis_label(run.axis), i18n.t("html_rx_level") + " (dBm)",
         i18n.t("html_act_margin") + " (dB)", i18n.t("html_total_loss") + " (dB)",
         i18n.t("html_col_f1"), i18n.t("html_status"),
     ))
-    pts = run.points
-    blocks = max(1, -(-len(pts) // _SWEEP_ROWS_PER_BLOCK))   # 切り上げ
-    per = -(-len(pts) // blocks)                             # 均等割り
-    tables = []
-    for i in range(blocks):
-        rows = "".join(_sweep_row(p) for p in pts[i * per:(i + 1) * per])
-        tables.append(f'<table class="scn"><thead><tr>{head}</tr></thead>'
-                      f'<tbody>\n{rows}</tbody></table>')
-    cls = "tables split" if blocks > 1 else "tables"
-    return f'<div class="{cls}">' + "".join(tables) + "</div>"
+    rows = "".join(_sweep_row(p) for p in run.points)
+    cls = "scn dense" if len(run.points) > _SWEEP_DENSE_ROWS else "scn"
+    return (f'<table class="{cls}"><thead><tr>{head}</tr></thead>'
+            f'<tbody>\n{rows}</tbody></table>')
 
 
 def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
