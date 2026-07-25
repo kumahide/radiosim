@@ -872,3 +872,59 @@ class TestSweepAxisSelection:
             moved = (a.result.p_rx != b.result.p_rx
                      or a.result.actual_margin != b.result.actual_margin)
             assert moved, f"軸 {axis} は結果を動かさない（軸に並べる意味がない）"
+
+
+class TestChangedParametersAreHighlighted:
+    """ベースと違うパラメータの**セル**に印を付ける（2026-07-26 ユーザー要望）。
+
+    条件が 3〜5 個あると「どの列のどの欄を変えたのか」が拾えない。数値行の
+    行網掛け（tr.diff）は列を特定できないので、条件行はセル単位で示す。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _ja(self):
+        prev = i18n._lang
+        i18n.set_lang("ja")
+        yield
+        i18n.set_lang(prev)
+
+    def _run(self, terrain, base):
+        conds = [
+            scn.Condition("ベース", {}),
+            scn.Condition("条件 1", {"freq_mhz": base.freq_mhz,        # 同値＝印なし
+                                     "h_tx": base.h_tx + 40.0}),       # 変更＝印あり
+            scn.Condition("条件 2", {"freq_mhz": 15000.0,
+                                     "env_type": "urban"}),
+        ]
+        return scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain,
+                               points=scn.evaluate(terrain, base, conds))
+
+    def _cond_row(self, html: str, key: str) -> str:
+        label = i18n.t(f"scn_axis_{key}")
+        rows = [ln for ln in html.splitlines() if "tr class='cond'" in ln and label in ln]
+        assert rows, f"{key} の条件行が無い"
+        return rows[0]
+
+    def test_changed_cells_are_marked(self, terrain, base):
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base))
+        assert self._cond_row(html, "h_tx").count("class='changed'") == 1
+        assert self._cond_row(html, "env_type").count("class='changed'") == 1
+
+    def test_cells_equal_to_base_are_not_marked(self, terrain, base):
+        """値をコピーしただけの欄には印を付けない（変えた欄だけを目立たせる）。"""
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base))
+        row = self._cond_row(html, "freq_mhz")
+        # 条件 1 は同値・条件 2 のみ変更 → 印は 1 つ
+        assert row.count("class='changed'") == 1
+
+    def test_base_column_is_never_marked(self, terrain, base):
+        """基準そのものに「違う」印は付かない（先頭列は常に素）。"""
+        html = report_scenario.scenario_sheet_html(self._run(terrain, base))
+        for key in ("h_tx", "freq_mhz", "env_type"):
+            row = self._cond_row(html, key)
+            first_cell = row.split("</td>")[1]      # 0=項目名, 1=ベース列
+            assert "changed" not in first_cell, f"{key}: ベース列に印が付いている"
+
+    def test_style_exists_for_the_marker(self):
+        assert ".sheet.scenario tr.cond td.changed{" in \
+            report_scenario.scenario_sheet_css()

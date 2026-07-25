@@ -53,6 +53,13 @@ _COMPARE_ROWS = (
 )
 
 
+def _differs(value, base) -> bool:
+    """パラメータがベースと違うか（数値は丸め誤差を無視して比較）。"""
+    if isinstance(value, (int, float)) and isinstance(base, (int, float)):
+        return abs(float(value) - float(base)) > 1e-9
+    return value != base
+
+
 def _param_text(key: str, value) -> str:
     """パラメータ値の表示（環境・回折モデルは内部キーでなく i18n ラベル）。"""
     if key == "env_type":
@@ -163,8 +170,11 @@ def scenario_sheet_css() -> str:
 /* 比較シート：差の出た行だけ地の色を変えて目を誘導する（セル内 Δ と対） */
 .sheet.scenario tr.diff td{background:#fffde7}
 .sheet.scenario .delta{color:#00695c;font-weight:bold;font-size:9px;margin-left:2px}
-/* 条件そのものの行（何を変えたか）は下段にまとめ、地の色で数値行と見分ける */
+/* 条件そのものの行（何を変えたか）は下段にまとめ、地の色で数値行と見分ける。
+   **ベースと違うセルだけ**さらに色を付ける＝条件が 3〜5 個あるとき「どの列の
+   どの欄を変えたか」を目で拾えるように（行の網掛けでは列を特定できない）。 */
 .sheet.scenario tr.cond td{background:#fafbfc;color:#546e7a}
+.sheet.scenario tr.cond td.changed{background:#fff3e0;color:#e65100;font-weight:bold}
 .sheet.scenario tr.cond:first-of-type td{border-top:2px solid #cfd8dc}
 .sheet.scenario .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f}
 .sheet.scenario .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
@@ -222,10 +232,18 @@ def _compare_table(run: scn.ScenarioRun) -> str:
     # ⚠️ **ベース列は上書きを持たない**ので overrides から引くと全部「—」になる
     # （実機で発覚）。基準の実値は base_params にあるので、そこへフォールバックする
     # ＝レポート単体で条件を再現できることが、この表の存在理由。
+    # **ベースと違うセルだけ色を付ける**（2026-07-26 ユーザー要望）＝条件が 3〜5 個
+    # あると「どの列のどの欄を変えたのか」を目で拾えないため。行ごとの網掛け（数値行の
+    # tr.diff）では列を特定できないので、ここはセル単位で印を付ける。
     changed = sorted({k for p in pts for k in p.overrides})
     for key in changed:
-        vals = [p.overrides.get(key, getattr(run.base_params, key)) for p in pts]
-        cells = "".join(f"<td>{_param_text(key, v)}</td>" for v in vals)
+        base_val = getattr(run.base_params, key)
+        vals = [p.overrides.get(key, base_val) for p in pts]
+        cells = ""
+        for i, v in enumerate(vals):
+            marked = i > 0 and _differs(v, base_val)   # 先頭列＝ベースは印を付けない
+            cls = " class='changed'" if marked else ""
+            cells += f"<td{cls}>{_param_text(key, v)}</td>"
         unit = AXIS_UNITS.get(key, "")
         label = i18n.t(f"scn_axis_{key}") + (f" ({unit})" if unit else "")
         rows += f"<tr class='cond'><td class='name'>{label}</td>{cells}</tr>\n"
