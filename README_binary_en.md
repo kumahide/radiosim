@@ -518,4 +518,4 @@ The app writes no data to the registry or AppData. Deleting the folder is a comp
 
 ## Copyright
 
-© 2026 BearValley Corp. All rights reserved.
+© 2026 BearValley AI Craftworks. All rights reserved.

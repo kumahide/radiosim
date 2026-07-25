@@ -91,7 +91,7 @@ _version_info = VSVersionInfo(
     kids=[
         StringFileInfo([
             StringTable("040904B0", [  # English (US) / Unicode
-                StringStruct("CompanyName",      "BearValley Corp."),
+                StringStruct("CompanyName",      "BearValley AI Craftworks"),
                 StringStruct("FileDescription",  _ver.APP_NAME),
                 StringStruct("FileVersion",      _ver.APP_VERSION),
                 StringStruct("InternalName",     "RadioSimPro"),

@@ -280,4 +280,4 @@ DEM タイルキャッシュを地図上で可視化・管理する機能を追�
 - `radio_sim.py`: 最初期。requests + PIL で国土地理院 DEM PNG を取得し地形プロファイルを描画。自由空間損失・回折損なし。
 - `radio_sim_gui.py`: tkinter 入力フォームを追加。地球曲率補正（Ke=4/3）・Fresnel 第1ゾーン描画・回折損（簡易 FK 近似）・FSPL 計算・P_rx 表示を初実装。
 - `antenna_slider_sim_v5〜v8`: matplotlib スライダー（TX/RX アンテナ高）によるリアルタイム更新、`config.json` でのパラメータ永続化、tkinter ランチャー + matplotlib グラフの 2 ウィンドウ構成、`blocked_ratio > 100%` 時の回折補正を実装。
-- `radio_sim_ultimate_Rel1.0〜Rel1.3`: ディスクキャッシュ・植生レイヤー・K ファクター・受信感度・SAVE PACKAGE・別スレッドでの DEM 取得（`threading.Thread`）・進捗バーを追加。数値安定化（`np.nan_to_num`）・デバウンス（50ms）・キャッシュ排他制御（`threading.Lock`）を段階的に改善。著作権表示 "© 2026 BearValley Corp." を追加。
+- `radio_sim_ultimate_Rel1.0〜Rel1.3`: ディスクキャッシュ・植生レイヤー・K ファクター・受信感度・SAVE PACKAGE・別スレッドでの DEM 取得（`threading.Thread`）・進捗バーを追加。数値安定化（`np.nan_to_num`）・デバウンス（50ms）・キャッシュ排他制御（`threading.Lock`）を段階的に改善。著作権表示 "© 2026 BearValley AI Craftworks" を追加。

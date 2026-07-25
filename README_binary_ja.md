@@ -521,4 +521,4 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ## 著作権
 
-© 2026 BearValley Corp. All rights reserved.
+© 2026 BearValley AI Craftworks. All rights reserved.

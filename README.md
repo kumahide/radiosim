@@ -43,4 +43,4 @@ No Python required. For Windows users who want a quick start.
 
 ---
 
-© 2026 BearValley Corp. All rights reserved.
+© 2026 BearValley AI Craftworks. All rights reserved.

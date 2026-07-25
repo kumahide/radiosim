@@ -142,7 +142,7 @@ def _setup_windows_platform() -> None:
             pass
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
-            "BearValleyCorp.RadioSimPro"
+            "BearValleyAICraftworks.RadioSimPro"
         )
     except Exception:
         pass
