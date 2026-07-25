@@ -39,6 +39,16 @@ class BatchBuilderWindow(tk.Toplevel):
     # 列に Entry は作られない。
     _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 2, 2]
 
+    # ウィンドウ既定サイズ。**幅は下限**（実幅は _fit_initial_width が中身に合わせる）。
+    _BASE_W = 1080
+    _BASE_H = 700
+    _MIN_W  = 880
+    # 表の外周 padding（outer の padx=8 左右）。スクロールバー幅は実測する
+    # （DPI スケーリングで変わるため定数にしない）。
+    _TABLE_PAD_W = 16
+    # 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
+    _SCREEN_MARGIN = 80
+
     # Common Settings の StringVar 属性名 → ランチャー config dict のキー対応。
     # 共通欄は SimParams の属性名で持つが、ランチャーは config キーで持つため変換が要る。
     _COMMON_CFG_MAP = {
@@ -71,9 +81,10 @@ class BatchBuilderWindow(tk.Toplevel):
         # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
         # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が
         # 窓外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
-        self.geometry("1080x700")
+        # ⚠️ 幅は下限でしかない＝実幅は _fit_initial_width() が中身から決める。
+        self.geometry(f"{self._BASE_W}x{self._BASE_H}")
         self.resizable(True, True)
-        self.minsize(880, 520)
+        self.minsize(self._MIN_W, 520)
 
         # ランチャー連携（凍結方式）。省略時は従来挙動（往復・凍結なし）。
         self._config_provider = config_provider
@@ -115,6 +126,7 @@ class BatchBuilderWindow(tk.Toplevel):
 
         self._build_ui()
         self._add_row()
+        self._fit_initial_width()
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
@@ -303,6 +315,9 @@ class BatchBuilderWindow(tk.Toplevel):
         vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
+        # 初期幅の判定で「表の可視幅は窓幅より狭い」ぶんを実測するために保持する
+        # （スクロールバー幅は DPI スケーリングで変わるので定数にしない）。
+        self._vsb = vsb
         self._canvas.pack(side="left", fill="both", expand=True)
 
         self._table_frame = ttk.Frame(self._canvas)
@@ -521,6 +536,28 @@ class BatchBuilderWindow(tk.Toplevel):
         # ないように）。バルク投入（インポート・並べ替え）はデバウンスで 1 回に畳む。
         self._schedule_sync()
         self._notify_paths_changed()
+
+    def _fit_initial_width(self) -> None:
+        """表の中身が収まる幅までウィンドウを広げる（既定幅は下限として扱う）。
+
+        列の実幅は**言語（日本語見出し）・DPI スケーリング・フォント**で変わるので、
+        幅を定数で持つと必ずどこかの環境で見切れる（B-002 と同じクラス）。I-000 の
+        水平距離列で 1080px の既定値が足りなくなったのを機に、定数合わせをやめて
+        実測へ合わせる。**縮めることはしない**＝ユーザーが広げた窓を勝手に狭めない。
+
+        画面幅は超えない。収まりきらない場合は最大化までに留め、そこから先は
+        既存の横方向レイアウト（列幅同期）に委ねる。
+        """
+        # 列幅同期はデバウンス予約されているので、測る前に確定させる。
+        self.update_idletasks()
+        self._run_sync()
+        self.update_idletasks()
+
+        need = self.winfo_reqwidth() + self._vsb.winfo_reqwidth() + self._TABLE_PAD_W
+        limit = self.winfo_screenwidth() - self._SCREEN_MARGIN
+        width = min(max(need, self._BASE_W), max(limit, self._MIN_W))
+        if width > self._BASE_W:
+            self.geometry(f"{width}x{self._BASE_H}")
 
     def _update_row_distance(self, entries: list[tk.Entry], label: ttk.Label) -> None:
         """行の TX/RX 座標から水平距離を計算して読み取り専用ラベルへ反映する。

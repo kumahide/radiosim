@@ -38,6 +38,15 @@ _HEADLESS_SAFE = [
 # pyright の静的検査でカバー）。
 _DISPLAY_REQUIRED = ["views.graph"]
 
+# バッチ窓の生成に要る最小パラメータ（値そのものはレイアウト検証に無関係）。
+_BATCH_PARAMS = {
+    "start": "34.5429, 132.4118", "end": "34.5389, 132.4050",
+    "h_tx": "30.0", "h_rx": "10.0", "freq": "2400.0", "p_tx": "20.0",
+    "gain_tx": "3.0", "gain_rx": "3.0", "sens": "-85.0", "veg_h": "10.0",
+    "k_factor": "10.0", "samples": "50", "diff_method": "deygout",
+    "env_type": "los", "rain_rate": "0.0",
+}
+
 
 @pytest.mark.parametrize("mod", _HEADLESS_SAFE)
 def test_module_imports(mod):
@@ -508,3 +517,52 @@ def test_graph_does_not_rewrite_the_diffraction_model():
         "views/graph.py が params.diff_method を書き換えている"
         f"（行 {offenders}）。回折モデルの入力源はランチャー1箇所に保つこと。"
     )
+
+
+@pytest.mark.parametrize("lang", ["en", "ja"])
+def test_batch_window_fits_its_table_width(lang):
+    """バッチ窓が開いた時点で表の全列が窓に収まること（見切れの再発防止）。
+
+    列の実幅は**言語（日本語見出しは英語より 1 割ほど広い）・DPI スケーリング・
+    フォント**で変わるため、ウィンドウ幅を定数で持つと必ずどこかの環境で右端の
+    列から見切れる（B-002 と同じクラス。実際 I-000 の水平距離列を足した 2.5a1 に
+    既定 1080px が足りず見切れた）。定数合わせをやめて実測に合わせた
+    `_fit_initial_width` が効いていることを、**両言語で**固定する。
+
+    ⚠️ `winfo_width()` は mainloop 前は 1 を返すので、ジオメトリ文字列から読む。
+    """
+    import tkinter as tk   # noqa: F401  （finally の TclError 捕捉で使う）
+
+    import i18n
+    import simulation as sim
+
+    prev_lang = i18n.get_lang() if hasattr(i18n, "get_lang") else None
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        i18n.set_lang(lang)
+        from views.batch_builder import BatchBuilderWindow
+
+        win = BatchBuilderWindow(root, sim.SimParams(_BATCH_PARAMS))
+        try:
+            root.update_idletasks()
+            width = int(win.geometry().split("+")[0].split("x")[0])
+            needed = (
+                win.winfo_reqwidth()
+                + win._vsb.winfo_reqwidth()
+                + win._TABLE_PAD_W
+            )
+            screen_limit = win.winfo_screenwidth() - win._SCREEN_MARGIN
+            assert width >= min(needed, screen_limit), (
+                f"[{lang}] バッチ表が窓に収まっていない（必要 {needed}px / "
+                f"窓 {width}px）。右端の列が見切れる。"
+            )
+        finally:
+            try:
+                win.destroy()
+            except tk.TclError:
+                pass
+    finally:
+        root.destroy()
+        if prev_lang is not None:
+            i18n.set_lang(prev_lang)
