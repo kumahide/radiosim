@@ -180,6 +180,8 @@ radiosim/
 ├── README_en.md          # This file
 └── tests/
     ├── test_models.py
+    ├── test_golden_links.py   # Regression corpus (golden link-budget values + purity invariants)
+    ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -623,6 +625,7 @@ python -m pytest tests/ --cov
 | File                       | Coverage                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
+| `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |

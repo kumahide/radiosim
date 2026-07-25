@@ -180,6 +180,8 @@ radiosim/
 ├── README_en.md          # 英語版 README
 └── tests/
     ├── test_models.py
+    ├── test_golden_links.py   # 回帰コーパス（代表回線のゴールデン値＋純関数の不変条件）
+    ├── golden_corpus_gen.py  # 同コーパスの生成器（手動実行・実 DEM を取得）
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -625,6 +627,7 @@ python -m pytest tests/ --cov
 | テストファイル             | 主な対象                                                                   |
 | -------------------------- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
+| `test_golden_links.py`   | 回帰コーパス＝代表回線 26 本の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
