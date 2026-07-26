@@ -113,8 +113,10 @@ class ScenarioWindow(tk.Toplevel):
 
         self._pump = ProgressPump(self, self._dispatch_event)
 
+        self._win_w = self._BASE_W
+        self._win_h = 0
         self._build()
-        self._fit_initial_height()
+        self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
     def _update_path_label(self) -> None:
@@ -166,16 +168,30 @@ class ScenarioWindow(tk.Toplevel):
             return {v: k for k, v in _diff_labels().items()}.get(text, text)
         return float(text)
 
-    def _fit_initial_height(self) -> None:
-        """**中身に合わせて開く**（比較モードは 11 行 × 列で背が高い）。
+    def _fit_to_content(self) -> None:
+        """**中身に合わせて開き、足りなくなったら広げる**（縮めはしない）。
 
-        高さを定数で決めると、結果一覧が潰れる（比較モードで実測）か、
-        スイープモードで余白が出る。中身の要求高で開き、画面からははみ出さない。
+        高さ：定数で決めると結果一覧が潰れる（比較モード）かスイープで余白が出る。
+        幅　：`_BASE_W` は**下限**でしかない。比較条件は最大 5 列まで増やせるので、
+        幅を固定すると **「条件を追加」で生やした右端の列が窓外へ出て見えなくなる**
+        （2026-07-26 の実機フィードバックで実際に条件 5 が見切れた）。列を増減する
+        たびに測り直す。これはランチャーの高さ（2.4）・幅（2.5b2）、バッチの幅と
+        **同じクラス**＝「固定サイズの寸法をリテラルで持つと中身が増えた日に黙って
+        切れる」。ユーザーが広げた窓は狭めない（広げる方向にだけ動かす）。
+
+        ⚠️ 決めた寸法を `_win_w` / `_win_h` に残すのは、**未表示のあいだ
+        `winfo_width()` が実現後のサイズを返さない**ため（ランチャーの
+        `_window_height` と同じ理由＝これを見ないテストは壊れた実装でも緑になる）。
         """
         self.update_idletasks()
-        needed = self.winfo_reqheight()
-        limit  = self.winfo_screenheight() - _SCREEN_MARGIN
-        self.geometry(f"{self._BASE_W}x{min(needed, limit)}")
+        lim_w = self.winfo_screenwidth()  - _SCREEN_MARGIN
+        lim_h = self.winfo_screenheight() - _SCREEN_MARGIN
+        # 現在の窓（未表示なら 1 が返るので下限・既定値で受ける）
+        cur_w = max(self.winfo_width(),  self._BASE_W, self._win_w)
+        cur_h = max(self.winfo_height(), self._win_h)
+        self._win_w = min(max(self.winfo_reqwidth(),  cur_w), lim_w)
+        self._win_h = min(max(self.winfo_reqheight(), cur_h), lim_h)
+        self.geometry(f"{self._win_w}x{self._win_h}")
 
     # ----------------------------------------------------------
     # 組み立て
@@ -319,6 +335,7 @@ class ScenarioWindow(tk.Toplevel):
             w.grid(row=row, column=col, padx=6, pady=1, sticky="ew")
         self._cmp_cols.append(cvars)
         self._sync_cond_buttons()
+        self._fit_to_content()
 
     def _remove_condition_column(self) -> None:
         if len(self._cmp_cols) <= 1:          # 比較対象ゼロにはしない
@@ -328,6 +345,7 @@ class ScenarioWindow(tk.Toplevel):
             w.destroy()
         self._cmp_cols.pop()
         self._sync_cond_buttons()
+        self._fit_to_content()
 
     def _sync_cond_buttons(self) -> None:
         n = len(self._cmp_cols)

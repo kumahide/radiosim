@@ -166,6 +166,22 @@ def make_tk_root(pytest_module=None):
     pytest.skip(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
 
 
+def make_themed_root(theme_name: str = "dark"):
+    """テーマとアプリのフォント設定まで済ませた Tk ルートを返す。
+
+    **窓の寸法を検証するテストは必ずこちらを使う**。素の Tk 既定フォントは実機
+    （sv_ttk の本文フォント）より小さく、そのまま測ると**実物より狭い前提**で
+    ゲートが緑になる。実際 2.5b2 で、条件探索の必要幅 947px を「テーマ無しなら
+    900px 未満」と測ってしまい、右端の条件列が見切れる実装を通した。
+    """
+    from views import theme as views_theme
+
+    root = make_tk_root()
+    set_theme(theme_name)
+    views_theme.apply_fonts(root)
+    return root
+
+
 def set_theme(name: str) -> None:
     """sv_ttk のテーマを適用する。`sv.tcl` の間欠的な読み込み失敗を再試行する。
 

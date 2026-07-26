@@ -18,7 +18,7 @@ import tkinter
 
 import pytest
 
-from conftest import _TK_INIT_ATTEMPTS, make_tk_root
+from conftest import _TK_INIT_ATTEMPTS, make_tk_root, make_themed_root
 
 import sys
 import os
@@ -199,7 +199,10 @@ def test_progress_poll_does_not_overwrite_completion_state():
     """
     import tkinter as tk   # noqa: F401  （finally の TclError 捕捉で使う）
 
-    root = make_tk_root()
+    # ⚠️ **テーマ済みのルートで測る**。素の Tk 既定フォントは実機より小さく、
+    # そのまま測ると実物より狭い前提でこのゲートが緑になる（2.5b2 で条件探索側の
+    # 同型ゲートが実際にそれで見切れを通した）。
+    root = make_themed_root()
     try:
         root.withdraw()
         from views.launcher import SimLauncher
@@ -546,7 +549,7 @@ def test_batch_window_fits_its_table_width(lang):
     import simulation as sim
 
     prev_lang = i18n.get_lang() if hasattr(i18n, "get_lang") else None
-    root = make_tk_root()
+    root = make_themed_root()      # 実機と同じフォントで測る（上と同じ理由）
     try:
         root.withdraw()
         i18n.set_lang(lang)

@@ -430,8 +430,15 @@ class TestScenarioWindowSmoke:
         i18n.set_lang(prev)
 
     def _win(self, default_params_dict):
-        from conftest import make_tk_root
-        root = make_tk_root()
+        """**テーマとフォントを適用してから**窓を作る。
+
+        ⚠️ 素の Tk 既定フォントのまま測ると、実機（sv_ttk の本文フォント）より
+        文字が小さく、寸法のゲートが**実物より狭い前提で緑になる**。実際、条件 5
+        列で必要幅 947px のところ、テーマ無しでは 900px 未満に収まってしまい、
+        幅を固定したままの実装（＝見切れる実装）でも通ってしまった。
+        """
+        from conftest import make_themed_root
+        root = make_themed_root()
         root.withdraw()
         from views.scenario import ScenarioWindow
         win = ScenarioWindow(root, sim.SimParams(default_params_dict))
@@ -446,6 +453,54 @@ class TestScenarioWindowSmoke:
             # レポートと同じ一覧。画面だけ単位が無いと何を入れる欄か分からない）。
             assert win._axis_box.get() == report_scenario.axis_label("h_tx")
             assert win._axis_box.get() == i18n.t("scn_axis_h_tx") + " (m)"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_window_fits_its_content_when_conditions_are_added(self, default_params_dict):
+        """比較条件を増やしたら窓を広げること（右端の列が窓外へ出ない）。
+
+        2026-07-26 の実機フィードバック＝**条件 5 が見切れた**。窓幅は `_BASE_W`
+        リテラル固定で、列を足しても測り直していなかった。ランチャーの高さ（2.4・
+        下端のボタンが消えた）／幅（2.5b2）と**同じクラス**の欠陥で、
+        「固定サイズの寸法をリテラルで持つ」限り中身が増えた日に必ず再発する。
+
+        ⚠️ 検証するのは**決めた寸法**（`_win_w`）＝未表示のあいだ `winfo_width()`
+        は実現後のサイズを返さないので、それと比べるテストは壊れた実装でも緑に
+        なる（ランチャー側で実際にそう書いて失敗した）。
+
+        b2 の最初の版は「窓を組み立てた直後」しか測っておらず、**あとから列を
+        足す**という観点が無かったために素通しした（同じ抜けでフォントの不具合も
+        通した＝[[feedback-user-examples-are-classes]]）。
+        """
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            root.update_idletasks()
+            assert win._win_w >= win.winfo_reqwidth(), "初期表示で既に中身が入らない"
+            while len(win._cmp_cols) < scn.MAX_COMPARE_CONDITIONS:
+                win._add_condition_column()
+            root.update_idletasks()
+            need  = win.winfo_reqwidth()
+            limit = win.winfo_screenwidth() - 90     # views/scenario._SCREEN_MARGIN
+            assert win._win_w >= min(need, limit), (
+                f"条件を {len(win._cmp_cols)} 列にしたら中身が窓に入らない"
+                f"（必要 {need}px / 窓 {win._win_w}px）。右端の条件列が見切れる。"
+            )
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_removing_a_condition_does_not_shrink_the_window(self, default_params_dict):
+        """列を減らしても窓は狭めないこと（ユーザーが広げた窓を勝手に縮めない）。"""
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            for _ in range(2):
+                win._add_condition_column()
+            root.update_idletasks()
+            wide = win._win_w
+            win._remove_condition_column()
+            root.update_idletasks()
+            assert win._win_w == wide
         finally:
             win.destroy(); root.destroy()
 
