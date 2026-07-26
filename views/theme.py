@@ -42,6 +42,7 @@ activeforeground で守る）。
 
 import tkinter as tk
 from tkinter import ttk
+from typing import Any
 
 # 色キー（sv_ttk の colors 配列のキーから先頭の "-" を除いたもの）
 _KEYS = ("fg", "bg", "selfg", "selbg", "disfg", "accent")
@@ -148,8 +149,10 @@ def apply_fonts(root: tk.Misc) -> None:
     tests/test_theme.py::test_fonts_survive_a_theme_switch。
     """
     style = ttk.Style(master=root)
-    settings = {name: {"configure": {"font": ui_font(root, kind)}}
-                for name, kind in _FONT_STYLES}
+    settings: dict[str, dict[str, Any]] = {
+        name: {"configure": {"font": ui_font(root, kind)}}
+        for name, kind in _FONT_STYLES
+    }
     for theme_name in style.theme_names():
         try:
             style.theme_settings(theme_name, settings)
@@ -180,7 +183,7 @@ def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
         linespace = 18
     # apply_fonts と同じ理由で全テーマの辞書へ入れる（テーマを切り替えると
     # 現テーマにしか無い設定は消える）。
-    settings = {
+    settings: dict[str, dict[str, Any]] = {
         name: {"configure": {"padding": _TABLE_PAD,
                              "rowheight": linespace + _TABLE_ROW_EXTRA}},
         f"{name}.Heading": {"configure": {"padding": _TABLE_HEADPAD}},
