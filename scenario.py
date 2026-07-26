@@ -36,6 +36,8 @@ from typing import Callable
 
 import numpy as np
 
+import config
+import i18n
 import models
 import simulation as sim
 
@@ -92,7 +94,21 @@ class Condition:
     def __post_init__(self) -> None:
         bad = sorted(set(self.overrides) - set(OVERRIDABLE))
         if bad:
-            raise ValueError(f"上書きできない項目です: {bad}")
+            raise ValueError(i18n.t("scn_err_override").format(keys=bad))
+        # **値域の検証はここが関門**（B-016）。比較・スイープ・将来のヘッドレス
+        # 呼び出しがすべて Condition を通るので、1 か所で全経路を覆える。
+        # 範囲の出所は config.VALIDATION_RULES ＝単一実行のランチャーと同じ表
+        # （フローごとに範囲がずれない）。
+        #
+        # ⚠️ 検証が無かった頃の実測（2026-07-26）：周波数 0 で ZeroDivisionError、
+        # 負で ValueError（どちらも生の英語メッセージが出てスイープ全体が失われる）、
+        # **高さ -50m や降雨 -10mm/h は黙って計算が通り**、`inf` に至っては
+        # 判定 OK まで出た。DEM 取得の前に弾く。
+        for key, value in self.overrides.items():
+            reason = config.validate_value(key, value)
+            if reason:
+                raise ValueError(i18n.t("scn_err_value").format(
+                    label=i18n.t(f"scn_axis_{key}"), reason=reason, value=value))
 
 
 @dataclass
@@ -253,6 +269,27 @@ def evaluate(
     return points
 
 
+def validate_base(params: sim.SimParams) -> list[str]:
+    """ベース params 自体の値域を検証する（問題なければ空リスト）。
+
+    **`Condition` の検証だけでは穴がある**（B-016 のクラス点検）：比較の「ベース」
+    列は上書きゼロの Condition なので、ベースの値そのものは 1 つも検査されない。
+    ランチャーは実行時に検証するが、条件探索はランチャーの値を**実行せずに**
+    スナップショットして持ってくるため、不正な値のまま計算へ入り得る
+    （周波数 0 なら DEM 取得のあとにワーカーが ZeroDivisionError で落ちる）。
+
+    範囲の出所は `Condition` と同じ config.VALIDATION_RULES。
+    """
+    errors: list[str] = []
+    for key in OVERRIDABLE:
+        reason = config.validate_value(key, getattr(params, key))
+        if reason:
+            errors.append(i18n.t("scn_err_value").format(
+                label=i18n.t(f"scn_axis_{key}"), reason=reason,
+                value=getattr(params, key)))
+    return errors
+
+
 def sweep_conditions(axis: str, values: list[float]) -> list[Condition]:
     """1 軸 N 点のスイープを Condition 列へ変換する（A-2）。
 
@@ -260,20 +297,16 @@ def sweep_conditions(axis: str, values: list[float]) -> list[Condition]:
     レポート層が単位付きで整えるので、ここでは数値を素直に文字列化する。
     """
     if axis not in SWEEP_AXES:
-        raise ValueError(f"スイープできない軸です: {axis}")
-    if len(values) < 2:
-        raise ValueError("スイープには 2 点以上が要ります")
-    if len(values) > MAX_SWEEP_POINTS:
-        raise ValueError(f"点数が多すぎます（上限 {MAX_SWEEP_POINTS}）")
+        raise ValueError(i18n.t("scn_err_axis").format(axis=axis))
+    if not (2 <= len(values) <= MAX_SWEEP_POINTS):
+        raise ValueError(i18n.t("scn_err_points").format(max=MAX_SWEEP_POINTS))
     return [Condition(label=f"{v:g}", overrides={axis: float(v)}) for v in values]
 
 
 def linspace_values(start: float, stop: float, points: int) -> list[float]:
     """スイープ軸の等間隔な値を返す（View の入力欄からの変換用）。"""
-    if points < 2:
-        raise ValueError("スイープには 2 点以上が要ります")
-    if points > MAX_SWEEP_POINTS:
-        raise ValueError(f"点数が多すぎます（上限 {MAX_SWEEP_POINTS}）")
+    if not (2 <= points <= MAX_SWEEP_POINTS):
+        raise ValueError(i18n.t("scn_err_points").format(max=MAX_SWEEP_POINTS))
     return [float(v) for v in np.linspace(float(start), float(stop), int(points))]
 
 
@@ -301,6 +334,13 @@ def run_scenario(
     View 側で完了後に生成すると、①GUI スレッドが固まる ②その時間が進捗率に
     現れない（B-006／I-008 で 2 度起きた欠陥）。相の宣言はここに一本化する。
     """
+    # ⚠️ **DEM 取得の前に**ベースを検証する（条件側は Condition が検査済み）。
+    # ここで弾かないと、取得を終えてから計算で落ちる＝待ち時間を捨てさせる。
+    base_errors = validate_base(base_params)
+    if base_errors:
+        on_error(ValueError("\n".join(base_errors)))
+        return
+
     phases = Phases([FETCH, CALC, *( [RENDER] if artifacts else [] )],
                     on_phase, on_progress)
 

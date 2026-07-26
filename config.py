@@ -14,6 +14,7 @@ config.py（本体）＋ dem.py へ分割した際に切り出した設定・検
 
 import json
 import logging
+import math
 import os
 import sys
 
@@ -90,6 +91,44 @@ VALIDATION_RULES: dict[str, tuple] = {
     "samples"  : (10,     2000,     "err_samples"),
     "rain_rate": (0.0,    200.0,    "err_rain_rate"),
 }
+
+# `SimParams` の属性名 → `VALIDATION_RULES` のキー（名前が違うものだけ）。
+# ランチャーは config のキー（freq / samples）で持ち、計算側は属性名（freq_mhz /
+# num）で持つという歴史的なずれがあるので、**値域の出所を 1 つに保つための橋**。
+_ATTR_TO_RULE_KEY = {"freq_mhz": "freq", "num": "samples"}
+
+
+def validate_value(attr: str, value: "float | str") -> "str | None":
+    """`SimParams` の属性 1 つ分を検証する。問題なければ None、あればメッセージ。
+
+    **値域の出所は `VALIDATION_RULES` ただ 1 つ**（単一実行のランチャーと同じ表）。
+    条件探索（scenario.py）はここを呼ぶ＝フローごとに範囲がずれない。
+
+    ⚠️ NaN / Inf を明示的に弾く：`float("nan")` も `float("inf")` も**パースは
+    通る**ので、範囲比較（`vmin <= nan <= vmax` は常に False）に頼ると「範囲外」
+    という的外れなメッセージになり、Inf は判定 OK まで出てしまう（B-016 の実測）。
+    """
+    if attr == "env_type":
+        return None if value in VALID_ENV_TYPES else (
+            f"{i18n.t('err_env_type')}: {sorted(VALID_ENV_TYPES)}")
+    if attr == "diff_method":
+        return None if value in VALID_DIFF_METHODS else (
+            f"{i18n.t('err_diff_method')}: {sorted(VALID_DIFF_METHODS)}")
+
+    rule = VALIDATION_RULES.get(_ATTR_TO_RULE_KEY.get(attr, attr))
+    if rule is None:
+        return None                      # 値域を定めていない項目は素通し
+    try:
+        val = float(value)               # type: ignore[arg-type]
+    except (TypeError, ValueError):
+        return i18n.t("err_numeric")
+    if not math.isfinite(val):
+        return i18n.t("err_not_finite")
+    vmin, vmax, msg_key = rule
+    if not (vmin <= val <= vmax):
+        return i18n.t(msg_key)
+    return None
+
 
 DEFAULT_CONFIG: dict[str, str] = {
     "start"      : "34.5429, 132.4118",
@@ -200,8 +239,11 @@ def select_app(values: dict) -> dict:
 
 
 # バリデーション用許容値セット（validate_config で参照）
-_VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
-_VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
+VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
+VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
+# 旧名（内部参照の互換）。新規コードは公開名を使うこと。
+_VALID_ENV_TYPES    = VALID_ENV_TYPES
+_VALID_DIFF_METHODS = VALID_DIFF_METHODS
 
 # ============================================================
 # 入力バリデーション

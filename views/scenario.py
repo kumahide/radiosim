@@ -71,6 +71,21 @@ def _axis_label(key: str) -> str:
     return report_scenario.axis_label(key)
 
 
+def _number(text: str, label: str) -> float:
+    """入力欄の文字列を数値へ。読めない値は**その欄の名前つき**で弾く。
+
+    素の `float()` に任せると Python 生の英語（`could not convert string to
+    float: 'abc'`）がダイアログに出る＝言語設定にも [[feedback_japanese_everywhere]]
+    にも従わない（B-016）。`nan` / `inf` は `float()` を通ってしまうので、
+    値域と一緒に config.validate_value 側で弾く。
+    """
+    try:
+        return float(text)
+    except ValueError:
+        raise ValueError(i18n.t("scn_err_value").format(
+            label=label, reason=i18n.t("err_numeric"), value=repr(text))) from None
+
+
 def _env_labels() -> dict[str, str]:
     return {k: i18n.t(f"env_{k}") for k in _ENV_KEYS}
 
@@ -160,7 +175,7 @@ class ScenarioWindow(tk.Toplevel):
             return {v: k for k, v in _env_labels().items()}.get(text, text)
         if key == "diff_method":
             return {v: k for k, v in _diff_labels().items()}.get(text, text)
-        return float(text)
+        return _number(text, _axis_label(key))
 
     def _fit_to_content(self) -> None:
         """**中身に合わせて開き、足りなくなったら広げる**（縮めない）。
@@ -394,11 +409,14 @@ class ScenarioWindow(tk.Toplevel):
 
     def _sweep_conditions(self) -> tuple[list[scn.Condition], str, list[float]]:
         axis = self._axis_labels[self._axis_box.get()]
-        start, stop = float(self._from_var.get()), float(self._to_var.get())
+        start = _number(self._from_var.get(), i18n.t("scn_from"))
+        stop  = _number(self._to_var.get(),   i18n.t("scn_to"))
         if start == stop:
             raise ValueError(i18n.t("scn_err_range"))
-        points = int(self._points_var.get())
+        points = int(_number(self._points_var.get(), i18n.t("scn_points")))
         values = scn.linspace_values(start, stop, points)
+        # 軸の値域（周波数 0 や負の高さ）は Condition が弾く＝**DEM 取得の前**に
+        # 落ちる。ここで別途チェックを書くと範囲の出所が二重になる（B-016）。
         return scn.sweep_conditions(axis, values), axis, values
 
     def _on_run(self) -> None:

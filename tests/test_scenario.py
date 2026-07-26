@@ -24,6 +24,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import config
 import i18n
 import models
 import report_scenario
@@ -76,7 +77,9 @@ def terrain(flat_terrain):
 class TestCondition:
 
     def test_rejects_unknown_override(self):
-        with pytest.raises(ValueError, match="上書きできない"):
+        # メッセージは i18n（言語で変わる）ので、**どの言語でも出る要素**＝
+        # 弾かれた項目名で照合する。
+        with pytest.raises(ValueError, match="samples"):
             scn.Condition(label="A", overrides={"samples": 100})
 
     def test_rejects_coordinate_override(self):
@@ -88,6 +91,125 @@ class TestCondition:
         cond = scn.Condition(label="A", overrides={k: getattr(base, k)
                                                    for k in scn.OVERRIDABLE})
         assert set(cond.overrides) == set(scn.OVERRIDABLE)
+
+
+class TestConditionValidatesValues:
+    """値域の検証（B-016）。**DEM 取得の前に**弾くことが要点。
+
+    検証が無かった頃の実測（2026-07-26）:
+      - 周波数 0 → ZeroDivisionError / 負 → ValueError（生の英語・実行ごと失われる）
+      - 高さ -50m・降雨 -10mm/h → **黙って計算が通る**（もっともらしい数字が出る）
+      - `inf` → p_rx=inf で **判定 OK** まで出る
+    範囲の出所は config.VALIDATION_RULES（単一実行のランチャーと同じ表）。
+    """
+
+    @pytest.mark.parametrize("key,value", [
+        ("freq_mhz", 0.0),        # ZeroDivisionError を起こしていた値
+        ("freq_mhz", -100.0),
+        ("freq_mhz", 200000.0),
+        ("h_tx", -50.0),          # 黙って通っていた値
+        ("h_rx", 5000.0),
+        ("rain_rate", -10.0),     # 黙って通っていた値
+        ("veg_h", -1.0),
+        ("sens", 0.0),            # 感度 0 dBm は範囲外（-130〜-20）
+        ("gain_tx", -5.0),
+        ("k_factor", 1000.0),
+    ])
+    def test_rejects_out_of_range(self, key, value):
+        with pytest.raises(ValueError, match=str(value).rstrip("0").rstrip(".")):
+            scn.Condition(label="A", overrides={key: value})
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_rejects_nan_and_inf(self, value):
+        """`float()` は nan / inf を通す＝範囲比較だけでは守れない。
+
+        inf は**判定 OK** を出していた（レポートにそのまま載る）。
+        """
+        with pytest.raises(ValueError):
+            scn.Condition(label="A", overrides={"p_tx": value})
+
+    @pytest.mark.parametrize("key,value", [
+        ("env_type", "forest"), ("diff_method", "bullington"),
+    ])
+    def test_rejects_unknown_choice(self, key, value):
+        with pytest.raises(ValueError, match=value):
+            scn.Condition(label="A", overrides={key: value})
+
+    def test_accepts_values_inside_the_range(self, base):
+        """正常値は通る（過検出でスクリーニングの幅を狭めない）。"""
+        scn.Condition(label="A", overrides={
+            "freq_mhz": 1.0, "h_tx": 500.0, "rain_rate": 200.0,
+            "sens": -130.0, "gain_rx": 60.0, "env_type": "los",
+        })
+
+    def test_range_source_is_config_not_a_copy(self):
+        """範囲の出所が config.VALIDATION_RULES であること（二重管理の検出）。
+
+        条件探索が独自の表を持つと、ランチャーで通る値が条件探索で弾かれる
+        （またはその逆）というフロー間のずれが起きる。上限ちょうど＋1 で
+        落ちることを、**config の値から計算して**確かめる。
+        """
+        vmax = config.VALIDATION_RULES["freq"][1]
+        scn.Condition(label="ok", overrides={"freq_mhz": vmax})
+        with pytest.raises(ValueError):
+            scn.Condition(label="ng", overrides={"freq_mhz": vmax + 1})
+
+    def test_every_overridable_numeric_key_has_a_range(self):
+        """上書きできる数値項目には**必ず**値域があること。
+
+        新しい項目を OVERRIDABLE に足したとき、値域を書き忘れると素通しになる
+        （B-016 そのもの＝「検証を足し忘れても誰も気づかない」）。ここで落とす。
+        """
+        missing = [
+            k for k in scn.OVERRIDABLE
+            if k not in ("env_type", "diff_method")
+            and config.VALIDATION_RULES.get(config._ATTR_TO_RULE_KEY.get(k, k)) is None
+        ]
+        assert not missing, (
+            f"値域が定義されていない上書き項目がある: {missing}。"
+            "config.VALIDATION_RULES に足すこと（範囲の出所は 1 つ）。"
+        )
+
+    def test_sweep_rejects_a_range_that_crosses_invalid_values(self):
+        """軸の**途中**に不正値がある場合も弾くこと（端だけ見ない）。
+
+        周波数 -100〜100 MHz のようなスイープは、途中で 0 を跨いで
+        ZeroDivisionError を起こしていた。
+        """
+        values = scn.linspace_values(-100.0, 100.0, 5)
+        with pytest.raises(ValueError):
+            scn.sweep_conditions("freq_mhz", values)
+
+
+class TestBaseParamsAreValidated:
+    """ベース params 自体の検証（B-016 のクラス点検で見つけた穴）。
+
+    比較の「ベース」列は上書きゼロの Condition なので、Condition の検証だけでは
+    **ベースの値が 1 つも検査されない**。条件探索はランチャーの値を*実行せずに*
+    スナップショットして持ってくるので、不正値のまま計算へ入り得る。
+    """
+
+    def test_invalid_base_is_reported_before_fetching_dem(self, monkeypatch,
+                                                          default_params_dict):
+        """DEM 取得**前**に on_error で落ちること（待たせてから落とさない）。"""
+        fetched = []
+        monkeypatch.setattr(sim, "fetch_elevations",
+                            lambda *a, **k: fetched.append(1))
+        bad = sim.SimParams({**default_params_dict, "freq": "0"})
+        errs: list[Exception] = []
+        scn.run_scenario(bad, [scn.Condition("base", {})],
+                         on_complete=lambda run: None,
+                         on_error=errs.append)
+        assert errs, "不正なベースがそのまま実行された"
+        assert not fetched, "DEM を取得してから落ちている（待ち時間を捨てさせる）"
+
+    def test_valid_base_passes(self, default_params_dict):
+        assert scn.validate_base(sim.SimParams(default_params_dict)) == []
+
+    def test_reports_every_bad_field_at_once(self, default_params_dict):
+        """複数の不正値をまとめて返すこと（1 つ直すたびに再実行させない）。"""
+        bad = sim.SimParams({**default_params_dict, "freq": "0", "veg_h": "-5"})
+        assert len(scn.validate_base(bad)) == 2
 
 
 class TestApplyOverrides:
@@ -153,7 +275,7 @@ class TestSweepConditions:
 
     def test_rejects_categorical_axis(self):
         """env_type / diff_method は離散＝軸にせず比較（A-1）で扱う。"""
-        with pytest.raises(ValueError, match="スイープできない"):
+        with pytest.raises(ValueError, match="env_type"):
             scn.sweep_conditions("env_type", [1.0, 2.0])
 
     def test_rejects_single_point(self):
@@ -162,7 +284,7 @@ class TestSweepConditions:
 
     def test_rejects_too_many_points(self):
         values = [float(i) for i in range(scn.MAX_SWEEP_POINTS + 1)]
-        with pytest.raises(ValueError, match="点数"):
+        with pytest.raises(ValueError, match=str(scn.MAX_SWEEP_POINTS)):
             scn.sweep_conditions("h_tx", values)
 
     def test_labels_are_the_axis_values(self):
