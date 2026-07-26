@@ -116,11 +116,21 @@ class TestAllFlowsUseResolver:
         src = pathlib.Path(simulation.__file__).read_text(encoding="utf-8")
         assert "config.RESULTS_DIR" in src
 
+    # 実行ごとの dir を切るフローは config.new_run_dir を通す（B-013 で導入）。
+    # これ自体が config.RESULTS_DIR 由来なので、どちらの呼び方でも解決器の上にいる。
+    _RESOLVER_CALLS = ("config.RESULTS_DIR", "config.new_run_dir")
+
     def test_batch_output_uses_resolver(self):
-        """バッチ＝run_batch の batch_dir は config.RESULTS_DIR 由来。"""
+        """バッチ＝run_batch の batch_dir は解決器由来。"""
         import batch
         src = pathlib.Path(batch.__file__).read_text(encoding="utf-8")
-        assert "config.RESULTS_DIR" in src
+        assert any(c in src for c in self._RESOLVER_CALLS)
+
+    def test_scenario_output_uses_resolver(self):
+        """条件探索（4 つ目のフロー）＝save_dir も解決器由来。"""
+        import views.scenario
+        src = pathlib.Path(views.scenario.__file__).read_text(encoding="utf-8")
+        assert any(c in src for c in self._RESOLVER_CALLS)
 
     def test_resolver_is_not_reimplemented_elsewhere(self):
         """解決器を二度書かない（重複が残ると片方だけ直す事故になる）。

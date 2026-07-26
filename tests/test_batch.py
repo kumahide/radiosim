@@ -80,6 +80,19 @@ class TestValidateRows:
         errs = batch.validate_rows(rows)
         assert any("Duplicate" in e for e in errs)
 
+    def test_duplicate_id_ignores_case(self):
+        """B-013: `p01`/`P01` は Windows の FS では同じ dir＝重複として弾くこと。
+
+        通してしまうと両者の成果物が同一パスへ書かれ、黙って上書きされる。
+        """
+        rows = [_row(path_id="p01"), _row(path_id="P01")]
+        errs = batch.validate_rows(rows)
+        assert any("Duplicate" in e for e in errs)
+
+    def test_case_differing_ids_are_not_flagged_when_distinct(self):
+        """大小以外でも違う ID は重複ではない（casefold の巻き込み防止）。"""
+        assert batch.validate_rows([_row(path_id="p01"), _row(path_id="P02")]) == []
+
     def test_invalid_id_slash(self):
         errs = batch.validate_rows([_row(path_id="path/01")])
         assert any("ID" in e for e in errs)
@@ -214,6 +227,32 @@ class TestParseCsv:
         rows = batch.parse_csv(_csv_file(tmp_path, content))
         assert len(rows) == 2
         assert rows[1].path_id == "p02"
+
+    def test_header_case_and_spaces_are_normalized(self, tmp_path):
+        """B-011: ヘッダ判定と行アクセスで正規化の有無を非対称にしない。
+
+        以前はヘッダだけ小文字化して「必須列あり」と判定し、行は生キーで引いて
+        いたため、大小混じりの正しい CSV が「'id' is empty」で落ちていた。
+        """
+        content = " ID , Start ,End,H_tx,H_RX\n" + self._make_row()
+        rows = batch.parse_csv(_csv_file(tmp_path, content))
+        assert len(rows) == 1
+        assert rows[0].path_id == "p01"
+        assert rows[0].lat_tx == pytest.approx(34.54)
+        assert rows[0].h_rx   == pytest.approx(10.0)
+
+    def test_optional_column_case_is_normalized(self, tmp_path):
+        """省略可の列も同じ正規化を通ること（必須列だけの手当てにしない）。"""
+        content = "id,start,end,h_tx,h_rx,Freq,Note\n" + self._make_row(extra=",2400,memo")
+        rows = batch.parse_csv(_csv_file(tmp_path, content))
+        assert rows[0].freq_mhz == pytest.approx(2400.0)
+        assert rows[0].note == "memo"
+
+    def test_short_row_reports_missing_field(self, tmp_path):
+        """列数が足りない行は None ではなく空欄として扱い、素の TypeError にしない。"""
+        content = self._HEADER + '\n"p01","34.54, 132.41","34.53, 132.40"\n'
+        with pytest.raises(ValueError):
+            batch.parse_csv(_csv_file(tmp_path, content))
 
     def test_optional_freq_parsed(self, tmp_path):
         content = "id,start,end,h_tx,h_rx,freq\n" + self._make_row(extra=",2400")
@@ -574,6 +613,76 @@ class TestSummaryGainColumns:
         # 単位は 2 行目（.u span）へ分離されるので、名前と単位を個別に確認する。
         assert 'TX Gain<span class="u">(dBi)</span>' in html
         assert 'RX Gain<span class="u">(dBi)</span>' in html
+
+
+# ============================================================
+# サマリ CSV の数式インジェクション対策（B-012）
+# ============================================================
+class TestSummaryCsvFormulaInjection:
+    """自由文字列（note / error / ID）を表計算が数式として解釈しないこと。
+
+    `summary.csv` はレポート成果物で、利用者は Excel 等で開く。`=HYPERLINK(...)`
+    のような note を素通しすると、開いた側の環境で式として評価され得る。
+    """
+
+    def _read(self, tmp_path) -> tuple[list[str], list[str]]:
+        import csv as _csv
+        with open(os.path.join(str(tmp_path), "summary.csv"), encoding="utf-8") as f:
+            reader = _csv.reader(f)
+            return next(reader), next(reader)
+
+    def _pr(self, default_params_dict, *, note="", error=None):
+        params = sim.SimParams(dict(default_params_dict))
+        row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0, note=note)
+        if error is not None:
+            return batch.PathResult(row=row, result=None, params=params, error=error)
+        return batch.PathResult(row=row, result=_make_result(), params=params)
+
+    def test_formula_note_is_quoted(self, tmp_path, default_params_dict):
+        pr = self._pr(default_params_dict, note='=HYPERLINK("http://example.com")')
+        report_summary._save_summary_csv([pr], str(tmp_path))
+        header, data = self._read(tmp_path)
+        assert data[header.index("note")].startswith("'=")
+
+    def test_formula_error_is_quoted(self, tmp_path, default_params_dict):
+        pr = self._pr(default_params_dict, error=ValueError("@SUM(1,1)"))
+        report_summary._save_summary_csv([pr], str(tmp_path))
+        header, data = self._read(tmp_path)
+        assert data[header.index("error")].startswith("'@")
+
+    def test_plain_note_is_untouched(self, tmp_path, default_params_dict):
+        pr = self._pr(default_params_dict, note="山越え・要現地確認")
+        report_summary._save_summary_csv([pr], str(tmp_path))
+        header, data = self._read(tmp_path)
+        assert data[header.index("note")] == "山越え・要現地確認"
+
+    def test_negative_numbers_stay_numeric(self, tmp_path, default_params_dict):
+        """⚠️ 負値は `-` 始まりだが数式ではない＝クォートで数値を壊さないこと。"""
+        pr = self._pr(default_params_dict)
+        report_summary._save_summary_csv([pr], str(tmp_path))
+        header, data = self._read(tmp_path)
+        for col in ("rx_dbm", "margin_db"):
+            assert not data[header.index(col)].startswith("'")
+            float(data[header.index(col)])   # 表計算が数値として読めること
+
+
+class TestCsvCellHelper:
+    """report_common.csv_cell 単体（書き手が複数あるので規則をここで固定する）。"""
+
+    def test_risky_prefixes_are_quoted(self):
+        import report_common
+        for text in ("=1+1", "+SUM(1)", "-1+1", "@x", "\t=x", "\r=x", "\n=x"):
+            assert report_common.csv_cell(text) == "'" + text
+
+    def test_numeric_values_pass_through(self):
+        import report_common
+        for text in ("-93.20", "-0.5", "+12", "-1e3"):
+            assert report_common.csv_cell(text) == text
+
+    def test_none_and_plain_text(self):
+        import report_common
+        assert report_common.csv_cell(None) == ""
+        assert report_common.csv_cell("p01") == "p01"
 
 
 # ============================================================

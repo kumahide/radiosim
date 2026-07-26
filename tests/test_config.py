@@ -8,6 +8,7 @@ i18n キーの網羅性チェック（TestI18n）は、検証メッセージ（v
 """
 
 import json
+import os
 
 import config
 
@@ -300,3 +301,42 @@ class TestI18n:
         for lang, strings in i18n._STRINGS.items():
             for key, val in strings.items():
                 assert val != "", f"空の翻訳値: lang='{lang}' key='{key}'"
+
+
+# ============================================================
+# 実行ごとの出力ディレクトリ（B-013）
+# ============================================================
+class TestNewRunDir:
+    """秒精度のタイムスタンプが衝突しても成果物を上書きしないこと。
+
+    バッチと条件探索が同じ欠陥を持っていたので、解決器を config へ一本化した
+    （単一実行は %f を含むタイムスタンプなのでこの関数を通らない）。
+    """
+
+    def test_creates_prefixed_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        d = config.new_run_dir("batch", "20260726_120000")
+        assert os.path.isdir(d)
+        assert os.path.basename(d) == "batch_20260726_120000"
+
+    def test_same_timestamp_gets_distinct_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        first  = config.new_run_dir("batch", "20260726_120000")
+        second = config.new_run_dir("batch", "20260726_120000")
+        third  = config.new_run_dir("batch", "20260726_120000")
+        assert first != second != third
+        assert len({first, second, third}) == 3
+        assert all(os.path.isdir(d) for d in (first, second, third))
+
+    def test_prefixes_do_not_collide(self, tmp_path, monkeypatch):
+        """バッチと条件探索が同秒に走っても互いを踏まないこと。"""
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        b = config.new_run_dir("batch", "20260726_120000")
+        s = config.new_run_dir("scenario", "20260726_120000")
+        assert os.path.basename(b) == "batch_20260726_120000"
+        assert os.path.basename(s) == "scenario_20260726_120000"
+
+    def test_creates_results_dir_if_missing(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path / "results"))
+        d = config.new_run_dir("batch", "20260726_120000")
+        assert os.path.isdir(d)

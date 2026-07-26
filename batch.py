@@ -97,17 +97,41 @@ def parse_csv(csv_path: str) -> list[PathRow]:
         reader = csv.DictReader(f)
         if reader.fieldnames is None:
             raise ValueError("CSV has no header row.")
-        cols = {c.strip().lower() for c in reader.fieldnames}
+        cols = {_norm_key(c) for c in reader.fieldnames}
         missing = _REQUIRED_COLS - cols
         if missing:
             raise ValueError(f"Missing required columns: {sorted(missing)}")
 
         for line_no, raw in enumerate(reader, start=2):
-            rows.append(_parse_csv_row(raw, line_no))
+            rows.append(_parse_csv_row(_normalize_row(raw), line_no))
 
     if not rows:
         raise ValueError("CSV has no data rows.")
     return rows
+
+
+def _norm_key(key: str) -> str:
+    """CSV 列名の正準形（前後空白を落として小文字）を返す。"""
+    return key.strip().lower()
+
+
+def _normalize_row(raw: dict) -> dict[str, str]:
+    """DictReader の 1 行を正準キーの dict へ寄せる。
+
+    ⚠️ **ヘッダ判定と行アクセスで正規化の有無を非対称にしない**（B-011）。
+    以前はヘッダだけ `strip().lower()` して必須列ありと判定し、行は生キーで
+    引いていたため、`ID,Start,…` のような大文字混じりの正しい CSV が
+    「必須列あり」と判定された直後に「Row 2: 'id' is empty」で落ちていた。
+
+    値の `None` は空文字へ倒す（列数が足りない行を DictReader が None で
+    埋めるため。ここで倒しておけば以降は「空欄」として一様に扱える）。
+    """
+    out: dict[str, str] = {}
+    for key, val in raw.items():
+        if key is None:      # 余剰列（restkey）は捨てる
+            continue
+        out[_norm_key(key)] = "" if val is None else val
+    return out
 
 
 def _parse_csv_row(raw: dict, line: int) -> PathRow:
@@ -184,11 +208,17 @@ def validate_rows(rows: list[PathRow]) -> list[str]:
         errors.append(i18n.t("verr_empty"))
         return errors
 
+    # ⚠️ 重複判定は **大小を区別しない**（B-013）。path_id はそのまま出力
+    # ディレクトリ名になるが、Windows のファイルシステムは大小を区別しない
+    # ため、`p01` と `P01` を別 ID として通すと両者の成果物が同一パスへ書かれ
+    # 先勝ち/後勝ちで黙って混ざる。ID そのものは入力どおり保持する（表示・
+    # ディレクトリ名は原文のまま）。
     seen: set[str] = set()
     for r in rows:
-        if r.path_id in seen:
+        key = r.path_id.casefold()
+        if key in seen:
             errors.append(i18n.t("verr_duplicate_id").format(pid=r.path_id))
-        seen.add(r.path_id)
+        seen.add(key)
 
     for r in rows:
         pid = r.path_id
@@ -287,8 +317,7 @@ def _run_thread(
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        batch_dir = os.path.join(config.RESULTS_DIR, f"batch_{timestamp}")
-        os.makedirs(batch_dir, exist_ok=True)
+        batch_dir = config.new_run_dir("batch", timestamp)
 
         path_results: list[PathResult] = []
         total = len(rows)

@@ -54,7 +54,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
             if pr.result is not None:
                 r = pr.result
                 writer.writerow([
-                    pr.row.path_id, r.status,
+                    report_common.csv_cell(pr.row.path_id), r.status,
                     freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
                     f"{r.p_rx:.2f}",          f"{r.actual_margin:.2f}",
                     f"{r.fspl:.2f}",           f"{r.diff_loss:.2f}",
@@ -63,14 +63,15 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     f"{r.total_loss:.2f}",
                     units.csv_distance(r.slant_dist_km),
                     units.csv_blocked_ratio(r.blocked_ratio),
-                    pr.row.note, "",
+                    report_common.csv_cell(pr.row.note), "",
                 ])
             else:
                 writer.writerow([
-                    pr.row.path_id, "ERROR",
+                    report_common.csv_cell(pr.row.path_id), "ERROR",
                     freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
                     "", "", "", "", "", "", "", "", "", "", "",
-                    pr.row.note, str(pr.error),
+                    report_common.csv_cell(pr.row.note),
+                    report_common.csv_cell(pr.error),
                 ])
 
 

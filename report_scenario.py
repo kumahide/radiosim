@@ -383,8 +383,11 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
             def val(name, default):
                 return o.get(name, default)
             r = p.result
+            # ラベルは今のところ i18n 由来か数値だが、CSV セルの安全化は
+            # 書き手ごとの判断にしない（→ report_common.csv_cell の節）。
+            label = report_common.csv_cell(p.label)
             w.writerow([
-                p.label, o.get(run.axis, "") if run.axis else p.label, r.status,
+                label, o.get(run.axis, "") if run.axis else label, r.status,
                 f"{r.p_rx:.2f}", f"{r.actual_margin:.2f}", f"{r.total_loss:.2f}",
                 f"{r.fspl:.2f}", f"{r.diff_loss:.2f}", f"{r.veg_loss:.2f}",
                 f"{r.env_loss:.2f}", f"{r.rain_loss:.2f}", f"{r.gas_loss:.2f}",

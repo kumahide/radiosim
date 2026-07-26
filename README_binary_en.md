@@ -285,6 +285,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
 - `start` / `end` must be quoted because they contain a comma
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings values when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
+- Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
 
 ### Common Settings (a snapshot of the launcher)
 

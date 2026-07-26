@@ -521,6 +521,31 @@ class TestScenarioReport:
         # 桁区切りは入れない（表計算が数値として読めること）
         assert "," in rows[1] and '"' not in rows[1]
 
+    def test_csv_label_is_formula_safe(self, terrain, base, tmp_path):
+        """B-012 のクラス点検＝CSV を吐くのはバッチだけではない（条件探索も吐く）。
+
+        今のラベルは i18n 由来か数値なので実害は無いが、安全化を書き手ごとの
+        判断にしない（→ report_common.csv_cell）。
+        """
+        i18n.set_lang("ja")
+        conds = [scn.Condition('=HYPERLINK("http://x")', {"freq_mhz": 900.0})]
+        run = scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain,
+                              points=scn.evaluate(terrain, base, conds))
+        report_scenario.save_scenario_csv(run, str(tmp_path))
+        body = (tmp_path / "scenario.csv").read_text(encoding="utf-8").splitlines()[1]
+        assert body.startswith("\"'=HYPERLINK") or body.startswith("'=HYPERLINK")
+
+    def test_csv_numeric_sweep_labels_stay_numeric(self, terrain, base, tmp_path):
+        """スイープのラベルは値そのもの＝負値でもクォートしないこと。"""
+        i18n.set_lang("ja")
+        values = [-95.0, -90.0]
+        points = scn.evaluate(terrain, base, scn.sweep_conditions("sens", values))
+        run = scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
+                              points=points, axis="sens", axis_values=values)
+        report_scenario.save_scenario_csv(run, str(tmp_path))
+        body = (tmp_path / "scenario.csv").read_text(encoding="utf-8").splitlines()[1]
+        assert body.startswith("-95")
+
     def test_axis_label_carries_the_unit(self):
         i18n.set_lang("ja")
         assert report_scenario.axis_label("h_tx").endswith("(m)")

@@ -476,10 +476,8 @@ class ScenarioWindow(tk.Toplevel):
         project = self._meta["project_name"]
         memo    = self._meta["memo"]
 
-        save_dir = os.path.join(
-            config.RESULTS_DIR,
-            f"scenario_{datetime.now().strftime('%Y%m%d_%H%M%S')}")
-        os.makedirs(save_dir, exist_ok=True)
+        save_dir = config.new_run_dir(
+            "scenario", datetime.now().strftime("%Y%m%d_%H%M%S"))
         self._last_dir = save_dir
 
         self._running = True

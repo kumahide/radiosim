@@ -54,6 +54,36 @@ CONFIG_FILE = app_path("radiosim_conf.json")
 RESULTS_DIR = app_path("results")
 LOG_FILE    = app_path("radiosim.log")
 
+
+# ============================================================
+# 実行ごとの出力ディレクトリ
+# ------------------------------------------------------------
+# バッチ（batch_…）と条件探索（scenario_…）は「接頭辞＋秒精度のタイムスタンプ」
+# で dir を切る。⚠️ 秒精度は同秒起動で衝突する（B-013）。`exist_ok=True` で
+# 作っていたため、2 回目の実行が 1 回目の成果物と同じ dir へ書き込み、
+# ファイル名が同じもの（summary.csv 等）を黙って上書きしていた。
+#
+# 作成まで含めてここで面倒を見る＝「衝突しない名前を返す」だけの関数にすると
+# 呼び出し側が makedirs するまでの隙間で再び衝突しうる（作成の成否そのものを
+# 一意性の判定に使う）。
+#
+# 単一実行（simulation.py）はタイムスタンプに %f（マイクロ秒）を含むため
+# この関数を通さない＝dir 名の形が違い、変えると既存の結果フォルダの並びが
+# 変わる。衝突しない以上そのままでよい。
+# ============================================================
+def new_run_dir(prefix: str, timestamp: str) -> str:
+    """`<results>/<prefix>_<timestamp>` を新規作成して返す（衝突時は連番を付す）。"""
+    name = f"{prefix}_{timestamp}"
+    suffix = 2
+    while True:
+        candidate = os.path.join(RESULTS_DIR, name)
+        try:
+            os.makedirs(candidate, exist_ok=False)
+            return candidate
+        except FileExistsError:
+            name = f"{prefix}_{timestamp}_{suffix}"
+            suffix += 1
+
 # ============================================================
 # ロギング設定
 #   DEBUG   : Fresnel・ν等の計算値（開発時）
