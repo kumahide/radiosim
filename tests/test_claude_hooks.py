@@ -293,3 +293,30 @@ class TestRoadmapDashboardHygiene:
         rows = memcheck._dashboard_rows()
         assert rows, "現在地表を 1 行も拾えていない＝パーサが壊れている可能性"
         assert memcheck.check_dashboard_rows(rows) == []
+
+
+class TestMemoryIndexLineLength:
+    """MEMORY.md の索引行が「要約」に留まっているかを機械で測る。
+
+    check 9 と同じ失敗の 1 段上。MEMORY.md は毎セッション読み込まれるので
+    知識ベースで最も読まれる面だが、ロードマップの索引行が約 1,000 字の
+    ミニ版履歴に育ち、2026-07-26 に本体だけ更新されて索引が stale 化した
+    （同日 3 件目の「同じ事実が 2 か所にあり片方だけ直る」）。
+    """
+
+    def test_long_index_line_is_flagged(self, memcheck):
+        line = "- [x.md（長い）](x.md) — " + "あ" * 500
+        found = memcheck.check_index_line_length([line])
+        assert any("索引に詳細が溜まっている" in f for f in found)
+
+    def test_normal_index_line_is_not_flagged(self, memcheck):
+        line = "- [x.md（ふつう）](x.md) — " + "あ" * 100
+        assert memcheck.check_index_line_length([line]) == []
+
+    def test_non_index_lines_are_ignored(self, memcheck):
+        """見出しや説明文は対象外（索引エントリだけを見る）。"""
+        assert memcheck.check_index_line_length(["## " + "あ" * 500]) == []
+
+    def test_real_index_is_clean(self, memcheck):
+        """実データで誤検知ゼロ（ノイズを出すゲートは読まれなくなる）。"""
+        assert memcheck.check_memory_index_lines() == []
