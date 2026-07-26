@@ -1010,6 +1010,25 @@ class BatchBuilderWindow(tk.Toplevel):
             "env_type"   : self._env_label_to_key.get(self._env_var.get(), "los"),
             "diff_method": self._diff_var.get(),
         }
+        # **値域の検証はここが関門**（B-018）。共通設定は readonly だが、値はランチャー
+        # の生の入力（窓を開いたときのスナップショット／↻更新）で、ランチャー自身は
+        # 実行時にしか検証しない＝単一実行を一度も走らせなければ無検証のまま届く。
+        # SimParams は float 化しかしないので、freq=0（ZeroDivisionError）や
+        # samples=999999（DEM 取得後に固まる）、inf/nan が計算まで通ってしまう。
+        # B-016（条件探索）と同じ欠陥のバッチ版で、範囲の出所も同じ VALIDATION_RULES。
+        #
+        # start/end は検証しない：実際の座標は各行が持ち（validate_rows が検証済み）、
+        # ここの start/end はランチャー由来の飾り。validate_config を通すと「送受信が
+        # 同一地点」で**正当なバッチ実行が偽陽性で止まる**。h_tx/h_rx も同じ理由で除外。
+        errors = [
+            f"[{key}] {reason}"
+            for key in ("freq", "p_tx", "gain_tx", "gain_rx", "sens",
+                        "veg_h", "k_factor", "samples", "rain_rate",
+                        "env_type", "diff_method")
+            if (reason := config.validate_value(key, c[key])) is not None
+        ]
+        if errors:
+            raise ValueError("\n".join(errors))
         return sim.SimParams(c)
 
     def _on_run(self) -> None:

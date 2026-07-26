@@ -7,6 +7,7 @@ batch.py のユニットテスト。
 ネットワーク無しで同期検証）
 """
 
+import gc
 import threading
 import time
 from typing import Any
@@ -1271,5 +1272,80 @@ class TestBatchCompletionOpensChosenReport:
         try:
             self._complete(win, bb, monkeypatch, None, tmp_path)
             assert opened == []
+        finally:
+            win.destroy(); root.destroy()
+
+
+# ============================================================
+# 共通設定の値域検証（B-018）
+# ============================================================
+class TestCommonSettingsValidation:
+    """バッチの Common Settings が値域外のまま実行へ進まないこと。
+
+    共通設定は readonly 表示だが、値はランチャーの生の入力（窓を開いたときの
+    スナップショット／↻更新）で届く。ランチャーは実行時にしか検証しないので、
+    単一実行を一度も走らせなければ無検証のまま計算まで通ってしまっていた
+    ＝B-016（条件探索）と同じ欠陥のバッチ版。DEM 取得の前に弾く。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+        # ⚠️ 窓を destroy しても tk.StringVar は参照が切れるまで生き残り、後続テストの
+        # ワーカースレッド上で GC されると Variable.__del__ が "main thread is not in
+        # main loop" を投げる（=無関係なテストが落ちる）。ここで回収しきる。
+        gc.collect()
+
+    def _win(self, default_params_dict):
+        from conftest import make_tk_root
+        import views.batch_builder as bb
+
+        root = make_tk_root()
+        root.withdraw()
+        win = bb.BatchBuilderWindow(root, sim.SimParams(default_params_dict))
+        return root, win, bb
+
+    @pytest.mark.parametrize("attr,bad", [
+        ("freq_mhz",  "0"),          # ZeroDivisionError
+        ("freq_mhz",  "-100"),       # ValueError
+        ("num",       "999999"),     # 巨大サンプルで固まる
+        ("veg_h",     "-50"),        # 黙って計算が通る
+        ("rain_rate", "-10"),        # 黙って計算が通る
+        ("k_factor",  "inf"),        # 範囲比較を素通りして判定 OK まで出る
+        ("sens",      "nan"),
+    ])
+    def test_out_of_range_common_setting_is_rejected(self, default_params_dict,
+                                                     attr, bad):
+        root, win, _bb = self._win(default_params_dict)
+        try:
+            win._common_vars[attr].set(bad)
+            with pytest.raises(ValueError):
+                win._read_base_params()
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_valid_common_settings_pass(self, default_params_dict):
+        root, win, _bb = self._win(default_params_dict)
+        try:
+            assert win._read_base_params().freq_mhz > 0
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_run_is_blocked_before_dem_fetch(self, monkeypatch, dialog_calls,
+                                             default_params_dict):
+        """行が正当でも、共通設定が不正なら run_batch へ到達しない。"""
+        root, win, bb = self._win(default_params_dict)
+        try:
+            win._add_row()
+            called: list[Any] = []
+            monkeypatch.setattr(bb.batch, "run_batch",
+                                lambda *a, **k: called.append(1))
+            win._common_vars["freq_mhz"].set("0")
+            win._on_run()
+            assert called == [], "値域外の共通設定で run_batch が呼ばれた"
+            assert any(c[0] == "alert" for c in dialog_calls), dialog_calls
+            assert win._running is False
         finally:
             win.destroy(); root.destroy()

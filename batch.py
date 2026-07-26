@@ -215,16 +215,21 @@ def validate_rows(rows: list[PathRow]) -> list[str]:
             errors.append(i18n.t("verr_rx_lon").format(pid=pid, val=r.lon_rx))
         if abs(r.lat_tx - r.lat_rx) < 1e-7 and abs(r.lon_tx - r.lon_rx) < 1e-7:
             errors.append(i18n.t("verr_identical").format(pid=pid))
-        if not (0 <= r.h_tx <= 500):
-            errors.append(i18n.t("verr_h_tx").format(pid=pid, val=r.h_tx))
-        if not (0 <= r.h_rx <= 500):
-            errors.append(i18n.t("verr_h_rx").format(pid=pid, val=r.h_rx))
-        if r.freq_mhz is not None and not (1 <= r.freq_mhz <= 100000):
-            errors.append(i18n.t("verr_freq").format(pid=pid, val=r.freq_mhz))
-        if r.gain_tx is not None and not (0 <= r.gain_tx <= 60):
-            errors.append(i18n.t("verr_gain_tx").format(pid=pid, val=r.gain_tx))
-        if r.gain_rx is not None and not (0 <= r.gain_rx <= 60):
-            errors.append(i18n.t("verr_gain_rx").format(pid=pid, val=r.gain_rx))
+        # 値域はリテラルで持たず config.VALIDATION_RULES から引く（B-018）。
+        # ランチャー／条件探索／バッチ共通設定はすべてこの表を出所にしているので、
+        # 行だけが第2の出所になっていると、表を直したとき行の範囲だけ取り残される。
+        for attr, val, msg_key in (
+            ("h_tx",    r.h_tx,     "verr_h_tx"),
+            ("h_rx",    r.h_rx,     "verr_h_rx"),
+            ("freq",    r.freq_mhz, "verr_freq"),
+            ("gain_tx", r.gain_tx,  "verr_gain_tx"),
+            ("gain_rx", r.gain_rx,  "verr_gain_rx"),
+        ):
+            if val is None:
+                continue                 # 行の任意列（未指定＝共通設定を踏襲）
+            vmin, vmax, _ = config.VALIDATION_RULES[attr]
+            if not (vmin <= val <= vmax):
+                errors.append(i18n.t(msg_key).format(pid=pid, val=val))
 
     return errors
 
