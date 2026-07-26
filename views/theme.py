@@ -149,7 +149,9 @@ def apply_fonts(root: tk.Misc) -> None:
     tests/test_theme.py::test_fonts_survive_a_theme_switch。
     """
     style = ttk.Style(master=root)
-    settings: dict[str, dict[str, Any]] = {
+    # 型は typeshed の `_ThemeSettings`（`{"configure": {...}}` の TypedDict）。
+    # 非公開エイリアスなので実体で書く。
+    settings: dict[str, Any] = {
         name: {"configure": {"font": ui_font(root, kind)}}
         for name, kind in _FONT_STYLES
     }
@@ -183,7 +185,7 @@ def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
         linespace = 18
     # apply_fonts と同じ理由で全テーマの辞書へ入れる（テーマを切り替えると
     # 現テーマにしか無い設定は消える）。
-    settings: dict[str, dict[str, Any]] = {
+    settings: dict[str, Any] = {
         name: {"configure": {"padding": _TABLE_PAD,
                              "rowheight": linespace + _TABLE_ROW_EXTRA}},
         f"{name}.Heading": {"configure": {"padding": _TABLE_HEADPAD}},
