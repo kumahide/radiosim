@@ -1333,19 +1333,56 @@ class TestCommonSettingsValidation:
         finally:
             win.destroy(); root.destroy()
 
+    def _armed_win(self, monkeypatch, default_params_dict):
+        """正当な行を 1 つ持ち、run_batch を差し替えた窓を返す。
+
+        ⚠️ 窓は最初から空行 `path01` を持ち、`_add_row()` も config_provider 無しでは
+        **座標欄が空**の行を足す（= 座標 NaN）。行を用意せずに `_on_run()` を呼ぶと
+        `validate_rows` で止まり、共通設定の検証まで到達しないまま
+        「run_batch が呼ばれない」が成立してしまう（Codex 指摘の false positive）。
+        必ず座標入りの行を入れ、下の positive control で到達を担保する。
+        """
+        root, win, bb = self._win(default_params_dict)
+        win._row_entries.clear()
+        for f in win._row_frames:
+            f.destroy()
+        win._row_frames.clear()
+        win._add_row(batch.PathRow(
+            path_id="path01", lat_tx=34.54, lon_tx=132.41,
+            lat_rx=34.53, lon_rx=132.40, h_tx=30.0, h_rx=10.0, note="",
+        ))
+        assert batch.validate_rows(win._read_table_rows()) == []
+        called: list[Any] = []
+        monkeypatch.setattr(bb.batch, "run_batch", lambda *a, **k: called.append(1))
+        return root, win, called
+
+    def test_run_reaches_run_batch_when_everything_is_valid(
+            self, monkeypatch, default_params_dict):
+        """positive control：この土俵で run_batch へ到達できることを先に示す。
+
+        これが無いと下の「到達しない」は、行の不備など**別の理由で止まっただけ**でも
+        通ってしまう（テストが何も固定していない状態に静かに退化する）。
+        """
+        root, win, called = self._armed_win(monkeypatch, default_params_dict)
+        try:
+            win._on_run()
+            assert called == [1], "正当な入力なのに run_batch へ到達しなかった"
+        finally:
+            win._running = False
+            win.destroy(); root.destroy()
+
     def test_run_is_blocked_before_dem_fetch(self, monkeypatch, dialog_calls,
                                              default_params_dict):
         """行が正当でも、共通設定が不正なら run_batch へ到達しない。"""
-        root, win, bb = self._win(default_params_dict)
+        root, win, called = self._armed_win(monkeypatch, default_params_dict)
         try:
-            win._add_row()
-            called: list[Any] = []
-            monkeypatch.setattr(bb.batch, "run_batch",
-                                lambda *a, **k: called.append(1))
             win._common_vars["freq_mhz"].set("0")
             win._on_run()
             assert called == [], "値域外の共通設定で run_batch が呼ばれた"
-            assert any(c[0] == "alert" for c in dialog_calls), dialog_calls
+            # 「何かのダイアログが出た」では行の検証で止まった場合と区別できない。
+            # 共通設定エラーのダイアログであることまで見る。
+            titles = [c[1] for c in dialog_calls if c[0] == "alert"]
+            assert titles == [i18n.t("dlg_common_cfg_error")], titles
             assert win._running is False
         finally:
             win.destroy(); root.destroy()
