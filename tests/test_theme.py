@@ -394,32 +394,75 @@ def test_ui_font_comes_from_sv_ttk(root):
     assert theme.ui_font(root, "bold")  == "SunValleyBodyStrongFont"
 
 
-def test_apply_fonts_sets_the_same_font_on_labels_and_entries(root):
-    """ラベルと入力欄が同じフォントになること（＝1つの窓の中で字面が揃う）。"""
+def _effective(widget) -> tuple:
+    """ウィジェットが実際に描画に使うフォントの（書体, サイズ）。
+
+    比較は**名前ではなく実値**で行う。名前で比べると `TkTextFont` と
+    `SunValleyBodyFont` が「違う」と出るが、既定フォントを書き換えた後は
+    同じ書体・同じサイズ＝見た目は揃っている（逆に、名前が同じでも実値が
+    違うことはない）。
+    """
+    from tkinter import font as tkfont
+
+    spec = str(widget.cget("font"))
+    if not spec:
+        # ウィジェットオプションが空＝スタイル、それも無ければ Tk の既定。
+        spec = ttk.Style(master=widget).lookup(widget.winfo_class(), "font")             or "TkDefaultFont"
+    f = tkfont.Font(root=widget, font=spec)
+    return f.actual("family"), f.actual("size")
+
+
+def test_labels_and_entries_render_in_the_same_font(root):
+    """ラベルと入力欄が同じ書体・同じサイズで描かれること。
+
+    sv_ttk は Entry/Combobox/Treeview にだけ本文フォントを当て、Label/Button
+    には当てない（＝ja 環境では Yu Gothic UI 9pt と Segoe UI Variable Text
+    10pt が同じ窓に混在する）。1 つの窓の中で字面が揃うことを固定する。
+    """
     set_theme("dark")
     theme.apply_fonts(root)
-    style = ttk.Style(master=root)
-    body = theme.ui_font(root)
-    for name in ("TLabel", "TButton", "TEntry", "TCombobox"):
-        assert style.lookup(name, "font") == body, (
-            f"{name} のフォントが本文フォント（{body}）に揃っていない"
-        )
+    label = ttk.Label(root, text="x")
+    entry = ttk.Entry(root)
+    combo = ttk.Combobox(root)
+    assert _effective(label) == _effective(entry) == _effective(combo), (
+        f"ラベル {_effective(label)} / 入力欄 {_effective(entry)} / "
+        f"選択欄 {_effective(combo)} が揃っていない"
+    )
+
+
+def test_dynamically_created_widgets_get_the_same_font(root):
+    """**あとから作った**ウィジェットも同じフォントになること。
+
+    2.5b2 の最初の版はスタイル（`style.configure("TEntry", font=…)`）だけで
+    揃えようとしたが、ttk の Entry/Combobox は `-font` を**ウィジェット
+    オプション**として持ち、その既定値 `TkTextFont` がスタイルより優先される。
+    結果、条件探索で「条件を追加」して生やした列だけ字が小さいまま出た
+    （既存の列は sv_ttk が `<<ThemeChanged>>` 時に個別に当てていた）。
+    **窓を組み立てた直後に測るテストでは落ちない**ので、生成の遅い側を明示的に
+    測る。
+    """
+    set_theme("dark")
+    theme.apply_fonts(root)
+    first = ttk.Entry(root)
+    root.update_idletasks()
+    later = ttk.Entry(root)          # 起動後・テーマ変更後に生成
+    assert _effective(later) == _effective(first), (
+        f"あとから作った入力欄のフォントが違う: {_effective(later)} != {_effective(first)}"
+    )
 
 
 def test_fonts_survive_a_theme_switch(root):
-    """テーマを切り替えてもフォント指定が残ること。
+    """テーマを切り替えても字面が揃ったままであること。
 
-    ttk のスタイル設定は**テーマごとに独立した辞書**なので、light で
-    configure した内容は dark へ切り替えると消える（配色で踏んだ B-004 と同型
-    ＝「設定したつもりが効いていない」）。`<<ThemeChanged>>` での貼り直しが
-    実際に効いていることをここで固定する。
+    ttk のスタイル設定は**テーマごとに独立した辞書**なので、`style.configure()`
+    で揃える実装はライト→ダークで黙って壊れる（配色で踏んだ B-004 と同型）。
+    既定フォント自体を書き換える方式ならテーマに依存しないことを固定する。
     """
     set_theme("light")
     theme.apply_fonts(root)
     set_theme("dark")
-    root.update()   # 仮想イベントはイベントループ経由で届く
-    style = ttk.Style(master=root)
-    assert style.lookup("TLabel", "font") == theme.ui_font(root)
+    root.update()
+    assert _effective(ttk.Label(root, text="x")) == _effective(ttk.Entry(root))
 
 
 def test_no_hardcoded_font_family_in_views():
@@ -463,4 +506,8 @@ def test_table_padding_survives_a_theme_switch(root):
     root.update()
     style = ttk.Style(master=root)
     assert style.lookup(name, "rowheight"), "テーマ切替で表の行高指定が消えた"
-    assert style.lookup(name, "padding"),   "テーマ切替で表の余白指定が消えた"
+    assert style.lookup(name, "padding"),   "テーマ切替で表の外周余白が消えた"
+    # **セルの中**の余白が本命＝外周だけ広げても、右詰めの数字は隣の列に
+    # くっついたまま（b2 の最初の版で「余白が効いていない」と再指摘された）。
+    assert style.lookup(f"{name}.Cell", "padding"), "セル内の余白が設定されていない"
+    assert style.lookup(f"{name}.Heading", "padding"), "見出しの余白が設定されていない"

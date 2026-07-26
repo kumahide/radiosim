@@ -118,55 +118,62 @@ def ui_font(widget: tk.Misc, kind: str = "body") -> str:
     return _FONT_FALLBACK[kind]
 
 
-# 既定フォントを流し込む ttk スタイル。sv_ttk が自前で `-font` を持つもの
-# （`TLabelframe.Label`＝Caption / `Heading` / `Treeview`＝Body）はテーマの意図
-# なので触らない。派生スタイル（`Accent.TButton` など）は ttk の継承で追従する。
-_FONT_STYLES = (
-    ("TLabel",       "body"),
-    ("TButton",      "body"),
-    ("TCheckbutton", "body"),
-    ("TRadiobutton", "body"),
-    ("TMenubutton",  "body"),
-    ("TNotebook.Tab", "body"),
-    # 入力系は sv_ttk がウィジェット単位で Body を当てる（`config_entry_font`）が、
-    # それはテーマ切替イベント経由なので、スタイル側にも同じものを置いて確定させる。
-    ("TEntry",       "body"),
-    ("TCombobox",    "body"),
-    ("TSpinbox",     "body"),
-)
+# 既定として書き換える Tk の名前付きフォント。
+# `TkDefaultFont` ＝ ttk の Label/Button など、`TkTextFont` ＝ Entry/Combobox/
+# Text/Listbox の既定。**メニュー（TkMenuFont）は触らない**＝OS のメニュー
+# フォントに合わせるのが Windows の作法。
+_DEFAULT_FONT_NAMES = ("TkDefaultFont", "TkTextFont")
 
 
 def apply_fonts(root: tk.Misc) -> None:
     """全窓の既定フォントを sv_ttk の本文フォントに揃える（アプリ起動時に1回）。
 
-    ウィジェット単位で `font=` を書くのをやめ、**ttk スタイル1か所**で決める。
+    やり方＝**Tk の既定フォント（名前付きフォント）そのものを書き換える**。
+    名前付きフォントは参照しているウィジェット全部に即時反映され、**あとから
+    作られるウィジェットにも効く**。
 
-    ⚠️ ttk のスタイル設定は **テーマごとに独立した辞書**なので、`style.configure()`
-    は「今のテーマ」にしか効かない。ライトで設定してダークへ切り替えると黙って
-    消える（＝B-004 と同型の「設定したつもりが効いていない」）。`<<ThemeChanged>>`
-    での貼り直しも**実測では root に届かなかった**ので、最初から
-    `theme_settings` で全テーマの辞書へ入れる。ガード＝
-    tests/test_theme.py::test_fonts_survive_a_theme_switch。
+    ⚠️ **ttk スタイルへの `font` 設定では足りない**（2.5b2 で実測）。ttk の
+    Entry/Combobox/Spinbox は `-font` を**ウィジェットオプション**として持ち、
+    その既定値 `TkTextFont` がスタイル設定より優先される。実際、`style.configure`
+    だけ入れた版では **あとから「条件を追加」で生やした列だけ字が小さい**（既存の
+    列は sv_ttk が `<<ThemeChanged>>` 時にウィジェット単位で本文フォントを当てて
+    いた）という形で表に出た。ガード＝tests/test_theme.py の
+    test_dynamically_created_widgets_get_the_same_font。
+
+    ロケール差も同時に消える：ja 環境の `TkDefaultFont` は Yu Gothic UI 9pt で、
+    sv_ttk が入力欄に当てる Segoe UI Variable Text 10pt とそもそも別物だった。
     """
-    style = ttk.Style(master=root)
-    # 型は typeshed の `_ThemeSettings`（`{"configure": {...}}` の TypedDict）。
-    # 非公開エイリアスなので実体で書く。
-    settings: dict[str, Any] = {
-        name: {"configure": {"font": ui_font(root, kind)}}
-        for name, kind in _FONT_STYLES
-    }
-    for theme_name in style.theme_names():
+    from tkinter import font as tkfont
+
+    try:
+        source = tkfont.nametofont(ui_font(root), root=root)
+        spec = source.config() or {}
+    except tk.TclError:
+        return
+    # サイズは `config()` から取る（`actual()` は px 指定を pt に丸めて返すので、
+    # 転記すると 1pt ぶん太る）。書体とサイズだけを写し、下線などは触らない。
+    family, size = spec.get("family"), spec.get("size")
+    if not isinstance(family, str) or not isinstance(size, int):
+        return
+    for name in _DEFAULT_FONT_NAMES:
         try:
-            style.theme_settings(theme_name, settings)
+            tkfont.nametofont(name, root=root).configure(family=family, size=size)
         except tk.TclError:
-            pass   # 読み込めないテーマは飛ばす（切替先になり得ないので実害なし）
+            pass   # その環境に無い名前付きフォントは飛ばす
 
 
-# 表（Treeview）の余白。左右＝枠と文字の間、上下＝ヘッダの厚み、行高＝文字の
-# 行送りに足す分。sv_ttk の既定は `linespace + 3`＝行が詰まり、文字は枠と列境界に
-# 張り付く（2026-07-26 の実機フィードバック）。
-_TABLE_PAD    = (8, 4)
-_TABLE_HEADPAD = (6, 5)
+# 表（Treeview）の余白。sv_ttk の既定は行高 `linespace + 3`＝行が詰まり、文字は
+# 枠にも列境界にも張り付く（2026-07-26 の実機フィードバック）。
+#   _TABLE_PAD      … 表の外周（枠と中身の間）
+#   _TABLE_CELL_PAD … **セルの中**（列境界と文字の間）。⚠️ ここが本命で、外周だけ
+#                     広げても「右詰めの数字が隣の列にくっついている」のは直らない
+#                     （b2 の最初の版で実際に「余白が効いていない」と再指摘された）。
+#                     ttk のセルは `Cell` レイアウトの `Treedata.padding` 経由でしか
+#                     内側の余白を持てない（列単位の padding オプションは無い）。
+#   _TABLE_HEADPAD  … 見出しの厚み
+_TABLE_PAD       = (4, 4)
+_TABLE_CELL_PAD  = (10, 0)
+_TABLE_HEADPAD   = (10, 6)
 _TABLE_ROW_EXTRA = 10
 
 
@@ -188,6 +195,7 @@ def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
     settings: dict[str, Any] = {
         name: {"configure": {"padding": _TABLE_PAD,
                              "rowheight": linespace + _TABLE_ROW_EXTRA}},
+        f"{name}.Cell":    {"configure": {"padding": _TABLE_CELL_PAD}},
         f"{name}.Heading": {"configure": {"padding": _TABLE_HEADPAD}},
     }
     for theme_name in style.theme_names():
