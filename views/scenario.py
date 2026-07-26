@@ -43,7 +43,7 @@ import report_scenario
 import scenario as scn
 import simulation as sim
 import units
-from views import dialogs, theme
+from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 
 # 比較タブで編集できる項目（順に並ぶ）。値は文字列で持ち、実行時に変換する
@@ -81,10 +81,6 @@ def _diff_labels() -> dict[str, str]:
 # 結果一覧の見える行数（超えた分はスクロール）。窓の高さを点数から切り離す。
 _RESULT_ROWS = 8
 
-# 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
-# バッチ窓の _SCREEN_MARGIN と同じ考え方。
-_SCREEN_MARGIN = 90
-
 
 class ScenarioWindow(tk.Toplevel):
     """条件探索ウィンドウ（ランチャーが唯一のインスタンスを持つ）。"""
@@ -113,8 +109,6 @@ class ScenarioWindow(tk.Toplevel):
 
         self._pump = ProgressPump(self, self._dispatch_event)
 
-        self._win_w = self._BASE_W
-        self._win_h = 0
         self._build()
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
@@ -169,29 +163,18 @@ class ScenarioWindow(tk.Toplevel):
         return float(text)
 
     def _fit_to_content(self) -> None:
-        """**中身に合わせて開き、足りなくなったら広げる**（縮めはしない）。
+        """**中身に合わせて開き、足りなくなったら広げる**（縮めない）。
 
         高さ：定数で決めると結果一覧が潰れる（比較モード）かスイープで余白が出る。
         幅　：`_BASE_W` は**下限**でしかない。比較条件は最大 5 列まで増やせるので、
         幅を固定すると **「条件を追加」で生やした右端の列が窓外へ出て見えなくなる**
-        （2026-07-26 の実機フィードバックで実際に条件 5 が見切れた）。列を増減する
-        たびに測り直す。これはランチャーの高さ（2.4）・幅（2.5b2）、バッチの幅と
-        **同じクラス**＝「固定サイズの寸法をリテラルで持つと中身が増えた日に黙って
-        切れる」。ユーザーが広げた窓は狭めない（広げる方向にだけ動かす）。
+        （I-024・2026-07-26 の実機フィードバックで実際に条件 5 が見切れた）。列を
+        増減するたびに測り直す。
 
-        ⚠️ 決めた寸法を `_win_w` / `_win_h` に残すのは、**未表示のあいだ
-        `winfo_width()` が実現後のサイズを返さない**ため（ランチャーの
-        `_window_height` と同じ理由＝これを見ないテストは壊れた実装でも緑になる）。
+        測り方そのものは [views/window_fit](views/window_fit.py) に集約してある
+        （見切れは窓ごとに直しては再発してきたクラスなので、実装を 1 つにする）。
         """
-        self.update_idletasks()
-        lim_w = self.winfo_screenwidth()  - _SCREEN_MARGIN
-        lim_h = self.winfo_screenheight() - _SCREEN_MARGIN
-        # 現在の窓（未表示なら 1 が返るので下限・既定値で受ける）
-        cur_w = max(self.winfo_width(),  self._BASE_W, self._win_w)
-        cur_h = max(self.winfo_height(), self._win_h)
-        self._win_w = min(max(self.winfo_reqwidth(),  cur_w), lim_w)
-        self._win_h = min(max(self.winfo_reqheight(), cur_h), lim_h)
-        self.geometry(f"{self._win_w}x{self._win_h}")
+        window_fit.fit_to_content(self, min_w=self._BASE_W)
 
     # ----------------------------------------------------------
     # 組み立て

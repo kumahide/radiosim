@@ -176,7 +176,8 @@ radiosim/
 │   ├── map_window.py     # マップウィンドウ（座標入力 / 連続追加 / キャッシュ管理モード）
 │   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
 │   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
-│   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色（sv_ttk 由来）
+│   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色・UI フォント（sv_ttk 由来）
+│   ├── window_fit.py     # ウィンドウを中身に合わせる唯一の実装（見切れ防止）
 │   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
 │   └── batch_builder.py  # 一括シミュレーションウィンドウ
 ├── README_ja.md          # このファイル
@@ -198,6 +199,7 @@ radiosim/
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_theme.py
+    ├── test_window_fit.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -595,7 +597,8 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
   views/batch_builder.py  一括シミュレーションウィンドウ
   views/dialogs.py        親中央表示の共通モーダルダイアログ
   views/progress.py       進捗トランスポート（キュー＋ポーリング・単一/バッチ共用）
-  views/theme.py          テーマ色の単一ソース（ttk 管理外の tk.Menu / tk.Canvas 用）
+  views/theme.py          テーマ色・UI フォントの単一ソース（ttk 管理外の tk.Menu / tk.Canvas 用）
+  views/window_fit.py     ウィンドウ寸法を中身に合わせる単一実装（全窓共通）
   views/scenario.py       条件探索ウィンドウ（比較 / スイープ）
   -> 副作用あり。計算・I/O は下位層に委譲。
 
@@ -656,7 +659,8 @@ python -m pytest tests/ --cov
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |
 | `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
 | `test_progress.py`       | 進捗トランスポート（開始/停止のライフサイクル・停止後の残存ポーリング・最新値のみ描画・スレッド安全性） |
-| `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従） |
+| `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
+| `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・通常起動では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード） |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |

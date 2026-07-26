@@ -40,7 +40,7 @@ import map_graphics
 import models
 import units
 from tkintermapview import TkinterMapView
-from views import dialogs, theme
+from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 
 logger = __import__("logging").getLogger("radiosim")
@@ -119,6 +119,10 @@ def close_map_safely(scheduler, map_widget, destroy) -> None:
 
 
 class MapWindow:
+    # ウィンドウ既定サイズ（**下限**。実寸は window_fit が中身から決める）。
+    _BASE_W = 900
+    _BASE_H = 680
+
     def __init__(
         self,
         parent: tk.Misc,
@@ -142,7 +146,7 @@ class MapWindow:
         self._win.title(i18n.t("map_title"))
         # タイル取得の進捗は単一/バッチと同じ部品で受ける（実行のあいだだけ回す）。
         self._pump = ProgressPump(self._win, self._render_progress, latest_only=True)
-        self._win.geometry("900x680")
+        # 既定サイズは**下限**（実寸は _build_ui の最後に中身から決める）。
         self._win.minsize(720, 520)
 
         # 現在のモード。"cache"=キャッシュ管理 / "coords"=座標入力（Phase B）。
@@ -657,6 +661,13 @@ class MapWindow:
         )
 
         self._set_idle()   # 起動時はヒントを表示
+
+        # 窓を中身に合わせる（既定 900x680 は下限）。地図そのものは伸縮するが、
+        # モードバー・ステータス行・各モードのパネルは言語とフォントで幅が変わる
+        # ＝ここを固定寸法のままにすると他の窓とまったく同じ形で見切れる
+        # （B-002 / I-000 / I-023 / I-024 と同じクラス。2.5b2 の横断ゲート追加で
+        # 「この窓だけ実測追従になっていない」ことが分かった）。
+        window_fit.fit_to_content(self._win, min_w=self._BASE_W, min_h=self._BASE_H)
 
     # ----------------------------------------------------------
     # Ctrl＋ドラッグによる矩形選択

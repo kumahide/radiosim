@@ -45,6 +45,7 @@ jobs:
           i18n.py main.py map_graphics.py coords.py units.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py
           views/map_window.py views/dialogs.py views/progress.py views/theme.py
+          views/window_fit.py
           views/scenario.py
 
       - name: Pytest (with coverage gate)

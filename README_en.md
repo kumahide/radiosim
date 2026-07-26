@@ -176,7 +176,8 @@ radiosim/
 │   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
-│   ├── theme.py          # Theme colors for plain tk widgets (sourced from sv_ttk)
+│   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
+│   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
@@ -198,6 +199,7 @@ radiosim/
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_theme.py
+    ├── test_window_fit.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -593,7 +595,8 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
   views/batch_builder.py  Batch Mode window
   views/dialogs.py        Shared modal dialogs centered on the parent
   views/progress.py       Progress transport (queue + polling, shared by single/batch)
-  views/theme.py          Single source of theme colors (for tk.Menu / tk.Canvas outside ttk)
+  views/theme.py          Single source of theme colors and UI fonts (for tk.Menu / tk.Canvas outside ttk)
+  views/window_fit.py     Single implementation of window sizing (shared by every window)
   views/scenario.py       Condition explorer window (compare / sweep)
   -> Has side effects. Delegates calculation and I/O downward.
 
@@ -654,7 +657,8 @@ python -m pytest tests/ --cov
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
-| `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) |
+| `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
+| `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |
 | `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; normal startup resolves to the legacy locations; static guard that the resolver is not re-implemented elsewhere) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |

@@ -22,7 +22,7 @@ import i18n
 import simulation as sim
 import units
 from models import ENV_KEYS, horizontal_distance_km
-from views import dialogs, theme
+from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 
 # 1 パスの進捗区間のうち、標高取得が占める割合。残りはレポート描画に充てる。
@@ -39,7 +39,7 @@ class BatchBuilderWindow(tk.Toplevel):
     # 列に Entry は作られない。
     _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 2, 2]
 
-    # ウィンドウ既定サイズ。**幅は下限**（実幅は _fit_initial_width が中身に合わせる）。
+    # ウィンドウ既定サイズ。**幅・高さとも下限**（実寸は _fit_width_to_content が中身に合わせる）。
     _BASE_W = 1080
     _BASE_H = 700
     _MIN_W  = 880
@@ -81,7 +81,7 @@ class BatchBuilderWindow(tk.Toplevel):
         # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
         # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が
         # 窓外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
-        # ⚠️ 幅は下限でしかない＝実幅は _fit_initial_width() が中身から決める。
+        # ⚠️ 幅は下限でしかない＝実幅は _fit_width_to_content() が中身から決める。
         self.geometry(f"{self._BASE_W}x{self._BASE_H}")
         self.resizable(True, True)
         self.minsize(self._MIN_W, 520)
@@ -126,7 +126,7 @@ class BatchBuilderWindow(tk.Toplevel):
 
         self._build_ui()
         self._add_row()
-        self._fit_initial_width()
+        self._run_sync()          # 同期 → その中で窓を中身に合わせる
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
 
@@ -537,27 +537,28 @@ class BatchBuilderWindow(tk.Toplevel):
         self._schedule_sync()
         self._notify_paths_changed()
 
-    def _fit_initial_width(self) -> None:
+    def _fit_width_to_content(self) -> None:
         """表の中身が収まる幅までウィンドウを広げる（既定幅は下限として扱う）。
 
         列の実幅は**言語（日本語見出し）・DPI スケーリング・フォント**で変わるので、
         幅を定数で持つと必ずどこかの環境で見切れる（B-002 と同じクラス）。I-000 の
-        水平距離列で 1080px の既定値が足りなくなったのを機に、定数合わせをやめて
-        実測へ合わせる。**縮めることはしない**＝ユーザーが広げた窓を勝手に狭めない。
+        水平距離列で 1080px の既定値が足りなくなったのを機に、定数合わせをやめた。
 
-        画面幅は超えない。収まりきらない場合は最大化までに留め、そこから先は
-        既存の横方向レイアウト（列幅同期）に委ねる。
+        ⚠️ **起動時だけでは足りない**（2.5b2・I-024 のクラス点検で判明）：CSV
+        インポートで長い備考が入ると `_sync_header_columns` が列を広げるのに、窓は
+        そのままだった＝あとから見切れる。**中身を入れ替える操作のあとにも呼ぶ**。
+
+        測り方は [views/window_fit](views/window_fit.py) に集約（縮めない・画面幅で
+        頭打ち・決めた寸法を `_fit_size` に残す＝横断ゲートが読む口）。
         """
-        # 列幅同期はデバウンス予約されているので、測る前に確定させる。
-        self.update_idletasks()
-        self._run_sync()
-        self.update_idletasks()
-
-        need = self.winfo_reqwidth() + self._vsb.winfo_reqwidth() + self._TABLE_PAD_W
-        limit = self.winfo_screenwidth() - self._SCREEN_MARGIN
-        width = min(max(need, self._BASE_W), max(limit, self._MIN_W))
-        if width > self._BASE_W:
-            self.geometry(f"{width}x{self._BASE_H}")
+        # ⚠️ ここから `_run_sync()` を呼ばないこと（相互再帰になる）。同期の直後に
+        # こちらが呼ばれる向きに一本化してある。
+        # 行はキャンバスの中にあり、縦スクロールバーと外周 padding は
+        # winfo_reqwidth() に載らないので extra_w で足す。
+        window_fit.fit_to_content(
+            self, min_w=self._BASE_W, min_h=self._BASE_H,
+            extra_w=self._vsb.winfo_reqwidth() + self._TABLE_PAD_W,
+        )
 
     def _update_row_distance(self, entries: list[tk.Entry], label: ttk.Label) -> None:
         """行の TX/RX 座標から水平距離を計算して読み取り専用ラベルへ反映する。
@@ -583,6 +584,11 @@ class BatchBuilderWindow(tk.Toplevel):
     def _run_sync(self) -> None:
         self._sync_after_id = None
         self._sync_header_columns()
+        # 列が広がった直後は窓の必要幅も変わっている。ここで測り直さないと
+        # 「起動時は正しいが、あとから見切れる」状態になる（I-024 のクラス）。
+        # 列幅は窓幅から独立に決まる（行セルと見出しの実測）ので、ここで窓を
+        # 広げても列幅は動かない＝再入して発散しない。
+        self._fit_width_to_content()
 
     def _sync_header_columns(self) -> None:
         """ヘッダと各行の列幅を揃えてズレと見出しの見切れを解消する。
@@ -807,6 +813,7 @@ class BatchBuilderWindow(tk.Toplevel):
                 self._add_row(vals)
         finally:
             self._suspend_notify = False
+        self._run_sync()
 
     def _clear_all(self) -> None:
         """テーブルの全行を削除する（確認ダイアログあり）。"""
@@ -874,6 +881,27 @@ class BatchBuilderWindow(tk.Toplevel):
     # ----------------------------------------------------------
     # Import / Export / Template
     # ----------------------------------------------------------
+    def replace_rows(self, rows: list) -> None:
+        """表の全行を差し替える（CSV インポートの本体）。
+
+        ファイル選択ダイアログから切り離してあるのは、**インポート後に窓が中身へ
+        追従すること**をテストから叩けるようにするため（長い備考が入ると列幅同期が
+        列を広げる＝窓の必要幅が変わる）。逐次通知を抑止して再構築し、終了後に
+        1 回だけ地図へ通知する。
+        """
+        self._suspend_notify = True
+        try:
+            for f in list(self._row_frames):
+                f.destroy()
+            self._row_frames.clear()
+            self._row_entries.clear()
+            for row in rows:
+                self._add_row(row)
+        finally:
+            self._suspend_notify = False
+        self._run_sync()             # 列幅同期 → 窓を中身へ追従（見切れ防止）
+        self._notify_paths_changed()
+
     def _import_csv(self) -> None:
         path = filedialog.askopenfilename(
             parent=self,
@@ -896,18 +924,7 @@ class BatchBuilderWindow(tk.Toplevel):
             ):
                 return
 
-        # 一括入れ替え。逐次通知を抑止して再構築し、終了後に1回だけ地図へ通知する。
-        self._suspend_notify = True
-        try:
-            for f in list(self._row_frames):
-                f.destroy()
-            self._row_frames.clear()
-            self._row_entries.clear()
-            for row in rows:
-                self._add_row(row)
-        finally:
-            self._suspend_notify = False
-        self._notify_paths_changed()
+        self.replace_rows(rows)
         dialogs.alert(
             self,
             i18n.t("dlg_import_title"),

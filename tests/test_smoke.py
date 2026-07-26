@@ -352,46 +352,9 @@ def test_single_and_batch_share_the_progress_transport():
         root.destroy()
 
 
-def test_launcher_window_fits_its_content():
-    """ランチャーの全ウィジェットがウィンドウ内に収まること。
-
-    ウィンドウは resizable(False, False) の固定サイズなので、高さが足りないと
-    最下段のウィジェットが黙って切り落とされ、ユーザーはリサイズで回避すら
-    できない。実際 2.4 で「案件情報」グループを足したとき必要高さが 931px に
-    なり、900px 固定のままだったため「マップウィンドウ」ボタンが丸ごと
-    見えなくなっていた（ユーザー報告・2026-07-20）。
-
-    入力欄を1グループ足すだけで再発する類なので、注意書きではなくゲートで守る。
-
-    ⚠️ 検証するのは**選ばれた寸法**（_window_height / _window_width）であって実現後のサイズでは
-    ない。ウィンドウが未表示のあいだ `geometry()` は設定値ではなく自然サイズを
-    返すため、それと比べるテストは壊れた実装でも緑になる（実際に一度そう書いた）。
-    """
-    import tkinter as tk   # noqa: F401  （finally の TclError 捕捉で使う）
-
-    root = make_tk_root()
-    try:
-        root.withdraw()
-        from views.launcher import SimLauncher
-        app = SimLauncher(root, lambda _t: None)
-        root.update_idletasks()
-
-        needed = root.winfo_reqheight()
-        assert app._window_height >= needed, (
-            f"ランチャーの中身がウィンドウに収まっていない（必要 {needed}px / "
-            f"ウィンドウ {app._window_height}px）。下端のウィジェットが切れる。"
-        )
-        # 幅も同じクラス（2.5b2）＝フォント統一で必要幅が 450px を超え、右端の
-        # 入力欄が押し潰された。寸法をリテラルで持つ限り高さと同様に再発する。
-        needed_w = root.winfo_reqwidth()
-        assert app._window_width >= needed_w, (
-            f"ランチャーの中身がウィンドウ幅に収まっていない（必要 {needed_w}px / "
-            f"ウィンドウ {app._window_width}px）。右端のウィジェットが切れる。"
-        )
-    finally:
-        root.destroy()
-
-
+# ⚠️ ランチャーの見切れゲートは **tests/test_window_fit.py へ移した**（2.5b2）。
+# 窓ごとの手書きテストは「次の窓・次の増え方」で必ず穴が空くので、views の
+# Toplevel を静的に洗い出して**全窓を横断で**検査する形に一本化した。
 def test_graph_signals_ready_before_blocking_show():
     """グラフは plt.show() でブロックする前に on_ready を呼ぶこと。
 
@@ -531,50 +494,4 @@ def test_graph_does_not_rewrite_the_diffraction_model():
     )
 
 
-@pytest.mark.parametrize("lang", ["en", "ja"])
-def test_batch_window_fits_its_table_width(lang):
-    """バッチ窓が開いた時点で表の全列が窓に収まること（見切れの再発防止）。
-
-    列の実幅は**言語（日本語見出しは英語より 1 割ほど広い）・DPI スケーリング・
-    フォント**で変わるため、ウィンドウ幅を定数で持つと必ずどこかの環境で右端の
-    列から見切れる（B-002 と同じクラス。実際 I-000 の水平距離列を足した 2.5a1 に
-    既定 1080px が足りず見切れた）。定数合わせをやめて実測に合わせた
-    `_fit_initial_width` が効いていることを、**両言語で**固定する。
-
-    ⚠️ `winfo_width()` は mainloop 前は 1 を返すので、ジオメトリ文字列から読む。
-    """
-    import tkinter as tk   # noqa: F401  （finally の TclError 捕捉で使う）
-
-    import i18n
-    import simulation as sim
-
-    prev_lang = i18n.get_lang() if hasattr(i18n, "get_lang") else None
-    root = make_themed_root()      # 実機と同じフォントで測る（上と同じ理由）
-    try:
-        root.withdraw()
-        i18n.set_lang(lang)
-        from views.batch_builder import BatchBuilderWindow
-
-        win = BatchBuilderWindow(root, sim.SimParams(_BATCH_PARAMS))
-        try:
-            root.update_idletasks()
-            width = int(win.geometry().split("+")[0].split("x")[0])
-            needed = (
-                win.winfo_reqwidth()
-                + win._vsb.winfo_reqwidth()
-                + win._TABLE_PAD_W
-            )
-            screen_limit = win.winfo_screenwidth() - win._SCREEN_MARGIN
-            assert width >= min(needed, screen_limit), (
-                f"[{lang}] バッチ表が窓に収まっていない（必要 {needed}px / "
-                f"窓 {width}px）。右端の列が見切れる。"
-            )
-        finally:
-            try:
-                win.destroy()
-            except tk.TclError:
-                pass
-    finally:
-        root.destroy()
-        if prev_lang is not None:
-            i18n.set_lang(prev_lang)
+# ⚠️ バッチの見切れゲートも tests/test_window_fit.py へ移した（上と同じ理由）。

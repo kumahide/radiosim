@@ -22,7 +22,7 @@ import i18n
 import simulation as sim
 import version
 from models import ENV_DEFAULT, ENV_KEYS
-from views import dialogs, theme
+from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 
 # 入力キー → i18n ツールチップキーのマッピング
@@ -116,36 +116,27 @@ class SimLauncher:
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。
 
-        ウィンドウは `resizable(False, False)` の固定サイズなので、**高さを
-        リテラルで持つと入力欄を1グループ足すたびに下端が黙って切れる**。実際
+        ウィンドウは `resizable(False, False)` の固定サイズなので、**寸法を
+        リテラルで持つと入力欄を1グループ足すたびに端が黙って切れる**。実際
         2.4 で「案件情報」グループ（案件名・メモ）を足したとき必要高さが 931px に
         なり、900px 固定のままだったため最下段の「マップウィンドウ」ボタンが
         丸ごと見えなくなっていた（ユーザー報告・2026-07-20）。ユーザーは
-        リサイズもできないので回避手段が無い。
+        リサイズもできないので回避手段が無い。幅も同じで、2.5b2 のフォント統一で
+        必要幅が 464px になり 450px 固定では右端が詰まった（I-023）。
 
-        高さは実測（`winfo_reqheight`）から決めるので、以後グループを足しても
-        追随する。画面からはみ出さないよう画面高さの 92% で頭打ちにする。
-        ガード＝tests/test_smoke.py::test_launcher_window_fits_its_content。
+        測り方は [views/window_fit](views/window_fit.py) に集約してある
+        （見切れは窓ごとに直しては再発してきたクラスなので、実装を 1 つにする）。
+        `_WIN_WIDTH` / `_MIN_HEIGHT` は**下限**として残す。
 
-        **幅も同じ扱いにする**（2.5b2 / I-023 のクラス点検）：`_WIN_WIDTH` は
-        リテラルのままだったので、フォント統一で本文が Segoe UI 本文フォントに
-        なった際に必要幅が 464px となり 450px 固定では横が足りなかった。原因
-        （固定サイズ窓＋寸法のリテラル持ち）は高さの不具合とまったく同じなので、
-        注意書きではなく**同じ仕組み**で塞ぐ。`_WIN_WIDTH` は下限として残す。
+        ⚠️ 検証するのは**選んだ寸法**（`window_fit` が `_fit_size` に残す）で
+        あって実現後のサイズではない。ウィンドウが未表示のあいだ `geometry()` は
+        設定値ではなく自然サイズを返すため、それと比べるテストは壊れた実装でも
+        緑になる（最初に書いたガードはこれで壊れた実装のまま通った）。
+        ガード＝tests/test_window_fit.py（全窓横断）。
         """
-        self.root.update_idletasks()
-        needed = max(self.root.winfo_reqheight(), self._MIN_HEIGHT)
-        limit  = int(self.root.winfo_screenheight() * 0.92)
-        self._window_width = min(
-            max(self.root.winfo_reqwidth(), self._WIN_WIDTH),
-            int(self.root.winfo_screenwidth() * 0.92),
+        self._window_width, self._window_height = window_fit.fit_to_content(
+            self.root, min_w=self._WIN_WIDTH, min_h=self._MIN_HEIGHT,
         )
-        # 選んだ高さを残す。ウィンドウが未表示のあいだ `geometry()` は設定値では
-        # なく自然サイズを返すため、テストから実現後のサイズは当てにできない
-        # （最初に書いたガードはこれで壊れた実装でも緑になった）。決定した値を
-        # そのまま検証できるようにしておく。
-        self._window_height = min(needed, limit)
-        self.root.geometry(f"{self._window_width}x{self._window_height}")
 
     def _on_app_close(self) -> None:
         # 破棄前にポーリングを止める（破棄済み root への after を避ける）。
