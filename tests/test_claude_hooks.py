@@ -238,3 +238,58 @@ def test_real_ledger_has_no_outstanding_warnings(hook):
     assert items, "未対応項目が 0 件＝パーサが壊れている可能性が高い"
     assert stale == [], f"済だがアーカイブ節へ未移動: {stale}"
     assert weak == [], f"済だが裏取りが弱い: {weak}"
+
+
+# ============================================================
+# check_memory.py check 9 ＝ 現在地表の衛生（2026-07-26 / 実証5-b）
+# ============================================================
+_CHECK_MEMORY_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "check_memory.py"))
+
+
+def _load_check_memory():
+    spec = importlib.util.spec_from_file_location("_check_memory", _CHECK_MEMORY_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_check_memory"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def memcheck():
+    if not os.path.exists(_CHECK_MEMORY_PATH):
+        pytest.skip("check_memory.py は git-ignore（CI には存在しない）")
+    return _load_check_memory()
+
+
+class TestRoadmapDashboardHygiene:
+    """ロードマップ現在地表の「片方のセルだけ古い」を機械で拾う。
+
+    2026-07-26 の実例＝「次の一手」セルを公開済みに更新したのに、同じ行の
+    「状態」セルが「ビルド未実施」のまま残った。原因は表の様式違反（1 セルが
+    2,290 字まで肥大し、誰も全体を読まなくなっていた）。散文を置くなという
+    ルールは置ける限り破られるので、**分量そのものを測る**。
+    """
+
+    def test_contradictory_state_words_in_one_row(self, memcheck):
+        """今回の事故そのもの＝未実施と公開済みが同居する行を拾う。"""
+        row = (1, "| 2.5 | 🚧 2.5RC1（ビルド未実施） | ✅ 公開済み＝gh release 実施 |")
+        found = memcheck.check_dashboard_rows([row])
+        assert any("食い違い" in f for f in found)
+
+    def test_long_cell_is_flagged(self, memcheck):
+        """散文の蓄積そのもの（＝食い違いを生む条件）を検出する。"""
+        row = (1, "| 2.5 | 🚧 進行中 | " + "あ" * 400 + " |")
+        found = memcheck.check_dashboard_rows([row])
+        assert any("散文が溜まっている" in f for f in found)
+
+    def test_waiting_is_not_a_contradiction(self, memcheck):
+        """「公開済み＋試用待ち」は正常＝待ち/未定で誤検知しないこと。"""
+        row = (1, "| 2.5 | 🚧 2.5RC1 公開済み／実機試用待ち | 指摘があれば RC2 |")
+        assert memcheck.check_dashboard_rows([row]) == []
+
+    def test_real_roadmap_dashboard_is_clean(self, memcheck):
+        """実データで誤検知ゼロ（ノイズを出すゲートは読まれなくなる）。"""
+        rows = memcheck._dashboard_rows()
+        assert rows, "現在地表を 1 行も拾えていない＝パーサが壊れている可能性"
+        assert memcheck.check_dashboard_rows(rows) == []
