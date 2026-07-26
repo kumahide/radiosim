@@ -1,0 +1,162 @@
+{
+  "_comment": [
+    "独立レビューのベンチマーク（2026-07-26 作成）。Codex（VS Code 拡張）が実際に",
+    "出した指摘に正解ラベルを付けたもの。レビュアー（別の LLM・別のモデルサイズ・",
+    "将来のローカルモデル）を同じ物差しで測るために使う。",
+    "使い方と採点規則は README.md。指摘の所在(where_reported)と欠陥の所在(where_real)が",
+    "ずれる例が含まれるのが、このデータセットの肝。"
+  ],
+  "created": "2026-07-26",
+  "source": "Codex (VS Code 拡張) の実レビュー 11 件（真 11・偽 0）＋ 対照としてローカル LLM の doc-review が出した既知の偽陽性 1 件（F1）。全件ユーザーと Claude が裏取り済み",
+  "findings": [
+    {
+      "id": "C1",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-011",
+      "input": "git diff c4c6c8b..1ca5089 ＋ その時点の batch.py 全体",
+      "defect_state": "1ca5089",
+      "fixed_in": "2730717",
+      "summary": "CSV ヘッダは strip().lower() して必須列を判定するのに、行アクセスは生キー。大文字混じりの正しい CSV が「必須列あり」判定の直後に『id が空』で落ちる",
+      "where_reported": "batch.py",
+      "where_real": "batch.py",
+      "class": "同じファイル内の非対称（正規化の有無）"
+    },
+    {
+      "id": "C2",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-012",
+      "input": "同上",
+      "defect_state": "1ca5089",
+      "fixed_in": "2730717",
+      "summary": "summary.csv の note/error が自由文字列のまま。= + - @ 始まりが表計算で数式として解釈され得る",
+      "where_reported": "report_summary.py",
+      "where_real": "report_summary.py",
+      "class": "出力の無害化漏れ"
+    },
+    {
+      "id": "C3",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-013",
+      "input": "同上",
+      "defect_state": "1ca5089",
+      "fixed_in": "2730717",
+      "summary": "重複 ID 判定が大小を区別する（p01/P01）＋出力 dir が秒精度で exist_ok=True＝同秒起動で上書き",
+      "where_reported": "batch.py",
+      "where_real": "batch.py（＋同型が views/scenario.py にもあった＝レビューは指摘していない）",
+      "class": "プラットフォーム前提の取りこぼし／衝突"
+    },
+    {
+      "id": "C4",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-018",
+      "input": "git diff 87fbc46..c4c6c8b",
+      "defect_state": "c4c6c8b",
+      "fixed_in": "0143e6a",
+      "summary": "バッチの共通設定は readonly 表示だが値はランチャーの生入力。単一実行を一度も押さなければ無検証のまま実行に使われる",
+      "where_reported": "views/batch_builder.py",
+      "where_real": "views/batch_builder.py",
+      "class": "検証経路の穴（値が検証を通らずに実行へ届く）",
+      "wrong_prescription": "validate_config を使う案が示されたが、それだと『送受信が同一地点』判定で正当なバッチ実行が止まる。正解は validate_value"
+    },
+    {
+      "id": "C5",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-018 のテスト",
+      "input": "git diff c4c6c8b..0143e6a",
+      "defect_state": "0143e6a",
+      "fixed_in": "1ca5089",
+      "summary": "B-018 の統合テストが緑だが手前の validate_rows で止まっており、検証経路に到達していない（false positive なテスト）",
+      "where_reported": "tests/test_batch.py",
+      "where_real": "tests/test_batch.py",
+      "class": "テストが目的の経路を通っていない（空振り）"
+    },
+    {
+      "id": "C6",
+      "label": "true_positive",
+      "kind": "code",
+      "input": "git diff 1ca5089..2730717",
+      "defect_state": "2730717",
+      "fixed_in": "56dd1f5",
+      "summary": "csv_cell が startswith だけで判定するため、先頭に空白のある \" =1+1\" が素通りする（前置の空白を無視して数式評価する表計算ソフトがある）",
+      "where_reported": "report_common.py",
+      "where_real": "report_common.py",
+      "class": "判定条件の抜け（直前に入れた修正の穴）"
+    },
+    {
+      "id": "C7",
+      "label": "true_positive",
+      "kind": "code",
+      "issue_id": "B-019",
+      "input": "git diff 1ca5089..2730717",
+      "defect_state": "2730717",
+      "fixed_in": "56dd1f5",
+      "summary": "_sweep_row が p.label を素で HTML へ埋め込む。同じファイルの比較表ヘッダは _html.escape 済みで非対称",
+      "where_reported": "report_scenario.py",
+      "where_real": "report_scenario.py",
+      "class": "同じファイル内の非対称（エスケープの有無）"
+    },
+    {
+      "id": "D1",
+      "label": "true_positive",
+      "kind": "doc",
+      "input": "memory 一式（下記 doc_reconstruction を適用した状態）",
+      "summary": "MEMORY.md の索引が「面1〜9」だが、正典 reference_full_audit_checklist.md は面10 を持つ",
+      "where_reported": "MEMORY.md",
+      "where_real": "MEMORY.md",
+      "class": "索引と正典の食い違い"
+    },
+    {
+      "id": "D2",
+      "label": "true_positive",
+      "kind": "doc",
+      "input": "同上",
+      "summary": "project_roadmap.md の「最終更新 2026-07-25」が、同じ表に書かれた 07-26 の出来事と食い違う",
+      "where_reported": "project_roadmap.md",
+      "where_real": "project_roadmap.md",
+      "class": "同一ファイル内のメタ情報の陳腐化",
+      "note": "機械化済み＝check_memory.py check 11"
+    },
+    {
+      "id": "D3",
+      "label": "true_positive",
+      "kind": "doc",
+      "input": "同上",
+      "summary": "feedback_radiosim.md と feedback_promote_recurring_checks.md が実行フローを3つとし scenario.py を将来扱い。正典は4つ",
+      "where_reported": "memory の feedback 2 通",
+      "where_real": "tests/test_smoke.py の横断ゲート（一覧が3フローのままで、条件探索が進捗を再発明しても落ちない状態だった）",
+      "class": "文書間の食い違い ＋ 指摘の所在と欠陥の所在がずれる",
+      "wrong_prescription": "「メモの表現を旧3フロー用ゲートの適用範囲として直す」が示されたが、正解はゲートの一覧に views/scenario.py を登録すること（5922168）。文書だけ直すと穴が残る"
+    },
+    {
+      "id": "D4",
+      "label": "true_positive",
+      "kind": "doc",
+      "input": "同上",
+      "summary": "project_radiosim_for_drone.md が「2.5正式 → 2.6」と版順序まで固定。ドローン版側の制約は「2.6 の後」だけ",
+      "where_reported": "project_radiosim_for_drone.md",
+      "where_real": "project_radiosim_for_drone.md",
+      "class": "他文書の管轄への越権"
+    },
+    {
+      "id": "F1",
+      "label": "false_positive",
+      "kind": "doc",
+      "input": "README のビルド手順表 ⇔ build.bat（ローカル LLM の doc-review ペア）",
+      "summary": "「PyInstaller の存在確認をせずに install している」と報告されたが、build.bat は存在確認後に導入しており README が正しい",
+      "source_tool": "ローカル LLM の doc-review（qwen3:8b）＝Codex ではない",
+      "note": "2.4RC1 と 2.5RC1 の 2 回とも同じ誤検知が出た＝再現性のある偽陽性。誤検知率を測る対照として残す（この 1 件だけレビュアーが違うので、Codex の精度を計算するときは分母に入れない）"
+    }
+  ],
+  "doc_reconstruction": {
+    "_comment": "memory は git 管理外なので、doc 面の入力は下記 4 行を現在の memory へ戻して再現する",
+    "MEMORY.md": "「→面1〜10→締め」を「→面1〜9→締め」へ戻す",
+    "project_roadmap.md": "「## 現在地（最終更新 2026-07-26）」を 2026-07-25 へ戻す",
+    "feedback_radiosim.md": "実行フローの行を「3つ＝単一/バッチ/地図」＋「4つ目のフローの出現は検出できない＝2.5 の scenario.py が該当。相の宣言を共有ランナーへ組み込む予定」へ戻す",
+    "project_radiosim_for_drone.md": "順序の行を「**順序**：2.5 正式 → 2.6（土台が自動的にできる）→ 下の実験（A）→ 判断 → コア切り出し → ドローン版 a1。」へ戻す"
+  }
+}
