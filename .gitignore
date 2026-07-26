@@ -51,3 +51,6 @@ tools/
 
 # Claude Code
 .claude/
+
+# ベンチマークの生出力（再生成可能・モデルの出力そのもの）
+experiments/review_benchmark/runs/
