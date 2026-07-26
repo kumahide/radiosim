@@ -53,10 +53,15 @@ _CSV_RISKY_PREFIX = ("=", "+", "-", "@", "\t", "\r", "\n")
 def csv_cell(value) -> str:
     """CSV セルの値を数式解釈されない文字列へ整える（数値はそのまま）。"""
     text = "" if value is None else str(value)
-    if not text.startswith(_CSV_RISKY_PREFIX):
+    # ⚠️ **先頭の空白を剥がしてから判定する**。表計算ソフトは前置の空白を無視して
+    # 数式として評価し得るので、`" =1+1"` を素通しすると回避されてしまう
+    # （2026-07-26 Codex レビュー指摘）。前置する `'` は**元の文字列**に付ける
+    # ＝空白ごと文字列として見せる（値を書き換えない）。
+    head = text.lstrip()
+    if not head.startswith(_CSV_RISKY_PREFIX):
         return text
     try:
-        float(text)
+        float(head)
     except ValueError:
         return "'" + text
     return text

@@ -521,6 +521,28 @@ class TestScenarioReport:
         # 桁区切りは入れない（表計算が数値として読めること）
         assert "," in rows[1] and '"' not in rows[1]
 
+    def test_labels_are_html_escaped_in_both_tables(self, terrain, base):
+        """ラベルの HTML エスケープを表ごとに非対称にしないこと。
+
+        比較表のヘッダは escape 済みなのにスイープ表の 1 列目は生のままで、
+        `<img … onerror=…>` がそのままレポートへ残った（2026-07-26 Codex
+        レビュー指摘）。片方だけ直す形にしないため両方を 1 つのテストで縛る。
+        """
+        i18n.set_lang("ja")
+        evil = '<img src=x onerror="alert(1)">'
+
+        conds = [scn.Condition(evil, {"freq_mhz": 900.0})]
+        compare = scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain,
+                                  points=scn.evaluate(terrain, base, conds))
+        html = report_scenario.scenario_sheet_html(compare)
+        assert evil not in html and "&lt;img" in html
+
+        points = scn.evaluate(terrain, base, [scn.Condition(evil, {"h_tx": 30.0})])
+        sweep = scn.ScenarioRun(kind="sweep", base_params=base, terrain=terrain,
+                                points=points, axis="h_tx", axis_values=[30.0])
+        html = report_scenario.scenario_sheet_html(sweep)
+        assert evil not in html and "&lt;img" in html
+
     def test_csv_label_is_formula_safe(self, terrain, base, tmp_path):
         """B-012 のクラス点検＝CSV を吐くのはバッチだけではない（条件探索も吐く）。
 

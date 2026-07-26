@@ -276,7 +276,10 @@ def _sweep_row(p: scn.ScenarioPoint) -> str:
     cls = "ok" if p.ok else "ng"
     return (
         f"<tr class='{cls}'>"
-        f"<td>{p.label}</td>"
+        # ラベルは比較表のヘッダ（_compare_table）と同じくエスケープする。
+        # 同じ値が経路によってエスケープされたりされなかったりする非対称は、
+        # 片方だけ直った状態を将来また作る（2026-07-26 Codex レビュー指摘）。
+        f"<td>{_html.escape(p.label)}</td>"
         f"<td>{r.p_rx:.2f}</td>"
         f"<td>{r.actual_margin:+.2f}</td>"
         f"<td>{r.total_loss:.2f}</td>"

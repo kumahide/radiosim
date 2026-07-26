@@ -674,6 +674,21 @@ class TestCsvCellHelper:
         for text in ("=1+1", "+SUM(1)", "-1+1", "@x", "\t=x", "\r=x", "\n=x"):
             assert report_common.csv_cell(text) == "'" + text
 
+    def test_leading_whitespace_does_not_bypass(self):
+        """先頭空白で判定を回避できないこと（2026-07-26 Codex レビュー指摘）。
+
+        表計算ソフトは前置の空白を無視して数式評価し得るので、`" =1+1"` は
+        素通しできない。`'` は元の文字列に付ける＝空白ごと文字列として見せる。
+        """
+        import report_common
+        for text in (" =1+1", "  =HYPERLINK(\"http://x\")", "\t @SUM(1)"):
+            assert report_common.csv_cell(text) == "'" + text
+
+    def test_leading_whitespace_number_still_passes(self):
+        """空白始まりでも数値なら数式ではない＝クォートしない。"""
+        import report_common
+        assert report_common.csv_cell(" -93.20") == " -93.20"
+
     def test_numeric_values_pass_through(self):
         import report_common
         for text in ("-93.20", "-0.5", "+12", "-1e3"):
