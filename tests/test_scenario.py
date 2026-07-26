@@ -581,6 +581,41 @@ class TestScenarioWindowSmoke:
     # ⚠️ 窓の見切れ（条件列を足すと右端が出る＝I-024）のゲートは
     # tests/test_window_fit.py へ移した（全窓横断の登録制ゲート）。
 
+    def test_input_widths_are_aligned_in_both_tabs(self, default_params_dict):
+        """同じ列に縦積みした入力欄の**実幅**が揃うこと（比較・スイープとも）。
+
+        `ttk.Entry(width=N)` と `ttk.Combobox(width=N)` は同じ文字数を指定しても
+        実幅が一致しない（Combobox は矢印ボタンぶん広い）。文字数で合わせにいく
+        限り、フォント・テーマ・言語が変わるたびにずれる。幅は grid の列に決め
+        させ（`sticky="ew"`）、ここでは**結果**＝実際の割り当て幅を検査する。
+
+        2026-07-25 の実機フィードバックで比較タブ（I-021）、2026-07-26 で
+        スイープタブが指摘された＝**同じ欠陥が 2 つのタブに別々に存在した**ので、
+        ゲートも両方をまとめて見る。
+        """
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            # --- スイープ：軸の Combobox と 開始/終了/点数 の Entry ---
+            win._mode.set("sweep"); win._on_mode_changed()
+            root.update_idletasks()
+            grid = win._axis_box.master
+            widths = {win._axis_box.winfo_width()}
+            for row in (1, 2, 3):
+                widths |= {w.winfo_width() for w in grid.grid_slaves(row=row, column=1)}
+            assert len(widths) == 1, f"スイープの入力欄の幅が揃っていない: {widths}"
+
+            # --- 比較：条件列の Entry と Combobox ---
+            win._mode.set("compare"); win._on_mode_changed()
+            root.update_idletasks()
+            col = 2                      # 0=項目名 / 1=ベース / 2=条件 1
+            cmp_widths = {w.winfo_width()
+                          for w in win._cmp_grid.grid_slaves(column=col)
+                          if w.winfo_class() in ("TEntry", "TCombobox")}
+            assert len(cmp_widths) == 1, f"比較の入力欄の幅が揃っていない: {cmp_widths}"
+        finally:
+            win.destroy(); root.destroy()
+
     def test_only_the_active_panel_is_shown(self, default_params_dict):
         """ttk.Notebook を使わない理由＝行数の多い比較側に引きずられて
         スイープ側に死んだ余白ができる（2026-07-25 実機フィードバック）。

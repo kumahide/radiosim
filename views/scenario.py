@@ -361,7 +361,11 @@ class ScenarioWindow(tk.Toplevel):
         self._axis_box = ttk.Combobox(
             grid, values=list(self._axis_labels), state="readonly", width=24)
         self._axis_box.set(_axis_label("h_tx"))
-        self._axis_box.grid(row=0, column=1, padx=6, pady=3, sticky="w")
+        # sticky="ew" ＝ **列の幅に合わせて広げる**（比較タブと同じ流儀＝I-021）。
+        # 軸の Combobox は width=24、開始/終了/点数の Entry は width=12 で、
+        # 文字数で揃えても実幅は一致しない（Combobox は矢印ボタンぶん広い）。
+        # 幅は grid の列（＝その列で一番広いウィジェット）に決めさせる。
+        self._axis_box.grid(row=0, column=1, padx=6, pady=3, sticky="ew")
 
         self._from_var   = tk.StringVar(value="10")
         self._to_var     = tk.StringVar(value="60")
@@ -373,7 +377,7 @@ class ScenarioWindow(tk.Toplevel):
         ), start=1):
             ttk.Label(grid, text=label).grid(row=i, column=0, sticky="w", pady=2)
             ttk.Entry(grid, textvariable=var, width=12).grid(
-                row=i, column=1, padx=6, pady=2, sticky="w")
+                row=i, column=1, padx=6, pady=2, sticky="ew")
 
         ttk.Label(frame, text=i18n.t("scn_err_points").format(
             max=scn.MAX_SWEEP_POINTS)).pack(anchor="w", pady=(8, 0))
