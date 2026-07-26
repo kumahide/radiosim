@@ -425,9 +425,14 @@ def test_all_execution_flows_use_the_progress_pump():
     直してクラスとして直さなかった**こと。ここで3フローを固定し、進捗の受け渡し
     が各所で再発明されるのを防ぐ。
 
-    ⚠️ このガードは**既知の3フローを固定するだけ**で、4つ目のフローが
-    ProgressPump を使わずに増えるのは検出できない（2.5 の scenario.py が
-    それにあたる。相の宣言を共有ランナーへ組み込む予定＝ロードマップ参照）。
+    ⚠️ このガードは**列挙したフローを固定するだけ**で、**新しいフローが
+    ProgressPump を使わずに増えるのは検出できない**。実際 2.5a3 で条件探索
+    （scenario）が4つ目のフローになり、実装は ProgressPump を使っていたのに
+    **この一覧に登録されていなかった**（2026-07-26 に追加）。フローを増やす版は
+    ここへの登録も完了条件に含めること。
+
+    なお条件探索は進捗の**トランスポート**に ProgressPump を使い、**配分の意味論**
+    は `scenario.Phases`（相の宣言）が持つ。既存3フローの Phases 移行は未実施。
     """
     import ast
 
@@ -435,6 +440,7 @@ def test_all_execution_flows_use_the_progress_pump():
         "views/launcher.py":      "単一実行",
         "views/batch_builder.py": "バッチ",
         "views/map_window.py":    "地図タイル取得",
+        "views/scenario.py":      "条件探索",
     }
     missing = []
     for rel, label in flows.items():
