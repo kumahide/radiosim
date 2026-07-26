@@ -87,6 +87,85 @@ def _block_network(request):
 
 
 # ============================================================
+# モーダルダイアログ・OS 委譲の遮断ゲート
+# ============================================================
+# GUI テストからモーダルダイアログが出ると、`wait_window()` が**人がボタンを
+# 押すまで返らない**＝テストが止まる。CI では気づけず（表示できないので別の形で
+# 失敗する）、ローカルでは実行者が手で押す羽目になる。実際 2026-07-26 に条件探索の
+# 完了ダイアログ（「保存しました。開きますか？」）で止まり、ユーザーが手動で
+# 応答した。しかも「はい」を押すと `os.startfile` でブラウザが開く＝テストが
+# 環境の外へ出る。
+#
+# ネットワーク遮断と**同じ理由・同じ形**で塞ぐ（→ [[feedback-promote-recurring-checks]]）：
+# テストごとに monkeypatch を書くのは「思い出す規則」で、新しい GUI テストを
+# 書いた人が忘れた瞬間に再発する。既定で塞ぎ、必要なら明示的に外す。
+#
+# 塞ぐのは「人の操作を待つ」「OS へ制御を渡す」の 2 種類:
+#   - views.dialogs の alert / confirm / choose（自前モーダル＝wait_window）
+#   - os.startfile（ブラウザ・エクスプローラ起動）
+#   - tkinter.filedialog の各種（ファイル選択ダイアログ）
+# 応答は**最も安全な既定**＝confirm は False（「いいえ」）、choose は None
+# （キャンセル）、ファイル選択は "" （キャンセル）を返す。
+#
+# 呼ばれた内容を検証したいテストは `dialog_calls` フィクスチャを受け取る。
+
+
+class _DialogCalls(list):
+    """記録された呼び出し（`("confirm", title, message)` 等）。"""
+
+    def kinds(self) -> list:
+        return [c[0] for c in self]
+
+
+@pytest.fixture(autouse=True)
+def dialog_calls(request, monkeypatch):
+    """モーダルダイアログと OS 委譲を塞ぎ、呼び出しを記録する。
+
+    テストがダイアログを**出そうとしたこと自体**を検証できるよう、戻り値を
+    そのままフィクスチャとして提供する。実物を出したいテストは
+    `@pytest.mark.real_dialogs` を付ける（人が操作する前提の手動確認用）。
+    """
+    calls = _DialogCalls()
+    if request.node.get_closest_marker("real_dialogs"):
+        yield calls
+        return
+
+    from tkinter import filedialog
+
+    from views import dialogs
+
+    def _alert(parent, title, message):
+        calls.append(("alert", title, message))
+
+    def _confirm(parent, title, message):
+        calls.append(("confirm", title, message))
+        return False                     # 既定は「いいえ」＝副作用の少ない側
+
+    def _choose(parent, title, message, options, cancel_label=None):
+        calls.append(("choose", title, message))
+        return None                      # 既定はキャンセル
+
+    monkeypatch.setattr(dialogs, "alert", _alert)
+    monkeypatch.setattr(dialogs, "confirm", _confirm)
+    monkeypatch.setattr(dialogs, "choose", _choose)
+    monkeypatch.setattr(os, "startfile",
+                        lambda path, *a, **k: calls.append(("startfile", str(path))),
+                        raising=False)
+    for name in ("askopenfilename", "asksaveasfilename", "askdirectory"):
+        monkeypatch.setattr(filedialog, name,
+                            lambda *a, _n=name, **k: (calls.append((_n,)), "")[1])
+    # matplotlib の `plt.show()` も入れ子 mainloop でブロックする（グラフ窓）。
+    # ⚠️ ここで pyplot を import しない（重い＝matplotlib を使わないテストにまで
+    # 起動コストを乗せる）。既に読み込まれている時だけ塞ぐ＝グラフ窓へ到達し得る
+    # テストは、そのモジュールを import した時点で pyplot も読み込んでいる。
+    plt = sys.modules.get("matplotlib.pyplot")
+    if plt is not None:
+        monkeypatch.setattr(plt, "show",
+                            lambda *a, **k: calls.append(("plt.show",)))
+    yield calls
+
+
+# ============================================================
 # プロセス横断状態のリセット
 # ============================================================
 @pytest.fixture(autouse=True)

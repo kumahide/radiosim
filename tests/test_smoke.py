@@ -561,3 +561,33 @@ def test_launcher_values_are_frozen_not_read_at_run_time():
         f"ランチャーの値を実行時に読み直している: {offenders}。"
         "スナップショット（開く時 / ↻）へ寄せること。"
     )
+
+
+# ============================================================
+# 「テストが止まらない」こと自体のゲート
+# ============================================================
+def test_modal_dialogs_and_os_handoff_are_blocked_in_tests(dialog_calls):
+    """テスト中はモーダルダイアログと OS 委譲が塞がれていること。
+
+    塞がれていないと `views.dialogs.confirm` の `wait_window()` が**人が
+    ボタンを押すまで返らない**＝テストが止まる。2026-07-26 に条件探索の完了
+    ダイアログ（「保存しました。開きますか？」）で実際に止まり、実行者が手で
+    応答した。CI では表示できないので別の形で失敗し、原因が読みにくい。
+
+    遮断は `tests/conftest.py` の autouse フィクスチャで行う（テストごとに
+    monkeypatch を書くのは「思い出す規則」で、新しい GUI テストを書いた人が
+    忘れた瞬間に再発する＝ネットワーク遮断と同じ扱いにした）。
+    **この遮断自体が外れたことを検出する**のがこのテスト。
+    """
+    import os as _os
+    from tkinter import filedialog
+
+    from views import dialogs
+
+    assert dialogs.confirm(None, "t", "m") is False, "confirm が塞がれていない"
+    dialogs.alert(None, "t", "m")
+    assert dialogs.choose(None, "t", "m", [("a", "A")]) is None
+    _os.startfile("dummy")                       # 実行されるとブラウザが開く
+    assert filedialog.askopenfilename() == ""
+    assert dialog_calls.kinds() == [
+        "confirm", "alert", "choose", "startfile", "askopenfilename"]

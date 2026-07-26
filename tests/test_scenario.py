@@ -629,8 +629,15 @@ class TestScenarioWindowSmoke:
             win.destroy(); root.destroy()
 
     def test_run_uses_the_snapshot_not_a_fresh_read(self, default_params_dict,
-                                                    monkeypatch, tmp_path):
-        """実行が使うのは**画面に出ている写し**であること（成果物の刻印）。"""
+                                                    monkeypatch, tmp_path,
+                                                    dialog_calls):
+        """実行が使うのは**画面に出ている写し**であること（成果物の刻印）。
+
+        ⚠️ このテストは完了まで走るので、**完了ダイアログ**（「保存しました。
+        開きますか？」）に到達する。`dialog_calls` フィクスチャ（autouse）が
+        塞いでいなければ、`wait_window()` で**人がボタンを押すまで止まる**
+        （2026-07-26 に実際に止めた）。ここではダイアログが出たことも確かめる。
+        """
         import config as cfg_mod
         import report_scenario
 
@@ -653,6 +660,9 @@ class TestScenarioWindowSmoke:
                 time.sleep(0.02)
             assert seen == {"project": "案件 A", "memo": "メモ A"}, (
                 f"実行時にランチャーを読み直している: {seen}")
+            # 完了ダイアログまで到達している＝遮断が効いていることの裏取り。
+            root.update()
+            assert "confirm" in dialog_calls.kinds()
         finally:
             win.destroy(); root.destroy()
 
