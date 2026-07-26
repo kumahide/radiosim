@@ -18,6 +18,7 @@ monkeypatch で塞ぎ、ネットワーク無しで実行する。
 import os
 import sys
 import threading
+import time
 
 import numpy as np
 import pytest
@@ -580,6 +581,80 @@ class TestScenarioWindowSmoke:
 
     # ⚠️ 窓の見切れ（条件列を足すと右端が出る＝I-024）のゲートは
     # tests/test_window_fit.py へ移した（全窓横断の登録制ゲート）。
+
+    def _win_with_meta(self, default_params_dict, meta: dict):
+        """案件情報プロバイダ付きの窓（プロバイダの中身は後から差し替えられる）。"""
+        from conftest import make_themed_root
+        root = make_themed_root()
+        root.withdraw()
+        from views.scenario import ScenarioWindow
+        win = ScenarioWindow(root, sim.SimParams(default_params_dict),
+                             meta_provider=lambda: meta)
+        return root, win
+
+    def test_case_info_is_snapshotted_and_shown(self, default_params_dict):
+        """案件情報を開いた時点で凍結し、画面にも出すこと。
+
+        2026-07-26 のユーザー指摘＝バッチには出るのに条件探索には出ない。
+        レポートの自己同定ヘッダには刻印されるので、**画面に無い値が成果物に
+        載る**状態だった。
+        """
+        i18n.set_lang("ja")
+        meta = {"project_name": "〇〇高校 無線化検討", "memo": "2 系統比較"}
+        root, win = self._win_with_meta(default_params_dict, meta)
+        try:
+            assert win._meta == meta
+            shown = win._meta_label.cget("text")
+            assert "〇〇高校 無線化検討" in shown and "2 系統比較" in shown
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_case_info_does_not_follow_the_launcher_silently(self, default_params_dict):
+        """ランチャー側を変えても、↻ を押すまで写しは変わらないこと。
+
+        経路（座標）と**同じ凍結方式**に揃える。実行の瞬間に読み直すと、窓を
+        開いたあとに案件名を変えた場合「画面と成果物が食い違う」。
+        """
+        i18n.set_lang("ja")
+        meta = {"project_name": "案件 A", "memo": ""}
+        root, win = self._win_with_meta(default_params_dict, meta)
+        try:
+            meta["project_name"] = "案件 B"          # ランチャー側で変更した相当
+            assert win._meta["project_name"] == "案件 A", "黙って追従している"
+            assert "案件 A" in win._meta_label.cget("text")
+            win._refresh_from_launcher()             # ↻ で明示的に取り込む
+            assert win._meta["project_name"] == "案件 B"
+            assert "案件 B" in win._meta_label.cget("text")
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_run_uses_the_snapshot_not_a_fresh_read(self, default_params_dict,
+                                                    monkeypatch, tmp_path):
+        """実行が使うのは**画面に出ている写し**であること（成果物の刻印）。"""
+        import config as cfg_mod
+        import report_scenario
+
+        i18n.set_lang("ja")
+        meta = {"project_name": "案件 A", "memo": "メモ A"}
+        root, win = self._win_with_meta(default_params_dict, meta)
+        seen: dict = {}
+        try:
+            monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(tmp_path))
+            monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
+            monkeypatch.setattr(sim, "_terrain_cache", {})
+            monkeypatch.setattr(
+                report_scenario, "save_scenario_package",
+                lambda run, d, project, memo: seen.update(project=project, memo=memo))
+            meta.update(project_name="案件 B", memo="メモ B")   # 実行の直前に変更
+            win._on_run()
+            deadline = time.time() + 30
+            while not seen and time.time() < deadline:
+                root.update()
+                time.sleep(0.02)
+            assert seen == {"project": "案件 A", "memo": "メモ A"}, (
+                f"実行時にランチャーを読み直している: {seen}")
+        finally:
+            win.destroy(); root.destroy()
 
     def test_input_widths_are_aligned_in_both_tabs(self, default_params_dict):
         """同じ列に縦積みした入力欄の**実幅**が揃うこと（比較・スイープとも）。

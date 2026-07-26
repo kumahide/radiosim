@@ -117,6 +117,9 @@ class ScenarioWindow(tk.Toplevel):
         self._base_params     = base_params
         self._config_provider = config_provider
         self._meta_provider   = meta_provider
+        # 案件情報（案件名・自由メモ）も**ランチャーのスナップショット**として持つ。
+        # ここで凍結し、↻ で明示的に取り込み直す（実行時に読み直さない＝下記）。
+        self._meta: dict[str, str] = self._snapshot_meta()
         self._on_close_cb     = on_close
         self._running = False
         self._last_run: "scn.ScenarioRun | None" = None
@@ -127,6 +130,29 @@ class ScenarioWindow(tk.Toplevel):
         self._build()
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _snapshot_meta(self) -> dict[str, str]:
+        """ランチャーの案件情報を取り込む（**この窓が持つのは常にこの写し**）。"""
+        meta = self._meta_provider() if self._meta_provider else {}
+        return {
+            "project_name": str(meta.get("project_name", "")),
+            "memo":         str(meta.get("memo", "")),
+        }
+
+    def _update_meta_label(self) -> None:
+        """案件情報の表示を、いま持っているスナップショットに合わせる。
+
+        **なぜ表示するか**（2026-07-26・ユーザー指摘）：案件名とメモはレポートの
+        自己同定ヘッダに刻印されるのに、この窓には出ていなかった。しかも実行の
+        瞬間にランチャーを読み直していたので、**画面に無い値が成果物に載る**
+        （窓を開いたあとにランチャー側で案件名を変えると、気づく手段が無い）。
+        経路と同じく「凍結して見せる」に揃える。
+        """
+        dash = "—"
+        self._meta_label.config(
+            text=(f'{i18n.t("batch_project_name")}: '
+                  f'{self._meta["project_name"] or dash}'
+                  f'　/　{i18n.t("batch_memo")}: {self._meta["memo"] or dash}'))
 
     def _update_path_label(self) -> None:
         p = self._base_params
@@ -142,6 +168,9 @@ class ScenarioWindow(tk.Toplevel):
         値まで巻き戻すと編集内容が消えるので、**ベースと同じ値だった欄だけ**を
         追従させる（触った欄はユーザーの意図として残す）。
         """
+        # 案件情報は座標と独立に取り込む（`config_provider` の有無に引きずらない）。
+        self._meta = self._snapshot_meta()
+        self._update_meta_label()
         if self._config_provider is None:
             return
         try:
@@ -210,6 +239,13 @@ class ScenarioWindow(tk.Toplevel):
         ttk.Button(head, text=i18n.t("scn_refresh"), width=18,
                    command=self._refresh_from_launcher).pack(side="right", padx=(12, 0))
         self._update_path_label()
+
+        # 案件情報＝経路と同じ「ランチャーからの凍結値」。レポートに刻印される値を
+        # 画面にも出す（補助情報なので落として見せる）。
+        self._meta_label = ttk.Label(
+            outer, text="", foreground=theme.muted_foreground(outer))
+        self._meta_label.pack(fill="x", pady=(0, 8))
+        self._update_meta_label()
 
         # モード切替＝**表示中のフレームだけを pack する**。ttk.Notebook は
         # 「一番背の高いタブ」に合わせて全タブの高さが決まるため、行数の多い比較タブに
@@ -434,9 +470,11 @@ class ScenarioWindow(tk.Toplevel):
 
         base = self._base_params
         kind = "sweep" if axis else "compare"
-        meta = self._meta_provider() if self._meta_provider else {}
-        project = str(meta.get("project_name", ""))
-        memo    = str(meta.get("memo", ""))
+        # ⚠️ **実行はここに出ている値で行う**（経路と同じ扱い）。以前は実行の瞬間に
+        # meta_provider を読み直しており、窓を開いたあとにランチャーで案件名を
+        # 変えると「画面に無い案件名がレポートに刻印される」状態だった。
+        project = self._meta["project_name"]
+        memo    = self._meta["memo"]
 
         save_dir = os.path.join(
             config.RESULTS_DIR,

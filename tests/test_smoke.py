@@ -495,3 +495,69 @@ def test_graph_does_not_rewrite_the_diffraction_model():
 
 
 # ⚠️ バッチの見切れゲートも tests/test_window_fit.py へ移した（上と同じ理由）。
+
+
+# ============================================================
+# ランチャーから分岐した窓の「凍結方式」
+# ============================================================
+# ランチャーの値を読むプロバイダを呼んでよい場所と、その理由。
+#
+# **判定の基準は「読んだ値をその場で画面へ書くか」**。書くなら＝ユーザーが見て
+# いる値になるので凍結方式に反しない。書かずに使う（＝実行の瞬間に読む）と、
+# 窓を開いたあとにランチャー側を変えた場合に画面と成果物が食い違う。
+_FREEZE_ALLOWED_CALLERS = {
+    "__init__":                      "窓を開く時の初期スナップショット",
+    "_snapshot_meta":                "条件探索：取り込みの実体（呼ぶのは __init__ と ↻）",
+    "_refresh_from_launcher":        "条件探索：↻ ランチャーから更新",
+    "_refresh_common_from_launcher": "バッチ：↻ ランチャーから更新",
+    "_build_case_info":              "バッチ：開く時の初期スナップショット",
+    "_frozen_defaults":              "バッチ：行追加時に**その行のセルへ書き込む**値",
+    "_frozen_row":                   "同上（セル文字列を組み立てて返すだけ）",
+    "_update_row_rf":                "バッチ：行の RF 欄を**画面ごと**書き換える",
+}
+
+
+def _provider_call_sites() -> "list[str]":
+    """`views/` で `self._config_provider()` / `self._meta_provider()` を
+    **呼んでいる**場所を "ファイル:関数" で返す（渡しているだけの箇所は除く）。"""
+    import ast
+
+    views_dir = os.path.join(os.path.dirname(__file__), "..", "views")
+    sites: list[str] = []
+    for fname in sorted(os.listdir(views_dir)):
+        if not fname.endswith(".py"):
+            continue
+        with open(os.path.join(views_dir, fname), encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=fname)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for sub in ast.walk(node):
+                if not isinstance(sub, ast.Call):
+                    continue
+                fn = sub.func
+                if (isinstance(fn, ast.Attribute)
+                        and fn.attr in ("_config_provider", "_meta_provider")):
+                    sites.append(f"{fname}:{node.name}")
+    return sorted(set(sites))
+
+
+def test_launcher_values_are_frozen_not_read_at_run_time():
+    """ランチャーの値は**開く時と ↻ の時にだけ**読むこと。
+
+    ランチャーから分岐する窓（バッチ・条件探索・以後に足す窓）は、ランチャーの
+    現在値を**スナップショットして表示し、実行は表示中の値で行う**という方針で
+    揃えてある（2026-07-26 ユーザー決定）。実行の瞬間に読み直すと、窓を開いた
+    あとにランチャー側を変えた場合に **画面に出ていない値が成果物に載る**。
+
+    実際に条件探索の案件情報がその状態で、しかも**画面に出ていなかったので
+    誰も気づけなかった**。心がけでは防げないのでゲートにする
+    （[[feedback-promote-recurring-checks]]）。新しい窓を足すときにここが落ちたら、
+    「開く時に取り込む」「↻ で取り込み直す」のどちらかへ寄せること。
+    """
+    offenders = [s for s in _provider_call_sites()
+                 if s.split(":", 1)[1] not in _FREEZE_ALLOWED_CALLERS]
+    assert not offenders, (
+        f"ランチャーの値を実行時に読み直している: {offenders}。"
+        "スナップショット（開く時 / ↻）へ寄せること。"
+    )
