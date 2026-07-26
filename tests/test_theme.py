@@ -511,3 +511,111 @@ def test_table_padding_survives_a_theme_switch(root):
     # くっついたまま（b2 の最初の版で「余白が効いていない」と再指摘された）。
     assert style.lookup(f"{name}.Cell", "padding"), "セル内の余白が設定されていない"
     assert style.lookup(f"{name}.Heading", "padding"), "見出しの余白が設定されていない"
+
+
+# ============================================================
+# DPI 追従（2026-07-26 のユーザー報告：窓は変わるのに字が変わらない）
+# ============================================================
+def _px(widget, kind: str = "body") -> int:
+    """名前付きフォントに設定されているピクセル数（負値＝px 指定）。"""
+    from tkinter import font as tkfont
+
+    return abs(int(tkfont.nametofont(theme.ui_font(widget, kind), root=widget)
+                   .config()["size"]))
+
+
+def test_fonts_scale_with_dpi(root):
+    """DPI を上げたらフォントも大きくなること。
+
+    sv_ttk のフォントは**ピクセル指定**（`-14`）で、Tk の `tk scaling` の影響を
+    受けない＝放っておくと DPI が変わっても 1px も変わらない。一方 Windows は
+    Per-Monitor DPI Aware の窓を拡大するので、「窓は大きくなったのに字は小さい
+    まま」になる（2026-07-26 のユーザー報告）。
+    """
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    at96 = _px(root)
+    theme.apply_fonts(root, dpi=144)          # 150% スケール
+    at144 = _px(root)
+    assert at144 > at96, f"DPI を上げてもフォントが変わらない（{at96}px のまま）"
+    assert at144 == round(at96 * 1.5), f"倍率が DPI 比に一致しない: {at96} → {at144}"
+
+
+def test_dpi_scaling_is_not_cumulative(root):
+    """同じ DPI で何度貼り直しても字が太らないこと。
+
+    実測値を毎回読み直して掛けると、貼り直すたびに拡大が積み上がる（DPI 変更は
+    移動のたびに走り得るので、これは致命的になる）。基準は 96dpi のピクセル数で
+    固定する。
+    """
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=144)
+    once = _px(root)
+    for _ in range(3):
+        theme.apply_fonts(root, dpi=144)
+    assert _px(root) == once, "同じ DPI の貼り直しでフォントが太った（倍率の累積）"
+
+
+def test_dpi_change_is_reversible(root):
+    """高 DPI から戻ったら元のサイズに戻ること。"""
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    at96 = _px(root)
+    theme.apply_fonts(root, dpi=192)
+    theme.apply_fonts(root, dpi=96)
+    assert _px(root) == at96
+
+
+def test_every_ui_font_scales_together(root):
+    """本文・小・太字がすべて同じ倍率で動くこと（DPI で字面が崩れない）。"""
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    base = {k: _px(root, k) for k in ("body", "small", "bold")}
+    theme.apply_fonts(root, dpi=192)
+    for kind, was in base.items():
+        assert _px(root, kind) == was * 2, f"{kind} が DPI に追従していない"
+
+
+def test_table_row_height_follows_the_font(root):
+    """表の行高もフォントに追従すること（行送りから算出しているため）。"""
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    style = ttk.Style(master=root)
+    low = int(style.lookup(theme.table_style(root), "rowheight"))
+    theme.apply_fonts(root, dpi=192)
+    high = int(style.lookup("App.Treeview", "rowheight"))
+    assert high > low, f"DPI を上げても行高が変わらない（{low}px のまま）"
+
+
+def test_watch_dpi_actually_fires_on_a_configure_event(root):
+    """配線が実際に動くこと（監視 → 検知 → 貼り直し → 通知）。
+
+    ⚠️ **ここが本丸**。「イベントに繋いだつもりで一度も発火しない」は本プロジェクト
+    が繰り返し踏んでいる形で、直近も `<<ThemeChanged>>` での貼り直しが root に
+    届いておらず、フォント統一が黙って無効化されていた（2.5b2）。監視の配線は
+    実装ではなくテストで裏を取る。
+    """
+    import tkinter as tk
+
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    at96 = _px(root)
+
+    fake = {"dpi": 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    notified: list[int] = []
+    try:
+        theme.watch_dpi(root, notified.append)
+        fake["dpi"] = 144                          # 別 DPI のモニタへ移した相当
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")              # 移動＝<Configure>
+        root.update()
+        # デバウンス（_DPI_DEBOUNCE_MS）を消化する
+        root.after(theme._DPI_DEBOUNCE_MS + 80, root.quit)
+        root.mainloop()
+        assert notified == [144], f"DPI 変化が通知されていない: {notified}"
+        assert _px(root) == round(at96 * 1.5), "通知は来たがフォントが貼り直されていない"
+    finally:
+        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)

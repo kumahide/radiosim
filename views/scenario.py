@@ -193,7 +193,7 @@ class ScenarioWindow(tk.Toplevel):
         self._path_label = ttk.Label(head, text="")
         self._path_label.pack(side="left")
         ttk.Button(head, text=i18n.t("scn_refresh"), width=18,
-                   command=self._refresh_from_launcher).pack(side="right")
+                   command=self._refresh_from_launcher).pack(side="right", padx=(12, 0))
         self._update_path_label()
 
         # モード切替＝**表示中のフレームだけを pack する**。ttk.Notebook は

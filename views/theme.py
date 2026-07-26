@@ -42,7 +42,7 @@ activeforeground で守る）。
 
 import tkinter as tk
 from tkinter import ttk
-from typing import Any
+from typing import Any, Callable
 
 # 色キー（sv_ttk の colors 配列のキーから先頭の "-" を除いたもの）
 _KEYS = ("fg", "bg", "selfg", "selbg", "disfg", "accent")
@@ -125,12 +125,68 @@ def ui_font(widget: tk.Misc, kind: str = "body") -> str:
 _DEFAULT_FONT_NAMES = ("TkDefaultFont", "TkTextFont")
 
 
-def apply_fonts(root: tk.Misc) -> None:
-    """全窓の既定フォントを sv_ttk の本文フォントに揃える（アプリ起動時に1回）。
+# ------------------------------------------------------------
+# DPI
+# ------------------------------------------------------------
+# sv_ttk のフォントは**ピクセル指定**（`-14` 等＝負値はピクセル）で、96dpi を前提に
+# 書かれている。ピクセル指定は Tk の `tk scaling` の影響を受けない＝**DPI が変わって
+# も字の大きさが 1px も変わらない**。一方 Windows（Per-Monitor DPI Aware）は窓の枠
+# だけを拡大するので、「窓は大きくなったのに字は小さいまま」になる
+# （2026-07-26 のユーザー報告）。
+#
+# そこで **96dpi 基準のピクセル数を保持し、実際の DPI 倍して当てる**。
+# 「起動時の DPI」でなく「今その窓が載っているモニタの DPI」を見るので、
+# 高 DPI 機での起動と、モニタ間の移動の**両方**に効く。
+_DPI_BASE = 96
 
-    やり方＝**Tk の既定フォント（名前付きフォント）そのものを書き換える**。
-    名前付きフォントは参照しているウィジェット全部に即時反映され、**あとから
-    作られるウィジェットにも効く**。
+# 96dpi 基準のピクセル数（初回に sv_ttk の定義から読み、以後はここを基準に倍率を
+# 掛ける）。**毎回 config() を読み直すと、拡大した値をさらに拡大してしまう**。
+_base_px: "dict[str, int]" = {}
+
+
+def window_dpi(widget: tk.Misc) -> int:
+    """`widget` が載っているモニタの DPI（取れなければ 96）。
+
+    `GetDpiForWindow` は Windows 10 1607+ で**モニタごと**の値を返す（Tk 8.6 の
+    `winfo_fpixels("1i")` は起動時のスクリーン値で固定なので、モニタ間の移動を
+    追えない）。取れない環境では順に劣化させる。
+    """
+    import sys
+
+    if sys.platform == "win32":
+        import ctypes
+        try:
+            hwnd = widget.winfo_toplevel().winfo_id()
+            dpi = int(ctypes.windll.user32.GetDpiForWindow(hwnd))
+            if dpi > 0:
+                return dpi
+        except Exception:
+            pass
+        try:
+            dpi = int(ctypes.windll.user32.GetDpiForSystem())
+            if dpi > 0:
+                return dpi
+        except Exception:
+            pass
+    try:
+        return int(round(widget.winfo_fpixels("1i")))
+    except tk.TclError:
+        return _DPI_BASE
+
+
+def _scaled_px(base_px: int, dpi: int) -> int:
+    """96dpi 基準のピクセル数を、実 DPI でのピクセル数へ。
+
+    Tk のフォントサイズは負値＝ピクセル。0 を返さないよう最小 1px で止める。
+    """
+    return -max(1, int(round(abs(base_px) * dpi / _DPI_BASE)))
+
+
+def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
+    """全窓の既定フォントを sv_ttk の本文フォントに揃え、**DPI に合わせる**。
+
+    やり方＝**名前付きフォントそのものを書き換える**。名前付きフォントは参照して
+    いるウィジェット全部に即時反映され、**あとから作られるウィジェットにも効く**。
 
     ⚠️ **ttk スタイルへの `font` 設定では足りない**（2.5b2 で実測）。ttk の
     Entry/Combobox/Spinbox は `-font` を**ウィジェットオプション**として持ち、
@@ -142,12 +198,37 @@ def apply_fonts(root: tk.Misc) -> None:
 
     ロケール差も同時に消える：ja 環境の `TkDefaultFont` は Yu Gothic UI 9pt で、
     sv_ttk が入力欄に当てる Segoe UI Variable Text 10pt とそもそも別物だった。
+
+    Args:
+        dpi: 使う DPI。省略時は `root` が載っているモニタから取る（テストが
+            高 DPI を再現できるよう注入可能にしてある）。
     """
     from tkinter import font as tkfont
 
+    if dpi is None:
+        dpi = window_dpi(root)
+
+    names = list(_SV_FONTS.values())
+    # ① sv_ttk のフォント自体を DPI に合わせる（Treeview・LabelFrame の見出し・
+    #    入力欄はテーマがこれらを直接参照しているので、ここを直せば全部追従する）。
+    for name in names:
+        try:
+            f = tkfont.nametofont(name, root=root)
+        except tk.TclError:
+            continue          # テーマ未適用（素の Tk）＝触らない
+        if name not in _base_px:
+            size = (f.config() or {}).get("size")
+            if not isinstance(size, int) or size >= 0:
+                continue      # pt 指定なら Tk の scaling に任せる（ここでは触らない）
+            _base_px[name] = size
+        f.configure(size=_scaled_px(_base_px[name], dpi))
+
+    # ② Tk の既定フォントを本文フォントに合わせる。
+    #    `TkDefaultFont` ＝ ttk の Label/Button など、`TkTextFont` ＝ Entry/
+    #    Combobox/Text/Listbox の既定。**メニュー（TkMenuFont）は触らない**
+    #    ＝OS のメニューフォントに合わせるのが Windows の作法。
     try:
-        source = tkfont.nametofont(ui_font(root), root=root)
-        spec = source.config() or {}
+        spec = tkfont.nametofont(ui_font(root), root=root).config() or {}
     except tk.TclError:
         return
     # サイズは `config()` から取る（`actual()` は px 指定を pt に丸めて返すので、
@@ -160,6 +241,66 @@ def apply_fonts(root: tk.Misc) -> None:
             tkfont.nametofont(name, root=root).configure(family=family, size=size)
         except tk.TclError:
             pass   # その環境に無い名前付きフォントは飛ばす
+
+    # ③ 等幅（README ビューア）も同じ DPI で。pt 指定なので `tk scaling` を
+    #    今の DPI に合わせておけば追従する。
+    try:
+        root.tk.call("tk", "scaling", dpi / 72.0)
+    except tk.TclError:
+        pass
+
+    # ④ 表の行高はフォントの行送りから決まる＝フォントが変わったら貼り直す。
+    table_style(root)
+
+
+# <Configure> は移動・リサイズのたびに飛ぶので、まとめて 1 回にする間隔。
+_DPI_DEBOUNCE_MS = 250
+
+
+def watch_dpi(root: tk.Misc, on_change: "Callable[[int], None] | None" = None) -> None:
+    """モニタ間の移動などで DPI が変わったらフォントを貼り直す。
+
+    Tk 8.6 は `WM_DPICHANGED` を受けて**窓の大きさは**追従させるが、フォントは
+    何もしない（`tk scaling` は起動時のスクリーン値で固定）。結果「窓だけ大きく
+    なって字は小さいまま」になる。Tk 側に DPI 変更の通知イベントが無いので、
+    **`<Configure>`（移動・リサイズ）を契機に実 DPI を見に行く**。
+
+    `bind_all` で全ウィンドウ分をまとめて拾う＝窓を1つ足すたびに配線を思い出す
+    必要がない（[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
+
+    Args:
+        on_change: DPI が変わってフォントを貼り直した**あと**に呼ばれる。
+            窓の寸法を測り直す（`views.window_fit.refit_all`）ために使う
+            ＝字が大きくなれば必要な幅も高さも増えるので、追従しないと見切れる。
+    """
+    state = {"dpi": window_dpi(root), "after": None}
+
+    def _check() -> None:
+        state["after"] = None
+        try:
+            dpi = window_dpi(root)
+        except tk.TclError:
+            return            # 破棄済み
+        if dpi == state["dpi"]:
+            return
+        state["dpi"] = dpi
+        apply_fonts(root, dpi=dpi)
+        if on_change is not None:
+            on_change(dpi)
+
+    def _on_configure(event: "tk.Event") -> None:
+        # トップレベル自身の Configure だけ見る（子ウィジェットの分は無視）。
+        widget = event.widget
+        if not isinstance(widget, (tk.Tk, tk.Toplevel)):
+            return
+        if state["after"] is not None:
+            try:
+                root.after_cancel(state["after"])
+            except tk.TclError:
+                pass
+        state["after"] = root.after(_DPI_DEBOUNCE_MS, _check)
+
+    root.bind_all("<Configure>", _on_configure, add="+")
 
 
 # 表（Treeview）の余白。sv_ttk の既定は行高 `linespace + 3`＝行が詰まり、文字は

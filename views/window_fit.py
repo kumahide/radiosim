@@ -38,6 +38,7 @@ views/window_fit.py
 from __future__ import annotations
 
 import tkinter as tk
+from typing import Any
 
 # 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
 # 従来はバッチ 80px / 条件探索 90px / ランチャー「画面の 92%」と窓ごとにばらけて
@@ -71,6 +72,13 @@ def fit_to_content(
         実際に `geometry()` へ渡した `(幅, 高さ)`。同じ値を `win._fit_size` に、
         必要量を `win._fit_need` に残す（横断ゲートが読む唯一の口）。
     """
+    # 呼び出しの内容を残す＝DPI 変更などで**同じ条件のまま測り直す**ため
+    # （refit_all が使う。窓ごとに min_w / extra_w が違うので、これが無いと
+    # 貼り直し側が窓ごとの事情を知らないと再測できない）。
+    win._fit_kwargs = {                 # type: ignore[attr-defined]
+        "min_w": min_w, "min_h": min_h,
+        "extra_w": extra_w, "extra_h": extra_h, "grow_only": grow_only,
+    }
     win.update_idletasks()
     lim_w = max(win.winfo_screenwidth()  - SCREEN_MARGIN, min_w)
     lim_h = max(win.winfo_screenheight() - SCREEN_MARGIN, min_h)
@@ -104,3 +112,44 @@ def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     win.update_idletasks()
     need_w, need_h = getattr(win, "_fit_need", (0, 0))
     return max(win.winfo_reqwidth(), need_w), max(win.winfo_reqheight(), need_h)
+
+
+def refit_all(root: "tk.Tk | tk.Toplevel") -> None:
+    """開いている全ウィンドウを、同じ条件のまま測り直す。
+
+    フォントが変わると（DPI 変更・テーマ変更）**必要な幅も高さも変わる**ので、
+    貼り直しただけでは字が大きくなった分だけ見切れる。窓ごとの事情（下限・
+    スクロールバー分の加算）は `fit_to_content` が `_fit_kwargs` に残しているので、
+    ここは「もう一度同じ呼び出しをする」だけでよい。
+
+    ⚠️ `grow_only` はそのまま尊重する＝DPI が下がったときに窓を縮めはしない
+    （ユーザーが広げた窓を勝手に狭めないという既存の約束を、DPI 経路でも破らない）。
+    """
+    for win in (root, *_toplevels(root)):
+        # 窓自身が再測メソッドを持つならそちらを優先する。`_fit_kwargs` に残る
+        # 加算値（バッチのスクロールバー幅）は**呼んだ時点の実測**なので、DPI が
+        # 変わるとスクロールバー自体が太って数 px 足りなくなる。窓の側で測り直せる
+        # なら、その方が正しい。
+        refit = getattr(win, "_fit_refit", None)
+        kwargs: "dict[str, Any]" = getattr(win, "_fit_kwargs", {})
+        if refit is None and not kwargs:
+            continue
+        try:
+            if refit is not None:
+                refit()
+            else:
+                fit_to_content(win, **kwargs)
+        except tk.TclError:
+            pass          # 破棄途中の窓は飛ばす
+
+
+def _toplevels(root: tk.Misc) -> "list[tk.Toplevel]":
+    """`root` 配下の Toplevel を集める（入れ子も辿る）。"""
+    found: list[tk.Toplevel] = []
+    stack = list(root.winfo_children())
+    while stack:
+        w = stack.pop()
+        if isinstance(w, tk.Toplevel):
+            found.append(w)
+        stack.extend(w.winfo_children())
+    return found

@@ -125,6 +125,9 @@ class BatchBuilderWindow(tk.Toplevel):
         self._run_samples = 0
 
         self._build_ui()
+        # DPI 変更などで貼り直すときは、列幅同期からやり直す（フォントが変われば
+        # 列の実測幅もスクロールバーの太さも変わる）。window_fit.refit_all が使う。
+        self._fit_refit = self._run_sync
         self._add_row()
         self._run_sync()          # 同期 → その中で窓を中身に合わせる
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。

@@ -232,6 +232,64 @@ def test_growing_content_does_not_shrink_the_window(monkeypatch):
 
 
 # ============================================================
+# DPI が変わったら測り直すこと
+# ============================================================
+def test_windows_are_refitted_when_dpi_grows(monkeypatch):
+    """DPI が上がってフォントが大きくなったら、窓も広がること。
+
+    2026-07-26 のユーザー報告は「窓は DPI に追従して変わるのに字が変わらない」
+    だった。字を追従させると今度は**必要な幅も高さも増える**ので、貼り直しと
+    測り直しは対で要る（片方だけ直すと、字は大きくなったが窓は元のままで
+    見切れる＝これまでと同じクラスの不具合になる）。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        win, owner = _open_scenario(root)
+        before = win._fit_size
+
+        theme.apply_fonts(root, dpi=144)     # 150% のモニタへ移した相当
+        window_fit.refit_all(root)
+        root.update_idletasks()
+
+        assert win._fit_size[0] > before[0], (
+            f"DPI が上がってフォントが大きくなったのに窓幅が変わらない"
+            f"（{before[0]}px のまま）。右端が見切れる。"
+        )
+        _assert_fits(win, "scenario（DPI 144）")
+    finally:
+        theme.apply_fonts(root, dpi=96)      # 名前付きフォントは他テストと共有
+        root.destroy()
+
+
+def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
+    """測り直しで窓ごとの下限・加算が失われないこと。
+
+    `refit_all` は窓ごとの事情（下限幅・スクロールバー分の加算）を知らないので、
+    `fit_to_content` が残した `_fit_kwargs` をそのまま使う。ここが失われると
+    バッチだけスクロールバー分だけ狭くなる、といった形で静かに壊れる。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_batch(root)
+        kwargs = dict(win._fit_kwargs)
+        window_fit.refit_all(root)
+        assert win._fit_kwargs == kwargs
+        assert kwargs["extra_w"] > 0, "バッチの加算（スクロールバー＋外周）が消えている"
+        # バッチは「列幅同期からやり直す」再測を自前で持つ＝DPI が変わって
+        # スクロールバー自体が太っても正しく測れる（保存済みの加算値は古くなる）。
+        assert getattr(win, "_fit_refit", None) is not None
+    finally:
+        root.destroy()
+
+
+# ============================================================
 # 3: 登録漏れが起きないこと（新しい窓を自動で対象にする）
 # ============================================================
 # Toplevel を作るが「窓の見切れ」の対象外にするもの。**理由を必ず書く**

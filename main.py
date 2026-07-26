@@ -97,7 +97,7 @@ import sv_ttk
 
 import i18n
 import config
-from views import theme
+from views import theme, window_fit
 from views.launcher import SimLauncher
 
 _prof("top-level imports done")
@@ -178,6 +178,10 @@ def main() -> None:
     # 全窓の既定フォントを sv_ttk の本文フォントへ揃える（窓ごとの font= を廃止）。
     # テーマ適用の**後**に呼ぶ（sv.tcl が名前付きフォントを作るのがテーマ読み込み時）。
     theme.apply_fonts(root)
+    # モニタ間の移動などで DPI が変わったら、フォントを貼り直して窓を測り直す。
+    # sv_ttk のフォントはピクセル指定＝Tk 任せでは 1px も変わらないので、
+    # 「窓だけ大きくなって字は小さいまま」になる（2026-07-26 のユーザー報告）。
+    theme.watch_dpi(root, lambda _dpi: window_fit.refit_all(root))
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")
