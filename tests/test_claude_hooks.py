@@ -320,3 +320,54 @@ class TestMemoryIndexLineLength:
     def test_real_index_is_clean(self, memcheck):
         """実データで誤検知ゼロ（ノイズを出すゲートは読まれなくなる）。"""
         assert memcheck.check_memory_index_lines() == []
+
+
+class TestUpdatedStampFreshness:
+    """本文の「最終更新 YYYY-MM-DD」がファイル更新日より古くないこと。
+
+    2026-07-26、現在地表を書き換えた（2.5RC1 公開）のに見出しの
+    「最終更新 2026-07-25」を直し忘れた＝同日 5 件目の「同じ事実が 2 か所に
+    あり片方だけ直る」。frontmatter の `modified:` は通常のファイル書き込みでは
+    更新されず当てにならないので、**mtime だけが嘘をつかない**。
+    """
+
+    def _memo(self, tmp_path, text, mtime_date):
+        import datetime
+        p = tmp_path / "project_x.md"
+        p.write_text(text, encoding="utf-8")
+        ts = datetime.datetime.combine(mtime_date, datetime.time(12, 0)).timestamp()
+        os.utime(p, (ts, ts))
+        return p
+
+    def _run(self, memcheck, tmp_path, monkeypatch):
+        monkeypatch.setattr(memcheck, "MEM_DIR", tmp_path)
+        return memcheck.check_updated_stamps()
+
+    def test_stale_stamp_is_flagged(self, memcheck, tmp_path, monkeypatch):
+        import datetime
+        self._memo(tmp_path, "## 現在地（最終更新 2026-07-25）\n", datetime.date(2026, 7, 26))
+        found = self._run(memcheck, tmp_path, monkeypatch)
+        assert any("直し忘れ" in f for f in found)
+
+    def test_same_day_edit_is_not_flagged(self, memcheck, tmp_path, monkeypatch):
+        import datetime
+        self._memo(tmp_path, "## 現在地（最終更新 2026-07-26）\n", datetime.date(2026, 7, 26))
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
+    def test_latest_stamp_wins(self, memcheck, tmp_path, monkeypatch):
+        """節ごとの古い日付だけでは鳴らない（最新の記載と比べる）。"""
+        import datetime
+        self._memo(
+            tmp_path,
+            "## A（最終更新 2026-06-01）\n## B（最終更新 2026-07-26）\n",
+            datetime.date(2026, 7, 26),
+        )
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
+    def test_memo_without_stamp_is_ignored(self, memcheck, tmp_path, monkeypatch):
+        import datetime
+        self._memo(tmp_path, "# 日付を持たないメモ\n", datetime.date(2026, 7, 26))
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
+    def test_real_memory_is_clean(self, memcheck):
+        assert memcheck.check_updated_stamps() == []
