@@ -364,6 +364,22 @@ class TestUpdatedStampFreshness:
         )
         assert self._run(memcheck, tmp_path, monkeypatch) == []
 
+    def test_stamp_quoted_in_prose_is_ignored(self, memcheck, tmp_path, monkeypatch):
+        """本文で過去の事故を引用しているだけの日付では鳴らないこと。
+
+        ⚠️ 実際に踏んだ誤検知（2026-07-26）＝この check 自体の説明文に
+        「見出しが『最終更新 2026-07-25』のままだった」と書いた行が拾われた。
+        **ファイルが自分の更新日を宣言するのは見出し**で、本文中の日付は
+        たいてい何かの引用（宣言 vs 言及）。
+        """
+        import datetime
+        self._memo(
+            tmp_path,
+            "# メモ\n- 契機＝見出しが「最終更新 2026-07-25」のままだった\n",
+            datetime.date(2026, 7, 26),
+        )
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
     def test_memo_without_stamp_is_ignored(self, memcheck, tmp_path, monkeypatch):
         import datetime
         self._memo(tmp_path, "# 日付を持たないメモ\n", datetime.date(2026, 7, 26))
