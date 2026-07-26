@@ -1,8 +1,12 @@
 """
 views/theme.py
 ==============
-sv_ttk（Sun Valley）のテーマ色を、ttk 管理外の素の tk ウィジェットへ渡すための
-単一ソース。
+sv_ttk（Sun Valley）の**見た目（色とフォント）の単一ソース**。ttk 管理外の素の
+tk ウィジェットへ色を渡す役と、全窓の既定フォント・表の余白を決める役を持つ。
+
+フォントについては `ui_font` / `apply_fonts` / `table_style` の docstring を見ること
+（2.5b2 / I-023：窓ごとに `("Arial", 8)` `("Arial", 9)` をベタ書きしていたのを、
+配色と同じく「出所は sv_ttk・集約は theme.py」へ寄せた）。
 
 **なぜ専用モジュールが要るか**：`ttk.Style().lookup("TFrame", "background")` は
 sun-valley では **常に空文字を返す**。このテーマは `.` / `TFrame` / `TLabel` に
@@ -68,6 +72,125 @@ _ACTIVE_MIX = 0.12
 # （0.40 でライト 4.41:1 / ダーク 6.60:1）。sv_ttk の disabled（2.4〜2.5:1）とは
 # はっきり差をつける＝補助テキストは「無効」ではなく「読めるが主役でない」。
 _MUTED_MIX = 0.40
+
+
+# ------------------------------------------------------------
+# フォント（配色と同じく「出所は sv_ttk」）
+# ------------------------------------------------------------
+# sv_ttk が `sv.tcl` で作る名前付きフォント。Tk の名前付きフォントなので、
+# ウィジェットの `font=` にはこの**名前をそのまま**渡せる（サイズを数値で持たない
+# ＝二重管理にならず、テーマ側が変えれば全窓が追従する）。
+#
+# なぜ「アプリ側で ("Arial", 9) と書かない」か（2.5b2 / I-023）：
+# sv_ttk はテーマ定義の中で Entry/Combobox/Treeview に `SunValleyBodyFont`
+# （Segoe UI Variable Text / -14px）を当てるが、Label/Button には当てない
+# （＝`TkDefaultFont` / Segoe UI 9pt のまま）。つまり**何も指定しない窓でも
+# ラベルと入力欄で字面が揃わない**。さらにランチャー・バッチだけが
+# `("Arial", 8)` `("Arial", 9)` をベタ書きしていたため、窓ごとに書体もサイズも
+# バラバラだった（実機フィードバック 2026-07-26）。出所を1つにして解消する。
+_SV_FONTS = {
+    "body":  "SunValleyBodyFont",
+    "small": "SunValleyCaptionFont",
+    "bold":  "SunValleyBodyStrongFont",
+}
+
+# sv_ttk が読み込まれていない場合の控え（テーマ未適用のテスト等）。
+_FONT_FALLBACK = {
+    "body":  "TkDefaultFont",
+    "small": "TkSmallCaptionFont",
+    "bold":  "TkHeadingFont",
+}
+
+
+def ui_font(widget: tk.Misc, kind: str = "body") -> str:
+    """ウィジェットの `font=` へ渡す**名前付きフォント名**を返す。
+
+    Args:
+        kind: ``body``（本文・入力欄）／``small``（密な表・注記）／``bold``（強調）
+    """
+    name = _SV_FONTS[kind]
+    try:
+        if name in widget.tk.call("font", "names"):
+            return name
+    except tk.TclError:
+        pass
+    return _FONT_FALLBACK[kind]
+
+
+# 既定フォントを流し込む ttk スタイル。sv_ttk が自前で `-font` を持つもの
+# （`TLabelframe.Label`＝Caption / `Heading` / `Treeview`＝Body）はテーマの意図
+# なので触らない。派生スタイル（`Accent.TButton` など）は ttk の継承で追従する。
+_FONT_STYLES = (
+    ("TLabel",       "body"),
+    ("TButton",      "body"),
+    ("TCheckbutton", "body"),
+    ("TRadiobutton", "body"),
+    ("TMenubutton",  "body"),
+    ("TNotebook.Tab", "body"),
+    # 入力系は sv_ttk がウィジェット単位で Body を当てる（`config_entry_font`）が、
+    # それはテーマ切替イベント経由なので、スタイル側にも同じものを置いて確定させる。
+    ("TEntry",       "body"),
+    ("TCombobox",    "body"),
+    ("TSpinbox",     "body"),
+)
+
+
+def apply_fonts(root: tk.Misc) -> None:
+    """全窓の既定フォントを sv_ttk の本文フォントに揃える（アプリ起動時に1回）。
+
+    ウィジェット単位で `font=` を書くのをやめ、**ttk スタイル1か所**で決める。
+
+    ⚠️ ttk のスタイル設定は **テーマごとに独立した辞書**なので、`style.configure()`
+    は「今のテーマ」にしか効かない。ライトで設定してダークへ切り替えると黙って
+    消える（＝B-004 と同型の「設定したつもりが効いていない」）。`<<ThemeChanged>>`
+    での貼り直しも**実測では root に届かなかった**ので、最初から
+    `theme_settings` で全テーマの辞書へ入れる。ガード＝
+    tests/test_theme.py::test_fonts_survive_a_theme_switch。
+    """
+    style = ttk.Style(master=root)
+    settings = {name: {"configure": {"font": ui_font(root, kind)}}
+                for name, kind in _FONT_STYLES}
+    for theme_name in style.theme_names():
+        try:
+            style.theme_settings(theme_name, settings)
+        except tk.TclError:
+            pass   # 読み込めないテーマは飛ばす（切替先になり得ないので実害なし）
+
+
+# 表（Treeview）の余白。左右＝枠と文字の間、上下＝ヘッダの厚み、行高＝文字の
+# 行送りに足す分。sv_ttk の既定は `linespace + 3`＝行が詰まり、文字は枠と列境界に
+# 張り付く（2026-07-26 の実機フィードバック）。
+_TABLE_PAD    = (8, 4)
+_TABLE_HEADPAD = (6, 5)
+_TABLE_ROW_EXTRA = 10
+
+
+def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
+    """余白を持たせた Treeview スタイルを用意し、その名前を返す。
+
+    行高はフォントの行送りから決める（DPI・テーマのフォント差に追従させる）。
+    スタイル名は `*.Treeview` である必要がある（ttk がレイアウトを名前で辿る）。
+    """
+    from tkinter import font as tkfont
+
+    style = ttk.Style(master=widget)
+    try:
+        linespace = tkfont.Font(root=widget, font=ui_font(widget)).metrics("linespace")
+    except tk.TclError:
+        linespace = 18
+    # apply_fonts と同じ理由で全テーマの辞書へ入れる（テーマを切り替えると
+    # 現テーマにしか無い設定は消える）。
+    settings = {
+        name: {"configure": {"padding": _TABLE_PAD,
+                             "rowheight": linespace + _TABLE_ROW_EXTRA}},
+        f"{name}.Heading": {"configure": {"padding": _TABLE_HEADPAD}},
+    }
+    for theme_name in style.theme_names():
+        try:
+            style.theme_settings(theme_name, settings)
+        except tk.TclError:
+            pass
+    return name
 
 
 def current_theme(widget: tk.Misc) -> str:

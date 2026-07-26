@@ -360,7 +360,7 @@ def test_launcher_window_fits_its_content():
 
     入力欄を1グループ足すだけで再発する類なので、注意書きではなくゲートで守る。
 
-    ⚠️ 検証するのは**選ばれた高さ**（_window_height）であって実現後のサイズでは
+    ⚠️ 検証するのは**選ばれた寸法**（_window_height / _window_width）であって実現後のサイズでは
     ない。ウィンドウが未表示のあいだ `geometry()` は設定値ではなく自然サイズを
     返すため、それと比べるテストは壊れた実装でも緑になる（実際に一度そう書いた）。
     """
@@ -377,6 +377,13 @@ def test_launcher_window_fits_its_content():
         assert app._window_height >= needed, (
             f"ランチャーの中身がウィンドウに収まっていない（必要 {needed}px / "
             f"ウィンドウ {app._window_height}px）。下端のウィジェットが切れる。"
+        )
+        # 幅も同じクラス（2.5b2）＝フォント統一で必要幅が 450px を超え、右端の
+        # 入力欄が押し潰された。寸法をリテラルで持つ限り高さと同様に再発する。
+        needed_w = root.winfo_reqwidth()
+        assert app._window_width >= needed_w, (
+            f"ランチャーの中身がウィンドウ幅に収まっていない（必要 {needed_w}px / "
+            f"ウィンドウ {app._window_width}px）。右端のウィジェットが切れる。"
         )
     finally:
         root.destroy()

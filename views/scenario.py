@@ -17,6 +17,9 @@ views/scenario.py
     （41 点でも FHD に収まる）。以前は Label に全点を流し込み、点数次第で
     窓外へ溢れて保存ボタンまで見切れた。
   - 実行・レポートのボタンは**常に見える帯**（タブの外・下端固定）に置く。
+  - 項目名は**単位つき**（出所は report_scenario の単位表＝画面とレポートで表記が
+    ずれない）、入力欄の幅は**文字数でなく grid の列**に決めさせる、結果表の余白は
+    [views/theme.table_style](views/theme.py) から取る（2026-07-26 実機 FB）。
 
 進捗は [views/progress.ProgressPump](views/progress.py) で受け、相の切り替え
 （取得 → 計算 → レポート生成）はランナー側の宣言に従うだけ＝**重い相が管轄外に
@@ -40,7 +43,7 @@ import report_scenario
 import scenario as scn
 import simulation as sim
 import units
-from views import dialogs
+from views import dialogs, theme
 from views.progress import ProgressPump
 
 # 比較タブで編集できる項目（順に並ぶ）。値は文字列で持ち、実行時に変換する
@@ -55,6 +58,17 @@ _COMPARE_FIELDS: tuple[tuple[str, str], ...] = (
 # 以前はキー（los / deygout …）をそのまま見せており、ja でも英語のままだった。
 _ENV_KEYS  = ("los", "rural", "suburban", "urban")
 _DIFF_KEYS = ("deygout", "single")
+
+
+def _axis_label(key: str) -> str:
+    """項目名の表示（**単位つき**）。
+
+    単位の出所は report_scenario.AXIS_UNITS ＝ レポート（HTML/PNG/CSV）と同じ
+    一覧を使う（2026-07-26 の実機フィードバック：画面だけ単位が無く、dBm と dBi と
+    m が同じ見た目の数字で並んでいて何を入れる欄か分からない）。
+    **画面とレポートで単位表記がずれない**ことが、出所を1つにする理由。
+    """
+    return report_scenario.axis_label(key)
 
 
 def _env_labels() -> dict[str, str]:
@@ -221,9 +235,11 @@ class ScenarioWindow(tk.Toplevel):
         self._summary_label = ttk.Label(self._result_box, text="")
         self._summary_label.pack(anchor="w", pady=(0, 6))
 
+        # 余白つきの表スタイル（既定は行が詰まり、文字が枠・列境界に張り付く）。
         cols = ("label", "rx", "margin", "status")
         self._tree = ttk.Treeview(self._result_box, columns=cols, show="headings",
-                                  height=_RESULT_ROWS)
+                                  height=_RESULT_ROWS,
+                                  style=theme.table_style(self))
         headings = (i18n.t("scn_col_label"), i18n.t("html_rx_level") + " (dBm)",
                     i18n.t("html_act_margin") + " (dB)", i18n.t("html_status"))
         widths = (220, 130, 130, 80)
@@ -266,23 +282,24 @@ class ScenarioWindow(tk.Toplevel):
     def _build_compare_grid(self) -> None:
         """項目名の列とベース列（読み取り専用・↻ で更新される）を作る。"""
         ttk.Label(self._cmp_grid, text="").grid(row=0, column=0)
-        ttk.Label(self._cmp_grid, text=i18n.t("scn_base")).grid(
-            row=0, column=1, padx=6)
+        ttk.Label(self._cmp_grid, text=i18n.t("scn_base"), anchor="center").grid(
+            row=0, column=1, padx=6, sticky="ew")
         self._base_vars: dict[str, tk.StringVar] = {}
         for row, (key, _kind) in enumerate(_COMPARE_FIELDS, start=1):
-            ttk.Label(self._cmp_grid, text=i18n.t(f"scn_axis_{key}")).grid(
+            ttk.Label(self._cmp_grid, text=_axis_label(key)).grid(
                 row=row, column=0, sticky="w", pady=1)
             var = tk.StringVar(value=self._display(key, getattr(self._base_params, key)))
             self._base_vars[key] = var
             ttk.Label(self._cmp_grid, textvariable=var,
-                      anchor="e", width=11).grid(row=row, column=1, padx=6, pady=1)
+                      anchor="e", width=11).grid(row=row, column=1, padx=6, pady=1,
+                                                 sticky="ew")
 
     def _add_condition_column(self) -> None:
         if len(self._cmp_cols) >= scn.MAX_COMPARE_CONDITIONS:
             return
         col = len(self._cmp_cols) + 2         # 0=項目名 / 1=ベース
-        ttk.Label(self._cmp_grid, text=i18n.t("scn_cond_n").format(n=col - 1)).grid(
-            row=0, column=col, padx=6)
+        ttk.Label(self._cmp_grid, text=i18n.t("scn_cond_n").format(n=col - 1),
+                  anchor="center").grid(row=0, column=col, padx=6, sticky="ew")
         cvars: dict[str, tk.StringVar] = {}
         for row, (key, kind) in enumerate(_COMPARE_FIELDS, start=1):
             var = tk.StringVar(
@@ -295,7 +312,11 @@ class ScenarioWindow(tk.Toplevel):
                 w = ttk.Combobox(self._cmp_grid, textvariable=var,
                                  values=list(labels.values()),
                                  state="readonly", width=9)
-            w.grid(row=row, column=col, padx=6, pady=1)
+            # sticky="ew" ＝ **列の幅に合わせて広げる**。Entry(width=11) と
+            # Combobox(width=9＋矢印ボタン) は同じ width 指定でも実幅が揃わないので、
+            # 幅は grid の列（＝その列で一番広いウィジェット）に決めさせる
+            # （2026-07-26 の実機フィードバック：欄の右端がガタついて見える）。
+            w.grid(row=row, column=col, padx=6, pady=1, sticky="ew")
         self._cmp_cols.append(cvars)
         self._sync_cond_buttons()
 
@@ -320,10 +341,10 @@ class ScenarioWindow(tk.Toplevel):
         grid.pack(anchor="w")
 
         ttk.Label(grid, text=i18n.t("scn_axis")).grid(row=0, column=0, sticky="w")
-        self._axis_labels = {i18n.t(f"scn_axis_{a}"): a for a in scn.SWEEP_AXES}
+        self._axis_labels = {_axis_label(a): a for a in scn.SWEEP_AXES}
         self._axis_box = ttk.Combobox(
-            grid, values=list(self._axis_labels), state="readonly", width=20)
-        self._axis_box.set(i18n.t("scn_axis_h_tx"))
+            grid, values=list(self._axis_labels), state="readonly", width=24)
+        self._axis_box.set(_axis_label("h_tx"))
         self._axis_box.grid(row=0, column=1, padx=6, pady=3, sticky="w")
 
         self._from_var   = tk.StringVar(value="10")

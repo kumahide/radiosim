@@ -97,6 +97,7 @@ import sv_ttk
 
 import i18n
 import config
+from views import theme
 from views.launcher import SimLauncher
 
 _prof("top-level imports done")
@@ -174,6 +175,9 @@ def main() -> None:
     i18n.set_lang(cfg.get("lang", "en"))
     _prof("config/i18n done")
     manager.apply(cfg.get("theme", "system"))
+    # 全窓の既定フォントを sv_ttk の本文フォントへ揃える（窓ごとの font= を廃止）。
+    # テーマ適用の**後**に呼ぶ（sv.tcl が名前付きフォントを作るのがテーマ読み込み時）。
+    theme.apply_fonts(root)
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")

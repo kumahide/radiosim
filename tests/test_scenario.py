@@ -442,7 +442,10 @@ class TestScenarioWindowSmoke:
         root, win = self._win(default_params_dict)
         try:
             assert win._mode.get() == "compare"
-            assert win._axis_box.get() == i18n.t("scn_axis_h_tx")
+            # 画面の項目名は**単位つき**（出所は report_scenario.AXIS_UNITS ＝
+            # レポートと同じ一覧。画面だけ単位が無いと何を入れる欄か分からない）。
+            assert win._axis_box.get() == report_scenario.axis_label("h_tx")
+            assert win._axis_box.get() == i18n.t("scn_axis_h_tx") + " (m)"
         finally:
             win.destroy(); root.destroy()
 

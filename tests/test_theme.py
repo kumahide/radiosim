@@ -376,3 +376,91 @@ def test_no_hardcoded_gray_foreground_in_views():
         f"補助テキストの色が直書きされている: {offenders}。"
         "views/theme.py の muted_foreground() から取ること。"
     )
+
+
+# ============================================================
+# フォント（配色と同じく「出所は theme.py 一本」）
+# ============================================================
+def test_ui_font_comes_from_sv_ttk(root):
+    """本文フォントの出所が sv_ttk の名前付きフォントであること。
+
+    2.5b2 / I-023：sv_ttk は Entry/Combobox/Treeview に `SunValleyBodyFont` を
+    当てるが Label/Button には当てない。アプリ側が別の書体（`("Arial", 9)`）を
+    ベタ書きすると、**窓ごと・ウィジェットごとに書体もサイズも揃わない**。
+    """
+    set_theme("dark")
+    assert theme.ui_font(root)          == "SunValleyBodyFont"
+    assert theme.ui_font(root, "small") == "SunValleyCaptionFont"
+    assert theme.ui_font(root, "bold")  == "SunValleyBodyStrongFont"
+
+
+def test_apply_fonts_sets_the_same_font_on_labels_and_entries(root):
+    """ラベルと入力欄が同じフォントになること（＝1つの窓の中で字面が揃う）。"""
+    set_theme("dark")
+    theme.apply_fonts(root)
+    style = ttk.Style(master=root)
+    body = theme.ui_font(root)
+    for name in ("TLabel", "TButton", "TEntry", "TCombobox"):
+        assert style.lookup(name, "font") == body, (
+            f"{name} のフォントが本文フォント（{body}）に揃っていない"
+        )
+
+
+def test_fonts_survive_a_theme_switch(root):
+    """テーマを切り替えてもフォント指定が残ること。
+
+    ttk のスタイル設定は**テーマごとに独立した辞書**なので、light で
+    configure した内容は dark へ切り替えると消える（配色で踏んだ B-004 と同型
+    ＝「設定したつもりが効いていない」）。`<<ThemeChanged>>` での貼り直しが
+    実際に効いていることをここで固定する。
+    """
+    set_theme("light")
+    theme.apply_fonts(root)
+    set_theme("dark")
+    root.update()   # 仮想イベントはイベントループ経由で届く
+    style = ttk.Style(master=root)
+    assert style.lookup("TLabel", "font") == theme.ui_font(root)
+
+
+def test_no_hardcoded_font_family_in_views():
+    """views の中でフォント書体・サイズが直書きされていないこと。
+
+    実機フィードバック（2026-07-26）＝「ウィンドウ毎にフォントサイズが統一されて
+    いない」。原因はランチャー／バッチだけが `("Arial", 8)` `("Arial", 9)` を
+    ベタ書きしていたこと。配色（`gray` 直書き）と同じクラスなので、同じように
+    構造で固定する＝フォントは `theme.ui_font()` か Tk の名前付きフォントから取る。
+    """
+    import re
+
+    views_dir = os.path.join(os.path.dirname(__file__), "..", "views")
+    # font= に書体名リテラル（("Arial", 9) 等）が来ているものを拾う。
+    # `font=theme.ui_font(...)` / `font="TkFixedFont"` は許す。
+    pattern = re.compile(r'font\s*=\s*\(\s*["\']')
+    offenders = []
+    for fname in sorted(os.listdir(views_dir)):
+        if not fname.endswith(".py"):
+            continue
+        path = os.path.join(views_dir, fname)
+        with open(path, encoding="utf-8") as f:
+            for lineno, line in enumerate(f, 1):
+                if pattern.search(line):
+                    offenders.append(f"{fname}:{lineno}")
+    assert not offenders, (
+        f"フォントが直書きされている: {offenders}。"
+        "views/theme.py の ui_font() から取ること。"
+    )
+
+
+def test_table_padding_survives_a_theme_switch(root):
+    """結果表の余白（行高・padding）もテーマ切替で消えないこと。
+
+    2026-07-26 の実機フィードバック「余白を設定する」への対処。スタイル設定が
+    テーマごとの辞書である以上、フォントとまったく同じクラスの落とし穴がある。
+    """
+    set_theme("light")
+    name = theme.table_style(root, "TestTable.Treeview")
+    set_theme("dark")
+    root.update()
+    style = ttk.Style(master=root)
+    assert style.lookup(name, "rowheight"), "テーマ切替で表の行高指定が消えた"
+    assert style.lookup(name, "padding"),   "テーマ切替で表の余白指定が消えた"

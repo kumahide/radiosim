@@ -157,17 +157,17 @@ class BatchBuilderWindow(tk.Toplevel):
 
         f_proj = ttk.Frame(frame)
         f_proj.pack(side="left", padx=6)
-        ttk.Label(f_proj, text=i18n.t("batch_project_name"), font=("Arial", 8)).pack(side="left")
-        ttk.Entry(f_proj, textvariable=self._project_name_var, font=("Arial", 8),
+        ttk.Label(f_proj, text=i18n.t("batch_project_name")).pack(side="left")
+        ttk.Entry(f_proj, textvariable=self._project_name_var,
                   width=20, state="readonly").pack(side="left", padx=(2, 0))
-        ttk.Label(f_proj, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
+        ttk.Label(f_proj, text="🔒").pack(side="left", padx=(2, 0))
 
         f_memo = ttk.Frame(frame)
         f_memo.pack(side="left", padx=6, fill="x", expand=True)
-        ttk.Label(f_memo, text=i18n.t("batch_memo"), font=("Arial", 8)).pack(side="left")
-        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 8),
+        ttk.Label(f_memo, text=i18n.t("batch_memo")).pack(side="left")
+        ttk.Entry(f_memo, textvariable=self._memo_var,
                   state="readonly").pack(side="left", padx=(2, 0), fill="x", expand=True)
-        ttk.Label(f_memo, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
+        ttk.Label(f_memo, text="🔒").pack(side="left", padx=(2, 0))
 
     def _build_common_settings(self) -> None:
         frame = ttk.LabelFrame(
@@ -199,7 +199,7 @@ class BatchBuilderWindow(tk.Toplevel):
         def _field(parent: tk.Widget, label: str, attr: str, width: int = 8) -> None:
             f = ttk.Frame(parent)
             f.pack(side="left", padx=6)
-            ttk.Label(f, text=label, font=("Arial", 8)).pack(side="left")
+            ttk.Label(f, text=label).pack(side="left")
             var = tk.StringVar(value=str(getattr(self._base_params, attr)))
             self._common_vars[attr] = var
             # 共通設定はランチャー（source of truth）のスナップショット。直接編集
@@ -208,12 +208,12 @@ class BatchBuilderWindow(tk.Toplevel):
             # ダークモードで薄グレー背景×白文字になり読めない（B-001）。ttk.Entry の
             # readonly ならライト/ダーク双方でテーマ配色になる。
             ttk.Entry(
-                f, textvariable=var, font=("Arial", 8), width=width,
+                f, textvariable=var, width=width,
                 state="readonly",
             ).pack(side="left", padx=(2, 0))
             # 🔒はテーマ配色に依存しないグリフなので、ライト/ダーク双方で
             # 「編集不可（ランチャーからの凍結値）」の視覚キューになる（I-004）。
-            ttk.Label(f, text="🔒", font=("Arial", 8)).pack(side="left", padx=(2, 0))
+            ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
         _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
         _field(row0, i18n.t("lbl_b_p_tx"),   "p_tx")
@@ -229,7 +229,7 @@ class BatchBuilderWindow(tk.Toplevel):
         # Env Type Combobox
         f_env = ttk.Frame(row1)
         f_env.pack(side="left", padx=6)
-        ttk.Label(f_env, text=i18n.t("lbl_b_env_type"), font=("Arial", 8)).pack(side="left")
+        ttk.Label(f_env, text=i18n.t("lbl_b_env_type")).pack(side="left")
         # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
         self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
         self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
@@ -241,17 +241,17 @@ class BatchBuilderWindow(tk.Toplevel):
         ttk.Combobox(
             f_env, textvariable=self._env_var,
             values=list(self._env_key_to_label.values()),
-            state="readonly", font=("Arial", 8), width=9,
+            state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
 
         # Diff Model Combobox
         f_diff = ttk.Frame(row1)
         f_diff.pack(side="left", padx=6)
-        ttk.Label(f_diff, text=i18n.t("lbl_b_diff_model"), font=("Arial", 8)).pack(side="left")
+        ttk.Label(f_diff, text=i18n.t("lbl_b_diff_model")).pack(side="left")
         self._diff_var = tk.StringVar(value=self._base_params.diff_method)
         ttk.Combobox(
             f_diff, textvariable=self._diff_var, values=["deygout", "single"],
-            state="readonly", font=("Arial", 8), width=9,
+            state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
 
         # ランチャー（source of truth）から共通設定を取り込む。専用行に右詰め、
@@ -259,7 +259,7 @@ class BatchBuilderWindow(tk.Toplevel):
         if self._config_provider is not None:
             ttk.Label(
                 row2, text=i18n.t("hint_common_readonly"),
-                font=("Arial", 8), foreground=theme.muted_foreground(row2),
+                foreground=theme.muted_foreground(row2),
             ).pack(side="left", padx=6)
             ttk.Button(
                 row2, text=i18n.t("btn_refresh_common"),
@@ -299,7 +299,7 @@ class BatchBuilderWindow(tk.Toplevel):
         for col, label in enumerate(self._COLS):
             ttk.Label(
                 self._hdr, text=label,
-                font=("Arial", 9, "bold"), anchor="w",
+                font=theme.ui_font(self, "bold"), anchor="w",
             ).grid(row=0, column=col, padx=2, pady=3, sticky="w")
 
         # スクロール可能なテーブル本体
@@ -383,15 +383,15 @@ class BatchBuilderWindow(tk.Toplevel):
         # 上段: 現在パス名 (左) + OK/NG/ERR カウント (右)
         row1 = ttk.Frame(prog_frame)
         row1.pack(fill="x")
-        self._prog_label = ttk.Label(row1, text="", font=("Arial", 9), anchor="w")  # noqa: E501
+        self._prog_label = ttk.Label(row1, text="", anchor="w")
         self._prog_label.pack(side="left", fill="x", expand=True)
         # OK/NG/ERR は個別の色分けをやめ、他の ttk.Label と同一スタイルへ統一する
         # （I-005・従来の tk.Label＋前景色ハードコードはダークテーマに追従しない）。
-        self._ok_label  = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
+        self._ok_label  = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
         self._ok_label.pack(side="left", padx=(8, 2))
-        self._ng_label  = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
+        self._ng_label  = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
         self._ng_label.pack(side="left", padx=2)
-        self._err_label = ttk.Label(row1, text="", font=("Arial", 9, "bold"))
+        self._err_label = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
         self._err_label.pack(side="left", padx=(2, 0))
 
         # 下段: バー (左・伸縮) + N/M (P%) (右)
@@ -400,7 +400,7 @@ class BatchBuilderWindow(tk.Toplevel):
         self._prog_bar = ttk.Progressbar(row2, orient="horizontal", mode="determinate")
         self._prog_bar.pack(side="left", fill="x", expand=True)
         self._prog_count_label = ttk.Label(
-            row2, text="", font=("Arial", 9), width=15, anchor="e"
+            row2, text="", width=15, anchor="e"
         )
         self._prog_count_label.pack(side="right", padx=(6, 0))
 
@@ -475,7 +475,7 @@ class BatchBuilderWindow(tk.Toplevel):
         # col 0: drag handle（他の ttk ウィジェットとスタイルを統一・I-005）
         handle = ttk.Label(
             row_frame, text="≡", cursor="fleur",
-            font=("Arial", 9, "bold"), width=2,
+            font=theme.ui_font(self, "bold"), width=2,
         )
         handle.grid(row=0, column=0, padx=2, pady=1)
         handle.bind("<ButtonPress-1>",   lambda e, f=row_frame: self._drag_start(e, f))
@@ -485,7 +485,7 @@ class BatchBuilderWindow(tk.Toplevel):
         # cols 1…N-2: entry widgets (skip handle col 0 and last 2 button cols)
         entries: list[tk.Entry] = []
         for i, (w, val) in enumerate(zip(self._WIDTHS[1:-2], defaults)):
-            e = ttk.Entry(row_frame, font=("Arial", 9), width=w)
+            e = ttk.Entry(row_frame, width=w)
             e.insert(0, val)
             e.grid(row=0, column=i + 1, padx=2, pady=1, sticky="w")
             entries.append(e)
@@ -493,7 +493,7 @@ class BatchBuilderWindow(tk.Toplevel):
         # 水平距離（読み取り専用・I-000）。座標の打ち間違いは距離が極端な値（0 や
         # 数千 km）になって現れるので、一覧に出しておくと実行前に気づける。
         # 表示は m 固定（units.format_distance＝I-014 で決めた表示単位の単一源泉）。
-        dist_lbl = ttk.Label(row_frame, font=("Arial", 9), anchor="e", width=self._WIDTHS[-3])
+        dist_lbl = ttk.Label(row_frame, anchor="e", width=self._WIDTHS[-3])
         dist_lbl.grid(row=0, column=len(self._WIDTHS) - 3, padx=2, pady=1, sticky="w")
 
         # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示と水平距離を

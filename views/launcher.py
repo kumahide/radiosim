@@ -77,7 +77,7 @@ class _Tooltip:
             self._tip, text=self._text,
             background=colors["background"], foreground=colors["foreground"],
             relief="solid", borderwidth=1,
-            font=("Arial", 8), padx=5, pady=3,
+            font=theme.ui_font(self._widget, "small"), padx=5, pady=3,
         ).pack()
 
     def _cancel(self, _=None) -> None:
@@ -114,7 +114,7 @@ class SimLauncher:
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
 
     def _fit_window_to_content(self) -> None:
-        """ウィンドウ高さを中身の必要量に合わせる（下端の切り落とし防止）。
+        """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。
 
         ウィンドウは `resizable(False, False)` の固定サイズなので、**高さを
         リテラルで持つと入力欄を1グループ足すたびに下端が黙って切れる**。実際
@@ -126,16 +126,26 @@ class SimLauncher:
         高さは実測（`winfo_reqheight`）から決めるので、以後グループを足しても
         追随する。画面からはみ出さないよう画面高さの 92% で頭打ちにする。
         ガード＝tests/test_smoke.py::test_launcher_window_fits_its_content。
+
+        **幅も同じ扱いにする**（2.5b2 / I-023 のクラス点検）：`_WIN_WIDTH` は
+        リテラルのままだったので、フォント統一で本文が Segoe UI 本文フォントに
+        なった際に必要幅が 464px となり 450px 固定では横が足りなかった。原因
+        （固定サイズ窓＋寸法のリテラル持ち）は高さの不具合とまったく同じなので、
+        注意書きではなく**同じ仕組み**で塞ぐ。`_WIN_WIDTH` は下限として残す。
         """
         self.root.update_idletasks()
         needed = max(self.root.winfo_reqheight(), self._MIN_HEIGHT)
         limit  = int(self.root.winfo_screenheight() * 0.92)
+        self._window_width = min(
+            max(self.root.winfo_reqwidth(), self._WIN_WIDTH),
+            int(self.root.winfo_screenwidth() * 0.92),
+        )
         # 選んだ高さを残す。ウィンドウが未表示のあいだ `geometry()` は設定値では
         # なく自然サイズを返すため、テストから実現後のサイズは当てにできない
         # （最初に書いたガードはこれで壊れた実装でも緑になった）。決定した値を
         # そのまま検証できるようにしておく。
         self._window_height = min(needed, limit)
-        self.root.geometry(f"{self._WIN_WIDTH}x{self._window_height}")
+        self.root.geometry(f"{self._window_width}x{self._window_height}")
 
     def _on_app_close(self) -> None:
         # 破棄前にポーリングを止める（破棄済み root への after を避ける）。
@@ -176,7 +186,7 @@ class SimLauncher:
             self.root,
             text=version.COPYRIGHT,
             fg=theme.muted_foreground(self.root),
-            font=("Arial", 8),
+            font=theme.ui_font(self.root, "small"),
         ).pack(side="bottom", pady=(0, 6))
         self._build_logo(self.root)
 
@@ -383,7 +393,7 @@ class SimLauncher:
         f_env = ttk.Frame(g)
         f_env.pack(fill="x", pady=2, padx=10)
         ttk.Label(
-            f_env, text=i18n.t("lbl_env_type"), width=22, anchor="w", font=("Arial", 9)
+            f_env, text=i18n.t("lbl_env_type"), width=22, anchor="w"
         ).pack(side="left")
         # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
         self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
@@ -399,7 +409,6 @@ class SimLauncher:
             textvariable = self._env_var,
             values       = list(self._env_key_to_label.values()),
             state        = "readonly",
-            font         = ("Arial", 9),
             width        = 16,
         ).pack(side="right", expand=True, fill="x")
 
@@ -411,7 +420,6 @@ class SimLauncher:
         f_diff.pack(fill="x", pady=2, padx=10)
         ttk.Label(
             f_diff, text=i18n.t("lbl_diff_method"), width=22, anchor="w",
-            font=("Arial", 9),
         ).pack(side="left")
         self._diff_key_to_label = {
             "deygout": i18n.t("diff_opt_deygout"),
@@ -429,7 +437,6 @@ class SimLauncher:
             textvariable = self._diff_var,
             values       = list(self._diff_key_to_label.values()),
             state        = "readonly",
-            font         = ("Arial", 9),
             width        = 16,
         )
         cb_diff.pack(side="right", expand=True, fill="x")
@@ -458,16 +465,16 @@ class SimLauncher:
 
         f_proj = ttk.Frame(g)
         f_proj.pack(fill="x", pady=2, padx=10)
-        ttk.Label(f_proj, text=i18n.t("batch_project_name"), width=22, anchor="w",
-                  font=("Arial", 9)).pack(side="left")
-        ttk.Entry(f_proj, textvariable=self._project_var, font=("Arial", 9)).pack(
+        ttk.Label(f_proj, text=i18n.t("batch_project_name"), width=22,
+                  anchor="w").pack(side="left")
+        ttk.Entry(f_proj, textvariable=self._project_var).pack(
             side="right", expand=True, fill="x")
 
         f_memo = ttk.Frame(g)
         f_memo.pack(fill="x", pady=2, padx=10)
-        ttk.Label(f_memo, text=i18n.t("batch_memo"), width=22, anchor="w",
-                  font=("Arial", 9)).pack(side="left")
-        ttk.Entry(f_memo, textvariable=self._memo_var, font=("Arial", 9)).pack(
+        ttk.Label(f_memo, text=i18n.t("batch_memo"), width=22,
+                  anchor="w").pack(side="left")
+        ttk.Entry(f_memo, textvariable=self._memo_var).pack(
             side="right", expand=True, fill="x")
 
     def _current_meta(self) -> dict[str, str]:
@@ -482,7 +489,7 @@ class SimLauncher:
         }
 
     def _build_status(self, parent: tk.Widget) -> None:
-        self.prog_label = ttk.Label(parent, text=i18n.t("status_ready"), font=("Arial", 9))
+        self.prog_label = ttk.Label(parent, text=i18n.t("status_ready"))
         self.prog_label.pack(pady=(10, 0))
 
         self.prog_bar = ttk.Progressbar(
@@ -579,9 +586,10 @@ class SimLauncher:
         f = ttk.Frame(parent)
         f.pack(fill="x", pady=2, padx=10)
         ttk.Label(
-            f, text=label, width=22, anchor="w", font=("Arial", 9)
+            f, text=label, width=22, anchor="w"
         ).pack(side="left")
-        e = tk.Entry(f, font=("Arial", 9))
+        # ⚠️ 素の tk.Entry はスタイルに追従しないので font を明示する（新規は ttk で）。
+        e = tk.Entry(f, font=theme.ui_font(parent))
         e.insert(0, self.config[key])
         e.pack(side="right", expand=True, fill="x")
         self.entries[key] = e
@@ -1055,7 +1063,7 @@ class SimLauncher:
         win.title("README")
         win.geometry("800x600")
         win.minsize(500, 400)
-        st = ScrolledText(win, font=("Courier New", 10), wrap="word")
+        st = ScrolledText(win, font="TkFixedFont", wrap="word")
         st.pack(fill="both", expand=True, padx=10, pady=10)
         with open(path, encoding="utf-8") as f:
             st.insert("1.0", f.read())
