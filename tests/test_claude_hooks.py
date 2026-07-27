@@ -23,6 +23,7 @@ pytest ＝ Stop フックの決定論ゲート（`tools/qa-hook/gate.mjs`）が�
 """
 
 import importlib.util
+import json
 import os
 import sys
 
@@ -312,6 +313,78 @@ class TestMemoryIndexLineLength:
     def test_normal_index_line_is_not_flagged(self, memcheck):
         line = "- [x.md（ふつう）](x.md) — " + "あ" * 100
         assert memcheck.check_index_line_length([line]) == []
+
+
+# ============================================================
+# session_budget.py ＝ トークン予算の計測（2026-07-27）
+# ============================================================
+_BUDGET_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "session_budget.py"))
+
+
+@pytest.fixture(scope="module")
+def budget():
+    if not os.path.exists(_BUDGET_PATH):
+        pytest.skip("session_budget.py は git-ignore（CI には存在しない）")
+    spec = importlib.util.spec_from_file_location("_session_budget", _BUDGET_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_session_budget"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestRoundtripCounting:
+    """1 回の API 応答を 1 回として数えられているかを固定する。
+
+    2026-07-27、最初の計測はこれを取り違えて結論を誤らせかけた。jsonl は 1 回の
+    応答を content ブロックごとに複数行へ分割して記録し、**分割された各行が同じ
+    usage を持ち回る**。行単位で数えると入力トークンが最大 3 倍に膨らみ（236M と
+    出た値の実体は 175M）、並列ツール呼び出しも「並列度 1.00」に潰れて見える。
+    施策の効果測定がこの数字に乗っているので、静かに壊れると判断ごと狂う。
+    """
+
+    def _write(self, tmp_path, entries):
+        p = tmp_path / "t.jsonl"
+        p.write_text(
+            "\n".join(json.dumps(e, ensure_ascii=False) for e in entries),
+            encoding="utf-8",
+        )
+        return p
+
+    def _assistant(self, mid, cache_read):
+        return {
+            "type": "assistant",
+            "message": {
+                "id": mid,
+                "content": [{"type": "text", "text": "x"}],
+                "usage": {"cache_read_input_tokens": cache_read},
+            },
+        }
+
+    def test_split_message_counts_once(self, budget, tmp_path):
+        """同一 message.id が 3 行に分割されても 1 往復・1 回ぶんのトークン。"""
+        path = self._write(tmp_path, [self._assistant("msg_A", 1000)] * 3)
+        trips, total = budget.count_roundtrips(path)
+        assert trips == 1
+        assert total == 1000
+
+    def test_distinct_messages_accumulate(self, budget, tmp_path):
+        path = self._write(
+            tmp_path,
+            [self._assistant("msg_A", 1000), self._assistant("msg_B", 2500)],
+        )
+        assert budget.count_roundtrips(path) == (2, 3500)
+
+    def test_non_assistant_and_broken_lines_are_ignored(self, budget, tmp_path):
+        """記録には user 行や壊れた行が混ざる＝落ちずに読み飛ばすこと。"""
+        p = tmp_path / "t.jsonl"
+        p.write_text(
+            json.dumps({"type": "user", "message": {"content": "hi"}})
+            + "\n{ broken json\n\n"
+            + json.dumps(self._assistant("msg_A", 700)),
+            encoding="utf-8",
+        )
+        assert budget.count_roundtrips(p) == (1, 700)
 
     def test_non_index_lines_are_ignored(self, memcheck):
         """見出しや説明文は対象外（索引エントリだけを見る）。"""
