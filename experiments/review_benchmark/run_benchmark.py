@@ -127,7 +127,11 @@ def ask(model: str, prompt: str, num_ctx: int, think: bool) -> dict:
         f"{OLLAMA}/api/generate", data=body, headers={"Content-Type": "application/json"}
     )
     t0 = time.time()
-    with urllib.request.urlopen(req, timeout=3600) as r:
+    # B310 を抑止する理由: URL は定数 OLLAMA（localhost:11434）だけで組み立てており、
+    # 外部入力もスキームの選択も入らない（file:/ 等に化ける経路が無い）。
+    # ⚠️ 除外は experiments/ ディレクトリごとではなくこの 1 行に限る＝ここを丸ごと
+    #    スキャン対象から外すと、以後この配下の実在の指摘も黙って消える。
+    with urllib.request.urlopen(req, timeout=3600) as r:  # nosec B310
         data = json.loads(r.read().decode("utf-8"))
     data["_wall"] = time.time() - t0
     return data
