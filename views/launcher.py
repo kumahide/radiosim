@@ -96,6 +96,15 @@ class SimLauncher:
     _WIN_WIDTH  = 450
     _MIN_HEIGHT = 900
 
+    # ロゴの表示上限。**高さ側が本質**＝ランチャーは縦がいちばん苦しい窓で、FHD
+    # 100% の使える高さ 990px に対して必要高が 1023px あり、33px が下端のボタン列
+    # から削られていた。ロゴは窓の中で唯一「機能を持たない帯」なので、足りない分は
+    # まずここから返す（入力欄・ボタンの余白を削って情報密度を上げる前に）。
+    # ⚠️ 高さの上限を外す/緩めるときは必ず tests/test_window_fit.py の FHD ゲートを
+    #    回すこと（緩めた分だけ最下段のボタンが削られる＝見切れ 7 回目になる）。
+    _LOGO_MAX_W = 460
+    _LOGO_MAX_H = 56
+
     def __init__(self, root: tk.Tk, on_theme: Callable[[str], None]) -> None:
         self.root = root
         root.title(version.APP_FULL)
@@ -562,11 +571,11 @@ class SimLauncher:
         try:
             from PIL import Image, ImageTk
             img = Image.open(logo_path).convert("RGBA")
-            max_w = 460
             w, h = img.size
-            if w > max_w:
-                h = int(h * max_w / w)
-                w = max_w
+            # 幅・高さの両方に収まる倍率を採る（縦横比は保つ）。拡大はしない。
+            scale = min(self._LOGO_MAX_W / w, self._LOGO_MAX_H / h, 1.0)
+            if scale < 1.0:
+                w, h = max(int(w * scale), 1), max(int(h * scale), 1)
                 img = img.resize((w, h), Image.Resampling.LANCZOS)
             self._logo_image = ImageTk.PhotoImage(img)
             tk.Label(parent, image=self._logo_image).pack(side="bottom", pady=(4, 8))

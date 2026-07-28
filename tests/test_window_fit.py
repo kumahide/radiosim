@@ -148,6 +148,17 @@ def _grow_scenario(win) -> None:
 # 1・2: 全窓が中身を収めていること
 # ============================================================
 def _assert_fits(win, label: str) -> None:
+    """窓が「測った必要量」を実際に確保していること。
+
+    ⚠️ **`min(need, lim)` の意味に注意（B-021 で一度ここに騙された）**。
+    これは *開発機の画面* が中身より小さいときの逃げで、**製品の欠陥を免除する
+    条項ではない**。2.5RC1 までは*これが唯一の検査*だったため、ランチャーが FHD
+    で 33px 溢れていても「画面に入らないのだから仕方ない」として緑になり、
+    見切れ 6 回目を通した（しかも開発機は WQHD ＝ 上限 1350px なので `lim` に
+    当たることすら無く、免除が働いていることにも気づけなかった）。
+    ⇒ **「中身が実機の画面に収まるか」は開発機の画面で測ってはいけない**。それは
+    `test_every_window_fits_on_fhd_at_96dpi`（下）が FHD の上限を明示して見る。
+    """
     need_w, need_h = window_fit.required_size(win)
     size = getattr(win, "_fit_size", None)
     assert size is not None, (
@@ -164,6 +175,56 @@ def _assert_fits(win, label: str) -> None:
         f"[{label}] 中身が窓高に入らない（必要 {need_h}px / 窓 {size[1]}px）。"
         "下端のウィジェットが見切れる。"
     )
+
+
+# ============================================================
+# 実機の画面に収まること（B-021）
+# ============================================================
+# 出荷先の画面＝**FHD（1920×1080）100%**。実効上限は SCREEN_MARGIN を引いた値で、
+# 高さは 990px になる。
+#
+# ⚠️ **開発機の画面で測ってはいけない**。開発機は WQHD（上限 1350px）なので、
+# ランチャーが必要とする 1023px は楽々入ってしまい、実機で 33px 溢れて最下段の
+# ボタンが数 px に潰れていることに**永久に気づけなかった**（B-021＝見切れ 6 回目）。
+# だから画面サイズを実測に頼らず、**出荷先の寸法を定数として与える**。
+#
+# ⚠️ **範囲は 96dpi（100%）まで**と意図して区切ってある（2026-07-28 の決定）。
+# 125%/150% では条件探索が 105px / 233px 溢れるが、それを緑にするには窓を
+# スクロール可能にする構造変更（2.6a1）が要るため、ここを広げるのはその後。
+# **区切った残りは B-023 として台帳に独立させてある**＝見逃しではない。
+_FHD_LIMIT = (1920 - window_fit.SCREEN_MARGIN, 1080 - window_fit.SCREEN_MARGIN)
+
+
+@pytest.mark.parametrize("lang", ["ja", "en"])
+@pytest.mark.parametrize("name", sorted(_WINDOWS))
+def test_every_window_fits_on_fhd_at_96dpi(name, lang, monkeypatch):
+    """全窓の必要寸法が FHD 100% の実効上限（1830×990）に収まること。"""
+    from views import theme
+
+    prev = i18n._lang
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang(lang)
+        theme.apply_fonts(root, dpi=96)
+        opener, _ = _WINDOWS[name]
+        win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        need_w, need_h = window_fit.required_size(win)
+        lim_w, lim_h = _FHD_LIMIT
+        assert need_h <= lim_h, (
+            f"[{name}/{lang}] 実機（FHD 100%）の画面に入らない"
+            f"（必要 {need_h}px / 使える高さ {lim_h}px ＝ {need_h - lim_h}px 超過）。"
+            "溢れた分は下端のウィジェットから削られる（B-021 では最下段のボタン列が"
+            "数 px の帯に潰れ、マップウィンドウ・条件探索へ到達できなくなった）。"
+        )
+        assert need_w <= lim_w, (
+            f"[{name}/{lang}] 実機（FHD 100%）の画面に入らない"
+            f"（必要 {need_w}px / 使える幅 {lim_w}px ＝ {need_w - lim_w}px 超過）。"
+        )
+    finally:
+        i18n.set_lang(prev)
+        theme.apply_fonts(root, dpi=96)   # 名前付きフォントは他テストと共有
+        root.destroy()
 
 
 @pytest.mark.parametrize("lang", ["ja", "en"])
