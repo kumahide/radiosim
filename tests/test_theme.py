@@ -391,7 +391,42 @@ def test_ui_font_comes_from_sv_ttk(root):
     set_theme("dark")
     assert theme.ui_font(root)          == "SunValleyBodyFont"
     assert theme.ui_font(root, "small") == "SunValleyCaptionFont"
-    assert theme.ui_font(root, "bold")  == "SunValleyBodyStrongFont"
+    # 強調だけは sv_ttk の名前をそのまま返さない（2.6a1 / B-026）。理由は下の
+    # test_bold_shares_the_body_typeface。
+    assert theme.ui_font(root, "bold")  != "SunValleyBodyStrongFont"
+
+
+def _family(widget, kind: str) -> str:
+    """名前付きフォントに設定されている書体名。"""
+    from tkinter import font as tkfont
+
+    return str(tkfont.nametofont(theme.ui_font(widget, kind), root=widget)
+               .config()["family"])
+
+
+def test_bold_shares_the_body_typeface(root):
+    """強調が本文と**同じ書体**で、weight だけ違うこと（B-026 の前提条件）。
+
+    sv_ttk の `SunValleyBodyStrongFont` は本文とは独立した書体なので、本文の書体を
+    差し替えても強調だけ取り残される。ここで固定するのは**「強調は本文に追従する」
+    という不変条件**であって、日本語の字形が揃うことではない。
+
+    ⚠️ **この検査が緑でも B-026 の症状（バッチ表ヘッダの漢字だけ字形が違う）は
+    消えない。** 2026-07-31 の実測で、漢字のフォントリンク先を決めているのは
+    family ではなく **weight** だと分かった＝本文が Segoe 系である限り、太字に
+    した時点で漢字は Malgun Gothic（韓国語フォント）へ落ちる。症状を消すのは
+    「ja の本文書体を日本語を持つ書体にする」（ISSUES.md B-026 の処方②・字幅が
+    変わるため寸法ゲートの後）で、本検査はその②が効くための足場を守るもの。
+    """
+    from tkinter import font as tkfont
+
+    set_theme("dark")
+    theme.apply_fonts(root)
+    assert _family(root, "bold") == _family(root, "body"), (
+        "強調が本文と別の書体になっている＝日本語のフォントリンク先が割れる"
+    )
+    weight = tkfont.nametofont(theme.ui_font(root, "bold"), root=root).config()["weight"]
+    assert str(weight) == "bold", "強調が太字になっていない"
 
 
 def _effective(widget) -> tuple:
@@ -574,6 +609,20 @@ def test_every_ui_font_scales_together(root):
     theme.apply_fonts(root, dpi=192)
     for kind, was in base.items():
         assert _px(root, kind) == was * 2, f"{kind} が DPI に追従していない"
+
+
+def test_bold_keeps_following_the_body_font_after_dpi_changes(root):
+    """DPI が動いても強調が本文と同じ書体・サイズであり続けること（B-026 / B-015）。
+
+    強調は本文フォントの複製として作るので、**貼り直しの通り道（apply_fonts）に
+    載せ忘れると強調だけ取り残される**。B-015（窓は追従するのにフォントが追従
+    しない）と同型の抜け方なので、DPI を振って固定する。
+    """
+    set_theme("dark")
+    for dpi in (96, 144, 192, 96):
+        theme.apply_fonts(root, dpi=dpi)
+        assert _family(root, "bold") == _family(root, "body"), f"dpi={dpi} で書体が割れた"
+        assert _px(root, "bold") == _px(root, "body"), f"dpi={dpi} でサイズが割れた"
 
 
 def test_table_row_height_follows_the_font(root):
