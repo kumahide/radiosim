@@ -416,7 +416,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | Sensitivity       | -130                           | -20     | dBm    |
 | TX/RX Height      | 0                              | 500     | m      |
 | Vegetation Height | 0                              | 100     | m      |
-| K-Factor          | 0                              | 30      | —     |
+| Rician K-Factor   | 0                              | 30      | —     |
 | Sampling Points   | 10                             | 2,000   | points |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
@@ -636,6 +636,10 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 ## Testing
 
 ```bash
+# Test dependencies are not in requirements.txt (they never ship with the app).
+# Install them first on a fresh environment.
+pip install pytest pytest-cov
+
 python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
