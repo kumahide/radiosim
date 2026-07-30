@@ -188,8 +188,12 @@ class TestRunCalculationIsPure:
     気づけない）。ゲートとして残す。
     """
 
+    # staticmethod なのは pytest 10 対策：class スコープの fixture を
+    # インスタンスメソッドで書く形は 9.1 で deprecated（10 で削除）。
+    # この fixture は self を一切使わないので形を変えるだけで済む。
     @pytest.fixture(scope="class")
-    def link(self):
+    @staticmethod
+    def link():
         return LINKS[0]
 
     def test_repeated_runs_are_bit_identical(self, link):

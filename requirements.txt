@@ -4,12 +4,16 @@
 # packaged app that ships to users. To refresh: bump a pin, run the full test
 # suite + a build, then commit. Transitive deps are not locked here; add a
 # full lockfile only if bit-exact reproducibility becomes necessary.
+# ⚠️ numpy は 2.4.4 で据え置き（2026-07-30 判断）。2.5.x は Requires-Python>=3.12 で、
+# 上げると宣言している対応 Python の下限が 3.11 → 3.12 に動く＝ソース実行の利用者に
+# 対する契約変更になる。取り込みたい機能・修正が無いので下限を守る側を選んだ。
+# 下限を上げるときは pyproject.toml と README ja/en の計 5 か所を同時に直すこと。
 numpy==2.4.4
-matplotlib==3.10.9
-requests==2.33.1
-Pillow==12.2.0
+matplotlib==3.11.1
+requests==2.34.2
+Pillow==12.3.0
 sv-ttk==2.6.1
 darkdetect==0.8.0
 markdown==3.10.2
 truststore==0.10.4
-tkintermapview==1.29
+tkintermapview==1.30
