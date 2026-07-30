@@ -1,4 +1,6 @@
-# Build output
+# Build output. Normally these live outside the repository (RADIOSIM_BUILD_ROOT
+# — see README "開発環境のセットアップ"); the entries stay because that env var is
+# optional and the default output path is right here.
 dist/
 build/
 RadioSimPro-*.zip
@@ -29,6 +31,8 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
+# The project venv is expected to live outside the repository (see README
+# "開発環境のセットアップ"). This entry catches one created here anyway.
 .venv/
 
 # Testing

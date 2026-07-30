@@ -22,11 +22,12 @@ jobs:
           python-version: "3.14"
           cache: pip
 
+      # 開発依存は requirements-dev.txt が唯一の宣言場所（I-037）。ここへインラインで
+      # 書き足すと、CI とローカルとで別の版を使いながら両方緑になり得る。
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
-          pip install -r requirements.txt
-          pip install pytest pytest-cov pyright ruff bandit
+          pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Ruff (syntax + pyflakes)
         run: ruff check .          # config from pyproject.toml [tool.ruff]

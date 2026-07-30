@@ -9,9 +9,16 @@ tests/test_env_consistency.py
 pytest が落ちる」Tier-0 ゲートに昇格する。
 
 守備範囲: 本テストは **pytest を実行しているインタープリタの環境**
-（ローカル=.venv / CI=ランナー）を検査する。もう一方の系統である
-ビルド用 Python（PATH 側）は build.bat が `pip install -r requirements.txt`
-でビルドごとにピンを強制するため、2系統とも常時ガードされる。
+（ローカル=プロジェクト venv / CI=ランナー）を検査する。2.6a1 で build.bat が
+`RADIOSIM_PYTHON`（＝テストを走らせている venv）に一本化されたため、
+ローカルでは「検証する環境」と「出荷物を焼く環境」が同一になった。
+
+⚠️ ただし本テストが見るのは **requirements.txt にピンされた直接依存だけ**で、
+推移的依存（certifi/fonttools/idna/click…）は射程外。2.6a1 以前は build 用に
+PATH の共有 Python を使っており、この射程外の 8 件がずれたまま出荷されていた
+（certifi の CA バンドルを含む＝ISSUES.md B-020）。環境の一本化はその穴を
+「ずれる余地ごと無くす」形で塞いだもので、本テストの守備範囲が広がった
+わけではない。
 
 ピンを意図的に上げる手順は requirements.txt 冒頭コメントのとおり
 （bump→フルテスト＋ビルド→コミット。Requires-Python の再確認も忘れずに）。

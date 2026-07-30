@@ -1,0 +1,28 @@
+# Development / build dependencies (NOT shipped — see I-037 / B-020).
+#
+# Why a separate file from requirements.txt:
+#   requirements.txt is what goes INTO the packaged app. Mixing pytest &c. in
+#   there risks bundling test tooling into RadioSimPro.exe. Keep the runtime
+#   surface and the workbench surface in different files, always.
+#
+# Pinned for the same reason requirements.txt is pinned: the versions listed
+# here are the ones the gates were green against, and pyinstaller in particular
+# decides the bootloader that ends up inside the shipped exe — an unpinned
+# bundler means the binary is built by whatever was newest that day.
+#
+# Install (into the project venv — see README "開発環境"):
+#   python -m pip install -r requirements.txt -r requirements-dev.txt
+#
+# To refresh: bump a pin, run the full suite + a build, then commit.
+
+# --- Test / coverage ---
+pytest==9.1.1
+pytest-cov==7.1.0
+
+# --- Static analysis (same set the CI gates run) ---
+pyright==1.1.411
+ruff==0.16.0
+bandit==1.9.4
+
+# --- Packaging (produces the distributed binary) ---
+pyinstaller==6.21.0

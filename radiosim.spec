@@ -1,11 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# RadioSim Pro 2.5 - PyInstaller spec ファイル
+# RadioSim Pro - PyInstaller spec ファイル
 #
-# ビルド方法:
-#   pyinstaller radiosim.spec
+# ビルド方法: build.bat から起動する（環境の検証と出力先の指定を持っている）。
+#   直接叩く場合も、pytest を走らせている venv の python で:
+#     <venv>\Scripts\python.exe -m PyInstaller radiosim.spec --noconfirm
 #
-# 出力先: dist/RadioSimPro/
+# 出力先: build.bat が --distpath / --workpath で渡す（既定はリポジトリ直下の
+#   dist/ build/、RADIOSIM_BUILD_ROOT を設定するとその配下）。
 #
 
 import re
@@ -163,9 +165,12 @@ hiddenimports = [
     # unittest（pyparsing の依存）
     "unittest",
     "unittest.mock",
-    # numpy の内部モジュール
-    "numpy.core._multiarray_umath",
-    "numpy.core._multiarray_tests",
+    # numpy の内部モジュール。numpy 2.x で実体は `numpy._core` へ移り、
+    # `numpy.core` は非推奨シムになった。`_multiarray_tests` は 2.x のシム経由では
+    # 解決できず、ビルドログに `ERROR: Hidden import ... not found` を毎回出して
+    # いた（2026-07-30 に除去）。テスト用モジュールで、そもそも numpy.testing /
+    # numpy.tests を excludes している方針と矛盾するため復活させない。
+    "numpy._core._multiarray_umath",
     # tkintermapview（タイルキャッシュ管理ウィンドウ）
     "tkintermapview",
     "geocoder",   # tkintermapview がトップレベルで無条件 import

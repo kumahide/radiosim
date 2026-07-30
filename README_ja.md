@@ -62,8 +62,11 @@ PyInstaller を使って Python 不要の単体 EXE フォルダ（onedir）を�
 
 ### 前提条件
 
-- Python 3.11 以上が `PATH` に通っていること（開発・CI は 3.14 で検証）
-- PyInstaller・依存ライブラリは `build.bat` が自動インストールします
+- Python 3.11 以上（開発・CI は 3.14 で検証）
+- **環境変数 `RADIOSIM_PYTHON`** に、テストを走らせている仮想環境の `python.exe` を指定してあること（**必須**）。→ [開発環境のセットアップ](#開発環境のセットアップ)
+- PyInstaller・依存ライブラリは `build.bat` が固定版で導入します
+
+> **なぜ環境変数で明示させるのか**：以前 `build.bat` は `PATH` の Python でビルドしており、pytest が検証した環境と推移的依存が食い違ったまま配布していました（TLS の CA バンドルを含む）。探索やフォールバックを持たせると食い違っても黙って成功するため、**未設定なら止める**設計にしています。
 
 ### ビルド手順
 
@@ -75,13 +78,17 @@ build.bat
 
 | ステップ | 内容 |
 | --- | --- |
-| 1 | Python / PyInstaller の存在確認・自動インストール |
-| 2 | 依存ライブラリを固定版で導入（`pip install -r requirements.txt`） |
-| 3 | 旧ビルド成果物の削除（`build/RadioSimPro/` `dist/RadioSimPro/`） |
-| 4 | `python -m PyInstaller radiosim.spec --noconfirm` |
+| 1 | `RADIOSIM_PYTHON` の検証（未設定・実体なしなら中止）と Python 版の表示 |
+| 2 | 依存ライブラリを固定版で導入（`pip install -r requirements.txt -r requirements-dev.txt`。PyInstaller もこのピンに含まれる） |
+| 3 | 旧ビルド成果物の削除（出力先の `build/RadioSimPro/` `dist/RadioSimPro/`） |
+| 4 | `python -m PyInstaller radiosim.spec --noconfirm --distpath … --workpath …` |
 | 5 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
 
+`build.bat clean` は再生成可能な生成物・キャッシュ・ログ・配布 zip を一掃します（仮想環境・`terrain_cache/`・`results/` は残します）。
+
 ### 出力
+
+既定はリポジトリ直下の `dist/`。環境変数 **`RADIOSIM_BUILD_ROOT`** を設定するとその配下の `dist/` `build/` へ出力します（クラウド同期フォルダの中でビルドしていて、毎回の作り直しを同期させたくない場合に使います）。
 
 ```
 dist/
@@ -635,13 +642,38 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ---
 
+## 開発環境のセットアップ
+
+依存の宣言は **2 ファイルに分かれています**。
+
+| ファイル | 中身 | 配布物に入るか |
+| --- | --- | --- |
+| `requirements.txt` | 実行時依存（numpy / matplotlib / requests …） | **入る** |
+| `requirements-dev.txt` | テスト・静的解析・パッケージング（pytest / pytest-cov / pyright / ruff / bandit / PyInstaller） | **入らない** |
+
+分けてある理由は、開発用の道具を実行時依存に混ぜると EXE に同梱され得るためです。**どちらもピン留め**しており、`requirements-dev.txt` の PyInstaller は配布 EXE のブートローダを決めるため、ここが無ピンだと「その日の最新」で焼いた出荷物になります。
+
+```bat
+rem 1. 仮想環境を作る（クラウド同期フォルダの外に置くのを推奨。venv は絶対パスが
+rem    焼き込まれるため同期しても他マシンでは使えず、同期する意味がありません）
+python -m venv D:\dev\radiosim\venv
+
+rem 2. 実行時依存と開発依存の両方を、ピンどおりに入れる
+D:\dev\radiosim\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+
+rem 3. その python.exe を「検証にもビルドにも使う唯一の環境」として宣言する
+rem    （設定後はシェルを開き直すこと。ビルドとローカル QA フックがこれを見ます）
+setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
+
+rem 4. 任意：dist / build もクラウド同期の外へ出す
+setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
+```
+
+`tests/test_env_consistency.py` が、pytest を走らせている環境の実版と `requirements.txt` のピンの一致を検証します（ずれた瞬間にテストが落ちます）。
+
 ## テスト
 
 ```bash
-# テスト用の依存は配布物に入らないため requirements.txt には含まれない。
-# 新しい環境では先に入れること。
-pip install pytest pytest-cov
-
 python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```

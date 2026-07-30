@@ -62,8 +62,11 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 
 ### Prerequisites
 
-- Python 3.11 or later must be on `PATH` (developed and CI-tested on 3.14)
-- PyInstaller and all dependencies are installed automatically by `build.bat`
+- Python 3.11 or later (developed and CI-tested on 3.14)
+- **`RADIOSIM_PYTHON`** must point at the `python.exe` of the same virtual environment the tests run in (**required**). → [Development Environment](#development-environment)
+- PyInstaller and all dependencies are installed at their pinned versions by `build.bat`
+
+> **Why declare it instead of discovering it**: `build.bat` used to build with whatever Python was on `PATH`, so the binary shipped with transitive dependencies that differed from the ones pytest had verified — including the TLS CA bundle. Any search-or-fallback logic would make that mismatch succeed silently, so a missing `RADIOSIM_PYTHON` **stops the build**.
 
 ### Build Steps
 
@@ -75,13 +78,17 @@ build.bat
 
 | Step | Action |
 | --- | --- |
-| 1 | Verify Python / PyInstaller are available; install if missing |
-| 2 | Install pinned dependencies (`pip install -r requirements.txt`) |
-| 3 | Remove old build artifacts (`build/RadioSimPro/` and `dist/RadioSimPro/`) |
-| 4 | Run `python -m PyInstaller radiosim.spec --noconfirm` |
+| 1 | Validate `RADIOSIM_PYTHON` (abort if unset or missing) and report the Python version |
+| 2 | Install pinned dependencies (`pip install -r requirements.txt -r requirements-dev.txt` — PyInstaller is pinned there too) |
+| 3 | Remove old build artifacts (`build/RadioSimPro/` and `dist/RadioSimPro/` under the output root) |
+| 4 | Run `python -m PyInstaller radiosim.spec --noconfirm --distpath … --workpath …` |
 | 5 | Create `terrain_cache/` and `results/` in the output folder |
 
+`build.bat clean` removes regenerable artifacts, caches, logs, and distribution zips (it keeps the virtual environment, `terrain_cache/`, and `results/`).
+
 ### Output
+
+Defaults to `dist/` next to the sources. Set **`RADIOSIM_BUILD_ROOT`** to place `dist/` and `build/` elsewhere — useful when the repository lives inside a cloud-synced folder and you do not want every rebuild to re-upload.
 
 ```
 dist/
@@ -633,13 +640,38 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 
 ---
 
+## Development Environment
+
+Dependencies are declared in **two files**:
+
+| File | Contents | Ships in the binary? |
+| --- | --- | --- |
+| `requirements.txt` | Runtime dependencies (numpy / matplotlib / requests …) | **Yes** |
+| `requirements-dev.txt` | Testing, static analysis, packaging (pytest / pytest-cov / pyright / ruff / bandit / PyInstaller) | **No** |
+
+They are separate because mixing development tooling into the runtime dependency list risks bundling it into the EXE. **Both are pinned** — the PyInstaller pin matters most, since it decides the bootloader inside the shipped binary; leaving it unpinned means the release was built by whatever version was newest that day.
+
+```bat
+rem 1. Create the virtual environment (preferably outside any cloud-synced folder:
+rem    a venv bakes in absolute paths, so syncing it is useless on another machine)
+python -m venv D:\dev\radiosim\venv
+
+rem 2. Install both dependency sets at their pinned versions
+D:\dev\radiosim\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
+
+rem 3. Declare that interpreter as the single environment used for both
+rem    verification and builds (reopen the shell afterwards)
+setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
+
+rem 4. Optional: keep dist / build out of the synced folder as well
+setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
+```
+
+`tests/test_env_consistency.py` verifies that the versions actually installed in the interpreter running pytest match the pins in `requirements.txt`, so drift fails the suite the moment it appears.
+
 ## Testing
 
 ```bash
-# Test dependencies are not in requirements.txt (they never ship with the app).
-# Install them first on a fresh environment.
-pip install pytest pytest-cov
-
 python -m pytest tests/ -v
 python -m pytest tests/ --cov
 ```
