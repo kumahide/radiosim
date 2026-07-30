@@ -296,6 +296,49 @@ class TestRoadmapDashboardHygiene:
         assert memcheck.check_dashboard_rows(rows) == []
 
 
+class TestRoadmapHeadingMatchesRow:
+    """現在地表の状態と、その版の H2 見出しが食い違っていないか。
+
+    check 9 が拾うのは「1 行の中の」食い違い。こちらはその 1 段外側＝表は
+    リリース済みと言っているのに、その版の節の見出しが 🚧 のまま、という形。
+
+    2026-07-30 の実例＝2.5 の正式リリースで、現在地表と節内の「現在地」行は
+    更新したのに `## 🚧 2.5（RC 進行中…）` を直し忘れ、ユーザーの指摘で発覚した。
+    「同じ事実が 2 か所にあって片方だけ直る」の 4 例目なので、心がけではなく
+    ここで測る。
+    """
+
+    def test_shipped_row_with_in_progress_heading_is_flagged(self, memcheck):
+        """今回の事故そのもの。"""
+        rows = [(1, "| 2.5 | ✅ リリース済み（tag `2.5`） | — |")]
+        headings = [(9, "## 🚧 2.5（RC 進行中・確定 2026-07-11）— テーマ「条件探索」")]
+        found = memcheck.check_heading_matches_row(rows, headings)
+        assert any("見出しに" in f for f in found)
+
+    def test_matching_pair_is_not_flagged(self, memcheck):
+        rows = [(1, "| 2.5 | ✅ リリース済み（tag `2.5`） | — |")]
+        headings = [(9, "## ✅ 2.5（リリース済み・2026-07-30 tag `2.5`）")]
+        assert memcheck.check_heading_matches_row(rows, headings) == []
+
+    def test_unreleased_version_keeps_its_in_progress_heading(self, memcheck):
+        """未リリースの版が 🔜 の見出しを持つのは正常＝誤検知を出さない。"""
+        rows = [(1, "| 2.6 | 🔜 確定・未着手 | 着手門＝中継方式の決定 |")]
+        headings = [(9, "## 🔜 2.6（確定 2026-07-11）— テーマ「中継点」")]
+        assert memcheck.check_heading_matches_row(rows, headings) == []
+
+    def test_version_token_does_not_match_a_longer_number(self, memcheck):
+        """2.5 の行が『12.5』や『2.50』の見出しに当たらないこと。"""
+        rows = [(1, "| 2.5 | ✅ リリース済み | — |")]
+        headings = [(9, "## 🚧 12.5（RC 進行中）"), (10, "## 🚧 2.50（進行中）")]
+        assert memcheck.check_heading_matches_row(rows, headings) == []
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        """実データで誤検知ゼロ。"""
+        rows, headings = memcheck._dashboard_rows(), memcheck._roadmap_headings()
+        assert rows and headings, "パーサが何も拾えていない"
+        assert memcheck.check_heading_matches_row(rows, headings) == []
+
+
 class TestMemoryIndexLineLength:
     """MEMORY.md の索引行が「要約」に留まっているかを機械で測る。
 
