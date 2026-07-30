@@ -253,7 +253,9 @@ class TestFetchElevationsCached:
         call_count = {"n": 0}
         def counting_get(la, lo):
             call_count["n"] += 1
-            return 0.0
+            # ⚠️ 0.0 を返さない：全点 0.0 は「DEM 全滅」としてキャッシュされない
+            # （B-025）ので、0.0 だとキャッシュの共有可否を検査できなくなる。
+            return 120.0
         monkeypatch.setattr(dem, "get_elevation", counting_get)
 
         params_a = sim.SimParams(default_params_dict)
@@ -275,7 +277,9 @@ class TestFetchElevationsCached:
 
     def test_cache_hit_calls_on_progress_with_total(self, default_params_dict, monkeypatch):
         """キャッシュヒット時は on_progress(num) が呼ばれてプログレスバーが満杯になること。"""
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
+        # ⚠️ 0.0 を返さない：全点 0.0 はキャッシュされない（B-025）ため、2回目が
+        # キャッシュヒットにならず、この検査が素通りしてしまう。
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 120.0)
         params = sim.SimParams(default_params_dict)
 
         # 1回目でキャッシュ生成
@@ -297,6 +301,98 @@ class TestFetchElevationsCached:
         )
         done2.wait(timeout=5)
         assert params.num in progress_vals  # 満杯値が渡されている
+
+    # --- DEM 全滅（all 0）を焼き付けない -----------------------------------
+    # B-025：`dem.get_elevation` は全レイヤ失敗時に「取れなかった」ではなく 0.0 を
+    # 返すため、Proxy 未設定などで取得が全滅すると標高 0m の平坦地形が正常値の顔で
+    # 出る。それが地形キャッシュに入ると、**Proxy を直してもアプリを再起動するまで
+    # 直らない**（キャッシュはプロセス常駐）。戻り値契約そのものの是正は 3.x。
+
+    def _run_once(self, params, on_complete=None):
+        done = threading.Event()
+        def _complete(elevs):
+            if on_complete is not None:
+                on_complete(elevs)
+            done.set()
+        sim.fetch_elevations_cached(
+            params=params, on_progress=lambda v: None,
+            on_complete=_complete, on_error=lambda ex: None,
+        )
+        done.wait(timeout=5)
+
+    def test_all_zero_result_is_not_cached(self, default_params_dict, monkeypatch):
+        """全点 0.0 の結果はキャッシュに入らず、次回はやり直すこと。"""
+        call_count = {"n": 0}
+        def failing_get(la, lo):
+            call_count["n"] += 1
+            return 0.0                      # ＝全レイヤ失敗時の戻り値
+        monkeypatch.setattr(dem, "get_elevation", failing_get)
+
+        params = sim.SimParams(default_params_dict)
+        self._run_once(params)
+        after_first = call_count["n"]
+        assert after_first == params.num
+
+        self._run_once(params)
+        assert call_count["n"] == after_first + params.num, (
+            "全点 0.0 の地形がキャッシュされている"
+            "＝Proxy を直しても再起動するまで平坦地形が返り続ける"
+        )
+
+    def test_all_zero_result_is_still_delivered(self, default_params_dict, monkeypatch):
+        """キャッシュしないだけで、結果自体は今までどおり返ること。
+
+        ここで握り潰すと「実行したのに何も起きない」になる。失敗の伝播と画面での
+        提示は別の対応（B-025 の ②③）で、この変更の担当ではない。
+        """
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
+        params = sim.SimParams(default_params_dict)
+
+        got = {}
+        self._run_once(params, on_complete=lambda e: got.__setitem__("elevs", e))
+        assert "elevs" in got, "on_complete が呼ばれていない"
+        assert len(got["elevs"]) == params.num
+
+    def test_recovery_is_cached_after_a_failed_run(self, default_params_dict, monkeypatch):
+        """全滅のあと取得が回復したら、その結果はキャッシュされること。
+
+        「怪しいから一切キャッシュしない」にすると復旧後も毎回取り直しになり、
+        地理院サーバーへ余計な負荷をかける（設計方針④）。
+        """
+        state = {"fail": True, "n": 0}
+        def flaky_get(la, lo):
+            state["n"] += 1
+            return 0.0 if state["fail"] else 120.0
+        monkeypatch.setattr(dem, "get_elevation", flaky_get)
+
+        params = sim.SimParams(default_params_dict)
+        self._run_once(params)              # 全滅（キャッシュされない）
+
+        state["fail"] = False
+        self._run_once(params)              # 回復（ここでキャッシュされるはず）
+        after_recovery = state["n"]
+
+        self._run_once(params)              # 3回目はキャッシュヒット
+        assert state["n"] == after_recovery, "回復後の結果がキャッシュされていない"
+
+    def test_partial_failure_is_cached(self, default_params_dict, monkeypatch):
+        """一部だけ 0.0 の経路は今までどおりキャッシュすること。
+
+        海抜 0m の点は実在する（海上・埋立地）。判定は「全点 0.0」に限る＝
+        部分的な 0 を疑い始めると正当な地形を捨てることになる。
+        """
+        call_count = {"n": 0}
+        def mostly_zero_get(la, lo):
+            call_count["n"] += 1
+            return 0.0 if call_count["n"] > 1 else 30.0
+        monkeypatch.setattr(dem, "get_elevation", mostly_zero_get)
+
+        params = sim.SimParams(default_params_dict)
+        self._run_once(params)
+        after_first = call_count["n"]
+
+        self._run_once(params)
+        assert call_count["n"] == after_first, "一部だけ 0.0 の地形までキャッシュを拒んでいる"
 
 
 # ============================================================

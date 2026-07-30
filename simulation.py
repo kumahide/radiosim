@@ -158,6 +158,21 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
     return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, params.num)
 
 
+def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
+    """全点が厳密に 0.0＝DEM が 1 点も取れなかった形か。
+
+    `dem.get_elevation` は全レイヤ失敗時に「取れなかった」ではなく `0.0` を返す
+    ため、Proxy 未設定などで取得が全滅すると**標高 0m の平坦地形**が正常値の顔で
+    出てくる（ISSUES.md B-025）。戻り値契約そのものの是正は呼び出し側 ~30 箇所と
+    出力契約に触るので 3.x 送りだが、**その値が地形キャッシュへ焼き付いて
+    「Proxy を直してもアプリを再起動するまで直らない」状態になる**のはここで防げる。
+
+    海上だけを通る経路も all 0 になり得る。その場合に払う代償は「毎回取り直す」
+    だけで、誤った平坦地形を配り続けるより安い。
+    """
+    return raw_elevs.size > 0 and bool(np.all(raw_elevs == 0.0))
+
+
 def fetch_elevations_cached(
     params: SimParams,
     on_progress: Callable[[int], None],
@@ -190,8 +205,21 @@ def fetch_elevations_cached(
 
     # キャッシュミス → 実取得してキャッシュに保存
     def _on_complete_and_cache(raw_elevs: np.ndarray) -> None:
-        with _terrain_cache_lock:
-            _terrain_cache[key] = raw_elevs.copy()
+        if _is_total_dem_failure(raw_elevs):
+            # 取得が全滅した結果は保持しない（B-025）。結果自体は今までどおり
+            # 返す＝ここで握り潰すと「何も起きない」になるため。呼び出し側への
+            # 失敗の伝播と画面での提示は別途（B-025 の ②③）。
+            logger.warning(
+                "Terrain NOT cached: every sample is 0.0 — DEM fetch likely failed "
+                "for the whole path (check proxy settings). "
+                "start=(%.6f,%.6f) end=(%.6f,%.6f) samples=%d",
+                params.lat_tx, params.lon_tx,
+                params.lat_rx, params.lon_rx,
+                params.num,
+            )
+        else:
+            with _terrain_cache_lock:
+                _terrain_cache[key] = raw_elevs.copy()
         on_complete(raw_elevs)
 
     fetch_elevations(params, on_progress, _on_complete_and_cache, on_error)

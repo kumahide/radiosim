@@ -939,13 +939,21 @@ class TestReportV2AzEl:
 # freq=999.0 の行だけ取得失敗にし、パス単位の失敗系を決定的に再現する。
 _FAIL_FREQ = 999.0
 
+# フェイク地形の地表高（m）。0 以外なら何でもよい＝B-025 の「全点 0.0 は
+# DEM 全滅とみなしてキャッシュしない」に引っかからないことだけが条件。
+_FAKE_GROUND_M = 10.0
+
 
 def _fake_fetch(params, on_progress, on_complete, on_error):
     on_progress(50)
     if params.freq_mhz == _FAIL_FREQ:
         on_error(RuntimeError("DEM fetch failed (fake)"))
     else:
-        on_complete(np.zeros(params.num))
+        # ⚠️ 全点 0.0 にしない：それは「DEM が 1 点も取れなかった」形として
+        # 地形キャッシュに入らなくなる（B-025）ので、キャッシュ再利用を検査する
+        # テストが黙って素通りする。一様な高さなので**経路の幾何は全 0 と同じ**
+        # （地表も両端も同じだけ持ち上がるのでクリアランスは不変）。
+        on_complete(np.full(params.num, _FAKE_GROUND_M))
 
 
 class TestFetchSync:
