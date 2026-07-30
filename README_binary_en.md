@@ -201,7 +201,7 @@ An input form is displayed on startup.
 | Field   | Description                                                             |
 | ------- | ---------------------------------------------------------------------- |
 | Project | Project name shown in the report header (applies to both Single and Batch reports) |
-| Note    | Free note shown in the report (per-path report / batch summary)        |
+| Note    | Free note. Shown on the **Single Mode report and the Batch summary page** (`summary.html` / `report_all.html`). **Not shown on Batch per-path reports** — it describes the survey as a whole, so it is not repeated per path |
 
 > Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Batch Mode inherit these values. In Batch Mode they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
 
@@ -356,7 +356,7 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 | Sensitivity       | -130                           | -20     | dBm    |
 | TX/RX Height      | 0                              | 500     | m      |
 | Vegetation Height | 0                              | 100     | m      |
-| K-Factor          | 0                              | 30      | —     |
+| Rician K-Factor   | 0                              | 30      | —     |
 | Sampling Points   | 10                             | 2,000   | points |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
