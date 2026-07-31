@@ -227,6 +227,148 @@ def test_every_window_fits_on_fhd_at_96dpi(name, lang, monkeypatch):
         root.destroy()
 
 
+# ============================================================
+# 入らないときの逃げ道（B-021② / B-023）
+# ============================================================
+# ⚠️ **ここは開発機の画面では絶対に発火しない**（WQHD ＝ 使える高さ 1350px）。
+# 出荷先の画面を `window_fit.screen_size` へ差し込んで、**溢れる状況を作ってから**
+# 検査する。溢れさせずに「逃げ道がある」ことだけ確かめるテストは、逃げ道が
+# 壊れていても緑になる（＝これまで見切れを 6 回通した形そのもの）。
+_FHD_SCREEN = (1920, 1080)
+
+# 逃げ道を持つべき窓と、その窓が実機 FHD で溢れる DPI。
+# **溢れない窓（バッチ・地図）を入れていないのは意図的**＝中身が伸縮する窓で、
+# 二重のスクロール容器に入れると内側の表が潰れる。溢れた日には
+# `test_every_window_fits_on_fhd_at_96dpi`（と 125/150% への拡張）が赤くなるので、
+# そのとき改めて判断する（黙って見逃す経路にはならない）。
+_ESCAPE_WINDOWS = {"launcher": 120, "scenario": 144}
+
+
+def _open_on_fhd(root, name, dpi, monkeypatch):
+    """FHD の画面・指定 DPI で窓を開く（`_fit_size` はその前提で決まる）。"""
+    from views import theme
+
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+    theme.apply_fonts(root, dpi=dpi)
+    opener, _ = _WINDOWS[name]
+    win, owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+    return win, owner
+
+
+@pytest.mark.parametrize("name,dpi", sorted(_ESCAPE_WINDOWS.items()))
+def test_window_that_cannot_fit_can_still_be_scrolled(name, dpi, monkeypatch):
+    """画面に入らない窓が、**スクロールで最後まで届く**こと。
+
+    B-021 の実害は「入らない」ことではなく、**入らなかった分が下端のウィジェット
+    から黙って削られる**ことだった（最下段のボタン列が数 px の帯に潰れ、マップ
+    ウィンドウ・条件探索へ到達できなくなった）。ここで見るのは 3 点：
+
+      1. 窓は画面の上限にクランプされている（＝溢れる状況を再現できている）
+      2. 縦スクロールバーが出ている
+      3. **スクロール領域が中身の必要量を丸ごと覆っている**＝一番下まで届く
+    """
+    prev = i18n._lang
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _owner = _open_on_fhd(root, name, dpi, monkeypatch)
+        need_h = window_fit.required_size(win)[1]
+        lim_h = _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN
+        assert need_h > lim_h, (
+            f"[{name}/{dpi}dpi] 溢れない条件でテストしている"
+            f"（必要 {need_h}px ≤ 上限 {lim_h}px）＝逃げ道が壊れていても緑になる。"
+            "DPI を上げるか、この窓を _ESCAPE_WINDOWS から外すこと。"
+        )
+        assert win._fit_size[1] == lim_h
+        escape = getattr(win, "_fit_scroll", None)
+        assert escape is not None, (
+            f"[{name}] 画面に入らないのに逃げ道が無い"
+            "（window_fit.scrollable_body の中へ組み立てること）。"
+        )
+        assert escape.active[0] and escape.vsb.grid_info(), (
+            f"[{name}/{dpi}dpi] 溢れているのに縦スクロールバーが出ていない"
+            "＝溢れた分は下端のウィジェットから削られる（B-021 と同じ形）。"
+        )
+        region = [int(v) for v in str(escape.canvas.cget("scrollregion")).split()]
+        assert region[3] >= escape.body.winfo_reqheight(), (
+            f"[{name}/{dpi}dpi] スクロール領域が中身に届いていない"
+            f"（領域 {region[3]}px / 中身 {escape.body.winfo_reqheight()}px）。"
+            "バーは出るが最下段までスクロールできない状態になる。"
+        )
+    finally:
+        i18n.set_lang(prev)
+        from views import theme
+        theme.apply_fonts(root, dpi=96)   # 名前付きフォントは他テストと共有
+        root.destroy()
+
+
+def test_mouse_wheel_moves_the_escape_only_when_nothing_inside_scrolls(monkeypatch):
+    """ホイールの担当分け＝**受け皿が動くのは、中の一覧が動けないときだけ**。
+
+    受け皿はトップレベルにバインドするので、中身のどこで回してもイベントが届く。
+    結果一覧（Treeview）のように自前でスクロールする部品の上でも受け皿が動くと、
+    一度のホイールで**二重に流れて**行き先が分からなくなる。
+
+    ⚠️ 窓を実体化（`deiconify`）しないと検証にならない＝未表示のキャンバスは
+    「中身が全部見えている」状態を返し、スクロール量が常に 0 になる。
+    """
+    from types import SimpleNamespace
+
+    prev = i18n._lang
+    root = make_themed_root()
+    try:
+        i18n.set_lang("ja")
+        win, _owner = _open_on_fhd(root, "launcher", 120, monkeypatch)
+        root.deiconify()
+        root.update()
+        escape = win._fit_scroll
+        assert escape.active[0], "前提が崩れている（溢れていない）"
+
+        top_before = escape.canvas.yview()[0]
+        escape._on_mousewheel(SimpleNamespace(widget=escape.body, delta=-120))
+        root.update()
+        assert escape.canvas.yview()[0] > top_before, (
+            "受け皿の上でホイールを回しても動かない＝溢れた下端へ到達できない。"
+        )
+
+        # 自前でスクロールできる部品の上では手を出さないこと。
+        moved = escape.canvas.yview()[0]
+        inner = SimpleNamespace(
+            widget=SimpleNamespace(yview=lambda: (0.2, 0.6), master=escape.body),
+            delta=-120)
+        escape._on_mousewheel(inner)
+        root.update()
+        assert escape.canvas.yview()[0] == moved, (
+            "自前でスクロールする一覧の上でも受け皿が動いている＝二重に流れる。"
+        )
+    finally:
+        i18n.set_lang(prev)
+        from views import theme
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_scroll_escape_stays_hidden_while_the_content_fits():
+    """**入るあいだはスクロールバーを出さない**こと。
+
+    逃げ道は「入らない時だけ」のもので、常時バーが出るなら受け皿を挟んだ時点で
+    見た目の回帰になる（幅を食い、ホイールが効き、印象も変わる）。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_scenario(root)          # 96dpi・開発機の画面＝余裕がある
+        escape = win._fit_scroll
+        need_h = window_fit.required_size(win)[1]
+        assert need_h <= win._fit_size[1], "前提が崩れている（この画面で既に溢れている）"
+        assert escape.active == (False, False)
+        assert not escape.vsb.grid_info() and not escape.hsb.grid_info()
+    finally:
+        root.destroy()
+
+
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
 def test_window_fits_its_content(name, lang, monkeypatch):

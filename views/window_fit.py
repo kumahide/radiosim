@@ -33,17 +33,199 @@ views/window_fit.py
 
 `winfo_width()` を当てにしないこと：未表示のあいだ `1` を返すので、実現後の
 サイズと比較するテストは壊れた実装でも緑になる（ランチャーで実際に踏んだ）。
+
+画面に入らないときの逃げ道（2.6a1・B-021②／B-023）
+--------------------------------------------------
+上の「測って合わせる」だけでは、**中身が画面より大きい窓**を救えない。実機
+（FHD・使える高さ 990px）ではランチャーが 100% で 1023px、125% で 1148px、
+条件探索が 125% で 1095px を要求する＝どう測っても入らない。従来はここで黙って
+クランプしていたので、**溢れた分は下端のウィジェットから削られていた**
+（B-021＝最下段のボタン列が数 px の帯に潰れ、主要機能へ到達できなくなった）。
+
+そこで窓の中身を `scrollable_body()` の受け皿へ入れる。入る間は今までと完全に
+同じ見た目で（スクロールバーは出ない）、**入らなくなった時だけ**スクロールバーが
+現れて全部に手が届く。**画面高がいくつであっても壊れない唯一の答え**なので、
+窓ごとの手当て（ロゴを縮める・余白を削る）はここまでの繋ぎでしかない::
+
+    body = window_fit.scrollable_body(self)   # 以後 self ではなく body へ pack する
+    ...
+    fit_to_content(self, ...)                 # 逃げ道の出し入れも面倒を見る
+
+⚠️ **受け皿へ入れても `_fit_need`（必要量）は減らない**。減らすと「スクロール
+できるから入っている」ことになり、**免除条項を別の場所に作り直すだけ**になる
+（B-021 で 6 回目を通した仕掛けそのもの）。ゲートが「入らない」と言い続け、
+そのうえで実害が消えている、という状態を保つ。
 """
 
 from __future__ import annotations
 
 import tkinter as tk
+from tkinter import ttk
 from typing import Any
 
 # 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
 # 従来はバッチ 80px / 条件探索 90px / ランチャー「画面の 92%」と窓ごとにばらけて
 # いたので、ここで 1 つに揃える（値そのものより、揃っていることに意味がある）。
 SCREEN_MARGIN = 90
+
+
+def screen_size(win: "tk.Misc") -> tuple[int, int]:
+    """窓が載っている画面の `(幅, 高さ)`。
+
+    `winfo_screen*` を直接呼ばず、ここを一度通す。理由は 2 つあり、どちらも
+    「開発機の画面で測ると欠陥が見えない」ことに由来する：
+
+      1. **テストが出荷先の画面を与えられる**＝開発機は WQHD（使える高さ 1350px）
+         なので、FHD で溢れる窓もローカルでは永久に緑になる（B-021 が 6 回目まで
+         生き延びた理由そのもの）。
+      2. 画面サイズは実行中に変わり得る（VDI・モニタ切替）。**その追従は B-022**
+         で、測り直しの口をここに 1 つだけ用意しておく。
+    """
+    return win.winfo_screenwidth(), win.winfo_screenheight()
+
+
+def scrollable_body(
+    win: "tk.Tk | tk.Toplevel", *, padding: "int | tuple[int, int]" = 0
+) -> ttk.Frame:
+    """`win` の中身を入れる受け皿を作り、その内側のフレームを返す。
+
+    窓は以後この戻り値へ組み立てる（`win` へ直接 pack しない）。**中身が窓に入る
+    あいだはスクロールバーを出さない**ので、見た目・タブ順・レイアウトは受け皿が
+    無いときと変わらない。入らなくなった時だけバーが現れる。
+
+    出し入れの判断は `fit_to_content` が行う（寸法を決めるのはあちらの仕事で、
+    ここは器だけ持つ）。
+
+    Args:
+        padding: 内側フレームの padding。**受け皿を挟む前に窓が持っていた
+            外周 padding をここへ移す**（`ttk.Frame(win, padding=10)` を
+            そのまま受け皿の中へ入れると、スクロール領域の外側に padding が
+            残って下端が隠れる）。
+    """
+    holder = ttk.Frame(win)
+    holder.pack(fill="both", expand=True)
+    holder.rowconfigure(0, weight=1)
+    holder.columnconfigure(0, weight=1)
+
+    # tk.Canvas は ttk 管理外＝テーマに追従しないので、生成時点のテーマ背景色を
+    # 明示的に合わせる（出所は views/theme.py。`ttk.Style().lookup` は sun-valley
+    # では常に空を返し、黙って無指定になる＝B-008）。
+    from views import theme                       # 遅延 import（循環回避）
+    canvas = tk.Canvas(holder, borderwidth=0, highlightthickness=0,
+                       bg=theme.palette(holder)["bg"])
+    canvas.grid(row=0, column=0, sticky="nsew")
+    vsb = ttk.Scrollbar(holder, orient="vertical",   command=canvas.yview)
+    hsb = ttk.Scrollbar(holder, orient="horizontal", command=canvas.xview)
+    canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
+
+    body = ttk.Frame(canvas, padding=padding)
+    item = canvas.create_window((0, 0), window=body, anchor="nw")
+
+    escape = _ScrollEscape(win, canvas, body, item, vsb, hsb)
+    win._fit_scroll = escape                       # type: ignore[attr-defined]
+    return body
+
+
+def _has_own_scroll(widget: "tk.Misc | None", *, stop: tk.Misc) -> bool:
+    """`widget` か、その祖先（`stop` まで）が**自分でスクロールできる**か。
+
+    ホイールのイベントはトップレベルまで上がってくるが、途中に結果一覧
+    （Treeview）のような自前のスクロールを持つウィジェットがあれば、そちらが
+    既に動かしている。受け皿まで一緒に動かすと**一度のホイールで二重に流れる**
+    ので、その場合は手を出さない。`yview()` が `(0.0, 1.0)` の間は「中身が全部
+    見えている＝そのウィジェットは動けない」ので、受け皿の仕事になる。
+    """
+    node = widget
+    while node is not None and node is not stop:
+        yview: "Any" = getattr(node, "yview", None)
+        if callable(yview):
+            try:
+                view: "Any" = yview()
+                first, last = (float(v) for v in view)
+            except (tk.TclError, TypeError, ValueError):
+                first, last = 0.0, 1.0
+            if (first, last) != (0.0, 1.0):
+                return True
+        node = getattr(node, "master", None)
+    return False
+
+
+class _ScrollEscape:
+    """「入らないときだけスクロールする」受け皿の中身（`scrollable_body` 用）。
+
+    肝は **キャンバスの*要求*サイズを中身の要求サイズに合わせ続ける**こと。
+    こうすると窓の `winfo_reqheight()` は受け皿が無いときと同じ値を返すので、
+    `fit_to_content` も横断ゲートも「中身がどれだけ要るか」を今までどおり測れる
+    （＝スクロールできることを理由に必要量を小さく偽らない）。窓が実際にその
+    高さを取れなければキャンバスだけが縮み、差分がスクロール量になる。
+    """
+
+    def __init__(self, win, canvas, body, item, vsb, hsb) -> None:
+        self.win, self.canvas, self.body = win, canvas, body
+        self.item, self.vsb, self.hsb = item, vsb, hsb
+        self.active = (False, False)               # (縦, 横) バーを出しているか
+        body.bind("<Configure>",   self._on_body_configure)
+        canvas.bind("<Configure>", self._on_canvas_configure)
+        # ⚠️ **`bind_all` は使わない**。Tk のバインドタグは
+        # 「ウィジェット → クラス → トップレベル → all」なので、**トップレベルに
+        # 束ねればこの窓の中だけに効く**。`bind_all` だと(1)他の窓のホイールまで
+        # 拾い(2)後から `bind_all` した窓に**上書きされ**(3)その窓が閉じるときの
+        # `unbind_all` で**こちらの分まで消える**（バッチ表が実際に bind_all して
+        # いる）。窓に閉じたバインドなら、この 3 つがまとめて起きない。
+        win.bind("<MouseWheel>", self._on_mousewheel)
+
+    # -- 中身とキャンバスの同期 --------------------------------
+    def remeasure(self) -> None:
+        """キャンバスの**要求**サイズを中身の要求サイズへ合わせ直す。
+
+        ⚠️ `<Configure>` 任せにはできない。あれは*実際の*サイズが変わったときしか
+        飛ばないが、フォントが大きくなった（DPI 変更）ときに変わるのは中身の
+        *要求*サイズだけで、窓が固定サイズなら実際のサイズは動かない
+        ＝**要求が伝わらず、窓は元の幅のまま字だけ大きくなって見切れる**
+        （実装中に踏んだ。`test_windows_are_refitted_when_dpi_grows` が捕まえた）。
+        だから `fit_to_content` が測る前に、ここを明示的に呼ぶ。
+        """
+        self.win.update_idletasks()
+        self.canvas.configure(width=self.body.winfo_reqwidth(),
+                              height=self.body.winfo_reqheight())
+        self.win.update_idletasks()
+
+    def _on_body_configure(self, _event=None) -> None:
+        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+
+    def _on_canvas_configure(self, event) -> None:
+        # 窓のほうが中身より大きいときは中身を引き伸ばす（`fill="both"` や
+        # `side="bottom"` で組んである既存のレイアウトを、受け皿の中でも
+        # そのまま成立させるため）。
+        self.canvas.itemconfig(
+            self.item,
+            width=max(event.width,  self.body.winfo_reqwidth()),
+            height=max(event.height, self.body.winfo_reqheight()),
+        )
+
+    def _on_mousewheel(self, event) -> None:
+        if not self.active[0]:
+            return                                 # 溢れていない＝スクロールしない
+        if _has_own_scroll(event.widget, stop=self.body):
+            return                                 # 中の一覧・表が自分で処理する
+        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
+
+    # -- 出し入れ ----------------------------------------------
+    def sync(self, *, overflow_v: bool, overflow_h: bool) -> tuple[int, int]:
+        """バーを出し入れし、**そのために余分に要る (幅, 高さ)** を返す。
+
+        縦バーを出せばその幅だけ中身の使える幅が減る（＝窓をそのぶん広げないと
+        横にも溢れる）。`fit_to_content` が返り値を見て一度だけ測り直す。
+        """
+        if (overflow_v, overflow_h) != self.active:
+            (self.vsb.grid(row=0, column=1, sticky="ns") if overflow_v
+             else self.vsb.grid_remove())
+            (self.hsb.grid(row=1, column=0, sticky="ew") if overflow_h
+             else self.hsb.grid_remove())
+            self.active = (overflow_v, overflow_h)
+            self.win.update_idletasks()
+        return (self.vsb.winfo_reqwidth() if overflow_v else 0,
+                self.hsb.winfo_reqheight() if overflow_h else 0)
 
 
 def fit_to_content(
@@ -79,9 +261,14 @@ def fit_to_content(
         "min_w": min_w, "min_h": min_h,
         "extra_w": extra_w, "extra_h": extra_h, "grow_only": grow_only,
     }
+    escape: "_ScrollEscape | None" = getattr(win, "_fit_scroll", None)
+    if escape is not None:
+        # 受け皿越しでも「中身がどれだけ要るか」を窓が正しく申告できる状態にする。
+        escape.remeasure()
     win.update_idletasks()
-    lim_w = max(win.winfo_screenwidth()  - SCREEN_MARGIN, min_w)
-    lim_h = max(win.winfo_screenheight() - SCREEN_MARGIN, min_h)
+    screen_w, screen_h = screen_size(win)
+    lim_w = max(screen_w - SCREEN_MARGIN, min_w)
+    lim_h = max(screen_h - SCREEN_MARGIN, min_h)
 
     need_w = win.winfo_reqwidth()  + extra_w
     need_h = win.winfo_reqheight() + extra_h
@@ -96,6 +283,18 @@ def fit_to_content(
 
     w = min(max(need_w, floor_w), lim_w)
     h = min(max(need_h, floor_h), lim_h)
+
+    # 入らなかったぶんは逃げ道（スクロール）へ回す。⚠️ `_fit_need` は**縮めない**
+    # ＝「スクロールできるから入っている」という免除条項を作らないため
+    # （ゲートは引き続き「入らない」と言い、実害だけが消える）。
+    if escape is not None:
+        pad_w, pad_h = escape.sync(overflow_v=need_h > h, overflow_h=need_w > w)
+        if pad_w or pad_h:
+            # 縦バーが出た分だけ窓を広げる（広げられなければ横バーも出る）。
+            w = min(max(need_w + pad_w, floor_w), lim_w)
+            h = min(max(need_h + pad_h, floor_h), lim_h)
+            escape.sync(overflow_v=need_h > h, overflow_h=need_w > w)
+
     win._fit_size = (w, h)              # type: ignore[attr-defined]
     win.geometry(f"{w}x{h}")
     return w, h
