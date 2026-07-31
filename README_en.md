@@ -167,6 +167,8 @@ radiosim/
 ├── batch.py              # Batch execution engine (CSV I/O, validation, run)
 ├── scenario.py           # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
 ├── report_scenario.py    # Condition explorer output (A4 line chart + table, CSV; headless)
+├── multihop.py           # Relay path engine (A-3; waypoints to hops, min aggregation; headless)
+├── report_multihop.py    # Relay path output (route sheet + per-hop sheets, hops.csv; headless)
 ├── report_common.py      # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
 ├── report_path.py        # Per-path output generation (PNG/HTML/KML; headless)
 ├── report_summary.py     # Batch summary output generation (CSV/HTML/KML, all-pages document; headless)
@@ -199,6 +201,7 @@ radiosim/
     ├── test_batch.py
     ├── test_report.py
     ├── test_scenario.py
+    ├── test_multihop.py
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
@@ -615,6 +618,7 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, validation, batch execution engine
   scenario.py     Condition explorer runner (fixed terrain, N conditions, phases)
+  multihop.py     Relay path engine (waypoints are the source of truth; overall verdict is the weakest hop)
   report_scenario.py Condition explorer output (line chart + table, CSV; headless)
   report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)
   report_path.py    Per-path output generation (PNG/HTML/KML; headless)
@@ -682,6 +686,7 @@ python -m pytest tests/ --cov
 | -------------------------- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
+| `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |

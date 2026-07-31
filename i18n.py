@@ -373,6 +373,23 @@ _STRINGS: dict[str, dict[str, str]] = {
             "one (Settings > Proxy Settings)."
         ),
 
+        # ===== Multi-hop (relay) =====
+        "mh_report_title":      "Relay Path Report",
+        "mh_mode_label":        "Relay path",
+        "mh_overall":           "Overall",
+        "mh_overall_margin":    "Worst margin",
+        "mh_hops":              "Hops",
+        "mh_worst_hop":         "Weakest hop",
+        "mh_section":           "Section",
+        "mh_heights":           "Heights (TX / RX)",
+        "mh_regenerative_note": "Each hop is an independent link budget (regenerative relay): losses are not added across hops, and the overall verdict is the weakest hop. Passive reflectors are out of scope.",
+        "mh_err_too_few":       "A relay path needs at least 2 waypoints (TX and RX).",
+        "mh_err_too_many":      "Too many hops (max {max}).",
+        "mh_err_rf_count":      "Radio settings do not match the hops ({hops} hop(s) / {rf} setting(s)).",
+        "mh_err_id_too_long":   "Path ID {pid} is too long (max {max}, got {n}).",
+        "mh_err_bad_height":    "{name}: antenna height is not a number.",
+        "mh_err_height_range":  "{name}: antenna height {val} is out of range (0 - 500 m).",
+
         # ===== Validation (config) =====
         "err_freq":             "Frequency must be between 1 and 100000 MHz",
         "err_p_tx":             "TX Power must be between -30 and 60 dBm",
@@ -782,6 +799,23 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ネットワーク接続を確認してください。社内ネットワークなどで"
             "プロキシが必要な場合は、設定 > プロキシ設定 で指定してください。"
         ),
+
+        # ===== Multi-hop (relay) =====
+        "mh_report_title":      "中継経路レポート",
+        "mh_mode_label":        "中継経路",
+        "mh_overall":           "全体判定",
+        "mh_overall_margin":    "最小マージン",
+        "mh_hops":              "ホップ数",
+        "mh_worst_hop":         "最も苦しい区間",
+        "mh_section":           "区間",
+        "mh_heights":           "アンテナ高（送 / 受）",
+        "mh_regenerative_note": "各ホップは独立したリンクバジェットです（再生中継）。ホップ間で損失は加算せず、全体判定は最も余裕の少ない区間で決まります。受動反射（反射板）は対象外です。",
+        "mh_err_too_few":       "中継経路には地点が 2 つ以上必要です（送信点と受信点）。",
+        "mh_err_too_many":      "ホップが多すぎます（最大 {max}）。",
+        "mh_err_rf_count":      "無線設定の数がホップ数と合っていません（ホップ {hops} / 設定 {rf}）。",
+        "mh_err_id_too_long":   "経路 ID「{pid}」が長すぎます（最大 {max} 文字・現在 {n} 文字）。",
+        "mh_err_bad_height":    "「{name}」: アンテナ高が数値ではありません。",
+        "mh_err_height_range":  "「{name}」: アンテナ高 {val} が範囲外です（0〜500 m）。",
 
         # ===== Validation (config) =====
         "err_freq":             "周波数は 1〜100000 MHz の範囲で入力してください",
