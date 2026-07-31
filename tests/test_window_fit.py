@@ -148,16 +148,17 @@ def _grow_scenario(win) -> None:
 # 1・2: 全窓が中身を収めていること
 # ============================================================
 def _assert_fits(win, label: str) -> None:
-    """窓が「測った必要量」を実際に確保していること。
+    """窓が「測った必要量」を実際に確保しているか、**入らないなら手が届く**こと。
 
-    ⚠️ **`min(need, lim)` の意味に注意（B-021 で一度ここに騙された）**。
-    これは *開発機の画面* が中身より小さいときの逃げで、**製品の欠陥を免除する
-    条項ではない**。2.5RC1 までは*これが唯一の検査*だったため、ランチャーが FHD
-    で 33px 溢れていても「画面に入らないのだから仕方ない」として緑になり、
-    見切れ 6 回目を通した（しかも開発機は WQHD ＝ 上限 1350px なので `lim` に
-    当たることすら無く、免除が働いていることにも気づけなかった）。
-    ⇒ **「中身が実機の画面に収まるか」は開発機の画面で測ってはいけない**。それは
-    `test_every_window_fits_on_fhd_at_96dpi`（下）が FHD の上限を明示して見る。
+    ⚠️ **かつてここには免除条項があった（B-021 で一度これに騙された）**＝
+    `size >= min(need, lim)` と書いてあり、「画面に入らないのだから仕方ない」で
+    緑になった。実機で 33px 溢れて最下段のボタン列が数 px に潰れていても検査を
+    通り、しかも開発機は WQHD（上限 1350px）なので `lim` に当たることすら無く、
+    **免除が働いていることにも気づけなかった**（見切れ 6 回目）。
+
+    **2.6a1 で撤去した**。入らないときの答えは「免除」ではなく**逃げ道**
+    （`window_fit.scrollable_body` のスクロール）で、入らないなら**入らないなりに
+    全部触れること**を要求する。逃げ道が無い窓は、入らなければ赤。
     """
     need_w, need_h = window_fit.required_size(win)
     size = getattr(win, "_fit_size", None)
@@ -165,16 +166,36 @@ def _assert_fits(win, label: str) -> None:
         f"[{label}] 窓が window_fit.fit_to_content() を通っていない"
         "（寸法をリテラルで持つと中身が増えた日に黙って切れる）。"
     )
-    lim_w = win.winfo_screenwidth()  - window_fit.SCREEN_MARGIN
-    lim_h = win.winfo_screenheight() - window_fit.SCREEN_MARGIN
-    assert size[0] >= min(need_w, lim_w), (
-        f"[{label}] 中身が窓幅に入らない（必要 {need_w}px / 窓 {size[0]}px）。"
-        "右端のウィジェットが見切れる。"
-    )
-    assert size[1] >= min(need_h, lim_h), (
-        f"[{label}] 中身が窓高に入らない（必要 {need_h}px / 窓 {size[1]}px）。"
-        "下端のウィジェットが見切れる。"
-    )
+    _assert_content_is_reachable(win, label, need_w, need_h, size)
+
+
+def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
+    """中身が窓に入っているか、入らないならスクロールで届くこと。"""
+    escape = getattr(win, "_fit_scroll", None)
+    # ⚠️ `escape.active` は **(縦, 横)** の順（バーの向き）で、寸法の (幅, 高さ) とは
+    # 逆。実装中に取り違えて「溢れているのにバーが出ていない」と誤検出した。
+    for bar, need, got, edge in (
+        (1, need_w, size[0], "右端"),      # 幅が足りない → 横バー
+        (0, need_h, size[1], "下端"),      # 高さが足りない → 縦バー
+    ):
+        if got >= need:
+            continue
+        assert escape is not None, (
+            f"[{label}] 中身が窓に入らない（必要 {need}px / 窓 {got}px）＝"
+            f"{edge}のウィジェットが見切れる。画面に入らないこと自体が避けられない"
+            "なら、window_fit.scrollable_body の逃げ道を与えること"
+            "（「入らないのだから仕方ない」で見逃さない＝B-021）。"
+        )
+        assert escape.active[bar], (
+            f"[{label}] 溢れている（必要 {need}px / 窓 {got}px）のにスクロール"
+            f"バーが出ていない＝{edge}へ到達できない。"
+        )
+    if escape is not None:
+        region = [int(v) for v in str(escape.canvas.cget("scrollregion")).split()]
+        assert region[3] >= escape.body.winfo_reqheight(), (
+            f"[{label}] スクロール領域が中身に届いていない"
+            f"（領域 {region[3]}px / 中身 {escape.body.winfo_reqheight()}px）。"
+        )
 
 
 # ============================================================
@@ -188,17 +209,32 @@ def _assert_fits(win, label: str) -> None:
 # ボタンが数 px に潰れていることに**永久に気づけなかった**（B-021＝見切れ 6 回目）。
 # だから画面サイズを実測に頼らず、**出荷先の寸法を定数として与える**。
 #
-# ⚠️ **範囲は 96dpi（100%）まで**と意図して区切ってある（2026-07-28 の決定）。
-# 125%/150% では条件探索が 105px / 233px 溢れるが、それを緑にするには窓を
-# スクロール可能にする構造変更（2.6a1）が要るため、ここを広げるのはその後。
-# **区切った残りは B-023 として台帳に独立させてある**＝見逃しではない。
+# ⚠️ **範囲は 2.6a1 で 125%/150% まで広げた**（2026-07-31）。2.5RC2 の時点では
+# 96dpi（100%）に意図して区切ってあった＝125%/150% では条件探索が 105px / 233px
+# 溢れ、それを緑にするには逃げ道（`scrollable_body`）が要ったため。逃げ道が
+# 入ったので、ここが本来見るべき範囲に戻った（区切っていた残り＝B-023）。
+#
+# **横（幅）は逃げ道に頼らせない**。溢れているのは縦だけで、幅は 150% でも
+# バッチの 1679px が最大＝1830px に収まる。横スクロールは「読む方向」に対して
+# 体験が悪いので、幅は素で入ることを要求し続ける（入らなくなった日に赤くなって
+# 判断を迫るのが正しい＝黙って横バーで逃げない）。
 _FHD_LIMIT = (1920 - window_fit.SCREEN_MARGIN, 1080 - window_fit.SCREEN_MARGIN)
+_FHD_SCREEN = (1920, 1080)
+
+# 出荷先で起こり得る表示スケール（100% / 125% / 150%）。
+_SHIP_DPIS = (96, 120, 144)
 
 
+@pytest.mark.parametrize("dpi", _SHIP_DPIS)
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
-def test_every_window_fits_on_fhd_at_96dpi(name, lang, monkeypatch):
-    """全窓の必要寸法が FHD 100% の実効上限（1830×990）に収まること。"""
+def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
+    """実機（FHD）で全窓が使えること＝**入るか、入らないなら手が届くか**。
+
+    「入らないのだから仕方ない」で見逃さない、が本テストの本体（B-021）。
+    高さは逃げ道（スクロール）で許すが、**幅は素で収まることを要求する**
+    （上の `_FHD_LIMIT` のコメント）。
+    """
     from views import theme
 
     prev = i18n._lang
@@ -206,21 +242,28 @@ def test_every_window_fits_on_fhd_at_96dpi(name, lang, monkeypatch):
     try:
         root.withdraw()
         i18n.set_lang(lang)
-        theme.apply_fonts(root, dpi=96)
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        theme.apply_fonts(root, dpi=dpi)
         opener, _ = _WINDOWS[name]
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
         need_w, need_h = window_fit.required_size(win)
         lim_w, lim_h = _FHD_LIMIT
-        assert need_h <= lim_h, (
-            f"[{name}/{lang}] 実機（FHD 100%）の画面に入らない"
-            f"（必要 {need_h}px / 使える高さ {lim_h}px ＝ {need_h - lim_h}px 超過）。"
-            "溢れた分は下端のウィジェットから削られる（B-021 では最下段のボタン列が"
-            "数 px の帯に潰れ、マップウィンドウ・条件探索へ到達できなくなった）。"
-        )
+        label = f"{name}/{lang}/{dpi}dpi"
         assert need_w <= lim_w, (
-            f"[{name}/{lang}] 実機（FHD 100%）の画面に入らない"
+            f"[{label}] 実機（FHD）の画面に幅が入らない"
             f"（必要 {need_w}px / 使える幅 {lim_w}px ＝ {need_w - lim_w}px 超過）。"
+            "**横スクロールで逃げない**＝列を減らすか、幅の要求そのものを削ること。"
         )
+        if need_h > lim_h:
+            # 入らない窓は、入らないなりに最後まで手が届くこと。
+            assert getattr(win, "_fit_scroll", None) is not None, (
+                f"[{label}] 画面に入らない（必要 {need_h}px / 使える高さ {lim_h}px ＝ "
+                f"{need_h - lim_h}px 超過）のに逃げ道が無い。溢れた分は下端の"
+                "ウィジェットから削られる（B-021 では最下段のボタン列が数 px の帯に"
+                "潰れ、マップウィンドウ・条件探索へ到達できなくなった）。"
+                "window_fit.scrollable_body の中へ組み立てること。"
+            )
+        _assert_content_is_reachable(win, label, need_w, need_h, win._fit_size)
     finally:
         i18n.set_lang(prev)
         theme.apply_fonts(root, dpi=96)   # 名前付きフォントは他テストと共有
@@ -234,8 +277,7 @@ def test_every_window_fits_on_fhd_at_96dpi(name, lang, monkeypatch):
 # 出荷先の画面を `window_fit.screen_size` へ差し込んで、**溢れる状況を作ってから**
 # 検査する。溢れさせずに「逃げ道がある」ことだけ確かめるテストは、逃げ道が
 # 壊れていても緑になる（＝これまで見切れを 6 回通した形そのもの）。
-_FHD_SCREEN = (1920, 1080)
-
+#
 # 逃げ道を持つべき窓と、その窓が実機 FHD で溢れる DPI。
 # **溢れない窓（バッチ・地図）を入れていないのは意図的**＝中身が伸縮する窓で、
 # 二重のスクロール容器に入れると内側の表が潰れる。溢れた日には
