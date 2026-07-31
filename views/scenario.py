@@ -224,8 +224,11 @@ class ScenarioWindow(tk.Toplevel):
     # 組み立て
     # ----------------------------------------------------------
     def _build(self) -> None:
-        outer = ttk.Frame(self, padding=10)
-        outer.pack(fill="both", expand=True)
+        # 中身はスクロールの受け皿の中へ（B-023＝B-021② と同一パス）。この窓は
+        # 100% では入るが 125% で 1095px、150% で 1223px を要求し、実機（FHD）の
+        # 使える高さ 990px を超える。外周 padding は受け皿の内側へ移す（外に残すと
+        # スクロール領域の外で下端を隠す）。
+        outer = window_fit.scrollable_body(self, padding=10)
 
         # 経路（固定された前提）＝ランチャーのスナップショット。
         # ⚠️ **実行はここに出ている値で行う**（黙って読み直さない）。以前は実行時に

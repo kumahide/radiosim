@@ -802,6 +802,15 @@ def set_lang(lang: str) -> None:
         _lang = lang
 
 
+def current_lang() -> str:
+    """いま使っている言語コード。
+
+    文字列だけでなく**書体の選択にも効く**（日本語は日本語グリフを持つ書体で
+    ないと、Windows のフォントリンクで漢字だけ別書体に落ちる＝B-026）。
+    """
+    return _lang
+
+
 def t(key: str) -> str:
     """現在の言語でキーに対応する文字列を返す。未定義の場合は英語フォールバック。"""
     return _STRINGS.get(_lang, _STRINGS["en"]).get(key, _STRINGS["en"].get(key, key))

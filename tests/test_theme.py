@@ -22,6 +22,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import i18n
 from conftest import make_tk_root, set_theme
 from views import theme
 
@@ -411,12 +412,13 @@ def test_bold_shares_the_body_typeface(root):
     差し替えても強調だけ取り残される。ここで固定するのは**「強調は本文に追従する」
     という不変条件**であって、日本語の字形が揃うことではない。
 
-    ⚠️ **この検査が緑でも B-026 の症状（バッチ表ヘッダの漢字だけ字形が違う）は
+    ⚠️ **この検査だけでは B-026 の症状（バッチ表ヘッダの漢字だけ字形が違う）は
     消えない。** 2026-07-31 の実測で、漢字のフォントリンク先を決めているのは
     family ではなく **weight** だと分かった＝本文が Segoe 系である限り、太字に
     した時点で漢字は Malgun Gothic（韓国語フォント）へ落ちる。症状を消すのは
-    「ja の本文書体を日本語を持つ書体にする」（ISSUES.md B-026 の処方②・字幅が
-    変わるため寸法ゲートの後）で、本検査はその②が効くための足場を守るもの。
+    処方②＝**ja では本文書体自体を日本語を持つ書体にする**（下の
+    `test_japanese_locale_uses_a_japanese_capable_face`）で、本検査はその②が
+    効くための足場（本文を差し替えたら強調も付いてくる）を守るもの。
     """
     from tkinter import font as tkfont
 
@@ -427,6 +429,75 @@ def test_bold_shares_the_body_typeface(root):
     )
     weight = tkfont.nametofont(theme.ui_font(root, "bold"), root=root).config()["weight"]
     assert str(weight) == "bold", "強調が太字になっていない"
+
+
+def test_japanese_locale_uses_a_japanese_capable_face(root):
+    """日本語では**日本語グリフを持つ書体**を本文にすること（B-026 の処方②）。
+
+    sv_ttk の Segoe UI Variable 系は日本語を持たず、不足分は Windows の
+    フォントリンク任せになる＝漢字だけ別書体で描かれ、しかも太字にすると
+    Malgun Gothic（韓国語）へ落ちる。**指定の側で日本語を持つ書体を選べば、
+    リンクに落ちる経路そのものが無くなる。**
+
+    ⚠️ ここで守れるのは「アプリが何を指定したか」まで。**実際に何で描かれるか**
+    （`font actual … -- 漢`）は OS のフォントリンク次第でヘッドレスでは測れない
+    ので、そちらは `experiments/font_fallback_probe.py` で手元実測する
+    （①を実装したのに症状が動かなかったのは、この層を測らずに処方を決めたため）。
+    """
+    from tkinter import font as tkfont
+
+    prev = i18n.current_lang()
+    set_theme("dark")
+    try:
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        family = _family(root, "body")
+        if not (set(_theme_families(root)) & set(theme._JA_FAMILIES)):
+            pytest.skip("この環境に日本語書体が 1 つも無い")
+        assert family in theme._JA_FAMILIES, (
+            f"日本語なのに本文が {family}＝日本語グリフを持たない書体だと、"
+            "漢字が Windows のフォントリンクで別書体（太字では韓国語）に落ちる。"
+        )
+        for kind in ("small", "bold"):
+            assert _family(root, kind) == family, (
+                f"{kind} だけ別書体（{_family(root, kind)}）＝そこだけ字形が割れる。"
+            )
+        for name in ("TkDefaultFont", "TkTextFont"):
+            got = tkfont.nametofont(name, root=root).config()["family"]
+            assert got == family, f"{name} が本文と別書体（{got}）"
+    finally:
+        i18n.set_lang(prev)
+        theme.apply_fonts(root, dpi=96)
+
+
+def test_english_locale_keeps_the_sv_ttk_face(root):
+    """英語では sv_ttk の書体のままであること（差し替えを一方通行にしない）。
+
+    日本語で書体を差し替えたあと英語へ戻したときに元へ戻らないと、**en の見た目が
+    ja のセッションを開いたかどうかで変わる**（名前付きフォントはプロセスで共有）。
+    """
+    prev = i18n.current_lang()
+    set_theme("dark")
+    try:
+        i18n.set_lang("en")
+        theme.apply_fonts(root, dpi=96)
+        base = _family(root, "body")
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        i18n.set_lang("en")
+        theme.apply_fonts(root, dpi=96)
+        assert _family(root, "body") == base, (
+            f"英語へ戻したのに書体が {_family(root, 'body')} のまま"
+            f"（本来 {base}）＝日本語を一度開いたかどうかで見た目が変わる。"
+        )
+    finally:
+        i18n.set_lang(prev)
+        theme.apply_fonts(root, dpi=96)
+
+
+def _theme_families(root) -> tuple:
+    from tkinter import font as tkfont
+    return tkfont.families(root)
 
 
 def _effective(widget) -> tuple:
@@ -636,7 +707,7 @@ def test_table_row_height_follows_the_font(root):
     assert high > low, f"DPI を上げても行高が変わらない（{low}px のまま）"
 
 
-def test_watch_dpi_actually_fires_on_a_configure_event(root):
+def test_watch_display_actually_fires_on_a_configure_event(root):
     """配線が実際に動くこと（監視 → 検知 → 貼り直し → 通知）。
 
     ⚠️ **ここが本丸**。「イベントに繋いだつもりで一度も発火しない」は本プロジェクト
@@ -655,16 +726,57 @@ def test_watch_dpi_actually_fires_on_a_configure_event(root):
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
     notified: list[int] = []
     try:
-        theme.watch_dpi(root, notified.append)
+        theme.watch_display(root, notified.append)
         fake["dpi"] = 144                          # 別 DPI のモニタへ移した相当
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")              # 移動＝<Configure>
         root.update()
-        # デバウンス（_DPI_DEBOUNCE_MS）を消化する
-        root.after(theme._DPI_DEBOUNCE_MS + 80, root.quit)
+        # デバウンス（_DISPLAY_DEBOUNCE_MS）を消化する
+        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
         root.mainloop()
         assert notified == [144], f"DPI 変化が通知されていない: {notified}"
         assert _px(root) == round(at96 * 1.5), "通知は来たがフォントが貼り直されていない"
     finally:
         theme.window_dpi = monkey                  # type: ignore[assignment]
         theme.apply_fonts(root, dpi=96)
+
+
+def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monkeypatch):
+    """**DPI が変わらない画面サイズの変化**でも測り直しが走ること（B-022）。
+
+    旧 `watch_dpi` は `<Configure>` を受け取りながら「DPI が同じなら即 return」で
+    捨てていた＝解像度変更・VDI の動的解像度・リモート再接続が素通りしていた。
+    害は両方向で、狭くなれば窓がデスクトップの外へ出たまま、広くなればクランプ
+    された小さいまま**二度と戻らない**（アプリの再起動しか回復手段が無かった）。
+
+    ⚠️ **フォントは貼り直さないこと**も同時に見る＝解像度だけの変化で全窓の
+    フォントを触るのは無駄で、副作用の面だけが広がる。
+    """
+    import tkinter as tk
+
+    from views import window_fit
+
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    before_px = _px(root)
+
+    screen = {"size": (1920, 1080)}
+    monkeypatch.setattr(theme, "window_dpi", lambda _w: 96)
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: screen["size"])
+
+    notified: list[int] = []
+    theme.watch_display(root, notified.append)
+    screen["size"] = (1280, 720)                   # 解像度だけが変わった
+    win = tk.Toplevel(root)
+    win.geometry("200x100+10+10")                  # <Configure> の契機
+    root.update()
+    root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
+    root.mainloop()
+
+    assert notified == [96], (
+        f"画面サイズの変化が素通りしている: {notified}"
+        "（窓は新しい画面に対して測り直されないまま残る＝B-022）。"
+    )
+    assert _px(root) == before_px, (
+        "解像度だけの変化でフォントまで貼り直している（DPI は変わっていない）。"
+    )

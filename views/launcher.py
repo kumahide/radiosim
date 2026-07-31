@@ -180,17 +180,24 @@ class SimLauncher:
     # ----------------------------------------------------------
     def _build_ui(self) -> None:
         self._build_menu()
+        # 中身は**スクロールの受け皿の中**へ組み立てる（B-021②）。ランチャーは
+        # 100% の FHD でも必要高 973px（125% では 1148px）で、画面の使える高さ
+        # 990px を超えた分は**下詰めのフッタに押されてボタン列から削られる**。
+        # 受け皿があれば溢れてもスクロールで届く（入るあいだはバーも出ない）。
+        # ⚠️ メニューバーは wm の持ち物なので受け皿の外（`self.root` のまま）。
+        body = window_fit.scrollable_body(self.root)
+
         # side="bottom" はパック順が逆（先にパックしたものが下）
         # copyright → logo の順にパックすると copyright が最下部、logo がその直上になる
         tk.Label(
-            self.root,
+            body,
             text=version.COPYRIGHT,
-            fg=theme.muted_foreground(self.root),
-            font=theme.ui_font(self.root, "small"),
+            fg=theme.muted_foreground(body),
+            font=theme.ui_font(body, "small"),
         ).pack(side="bottom", pady=(0, 6))
-        self._build_logo(self.root)
+        self._build_logo(body)
 
-        container = ttk.Frame(self.root, padding=(20, 10))
+        container = ttk.Frame(body, padding=(20, 10))
         container.pack(fill="both", expand=True)
 
         self._build_site_group(container)
