@@ -1179,12 +1179,18 @@ class BatchBuilderWindow(tk.Toplevel):
             i18n.t("dlg_batch_complete"),
             i18n.t("dlg_batch_complete_msg").format(dir=batch_dir),
             [("summary", i18n.t("dlg_open_summary")),
-             ("all", i18n.t("dlg_open_all"))],
+             ("all", i18n.t("dlg_open_all")),
+             # 「保存先を開く」＝ランチャーから恒久ボタンを外した代わりの受け皿
+             # （I-030）。KML/CSV/PNG を掴むにはフォルダが要り、その必要は
+             # **実行した直後**に局在している。
+             ("folder", i18n.t("dlg_open_folder"))],
         )
         if choice == "summary":
             os.startfile(os.path.join(batch_dir, "summary.html"))
         elif choice == "all":
             os.startfile(os.path.join(batch_dir, "report_all.html"))
+        elif choice == "folder":
+            os.startfile(batch_dir)
 
     def _on_error(self, ex: Exception) -> None:
         self._running = False

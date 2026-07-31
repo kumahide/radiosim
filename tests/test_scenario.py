@@ -619,10 +619,12 @@ class TestScenarioWindowSmoke:
         root, win = self._win(default_params_dict)
         try:
             assert win._mode.get() == "compare"
+            # スイープの軸は**行のラジオ**で選ぶ（I-032 でタブを比較タブの器へ
+            # 寄せた）。既定は従来と同じ h_tx。
+            assert win._sweep_axis.get() == "h_tx"
             # 画面の項目名は**単位つき**（出所は report_scenario.AXIS_UNITS ＝
             # レポートと同じ一覧。画面だけ単位が無いと何を入れる欄か分からない）。
-            assert win._axis_box.get() == report_scenario.axis_label("h_tx")
-            assert win._axis_box.get() == i18n.t("scn_axis_h_tx") + " (m)"
+            assert report_scenario.axis_label("h_tx") == i18n.t("scn_axis_h_tx") + " (m)"
         finally:
             win.destroy(); root.destroy()
 
@@ -651,8 +653,10 @@ class TestScenarioWindowSmoke:
         root, win = self._win_with_meta(default_params_dict, meta)
         try:
             assert win._meta == meta
-            shown = win._meta_label.cget("text")
-            assert "〇〇高校 無線化検討" in shown and "2 系統比較" in shown
+            # I-031 で帯を「バッチと同じ readonly 欄＋🔒」へ揃えたので、
+            # 表示の実体は 1 行テキストではなく欄の値。
+            assert win._project_var.get() == "〇〇高校 無線化検討"
+            assert win._memo_var.get() == "2 系統比較"
         finally:
             win.destroy(); root.destroy()
 
@@ -668,10 +672,10 @@ class TestScenarioWindowSmoke:
         try:
             meta["project_name"] = "案件 B"          # ランチャー側で変更した相当
             assert win._meta["project_name"] == "案件 A", "黙って追従している"
-            assert "案件 A" in win._meta_label.cget("text")
+            assert win._project_var.get() == "案件 A"
             win._refresh_from_launcher()             # ↻ で明示的に取り込む
             assert win._meta["project_name"] == "案件 B"
-            assert "案件 B" in win._meta_label.cget("text")
+            assert win._project_var.get() == "案件 B"
         finally:
             win.destroy(); root.destroy()
 
@@ -709,7 +713,8 @@ class TestScenarioWindowSmoke:
                 f"実行時にランチャーを読み直している: {seen}")
             # 完了ダイアログまで到達している＝遮断が効いていることの裏取り。
             root.update()
-            assert "confirm" in dialog_calls.kinds()
+            # 完了ダイアログは「レポートを開く / 保存先を開く」の選択になった（I-030）。
+            assert "choose" in dialog_calls.kinds()
         finally:
             win.destroy(); root.destroy()
 
@@ -728,13 +733,15 @@ class TestScenarioWindowSmoke:
         i18n.set_lang("ja")
         root, win = self._win(default_params_dict)
         try:
-            # --- スイープ：軸の Combobox と 開始/終了/点数 の Entry ---
+            # --- スイープ：開始 / 終了 / 点数 の Entry ---
+            # ⚠️ **軸の Combobox は I-032 で消えた**（軸は行のラジオで選ぶ）＝
+            # 「Combobox と Entry で実幅が揃わない」という元の欠陥は構造ごと無くなり、
+            # 残るのは同じ種類・同じ幅の Entry 3 つが揃っているかだけ。ここを消さずに
+            # 残すのは、選択行へ置き直す実装（`_on_sweep_axis_changed`）が列を
+            # ずらして幅を壊し得るため。
             win._mode.set("sweep"); win._on_mode_changed()
             root.update_idletasks()
-            grid = win._axis_box.master
-            widths = {win._axis_box.winfo_width()}
-            for row in (1, 2, 3):
-                widths |= {w.winfo_width() for w in grid.grid_slaves(row=row, column=1)}
+            widths = {ent.winfo_width() for _lab, ent in win._range_cells}
             assert len(widths) == 1, f"スイープの入力欄の幅が揃っていない: {widths}"
 
             # --- 比較：条件列の Entry と Combobox ---
@@ -932,8 +939,9 @@ class TestScenarioResultsAndDialog:
         try:
             import views.scenario as vs
             asked, opened = [], []
-            monkeypatch.setattr(vs.dialogs, "confirm",
-                                lambda *a, **k: (asked.append(a[2]), True)[1])
+            monkeypatch.setattr(
+                vs.dialogs, "choose",
+                lambda *a, **k: (asked.append(a[2]), "report")[1])
             monkeypatch.setattr(vs.os, "startfile", lambda p: opened.append(str(p)),
                                 raising=False)
             win._last_dir = str(tmp := "some_dir")
@@ -1098,7 +1106,7 @@ class TestLauncherSnapshot:
             win._refresh_from_launcher()
             assert win._base_params.lat_tx == pytest.approx(35.1)
             assert win._base_params.freq_mhz == 15000.0
-            assert "35.10000" in win._path_label["text"], "経路表示が追従していない"
+            assert "35.10000" in win._path_var.get(), "経路表示が追従していない"
             assert win._base_vars["freq_mhz"].get() == "15000.0"
             # 触っていない条件欄はベースに追従する
             assert win._cmp_cols[0]["freq_mhz"].get() == "15000.0"

@@ -186,12 +186,24 @@ class _ScrollEscape:
         だから `fit_to_content` が測る前に、ここを明示的に呼ぶ。
         """
         self.win.update_idletasks()
-        self.canvas.configure(width=self.body.winfo_reqwidth(),
-                              height=self.body.winfo_reqheight())
+        need_w, need_h = self.body.winfo_reqwidth(), self.body.winfo_reqheight()
+        self.canvas.configure(width=need_w, height=need_h)
+        self._sync_scrollregion()
         self.win.update_idletasks()
 
+    def _sync_scrollregion(self) -> None:
+        """スクロールできる範囲＝**中身の要求サイズ**（キャンバスより大きい側）。
+
+        ⚠️ `bbox("all")` から取らない＝あれは*描かれている*大きさで、窓が未実現の
+        あいだや `<Configure>` が飛ぶ前は中身より小さい値を返す。そのままだと
+        「バーは出ているのに下端まで送れない」状態になる（実装中に踏んだ）。
+        """
+        w = max(self.body.winfo_reqwidth(),  self.canvas.winfo_width())
+        h = max(self.body.winfo_reqheight(), self.canvas.winfo_height())
+        self.canvas.configure(scrollregion=(0, 0, w, h))
+
     def _on_body_configure(self, _event=None) -> None:
-        self.canvas.configure(scrollregion=self.canvas.bbox("all"))
+        self._sync_scrollregion()
 
     def _on_canvas_configure(self, event) -> None:
         # 窓のほうが中身より大きいときは中身を引き伸ばす（`fill="both"` や

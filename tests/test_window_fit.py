@@ -225,6 +225,50 @@ _FHD_SCREEN = (1920, 1080)
 _SHIP_DPIS = (96, 120, 144)
 
 
+@pytest.mark.parametrize("lang", ["ja", "en"])
+@pytest.mark.parametrize("name", sorted(_WINDOWS))
+def test_every_window_fits_without_scrolling_at_100_percent(name, lang, monkeypatch):
+    """**出荷先の標準環境（FHD 100%）では逃げ道に頼らない**こと。
+
+    逃げ道（`scrollable_body`）は「入らない画面でも壊れない」ための保険であって、
+    **標準環境で常時スクロールさせてよい**という意味ではない。ここを緩めると、
+    UI を足すたびに数十 px ずつ食って「実機では最初からスクロール」の窓が
+    できあがる（実際 I-029〜I-031 の実装中に、ランチャーが 966→994px、条件探索が
+    941→1033px まで膨らんで一度この線を越えた＝このテストが捕まえた）。
+
+    125%/150% は逃げ道で担保する（`test_every_window_is_usable_on_fhd`）。
+    ⚠️ このテストが赤くなったら「余白を削る」より先に**足した UI が本当に要るか**
+    を問うこと（B-021 でロゴを縮めて 33px 返したのと同じ順序）。
+    """
+    from views import theme
+
+    prev = i18n._lang
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang(lang)
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        theme.apply_fonts(root, dpi=96)
+        opener, _ = _WINDOWS[name]
+        win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        need_w, need_h = window_fit.required_size(win)
+        lim_w, lim_h = _FHD_LIMIT
+        assert need_h <= lim_h, (
+            f"[{name}/{lang}] FHD 100% で画面に入らない"
+            f"（必要 {need_h}px / 使える高さ {lim_h}px ＝ {need_h - lim_h}px 超過）。"
+            "逃げ道は 125% 以上のための保険で、標準環境で常時スクロールさせる"
+            "ためのものではない。"
+        )
+        assert need_w <= lim_w, (
+            f"[{name}/{lang}] FHD 100% で画面に幅が入らない"
+            f"（必要 {need_w}px / 使える幅 {lim_w}px ＝ {need_w - lim_w}px 超過）。"
+        )
+    finally:
+        i18n.set_lang(prev)
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 @pytest.mark.parametrize("dpi", _SHIP_DPIS)
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
