@@ -30,7 +30,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import ttk
-from typing import Callable, Protocol, cast
+from typing import Callable, NamedTuple, Protocol, cast
 
 from PIL import ImageTk
 
@@ -60,6 +60,40 @@ _LEVEL_COLORS: dict[str, str] = {
 
 # キャッシュ済み領域の外周線の色
 _OUTLINE_COLOR = "#0066CC"
+
+# 背景タイル（**2 択だけ**・I-028）。どちらも地理院タイル＝外部 API は GSI 一本の
+# まま（設計哲学④）。**標準地図・白地図・陰影起伏…と足せる作りにしない**＝足せる
+# 作りにすると次に必ず「全部出せるように」が来る（YAGNI の釘）。
+#
+# 航空写真を足す理由＝`veg_h` と `env_type` は今のところ利用者の当てずっぽうで、
+# ここが数 dB〜十数 dB を動かす。写真で市街地／杉林／水面を目で決められると
+# **新しい出力を増やさずに既存入力の質が上がる**。
+# ⚠️ **見て確認するためだけ**＝写真から入力へ値を流す導線は作らない。
+class _TileLayer(NamedTuple):
+    url:       str
+    max_zoom:  int
+    label_key: str          # 選択欄に出す名前（i18n キー）
+    attr_key:  str          # 出典表記（i18n キー）＝**タイルと対で持つ**
+
+
+_TILE_LAYERS: dict[str, _TileLayer] = {
+    "pale": _TileLayer(
+        "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
+        18, "map_layer_pale", "tm_attr_pale"),
+    "photo": _TileLayer(
+        "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
+        18, "map_layer_photo", "tm_attr_photo"),
+}
+_DEFAULT_LAYER = "pale"
+
+# 出典表記の配色。**背景を持たせるのは切り替え対策**＝淡色地図（明るい）と
+# 航空写真（暗い・多色）では地の色が真逆で、地に直接描くとどちらかで必ず
+# 読めなくなる（B-009＝ダークでツールチップが判読不能、と同型）。ウィジェットに
+# 背景色を持たせれば**レイヤに依存しない 1 経路**で済む。
+# ⚠️ ここは地図の上＝**アプリのテーマではなくタイルの上での可読性**で決める
+# （sv_ttk のダークに合わせると航空写真の暗部で沈む）。
+_ATTR_FG = "#333333"
+_ATTR_BG = "#FFFFFF"
 
 # 開いたとき設定中 TX/RX を収めるよう自動ズームする際のパラメータ。
 _FIT_MARGIN   = 0.25    # bbox を広げる余白（経路が縁に張り付かないように）
@@ -581,11 +615,22 @@ class MapWindow:
             self._mode_buttons[value] = b
         self._select_mode(self._mode.get())   # 初期選択のスタイルを反映
 
+        # 背景の 2 択（I-028）。**モードではないので見た目を変える**＝モードは
+        # セグメントボタン、こちらは Combobox。同じ形にすると「4 つ目のモード」に
+        # 見えて、選ぶ軸が 2 本あることが読み取れなくなる。
+        ttk.Label(modebar, text=i18n.t("map_layer_label")).pack(side="left", padx=(16, 4))
+        self._layer_labels = {
+            i18n.t(spec.label_key): key
+            for key, spec in _TILE_LAYERS.items()
+        }
+        self._layer_box = ttk.Combobox(
+            modebar, values=list(self._layer_labels), state="readonly", width=10)
+        self._layer_box.set(i18n.t(_TILE_LAYERS[_DEFAULT_LAYER].label_key))
+        self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
+        self._layer_box.pack(side="left")
+
         self._map = TkinterMapView(self._win, corner_radius=0)
-        # 地図タイルは GSI 淡色地図に統一（DEM 出典と揃え、外部 API を GSI 一本化）。
-        self._map.set_tile_server(
-            "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png", max_zoom=18
-        )
+        self._layer = _DEFAULT_LAYER
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)
         self._map.set_zoom(8)
@@ -615,12 +660,21 @@ class MapWindow:
                 lambda e: self._sel_release(e, "delete"), add="+")
 
         # 出典表記（GSI 帰属）は地図右下にオーバーレイ表示する（地図出典の慣例位置）。
-        # ウィジェットでは背景を透過できないため、canvas に直接テキスト描画する。
-        self._attribution = cv.create_text(
-            0, 0, text=i18n.t("tm_attribution"),
-            anchor="se", fill="gray", tags="attribution",
+        #
+        # ⚠️ **canvas のテキストではなく「置いたウィジェット」にする**（2.6a5・B-027）。
+        # 従来は `create_text` で canvas に直接描いており、`<Configure>` のたびに
+        # `tag_raise` していたが、**タイル画像は後から canvas に足される**ので
+        # 描画のたびに埋もれた＝実画面では出典が 1 度も見えていなかった
+        # （実機スクショで発覚。地理院タイルの出典表記は表示義務がある）。
+        # 子ウィジェットは canvas の中身より常に上に描かれるので、`place` すれば
+        # z 順の争いが構造的に消える（背景色もウィジェットが持てる＝下敷き不要）。
+        self._attribution = tk.Label(
+            self._map, text=i18n.t(_TILE_LAYERS[_DEFAULT_LAYER].attr_key),
+            fg=_ATTR_FG, bg=_ATTR_BG, font=theme.ui_font(self._win, "small"),
+            padx=4, pady=1,
         )
-        cv.bind("<Configure>", self._reposition_attribution, add="+")
+        self._attribution.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
+        self._apply_layer(_DEFAULT_LAYER)
 
         # ---- 下部ステータスバー（1 本に集約）----------------------------
         # 出没でレイアウトが動かないよう、各要素の高さを予約して配置する。
@@ -765,11 +819,27 @@ class MapWindow:
             border_width=2,
         )
 
-    def _reposition_attribution(self, event=None) -> None:
-        """出典テキストを地図右下に再配置し、最前面へ持ち上げる。"""
-        cv = self._map.canvas
-        cv.coords(self._attribution, cv.winfo_width() - 4, cv.winfo_height() - 4)
-        cv.tag_raise(self._attribution)
+    # ----------------------------------------------------------
+    # 背景タイル（淡色地図 / 航空写真）
+    # ----------------------------------------------------------
+    def _on_layer_changed(self, _event=None) -> None:
+        self._apply_layer(self._layer_labels[self._layer_box.get()])
+
+    def _apply_layer(self, key: str) -> None:
+        """背景タイルを切り替え、**出典表記も一緒に変える**（I-028）。
+
+        ⚠️ 表記の追従がこの関数の本体＝タイルだけ替えると「航空写真を見ながら
+        『出典: 淡色地図』」という*事実と食い違う刻印*になる。1 か所で両方を
+        変えることで、片方だけ直す余地を残さない。
+
+        写真には地名が写らないので、目的地まで地図を送るのは淡色のほうが速い。
+        **常時 2 択で行き来できること**が要件で、「写真＋注記の重ね合わせ」は
+        2 レイヤ同時描画になり `tkintermapview` の作りから見て割に合わない＝やらない。
+        """
+        spec = _TILE_LAYERS[key]
+        self._layer = key
+        self._map.set_tile_server(spec.url, max_zoom=spec.max_zoom)
+        self._attribution.config(text=i18n.t(spec.attr_key))
 
     # ----------------------------------------------------------
     # タイルオーバーレイ
@@ -841,8 +911,10 @@ class MapWindow:
                 border_width=2,
             )
             self._tile_polygons.append(p)
-        # カバレッジ描画でタイル/ポリゴンが上に来るため出典を持ち上げ直す。
-        self._reposition_attribution()
+        # ⚠️ ここには「カバレッジ描画で上に来るため出典を持ち上げ直す」という
+        # 1 行があった。**持ち上げ直しが要る時点で z 順の争いに負けている**
+        # （実際タイル画像のほうは拾えておらず、出典は一度も見えていなかった＝
+        # B-027）。出典を `place` したウィジェットにしたので争い自体が消えた。
 
     # ----------------------------------------------------------
     # ダウンロード（Ctrl＋ドラッグ → 確認 → 実行）
