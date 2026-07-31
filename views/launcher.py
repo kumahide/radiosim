@@ -587,17 +587,23 @@ class SimLauncher:
         frame = ttk.Frame(parent)
         frame.pack(fill="x", pady=(6, 4))
 
-        # 縦積み＝3 個をこの窓幅（450px）で横に並べると日本語ラベルが入らない。
-        # 幅を揃えた縦の並びは「行き先の一覧」として読める。
-        # ⚠️ 余白は詰めてある＝この窓は FHD 100% の使える高さ 990px に対して
-        # 余裕が十数 px しかない（B-021）。ここを緩めた分だけ実機で見切れに近づく。
-        for key, command in (
+        # **2 列 × 2 行**＝行き先が 4 つになった時点で縦積みは背が高すぎる
+        # （この窓は FHD 100% の使える高さ 990px に対して余裕が十数 px しかない
+        # ＝B-021。4 つ目を縦に足した瞬間に上限を超えた）。2 列なら日本語ラベルも
+        # 入る（元の 3×2 レイアウトで実績がある幅）。
+        # ⚠️ 5 つ目を足すときは、また高さの予算を測ること
+        # （tests/test_window_fit.py の 100% ゲートが止めてくれる）。
+        frame.columnconfigure(0, weight=1)
+        frame.columnconfigure(1, weight=1)
+        for i, (key, command) in enumerate((
             ("btn_batch_mode", self._on_batch),
             ("btn_open_map",   self._on_open_map),
             ("scn_open_btn",   self._on_open_scenario),
-        ):
-            ttk.Button(frame, text=i18n.t(key), command=command).pack(
-                fill="x", pady=1, ipady=4)
+            ("mh_open_btn",    self._on_open_multihop),
+        )):
+            ttk.Button(frame, text=i18n.t(key), command=command).grid(
+                row=i // 2, column=i % 2, sticky="ew",
+                padx=(0, 2) if i % 2 == 0 else (2, 0), pady=1, ipady=4)
 
     def _build_logo(self, parent: tk.Misc) -> None:
         """logo.png をボタン下の余白に表示する。ファイルがなければ何もしない。"""
@@ -950,6 +956,44 @@ class SimLauncher:
     def _open_batch_for_append(self):
         """連続追加モードの append 先としてバッチウィンドウを開いて返す。"""
         return self.ensure_batch_window()
+
+    def _on_open_multihop(self) -> None:
+        """中継経路ウィンドウを開く（唯一インスタンス。開いていれば前面化）。
+
+        バッチ・地図・条件探索と同じ流儀＝**ランチャーが source of truth**で、
+        共通設定と案件情報は現在値のスナップショットを渡す。
+        """
+        win = getattr(self, "_multihop_win", None)
+        if win is not None and win.winfo_exists():
+            win.lift()
+            win.focus_force()
+            return
+        from views.multihop import MultiHopWindow
+        try:
+            params = sim.SimParams(self._current_config())
+        except Exception:
+            params = sim.SimParams(config.DEFAULT_CONFIG)
+        self._multihop_win = MultiHopWindow(
+            self.root, params,
+            config_provider=self._current_config,
+            meta_provider=self._current_meta,
+            on_close=self._on_multihop_closed,
+        )
+
+    def _on_multihop_closed(self) -> None:
+        self._multihop_win = None
+
+    def open_map_for_waypoints(self, sink) -> None:
+        """地図を**中継点モード**で開いて宛先をこの sink にする（2.3 D2 の型）。
+
+        地図はアプリ唯一のインスタンスで、モードで宛先を切り替える。中継経路の
+        窓から直接 2 つ目の地図を作らない（D2 で一度そうして親子関係と描画系が
+        歪んだ経緯がある）。
+        """
+        self._on_open_map()
+        self._map_win._waypoint_sink = sink
+        self._map_win._select_mode("waypoints")
+        self._map_win._win.lift()
 
     def _on_open_scenario(self) -> None:
         """条件探索ウィンドウを開く（唯一インスタンス。開いていれば前面化）。
