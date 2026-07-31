@@ -13,12 +13,11 @@ import でき、tkinter のルートが生成できる」ことだけを確認�
 
 import importlib
 import subprocess
-import time
 import tkinter
 
 import pytest
 
-from conftest import _TK_INIT_ATTEMPTS, make_tk_root, make_themed_root
+from conftest import make_tk_root, make_themed_root
 
 import sys
 import os
@@ -355,28 +354,47 @@ def test_single_and_batch_share_the_progress_transport():
 # ⚠️ ランチャーの見切れゲートは **tests/test_window_fit.py へ移した**（2.5b2）。
 # 窓ごとの手書きテストは「次の窓・次の増え方」で必ず穴が空くので、views の
 # Toplevel を静的に洗い出して**全窓を横断で**検査する形に一本化した。
-def test_graph_signals_ready_before_blocking_show():
-    """グラフは plt.show() でブロックする前に on_ready を呼ぶこと。
+def test_graph_window_is_a_toplevel_that_does_not_block():
+    """グラフ窓は**普通の Toplevel** で、開いても呼び出し元をブロックしないこと。
 
-    単一実行では「グラフを準備中…」の表示をこのフックで待機状態へ戻す。
-    show_graph は plt.show() の入れ子 mainloop でブロックするので、戻り値を
-    待って戻すとグラフを閉じるまでラベルが「準備中」のまま残る（2.4b3）。
+    以前は窓が丸ごと matplotlib の figure で、`plt.show()` の入れ子 mainloop が
+    **閉じるまで返らなかった**。そのため「準備中」表示を戻すための `on_ready`
+    フックが要り（戻り値を待つと閉じるまでラベルが残る）、終了時には pyplot の
+    全 Figure を閉じる後始末も要った。B-024 の Tk 化でその 3 つがまとめて消える。
+
+    ⚠️ **`pyplot` を使っていないことも見る**＝pyplot を 1 行でも使うとグローバルな
+    図のレジストリと独自の Tk ルートが復活し、同じ構造に戻る。
     """
+    import ast
+
     import numpy as np
 
-    try:
-        import views.graph as graph          # import 時に TkAgg を要求する
-    except Exception as e:                   # noqa: BLE001
-        pytest.skip(f"requires display backend: {e}")
+    src = open(os.path.join(_APP_ROOT, "views", "graph.py"), encoding="utf-8").read()
+    tree = ast.parse(src)
+    # ⚠️ 本文の文字列検索では駄目＝docstring が「pyplot を使わない理由」を
+    # 説明しているので必ず引っかかる。**import 文を見る。**
+    imported = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            imported |= {a.name for a in node.names}
+        elif isinstance(node, ast.ImportFrom):
+            imported |= {f"{node.module}.{a.name}" for a in node.names if node.module}
+    assert not any("pyplot" in name for name in imported), (
+        f"views/graph.py が pyplot を import している（入れ子 mainloop と"
+        f"後始末が戻る）: {sorted(n for n in imported if 'pyplot' in n)}"
+    )
+    classes = {n.name: n for n in ast.walk(tree) if isinstance(n, ast.ClassDef)}
+    assert "GraphWindow" in classes, "GraphWindow が無い"
+    assert any(
+        isinstance(b, ast.Attribute) and b.attr == "Toplevel"
+        for b in classes["GraphWindow"].bases
+    ), "GraphWindow が tk.Toplevel を継承していない（横断ゲートの傘に入らない）"
 
-    import matplotlib.pyplot as plt
-    import simulation as sim
-
-    order: list[str] = []
-    real_show = plt.show
-    real_close = plt.close
-    plt.show = lambda *a, **k: order.append("show")
+    root = make_tk_root()
     try:
+        root.withdraw()
+        import simulation as sim
+        from views.graph import show_graph
         params = sim.SimParams({
             "start": "35.4258, 139.2131", "end": "35.4175, 139.2137",
             "h_tx": "30", "h_rx": "30", "freq": "2400", "p_tx": "13",
@@ -384,36 +402,20 @@ def test_graph_signals_ready_before_blocking_show():
             "k_factor": "10", "samples": "50", "env_type": "los",
             "rain_rate": "0", "diff_method": "deygout",
         })
-        # TkAgg の Figure 生成は内部で Tk ルートを作るので、この環境の間欠的な
-        # Tk 初期化失敗を踏む（conftest.make_tk_root と同じ事象）。
-        # ⚠️ 事前に plt.figure() で疎通を見るだけでは**守れない**＝プローブが
-        # 通っても直後の本番呼び出しが落ちた実例あり（`invalid command name
-        # "tcl_findLibrary"`＝init.tcl が読めず interp が不完全な状態）。
-        # したがって**測りたい操作そのもの**をリトライする。
-        last_err = None
-        for _attempt in range(_TK_INIT_ATTEMPTS):
-            order.clear()
-            try:
-                graph.show_graph(
-                    params, np.zeros(50), "", "",
-                    on_ready=lambda: order.append("ready"),
-                )
-                break
-            except tkinter.TclError as e:
-                last_err = e
-                real_close("all")
-                time.sleep(0.05)
-        else:
-            pytest.skip(
-                f"Tk の初期化に失敗（環境側の間欠障害・{_TK_INIT_ATTEMPTS} 回試行）: {last_err}"
-            )
-
-        assert order == ["ready", "show"], (
-            f"on_ready が plt.show() の前に呼ばれていない: {order}"
-        )
+        closed: list[str] = []
+        # **ここが返ってくること自体**が検査（返らなければテストが固まる）。
+        win = show_graph(root, params, np.zeros(50), on_close=lambda: closed.append("x"))
+        try:
+            assert isinstance(win, tkinter.Toplevel)
+            assert win.winfo_exists()
+            # 閉じたら呼び出し元へ知らせる（ランチャーが参照を外せる）。
+            win._on_close()
+            assert closed == ["x"]
+        finally:
+            if win.winfo_exists():
+                win.destroy()
     finally:
-        plt.show = real_show
-        real_close("all")
+        root.destroy()
 
 
 def test_all_execution_flows_use_the_progress_pump():

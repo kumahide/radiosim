@@ -597,31 +597,29 @@ def _make_result(diff_method="single", env_type="los"):
 
 class TestSavePackage:
 
-    @pytest.fixture(autouse=True)
-    def _setup_mpl(self):
-        """matplotlib を Agg バックエンドで初期化。"""
-        import matplotlib
-        matplotlib.use("Agg")
-        import matplotlib.pyplot as plt
-        self.plt = plt
-
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
                   diff_method="single", coord_format="dd"):
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         default_params_dict["diff_method"] = diff_method
         params = sim.SimParams(default_params_dict)
         result = _make_result(diff_method)
-        fig, _ = self.plt.subplots()
-        save_dir = sim.save_package(fig, flat_terrain, result, params, 30.0, 10.0,
+        save_dir = sim.save_package(flat_terrain, result, params, 30.0, 10.0,
                                     coord_format=coord_format)
-        self.plt.close(fig)
         return save_dir
 
     def test_creates_all_expected_files(self, tmp_path, flat_terrain,
                                         default_params_dict, monkeypatch):
-        """save_package が PNG / CSV / JSON / TXT を生成すること。"""
+        """save_package が CSV / JSON / TXT を生成すること。
+
+        ⚠️ **`profile.png` はここでは作られない**（2.6a1 / I-036）。以前は画面の
+        図を `savefig` していたが、呼び出し側が直後に `report_path.save_profile_png`
+        で**同じパスを上書き**しており、1 回目は必ず捨てられていた。図の保存は
+        レポート専用図の担当に一本化した。
+        """
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict, monkeypatch)
-        assert os.path.exists(os.path.join(save_dir, "profile.png"))
+        assert not os.path.exists(os.path.join(save_dir, "profile.png")), (
+            "save_package が画面の図を書いている（レポート図に上書きされる二重書き）"
+        )
         assert os.path.exists(os.path.join(save_dir, "terrain_profile.csv"))
         assert os.path.exists(os.path.join(save_dir, "settings.json"))
         assert os.path.exists(os.path.join(save_dir, "report.txt"))

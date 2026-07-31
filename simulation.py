@@ -327,7 +327,6 @@ def run_calculation(
 # 保存パッケージ
 # ============================================================
 def save_package(
-    fig,                          # matplotlib.figure.Figure
     terrain: models.TerrainProfile,
     result: models.LinkBudgetResult,
     params: SimParams,
@@ -347,18 +346,12 @@ def save_package(
     save_dir  = os.path.join(config.RESULTS_DIR, timestamp)
     os.makedirs(save_dir, exist_ok=True)
 
-    _save_graph(fig, save_dir)
     _save_settings(params, h_tx, h_rx, save_dir)
     _save_terrain_csv(terrain, save_dir)
     _save_report(result, params, h_tx, h_rx, save_dir, coord_format)
 
     logger.info("Package saved: %s", save_dir)
     return save_dir
-
-
-def _save_graph(fig, save_dir: str) -> None:
-    path = os.path.join(save_dir, "profile.png")
-    fig.savefig(path, dpi=150)
 
 
 def _save_settings(

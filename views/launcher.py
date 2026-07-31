@@ -158,14 +158,11 @@ class SimLauncher:
                     map_widget = win._map
             except Exception:
                 pass
-        # 地形グラフ（matplotlib pyplot）は独自の Tk ルートとネストした mainloop を
-        # 持つため、ランチャーを閉じても plt.show() のループが残りプロセスが終了
-        # しない。全 Figure を閉じてループを抜けさせる（matplotlib は遅延 import）。
-        try:
-            import matplotlib.pyplot as plt
-            plt.close("all")
-        except Exception:
-            pass
+        # ⚠️ ここには「pyplot の全 Figure を閉じる」後始末があった。グラフ窓が
+        # pyplot の窓（独自の Tk ルート＋入れ子 mainloop）で、閉じないとプロセスが
+        # 終了しなかったため。**B-024 で Toplevel になり pyplot を使わなくなった**
+        # ので不要＝root の破棄で一緒に片付く（残すと matplotlib を遅延 import する
+        # 意味も薄れる）。
         # マップが開いたままなら、再スケジュールを止めてから猶予をおいて root を
         # 破棄する（破棄手順は map_window.close_map_safely に集約。直後に destroy
         # すると tkintermapview の `...update_canvas_tile_images` が破棄後に発火する）。
@@ -803,26 +800,33 @@ class SimLauncher:
         # ログ上まったく見えなかった（→ 開発環境 C-b3② を3フロー対称化）。
         self._t_render = time.perf_counter()
 
-        # matplotlib/pyplot/TkAgg/numpy はここで初めて要る（ランチャー表示前に
+        # matplotlib/TkAgg/numpy はここで初めて要る（ランチャー表示前に
         # ロードしないため遅延 import。MapWindow/BatchBuilder と同じ方針）
         from views.graph import show_graph
         meta = self._current_meta()
-        # show_graph は plt.show() の入れ子 mainloop でブロックするので、戻り値を
-        # 待って表示を戻すと**グラフを閉じるまで「準備中」が残る**。表示直前に
-        # 呼ばれる on_ready で戻す。
-        show_graph(
-            params, raw_elevs, meta["project_name"], meta["memo"],
-            on_ready = self._on_graph_ready,
+        # **唯一インスタンス**＝実行のたびに開き直す（バッチ・地図・条件探索と
+        # 同じ流儀）。B-024 で Tk 化してブロックしなくなったので、放っておくと
+        # 実行のたびに窓が増える。**結果を並べて比べるのは条件探索の担当**
+        # （回折トグルを撤去したのと同じ線引き＝比較の器を 2 つ持たない）。
+        old = getattr(self, "_graph_win", None)
+        if old is not None and old.winfo_exists():
+            old.destroy()
+        self._graph_win = show_graph(
+            self.root, params, raw_elevs, meta["project_name"], meta["memo"],
+            on_close = self._on_graph_closed,
         )
-
-    def _on_graph_ready(self) -> None:
-        """グラフが画面に出る直前に進捗表示を待機状態へ戻す。"""
+        # 窓が出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
+        # したため、表示直前に呼ばれる `on_ready` フックが要った（戻り値を待つと
+        # グラフを閉じるまで「準備中」が残った）。Toplevel になって不要になった。
         config.logger.info(
             "Graph render complete in %.2fs",
             time.perf_counter() - self._t_render,
         )
         self.prog_label.config(text=i18n.t("status_ready"))
         self.prog_bar.config(value=0)
+
+    def _on_graph_closed(self) -> None:
+        self._graph_win = None
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._progress_stop()
