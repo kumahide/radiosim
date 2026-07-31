@@ -173,6 +173,10 @@ class _ScrollEscape:
         # `unbind_all` で**こちらの分まで消える**（バッチ表が実際に bind_all して
         # いる）。窓に閉じたバインドなら、この 3 つがまとめて起きない。
         win.bind("<MouseWheel>", self._on_mousewheel)
+        # **ユーザーが窓を縮めたときも**バーを出す。`fit_to_content` は開いたときと
+        # 中身が増えたときにしか走らないので、これが無いと「手で小さくしたら下端が
+        # 消えて、スクロールもできない」になる（リサイズできる窓＝グラフ窓で露見）。
+        win.bind("<Configure>", self._on_win_configure, add="+")
 
     # -- 中身とキャンバスの同期 --------------------------------
     def remeasure(self) -> None:
@@ -214,6 +218,19 @@ class _ScrollEscape:
             width=max(event.width,  self.body.winfo_reqwidth()),
             height=max(event.height, self.body.winfo_reqheight()),
         )
+
+    def _on_win_configure(self, event) -> None:
+        """窓の実サイズと必要量を突き合わせてバーを出し入れする。
+
+        ⚠️ 比べるのは `_fit_size`（**決めた寸法**）ではなく**今の実サイズ**＝
+        ユーザーが手で変えた結果はそちらにしか現れない。`sync` は状態が変わった
+        ときだけ触るので、この handler が Configure を呼び戻して無限に往復する
+        ことはない。
+        """
+        if event.widget is not self.win:
+            return                       # 子ウィジェットの Configure は無視
+        need_w, need_h = getattr(self.win, "_fit_need", (0, 0))
+        self.sync(overflow_v=need_h > event.height, overflow_h=need_w > event.width)
 
     def _on_mousewheel(self, event) -> None:
         if not self.active[0]:

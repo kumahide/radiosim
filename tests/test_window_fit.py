@@ -72,6 +72,18 @@ def _open_scenario(root):
     return win, win
 
 
+def _open_graph(root):
+    """グラフ窓（B-024 で matplotlib の窓から Toplevel になり、対象窓が 4→5 へ）。
+
+    ⚠️ **逃げ道（B-021②）が入るまでこの登録はできなかった**＝入らないときの
+    受け皿が無いまま対象を増やすと「ゲートに入れた瞬間に赤」を自分で作る。
+    """
+    import numpy as np
+    from views.graph import show_graph
+    win = show_graph(root, sim.SimParams(_PARAMS), np.zeros(int(_PARAMS["samples"])))
+    return win, win
+
+
 def _open_map(root, monkeypatch):
     """地図ウィンドウ（`TkinterMapView` はフェイクに差し替える）。
 
@@ -116,6 +128,7 @@ _WINDOWS = {
     "batch":    (_open_batch,    lambda win, owner: _grow_batch(owner)),
     "scenario": (_open_scenario, lambda win, owner: _grow_scenario(owner)),
     "map":      (_open_map,      None),
+    "graph":    (_open_graph,    None),
 }
 
 
@@ -435,6 +448,33 @@ def test_mouse_wheel_moves_the_escape_only_when_nothing_inside_scrolls(monkeypat
         root.destroy()
 
 
+def test_shrinking_a_window_by_hand_shows_the_escape():
+    """**手で小さくしたとき**もバーが出ること。
+
+    `fit_to_content` が走るのは「開いたとき」と「中身が増えたとき」だけなので、
+    ユーザーがマウスで窓を縮めた場合はそこを通らない。ここが無いと
+    「小さくしたら下端が消えて、しかもスクロールもできない」になる
+    （リサイズできる窓＝グラフ窓で露見。他の窓は固定 or 下限が大きく気づけなかった）。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_scenario(root)
+        escape = win._fit_scroll
+        assert not escape.active[0], "前提が崩れている（最初から溢れている）"
+
+        need_h = win._fit_need[1]
+        root.deiconify()
+        win.geometry(f"{win._fit_size[0]}x{need_h - 200}")   # 手で縮めた相当
+        root.update()
+        assert escape.active[0], (
+            "手で縮めてもスクロールバーが出ない＝下端に手が届かない。"
+        )
+    finally:
+        root.destroy()
+
+
 def test_scroll_escape_stays_hidden_while_the_content_fits():
     """**入るあいだはスクロールバーを出さない**こと。
 
@@ -676,6 +716,7 @@ def _toplevel_sites() -> "list[tuple[str, str]]":
 
 # レジストリの窓 → 実装上の Toplevel 生成箇所の対応（登録済みであることの証明）。
 _REGISTERED_SITES = {
+    ("graph.py",         "GraphWindow"):        "graph",
     ("batch_builder.py", "BatchBuilderWindow"): "batch",
     ("scenario.py",      "ScenarioWindow"):     "scenario",
     ("map_window.py",    "__init__"):           "map",
