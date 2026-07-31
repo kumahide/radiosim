@@ -217,6 +217,22 @@ class SimLauncher:
         menubar = tk.Menu(self.root)
         self._themed_menus.append(menubar)
 
+        # 「ファイル」＝**ファイル／OS へ出る**操作の置き場（I-030）。ボタン群から
+        # 移してきた 2 個で、どちらも「アプリの外の世界へ出る」もの。⚠️ 実行直後に
+        # 結果が要る動線は**完了ダイアログの「保存先を開く」**が担う（メニューを
+        # 2 階層たどらせない）＝恒久ボタンを消した代わりの受け皿はそちら。
+        file_menu = tk.Menu(menubar, tearoff=False)
+        self._themed_menus.append(file_menu)
+        file_menu.add_command(
+            label   = i18n.t("menu_load_settings"),
+            command = self._on_load_settings,
+        )
+        file_menu.add_command(
+            label   = i18n.t("menu_open_results"),
+            command = self._on_open_results,
+        )
+        menubar.add_cascade(label=i18n.t("menu_file"), menu=file_menu)
+
         settings_menu = tk.Menu(menubar, tearoff=False)
         self._themed_menus.append(settings_menu)
 
@@ -499,10 +515,21 @@ class SimLauncher:
         self.prog_label = ttk.Label(parent, text=i18n.t("status_ready"))
         self.prog_label.pack(pady=(10, 0))
 
+        # 進捗バーと「実行」を同じ帯に置く（I-029）。**3 つの実行フローで同じ名前・
+        # 同じ位置**＝バッチが既にこの配置なので、一番情報量の多い窓を動かさずに
+        # 単一と条件探索の 2 窓だけを揃える側に回した。
+        bar = ttk.Frame(parent)
+        bar.pack(fill="x", pady=5)
         self.prog_bar = ttk.Progressbar(
-            parent, orient="horizontal", length=350, mode="determinate"
+            bar, orient="horizontal", length=350, mode="determinate"
         )
-        self.prog_bar.pack(pady=5, fill="x")
+        self.prog_bar.pack(side="left", fill="x", expand=True)
+        # Accent（青）は**「走らせる」ボタンだけ**に使う（I-029/I-030）。以前は
+        # 「一括シミュレーション」（＝窓を開く操作）にも付いており、強調の軸が
+        # 意味の軸と直交していた。
+        self.run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
+                                  command=self._on_run, style="Accent.TButton")
+        self.run_btn.pack(side="right", padx=(10, 0))
 
         # 進捗はワーカースレッドから ProgressPump 経由で受け取る。バーとラベルは
         # 「最新の状態」だけが意味を持つので latest_only（中間値を全部描いても
@@ -546,24 +573,34 @@ class SimLauncher:
         self._pump.stop()
 
     def _build_buttons(self, parent: tk.Widget) -> None:
+        """**別の窓を開く**ボタンだけを置く（I-030）。
+
+        ランチャーの操作は意味で 3 カテゴリーに分かれる:
+
+          1. **走らせる**（1 個）→ 進捗バーの右・`Accent.TButton` はここだけ（I-029）
+          2. **別の窓を開く**（3 個）→ ここ
+          3. **ファイル／OS へ出る**（2 個）→ **メニューバーの「ファイル」**
+
+        以前は 3×2 の 6 個が同じ見た目の並びに混在し、`Accent` が「走らせる」と
+        「窓を開く」をまたいでいた＝**強調の軸が意味の軸と直交していた**。
+        3 の 2 個をメニューへ移した根拠は「結果フォルダが要る瞬間は*実行した直後*に
+        時間的に局在している」＝恒久ボタンは場所が間違っており、必要が発生する
+        その場所（完了ダイアログの「保存先を開く」）に置く。
+        """
         frame = ttk.Frame(parent)
-        frame.pack(fill="x", pady=10)
-        frame.columnconfigure(0, weight=1)
-        frame.columnconfigure(1, weight=1)
+        frame.pack(fill="x", pady=(6, 4))
 
-        self.run_btn = ttk.Button(frame, text=i18n.t("btn_run_sim"),       command=self._on_run,            style="Accent.TButton")
-        btn_batch    = ttk.Button(frame, text=i18n.t("btn_batch_mode"),    command=self._on_batch,          style="Accent.TButton")
-        btn_load     = ttk.Button(frame, text=i18n.t("btn_load_settings"), command=self._on_load_settings)
-        btn_open     = ttk.Button(frame, text=i18n.t("btn_open_results"),  command=self._on_open_results)
-        btn_map      = ttk.Button(frame, text=i18n.t("btn_open_map"),      command=self._on_open_map)
-        btn_scenario = ttk.Button(frame, text=i18n.t("scn_open_btn"),      command=self._on_open_scenario)
-
-        self.run_btn.grid(row=0, column=0, sticky="ew", padx=(0, 2), pady=(0, 4), ipady=10)
-        btn_batch.grid   (row=0, column=1, sticky="ew", padx=(2, 0), pady=(0, 4), ipady=10)
-        btn_load.grid    (row=1, column=0, sticky="ew", padx=(0, 2),               ipady=6)
-        btn_open.grid    (row=1, column=1, sticky="ew", padx=(2, 0),               ipady=6)
-        btn_map.grid     (row=2, column=0, sticky="ew", padx=(0, 2), pady=(4, 0),  ipady=6)
-        btn_scenario.grid(row=2, column=1, sticky="ew", padx=(2, 0), pady=(4, 0),  ipady=6)
+        # 縦積み＝3 個をこの窓幅（450px）で横に並べると日本語ラベルが入らない。
+        # 幅を揃えた縦の並びは「行き先の一覧」として読める。
+        # ⚠️ 余白は詰めてある＝この窓は FHD 100% の使える高さ 990px に対して
+        # 余裕が十数 px しかない（B-021）。ここを緩めた分だけ実機で見切れに近づく。
+        for key, command in (
+            ("btn_batch_mode", self._on_batch),
+            ("btn_open_map",   self._on_open_map),
+            ("scn_open_btn",   self._on_open_scenario),
+        ):
+            ttk.Button(frame, text=i18n.t(key), command=command).pack(
+                fill="x", pady=1, ipady=4)
 
     def _build_logo(self, parent: tk.Misc) -> None:
         """logo.png をボタン下の余白に表示する。ファイルがなければ何もしない。"""

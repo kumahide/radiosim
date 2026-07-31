@@ -131,6 +131,75 @@ class ScenarioWindow(tk.Toplevel):
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
+    def _build_frozen_header(self, parent: tk.Misc) -> None:
+        """ランチャーから凍結した前提の帯（I-031）。
+
+        **バッチ窓と同じ見せ方に揃える**＝どちらも「ランチャーから凍結した
+        スナップショットを読み取り専用で見せる帯」という*同じ性質のもの*なのに、
+        バッチは枠付きの構造化された表示、こちらは枠なしの 1 行テキストで、
+        見た目から同じ性質だと読み取れなかった。凍結方式はアプリ全体の原則
+        （⑦：入力の権限を 1 か所に置く）なので、**原則が守られているのに見た目が
+        原則を裏切っている**状態を消す。揃えた点は 3 つ＝①ラベル付きグループ枠
+        ②`readonly` の Entry ＋ 🔒 ③「ランチャーのスナップショット」の明示。
+
+        ⚠️ **実行はここに出ている値で行う**（黙って読み直さない）。以前は実行時に
+        `config_provider` を読み直しており、ランチャーで座標を変えると「画面の経路と
+        計算した経路が違う」状態になり得た。更新は ↻ ボタンで明示的に行う。
+        """
+        # 案件情報＝バッチの `_build_case_info` と同じ並び（ラベル→readonly→🔒）。
+        case = ttk.LabelFrame(parent, text=i18n.t("batch_case_info"), padding=(8, 2))
+        case.pack(fill="x", pady=(0, 4))
+        self._project_var = tk.StringVar()
+        self._memo_var    = tk.StringVar()
+        for label_key, var, expand in (
+            ("batch_project_name", self._project_var, False),
+            ("batch_memo",         self._memo_var,    True),
+        ):
+            f = ttk.Frame(case)
+            f.pack(side="left", padx=6, fill="x", expand=expand)
+            ttk.Label(f, text=i18n.t(label_key)).pack(side="left")
+            # width は下限（メモ側は expand で余りを取る）＝バッチと同じ流儀。
+            ttk.Entry(f, textvariable=var, state="readonly", width=20).pack(
+                side="left", padx=(2, 0), fill="x", expand=expand)
+            ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
+
+        # 固定した経路＝この窓が振れない前提（座標と samples）。**振れる前提は
+        # 比較タブのベース列に出る**ので、ここには出さない（二重に見せない）。
+        fixed = ttk.LabelFrame(parent, text=i18n.t("scn_fixed_group"), padding=(8, 2))
+        fixed.pack(fill="x", pady=(0, 6))
+        row = ttk.Frame(fixed)
+        row.pack(fill="x")
+        self._path_var    = tk.StringVar()
+        self._samples_var = tk.StringVar()
+        # ラベルは短く「経路」＝枠が既に「固定した経路」と名乗っているので、
+        # 中で同じ語を繰り返さない（レポート側の "固定した経路: …" は文中の
+        # 表記なのでそのまま＝`scn_fixed_path` は据え置き）。
+        # 幅 42 文字＝"34.54290, 132.41180 → 34.53890, 132.40500" が切れない下限。
+        # ⚠️ 座標が読めない凍結帯は帯の意味を失う（何を固定したのか分からない）。
+        for label_key, var, expand, width in (
+            ("scn_path",    self._path_var,    True,  42),
+            ("scn_samples", self._samples_var, False, 6),
+        ):
+            f = ttk.Frame(row)
+            f.pack(side="left", padx=6, fill="x", expand=expand)
+            ttk.Label(f, text=i18n.t(label_key)).pack(side="left")
+            ttk.Entry(f, textvariable=var, state="readonly", width=width).pack(
+                side="left", padx=(2, 0), fill="x", expand=expand)
+            ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
+
+        # 🔒 の意味と ↻ は**同じ行の右側**に置く（バッチは独立行にしているが、
+        # あちらは 1 行に 6 欄が並んで幅が逼迫しているため。ここは 2 欄しか無い）。
+        # ⚠️ 行を 1 つ増やすと、この窓は FHD 100% の 990px を超える（実測で
+        # 1033px になり、100% の実機でスクロールが要る窓になってしまう）。
+        # **見せ方を揃えるのが目的であって、行数を揃えるのが目的ではない。**
+        ttk.Button(row, text=i18n.t("scn_refresh"), width=18,
+                   command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
+        ttk.Label(row, text=i18n.t("hint_common_readonly"),
+                  foreground=theme.muted_foreground(row)).pack(side="right", padx=6)
+
+        self._update_path_label()
+        self._update_meta_label()
+
     def _snapshot_meta(self) -> dict[str, str]:
         """ランチャーの案件情報を取り込む（**この窓が持つのは常にこの写し**）。"""
         meta = self._meta_provider() if self._meta_provider else {}
@@ -148,18 +217,14 @@ class ScenarioWindow(tk.Toplevel):
         （窓を開いたあとにランチャー側で案件名を変えると、気づく手段が無い）。
         経路と同じく「凍結して見せる」に揃える。
         """
-        dash = "—"
-        self._meta_label.config(
-            text=(f'{i18n.t("batch_project_name")}: '
-                  f'{self._meta["project_name"] or dash}'
-                  f'　/　{i18n.t("batch_memo")}: {self._meta["memo"] or dash}'))
+        self._project_var.set(self._meta["project_name"])
+        self._memo_var.set(self._meta["memo"])
 
     def _update_path_label(self) -> None:
         p = self._base_params
-        self._path_label.config(
-            text=(f'{i18n.t("scn_fixed_path")}: '
-                  f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'
-                  f'　/　{i18n.t("scn_samples")}: {p.num}'))
+        self._path_var.set(
+            f"{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}")
+        self._samples_var.set(str(p.num))
 
     def _refresh_from_launcher(self) -> None:
         """ランチャーの現在値（**座標を含む**）を取り込み直す。
@@ -230,25 +295,7 @@ class ScenarioWindow(tk.Toplevel):
         # スクロール領域の外で下端を隠す）。
         outer = window_fit.scrollable_body(self, padding=10)
 
-        # 経路（固定された前提）＝ランチャーのスナップショット。
-        # ⚠️ **実行はここに出ている値で行う**（黙って読み直さない）。以前は実行時に
-        # config_provider を読み直しており、ランチャーで座標を変えると「画面の経路と
-        # 計算した経路が違う」状態になり得た。更新は ↻ ボタンで明示的に行う
-        # （バッチの Common Settings と同じ流儀＝ランチャーが source of truth）。
-        head = ttk.Frame(outer)
-        head.pack(fill="x", pady=(0, 8))
-        self._path_label = ttk.Label(head, text="")
-        self._path_label.pack(side="left")
-        ttk.Button(head, text=i18n.t("scn_refresh"), width=18,
-                   command=self._refresh_from_launcher).pack(side="right", padx=(12, 0))
-        self._update_path_label()
-
-        # 案件情報＝経路と同じ「ランチャーからの凍結値」。レポートに刻印される値を
-        # 画面にも出す（補助情報なので落として見せる）。
-        self._meta_label = ttk.Label(
-            outer, text="", foreground=theme.muted_foreground(outer))
-        self._meta_label.pack(fill="x", pady=(0, 8))
-        self._update_meta_label()
+        self._build_frozen_header(outer)
 
         # モード切替＝**表示中のフレームだけを pack する**。ttk.Notebook は
         # 「一番背の高いタブ」に合わせて全タブの高さが決まるため、行数の多い比較タブに
@@ -266,7 +313,7 @@ class ScenarioWindow(tk.Toplevel):
                                 side="left", padx=(0, 6))
 
         self._panels = ttk.Frame(outer)
-        self._panels.pack(fill="x", pady=(6, 0))
+        self._panels.pack(fill="x", pady=(4, 0))
         self._compare_panel = self._build_compare_tab()
         self._sweep_panel   = self._build_sweep_tab()
         self._on_mode_changed()
@@ -313,7 +360,7 @@ class ScenarioWindow(tk.Toplevel):
         「何と比べたのか」が曖昧になる）。比較条件はベース値で初期化し、変えたい
         欄だけ触る使い方を想定する。
         """
-        frame = ttk.Frame(self._panels, padding=(10, 8))
+        frame = ttk.Frame(self._panels, padding=(10, 4))
         self._cmp_grid = ttk.Frame(frame)
         self._cmp_grid.pack(anchor="w")
 
@@ -391,36 +438,74 @@ class ScenarioWindow(tk.Toplevel):
         self._del_btn.config(state="disabled" if n <= 1 else "normal")
 
     def _build_sweep_tab(self) -> ttk.Frame:
-        frame = ttk.Frame(self._panels, padding=(10, 8))
+        """比較タブと同じ器（項目名＋ベース値）に、**振る軸のラジオ**を足す（I-032）。
+
+        従来は軸 Combobox と開始/終了/点数だけの独立ブロックで、**周波数や
+        アンテナ高が今いくつなのかが画面に一切無かった**＝「振らない側の条件」を
+        確かめるために比較タブへ往復させられた。比較タブが既にベース列でこの情報を
+        出しているので、**新しい表現を増やさず同じ器に載せる**（⑧の判断テスト
+        「この表現は他のどこかに既にあるか？」の答えが Yes ならそれに合わせる）。
+
+        ベース値の StringVar は**比較タブと共有する**＝↻ で取り込み直したときに
+        片方だけ古い値が残る、という形の破れ方をしなくなる（Tk の textvariable は
+        1 つの変数を複数のウィジェットが参照できる）。
+        """
+        frame = ttk.Frame(self._panels, padding=(10, 4))
         grid = ttk.Frame(frame)
-        grid.pack(anchor="w")
+        grid.pack(anchor="w", fill="x")
+        self._sweep_grid = grid
 
-        ttk.Label(grid, text=i18n.t("scn_axis")).grid(row=0, column=0, sticky="w")
-        self._axis_labels = {_axis_label(a): a for a in scn.SWEEP_AXES}
-        self._axis_box = ttk.Combobox(
-            grid, values=list(self._axis_labels), state="readonly", width=24)
-        self._axis_box.set(_axis_label("h_tx"))
-        # sticky="ew" ＝ **列の幅に合わせて広げる**（比較タブと同じ流儀＝I-021）。
-        # 軸の Combobox は width=24、開始/終了/点数の Entry は width=12 で、
-        # 文字数で揃えても実幅は一致しない（Combobox は矢印ボタンぶん広い）。
-        # 幅は grid の列（＝その列で一番広いウィジェット）に決めさせる。
-        self._axis_box.grid(row=0, column=1, padx=6, pady=3, sticky="ew")
+        ttk.Label(grid, text=i18n.t("scn_base"), anchor="center").grid(
+            row=0, column=1, padx=6, sticky="ew")
 
+        # 振る軸（ラジオ）。既定は従来と同じ h_tx。
+        self._sweep_axis = tk.StringVar(value="h_tx")
+        self._sweep_rows: dict[str, int] = {}
+        for row, (key, _kind) in enumerate(_COMPARE_FIELDS, start=1):
+            ttk.Label(grid, text=_axis_label(key)).grid(
+                row=row, column=0, sticky="w", pady=1)
+            ttk.Label(grid, textvariable=self._base_vars[key],
+                      anchor="e", width=11).grid(row=row, column=1, padx=6, pady=1,
+                                                 sticky="ew")
+            if key in scn.SWEEP_AXES:
+                # **振れない項目にはラジオを置かない**＝env/diff は離散の選択肢で
+                # 比較（A-1）の担当、k_factor は損失にも判定にも効かない
+                # （振っても結果が動かない軸を並べると「効くはず」と誤読させる）。
+                ttk.Radiobutton(grid, variable=self._sweep_axis, value=key,
+                                command=self._on_sweep_axis_changed).grid(
+                                    row=row, column=2, padx=(0, 6))
+                self._sweep_rows[key] = row
+
+        # 開始 / 終了 / 点数＝**選ばれた行にだけ現れる**。1 組だけ作って選択に
+        # 合わせて置き直す（行ごとに 3 欄ずつ作ると、入力途中の値が行を変えた
+        # 瞬間に消えたり、どの行の値が実行に使われるのか曖昧になる）。
         self._from_var   = tk.StringVar(value="10")
         self._to_var     = tk.StringVar(value="60")
         self._points_var = tk.StringVar(value="11")
-        for i, (label, var) in enumerate((
-            (i18n.t("scn_from"), self._from_var),
-            (i18n.t("scn_to"), self._to_var),
-            (i18n.t("scn_points"), self._points_var),
-        ), start=1):
-            ttk.Label(grid, text=label).grid(row=i, column=0, sticky="w", pady=2)
-            ttk.Entry(grid, textvariable=var, width=12).grid(
-                row=i, column=1, padx=6, pady=2, sticky="ew")
+        self._range_cells: list[tuple[ttk.Label, ttk.Entry]] = []
+        for col, (label_key, var) in enumerate((
+            ("scn_from",   self._from_var),
+            ("scn_to",     self._to_var),
+            ("scn_points", self._points_var),
+        )):
+            lab = ttk.Label(grid, text=i18n.t(label_key))
+            ent = ttk.Entry(grid, textvariable=var, width=10)
+            self._range_cells.append((lab, ent))
+            grid.columnconfigure(3 + col * 2 + 1, weight=0)
 
         ttk.Label(frame, text=i18n.t("scn_err_points").format(
-            max=scn.MAX_SWEEP_POINTS)).pack(anchor="w", pady=(8, 0))
+            max=scn.MAX_SWEEP_POINTS),
+            foreground=theme.muted_foreground(frame)).pack(anchor="w", pady=(6, 0))
+        self._on_sweep_axis_changed()
         return frame
+
+    def _on_sweep_axis_changed(self) -> None:
+        """開始 / 終了 / 点数の欄を、選ばれている軸の行へ移す。"""
+        row = self._sweep_rows[self._sweep_axis.get()]
+        for i, (lab, ent) in enumerate(self._range_cells):
+            lab.grid(row=row, column=3 + i * 2, sticky="e", padx=(6, 2), pady=1)
+            ent.grid(row=row, column=4 + i * 2, sticky="w", pady=1)
+        self._fit_to_content()
 
     # ----------------------------------------------------------
     # 実行
@@ -451,7 +536,7 @@ class ScenarioWindow(tk.Toplevel):
         return conds
 
     def _sweep_conditions(self) -> tuple[list[scn.Condition], str, list[float]]:
-        axis = self._axis_labels[self._axis_box.get()]
+        axis = self._sweep_axis.get()
         start = _number(self._from_var.get(), i18n.t("scn_from"))
         stop  = _number(self._to_var.get(),   i18n.t("scn_to"))
         if start == stop:
@@ -533,11 +618,19 @@ class ScenarioWindow(tk.Toplevel):
         self._last_run = run
         self._fill_results(run)
 
-        # 単一・バッチと同じ流儀＝保存先を告げてから開くか尋ねる
+        # 単一・バッチと同じ流儀＝保存先を告げ、レポートかフォルダかを選ばせる
         # （実機フィードバック：ここだけダイアログが出ないのは挙動が揃っていない）。
-        if dialogs.confirm(self, i18n.t("dlg_saved_title"),
-                           i18n.t("scn_saved_msg").format(dir=self._last_dir)):
+        # 「保存先を開く」はランチャーの恒久ボタンを外した代わりの受け皿（I-030）。
+        choice = dialogs.choose(
+            self, i18n.t("dlg_saved_title"),
+            i18n.t("scn_saved_msg").format(dir=self._last_dir),
+            [("report", i18n.t("dlg_open_report")),
+             ("folder", i18n.t("dlg_open_folder"))],
+        )
+        if choice == "report":
             self._open_report()
+        elif choice == "folder":
+            os.startfile(self._last_dir)
 
     def _fill_results(self, run: scn.ScenarioRun) -> None:
         """結果一覧を埋める（点数が多くてもスクロールで収まる）。"""
