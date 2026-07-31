@@ -84,6 +84,13 @@ def _open_graph(root):
     return win, win
 
 
+def _open_multihop(root):
+    """中継経路窓（A-3 で 6 つ目の登録窓になった）。"""
+    from views.multihop import MultiHopWindow
+    win = MultiHopWindow(root, sim.SimParams(_PARAMS))
+    return win, win
+
+
 def _open_map(root, monkeypatch):
     """地図ウィンドウ（`TkinterMapView` はフェイクに差し替える）。
 
@@ -129,7 +136,15 @@ _WINDOWS = {
     "scenario": (_open_scenario, lambda win, owner: _grow_scenario(owner)),
     "map":      (_open_map,      None),
     "graph":    (_open_graph,    None),
+    "multihop": (_open_multihop, lambda win, owner: _grow_multihop(owner)),
 }
+
+
+def _grow_multihop(win) -> None:
+    """地点を上限まで足す＝表が縦に伸びる経路（中継経路の「増え方」）。"""
+    import multihop as mh
+    while len(win._wp_vars) < mh.MAX_HOPS + 1:
+        win._add_waypoint()
 
 
 def _grow_batch(win) -> None:
@@ -717,6 +732,7 @@ def _toplevel_sites() -> "list[tuple[str, str]]":
 # レジストリの窓 → 実装上の Toplevel 生成箇所の対応（登録済みであることの証明）。
 _REGISTERED_SITES = {
     ("graph.py",         "GraphWindow"):        "graph",
+    ("multihop.py",      "MultiHopWindow"):     "multihop",
     ("batch_builder.py", "BatchBuilderWindow"): "batch",
     ("scenario.py",      "ScenarioWindow"):     "scenario",
     ("map_window.py",    "__init__"):           "map",

@@ -48,7 +48,7 @@ jobs:
           views/launcher.py views/graph.py views/batch_builder.py
           views/map_window.py views/dialogs.py views/progress.py views/theme.py
           views/window_fit.py
-          views/scenario.py
+          views/scenario.py views/multihop.py
 
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov

@@ -352,3 +352,109 @@ class TestRouteSheet:
         ]
         unscoped = [s for s in selectors if not s.startswith(".sheet.multihop")]
         assert not unscoped, f"スコープされていないセレクタ: {unscoped}"
+
+
+# ============================================================
+# 中継経路ウィンドウ（入力面）
+# ============================================================
+class TestMultiHopWindow:
+    """**並び順が経路そのもの**であることを守る（ここが崩れると経路が化ける）。"""
+
+    def _win(self, default_params_dict):
+        from conftest import make_themed_root
+        from views.multihop import MultiHopWindow
+        root = make_themed_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        return root, MultiHopWindow(root, sim.SimParams(default_params_dict))
+
+    def _names(self, win):
+        return [v["name"].get() for v in win._wp_vars]
+
+    def test_starts_with_tx_and_rx(self, default_params_dict):
+        root, win = self._win(default_params_dict)
+        try:
+            assert self._names(win) == ["TX", "RX"]
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_added_point_becomes_a_relay_between_tx_and_rx(self, default_params_dict):
+        """**足した点は受信点の手前に入る**（末尾に足さない）。
+
+        末尾に足すと「TX → RX → R1」となり、**それまで受信点だった地点が中継点に
+        化ける**。実装直後のスクリーンショットで実際にそうなっていた＝利用者の
+        頭の中（送信点と受信点があって、その間に中継点を置く）と食い違う。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            assert self._names(win) == ["TX", "R1", "RX"]
+            win._on_add_point()
+            assert self._names(win) == ["TX", "R1", "R2", "RX"]
+            assert self._names(win)[0] == "TX" and self._names(win)[-1] == "RX"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_hop_labels_follow_the_order(self, default_params_dict):
+        """区間の表示が並び順から導出されること（TX → R1 / R1 → RX）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            labels = [w.cget("text") for w in win._hop_grid.grid_slaves(column=0)
+                      if int(w.grid_info()["row"]) > 0]
+            assert sorted(labels) == sorted(["TX → R1", "R1 → RX"])
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_delete_removes_a_relay_not_the_endpoint(self, default_params_dict):
+        """削除で消えるのは**中継点**（送信点・受信点は残る）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            win._on_del_point()
+            assert self._names(win) == ["TX", "RX"]
+            win._on_del_point()                     # 2 点未満にはしない
+            assert self._names(win) == ["TX", "RX"]
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_map_picks_fill_blanks_in_order(self, default_params_dict):
+        """地図のクリックは**空欄を順に埋める**＝TX → RX → 以後は中継点。"""
+        root, win = self._win(default_params_dict)
+        try:
+            assert win.append_waypoint(34.54, 132.41) == "TX"
+            assert win.append_waypoint(34.53, 132.40) == "RX"
+            third = win.append_waypoint(34.535, 132.405)
+            assert self._names(win) == ["TX", third, "RX"], (
+                "3 点目が受信点の後ろに足されている（経路が化ける）"
+            )
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_collected_path_shares_the_relay_height(self, default_params_dict):
+        """画面 → モデルでも**中継点の高さは 1 つ**であること（⑦の端から端まで）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            coords = ["34.5429, 132.4118", "34.5410, 132.4090", "34.5389, 132.4050"]
+            heights = ["40", "25", "10"]
+            for vars_, c, h in zip(win._wp_vars, coords, heights):
+                vars_["coord"].set(c)
+                vars_["height"].set(h)
+            rows = mh.hop_rows(win._collect_path())
+            assert rows[0].h_rx == 25.0 and rows[1].h_tx == 25.0
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_blank_hop_fields_inherit_the_common_settings(self, default_params_dict):
+        """区間の空欄は共通設定を引き継ぐ（`None` のまま渡す）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            for vars_ in win._wp_vars:
+                vars_["coord"].set("34.5429, 132.4118")
+            win._wp_vars[-1]["coord"].set("34.5389, 132.4050")
+            path = win._collect_path()
+            assert path.hop_rf[0].freq_mhz is None
+            assert path.hop_rf[0].gain_tx is None
+        finally:
+            win.destroy(); root.destroy()

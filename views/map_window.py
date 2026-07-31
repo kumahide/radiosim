@@ -114,6 +114,15 @@ class _AppendSink(Protocol):
     def existing_paths(self) -> list[tuple]: ...
 
 
+class _WaypointSink(Protocol):
+    """中継点シンク（中継経路・A-3）: クリックごとに**1 点ずつ順に**足す。
+
+    ペア（TX/RX）ではなく**点**を足すのが append シンクとの違い＝中継経路は
+    「順に並んだ地点の列」で、区間はその導出物だから（⑦）。
+    """
+    def append_waypoint(self, lat: float, lon: float) -> str: ...
+
+
 # tkintermapview の after ループを止めてからウィジェットを破棄するまでの猶予 [ms]。
 # キュー済みの直近 after（10ms 周期）が widget 生存中に消化される時間。
 _MAP_DRAIN_MS = 60
@@ -189,6 +198,8 @@ class MapWindow:
 
         # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
         self._pick_next = "tx"
+        # 中継点モードの宛先（中継経路ウィンドウ）。モードを抜けたら手放す。
+        self._waypoint_sink: "_WaypointSink | None" = None
         self._tx_coord: tuple | None = None
         self._rx_coord: tuple | None = None
         self._tx_marker = None
@@ -309,6 +320,8 @@ class MapWindow:
             self._win.lift()                    # 受け皿を開いた後、地図を前面へ戻す
         else:
             self._append_sink = None            # 連続追加を抜けたら append 先を手放す
+            if self._mode.get() != "waypoints":
+                self._waypoint_sink = None      # 中継点モードを抜けたら同様
             if self._mode.get() == "coords":
                 # 連続追加で消したアクティブピックを、ランチャーの現在値で復元する。
                 self._load_single_coords()
@@ -451,6 +464,15 @@ class MapWindow:
         if self._click_on_zoom_button():
             return
         lat, lon = coords
+        if self._mode.get() == "waypoints":
+            # 中継点＝**1 点ずつ順に足す**（TX/RX の交互ピックではない）。
+            if self._waypoint_sink is None:
+                return
+            name = self._waypoint_sink.append_waypoint(lat, lon)
+            self._map.set_marker(lat, lon, text=name)
+            self._set_status(i18n.t("map_append_added").format(pid=name),
+                             auto_clear=True)
+            return
         role = self._pick_next
         self._set_pick_marker(role, lat, lon)
         if self._append_sink is not None:
@@ -605,6 +627,7 @@ class MapWindow:
         for value, key in [
             ("coords", "map_mode_coords"),
             ("append", "map_mode_append"),
+            ("waypoints", "map_mode_waypoints"),
             ("cache",  "map_mode_cache"),
         ]:
             b = ttk.Button(
