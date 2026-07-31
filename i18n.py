@@ -359,7 +359,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_confirm":"Delete ALL cached tiles, including both elevation (DEM) tiles and report map tiles? This cannot be undone.",
         "tm_delete_all_done":   "All cache deleted: {deleted} tiles.",
         "tm_stats":             "Total cache: {count} tiles / {mb} MB",
-        "tm_attribution":       "Source: GSI Tiles (Pale map)",
+        "tm_attr_pale":         "Source: GSI Tiles (Pale map)",
+        "tm_attr_photo":        "Source: GSI Tiles (Aerial photo)",
+        "map_layer_label":      "Basemap",
+        "map_layer_pale":       "Pale map",
+        "map_layer_photo":      "Aerial photo",
 
         # ===== Terrain fetch =====
         "err_dem_unreachable":  (
@@ -765,7 +769,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_confirm":"標高(DEM)タイルとレポート地図タイルの両方を含む、全キャッシュタイルを削除しますか？この操作は元に戻せません。",
         "tm_delete_all_done":   "全キャッシュを削除しました: {deleted}枚",
         "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
-        "tm_attribution":       "出典: 地理院タイル（淡色地図）",
+        "tm_attr_pale":         "出典: 地理院タイル（淡色地図）",
+        "tm_attr_photo":        "出典: 地理院タイル（航空写真）",
+        "map_layer_label":      "背景",
+        "map_layer_pale":       "淡色地図",
+        "map_layer_photo":      "航空写真",
 
         # ===== Terrain fetch =====
         "err_dem_unreachable":  (
