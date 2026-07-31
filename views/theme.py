@@ -212,6 +212,39 @@ _DPI_BASE = 96
 # 掛ける）。**毎回 config() を読み直すと、拡大した値をさらに拡大してしまう**。
 _base_px: "dict[str, int]" = {}
 
+# sv_ttk が定義した元の書体（初回に読む）。日本語ロケールで差し替えたあとに
+# 英語へ戻せるよう、**書き換える前の値を必ず持っておく**。
+_base_family: "dict[str, str]" = {}
+
+
+# ------------------------------------------------------------
+# 日本語の書体（B-026）
+# ------------------------------------------------------------
+# sv_ttk の本文書体（Segoe UI Variable Text）は**日本語グリフを持たない**。
+# Tk 8.6 は不足分を Windows のフォントリンクへ丸投げするので、日本語だけが
+# 別書体で描かれる。しかも**落ちる先を決めるのは family ではなく weight** で、
+# 本文が Segoe 系である限り**強調にした瞬間に漢字が Malgun Gothic（韓国語）へ
+# 落ちる**（2026-07-31 の実測。表は ISSUES.md B-026）。
+#
+# ⇒ 日本語では**最初から日本語を持つ書体を本文にする**。これらは normal / bold・
+# 漢字 / ラテンのどの組み合わせでも同じ書体を保つので、強調も本文も揃う。
+# （I-023 のフォント統一で全窓の日本語が Yu Gothic UI → ＭＳ Ｐゴシックへ落ちて
+# いた副作用も、これで同時に解ける。）
+_JA_FAMILIES = ("Yu Gothic UI", "Meiryo UI", "MS UI Gothic", "ＭＳ Ｐゴシック")
+
+
+def _japanese_family(root: tk.Misc) -> "str | None":
+    """この環境で使える日本語書体（無ければ None＝元の書体のまま）。"""
+    try:
+        from tkinter import font as tkfont
+        installed = set(tkfont.families(root))
+    except tk.TclError:
+        return None
+    for family in _JA_FAMILIES:
+        if family in installed:
+            return family
+    return None
+
 
 def window_dpi(widget: tk.Misc) -> int:
     """`widget` が載っているモニタの DPI（取れなければ 96）。
@@ -268,6 +301,13 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
     ロケール差も同時に消える：ja 環境の `TkDefaultFont` は Yu Gothic UI 9pt で、
     sv_ttk が入力欄に当てる Segoe UI Variable Text 10pt とそもそも別物だった。
 
+    ⚠️ **書体は UI 言語で変わる**（B-026）：日本語では sv_ttk の Segoe UI Variable
+    Text を**日本語を持つ書体へ差し替える**（`_JA_FAMILIES`）。Segoe 系のままだと
+    漢字が Windows のフォントリンクで別書体に落ち、強調では Malgun Gothic
+    （韓国語）になる。⇒ **言語を変えたら呼び直すこと**（現状は言語切替が再起動を
+    伴うので起動時の 1 回で足りる）。**字幅が変わる**ので、変更時は必ず
+    tests/test_window_fit.py（実機 FHD × 125%/150%）を回すこと。
+
     Args:
         dpi: 使う DPI。省略時は `root` が載っているモニタから取る（テストが
             高 DPI を再現できるよう注入可能にしてある）。
@@ -278,6 +318,12 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
         dpi = window_dpi(root)
 
     names = list(_SV_FONTS.values())
+    # 日本語のときは本文書体そのものを日本語を持つ書体へ差し替える（B-026）。
+    # ⚠️ **ここでしか差し替えない**＝窓やウィジェットごとに書体を選ぶと、
+    # I-023 で潰したはずの「窓ごとにバラバラ」が別の形で戻る。
+    import i18n
+    ja_family = _japanese_family(root) if i18n.current_lang() == "ja" else None
+
     # ① sv_ttk のフォント自体を DPI に合わせる（Treeview・LabelFrame の見出し・
     #    入力欄はテーマがこれらを直接参照しているので、ここを直せば全部追従する）。
     for name in names:
@@ -285,11 +331,20 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
             f = tkfont.nametofont(name, root=root)
         except tk.TclError:
             continue          # テーマ未適用（素の Tk）＝触らない
+        conf = f.config() or {}
         if name not in _base_px:
-            size = (f.config() or {}).get("size")
+            size = conf.get("size")
             if not isinstance(size, int) or size >= 0:
                 continue      # pt 指定なら Tk の scaling に任せる（ここでは触らない）
             _base_px[name] = size
+        if name not in _base_family:
+            family = conf.get("family")
+            if isinstance(family, str):
+                _base_family[name] = family
+        # 英語へ戻したときに sv_ttk の書体へ戻す＝差し替えを一方通行にしない。
+        want = ja_family or _base_family.get(name)
+        if want:
+            f.configure(family=want)
         f.configure(size=_scaled_px(_base_px[name], dpi))
 
     # ② Tk の既定フォントを本文フォントに合わせる。
