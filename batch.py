@@ -413,6 +413,14 @@ def _process_one(
 
         return pr
 
+    except sim.DemUnreachableError:
+        # DEM に届かないのは**経路の問題ではなく環境の問題**なので、1 行の ERR に
+        # せず batch ごと止める（B-025 ②）。ここで飲み込むと、残りの経路も必ず
+        # 同じ失敗をしながら 1 経路ぶんの待ち時間を積み上げ、最後に「全行 ERR の
+        # レポート」を作って終わる＝ユーザーは何が悪いのか分からないまま待たされる。
+        # 上位（_run_thread の except）が on_error → ダイアログへ流す。
+        raise
+
     except Exception as ex:
         logger.error("Path '%s' failed: %s", row.path_id, ex)
         return PathResult(row=row, result=None, error=ex)

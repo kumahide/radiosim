@@ -356,6 +356,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_stats":             "Total cache: {count} tiles / {mb} MB",
         "tm_attribution":       "Source: GSI Tiles (Pale map)",
 
+        # ===== Terrain fetch =====
+        "err_dem_unreachable":  (
+            "Could not download terrain data (DEM). The run was stopped so that "
+            "a flat 0 m terrain is not reported as a real result.\n\n"
+            "Check your network connection, and set a proxy if your site requires "
+            "one (Settings > Proxy Settings)."
+        ),
+
         # ===== Validation (config) =====
         "err_freq":             "Frequency must be between 1 and 100000 MHz",
         "err_p_tx":             "TX Power must be between -30 and 60 dBm",
@@ -748,6 +756,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_done":   "全キャッシュを削除しました: {deleted}枚",
         "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
         "tm_attribution":       "出典: 地理院タイル（淡色地図）",
+
+        # ===== Terrain fetch =====
+        "err_dem_unreachable":  (
+            "地形データ（DEM）を取得できませんでした。標高 0m の平坦な地形を"
+            "結果として出さないよう、実行を中止しました。\n\n"
+            "ネットワーク接続を確認してください。社内ネットワークなどで"
+            "プロキシが必要な場合は、設定 > プロキシ設定 で指定してください。"
+        ),
 
         # ===== Validation (config) =====
         "err_freq":             "周波数は 1〜100000 MHz の範囲で入力してください",

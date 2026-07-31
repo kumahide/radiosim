@@ -300,6 +300,45 @@ class TestFailedTileNegativeCache:
         assert result is None
         assert ("dem_png", 111, 222) not in dem._failed_tiles
 
+    # ── 「取れなかった」を別口で知らせる（B-025 ②）────────────────────
+    def test_network_failure_is_reported_alongside_the_zero(self, monkeypatch):
+        """通信で失敗したら `network_failed()` が立つこと。
+
+        戻り値は 0.0 のまま（契約は 3.x まで変えない）なので、**これが「取れて
+        いない」を知る唯一の手段**。ここが立たないと、呼び出し側は標高 0m の
+        平坦地形を正常値として配り続ける（B-025 の実害そのもの）。
+        """
+        self._mock_session(
+            monkeypatch,
+            lambda *a, **k: (_ for _ in ()).throw(requests.RequestException("timeout")),
+        )
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert dem.network_failed(), "通信の失敗が呼び出し側に伝わらない"
+
+    def test_sea_tiles_404_are_not_a_network_failure(self, monkeypatch):
+        """**404 では立たない**こと（海上・日本域外＝通信は成功している）。
+
+        ここを混ぜると、海の上を通る経路が「ネットワーク異常」として打ち切られる
+        ＝B-010（一時失敗を負キャッシュに入れて標高を誤った）の鏡像。
+        """
+        self._mock_session(monkeypatch, lambda *a, **k: self._status(404))
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert not dem.network_failed(), "404（データが無い）を通信失敗と混同している"
+
+    def test_a_value_from_a_later_layer_clears_the_failure(self, monkeypatch):
+        """先のレイヤが通信失敗でも、後のレイヤで値が取れたら失敗ではないこと。"""
+        state = {"n": 0}
+
+        def get_impl(*a, **k):
+            state["n"] += 1
+            if state["n"] == 1:
+                raise requests.RequestException("timeout")   # 1 層目だけ失敗
+            return self._png_200()
+
+        self._mock_session(monkeypatch, get_impl)
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+        assert not dem.network_failed(), "値が取れているのに失敗として扱っている"
+
     # ── get_elevation 統合：一時失敗 → 回復で取得し直せる（B-010 本丸）──
     def test_transient_failure_then_recovery_refetches(self, monkeypatch):
         """一時失敗の後で通信が回復したら、同一プロセスでも標高を取得し直す。"""

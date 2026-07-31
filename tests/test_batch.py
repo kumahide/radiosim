@@ -1160,6 +1160,27 @@ class TestRunBatch:
                   fetch=_counting_fetch)
         assert len(fetches) == 2, f"再実行で DEM を取り直している: {fetches}"
 
+    def test_unreachable_dem_stops_the_whole_batch(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """DEM に届かないときは **1 行の ERR にせずバッチごと止める**（B-025 ②）。
+
+        経路の問題ではなく環境（Proxy・NW）の問題なので、残りの経路も必ず同じ
+        失敗をする。飲み込むと、待ち時間を経路の数だけ積み上げた末に「全行 ERR
+        のレポート」ができ、ユーザーには何が悪いのか分からない。
+        """
+        def _unreachable(params, on_progress, on_complete, on_error):
+            on_error(sim.DemUnreachableError("proxy?"))
+
+        ev = self._run([_row(path_id="p1"), _row(path_id="p2"), _row(path_id="p3")], tmp_path,
+                       default_params_dict, monkeypatch, fetch=_unreachable)
+
+        assert ev["batch"] == [], "DEM に届かないのにレポートまで作っている"
+        assert len(ev["error"]) == 1
+        assert isinstance(ev["error"][0], sim.DemUnreachableError)
+        assert len(ev["complete"]) < 3, (
+            "全経路を試している＝1 経路ぶんの待ち時間を経路の数だけ積み上げる"
+        )
+
     def test_engine_failure_calls_on_error(
             self, tmp_path, default_params_dict, monkeypatch):
         """パス処理より外側の失敗（サマリ書き出し等）は on_error に届く。"""

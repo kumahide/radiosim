@@ -116,6 +116,31 @@ _cache_lock = threading.Lock()
 _failed_tiles: set[tuple] = set()
 
 
+# ------------------------------------------------------------
+# 「取れなかった」を戻り値を変えずに知らせる口（B-025 ②）
+# ------------------------------------------------------------
+# `get_elevation` は失敗しても 0.0 を返す（契約の是正は 3.x）。呼び出し側が
+# 「取れなかった」ことに気づけないと、Proxy 未設定の環境で**平坦な地形を正しい顔で
+# 配り続ける**。そこで戻り値には触らず、**直前の呼び出しが通信の失敗で終わったか**
+# だけをスレッドローカルに置く。
+#
+# なぜスレッドローカルか：標高取得は 1 点 1 スレッドで並列に走る（simulation の
+# ワーカー）ので、モジュール変数だと隣の点の結果を読む。呼ぶ側は自分のスレッドで
+# `get_elevation` → `network_failed()` と続けて読むだけでよい。
+#
+# ⚠️ **記録するのは通信の失敗だけ**（タイムアウト・接続エラー・5xx/429）。
+# **404 は含めない**＝あれは「そこに標高データが永久に無い」＝海上・日本域外で
+# 正常に起きることで、通信は成功している。ここを混ぜると**海の上を通る経路が
+# 「ネットワーク異常」として打ち切られる**（B-010 で負キャッシュに一時失敗を
+# 混ぜたのと鏡像の誤り）。
+_network_trouble = threading.local()
+
+
+def network_failed() -> bool:
+    """**このスレッドの直前の `get_elevation`** が通信の失敗で終わったか。"""
+    return bool(getattr(_network_trouble, "flag", False))
+
+
 def lonlat_to_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
     """緯度・経度を指定ズームの「グローバルピクセル座標」（小数）に変換する。
 
@@ -156,7 +181,16 @@ def get_elevation(lat: float, lon: float) -> float:
     DEM_LAYERS の順（5m → 5m → 10m）に試み、
     タイル取得成功かつデコード値が有効（!= 0.0）なら返す。
     すべて失敗・無効値の場合は 0.0 を返す。
+
+    ⚠️ **この 0.0 は「海抜 0m」と「取れなかった」を区別しない**（戻り値契約の
+    是正は呼び出し側 ~30 箇所と出力契約に触るので 3.x＝ISSUES.md B-025 ①）。
+    そのままだと Proxy 未設定などで取得が全滅したときに**平坦な地形が正常値の顔で
+    出てくる**ので、**取れなかったことだけは別口で知らせる**＝直後に
+    `network_failed()` を読むと、この呼び出しが**通信の失敗**で終わったかが分かる
+    （B-025 ②）。戻り値には触っていないので既存の呼び出し側・テストのフェイクは
+    そのまま動く（フェイクは「成功」として扱われる＝安全側）。
     """
+    _network_trouble.flag = False
     try:
         for layer_id, zoom in DEM_LAYERS:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
@@ -173,6 +207,7 @@ def get_elevation(lat: float, lon: float) -> float:
             if cached is not None:
                 elev = _decode_elevation(cached[py, px])
                 if elev != 0.0:
+                    _network_trouble.flag = False
                     return elev
                 logger.debug(
                     "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
@@ -197,6 +232,8 @@ def get_elevation(lat: float, lon: float) -> float:
 
             elev = _decode_elevation(arr[py, px])
             if elev != 0.0:
+                # 別レイヤで通信に失敗していても、値が取れたなら失敗ではない。
+                _network_trouble.flag = False
                 return elev
             logger.debug(
                 "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
@@ -271,6 +308,7 @@ def _fetch_tile(
             "tile: unexpected status %d layer=%s tile=(%d,%d)",
             res.status_code, layer_id, xtile, ytile,
         )
+        _network_trouble.flag = True
         return None
 
     except requests.RequestException as e:
@@ -281,6 +319,7 @@ def _fetch_tile(
         )
         if os.path.exists(cache_path):
             return np.array(Image.open(cache_path).convert("RGB"))
+        _network_trouble.flag = True
         return None
 
 

@@ -25,6 +25,7 @@ import numpy as np
 import config
 import coords
 import dem
+import i18n
 import models
 import units
 
@@ -68,6 +69,28 @@ class SimParams:
 # GSI サーバーへの過負荷とタイルキャッシュのロック競合を避けるため上限を設ける。
 _MAX_FETCH_WORKERS: int = 8
 
+# 打ち切りの敷居（B-025 ②）。**1 点も取れないまま通信の失敗がこの数に達したら
+# 中止する**。並列度と同じ数＝「最初の 1 巡が全滅した」ことを意味する。
+#
+# なぜ「1 点も取れないまま」を条件に足すか：数点の失敗は日常的に起こり得る
+# （タイル 1 枚のタイムアウト、混雑時の 429）。それで経路全体を落とすと、
+# 従来動いていた実行が突然エラーになる。**打ち切りたいのは「そもそも外へ出られて
+# いない」場合だけ**（Proxy 未設定・NW 断）で、その形は必ず「成功 0 件」になる。
+#
+# ⚠️ 敷居を上げると待ち時間がそのまま伸びる＝1 点あたり最大 15 秒
+# （timeout 5 秒 × レイヤ 3 段）。8 点は並列に走るので、実測の体感は「1 巡 ＝
+# 最大 15 秒で打ち切り」。従来は全点ぶん繰り返していた（200 点なら数十分）。
+_DEM_FAILURE_LIMIT: int = _MAX_FETCH_WORKERS
+
+
+class DemUnreachableError(RuntimeError):
+    """DEM をまったく取得できずに打ち切ったことを表す（B-025 ②）。
+
+    **平坦な地形を正常値の顔で返さない**ための唯一の出口。3 フロー（単一・
+    バッチ・条件探索）とも `on_error` がダイアログへ出すので、これを投げれば
+    どのフローでもユーザーに届く。
+    """
+
 
 def fetch_elevations(
     params: SimParams,
@@ -100,38 +123,66 @@ def fetch_elevations(
 
             raw_elevs: list[float] = [0.0] * params.num
             completed  = 0
+            failures   = 0
+            successes  = 0
             lock       = threading.Lock()
-            all_done   = threading.Event()
-            total      = params.num
             sem        = threading.Semaphore(_MAX_FETCH_WORKERS)
 
             worker_error: list[Exception] = []
 
             def _fetch_one(idx: int, la: float, lo: float) -> None:
+                nonlocal completed, failures, successes
+                failed = True          # 何が起きても finally で参照できる初期値
                 try:
                     raw_elevs[idx] = dem.get_elevation(la, lo)
+                    # 「取れなかった」は戻り値に出ない（0.0 は海抜 0m と同じ顔）。
+                    # 直後に聞くのが唯一の判別手段＝B-025 ②。
+                    failed = dem.network_failed()
                 except Exception as e:
+                    failed = True
                     with lock:
                         worker_error.append(e)
                 finally:
-                    sem.release()
                     with lock:
-                        nonlocal completed
                         completed += 1
+                        if failed:
+                            failures  += 1
+                        else:
+                            successes += 1
                         on_progress(completed)
-                        if completed == total:
-                            all_done.set()
+                    # ⚠️ 解放は**カウンタを更新しきってから**。先に解放すると、
+                    # 下の「全ワーカーの終了待ち」が数え終える前に抜ける。
+                    sem.release()
+
+            def _should_abort() -> bool:
+                with lock:
+                    return successes == 0 and failures >= _DEM_FAILURE_LIMIT
 
             for i, (la, lo) in enumerate(zip(lats, lons)):
+                if _should_abort():
+                    break                      # これ以上投げない（待ち時間を捨てる）
                 sem.acquire()
                 threading.Thread(
                     target=_fetch_one, args=(i, la, lo), daemon=True
                 ).start()
 
-            all_done.wait()
+            # 全ワーカーの終了を待つ＝許可証を全部回収できたら誰も走っていない。
+            # （完了件数のイベントで待つと、打ち切って投げ終えなかったぶん永久に
+            #   揃わない。「投げた数」を数え直すより許可証を数える方が確実。）
+            for _ in range(_MAX_FETCH_WORKERS):
+                sem.acquire()
 
             if worker_error:
                 raise worker_error[0]
+
+            if _should_abort():
+                logger.error(
+                    "Terrain fetch aborted: %d consecutive DEM failures with no "
+                    "success (check proxy settings). start=(%.6f,%.6f) end=(%.6f,%.6f)",
+                    failures, params.lat_tx, params.lon_tx,
+                    params.lat_rx, params.lon_rx,
+                )
+                raise DemUnreachableError(i18n.t("err_dem_unreachable"))
 
             logger.info("Terrain fetch complete: %d samples", params.num)
             on_complete(np.array(raw_elevs))

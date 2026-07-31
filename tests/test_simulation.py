@@ -15,6 +15,7 @@ DEM 取得は monkeypatch でモックし、ネットワーク不要。
 import os
 import json
 import threading
+from unittest import mock
 
 import numpy as np
 import pytest
@@ -169,6 +170,106 @@ class TestFetchElevations:
 
         done.wait(timeout=5)
         assert "ex" in errors
+
+
+# ============================================================
+# DEM が取れないときの打ち切り（B-025 ②）
+# ============================================================
+class TestDemCircuitBreaker:
+    """「取れないまま黙って完走する」を止めること。
+
+    ⚠️ **フェイクは `dem.network_failed` まで差し替える**＝製品では
+    `get_elevation` が 0.0 を返しつつ「通信で失敗した」を別口で立てる。戻り値だけ
+    0.0 にしたフェイクは**成功扱い**になる（既存テストのフェイクを壊さないための
+    設計＝安全側）ので、それでは打ち切りを再現できない。
+    """
+
+    def _run(self, params, *, elevation, failed, samples_seen=None):
+        """フェイクの DEM で 1 回走らせ、(完了した配列, 例外) を返す。"""
+        def _get(la, lo):
+            if samples_seen is not None:
+                samples_seen.append((la, lo))
+            return elevation(la, lo) if callable(elevation) else elevation
+
+        out: dict = {}
+        done = threading.Event()
+        with mock.patch.object(dem, "get_elevation", _get), \
+             mock.patch.object(dem, "network_failed", failed):
+            sim.fetch_elevations(
+                params      = params,
+                on_progress = lambda v: None,
+                on_complete = lambda e: (out.__setitem__("elevs", e), done.set()),
+                on_error    = lambda ex: (out.__setitem__("error", ex), done.set()),
+            )
+            done.wait(timeout=10)
+        return out
+
+    def test_total_network_failure_aborts_instead_of_returning_flat_terrain(
+            self, default_params_dict):
+        """1 点も取れないなら**エラーで止める**（平坦な地形を返さない）。
+
+        従来は全点 0.0 の「標高 0m の平坦地形」が正常値の顔で完走し、判定は
+        見通し良好側＝安全側に外れていた（B-025・実地で発生）。
+        """
+        default_params_dict["samples"] = "50"
+        params = sim.SimParams(default_params_dict)
+        out = self._run(params, elevation=0.0, failed=lambda: True)
+
+        assert "elevs" not in out, (
+            "取得が全滅したのに完走している＝標高 0m の平坦地形が結果として出る。"
+        )
+        assert isinstance(out.get("error"), sim.DemUnreachableError), (
+            f"打ち切りの型が違う: {out.get('error')!r}"
+        )
+        assert "DEM" in str(out["error"]), "メッセージが原因を指していない"
+
+    def test_it_stops_early_instead_of_waiting_for_every_sample(
+            self, default_params_dict):
+        """**全点ぶん待たない**こと（遅さの訴えはここで消える）。
+
+        1 点あたり最大 15 秒（timeout 5 秒 × レイヤ 3 段）かかるので、200 点を
+        最後まで試すと数十分になる。敷居に達したら投げるのをやめる。
+        """
+        default_params_dict["samples"] = "200"
+        params = sim.SimParams(default_params_dict)
+        seen: list = []
+        self._run(params, elevation=0.0, failed=lambda: True, samples_seen=seen)
+
+        assert len(seen) < params.num, "打ち切らずに全点を試している"
+        assert len(seen) <= sim._DEM_FAILURE_LIMIT + sim._MAX_FETCH_WORKERS, (
+            f"打ち切りが遅すぎる（{len(seen)} 点も試した）"
+        )
+
+    def test_a_few_failures_do_not_abort_a_working_run(self, default_params_dict):
+        """**取れている実行は落とさない**＝失敗が数点あっても続ける。
+
+        タイル 1 枚のタイムアウトや混雑時の 429 は日常的に起きる。それで経路
+        全体をエラーにすると、これまで動いていた実行が突然使えなくなる。
+        打ち切るのは「そもそも外へ出られていない」＝成功 0 件の形だけ。
+        """
+        default_params_dict["samples"] = "50"
+        params = sim.SimParams(default_params_dict)
+        state = {"n": 0}
+
+        def failed():
+            state["n"] += 1
+            return state["n"] % 3 == 0      # 3 点に 1 点は通信失敗
+
+        out = self._run(params, elevation=lambda la, lo: 120.0, failed=failed)
+        assert "error" not in out, f"取れているのに落ちた: {out.get('error')!r}"
+        assert len(out["elevs"]) == params.num
+
+    def test_sea_tiles_are_not_treated_as_a_network_failure(self, default_params_dict):
+        """海上（404 で標高が無い）は打ち切らないこと。
+
+        404 は「そこにデータが永久に無い」＝通信は成功しており、`network_failed`
+        は立たない（dem 側の約束）。ここを混ぜると**海の上を通る経路が
+        「ネットワーク異常」で落ちる**（B-010 の鏡像）。
+        """
+        params = sim.SimParams(default_params_dict)
+        out = self._run(params, elevation=0.0, failed=lambda: False)
+        assert "error" not in out, "海上の 0m を通信失敗と取り違えている"
+        assert list(out["elevs"]) == [0.0] * params.num
 
 
 # ============================================================
