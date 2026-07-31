@@ -469,6 +469,46 @@ def test_windows_are_refitted_when_dpi_grows(monkeypatch):
         root.destroy()
 
 
+def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
+    """**画面が変わったら**測り直しで追従すること（B-022 の測り直し側）。
+
+    害は両方向に出る＝狭くなれば窓がデスクトップの外へ出たまま、広くなれば
+    クランプされた小さいまま二度と戻らない（再起動しか回復手段が無い）。
+    ⚠️ 「広くなったら戻る」は `grow_only`（縮めない約束）と紛らわしいが別物＝
+    こちらは**画面の上限が動いた**話で、ユーザーが広げた窓を狭める話ではない。
+
+    契機の側（`<Configure>` で画面サイズの変化に気づくこと）は
+    tests/test_theme.py::test_watch_display_notices_a_resolution_change_with_the_same_dpi。
+    """
+    screen = {"size": (1920, 1080)}
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: screen["size"])
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_scenario(root)
+        need_h = window_fit.required_size(win)[1]
+        assert win._fit_size[1] == need_h, "前提が崩れている（最初から入っていない）"
+
+        screen["size"] = (1920, 800)               # 解像度が下がった
+        window_fit.refit_all(root)
+        assert win._fit_size[1] == 800 - window_fit.SCREEN_MARGIN, (
+            f"狭くなった画面に追従していない（{win._fit_size[1]}px のまま）"
+            "＝窓の下端がデスクトップの外に残る。"
+        )
+        assert win._fit_scroll.active[0], "入らなくなったのに逃げ道が出ていない"
+
+        screen["size"] = (1920, 1080)              # 元に戻った（再接続など）
+        window_fit.refit_all(root)
+        assert win._fit_size[1] == need_h, (
+            f"広くなった画面に戻っていない（{win._fit_size[1]}px のまま）"
+            "＝クランプされた小さいままアプリの再起動しか回復手段が無くなる。"
+        )
+        assert not win._fit_scroll.active[0], "入るようになったのにバーが残っている"
+    finally:
+        root.destroy()
+
+
 def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
     """測り直しで窓ごとの下限・加算が失われないこと。
 

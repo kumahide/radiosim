@@ -636,7 +636,7 @@ def test_table_row_height_follows_the_font(root):
     assert high > low, f"DPI を上げても行高が変わらない（{low}px のまま）"
 
 
-def test_watch_dpi_actually_fires_on_a_configure_event(root):
+def test_watch_display_actually_fires_on_a_configure_event(root):
     """配線が実際に動くこと（監視 → 検知 → 貼り直し → 通知）。
 
     ⚠️ **ここが本丸**。「イベントに繋いだつもりで一度も発火しない」は本プロジェクト
@@ -655,16 +655,57 @@ def test_watch_dpi_actually_fires_on_a_configure_event(root):
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
     notified: list[int] = []
     try:
-        theme.watch_dpi(root, notified.append)
+        theme.watch_display(root, notified.append)
         fake["dpi"] = 144                          # 別 DPI のモニタへ移した相当
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")              # 移動＝<Configure>
         root.update()
-        # デバウンス（_DPI_DEBOUNCE_MS）を消化する
-        root.after(theme._DPI_DEBOUNCE_MS + 80, root.quit)
+        # デバウンス（_DISPLAY_DEBOUNCE_MS）を消化する
+        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
         root.mainloop()
         assert notified == [144], f"DPI 変化が通知されていない: {notified}"
         assert _px(root) == round(at96 * 1.5), "通知は来たがフォントが貼り直されていない"
     finally:
         theme.window_dpi = monkey                  # type: ignore[assignment]
         theme.apply_fonts(root, dpi=96)
+
+
+def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monkeypatch):
+    """**DPI が変わらない画面サイズの変化**でも測り直しが走ること（B-022）。
+
+    旧 `watch_dpi` は `<Configure>` を受け取りながら「DPI が同じなら即 return」で
+    捨てていた＝解像度変更・VDI の動的解像度・リモート再接続が素通りしていた。
+    害は両方向で、狭くなれば窓がデスクトップの外へ出たまま、広くなればクランプ
+    された小さいまま**二度と戻らない**（アプリの再起動しか回復手段が無かった）。
+
+    ⚠️ **フォントは貼り直さないこと**も同時に見る＝解像度だけの変化で全窓の
+    フォントを触るのは無駄で、副作用の面だけが広がる。
+    """
+    import tkinter as tk
+
+    from views import window_fit
+
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    before_px = _px(root)
+
+    screen = {"size": (1920, 1080)}
+    monkeypatch.setattr(theme, "window_dpi", lambda _w: 96)
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: screen["size"])
+
+    notified: list[int] = []
+    theme.watch_display(root, notified.append)
+    screen["size"] = (1280, 720)                   # 解像度だけが変わった
+    win = tk.Toplevel(root)
+    win.geometry("200x100+10+10")                  # <Configure> の契機
+    root.update()
+    root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
+    root.mainloop()
+
+    assert notified == [96], (
+        f"画面サイズの変化が素通りしている: {notified}"
+        "（窓は新しい画面に対して測り直されないまま残る＝B-022）。"
+    )
+    assert _px(root) == before_px, (
+        "解像度だけの変化でフォントまで貼り直している（DPI は変わっていない）。"
+    )

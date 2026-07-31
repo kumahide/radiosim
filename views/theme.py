@@ -329,37 +329,59 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
 
 
 # <Configure> は移動・リサイズのたびに飛ぶので、まとめて 1 回にする間隔。
-_DPI_DEBOUNCE_MS = 250
+_DISPLAY_DEBOUNCE_MS = 250
 
 
-def watch_dpi(root: tk.Misc, on_change: "Callable[[int], None] | None" = None) -> None:
-    """モニタ間の移動などで DPI が変わったらフォントを貼り直す。
+def watch_display(root: tk.Misc, on_change: "Callable[[int], None] | None" = None) -> None:
+    """**表示環境が変わったら**フォントを貼り直し、窓を測り直させる。
 
-    Tk 8.6 は `WM_DPICHANGED` を受けて**窓の大きさは**追従させるが、フォントは
-    何もしない（`tk scaling` は起動時のスクリーン値で固定）。結果「窓だけ大きく
-    なって字は小さいまま」になる。Tk 側に DPI 変更の通知イベントが無いので、
-    **`<Configure>`（移動・リサイズ）を契機に実 DPI を見に行く**。
+    見るのは 2 つ＝**DPI** と **画面サイズ**。どちらも窓の寸法の入力なので、
+    片方だけ監視すると片方の変化が素通りする。
+
+    - **DPI**（モニタ間の移動）: Tk 8.6 は `WM_DPICHANGED` を受けて**窓の
+      大きさは**追従させるが、フォントは何もしない（`tk scaling` は起動時の
+      スクリーン値で固定）。結果「窓だけ大きくなって字は小さいまま」になる
+      （B-015）。Tk 側に DPI 変更の通知イベントが無いので、**`<Configure>`
+      （移動・リサイズ）を契機に実 DPI を見に行く**。
+    - **画面サイズ**（解像度変更・VDI の動的解像度・リモート再接続）: `fit_to_content`
+      は画面の高さを上限に使っているので、**画面が変われば選ぶべき寸法も変わる**。
+      ⚠️ **旧 `watch_dpi` はここを見ておらず、`<Configure>` は来ているのに
+      「DPI が同じなら即 return」で捨てていた**（B-022）。害は両方向に出た＝狭く
+      なれば窓がデスクトップの外へ出たまま、広くなればクランプされた小さいまま
+      二度と戻らない（`fit_to_content` が二度と呼ばれないため、再接続しても
+      直らずアプリの再起動しか回復手段が無かった）。
+
+    ⚠️ **フォントの貼り直しは DPI が変わったときだけ**（解像度だけ変わった時に
+    貼り直すのは無駄な上に、全窓のフォントを触るので副作用の面が広い）。
+    測り直しは**どちらの契機でも**呼ぶ。
 
     `bind_all` で全ウィンドウ分をまとめて拾う＝窓を1つ足すたびに配線を思い出す
     必要がない（[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
 
     Args:
-        on_change: DPI が変わってフォントを貼り直した**あと**に呼ばれる。
+        on_change: 表示環境が変わった**あと**に呼ばれる（引数＝その時点の DPI）。
             窓の寸法を測り直す（`views.window_fit.refit_all`）ために使う
             ＝字が大きくなれば必要な幅も高さも増えるので、追従しないと見切れる。
     """
-    state = {"dpi": window_dpi(root), "after": None}
+    from views import window_fit                    # 遅延 import（循環回避）
+
+    state: "dict[str, Any]" = {
+        "dpi": window_dpi(root), "screen": window_fit.screen_size(root), "after": None,
+    }
 
     def _check() -> None:
         state["after"] = None
         try:
             dpi = window_dpi(root)
+            screen = window_fit.screen_size(root)
         except tk.TclError:
             return            # 破棄済み
-        if dpi == state["dpi"]:
+        if dpi == state["dpi"] and screen == state["screen"]:
             return
-        state["dpi"] = dpi
-        apply_fonts(root, dpi=dpi)
+        if dpi != state["dpi"]:
+            state["dpi"] = dpi
+            apply_fonts(root, dpi=dpi)
+        state["screen"] = screen
         if on_change is not None:
             on_change(dpi)
 
@@ -373,7 +395,7 @@ def watch_dpi(root: tk.Misc, on_change: "Callable[[int], None] | None" = None) -
                 root.after_cancel(state["after"])
             except tk.TclError:
                 pass
-        state["after"] = root.after(_DPI_DEBOUNCE_MS, _check)
+        state["after"] = root.after(_DISPLAY_DEBOUNCE_MS, _check)
 
     root.bind_all("<Configure>", _on_configure, add="+")
 
