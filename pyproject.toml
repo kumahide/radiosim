@@ -37,7 +37,7 @@ source = [
     "models", "simulation", "config", "dem",
     "batch", "scenario",
     "report_common", "report_path", "report_summary", "report_scenario",
-    "multihop", "report_multihop",
+    "multihop", "report_multihop", "project",
     "report_map",
     "coords", "units", "map_graphics", "mpl_fonts", "i18n",
 ]

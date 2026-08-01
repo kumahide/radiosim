@@ -26,11 +26,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 # ヘッドレスでも import 可能なモジュール（tk.Tk() を作らない限り tkinter import は安全）。
 _HEADLESS_SAFE = [
     "main", "models", "simulation", "config", "dem",
-    "batch", "scenario", "report_common", "report_path", "report_summary",
-    "report_scenario", "report_map", "map_graphics",
+    "batch", "scenario", "multihop", "project",
+    "report_common", "report_path", "report_summary",
+    "report_scenario", "report_map", "report_multihop", "map_graphics",
     "coords", "i18n", "mpl_fonts", "version",
     "views.launcher", "views.batch_builder", "views.scenario",
-    "views.map_window", "views.dialogs",
+    "views.map_window", "views.multihop", "views.dialogs",
 ]
 
 # import 時に matplotlib の TkAgg バックエンドをロードするためディスプレイを要する。
@@ -73,8 +74,10 @@ def test_gui_module_imports(mod):
 # 素の子プロセスで検証する（テスト実行順に依存しない）。
 _HEADLESS_CORE = [
     "models", "simulation", "config", "dem", "batch", "scenario",
+    "multihop", "project",
     "report_common", "report_path", "report_summary", "report_scenario",
-    "report_map", "map_graphics", "coords", "i18n", "mpl_fonts", "version",
+    "report_map", "report_multihop", "map_graphics", "coords", "i18n",
+    "mpl_fonts", "version",
 ]
 
 

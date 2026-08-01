@@ -99,6 +99,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_app_settings_none_title": "No App Settings",
         "dlg_app_settings_none": "The selected file contains no app settings (theme/language/proxy). Nothing was changed.",
         "dlg_select_settings":  "Select settings.json",
+        "proj_err_not_project": "This is not a RadioSim project file.",
+        "proj_err_newer":       "Saved by a newer version of RadioSim (schema {ver}, supported {cur}). Update RadioSim to open it.",
+        "proj_err_broken":      "Cannot read the project file: {reason}",
         "dlg_select_app_settings": "Select a settings file (app settings only)",
         "dlg_success":          "Success",
 
@@ -552,6 +555,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_app_settings_none_title": "アプリ設定なし",
         "dlg_app_settings_none": "選択したファイルにアプリ設定（テーマ／言語／プロキシ）がありません。変更はありません。",
         "dlg_select_settings":  "settings.json を選択",
+        "proj_err_not_project": "RadioSim のプロジェクトファイルではありません。",
+        "proj_err_newer":       "より新しい版の RadioSim で保存されたファイルです（schema {ver} / 対応 {cur}）。RadioSim を更新してください。",
+        "proj_err_broken":      "プロジェクトファイルを読めません: {reason}",
         "dlg_select_app_settings": "設定ファイルを選択（アプリ設定のみ）",
         "dlg_success":          "完了",
 

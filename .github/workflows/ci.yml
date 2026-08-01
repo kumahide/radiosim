@@ -42,7 +42,7 @@ jobs:
           pyright
           batch.py scenario.py models.py simulation.py config.py dem.py version.py
           report_common.py report_path.py report_summary.py report_scenario.py
-          multihop.py report_multihop.py
+          multihop.py report_multihop.py project.py
           report_map.py
           i18n.py main.py map_graphics.py coords.py units.py mpl_fonts.py
           views/launcher.py views/graph.py views/batch_builder.py

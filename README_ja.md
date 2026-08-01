@@ -169,6 +169,7 @@ radiosim/
 ├── report_scenario.py    # 条件探索の出力生成（A4 の折れ線＋表・CSV・ヘッドレス）
 ├── multihop.py           # 中継経路（A-3）の実行エンジン（waypoint→ホップ導出・min 集約・ヘッドレス）
 ├── report_multihop.py    # 中継経路の出力生成（合成シート＋ホップ別連結・hops.csv・ヘッドレス）
+├── project.py            # プロジェクトファイル（.rsproj）の読み書き＝入力一式を束ねる（ヘッドレス）
 ├── report_common.py      # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
 ├── report_path.py        # 経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
 ├── report_summary.py     # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
@@ -202,6 +203,7 @@ radiosim/
     ├── test_report.py
     ├── test_scenario.py
     ├── test_multihop.py
+    ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
@@ -621,6 +623,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
   batch.py        CSV I/O・バリデーション・一括実行エンジン
   scenario.py     条件探索の共有ランナー（terrain 固定・N 条件・相の宣言）
   multihop.py     中継経路の実行エンジン（waypoint 列が source of truth・全体判定は min）
+  project.py      プロジェクトファイル（.rsproj）＝入力一式を束ねる（結果と app 設定は含めない）
   report_scenario.py 条件探索の出力生成（折れ線＋表・CSV・ヘッドレス）
   report_common.py  レポート共有部品（A4 骨格・ヘッダ/フッタ・文書外枠）
   report_path.py    経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
@@ -689,6 +692,7 @@ python -m pytest tests/ --cov
 | `test_models.py`         | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
 | `test_scenario.py`       | 条件探索（DEM 取得 1 回 + N 条件・相の進捗・上書きの非破壊・A4 シート/CSV 出力）|
 | `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・hops.csv／合成シート）|
+| `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・節の欠損は「持たない」・新しい schema の拒否・破損の扱い）|
 | `test_golden_links.py`   | 回帰コーパス＝代表回線 26 本の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
