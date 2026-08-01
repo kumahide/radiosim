@@ -89,95 +89,38 @@ _MUTED_MIX = 0.40
 # ラベルと入力欄で字面が揃わない**。さらにランチャー・バッチだけが
 # `("Arial", 8)` `("Arial", 9)` をベタ書きしていたため、窓ごとに書体もサイズも
 # バラバラだった（実機フィードバック 2026-07-26）。出所を1つにして解消する。
+#
+# ⛔ **画面で太字は使わない**（2026-08-01 ユーザー決定＝「かえって読みにくい」）。
+#    強調は配置・余白・区切り線で作る。したがって `ui_font` に "bold" は無い。
+#    ⚠️ レポート HTML の `font-weight:bold` は**別の設計言語**（印刷物・小さな
+#    文字を紙で読ませる）なので、この決定は持ち込まない。
+#    ⚠️ ここに太字を戻したくなったら、先に ISSUES.md B-026 を読むこと＝Segoe UI
+#    Variable 系は日本語グリフを持たず、**漢字のフォントリンク先を決めるのは
+#    family ではなく weight** なので、太字にした瞬間に漢字だけ Malgun Gothic
+#    （韓国語）へ落ちる（2026-07-31 実測・`experiments/font_fallback_probe.py`）。
 _SV_FONTS = {
     "body":  "SunValleyBodyFont",
     "small": "SunValleyCaptionFont",
-    "bold":  "SunValleyBodyStrongFont",
+    # ⚠️ 画面では使わないが**テーブルには残す**＝sv_ttk 自身がテーマ定義の中で
+    # 参照しているので、DPI・書体の追従ループ（apply_fonts ①）が舐める必要がある。
+    "_theme_strong": "SunValleyBodyStrongFont",
 }
 
 # sv_ttk が読み込まれていない場合の控え（テーマ未適用のテスト等）。
 _FONT_FALLBACK = {
     "body":  "TkDefaultFont",
     "small": "TkSmallCaptionFont",
-    "bold":  "TkHeadingFont",
 }
-
-# 強調用に自前で持つ名前付きフォント（本文の複製＋`-weight bold`）。
-# ⚠️ `_SV_FONTS["bold"]`（= SunValleyBodyStrongFont）は **`ui_font` からは返さない**。
-# ①の DPI 追従で名前を舐めるためにテーブルには残してあるだけ（sv_ttk 自身が
-# テーマ定義の中で参照している）。理由は `_ensure_bold_font` の docstring。
-_BOLD_FONT_NAME = "RadioSimBodyStrongFont"
-
-
-def _ensure_bold_font(widget: tk.Misc) -> "str | None":
-    """本文フォントを複製して太字にした名前付きフォントを用意し、その名前を返す。
-
-    **狙いは「強調が常に本文の書体に追従する」という不変条件**（2.6a1 / B-026）。
-    sv_ttk の `SunValleyBodyStrongFont` は独立した書体（Segoe UI Variable Text
-    Semibold）なので、本文の書体を差し替えても強調だけ取り残される。
-
-    ⚠️ **これだけでは日本語の字形は揃わない**（2026-07-31 に実測）。Segoe UI
-    Variable 系は日本語グリフを持たず、Tk 8.6 は不足分を Windows のフォントリンク
-    へ丸投げするが、**落ちる先を決めるのは family ではなく weight** だった::
-
-        family                            weight   漢の書体
-        Segoe UI Variable Text            normal   ＭＳ Ｐゴシック
-        Segoe UI Variable Text            bold     Malgun Gothic   ← 韓国語
-        Yu Gothic UI                      normal   Yu Gothic UI
-        Yu Gothic UI                      bold     Yu Gothic UI
-
-    ⇒ 本文が Segoe 系である限り、**強調にすると必ず漢字が韓国語フォントへ落ちる**。
-    症状（バッチ表のヘッダだけ漢字の字形が違う）を消せるのは「ja の本文書体を
-    日本語を持つ書体にする」＝ISSUES.md B-026 の処方②だけで、そちらは全窓の
-    字幅が変わるため寸法ゲート（B-021/B-023）の後に回してある。
-
-    **本関数はその②が効くための前提**＝本文を差し替えた瞬間に強調も追従する。
-    既にあれば作り直さず設定し直すので、`apply_fonts`（DPI 変更・テーマ切替の
-    単一の通り道）から呼べば DPI にも追従する。
-
-    Returns:
-        用意できた名前付きフォント名。本文フォントが読めない環境では None。
-    """
-    from tkinter import font as tkfont
-
-    try:
-        spec = tkfont.nametofont(ui_font(widget, "body"), root=widget).config() or {}
-    except tk.TclError:
-        return None
-    # サイズは `config()` から取る（`actual()` は px 指定を pt に丸めるため）。
-    family, size = spec.get("family"), spec.get("size")
-    if not isinstance(family, str) or not isinstance(size, int):
-        return None
-
-    # ⚠️ `tkfont.Font(name=...)` で作らない：Python 側の Font オブジェクトが自分の
-    # 作った名前付きフォントを所有し、**GC された瞬間に `font delete` する**。
-    # ここは参照を持ち回らない使い方（名前だけ返す）なので、生成直後に消えて
-    # 「そんな名前のフォントは無い」になる。Tcl へ直接作らせれば寿命は
-    # インタプリタと同じになる。
-    try:
-        exists = _BOLD_FONT_NAME in widget.tk.call("font", "names")
-        verb = "configure" if exists else "create"
-        widget.tk.call(
-            "font", verb, _BOLD_FONT_NAME,
-            "-family", family, "-size", size, "-weight", "bold",
-        )
-    except tk.TclError:
-        return None
-    return _BOLD_FONT_NAME
-
 
 def ui_font(widget: tk.Misc, kind: str = "body") -> str:
     """ウィジェットの `font=` へ渡す**名前付きフォント名**を返す。
 
     Args:
-        kind: ``body``（本文・入力欄）／``small``（密な表・注記）／``bold``（強調）
-    """
-    if kind == "bold":
-        derived = _ensure_bold_font(widget)
-        if derived is not None:
-            return derived
-        return _FONT_FALLBACK["bold"]
+        kind: ``body``（本文・入力欄）／``small``（密な表・注記）
 
+    ⛔ ``bold`` は**無い**（画面で太字を使わない＝上記の決定）。呼ぶと KeyError に
+       なるのは意図的で、「強調したい」が出てきたら配置か余白で解くこと。
+    """
     name = _SV_FONTS[kind]
     try:
         if name in widget.tk.call("font", "names"):
@@ -365,12 +308,6 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
             tkfont.nametofont(name, root=root).configure(family=family, size=size)
         except tk.TclError:
             pass   # その環境に無い名前付きフォントは飛ばす
-
-    # ②' 強調フォント（本文の複製＋bold）も本文に追従させる。①で本文のサイズが
-    #     変わっているので、ここを通さないと**強調だけ DPI に置いていかれる**
-    #     （B-015 と同型の取り残し）。既存のウィジェットにも名前付きフォント
-    #     経由で即反映される。
-    _ensure_bold_font(root)
 
     # ③ 等幅（README ビューア）も同じ DPI で。pt 指定なので `tk scaling` を
     #    今の DPI に合わせておけば追従する。
@@ -591,6 +528,37 @@ def muted_foreground(widget: tk.Misc) -> str:
     """
     colors = palette(widget)
     return _mix(colors["fg"], colors["bg"], _MUTED_MIX)
+
+
+# 判定（OK / NG）の色。**アプリ全体で 1 か所**＝画面・レポートで同じ意味に同じ色を
+# 使う（⑧）。ライトは Material の 800、ダークは 300 相当＝暗い地の上で沈まない値。
+# ⚠️ ここを増やすとき（ERR 等）は、必ず両テーマぶん決めてコントラストを測ること
+# （B-009＝ダークでツールチップが 1.06:1 だった件と同じクラスの失敗を招く）。
+_VERDICT = {
+    "light": {"ok": "#2e7d32", "ng": "#c62828"},
+    "dark":  {"ok": "#66bb6a", "ng": "#ef5350"},
+}
+
+
+def verdict_colors(widget: tk.Misc) -> "dict[str, str]":
+    """判定色（`{"ok": …, "ng": …}`）を現在テーマで返す。
+
+    **窓ごとに色を書かない**ための出所。条件探索だけが緑/赤で中継経路は同色、
+    という不揃いが実機フィードバックで出た（レポート側は両方色分けしていたので、
+    画面だけが落ちていた＝配色の出所が散っていると片方だけ直る）。
+    """
+    return dict(_VERDICT[current_theme(widget)])
+
+
+def apply_verdict_tags(tree: "ttk.Treeview") -> None:
+    """結果一覧（Treeview）に `ok` / `ng` タグの配色を当てる。
+
+    **窓ごとに `tag_configure` を書かない**ための口。行を入れる側は
+    `tags=("ok",)` を付けるだけでよく、色は 1 か所（`_VERDICT`）で決まる。
+    """
+    colors = verdict_colors(tree)
+    for key, color in colors.items():
+        tree.tag_configure(key, foreground=color)
 
 
 def apply_menu_theme(menus: "list[tk.Menu]", widget: tk.Misc) -> None:

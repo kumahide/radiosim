@@ -346,21 +346,21 @@ def test_progress_poll_does_not_overwrite_completion_state():
         app._pump.start()
         app._progress_push(200, "地形データ取得中… 100%")
         app._progress_stop()
-        app.prog_label.config(text="準備完了")
-        app.prog_bar.config(value=0)
+        app._prog_label.config(text="準備完了")
+        app._prog_bar.config(value=0)
 
         # 停止後に残存ポーリングが 1 回発火しても表示は変わらない。
         app._pump._poll()
-        assert app.prog_label.cget("text") == "準備完了"
-        assert float(app.prog_bar.cget("value")) == 0.0
+        assert app._prog_label.cget("text") == "準備完了"
+        assert float(app._prog_bar.cget("value")) == 0.0
 
         # ワーカースレッドは停止後にも進捗を push しうる（取得完了の通知と
         # 最後のサンプルの push は競合する）。その分も描画してはいけない
         # ＝キュー破棄だけでなくポーリング側の早期 return が要る。
         app._progress_push(200, "地形データ取得中… 100%")
         app._pump._poll()
-        assert app.prog_label.cget("text") == "準備完了"
-        assert float(app.prog_bar.cget("value")) == 0.0
+        assert app._prog_label.cget("text") == "準備完了"
+        assert float(app._prog_bar.cget("value")) == 0.0
     finally:
         root.destroy()
 

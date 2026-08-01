@@ -310,7 +310,7 @@ class BatchBuilderWindow(tk.Toplevel):
         for col, label in enumerate(self._COLS):
             ttk.Label(
                 self._hdr, text=label,
-                font=theme.ui_font(self, "bold"), anchor="w",
+                anchor="w",
             ).grid(row=0, column=col, padx=2, pady=3, sticky="w")
 
         # スクロール可能なテーブル本体
@@ -379,13 +379,10 @@ class BatchBuilderWindow(tk.Toplevel):
         ttk.Button(left, text=i18n.t("btn_template"),   command=self._save_template).pack(side="left", padx=2)
         ttk.Button(left, text=i18n.t("btn_clear_all"),  command=self._clear_all   ).pack(side="left", padx=2)
 
-        right = ttk.Frame(bottom)
-        right.pack(side="right")
-        self._run_btn = ttk.Button(
-            right, text=i18n.t("btn_run_batch"), command=self._on_run, width=14,
-            style="Accent.TButton",
-        )
-        self._run_btn.pack(side="right", padx=4)
+        # ⚠️ 実行ボタンは**ここには置かない**＝進捗帯の右端（下記 row2）が
+        # アプリ共通の位置（I-029）。この列に置いていたころは、同じ見た目の
+        # 「行を追加 / インポート / …」と並んで**走らせる操作が編集操作に紛れて**
+        # いた。位置は tests/test_ui_consistency.py が全窓横断で縛る。
 
         # 進捗エリア（2段構成）
         prog_frame = ttk.Frame(self)
@@ -398,18 +395,25 @@ class BatchBuilderWindow(tk.Toplevel):
         self._prog_label.pack(side="left", fill="x", expand=True)
         # OK/NG/ERR は個別の色分けをやめ、他の ttk.Label と同一スタイルへ統一する
         # （I-005・従来の tk.Label＋前景色ハードコードはダークテーマに追従しない）。
-        self._ok_label  = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
+        # ⛔ 太字は使わない（画面の強調は配置と余白で作る＝theme.py の決定）。
+        self._ok_label  = ttk.Label(row1, text="")
         self._ok_label.pack(side="left", padx=(8, 2))
-        self._ng_label  = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
+        self._ng_label  = ttk.Label(row1, text="")
         self._ng_label.pack(side="left", padx=2)
-        self._err_label = ttk.Label(row1, text="", font=theme.ui_font(self, "bold"))
+        self._err_label = ttk.Label(row1, text="")
         self._err_label.pack(side="left", padx=(2, 0))
 
-        # 下段: バー (左・伸縮) + N/M (P%) (右)
+        # 下段: バー (左・伸縮) + N/M (P%) + **実行**（右端＝全フロー共通の位置）
         row2 = ttk.Frame(prog_frame)
         row2.pack(fill="x", pady=(2, 0))
         self._prog_bar = ttk.Progressbar(row2, orient="horizontal", mode="determinate")
         self._prog_bar.pack(side="left", fill="x", expand=True)
+        # 右端から順に pack する（実行 → カウント）＝ボタンが常に帯の右端に来る。
+        self._run_btn = ttk.Button(
+            row2, text=i18n.t("btn_run_batch"), command=self._on_run, width=14,
+            style="Accent.TButton",
+        )
+        self._run_btn.pack(side="right", padx=(10, 0))
         self._prog_count_label = ttk.Label(
             row2, text="", width=15, anchor="e"
         )
@@ -485,8 +489,7 @@ class BatchBuilderWindow(tk.Toplevel):
 
         # col 0: drag handle（他の ttk ウィジェットとスタイルを統一・I-005）
         handle = ttk.Label(
-            row_frame, text="≡", cursor="fleur",
-            font=theme.ui_font(self, "bold"), width=2,
+            row_frame, text="≡", cursor="fleur", width=2,
         )
         handle.grid(row=0, column=0, padx=2, pady=1)
         handle.bind("<ButtonPress-1>",   lambda e, f=row_frame: self._drag_start(e, f))

@@ -431,6 +431,75 @@ class TestMultiHopWindow:
         finally:
             win.destroy(); root.destroy()
 
+    # --------------------------------------------------------
+    # 地図との配線（**両側を通す**）
+    # --------------------------------------------------------
+    # ⚠️ このクラスのテストは長らく `append_waypoint`（受け取る側）しか叩いて
+    # おらず、**呼び出す側が一度も動いていなかった**ことを見逃した（5b の
+    # `getattr(self.master, "open_map_for_waypoints")` は `self.master` が Tk の
+    # ルートなので常に None → 「地図を開けません」で終わっていた）。以後は
+    # ランチャーから地図までを通したところをゲートにする。
+
+    def test_from_map_button_reaches_the_launcher(self, monkeypatch):
+        """「地図から選ぶ」がランチャー経由で地図へ届き、宛先がこの窓になること。"""
+        from conftest import make_themed_root
+        from views import dialogs
+        from views.launcher import SimLauncher
+        root = make_themed_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        try:
+            app = SimLauncher(root, lambda _t: None)
+            app._on_open_multihop()
+            win = app._multihop_win
+
+            seen: dict = {}
+            monkeypatch.setattr(dialogs, "alert",
+                                lambda *a, **k: seen.setdefault("alert", True))
+
+            class _FakeMap:
+                def start_waypoint_mode(self, sink):
+                    seen["sink"] = sink
+
+            monkeypatch.setattr(app, "_on_open_map",
+                                lambda: setattr(app, "_map_win", _FakeMap()))
+            win._on_from_map()
+
+            assert "alert" not in seen, "「地図を開けません」で終わっている（配線切れ）"
+            assert seen.get("sink") is win
+        finally:
+            root.destroy()
+
+    def test_map_can_open_the_relay_window_by_itself(self, monkeypatch):
+        """地図のモードセレクタから中継点モードを選んでも受け皿が用意されること。
+
+        受け皿が無いまま入ると、クリックしても**何も起きず・何も出ない**死んだ
+        モードになる（連続追加は `append_provider` で受け皿を確保しているので、
+        中継点モードだけが非対称だった）。
+        """
+        from conftest import make_themed_root
+        from views import map_window
+        from views.launcher import SimLauncher
+        root = make_themed_root()
+        root.withdraw()
+        try:
+            app = SimLauncher(root, lambda _t: None)
+            captured: dict = {}
+
+            class _RecordingMap:
+                def __init__(self, parent, config, **kwargs):
+                    captured.update(kwargs)
+                    self._win = root
+
+            monkeypatch.setattr(map_window, "MapWindow", _RecordingMap)
+            app._on_open_map()
+
+            provider = captured.get("waypoint_provider")
+            assert provider is not None, "地図に中継点モードの受け皿を渡していない"
+            assert provider() is app._multihop_win
+        finally:
+            root.destroy()
+
     def test_collected_path_shares_the_relay_height(self, default_params_dict):
         """画面 → モデルでも**中継点の高さは 1 つ**であること（⑦の端から端まで）。"""
         root, win = self._win(default_params_dict)

@@ -396,13 +396,15 @@ class ScenarioWindow(tk.Toplevel):
         # 実行 & 進捗 & レポート（常に見える帯）
         bar = ttk.Frame(outer)
         bar.pack(fill="x", pady=(10, 6))
+        # 実行帯の型（I-029）＝**バーが左で伸び、実行は帯の右端**。以前はこの窓
+        # だけボタンがバーの左にあり、ランチャー・中継経路と鏡像になっていた。
         self._run_btn = ttk.Button(bar, text=i18n.t("scn_run"), command=self._on_run,
                                    style="Accent.TButton")
-        self._run_btn.pack(side="left")
+        self._run_btn.pack(side="right", padx=(10, 0))
         self._prog_label = ttk.Label(bar, text="")
-        self._prog_label.pack(side="right")
+        self._prog_label.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
-        self._prog_bar.pack(side="left", fill="x", expand=True, padx=10)
+        self._prog_bar.pack(side="left", fill="x", expand=True)
 
         # 結果一覧（残りの高さを使う＝点数が増えてもスクロールで収まる）
         self._result_box = ttk.LabelFrame(outer, text=i18n.t("scn_result"), padding=8)
@@ -427,6 +429,12 @@ class ScenarioWindow(tk.Toplevel):
         self._tree.configure(yscrollcommand=vsb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
+        # 判定色は theme が出所（窓ごとに書かない）。**表を作った時点で当てる**＝
+        # 結果を入れる関数の中だけで当てると、テーマ切替や他窓との突合せで
+        # 「まだ色が無い」状態ができる。
+        theme.apply_verdict_tags(self._tree)
+        self.bind("<<ThemeChanged>>",
+                  lambda _e: theme.apply_verdict_tags(self._tree), add="+")
 
     def _build_compare_tab(self) -> ttk.Frame:
         """ベース列（読み取り専用）＋比較条件 N 列（2026-07-25 要望で N 可変）。
@@ -717,8 +725,6 @@ class ScenarioWindow(tk.Toplevel):
                  f'{units.format_distance(run.terrain.horiz_dist_km)}')
 
         self._tree.delete(*self._tree.get_children())
-        self._tree.tag_configure("ok", foreground="#2e7d32")
-        self._tree.tag_configure("ng", foreground="#c62828")
         for p in run.points:
             self._tree.insert("", "end", values=(
                 p.label, f"{p.result.p_rx:.2f}", f"{p.result.actual_margin:+.2f}",

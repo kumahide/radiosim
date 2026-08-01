@@ -52,6 +52,7 @@ class MultiHopWindow(tk.Toplevel):
         meta_provider:   "Callable[[], dict] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
         initial_path:    "mh.MultiHopPath | None" = None,
+        map_opener:      "Callable[[object], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("mh_window_title"))
@@ -62,6 +63,8 @@ class MultiHopWindow(tk.Toplevel):
         self._meta_provider   = meta_provider
         self._meta            = self._snapshot_meta()
         self._on_close_cb     = on_close
+        # 地図を中継点モードで開く口（ランチャーが注入する）。
+        self._map_opener      = map_opener
         self._running  = False
         self._last_run: "mh.MultiHopRun | None" = None
 
@@ -141,11 +144,12 @@ class MultiHopWindow(tk.Toplevel):
         # 実行帯＝**進捗バーの右に「実行」**（3 フローと同じ型＝I-029）。
         bar = ttk.Frame(outer)
         bar.pack(fill="x", pady=(10, 6))
-        self._prog_label = ttk.Label(bar, text="")
-        self._prog_label.pack(side="right")
+        # 右端から順に pack する（実行 → ステータス）＝ボタンが常に帯の右端。
         self._run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
                                    command=self._on_run, style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
+        self._prog_label = ttk.Label(bar, text="")
+        self._prog_label.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
         self._prog_bar.pack(side="left", fill="x", expand=True)
 
@@ -206,8 +210,7 @@ class MultiHopWindow(tk.Toplevel):
         self._wp_grid.pack(fill="x")
         for col, key in enumerate(("mh_col_no", "mh_col_name", "mh_col_coord",
                                    "mh_col_height")):
-            ttk.Label(self._wp_grid, text=i18n.t(key),
-                      font=theme.ui_font(self, "bold")).grid(
+            ttk.Label(self._wp_grid, text=i18n.t(key)).grid(
                           row=0, column=col, padx=4, pady=(0, 2), sticky="w")
 
         btns = ttk.Frame(box)
@@ -231,8 +234,7 @@ class MultiHopWindow(tk.Toplevel):
         self._hop_grid.pack(fill="x")
         for col, key in enumerate(("mh_col_section", "lbl_b_freq",
                                    "lbl_b_gain_tx", "lbl_b_gain_rx")):
-            ttk.Label(self._hop_grid, text=i18n.t(key),
-                      font=theme.ui_font(self, "bold")).grid(
+            ttk.Label(self._hop_grid, text=i18n.t(key)).grid(
                           row=0, column=col, padx=4, pady=(0, 2), sticky="w")
         ttk.Label(box, text=i18n.t("mh_hint_inherit"),
                   foreground=theme.muted_foreground(box)).pack(anchor="w", pady=(4, 0))
@@ -261,6 +263,12 @@ class MultiHopWindow(tk.Toplevel):
         self._tree.configure(yscrollcommand=vsb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
+        # 判定色（OK/緑・NG/赤）は条件探索と同じ出所から取る。行に `ok`/`ng` の
+        # タグは付いていたのに**色を当てておらず、この窓だけ同色**だった
+        # （レポート側は色分けしていたので、画面だけが落ちていた）。
+        theme.apply_verdict_tags(self._tree)
+        self.bind("<<ThemeChanged>>",
+                  lambda _e: theme.apply_verdict_tags(self._tree), add="+")
 
     def _fit_to_content(self) -> None:
         window_fit.fit_to_content(self, min_w=self._BASE_W)
@@ -373,12 +381,16 @@ class MultiHopWindow(tk.Toplevel):
 
         地図は**アプリ唯一のインスタンス**で、モードで宛先を切り替える設計
         （2.3 D2）。ここはその 3 つ目のシンク＝**1 点ずつ順に足す**。
+
+        ⚠️ **親ウィジェットからメソッドを探さない**（`getattr(self.master, …)`）。
+        `self.master` は Tk のルートで、ランチャー（`SimLauncher`）はウィジェット
+        ではないため**必ず None になり、この機能は一度も動かなかった**。依存は
+        バッチの `load_params`・条件探索の `config_provider` と同じく**注入**する。
         """
-        opener = getattr(self.master, "open_map_for_waypoints", None)
-        if opener is None:
+        if self._map_opener is None:
             dialogs.alert(self, i18n.t("dlg_input_error"), i18n.t("mh_err_no_map"))
             return
-        opener(self)
+        self._map_opener(self)
 
     def append_waypoint(self, lat: float, lon: float) -> str:
         """地図からの 1 点追加（`_WaypointSink` の実装）。
