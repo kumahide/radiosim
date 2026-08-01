@@ -553,9 +553,10 @@ class MultiHopWindow(tk.Toplevel):
             self._on_error(args[0])
 
     def _add_result_row(self, index: int, pr) -> None:
-        wp = self._wp_vars
-        section = (f"{wp[index - 1]['name'].get()} → {wp[index]['name'].get()}"
-                   if index < len(wp) else pr.row.path_id)
+        # 区間名は `multihop` が決める（接続規則を画面側へ書き写さない）。
+        # 実行中の経路は `_collect_path` で作った側にあるので、行の備考
+        # （`hop_rows` が「A → B」を入れている）をそのまま使う。
+        section = pr.row.note or pr.row.path_id
         r = pr.result
         if r is None:
             self._tree.insert("", "end", values=(index, section, "—", "—", "ERROR"),
@@ -579,8 +580,7 @@ class MultiHopWindow(tk.Toplevel):
         worst_label = "—"
         if worst is not None:
             idx = run.hops.index(worst)
-            worst_label = (f"#{idx + 1} {run.path.waypoints[idx].name} → "
-                           f"{run.path.waypoints[idx + 1].name}")
+            worst_label = f"#{idx + 1} {mh.hop_label(run.path, idx)}"
         self._summary_label.config(text=i18n.t("mh_summary").format(
             status="OK" if run.ok else "NG",
             margin=f"{margin:+.2f}" if margin is not None else "—",

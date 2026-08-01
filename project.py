@@ -150,6 +150,10 @@ def to_dict(doc: ProjectDoc) -> dict:
         data["multihop"] = {
             "path_id":   p.path_id,
             "note":      p.note,
+            # 点列をどう結ぶか（既定＝鎖）。**書いておくのは、後から星を使う版が
+            # 出たときに古いファイルの意味が変わらないため**（読む側は未知の値を
+            # 鎖として扱う＝`multihop.links` の約束）。
+            "topology":  p.topology,
             # 高さは**地点にしかない**（`multihop.Waypoint` の核心）。区間側に
             # 高さを足すと二重入力が復活するので、この形を崩さないこと。
             "waypoints": [{"name": w.name, "lat": w.lat, "lon": w.lon, "h": w.h}
@@ -228,6 +232,9 @@ def from_dict(data: dict) -> ProjectDoc:
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
                          for rf in m.get("hop_rf", []) if isinstance(rf, dict)],
             note      = str(m.get("note", "")),
+            # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
+            # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
+            topology  = str(m.get("topology", mh.TOPOLOGY_CHAIN)),
         )
     return doc
 

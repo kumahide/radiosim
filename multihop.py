@@ -85,6 +85,28 @@ class HopRF:
     gain_rx:  "float | None" = None
 
 
+# ============================================================
+# トポロジー＝**点列と接続規則を分ける**（2026-08-01）
+# ------------------------------------------------------------
+# 中継経路は「鎖」（P1→P2→P3）だが、**同じ点列を別の規則で結べば別の使い方に
+# なる**：応用プロダクト（RadioSim for Drone）は「星」（GCS→各点）で、点列・
+# 高さの持ち方・1 行 = 1 区間の出力まで構造が同一＝**違うのは接続規則だけ**。
+#
+# ⇒ 鎖を式に埋め込まず（`waypoints[i], waypoints[i+1]` を各所に書かず）、
+#    **接続の導出を `links()` 1 か所に閉じる**。ここを分けておかないと、
+#    後から星を足すときに「どこが隣接ペアを前提にしているか」を全部探し直す
+#    ことになる（[[project-radiosim-for-drone]] の「今ならほぼゼロ・後だと作り直し」）。
+#
+# ⚠️ **これはデータ構造の布石であって、機能ではない**。星は UI から作れないし
+#    作らない（⑤＝作れないものの表現だけ用意しない）。
+# ⚠️ **集約規則（`MultiHopRun.ok` / `overall_margin` の min）は鎖の意味論**。
+#    星は「独立した N 本」なので min で潰すと各点の値という肝心の情報が消える。
+#    星を実際に使うときは集約も併せて決めること（2.6 では決めない）。
+TOPOLOGY_CHAIN = "chain"     # P1 → P2 → P3（中継経路＝2.6 の唯一の使い方）
+TOPOLOGY_STAR  = "star"      # P1 → P2, P1 → P3, …（先頭がハブ）
+TOPOLOGIES     = (TOPOLOGY_CHAIN, TOPOLOGY_STAR)
+
+
 @dataclass
 class MultiHopPath:
     """中継経路 1 本＝waypoint 列と、その間の区間ごとの諸元。"""
@@ -92,10 +114,24 @@ class MultiHopPath:
     waypoints: list[Waypoint]
     hop_rf:    list[HopRF] = field(default_factory=list)
     note:      str         = ""
+    # 点列をどう結ぶか。**既定は鎖**＝既存のファイル・呼び出しは何も変わらない。
+    topology:  str         = TOPOLOGY_CHAIN
 
     @property
     def hop_count(self) -> int:
-        return max(len(self.waypoints) - 1, 0)
+        return len(links(self))
+
+
+def links(path: MultiHopPath) -> list[tuple[int, int]]:
+    """点列 → 区間（waypoint の添字ペア）＝**接続規則はここだけが知っている**。
+
+    未知のトポロジーは鎖として扱う（新しい版が書いたファイルを古い版で開いた
+    ときに落とさない＝`.rsproj` の「未知は既定へ」と同じ流儀）。
+    """
+    n = len(path.waypoints)
+    if path.topology == TOPOLOGY_STAR:
+        return [(0, i) for i in range(1, n)]
+    return [(i, i + 1) for i in range(n - 1)]
 
 
 @dataclass
@@ -138,6 +174,26 @@ class MultiHopRun:
         return min(margins)
 
 
+def hop_endpoints(path: MultiHopPath, index: int) -> "tuple[Waypoint, Waypoint] | None":
+    """区間 `index` の両端の地点（範囲外なら None）。
+
+    **表示側はここを通す**＝「区間 i の端点は `wp[i]` と `wp[i+1]`」という式を
+    レポート・CSV・窓へ書き写すと、接続規則を 1 か所に閉じた意味が無くなる
+    （実際 5a の時点で同じ式が 4 か所へ散っていた）。
+    """
+    pairs = links(path)
+    if not 0 <= index < len(pairs):
+        return None
+    a, b = pairs[index]
+    return path.waypoints[a], path.waypoints[b]
+
+
+def hop_label(path: MultiHopPath, index: int, fallback: str = "") -> str:
+    """区間 `index` の見出し（`A → B`）。範囲外なら `fallback`。"""
+    ends = hop_endpoints(path, index)
+    return f"{ends[0].name} → {ends[1].name}" if ends else fallback
+
+
 def hop_id(path_id: str, index: int) -> str:
     """ホップの ID（**出力ディレクトリ名になる**ので衝突しない形にする）。"""
     return f"{path_id}_h{index + 1}"
@@ -146,12 +202,13 @@ def hop_id(path_id: str, index: int) -> str:
 def hop_rows(path: MultiHopPath) -> list[batch.PathRow]:
     """waypoint 列 → `PathRow` の列（**導出**＝ここでしか作らない）。
 
-    hop i は `wp[i] → wp[i+1]`。高さは**地点から**、無線諸元は**区間から**取る。
-    戻り値をユーザーに編集させないこと（編集させると二重入力が復活する）。
+    どの地点とどの地点を結ぶかは `links()` が決める（鎖なら `wp[i] → wp[i+1]`）。
+    高さは**地点から**、無線諸元は**区間から**取る。戻り値をユーザーに編集させない
+    こと（編集させると二重入力が復活する）。
     """
     rows: list[batch.PathRow] = []
-    for i in range(path.hop_count):
-        tx, rx = path.waypoints[i], path.waypoints[i + 1]
+    for i, (a, b) in enumerate(links(path)):
+        tx, rx = path.waypoints[a], path.waypoints[b]
         rf = path.hop_rf[i] if i < len(path.hop_rf) else HopRF()
         rows.append(batch.PathRow(
             path_id  = hop_id(path.path_id, i),
@@ -296,8 +353,9 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
             "rx_dbm", "margin_db", "slant_m", "f1_pct", "error",
         ])
         for i, pr in enumerate(run.hops):
-            wp_from = run.path.waypoints[i].name
-            wp_to   = run.path.waypoints[i + 1].name
+            ends = hop_endpoints(run.path, i)
+            wp_from = ends[0].name if ends else ""
+            wp_to   = ends[1].name if ends else ""
             r, p = pr.result, pr.params
             w.writerow([
                 report_common.csv_cell(run.path.path_id), i + 1,

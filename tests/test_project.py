@@ -169,6 +169,26 @@ def test_empty_batch_rows_is_distinct_from_missing():
     assert got.batch_rows == []
 
 
+def test_topology_round_trips_and_defaults_to_chain():
+    """接続規則（トポロジー）が往復し、**古いファイルは鎖として読める**こと。
+
+    2.6 は鎖しか使わないが、ファイルに書いておかないと「星を使う版」が出たとき
+    に古いファイルの意味が変わる（未指定＝その版の既定、になってしまう）。
+    """
+    doc = _doc()
+    assert doc.multihop is not None
+    doc.multihop.topology = mh.TOPOLOGY_STAR
+    got = project.from_dict(project.to_dict(doc))
+    assert got.multihop is not None
+    assert got.multihop.topology == mh.TOPOLOGY_STAR
+
+    data = project.to_dict(_doc())
+    del data["multihop"]["topology"]          # 2.6a8 以前が書いたファイル相当
+    old = project.from_dict(data)
+    assert old.multihop is not None
+    assert old.multihop.topology == mh.TOPOLOGY_CHAIN
+
+
 def test_unknown_keys_are_ignored():
     """未知キーは無視（新しい版が足したキーで古い版が落ちない）。"""
     data = project.to_dict(_doc())

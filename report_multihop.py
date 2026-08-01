@@ -27,6 +27,7 @@ import i18n
 import report_common
 import report_summary
 import units
+import multihop as mh
 from multihop import MultiHopRun
 
 
@@ -65,9 +66,7 @@ def route_sheet_css() -> str:
 .sheet.multihop .map img{width:100%;border:1px solid #ddd;border-radius:4px}
 .sheet.multihop .map{margin-bottom:10px}
 .sheet.multihop .note{font-size:9px;color:#777;margin-top:8px}
-/* 台帳の備考・グラフ列とヘッダの単位行＝**バッチ台帳と同じ見せ方**（⑧）。 */
-.sheet.multihop table.hops td.c-note{text-align:left;white-space:normal;
-  word-break:break-word;font-size:8px;color:#555}
+/* 台帳のグラフ列とヘッダの単位行＝**バッチ台帳と同じ見せ方**（⑧）。 */
 .sheet.multihop table.hops img.thumb{max-height:40px;border:1px solid #ddd;
   border-radius:3px;vertical-align:middle}
 .sheet.multihop .all-link{margin:0 0 10px;font-size:11px}
@@ -86,8 +85,12 @@ _HOP_COL_KEYS = (
     "mh_heights", "html_col_rx", "html_col_margin", "html_col_fspl",
     "html_col_diff", "html_col_veg", "html_col_env", "html_col_rain",
     "html_col_gas", "html_col_total_loss", "html_col_slant", "html_col_f1",
-    "html_col_note", "html_col_graph",
+    "html_col_graph",
 )
+# ⚠️ **備考列はバッチにあってここには無い**（意図的）。中継のホップは
+# `hop_rows` が備考へ「A → B」を入れる導出物なので、載せると**区間列と同じ
+# 文字が並ぶだけ**＝情報がゼロの列になる（列を揃えること自体が目的ではない）。
+# 区間ごとの自由記述を入力できるようにした日に、ここへ戻すこと。
 
 
 def _hop_header_cells() -> str:
@@ -123,11 +126,15 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                     if pr.result is not None and pr.result.status != "OK")
     err_count = sum(1 for pr in run.hops if pr.result is None)
 
+    # 経路の並び。**鎖のときだけ「A → B → C」と読める**（星なら中心と枝の関係に
+    # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
     names = " → ".join(_html.escape(w.name) for w in run.path.waypoints)
     rows_html = ""
     for i, pr in enumerate(run.hops):
-        wp_from = _html.escape(run.path.waypoints[i].name)
-        wp_to   = _html.escape(run.path.waypoints[i + 1].name)
+        # 区間の端点は `multihop` が決める（接続規則を表示側へ書き写さない）。
+        ends    = mh.hop_endpoints(run.path, i)
+        wp_from = _html.escape(ends[0].name if ends else "")
+        wp_to   = _html.escape(ends[1].name if ends else "")
         pid     = pr.row.path_id                 # validated: [A-Za-z0-9_-]+
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         classes = []
@@ -146,7 +153,6 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             )
             continue
         freq_disp = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
-        note_esc  = _html.escape(pr.row.note)
         pid_safe  = pr.row.path_id           # validated: [A-Za-z0-9_-]+
         # 単位は列見出しが持つ（`unit=False`）＝バッチ台帳と同じ約束。数値だけを
         # 並べるほうが桁で読める（画面パネルの桁揃えと同じ理由）。
@@ -167,7 +173,6 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
-            f"<td class='c-note'>{note_esc}</td>"
             f"<td><a href='{href}'>"
             f"<img src='{pid_safe}/profile.png' class='thumb'></a></td></tr>\n"
         )
@@ -175,9 +180,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     worst_label = "—"
     if worst is not None:
         idx = run.hops.index(worst)
-        worst_label = (f"#{idx + 1} "
-                       f"{_html.escape(run.path.waypoints[idx].name)} → "
-                       f"{_html.escape(run.path.waypoints[idx + 1].name)}")
+        worst_label = f"#{idx + 1} " + _html.escape(mh.hop_label(run.path, idx))
 
     map_html = (f"<div class='map'><img src='data:image/png;base64,{map_b64}'></div>"
                 if map_b64 else
