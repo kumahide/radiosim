@@ -75,6 +75,7 @@ class BatchBuilderWindow(tk.Toplevel):
         load_params:     "Callable[[dict], None] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
         on_paths_changed: "Callable[[], None] | None" = None,
+        initial_rows:    "list | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
@@ -128,7 +129,14 @@ class BatchBuilderWindow(tk.Toplevel):
         # DPI 変更などで貼り直すときは、列幅同期からやり直す（フォントが変われば
         # 列の実測幅もスクロールバーの太さも変わる）。window_fit.refit_all が使う。
         self._fit_refit = self._run_sync
-        self._add_row()
+        # プロジェクト（`.rsproj`）から開いたときは、その行で始める（凍結した
+        # ランチャー値の 1 行ではなく）。**空リストも「行が無い」という情報**なので
+        # None と区別する（`None`＝節を持たない＝従来どおり 1 行で始める）。
+        if initial_rows is None:
+            self._add_row()
+        else:
+            for row in initial_rows:
+                self._add_row(row)
         self._run_sync()          # 同期 → その中で窓を中身に合わせる
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
@@ -734,6 +742,15 @@ class BatchBuilderWindow(tk.Toplevel):
             return
         self._on_paths_changed()
 
+    def close_window(self) -> None:
+        """他所（ランチャーのプロジェクト読込）から閉じるための公開口。
+
+        3 つの窓で**名前を揃える**＝内部ハンドラ名で分岐させない（この窓は
+        `_on_close` を*コールバックの保管場所*として使っているので、名前で
+        分岐すると「閉じずにコールバックだけ呼ぶ」に化ける）。
+        """
+        self._on_close_window()
+
     def _on_close_window(self) -> None:
         """ウィンドウを閉じる。閉じる旨をランチャーへ通知する（地図の連携解除）。"""
         cb = self._on_close
@@ -742,9 +759,13 @@ class BatchBuilderWindow(tk.Toplevel):
         # 失敗＝map_window.close_map_safely 参照）。ワーカースレッドは走り続けるが、
         # 成果物生成はワーカー内で完結するので実行そのものは完走する。
         self._pump.stop()
-        self.destroy()
+        # ⚠️ **通知は破棄より前**（条件探索・中継経路と同じ順序）。ランチャーは
+        # この通知で行を回収して `.rsproj` へ持ち越すので、先に destroy すると
+        # 「バッチ窓を閉じただけで行が消えたファイルを保存する」ことになる
+        # （project.py が「節が無い＝空ではない」で守っている性質と対）。
         if cb is not None:
             cb()
+        self.destroy()
 
     # ----------------------------------------------------------
     # ドラッグ&ドロップ並び替え
@@ -832,6 +853,16 @@ class BatchBuilderWindow(tk.Toplevel):
             self._row_frames.clear()
             self._row_entries.clear()
             self._notify_paths_changed()
+
+    def project_rows(self) -> list[batch.PathRow]:
+        """プロジェクト保存のための行の写し（`replace_rows` と対）。
+
+        `_read_table_rows` と同じもの＝**保存のために別の読み方を作らない**
+        （行の意味が 2 通りになると、CSV に出る行と `.rsproj` に入る行が
+        黙ってずれる）。パースできない欄は NaN のまま入り、実行時に
+        `validate_rows` が 1 か所で弾く（保存はいつでも通す）。
+        """
+        return self._read_table_rows()
 
     def _read_table_rows(self) -> list[batch.PathRow]:
         """テーブルの入力内容を PathRow リストに変換する。NaN でパース失敗を表現する。"""

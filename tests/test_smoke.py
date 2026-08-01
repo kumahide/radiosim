@@ -142,6 +142,138 @@ def test_report_meta_flows_from_launcher():
 
 
 # ============================================================
+# プロジェクト（`.rsproj`）の UI 配線（5c-2）
+# ============================================================
+# ヘッドレスの読み書きは tests/test_project.py が守る。ここが守るのは
+# **窓 ↔ ランチャーの受け渡し**＝「開いている窓から集める／閉じている窓の節は
+# 持ち越す／読み込んだ節は開いた窓へ入る」の 3 点。
+
+def _launcher_with_windows(root):
+    """ランチャー＋3 つの窓を開いた状態を作る（プロジェクト系テストの母体）。"""
+    import batch
+    from views.launcher import SimLauncher
+    app = SimLauncher(root, lambda _t: None)
+    app._project_var.set("案件 A")
+    app._memo_var.set("メモ A")
+
+    bw = app.ensure_batch_window()
+    bw.replace_rows([
+        batch.PathRow(path_id="P1", lat_tx=34.5, lon_tx=132.4,
+                      lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0),
+        batch.PathRow(path_id="P2", lat_tx=34.7, lon_tx=132.6,
+                      lat_rx=34.8, lon_rx=132.7, h_tx=20.0, h_rx=5.0,
+                      freq_mhz=400.0),
+    ])
+    app._on_open_scenario()
+    app._scenario_win._mode.set("sweep")
+    app._scenario_win._cmp_cols[0]["h_tx"].set("55")
+    app._scenario_win._from_var.set("15")
+
+    app._on_open_multihop()
+    mw = app._multihop_win
+    for vars_, coord in zip(mw._wp_vars, ("34.50, 132.40", "34.60, 132.50")):
+        vars_["coord"].set(coord)
+    mw._hop_vars[0]["freq"].set("5600")
+    return app
+
+
+def test_project_collects_from_open_windows_and_round_trips(tmp_path):
+    """開いている 3 窓の内容が `.rsproj` へ入り、読み直しても同じであること。"""
+    pytest.importorskip("tkinter")
+    import project
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = _launcher_with_windows(root)
+        doc, warnings = app._collect_project()
+        assert warnings == []
+        assert doc.meta["project_name"] == "案件 A"
+        assert [r.path_id for r in doc.batch_rows] == ["P1", "P2"]
+        assert doc.scenario.mode == "sweep"
+        assert doc.scenario.compare[0]["h_tx"] == "55"
+        assert doc.scenario.sweep["from"] == "15"
+        assert [w.lat for w in doc.multihop.waypoints] == [34.50, 34.60]
+        assert doc.multihop.hop_rf[0].freq_mhz == 5600.0
+
+        path = str(tmp_path / "p.rsproj")
+        project.save(doc, path)
+        again = project.load(path)
+        assert [r.path_id for r in again.batch_rows] == ["P1", "P2"]
+        assert again.scenario.sweep["from"] == "15"
+        assert again.multihop.hop_rf[0].freq_mhz == 5600.0
+    finally:
+        root.destroy()
+
+
+def test_project_keeps_sections_of_closed_windows():
+    """**窓を閉じただけで節が消えないこと**（データ喪失の防止・譲らない性質）。
+
+    バッチ窓を閉じてから保存すると行が消えたファイルを書く、という壊れ方を
+    止める。バッチは通知が破棄より前に来る順序に依存しているので、順序が
+    戻ればこのテストが落ちる。
+    """
+    pytest.importorskip("tkinter")
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = _launcher_with_windows(root)
+        app._batch_win.close_window()
+        app._scenario_win.close_window()
+        app._multihop_win.close_window()
+        doc, warnings = app._collect_project()
+        assert warnings == []
+        assert [r.path_id for r in doc.batch_rows] == ["P1", "P2"]
+        assert doc.scenario.compare[0]["h_tx"] == "55"
+        assert [w.lat for w in doc.multihop.waypoints] == [34.50, 34.60]
+    finally:
+        root.destroy()
+
+
+def test_project_sections_seed_reopened_windows():
+    """読み込んだ節が、その窓を**開いたとき**に入ること（凍結方式と対）。"""
+    pytest.importorskip("tkinter")
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = _launcher_with_windows(root)
+        doc, _ = app._collect_project()
+        for win in (app._batch_win, app._scenario_win, app._multihop_win):
+            win.close_window()
+
+        app._project = doc
+        bw = app.ensure_batch_window()
+        assert [r.path_id for r in bw.project_rows()] == ["P1", "P2"]
+        app._on_open_scenario()
+        assert app._scenario_win._mode.get() == "sweep"
+        assert app._scenario_win._cmp_cols[0]["h_tx"].get() == "55"
+        assert app._scenario_win._from_var.get() == "15"
+        app._on_open_multihop()
+        assert [v["coord"].get() for v in app._multihop_win._wp_vars] == \
+            ["34.500000, 132.400000", "34.600000, 132.500000"]
+        assert app._multihop_win._hop_vars[0]["freq"].get() == "5600.0"
+    finally:
+        root.destroy()
+
+
+def test_project_does_not_save_unreadable_batch_rows(tmp_path):
+    """読めない値のある節は**保存せず警告する**（壊れた JSON を書かない）。"""
+    pytest.importorskip("tkinter")
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = _launcher_with_windows(root)
+        app._batch_win._row_entries[0][3].delete(0, tkinter.END)
+        app._batch_win._row_entries[0][3].insert(0, "abc")   # h_tx が読めない
+        doc, warnings = app._collect_project()
+        assert warnings and "P1" in warnings[0]
+        assert doc.batch_rows is None      # 前回値が無いので節ごと出ない
+        import project
+        project.save(doc, str(tmp_path / "p.rsproj"))   # 例外なく書ける
+    finally:
+        root.destroy()
+
+
+# ============================================================
 # ネットワーク遮断ゲートの自己検査
 # ============================================================
 # conftest の _block_network が「効かなくなったこと」に気づけるようにする。

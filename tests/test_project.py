@@ -179,6 +179,36 @@ def test_unknown_keys_are_ignored():
 
 
 # ------------------------------------------------------------
+# 3b. 書けたファイルは必ず正しい JSON（NaN を書かない）
+# ------------------------------------------------------------
+# バッチの表は入力途中を許すため、読めない欄を NaN のまま持つ（`_read_table_rows`）。
+# それを素の json.dump で書くと `NaN` リテラルが混ざり、**規格外の JSON**（他の
+# ツールが読めないファイル）が黙って出来上がる。⇒ 保存側で弾き、UI は保存前に
+# `unreadable_row` で気づいて**その節だけ保存しない**（警告つき）。
+
+def test_unreadable_row_finds_non_finite_values():
+    rows = [batch.PathRow(path_id="ok", lat_tx=34.5, lon_tx=132.4,
+                          lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0),
+            batch.PathRow(path_id="bad", lat_tx=34.5, lon_tx=132.4,
+                          lat_rx=34.6, lon_rx=132.5,
+                          h_tx=float("nan"), h_rx=10.0)]
+    assert project.unreadable_row(rows) is rows[1]
+    assert project.unreadable_row(rows[:1]) is None
+    assert project.unreadable_row(None) is None
+    # 任意欄（空欄＝共通設定の踏襲）の None は「読めない値」ではない。
+    rows[1].h_tx = 30.0
+    assert project.unreadable_row(rows) is None
+
+
+def test_save_refuses_to_write_non_finite_numbers(tmp_path):
+    doc = project.ProjectDoc(batch_rows=[
+        batch.PathRow(path_id="bad", lat_tx=float("inf"), lon_tx=132.4,
+                      lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)])
+    with pytest.raises(ValueError):
+        project.save(doc, str(tmp_path / "p.rsproj"))
+
+
+# ------------------------------------------------------------
 # 4. schema version
 # ------------------------------------------------------------
 def test_newer_schema_is_rejected():

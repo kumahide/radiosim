@@ -40,6 +40,7 @@ CSV（`batch.CSV_COLUMNS`）は**人が Excel で編集する外部契約**で�
 from __future__ import annotations
 
 import json
+import math
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -252,17 +253,40 @@ def _row_from_dict(r: dict) -> batch.PathRow:
 # ============================================================
 # ファイル I/O
 # ============================================================
+def unreadable_row(rows: "list[batch.PathRow] | None") -> "batch.PathRow | None":
+    """数値として読めない値（NaN/inf）を含む行を 1 つ返す（無ければ None）。
+
+    バッチの表は**入力途中でも読める**ように、パースできない欄を NaN のまま持つ
+    （`_read_table_rows`）。それをそのまま書くと `NaN` リテラルが混ざって
+    **JSON として不正なファイル**になる（他のツールで開けない・`allow_nan=False`
+    が下で弾く）。⇒ 呼び出し側が保存前に気づけるようにここで見つける。
+    """
+    if not rows:
+        return None
+    for row in rows:
+        for value in (row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx,
+                      row.h_tx, row.h_rx, row.freq_mhz, row.gain_tx, row.gain_rx):
+            if value is not None and not math.isfinite(value):
+                return row
+    return None
+
+
 def save(doc: ProjectDoc, path: str) -> None:
     """`.rsproj` として保存する。
 
     ⚠️ **失敗を握り潰さない**（I-010 と同クラス）＝書けなかったことを呼び出し側が
     知らないまま「保存しました」と出すのが最悪の振る舞い。例外はそのまま上げる。
 
+    ⚠️ `allow_nan=False`＝**書けたファイルは必ず正しい JSON**（Python の json は
+    既定で `NaN` / `Infinity` を書くが、これは JSON の規格外で他のツールが読めない）。
+    読めない値は保存前に `unreadable_row` で気づかせる方が、静かに壊れたファイルを
+    作るより良い。
+
     座標は `params` の中で **DD 固定**（データ＝DD 原則）。呼び出し側（ランチャーの
     `_current_config`）が既に DD へ整えている＝ここで表示形式を持ち込まない。
     """
     with open(path, "w", encoding="utf-8") as f:
-        json.dump(to_dict(doc), f, indent=2, ensure_ascii=False)
+        json.dump(to_dict(doc), f, indent=2, ensure_ascii=False, allow_nan=False)
 
 
 def load(path: str) -> ProjectDoc:
