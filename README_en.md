@@ -45,7 +45,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **A4 reports (v2)**: per-path / summary as a single print-ready A4 page (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer)
 - **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
 - **All-paths overview map** in the summary report (color-coded by verdict)
-- **Relay routes (multi-hop)**: a waypoint list is the source of truth; each hop runs an independent link budget (regenerative relay). The overall verdict is the min (the tightest hop), reported alongside the per-hop breakdown
+- **Relay routes**: a waypoint list is the source of truth; each section runs an independent link budget (regenerative relay). The overall verdict is the min (the tightest section), reported alongside the per-section breakdown
 - **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (never results, never app settings)
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
@@ -599,16 +599,16 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 | `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
-### Relay Route (multi-hop)
+### Relay Route
 
 Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 | File | Contents |
 | --- | --- |
-| `route.html` | Combined sheet (overall verdict = min, per-hop breakdown, overview map) |
-| `report_all.html` | Combined sheet + every hop in one printable document |
-| `hops.csv` | **One row per hop** (a separate contract from the batch `summary.csv`) |
-| `{id}/` | Per-hop package (same structure as Single Mode) |
+| `route.html` | Combined sheet (overall verdict = min, per-section breakdown, overview map) |
+| `report_all.html` | Combined sheet + every section in one printable document |
+| `hops.csv` | **One row per section** (a separate contract from the batch `summary.csv`; the file name and column names stay `hop*`) |
+| `{id}/` | Per-section package (same structure as Single Mode) |
 
 ---
 
@@ -624,7 +624,7 @@ A single JSON file that bundles **the whole input set**. Read and written from *
 | `params` | Launcher sim parameters (coordinates always DD) |
 | `batch` | Batch rows, keyed by `PathRow` attribute names (not CSV column names) |
 | `scenario` | Explorer conditions, **kept as the on-screen strings** |
-| `multihop` | Relay waypoints and per-hop RF |
+| `multihop` | Relay waypoints and per-section RF |
 
 **Never included**: results (that is what `results/` is for), app settings (theme / language / proxy), window geometry or open/closed state. App settings are excluded so that opening someone else's project cannot silently switch your language or proxy — both the reader and the writer go through `config.select_sim`.
 
@@ -666,7 +666,7 @@ Loading closes the open windows (batch / explorer / relay route) after asking fo
   simulation.py   DEM fetch management, terrain cache, calculation calls
   batch.py        CSV I/O, validation, batch execution engine
   scenario.py     Condition explorer runner (fixed terrain, N conditions, phases)
-  multihop.py     Relay path engine (waypoints are the source of truth; overall verdict is the weakest hop)
+  multihop.py     Relay path engine (waypoints are the source of truth; overall verdict is the weakest section)
   project.py      Project files (.rsproj) — bundles the input set (never results, never app settings)
   report_scenario.py Condition explorer output (line chart + table, CSV; headless)
   report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)

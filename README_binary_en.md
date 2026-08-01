@@ -16,7 +16,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 5. [Usage — Single Mode](#usage--single-mode)
 6. [Usage — Batch Mode](#usage--batch-mode)
 7. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
-8. [Usage — Relay Route](#usage--relay-route-multi-hop)
+8. [Usage — Relay Route](#usage--relay-route)
 9. [Project Files (.rsproj)](#project-files-rsproj)
 10. [Input Parameters](#input-parameters)
 11. [Calculation Models](#calculation-models)
@@ -50,7 +50,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **All-paths overview map** in the summary report (color-coded by verdict)
 - **Condition Explorer (compare / sweep)**: for a single path, line up results under different conditions (base + up to 5) or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once
 - **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
-- **Relay routes (multi-hop)**: place up to 7 relay points between TX and RX and get a link budget per hop. **The overall verdict is decided by the tightest hop** (regenerative relay — each relay receives and transmits again)
+- **Relay routes**: place up to 7 relay points between TX and RX and get a link budget per section. **The overall verdict is decided by the tightest section** (regenerative relay — each relay receives and transmits again)
 - **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay route into **one file** and pick the work up later
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
@@ -349,7 +349,7 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 
 ---
 
-## Usage — Relay Route (multi-hop)
+## Usage — Relay Route
 
 For **one link carried over relay points**. Open it with the **Relay Route** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
 
@@ -357,32 +357,32 @@ For **one link carried over relay points**. Open it with the **Relay Route** but
 
 Each relay point **receives and then transmits again**. That means:
 
-- Every hop gets its own independent link budget — **hop losses are never added together**.
-- **The overall verdict is decided by the tightest hop.** The report shows the overall verdict **and** the per-hop breakdown, because "it fails" is not actionable unless you can see which hop is short.
+- Every section gets its own independent link budget — **section losses are never added together**.
+- **The overall verdict is decided by the tightest section.** The report shows the overall verdict **and** the per-section breakdown, because "it fails" is not actionable unless you can see which section is short.
 - **Passive reflectors are out of scope.** Their losses combine differently and are not part of this tool's calculation.
 
-### Waypoints and hops
+### Waypoints and sections
 
 - The **waypoint table** is the input surface. **The first point is the transmitter and the last is the receiver**; "Add point" inserts a relay **before the receiver**, so the order on screen is the order of the route. Each row shows its role (TX / relay / RX).
-- Each waypoint has **coordinates and an above-ground height**. **Height belongs to the point, not to the hop** — a relay has one antenna, so it must not be possible to enter one height as "hop 1 RX" and a different one as "hop 2 TX".
-- The **hop table** lets you override **frequency and TX/RX gain per hop** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
+- Each waypoint has **coordinates and an above-ground height**. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
+- The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
 - **Pick from map** switches the map into waypoint mode; each click fills the next waypoint.
-- Up to 7 relay points (8 hops).
+- Up to 7 relay points (8 sections).
 
-> **⚠️ Relay points are meant to be placed, not dragged around to explore.** Each hop fetches its own terrain data, so moving a point triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
+> **⚠️ Relay points are meant to be placed, not dragged around to explore.** Each section fetches its own terrain data, so moving a point triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
 
 ### Running the route
 
-**Run** processes the hops in order, filling the result list hop by hop (received level, margin, verdict), and finishes with the overall verdict (the tightest hop).
+**Run** processes the sections in order, filling the result list section by section (received level, margin, verdict), and finishes with the overall verdict (the tightest section).
 
 The following are saved to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 | File | Contents |
 | --- | --- |
-| `route.html` | Combined sheet: overall verdict, per-hop breakdown, overview map |
-| `report_all.html` | Combined sheet + every hop in one document (Ctrl+P for a single PDF) |
-| `hops.csv` | One row per hop (spreadsheet-compatible) |
-| `{id}/` | Per-hop package (same structure as Single Mode) |
+| `route.html` | Combined sheet: overall verdict, per-section breakdown, overview map |
+| `report_all.html` | Combined sheet + every section in one document (Ctrl+P for a single PDF) |
+| `hops.csv` | One row per section (spreadsheet-compatible) |
+| `{id}/` | Per-section package (same structure as Single Mode) |
 
 ---
 
@@ -398,7 +398,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | Project info (name and free note) | **App settings** (theme, language, proxy) |
 | Batch Mode rows | Window positions, sizes, open/closed state |
 | Explorer conditions (compare columns / sweep axis and range) | |
-| Relay route waypoints and hops | |
+| Relay route waypoints and sections | |
 
 **Leaving out theme, language and proxy is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
 

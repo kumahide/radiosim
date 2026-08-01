@@ -148,7 +148,8 @@ class TestValidate:
         assert mh.validate_path(p)
 
     def test_rejects_too_many_hops(self):
-        assert any("ホップ" in e or "hops" in e
+        # 画面語彙は「区間」（B-031）。コード語彙の `hop` はここでは出さない。
+        assert any("区間" in e or "section" in e
                    for e in mh.validate_path(_path(mh.MAX_HOPS + 2)))
 
     def test_rejects_rf_count_mismatch(self):

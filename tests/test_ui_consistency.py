@@ -280,3 +280,34 @@ def _collect_bold(widget, name: str, out: list) -> None:
             if "bold" in spec:
                 out.append(f"{name}:{child.winfo_class()}")
         _collect_bold(child, name, out)
+
+
+# ============================================================
+# 4. 画面語彙（1 つのものを 2 語で呼ばない）
+# ============================================================
+def test_screen_wording_never_says_hop():
+    """画面・レポートの文言に「ホップ」／`hop` を出さないこと（B-031）。
+
+    中継経路の区間を、同じ成果物の中で `ホップ数` と `区間ごとの設定` の
+    **2 語で呼んでいた**。しかも片方（ホップ）は一般の読みと食い違う——通信で
+    「ホップ数」がリンク数を指す慣例は少なくとも日本には無く、**経由する中継の
+    回数**として読まれる。数字（`len(run.hops)`）は正しいのに語だけが誤って
+    伝わる欠陥なので、直したあと**語彙が 3 通りに増えないことを機械で縛る**。
+
+    ⚠️ ここが見るのは**画面語彙だけ**＝`hops.csv` の列名（出力契約）と、コード
+    内部の識別子・i18n のキー名・`{hops}` のような差し込み名（実装語彙）は
+    `hop` のままでよい。実装語彙と画面語彙は別物で、改名の波及はリスクだけ。
+    """
+    import re
+    offenders = []
+    for lang, table in i18n._STRINGS.items():
+        for key, value in table.items():
+            if not isinstance(value, str):
+                continue
+            shown = re.sub(r"\{[^}]*\}", "", value)   # 差し込み名は読み手に見えない
+            if "ホップ" in shown or re.search(r"\bhops?\b", shown, re.IGNORECASE):
+                offenders.append(f"{lang}:{key}={value!r}")
+    assert not offenders, (
+        "画面語彙に「ホップ」/hop が残っている（区間 / section へ）: "
+        + ", ".join(offenders)
+    )
