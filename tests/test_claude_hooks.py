@@ -239,6 +239,76 @@ def test_real_ledger_has_no_outstanding_warnings(hook):
     assert items, "未対応項目が 0 件＝パーサが壊れている可能性が高い"
     assert stale == [], f"済だがアーカイブ節へ未移動: {stale}"
     assert weak == [], f"済だが裏取りが弱い: {weak}"
+    assert hook.unquoted_user_items(
+        open(ledger, encoding="utf-8").read().splitlines()
+    ) == [], "人由来なのに原文の引用が無い項目がある"
+
+
+# ============================================================
+# 原文の引用（2026-08-01 新設・言い換えのずれを検出可能にする）
+# ============================================================
+def _sourced(iid: str, source: str, quote: str = "", state: str = "未着手") -> str:
+    """出所欄（と任意の原文欄）を持つ項目の断片。"""
+    body = f"### ★ {iid}: タイトル\n\n- ★ **状態**: {state}\n"
+    if quote:
+        body += f"- ★ **原文（出所の言葉のまま・言い換えない）**: 「{quote}」\n"
+    body += f"- **提案日・出所**: {source}\n"
+    return body
+
+
+class TestQuoteTheSource:
+    """人の報告を Claude が言い換えて書くとき、**原文が残っていないとずれが検出できない**。
+
+    2026-08-01 の 1 セッションで 3 件ずれた（I-052＝問いのすり替え／B-031＝「語が誤り」を
+    「数字が誤り」に読み替え／B-029・B-030＝「バグ」を Claude の定義で適用）。**どれも
+    ユーザーが読み返して初めて出た**＝台帳の中に原文が無い限り機械にも人にも見えない。
+    ここが見張るのは**欄の欠落**だけ（中身の一致は機械で判定できないが、欄さえあれば
+    人が突き合わせられる）。
+    """
+
+    def test_user_sourced_item_without_quote_is_flagged(self, hook):
+        assert hook.unquoted_user_items(
+            _doc(_sourced("I-100", "2026-08-01（2.6b1 試用のユーザー要望）"))
+        ) == ["I-100"]
+
+    def test_quote_satisfies_the_rule(self, hook):
+        assert hook.unquoted_user_items(
+            _doc(_sourced("I-100", "2026-08-01（2.6b1 試用のユーザー要望）",
+                          quote="・保存ボタン大きすぎ"))
+        ) == []
+
+    def test_explicit_opt_out_is_respected(self, hook):
+        """Claude/Codex 由来で引く原文が無いときの逃げ道（「書き忘れ」と区別する）。"""
+        doc = _doc(_sourced("I-100", "2026-08-01（実機試用で気づいた・ユーザー報告ではない）")
+                   .replace("- **提案日", "- ★ **原文**: **原文なし**（Claude 起票）\n- **提案日"))
+        assert hook.unquoted_user_items(doc) == []
+
+    @pytest.mark.parametrize("source", [
+        "2026-07-30（独立レビュー Codex 由来）",
+        "B-009 のクラス掃き出し",
+        "2026-08-01（Codex レビュー由来・版区切り整合 WF の検算）",
+    ])
+    def test_non_human_sources_are_not_required_to_quote(self, hook, source):
+        assert hook.unquoted_user_items(_doc(_sourced("I-100", source))) == []
+
+    @pytest.mark.parametrize("source", [
+        "2026-07-27（2.5RC1 試用のユーザー要望・スクリーンショット添付）",
+        "2026-07-25（2.4RC2 試用のユーザー要望）",
+    ])
+    def test_items_older_than_the_rule_are_exempt(self, hook, source):
+        """規則の開始日より前は対象外＝原文はもう手元に無い（遡ると全件が警告に載る）。"""
+        assert hook.unquoted_user_items(_doc(_sourced("I-100", source))) == []
+
+    def test_template_inside_html_comment_is_ignored(self, hook):
+        """記入例テンプレは見出しの体裁が同じなので、コメント内は丸ごと飛ばす。"""
+        doc = _doc(
+            "<!-- テンプレ",
+            _sourced("I-0XX", "2026-08-01（ユーザー要望）"),
+            _sourced("I-101", "2026-08-01（2.6b1 試用のユーザー要望）"),
+            "-->",
+            _sourced("I-102", "2026-08-01（2.6b1 試用のユーザー要望）", quote="原文"),
+        )
+        assert hook.unquoted_user_items(doc) == []
 
 
 # ============================================================
