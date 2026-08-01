@@ -27,6 +27,7 @@ import i18n
 import report_common
 import report_summary
 import units
+import multihop as mh
 from multihop import MultiHopRun
 
 
@@ -123,11 +124,15 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                     if pr.result is not None and pr.result.status != "OK")
     err_count = sum(1 for pr in run.hops if pr.result is None)
 
+    # 経路の並び。**鎖のときだけ「A → B → C」と読める**（星なら中心と枝の関係に
+    # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
     names = " → ".join(_html.escape(w.name) for w in run.path.waypoints)
     rows_html = ""
     for i, pr in enumerate(run.hops):
-        wp_from = _html.escape(run.path.waypoints[i].name)
-        wp_to   = _html.escape(run.path.waypoints[i + 1].name)
+        # 区間の端点は `multihop` が決める（接続規則を表示側へ書き写さない）。
+        ends    = mh.hop_endpoints(run.path, i)
+        wp_from = _html.escape(ends[0].name if ends else "")
+        wp_to   = _html.escape(ends[1].name if ends else "")
         pid     = pr.row.path_id                 # validated: [A-Za-z0-9_-]+
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         classes = []
@@ -175,9 +180,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     worst_label = "—"
     if worst is not None:
         idx = run.hops.index(worst)
-        worst_label = (f"#{idx + 1} "
-                       f"{_html.escape(run.path.waypoints[idx].name)} → "
-                       f"{_html.escape(run.path.waypoints[idx + 1].name)}")
+        worst_label = f"#{idx + 1} " + _html.escape(mh.hop_label(run.path, idx))
 
     map_html = (f"<div class='map'><img src='data:image/png;base64,{map_b64}'></div>"
                 if map_b64 else

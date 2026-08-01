@@ -267,6 +267,54 @@ class TestRunMultihop:
         )
 
 
+# ============================================================
+# トポロジー（点列＋接続規則）
+# ============================================================
+# **鎖を式に埋め込まない**という布石（[[project-radiosim-for-drone]]）。応用側
+# （GCS →各点＝星）と構造を共有するための土台で、2.6 では鎖しか使わない。
+# ⚠️ ここが守るのは「接続規則が 1 か所にある」ことだけ。**集約（min）は鎖の
+# 意味論**なので、星を実際に使うときは併せて決め直すこと。
+
+class TestTopology:
+
+    def test_chain_is_the_default(self):
+        path = _path(4)
+        assert path.topology == mh.TOPOLOGY_CHAIN
+        assert mh.links(path) == [(0, 1), (1, 2), (2, 3)]
+        assert path.hop_count == 3
+
+    def test_star_links_every_point_to_the_hub(self):
+        path = _path(4)
+        path.topology = mh.TOPOLOGY_STAR
+        assert mh.links(path) == [(0, 1), (0, 2), (0, 3)]
+        assert path.hop_count == 3
+
+    def test_unknown_topology_falls_back_to_chain(self):
+        """未知の値は鎖（新しい版が書いたファイルで落ちない）。"""
+        path = _path(3)
+        path.topology = "hypercube"
+        assert mh.links(path) == [(0, 1), (1, 2)]
+
+    def test_rows_follow_the_links_not_the_order(self):
+        """`hop_rows` が接続規則に従うこと（隣接ペア決め打ちでない）。"""
+        path = _path(3)
+        path.topology = mh.TOPOLOGY_STAR
+        rows = mh.hop_rows(path)
+        hub = path.waypoints[0]
+        assert all(r.lat_tx == hub.lat and r.lon_tx == hub.lon for r in rows), (
+            "星なのに送信側がハブになっていない＝鎖の式が残っている"
+        )
+        assert [r.lat_rx for r in rows] == [w.lat for w in path.waypoints[1:]]
+
+    def test_labels_come_from_the_links(self):
+        """区間の見出しも接続規則から導くこと（表示側に式を書き写さない）。"""
+        path = _path(3)
+        assert mh.hop_label(path, 0) == f"{path.waypoints[0].name} → {path.waypoints[1].name}"
+        path.topology = mh.TOPOLOGY_STAR
+        assert mh.hop_label(path, 1) == f"{path.waypoints[0].name} → {path.waypoints[2].name}"
+        assert mh.hop_label(path, 9, fallback="—") == "—"
+
+
 def test_relay_mode_is_regenerative_only():
     """**受動反射は対象外**であることを記録として固定する（2026-07-31 決定）。
 
