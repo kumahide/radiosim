@@ -331,7 +331,8 @@ The toggle at the top switches between two modes. After changing coordinates or 
 
 ### Sweep (one axis, N points)
 
-- Pick an **axis** (antenna height, frequency, rain rate, ...) plus **From / To / Points** (2-41).
+- Pick an **axis** (antenna height, frequency, rain rate, ...), a range, and **Points** (2-41).
+- The range can be entered two ways: **From / To** (absolute values) or **Base ±** (swing around the current value). **Base ±** matches how the question is usually asked — "what happens within ±10 m of the current 30 m?". Switching between them keeps the span, and the range is always normalised to From / To internally (that is also what a project file stores).
 - The report contains **a line chart and a numeric table**. The chart draws the verdict threshold (0 dB margin) and colours each point by verdict (OK = green / NG = orange); the colour change is where the link starts to close. Even at the maximum 41 points the report stays on **a single A4 page** — the table stays a single column (rows are simply tightened), so the progression can be read straight down.
 - When the margin spans a huge range (deeply obstructed paths), the vertical axis switches to a log-like scale so the region around the threshold stays readable.
 

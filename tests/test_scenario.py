@@ -741,8 +741,19 @@ class TestScenarioWindowSmoke:
             # ずらして幅を壊し得るため。
             win._mode.set("sweep"); win._on_mode_changed()
             root.update_idletasks()
-            widths = {ent.winfo_width() for _lab, ent in win._range_cells}
-            assert len(widths) == 1, f"スイープの入力欄の幅が揃っていない: {widths}"
+            # `_range_cells` は入れ方（開始/終了・ベース±）ごとの欄を名前で持つ。
+            # **見えている欄だけ**を測る（隠れている欄は幅 1 になる）。両方の
+            # 入れ方を順に見るのは、片方だけ列がずれる形の壊れ方を拾うため。
+            for mode in ("range", "delta"):
+                win._range_mode.set(mode)
+                win._on_range_mode_changed()
+                root.update_idletasks()
+                widths = {win._range_cells[name][1].winfo_width()
+                          for name in win._RANGE_FIELDS[mode]}
+                assert len(widths) == 1, (
+                    f"スイープ（{mode}）の入力欄の幅が揃っていない: {widths}")
+            win._range_mode.set("range")
+            win._on_range_mode_changed()
 
             # --- 比較：条件列の Entry と Combobox ---
             win._mode.set("compare"); win._on_mode_changed()
@@ -828,6 +839,49 @@ class TestScenarioWindowSmoke:
             assert axis == "h_tx"
             assert values == [10.0, 20.0, 30.0, 40.0, 50.0]
             assert [c.label for c in conds] == ["10", "20", "30", "40", "50"]
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_base_delta_normalizes_to_from_and_to(self, default_params_dict):
+        """`ベース ±Δ` は**開始/終了へ正規化**されること（内部の表現は 1 つ）。
+
+        振りたいのは「今の値の前後」なのでその言い方を入れられるようにしたが、
+        **範囲の表現を 2 つ持たない**＝実行も保存（`.rsproj`）も開始/終了だけを
+        見る。ここが崩れると、どちらが本当の範囲か決められない状態になる。
+        """
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            win._mode.set("sweep"); win._on_mode_changed()
+            win._sweep_axis.set("h_tx"); win._on_sweep_axis_changed()
+            base = float(win._base_vars["h_tx"].get())
+
+            win._range_mode.set("delta"); win._on_range_mode_changed()
+            win._delta_var.set("20")
+            assert float(win._from_var.get()) == pytest.approx(base - 20)
+            assert float(win._to_var.get())   == pytest.approx(base + 20)
+
+            _, axis, values = win._sweep_conditions()
+            assert axis == "h_tx"
+            assert values[0] == pytest.approx(base - 20)
+            assert values[-1] == pytest.approx(base + 20)
+
+            # 軸を変えたら、その軸のベース値を中心に引き直す。
+            win._sweep_axis.set("freq_mhz"); win._on_sweep_axis_changed()
+            fbase = float(win._base_vars["freq_mhz"].get())
+            assert float(win._from_var.get()) == pytest.approx(fbase - 20)
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_switching_range_mode_keeps_the_span(self, default_params_dict):
+        """入れ方を切り替えても**振り幅**は引き継ぐ（打ち直させない）。"""
+        i18n.set_lang("ja")
+        root, win = self._win(default_params_dict)
+        try:
+            win._mode.set("sweep"); win._on_mode_changed()
+            win._from_var.set("10"); win._to_var.set("50")
+            win._range_mode.set("delta"); win._on_range_mode_changed()
+            assert float(win._delta_var.get()) == pytest.approx(20.0)
         finally:
             win.destroy(); root.destroy()
 

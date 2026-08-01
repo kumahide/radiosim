@@ -172,6 +172,7 @@ class MapWindow:
         config: dict,
         single_sink: object = None,
         append_provider: "Callable[[], object] | None" = None,
+        waypoint_provider: "Callable[[], object] | None" = None,
     ) -> None:
         self._config = config
         # 座標入力モード（single）の書き戻し先。構築時固定（ランチャー）。
@@ -181,6 +182,11 @@ class MapWindow:
         # 連続追加モードの append 先を開いて返すプロバイダ（ランチャー → バッチ）。
         # 連続追加モードに入ったときに呼び、受け皿（_AppendSink）を取得する。
         self._append_provider = append_provider
+        # 中継点モードの宛先を開いて返すプロバイダ（ランチャー → 中継経路）。
+        # **append と同じ形にする**＝モードセレクタから直接この モードを選んでも
+        # 受け皿が用意される。以前は宛先が None のままで、クリックしても
+        # 「何も起きない・メッセージも出ない」死んだモードになっていた。
+        self._waypoint_provider = waypoint_provider
         # 現在保持している append 先（連続追加モードのときのみ非 None）。
         self._append_sink: "_AppendSink | None" = None
         self._sync_proxy()
@@ -302,6 +308,18 @@ class MapWindow:
             btn.configure(style="Accent.TButton" if v == value else "TButton")
         self._on_mode_change()
 
+    def start_waypoint_mode(self, sink: object) -> None:
+        """宛先を指定して中継点モードへ入る（中継経路窓の「地図から選ぶ」）。
+
+        **公開口にしてある**＝呼び出し側が `_waypoint_sink` や `_select_mode` を
+        直接触らない（内部名に依存した配線は、5b の `getattr(self.master, …)` と
+        同じ形で黙って壊れる）。宛先を先に据えるので、モード遷移側の
+        `waypoint_provider`（窓を開いて受け皿を作る経路）は走らない。
+        """
+        self._waypoint_sink = cast("_WaypointSink", sink)
+        self._select_mode("waypoints")
+        self._win.lift()
+
     def _on_mode_change(self) -> None:
         # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
         if not hasattr(self, "_status_label"):
@@ -318,10 +336,21 @@ class MapWindow:
             self._reset_active_pick()           # アクティブピックは持たず TX 待ちから
             self._fit_to_existing_paths()       # 既存パス群へズームを合わせる
             self._win.lift()                    # 受け皿を開いた後、地図を前面へ戻す
+        elif self._mode.get() == "waypoints":
+            # 中継点モード＝連続追加と同じ約束（受け皿が無ければ開いて確保する）。
+            # 既に宛先を持っている場合（中継経路窓の「地図から選ぶ」から来た場合）は
+            # それを尊重する＝窓を開き直さない。
+            self._append_sink = None
+            if self._waypoint_sink is None:
+                sink = self._waypoint_provider() if self._waypoint_provider else None
+                if sink is None:
+                    self._select_mode("coords")
+                    return
+                self._waypoint_sink = cast("_WaypointSink", sink)
+            self._win.lift()
         else:
-            self._append_sink = None            # 連続追加を抜けたら append 先を手放す
-            if self._mode.get() != "waypoints":
-                self._waypoint_sink = None      # 中継点モードを抜けたら同様
+            self._append_sink   = None          # 連続追加を抜けたら append 先を手放す
+            self._waypoint_sink = None          # 中継点モードを抜けたら同様
             if self._mode.get() == "coords":
                 # 連続追加で消したアクティブピックを、ランチャーの現在値で復元する。
                 self._load_single_coords()

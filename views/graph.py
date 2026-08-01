@@ -178,7 +178,8 @@ class GraphWindow(tk.Toplevel):
         # 上下左右とも詰められる（I-035＝上部余白が広すぎる、はここで解ける。
         # 従来は top=0.88／bottom=0.26／right=0.77 で操作系とパネルの場所を
         # 空けていた）。
-        self._fig.subplots_adjust(left=0.08, right=0.98, top=0.96, bottom=0.14)
+        # 上だけは凡例のぶんを空ける（`_build_legend` が軸の外・上へ出す）。
+        self._fig.subplots_adjust(left=0.08, right=0.98, top=0.89, bottom=0.14)
 
         self._canvas = FigureCanvasTkAgg(self._fig, master=card)
         self._canvas.get_tk_widget().pack(fill="both", expand=True)
@@ -206,48 +207,59 @@ class GraphWindow(tk.Toplevel):
         budget = ttk.LabelFrame(side, text=i18n.t("panel_link_budget"), padding=(8, 4))
         budget.pack(fill="x")
         self._panel_rows(budget, (
-            ("eirp",       "pl_eirp"),
-            ("fspl",       "pl_fspl"),
-            ("diff_loss",  "pl_diff_loss"),
-            ("veg_loss",   "pl_veg_loss"),
-            ("env_loss",   "pl_env_loss"),
-            ("rain_loss",  "pl_rain_loss"),
-            ("gas_loss",   "pl_gas_loss"),
-            ("total_loss", "pl_total_loss"),
-            ("gain_rx",    "pl_rx_ant_g"),
-            (None,         None),                 # 区切り
-            ("p_rx",       "pl_rx_level"),
-            ("sens",       "pl_threshold"),
-            ("margin",     "pl_act_margin"),
-            (None,         None),
-            ("status",     "pl_status"),
+            ("eirp",       "pl_eirp",       "dBm"),
+            ("fspl",       "pl_fspl",       "dB"),
+            ("diff_loss",  "pl_diff_loss",  "dB"),
+            ("veg_loss",   "pl_veg_loss",   "dB"),
+            ("env_loss",   "pl_env_loss",   "dB"),
+            ("rain_loss",  "pl_rain_loss",  "dB"),
+            ("gas_loss",   "pl_gas_loss",   "dB"),
+            ("total_loss", "pl_total_loss", "dB"),
+            ("gain_rx",    "pl_rx_ant_g",   "dBi"),
+            (None,         None,            ""),   # 区切り
+            ("p_rx",       "pl_rx_level",   "dBm"),
+            ("sens",       "pl_threshold",  "dBm"),
+            ("margin",     "pl_act_margin", "dB"),
+            (None,         None,            ""),
+            ("status",     "pl_status",     ""),
         ))
 
         env = ttk.LabelFrame(side, text=i18n.t("panel_environment"), padding=(8, 4))
         env.pack(fill="x", pady=(6, 0))
         self._panel_rows(env, (
-            ("env_type",   "pl_env_type"),
-            ("diff_model", "pl_diff_model"),
-            ("k_factor",   "pl_k_factor"),
-            ("f1_obs",     "pl_f1_obs"),
-            ("slant",      "pl_slant_dist"),
+            ("env_type",   "pl_env_type",   ""),
+            ("diff_model", "pl_diff_model", ""),
+            ("k_factor",   "pl_k_factor",   ""),
+            ("f1_obs",     "pl_f1_obs",     "%"),
+            ("slant",      "pl_slant_dist", "m"),
         ))
 
     def _panel_rows(self, parent: ttk.LabelFrame, rows) -> None:
-        """`(キー, i18n ラベルキー)` の並びを 2 列の grid にする（None は区切り線）。"""
+        """`(キー, i18n ラベルキー, 単位)` の並びを **3 列**の grid にする。
+
+        **単位を値と別の列にするのが桁揃えの本体**（2026-08-01 実機フィードバック）。
+        `-76.4 dBm` と `12.3 dB` を 1 つの文字列にして右寄せすると、**揃うのは
+        単位の右端**で小数点は揃わない。値の列だけを右寄せし、単位は左寄せの
+        別列に固定すると、数字の桁がそのまま縦に並ぶ。
+
+        ⚠️ **等幅フォントは持ち込まない**（書体の出所が増える＝B-015/B-026 の
+        再来）。数字の幅は本文書体のまま、列で揃える。
+        """
         parent.columnconfigure(1, weight=1)
-        for r, (key, label_key) in enumerate(rows):
+        for r, (key, label_key, unit) in enumerate(rows):
             if key is None:
                 ttk.Separator(parent, orient="horizontal").grid(
-                    row=r, column=0, columnspan=2, sticky="ew", pady=3)
+                    row=r, column=0, columnspan=3, sticky="ew", pady=3)
                 continue
             ttk.Label(parent, text=i18n.t(label_key)).grid(
                 row=r, column=0, sticky="w", padx=(0, 10))
             var = tk.StringVar()
             self._vars[key] = var
-            # 値は右寄せ＝桁が揃って読める（従来は空白を数えて揃えていた）。
             ttk.Label(parent, textvariable=var, anchor="e").grid(
                 row=r, column=1, sticky="e")
+            if unit:
+                ttk.Label(parent, text=unit).grid(
+                    row=r, column=2, sticky="w", padx=(4, 0))
 
     def _build_controls(self, parent: tk.Misc) -> None:
         """what-if の操作系（スライダー＋数値入力）と保存ボタン。
@@ -357,6 +369,12 @@ class GraphWindow(tk.Toplevel):
         標準 legend は**窓が小さくなると自分で畳む**ので、B-024 の「凡例が枠を
         突き抜ける」は処方の副産物として消える。
 
+        **位置は軸の外・上（横 1 列）＝レポート図と同じ**（2026-08-01 実機
+        フィードバック）。図の中の右上に置くと、**RX 側のアンテナ支柱と受信端が
+        必ずそこに来る**ので凡例に隠れる（経路は左下→右上に描かれるため、右上は
+        構造的に一番混む場所）。`loc="best"` は「毎回どこに出るか分からない」
+        ＝⑧（一貫性は人の速度）と衝突するので採らない。
+
         ハンドルは**代理（proxy）**で作る＝F1 ゾーンは更新のたびに描き直す
         （`remove()` → `fill_between`）ので、実オブジェクトを渡すと legend が
         破棄済みのハンドルを指す。
@@ -369,7 +387,9 @@ class GraphWindow(tk.Toplevel):
                        label=i18n.t("legend_los")),
                 Patch(facecolor=_F1_COLOR, alpha=0.25, label=i18n.t("legend_fresnel")),
             ],
-            loc="upper right", fontsize=9, framealpha=0.85,
+            # レポート図（report_path.save_profile_png）と同じ指定。
+            loc="lower right", bbox_to_anchor=(1.0, 1.02), ncol=4,
+            fontsize=9, framealpha=0.9, borderaxespad=0,
         )
 
     # ----------------------------------------------------------
@@ -442,19 +462,23 @@ class GraphWindow(tk.Toplevel):
             [tx_abs, rx_abs], color="black", lw=3)
 
     def _update_panel(self, r: models.LinkBudgetResult) -> None:
-        """パネルの数値を更新する（**桁揃えは grid の仕事**）。"""
+        """パネルの数値を更新する。
+
+        ⚠️ **単位を値に混ぜない**（単位は `_panel_rows` が別列に固定している）。
+        混ぜると右寄せしても小数点が揃わない＝桁揃えが崩れる。
+        """
         p = self._params
-        self._vars["eirp"].set(f"{r.eirp:.1f} dBm")
+        self._vars["eirp"].set(f"{r.eirp:.1f}")
         for key, value in (
             ("fspl", r.fspl), ("diff_loss", r.diff_loss), ("veg_loss", r.veg_loss),
             ("env_loss", r.env_loss), ("rain_loss", r.rain_loss),
             ("gas_loss", r.gas_loss), ("total_loss", r.total_loss),
         ):
-            self._vars[key].set(f"{value:.1f} dB")
-        self._vars["gain_rx"].set(f"{p.gain_rx:+.1f} dBi")
-        self._vars["p_rx"].set(f"{r.p_rx:.1f} dBm")
-        self._vars["sens"].set(f"{p.sens:.1f} dBm")
-        self._vars["margin"].set(f"{r.actual_margin:.1f} dB")
+            self._vars[key].set(f"{value:.1f}")
+        self._vars["gain_rx"].set(f"{p.gain_rx:+.1f}")
+        self._vars["p_rx"].set(f"{r.p_rx:.1f}")
+        self._vars["sens"].set(f"{p.sens:.1f}")
+        self._vars["margin"].set(f"{r.actual_margin:.1f}")
         self._vars["status"].set(r.status)
 
         self._vars["env_type"].set(i18n.t(f"env_{r.env_type}"))
@@ -462,8 +486,10 @@ class GraphWindow(tk.Toplevel):
             i18n.t("html_model_deygout") if r.diff_method == "deygout"
             else i18n.t("html_model_single"))
         self._vars["k_factor"].set(f"{r.current_k:.1f}")
-        self._vars["f1_obs"].set(units.format_blocked_ratio(r.blocked_ratio))
-        self._vars["slant"].set(units.format_distance(r.slant_dist_km))
+        # 単位は列が持つので `unit=False`（この 2 つは units.py が書式の出所）。
+        self._vars["f1_obs"].set(
+            units.format_blocked_ratio(r.blocked_ratio, unit=False))
+        self._vars["slant"].set(units.format_distance(r.slant_dist_km, unit=False))
 
     # ----------------------------------------------------------
     # 保存・クローズ

@@ -101,7 +101,11 @@ _RESULT_ROWS = 8
 class ScenarioWindow(tk.Toplevel):
     """条件探索ウィンドウ（ランチャーが唯一のインスタンスを持つ）。"""
 
-    _BASE_W = 900
+    # 幅の**下限**（実寸は中身から決まる＝`_fit_to_content`）。900 だったころは
+    # 凍結帯が 1050px を要求していたので下限が効いておらず、比較条件が 1 列でも
+    # 窓は 1070px で右側が丸ごと空いていた（2026-08-01 実機フィードバック）。
+    # 帯を詰めた今は**中身に追従する**ので、下限は最小サイズ寄りに戻す。
+    _BASE_W = 820
 
     def __init__(
         self,
@@ -267,7 +271,9 @@ class ScenarioWindow(tk.Toplevel):
         # ⚠️ 行を 1 つ増やすと、この窓は FHD 100% の 990px を超える（実測で
         # 1033px になり、100% の実機でスクロールが要る窓になってしまう）。
         # **見せ方を揃えるのが目的であって、行数を揃えるのが目的ではない。**
-        ttk.Button(row, text=i18n.t("scn_refresh"), width=18,
+        # ⚠️ `width=` は付けない＝文字数で幅を固定すると、**中身より広い帯**を
+        # 要求して窓全体の幅を押し上げる（この窓は凍結帯が窓幅を決めていた）。
+        ttk.Button(row, text=i18n.t("scn_refresh"),
                    command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
         ttk.Label(row, text=i18n.t("hint_common_readonly"),
                   foreground=theme.muted_foreground(row)).pack(side="right", padx=6)
@@ -327,6 +333,8 @@ class ScenarioWindow(tk.Toplevel):
             for cvars in self._cmp_cols:
                 if cvars[key].get() == self._display(key, getattr(old_base, key)):
                     cvars[key].set(self._display(key, new_val))
+        # `ベース ±` はベース値が動けば範囲も動く（取り込み直した値で引き直す）。
+        self._sync_range_from_delta()
 
     @staticmethod
     def _display(key: str, value) -> str:
@@ -396,13 +404,15 @@ class ScenarioWindow(tk.Toplevel):
         # 実行 & 進捗 & レポート（常に見える帯）
         bar = ttk.Frame(outer)
         bar.pack(fill="x", pady=(10, 6))
+        # 実行帯の型（I-029）＝**バーが左で伸び、実行は帯の右端**。以前はこの窓
+        # だけボタンがバーの左にあり、ランチャー・中継経路と鏡像になっていた。
         self._run_btn = ttk.Button(bar, text=i18n.t("scn_run"), command=self._on_run,
                                    style="Accent.TButton")
-        self._run_btn.pack(side="left")
+        self._run_btn.pack(side="right", padx=(10, 0))
         self._prog_label = ttk.Label(bar, text="")
-        self._prog_label.pack(side="right")
+        self._prog_label.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
-        self._prog_bar.pack(side="left", fill="x", expand=True, padx=10)
+        self._prog_bar.pack(side="left", fill="x", expand=True)
 
         # 結果一覧（残りの高さを使う＝点数が増えてもスクロールで収まる）
         self._result_box = ttk.LabelFrame(outer, text=i18n.t("scn_result"), padding=8)
@@ -427,6 +437,12 @@ class ScenarioWindow(tk.Toplevel):
         self._tree.configure(yscrollcommand=vsb.set)
         self._tree.pack(side="left", fill="both", expand=True)
         vsb.pack(side="right", fill="y")
+        # 判定色は theme が出所（窓ごとに書かない）。**表を作った時点で当てる**＝
+        # 結果を入れる関数の中だけで当てると、テーマ切替や他窓との突合せで
+        # 「まだ色が無い」状態ができる。
+        theme.apply_verdict_tags(self._tree)
+        self.bind("<<ThemeChanged>>",
+                  lambda _e: theme.apply_verdict_tags(self._tree), add="+")
 
     def _build_compare_tab(self) -> ttk.Frame:
         """ベース列（読み取り専用）＋比較条件 N 列（2026-07-25 要望で N 可変）。
@@ -551,22 +567,42 @@ class ScenarioWindow(tk.Toplevel):
                                     row=row, column=2, padx=(0, 6))
                 self._sweep_rows[key] = row
 
-        # 開始 / 終了 / 点数＝**選ばれた行にだけ現れる**。1 組だけ作って選択に
-        # 合わせて置き直す（行ごとに 3 欄ずつ作ると、入力途中の値が行を変えた
-        # 瞬間に消えたり、どの行の値が実行に使われるのか曖昧になる）。
+        # 範囲の入れ方＝**開始/終了** か **ベース ±**（2026-08-01 ユーザー要望）。
+        # 実際に振りたいのは「今の値の前後」なので、その言い方をそのまま入れられる
+        # ようにする。⚠️ **器は 2 つにしない**＝どちらの入れ方でも内部は常に
+        # 開始/終了へ正規化し、実行も保存（`.rsproj`）もそこだけを見る。同じ範囲の
+        # 表現が 2 つ残ると、食い違ったときにどちらが本当かを決められなくなる。
         self._from_var   = tk.StringVar(value="10")
         self._to_var     = tk.StringVar(value="60")
         self._points_var = tk.StringVar(value="11")
-        self._range_cells: list[tuple[ttk.Label, ttk.Entry]] = []
-        for col, (label_key, var) in enumerate((
-            ("scn_from",   self._from_var),
-            ("scn_to",     self._to_var),
-            ("scn_points", self._points_var),
-        )):
+        self._delta_var  = tk.StringVar(value="10")
+        self._range_mode = tk.StringVar(value="range")
+
+        switch = ttk.Frame(frame)
+        switch.pack(anchor="w", pady=(6, 0))
+        ttk.Label(switch, text=i18n.t("scn_range_how")).pack(side="left", padx=(0, 6))
+        for value, key in (("range", "scn_range_from_to"),
+                           ("delta", "scn_range_delta")):
+            ttk.Radiobutton(switch, text=i18n.t(key), value=value,
+                            variable=self._range_mode, style="Toggle.TButton",
+                            command=self._on_range_mode_changed).pack(
+                                side="left", padx=(0, 6))
+
+        # 欄は**選ばれた軸の行にだけ現れる**。1 組だけ作って選択に合わせて置き直す
+        # （行ごとに欄を作ると、入力途中の値が行を変えた瞬間に消えたり、どの行の値が
+        # 実行に使われるのか曖昧になる）。
+        self._range_cells: dict[str, tuple[ttk.Label, ttk.Entry]] = {}
+        for name, label_key, var in (
+            ("from",   "scn_from",   self._from_var),
+            ("to",     "scn_to",     self._to_var),
+            ("delta",  "scn_delta",  self._delta_var),
+            ("points", "scn_points", self._points_var),
+        ):
             lab = ttk.Label(grid, text=i18n.t(label_key))
             ent = ttk.Entry(grid, textvariable=var, width=10)
-            self._range_cells.append((lab, ent))
-            grid.columnconfigure(3 + col * 2 + 1, weight=0)
+            self._range_cells[name] = (lab, ent)
+        # ± を変えたら開始/終了を作り直す（正規化はここ 1 か所）。
+        self._delta_var.trace_add("write", lambda *_: self._sync_range_from_delta())
 
         ttk.Label(frame, text=i18n.t("scn_err_points").format(
             max=scn.MAX_SWEEP_POINTS),
@@ -574,13 +610,55 @@ class ScenarioWindow(tk.Toplevel):
         self._on_sweep_axis_changed()
         return frame
 
+    # 入れ方ごとに見せる欄（**点数は共通**）。
+    _RANGE_FIELDS = {"range": ("from", "to", "points"),
+                     "delta": ("delta", "points")}
+
     def _on_sweep_axis_changed(self) -> None:
-        """開始 / 終了 / 点数の欄を、選ばれている軸の行へ移す。"""
+        """範囲の欄を、選ばれている軸の行へ移す。"""
         row = self._sweep_rows[self._sweep_axis.get()]
-        for i, (lab, ent) in enumerate(self._range_cells):
+        for lab, ent in self._range_cells.values():
+            lab.grid_remove()
+            ent.grid_remove()
+        for i, name in enumerate(self._RANGE_FIELDS[self._range_mode.get()]):
+            lab, ent = self._range_cells[name]
             lab.grid(row=row, column=3 + i * 2, sticky="e", padx=(6, 2), pady=1)
             ent.grid(row=row, column=4 + i * 2, sticky="w", pady=1)
+        if self._range_mode.get() == "delta":
+            self._sync_range_from_delta()      # 軸が変われば基準値も変わる
         self._fit_to_content()
+
+    def _on_range_mode_changed(self) -> None:
+        """入れ方を切り替える。**振り幅は引き継ぐ**（打ち直させない）。
+
+        ⚠️ 引き継げるのは幅だけ＝`ベース ±` は定義上ベース値を中心に置くので、
+        開始/終了が中心からずれていた場合は中心が動く（これは仕様であって
+        バグではない）。
+        """
+        if self._range_mode.get() == "delta":
+            # 今の開始/終了の幅の半分を ± とする（振り幅を引き継ぐ）。
+            try:
+                half = abs(float(self._to_var.get()) - float(self._from_var.get())) / 2
+                self._delta_var.set(f"{half:g}")
+            except ValueError:
+                pass                            # 入力途中なら既定値のまま
+        self._on_sweep_axis_changed()
+
+    def _sync_range_from_delta(self) -> None:
+        """`ベース ±Δ` を開始/終了へ正規化する（**内部の表現は 1 つ**）。
+
+        基準はその軸のベース値＝ランチャーの現在値（↻ で取り込み直す値）。
+        読めない値のときは何もしない＝実行時に名前つきのエラーで弾かれる。
+        """
+        if self._range_mode.get() != "delta":
+            return
+        try:
+            base  = float(self._base_vars[self._sweep_axis.get()].get())
+            delta = abs(float(self._delta_var.get()))
+        except (ValueError, KeyError):
+            return
+        self._from_var.set(f"{base - delta:g}")
+        self._to_var.set(f"{base + delta:g}")
 
     # ----------------------------------------------------------
     # 実行
@@ -717,8 +795,6 @@ class ScenarioWindow(tk.Toplevel):
                  f'{units.format_distance(run.terrain.horiz_dist_km)}')
 
         self._tree.delete(*self._tree.get_children())
-        self._tree.tag_configure("ok", foreground="#2e7d32")
-        self._tree.tag_configure("ng", foreground="#c62828")
         for p in run.points:
             self._tree.insert("", "end", values=(
                 p.label, f"{p.result.p_rx:.2f}", f"{p.result.actual_margin:+.2f}",

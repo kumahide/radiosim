@@ -530,24 +530,24 @@ class SimLauncher:
         }
 
     def _build_status(self, parent: tk.Widget) -> None:
-        self.prog_label = ttk.Label(parent, text=i18n.t("status_ready"))
-        self.prog_label.pack(pady=(10, 0))
+        self._prog_label = ttk.Label(parent, text=i18n.t("status_ready"))
+        self._prog_label.pack(pady=(10, 0))
 
         # 進捗バーと「実行」を同じ帯に置く（I-029）。**3 つの実行フローで同じ名前・
         # 同じ位置**＝バッチが既にこの配置なので、一番情報量の多い窓を動かさずに
         # 単一と条件探索の 2 窓だけを揃える側に回した。
         bar = ttk.Frame(parent)
         bar.pack(fill="x", pady=5)
-        self.prog_bar = ttk.Progressbar(
+        self._prog_bar = ttk.Progressbar(
             bar, orient="horizontal", length=350, mode="determinate"
         )
-        self.prog_bar.pack(side="left", fill="x", expand=True)
+        self._prog_bar.pack(side="left", fill="x", expand=True)
         # Accent（青）は**「走らせる」ボタンだけ**に使う（I-029/I-030）。以前は
         # 「一括シミュレーション」（＝窓を開く操作）にも付いており、強調の軸が
         # 意味の軸と直交していた。
-        self.run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
+        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
                                   command=self._on_run, style="Accent.TButton")
-        self.run_btn.pack(side="right", padx=(10, 0))
+        self._run_btn.pack(side="right", padx=(10, 0))
 
         # 進捗はワーカースレッドから ProgressPump 経由で受け取る。バーとラベルは
         # 「最新の状態」だけが意味を持つので latest_only（中間値を全部描いても
@@ -562,8 +562,8 @@ class SimLauncher:
     def _render_progress(self, item: tuple) -> None:
         """ポンプから届いた進捗を描画する（メインスレッドで呼ばれる）。"""
         value, text = item
-        self.prog_bar.config(value=value)
-        self.prog_label.config(text=text)
+        self._prog_bar.config(value=value)
+        self._prog_label.config(text=text)
 
     def _progress_push(self, value: float, text: str) -> None:
         """ワーカースレッドから進捗を送る。Tk には一切触れない。
@@ -583,8 +583,8 @@ class SimLauncher:
         避けるため、キューを捨ててから設定する。
         """
         self._pump.clear()
-        self.prog_bar.config(maximum=max(maximum, 1), value=0)
-        self.prog_label.config(text=text)
+        self._prog_bar.config(maximum=max(maximum, 1), value=0)
+        self._prog_label.config(text=text)
 
     def _progress_stop(self) -> None:
         """進捗ポーリングを止め、積み残しを捨てる（メインスレッドから呼ぶ）。"""
@@ -752,7 +752,7 @@ class SimLauncher:
 
         # sim キーのみ保存。app 設定（theme/lang/proxy_url）は save_sim 内で保持される。
         config.save_sim(c)
-        self.run_btn.config(state="disabled")
+        self._run_btn.config(state="disabled")
 
         # Phase 1: bbox 内の DEM タイルを事前取得
         tile_count = dem.count_bbox_tiles(
@@ -810,7 +810,7 @@ class SimLauncher:
 
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs) -> None:
         self._progress_stop()
-        self.run_btn.config(state="normal")
+        self._run_btn.config(state="normal")
         # ここから先（matplotlib の遅延 import＋グラフ構築）が単一実行の体感時間の
         # 大半を占める。実測（キャッシュ暖機済み・200 サンプル）で取得 0.035s に対し
         # import 0.26s＋構築 0.34s ＝ 約 0.6s。従来はこの直前に「準備完了」へ戻して
@@ -820,7 +820,7 @@ class SimLauncher:
         # グラフは pyplot/TkAgg なのでワーカースレッドへは出せない＝ここは本物の
         # メインスレッド制約。したがって偽の進捗は出さず、バッチの段階ラベルと同じく
         # 「何をしているか」だけを示す（→ batch の batch_stage_render）。
-        self.prog_label.config(text=i18n.t("status_rendering"))
+        self._prog_label.config(text=i18n.t("status_rendering"))
         self.root.update_idletasks()   # 描画に入る前にラベルを実際に出す
 
         # phase 境界ログ。バッチには b3 で入れたが単一側は無く、この 0.6 秒が
@@ -849,8 +849,8 @@ class SimLauncher:
             "Graph render complete in %.2fs",
             time.perf_counter() - self._t_render,
         )
-        self.prog_label.config(text=i18n.t("status_ready"))
-        self.prog_bar.config(value=0)
+        self._prog_label.config(text=i18n.t("status_ready"))
+        self._prog_bar.config(value=0)
 
     def _on_graph_closed(self) -> None:
         self._graph_win = None
@@ -858,9 +858,9 @@ class SimLauncher:
     def _on_fetch_error(self, ex: Exception) -> None:
         self._progress_stop()
         self._alert(i18n.t("dlg_error"), str(ex))
-        self.run_btn.config(state="normal")
-        self.prog_label.config(text=i18n.t("status_ready"))
-        self.prog_bar.config(value=0)
+        self._run_btn.config(state="normal")
+        self._prog_label.config(text=i18n.t("status_ready"))
+        self._prog_bar.config(value=0)
 
     def _on_load_settings(self) -> None:
         file_path = filedialog.askopenfilename(
@@ -1107,11 +1107,17 @@ class SimLauncher:
             self.root, self.config,
             single_sink=self,
             append_provider=self._open_batch_for_append,
+            waypoint_provider=self._open_multihop_for_waypoints,
         )
 
     def _open_batch_for_append(self):
         """連続追加モードの append 先としてバッチウィンドウを開いて返す。"""
         return self.ensure_batch_window()
+
+    def _open_multihop_for_waypoints(self):
+        """中継点モードの宛先として中継経路ウィンドウを開いて返す（append と対称）。"""
+        self._on_open_multihop()
+        return self._multihop_win
 
     def _on_open_multihop(self) -> None:
         """中継経路ウィンドウを開く（唯一インスタンス。開いていれば前面化）。
@@ -1138,6 +1144,10 @@ class SimLauncher:
             # 「開く＝スナップショット」とちょうど一致するので、開いている窓へ
             # 後から流し込む口を作らずに済む）。
             initial_path=self._project_doc().multihop,
+            # ⚠️ 親ウィジェットから探させない（`self.master` は Tk のルートで
+            # ランチャーではない＝5b の実装はここで黙って None になり、地図連携が
+            # 一度も動かなかった）。バッチ・条件探索と同じく**注入**する。
+            map_opener=self.open_map_for_waypoints,
         )
 
     def _on_multihop_closed(self) -> None:
@@ -1160,9 +1170,7 @@ class SimLauncher:
         歪んだ経緯がある）。
         """
         self._on_open_map()
-        self._map_win._waypoint_sink = sink
-        self._map_win._select_mode("waypoints")
-        self._map_win._win.lift()
+        self._map_win.start_waypoint_mode(sink)
 
     def _on_open_scenario(self) -> None:
         """条件探索ウィンドウを開く（唯一インスタンス。開いていれば前面化）。
