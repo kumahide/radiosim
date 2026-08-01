@@ -508,6 +508,41 @@ class TestGroundworkDeadline:
         assert memcheck.check_groundwork(memcheck._current_version() or "0.0") == []
 
 
+class TestVersionSyncIgnoresDeltaNotation:
+    """版番号の**増分**表記（`+0.1` / `+1.0`）を版番号と読み違えないこと。
+
+    2026-08-01 の誤検知＝ロードマップに「`+0.1` の受け皿」という見出しを足した
+    ところ、`0.1` を版と読み current `2.6b1` より古い＝stale と鳴った。`+0.1`/
+    `+1.0` は [[feedback-branch-strategy]]「見つけたものをどの版で直すか」の
+    用語で**今後も見出しに現れる**ので、その場しのぎの言い換えでは再発する。
+
+    check 11（本文の日付）・check 12（布石の記法）と**同じクラス**＝
+    パターンが一致しただけの「言及」を「宣言」と取り違える誤検知。
+    """
+
+    def _memo(self, tmp_path, text):
+        (tmp_path / "project_x.md").write_text(text, encoding="utf-8")
+
+    def _run(self, memcheck, tmp_path, monkeypatch, ver):
+        monkeypatch.setattr(memcheck, "MEM_DIR", tmp_path)
+        return memcheck.check_version_sync(ver)
+
+    def test_delta_notation_is_not_a_version(self, memcheck, tmp_path, monkeypatch):
+        self._memo(tmp_path, "## 次のマイナー（番号未定）— `+0.1` の受け皿\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6b1") == []
+
+    def test_major_delta_notation_is_not_a_version(self, memcheck, tmp_path,
+                                                   monkeypatch):
+        self._memo(tmp_path, "## 約束が変わるなら +1.0 へ割り振る\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6b1") == []
+
+    def test_a_genuinely_stale_heading_is_still_flagged(self, memcheck, tmp_path,
+                                                        monkeypatch):
+        """除外を入れたせいで**本来の検出まで黙らない**こと（対の確認）。"""
+        self._memo(tmp_path, "## 2.4 の作業中\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6b1")
+
+
 class TestUpdatedStampFreshness:
     """本文の「最終更新 YYYY-MM-DD」がファイル更新日より古くないこと。
 
