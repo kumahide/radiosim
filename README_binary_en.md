@@ -16,13 +16,15 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 5. [Usage — Single Mode](#usage--single-mode)
 6. [Usage — Batch Mode](#usage--batch-mode)
 7. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
-8. [Input Parameters](#input-parameters)
-9. [Calculation Models](#calculation-models)
-10. [DEM Retrieval Logic](#dem-retrieval-logic)
-11. [Save Package](#save-package)
-12. [Uninstall](#uninstall)
-13. [Known Limitations](#known-limitations)
-14. [Copyright](#copyright)
+8. [Usage — Relay Route](#usage--relay-route-multi-hop)
+9. [Project Files (.rsproj)](#project-files-rsproj)
+10. [Input Parameters](#input-parameters)
+11. [Calculation Models](#calculation-models)
+12. [DEM Retrieval Logic](#dem-retrieval-logic)
+13. [Save Package](#save-package)
+14. [Uninstall](#uninstall)
+15. [Known Limitations](#known-limitations)
+16. [Copyright](#copyright)
 
 ---
 
@@ -48,6 +50,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **All-paths overview map** in the summary report (color-coded by verdict)
 - **Condition Explorer (compare / sweep)**: for a single path, line up results under different conditions (base + up to 5) or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once
 - **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
+- **Relay routes (multi-hop)**: place up to 7 relay points between TX and RX and get a link budget per hop. **The overall verdict is decided by the tightest hop** (regenerative relay — each relay receives and transmits again)
+- **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay route into **one file** and pick the work up later
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
@@ -341,6 +345,74 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 | ----------------- | ----------------------------------------------------------------- |
 | `scenario.html` | Single-page A4 report (compare = difference table / sweep = chart + table) |
 | `scenario.csv`  | Numbers for every condition / point (spreadsheet-compatible)      |
+
+---
+
+## Usage — Relay Route (multi-hop)
+
+For **one link carried over relay points**. Open it with the **Relay Route** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
+
+### Assumption — regenerative relay
+
+Each relay point **receives and then transmits again**. That means:
+
+- Every hop gets its own independent link budget — **hop losses are never added together**.
+- **The overall verdict is decided by the tightest hop.** The report shows the overall verdict **and** the per-hop breakdown, because "it fails" is not actionable unless you can see which hop is short.
+- **Passive reflectors are out of scope.** Their losses combine differently and are not part of this tool's calculation.
+
+### Waypoints and hops
+
+- The **waypoint table** is the input surface. **The first point is the transmitter and the last is the receiver**; "Add point" inserts a relay **before the receiver**, so the order on screen is the order of the route. Each row shows its role (TX / relay / RX).
+- Each waypoint has **coordinates and an above-ground height**. **Height belongs to the point, not to the hop** — a relay has one antenna, so it must not be possible to enter one height as "hop 1 RX" and a different one as "hop 2 TX".
+- The **hop table** lets you override **frequency and TX/RX gain per hop** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
+- **Pick from map** switches the map into waypoint mode; each click fills the next waypoint.
+- Up to 7 relay points (8 hops).
+
+> **⚠️ Relay points are meant to be placed, not dragged around to explore.** Each hop fetches its own terrain data, so moving a point triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
+
+### Running the route
+
+**Run** processes the hops in order, filling the result list hop by hop (received level, margin, verdict), and finishes with the overall verdict (the tightest hop).
+
+The following are saved to `results/multihop_YYYYMMDD_HHMMSS/`:
+
+| File | Contents |
+| --- | --- |
+| `route.html` | Combined sheet: overall verdict, per-hop breakdown, overview map |
+| `report_all.html` | Combined sheet + every hop in one document (Ctrl+P for a single PDF) |
+| `hops.csv` | One row per hop (spreadsheet-compatible) |
+| `{id}/` | Per-hop package (same structure as Single Mode) |
+
+---
+
+## Project Files (.rsproj)
+
+Bundles **the whole input set into one file** so you can pick the work up later. Use **File → Save Project / Open Project**.
+
+### What is included
+
+| Included | Not included |
+| --- | --- |
+| Coordinates and all parameters (the launcher inputs) | **Results** (those belong to `results/`) |
+| Project info (name and free note) | **App settings** (theme, language, proxy) |
+| Batch Mode rows | Window positions, sizes, open/closed state |
+| Explorer conditions (compare columns / sweep axis and range) | |
+| Relay route waypoints and hops | |
+
+**Leaving out theme, language and proxy is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
+
+### Saving
+
+- Open windows (batch / explorer / relay route) contribute their **current** values.
+- **Closed windows keep their contents too** — the previous values are carried forward, so closing the batch window before saving does not delete your rows.
+- Anything that is not a readable number is not written; the dialog tells you which part was skipped (so a broken file is never produced silently).
+
+### Opening
+
+- Open windows (batch / explorer / relay route) are **closed after a confirmation**. Unsaved edits in them are lost.
+- The launcher fields and project info are replaced immediately.
+- **Batch, explorer and relay route contents appear when you open those windows** — this app freezes a window's inputs when it opens, and loading follows the same rule.
+- A file saved by a newer version of RadioSim will not be opened (you are told, rather than having it silently mangled).
 
 ---
 
