@@ -53,6 +53,7 @@ class MultiHopWindow(tk.Toplevel):
         on_close:        "Callable[[], None] | None" = None,
         initial_path:    "mh.MultiHopPath | None" = None,
         map_opener:      "Callable[[object], None] | None" = None,
+        map_notify:      "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("mh_window_title"))
@@ -63,8 +64,10 @@ class MultiHopWindow(tk.Toplevel):
         self._meta_provider   = meta_provider
         self._meta            = self._snapshot_meta()
         self._on_close_cb     = on_close
-        # 地図を中継点モードで開く口（ランチャーが注入する）。
+        # 地図を中継点モードで開く口／地点列が変わったことを知らせる口
+        # （どちらもランチャーが注入する＝親ウィジェットから探さない）。
         self._map_opener      = map_opener
+        self._map_notify      = map_notify
         self._running  = False
         self._last_run: "mh.MultiHopRun | None" = None
 
@@ -357,14 +360,20 @@ class MultiHopWindow(tk.Toplevel):
                     i18n.t("mh_role_rx") if i == last else i18n.t("mh_role_relay"))
             ttk.Label(self._wp_grid, text=f"{row}  {role}").grid(
                 row=row, column=0, padx=4, pady=1, sticky="w")
-            ttk.Entry(self._wp_grid, textvariable=vars_["name"], width=10).grid(
-                row=row, column=1, padx=4, pady=1)
-            ttk.Entry(self._wp_grid, textvariable=vars_["coord"], width=26).grid(
-                row=row, column=2, padx=4, pady=1, sticky="ew")
+            name_ent = ttk.Entry(self._wp_grid, textvariable=vars_["name"], width=10)
+            name_ent.grid(row=row, column=1, padx=4, pady=1)
+            coord_ent = ttk.Entry(self._wp_grid, textvariable=vars_["coord"], width=26)
+            coord_ent.grid(row=row, column=2, padx=4, pady=1, sticky="ew")
             ttk.Entry(self._wp_grid, textvariable=vars_["height"], width=8).grid(
                 row=row, column=3, padx=4, pady=1)
+            # 手入力の確定でも地図を追従させる（バッチの座標セルと同じ流儀）。
+            for ent in (name_ent, coord_ent):
+                ent.bind("<FocusOut>", lambda _e: self._notify_map(), add="+")
+                ent.bind("<Return>",   lambda _e: self._notify_map(), add="+")
         self._sync_hops()
         self._fit_to_content()
+        # 地点の増減・並びの変化はここに集約されている＝通知もここ 1 か所で足りる。
+        self._notify_map()
 
     def _on_add_point(self) -> None:
         self._add_waypoint()
@@ -391,6 +400,34 @@ class MultiHopWindow(tk.Toplevel):
             dialogs.alert(self, i18n.t("dlg_input_error"), i18n.t("mh_err_no_map"))
             return
         self._map_opener(self)
+
+    def waypoint_markers(self) -> "list[tuple[str, float, float]]":
+        """地図が描き直すための現在の地点列（読めない座標の行は落とす）。
+
+        **地図は写すだけ**＝ここが唯一の出所（`_WaypointSink` の実装）。座標を
+        入力途中の行は座標として読めないので出さない（実行時の検証とは別物＝
+        地図の表示は「今読める点」で足りる）。
+        """
+        points: list[tuple[str, float, float]] = []
+        for vars_ in self._wp_vars:
+            parts = vars_["coord"].get().split(",")
+            if len(parts) != 2:
+                continue
+            try:
+                points.append((vars_["name"].get(),
+                               float(parts[0]), float(parts[1])))
+            except ValueError:
+                continue
+        return points
+
+    def _notify_map(self) -> None:
+        """地点列が変わったことを地図へ知らせる（開いていて中継点モードのときだけ効く）。
+
+        ⚠️ **削除も編集も通知する**＝追加のときだけ描くと、窓で消した地点が地図に
+        残る（2026-08-01 実機確認）。バッチ → 地図の `on_paths_changed` と同じ形。
+        """
+        if self._map_notify is not None:
+            self._map_notify()
 
     def append_waypoint(self, lat: float, lon: float) -> str:
         """地図からの 1 点追加（`_WaypointSink` の実装）。

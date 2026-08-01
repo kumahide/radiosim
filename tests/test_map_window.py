@@ -79,6 +79,85 @@ def test_resilient_when_map_widget_has_no_running():
 
 
 # ============================================================
+# 中継経路レイヤ（地図は写すだけ・モードが見た目を決める）
+# ============================================================
+# 実物の MapWindow は tkintermapview が要るのでここでは起こさない。**描き直しの
+# 規則**（毎回消してから描く／モードを抜けたら消す／宛先が無ければ何も描かない）
+# だけをフェイクで固定する。2026-08-01 の実機確認で出た 2 件
+#   ①窓で地点を削除しても地図のピンが残る（足すだけで消し方が無かった）
+#   ②どのモードでも中継点ピンが出る（モード別の表示制御に入っていなかった）
+# は、どちらもこの規則の不在そのもの。
+
+class _FakeMapWidget:
+    """`set_marker` / `set_path` を記録し、`delete()` で消えるフェイク。"""
+
+    def __init__(self):
+        self.objects: list = []
+
+    def _make(self, kind):
+        obj = SimpleNamespace(kind=kind, deleted=False)
+        obj.delete = lambda o=obj: setattr(o, "deleted", True)
+        self.objects.append(obj)
+        return obj
+
+    def set_marker(self, *a, **k):
+        return self._make("marker")
+
+    def set_path(self, *a, **k):
+        return self._make("path")
+
+    @property
+    def alive(self):
+        return [o for o in self.objects if not o.deleted]
+
+
+def _map_stub(mode: str, points):
+    """`_refresh_waypoints` を呼ぶのに要る最小限だけを持つ MapWindow。"""
+    from views.map_window import MapWindow
+
+    win = MapWindow.__new__(MapWindow)
+    win._map = _FakeMapWidget()
+    win._wp_objects = []
+    win._mode = SimpleNamespace(get=lambda: mode)
+    win._waypoint_sink = (None if points is None else
+                          SimpleNamespace(waypoint_markers=lambda: points))
+    win._tx_icon = win._rx_icon = win._relay_icon = None
+    return win
+
+
+_THREE = [("TX", 34.5, 132.4), ("R1", 34.55, 132.45), ("RX", 34.6, 132.5)]
+
+
+def test_waypoint_layer_is_redrawn_not_appended():
+    """描き直しは**毎回消してから**（足すだけにすると削除が地図に届かない）。"""
+    win = _map_stub("waypoints", _THREE)
+    win._refresh_waypoints()
+    first = len(win._map.alive)
+    assert first == 4, f"折れ線 1 本＋地点 3 つのはずが {first}"
+
+    win._waypoint_sink = SimpleNamespace(waypoint_markers=lambda: _THREE[:2])
+    win._refresh_waypoints()
+    assert len(win._map.alive) == 3, "古いマーカーが残っている（削除が反映されない）"
+
+
+def test_waypoint_layer_is_cleared_outside_its_mode():
+    """中継点モードを抜けたら消えること（モードが見た目を決める）。"""
+    win = _map_stub("waypoints", _THREE)
+    win._refresh_waypoints()
+    assert win._map.alive
+    win._mode = SimpleNamespace(get=lambda: "coords")
+    win._refresh_waypoints()
+    assert not win._map.alive, "他のモードでも中継点が残っている"
+
+
+def test_waypoint_layer_needs_a_destination():
+    """宛先（中継経路ウィンドウ）が無ければ何も描かない。"""
+    win = _map_stub("waypoints", None)
+    win._refresh_waypoints()
+    assert not win._map.alive
+
+
+# ============================================================
 # 破棄経路の静的ガード
 # ============================================================
 # close_map_safely の docstring は「マップを破棄し得る経路は必ずこの関数を通す」
