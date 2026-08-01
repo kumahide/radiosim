@@ -549,14 +549,19 @@ class MultiHopWindow(tk.Toplevel):
             margin=f"{margin:+.2f}" if margin is not None else "—",
             worst=worst_label))
 
+        # **バッチと同じ 3 択**（合成シート / 全ページ / 保存先）。`report_all.html`
+        # は作っていたのに開く導線がどこにも無く、事実上「無い機能」だった。
         choice = dialogs.choose(
             self, i18n.t("dlg_saved_title"),
             i18n.t("scn_saved_msg").format(dir=run.save_dir),
             [("report", i18n.t("dlg_open_report")),
+             ("all",    i18n.t("dlg_open_all")),
              ("folder", i18n.t("dlg_open_folder"))],
         )
         if choice == "report":
             os.startfile(os.path.join(run.save_dir, "route.html"))
+        elif choice == "all":
+            os.startfile(os.path.join(run.save_dir, "report_all.html"))
         elif choice == "folder":
             os.startfile(run.save_dir)
 

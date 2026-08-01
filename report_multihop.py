@@ -63,8 +63,46 @@ def route_sheet_css() -> str:
 .sheet.multihop tr.worst td{background:#fff8e1}
 .sheet.multihop .route-line{font-size:10px;color:#555;margin:0 0 10px}
 .sheet.multihop .map img{width:100%;border:1px solid #ddd;border-radius:4px}
+.sheet.multihop .map{margin-bottom:10px}
 .sheet.multihop .note{font-size:9px;color:#777;margin-top:8px}
+/* 台帳の備考・グラフ列とヘッダの単位行＝**バッチ台帳と同じ見せ方**（⑧）。 */
+.sheet.multihop table.hops td.c-note{text-align:left;white-space:normal;
+  word-break:break-word;font-size:8px;color:#555}
+.sheet.multihop table.hops img.thumb{max-height:40px;border:1px solid #ddd;
+  border-radius:3px;vertical-align:middle}
+.sheet.multihop .all-link{margin:0 0 10px;font-size:11px}
+.sheet.multihop .all-link a{color:#00695c}
 """
+
+
+# ホップ台帳の列＝**バッチ台帳（`report_summary._SUMMARY_COL_KEYS`）と同じ並び**に
+# 揃える（2026-08-01 ユーザー決定「バッチの仕様と合わせたい」）。違うのは先頭 2 列
+# （バッチ＝ID / 判定、こちらは # / 区間 → 判定）と、per-hop では意味を持たない
+# 送受利得を落とし、代わりに「送/受アンテナ高」を 1 列にまとめるところだけ。
+# ⚠️ 列を足すときは**両方の台帳を見て決める**（片方だけ増やすと、同じ「1 本の
+# 回線の内訳」を見る 2 つの面がまた食い違う）。
+_HOP_COL_KEYS = (
+    "mh_col_no", "mh_section", "html_col_status", "html_col_freq",
+    "mh_heights", "html_col_rx", "html_col_margin", "html_col_fspl",
+    "html_col_diff", "html_col_veg", "html_col_env", "html_col_rain",
+    "html_col_gas", "html_col_total_loss", "html_col_slant", "html_col_f1",
+    "html_col_note", "html_col_graph",
+)
+
+
+def _hop_header_cells() -> str:
+    """ホップ台帳の `<th>` 群（単位は 2 行目へ落とす＝バッチ台帳と同じ規則）。"""
+    cells = []
+    for key in _HOP_COL_KEYS:
+        label = i18n.t(key)
+        if label.endswith(")") and " (" in label:
+            name, unit = label.split(" (", 1)
+            cells.append(f'<th>{name}<span class="u">({unit}</span></th>')
+        elif key == "mh_heights":
+            cells.append(f'<th>{label}<span class="u">(m)</span></th>')
+        else:
+            cells.append(f"<th>{label}</th>")
+    return "".join(cells)
 
 
 def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
@@ -79,6 +117,11 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     overall = run.overall_margin
     status_cls = "ok" if run.ok else "ng"
     overall_txt = f"{overall:+.1f} dB" if overall is not None else "—"
+    ok_count  = sum(1 for pr in run.hops
+                    if pr.result is not None and pr.result.status == "OK")
+    ng_count  = sum(1 for pr in run.hops
+                    if pr.result is not None and pr.result.status != "OK")
+    err_count = sum(1 for pr in run.hops if pr.result is None)
 
     names = " → ".join(_html.escape(w.name) for w in run.path.waypoints)
     rows_html = ""
@@ -98,20 +141,35 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 f"<tr class='{cls}'><td>{i + 1}</td>"
                 f"<td class='c-name'>{wp_from} → {wp_to}</td>"
                 f"<td class='c-status'>ERROR</td>"
-                f"<td colspan='6'>{_html.escape(str(pr.error))}</td></tr>\n"
+                f"<td colspan='{len(_HOP_COL_KEYS) - 3}'>"
+                f"{_html.escape(str(pr.error))}</td></tr>\n"
             )
             continue
         freq_disp = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
+        note_esc  = _html.escape(pr.row.note)
+        pid_safe  = pr.row.path_id           # validated: [A-Za-z0-9_-]+
+        # 単位は列見出しが持つ（`unit=False`）＝バッチ台帳と同じ約束。数値だけを
+        # 並べるほうが桁で読める（画面パネルの桁揃えと同じ理由）。
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
             f"<td class='c-name'><a href='{href}'>{wp_from} → {wp_to}</a></td>"
             f"<td class='c-status'>{r.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
-            f"<td>{units.format_distance(r.slant_dist_km)}</td>"
             f"<td>{r.p_rx:.1f}</td>"
             f"<td>{r.actual_margin:+.1f}</td>"
-            f"<td>{units.format_blocked_ratio(r.blocked_ratio)}</td></tr>\n"
+            f"<td>{r.fspl:.1f}</td>"
+            f"<td>{r.diff_loss:.1f}</td>"
+            f"<td>{r.veg_loss:.1f}</td>"
+            f"<td>{r.env_loss:.1f}</td>"
+            f"<td>{r.rain_loss:.1f}</td>"
+            f"<td>{r.gas_loss:.1f}</td>"
+            f"<td>{r.total_loss:.1f}</td>"
+            f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
+            f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
+            f"<td class='c-note'>{note_esc}</td>"
+            f"<td><a href='{href}'>"
+            f"<img src='{pid_safe}/profile.png' class='thumb'></a></td></tr>\n"
         )
 
     worst_label = "—"
@@ -125,6 +183,14 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 if map_b64 else
                 f"<p class='note'>{i18n.t('html_map_unavailable')}</p>")
     memo_html = (f"<p class='route-line'>{_html.escape(memo)}</p>" if memo else "")
+    # 全ページ連結（`report_all.html`）への導線＝**バッチ台帳と同じ**（単体の
+    # route.html にだけ出し、連結文書では自分自身への案内になるので出さない。
+    # 画面でだけ見える＝印刷では消える）。中継は report_all.html を作っていたのに
+    # そこへ辿り着く導線がどこにも無く、事実上「無い機能」になっていた。
+    all_link = "" if anchor_links else (
+        f'<p class="all-link no-print">'
+        f'<a href="report_all.html">{_html.escape(i18n.t("html_all_link"))}</a></p>'
+    )
 
     return (
         '<section class="sheet multihop">'
@@ -132,6 +198,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                                     run.path.path_id)
         + f'<p class="route-line">{names}</p>'
         + memo_html
+        + all_link
+        # カードは**全体判定の 4 枚＋内訳の 3 枚**。前半は中継固有（全体は min で
+        # 決まる／どの区間が決めているか）、後半は**バッチ台帳と同じ OK/NG/ERR の
+        # 内訳**＝同じ性質の情報を同じ見た目で出す（⑧）。
         + '<div class="cards">'
         + f'<div class="card {status_cls}"><div class="lbl">'
           f'{i18n.t("mh_overall")}</div><div class="val">'
@@ -142,18 +212,18 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
           f'<div class="val">{len(run.hops)}</div></div>'
         + f'<div class="card"><div class="lbl">{i18n.t("mh_worst_hop")}</div>'
           f'<div class="val">{worst_label}</div></div>'
+        + f'<div class="card ok"><div class="lbl">{i18n.t("html_ok")}</div>'
+          f'<div class="val">{ok_count}</div></div>'
+        + f'<div class="card ng"><div class="lbl">{i18n.t("html_ng")}</div>'
+          f'<div class="val">{ng_count}</div></div>'
+        + f'<div class="card err"><div class="lbl">{i18n.t("html_error")}</div>'
+          f'<div class="val">{err_count}</div></div>'
         + '</div>'
+        + map_html
         + '<table class="hops"><thead><tr>'
-        + f'<th>#</th><th>{i18n.t("mh_section")}</th><th>{i18n.t("html_status")}</th>'
-        + f'<th>{i18n.t("lbl_b_freq")}<span class="u">MHz</span></th>'
-        + f'<th>{i18n.t("mh_heights")}<span class="u">m</span></th>'
-        + f'<th>{i18n.t("pl_slant_dist")}</th>'
-        + f'<th>{i18n.t("html_rx_level")}<span class="u">dBm</span></th>'
-        + f'<th>{i18n.t("html_act_margin")}<span class="u">dB</span></th>'
-        + f'<th>{i18n.t("pl_f1_obs")}</th>'
+        + _hop_header_cells()
         + '</tr></thead><tbody>' + rows_html + '</tbody></table>'
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
-        + map_html
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'
     )

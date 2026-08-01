@@ -335,6 +335,46 @@ class TestRouteSheet:
         html = report_multihop.route_sheet_html(run)
         assert "再生中継" in html and "受動反射" in html
 
+    def test_ledger_matches_the_batch_ledger(self, base, tmp_path, monkeypatch):
+        """ホップ台帳が**バッチ台帳と同じ項目**を持つこと（2026-08-01 決定）。
+
+        同じ「1 本の回線を数字で見る」面なのに、中継だけ損失の内訳・備考・
+        断面図サムネイルが無かった＝**同じ問いに答える 2 つの面が食い違う**。
+        列を足すときは両方を見て決める、という約束をここで縛る。
+        """
+        import report_multihop
+        import report_summary
+
+        i18n.set_lang("ja")
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        html = report_multihop.route_sheet_html(run)
+
+        shared = set(report_summary._SUMMARY_COL_KEYS) & \
+            set(report_multihop._HOP_COL_KEYS)
+        missing = {k for k in ("html_col_fspl", "html_col_diff", "html_col_veg",
+                               "html_col_env", "html_col_rain", "html_col_gas",
+                               "html_col_total_loss", "html_col_note",
+                               "html_col_graph")} - shared
+        assert not missing, f"バッチ台帳にあってホップ台帳に無い列: {missing}"
+        for pr in run.hops:
+            assert f"{pr.result.total_loss:.1f}" in html, "合計損失が載っていない"
+        assert "profile.png" in html, "断面図のサムネイルが無い"
+
+    def test_sheet_links_to_the_all_pages_document(self, base, tmp_path,
+                                                   monkeypatch):
+        """単体シートから**全ページ連結**へ辿れること（バッチと同じ導線）。
+
+        `report_all.html` は作られていたのに、どこからも開けなかった＝
+        作った成果物に導線が無ければ「無い機能」と同じ。
+        """
+        import report_multihop
+
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        assert "report_all.html" in report_multihop.route_sheet_html(run)
+        # 連結文書の中では出さない（自分自身への案内になる）。
+        assert "report_all.html" not in report_multihop.route_sheet_html(
+            run, anchor_links=True)
+
     def test_css_is_scoped_to_the_sheet(self):
         """シート固有 CSS が `.sheet.multihop` へスコープされていること。
 
