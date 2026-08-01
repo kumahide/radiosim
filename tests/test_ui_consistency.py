@@ -54,9 +54,16 @@ _WINDOWS = [
 ]
 
 
-@pytest.fixture
+@pytest.fixture(scope="module")
 def app_windows():
-    """ランチャーと 3 つの窓を開いた状態（テストごとに作り直す）。"""
+    """ランチャーと 3 つの窓を開いた状態。
+
+    ⚠️ **module スコープ**＝ここのテストは「窓を眺めて型を確かめる」だけで中身を
+    書き換えないので、窓は 1 組で足りる。テストごとに Tk のルートを作り直すと、
+    ルートの生成が詰まって**表示依存テストが黙って skip される**（conftest の
+    リトライで拾いきれない）／ごく稀に Tcl が落ちる（I-019）という形で、この
+    ファイルが他のゲートを巻き添えにする。
+    """
     pytest.importorskip("tkinter")
     root = make_themed_root()
     root.withdraw()
