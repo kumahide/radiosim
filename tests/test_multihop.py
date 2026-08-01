@@ -399,10 +399,15 @@ class TestRouteSheet:
 
         shared = set(report_summary._SUMMARY_COL_KEYS) & \
             set(report_multihop._HOP_COL_KEYS)
+        # ⚠️ 備考列は**意図的に外してある**＝中継の備考は `hop_rows` が入れる
+        # 「A → B」の導出物で、載せると区間列と同じ文字が並ぶだけになる。
         missing = {k for k in ("html_col_fspl", "html_col_diff", "html_col_veg",
                                "html_col_env", "html_col_rain", "html_col_gas",
-                               "html_col_total_loss", "html_col_note",
+                               "html_col_total_loss",
                                "html_col_graph")} - shared
+        assert "html_col_note" not in report_multihop._HOP_COL_KEYS, (
+            "区間名と同じ文字が並ぶ備考列が復活している"
+        )
         assert not missing, f"バッチ台帳にあってホップ台帳に無い列: {missing}"
         for pr in run.hops:
             assert f"{pr.result.total_loss:.1f}" in html, "合計損失が載っていない"
