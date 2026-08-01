@@ -158,6 +158,95 @@ def test_verdict_colors_come_from_theme_in_every_window(app_windows):
 
 
 # ============================================================
+# 2b. 数値パネルの桁揃え（グラフ窓）
+# ============================================================
+def test_graph_panel_keeps_units_out_of_the_values():
+    """リンクバジェットの値に**単位を混ぜない**こと（桁が揃わなくなる）。
+
+    `-76.4 dBm` と `12.3 dB` を 1 つの文字列にして右寄せすると、揃うのは単位の
+    右端で**小数点は揃わない**（2026-08-01 実機フィードバック）。単位は
+    `_panel_rows` が別の列に固定するので、値は数値だけを持つ。
+    """
+    pytest.importorskip("tkinter")
+    import numpy as np
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        from views.graph import show_graph
+        params = _params()
+        win = show_graph(root, params, np.zeros(params.num))
+        win.update()
+        numeric = ("eirp", "fspl", "diff_loss", "total_loss", "gain_rx",
+                   "p_rx", "sens", "margin", "k_factor", "f1_obs", "slant")
+        for key in numeric:
+            value = win._vars[key].get()
+            assert value.replace(",", "").replace("+", "").replace("-", "") \
+                .replace(".", "").isdigit(), f"{key} に数値以外が混ざっている: {value!r}"
+
+        # 値は列 1 に右寄せ・単位は列 2（列が崩れれば桁も崩れる）。
+        values, units_ = _panel_columns(win)
+        assert values, "値の列が見つからない（パネルの組み方が変わった）"
+        assert all(a == "e" for a in values), f"値の列が右寄せでない: {values}"
+        assert units_, "単位の列が無い（値に単位を混ぜていないか）"
+    finally:
+        root.destroy()
+
+
+def test_graph_legend_does_not_cover_the_plot():
+    """凡例が**プロット領域に重ならない**こと（軸の外・上＝レポート図と同じ）。
+
+    図の中の右上に置くと、経路は左下→右上に描かれるので**受信側のアンテナと
+    受信端が必ず凡例の下に入る**（2026-08-01 実機フィードバック）。`loc="best"`
+    は出る場所が毎回変わるので採らない＝位置の一貫性そのものが要件（⑧）。
+    """
+    pytest.importorskip("tkinter")
+    import numpy as np
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        from views.graph import show_graph
+        params = _params()
+        win = show_graph(root, params, np.zeros(params.num))
+        win.update()
+        fig = win._fig
+        fig.canvas.draw()
+        legend = win._ax.get_legend()
+        lg = legend.get_window_extent(fig.canvas.get_renderer())
+        ax = win._ax.get_window_extent()
+        assert lg.y0 >= ax.y1 - 1, (
+            f"凡例がプロット領域に重なっている（凡例 y0={lg.y0:.0f} / 軸 y1={ax.y1:.0f}）"
+        )
+    finally:
+        root.destroy()
+
+
+def _panel_columns(win) -> tuple:
+    """パネルの列 1（値）の anchor 一覧と、列 2（単位）のテキスト一覧。"""
+    from tkinter import ttk
+    values, units_ = [], []
+    for frame in _labelframes(win):
+        for child in frame.grid_slaves():
+            info = child.grid_info()
+            if not isinstance(child, ttk.Label):
+                continue
+            if int(info.get("column", 0)) == 1:
+                values.append(str(child.cget("anchor")))
+            elif int(info.get("column", 0)) == 2:
+                units_.append(str(child.cget("text")))
+    return values, units_
+
+
+def _labelframes(widget) -> list:
+    from tkinter import ttk
+    found = []
+    for child in widget.winfo_children():
+        if isinstance(child, ttk.LabelFrame):
+            found.append(child)
+        found.extend(_labelframes(child))
+    return found
+
+
+# ============================================================
 # 3. 画面では bold を使わない
 # ============================================================
 def test_no_bold_font_on_screen(app_windows):
