@@ -306,6 +306,23 @@ class TestTopology:
         )
         assert [r.lat_rx for r in rows] == [w.lat for w in path.waypoints[1:]]
 
+    def test_aggregation_refuses_topologies_it_was_not_designed_for(self):
+        """鎖以外では**黙って数字を返さず止める**（集約規則が未決定だから）。
+
+        `topology` という入り口を作った以上、星を設定した誰かに対して
+        `overall_margin` は何事もなかったように min を返してしまう。min は
+        鎖（直列）の意味論で、星（独立した N 本）では**経路上の分布**という
+        主役の情報が消える＝静かに誤る。制約をコメントに書くだけでは守られない
+        （この布石自体が散文だったせいで 5a では打たれなかった）ので門にする。
+        """
+        run = mh.MultiHopRun(path=_path(3), hops=[])
+        assert run.ok is False                      # 鎖は従来どおり答える
+        run.path.topology = mh.TOPOLOGY_STAR
+        for name in ("ok", "worst", "overall_margin"):
+            with pytest.raises(NotImplementedError) as ex:
+                getattr(run, name)
+            assert "集約" in str(ex.value), "何が未決定なのかが伝わらない"
+
     def test_labels_come_from_the_links(self):
         """区間の見出しも接続規則から導くこと（表示側に式を書き写さない）。"""
         path = _path(3)

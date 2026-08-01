@@ -136,14 +136,42 @@ def links(path: MultiHopPath) -> list[tuple[int, int]]:
 
 @dataclass
 class MultiHopRun:
-    """実行結果（ホップ別＋全体）。"""
+    """実行結果（ホップ別＋全体）。
+
+    ⚠️ **集約（下の 3 つ）は鎖の意味論**であって、トポロジーが変われば意味を失う。
+    そのため鎖以外では**黙って数字を返さず止める**（下記 `_require_chain`）。
+    """
     path:     MultiHopPath
     hops:     list[batch.PathResult]
     save_dir: str = ""
 
+    def _require_chain(self, what: str) -> None:
+        """鎖以外のトポロジーで集約を求められたら、その場で止める。
+
+        **なぜ例外にするか**＝`topology` という入り口を作った以上、星を設定した
+        誰かに対して `overall_margin` は**何事もなかったように min を返す**。
+        中身は意味を持たないのに、である（鎖＝直列なので min が回線の余裕そのもの
+        だが、星＝独立した N 本では「経路上で最悪の 1 点」という統計値の 1 つに
+        すぎず、主役であるはずの分布——どこで切れるか・どれだけ切れるか——が
+        消える）。**静かに誤るより、その場で決定を強制するほうが安い。**
+
+        この制約はコメントとメモリにしか無いと守られない（[[project-radiosim-for-drone]]
+        の布石がまさにそれで打たれなかった）ので、実行時の門にしてある。
+        ⛔ ここを外すときは、集約規則そのものを設計してから外すこと
+        （判定の単位／主たる出力／`worst` の読み替え＝出力の形とセットで決まる）。
+        """
+        if self.path.topology != TOPOLOGY_CHAIN:
+            raise NotImplementedError(
+                f"{what}: トポロジー '{self.path.topology}' の集約規則は未決定です。"
+                "min は鎖（直列）の意味論であって、星（独立した N 本）では"
+                "経路上の分布という肝心の情報が消えます。出力の形と併せて"
+                "集約規則を設計してから使ってください。"
+            )
+
     @property
     def ok(self) -> bool:
         """**全ホップが成立して初めて回線が成立する**（鎖は最も弱い輪で切れる）。"""
+        self._require_chain("ok")
         return bool(self.hops) and all(
             h.result is not None and h.result.status == "OK" for h in self.hops
         )
@@ -154,6 +182,7 @@ class MultiHopRun:
 
         **失敗したホップがあればそれが最悪**（数値が無い＝比較できない）。
         """
+        self._require_chain("worst")
         failed = [h for h in self.hops if h.result is None]
         if failed:
             return failed[0]
@@ -168,6 +197,7 @@ class MultiHopRun:
         再生中継なので各ホップは独立したバジェット。「どこが一番苦しいか」が
         回線全体の余裕そのものになる。
         """
+        self._require_chain("overall_margin")
         margins = [h.result.actual_margin for h in self.hops if h.result is not None]
         if not margins or len(margins) != len(self.hops):
             return None                  # 失敗したホップがある＝全体は語れない
