@@ -438,6 +438,76 @@ class TestRoundtripCounting:
         assert memcheck.check_memory_index_lines() == []
 
 
+class TestGroundworkDeadline:
+    """**将来の版のための布石**が、その版に入っても未了なら知らせること。
+
+    2026-08-01：ロードマップとドローン応用メモの両方に「2.6 で waypoint の
+    トポロジーを鎖で決め打ちせず点列＋接続規則で持つ（今ならほぼゼロ・後だと
+    作り直し）」と書いてあったのに、2.6 の A-3 実装は鎖の決め打ちで通り、
+    ユーザーの「スター型は配慮されている?」で初めて発覚した。決定は実在し
+    正しかったが、**その版の作業リストに現れなかったので打たれなかった**。
+
+    通常の仕組みが拾えなかった理由＝①布石はドローンの話題の下にあり、2.6 の
+    作業順（テーマ＝A-3 から作った）に入らなかった ②版区切り整合WF は
+    **リリース時**に走る＝着手時に要る布石には一巡遅い。⇒ 対象版を機械可読に
+    書き、**時計のほうを機械に見張らせる**。
+    """
+
+    def _memo(self, tmp_path, text):
+        p = tmp_path / "project_x.md"
+        p.write_text(text, encoding="utf-8")
+        return p
+
+    def _run(self, memcheck, tmp_path, monkeypatch, ver):
+        monkeypatch.setattr(memcheck, "MEM_DIR", tmp_path)
+        return memcheck.check_groundwork(ver)
+
+    def test_due_groundwork_is_flagged(self, memcheck, tmp_path, monkeypatch):
+        self._memo(tmp_path, "- ⏳布石(2.6): waypoint を点列＋接続規則で持つ\n")
+        found = self._run(memcheck, tmp_path, monkeypatch, "2.6a3")
+        assert any("布石(2.6)" in f and "waypoint" in f for f in found)
+
+    def test_future_groundwork_is_silent(self, memcheck, tmp_path, monkeypatch):
+        """まだ先の版の布石では鳴らない（着手した版だけを見る＝ノイズを出さない）。"""
+        self._memo(tmp_path, "- ⏳布石(3.2): 出力契約に版を持たせる\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6a3") == []
+
+    def test_done_groundwork_is_silent(self, memcheck, tmp_path, monkeypatch):
+        self._memo(tmp_path, "- ✅布石(2.6): waypoint を点列＋接続規則で持つ\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6a3") == []
+
+    def test_it_keeps_nagging_after_the_target_version(self, memcheck, tmp_path,
+                                                       monkeypatch):
+        """**版を跨いでも鳴り続ける**＝打ち忘れたまま次の版へ進ませない。"""
+        self._memo(tmp_path, "- ⏳布石(2.6): 打ち忘れたもの\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.7a1")
+
+    def test_half_width_parens_are_accepted(self, memcheck, tmp_path, monkeypatch):
+        """記法の揺れ（全角/半角の括弧）で黙らないこと。"""
+        self._memo(tmp_path, "- ⏳布石(2.6): x\n- ⏳布石（2.6）: y\n")
+        assert len(self._run(memcheck, tmp_path, monkeypatch, "2.6a3")) == 2
+
+    def test_notation_quoted_in_prose_is_ignored(self, memcheck, tmp_path,
+                                                 monkeypatch):
+        """記法を**説明している行**では鳴らないこと（宣言 vs 言及）。
+
+        ⚠️ 実際に踏んだ誤検知（2026-08-01・実装直後）＝この check の説明文
+        「`⏳布石(2.6)` … を拾い」が検出された。**check 11 でも同じ罠を踏んで
+        いる**（本文中の日付は引用であることが多い）。同じクラスなので対策も
+        同じ＝インラインコードを落とし、行頭付近の宣言だけを数える。
+        """
+        self._memo(
+            tmp_path,
+            "# 説明\n"
+            "- メモリ全体から `⏳布石(2.6)` 形式のマーカーを拾い、版に達したら警告する\n"
+            "- 長い前置きがずっと続く文章の途中に ⏳布石(2.6): が出てくる場合も言及\n",
+        )
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.6a3") == []
+
+    def test_real_memory_has_no_overdue_groundwork(self, memcheck):
+        assert memcheck.check_groundwork(memcheck._current_version() or "0.0") == []
+
+
 class TestUpdatedStampFreshness:
     """本文の「最終更新 YYYY-MM-DD」がファイル更新日より古くないこと。
 
