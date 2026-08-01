@@ -51,6 +51,7 @@ class MultiHopWindow(tk.Toplevel):
         config_provider: "Callable[[], dict] | None" = None,
         meta_provider:   "Callable[[], dict] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
+        initial_path:    "mh.MultiHopPath | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("mh_window_title"))
@@ -71,10 +72,49 @@ class MultiHopWindow(tk.Toplevel):
         self._pump = ProgressPump(self, self._dispatch_event)
 
         self._build()
-        self._add_waypoint(_DEFAULT_NAMES[0])
-        self._add_waypoint(_DEFAULT_NAMES[-1])
+        if initial_path is not None and initial_path.waypoints:
+            self._apply_path(initial_path)
+        else:
+            self._add_waypoint(_DEFAULT_NAMES[0])
+            self._add_waypoint(_DEFAULT_NAMES[-1])
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ----------------------------------------------------------
+    # プロジェクト（`.rsproj`）との受け渡し
+    # ----------------------------------------------------------
+    def project_path(self) -> "mh.MultiHopPath | None":
+        """保存用に経路を取り出す。**まだ座標が 1 つも入っていなければ None**。
+
+        `None`＝「この窓の情報を持たない」（project.py の約束）。開いただけの窓が
+        空の経路でファイルの中身を上書きしないための区別で、`_collect_path` の
+        「読めない値は名前つきで弾く」性質はそのまま使う（保存側は例外を受けて
+        **その節だけ保存しない**＝黙って壊れた経路を書かない）。
+        """
+        if not any(v["coord"].get().strip() for v in self._wp_vars):
+            return None
+        return self._collect_path()
+
+    def _apply_path(self, path: "mh.MultiHopPath") -> None:
+        """プロジェクトの経路を画面へ流し込む（`project_path` と対）。
+
+        ⚠️ **地点を先に作ってからホップ RF を入れる**＝ホップ行は地点数からの
+        導出物（`_sync_hops`）なので、順序を逆にすると入れた値が消える。
+        """
+        self._route_id.set(path.path_id or "route1")
+        self._note.set(path.note)
+        self._wp_vars = []
+        for wp in path.waypoints:
+            self._wp_vars.append({
+                "name":   tk.StringVar(value=wp.name),
+                "coord":  tk.StringVar(value=f"{wp.lat:.6f}, {wp.lon:.6f}"),
+                "height": tk.StringVar(value=f"{wp.h:.1f}"),
+            })
+        self._render_waypoints()          # → _sync_hops でホップ行が揃う
+        for vars_, rf in zip(self._hop_vars, path.hop_rf):
+            for key, value in (("freq", rf.freq_mhz), ("gain_tx", rf.gain_tx),
+                               ("gain_rx", rf.gain_rx)):
+                vars_[key].set("" if value is None else str(value))
 
     # ----------------------------------------------------------
     # 組み立て
@@ -515,6 +555,11 @@ class MultiHopWindow(tk.Toplevel):
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
         dialogs.alert(self, i18n.t("dlg_error"), str(ex))
+
+    def close_window(self) -> None:
+        """他所（ランチャーのプロジェクト読込）から閉じるための公開口
+        （3 つの窓で名前を揃える＝内部ハンドラ名で分岐させない）。"""
+        self._on_close()
 
     def _on_close(self) -> None:
         self._pump.stop()

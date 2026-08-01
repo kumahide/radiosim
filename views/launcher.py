@@ -13,7 +13,7 @@ import threading
 import time
 import tkinter as tk
 from tkinter import filedialog, ttk
-from typing import Callable
+from typing import TYPE_CHECKING, Callable
 
 import config
 import coords
@@ -24,6 +24,9 @@ import version
 from models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
+
+if TYPE_CHECKING:              # 型注釈のためだけ＝起動時の import 連鎖を増やさない
+    import project
 
 # 入力キー → i18n ツールチップキーのマッピング
 _TIP_KEYS: dict[str, str] = {
@@ -114,6 +117,12 @@ class SimLauncher:
         dem.set_proxy(self.config.get("proxy_url", ""))
         self.entries:  dict[str, tk.Entry] = {}
         self._on_theme = on_theme
+        # プロジェクト（`.rsproj`）の保持者はランチャー。**閉じている窓の節は
+        # ここに持ち越す**＝バッチ窓を閉じただけで行が消えたファイルを上書き保存
+        # する事故を防ぐ（project.py の「節が無い＝空ではない」と対）。
+        # 型は project.ProjectDoc。起動時に project を import しないため遅延生成
+        # （project → batch → report 系と import 連鎖が伸び、初回描画が遅くなる）。
+        self._project: "project.ProjectDoc | None" = None
 
         self._build_ui()
         self._fit_window_to_content()
@@ -220,6 +229,18 @@ class SimLauncher:
         # 2 階層たどらせない）＝恒久ボタンを消した代わりの受け皿はそちら。
         file_menu = tk.Menu(menubar, tearoff=False)
         self._themed_menus.append(file_menu)
+        # プロジェクト（`.rsproj`）＝**入力一式を 1 つに束ねる**唯一の口。
+        # ⚠️ ボタンは足さない（ボタン列は FHD 100% の高さ予算をぎりぎりで
+        # 使い切っており、4 つ目で 2 列×2 行へ組み直した直後＝B-021）。
+        file_menu.add_command(
+            label   = i18n.t("menu_open_project"),
+            command = self._on_open_project,
+        )
+        file_menu.add_command(
+            label   = i18n.t("menu_save_project"),
+            command = self._on_save_project,
+        )
+        file_menu.add_separator()
         file_menu.add_command(
             label   = i18n.t("menu_load_settings"),
             command = self._on_load_settings,
@@ -852,30 +873,37 @@ class SimLauncher:
             return
         try:
             with open(file_path, "r", encoding="utf-8") as f:
-                new_conf = json.load(f)
-            # sim キーのみ取り込む（app 設定 theme/lang/proxy_url は無視する）。
-            new_conf = config.select_sim(new_conf)
-            for k, v in new_conf.items():
-                if k in self.entries:
-                    self.entries[k].delete(0, tk.END)
-                    self.entries[k].insert(0, str(v))
-            if "env_type" in new_conf:
-                label = self._env_key_to_label.get(
-                    new_conf["env_type"], self._env_key_to_label["suburban"]
-                )
-                self._env_var.set(label)
-            if "diff_method" in new_conf:
-                self._diff_var.set(
-                    self._diff_key_to_label.get(
-                        str(new_conf["diff_method"]),
-                        self._diff_key_to_label["deygout"],
-                    )
-                )
-            # ファイルの座標は DD。現在の表示形式（DMS かも）へ整形し直す。
-            self._refresh_coord_display()
+                self._apply_sim_config(json.load(f))
             self._alert(i18n.t("dlg_success"), i18n.t("dlg_settings_ok"))
         except Exception as e:
             self._alert(i18n.t("dlg_error"), str(e))
+
+    def _apply_sim_config(self, conf: dict) -> None:
+        """sim パラメータを入力欄へ流し込む（settings.json とプロジェクトの共通口）。
+
+        **app 設定（theme/lang/proxy_url）は `select_sim` が落とす**＝他人のファイルを
+        開いた瞬間に言語やプロキシが変わらない（`.rsproj` 側では project.py も同じ
+        関門を通す＝二重の守り）。
+        """
+        conf = config.select_sim(conf)
+        for k, v in conf.items():
+            if k in self.entries:
+                self.entries[k].delete(0, tk.END)
+                self.entries[k].insert(0, str(v))
+        if "env_type" in conf:
+            label = self._env_key_to_label.get(
+                conf["env_type"], self._env_key_to_label["suburban"]
+            )
+            self._env_var.set(label)
+        if "diff_method" in conf:
+            self._diff_var.set(
+                self._diff_key_to_label.get(
+                    str(conf["diff_method"]),
+                    self._diff_key_to_label["deygout"],
+                )
+            )
+        # ファイルの座標は DD。現在の表示形式（DMS かも）へ整形し直す。
+        self._refresh_coord_display()
 
     def _on_load_app_settings(self) -> None:
         """ファイルから app 設定（theme/lang/proxy_url）のみ取り込む。
@@ -926,6 +954,134 @@ class SimLauncher:
                 self._alert(i18n.t("dlg_success"), i18n.t("dlg_app_settings_ok"))
         except Exception as e:
             self._alert(i18n.t("dlg_error"), str(e))
+
+    # ----------------------------------------------------------
+    # プロジェクト（`.rsproj`）＝入力一式を 1 つに束ねる
+    #
+    # 保持者はランチャー。**開いている窓からは現在値を集め、閉じている窓の節は
+    # 前回値を持ち越す**（窓を閉じただけで内容が消えたファイルを書かない）。
+    # 読込は「確認して閉じ、開き直す」＝凍結方式（開く＝スナップショット）と
+    # ちょうど一致するので、各窓に流し込み口を作らずに済む。
+    # ----------------------------------------------------------
+    def _project_doc(self) -> "project.ProjectDoc":
+        """保持中の ProjectDoc（無ければ空で作る）。project は遅延 import。"""
+        import project
+        if self._project is None:
+            self._project = project.ProjectDoc()
+        return self._project
+
+    def _open_window(self, attr: str):
+        """開いている窓を返す（閉じていれば None）。"""
+        win = getattr(self, attr, None)
+        try:
+            return win if win is not None and win.winfo_exists() else None
+        except tk.TclError:
+            return None
+
+    def _collect_project(self) -> "tuple[project.ProjectDoc, list[str]]":
+        """現在の入力一式を ProjectDoc に集める。戻り値＝(doc, 警告文リスト)。
+
+        **警告は「保存しなかった節」を伝えるためのもの**＝読めない値を黙って
+        書いて壊れたファイルを作るくらいなら、その節だけ保存せずに知らせる。
+        保存そのものは通す（入力途中でも保存できることを優先＝I-010 の逆側で、
+        黙って失敗しないことが要点）。
+        """
+        import project
+        doc = self._project_doc()
+        doc.meta   = self._current_meta()
+        doc.params = self._current_config()
+        doc.app_version = ""            # 保存のたびに現在の版で刻印し直す
+        doc.saved_at    = ""
+        warnings: list[str] = []
+
+        bw = self._open_window("_batch_win")
+        if bw is not None:
+            rows = bw.project_rows()
+            bad  = project.unreadable_row(rows)
+            if bad is None:
+                doc.batch_rows = rows
+            else:
+                warnings.append(i18n.t("proj_warn_batch").format(
+                    id=bad.path_id or "-"))
+
+        sw = self._open_window("_scenario_win")
+        if sw is not None:
+            doc.scenario = sw.project_spec()
+
+        mw = self._open_window("_multihop_win")
+        if mw is not None:
+            try:
+                path = mw.project_path()
+            except ValueError as ex:
+                warnings.append(i18n.t("proj_warn_multihop").format(reason=ex))
+            else:
+                if path is not None:
+                    doc.multihop = path
+        return doc, warnings
+
+    def _on_save_project(self) -> None:
+        import project
+        doc, warnings = self._collect_project()
+        file_path = filedialog.asksaveasfilename(
+            parent           = self.root,
+            title            = i18n.t("dlg_save_project"),
+            defaultextension = project.FILE_EXT,
+            filetypes        = [(i18n.t("proj_filetype"), "*" + project.FILE_EXT)],
+            initialfile      = project.default_filename(
+                doc.meta.get("project_name", "")),
+        )
+        if not file_path:
+            return
+        try:
+            project.save(doc, file_path)
+        except Exception as e:
+            # 書けなかったことを黙らない（I-010 と同クラス）。
+            config.logger.warning("Project save failed: %s", e)
+            self._alert(i18n.t("dlg_error"), str(e))
+            return
+        self._alert(i18n.t("dlg_success"),
+                    i18n.t("proj_saved").format(path=file_path) + "".join(warnings))
+
+    def _on_open_project(self) -> None:
+        import project
+        file_path = filedialog.askopenfilename(
+            parent    = self.root,
+            title     = i18n.t("dlg_select_project"),
+            filetypes = [(i18n.t("proj_filetype"), "*" + project.FILE_EXT)],
+        )
+        if not file_path:
+            return
+        try:
+            doc = project.load(file_path)
+        except project.ProjectError as e:
+            self._alert(i18n.t("dlg_error"), str(e))
+            return
+        except Exception as e:
+            config.logger.warning("Project load failed: %s", e)
+            self._alert(i18n.t("dlg_error"), str(e))
+            return
+
+        # 開いている窓があるなら、閉じてよいか先に聞く（編集中の内容が消えるので）。
+        open_windows = [w for w in (self._open_window("_batch_win"),
+                                    self._open_window("_scenario_win"),
+                                    self._open_window("_multihop_win"))
+                        if w is not None]
+        if open_windows and not self._confirm(i18n.t("proj_close_title"),
+                                              i18n.t("proj_close_confirm")):
+            return
+        for win in open_windows:
+            # ⚠️ 各窓の close ハンドラ名に依存しない（バッチは `_on_close` を
+            # **コールバックの保管場所**として使っており、名前で分岐すると
+            # 「閉じずにコールバックだけ呼ぶ」に化ける）。公開口は close_window。
+            win.close_window()
+
+        # ⚠️ **窓を閉じてから doc を差し替える**＝閉じる処理は「その窓の節を
+        # 持ち越す」ので、先に差し替えると読み込んだ内容が閉じた窓の値で上書きされる。
+        self._project = doc
+        self._apply_sim_config(doc.params)
+        self._project_var.set(doc.meta.get("project_name", ""))
+        self._memo_var.set(doc.meta.get("memo", ""))
+        self._alert(i18n.t("dlg_success"), i18n.t("proj_loaded"))
 
     def _on_open_results(self) -> None:
         if os.path.exists(config.RESULTS_DIR):
@@ -978,9 +1134,22 @@ class SimLauncher:
             config_provider=self._current_config,
             meta_provider=self._current_meta,
             on_close=self._on_multihop_closed,
+            # プロジェクトを読み込んでいれば、その経路で開く（凍結方式＝
+            # 「開く＝スナップショット」とちょうど一致するので、開いている窓へ
+            # 後から流し込む口を作らずに済む）。
+            initial_path=self._project_doc().multihop,
         )
 
     def _on_multihop_closed(self) -> None:
+        """閉じる前に経路を持ち越す（読めない値のときは前回値のまま）。"""
+        win = self._open_window("_multihop_win")
+        if win is not None:
+            try:
+                path = win.project_path()
+            except ValueError:
+                path = None          # 未完成の入力で保存済みの経路を壊さない
+            if path is not None:
+                self._project_doc().multihop = path
         self._multihop_win = None
 
     def open_map_for_waypoints(self, sink) -> None:
@@ -1017,9 +1186,14 @@ class SimLauncher:
             config_provider=self._current_config,
             meta_provider=self._current_meta,
             on_close=self._on_scenario_closed,
+            initial_spec=self._project_doc().scenario,
         )
 
     def _on_scenario_closed(self) -> None:
+        """閉じる前に条件セットを持ち越す（窓を閉じただけで消さない）。"""
+        win = self._open_window("_scenario_win")
+        if win is not None:
+            self._project_doc().scenario = win.project_spec()
         self._scenario_win = None
 
     # ----------------------------------------------------------
@@ -1189,11 +1363,21 @@ class SimLauncher:
             load_params=self.load_batch_row,
             on_close=self._on_batch_closed,
             on_paths_changed=self._notify_map_paths_changed,
+            initial_rows=self._project_doc().batch_rows,
         )
         return self._batch_win
 
     def _on_batch_closed(self) -> None:
-        """バッチが閉じたとき: 参照を手放し、地図が連続追加中なら座標入力へ戻させる。"""
+        """バッチが閉じたとき: **行を持ち越し**、参照を手放し、地図が連続追加中なら
+        座標入力へ戻させる。
+
+        ⚠️ この通知はバッチ窓が**破棄される前**に来る（`_on_close_window`）。行の
+        回収がここでできるのはそのためで、順序を戻すと「閉じただけで行が消えた
+        プロジェクトを保存する」ことになる。
+        """
+        win = self._open_window("_batch_win")
+        if win is not None:
+            self._project_doc().batch_rows = win.project_rows()
         self._batch_win = None
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_append_target_closed()

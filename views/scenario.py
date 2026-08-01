@@ -39,6 +39,7 @@ from typing import Callable
 
 import config
 import i18n
+import project
 import report_scenario
 import scenario as scn
 import simulation as sim
@@ -109,6 +110,7 @@ class ScenarioWindow(tk.Toplevel):
         config_provider: "Callable[[], dict] | None" = None,
         meta_provider:   "Callable[[], dict] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
+        initial_spec:    "project.ScenarioSpec | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("scn_window_title"))
@@ -128,8 +130,81 @@ class ScenarioWindow(tk.Toplevel):
         self._pump = ProgressPump(self, self._dispatch_event)
 
         self._build()
+        if initial_spec is not None:
+            self._apply_spec(initial_spec)
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    # ----------------------------------------------------------
+    # プロジェクト（`.rsproj`）との受け渡し
+    # ----------------------------------------------------------
+    def project_spec(self) -> "project.ScenarioSpec":
+        """画面の条件セットを**文字列のまま**取り出す（保存用）。
+
+        ⚠️ ここで数値へ変換しない＝この窓は「値は文字列で持ち、実行時に変換する」
+        流儀（`_COMPARE_FIELDS`）で、保存の瞬間にパースを走らせると**入力途中の
+        値を保存できなくなる**。値域の検証は実行時に 1 か所（`scn.Condition`）で行う。
+
+        env/diff は**画面ラベルでなく内部キー**で持つ（ja で保存したファイルを en で
+        開いても壊れないため＝`_to_value` と対の `_display` で戻す）。
+        """
+        compare = [
+            {key: self._key_of(key, cvars[key].get()) for key, _kind in _COMPARE_FIELDS}
+            for cvars in self._cmp_cols
+        ]
+        sweep = {
+            "axis":   self._sweep_axis.get(),
+            "from":   self._from_var.get(),
+            "to":     self._to_var.get(),
+            "points": self._points_var.get(),
+        }
+        return project.ScenarioSpec(mode=self._mode.get(), compare=compare,
+                                    sweep=sweep)
+
+    def _apply_spec(self, spec: "project.ScenarioSpec") -> None:
+        """プロジェクトの条件セットを画面へ流し込む（`project_spec` と対）。
+
+        ベース列には触らない＝**ベースは常にランチャーの現在値**（プロジェクトの
+        params もランチャーへ流し込まれてからこの窓が開くので、両者は一致する）。
+        """
+        if spec.mode in ("compare", "sweep"):
+            self._mode.set(spec.mode)
+            self._on_mode_changed()
+
+        # 比較条件の列数をファイルに合わせる（最低 1 列は常に残す）。
+        while len(self._cmp_cols) > max(len(spec.compare), 1):
+            self._remove_condition_column()
+        while len(self._cmp_cols) < len(spec.compare):
+            before = len(self._cmp_cols)
+            self._add_condition_column()
+            if len(self._cmp_cols) == before:
+                break                      # 上限に達した（保存元の版が違う等）
+        for cvars, saved in zip(self._cmp_cols, spec.compare):
+            for key, _kind in _COMPARE_FIELDS:
+                if key in saved:
+                    cvars[key].set(self._display(key, saved[key]))
+
+        axis = spec.sweep.get("axis", "")
+        if axis in self._sweep_rows:
+            self._sweep_axis.set(axis)
+        for name, var in (("from", self._from_var), ("to", self._to_var),
+                          ("points", self._points_var)):
+            if spec.sweep.get(name):
+                var.set(spec.sweep[name])
+        self._on_sweep_axis_changed()
+
+    @staticmethod
+    def _key_of(key: str, text: str) -> str:
+        """画面表示 → 保存する文字列（env/diff だけ i18n ラベルを内部キーへ戻す）。
+
+        `_to_value` を使わない理由＝あちらは数値欄を `float` にして**読めない値で
+        例外を投げる**（実行時の検証）。保存は入力途中でも通す必要がある。
+        """
+        if key == "env_type":
+            return {v: k for k, v in _env_labels().items()}.get(text, text)
+        if key == "diff_method":
+            return {v: k for k, v in _diff_labels().items()}.get(text, text)
+        return text
 
     def _build_frozen_header(self, parent: tk.Misc) -> None:
         """ランチャーから凍結した前提の帯（I-031）。
@@ -665,6 +740,11 @@ class ScenarioWindow(tk.Toplevel):
         os.startfile(os.path.join(self._last_dir, "scenario.html"))
 
     # ----------------------------------------------------------
+    def close_window(self) -> None:
+        """他所（ランチャーのプロジェクト読込）から閉じるための公開口
+        （3 つの窓で名前を揃える＝内部ハンドラ名で分岐させない）。"""
+        self._on_close()
+
     def _on_close(self) -> None:
         """閉じるときはポンプを止めてから破棄する。
 

@@ -18,9 +18,10 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 9. [Calculation Models](#calculation-models)
 10. [DEM Retrieval Logic](#dem-retrieval-logic)
 11. [Save Package](#save-package)
-12. [Architecture](#architecture)
-13. [Testing](#testing)
-14. [Known Limitations](#known-limitations)
+12. [Project Files (.rsproj)](#project-files-rsproj)
+13. [Architecture](#architecture)
+14. [Testing](#testing)
+15. [Known Limitations](#known-limitations)
 
 ---
 
@@ -44,6 +45,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - **A4 reports (v2)**: per-path / summary as a single print-ready A4 page (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer)
 - **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
 - **All-paths overview map** in the summary report (color-coded by verdict)
+- **Relay routes (multi-hop)**: a waypoint list is the source of truth; each hop runs an independent link budget (regenerative relay). The overall verdict is the min (the tightest hop), reported alongside the per-hop breakdown
+- **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (never results, never app settings)
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
 - Japanese / English UI — switchable from the menu bar
@@ -169,6 +172,7 @@ radiosim/
 ├── report_scenario.py    # Condition explorer output (A4 line chart + table, CSV; headless)
 ├── multihop.py           # Relay path engine (A-3; waypoints to hops, min aggregation; headless)
 ├── report_multihop.py    # Relay path output (route sheet + per-hop sheets, hops.csv; headless)
+├── project.py            # Project file (.rsproj) I/O — bundles the whole input set (headless)
 ├── report_common.py      # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
 ├── report_path.py        # Per-path output generation (PNG/HTML/KML; headless)
 ├── report_summary.py     # Batch summary output generation (CSV/HTML/KML, all-pages document; headless)
@@ -188,6 +192,7 @@ radiosim/
 │   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
 │   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
+│   ├── multihop.py       # Relay route window (waypoints are the input surface; hops are derived)
 │   └── batch_builder.py  # Batch Mode window
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
@@ -202,6 +207,7 @@ radiosim/
     ├── test_report.py
     ├── test_scenario.py
     ├── test_multihop.py
+    ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
@@ -592,6 +598,47 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 | `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
+### Relay Route (multi-hop)
+
+Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
+
+| File | Contents |
+| --- | --- |
+| `route.html` | Combined sheet (overall verdict = min, per-hop breakdown, overview map) |
+| `report_all.html` | Combined sheet + every hop in one printable document |
+| `hops.csv` | **One row per hop** (a separate contract from the batch `summary.csv`) |
+| `{id}/` | Per-hop package (same structure as Single Mode) |
+
+---
+
+## Project Files (.rsproj)
+
+A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](project.py) — headless, never imports tkinter).
+
+### What it bundles
+
+| Section | Contents |
+| --- | --- |
+| `meta` | Project name and free note |
+| `params` | Launcher sim parameters (coordinates always DD) |
+| `batch` | Batch rows, keyed by `PathRow` attribute names (not CSV column names) |
+| `scenario` | Explorer conditions, **kept as the on-screen strings** |
+| `multihop` | Relay waypoints and per-hop RF |
+
+**Never included**: results (that is what `results/` is for), app settings (theme / language / proxy), window geometry or open/closed state. App settings are excluded so that opening someone else's project cannot silently switch your language or proxy — both the reader and the writer go through `config.select_sim`.
+
+### Compatibility rules
+
+- `schema_version` is **a single integer for the whole document** (no per-section versions).
+- **Unknown keys are ignored, missing keys fall back to defaults, and a newer version is rejected** (the same style as `config.load_config`).
+- `app_version` / `saved_at` are provenance stamps and are **never used to decide how to read the file**.
+- **A missing section means "this window's state is unknown"**, not "the window is empty". The reader leaves it alone and the writer carries the previous value forward, so closing the batch window never produces a saved file with the rows deleted.
+- Values that are not readable numbers (NaN / Inf) are never written: that section is skipped and the UI says so, rather than emitting non-standard JSON.
+
+### How loading works
+
+Loading closes the open windows (batch / explorer / relay route) after asking for confirmation, then they pick the new state up when reopened. This matches the app-wide rule that a window freezes its inputs when it opens, so no window needs a separate injection path.
+
 ---
 
 ## Architecture
@@ -619,6 +666,7 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
   batch.py        CSV I/O, validation, batch execution engine
   scenario.py     Condition explorer runner (fixed terrain, N conditions, phases)
   multihop.py     Relay path engine (waypoints are the source of truth; overall verdict is the weakest hop)
+  project.py      Project files (.rsproj) — bundles the input set (never results, never app settings)
   report_scenario.py Condition explorer output (line chart + table, CSV; headless)
   report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)
   report_path.py    Per-path output generation (PNG/HTML/KML; headless)
@@ -687,6 +735,7 @@ python -m pytest tests/ --cov
 | `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
 | `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
 | `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
+| `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
