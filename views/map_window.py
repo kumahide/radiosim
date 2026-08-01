@@ -119,8 +119,12 @@ class _WaypointSink(Protocol):
 
     ペア（TX/RX）ではなく**点**を足すのが append シンクとの違い＝中継経路は
     「順に並んだ地点の列」で、区間はその導出物だから（⑦）。
+
+    `waypoint_markers` は地図が**写しを描き直す**ための現在の地点列
+    （`existing_paths` と同じ役割＝地図は source of truth を持たない）。
     """
     def append_waypoint(self, lat: float, lon: float) -> str: ...
+    def waypoint_markers(self) -> "list[tuple[str, float, float]]": ...
 
 
 # tkintermapview の after ループを止めてからウィジェットを破棄するまでの猶予 [ms]。
@@ -221,6 +225,10 @@ class MapWindow:
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._tx_icon = self._make_node_icon(hollow=False)
         self._rx_icon = self._make_node_icon(hollow=True)
+        # 中継点＝リング（送信点・受信点と**形で**区別する）。
+        self._relay_icon = ImageTk.PhotoImage(map_graphics.relay_icon())
+        # 中継経路レイヤ（折れ線＋地点マーカー）。窓の地点列を写すだけで持たない。
+        self._wp_objects: list = []
         # 距離ラベルのバッジ画像（テキスト＋半透明ピル背景）。距離ごとに作り直す。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._dist_badge = None
@@ -361,17 +369,73 @@ class MapWindow:
     def _apply_mode_visibility(self) -> None:
         """各モードは自分の関心レイヤだけを表示する（モードが見た目を決める）。
 
-        - cache         : キャッシュカバレッジを描画し、経路レイヤは隠す。
+        - cache      : キャッシュカバレッジを描画し、経路レイヤは隠す。
         - coords/append : 経路レイヤ（マーカー/線/距離・確定パス）を描画し、塗りは隠す。
+        - waypoints  : **中継経路のレイヤだけ**（TX/RX のピックや確定パスは出さない）。
+
         座標値（_tx_coord/_rx_coord）は保持するのでモードを往復しても失われない。
+        ⚠️ **中継点レイヤはモードを抜けたら必ず消す**＝どのモードでも出しっぱなしに
+        なっていた（2026-08-01 実機確認）。モードが見た目を決めるという原則から
+        中継点だけが外れていた。
         """
         if self._mode.get() == "cache":
             self._clear_coord_visuals()
+            self._clear_waypoint_visuals()
             self._refresh_overlay()
+        elif self._mode.get() == "waypoints":
+            self._clear_tile_overlays()
+            self._clear_coord_visuals()
+            self._refresh_waypoints()
         else:
             self._clear_tile_overlays()
+            self._clear_waypoint_visuals()
             self._show_coord_visuals()
             self._refresh_committed_paths()
+
+    # ----------------------------------------------------------
+    # 中継経路レイヤ（中継点モード）
+    # ----------------------------------------------------------
+    # **地図は source of truth を持たない**＝中継経路ウィンドウの地点列を毎回
+    # 写して描き直すだけ（確定パス表示＝`_refresh_committed_paths` と同じ流儀）。
+    # 以前はクリックのたびに `set_marker` を足すだけだったので、**窓側で地点を
+    # 削除しても地図のピンが残り**、消し方も持っていなかった（2026-08-01 実機確認）。
+
+    def on_waypoints_changed(self) -> None:
+        """中継経路ウィンドウの地点列が変わったときの通知（追加・削除・編集）。"""
+        self._refresh_waypoints()
+
+    def _refresh_waypoints(self) -> None:
+        """宛先の地点列から中継経路レイヤを描き直す。"""
+        self._clear_waypoint_visuals()
+        if self._mode.get() != "waypoints" or self._waypoint_sink is None:
+            return
+        points = self._waypoint_sink.waypoint_markers()
+        coords = [(lat, lon) for _name, lat, lon in points]
+        if len(coords) >= 2:
+            # 折れ線＝**並びがそのまま経路**であることを地図でも見せる。
+            self._wp_objects.append(
+                self._map.set_path(coords, color=_UISP_CYAN_HEX, width=3))
+        last = len(points) - 1
+        for i, (name, lat, lon) in enumerate(points):
+            # 先頭＝送信点（塗り）／末尾＝受信点（白抜き）／間＝中継点（リング）。
+            # 形だけで役割が読めるようにする（窓の役割ラベルと同じ意味を地図でも）。
+            if i == 0:
+                icon = self._tx_icon
+            elif i == last:
+                icon = self._rx_icon
+            else:
+                icon = self._relay_icon
+            self._wp_objects.append(self._map.set_marker(
+                lat, lon, text=name, icon=icon, icon_anchor="center",
+                text_color=_MARKER_TEXT))
+
+    def _clear_waypoint_visuals(self) -> None:
+        for obj in self._wp_objects:
+            try:
+                obj.delete()
+            except Exception:
+                pass
+        self._wp_objects.clear()
 
     def on_append_target_closed(self) -> None:
         """append 先（バッチ）が閉じたときの通知。連続追加中なら座標入力へ戻す。"""
@@ -498,7 +562,9 @@ class MapWindow:
             if self._waypoint_sink is None:
                 return
             name = self._waypoint_sink.append_waypoint(lat, lon)
-            self._map.set_marker(lat, lon, text=name)
+            # ⚠️ ここでマーカーを**足さない**＝窓へ入れてから写しを描き直す。
+            # 足すだけにすると、窓側で地点を削除しても地図に残る（消し方が無い）。
+            self._refresh_waypoints()
             self._set_status(i18n.t("map_append_added").format(pid=name),
                              auto_clear=True)
             return
@@ -1009,6 +1075,11 @@ class MapWindow:
         elif mode == "append":
             key = "map_append_hint_tx" if self._pick_next == "tx" else "map_append_hint_rx"
             self._status_var.set(i18n.t(key))
+        elif mode == "waypoints":
+            # ⚠️ ここが無いと**中継点モードなのに「TX を指定します」**と出る
+            # （2026-08-01 の実機スクリーンショットで判明）。モードごとの分岐を
+            # 足すときは、ヒント・表示レイヤ・宛先の 3 か所を揃えて足すこと。
+            self._status_var.set(i18n.t("map_status_waypoint"))
         else:
             key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
             self._status_var.set(i18n.t(key))

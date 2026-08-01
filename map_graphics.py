@@ -59,6 +59,35 @@ def node_icon(hollow: bool) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
+def relay_icon() -> Image.Image:
+    """中継点（ホップの折れ点）のアイコン＝**ひし形**（RGBA PIL Image）。
+
+    送信点（塗りの丸）・受信点（白抜きの丸）と**形で**区別する。丸のまま濃淡や
+    大小で分けると、地図上で近接したときに見分けがつかない（`arrow_icon` を
+    別形状にしたのと同じ理由）。ひし形は「経路の折れ点」という意味にも合う。
+
+    ⚠️ 既定のマーカー（tkintermapview の赤い水滴）は使わない＝アプリの地図表現
+    （UISP 風のシアン系）から浮く。2026-08-01 の実機確認で指摘された。
+    """
+    size, scale = 22, 4
+    s = size * scale
+    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    c = s / 2
+    r, g, b = UISP_CYAN
+
+    # 淡いハロー（端点より控えめ＝主役は両端）。
+    d.ellipse([c - s * 0.44, c - s * 0.44, c + s * 0.44, c + s * 0.44],
+              fill=(r, g, b, 45))
+    # 塗りのひし形＋白縁（淡色地図でのコントラスト確保）。
+    half = s * 0.30
+    pts = [(c, c - half), (c + half, c), (c, c + half), (c - half, c)]
+    d.polygon(pts, fill=(r, g, b, 255))
+    d.line(pts + [pts[0]], fill=(255, 255, 255, 255),
+           width=int(1.6 * scale), joint="curve")
+    return img.resize((size, size), Image.Resampling.LANCZOS)
+
+
 def arrow_icon(bearing_deg: float) -> Image.Image:
     """TX→RX の方位（真北 0°・東 90°・時計回り）を指す矢じりアイコン（RGBA）を返す。
 

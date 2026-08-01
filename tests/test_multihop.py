@@ -531,6 +531,9 @@ class TestMultiHopWindow:
                     captured.update(kwargs)
                     self._win = root
 
+                def on_waypoints_changed(self):
+                    pass                      # 地点列の通知（本物は描き直す）
+
             monkeypatch.setattr(map_window, "MapWindow", _RecordingMap)
             app._on_open_map()
 
@@ -539,6 +542,41 @@ class TestMultiHopWindow:
             assert provider() is app._multihop_win
         finally:
             root.destroy()
+
+    def test_map_layer_is_a_copy_of_the_waypoint_list(self, default_params_dict):
+        """地図の中継点は**窓の地点列の写し**であること（地図は源泉を持たない）。
+
+        以前はクリックのたびにマーカーを足すだけで消し方が無く、**窓で地点を
+        削除しても地図にピンが残り続けた**（2026-08-01 実機確認）。バッチ →
+        地図（`existing_paths`）と同じ「毎回引き直す」形に揃える。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            notified: list = []
+            win._map_notify = lambda: notified.append(True)
+            win.append_waypoint(34.54, 132.41)
+            win.append_waypoint(34.53, 132.40)
+            win._on_add_point()                       # 中継点を 1 つ足す
+            win._wp_vars[1]["coord"].set("34.535, 132.405")
+            assert [n for n, _, _ in win.waypoint_markers()] == ["TX", "R1", "RX"]
+
+            win._on_del_point()                       # 中継点を消す
+            assert [n for n, _, _ in win.waypoint_markers()] == ["TX", "RX"], (
+                "削除が地点列に反映されていない（地図に残る）"
+            )
+            assert notified, "地点列が変わったのに地図へ通知していない"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_map_layer_skips_unreadable_coordinates(self, default_params_dict):
+        """座標を入力途中の地点は地図に出さない（読める点だけ描く）。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._wp_vars[0]["coord"].set("34.54, 132.41")
+            win._wp_vars[1]["coord"].set("34.5")       # 途中
+            assert [n for n, _, _ in win.waypoint_markers()] == ["TX"]
+        finally:
+            win.destroy(); root.destroy()
 
     def test_collected_path_shares_the_relay_height(self, default_params_dict):
         """画面 → モデルでも**中継点の高さは 1 つ**であること（⑦の端から端まで）。"""

@@ -1148,6 +1148,7 @@ class SimLauncher:
             # ランチャーではない＝5b の実装はここで黙って None になり、地図連携が
             # 一度も動かなかった）。バッチ・条件探索と同じく**注入**する。
             map_opener=self.open_map_for_waypoints,
+            map_notify=self._notify_map_waypoints_changed,
         )
 
     def _on_multihop_closed(self) -> None:
@@ -1394,6 +1395,11 @@ class SimLauncher:
         """バッチの行が変わったとき、地図の確定パス表示を追従させる。"""
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_paths_changed()
+
+    def _notify_map_waypoints_changed(self) -> None:
+        """中継経路の地点列が変わったとき、地図の中継点表示を追従させる。"""
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_waypoints_changed()
 
     def load_batch_row(self, row: dict) -> None:
         """バッチ行（座標＋RF）をランチャーの数値欄へロードする（→シングルへ送る）。
