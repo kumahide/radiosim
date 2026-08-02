@@ -20,7 +20,7 @@ Requires Python 3.11 or later.
 ```bash
 git clone https://github.com/kumahide/radiosim.git
 cd radiosim
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
+python -m pip install -r requirements.txt
 python main.py
 ```
 

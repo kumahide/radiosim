@@ -141,8 +141,10 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### 必要ライブラリ
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
+python -m pip install -r requirements.txt
 ```
+
+**版は [`requirements.txt`](requirements.txt) が単一ソース**です（固定＝ソース実行と配布バイナリで同じ版が入る）。名前を並べて入れると版が固定されず、下表と二重管理になります。
 
 | ライブラリ | 用途                                                              |
 | ---------- | ----------------------------------------------------------------- |
@@ -229,8 +231,11 @@ radiosim/
 ## インストール・起動（ソースから実行）
 
 ```bash
-# 依存ライブラリのインストール
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
+# 依存ライブラリのインストール（版は requirements.txt が単一ソース＝固定して配布物と揃える）
+python -m pip install -r requirements.txt
+
+# テスト・ビルドもする場合は開発用も
+python -m pip install -r requirements-dev.txt
 
 # 起動
 cd radiosim

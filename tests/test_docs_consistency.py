@@ -105,15 +105,33 @@ def test_test_table_lists_all_test_files(doc):
         assert name in section, f"{doc}: test table is missing {name}"
 
 
-# --- 4. pip install 行: 全依存を含むか --------------------------------------
+# --- 4. pip install 行: requirements.txt から入れているか ---------------------
+#
+# ⚠️ **このゲートは 2026-08-02 に向きが反転した**（2.6RC1・独立レビュー Codex 由来）。
+# 旧版は「pip 行が全依存を**名前で列挙**していること」を要求していた＝**誤った運用を
+# ゲートで固定していた**。`requirements.txt` は冒頭コメントのとおり「再現可能な CI と
+# 配布ビルドのために固定する」方針なのに、README は名前だけで入れさせており、読者は
+# **配布バイナリと違う版**を掴む（実際、レビュー環境では 4 依存がピンからずれて
+# `test_env_consistency` が落ちた）。
+#
+# 🔑 **直し方の要点＝列挙そのものを禁じる**。名前を並べる限り「requirements.txt と
+# README の二重管理」という*面*が残り、いつか必ずずれる（旧ゲートは名前の**欠落**しか
+# 見ないので、版のずれは原理的に検出できなかった）。面を消せばゲートは 1 行で足りる。
 @pytest.mark.parametrize("doc", PIP_READMES)
-def test_pip_install_line_lists_all_dependencies(doc):
+def test_pip_install_line_installs_from_requirements(doc):
     text = _read(doc)
     pip_lines = [ln for ln in text.splitlines() if "pip install" in ln]
     assert pip_lines, f"{doc}: no pip install line found"
-    blob = "\n".join(pip_lines).lower()
+    blob = "\n".join(pip_lines)
+    assert "-r requirements.txt" in blob, (
+        f"{doc}: pip install line does not install from requirements.txt"
+        "（版を固定した単一ソースから入れさせること）"
+    )
     for dep in _deps():
-        assert dep.lower() in blob, f"{doc}: pip install line is missing dependency {dep}"
+        assert dep.lower() not in blob.lower(), (
+            f"{doc}: pip install line still names {dep}"
+            "（依存名を並べると版が固定されず requirements.txt と二重管理になる）"
+        )
 
 
 # --- 5. バージョン文字列: version.py を単一ソースに各ドキュメントが追従するか --

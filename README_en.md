@@ -141,8 +141,10 @@ powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSi
 ### Dependencies
 
 ```
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
+python -m pip install -r requirements.txt
 ```
+
+**[`requirements.txt`](requirements.txt) is the single source of versions** (pinned, so a source run gets what the binary ships). Installing by name leaves the versions floating and duplicates the table below.
 
 | Library    | Purpose                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------- |
@@ -229,8 +231,12 @@ radiosim/
 ## Installation & Launch (from source)
 
 ```bash
-# Install dependencies
-pip install numpy matplotlib requests Pillow sv-ttk darkdetect markdown truststore tkintermapview
+# Install dependencies (requirements.txt is the single source of versions —
+# pinned so that a source run matches what ships in the binary)
+python -m pip install -r requirements.txt
+
+# For running the tests or building, add the development set
+python -m pip install -r requirements-dev.txt
 
 # Launch
 cd radiosim
