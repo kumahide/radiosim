@@ -89,6 +89,31 @@ class TestRoundtrip:
         assert back_lat == pytest.approx(lat, abs=5e-4)
         assert back_lon == pytest.approx(lon, abs=5e-4)
 
+    def test_roundtrip_survives_a_sweep_of_the_service_area(self):
+        """**日本全域を 0.1° 刻みで掃いて**往復すること（B-034）。
+
+        代表値を 4 つ選ぶ形（上のテスト）では**秒の桁上げに当たらなかった**。
+        `34.8` `132.6` のような「丸い」座標は浮動小数の残差で秒が 59.999… になり、
+        桁上げの実装が `seconds -= 60.0` だと **負の微小値**が残って `-0.0` と印字され、
+        その文字列は読み戻せない（`parse_pair` が ValueError → 呼び出し側で NaN）。
+        **0.1 刻み 1100 点の 4 割が壊れていた**のに、代表値 4 点は 1 つも踏まなかった。
+
+        ⇒ **座標の整形は「代表値」ではなく掃き取りで守る**（値域の端ではなく
+        *刻み*で壊れる欠陥なので、境界値の追加では拾えない）。
+        """
+        for step in range(300, 460):                 # 緯度 30.0〜45.9
+            lat = step / 10.0
+            lon = (step + 980) / 10.0                # 経度 128.0〜143.9
+            text = coords.format_dms(lat, lon)
+            assert "-" not in text, f"整形が負の成分を出した: {text!r}"
+            back_lat, back_lon = coords.parse_pair(text)   # ValueError なら失敗
+            assert back_lat == pytest.approx(lat, abs=5e-4)
+            assert back_lon == pytest.approx(lon, abs=5e-4)
+
+    def test_seconds_never_print_as_negative_zero(self):
+        """桁上げした秒は **0.0 に置く**（引き算で作らない）ことの直接のガード。"""
+        assert coords.format_dms(34.8, 132.6) == "34°48'00.0\"N, 132°36'00.0\"E"
+
 
 class TestFormatPair:
 

@@ -76,8 +76,13 @@ def _format_dms_one(value: float, positive: str, negative: str) -> str:
     minutes = int(rem_min)
     seconds = (rem_min - minutes) * 60.0
     # 秒の四捨五入が 60.0 に達したら桁上げする（59.95 → 60.0"）。
+    # ⚠️ 桁上げしたら秒は **0.0 に置く**（引き算で作らない）。`seconds -= 60.0` だと
+    # 浮動小数の残差が **負の微小値**になり、`{:04.1f}` が `-0.0` を出す＝
+    # `132°36'-0.0"E` という**読み戻せない文字列**になる（`parse_pair` が ValueError →
+    # 呼び出し側で NaN 化）。34.8 や 132.6 のような「丸い」座標——手入力で最も多い形——の
+    # 4 割で起きていた（B-034）。
     if round(seconds, 1) >= 60.0:
-        seconds -= 60.0
+        seconds = 0.0
         minutes += 1
     if minutes >= 60:
         minutes -= 60
