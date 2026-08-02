@@ -223,6 +223,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
+    ├── test_repo_hygiene.py
     └── test_claude_hooks.py
 ```
 
@@ -762,6 +763,7 @@ python -m pytest tests/ --cov
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
+| `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 
 ---

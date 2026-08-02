@@ -14,11 +14,26 @@ terrain_cache/
 
 # User settings & logs
 radiosim_conf.json
-radiosim.log
-# マシン名つきのランタイムログ（ローテーション分も含む）
-radiosim-*.log
-radiosim_profile.log
+# ランタイムログはクラスごと除外する（radiosim.log / プロファイル / ローテーション
+# 分 / OneDrive の競合コピーを個別に列挙していたのをやめた＝列挙は必ず漏れる）。
+*.log
 build_log*.txt
+
+# --- OneDrive の同期競合コピー ----------------------------------------------
+# このリポジトリは OneDrive 配下にある。OneDrive は同期競合時に
+# 「<元の名前>-<マシン名>[-N].<拡張子>」というコピーを作るが、**元の名前が
+# ignore されていてもコピーは別名なので素通りする**。
+# 実例（2026-08-02）: radiosim.log は当時から ignore 済みだったのに、その競合
+# コピー radiosim-HP-OMEN25L.log（8.1MB）が commit・push され、公開リポの履歴
+# から消すのに filter-repo での全履歴書き換え＋SHA 参照 264 箇所の修正を要した。
+# ⚠️ 危険なのは容量ではなく**中身**＝同じ経路で ISSUES.md（未修正の脆弱性）や
+# issue_evidence/（実運用のスクショ）のコピーが公開される。
+# ⚠️ 以下は「知っているマシン名」しか止められない Tier-2。実効の門は
+# .git/hooks/pre-commit（履歴に入る前）と tests/test_repo_hygiene.py（CI で強制）。
+*-HP-OMEN25L.*
+*-HP-OMEN25L-[0-9].*
+* - コピー*
+* - Copy*
 
 # Local issue tracker (bugs / improvement ideas) and its evidence files.
 # NOT ignored because it is a scratchpad — it is a long-lived ledger. It is
