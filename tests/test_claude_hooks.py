@@ -166,8 +166,8 @@ class TestArchivePlacement:
 # ============================================================
 class TestDoneEvidence:
     @pytest.mark.parametrize("resp", [
-        "2.4b3 / `cd1d360`。配色をテーマから取る。",
-        "2.4b2 / `d669d66`（PR#44 `dba885e`）。",
+        "2.4b3 / `3a5b75a`。配色をテーマから取る。",
+        "2.4b2 / `40e7254`（PR#44 `88283c4`）。",
         "2.4a1。PR#45 で対応。",
     ])
     def test_commit_reference_satisfies_the_rule(self, hook, resp):
@@ -210,7 +210,7 @@ class TestDoneEvidence:
         _, _, weak = hook.parse_issues(_doc(
             _ARCHIVE_HEAD,
             _item("B-010", "済", resp=(
-                "2.4RC2 / `49fc90c`。旧記述「未コミット／ビルドは RC2 の配布パスで」は"
+                "2.4RC2 / `a15801f`。旧記述「未コミット／ビルドは RC2 の配布パスで」は"
                 "実態へ更新。旧記述「2.3b2 で追加予定」は予定のまま実施されず。"
             )),
         ))

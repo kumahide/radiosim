@@ -36,10 +36,10 @@ python experiments/review_benchmark/run_benchmark.py <model> --case C1C2C3
 各 finding の `defect_state` が**欠陥が存在するコミット**。そこをチェックアウトするか、`input` の差分をそのまま渡す。
 
 ```
-git diff c4c6c8b..1ca5089     # C1 C2 C3（＋当時の batch.py 全体）
-git diff 87fbc46..c4c6c8b     # C4
-git diff c4c6c8b..0143e6a     # C5
-git diff 1ca5089..2730717     # C6 C7
+git diff aba2040..60c2082     # C1 C2 C3（＋当時の batch.py 全体）
+git diff 4a4f68a..aba2040     # C4
+git diff aba2040..a4ca3ad     # C5
+git diff 60c2082..1bc50fa     # C6 C7
 ```
 
 ### 文書面（memory は git 管理外なので手で戻す）

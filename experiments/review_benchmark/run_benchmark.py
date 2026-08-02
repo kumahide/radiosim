@@ -51,11 +51,11 @@ PROMPT_HEAD = (
 CASES = {
     "C6C7": {
         "findings": ["C6", "C7"],
-        "diff": "1ca5089..2730717",
+        "diff": "60c2082..1bc50fa",
         # C7 の欠陥（_sweep_row）は差分に含まれない＝Codex はワークスペース全体を
         # 読めていた。同条件にするため、差分が触れたファイルの全文を添える。
         "files": ["report_common.py", "report_scenario.py"],
-        "at": "2730717",
+        "at": "1bc50fa",
         "markers": {
             "C6": r"lstrip|先頭\s*の?\s*空白|空白\s*で?\s*始ま",
             "C7": r"_sweep_row|escape\(|エスケープ",
@@ -65,7 +65,7 @@ CASES = {
         "findings": ["C1", "C2", "C3"],
         "diff": None,
         "files": ["batch.py", "report_summary.py"],
-        "at": "1ca5089",
+        "at": "60c2082",
         "markers": {
             "C1": r"_parse_csv_row|生キー|raw\.get|正規化.*非対称|非対称.*正規化",
             "C2": r"formula|数式|インジェクション|HYPERLINK",
@@ -74,9 +74,9 @@ CASES = {
     },
     "C5": {
         "findings": ["C5"],
-        "diff": "c4c6c8b..0143e6a",
+        "diff": "aba2040..a4ca3ad",
         "files": [],
-        "at": "0143e6a",
+        "at": "a4ca3ad",
         "markers": {"C5": r"validate_rows|到達|経路を通|空振り|検証されていない"},
     },
 }
