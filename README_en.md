@@ -12,16 +12,19 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 3. [Requirements](#requirements)
 4. [File Structure](#file-structure)
 5. [Installation &amp; Launch (from source)](#installation--launch-from-source)
-6. [Usage — Single Mode](#usage--single-mode)
-7. [Usage — Batch Mode](#usage--batch-mode)
-8. [Input Parameters](#input-parameters)
-9. [Calculation Models](#calculation-models)
-10. [DEM Retrieval Logic](#dem-retrieval-logic)
-11. [Save Package](#save-package)
-12. [Project Files (.rsproj)](#project-files-rsproj)
-13. [Architecture](#architecture)
-14. [Testing](#testing)
-15. [Known Limitations](#known-limitations)
+6. [Menus](#menus)
+7. [Map Window](#map-window)
+8. [Usage — Single Mode](#usage--single-mode)
+9. [Usage — Batch Mode](#usage--batch-mode)
+10. [Input Parameters](#input-parameters)
+11. [Calculation Models](#calculation-models)
+12. [DEM Retrieval Logic](#dem-retrieval-logic)
+13. [Save Package](#save-package)
+14. [Project Files (.rsproj)](#project-files-rsproj)
+15. [Architecture](#architecture)
+16. [Development Environment](#development-environment)
+17. [Testing](#testing)
+18. [Known Limitations](#known-limitations)
 
 ---
 
@@ -32,24 +35,49 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 ### Key Features
 
+#### Execution flows (four)
+
+Also **the unit of class review** — when fixing a defect, always ask whether it applies to all four plus the map (five faces).
+
+| Flow | Implementation | Source of truth for input |
+| --- | --- | --- |
+| **Single Mode** | `simulation.py` | The launcher's input fields |
+| **Batch Mode** | `batch.py` | The batch table (CSV I/O) |
+| **Condition Explorer (compare / sweep)** | `scenario.py` | A pinned path plus a condition list. **One DEM fetch + N pure computations** (leaning on the pipeline being two-phase) |
+| **Relay Route** | `multihop.py` | The waypoint list; sections are derived. Regenerative relay model, so **the overall verdict is the min** (the tightest section), reported alongside the per-section breakdown |
+
+#### Map
+
+- **Map Window** (`views/map_window.py`, a single app-wide instance, 3 modes): pick coordinates / continuously add paths into Batch Mode / visualize, prefetch, and delete DEM cache
+
+#### Calculation models (`models.py` — pure functions, zero side effects)
+
 - Automatic terrain profile generation from GSI DEM PNG tiles (5 m / 10 m mesh)
 - Earth curvature correction (standard atmosphere K = 4/3, fixed)
 - Diffraction loss calculation using Deygout / Fresnel-Kirchhoff methods
 - Vegetation attenuation (LoS intrusion depth model)
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
-- Real-time antenna height and rain rate sliders in the graph window
-- Batch Mode — process multiple paths from a CSV file
-- Map Window — pick coordinates by clicking the map / visualize, prefetch, and delete DEM cache
-- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
+
+#### Output and reports (`report_*.py` — all headless)
+
 - **A4 reports (v2)**: per-path / summary as a single print-ready A4 page (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer)
 - **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
+- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - **All-paths overview map** in the summary report (color-coded by verdict)
-- **Relay routes**: a waypoint list is the source of truth; each section runs an independent link budget (regenerative relay). The overall verdict is the min (the tightest section), reported alongside the per-section breakdown
-- **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (never results, never app settings)
-- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
+- **Everything concatenated**: `report_all.html` carries the summary plus every path (for relays, every section)
 - Save results as a package (PNG / CSV / JSON / HTML / KML)
-- Japanese / English UI — switchable from the menu bar
+
+#### Reusing input
+
+- **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (**never results, never app settings**)
+- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
+
+#### Interface
+
+- Real-time antenna height and rain rate sliders in the graph window
+- Switchable coordinate notation (DD / DMS; `coords.py` is pure)
+- Japanese / English UI — switchable from the menu bar (`i18n.py` is the single source)
 - System-aware dark mode (Light / Dark / System auto)
 
 ### Accuracy Statement
@@ -255,22 +283,54 @@ The following directories are created automatically in the project root on first
 | `terrain_cache/` | Disk cache for DEM tiles              |
 | `results/`       | Output destination for saved packages |
 
-### UI Settings
+---
 
-The menu bar provides the following options. Settings are saved to `radiosim_conf.json`.
+## Menus
 
-| Menu                    | Item                  | Description                                                              |
-| ----------------------- | --------------------- | ------------------------------------------------------------------------ |
-| Settings > Theme        | System / Light / Dark | Window color theme                                                       |
-| Settings > Language     | English / 日本語      | UI language (requires restart)                                           |
-| Settings > Proxy        | URL entry             | Explicit HTTP proxy URL (leave blank to use OS proxy settings)           |
-| Settings > Load App Settings | —               | Imports only app settings (theme/language/proxy) from a settings file   |
-| Settings > Delete All Cache | —                | Deletes all downloaded DEM/map tiles (with confirmation)                 |
-| Help > Open README      | —                    | Opens this document in a browser                                         |
+Three menus — **File / Settings / Help** (built in `_build_menu`, [views/launcher.py](views/launcher.py)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
 
-The Map Window is opened from the **"Map Window" button** at the bottom of the launcher (not the menu).
+### File
 
-#### Proxy Settings
+Home for operations that **reach out of the app** (moved here from the launcher button row). ⚠️ Do not add buttons here — the button row already spends the FHD 100% (1080px screen) height budget and is a recurring source of clipping.
+
+| Item                | Description                                                              |
+| ------------------- | -------------------------------------------------------------------------- |
+| Open Project...     | Loads a `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
+| Save Project As...  | Writes the current input set to a `.rsproj` → same                        |
+| Load Parameters...  | Imports **simulation parameters only** from a settings file              |
+| Open Results Folder | Opens `results/` in Explorer                                             |
+
+### Settings
+
+Selections are persisted to `radiosim_conf.json`.
+
+| Item                 | Options                     | Description                                                     |
+| -------------------- | --------------------------- | ----------------------------------------------------------------- |
+| Theme                | System / Light / Dark       | Window color theme                                                |
+| Language             | English / 日本語            | UI language (requires restart)                                    |
+| Coord Format         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
+| Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
+| Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file   |
+| Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
+
+### Help
+
+| Item        | Description                          |
+| ----------- | -------------------------------------- |
+| Open README | Opens this document in a browser       |
+| About       | Shows the version from `version.py`    |
+
+> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme/language/proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
+
+> **The Map Window is not in the menus** — it opens from the **"Map Window" button** at the bottom of the launcher (→ [Map Window](#map-window)).
+
+### Coordinate Format (DD / DMS)
+
+**A notation (display) setting, not an input mode.** `coords.parse_pair` accepts both DD and DMS leniently and everything is normalised to DD before the calculation (values reaching `simulation.SimParams` are always DD).
+
+⚠️ Fields are reformatted in only three places — startup, notation switch, and settings/project load — **never on entry commit** (Enter / focus-out). So typing DD while DMS is selected leaves the text as typed: **not a fault**, but the screen gives no signal that the value was accepted (a known rough edge).
+
+### Proxy Settings
 
 If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL:
 
@@ -281,8 +341,11 @@ http://proxy.example.com:8080
 - Changes take effect immediately — no restart required
 - Leaving the field blank and clicking OK reverts to OS proxy settings (system settings / environment variables)
 - `truststore` integration with the Windows certificate store is also active to handle corporate SSL inspection
+- If the elevation server is entirely unreachable, the run **aborts on consecutive failures** and asks the user, instead of quietly finishing on flat terrain
 
-#### Map Window
+---
+
+## Map Window
 
 The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
@@ -585,7 +648,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
 | `report.html`         | Detailed report with the terrain graph and a path map embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
-| `settings.json`       | Complete input parameters (reloadable via Load Settings) |
+| `settings.json`       | Complete input parameters (reloadable via File > Load Parameters) |
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 

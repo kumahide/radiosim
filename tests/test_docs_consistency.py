@@ -238,6 +238,47 @@ _MODE_READMES = [
 _MODE_KEYS = ["map_mode_coords", "map_mode_append", "map_mode_cache"]
 
 
+_MENU_SECTION_HEADERS = ["メニュー", "Menus"]
+
+
+def _menu_i18n_keys() -> list[str]:
+    """`_build_menu` が実際に使っている i18n キーを**実装から**採る。
+
+    ⚠️ ここに手書きの一覧を置かない。列挙で塞いだ穴は**メニュー項目を 1 つ足した
+    瞬間に開く**（→ [[feedback-promote-recurring-checks]] の実証 10）。実装を単一
+    ソースにしておけば、項目を足した人が README も直すまでこのゲートが赤いままになる。
+    """
+    src = (ROOT / "views" / "launcher.py").read_text(encoding="utf-8")
+    m = re.search(r"\n    def _build_menu\b.*?(?=\n    def )", src, re.S)
+    assert m, "views/launcher.py: _build_menu が見つからない（このゲートが空振りする）"
+    body = m.group(0)
+    keys = set(re.findall(r'i18n\.t\("([a-z0-9_]+)"\)', body))
+    # f-string 経由（例: `i18n.t(f"coord_fmt_{value}")`）＝接頭辞を持つキー族を
+    # まるごと対象にする。ここも名前で拾うので、族に値が増えても追従する。
+    for prefix in re.findall(r'i18n\.t\(f"([a-z0-9_]+)\{', body):
+        keys |= {k for k in i18n._STRINGS["en"] if k.startswith(prefix)}
+    return sorted(keys)
+
+
+@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+def test_menu_items_are_documented(doc, lang):
+    """メニューバーの**全項目**が、各 README の「メニュー」節に載っているか。
+
+    背景（2026-08-03・ユーザー指摘）: 節名が「UI 設定」だったころ、載っていたのは
+    12 項目中 6 項目だけで、**ファイルメニュー 4 項目が丸ごと欠けていた**——
+    2.6 の目玉であるプロジェクト機能の唯一の入口が、メニュー表に 1 行も無い状態。
+    しかも節にはメニューでないもの（マップウィンドウ）が同居していた。
+    「実装にメニューを足したが README を直さなかった」は放置すれば必ず再発する型
+    なので、`test_map_mode_labels_listed` と同じ形の門にして止める。
+    """
+    section = _section(_read(doc), _MENU_SECTION_HEADERS)
+    for key in _menu_i18n_keys():
+        label = i18n._STRINGS[lang][key]
+        assert label in section, (
+            f"{doc}: メニュー項目 {label!r} ({key}) が「メニュー」節に載っていない"
+        )
+
+
 @pytest.mark.parametrize("doc,lang", _MODE_READMES)
 def test_map_mode_labels_listed(doc, lang):
     """マップウィンドウの全モードのボタンラベル（i18n が単一ソース）が各 README に
@@ -349,4 +390,48 @@ def test_coverage_source_lists_all_headless_modules():
     assert not missing, (
         f"カバレッジ計測から漏れているモジュール: {missing}。"
         "pyproject.toml の [tool.coverage.run] source に追記すること。"
+    )
+
+
+# --- 11. 公開文書に非公開の課題 ID を書かない（2.6 追加） ---------------------
+#       背景（2026-08-03・ユーザー指摘）: メニュー節を書き直したとき、README に
+#       `I-030` `B-021` `B-025②` `I-060` の 4 種 6 箇所を書き込んでしまった。
+#       **ISSUES.md は `.gitignore` 対象**（未修正の脆弱性・実機スクショを含むため
+#       公開できない）＝**公開リポジトリの読者には解決不能な参照**になる。
+#
+#       ⚠️ この判断は ISSUES.md の冒頭に既にルールとして書いてあった——
+#       「逆向き（GitHub 側に B-021 を書く）はしない…CHANGELOG から課題 ID を
+#       落としているのと同じ理由」。**CHANGELOG が守っている規則を README で破った**
+#       ＝散文の規則は、書いた本人でも次の作業で踏む（→ [[feedback-promote-recurring-checks]]）。
+#
+#       中身（なぜそうなっているか）は書いてよい。**落とすのは ID だけ**で、理由は
+#       地の文へ展開する。
+#
+#       対象は「追跡されている = 公開される」ファイル。この性質そのものが判定基準
+#       なので、ここでも手書きの一覧を持たず git に問い合わせる。
+_ISSUE_ID_RE = re.compile(r"\b[BI]-\d{3}\b")
+
+
+def _tracked_markdown() -> list[str]:
+    """追跡下（＝公開される）の Markdown。git が無い環境では skip。"""
+    import subprocess
+    try:
+        out = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
+                             capture_output=True, text=True, check=True).stdout
+    except (OSError, subprocess.CalledProcessError):  # pragma: no cover
+        pytest.skip("git が使えない環境")
+    return [p for p in out.splitlines() if p]
+
+
+def test_public_docs_do_not_cite_issue_ids():
+    """公開される Markdown に ISSUES.md の課題 ID（B-000 / I-000 形式）が無いこと。"""
+    hits = []
+    for rel in _tracked_markdown():
+        for lineno, line in enumerate(_read(rel).splitlines(), 1):
+            for m in _ISSUE_ID_RE.finditer(line):
+                hits.append(f"{rel}:{lineno} {m.group(0)}")
+    assert not hits, (
+        "公開文書に非公開の課題 ID がある（ISSUES.md は .gitignore 対象なので"
+        "読者には辿れない）。ID を消し、理由を地の文で書くこと:\n  "
+        + "\n  ".join(hits)
     )

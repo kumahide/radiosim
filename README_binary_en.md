@@ -12,19 +12,20 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 1. [Overview](#overview)
 2. [Requirements](#requirements)
 3. [Installation &amp; Launch](#installation--launch)
-4. [UI Settings](#ui-settings)
-5. [Usage — Single Mode](#usage--single-mode)
-6. [Usage — Batch Mode](#usage--batch-mode)
-7. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
-8. [Usage — Relay Route](#usage--relay-route)
-9. [Project Files (.rsproj)](#project-files-rsproj)
-10. [Input Parameters](#input-parameters)
-11. [Calculation Models](#calculation-models)
-12. [DEM Retrieval Logic](#dem-retrieval-logic)
-13. [Save Package](#save-package)
-14. [Uninstall](#uninstall)
-15. [Known Limitations](#known-limitations)
-16. [Copyright](#copyright)
+4. [Menus](#menus)
+5. [Map Window](#map-window)
+6. [Usage — Single Mode](#usage--single-mode)
+7. [Usage — Batch Mode](#usage--batch-mode)
+8. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
+9. [Usage — Relay Route](#usage--relay-route)
+10. [Project Files (.rsproj)](#project-files-rsproj)
+11. [Input Parameters](#input-parameters)
+12. [Calculation Models](#calculation-models)
+13. [DEM Retrieval Logic](#dem-retrieval-logic)
+14. [Save Package](#save-package)
+15. [Uninstall](#uninstall)
+16. [Known Limitations](#known-limitations)
+17. [Copyright](#copyright)
 
 ---
 
@@ -35,25 +36,46 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 ### Key Features
 
+#### Workflows — four, by what you want to find out
+
+| Workflow | What it answers |
+| --- | --- |
+| **Single Mode** | Does this one link close? Watch the terrain profile while you move antenna heights and rain rate on the spot |
+| **Batch Mode** | Many links at once, with CSV in and out |
+| **Condition Explorer (compare / sweep)** | **Digs into one path.** Line up results under different conditions (base + up to 5), or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once |
+| **Relay Route** | Bridges a link that will not close directly. Up to 7 relay points, a link budget per section, and **the overall verdict decided by the tightest section** (regenerative relay — each relay receives and transmits again) |
+
+#### Map
+
+- **Map Window** (3 modes): pick coordinates by clicking the map / continuously add paths from the map into Batch Mode / visualize, prefetch, and delete DEM cache
+
+#### Calculation models
+
 - Automatic terrain profile generation from GSI DEM PNG tiles (5 m / 10 m mesh)
 - Earth curvature correction (standard atmosphere K = 4/3, fixed)
 - Diffraction loss calculation using Deygout / Fresnel-Kirchhoff methods
 - Vegetation attenuation (LoS intrusion depth model)
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
-- Real-time antenna height and rain rate sliders in the graph window
-- Batch Mode — process multiple paths from a CSV file
-- Map Window — pick coordinates by clicking the map / continuously add paths from the map into Batch Mode / visualize, prefetch, and delete DEM cache
-- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
+
+#### Output and reports
+
 - **A4 reports (v2)**: per-path / summary rendered as a single print-ready A4 page. Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
 - **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
+- **Automatic path map** in HTML reports (TX/RX, path, and distance overlaid on a map)
 - **All-paths overview map** in the summary report (color-coded by verdict)
-- **Condition Explorer (compare / sweep)**: for a single path, line up results under different conditions (base + up to 5) or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once
 - **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
-- **Relay routes**: place up to 7 relay points between TX and RX and get a link budget per section. **The overall verdict is decided by the tightest section** (regenerative relay — each relay receives and transmits again)
+- Save results as a package (PNG / CSV / JSON / HTML / KML)
+
+#### Reusing your input
+
 - **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay route into **one file** and pick the work up later
 - **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
-- Save results as a package (PNG / CSV / JSON / HTML / KML)
+
+#### Interface
+
+- Real-time antenna height and rain rate sliders in the graph window
+- Switchable coordinate notation (Decimal Degrees / Degrees Minutes Seconds)
 - Japanese / English UI — switchable from the menu bar
 - System-aware dark mode (Light / Dark / System auto)
 
@@ -70,7 +92,8 @@ This tool is intended solely for screening purposes — determining whether a fi
 | -------- | ------------------------------------------------------------- |
 | OS       | Windows 10 / 11 (64-bit)                                      |
 | Internet | Required for DEM retrieval (fetched tiles are cached locally) |
-| Python   | Not required (bundled in the binary)                          |
+
+> **You do not need to install Python.** Everything required to run the app is bundled.
 
 ---
 
@@ -97,39 +120,74 @@ On first launch, the following directories and files are created automatically i
 
 ---
 
-## UI Settings
+## Menus
 
-The menu bar provides the following options. Settings are saved to `radiosim_conf.json`.
+The menu bar has three menus — **File / Settings / Help**. Every item is listed below.
 
-| Menu                 | Item                  | Description                                                       |
-| -------------------- | --------------------- | ----------------------------------------------------------------- |
-| Settings > Theme     | System / Light / Dark | Window color theme                                                |
-| Settings > Language  | English / 日本語      | UI language (requires restart)                                    |
-| Settings > Proxy     | URL entry             | Explicit HTTP proxy URL (blank = use OS proxy settings)           |
-| Settings > Load App Settings | —             | Imports only theme/language/proxy from a settings file (leaves simulation parameters unchanged)|
-| Settings > Delete All Cache | —              | Deletes all downloaded DEM/map tiles (with confirmation)          |
-| Help > Open README   | —                    | Opens this document in a browser                                  |
+### File
 
-> The **Map Window** is opened from the **"Map Window" button** at the bottom of the launcher (not the menu) — see below.
+Operations that reach out to files or to the OS.
+
+| Item                | Description                                                                                     |
+| ------------------- | ------------------------------------------------------------------------------------------------- |
+| Open Project...     | Loads a saved `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
+| Save Project As...  | Writes the current input set to a `.rsproj` → [Project Files (.rsproj)](#project-files-rsproj)   |
+| Load Parameters...  | Imports **simulation parameters only** from a settings file into the input form                 |
+| Open Results Folder | Opens the `results/` folder in Explorer                                                         |
+
+### Settings
+
+Your choices are saved to `radiosim_conf.json` and persist across restarts.
+
+| Item               | Options                          | Description                                                        |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------- |
+| Theme              | System / Light / Dark            | Window color theme                                                   |
+| Language           | English / 日本語                 | UI language (requires restart)                                       |
+| Coord Format       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
+| Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
+| Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file      |
+| Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
+
+### Help
+
+| Item         | Description                          |
+| ------------ | -------------------------------------- |
+| Open README  | Opens this document in a browser       |
+| About        | Shows the installed version            |
+
+> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
+
+> **The Map Window is not in the menus** — open it from the **"Map Window" button** at the bottom of the launcher (→ [Map Window](#map-window)).
+
+### Coordinate Format (DD / DMS)
+
+This selects **how coordinates are displayed**. It is not an input mode switch.
+
+- **Input fields accept either notation.** With DMS selected you can still type `34.8, 132.6` (DD), and with DD selected you can still type `34°48'00.0"N, 132°36'00.0"E`. Everything is normalised to decimal degrees before the calculation runs.
+- **Fields are reformatted into the selected notation when you switch the format, or when settings/a project are loaded.** Committing an entry does not reformat it, so **what you just typed stays in the form you typed it** — this is not a fault.
 
 ### Proxy Settings
 
-If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL (e.g. `http://proxy.example.com:8080`). Changes take effect immediately. Leave blank and click OK to revert to OS proxy settings.
+If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL (e.g. `http://proxy.example.com:8080`). Changes take effect immediately (no restart needed). Leave blank and click OK to revert to OS proxy settings.
 
-### Map Window
+> If no proxy is configured and the elevation server is completely unreachable, the run **aborts after a dozen seconds or so** and a dialog asks you to check the proxy settings — it will not quietly finish and hand you flat terrain.
+
+---
+
+## Map Window
 
 The **"Map Window" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the Map Window is a convenience layer.
 
 > On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
 
-#### Pick Coordinates mode (default)
+### Pick Coordinates mode (default)
 
 Click the map to set **TX → RX** alternately; the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Click again at any time to re-place a point.
 
 - Shows UISP-style markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
 
-#### Continuous Add mode
+### Continuous Add mode
 
 A mode for stacking paths into Batch Mode straight from the map. Selecting the **Append to Batch** mode opens (and raises) the Batch Mode window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
 
@@ -138,7 +196,7 @@ A mode for stacking paths into Batch Mode straight from the map. Selecting the *
 - Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
 - Closing the Batch Mode window returns the map to Pick Coordinates mode.
 
-#### Cache Management mode
+### Cache Management mode
 
 Review the DEM tile cache and prefetch or delete tiles for any area — intended for downloading what you need for offline use before heading to a site with poor connectivity. Normal simulations already cache the tiles around each path automatically, so **you do not need to open this for everyday use**.
 
@@ -244,11 +302,11 @@ Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
 
-### 4. Saving and Loading Settings
+### 4. Automatic Saving of Input Values
 
-- Input values are automatically saved to `radiosim_conf.json` each time Single Mode is run
-- **Load Settings**: Loads a previous `settings.json` and restores it to the input form
-- **Open Results**: Opens the `results/` folder in Explorer
+Each time you run a Single Mode simulation, the input values are saved to `radiosim_conf.json` and restored on the next launch. **No explicit save action is needed.**
+
+To pull past conditions in from a file, or to carry a whole input set around, use the [File menu](#file) (**Load Parameters** / **Save Project As** / **Open Project**).
 
 ---
 
@@ -569,7 +627,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
 | `report.html`         | Detailed report (single A4 page) with the terrain graph, a path map, and antenna initial aim AZ/EL embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
-| `settings.json`       | Complete input parameters (reloadable via Load Settings) |
+| `settings.json`       | Complete input parameters (reloadable via File > Load Parameters) |
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
