@@ -124,16 +124,80 @@ def test_batch_runner_logs_traceback(tmp_path, default_params_dict,
     )
 
 
+def test_per_path_failure_logs_traceback(tmp_path, default_params_dict,
+                                         monkeypatch, caplog):
+    """**経路 1 本の失敗**も traceback つきで残ること。
+
+    🔴 背景（2026-08-04・独立レビュー Codex 3 巡目）: ここが無かったせいで、
+    **`_process_one` の行を `logger.error` に戻してもテストが緑のまま**だった
+    （モジュール内に `logger.exception` が 1 個でもあれば通る書き方をしていた）。
+    ゲートの壊れ方③「**間違ったものを要求している**」の実例——落ちることも
+    誤検知しないことも確かめたのに、**要求の粒度が粗くて素通りしていた。**
+
+    ⚠️ **最上位の except では代用できない**＝経路 1 本の失敗はここで
+    `PathResult(ok=False)` に畳まれ、**バッチは完走する**（それが仕様）。
+    計算・保存・レポート描画の失敗は全部この経路へ入る。
+    """
+    import report_path
+
+    def _raise(*_a, **_kw):
+        raise _Boom("描画で仕組んだ失敗")
+    # 実 DEM を引かずに、描画段だけを倒す（そこまでは正常に進む必要がある）。
+    monkeypatch.setattr(report_path, "save_path_visuals", _raise, raising=True)
+    monkeypatch.setattr(config, "results_dir", lambda: str(tmp_path), raising=False)
+
+    ev: dict = {}
+    done = threading.Event()
+
+    def on_batch_complete(_dir, results):
+        ev["results"] = results
+        done.set()
+
+    with caplog.at_level("ERROR"):
+        batch.run_batch(
+            [batch.PathRow(path_id="path01", lat_tx=34.5, lon_tx=132.4,
+                           lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)],
+            _params(default_params_dict),
+            on_path_start     = lambda *a: None,
+            on_path_progress  = lambda *a: None,
+            on_path_complete  = lambda *a: None,
+            on_batch_complete = on_batch_complete,
+            on_error          = lambda ex: (ev.setdefault("error", ex), done.set()),
+        )
+        assert done.wait(timeout=60), "バッチが時間内に終わらなかった"
+
+    assert "results" in ev, f"バッチが完走していない（on_error={ev.get('error')!r}）"
+    (pr,) = ev["results"]
+    assert not pr.ok and isinstance(pr.error, _Boom), \
+        "仕込んだ失敗が PathResult.error に入っていない"
+
+    records = _records_with_traceback(caplog)
+    assert records, (
+        "経路単位の失敗が logger.exception で残っていない"
+        "（logger.error だと投げ元が分からない）"
+    )
+    assert any(r.exc_info and r.exc_info[0] is _Boom for r in records), \
+        "記録された traceback が、仕込んだ例外のものではない"
+
+
 @pytest.mark.parametrize("module", [batch, scenario, multihop])
 def test_runners_do_not_swallow_the_traceback(module):
-    """3 ランナーの最上位 except が `logger.exception` を使っていること。
+    """3 ランナーが**捕捉した例外を `logger.error` で握らない**こと。
 
-    ⚠️ 実行して確かめるのが本筋（上のテスト）だが、**条件探索と中継経路は
-    実行に実 DEM 相当の下ごしらえが要る**ので、ここはソースで縛る。
-    片方だけだと「1 つだけ直して他が戻る」を許すため両輪で見る。
+    ⚠️ **「`logger.exception` が 1 個あること」では縛れない**（3 巡目の指摘）＝
+    最上位を直しただけで通ってしまい、**他の except が戻ったのを見逃す**。
+    ⇒ **`logger.error(` が 1 つも無いこと**を要求する（このモジュール群では、
+    捕捉した例外を残す口は全て `logger.exception` であるべき）。
+
+    実行して確かめるのが本筋（上の 2 つ）だが、**条件探索と中継経路は実行の
+    下ごしらえが重い**のでここはソースで縛る。両輪で見る。
     """
     src = open(module.__file__, encoding="utf-8").read()
     assert "logger.exception(" in src, (
-        f"{os.path.basename(module.__file__)}: ワーカー最上位の失敗を "
-        "logger.exception で残していない（logger.error では traceback が消える）"
+        f"{os.path.basename(module.__file__)}: 失敗を logger.exception で残していない"
+    )
+    assert "logger.error(" not in src, (
+        f"{os.path.basename(module.__file__)}: `logger.error(` が残っている。"
+        "捕捉した例外は `logger.exception` で残すこと（traceback が消える）。"
+        "例外に無関係な ERROR ログを足す必要が出たら、この規則ごと見直すこと。"
     )

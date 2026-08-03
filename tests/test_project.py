@@ -349,3 +349,92 @@ def test_save_failure_raises(tmp_path):
 def test_default_filename(name, expected):
     """案件名は自由文字列＝ファイル名に使えない文字が来る。"""
     assert project.default_filename(name) == expected
+
+
+# ------------------------------------------------------------
+# 型ガード＝「キーが無い」と「キーはあるが型が違う」を分ける
+# ------------------------------------------------------------
+# 背景（2026-08-03/04・独立レビュー Codex を 3 巡）: この層の契約は「**壊れた
+# ファイルは ProjectError 一種類に畳む**」。ところが `data.get(key)` は
+# **キー欠損と明示的な `null` を区別できない**ので、壊れた節が「その節は無い」
+# として**読めてしまって**いた。
+#
+# 🔴 **読めてしまうことが危険**＝利用者は気づかず、**そのまま上書き保存すると
+# 壊れていた節の中身が消える**（原子的保存で直したデータ損失と同じクラス）。
+#
+# 🔑 **線引きの根拠＝`to_dict` が実際に書く形**。節が None ならキーごと出さず、
+# 内側は必ず list / dict。⇒ **`null` や裸の配列は我々が書かない**＝壊れている。
+# 「欠損は既定値」の緩さは**キーが無いときにだけ**与える。
+#
+# ⚠️ **ここが無いまま 2 巡した**（実装だけ直してテストを書かなかった）。
+# 実装を戻しても誰も気づかない状態を 2 回作ったので、ここで固定する。
+_BASE_DOC = {"schema_version": 1, "meta": {}, "params": {}}
+
+# 「壊れている」と言い切るべき入力（節・入れ子・要素の 3 段すべて）
+_BROKEN = [
+    ("節が null",             {"multihop": None}),
+    ("節が配列",              {"scenario": []}),
+    ("節が数値",              {"batch": 5}),
+    ("節が文字列",            {"multihop": "x"}),
+    ("入れ子が null",         {"batch": {"rows": None}}),
+    ("入れ子が null(compare)", {"scenario": {"compare": None}}),
+    ("入れ子が数値",          {"scenario": {"compare": 5}}),
+    ("入れ子が配列(sweep)",   {"scenario": {"sweep": []}}),
+    ("入れ子が null(hop_rf)", {"multihop": {"waypoints": [], "hop_rf": None}}),
+    ("要素が数値",            {"scenario": {"compare": [5]}}),
+    ("要素が文字列",          {"multihop": {"waypoints": ["x"]}}),
+    ("meta が配列",           {"meta": []}),
+    ("params が null",        {"params": None}),
+]
+
+
+@pytest.mark.parametrize("label,fragment", _BROKEN, ids=[x[0] for x in _BROKEN])
+def test_broken_shapes_are_project_errors(tmp_path, label, fragment):
+    """壊れた形は **`ProjectError` 一種類**に畳まれること（生の例外を漏らさない）。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, **fragment}, f)
+    with pytest.raises(project.ProjectError):
+        project.load(path)
+
+
+# 「キーが無い」だけは既定値で読めること（後方互換＝古いファイル・部分的なファイル）
+_ABSENT = [
+    ("節が全て無い",     {}),
+    ("batch だけ",       {"batch": {"rows": []}}),
+    ("rows キーが無い",  {"batch": {}}),
+    ("compare キーが無い", {"scenario": {"mode": "compare"}}),
+    ("meta キーが無い",  {"__drop__": "meta"}),
+]
+
+
+@pytest.mark.parametrize("label,fragment", _ABSENT, ids=[x[0] for x in _ABSENT])
+def test_absent_keys_fall_back_to_defaults(tmp_path, label, fragment):
+    """**キーが無い**のは壊れていない＝既定値で読める（`null` とは扱いが違う）。"""
+    data = {**_BASE_DOC}
+    drop = fragment.pop("__drop__", None)
+    if drop:
+        data.pop(drop)
+    data.update(fragment)
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f)
+    project.load(path)          # 例外が出ないことが仕様
+
+
+def test_saved_file_never_contains_null_for_known_keys():
+    """**書く側が `null` を出さない**ことを固定する（上の線引きの根拠そのもの）。
+
+    ここが崩れると「`null` は壊れている」という判断の前提が消え、
+    自分が書いたファイルを自分で拒否するようになる。
+    """
+    doc = project.ProjectDoc(
+        meta={"project_name": "x"}, params={"freq_mhz": "2400"},
+        batch_rows=[], scenario=project.ScenarioSpec(), multihop=None)
+    data = project.to_dict(doc)
+    assert "multihop" not in data, "節が無いときはキーごと出さない（null を書かない）"
+    for key in ("meta", "params", "batch", "scenario"):
+        assert data.get(key) is not None, f"{key} に null を書いている"
+    assert isinstance(data["batch"]["rows"], list)
+    assert isinstance(data["scenario"]["compare"], list)
+    assert isinstance(data["scenario"]["sweep"], dict)

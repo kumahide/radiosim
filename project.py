@@ -119,6 +119,25 @@ def _opt_num(value, what: str) -> "float | None":
     return _num(value, what)
 
 
+# ---------------------------------------------------------------------------
+# 既知キーの取り出し ＝ **「キーが無い」と「キーはあるが型が違う」を分ける**
+# ---------------------------------------------------------------------------
+# 🔴 **`data.get(key)` では分けられない**（2026-08-03・独立レビュー Codex 3 巡目）。
+# `null` が入っていても欠損と同じ `None` が返るので、**壊れたファイルが「その節は
+# 無い」として読めてしまう**。読めてしまうのが危険なのは、**そのまま上書き保存
+# すると壊れていた節の中身が消える**から——直したはずのデータ損失と同じクラス。
+#
+# 🔑 **判断の決め手＝`to_dict` は `null` も裸の配列も書かない**（節が None なら
+# キーごと出さない・内側は必ず list / dict）。⇒ **これらの位置に `null` がある
+# ファイルは、我々が書いたものではない**＝壊れているか別のツールが作ったもの。
+# 「欠損は既定値」の緩さは**キーが無いときにだけ**与えればよい。
+#
+# ⚠️ 2 巡目まで「`null` は値が無いの自然な表現」として通していた。**説明としては
+# 正しいが、書き手を我々に限れば起こり得ない入力**だった＝*一般的な JSON の作法*
+# ではなく*この製品が実際に書く形*で線を引く。
+_MISSING = object()
+
+
 def _str_map(value) -> dict[str, str]:
     """dict[str, str] へ正規化（数値が入っていても文字列にする）。"""
     if not isinstance(value, dict):
@@ -126,40 +145,32 @@ def _str_map(value) -> dict[str, str]:
     return {str(k): "" if v is None else str(v) for k, v in value.items()}
 
 
-def _seq(value, what: str) -> list:
-    """入れ子のリストを取り出す。**リスト以外は `ProjectError` に畳む。**
-
-    ⚠️ `data.get("compare", [])` では守れない＝**キーが在って値が `null`** のとき
-    既定値は使われず `None` が返り、そのまま反復して**生の `TypeError` が漏れる**
-    （2026-08-03・独立レビュー Codex 由来。実測で `compare: null` / `hop_rf: null`
-    / `compare: 5` の 3 ケースが漏出した）。本モジュールの契約は「**壊れたファイル
-    は `ProjectError` 一種類に畳む**」なので、欠損（キーが無い）は空扱い、
-    **不正な型は明示的にエラー**へ分ける。
-    """
-    if value is None:
-        return []                      # 欠損＝既定値（`.rsproj` の「欠損は既定値」）
-    if not isinstance(value, list):
-        raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
+def _typed(container: dict, key: str, kind: type, what: str = ""):
+    """既知キーを型つきで取り出す。**無ければ None・型が違えば `ProjectError`。**"""
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return None                                   # キーが無い＝既定値へ
+    if not isinstance(value, kind):
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
     return value
+
+
+def _seq(container: dict, key: str, what: str = "") -> list:
+    """既知キーのリストを取り出す（無ければ空・リスト以外は `ProjectError`）。"""
+    return _typed(container, key, list, what) or []
+
+
+def _map(container: dict, key: str, what: str = "") -> dict:
+    """既知キーの dict を取り出す（無ければ空・dict 以外は `ProjectError`）。"""
+    return _typed(container, key, dict, what) or {}
 
 
 def _section(data: dict, key: str) -> "dict | None":
     """既知の節（`batch` / `scenario` / `multihop`）を取り出す。
 
-    **無い（キーが無い・`null`）＝ None、dict 以外＝`ProjectError`。**
-
-    ⚠️ `if isinstance(x, dict):` だけで受けると、**型が違う節は「無かったこと」に
-    される**（2026-08-03・独立レビュー Codex 2 巡目。実測で `"scenario": []` /
-    `"multihop": []` が成功扱いになった）。**壊れているのに読めてしまうのが危険**
-    ＝そのまま上書き保存すると、**壊れていた節の中身が消える**。読めないなら
-    読めないと言う。
+    **キーが無い＝None（節が無い）／dict 以外（`null` を含む）＝`ProjectError`。**
     """
-    value = data.get(key)
-    if value is None:
-        return None
-    if not isinstance(value, dict):
-        raise ProjectError(i18n.t("proj_err_broken").format(reason=key))
-    return value
+    return _typed(data, key, dict)
 
 
 def _dicts(items: list, what: str) -> list:
@@ -244,17 +255,17 @@ def from_dict(data: dict) -> ProjectDoc:
             ver=ver, cur=SCHEMA_VERSION))
 
     doc = ProjectDoc(
-        meta        = _str_map(data.get("meta")),
+        meta        = _str_map(_map(data, "meta")),
         # ⚠️ 読む側でも sim キーだけ＝ファイルに app キーが混ざっていても
         # theme/lang/proxy_url は取り込まない（`select_sim` が唯一の関門）。
-        params      = config.select_sim(_str_map(data.get("params"))),
+        params      = config.select_sim(_str_map(_map(data, "params"))),
         app_version = str(data.get("app_version", "")),
         saved_at    = str(data.get("saved_at", "")),
     )
 
     b = _section(data, "batch")
     if b is not None:
-        rows = _dicts(_seq(b.get("rows"), "batch.rows"), "batch.rows")
+        rows = _dicts(_seq(b, "rows", "batch.rows"), "batch.rows")
         doc.batch_rows = [_row_from_dict(r) for r in rows]
 
     s = _section(data, "scenario")
@@ -263,13 +274,13 @@ def from_dict(data: dict) -> ProjectDoc:
         doc.scenario = ScenarioSpec(
             mode    = mode if mode in ("compare", "sweep") else "compare",
             compare = [_str_map(c) for c in
-                       _dicts(_seq(s.get("compare"), "compare"), "compare")],
-            sweep   = _str_map(s.get("sweep")),
+                       _dicts(_seq(s, "compare"), "compare")],
+            sweep   = _str_map(_map(s, "sweep")),
         )
 
     m = _section(data, "multihop")
     if m is not None:
-        wps = _dicts(_seq(m.get("waypoints"), "waypoints"), "waypoints")
+        wps = _dicts(_seq(m, "waypoints"), "waypoints")
         doc.multihop = mh.MultiHopPath(
             path_id   = str(m.get("path_id", "")),
             waypoints = [mh.Waypoint(name=str(w.get("name", "")),
@@ -280,7 +291,7 @@ def from_dict(data: dict) -> ProjectDoc:
             hop_rf    = [mh.HopRF(freq_mhz=_opt_num(rf.get("freq_mhz"), "freq_mhz"),
                                   gain_tx=_opt_num(rf.get("gain_tx"), "gain_tx"),
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
-                         for rf in _dicts(_seq(m.get("hop_rf"), "hop_rf"), "hop_rf")],
+                         for rf in _dicts(_seq(m, "hop_rf"), "hop_rf")],
             note      = str(m.get("note", "")),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
