@@ -422,7 +422,12 @@ def _process_one(
         raise
 
     except Exception as ex:
-        logger.error("Path '%s' failed: %s", row.path_id, ex)
+        # ⚠️ **経路 1 本の失敗はここで畳まれ、バッチは完走する**（それが仕様）＝
+        # 最上位の except には届かないので、**traceback はここで残すしかない**。
+        # 計算・保存・レポート描画の失敗が全部この経路へ入る。
+        # ⚠️ **失敗を「成功に紛れさせない」件（I-010）は別**＝ここが直っても、
+        # 完了ダイアログが正常に出ることは変わらない。**残すのと見せるのは別の話。**
+        logger.exception("Path '%s' failed: %s", row.path_id, ex)
         return PathResult(row=row, result=None, error=ex)
 
 

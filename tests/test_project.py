@@ -228,6 +228,60 @@ def test_save_refuses_to_write_non_finite_numbers(tmp_path):
         project.save(doc, str(tmp_path / "p.rsproj"))
 
 
+def _big_doc(n: int = 200) -> project.ProjectDoc:
+    """1 回の書き込みでバッファに収まらない大きさのプロジェクト。
+
+    ⚠️ **小さいと再現しない**＝全体がバッファに収まると、失敗しても未 flush の
+    ままなのでファイルが無傷に「見える」。最初の実測でそれに騙されかけた。
+    """
+    return project.ProjectDoc(
+        meta={"project_name": "大事な案件"},
+        batch_rows=[batch.PathRow(path_id=f"p{i:03d}", lat_tx=34.5, lon_tx=132.4,
+                                  lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)
+                    for i in range(n)])
+
+
+def test_save_failure_leaves_the_existing_file_intact(tmp_path):
+    """**保存に失敗しても、前のプロジェクトが壊れないこと。**
+
+    背景（2026-08-03・独立レビュー Codex）: 以前は保存先を直接 `"w"` で開いており、
+    **open した瞬間に既存が 0 バイトへ切り詰められて**いた。途中で失敗すると
+    読めない残骸だけが残る（実測＝56,384 → 42,473 バイトの壊れた JSON）。
+    **条件探索・中継経路にとって `.rsproj` は唯一の永続化手段**なので、
+    「保存は失敗したが前のファイルは無事」を成立させる必要がある。
+
+    ⚠️ **引き金は NaN だけではない**（ディスク不足・I/O エラーでも同じ）。ここでは
+    再現しやすい NaN で代表させるが、守っているのは**書き込み全般**である。
+    """
+    path = str(tmp_path / "p.rsproj")
+    project.save(_big_doc(), path)
+    before = open(path, encoding="utf-8").read()
+    assert len(before) > 8192, "テストの前提（バッファに収まらない大きさ）が崩れている"
+
+    doomed = _big_doc()
+    doomed.batch_rows[150].h_tx = float("nan")     # 途中で失敗させる
+    with pytest.raises(ValueError):
+        project.save(doomed, path)
+
+    assert open(path, encoding="utf-8").read() == before, \
+        "保存に失敗したのに既存ファイルが変わっている（原子的でない）"
+    json.loads(before)                              # 壊れていないことも明示的に見る
+    assert project.load(path).batch_rows[150].h_tx == 30.0, "前の内容が読み戻せない"
+
+
+def test_save_leaves_no_temporary_file_behind(tmp_path):
+    """成功・失敗のどちらでも一時ファイルを残さないこと。"""
+    path = str(tmp_path / "p.rsproj")
+    project.save(_big_doc(), path)
+    assert os.listdir(tmp_path) == ["p.rsproj"], "成功時に一時ファイルが残っている"
+
+    doomed = _big_doc()
+    doomed.batch_rows[150].h_tx = float("nan")
+    with pytest.raises(ValueError):
+        project.save(doomed, path)
+    assert os.listdir(tmp_path) == ["p.rsproj"], "失敗時に一時ファイルが残っている"
+
+
 # ------------------------------------------------------------
 # 4. schema version
 # ------------------------------------------------------------

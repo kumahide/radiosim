@@ -143,6 +143,38 @@ def _seq(value, what: str) -> list:
     return value
 
 
+def _section(data: dict, key: str) -> "dict | None":
+    """既知の節（`batch` / `scenario` / `multihop`）を取り出す。
+
+    **無い（キーが無い・`null`）＝ None、dict 以外＝`ProjectError`。**
+
+    ⚠️ `if isinstance(x, dict):` だけで受けると、**型が違う節は「無かったこと」に
+    される**（2026-08-03・独立レビュー Codex 2 巡目。実測で `"scenario": []` /
+    `"multihop": []` が成功扱いになった）。**壊れているのに読めてしまうのが危険**
+    ＝そのまま上書き保存すると、**壊れていた節の中身が消える**。読めないなら
+    読めないと言う。
+    """
+    value = data.get(key)
+    if value is None:
+        return None
+    if not isinstance(value, dict):
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=key))
+    return value
+
+
+def _dicts(items: list, what: str) -> list:
+    """リストの要素が全て dict であることを確かめて返す。
+
+    ⚠️ **黙って捨てない**＝以前は `if isinstance(c, dict)` で非 dict を除外して
+    いたので、`"compare": [5]` が**空の compare として読め**、そのまま保存すると
+    **条件が消えた**（同上・実測）。落とすくらいなら読めないと言う方が安全。
+    """
+    for item in items:
+        if not isinstance(item, dict):
+            raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
+    return items
+
+
 # ============================================================
 # シリアライズ
 # ============================================================
@@ -220,37 +252,35 @@ def from_dict(data: dict) -> ProjectDoc:
         saved_at    = str(data.get("saved_at", "")),
     )
 
-    b = data.get("batch")
-    if isinstance(b, dict) and isinstance(b.get("rows"), list):
-        doc.batch_rows = [_row_from_dict(r) for r in b["rows"]]
+    b = _section(data, "batch")
+    if b is not None:
+        rows = _dicts(_seq(b.get("rows"), "batch.rows"), "batch.rows")
+        doc.batch_rows = [_row_from_dict(r) for r in rows]
 
-    s = data.get("scenario")
-    if isinstance(s, dict):
+    s = _section(data, "scenario")
+    if s is not None:
         mode = str(s.get("mode", "compare"))
         doc.scenario = ScenarioSpec(
             mode    = mode if mode in ("compare", "sweep") else "compare",
-            compare = [_str_map(c) for c in _seq(s.get("compare"), "compare")
-                       if isinstance(c, dict)],
+            compare = [_str_map(c) for c in
+                       _dicts(_seq(s.get("compare"), "compare"), "compare")],
             sweep   = _str_map(s.get("sweep")),
         )
 
-    m = data.get("multihop")
-    if isinstance(m, dict):
-        wps = m.get("waypoints")
-        if not isinstance(wps, list):
-            raise ProjectError(i18n.t("proj_err_broken").format(reason="waypoints"))
+    m = _section(data, "multihop")
+    if m is not None:
+        wps = _dicts(_seq(m.get("waypoints"), "waypoints"), "waypoints")
         doc.multihop = mh.MultiHopPath(
             path_id   = str(m.get("path_id", "")),
             waypoints = [mh.Waypoint(name=str(w.get("name", "")),
                                      lat=_num(w.get("lat"), "lat"),
                                      lon=_num(w.get("lon"), "lon"),
                                      h=_num(w.get("h"), "h"))
-                         for w in wps if isinstance(w, dict)],
+                         for w in wps],
             hop_rf    = [mh.HopRF(freq_mhz=_opt_num(rf.get("freq_mhz"), "freq_mhz"),
                                   gain_tx=_opt_num(rf.get("gain_tx"), "gain_tx"),
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
-                         for rf in _seq(m.get("hop_rf"), "hop_rf")
-                         if isinstance(rf, dict)],
+                         for rf in _dicts(_seq(m.get("hop_rf"), "hop_rf"), "hop_rf")],
             note      = str(m.get("note", "")),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
