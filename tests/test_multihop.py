@@ -676,3 +676,45 @@ class TestMultiHopWindow:
             assert path.hop_rf[0].gain_tx is None
         finally:
             win.destroy(); root.destroy()
+
+
+# ------------------------------------------------------------
+# トポロジーの契約＝**読める / 実行できる を分け、止めるなら早く止める**
+# ------------------------------------------------------------
+# 🔴 背景（2026-08-04・独立レビュー Codex 6 巡目）: `links()` は未知のトポロジーを
+# 鎖として扱う一方、`MultiHopRun._require_chain` は鎖以外を拒否する——**同じ
+# モジュールに正反対の方針が同居**していた。その結果 `star` は実行前検証を通り、
+# **全区間の DEM を引いた後**、レポート生成の集約で初めて落ちていた。
+#
+# 🔑 採る方針＝`_require_chain` 側（「静かに誤るより、その場で決定を強制する」）。
+# **止めるなら、金と時間を使う前に止める。**
+def test_unsupported_topology_stops_before_fetching_terrain(monkeypatch):
+    """`star` は **DEM を 1 枚も引かずに** on_error へ落ちること。"""
+    fetched: list[int] = []
+
+    def _must_not_fetch(*_a, **_kw):
+        fetched.append(1)
+        raise AssertionError("実行できないトポロジーで DEM を引いている")
+
+    monkeypatch.setattr(mh.batch, "_fetch_sync", _must_not_fetch,
+                        raising=True)
+
+    path = mh.MultiHopPath(
+        path_id="r1", topology=mh.TOPOLOGY_STAR,
+        waypoints=[mh.Waypoint(name=f"P{i}", lat=34.5 + i * 0.01,
+                                     lon=132.4, h=30.0) for i in range(3)])
+    done = threading.Event()
+    box: list[Exception] = []
+
+    mh.run_multihop(
+        path, sim.SimParams(config.DEFAULT_CONFIG),
+        on_hop_start    = lambda *a: None,
+        on_hop_progress = lambda *a: None,
+        on_hop_complete = lambda *a: None,
+        on_complete     = lambda run: done.set(),
+        on_error        = lambda ex: (box.append(ex), done.set()),
+    )
+    assert done.wait(timeout=30), "実行が終わらなかった"
+    assert box and isinstance(box[0], NotImplementedError), \
+        f"未対応トポロジーが早期に止まっていない（{box!r}）"
+    assert not fetched, "DEM を引いてしまっている（止めるなら引く前）"

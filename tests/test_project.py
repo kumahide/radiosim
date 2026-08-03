@@ -567,18 +567,41 @@ def test_broken_enums_and_map_values_are_project_errors(tmp_path, label, fragmen
         project.load(path)
 
 
-def test_unknown_topology_string_is_still_accepted(tmp_path):
-    """⚠️ **`topology` は意図的に開いた集合**（未知の文字列は鎖として扱う）。
+def test_declared_topologies_load(tmp_path):
+    """宣言済みのトポロジー（`multihop.TOPOLOGIES`）は読める。
 
-    後から星型を足した版のファイルを、古いアプリが**黙って壊さない**ための約束
-    （意味づけは `multihop.links` の 1 か所）。ここが落ちるようになったら、
-    前方互換の設計判断を壊している。**文字列であることだけ**を要求する。
+    ⚠️ **`star` は読めるが実行はできない**（集約規則が未決定）。実行を止めるのは
+    `multihop` 側の役目で、**DEM を引く前**に止まる（`test_multihop.py`）。
+    """
+    for topology in mh.TOPOLOGIES:
+        path = str(tmp_path / f"{topology}.rsproj")
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump({**_BASE_DOC,
+                       "multihop": {"waypoints": [], "topology": topology}}, f)
+        assert project.load(path).multihop.topology == topology
+
+
+def test_unknown_topology_is_rejected(tmp_path):
+    """🔴 **本当に未知の値は読まない**（2026-08-04・独立レビュー Codex 6 巡目）。
+
+    ⚠️ **以前は「未知は鎖として扱う」で通していた**が、それは*静かに誤る*道だった
+    ——新しい版が別のトポロジーで書いたファイルを、古い版が**鎖として計算して
+    もっともらしい数字を返す**。同じモジュールの `_require_chain` は「静かに誤る
+    より、その場で決定を強制するほうが安い」と正反対の哲学を明記しており、
+    **2 つの方針が同居していた**。採るのは後者（プロジェクトが明示的に選んだ方）。
+
+    ⚠️ 前方互換の本来の担当は `schema_version`（新しい版のファイルは拒否）。
+
+    ⚠️ **テスト値に `star` は使えない**＝既に `TOPOLOGY_STAR` として宣言済みで、
+    「未知」の回帰にならない（前の版のテストがまさにそれで空振りしていた）。
     """
     path = str(tmp_path / "p.rsproj")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({**_BASE_DOC,
-                   "multihop": {"waypoints": [], "topology": "star"}}, f)
-    assert project.load(path).multihop.topology == "star"
+                   "multihop": {"waypoints": [], "topology": "hypercube"}}, f)
+    assert "hypercube" not in mh.TOPOLOGIES, "この値が宣言済みになったらテストを変える"
+    with pytest.raises(project.ProjectError):
+        project.load(path)
 
 
 def test_map_values_written_as_numbers_are_accepted(tmp_path):
@@ -622,3 +645,60 @@ def test_reader_never_converts_values_with_bare_str():
         assert not re.search(r"(?<![\w.])(float|int)\(", body), (
             f"{func} が素の数値変換を使っている（`_num` / `_opt_num` を使うこと）"
         )
+
+
+# ------------------------------------------------------------
+# 数値経路（6 巡目の指摘）
+# ------------------------------------------------------------
+# 🔴 背景（2026-08-04・独立レビュー Codex 6 巡目）: `float(value)` は
+# **`True` を 1.0 に、`NaN` を nan に**変換する。書く側は `allow_nan=False` で
+# 非有限を**絶対に書かない**ので、ファイルの中の NaN/Inf は壊れている。
+# 巨大整数は `OverflowError`（`ValueError` ではない）で**契約の外へ漏れていた**。
+_BROKEN_NUMBERS = [
+    ("座標が true",      {"batch": {"rows": [{"path_id": "p", "lat_tx": True,
+                                             "lon_tx": 132.4, "lat_rx": 34.6,
+                                             "lon_rx": 132.5, "h_tx": 30.0,
+                                             "h_rx": 10.0}]}}),
+    ("hop_rf が true",   {"multihop": {"waypoints": [],
+                                       "hop_rf": [{"freq_mhz": True}]}}),
+]
+
+
+@pytest.mark.parametrize("label,fragment", _BROKEN_NUMBERS,
+                         ids=[x[0] for x in _BROKEN_NUMBERS])
+def test_bool_is_not_a_number(tmp_path, label, fragment):
+    """`True` を 1.0 として受けない（`bool` は `int` の派生という言語の都合）。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, **fragment}, f)
+    with pytest.raises(project.ProjectError):
+        project.load(path)
+
+
+_RAW_BROKEN = [
+    ("params が NaN",
+     '{"schema_version":1,"meta":{},"params":{"freq":NaN}}'),
+    ("座標が Infinity",
+     '{"schema_version":1,"meta":{},"params":{},"batch":{"rows":[{"path_id":"p",'
+     '"lat_tx":Infinity,"lon_tx":132.4,"lat_rx":34.6,"lon_rx":132.5,'
+     '"h_tx":30.0,"h_rx":10.0}]}}'),
+    ("座標が巨大整数",
+     '{"schema_version":1,"meta":{},"params":{},"batch":{"rows":[{"path_id":"p",'
+     '"lat_tx":1' + "0" * 400 + ',"lon_tx":132.4,"lat_rx":34.6,"lon_rx":132.5,'
+     '"h_tx":30.0,"h_rx":10.0}]}}'),
+]
+
+
+@pytest.mark.parametrize("label,raw", _RAW_BROKEN, ids=[x[0] for x in _RAW_BROKEN])
+def test_non_finite_and_overflow_are_project_errors(tmp_path, label, raw):
+    """非有限（NaN / Inf）と桁あふれも `ProjectError` に畳むこと。
+
+    ⚠️ **書く側は `allow_nan=False`** なので、これらは我々が書いた形ではない。
+    `OverflowError` は `ValueError` の派生ではないため、**捕捉漏れで生のまま
+    漏れていた**（契約は「壊れたファイルは `ProjectError` 一種類」）。
+    """
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(raw)
+    with pytest.raises(project.ProjectError):
+        project.load(path)

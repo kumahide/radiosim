@@ -122,6 +122,28 @@ class MultiHopPath:
         return len(links(self))
 
 
+def require_runnable(path: MultiHopPath, what: str = "run") -> None:
+    """**実行できるトポロジーか**を問い、できないなら `NotImplementedError`。
+
+    🔴 規則の単一ソース（2026-08-04・独立レビュー Codex 6 巡目）。それまでは
+    `MultiHopRun._require_chain`（集約のとき）にしか無かったので、
+    **全区間の DEM を引き終えてから落ちて**いた。⇒ **止めるなら、金と時間を
+    使う前に止める**（実行の入口でも同じ規則を通す）。
+
+    ⚠️ `links()` が未知のトポロジーを鎖として扱うのとは**矛盾しない**＝
+    `links` は「点列をどう結ぶか」の既定を答えるだけで、**実行してよいか**は
+    こちらが決める。読み込み側（`project.from_dict`）は宣言済みの値しか通さない
+    ので、未知の値がここへ来るのは API を直接叩いた場合だけ。
+    """
+    if path.topology != TOPOLOGY_CHAIN:
+        raise NotImplementedError(
+            f"{what}: トポロジー '{path.topology}' の集約規則は未決定です。"
+            "min は鎖（直列）の意味論であって、星（独立した N 本）では"
+            "経路上の分布という肝心の情報が消えます。出力の形と併せて"
+            "集約規則を設計してから使ってください。"
+        )
+
+
 def links(path: MultiHopPath) -> list[tuple[int, int]]:
     """点列 → 区間（waypoint の添字ペア）＝**接続規則はここだけが知っている**。
 
@@ -160,13 +182,7 @@ class MultiHopRun:
         ⛔ ここを外すときは、集約規則そのものを設計してから外すこと
         （判定の単位／主たる出力／`worst` の読み替え＝出力の形とセットで決まる）。
         """
-        if self.path.topology != TOPOLOGY_CHAIN:
-            raise NotImplementedError(
-                f"{what}: トポロジー '{self.path.topology}' の集約規則は未決定です。"
-                "min は鎖（直列）の意味論であって、星（独立した N 本）では"
-                "経路上の分布という肝心の情報が消えます。出力の形と併せて"
-                "集約規則を設計してから使ってください。"
-            )
+        require_runnable(self.path, what)      # 規則は require_runnable が単一ソース
 
     @property
     def ok(self) -> bool:
@@ -309,6 +325,15 @@ def run_multihop(
     ⚠️ **1 ホップ = 1 区間の DEM 取得**なので、取得量はホップ数に比例する（④）。
     追い風＝隣接ホップは端点を共有し、タイルが重なるのでキャッシュが効きやすい。
     """
+    # ⛔ **DEM を引く前に**実行可否を確かめる（引いてから落ちると時間も外部
+    # サーバーへの負荷も無駄になる）。失敗の渡し方は他の失敗と同じ on_error。
+    try:
+        require_runnable(path, "run_multihop")
+    except NotImplementedError as ex:
+        logger.exception("Multihop error: %s", ex)
+        on_error(ex)
+        return
+
     threading.Thread(
         target = _run_thread,
         args   = (path, base_params, on_hop_start, on_hop_progress,

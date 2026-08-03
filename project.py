@@ -108,11 +108,28 @@ class ProjectDoc:
 # 値の変換（読む側は「壊れたファイル」を例外 1 種に畳む）
 # ============================================================
 def _num(value, what: str) -> float:
+    """数値を取り出す。**壊れていれば `ProjectError`。**
+
+    ⚠️ 素の `float()` では 3 つ漏れる（2026-08-04・独立レビュー Codex 6 巡目）:
+    ①**`True` が 1.0 になる**（`bool` は `int` の派生という言語の都合であって、
+    座標に真偽値が書いてあれば壊れている）②**`NaN` / `Infinity` を受ける**
+    （Python の `json` は既定でこれらを読む。**書く側は `allow_nan=False` なので
+    我々は絶対に書かない**＝ファイルにあれば壊れている）③**巨大整数が
+    `OverflowError`**——これは `ValueError` の派生では**ない**ので捕捉から漏れ、
+    生の例外として契約の外へ出ていた。
+    """
+    if isinstance(value, bool):
+        raise ProjectError(i18n.t("proj_err_broken").format(
+            reason=f"{what}={value!r}"))
     try:
-        return float(value)
-    except (TypeError, ValueError):
+        number = float(value)
+    except (TypeError, ValueError, OverflowError):
         raise ProjectError(i18n.t("proj_err_broken").format(
             reason=f"{what}={value!r}")) from None
+    if not math.isfinite(number):
+        raise ProjectError(i18n.t("proj_err_broken").format(
+            reason=f"{what}={value!r}"))
+    return number
 
 
 def _opt_num(value, what: str) -> "float | None":
@@ -200,7 +217,8 @@ def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
         return default
     if isinstance(value, str):
         return value
-    if isinstance(value, (int, float)) and not isinstance(value, bool):
+    if (isinstance(value, (int, float)) and not isinstance(value, bool)
+            and math.isfinite(value)):
         return str(value)
     raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
 
@@ -256,7 +274,10 @@ def _read_map(raw: dict, what: str) -> dict[str, str]:
     for key, value in raw.items():
         if isinstance(value, str):
             out[str(key)] = value
-        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+        elif (isinstance(value, (int, float)) and not isinstance(value, bool)
+              and math.isfinite(value)):
+            # ⚠️ 非有限（NaN / Inf）は弾く＝書く側が `allow_nan=False` で
+            # 絶対に書かない形。`"nan"` という文字列に化けさせない。
             out[str(key)] = str(value)
         else:
             raise ProjectError(i18n.t("proj_err_broken").format(
@@ -385,7 +406,8 @@ def from_dict(data: dict) -> ProjectDoc:
             note      = _text(m, "note", what="multihop.note"),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
-            topology  = _name(m, "topology", mh.TOPOLOGY_CHAIN, "multihop.topology"),
+            topology  = _enum(m, "topology", mh.TOPOLOGIES,
+                                mh.TOPOLOGY_CHAIN, "multihop.topology"),
         )
     return doc
 
