@@ -246,6 +246,7 @@ radiosim/
     ├── test_units.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
+    ├── test_runner_logging.py
     ├── test_theme.py
     ├── test_window_fit.py
     ├── test_errors.py
@@ -800,10 +801,19 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 
 ## テスト
 
-```bash
-python -m pytest tests/ -v
-python -m pytest tests/ --cov
+**宣言した環境（`RADIOSIM_PYTHON`）で回してください。**
+
+```powershell
+& "$env:RADIOSIM_PYTHON" -m pytest tests/ -v
+& "$env:RADIOSIM_PYTHON" -m pytest tests/ --cov
 ```
+
+> ⚠️ **裸の `python -m pytest` では回さないこと。** 別の環境で回すと依存の版が
+> `requirements.txt` のピンとずれ、**検証した版と exe に入る版が食い違います**
+> （`build.bat` は宣言された環境で焼きます）。`RADIOSIM_PYTHON` が設定されている
+> のに別の Python で pytest を起動すると、`tests/conftest.py` が理由を示して止めます。
+> **未設定の環境（CI・他マシンの clone）では何も起きません**ので、そこでは
+> `python -m pytest` で構いません。
 
 ### テスト構成
 
@@ -825,6 +835,7 @@ python -m pytest tests/ --cov
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |
 | `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
 | `test_progress.py`       | 進捗トランスポート（開始/停止のライフサイクル・停止後の残存ポーリング・最新値のみ描画・スレッド安全性） |
+| `test_runner_logging.py` | バックグラウンド実行（バッチ / 条件探索 / 中継経路）の失敗が **traceback つき**でログに残ること |
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
 | `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |

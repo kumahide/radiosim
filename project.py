@@ -41,6 +41,8 @@ from __future__ import annotations
 
 import json
 import math
+import os
+import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 
@@ -122,6 +124,23 @@ def _str_map(value) -> dict[str, str]:
     if not isinstance(value, dict):
         return {}
     return {str(k): "" if v is None else str(v) for k, v in value.items()}
+
+
+def _seq(value, what: str) -> list:
+    """入れ子のリストを取り出す。**リスト以外は `ProjectError` に畳む。**
+
+    ⚠️ `data.get("compare", [])` では守れない＝**キーが在って値が `null`** のとき
+    既定値は使われず `None` が返り、そのまま反復して**生の `TypeError` が漏れる**
+    （2026-08-03・独立レビュー Codex 由来。実測で `compare: null` / `hop_rf: null`
+    / `compare: 5` の 3 ケースが漏出した）。本モジュールの契約は「**壊れたファイル
+    は `ProjectError` 一種類に畳む**」なので、欠損（キーが無い）は空扱い、
+    **不正な型は明示的にエラー**へ分ける。
+    """
+    if value is None:
+        return []                      # 欠損＝既定値（`.rsproj` の「欠損は既定値」）
+    if not isinstance(value, list):
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
+    return value
 
 
 # ============================================================
@@ -210,7 +229,7 @@ def from_dict(data: dict) -> ProjectDoc:
         mode = str(s.get("mode", "compare"))
         doc.scenario = ScenarioSpec(
             mode    = mode if mode in ("compare", "sweep") else "compare",
-            compare = [_str_map(c) for c in s.get("compare", [])
+            compare = [_str_map(c) for c in _seq(s.get("compare"), "compare")
                        if isinstance(c, dict)],
             sweep   = _str_map(s.get("sweep")),
         )
@@ -230,7 +249,8 @@ def from_dict(data: dict) -> ProjectDoc:
             hop_rf    = [mh.HopRF(freq_mhz=_opt_num(rf.get("freq_mhz"), "freq_mhz"),
                                   gain_tx=_opt_num(rf.get("gain_tx"), "gain_tx"),
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
-                         for rf in m.get("hop_rf", []) if isinstance(rf, dict)],
+                         for rf in _seq(m.get("hop_rf"), "hop_rf")
+                         if isinstance(rf, dict)],
             note      = str(m.get("note", "")),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
@@ -291,9 +311,35 @@ def save(doc: ProjectDoc, path: str) -> None:
 
     座標は `params` の中で **DD 固定**（データ＝DD 原則）。呼び出し側（ランチャーの
     `_current_config`）が既に DD へ整えている＝ここで表示形式を持ち込まない。
+
+    🔴 **原子的に置き換える**（2026-08-03・独立レビュー Codex 由来）。⚠️ **対象を
+    直接 `"w"` で開いてはいけない**＝open した瞬間に**既存ファイルが 0 バイトに
+    切り詰められ**、その後 `json.dump` が途中で失敗すると**前のプロジェクトが
+    壊れた JSON として残る**。実測＝56,384 バイトのファイルが 42,473 バイトの
+    読めない残骸になった（`allow_nan=False` が中ほどの NaN で送出したケース）。
+
+    失敗の引き金は NaN だけではない（ディスク不足・I/O エラーでも同じ）。
+    **条件探索と中継経路にとって `.rsproj` は唯一の永続化手段**なので、
+    「保存に失敗したが前のファイルは無事」を成立させる必要がある。
+
+    ⇒ **同じディレクトリの一時ファイルへ書き切ってから `os.replace`**。
+    同一ボリュームなので replace は原子的で、失敗しても対象は元のまま。
     """
-    with open(path, "w", encoding="utf-8") as f:
-        json.dump(to_dict(doc), f, indent=2, ensure_ascii=False, allow_nan=False)
+    directory = os.path.dirname(os.path.abspath(path))
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".rsproj-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            json.dump(to_dict(doc), f, indent=2, ensure_ascii=False, allow_nan=False)
+            f.flush()
+            os.fsync(f.fileno())   # 電源断でも「空のファイルに置き換わる」を避ける
+        os.replace(tmp, path)      # 同一ディレクトリ＝原子的。既存は最後まで無傷
+    except BaseException:
+        # 失敗したら一時ファイルを片付けて、例外はそのまま上げる（握り潰さない）。
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise
 
 
 def load(path: str) -> ProjectDoc:

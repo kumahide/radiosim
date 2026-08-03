@@ -358,7 +358,7 @@ def _run_thread(
         on_complete(run)
 
     except Exception as ex:
-        logger.error("Multihop error: %s", ex)
+        logger.exception("Multihop error: %s", ex)
         on_error(ex)
 
 

@@ -377,7 +377,7 @@ def run_scenario(
             phases.finish()
             on_complete(run)
         except Exception as ex:      # 失敗は呼び出し側へ 1 本化して渡す
-            logger.error("Scenario error: %s", ex)
+            logger.exception("Scenario error: %s", ex)
             on_error(ex)
 
     threading.Thread(target=_work, daemon=True).start()

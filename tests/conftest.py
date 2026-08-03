@@ -87,6 +87,47 @@ def _block_network(request):
 
 
 # ============================================================
+# 実行環境の一致ゲート（宣言した venv でしかテストを回させない）
+# ============================================================
+# 背景（2026-08-03・独立レビュー Codex 由来）: `RADIOSIM_PYTHON` は「**検証にも
+# ビルドにも使う唯一の環境**」の宣言で、`build.bat` は未設定なら止まる。ところが
+# **pytest 側には何の強制も無く**、README のテスト手順も裸の `python -m pytest` の
+# ままだった。⇒ **別の環境で検証して、別の環境で exe を焼ける**。
+#
+# 🔴 実際に起きた（2026-08-03・このゲートを入れた当日）: Claude が
+# `2.6` のリリース準備で全スイートをシステムの Python 3.14 で回し、依存版のずれで
+# 落ちた 4 件を「既知の課題」と誤読して「全件緑（既知分を除外）」と報告した。
+# 宣言環境では 10 件とも一致して**除外ゼロで緑**だった。**赤の意味を取り違えた**
+# のではなく、**そもそも違う環境の赤を見ていた**。
+#
+# 判定は「宣言があるときだけ」＝`RADIOSIM_PYTHON` 未設定の環境（CI・他マシンの
+# clone）では何もしない。宣言と食い違うときだけ、理由と直し方を出して止める。
+def _same_interpreter(a: str, b: str) -> bool:
+    """パスの表記ゆれ（大小・区切り・相対）を吸収して同一性を見る。"""
+    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+
+
+def pytest_configure(config):
+    declared = os.environ.get("RADIOSIM_PYTHON", "").strip().strip('"')
+    if not declared:
+        return                                  # 宣言が無い環境＝CI 等。何もしない
+    if not os.path.exists(declared):
+        return                                  # 宣言が壊れている件は build.bat の管轄
+    if _same_interpreter(declared, sys.executable):
+        return
+    raise pytest.UsageError(
+        "宣言された環境と違う Python でテストを回しています。\n"
+        f"  RADIOSIM_PYTHON : {declared}\n"
+        f"  いま実行中       : {sys.executable}\n"
+        "この環境の依存版は requirements.txt のピンと一致しない可能性があり、"
+        "**検証した版と配布する exe の版がずれます**（build.bat は上の環境で焼きます）。\n"
+        "次のように回してください:\n"
+        '  & "$env:RADIOSIM_PYTHON" -m pytest\n'
+        "意図して別環境で回すなら、そのシェルで RADIOSIM_PYTHON を空にしてください。"
+    )
+
+
+# ============================================================
 # モーダルダイアログ・OS 委譲の遮断ゲート
 # ============================================================
 # GUI テストからモーダルダイアログが出ると、`wait_window()` が**人がボタンを

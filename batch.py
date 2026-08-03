@@ -354,7 +354,7 @@ def _run_thread(
         on_batch_complete(batch_dir, path_results)
 
     except Exception as ex:
-        logger.error("Batch error: %s", ex)
+        logger.exception("Batch error: %s", ex)
         on_error(ex)
 
 

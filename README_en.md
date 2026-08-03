@@ -246,6 +246,7 @@ radiosim/
     ├── test_units.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
+    ├── test_runner_logging.py
     ├── test_theme.py
     ├── test_window_fit.py
     ├── test_errors.py
@@ -799,10 +800,19 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 
 ## Testing
 
-```bash
-python -m pytest tests/ -v
-python -m pytest tests/ --cov
+**Run tests with the declared interpreter (`RADIOSIM_PYTHON`).**
+
+```powershell
+& "$env:RADIOSIM_PYTHON" -m pytest tests/ -v
+& "$env:RADIOSIM_PYTHON" -m pytest tests/ --cov
 ```
+
+> ⚠️ **Do not use a bare `python -m pytest`.** A different interpreter drifts from
+> the pins in `requirements.txt`, so **the versions you verified stop matching the
+> ones that go into the exe** (`build.bat` always builds with the declared
+> interpreter). If `RADIOSIM_PYTHON` is set and you start pytest with another
+> Python, `tests/conftest.py` stops the run and explains why. **Nothing happens
+> where the variable is unset** (CI, a fresh clone), so `python -m pytest` is fine there.
 
 ### Test Suite
 
@@ -824,6 +834,7 @@ python -m pytest tests/ --cov
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
+| `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |
