@@ -17,7 +17,10 @@ test_project.py
 
 import json
 import os
+import re
 import sys
+
+from pathlib import Path
 
 import pytest
 
@@ -518,3 +521,104 @@ def test_scalar_roundtrip_survives_save_and_load(tmp_path):
     assert back.scenario.mode == "sweep"
     assert back.multihop.path_id == "r1"
     assert back.batch_rows[0].path_id == "p01"
+
+
+# ------------------------------------------------------------
+# 列挙値とマップの値（5 巡目の指摘＝**変換の全経路を洗い出して閉じる**）
+# ------------------------------------------------------------
+# 🔴 背景（2026-08-04・独立レビュー Codex 5 巡目）: 4 巡目で入れた `_text` は
+# **全文字列項目で数値を救済**していた。自由文字列（`path_id` / `note`）なら
+# 妥当だが、**列挙項目に効かせると意味が変わる**＝`"mode": 1` が `"1"` になり、
+# 直後の「知らない値なら compare」で**黙って `compare` に化ける**。
+# `"topology": 1` は `"1"` として通り、**後段の集約で例外**になり得る。
+#
+# 併せて `_str_map` は値を無条件に文字列化していたので、
+# `compare[].h_tx: null` → `""`（**条件指定が消える**）、`params.start: []` →
+# `"[]"` が通っていた。
+#
+# 🔑 **今回は指摘の 2 件だけでなく `from_dict` の変換を全部洗い出した**（毎巡
+# 1 件ずつ潰す形を終わらせるため）。残っていた緩い経路は**列挙 2 つとマップ 4 つ
+# だけ**で、他（節・入れ子・要素・スカラー・数値）は既に閉じている。
+_BROKEN_ENUMS = [
+    ("mode が数値",       {"scenario": {"mode": 1}}),
+    ("mode が未知の文字列", {"scenario": {"mode": "xyz"}}),
+    ("topology が数値",   {"multihop": {"waypoints": [], "topology": 1}}),
+    ("topology が真偽値", {"multihop": {"waypoints": [], "topology": True}}),
+]
+
+_BROKEN_MAP_VALUES = [
+    ("compare の値が null", {"scenario": {"compare": [{"h_tx": None}]}}),
+    ("compare の値が配列",  {"scenario": {"compare": [{"h_tx": []}]}}),
+    ("sweep の値が null",   {"scenario": {"sweep": {"axis": None}}}),
+    ("params の値が配列",   {"params": {"start": []}}),
+    ("params の値が dict",  {"params": {"start": {}}}),
+    ("meta の値が dict",    {"meta": {"project_name": {}}}),
+]
+
+
+@pytest.mark.parametrize("label,fragment", _BROKEN_ENUMS + _BROKEN_MAP_VALUES,
+                         ids=[x[0] for x in _BROKEN_ENUMS + _BROKEN_MAP_VALUES])
+def test_broken_enums_and_map_values_are_project_errors(tmp_path, label, fragment):
+    """列挙項目とマップの値も、壊れていれば `ProjectError` に畳むこと。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, **fragment}, f)
+    with pytest.raises(project.ProjectError):
+        project.load(path)
+
+
+def test_unknown_topology_string_is_still_accepted(tmp_path):
+    """⚠️ **`topology` は意図的に開いた集合**（未知の文字列は鎖として扱う）。
+
+    後から星型を足した版のファイルを、古いアプリが**黙って壊さない**ための約束
+    （意味づけは `multihop.links` の 1 か所）。ここが落ちるようになったら、
+    前方互換の設計判断を壊している。**文字列であることだけ**を要求する。
+    """
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC,
+                   "multihop": {"waypoints": [], "topology": "star"}}, f)
+    assert project.load(path).multihop.topology == "star"
+
+
+def test_map_values_written_as_numbers_are_accepted(tmp_path):
+    """手書きの `"freq": 2400`（数値）は受ける（情報が失われない）。
+
+    ⚠️ キーは **sim の実キー**（`config.DEFAULT_CONFIG`）でないと `select_sim` に
+    落とされる＝このテスト自身が最初それで落ちた。
+    """
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, "params": {"freq": 2400}}, f)
+    assert project.load(path).params["freq"] == "2400"
+
+
+def test_reader_never_converts_values_with_bare_str():
+    """**読む側の変換は必ずガード付きヘルパーを通る**ことを構造で縛る。
+
+    🔴 なぜ個別のケースだけでなくクラスで塞ぐか（2026-08-04・独立レビュー Codex を
+    5 巡）: `null` → 節が消える／`[5]` → 要素が消える／`"None"` → 文字列に化ける／
+    `mode: 1` → 別の相に化ける……と、**毎巡「同じ型の穴が別の場所で」出続けた**。
+    どれも正体は 1 つ＝**読む側で素の `str(...)` を使うと、壊れた値が黙って
+    正しそうな値に化ける**。⇒ 事例を 1 つずつ潰すのをやめ、**手口ごと禁じる**
+    （[[feedback-promote-recurring-checks]] 実証10＝列挙で塞ぐ穴は名前 1 つで開く）。
+
+    ⚠️ ここが落ちたら、`str(...)` を足したのが悪いのではなく**ガード付きの
+    ヘルパー（`_text` / `_name` / `_enum` / `_num` / `_read_map` …）を増やすべき**
+    という合図。
+    """
+    src = (Path(project.__file__)).read_text(encoding="utf-8")
+    for func in ("from_dict", "_row_from_dict"):
+        m = re.search(rf"\ndef {func}\b.*?(?=\ndef |\Z)", src, re.S)
+        assert m, f"project.py に {func} が見つからない（このゲートが空振りする）"
+        body = m.group(0)
+        # ⚠️ **語境界で見る**＝部分一致だと `mh.Waypoint(` の "int(" に当たって
+        # 毎回鳴る（このゲート自身が最初それで誤検知した＝壊れ方②）。
+        assert not re.search(r"(?<![\w.])str\(", body), (
+            f"{func} が素の `str(...)` で値を変換している。"
+            "壊れた値が黙って文字列に化けるので、ガード付きヘルパーを使うこと"
+            "（`_text` / `_name` / `_enum` / `_read_map`）。"
+        )
+        assert not re.search(r"(?<![\w.])(float|int)\(", body), (
+            f"{func} が素の数値変換を使っている（`_num` / `_opt_num` を使うこと）"
+        )

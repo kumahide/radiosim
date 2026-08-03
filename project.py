@@ -66,6 +66,9 @@ import version
 SCHEMA_VERSION = 1
 FILE_EXT = ".rsproj"
 
+# 条件探索の相（**閉じた集合**）。`ScenarioSpec.mode` の許可値の単一ソース。
+SCENARIO_MODES = ("compare", "sweep")
+
 
 class ProjectError(Exception):
     """プロジェクトファイルを読めない（形式・版・破損）。メッセージは i18n 済み。"""
@@ -202,6 +205,65 @@ def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
     raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
 
 
+def _name(container: dict, key: str, default: str, what: str) -> str:
+    """**開いた集合**の識別子を取り出す（未知の値は通すが、必ず文字列）。
+
+    `topology` 用。**未知の文字列を通すのは設計判断**＝後から星型を足した版の
+    ファイルを古いアプリが黙って壊さないため（意味づけは `multihop.links` の
+    1 か所に置く）。⚠️ **だからといって数値まで通す理由はない**＝`_text` の
+    数値救済を効かせると `1` が `"1"` として通り、**後段の集約で例外**になる。
+    """
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return default
+    if not isinstance(value, str):
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
+    return value
+
+
+def _enum(container: dict, key: str, allowed: tuple, default: str, what: str) -> str:
+    """**閉じた集合**の値を取り出す（許可値以外は `ProjectError`）。
+
+    `scenario.mode` 用。⚠️ **「知らない値なら既定値」にしない**＝`"mode": 1` も
+    `"mode": "xyz"` も**黙って `"compare"` に化ける**（2026-08-04・独立レビュー
+    Codex 5 巡目。数値の例で指摘されたが、**文字列でも同じ**）。
+    書く側は必ず許可値のどれかを書くので、それ以外は壊れている。
+
+    ⚠️ **前方互換は `schema_version` の担当**＝将来 mode が増えた版のファイルは
+    「新しい版は拒否」で先に止まる。ここで緩める必要はない（`topology` は
+    *同じ版の中で*未知の値を持ち得るので扱いが違う＝上の `_name`）。
+    """
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return default
+    if not isinstance(value, str) or value not in allowed:
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
+    return value
+
+
+def _read_map(raw: dict, what: str) -> dict[str, str]:
+    """**読む側**の `dict[str, str]` 変換（値が壊れていれば `ProjectError`）。
+
+    ⚠️ `_str_map` は**書く側**の正規化なので、`None` を `""` にするなど寛容で
+    よい。同じ関数を読みに使うと、**壊れた値を黙って文字列に化かす**＝
+    `compare[].h_tx: null` → `""` で**条件指定が消え**、`params.start: []` →
+    `"[]"` が通っていた（2026-08-04・Codex 5 巡目）。
+
+    受けるのは**文字列と数値**（手書きの `"freq_mhz": 2400` を弾く理由がない）。
+    `null` / 配列 / dict / 真偽値は壊れている。
+    """
+    out: dict[str, str] = {}
+    for key, value in raw.items():
+        if isinstance(value, str):
+            out[str(key)] = value
+        elif isinstance(value, (int, float)) and not isinstance(value, bool):
+            out[str(key)] = str(value)
+        else:
+            raise ProjectError(i18n.t("proj_err_broken").format(
+                reason=f"{what}.{key}"))
+    return out
+
+
 def _dicts(items: list, what: str) -> list:
     """リストの要素が全て dict であることを確かめて返す。
 
@@ -284,10 +346,10 @@ def from_dict(data: dict) -> ProjectDoc:
             ver=ver, cur=SCHEMA_VERSION))
 
     doc = ProjectDoc(
-        meta        = _str_map(_map(data, "meta")),
+        meta        = _read_map(_map(data, "meta"), "meta"),
         # ⚠️ 読む側でも sim キーだけ＝ファイルに app キーが混ざっていても
         # theme/lang/proxy_url は取り込まない（`select_sim` が唯一の関門）。
-        params      = config.select_sim(_str_map(_map(data, "params"))),
+        params      = config.select_sim(_read_map(_map(data, "params"), "params")),
         app_version = _text(data, "app_version"),
         saved_at    = _text(data, "saved_at"),
     )
@@ -299,12 +361,11 @@ def from_dict(data: dict) -> ProjectDoc:
 
     s = _section(data, "scenario")
     if s is not None:
-        mode = _text(s, "mode", "compare", "scenario.mode")
         doc.scenario = ScenarioSpec(
-            mode    = mode if mode in ("compare", "sweep") else "compare",
-            compare = [_str_map(c) for c in
+            mode    = _enum(s, "mode", SCENARIO_MODES, "compare", "scenario.mode"),
+            compare = [_read_map(c, "compare") for c in
                        _dicts(_seq(s, "compare"), "compare")],
-            sweep   = _str_map(_map(s, "sweep")),
+            sweep   = _read_map(_map(s, "sweep"), "sweep"),
         )
 
     m = _section(data, "multihop")
@@ -324,7 +385,7 @@ def from_dict(data: dict) -> ProjectDoc:
             note      = _text(m, "note", what="multihop.note"),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
-            topology  = _text(m, "topology", mh.TOPOLOGY_CHAIN, "multihop.topology"),
+            topology  = _name(m, "topology", mh.TOPOLOGY_CHAIN, "multihop.topology"),
         )
     return doc
 
