@@ -32,9 +32,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import numpy as np
+
 import batch
 import config
 import multihop
+import report_summary
 import scenario
 import simulation as sim
 
@@ -68,18 +71,33 @@ def _records_with_traceback(caplog):
             if r.levelname == "ERROR" and r.exc_info is not None]
 
 
-@pytest.fixture
-def _blow_up(monkeypatch):
-    """3 ランナーが共通で通る地形取得を、必ず失敗する形に差し替える。"""
-    def _raise(*_a, **_kw):
-        raise _Boom("仕組まれた失敗")
-    monkeypatch.setattr(sim, "run_simulation", _raise, raising=False)
-    return _raise
+_FAKE_GROUND_M = 100.0
+
+
+def _isolate(tmp_path, monkeypatch):
+    """**実ネットワーク・実 DEM キャッシュ・本番の出力先から切り離す。**
+
+    🔴 ここが無いまま書いて実害を出した（2026-08-04・独立レビュー Codex 4 巡目）＝
+    ①出力先の差し替えを **`config.results_dir` という存在しない名前**へ当てており
+    （`monkeypatch.setattr(..., raising=False)` が**タイプミスを黙って受け入れた**）、
+    **本番の `results/batch_*` が実際に作られた**。②標高取得を塞いでいなかったので、
+    **手元のディスクキャッシュが温まっていたから通っていただけ**——クリーンな環境
+    では conftest のネットワーク遮断に先に当たり、仕込んだ失敗へ到達しない。
+
+    ⚠️ **`raising=False` は既定にしない**＝差し替え先が実在することまで含めて
+    テストの前提。存在しない属性へ当てても静かに成功するので、**間違いが緑で通る**。
+    """
+    def _fake_fetch(params, on_progress, on_complete, on_error):
+        on_complete(np.full(params.num, _FAKE_GROUND_M))
+
+    monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)          # 実在必須
+    monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))          # 実在必須
+    # サマリ地図は淡色タイルを取りに行く唯一の経路（塞がないと実ネットワーク）。
+    monkeypatch.setattr(report_summary, "render_summary_map_b64",
+                        lambda results: None)
 
 
 def _run_batch(tmp_path, params, monkeypatch):
-    monkeypatch.setattr(config, "results_dir", lambda: str(tmp_path), raising=False)
-
     def start(on_error):
         batch.run_batch(
             [batch.PathRow(path_id="path01", lat_tx=34.5, lon_tx=132.4,
@@ -105,9 +123,11 @@ def test_batch_runner_logs_traceback(tmp_path, default_params_dict,
     `PathResult(ok=False)` に畳まれ、バッチは完走する（それが仕様）。ここで見たいの
     は**バッチそのものが倒れる**経路なので、ループの手前（出力先の用意）で倒す。
     """
+    _isolate(tmp_path, monkeypatch)
+
     def _raise(*_a, **_kw):
         raise _Boom("仕組まれた失敗")
-    monkeypatch.setattr(config, "new_run_dir", _raise, raising=False)
+    monkeypatch.setattr(config, "new_run_dir", _raise)   # raising=True＝実在を要求
 
     with caplog.at_level("ERROR"):
         ex = _wait_for_error(
@@ -140,11 +160,12 @@ def test_per_path_failure_logs_traceback(tmp_path, default_params_dict,
     """
     import report_path
 
+    _isolate(tmp_path, monkeypatch)          # 実ネットワーク・本番の出力先を断つ
+
     def _raise(*_a, **_kw):
         raise _Boom("描画で仕組んだ失敗")
-    # 実 DEM を引かずに、描画段だけを倒す（そこまでは正常に進む必要がある）。
+    # 標高取得はフェイクで通し、**描画段だけ**を倒す（そこまでは正常に進む必要がある）。
     monkeypatch.setattr(report_path, "save_path_visuals", _raise, raising=True)
-    monkeypatch.setattr(config, "results_dir", lambda: str(tmp_path), raising=False)
 
     ev: dict = {}
     done = threading.Event()

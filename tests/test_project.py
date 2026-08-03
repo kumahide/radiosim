@@ -438,3 +438,83 @@ def test_saved_file_never_contains_null_for_known_keys():
     assert isinstance(data["batch"]["rows"], list)
     assert isinstance(data["scenario"]["compare"], list)
     assert isinstance(data["scenario"]["sweep"], dict)
+
+
+# ------------------------------------------------------------
+# スカラー項目の型検査（4 巡目の指摘）
+# ------------------------------------------------------------
+# 🔴 背景（2026-08-04・独立レビュー Codex 4 巡目）: 3 巡目で厳密化したのは
+# **dict / list の構造項目だけ**で、文字列項目は `str(...)` を通していた。
+# ⇒ `"mode": []` が `"compare"` に、`"path_id": null` が**文字列 "None"** に
+# 黙って化ける。**壊れた値を変換して受け入れ、そのまま再保存できる**ので、
+# 構造項目で塞いだのと同じ穴がスカラー側に残っていた。
+#
+# ⚠️ **`null` を一律に破損とはできない**＝`to_dict` は **hop_rf の RF 値には
+# `null` を書く**（空欄＝共通設定の踏襲という仕様）。**書く側が実際に書く形**で
+# フィールドごとに線を引く（構造項目のときと同じ判断基準）。
+_BROKEN_SCALARS = [
+    ("mode が配列",       {"scenario": {"mode": []}}),
+    ("mode が dict",      {"scenario": {"mode": {}}}),
+    ("mode が null",      {"scenario": {"mode": None}}),
+    ("path_id が null",   {"multihop": {"waypoints": [], "path_id": None}}),
+    ("path_id が配列",    {"multihop": {"waypoints": [], "path_id": []}}),
+    ("note が dict",      {"multihop": {"waypoints": [], "note": {}}}),
+    ("topology が null",  {"multihop": {"waypoints": [], "topology": None}}),
+    ("行の path_id が配列",
+     {"batch": {"rows": [{"path_id": [], "lat_tx": 34.5, "lon_tx": 132.4,
+                          "lat_rx": 34.6, "lon_rx": 132.5,
+                          "h_tx": 30.0, "h_rx": 10.0}]}}),
+]
+
+
+@pytest.mark.parametrize("label,fragment", _BROKEN_SCALARS,
+                         ids=[x[0] for x in _BROKEN_SCALARS])
+def test_broken_scalars_are_project_errors(tmp_path, label, fragment):
+    """**壊れたスカラーを黙って文字列へ変換しない**こと。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, **fragment}, f)
+    with pytest.raises(project.ProjectError):
+        project.load(path)
+
+
+def test_optional_rf_null_is_still_accepted(tmp_path):
+    """⚠️ **RF の `null` は「空欄＝共通設定を踏襲」で、書く側が実際に書く形**。
+
+    ここが落ちるようになったら、**自分で書いたファイルを自分で拒否している**。
+    """
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, "multihop": {
+            "waypoints": [], "path_id": "r1",
+            "hop_rf": [{"freq_mhz": None, "gain_tx": None, "gain_rx": None}]}}, f)
+    doc = project.load(path)
+    assert doc.multihop is not None
+    assert doc.multihop.hop_rf[0].freq_mhz is None
+
+
+def test_scalar_numbers_are_accepted_as_text(tmp_path):
+    """数値で書かれた文字列項目は受ける（情報が失われない・手書き救済）。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, "multihop": {"waypoints": [], "path_id": 1}}, f)
+    assert project.load(path).multihop.path_id == "1"
+
+
+def test_scalar_roundtrip_survives_save_and_load(tmp_path):
+    """自分で書いたファイルは必ず読み戻せる（厳密化のたびに確かめる）。"""
+    doc = project.ProjectDoc(
+        meta={"project_name": "案件"}, params={"freq_mhz": "2400"},
+        batch_rows=[batch.PathRow(path_id="p01", lat_tx=34.5, lon_tx=132.4,
+                                  lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)],
+        scenario=project.ScenarioSpec(mode="sweep"),
+        multihop=mh.MultiHopPath(
+            path_id="r1",
+            waypoints=[mh.Waypoint(name="TX", lat=34.5, lon=132.4, h=30.0)],
+            hop_rf=[mh.HopRF(freq_mhz=None, gain_tx=None, gain_rx=None)]))
+    path = str(tmp_path / "p.rsproj")
+    project.save(doc, path)
+    back = project.load(path)
+    assert back.scenario.mode == "sweep"
+    assert back.multihop.path_id == "r1"
+    assert back.batch_rows[0].path_id == "p01"

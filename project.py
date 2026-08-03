@@ -173,6 +173,35 @@ def _section(data: dict, key: str) -> "dict | None":
     return _typed(data, key, dict)
 
 
+def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
+    """既知の**文字列項目**を取り出す（`mode` / `path_id` / `note` / `topology` …）。
+
+    **キーが無い＝既定値／文字列と数値＝受ける／それ以外（`null`・配列・dict）
+    ＝`ProjectError`。**
+
+    🔴 なぜ `str(...)` ではいけないか（2026-08-04・独立レビュー Codex 4 巡目）＝
+    `str()` は**何でも通す**ので、`"mode": []` が `"compare"` に、`"path_id": null`
+    が**文字列 `"None"`** に黙って化ける。**壊れた値を変換して受け入れ、そのまま
+    再保存できる**＝構造項目で塞いだのと同じ穴がスカラー側に残っていた。
+
+    ⚠️ **数値は受ける**＝JSON の数値は曖昧さなく文字列にでき、情報も失われない
+    （手書きの `"path_id": 1` を弾く理由がない）。`bool` は `int` の派生だが
+    `True` → `"True"` は明らかに壊れているので弾く。
+
+    ⚠️ **`null` を一律に破損とはできない**（この関数の対象外の話）＝`to_dict` は
+    **hop_rf の RF 値には `null` を書く**（空欄＝共通設定の踏襲）。そちらは
+    `_opt_num` が正しく `None` のまま通す。**書く側が実際に書く形**で線を引く。
+    """
+    value = container.get(key, _MISSING)
+    if value is _MISSING:
+        return default
+    if isinstance(value, str):
+        return value
+    if isinstance(value, (int, float)) and not isinstance(value, bool):
+        return str(value)
+    raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
+
+
 def _dicts(items: list, what: str) -> list:
     """リストの要素が全て dict であることを確かめて返す。
 
@@ -259,8 +288,8 @@ def from_dict(data: dict) -> ProjectDoc:
         # ⚠️ 読む側でも sim キーだけ＝ファイルに app キーが混ざっていても
         # theme/lang/proxy_url は取り込まない（`select_sim` が唯一の関門）。
         params      = config.select_sim(_str_map(_map(data, "params"))),
-        app_version = str(data.get("app_version", "")),
-        saved_at    = str(data.get("saved_at", "")),
+        app_version = _text(data, "app_version"),
+        saved_at    = _text(data, "saved_at"),
     )
 
     b = _section(data, "batch")
@@ -270,7 +299,7 @@ def from_dict(data: dict) -> ProjectDoc:
 
     s = _section(data, "scenario")
     if s is not None:
-        mode = str(s.get("mode", "compare"))
+        mode = _text(s, "mode", "compare", "scenario.mode")
         doc.scenario = ScenarioSpec(
             mode    = mode if mode in ("compare", "sweep") else "compare",
             compare = [_str_map(c) for c in
@@ -282,8 +311,8 @@ def from_dict(data: dict) -> ProjectDoc:
     if m is not None:
         wps = _dicts(_seq(m, "waypoints"), "waypoints")
         doc.multihop = mh.MultiHopPath(
-            path_id   = str(m.get("path_id", "")),
-            waypoints = [mh.Waypoint(name=str(w.get("name", "")),
+            path_id   = _text(m, "path_id", what="multihop.path_id"),
+            waypoints = [mh.Waypoint(name=_text(w, "name", what="waypoints.name"),
                                      lat=_num(w.get("lat"), "lat"),
                                      lon=_num(w.get("lon"), "lon"),
                                      h=_num(w.get("h"), "h"))
@@ -292,10 +321,10 @@ def from_dict(data: dict) -> ProjectDoc:
                                   gain_tx=_opt_num(rf.get("gain_tx"), "gain_tx"),
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
                          for rf in _dicts(_seq(m, "hop_rf"), "hop_rf")],
-            note      = str(m.get("note", "")),
+            note      = _text(m, "note", what="multihop.note"),
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
             # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
-            topology  = str(m.get("topology", mh.TOPOLOGY_CHAIN)),
+            topology  = _text(m, "topology", mh.TOPOLOGY_CHAIN, "multihop.topology"),
         )
     return doc
 
@@ -304,7 +333,7 @@ def _row_from_dict(r: dict) -> batch.PathRow:
     if not isinstance(r, dict):
         raise ProjectError(i18n.t("proj_err_broken").format(reason="batch.rows"))
     return batch.PathRow(
-        path_id  = str(r.get("path_id", "")),
+        path_id  = _text(r, "path_id", what="batch.rows.path_id"),
         lat_tx   = _num(r.get("lat_tx"), "lat_tx"),
         lon_tx   = _num(r.get("lon_tx"), "lon_tx"),
         lat_rx   = _num(r.get("lat_rx"), "lat_rx"),
@@ -314,7 +343,7 @@ def _row_from_dict(r: dict) -> batch.PathRow:
         freq_mhz = _opt_num(r.get("freq_mhz"), "freq_mhz"),
         gain_tx  = _opt_num(r.get("gain_tx"),  "gain_tx"),
         gain_rx  = _opt_num(r.get("gain_rx"),  "gain_rx"),
-        note     = str(r.get("note", "")),
+        note     = _text(r, "note", what="batch.rows.note"),
     )
 
 
