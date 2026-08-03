@@ -85,7 +85,8 @@ build.bat
 | 2 | 依存ライブラリを固定版で導入（`pip install -r requirements.txt -r requirements-dev.txt`。PyInstaller もこのピンに含まれる） |
 | 3 | 旧ビルド成果物の削除（出力先の `build/RadioSimPro/` `dist/RadioSimPro/`） |
 | 4 | `python -m PyInstaller radiosim.spec --noconfirm --distpath … --workpath …` |
-| 5 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
+| 5 | **同梱漏れの検査**（`buildtools/check_bundle_imports.py`）。同梱物が無条件に import するモジュールが exe から除外されていたら**ビルドを中止**する |
+| 6 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
 
 `build.bat clean` は再生成可能な生成物・キャッシュ・ログ・配布 zip を一掃します（仮想環境・`terrain_cache/`・`results/` は残します）。
 
@@ -190,6 +191,7 @@ radiosim/
 │   ├── graph.py          # グラフウィンドウ（matplotlib + tkinter）
 │   ├── map_window.py     # マップウィンドウ（座標入力 / 連続追加 / キャッシュ管理モード）
 │   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
+│   ├── errors.py         # GUI の未捕捉例外をログ＋ダイアログへ流す単一の受け皿
 │   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
 │   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色・UI フォント（sv_ttk 由来）
 │   ├── window_fit.py     # ウィンドウを中身に合わせる唯一の実装（見切れ防止）
@@ -218,6 +220,8 @@ radiosim/
     ├── test_progress.py
     ├── test_theme.py
     ├── test_window_fit.py
+    ├── test_errors.py
+    ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_paths.py
     ├── test_smoke.py
@@ -661,6 +665,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
   views/map_window.py     マップウィンドウ（座標入力 / 連続追加 / キャッシュ管理）
   views/batch_builder.py  一括シミュレーションウィンドウ
   views/dialogs.py        親中央表示の共通モーダルダイアログ
+  views/errors.py         Tk コールバックの未捕捉例外をログ＋ダイアログへ（全窓を 1 か所で）
   views/progress.py       進捗トランスポート（キュー＋ポーリング・単一/バッチ共用）
   views/theme.py          テーマ色・UI フォントの単一ソース（ttk 管理外の tk.Menu / tk.Canvas 用）
   views/window_fit.py     ウィンドウ寸法を中身に合わせる単一実装（全窓共通）
@@ -760,6 +765,8 @@ python -m pytest tests/ --cov
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
 | `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |
+| `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
+| `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・通常起動では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード） |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |

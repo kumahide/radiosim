@@ -125,6 +125,21 @@ if errorlevel 1 (
     exit /b 1
 )
 
+rem ---- Gate: does the exe ship without a module that bundled code always
+rem      imports? Source-run QA cannot see this (the dev machine has the whole
+rem      stdlib), so this report is the only place it is visible. It was already
+rem      visible at 2.6RC1 build time and nobody read it - hence a gate, not a
+rem      note. Rationale in Japanese: buildtools\check_bundle_imports.py / ISSUES B-036.
+echo.
+echo [INFO] Checking the bundle for unconditionally-imported missing modules...
+"%PY%" buildtools\check_bundle_imports.py "%WORK_DIR%\radiosim\warn-radiosim.txt"
+if errorlevel 1 (
+    echo.
+    echo [ERROR] Build stopped: the exe would crash at run time. See above.
+    pause
+    exit /b 1
+)
+
 echo.
 echo [INFO] Creating runtime directories...
 if not exist "%APP_DIR%\terrain_cache" mkdir "%APP_DIR%\terrain_cache"

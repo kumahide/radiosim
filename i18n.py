@@ -34,6 +34,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
+        "dlg_unexpected_error": "Unexpected error",
+        "dlg_unexpected_error_msg":
+            "The operation stopped because of an unexpected error.\n\n"
+            "{error}\n\n"
+            "The full details were written to:\n{log}",
         "dlg_ok":               "OK",
         "dlg_close":            "Close",
         "dlg_open_report":      "Open report",
@@ -505,6 +510,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
+        "dlg_unexpected_error": "予期しないエラー",
+        "dlg_unexpected_error_msg":
+            "予期しないエラーが起きたため、処理を中断しました。\n\n"
+            "{error}\n\n"
+            "詳しい内容を次の場所に書き出しました:\n{log}",
         "dlg_ok":               "OK",
         "dlg_close":            "閉じる",
         "dlg_open_report":      "レポートを開く",

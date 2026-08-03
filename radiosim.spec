@@ -236,36 +236,29 @@ a = Analysis(
         "matplotlib.backends.backend_cairo",
         "matplotlib.backends.backend_nbagg",
         "matplotlib.backends.backend_template",
-        # B: 標準ライブラリ（本アプリで未使用）
-        # ※ email / html は dem.py / batch.py で使用するため除外しない
-        # "xml",
-        "xmlrpc",
-        "ftplib",
-        "imaplib",
-        "poplib",
-        "smtplib",
-        "telnetlib",
-        "nntplib",
-        "http.server",
-        "doctest",
-        "pdb",
-        "profile",
-        "cProfile",
-        "timeit",
-        "trace",
-        "tkinter.test",
-        "lib2to3",
-        # "plistlib",  # matplotlib font_manager が Windows でも使用するため除外不可
-        "turtle",
-        "turtledemo",
-        "ensurepip",
-        "venv",
-        "antigravity",
-        "this",
-        "tabnanny",
-        "py_compile",
-        "compileall",
-        "pickletools",
+        # B: 標準ライブラリ ＝ **除外しない**（2026-08-03 / B-036・B-037 で全廃）
+        # ------------------------------------------------------------------
+        # かつてここには「本アプリで未使用」の stdlib が 20 個ほど並んでいた
+        # （timeit / doctest / pdb / profile / pickletools …）。**2.6RC1 の実機で
+        # 実害が出たので、リストごと消した。**
+        #
+        # 何が起きたか: matplotlib 3.11 で `matplotlib.dviread` に
+        # `import fontTools.agl` が**トップレベルで**入り、`fontTools/__init__.py`
+        # → `fontTools.misc.loggingTools` → `import timeit` の連鎖ができた。
+        # dviread は textpath ← text ← figure と辿られるので、**図を作った瞬間に
+        # `ModuleNotFoundError: No module named 'timeit'`** になる。単一実行は
+        # グラフ窓が開かず、バッチは per-path の PNG/HTML/KML だけが黙って落ちた。
+        #
+        # なぜ「1 個戻す」で済ませないか: 我々が使う名前を列挙して守る方式は、
+        # **依存の内部が変わるたびに、我々の知らない名前で穴が開く**。今回まさに
+        # 「ps/pdf バックエンドを除外してあるから fontTools は入らない」という
+        # 前提が、上流のリファクタ 1 回で崩れた。得られていたのは数百 KB。
+        # 対価が「exe でだけ落ち、ソース実行の QA が全部素通りする」なら割に合わない。
+        # ⇒ **stdlib は丸ごと同梱する**（[[feedback-promote-recurring-checks]] 実証10＝
+        #   列挙で塞ぐ穴は名前 1 つで開く）。
+        # ガード: build.bat が PyInstaller の warn レポートを検査し、
+        #   「excluded module named X - imported by … (top-level)」があれば**ビルドを止める**。
+        #
         # C: numpy テスト・ビルドツール
         "numpy.testing",
         "numpy.tests",

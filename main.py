@@ -97,7 +97,7 @@ import sv_ttk
 
 import i18n
 import config
-from views import theme, window_fit
+from views import errors, theme, window_fit
 from views.launcher import SimLauncher
 
 _prof("top-level imports done")
@@ -168,6 +168,9 @@ def main() -> None:
     _prof("main() enter")
     _setup_windows_platform()
     root = tk.Tk()
+    # 以降に作る窓・コールバックすべてを覆うので、**何よりも先に**入れる
+    # （ここより前で落ちたものは stderr へ消える＝I-059）。
+    errors.install(root)
     _prof("tk.Tk() created")
     _set_window_icon(root)
     manager = _ThemeManager(root)
