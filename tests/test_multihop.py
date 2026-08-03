@@ -718,3 +718,38 @@ def test_unsupported_topology_stops_before_fetching_terrain(monkeypatch):
     assert box and isinstance(box[0], NotImplementedError), \
         f"未対応トポロジーが早期に止まっていない（{box!r}）"
     assert not fetched, "DEM を引いてしまっている（止めるなら引く前）"
+
+
+def test_unsupported_topology_still_reports_off_the_calling_thread(monkeypatch):
+    """⚠️ **失敗の渡り方は経路によって変えない**（スレッド契約）。
+
+    `run_multihop` は「バックグラウンドスレッドで開始する」API。未対応トポロジー
+    のときだけ**呼び出し元スレッドで `on_error` を呼んで戻る**と、コールバックの
+    順序とスレッドが経路ごとに変わり、再入の危険が出る（2026-08-04・独立レビュー
+    Codex 7 巡目）。⇒ **どの失敗もワーカースレッドから**渡ってくること。
+    """
+    def _must_not_fetch(*_a, **_kw):
+        raise AssertionError("DEM を引いている")
+
+    monkeypatch.setattr(mh.batch, "_fetch_sync", _must_not_fetch, raising=True)
+    path = mh.MultiHopPath(
+        path_id="r1", topology=mh.TOPOLOGY_STAR,
+        waypoints=[mh.Waypoint(name=f"P{i}", lat=34.5 + i * 0.01,
+                               lon=132.4, h=30.0) for i in range(3)])
+    caller = threading.current_thread().ident
+    done = threading.Event()
+    seen: list[int] = []
+
+    mh.run_multihop(
+        path, sim.SimParams(config.DEFAULT_CONFIG),
+        on_hop_start    = lambda *a: None,
+        on_hop_progress = lambda *a: None,
+        on_hop_complete = lambda *a: None,
+        on_complete     = lambda run: done.set(),
+        on_error        = lambda ex: (seen.append(threading.current_thread().ident),
+                                      done.set()),
+    )
+    assert done.wait(timeout=30), "実行が終わらなかった"
+    assert seen, "on_error が呼ばれていない"
+    assert seen[0] != caller, \
+        "on_error が呼び出し元スレッドで実行された（他の失敗経路と契約が違う）"

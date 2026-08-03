@@ -325,15 +325,6 @@ def run_multihop(
     ⚠️ **1 ホップ = 1 区間の DEM 取得**なので、取得量はホップ数に比例する（④）。
     追い風＝隣接ホップは端点を共有し、タイルが重なるのでキャッシュが効きやすい。
     """
-    # ⛔ **DEM を引く前に**実行可否を確かめる（引いてから落ちると時間も外部
-    # サーバーへの負荷も無駄になる）。失敗の渡し方は他の失敗と同じ on_error。
-    try:
-        require_runnable(path, "run_multihop")
-    except NotImplementedError as ex:
-        logger.exception("Multihop error: %s", ex)
-        on_error(ex)
-        return
-
     threading.Thread(
         target = _run_thread,
         args   = (path, base_params, on_hop_start, on_hop_progress,
@@ -348,6 +339,16 @@ def _run_thread(
     on_complete, on_error, coord_format, on_hop_stage, project_name, memo,
 ) -> None:
     try:
+        # ⛔ **実行できるかを最初に問う**（2026-08-04・独立レビュー Codex 7 巡目）。
+        # ここに置く理由が 2 つある:
+        #   ① **DEM を引く前**＝引いてから落ちると時間も外部サーバーへの負荷も
+        #      無駄になる。出力ディレクトリも作らない。
+        #   ② **ワーカースレッドの中**＝`run_multihop` は「バックグラウンドで
+        #      開始する」API なので、ここだけ**呼び出し元スレッドで `on_error` を
+        #      呼ぶ**とコールバックの順序とスレッド契約が経路ごとに変わる
+        #      （再入の危険）。失敗の渡り方は他の失敗と同じ 1 本にする。
+        require_runnable(path, "run_multihop")
+
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         run_dir   = config.new_run_dir("multihop", timestamp)
 

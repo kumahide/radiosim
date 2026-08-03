@@ -165,6 +165,22 @@ def _str_map(value) -> dict[str, str]:
     return {str(k): "" if v is None else str(v) for k, v in value.items()}
 
 
+def _is_plain_number(value) -> bool:
+    """文字列項目が受けてよい数値か（`bool` と非有限を除く）。
+
+    ⚠️ **`int` と `float` を分ける**（2026-08-04・独立レビュー Codex 7 巡目）＝
+    `math.isfinite(10**400)` は**それ自身が `OverflowError` を投げる**（float へ
+    変換できないため）。6 巡目に `isfinite` を足したとき `_num` 経路しか試さず、
+    **文字列経路から生の `OverflowError` が漏れる**のを見落とした。
+    Python の `int` は常に有限なので、**`int` は検査せずそのまま**でよい。
+    """
+    if isinstance(value, bool):
+        return False                      # bool は int の派生（言語の都合）
+    if isinstance(value, int):
+        return True                       # int は常に有限（桁の大きさは問わない）
+    return isinstance(value, float) and math.isfinite(value)
+
+
 def _typed(container: dict, key: str, kind: type, what: str = ""):
     """既知キーを型つきで取り出す。**無ければ None・型が違えば `ProjectError`。**"""
     value = container.get(key, _MISSING)
@@ -217,8 +233,7 @@ def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
         return default
     if isinstance(value, str):
         return value
-    if (isinstance(value, (int, float)) and not isinstance(value, bool)
-            and math.isfinite(value)):
+    if _is_plain_number(value):
         return str(value)
     raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
 
@@ -274,10 +289,7 @@ def _read_map(raw: dict, what: str) -> dict[str, str]:
     for key, value in raw.items():
         if isinstance(value, str):
             out[str(key)] = value
-        elif (isinstance(value, (int, float)) and not isinstance(value, bool)
-              and math.isfinite(value)):
-            # ⚠️ 非有限（NaN / Inf）は弾く＝書く側が `allow_nan=False` で
-            # 絶対に書かない形。`"nan"` という文字列に化けさせない。
+        elif _is_plain_number(value):
             out[str(key)] = str(value)
         else:
             raise ProjectError(i18n.t("proj_err_broken").format(
@@ -404,8 +416,14 @@ def from_dict(data: dict) -> ProjectDoc:
                                   gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
                          for rf in _dicts(_seq(m, "hop_rf"), "hop_rf")],
             note      = _text(m, "note", what="multihop.note"),
-            # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。未知の値もそのまま持たせ、
-            # 意味づけは `multihop.links` に任せる（判定を 2 か所に置かない）。
+            # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。
+            # ⚠️ **宣言済みの値だけ**（未知は破損）。⇒ 読めた値は**窓が保持し**
+            # （`views/multihop.py` の `_topology`）、実行してよいかは
+            # `multihop.require_runnable` が DEM を引く前に決める。
+            # 🔴 **3 つが揃って初めて安全**（2026-08-04・Codex 7 巡目）＝読む側だけ
+            # 直しても、窓が値を落とせば**星の地点を鎖として計算し**、保存で
+            # **ファイルの値が書き換わる**。逆に読む側だけ拒否すると、**自分が
+            # 書いたファイルを自分で読めない**非対称ができる。
             topology  = _enum(m, "topology", mh.TOPOLOGIES,
                                 mh.TOPOLOGY_CHAIN, "multihop.topology"),
         )

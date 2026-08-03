@@ -567,18 +567,34 @@ def test_broken_enums_and_map_values_are_project_errors(tmp_path, label, fragmen
         project.load(path)
 
 
-def test_declared_topologies_load(tmp_path):
-    """宣言済みのトポロジー（`multihop.TOPOLOGIES`）は読める。
+def test_chain_loads(tmp_path):
+    """`chain` は読める（この版が実際に扱える唯一のトポロジー）。"""
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, "multihop": {
+            "waypoints": [], "topology": mh.TOPOLOGY_CHAIN}}, f)
+    assert project.load(path).multihop.topology == mh.TOPOLOGY_CHAIN
 
-    ⚠️ **`star` は読めるが実行はできない**（集約規則が未決定）。実行を止めるのは
-    `multihop` 側の役目で、**DEM を引く前**に止まる（`test_multihop.py`）。
+
+def test_star_round_trips_and_is_held_by_the_window(tmp_path):
+    """🔴 **宣言済みの値は落とさない**（2026-08-04・独立レビュー Codex 7 巡目）。
+
+    ⚠️ `star` は**読めるが実行できない**（集約規則が未決定）。安全なのは
+    **3 つが揃ったとき**だけ:
+      ① 読む側が宣言済みの値を受ける（ここ）
+      ② **中継窓が保持する**（`views/multihop.py` の `_topology`）
+      ③ 実行の可否は `multihop.require_runnable` が **DEM を引く前**に決める
+
+    ②が無いと、読めても `_collect_path` が既定の鎖で組み直し、**星の地点を鎖として
+    計算**して**保存でファイルの値まで書き換える**（＝静かに誤る）。
+    逆に①だけ拒否すると、`to_dict` は star を書けるので**自分が書いたファイルを
+    自分で読めない**非対称ができる。**片側だけ直さない。**
     """
-    for topology in mh.TOPOLOGIES:
-        path = str(tmp_path / f"{topology}.rsproj")
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump({**_BASE_DOC,
-                       "multihop": {"waypoints": [], "topology": topology}}, f)
-        assert project.load(path).multihop.topology == topology
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump({**_BASE_DOC, "multihop": {
+            "waypoints": [], "topology": mh.TOPOLOGY_STAR}}, f)
+    assert project.load(path).multihop.topology == mh.TOPOLOGY_STAR
 
 
 def test_unknown_topology_is_rejected(tmp_path):
@@ -702,3 +718,29 @@ def test_non_finite_and_overflow_are_project_errors(tmp_path, label, raw):
         f.write(raw)
     with pytest.raises(project.ProjectError):
         project.load(path)
+
+
+@pytest.mark.parametrize("where,raw", [
+    ("path_id", '{"schema_version":1,"meta":{},"params":{},"multihop":'
+                '{"waypoints":[],"path_id":1' + "0" * 400 + '}}'),
+    ("params",  '{"schema_version":1,"meta":{},"params":{"freq":1'
+                + "0" * 400 + '}}'),
+])
+def test_huge_integers_in_text_paths_do_not_leak_overflow(tmp_path, where, raw):
+    """文字列経路の巨大整数で**生の `OverflowError` を漏らさない**こと。
+
+    🔴 6 巡目に `math.isfinite()` を足したとき、**`math.isfinite(10**400)` 自身が
+    `OverflowError` を送出する**のを見落とした（2026-08-04・Codex 7 巡目）。
+    `_num` 経路だけを試して「数値経路は閉じた」と書いていた＝**追加したテストの
+    前提と実装が食い違っていた。**
+
+    ⚠️ **文字列項目では巨大整数はエラーにしない**＝`int` は常に有限で、文字列化
+    しても情報が失われない（`path_id` は札、`params` の値域は実行時に別途検査）。
+    見たいのは**契約の外の例外が出ないこと**。
+    """
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write(raw)
+    doc = project.load(path)                    # ProjectError も OverflowError も出ない
+    text = doc.multihop.path_id if where == "path_id" else doc.params["freq"]
+    assert text.startswith("1") and len(text) == 401
