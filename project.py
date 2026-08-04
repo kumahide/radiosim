@@ -349,6 +349,14 @@ def to_dict(doc: ProjectDoc) -> dict:
         }
     if doc.multihop is not None:
         p = doc.multihop
+        # ⛔ **読めないものは書かない**（2026-08-04・独立レビュー Codex 全体レビュー）。
+        # 読む側（`from_dict`）はこの版が扱える鎖しか受けない。書く側だけ緩いと
+        # **「保存しました」と言った直後に開けないファイル**ができ、既存の正常な
+        # プロジェクトへ上書きすれば**正常保存の顔をしてデータが失われる**
+        # （B-043 で直したのと同じ被害）。⇒ 読み書きは必ず同じ集合で揃える。
+        if p.topology != mh.TOPOLOGY_CHAIN:
+            raise ProjectError(i18n.t("proj_err_broken").format(
+                reason=f"multihop.topology={p.topology!r}"))
         data["multihop"] = {
             "path_id":   p.path_id,
             "note":      p.note,

@@ -112,7 +112,18 @@ def pytest_configure(config):
     if not declared:
         return                                  # 宣言が無い環境＝CI 等。何もしない
     if not os.path.exists(declared):
-        return                                  # 宣言が壊れている件は build.bat の管轄
+        # 🔴 **ここで return してはいけない**（2026-08-04・独立レビュー Codex）。
+        # venv を移動・削除した／設定を打ち間違えた状態で、**ゲートが黙って
+        # 無効になる**＝このゲートが防ごうとしている「別環境での偽の成功」が
+        # そのまま再発する（実測＝`Z:\missing\python.exe` を宣言しても、
+        # 別の Python で収集が成功した）。**宣言が壊れているなら止める。**
+        raise pytest.UsageError(
+            "RADIOSIM_PYTHON が指す Python が見つかりません。\n"
+            f"  RADIOSIM_PYTHON : {declared}\n"
+            "venv を作り直したか、パスを打ち間違えています。"
+            "正しい python.exe を指すよう設定し直してください"
+            "（未設定にすればこの検査は行われません）。"
+        )
     if _same_interpreter(declared, sys.executable):
         return
     raise pytest.UsageError(

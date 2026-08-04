@@ -780,3 +780,48 @@ def test_integers_beyond_the_str_conversion_limit(tmp_path, where):
                 '{"waypoints":[],"path_id":1' + "0" * 4999 + '}}')
     with pytest.raises(project.ProjectError):
         project.load(path)
+
+
+# ------------------------------------------------------------
+# 読み書きの対称性（全体レビューの指摘）
+# ------------------------------------------------------------
+# 🔴 背景（2026-08-04・独立レビュー Codex・全体レビュー）: 8 巡目に「この版は鎖
+# しか**読まない**」と決めたが、**書く側は star をそのまま書いていた**。
+# ⇒ **「保存しました」と言った直後に開けないファイル**ができる。既存の正常な
+# プロジェクトに上書きすれば、**正常保存の顔をしてデータが失われる**。
+#
+# 🔑 7 巡目に私はこの非対称を「API を直接叩いたときにしか起きない」として退けた。
+# **起きる頻度が低いことと、起きたときの被害が小さいことは別**だった
+# （被害＝上書き保存でのデータ喪失＝このセッションで最初に直した B-043 と同じ）。
+# ⇒ **対応は片側ではなく両側**。読めないものは書かない。
+
+def test_anything_we_write_we_can_read_back():
+    """**書けたものは必ず読み戻せる**（往復の対称性そのもの）。"""
+    doc = _doc()
+    assert project.from_dict(project.to_dict(doc)) is not None
+
+
+def test_writing_an_unsupported_topology_is_refused():
+    """読めない `topology` は**書かせない**（保存成功→開けない、を作らない）。"""
+    doc = project.ProjectDoc(
+        multihop=mh.MultiHopPath(path_id="r", topology=mh.TOPOLOGY_STAR,
+                                 waypoints=[]))
+    with pytest.raises(project.ProjectError):
+        project.to_dict(doc)
+
+
+def test_save_refuses_unsupported_topology_without_touching_the_file(tmp_path):
+    """⚠️ **拒否は書き始める前に**＝既存ファイルを壊さない（B-043 と同じ約束）。"""
+    path = str(tmp_path / "p.rsproj")
+    project.save(_doc(), path)
+    before = open(path, encoding="utf-8").read()
+
+    doomed = _doc()
+    assert doomed.multihop is not None
+    doomed.multihop.topology = mh.TOPOLOGY_STAR
+    with pytest.raises(project.ProjectError):
+        project.save(doomed, path)
+
+    assert open(path, encoding="utf-8").read() == before, \
+        "保存を拒否したのに既存ファイルが変わっている"
+    assert os.listdir(tmp_path) == ["p.rsproj"], "一時ファイルが残っている"
