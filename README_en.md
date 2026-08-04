@@ -233,6 +233,8 @@ radiosim/
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay route window (waypoints are the input surface; hops are derived)
 │   └── batch_builder.py  # Batch Mode window
+├── docs/
+│   └── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
 └── tests/
@@ -259,6 +261,7 @@ radiosim/
     ├── test_errors.py
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
+    ├── test_i18n_glossary.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -844,6 +847,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
+| `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [docs/glossary.md](docs/glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |
 | `test_errors.py`         | Unhandled exceptions in GUI callbacks are logged **with a traceback** and surfaced in a dialog naming the log file (no stacked modals when errors repeat; the log survives even if the dialog cannot be shown) |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |

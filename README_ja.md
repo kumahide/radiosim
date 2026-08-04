@@ -233,6 +233,8 @@ radiosim/
 │   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
 │   ├── multihop.py       # 中継経路ウィンドウ（地点＝入力面・区間は導出）
 │   └── batch_builder.py  # 一括シミュレーションウィンドウ
+├── docs/
+│   └── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
 ├── README_ja.md          # このファイル
 ├── README_en.md          # 英語版 README
 └── tests/
@@ -259,6 +261,7 @@ radiosim/
     ├── test_errors.py
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
+    ├── test_i18n_glossary.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -845,6 +848,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_runner_logging.py` | バックグラウンド実行（バッチ / 条件探索 / 中継経路）の失敗が **traceback つき**でログに残ること |
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
+| `test_i18n_glossary.py`  | 画面語彙のゲート（[docs/glossary.md](docs/glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
 | `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
