@@ -254,22 +254,6 @@ def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
     raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
 
 
-def _name(container: dict, key: str, default: str, what: str) -> str:
-    """**開いた集合**の識別子を取り出す（未知の値は通すが、必ず文字列）。
-
-    `topology` 用。**未知の文字列を通すのは設計判断**＝後から星型を足した版の
-    ファイルを古いアプリが黙って壊さないため（意味づけは `multihop.links` の
-    1 か所に置く）。⚠️ **だからといって数値まで通す理由はない**＝`_text` の
-    数値救済を効かせると `1` が `"1"` として通り、**後段の集約で例外**になる。
-    """
-    value = container.get(key, _MISSING)
-    if value is _MISSING:
-        return default
-    if not isinstance(value, str):
-        raise ProjectError(i18n.t("proj_err_broken").format(reason=what))
-    return value
-
-
 def _enum(container: dict, key: str, allowed: tuple, default: str, what: str) -> str:
     """**閉じた集合**の値を取り出す（許可値以外は `ProjectError`）。
 
@@ -327,6 +311,122 @@ def _dicts(items: list, what: str) -> list:
 
 
 # ============================================================
+# フィールド表（**1 行 = 検証の 1 契約**）
+# ------------------------------------------------------------
+# 🔴 **なぜ表にするか**（2026-08-05・I-065）＝それまでの `from_dict` は 86 行の
+# 手書き分岐で、**フィールド × 型 × `null`/欠損 の組み合わせを 1 か所ずつ人間が
+# 正しく選ぶ**構造だった。⇒ **穴の数がフィールド数に比例して増える**。実績＝
+# 2.6 の独立レビュー 20 件のうち **11 件がこの 1 ファイルから**出て、しかも
+# 収束に 5 巡かかった（`null` → 節が消える／`[5]` → 要素が消える／`"None"` に
+# 化ける／`mode: 1` が別の相に化ける／`bool`・`NaN`・4300 桁 …）。
+#
+# 🔑 **効いたのは「手口を禁じる門」ではなかった**＝5 巡目に「素の `str()` 禁止」を
+# 入れたが、**どのヘルパーを選ぶかは依然として人間の判断**で、その後も誤選択が
+# 続いた（6 巡目＝列挙項目に `_text`／7 巡目＝int に `isfinite`）。
+# ⇒ **選択そのものを消す**＝フィールドごとに「種別」を宣言し、読みはそこから駆動する。
+# **新しいフィールドを足す＝表に 1 行足す**。検証の選択は発生しない。
+#
+# ⚠️ 種別の中身（`_num` / `_text` / `_enum` / `_read_map` …）は**そのまま使う**＝
+# 上の 11 件で得た知識はすべてあの関数群に入っている。表はその**選び方**だけを消す。
+# ⚠️ `schema_version` の約束は不変（新しい版は拒否・未知キーは無視・欠損は既定値）。
+# ============================================================
+NUMBER     = "number"       # 必須の数値（`bool` / 非有限 / 巨大整数は破損）
+OPT_NUMBER = "opt_number"   # 空欄・`null` は None のまま（＝共通設定を踏襲）
+TEXT       = "text"         # 文字列項目（数値は文字列化して受ける・それ以外は破損）
+ENUM       = "enum"         # **閉じた集合**（許可値以外は破損＝黙って既定値にしない）
+STR_MAP    = "str_map"      # dict[str, str]（値が壊れていれば破損）
+MAP_LIST   = "map_list"     # list[dict[str, str]]（要素を黙って捨てない）
+OBJ_LIST   = "obj_list"     # list[dict]（要素は別の表で読む）
+
+KINDS = (NUMBER, OPT_NUMBER, TEXT, ENUM, STR_MAP, MAP_LIST, OBJ_LIST)
+
+
+@dataclass(frozen=True)
+class Field:
+    """表の 1 行＝**そのフィールドが何を受けるか**の宣言。"""
+    key:     str
+    kind:    str
+    default: str = ""
+    allowed: tuple = ()          # ENUM のみ
+
+
+# ドキュメントの頭（節ではない項目）
+_DOC_FIELDS = (
+    Field("meta",        STR_MAP),
+    Field("params",      STR_MAP),
+    Field("app_version", TEXT),
+    Field("saved_at",    TEXT),
+)
+
+# バッチ行＝`batch.PathRow` の写し（キー名は属性名と一致させる＝`PathRow(**…)`）
+_BATCH_ROW_FIELDS = (
+    Field("path_id",  TEXT),
+    Field("lat_tx",   NUMBER), Field("lon_tx", NUMBER),
+    Field("lat_rx",   NUMBER), Field("lon_rx", NUMBER),
+    Field("h_tx",     NUMBER), Field("h_rx",   NUMBER),
+    Field("freq_mhz", OPT_NUMBER),
+    Field("gain_tx",  OPT_NUMBER), Field("gain_rx", OPT_NUMBER),
+    Field("note",     TEXT),
+)
+
+# 条件探索＝`ScenarioSpec` の写し
+_SCENARIO_FIELDS = (
+    Field("mode",    ENUM, "compare", SCENARIO_MODES),
+    Field("compare", MAP_LIST),
+    Field("sweep",   STR_MAP),
+)
+
+# 中継経路＝`mh.MultiHopPath`（点列と RF は下の 2 表で読む）
+_MULTIHOP_FIELDS = (
+    Field("path_id",   TEXT),
+    Field("note",      TEXT),
+    # ⛔ **この版が扱えるトポロジーの単一ソースは `multihop.SUPPORTED_TOPOLOGIES`**
+    # （I-066）。ここに `TOPOLOGY_CHAIN` を直書きすると、星を実装する版で
+    # 「読む・持つ・実行する」を再び個別に直すことになる。
+    Field("topology",  ENUM, mh.TOPOLOGY_CHAIN, mh.SUPPORTED_TOPOLOGIES),
+    Field("waypoints", OBJ_LIST),
+    Field("hop_rf",    OBJ_LIST),
+)
+
+_WAYPOINT_FIELDS = (
+    Field("name", TEXT),
+    Field("lat",  NUMBER), Field("lon", NUMBER), Field("h", NUMBER),
+)
+
+_HOP_RF_FIELDS = (
+    Field("freq_mhz", OPT_NUMBER),
+    Field("gain_tx",  OPT_NUMBER), Field("gain_rx", OPT_NUMBER),
+)
+
+
+def _read_field(container: dict, f: Field, what: str):
+    """表の 1 行を読む。**種別ごとの検証は既存のヘルパーが担う。**"""
+    where = f"{what}.{f.key}" if what else f.key
+    if f.kind == NUMBER:
+        return _num(container.get(f.key), where)
+    if f.kind == OPT_NUMBER:
+        return _opt_num(container.get(f.key), where)
+    if f.kind == TEXT:
+        return _text(container, f.key, f.default, where)
+    if f.kind == ENUM:
+        return _enum(container, f.key, f.allowed, f.default, where)
+    if f.kind == STR_MAP:
+        return _read_map(_map(container, f.key, where), where)
+    if f.kind == MAP_LIST:
+        return [_read_map(item, where)
+                for item in _dicts(_seq(container, f.key, where), where)]
+    if f.kind == OBJ_LIST:
+        return _dicts(_seq(container, f.key, where), where)
+    # 表に無い種別＝実装の誤り（利用者の入力では起こらない）。
+    raise AssertionError(f"unknown field kind: {f.kind!r}")
+
+
+def _read(container: dict, fields: tuple, what: str = "") -> dict:
+    """表 1 枚を読み、**データクラスへそのまま渡せる dict** を返す。"""
+    return {f.key: _read_field(container, f, what) for f in fields}
+
+
+# ============================================================
 # シリアライズ
 # ============================================================
 def to_dict(doc: ProjectDoc) -> dict:
@@ -354,7 +454,8 @@ def to_dict(doc: ProjectDoc) -> dict:
         # **「保存しました」と言った直後に開けないファイル**ができ、既存の正常な
         # プロジェクトへ上書きすれば**正常保存の顔をしてデータが失われる**
         # （B-043 で直したのと同じ被害）。⇒ 読み書きは必ず同じ集合で揃える。
-        if p.topology != mh.TOPOLOGY_CHAIN:
+        # ⚠️ 扱える範囲の単一ソースは `multihop.SUPPORTED_TOPOLOGIES`（I-066）。
+        if p.topology not in mh.SUPPORTED_TOPOLOGIES:
             raise ProjectError(i18n.t("proj_err_broken").format(
                 reason=f"multihop.topology={p.topology!r}"))
         data["multihop"] = {
@@ -402,44 +503,36 @@ def from_dict(data: dict) -> ProjectDoc:
         raise ProjectError(i18n.t("proj_err_newer").format(
             ver=ver, cur=SCHEMA_VERSION))
 
+    head = _read(data, _DOC_FIELDS)
     doc = ProjectDoc(
-        meta        = _read_map(_map(data, "meta"), "meta"),
+        meta        = head["meta"],
         # ⚠️ 読む側でも sim キーだけ＝ファイルに app キーが混ざっていても
         # theme/lang/proxy_url は取り込まない（`select_sim` が唯一の関門）。
-        params      = config.select_sim(_read_map(_map(data, "params"), "params")),
-        app_version = _text(data, "app_version"),
-        saved_at    = _text(data, "saved_at"),
+        params      = config.select_sim(head["params"]),
+        app_version = head["app_version"],
+        saved_at    = head["saved_at"],
     )
 
     b = _section(data, "batch")
     if b is not None:
         rows = _dicts(_seq(b, "rows", "batch.rows"), "batch.rows")
-        doc.batch_rows = [_row_from_dict(r) for r in rows]
+        doc.batch_rows = [batch.PathRow(**_read(r, _BATCH_ROW_FIELDS, "batch.rows"))
+                          for r in rows]
 
     s = _section(data, "scenario")
     if s is not None:
-        doc.scenario = ScenarioSpec(
-            mode    = _enum(s, "mode", SCENARIO_MODES, "compare", "scenario.mode"),
-            compare = [_read_map(c, "compare") for c in
-                       _dicts(_seq(s, "compare"), "compare")],
-            sweep   = _read_map(_map(s, "sweep"), "sweep"),
-        )
+        doc.scenario = ScenarioSpec(**_read(s, _SCENARIO_FIELDS, "scenario"))
 
     m = _section(data, "multihop")
     if m is not None:
-        wps = _dicts(_seq(m, "waypoints"), "waypoints")
+        raw = _read(m, _MULTIHOP_FIELDS, "multihop")
         doc.multihop = mh.MultiHopPath(
-            path_id   = _text(m, "path_id", what="multihop.path_id"),
-            waypoints = [mh.Waypoint(name=_text(w, "name", what="waypoints.name"),
-                                     lat=_num(w.get("lat"), "lat"),
-                                     lon=_num(w.get("lon"), "lon"),
-                                     h=_num(w.get("h"), "h"))
-                         for w in wps],
-            hop_rf    = [mh.HopRF(freq_mhz=_opt_num(rf.get("freq_mhz"), "freq_mhz"),
-                                  gain_tx=_opt_num(rf.get("gain_tx"), "gain_tx"),
-                                  gain_rx=_opt_num(rf.get("gain_rx"), "gain_rx"))
-                         for rf in _dicts(_seq(m, "hop_rf"), "hop_rf")],
-            note      = _text(m, "note", what="multihop.note"),
+            path_id   = raw["path_id"],
+            note      = raw["note"],
+            waypoints = [mh.Waypoint(**_read(w, _WAYPOINT_FIELDS, "waypoints"))
+                         for w in raw["waypoints"]],
+            hop_rf    = [mh.HopRF(**_read(rf, _HOP_RF_FIELDS, "hop_rf"))
+                         for rf in raw["hop_rf"]],
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。
             # ⚠️ **宣言済みの値だけ**（未知は破損）。⇒ 読めた値は**窓が保持し**
             # （`views/multihop.py` の `_topology`）、実行してよいかは
@@ -467,28 +560,18 @@ def from_dict(data: dict) -> ProjectDoc:
             #
             # 🔑 star を読めるようにするのは、**集約規則が決まり、窓がホップ行を
             # `links()` から導けるようになってから**（3.x）。
-            topology  = _enum(m, "topology", (mh.TOPOLOGY_CHAIN,),
-                                mh.TOPOLOGY_CHAIN, "multihop.topology"),
+            #
+            # 🆕 **2026-08-05（I-066）＝許可値は表の 1 行になり、その値は
+            # `multihop.SUPPORTED_TOPOLOGIES` を見る**（`_MULTIHOP_FIELDS`）。
+            # 星を実装する版は**宣言に 1 行足すだけ**で読む側も同時に開く。
+            topology  = raw["topology"],
         )
     return doc
 
 
-def _row_from_dict(r: dict) -> batch.PathRow:
-    if not isinstance(r, dict):
-        raise ProjectError(i18n.t("proj_err_broken").format(reason="batch.rows"))
-    return batch.PathRow(
-        path_id  = _text(r, "path_id", what="batch.rows.path_id"),
-        lat_tx   = _num(r.get("lat_tx"), "lat_tx"),
-        lon_tx   = _num(r.get("lon_tx"), "lon_tx"),
-        lat_rx   = _num(r.get("lat_rx"), "lat_rx"),
-        lon_rx   = _num(r.get("lon_rx"), "lon_rx"),
-        h_tx     = _num(r.get("h_tx"),   "h_tx"),
-        h_rx     = _num(r.get("h_rx"),   "h_rx"),
-        freq_mhz = _opt_num(r.get("freq_mhz"), "freq_mhz"),
-        gain_tx  = _opt_num(r.get("gain_tx"),  "gain_tx"),
-        gain_rx  = _opt_num(r.get("gain_rx"),  "gain_rx"),
-        note     = _text(r, "note", what="batch.rows.note"),
-    )
+# ⚠️ **`_row_from_dict` は削除した**（2026-08-05・I-065）＝バッチ行 11 項目の
+#    読みは `_BATCH_ROW_FIELDS` の 11 行になった。要素が dict であることの検査は
+#    `_dicts` が既に担っているので、関数側の `isinstance` も不要になっている。
 
 
 # ============================================================

@@ -14,6 +14,7 @@ DEM 取得は monkeypatch で塞ぎ、ネットワーク無しで実行する。
 """
 
 import csv
+import re
 import os
 import sys
 import threading
@@ -331,6 +332,90 @@ class TestTopology:
         path.topology = mh.TOPOLOGY_STAR
         assert mh.hop_label(path, 1) == f"{path.waypoints[0].name} → {path.waypoints[2].name}"
         assert mh.hop_label(path, 9, fallback="—") == "—"
+
+
+# ============================================================
+# 「この版が扱える範囲」の宣言（I-066）
+# ============================================================
+# 🔴 背景（2026-08-04 の根本原因分析 → 2026-08-05 に実装）: 2.6 では
+# 「**この版は鎖だけを扱う**」という 1 つの事実が 3 か所に**暗黙に**散っていた
+# ——`project.py`（読む）・`views/multihop.py`（持つ）・`multihop.py`（実行する）。
+# **どれも単体では筋が通るのに、繋ぐと「星の地点を鎖として計算し、保存で
+# 書き換える」**という壊れ方をし、独立レビューを 3 巡して処方を 3 回変えた。
+#
+# ⇒ 扱える範囲は `SUPPORTED_TOPOLOGIES` 1 か所で宣言し、各層はそこを見る。
+#
+# 🔑 **このゲートは宣言から駆動される**＝いま拒否を要求しているのは
+# 「宣言されているが未対応」な値（＝現在は `star`）だけで、**星を実装して
+# `SUPPORTED_TOPOLOGIES` に足した日には、このテストは何も要求しなくなる**。
+# 値を書き並べたゲートだと、そのとき「なぜか星を拒否しろと言うテスト」が
+# 残って足を引っ張る（[[feedback-promote-recurring-checks]] 実証 9＝
+# 間違ったものを要求するゲート）。
+_DECLARED_BUT_UNSUPPORTED = sorted(set(mh.TOPOLOGIES) - set(mh.SUPPORTED_TOPOLOGIES))
+
+
+def test_the_two_declarations_are_not_the_same_thing():
+    """宣言されている語彙と、この版が扱える値は**別物**（名前を分ける理由）。"""
+    assert set(mh.SUPPORTED_TOPOLOGIES) <= set(mh.TOPOLOGIES), (
+        "扱えると宣言した値が語彙に無い（`TOPOLOGIES` に足し忘れている）"
+    )
+
+
+@pytest.mark.parametrize("topology", _DECLARED_BUT_UNSUPPORTED)
+def test_unsupported_topologies_are_refused_by_every_layer(topology, tmp_path):
+    """**読む・書く・実行するの 3 層が、同じ宣言を見て同じ答えを返す。**
+
+    層がばらばらだと 2.6 の壊れ方に戻る＝読めるのに実行できない（窓が値を
+    落として鎖として計算する）／書けるのに読めない（保存成功の顔でデータが
+    失われる）。
+    """
+    import project
+
+    path = mh.MultiHopPath(path_id="r1", topology=topology,
+                           waypoints=[_wp("A", 34.5, 132.4), _wp("B", 34.6, 132.5)])
+
+    # ① 実行する層
+    with pytest.raises(NotImplementedError):
+        mh.require_runnable(path)
+
+    # ② 書く層（読めないものは書かせない）
+    with pytest.raises(project.ProjectError):
+        project.to_dict(project.ProjectDoc(multihop=path))
+
+    # ③ 読む層
+    import json
+    file = str(tmp_path / "p.rsproj")
+    with open(file, "w", encoding="utf-8") as f:
+        json.dump({"schema_version": 1, "meta": {}, "params": {},
+                   "multihop": {"waypoints": [], "topology": topology}}, f)
+    with pytest.raises(project.ProjectError):
+        project.load(file)
+
+
+def test_no_layer_decides_the_supported_range_on_its_own():
+    """扱える範囲を**層ごとに書かない**（宣言を参照する）ことを構造で縛る。
+
+    ⚠️ 見るのは「トポロジー定数との比較」と「その場で作った許可タプル」だけ。
+    **既定値としての `mh.TOPOLOGY_CHAIN`（表の 1 行）は正当**なので当たらない。
+    `multihop.py` 自身は除外＝宣言と、名前ごとの意味（`links`）を持つ場所。
+    """
+    import pathlib
+    root = pathlib.Path(__file__).resolve().parent.parent
+    offenders = []
+    for file in sorted(root.glob("*.py")) + sorted((root / "views").glob("*.py")):
+        if file.name == "multihop.py":
+            continue
+        src = file.read_text(encoding="utf-8")
+        for pattern, why in (
+            (r"[!=]=\s*mh\.TOPOLOGY_\w+", "定数と直に比べている"),
+            (r"\(\s*mh\.TOPOLOGY_\w+\s*,\s*\)", "その場で許可タプルを作っている"),
+        ):
+            if re.search(pattern, src):
+                offenders.append(f"{file.name}: {why}")
+    assert not offenders, (
+        "扱えるトポロジーの範囲を層ごとに決めている（`mh.SUPPORTED_TOPOLOGIES` を"
+        "参照すること）: " + ", ".join(offenders)
+    )
 
 
 def test_relay_mode_is_regenerative_only():

@@ -15,6 +15,7 @@ test_project.py
   5. 我々のファイルでないもの（settings.json 等）は**プロジェクトとして読まない**
 """
 
+import dataclasses
 import json
 import os
 import re
@@ -648,11 +649,15 @@ def test_reader_never_converts_values_with_bare_str():
     （[[feedback-promote-recurring-checks]] 実証10＝列挙で塞ぐ穴は名前 1 つで開く）。
 
     ⚠️ ここが落ちたら、`str(...)` を足したのが悪いのではなく**ガード付きの
-    ヘルパー（`_text` / `_name` / `_enum` / `_num` / `_read_map` …）を増やすべき**
-    という合図。
+    ヘルパー（`_text` / `_enum` / `_num` / `_read_map` …）を増やすべき**という合図。
+
+    🆕 **2026-08-05（I-065）＝見る場所が変わった**＝読みはフィールド表から駆動
+    されるようになり、`_row_from_dict` は消えて `_read_field`（種別ごとの
+    振り分け）が唯一の変換点になった。**このゲートが「関数が見つからない」で
+    落ちて教えた**＝空振りするゲートにならずに済んだ実例。
     """
     src = (Path(project.__file__)).read_text(encoding="utf-8")
-    for func in ("from_dict", "_row_from_dict"):
+    for func in ("from_dict", "_read_field"):
         m = re.search(rf"\ndef {func}\b.*?(?=\ndef |\Z)", src, re.S)
         assert m, f"project.py に {func} が見つからない（このゲートが空振りする）"
         body = m.group(0)
@@ -666,6 +671,61 @@ def test_reader_never_converts_values_with_bare_str():
         assert not re.search(r"(?<![\w.])(float|int)\(", body), (
             f"{func} が素の数値変換を使っている（`_num` / `_opt_num` を使うこと）"
         )
+
+
+# ------------------------------------------------------------
+# フィールド表そのもののゲート（I-065）
+# ------------------------------------------------------------
+# 🔴 **表にした本当の狙いは「検証の選択を人間にさせない」こと**。だから表が
+# **実際の型と 1 対 1 で対応している**ことを機械で縛る。ここが無いと、
+# 新しいフィールドを足したときに**表に書き忘れても静かに既定値で読める**＝
+# 手書き時代と同じ「気づけない穴」が、場所を変えて復活する。
+_TABLE_VS_DATACLASS = [
+    ("_BATCH_ROW_FIELDS", batch.PathRow),
+    ("_SCENARIO_FIELDS",  project.ScenarioSpec),
+    ("_WAYPOINT_FIELDS",  mh.Waypoint),
+    ("_HOP_RF_FIELDS",    mh.HopRF),
+]
+
+
+@pytest.mark.parametrize("table_name,cls", _TABLE_VS_DATACLASS,
+                         ids=[t[0] for t in _TABLE_VS_DATACLASS])
+def test_every_field_of_the_type_has_exactly_one_row_in_the_table(table_name, cls):
+    """**表の 1 行 = 型の 1 フィールド**（過不足なし）。
+
+    読みは `Cls(**_read(container, table))` の形なので、**表に無いフィールドは
+    黙って既定値**になる（＝ファイルに書いてあっても読まれない）。逆に型から
+    消えたフィールドが表に残っていれば `TypeError` になる。
+    """
+    in_table = {f.key for f in getattr(project, table_name)}
+    in_type  = {f.name for f in dataclasses.fields(cls)}
+    assert in_table == in_type, (
+        f"{table_name} と {cls.__name__} がずれている: "
+        f"表にだけある={sorted(in_table - in_type)} / 型にだけある={sorted(in_type - in_table)}"
+    )
+
+
+def test_every_declared_kind_is_one_the_reader_knows():
+    """表が使う種別は、読み手が実装している種別のどれか。
+
+    ⚠️ 未知の種別は `_read_field` の `AssertionError`（実装の誤り）で落ちる＝
+    **利用者の入力では起こらない**。だから入力側のテストでは捕まらず、ここで見る。
+    """
+    tables = [t for name, t in vars(project).items()
+              if name.endswith("_FIELDS") and isinstance(t, tuple)]
+    assert tables, "フィールド表が 1 枚も見つからない（このゲートが空振りする）"
+    unknown = [f"{f.key}:{f.kind}" for table in tables for f in table
+               if f.kind not in project.KINDS]
+    assert not unknown, f"読み手が知らない種別を宣言している: {unknown}"
+
+
+def test_a_closed_set_field_declares_its_allowed_values():
+    """`ENUM` の行は許可値を必ず持つ（空だと**何も通らない**表になる）。"""
+    tables = [t for name, t in vars(project).items()
+              if name.endswith("_FIELDS") and isinstance(t, tuple)]
+    empty = [f.key for table in tables for f in table
+             if f.kind == project.ENUM and not f.allowed]
+    assert not empty, f"許可値の無い閉じた集合がある: {empty}"
 
 
 # ------------------------------------------------------------

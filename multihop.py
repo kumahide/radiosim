@@ -104,7 +104,23 @@ class HopRF:
 #    星を実際に使うときは集約も併せて決めること（2.6 では決めない）。
 TOPOLOGY_CHAIN = "chain"     # P1 → P2 → P3（中継経路＝2.6 の唯一の使い方）
 TOPOLOGY_STAR  = "star"      # P1 → P2, P1 → P3, …（先頭がハブ）
-TOPOLOGIES     = (TOPOLOGY_CHAIN, TOPOLOGY_STAR)
+
+#: **宣言されている語彙**＝この名前が何を意味するかを我々が決めてある値。
+TOPOLOGIES = (TOPOLOGY_CHAIN, TOPOLOGY_STAR)
+
+#: **この版が実際に扱える値**＝読む・持つ・実行するの 3 層が共通で見る単一ソース。
+#
+# 🔑 **`TOPOLOGIES` とは別物**（2026-08-05・I-066）。2.6 ではこの 2 つが**同じ 1 つの
+# 事実の別の面**として 3 か所に暗黙に散っており、`project.py`（読む）・
+# `views/multihop.py`（持つ）・`multihop.py`（実行する）は**どれも単体では筋が
+# 通るのに、繋ぐと「星の地点を鎖として計算し、保存で書き換える」**という壊れ方を
+# した（独立レビューで 3 巡かけて処方を 3 回変えた）。
+#
+# ⇒ **扱える範囲は 1 か所で宣言し、各層はそれを参照するだけにする。**
+# 星を実装する版では**ここに 1 行足すだけ**で 3 層が同時に開く（＝そのとき
+# 3 層を個別に直す作業が発生しない＝本件の再発を封じる形）。
+# ⚠️ 開けてよいのは**集約規則が決まってから**（`MultiHopRun` の min は鎖の意味論）。
+SUPPORTED_TOPOLOGIES = (TOPOLOGY_CHAIN,)
 
 
 @dataclass
@@ -134,8 +150,11 @@ def require_runnable(path: MultiHopPath, what: str = "run") -> None:
     `links` は「点列をどう結ぶか」の既定を答えるだけで、**実行してよいか**は
     こちらが決める。読み込み側（`project.from_dict`）は宣言済みの値しか通さない
     ので、未知の値がここへ来るのは API を直接叩いた場合だけ。
+
+    ⚠️ **判定は `SUPPORTED_TOPOLOGIES` を見る**（`TOPOLOGY_CHAIN` と直に比べない）
+    ＝扱える範囲の宣言は 1 か所（I-066）。
     """
-    if path.topology != TOPOLOGY_CHAIN:
+    if path.topology not in SUPPORTED_TOPOLOGIES:
         raise NotImplementedError(
             f"{what}: トポロジー '{path.topology}' の集約規則は未決定です。"
             "min は鎖（直列）の意味論であって、星（独立した N 本）では"
