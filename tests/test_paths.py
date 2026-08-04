@@ -18,13 +18,20 @@ OS 標準の場所（%APPDATA% 等）への移設は将来版（3.0）の仕事�
 """
 
 import importlib
+import logging
 import os
 import pathlib
 
 import config
 import dem
+from conftest import ORIGINAL_APP_PATHS, apply_app_path_isolation
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+
+# ⚠️ **`config.CONFIG_FILE` 等は、テスト中は一時ディレクトリを指している**
+#    （conftest の隔離＝I-055 ①）。「通常起動でどこを指すか」を見るテストは
+#    隔離前に控えてある `ORIGINAL_APP_PATHS` を使う＝**製品の値はこちら**。
+#    定数を直に読むと、検証しているつもりで隔離後の値を見ることになる。
 
 
 # ============================================================
@@ -71,20 +78,22 @@ class TestCwdIndependence:
         定数は import 時に確定するので、cwd を変えた状態での再 import が
         「別ディレクトリから起動した」ことの再現になる。
         """
-        before = (config.CONFIG_FILE, config.RESULTS_DIR, config.LOG_FILE)
+        expected = (ORIGINAL_APP_PATHS["CONFIG_FILE"],
+                    ORIGINAL_APP_PATHS["RESULTS_DIR"],
+                    ORIGINAL_APP_PATHS["LOG_FILE"])
         monkeypatch.chdir(tmp_path)
-        importlib.reload(config)
+        importlib.reload(config)          # ＝別ディレクトリから起動した状態の再現
         try:
-            assert (config.CONFIG_FILE, config.RESULTS_DIR, config.LOG_FILE) == before
+            assert (config.CONFIG_FILE, config.RESULTS_DIR, config.LOG_FILE) == expected
         finally:
             importlib.reload(config)
+            apply_app_path_isolation()    # reload が実パスへ戻すので隔離を掛け直す
 
     def test_all_write_targets_are_absolute(self):
         """相対パスが1つでも残っていれば cwd 依存が復活する。"""
-        for name in ("CONFIG_FILE", "RESULTS_DIR", "LOG_FILE"):
-            value = getattr(config, name)
-            assert os.path.isabs(value), f"config.{name} が相対パス: {value}"
-        assert os.path.isabs(dem.CACHE_DIR), f"dem.CACHE_DIR が相対パス: {dem.CACHE_DIR}"
+        for name in ("CONFIG_FILE", "RESULTS_DIR", "LOG_FILE", "CACHE_DIR"):
+            value = ORIGINAL_APP_PATHS[name]
+            assert os.path.isabs(value), f"{name} が相対パス: {value}"
 
 
 # ============================================================
@@ -94,10 +103,10 @@ class TestBackwardCompatibility:
     """基準を固定するだけで移設はしない。通常起動の保存先は従来どおり。"""
 
     def test_paths_match_legacy_layout(self):
-        assert config.CONFIG_FILE == os.path.join(REPO_ROOT, "radiosim_conf.json")
-        assert config.RESULTS_DIR == os.path.join(REPO_ROOT, "results")
-        assert config.LOG_FILE    == os.path.join(REPO_ROOT, "radiosim.log")
-        assert dem.CACHE_DIR      == os.path.join(REPO_ROOT, "terrain_cache")
+        assert ORIGINAL_APP_PATHS["CONFIG_FILE"] == os.path.join(REPO_ROOT, "radiosim_conf.json")
+        assert ORIGINAL_APP_PATHS["RESULTS_DIR"] == os.path.join(REPO_ROOT, "results")
+        assert ORIGINAL_APP_PATHS["LOG_FILE"]    == os.path.join(REPO_ROOT, "radiosim.log")
+        assert ORIGINAL_APP_PATHS["CACHE_DIR"]   == os.path.join(REPO_ROOT, "terrain_cache")
 
 
 # ============================================================
@@ -108,7 +117,7 @@ class TestAllFlowsUseResolver:
 
     def test_dem_cache_uses_resolver(self):
         """地図・DEM（3 フロー共有）。"""
-        assert dem.CACHE_DIR == config.app_path("terrain_cache")
+        assert ORIGINAL_APP_PATHS["CACHE_DIR"] == config.app_path("terrain_cache")
 
     def test_single_run_output_uses_resolver(self):
         """単一＝save_package の保存先は config.RESULTS_DIR 由来。"""
@@ -146,3 +155,79 @@ class TestAllFlowsUseResolver:
             if "sys.executable" in path.read_text(encoding="utf-8"):
                 offenders.append(path.name)
         assert offenders == [], f"exe 基準の解決を再実装している: {offenders}"
+
+
+# ============================================================
+# テスト実行の隔離＝開発機の実体に触らない（I-055 ①）
+# ============================================================
+class TestTestRunIsolation:
+    """**テストが開発機の設定を読まず、実リポジトリへ書かない**ことのゲート。
+
+    これが緑であることが、以降のすべてのテストの緑を「証拠」にする前提。
+    読む側を塞いだ理由（B-034 が長期間生き延びた）と書く側を塞いだ理由
+    （8.1MB ログ誤 push の原料）は conftest の該当節に書いてある。
+
+    **変異検証済み（2026-08-05）**＝conftest の隔離を 1 手ずつ外すと、対応する
+    ゲートだけが落ちる: 既定引数の差し替えをやめる → 下の 2 本／ログハンドラの
+    差し替えをやめる → ログの 1 本／定数を実パスへ戻す → 書き込み先の 1 本。
+
+    ⚠️ **ゲートが「定数」ではなく*実際に使われる出口*を見ているのが要点**＝
+    既定引数（`def load_config(path=CONFIG_FILE)`）と、開いている `FileHandler`。
+    定数だけを見るゲートにしていたら、**実設定を読み続けたまま緑**になっていた
+    （実際、最初の実装がその状態で、この 2 本が赤にして教えた）。
+    """
+
+    def _is_inside_repo(self, path: str) -> bool:
+        return os.path.normcase(os.path.abspath(path)).startswith(
+            os.path.normcase(REPO_ROOT) + os.sep)
+
+    def test_write_targets_are_outside_the_repository(self):
+        """4 つの書き込み先が、テスト中はリポジトリの外を指していること。"""
+        live = {
+            "config.CONFIG_FILE": config.CONFIG_FILE,
+            "config.RESULTS_DIR": config.RESULTS_DIR,
+            "config.LOG_FILE":    config.LOG_FILE,
+            "dem.CACHE_DIR":      dem.CACHE_DIR,
+        }
+        inside = {n: v for n, v in live.items() if self._is_inside_repo(v)}
+        assert not inside, f"テストの書き込み先がリポジトリ内を向いている: {inside}"
+
+    def test_config_readers_do_not_default_to_the_real_file(self):
+        """**引数なしの `load_config()` が実設定を読まない**こと。
+
+        🔑 定数の差し替えだけでは足りない＝`def load_config(path=CONFIG_FILE)` は
+        **def 時に値を焼き込む**ので、`config.CONFIG_FILE` を後から変えても
+        引数なしの呼び出しは古いパスを使い続ける。**窓が直に呼ぶのはこの形**
+        （＝G2 で配線を直すまで、ここが実設定への唯一の入口）。
+        """
+        import inspect
+        offenders = []
+        for name, func in vars(config).items():
+            if not inspect.isfunction(func):
+                continue
+            for pname, param in inspect.signature(func).parameters.items():
+                if isinstance(param.default, str) and self._is_inside_repo(param.default):
+                    offenders.append(f"config.{name}({pname}={param.default})")
+        assert not offenders, (
+            "既定引数に実リポジトリのパスが焼き込まれたままの関数がある"
+            "（conftest の隔離が届いていない）: " + ", ".join(offenders)
+        )
+
+    def test_loaded_config_is_the_default_regardless_of_the_dev_machine(self):
+        """開発機の設定がどうであれ、テストが見る設定は既定値。
+
+        ⚠️ これが破れると「同じコミットが開発機の設定次第で緑にも赤にもなる」
+        （B-034 は `coord_format` が `dms` の日にだけ落ちた）。
+        """
+        assert config.load_config() == config.DEFAULT_CONFIG
+
+    def test_file_logging_goes_outside_the_repository(self):
+        """ログの出口（実際に開いているファイル）がリポジトリの外であること。
+
+        定数ではなく **`FileHandler` が開いている実ファイル**を見る＝`config.py` は
+        import 時にハンドラを開くので、定数だけ直しても出口は変わらない。
+        """
+        offenders = [h.baseFilename for h in logging.root.handlers
+                     if isinstance(h, logging.FileHandler)
+                     and self._is_inside_repo(h.baseFilename)]
+        assert not offenders, f"テストのログが実リポジトリへ流れている: {offenders}"

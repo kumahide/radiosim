@@ -1,10 +1,14 @@
 """
 tests/conftest.py
 =================
-共有フィクスチャと、外部ネットワークアクセスの遮断ゲート。
+共有フィクスチャと、テストを実行環境から切り離すゲート群
+（外部ネットワーク・モーダルダイアログ・**開発機の設定と書き込み先**）。
 """
 
+import logging
+import shutil
 import socket
+import tempfile
 import time
 
 import numpy as np
@@ -108,6 +112,16 @@ def _same_interpreter(a: str, b: str) -> bool:
 
 
 def pytest_configure(config):
+    """収集の前に走る唯一の口＝環境の宣言を検査し、書き込み先を隔離する。
+
+    ⚠️ **隔離は検査の後・テストモジュールの import より前**。ここより後ろに置くと、
+    import 時に実パスを掴むテストモジュールが出る。
+    """
+    _require_declared_interpreter()
+    _isolate_app_paths()
+
+
+def _require_declared_interpreter():
     declared = os.environ.get("RADIOSIM_PYTHON", "").strip().strip('"')
     if not declared:
         return                                  # 宣言が無い環境＝CI 等。何もしない
@@ -125,7 +139,7 @@ def pytest_configure(config):
             "（未設定にすればこの検査は行われません）。"
         )
     if _same_interpreter(declared, sys.executable):
-        return
+        return None
     raise pytest.UsageError(
         "宣言された環境と違う Python でテストを回しています。\n"
         f"  RADIOSIM_PYTHON : {declared}\n"
@@ -136,6 +150,158 @@ def pytest_configure(config):
         '  & "$env:RADIOSIM_PYTHON" -m pytest\n'
         "意図して別環境で回すなら、そのシェルで RADIOSIM_PYTHON を空にしてください。"
     )
+
+
+# ============================================================
+# 開発機の設定と書き込み先からの隔離（I-055 ①）
+# ============================================================
+# テストは **利用者の実体に一切触らない**。触っていたのは 2 方向とも:
+#
+#   読む側: 窓が `config.load_config()` を直に呼ぶため、GUI テストは
+#     リポジトリ直下の `radiosim_conf.json`（開発機の実設定）を読んでいた。
+#     ⇒ ①同じコミットが開発機の設定次第で緑にも赤にもなる ②CI は常に既定値で
+#     走るので、既定でない側の経路が**一度も実行されない**。B-034（DMS の座標が
+#     4 割壊れる）が長期間生き延びた直接の理由で、**発見は運**だった。
+#
+#   書く側: `LOG_FILE` / `RESULTS_DIR` / `CACHE_DIR` / `CONFIG_FILE` を一つも
+#     差し替えていなかったため、**pytest を回すたびに実リポジトリへ書いていた**
+#     （実測 2026-08-03: `radiosim.log` が 3.75MB）。🔑 これは 8.1MB ログ誤 push
+#     事故の原料そのもの＝流出したログの中身は pytest のネットワーク遮断警告で、
+#     書き込み先を隔離していればあのファイルは生まれていない。
+#
+# ⚠️ **製品コードは触らない**。保存先そのものの移設は 3.0 の仕事（利用者への
+#    約束が変わる）。ここでやるのは**テスト実行時だけの付け替え**で、解決器
+#    （`config.app_base_dir()` / `app_path()`）は素のまま残す＝「通常起動では
+#    従来と同じ場所」を tests/test_paths.py が引き続き検証できる。
+#
+# 🔑 **定数の代入だけでは足りない**（`config.py` の関数は
+#    `def load_config(path: str = CONFIG_FILE)` と**既定値を def 時に焼き込む**）。
+#    後から `config.CONFIG_FILE` を差し替えても、引数なしの呼び出しは**古いパスを
+#    使い続ける**。⇒ 関数の `__defaults__` / `__kwdefaults__` まで書き換える。
+#    列挙ではなく**値が一致するものを全部**置き換える形にしてあるので、パス既定を
+#    持つ関数が増えても自動で乗る（[[feedback-promote-recurring-checks]] 実証 10）。
+#
+# 隔離は `pytest_configure`（**テストモジュールの import より前**）で 1 回行い、
+# 定数の再適用だけを毎テスト前に行う＝`importlib.reload(config)` で素へ戻る
+# テストがあるため（reload は定数を実パスへ書き戻す）。
+
+_ISOLATED_TMP_DIR: "str | None" = None
+
+#: 隔離前の本来の値。**通常起動の保存先はこれ**＝互換性の検証はこちらを見る。
+ORIGINAL_APP_PATHS: dict[str, str] = {}
+
+#: 隔離後の値（定数の再適用に使う）。
+_ISOLATED_APP_PATHS: dict[str, str] = {}
+
+
+def _repo_modules():
+    """リポジトリ配下から読み込まれたモジュールだけを返す（site-packages を除く）。"""
+    root = os.path.normcase(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    for module in list(sys.modules.values()):
+        path = getattr(module, "__file__", None)
+        if path and os.path.normcase(os.path.abspath(path)).startswith(root + os.sep):
+            yield module
+
+
+def _isolate_app_paths() -> None:
+    """設定・結果・ログ・DEM キャッシュの行き先を一時ディレクトリへ向ける。"""
+    global _ISOLATED_TMP_DIR
+
+    import config
+    import dem
+
+    _ISOLATED_TMP_DIR = tempfile.mkdtemp(prefix="radiosim-tests-")
+    ORIGINAL_APP_PATHS.update({
+        "CONFIG_FILE": config.CONFIG_FILE,
+        "RESULTS_DIR": config.RESULTS_DIR,
+        "LOG_FILE":    config.LOG_FILE,
+        "CACHE_DIR":   dem.CACHE_DIR,
+    })
+    _ISOLATED_APP_PATHS.update({
+        "CONFIG_FILE": os.path.join(_ISOLATED_TMP_DIR, "radiosim_conf.json"),
+        "RESULTS_DIR": os.path.join(_ISOLATED_TMP_DIR, "results"),
+        "LOG_FILE":    os.path.join(_ISOLATED_TMP_DIR, "radiosim.log"),
+        "CACHE_DIR":   os.path.join(_ISOLATED_TMP_DIR, "terrain_cache"),
+    })
+    apply_app_path_isolation()
+    _redirect_file_logging(ORIGINAL_APP_PATHS["LOG_FILE"], _ISOLATED_APP_PATHS["LOG_FILE"])
+
+
+def apply_app_path_isolation() -> None:
+    """定数と既定引数を隔離後の値へ（再）適用する。
+
+    **`importlib.reload(config)` の後にも呼べる**ことが要点＝reload は
+    モジュールを再実行するので、定数も*関数も*実パスを掴んだ状態で作り直される
+    （実際 tests/test_paths.py に reload するテストがあり、そこを境に隔離が
+    抜けていた＝この関数が「両方」を面倒みる理由）。
+    """
+    if not _ISOLATED_APP_PATHS:
+        return
+    import config
+    import dem
+
+    config.CONFIG_FILE = _ISOLATED_APP_PATHS["CONFIG_FILE"]
+    config.RESULTS_DIR = _ISOLATED_APP_PATHS["RESULTS_DIR"]
+    config.LOG_FILE    = _ISOLATED_APP_PATHS["LOG_FILE"]
+    dem.CACHE_DIR      = _ISOLATED_APP_PATHS["CACHE_DIR"]
+    _rebind_path_defaults(
+        {ORIGINAL_APP_PATHS[k]: _ISOLATED_APP_PATHS[k] for k in ORIGINAL_APP_PATHS})
+
+
+def _rebind_path_defaults(replacements: dict) -> None:
+    """関数の既定引数に焼き込まれた実パスを、隔離後のパスへ差し替える。"""
+    def _swap(values):
+        return tuple(replacements.get(v, v) if isinstance(v, str) else v for v in values)
+
+    for module in _repo_modules():
+        for obj in list(vars(module).values()):
+            if not callable(obj) or not hasattr(obj, "__defaults__"):
+                continue
+            if obj.__defaults__:
+                obj.__defaults__ = _swap(obj.__defaults__)
+            if getattr(obj, "__kwdefaults__", None):
+                obj.__kwdefaults__ = {
+                    k: replacements.get(v, v) if isinstance(v, str) else v
+                    for k, v in obj.__kwdefaults__.items()
+                }
+
+
+def _redirect_file_logging(old_log: str, new_log: str) -> None:
+    """既に開いている実ログのハンドラを閉じ、一時ディレクトリのログへ差し替える。
+
+    `config.py` は import 時に `setup_logging()` を呼び、その場で
+    `FileHandler` が実ログを**開く**。定数を差し替えても開いたままなので、
+    ハンドラそのものを取り替えないとテストの出力は実ログへ流れ続ける。
+    """
+    for handler in list(logging.root.handlers):
+        if not isinstance(handler, logging.FileHandler):
+            continue
+        if os.path.normcase(handler.baseFilename) != os.path.normcase(os.path.abspath(old_log)):
+            continue
+        logging.root.removeHandler(handler)
+        handler.close()
+        replacement = logging.FileHandler(new_log, encoding="utf-8")
+        replacement.setFormatter(handler.formatter)
+        replacement.setLevel(handler.level)
+        logging.root.addHandler(replacement)
+
+
+@pytest.fixture(autouse=True)
+def _app_paths_stay_isolated():
+    """毎テスト前に定数を再適用する（`importlib.reload` 後の復帰）。"""
+    apply_app_path_isolation()
+    yield
+
+
+def pytest_unconfigure(config):
+    """一時ディレクトリを片付ける（ログハンドラを閉じてから）。"""
+    if not _ISOLATED_TMP_DIR:
+        return
+    for handler in list(logging.root.handlers):
+        if isinstance(handler, logging.FileHandler):
+            logging.root.removeHandler(handler)
+            handler.close()
+    shutil.rmtree(_ISOLATED_TMP_DIR, ignore_errors=True)
 
 
 # ============================================================
