@@ -116,7 +116,10 @@ build.bat
 | 5 | **同梱漏れの検査**（`buildtools/check_bundle_imports.py`）。同梱物が無条件に import するモジュールが exe から除外されていたら**ビルドを中止**する |
 | 6 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
 
-`build.bat clean` は再生成可能な生成物・キャッシュ・ログ・配布 zip を一掃します（仮想環境・`terrain_cache/`・`results/` は残します）。
+`build.bat clean` は再生成可能な生成物・キャッシュ・ログ・配布 zip を一掃します。
+
+- **残すもの**: 仮想環境と、**リポジトリ直下の** `terrain_cache/` `results/` `basemap_pale/`（ソース実行で貯めたデータ＝取り直しが高価、または利用者のもの）
+- **消すもの**: ビルド出力の下は**すべて**。⚠️ **ビルドした exe が自分の隣に作った `terrain_cache/` `results/` も消えます**（これらはビルド出力の一部で、通常のビルドでも作り直されます）。
 
 ### 出力
 
@@ -133,11 +136,15 @@ dist/
 
 ### 配布パッケージの作成
 
-`dist/RadioSimPro/` フォルダをそのまま ZIP 圧縮して配布します。
+ビルド出力の `RadioSimPro/` フォルダをそのまま ZIP 圧縮して配布します。
 
-```bat
-powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSimPro.zip -Force
+```powershell
+# 出力先は RADIOSIM_BUILD_ROOT に従う（未設定ならリポジトリ直下の dist/）
+$dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
+Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.zip" -Force
 ```
+
+> ⚠️ **`dist\RadioSimPro` と直書きしない**＝`RADIOSIM_BUILD_ROOT` を設定している環境では、失敗するか**リポジトリ側の古い成果物を誤って圧縮**します。
 
 ### `radiosim.spec` の主な設定
 

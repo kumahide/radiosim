@@ -116,7 +116,10 @@ build.bat
 | 5 | **Check the bundle for missing imports** (`buildtools/check_bundle_imports.py`). **Aborts the build** if the exe excludes a module that bundled code imports unconditionally |
 | 6 | Create `terrain_cache/` and `results/` in the output folder |
 
-`build.bat clean` removes regenerable artifacts, caches, logs, and distribution zips (it keeps the virtual environment, `terrain_cache/`, and `results/`).
+`build.bat clean` removes regenerable artifacts, caches, logs, and distribution zips.
+
+- **Kept**: the virtual environment and the **repo-root** `terrain_cache/`, `results/`, `basemap_pale/` (data from source runs — expensive to refetch, or user-owned)
+- **Removed**: everything under the build output root. ⚠️ **That includes the `terrain_cache/` and `results/` the built exe created next to itself** — they are part of the build output and a normal build recreates them anyway.
 
 ### Output
 
@@ -133,11 +136,15 @@ dist/
 
 ### Creating a Distribution Package
 
-ZIP the entire `dist/RadioSimPro/` folder:
+ZIP the `RadioSimPro/` folder from the build output:
 
-```bat
-powershell Compress-Archive -Path dist\RadioSimPro -DestinationPath dist\RadioSimPro.zip -Force
+```powershell
+# Honour RADIOSIM_BUILD_ROOT (falls back to dist/ next to the sources)
+$dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
+Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.zip" -Force
 ```
+
+> ⚠️ **Do not hard-code `dist\RadioSimPro`** — where `RADIOSIM_BUILD_ROOT` is set it either fails or silently zips a stale artifact from the repository.
 
 ### Key `radiosim.spec` Settings
 

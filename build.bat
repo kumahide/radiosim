@@ -58,8 +58,16 @@ if defined RADIOSIM_BUILD_ROOT (
 set "APP_DIR=%DIST_DIR%\RadioSimPro"
 
 rem ---- "clean" subcommand: wipe regenerable artifacts, caches, logs, zips ----
-rem Kept (expensive to refetch, or user data): the venv / terrain_cache /
-rem results / basemap_pale / tools / .qa. Usage: build.bat clean
+rem Kept: the venv and the REPO-ROOT terrain_cache / results / basemap_pale /
+rem tools / .qa (source-run data; expensive to refetch or user-owned).
+rem
+rem NOT kept: everything under the build output root (DIST_DIR / WORK_DIR),
+rem INCLUDING the terrain_cache and results that the built exe created next to
+rem itself. Those belong to the build output and a normal build discards them
+rem too (see "Cleaning old build" below, which removes APP_DIR wholesale).
+rem Do not describe them as preserved - a 2026-08-04 review found the README
+rem promising exactly that while this block deleted them.
+rem Usage: build.bat clean
 if /i "%~1"=="clean" (
     echo [INFO] Cleaning build artifacts, caches, logs, and distribution zips...
     if exist "%WORK_DIR%"      rmdir /s /q "%WORK_DIR%"
@@ -72,11 +80,16 @@ if /i "%~1"=="clean" (
     if exist __pycache__       rmdir /s /q __pycache__
     if exist views\__pycache__ rmdir /s /q views\__pycache__
     if exist tests\__pycache__ rmdir /s /q tests\__pycache__
+    rem Distribution zips live next to DIST_DIR once RADIOSIM_BUILD_ROOT is set,
+    rem so sweeping only the repo root silently kept them (same 2026-08-04 review).
     del /q RadioSimPro-*.zip 2>nul
+    if exist "%DIST_DIR%\RadioSimPro-*.zip" del /q "%DIST_DIR%\RadioSimPro-*.zip" 2>nul
     del /q build_log.txt 2>nul
     del /q radiosim.log 2>nul
     del /q .coverage 2>nul
-    echo [OK] Clean complete. ^(kept: venv / terrain_cache / results / basemap_pale / tools^)
+    echo [OK] Clean complete.
+    echo      kept    : venv / repo-root terrain_cache, results, basemap_pale / tools
+    echo      removed : build output incl. the exe's own terrain_cache and results
     endlocal
     exit /b 0
 )
