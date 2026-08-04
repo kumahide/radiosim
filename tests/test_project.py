@@ -180,10 +180,10 @@ def test_topology_round_trips_and_defaults_to_chain():
     """
     doc = _doc()
     assert doc.multihop is not None
-    doc.multihop.topology = mh.TOPOLOGY_STAR
+    doc.multihop.topology = mh.TOPOLOGY_CHAIN
     got = project.from_dict(project.to_dict(doc))
     assert got.multihop is not None
-    assert got.multihop.topology == mh.TOPOLOGY_STAR
+    assert got.multihop.topology == mh.TOPOLOGY_CHAIN
 
     data = project.to_dict(_doc())
     del data["multihop"]["topology"]          # 2.6a8 以前が書いたファイル相当
@@ -576,25 +576,30 @@ def test_chain_loads(tmp_path):
     assert project.load(path).multihop.topology == mh.TOPOLOGY_CHAIN
 
 
-def test_star_round_trips_and_is_held_by_the_window(tmp_path):
-    """🔴 **宣言済みの値は落とさない**（2026-08-04・独立レビュー Codex 7 巡目）。
+def test_star_is_refused_because_this_version_cannot_run_it(tmp_path):
+    """🔴 **実行できないものは、読めるようにもしない**（2026-08-04・Codex 7〜8 巡目）。
 
-    ⚠️ `star` は**読めるが実行できない**（集約規則が未決定）。安全なのは
-    **3 つが揃ったとき**だけ:
-      ① 読む側が宣言済みの値を受ける（ここ）
-      ② **中継窓が保持する**（`views/multihop.py` の `_topology`）
-      ③ 実行の可否は `multihop.require_runnable` が **DEM を引く前**に決める
+    `star` は `TOPOLOGIES` に**宣言**されているが、この版は実行できない
+    （`require_runnable` が止める）。読めるようにすると中継窓で次々に綻ぶ:
+      ① 窓が値を落とし、**星の地点を鎖として計算**する
+      ② 保存でファイルの値が**鎖へ書き換わる**
+      ③ 窓に持たせても、ホップ行は `len(地点)-1` と `wp[i]→wp[i+1]` で作られる
+         ＝**星では区間名が実際とずれ、別の区間の RF を編集してしまう**
 
-    ②が無いと、読めても `_collect_path` が既定の鎖で組み直し、**星の地点を鎖として
-    計算**して**保存でファイルの値まで書き換える**（＝静かに誤る）。
-    逆に①だけ拒否すると、`to_dict` は star を書けるので**自分が書いたファイルを
-    自分で読めない**非対称ができる。**片側だけ直さない。**
+    ⚠️ **7 巡目は「窓に持たせる」道を採って ③ を踏んだ**。理由は「`to_dict` は
+    star を書けるので、読みだけ拒否すると自分が書いたファイルを自分で読めない」
+    だったが、**その非対称は API を直接叩いたときにしか起きない**（窓は鎖しか
+    作らない）。**理屈上の対称性より、実際に踏む誤りを優先する。**
+
+    🔑 読めるようにするのは、集約規則が決まり、窓がホップ行を `links()` から
+    導けるようになってから（3.x）。
     """
     path = str(tmp_path / "p.rsproj")
     with open(path, "w", encoding="utf-8") as f:
         json.dump({**_BASE_DOC, "multihop": {
             "waypoints": [], "topology": mh.TOPOLOGY_STAR}}, f)
-    assert project.load(path).multihop.topology == mh.TOPOLOGY_STAR
+    with pytest.raises(project.ProjectError):
+        project.load(path)
 
 
 def test_unknown_topology_is_rejected(tmp_path):
@@ -744,3 +749,34 @@ def test_huge_integers_in_text_paths_do_not_leak_overflow(tmp_path, where, raw):
     doc = project.load(path)                    # ProjectError も OverflowError も出ない
     text = doc.multihop.path_id if where == "path_id" else doc.params["freq"]
     assert text.startswith("1") and len(text) == 401
+
+
+@pytest.mark.parametrize("where", ["path_id", "params"])
+def test_integers_beyond_the_str_conversion_limit(tmp_path, where):
+    """**桁が大きすぎて文字列にできない整数**も `ProjectError` に畳むこと。
+
+    🔴 `str(10**5000)` は `ValueError` を投げる（2026-08-04・独立レビュー Codex
+    8 巡目）＝**CPython は既定で 4300 桁を超える整数の文字列変換を拒む**。
+    7 巡目に「`int` は常に有限だからそのまま文字列化してよい」と書いたが、
+    **有限であることと文字列にできることは別**だった。
+
+    ⚠️ **401 桁のテストでは届かない**＝あれは float の範囲（約 309 桁）を超える
+    だけで、整数の文字列変換の境界（4300 桁）には遠い。**境界は「次に壊れる値」
+    ではなく「実装が持っている閾値」に合わせて選ぶ。**
+
+    ⚠️ テストデータも `int("1" + "0"*4999)` では作れない（**文字列→整数も同じ
+    上限に当たる**）。`10 ** 4999` と書く。
+    """
+    big = 10 ** 4999
+    doc = ({**_BASE_DOC, "multihop": {"waypoints": [], "path_id": big}}
+           if where == "path_id" else {**_BASE_DOC, "params": {"freq": big}})
+    with pytest.raises(project.ProjectError):
+        project.from_dict(doc)
+
+    # 生の JSON（`load` 経路）でも同じこと＝json の解析自体が ValueError を出す。
+    path = str(tmp_path / "p.rsproj")
+    with open(path, "w", encoding="utf-8") as f:
+        f.write('{"schema_version":1,"meta":{},"params":{},"multihop":'
+                '{"waypoints":[],"path_id":1' + "0" * 4999 + '}}')
+    with pytest.raises(project.ProjectError):
+        project.load(path)

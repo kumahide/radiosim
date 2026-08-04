@@ -109,7 +109,6 @@ class MultiHopWindow(tk.Toplevel):
         """
         self._route_id.set(path.path_id or "route1")
         self._note.set(path.note)
-        self._topology = path.topology            # 画面には出ないが持ち越す
         self._wp_vars = []
         for wp in path.waypoints:
             self._wp_vars.append({
@@ -134,12 +133,6 @@ class MultiHopWindow(tk.Toplevel):
         head = ttk.Frame(outer)
         head.pack(fill="x", pady=(0, 6))
         ttk.Label(head, text=i18n.t("mh_route_id")).pack(side="left")
-        # ⚠️ **画面に無い情報も持ち越す**＝トポロジーは 2.6 の UI に入口が無いが、
-        # 保持しないと**プロジェクトを開いて保存し直しただけで値が書き換わる**
-        # （2026-08-04・独立レビュー Codex 7 巡目）。実行できるかの判定は
-        # `multihop.require_runnable` が DEM を引く前に行うので、**ここは値を
-        # 落とさないことだけ**を担う。
-        self._topology = mh.TOPOLOGY_CHAIN
         self._route_id = tk.StringVar(value="route1")
         ttk.Entry(head, textvariable=self._route_id, width=14).pack(
             side="left", padx=(4, 12))
@@ -508,8 +501,7 @@ class MultiHopWindow(tk.Toplevel):
                   for v in self._hop_vars]
         return mh.MultiHopPath(path_id=self._route_id.get().strip(),
                                waypoints=waypoints, hop_rf=hop_rf,
-                               note=self._note.get().strip(),
-                               topology=self._topology)
+                               note=self._note.get().strip())
 
     def _on_run(self) -> None:
         if self._running:

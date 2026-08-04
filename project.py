@@ -177,8 +177,24 @@ def _is_plain_number(value) -> bool:
     if isinstance(value, bool):
         return False                      # bool は int の派生（言語の都合）
     if isinstance(value, int):
-        return True                       # int は常に有限（桁の大きさは問わない）
+        return True                       # int は常に有限（桁は `_number_text` が見る）
     return isinstance(value, float) and math.isfinite(value)
+
+
+def _number_text(value, what: str) -> str:
+    """数値を文字列にする。**桁が大きすぎるものは `ProjectError`。**
+
+    🔴 `str(10**5000)` は `ValueError` を投げる（2026-08-04・独立レビュー Codex
+    8 巡目）＝**CPython は既定で 4300 桁を超える整数の文字列変換を拒む**
+    （DoS 対策の上限・`sys.get_int_max_str_digits`）。7 巡目に「`int` は常に有限
+    だからそのまま文字列化してよい」と書いたが、**有限であることと文字列にできる
+    ことは別**だった。401 桁のテストは float の範囲を超えるだけで、この境界には
+    届いていなかった。
+    """
+    try:
+        return str(value)
+    except ValueError:
+        raise ProjectError(i18n.t("proj_err_broken").format(reason=what)) from None
 
 
 def _typed(container: dict, key: str, kind: type, what: str = ""):
@@ -234,7 +250,7 @@ def _text(container: dict, key: str, default: str = "", what: str = "") -> str:
     if isinstance(value, str):
         return value
     if _is_plain_number(value):
-        return str(value)
+        return _number_text(value, what or key)
     raise ProjectError(i18n.t("proj_err_broken").format(reason=what or key))
 
 
@@ -290,7 +306,7 @@ def _read_map(raw: dict, what: str) -> dict[str, str]:
         if isinstance(value, str):
             out[str(key)] = value
         elif _is_plain_number(value):
-            out[str(key)] = str(value)
+            out[str(key)] = _number_text(value, f"{what}.{key}")
         else:
             raise ProjectError(i18n.t("proj_err_broken").format(
                 reason=f"{what}.{key}"))
@@ -424,7 +440,26 @@ def from_dict(data: dict) -> ProjectDoc:
             # 直しても、窓が値を落とせば**星の地点を鎖として計算し**、保存で
             # **ファイルの値が書き換わる**。逆に読む側だけ拒否すると、**自分が
             # 書いたファイルを自分で読めない**非対称ができる。
-            topology  = _enum(m, "topology", mh.TOPOLOGIES,
+            # ⛔ **この版が読めるのは鎖だけ。**（2026-08-04・独立レビュー Codex
+            # 7〜8 巡目で 2 度作り直した箇所＝判断の経緯ごと残す）
+            #
+            # `star` は `TOPOLOGIES` に**宣言**されているが、**この版は実行できない**
+            # （`require_runnable` が止める）。にもかかわらず読めるようにすると、
+            # 中継窓を通るあいだに次々と綻ぶ:
+            #   ① 窓が `topology` を落とし、**星の地点を鎖として計算**する
+            #   ② 保存でファイルの値が**鎖へ書き換わる**
+            #   ③ 窓に持たせても、ホップ行は `len(地点)-1` と `wp[i]→wp[i+1]` で
+            #      作られる＝**星では区間名が実際とずれ、別の区間の RF を編集する**
+            # ⇒ **実行できないものを、読めるようにも持てるようにもしない。**
+            #
+            # ⚠️ 7 巡目に「`to_dict` は star を書けるので、読みだけ拒否すると
+            # *自分が書いたファイルを自分で読めない*」として窓に持たせる道を採ったが、
+            # **その非対称は API を直接叩いたときにしか起きない**（窓は鎖しか作らない）。
+            # **理屈上の対称性より、実際に踏む誤りを優先する。**
+            #
+            # 🔑 star を読めるようにするのは、**集約規則が決まり、窓がホップ行を
+            # `links()` から導けるようになってから**（3.x）。
+            topology  = _enum(m, "topology", (mh.TOPOLOGY_CHAIN,),
                                 mh.TOPOLOGY_CHAIN, "multihop.topology"),
         )
     return doc
@@ -520,7 +555,11 @@ def load(path: str) -> ProjectDoc:
             data = json.load(f)
     except ProjectError:
         raise
-    except (OSError, UnicodeDecodeError, json.JSONDecodeError) as e:
+    except (OSError, UnicodeDecodeError, ValueError) as e:
+        # ⚠️ `json.JSONDecodeError` だけでは足りない（2026-08-04・独立レビュー
+        # Codex 8 巡目）＝**CPython は 4300 桁を超える整数の文字列変換を拒む**
+        # ので、桁の大きい整数を含む JSON は**素の `ValueError`** で落ちる。
+        # `JSONDecodeError` は `ValueError` の派生なので、こちらで両方受かる。
         raise ProjectError(i18n.t("proj_err_broken").format(reason=e)) from e
     return from_dict(data)
 
