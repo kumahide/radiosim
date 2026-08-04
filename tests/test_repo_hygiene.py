@@ -51,6 +51,36 @@ RUNTIME_SUFFIXES = {".log"}
 PRIVATE_PATTERNS = ("ISSUES", "issue_evidence/", "radiosim_conf", "results/", "terrain_cache/")
 
 
+# --- リポジトリ直下の venv ----------------------------------------------------
+#
+# 背景（B-038・2026-08-03 発覚 / 2.7a1 で決着）: 検証用の venv がリポジトリ直下
+# （`.venv`・OneDrive 配下・12,120 ファイル 185MB）に、ビルド用の venv が
+# `RADIOSIM_PYTHON` の指す OneDrive 外に、と **2 つ**あった。ピン更新は後者にしか
+# 当たらず、**テストが検証した matplotlib 3.10.9 と exe に入る 3.11.1 がずれたまま
+# `2.6RC1` を出荷**した。`test_env_consistency` は正しく鳴っていたが、1 週間読まれ
+# なかった。⇒ **venv は 1 つだけ**という状態そのものを検査する。
+#
+# ⚠️ 名前ではなく `pyvenv.cfg` で見る。`.venv` だけを禁止すると `venv/` `env/` と
+# 名前を変えた瞬間に穴が開く（[[feedback-promote-recurring-checks]] 実証10＝
+# 「列挙で塞ぐ穴は名前 1 つで開く」）。`pyvenv.cfg` は venv の定義そのもので、
+# 名前に依存しない。
+VENV_MARKER = "pyvenv.cfg"
+
+
+def venv_dirs_in_root(root: Path | None = None) -> list[str]:
+    """リポジトリ直下にある venv（`pyvenv.cfg` を持つディレクトリ）の名前。
+
+    直下だけを見る（全走査はしない）＝venv は直下に作られるものであり、
+    terrain_cache 等の巨大ディレクトリを毎回舐める費用に見合わない。
+    """
+    root = root or ROOT
+    found = []
+    for child in sorted(root.iterdir()):
+        if child.is_dir() and child.name != ".git" and (child / VENV_MARKER).exists():
+            found.append(child.name)
+    return found
+
+
 def _git(*args: str) -> str:
     return subprocess.run(
         ["git", *args], cwd=ROOT, capture_output=True, text=True, check=True
@@ -190,6 +220,43 @@ class TestRepoHygiene:
         """
         assert _conflict_copy_origin("requirements-dev.txt") is None
         assert _conflict_copy_origin("radiosim-HP-OMEN25L.log") == "radiosim.log"
+
+    # --- リポジトリ直下の venv（B-038 ③）-------------------------------------
+
+    def test_リポジトリ直下に_venv_が無い(self):
+        """本番の不変条件。venv が 2 つある状態を作らせない。"""
+        found = venv_dirs_in_root()
+        assert not found, (
+            "リポジトリ直下に venv があります: " + ", ".join(found) + "\n"
+            "この環境は誰にも宣言されていないため、依存のピン更新から取り残され、"
+            "**検証した版と exe に入る版がずれます**（B-038＝実際に 2.6RC1 で起きた）。\n"
+            "venv はリポジトリの外に 1 つだけ置き、RADIOSIM_PYTHON で宣言してください"
+            "（手順は README「開発環境のセットアップ」）。"
+        )
+
+    def test_venv門_壊れ方1_一度も落ちない_ことがない(self, tmp_path):
+        """①venv があれば必ず検出すること（削除後に無検出で緑になっていないか）。"""
+        (tmp_path / ".venv").mkdir()
+        (tmp_path / ".venv" / VENV_MARKER).write_text("home = C:\\Python", encoding="utf-8")
+        assert venv_dirs_in_root(tmp_path) == [".venv"]
+
+    def test_venv門_壊れ方2_毎回鳴る_ことがない(self, tmp_path):
+        """②venv でないディレクトリでは沈黙すること。"""
+        for name in ("views", "tests", "terrain_cache"):
+            (tmp_path / name).mkdir()
+        (tmp_path / "requirements.txt").write_text("numpy\n", encoding="utf-8")
+        assert venv_dirs_in_root(tmp_path) == []
+
+    @pytest.mark.parametrize("name", ["venv", "env", ".env311", "検証環境"])
+    def test_venv門_壊れ方3_名前ではなく実体を見ている(self, tmp_path, name):
+        """③`.venv` という名前だけを禁じていないこと。
+
+        名前で列挙すると、次に作られる venv が別名だった瞬間に穴が開く。
+        判定は `pyvenv.cfg` の有無＝venv の定義そのもの。
+        """
+        (tmp_path / name).mkdir()
+        (tmp_path / name / VENV_MARKER).write_text("home = C:\\Python", encoding="utf-8")
+        assert venv_dirs_in_root(tmp_path) == [name]
 
     def test_size_allowlist_が実在する(self):
         """許可リストが陳腐化していないか（消えたファイルを許し続けない）。"""
