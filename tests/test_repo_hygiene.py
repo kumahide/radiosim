@@ -264,6 +264,52 @@ class TestRepoHygiene:
             assert (ROOT / name).exists(), f"許可リストの {name} が存在しない"
 
 
+# ============================================================
+# モジュールの分割閾値（2.7 スライス A で新設）
+# ============================================================
+# 🔴 **「触る版が来たら割る」では二度と割れない**——2.6 は超過 3 モジュールを
+# 全部触ったのに、どれも割らなかった。監視条項が散文だったので、版の作業順に
+# 項目として現れず、誰も判断を迫られなかった（[[feedback-promote-recurring-checks]]）。
+# ⇒ 2.7 で 3 つとも割ったので、**その状態を機械で保つ**。
+#
+# 閾値 1045 行は 2.4 から使ってきた値をそのまま採る（新しい根拠を作らない）。
+# ⚠️ **超えたら「割る」か「理由つきで許可リストへ」の二択**＝どちらを選んでも
+# 判断が記録に残る。数字を黙って上げるのは 3 つ目の選択肢ではない。
+_MODULE_LINE_LIMIT = 1045
+
+# 行数ではなく**性質**で外すもの（表・辞書＝分割しても読みやすくならない）。
+_LINE_LIMIT_EXEMPT = {
+    "i18n.py": "UI 文字列の辞書＝データ表。分割しても読む単位は変わらない",
+}
+
+
+def _python_modules():
+    """アプリのモジュール（ルート直下と views/）。テスト・ツールは対象外。"""
+    return sorted(list(ROOT.glob("*.py")) + list((ROOT / "views").glob("*.py")))
+
+
+def test_no_module_exceeds_the_split_threshold():
+    """アプリのモジュールが分割閾値を超えていないこと。"""
+    over = []
+    for path in _python_modules():
+        if path.name in _LINE_LIMIT_EXEMPT:
+            continue
+        lines = len(path.read_text(encoding="utf-8").splitlines())
+        if lines > _MODULE_LINE_LIMIT:
+            over.append(f"{path.name}: {lines} 行")
+    assert not over, (
+        f"分割閾値（{_MODULE_LINE_LIMIT} 行）を超えたモジュールがある: {over}。"
+        "割るか、理由を書いて _LINE_LIMIT_EXEMPT へ入れること"
+        "（閾値そのものを上げるのは選択肢ではない）。"
+    )
+
+
+def test_line_limit_exemptions_still_exist():
+    """除外リストに、実在しないファイルが残っていないこと（掃除漏れ検出）。"""
+    missing = [name for name in _LINE_LIMIT_EXEMPT if not (ROOT / name).exists()]
+    assert not missing, f"除外リストに実在しないファイルがある: {missing}"
+
+
 # --- pre-commit フックからの呼び出し口 ---------------------------------------
 
 if __name__ == "__main__":

@@ -178,12 +178,12 @@ def test_tooltip_takes_both_colors_from_theme():
     try:
         root.withdraw()
         set_theme("dark")
-        from views.launcher import _Tooltip
+        from views.tooltip import Tooltip     # 2.7 スライス A で launcher から独立
         target = tk.Entry(root)
         target.pack()
         root.update_idletasks()
 
-        tip = _Tooltip(target, "テスト")
+        tip = Tooltip(target, "テスト")
         tip._show()
         assert tip._tip is not None
         label = tip._tip.winfo_children()[0]

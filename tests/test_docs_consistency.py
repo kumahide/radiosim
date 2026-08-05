@@ -248,9 +248,12 @@ def _menu_i18n_keys() -> list[str]:
     瞬間に開く**（→ [[feedback-promote-recurring-checks]] の実証 10）。実装を単一
     ソースにしておけば、項目を足した人が README も直すまでこのゲートが赤いままになる。
     """
-    src = (ROOT / "views" / "launcher.py").read_text(encoding="utf-8")
+    # ⚠️ 2.7 スライス A でメニューは `views/launcher_menu.py`（`SimLauncher` の
+    #    Mixin）へ移った。**ここが「見つからない」で落ちて教えた**＝場所を書いた
+    #    ゲートは、移動そのものを検出できる形になっている。
+    src = (ROOT / "views" / "launcher_menu.py").read_text(encoding="utf-8")
     m = re.search(r"\n    def _build_menu\b.*?(?=\n    def )", src, re.S)
-    assert m, "views/launcher.py: _build_menu が見つからない（このゲートが空振りする）"
+    assert m, "views/launcher_menu.py: _build_menu が見つからない（このゲートが空振りする）"
     body = m.group(0)
     keys = set(re.findall(r'i18n\.t\("([a-z0-9_]+)"\)', body))
     # f-string 経由（例: `i18n.t(f"coord_fmt_{value}")`）＝接頭辞を持つキー族を

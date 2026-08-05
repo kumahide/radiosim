@@ -222,9 +222,16 @@ radiosim/
 ├── i18n.py               # 多言語文字列テーブル
 ├── version.py            # バージョン情報
 ├── views/
-│   ├── launcher.py       # ランチャーウィンドウ
+│   ├── launcher.py       # ランチャーウィンドウ（本体＝入力フォーム・実行・進捗）
+│   ├── launcher_menu.py  # ランチャーのメニューバーとその操作（Mixin）
+│   ├── launcher_project.py # プロジェクト（.rsproj）の収集・保存・読込（Mixin）
+│   ├── launcher_windows.py # 子窓の開閉と窓どうしの通知（Mixin）
+│   ├── tooltip.py        # 入力ヒントのツールチップ（窓に依存しない部品）
 │   ├── graph.py          # グラフウィンドウ（matplotlib + tkinter）
-│   ├── map_window.py     # マップウィンドウ（座標入力 / 連続追加 / キャッシュ管理モード）
+│   ├── map_window.py     # マップウィンドウ（本体＝モード切替・地図ウィジェット）
+│   ├── map_picks.py      # 地点の指定と経路の描画（Mixin）
+│   ├── map_cache.py      # DEM キャッシュの範囲選択・取得・オーバーレイ（Mixin）
+│   ├── map_style.py      # 地図窓の描画定数（色・余白・ズーム）の単一ソース
 │   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
 │   ├── errors.py         # GUI の未捕捉例外をログ＋ダイアログへ流す単一の受け皿
 │   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
@@ -232,7 +239,10 @@ radiosim/
 │   ├── window_fit.py     # ウィンドウを中身に合わせる唯一の実装（見切れ防止）
 │   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
 │   ├── multihop.py       # 中継経路ウィンドウ（地点＝入力面・区間は導出）
-│   └── batch_builder.py  # 一括シミュレーションウィンドウ
+│   ├── batch_builder.py  # 一括シミュレーションウィンドウ（本体＝共通設定・案件情報）
+│   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
+│   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
+│   └── batch_run.py      # バッチの実行と進捗（Mixin）
 ├── docs/
 │   └── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
 ├── README_ja.md          # このファイル
@@ -734,10 +744,20 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ```
 [表示層]
-  views/launcher.py       ランチャーウィンドウ
+  views/launcher.py       ランチャーウィンドウ（本体＝入力フォーム・実行・進捗）
+  views/launcher_menu.py     └ メニューバーとその操作（テーマ/言語/プロキシ/README）
+  views/launcher_project.py  └ プロジェクト（.rsproj）の収集・保存・読込
+  views/launcher_windows.py  └ 子窓の開閉と窓どうしの通知（凍結方式の出所）
+  views/tooltip.py        入力ヒントのツールチップ（窓に依存しない部品）
   views/graph.py          グラフウィンドウ
-  views/map_window.py     マップウィンドウ（座標入力 / 連続追加 / キャッシュ管理）
-  views/batch_builder.py  一括シミュレーションウィンドウ
+  views/map_window.py     マップウィンドウ（本体＝モード切替・地図ウィジェット）
+  views/map_picks.py         └ 地点の指定と経路の描画
+  views/map_cache.py         └ DEM キャッシュの範囲選択・取得・オーバーレイ
+  views/map_style.py      地図窓の描画定数（色・余白・ズーム）の単一ソース
+  views/batch_builder.py  一括シミュレーションウィンドウ（本体＝共通設定・案件情報）
+  views/batch_table.py       └ 入力表（行の生成/複製/削除/並べ替え）
+  views/batch_io.py          └ CSV 入出力とテンプレート
+  views/batch_run.py         └ 実行と進捗
   views/dialogs.py        親中央表示の共通モーダルダイアログ
   views/errors.py         Tk コールバックの未捕捉例外をログ＋ダイアログへ（全窓を 1 か所で）
   views/progress.py       進捗トランスポート（キュー＋ポーリング・単一/バッチ共用）
