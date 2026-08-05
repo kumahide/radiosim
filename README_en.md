@@ -222,9 +222,16 @@ radiosim/
 ├── i18n.py               # Multilingual string table
 ├── version.py            # Version information
 ├── views/
-│   ├── launcher.py       # Launcher window
+│   ├── launcher.py       # Launcher window (core: input form, run, progress)
+│   ├── launcher_menu.py  # Launcher menu bar and its actions (mixin)
+│   ├── launcher_project.py # Project (.rsproj) collect / save / load (mixin)
+│   ├── launcher_windows.py # Child windows and cross-window notifications (mixin)
+│   ├── tooltip.py        # Input hint tooltip (standalone widget)
 │   ├── graph.py          # Graph window (matplotlib + tkinter)
-│   ├── map_window.py     # Map window (Pick Coordinates / Append to Batch / Cache Management modes)
+│   ├── map_window.py     # Map window (core: mode switching, map widget)
+│   ├── map_picks.py      # Picking sites and drawing paths (mixin)
+│   ├── map_cache.py      # DEM cache selection, download and overlay (mixin)
+│   ├── map_style.py      # Single source of map drawing constants (colors, margins, zoom)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   ├── errors.py         # Single sink that routes unhandled GUI exceptions to the log and a dialog
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
@@ -232,7 +239,10 @@ radiosim/
 │   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay route window (waypoints are the input surface; hops are derived)
-│   └── batch_builder.py  # Batch Mode window
+│   ├── batch_builder.py  # Batch Mode window (core: common settings, project info)
+│   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
+│   ├── batch_io.py       # Batch CSV import/export and template (mixin)
+│   └── batch_run.py      # Batch execution and progress (mixin)
 ├── docs/
 │   └── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
 ├── README_ja.md          # Japanese README
@@ -733,10 +743,20 @@ Loading closes the open windows (batch / explorer / relay route) after asking fo
 
 ```
 [View layer]
-  views/launcher.py       Launcher window
+  views/launcher.py       Launcher window (core: input form, run, progress)
+  views/launcher_menu.py     └ Menu bar and its actions (theme/language/proxy/README)
+  views/launcher_project.py  └ Project (.rsproj) collect / save / load
+  views/launcher_windows.py  └ Child windows and cross-window notifications
+  views/tooltip.py        Input hint tooltip (standalone widget)
   views/graph.py          Graph window
-  views/map_window.py     Map window (Pick Coordinates / Append to Batch / Cache Management)
-  views/batch_builder.py  Batch Mode window
+  views/map_window.py     Map window (core: mode switching, map widget)
+  views/map_picks.py         └ Picking sites and drawing paths
+  views/map_cache.py         └ DEM cache selection, download and overlay
+  views/map_style.py      Single source of map drawing constants (colors, margins, zoom)
+  views/batch_builder.py  Batch Mode window (core: common settings, project info)
+  views/batch_table.py       └ Input table (add/duplicate/remove/reorder rows)
+  views/batch_io.py          └ CSV import/export and template
+  views/batch_run.py         └ Execution and progress
   views/dialogs.py        Shared modal dialogs centered on the parent
   views/errors.py         Unhandled Tk callback exceptions -> log + dialog (one sink for every window)
   views/progress.py       Progress transport (queue + polling, shared by single/batch)

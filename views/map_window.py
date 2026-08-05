@@ -41,13 +41,14 @@ import models
 import units
 from tkintermapview import TkinterMapView
 from views import dialogs, theme, window_fit
+from views.map_cache import _CacheMixin
+from views.map_picks import _PickMixin
+from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
+                             _OUTLINE_COLOR, _SINGLE_ZOOM, _UISP_CYAN_HEX)
 from views.progress import ProgressPump
 
 logger = __import__("logging").getLogger("radiosim")
 
-# マーカー配色は map_graphics に集約（レポート地図生成 report_map.py と共通）。
-_UISP_CYAN_HEX = map_graphics.UISP_CYAN_HEX
-_MARKER_TEXT   = map_graphics.MARKER_TEXT
 
 # zoom-14 オーバーレイの色（最高精度レベルで色分け）。
 # scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
@@ -58,8 +59,6 @@ _LEVEL_COLORS: dict[str, str] = {
     "dem":  "#87CEEB",  # 水色: 10m（dem_png）
 }
 
-# キャッシュ済み領域の外周線の色
-_OUTLINE_COLOR = "#0066CC"
 
 # 背景タイル（**2 択だけ**・I-028）。どちらも地理院タイル＝外部 API は GSI 一本の
 # まま（設計哲学④）。**標準地図・白地図・陰影起伏…と足せる作りにしない**＝足せる
@@ -96,9 +95,6 @@ _ATTR_FG = "#333333"
 _ATTR_BG = "#FFFFFF"
 
 # 開いたとき設定中 TX/RX を収めるよう自動ズームする際のパラメータ。
-_FIT_MARGIN   = 0.25    # bbox を広げる余白（経路が縁に張り付かないように）
-_FIT_MIN_SPAN = 0.002   # 退化（同緯度/同経度の経路）回避の最小スパン（度）
-_SINGLE_ZOOM  = 13      # TX/RX 片方だけ設定済みのときの初期ズーム
 
 # 座標シンク（ピック結果の受け手）の 2 形態。実装はランチャー／バッチビルダー。
 # 共有メソッドは無く capability で分岐するため、別々の Protocol として定義する。
@@ -165,7 +161,7 @@ def close_map_safely(scheduler, map_widget, destroy) -> None:
         destroy()
 
 
-class MapWindow:
+class MapWindow(_PickMixin, _CacheMixin):
     # ウィンドウ既定サイズ（**下限**。実寸は window_fit が中身から決める）。
     _BASE_W = 900
     _BASE_H = 680
@@ -400,311 +396,6 @@ class MapWindow:
     # 以前はクリックのたびに `set_marker` を足すだけだったので、**窓側で地点を
     # 削除しても地図のピンが残り**、消し方も持っていなかった（2026-08-01 実機確認）。
 
-    def on_waypoints_changed(self) -> None:
-        """中継経路ウィンドウの地点列が変わったときの通知（追加・削除・編集）。"""
-        self._refresh_waypoints()
-
-    def _refresh_waypoints(self) -> None:
-        """宛先の地点列から中継経路レイヤを描き直す。"""
-        self._clear_waypoint_visuals()
-        if self._mode.get() != "waypoints" or self._waypoint_sink is None:
-            return
-        points = self._waypoint_sink.waypoint_markers()
-        coords = [(lat, lon) for _name, lat, lon in points]
-        if len(coords) >= 2:
-            # 折れ線＝**並びがそのまま経路**であることを地図でも見せる。
-            self._wp_objects.append(
-                self._map.set_path(coords, color=_UISP_CYAN_HEX, width=3))
-        last = len(points) - 1
-        for i, (name, lat, lon) in enumerate(points):
-            # 先頭＝送信点（塗り）／末尾＝受信点（白抜き）／間＝中継点（リング）。
-            # 形だけで役割が読めるようにする（窓の役割ラベルと同じ意味を地図でも）。
-            if i == 0:
-                icon = self._tx_icon
-            elif i == last:
-                icon = self._rx_icon
-            else:
-                icon = self._relay_icon
-            self._wp_objects.append(self._map.set_marker(
-                lat, lon, text=name, icon=icon, icon_anchor="center",
-                text_color=_MARKER_TEXT))
-
-    def _clear_waypoint_visuals(self) -> None:
-        for obj in self._wp_objects:
-            try:
-                obj.delete()
-            except Exception:
-                pass
-        self._wp_objects.clear()
-
-    def on_append_target_closed(self) -> None:
-        """append 先（バッチ）が閉じたときの通知。連続追加中なら座標入力へ戻す。"""
-        self._append_sink = None
-        if self._mode.get() == "append":
-            self._select_mode("coords")
-
-    def on_paths_changed(self) -> None:
-        """append 先（バッチ）のパス集合が変わったときの通知。確定パス表示を引き直す。
-
-        連続追加モードでないとき（_append_sink is None）は _refresh_committed_paths
-        が早期 return するので no-op。地図側で source of truth を持たないため、毎回
-        バッチの現在の行から描き直すだけ（削除・クリア・インポートに追従する）。
-        """
-        self._refresh_committed_paths()
-
-    def _show_coord_visuals(self) -> None:
-        """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
-        if self._tx_coord is not None:
-            self._set_pick_marker("tx", *self._tx_coord)
-        if self._rx_coord is not None:
-            self._set_pick_marker("rx", *self._rx_coord)
-
-    def _clear_coord_visuals(self) -> None:
-        """マーカー・経路・距離ラベル・確定パスを地図から消す（座標値は保持する）。"""
-        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
-            if obj is not None:
-                obj.delete()
-        self._tx_marker = None
-        self._rx_marker = None
-        self._path_line = None
-        self._dist_label = None
-        self._clear_committed_paths()
-
-    # ----------------------------------------------------------
-    # 追記モード（Phase D2）: 確定済みパスのライン表示
-    # ----------------------------------------------------------
-    def _clear_committed_paths(self) -> None:
-        for obj in self._committed:
-            obj.delete()
-        self._committed.clear()
-        self._committed_images.clear()
-
-    @staticmethod
-    def _screen_bearing_deg(tx: tuple, rx: tuple) -> float:
-        """TX→RX の方位（真北 0°・東 90°・時計回り）を平面近似で返す。
-
-        地図は北上固定なので矢じりの回転角に使う。緯度差・経度差（緯度補正）から
-        atan2(東, 北) で求める。重い測地計算は不要（描画向きの近似で十分）。
-        """
-        import math
-        dlat = rx[0] - tx[0]
-        dlon = (rx[1] - tx[1]) * math.cos(math.radians((tx[0] + rx[0]) / 2))
-        return math.degrees(math.atan2(dlon, dlat)) % 360
-
-    def _refresh_committed_paths(self) -> None:
-        """シンクが持つ既存パス（バッチ各行の座標）を地図上に表示する。
-
-        確定パスは **TX=塗りドット／RX=方位矢じり** ＋経路線＋中点の水平距離バッジ
-        で残す（TX/RX 文字ラベルは出さない）。形状で送受を区別するため、TX/RX が
-        近接・同一座標でも重なって判別不能にならない。追記モードでのみ意味を持ち、
-        バッチ表が source of truth なので毎回引き直すだけ。パース不能行は除外済み。
-        距離バッジに path_id を添えて、バッチ表のどの行に対応するパスかを地図上で
-        判別できるようにする（I-001）。
-        """
-        self._clear_committed_paths()
-        if self._append_sink is None:
-            return
-        for pid, tx, rx in self._append_sink.existing_paths():
-            self._committed.append(
-                self._map.set_path([tx, rx], color=_UISP_CYAN_HEX, width=3))
-            # TX = 塗りドット（ラベルなし）。アイコンはアクティブピックと共用。
-            self._committed.append(self._map.set_marker(
-                tx[0], tx[1], icon=self._tx_icon, icon_anchor="center"))
-            # RX = TX→RX 方位を指す矢じり（ラベルなし・別形状で送受を区別）。
-            arrow = ImageTk.PhotoImage(
-                map_graphics.arrow_icon(self._screen_bearing_deg(tx, rx)))
-            self._committed_images.append(arrow)   # GC 防止に保持
-            self._committed.append(self._map.set_marker(
-                rx[0], rx[1], icon=arrow, icon_anchor="center"))
-            # 中点に path_id ＋ 水平距離バッジ。
-            mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
-            km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
-            dist_text = units.format_distance(km)
-            label = f"{pid}  {dist_text}" if pid else dist_text
-            badge = self._make_distance_badge(label)
-            self._committed_images.append(badge)   # GC 防止に保持
-            self._committed.append(self._map.set_marker(
-                mid[0], mid[1], icon=badge, icon_anchor="center"))
-
-    # ----------------------------------------------------------
-    # 座標入力モード（地図クリックで TX/RX をピック → ランチャー数値欄へ書戻し）
-    # 数値欄が source of truth。地図は交互ピッカーに徹する。
-    # ----------------------------------------------------------
-    def _click_on_zoom_button(self) -> bool:
-        """直近の押下ピクセルが地図の +/- ズームボタン矩形内かを判定する。
-
-        tkintermapview のズームボタンは canvas 埋込の CanvasButton で、自前の
-        tag_bind とは別に canvas 全体の <Button-1>/<ButtonRelease-1> も発火する
-        ため、ボタン上クリックが「移動なしクリック」として map_click_callback に
-        流れ込み座標ピックされてしまう。押下位置がボタン矩形内なら無視する。"""
-        pos = getattr(self._map, "last_mouse_down_position", None)
-        if not pos:
-            return False
-        px, py = pos
-        for name in ("button_zoom_in", "button_zoom_out"):
-            btn = getattr(self._map, name, None)
-            if btn is None:
-                continue
-            bx, by = btn.canvas_position
-            if bx <= px <= bx + btn.width and by <= py <= by + btn.height:
-                return True
-        return False
-
-    def _on_map_click(self, coords: tuple) -> None:
-        """地図の素クリック。座標入力／連続追加モードで TX→RX を交互にピックする。"""
-        if self._mode.get() == "cache" or self._busy:
-            return
-        if self._click_on_zoom_button():
-            return
-        lat, lon = coords
-        if self._mode.get() == "waypoints":
-            # 中継点＝**1 点ずつ順に足す**（TX/RX の交互ピックではない）。
-            if self._waypoint_sink is None:
-                return
-            name = self._waypoint_sink.append_waypoint(lat, lon)
-            # ⚠️ ここでマーカーを**足さない**＝窓へ入れてから写しを描き直す。
-            # 足すだけにすると、窓側で地点を削除しても地図に残る（消し方が無い）。
-            self._refresh_waypoints()
-            self._set_status(i18n.t("map_append_added").format(pid=name),
-                             auto_clear=True)
-            return
-        role = self._pick_next
-        self._set_pick_marker(role, lat, lon)
-        if self._append_sink is not None:
-            # 連続追加（Phase D2）: RX 確定でペア成立 → 1 行を append し、
-            # アクティブなピックをリセットして次の TX 待ちに戻す（add 不要）。
-            if role == "rx" and self._tx_coord is not None and self._rx_coord is not None:
-                pid = self._append_sink.append_path(self._tx_coord, self._rx_coord)
-                self._reset_active_pick()
-                self._refresh_committed_paths()
-                if pid:
-                    self._set_status(
-                        i18n.t("map_append_added").format(pid=pid), auto_clear=True)
-            else:
-                self._pick_next = "rx"
-        else:
-            # 単一書き戻し（ランチャー）: ピックごとに start/end 欄へ反映。
-            if self._single_sink is not None:
-                self._single_sink.apply_map_pick(role, lat, lon)
-            self._pick_next = "rx" if role == "tx" else "tx"
-        self._set_idle()   # 次のピック対象をヒントに反映
-
-    def _reset_active_pick(self) -> None:
-        """アクティブな TX/RX ピック（マーカー・経路・座標）をクリアし TX 待ちへ戻す。
-
-        確定済みパス（_committed）には触れない＝append 後も軌跡は地図に残る。
-        """
-        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
-            if obj is not None:
-                obj.delete()
-        self._tx_marker = self._rx_marker = self._path_line = self._dist_label = None
-        self._tx_coord = self._rx_coord = None
-        self._pick_next = "tx"
-
-    def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
-        """UISP 風のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
-        return ImageTk.PhotoImage(map_graphics.node_icon(hollow))
-
-    def _make_distance_badge(self, text: str) -> ImageTk.PhotoImage:
-        """距離バッジを Tk 用にラップして返す（描画は map_graphics）。"""
-        return ImageTk.PhotoImage(map_graphics.distance_badge(text))
-
-    def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
-        """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
-        if role == "tx":
-            if self._tx_marker is not None:
-                self._tx_marker.delete()
-            self._tx_coord = (lat, lon)
-            self._tx_marker = self._map.set_marker(
-                lat, lon, text=i18n.t("map_marker_tx"),
-                icon=self._tx_icon, icon_anchor="center",
-                text_color=_MARKER_TEXT,
-            )
-        else:
-            if self._rx_marker is not None:
-                self._rx_marker.delete()
-            self._rx_coord = (lat, lon)
-            self._rx_marker = self._map.set_marker(
-                lat, lon, text=i18n.t("map_marker_rx"),
-                icon=self._rx_icon, icon_anchor="center",
-                text_color=_MARKER_TEXT,
-            )
-        self._redraw_path()
-
-    def _redraw_path(self) -> None:
-        """TX/RX が揃っていれば 2 点を結ぶパス線と中点の距離ラベルを引き直す。"""
-        if self._path_line is not None:
-            self._path_line.delete()
-            self._path_line = None
-        if self._dist_label is not None:
-            self._dist_label.delete()
-            self._dist_label = None
-        if self._tx_coord is not None and self._rx_coord is not None:
-            # 既定 width=9 は太いので細線に。色は UISP 風シアンでノードと揃える。
-            self._path_line = self._map.set_path(
-                [self._tx_coord, self._rx_coord], color=_UISP_CYAN_HEX, width=3)
-            # 水平距離ラベルを中点に重ねる（半透明ピル背景つき＝pan/zoom 追従）。
-            mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
-                   (self._tx_coord[1] + self._rx_coord[1]) / 2)
-            km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
-            text = units.format_distance(km)
-            self._dist_badge = self._make_distance_badge(text)
-            self._dist_label = self._map.set_marker(
-                mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
-            )
-
-    def _fit_to_existing_paths(self) -> None:
-        """append 先（バッチ）の既存パス群の外接 bbox に地図をフィットする。"""
-        if self._append_sink is None:
-            return
-        paths = self._append_sink.existing_paths()
-        if not paths:
-            return
-        lats = [p for _, tx, rx in paths for p in (tx[0], rx[0])]
-        lons = [p for _, tx, rx in paths for p in (tx[1], rx[1])]
-        self._fit_to_path((max(lats), min(lons)), (min(lats), max(lons)))
-
-    def _load_single_coords(self) -> None:
-        """ランチャー数値欄の既存 TX/RX を取り込み、地図の中心とズームを合わせる。
-
-        両方そろっていれば経路長に合わせて自動ズーム、片方だけなら近接ズームで寄せる。
-        マーカー・経路の実描画はモードに応じて _apply_mode_visibility が行う。
-        """
-        if self._single_sink is None:
-            return
-        coords = self._single_sink.current_path_coords()
-        tx, rx = coords.get("tx"), coords.get("rx")
-        self._tx_coord, self._rx_coord = tx, rx
-        # 次の入力対象: 未設定があればそれを優先、両方あれば TX から上書き再開。
-        self._pick_next = "tx" if tx is None else ("rx" if rx is None else "tx")
-        # 既存座標があれば中心とズームを合わせる。
-        if tx is not None and rx is not None:
-            self._fit_to_path(tx, rx)
-        elif tx is not None:
-            self._map.set_zoom(_SINGLE_ZOOM)
-            self._map.set_position(*tx)
-        elif rx is not None:
-            self._map.set_zoom(_SINGLE_ZOOM)
-            self._map.set_position(*rx)
-
-    def _fit_to_path(self, tx: tuple, rx: tuple) -> None:
-        """TX/RX を余白込みで収める bbox に地図をフィット（経路長に応じ自動ズーム）。
-
-        tkintermapview の fit_bounding_box は top_left=(緯度大, 経度小) /
-        bottom_right=(緯度小, 経度大) で、かつ両者が厳密に大小である必要がある。
-        純東西/南北の経路は span が 0 で退化するため最小スパンと余白でパディングする。
-        （内部で after(100) し寸法確定後にズーム決定される。）
-        """
-        lat_n, lat_s = max(tx[0], rx[0]), min(tx[0], rx[0])
-        lon_w, lon_e = min(tx[1], rx[1]), max(tx[1], rx[1])
-        span_lat = max(lat_n - lat_s, _FIT_MIN_SPAN)
-        span_lon = max(lon_e - lon_w, _FIT_MIN_SPAN)
-        cy, cx = (lat_n + lat_s) / 2, (lon_w + lon_e) / 2
-        half_lat = span_lat / 2 * (1 + _FIT_MARGIN)
-        half_lon = span_lon / 2 * (1 + _FIT_MARGIN)
-        self._map.fit_bounding_box(
-            (cy + half_lat, cx - half_lon), (cy - half_lat, cx + half_lon)
-        )
 
     # ----------------------------------------------------------
     # UI 構築
@@ -841,101 +532,6 @@ class MapWindow:
         # 「この窓だけ実測追従になっていない」ことが分かった）。
         window_fit.fit_to_content(self._win, min_w=self._BASE_W, min_h=self._BASE_H)
 
-    # ----------------------------------------------------------
-    # Ctrl＋ドラッグによる矩形選択
-    #
-    # tkinter は「より具体的なバインド」を優先するため、<Control-B1-Motion>
-    # を張ると Ctrl 押下中のドラッグでは素の <B1-Motion>（地図パン）が呼ばれ
-    # ない。よってモード切替やパン無効化なしで「素のドラッグ＝パン／Ctrl＋
-    # ドラッグ＝範囲選択」が両立する。
-    # ----------------------------------------------------------
-    def _sel_press(self, event) -> None:
-        if self._busy:
-            return   # DL 実行中は新たな範囲選択を開始しない
-        self._sel_start = self._map.convert_canvas_coords_to_decimal_coords(event.x, event.y)
-
-    def _sel_drag(self, event) -> None:
-        if self._sel_start is None:
-            return
-        cur = self._map.convert_canvas_coords_to_decimal_coords(event.x, event.y)
-        lat_n = max(self._sel_start[0], cur[0]); lat_s = min(self._sel_start[0], cur[0])
-        lon_w = min(self._sel_start[1], cur[1]); lon_e = max(self._sel_start[1], cur[1])
-        if self._sel_rect is not None:
-            self._sel_rect.delete()
-        self._sel_rect = self._map.set_polygon(
-            [(lat_n, lon_w), (lat_n, lon_e), (lat_s, lon_e), (lat_s, lon_w)],
-            fill_color="", outline_color="#0066CC", border_width=2,
-        )
-
-    def _sel_release(self, event, action: str) -> None:
-        """ドラッグ確定。action: "download"（Ctrl）/ "delete"（Shift+Ctrl）。"""
-        start = self._sel_start
-        self._sel_start = None
-        if self._sel_rect is not None:
-            self._sel_rect.delete()
-            self._sel_rect = None
-        if start is None:
-            return
-        cur = self._map.convert_canvas_coords_to_decimal_coords(event.x, event.y)
-        if abs(start[0] - cur[0]) < 1e-9 or abs(start[1] - cur[1]) < 1e-9:
-            return   # クリックのみ（面積ゼロ）は無視
-        lat_n = max(start[0], cur[0]); lat_s = min(start[0], cur[0])
-        lon_w = min(start[1], cur[1]); lon_e = max(start[1], cur[1])
-        # NW を (lat1, lon1)、SE を (lat2, lon2) として確定し、枠とエリア数を表示
-        self._lat1_var.set(f"{lat_n:.6f}")
-        self._lon1_var.set(f"{lon_w:.6f}")
-        self._lat2_var.set(f"{lat_s:.6f}")
-        self._lon2_var.set(f"{lon_e:.6f}")
-        self._draw_bbox_rect()
-        # 選択エリア数はこの直後の確認ダイアログが必ず提示するため、別途の表示はしない。
-
-        bbox = (lat_n, lon_w, lat_s, lon_e)
-        if action in ("download", "download_force"):
-            force = action == "download_force"
-            # 表示する対象数は force の有無で変わる:
-            #   force ON  → 全エリア再取得（総数）
-            #   force OFF → キャッシュ済みはスキップされるので新規分のみ
-            total = dem.count_bbox_tiles(*bbox)
-            n = total if force else total - dem.count_cached_areas(*bbox)
-            title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
-            msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
-            msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
-            if dialogs.confirm(self._win, title, msg):
-                self._start_download(bbox, force)
-            else:
-                self._clear_selection()
-        else:   # delete
-            # 削除は実際にキャッシュ済みのエリアのみが対象
-            n = dem.count_cached_areas(*bbox)
-            if dialogs.confirm(
-                self._win, i18n.t("tm_delete_title"),
-                i18n.t("tm_delete_confirm").format(n=n),
-            ):
-                self._do_delete(bbox)
-            else:
-                self._clear_selection()
-
-    # ----------------------------------------------------------
-    # bbox 矩形描画
-    # ----------------------------------------------------------
-    def _draw_bbox_rect(self) -> None:
-        try:
-            lat1 = float(self._lat1_var.get())
-            lon1 = float(self._lon1_var.get())
-            lat2 = float(self._lat2_var.get())
-            lon2 = float(self._lon2_var.get())
-        except ValueError:
-            return
-        if self._bbox_polygon:
-            self._bbox_polygon.delete()
-        lat_n = max(lat1, lat2); lat_s = min(lat1, lat2)
-        lon_w = min(lon1, lon2); lon_e = max(lon1, lon2)
-        self._bbox_polygon = self._map.set_polygon(
-            [(lat_n, lon_w), (lat_n, lon_e), (lat_s, lon_e), (lat_s, lon_w)],
-            fill_color="",
-            outline_color="#0066CC",
-            border_width=2,
-        )
 
     # ----------------------------------------------------------
     # 背景タイル（淡色地図 / 航空写真）
@@ -959,76 +555,7 @@ class MapWindow:
         self._map.set_tile_server(spec.url, max_zoom=spec.max_zoom)
         self._attribution.config(text=i18n.t(spec.attr_key))
 
-    # ----------------------------------------------------------
-    # タイルオーバーレイ
-    # ----------------------------------------------------------
-    def _clear_tile_overlays(self) -> None:
-        for p in self._tile_polygons:
-            p.delete()
-        self._tile_polygons.clear()
 
-    # ----------------------------------------------------------
-    # 自動カバレッジ表示（地図のパン/ズームに追従）
-    # ----------------------------------------------------------
-    def _schedule_overlay_refresh(self, event=None) -> None:
-        """パン/ズーム連打をデバウンスして再描画する。"""
-        if self._mode.get() != "cache":
-            return   # キャッシュ管理以外ではカバレッジを描かない（無駄なタイマーも張らない）
-        if self._overlay_after_id is not None:
-            self._win.after_cancel(self._overlay_after_id)
-        self._overlay_after_id = self._win.after(300, self._refresh_overlay)
-
-    def _refresh_overlay(self) -> None:
-        self._overlay_after_id = None
-        if self._mode.get() != "cache":
-            return   # キャッシュ管理以外ではカバレッジ描画をスキップ
-        try:
-            w = self._map.canvas.winfo_width()
-            h = self._map.canvas.winfo_height()
-            if w < 2 or h < 2:
-                return
-            nw = self._map.convert_canvas_coords_to_decimal_coords(0, 0)
-            se = self._map.convert_canvas_coords_to_decimal_coords(w, h)
-            # セル粒度は表示ズームに追従させ、ポリゴン数を画面タイル数程度に保つ。
-            overlay_zoom = max(2, min(14, int(round(self._map.zoom))))
-        except Exception:
-            return
-        threading.Thread(
-            target=self._overlay_worker, args=(nw, se, overlay_zoom), daemon=True
-        ).start()
-
-    def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int) -> None:
-        cells = dem.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
-        outline = dem.coverage_outline(nw[0], nw[1], se[0], se[1])
-        self._win.after(0, self._draw_overlay_cells, cells, outline)
-
-    def _draw_overlay_cells(self, cells: list, outline: list) -> None:
-        if self._mode.get() != "cache":
-            return   # モード切替後に届いた旧ワーカー結果は捨てる（描画しない）
-        self._clear_tile_overlays()
-        # 半透明塗り（stipple はライブラリ既定）。セル境界線は描かず、
-        # 隣接セルの塗りを繋げて内部グリッド線を出さない。
-        for c in cells:
-            x, y, z = c["x"], c["y"], c["zoom"]
-            lat_n, lon_w = dem.tile_to_latlng(x,     y,     z)
-            lat_s, lon_e = dem.tile_to_latlng(x + 1, y + 1, z)
-            color = _LEVEL_COLORS.get(c["level"], "#CCCCCC")
-            p = self._map.set_polygon(
-                [(lat_n, lon_w), (lat_n, lon_e), (lat_s, lon_e), (lat_s, lon_w)],
-                fill_color=color,
-                outline_color="",
-                border_width=0,
-            )
-            self._tile_polygons.append(p)
-        # 領域の外周線のみを描く。
-        for loop in outline:
-            p = self._map.set_polygon(
-                loop,
-                fill_color="",
-                outline_color=_OUTLINE_COLOR,
-                border_width=2,
-            )
-            self._tile_polygons.append(p)
         # ⚠️ ここには「カバレッジ描画で上に来るため出典を持ち上げ直す」という
         # 1 行があった。**持ち上げ直しが要る時点で z 順の争いに負けている**
         # （実際タイル画像のほうは拾えておらず、出典は一度も見えていなかった＝
@@ -1041,12 +568,6 @@ class MapWindow:
     _TILES_PER_AREA = 4
     _DEFAULT_TILE_BYTES = 25 * 1024   # 実キャッシュが無いときのフォールバック
 
-    def _estimate_mb(self, n_areas: int) -> str:
-        """DL 容量の目安 [MB] を文字列で返す。平均タイルサイズは実キャッシュから推定。"""
-        stats = dem.get_cache_stats()
-        avg = stats["size_bytes"] / stats["count"] if stats["count"] else self._DEFAULT_TILE_BYTES
-        mb = n_areas * self._TILES_PER_AREA * avg / (1024 * 1024)
-        return f"{mb:.1f}"
 
     # ----------------------------------------------------------
     # ステータス表示ヘルパー
@@ -1094,36 +615,6 @@ class MapWindow:
         if auto_clear and text:
             self._status_clear_id = self._win.after(self._STATUS_CLEAR_MS, self._set_idle)
 
-    def _start_download(self, bbox: tuple, force: bool) -> None:
-        self._set_busy(True)
-        self._progress_var.set(0)
-        self._show_progress()
-        self._set_status(i18n.t("tm_downloading"))
-        self._pump.start()
-        threading.Thread(target=self._download_worker, args=(bbox, force), daemon=True).start()
-
-    def _download_worker(self, bbox: tuple, force: bool) -> None:
-        # 進捗はポンプ経由で渡す。従来はタイルごとに `after(0, ...)` を2回呼んで
-        # おり、ワーカースレッドから Tcl を叩く点でも他フローで廃した書き方だった
-        # （単一実行では同じ形が取得時間そのものを支配していた＝B-006）。ここは
-        # progress_cb がロック外で呼ばれるので直列化の実害は無かったが、書き方は
-        # 3フローで揃える。
-        def progress_cb(done: int, total: int) -> None:
-            pct = int(done / total * 100) if total else 0
-            self._pump.push((pct, i18n.t("tm_dl_progress").format(
-                done=done, total=total, pct=pct)))
-
-        t0 = time.perf_counter()
-        dl_result = dem.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
-        logger.info("Tile download complete in %.2fs: %s",
-                    time.perf_counter() - t0, dl_result)
-        self._win.after(0, self._on_download_done, dl_result)
-
-    def _render_progress(self, item: tuple) -> None:
-        """ポンプから届いた進捗を描画する（メインスレッドで呼ばれる）。"""
-        pct, text = item
-        self._progress_var.set(pct)
-        self._set_status(text)
 
     def _on_download_done(self, dl_result: dict) -> None:
         self._pump.stop()

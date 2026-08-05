@@ -710,11 +710,11 @@ _EXEMPT = {
     ("dialogs.py", "_make"):
         "モーダルダイアログ＝サイズを指定せず自然サイズで開く（geometry は位置のみ）。"
         "中身はメッセージ 1 つとボタンで、増える経路が無い。",
-    ("launcher.py", "_show"):
+    ("tooltip.py", "_show"):
         "ツールチップ（overrideredirect）。自然サイズ・位置のみ指定。",
-    ("launcher.py", "_on_proxy_settings"):
+    ("launcher_menu.py", "_on_proxy_settings"):
         "プロキシ設定ダイアログ＝サイズを指定せず自然サイズで開く（位置のみ）。",
-    ("launcher.py", "_show_readme_text"):
+    ("launcher_menu.py", "_show_readme_text"):
         "README ビューア＝スクロール前提の閲覧窓（resizable・中身は本文テキスト）。",
 }
 

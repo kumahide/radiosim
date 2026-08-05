@@ -50,6 +50,10 @@ jobs:
           views/window_fit.py views/errors.py
           buildtools/check_bundle_imports.py
           views/scenario.py views/multihop.py
+          views/launcher_menu.py views/launcher_project.py
+          views/launcher_windows.py views/tooltip.py
+          views/batch_table.py views/batch_io.py views/batch_run.py
+          views/map_picks.py views/map_cache.py views/map_style.py
 
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov
