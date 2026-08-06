@@ -402,15 +402,26 @@ class ScenarioWindow(tk.Toplevel):
         self._on_mode_changed()
 
         # 実行 & 進捗 & レポート（常に見える帯）
-        bar = ttk.Frame(outer)
-        bar.pack(fill="x", pady=(10, 6))
-        # 実行帯の型（I-029）＝**バーが左で伸び、実行は帯の右端**。以前はこの窓
+        # ⚠️ 帯が 2 段になったぶん、外側の余白を (10, 6) から詰める＝この窓は FHD
+        # 100% の 990px に対して余りが 10px しか無く、詰めないと**入らなくなる**
+        # （B-021 系＝見切れは寸法を足した回に出る）。
+        prog_frame = ttk.Frame(outer)
+        prog_frame.pack(fill="x", pady=(4, 2))
+
+        # 上段: ステータス 1 行（**バーの上**＝4 窓共通の位置・I-047）。以前はこの
+        # 窓だけバーの*横*にあり、フェーズ名が伸びるたびに実行ボタンが左へ動いた。
+        row1 = ttk.Frame(prog_frame)
+        row1.pack(fill="x")
+        self._prog_label = ttk.Label(row1, text="", anchor="w")
+        self._prog_label.pack(side="left", fill="x", expand=True)
+
+        # 下段: 実行帯の型（I-029）＝**バーが左で伸び、実行は帯の右端**。以前はこの窓
         # だけボタンがバーの左にあり、ランチャー・中継経路と鏡像になっていた。
+        bar = ttk.Frame(prog_frame)
+        bar.pack(fill="x", pady=(2, 0))
         self._run_btn = ttk.Button(bar, text=i18n.t("scn_run"), command=self._on_run,
                                    style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
-        self._prog_label = ttk.Label(bar, text="")
-        self._prog_label.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
         self._prog_bar.pack(side="left", fill="x", expand=True)
 

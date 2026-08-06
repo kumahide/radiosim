@@ -151,15 +151,22 @@ class MultiHopWindow(tk.Toplevel):
         self._build_waypoints(outer)
         self._build_hops(outer)
 
-        # 実行帯＝**進捗バーの右に「実行」**（3 フローと同じ型＝I-029）。
-        bar = ttk.Frame(outer)
-        bar.pack(fill="x", pady=(10, 6))
-        # 右端から順に pack する（実行 → ステータス）＝ボタンが常に帯の右端。
+        # 実行帯＝**上段にステータス 1 行／下段はバーの右に「実行」**（4 窓で同じ型＝
+        # I-029 ＋ I-047）。ステータスをバーの横に置いていたころは、`n 区間目を計算中`
+        # の文言が伸びるたびに実行ボタンが左へ動いた。
+        prog_frame = ttk.Frame(outer)
+        prog_frame.pack(fill="x", pady=(10, 6))
+
+        row1 = ttk.Frame(prog_frame)
+        row1.pack(fill="x")
+        self._prog_label = ttk.Label(row1, text="", anchor="w")
+        self._prog_label.pack(side="left", fill="x", expand=True)
+
+        bar = ttk.Frame(prog_frame)
+        bar.pack(fill="x", pady=(2, 0))
         self._run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
                                    command=self._on_run, style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
-        self._prog_label = ttk.Label(bar, text="")
-        self._prog_label.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
         self._prog_bar.pack(side="left", fill="x", expand=True)
 

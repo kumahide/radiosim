@@ -304,11 +304,13 @@ class GraphWindow(tk.Toplevel):
             self._scales[key], self._entries[key], self._values[key] = scale, entry, var
             self._fmt[key] = fmt
 
-        # 保存は 3 行ぶんの高さを持つ 1 個（右端）。width を与えないと日本語 2 文字が
-        # 縦に潰れて読めない。
-        ttk.Button(bar, text=i18n.t("btn_save_pkg"), command=self._on_save,
-                   width=12).grid(row=0, column=3, rowspan=3, sticky="ns",
-                                  padx=(12, 0), pady=2)
+        # 保存は**1 行ぶんの高さで操作帯の右下**（I-049）。以前はスライダー 3 行を
+        # またぐ縦長のボタンで、他窓の主操作（1 行）と不揃いだった。⛔ 大きさで
+        # 主操作を表さない＝主操作は**位置**（帯の右端）で表す、と決めてある
+        # （グラフ窓に進捗帯は無いので、操作帯の最下行の右端が対応する場所）。
+        self._save_btn = ttk.Button(bar, text=i18n.t("btn_save_pkg"),
+                                    command=self._on_save)
+        self._save_btn.grid(row=2, column=3, sticky="e", padx=(12, 0), pady=2)
 
     def _fit_to_content(self) -> None:
         """窓を中身に合わせる（**下限は「見やすい初期値」**）。

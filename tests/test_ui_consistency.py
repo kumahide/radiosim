@@ -110,6 +110,115 @@ def test_run_button_sits_at_the_right_end_of_the_progress_bar(app_windows, name)
 
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
+def test_status_line_sits_above_the_progress_bar(app_windows, name):
+    """ステータスは**進捗バーの上に 1 行**（I-047）＝4 窓とも同じ場所。
+
+    以前は 4 窓で 3 通りだった（バッチ＝上／条件探索・中継＝バーの横／ランチャー＝
+    上だが中央寄せ）。揃えるのは**場所**であって中身ではない＝OK/NG/ERR カウントは
+    複数本を回す窓にしか意味が無いので、そこは揃えない。
+    """
+    app, wins = app_windows
+    win   = wins[name]
+    owner = app if name == "launcher" else win
+    label, bar = owner._prog_label, owner._prog_bar
+
+    assert label.winfo_parent() != bar.winfo_parent(), (
+        f"{name}: ステータスが進捗バーと同じ帯にある（文言の長さでボタンが動く）"
+    )
+    win.update()
+    assert label.winfo_rooty() < bar.winfo_rooty(), f"{name}: ステータスがバーの上に無い"
+    # 左寄せ＝バーの左端と同じ位置から始まる（中央寄せだと窓ごとに始点が違う）。
+    assert abs(label.winfo_rootx() - bar.winfo_rootx()) <= 2, (
+        f"{name}: ステータスがバーの左端と揃っていない"
+    )
+
+
+@pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
+def test_status_text_never_resizes_the_progress_bar(app_windows, name):
+    """ステータスの**文言が伸びても実行帯の形が変わらない**こと（I-047 の理由）。
+
+    ⚠️ 「別の帯にある」という構造だけでは足りない＝上の段に置いても、伸縮しない
+    ラベルを右詰めにすれば帯の形は再び中身の量で動く。**位置ではなく振る舞い**で
+    縛る。
+
+    🔑 **当初はここで「実行ボタンが動かないこと」を見ようとしたが、それは一度も
+    落ちないゲートだった**＝ボタンは帯の右端に*先に* pack されているので、同じ帯に
+    長い文言が入っても動くのは**進捗バーの方**（バーが縮む）。実際に壊れる側を
+    測る（[[feedback-promote-recurring-checks]] 壊れ方①）。
+    """
+    app, wins = app_windows
+    win   = wins[name]
+    owner = app if name == "launcher" else win
+    label, bar = owner._prog_label, owner._prog_bar
+
+    before = str(label.cget("text"))
+    win.update()
+    w0 = bar.winfo_width()
+    label.config(text="あ" * 60)
+    win.update()
+    w1 = bar.winfo_width()
+    label.config(text=before)
+    win.update()
+    assert w0 == w1, (
+        f"{name}: ステータスの文言で進捗バーの幅が変わった（{w0} → {w1}）"
+    )
+
+
+@pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
+def test_run_button_has_no_fixed_width(app_windows, name):
+    """実行ボタンに**固定幅を与えない**こと（I-046）＝4 窓で同じ文字は同じ大きさ。
+
+    ラベルの統一（I-029）は縛っていたのに大きさは縛っておらず、バッチだけ
+    `width=14` で広かった。⚠️ 幅を外すと見切れる逆の実績があるので（`btn_import_csv`
+    等）、外すのは**主操作 1 個だけ**で、それをここで固定する。
+    """
+    app, wins = app_windows
+    owner = app if name == "launcher" else wins[name]
+    width = str(owner._run_btn.cget("width"))
+    assert width in ("", "0"), f"{name}: 実行ボタンに固定幅がある（width={width}）"
+
+
+def test_no_button_is_stretched_to_stand_out(app_windows):
+    """**大きさで主操作を表さない**＝行をまたいで引き伸ばしたボタンを置かない（I-049）。
+
+    グラフ窓の保存がスライダー 3 行ぶんの高さを占めており、他窓の主操作（1 行）と
+    不揃いだった。🔑 **名指しでなくクラスで縛る**＝「保存ボタンの rowspan」だけを
+    禁じても、次に別のボタンを縦長にした瞬間に同じ欠陥が戻る（用語集ゲートで学んだ
+    型と同じ）。強調は**位置**と Accent で表す。
+    """
+    import numpy as np
+    app, wins = app_windows
+    from views.graph import show_graph
+
+    graph = show_graph(app.root, _params(), np.zeros(_params().num))
+    try:
+        targets = dict(wins)
+        targets["graph"] = graph
+        offenders: list[str] = []
+        for name, win in targets.items():
+            _collect_stretched_buttons(win, name, offenders)
+        assert not offenders, (
+            "行をまたいで引き伸ばしたボタンがある: " + ", ".join(offenders)
+        )
+    finally:
+        graph.destroy()
+
+
+def _collect_stretched_buttons(widget, name: str, out: list) -> None:
+    """grid で 2 行以上をまたぐボタンを集める（別の Toplevel へは降りない）。"""
+    import tkinter as tk
+    from tkinter import ttk
+    for child in widget.winfo_children():
+        if isinstance(child, tk.Toplevel):
+            continue
+        if isinstance(child, (ttk.Button, tk.Button)):
+            info = child.grid_info()
+            if info and int(info.get("rowspan", 1)) > 1:
+                out.append(f"{name}:{child.cget('text')}")
+        _collect_stretched_buttons(child, name, out)
+
+
+@pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_run_button_is_the_only_accent_button(app_windows, name):
     """Accent（塗り）は**「走らせる」ボタンだけ**（強調の軸＝意味の軸）。"""
     app, wins = app_windows

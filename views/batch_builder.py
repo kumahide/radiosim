@@ -356,8 +356,11 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._prog_bar = ttk.Progressbar(row2, orient="horizontal", mode="determinate")
         self._prog_bar.pack(side="left", fill="x", expand=True)
         # 右端から順に pack する（実行 → カウント）＝ボタンが常に帯の右端に来る。
+        # ⛔ `width=` は付けない（I-046）＝ラベルは 4 窓とも「実行」で揃えてあるのに、
+        # ここだけ 14 文字ぶんの箱で**同じ文字が違う大きさ**に見えていた。主操作で
+        # あることは位置（帯の右端）と Accent で表す＝大きさは強調の軸ではない。
         self._run_btn = ttk.Button(
-            row2, text=i18n.t("btn_run_batch"), command=self._on_run, width=14,
+            row2, text=i18n.t("btn_run_batch"), command=self._on_run,
             style="Accent.TButton",
         )
         self._run_btn.pack(side="right", padx=(10, 0))

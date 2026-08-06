@@ -309,14 +309,22 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         }
 
     def _build_status(self, parent: tk.Widget) -> None:
-        self._prog_label = ttk.Label(parent, text=i18n.t("status_ready"))
-        self._prog_label.pack(pady=(10, 0))
+        # 実行帯は**上段＝ステータス 1 行／下段＝バー（左・伸縮）＋実行（右端）**
+        # の 2 段（I-047・4 窓共通）。ステータスをバーの*横*に置くと、文言の長さで
+        # 実行ボタンの位置が動く（左寄せの 1 行なら文言が伸びても帯の形は変わらない）。
+        prog_frame = ttk.Frame(parent)
+        prog_frame.pack(fill="x", pady=(10, 5))
+
+        row1 = ttk.Frame(prog_frame)
+        row1.pack(fill="x")
+        self._prog_label = ttk.Label(row1, text=i18n.t("status_ready"), anchor="w")
+        self._prog_label.pack(side="left", fill="x", expand=True)
 
         # 進捗バーと「実行」を同じ帯に置く（I-029）。**3 つの実行フローで同じ名前・
         # 同じ位置**＝バッチが既にこの配置なので、一番情報量の多い窓を動かさずに
         # 単一と条件探索の 2 窓だけを揃える側に回した。
-        bar = ttk.Frame(parent)
-        bar.pack(fill="x", pady=5)
+        bar = ttk.Frame(prog_frame)
+        bar.pack(fill="x", pady=(2, 0))
         self._prog_bar = ttk.Progressbar(
             bar, orient="horizontal", length=350, mode="determinate"
         )
