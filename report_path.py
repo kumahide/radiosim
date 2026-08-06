@@ -39,7 +39,7 @@ logger = logging.getLogger("radiosim")
 
 
 def save_path_visuals(pr: PathResult, coord_format: str = "dd",
-                      project_name: str = "") -> None:
+                      project_name: str = "") -> "Exception | None":
     """
     PNG と HTML を保存する（バックグラウンドスレッドから呼んでよい）。
 
@@ -59,9 +59,18 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
     report_all.html へ連結するため＝断面 PNG/地図は base64 埋め込みなので
     ディスクを読み直さずに済む）。失敗したパスは空のまま＝連結からは落ちる
     （台帳にはエラー行として載る）。
+
+    **成否を返す**（I-010・2026-08-03 に B-037 で実機に出た欠陥の恒久対策）＝
+    成功なら `None`、失敗ならその例外。同じものを `pr.artifact_error` へも入れる
+    ので、**戻り値を捨てても失敗は消えない**（`PathResult` はこの後 集計・台帳・
+    画面へそのまま流れる）。以前はここで `logger.error` して黙って戻っており、
+    描画が全滅しても `⚠ 0 ERR` で完走して完了ダイアログが正常に出た。
+
+    ⚠️ **戻り値だけにしないのが要点**＝呼び出し側が受け取り忘れれば「静かに成功」
+    へ戻る。記録先を結果オブジェクトに置けば、忘れようがない。
     """
     if pr.result is None or pr.terrain is None or pr.params is None:
-        return
+        return None                      # 計算が無い＝そもそも成果物を作らない
     try:
         pr.sheet_html = save_profile_png(
             pr.terrain, pr.result, pr.params,
@@ -73,7 +82,12 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
             pr.params.h_tx, pr.params.h_rx, pr.save_dir,
         )
     except Exception as ex:
-        logger.error("Visual save failed for '%s': %s", pr.row.path_id, ex)
+        # traceback を残す（I-010 ②）＝B-037 の診断はメッセージ 1 行しか無く、
+        # 連鎖を追うのに再現実験が要った。
+        logger.exception("Visual save failed for '%s': %s", pr.row.path_id, ex)
+        pr.artifact_error = ex
+        return ex
+    return None
 
 
 def save_profile_png(

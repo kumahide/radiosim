@@ -5,7 +5,11 @@ views/multihop.py
 
 ヘッドレスの実行は [multihop.py](multihop.py)、出力は
 [report_multihop.py](report_multihop.py) が担い、ここは入力欄・進捗・結果の
-一覧表示だけを持つ。
+表示だけを持つ。
+
+**結果の居場所（2.7 スライス B・I-041）**：区間ごとの結果は**区間表の右 3 列**に
+返し、独立した結果一覧（Treeview）は持たない。全体判定（区間をまたいだ集約）だけが
+下の枠に残る。
 
 **なぜ waypoint 列と行の二層なのか（⑦・書き落とすと一周戻る）**
 --------------------------------------------------------------
@@ -74,6 +78,9 @@ class MultiHopWindow(tk.Toplevel):
         # 画面の状態＝waypoint 列とホップ別 RF（**これが source of truth**）。
         self._wp_vars:  list[dict[str, tk.StringVar]] = []
         self._hop_vars: list[dict[str, tk.StringVar]] = []
+        # 区間表の結果セル（`_sync_hops` が区間行と一緒に作り直す）＝結果は
+        # **その結果を生んだ区間の行**に返る（I-041・結果一覧は廃止した）。
+        self._hop_result_labels: list[dict[str, ttk.Label]] = []
 
         self._pump = ProgressPump(self, self._dispatch_event)
 
@@ -226,52 +233,49 @@ class MultiHopWindow(tk.Toplevel):
                   foreground=theme.muted_foreground(btns)).pack(side="left", padx=6)
 
     def _build_hops(self, parent: tk.Misc) -> None:
-        """区間（ホップ）の無線諸元＝**地点の間に 1 行ずつ**。
+        """区間（ホップ）の無線諸元＝**地点の間に 1 行ずつ**。**結果もここへ返る**。
 
         ⚠️ ここに高さは出さない（高さは地点のもの）。**この分担が二重入力を
         構造的に防いでいる**ので、後から「ここにも高さがあると便利」を足さないこと。
+
+        **右 3 列は読み取り専用の結果**（受信レベル / マージン / 判定＝I-041）。
+        区間表は 1 行 = 1 区間 = 1 結果なので、統一規則「結果はその結果を生んだ行に
+        返す」がそのまま当てはまる。**地点表ではない**＝地点 N に対し結果は N−1 で、
+        1:1 が成り立たない。
         """
         box = ttk.LabelFrame(parent, text=i18n.t("mh_hops_group"), padding=(8, 4))
         box.pack(fill="x", pady=(6, 0))
         self._hop_grid = ttk.Frame(box)
         self._hop_grid.pack(fill="x")
         for col, key in enumerate(("mh_col_section", "lbl_b_freq",
-                                   "lbl_b_gain_tx", "lbl_b_gain_rx")):
+                                   "lbl_b_gain_tx", "lbl_b_gain_rx",
+                                   "html_rx_level", "html_act_margin",
+                                   "html_status")):
             ttk.Label(self._hop_grid, text=i18n.t(key)).grid(
                           row=0, column=col, padx=4, pady=(0, 2), sticky="w")
         ttk.Label(box, text=i18n.t("mh_hint_inherit"),
                   foreground=theme.muted_foreground(box)).pack(anchor="w", pady=(4, 0))
+        # 判定色はテーマから引く＝**結果を入れたときに**決まるので、テーマ切替では
+        # 自動追従しない（Treeview のタグと違う）。貼り直す口をここで結んでおく。
+        self.bind("<<ThemeChanged>>",
+                  lambda _e: self._refresh_verdict_colors(), add="+")
 
     def _build_results(self, parent: tk.Misc) -> None:
-        self._result_box = ttk.LabelFrame(parent, text=i18n.t("mh_result"), padding=8)
-        self._result_box.pack(fill="both", expand=True)
-        self._summary_label = ttk.Label(self._result_box, text="")
-        self._summary_label.pack(anchor="w", pady=(0, 6))
+        """**全体判定だけ**を置く枠（区間別の結果は区間表が持つ）。
 
-        cols = ("hop", "section", "rx", "margin", "status")
-        self._tree = ttk.Treeview(self._result_box, columns=cols, show="headings",
-                                  height=6, style=theme.table_style(self))
-        for col, key, w in (
-            ("hop",     "mh_col_no",       50),
-            ("section", "mh_col_section", 240),
-            ("rx",      "html_rx_level",  130),
-            ("margin",  "html_act_margin", 130),
-            ("status",  "html_status",     80),
-        ):
-            self._tree.heading(col, text=i18n.t(key))
-            self._tree.column(col, width=w, stretch=True,
-                              anchor="w" if col == "section" else "e")
-        vsb = ttk.Scrollbar(self._result_box, orient="vertical",
-                            command=self._tree.yview)
-        self._tree.configure(yscrollcommand=vsb.set)
-        self._tree.pack(side="left", fill="both", expand=True)
-        vsb.pack(side="right", fill="y")
-        # 判定色（OK/緑・NG/赤）は条件探索と同じ出所から取る。行に `ok`/`ng` の
-        # タグは付いていたのに**色を当てておらず、この窓だけ同色**だった
-        # （レポート側は色分けしていたので、画面だけが落ちていた）。
-        theme.apply_verdict_tags(self._tree)
-        self.bind("<<ThemeChanged>>",
-                  lambda _e: theme.apply_verdict_tags(self._tree), add="+")
+        ⛔ **結果一覧（Treeview）はここに戻さない**（2.7 スライス B で廃止）。
+        統一規則＝「結果はその結果を生んだ行に返す。1 行 = 1 結果が成り立つ入力表を
+        持つ窓はその表へ返し、成り立たない窓だけが結果一覧を持つ」。中継は区間表が
+        1 行 = 1 結果なので、一覧を持つと**同じ数字が窓の中に 2 か所**できる。
+        一覧を持つのは条件探索（1 条件から結果が N 件出る＝1:1 でない）だけ。
+
+        全体判定が残るのは重複ではない＝**区間をまたいだ集約**（最も苦しい区間が
+        どれか）で、区間表のどの行にも書けない情報（[[glossary]] の「全体判定」）。
+        """
+        self._result_box = ttk.LabelFrame(parent, text=i18n.t("mh_result"), padding=8)
+        self._result_box.pack(fill="x")
+        self._summary_label = ttk.Label(self._result_box, text="")
+        self._summary_label.pack(anchor="w")
 
     def _fit_to_content(self) -> None:
         window_fit.fit_to_content(self, min_w=self._BASE_W)
@@ -447,13 +451,19 @@ class MultiHopWindow(tk.Toplevel):
         return self._wp_vars[len(self._wp_vars) - 2]["name"].get()
 
     def _sync_hops(self) -> None:
-        """地点の数に合わせてホップ行を作り直す（**導出**＝地点が先）。"""
+        """地点の数に合わせてホップ行を作り直す（**導出**＝地点が先）。
+
+        ⚠️ **結果列（右 3 列）も一緒に作り直す＝ここで前回の結果が消える**。
+        地点が増減すれば区間の意味そのものが変わるので、**古い結果を新しい区間の
+        行に残さない**（I-041 の規則は「結果はその結果を生んだ行に返す」）。
+        """
         for r in range(1, len(self._hop_vars) + 2):
             for w in self._hop_grid.grid_slaves(row=r):
                 w.destroy()
         hops = max(len(self._wp_vars) - 1, 0)
         old = self._hop_vars
         self._hop_vars = []
+        self._hop_result_labels = []
         for i in range(hops):
             vars_ = old[i] if i < len(old) else {
                 "freq":    tk.StringVar(),
@@ -468,6 +478,16 @@ class MultiHopWindow(tk.Toplevel):
             for col, key in enumerate(("freq", "gain_tx", "gain_rx"), start=1):
                 ttk.Entry(self._hop_grid, textvariable=vars_[key], width=10).grid(
                     row=i + 1, column=col, padx=4, pady=1)
+            # 結果（読み取り専用）＝実行するとこの 3 つに入る。数値は右寄せで
+            # 桁を揃える（画面パネルと同じ約束＝単位は見出しが持つ）。
+            cells: dict[str, ttk.Label] = {
+                "rx":     ttk.Label(self._hop_grid, text="", anchor="e", width=12),
+                "margin": ttk.Label(self._hop_grid, text="", anchor="e", width=12),
+                "status": ttk.Label(self._hop_grid, text="", anchor="w", width=6),
+            }
+            for col, key in enumerate(("rx", "margin", "status"), start=4):
+                cells[key].grid(row=i + 1, column=col, padx=4, pady=1, sticky="w")
+            self._hop_result_labels.append(cells)
 
     # ----------------------------------------------------------
     # 実行
@@ -519,7 +539,7 @@ class MultiHopWindow(tk.Toplevel):
 
         self._running = True
         self._run_btn.config(state="disabled")
-        self._tree.delete(*self._tree.get_children())
+        self._clear_hop_results()
         self._summary_label.config(text="")
         self._prog_bar.config(value=0, maximum=path.hop_count)
         self._pump.start()
@@ -545,26 +565,47 @@ class MultiHopWindow(tk.Toplevel):
             self._prog_label.config(text=i18n.t("mh_running").format(i=i, n=n))
         elif kind == "hop":
             i, _n, pr = args
-            self._add_result_row(i, pr)
+            self._show_hop_result(i, pr)
             self._prog_bar.config(value=i)
         elif kind == "complete":
             self._on_complete(args[0])
         elif kind == "error":
             self._on_error(args[0])
 
-    def _add_result_row(self, index: int, pr) -> None:
-        # 区間名は `multihop` が決める（接続規則を画面側へ書き写さない）。
-        # 実行中の経路は `_collect_path` で作った側にあるので、行の備考
-        # （`hop_rows` が「A → B」を入れている）をそのまま使う。
-        section = pr.row.note or pr.row.path_id
-        r = pr.result
-        if r is None:
-            self._tree.insert("", "end", values=(index, section, "—", "—", "ERROR"),
-                              tags=("ng",))
-            return
-        self._tree.insert("", "end", tags=("ok" if r.status == "OK" else "ng",),
-                          values=(index, section, f"{r.p_rx:.2f}",
-                                  f"{r.actual_margin:+.2f}", r.status))
+    def _show_hop_result(self, index: int, pr) -> None:
+        """区間 `index`（1 始まり）の行へ結果を返す（I-041）。
+
+        区間名は行がすでに持っている（`_sync_hops` が「A → B」を書いた列）ので、
+        ここでは値だけを入れる＝**同じ名前を 2 か所に出さない**。
+
+        判定は `batch.PathResult.status`＝**成果物だけ失敗した区間も ERR** になる
+        （I-010・出所は 1 か所）。
+        """
+        if not (1 <= index <= len(self._hop_result_labels)):
+            return                          # 実行中に地点が変わった＝返す先が無い
+        cells  = self._hop_result_labels[index - 1]
+        status = pr.status
+        r      = pr.result
+        cells["rx"].config(text=f"{r.p_rx:.2f}" if r is not None else "—")
+        cells["margin"].config(
+            text=f"{r.actual_margin:+.2f}" if r is not None else "—")
+        cells["status"].config(
+            text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
+            foreground=theme.verdict_colors(self)[theme.verdict_key(status)])
+
+    def _clear_hop_results(self) -> None:
+        """区間表の結果列を空にする（実行の開始時＝前回の結果を残さない）。"""
+        for cells in self._hop_result_labels:
+            for cell in cells.values():
+                cell.config(text="")
+
+    def _refresh_verdict_colors(self) -> None:
+        """テーマ切替で判定色を貼り直す（表示中の字から色のキーを引く）。"""
+        colors = theme.verdict_colors(self)
+        for cells in self._hop_result_labels:
+            text = str(cells["status"].cget("text"))
+            if text:
+                cells["status"].config(foreground=colors[theme.verdict_key(text)])
 
     def _on_complete(self, run: mh.MultiHopRun) -> None:
         self._running = False

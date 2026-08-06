@@ -97,6 +97,9 @@ class _RunMixin:
         self._ok_label.config(text="✓ 0 OK")
         self._ng_label.config(text="✗ 0 NG")
         self._err_label.config(text="⚠ 0 ERR")
+        # 前回の判定を消す（I-041）＝表の行は残るので、消さないと**古い結果が
+        # 新しい実行の途中まで居座る**（どこまで進んだのかも読めなくなる）。
+        self._clear_verdicts()
 
         # ポンプは実行のあいだだけ回す（完了・エラーのハンドラで停止する）。
         self._pump.start()
@@ -177,15 +180,18 @@ class _RunMixin:
     def _on_path_done(self, cur: int, tot: int, pr: batch.PathResult) -> None:
         pct = int(cur / tot * 100) if tot else 0
         self._prog_bar.config(value=cur)
-        if pr.result is not None:
-            if pr.result.status == "OK":
-                self._ok_count += 1
-            else:
-                self._ng_count += 1
-            status_text = pr.result.status
+        # 判定の出所は `PathResult.status` の 1 か所（I-010 ③）＝**成果物だけ
+        # 失敗した経路もここで ERR に数えられる**（以前は計算が通った時点で OK に
+        # 数え、描画が全滅しても `⚠ 0 ERR` で完走した＝B-037）。
+        status_text = pr.status
+        if status_text == "OK":
+            self._ok_count += 1
+        elif status_text == "NG":
+            self._ng_count += 1
         else:
             self._err_count += 1
-            status_text = "ERROR"
+        # **結果はその結果を生んだ行に返す**（I-041）＝カウンタは合計しか持たない。
+        self._set_row_verdict(pr.row.path_id, status_text)
         self._prog_label.config(text=f"   {pr.row.path_id}  →  {status_text}")
         self._prog_count_label.config(text=f"{cur} / {tot}  ({pct}%)")
         self._ok_label.config(text=f"✓ {self._ok_count} OK")

@@ -53,8 +53,11 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
             h_rx_val = f"{pr.row.h_rx:.1f}"
             if pr.result is not None:
                 r = pr.result
+                # status 列は `pr.status`＝成果物だけ失敗した経路も ERROR で出る
+                # （I-010）。**数値は残す**（計算は通っているので消す理由が無い）
+                # ＝何が欠けたかは末尾の error 列が持つ。
                 writer.writerow([
-                    report_common.csv_cell(pr.row.path_id), r.status,
+                    report_common.csv_cell(pr.row.path_id), pr.status,
                     freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
                     f"{r.p_rx:.2f}",          f"{r.actual_margin:.2f}",
                     f"{r.fspl:.2f}",           f"{r.diff_loss:.2f}",
@@ -63,7 +66,9 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     f"{r.total_loss:.2f}",
                     units.csv_distance(r.slant_dist_km),
                     units.csv_blocked_ratio(r.blocked_ratio),
-                    report_common.csv_cell(pr.row.note), "",
+                    report_common.csv_cell(pr.row.note),
+                    report_common.csv_cell(pr.artifact_error)
+                    if pr.artifact_error is not None else "",
                 ])
             else:
                 writer.writerow([
@@ -118,7 +123,7 @@ def render_summary_map_b64(results: list[PathResult]) -> "str | None":
         report_map.PathSpec(
             tx=(pr.row.lat_tx, pr.row.lon_tx),
             rx=(pr.row.lat_rx, pr.row.lon_rx),
-            status=(pr.result.status if pr.result is not None else "ERROR"),
+            status=pr.status,
             label=pr.row.path_id,
         )
         for pr in results
@@ -187,6 +192,8 @@ def summary_sheet_css() -> str:
 .sheet.summary .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}
 .sheet.summary .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
 .sheet.summary .paths-map{display:block;width:100%;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px;break-inside:avoid}
+/* 成果物が欠けた経路のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。 */
+.sheet.summary td.c-missing{color:#e65100;font-size:8px;text-align:center}
 .sheet.summary .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}
 /* 連結レポートへの導線（画面のみ・印刷では消える＝.no-print） */
 .sheet.summary .all-link{margin:0 0 10px;font-size:11px}
@@ -210,9 +217,11 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     map_b64 は全パス俯瞰地図（render_summary_map_b64 の戻り）。None のときは
     地図を省き注記を表示する（per-path と同じベストエフォート）。
     """
-    ok_count  = sum(1 for pr in results if pr.result is not None and pr.result.status == "OK")
-    ng_count  = sum(1 for pr in results if pr.result is not None and pr.result.status != "OK")
-    err_count = sum(1 for pr in results if pr.result is None)
+    # 判定の出所は `PathResult.status` 1 か所（I-010 ③）＝ここで条件を書き直すと、
+    # 成果物だけ失敗した経路が台帳で「OK」に数え直される。
+    ok_count  = sum(1 for pr in results if pr.status == "OK")
+    ng_count  = sum(1 for pr in results if pr.status == "NG")
+    err_count = sum(1 for pr in results if pr.status == "ERROR")
     total     = len(results)
 
     rows_html = ""
@@ -239,13 +248,28 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             )
             continue
         r   = pr.result
-        cls = "ok" if r.status == "OK" else "ng"
+        # 判定は `pr.status`＝**成果物が欠けた経路はここで ERROR になる**（I-010）。
+        # 数値は計算できているのでセルには残す（値まで消すと、何が起きたのか
+        # 分からなくなる）。欠けているのはグラフ列のサムネイルなので、そこへ
+        # 「成果物なし」を出す＝**リンク切れの画像で気づかせない**。
+        cls = {"OK": "ok", "NG": "ng"}.get(pr.status, "err")
         # 連結文書では文書内アンカー（#p01）へ、単体では p01/report.html へ飛ばす。
         href = f"#{pid_safe}" if anchor_links else f"{pid_safe}/report.html"
+        if pr.artifact_error is None:
+            graph_cell = (
+                f"<td><a href='{href}'>"
+                f"<img src='{pid_safe}/profile.png' style='max-height:40px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"
+                f"</a></td>"
+            )
+        else:
+            graph_cell = (
+                f"<td class='c-missing'>"
+                f"{_html.escape(i18n.t('html_artifact_missing'))}</td>"
+            )
         rows_html += (
             f"<tr class='{cls}'>"
             f"<td>{pid_esc}</td>"
-            f"<td class='s-{cls}'>{r.status}</td>"
+            f"<td class='s-{cls}'>{pr.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{gain_tx_disp}</td>"
             f"<td>{gain_rx_disp}</td>"
@@ -263,9 +287,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
             f"<td class='c-note'>{note_esc}</td>"
-            f"<td><a href='{href}'>"
-            f"<img src='{pid_safe}/profile.png' style='max-height:40px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"
-            f"</a></td></tr>\n"
+            f"{graph_cell}</tr>\n"
         )
 
     # 案件メモ（サーベイ全体の自由注記）。非空時のみヘッダ直下（p1）に小ブロック表示。
@@ -393,7 +415,9 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
                 f"Freq: {freq_s} | RX: {pr.result.p_rx:.1f} dBm | "
                 f"Margin: {pr.result.actual_margin:+.1f} dB"
             )
-            style = "ok" if pr.result.status == "OK" else "ng"
+            # 線は実測どおり引ける（地形がある）が、**振り分けは判定に従う**＝
+            # 成果物が欠けた経路は Error フォルダへ入る（I-010・台帳と食い違わせない）。
+            style = {"OK": "ok", "NG": "ng"}.get(pr.status, "err")
             pm = (
                 f"    <Placemark><name>{pid_esc}</name>"
                 f"<description>{desc_esc}</description>"
@@ -402,10 +426,12 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
                 f"<coordinates>{coords}</coordinates>"
                 f"</LineString></Placemark>\n"
             )
-            if pr.result.status == "OK":
+            if style == "ok":
                 ok_xml += pm
-            else:
+            elif style == "ng":
                 ng_xml += pm
+            else:
+                err_xml += pm
         else:
             # エラーパス: 地形データなし → 地表面クランプにフォールバック
             coords   = (

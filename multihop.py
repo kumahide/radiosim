@@ -207,9 +207,9 @@ class MultiHopRun:
     def ok(self) -> bool:
         """**全ホップが成立して初めて回線が成立する**（鎖は最も弱い輪で切れる）。"""
         self._require_chain("ok")
-        return bool(self.hops) and all(
-            h.result is not None and h.result.status == "OK" for h in self.hops
-        )
+        # 判定は `batch.PathResult.status` が単一ソース（I-010 ③）＝計算に失敗した
+        # 区間だけでなく、**成果物が欠けた区間**もここで OK から外れる。
+        return bool(self.hops) and all(h.status == "OK" for h in self.hops)
 
     @property
     def worst(self) -> "batch.PathResult | None":

@@ -59,6 +59,8 @@ def route_sheet_css() -> str:
 .sheet.multihop tr.ok td.c-status{color:#2e7d32;font-weight:bold}
 .sheet.multihop tr.ng td.c-status{color:#c62828;font-weight:bold}
 .sheet.multihop tr.err td{color:#e65100}
+/* 成果物が欠けた区間のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。 */
+.sheet.multihop table.hops td.c-missing{color:#e65100;text-align:center}
 /* 全体判定を決めているホップ＝**一番苦しい区間**を目で拾えるようにする
    （次の一手はここに打つので、表の中で最初に見つかるべき行）。 */
 .sheet.multihop tr.worst td{background:#fff8e1}
@@ -120,11 +122,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     overall = run.overall_margin
     status_cls = "ok" if run.ok else "ng"
     overall_txt = f"{overall:+.1f} dB" if overall is not None else "—"
-    ok_count  = sum(1 for pr in run.hops
-                    if pr.result is not None and pr.result.status == "OK")
-    ng_count  = sum(1 for pr in run.hops
-                    if pr.result is not None and pr.result.status != "OK")
-    err_count = sum(1 for pr in run.hops if pr.result is None)
+    # 判定の出所は `batch.PathResult.status` の 1 か所（I-010 ③）。
+    ok_count  = sum(1 for pr in run.hops if pr.status == "OK")
+    ng_count  = sum(1 for pr in run.hops if pr.status == "NG")
+    err_count = sum(1 for pr in run.hops if pr.status == "ERROR")
 
     # 経路の並び。**鎖のときだけ「A → B → C」と読める**（星なら中心と枝の関係に
     # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
@@ -139,7 +140,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         classes = []
         r = pr.result
-        classes.append("err" if r is None else ("ok" if r.status == "OK" else "ng"))
+        classes.append({"OK": "ok", "NG": "ng"}.get(pr.status, "err"))
         if pr is worst:
             classes.append("worst")
         cls = " ".join(classes)
@@ -154,12 +155,20 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             continue
         freq_disp = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
         pid_safe  = pr.row.path_id           # validated: [A-Za-z0-9_-]+
+        # 成果物が欠けた区間は、判定を ERROR にしてサムネイルの代わりに字を出す
+        # （I-010・バッチ台帳と同じ扱い＝リンク切れの画像で気づかせない）。
+        if pr.artifact_error is None:
+            graph_cell = (f"<td><a href='{href}'>"
+                          f"<img src='{pid_safe}/profile.png' class='thumb'></a></td>")
+        else:
+            graph_cell = (f"<td class='c-missing'>"
+                          f"{_html.escape(i18n.t('html_artifact_missing'))}</td>")
         # 単位は列見出しが持つ（`unit=False`）＝バッチ台帳と同じ約束。数値だけを
         # 並べるほうが桁で読める（画面パネルの桁揃えと同じ理由）。
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
             f"<td class='c-name'><a href='{href}'>{wp_from} → {wp_to}</a></td>"
-            f"<td class='c-status'>{r.status}</td>"
+            f"<td class='c-status'>{pr.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
             f"<td>{r.p_rx:.1f}</td>"
@@ -173,8 +182,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
-            f"<td><a href='{href}'>"
-            f"<img src='{pid_safe}/profile.png' class='thumb'></a></td></tr>\n"
+            f"{graph_cell}</tr>\n"
         )
 
     worst_label = "—"

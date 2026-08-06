@@ -64,6 +64,8 @@ class _TableMixin:
         self._canvas.bind("<Configure>",      self._on_canvas_configure)
         self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
         self.bind("<Destroy>", self._on_destroy)
+        self.bind("<<ThemeChanged>>",
+                  lambda _e: self._refresh_verdict_colors(), add="+")
 
     def _on_frame_configure(self, _=None) -> None:
         self._canvas.configure(scrollregion=self._canvas.bbox("all"))
@@ -170,8 +172,18 @@ class _TableMixin:
         # 水平距離（読み取り専用・I-000）。座標の打ち間違いは距離が極端な値（0 や
         # 数千 km）になって現れるので、一覧に出しておくと実行前に気づける。
         # 表示は m 固定（units.format_distance＝I-014 で決めた表示単位の単一源泉）。
-        dist_lbl = ttk.Label(row_frame, anchor="e", width=self._WIDTHS[-3])
-        dist_lbl.grid(row=0, column=len(self._WIDTHS) - 3, padx=2, pady=1, sticky="w")
+        dist_lbl = ttk.Label(row_frame, anchor="e", width=self._WIDTHS[-4])
+        dist_lbl.grid(row=0, column=len(self._WIDTHS) - 4, padx=2, pady=1, sticky="w")
+
+        # 判定（読み取り専用・I-041）＝**実行結果はこの行に返る**。実行前・編集後は
+        # 空欄で、実行中に上から順に OK / NG / ERR が入る（進捗と結果が同じ場所に
+        # 出る＝カウンタは「合計だけ」で場所を持っていなかった）。
+        # ⚠️ **並行リストで持たない**＝判定ラベルの出所は行フレームのグリッド
+        # そのもの（`_verdict_label`）。行を作る／消す／並べ替える口は既に 3 つ
+        # あり、4 本目のリストを足すと**そのどれかで同期し忘れる**（実際、最初の
+        # 実装は行を手で消すテストで破棄済みウィジェットを掴んで落ちた）。
+        verdict_lbl = ttk.Label(row_frame, anchor="w", width=self._WIDTHS[-3])
+        verdict_lbl.grid(row=0, column=len(self._WIDTHS) - 3, padx=2, pady=1, sticky="w")
 
         # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示と水平距離を
         # 追従させる。地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。
@@ -184,6 +196,16 @@ class _TableMixin:
             entries[col].bind("<FocusOut>", _coords_committed, add="+")
             entries[col].bind("<Return>",   _coords_committed, add="+")
         self._update_row_distance(entries, dist_lbl)
+
+        # 行を触ったら判定を消す＝**その結果を生んだ入力でなくなった行に、結果を
+        # 残さない**（I-041 の規則は「結果はその結果を生んだ行に返す」なので、
+        # 行が別物になった瞬間に居場所が無くなる）。
+        def _clear_verdict(_e=None, lbl=verdict_lbl):
+            if lbl.cget("text"):
+                lbl.config(text="")
+
+        for e in entries:
+            e.bind("<Key>", _clear_verdict, add="+")
 
         def _dup(es=entries):
             self._dup_row(es)
@@ -296,6 +318,65 @@ class _TableMixin:
             self._row_frames.remove(frame)
         frame.destroy()
         self._notify_paths_changed()
+
+    # ----------------------------------------------------------
+    # 判定列（I-041＝結果はその結果を生んだ行に返す）
+    # ----------------------------------------------------------
+    def _verdict_label(self, frame: ttk.Frame) -> "ttk.Label | None":
+        """行フレームの判定ラベルを返す（**出所は行そのもの**）。
+
+        🔑 並行リストを持たないための引き方＝行が消えれば判定も消える。列の位置は
+        `_WIDTHS` の 1 か所で決まるので、列を足しても添字を直すのはそこだけ。
+        """
+        slaves = frame.grid_slaves(row=0, column=len(self._WIDTHS) - 3)
+        return slaves[0] if slaves and isinstance(slaves[0], ttk.Label) else None
+
+    def _refresh_verdict_colors(self) -> None:
+        """テーマ切替で判定色を貼り直す（`<<ThemeChanged>>` から）。
+
+        ⚠️ ラベルの前景色は生成時ではなく**判定を入れたときに**決まるので、
+        Treeview のタグと違い自動では追従しない（結果一覧を持つ窓は
+        `apply_verdict_tags` を貼り直している＝同じ手当てをここにも置く）。
+        表示中の字（OK / NG / ERR）から色のキーを引ける形にしてあるので、
+        行ごとの状態を別に持たなくてよい。
+        """
+        colors = theme.verdict_colors(self)
+        for frame in self._row_frames:
+            lbl = self._verdict_label(frame)
+            if lbl is None:
+                continue
+            text = str(lbl.cget("text"))
+            if text:
+                lbl.config(foreground=colors[theme.verdict_key(text)])
+
+    def _clear_verdicts(self) -> None:
+        """全行の判定を空にする（実行の開始時＝前回の結果を残さない）。"""
+        for frame in self._row_frames:
+            lbl = self._verdict_label(frame)
+            if lbl is not None:
+                lbl.config(text="")
+
+    def _set_row_verdict(self, path_id: str, status: str) -> None:
+        """`path_id` の行へ判定を返す（`"OK"` / `"NG"` / `"ERROR"`）。
+
+        **行番号ではなく ID で引く**＝空行は `_read_table_rows` が飛ばすので、
+        実行順の番号と表の行番号は一致しない。ID は `validate_rows` が大小を
+        区別せず一意に縛っているので、これで 1 行に定まる（実行中に行が消えても
+        「見つからない＝返さない」で済み、別の行へ誤って返さない）。
+
+        色は `theme.verdict_colors` が出所（画面ごとに色を書かない・I-005/B-008）。
+        表記は進捗帯のカウンタ（`✓ n OK` / `⚠ n ERR`）と揃える。
+        """
+        key = path_id.strip().casefold()
+        for entries, frame in zip(self._row_entries, self._row_frames):
+            if entries[0].get().strip().casefold() != key:
+                continue
+            lbl = self._verdict_label(frame)
+            if lbl is None:
+                return
+            lbl.config(text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
+                       foreground=theme.verdict_colors(lbl)[theme.verdict_key(status)])
+            return
 
     def _dup_row(self, entries: list[tk.Entry]) -> None:
         """選択行の値をコピーして末尾に新しい行を追加する。ID は _copy サフィックスを付与。"""

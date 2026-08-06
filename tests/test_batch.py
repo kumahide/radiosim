@@ -7,7 +7,9 @@ batch.py のユニットテスト。
 ネットワーク無しで同期検証）
 """
 
+import csv
 import gc
+import re
 import threading
 import time
 from typing import Any
@@ -1080,6 +1082,56 @@ class TestRunBatch:
         assert [pr.ok for pr in results] == [True, False, True]
         assert isinstance(results[1].error, RuntimeError)
         assert os.path.exists(os.path.join(batch_dir, "summary.csv"))
+
+    def test_artifact_failure_is_counted_as_an_error_not_a_success(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """**成果物の生成に失敗した経路を「成功」に紛れさせない**（I-010）。
+
+        🔴 2026-08-03 に実機で起きた形（B-037）＝バッチが `⚠ 0 ERR` で完走し、
+        `profile.png` / `report.html` / `path.kml` だけが無い。計算が通った時点で
+        OK に数えており、成果物の失敗を数える口が**どこにも無かった**。
+
+        ここで見るのは 4 か所すべて＝結果オブジェクト・台帳 HTML のカード・
+        台帳 CSV の status 列・KML の振り分け。**1 か所だけ直しても他が「成功」と
+        言い続ける**ので、判定の出所が 1 つであること自体をこのテストが縛る。
+        """
+        def _boom(*_a, **_kw):
+            raise RuntimeError("仕組んだ描画失敗")
+
+        # **描画段だけ**を倒す（計算・report.txt はここまで正常に通る）。
+        monkeypatch.setattr(report_path, "save_profile_png", _boom)
+
+        ev = self._run([_row(), _row(path_id="path02", lat_tx=35.10, lon_tx=133.10)],
+                       tmp_path, default_params_dict, monkeypatch)
+        assert ev["error"] == [], "経路単位の成果物失敗でバッチごと止めない"
+        (batch_dir, results), = ev["batch"]
+
+        for pr in results:
+            assert pr.result is not None, "計算まで倒れている（この土俵では倒さない）"
+            assert isinstance(pr.artifact_error, RuntimeError), \
+                "成果物の失敗が PathResult に残っていない"
+            assert pr.status == "ERROR", "成果物が欠けたのに判定が ERROR でない"
+            assert not pr.ok
+
+        # 台帳 HTML＝ERR のカードに数が立つ（画面のカウンタもここと同じ出所）。
+        summary = open(os.path.join(batch_dir, "summary.html"), encoding="utf-8").read()
+        cards = re.findall(r"<div class=\"card (\w+)\"><div class=\"lbl\">"
+                           r"[^<]*</div><div class=\"val\">(\d+)</div>", summary)
+        counts = {cls: int(n) for cls, n in cards}
+        assert counts.get("err") == 2, f"台帳の ERR が 2 でない: {counts}"
+        assert counts.get("ok") == 0, f"成果物が欠けた経路を OK に数えている: {counts}"
+
+        # 台帳 CSV＝status 列（**数値は残す**＝計算は通っているので消す理由が無い）
+        with open(os.path.join(batch_dir, "summary.csv"), encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        assert [r["status"] for r in rows] == ["ERROR", "ERROR"]
+        assert all(r["rx_dbm"] for r in rows), "計算できた数値まで消している"
+        assert all("仕組んだ描画失敗" in r["error"] for r in rows), \
+            "何が欠けたのかが CSV から読めない"
+
+        # KML＝Error フォルダへ入る（台帳と食い違わせない）
+        kml = open(os.path.join(batch_dir, "summary.kml"), encoding="utf-8").read()
+        assert kml.count("#err") == 2, "成果物が欠けた経路が KML で OK/NG のまま"
 
     def test_artifacts_are_generated_off_the_main_thread(
             self, tmp_path, default_params_dict, monkeypatch):

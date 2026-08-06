@@ -249,6 +249,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_aim_rx":          "RX aim (AZ/EL)",
         "html_map_title":       "Path Map",
         "html_map_unavailable": "Map unavailable (tiles could not be fetched).",
+        # 成果物（PNG / report.html / KML）の生成に失敗した経路の印（I-010）。
+        "html_artifact_missing": "no output",
         "html_radio_settings":  "Radio Settings",
         "html_frequency":       "Frequency",
         "html_tx_power":        "TX Power",
@@ -724,6 +726,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_aim_rx":          "RX指向 (AZ/EL)",
         "html_map_title":       "経路地図",
         "html_map_unavailable": "地図は取得できませんでした（タイル未取得）。",
+        # 成果物（PNG / report.html / KML）の生成に失敗した経路の印（I-010）。
+        "html_artifact_missing": "成果物なし",
         "html_radio_settings":  "無線設定",
         "html_frequency":       "周波数",
         "html_tx_power":        "送信電力",

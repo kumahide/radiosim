@@ -31,10 +31,12 @@ from views.progress import ProgressPump
 class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
     """バッチ実行用のパス入力ウィンドウ。ランチャーから生成される。"""
 
-    # 末尾から3列目＝水平距離（読み取り専用ラベル）。_add_row の Entry 生成は
-    # zip(_WIDTHS[1:-2], defaults) で defaults 側（9列）に切られるため、この
-    # 列に Entry は作られない。
-    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 2, 2]
+    # 末尾から4列目＝水平距離、3列目＝判定（どちらも読み取り専用ラベル）。
+    # _add_row の Entry 生成は zip(_WIDTHS[1:-2], defaults) で defaults 側（9列）に
+    # 切られるため、この 2 列に Entry は作られない。
+    # ⚠️ 判定列は**計算で出る列**＝水平距離（I-000）と同じ性格で、入力ではない。
+    # だから CSV エクスポート（入力の契約）には出ない（I-041）。
+    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 6, 2, 2]
 
     # ウィンドウ既定サイズ。**幅・高さとも下限**（実寸は _fit_width_to_content が中身に合わせる）。
     _BASE_W = 1080
@@ -60,7 +62,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             "", i18n.t("col_id"), i18n.t("col_start"), i18n.t("col_end"),
             i18n.t("col_h_tx"), i18n.t("col_h_rx"), i18n.t("col_freq"),
             i18n.t("col_gain_tx"), i18n.t("col_gain_rx"), i18n.t("col_note"),
-            i18n.t("col_dist"), "", "",
+            i18n.t("col_dist"), i18n.t("html_status"), "", "",
         ]
 
     def __init__(

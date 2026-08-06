@@ -62,13 +62,17 @@ def _fake_fetch(params, on_progress, on_complete, on_error):
     on_complete(raw)
 
 
-def _run(path, base_params, tmp_path, monkeypatch, **kwargs):
-    """run_multihop を同期的に回して MultiHopRun を返す。"""
+def _run(path, base_params, tmp_path, monkeypatch, stub_visuals=True, **kwargs):
+    """run_multihop を同期的に回して MultiHopRun を返す。
+
+    `stub_visuals=False` で**本物の成果物生成を通す**（描画の失敗が結果に出るか
+    を見るテスト＝I-010 はこちらを使う。既定は塞ぐ＝別テストの担当）。
+    """
     monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
     monkeypatch.setattr(sim, "_terrain_cache", {})
     monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
-    # レポート図の生成は本題ではないので塞ぐ（別テストの担当）。
-    monkeypatch.setattr("report_path.save_path_visuals", lambda *a, **k: None)
+    if stub_visuals:
+        monkeypatch.setattr("report_path.save_path_visuals", lambda *a, **k: None)
     monkeypatch.setattr(report_summary, "render_summary_map_b64", lambda r: None)
 
     out: list = []
@@ -530,6 +534,54 @@ class TestRouteSheet:
         # 連結文書の中では出さない（自分自身への案内になる）。
         assert "report_all.html" not in report_multihop.route_sheet_html(
             run, anchor_links=True)
+
+    def test_hop_with_missing_artifacts_is_not_reported_as_ok(
+            self, base, tmp_path, monkeypatch):
+        """**成果物が欠けた区間を「成功」に紛れさせない**（I-010 のクラス点検）。
+
+        中継は実行層をバッチから流用している（`batch._process_one`）ので、
+        バッチだけ直しても中継が同じ隠し方をしていたら意味が無い＝**同じ穴が
+        2 か所ある**という形（[[feedback-user-examples-are-classes]]）。
+
+        全体判定まで落ちるのは意図どおり＝計算に失敗した区間が既に全体を NG に
+        しており、成果物の欠落も「その区間は納品できていない」という同じクラス。
+        """
+        import report_multihop
+
+        def _boom(*_a, **_kw):
+            raise RuntimeError("仕組んだ描画失敗")
+
+        i18n.set_lang("ja")
+        # ⚠️ **地形の尾根（60m）を越える高さにする**＝既定の 30m では区間が元から
+        # NG で、全体判定が最初から False になる。それでは「成果物の欠落が全体を
+        # 落とした」ことを一切確かめられない（ゲートの壊れ方③＝間違ったものを
+        # 要求している。実際、最初の版はこの土俵で書いてしまい、`MultiHopRun.ok`
+        # を旧実装へ戻す変異を素通りさせた）。
+        tall = mh.MultiHopPath(
+            path_id   = "route1",
+            waypoints = [_wp(f"P{i}", 34.54 + i * 0.01, 132.41 + i * 0.01, h=150.0)
+                         for i in range(3)],
+            hop_rf    = [mh.HopRF() for _ in range(2)],
+        )
+        # positive control＝**同じ土俵で成果物が作れれば OK になる**こと。
+        # これが無いと、他の理由（計算が落ちた等）で ERROR でも通ってしまう。
+        healthy = _run(tall, base, tmp_path, monkeypatch, stub_visuals=False)
+        assert all(pr.status == "OK" for pr in healthy.hops) and healthy.ok, \
+            "成果物が作れているのに OK にならない（この土俵が壊れている）"
+
+        monkeypatch.setattr("report_path.save_profile_png", _boom)
+        run = _run(tall, base, tmp_path, monkeypatch, stub_visuals=False)
+
+        assert all(pr.result is not None for pr in run.hops), \
+            "計算まで倒れている（この土俵では倒さない）"
+        assert all(pr.status == "ERROR" for pr in run.hops), \
+            "成果物が欠けたのに区間の判定が ERROR でない"
+        assert not run.ok, "区間が納品できていないのに全体判定が OK"
+
+        html = report_multihop.route_sheet_html(run)
+        assert "profile.png" not in html, \
+            "作られていない断面図へリンクしている（リンク切れの画像で気づかせない）"
+        assert i18n.t("html_artifact_missing") in html
 
     def test_css_is_scoped_to_the_sheet(self):
         """シート固有 CSS が `.sheet.multihop` へスコープされていること。

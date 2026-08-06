@@ -69,10 +69,37 @@ class PathResult:
     # 生成済みの A4 シート断片（report_path が詰める）。バッチ完了時に
     # report_all.html へ連結するための保持で、失敗したパスは空のまま。
     sheet_html: str                         = ""
+    # 成果物（PNG / report.html / KML）の生成に失敗したときの例外（I-010）。
+    # **計算の失敗（`error`）とは別物**＝計算は通ったのに納品物だけが欠けた状態で、
+    # 2026-08-03 に実機で現実になった（B-037＝`⚠ 0 ERR` で完走し詳細レポートだけ
+    # が無い）。`report_path.save_path_visuals` がここへ入れる。
+    artifact_error: Exception        | None = None
+
+    @property
+    def status(self) -> str:
+        """この経路の判定＝`"OK"` / `"NG"` / `"ERROR"`。
+
+        🔑 **判定を作る場所はここだけ**（I-010 ③）。画面・台帳・CSV・KML・地図が
+        それぞれ `pr.result is not None and pr.result.status == "OK"` を書いていた
+        ころは、**成果物の失敗を数える口が 1 つも無い**のに全部が「成功」と読めた。
+        条件を足すなら 1 か所で足りるように、判定はここから引く。
+
+        **成果物の失敗も ERROR に含める**＝計算が通っていても納品物が欠けていれば
+        「成功」ではない（バッチの出口は確定成果物ファイル）。数値そのものは
+        `result` に残るので、台帳は値を出したままエラー行として扱える。
+        """
+        if self.result is None or self.artifact_error is not None:
+            return "ERROR"
+        return self.result.status
 
     @property
     def ok(self) -> bool:
-        return self.result is not None
+        """**実行が成功したか**（＝判定 OK/NG ではない。NG でも実行は成功）。
+
+        ⚠️ `status` と混同しないこと＝あちらは回線の判定、こちらは「この経路の
+        処理が最後まで通ったか」。成果物が欠けた経路はここでも成功ではない。
+        """
+        return self.result is not None and self.artifact_error is None
 
 
 # ============================================================
@@ -407,9 +434,13 @@ def _process_one(
         # phase 境界ログ。B-006 の診断では「バッチで最も時間を食う区間」に
         # ログ行が1つも無く、所要時間が最後まで測れなかった（→ 開発環境 C-b3②）。
         t0 = time.perf_counter()
+        # 戻り値は `pr.artifact_error` と同じもの（save_path_visuals が pr へ
+        # 記録する）＝**呼び出し側が受け取り忘れても失敗が消えない**形にしてある
+        # （I-010・受け取り忘れは「静かに成功」に戻る唯一の道だった）。
         report_path.save_path_visuals(pr, coord_format, project_name)
-        logger.info("Path '%s' render complete in %.2fs",
-                    row.path_id, time.perf_counter() - t0)
+        logger.info("Path '%s' render complete in %.2fs (%s)",
+                    row.path_id, time.perf_counter() - t0,
+                    "ok" if pr.artifact_error is None else "artifacts failed")
 
         return pr
 

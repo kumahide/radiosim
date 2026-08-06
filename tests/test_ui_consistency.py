@@ -151,17 +151,133 @@ def test_verdict_colors_come_from_theme_in_every_window(app_windows):
     ⚠️ 条件探索だけが色分けされ、中継経路は同色だった（レポート側は両方とも
     色分けしている＝画面だけが落ちていた）。色を窓ごとに足すと出所が増えるので、
     出所を 1 つにしたうえで「使っていること」をここで縛る。
+
+    **結果の返し先が窓ごとに違っても、色の出所は 1 つ**（2.7 スライス B）＝
+    条件探索は結果一覧（Treeview のタグ）、バッチと中継は**入力表の行**（ラベルの
+    前景色）。タグとラベルで機構が違うぶん、片方だけ theme から外れやすい。
     """
     from views import theme
     _, wins = app_windows
     expected = theme.verdict_colors(wins["scenario"])
-    for name in ("scenario", "multihop"):
-        tree = wins[name]._tree
-        for key in ("ok", "ng"):
-            got = str(tree.tag_configure(key, "foreground"))
-            assert got == expected[key], (
-                f"{name}: 判定色 {key} が theme と違う（{got!r} != {expected[key]!r}）"
-            )
+
+    # ① 結果一覧を持つ窓＝タグの配色
+    tree = wins["scenario"]._tree
+    for key in ("ok", "ng"):
+        got = str(tree.tag_configure(key, "foreground"))
+        assert got == expected[key], (
+            f"scenario: 判定色 {key} が theme と違う（{got!r} != {expected[key]!r}）"
+        )
+
+    # ② 表へ返す窓＝行に実際の判定を入れて、その前景色を測る（3 値とも）
+    batch_win = wins["batch"]
+    for status, key in (("OK", "ok"), ("NG", "ng"), ("ERROR", "err")):
+        pid = batch_win._row_entries[0][0].get()
+        batch_win._set_row_verdict(pid, status)
+        lbl = batch_win._verdict_label(batch_win._row_frames[0])
+        got = str(lbl.cget("foreground"))
+        assert got == expected[key], (
+            f"batch: 判定色 {key} が theme と違う（{got!r} != {expected[key]!r}）"
+        )
+    batch_win._clear_verdicts()
+
+    mh = wins["multihop"]
+    for status, key in (("OK", "ok"), ("NG", "ng"), ("ERROR", "err")):
+        mh._show_hop_result(1, _fake_path_result("h1", status))
+        got = str(mh._hop_result_labels[0]["status"].cget("foreground"))
+        assert got == expected[key], (
+            f"multihop: 判定色 {key} が theme と違う（{got!r} != {expected[key]!r}）"
+        )
+    mh._clear_hop_results()
+
+
+# ============================================================
+# 2c. 結果の居場所（2.7 スライス B・I-041）
+# ============================================================
+class _FakeResult:
+    """`models.LinkBudgetResult` の代役（画面が読む 3 つの属性だけ持つ）。"""
+
+    def __init__(self, status: str) -> None:
+        self.status = status
+        self.p_rx = -70.5
+        self.actual_margin = 12.25
+
+
+def _fake_path_result(path_id: str, status: str):
+    """判定が `status` になる `batch.PathResult` を作る。
+
+    `"ERROR"` は **2 通りの作り方**がある＝①計算そのものが落ちた ②計算は通ったが
+    成果物が作れなかった（I-010）。ここでは後者で作る＝*計算が通っていても
+    ERROR になり得る*ことを、画面のゲート側でも前提にしておくため。
+    """
+    import batch
+    row = batch.PathRow(path_id=path_id, lat_tx=34.5, lon_tx=132.4,
+                        lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)
+    if status == "ERROR":
+        return batch.PathResult(row=row, result=_FakeResult("OK"),
+                                artifact_error=RuntimeError("仕組んだ描画失敗"))
+    return batch.PathResult(row=row, result=_FakeResult(status))
+
+
+def test_result_comes_back_to_the_row_that_produced_it(app_windows):
+    """**1 行 = 1 結果が成り立つ入力表を持つ窓は、その行へ結果を返す**（I-041）。
+
+    バッチは経路の行へ、中継は**区間**の行へ返る（地点の行ではない＝地点 N に対し
+    結果は N−1 で 1:1 が成り立たない）。カウンタや一覧は「合計」や「別の場所」しか
+    持てず、どの入力がその結果を生んだのかを目で取り直す必要があった。
+    """
+    _, wins = app_windows
+
+    # バッチ＝**ID で引く**（空行は実行対象から落ちるので、行番号は当てにならない）
+    batch_win = wins["batch"]
+    pid = batch_win._row_entries[0][0].get()
+    batch_win._on_path_done(1, 1, _fake_path_result(pid, "NG"))
+    lbl = batch_win._verdict_label(batch_win._row_frames[0])
+    assert str(lbl.cget("text")) == "NG", "バッチ: 実行結果が入力表の行に返っていない"
+    batch_win._clear_verdicts()
+
+    # 中継＝区間表の行（既定は TX → RX の 1 区間）
+    mh = wins["multihop"]
+    mh._dispatch_event(("hop", (1, 1, _fake_path_result("route1_h1", "OK"))))
+    cells = mh._hop_result_labels[0]
+    assert str(cells["status"].cget("text")) == "OK", \
+        "中継: 実行結果が区間表の行に返っていない"
+    assert str(cells["rx"].cget("text")) and str(cells["margin"].cget("text")), \
+        "中継: 受信レベル / マージンが区間の行に出ていない"
+    mh._clear_hop_results()
+
+
+def test_only_windows_without_a_one_to_one_table_keep_a_result_list(app_windows):
+    """結果一覧（Treeview）を持ってよいのは**1 行 = 1 結果が成り立たない窓だけ**。
+
+    規則の裏面まで縛る＝条件探索は 1 条件から結果が N 件出るので一覧を持つ。
+    バッチと中継は入力表がそのまま結果の器なので、一覧を足すと**同じ数字が窓の
+    中に 2 か所**できる（中継は 2.7 スライス B まで実際にそうなっていた）。
+
+    ⚠️ 「`_tree` 属性が無いこと」では縛らない＝名前を変えれば通る。窓の配下に
+    Treeview のウィジェットが**実在しないこと**で見る。
+    """
+    from tkinter import ttk
+    _, wins = app_windows
+
+    def _trees(widget) -> list:
+        import tkinter as tk
+        found = []
+        for child in widget.winfo_children():
+            if isinstance(child, tk.Toplevel):
+                continue                      # 別の窓へは降りない
+            if isinstance(child, ttk.Treeview):
+                found.append(str(child))
+            found.extend(_trees(child))
+        return found
+
+    for name in ("batch", "multihop"):
+        assert not _trees(wins[name]), (
+            f"{name}: 入力表が 1 行 = 1 結果なのに結果一覧がある"
+            "（結果はその結果を生んだ行へ返す＝I-041）"
+        )
+    assert _trees(wins["scenario"]), (
+        "scenario: 1 条件から結果が N 件出る窓は結果一覧を持つ（規則の裏面）"
+    )
 
 
 # ============================================================
