@@ -16,7 +16,6 @@ from tkinter import filedialog, ttk
 from typing import Callable
 
 import batch
-import config
 import coords
 import i18n
 import simulation as sim
@@ -74,6 +73,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         on_close:        "Callable[[], None] | None" = None,
         on_paths_changed: "Callable[[], None] | None" = None,
         initial_rows:    "list | None" = None,
+        coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
@@ -100,8 +100,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._suspend_notify   = False
 
         self._base_params  = base_params
-        # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）
-        self._coord_format = config.load_config().get("coord_format", "dd")
+        # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）。
+        # 値は**開いた時点のスナップショット**をランチャーから受け取る＝窓が
+        # `config.load_config()` を直に読まない（I-055 ②・2.7 スライス G2）。
+        self._coord_format = coord_format
         self._row_entries: list[list[tk.Entry]] = []
         self._row_frames:  list[ttk.Frame]      = []
         self._running      = False

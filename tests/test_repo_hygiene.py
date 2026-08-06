@@ -27,6 +27,7 @@ issue_evidence/（実運用のスクリーンショット）のコピーが**公
 
 from __future__ import annotations
 
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -308,6 +309,101 @@ def test_line_limit_exemptions_still_exist():
     """除外リストに、実在しないファイルが残っていないこと（掃除漏れ検出）。"""
     missing = [name for name in _LINE_LIMIT_EXEMPT if not (ROOT / name).exists()]
     assert not missing, f"除外リストに実在しないファイルがある: {missing}"
+
+
+# ============================================================
+# アプリ設定の出所は 1 つ（2.7 スライス G2＝I-055 ②）
+# ============================================================
+# 🔴 背景: 窓が `config.load_config()` を**直に**呼ぶと、①テストの緑が開発機の
+# 実設定に左右され（B-034 が長期間生き延びた機構そのもの）②同じ設定を窓ごとに
+# 違う時点で読むので、画面と保存物で表記が食い違い得る。
+# ⇒ **app 設定はランチャーが読み、開く時点のスナップショットを窓へ渡す**
+#   （[[project-radiosim]] の凍結方式を設定へ広げただけ＝新しい仕掛けではない）。
+#
+# ⚠️ 窓の名前を列挙して禁じない＝次に増える窓が別名だった瞬間に穴が開く
+# （[[feedback-promote-recurring-checks]] 実証10）。**読んでよい側を挙げる。**
+_CONFIG_READ_ALLOWED = {
+    "config.py":          "定義そのもの",
+    "main.py":            "起動時の読み込み（アプリの入口）",
+    "views/launcher.py":  "凍結の出所＝ランチャーが読んで子窓へ渡す",
+}
+
+# `config.load_config()` と、`from config import load_config`（別名で持ち込んで
+# から呼ぶ経路）の両方を捕まえる。
+_CONFIG_READ_RE = re.compile(
+    r"\bload_config\s*\(|from\s+config\s+import\s+[^\n]*\bload_config\b"
+)
+
+
+def direct_config_reads(name: str, text: str) -> list[str]:
+    """モジュール 1 本の中の「app 設定を直に読んでいる」行（許可された側は空）。"""
+    if name in _CONFIG_READ_ALLOWED:
+        return []
+    found = []
+    for i, line in enumerate(text.splitlines(), 1):
+        code = line.split("#", 1)[0]          # コメント内の言及は対象外
+        if _CONFIG_READ_RE.search(code):
+            found.append(f"{name}:{i}")
+    return found
+
+
+def _app_modules_with_text():
+    for path in _python_modules():
+        rel = path.relative_to(ROOT).as_posix()
+        yield rel, path.read_text(encoding="utf-8")
+
+
+class TestConfigHasOneSource:
+    def test_窓が_app_設定を直に読まない(self):
+        """本番の不変条件。読んでよいのは入口とランチャーだけ。"""
+        found = [v for rel, text in _app_modules_with_text()
+                 for v in direct_config_reads(rel, text)]
+        assert not found, (
+            "app 設定を直に読んでいる箇所があります: " + ", ".join(found) + "\n"
+            "設定はランチャーが読み、窓を開く時点のスナップショットを引数で渡して"
+            "ください（凍結方式・I-055 ②）。直に読むと、テストの結果が開発機の"
+            "設定に左右されます。"
+        )
+
+    def test_壊れ方1_一度も落ちない_ことがない(self):
+        """①直読みを与えたら必ず検出すること。"""
+        text = '        self._coord_format = config.load_config().get("coord_format", "dd")\n'
+        assert direct_config_reads("views/batch_builder.py", text)
+
+    @pytest.mark.parametrize("code", [
+        "cfg = config.load_config()",
+        "from config import load_config",     # 別名で持ち込む経路
+        "fmt = load_config().get('coord_format')",
+        "conf = config.load_config(path)",
+    ])
+    def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
+        assert direct_config_reads("views/新しい窓.py", code + "\n")
+
+    def test_壊れ方2_毎回鳴る_ことがない(self):
+        """②正しい書き方では沈黙すること。"""
+        正当 = (
+            "self._coord_format = coord_format\n"
+            "c = self._config_provider()\n"
+            "params = sim.SimParams(config.DEFAULT_CONFIG)\n"
+            "config.save_app(self.config)\n"
+            "# 窓は config.load_config() を直に読まない（説明のコメント）\n"
+        )
+        assert direct_config_reads("views/graph.py", 正当) == []
+
+    def test_壊れ方3_間違ったものを要求していない(self):
+        """③禁じているのは「窓が直に読むこと」であって config の利用ではない。
+
+        許可された側（ランチャー・入口）は同じ行でも通ること、逆に窓の名前を
+        知らなくても検出できることの両方を示す。
+        """
+        code = "cfg = config.load_config()\n"
+        assert direct_config_reads("views/launcher.py", code) == []
+        assert direct_config_reads("main.py", code) == []
+        assert direct_config_reads("views/まだ存在しない窓.py", code)
+
+    def test_許可リストが実在する(self):
+        missing = [n for n in _CONFIG_READ_ALLOWED if not (ROOT / n).exists()]
+        assert not missing, f"許可リストに実在しないファイルがある: {missing}"
 
 
 # --- pre-commit フックからの呼び出し口 ---------------------------------------

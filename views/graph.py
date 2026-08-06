@@ -58,7 +58,6 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-import config
 import i18n
 import models
 import mpl_fonts
@@ -83,6 +82,7 @@ def show_graph(
     project_name: str = "",
     memo: str = "",
     on_close: "Callable[[], None] | None" = None,
+    coord_format: str = "dd",
 ) -> "GraphWindow":
     """地形断面ウィンドウを開く（**ブロックしない**）。
 
@@ -93,6 +93,7 @@ def show_graph(
         project_name: レポートの案件名（ランチャーから踏襲・空可）
         memo:         レポートの自由メモ（ランチャーから踏襲・空可）
         on_close:     窓が閉じられたときに呼ばれる（呼び出し元の参照を外す用）。
+        coord_format: 人が読むレポートの座標表記（ランチャーが凍結して渡す）。
     """
     mpl_fonts.apply_japanese_font()
     terrain = models.calculate_terrain_profile(
@@ -102,7 +103,8 @@ def show_graph(
         lat_rx    = params.lat_rx,
         lon_rx    = params.lon_rx,
     )
-    return GraphWindow(parent, params, terrain, project_name, memo, on_close)
+    return GraphWindow(parent, params, terrain, project_name, memo, on_close,
+                       coord_format)
 
 
 class GraphWindow(tk.Toplevel):
@@ -125,6 +127,7 @@ class GraphWindow(tk.Toplevel):
         project_name: str = "",
         memo: str = "",
         on_close: "Callable[[], None] | None" = None,
+        coord_format: str = "dd",
     ) -> None:
         super().__init__(parent)
         # タイトルはソフト名を名乗らず**周波数だけ**（I-034）。レポート図が既に
@@ -135,6 +138,10 @@ class GraphWindow(tk.Toplevel):
         self._terrain = terrain
         self._report_project = project_name
         self._report_memo    = memo
+        # 座標表記は**開いた時点のアプリ設定**（ランチャーが凍結して渡す）。
+        # 窓が自分で `config.load_config()` を読まないのは、設定の出所を 1 つに保ち、
+        # テストの緑が開発機の設定に左右されないようにするため（I-055 ②・スライス G2）。
+        self._coord_format   = coord_format
         self._on_close_cb = on_close
         self._last_result: "models.LinkBudgetResult | None" = None
         self._pending: "str | None" = None
@@ -505,8 +512,9 @@ class GraphWindow(tk.Toplevel):
             self._params.rain_rate = self._scales["rain"].get()
             h_tx = self._scales["h_tx"].get()
             h_rx = self._scales["h_rx"].get()
-            # 座標表記は app 設定に従う（人が読む report.txt のみ。データは DD 固定）
-            coord_format = config.load_config().get("coord_format", "dd")
+            # 座標表記は app 設定に従う（人が読む report.txt のみ。データは DD 固定）。
+            # 値は窓を開いた時点で凍結済み（ランチャーから受け取る）。
+            coord_format = self._coord_format
             save_dir = sim.save_package(
                 terrain = self._terrain,
                 result  = self._last_result,

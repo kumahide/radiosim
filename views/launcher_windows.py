@@ -198,6 +198,9 @@ class _ChildWindowsMixin:
             on_close=self._on_batch_closed,
             on_paths_changed=self._notify_map_paths_changed,
             initial_rows=self._project_doc().batch_rows,
+            # app 設定（座標表記）も凍結して渡す＝窓に `config.load_config()` を
+            # 読ませない（I-055 ②・2.7 スライス G2）。出所はランチャー 1 つ。
+            coord_format=self._coord_fmt_var.get(),
         )
         return self._batch_win
 

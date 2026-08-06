@@ -292,3 +292,63 @@ def _collect_bold(widget, name: str, out: list) -> None:
 #    🔑 **列挙で塞いだ穴は、名前 1 つで開く**——「ホップ」だけを名指しで禁じても、
 #    次に別の語が 2 通りに分かれた瞬間に同じ欠陥が戻る。語の統一は*クラス*
 #    （用語集の表）で縛るのが正しい形なので、1 語ぶんのゲートは残さない。
+
+
+# ============================================================
+# 5. app 設定は「開いた時点」で凍結される（2.7 スライス G2＝I-055 ②）
+# ============================================================
+# 窓は `config.load_config()` を直に読まず、**ランチャーが読んだ値を引数で
+# 受け取る**（[[project-radiosim]] の凍結方式を設定へ広げただけ）。
+# ⚠️ 静的ゲート（tests/test_repo_hygiene.py::TestConfigHasOneSource）は「直に
+# 読んでいない」ことしか言えない。**渡した値が実際に効いている**ことは、窓を
+# 起こして確かめないと分からない（＝渡した引数を無視する実装でも静的には緑）。
+def test_batch_window_uses_the_injected_coord_format():
+    """バッチ窓が、渡された座標表記で行を組むこと（DMS を渡せば DMS で入る）。"""
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params(), coord_format="dms")
+        win.append_path((35.4258, 139.2131), (35.4175, 139.2137))
+        # 窓は既定で 1 行を持って開くので、見るのは**追加した行**（末尾）。
+        texts = [e.get() for e in win._row_entries[-1]]
+        assert any("°" in t for t in texts), (
+            f"渡した coord_format='dms' が行に効いていない: {texts}"
+        )
+    finally:
+        root.destroy()
+
+
+def test_graph_window_saves_with_the_coord_format_it_was_opened_with(monkeypatch,
+                                                                    tmp_path):
+    """グラフ窓の保存が、**開いた時点**の座標表記を使うこと。
+
+    ⚠️ 以前はここで毎回 `config.load_config()` を読み直していた＝保存の瞬間の
+    設定ファイルの中身に依存し、テストの結果が開発機の設定で変わった（I-055）。
+    """
+    pytest.importorskip("tkinter")
+    import numpy as np
+
+    from views import graph as g
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        params = _params()
+        win = g.show_graph(root, params, np.zeros(params.num), coord_format="dms")
+        seen: dict = {}
+
+        def _spy_save_package(**kw):
+            seen["coord_format"] = kw.get("coord_format")
+            return str(tmp_path)
+
+        monkeypatch.setattr(g.sim, "save_package", _spy_save_package)
+        monkeypatch.setattr(g.report_path, "save_profile_png", lambda *a, **k: None)
+        monkeypatch.setattr(g.report_path, "save_path_kml", lambda *a, **k: None)
+        monkeypatch.setattr(g.dialogs, "choose", lambda *a, **k: None)
+        win._on_save()
+        assert seen.get("coord_format") == "dms", (
+            f"保存が開いた時点の表記を使っていない: {seen}"
+        )
+    finally:
+        root.destroy()

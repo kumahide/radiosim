@@ -600,6 +600,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._graph_win = show_graph(
             self.root, params, raw_elevs, meta["project_name"], meta["memo"],
             on_close = self._on_graph_closed,
+            # app 設定（座標表記）は開く時点で凍結して渡す＝窓が保存のたびに
+            # `config.load_config()` を読み直さない（I-055 ②・2.7 スライス G2）。
+            coord_format = self._coord_fmt_var.get(),
         )
         # 窓が出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
         # したため、表示直前に呼ばれる `on_ready` フックが要った（戻り値を待つと
