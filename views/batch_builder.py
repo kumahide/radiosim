@@ -335,11 +335,19 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         prog_frame = ttk.Frame(self)
         prog_frame.pack(fill="x", padx=8, pady=(0, 8))
 
-        # 上段: 現在パス名 (左) + OK/NG/ERR カウント (右)
+        # 上段: 現在パス名 (左) + OK/NG/ERR カウント + N/M (P%)（右端）
         row1 = ttk.Frame(prog_frame)
         row1.pack(fill="x")
         self._prog_label = ttk.Label(row1, text="", anchor="w")
         self._prog_label.pack(side="left", fill="x", expand=True)
+        # 件数は**ステータスの行**に置く（I-047 の実機確認で発覚）＝ここを帯の下段に
+        # 置いていたころは、空でも 15 文字ぶんの箱を占めるので**バーだけが 1 窓だけ
+        # 短く**、実行ボタンに届いていなかった。下段はどの窓も「バーと実行だけ」。
+        # ⚠️ `width=15` は残す＝進捗の文言（`0 / 12  (0%)`）が伸び縮みするたびに
+        # 左隣の OK/NG/ERR が横へ動くのを止めるため（幅を固定するのは*動かさない*
+        # ためであって、大きさで強調するためではない＝I-046 とは目的が違う）。
+        self._prog_count_label = ttk.Label(row1, text="", width=15, anchor="e")
+        self._prog_count_label.pack(side="right", padx=(6, 0))
         # OK/NG/ERR は個別の色分けをやめ、他の ttk.Label と同一スタイルへ統一する
         # （I-005・従来の tk.Label＋前景色ハードコードはダークテーマに追従しない）。
         # ⛔ 太字は使わない（画面の強調は配置と余白で作る＝theme.py の決定）。
@@ -350,12 +358,13 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._err_label = ttk.Label(row1, text="")
         self._err_label.pack(side="left", padx=(2, 0))
 
-        # 下段: バー (左・伸縮) + N/M (P%) + **実行**（右端＝全フロー共通の位置）
+        # 下段: バー (左・伸縮) + **実行**（右端＝全フロー共通の位置）。
+        # ⛔ この行に**第 3 のウィジェットを足さない**＝バーの右端がボタンまで
+        # 届かなくなり、その窓のバーだけ短く見える（実機確認で発覚）。
         row2 = ttk.Frame(prog_frame)
         row2.pack(fill="x", pady=(2, 0))
         self._prog_bar = ttk.Progressbar(row2, orient="horizontal", mode="determinate")
         self._prog_bar.pack(side="left", fill="x", expand=True)
-        # 右端から順に pack する（実行 → カウント）＝ボタンが常に帯の右端に来る。
         # ⛔ `width=` は付けない（I-046）＝ラベルは 4 窓とも「実行」で揃えてあるのに、
         # ここだけ 14 文字ぶんの箱で**同じ文字が違う大きさ**に見えていた。主操作で
         # あることは位置（帯の右端）と Accent で表す＝大きさは強調の軸ではない。
@@ -364,10 +373,6 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             style="Accent.TButton",
         )
         self._run_btn.pack(side="right", padx=(10, 0))
-        self._prog_count_label = ttk.Label(
-            row2, text="", width=15, anchor="e"
-        )
-        self._prog_count_label.pack(side="right", padx=(6, 0))
 
 
 

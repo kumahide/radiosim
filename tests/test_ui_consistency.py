@@ -110,6 +110,33 @@ def test_run_button_sits_at_the_right_end_of_the_progress_bar(app_windows, name)
 
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
+def test_progress_bar_reaches_the_run_button(app_windows, name):
+    """帯の下段は**バーと実行ボタンだけ**＝バーの右端がボタンに届くこと（I-047）。
+
+    バッチだけ `N / M (P%)` のラベル（空でも `width=15` の箱）を 2 つのあいだに
+    置いており、**その窓のバーだけ 15 文字ぶん短かった**（2026-08-07 実機確認・
+    原文「バッチ窓のプログレスバーが他の窓より短い（実行ボタンのすぐ横まで届いて
+    ない）」）。件数は上段（ステータスの行）へ移した。
+
+    ⚠️ **「バーが伸びる」だけでは足りない**＝`expand=True` は既に別のゲートが
+    見ているのに、この欠陥は素通りした（伸びてはいる＝残りを他のウィジェットが
+    取っているだけ）。**隙間の実測**でしか捕まらない。
+    """
+    app, wins = app_windows
+    win   = wins[name]
+    owner = app if name == "launcher" else win
+    bar, run_btn = owner._prog_bar, owner._run_btn
+
+    win.update()
+    gap = run_btn.winfo_rootx() - (bar.winfo_rootx() + bar.winfo_width())
+    # 許容はボタン側の左余白（padx=10）ぶんだけ。
+    assert gap <= 12, (
+        f"{name}: 進捗バーと実行ボタンのあいだに {gap}px の隙間がある"
+        "（帯の下段はバーと実行だけ＝第 3 のウィジェットを置かない）"
+    )
+
+
+@pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_status_line_sits_above_the_progress_bar(app_windows, name):
     """ステータスは**進捗バーの上に 1 行**（I-047）＝4 窓とも同じ場所。
 
