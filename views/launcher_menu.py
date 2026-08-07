@@ -15,6 +15,7 @@ import json
 import os
 import tkinter as tk
 from tkinter import filedialog, ttk
+from typing import TYPE_CHECKING, Callable
 
 import config
 import dem
@@ -23,8 +24,28 @@ import simulation as sim
 import version
 from views import theme
 
+if TYPE_CHECKING:
+    from views.map_window import MapWindow
+
 
 class _MenuMixin:
+    # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
+    # （実行時は 1 文字も定義しない）。理由は
+    # [views/map_picks.py](map_picks.py) の同じブロックに書いた（B-049）。
+    if TYPE_CHECKING:
+        root: tk.Tk
+        config: dict
+        _on_theme: Callable[[str], None]
+        _map_win: "MapWindow"
+
+        def _alert(self, title: str, message: str) -> None: ...
+        def _confirm(self, title: str, message: str) -> bool: ...
+        def _apply_sim_config(self, conf: dict) -> None: ...
+        def _on_coord_format_change(self) -> None: ...
+        def _on_open_project(self) -> None: ...
+        def _on_save_project(self) -> None: ...
+        def _on_open_results(self) -> None: ...
+
     def _build_menu(self) -> None:
         # tk.Menu は sv_ttk（ttk 専用）のテーマに追従しないため、生成した全メニューを
         # 保持し、テーマ変更ごとに配色を明示適用する（_apply_menu_theme・B-004）。

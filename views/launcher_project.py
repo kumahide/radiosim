@@ -23,6 +23,20 @@ if TYPE_CHECKING:                    # 実行時は遅延 import（起動を軽�
 
 
 class _ProjectMixin:
+    # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
+    # （実行時は 1 文字も定義しない）。理由は
+    # [views/map_picks.py](map_picks.py) の同じブロックに書いた（B-049）。
+    if TYPE_CHECKING:
+        root: tk.Tk
+        _project: "project.ProjectDoc | None"
+        _project_var: tk.StringVar
+        _memo_var: tk.StringVar
+
+        def _current_config(self) -> dict[str, str]: ...
+        def _current_meta(self) -> dict[str, str]: ...
+        def _apply_sim_config(self, conf: dict) -> None: ...
+        def _alert(self, title: str, message: str) -> None: ...
+
     # ----------------------------------------------------------
     # プロジェクト（`.rsproj`）＝入力一式を 1 つに束ねる
     #
@@ -160,7 +174,10 @@ class _ProjectMixin:
         ＝閉じる処理が今までどおりその窓の節を `self._project` へ持ち越すため。
         凍結方式（見えている値が正）と同じ向きなので、これでよい。
         """
-        doc = self._project
+        # 呼ばれるのは読込直後（`self._project` は必ず入っている）だが、**保持者から
+        # 取る唯一の口**を通す＝節がすべて `None` の空 doc になるだけで、下の
+        # `section is None` で全部 continue する（帯は 1 本も出ない＝同じ結果）。
+        doc = self._project_doc()
         targets = (
             ("_batch_win",    doc.batch_rows,
              lambda win, rows=doc.batch_rows: win.replace_rows(rows)),

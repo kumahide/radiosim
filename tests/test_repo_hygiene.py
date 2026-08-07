@@ -27,6 +27,7 @@ issue_evidence/（実運用のスクリーンショット）のコピーが**公
 
 from __future__ import annotations
 
+import json
 import re
 import subprocess
 import sys
@@ -343,6 +344,77 @@ def test_ruff_finds_no_undefined_names_or_unused_imports():
     assert proc.returncode == 0, (
         "ruff の指摘がある（CI の Ruff ステップが同じ内容で落ちる）:\n"
         + proc.stdout + proc.stderr
+    )
+
+
+# ============================================================
+# 型エラー（2.7・B-049 で新設）
+# ============================================================
+# 🔴 **B-047 と同じ穴が、同じ分割で、別の道具に開いていた。**
+# `ruff` はローカルへ降ろした（上のゲート）が、**pyright は CI にしか無いまま**
+# だった。2.7 スライス A（view 分割）で作った Mixin 8 本は、宿主（`MapWindow` /
+# `SimLauncher` / `BatchBuilderWindow`）の `self.*` を借りたまま切り出されており、
+# 型検査器から見ると借りている属性は「無い属性」＝**365 件のエラー**になっていた。
+# 気づいたのは 12 コミットあと、push して CI が赤くなった時。
+# ⇒ **CI と同じ対象・同じ設定で、ローカルの pytest からも回す。**
+#
+# ⚠️ **対象リストは `.github/workflows/ci.yml` から読む**＝ここへ写すと 2 本目の
+# 手書きリストになり、片方だけ増えて黙ってすり抜ける（[[project-radiosim]] の
+# I-058 が消そうとしているのと同じ形の穴）。出所は CI の 1 か所のまま。
+def _ci_pyright_targets() -> list[str]:
+    """CI の Pyright ステップが検査する対象を ci.yml から取り出す。"""
+    text = (ROOT / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    lines = text.splitlines()
+    for i, line in enumerate(lines):
+        if line.strip().startswith("- name:") and "Pyright" in line:
+            break
+    else:
+        raise AssertionError("ci.yml に Pyright のステップが無い")
+    # `run: >-` の折り畳みブロック＝`run:` より深くインデントされた行が本文。
+    for j in range(i + 1, len(lines)):
+        if lines[j].strip().startswith("run:"):
+            run_indent = len(lines[j]) - len(lines[j].lstrip())
+            break
+    else:
+        raise AssertionError("Pyright ステップに run: が無い")
+    words: list[str] = []
+    for line in lines[j + 1:]:
+        if not line.strip():
+            continue
+        if len(line) - len(line.lstrip()) <= run_indent:
+            break
+        words += line.split()
+    assert words and words[0] == "pyright", f"想定外の run: 本文 {words[:3]}"
+    return words[1:]
+
+
+def test_pyright_finds_no_type_errors_in_app_modules():
+    """`pyright` が通ること（CI の Pyright ステップと同じ対象・同じ設定）。
+
+    ⚠️ **対象が痩せていないことを先に検査する**＝ci.yml の書式が変わって 0 件を
+    取り出しても pyright は `0 errors` で終わる＝**一度も鳴らないゲート**になる
+    （[[feedback-promote-recurring-checks]] 壊れ方①）。
+    """
+    targets = _ci_pyright_targets()
+    assert len(targets) >= 20 and any(t.startswith("views/") for t in targets), (
+        f"ci.yml から取り出した pyright の対象が痩せている: {targets}"
+    )
+    proc = subprocess.run(
+        [sys.executable, "-m", "pyright", "--outputjson", *targets],
+        cwd=ROOT, capture_output=True, text=True, errors="replace",
+    )
+    if "No module named pyright" in proc.stderr:
+        pytest.skip("pyright が入っていない（requirements-dev.txt）")
+    errors = [
+        f"{d.get('file')}:{(d.get('range') or {}).get('start', {}).get('line', 0) + 1}"
+        f" {d.get('message', '').splitlines()[0]}"
+        for d in (json.loads(proc.stdout or "{}").get("generalDiagnostics") or [])
+        if d.get("severity") == "error"
+    ]
+    assert not errors, (
+        f"pyright の型エラーが {len(errors)} 件ある"
+        "（CI の Pyright ステップが同じ内容で落ちる）:\n"
+        + "\n".join(errors[:25])
     )
 
 

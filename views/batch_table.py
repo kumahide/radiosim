@@ -13,6 +13,7 @@ views/batch_table.py
 
 import tkinter as tk
 from tkinter import ttk
+from typing import TYPE_CHECKING, Callable
 
 import batch
 import coords
@@ -21,8 +22,50 @@ import units
 from models import horizontal_distance_km
 from views import dialogs, theme, window_fit
 
+if TYPE_CHECKING:
+    import simulation as sim
 
-class _TableMixin:
+# 宿主（`BatchBuilderWindow`）は `tk.Toplevel` の派生。Mixin は単体では
+# ウィジェットではないので、**型検査のときだけ**宿主の基底を見せる（実行時は
+# 素の Mixin のまま＝MRO も振る舞いも変わらない）。これが無いと `self` を
+# `parent=` に渡す既存の呼び出しがすべて型エラーになる（B-049）。
+if TYPE_CHECKING:
+    _HostBase = tk.Toplevel
+else:
+    _HostBase = object
+
+
+class _TableMixin(_HostBase):
+    # 宿主から借りている面の宣言。**型検査のときだけ**存在する（実行時は 1 文字も
+    # 定義しない）。理由は [views/map_picks.py](map_picks.py) の同じブロックに
+    # 書いた（B-049）。
+    if TYPE_CHECKING:
+        _BASE_W: int
+        _BASE_H: int
+        _MIN_W: int
+        _SCREEN_MARGIN: int
+        _TABLE_PAD_W: int
+        _WIDTHS: list[int]
+        _base_params: "sim.SimParams"
+        _common_vars: dict[str, tk.StringVar]
+        _config_provider: "Callable[[], dict] | None"
+        _load_params: "Callable[[dict], None] | None"
+        _coord_format: str
+        _row_entries: list[list[tk.Entry]]
+        _row_frames: list[ttk.Frame]
+        _drag_row_idx: "int | None"
+        _drag_indicator: "tk.Frame | None"
+        _sync_after_id: "str | None"
+        _suspend_notify: bool
+
+        # 列見出しは宿主側が **property**（i18n を都度引く）＝ここも property で
+        # 宣言する（ただの属性にすると宿主の定義が「上書き」に見えて赤くなる）。
+        @property
+        def _COLS(self) -> list[str]: ...
+
+        def _notify_paths_changed(self) -> None: ...
+        def _on_destroy(self, event: tk.Event) -> None: ...
+
     def _build_table(self) -> None:
         outer = ttk.Frame(self)
         outer.pack(fill="both", expand=True, padx=8, pady=6)

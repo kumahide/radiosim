@@ -10,6 +10,9 @@ views/map_picks.py
 2.7 スライス A（メソッド本文は 1 文字も変えていない＝「移動だけ」）。
 """
 
+import tkinter as tk
+from typing import TYPE_CHECKING
+
 from PIL import ImageTk
 
 import i18n
@@ -19,8 +22,47 @@ import units
 from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
                              _SINGLE_ZOOM, _UISP_CYAN_HEX)
 
+if TYPE_CHECKING:
+    from tkintermapview import TkinterMapView
+    from tkintermapview.canvas_path import CanvasPath
+    from tkintermapview.canvas_position_marker import CanvasPositionMarker
+
+    from views.map_window import _AppendSink, _SingleSink, _WaypointSink
+
 
 class _PickMixin:
+    # 宿主（`MapWindow`）から借りている面の宣言。**型検査のときだけ**存在する
+    # （実行時は 1 文字も定義しない＝Mixin の振る舞いは変わらない）。
+    # Mixin は `self.*` を宿主と共有する形で切り出したので、これを書かないと
+    # 型検査器から見て `self._map` は「無い属性」になる（2.7 スライス A の分割で
+    # pyright が 365 件のエラーを出した＝B-049）。**借りている面を明示的に並べる
+    # ことが、Mixin と宿主のあいだの契約そのもの**でもある。
+    if TYPE_CHECKING:
+        _map: "TkinterMapView"
+        _mode: tk.StringVar
+        _busy: bool
+        _pick_next: str
+        _single_sink: "_SingleSink | None"
+        _append_sink: "_AppendSink | None"
+        _waypoint_sink: "_WaypointSink | None"
+        _tx_coord: "tuple | None"
+        _rx_coord: "tuple | None"
+        _tx_marker: "CanvasPositionMarker | None"
+        _rx_marker: "CanvasPositionMarker | None"
+        _path_line: "CanvasPath | None"
+        _dist_label: "CanvasPositionMarker | None"
+        _dist_badge: "ImageTk.PhotoImage | None"
+        _tx_icon: ImageTk.PhotoImage
+        _rx_icon: ImageTk.PhotoImage
+        _relay_icon: ImageTk.PhotoImage
+        _committed: list
+        _committed_images: list
+        _wp_objects: list
+
+        def _select_mode(self, value: str) -> None: ...
+        def _set_idle(self) -> None: ...
+        def _set_status(self, text: str, auto_clear: bool = False) -> None: ...
+
     def on_waypoints_changed(self) -> None:
         """中継経路ウィンドウの地点列が変わったときの通知（追加・削除・編集）。"""
         self._refresh_waypoints()

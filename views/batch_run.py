@@ -11,6 +11,9 @@ views/batch_run.py
 """
 
 import os
+import tkinter as tk
+from tkinter import ttk
+from typing import TYPE_CHECKING
 
 import batch
 import config
@@ -18,13 +21,54 @@ import i18n
 import simulation as sim
 from views import dialogs
 
+if TYPE_CHECKING:
+    from views.progress import ProgressPump
+
+# 宿主（`BatchBuilderWindow`）は `tk.Toplevel` の派生。理由は
+# [views/batch_table.py](batch_table.py) の同じ宣言に書いた（B-049）。
+if TYPE_CHECKING:
+    _HostBase = tk.Toplevel
+else:
+    _HostBase = object
+
 # 1 パスの進捗区間のうち、標高取得が占める割合。残りはレポート描画に充てる。
 # 実測（2.4b1・200 サンプル）では取得 ≒35ms に対し描画はその数十倍で、取得を
 # 区間全体に割り当てるとバーが即座に振り切れて実態と乖離する。
 _FETCH_FRAC = 0.15
 
 
-class _RunMixin:
+class _RunMixin(_HostBase):
+    # 宿主から借りている面の宣言。**型検査のときだけ**存在する（実行時は 1 文字も
+    # 定義しない）。理由は [views/map_picks.py](map_picks.py) の同じブロックに
+    # 書いた（B-049）。
+    if TYPE_CHECKING:
+        _base_params: sim.SimParams
+        _common_vars: dict[str, tk.StringVar]
+        _coord_format: str
+        _project_name_var: tk.StringVar
+        _memo_var: tk.StringVar
+        _env_var: tk.StringVar
+        _env_label_to_key: dict[str, str]
+        _diff_var: tk.StringVar
+        _pump: "ProgressPump"
+        _running: bool
+        _run_btn: ttk.Button
+        _prog_bar: ttk.Progressbar
+        _prog_label: ttk.Label
+        _prog_count_label: ttk.Label
+        _ok_label: ttk.Label
+        _ng_label: ttk.Label
+        _err_label: ttk.Label
+        _ok_count: int
+        _ng_count: int
+        _err_count: int
+        _run_cur: int
+        _run_samples: int
+
+        def _read_table_rows(self) -> list[batch.PathRow]: ...
+        def _clear_verdicts(self) -> None: ...
+        def _set_row_verdict(self, path_id: str, status: str) -> None: ...
+
     # ----------------------------------------------------------
     # 実行
     # ----------------------------------------------------------

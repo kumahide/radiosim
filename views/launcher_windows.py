@@ -12,13 +12,31 @@ views/launcher_windows.py
 
 import os
 import tkinter as tk
+from typing import TYPE_CHECKING
 
 import config
 import coords
 import simulation as sim
 
+if TYPE_CHECKING:
+    import project
+
 
 class _ChildWindowsMixin:
+    # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
+    # （実行時は 1 文字も定義しない）。理由は
+    # [views/map_picks.py](map_picks.py) の同じブロックに書いた（B-049）。
+    if TYPE_CHECKING:
+        root: tk.Tk
+        config: dict
+        entries: dict[str, tk.Entry]
+        _coord_fmt_var: tk.StringVar
+
+        def _current_config(self) -> dict[str, str]: ...
+        def _current_meta(self) -> dict[str, str]: ...
+        def _project_doc(self) -> "project.ProjectDoc": ...
+        def _open_window(self, attr: str): ...
+
     def _notify_map_cache_change(self) -> None:
         """シミュレーションのプリフェッチでキャッシュが増えた後、開いている
         マップウィンドウの統計・カバレッジ表示を更新する。"""

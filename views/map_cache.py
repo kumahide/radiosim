@@ -12,16 +12,54 @@ views/map_cache.py
 
 import threading
 import time
+import tkinter as tk
+from typing import TYPE_CHECKING
 
 import dem
 import i18n
 from views import dialogs
 from views.map_style import _LEVEL_COLORS, _OUTLINE_COLOR
 
+if TYPE_CHECKING:
+    from tkintermapview import TkinterMapView
+    from tkintermapview.canvas_polygon import CanvasPolygon
+
+    from views.progress import ProgressPump
+
 logger = __import__("logging").getLogger("radiosim")
 
 
 class _CacheMixin:
+    # 宿主（`MapWindow`）から借りている面の宣言。**型検査のときだけ**存在する
+    # （実行時は 1 文字も定義しない）。理由は
+    # [views/map_picks.py](map_picks.py) の同じブロックに書いた（B-049）。
+    if TYPE_CHECKING:
+        _win: tk.Toplevel
+        _map: "TkinterMapView"
+        _mode: tk.StringVar
+        _pump: "ProgressPump"
+        _busy: bool
+        _sel_start: "tuple | None"
+        _sel_rect: "CanvasPolygon | None"
+        _bbox_polygon: "CanvasPolygon | None"
+        _tile_polygons: list
+        _overlay_after_id: "str | None"
+        _lat1_var: tk.StringVar
+        _lon1_var: tk.StringVar
+        _lat2_var: tk.StringVar
+        _lon2_var: tk.StringVar
+        _progress_var: tk.IntVar
+        _TILES_PER_AREA: int
+        _DEFAULT_TILE_BYTES: int
+
+        def _set_busy(self, busy: bool) -> None: ...
+        def _set_status(self, text: str, auto_clear: bool = False) -> None: ...
+        def _show_progress(self) -> None: ...
+        def _hide_progress(self) -> None: ...
+        def _clear_selection(self) -> None: ...
+        def _do_delete(self, bbox: tuple) -> None: ...
+        def _on_download_done(self, dl_result: dict) -> None: ...
+
     # ----------------------------------------------------------
     # Ctrl＋ドラッグによる矩形選択
     #

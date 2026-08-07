@@ -10,14 +10,36 @@ views/batch_io.py
 切り出しは 2.7 スライス A（メソッド本文は 1 文字も変えていない＝「移動だけ」）。
 """
 
+import tkinter as tk
 from tkinter import filedialog
+from typing import TYPE_CHECKING
 
 import batch
 import i18n
 from views import dialogs
 
+if TYPE_CHECKING:
+    import simulation as sim
 
-class _CsvMixin:
+# 宿主（`BatchBuilderWindow`）は `tk.Toplevel` の派生。理由は
+# [views/batch_table.py](batch_table.py) の同じ宣言に書いた（B-049）。
+if TYPE_CHECKING:
+    _HostBase = tk.Toplevel
+else:
+    _HostBase = object
+
+
+class _CsvMixin(_HostBase):
+    # 宿主から借りている面の宣言。**型検査のときだけ**存在する（実行時は 1 文字も
+    # 定義しない）。理由は [views/map_picks.py](map_picks.py) の同じブロックに
+    # 書いた（B-049）。
+    if TYPE_CHECKING:
+        _base_params: "sim.SimParams"
+        _row_entries: list[list[tk.Entry]]
+
+        def _read_table_rows(self) -> list[batch.PathRow]: ...
+        def replace_rows(self, rows: list) -> None: ...
+
     def _import_csv(self) -> None:
         path = filedialog.askopenfilename(
             parent=self,
