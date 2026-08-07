@@ -37,14 +37,14 @@ from datetime import datetime
 from tkinter import ttk
 from typing import Callable
 
-import config
-import coords
-import i18n
-import project
-import report_scenario
-import scenario as scn
-import simulation as sim
-import units
+from core import config
+from core import coords
+from core import i18n
+from core import scenario as scn
+from core import simulation as sim
+from core import units
+from report import project
+from report import report_scenario
 from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 

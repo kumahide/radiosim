@@ -11,7 +11,7 @@ tkinter の messagebox は Windows ネイティブ API のため表示位置を�
 import tkinter as tk
 from tkinter import ttk
 
-import i18n
+from core import i18n
 
 
 def _center_on(parent: tk.Misc, dlg: tk.Toplevel) -> None:

@@ -49,7 +49,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import i18n
+from core import i18n
 
 GLOSSARY = Path(__file__).resolve().parent.parent / "docs" / "glossary.md"
 

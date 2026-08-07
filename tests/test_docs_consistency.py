@@ -23,9 +23,9 @@ from pathlib import Path
 
 import pytest
 
-import batch
-import i18n
-import version
+from core import i18n
+from core import version
+from report import batch
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -294,27 +294,38 @@ def test_map_mode_labels_listed(doc, lang):
 
 
 # --- CI ゲートの対象網羅 -----------------------------------------------------
-# pyright の対象は CI ワークフローにモジュール名を**べた書き**している。新しい
-# アプリモジュールを足したときリストへの追記を忘れると、そのファイルだけ静的検査を
-# すり抜ける（2026-07-23 の 2.4RC1 移行時に `views/theme.py` で実際に発生）。
-# ドキュメントと同じく「実装＝真実」で照合し、追記漏れを落とす。
+# 🔑 **この照合は 2.7 スライス H（I-058）で不要になった。**
+# かつて pyright の対象は CI ワークフローにモジュール名を 43 件**べた書き**して
+# おり、追記を忘れるとそのファイルだけ静的検査をすり抜けた（2026-07-23 の
+# 2.4RC1 移行時に `views/theme.py` で実際に発生）。だから「実装＝真実」で照合する
+# テストが要った。**いまは対象が層のディレクトリ（`core report views`）なので、
+# 新しいモジュールは置いた時点で対象**＝照合するリストがそもそも無い。
+# ⇒ **残すのは「層が全部載っているか」だけ**（それは
+#    tests/test_repo_hygiene.py::test_pyright_finds_no_type_errors_in_app_modules
+#    が ci.yml を読んで検査している）。ここには**直下に .py を置き去りにしていない
+#    こと**＝層に属さないアプリモジュールが生まれていないことを置く。
 CI_WORKFLOW = ".github/workflows/ci.yml"
 
-# 型検査から意図的に外すもの（テスト・ビルド定義・ツール類）。
-_PYRIGHT_EXEMPT = {"radiosim.spec"}
+# 直下に置いてよい `.py`（層に属さないもの）とその理由。
+_ROOT_PY_ALLOWED = {
+    "main.py": "アプリの入口＝層ではない（起動して views を組み立てるだけ）",
+}
 
 
-def test_ci_pyright_covers_all_app_modules():
-    """CI の pyright 対象に、ルート直下と views/ の全モジュールが載っていること。"""
-    workflow = _read(CI_WORKFLOW)
-    listed = set(re.findall(r"[\w/]+\.py", workflow))
-    app_modules = {p.name for p in ROOT.glob("*.py")} | {
-        f"views/{name}" for name in VIEW_MODULES
-    }
-    missing = sorted(m for m in app_modules - listed if m not in _PYRIGHT_EXEMPT)
-    assert not missing, (
-        f"{CI_WORKFLOW} の pyright 対象に未登録のモジュール: {missing}。"
-        "CI がこのファイルを型検査していない（追記すること）。"
+def test_no_app_module_sits_outside_a_layer():
+    """アプリのモジュールが `core/` `report/` `views/` のどれかに属すること。
+
+    直下へ 1 本置くだけで、その版のうちは誰も困らない。困るのは次の分割のとき
+    で、**どの層のものか誰にも分からないまま参照だけ増える**（I-058 が消した
+    「フラットな直下は共有コアを表現できない」状態そのもの）。
+    """
+    stray = sorted(
+        p.name for p in ROOT.glob("*.py") if p.name not in _ROOT_PY_ALLOWED
+    )
+    assert not stray, (
+        f"層に属さないモジュールが直下にある: {stray}。"
+        "`core/`（土台）・`report/`（出力）・`views/`（画面）のどれかへ置くこと"
+        "（依存は views → report → core の一方向）。"
     )
 
 
@@ -369,30 +380,29 @@ def test_doc_links_point_to_existing_files(doc):
     assert not broken, f"{doc}: リンク切れ {len(broken)} 件\n  " + "\n  ".join(broken)
 
 
-# --- 10. カバレッジ対象の網羅（2.5a3 追加） -----------------------------------
+# --- 10. カバレッジ対象の網羅（2.5a3 追加・2.7 スライス H で作り直し） --------
 #       背景: `[tool.coverage.run] source` はモジュール名のべた書きで、**分割・改名で
 #       黙って死角ができる**。実際 2.5a2 で `report.py` を report_common/path/summary へ
 #       割ったとき source に "report" が残り、出力層がまるごと計測外のまま
 #       カバレッジ 95% が報告されていた（気づいたのは 2.5a3 で新モジュールを足した時）。
-#       CI の pyright 対象と同じ型の穴なので、同じやり方でゲート化する。
-_COVERAGE_EXEMPT = {
-    # GUI（views/*）と起動口は omit 済み。version は定数のみ。
-    "main", "version", "radiosim",
-}
+#
+#       🔑 **I-058 で source が 2 要素（`["core", "report"]`）になり、19 件の名前
+#       列挙が消えた**＝「割ったのに追記を忘れる」という壊れ方が構造的に起きない。
+#       ⇒ 残す検査は「**ヘッドレス層のディレクトリが両方載っているか**」だけ。
+#       ⚠️ この検査を消さない理由＝`source` を空や `["."]` に書き換えると、GUI 層を
+#       含めた薄いカバレッジで `fail_under` を満たしてしまう（数字は緑・中身は死角）。
 
 
-def test_coverage_source_lists_all_headless_modules():
-    """ルート直下の全ヘッドレスモジュールがカバレッジ計測の対象であること。"""
+def test_coverage_source_is_the_headless_layers():
+    """カバレッジ計測の対象がヘッドレス層のディレクトリ 2 つであること。"""
     text = _read("pyproject.toml")
     block = re.search(r"\[tool\.coverage\.run\].*?source\s*=\s*\[(.*?)\]",
                       text, re.S)
     assert block, "pyproject.toml に [tool.coverage.run] source が無い"
-    listed = set(re.findall(r'"([\w_]+)"', block.group(1)))
-    modules = {p.stem for p in ROOT.glob("*.py")} - _COVERAGE_EXEMPT
-    missing = sorted(modules - listed)
-    assert not missing, (
-        f"カバレッジ計測から漏れているモジュール: {missing}。"
-        "pyproject.toml の [tool.coverage.run] source に追記すること。"
+    listed = set(re.findall(r'"([\w_./]+)"', block.group(1)))
+    assert listed == {"core", "report"}, (
+        f"カバレッジ計測の対象がヘッドレス層と一致しない: {sorted(listed)}。"
+        "層はディレクトリで表す（`source = [\"core\", \"report\"]`）。"
     )
 
 

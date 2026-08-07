@@ -36,8 +36,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import models
-import simulation as sim
+from core import models
+from core import simulation as sim
 
 _DATA = os.path.join(os.path.dirname(__file__), "data", "golden_links.json")
 

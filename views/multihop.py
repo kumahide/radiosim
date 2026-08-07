@@ -33,10 +33,10 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-import coords
-import i18n
-import multihop as mh
-import simulation as sim
+from core import coords
+from core import i18n
+from core import simulation as sim
+from report import multihop as mh
 from views import dialogs, theme, window_fit
 from views.progress import ProgressPump
 

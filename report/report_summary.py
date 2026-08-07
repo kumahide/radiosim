@@ -19,15 +19,15 @@ import os
 from datetime import datetime
 from typing import TYPE_CHECKING
 
-import i18n
-import report_common
-import report_map
-import report_path
-import units
-import version
+from core import i18n
+from core import units
+from core import version
+from report import report_common
+from report import report_map
+from report import report_path
 
 if TYPE_CHECKING:
-    from batch import PathResult
+    from report.batch import PathResult
 
 
 # ============================================================

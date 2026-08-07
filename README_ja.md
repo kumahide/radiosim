@@ -200,28 +200,34 @@ python -m pip install -r requirements.txt
 
 ```
 radiosim/
-├── main.py               # エントリーポイント
-├── models.py             # 純粋計算ロジック（副作用ゼロ）
-├── simulation.py         # ViewModel / オーケストレーター
-├── config.py             # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
-├── dem.py                # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
-├── batch.py              # 複数経路の実行エンジン（CSV I/O・バリデーション・実行）
-├── scenario.py           # 条件探索の共有ランナー（A-1 比較 / A-2 スイープ・相の宣言・ヘッドレス）
-├── report_scenario.py    # 条件探索の出力生成（A4 の折れ線＋表・CSV・ヘッドレス）
-├── multihop.py           # 中継経路（A-3）の実行エンジン（waypoint→ホップ導出・min 集約・ヘッドレス）
-├── report_multihop.py    # 中継経路の出力生成（合成シート＋ホップ別連結・hops.csv・ヘッドレス）
-├── project.py            # プロジェクトファイル（.rsproj）の読み書き＝入力一式を束ねる（ヘッドレス）
-├── report_common.py      # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
-├── report_path.py        # 経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
-├── report_summary.py     # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
-├── report_map.py         # レポート用 経路オーバーレイ地図のヘッドレス生成
-├── map_graphics.py       # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
-├── coords.py             # 座標表記変換（DD ⇔ DMS・純関数）
-├── units.py              # 距離の表示整形（内部 km → 表示 m・純関数）
-├── mpl_fonts.py          # matplotlib 日本語フォント適用（ヘッドレス・グラフ/レポート共通）
-├── i18n.py               # 多言語文字列テーブル
-├── version.py            # バージョン情報
-├── views/
+├── main.py               # エントリーポイント（層には属さない＝起動して画面を組み立てるだけ）
+│
+│   # 層はディレクトリで表す。依存は views → report → core の一方向。
+│   # 2 つの層から使われるものは「下」へ置く（`shared/` のような箱は作らない）。
+│
+├── core/                 # 土台＝計算・データ・設定。tkinter も matplotlib も引かない
+│   ├── models.py         # 純粋計算ロジック（副作用ゼロ）
+│   ├── simulation.py     # ViewModel / オーケストレーター
+│   ├── config.py         # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
+│   ├── dem.py            # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
+│   ├── scenario.py       # 条件探索の共有ランナー（A-1 比較 / A-2 スイープ・相の宣言・ヘッドレス）
+│   ├── coords.py         # 座標表記変換（DD ⇔ DMS・純関数）
+│   ├── units.py          # 距離の表示整形（内部 km → 表示 m・純関数）
+│   ├── i18n.py           # 多言語文字列テーブル
+│   └── version.py        # バージョン情報
+├── report/               # 出力を作る層＝実行エンジンと成果物の生成（ヘッドレス）
+│   ├── batch.py          # 複数経路の実行エンジン（CSV I/O・バリデーション・実行）
+│   ├── multihop.py       # 中継経路（A-3）の実行エンジン（waypoint→ホップ導出・min 集約）
+│   ├── project.py        # プロジェクトファイル（.rsproj）の読み書き＝入力一式を束ねる
+│   ├── report_common.py  # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
+│   ├── report_path.py    # 経路ごとの出力生成（PNG/HTML/KML）
+│   ├── report_summary.py # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結）
+│   ├── report_scenario.py # 条件探索の出力生成（A4 の折れ線＋表・CSV）
+│   ├── report_multihop.py # 中継経路の出力生成（合成シート＋ホップ別連結・hops.csv）
+│   ├── report_map.py     # レポート用 経路オーバーレイ地図のヘッドレス生成
+│   ├── map_graphics.py   # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
+│   └── mpl_fonts.py      # matplotlib 日本語フォント適用（グラフ/レポート共通）
+├── views/                # 画面（tkinter）
 │   ├── launcher.py       # ランチャーウィンドウ（本体＝入力フォーム・実行・進捗）
 │   ├── launcher_menu.py  # ランチャーのメニューバーとその操作（Mixin）
 │   ├── launcher_project.py # プロジェクト（.rsproj）の収集・保存・読込（Mixin）
@@ -272,6 +278,7 @@ radiosim/
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
+    ├── test_layers.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -710,7 +717,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ## プロジェクトファイル（.rsproj）
 
-**入力一式**を 1 つの JSON へ束ねる形式です。ランチャーの **ファイル → プロジェクトを開く / 保存** から読み書きします（実装は [`project.py`](project.py)＝ヘッドレス・tkinter に依存しません）。
+**入力一式**を 1 つの JSON へ束ねる形式です。ランチャーの **ファイル → プロジェクトを開く / 保存** から読み書きします（実装は [`project.py`](report/project.py)＝ヘッドレス・tkinter に依存しません）。
 
 ### 束ねる範囲
 
@@ -879,6 +886,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
 | `test_i18n_glossary.py`  | 画面語彙のゲート（[docs/glossary.md](docs/glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
+| `test_layers.py`         | 層の約束のゲート（依存は views → report → core の一方向・import 時に閉じる循環が無い・`core/` が GUI ツールキットと作図ライブラリを引かない・層が空になって検査が空振りしていない） |
 | `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |

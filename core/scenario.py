@@ -36,10 +36,10 @@ from typing import Callable
 
 import numpy as np
 
-import config
-import i18n
-import models
-import simulation as sim
+from core import config
+from core import i18n
+from core import models
+from core import simulation as sim
 
 logger = logging.getLogger("radiosim")
 

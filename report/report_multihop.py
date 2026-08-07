@@ -23,12 +23,12 @@ from __future__ import annotations
 import html as _html
 import os
 
-import i18n
-import report_common
-import report_summary
-import units
-import multihop as mh
-from multihop import MultiHopRun
+from core import i18n
+from core import units
+from report import multihop as mh
+from report import report_common
+from report import report_summary
+from report.multihop import MultiHopRun
 
 
 def route_sheet_css() -> str:
@@ -262,7 +262,7 @@ def save_report_all_html(run: MultiHopRun, project_name: str = "", memo: str = "
     実行時に `PathResult.sheet_html` へ溜まっているものを使う＝ディスクを
     読み直さない（a2 の分割でそう作ってある）。
     """
-    import report_path
+    from report import report_path
 
     sheets = [route_sheet_html(run, project_name, memo, map_b64, anchor_links=True)]
     sheets += [pr.sheet_html for pr in run.hops if pr.sheet_html]

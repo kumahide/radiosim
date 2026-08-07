@@ -35,8 +35,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import i18n
-import simulation as sim
+from core import i18n
+from core import simulation as sim
 from conftest import make_themed_root
 from views import window_fit
 
@@ -142,7 +142,7 @@ _WINDOWS = {
 
 def _grow_multihop(win) -> None:
     """地点を上限まで足す＝表が縦に伸びる経路（中継経路の「増え方」）。"""
-    import multihop as mh
+    from report import multihop as mh
     while len(win._wp_vars) < mh.MAX_HOPS + 1:
         win._add_waypoint()
 
@@ -167,7 +167,7 @@ def _grow_batch(win) -> None:
 
 def _grow_scenario(win) -> None:
     """比較条件を上限（5 列）まで足す＝実機で条件 5 が見切れた経路（I-024）。"""
-    import scenario as scn
+    from core import scenario as scn
     while len(win._cmp_cols) < scn.MAX_COMPARE_CONDITIONS:
         win._add_condition_column()
 

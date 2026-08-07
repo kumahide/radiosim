@@ -16,9 +16,9 @@ import numpy as np
 import pytest
 from PIL import Image
 
-import dem
-import map_graphics
-import report_map
+from core import dem
+from report import map_graphics
+from report import report_map
 
 
 # ============================================================

@@ -14,11 +14,11 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
-import batch
-import coords
-import i18n
-import simulation as sim
-from models import ENV_KEYS
+from core import coords
+from core import i18n
+from core import simulation as sim
+from core.models import ENV_KEYS
+from report import batch
 from views import theme
 from views.batch_io import _CsvMixin
 from views.batch_run import _RunMixin

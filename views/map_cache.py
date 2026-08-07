@@ -15,8 +15,8 @@ import time
 import tkinter as tk
 from typing import TYPE_CHECKING
 
-import dem
-import i18n
+from core import dem
+from core import i18n
 from views import dialogs
 from views.map_style import _LEVEL_COLORS, _OUTLINE_COLOR
 

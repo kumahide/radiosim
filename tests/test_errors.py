@@ -23,7 +23,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import config
+from core import config
 from conftest import make_tk_root
 from views import dialogs, errors
 

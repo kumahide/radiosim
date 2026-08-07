@@ -16,7 +16,7 @@ import logging
 
 import matplotlib
 
-import i18n
+from core import i18n
 
 logger = logging.getLogger("radiosim")
 

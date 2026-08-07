@@ -58,12 +58,12 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
-import i18n
-import models
-import mpl_fonts
-import report_path
-import simulation as sim
-import units
+from core import i18n
+from core import models
+from core import simulation as sim
+from core import units
+from report import mpl_fonts
+from report import report_path
 from views import dialogs, window_fit
 
 logger = logging.getLogger("radiosim")

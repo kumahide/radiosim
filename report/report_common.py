@@ -22,8 +22,8 @@ from __future__ import annotations
 import html as _html
 from datetime import datetime
 
-import i18n
-import version
+from core import i18n
+from core import version
 
 # ============================================================
 # CSV セルの安全化（B-012 / Formula Injection）

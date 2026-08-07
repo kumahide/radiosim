@@ -24,12 +24,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import batch
-import config
-import i18n
-import multihop as mh
-import report_summary
-import simulation as sim
+from core import config
+from core import i18n
+from core import simulation as sim
+from report import batch
+from report import multihop as mh
+from report import report_summary
 
 
 # ============================================================
@@ -72,7 +72,7 @@ def _run(path, base_params, tmp_path, monkeypatch, stub_visuals=True, **kwargs):
     monkeypatch.setattr(sim, "_terrain_cache", {})
     monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
     if stub_visuals:
-        monkeypatch.setattr("report_path.save_path_visuals", lambda *a, **k: None)
+        monkeypatch.setattr("report.report_path.save_path_visuals", lambda *a, **k: None)
     monkeypatch.setattr(report_summary, "render_summary_map_b64", lambda r: None)
 
     out: list = []
@@ -373,7 +373,7 @@ def test_unsupported_topologies_are_refused_by_every_layer(topology, tmp_path):
     落として鎖として計算する）／書けるのに読めない（保存成功の顔でデータが
     失われる）。
     """
-    import project
+    from report import project
 
     path = mh.MultiHopPath(path_id="r1", topology=topology,
                            waypoints=[_wp("A", 34.5, 132.4), _wp("B", 34.6, 132.5)])
@@ -439,7 +439,7 @@ class TestRouteSheet:
     """**min だけを出さない**ことがこの節の主題（②）。"""
 
     def _run_with_report(self, base, tmp_path, monkeypatch):
-        monkeypatch.setattr("report_path.save_path_visuals", lambda *a, **k: None)
+        monkeypatch.setattr("report.report_path.save_path_visuals", lambda *a, **k: None)
         return _run(_path(3), base, tmp_path, monkeypatch)
 
     def test_route_html_is_written(self, base, tmp_path, monkeypatch):
@@ -454,7 +454,7 @@ class TestRouteSheet:
         min だけ出すのは②違反＝「どこが一番苦しいか」が分からないと、中継点を
         どこに足すか・どの区間の空中線を上げるかという次の一手が決められない。
         """
-        import report_multihop
+        from report import report_multihop
 
         i18n.set_lang("ja")
         run = self._run_with_report(base, tmp_path, monkeypatch)
@@ -470,7 +470,7 @@ class TestRouteSheet:
 
     def test_sheet_marks_the_weakest_hop(self, base, tmp_path, monkeypatch):
         """全体判定を決めている区間が**目で拾える**こと。"""
-        import report_multihop
+        from report import report_multihop
 
         run = self._run_with_report(base, tmp_path, monkeypatch)
         html = report_multihop.route_sheet_html(run)
@@ -483,7 +483,7 @@ class TestRouteSheet:
         「反射板でも使えますか」と聞かれたときに成果物側で答えられる状態にする
         ＝前提を紙に残すのは 3.1「刻印」トラックの精神でもある。
         """
-        import report_multihop
+        from report import report_multihop
 
         i18n.set_lang("ja")
         run = self._run_with_report(base, tmp_path, monkeypatch)
@@ -497,8 +497,8 @@ class TestRouteSheet:
         断面図サムネイルが無かった＝**同じ問いに答える 2 つの面が食い違う**。
         列を足すときは両方を見て決める、という約束をここで縛る。
         """
-        import report_multihop
-        import report_summary
+        from report import report_multihop
+        from report import report_summary
 
         i18n.set_lang("ja")
         run = self._run_with_report(base, tmp_path, monkeypatch)
@@ -527,7 +527,7 @@ class TestRouteSheet:
         `report_all.html` は作られていたのに、どこからも開けなかった＝
         作った成果物に導線が無ければ「無い機能」と同じ。
         """
-        import report_multihop
+        from report import report_multihop
 
         run = self._run_with_report(base, tmp_path, monkeypatch)
         assert "report_all.html" in report_multihop.route_sheet_html(run)
@@ -546,7 +546,7 @@ class TestRouteSheet:
         全体判定まで落ちるのは意図どおり＝計算に失敗した区間が既に全体を NG に
         しており、成果物の欠落も「その区間は納品できていない」という同じクラス。
         """
-        import report_multihop
+        from report import report_multihop
 
         def _boom(*_a, **_kw):
             raise RuntimeError("仕組んだ描画失敗")
@@ -569,7 +569,7 @@ class TestRouteSheet:
         assert all(pr.status == "OK" for pr in healthy.hops) and healthy.ok, \
             "成果物が作れているのに OK にならない（この土俵が壊れている）"
 
-        monkeypatch.setattr("report_path.save_profile_png", _boom)
+        monkeypatch.setattr("report.report_path.save_profile_png", _boom)
         run = _run(tall, base, tmp_path, monkeypatch, stub_visuals=False)
 
         assert all(pr.result is not None for pr in run.hops), \
@@ -590,7 +590,7 @@ class TestRouteSheet:
         起き、**画面では気づけず印刷で初めて壊れる**（a2 の分割で同じ形を踏んだ）。
         """
 
-        import report_multihop
+        from report import report_multihop
 
         css = report_multihop.route_sheet_css()
         selectors = [
@@ -942,7 +942,7 @@ class TestOverallDisplay:
         でも、上の 3 本は緑のままになる（I-010 で見た「判定の出所が各所に散る」
         壊れ方と同じ）。**成果物の字**まで見て初めて単一ソースが証明される。
         """
-        import report_multihop
+        from report import report_multihop
         run = _run(_path(3), base, tmp_path, monkeypatch)
         for h in run.hops:
             h.result.actual_margin = 5.0

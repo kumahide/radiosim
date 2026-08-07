@@ -24,11 +24,11 @@ import html as _html
 import io
 import os
 
-import i18n
-import mpl_fonts
-import report_common
-import scenario as scn
-import units
+from core import i18n
+from core import scenario as scn
+from core import units
+from report import mpl_fonts
+from report import report_common
 
 # 軸ごとの単位（表・折れ線の軸ラベルに使う）。距離以外は素の単位で、
 # 距離書式（units）と違い変換は無い＝ここは「ラベル」の一覧。

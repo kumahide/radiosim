@@ -15,15 +15,15 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
-import batch
-import coords
-import i18n
-import units
-from models import horizontal_distance_km
+from core import coords
+from core import i18n
+from core import units
+from core.models import horizontal_distance_km
+from report import batch
 from views import dialogs, theme, window_fit
 
 if TYPE_CHECKING:
-    import simulation as sim
+    from core import simulation as sim
 
 # 宿主（`BatchBuilderWindow`）は `tk.Toplevel` の派生。Mixin は単体では
 # ウィジェットではないので、**型検査のときだけ**宿主の基底を見せる（実行時は

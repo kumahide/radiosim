@@ -27,9 +27,9 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import batch
-import multihop as mh
-import project
+from report import batch
+from report import multihop as mh
+from report import project
 
 
 def _doc() -> project.ProjectDoc:

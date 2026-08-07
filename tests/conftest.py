@@ -17,8 +17,8 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import models
-import simulation as sim
+from core import models
+from core import simulation as sim
 
 
 # ============================================================
@@ -207,8 +207,8 @@ def _isolate_app_paths() -> None:
     """設定・結果・ログ・DEM キャッシュの行き先を一時ディレクトリへ向ける。"""
     global _ISOLATED_TMP_DIR
 
-    import config
-    import dem
+    from core import config
+    from core import dem
 
     _ISOLATED_TMP_DIR = tempfile.mkdtemp(prefix="radiosim-tests-")
     ORIGINAL_APP_PATHS.update({
@@ -237,8 +237,8 @@ def apply_app_path_isolation() -> None:
     """
     if not _ISOLATED_APP_PATHS:
         return
-    import config
-    import dem
+    from core import config
+    from core import dem
 
     config.CONFIG_FILE = _ISOLATED_APP_PATHS["CONFIG_FILE"]
     config.RESULTS_DIR = _ISOLATED_APP_PATHS["RESULTS_DIR"]

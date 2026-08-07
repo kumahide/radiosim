@@ -270,7 +270,7 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
     # 日本語のときは本文書体そのものを日本語を持つ書体へ差し替える（B-026）。
     # ⚠️ **ここでしか差し替えない**＝窓やウィジェットごとに書体を選ぶと、
     # I-023 で潰したはずの「窓ごとにバラバラ」が別の形で戻る。
-    import i18n
+    from core import i18n
     ja_family = _japanese_family(root) if i18n.current_lang() == "ja" else None
 
     # ① sv_ttk のフォント自体を DPI に合わせる（Treeview・LabelFrame の見出し・

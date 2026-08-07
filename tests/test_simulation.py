@@ -20,10 +20,10 @@ from unittest import mock
 import numpy as np
 import pytest
 
-import config
-import dem
-import models
-import simulation as sim
+from core import config
+from core import dem
+from core import models
+from core import simulation as sim
 
 
 # ============================================================

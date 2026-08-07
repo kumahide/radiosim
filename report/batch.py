@@ -21,12 +21,12 @@ from typing import Callable
 
 import numpy as np
 
-import config
-import i18n
-import models
-import report_path
-import report_summary
-import simulation as sim
+from core import config
+from core import i18n
+from core import models
+from core import simulation as sim
+from report import report_path
+from report import report_summary
 
 logger = __import__("logging").getLogger("radiosim")
 

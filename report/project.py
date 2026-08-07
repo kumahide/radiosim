@@ -46,11 +46,11 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 
-import batch
-import config
-import i18n
-import multihop as mh
-import version
+from core import config
+from core import i18n
+from core import version
+from report import batch
+from report import multihop as mh
 
 # ============================================================
 # スキーマ

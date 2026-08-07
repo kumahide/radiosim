@@ -45,10 +45,10 @@ from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Callable
 
-import batch
-import config
-import i18n
-import simulation as sim
+from core import config
+from core import i18n
+from core import simulation as sim
+from report import batch
 
 logger = logging.getLogger("radiosim")
 
@@ -419,8 +419,8 @@ def _run_thread(
         # 「どこが一番苦しいか」が分からないと次の一手（中継点を足す・空中線を
         # 上げる）が決められない（②）。地図はバッチと同じ俯瞰図を流用する
         # ＝端点が一致する N 本なので、そのまま折れ線に見える。
-        import report_multihop
-        import report_summary
+        from report import report_multihop
+        from report import report_summary
         map_b64 = report_summary.render_summary_map_b64(results)
         report_multihop.save_route_html(run, project_name, memo, map_b64)
         report_multihop.save_report_all_html(run, project_name, memo, map_b64)
@@ -444,7 +444,7 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
     """
     import csv
 
-    import report_common
+    from report import report_common
 
     path_csv = os.path.join(run_dir, "hops.csv")
     with open(path_csv, "w", newline="", encoding="utf-8") as f:

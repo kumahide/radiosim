@@ -33,9 +33,9 @@ from typing import Callable, NamedTuple, Protocol, cast
 
 from PIL import ImageTk
 
-import dem
-import i18n
-import map_graphics
+from core import dem
+from core import i18n
+from report import map_graphics
 from tkintermapview import TkinterMapView
 from views import theme, window_fit
 from views.map_cache import _CacheMixin

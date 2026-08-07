@@ -14,12 +14,12 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import TYPE_CHECKING
 
-import batch
-import i18n
+from core import i18n
+from report import batch
 from views import dialogs
 
 if TYPE_CHECKING:
-    import simulation as sim
+    from core import simulation as sim
 
 # 宿主（`BatchBuilderWindow`）は `tk.Toplevel` の派生。理由は
 # [views/batch_table.py](batch_table.py) の同じ宣言に書いた（B-049）。

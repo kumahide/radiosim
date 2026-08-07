@@ -18,7 +18,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import units  # noqa: E402
+from core import units  # noqa: E402
 
 
 class TestKmToM:
@@ -111,7 +111,8 @@ class TestBlockedRatioFormattingIsNotScattered:
     """
 
     _DISPLAY_MODULES = [
-        "report_summary.py", "simulation.py", "views/graph.py", "report_path.py",
+        "report/report_summary.py", "core/simulation.py",
+        "views/graph.py", "report/report_path.py",
     ]
 
     @pytest.mark.parametrize("mod", _DISPLAY_MODULES)
@@ -129,7 +130,7 @@ class TestBlockedRatioFormattingIsNotScattered:
         """クランプは表示だけ＝models の値は生のまま（情報を捨てない）。"""
         import numpy as np
 
-        import models
+        from core import models
         raw = np.zeros(120)
         raw[55:65] = 400.0          # 深い尾根＝F1 半径を大きく超える
         terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.53, 132.40)

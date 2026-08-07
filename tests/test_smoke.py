@@ -23,16 +23,29 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+# ヘッドレス層＝`core/` と `report/` の**中身そのもの**（2.7 スライス H・I-058）。
+# ⚠️ **手で並べない**＝ここは 2.5a2 で一度腐った形（`report.py` を 3 分割したとき
+# リストが追従せず、出力層がまるごと検査の外に出た）。層をディレクトリで表した
+# ので、**そのディレクトリを読む**のが正しい。モジュールを足す・割るたびに
+# ここを直す作業は消える。
+def _layer_modules(pkg: str) -> list[str]:
+    d = os.path.join(_LAYER_ROOT, pkg)
+    return [f"{pkg}.{n[:-3]}" for n in sorted(os.listdir(d))
+            if n.endswith(".py") and n != "__init__.py"]
+
+
+_LAYER_ROOT = os.path.join(os.path.dirname(__file__), "..")
+
 # ヘッドレスでも import 可能なモジュール（tk.Tk() を作らない限り tkinter import は安全）。
-_HEADLESS_SAFE = [
-    "main", "models", "simulation", "config", "dem",
-    "batch", "scenario", "multihop", "project",
-    "report_common", "report_path", "report_summary",
-    "report_scenario", "report_map", "report_multihop", "map_graphics",
-    "coords", "i18n", "mpl_fonts", "version",
-    "views.launcher", "views.batch_builder", "views.scenario",
-    "views.map_window", "views.multihop", "views.dialogs",
-]
+_HEADLESS_SAFE = (
+    ["main"]
+    + _layer_modules("core")
+    + _layer_modules("report")
+    + [
+        "views.launcher", "views.batch_builder", "views.scenario",
+        "views.map_window", "views.multihop", "views.dialogs",
+    ]
+)
 
 # import 時に matplotlib の TkAgg バックエンドをロードするためディスプレイを要する。
 # ヘッドレス CI では backend ロードに失敗するので skip する（views は CI では
@@ -72,17 +85,17 @@ def test_gui_module_imports(mod):
 # この継ぎ目は従来「規約」でしか守られていなかったので、Tier-0 ゲートに昇格する。
 # 本テストプロセス自体は上のスモークで views/tkinter を import 済みのため、
 # 素の子プロセスで検証する（テスト実行順に依存しない）。
-_HEADLESS_CORE = [
-    "models", "simulation", "config", "dem", "batch", "scenario",
-    "multihop", "project",
-    "report_common", "report_path", "report_summary", "report_scenario",
-    "report_map", "report_multihop", "map_graphics", "coords", "i18n",
-    "mpl_fonts", "version",
-]
+_HEADLESS_CORE = _layer_modules("core") + _layer_modules("report")
 
 
 def test_core_imports_do_not_pull_tkinter():
-    """コア import 後の sys.modules に tkinter が居ないこと（GUI 混入の即検出）。"""
+    """`core/` と `report/` の import 後に tkinter が居ないこと（GUI 混入の即検出）。
+
+    ⚠️ **対象はディレクトリの中身そのもの**（2.7 スライス H）＝新しく足した
+    モジュールが自動で検査対象になる。「一覧に登録し忘れたので黙って対象外」
+    という抜け道が構造的に無い。
+    """
+    assert _HEADLESS_CORE, "core/ report/ が空＝この検査は何も見ていない"
     code = (
         "import sys; "
         f"import {', '.join(_HEADLESS_CORE)}; "
@@ -150,7 +163,7 @@ def test_report_meta_flows_from_launcher():
 
 def _launcher_with_windows(root):
     """ランチャー＋3 つの窓を開いた状態を作る（プロジェクト系テストの母体）。"""
-    import batch
+    from report import batch
     from views.launcher import SimLauncher
     app = SimLauncher(root, lambda _t: None)
     app._project_var.set("案件 A")
@@ -180,7 +193,7 @@ def _launcher_with_windows(root):
 def test_project_collects_from_open_windows_and_round_trips(tmp_path):
     """開いている 3 窓の内容が `.rsproj` へ入り、読み直しても同じであること。"""
     pytest.importorskip("tkinter")
-    import project
+    from report import project
     root = make_tk_root()
     try:
         root.withdraw()
@@ -267,7 +280,7 @@ def test_project_does_not_save_unreadable_batch_rows(tmp_path):
         doc, warnings = app._collect_project()
         assert warnings and "P1" in warnings[0]
         assert doc.batch_rows is None      # 前回値が無いので節ごと出ない
-        import project
+        from report import project
         project.save(doc, str(tmp_path / "p.rsproj"))   # 例外なく書ける
     finally:
         root.destroy()
@@ -528,7 +541,7 @@ def test_graph_window_is_a_toplevel_that_does_not_block():
     root = make_tk_root()
     try:
         root.withdraw()
-        import simulation as sim
+        from core import simulation as sim
         from views.graph import show_graph
         params = sim.SimParams({
             "start": "35.4258, 139.2131", "end": "35.4175, 139.2137",

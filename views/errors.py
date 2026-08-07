@@ -30,8 +30,8 @@ from __future__ import annotations
 import tkinter as tk
 from typing import Any
 
-import config
-import i18n
+from core import config
+from core import i18n
 from views import dialogs
 
 

@@ -10,7 +10,7 @@ views/map_style.py
 ⛔ ここに関数やウィジェットを置かない（置いた瞬間に循環が戻る）。
 """
 
-import map_graphics
+from report import map_graphics
 
 # マーカー配色は map_graphics に集約（レポート地図生成 report_map.py と共通）。
 _UISP_CYAN_HEX = map_graphics.UISP_CYAN_HEX

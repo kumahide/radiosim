@@ -268,7 +268,7 @@ def test_layer_switch_changes_tiles_and_attribution(monkeypatch):
     『出典: 淡色地図』」という**事実と食い違う刻印**になる（3.1「刻印」トラックの
     精神にも反する）。片方だけ直る余地を残さないため、1 つのテストで両方を見る。
     """
-    import i18n
+    from core import i18n
 
 
     prev = i18n.current_lang()

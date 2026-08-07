@@ -24,8 +24,8 @@ import numpy as np
 import requests
 from PIL import Image
 
-import version
-from config import app_path, logger
+from core import version
+from core.config import app_path, logger
 
 # ============================================================
 # DEM タイルキャッシュのルートディレクトリ

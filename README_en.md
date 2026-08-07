@@ -200,28 +200,34 @@ python -m pip install -r requirements.txt
 
 ```
 radiosim/
-├── main.py               # Entry point
-├── models.py             # Pure calculation logic (no side effects)
-├── simulation.py         # ViewModel / orchestrator
-├── config.py             # App config I/O, input validation, logging (minimal external deps)
-├── dem.py                # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
-├── batch.py              # Batch execution engine (CSV I/O, validation, run)
-├── scenario.py           # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
-├── report_scenario.py    # Condition explorer output (A4 line chart + table, CSV; headless)
-├── multihop.py           # Relay path engine (A-3; waypoints to hops, min aggregation; headless)
-├── report_multihop.py    # Relay path output (route sheet + per-hop sheets, hops.csv; headless)
-├── project.py            # Project file (.rsproj) I/O — bundles the whole input set (headless)
-├── report_common.py      # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
-├── report_path.py        # Per-path output generation (PNG/HTML/KML; headless)
-├── report_summary.py     # Batch summary output generation (CSV/HTML/KML, all-pages document; headless)
-├── report_map.py         # Headless path-overlay map generation for reports
-├── map_graphics.py       # Pure-PIL map overlay drawing (shared by UI and reports)
-├── coords.py             # Coordinate notation conversion (DD <-> DMS, pure functions)
-├── units.py              # Distance display formatting (internal km -> displayed m, pure functions)
-├── mpl_fonts.py          # matplotlib Japanese font application (headless; shared by graph/report)
-├── i18n.py               # Multilingual string table
-├── version.py            # Version information
-├── views/
+├── main.py               # Entry point (belongs to no layer — it just starts and wires the UI)
+│
+│   # Layers are directories. Dependencies run one way: views -> report -> core.
+│   # Anything used by two layers goes to the lower one (no `shared/` catch-all).
+│
+├── core/                 # Foundation: calculation, data, config. Pulls neither tkinter nor matplotlib
+│   ├── models.py         # Pure calculation logic (no side effects)
+│   ├── simulation.py     # ViewModel / orchestrator
+│   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
+│   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
+│   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
+│   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
+│   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
+│   ├── i18n.py           # Multilingual string table
+│   └── version.py        # Version information
+├── report/               # The layer that produces output: engines and artifacts (headless)
+│   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
+│   ├── multihop.py       # Relay path engine (A-3; waypoints to hops, min aggregation)
+│   ├── project.py        # Project file (.rsproj) I/O — bundles the whole input set
+│   ├── report_common.py  # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
+│   ├── report_path.py    # Per-path output generation (PNG/HTML/KML)
+│   ├── report_summary.py # Batch summary output generation (CSV/HTML/KML, all-pages document)
+│   ├── report_scenario.py # Condition explorer output (A4 line chart + table, CSV)
+│   ├── report_multihop.py # Relay path output (route sheet + per-hop sheets, hops.csv)
+│   ├── report_map.py     # Headless path-overlay map generation for reports
+│   ├── map_graphics.py   # Pure-PIL map overlay drawing (shared by UI and reports)
+│   └── mpl_fonts.py      # matplotlib Japanese font application (shared by graph/report)
+├── views/                # Screens (tkinter)
 │   ├── launcher.py       # Launcher window (core: input form, run, progress)
 │   ├── launcher_menu.py  # Launcher menu bar and its actions (mixin)
 │   ├── launcher_project.py # Project (.rsproj) collect / save / load (mixin)
@@ -272,6 +278,7 @@ radiosim/
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
+    ├── test_layers.py
     ├── test_paths.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
@@ -709,7 +716,7 @@ Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 ## Project Files (.rsproj)
 
-A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](project.py) — headless, never imports tkinter).
+A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](report/project.py) — headless, never imports tkinter).
 
 ### What it bundles
 
@@ -875,6 +882,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
 | `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [docs/glossary.md](docs/glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
+| `test_layers.py`         | Layering gate (dependencies flow one way: views -> report -> core; no import-time cycles; `core/` pulls no GUI toolkit or plotting library; no layer is empty, which would make the checks vacuous) |
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |
 | `test_errors.py`         | Unhandled exceptions in GUI callbacks are logged **with a traceback** and surfaced in a dialog naming the log file (no stacked modals when errors repeat; the log survives even if the dialog cannot be shown) |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |

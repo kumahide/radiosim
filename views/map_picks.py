@@ -15,10 +15,10 @@ from typing import TYPE_CHECKING
 
 from PIL import ImageTk
 
-import i18n
-import map_graphics
-import models
-import units
+from core import i18n
+from core import models
+from core import units
+from report import map_graphics
 from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
                              _SINGLE_ZOOM, _UISP_CYAN_HEX)
 

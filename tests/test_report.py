@@ -22,13 +22,13 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 
-import batch
-import i18n
-import models
-import report_common
-import report_path
-import report_summary
-import simulation as sim
+from core import i18n
+from core import models
+from core import simulation as sim
+from report import batch
+from report import report_common
+from report import report_path
+from report import report_summary
 
 _KML_NS = "{http://www.opengis.net/kml/2.2}"
 

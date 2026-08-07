@@ -43,23 +43,17 @@ jobs:
         # （Low はローカル Stop-hook の助言に委ね、CI は実害級だけで落とす）。
         run: bandit -r . -c pyproject.toml -ll -q
 
+      # 対象は**層のディレクトリ**（2.7 スライス H・I-058）。ファイルを 43 件
+      # 手で並べていたが、モジュールを足すたびに書き足す作業が要り、書き忘れれば
+      # そのファイルだけ黙って型検査の外に出る。ディレクトリなら追従が要らない。
+      # ⚠️ ローカルの pytest からも同じ対象で回る（B-049 で降ろした
+      # tests/test_repo_hygiene.py::test_pyright_finds_no_type_errors_in_app_modules
+      # がこの行を読む）＝push を待たずに鳴る。
       - name: Pyright (type check, app modules)
         run: >-
           pyright
-          batch.py scenario.py models.py simulation.py config.py dem.py version.py
-          report_common.py report_path.py report_summary.py report_scenario.py
-          multihop.py report_multihop.py project.py
-          report_map.py
-          i18n.py main.py map_graphics.py coords.py units.py mpl_fonts.py
-          views/launcher.py views/graph.py views/batch_builder.py
-          views/map_window.py views/dialogs.py views/progress.py views/theme.py
-          views/window_fit.py views/errors.py
+          core report views main.py
           buildtools/check_bundle_imports.py
-          views/scenario.py views/multihop.py
-          views/launcher_menu.py views/launcher_project.py
-          views/launcher_windows.py views/tooltip.py
-          views/batch_table.py views/batch_io.py views/batch_run.py
-          views/map_picks.py views/map_cache.py views/map_style.py
 
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov

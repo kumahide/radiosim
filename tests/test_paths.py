@@ -24,8 +24,8 @@ import pathlib
 
 import pytest
 
-import config
-import dem
+from core import config
+from core import dem
 from conftest import ORIGINAL_APP_PATHS, apply_app_path_isolation
 
 #: `pytest.skip()` が投げる例外（`_no_display` の分岐を型で見分けるため）。
@@ -126,7 +126,7 @@ class TestAllFlowsUseResolver:
 
     def test_single_run_output_uses_resolver(self):
         """単一＝save_package の保存先は config.RESULTS_DIR 由来。"""
-        import simulation
+        from core import simulation
         src = pathlib.Path(simulation.__file__).read_text(encoding="utf-8")
         assert "config.RESULTS_DIR" in src
 
@@ -136,7 +136,7 @@ class TestAllFlowsUseResolver:
 
     def test_batch_output_uses_resolver(self):
         """バッチ＝run_batch の batch_dir は解決器由来。"""
-        import batch
+        from report import batch
         src = pathlib.Path(batch.__file__).read_text(encoding="utf-8")
         assert any(c in src for c in self._RESOLVER_CALLS)
 
@@ -153,8 +153,11 @@ class TestAllFlowsUseResolver:
         同じ式を持っていたが、解決器の呼び出しへ置き換えた。
         """
         offenders = []
-        for path in sorted(pathlib.Path(REPO_ROOT).glob("*.py")) + \
-                    sorted(pathlib.Path(REPO_ROOT, "views").glob("*.py")):
+        # 直下＋3 層すべてを見る（2.7 スライス H で層がディレクトリになった）。
+        paths = sorted(pathlib.Path(REPO_ROOT).glob("*.py"))
+        for layer in ("core", "report", "views"):
+            paths += sorted(pathlib.Path(REPO_ROOT, layer).glob("*.py"))
+        for path in paths:
             if path.name == "config.py":
                 continue
             if "sys.executable" in path.read_text(encoding="utf-8"):

@@ -25,12 +25,12 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import config
-import i18n
-import models
-import report_scenario
-import scenario as scn
-import simulation as sim
+from core import config
+from core import i18n
+from core import models
+from core import scenario as scn
+from core import simulation as sim
+from report import report_scenario
 
 
 # ============================================================
@@ -689,8 +689,8 @@ class TestScenarioWindowSmoke:
         塞いでいなければ、`wait_window()` で**人がボタンを押すまで止まる**
         （2026-07-26 に実際に止めた）。ここではダイアログが出たことも確かめる。
         """
-        import config as cfg_mod
-        import report_scenario
+        from core import config as cfg_mod
+        from report import report_scenario
 
         i18n.set_lang("ja")
         meta = {"project_name": "案件 A", "memo": "メモ A"}

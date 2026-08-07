@@ -14,12 +14,12 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import TYPE_CHECKING
 
-import config
-import i18n
+from core import config
+from core import i18n
 from views import dialogs
 
 if TYPE_CHECKING:                    # 実行時は遅延 import（起動を軽くする）。
-    import project                   # 文字列注釈の名前解決だけをここで通す。
+    from report import project                   # 文字列注釈の名前解決だけをここで通す。
 
 
 class _ProjectMixin:
@@ -48,7 +48,7 @@ class _ProjectMixin:
     # ----------------------------------------------------------
     def _project_doc(self) -> "project.ProjectDoc":
         """保持中の ProjectDoc（無ければ空で作る）。project は遅延 import。"""
-        import project
+        from report import project
         if self._project is None:
             self._project = project.ProjectDoc()
         return self._project
@@ -69,7 +69,7 @@ class _ProjectMixin:
         保存そのものは通す（入力途中でも保存できることを優先＝I-010 の逆側で、
         黙って失敗しないことが要点）。
         """
-        import project
+        from report import project
         doc = self._project_doc()
         doc.meta   = self._current_meta()
         doc.params = self._current_config()
@@ -103,7 +103,7 @@ class _ProjectMixin:
         return doc, warnings
 
     def _on_save_project(self) -> None:
-        import project
+        from report import project
         doc, warnings = self._collect_project()
         file_path = filedialog.asksaveasfilename(
             parent           = self.root,
@@ -126,7 +126,7 @@ class _ProjectMixin:
                     i18n.t("proj_saved").format(path=file_path) + "".join(warnings))
 
     def _on_open_project(self) -> None:
-        import project
+        from report import project
         file_path = filedialog.askopenfilename(
             parent    = self.root,
             title     = i18n.t("dlg_select_project"),

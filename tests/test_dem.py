@@ -13,8 +13,8 @@ import numpy as np
 import pytest
 import requests
 
-import config
-import dem
+from core import config
+from core import dem
 
 
 # ============================================================

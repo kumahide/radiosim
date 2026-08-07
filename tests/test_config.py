@@ -10,7 +10,7 @@ i18n キーの網羅性チェック（TestI18n）は、検証メッセージ（v
 import json
 import os
 
-import config
+from core import config
 
 
 # ============================================================
@@ -281,7 +281,7 @@ class TestI18n:
 
     def test_all_en_keys_exist_in_ja(self):
         """英語キーがすべて日本語にも定義されていること。"""
-        import i18n
+        from core import i18n
         en_keys = set(i18n._STRINGS["en"].keys())
         ja_keys = set(i18n._STRINGS["ja"].keys())
         missing = en_keys - ja_keys
@@ -289,7 +289,7 @@ class TestI18n:
 
     def test_all_ja_keys_exist_in_en(self):
         """日本語キーがすべて英語にも定義されていること。"""
-        import i18n
+        from core import i18n
         en_keys = set(i18n._STRINGS["en"].keys())
         ja_keys = set(i18n._STRINGS["ja"].keys())
         missing = ja_keys - en_keys
@@ -297,7 +297,7 @@ class TestI18n:
 
     def test_no_empty_values(self):
         """すべての翻訳値が空文字でないこと。"""
-        import i18n
+        from core import i18n
         for lang, strings in i18n._STRINGS.items():
             for key, val in strings.items():
                 assert val != "", f"空の翻訳値: lang='{lang}' key='{key}'"

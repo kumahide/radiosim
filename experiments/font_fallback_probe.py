@@ -23,7 +23,7 @@ from tkinter import font as tkfont
 
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import i18n                                    # noqa: E402
+from core import i18n                                    # noqa: E402
 from views import theme                        # noqa: E402
 
 

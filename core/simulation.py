@@ -22,12 +22,12 @@ from typing import Callable
 
 import numpy as np
 
-import config
-import coords
-import dem
-import i18n
-import models
-import units
+from core import config
+from core import coords
+from core import dem
+from core import i18n
+from core import models
+from core import units
 
 logger = logging.getLogger("radiosim")
 

@@ -71,7 +71,7 @@ def _prof_flush() -> None:
         # 再実装しない。**遅延 import 必須**＝モジュール先頭で config を読むと、
         # 下の truststore 注入（他の import より先に実行する必要がある）より
         # 前に import 連鎖が走ってしまう。この関数は実行時にしか呼ばれない。
-        from config import app_path
+        from core.config import app_path
         with open(app_path("radiosim_profile.log"), "a", encoding="utf-8") as f:
             f.write(text)
     except Exception:
@@ -96,8 +96,8 @@ from typing import Any
 import darkdetect
 import sv_ttk
 
-import i18n
-import config
+from core import config
+from core import i18n
 from views import errors, theme, window_fit
 from views.launcher import SimLauncher
 

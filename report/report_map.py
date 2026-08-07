@@ -34,10 +34,10 @@ from typing import NamedTuple
 import numpy as np
 from PIL import Image, ImageDraw
 
-import dem
-import map_graphics
-import models
-import units
+from core import dem
+from core import models
+from core import units
+from report import map_graphics
 
 logger = logging.getLogger(__name__)
 

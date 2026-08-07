@@ -30,10 +30,10 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import batch as b
-import config
-import i18n
-import simulation as sim
+from core import config
+from core import i18n
+from core import simulation as sim
+from report import batch as b
 from conftest import make_themed_root
 
 
@@ -346,7 +346,7 @@ def _fake_path_result(path_id: str, status: str):
     成果物が作れなかった（I-010）。ここでは後者で作る＝*計算が通っていても
     ERROR になり得る*ことを、画面のゲート側でも前提にしておくため。
     """
-    import batch
+    from report import batch
     row = batch.PathRow(path_id=path_id, lat_tx=34.5, lon_tx=132.4,
                         lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0)
     if status == "ERROR":
@@ -868,7 +868,7 @@ def _dms_sample_length() -> int:
 
     経度が 3 桁になる日本国内の座標で測る（`132°36'00.0"E`）＝ここが最長。
     """
-    import coords as _coords
+    from core import coords as _coords
     return len(_coords.format_dms(34.8, 132.6))
 
 
@@ -947,7 +947,7 @@ def test_loading_a_project_does_not_touch_open_windows_until_asked():
     緑になる。**押す前と押した後の両方**を見る。
     """
     pytest.importorskip("tkinter")
-    import project
+    from report import project
     root = make_themed_root()
     root.withdraw()
     try:
@@ -985,7 +985,7 @@ def test_no_notice_when_the_project_has_no_section_for_that_window():
     （`project.py` の約束）。出してしまうと「取り込む」が**行の全消し**になる。
     """
     pytest.importorskip("tkinter")
-    import project
+    from report import project
     root = make_themed_root()
     root.withdraw()
     try:

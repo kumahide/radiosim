@@ -281,24 +281,35 @@ _MODULE_LINE_LIMIT = 1045
 
 # 行数ではなく**性質**で外すもの（表・辞書＝分割しても読みやすくならない）。
 _LINE_LIMIT_EXEMPT = {
-    "i18n.py": "UI 文字列の辞書＝データ表。分割しても読む単位は変わらない",
+    "core/i18n.py": "UI 文字列の辞書＝データ表。分割しても読む単位は変わらない",
 }
+
+# アプリの層（2.7 スライス H・I-058）。直下は入口（main.py）だけ。
+_LAYERS = ("core", "report", "views")
 
 
 def _python_modules():
-    """アプリのモジュール（ルート直下と views/）。テスト・ツールは対象外。"""
-    return sorted(list(ROOT.glob("*.py")) + list((ROOT / "views").glob("*.py")))
+    """アプリのモジュール（直下の入口と 3 層）。テスト・ツールは対象外。"""
+    paths = list(ROOT.glob("*.py"))
+    for layer in _LAYERS:
+        paths += (ROOT / layer).glob("*.py")
+    return sorted(paths)
+
+
+def _rel(path) -> str:
+    """リポジトリからの相対パス（`core/i18n.py` の形）。"""
+    return path.relative_to(ROOT).as_posix()
 
 
 def test_no_module_exceeds_the_split_threshold():
     """アプリのモジュールが分割閾値を超えていないこと。"""
     over = []
     for path in _python_modules():
-        if path.name in _LINE_LIMIT_EXEMPT:
+        if _rel(path) in _LINE_LIMIT_EXEMPT:
             continue
         lines = len(path.read_text(encoding="utf-8").splitlines())
         if lines > _MODULE_LINE_LIMIT:
-            over.append(f"{path.name}: {lines} 行")
+            over.append(f"{_rel(path)}: {lines} 行")
     assert not over, (
         f"分割閾値（{_MODULE_LINE_LIMIT} 行）を超えたモジュールがある: {over}。"
         "割るか、理由を書いて _LINE_LIMIT_EXEMPT へ入れること"
@@ -396,8 +407,11 @@ def test_pyright_finds_no_type_errors_in_app_modules():
     （[[feedback-promote-recurring-checks]] 壊れ方①）。
     """
     targets = _ci_pyright_targets()
-    assert len(targets) >= 20 and any(t.startswith("views/") for t in targets), (
-        f"ci.yml から取り出した pyright の対象が痩せている: {targets}"
+    # 3 層とも入っていること。**件数ではなく層で見る**（2.7 スライス H で対象が
+    # ファイル 43 件からディレクトリ 3 つ＋α になった＝件数の下限は意味を失った）。
+    missing = {"core", "report", "views"} - set(targets)
+    assert not missing, (
+        f"ci.yml の pyright が層を取りこぼしている: {sorted(missing)}（対象={targets}）"
     )
     proc = subprocess.run(
         [sys.executable, "-m", "pyright", "--outputjson", *targets],
@@ -430,15 +444,16 @@ def test_pyright_finds_no_type_errors_in_app_modules():
 # ⚠️ 窓の名前を列挙して禁じない＝次に増える窓が別名だった瞬間に穴が開く
 # （[[feedback-promote-recurring-checks]] 実証10）。**読んでよい側を挙げる。**
 _CONFIG_READ_ALLOWED = {
-    "config.py":          "定義そのもの",
+    "core/config.py":     "定義そのもの",
     "main.py":            "起動時の読み込み（アプリの入口）",
     "views/launcher.py":  "凍結の出所＝ランチャーが読んで子窓へ渡す",
 }
 
 # `config.load_config()` と、`from config import load_config`（別名で持ち込んで
-# から呼ぶ経路）の両方を捕まえる。
+# から呼ぶ経路）の両方を捕まえる。⚠️ 層をディレクトリにしたので
+# `from core.config import load_config` の形も来る（2.7 スライス H）。
 _CONFIG_READ_RE = re.compile(
-    r"\bload_config\s*\(|from\s+config\s+import\s+[^\n]*\bload_config\b"
+    r"\bload_config\s*\(|from\s+(?:core\.)?config\s+import\s+[^\n]*\bload_config\b"
 )
 
 

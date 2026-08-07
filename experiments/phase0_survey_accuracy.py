@@ -55,8 +55,8 @@ import numpy as np
 
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-import models              # noqa: E402
-import simulation as sim   # noqa: E402
+from core import models              # noqa: E402
+from core import simulation as sim   # noqa: E402
 
 _CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "tests", "data", "golden_links.json")

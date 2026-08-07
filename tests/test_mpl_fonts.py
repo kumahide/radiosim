@@ -18,8 +18,8 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import i18n
-import mpl_fonts
+from core import i18n
+from report import mpl_fonts
 
 
 def _fake_fontlist(*names):

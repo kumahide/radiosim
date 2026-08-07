@@ -22,7 +22,7 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import i18n
+from core import i18n
 from conftest import make_tk_root, set_theme
 from views import theme
 
@@ -289,7 +289,7 @@ def test_batch_canvas_uses_theme_background():
     try:
         root.withdraw()
         set_theme("dark")
-        import simulation as sim
+        from core import simulation as sim
         from views.batch_builder import BatchBuilderWindow
         win = BatchBuilderWindow(root, sim.SimParams(_PARAMS))
         expected = theme.palette(root)["bg"]

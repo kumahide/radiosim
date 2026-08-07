@@ -15,10 +15,10 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING
 
-import batch
-import config
-import i18n
-import simulation as sim
+from core import config
+from core import i18n
+from core import simulation as sim
+from report import batch
 from views import dialogs
 
 if TYPE_CHECKING:

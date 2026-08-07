@@ -14,22 +14,22 @@ import tkinter as tk
 from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
-import config
-import coords
-import dem
-import i18n
-import simulation as sim
-import version
-from models import ENV_DEFAULT, ENV_KEYS
+from core import config
+from core import coords
+from core import dem
+from core import i18n
+from core import simulation as sim
+from core import version
+from core.models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs, theme, window_fit
 from views.launcher_menu import _MenuMixin
 from views.launcher_project import _ProjectMixin
 from views.launcher_windows import _ChildWindowsMixin
-from views.tooltip import Tooltip
 from views.progress import ProgressPump
+from views.tooltip import Tooltip
 
 if TYPE_CHECKING:              # 型注釈のためだけ＝起動時の import 連鎖を増やさない
-    import project
+    from report import project
 
 # 入力キー → i18n ツールチップキーのマッピング
 _TIP_KEYS: dict[str, str] = {

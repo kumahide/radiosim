@@ -23,17 +23,17 @@ from typing import TYPE_CHECKING
 
 import numpy as np
 
-import coords
-import i18n
-import models
-import mpl_fonts
-import report_common
-import report_map
-import units
+from core import coords
+from core import i18n
+from core import models
+from core import units
+from report import mpl_fonts
+from report import report_common
+from report import report_map
 
 if TYPE_CHECKING:
-    import simulation as sim
-    from batch import PathResult
+    from core import simulation as sim
+    from report.batch import PathResult
 
 logger = logging.getLogger("radiosim")
 

@@ -17,11 +17,11 @@ import tkinter as tk
 from tkinter import filedialog, ttk
 from typing import TYPE_CHECKING, Callable
 
-import config
-import dem
-import i18n
-import simulation as sim
-import version
+from core import config
+from core import dem
+from core import i18n
+from core import simulation as sim
+from core import version
 from views import theme
 
 if TYPE_CHECKING:

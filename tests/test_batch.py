@@ -20,15 +20,15 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-import batch
-import i18n
-import config
-import models
-import report_path
-import report_summary
-import simulation as sim
-from batch import _make_params
-from report_path import _find_obs_segments
+from core import config
+from core import i18n
+from core import models
+from core import simulation as sim
+from report import batch
+from report import report_path
+from report import report_summary
+from report.batch import _make_params
+from report.report_path import _find_obs_segments
 
 
 # ============================================================
@@ -672,7 +672,7 @@ class TestCsvCellHelper:
     """report_common.csv_cell 単体（書き手が複数あるので規則をここで固定する）。"""
 
     def test_risky_prefixes_are_quoted(self):
-        import report_common
+        from report import report_common
         for text in ("=1+1", "+SUM(1)", "-1+1", "@x", "\t=x", "\r=x", "\n=x"):
             assert report_common.csv_cell(text) == "'" + text
 
@@ -682,22 +682,22 @@ class TestCsvCellHelper:
         表計算ソフトは前置の空白を無視して数式評価し得るので、`" =1+1"` は
         素通しできない。`'` は元の文字列に付ける＝空白ごと文字列として見せる。
         """
-        import report_common
+        from report import report_common
         for text in (" =1+1", "  =HYPERLINK(\"http://x\")", "\t @SUM(1)"):
             assert report_common.csv_cell(text) == "'" + text
 
     def test_leading_whitespace_number_still_passes(self):
         """空白始まりでも数値なら数式ではない＝クォートしない。"""
-        import report_common
+        from report import report_common
         assert report_common.csv_cell(" -93.20") == " -93.20"
 
     def test_numeric_values_pass_through(self):
-        import report_common
+        from report import report_common
         for text in ("-93.20", "-0.5", "+12", "-1e3"):
             assert report_common.csv_cell(text) == text
 
     def test_none_and_plain_text(self):
-        import report_common
+        from report import report_common
         assert report_common.csv_cell(None) == ""
         assert report_common.csv_cell("p01") == "p01"
 

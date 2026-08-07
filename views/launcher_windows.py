@@ -14,12 +14,12 @@ import os
 import tkinter as tk
 from typing import TYPE_CHECKING
 
-import config
-import coords
-import simulation as sim
+from core import config
+from core import coords
+from core import simulation as sim
 
 if TYPE_CHECKING:
-    import project
+    from report import project
 
 
 class _ChildWindowsMixin:

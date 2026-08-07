@@ -34,12 +34,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
 
-import batch
-import config
-import multihop
-import report_summary
-import scenario
-import simulation as sim
+from core import config
+from core import scenario
+from core import simulation as sim
+from report import batch
+from report import multihop
+from report import report_summary
 
 
 class _Boom(RuntimeError):
@@ -158,7 +158,7 @@ def test_per_path_failure_logs_traceback(tmp_path, default_params_dict,
     `PathResult(ok=False)` に畳まれ、**バッチは完走する**（それが仕様）。
     計算・保存・レポート描画の失敗は全部この経路へ入る。
     """
-    import report_path
+    from report import report_path
 
     _isolate(tmp_path, monkeypatch)          # 実ネットワーク・本番の出力先を断つ
 

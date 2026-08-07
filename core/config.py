@@ -18,7 +18,7 @@ import math
 import os
 import sys
 
-import i18n
+from core import i18n
 
 # ============================================================
 # パス解決
@@ -36,10 +36,16 @@ import i18n
 #   基準を固定するだけで、通常起動時の保存先は従来と完全に同じになる。
 # ============================================================
 def app_base_dir() -> str:
-    """アプリが書き込む先の基準ディレクトリ（凍結時は exe の隣、そうでなければソースの隣）。"""
+    """アプリが書き込む先の基準ディレクトリ（凍結時は exe の隣、そうでなければソースの隣）。
+
+    ⚠️ **「ソースの隣」＝リポジトリ直下**であって、このファイルの隣ではない。
+    2.7 スライス H でこのモジュールが `core/` へ入ったので、`__file__` の親を
+    そのまま使うと保存先が `<repo>/core/results` へ黙ってずれる（設定・ログ・
+    DEM キャッシュも同じ経路）。⇒ **層のぶんだけ 1 つ上がる。**
+    """
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
-    return os.path.dirname(os.path.abspath(__file__))
+    return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def app_path(*parts: str) -> str:

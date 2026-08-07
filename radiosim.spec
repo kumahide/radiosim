@@ -63,7 +63,7 @@ from PyInstaller.utils.win32.versioninfo import (
     VarFileInfo, VarStruct,
 )
 
-import version as _ver
+from core import version as _ver   # 層はディレクトリ（2.7 スライス H）
 
 def _to_ver_tuple(v: str) -> tuple:
     """'2.0' → (2, 0, 0, 0)、'2.1.3' → (2, 1, 3, 0)、'2.0RC2' → (2, 0, 0, 2)"""

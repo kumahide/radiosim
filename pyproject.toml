@@ -27,20 +27,12 @@ exclude_dirs = ["tests", "build", "dist", ".venv"]
 skips = ["B101"]
 
 [tool.coverage.run]
-# ヘッドレス層全体をゲート対象にする（= Web/PWA で再利用予定の資産。
-# 従来はコア3モジュールのみで、report/batch の出力層が死角だった）。
-# ⚠️ ここは手で書くリストなので、モジュールを増やす/割ると黙って死角が生まれる
-# （2.5a2 で report.py を 3 分割したとき "report" が残り、出力層がまるごと
-# 計測外になっていた）。tests/test_docs_consistency.py がルート直下の
-# ヘッドレスモジュール全件との一致を検査する。
-source = [
-    "models", "simulation", "config", "dem",
-    "batch", "scenario",
-    "report_common", "report_path", "report_summary", "report_scenario",
-    "multihop", "report_multihop", "project",
-    "report_map",
-    "coords", "units", "map_graphics", "mpl_fonts", "i18n",
-]
+# ヘッドレス層全体をゲート対象にする（= Web/PWA で再利用予定の資産）。
+# 🔑 **層がディレクトリになったので 2 要素で済む**（2.7 スライス H・I-058）。
+# 以前はモジュール名を 19 件手で並べており、実際に一度腐った＝2.5a2 で
+# report.py を 3 分割したとき "report" が残り、出力層がまるごと計測外だった。
+# **ディレクトリ表現なら、割っても増やしても追従の作業が発生しない。**
+source = ["core", "report"]
 omit   = ["views/*", "main.py"]   # GUI層（tkinter）はカバレッジ対象外
 
 [tool.coverage.report]
