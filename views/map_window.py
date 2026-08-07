@@ -26,7 +26,6 @@ views/map_window.py
 """
 
 import os
-import threading
 import time
 import tkinter as tk
 from tkinter import ttk
@@ -37,27 +36,18 @@ from PIL import ImageTk
 import dem
 import i18n
 import map_graphics
-import models
-import units
 from tkintermapview import TkinterMapView
-from views import dialogs, theme, window_fit
+from views import theme, window_fit
 from views.map_cache import _CacheMixin
 from views.map_picks import _PickMixin
-from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
-                             _OUTLINE_COLOR, _SINGLE_ZOOM, _UISP_CYAN_HEX)
 from views.progress import ProgressPump
 
 logger = __import__("logging").getLogger("radiosim")
 
-
-# zoom-14 オーバーレイの色（最高精度レベルで色分け）。
-# scan_cache_overlay はキャッシュ済みセルのみ返す（未取得は描画しない）ため、
-# ここに含めるのは 5a/5b/dem の 3 レベルだけ。
-_LEVEL_COLORS: dict[str, str] = {
-    "5a":   "#90EE90",  # 緑: 5m航空（dem5a_png）
-    "5b":   "#FFD700",  # 黄: 5m写真（dem5b_png）
-    "dem":  "#87CEEB",  # 水色: 10m（dem_png）
-}
+# ⚠️ `_LEVEL_COLORS`（zoom-14 オーバーレイの色）は
+# [views/map_style.py](map_style.py) へ移した＝**使うのは `map_cache.py` だけ**
+# なのにここに残っており、あちらから見えていなかった（2.7 スライス A の分割で
+# 生まれた `NameError`。`ruff` の F821 が指していた）。
 
 
 # 背景タイル（**2 択だけ**・I-028）。どちらも地理院タイル＝外部 API は GSI 一本の

@@ -312,6 +312,41 @@ def test_line_limit_exemptions_still_exist():
 
 
 # ============================================================
+# 未定義の名前・未使用の import（2.7 スライス F で新設）
+# ============================================================
+# 🔴 **CI にしか無いゲートは、push するまで一度も鳴らない。**
+# 2.7 スライス A（view 分割）は `views/map_cache.py` に `_LEVEL_COLORS` の
+# **未定義参照**（定義は `map_window.py` に残っていた＝`NameError`）を残したが、
+# 気づいたのは 6 コミットあと。理由は単純で、**この間 push が無く CI が一度も
+# 走らなかった**から。`ruff` は最初からこれを F821 として指していた。
+# ⇒ **同じ検査をローカルの pytest からも回す**（設定は pyproject の
+#    [tool.ruff] をそのまま使うので二重管理にならない）。
+#
+# ⚠️ **未使用 import も一緒に見る**（F401）。分割の残骸というだけでなく、
+# **テストが「たまたま生きている import」経由でモジュールを差し替えている**のを
+# 隠す（実例＝`tests/test_batch.py` が `batch_builder.os` を差し替えていたが、
+# 実際に `os.startfile` を呼ぶのは `batch_run.py` だった。モジュールオブジェクトは
+# 共有なので通っていただけで、掃除した瞬間に落ちた）。
+def test_ruff_finds_no_undefined_names_or_unused_imports():
+    """`ruff check .` が通ること（CI の Ruff ステップと同じ設定・同じ対象）。
+
+    ⚠️ **`sys.executable -m ruff` で呼ぶ**＝`shutil.which("ruff")` は venv の
+    `Scripts/` が PATH に無い実行のしかたで空を返す。そこで skip すると、
+    **一度も鳴らないゲート**になる（[[feedback-promote-recurring-checks]] 壊れ方②）。
+    """
+    proc = subprocess.run(
+        [sys.executable, "-m", "ruff", "check", ".", "--output-format", "concise"],
+        cwd=ROOT, capture_output=True, text=True, errors="replace",
+    )
+    if "No module named ruff" in proc.stderr:
+        pytest.skip("ruff が入っていない（requirements-dev.txt）")
+    assert proc.returncode == 0, (
+        "ruff の指摘がある（CI の Ruff ステップが同じ内容で落ちる）:\n"
+        + proc.stdout + proc.stderr
+    )
+
+
+# ============================================================
 # アプリ設定の出所は 1 つ（2.7 スライス G2＝I-055 ②）
 # ============================================================
 # 🔴 背景: 窓が `config.load_config()` を**直に**呼ぶと、①テストの緑が開発機の

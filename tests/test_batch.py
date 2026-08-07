@@ -1442,18 +1442,24 @@ class TestBatchCompletionOpensChosenReport:
     def _win(self, monkeypatch, default_params_dict):
         from conftest import make_tk_root
         import views.batch_builder as bb
+        import views.batch_run as br      # ⚠️ 差し替え先は**実際に呼ぶ側**
 
         root = make_tk_root()
         root.withdraw()
         i18n.set_lang("ja")
         win = bb.BatchBuilderWindow(root, sim.SimParams(default_params_dict))
         opened: list[str] = []
-        monkeypatch.setattr(bb.os, "startfile", lambda p: opened.append(str(p)),
+        # ⚠️ **`batch_builder` ではなく `batch_run` を差し替える**＝`os.startfile` /
+        # `dialogs.choose` を呼ぶのは 2.7 スライス A で切り出したこちら。従来は
+        # `bb.os` を差し替えていたが、**モジュールオブジェクトは共有**なので
+        # `os.startfile` をプロセス全体で差し替えていた（＝たまたま効いていた）。
+        # 未使用 import を掃除した途端に `bb.os` が消えて落ちた。
+        monkeypatch.setattr(br.os, "startfile", lambda p: opened.append(str(p)),
                             raising=False)
-        return root, win, bb, opened
+        return root, win, br, opened
 
-    def _complete(self, win, bb, monkeypatch, choice, batch_dir):
-        monkeypatch.setattr(bb.dialogs, "choose",
+    def _complete(self, win, br, monkeypatch, choice, batch_dir):
+        monkeypatch.setattr(br.dialogs, "choose",
                             lambda *a, **k: choice)
         win._pump.start()
         win._on_batch_complete(str(batch_dir), [])
@@ -1464,18 +1470,18 @@ class TestBatchCompletionOpensChosenReport:
     ])
     def test_opens_the_chosen_report(self, monkeypatch, tmp_path, default_params_dict,
                                      choice, expected):
-        root, win, bb, opened = self._win(monkeypatch, default_params_dict)
+        root, win, br, opened = self._win(monkeypatch, default_params_dict)
         try:
-            self._complete(win, bb, monkeypatch, choice, tmp_path)
+            self._complete(win, br, monkeypatch, choice, tmp_path)
             assert opened and opened[0].endswith(expected), opened
         finally:
             win.destroy(); root.destroy()
 
     def test_opens_nothing_when_dismissed(self, monkeypatch, tmp_path,
                                           default_params_dict):
-        root, win, bb, opened = self._win(monkeypatch, default_params_dict)
+        root, win, br, opened = self._win(monkeypatch, default_params_dict)
         try:
-            self._complete(win, bb, monkeypatch, None, tmp_path)
+            self._complete(win, br, monkeypatch, None, tmp_path)
             assert opened == []
         finally:
             win.destroy(); root.destroy()

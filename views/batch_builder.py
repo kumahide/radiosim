@@ -10,18 +10,16 @@ views/batch_builder.py
 実行は batch.run_batch() に委譲する。
 """
 
-import os
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import ttk
 from typing import Callable
 
 import batch
 import coords
 import i18n
 import simulation as sim
-import units
 from models import ENV_KEYS
-from views import dialogs, theme, window_fit
+from views import theme
 from views.batch_io import _CsvMixin
 from views.batch_run import _RunMixin
 from views.batch_table import _TableMixin

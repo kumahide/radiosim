@@ -12,10 +12,14 @@ views/launcher_project.py
 
 import tkinter as tk
 from tkinter import filedialog
+from typing import TYPE_CHECKING
 
 import config
 import i18n
 from views import dialogs
+
+if TYPE_CHECKING:                    # 実行時は遅延 import（起動を軽くする）。
+    import project                   # 文字列注釈の名前解決だけをここで通す。
 
 
 class _ProjectMixin:

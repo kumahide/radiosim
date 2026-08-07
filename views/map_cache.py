@@ -16,7 +16,7 @@ import time
 import dem
 import i18n
 from views import dialogs
-from views.map_style import _OUTLINE_COLOR
+from views.map_style import _LEVEL_COLORS, _OUTLINE_COLOR
 
 logger = __import__("logging").getLogger("radiosim")
 

@@ -7,12 +7,11 @@ views/launcher.py
 simulation・config・dem の各モジュールを呼ぶだけ。
 """
 
-import json
 import os
 import threading
 import time
 import tkinter as tk
-from tkinter import filedialog, ttk
+from tkinter import ttk
 from typing import TYPE_CHECKING, Callable
 
 import config
