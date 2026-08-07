@@ -582,25 +582,80 @@ def test_window_still_fits_after_content_grows(name, monkeypatch):
         root.destroy()
 
 
-def test_growing_content_does_not_shrink_the_window(monkeypatch):
-    """広がった窓を、あとの操作で勝手に狭めないこと。
+# 「増やす操作」が**必要サイズを動かさない**窓＝理由を書いてここへ入れる
+# （2.7 スライス F で新設）。⚠️ 空欄にできない＝**理由ごと残して見直せる**ように
+# するのがこの表の目的（`_LINE_LIMIT_EXEMPT` と同じ扱い）。
+_GROW_EXEMPT = {
+    "batch":
+        "入力表は受け皿（キャンバス）の中にあり、行を足しても窓の必要サイズは動かない"
+        "（実測 2026-08-07＝1 行 / 12 行 / 30 行とも 1378x612）。列幅も入力欄の"
+        "文字数で決まるので、長い備考を入れても広がらない",
+    "scenario":
+        "条件列は増えるが、この窓の幅は座標欄が決めており吸収される"
+        "（実測 2026-08-07＝1 列 / 4 列 / 5 列とも 1105x986）。2.7 スライス E で"
+        "座標欄を広げ 1009 → 1105px になったときから吸収されるようになった",
+}
 
-    ユーザーが手で広げた窓／中身に合わせて広げた窓を縮めるのは、見切れの逆側の
-    嫌がらせになる（条件を 1 つ消したら窓が縮んで他の入力が見えなくなる、等）。
+
+@pytest.mark.parametrize(
+    "name", sorted(n for n, (_, grow) in _WINDOWS.items() if grow is not None))
+def test_the_grow_operation_actually_grows(name):
+    """登録した「中身を増やす操作」が、**本当に必要サイズを増やす**こと。
+
+    🔴 **上の `test_window_still_fits_after_content_grows` は、増やす操作が
+    何も増やさなくなっても緑のまま**＝「増えても収まる」を主張しているのに、
+    増えていないので何も検査していない（[[feedback-promote-recurring-checks]]
+    壊れ方②）。実際 2026-08-07 に測ったら **3 本中 2 本が動いていなかった**
+    （batch / scenario）。窓が育つほど、増やす操作は静かに吸収されていく。
+
+    ⇒ **個別のテストではなく登録表（`_WINDOWS`）そのものを検査する**ので、
+    窓を足す人が「増やす操作」を書いた時点で、それが効いているかを機械が言う。
+
+    ⚠️ **除外側も検査する**（増えるようになったら除外が古い）＝除外表は
+    「今は動かない」という**観測の記録**であって、免除の永久パスではない。
     """
+    prev = i18n._lang
     root = make_themed_root()
     try:
         root.withdraw()
         i18n.set_lang("ja")
-        win, owner = _open_scenario(root)
-        _grow_scenario(owner)
+        opener, grow = _WINDOWS[name]
+        win, owner = opener(root)
         root.update_idletasks()
-        wide = win._fit_size[0]
-        owner._remove_condition_column()
+        before = window_fit.required_size(win)
+        grow(win, owner)
         root.update_idletasks()
-        assert win._fit_size[0] == wide
+        after = window_fit.required_size(win)
+
+        if name in _GROW_EXEMPT:
+            assert after == before, (
+                f"{name} の「増やす操作」が必要サイズを動かすようになった"
+                f"（{before} → {after}）。_GROW_EXEMPT から外すこと"
+                f"（除外の理由: {_GROW_EXEMPT[name]}）。"
+            )
+        else:
+            assert after != before, (
+                f"{name} の「増やす操作」が必要サイズを 1px も動かしていない"
+                f"（{before} のまま）＝`test_window_still_fits_after_content_grows` は"
+                "この窓について何も検査していない。増える操作へ直すか、"
+                "理由を書いて _GROW_EXEMPT へ入れること。"
+            )
     finally:
+        i18n.set_lang(prev)
         root.destroy()
+
+
+def test_grow_exemptions_still_refer_to_registered_windows():
+    """除外表に、登録されていない窓・増やす操作の無い窓が残っていないこと。"""
+    stale = [name for name in _GROW_EXEMPT
+             if name not in _WINDOWS or _WINDOWS[name][1] is None]
+    assert not stale, f"除外表に古い項目がある: {stale}"
+
+
+# ⛔ `test_growing_content_does_not_shrink_the_window` は 2.7 スライス F で削除。
+#    条件列を足しても引いても条件探索の必要サイズが動かない（上記の除外理由）ので、
+#    「広げた窓を狭めない」を**恒真**に主張していた。同じ約束は、下の
+#    `test_refit_all_does_not_shrink_unless_asked` が DPI 経由で非自明に見ている。
 
 
 # ============================================================

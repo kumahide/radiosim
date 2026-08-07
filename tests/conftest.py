@@ -293,6 +293,43 @@ def _app_paths_stay_isolated():
     yield
 
 
+# ============================================================
+# skip 予算（2.7 スライス F で新設）
+# ============================================================
+# 🔴 **「ほとんど走らなかった」を終了コード 0 で返させない。**
+# 上の `_no_display` は Tk 由来の大量 skip を塞ぐが、**skip の出所は他にも増える**
+# ので、理由を問わない網をもう 1 枚置く（[[feedback-promote-recurring-checks]]
+# ＝列挙で塞ぐ穴は名前 1 つで開く）。
+#
+# 桁で区別する＝正当な skip は 2026-08-07 実測で **1297 本中 5 本（0.4%）**
+# （alpha 段階の doc 追従猶予）。事故は **112 本中 106 本（95%）**だった。
+# ⚠️ **小さな部分実行には効かせない**＝1 ファイルだけ回すと正当な skip でも
+# 割合が跳ねる（`test_docs_consistency.py` 単独で 39 本中 5 本＝13%）。
+_SKIP_BUDGET_MIN_TESTS = 100      # これ未満の実行は部分実行とみなして見ない
+_SKIP_BUDGET_RATIO     = 0.25     # 全体実行でこれを超えたら「走っていない」
+
+
+def pytest_sessionfinish(session, exitstatus):
+    """大半が skip なら、終了コードを失敗にする（緑に化けさせない）。"""
+    if exitstatus != 0:
+        return                      # 既に赤＝上書きしない
+    reporter = session.config.pluginmanager.get_plugin("terminalreporter")
+    total = session.testscollected
+    if reporter is None or total < _SKIP_BUDGET_MIN_TESTS:
+        return
+    skipped = len(reporter.stats.get("skipped", []))
+    if skipped <= total * _SKIP_BUDGET_RATIO:
+        return
+    reporter.write_sep(
+        "=",
+        f"skip が多すぎます（{skipped}/{total} 本）。"
+        f"上限は {_SKIP_BUDGET_RATIO:.0%}＝この実行はテストとして成立していません。"
+        "（GUI の skip なら表示環境を疑うこと。ヘッドレスで回すなら "
+        "RADIOSIM_HEADLESS=1 を宣言する）",
+        red=True, bold=True,
+    )
+    session.exitstatus = 1
+
 def pytest_unconfigure(config):
     """一時ディレクトリを片付ける（ログハンドラを閉じてから）。"""
     if not _ISOLATED_TMP_DIR:
@@ -445,6 +482,30 @@ def flat_terrain():
 
 _TK_INIT_ATTEMPTS = 5
 
+# 🔴 **skip は「表示が無い環境」でだけ正当**（＝ヘッドレス CI）。開発機で 5 回とも
+# 失敗したのなら、それは**一過性の失敗が収まらなかった**という結果であって、
+# 「この環境では検査しなくてよい」ではない。区別が付かないまま skip へ倒すと、
+# **大量 skip・終了コード 0 の「緑」**が出る（2026-08-07 に実測＝112 本中 106 本が
+# skip。しかも変異検証をその実行で回してしまい、壊した実装が「緑」と出た）。
+#
+# ⇒ **環境を宣言させる**（`RADIOSIM_PYTHON` と同じ流儀・B-041）。CI は
+# `RADIOSIM_HEADLESS=1` を宣言しているので従来どおり skip、宣言の無い環境では
+# **fail** させて緑に化けないようにする。
+_HEADLESS_DECLARED = bool(os.environ.get("RADIOSIM_HEADLESS"))
+
+
+def _no_display(reason: str):
+    """表示が使えないときの終わり方（宣言された環境だけ skip・他は fail）。"""
+    if _HEADLESS_DECLARED:
+        pytest.skip(reason)
+    pytest.fail(
+        f"{reason}\n"
+        "＝表示があるはずの環境で Tk を起こせなかった。ヘッドレスで回すなら "
+        "`RADIOSIM_HEADLESS=1` を宣言すること（宣言の無い環境で skip へ倒すと、"
+        "GUI 配線を 1 つも検査しないまま『緑』になる）。",
+        pytrace=False,
+    )
+
 
 def make_tk_root(pytest_module=None):
     """tkinter のルートを生成する。間欠的な初期化失敗は数回リトライする。
@@ -460,7 +521,7 @@ def make_tk_root(pytest_module=None):
         except tk.TclError as e:
             last = e
             time.sleep(0.05)
-    pytest.skip(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
+    _no_display(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
 
 
 def make_themed_root(theme_name: str = "dark"):
@@ -498,4 +559,4 @@ def set_theme(name: str) -> None:
         except tk.TclError as e:
             last = e
             time.sleep(0.05)
-    pytest.skip(f"sv_ttk テーマを読み込めない（{_TK_INIT_ATTEMPTS} 回試行）: {last}")
+    _no_display(f"sv_ttk テーマを読み込めない（{_TK_INIT_ATTEMPTS} 回試行）: {last}")

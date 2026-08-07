@@ -22,9 +22,14 @@ import logging
 import os
 import pathlib
 
+import pytest
+
 import config
 import dem
 from conftest import ORIGINAL_APP_PATHS, apply_app_path_isolation
+
+#: `pytest.skip()` が投げる例外（`_no_display` の分岐を型で見分けるため）。
+_SKIPPED = pytest.skip.Exception
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -231,3 +236,84 @@ class TestTestRunIsolation:
                      if isinstance(h, logging.FileHandler)
                      and self._is_inside_repo(h.baseFilename)]
         assert not offenders, f"テストのログが実リポジトリへ流れている: {offenders}"
+
+# ============================================================
+# 「緑」は「走った」を意味すること（2.7 スライス F で新設）
+# ============================================================
+class TestGreenMeansItRan:
+    """テストが**走らなかった**ことを、緑で隠さないための 2 枚の網。
+
+    🔴 2026-08-07 に実測した事故＝GUI テストが **112 本中 106 本 skip・終了
+    コード 0** で終わり、その実行で変異検証を回してしまい**壊した実装が「緑」**
+    と出た。skip は「表示が無い環境」でだけ正当なので、**環境を宣言させて**
+    区別する（`RADIOSIM_PYTHON` と同じ流儀）＋ 理由を問わない**割合の網**を置く。
+    """
+
+    # -- 網① 宣言された環境だけ skip ---------------------------
+    def test_display_failure_is_a_skip_only_when_headless_is_declared(self, monkeypatch):
+        """宣言があれば skip（CI）・無ければ fail（開発機）。"""
+        import conftest
+
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", True)
+        with pytest.raises(BaseException) as declared:   # Skipped/Failed は BaseException
+            conftest._no_display("表示なし")
+        assert declared.errisinstance(_SKIPPED), (
+            "ヘッドレスを宣言した環境で skip 以外になった＝CI が赤くなる"
+        )
+
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        with pytest.raises(BaseException) as undeclared:
+            conftest._no_display("表示なし")
+        assert not undeclared.errisinstance(_SKIPPED), (
+            "表示があるはずの環境で skip へ倒している＝GUI 配線を 1 つも検査せずに"
+            "緑になる（2026-08-07 に実測した事故そのもの）。"
+        )
+
+    # -- 網② 大半が skip なら赤 --------------------------------
+    @staticmethod
+    def _finish(collected: int, skipped: int, exitstatus: int = 0) -> int:
+        """`pytest_sessionfinish` を偽のセッションで回し、終了コードを返す。"""
+        import conftest
+
+        class _Reporter:
+            stats = {"skipped": [object()] * skipped}
+            def write_sep(self, *a, **k): pass
+
+        class _PM:
+            def get_plugin(self, _name): return _Reporter()
+
+        class _Config:
+            pluginmanager = _PM()
+
+        class _Session:
+            config = _Config()
+            testscollected = collected
+
+        session = _Session()
+        session.exitstatus = exitstatus
+        conftest.pytest_sessionfinish(session, exitstatus)
+        return session.exitstatus
+
+    def test_a_run_that_mostly_skipped_is_red(self):
+        """事故の実測値（112 本中 106 本 skip）が赤になること。"""
+        assert self._finish(collected=112, skipped=106) == 1
+
+    def test_a_normal_run_stays_green(self):
+        """正当な skip（実測＝1297 本中 5 本）は素通しすること。"""
+        assert self._finish(collected=1297, skipped=5) == 0
+
+    def test_a_partial_run_is_not_judged(self):
+        """1 ファイル・`-k` の部分実行は見ない（正当な skip でも割合が跳ねる）。
+
+        ⚠️ **下限（`_SKIP_BUDGET_MIN_TESTS`）が効いていることを見る値を選ぶ**＝
+        `test_docs_consistency.py` 単独の実測（39 本中 5 本＝13%）は**割合の側で
+        既に下回っている**ので、下限を外しても緑のまま＝この検査が下限について
+        何も言わない（変異検証で実際に素通りした）。⇒ **割合を超える小さな実行**
+        （10 本中 6 本＝60%）で見る。`-k` で数本に絞れば普通に起こる形。
+        """
+        assert self._finish(collected=39, skipped=5) == 0     # 割合も下回る
+        assert self._finish(collected=10, skipped=6) == 0     # 下限だけが効く
+
+    def test_an_already_red_run_is_left_alone(self):
+        """既に赤い実行の終了コードを書き換えないこと。"""
+        assert self._finish(collected=112, skipped=106, exitstatus=2) == 2

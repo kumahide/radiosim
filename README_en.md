@@ -844,6 +844,13 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 > Python, `tests/conftest.py` stops the run and explains why. **Nothing happens
 > where the variable is unset** (CI, a fresh clone), so `python -m pytest` is fine there.
 
+> 🖥 **Declare `RADIOSIM_HEADLESS=1` where there is no display.** GUI tests stop
+> when Tk cannot start: **with the declaration they skip, without it they fail.**
+> Skipping on a machine that does have a display turns a run in which *no GUI
+> wiring was checked at all* into a green one (observed 2026-08-07: 106 of 112
+> tests skipped, exit code 0). A full run also **fails when more than 25% of the
+> tests skip**, whatever the reason.
+
 ### Test Suite
 
 | File                       | Coverage                                                                        |

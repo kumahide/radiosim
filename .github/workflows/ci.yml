@@ -14,6 +14,12 @@ jobs:
     runs-on: ubuntu-latest
     env:
       MPLBACKEND: Agg   # matplotlib must not try to open a display
+      # Declare that this runner has no display, so tests/conftest.py may skip the
+      # GUI layer. Without this declaration a failure to start Tk is a *failure*,
+      # not a skip -- on a machine that does have a display, "skipped" would hide
+      # a run in which no GUI wiring was checked at all (observed 2026-08-07:
+      # 106 of 112 tests skipped, exit code 0).
+      RADIOSIM_HEADLESS: "1"
     steps:
       - uses: actions/checkout@v5
 
