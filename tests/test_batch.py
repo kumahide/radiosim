@@ -1597,3 +1597,88 @@ class TestCommonSettingsValidation:
             assert win._running is False
         finally:
             win.destroy(); root.destroy()
+
+
+# ============================================================
+# ホイールスクロールが「この窓の中だけ」に効くこと（B-050）
+# ============================================================
+class TestBatchTableWheelIsScopedToItsWindow:
+    """バッチ表のホイールを `bind_all` から**窓に閉じたバインド**へ変えた（B-050）。
+
+    `bind_all` は 2 つ壊していた:
+      ①**窓を閉じても解放されない**＝登録先がルートの `_tclCommands` で、しかも
+        CPython の `unbind_all` は `deletecommand` しない（開閉のたびに +40 個）。
+      ②**他の窓と干渉する**＝[views/window_fit.py](views/window_fit.py) の注記が
+        この行を名指ししていた（他窓のホイールを拾う・上書きされる・閉じるときに
+        他窓のバインドまで消す）。
+
+    ⚠️ **機能そのもの（表がホイールで動く）には検査が 1 本も無かった**ので、
+    直し方の検査と一緒にここで足す＝**直したことで壊れていないか**を見る側。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _restore_lang(self):
+        """言語を戻す（このクラスは ja でウィンドウを組むため）。
+
+        🔴 **これを落として実際に汚染した**＝後続の `test_config` が英語メッセージを
+        assert して 3 件落ちた。**同じファイルの上にこの警告が書いてあった**のに、
+        新しいクラスを足すときに写し忘れた＝注意書きは新規追加を守らない。
+        """
+        prev = i18n._lang
+        yield
+        i18n.set_lang(prev)
+
+    def _win(self, default_params_dict):
+        from conftest import make_tk_root
+        import views.batch_builder as bb
+
+        root = make_tk_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        return root, bb.BatchBuilderWindow(root, sim.SimParams(default_params_dict))
+
+    def test_the_wheel_is_not_bound_globally(self, default_params_dict):
+        """アプリ全体（`bind all`）へ登録していないこと＝リークと干渉の原因。"""
+        root, win = self._win(default_params_dict)
+        try:
+            assert not str(root.bind_all("<MouseWheel>")).strip(), (
+                "バッチ表がホイールを bind_all している＝窓を閉じても解放されず、"
+                "他の窓のホイールまで拾う（B-050）"
+            )
+            assert str(win.bind("<MouseWheel>")).strip(), (
+                "窓に閉じたバインドが無い＝表がホイールで動かない"
+            )
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_the_wheel_still_scrolls_the_table(self, default_params_dict):
+        """ポインタが表の上にあれば、従来どおりスクロールすること。"""
+        from types import SimpleNamespace
+
+        root, win = self._win(default_params_dict)
+        moved: list[tuple] = []
+        try:
+            win.winfo_containing = lambda *_a, **_k: win._canvas   # 表の上にいる
+            win._canvas.yview_scroll = lambda n, what: moved.append((n, what))
+            win._on_mousewheel(SimpleNamespace(x_root=0, y_root=0, delta=-120))
+            assert moved == [(1, "units")], f"表が動かなかった: {moved}"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_the_wheel_ignores_the_rest_of_the_window(self, default_params_dict):
+        """表の外（共通設定欄など）で回しても表は動かないこと。
+
+        見ている場所と動く場所がずれるため。**窓に閉じたバインドになった後も要る**
+        ＝バインドの範囲が「窓の中」なので、表の外もここへ届く。
+        """
+        from types import SimpleNamespace
+
+        root, win = self._win(default_params_dict)
+        moved: list[tuple] = []
+        try:
+            win.winfo_containing = lambda *_a, **_k: win        # 窓の地の部分
+            win._canvas.yview_scroll = lambda n, what: moved.append((n, what))
+            win._on_mousewheel(SimpleNamespace(x_root=0, y_root=0, delta=-120))
+            assert moved == [], f"表の外で回したのに動いた: {moved}"
+        finally:
+            win.destroy(); root.destroy()

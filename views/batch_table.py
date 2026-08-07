@@ -64,7 +64,6 @@ class _TableMixin(_HostBase):
         def _COLS(self) -> list[str]: ...
 
         def _notify_paths_changed(self) -> None: ...
-        def _on_destroy(self, event: tk.Event) -> None: ...
 
     def _build_table(self) -> None:
         outer = ttk.Frame(self)
@@ -105,8 +104,17 @@ class _TableMixin(_HostBase):
         )
         self._table_frame.bind("<Configure>", self._on_frame_configure)
         self._canvas.bind("<Configure>",      self._on_canvas_configure)
-        self._canvas.bind_all("<MouseWheel>", self._on_mousewheel)
-        self.bind("<Destroy>", self._on_destroy)
+        # ⚠️ **`bind_all` を使わない**（B-050）。理由は 2 つあり、どちらも実測済み。
+        #   ①**窓を閉じても解放されない**＝`bind_all` の登録先は**ルートの**
+        #     `_tclCommands` で、しかも CPython の `Misc.unbind_all` は
+        #     `bind all <seq> ''` を呼ぶだけで **`deletecommand` しない**（3.14 の
+        #     ソースで確認）。⇒ コールバック（＝この窓への強参照）がアプリの寿命ぶん
+        #     残り、開閉のたびに **40 個ずつ線形に積み上がる**（10 回で +400 個）。
+        #   ②**他の窓と干渉する**＝[views/window_fit.py](window_fit.py) が同じ理由で
+        #     既に `bind_all` を避けており、その注記が**この行を名指ししていた**。
+        # バインドタグは「ウィジェット → クラス → トップレベル → all」なので、
+        # **トップレベルに束ねればこの窓の中だけに効く**（＝従来と同じ効き方）。
+        self.bind("<MouseWheel>", self._on_mousewheel, add="+")
         self.bind("<<ThemeChanged>>",
                   lambda _e: self._refresh_verdict_colors(), add="+")
 
@@ -117,9 +125,9 @@ class _TableMixin(_HostBase):
         self._canvas.itemconfig(self._table_win, width=event.width)
 
     def _on_mousewheel(self, event) -> None:
-        # bind_all はアプリ全体（子 Toplevel のマップ含む）に効くため、ポインタが
-        # テーブル（_canvas 配下）にある時だけスクロールする。これがないとマップ
-        # ウィンドウのズーム（ホイール）でバッチ表まで一緒にスクロールしてしまう。
+        # ポインタがテーブル（_canvas 配下）にある時だけスクロールする。窓に閉じた
+        # バインドになった今も要る＝この窓の**他の領域**（共通設定欄など）でホイール
+        # を回したときに表が動くと、見ている場所と動く場所がずれる。
         widget = self.winfo_containing(event.x_root, event.y_root)
         if widget is None:
             return

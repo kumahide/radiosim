@@ -631,7 +631,13 @@ class ScenarioWindow(tk.Toplevel):
             ent = ttk.Entry(grid, textvariable=var, width=10)
             self._range_cells[name] = (lab, ent)
         # ± を変えたら開始/終了を作り直す（正規化はここ 1 か所）。
-        self._delta_var.trace_add("write", lambda *_: self._sync_range_from_delta())
+        # ⚠️ **返り値を捨てない**（B-050）。`trace_add` が登録する Tcl コマンドは
+        #    ラムダ →（self を捕まえて）窓 → この変数、と **C レベルを経由して
+        #    循環する**ので、Python の GC が切れない＝**窓を閉じても永久に解放
+        #    されず、開閉のたびに 65 個ずつ積み上がる**（10 回で +650 個）。
+        #    `_on_close` で外すために id を持っておく（アプリ唯一の `trace_add`）。
+        self._delta_trace = self._delta_var.trace_add(
+            "write", lambda *_: self._sync_range_from_delta())
 
         ttk.Label(frame, text=i18n.t("scn_err_points").format(
             max=scn.MAX_SWEEP_POINTS),
@@ -857,6 +863,14 @@ class ScenarioWindow(tk.Toplevel):
         （2.4b3 で単一/バッチともに塞いだのと同じクラス）。
         """
         self._pump.stop()
+        # Tcl 側に残る参照を切る（B-050）。これを外さないと窓が解放されない。
+        trace_id = getattr(self, "_delta_trace", None)
+        if trace_id is not None:
+            try:
+                self._delta_var.trace_remove("write", trace_id)
+            except Exception:
+                pass
+            self._delta_trace = None
         if self._on_close_cb:
             self._on_close_cb()
         self.destroy()

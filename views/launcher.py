@@ -21,7 +21,7 @@ from core import i18n
 from core import simulation as sim
 from core import version
 from core.models import ENV_DEFAULT, ENV_KEYS
-from views import dialogs, theme, window_fit
+from views import dialogs, progress, theme, window_fit
 from views.launcher_menu import _MenuMixin
 from views.launcher_project import _ProjectMixin
 from views.launcher_windows import _ChildWindowsMixin
@@ -89,6 +89,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # （tkintermapview の `invalid command name ...update_canvas_tile_images`
         # 対策。MapWindow._on_close と対）。
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
+        # 閉じた窓の残骸をメインスレッドで掃き続ける（B-050）。**ワーカースレッドに
+        # 拾わせると 20〜30 秒止まる**ので、先にこちらで回収してしまう。ルートに 1 つ
+        # 置く形＝窓を足しても書き足す必要がない。理由と実測値は views/progress.py。
+        progress.sweep_tk_garbage(root)
 
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。

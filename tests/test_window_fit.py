@@ -965,3 +965,186 @@ def test_launcher_is_covered_even_though_it_is_the_root():
     誰も気づかない（「静的ガードがあるから大丈夫」の死角）。
     """
     assert "launcher" in _WINDOWS
+
+
+# ============================================================
+# 4: 閉じた窓が解放されること（B-050）
+# ============================================================
+# 🔴 **`destroy()` は Tk オブジェクトを消さない。** tkinter は親子で相互参照する
+# ので、窓を閉じても Python 側は循環ゴミとして残り、**`gc.collect()` を回すまで
+# 生きている**。そこまでは仕様どおりだが、この 2 つは欠陥だった（実測 2026-08-07）:
+#
+#   ①**そもそも解放されない窓が 2 つあった**＝バッチ（`bind_all`）と条件探索
+#     （`trace_add`）。どちらも Tcl 側に参照が残り、開閉のたびに 40 / 65 個ずつ
+#     **線形に積み上がる**（10 回で +400 / +650 個）。
+#   ②**残骸を製品のワーカースレッドの GC が拾うと、そこが 20〜30 秒止まる**
+#     （`_tkinter` はメインスレッド外からの Tcl 呼び出しを 1 個あたり約 1 秒待つ）。
+#
+# ⇒ ①はここで（全窓横断で）押さえ、②は `sweep_tk_garbage` の側で押さえる。
+# ⚠️ **①と②は打ち消し合う**＝漏れている窓は「回収され得ない」から止まらない。
+#    ①だけ直すと②が新たに出る（実測＝条件探索が 0 秒 → 35.8 秒）。**両方要る。**
+#
+# この検査を `_WINDOWS` の上で回すのが要点＝**新しい窓は自動で対象になる**。
+
+#: 窓ごとの「製品の閉じる経路」。⚠️ `destroy()` を直接呼ばない＝それは利用者が
+#: 通る道ではなく、後始末（trace の解除・地図の after ループ停止）を飛ばす。
+_CLOSERS = {
+    "batch":    lambda owner: owner._on_close_window(),
+    "scenario": lambda owner: owner._on_close(),
+    "graph":    lambda owner: owner._on_close(),
+    "multihop": lambda owner: owner._on_close(),
+    "map":      lambda owner: owner._on_close(),
+}
+
+_RELEASE_LIMIT_S = 5.0
+
+
+def _live_tk_count() -> int:
+    import gc
+    import tkinter as tk
+
+    return sum(1 for o in gc.get_objects()
+               if isinstance(o, (tk.Misc, tk.Variable, tk.Image)))
+
+
+def test_every_window_has_a_close_path_registered():
+    """閉じ方を書き忘れた窓が無いこと（ランチャー＝ルートだけ対象外）。
+
+    これが無いと、窓を足した人が `_CLOSERS` に書き忘れたとき**下の検査が黙って
+    その窓を飛ばす**＝ゲートが痩せたことに誰も気づかない。
+    """
+    missing = [n for n in _WINDOWS if n != "launcher" and n not in _CLOSERS]
+    assert not missing, (
+        f"閉じ方が登録されていない窓がある: {missing}。"
+        "tests/test_window_fit.py の _CLOSERS へ製品の閉じる経路を書くこと"
+    )
+
+
+@pytest.mark.parametrize("name", [n for n in _WINDOWS if n != "launcher"])
+def test_closed_window_is_released(name, monkeypatch):
+    """閉じた窓が解放されること（Tcl 側に参照を残さないこと）。
+
+    ⚠️ **閉じるのは同期処理ではない**（測定で 3 回誤判定した）＝地図は破棄を
+    `after` に載せ、その先でスレッドの終了を待つ。だから固定時間で測らず、
+    **解放されるまでイベントループと GC を回し、上限で打ち切る**。
+    """
+    import gc
+    import time
+    import weakref
+
+    root = make_themed_root()
+    root.withdraw()
+    i18n.set_lang("ja")
+    try:
+        opener = _WINDOWS[name][0]
+        win, owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        ref = weakref.ref(owner)
+        _CLOSERS[name](owner)
+        del win, owner
+
+        deadline = time.perf_counter() + _RELEASE_LIMIT_S
+        while time.perf_counter() < deadline:
+            root.update()
+            gc.collect()                 # ★ メインスレッドで回す（これが正しい姿）
+            if ref() is None:
+                break
+            time.sleep(0.02)
+
+        assert ref() is None, (
+            f"{name} の窓が、閉じても解放されない（{_RELEASE_LIMIT_S:.0f} 秒待った）。"
+            "Tcl 側に参照が残っている＝`bind_all` / `trace_add` / `after` を"
+            "登録したまま閉じていないか。開閉のたびに積み上がる（B-050）"
+        )
+    finally:
+        root.destroy()
+        gc.collect()
+
+
+class TestTkGarbageIsSweptOnTheMainThread:
+    """残骸を**メインスレッドで**掃く仕掛けが生きていること（B-050 の②）。
+
+    ⚠️ ①（解放されること）だけでは足りない＝解放できる状態にしたぶん、
+    **ワーカースレッドの GC がそれを拾えるようになる**（拾うと 20〜30 秒止まる）。
+    """
+
+    def test_sweeping_collects_tk_garbage(self):
+        """掃くと、閉じた窓の残骸が実際に消えること。"""
+        import gc
+
+        from views import progress
+
+        root = make_themed_root()
+        root.withdraw()
+        try:
+            from views.multihop import MultiHopWindow
+            gc.collect()
+            base = _live_tk_count()
+            win = MultiHopWindow(root, sim.SimParams(_PARAMS))
+            win._on_close()
+            del win
+            root.update()
+            gc.disable()                 # 自動 GC に助けさせない
+            try:
+                assert _live_tk_count() > base, "残骸が積まれていない＝前提が変わった"
+                progress.sweep_tk_garbage(root, interval_ms=10_000)
+                assert _live_tk_count() == base, (
+                    "掃いても残骸が残った＝ワーカースレッドの GC が拾える状態のまま"
+                )
+            finally:
+                gc.enable()
+        finally:
+            root.destroy()
+            gc.collect()
+
+    def test_sweeping_schedules_the_next_round(self):
+        """一度きりで終わらないこと（地図はゴミになるまで約 2.4 秒かかる）。"""
+        calls = []
+
+        class _FakeRoot:
+            def after(self, ms, cb):
+                calls.append(ms)
+
+        from views import progress
+        progress.sweep_tk_garbage(_FakeRoot(), interval_ms=1234)
+        assert calls == [1234], (
+            "次回を予約していない＝1 回で止まる。閉じた瞬間にはゴミになっていない窓"
+            "（地図＝スレッドの終了待ち）を永久に取りこぼす"
+        )
+
+    def test_sweeping_stops_when_the_root_is_gone(self):
+        """ルートが死んでいたら静かに止まること（終了時に例外を出さない）。"""
+        import tkinter as tk
+
+        class _DeadRoot:
+            def after(self, ms, cb):
+                raise tk.TclError("application has been destroyed")
+
+        from views import progress
+        progress.sweep_tk_garbage(_DeadRoot())      # 例外が出なければ良い
+
+    def test_the_launcher_starts_the_sweeper(self):
+        """配線＝ランチャーが掃除役を起動すること。
+
+        窓ごとに書かず**ルートに 1 つ**置く形なので、ここが外れると
+        「全窓ぶんが一斉に効かなくなる」。
+        """
+        from views import launcher as launcher_mod
+        from views import progress
+
+        started = []
+        root = make_themed_root()
+        root.withdraw()
+        try:
+            original = progress.sweep_tk_garbage
+            launcher_mod.progress.sweep_tk_garbage = (
+                lambda r, **k: started.append(r))
+            try:
+                launcher_mod.SimLauncher(root, lambda _t: None)
+            finally:
+                launcher_mod.progress.sweep_tk_garbage = original
+            assert started, (
+                "ランチャーが sweep_tk_garbage を起動していない＝閉じた窓の残骸が"
+                "ワーカースレッドの GC に拾われる（進捗が 20〜30 秒止まる）"
+            )
+        finally:
+            root.destroy()

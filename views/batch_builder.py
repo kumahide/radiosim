@@ -309,12 +309,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
 
 
 
-    def _on_destroy(self, event: tk.Event) -> None:
-        if event.widget is self:
-            try:
-                self._canvas.unbind_all("<MouseWheel>")
-            except Exception:
-                pass
+    # ⚠️ ここに `_on_destroy`（`unbind_all("<MouseWheel>")`）があったが、B-050 で
+    #    削除した。ホイールを窓に閉じたバインドへ変えたので**外す相手がもう無い**
+    #    のに加え、`unbind_all` は**他の窓の分まで消す**（window_fit の注記③）。
+    #    しかも「外した」つもりで参照は残っていた＝リークの本体はこちらだった。
 
     def _build_bottom(self) -> None:
         bottom = ttk.Frame(self, padding=(0, 6))
