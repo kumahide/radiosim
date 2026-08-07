@@ -320,3 +320,158 @@ class TestGreenMeansItRan:
     def test_an_already_red_run_is_left_alone(self):
         """既に赤い実行の終了コードを書き換えないこと。"""
         assert self._finish(collected=112, skipped=106, exitstatus=2) == 2
+
+
+# ============================================================
+# Tk オブジェクトを次のテストへ持ち越さない（I-019）
+# ============================================================
+class TestTkGarbageDoesNotEscape:
+    """`destroy()` した Tk が**循環ゴミとして生き延びる**ことへの網。
+
+    生き延びたゴミを製品のワーカースレッドの GC が拾うと、Tcl をメインスレッド
+    外から叩く＝①1 個あたり約 1 秒ワーカーが止まる ②`Tk` 本体が混ざると
+    `Tcl_AsyncDelete` でプロセスごと落ちる（I-019 の `Current thread's C stack
+    trace`）。⇒ **毎テストの teardown で、メインスレッドで回収する。**
+
+    ⚠️ 検査するのは「conftest がゴミを片付けること」＝**回避策の配線**であって、
+    tkinter の実装ではない。①は前提が変わったら教えてくれる観測、②は「なぜ
+    メインスレッドなのか」を固定する（外すと回避策が意味を失うため）。
+    """
+
+    @staticmethod
+    def _make_tk_garbage(root, n_vars: int = 3):
+        """GUI テストと同じ形のゴミを作る＝destroy 済みなのに循環で残る一式。"""
+        import tkinter as tk
+
+        class _Win:                       # 窓オブジェクトが widget を抱える形
+            frame: "tk.Frame"
+            vars: "list[tk.StringVar]"
+
+        win = _Win()
+        frame = tk.Frame(root)
+        win.frame = frame
+        win.vars = [tk.StringVar(master=root, value=f"v{i}") for i in range(n_vars)]
+        setattr(frame, "win", win)        # ← 循環（tkinter 自身も親子で循環する）
+        frame.destroy()
+
+    @staticmethod
+    def _live_tk_count() -> int:
+        import gc
+        import tkinter as tk
+
+        return sum(1 for o in gc.get_objects()
+                   if isinstance(o, (tk.Misc, tk.Variable, tk.Image)))
+
+    # -- 前提 ---------------------------------------------------
+    def test_destroy_alone_does_not_free_them(self):
+        """`destroy()` だけでは消えない（＝回避策が要る理由）。
+
+        CPython 側が直ってここが落ちるようになったら、**回避策を外してよい合図**。
+        """
+        import gc
+
+        from conftest import make_tk_root
+
+        root = make_tk_root()
+        try:
+            gc.collect()                                  # 先に場を掃く
+            before = self._live_tk_count()
+            self._make_tk_garbage(root)
+            gc.disable()                                  # 自動 GC を挟ませない
+            try:
+                assert self._live_tk_count() > before, (
+                    "destroy 済みの Tk オブジェクトが即座に消えた＝前提が変わった。"
+                    "conftest の _tk_garbage_never_escapes は不要になった可能性がある"
+                )
+                assert gc.collect() > 0, "循環ゴミとして残っていない"
+                assert self._live_tk_count() == before, (
+                    "gc.collect() でも消えない＝どこかが実参照を持っている"
+                )
+            finally:
+                gc.enable()
+        finally:
+            root.destroy()
+            gc.collect()
+
+    # -- なぜメインスレッドで回収するのか ------------------------
+    # ⚠️ このテストは**わざと**別スレッドで `__del__` を走らせるので、
+    #    `RuntimeError: main thread is not in main loop` が unraisable として出る
+    #    ＝検査対象そのもの。ここだけ黙らせる（他の場所で出たら本物の欠陥）。
+    @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
+    def test_collecting_from_another_thread_stalls_it(self):
+        """別スレッドで回収すると Tcl 待ちで止まる（＝ワーカーに残せない）。
+
+        `_tkinter` はメインスレッド外からの呼び出しを 100ms×10 回待ってから
+        RuntimeError にする。**1 個で約 1 秒**＝GUI テストが残す 19〜31 個なら
+        20〜30 秒で、レポート生成の 30 秒待ちを丸ごと食い潰す（実測で確認済み）。
+        """
+        import gc
+        import threading
+        import time
+
+        from conftest import make_tk_root
+
+        root = make_tk_root()               # ルートは生かす＝パニックさせずに測る
+        try:
+            gc.collect()
+            self._make_tk_garbage(root, n_vars=1)
+            elapsed = {}
+
+            def _worker():
+                t0 = time.perf_counter()
+                gc.collect()
+                elapsed["dt"] = time.perf_counter() - t0
+
+            thread = threading.Thread(target=_worker, name="FakeReportWorker")
+            thread.start()
+            thread.join(timeout=30)
+            assert "dt" in elapsed, "ワーカーの GC が 30 秒で終わらなかった"
+            assert elapsed["dt"] > 0.5, (
+                f"別スレッドの GC が {elapsed['dt']:.2f} 秒で終わった＝Tcl 待ちが"
+                "無くなった。メインスレッドで回収する理由が消えたかを確認すること"
+            )
+        finally:
+            root.destroy()
+            gc.collect()
+
+    # -- 配線 ---------------------------------------------------
+    def test_teardown_collects_the_garbage(self):
+        """conftest の teardown が実際にゴミを回収すること（本丸）。
+
+        フィクスチャの本体を直に回す＝`gc.collect()` を消す変異でここが赤くなる。
+        """
+        import gc
+
+        import conftest
+        from conftest import make_tk_root
+
+        root = make_tk_root()
+        try:
+            gc.collect()
+            baseline = self._live_tk_count()
+
+            fixture = conftest._tk_garbage_never_escapes._get_wrapped_function()()
+            next(fixture)                                 # setup
+            self._make_tk_garbage(root)
+            gc.disable()                                  # 自動 GC に助けさせない
+            try:
+                assert self._live_tk_count() > baseline   # ゴミが積まれた
+                next(fixture, None)                       # ★ teardown
+                assert self._live_tk_count() == baseline, (
+                    "teardown を通ってもゴミが残った＝次のテスト（や製品の"
+                    "ワーカースレッド）へ Tk オブジェクトが漏れる"
+                )
+            finally:
+                gc.enable()
+        finally:
+            root.destroy()
+            gc.collect()
+
+    def test_the_cleanup_is_autouse(self):
+        """思い出す規則にしない＝全テストへ自動で掛かること。"""
+        import conftest
+
+        marker = conftest._tk_garbage_never_escapes._fixture_function_marker
+        assert marker.autouse, (
+            "autouse を外すと『新しい GUI テストを書いた人が忘れる』形に戻る"
+        )

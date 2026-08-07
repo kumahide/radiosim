@@ -5,11 +5,13 @@ tests/conftest.py
 （外部ネットワーク・モーダルダイアログ・**開発機の設定と書き込み先**）。
 """
 
+import gc
 import logging
 import shutil
 import socket
 import tempfile
 import time
+import typing
 
 import numpy as np
 import pytest
@@ -494,8 +496,12 @@ _TK_INIT_ATTEMPTS = 5
 _HEADLESS_DECLARED = bool(os.environ.get("RADIOSIM_HEADLESS"))
 
 
-def _no_display(reason: str):
-    """表示が使えないときの終わり方（宣言された環境だけ skip・他は fail）。"""
+def _no_display(reason: str) -> "typing.NoReturn":
+    """表示が使えないときの終わり方（宣言された環境だけ skip・他は fail）。
+
+    ⚠️ **`NoReturn` の注釈は飾りではない**＝これが無いと `make_tk_root` の戻り値が
+    `Tk | None` に見え、**呼び出し側全部で `root.destroy()` が型エラーになる**。
+    """
     if _HEADLESS_DECLARED:
         pytest.skip(reason)
     pytest.fail(
@@ -505,6 +511,43 @@ def _no_display(reason: str):
         "GUI 配線を 1 つも検査しないまま『緑』になる）。",
         pytrace=False,
     )
+
+
+# ============================================================
+# Tk オブジェクトを次のテストへ持ち越さない（I-019 の根治・2.7a2）
+# ============================================================
+# 🔴 **`destroy()` は Tk オブジェクトを消さない。** tkinter は親子で相互参照する
+# ので、テストが `win.destroy(); root.destroy()` まで正しく書いても、Python 側の
+# オブジェクトは**循環ゴミとして生き残る**（実測 2026-08-07・test_multihop.py＝
+# 1 テストあたり 41〜97 個。内訳の例＝`Tk` 1・`StringVar` 26・`Frame` 26・
+# `PhotoImage` 1。`gc.collect()` を明示的に回すと全部消える＝GC 待ちだった）。
+#
+# 残ったゴミは「いつか誰かの GC」が拾う。**その誰かが製品のワーカースレッドだと、
+# 壊れる**:
+#
+#   ① `tkinter.Variable.__del__` は無条件に `self._tk.call("info", "exists", …)`
+#      を呼ぶ。CPython の `_tkinter` は**メインスレッド以外からの呼び出しを
+#      100ms×10 回待ってから** RuntimeError にする（実測 **1.036 秒/回**）。
+#      ⇒ StringVar 20 個をワーカーで回収させると **21.2 秒**（実測）。
+#      これが「レポート生成が 30 秒で終わらない」の正体で、`savefig` は無実。
+#   ② ゴミに `Tk` 本体（tkapp）が含まれると、Tcl インタプリタの解放が誤った
+#      スレッドで走り **`Tcl_AsyncDelete: async handler deleted by the wrong
+#      thread`** で **プロセスごと落ちる**（実測＝exit 3）。これが I-019 の見出しの
+#      `Current thread's C stack trace` そのもの。
+#
+# 実スイートで捕まえた証拠（2026-08-07・`-p no:randomly` の全体実行）＝落ちた
+# スレッドのスタックの先頭が **`Garbage-collecting`**（`Thread-374 (_work)` の中）。
+#
+# ⇒ **メインスレッドで、毎テスト、確定的に回収する。** ここで回収する限り
+#    `__del__` の Tcl 呼び出しはメインスレッドで一瞬に済み、ワーカーには何も残らない。
+#    列挙（「GUI テストにだけ付ける」）にしないのは、**新しい GUI テストを書いた人が
+#    忘れた瞬間に再発する**ため（→ [[feedback-promote-recurring-checks]]）。
+#    コストは実測 `gc.collect()` 1 回 8.9ms ＝全 1300 本で約 12 秒。
+@pytest.fixture(autouse=True)
+def _tk_garbage_never_escapes():
+    """テストが残した循環ゴミを、**メインスレッドで**片付けてから次へ進む。"""
+    yield
+    gc.collect()
 
 
 def make_tk_root(pytest_module=None):
