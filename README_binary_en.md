@@ -13,9 +13,9 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 2. [Requirements](#requirements)
 3. [Installation &amp; Launch](#installation--launch)
 4. [Menus](#menus)
-5. [Map Window](#map-window)
+5. [Map](#map)
 6. [Usage — Single Mode](#usage--single-mode)
-7. [Usage — Batch Mode](#usage--batch-mode)
+7. [Usage — Multiple Paths](#usage--multiple-paths)
 8. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
 9. [Usage — Relay Route](#usage--relay-route)
 10. [Project Files (.rsproj)](#project-files-rsproj)
@@ -41,13 +41,13 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 | Workflow | What it answers |
 | --- | --- |
 | **Single Mode** | Does this one link close? Watch the terrain profile while you move antenna heights and rain rate on the spot |
-| **Batch Mode** | Many links at once, with CSV in and out |
+| **Multiple Paths** | Many links at once, with CSV in and out |
 | **Condition Explorer (compare / sweep)** | **Digs into one path.** Line up results under different conditions (base + up to 5), or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once |
 | **Relay Route** | Bridges a link that will not close directly. Up to 7 relay points, a link budget per section, and **the overall verdict decided by the tightest section** (regenerative relay — each relay receives and transmits again) |
 
 #### Map
 
-- **Map Window** (3 modes): pick coordinates by clicking the map / continuously add paths from the map into Batch Mode / visualize, prefetch, and delete DEM cache
+- **Map** (3 modes): pick coordinates by clicking the map / continuously add paths from the map into Multiple Paths / visualize, prefetch, and delete DEM cache
 
 #### Calculation models
 
@@ -69,8 +69,8 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 #### Reusing your input
 
-- **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay route into **one file** and pick the work up later
-- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
+- **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay path into **one file** and pick the work up later
+- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Multiple Paths reports
 
 #### Interface
 
@@ -143,7 +143,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | ------------------ | -------------------------------- | -------------------------------------------------------------------- |
 | Theme              | System / Light / Dark            | Window color theme                                                   |
 | Language           | English / 日本語                 | UI language (requires restart)                                       |
-| Coord Format       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
+| Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
 | Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
 | Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
@@ -157,7 +157,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
-> **The Map Window is not in the menus** — open it from the **"Map Window" button** at the bottom of the launcher (→ [Map Window](#map-window)).
+> **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
 ### Coordinate Format (DD / DMS)
 
@@ -174,9 +174,9 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open
 
 ---
 
-## Map Window
+## Map
 
-The **"Map Window" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the Map Window is a convenience layer.
+The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the map is a convenience layer.
 
 > On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
 
@@ -189,12 +189,12 @@ Click the map to set **TX → RX** alternately; the picked points are written ba
 
 ### Continuous Add mode
 
-A mode for stacking paths into Batch Mode straight from the map. Selecting the **Append to Batch** mode opens (and raises) the Batch Mode window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
+A mode for stacking paths into Multiple Paths straight from the map. Selecting the **Append to Multiple Paths** mode opens (and raises) the Multiple Paths window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
 
 - Each row's RF settings (frequency, antenna gains, antenna heights) are **frozen from the launcher values at the moment of adding**. The workflow is to fix your conditions in the launcher first, then stack paths.
 - All paths in the batch are drawn on the map. Committed paths use **TX = filled dot / RX = bearing arrowhead** (pointing along TX → RX) plus a distance label, so TX and RX stay distinguishable even when close together or at the same coordinates.
 - Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
-- Closing the Batch Mode window returns the map to Pick Coordinates mode.
+- Closing the Multiple Paths window returns the map to Pick Coordinates mode.
 
 ### Cache Management mode
 
@@ -262,10 +262,10 @@ An input form is displayed on startup.
 
 | Field   | Description                                                             |
 | ------- | ---------------------------------------------------------------------- |
-| Project | Project name shown in the report header (applies to both Single and Batch reports) |
-| Note    | Free note. Shown on the **Single Mode report and the Batch summary page** (`summary.html` / `report_all.html`). **Not shown on Batch per-path reports** — it describes the survey as a whole, so it is not repeated per path |
+| Project | Project name shown in the report header (applies to both Single and Multiple Paths reports) |
+| Note    | Free note. Shown on the **Single Mode report and the Multiple Paths summary page** (`summary.html` / `report_all.html`). **Not shown on per-path reports** — it describes the survey as a whole, so it is not repeated per path |
 
-> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Batch Mode inherit these values. In Batch Mode they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
+> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Multiple Paths inherit these values. In Multiple Paths they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
 
 ### 2. Single Mode Button
 
@@ -310,13 +310,13 @@ To pull past conditions in from a file, or to carry a whole input set around, us
 
 ---
 
-## Usage — Batch Mode
+## Usage — Multiple Paths
 
-Click the **Batch Mode** button in the launcher to open the dedicated window.
+Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
-### Design — refine in Single, commit in Batch
+### Design — refine in Single, commit in Multiple Paths
 
-**Single (the launcher) is where you refine conditions; Batch is where you turn committed conditions into deliverables.** The launcher is the single source of truth, and each batch row is a **committed link frozen by copying the launcher fields at the moment the row was added**.
+**Single (the launcher) is where you refine conditions; Multiple Paths is where you turn committed conditions into deliverables.** The launcher is the single source of truth, and each batch row is a **committed link frozen by copying the launcher fields at the moment the row was added**.
 
 ### Input Methods
 
@@ -384,7 +384,7 @@ The toggle at the top switches between two modes. After changing coordinates or 
 
 - The leftmost **Base** column is the launcher's current values (read-only) — the reference never moves.
 - In columns **Cond 1 ... Cond 5**, change only the fields you care about (they start as copies of the base). "+ Condition" adds up to 5 columns.
-- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and sample count cannot be varied** (comparing different paths is what Batch Mode is for).
+- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and sample count cannot be varied** (comparing different paths is what Multiple Paths is for).
 - The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.44 (+13.56)`). Rows that differ are tinted.
 
 ### Sweep (one axis, N points)
@@ -396,7 +396,7 @@ The toggle at the top switches between two modes. After changing coordinates or 
 
 ### Running and results
 
-**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (same flow as Single and Batch). To look at it later, use "Open Results" in the launcher.
+**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (same flow as Single and Multiple Paths). To look at it later, use "Open Results" in the launcher.
 
 The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 
@@ -454,7 +454,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | --- | --- |
 | Coordinates and all parameters (the launcher inputs) | **Results** (those belong to `results/`) |
 | Project info (name and free note) | **App settings** (theme, language, proxy) |
-| Batch Mode rows | Window positions, sizes, open/closed state |
+| Multiple Paths rows | Window positions, sizes, open/closed state |
 | Explorer conditions (compare columns / sweep axis and range) | |
 | Relay route waypoints and sections | |
 
@@ -462,15 +462,15 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 
 ### Saving
 
-- Open windows (batch / explorer / relay route) contribute their **current** values.
+- Open windows (batch / explorer / relay path) contribute their **current** values.
 - **Closed windows keep their contents too** — the previous values are carried forward, so closing the batch window before saving does not delete your rows.
 - Anything that is not a readable number is not written; the dialog tells you which part was skipped (so a broken file is never produced silently).
 
 ### Opening
 
-- Open windows (batch / explorer / relay route) are **closed after a confirmation**. Unsaved edits in them are lost.
+- Open windows (batch / explorer / relay path) are **closed after a confirmation**. Unsaved edits in them are lost.
 - The launcher fields and project info are replaced immediately.
-- **Batch, explorer and relay route contents appear when you open those windows** — this app freezes a window's inputs when it opens, and loading follows the same rule.
+- **Multiple Paths, explorer and relay path contents appear when you open those windows** — this app freezes a window's inputs when it opens, and loading follows the same rule.
 - A file saved by a newer version of RadioSim will not be opened (you are told, rather than having it silently mangled).
 
 ---
@@ -633,13 +633,13 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 
 > **A4 reports (v2)**: `report.html` / `summary.html` are rendered as a single print-ready A4 page (`@page A4` / `@media print`). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
-> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Batch runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking a thumbnail in the ledger jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
+> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking a thumbnail in the ledger jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
 > **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
 > **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI). AZ is a **true** azimuth — to aim with a magnetic compass, correct for local declination (in Japan magnetic north is ~7-9° west of true north, varies by region).
 
-### Batch Mode
+### Multiple Paths
 
 Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 

@@ -242,22 +242,29 @@ class ScenarioWindow(tk.Toplevel):
                 side="left", padx=(2, 0), fill="x", expand=expand)
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
-        # 固定した経路＝この窓が振れない前提（座標と samples）。**振れる前提は
-        # 比較タブのベース列に出る**ので、ここには出さない（二重に見せない）。
+        # この窓が振れない前提（座標と samples）。**振れる前提は比較タブの
+        # ベース列に出る**ので、ここには出さない（二重に見せない）。
+        # 枠名は「経路」＝「固定した」は凍結方式の言い方で、**同じことを右端の
+        # 🔒 ヒントが既に言っている**（同じ意味を 2 通りで言わない・I-048）。
         fixed = ttk.LabelFrame(parent, text=i18n.t("scn_fixed_group"), padding=(8, 2))
         fixed.pack(fill="x", pady=(0, 6))
         row = ttk.Frame(fixed)
         row.pack(fill="x")
-        self._path_var    = tk.StringVar()
+        self._tx_var      = tk.StringVar()
+        self._rx_var      = tk.StringVar()
         self._samples_var = tk.StringVar()
-        # ラベルは短く「経路」＝枠が既に「固定した経路」と名乗っているので、
-        # 中で同じ語を繰り返さない（レポート側の "固定した経路: …" は文中の
-        # 表記なのでそのまま＝`scn_fixed_path` は据え置き）。
-        # 幅 42 文字＝"34.54290, 132.41180 → 34.53890, 132.40500" が切れない下限。
+        # **送信座標 / 受信座標の 2 欄に割る**（I-048）＝バッチの列と同じ語・同じ
+        # 並びになり、「→」という第 3 の表記が消える。
+        # ⚠️ `→` そのものを追放したいのではない＝中継の区間名 `A → B` は *2 点の
+        # 関係*を表す記号として情報を持つ。ここは *2 つの入力値* なので欄で表す。
+        # 幅 21 文字＝"34.54290, 132.41180" が切れない下限（**この帯は常に DD**。
+        # 座標の表示形式がここへ効いていないのは別件＝I-070）。
         # ⚠️ 座標が読めない凍結帯は帯の意味を失う（何を固定したのか分からない）。
+        # 実測＝帯の作り直しで窓の必要幅は 695 → 809px（高さは 813px で不変）。
         for label_key, var, expand, width in (
-            ("scn_path",    self._path_var,    True,  42),
-            ("scn_samples", self._samples_var, False, 6),
+            ("scn_tx_coord", self._tx_var,      True,  21),
+            ("scn_rx_coord", self._rx_var,      True,  21),
+            ("scn_samples",  self._samples_var, False, 6),
         ):
             f = ttk.Frame(row)
             f.pack(side="left", padx=6, fill="x", expand=expand)
@@ -303,8 +310,8 @@ class ScenarioWindow(tk.Toplevel):
 
     def _update_path_label(self) -> None:
         p = self._base_params
-        self._path_var.set(
-            f"{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}")
+        self._tx_var.set(f"{p.lat_tx:.5f}, {p.lon_tx:.5f}")
+        self._rx_var.set(f"{p.lat_rx:.5f}, {p.lon_rx:.5f}")
         self._samples_var.set(str(p.num))
 
     def _refresh_from_launcher(self) -> None:

@@ -188,7 +188,16 @@ class _TableMixin:
         # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示と水平距離を
         # 追従させる。地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。
         # FocusOut は他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
+        # あわせて**確定した座標をこの窓の表記へ整形する**（I-060 R3）＝整形される
+        # こと自体が「読めた」という返事になり、読めなければ原文が残るので parse の
+        # 成否が目で分かる。表記は窓を開いた時点で凍結した `_coord_format`（G2）。
         def _coords_committed(_e=None, es=entries, lbl=dist_lbl):
+            for c in (1, 2):
+                text = es[c].get()
+                shown = coords.reformat(text, self._coord_format)
+                if shown != text:
+                    es[c].delete(0, tk.END)
+                    es[c].insert(0, shown)
             self._update_row_distance(es, lbl)
             self._notify_paths_changed()
 

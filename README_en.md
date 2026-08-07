@@ -13,9 +13,9 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 4. [File Structure](#file-structure)
 5. [Installation &amp; Launch (from source)](#installation--launch-from-source)
 6. [Menus](#menus)
-7. [Map Window](#map-window)
+7. [Map](#map)
 8. [Usage — Single Mode](#usage--single-mode)
-9. [Usage — Batch Mode](#usage--batch-mode)
+9. [Usage — Multiple Paths](#usage--multiple-paths)
 10. [Input Parameters](#input-parameters)
 11. [Calculation Models](#calculation-models)
 12. [DEM Retrieval Logic](#dem-retrieval-logic)
@@ -42,13 +42,13 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 | Flow | Implementation | Source of truth for input |
 | --- | --- | --- |
 | **Single Mode** | `simulation.py` | The launcher's input fields |
-| **Batch Mode** | `batch.py` | The batch table (CSV I/O) |
+| **Multiple Paths** | `batch.py` | The batch table (CSV I/O) |
 | **Condition Explorer (compare / sweep)** | `scenario.py` | A pinned path plus a condition list. **One DEM fetch + N pure computations** (leaning on the pipeline being two-phase) |
 | **Relay Route** | `multihop.py` | The waypoint list; sections are derived. Regenerative relay model, so **the overall verdict is the min** (the tightest section), reported alongside the per-section breakdown |
 
 #### Map
 
-- **Map Window** (`views/map_window.py`, a single app-wide instance, 3 modes): pick coordinates / continuously add paths into Batch Mode / visualize, prefetch, and delete DEM cache
+- **Map** (`views/map_window.py`, a single app-wide instance, 3 modes): pick coordinates / continuously add paths into Multiple Paths / visualize, prefetch, and delete DEM cache
 
 #### Calculation models (`models.py` — pure functions, zero side effects)
 
@@ -71,7 +71,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 #### Reusing input
 
 - **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (**never results, never app settings**)
-- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Batch reports
+- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Multiple Paths reports
 
 #### Interface
 
@@ -239,7 +239,7 @@ radiosim/
 │   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay route window (waypoints are the input surface; hops are derived)
-│   ├── batch_builder.py  # Batch Mode window (core: common settings, project info)
+│   ├── batch_builder.py  # Multiple Paths window (core: common settings, project info)
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
@@ -329,7 +329,7 @@ Selections are persisted to `radiosim_conf.json`.
 | -------------------- | --------------------------- | ----------------------------------------------------------------- |
 | Theme                | System / Light / Dark       | Window color theme                                                |
 | Language             | English / 日本語            | UI language (requires restart)                                    |
-| Coord Format         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
+| Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
 | Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file   |
 | Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
@@ -343,7 +343,7 @@ Selections are persisted to `radiosim_conf.json`.
 
 > **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme/language/proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
 
-> **The Map Window is not in the menus** — it opens from the **"Map Window" button** at the bottom of the launcher (→ [Map Window](#map-window)).
+> **The Map is not in the menus** — it opens from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
 ### Coordinate Format (DD / DMS)
 
@@ -366,12 +366,12 @@ http://proxy.example.com:8080
 
 ---
 
-## Map Window
+## Map
 
-The **"Map Window" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the Map Window is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
+The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the map is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
 - **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
-- **Append to Batch mode**: selecting it opens (or raises) the batch window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. Committed paths render as **TX = filled dot / RX = bearing arrowhead** plus distance (so TX/RX stay distinguishable even when near/identical). Batch row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths`.
+- **Append to Multiple Paths mode**: selecting it opens (or raises) the Multiple Paths window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. Committed paths render as **TX = filled dot / RX = bearing arrowhead** plus distance (so TX/RX stay distinguishable even when near/identical). Path row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths`.
 - **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `dem.prefetch_tiles` and related public APIs; tiles are never re-downloaded once present. Clear everything via **Settings > Delete All Cache**.
 
 ---
@@ -452,13 +452,13 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 ---
 
-## Usage — Batch Mode
+## Usage — Multiple Paths
 
-Click the **Batch Mode** button in the launcher to open the dedicated window.
+Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
-### Design: refine in Single, finalize in Batch
+### Design: refine in Single, finalize in Multiple Paths
 
-**Single (the launcher) is where you refine conditions; Batch is where you produce deliverables from finalized conditions.** The launcher is the single source of truth, and each batch row is a **finalized link frozen by copying the launcher fields at the moment the row is added**.
+**Single (the launcher) is where you refine conditions; Multiple Paths is where you produce deliverables from finalized conditions.** The launcher is the single source of truth, and each batch row is a **finalized link frozen by copying the launcher fields at the moment the row is added**.
 
 ### Input Methods
 
@@ -673,7 +673,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
-### Batch Mode
+### Multiple Paths
 
 Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 
@@ -733,7 +733,7 @@ A single JSON file that bundles **the whole input set**. Read and written from *
 
 ### How loading works
 
-Loading closes the open windows (batch / explorer / relay route) after asking for confirmation, then they pick the new state up when reopened. This matches the app-wide rule that a window freezes its inputs when it opens, so no window needs a separate injection path.
+Loading closes the open windows (batch / explorer / relay path) after asking for confirmation, then they pick the new state up when reopened. This matches the app-wide rule that a window freezes its inputs when it opens, so no window needs a separate injection path.
 
 ---
 
@@ -753,7 +753,7 @@ Loading closes the open windows (batch / explorer / relay route) after asking fo
   views/map_picks.py         └ Picking sites and drawing paths
   views/map_cache.py         └ DEM cache selection, download and overlay
   views/map_style.py      Single source of map drawing constants (colors, margins, zoom)
-  views/batch_builder.py  Batch Mode window (core: common settings, project info)
+  views/batch_builder.py  Multiple Paths window (core: common settings, project info)
   views/batch_table.py       └ Input table (add/duplicate/remove/reorder rows)
   views/batch_io.py          └ CSV import/export and template
   views/batch_run.py         └ Execution and progress

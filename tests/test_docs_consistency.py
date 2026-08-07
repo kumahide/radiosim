@@ -223,9 +223,9 @@ ALL_READMES = ["README_ja.md", "README_en.md",
 @pytest.mark.parametrize("doc", ALL_READMES)
 def test_batch_csv_columns_listed(doc):
     """バッチ CSV の全列（batch.CSV_COLUMNS が単一ソース）が各 README の
-    一括シミュレーション節に載っているか。gain_tx/gain_rx 追加のような
+    複数経路の節に載っているか。gain_tx/gain_rx 追加のような
     スキーマ変更をドキュメント全系統へ反映し忘れるのを捕捉する。"""
-    section = _section(_read(doc), ["一括シミュレーション", "Batch Mode"])
+    section = _section(_read(doc), ["複数経路", "Multiple Paths"])
     for col in batch.CSV_COLUMNS:
         assert col in section, f"{doc}: batch CSV section is missing column '{col}'"
 

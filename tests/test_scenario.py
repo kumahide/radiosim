@@ -1160,7 +1160,7 @@ class TestLauncherSnapshot:
             win._refresh_from_launcher()
             assert win._base_params.lat_tx == pytest.approx(35.1)
             assert win._base_params.freq_mhz == 15000.0
-            assert "35.10000" in win._path_var.get(), "経路表示が追従していない"
+            assert "35.10000" in win._tx_var.get(), "送信座標の表示が追従していない"
             assert win._base_vars["freq_mhz"].get() == "15000.0"
             # 触っていない条件欄はベースに追従する
             assert win._cmp_cols[0]["freq_mhz"].get() == "15000.0"

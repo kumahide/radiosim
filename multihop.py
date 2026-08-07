@@ -239,6 +239,33 @@ class MultiHopRun:
         return min(margins)
 
 
+#: 集約カードの語（I-052）。**判定で切り替える**ので、キーを 2 つ持つ。
+OVERALL_MARGIN_KEY    = "mh_overall_margin"      # OK＝設計余裕の KPI
+OVERALL_SHORTFALL_KEY = "mh_overall_shortfall"   # NG＝あと何 dB 足りないか
+
+
+def overall_display(run: MultiHopRun, digits: int = 1) -> tuple[str, str]:
+    """集約カードの **(語の i18n キー, 表示する数値)** を返す（I-052）。
+
+    **同じ数字が答えている問いが、判定で変わる**——OK なら「あと何 dB 積めるか」
+    （連続量として意味を持つ）だが、NG なら要るのは「あと何 dB 足りないか」で、
+    `−12.4` を「余裕」と書いた数字は読み違えの元になる。⇒ **値の出所
+    （`overall_margin`）は変えず、語と符号だけを切り替える**。
+
+    ⚠️ ここを画面とレポートで別々に書くと、必ず片方だけ直る日が来る
+    （I-010 で「判定の出所が各所に散っていた」のと同じ壊れ方）。**単一ソース。**
+    ⚠️ 判定できない（`overall_margin is None`）ときは NG 側の語を使わない
+    ——不足量が分からないのに「最大不足 —」と書くのは、無い情報を語ってしまう。
+    """
+    margin = run.overall_margin
+    if margin is None:
+        return OVERALL_MARGIN_KEY, "—"
+    if run.ok:
+        return OVERALL_MARGIN_KEY, f"{margin:+.{digits}f}"
+    # 「不足 −12.4」は二重否定で読めない＝符号を反転して不足量そのものを出す。
+    return OVERALL_SHORTFALL_KEY, f"{-margin:.{digits}f}"
+
+
 def hop_endpoints(path: MultiHopPath, index: int) -> "tuple[Waypoint, Waypoint] | None":
     """区間 `index` の両端の地点（範囲外なら None）。
 

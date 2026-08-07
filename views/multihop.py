@@ -623,7 +623,9 @@ class MultiHopWindow(tk.Toplevel):
         self._last_run = run
 
         # **全体判定＋どの区間が決めているか**を必ず併記する（min だけ出さない）。
-        margin = run.overall_margin
+        # 集約の語と符号は `mh.overall_display` が単一ソース（I-052）＝レポートの
+        # カードと同じ語・同じ数字になる。
+        label_key, margin_txt = mh.overall_display(run, digits=2)
         worst  = run.worst
         worst_label = "—"
         if worst is not None:
@@ -631,7 +633,8 @@ class MultiHopWindow(tk.Toplevel):
             worst_label = f"#{idx + 1} {mh.hop_label(run.path, idx)}"
         self._summary_label.config(text=i18n.t("mh_summary").format(
             status="OK" if run.ok else "NG",
-            margin=f"{margin:+.2f}" if margin is not None else "—",
+            label=i18n.t(label_key),
+            margin=margin_txt,
             worst=worst_label))
 
         # **バッチと同じ 3 択**（合成シート / 全ページ / 保存先）。`report_all.html`

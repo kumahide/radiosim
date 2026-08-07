@@ -604,3 +604,146 @@ def test_graph_window_saves_with_the_coord_format_it_was_opened_with(monkeypatch
         )
     finally:
         root.destroy()
+
+
+# ============================================================
+# 6. 入口の語彙（2.7 スライス D）
+# ============================================================
+# ⚠️ ここは**語そのもの**ではなく「語で表した構造」を見る。語の統一は
+# `tests/test_i18n_glossary.py` が用語集と突き合わせて守るので、二重に持たない。
+
+
+def test_launcher_buttons_are_ordered_by_what_they_run(app_windows):
+    """ランチャーの窓ボタン 4 つが「何を回すか」の軸で並んでいること（I-051）。
+
+    ①経路を複数回す（複数経路 / 中継経路＝親戚）②1 経路を振る（条件探索）
+    ③入力の道具（地図）。**地図は他 3 つの入力元**なので最後に置く——実行フロー
+    と同じ列に並ぶと同格に見える（I-030「強調の軸を意味の軸に合わせる」の続き）。
+
+    ⚠️ **座標（row, column）で見る**＝生成順で見ると、2 列 grid のどちらの列に
+    載ったかを一切要求しないゲートになる（並び替えを検出できない）。
+    """
+    app, _ = app_windows
+    expected = [
+        ("btn_batch_mode", 0, 0), ("mh_open_btn",  0, 1),
+        ("scn_open_btn",   1, 0), ("btn_open_map", 1, 1),
+    ]
+    placed = {}
+    for w in app.root.winfo_children():
+        for child in _walk(w):
+            if child.winfo_class() == "TButton":
+                info = child.grid_info()
+                if info:
+                    placed[(int(info["row"]), int(info["column"]))] = str(
+                        child.cget("text"))
+    actual = [placed.get((r, c)) for _k, r, c in expected]
+    assert actual == [i18n.t(k) for k, _r, _c in expected], (
+        f"窓ボタンの並びが意味の軸と合っていない: {actual}"
+    )
+
+
+def _walk(widget):
+    """widget とその子孫を全部返す。"""
+    yield widget
+    for child in widget.winfo_children():
+        yield from _walk(child)
+
+
+def test_scenario_freezes_the_path_as_two_coordinate_fields(app_windows):
+    """条件探索の凍結帯が、座標を **2 欄**で持つこと（I-048）。
+
+    以前は `34.5, 132.4 → 34.5, 132.4` の 1 欄で、**他窓に無い第 3 の表記**だった。
+    ⚠️ `→` そのものを追放したいのではない（中継の区間名 `A → B` は 2 点の*関係*
+    を表す記号として情報を持つ）。ここは **2 つの入力値**なので欄で表す。
+    """
+    _app, wins = app_windows
+    win = wins["scenario"]
+    assert "→" not in win._tx_var.get() and "→" not in win._rx_var.get(), (
+        "凍結帯の座標がまだ 1 欄に矢印で詰め込まれている"
+    )
+    labels = {str(w.cget("text")) for w in _walk(win) if w.winfo_class() == "TLabel"}
+    for key in ("scn_tx_coord", "scn_rx_coord"):
+        assert i18n.t(key) in labels, f"凍結帯に「{i18n.t(key)}」の欄が無い"
+
+
+@pytest.mark.parametrize("mode,expect", [("dms", "°"), ("dd", ".")])
+def test_committing_a_coordinate_reformats_it_to_the_current_notation(mode, expect):
+    """入力を確定すると、その欄が現在の表記へ整形されること（I-060 R3）。
+
+    **整形されること自体が「読めた」という返事**になる。これが無いと、DMS 表記を
+    選んだ状態で DD を貼ったとき「受理された」のか「無視された」のかが画面から
+    区別できない（実機で不具合として報告された）。
+    ⚠️ 打鍵ごとには整形しない＝確定（Enter / focus 離脱）の 2 契機だけ。
+    ⚠️ **窓を withdraw しない**＝可視でない widget には Tk がキーイベントを配送
+    しないので、`_reformat_entry` を直に呼ぶだけの「配線を見ていないゲート」に
+    化ける（実際、最初の実装は withdraw していて**何を書いても緑**だった）。
+    """
+    pytest.importorskip("tkinter")
+    root = make_themed_root()
+    try:
+        app = _launcher(root)
+        app._coord_fmt_var.set(mode)
+        entry = app.entries["start"]
+        entry.delete(0, "end")
+        entry.insert(0, "34.8, 132.6")          # DD 表記で貼り付ける
+        root.update()
+        entry.focus_force()
+        root.update()
+        entry.event_generate("<Return>")
+        root.update()
+        assert expect in entry.get() and entry.get() != "34.8, 132.6", (
+            f"確定しても表記が {mode} へ整形されていない: {entry.get()!r}"
+        )
+    finally:
+        root.destroy()
+
+
+def test_an_unreadable_coordinate_survives_being_committed():
+    """読めない入力は**原文が残る**こと（I-060 R3 の裏面）。
+
+    整形が返事なら、返事が来ないことが「読めなかった」の合図になる。ここで原文を
+    捨てると、打ち間違いの現物が消えて直しようがなくなる。
+    """
+    pytest.importorskip("tkinter")
+    root = make_themed_root()
+    try:
+        app = _launcher(root)
+        app._coord_fmt_var.set("dms")
+        entry = app.entries["start"]
+        entry.delete(0, "end")
+        entry.insert(0, "きた 34 ひがし 132")
+        root.update()
+        entry.focus_force()
+        root.update()
+        entry.event_generate("<Return>")
+        root.update()
+        assert entry.get() == "きた 34 ひがし 132"
+    finally:
+        root.destroy()
+
+
+def test_committing_a_coordinate_reformats_it_in_the_batch_table_too():
+    """同じ整形が**複数経路の表**でも起きること（I-060 のクラス点検）。
+
+    手入力の座標欄はランチャーだけではない。1 か所だけ直すと「窓によって返事が
+    返ったり返らなかったり」になり、⑧の観点では直す前より悪い。
+    ⚠️ 表記はこの窓が**開いた時点で凍結した** `coord_format`（G2）を使う。
+    """
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+    root = make_themed_root()
+    try:
+        win = BatchBuilderWindow(root, _params(), coord_format="dms")
+        entry = win._row_entries[0][1]          # 先頭行の start セル
+        entry.delete(0, "end")
+        entry.insert(0, "34.8, 132.6")
+        root.update()
+        entry.focus_force()
+        root.update()
+        entry.event_generate("<Return>")
+        root.update()
+        assert "°" in entry.get(), (
+            f"複数経路の表で確定しても DMS へ整形されない: {entry.get()!r}"
+        )
+    finally:
+        root.destroy()

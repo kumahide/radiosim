@@ -119,9 +119,11 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     へ、False なら `route1_h1/report.html` へ飛ばす（`report_summary` と同じ流儀）。
     """
     worst = run.worst
-    overall = run.overall_margin
     status_cls = "ok" if run.ok else "ng"
-    overall_txt = f"{overall:+.1f} dB" if overall is not None else "—"
+    # 集約カードの語と符号は `mh.overall_display` が単一ソース（I-052）＝画面の
+    # サマリ 1 行と同じ語・同じ数字になる。
+    overall_key, overall_val = mh.overall_display(run, digits=1)
+    overall_txt = overall_val if overall_val == "—" else f"{overall_val} dB"
     # 判定の出所は `batch.PathResult.status` の 1 か所（I-010 ③）。
     ok_count  = sum(1 for pr in run.hops if pr.status == "OK")
     ng_count  = sum(1 for pr in run.hops if pr.status == "NG")
@@ -218,7 +220,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
           f'{i18n.t("mh_overall")}</div><div class="val">'
           f'{"OK" if run.ok else "NG"}</div></div>'
         + f'<div class="card {status_cls}"><div class="lbl">'
-          f'{i18n.t("mh_overall_margin")}</div><div class="val">{overall_txt}</div></div>'
+          f'{i18n.t(overall_key)}</div><div class="val">{overall_txt}</div></div>'
         + f'<div class="card"><div class="lbl">{i18n.t("mh_hops")}</div>'
           f'<div class="val">{len(run.hops)}</div></div>'
         + f'<div class="card"><div class="lbl">{i18n.t("mh_worst_hop")}</div>'

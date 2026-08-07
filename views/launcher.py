@@ -403,11 +403,17 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # （tests/test_window_fit.py の 100% ゲートが止めてくれる）。
         frame.columnconfigure(0, weight=1)
         frame.columnconfigure(1, weight=1)
+        # **並びは「何を回すか」の軸**（I-051）＝①経路を複数回す（複数経路／中継経路
+        # ＝親戚）②1 経路を振る（条件探索）③入力の道具（地図）。地図を最後に置くのは
+        # **他 3 つの入力元**だからで、実行フローと同じ列に並ぶと同格に見える
+        # （I-030「強調の軸を意味の軸に合わせる」の続き）。
+        # ⚠️ 区切り線や見出しは足さない＝4 個に見出しを付けるのは⑤に反する。
+        # **並び順だけで意味を表す。**
         for i, (key, command) in enumerate((
             ("btn_batch_mode", self._on_batch),
-            ("btn_open_map",   self._on_open_map),
-            ("scn_open_btn",   self._on_open_scenario),
             ("mh_open_btn",    self._on_open_multihop),
+            ("scn_open_btn",   self._on_open_scenario),
+            ("btn_open_map",   self._on_open_map),
         )):
             ttk.Button(frame, text=i18n.t(key), command=command).grid(
                 row=i // 2, column=i % 2, sticky="ew",
@@ -450,6 +456,14 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self.entries[key] = e
         if key in _TIP_KEYS:
             Tooltip(e, i18n.t(_TIP_KEYS[key]))
+        if key in ("start", "end"):
+            # **入力の確定で現在の表記へ整形する**（I-060 R3）。整形されること
+            # 自体が「読めた」という返事で、読めなければ原文が残る＝parse の成否が
+            # 目で分かる。これが無いと、DMS 表記を選んだ状態で DD を入れたとき
+            # 「受理された」のか「無視された」のかが画面から区別できない。
+            # ⚠️ 打鍵ごとには整形しない（編集できなくなる）＝確定の 2 契機だけ。
+            e.bind("<FocusOut>", lambda _ev, k=key: self._reformat_entry(k), add="+")
+            e.bind("<Return>",   lambda _ev, k=key: self._reformat_entry(k), add="+")
 
     # ----------------------------------------------------------
     # 座標形式（DD/DMS）切替
@@ -464,14 +478,23 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
     def _refresh_coord_display(self) -> None:
         """start/end 欄の文字列を現在の座標形式へ整形する（パース不能なら原文維持）。"""
-        mode = self._coord_fmt_var.get()
         for key in ("start", "end"):
-            entry = self.entries.get(key)
-            if entry is None:
-                continue
-            new_text = coords.reformat(entry.get(), mode)
-            entry.delete(0, tk.END)
-            entry.insert(0, new_text)
+            self._reformat_entry(key)
+
+    def _reformat_entry(self, key: str) -> None:
+        """1 欄だけを現在の座標形式へ整形する（パース不能なら原文のまま）。
+
+        **入力の確定（Enter / focus 離脱）と、表記の切替の両方がここを通る**
+        （I-060 R3）＝整形の規則を 2 か所に書かない。
+        """
+        entry = self.entries.get(key)
+        if entry is None:
+            return
+        new_text = coords.reformat(entry.get(), self._coord_fmt_var.get())
+        if new_text == entry.get():
+            return                      # 変わらないなら触らない（カーソルを飛ばさない）
+        entry.delete(0, tk.END)
+        entry.insert(0, new_text)
 
     def _coords_to_dd(self, c: dict[str, str]) -> None:
         """config dict 中の start/end を DD 文字列へ正規化する（in-place）。

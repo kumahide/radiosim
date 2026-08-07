@@ -890,3 +890,65 @@ def test_unsupported_topology_still_reports_off_the_calling_thread(monkeypatch):
     assert seen, "on_error が呼ばれていない"
     assert seen[0] != caller, \
         "on_error が呼び出し元スレッドで実行された（他の失敗経路と契約が違う）"
+
+
+# ============================================================
+# 集約カードの語は判定で変わる（I-052・2.7 スライス D）
+# ============================================================
+class TestOverallDisplay:
+    """**同じ数字が答えている問いが、判定で変わる**——だから語を切り替える。
+
+    OK のときの min は「あと何 dB 積めるか」という連続量（設計余裕の KPI）だが、
+    NG のときに要るのは「あと何 dB 足りないか」で、`−12.4` を「余裕」と書いた
+    数字は読み違えの元になる。⇒ 値の出所は変えず、**語と符号だけ**を切り替える。
+    """
+
+    def test_ok_run_shows_the_margin_with_its_sign(self, base, tmp_path, monkeypatch):
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 8.0
+            h.result.status = "OK"
+        key, text = mh.overall_display(run, digits=1)
+        assert key == mh.OVERALL_MARGIN_KEY
+        assert text == "+8.0", text
+
+    def test_ng_run_shows_the_shortfall_as_a_positive_amount(self, base, tmp_path,
+                                                             monkeypatch):
+        """「不足 −12.4」は二重否定で読めない＝符号を反転して不足量そのものを出す。"""
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 5.0
+            h.result.status = "OK"
+        run.hops[0].result.actual_margin = -12.4
+        run.hops[0].result.status = "NG"
+        key, text = mh.overall_display(run, digits=1)
+        assert key == mh.OVERALL_SHORTFALL_KEY
+        assert text == "12.4", text
+
+    def test_an_unspeakable_overall_never_borrows_the_shortfall_wording(
+            self, base, tmp_path, monkeypatch):
+        """判定できない（ERR）ときに「最大不足 —」と書かない＝無い情報を語らない。"""
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        run.hops[1].result = None
+        key, text = mh.overall_display(run)
+        assert (key, text) == (mh.OVERALL_MARGIN_KEY, "—")
+
+    def test_the_report_card_uses_the_same_wording_as_the_window(
+            self, base, tmp_path, monkeypatch):
+        """レポートのカードが `overall_display` の語を使うこと。
+
+        ⚠️ **純関数のテストだけでは足りない**＝呼び出し側が旧キーを直に引いたまま
+        でも、上の 3 本は緑のままになる（I-010 で見た「判定の出所が各所に散る」
+        壊れ方と同じ）。**成果物の字**まで見て初めて単一ソースが証明される。
+        """
+        import report_multihop
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 5.0
+            h.result.status = "OK"
+        run.hops[0].result.actual_margin = -12.4
+        run.hops[0].result.status = "NG"
+        html = report_multihop.route_sheet_html(run)
+        assert i18n.t(mh.OVERALL_SHORTFALL_KEY) in html
+        assert i18n.t(mh.OVERALL_MARGIN_KEY) not in html
+        assert "12.4 dB" in html
