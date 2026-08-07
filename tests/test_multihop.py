@@ -659,9 +659,10 @@ class TestMultiHopWindow:
         root, win = self._win(default_params_dict)
         try:
             win._on_add_point()
-            win._on_del_point()
+            win._delete_waypoint(1)
             assert self._names(win) == ["TX", "RX"]
-            win._on_del_point()                     # 2 点未満にはしない
+            win._delete_waypoint(0)                 # 送信点は消せない
+            win._delete_waypoint(1)                 # 受信点も消せない
             assert self._names(win) == ["TX", "RX"]
         finally:
             win.destroy(); root.destroy()
@@ -768,7 +769,7 @@ class TestMultiHopWindow:
             win._wp_vars[1]["coord"].set("34.535, 132.405")
             assert [n for n, _, _ in win.waypoint_markers()] == ["TX", "R1", "RX"]
 
-            win._on_del_point()                       # 中継点を消す
+            win._delete_waypoint(1)                   # 中継点を消す
             assert [n for n, _, _ in win.waypoint_markers()] == ["TX", "RX"], (
                 "削除が地点列に反映されていない（地図に残る）"
             )

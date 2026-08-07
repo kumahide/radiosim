@@ -33,6 +33,7 @@ import tkinter as tk
 from tkinter import ttk
 from typing import Callable
 
+import coords
 import i18n
 import multihop as mh
 import simulation as sim
@@ -41,6 +42,9 @@ from views.progress import ProgressPump
 
 # 地点の既定の地上高（ランチャーの h_tx を初期値に使う）。
 _DEFAULT_NAMES = ("TX", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "RX")
+
+# 座標欄の幅は `coords` が単一ソース（B-046）＝窓ごとに数字を書かない。
+_COORD_WIDTH = coords.DISPLAY_WIDTH_CHARS
 
 
 class MultiHopWindow(tk.Toplevel):
@@ -58,6 +62,7 @@ class MultiHopWindow(tk.Toplevel):
         initial_path:    "mh.MultiHopPath | None" = None,
         map_opener:      "Callable[[object], None] | None" = None,
         map_notify:      "Callable[[], None] | None" = None,
+        coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("mh_window_title"))
@@ -72,6 +77,11 @@ class MultiHopWindow(tk.Toplevel):
         # （どちらもランチャーが注入する＝親ウィジェットから探さない）。
         self._map_opener      = map_opener
         self._map_notify      = map_notify
+        # 座標の表記＝**開いた時点で凍結**（G2 と同じ形・I-070）。この窓は長らく
+        # 受け取っておらず、設定を DMS にしてもここだけ十進度で出ていた。
+        # ⚠️ **表記は表示だけの話**＝読む側は `coords.parse_pair` が両表記を受け、
+        # 保存・計算へは常に DD で渡る（内部の正典は DD）。
+        self._coord_format    = coord_format
         self._running  = False
         self._last_run: "mh.MultiHopRun | None" = None
 
@@ -86,12 +96,42 @@ class MultiHopWindow(tk.Toplevel):
 
         self._build()
         if initial_path is not None and initial_path.waypoints:
+            # ⚠️ プロジェクトの経路があるときは**引き継ぎで上書きしない**（I-044）。
             self._apply_path(initial_path)
         else:
-            self._add_waypoint(_DEFAULT_NAMES[0])
-            self._add_waypoint(_DEFAULT_NAMES[-1])
+            # **TX / RX はランチャーの座標を初期値にする**（I-044）＝⑦ランチャーが
+            # 唯一の源泉・⑧複数経路の表は既にそうしている。中継点は空のまま
+            # （ランチャーに対応する値が無い）。
+            # ⚠️ **これは「開いた時の初期値」だけ**＝`↻ ランチャーから更新` の
+            # 対象にはしない。座標はこの窓で編集する値で、凍結帯（案件情報・
+            # 共通設定）とは性格が違う＝↻ で経路が消えたら事故。
+            tx, rx = self._launcher_endpoints()
+            self._add_waypoint(_DEFAULT_NAMES[0],  lat=tx[0] if tx else None,
+                               lon=tx[1] if tx else None)
+            self._add_waypoint(_DEFAULT_NAMES[-1], lat=rx[0] if rx else None,
+                               lon=rx[1] if rx else None)
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+
+    def _launcher_endpoints(self):
+        """ランチャーの送受信座標（読めなければ `None`）＝TX / RX の初期値（I-044）。
+
+        ⚠️ **読めない値は静かに空欄にする**＝窓を開く途中でダイアログは出さない
+        （ランチャー側の入力エラーは、ランチャーで実行したときに出る）。
+        """
+        if self._config_provider is None:
+            return None, None
+        try:
+            cfg = self._config_provider()
+        except Exception:
+            return None, None
+        out = []
+        for key in ("start", "end"):
+            try:
+                out.append(coords.parse_pair(str(cfg.get(key, ""))))
+            except ValueError:
+                out.append(None)
+        return out[0], out[1]
 
     # ----------------------------------------------------------
     # プロジェクト（`.rsproj`）との受け渡し
@@ -108,6 +148,14 @@ class MultiHopWindow(tk.Toplevel):
             return None
         return self._collect_path()
 
+    def apply_project_path(self, path: "mh.MultiHopPath") -> None:
+        """プロジェクトの経路をこの窓へ取り込む（I-061 の帯から呼ばれる）。
+
+        **公開口にしてある**＝ランチャーが `_apply_path` のような内部名に
+        依存しない（内部名への配線は黙って壊れる＝5b の `getattr` の教訓）。
+        """
+        self._apply_path(path)
+
     def _apply_path(self, path: "mh.MultiHopPath") -> None:
         """プロジェクトの経路を画面へ流し込む（`project_path` と対）。
 
@@ -120,7 +168,8 @@ class MultiHopWindow(tk.Toplevel):
         for wp in path.waypoints:
             self._wp_vars.append({
                 "name":   tk.StringVar(value=wp.name),
-                "coord":  tk.StringVar(value=f"{wp.lat:.6f}, {wp.lon:.6f}"),
+                "coord":  tk.StringVar(
+                    value=coords.format_pair(wp.lat, wp.lon, self._coord_format)),
                 "height": tk.StringVar(value=f"{wp.h:.1f}"),
             })
         self._render_waypoints()          # → _sync_hops でホップ行が揃う
@@ -232,8 +281,10 @@ class MultiHopWindow(tk.Toplevel):
 
         btns = ttk.Frame(box)
         btns.pack(fill="x", pady=(6, 0))
+        # ⚠️ **「中継点を削除」ボタンは置かない**（I-045）＝削除は行ごとの `×`
+        # に移した。末尾固定の削除ボタンと行ごとの `×` が同居すると、「どちらが
+        # 消えるのか」を毎回考えることになる（複数経路の表は `×` だけ）。
         for key, cmd in (("mh_add_point",  self._on_add_point),
-                         ("mh_del_point",  self._on_del_point),
                          ("mh_from_map",   self._on_from_map)):
             ttk.Button(btns, text=i18n.t(key), command=cmd).pack(side="left", padx=(0, 6))
         ttk.Label(btns, text=i18n.t("mh_hint_order"),
@@ -330,7 +381,8 @@ class MultiHopWindow(tk.Toplevel):
             dialogs.alert(self, i18n.t("dlg_input_error"),
                           i18n.t("mh_err_too_many").format(max=mh.MAX_HOPS))
             return
-        coord = f"{lat:.6f}, {lon:.6f}" if lat is not None and lon is not None else ""
+        coord = ("" if lat is None or lon is None
+                 else coords.format_pair(lat, lon, self._coord_format))
         vars_ = {
             "name":   tk.StringVar(value=name or self._next_relay_name()),
             "coord":  tk.StringVar(value=coord),
@@ -373,7 +425,8 @@ class MultiHopWindow(tk.Toplevel):
                 row=row, column=0, padx=4, pady=1, sticky="w")
             name_ent = ttk.Entry(self._wp_grid, textvariable=vars_["name"], width=10)
             name_ent.grid(row=row, column=1, padx=4, pady=1)
-            coord_ent = ttk.Entry(self._wp_grid, textvariable=vars_["coord"], width=26)
+            coord_ent = ttk.Entry(self._wp_grid, textvariable=vars_["coord"],
+                                  width=_COORD_WIDTH)
             coord_ent.grid(row=row, column=2, padx=4, pady=1, sticky="ew")
             ttk.Entry(self._wp_grid, textvariable=vars_["height"], width=8).grid(
                 row=row, column=3, padx=4, pady=1)
@@ -381,19 +434,50 @@ class MultiHopWindow(tk.Toplevel):
             for ent in (name_ent, coord_ent):
                 ent.bind("<FocusOut>", lambda _e: self._notify_map(), add="+")
                 ent.bind("<Return>",   lambda _e: self._notify_map(), add="+")
+            # 確定でこの窓の表記へ整形する（I-060 R3）＝整形されること自体が
+            # 「読めた」という返事になる。読めなければ原文が残る。
+            for seq in ("<FocusOut>", "<Return>"):
+                coord_ent.bind(seq, lambda _e, v=vars_["coord"]: self._reformat(v),
+                               add="+")
+            # 行ごとの削除（I-045）＝複数経路の表と同じ `×`。
+            # ⚠️ **送信点・受信点には出さない**＝消せないという現在の不変条件を、
+            # そのまま画面で表す（押せるのに何も起きないボタンを置かない）。
+            if 0 < i < last:
+                ttk.Button(self._wp_grid, text="×", width=2, cursor="hand2",
+                           command=lambda idx=i: self._delete_waypoint(idx)).grid(
+                    row=row, column=4, padx=4, pady=1)
         self._sync_hops()
         self._fit_to_content()
         # 地点の増減・並びの変化はここに集約されている＝通知もここ 1 か所で足りる。
         self._notify_map()
 
+    def _reformat(self, var: tk.StringVar) -> None:
+        """座標欄 1 つを、この窓の表記へ整形する（読めなければ原文のまま）。"""
+        shown = coords.reformat(var.get(), self._coord_format)
+        if shown != var.get():
+            var.set(shown)
+
     def _on_add_point(self) -> None:
         self._add_waypoint()
 
-    def _on_del_point(self) -> None:
-        """**中継点**を末尾から 1 つ削る（送信点・受信点は残す）。"""
-        if len(self._wp_vars) <= 2:
+    def _delete_waypoint(self, index: int) -> None:
+        """**任意の中継点**を消す（I-045）。送信点・受信点は消せない。
+
+        🔴 **区間の設定も一緒に落とす**＝`_sync_hops` はホップ行を**先頭から
+        詰め直す**ので、地点だけ消すと**消した地点より後ろの周波数・利得が 1 つ
+        前へずれる**（末尾を消すだけだった頃は起きなかった）。ずれても画面は
+        自然に見えるので、**黙って別の区間の設定で計算する**実害になる。
+
+        落とすのは **`index` 番目のホップ＝消える地点から「出ていく」側**。
+        残すのは「入ってくる」側（`index - 1`）で、こちらは合流後の区間と
+        **始点が同じ**なので、利用者の入力の意味が変わらない。
+        """
+        last = len(self._wp_vars) - 1
+        if len(self._wp_vars) <= 2 or not 0 < index < last:
             return
-        self._wp_vars.pop(len(self._wp_vars) - 2)
+        self._wp_vars.pop(index)
+        if index < len(self._hop_vars):
+            self._hop_vars.pop(index)
         self._render_waypoints()
 
     def _on_from_map(self) -> None:
@@ -421,14 +505,11 @@ class MultiHopWindow(tk.Toplevel):
         """
         points: list[tuple[str, float, float]] = []
         for vars_ in self._wp_vars:
-            parts = vars_["coord"].get().split(",")
-            if len(parts) != 2:
-                continue
             try:
-                points.append((vars_["name"].get(),
-                               float(parts[0]), float(parts[1])))
+                lat, lon = coords.parse_pair(vars_["coord"].get())
             except ValueError:
                 continue
+            points.append((vars_["name"].get(), lat, lon))
         return points
 
     def _notify_map(self) -> None:
@@ -448,7 +529,8 @@ class MultiHopWindow(tk.Toplevel):
         """
         for vars_ in self._wp_vars:
             if not vars_["coord"].get().strip():
-                vars_["coord"].set(f"{lat:.6f}, {lon:.6f}")
+                vars_["coord"].set(
+                    coords.format_pair(lat, lon, self._coord_format))
                 return vars_["name"].get()
         # 空きが無ければ**中継点として**足す（受信点の手前＝_add_waypoint の約束）。
         before = len(self._wp_vars)
@@ -500,16 +582,18 @@ class MultiHopWindow(tk.Toplevel):
     # 実行
     # ----------------------------------------------------------
     def _collect_path(self) -> mh.MultiHopPath:
-        """画面 → `MultiHopPath`（**ここでしか組み立てない**）。"""
+        """画面 → `MultiHopPath`（**ここでしか組み立てない**）。
+
+        ⚠️ **座標は `coords.parse_pair` が読む**（I-070 ②）＝以前はここで
+        `split(",")` ＋ `float()` と手読みしており、**DMS 表記を弾いていた**
+        （「入力は DD / DMS のどちらも受ける」という約束が、この窓だけ
+        成り立っていなかった）。**この窓が経路を組み立てる唯一の口**なので、
+        ここを直せば実行・保存・`.rsproj` の全経路に一度に効く。
+        """
         waypoints: list[mh.Waypoint] = []
         for i, vars_ in enumerate(self._wp_vars, start=1):
-            text = vars_["coord"].get().strip()
-            parts = text.split(",")
-            if len(parts) != 2:
-                raise ValueError(i18n.t("mh_err_coord").format(
-                    no=i, name=vars_["name"].get()))
             try:
-                lat, lon = float(parts[0]), float(parts[1])
+                lat, lon = coords.parse_pair(vars_["coord"].get())
                 height   = float(vars_["height"].get())
             except ValueError:
                 raise ValueError(i18n.t("mh_err_coord").format(

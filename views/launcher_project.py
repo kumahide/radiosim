@@ -15,6 +15,7 @@ from tkinter import filedialog
 
 import config
 import i18n
+from views import dialogs
 
 
 class _ProjectMixin:
@@ -23,8 +24,9 @@ class _ProjectMixin:
     #
     # 保持者はランチャー。**開いている窓からは現在値を集め、閉じている窓の節は
     # 前回値を持ち越す**（窓を閉じただけで内容が消えたファイルを書かない）。
-    # 読込は「確認して閉じ、開き直す」＝凍結方式（開く＝スナップショット）と
-    # ちょうど一致するので、各窓に流し込み口を作らずに済む。
+    # 読込は**窓を閉じず、開いている窓には帯で知らせて押されたときだけ差し替える**
+    # （I-061・2026-08-07）。凍結方式（開く＝スナップショット／見えている値で
+    # 実行する）は保たれる＝帯を押さなければ画面は動かない。
     # ----------------------------------------------------------
     def _project_doc(self) -> "project.ProjectDoc":
         """保持中の ProjectDoc（無ければ空で作る）。project は遅延 import。"""
@@ -124,24 +126,49 @@ class _ProjectMixin:
             self._alert(i18n.t("dlg_error"), str(e))
             return
 
-        # 開いている窓があるなら、閉じてよいか先に聞く（編集中の内容が消えるので）。
-        open_windows = [w for w in (self._open_window("_batch_win"),
-                                    self._open_window("_scenario_win"),
-                                    self._open_window("_multihop_win"))
-                        if w is not None]
-        if open_windows and not self._confirm(i18n.t("proj_close_title"),
-                                              i18n.t("proj_close_confirm")):
-            return
-        for win in open_windows:
-            # ⚠️ 各窓の close ハンドラ名に依存しない（バッチは `_on_close` を
-            # **コールバックの保管場所**として使っており、名前で分岐すると
-            # 「閉じずにコールバックだけ呼ぶ」に化ける）。公開口は close_window。
-            win.close_window()
-
-        # ⚠️ **窓を閉じてから doc を差し替える**＝閉じる処理は「その窓の節を
-        # 持ち越す」ので、先に差し替えると読み込んだ内容が閉じた窓の値で上書きされる。
+        # **窓は閉じない**（I-061・2026-08-07 ユーザー決定）。開いている窓には
+        # 「取り込める」ことだけ知らせ、**押したときだけ**差し替える。
+        # ⚠️ 以前は「確認して閉じ、開き直す」形だった＝凍結方式（開く＝スナップ
+        # ショット）とちょうど一致するので流し込み口が要らなかった。作業の流れが
+        # 切れる（窓の位置・スクロール位置・選択が失われる）のが代償で、そちらを
+        # 取った。**凍結方式そのものは改版していない**＝窓が黙って書き換わることは
+        # 起きない（帯を押さなければ画面は 1px も動かない）。
         self._project = doc
         self._apply_sim_config(doc.params)
         self._project_var.set(doc.meta.get("project_name", ""))
         self._memo_var.set(doc.meta.get("memo", ""))
+        self._offer_project_to_open_windows()
         self._alert(i18n.t("dlg_success"), i18n.t("proj_loaded"))
+
+    def _offer_project_to_open_windows(self) -> None:
+        """開いている窓に「内容を取り込む」帯を出す（I-061）。
+
+        ⛔ **既存の `↻ ランチャーから更新` には載せない**＝あちらは凍結帯（共通
+        設定・案件情報）だけを触り、利用者が入れた行・地点には手を出さない。
+        そこへ差し替えを足すと「共通設定を更新するつもりで押したら行が消えた」
+        という、この項目で直そうとしている事故を自分で作ることになる。
+
+        ⚠️ **節を持たないファイルでは帯を出さない**＝`None` は「その窓の情報を
+        持たない」という意味（`project.py` の約束）で、空にする指示ではない。
+        出してしまうと「取り込む」が**行の全消し**として働く。
+
+        ⚠️ **取り込まないまま窓を閉じたら、画面に見えている方（窓の内容）が残る**
+        ＝閉じる処理が今までどおりその窓の節を `self._project` へ持ち越すため。
+        凍結方式（見えている値が正）と同じ向きなので、これでよい。
+        """
+        doc = self._project
+        targets = (
+            ("_batch_win",    doc.batch_rows,
+             lambda win, rows=doc.batch_rows: win.replace_rows(rows)),
+            ("_scenario_win", doc.scenario,
+             lambda win, spec=doc.scenario: win.apply_project_spec(spec)),
+            ("_multihop_win", doc.multihop,
+             lambda win, path=doc.multihop: win.apply_project_path(path)),
+        )
+        for attr, section, take in targets:
+            win = self._open_window(attr)
+            if win is None or section is None:
+                continue
+            dialogs.show_notice(
+                win, i18n.t("proj_notice"), i18n.t("proj_notice_take"),
+                lambda w=win, t=take: t(w))

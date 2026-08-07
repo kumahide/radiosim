@@ -36,7 +36,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
     # 切られるため、この 2 列に Entry は作られない。
     # ⚠️ 判定列は**計算で出る列**＝水平距離（I-000）と同じ性格で、入力ではない。
     # だから CSV エクスポート（入力の契約）には出ない（I-041）。
-    _WIDTHS = [2, 9, 21, 21, 6, 6, 8, 7, 7, 11, 9, 6, 2, 2]
+    # ⚠️ 座標 2 列（添字 2 / 3）の幅は `coords` が単一ソース（B-046）＝ここに
+    # 数字を書くと、DMS 表記のときに末尾の `E` / `W` が黙って切れる。
+    _CW = coords.DISPLAY_WIDTH_CHARS
+    _WIDTHS = [2, 9, _CW, _CW, 6, 6, 8, 7, 7, 11, 9, 6, 2, 2]
 
     # ウィンドウ既定サイズ。**幅・高さとも下限**（実寸は _fit_width_to_content が中身に合わせる）。
     _BASE_W = 1080
@@ -76,6 +79,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         on_paths_changed: "Callable[[], None] | None" = None,
         initial_rows:    "list | None" = None,
         coord_format:    str = "dd",
+        map_opener:      "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("batch_title"))
@@ -93,6 +97,9 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # スナップショット。省略時は空メタ。
         self._meta_provider   = meta_provider
         self._load_params     = load_params
+        # 地図を連続追加モードで開く口（I-043）＝**ランチャーが注入する**。
+        # 親ウィジェットから探させない（中継窓の map_opener と同じ流儀）。
+        self._map_opener      = map_opener
         # 閉じたときにランチャーへ通知するコールバック（地図の連続追加先を手放させる）。
         self._on_close        = on_close
         # パス集合（行）が変わったときにランチャー→地図へ通知するコールバック。
@@ -321,6 +328,11 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # 固定文字幅（width=）は日本語ラベル（例「CSVエクスポート」）が入りきらず
         # 見切れる（B-002 系）。幅は付けず内容に合わせて自動サイズさせる。
         ttk.Button(left, text=i18n.t("btn_add_row"),    command=self._add_row     ).pack(side="left", padx=2)
+        # 地図から連続追加する口（I-043）＝**行を足す操作**なので `+ 行を追加` の隣。
+        # ⚠️ 中継経路の窓には前からあり、この窓だけ無かった（⑧）。
+        if self._map_opener is not None:
+            ttk.Button(left, text=i18n.t("mh_from_map"),
+                       command=self._map_opener).pack(side="left", padx=2)
         ttk.Button(left, text=i18n.t("btn_import_csv"), command=self._import_csv  ).pack(side="left", padx=2)
         ttk.Button(left, text=i18n.t("btn_export_csv"), command=self._export_csv  ).pack(side="left", padx=2)
         ttk.Button(left, text=i18n.t("btn_template"),   command=self._save_template).pack(side="left", padx=2)

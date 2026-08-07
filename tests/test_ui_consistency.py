@@ -30,6 +30,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import batch as b
 import config
 import i18n
 import simulation as sim
@@ -744,6 +745,256 @@ def test_committing_a_coordinate_reformats_it_in_the_batch_table_too():
         root.update()
         assert "°" in entry.get(), (
             f"複数経路の表で確定しても DMS へ整形されない: {entry.get()!r}"
+        )
+    finally:
+        root.destroy()
+
+
+# ============================================================
+# 7. 窓をまたぐ導線（2.7 スライス E）
+# ============================================================
+
+
+def test_the_map_can_be_opened_from_every_window_that_places_points(app_windows):
+    """**地点を置く窓は、どれも地図を開ける**こと（I-043）。
+
+    中継経路には前から `地図から選ぶ` があり、複数経路だけ無かった＝「バッチから
+    地図を開かない」という古い決めごとが、後から来た窓に破られていた。
+    ⚠️ **条件探索は対象外**＝経路をランチャーから凍結して受け取るので、地点を
+    置く窓ではない（3 窓を機械的に揃えない）。
+    """
+    _app, wins = app_windows
+    for name in ("batch", "multihop"):
+        labels = [str(w.cget("text")) for w in _walk(wins[name])
+                  if w.winfo_class() == "TButton"]
+        assert i18n.t("mh_from_map") in labels, (
+            f"{name}: 地図を開く口が無い（地点を置く窓には要る）"
+        )
+
+
+def test_deleting_a_relay_keeps_the_remaining_sections_aligned():
+    """**任意の中継点**を消せて、区間の設定がずれないこと（I-045）。
+
+    🔴 ここがこの項目の実害＝`_sync_hops` はホップ行を**先頭から詰め直す**ので、
+    地点だけ消すと**消した地点より後ろの周波数が 1 つ前へずれる**。ずれても画面は
+    自然に見えるため、**黙って別の区間の設定で計算する**。
+    ⚠️ 「削除できること」だけを見るゲートでは捕まらない（削除は前から出来ていた）。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params())
+        for _ in range(2):
+            win._on_add_point()                 # TX, R1, R2, RX
+        assert len(win._hop_vars) == 3
+        for i, freq in enumerate(("100", "200", "300")):
+            win._hop_vars[i]["freq"].set(freq)
+
+        win._delete_waypoint(1)                 # 先頭の中継点を消す
+        # 残るのは「入ってくる側」＝TX → R1 の設定と、その後ろの区間。
+        assert [v["freq"].get() for v in win._hop_vars] == ["100", "300"], (
+            "中継点を消したら区間の周波数がずれた（別の区間の設定で計算される）"
+        )
+        # 送信点・受信点は消せない（画面にも `×` を出していない）。
+        names_before = [v["name"].get() for v in win._wp_vars]
+        win._delete_waypoint(0)
+        win._delete_waypoint(len(win._wp_vars) - 1)
+        assert [v["name"].get() for v in win._wp_vars] == names_before
+    finally:
+        root.destroy()
+
+
+def test_relay_window_inherits_the_launcher_endpoints():
+    """中継の TX / RX は**開いた時**にランチャーの座標を引き継ぐこと（I-044）。
+
+    ⚠️ **中継点は空のまま**（ランチャーに対応する値が無い）。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        cfg = dict(config.DEFAULT_CONFIG)
+        cfg["start"] = "35.10000, 139.20000"
+        cfg["end"]   = "35.20000, 139.30000"
+        win = MultiHopWindow(root, _params(), config_provider=lambda: dict(cfg))
+        shown = [v["coord"].get() for v in win._wp_vars]
+        assert "35.1" in shown[0] and "35.2" in shown[1], (
+            f"ランチャーの座標を引き継いでいない: {shown}"
+        )
+    finally:
+        root.destroy()
+
+
+def test_relay_window_reads_both_coordinate_notations():
+    """中継が **DMS 入力も受ける**こと（I-070 ②＝R1 の穴）。
+
+    🔴 以前は `split(",")` ＋ `float()` の手読みで、**正しい座標を拒否していた**
+    （「入力は DD / DMS のどちらも受ける」がこの窓だけ成り立っていなかった）。
+    ⚠️ 保存・計算へ渡るのは**常に DD**（内部の正典は変えない）。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params(), coord_format="dms")
+        win._wp_vars[0]["coord"].set("34°48'00.0\"N, 132°36'00.0\"E")
+        win._wp_vars[1]["coord"].set("34.5, 132.4")     # DD も同時に受ける
+        path = win._collect_path()
+        assert path.waypoints[0].lat == pytest.approx(34.8)
+        assert path.waypoints[0].lon == pytest.approx(132.6)
+        assert path.waypoints[1].lat == pytest.approx(34.5)
+    finally:
+        root.destroy()
+
+
+def _entries_bound_to(win, variables) -> list:
+    """指定した StringVar に結びついた Entry を集める。
+
+    ⚠️ **幅で座標欄を探さない**＝最初の実装は「width >= 20 の Entry」で拾おうと
+    して、案件情報の読み取り専用欄（width=20）を掴んで落ちた（壊れ方③＝間違った
+    ものを要求するゲート）。**何に結びついているか**で特定する。
+    """
+    names = {str(v) for v in variables}
+    return [w for w in _walk(win)
+            if w.winfo_class() == "TEntry" and str(w.cget("textvariable")) in names]
+
+
+def _dms_sample_length() -> int:
+    """画面に出る DMS 表記の文字数（**要求量そのもの**）。
+
+    経度が 3 桁になる日本国内の座標で測る（`132°36'00.0"E`）＝ここが最長。
+    """
+    import coords as _coords
+    return len(_coords.format_dms(34.8, 132.6))
+
+
+def test_relay_coordinate_fields_are_wide_enough_for_dms():
+    """座標欄が **DMS 表記を切らない**幅であること（B-046）。
+
+    ⚠️ **値のゲートでは捕まらない**＝欄はスクロールするので `get()` は完全な値を
+    返し、`winfo_reqwidth` も要求どおり。**切れているのは描画された字だけ**。
+
+    🔑 **`coords.DISPLAY_WIDTH_CHARS` と比べてはいけない**＝それは*守る対象*で、
+    基準にすると定数を 21 に戻しても緑のままになる（実測で確認した＝壊れ方①）。
+    **実際に表示する DMS 文字列の長さ**から要求量を測る。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    need = _dms_sample_length()
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params())
+        ents = _entries_bound_to(win, [v["coord"] for v in win._wp_vars])
+        assert ents, "座標欄が見つからない"
+        for e in ents:
+            assert int(e.cget("width")) >= need, (
+                f"中継: 座標欄が DMS を切る幅（{e.cget('width')} < {need}）"
+            )
+    finally:
+        root.destroy()
+
+
+def test_path_table_coordinate_cells_are_wide_enough_for_dms():
+    """複数経路の表の座標セルも同じ下限（B-046 の実害が出ていた場所）。"""
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+    need = _dms_sample_length()
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params(), coord_format="dms")
+        for col in (1, 2):                      # 送信座標 / 受信座標
+            cell = win._row_entries[0][col]
+            assert int(cell.cget("width")) >= need, (
+                f"複数経路: 座標セル {col} が DMS を切る幅"
+                f"（{cell.cget('width')} < {need}）"
+            )
+    finally:
+        root.destroy()
+
+
+def _load_project_into(app, doc):
+    """`_on_open_project` の**読み込んだ後**の処理だけを起こす（ファイル選択は経ない）。"""
+    app._project = doc
+    app._apply_sim_config(doc.params)
+    app._offer_project_to_open_windows()
+
+
+def _notice_take_button(win):
+    """お知らせの帯の「内容を取り込む」ボタン（無ければ None）。"""
+    bar = getattr(win, "_notice_bar", None)
+    if bar is None or not bar.winfo_exists():
+        return None
+    for w in _walk(bar):
+        if w.winfo_class() == "TButton" and str(w.cget("text")) == i18n.t(
+                "proj_notice_take"):
+            return w
+    return None
+
+
+def test_loading_a_project_does_not_touch_open_windows_until_asked():
+    """プロジェクトを読み込んでも、**押すまで**窓の中身は変わらないこと（I-061）。
+
+    🔴 **これがこの項目の芯**＝要望は「閉じずに反映してほしい」だったが、黙って
+    入れ替えると凍結方式（見えている値で実行する）が壊れる。⇒ 帯で知らせ、
+    **押したときだけ**差し替える。
+    ⚠️ 「窓が閉じないこと」だけを見るゲートでは足りない＝黙って書き換える実装でも
+    緑になる。**押す前と押した後の両方**を見る。
+    """
+    pytest.importorskip("tkinter")
+    import project
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app   = _launcher(root)
+        batch = app.ensure_batch_window()
+        batch._row_entries[0][0].delete(0, "end")
+        batch._row_entries[0][0].insert(0, "mine")     # 作業中の行
+
+        rows = [b.PathRow(path_id="fromfile", lat_tx=34.5, lon_tx=132.4,
+                          lat_rx=34.6, lon_rx=132.5, h_tx=2.0, h_rx=2.0)]
+        _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
+                                                   batch_rows=rows))
+
+        assert batch.winfo_exists(), "窓が閉じられた（閉じないと決めた）"
+        assert batch._row_entries[0][0].get() == "mine", (
+            "押していないのに中身が差し替わった（凍結方式が壊れている）"
+        )
+        btn = _notice_take_button(batch)
+        assert btn is not None, "取り込みの帯が出ていない"
+
+        btn.invoke()
+        root.update()
+        assert batch._row_entries[0][0].get() == "fromfile", "押しても取り込まれない"
+        assert getattr(batch, "_notice_bar", None) is None, (
+            "取り込んだのに帯が残っている（誘い続ける）"
+        )
+    finally:
+        root.destroy()
+
+
+def test_no_notice_when_the_project_has_no_section_for_that_window():
+    """**節を持たないファイルでは帯を出さない**こと（I-061）。
+
+    `None`＝「その窓の情報を持たない」であって、空にする指示ではない
+    （`project.py` の約束）。出してしまうと「取り込む」が**行の全消し**になる。
+    """
+    pytest.importorskip("tkinter")
+    import project
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app   = _launcher(root)
+        batch = app.ensure_batch_window()
+        _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
+                                                   batch_rows=None))
+        assert _notice_take_button(batch) is None, (
+            "節が無いのに帯を出した（押すと行が全部消える）"
         )
     finally:
         root.destroy()

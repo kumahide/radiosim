@@ -38,6 +38,7 @@ from tkinter import ttk
 from typing import Callable
 
 import config
+import coords
 import i18n
 import project
 import report_scenario
@@ -115,6 +116,7 @@ class ScenarioWindow(tk.Toplevel):
         meta_provider:   "Callable[[], dict] | None" = None,
         on_close:        "Callable[[], None] | None" = None,
         initial_spec:    "project.ScenarioSpec | None" = None,
+        coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("scn_window_title"))
@@ -123,6 +125,9 @@ class ScenarioWindow(tk.Toplevel):
         self._base_params     = base_params
         self._config_provider = config_provider
         self._meta_provider   = meta_provider
+        # 座標の表記＝**開いた時点で凍結**（G2 と同じ形・I-070）。この帯は長らく
+        # 十進度で決め打ちしており、設定を DMS にしてもここだけ従わなかった。
+        self._coord_format    = coord_format
         # 案件情報（案件名・自由メモ）も**ランチャーのスナップショット**として持つ。
         # ここで凍結し、↻ で明示的に取り込み直す（実行時に読み直さない＝下記）。
         self._meta: dict[str, str] = self._snapshot_meta()
@@ -164,6 +169,10 @@ class ScenarioWindow(tk.Toplevel):
         }
         return project.ScenarioSpec(mode=self._mode.get(), compare=compare,
                                     sweep=sweep)
+
+    def apply_project_spec(self, spec: "project.ScenarioSpec") -> None:
+        """プロジェクトの条件セットをこの窓へ取り込む（I-061 の帯から呼ばれる）。"""
+        self._apply_spec(spec)
 
     def _apply_spec(self, spec: "project.ScenarioSpec") -> None:
         """プロジェクトの条件セットを画面へ流し込む（`project_spec` と対）。
@@ -257,15 +266,15 @@ class ScenarioWindow(tk.Toplevel):
         # 並びになり、「→」という第 3 の表記が消える。
         # ⚠️ `→` そのものを追放したいのではない＝中継の区間名 `A → B` は *2 点の
         # 関係*を表す記号として情報を持つ。ここは *2 つの入力値* なので欄で表す。
-        # 幅 21 文字＝"34.54290, 132.41180" が切れない下限（**この帯は常に DD**。
-        # 座標の表示形式がここへ効いていないのは別件＝I-070）。
+        # 座標欄の幅は `coords` が単一ソース（B-046）＝DMS でも末尾の `E` が
+        # 切れない下限。⚠️ **表記によって幅を変えない**（切り替えるたびに列が
+        # ずれる＝⑧に反する）。
         # ⚠️ 座標が読めない凍結帯は帯の意味を失う（何を固定したのか分からない）。
-        # 実測＝帯の作り直しで窓の必要幅は 870 → 1009px（**高さ 986px は不変**）。
-        # ⚠️ 高さが動いていないことが要点＝実機（FHD・使える高さ 990px）の予算に
-        # 対する余裕は 4px のままで、スライス D で減らしていない。
+        # 実測＝スライス D の帯の作り直しで必要幅は 870 → 1009px（高さ 986px は
+        # 不変＝実機の高さ予算 990px に対する余裕 4px を減らしていない）。
         for label_key, var, expand, width in (
-            ("scn_tx_coord", self._tx_var,      True,  21),
-            ("scn_rx_coord", self._rx_var,      True,  21),
+            ("scn_tx_coord", self._tx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
+            ("scn_rx_coord", self._rx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
             ("scn_samples",  self._samples_var, False, 6),
         ):
             f = ttk.Frame(row)
@@ -312,8 +321,8 @@ class ScenarioWindow(tk.Toplevel):
 
     def _update_path_label(self) -> None:
         p = self._base_params
-        self._tx_var.set(f"{p.lat_tx:.5f}, {p.lon_tx:.5f}")
-        self._rx_var.set(f"{p.lat_rx:.5f}, {p.lon_rx:.5f}")
+        self._tx_var.set(coords.format_pair(p.lat_tx, p.lon_tx, self._coord_format))
+        self._rx_var.set(coords.format_pair(p.lat_rx, p.lon_rx, self._coord_format))
         self._samples_var.set(str(p.num))
 
     def _refresh_from_launcher(self) -> None:

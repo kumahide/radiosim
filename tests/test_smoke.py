@@ -657,6 +657,7 @@ _FREEZE_ALLOWED_CALLERS = {
     "_frozen_defaults":              "バッチ：行追加時に**その行のセルへ書き込む**値",
     "_frozen_row":                   "同上（セル文字列を組み立てて返すだけ）",
     "_update_row_rf":                "バッチ：行の RF 欄を**画面ごと**書き換える",
+    "_launcher_endpoints":           "中継：TX / RX の初期値（呼ぶのは __init__ だけ・I-044）",
 }
 
 

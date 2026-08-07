@@ -83,6 +83,9 @@ class _ChildWindowsMixin:
             # 一度も動かなかった）。バッチ・条件探索と同じく**注入**する。
             map_opener=self.open_map_for_waypoints,
             map_notify=self._notify_map_waypoints_changed,
+            # 座標の表記も凍結して渡す（I-070）＝この窓だけ設定に従わず、
+            # 常に十進度で出していた。
+            coord_format=self._coord_fmt_var.get(),
         )
 
     def _on_multihop_closed(self) -> None:
@@ -96,6 +99,19 @@ class _ChildWindowsMixin:
             if path is not None:
                 self._project_doc().multihop = path
         self._multihop_win = None
+
+    def open_map_for_append(self) -> None:
+        """地図を**連続追加モード**で開く（複数経路の窓の「地図から取る」・I-043）。
+
+        ⚠️ **「バッチからは地図を開かない」という決めごとを、ここで意図的に外した**
+        ＝後から来た中継経路の窓が既に地図を開けるので、決めごとのほうが破られて
+        いた（⑧＝窓によって出来ることが違うのが最も高い代償）。**揃える向きは
+        「足す」**＝中継から地図を外すのは機能の後退（地点は地図で拾うのが自然）。
+        新しい経路は増えない＝地図 → 複数経路の連続追加は既にあり、その逆向きを
+        呼ぶだけ。
+        """
+        self._on_open_map()
+        self._map_win.start_append_mode()
 
     def open_map_for_waypoints(self, sink) -> None:
         """地図を**中継点モード**で開いて宛先をこの sink にする（2.3 D2 の型）。
@@ -130,6 +146,7 @@ class _ChildWindowsMixin:
             meta_provider=self._current_meta,
             on_close=self._on_scenario_closed,
             initial_spec=self._project_doc().scenario,
+            coord_format=self._coord_fmt_var.get(),
         )
 
     def _on_scenario_closed(self) -> None:
@@ -201,6 +218,8 @@ class _ChildWindowsMixin:
             # app 設定（座標表記）も凍結して渡す＝窓に `config.load_config()` を
             # 読ませない（I-055 ②・2.7 スライス G2）。出所はランチャー 1 つ。
             coord_format=self._coord_fmt_var.get(),
+            # 地図を連続追加モードで開く口（I-043）＝この窓にだけ無かった。
+            map_opener=self.open_map_for_append,
         )
         return self._batch_win
 

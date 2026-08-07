@@ -325,6 +325,7 @@ Click the **Multiple Paths** button in the launcher to open the dedicated window
 The **Dist (m)** column on the right is read-only and computed from the TX/RX coordinates (updated whenever a coordinate is committed). A mistyped coordinate shows up as an absurd distance, so it can be caught before running.
 
 - **+ Add row**: Adds a row that freezes a copy of the current launcher fields (coordinates, frequency, gains, antenna heights).
+- **Pick from map**: Opens the map in "Append to Multiple Paths" mode; every **TX → RX** pair you place adds one row (opening the map from this window is new in 2.7 — previously the flow could only be started from the map side).
 - **Right-click a row**: Opens a per-row menu.
   - **→ Send to Single**: Loads that row's coordinates + RF into the launcher for adjustment.
   - **⟳ Update RF from Single**: Writes the launcher's current RF back into that row (**coordinates are kept**).
@@ -422,9 +423,11 @@ Each relay point **receives and then transmits again**. That means:
 ### Waypoints and sections
 
 - The **waypoint table** is the input surface. **The first point is the transmitter and the last is the receiver**; "Add point" inserts a relay **before the receiver**, so the order on screen is the order of the route. Each row shows its role (TX / relay / RX).
-- Each waypoint has **coordinates and an above-ground height**. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
+- Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point.
+- Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
 - **Pick from map** switches the map into waypoint mode; each click fills the next waypoint.
+- TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
 - Up to 7 relay points (8 sections).
 
 > **⚠️ Relay points are meant to be placed, not dragged around to explore.** Each section fetches its own terrain data, so moving a point triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
@@ -468,9 +471,10 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 
 ### Opening
 
-- Open windows (batch / explorer / relay path) are **closed after a confirmation**. Unsaved edits in them are lost.
+- **Open windows are not closed.** A bar appears at the top of each of them, and the window's contents are replaced **only when you press "Apply to this window"** (nothing changes until you do). Dismiss the bar with `×`.
 - The launcher fields and project info are replaced immediately.
-- **Multiple Paths, explorer and relay path contents appear when you open those windows** — this app freezes a window's inputs when it opens, and loading follows the same rule.
+- **Contents for closed windows appear when you open them** — this app freezes a window's inputs when it opens, and loading follows the same rule.
+- If you close a window without applying, **what you saw on screen wins** (that is what gets written on the next save).
 - A file saved by a newer version of RadioSim will not be opened (you are told, rather than having it silently mangled).
 
 ---

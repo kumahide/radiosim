@@ -324,6 +324,17 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._select_mode("waypoints")
         self._win.lift()
 
+    def start_append_mode(self) -> None:
+        """連続追加モードへ入る（複数経路の窓の「地図から取る」・I-043）。
+
+        `start_waypoint_mode` と同じ理由で**公開口にしてある**＝呼び出し側が
+        `_select_mode` のような内部名に依存しない。宛先（受け皿）は
+        `_on_mode_change` が `append_provider` から取るので、ここでは渡さない
+        ——**受け皿を開くのはランチャーの仕事**という既存の分担をそのまま使う。
+        """
+        self._select_mode("append")
+        self._win.lift()
+
     def _on_mode_change(self) -> None:
         # UI 構築中（ステータスバー未生成）に呼ばれる初期スタイル反映時は何もしない。
         if not hasattr(self, "_status_label"):
