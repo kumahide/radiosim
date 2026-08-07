@@ -475,3 +475,38 @@ class TestTkGarbageDoesNotEscape:
         assert marker.autouse, (
             "autouse を外すと『新しい GUI テストを書いた人が忘れる』形に戻る"
         )
+
+
+class TestLanguageDoesNotLeakBetweenTests:
+    """表示言語がテストをまたがないこと（2.7a2 で注意書きから昇格）。
+
+    `i18n` の言語はプロセス共有のグローバルで、GUI を組むテストは軒並み
+    `set_lang("ja")` する（tests 配下に 99 か所）。戻さないと後続が英語メッセージを
+    assert して落ちる。🔴 **注意書きはこれを守れなかった**＝規則が書いてある当の
+    ファイルへ新しいクラスを足したときに写し忘れ、実際に 3 件落とした。
+    """
+
+    def test_the_fixture_restores_the_language(self):
+        """フィクスチャの teardown が言語を戻すこと（本丸）。"""
+        import conftest
+        from core import i18n
+
+        before = i18n._lang
+        fixture = conftest._language_never_leaks._get_wrapped_function()()
+        next(fixture)                                  # setup
+        i18n.set_lang("en" if before != "en" else "ja")
+        assert i18n._lang != before                    # テストが言語を変えた
+        next(fixture, None)                            # ★ teardown
+        assert i18n._lang == before, (
+            "teardown を通っても言語が戻らない＝後続のテストが別の言語で走る"
+        )
+
+    def test_the_restore_is_autouse(self):
+        """思い出す規則にしない＝全テストへ自動で掛かること。"""
+        import conftest
+
+        marker = conftest._language_never_leaks._fixture_function_marker
+        assert marker.autouse, (
+            "autouse を外すと『新しいテストを書いた人が写し忘れる』形に戻る"
+            "（2026-08-07 に実際に起きた）"
+        )

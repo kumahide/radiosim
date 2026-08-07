@@ -543,6 +543,31 @@ def _no_display(reason: str) -> "typing.NoReturn":
 #    列挙（「GUI テストにだけ付ける」）にしないのは、**新しい GUI テストを書いた人が
 #    忘れた瞬間に再発する**ため（→ [[feedback-promote-recurring-checks]]）。
 #    コストは実測 `gc.collect()` 1 回 8.9ms ＝全 1300 本で約 12 秒。
+# ============================================================
+# 表示言語がテストをまたいで漏れない（2.7a2 で昇格）
+# ============================================================
+# `i18n` の言語は**プロセス共有のグローバル**で、GUI を組むテストは軒並み
+# `set_lang("ja")` する（実測＝tests 配下に 99 か所）。戻さないと、後続の
+# `test_config` が英語メッセージを assert して落ちる。
+#
+# 🔴 **注意書きでは守れないことが実証された**＝この規則は `tests/test_batch.py` に
+# 「戻さないと後続の test_config が落ちる」と**はっきり書いてあった**のに、同じ
+# ファイルへ新しいクラスを足したときに写し忘れ、**実際に 3 件落とした**
+# （2026-08-07・B-050 の作業中）。99 か所が設定して 2 か所しか戻していない状態は、
+# 定義上「思い出す規則」（→ [[feedback-promote-recurring-checks]]）。
+# ⇒ **既定で戻す**。クラスごとの `_restore_lang` は残しても害はない（二重に戻る
+#    だけ）が、新しいテストはもう書かなくてよい。
+@pytest.fixture(autouse=True)
+def _language_never_leaks():
+    """テストが変えた表示言語を、そのテストの中に閉じ込める。"""
+    from core import i18n
+
+    before = i18n._lang
+    yield
+    if i18n._lang != before:
+        i18n.set_lang(before)
+
+
 @pytest.fixture(autouse=True)
 def _tk_garbage_never_escapes():
     """テストが残した循環ゴミを、**メインスレッドで**片付けてから次へ進む。"""

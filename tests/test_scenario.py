@@ -1223,6 +1223,11 @@ class TestSweepAxisSelection:
         効かない軸を並べると「効くはず」と誤読させる（2026-07-25 ユーザー指摘）。
         """
         assert "k_factor" not in scn.SWEEP_AXES
+        # ⚠️ **自分で言語を決める**（2026-08-07）。ここは日本語の文面を assert して
+        #    いるのに設定しておらず、**他のテストが漏らした `ja` に乗って**通って
+        #    いた。conftest が言語を毎テスト戻すようにした途端に露見した
+        #    （＝それまでは実行順しだいで赤くなり得た）。
+        i18n.set_lang("ja")
         with pytest.raises(ValueError, match="スイープできない"):
             scn.sweep_conditions("k_factor", [1.0, 2.0])
 
