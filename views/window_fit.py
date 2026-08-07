@@ -257,6 +257,67 @@ class _ScrollEscape:
                 self.hsb.winfo_reqheight() if overflow_h else 0)
 
 
+def _tables(win: "tk.Misc") -> "list[ttk.Treeview]":
+    """`win` の中の Treeview を集める。"""
+    found: "list[ttk.Treeview]" = []
+    stack = list(win.winfo_children())
+    while stack:
+        w = stack.pop()
+        if isinstance(w, ttk.Treeview):
+            found.append(w)
+        stack.extend(w.winfo_children())
+    return found
+
+
+def _freeze_table_columns(win: "tk.Misc", *, freeze: bool) -> "list[ttk.Treeview]":
+    """`stretch=True` の Treeview が書き戻した列幅の面倒を見る。
+
+    ttk の Treeview は窓が中身より広いと列を引き伸ばし、**引き伸ばした幅を
+    `-width` として持ち帰る**。その結果、次に測ったときの要求幅は「広げられた
+    あとの幅」になり、**表の必要幅が一方通行で増え続ける**（窓を縮められるように
+    しても、中身が元の幅を要求しないので戻らない＝I-053 の最後の一片）。
+
+    そこで**作ったときの列幅を覚えておき**、縮む方向に測り直すときだけ戻す。
+    ⚠️ 覚えるのは初回の `fit_to_content` 時点＝窓はまだ中身ぴったりで、引き伸ばし
+    は起きていない（あとから列を足す窓が出たら、その窓の分はここで覚え直される）。
+
+    ⚠️ **幅を戻すだけでは足りない**＝戻した直後に走る再レイアウトで、まだ広い
+    ままの窓に合わせて ttk がもう一度引き伸ばす（測る前に元通りになる）。測って
+    いるあいだは `stretch` も止め、寸法を決めたあとに `_thaw_table_columns` で
+    元に戻す（新しい窓幅に合わせた引き伸ばしはそこで改めて走る）。
+
+    Returns:
+        止めた Treeview（`_thaw_table_columns` へ渡す）。
+    """
+    frozen: "list[ttk.Treeview]" = []
+    for tree in _tables(win):
+        base: "dict[str, tuple[int, bool]] | None" = getattr(tree, "_fit_col_widths", None)
+        columns = [str(c) for c in tree["columns"]]
+        if base is None or set(base) != set(columns):
+            tree._fit_col_widths = {          # type: ignore[attr-defined]
+                col: (int(tree.column(col, "width")), bool(tree.column(col, "stretch")))
+                for col in columns}
+            continue
+        if not freeze:
+            continue
+        for col, (width, _stretch) in base.items():
+            tree.column(col, width=width, stretch=False)
+        # ⚠️ **列幅を戻すだけでは要求幅が変わらない**（実測＝列は 220px に戻るのに
+        # `winfo_reqwidth()` は引き伸ばし後の 1460px を返し続ける。ttk は列幅の
+        # 変更で幾何を要求し直さない＝広げる側でしか再計算が走らない）。
+        # `displaycolumns` を**同じ値で**入れ直すと再計算の契機になる。
+        tree.configure(displaycolumns=tree["displaycolumns"])
+        frozen.append(tree)
+    return frozen
+
+
+def _thaw_table_columns(trees: "list[ttk.Treeview]") -> None:
+    """`_freeze_table_columns` で止めた引き伸ばしを元に戻す。"""
+    for tree in trees:
+        for col, (_width, stretch) in getattr(tree, "_fit_col_widths", {}).items():
+            tree.column(col, stretch=stretch)
+
+
 def fit_to_content(
     win: "tk.Tk | tk.Toplevel",
     *,
@@ -290,6 +351,14 @@ def fit_to_content(
         "min_w": min_w, "min_h": min_h,
         "extra_w": extra_w, "extra_h": extra_h, "grow_only": grow_only,
     }
+    # **DPI が変わった経路だけ**は縮む方向にも測り直す（I-053）。印は属性で受ける
+    # ＝バッチのように自前の再測（`_fit_refit`）を持つ窓は自分の `grow_only` で
+    # ここを呼び直すので、引数では伝わらない。⚠️ `_fit_kwargs` は**窓本来の条件**
+    # のまま残す（この上書きは 1 回きりで、窓の約束を書き換えない）。
+    shrink = bool(getattr(win, "_fit_shrink", False))
+    if shrink:
+        grow_only = False
+    frozen = _freeze_table_columns(win, freeze=shrink)
     escape: "_ScrollEscape | None" = getattr(win, "_fit_scroll", None)
     if escape is not None:
         # 受け皿越しでも「中身がどれだけ要るか」を窓が正しく申告できる状態にする。
@@ -326,6 +395,7 @@ def fit_to_content(
 
     win._fit_size = (w, h)              # type: ignore[attr-defined]
     win.geometry(f"{w}x{h}")
+    _thaw_table_columns(frozen)
     return w, h
 
 
@@ -342,7 +412,7 @@ def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     return max(win.winfo_reqwidth(), need_w), max(win.winfo_reqheight(), need_h)
 
 
-def refit_all(root: "tk.Tk | tk.Toplevel") -> None:
+def refit_all(root: "tk.Tk | tk.Toplevel", *, shrink: bool = False) -> None:
     """開いている全ウィンドウを、同じ条件のまま測り直す。
 
     フォントが変わると（DPI 変更・テーマ変更）**必要な幅も高さも変わる**ので、
@@ -350,8 +420,15 @@ def refit_all(root: "tk.Tk | tk.Toplevel") -> None:
     スクロールバー分の加算）は `fit_to_content` が `_fit_kwargs` に残しているので、
     ここは「もう一度同じ呼び出しをする」だけでよい。
 
-    ⚠️ `grow_only` はそのまま尊重する＝DPI が下がったときに窓を縮めはしない
-    （ユーザーが広げた窓を勝手に狭めないという既存の約束を、DPI 経路でも破らない）。
+    Args:
+        shrink: 真なら `grow_only` を**この 1 回だけ**外し、縮む方向にも測り直す。
+            **DPI が変わった経路にだけ渡す**（I-053）＝表示スケールを 150% →
+            100% へ戻したのに窓が 150% の大きさのまま残るのを直す。
+            受け入れる副作用＝**手で広げた窓も既定サイズへ戻る**（スケールを
+            変えた瞬間は「窓の大きさが変わる」ことが期待そのもの）。
+            ⚠️ **画面サイズだけが変わった経路には渡さない**＝あちらは上限が動く
+            話で、ユーザーが広げた窓を狭める理由にならない（B-022 の復帰は
+            `lim_h` 側で既に効く）。
     """
     for win in (root, *_toplevels(root)):
         # 窓自身が再測メソッドを持つならそちらを優先する。`_fit_kwargs` に残る
@@ -362,6 +439,7 @@ def refit_all(root: "tk.Tk | tk.Toplevel") -> None:
         kwargs: "dict[str, Any]" = getattr(win, "_fit_kwargs", {})
         if refit is None and not kwargs:
             continue
+        win._fit_shrink = shrink        # type: ignore[attr-defined]
         try:
             if refit is not None:
                 refit()
@@ -369,6 +447,8 @@ def refit_all(root: "tk.Tk | tk.Toplevel") -> None:
                 fit_to_content(win, **kwargs)
         except tk.TclError:
             pass          # 破棄途中の窓は飛ばす
+        finally:
+            win._fit_shrink = False     # type: ignore[attr-defined]
 
 
 def _toplevels(root: tk.Misc) -> "list[tk.Toplevel]":

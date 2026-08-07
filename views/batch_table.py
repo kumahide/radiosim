@@ -301,19 +301,25 @@ class _TableMixin:
     def _sync_header_columns(self) -> None:
         """ヘッダと各行の列幅を揃えてズレと見出しの見切れを解消する。
 
-        各列の最小幅を「行セルの実測幅」と「見出しの必要幅」の大きい方に合わせ、
+        各列の最小幅を「行セルの必要幅」と「見出しの必要幅」の大きい方に合わせ、
         ヘッダ・全行の両グリッドへ同じ minsize を掛ける。これで日本語見出しが
         入りきり（B-002）、かつ列がずれない（見出しは別グリッドのため両者に適用）。
+
+        ⚠️ **セルは `grid_bbox`（実測）ではなく `winfo_reqwidth`（必要量）で測る**。
+        bbox は前回この関数が掛けた `minsize` を含んだ「今の幅」なので、測って
+        掛け直すたびに前回以上の値しか出ない＝**列幅が一方通行になる**。表示スケール
+        を 150% → 100% へ戻しても表は 150% の幅を要求し続け、窓も戻らなかった
+        （I-053）。見出し側が最初から必要量で測っているのと揃える。
         """
         if not self._row_frames:
             return
         self._table_frame.update_idletasks()
         self._hdr.update_idletasks()
         for col in range(len(self._WIDTHS)):
-            bbox   = self._row_frames[0].grid_bbox(column=col, row=0)
-            cell_w = bbox[2] if bbox else 0
+            # padx=2 の左右分を見込んで少し余裕を持たせる（行・見出しとも同じ）。
+            cell   = self._row_frames[0].grid_slaves(row=0, column=col)
+            cell_w = (cell[0].winfo_reqwidth() + 4) if cell else 0
             hdr    = self._hdr.grid_slaves(row=0, column=col)
-            # padx=2 の左右分を見込んで少し余裕を持たせる。
             hdr_w  = (hdr[0].winfo_reqwidth() + 4) if hdr else 0
             target = max(cell_w, hdr_w)
             self._hdr.grid_columnconfigure(col, minsize=target)

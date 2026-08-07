@@ -638,6 +638,118 @@ def test_windows_are_refitted_when_dpi_grows(monkeypatch):
         root.destroy()
 
 
+def test_windows_shrink_back_when_dpi_falls(monkeypatch):
+    """DPI が**下がったら**窓も戻ること（I-053＝150% → 100% の一方通行）。
+
+    ⚠️ **上の `test_windows_are_refitted_when_dpi_grows` と対で置く**＝あちらは
+    増える方向しか見ておらず、`grow_only`（縮めない約束）を DPI 経路でも尊重して
+    いた実装が**そのまま緑**だった（片側しか見ていないゲート）。表示スケールを
+    戻したのに窓が大きいままなのは、狭い画面では見切れの原因そのものになる。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_scenario(root)
+        at96 = win._fit_size
+
+        theme.apply_fonts(root, dpi=144)          # 150% のモニタへ移した
+        window_fit.refit_all(root, shrink=True)
+        root.update_idletasks()
+        assert win._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
+
+        theme.apply_fonts(root, dpi=96)           # 100% へ戻した
+        window_fit.refit_all(root, shrink=True)
+        root.update_idletasks()
+        assert win._fit_size == at96, (
+            f"表示スケールを戻したのに窓が {win._fit_size} のまま"
+            f"（100% では {at96} で足りる）＝広がる方向の一方通行。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)           # 名前付きフォントは他テストと共有
+        root.destroy()
+
+
+def test_a_window_with_its_own_refit_shrinks_too(monkeypatch):
+    """**自前の再測を持つ窓**（バッチ）も縮む方向に追従すること。
+
+    `refit_all` は `_fit_refit` があればそちらを呼ぶ＝窓が自分の `grow_only` で
+    `fit_to_content` を呼び直すので、**引数では「今回は縮んでよい」が伝わらない**。
+    ⚠️ ここが抜けると「4 窓は戻るのにバッチだけ戻らない」という、直そうとして
+    いる一方通行の一部だけが生き残る（⑧＝同じ表示環境なら同じ規則で追従する）。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_batch(root)
+        assert getattr(win, "_fit_refit", None) is not None, "前提（自前の再測）が無い"
+        at96 = win._fit_size
+
+        theme.apply_fonts(root, dpi=144)
+        window_fit.refit_all(root, shrink=True)
+        root.update_idletasks()
+        assert win._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
+
+        theme.apply_fonts(root, dpi=96)
+        window_fit.refit_all(root, shrink=True)
+        root.update_idletasks()
+        assert win._fit_size == at96, (
+            f"自前の再測を持つ窓が縮んでいない（{win._fit_size} のまま／100% では "
+            f"{at96}）＝`shrink` が `_fit_refit` の先まで届いていない。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_refit_all_does_not_shrink_unless_asked(monkeypatch):
+    """`shrink` を渡さない経路では**縮めない**こと（既存の約束を壊さない）。
+
+    縮めてよいのは DPI が変わった瞬間だけ＝解像度の変化やテーマの貼り直しで
+    「手で広げた窓が勝手に既定サイズへ戻る」と、I-053 で直したい一方通行の
+    ちょうど裏返しの嫌がらせになる。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_scenario(root)
+        at96 = win._fit_size
+
+        theme.apply_fonts(root, dpi=144)
+        window_fit.refit_all(root, shrink=True)
+        root.update_idletasks()
+        wide = win._fit_size
+        assert wide[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
+
+        theme.apply_fonts(root, dpi=96)
+        window_fit.refit_all(root)                 # 既定＝縮めない
+        root.update_idletasks()
+        assert win._fit_size == wide, (
+            f"頼まれていないのに窓を狭めた（{win._fit_size} ／ {wide} だった）。"
+        )
+
+        window_fit.refit_all(root, shrink=True)    # 頼まれたら縮む
+        root.update_idletasks()
+        assert win._fit_size == at96, (
+            f"`shrink=True` でも戻らない（{win._fit_size} のまま）＝上の主張が"
+            "「一度も落ちないゲート」になっていないかを見る対の検査。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
     """**画面が変わったら**測り直しで追従すること（B-022 の測り直し側）。
 

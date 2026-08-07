@@ -132,8 +132,14 @@ def ui_font(widget: tk.Misc, kind: str = "body") -> str:
 
 # 既定として書き換える Tk の名前付きフォント。
 # `TkDefaultFont` ＝ ttk の Label/Button など、`TkTextFont` ＝ Entry/Combobox/
-# Text/Listbox の既定。**メニュー（TkMenuFont）は触らない**＝OS のメニュー
-# フォントに合わせるのが Windows の作法。
+# Text/Listbox の既定。**メニュー（TkMenuFont）は入れない**＝OS のメニューフォント
+# に合わせるのが Windows の作法であり、かつ**入れても効かない**：
+# メニューバーは Windows が描く HMENU で Tk の管轄外なので、`TkMenuFont` を
+# 書き換えても `tk.Menu(font=…)` を直に指定しても字は 1px も変わらない
+# （2026-08-07 実測・I-054。変わるのはドロップダウンだけ）。
+# ⇒ **表示スケールへの追従は OS にやらせる**＝[main.py](../main.py) の
+#    `_set_dpi_awareness` が Per-Monitor **v2** を立て、非クライアント領域
+#    （枠・タイトルバー・win32 メニュー）を Windows 側にスケールさせている。
 _DEFAULT_FONT_NAMES = ("TkDefaultFont", "TkTextFont")
 
 
@@ -293,7 +299,7 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
     # ② Tk の既定フォントを本文フォントに合わせる。
     #    `TkDefaultFont` ＝ ttk の Label/Button など、`TkTextFont` ＝ Entry/
     #    Combobox/Text/Listbox の既定。**メニュー（TkMenuFont）は触らない**
-    #    ＝OS のメニューフォントに合わせるのが Windows の作法。
+    #    ＝触っても効かない（理由は `_DEFAULT_FONT_NAMES` の注記・I-054）。
     try:
         spec = tkfont.nametofont(ui_font(root), root=root).config() or {}
     except tk.TclError:
@@ -324,7 +330,9 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
 _DISPLAY_DEBOUNCE_MS = 250
 
 
-def watch_display(root: tk.Misc, on_change: "Callable[[int], None] | None" = None) -> None:
+def watch_display(
+    root: tk.Misc, on_change: "Callable[[int, bool], None] | None" = None
+) -> None:
     """**表示環境が変わったら**フォントを貼り直し、窓を測り直させる。
 
     見るのは 2 つ＝**DPI** と **画面サイズ**。どちらも窓の寸法の入力なので、
@@ -351,9 +359,12 @@ def watch_display(root: tk.Misc, on_change: "Callable[[int], None] | None" = Non
     必要がない（[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
 
     Args:
-        on_change: 表示環境が変わった**あと**に呼ばれる（引数＝その時点の DPI）。
-            窓の寸法を測り直す（`views.window_fit.refit_all`）ために使う
-            ＝字が大きくなれば必要な幅も高さも増えるので、追従しないと見切れる。
+        on_change: 表示環境が変わった**あと**に呼ばれる。引数＝`(その時点の DPI,
+            DPI が変わったか)`。窓の寸法を測り直す（`views.window_fit.refit_all`）
+            ために使う＝字が大きくなれば必要な幅も高さも増えるので、追従しないと
+            見切れる。**2 つ目の引数で 2 つの契機を呼び分ける**＝DPI が変わった
+            ときだけ縮む方向にも測り直す（I-053。上の「フォントの貼り直しは DPI
+            のときだけ」と同じ分岐で、判定を呼ばれた側に再現させない）。
     """
     from views import window_fit                    # 遅延 import（循環回避）
 
@@ -370,12 +381,13 @@ def watch_display(root: tk.Misc, on_change: "Callable[[int], None] | None" = Non
             return            # 破棄済み
         if dpi == state["dpi"] and screen == state["screen"]:
             return
-        if dpi != state["dpi"]:
+        dpi_changed = dpi != state["dpi"]
+        if dpi_changed:
             state["dpi"] = dpi
             apply_fonts(root, dpi=dpi)
         state["screen"] = screen
         if on_change is not None:
-            on_change(dpi)
+            on_change(dpi, dpi_changed)
 
     def _on_configure(event: "tk.Event") -> None:
         # トップレベル自身の Configure だけ見る（子ウィジェットの分は無視）。
@@ -404,7 +416,10 @@ def watch_display(root: tk.Misc, on_change: "Callable[[int], None] | None" = Non
 _TABLE_PAD       = (4, 4)
 _TABLE_CELL_PAD  = (10, 0)
 _TABLE_HEADPAD   = (10, 6)
-_TABLE_ROW_EXTRA = 10
+# ⚠️ 10 → 8（2.7 スライス F）。行高の計算が使う行送りの測り方を直した副作用で
+# 実測が 2px 太くなったので、**100% での行高（27px）が 1px も動かない**値へ戻した
+# ＝直したのは「DPI を往復すると戻らない」ことであって、行の見た目ではない。
+_TABLE_ROW_EXTRA = 8
 
 
 def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
@@ -417,7 +432,13 @@ def table_style(widget: tk.Misc, name: str = "App.Treeview") -> str:
 
     style = ttk.Style(master=widget)
     try:
-        linespace = tkfont.Font(root=widget, font=ui_font(widget)).metrics("linespace")
+        # ⚠️ **名前付きフォントを直に測る**（`tkfont.Font(font=...)` で写しを作らない）。
+        # 写しは `actual()` 経由＝ピクセル指定を**そのときの `tk scaling` で pt へ
+        # 丸めて**持つので、DPI を変えて戻すと同じ設定でも別の行送りが返る（実測＝
+        # 96dpi で 17px → 144dpi を経由して 96dpi へ戻すと 12px。144dpi では 55px と
+        # 過大にもなった）。結果、**表の行高が DPI 往復で戻らない**＝I-053 で窓を
+        # 縮められるようにしても中身が元の高さを要求しない。
+        linespace = tkfont.nametofont(ui_font(widget), root=widget).metrics("linespace")
     except tk.TclError:
         linespace = 18
     # apply_fonts と同じ理由で全テーマの辞書へ入れる（テーマを切り替えると

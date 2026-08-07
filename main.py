@@ -91,6 +91,7 @@ import os
 import sys
 import threading
 import tkinter as tk
+from typing import Any
 
 import darkdetect
 import sv_ttk
@@ -129,18 +130,56 @@ class _ThemeManager:
         threading.Thread(target=darkdetect.listener, args=(_cb,), daemon=True).start()
 
 
+# Per-Monitor DPI Aware **v2**（Windows 10 1703+）。`SetProcessDpiAwarenessContext`
+# へ渡す擬似ハンドル。
+_PER_MONITOR_AWARE_V2 = -4
+
+
+def _set_dpi_awareness(windll: Any) -> str:
+    """使える一番強い DPI 認識を設定し、その名前を返す（強い順に試す）。
+
+    **v2 を先に試す**理由（I-054）＝v1（`SetProcessDpiAwareness(2)`）が面倒を見るのは
+    窓とクライアント領域だけで、**メニューバーは OS が描いたまま拡大されない**。
+    実測で確認済み＝帯（ファイル / 設定 / ヘルプ）は Tk の管轄外で、`TkMenuFont` を
+    書き換えても `tk.Menu(font=…)` を直に指定しても 1px も変わらない（変わるのは
+    ドロップダウンだけ）。⇒ **アプリ側からは字を大きくできない。**
+
+    v2 は非クライアント領域（枠・タイトルバー・**win32 メニュー**）まで OS が自動で
+    スケールする。⇒ 「メニューは OS のメニューフォントに合わせる」という
+    [views/theme.py](views/theme.py) の方針を**撤回せずに**果たせる（当初案の
+    「`TkMenuFont` を DPI で書き換える＝方針の撤回」は、そもそも効かない）。
+
+    Returns:
+        `per-monitor-v2` / `per-monitor` / `system` / `none`。
+    """
+    import ctypes
+
+    try:
+        user32 = windll.user32
+        user32.SetProcessDpiAwarenessContext.restype  = ctypes.c_bool
+        user32.SetProcessDpiAwarenessContext.argtypes = [ctypes.c_void_p]
+        if user32.SetProcessDpiAwarenessContext(ctypes.c_void_p(_PER_MONITOR_AWARE_V2)):
+            return "per-monitor-v2"
+    except Exception:
+        pass
+    try:
+        windll.shcore.SetProcessDpiAwareness(2)        # Windows 8.1+
+        return "per-monitor"
+    except Exception:
+        pass
+    try:
+        windll.user32.SetProcessDPIAware()             # Vista/7 フォールバック
+        return "system"
+    except Exception:
+        return "none"
+
+
 def _setup_windows_platform() -> None:
     """DPI 対応とタスクバーグループ化（Windows のみ）。tk.Tk() より前に呼ぶこと。"""
     if sys.platform != "win32":
         return
     import ctypes
-    try:
-        ctypes.windll.shcore.SetProcessDpiAwareness(2)  # Per-Monitor DPI Aware
-    except Exception:
-        try:
-            ctypes.windll.user32.SetProcessDPIAware()   # Vista/7 フォールバック
-        except Exception:
-            pass
+    _set_dpi_awareness(ctypes.windll)
     try:
         ctypes.windll.shell32.SetCurrentProcessExplicitAppUserModelID(
             "BearValleyAICraftworks.RadioSimPro"
@@ -185,7 +224,9 @@ def main() -> None:
     # sv_ttk のフォントはピクセル指定＝Tk 任せでは 1px も変わらないので、
     # 「窓だけ大きくなって字は小さいまま」になる（2026-07-26 のユーザー報告）。
     # 画面サイズも寸法の入力（fit_to_content の上限）なので同じ契機で拾う＝B-022。
-    theme.watch_display(root, lambda _dpi: window_fit.refit_all(root))
+    # DPI が変わったときだけ縮む方向にも測り直す（I-053＝150% → 100% で窓が戻る）。
+    theme.watch_display(
+        root, lambda _dpi, dpi_changed: window_fit.refit_all(root, shrink=dpi_changed))
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")

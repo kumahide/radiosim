@@ -697,9 +697,9 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
     fake = {"dpi": 96}
     monkey = theme.window_dpi
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
-    notified: list[int] = []
+    notified: "list[tuple[int, bool]]" = []
     try:
-        theme.watch_display(root, notified.append)
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
         fake["dpi"] = 144                          # 別 DPI のモニタへ移した相当
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")              # 移動＝<Configure>
@@ -707,7 +707,10 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         # デバウンス（_DISPLAY_DEBOUNCE_MS）を消化する
         root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
         root.mainloop()
-        assert notified == [144], f"DPI 変化が通知されていない: {notified}"
+        assert notified == [(144, True)], (
+            f"DPI 変化が通知されていない、または「DPI が変わった」と伝わっていない:"
+            f" {notified}（後者だと窓が縮む方向に測り直されない＝I-053）。"
+        )
         assert _px(root) == round(at96 * 1.5), "通知は来たがフォントが貼り直されていない"
     finally:
         theme.window_dpi = monkey                  # type: ignore[assignment]
@@ -737,8 +740,8 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
     monkeypatch.setattr(theme, "window_dpi", lambda _w: 96)
     monkeypatch.setattr(window_fit, "screen_size", lambda _w: screen["size"])
 
-    notified: list[int] = []
-    theme.watch_display(root, notified.append)
+    notified: "list[tuple[int, bool]]" = []
+    theme.watch_display(root, lambda d, c: notified.append((d, c)))
     screen["size"] = (1280, 720)                   # 解像度だけが変わった
     win = tk.Toplevel(root)
     win.geometry("200x100+10+10")                  # <Configure> の契機
@@ -746,10 +749,86 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
     root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
     root.mainloop()
 
-    assert notified == [96], (
-        f"画面サイズの変化が素通りしている: {notified}"
-        "（窓は新しい画面に対して測り直されないまま残る＝B-022）。"
+    assert notified == [(96, False)], (
+        f"画面サイズの変化が素通りしている、または「DPI が変わった」と誤って"
+        f"伝えている: {notified}（前者は B-022＝窓が新しい画面に対して測り直され"
+        "ないまま残る。後者は I-053＝解像度が変わっただけで、ユーザーが手で広げた"
+        "窓まで既定サイズへ縮む）。"
     )
     assert _px(root) == before_px, (
         "解像度だけの変化でフォントまで貼り直している（DPI は変わっていない）。"
     )
+
+
+# ============================================================
+# DPI 認識のレベル（I-054＝メニューバーを OS に追従させる唯一の口）
+# ============================================================
+# ⚠️ **ここは「実際に効いたか」を見るテストではない**（プロセスの DPI 認識は
+# 起動時に一度だけ決まり、pytest のプロセスでは既に確定している）。見るのは
+# **試す順序**＝v2 を先に試すこと・使えない Windows でも黙って落ちないこと。
+#
+# なぜ順序が守る価値のあるものか＝メニューバー（ファイル / 設定 / ヘルプ）は
+# Tk の管轄外で、`TkMenuFont` を書き換えても `tk.Menu(font=…)` を直に指定しても
+# 1px も変わらない（2026-08-07 実測。変わるのはドロップダウンだけ）。**OS が
+# 非クライアント領域をスケールしてくれる v2 でしか追従しない**ので、v1 へ静かに
+# 落ちると I-054 は「直したつもりで直っていない」に戻る。
+class _FakeWindll:
+    """`ctypes.windll` の代役（どの API まで生えているかを差し替える）。"""
+
+    def __init__(self, *, v2: "bool | None", v1: bool, system: bool = True) -> None:
+        self.calls: list[str] = []
+        self._v2, self._v1, self._system = v2, v1, system
+        outer = self
+
+        class _User32:
+            SetProcessDpiAwarenessContext = None   # 属性差し替えを許すための箱
+
+            def SetProcessDPIAware(self):          # noqa: N802 — Win32 の名前
+                outer.calls.append("system")
+                if not outer._system:
+                    raise OSError("no such API")
+                return True
+
+        class _Shcore:
+            def SetProcessDpiAwareness(self, _level):   # noqa: N802
+                outer.calls.append("v1")
+                if not outer._v1:
+                    raise OSError("no such API")
+                return 0
+
+        def _ctx(_handle):
+            outer.calls.append("v2")
+            if outer._v2 is None:
+                raise OSError("no such API")
+            return outer._v2
+
+        self.user32 = _User32()
+        self.user32.SetProcessDpiAwarenessContext = _ctx
+        self.shcore = _Shcore()
+
+
+def test_dpi_awareness_prefers_per_monitor_v2():
+    """v2 が使えるなら v2 で止まること（v1 へ落ちない）。"""
+    import main
+
+    fake = _FakeWindll(v2=True, v1=True)
+    assert main._set_dpi_awareness(fake) == "per-monitor-v2"
+    assert fake.calls == ["v2"], (
+        f"v2 の後まで試している: {fake.calls}"
+        "（あとから弱い認識を設定しても効かないが、順序が壊れている印）。"
+    )
+
+
+@pytest.mark.parametrize("v2, v1, system, expected, first", [
+    (None,  True,  True,  "per-monitor", "v2"),   # v2 が無い Windows 8.1
+    (False, True,  True,  "per-monitor", "v2"),   # v2 はあるが設定に失敗
+    (None,  False, True,  "system",      "v2"),   # shcore ごと無い Vista/7
+    (None,  False, False, "none",        "v2"),   # 何も無い（Windows 以外の実験）
+])
+def test_dpi_awareness_falls_back_in_order(v2, v1, system, expected, first):
+    """使えない環境では静かに次へ落ちること（例外を漏らさない）。"""
+    import main
+
+    fake = _FakeWindll(v2=v2, v1=v1, system=system)
+    assert main._set_dpi_awareness(fake) == expected
+    assert fake.calls[0] == first, f"最初に試したのが v2 でない: {fake.calls}"
