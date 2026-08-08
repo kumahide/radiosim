@@ -229,6 +229,63 @@ def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
 # ============================================================
 # 窓は中身に**追従**する（広すぎない）
 # ============================================================
+# 下限（`_BASE_W` / `minsize`）が中身を上回っていても許される窓＝**中身が
+# キャンバスで、要求サイズが「描ける最小」しか語らない**もの。理由ごと残す。
+# ⚠️ ここは `_GROW_EXEMPT` と違い**逆向きの検査を置いていない**（「除外側は余りが
+# 消えていないか見る」をしない）＝余りは言語と DPI で動く量なので「常に余る」とは
+# 言えず、置くと毎回鳴る側（壊れ方②）になる。⇒ 除外を外す契機は人の判断。
+_WIDTH_FLOOR_EXEMPT = {
+    "graph":
+        "図（matplotlib）は要求幅が実質 0 で、`_BASE_W = 1040` が**描ける大きさ**を"
+        "決めている（断面図・スライダー 3 段が読める幅）",
+    "map":
+        "地図はタイルを描く面積そのものが機能で、`_BASE_W = 900` が最小の作業面"
+        "（フェイク地図では要求幅がさらに小さく出る）",
+}
+
+# 下限が中身を上回っていることを「余り」として許す上限。丸めと枠の分だけ。
+_WIDTH_FLOOR_TOLERANCE = 40
+
+
+@pytest.mark.parametrize("name", sorted(_WINDOWS))
+def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
+    """**下限が窓幅を決めていない**こと（窓幅 ≒ 中身の必要幅）。
+
+    `_BASE_W` は「これ以上細くしない」ための下限であって、**既定幅を決める場所では
+    ない**。中身より大きい下限を置くと、中身が何であっても同じ幅の窓が開き、右に
+    死んだ余白が残る＝**中継経路が実際にそうなっていた**（`_BASE_W = 980` に対し
+    必要幅は ja 879 / en 847px＝2026-08-08 ユーザー指摘・B-053）。
+
+    ⚠️ **下限は 2 か所にある**＝`_BASE_W` と `minsize`。`minsize` が上だと Tk が
+    `geometry()` を上書きするので、`_BASE_W` を下げても窓は細くならない（B-053 の
+    実装中に実際に踏んだ）。⚠️ ただし**この形を捕まえるのは下の「余り」の assert**
+    （窓幅が minsize まで押し上げられるので余りとして出る）。`minsize` の assert は
+    **除外窓でも効く二重の網**で、単独ではこの欠陥を検出しない＝**主たる守りと
+    補助を取り違えないこと。**
+    """
+    opener, _grow = _WINDOWS[name]
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        win.update()
+        size, need = win._fit_size, win._fit_need
+        min_w = int(win.minsize()[0])
+        assert min_w <= size[0], (
+            f"[{name}] minsize({min_w}px) が窓幅({size[0]}px)を上回っている＝"
+            "Tk が geometry() を上書きするので、下限を下げても細くならない"
+        )
+        if name in _WIDTH_FLOOR_EXEMPT:
+            return
+        assert size[0] - need[0] <= _WIDTH_FLOOR_TOLERANCE, (
+            f"[{name}] 窓が必要幅より {size[0] - need[0]}px 広い"
+            f"（窓 {size[0]}px / 必要 {need[0]}px）＝下限が既定幅を決めている。"
+            f"下限を中身より下げるか、理由を書いて _WIDTH_FLOOR_EXEMPT へ入れること。"
+        )
+    finally:
+        root.destroy()
+
+
 def _scenario_band_width(win) -> int:
     """凍結帯（案件情報・経路）が要求する幅（＝この 2 つの LabelFrame の最大）。"""
     bands = [c for c in win._fit_scroll.body.winfo_children()

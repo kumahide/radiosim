@@ -555,6 +555,47 @@ def _collect_bold(widget, name: str, out: list) -> None:
 
 
 # ============================================================
+# 4-b. 凍結帯の ↻ と 🔒 は 3 窓で同じ場所（B-053）
+# ============================================================
+_FROZEN_WINDOWS = ("batch", "scenario", "multihop")
+
+
+@pytest.mark.parametrize("name", _FROZEN_WINDOWS)
+def test_the_refresh_pair_sits_on_the_first_row_of_the_frozen_area(app_windows, name):
+    """`↻ ランチャーから更新` と `🔒 ランチャーの値` は**案件情報の枠の中**にあること。
+
+    この 2 つは**帯 1 つではなく凍結領域全体**に効く（↻ はどの窓でも案件情報と共通
+    設定／経路をまとめて取り込む）。にもかかわらず置き場は 3 窓で 3 通りだった
+    ＝条件探索は経路の行・中継経路は共通設定の 2 行目・複数経路は共通設定の中の
+    独立行。**しかも置き場は幅の問題を連れてくる**＝条件探索（B-052）と中継経路
+    （B-053）では、この 2 つが座標や 6 欄と同じ行を分け合って**帯が窓幅を決めていた**。
+
+    ⇒ 「案件情報の枠の中」に揃える。⚠️ **並び順や padding までは縛らない**（窓ごとに
+    右端の余りが違う）。縛るのは**どの枠に属するか**＝幅の問題が起きる場所そのもの。
+    """
+    _app, wins = app_windows
+    win = wins[name]
+    case_frames = [w for w in _walk(win)
+                   if w.winfo_class() == "TLabelframe"
+                   and str(w.cget("text")) == i18n.t("batch_case_info")]
+    assert len(case_frames) == 1, f"{name}: 案件情報の枠が 1 つでない"
+    case = str(case_frames[0])
+    found = {}
+    for w in _walk(win):
+        text = str(w.cget("text")) if "text" in w.keys() else ""
+        if text.startswith("↻"):
+            found["refresh"] = w
+        elif text.startswith("🔒") and len(text) > 2:   # 単独の 🔒 は各欄の印
+            found["hint"] = w
+    for key in ("refresh", "hint"):
+        assert key in found, f"{name}: {key} が見つからない（文言が変わった？）"
+        assert found[key].winfo_parent() == case, (
+            f"{name}: {key} が案件情報の枠の外にある"
+            f"（{found[key].winfo_parent()} ≠ {case}）"
+        )
+
+
+# ============================================================
 # 5. app 設定は「開いた時点」で凍結される（2.7 スライス G2＝I-055 ②）
 # ============================================================
 # 窓は `config.load_config()` を直に読まず、**ランチャーが読んだ値を引数で

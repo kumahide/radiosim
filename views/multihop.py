@@ -50,7 +50,13 @@ _COORD_WIDTH = coords.DISPLAY_WIDTH_CHARS
 class MultiHopWindow(tk.Toplevel):
     """中継経路ウィンドウ（ランチャーが唯一のインスタンスを持つ）。"""
 
-    _BASE_W = 980
+    # 幅の**下限**（実寸は中身から決まる＝`_fit_to_content`）。980 だったころは
+    # 下限が中身（ja で 879px・en 847px）を上回っており、**中身が何であっても
+    # 980px の窓が開いていた**＝右に 100px 前後の死んだ余白（2026-08-08 ユーザー
+    # 指摘・B-053）。下限は「これ以上細くしない」ためのもので、既定幅を決める場所
+    # ではない。⇒ 中身より下に置く（`minsize` も同時に下げること＝あちらが上なら
+    # `geometry()` を上書きして効かない）。
+    _BASE_W = 780
 
     def __init__(
         self,
@@ -66,7 +72,9 @@ class MultiHopWindow(tk.Toplevel):
     ) -> None:
         super().__init__(parent)
         self.title(i18n.t("mh_window_title"))
-        self.minsize(820, 560)
+        # ⚠️ `minsize` は `_BASE_W` より下に置く＝上にすると Tk が `geometry()` を
+        # 上書きし、下限を下げても窓が細くならない（B-053 で実際に踏んだ）。
+        self.minsize(760, 560)
 
         self._base_params     = base_params
         self._config_provider = config_provider
@@ -236,6 +244,21 @@ class MultiHopWindow(tk.Toplevel):
                 side="left", padx=(2, 0), fill="x", expand=(key == "batch_memo"))
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
+        # 🔒 の意味と ↻ は**凍結した領域の 1 行目（案件情報の行）の右側**（条件探索と
+        # 同じ置き方＝B-052）。以前は共通設定の 2 行目にあり、`↻`（`width=18` の
+        # 文字数固定で 158px）と `🔒 ランチャーの値`（98px）が **6 欄のうち後半 3 欄と
+        # 同じ行を分け合って**いた。その結果**この帯だけで 859px を要求し、窓幅を
+        # 決めていた**（区間表 738px・地点表 605px）。移すと帯は 620px 台になり、
+        # **窓幅は区間表＝この窓の主たる中身が決める**。
+        # ⚠️ この 2 つは帯 1 つではなく**凍結領域全体**に効く（`↻` は案件情報と共通
+        # 設定をまとめて取り込む＝`_refresh_from_launcher`）ので、1 行目のほうが実態に
+        # 近い。⚠️ `width=` は付けない＝文字数で幅を固定すると中身より広い帯を要求
+        # する（I-046 で「実行」から外したのと同じ理由）。
+        ttk.Button(case, text=i18n.t("scn_refresh"),
+                   command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
+        ttk.Label(case, text=i18n.t("hint_common_readonly"),
+                  foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
+
         common = ttk.LabelFrame(parent, text=i18n.t("batch_common_cfg"), padding=(8, 2))
         common.pack(fill="x", pady=(0, 6))
         # ⚠️ **2 行に折る**＝6 欄を 1 行に並べると 125%/150% で必要幅が 2000px を
@@ -244,7 +267,6 @@ class MultiHopWindow(tk.Toplevel):
         rows = [ttk.Frame(common), ttk.Frame(common)]
         for r in rows:
             r.pack(fill="x")
-        row = rows[1]
         self._common_vars: dict[str, tk.StringVar] = {}
         for n, (label_key, attr, width) in enumerate((
             ("lbl_b_p_tx",     "p_tx",     7),
@@ -262,10 +284,6 @@ class MultiHopWindow(tk.Toplevel):
             ttk.Entry(f, textvariable=var, state="readonly", width=width).pack(
                 side="left", padx=(2, 0))
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
-        ttk.Button(row, text=i18n.t("scn_refresh"), width=18,
-                   command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
-        ttk.Label(row, text=i18n.t("hint_common_readonly"),
-                  foreground=theme.muted_foreground(row)).pack(side="right", padx=6)
         self._update_frozen()
 
     def _build_waypoints(self, parent: tk.Misc) -> None:

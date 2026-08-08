@@ -187,6 +187,23 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
                   state="readonly").pack(side="left", padx=(2, 0), fill="x", expand=True)
         ttk.Label(f_memo, text="🔒").pack(side="left", padx=(2, 0))
 
+        # 🔒 の意味と ↻ は**凍結した領域の 1 行目（この行）の右側**＝条件探索・中継
+        # 経路と同じ置き場（2026-08-08・B-053 のクラス点検で 3 窓を揃えた）。
+        # **以前は共通設定の中の独立行**で、理由は「row1 は日本語ラベルで幅が逼迫し、
+        # 右詰めのボタンが窓外へ押し出される（B-002 系）」だった。⇒ **その理由は
+        # ここへ移すと消える**（この行は 2 欄しか無い）。行が 1 つ減るので窓も低くなる。
+        # ⚠️ この 2 つは帯 1 つでなく**凍結領域全体**に効く（`↻` は共通設定と案件情報を
+        # まとめて取り込む＝`_refresh_common_from_launcher`）ので、1 行目が実態に近い。
+        if self._config_provider is not None:
+            ttk.Button(
+                frame, text=i18n.t("btn_refresh_common"),
+                command=self._refresh_common_from_launcher,
+            ).pack(side="right", padx=(6, 0))
+            ttk.Label(
+                frame, text=i18n.t("hint_common_readonly"),
+                foreground=theme.muted_foreground(frame),
+            ).pack(side="right", padx=6)
+
     def _build_common_settings(self) -> None:
         frame = ttk.LabelFrame(
             self, text=i18n.t("batch_common_cfg"),
@@ -208,11 +225,6 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         row0.pack(fill="x")
         row1 = ttk.Frame(grp_env)
         row1.pack(fill="x")
-        # 「↻ランチャーから更新」用の専用行。row1 は日本語ラベルで横幅が逼迫し、
-        # 右詰めのボタンが窓外へ押し出される（B-002 系）。独立行なら言語に依らず収まる。
-        # 左には凍結欄の意味（🔒）を説明するヒントを置き、空きスペース化を防ぐ（I-003）。
-        row2 = ttk.Frame(frame)
-        row2.pack(fill="x", pady=(4, 0))
 
         def _field(parent: tk.Widget, label: str, attr: str, width: int = 8) -> None:
             f = ttk.Frame(parent)
@@ -271,18 +283,6 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             f_diff, textvariable=self._diff_var, values=["deygout", "single"],
             state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
-
-        # ランチャー（source of truth）から共通設定を取り込む。専用行に右詰め、
-        # 左には🔒の意味を説明するヒントを添える。
-        if self._config_provider is not None:
-            ttk.Label(
-                row2, text=i18n.t("hint_common_readonly"),
-                foreground=theme.muted_foreground(row2),
-            ).pack(side="left", padx=6)
-            ttk.Button(
-                row2, text=i18n.t("btn_refresh_common"),
-                command=self._refresh_common_from_launcher,
-            ).pack(side="right", padx=6)
 
     def _refresh_common_from_launcher(self) -> None:
         """ランチャーの現在値で Common Settings を上書きする（凍結方式の取り込み）。
