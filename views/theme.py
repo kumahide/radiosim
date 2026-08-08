@@ -132,15 +132,25 @@ def ui_font(widget: tk.Misc, kind: str = "body") -> str:
 
 # 既定として書き換える Tk の名前付きフォント。
 # `TkDefaultFont` ＝ ttk の Label/Button など、`TkTextFont` ＝ Entry/Combobox/
-# Text/Listbox の既定。**メニュー（TkMenuFont）は入れない**＝OS のメニューフォント
-# に合わせるのが Windows の作法であり、かつ**入れても効かない**：
-# メニューバーは Windows が描く HMENU で Tk の管轄外なので、`TkMenuFont` を
-# 書き換えても `tk.Menu(font=…)` を直に指定しても字は 1px も変わらない
-# （2026-08-07 実測・I-054。変わるのはドロップダウンだけ）。
-# ⇒ **表示スケールへの追従は OS にやらせる**＝[main.py](../main.py) の
-#    `_set_dpi_awareness` が Per-Monitor **v2** を立て、非クライアント領域
-#    （枠・タイトルバー・win32 メニュー）を Windows 側にスケールさせている。
+# Text/Listbox の既定。**メニュー（TkMenuFont）は入れない＝入れても効かない**。
+#
+# 🔴 **メニューの字は 2 つの別々の仕組みで決まる**（2026-08-08 実測・B-051）：
+#   - **帯**（ファイル / 設定 / ヘルプ）＝Windows が描く HMENU で Tk の管轄外。
+#     追従は OS にやらせる＝[main.py](../main.py) の `_set_dpi_awareness` が
+#     Per-Monitor **v2** を立て、非クライアント領域を Windows 側にスケールさせる。
+#   - **ドロップダウン**（帯を開いた中身・右クリックメニュー）＝Tk が描くが、
+#     **`TkMenuFont` にも `tk scaling` にも従わない**。実測＝scaling を 1.33→2.00 に
+#     しても、既存メニューも新規メニューも要求高は 97px のまま。**唯一効くのは
+#     ウィジェットへの直接指定 `tk.Menu(font=…)`**（40pt 指定で 97→377px）。
+# ⇒ だからドロップダウンだけは `menu_font()` を `menu_options()` で明示的に当て、
+#    DPI が変わったら `apply_fonts` が既存のメニューにも貼り直す。
+# ⚠️ I-054 の対策（PMv2）は帯だけを直したので、**帯が大きく中身が小さい**という
+#    ちぐはぐが残っていた（2026-08-08 にユーザーが 150% のスクショで報告）。
 _DEFAULT_FONT_NAMES = ("TkDefaultFont", "TkTextFont")
+
+# ドロップダウンの基準（96dpi でのピクセル）。初回に `TkMenuFont` から読む＝
+# **OS のメニューフォントに合わせる**（帯は OS が同じ元から描くので、揃う）。
+_menu_base: "dict[str, int | str]" = {}
 
 
 # ------------------------------------------------------------
@@ -233,6 +243,24 @@ def _scaled_px(base_px: int, dpi: int) -> int:
     return -max(1, int(round(abs(base_px) * dpi / _DPI_BASE)))
 
 
+def _walk_menus(root: tk.Misc) -> "list[tk.Menu]":
+    """`root` 以下に現存する `tk.Menu` を全部集める（メニューバーも子ウィジェット）。"""
+    found: "list[tk.Menu]" = []
+
+    def walk(widget: tk.Misc) -> None:
+        try:
+            children = widget.winfo_children()
+        except tk.TclError:
+            return                    # 破棄途中のウィジェット
+        for child in children:
+            if isinstance(child, tk.Menu):
+                found.append(child)
+            walk(child)
+
+    walk(root)
+    return found
+
+
 def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
     """全窓の既定フォントを sv_ttk の本文フォントに揃え、**DPI に合わせる**。
 
@@ -314,6 +342,17 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
             tkfont.nametofont(name, root=root).configure(family=family, size=size)
         except tk.TclError:
             pass   # その環境に無い名前付きフォントは飛ばす
+
+    # ②' ドロップダウンは名前付きフォントを見ないので、**現存するメニューへ直に**
+    #     貼り直す（B-051）。ウィジェット木を歩くのは `bind_all` と同じ理由＝
+    #     メニューを 1 つ足すたびに登録を思い出す運用にしない。
+    font = menu_font(root, dpi=dpi)
+    _menu_base["dpi"] = dpi          # 以後に作られるメニューも同じ基準で作る
+    for menu in _walk_menus(root):
+        try:
+            menu.configure(font=font)
+        except tk.TclError:
+            pass   # 破棄済み／再入で消えたメニューは無視する
 
     # ③ 等幅（README ビューア）も同じ DPI で。pt 指定なので `tk scaling` を
     #    今の DPI に合わせておけば追従する。
@@ -500,10 +539,47 @@ def _mix(color_a: str, color_b: str, ratio: float) -> str:
     return "#" + "".join(f"{v:02x}" for v in mixed)
 
 
-def menu_options(widget: tk.Misc) -> dict[str, str]:
-    """`tk.Menu.configure()` へ渡す配色オプション一式。
+def menu_font(widget: tk.Misc, *, dpi: "int | None" = None) -> tuple:
+    """ドロップダウンへ**直に**渡すフォント（family, ピクセルサイズ）。
+
+    **ピクセル指定（負値）で返す**＝メニューは `tk scaling` を見ないので、pt で
+    渡すと DPI が変わっても字が動かない（`_DEFAULT_FONT_NAMES` の注記・B-051）。
+
+    基準は `TkMenuFont`＝**OS のメニューフォント**。帯は Windows が同じ元から
+    描くので、こうすると帯と中身の大きさが揃う。
+    """
+    from tkinter import font as tkfont
+
+    if not _menu_base:
+        try:
+            conf = tkfont.nametofont("TkMenuFont", root=widget).config() or {}
+        except tk.TclError:
+            conf = {}
+        size = conf.get("size", 9)
+        # pt（正値）は 96dpi のピクセルへ直してから基準にする。
+        _menu_base["px"] = int(size) if isinstance(size, int) and size < 0 else -int(
+            round(abs(int(size or 9)) * _DPI_BASE / 72)
+        )
+        _menu_base["family"] = conf.get("family") or "Segoe UI"
+
+    from core import i18n
+    family = _menu_base["family"]
+    if i18n.current_lang() == "ja":
+        family = _japanese_family(widget) or family   # 漢字が別書体へ落ちない（B-026）
+    # ⚠️ 既定は **最後に `apply_fonts` が使った DPI**（無ければその窓の実測値）。
+    # ここで毎回 `window_dpi` を引くと、あとから開いた右クリックメニューだけが
+    # 「他のフォントと違う基準」で作られる（テストが DPI を注入した回に露見した）。
+    if dpi is None:
+        dpi = int(_menu_base.get("dpi") or window_dpi(widget))
+    return (family, _scaled_px(int(_menu_base["px"]), dpi))
+
+
+def menu_options(widget: tk.Misc) -> dict:
+    """`tk.Menu.configure()` へ渡す配色＋フォントのオプション一式。
 
     アクティブ時も前景色を変えない（理由はモジュール docstring）。
+    **フォントもここに含める**＝配色と同じ経路で当たるので、メニューを足した人が
+    「フォントも当てる」を思い出さなくてよい（[[feedback-promote-recurring-checks]]）。
     """
     colors = palette(widget)
     fg, bg = colors["fg"], colors["bg"]
@@ -514,6 +590,7 @@ def menu_options(widget: tk.Misc) -> dict[str, str]:
         "activeforeground"  : fg,
         "disabledforeground": colors["disfg"],
         "selectcolor"       : fg,   # ラジオ/チェックの「✓」（B-004）
+        "font"              : menu_font(widget),
     }
 
 

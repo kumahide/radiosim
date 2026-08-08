@@ -214,7 +214,19 @@ def test_apply_menu_theme_actually_sets_colors(root):
     theme.apply_menu_theme([menu], root)
     expected = theme.menu_options(root)
     for option, value in expected.items():
+        if option == "font":
+            continue        # 色ではないので下で別に見る（Tk が文字列へ正規化する）
         assert str(menu.cget(option)) == value, f"{option} が適用されていない"
+
+    # フォントも同じ経路で当たること（B-051）。
+    # ⚠️ `tkfont.Font(font=…).config()` を通してはいけない＝**ピクセル指定を pt へ
+    # 丸めて返す**ので（-12px → 9pt）、指定した値と比べられない。cget が返す
+    # 記述子の文字列で見る。
+    applied = str(menu.cget("font"))
+    family, size = expected["font"]
+    assert family in applied and str(size) in applied, (
+        f"font が適用されていない: {applied!r} に {family!r}/{size} が無い"
+    )
 
 
 def _attached_menus(root: tk.Misc) -> "list[tk.Menu]":
@@ -832,3 +844,128 @@ def test_dpi_awareness_falls_back_in_order(v2, v1, system, expected, first):
     fake = _FakeWindll(v2=v2, v1=v1, system=system)
     assert main._set_dpi_awareness(fake) == expected
     assert fake.calls[0] == first, f"最初に試したのが v2 でない: {fake.calls}"
+
+
+# ============================================================
+# メニューの字が表示スケールに追従する（B-051）
+# ============================================================
+# 🔴 **メニューの字は 2 つの別々の仕組みで決まる**（2026-08-08 実測）:
+#   帯（ファイル / 設定 / ヘルプ）＝Windows が描く HMENU ＝ OS が拡大する（I-054・PMv2）。
+#   ドロップダウン＝Tk が描くが、**`TkMenuFont` にも `tk scaling` にも従わない**
+#   （scaling を 1.33→2.00 にしても要求高は 97px のまま）。効くのは
+#   **ウィジェットへの直接指定 `font=`** だけ。
+# ⇒ I-054 は帯だけを直したので「帯は大きいのに中身は小さい」が残った
+#   （ユーザーが 150% のスクショで報告）。ここはその回帰ガード。
+#
+# ⚠️ **見るのは font オプションではなく要求サイズ**＝`font=` を設定しただけの
+# ゲートは、設定が効かない書き方（pt 指定・名前付きフォント）でも緑になる。
+# 実際に**メニューが要求する高さ**が DPI 比で伸びることまで見る。
+
+def _sample_menu(root: tk.Misc) -> tk.Menu:
+    menu = tk.Menu(root, tearoff=0)
+    for label in ("テーマ", "言語", "座標の表示形式", "プロキシ設定...", "全キャッシュ削除..."):
+        menu.add_command(label=label)
+    theme.apply_menu_theme([menu], root)
+    root.update_idletasks()
+    return menu
+
+
+def test_dropdown_grows_with_dpi(root):
+    """既に開いている窓のメニューも、DPI が変わったら大きくなること。
+
+    ⚠️ **これが本命**＝利用者は「アプリを起動したまま表示スケールを変える」。
+
+    ⚠️ **入れ子（カスケードの子）まで見る**＝メニューバーの子メニューは*その親の*
+    子ウィジェットなので、木を 1 段しか見ない実装だと「帯を開いた 1 段目は大きいのに
+    サブメニューだけ小さい」が残る。
+    """
+    theme.apply_fonts(root, dpi=96)
+    menu = _sample_menu(root)
+    child = tk.Menu(menu, tearoff=0)
+    for label in ("ライト", "ダーク", "システム"):
+        child.add_radiobutton(label=label)
+    menu.add_cascade(label="テーマ", menu=child)
+    theme.apply_menu_theme([child], root)
+    root.update_idletasks()
+    at96, child96 = menu.winfo_reqheight(), child.winfo_reqheight()
+
+    theme.apply_fonts(root, dpi=144)
+    root.update_idletasks()
+    at144, child144 = menu.winfo_reqheight(), child.winfo_reqheight()
+
+    assert at96 > 0 and child96 > 0
+    assert at144 >= at96 * 1.4, (
+        f"ドロップダウンが DPI に追従していない（96dpi={at96}px / 144dpi={at144}px）。"
+        "TkMenuFont や tk scaling では動かない＝tk.Menu へ直に font= を渡すこと。"
+    )
+    assert child144 >= child96 * 1.4, (
+        f"サブメニューが追従していない（96dpi={child96}px / 144dpi={child144}px）。"
+        "メニューの木を 1 段しか辿っていない可能性がある。"
+    )
+
+
+def test_dropdown_created_later_uses_the_same_scale(root):
+    """あとから作るメニュー（右クリック）も同じ基準で作られること。
+
+    バッチ表の per-row メニューは**その場で生成**されるので、生成時の基準が
+    ずれていると「帯は大きいのに右クリックだけ小さい」が別の形で復活する。
+
+    ⚠️ **測る順序に注意**＝`apply_fonts` は現存するメニューを全部貼り直すので、
+    2 枚を並べて持ったまま DPI を変えると**両方が新しい DPI に揃う**（それが正しい
+    振る舞い）。⇒ **各 DPI で「作って測って捨てる」**。
+    """
+    theme.apply_fonts(root, dpi=96)
+    small = _sample_menu(root)
+    at96 = small.winfo_reqheight()
+    small.destroy()
+
+    theme.apply_fonts(root, dpi=144)
+    later = _sample_menu(root)          # DPI を上げた**あと**に生まれたメニュー
+    at144 = later.winfo_reqheight()
+
+    assert at144 >= at96 * 1.4, (
+        f"あとから作ったメニューの基準がずれている（96dpi 時={at96}px / 144dpi 時={at144}px）"
+    )
+    # ⚠️ **大きさだけでは足りない**＝生成経路（menu_options）が font を渡さなくても、
+    # たまたま近い値になることがある。**明示指定そのもの**が当たっていることまで見る
+    # （変異検証で、大きさだけの assert が font を外す変異を素通りさせた）。
+    _family, size = theme.menu_font(root, dpi=144)
+    assert str(size) in str(later.cget("font")), (
+        f"生成時に font が明示されていない: {later.cget('font')!r}（期待サイズ {size}）"
+    )
+
+
+def test_dropdown_font_is_pixel_specified(root):
+    """フォントは**ピクセル指定（負値）**であること。
+
+    pt で渡すと `tk scaling` 頼みになり、メニューはそれを見ないので静かに
+    追従しなくなる（この項目の原因そのもの）。
+    """
+    _family, size = theme.menu_font(root, dpi=144)
+    assert isinstance(size, int) and size < 0, f"pt 指定になっている: {size}"
+
+
+def test_launcher_dropdowns_follow_dpi():
+    """ランチャーの実物のメニュー（帯＋全サブメニュー）が追従すること。"""
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        set_theme("light")
+        from views.launcher import SimLauncher
+        SimLauncher(root, lambda _t: None)
+
+        theme.apply_fonts(root, dpi=96)
+        root.update_idletasks()
+        before = [m.winfo_reqheight() for m in _attached_menus(root)]
+
+        theme.apply_fonts(root, dpi=144)
+        root.update_idletasks()
+        after = [m.winfo_reqheight() for m in _attached_menus(root)]
+
+        assert before and len(before) == len(after)
+        grew = [(b, a) for b, a in zip(before, after) if a >= b * 1.4]
+        assert len(grew) == len(before), (
+            f"追従していないメニューがある: 96dpi={before} / 144dpi={after}"
+        )
+    finally:
+        root.destroy()
