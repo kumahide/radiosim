@@ -280,6 +280,7 @@ radiosim/
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
+    ├── test_i18n_key_duplication.py
     ├── test_layers.py
     ├── test_paths.py
     ├── test_smoke.py
@@ -923,6 +924,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
 | `test_i18n_glossary.py`  | 画面語彙のゲート（[docs/glossary.md](docs/glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
+| `test_i18n_key_duplication.py` | i18n キーのゲート（**画面に出る同じ字を 2 つのキーで持たない**。片方だけ直すと画面に 2 通りの語が出るため。成果物＝レポート HTML・グラフ画像の語は対象外＝画面と成果物の名前を揃えるのは出力の版の仕事） |
 | `test_layers.py`         | 層の約束のゲート（依存は views → report → core の一方向・import 時に閉じる循環が無い・`core/` が GUI ツールキットと作図ライブラリを引かない・層が空になって検査が空振りしていない） |
 | `test_window_fit.py`     | 見切れの横断ゲート（全窓が中身を収めているか・中身が増えたあとも収まるか・**新しい窓の登録漏れ**を静的に検出） |
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |

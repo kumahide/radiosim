@@ -80,7 +80,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         map_opener:      "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
-        self.title(i18n.t("batch_title"))
+        self.title(i18n.t("batch_window_title"))
         # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
         # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が
         # 窓外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
@@ -259,7 +259,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # Env Type Combobox
         f_env = ttk.Frame(row1)
         f_env.pack(side="left", padx=6)
-        ttk.Label(f_env, text=i18n.t("lbl_b_env_type")).pack(side="left")
+        ttk.Label(f_env, text=i18n.t("lbl_env_type")).pack(side="left")
         # 表示ラベルは i18n の env_<key> を単一ソースに（言語連動）。内部は常にキー。
         self._env_key_to_label = {k: i18n.t(f"env_{k}") for k in ENV_KEYS}
         self._env_label_to_key = {v: k for k, v in self._env_key_to_label.items()}
@@ -377,7 +377,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # ここだけ 14 文字ぶんの箱で**同じ文字が違う大きさ**に見えていた。主操作で
         # あることは位置（帯の右端）と Accent で表す＝大きさは強調の軸ではない。
         self._run_btn = ttk.Button(
-            row2, text=i18n.t("btn_run_batch"), command=self._on_run,
+            row2, text=i18n.t("btn_run"), command=self._on_run,
             style="Accent.TButton",
         )
         self._run_btn.pack(side="right", padx=(10, 0))

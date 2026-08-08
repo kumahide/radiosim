@@ -180,7 +180,7 @@ class _MenuMixin:
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
         config.save_app(self.config)
-        self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
+        self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
 
     def _on_proxy_settings(self) -> None:
         dlg = tk.Toplevel(self.root)
@@ -308,7 +308,7 @@ class _MenuMixin:
                 return
             config.save_app(self.config)
             if lang_changed:
-                self._alert(i18n.t("lang_changed_title"), i18n.t("lang_changed_msg"))
+                self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
             else:
                 self._alert(i18n.t("dlg_success"), i18n.t("dlg_app_settings_ok"))
         except Exception as e:

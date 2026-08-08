@@ -229,7 +229,7 @@ class MultiHopWindow(tk.Toplevel):
 
         bar = ttk.Frame(prog_frame)
         bar.pack(fill="x", pady=(2, 0))
-        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
+        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run"),
                                    command=self._on_run, style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)
@@ -262,7 +262,7 @@ class MultiHopWindow(tk.Toplevel):
         # 設定をまとめて取り込む＝`_refresh_from_launcher`）ので、1 行目のほうが実態に
         # 近い。⚠️ `width=` は付けない＝文字数で幅を固定すると中身より広い帯を要求
         # する（I-046 で「実行」から外したのと同じ理由）。
-        ttk.Button(case, text=i18n.t("scn_refresh"),
+        ttk.Button(case, text=i18n.t("btn_refresh_common"),
                    command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
         ttk.Label(case, text=i18n.t("hint_common_readonly"),
                   foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
@@ -282,7 +282,7 @@ class MultiHopWindow(tk.Toplevel):
             ("lbl_b_veg_h",    "veg_h",    6),
             ("lbl_b_samples",  "num",      6),
             ("lbl_b_rain",     "rain_rate", 6),
-            ("lbl_b_env_type", "env_type", 9),
+            ("lbl_env_type", "env_type", 9),
         )):
             f = ttk.Frame(rows[0] if n < 3 else rows[1])
             f.pack(side="left", padx=6)

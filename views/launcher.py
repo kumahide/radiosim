@@ -335,7 +335,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # Accent（青）は**「走らせる」ボタンだけ**に使う（I-029/I-030）。以前は
         # 「一括シミュレーション」（＝窓を開く操作）にも付いており、強調の軸が
         # 意味の軸と直交していた。
-        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run_sim"),
+        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run"),
                                   command=self._on_run, style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
 
@@ -413,10 +413,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # ⚠️ 区切り線や見出しは足さない＝4 個に見出しを付けるのは⑤に反する。
         # **並び順だけで意味を表す。**
         for i, (key, command) in enumerate((
-            ("btn_batch_mode", self._on_batch),
-            ("mh_open_btn",    self._on_open_multihop),
-            ("scn_open_btn",   self._on_open_scenario),
-            ("btn_open_map",   self._on_open_map),
+            ("batch_window_title", self._on_batch),
+            ("mh_window_title",    self._on_open_multihop),
+            ("scn_window_title",   self._on_open_scenario),
+            ("map_window_title",   self._on_open_map),
         )):
             ttk.Button(frame, text=i18n.t(key), command=command).grid(
                 row=i // 2, column=i % 2, sticky="ew",

@@ -57,7 +57,7 @@ class _CsvMixin(_HostBase):
         if self._row_entries:
             if not dialogs.confirm(
                 self,
-                i18n.t("dlg_import_title"),
+                i18n.t("btn_import_csv"),
                 i18n.t("dlg_import_confirm").format(n=len(self._row_entries)),
             ):
                 return
@@ -65,7 +65,7 @@ class _CsvMixin(_HostBase):
         self.replace_rows(rows)
         dialogs.alert(
             self,
-            i18n.t("dlg_import_title"),
+            i18n.t("btn_import_csv"),
             i18n.t("dlg_import_success").format(n=len(rows)),
         )
 
@@ -117,7 +117,7 @@ class _CsvMixin(_HostBase):
             batch.export_csv([template], path)
             dialogs.alert(
                 self,
-                i18n.t("dlg_template_title"),
+                i18n.t("btn_template"),
                 i18n.t("dlg_template_saved").format(path=path),
             )
         except Exception as e:

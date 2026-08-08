@@ -587,7 +587,7 @@ class _TableMixin(_HostBase):
             return
         if dialogs.confirm(
             self,
-            i18n.t("dlg_clear_title"),
+            i18n.t("btn_clear_all"),
             i18n.t("dlg_clear_msg").format(n=len(self._row_frames)),
         ):
             for f in list(self._row_frames):

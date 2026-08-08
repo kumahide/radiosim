@@ -674,8 +674,8 @@ def test_launcher_buttons_are_ordered_by_what_they_run(app_windows):
     """
     app, _ = app_windows
     expected = [
-        ("btn_batch_mode", 0, 0), ("mh_open_btn",  0, 1),
-        ("scn_open_btn",   1, 0), ("btn_open_map", 1, 1),
+        ("batch_window_title", 0, 0), ("mh_window_title",  0, 1),
+        ("scn_window_title",   1, 0), ("map_window_title", 1, 1),
     ]
     placed = {}
     for w in app.root.winfo_children():

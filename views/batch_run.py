@@ -263,7 +263,7 @@ class _RunMixin(_HostBase):
         # 保存先フォルダから開ける。
         choice = dialogs.choose(
             self,
-            i18n.t("dlg_batch_complete"),
+            i18n.t("batch_window_title"),
             i18n.t("dlg_batch_complete_msg").format(dir=batch_dir),
             [("summary", i18n.t("dlg_open_summary")),
              ("all", i18n.t("dlg_open_all")),

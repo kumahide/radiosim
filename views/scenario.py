@@ -268,7 +268,7 @@ class ScenarioWindow(tk.Toplevel):
         # 経路・ベース列をまとめて取り込み直す）ので、1 行目に置くほうが実態に近い
         # ＝バッチも `↻` は共通設定と案件情報の両方を取り込む（`_refresh_common…`）。
         # ⚠️ `width=` は付けない＝文字数で幅を固定すると、中身より広い帯を要求する。
-        ttk.Button(case, text=i18n.t("scn_refresh"),
+        ttk.Button(case, text=i18n.t("btn_refresh_common"),
                    command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
         ttk.Label(case, text=i18n.t("hint_common_readonly"),
                   foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
@@ -447,7 +447,7 @@ class ScenarioWindow(tk.Toplevel):
         # だけボタンがバーの左にあり、ランチャー・中継経路と鏡像になっていた。
         bar = ttk.Frame(prog_frame)
         bar.pack(fill="x", pady=(2, 0))
-        self._run_btn = ttk.Button(bar, text=i18n.t("scn_run"), command=self._on_run,
+        self._run_btn = ttk.Button(bar, text=i18n.t("btn_run"), command=self._on_run,
                                    style="Accent.TButton")
         self._run_btn.pack(side="right", padx=(10, 0))
         self._prog_bar = ttk.Progressbar(bar, mode="determinate", maximum=100)

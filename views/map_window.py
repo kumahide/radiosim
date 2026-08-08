@@ -182,7 +182,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
-        self._win.title(i18n.t("map_title"))
+        self._win.title(i18n.t("map_window_title"))
         # タイル取得の進捗は単一/バッチと同じ部品で受ける（実行のあいだだけ回す）。
         self._pump = ProgressPump(self._win, self._render_progress, latest_only=True)
         # 既定サイズは**下限**（実寸は _build_ui の最後に中身から決める）。
