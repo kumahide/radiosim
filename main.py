@@ -98,6 +98,7 @@ import sv_ttk
 
 from core import config
 from core import i18n
+from core import runtime_env
 from views import errors, theme, window_fit
 from views.launcher import SimLauncher
 
@@ -203,8 +204,29 @@ def _set_window_icon(root: tk.Tk) -> None:
         pass
 
 
+def _warn_if_not_the_declared_interpreter() -> None:
+    """宣言と違う Python で起動していたら**警告する**（止めはしない）。
+
+    起動だけ門が無く、素の `python main.py` が**別の依存版で黙って動いていた**
+    （B-056）。⛔ **止めない**＝配布 exe は宣言を持たないので `interpreter_mismatch()`
+    が `None` を返し、そもそもここへ来ない。それでも例外を投げないのは、開発機で
+    exe を試す経路（宣言あり × 走っているのは exe）を利用者と同じ形に保つため。
+
+    ⚠️ **ログと stderr の両方へ出す**＝GUI アプリなのでログだけでは気づけないが、
+    ターミナルから起動した人には stderr が見える。ダイアログにはしない（毎回出る
+    ものを目の前に置くと、読まずに閉じる習慣がつく＝警告が死ぬ）。
+    """
+    pair = runtime_env.interpreter_mismatch()
+    if pair is None:
+        return
+    message = runtime_env.mismatch_message(*pair)
+    config.logger.warning(message.replace("\n", " / "))
+    print(f"[WARNING] {message}", file=sys.stderr)
+
+
 def main() -> None:
     _prof("main() enter")
+    _warn_if_not_the_declared_interpreter()
     _setup_windows_platform()
     root = tk.Tk()
     # 以降に作る窓・コールバックすべてを覆うので、**何よりも先に**入れる

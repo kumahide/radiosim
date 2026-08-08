@@ -21,6 +21,7 @@ import importlib
 import logging
 import os
 import pathlib
+import sys
 
 import pytest
 
@@ -146,6 +147,19 @@ class TestAllFlowsUseResolver:
         src = pathlib.Path(views.scenario.__file__).read_text(encoding="utf-8")
         assert any(c in src for c in self._RESOLVER_CALLS)
 
+    # `sys.executable` を持ってよいファイルと、その理由。
+    # ⚠️ **禁じているのは「exe の位置から*書き込み先*を決めること」**で、
+    # `sys.executable` という字そのものではない。⇒ 別の用途で必要な file は
+    # 理由つきで通し、**代わりに「基準ディレクトリを作っていない」ことを見る**
+    # （除外を免除の永久パスにしない＝`_GROW_EXEMPT` と同じ流儀）。
+    _EXECUTABLE_ALLOWED = {
+        "config.py":      "解決器そのもの（唯一の出所・B-014）",
+        "runtime_env.py": "**どの Python が走っているか**を答えるため（B-056）＝"
+                          "パスを基準として使わず、宣言との同一性判定にしか使わない",
+    }
+    #: 「基準ディレクトリを作っている」と見なす形（これがあれば除外は無効）。
+    _BASE_DIR_FORMS = ("dirname(sys.executable)", "dirname(os.path.abspath(sys.executable))")
+
     def test_resolver_is_not_reimplemented_elsewhere(self):
         """解決器を二度書かない（重複が残ると片方だけ直す事故になる）。
 
@@ -158,10 +172,20 @@ class TestAllFlowsUseResolver:
         for layer in ("core", "report", "views"):
             paths += sorted(pathlib.Path(REPO_ROOT, layer).glob("*.py"))
         for path in paths:
+            src = path.read_text(encoding="utf-8")
+            if "sys.executable" not in src:
+                continue
+            if path.name not in self._EXECUTABLE_ALLOWED:
+                offenders.append(path.name)
+                continue
             if path.name == "config.py":
                 continue
-            if "sys.executable" in path.read_text(encoding="utf-8"):
-                offenders.append(path.name)
+            # 除外側の検査＝**基準ディレクトリを作り始めたら除外は無効**。
+            assert not any(form in src.replace(" ", "") for form in self._BASE_DIR_FORMS), (
+                f"{path.name} が exe 位置から基準ディレクトリを作っている"
+                f"（除外の理由: {self._EXECUTABLE_ALLOWED[path.name]}）"
+                "＝解決器は config.py の 1 箇所に保つこと"
+            )
         assert offenders == [], f"exe 基準の解決を再実装している: {offenders}"
 
 
@@ -561,4 +585,95 @@ class TestLanguageDoesNotLeakBetweenTests:
         assert not offenders, (
             "上位スコープのフィクスチャが表示言語を戻していない"
             f"＝モジュールを越えて漏れる: {offenders}"
+        )
+
+
+# ============================================================
+# 起動も「宣言された実行系か」を見る（B-056）
+# ============================================================
+class TestDeclaredInterpreter:
+    """`RADIOSIM_PYTHON` の宣言と食い違う実行系を、**起動時に気づける**こと。
+
+    門は 2 か所にしかなかった＝`build.bat`（未設定なら中止）と `pytest`
+    （conftest が停止）。**`python main.py` は何も見ておらず**、この機では素の
+    `python` にも依存が入っているので**版だけ違う状態で黙って起動する**
+    （実測 2026-08-08＝matplotlib 3.11.1 と 3.10.9）。同じ Python の版なので
+    エラーも警告も出ない＝**「動いたから同じ」が成り立たない**。
+
+    ⛔ **起動は止めない**（配布 exe と、開発機で exe を試す経路を塞がない）。
+    ⇒ 判定はここで縛り、**「止める / 警告する」の差はそれぞれの呼び出し側**。
+    """
+
+    def test_no_declaration_means_no_opinion(self, monkeypatch):
+        """宣言が無い環境（CI・他マシンの clone）では何も言わない。"""
+        from core import runtime_env
+
+        monkeypatch.delenv(runtime_env.DECLARED_ENV, raising=False)
+        assert runtime_env.declared_interpreter() == ""
+        assert runtime_env.interpreter_mismatch() is None
+
+    def test_the_declaration_is_read_without_quotes_or_spaces(self, monkeypatch):
+        """`setx` で引用符ごと入った値も宣言として読めること。"""
+        from core import runtime_env
+
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, '  "D:/venv/python.exe" ')
+        assert runtime_env.declared_interpreter() == "D:/venv/python.exe"
+
+    def test_the_running_interpreter_is_not_a_mismatch(self, monkeypatch):
+        """自分自身を宣言したら食い違いではない（表記ゆれを吸収する）。"""
+        from core import runtime_env
+
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, sys.executable.upper())
+        assert runtime_env.interpreter_mismatch() is None
+
+    def test_another_interpreter_is_a_mismatch(self, monkeypatch):
+        """別の python を宣言していたら `(宣言, 実行中)` を返すこと。"""
+        from core import runtime_env
+
+        other = os.path.join(os.path.dirname(sys.executable), "other-python.exe")
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, other)
+        pair = runtime_env.interpreter_mismatch()
+        assert pair == (other, sys.executable)
+
+    def test_a_broken_declaration_is_a_mismatch_not_a_silent_pass(self, monkeypatch):
+        """**宣言先が存在しない**ときも黙って通さないこと。
+
+        🔴 conftest 側で実際に踏んだ形（2026-08-04・独立レビュー Codex）＝
+        存在しないパスで `return` すると、**門が黙って無効になる**。
+        """
+        from core import runtime_env
+
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, "Z:/missing/python.exe")
+        assert runtime_env.interpreter_mismatch() is not None
+
+    def test_a_frozen_build_never_warns(self, monkeypatch):
+        """配布 exe では判定そのものをしない（利用者に無関係な警告を出さない）。
+
+        ⚠️ 開発機で exe を試すときは**宣言があり、走っているのは exe** ＝ここが
+        無いと利用者と違う経路を通ることになる。
+        """
+        from core import runtime_env
+
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, "Z:/missing/python.exe")
+        monkeypatch.setattr(sys, "frozen", True, raising=False)
+        assert runtime_env.interpreter_mismatch() is None
+
+    def test_main_calls_the_check_when_it_starts(self):
+        """**`main()` がこの検査を呼んでいること**（判定があっても呼ばれなければ無意味）。
+
+        ⚠️ 実際に `main()` を走らせると Tk のループに入るので、呼び出しの有無は
+        構文木で見る（[[feedback-promote-recurring-checks]]＝「配線されているか」は
+        配線そのものを検査する）。
+        """
+        import ast
+
+        path = os.path.join(os.path.dirname(__file__), "..", "main.py")
+        with open(path, encoding="utf-8") as f:
+            tree = ast.parse(f.read())
+        main_fn = next(n for n in tree.body
+                       if isinstance(n, ast.FunctionDef) and n.name == "main")
+        called = {n.func.id for n in ast.walk(main_fn)
+                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
+        assert "_warn_if_not_the_declared_interpreter" in called, (
+            "main() が実行系の検査を呼んでいない＝起動の門が空振りする"
         )

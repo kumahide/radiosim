@@ -864,6 +864,14 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 
 `tests/test_env_consistency.py` verifies that the versions actually installed in the interpreter running pytest match the pins in `requirements.txt`, so drift fails the suite the moment it appears.
 
+Once declared, **launch the app with that interpreter too**:
+
+```powershell
+& "$env:RADIOSIM_PYTHON" main.py
+```
+
+Launching with a different interpreter logs a warning (to the log file and stderr) and **continues** — it does not stop. Two interpreters can share the same Python version while differing in library versions, so "it started" is not evidence that the environment matches. The warning never appears where the variable is not declared, including the packaged executable.
+
 ## Testing
 
 **Run tests with the declared interpreter (`RADIOSIM_PYTHON`).**

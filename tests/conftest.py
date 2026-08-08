@@ -108,9 +108,10 @@ def _block_network(request):
 #
 # 判定は「宣言があるときだけ」＝`RADIOSIM_PYTHON` 未設定の環境（CI・他マシンの
 # clone）では何もしない。宣言と食い違うときだけ、理由と直し方を出して止める。
-def _same_interpreter(a: str, b: str) -> bool:
-    """パスの表記ゆれ（大小・区切り・相対）を吸収して同一性を見る。"""
-    return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
+# ⚠️ **判定の規則は製品側（`core/runtime_env.py`）が持つ**＝起動時にも同じ問いを
+# するようになったので（B-056）、正規化を 2 か所に書かない。ここに残るのは
+# 「テストのときは**止める**」という*ふるまい*だけ（起動側は警告のみ）。
+from core import runtime_env  # noqa: E402  （sys.path 追加の後に import する）
 
 
 def pytest_configure(config):
@@ -124,7 +125,7 @@ def pytest_configure(config):
 
 
 def _require_declared_interpreter():
-    declared = os.environ.get("RADIOSIM_PYTHON", "").strip().strip('"')
+    declared = runtime_env.declared_interpreter()
     if not declared:
         return                                  # 宣言が無い環境＝CI 等。何もしない
     if not os.path.exists(declared):
@@ -140,7 +141,7 @@ def _require_declared_interpreter():
             "正しい python.exe を指すよう設定し直してください"
             "（未設定にすればこの検査は行われません）。"
         )
-    if _same_interpreter(declared, sys.executable):
+    if runtime_env.same_interpreter(declared, sys.executable):
         return None
     raise pytest.UsageError(
         "宣言された環境と違う Python でテストを回しています。\n"

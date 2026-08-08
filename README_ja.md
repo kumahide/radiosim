@@ -869,6 +869,14 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 
 `tests/test_env_consistency.py` が、pytest を走らせている環境の実版と `requirements.txt` のピンの一致を検証します（ずれた瞬間にテストが落ちます）。
 
+宣言したあとは、**アプリの起動もその python で行ってください**。
+
+```powershell
+& "$env:RADIOSIM_PYTHON" main.py
+```
+
+宣言と違う python で起動した場合は、警告をログと標準エラー出力に出して**そのまま起動します**（止めません）。同じ版の Python でもライブラリの版だけが違う状態は起こり得るため、「起動できたから同じ環境」とは言えないためです。この警告は環境変数を宣言していない環境（配布版の exe を含む）では出ません。
+
 ## テスト
 
 **宣言した環境（`RADIOSIM_PYTHON`）で回してください。**
