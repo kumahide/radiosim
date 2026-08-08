@@ -16,15 +16,17 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 7. [Map](#map)
 8. [Usage — Single Mode](#usage--single-mode)
 9. [Usage — Multiple Paths](#usage--multiple-paths)
-10. [Input Parameters](#input-parameters)
-11. [Calculation Models](#calculation-models)
-12. [DEM Retrieval Logic](#dem-retrieval-logic)
-13. [Save Package](#save-package)
-14. [Project Files (.rsproj)](#project-files-rsproj)
-15. [Architecture](#architecture)
-16. [Development Environment](#development-environment)
-17. [Testing](#testing)
-18. [Known Limitations](#known-limitations)
+10. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
+11. [Usage — Relay Route](#usage--relay-route)
+12. [Input Parameters](#input-parameters)
+13. [Calculation Models](#calculation-models)
+14. [DEM Retrieval Logic](#dem-retrieval-logic)
+15. [Save Package](#save-package)
+16. [Project Files (.rsproj)](#project-files-rsproj)
+17. [Architecture](#architecture)
+18. [Development Environment](#development-environment)
+19. [Testing](#testing)
+20. [Known Limitations](#known-limitations)
 
 ---
 
@@ -284,7 +286,8 @@ radiosim/
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_repo_hygiene.py
-    └── test_claude_hooks.py
+    ├── test_claude_hooks.py
+    └── test_qa_gate_cache.py
 ```
 
 ---
@@ -520,6 +523,32 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | `{id}/settings.json`       | Per-path input parameters                                        |
 | `{id}/terrain_profile.csv` | Terrain profile data                                             |
 | `{id}/report.txt`          | Text-format link budget report                                   |
+
+---
+
+## Usage — Condition Explorer (Compare / Sweep)
+
+Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [README_binary_en.md](README_binary_en.md) — what follows is the implementation side.
+
+- **Terrain is fetched once.** `run_scenario()` walks FETCH → CALC (→ RENDER), and the fetch happens once at the front. `_fetch_sync()` goes through `fetch_elevations_cached()`, so re-running the same path with different conditions never re-downloads DEM — which is exactly how this screen is used.
+- **A condition is a delta.** `Condition` is an override dict on top of the base params, and `scenario.OVERRIDABLE` is the single source of what may be overridden. **Coordinates and sample count are not in it** (comparing paths themselves is what Multiple Paths is for). Compare mode allows up to `MAX_COMPARE_CONDITIONS` columns.
+- **Compare and sweep share one computation path.** A sweep is turned into conditions first: `linspace_values()` → `sweep_conditions(axis, values)` → `evaluate()`. Axes are `SWEEP_AXES`, point count is capped by `MAX_SWEEP_POINTS`. **Only the input construction branches**; evaluation and the result types (`ScenarioRun` / `ScenarioPoint`) are single.
+- **Progress is declared as phases.** `Phase` / `Phases` (`FETCH`, `CALC`, `RENDER`) carry relative weights, and report generation runs inside the worker thread as the RENDER phase via `artifacts`. **Do not generate reports in the View after completion** — it freezes the GUI and that time never shows up in the progress bar (a defect this project has shipped twice).
+- **Validation precedes the fetch.** `validate_base()` rejects bad base values before any download (failing after the fetch throws away the user's wait). Conditions validate themselves in `Condition`.
+- **The window's own values are canonical.** Launcher values are frozen when the window opens and are **only pulled in when ↻ is pressed** — every window computes with the values you can see.
+
+---
+
+## Usage — Relay Route
+
+Open it with the **Relay Route** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
+
+- **A route is a point list plus a connection rule.** `MultiHopPath` holds `Waypoint`s and a per-section `HopRF`; sections are derived by `links(path)` so the meaning of the ordering is not re-spelled at every call site. **Height belongs to the waypoint only** — a relay has one antenna, so there is deliberately no way to give "RX height of the previous section" and "TX height of the next" different values. The cap is `MAX_HOPS`.
+- **Topology is declared in one place.** `TOPOLOGIES` lists chain and star, but **only `SUPPORTED_TOPOLOGIES` may actually run**; the read, write and run layers all consult that one tuple, and `require_runnable()` is the gate. The aggregates (`ok` / `worst` / `overall_margin`) carry **chain semantics**, so for anything else they refuse rather than quietly return a number (a min over a star means nothing).
+- **The runner reuses batch.** `hop_rows(path)` lowers sections into `batch.PathRow`, and `run_multihop()` takes the same callback shape as `batch.run_batch()` (same `ProgressPump` usage). ⚠️ **One section = one DEM fetch**, so download volume scales with section count (adjacent sections share an endpoint, so tile caching does help).
+- **`batch.PathResult.status` is the single source of the verdict.** Not only a section whose computation failed but also **a section whose artifacts are missing** drops out of OK. The overall verdict is the tightest section — **losses are never summed**.
+- **`overall_display()` owns the wording of the summary card.** The same number is labelled "overall margin (smallest headroom)" when OK and "largest shortfall" when NG (sign flipped). Screen and report both take the wording from that one function.
+- **Relay points are meant to be placed, not dragged around to explore.** Moving one triggers a fresh fetch; sweeping heights or conditions is the Condition Explorer's job.
 
 ---
 
@@ -892,6 +921,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
+| `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. **Skipped in CI** because the target is git-ignored (local pytest only) |
 
 ---
 
