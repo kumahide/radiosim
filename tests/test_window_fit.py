@@ -229,26 +229,63 @@ def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
 # ============================================================
 # 窓は中身に**追従**する（広すぎない）
 # ============================================================
-def test_scenario_window_width_follows_its_content():
-    """条件探索の幅が中身に追従すること（余った幅を抱え込まない）。
+def _scenario_band_width(win) -> int:
+    """凍結帯（案件情報・経路）が要求する幅（＝この 2 つの LabelFrame の最大）。"""
+    bands = [c for c in win._fit_scroll.body.winfo_children()
+             if c.winfo_class() == "TLabelframe"]
+    assert len(bands) >= 2, "凍結帯が見つからない（案件情報・経路）"
+    return max(b.winfo_reqwidth() for b in bands[:2])
+
+
+def test_the_frozen_header_does_not_decide_the_scenario_window_width():
+    """条件探索の窓幅を**凍結帯が決めていない**こと（帯 ≦ 条件 5 列のグリッド）。
 
     実機フィードバック（2026-08-01）＝「横幅が広すぎる。条件 5 列でも右が余る」。
-    原因は**凍結帯**が 1050px を要求していたこと（読み取り専用のヒント文と、
-    文字数で固定した ↻ ボタン）で、比較条件が 1 列でも窓は 1070px あった。
-    見切れゲートは「足りているか」しか見ないので、**広すぎる方向は素通り**する。
+    直した（帯を詰めて 1070 → 870/940px）が、**2026-08-08 に再来**した＝B-046 で
+    座標欄を 27 文字にしたとき帯が 870 → 1085px に太り、また帯が窓幅を決めた
+    （B-052）。⇒ 窓幅を決めてよいのは**列数で変わる中身**（比較グリッド）だけ。
 
-    ⚠️ 下限（`_BASE_W`）を下げるだけでは直らない（帯の要求が下限を上回るため）。
-    ここでは「窓幅 ≦ 一番広い中身 ＋ わずかな余白」を縛る。
+    ⚠️ **1 回目のゲートはこの再来を捕まえられなかった**＝「窓幅 ≦ *一番広い中身*
+    + 60」を見ており、**一番広い中身が帯そのもの**なので、帯が太るとゲートの基準も
+    一緒に太った（[[feedback-promote-recurring-checks]] 実証30／壊れ方③）。ここでは
+    **帯とグリッドという別々の量**を比べる＝どちらが太っても片方は動かない。
+    ⚠️ **座標欄を細くせよとは要求しない**（B-046 の下限と矛盾させない）。帯が太い
+    なら、**幅を食っている物を帯から出す**（↻ と 🔒 の説明は案件情報の行へ移した）。
     """
     root = make_themed_root()
     root.withdraw()
     try:
-        win, _ = _open_scenario(root)
+        win, owner = _open_scenario(root)
+        _grow_scenario(owner)              # 条件を上限まで並べる
         win.update()
-        body = win._fit_scroll.body
-        widest = max(c.winfo_reqwidth() for c in body.winfo_children())
-        assert win._fit_size[0] <= widest + 60, (
-            f"窓が中身より広い（窓 {win._fit_size[0]}px / 一番広い中身 {widest}px）"
+        band = _scenario_band_width(win)
+        grid = win._cmp_grid.winfo_reqwidth()
+        assert band <= grid, (
+            f"凍結帯が窓幅を決めている（帯 {band}px > 条件 5 列 {grid}px）"
+        )
+    finally:
+        root.destroy()
+
+
+def test_scenario_window_width_follows_the_condition_count():
+    """条件を増やしたときだけ窓が広がること（1 列の時点で最大幅になっていない）。
+
+    「窓が広すぎる」の**症状そのもの**を見る＝帯や下限が幅を決めていると、条件 1 列
+    でも最大幅になり、ここが等しくなる。⚠️ `_BASE_W`（下限）を上げただけでも赤に
+    なる＝下限は「これ以上細くしない」ためのもので、既定幅を決める場所ではない。
+    """
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, owner = _open_scenario(root)
+        win.update()
+        narrow = win._fit_size[0]
+        _grow_scenario(owner)
+        win.update()
+        wide = win._fit_size[0]
+        assert narrow < wide, (
+            f"条件を 1 → 5 列にしても窓幅が変わらない（{narrow}px → {wide}px）"
+            "＝幅を決めているのは条件列ではない"
         )
     finally:
         root.destroy()
@@ -590,10 +627,10 @@ _GROW_EXEMPT = {
         "入力表は受け皿（キャンバス）の中にあり、行を足しても窓の必要サイズは動かない"
         "（実測 2026-08-07＝1 行 / 12 行 / 30 行とも 1378x612）。列幅も入力欄の"
         "文字数で決まるので、長い備考を入れても広がらない",
-    "scenario":
-        "条件列は増えるが、この窓の幅は座標欄が決めており吸収される"
-        "（実測 2026-08-07＝1 列 / 4 列 / 5 列とも 1105x986）。2.7 スライス E で"
-        "座標欄を広げ 1009 → 1105px になったときから吸収されるようになった",
+    # ⚠️ **`scenario` は 2026-08-08 に除外から戻した**（B-052）＝凍結帯から ↻ と
+    # 🔒 の説明を出して帯を 1085 → 829px に細くしたので、**窓幅はまた条件列で
+    # 決まる**（実測 ja/dd＝1 列 859px → 5 列 947px）。この除外表がその場で赤に
+    # なって知らせた＝「除外は免除の永久パスではなく観測の記録」が働いた実例。
 }
 
 

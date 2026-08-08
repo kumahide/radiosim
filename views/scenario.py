@@ -106,6 +106,10 @@ class ScenarioWindow(tk.Toplevel):
     # 凍結帯が 1050px を要求していたので下限が効いておらず、比較条件が 1 列でも
     # 窓は 1070px で右側が丸ごと空いていた（2026-08-01 実機フィードバック）。
     # 帯を詰めた今は**中身に追従する**ので、下限は最小サイズ寄りに戻す。
+    # ⚠️ その後 B-046（座標欄 21→27 文字）で帯が 870 → 1085px に太り、**再び帯が
+    # 窓幅を決めた**（＝同じ苦情が 2026-08-08 に再来＝B-052）。処方も 1 回目と同じ
+    # ＝**帯を細くする**（↻ と 🔒 の説明を案件情報の行へ移した）。⇒ 実測 ja/dd で
+    # 1105px → 859px（条件 1 列・スイープ）/ 947px（条件 5 列）。
     _BASE_W = 820
 
     def __init__(
@@ -251,6 +255,24 @@ class ScenarioWindow(tk.Toplevel):
                 side="left", padx=(2, 0), fill="x", expand=expand)
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
+        # 🔒 の意味と ↻ は**凍結した領域の 1 行目（案件情報の行）の右側**に置く。
+        # **なぜ座標の行から移したか**＝以前は座標と同じ行にあり、`↻ ランチャーから
+        # 更新`（140px）と `🔒 ランチャーの値`（98px）が、DMS でも切れない座標欄
+        # 2 つ（B-046＝各 315px）と同じ行を分け合っていた。その結果**この帯だけで
+        # 1085px を要求し、窓幅を決めていた**（条件 5 列のグリッドは 900px）＝
+        # 2026-08-01 に一度直した「窓が広すぎる」が B-046 の後に再来した正体
+        # （B-052）。移すと帯は 835px になり、**窓幅は比較条件の列数で決まる**。
+        # ⚠️ **独立した行にはしない**＝行を 1 つ増やすとこの窓は FHD 100% の 990px
+        # を超える（実測 1033px＝100% の実機でスクロールが要る窓になる）。
+        # ⚠️ この 2 つは**帯 1 つではなく凍結した領域全体に効く**（`↻` は案件情報・
+        # 経路・ベース列をまとめて取り込み直す）ので、1 行目に置くほうが実態に近い
+        # ＝バッチも `↻` は共通設定と案件情報の両方を取り込む（`_refresh_common…`）。
+        # ⚠️ `width=` は付けない＝文字数で幅を固定すると、中身より広い帯を要求する。
+        ttk.Button(case, text=i18n.t("scn_refresh"),
+                   command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
+        ttk.Label(case, text=i18n.t("hint_common_readonly"),
+                  foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
+
         # この窓が振れない前提（座標と samples）。**振れる前提は比較タブの
         # ベース列に出る**ので、ここには出さない（二重に見せない）。
         # 枠名は「経路」＝「固定した」は凍結方式の言い方で、**同じことを右端の
@@ -283,18 +305,6 @@ class ScenarioWindow(tk.Toplevel):
             ttk.Entry(f, textvariable=var, state="readonly", width=width).pack(
                 side="left", padx=(2, 0), fill="x", expand=expand)
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
-
-        # 🔒 の意味と ↻ は**同じ行の右側**に置く（バッチは独立行にしているが、
-        # あちらは 1 行に 6 欄が並んで幅が逼迫しているため。ここは 2 欄しか無い）。
-        # ⚠️ 行を 1 つ増やすと、この窓は FHD 100% の 990px を超える（実測で
-        # 1033px になり、100% の実機でスクロールが要る窓になってしまう）。
-        # **見せ方を揃えるのが目的であって、行数を揃えるのが目的ではない。**
-        # ⚠️ `width=` は付けない＝文字数で幅を固定すると、**中身より広い帯**を
-        # 要求して窓全体の幅を押し上げる（この窓は凍結帯が窓幅を決めていた）。
-        ttk.Button(row, text=i18n.t("scn_refresh"),
-                   command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
-        ttk.Label(row, text=i18n.t("hint_common_readonly"),
-                  foreground=theme.muted_foreground(row)).pack(side="right", padx=6)
 
         self._update_path_label()
         self._update_meta_label()
