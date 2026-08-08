@@ -727,3 +727,70 @@ class TestUpdatedStampFreshness:
 
     def test_real_memory_is_clean(self, memcheck):
         assert memcheck.check_updated_stamps() == []
+
+
+# ============================================================
+# 存在しないモジュール参照（check 6）— I-072
+# ============================================================
+class TestStaleModuleRefs:
+    """**除外が「場所」に依存していた**ことで死んだ検査を、宣言へ寄せ直した回。
+
+    元の実装は「リポジトリを歩いて見つかった `.py` は実在」とし、docstring は
+    除外理由に `map_widget.py`（tkintermapview）を名指ししていた。**venv が
+    リポジトリの外へ出た**（`RADIOSIM_PYTHON`＝2.6a1／旧 `.venv` の削除＝2.7a1）
+    ことでライブラリが視野から消え、**毎セッション同じ 2 行を報告し続けた**。
+
+    ⚠️ ここで守るのは 2 つで、**片方だけでは意味がない**:
+      ① ライブラリの名前で鳴らない（＝直したこと）
+      ② **自分のモジュールの drift ではまだ鳴る**（＝検出力を捨てていないこと）
+    ①だけを検証すると「全部黙らせる」変異が緑で通る（壊れ方①）。
+    """
+
+    def _memo(self, tmp_path, body: str):
+        (tmp_path / "project_x.md").write_text(body, encoding="utf-8")
+
+    def _run(self, memcheck, tmp_path, monkeypatch):
+        monkeypatch.setattr(memcheck, "MEM_DIR", tmp_path)
+        return memcheck.check_stale_module_refs()
+
+    def test_library_module_outside_the_repo_is_not_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """宣言された venv に在るライブラリのモジュールでは鳴らない（I-072 の本題）。"""
+        if not os.environ.get("RADIOSIM_PYTHON"):
+            pytest.skip("RADIOSIM_PYTHON 未宣言＝この環境ではライブラリを解決しない")
+        self._memo(tmp_path, "- `map_widget.py` の after 再スケジュールに注意\n")
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
+    def test_a_module_that_exists_nowhere_is_still_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """**検出力を捨てていない**＝リポジトリにも venv にも無い名前は鳴る。"""
+        self._memo(tmp_path, "- `infrastructure.py` が設定と DEM を抱えている\n")
+        found = self._run(memcheck, tmp_path, monkeypatch)
+        assert any("infrastructure.py" in f for f in found)
+
+    def test_repo_module_is_not_flagged(self, memcheck, tmp_path, monkeypatch):
+        """リポジトリに在る名前は従来どおり鳴らない（venv を見に行く前に解決する）。"""
+        self._memo(tmp_path, "- `map_window.py` は単一インスタンス\n")
+        assert self._run(memcheck, tmp_path, monkeypatch) == []
+
+    def test_undeclared_interpreter_falls_back_to_repo_only(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """`RADIOSIM_PYTHON` 未設定なら従来の挙動（CI・新規 clone を壊さない）。
+
+        ⚠️ **推測しない**＝ここで PATH の python を拾うと、別環境のライブラリ名で
+        「実在する」ことになり、このプロジェクトに無い名前まで免除されてしまう。
+        """
+        monkeypatch.delenv("RADIOSIM_PYTHON", raising=False)
+        assert memcheck._declared_venv_py_basenames() == set()
+        self._memo(tmp_path, "- `map_widget.py` の話\n")
+        found = self._run(memcheck, tmp_path, monkeypatch)
+        assert any("map_widget.py" in f for f in found)
+
+    def test_real_memory_is_clean(self, memcheck):
+        """実メモリで鳴らないこと（②毎回鳴るの回帰ガード＝この項目の出発点）。"""
+        if not os.environ.get("RADIOSIM_PYTHON"):
+            pytest.skip("RADIOSIM_PYTHON 未宣言＝この環境ではライブラリを解決しない")
+        assert memcheck.check_stale_module_refs() == []
