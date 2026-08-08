@@ -876,6 +876,41 @@ def test_relay_window_inherits_the_launcher_endpoints():
         root.destroy()
 
 
+def test_relay_window_inherits_the_launcher_heights_per_end():
+    """中継の TX / RX は**送受それぞれの高さ**を引き継ぐこと（B-055）。
+
+    🔴 **座標は振り分けていたのに、高さは 2 点とも `h_tx`** だった＝ランチャーで
+    送信 30m / 受信 10m と入れても受信点が 30m で始まり、気づかず実行すると
+    **受信側を 30m として計算する**（値は壊れていないが、入れた覚えのない前提で
+    答えが出る）。複数経路の表は最初から `h_tx` / `h_rx` を別々に凍結している
+    （`batch_table._frozen_row`）＝**揃っていなかったのは中継だけ**。
+
+    ⚠️ **中継点は `h_tx` のまま**（ランチャーに対応する値が無い）＝ここも縛って
+    おかないと「全点 h_rx」のような直し方でも緑になる。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        cfg = dict(config.DEFAULT_CONFIG)
+        cfg["h_tx"], cfg["h_rx"] = "30.0", "10.0"
+        win = MultiHopWindow(root, sim.SimParams(cfg),
+                             config_provider=lambda: dict(cfg))
+        assert [v["height"].get() for v in win._wp_vars] == ["30.0", "10.0"], (
+            "送信点／受信点の初期高さがランチャーの送受と対応していない: "
+            f"{[v['height'].get() for v in win._wp_vars]}"
+        )
+        win._add_waypoint()          # 中継点＝対応する値が無いので h_tx
+        assert [v["height"].get() for v in win._wp_vars] == \
+            ["30.0", "30.0", "10.0"], (
+                "中継点の高さが h_tx でない／地点を足したら他の点の高さが動いた: "
+                f"{[v['height'].get() for v in win._wp_vars]}"
+            )
+    finally:
+        root.destroy()
+
+
 def test_relay_window_reads_both_coordinate_notations():
     """中継が **DMS 入力も受ける**こと（I-070 ②＝R1 の穴）。
 

@@ -113,11 +113,19 @@ class MultiHopWindow(tk.Toplevel):
             # ⚠️ **これは「開いた時の初期値」だけ**＝`↻ ランチャーから更新` の
             # 対象にはしない。座標はこの窓で編集する値で、凍結帯（案件情報・
             # 共通設定）とは性格が違う＝↻ で経路が消えたら事故。
+            # ⚠️ **高さも送受で振り分ける**（B-055）＝座標は `start`/`end` を
+            # 振り分けていたのに、高さは 2 点とも `h_tx` を入れていた。ランチャーで
+            # 送信 30m / 受信 10m と入れても**受信点が 30m で始まる**（気づかず
+            # 実行すると受信側を 30m として計算する）。複数経路の表は最初から
+            # `h_tx` / `h_rx` を別々に凍結している（`_frozen_row`）＝⑧の漏れ。
+            # ⚠️ **中継点は `h_tx` のまま**（ランチャーに対応する値が無い）。
             tx, rx = self._launcher_endpoints()
             self._add_waypoint(_DEFAULT_NAMES[0],  lat=tx[0] if tx else None,
-                               lon=tx[1] if tx else None)
+                               lon=tx[1] if tx else None,
+                               h=self._base_params.h_tx)
             self._add_waypoint(_DEFAULT_NAMES[-1], lat=rx[0] if rx else None,
-                               lon=rx[1] if rx else None)
+                               lon=rx[1] if rx else None,
+                               h=self._base_params.h_rx)
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
 
@@ -387,7 +395,7 @@ class MultiHopWindow(tk.Toplevel):
     # 地点の増減
     # ----------------------------------------------------------
     def _add_waypoint(self, name: str = "", lat: "float | None" = None,
-                      lon: "float | None" = None) -> None:
+                      lon: "float | None" = None, h: "float | None" = None) -> None:
         """地点を足す。**2 点あるときは「間」に入れる**（＝中継点として足す）。
 
         ⚠️ 末尾に足すと「TX → RX → R1」という並びになり、**それまで受信点だった
@@ -401,10 +409,15 @@ class MultiHopWindow(tk.Toplevel):
             return
         coord = ("" if lat is None or lon is None
                  else coords.format_pair(lat, lon, self._coord_format))
+        # 高さの既定は `h_tx`。⚠️ **受信点だけは呼び出し側が `h_rx` を渡す**
+        # （B-055）＝ここで「末尾なら h_rx」と判断してはいけない。この関数は
+        # **中継点の挿入にも使われ、そのとき末尾は受信点のまま動かない**ので、
+        # 位置から高さを決めると「地点を足したら誰かの高さが変わる」ことになる。
         vars_ = {
             "name":   tk.StringVar(value=name or self._next_relay_name()),
             "coord":  tk.StringVar(value=coord),
-            "height": tk.StringVar(value=f"{self._base_params.h_tx:.1f}"),
+            "height": tk.StringVar(
+                value=f"{self._base_params.h_tx if h is None else h:.1f}"),
         }
         if len(self._wp_vars) >= 2:
             self._wp_vars.insert(len(self._wp_vars) - 1, vars_)   # 受信点の手前へ
