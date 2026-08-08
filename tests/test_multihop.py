@@ -690,7 +690,7 @@ class TestMultiHopWindow:
     # ランチャーから地図までを通したところをゲートにする。
 
     def test_from_map_button_reaches_the_launcher(self, monkeypatch):
-        """「地図から選ぶ」がランチャー経由で地図へ届き、宛先がこの窓になること。"""
+        """「地図から選択」がランチャー経由で地図へ届き、宛先がこの窓になること。"""
         from conftest import make_themed_root
         from views import dialogs
         from views.launcher import SimLauncher

@@ -758,7 +758,7 @@ def test_committing_a_coordinate_reformats_it_in_the_batch_table_too():
 def test_the_map_can_be_opened_from_every_window_that_places_points(app_windows):
     """**地点を置く窓は、どれも地図を開ける**こと（I-043）。
 
-    中継経路には前から `地図から選ぶ` があり、複数経路だけ無かった＝「バッチから
+    中継経路には前から `地図から選択` があり、複数経路だけ無かった＝「バッチから
     地図を開かない」という古い決めごとが、後から来た窓に破られていた。
     ⚠️ **条件探索は対象外**＝経路をランチャーから凍結して受け取るので、地点を
     置く窓ではない（3 窓を機械的に揃えない）。

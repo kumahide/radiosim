@@ -303,7 +303,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._on_mode_change()
 
     def start_waypoint_mode(self, sink: object) -> None:
-        """宛先を指定して中継点モードへ入る（中継経路窓の「地図から選ぶ」）。
+        """宛先を指定して中継点モードへ入る（中継経路窓の「地図から選択」）。
 
         **公開口にしてある**＝呼び出し側が `_waypoint_sink` や `_select_mode` を
         直接触らない（内部名に依存した配線は、5b の `getattr(self.master, …)` と
@@ -343,7 +343,7 @@ class MapWindow(_PickMixin, _CacheMixin):
             self._win.lift()                    # 受け皿を開いた後、地図を前面へ戻す
         elif self._mode.get() == "waypoints":
             # 中継点モード＝連続追加と同じ約束（受け皿が無ければ開いて確保する）。
-            # 既に宛先を持っている場合（中継経路窓の「地図から選ぶ」から来た場合）は
+            # 既に宛先を持っている場合（中継経路窓の「地図から選択」から来た場合）は
             # それを尊重する＝窓を開き直さない。
             self._append_sink = None
             if self._waypoint_sink is None:

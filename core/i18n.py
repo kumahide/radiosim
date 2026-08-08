@@ -905,7 +905,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_col_section":       "区間",
         "mh_add_point":         "＋ 地点を追加",
         "mh_del_point":         "− 中継点を削除",
-        "mh_from_map":          "地図から選ぶ",
+        "mh_from_map":          "地図から選択",
         "mh_hint_order":        "この順に経路をたどります（先頭が送信点・末尾が受信点）。",
         "mh_hint_inherit":      "空欄は共通設定を引き継ぎます。",
         "mh_running":           "区間 {i} / {n} を計算中…",
