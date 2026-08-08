@@ -510,3 +510,55 @@ class TestLanguageDoesNotLeakBetweenTests:
             "autouse を外すと『新しいテストを書いた人が写し忘れる』形に戻る"
             "（2026-08-07 に実際に起きた）"
         )
+
+    def test_higher_scoped_fixtures_restore_the_language_themselves(self):
+        """**module / class / session スコープのフィクスチャは自分で戻すこと**。
+
+        🔴 **autouse の復元では届かない穴**（2026-08-08 に実測で発覚）＝pytest は
+        上位スコープのフィクスチャを**先に**組むので、`_language_never_leaks` が
+        「前の言語」を captureする時点で**もう ja になっている**。差が無いので何も
+        戻さず、**その言語がモジュールを越えて残る**。
+
+        実害＝`tests/test_ui_consistency.py` の `app_windows`（module）が ja を
+        漏らし、**先に ui_consistency を走らせると `test_batch` の英語メッセージ
+        assert が 10 件落ちた**（ファイル名の順で走る通常実行では隠れていた＝
+        [[feedback-promote-recurring-checks]] の「一度も落ちないゲート」の隣にある
+        「一度も落ちない**順序**」）。
+
+        ⇒ 上位スコープで `set_lang` するなら、**同じフィクスチャの teardown で
+        戻す**（`yield` より後に `set_lang` がある）ことを静的に要求する。
+        """
+        import ast
+        import glob
+
+        offenders = []
+        for path in sorted(glob.glob(os.path.join(os.path.dirname(__file__), "*.py"))):
+            with open(path, encoding="utf-8") as f:
+                tree = ast.parse(f.read())
+            for node in ast.walk(tree):
+                if not isinstance(node, ast.FunctionDef):
+                    continue
+                scope = None
+                for dec in node.decorator_list:
+                    if isinstance(dec, ast.Call):
+                        for kw in dec.keywords:
+                            if kw.arg == "scope" and isinstance(kw.value, ast.Constant):
+                                scope = kw.value.value
+                if scope in (None, "function"):
+                    continue
+                yields = [n.lineno for n in ast.walk(node)
+                          if isinstance(n, (ast.Yield, ast.YieldFrom))]
+                sets = [n.lineno for n in ast.walk(node)
+                        if isinstance(n, ast.Call)
+                        and getattr(n.func, "attr", "") == "set_lang"]
+                if not sets:
+                    continue
+                # teardown 側（yield より後）に復元があるか。
+                if not (yields and any(s > max(yields) for s in sets)):
+                    offenders.append(
+                        f"{os.path.basename(path)}:{node.lineno} {node.name}"
+                        f"（scope={scope}）")
+        assert not offenders, (
+            "上位スコープのフィクスチャが表示言語を戻していない"
+            f"＝モジュールを越えて漏れる: {offenders}"
+        )

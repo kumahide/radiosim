@@ -68,12 +68,19 @@ def app_windows():
     pytest.importorskip("tkinter")
     root = make_themed_root()
     root.withdraw()
+    # ⚠️ **言語は自分で戻す**＝conftest の autouse な復元は**届かない**（pytest は
+    # 上位スコープのフィクスチャを先に組むので、あちらが「前の言語」を捕まえる
+    # 時点でもう ja になっている＝差が無く、何も戻らない）。実測＝この漏れで
+    # `test_batch` の英語メッセージ assert が 10 件落ちた（走らせる順による）。
+    # 静的な守り＝`test_paths.py::…test_higher_scoped_fixtures_restore_the_language…`。
+    lang_before = i18n._lang
     i18n.set_lang("ja")
     app = _launcher(root)
     try:
         yield app, {name: make(root, app) for name, make in _WINDOWS}
     finally:
         root.destroy()
+        i18n.set_lang(lang_before)
 
 
 # ============================================================
