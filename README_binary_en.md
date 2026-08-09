@@ -707,3 +707,5 @@ The app writes no data to the registry or AppData. Deleting the folder is a comp
 ## Copyright
 
 © 2026 BearValley AI Craftworks. All rights reserved.
+
+This software is distributed under the **MIT License**, commercial use included. The license text ships as `LICENSE`, next to `RadioSimPro.exe`.

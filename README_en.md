@@ -977,3 +977,5 @@ Launching with a different interpreter logs a warning (to the log file and stder
 ## Copyright
 
 © 2026 BearValley AI Craftworks. All rights reserved.
+
+This software is distributed under the **MIT License** ([LICENSE](LICENSE)), commercial use included.

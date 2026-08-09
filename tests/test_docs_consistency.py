@@ -464,7 +464,7 @@ def _bundled_paths() -> set[str]:
     """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
     spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
     return {m.group(1).replace("\\", "/")
-            for m in re.finditer(r'\(\s*"([^"]+\.(?:png|md))"\s*,\s*"[^"]*"\s*\)', spec)}
+            for m in re.finditer(r'\(\s*"([^"]+\.(?:png|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
 
 
 @pytest.mark.parametrize("doc", BINARY_READMES)
@@ -519,3 +519,16 @@ def test_the_readme_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path)
     assert out.count("data:image/png;base64,") == 2, "同梱画像が 2 枚とも畳まれていない"
     assert 'src="https://example.com/x.png"' in out, "外部 URL を触っている"
     assert 'src="../outside.png"' in out, "同梱物の外のファイルを読んでいる"
+
+
+def test_the_license_text_ships_with_the_binary():
+    """**配布物に `LICENSE` が入っている**こと。
+
+    MIT は「複製物に許諾表示を含めること」を求める。exe を受け取った利用者は
+    リポジトリを見られないので、**同梱されていなければライセンス本文に触れられない**。
+    ⚠️ 2026-08-09 まで実際に入っていなかった（README にライセンスを書き足そうとして
+    発覚）＝**表記の不足ではなく配布の不備**。
+    """
+    assert "LICENSE" in _bundled_paths(), (
+        "radiosim.spec の datas に LICENSE が無い（配布物にライセンス本文が入らない）"
+    )

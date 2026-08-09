@@ -45,6 +45,8 @@ datas = [
     # README（ヘルプメニューで表示）
     ("README_binary_ja.md", "."),
     ("README_binary_en.md", "."),
+    # ライセンス本文（MIT は「複製物に許諾表示を含めること」を求める＝配布物に必須）
+    ("LICENSE", "."),
     # ロゴ画像
     ("logo.png", "."),
     # README のスクリーンショット（同梱 README から相対参照＝描画時に data URI へ畳む）

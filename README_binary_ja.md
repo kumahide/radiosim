@@ -708,3 +708,5 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 ## 著作権
 
 © 2026 BearValley AI Craftworks. All rights reserved.
+
+本ソフトウェアは **MIT ライセンス**で配布しています。ライセンス本文は `RadioSimPro.exe` と同じフォルダの `LICENSE` にあります。商用利用も可能です。

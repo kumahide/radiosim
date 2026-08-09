@@ -980,3 +980,5 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 ## 著作権
 
 © 2026 BearValley AI Craftworks. All rights reserved.
+
+本ソフトウェアは **MIT ライセンス**で配布しています（[LICENSE](LICENSE)）。商用利用も可能です。
