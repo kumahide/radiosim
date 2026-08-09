@@ -48,6 +48,7 @@ from typing import Callable
 from core import config
 from core import i18n
 from core import simulation as sim
+from core import units
 from report import batch
 
 logger = logging.getLogger("radiosim")
@@ -470,7 +471,12 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 f"{pr.row.h_tx:.1f}", f"{pr.row.h_rx:.1f}",
                 f"{r.p_rx:.2f}" if r else "",
                 f"{r.actual_margin:.2f}" if r else "",
-                f"{r.slant_dist_km * 1000:.0f}" if r else "",
-                f"{r.blocked_ratio * 100:.1f}" if r else "",
+                # ⚠️ **整形は `units` が単一ソース**（B-060）。手書きすると、
+                # ここのように「% を % で割り増す」誤りが静かに入る＝
+                # `blocked_ratio` は models の時点で既に **%**（`* 100` 済み）で、
+                # さらに 100 倍していた（画面 33.8% に対し CSV は 3381.3）。
+                # `csv_blocked_ratio` は 100% で頭打ちにする側の約束も持っている。
+                units.csv_distance(r.slant_dist_km) if r else "",
+                units.csv_blocked_ratio(r.blocked_ratio) if r else "",
                 report_common.csv_cell(str(pr.error) if pr.error else ""),
             ])

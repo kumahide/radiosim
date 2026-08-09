@@ -28,6 +28,7 @@ from core import config
 from core import i18n
 from core import simulation as sim
 from report import batch
+from core import units
 from report import multihop as mh
 from report import report_summary
 
@@ -250,6 +251,31 @@ class TestRunMultihop:
         assert {r["group_id"] for r in rows} == {"route1"}
         assert rows[0]["from"] == "P0" and rows[0]["to"] == "P1"
         assert rows[0]["status"] in ("OK", "NG")
+
+    def test_hops_csv_numbers_match_the_screen(self, base, tmp_path, monkeypatch):
+        """`hops.csv` の**数値列が画面と同じ値**であること（B-060）。
+
+        ⚠️ **行数・識別子・判定だけを見ていたので、100 倍の誤りが素通りしていた**
+        （`f1_pct` に 3381.3＝画面の 33.8% の 100 倍が出ていた。`blocked_ratio` は
+        models の時点で既に % なのに、書き出しでもう一度 100 倍していた）。
+        ⇒ **整形は `units` が単一ソース**。CSV はその出力と一致していること。
+
+        🔑 **「列が在る」ではなく「値が合っている」を見る**＝出力契約の検査は、
+        形だけ見ると数字の意味が壊れても緑になる。
+        """
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        with open(os.path.join(run.save_dir, "hops.csv"), encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+
+        for row, hop in zip(rows, run.hops):
+            r = hop.result
+            assert r is not None, "前提: 結果のあるホップで比べる"
+            assert row["f1_pct"]   == units.csv_blocked_ratio(r.blocked_ratio)
+            assert row["slant_m"]  == units.csv_distance(r.slant_dist_km)
+            assert row["rx_dbm"]   == f"{r.p_rx:.2f}"
+            assert row["margin_db"] == f"{r.actual_margin:.2f}"
+            # 率を名乗る列は 100% を超えない（超えるのは侵入深さであって率ではない）
+            assert float(row["f1_pct"]) <= units.BLOCKED_RATIO_MAX
 
     def test_uses_the_batch_processor_for_each_hop(self):
         """実行層は `batch._process_one` の流用であること（新規ループを増やさない）。
