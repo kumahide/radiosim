@@ -572,6 +572,23 @@ _FORBIDDEN_SAFE_BOUNDARY = [
     r"roughly\s*[0-9.]+\s*m of relief",
 ]
 
+# 🔴 **書いてはいけない②＝裏の取れていない保証**（2026-08-09・Codex 3 件目）。
+# 上の安全境界と**同じ型**＝「危険がある」ではなく「ここまでは大丈夫」と言う形。
+# 前日に安全境界を撤回した*その修正の中で*、代わりに 2 つを書いてしまった:
+#   ①「2 つのモデルは真の値を挟む」＝**実測とも基準実装とも突き合わせていない**。
+#     P.526 自体が地形の形ごとにモデルを選ぶ構造で、Single と Deygout を上下限と
+#     していない。⇒ 言えるのは「差が大きい＝モデル依存が強い」という**診断**まで。
+#   ②「Deygout は ITU-R P.526 準拠」＝使っているのは J(ν) だけで、現行 P.526-16 の
+#     孤立円筒モデルも Bullington も標準の補正項も持たない**独自実装**。
+# 🔑 **型＝「弱めた」つもりの文がまた別の保証になっていた。**開示を書き直すときは
+# 「何を保証していないか」を数えること（→ [[feedback-promote-recurring-checks]]）。
+_FORBIDDEN_UNBACKED_CLAIM = [
+    (r"真の値を挟む|真値を挟む|上下限として", "Single と Deygout が真値を挟むという保証"),
+    (r"bracket the truth", "the two models bracketing the true value"),
+    # 見出しで「Deygout ＝ P.526 準拠」と名乗る形（本文の否定文は拾わない）
+    (r"^#+.*Deygout.*P\.526", "見出しで Deygout を P.526 準拠と名乗っている"),
+]
+
 
 def _readme_langs(doc: str) -> list[str]:
     """`README.md` は日英併記なので**両方**を要求する。他は名前で決まる。"""
@@ -623,3 +640,22 @@ def test_blocked_ratio_clamp_is_explained(doc):
             assert marker in text, (
                 f"{doc}: F1 遮蔽率の 100% 頭打ちの説明が無い（{lang} の目印 '{marker}' が見つからない）"
             )
+
+
+@pytest.mark.parametrize(
+    "doc", _PUBLIC_READMES + ["docs/screenshots.md", "CHANGELOG.md"]
+)
+def test_no_unbacked_accuracy_claim(doc):
+    """**裏の取れていない保証を書いていない**こと（→ 上の `_FORBIDDEN_UNBACKED_CLAIM`）。
+
+    ⚠️ このゲートは「Deygout」「P.526」という語そのものは禁じない——**見出しで
+    準拠を名乗る形**と、**2 モデルが真値を挟むという主張**だけを禁じる。
+    本文で「P.526 準拠ではない」と*否定*するのは通す（それが正しい記述だから）。
+    """
+    text = _read(doc)
+    for pat, what in _FORBIDDEN_UNBACKED_CLAIM:
+        m = re.search(pat, text, re.MULTILINE)
+        assert m is None, (
+            f"{doc}: 裏の取れていない保証が書かれている（{what}／'{m.group(0)[:60]}'）。"
+            "言えるのは「差が大きければモデル依存が強い」という診断まで。"
+        )

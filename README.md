@@ -26,7 +26,7 @@
 
 > 🔴 **回折損が過大に出ることがあり、どの経路で信頼できるかを事前に見分ける方法がありません**（既知の欠陥・修正予定）。既定の Deygout 法は、尾根のような**広がりのある障害物**を多数の独立した稜線として数えてしまい、山越えでは**数百〜数千 dB**になります。⚠️ **起伏の大きさでも F1 遮蔽率でも判定できません**＝起伏 25m の滑らかな丘（10km・150MHz）で `Single` 法 **0.0 dB** に対し Deygout 法は **65 dB**（F1 遮蔽率は 100% 未満のまま）。同じ起伏でも**地形の形しだいで 10 倍以上変わります**。⚠️ F1 遮蔽率は表示上 **100% で頭打ち**なので、率の側からは異常に気づけません。
 >
-> 🛡 **今できる自衛策** — **「回折モデル」を `Single` に切り替えて計算し直し、2 つの値を見比べてください。**大きく食い違う経路では既定（Deygout）の値を信用しないでください。⚠️ `Single` は逆に障害物が複数ある経路を過小評価します（2 つは真の値を挟む目安であって、どちらかが正解ではありません）。
+> 🛡 **今できる自衛策** — **「回折モデル」を `Single` に切り替えて計算し直し、2 つの値を見比べてください。**大きく食い違う経路では既定（Deygout）の値を信用しないでください。⚠️ **これは正しさを決める手段ではなく、結果がモデルの選び方にどれだけ依存しているかの診断**です（差が小さくても正しさは保証されません）。`Single` は逆に障害物が複数ある経路を過小評価します。
 >
 > *🔴 **Diffraction loss can come out far too high, and no advance test tells you which paths are safe.** Neither relief nor Fresnel blockage predicts it: over a smooth 25 m hill, `Single` returns 0.0 dB where Deygout returns 65 dB. Fresnel blockage is **capped at 100%** wherever it is shown, so the percentage will not warn you either. **Mitigation**: re-run with the Diffraction Model set to `Single` and compare — where the two differ substantially, do not trust the default.*
 
@@ -47,7 +47,7 @@
 
 | 項目 | 準拠・方式 |
 | --- | --- |
-| 回折損 | **Deygout 法**（多重ナイフエッジ）／**Fresnel-Kirchhoff** 単一エッジ（**ITU-R P.526** 系） |
+| 回折損 | **Fresnel-Kirchhoff** 単一エッジ（**ITU-R P.526** のナイフエッジ式）／**Deygout 法＝独自実装**（同じ式を再帰的に使うもので、P.526 の完全法ではありません） |
 | 自由空間伝搬損失 | FSPL（球面波） |
 | 地球曲率補正 | 標準大気 K = 4/3 |
 | フレネルゾーン | 第 1 フレネル半径と地形・植生の交差から遮蔽率を算出 |

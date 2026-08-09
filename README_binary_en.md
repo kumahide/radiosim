@@ -538,9 +538,11 @@ When the 1st Fresnel zone is obstructed by terrain or vegetation, diffraction lo
 
 ### Diffraction Loss
 
-#### Deygout Method (default, ITU-R P.526)
+#### Deygout Method (default, **custom implementation**)
 
-A recursive model that handles multiple diffraction edges. Appropriate for real terrain with overlapping ridges.
+A recursive model that handles multiple diffraction edges: the worst obstruction is taken as the main obstacle, the path is split around it, and losses are summed recursively.
+
+⚠️ **This is not "ITU-R P.526 compliant"** (wording corrected 2026-08-09). The only thing taken from P.526 is the **knife-edge loss function J(ν)**. The current P.526-16 specifies a **cylinder model** for multiple obstacles and **Bullington** for general terrain, plus standard correction terms — **none of which are implemented here**. ⇒ **Broad obstacles are over-estimated** (known defect — see Known Limitations above).
 
 #### Fresnel-Kirchhoff Loss J(ν)
 
@@ -683,7 +685,7 @@ The app writes no data to the registry or AppData. Deleting the folder is a comp
 - DEM horizontal resolution (5–10 m) is the hard ceiling for accuracy; individual building obstructions are not modeled
 - The Deygout method is an approximation; errors of ±5–15 dB relative to measurements are expected
 - 🔴 **Diffraction loss (the default Deygout method) can come out far too high, and there is no way to tell in advance which paths are trustworthy** (known defect, fix planned). A broad ridge is counted as many independent knife edges, so mountain paths reach **hundreds to thousands of dB**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you whether a result is safe**: over a smooth 25 m hill (10 km, 150 MHz) the Single method returns **0.0 dB** while Deygout returns **65 dB**, with Fresnel blockage still under 100%. **The same relief can differ by more than 10x depending on the shape of the terrain** (a narrow peak gives 5.7 dB under the same conditions). ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
-- 🛡 **What you can do about it today**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Deygout) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ Single, conversely, **underestimates paths with several obstacles**. The two bracket the truth; neither one is the right answer
+- 🛡 **What you can do about it today**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Deygout) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ Single, conversely, tends to **underestimate paths with several obstacles**
 - The vegetation model is empirical; species, density, and seasonal variation are not accounted for
 - Environmental loss coefficients are empirical; suitability for specific regions is not guaranteed
 
