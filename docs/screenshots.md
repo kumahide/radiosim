@@ -127,7 +127,14 @@ F1 遮蔽率 97.4%・回折損 11.2 dB**。画面がこの値にならないと�
 1. `docs/images/` へ 3 枚を置く。
 2. `README.md` の冒頭（リード文の直後）へ 1 枚目、`## 主な機能` の近くへ 2・3 枚目。
 3. `README_ja.md` / `README_en.md` は該当する「使い方」節の先頭へ。
-4. `README_binary_ja.md` / `README_binary_en.md` は **base64 でインライン埋め込み**
-   （同梱物は自己完結が方針。`logo.png` が同じ方式）。⚠️ **埋め込み後にファイルサイズを
-   実測する**——跳ねるようなら幅を縮めるか枚数を減らす（リンク参照への退避は最後の手段）。
+4. `README_binary_ja.md` / `README_binary_en.md` も**相対参照のまま**書き、画像は
+   `radiosim.spec` の `datas` に足す。
+   🔴 **2026-08-09 訂正＝ここには「base64 でインライン埋め込み（`logo.png` が同じ方式）」と
+   書いてあったが、誤り。** 実際の作りは **同梱はファイル・埋め込みは描画時**＝spec が
+   画像を exe に入れ、README ビューア（`views/launcher_menu.py`）が**表示のときだけ**
+   data URI へ畳む（Tier 1 は一時ディレクトリへ HTML を書き出すので、相対パスのままでは
+   必ず壊れるため）。⇒ **README 本文に base64 を書かない**（テキストとして読めなくなるうえ、
+   同じ絵を 2 本の README に二重に持つことになる）。
+   ⚠️ **spec への追加を忘れると exe の中だけ絵が出ない**（2.3RC1 で同型の事故あり）。
+   ゲート `test_images_in_the_bundled_readme_are_also_bundled` が止める。
 5. 4 本すべてで **alt を日本語**にする（可読性と検索面積の両取り）。
