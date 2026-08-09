@@ -253,9 +253,15 @@ radiosim/
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
 │   └── batch_run.py      # バッチの実行と進捗（Mixin）
 ├── docs/
-│   └── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
+│   ├── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
+│   ├── screenshots.md    # README 用スクショの撮り方（座標・条件・期待値・配置先の正典）
+│   └── images/           # そのスクショ（README 4 本から参照・exe にも同梱）
 ├── README_ja.md          # このファイル
 ├── README_en.md          # 英語版 README
+│
+│   # テストは**名前だけ**＝説明は「テスト」節の表が正典（同じ説明を 2 か所で持たない）。
+│   # 例外は表に載らないもの＝`test_*.py` でないファイルで、そこだけここに説明を付ける。
+│
 └── tests/
     ├── test_models.py
     ├── test_golden_links.py   # 回帰コーパス（代表回線のゴールデン値＋純関数の不変条件）

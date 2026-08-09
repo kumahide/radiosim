@@ -253,9 +253,16 @@ radiosim/
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
 ├── docs/
-│   └── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
+│   ├── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
+│   ├── screenshots.md    # How to shoot the README screenshots (coordinates, conditions, expected values)
+│   └── images/           # Those screenshots (referenced by all four READMEs; also bundled into the exe)
 ├── README_ja.md          # Japanese README
 ├── README_en.md          # This file
+│
+│   # Tests are listed by **name only** — the "Testing" table is the source of truth
+│   # for what each one does (the same description must not live in two places).
+│   # The exception is anything the table cannot list (files that are not `test_*.py`).
+│
 └── tests/
     ├── test_models.py
     ├── test_golden_links.py   # Regression corpus (golden link-budget values + purity invariants)
