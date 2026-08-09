@@ -547,15 +547,30 @@ def test_the_license_text_ships_with_the_binary():
 # 「何を開示すべきか」を書き換える**（頭打ちの説明は修正後も残る＝I-077）。
 _PUBLIC_READMES = ["README.md", *ALL_READMES]
 
-# 言語ごとの目印。**訳語ではなく概念**を 1 つずつ（文面を直すたびに赤くならない粒度）。
+# ⚠️ **2026-08-09 に目印を入れ替えた**＝初版は `25m` / `25 m` を必須マーカーにしており、
+# **誤った安全境界を機械的に固定していた**（Codex の再レビュー）。ゲートの壊れ方の
+# 3 つ目「**間違ったものを要求している**」の実例（→ [[feedback-promote-recurring-checks]]）。
+# ⇒ **数値の境界は目印にしない。**開示すべき概念は 3 つ＝①過大に出ること
+# ②事前に見分けられないこと ③自衛策（`Single` と見比べる）。
 _DIVERGENCE_MARKERS = {
-    "ja": ["発散", "25m"],
-    "en": ["diverge", "25 m"],
+    "ja": ["過大", "起伏の大きさでも", "`Single`"],
+    "en": ["too high", "Neither", "`Single`"],
 }
 _CLAMP_MARKERS = {
     "ja": ["100% で頭打ち"],
     "en": ["capped at 100%"],
 }
+
+# 🔴 **書いてはいけない**＝「起伏がこれ以下なら信頼できる」という形の安全保証。
+# 起伏は予測子ではない（同じ起伏 25m で、広い丘 65 dB / 細い峰 5.7 dB＝**11 倍**）。
+# ⚠️ **在ることの検査だけでは、この誤りは防げなかった**＝誤った境界も「開示」の
+# 顔をして全 5 本に揃っていた。**無いことの検査**を対で置く。
+_FORBIDDEN_SAFE_BOUNDARY = [
+    r"起伏\s*[0-9.]+\s*m\s*程度まで",          # 「起伏 25m 程度までの…は信頼できる」
+    r"信頼できるのは起伏",
+    r"relief or less",                          # 「…25 m of relief or less」
+    r"roughly\s*[0-9.]+\s*m of relief",
+]
 
 
 def _readme_langs(doc: str) -> list[str]:
@@ -567,13 +582,32 @@ def _readme_langs(doc: str) -> list[str]:
 
 @pytest.mark.parametrize("doc", _PUBLIC_READMES)
 def test_mountain_path_limitation_is_disclosed(doc):
-    """**山越えでは結果が使えない**ことが全 README に書いてあるか（B-032）。"""
+    """**回折損が過大に出ること・事前に見分けられないこと・自衛策**が全 README に在るか。"""
     text = _read(doc)
     for lang in _readme_langs(doc):
         for marker in _DIVERGENCE_MARKERS[lang]:
             assert marker in text, (
-                f"{doc}: B-032 の適用不能域の開示が無い（{lang} の目印 '{marker}' が見つからない）"
+                f"{doc}: 回折損の適用限界の開示が足りない（{lang} の目印 '{marker}' が見つからない）"
             )
+
+
+@pytest.mark.parametrize(
+    "doc", _PUBLIC_READMES + ["docs/screenshots.md", "CHANGELOG.md"]
+)
+def test_no_relief_based_safety_claim(doc):
+    """**「起伏がこれ以下なら信頼できる」と書いていない**こと。
+
+    2026-08-09 に実際に書いてしまい、しかも**ゲートがその境界を必須マーカーとして
+    固定していた**。起伏 25m の滑らかな丘で `Single` 0.0 dB に対し Deygout 65 dB
+    （F1 遮蔽率は 100% 未満）＝**起伏も遮蔽率も予測子ではない**。
+    """
+    text = _read(doc)
+    for pat in _FORBIDDEN_SAFE_BOUNDARY:
+        m = re.search(pat, text)
+        assert m is None, (
+            f"{doc}: 起伏を根拠にした安全保証が書かれている（'{m.group(0)}'）。"
+            "起伏は予測子ではない＝同じ 25m で広い丘 65 dB / 細い峰 5.7 dB。"
+        )
 
 
 @pytest.mark.parametrize("doc", _PUBLIC_READMES)
