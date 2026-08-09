@@ -27,6 +27,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 18. [Development Environment](#development-environment)
 19. [Testing](#testing)
 20. [Known Limitations](#known-limitations)
+21. [Copyright](#copyright)
 
 ---
 
@@ -970,3 +971,9 @@ Launching with a different interpreter logs a warning (to the log file and stder
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
+
+---
+
+## Copyright
+
+© 2026 BearValley AI Craftworks. All rights reserved.
