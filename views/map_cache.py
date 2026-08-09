@@ -18,6 +18,7 @@ from typing import TYPE_CHECKING
 from core import dem
 from core import i18n
 from views import dialogs
+from views import progress
 from views.map_style import _LEVEL_COLORS, _OUTLINE_COLOR
 
 if TYPE_CHECKING:
@@ -197,7 +198,9 @@ class _CacheMixin:
     def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int) -> None:
         cells = dem.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
         outline = dem.coverage_outline(nw[0], nw[1], se[0], se[1])
-        self._win.after(0, self._draw_overlay_cells, cells, outline)
+        # 走査中に地図窓を閉じられている可能性がある（B-061）
+        progress.post_to_ui(self._win,
+                            lambda: self._draw_overlay_cells(cells, outline))
 
     def _draw_overlay_cells(self, cells: list, outline: list) -> None:
         if self._mode.get() != "cache":
@@ -257,7 +260,7 @@ class _CacheMixin:
         dl_result = dem.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
         logger.info("Tile download complete in %.2fs: %s",
                     time.perf_counter() - t0, dl_result)
-        self._win.after(0, self._on_download_done, dl_result)
+        progress.post_to_ui(self._win, lambda: self._on_download_done(dl_result))
 
     def _render_progress(self, item: tuple) -> None:
         """ポンプから届いた進捗を描画する（メインスレッドで呼ばれる）。"""

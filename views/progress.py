@@ -86,6 +86,49 @@ def sweep_tk_garbage(root, *, interval_ms: int = _TK_SWEEP_MS) -> None:
         pass          # ルートが無い＝終了処理中。掃く相手も、次回も無い
 
 
+# ============================================================
+# ワーカーから UI へ投函する（B-061）
+# ============================================================
+# ワーカーが `root.after(...)` を直に呼ぶと、**取得中に窓を閉じた瞬間**に
+# 投函先が消えている＝`RuntimeError: main thread is not in main loop` が
+# ワーカースレッドで上がる。**例外は画面に出ずログに残るだけ**なので、
+# 気づかれないまま配布される（Codex の独立レビューで発覚）。
+#
+# **なぜ各所に try/except を撒かないのか**＝それは列挙で塞ぐ穴で、次に
+# ワーカーを足した人が忘れた瞬間に再発する（→ [[feedback-promote-recurring-checks]]）。
+# 投函の口を 1 つにして、**これから増えるワーカーにも自動で効く**形にする。
+#
+# ⚠️ **`winfo_exists()` で生死を確かめてから投函しない**＝それ自体が
+# ワーカースレッドからの Tcl 呼び出しで、防ごうとしている危険そのものを増やす。
+# **投函を試して、死んでいた合図（例外）を受け取る**ほうが Tcl への接触が少ない。
+# ⚠️ **飲むのは 2 種類だけ**（`RuntimeError` / `TclError`＝インタプリタが無い合図）。
+# 例外を広く飲むと、コールバック側の本物のバグまで静かに消える。
+# ⚠️ 型名で判定しているのは、このモジュールが **tkinter を import しない**約束
+# （フェイクでヘッドレスに検証できる）を守るため。
+_DEAD_TK_EXCEPTIONS = ("RuntimeError", "TclError")
+
+
+def post_to_ui(widget, func, *, delay_ms: int = 0) -> bool:
+    """ワーカースレッドから UI スレッドへコールバックを投函する。
+
+    引数:
+      widget   : `.after(ms, cb)` を持つウィジェット（破棄済みでもよい）。
+      func     : UI スレッドで実行したい呼び出し可能オブジェクト。
+      delay_ms : 遅延（既定 0＝次の空き時間）。
+
+    戻り値:
+      投函できたら True。**投函先が既に破棄されていたら False**（例外は上げない
+      ＝結果を捨ててよい場面でしか使わない）。
+    """
+    try:
+        widget.after(delay_ms, func)
+        return True
+    except Exception as ex:
+        if type(ex).__name__ not in _DEAD_TK_EXCEPTIONS:
+            raise
+        return False
+
+
 class ProgressPump:
     """ワーカースレッドからの投入をメインスレッドで消費するポンプ。
 

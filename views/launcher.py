@@ -570,8 +570,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 )
             except Exception as ex:
                 config.logger.warning("Prefetch error (continuing): %s", ex)
-            self.root.after(0, self._notify_map_cache_change)
-            self.root.after(0, lambda: self._start_simulation(params))
+            # ⚠️ 事前取得中に窓を閉じられている可能性がある（B-061）
+            progress.post_to_ui(self.root, self._notify_map_cache_change)
+            progress.post_to_ui(self.root, lambda: self._start_simulation(params))
 
         threading.Thread(target=_run_prefetch, daemon=True).start()
 
@@ -589,10 +590,11 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             )
 
         def _on_complete(elevs) -> None:
-            self.root.after(0, lambda: self._on_fetch_complete(params, elevs))
+            # ワーカースレッドから呼ばれる＝投函先が生きているとは限らない（B-061）
+            progress.post_to_ui(self.root, lambda: self._on_fetch_complete(params, elevs))
 
         def _on_error(ex: Exception) -> None:
-            self.root.after(0, lambda: self._on_fetch_error(ex))
+            progress.post_to_ui(self.root, lambda: self._on_fetch_error(ex))
 
         sim.fetch_elevations_cached(
             params      = params,

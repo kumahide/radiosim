@@ -11,7 +11,22 @@ ProgressPump（ワーカースレッド → メインスレッドの進捗トラ
 
 import threading
 
+import pytest
+
 from views.progress import ProgressPump
+
+
+class TclError(Exception):
+    """tkinter を import せずに `TclError` を模す（型名で判定している側の検証）。
+
+    ⚠️ **クラス名そのものを `TclError` にする**＝`__name__ = "TclError"` を
+    クラス本体に書いても効かない（`type.__name__` はメタクラス側の記述子が
+    優先されるので、実際の型名が返る）。最初の実装がこれで落ちた。
+    """
+
+
+_FakeTclError = TclError
+
 
 
 class FakeScheduler:
@@ -222,4 +237,82 @@ def test_push_is_safe_from_worker_threads():
     sched.fire_all()
     assert sorted(seen) == sorted(
         base * 100 + i for base in range(4) for i in range(50)
+    )
+
+
+# ============================================================
+# ワーカー → UI の投函（B-061）
+# ============================================================
+def test_post_to_ui_delivers_while_the_widget_lives():
+    """生きているウィジェットへは、そのまま投函されること。"""
+    from views.progress import post_to_ui
+
+    class Widget:
+        def __init__(self): self.calls = []
+        def after(self, ms, cb): self.calls.append((ms, cb))
+
+    w = Widget()
+    assert post_to_ui(w, lambda: None) is True
+    assert len(w.calls) == 1 and w.calls[0][0] == 0
+
+
+@pytest.mark.parametrize("error", [RuntimeError("main thread is not in main loop"),
+                                   _FakeTclError("invalid command name")])
+def test_post_to_ui_is_quiet_when_the_widget_is_already_gone(error):
+    """**破棄済みへの投函は静かに諦める**こと（B-061）。
+
+    取得中に窓を閉じるのは利用者が普通にやる操作で、そのとき投函先はもう無い。
+    ⚠️ 例外はワーカースレッドで上がるので**画面に出ずログに残るだけ**＝
+    気づかれないまま配布される。
+    """
+    from views.progress import post_to_ui
+
+    class Dead:
+        def after(self, ms, cb): raise error
+
+    assert post_to_ui(Dead(), lambda: None) is False
+
+
+def test_post_to_ui_does_not_swallow_real_bugs():
+    """**飲むのは「Tk が無い」合図だけ**＝コールバック側の本物のバグは通す。
+
+    ここを `except Exception` にすると、投函の失敗と実装の誤りが区別できなくなる。
+    """
+    from views.progress import post_to_ui
+
+    class Broken:
+        def after(self, ms, cb): raise ValueError("これは本物のバグ")
+
+    with pytest.raises(ValueError):
+        post_to_ui(Broken(), lambda: None)
+
+
+def test_no_worker_posts_to_tk_without_going_through_post_to_ui():
+    """**ワーカーの中で素の `after` を呼んでいない**こと（静的検査・B-061）。
+
+    ⚠️ 各所に try/except を撒く形は「思い出す規則」で、次にワーカーを足した人が
+    忘れた瞬間に再発する。**投函の口を 1 つに保つ**ことを機械に守らせる。
+    """
+    import ast
+    import pathlib
+
+    offenders: list[str] = []
+    for path in sorted(pathlib.Path(__file__).resolve().parent.parent.glob("views/*.py")):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        targets = {
+            (getattr(kw.value, "id", None) or getattr(kw.value, "attr", None))
+            for node in ast.walk(tree)
+            if isinstance(node, ast.Call) and getattr(node.func, "attr", "") == "Thread"
+            for kw in node.keywords if kw.arg == "target"
+        }
+        for node in ast.walk(tree):
+            if isinstance(node, ast.FunctionDef) and node.name in targets:
+                offenders += [
+                    f"{path.name}:{c.lineno} ({node.name})"
+                    for c in ast.walk(node)
+                    if isinstance(c, ast.Call) and getattr(c.func, "attr", "") == "after"
+                ]
+    assert not offenders, (
+        "ワーカーが Tk へ直に投函している（progress.post_to_ui を通すこと）: "
+        + ", ".join(offenders)
     )
