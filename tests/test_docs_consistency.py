@@ -448,3 +448,74 @@ def test_public_docs_do_not_cite_issue_ids():
         "読者には辿れない）。ID を消し、理由を地の文で書くこと:\n  "
         + "\n  ".join(hits)
     )
+
+
+# ============================================================
+# 同梱 README が参照する画像は、exe にも入っていること（I-017）
+# ============================================================
+# **配布物の README だけ画像が無い**という壊れ方は 2.3RC1 で実際に踏んでいる
+# （I-012＝同梱 README の存在自体を忘れた）。今度は画像で同じ穴が開きうる：
+# `README_binary_*.md` に `![](docs/images/…)` と書いても、`radiosim.spec` の
+# `datas` に足し忘れれば **exe の中だけ絵が出ない**。⇒ 参照と同梱を突き合わせる。
+BINARY_READMES = ["README_binary_ja.md", "README_binary_en.md"]
+
+
+def _bundled_paths() -> set[str]:
+    """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
+    spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
+    return {m.group(1).replace("\\", "/")
+            for m in re.finditer(r'\(\s*"([^"]+\.(?:png|md))"\s*,\s*"[^"]*"\s*\)', spec)}
+
+
+@pytest.mark.parametrize("doc", BINARY_READMES)
+def test_images_in_the_bundled_readme_are_also_bundled(doc):
+    refs = {m.group(1) for m in
+            re.finditer(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)',
+                        (ROOT / doc).read_text(encoding="utf-8"))}
+    refs |= {m.group(1) for m in
+             re.finditer(r'<img[^>]+src="([^"]+\.(?:png|jpg|jpeg|gif))"',
+                         (ROOT / doc).read_text(encoding="utf-8"))}
+    assert refs, f"{doc}: 画像参照が 1 つも無い（この検査が空振りしている）"
+    bundled = _bundled_paths()
+    missing = sorted(r for r in refs if r not in bundled)
+    assert not missing, (
+        f"{doc} が参照する画像が radiosim.spec の datas に無い"
+        f"（exe の中だけ絵が出ない）: {missing}"
+    )
+
+
+@pytest.mark.parametrize("doc", BINARY_READMES)
+def test_images_in_the_bundled_readme_exist_on_disk(doc):
+    for m in re.finditer(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)',
+                         (ROOT / doc).read_text(encoding="utf-8")):
+        assert (ROOT / m.group(1)).exists(), f"{doc}: 参照先が無い {m.group(1)}"
+
+
+def test_the_readme_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path):
+    """描画時の data URI 化が**画像 1 枚の決め打ちでない**こと。
+
+    Tier 1 の表示は一時ディレクトリへ HTML を書くので、相対パスの画像は必ず壊れる。
+    `logo.png` だけを畳む実装のままスクショを足すと、**新しい画像だけ黙って壊れる**。
+
+    ⚠️ **同梱物の外を読まないこと**は、**実在するファイル**で確かめる。存在しない
+    パスで試すと「無いから素通し」で緑になり、防御を外しても落ちない（最初の実装が
+    実際にそうなっていた＝理由なく通るテスト）。
+    """
+    from views.launcher_menu import inline_local_images
+
+    png = (ROOT / "logo.png").read_bytes()
+    base = tmp_path / "bundle"
+    (base / "docs" / "images").mkdir(parents=True)
+    (base / "logo.png").write_bytes(png)
+    (base / "docs" / "images" / "shot.png").write_bytes(png)
+    (tmp_path / "outside.png").write_bytes(png)          # **実在する**同梱物の外
+
+    body = ('<img src="logo.png">'
+            '<img src="docs/images/shot.png">'
+            '<img src="https://example.com/x.png">'
+            '<img src="../outside.png">')
+    out = inline_local_images(body, str(base))
+
+    assert out.count("data:image/png;base64,") == 2, "同梱画像が 2 枚とも畳まれていない"
+    assert 'src="https://example.com/x.png"' in out, "外部 URL を触っている"
+    assert 'src="../outside.png"' in out, "同梱物の外のファイルを読んでいる"

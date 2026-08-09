@@ -28,6 +28,49 @@ if TYPE_CHECKING:
     from views.map_window import MapWindow
 
 
+#: README ビューアが埋め込める画像（同梱物に置いてよい形式だけ）。
+_INLINE_IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
+                       ".jpeg": "image/jpeg", ".gif": "image/gif"}
+
+
+def inline_local_images(html_body: str, base_dir: str) -> str:
+    """`<img src="...">` のローカル画像を data URI へ畳み込む。
+
+    **なぜ必要か**: Tier 1 の表示は markdown を HTML に変換して**一時ディレクトリ**へ
+    書き出しブラウザで開く。相対パスはその一時ディレクトリから解決されるので、
+    素のままでは画像が必ず壊れる（`<base href>` を足すと今度はアンカーリンクの
+    解決先が変わる）。⇒ **描画時に埋め込む**のがこの窓の作法。
+
+    ⚠️ **`logo.png` 決め打ちだったのを一般化した**（2026-08-09・I-017 でスクショを
+    足したときに、決め打ちのままだと新しい画像だけ黙って壊れると分かった）
+    ＝**列挙で塞ぐ穴は、次の 1 枚で開く**。
+
+    ⚠️ **同梱物の外は読まない**＝`..` で外へ出る参照と、スキームつき（`http:` /
+    `data:`）はそのまま残す。README は配布物なので、描画のたびに任意の
+    ローカルファイルを読める口にはしない。
+    """
+    import base64 as _b64
+    import re as _re
+
+    root = os.path.abspath(base_dir)
+
+    def _replace(m: "_re.Match[str]") -> str:
+        src = m.group(1)
+        if "://" in src or src.startswith("data:") or os.path.isabs(src):
+            return m.group(0)
+        path = os.path.abspath(os.path.join(root, src))
+        if os.path.commonpath([root, path]) != root:
+            return m.group(0)                      # 同梱物の外＝触らない
+        mime = _INLINE_IMAGE_TYPES.get(os.path.splitext(path)[1].lower())
+        if mime is None or not os.path.exists(path):
+            return m.group(0)
+        with open(path, "rb") as f:
+            data = _b64.b64encode(f.read()).decode("ascii")
+        return f'src="data:{mime};base64,{data}"'
+
+    return _re.sub(r'src="([^"]+)"', _replace, html_body)
+
+
 class _MenuMixin:
     # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
     # （実行時は 1 文字も定義しない）。理由は
@@ -362,16 +405,8 @@ class _MenuMixin:
                     f.read(),
                     extensions=["tables", "fenced_code", TocExtension(slugify=_slugify)],
                 )
-            # logo.png を base64 に変換して埋め込む（<base href> 不要・アンカーリンク保護）
-            import base64 as _b64
-            logo_path = os.path.join(base, "logo.png")
-            if os.path.exists(logo_path):
-                with open(logo_path, "rb") as _f:
-                    _b64str = _b64.b64encode(_f.read()).decode("ascii")
-                body = body.replace(
-                    'src="logo.png"',
-                    f'src="data:image/png;base64,{_b64str}"',
-                )
+            # 画像を base64 に変換して埋め込む（<base href> 不要・アンカーリンク保護）
+            body = inline_local_images(body, base)
             html = (
                 f'<!DOCTYPE html><html lang="{i18n.t("html_lang")}">'
                 '<head><meta charset="UTF-8"><style>'

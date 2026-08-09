@@ -176,6 +176,8 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open
 
 ## Map
 
+![地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える](docs/images/shot_map.png)
+
 The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the map is a convenience layer.
 
 > On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
@@ -226,6 +228,8 @@ Downloads and deletions show a confirmation dialog with the estimated number of 
 ---
 
 ## Usage — Single Mode
+
+![地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている](docs/images/shot_profile.png)
 
 ### 1. Launcher Window
 
@@ -311,6 +315,8 @@ To pull past conditions in from a file, or to carry a whole input set around, us
 ---
 
 ## Usage — Multiple Paths
+
+![複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている](docs/images/shot_batch.png)
 
 Click the **Multiple Paths** button in the launcher to open the dedicated window.
 

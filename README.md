@@ -10,6 +10,8 @@
 
 *A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. Because it relies on GSI tiles, **it covers links inside Japan only**. English documentation: [README_en.md](README_en.md).*
 
+<img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
+
 ---
 
 ## 想定用途
@@ -31,6 +33,9 @@
 - **地図から座標を拾う** — 淡色地図をクリックして送受信点を指定、DEM キャッシュの可視化・事前取得も
 - **プロジェクトファイル（`.rsproj`）** — 座標・パラメータ・案件情報をまとめて保存し、続きから再開
 - **日本語 / 英語 UI**・ダークモード対応
+
+<img src="docs/images/shot_map.png" width="480" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
+<img src="docs/images/shot_batch.png" width="480" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
 
 ## 計算モデル
 

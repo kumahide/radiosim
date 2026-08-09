@@ -379,6 +379,8 @@ http://proxy.example.com:8080
 
 ## Map
 
+<img src="docs/images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
+
 The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the map is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
 - **Pick Coordinates mode (default)**: click the map to set TX→RX alternately and write them back to the launcher's start/end fields (the numeric fields are the source of truth). Shows UISP-style markers, a path line, and a distance label. Wired via `apply_map_pick` / `current_path_coords`.
@@ -388,6 +390,8 @@ The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary 
 ---
 
 ## Usage — Single Mode
+
+<img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
 ### 1. Launcher Window
 
@@ -464,6 +468,8 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 ---
 
 ## Usage — Multiple Paths
+
+<img src="docs/images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
 
 Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
