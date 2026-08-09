@@ -1081,3 +1081,55 @@ def test_no_notice_when_the_project_has_no_section_for_that_window():
         )
     finally:
         root.destroy()
+
+
+# ============================================================
+# 3. 判定が消える引き金は「値が変わったこと」だけ（B-058）
+# ============================================================
+# 実行結果は、その結果を生んだ入力でなくなった行からは消える（I-041）。
+# ⚠️ **消す条件を「キーが押された」で書くと、→ ← Tab Shift Home Ctrl でも消える**＝
+# 実行直後に矢印キーで表を眺めただけで結果が読めなくなる。しかも消えるのは触った行
+# だけなので、**表が「一部だけ判定がある」状態**になり、実行し損ねた行と区別が付かない。
+# 実際に I-017 のスクリーンショットで 1 行だけ判定が空になって発覚した。
+@pytest.mark.parametrize("key,column,changes", [
+    ("Right",     0, False),   # 移動
+    ("Home",      0, False),
+    ("Shift_L",   0, False),   # 修飾
+    ("Control_L", 0, False),
+    ("BackSpace", 0, True),    # 編集
+    ("5",         4, True),
+])
+def test_verdict_survives_keys_that_do_not_change_the_row(key, column, changes):
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params())
+        win.update()
+        win._set_row_verdict(win._row_entries[0][0].get(), "OK")
+        win.update()
+        lbl = win._verdict_label(win._row_frames[0])
+        assert lbl is not None and lbl.cget("text") == "OK", "前提: 判定が入っていない"
+
+        entry = win._row_entries[0][column]
+        entry.focus_force()
+        entry.icursor("end")
+        win.update()
+        before = entry.get()
+        entry.event_generate(f"<KeyPress-{key}>", when="now")
+        entry.event_generate(f"<KeyRelease-{key}>", when="now")
+        win.update()
+
+        assert (entry.get() != before) is changes, (
+            f"前提が崩れている: {key} で値が{'変わるはず' if changes else '変わらないはず'}"
+        )
+        if changes:
+            assert lbl.cget("text") == "", f"{key} で行を変えたのに判定が残っている"
+        else:
+            assert lbl.cget("text") == "OK", (
+                f"{key} は値を変えていないのに判定が消えた（結果が読めなくなる）"
+            )
+    finally:
+        root.destroy()

@@ -257,15 +257,26 @@ class _TableMixin(_HostBase):
             entries[col].bind("<Return>",   _coords_committed, add="+")
         self._update_row_distance(entries, dist_lbl)
 
-        # 行を触ったら判定を消す＝**その結果を生んだ入力でなくなった行に、結果を
+        # 行を**変えたら**判定を消す＝**その結果を生んだ入力でなくなった行に、結果を
         # 残さない**（I-041 の規則は「結果はその結果を生んだ行に返す」なので、
         # 行が別物になった瞬間に居場所が無くなる）。
-        def _clear_verdict(_e=None, lbl=verdict_lbl):
-            if lbl.cget("text"):
+        # ⚠️ **引き金は「値が変わったこと」であって「キーが押されたこと」ではない**
+        # （B-058）。`<Key>` で消していたころは **→ ← Tab Shift Home Ctrl でも消えた**＝
+        # 実行直後に矢印キーで表を眺めただけで結果が読めなくなり、しかも消えるのは
+        # 触った行だけなので、**表が「一部だけ判定がある」状態**になって読み手には
+        # 実行し損ねた行と区別が付かなかった。
+        def _clear_verdict_if_changed(_e=None, lbl=verdict_lbl, es=entries):
+            if lbl.cget("text") and self._row_values(es) != getattr(lbl, "_verdict_input", None):
                 lbl.config(text="")
 
         for e in entries:
-            e.bind("<Key>", _clear_verdict, add="+")
+            # KeyRelease＝押した瞬間ではなく**値が確定してから**比べる。
+            # 貼り付け・切り取りはキーを経由しない口があるので仮想イベントも拾う。
+            e.bind("<KeyRelease>", _clear_verdict_if_changed, add="+")
+            e.bind("<<Paste>>", lambda ev, w=e, f=_clear_verdict_if_changed:
+                   w.after_idle(f), add="+")
+            e.bind("<<Cut>>", lambda ev, w=e, f=_clear_verdict_if_changed:
+                   w.after_idle(f), add="+")
 
         def _dup(es=entries):
             self._dup_row(es)
@@ -415,6 +426,11 @@ class _TableMixin(_HostBase):
             if text:
                 lbl.config(foreground=colors[theme.verdict_key(text)])
 
+    @staticmethod
+    def _row_values(entries: list[tk.Entry]) -> tuple[str, ...]:
+        """行の入力値。**判定を消してよいか**の判断はこの値の変化だけで決める（B-058）。"""
+        return tuple(e.get() for e in entries)
+
     def _clear_verdicts(self) -> None:
         """全行の判定を空にする（実行の開始時＝前回の結果を残さない）。"""
         for frame in self._row_frames:
@@ -442,6 +458,9 @@ class _TableMixin(_HostBase):
                 return
             lbl.config(text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
                        foreground=theme.verdict_colors(lbl)[theme.verdict_key(status)])
+            # **この判定を生んだ入力**を控える（B-058）。以後この値から変わった
+            # ときだけ判定を消す＝移動キーや修飾キーでは消えない。
+            setattr(lbl, "_verdict_input", self._row_values(entries))
             return
 
     def _dup_row(self, entries: list[tk.Entry]) -> None:
