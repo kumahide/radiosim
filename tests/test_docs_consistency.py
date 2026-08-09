@@ -587,6 +587,14 @@ _FORBIDDEN_UNBACKED_CLAIM = [
     (r"bracket the truth", "the two models bracketing the true value"),
     # 見出しで「Deygout ＝ P.526 準拠」と名乗る形（本文の否定文は拾わない）
     (r"^#+.*Deygout.*P\.526", "見出しで Deygout を P.526 準拠と名乗っている"),
+    # 🔴 **片側だけの方向保証**（2026-08-09・Codex 4 巡目で残留が判明）。
+    # 「挟む」を消しても「Single は過小評価する」が残っていた＝**上下限保証の片側**。
+    # ⚠️ 前回のゲートはこれを見逃した＝**禁じたのは合成語（「挟む」）だけで、
+    # 主張の*形*（真値に対する向き）を見ていなかった**。
+    # 言えるのは「Single は複数障害物の合成損失を表現しない ⇒ Deygout より小さく
+    # 出ることがある」までで、**それが真値の下側という意味にはならない**。
+    (r"過小評価|過少評価", "真値に対して過小という方向保証（モデル間の大小に言い換える）"),
+    (r"underestimat", "a directional claim against the true value (say 'lower than Deygout')"),
 ]
 
 
