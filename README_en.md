@@ -535,6 +535,8 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
+<img src="docs/images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
+
 Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [README_binary_en.md](README_binary_en.md) — what follows is the implementation side.
 
 - **Terrain is fetched once.** `run_scenario()` walks FETCH → CALC (→ RENDER), and the fetch happens once at the front. `_fetch_sync()` goes through `fetch_elevations_cached()`, so re-running the same path with different conditions never re-downloads DEM — which is exactly how this screen is used.
@@ -547,6 +549,8 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 ---
 
 ## Usage — Relay Route
+
+<img src="docs/images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
 Open it with the **Relay Route** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
 

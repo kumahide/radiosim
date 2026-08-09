@@ -383,6 +383,8 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
+![条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている](docs/images/shot_scenario.png)
+
 A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and sample count are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
 
 The toggle at the top switches between two modes. After changing coordinates or parameters in the launcher, press **"↻ From Launcher"** at the top right to pull them in (**until you do, the run uses the values shown on screen** — what you see is what is computed).
@@ -415,6 +417,8 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 ---
 
 ## Usage — Relay Route
+
+![中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている](docs/images/shot_multihop.png)
 
 For **one link carried over relay points**. Open it with the **Relay Route** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
 

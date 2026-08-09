@@ -51,6 +51,8 @@ datas = [
     ("docs/images/shot_profile.png", "docs/images"),
     ("docs/images/shot_map.png",     "docs/images"),
     ("docs/images/shot_batch.png",   "docs/images"),
+    ("docs/images/shot_scenario.png", "docs/images"),
+    ("docs/images/shot_multihop.png", "docs/images"),
 ]
 
 # icon.png が存在する場合のみ datas に追加する
