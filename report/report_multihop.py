@@ -165,11 +165,18 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         else:
             graph_cell = (f"<td class='c-missing'>"
                           f"{_html.escape(i18n.t('html_artifact_missing'))}</td>")
+        # ⚠️ **リンクの抑止はサムネイルだけでは足りない**＝区間名からも同じ
+        # `report.html` へ飛ばしており、そちらが生き残っていた。成果物の生成は
+        # `save_path_visuals` が一括で失敗するので、PNG が無いときは `report.html`
+        # も無い（`anchor_links=True` の連結文書でも、`sheet_html` が空のまま
+        # 落ちるのでアンカー先が存在しない）＝**どちらの形でもリンク切れになる**。
+        name_cell = (f"<a href='{href}'>{wp_from} → {wp_to}</a>"
+                     if pr.artifact_error is None else f"{wp_from} → {wp_to}")
         # 単位は列見出しが持つ（`unit=False`）＝バッチ台帳と同じ約束。数値だけを
         # 並べるほうが桁で読める（画面パネルの桁揃えと同じ理由）。
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
-            f"<td class='c-name'><a href='{href}'>{wp_from} → {wp_to}</a></td>"
+            f"<td class='c-name'>{name_cell}</td>"
             f"<td class='c-status'>{pr.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"

@@ -237,6 +237,80 @@ class TestRunMultihop:
         assert run.worst is run.hops[1]
         assert not run.ok
 
+    def test_artifact_failure_is_not_a_healthy_number(self, base, tmp_path,
+                                                      monkeypatch):
+        """**成果物だけ失敗した区間**も、集約では失敗として扱うこと（I-010 ③）。
+
+        🔴 2.7RC1 の独立レビューで見つかった食い違い＝`ok` は `status` を見て
+        False を返すのに、`worst` / `overall_margin` は `result is None` しか
+        失敗と見ておらず、**成果物が欠けた区間の RF 値を健全な値として比較に
+        混ぜて**いた。その結果、全区間の余裕が正でも `ok` が False になり、
+        `overall_display` が **「最大不足 −20.0 dB」という負の不足量**を出した
+        （二重否定で読めない字＝I-052 が避けたかったものそのもの）。
+
+        ⇒ 判定の出所は `status` の 1 か所（`ok` と同じ）に揃える。**語れないもの
+        は「—」と言う**——間違った量を言うより安い。
+        """
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:                       # 前提: 電波的にはどちらも成立
+            h.result.actual_margin = 20.0
+            h.result.status = "OK"
+        run.hops[0].artifact_error = RuntimeError("仕組んだ描画失敗")
+
+        assert not run.ok, "前提: 成果物が欠けた区間があれば全体は成功ではない"
+        assert run.worst is run.hops[0], "正常な区間を最悪と呼んでいる"
+        assert run.overall_margin is None, "語れないはずの全体余裕を語っている"
+        key, text = mh.overall_display(run)
+        assert key == mh.OVERALL_MARGIN_KEY and text == "—", (
+            f"判定不能なのに不足量を出した: {key} / {text}"
+        )
+
+    def test_hops_csv_does_not_bypass_the_single_verdict(self, base, tmp_path,
+                                                         monkeypatch):
+        """`hops.csv` の判定と理由が、画面・HTML と食い違わないこと（I-010 ③）。
+
+        🔴 同上の独立レビューで発見＝この 1 列だけ `pr.result.status` を直に
+        読んでおり、**画面と HTML が ERROR の行を CSV だけ OK** と書いていた。
+        理由欄も `pr.error` しか見ないので空のままで、CSV を読んだ人には
+        「成果物が欠けた」ことを知る手段が無かった。
+        """
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        run.hops[0].artifact_error = RuntimeError("仕組んだ描画失敗")
+        mh._write_hops_csv(run, run.save_dir)
+
+        with open(os.path.join(run.save_dir, "hops.csv"), encoding="utf-8") as f:
+            rows = list(csv.DictReader(f))
+        assert rows[0]["status"] == run.hops[0].status == "ERROR", (
+            "CSV の判定が画面と食い違っている（成果物の失敗が素通りしている）"
+        )
+        assert "仕組んだ描画失敗" in rows[0]["error"], "ERROR の理由欄が空"
+        # 数値は残す（計算は通っているので消す理由が無い＝summary.csv と同じ約束）
+        assert rows[0]["margin_db"] != ""
+
+    def test_missing_artifacts_are_not_linked(self, base, tmp_path, monkeypatch):
+        """成果物が無い区間から `report.html` へリンクしないこと。
+
+        🔴 同上＝サムネイルだけ抑止しており、**区間名のリンクが生き残って**いた。
+        成果物は `save_path_visuals` が一括で失敗するので、PNG が無い区間は
+        `report.html` も無い（連結文書側も `sheet_html` が空で落ちるためアンカー
+        先が無い）＝**どちらの形でもリンク切れ**になる。
+        """
+        from report import report_multihop
+
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        run.hops[0].artifact_error = RuntimeError("仕組んだ描画失敗")
+        pid = run.hops[0].row.path_id
+
+        for anchor_links in (False, True):
+            html = report_multihop.route_sheet_html(run, anchor_links=anchor_links)
+            href = f"#{pid}" if anchor_links else f"{pid}/report.html"
+            assert f"href='{href}'" not in html, (
+                f"成果物の無い区間へリンクしている（anchor_links={anchor_links}）"
+            )
+        # 健全な区間のリンクまで消していないこと（過剰な抑止も欠陥）
+        html = report_multihop.route_sheet_html(run)
+        assert f"{run.hops[1].row.path_id}/report.html" in html
+
     def test_writes_hops_csv_with_group_columns(self, base, tmp_path, monkeypatch):
         """`hops.csv` が「1 行 = 1 ホップ」で group_id / hop_index を持つこと。
 

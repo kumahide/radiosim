@@ -217,9 +217,14 @@ class MultiHopRun:
         """最も余裕の少ないホップ（＝全体判定を決めている区間）。
 
         **失敗したホップがあればそれが最悪**（数値が無い＝比較できない）。
+
+        ⚠️ 失敗の判定は `status`＝**成果物が欠けた区間もここに入る**（I-010 ③）。
+        `result is None` だけを見ていたころは、`ok` が False を返している同じ実行で
+        `worst` が**正常な区間を指す**という食い違いが起きた（成果物が失敗した区間
+        の RF 値を、健全な値として比較に混ぜていた）。
         """
         self._require_chain("worst")
-        failed = [h for h in self.hops if h.result is None]
+        failed = [h for h in self.hops if h.status == "ERROR"]
         if failed:
             return failed[0]
         if not self.hops:
@@ -232,11 +237,20 @@ class MultiHopRun:
 
         再生中継なので各ホップは独立したバジェット。「どこが一番苦しいか」が
         回線全体の余裕そのものになる。
+
+        ⚠️ **1 区間でも `ERROR` なら `None`**（`ok` / `worst` と同じ `status` で
+        判定する）。成果物が欠けただけの区間は数値そのものは残っているが、その値を
+        全体の余裕として出すと **`ok` が False なのに正の余裕が出る**——`overall_display`
+        はそれを「最大不足 −20.0 dB」という読めない字にしていた（負の不足量）。
+        **判定できないことを「—」と言うほうが、間違った量を言うより安い。**
+        区間ごとの数値は表に残るので、情報は失われない。
         """
         self._require_chain("overall_margin")
+        if any(h.status == "ERROR" for h in self.hops):
+            return None                  # 失敗したホップがある＝全体は語れない
         margins = [h.result.actual_margin for h in self.hops if h.result is not None]
         if not margins or len(margins) != len(self.hops):
-            return None                  # 失敗したホップがある＝全体は語れない
+            return None
         return min(margins)
 
 
@@ -464,7 +478,11 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 report_common.csv_cell(run.path.path_id), i + 1,
                 report_common.csv_cell(pr.row.path_id),
                 report_common.csv_cell(wp_from), report_common.csv_cell(wp_to),
-                r.status if r else "ERROR",
+                # 判定は `pr.status` が単一ソース（I-010 ③）＝`r.status` を直に
+                # 読むと**成果物の失敗がこの列だけ素通りする**（画面と HTML は
+                # ERROR、CSV だけ OK）。台帳の 3 つの口で字が食い違わないよう、
+                # ここも同じ 1 か所から引く。
+                pr.status,
                 f"{p.freq_mhz:.1f}" if p else "",
                 f"{p.gain_tx:.1f}"  if p else "",
                 f"{p.gain_rx:.1f}"  if p else "",
@@ -478,5 +496,8 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # `csv_blocked_ratio` は 100% で頭打ちにする側の約束も持っている。
                 units.csv_distance(r.slant_dist_km) if r else "",
                 units.csv_blocked_ratio(r.blocked_ratio) if r else "",
-                report_common.csv_cell(str(pr.error) if pr.error else ""),
+                # 理由も 2 種類ある（計算の失敗 `error` ／ 成果物の失敗
+                # `artifact_error`）＝`error` だけを見ると、ERROR と書いた行の
+                # 理由欄が空になる。バッチの `summary.csv` と同じ埋め方にする。
+                report_common.csv_cell(str(pr.error or pr.artifact_error or "")),
             ])
