@@ -24,6 +24,10 @@
 
 **使わないほうがよい用途**: 回線設計の最終判断。DEM の水平解像度は 5〜10m で、回折損の実質精度は **±5〜15 dB** 程度です。
 
+> 🔴 **適用できない経路があります — 起伏の大きい経路（山越え）では回折損が発散し、結果を使えません**（既知の欠陥・修正予定）。尾根のような**広がりのある障害物**を多数の独立した稜線として数えてしまうため、回折損が**数百〜数千 dB**で出ます。⚠️ **F1 遮蔽率は画面・レポート・CSV とも 100% で頭打ち**なので、**発散していても表示は「100%」のまま**＝率の側からは異常に気づけません。判定は NG になりますが、**その NG が正しいかどうかも、この値からは分かりません**。⇒ **信頼できるのは起伏 25m 程度までの平地・沿岸の経路**です（実測）。上の ±5〜15 dB はその範囲での目安です。
+>
+> *🔴 **Not applicable to rugged (mountain) paths**: diffraction loss diverges into **hundreds to thousands of dB**, and the Fresnel blockage is capped at 100% everywhere it is displayed, so the percentage will not warn you. Trust the results only on flat or coastal paths with roughly 25 m of relief or less.*
+
 ## 主な機能
 
 - **地形断面（パスプロファイル）の自動生成** — 座標を入れると標高タイルを取得して断面を描画

@@ -532,3 +532,60 @@ def test_the_license_text_ships_with_the_binary():
     assert "LICENSE" in _bundled_paths(), (
         "radiosim.spec の datas に LICENSE が無い（配布物にライセンス本文が入らない）"
     )
+
+
+# ============================================================
+# 適用不能域（B-032）の開示が、公開 README 5 本すべてに在ること
+# ------------------------------------------------------------
+# 2026-08-09 に「5 本の README へ明記した」とコミットメッセージに書いたのに、
+# **実際に触れたのは 4 本**で、一番読まれる `README.md` だけ抜けていた
+# （Codex の再レビューで発覚）。⚠️ **自己申告では検出できない型**＝数えたつもりの
+# 数と触ったファイルの数が食い違っても、誰も突き合わせない。
+#
+# ここで守るのは**開示が全数に在ること**だけ（文面の良し悪しは doc-review 助言へ）。
+# 🔴 **B-032 を 3.2 で直したら、この 2 つのゲートは「消す」のではなく
+# 「何を開示すべきか」を書き換える**（頭打ちの説明は修正後も残る＝I-077）。
+_PUBLIC_READMES = ["README.md", *ALL_READMES]
+
+# 言語ごとの目印。**訳語ではなく概念**を 1 つずつ（文面を直すたびに赤くならない粒度）。
+_DIVERGENCE_MARKERS = {
+    "ja": ["発散", "25m"],
+    "en": ["diverge", "25 m"],
+}
+_CLAMP_MARKERS = {
+    "ja": ["100% で頭打ち"],
+    "en": ["capped at 100%"],
+}
+
+
+def _readme_langs(doc: str) -> list[str]:
+    """`README.md` は日英併記なので**両方**を要求する。他は名前で決まる。"""
+    if doc == "README.md":
+        return ["ja", "en"]
+    return ["en"] if doc.endswith("_en.md") else ["ja"]
+
+
+@pytest.mark.parametrize("doc", _PUBLIC_READMES)
+def test_mountain_path_limitation_is_disclosed(doc):
+    """**山越えでは結果が使えない**ことが全 README に書いてあるか（B-032）。"""
+    text = _read(doc)
+    for lang in _readme_langs(doc):
+        for marker in _DIVERGENCE_MARKERS[lang]:
+            assert marker in text, (
+                f"{doc}: B-032 の適用不能域の開示が無い（{lang} の目印 '{marker}' が見つからない）"
+            )
+
+
+@pytest.mark.parametrize("doc", _PUBLIC_READMES)
+def test_blocked_ratio_clamp_is_explained(doc):
+    """**F1 遮蔽率が表示側で 100% に頭打ちされる**ことが書いてあるか（I-077）。
+
+    ⚠️ 頭打ちは B-032 の発散を画面から隠す＝「100%」が*完全遮蔽*と*発散*の
+    2 つの意味を持つ。**発散の開示だけでは足りない**（利用者は率を見て安心する）。
+    """
+    text = _read(doc)
+    for lang in _readme_langs(doc):
+        for marker in _CLAMP_MARKERS[lang]:
+            assert marker in text, (
+                f"{doc}: F1 遮蔽率の 100% 頭打ちの説明が無い（{lang} の目印 '{marker}' が見つからない）"
+            )
