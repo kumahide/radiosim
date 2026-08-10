@@ -620,7 +620,32 @@ class TestDeclaredInterpreter:
         assert runtime_env.declared_interpreter() == "D:/venv/python.exe"
 
     def test_the_running_interpreter_is_not_a_mismatch(self, monkeypatch):
-        """自分自身を宣言したら食い違いではない（表記ゆれを吸収する）。"""
+        """自分自身を宣言したら食い違いではない（区切りと相対の表記ゆれを吸収する）。
+
+        ⚠️ **大小のゆれはここで見ない**（下の Windows 限定の試験が見る）＝
+        大小同一視は**ファイルシステムの性質**であって、この関数の性質ではない。
+        """
+        from core import runtime_env
+
+        # 区切りと `.` を混ぜた同じパス（どの OS でも同じ実行系を指す）。
+        d, base = os.path.split(sys.executable)
+        noisy = os.path.join(d, ".", base).replace(os.sep, "/")
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, noisy)
+        assert runtime_env.interpreter_mismatch() is None
+
+    @pytest.mark.skipif(os.name != "nt",
+                        reason="大小の同一視は case-insensitive な FS（Windows）の話")
+    def test_case_differences_are_absorbed_on_windows(self, monkeypatch):
+        """Windows では大小が違っても同じ実行系と見なすこと。
+
+        🔴 **この試験は 2026-08-08〜11 に CI（ubuntu）を 3 回赤にしていた**＝
+        当時は上の試験が `sys.executable.upper()` を宣言していたため。Linux は
+        **大小を区別する**ので、大文字のパスは*実在しない別のパス*＝
+        `interpreter_mismatch()` が食い違いを返すのが**正しい振る舞い**だった。
+        ⇒ 落ちていたのは製品ではなく、**Windows 前提を書いた試験の側**。
+        [[feedback-no-wsl-push]] のとおり開発と QA は Windows 完結だが、**CI だけは
+        ubuntu** なので、FS の性質に依存する試験はここで OS を宣言する。
+        """
         from core import runtime_env
 
         monkeypatch.setenv(runtime_env.DECLARED_ENV, sys.executable.upper())
