@@ -75,3 +75,6 @@ tools/
 
 # ベンチマークの生出力（再生成可能・モデルの出力そのもの）
 experiments/review_benchmark/runs/
+
+# VS Code Counter（拡張が出す行数集計・実行のたびに日時フォルダが増える）
+.VSCodeCounter/
