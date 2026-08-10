@@ -8,7 +8,7 @@
 
 > **標高データが国土地理院タイル前提のため、対象は日本国内の回線に限られます。**
 
-*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. Because it relies on GSI tiles, **it covers links inside Japan only**. English documentation: [README_en.md](README_en.md).*
+*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. Because it relies on GSI tiles, **it covers links inside Japan only**. English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
 
 <img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
@@ -111,10 +111,11 @@ MIT ライセンスの無料ソフトです。商用利用も可能です（[LIC
 
 | 読みたいもの | 場所 |
 | --- | --- |
-| 使い方（Windows バイナリ版の利用者向け） | [README_binary_ja.md](README_binary_ja.md) |
-| 開発者向け（構成・計算モデル詳細・アーキテクチャ） | [README_ja.md](README_ja.md) |
+| 使い方（Windows バイナリ版の利用者向け） | [docs/manual_ja.md](docs/manual_ja.md) |
+| 開発者向け（構成・計算モデル詳細・アーキテクチャ） | [docs/developer_ja.md](docs/developer_ja.md) |
 | 変更履歴 | [CHANGELOG.md](CHANGELOG.md) |
-| English (for developers) | [README_en.md](README_en.md) |
+| English — user manual | [docs/manual_en.md](docs/manual_en.md) |
+| English — for developers | [docs/developer_en.md](docs/developer_en.md) |
 
 ---
 

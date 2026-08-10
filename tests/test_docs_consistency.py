@@ -44,8 +44,8 @@ CORE_ARCH_MODULES = [
     "units.py",
 ]
 
-DEV_READMES = ["README_ja.md", "README_en.md"]
-PIP_READMES = ["README.md", "README_ja.md", "README_en.md"]
+DEV_DOCS = ["docs/developer_ja.md", "docs/developer_en.md"]
+PIP_DOCS = ["README.md", "docs/developer_ja.md", "docs/developer_en.md"]
 
 
 def _read(name: str) -> str:
@@ -82,7 +82,7 @@ def _deps() -> list[str]:
 
 
 # --- 1. ファイル構成ツリー: 全 view/コア/テストを列挙しているか -------------
-@pytest.mark.parametrize("doc", DEV_READMES)
+@pytest.mark.parametrize("doc", DEV_DOCS)
 def test_file_tree_lists_all_modules(doc):
     tree = _section(_read(doc), ["ファイル構成", "File Structure"])
     for name in VIEW_MODULES + CORE_ARCH_MODULES + TEST_FILES:
@@ -91,7 +91,7 @@ def test_file_tree_lists_all_modules(doc):
 
 # --- 2. アーキテクチャ層構成図: 全 view + コアモジュールを含むか -------------
 #       （今回見落とした図そのものをガードする）
-@pytest.mark.parametrize("doc", DEV_READMES)
+@pytest.mark.parametrize("doc", DEV_DOCS)
 def test_architecture_diagram_lists_all_modules(doc):
     arch = _section(_read(doc), ["アーキテクチャ", "Architecture"])
     for name in VIEW_MODULES + CORE_ARCH_MODULES:
@@ -99,7 +99,7 @@ def test_architecture_diagram_lists_all_modules(doc):
 
 
 # --- 3. テスト表: 全テストファイルを列挙しているか ---------------------------
-@pytest.mark.parametrize("doc", DEV_READMES)
+@pytest.mark.parametrize("doc", DEV_DOCS)
 def test_test_table_lists_all_test_files(doc):
     section = _section(_read(doc), ["テスト", "Testing"])
     for name in TEST_FILES:
@@ -118,7 +118,7 @@ def test_test_table_lists_all_test_files(doc):
 # 🔑 **直し方の要点＝列挙そのものを禁じる**。名前を並べる限り「requirements.txt と
 # README の二重管理」という*面*が残り、いつか必ずずれる（旧ゲートは名前の**欠落**しか
 # 見ないので、版のずれは原理的に検出できなかった）。面を消せばゲートは 1 行で足りる。
-@pytest.mark.parametrize("doc", PIP_READMES)
+@pytest.mark.parametrize("doc", PIP_DOCS)
 def test_pip_install_line_installs_from_requirements(doc):
     text = _read(doc)
     pip_lines = [ln for ln in text.splitlines() if "pip install" in ln]
@@ -145,9 +145,9 @@ def test_pip_install_line_installs_from_requirements(doc):
 #       - beta/RC/正式（`X.YbN`/`X.YRCn`/`X.Y`）＝ドキュメント整備対象 → **base 版**
 #         （`X.Y`）で照合する。プレリリース接尾辞まで README H1 に書かせない
 #         （README は配布版の見え方＝base のみ）。
-VERSION_READMES = [
-    "README_ja.md", "README_en.md",
-    "README_binary_ja.md", "README_binary_en.md",
+VERSION_DOCS = [
+    "docs/developer_ja.md", "docs/developer_en.md",
+    "docs/manual_ja.md", "docs/manual_en.md",
 ]
 
 _ALPHA_RE = re.compile(r"^\d+\.\d+a\d+$")
@@ -160,7 +160,7 @@ def _base_version() -> str:
     return m.group(1) if m else version.APP_VERSION
 
 
-@pytest.mark.parametrize("doc", VERSION_READMES)
+@pytest.mark.parametrize("doc", VERSION_DOCS)
 def test_readme_h1_matches_app_version(doc):
     if _ALPHA_RE.match(version.APP_VERSION):
         pytest.skip(f"alpha 段階（{version.APP_VERSION}）は README 追従免除")
@@ -198,7 +198,7 @@ def _repo_py_files() -> tuple[set[str], set[str]]:
     return paths, names
 
 
-@pytest.mark.parametrize("doc", DEV_READMES)
+@pytest.mark.parametrize("doc", DEV_DOCS)
 def test_dev_readme_py_references_exist(doc):
     paths, names = _repo_py_files()
     refs = set(re.findall(r"`([\w/]+\.py)`", _read(doc)))
@@ -217,11 +217,11 @@ def test_dev_readme_py_references_exist(doc):
 #       **列挙可能な部分（CSV 列・マップのモード名）を実装を単一ソースに全 README
 #       で照合するブロッキングゲート＝Tier-0** へ昇格させる。振る舞いの散文（概念の
 #       説明が十分か）は引き続き doc-review 助言に委ねる（機械化できる列挙のみ守る）。
-ALL_READMES = ["README_ja.md", "README_en.md",
-               "README_binary_ja.md", "README_binary_en.md"]
+ALL_DOCS = ["docs/developer_ja.md", "docs/developer_en.md",
+               "docs/manual_ja.md", "docs/manual_en.md"]
 
 
-@pytest.mark.parametrize("doc", ALL_READMES)
+@pytest.mark.parametrize("doc", ALL_DOCS)
 def test_batch_csv_columns_listed(doc):
     """バッチ CSV の全列（batch.CSV_COLUMNS が単一ソース）が各 README の
     複数経路の節に載っているか。gain_tx/gain_rx 追加のような
@@ -232,9 +232,9 @@ def test_batch_csv_columns_listed(doc):
 
 
 # doc の言語 → i18n の言語キー。バイナリ/開発者の両系統を言語ごとに照合する。
-_MODE_READMES = [
-    ("README_ja.md", "ja"), ("README_en.md", "en"),
-    ("README_binary_ja.md", "ja"), ("README_binary_en.md", "en"),
+_MODE_DOCS = [
+    ("docs/developer_ja.md", "ja"), ("docs/developer_en.md", "en"),
+    ("docs/manual_ja.md", "ja"), ("docs/manual_en.md", "en"),
 ]
 _MODE_KEYS = ["map_mode_coords", "map_mode_append", "map_mode_cache"]
 
@@ -264,7 +264,7 @@ def _menu_i18n_keys() -> list[str]:
     return sorted(keys)
 
 
-@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_menu_items_are_documented(doc, lang):
     """メニューバーの**全項目**が、各 README の「メニュー」節に載っているか。
 
@@ -283,7 +283,7 @@ def test_menu_items_are_documented(doc, lang):
         )
 
 
-@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_map_mode_labels_listed(doc, lang):
     """マップウィンドウの全モードのボタンラベル（i18n が単一ソース）が各 README に
     載っているか。連続追加モードの追加のようなモード新設を反映し忘れるのを捕捉する
@@ -368,7 +368,7 @@ def _button_mentions(text: str, lang: str) -> list[str]:
     return missing
 
 
-@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_documented_button_names_exist_in_the_app(doc, lang):
     """文書のボタン名が、i18n の実値として実在するか（改名の置き去りを捕捉）。
 
@@ -465,7 +465,7 @@ _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 # 非追跡ゆえ CI には存在しないが、ローカルでは検査したいドキュメント。
 _LOCAL_ONLY_DOCS = ["ISSUES.md", "issue_evidence/README.md"]
-_LINK_DOCS = ["README.md", *ALL_READMES, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
+_LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 
 
 def _iter_links(text: str):
@@ -573,13 +573,30 @@ def test_public_docs_do_not_cite_issue_ids():
 
 
 # ============================================================
-# 同梱 README が参照する画像は、exe にも入っていること（I-017）
+# 同梱マニュアルが参照する画像は、exe にも入っていること（I-017）
 # ============================================================
-# **配布物の README だけ画像が無い**という壊れ方は 2.3RC1 で実際に踏んでいる
-# （I-012＝同梱 README の存在自体を忘れた）。今度は画像で同じ穴が開きうる：
-# `README_binary_*.md` に `![](docs/images/…)` と書いても、`radiosim.spec` の
+# **配布物の文書だけ画像が無い**という壊れ方は 2.3RC1 で実際に踏んでいる
+# （I-012＝同梱ドキュメントの存在自体を忘れた）。今度は画像で同じ穴が開きうる：
+# `docs/manual_*.md` に `![](images/…)` と書いても、`radiosim.spec` の
 # `datas` に足し忘れれば **exe の中だけ絵が出ない**。⇒ 参照と同梱を突き合わせる。
-BINARY_READMES = ["README_binary_ja.md", "README_binary_en.md"]
+#
+# 🔑 **参照はその文書からの相対**（Markdown の意味）なので、突き合わせる前に
+# **リポジトリ相対へ畳む**（`docs/manual_ja.md` の `../logo.png` = `logo.png`）。
+# ⚠️ 畳まずに文字列のまま比べると、`images/shot_map.png` が spec の
+# `docs/images/shot_map.png` と一致せず**常に赤**になる（＝毎回鳴るゲート）。
+BUNDLED_MANUALS = ["docs/manual_ja.md", "docs/manual_en.md"]
+
+_IMG_MD_RE = re.compile(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)')
+_IMG_HTML_RE = re.compile(r'<img[^>]+src="([^"]+\.(?:png|jpg|jpeg|gif))"')
+
+
+def _image_refs(doc: str) -> set[str]:
+    """`doc` の画像参照を**リポジトリ相対のパス**として返す。"""
+    import posixpath
+    text = (ROOT / doc).read_text(encoding="utf-8")
+    here = posixpath.dirname(doc)
+    return {posixpath.normpath(posixpath.join(here, m.group(1)))
+            for r in (_IMG_MD_RE, _IMG_HTML_RE) for m in r.finditer(text)}
 
 
 def _bundled_paths() -> set[str]:
@@ -589,14 +606,9 @@ def _bundled_paths() -> set[str]:
             for m in re.finditer(r'\(\s*"([^"]+\.(?:png|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
 
 
-@pytest.mark.parametrize("doc", BINARY_READMES)
-def test_images_in_the_bundled_readme_are_also_bundled(doc):
-    refs = {m.group(1) for m in
-            re.finditer(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)',
-                        (ROOT / doc).read_text(encoding="utf-8"))}
-    refs |= {m.group(1) for m in
-             re.finditer(r'<img[^>]+src="([^"]+\.(?:png|jpg|jpeg|gif))"',
-                         (ROOT / doc).read_text(encoding="utf-8"))}
+@pytest.mark.parametrize("doc", BUNDLED_MANUALS)
+def test_images_in_the_bundled_manual_are_also_bundled(doc):
+    refs = _image_refs(doc)
     assert refs, f"{doc}: 画像参照が 1 つも無い（この検査が空振りしている）"
     bundled = _bundled_paths()
     missing = sorted(r for r in refs if r not in bundled)
@@ -606,14 +618,13 @@ def test_images_in_the_bundled_readme_are_also_bundled(doc):
     )
 
 
-@pytest.mark.parametrize("doc", BINARY_READMES)
-def test_images_in_the_bundled_readme_exist_on_disk(doc):
-    for m in re.finditer(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)',
-                         (ROOT / doc).read_text(encoding="utf-8")):
-        assert (ROOT / m.group(1)).exists(), f"{doc}: 参照先が無い {m.group(1)}"
+@pytest.mark.parametrize("doc", BUNDLED_MANUALS)
+def test_images_in_the_bundled_manual_exist_on_disk(doc):
+    for ref in sorted(_image_refs(doc)):
+        assert (ROOT / ref).exists(), f"{doc}: 参照先が無い {ref}"
 
 
-def test_the_readme_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path):
+def test_the_manual_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path):
     """描画時の data URI 化が**画像 1 枚の決め打ちでない**こと。
 
     Tier 1 の表示は一時ディレクトリへ HTML を書くので、相対パスの画像は必ず壊れる。
@@ -643,6 +654,38 @@ def test_the_readme_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path)
     assert 'src="../outside.png"' in out, "同梱物の外のファイルを読んでいる"
 
 
+def test_the_manual_viewer_resolves_images_from_the_document_not_the_root(tmp_path):
+    """画像の解決基準が**その文書のあるディレクトリ**であること（`docs/` 移設）。
+
+    マニュアルは `docs/manual_*.md` にあり、参照は Markdown の意味どおり
+    **その文書からの相対**（`images/…`・`../logo.png`）。⇒ 根から解決すると
+    **アプリでだけ絵が出ない**（GitHub では出るので気づきにくい）。
+
+    ⚠️ **境界は根のまま**＝`../logo.png` は同梱物の中なので畳み、そこからさらに
+    外へ出るものは畳まない。**この 2 つを 1 つのテストで見る**＝基準だけ動かして
+    境界も一緒に動かす直し方（＝任意のファイルを読める口）を落とすため。
+    """
+    from views.launcher_menu import inline_local_images
+
+    png = (ROOT / "logo.png").read_bytes()
+    base = tmp_path / "bundle"
+    (base / "docs" / "images").mkdir(parents=True)
+    (base / "logo.png").write_bytes(png)
+    (base / "docs" / "images" / "shot.png").write_bytes(png)
+    (tmp_path / "outside.png").write_bytes(png)          # **実在する**同梱物の外
+
+    body = ('<img src="images/shot.png">'                # docs/ からの相対
+            '<img src="../logo.png">'                    # 根へ戻る＝同梱物の中
+            '<img src="../../outside.png">')             # 根の外＝触らない
+    out = inline_local_images(body, str(base), str(base / "docs"))
+
+    assert out.count("data:image/png;base64,") == 2, (
+        "文書のあるディレクトリを基準に解決していない"
+        "（`images/…` と `../logo.png` の両方が畳まれること）"
+    )
+    assert 'src="../../outside.png"' in out, "同梱物の外のファイルを読んでいる"
+
+
 def test_the_license_text_ships_with_the_binary():
     """**配布物に `LICENSE` が入っている**こと。
 
@@ -667,7 +710,7 @@ def test_the_license_text_ships_with_the_binary():
 # ここで守るのは**開示が全数に在ること**だけ（文面の良し悪しは doc-review 助言へ）。
 # 🔴 **B-032 を 3.2 で直したら、この 2 つのゲートは「消す」のではなく
 # 「何を開示すべきか」を書き換える**（頭打ちの説明は修正後も残る＝I-077）。
-_PUBLIC_READMES = ["README.md", *ALL_READMES]
+_PUBLIC_DOCS = ["README.md", *ALL_DOCS]
 
 # ⚠️ **2026-08-09 に目印を入れ替えた**＝初版は `25m` / `25 m` を必須マーカーにしており、
 # **誤った安全境界を機械的に固定していた**（Codex の再レビュー）。ゲートの壊れ方の
@@ -727,7 +770,7 @@ def _readme_langs(doc: str) -> list[str]:
     return ["en"] if doc.endswith("_en.md") else ["ja"]
 
 
-@pytest.mark.parametrize("doc", _PUBLIC_READMES)
+@pytest.mark.parametrize("doc", _PUBLIC_DOCS)
 def test_mountain_path_limitation_is_disclosed(doc):
     """**回折損が過大に出ること・事前に見分けられないこと・自衛策**が全 README に在るか。"""
     text = _read(doc)
@@ -739,7 +782,7 @@ def test_mountain_path_limitation_is_disclosed(doc):
 
 
 @pytest.mark.parametrize(
-    "doc", _PUBLIC_READMES + ["docs/screenshots.md", "CHANGELOG.md"]
+    "doc", _PUBLIC_DOCS + ["docs/screenshots.md", "CHANGELOG.md"]
 )
 def test_no_relief_based_safety_claim(doc):
     """**「起伏がこれ以下なら信頼できる」と書いていない**こと。
@@ -757,7 +800,7 @@ def test_no_relief_based_safety_claim(doc):
         )
 
 
-@pytest.mark.parametrize("doc", _PUBLIC_READMES)
+@pytest.mark.parametrize("doc", _PUBLIC_DOCS)
 def test_blocked_ratio_clamp_is_explained(doc):
     """**F1 遮蔽率が表示側で 100% に頭打ちされる**ことが書いてあるか（I-077）。
 
@@ -773,7 +816,7 @@ def test_blocked_ratio_clamp_is_explained(doc):
 
 
 @pytest.mark.parametrize(
-    "doc", _PUBLIC_READMES + ["docs/screenshots.md", "CHANGELOG.md"]
+    "doc", _PUBLIC_DOCS + ["docs/screenshots.md", "CHANGELOG.md"]
 )
 def test_no_unbacked_accuracy_claim(doc):
     """**裏の取れていない保証を書いていない**こと（→ 上の `_FORBIDDEN_UNBACKED_CLAIM`）。

@@ -33,7 +33,7 @@ _INLINE_IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
                        ".jpeg": "image/jpeg", ".gif": "image/gif"}
 
 
-def inline_local_images(html_body: str, base_dir: str) -> str:
+def inline_local_images(html_body: str, base_dir: str, doc_dir: str | None = None) -> str:
     """`<img src="...">` のローカル画像を data URI へ畳み込む。
 
     **なぜ必要か**: Tier 1 の表示は markdown を HTML に変換して**一時ディレクトリ**へ
@@ -45,20 +45,28 @@ def inline_local_images(html_body: str, base_dir: str) -> str:
     足したときに、決め打ちのままだと新しい画像だけ黙って壊れると分かった）
     ＝**列挙で塞ぐ穴は、次の 1 枚で開く**。
 
-    ⚠️ **同梱物の外は読まない**＝`..` で外へ出る参照と、スキームつき（`http:` /
-    `data:`）はそのまま残す。README は配布物なので、描画のたびに任意の
+    🔑 **解決の基準は「その文書があるディレクトリ」・境界は「同梱物の根」**（`doc_dir`
+    を省くと従来どおり両方 `base_dir`）。文書が `docs/` に置かれるようになったので、
+    **Markdown の相対パスの意味（＝書いた文書からの相対）と揃える**必要がある
+    ＝そうしないと GitHub で読むときとアプリで読むときで同じ 1 行が別の場所を指す。
+    ⚠️ **境界だけは根に据え置く**＝`docs/manual_ja.md` から `../logo.png` を指すのは
+    同梱物の中なので通し、そこからさらに外へ出るものは落とす。
+
+    ⚠️ **同梱物の外は読まない**＝`..` で根の外へ出る参照と、スキームつき（`http:` /
+    `data:`）はそのまま残す。マニュアルは配布物なので、描画のたびに任意の
     ローカルファイルを読める口にはしない。
     """
     import base64 as _b64
     import re as _re
 
     root = os.path.abspath(base_dir)
+    here = os.path.abspath(doc_dir) if doc_dir else root
 
     def _replace(m: "_re.Match[str]") -> str:
         src = m.group(1)
         if "://" in src or src.startswith("data:") or os.path.isabs(src):
             return m.group(0)
-        path = os.path.abspath(os.path.join(root, src))
+        path = os.path.abspath(os.path.join(here, src))
         if os.path.commonpath([root, path]) != root:
             return m.group(0)                      # 同梱物の外＝触らない
         mime = _INLINE_IMAGE_TYPES.get(os.path.splitext(path)[1].lower())
@@ -406,7 +414,7 @@ class _MenuMixin:
                     extensions=["tables", "fenced_code", TocExtension(slugify=_slugify)],
                 )
             # 画像を base64 に変換して埋め込む（<base href> 不要・アンカーリンク保護）
-            body = inline_local_images(body, base)
+            body = inline_local_images(body, base, os.path.dirname(path))
             html = (
                 f'<!DOCTYPE html><html lang="{i18n.t("html_lang")}">'
                 '<head><meta charset="UTF-8"><style>'

@@ -1,5 +1,8 @@
 # RadioSim Pro 2.7
 
+> **対象読者**: **ソースから動かす・中身に手を入れる方**向けの開発者ドキュメントです。
+> アプリの使い方だけを知りたい場合は [manual_ja.md](manual_ja.md) を参照してください。
+
 地上無線回線の伝搬特性を現地調査前にスクリーニングするデスクトップシミュレーターです。
 国土地理院 DEM（数値標高モデル）を自動取得し、地形断面・回折損・植生減衰・リンクバジェットをリアルタイムに可視化します。
 
@@ -157,7 +160,7 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.z
 | EXE ファイルプロパティ | `version.py` の `APP_VERSION` / `COPYRIGHT` から自動生成 |
 | `console=False` | コンソールウィンドウを非表示 |
 | UPX 圧縮 | インストール済みの場合のみ有効 |
-| README_binary_*.md / logo.png | バイナリに同梱（`sys._MEIPASS` で参照） |
+| `docs/manual_*.md` / `docs/images/` / `logo.png` | バイナリに同梱（`sys._MEIPASS` で参照） |
 
 ### トラブルシューティング
 
@@ -183,7 +186,7 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.z
 python -m pip install -r requirements.txt
 ```
 
-**版は [`requirements.txt`](requirements.txt) が単一ソース**です（固定＝ソース実行と配布バイナリで同じ版が入る）。名前を並べて入れると版が固定されず、下表と二重管理になります。
+**版は [`requirements.txt`](../requirements.txt) が単一ソース**です（固定＝ソース実行と配布バイナリで同じ版が入る）。名前を並べて入れると版が固定されず、下表と二重管理になります。
 
 | ライブラリ | 用途                                                              |
 | ---------- | ----------------------------------------------------------------- |
@@ -252,12 +255,15 @@ radiosim/
 │   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
 │   └── batch_run.py      # バッチの実行と進捗（Mixin）
-├── docs/
+├── docs/                 # 読み物（開発者向け・利用者向けとも、入口の README.md を除いてここ）
+│   ├── developer_ja.md   # このファイル
+│   ├── developer_en.md   # 英語版の開発者ドキュメント
+│   ├── manual_ja.md      # 利用者向けマニュアル（exe に同梱・ヘルプ「READMEを開く」が開く）
+│   ├── manual_en.md      # 英語版の利用者向けマニュアル（同上）
 │   ├── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
-│   ├── screenshots.md    # README 用スクショの撮り方（座標・条件・期待値・配置先の正典）
-│   └── images/           # そのスクショ（README 4 本から参照・exe にも同梱）
-├── README_ja.md          # このファイル
-├── README_en.md          # 英語版 README
+│   ├── screenshots.md    # スクショの撮り方（座標・条件・期待値・配置先の正典）
+│   └── images/           # そのスクショ（この 4 本と README.md から参照・exe にも同梱）
+├── README.md             # リポジトリの入口（GitHub で最初に読まれる 1 本）
 │
 │   # テストは**名前だけ**＝説明は「テスト」節の表が正典（同じ説明を 2 か所で持たない）。
 │   # 例外は表に載らないもの＝`test_*.py` でないファイルで、そこだけここに説明を付ける。
@@ -326,7 +332,7 @@ python main.py
 
 ## メニュー
 
-メニューバーは **ファイル / 設定 / ヘルプ** の 3 つ（実装＝[views/launcher.py](views/launcher.py) の `_build_menu`）。ラベルは `i18n.py` の辞書が単一ソース。以下がその全項目です。
+メニューバーは **ファイル / 設定 / ヘルプ** の 3 つ（実装＝[views/launcher.py](../views/launcher.py) の `_build_menu`）。ラベルは `i18n.py` の辞書が単一ソース。以下がその全項目です。
 
 ### ファイル
 
@@ -386,7 +392,7 @@ http://proxy.example.com:8080
 
 ## 地図
 
-<img src="docs/images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
+<img src="images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
 
 ランチャーの**「地図」ボタン**（`views/map_window.py`）で、国土地理院の淡色地図を使う補助ウィンドウを開きます。**地図はアプリ唯一のインスタンス（ランチャー所有）**で、上部のモードセレクタで 3 モードを切り替えます（複数経路の窓からは地図を開きません＝ランチャーが本筋・複数経路は従属する受け皿）。コアのシミュレーションは地図なしで完結し、地図は便利機能です。開いたとき設定中 TX/RX の経路長に合わせて自動ズーム・センタリングします。
 
@@ -398,7 +404,7 @@ http://proxy.example.com:8080
 
 ## 使い方 — 個別シミュレーション
 
-<img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
+<img src="images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
 ### 1. ランチャーウィンドウ
 
@@ -476,7 +482,7 @@ http://proxy.example.com:8080
 
 ## 使い方 — 複数経路
 
-<img src="docs/images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
+<img src="images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
 
 ランチャーの **複数経路** ボタンで専用ウィンドウを開きます。
 
@@ -542,9 +548,9 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線
 
 ## 使い方 — 条件探索（比較 / スイープ）
 
-<img src="docs/images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
+<img src="images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
 
-ランチャーの **条件探索** ボタンで開きます（`views/scenario.py`）。**1 本の確定した経路を、条件を変えて掘る**画面で、計算側は `core/scenario.py` が持ちます。操作手順は [README_binary_ja.md](README_binary_ja.md) が詳しいので、ここでは実装の勘所を挙げます。
+ランチャーの **条件探索** ボタンで開きます（`views/scenario.py`）。**1 本の確定した経路を、条件を変えて掘る**画面で、計算側は `core/scenario.py` が持ちます。操作手順は [manual_ja.md](manual_ja.md) が詳しいので、ここでは実装の勘所を挙げます。
 
 - **地形は 1 回だけ取る**: `run_scenario()` は FETCH → CALC（→ RENDER）の順に進み、取得は先頭で 1 回。`_fetch_sync()` は `fetch_elevations_cached()` を通すので、同じ経路で条件を振り直しても DEM の再取得は起きません（＝この画面の使い方そのもの）。
 - **条件は「差分」で持つ**: `Condition` はベースからの上書き辞書で、変えられる欄は `scenario.OVERRIDABLE` が単一ソース。**座標とサンプル数は入っていません**（経路そのものを比べるのは複数経路の仕事）。比較は最大 `MAX_COMPARE_CONDITIONS` 列。
@@ -557,7 +563,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線
 
 ## 使い方 — 中継経路
 
-<img src="docs/images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
+<img src="images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
 ランチャーの **中継経路** ボタンで開きます（`views/multihop.py`）。**再生中継**（受けて送り直す）前提で、区間ごとに独立したリンクバジェットを計算します。モデルと実行は `report/multihop.py`。
 
@@ -767,7 +773,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ## プロジェクトファイル（.rsproj）
 
-**入力一式**を 1 つの JSON へ束ねる形式です。ランチャーの **ファイル → プロジェクトを開く / 保存** から読み書きします（実装は [`project.py`](report/project.py)＝ヘッドレス・tkinter に依存しません）。
+**入力一式**を 1 つの JSON へ束ねる形式です。ランチャーの **ファイル → プロジェクトを開く / 保存** から読み書きします（実装は [`project.py`](../report/project.py)＝ヘッドレス・tkinter に依存しません）。
 
 ### 束ねる範囲
 
@@ -943,7 +949,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_runner_logging.py` | バックグラウンド実行（バッチ / 条件探索 / 中継経路）の失敗が **traceback つき**でログに残ること |
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
 | `test_ui_consistency.py` | 窓をまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
-| `test_i18n_glossary.py`  | 画面語彙のゲート（[docs/glossary.md](docs/glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
+| `test_i18n_glossary.py`  | 画面語彙のゲート（[glossary.md](glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
 | `test_i18n_key_duplication.py` | i18n キーのゲート（**画面に出る同じ字を 2 つのキーで持たない**。片方だけ直すと画面に 2 通りの語が出るため。成果物＝レポート HTML・グラフ画像の語は対象外＝画面と成果物の名前を揃えるのは出力の版の仕事） |
 | `test_i18n_no_hardcoded_ui_text.py` | i18n 迂回のゲート（**画面に出る自然言語を、i18n を通さずに書かない**。`views/` が字を出す 4 つの口＝`text=` / `label=` / `.title()` / `dialogs.*()` に渡るリテラルを見て、英単語や仮名漢字が直書きされていれば赤。判定の 3 値・単位・記号・数値書式は両言語で同じなので対象外） |
 | `test_layers.py`         | 層の約束のゲート（依存は views → report → core の一方向・import 時に閉じる循環が無い・`core/` が GUI ツールキットと作図ライブラリを引かない・層が空になって検査が空振りしていない） |
@@ -992,4 +998,4 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 
 © 2026 BearValley AI Craftworks. All rights reserved.
 
-本ソフトウェアは **MIT ライセンス**で配布しています（[LICENSE](LICENSE)）。商用利用も可能です。
+本ソフトウェアは **MIT ライセンス**で配布しています（[LICENSE](../LICENSE)）。商用利用も可能です。

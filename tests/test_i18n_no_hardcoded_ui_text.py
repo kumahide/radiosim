@@ -63,7 +63,8 @@ NATURAL_LANGUAGE = re.compile(r"[A-Za-z]{3,}|[぀-ヿ一-鿿]")
 #: i18n を通さないことを認めるリテラル。**理由を必ず書く**。
 ALLOWED_LITERALS: dict[str, str] = {
     "ERR": "判定の 3 値（OK / NG / ERR）は両言語共通の定訳＝docs/glossary.md",
-    "README": "ファイル名そのもの（`README_ja.md` を表示する窓の題）＝訳す対象ではない",
+    "README": "メニュー「READMEを開く」で開く窓の題＝訳す対象ではない"
+              "（開く実体は `docs/manual_*.md` へ移ったが、画面の語は据え置き）",
     "MHz": "単位は両言語共通（docs/glossary.md の対象外）＝グラフ窓の題 `2400.0 MHz`",
 }
 

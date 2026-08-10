@@ -1,5 +1,8 @@
 # RadioSim Pro 2.7
 
+> **Intended reader**: developers who run it from source or work on the code.
+> If you only want to know how to use the app, see [manual_en.md](manual_en.md).
+
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
 
@@ -157,7 +160,7 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.z
 | EXE file properties | Auto-generated from `APP_VERSION` / `COPYRIGHT` in `version.py` |
 | `console=False` | No console window shown to the user |
 | UPX compression | Enabled only when UPX is installed |
-| `README_binary_*.md` / `logo.png` | Bundled into the binary; accessed via `sys._MEIPASS` |
+| `docs/manual_*.md` / `docs/images/` / `logo.png` | Bundled into the binary; accessed via `sys._MEIPASS` |
 
 ### Troubleshooting
 
@@ -183,7 +186,7 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.z
 python -m pip install -r requirements.txt
 ```
 
-**[`requirements.txt`](requirements.txt) is the single source of versions** (pinned, so a source run gets what the binary ships). Installing by name leaves the versions floating and duplicates the table below.
+**[`requirements.txt`](../requirements.txt) is the single source of versions** (pinned, so a source run gets what the binary ships). Installing by name leaves the versions floating and duplicates the table below.
 
 | Library    | Purpose                                                                                     |
 | ---------- | ------------------------------------------------------------------------------------------- |
@@ -252,12 +255,15 @@ radiosim/
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
-├── docs/
+├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
+│   ├── developer_ja.md   # Japanese developer documentation
+│   ├── developer_en.md   # This file
+│   ├── manual_ja.md      # Japanese user manual (bundled into the exe; opened by Help → Open README)
+│   ├── manual_en.md      # English user manual (same)
 │   ├── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
-│   ├── screenshots.md    # How to shoot the README screenshots (coordinates, conditions, expected values)
-│   └── images/           # Those screenshots (referenced by all four READMEs; also bundled into the exe)
-├── README_ja.md          # Japanese README
-├── README_en.md          # This file
+│   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values)
+│   └── images/           # Those screenshots (referenced by these four docs and README.md; also bundled into the exe)
+├── README.md             # Repository entry point (the one read first on GitHub)
 │
 │   # Tests are listed by **name only** — the "Testing" table is the source of truth
 │   # for what each one does (the same description must not live in two places).
@@ -328,7 +334,7 @@ The following directories are created automatically in the project root on first
 
 ## Menus
 
-Three menus — **File / Settings / Help** (built in `_build_menu`, [views/launcher.py](views/launcher.py)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
+Three menus — **File / Settings / Help** (built in `_build_menu`, [views/launcher.py](../views/launcher.py)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
 
 ### File
 
@@ -388,7 +394,7 @@ http://proxy.example.com:8080
 
 ## Map
 
-<img src="docs/images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
+<img src="images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
 
 The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the map is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
@@ -400,7 +406,7 @@ The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary 
 
 ## Usage — Single Mode
 
-<img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
+<img src="images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
 ### 1. Launcher Window
 
@@ -478,7 +484,7 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 ## Usage — Multiple Paths
 
-<img src="docs/images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
+<img src="images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
 
 Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
@@ -544,9 +550,9 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
-<img src="docs/images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
+<img src="images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
 
-Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [README_binary_en.md](README_binary_en.md) — what follows is the implementation side.
+Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
 
 - **Terrain is fetched once.** `run_scenario()` walks FETCH → CALC (→ RENDER), and the fetch happens once at the front. `_fetch_sync()` goes through `fetch_elevations_cached()`, so re-running the same path with different conditions never re-downloads DEM — which is exactly how this screen is used.
 - **A condition is a delta.** `Condition` is an override dict on top of the base params, and `scenario.OVERRIDABLE` is the single source of what may be overridden. **Coordinates and sample count are not in it** (comparing paths themselves is what Multiple Paths is for). Compare mode allows up to `MAX_COMPARE_CONDITIONS` columns.
@@ -559,7 +565,7 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 
 ## Usage — Relay Path
 
-<img src="docs/images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
+<img src="images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
 Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
 
@@ -767,7 +773,7 @@ Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 ## Project Files (.rsproj)
 
-A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](report/project.py) — headless, never imports tkinter).
+A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](../report/project.py) — headless, never imports tkinter).
 
 ### What it bundles
 
@@ -940,7 +946,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
-| `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [docs/glossary.md](docs/glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
+| `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_i18n_key_duplication.py` | i18n key gate (**no two keys hold the same on-screen wording**; fixing only one of them would put two words on screen). Artifact wording — report HTML and plot images — is out of scope: aligning screen and artifact names belongs to the output-contract release |
 | `test_i18n_no_hardcoded_ui_text.py` | i18n bypass gate (**no natural language reaches the screen without going through i18n**: literals passed to the four screen-text doors in `views/` — `text=`, `label=`, `.title()`, `dialogs.*()` — fail if they contain English words or kana/kanji. Verdict words, units, symbols and number formats are out of scope — they are identical in both languages) |
 | `test_layers.py`         | Layering gate (dependencies flow one way: views -> report -> core; no import-time cycles; `core/` pulls no GUI toolkit or plotting library; no layer is empty, which would make the checks vacuous) |
@@ -990,4 +996,4 @@ Launching with a different interpreter logs a warning (to the log file and stder
 
 © 2026 BearValley AI Craftworks. All rights reserved.
 
-This software is distributed under the **MIT License** ([LICENSE](LICENSE)), commercial use included.
+This software is distributed under the **MIT License** ([LICENSE](../LICENSE)), commercial use included.

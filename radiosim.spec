@@ -43,8 +43,8 @@ datas = [
     # sv-ttk の TCL テーマファイル
     (str(sv_ttk_path), "sv_ttk"),
     # README（ヘルプメニューで表示）
-    ("README_binary_ja.md", "."),
-    ("README_binary_en.md", "."),
+    ("docs/manual_ja.md", "docs"),
+    ("docs/manual_en.md", "docs"),
     # ライセンス本文（MIT は「複製物に許諾表示を含めること」を求める＝配布物に必須）
     ("LICENSE", "."),
     # ロゴ画像
