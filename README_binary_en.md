@@ -186,7 +186,7 @@ The **"Map" button** at the bottom of the launcher opens an auxiliary window ove
 
 Click the map to set **TX → RX** alternately; the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Click again at any time to re-place a point.
 
-- Shows UISP-style markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
+- Shows cyan endpoint markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
 
 ### Continuous Add mode

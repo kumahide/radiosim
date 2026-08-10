@@ -207,7 +207,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._committed: list = []
         # 確定パスの PhotoImage（距離バッジ・RX 矢じり）保持リスト（GC 防止）。
         self._committed_images: list = []
-        # UISP 風ノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
+        # 端点のノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._tx_icon = self._make_node_icon(hollow=False)
         self._rx_icon = self._make_node_icon(hollow=True)

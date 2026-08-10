@@ -20,7 +20,7 @@ from core import models
 from core import units
 from report import map_graphics
 from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
-                             _SINGLE_ZOOM, _UISP_CYAN_HEX)
+                             _SINGLE_ZOOM, _MAP_CYAN_HEX)
 
 if TYPE_CHECKING:
     from tkintermapview import TkinterMapView
@@ -77,7 +77,7 @@ class _PickMixin:
         if len(coords) >= 2:
             # 折れ線＝**並びがそのまま経路**であることを地図でも見せる。
             self._wp_objects.append(
-                self._map.set_path(coords, color=_UISP_CYAN_HEX, width=3))
+                self._map.set_path(coords, color=_MAP_CYAN_HEX, width=3))
         last = len(points) - 1
         for i, (name, lat, lon) in enumerate(points):
             # 先頭＝送信点（塗り）／末尾＝受信点（白抜き）／間＝中継点（リング）。
@@ -169,7 +169,7 @@ class _PickMixin:
             return
         for pid, tx, rx in self._append_sink.existing_paths():
             self._committed.append(
-                self._map.set_path([tx, rx], color=_UISP_CYAN_HEX, width=3))
+                self._map.set_path([tx, rx], color=_MAP_CYAN_HEX, width=3))
             # TX = 塗りドット（ラベルなし）。アイコンはアクティブピックと共用。
             self._committed.append(self._map.set_marker(
                 tx[0], tx[1], icon=self._tx_icon, icon_anchor="center"))
@@ -265,7 +265,7 @@ class _PickMixin:
         self._pick_next = "tx"
 
     def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
-        """UISP 風のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
+        """端点のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
         return ImageTk.PhotoImage(map_graphics.node_icon(hollow))
 
     def _make_distance_badge(self, text: str) -> ImageTk.PhotoImage:
@@ -303,9 +303,9 @@ class _PickMixin:
             self._dist_label.delete()
             self._dist_label = None
         if self._tx_coord is not None and self._rx_coord is not None:
-            # 既定 width=9 は太いので細線に。色は UISP 風シアンでノードと揃える。
+            # 既定 width=9 は太いので細線に。色は基調のシアンでノードと揃える。
             self._path_line = self._map.set_path(
-                [self._tx_coord, self._rx_coord], color=_UISP_CYAN_HEX, width=3)
+                [self._tx_coord, self._rx_coord], color=_MAP_CYAN_HEX, width=3)
             # 水平距離ラベルを中点に重ねる（半透明ピル背景つき＝pan/zoom 追従）。
             mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
                    (self._tx_coord[1] + self._rx_coord[1]) / 2)

@@ -237,7 +237,7 @@ def render_path_map(
 
         tx_px, rx_px = _shift(txr), _shift(rxr)
         draw = ImageDraw.Draw(cropped)
-        draw.line([tx_px, rx_px], fill=map_graphics.UISP_CYAN_HEX, width=3)
+        draw.line([tx_px, rx_px], fill=map_graphics.MAP_CYAN_HEX, width=3)
 
         for px_, hollow in ((tx_px, False), (rx_px, True)):
             icon = map_graphics.node_icon(hollow)

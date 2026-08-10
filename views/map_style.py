@@ -13,7 +13,7 @@ views/map_style.py
 from report import map_graphics
 
 # マーカー配色は map_graphics に集約（レポート地図生成 report_map.py と共通）。
-_UISP_CYAN_HEX = map_graphics.UISP_CYAN_HEX
+_MAP_CYAN_HEX = map_graphics.MAP_CYAN_HEX
 _MARKER_TEXT   = map_graphics.MARKER_TEXT
 
 # キャッシュ済み領域の外周線の色

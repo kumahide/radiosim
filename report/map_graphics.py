@@ -13,9 +13,10 @@ import math
 
 from PIL import Image, ImageDraw, ImageFont
 
-# UISP/Ubiquiti 風の基調色（ノード・パス線・ハロー・距離バッジ枠で共通）。
-UISP_CYAN     = (25, 181, 230)     # RGB
-UISP_CYAN_HEX = "#19B5E6"
+# 地図表現の基調色（ノード・パス線・ハロー・距離バッジ枠で共通）。淡色地図と
+# 航空写真のどちらの上でも沈まず、判定色（緑/赤）とも衝突しないシアン系を選んだ。
+MAP_CYAN     = (25, 181, 230)     # RGB
+MAP_CYAN_HEX = "#19B5E6"
 MARKER_TEXT   = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
 
 # 判定ステータス別の経路色。summary.html の台帳（tr.ok / tr.ng / tr.err と
@@ -29,7 +30,7 @@ STATUS_RGB = {
 
 
 def node_icon(hollow: bool) -> Image.Image:
-    """UISP 風のノードアイコン（RGBA PIL Image）を生成する。
+    """端点のノードアイコン（RGBA PIL Image）を生成する。
 
     半透明シアンのハロー（電波点の表現）＋白縁取りのシアンノード。
     hollow=False（TX）は塗りつぶし、hollow=True（RX）は白抜きで区別する。
@@ -40,12 +41,12 @@ def node_icon(hollow: bool) -> Image.Image:
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     c = s / 2
-    r, g, b = UISP_CYAN
+    r, g, b = MAP_CYAN
 
     def disc(radius: float, **kw) -> None:
         d.ellipse([c - radius, c - radius, c + radius, c + radius], **kw)
 
-    # ハロー（半透明・大）→ 電波を発する点という UISP の雰囲気を出す。
+    # ハロー（半透明・大）→ 電波を発する点であることを表す。
     disc(s * 0.46, fill=(r, g, b, 55))
     disc(s * 0.34, fill=(r, g, b, 90))
     # ノード本体（白縁取りで地図上のコントラストを確保）。
@@ -67,14 +68,14 @@ def relay_icon() -> Image.Image:
     別形状にしたのと同じ理由）。ひし形は「経路の折れ点」という意味にも合う。
 
     ⚠️ 既定のマーカー（tkintermapview の赤い水滴）は使わない＝アプリの地図表現
-    （UISP 風のシアン系）から浮く。2026-08-01 の実機確認で指摘された。
+    （基調色のシアン系）から浮く。2026-08-01 の実機確認で指摘された。
     """
     size, scale = 22, 4
     s = size * scale
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     c = s / 2
-    r, g, b = UISP_CYAN
+    r, g, b = MAP_CYAN
 
     # 淡いハロー（端点より控えめ＝主役は両端）。
     d.ellipse([c - s * 0.44, c - s * 0.44, c + s * 0.44, c + s * 0.44],
@@ -105,7 +106,7 @@ def arrow_icon(bearing_deg: float) -> Image.Image:
     img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
     d = ImageDraw.Draw(img)
     c = s / 2
-    r, g, b = UISP_CYAN
+    r, g, b = MAP_CYAN
     # 画面座標（y 下向き）での進行方向ベクトル: 北=上=-y、東=右=+x。
     rad = math.radians(bearing_deg)
     ux, uy = math.sin(rad), -math.cos(rad)
@@ -133,7 +134,7 @@ def distance_badge(text: str) -> Image.Image:
 
 def pill_badge(
     text: str, *,
-    outline: tuple[int, int, int] = UISP_CYAN,
+    outline: tuple[int, int, int] = MAP_CYAN,
     text_color: "str | tuple[int, int, int]" = MARKER_TEXT,
 ) -> Image.Image:
     """テキストを半透明の角丸ピル背景に載せたバッジ画像（RGBA）を生成する。
@@ -185,7 +186,7 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
     # 半透明の白円板（淡色地図上で記号を読みやすく）。
     d.ellipse(
         [c - s * 0.40, c - s * 0.40, c + s * 0.40, c + s * 0.40],
-        fill=(255, 255, 255, 180), outline=UISP_CYAN + (255,), width=scale,
+        fill=(255, 255, 255, 180), outline=MAP_CYAN + (255,), width=scale,
     )
     r = s * 0.26
     tip  = (c + ux * r, c + uy * r)
