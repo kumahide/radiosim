@@ -17,7 +17,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 8. [Usage — Single Mode](#usage--single-mode)
 9. [Usage — Multiple Paths](#usage--multiple-paths)
 10. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
-11. [Usage — Relay Route](#usage--relay-route)
+11. [Usage — Relay Path](#usage--relay-path)
 12. [Input Parameters](#input-parameters)
 13. [Calculation Models](#calculation-models)
 14. [DEM Retrieval Logic](#dem-retrieval-logic)
@@ -47,7 +47,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 | **Single Mode** | `simulation.py` | The launcher's input fields |
 | **Multiple Paths** | `batch.py` | The batch table (CSV I/O) |
 | **Condition Explorer (compare / sweep)** | `scenario.py` | A pinned path plus a condition list. **One DEM fetch + N pure computations** (leaning on the pipeline being two-phase) |
-| **Relay Route** | `multihop.py` | The waypoint list; sections are derived. Regenerative relay model, so **the overall verdict is the min** (the tightest section), reported alongside the per-section breakdown |
+| **Relay Path** | `multihop.py` | The waypoint list; sections are derived. Regenerative relay model, so **the overall verdict is the min** (the tightest section), reported alongside the per-section breakdown |
 
 #### Map
 
@@ -557,7 +557,7 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 
 ---
 
-## Usage — Relay Route
+## Usage — Relay Path
 
 <img src="docs/images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
@@ -752,7 +752,7 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 | `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
-### Relay Route
+### Relay Path
 
 Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
 

@@ -17,7 +17,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 6. [Usage — Single Mode](#usage--single-mode)
 7. [Usage — Multiple Paths](#usage--multiple-paths)
 8. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
-9. [Usage — Relay Route](#usage--relay-route)
+9. [Usage — Relay Path](#usage--relay-path)
 10. [Project Files (.rsproj)](#project-files-rsproj)
 11. [Input Parameters](#input-parameters)
 12. [Calculation Models](#calculation-models)
@@ -43,7 +43,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 | **Single Mode** | Does this one link close? Watch the terrain profile while you move antenna heights and rain rate on the spot |
 | **Multiple Paths** | Many links at once, with CSV in and out |
 | **Condition Explorer (compare / sweep)** | **Digs into one path.** Line up results under different conditions (base + up to 5), or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once |
-| **Relay Route** | Bridges a link that will not close directly. Up to 7 relay points, a link budget per section, and **the overall verdict decided by the tightest section** (regenerative relay — each relay receives and transmits again) |
+| **Relay Path** | Bridges a link that will not close directly. Up to 7 relay points, a link budget per section, and **the overall verdict decided by the tightest section** (regenerative relay — each relay receives and transmits again) |
 
 #### Map
 
@@ -416,7 +416,7 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 
 ---
 
-## Usage — Relay Route
+## Usage — Relay Path
 
 ![中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている](docs/images/shot_multihop.png)
 
