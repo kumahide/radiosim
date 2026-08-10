@@ -271,7 +271,7 @@ An input form is displayed on startup.
 
 > Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Multiple Paths inherit these values. In Multiple Paths they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
 
-### 2. Single Mode Button
+### 2. The "Run" Button (Single Mode)
 
 Clicking the button runs data retrieval in two phases.
 
@@ -302,7 +302,7 @@ After retrieval completes, the terrain cross-section graph is displayed.
 
 Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
-#### Save Button
+#### The "SAVE PACKAGE" Button
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
 
@@ -358,11 +358,11 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
 
 ### Common Settings (a snapshot of the launcher)
 
-The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only**, shown as a snapshot of the launcher (the source of truth). Use the **↻ Update from launcher** button to pull in the launcher's current values.
+The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only**, shown as a snapshot of the launcher (the source of truth). Use the **↻ From Launcher** button to pull in the launcher's current values.
 
 ### Running and Results
 
-Click **▶ Run** to process paths sequentially. OK / NG / ERR counts update in real time.
+Click **Run** to process paths sequentially. OK / NG / ERR counts update in real time.
 
 On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
@@ -420,7 +420,7 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 
 ![中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている](docs/images/shot_multihop.png)
 
-For **one link carried over relay points**. Open it with the **Relay Route** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
+For **one link carried over relay points**. Open it with the **Relay Path** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
 
 ### Assumption — regenerative relay
 

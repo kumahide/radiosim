@@ -433,7 +433,7 @@ An input form is displayed on startup.
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
 | Sampling Points       | Number of terrain sample points (10–2000; more = higher accuracy but longer retrieval) |
 
-### 2. Single Mode Button
+### 2. The "Run" Button (Single Mode)
 
 Clicking the button runs data retrieval in two phases.
 
@@ -464,7 +464,7 @@ After retrieval completes, the terrain cross-section graph is displayed.
 
 Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
-#### Save Button
+#### The "SAVE PACKAGE" Button
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
 
@@ -523,7 +523,7 @@ The **Common Settings** panel at the top defines default values used whenever a 
 
 ### Running and Results
 
-Click **▶ Run** to process paths sequentially. OK / NG / ERR counts update in real time.
+Click **Run** to process paths sequentially. OK / NG / ERR counts update in real time.
 
 On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
@@ -561,7 +561,7 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 
 <img src="docs/images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
-Open it with the **Relay Route** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
+Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
 
 - **A route is a point list plus a connection rule.** `MultiHopPath` holds `Waypoint`s and a per-section `HopRF`; sections are derived by `links(path)` so the meaning of the ordering is not re-spelled at every call site. **Height belongs to the waypoint only** — a relay has one antenna, so there is deliberately no way to give "RX height of the previous section" and "TX height of the next" different values. The cap is `MAX_HOPS`.
 - **Topology is declared in one place.** `TOPOLOGIES` lists chain and star, but **only `SUPPORTED_TOPOLOGIES` may actually run**; the read, write and run layers all consult that one tuple, and `require_runnable()` is the gate. The aggregates (`ok` / `worst` / `overall_margin`) carry **chain semantics**, so for anything else they refuse rather than quietly return a number (a min over a star means nothing).

@@ -18,6 +18,7 @@ tests/test_docs_consistency.py
 正確な件数は人手の節目チェックに委ね、ここでは「列挙の網羅」を守る。
 """
 
+import ast
 import re
 from pathlib import Path
 
@@ -291,6 +292,114 @@ def test_map_mode_labels_listed(doc, lang):
     for key in _MODE_KEYS:
         label = i18n._STRINGS[lang][key]
         assert label in text, f"{doc}: map mode label {label!r} ({key}) is not documented"
+
+
+# --- 文書が名乗るボタン名が、実装に在るか -------------------------------------
+# 🔑 **上の 2 つと向きが逆**。`test_menu_items_are_documented` と
+# `test_map_mode_labels_listed` は「実装のラベルが文書に載っているか」を見るので、
+# **ボタンを改名して文書を直し忘れた**場合は素通りする（古い名前が文書に残り、
+# 新しい名前がどこかに在れば緑）。2026-08-10 の 2.7RC1 実機確認でユーザーが
+# 指摘した 2 件——`▶ 実行`（I-029 で `▶` を落とした）と`個別シミュレーション
+# ボタン`（I-029 で「実行」へ改名）——は、まさにこの向きの穴だった。
+#
+# ⇒ **文書が「〜ボタン」と名指しした字は、i18n の実値に在ること。**
+_BUTTON_MENTION = {
+    # 「…」ボタン ／ **…** ボタン ／ 見出し末尾の「…ボタン」
+    "ja": [r"「([^」]{1,30})」\s*ボタン",
+           r"\*\*([^*]{1,30})\*\*\s*ボタン",
+           r"^#{2,4}\s*\d*\.?\s*(.{1,30}?)ボタン\s*$"],
+    # **…** button ／ "…" button ／ 見出しの `… Button`
+    "en": [r"\*\*([^*]{1,40})\*\*\s+button",
+           r'"([^"]{1,40})"\s+[Bb]utton',
+           r"^#{2,4}\s*\d*\.?\s*(?:The\s+)?[\"“]?(.{1,40}?)[\"”]?\s+Button\s*$"],
+}
+
+#: 実装に無くても文書に書いてよいボタン名。**理由を必ず書く**（空で始まっている）。
+_BUTTON_MENTION_ALLOWED: dict[str, str] = {}
+
+
+def _norm_label(s: str) -> str:
+    """比較用に空白と装飾を落とす（`↻ From Launcher` と `↻From Launcher` を同一視）。"""
+    return s.strip().strip("*「」\"“”").replace(" ", "").replace("　", "")
+
+
+def _button_keys() -> set[str]:
+    """**ボタンの字として実際に使われている** i18n キーを実装から採る。
+
+    ⚠️ `i18n` の全値と照合してはいけない＝**成果物の語まで通ってしまう**。実例＝
+    `個別シミュレーション` は `html_single_mode`（レポートがモードを名乗る出力契約
+    の字）として今も i18n に在るので、全値と比べると「個別シミュレーションボタン」
+    という**存在しないボタン名が緑になる**（2026-08-10 に実際そうなった）。
+    """
+    keys: set[str] = set()
+    for path in (ROOT / "views").glob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        for node in ast.walk(tree):
+            if not (isinstance(node, ast.Call)
+                    and isinstance(node.func, ast.Attribute)
+                    and node.func.attr == "Button"):
+                continue
+            for kw in node.keywords:
+                if kw.arg != "text" or not isinstance(kw.value, ast.Call):
+                    continue
+                arg = kw.value.args[0] if kw.value.args else None
+                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+                    keys.add(arg.value)
+    # `btn_` はボタンの名前空間そのもの。`*_window_title` はランチャーが**窓の名前を
+    # ボタンの字に使う**（[views/launcher.py] のループはキーが変数なので AST で解けない）。
+    keys |= {k for k in i18n._STRINGS["en"]
+             if k.startswith("btn_") or k.endswith("_window_title")}
+    return keys
+
+
+def _implemented_labels(lang: str) -> set[str]:
+    strings = i18n._STRINGS[lang]
+    return {_norm_label(strings[k]) for k in _button_keys() if k in strings}
+
+
+def _button_mentions(text: str, lang: str) -> list[str]:
+    """文書が「〜ボタン」と名指ししている字を、実装に無いものだけ返す。"""
+    known = _implemented_labels(lang)
+    missing = []
+    for pattern in _BUTTON_MENTION[lang]:
+        for m in re.finditer(pattern, text, re.MULTILINE):
+            label = _norm_label(m.group(1))
+            if label and label not in known and label not in _BUTTON_MENTION_ALLOWED:
+                missing.append(m.group(1).strip())
+    return missing
+
+
+@pytest.mark.parametrize("doc,lang", _MODE_READMES)
+def test_documented_button_names_exist_in_the_app(doc, lang):
+    """文書のボタン名が、i18n の実値として実在するか（改名の置き去りを捕捉）。
+
+    ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
+    - **一度も落ちない**: `test_the_button_scanner_catches_a_rename` が、改名前の
+      文言（`▶ 実行`）を毎回スキャンして赤くなることを確かめる。
+    - **毎回鳴る**: 例外は `_BUTTON_MENTION_ALLOWED`＝**0 件**で始めている。拾うのは
+      「〜ボタン」と明示した箇所だけなので、地の文の言い換えでは鳴らない。
+    - **間違ったものを要求している**: 要求は「**その字のボタンが在る**」であって
+      文言の良し悪しではない。ja / en それぞれの実値と照合するので、片方の言語だけ
+      直した状態も捕まる。
+    """
+    missing = _button_mentions(_read(doc), lang)
+    assert not missing, (
+        f"{doc}: 実装に無いボタン名を書いている（改名の置き去り）: {missing}"
+    )
+
+
+def test_the_button_scanner_catches_a_rename():
+    """改名前の文言をスキャナが必ず捕まえること（変異検証）。"""
+    assert _button_mentions("**▶ 実行** ボタンを押すと", "ja") == ["▶ 実行"]
+    assert _button_mentions("### 2. 個別シミュレーションボタン", "ja") == ["個別シミュレーション"]
+    assert _button_mentions("Click the **Relay Route** button.", "en") == ["Relay Route"]
+
+
+def test_the_button_scanner_accepts_the_real_labels():
+    """実在するラベルでは鳴らないこと（毎回鳴るゲートにしない）。"""
+    assert _button_mentions("**実行** ボタンを押すと", "ja") == []
+    assert _button_mentions("「↻ ランチャーから更新」ボタン", "ja") == []
+    assert _button_mentions("Click the **Relay Path** button.", "en") == []
 
 
 # --- CI ゲートの対象網羅 -----------------------------------------------------
