@@ -82,8 +82,11 @@ if /i "%~1"=="clean" (
     if exist tests\__pycache__ rmdir /s /q tests\__pycache__
     rem Distribution zips live next to DIST_DIR once RADIOSIM_BUILD_ROOT is set,
     rem so sweeping only the repo root silently kept them (same 2026-08-04 review).
+    rem 2026-08-11 (independent review): the follow-up line used to look INSIDE
+    rem DIST_DIR *after* DIST_DIR was already removed above - dead either way,
+    rem and one level off from where the zips actually sit. Sweep the build root.
     del /q RadioSimPro-*.zip 2>nul
-    if exist "%DIST_DIR%\RadioSimPro-*.zip" del /q "%DIST_DIR%\RadioSimPro-*.zip" 2>nul
+    if defined RADIOSIM_BUILD_ROOT del /q "%RADIOSIM_BUILD_ROOT%\RadioSimPro-*.zip" 2>nul
     del /q build_log.txt 2>nul
     del /q radiosim.log 2>nul
     del /q .coverage 2>nul

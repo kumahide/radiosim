@@ -53,6 +53,8 @@ class _TableMixin(_HostBase):
         _coord_format: str
         _row_entries: list[list[tk.Entry]]
         _row_frames: list[ttk.Frame]
+        #: 実行に出した行の入力（ID → 値）。判定を書き戻してよいかの照合に使う。
+        _run_inputs: dict[str, tuple[str, ...]]
         _drag_row_idx: "int | None"
         _drag_indicator: "tk.Frame | None"
         _sync_after_id: "str | None"
@@ -432,11 +434,18 @@ class _TableMixin(_HostBase):
         return tuple(e.get() for e in entries)
 
     def _clear_verdicts(self) -> None:
-        """全行の判定を空にする（実行の開始時＝前回の結果を残さない）。"""
-        for frame in self._row_frames:
+        """全行の判定を空にする（実行の開始時＝前回の結果を残さない）。
+
+        あわせて**実行に出した入力の控え**を取る（下の `_set_row_verdict` が使う）。
+        """
+        self._run_inputs = {}
+        for entries, frame in zip(self._row_entries, self._row_frames):
             lbl = self._verdict_label(frame)
             if lbl is not None:
                 lbl.config(text="")
+            pid = entries[0].get().strip().casefold()
+            if pid:
+                self._run_inputs[pid] = self._row_values(entries)
 
     def _set_row_verdict(self, path_id: str, status: str) -> None:
         """`path_id` の行へ判定を返す（`"OK"` / `"NG"` / `"ERROR"`）。
@@ -446,13 +455,24 @@ class _TableMixin(_HostBase):
         区別せず一意に縛っているので、これで 1 行に定まる（実行中に行が消えても
         「見つからない＝返さない」で済み、別の行へ誤って返さない）。
 
+        ⚠️ **実行中も表は編集できる**（止めているのは実行ボタンだけ）。ID が同じでも
+        **その行の入力が実行に出したものと違えば、返ってきた判定はその行の結果では
+        ない**ので書かない（2026-08-11・Codex 独立レビュー P1）。以前はここで現在の
+        入力を控えていたため、**編集後の値で出た判定であるかのように貼られた**。
+        ⇒ 規則は B-058／B-059 と同じ 1 本＝**結果は、それを生んだ入力が変わった
+        時点で結果でなくなる**。計算そのものは開始時に凍結した行で走るので、
+        **成果物（レポート・CSV）は元から正しい**＝直しているのは画面だけ。
+
         色は `theme.verdict_colors` が出所（画面ごとに色を書かない・I-005/B-008）。
         表記は進捗帯のカウンタ（`✓ n OK` / `⚠ n ERR`）と揃える。
         """
         key = path_id.strip().casefold()
+        sent = getattr(self, "_run_inputs", {}).get(key)
         for entries, frame in zip(self._row_entries, self._row_frames):
             if entries[0].get().strip().casefold() != key:
                 continue
+            if sent is not None and self._row_values(entries) != sent:
+                return          # 実行に出した行ではない（実行中に編集された）
             lbl = self._verdict_label(frame)
             if lbl is None:
                 return

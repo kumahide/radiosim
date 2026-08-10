@@ -1061,6 +1061,41 @@ def test_loading_a_project_does_not_touch_open_windows_until_asked():
         root.destroy()
 
 
+def test_a_stale_notice_never_survives_the_next_project():
+    """**前の読込の帯が、次の読込をまたいで生き残らない**こと（Codex P1）。
+
+    帯のクロージャは*読んだときの*プロジェクトの中身を掴んでいる。A の帯を出した
+    まま、その節を持たない B を読み、あとから押せると **A の行が B へ入る**（次の
+    保存で混在する）。⇒ 消す契機は「新しい帯を出すとき」ではなく「前の話が
+    終わったとき」＝**節の有無にかかわらず先に消す**。
+    """
+    pytest.importorskip("tkinter")
+    from report import project
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app   = _launcher(root)
+        batch = app.ensure_batch_window()
+        batch._row_entries[0][0].delete(0, "end")
+        batch._row_entries[0][0].insert(0, "mine")
+
+        rows_a = [b.PathRow(path_id="from_a", lat_tx=34.5, lon_tx=132.4,
+                            lat_rx=34.6, lon_rx=132.5, h_tx=2.0, h_rx=2.0)]
+        _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
+                                                   batch_rows=rows_a))
+        assert _notice_take_button(batch) is not None, "前提: A の帯が出ていない"
+
+        # B＝バッチの節を持たないプロジェクト（帯は出ない側）。
+        _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
+                                                   batch_rows=None))
+        assert _notice_take_button(batch) is None, (
+            "A の帯が残っている（押すと A の行が B に入る）"
+        )
+        assert batch._row_entries[0][0].get() == "mine", "画面の内容が勝手に変わった"
+    finally:
+        root.destroy()
+
+
 def test_no_notice_when_the_project_has_no_section_for_that_window():
     """**節を持たないファイルでは帯を出さない**こと（I-061）。
 
@@ -1091,6 +1126,63 @@ def test_no_notice_when_the_project_has_no_section_for_that_window():
 # 実行直後に矢印キーで表を眺めただけで結果が読めなくなる。しかも消えるのは触った行
 # だけなので、**表が「一部だけ判定がある」状態**になり、実行し損ねた行と区別が付かない。
 # 実際に I-017 のスクリーンショットで 1 行だけ判定が空になって発覚した。
+def test_a_verdict_is_not_written_to_a_row_edited_during_the_run():
+    """**実行中に編集された行へは、返ってきた判定を書かない**こと（Codex P1）。
+
+    止めているのは実行ボタンだけなので、計算中も表は編集できる。ID だけで行を
+    引くと、**編集後の行に、編集前の入力で出た判定**が「その行の結果」として
+    貼られる。⚠️ 計算は開始時に凍結した行で走るので**成果物は正しい**＝守るのは
+    画面の側。規則は B-058／B-059 と同じ 1 本＝結果は、それを生んだ入力が変わった
+    時点で結果でなくなる。
+    """
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params())
+        win.update()
+        pid = win._row_entries[0][0].get()
+        win._clear_verdicts()          # 実行の開始時＝ここで入力を控える
+        win.update()
+
+        # 実行中に座標を書き換える（ID は変えない＝引き当ては成功する側）。
+        entry = win._row_entries[0][1]
+        entry.delete(0, "end")
+        entry.insert(0, "35.000000, 135.000000")
+        win.update()
+
+        win._set_row_verdict(pid, "OK")
+        win.update()
+        lbl = win._verdict_label(win._row_frames[0])
+        assert lbl is not None and lbl.cget("text") == "", (
+            "編集後の行に、編集前の入力で出た判定が貼られた"
+        )
+    finally:
+        root.destroy()
+
+
+def test_a_verdict_is_written_when_the_row_is_untouched():
+    """触っていない行には従来どおり書けること（過剰な抑止も欠陥）。"""
+    pytest.importorskip("tkinter")
+    from views.batch_builder import BatchBuilderWindow
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params())
+        win.update()
+        pid = win._row_entries[0][0].get()
+        win._clear_verdicts()
+        win._set_row_verdict(pid, "OK")
+        win.update()
+        lbl = win._verdict_label(win._row_frames[0])
+        assert lbl is not None and lbl.cget("text") == "OK", "正常な行に判定が返らない"
+    finally:
+        root.destroy()
+
+
 @pytest.mark.parametrize("key,column,changes", [
     ("Right",     0, False),   # 移動
     ("Home",      0, False),

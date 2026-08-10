@@ -188,7 +188,15 @@ class _ProjectMixin:
         )
         for attr, section, take in targets:
             win = self._open_window(attr)
-            if win is None or section is None:
+            if win is None:
+                continue
+            # ⚠️ **前の読込の帯を、節の有無にかかわらず先に消す**（Codex 指摘）＝
+            # 帯が掴んでいるのは*読んだときのプロジェクト*の中身なので、次の
+            # プロジェクトを読んだあとに押せると**別のプロジェクトの行が入る**。
+            # 「新しい帯を出すときに古いのを壊す」だけでは、**新しい帯が出ない
+            # 読込**（その節を持たないプロジェクト）で古い帯が生き残る。
+            dialogs.clear_notice(win)
+            if section is None:
                 continue
             dialogs.show_notice(
                 win, i18n.t("proj_notice"), i18n.t("proj_notice_take"),

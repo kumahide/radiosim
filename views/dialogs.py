@@ -117,6 +117,22 @@ def notice_bar(parent: tk.Misc, message: str, action: str,
     return bar
 
 
+def clear_notice(win: tk.Misc) -> None:
+    """その窓のお知らせの帯を（あれば）消す。
+
+    ⚠️ **帯を出す側と別に、消す口が要る**（2026-08-11・Codex 独立レビュー P1）＝
+    `show_notice` の中でだけ古い帯を壊していたころは、**新しい読込に出す帯が無い
+    ときに古い帯が残った**（プロジェクト A の帯を出したまま、その節を持たない B を
+    読むと A の帯が居座り、押すと **A の中身が B へ入る**）。⇒ 消すのは「新しい帯を
+    出すとき」ではなく「**前の話が終わったとき**」。
+    """
+    old = getattr(win, "_notice_bar", None)
+    if old is not None and old.winfo_exists():
+        old.destroy()
+    if hasattr(win, "_notice_bar"):
+        win._notice_bar = None      # type: ignore[attr-defined]
+
+
 def show_notice(win: tk.Misc, message: str, action: str, command) -> None:
     """窓の**いちばん上**にお知らせの帯を出す（同じ窓に 2 本並べない）。
 
@@ -124,9 +140,7 @@ def show_notice(win: tk.Misc, message: str, action: str, command) -> None:
     （3 窓に配ると必ずどれかで消し忘れる）。押したら `command` を呼び、
     **帯は自分で消える**（取り込み済みなのに誘い続ける帯を残さない）。
     """
-    old = getattr(win, "_notice_bar", None)
-    if old is not None and old.winfo_exists():
-        old.destroy()
+    clear_notice(win)
 
     def _run() -> None:
         command()
