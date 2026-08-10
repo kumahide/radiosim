@@ -324,31 +324,30 @@ def _norm_label(s: str) -> str:
 
 
 def _button_keys() -> set[str]:
-    """**ボタンの字として実際に使われている** i18n キーを実装から採る。
+    """**画面が使っている** i18n キーを実装から採る（`views/` に現れるものすべて）。
 
     ⚠️ `i18n` の全値と照合してはいけない＝**成果物の語まで通ってしまう**。実例＝
     `個別シミュレーション` は `html_single_mode`（レポートがモードを名乗る出力契約
     の字）として今も i18n に在るので、全値と比べると「個別シミュレーションボタン」
     という**存在しないボタン名が緑になる**（2026-08-10 に実際そうなった）。
+    ⇒ **`report/` からしか引かれないキーを入れない**ことがこのゲートの肝。
+
+    ⚠️ **`ttk.Button(text=i18n.t("…"))` の形だけを採ってはいけない**（2026-08-10・
+    Codex 独立レビュー P2）＝**実在するボタンの多くはキーが変数**で、
+    `views/map_window.py` のモード 4 つ（`map_mode_*`）も
+    `views/multihop.py` の `mh_add_point` / `mh_from_map` も**ループのタプル**から
+    渡る。AST で `Button` だけを追うと、これらを「実装に無いボタン」と誤判定して
+    **文書に正しいことを書けなくなる**（＝毎回鳴るゲート）。⇒ 拾うのは
+    **`views/` に現れる文字列リテラルのうち i18n のキーであるもの**。ボタン以外の
+    画面語も混ざるが、このゲートが問うのは「その字が画面に在るか」なので害はない。
     """
+    known = set(i18n._STRINGS["en"])
     keys: set[str] = set()
     for path in (ROOT / "views").glob("*.py"):
-        tree = ast.parse(path.read_text(encoding="utf-8"))
-        for node in ast.walk(tree):
-            if not (isinstance(node, ast.Call)
-                    and isinstance(node.func, ast.Attribute)
-                    and node.func.attr == "Button"):
-                continue
-            for kw in node.keywords:
-                if kw.arg != "text" or not isinstance(kw.value, ast.Call):
-                    continue
-                arg = kw.value.args[0] if kw.value.args else None
-                if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
-                    keys.add(arg.value)
-    # `btn_` はボタンの名前空間そのもの。`*_window_title` はランチャーが**窓の名前を
-    # ボタンの字に使う**（[views/launcher.py] のループはキーが変数なので AST で解けない）。
-    keys |= {k for k in i18n._STRINGS["en"]
-             if k.startswith("btn_") or k.endswith("_window_title")}
+        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
+            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
+                    and node.value in known):
+                keys.add(node.value)
     return keys
 
 
@@ -400,6 +399,20 @@ def test_the_button_scanner_accepts_the_real_labels():
     assert _button_mentions("**実行** ボタンを押すと", "ja") == []
     assert _button_mentions("「↻ ランチャーから更新」ボタン", "ja") == []
     assert _button_mentions("Click the **Relay Path** button.", "en") == []
+
+
+def test_the_button_scanner_accepts_labels_whose_key_is_a_variable():
+    """キーがループ変数で渡るボタンも「実在」と認めること（Codex P2・変異検証）。
+
+    `views/map_window.py` のモード 4 つと `views/multihop.py` の 2 つは、キーが
+    タプルから渡るので `Button(text=i18n.t("…"))` の形では拾えない。**文書が
+    これらを名指しできなくなる**のが誤検知の実害なので、両言語で確かめる。
+    """
+    for key in ("map_mode_append", "mh_add_point", "mh_from_map"):
+        assert key in _button_keys(), f"{key} が画面のキーとして拾えていない"
+        for lang, template in (("ja", "**{}** ボタン"), ("en", "the **{}** button")):
+            label = i18n._STRINGS[lang][key]
+            assert _button_mentions(template.format(label), lang) == []
 
 
 # --- CI ゲートの対象網羅 -----------------------------------------------------

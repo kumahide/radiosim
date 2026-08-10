@@ -13,11 +13,19 @@ tests/test_i18n_no_hardcoded_ui_text.py
 いつでも書ける**。注意書きを増やしても強制されないので、機械に守らせる
 （[[feedback-promote-recurring-checks]] の昇格）。
 
-見るのは `text=` に渡るリテラルだけ
------------------------------------
-Tk のウィジェットに字を載せる口は実質 `text=`（生成時と `.config(text=…)` の
-両方が `ast.Call` のキーワードとして同じ形に見える）。f-string の場合は
-**式の部分を捨ててリテラルの部分だけ**を見る＝`f"▶  {pid}"` の `pid` や
+見るのは「画面へ字を出す 4 つの口」
+----------------------------------
+①`text=`（ウィジェット生成と `.config(text=…)` は `ast.Call` のキーワードとして
+同じ形に見える）②`label=`（`tk.Menu.add_command` 系）③`.title(…)`（窓の題）
+④`dialogs.*(…)` の引数（ダイアログの題と本文）。
+
+⚠️ **①だけを見ていた版があった**（2026-08-10・Codex 独立レビュー P2 で指摘）＝
+テスト名と README は「画面に出る自然言語」を保証すると読めるのに、実際は `text=`
+しか見ておらず、`label="Open"` や `title("Settings")` を直書きしても緑だった。
+**保証の文と検査の範囲がずれているゲートは、無いより悪い**（→
+[[feedback-promote-recurring-checks]]＝「ここまでは大丈夫」は反例 1 つで嘘になる）。
+
+f-string は**式の部分を捨ててリテラルの部分だけ**を見る＝`f"▶  {pid}"` の `pid` や
 `f"{margin:+.2f}"` の数値書式は自然言語ではないので対象外になる。
 
 ⚠️ 対象は `views/` だけ。`report/` は成果物の側で、画面と成果物の語を揃えるのは
@@ -55,6 +63,8 @@ NATURAL_LANGUAGE = re.compile(r"[A-Za-z]{3,}|[぀-ヿ一-鿿]")
 #: i18n を通さないことを認めるリテラル。**理由を必ず書く**。
 ALLOWED_LITERALS: dict[str, str] = {
     "ERR": "判定の 3 値（OK / NG / ERR）は両言語共通の定訳＝docs/glossary.md",
+    "README": "ファイル名そのもの（`README_ja.md` を表示する窓の題）＝訳す対象ではない",
+    "MHz": "単位は両言語共通（docs/glossary.md の対象外）＝グラフ窓の題 `2400.0 MHz`",
 }
 
 
@@ -68,21 +78,35 @@ def _literal_part(node: ast.expr) -> str | None:
     return None
 
 
+def _screen_text_args(call: ast.Call) -> list[ast.expr]:
+    """この呼び出しのうち、**画面に字を出す**引数を返す（上の 4 つの口）。"""
+    args: list[ast.expr] = [kw.value for kw in call.keywords
+                            if kw.arg in ("text", "label")]
+    func = call.func
+    if isinstance(func, ast.Attribute):
+        # `win.title("…")`＝窓の題。⚠️ 引数無しの `str.title()` と区別するため
+        # 「リテラルを 1 つ渡している」形だけを見る。
+        if func.attr == "title" and len(call.args) == 1 and not call.keywords:
+            args.append(call.args[0])
+        # `dialogs.alert(parent, title, message)` 系＝題も本文も画面に出る。
+        if isinstance(func.value, ast.Name) and func.value.id == "dialogs":
+            args.extend(call.args)
+    return args
+
+
 def _offenders(source: str, name: str = "<test>") -> list[str]:
-    """`text=` に自然言語のリテラルを渡している箇所を `"file:line: 字"` で返す。"""
+    """画面へ字を出す口に自然言語のリテラルを渡している箇所を返す。"""
     found: list[str] = []
     for node in ast.walk(ast.parse(source)):
         if not isinstance(node, ast.Call):
             continue
-        for kw in node.keywords:
-            if kw.arg != "text":
-                continue
-            text = _literal_part(kw.value)
+        for value in _screen_text_args(node):
+            text = _literal_part(value)
             if text is None:
                 continue
             words = NATURAL_LANGUAGE.findall(text)
             if words and not all(w in ALLOWED_LITERALS for w in words):
-                found.append(f"{name}:{kw.value.lineno}: {text!r}")
+                found.append(f"{name}:{value.lineno}: {text!r}")
     return found
 
 
@@ -109,6 +133,13 @@ def test_the_scanner_catches_the_original_defect():
     offenders = _offenders(
         'self._prog_label.config(text=f"Done: {os.path.basename(batch_dir)}")')
     assert len(offenders) == 1
+
+
+def test_the_scanner_catches_the_other_three_doors():
+    """`text=` 以外の 3 つの口も塞がっていること（Codex P2・変異検証）。"""
+    assert _offenders('menu.add_command(label="Open", command=f)')
+    assert _offenders('win.title("Settings")')
+    assert _offenders('dialogs.alert(self, "Error", "Could not save the file")')
 
 
 def test_the_scanner_lets_the_shared_verdict_words_through():
