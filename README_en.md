@@ -247,7 +247,7 @@ radiosim/
 │   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
 │   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
-│   ├── multihop.py       # Relay route window (waypoints are the input surface; hops are derived)
+│   ├── multihop.py       # Relay path window (waypoints are the input surface; hops are derived)
 │   ├── batch_builder.py  # Multiple Paths window (core: common settings, project info)
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)

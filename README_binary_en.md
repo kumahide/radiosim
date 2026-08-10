@@ -469,7 +469,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | Project info (name and free note) | **App settings** (theme, language, proxy) |
 | Multiple Paths rows | Window positions, sizes, open/closed state |
 | Explorer conditions (compare columns / sweep axis and range) | |
-| Relay route waypoints and sections | |
+| Relay path waypoints and sections | |
 
 **Leaving out theme, language and proxy is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
 
