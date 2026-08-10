@@ -254,7 +254,11 @@ class _RunMixin(_HostBase):
         # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
         # 進捗カウントもバーに合わせて消し、結果サマリは OK/NG/ERR ラベルに残す。
         self._prog_bar.config(value=0)
-        self._prog_label.config(text=f"Done: {os.path.basename(batch_dir)}")
+        # ⚠️ ここは**日本語表示でも英語のまま出ていた**（B-066・2.7RC1 実機確認）。
+        # 進捗帯に出る自然言語はこの 1 行だけが i18n を迂回していた＝OK/NG/ERR は
+        # 両言語共通の定訳（docs/glossary.md）、`▶ path01` は記号と ID なので対象外。
+        self._prog_label.config(
+            text=i18n.t("batch_done").format(dir=os.path.basename(batch_dir)))
         self._prog_count_label.config(text="")
         # 成果物は 2 種類ある＝**閲覧用のサマリ**（台帳・サムネイル・各経路への
         # リンク）と**印刷用の連結レポート**（report_all.html＝Ctrl+P で全ページ分の
