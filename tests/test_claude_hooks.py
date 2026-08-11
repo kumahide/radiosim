@@ -333,6 +333,111 @@ class TestDuplicateIds:
         assert hook.next_free_ids(doc) == {"B": "B-073", "I": "I-011"}
 
 
+class TestAssignmentAudit:
+    """未対応項目に**行き先が書いてあるか**（2026-08-12 新設）。
+
+    きっかけ＝ユーザーの「現状の issue はすべて版に割り振り済みですか？」。答えは
+    **No** で、**素の漏れ 2 件**（I-081・I-016）と**決定済みなのに在庫へ積み忘れ
+    1 件**（I-078）が出た。⇒ 聞かれたときだけ数えるのでは遅い。
+
+    🔴 **最初に書いた監査スクリプトは静かに間違えた**＝`対象版` 欄を版割りとして
+    読み、**B-025 を 2.5**（実際は 3.2／`2.5RC2` は*発生元*）、**B-032 と I-077 を
+    「行き先なし」**（実際はどちらも 3.0）と出した。**静かに間違える監査は、監査が
+    無いより悪い**ので、その形を下の 2 つのテストで名指しで固定する。
+    """
+
+    def test_the_target_version_field_is_not_the_fix_version(self, hook):
+        """⛔ `対象版` 欄を行き先として読まないこと（実データの形で固定）。
+
+        B-025 の実データ＝`対象版` は `2.5RC2（以前から同構造）`＝**発生元**で、
+        直すのは状態欄が言う 3.2。欄を読むと 2.5 に振り分けてしまう。
+        """
+        doc = _doc(
+            "### ★ B-025: DEM 取得が全滅しても黙って完走する",
+            "",
+            "- ★ **状態**: **対応中**。①③は ✅ 3.2 確定（呼び出し側と出力契約に触る）",
+            "- **対象版**: 2.5RC2（以前から同構造）",
+        )
+        audit = hook.assignment_audit(doc)
+        assert audit["assigned"] == {"3.2": ["B-025"]}, audit
+        assert audit["unassigned"] == []
+
+    @pytest.mark.parametrize("state", [
+        "未着手 ／ **✅ 版割り確定＝3.0・処方は「直す」（2026-08-05 ユーザー）**",   # B-032
+        "未着手（**3.0＝出力契約の回**。units.py が既にその線を書いている）",        # I-077
+        "未着手（**✅ 3.0 確定＝2026-08-11 ユーザー決定**。理由＝出力契約に触れる）",  # B-071
+        "未着手 ／ **✅ 対象版 = 3.0 確定（2026-08-05 ユーザー）**",                 # I-069
+        "未着手（**調査完了・処方確定 2026-08-02／実施は 3.0**）",                   # B-033
+    ])
+    def test_the_many_prose_forms_of_a_destination_are_all_read(self, hook, state):
+        """行き先の書き方は実データで 5 通り以上ある。**全部「書いてある」側**。
+
+        ⚠️ ここが取りこぼされると、**版割り済みの項目が「漏れ」として毎回鳴る**＝
+        正しく運用しているほど警告が増える（毎回鳴るゲート）。
+        """
+        doc = _doc("### ★ B-001: t", "", f"- ★ **状態**: {state}")
+        audit = hook.assignment_audit(doc)
+        assert audit["unassigned"] == [], f"{state!r} を行き先なしと誤判定"
+        assert audit["assigned"] == {"3.0": ["B-001"]}, audit
+
+    def test_a_bare_open_item_is_flagged(self, hook):
+        """行き先も判断待ちも書いていない項目は鳴ること（I-081・I-016 の形）。"""
+        doc = _doc("### ★ I-081: 公開文書に旧番号の版が残っている", "",
+                   "- ★ **状態**: 未着手")
+        assert hook.assignment_audit(doc)["unassigned"] == ["I-081"]
+
+    @pytest.mark.parametrize("state", [
+        "未着手（**版割り未決**＝`+0.1` か 3.0 か）",          # I-075
+        "保留（**設計判断待ち＝既存の決定を蒸し返すか**）",     # I-080
+    ])
+    def test_declared_indecision_is_not_a_miss(self, hook, state):
+        """**決めていないと書いてある**なら漏れではない（版より前の段階）。
+
+        ⚠️ ここを鳴らすと「まだ決めない」という正当な状態を持てなくなり、
+        版を埋めるためだけの嘘の割り振りを誘発する。
+        """
+        doc = _doc("### ★ I-075: t", "", f"- ★ **状態**: {state}")
+        audit = hook.assignment_audit(doc)
+        assert audit["unassigned"] == [] and audit["pending"] == ["I-075"]
+
+    def test_two_versions_in_one_state_line_go_to_ambiguous(self, hook):
+        """版が 2 つ見えるものは**人に読ませる**（機械で当てにいかない）。
+
+        実データ＝B-065 の状態欄は「対象版＝2.8」と「2.7 で直さない理由」を
+        両方含む。片方を選ぶ実装は、選び方を間違えても緑になる。
+        """
+        doc = _doc("### ★ B-065: t", "",
+                   "- ★ **状態**: 未着手（**対象版＝2.8**。2.7 で直さない理由は下）")
+        audit = hook.assignment_audit(doc)
+        assert audit["ambiguous"] == ["B-065"] and audit["unassigned"] == []
+
+    def test_closed_items_are_not_audited(self, hook):
+        """済・却下に行き先は要らない。"""
+        doc = _doc(_ARCHIVE_HEAD, _item("B-001", "済", resp="`abc1234`"))
+        a = hook.assignment_audit(doc)
+        assert a["unassigned"] == [] and a["assigned"] == {}
+
+    def test_the_template_is_not_audited(self, hook):
+        doc = _doc("<!--", "### ★ B-0XX: （症状を一言で）",
+                   "- ★ **状態**: 未着手 / 対応中 / 済", "-->")
+        assert hook.assignment_audit(doc)["unassigned"] == []
+
+
+def test_real_ledger_has_every_open_item_assigned(hook):
+    """実データ＝行き先の無い未対応が 0 件であること（2026-08-12 に 2 件あり解消）。"""
+    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
+    if not os.path.exists(ledger):
+        pytest.skip(structural_skip("ISSUES.md も git-ignore（CI には存在しない）"))
+    with open(ledger, encoding="utf-8") as f:
+        audit = hook.assignment_audit(f.read().splitlines())
+    total = (sum(len(v) for v in audit["assigned"].values())
+             + len(audit["pending"]) + len(audit["ambiguous"]) + len(audit["unassigned"]))
+    assert total, "未対応が 0 件＝パーサが壊れている可能性が高い"
+    assert audit["unassigned"] == [], (
+        f"行き先の無い未対応がある: {audit['unassigned']}"
+    )
+
+
 def test_real_ledger_has_no_duplicate_ids(hook):
     """実際の台帳に ID の衝突が無いこと（2026-08-12 に 1 件あり、振り直した）。"""
     ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
