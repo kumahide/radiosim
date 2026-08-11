@@ -415,6 +415,117 @@ def test_the_button_scanner_accepts_labels_whose_key_is_a_variable():
             assert _button_mentions(template.format(label), lang) == []
 
 
+# --- 文書が窓を名指しする「枠」に、実装の窓名が入っているか --------------------
+# 🔑 **上のボタン名ゲートより広い穴を、前置詞ではなく“位置”で塞ぐ**（I-079）。
+# `test_documented_button_names_exist_in_the_app` が見るのは「〜ボタン」と名指し
+# した形だけなので、**見出し・目次・機能表で窓を古い名前で呼んでいても緑**になる。
+# 2.7 の正式ビルド後に同梱 README を grep して見つかった `Relay Route`（実装は
+# `Relay Path`）は、まさにその位置に居た（`## Usage — Relay Route` と目次）。
+#
+# ⚠️ **素朴な拡張＝「古そうな語を探す」は毎回鳴る**（2026-08-11 に実測した）。
+# 窓名の頭で全文を走査すると、正当な散文が大量に落ちる——ja は `中継点`（中継
+# *経路*ではない実在の概念）`複数障害` `条件を…` で 18 件、en は `Relay points`
+# `Condition explorer` が鳴った。**語の見た目からは、窓を名指ししているのか
+# ただ日本語/英語を書いているのかを区別できない。**
+#
+# ⇒ **枠で位置を決める。** 4 文書とも窓の名前が出るのは次の 2 か所だけで、
+#    どちらも「窓名を知らなくても」構文から特定できる:
+#      ① 見出し `## 使い方 — <窓名>` / `## Usage — <Window>`（地図は `## 地図`）
+#      ② 目次のリンクの字
+#    枠の中身だけを検査するので、散文には**原理的に触れない**。
+_WINDOW_TITLE_KEYS = sorted(k for k in i18n._STRINGS["en"] if k.endswith("_window_title"))
+
+#: 「使い方 — X」の枠。X は窓名か、ランチャー（`html_single_mode`）。
+_USAGE_FRAME = re.compile(r"^(?:使い方|Usage)\s*[—–-]\s*(.+?)\s*$")
+
+
+def _headings(text: str) -> list[str]:
+    """見出しの字（`#` を落としたもの）。"""
+    return [re.sub(r"^#+\s*", "", s) for line in text.splitlines()
+            if (s := line.strip()).startswith("#")]
+
+
+def _toc_labels(text: str) -> list[str]:
+    """目次のリンクの字（`1. [〜](#anchor)` の `〜`）。"""
+    return re.findall(r"^\s*\d+\.\s*\[([^\]]+)\]\(#", text, re.MULTILINE)
+
+
+def _frame_subjects(text: str) -> list[str]:
+    """「使い方 — X」の枠に入っている X を、見出しと目次から全部集める。
+
+    末尾の括弧書きは落とす（`条件探索（比較 / スイープ）` → `条件探索`）＝括弧の
+    中は窓名ではなく**その節が何を扱うかの補足**なので、実装と照合する対象でない。
+    """
+    subjects = []
+    for s in _headings(text) + _toc_labels(text):
+        if m := _USAGE_FRAME.match(s):
+            subjects.append(re.sub(r"\s*[（(].*[）)]\s*$", "", m.group(1)))
+    return subjects
+
+
+@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
+def test_window_titles_are_named_in_headings_and_toc(doc, lang):
+    """**前向き**＝窓の名前（i18n が単一ソース）が、見出しと目次に実値で在ること。
+
+    窓を改名して文書を直し忘れると、枠は古い名前で埋まったまま**新しい名前が
+    どこにも無い**状態になるので、ここが赤くなる。
+    """
+    text = _read(doc)
+    heads, toc = _headings(text), _toc_labels(text)
+    for key in _WINDOW_TITLE_KEYS:
+        title = i18n._STRINGS[lang][key]
+        assert any(title in h for h in heads), (
+            f"{doc}: 窓 {key} の名前 {title!r} を名乗る見出しが無い（改名の置き去り）"
+        )
+        assert any(title in t for t in toc), (
+            f"{doc}: 窓 {key} の名前 {title!r} が目次に無い（改名の置き去り）"
+        )
+
+
+@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
+def test_usage_sections_name_something_that_exists(doc, lang):
+    """**後ろ向き**＝「使い方 — X」の X が、画面に実在する字であること。
+
+    前向きの検査だけでは、**古い名前が別の見出しに残っていても緑**になる（新しい
+    名前がどこか 1 か所に在れば通ってしまう）。だから枠の中身そのものも見る。
+    `Usage — Relay Route` は、`Relay Route` という i18n 値が無いので赤くなる。
+
+    ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
+    - **一度も落ちない**: `test_the_usage_frame_catches_a_stale_window_name` が
+      改名前の字（`Relay Route` / `中継ルート`）で赤くなることを確かめる。
+    - **毎回鳴る**: 例外表は**持たない**。枠の外（散文・小見出し・表のセル）は
+      一切見ないので、`中継点` や `Relay points` では鳴りようがない。
+    - **間違ったものを要求している**: 要求は「**その字が画面に在る**」だけで、
+      名前の良し悪しでも、節の並び順でもない。
+    """
+    known = set(i18n._STRINGS[lang].values())
+    for subject in _frame_subjects(_read(doc)):
+        assert subject in known, (
+            f"{doc}: 使い方の節が名乗る {subject!r} は画面に無い字（改名の置き去り）"
+        )
+
+
+def test_the_usage_frame_catches_a_stale_window_name():
+    """改名前の窓名を枠が必ず捕まえること（変異検証）。"""
+    for lang, stale in (("en", "Relay Route"), ("ja", "中継ルート")):
+        head = "## Usage — " if lang == "en" else "## 使い方 — "
+        assert _frame_subjects(head + stale) == [stale]
+        assert stale not in set(i18n._STRINGS[lang].values())
+
+
+def test_the_usage_frame_ignores_prose_that_merely_starts_alike():
+    """枠の外は見ないこと（毎回鳴るゲートにしない・実測で鳴った字で確かめる）。
+
+    どれも 2026-08-11 に実文書へ在った正当な散文で、窓名の頭で全文走査すると
+    落ちていたもの。**枠を見る限り 1 件も拾わない。**
+    """
+    for prose in ("中継点は最大 7 つで、区間ごとに計算します。",
+                  "| **複数障害** | 条件を変えた結果を並べる |",
+                  "Up to 7 relay points, and a Condition explorer run.",
+                  "### 設計思想 — シングルで詰め、複数経路で確定する"):
+        assert _frame_subjects(prose) == []
+
+
 # --- CI ゲートの対象網羅 -----------------------------------------------------
 # 🔑 **この照合は 2.7 スライス H（I-058）で不要になった。**
 # かつて pyright の対象は CI ワークフローにモジュール名を 43 件**べた書き**して
