@@ -645,7 +645,12 @@ class ScenarioWindow(tk.Toplevel):
         #    ラムダ →（self を捕まえて）窓 → この変数、と **C レベルを経由して
         #    循環する**ので、Python の GC が切れない＝**窓を閉じても永久に解放
         #    されず、開閉のたびに 65 個ずつ積み上がる**（10 回で +650 個）。
-        #    `_on_close` で外すために id を持っておく（アプリ唯一の `trace_add`）。
+        #    `_on_close` で外すために id を持っておく。
+        # ⚠️ **処方は 2 つある**（2026-08-12・B-059 で 2 つ目が要った）＝ここは
+        #    「id を控えて閉じ際に外す」形だが、**変数が動的に捨てられる窓では
+        #    足りない**（捨てる箇所を数え上げれば必ず漏れる）。中継経路は
+        #    `views/multihop.py` の `_watch_input` のように**弱参照で循環を
+        #    作らない**形を採っている。窓の作りで選ぶこと。
         self._delta_trace = self._delta_var.trace_add(
             "write", lambda *_: self._sync_range_from_delta())
 

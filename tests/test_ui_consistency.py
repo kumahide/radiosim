@@ -1225,3 +1225,174 @@ def test_verdict_survives_keys_that_do_not_change_the_row(key, column, changes):
             )
     finally:
         root.destroy()
+
+
+# ------------------------------------------------------------
+# 3b. 中継経路も同じ規則で消える（B-059＝B-058 の裏面）
+# ------------------------------------------------------------
+# 🔑 **規則は 1 本＝結果は、それを生んだ入力が変わった時点で結果でなくなる。**
+# 2 つの窓は同じ規則を逆向きに破っていた＝複数経路は**キーを押しただけで消え**
+# （B-058＝消しすぎ）、中継経路は**入力を変えても残った**（B-059＝消さなすぎ。
+# 消す口が実行の開始時にしか呼ばれていなかった）。
+# ⚠️ **中継はバッチと違い、1 つの結果の入力が 2 つの表にまたがる**＝区間 k は
+# 地点 k・k+1（座標/高さ）と区間 k（周波数/利得）と**凍結した共通設定**から出る。
+def _mh_win(root):
+    from views.multihop import MultiHopWindow
+    win = MultiHopWindow(root, _params())
+    win.update()
+    win._on_add_point()                     # TX → R1 → RX＝2 区間にする
+    win.update()
+    for index in (1, 2):
+        win._show_hop_result(index, _FakeHopResult())
+    win.update()
+    return win
+
+
+class _FakeHopResult:
+    """`batch.PathResult` のうち、区間表が読む 2 つだけ。"""
+    status = "OK"
+
+    class result:
+        p_rx = -70.0
+        actual_margin = 5.0
+
+
+def _hop_texts(win):
+    return [c["status"].cget("text") for c in win._hop_result_labels]
+
+
+@pytest.mark.parametrize("where,changes", [
+    ("wp_coord",  True),    # 地点の座標＝前後 2 区間の入力
+    ("wp_height", True),    # 地点の高さ
+    ("hop_freq",  True),    # 区間の周波数
+    ("wp_name",   False),   # 地点名＝結果の数字を作らない
+    ("route_id",  False),   # 経路 ID＝識別子であって入力ではない
+    ("note",      False),   # 備考
+])
+def test_hop_results_clear_only_when_their_own_input_changes(where, changes):
+    """区間結果は、**それを生んだ入力**が変わったときだけ消えること（B-059）。
+
+    ⚠️ 消えない側（`wp_name` / `route_id` / `note`）を必ず一緒に測る＝**全部消す
+    実装でも「消える」側の検査だけなら緑になる**。B-058 が示したとおり、この規則は
+    消しすぎでも壊れる。
+    """
+    pytest.importorskip("tkinter")
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = _mh_win(root)
+        assert _hop_texts(win) == ["OK", "OK"], "前提: 区間結果が入っていない"
+
+        if where == "wp_coord":
+            win._wp_vars[1]["coord"].set("34.500000, 132.500000")
+        elif where == "wp_height":
+            win._wp_vars[1]["height"].set("99.9")
+        elif where == "hop_freq":
+            win._hop_vars[0]["freq"].set("5800")
+        elif where == "wp_name":
+            win._wp_vars[1]["name"].set("R9")
+        elif where == "route_id":
+            win._route_id.set("route2")
+        else:
+            win._note.set("メモ")
+        win.update()
+
+        if changes:
+            assert "" in _hop_texts(win), f"{where} を変えたのに区間結果が残っている"
+        else:
+            assert _hop_texts(win) == ["OK", "OK"], (
+                f"{where} は結果の数字を作らないのに区間結果が消えた（消しすぎ）"
+            )
+    finally:
+        root.destroy()
+
+
+def test_a_moved_point_clears_both_of_its_sections():
+    """地点を 1 つ動かしたら、**その前後 2 区間とも**消えること（B-059）。
+
+    🔑 **ここが中継固有の落とし穴**＝欄と区間を 1 対 1 で配線すると、必ず片側が
+    残る（区間 k の入力は地点 k と k+1 の**両方**）。R1 は区間 1 の終点であり
+    区間 2 の始点なので、動かせば 2 つとも古くなる。
+    """
+    pytest.importorskip("tkinter")
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = _mh_win(root)
+        win._wp_vars[1]["coord"].set("34.500000, 132.500000")   # R1＝真ん中
+        win.update()
+        assert _hop_texts(win) == ["", ""], (
+            f"前後 2 区間のうち片方しか消えていない: {_hop_texts(win)}"
+        )
+    finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize("change,expected", [
+    ("tx_coord", ["", "OK"]),    # 送信点＝区間 1 の入力にしか入らない
+    ("rx_coord", ["OK", ""]),    # 受信点＝区間 2 だけ
+    ("hop1_gain", ["", "OK"]),   # 区間 1 の利得＝その区間だけ
+])
+def test_only_the_affected_sections_clear(change, expected):
+    """**関係ない区間の結果は残る**こと（B-059＝消しすぎない側の芯）。
+
+    🔑 **この検査が無いと「どれか変わったら全部消す」実装が緑になる**。上の
+    `test_a_moved_point_clears_both_of_its_sections` は真ん中の点を動かすので
+    2 区間とも消えるのが正解＝**全消し実装と区別が付かない**。端の点と区間ごとの
+    欄で測って初めて、控えとの突き合わせが働いていることが分かる。
+    """
+    pytest.importorskip("tkinter")
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = _mh_win(root)
+        if change == "tx_coord":
+            win._wp_vars[0]["coord"].set("34.100000, 132.100000")
+        elif change == "rx_coord":
+            win._wp_vars[2]["coord"].set("34.900000, 132.900000")
+        else:
+            win._hop_vars[0]["gain_tx"].set("20")
+        win.update()
+        assert _hop_texts(win) == expected, (
+            f"{change}: 関係ない区間まで消えた（または消し損ねた）"
+        )
+    finally:
+        root.destroy()
+
+
+def test_refreshing_common_settings_clears_results_only_when_they_differ():
+    """↻ は、**共通設定が実際に変わったときだけ**区間結果を消すこと（B-059）。
+
+    ⚠️ **`repr(SimParams)` で指紋を取ると、押すたびに消える**＝dataclass では
+    ないので既定の `repr` はオブジェクトの番地になり、中身が同じでも別物に見える
+    （＝「毎回鳴る」壊れ方）。だから**同じ設定で押した場合**を必ず測る。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        cfg = dict(config.DEFAULT_CONFIG)
+        win = MultiHopWindow(root, _params(), config_provider=lambda: dict(cfg))
+        win.update()
+        win._on_add_point()
+        win.update()
+        for index in (1, 2):
+            win._show_hop_result(index, _FakeHopResult())
+        win.update()
+
+        win._refresh_from_launcher()        # 同じ設定のまま押した
+        win.update()
+        assert _hop_texts(win) == ["OK", "OK"], (
+            "共通設定が変わっていないのに ↻ で区間結果が消えた（毎回鳴る）"
+        )
+
+        cfg["h_tx"] = str(float(cfg["h_tx"]) + 5.0)
+        win._refresh_from_launcher()        # 中身を変えて押した
+        win.update()
+        assert _hop_texts(win) == ["", ""], (
+            "共通設定を取り込み直したのに古い区間結果が残っている"
+        )
+    finally:
+        root.destroy()

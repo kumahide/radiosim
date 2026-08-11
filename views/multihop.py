@@ -30,6 +30,7 @@ from __future__ import annotations
 
 import os
 import tkinter as tk
+import weakref
 from tkinter import ttk
 from typing import Callable
 
@@ -182,12 +183,10 @@ class MultiHopWindow(tk.Toplevel):
         self._note.set(path.note)
         self._wp_vars = []
         for wp in path.waypoints:
-            self._wp_vars.append({
-                "name":   tk.StringVar(value=wp.name),
-                "coord":  tk.StringVar(
-                    value=coords.format_pair(wp.lat, wp.lon, self._coord_format)),
-                "height": tk.StringVar(value=f"{wp.h:.1f}"),
-            })
+            self._wp_vars.append(self._new_wp_vars(
+                name=wp.name,
+                coord=coords.format_pair(wp.lat, wp.lon, self._coord_format),
+                height=f"{wp.h:.1f}"))
         self._render_waypoints()          # → _sync_hops でホップ行が揃う
         for vars_, rf in zip(self._hop_vars, path.hop_rf):
             for key, value in (("freq", rf.freq_mhz), ("gain_tx", rf.gain_tx),
@@ -390,6 +389,10 @@ class MultiHopWindow(tk.Toplevel):
                 dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
                 return
         self._update_frozen()
+        # 共通設定も区間結果の入力なので、取り込み直したら古い結果は結果でなくなる
+        # （B-059）。⚠️ **凍結方式は「黙って追従しない」であって「古い数字を残す」
+        # ではない**＝↻ を押した人は新しい前提を入れたつもりでいる。
+        self._drop_stale_hop_results()
 
     # ----------------------------------------------------------
     # 地点の増減
@@ -413,17 +416,118 @@ class MultiHopWindow(tk.Toplevel):
         # （B-055）＝ここで「末尾なら h_rx」と判断してはいけない。この関数は
         # **中継点の挿入にも使われ、そのとき末尾は受信点のまま動かない**ので、
         # 位置から高さを決めると「地点を足したら誰かの高さが変わる」ことになる。
-        vars_ = {
-            "name":   tk.StringVar(value=name or self._next_relay_name()),
-            "coord":  tk.StringVar(value=coord),
-            "height": tk.StringVar(
-                value=f"{self._base_params.h_tx if h is None else h:.1f}"),
-        }
+        vars_ = self._new_wp_vars(
+            name=name or self._next_relay_name(),
+            coord=coord,
+            height=f"{self._base_params.h_tx if h is None else h:.1f}")
         if len(self._wp_vars) >= 2:
             self._wp_vars.insert(len(self._wp_vars) - 1, vars_)   # 受信点の手前へ
         else:
             self._wp_vars.append(vars_)
         self._render_waypoints()
+
+    # ----------------------------------------------------------
+    # 入力の変数（**生成の口はこの 2 つだけ**）
+    # ----------------------------------------------------------
+    # 🔑 **口を 1 本にしてあるのは、結果を無効にする配線を貼る場所を 1 か所に
+    # するため**（B-059）。地点の変数は以前 `_add_waypoint` と `_apply_path` の
+    # 2 か所で作られており、そこへ個別に配線すると**3 か所目を足した人が黙って
+    # 落とす**（列挙で塞いだ穴は名前 1 つで開く＝[[feedback-promote-recurring-checks]]）。
+    def _new_wp_vars(self, name: str, coord: str, height: str) -> dict:
+        """地点 1 行分の入力変数。**数値を生む 2 つだけ**が結果の無効化に効く。
+
+        ⚠️ `name` は入れない＝地点名は**結果の数字を作らない**（区間の見出しに
+        出るだけ）。名前を直しただけで受信レベルが消えるのは、消しすぎの側の
+        欠陥（B-058）と同じ型になる。
+        """
+        vars_ = {"name":   tk.StringVar(value=name),
+                 "coord":  tk.StringVar(value=coord),
+                 "height": tk.StringVar(value=height)}
+        for key in ("coord", "height"):
+            self._watch_input(vars_[key])
+        return vars_
+
+    def _new_hop_vars(self) -> dict:
+        """区間 1 行分の無線諸元。3 つとも結果の数字を作るので全部が効く。"""
+        vars_ = {"freq": tk.StringVar(), "gain_tx": tk.StringVar(),
+                 "gain_rx": tk.StringVar()}
+        for var in vars_.values():
+            self._watch_input(var)
+        return vars_
+
+    def _watch_input(self, var: tk.StringVar) -> None:
+        """値が変わったら結果の鮮度を見直す（B-059）。
+
+        🔴 **コールバックに `self` を持たせない**（B-050）。`trace_add` が登録する
+        Tcl コマンドは **C レベルを経由して**変数 → 窓 → 変数と循環するので、
+        窓を掴んだまま登録すると **Python の GC が切れず、閉じた窓が永久に残る**
+        （条件探索が実際に踏んで 65 個/開閉で積み上がった穴）。
+        ⚠️ **条件探索の処方（id を控えて `_on_close` で外す）はここでは効かない**＝
+        地点の追加・削除で**変数そのものが動的に捨てられる**ので、後始末を書く
+        場所が窓の閉じ際だけでは足りず、捨てる箇所を数え上げれば必ず漏れる。
+        ⇒ **弱参照にして循環を作らない**＝後始末の場所が 1 つも要らなくなる。
+        """
+        ref = weakref.ref(self)
+        def _on_write(*_args, _ref=ref) -> None:
+            win = _ref()
+            if win is not None:
+                win._drop_stale_hop_results()
+        var.trace_add("write", _on_write)
+
+    # ----------------------------------------------------------
+    # 結果が結果でなくなる時（I-041 / B-059）
+    # ----------------------------------------------------------
+    def _hop_input(self, index: int) -> tuple:
+        """区間 `index`（1 始まり）の結果を生んだ入力の控え。
+
+        🔑 **中継はバッチと違い、1 つの結果の入力が 2 つの表にまたがる**＝区間 k は
+        **地点 k と k+1**（座標・高さ）と**区間 k 自身**（周波数・利得）から出る。
+        さらに**凍結した共通設定**（`↻ ランチャーから更新` で差し替わる）も入力
+        なので、3 つ目として指紋を混ぜる。
+        """
+        wp = self._wp_vars
+        return (
+            tuple(wp[i][k].get() for i in (index - 1, index)
+                  for k in ("coord", "height")),
+            tuple(self._hop_vars[index - 1][k].get()
+                  for k in ("freq", "gain_tx", "gain_rx")),
+            self._common_fingerprint(),
+        )
+
+    def _common_fingerprint(self) -> tuple:
+        """凍結した共通設定の**値**の指紋。
+
+        ⛔ **`repr(self._base_params)` を使ってはいけない**＝`SimParams` は
+        dataclass ではないので既定の `repr` は**オブジェクトの番地**になる。
+        ↻ は毎回新しい `SimParams` を作るので、**中身が 1 つも変わっていなくても
+        指紋が変わり、押すたびに結果が消える**（＝「毎回鳴る」壊れ方）。
+        """
+        return tuple(sorted((k, repr(v))
+                            for k, v in vars(self._base_params).items()))
+
+    def _drop_stale_hop_results(self, *_trace) -> None:
+        """**それを生んだ入力が変わった区間**の結果だけを消す（I-041 の規則）。
+
+        規則は B-058 と 1 本＝**結果は、それを生んだ入力が変わった時点で結果で
+        なくなる**。B-058（複数経路）は「消しすぎ」＝キーを押しただけで消えた側で、
+        こちらは「消さなすぎ」＝**入力を変えても前の区間結果が残る**側だった
+        （消す口が実行の開始時にしか呼ばれていなかった）。
+
+        ⚠️ **引き金は個々の欄ではなく「どれかが変わったら全区間を照合」**にする。
+        地点を 1 つ動かすと**その前後 2 区間**が同時に古くなるので、欄と区間を
+        対応づける配線を持つと**必ず片側を落とす**。区間は最大 8 なので総当たりで
+        足りる。
+        """
+        # ⚠️ **表を作り直している最中に呼ばれても落ちないこと**＝トレースは値が
+        # 書かれた瞬間に走るので、地点表とホップ表が揃う前に来る経路があり得る。
+        hops = min(len(self._hop_result_labels), len(self._hop_vars),
+                   max(len(self._wp_vars) - 1, 0))
+        for index, cells in enumerate(self._hop_result_labels[:hops], start=1):
+            if not cells["status"].cget("text") and not cells["rx"].cget("text"):
+                continue                    # そもそも結果が入っていない
+            if getattr(cells["status"], "_hop_input", None) != self._hop_input(index):
+                for cell in cells.values():
+                    cell.config(text="")
 
     def _next_relay_name(self) -> str:
         """既定の地点名。先頭＝TX／2 点目＝RX／以後は使っていない `R*` を選ぶ。"""
@@ -585,11 +689,7 @@ class MultiHopWindow(tk.Toplevel):
         self._hop_vars = []
         self._hop_result_labels = []
         for i in range(hops):
-            vars_ = old[i] if i < len(old) else {
-                "freq":    tk.StringVar(),
-                "gain_tx": tk.StringVar(),
-                "gain_rx": tk.StringVar(),
-            }
+            vars_ = old[i] if i < len(old) else self._new_hop_vars()
             self._hop_vars.append(vars_)
             label = (f"{self._wp_vars[i]['name'].get()} → "
                      f"{self._wp_vars[i + 1]['name'].get()}")
@@ -714,6 +814,9 @@ class MultiHopWindow(tk.Toplevel):
         cells["status"].config(
             text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
             foreground=theme.verdict_colors(self)[theme.verdict_key(status)])
+        # **この結果を生んだ入力**を控える（B-059）。以後この控えから変わった
+        # ときだけ消える＝欄を覗いただけ・名前を直しただけでは消えない。
+        setattr(cells["status"], "_hop_input", self._hop_input(index))
 
     def _clear_hop_results(self) -> None:
         """区間表の結果列を空にする（実行の開始時＝前回の結果を残さない）。"""
