@@ -298,12 +298,23 @@ class TestGreenMeansItRan:
 
     # -- 網② 大半が skip なら赤 --------------------------------
     @staticmethod
-    def _finish(collected: int, skipped: int, exitstatus: int = 0) -> int:
-        """`pytest_sessionfinish` を偽のセッションで回し、終了コードを返す。"""
+    def _finish(collected: int, skipped: int, exitstatus: int = 0,
+                structural: int = 0) -> int:
+        """`pytest_sessionfinish` を偽のセッションで回し、終了コードを返す。
+
+        `structural`＝「この環境では原理的に走らない」と宣言された skip の本数
+        （`conftest.STRUCTURAL_SKIP` の印が付いたもの）。
+        """
         import conftest
 
+        class _Skip:
+            def __init__(self, longrepr): self.longrepr = longrepr
+
+        reports = ([_Skip("理由不明")] * skipped
+                   + [_Skip(conftest.structural_skip("表示なし"))] * structural)
+
         class _Reporter:
-            stats = {"skipped": [object()] * skipped}
+            stats = {"skipped": reports}
             def write_sep(self, *a, **k): pass
 
         class _PM:
@@ -344,6 +355,35 @@ class TestGreenMeansItRan:
     def test_an_already_red_run_is_left_alone(self):
         """既に赤い実行の終了コードを書き換えないこと。"""
         assert self._finish(collected=112, skipped=106, exitstatus=2) == 2
+
+    # -- 網②の数え方＝宣言された skip は数えない（B-074(b) の先取り）--------
+    def test_declared_skips_do_not_count_against_the_budget(self):
+        """CI の実測（1537 本中 385 本が構造的 skip）が緑であること。
+
+        🔴 **ここが 2026-08-11 に実際に破綻した**＝`385/1537 = 25.05%` で赤くなった。
+        中身は正常（1152 本が実行され通っている）で、増えたのは**CI で走らない
+        モジュールへのテスト 6 本**。⇒ **テストを足すほど赤に近づく網**だった。
+        予算が問うのは「この実行は何か検査したか」であって「CI に無いものがどれだけ
+        多いか」ではない。⛔ **閾値を上げて逃げない**（次に足せばまた同じ場所に来る）。
+        """
+        assert self._finish(collected=1537, skipped=0, structural=385) == 0
+
+    def test_an_undeclared_mass_skip_is_still_red(self):
+        """**宣言の無い**大量 skip は従来どおり赤（事故の形は捕まえ続ける）。
+
+        ⚠️ これが無いと、上の除外は**網そのものを外した**のと区別が付かない。
+        2026-08-07 の事故（112 本中 106 本）は理由が宣言されていない skip だった。
+        """
+        assert self._finish(collected=112, skipped=106) == 1
+        assert self._finish(collected=1537, skipped=400, structural=385) == 1
+
+    def test_the_mark_is_what_distinguishes_them(self):
+        """区別しているのは**印であって本数ではない**こと（変異検証）。
+
+        同じ本数・同じ割合でも、宣言の有無だけで赤緑が分かれる。
+        """
+        assert self._finish(collected=1000, skipped=0, structural=300) == 0
+        assert self._finish(collected=1000, skipped=300) == 1
 
 
 # ============================================================

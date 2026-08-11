@@ -29,12 +29,14 @@ import sys
 
 import pytest
 
+from conftest import structural_skip
+
 _HOOK_DIR = os.path.join(os.path.dirname(__file__), "..", ".claude")
 _HOOK_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "session_context.py"))
 
 pytestmark = pytest.mark.skipif(
     not os.path.exists(_HOOK_PATH),
-    reason=".claude/ は git-ignore（CI には存在しない）。ローカルのみ検証する。",
+    reason=structural_skip(".claude/ は git-ignore（CI には存在しない）。ローカルのみ検証する。"),
 )
 
 

@@ -311,6 +311,37 @@ def _app_paths_stay_isolated():
 _SKIP_BUDGET_MIN_TESTS = 100      # これ未満の実行は部分実行とみなして見ない
 _SKIP_BUDGET_RATIO     = 0.25     # 全体実行でこれを超えたら「走っていない」
 
+#: **その環境では原理的に走らない**と宣言された skip の印。
+#
+# 🔴 **予算はこれを数えない**（2026-08-12・B-074(b) の先取り）。予算が問うのは
+# 「**この実行は何か検査したか**」で、事故（112 本中 106 本＝環境が壊れて全滅）を
+# 捕まえるための網。ところが CI には**宣言済みの構造的 skip が大量にある**——
+# 表示が無い（`RADIOSIM_HEADLESS=1`）と、git-ignore の道具（`.claude/` `tools/`）。
+# これらを同じ分母で数えると、**割合が「実行の健全さ」ではなく「CI に無いものの
+# 多さ」を測る**ことになる。
+#
+# ⚠️ **実際に破綻した**＝2026-08-11 の CI が **385/1537 = 25.05%** で赤くなった。
+# 中身は正常（1152 本が実行され通っている）で、増えたのは**CI で走らないモジュール
+# へのテスト 6 本**。⇒ **テストを足すほど赤に近づく網**になっていた（正当な作業を
+# 罰する＝[[feedback-promote-recurring-checks]] の「毎回鳴る」壊れ方の一歩手前）。
+# ⛔ **閾値を上げて逃げない**＝それは網を緩めるだけで、次にテストを足せばまた同じ
+# 場所に来る。**数え方のほうが間違っている。**
+#
+# ⚠️ **印を付ける先は「宣言された skip」だけ**＝理由の分からない skip は従来どおり
+# 数える（それこそが事故の形）。
+STRUCTURAL_SKIP = "[環境に無い]"
+
+
+def structural_skip(reason: str) -> str:
+    """「この環境では原理的に走らない」と宣言する skip 理由を作る（→ `STRUCTURAL_SKIP`）。"""
+    return f"{STRUCTURAL_SKIP} {reason}"
+
+
+def _unexpected_skips(reporter) -> int:
+    """宣言されていない skip の本数（予算が見るのはこれだけ）。"""
+    return sum(1 for r in reporter.stats.get("skipped", [])
+               if STRUCTURAL_SKIP not in str(getattr(r, "longrepr", "")))
+
 
 def pytest_sessionfinish(session, exitstatus):
     """大半が skip なら、終了コードを失敗にする（緑に化けさせない）。"""
@@ -320,15 +351,18 @@ def pytest_sessionfinish(session, exitstatus):
     total = session.testscollected
     if reporter is None or total < _SKIP_BUDGET_MIN_TESTS:
         return
-    skipped = len(reporter.stats.get("skipped", []))
+    skipped = _unexpected_skips(reporter)
     if skipped <= total * _SKIP_BUDGET_RATIO:
         return
+    declared = len(reporter.stats.get("skipped", [])) - skipped
     reporter.write_sep(
         "=",
-        f"skip が多すぎます（{skipped}/{total} 本）。"
+        f"**宣言の無い** skip が多すぎます（{skipped}/{total} 本"
+        f"／別に宣言済みが {declared} 本＝これは数えていない）。"
         f"上限は {_SKIP_BUDGET_RATIO:.0%}＝この実行はテストとして成立していません。"
         "（GUI の skip なら表示環境を疑うこと。ヘッドレスで回すなら "
-        "RADIOSIM_HEADLESS=1 を宣言する）",
+        "RADIOSIM_HEADLESS=1 を宣言する。その環境では原理的に走らないものは "
+        "conftest.structural_skip() で宣言する）",
         red=True, bold=True,
     )
     session.exitstatus = 1
@@ -504,7 +538,9 @@ def _no_display(reason: str) -> "typing.NoReturn":
     `Tk | None` に見え、**呼び出し側全部で `root.destroy()` が型エラーになる**。
     """
     if _HEADLESS_DECLARED:
-        pytest.skip(reason)
+        # 宣言された環境の skip＝**構造的**（→ `STRUCTURAL_SKIP`）。予算はこれを
+        # 数えない＝「表示が無い」ことは実行の不健全さではないため。
+        pytest.skip(structural_skip(reason))
     pytest.fail(
         f"{reason}\n"
         "＝表示があるはずの環境で Tk を起こせなかった。ヘッドレスで回すなら "

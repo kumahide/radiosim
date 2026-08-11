@@ -32,13 +32,15 @@ import time
 
 import pytest
 
+from conftest import structural_skip
+
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _CACHE_MJS = os.path.join(_REPO, "tools", "qa-hook", "pytest-cache.mjs")
 
 pytestmark = [
     pytest.mark.skipif(
         not os.path.exists(_CACHE_MJS),
-        reason="tools/ は git-ignore（CI には存在しない）。ローカルのみ検証する。",
+        reason=structural_skip("tools/ は git-ignore（CI には存在しない）。ローカルのみ検証する。"),
     ),
     pytest.mark.skipif(shutil.which("node") is None, reason="node が無い環境"),
 ]
