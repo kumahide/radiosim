@@ -274,6 +274,76 @@ class TestDoneEvidence:
 # ============================================================
 # 実データ（現在の ISSUES.md）が清浄であること
 # ============================================================
+class TestDuplicateIds:
+    """**1 項目 1 ID** が守られていること（2026-08-12 新設）。
+
+    実際に衝突させた＝新しいバグを起票するとき**未対応節の最大値だけを見て
+    `B-072` を採った**が、`B-072` はアーカイブ節に既にあった。台帳は ID 降順で
+    未対応節が上なので、**上から読むと済んだ番号が見えない**＝衝突は「うっかり」
+    ではなく並び方が構造的に誘発する。
+
+    ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
+    - **一度も落ちない**: 下の `test_a_collision_across_sections_is_flagged` が、
+      実際に起きた形（本文節とアーカイブ節に同じ ID）で赤くなることを確かめる。
+    - **毎回鳴る**: 本文の相互参照とテンプレでは鳴らないことを 2 件で固定する。
+      例外表は持たない（実データで 0 件＝下の実データ検査）。
+    - **間違ったものを要求している**: 要求は「同じ ID の**項目**が 2 つ無い」こと
+      だけ。番号が連番であることも、順に並んでいることも要求しない。
+    """
+
+    def test_a_collision_across_sections_is_flagged(self, hook):
+        """実際に起きた形＝本文節の新項目とアーカイブ節の済が同じ ID。"""
+        doc = _doc("## 🐞 バグ", _item("B-072", "未着手"),
+                   _ARCHIVE_HEAD, _item("B-072", "済", resp="`abc1234`"))
+        assert hook.duplicate_ids(doc) == ["B-072"]
+
+    def test_distinct_ids_are_not_flagged(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-074", "未着手"),
+                   _ARCHIVE_HEAD, _item("B-072", "済", resp="`abc1234`"))
+        assert hook.duplicate_ids(doc) == []
+
+    def test_a_reference_in_the_body_is_not_a_second_item(self, hook):
+        """本文が他の項目を**指す**のは名乗りではない（毎回鳴るゲートにしない）。
+
+        実データにこの形がある＝B-065 の状態欄が `B-074 (a) と束ねて直す` と書く。
+        参照まで数えると、正しく相互参照するほど赤くなる。
+        """
+        doc = _doc("## 🐞 バグ", _item("B-065", "未着手"),
+                   "- 🔑 **B-065 と B-074 は同じ面**（B-065 の状態欄から参照）",
+                   _item("B-074", "未着手"))
+        assert hook.duplicate_ids(doc) == []
+
+    def test_the_template_is_not_counted(self, hook):
+        """記入例テンプレ（HTML コメント内）は項目ではない。"""
+        doc = _doc("## 🐞 バグ",
+                   "<!--", "### ★ B-001: （症状を一言で）", "-->",
+                   _item("B-001", "未着手"))
+        assert hook.duplicate_ids(doc) == []
+
+    def test_next_free_id_looks_at_every_section(self, hook):
+        """空き番号は**全節**の最大値＋1（未対応節だけ見ると衝突する）。
+
+        🔑 **これが衝突の原因そのものを消す部分**＝検出は事後にしか鳴らない。
+        アーカイブ側のほうが大きい番号を持つ状況を作って固定する。
+        """
+        doc = _doc("## 🐞 バグ", _item("B-060", "未着手"), _item("I-010", "未着手"),
+                   _ARCHIVE_HEAD, _item("B-072", "済", resp="`abc1234`"))
+        assert hook.next_free_ids(doc) == {"B": "B-073", "I": "I-011"}
+
+
+def test_real_ledger_has_no_duplicate_ids(hook):
+    """実際の台帳に ID の衝突が無いこと（2026-08-12 に 1 件あり、振り直した）。"""
+    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
+    if not os.path.exists(ledger):
+        pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
+    with open(ledger, encoding="utf-8") as f:
+        lines = f.read().splitlines()
+    assert hook.issue_id_headings(lines), "ID が 1 つも採れていない＝パーサが壊れている"
+    assert hook.duplicate_ids(lines) == [], (
+        f"同じ ID の項目が 2 つ以上ある: {hook.duplicate_ids(lines)}"
+    )
+
+
 def test_real_ledger_has_no_outstanding_warnings(hook):
     """実際の台帳に「未移動」「裏取りが弱い」が溜まっていないこと。
 
