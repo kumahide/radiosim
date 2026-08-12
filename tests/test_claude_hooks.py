@@ -1179,3 +1179,78 @@ class TestCanonMovedButKept:
     def test_real_memory_is_clean(self, memcheck):
         """実データで鳴らないこと（棚卸しの結果＝残存 0 件の回帰ガード）。"""
         assert memcheck.check_canon_moved_but_kept() == []
+
+
+# ============================================================
+# session_budget.py 並列度の畳み方（B-077・2026-08-13）
+# ============================================================
+# 🔴 **計測器が構造的に必ず 1.00 を返していた。**
+# jsonl は 1 応答を複数行へ分割し、**1 エントリに入る tool_use は最大 1 個**。
+# 旧実装は message.id の**最初の行だけ**を採っていたので、
+#   - 先頭行はたいてい text だけ ⇒ その応答は丸ごと数から落ち、
+#   - 拾えた応答も必ず 1 個ぶんしか見えない
+# ⇒ 閾値 1.15 に永遠に届かず、何をしても鳴り続ける網だった（壊れ方②）。
+# ⚠️ **この罠は analyze_usage.py も、上の TestRoundtripCounting の docstring も
+# 既に知っていた**＝知識は在ったのに再実装で失われた。
+
+
+class TestParallelismFolding:
+    """並列度が「合算」で数えられていること（B-077）。"""
+
+    def _entry(self, mid, tools=(), text=False):
+        content = [{"type": "text", "text": "x"}] if text else []
+        content += [{"type": "tool_use", "name": n} for n in tools]
+        return {"type": "assistant", "message": {"id": mid, "content": content}}
+
+    def _write(self, tmp_path, entries):
+        p = tmp_path / "t.jsonl"
+        p.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in entries),
+                     encoding="utf-8")
+        return p
+
+    def _transcript(self, tmp_path, tools_per_response):
+        """応答ごとのツール列から、実データと同じ「分割された」jsonl を作る。"""
+        entries = []
+        for i, tools in enumerate(tools_per_response):
+            entries.append(self._entry(f"m{i}", text=True))        # 先頭行＝text だけ
+            for t in tools:
+                entries.append(self._entry(f"m{i}", tools=(t,)))   # 1 行 1 tool_use
+        return self._write(tmp_path, entries)
+
+    def test_a_split_response_with_two_tools_counts_as_two(self, budget, tmp_path):
+        """🔴 **これが旧実装で 1.00 に潰れていた形。**"""
+        path = self._transcript(tmp_path, [["Bash", "Read"]] * 15)
+        par, n = budget.recent_parallelism(path)
+        assert n == 15 and par == 2.0
+
+    def test_a_response_whose_first_entry_is_text_is_not_dropped(self, budget, tmp_path):
+        """先頭行が text だけの応答を分母から落とさないこと。
+
+        実データではこれが多数派で、旧実装は 1 セッションあたり 43〜234 応答を
+        丸ごと見落としていた。
+        """
+        path = self._transcript(tmp_path, [["Bash"]] * 15)
+        par, n = budget.recent_parallelism(path)
+        assert n == 15 and par == 1.0
+
+    def test_text_only_responses_stay_out_of_the_denominator(self, budget, tmp_path):
+        """会話だけの応答は数えない（「喋った量」の指標にしない）。"""
+        path = self._transcript(tmp_path, [["Bash", "Read"]] * 15 + [[]] * 10)
+        par, n = budget.recent_parallelism(path)
+        assert n == 15 and par == 2.0
+
+    def test_the_value_is_not_structurally_pinned_to_one(self, budget, tmp_path):
+        """⚠️ **まとめ方が変われば数字が動くこと**（旧実装は動かなかった）。
+
+        これが無いと「1.15 に永遠に届かない＝毎回鳴る」に戻ったことに気づけない。
+        """
+        for sub in ("a", "b"):
+            (tmp_path / sub).mkdir(parents=True, exist_ok=True)
+        low = budget.recent_parallelism(self._transcript(tmp_path / "a", [["Bash"]] * 15))
+        high = budget.recent_parallelism(
+            self._transcript(tmp_path / "b", [["Bash", "Read", "Grep"]] * 15))
+        assert low[0] == 1.0 and high[0] == 3.0
+
+    def test_small_samples_are_not_judged(self, budget, tmp_path):
+        """母数が足りなければ測らないこと（部分実行で跳ねる値を出さない）。"""
+        assert budget.recent_parallelism(self._transcript(tmp_path, [["Bash"]] * 3)) is None
