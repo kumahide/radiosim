@@ -146,9 +146,6 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._drag_indicator: tk.Frame | None   = None
         # 列幅同期（_sync_header_columns）のデバウンス用 after ID。
         self._sync_after_id: str | None          = None
-        self._ok_count  = 0
-        self._ng_count  = 0
-        self._err_count = 0
         # 実行中のパス内進捗（標高取得 done/samples）をバーへ滑らかに反映するための
         # 実行時状態（_on_path_progress_tick が参照）。
         self._run_cur     = 0
@@ -365,7 +362,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         prog_frame = ttk.Frame(self)
         prog_frame.pack(fill="x", padx=8, pady=(0, 8))
 
-        # 上段: 現在パス名 (左) + OK/NG/ERR カウント + N/M (P%)（右端）
+        # 上段: 現在パス名 (左) + N/M (P%)（右端）
         row1 = ttk.Frame(prog_frame)
         row1.pack(fill="x")
         self._prog_label = ttk.Label(row1, text="", anchor="w")
@@ -374,19 +371,17 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # 置いていたころは、空でも 15 文字ぶんの箱を占めるので**バーだけが 1 窓だけ
         # 短く**、実行ボタンに届いていなかった。下段はどの窓も「バーと実行だけ」。
         # ⚠️ `width=15` は残す＝進捗の文言（`0 / 12  (0%)`）が伸び縮みするたびに
-        # 左隣の OK/NG/ERR が横へ動くのを止めるため（幅を固定するのは*動かさない*
-        # ためであって、大きさで強調するためではない＝I-046 とは目的が違う）。
+        # 左隣の経路名が横へ動くのを止めるため（幅を固定するのは*動かさない*ため
+        # であって、大きさで強調するためではない＝I-046 とは目的が違う）。
+        # 🔑 かつては左隣が OK/NG/ERR カウントだった（I-078 で外した）が、幅を固定
+        # する理由は隣が何であっても変わらない。
         self._prog_count_label = ttk.Label(row1, text="", width=15, anchor="e")
         self._prog_count_label.pack(side="right", padx=(6, 0))
-        # OK/NG/ERR は個別の色分けをやめ、他の ttk.Label と同一スタイルへ統一する
-        # （I-005・従来の tk.Label＋前景色ハードコードはダークテーマに追従しない）。
-        # ⛔ 太字は使わない（画面の強調は配置と余白で作る＝theme.py の決定）。
-        self._ok_label  = ttk.Label(row1, text="")
-        self._ok_label.pack(side="left", padx=(8, 2))
-        self._ng_label  = ttk.Label(row1, text="")
-        self._ng_label.pack(side="left", padx=2)
-        self._err_label = ttk.Label(row1, text="")
-        self._err_label.pack(side="left", padx=(2, 0))
+        # ⛔ **OK/NG/ERR の集計ラベルはここに置かない**（I-078・2026-08-13 に撤去）。
+        # 2.7 で行ごとの判定列（I-041）が入り、帯の集計は**同じ事実の数え直し**に
+        # なった。⇒ 判定は行が持ち、帯は「どこまで進んだか」だけを言う。
+        # 🔑 先例は中継経路＝あちらの帯は列に無い情報（全体判定＋どの区間が決めて
+        # いるか）を出しており、数え直しではない。
 
         # 下段: バー (左・伸縮) + **実行**（右端＝全フロー共通の位置）。
         # ⛔ この行に**第 3 のウィジェットを足さない**＝バーの右端がボタンまで

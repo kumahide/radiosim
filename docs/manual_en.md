@@ -365,7 +365,7 @@ The **Common Settings** panel at the top defines default values used whenever a 
 
 ### Running and Results
 
-Click **Run** to process paths sequentially. OK / NG / ERR counts update in real time.
+Click **Run** to process paths sequentially. The bar shows progress (done / total), and **each verdict is returned to the row that produced it**.
 
 On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 

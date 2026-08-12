@@ -56,12 +56,6 @@ class _RunMixin(_HostBase):
         _prog_bar: ttk.Progressbar
         _prog_label: ttk.Label
         _prog_count_label: ttk.Label
-        _ok_label: ttk.Label
-        _ng_label: ttk.Label
-        _err_label: ttk.Label
-        _ok_count: int
-        _ng_count: int
-        _err_count: int
         _run_cur: int
         _run_samples: int
 
@@ -129,18 +123,12 @@ class _RunMixin(_HostBase):
             return
 
         self._running   = True
-        self._ok_count  = 0
-        self._ng_count  = 0
-        self._err_count = 0
         self._run_cur     = 0
         self._run_samples = base_params.num
         self._run_btn.config(state="disabled")
         self._prog_bar.config(maximum=len(rows), value=0)
         self._prog_label.config(text=i18n.t("batch_starting"))
         self._prog_count_label.config(text=f"0 / {len(rows)}  (0%)")
-        self._ok_label.config(text="✓ 0 OK")
-        self._ng_label.config(text="✗ 0 NG")
-        self._err_label.config(text="⚠ 0 ERR")
         # 前回の判定を消す（I-041）＝表の行は残るので、消さないと**古い結果が
         # 新しい実行の途中まで居座る**（どこまで進んだのかも読めなくなる）。
         self._clear_verdicts()
@@ -225,22 +213,13 @@ class _RunMixin(_HostBase):
         pct = int(cur / tot * 100) if tot else 0
         self._prog_bar.config(value=cur)
         # 判定の出所は `PathResult.status` の 1 か所（I-010 ③）＝**成果物だけ
-        # 失敗した経路もここで ERR に数えられる**（以前は計算が通った時点で OK に
-        # 数え、描画が全滅しても `⚠ 0 ERR` で完走した＝B-037）。
+        # 失敗した経路もここで ERR になる**（以前は計算が通った時点で OK に数え、
+        # 描画が全滅しても `⚠ 0 ERR` で完走した＝B-037）。
         status_text = pr.status
-        if status_text == "OK":
-            self._ok_count += 1
-        elif status_text == "NG":
-            self._ng_count += 1
-        else:
-            self._err_count += 1
-        # **結果はその結果を生んだ行に返す**（I-041）＝カウンタは合計しか持たない。
+        # **結果はその結果を生んだ行に返す**（I-041）＝帯は合計を持たない（I-078）。
         self._set_row_verdict(pr.row.path_id, status_text)
         self._prog_label.config(text=f"   {pr.row.path_id}  →  {status_text}")
         self._prog_count_label.config(text=f"{cur} / {tot}  ({pct}%)")
-        self._ok_label.config(text=f"✓ {self._ok_count} OK")
-        self._ng_label.config(text=f"✗ {self._ng_count} NG")
-        self._err_label.config(text=f"⚠ {self._err_count} ERR")
 
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
         # 成果物（per-path PNG/HTML/KML・サマリ地図/HTML/KML）は batch 側の
@@ -252,7 +231,8 @@ class _RunMixin(_HostBase):
         self._pump.stop()
         self._run_btn.config(state="normal")
         # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
-        # 進捗カウントもバーに合わせて消し、結果サマリは OK/NG/ERR ラベルに残す。
+        # 進捗カウントもバーに合わせて消す。**結果は行の判定列に残る**（I-078 で
+        # 帯の OK/NG/ERR 集計を外した＝同じ事実を 2 か所で読ませない）。
         self._prog_bar.config(value=0)
         # ⚠️ ここは**日本語表示でも英語のまま出ていた**（B-066・2.7RC1 実機確認）。
         # 進捗帯に出る自然言語はこの 1 行だけが i18n を迂回していた＝OK/NG/ERR は
