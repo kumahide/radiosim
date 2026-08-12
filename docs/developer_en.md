@@ -394,7 +394,7 @@ http://proxy.example.com:8080
 
 ## Map
 
-<img src="images/shot_map.png" width="600" alt="地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える">
+<img src="images/shot_map.png" width="600" alt="Map view with the transmit point, the receive point and the path between them; clicking the map picks up coordinates">
 
 The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a three-mode selector at the top (the batch window does not open its own map — the launcher is the main line and the batch is a subordinate sink). The core simulation works without the map; the map is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX.
 
@@ -406,7 +406,7 @@ The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary 
 
 ## Usage — Single Mode
 
-<img src="images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
+<img src="images/shot_profile.png" width="720" alt="Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown">
 
 ### 1. Launcher Window
 
@@ -484,7 +484,7 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 ## Usage — Multiple Paths
 
-<img src="images/shot_batch.png" width="720" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
+<img src="images/shot_batch.png" width="720" alt="Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run">
 
 Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
@@ -550,7 +550,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
-<img src="images/shot_scenario.png" width="620" alt="条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている">
+<img src="images/shot_scenario.png" width="620" alt="Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG">
 
 Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
 
@@ -565,7 +565,7 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 
 ## Usage — Relay Path
 
-<img src="images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
+<img src="images/shot_multihop.png" width="620" alt="Relay Path window: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table">
 
 Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
 

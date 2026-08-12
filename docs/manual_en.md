@@ -179,7 +179,7 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open
 
 ## Map
 
-![地図上に送信点・受信点と経路が表示された画面。地図をクリックして座標を拾える](images/shot_map.png)
+![Map view with the transmit point, the receive point and the path between them; clicking the map picks up coordinates](images/shot_map.png)
 
 The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the map is a convenience layer.
 
@@ -232,7 +232,7 @@ Downloads and deletions show a confirmation dialog with the estimated number of 
 
 ## Usage — Single Mode
 
-![地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている](images/shot_profile.png)
+![Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown](images/shot_profile.png)
 
 ### 1. Launcher Window
 
@@ -319,7 +319,7 @@ To pull past conditions in from a file, or to carry a whole input set around, us
 
 ## Usage — Multiple Paths
 
-![複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている](images/shot_batch.png)
+![Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run](images/shot_batch.png)
 
 Click the **Multiple Paths** button in the launcher to open the dedicated window.
 
@@ -386,7 +386,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
-![条件探索の比較画面。1 本の経路に対し周波数と利得を変えた 4 条件の受信レベルとマージンが並び、最後の条件だけ NG になっている](images/shot_scenario.png)
+![Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG](images/shot_scenario.png)
 
 A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and sample count are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
 
@@ -421,7 +421,7 @@ The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
 
 ## Usage — Relay Path
 
-![中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている](images/shot_multihop.png)
+![Relay Path window: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table](images/shot_multihop.png)
 
 For **one link carried over relay points**. Open it with the **Relay Path** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
 

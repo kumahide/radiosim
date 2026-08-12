@@ -1103,6 +1103,69 @@ class TestVersionInventorySync:
         """実データで鳴らないこと（②毎回鳴るの回帰ガード）。"""
         assert memcheck.check_version_inventory() == []
 
+    def test_ids_next_to_japanese_are_seen(self, memcheck):
+        """🔴 **在庫の ID が日本語に直に接していても拾うこと**（B-078 と同型）。
+
+        `\\b` で境界を取っていたころは `クラスI-100` が見えず、**積んであるのに
+        「積み忘れ」と鳴った**。実データのロードマップで 19 件が不可視だった。
+        """
+        roadmap = ["## 🔜 2.8 — 受け皿", "1. クラスI-100を直す", "## 🔜 3.0"]
+        assert memcheck.check_ledger_matches_inventory(
+            self._LEDGER, roadmap, "2.8") == []
+
+
+# ============================================================
+# check_memory.py check 16 ＝ 状態欄と対応欄の食い違い（I-016）
+# ============================================================
+
+
+class TestStateContradictsResponse:
+    """「状態＝未着手」なのに対応欄が実施を語る項目を鳴らす。
+
+    出発点は I-016＝作業は `2.7a2` で終わっていたのに状態欄が「未着手」のまま残り、
+    **棚卸しが済んだ仕事に版を割り振った**（人も機械も古い方を信じた）。
+    ⚠️ check 13 では捕まらない＝あちらは状態欄を*正*として在庫と突き合わせるので、
+    状態欄そのものが古いときは静かになる。
+    """
+
+    def _item(self, state: str, resp: str) -> list[str]:
+        return ["## 💡 改善案", "### ★ I-100: 何かの改善",
+                f"- ★ **状態**: {state}", f"- **対応**: {resp}"]
+
+    def test_the_original_defect_is_caught(self, memcheck):
+        """I-016 の実際の形（未着手なのに版とコミットが書いてある）。"""
+        found = memcheck.check_state_contradicts_response(
+            self._item("未着手（**✅ 2.8 確定**）", "**2.7a2 / `d2a256c`（2026-08-08）**"))
+        assert found and "I-100" in found[0]
+
+    def test_a_plain_open_item_is_silent(self, memcheck):
+        """まだ手を付けていない項目では鳴らないこと（②毎回鳴る）。"""
+        assert memcheck.check_state_contradicts_response(
+            self._item("未着手（**✅ 2.8 確定**）", "未")) == []
+
+    def test_a_destination_version_is_not_evidence(self, memcheck):
+        """⛔ 「対応: 未（3.0）」は**行き先**であって実施記録ではない。
+
+        絞らないと実データで B-071・I-077 が鳴る（＝毎回鳴る網になる）。
+        """
+        assert memcheck.check_state_contradicts_response(
+            self._item("未着手", "未（3.0）")) == []
+
+    def test_in_progress_items_may_carry_a_record(self, memcheck):
+        """「対応中」は部分実施の記録を持ってよい（B-025 が実例）。"""
+        assert memcheck.check_state_contradicts_response(
+            self._item("対応中（一部のみ）", "`2.7a2` で①だけ実施")) == []
+
+    def test_archived_items_are_not_checked(self, memcheck):
+        """アーカイブ節は「済＋実施記録」が普通の形なので対象外。"""
+        lines = ["## ✅ 確認済み・対応済み（アーカイブ）", "### ★ I-102: 済んだ改善",
+                 "- ★ **状態**: 未着手", "- **対応**: `2.7a2` / `abc1234`"]
+        assert memcheck.check_state_contradicts_response(lines) == []
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（I-016 を直したので 0 件）。"""
+        assert memcheck.check_ledger_state_consistency() == []
+
 
 # ============================================================
 # check_memory.py check 14/15 ＝ 索引の揮発物（I-086）と正典移動（I-087）
