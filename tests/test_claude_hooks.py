@@ -360,7 +360,7 @@ class TestAssignmentAudit:
         )
         audit = hook.assignment_audit(doc)
         assert audit["assigned"] == {"3.2": ["B-025"]}, audit
-        assert audit["unassigned"] == []
+        assert audit["undeclared"] == []
 
     @pytest.mark.parametrize("state", [
         "未着手 ／ **✅ 版割り確定＝3.0・処方は「直す」（2026-08-05 ユーザー）**",   # B-032
@@ -377,14 +377,14 @@ class TestAssignmentAudit:
         """
         doc = _doc("### ★ B-001: t", "", f"- ★ **状態**: {state}")
         audit = hook.assignment_audit(doc)
-        assert audit["unassigned"] == [], f"{state!r} を行き先なしと誤判定"
+        assert audit["undeclared"] == [], f"{state!r} を未記入と誤判定"
         assert audit["assigned"] == {"3.0": ["B-001"]}, audit
 
     def test_a_bare_open_item_is_flagged(self, hook):
         """行き先も判断待ちも書いていない項目は鳴ること（I-081・I-016 の形）。"""
         doc = _doc("### ★ I-081: 公開文書に旧番号の版が残っている", "",
                    "- ★ **状態**: 未着手")
-        assert hook.assignment_audit(doc)["unassigned"] == ["I-081"]
+        assert hook.assignment_audit(doc)["undeclared"] == ["I-081"]
 
     @pytest.mark.parametrize("state", [
         "未着手（**版割り未決**＝`+0.1` か 3.0 か）",          # I-075
@@ -398,7 +398,32 @@ class TestAssignmentAudit:
         """
         doc = _doc("### ★ I-075: t", "", f"- ★ **状態**: {state}")
         audit = hook.assignment_audit(doc)
-        assert audit["unassigned"] == [] and audit["pending"] == ["I-075"]
+        assert audit["undeclared"] == [] and audit["pending"] == ["I-075"]
+
+    def test_the_four_buckets_partition_every_open_item(self, hook):
+        """4 分類の合計が未対応の総数になること（＝どれかに必ず入り、重複しない）。
+
+        🔴 **この検査が無いと、報告が矛盾して見える**（2026-08-12 ユーザー指摘）＝
+        `undeclared` は「行き先が**無い**」ではなく「行き先の**宣言**が無い」なので、
+        **`pending` の項目も行き先は無い**。両者を並べて「行き先なし 0 件／判断待ち
+        3 件」と報告すると読み手には矛盾に見える。⇒ **分類は分割（partition）で
+        あって、名前はその分割のどこを指すかを言っていなければならない。**
+        """
+        doc = _doc(
+            "### ★ B-001: 版が 1 つ", "", "- ★ **状態**: 未着手（✅ 3.0 確定）",
+            "### ★ B-002: 版が 2 つ", "", "- ★ **状態**: 未着手（行き先＝2.8。2.7 では直さない）",
+            "### ★ B-003: 決めていないと明記", "", "- ★ **状態**: 保留（**設計判断待ち**）",
+            "### ★ B-004: 何も書いていない", "", "- ★ **状態**: 未着手",
+            "### ★ B-005: 済は対象外", "", "- ★ **状態**: 済",
+        )
+        a = hook.assignment_audit(doc)
+        assert sorted(v for ids in a["assigned"].values() for v in ids) == ["B-001"]
+        assert a["ambiguous"] == ["B-002"]
+        assert a["pending"] == ["B-003"]
+        assert a["undeclared"] == ["B-004"]
+        total = (sum(len(v) for v in a["assigned"].values())
+                 + len(a["ambiguous"]) + len(a["pending"]) + len(a["undeclared"]))
+        assert total == 4, f"4 分類の合計が未対応の総数と合わない: {total}"
 
     def test_two_versions_in_one_state_line_go_to_ambiguous(self, hook):
         """版が 2 つ見えるものは**人に読ませる**（機械で当てにいかない）。
@@ -409,18 +434,18 @@ class TestAssignmentAudit:
         doc = _doc("### ★ B-065: t", "",
                    "- ★ **状態**: 未着手（**行き先＝2.8**。2.7 で直さない理由は下）")
         audit = hook.assignment_audit(doc)
-        assert audit["ambiguous"] == ["B-065"] and audit["unassigned"] == []
+        assert audit["ambiguous"] == ["B-065"] and audit["undeclared"] == []
 
     def test_closed_items_are_not_audited(self, hook):
         """済・却下に行き先は要らない。"""
         doc = _doc(_ARCHIVE_HEAD, _item("B-001", "済", resp="`abc1234`"))
         a = hook.assignment_audit(doc)
-        assert a["unassigned"] == [] and a["assigned"] == {}
+        assert a["undeclared"] == [] and a["assigned"] == {}
 
     def test_the_template_is_not_audited(self, hook):
         doc = _doc("<!--", "### ★ B-0XX: （症状を一言で）",
                    "- ★ **状態**: 未着手 / 対応中 / 済", "-->")
-        assert hook.assignment_audit(doc)["unassigned"] == []
+        assert hook.assignment_audit(doc)["undeclared"] == []
 
 
 def test_real_ledger_has_every_open_item_assigned(hook):
@@ -431,10 +456,10 @@ def test_real_ledger_has_every_open_item_assigned(hook):
     with open(ledger, encoding="utf-8") as f:
         audit = hook.assignment_audit(f.read().splitlines())
     total = (sum(len(v) for v in audit["assigned"].values())
-             + len(audit["pending"]) + len(audit["ambiguous"]) + len(audit["unassigned"]))
+             + len(audit["pending"]) + len(audit["ambiguous"]) + len(audit["undeclared"]))
     assert total, "未対応が 0 件＝パーサが壊れている可能性が高い"
-    assert audit["unassigned"] == [], (
-        f"行き先の無い未対応がある: {audit['unassigned']}"
+    assert audit["undeclared"] == [], (
+        f"行き先が未記入の未対応がある: {audit['undeclared']}"
     )
 
 
