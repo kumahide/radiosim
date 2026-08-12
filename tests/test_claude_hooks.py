@@ -162,6 +162,44 @@ class TestArchivePlacement:
         ))
         assert len(items) == 1 and stale == []
 
+    # --- 置き場の規則の**逆向き**（2026-08-12・I-016 で実際に踏んだ）------------
+    #
+    # 🔴 **規則は双方向なのに、検査は片方しか無かった。** 上の 3 本が見るのは
+    # 「済なのに本文節」だけで、「未対応なのにアーカイブ節」は誰も見ていない。
+    # ⇒ 実際に **I-016 がアーカイブ節の中で「未着手」のまま**置かれていた（2.8 へ
+    # 復活させたとき、状態欄だけ直して物理移動が漏れた）。⚠️ **見つけたのは偶然**＝
+    # 版割りの突き合わせ（I-085）が台帳側を 1 件少なく数えたので気づいた。
+
+    def test_open_item_inside_archive_is_flagged_as_misplaced(self, hook):
+        """未対応がアーカイブ節にあれば鳴ること（I-016 の形）。"""
+        assert hook.misplaced_open_items(_doc(
+            "## 🐞 バグ", _item("B-013", "未着手"),
+            _ARCHIVE_HEAD, _item("I-016", "未着手"),
+        )) == ["I-016"]
+
+    def test_open_item_in_the_body_is_not_flagged(self, hook):
+        """本文節の未対応は正しい置き場＝鳴らないこと。"""
+        assert hook.misplaced_open_items(_doc(
+            "## 💡 改善案", _item("I-016", "未着手"), _ARCHIVE_HEAD,
+        )) == []
+
+    def test_done_inside_archive_is_not_misplaced(self, hook):
+        """済がアーカイブ節にあるのは正しい＝鳴らないこと（毎回鳴る網にしない）。"""
+        assert hook.misplaced_open_items(_doc(
+            _ARCHIVE_HEAD, _item("B-004", "済", resp="2.4a1 / `abc1234`"),
+        )) == []
+
+    def test_misplaced_reads_the_same_state_words_as_the_forward_check(self, hook):
+        """状態語の読み方が順方向と揃っていること（強調・註釈つきでも拾う）。
+
+        ⚠️ ここが揃っていないと、**同じ 1 つの規則が方向によって別の基準になる**。
+        実データの状態欄は `**未着手**（✅ 2.8 確定＝…）` の形が普通。
+        """
+        assert hook.misplaced_open_items(_doc(
+            _ARCHIVE_HEAD,
+            _item("I-016", "**未着手**（✅ 2.8 確定＝2026-08-12 ユーザー決定）"),
+        )) == ["I-016"]
+
     # --- 状態語の読み取り（2026-08-05・このゲートが「一度も落ちなかった」件）-----
     #
     # 実データの状態欄は強調・註釈・同義語が付く。旧実装はそれを状態語として
@@ -996,3 +1034,148 @@ class TestStaleModuleRefs:
         if not os.environ.get("RADIOSIM_PYTHON"):
             pytest.skip("RADIOSIM_PYTHON 未宣言＝この環境ではライブラリを解決しない")
         assert memcheck.check_stale_module_refs() == []
+
+
+# ============================================================
+# check_memory.py check 13 ＝ 台帳の版割り ⇔ ロードマップの在庫（I-085）
+# ============================================================
+# 「割り振りを決める」と「在庫へ積む」は**別の手**なので、後者だけ落ちても
+# どちらのファイルを読んでも矛盾が見えない。実際に 1 日で 2 件落ちた
+# （I-078＝8/10 確定→積み忘れ／I-084＝8/12 確定→同じ日の棚卸しで再発）。
+
+
+class TestVersionInventorySync:
+    """台帳で版を確定した未対応が、ロードマップの在庫にも現れること。"""
+
+    _LEDGER = [
+        "## 💡 改善案",
+        "### ★ I-100: 何かの改善",
+        "- ★ **状態**: 未着手（**✅ 2.8 確定＝2026-08-12 ユーザー決定**）",
+        "### ★ I-101: 別の改善",
+        "- ★ **状態**: 未着手（**✅ 3.0 確定**）",
+        "## ✅ 確認済み・対応済み（アーカイブ）",
+        "### ★ I-102: 済んだ改善",
+        "- ★ **状態**: **済**（`2.8a1`・`abc1234`）",
+    ]
+    _ROADMAP = ["## 🔜 2.8 — 受け皿", "1. **I-100 何かの改善**", "## 🔜 3.0 — 出力契約"]
+
+    def test_an_assigned_item_missing_from_the_inventory_is_flagged(self, memcheck):
+        """在庫に積み忘れた項目が鳴ること（この項目の出発点そのもの）。"""
+        roadmap = ["## 🔜 2.8 — 受け皿", "1. 何も積んでいない", "## 🔜 3.0"]
+        found = memcheck.check_ledger_matches_inventory(self._LEDGER, roadmap, "2.8")
+        assert found and "I-100" in found[0]
+
+    def test_an_item_present_in_the_inventory_is_silent(self, memcheck):
+        """積んであれば鳴らないこと（②毎回鳴るを避ける）。"""
+        assert memcheck.check_ledger_matches_inventory(
+            self._LEDGER, self._ROADMAP, "2.8") == []
+
+    def test_other_versions_are_not_demanded(self, memcheck):
+        """別の版に割り振った項目を、この版の在庫に要求しないこと。"""
+        assert "I-101" not in "".join(
+            memcheck.check_ledger_matches_inventory(self._LEDGER, self._ROADMAP, "2.8"))
+
+    def test_done_items_are_not_demanded(self, memcheck):
+        """済んだ項目は在庫に無くてよい（積む義務があるのは未対応だけ）。"""
+        assert "I-102" not in "".join(
+            memcheck.check_ledger_matches_inventory(self._LEDGER, self._ROADMAP, "2.8"))
+
+    def test_the_reverse_direction_is_not_checked(self, memcheck):
+        """⛔ **逆向き（在庫にあり台帳に無い）は鳴らさないこと。**
+
+        在庫には ID を持たない項目が正当に居る（`B-061 の残留リスク`・
+        `表示言語の利用者拡張`）。両方向にすると毎回鳴る網になる。
+        """
+        roadmap = self._ROADMAP + ["2. **B-061 の残留リスク**", "3. **I-999 台帳に無い**"]
+        assert memcheck.check_ledger_matches_inventory(self._LEDGER, roadmap, "2.8") == []
+
+    def test_version_token_matching_has_boundaries(self, memcheck):
+        """`2.8` が `12.8` や `2.85` に当たらないこと（版の取り違え）。"""
+        assert memcheck._names_version("2.8a1 で直す", "2.8")
+        assert not memcheck._names_version("12.8 の話", "2.8")
+        assert not memcheck._names_version("2.85 の話", "2.8")
+
+    def test_missing_inventory_section_is_silent(self, memcheck):
+        """その版の節がまだ無いなら黙ること（版を切る前に鳴らさない）。"""
+        assert memcheck.check_ledger_matches_inventory(self._LEDGER, ["## 🔜 3.0"], "2.8") == []
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（②毎回鳴るの回帰ガード）。"""
+        assert memcheck.check_version_inventory() == []
+
+
+# ============================================================
+# check_memory.py check 14/15 ＝ 索引の揮発物（I-086）と正典移動（I-087）
+# ============================================================
+
+
+class TestIndexVolatileValues:
+    """索引に「いまの件数」を書かせない（I-086）。
+
+    索引は毎セッション読み込まれるので、古い数字を信じたまま作業を始める入口に
+    なる。実際に 2 度 stale 化した（ロードマップ行の在庫数／CodeGraph 行の必須条件）。
+    """
+
+    def test_a_live_inventory_count_is_flagged(self, memcheck):
+        """実際に stale 化した形（在庫数）が鳴ること。"""
+        found = memcheck.check_index_volatile_values(
+            ["- [project_roadmap.md](project_roadmap.md) — 在庫 15 件で進行中"])
+        assert found and "在庫 15 件" in found[0]
+
+    @pytest.mark.parametrize("line", [
+        "- [a.md](a.md) — 版段階は完了で b1・大改修ごとに +1",          # 規則の説明
+        "- [b.md](b.md) — 2026-08-01 に 1 セッションで 3 件の実例",      # 凍った history
+        "- [c.md](c.md) — 依存 3 件の実測が要る",                        # 要件の数
+        "- [d.md](d.md) — 2026-08-12 に決着（2.8 で実施）",             # 日付・版番号
+    ])
+    def test_frozen_facts_are_not_flagged(self, memcheck, line):
+        """⛔ **動かない数は鳴らさないこと。**
+
+        ここを素朴に「件数を禁止」にすると索引 29 行中 8 行が当たり、その中身は
+        規則の説明・凍った history・要件の数＝**毎回鳴る網**になる（壊れ方②）。
+        """
+        assert memcheck.check_index_volatile_values([line]) == []
+
+    def test_non_index_lines_are_ignored(self, memcheck):
+        """見出しや注記は対象外（索引の 1 行だけを見る）。"""
+        assert memcheck.check_index_volatile_values(["## 未対応 20 件の話"]) == []
+
+    def test_real_index_is_clean(self, memcheck):
+        """実データで鳴らないこと（②毎回鳴るの回帰ガード）。"""
+        assert memcheck.check_memory_index_volatile() == []
+
+
+class TestCanonMovedButKept:
+    """「正典は Q」と宣言しながら自分が実体を持つのを拾う（I-087）。
+
+    2026-08-12 の実例＝`project_radiosim` が「ここで版スコープを再記述しない」と
+    宣言する同じ 1 文で「2.2 リリース済み」「2.3 リリース済み」と再記述していた。
+    🔑 危なかったのは古くなることではなく、**列挙が 2.3 で止まっていたこと**。
+    """
+
+    _DECL = "⚠️ 版ごとの進捗・現在地は [[project-roadmap]] の表を見る"
+
+    def test_enumeration_alongside_the_pointer_is_flagged(self, memcheck):
+        found = memcheck.check_pointer_without_removal(
+            "project_radiosim.md", [self._DECL, "- 2.2 リリース済み・2.3 リリース済み"])
+        assert found and "project_radiosim.md:2" in found[0]
+
+    def test_a_file_without_the_pointer_is_out_of_scope(self, memcheck):
+        """宣言していないファイルは対象外（版を語ってよい場所がある）。"""
+        assert memcheck.check_pointer_without_removal(
+            "other.md", ["- 2.2 リリース済み"]) == []
+
+    def test_the_incident_record_itself_is_not_flagged(self, memcheck):
+        """⛔ **記録・引用ブロック（`>`）を消させないこと。**
+
+        この事故の*記録*そのものが「2.2 リリース済み」を引用している。ここで鳴ると
+        ゲートが**記録を壊す**＝壊れ方③（間違ったものを要求する）。実データで 2 件該当。
+        """
+        assert memcheck.check_pointer_without_removal(
+            "project_radiosim.md",
+            [self._DECL, "> 昔は「2.2 リリース済み」と書いていた＝それが欠陥だった"],
+        ) == []
+
+    def test_real_memory_is_clean(self, memcheck):
+        """実データで鳴らないこと（棚卸しの結果＝残存 0 件の回帰ガード）。"""
+        assert memcheck.check_canon_moved_but_kept() == []
