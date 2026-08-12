@@ -72,7 +72,24 @@ htmlcov/
 # ローカルの QA 環境（**意図的にコミットしない**＝2026-06-14 の決定）。
 # ローカル LLM のレビュー足場（Ollama/Qwen）と、そのプロジェクト MCP 登録。
 # 起動側は .claude/（無視対象）と .git/hooks/（clone されない）にある。
-tools/
+#
+# 🔁 **2026-08-12 に射程を絞った（I-090）＝決定を覆したのではない。**
+# 当初は `tools/` を丸ごと無視していたが、**この決定の理由（公開リポにローカル LLM
+# の足場を置かない）は tools/ の一部にしか当たっていなかった**。`gate.mjs` や
+# `release-checklist.txt` は Ollama に依存しない**プロジェクトの QA 道具**で、
+# 理由の側から見れば最初から対象外だった。しかも 2026-07-26 に LLM コードレビュー
+# 自体を廃止しており、射程はさらに狭まっている。
+# ⚠️ **実害が出ていた**＝B-074(b) の刻印照合（`release-check.mjs`）は `build.bat`
+# から呼ばれるのに**ファイルが clone に無い**ので、他の環境では門が丸ごと消えていた。
+# しかも `tools/` は履歴が無いため、**消したら本当に消える**（退役ツールを削除でなく
+# `_retired/` へ移動しているのはそのため）。
+# ⇒ **無視するのは「LLM 足場」と「個人の作業ログ」だけ**にする。
+tools/qa-mcp/
+tools/qa-hook/doc-review.mjs
+tools/qa-hook/model-eval.mjs
+tools/qa-hook/_retired/
+# Claude Code のトランスクリプト（＝個人の作業ログ）を解析する道具。
+tools/token-usage/
 .mcp.json
 
 # ローカル LLM の QA Stop フックの出力（レビュー報告＋重複排除の状態）

@@ -295,6 +295,62 @@ _LINE_LIMIT_EXEMPT = {
 _LAYERS = ("core", "report", "views")
 
 
+# ============================================================
+# 追跡されている呼び出し口が呼ぶ道具は、追跡されていること（I-090）
+# ============================================================
+# 🔴 **門が「この機械にしか無い」状態は、外からは緑に見える。**
+# `build.bat` は追跡されているのに、そこから呼ぶ `tools/qa-hook/release-check.mjs`
+# は `tools/` ごと git-ignore されていた＝**clone した環境では門が丸ごと消える**のに、
+# `if exist` のガードで**静かにスキップ**されるので誰も気づかない。実際 B-074(b) の
+# 刻印照合（表示依存テストを回したかの突き合わせ）が、この形で片翼だけローカルに
+# 存在していた（2026-08-12・I-090）。
+#
+# ⇒ **一覧をここに書かない**＝書くと道具が増えたとき追従が要り、書き忘れれば
+# その 1 件だけが検査の外に出る（[[feedback-user-examples-are-classes]]＝列挙で
+# 塞ぐ穴は名前 1 つで開く）。**呼び出し口の実物から参照を読む。**
+_TOOL_REF = re.compile(r"tools[\\/][\w\-.\\/]+\.(?:mjs|py|txt)", re.IGNORECASE)
+
+
+def _tools_referenced_by(path: Path) -> set[str]:
+    """そのファイルが名指ししている `tools/…` を集める（POSIX 区切り）。"""
+    text = path.read_text(encoding="utf-8", errors="replace")
+    return {m.group(0).replace("\\", "/") for m in _TOOL_REF.finditer(text)}
+
+
+def test_qa_tools_called_from_tracked_files_are_tracked():
+    """追跡ファイルが呼ぶ QA 道具が、追跡から漏れていないこと。
+
+    ⚠️ **`if exist` のガードがあるから安全、ではない**＝ガードは「無いときに壊れ
+    ない」ことしか保証せず、**門が働かないこと自体は報告しない**。B-074 の処方は
+    「報告と刻印の対」で成り立っているので、片翼が消えると静かに元の事故へ戻る。
+    """
+    callers = [ROOT / "build.bat"]
+    tracked = set(tracked_paths())
+    missing = []
+    for caller in callers:
+        for ref in sorted(_tools_referenced_by(caller)):
+            if not (ROOT / ref).exists():
+                continue        # 参照が古いだけ（別のゲートの領分）
+            if ref not in tracked:
+                missing.append(f"{_rel(caller)} → {ref}")
+    assert not missing, (
+        "追跡されている呼び出し口が、**非追跡の道具**を呼んでいます:\n  "
+        + "\n  ".join(missing)
+        + "\n＝clone した環境ではこの門が丸ごと消えます（しかも静かにスキップ"
+        "されるので気づけません）。道具を追跡するか、呼び出し口の側から外すこと。"
+    )
+
+
+def test_the_release_checklist_is_tracked():
+    """リリース前チェックリストの**正典**が追跡されていること。
+
+    🔑 `release-check.mjs` からしか名指しされないので上の走査には載らない
+    （呼び出し口＝`build.bat` は中身を知らない）。**手順の正典が clone に無いと、
+    リリース工程そのものがこの機械に固有になる。**
+    """
+    assert "tools/qa-hook/release-checklist.txt" in set(tracked_paths())
+
+
 def _python_modules():
     """アプリのモジュール（直下の入口と 3 層）。テスト・ツールは対象外。"""
     paths = list(ROOT.glob("*.py"))
