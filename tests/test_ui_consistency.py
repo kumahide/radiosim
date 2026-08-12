@@ -859,6 +859,91 @@ def test_deleting_a_relay_keeps_the_remaining_sections_aligned():
         root.destroy()
 
 
+def test_inserting_a_relay_does_not_shift_the_later_sections():
+    """**任意の位置に挿しても**、後ろの区間の設定がずれないこと（I-074）。
+
+    🔴 削除側（I-045）の裏面＝`_sync_hops` は `old[i]` を**位置で**再利用するので、
+    地点だけ挿すと**挿した位置より後ろの周波数が 1 つ後ろへずれる**。画面は自然に
+    見えたまま、黙って別の区間の設定で計算する。
+    ⚠️ 「任意の位置に挿せること」だけを見るゲートでは捕まらない（並びは正しく見える）。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params())
+        for _ in range(2):
+            win._on_add_point()                 # TX, R1, R2, RX
+        for i, freq in enumerate(("100", "200", "300")):
+            win._hop_vars[i]["freq"].set(freq)
+
+        win._add_waypoint(index=1)              # TX と R1 のあいだへ挿す
+        assert len(win._wp_vars) == 5 and len(win._hop_vars) == 4
+        # 挿した地点から「出ていく」区間だけが空欄。入ってくる側（TX → 新）は
+        # 分割前と**始点が同じ**なので、利用者の入力の意味が変わらない。
+        assert [v["freq"].get() for v in win._hop_vars] == ["100", "", "200", "300"], (
+            "中継点を挿したら後ろの区間の周波数がずれた（別の区間の設定で計算される）"
+        )
+    finally:
+        root.destroy()
+
+
+def test_insert_and_delete_at_the_same_place_round_trips():
+    """挿してから同じ位置を消すと、**地点も区間の設定も完全に元へ戻る**こと。
+
+    🔑 **この 1 本で「ずれ」を封じられる**＝追加と削除が互いの逆写像であることを
+    直接見るので、片方の規則だけが動いた日に必ず落ちる。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params())
+        for _ in range(2):
+            win._on_add_point()
+        for i, freq in enumerate(("100", "200", "300")):
+            win._hop_vars[i]["freq"].set(freq)
+        names_before = [v["name"].get() for v in win._wp_vars]
+        freqs_before = [v["freq"].get() for v in win._hop_vars]
+
+        for at in (1, 2, 3):                    # 先頭・中間・受信点の手前
+            win._add_waypoint(index=at)
+            win._delete_waypoint(at)
+            assert [v["name"].get() for v in win._wp_vars] == names_before, (
+                f"位置 {at} で挿して消したら地点の並びが戻らない"
+            )
+            assert [v["freq"].get() for v in win._hop_vars] == freqs_before, (
+                f"位置 {at} で挿して消したら区間の設定が戻らない"
+            )
+    finally:
+        root.destroy()
+
+
+def test_the_endpoints_stay_fixed_however_the_insert_is_asked():
+    """⛔ **送信点より前・受信点より後ろには挿さらない**こと。
+
+    先頭＝送信点／末尾＝受信点は窓の不変条件で、`＋` の口が増えても変わらない。
+    ⚠️ 画面のボタンは受信点の行に出していないが、**範囲は呼び出し側ではなく
+    `_add_waypoint` が守る**（口が 3 つある＝行の `＋`・下部のボタン・地図）。
+    """
+    pytest.importorskip("tkinter")
+    from views.multihop import MultiHopWindow
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = MultiHopWindow(root, _params())
+        tx, rx = (v["name"].get() for v in win._wp_vars)
+        win._add_waypoint(index=0)              # 送信点より前は不可
+        assert win._wp_vars[0]["name"].get() == tx
+        win._add_waypoint(index=99)             # 受信点より後ろも不可
+        assert win._wp_vars[-1]["name"].get() == rx
+        assert len(win._hop_vars) == len(win._wp_vars) - 1
+    finally:
+        root.destroy()
+
+
 def test_relay_window_inherits_the_launcher_endpoints():
     """中継の TX / RX は**開いた時**にランチャーの座標を引き継ぐこと（I-044）。
 

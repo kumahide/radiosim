@@ -401,13 +401,19 @@ class MultiHopWindow(tk.Toplevel):
     # 地点の増減
     # ----------------------------------------------------------
     def _add_waypoint(self, name: str = "", lat: "float | None" = None,
-                      lon: "float | None" = None, h: "float | None" = None) -> None:
+                      lon: "float | None" = None, h: "float | None" = None,
+                      index: "int | None" = None) -> None:
         """地点を足す。**2 点あるときは「間」に入れる**（＝中継点として足す）。
 
         ⚠️ 末尾に足すと「TX → RX → R1」という並びになり、**それまで受信点だった
         地点が中継点に化ける**（実装直後のスクリーンショットで実際にそうなった）。
         利用者の頭の中は「送信点と受信点があって、その間に中継点を置く」なので、
         **先頭＝送信点・末尾＝受信点を固定**し、新しい点はその手前へ挿す。
+
+        `index` を渡すと**その位置へ**挿す（I-074＝行ごとの `＋`）。既定（`None`）は
+        従来どおり受信点の手前。⚠️ **範囲は呼び出し側が保証する**のではなく、ここで
+        `1 <= index <= last` に丸める＝送信点より前と受信点より後ろには挿さらない
+        （先頭・末尾が固定という不変条件は、口が増えても 1 か所で守る）。
         """
         if len(self._wp_vars) >= mh.MAX_HOPS + 1:
             dialogs.alert(self, i18n.t("dlg_input_error"),
@@ -424,7 +430,20 @@ class MultiHopWindow(tk.Toplevel):
             coord=coord,
             height=f"{self._base_params.h_tx if h is None else h:.1f}")
         if len(self._wp_vars) >= 2:
-            self._wp_vars.insert(len(self._wp_vars) - 1, vars_)   # 受信点の手前へ
+            last = len(self._wp_vars) - 1
+            at = last if index is None else max(1, min(index, last))
+            self._wp_vars.insert(at, vars_)                       # 既定＝受信点の手前
+            # 🔴 **区間の設定も一緒に挿す＝`_delete_waypoint` の逆写像**（I-074）。
+            # `_sync_hops` はホップ行を**先頭から詰め直す**（`old[i]` を位置で
+            # 再利用する）ので、地点だけ挿すと**挿した位置より後ろの周波数・利得が
+            # 1 つ後ろへずれる**。画面は自然に見えたまま、黙って別の区間の設定で
+            # 計算する＝削除側で実際に起きた実害（I-045）と同型。
+            #
+            # 挿すのは **`at` 番目のホップ＝挿した地点から「出ていく」側を空欄で**。
+            # `at - 1`（入ってくる側）に既存の設定が残るのは、そちらが分割前の区間と
+            # **始点が同じ**だから＝利用者の入力の意味が変わらない。
+            # ⇒ 同じ位置を消せば `_hop_vars.pop(at)` で**元へ戻る（往復で同一）**。
+            self._hop_vars.insert(at, self._new_hop_vars())
         else:
             self._wp_vars.append(vars_)
         self._render_waypoints()
@@ -595,13 +614,21 @@ class MultiHopWindow(tk.Toplevel):
             for seq in ("<FocusOut>", "<Return>"):
                 coord_ent.bind(seq, lambda _e, v=vars_["coord"]: self._reformat(v),
                                add="+")
+            # 行ごとの追加（I-074）＝**この行の下に中継点を挿す**。`×` と対にする
+            # ための列で、⚠️ **受信点の行には出さない**（末尾は受信点固定なので、
+            # その下に挿せる場所が無い）。⇒ `＋` は送信点〜最後の中継点、`×` は
+            # 中継点だけ＝**押せるのに何も起きないボタンを置かない**という同じ規則。
+            if i < last:
+                ttk.Button(self._wp_grid, text="＋", width=2, cursor="hand2",
+                           command=lambda idx=i: self._add_waypoint(index=idx + 1)
+                           ).grid(row=row, column=4, padx=(4, 0), pady=1)
             # 行ごとの削除（I-045）＝複数経路の表と同じ `×`。
             # ⚠️ **送信点・受信点には出さない**＝消せないという現在の不変条件を、
             # そのまま画面で表す（押せるのに何も起きないボタンを置かない）。
             if 0 < i < last:
                 ttk.Button(self._wp_grid, text="×", width=2, cursor="hand2",
                            command=lambda idx=i: self._delete_waypoint(idx)).grid(
-                    row=row, column=4, padx=4, pady=1)
+                    row=row, column=5, padx=4, pady=1)
         self._sync_hops()
         self._fit_to_content()
         # 地点の増減・並びの変化はここに集約されている＝通知もここ 1 か所で足りる。
