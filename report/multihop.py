@@ -361,7 +361,13 @@ def validate_path(path: MultiHopPath) -> list[str]:
                 name=wp.name, val=wp.h))
     # 隣接する 2 点が同じ位置＝ホップとして成立しない（バッチ側の
     # verr_identical と同じ判定を、導出した行に対してかける）。
-    errors.extend(batch.validate_rows(hop_rows(path)) if errors == [] else [])
+    # ⚠️ ID 長は**出力ディレクトリ名の上限**で見る（B-057）＝ここへ渡すのは
+    # `route1_h8` のように**生成した** ID で、人が複数経路の表に打つものではない。
+    # 既定（`MAX_TYPED_ID_LEN` ＝表で読める長さ）を使うと、中継の経路 ID が
+    # 8 文字まで縮む。経路 ID そのものの上限は上の `_MAX_PATH_ID_LEN` で見ている。
+    errors.extend(
+        batch.validate_rows(hop_rows(path), max_id_len=batch._MAX_PATH_ID_LEN)
+        if errors == [] else [])
     return errors
 
 

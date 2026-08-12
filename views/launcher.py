@@ -453,7 +453,17 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             f, text=label, width=22, anchor="w"
         ).pack(side="left")
         # ⚠️ 素の tk.Entry はスタイルに追従しないので font を明示する（新規は ttk で）。
+        # ⚠️ **座標欄だけ幅の下限を `coords` から取る**（B-046 / B-057）。ここは
+        # `fill="x"` で伸びるので普段は足りているが、**幅を宣言していなかった**ため
+        # Tk 既定の 20 文字が下限になり、**150% 表示で DMS の末尾が切れていた**
+        # （実測 2026-08-12＝欄 240px / DMS 要求はそれ以上）。他の 4 つの窓は
+        # `DISPLAY_WIDTH_CHARS` に揃っていたのに、**座標を実際に打つこの窓だけが
+        # 揃っていなかった**。⇒ 伸びるかどうかと、下限を宣言するかは別の話。
+        # ⚠️ `**kw` で渡さない＝pyright が tk.Entry のオーバーロードを解決できず
+        #    型エラー 28 件になる（実測）。**後から `configure` で当てる。**
         e = tk.Entry(f, font=theme.ui_font(parent))
+        if key in ("start", "end"):
+            e.configure(width=coords.DISPLAY_WIDTH_CHARS)
         e.insert(0, self.config[key])
         e.pack(side="right", expand=True, fill="x")
         self.entries[key] = e

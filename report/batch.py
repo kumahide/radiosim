@@ -34,6 +34,25 @@ _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
 # path_id・備考の最大文字数。長すぎる値は summary 台帳の列幅を押し広げ A4 レイアウトを
 # 崩すため、実行前の validate_rows で弾く（手入力・CSV 取込の共通チョークポイント）。
+#
+# ⚠️ **path_id の上限は 2 つある**（B-057・2026-08-12 に分割）。ひとつの数で
+# 両方を兼ねていたのが欠陥の温床だった＝**役割が違う**：
+#
+#   - `MAX_TYPED_ID_LEN` ＝ **人が表に打ち、表で読む**長さ。複数経路の ID 欄の
+#     幅と**同じ数でなければならない**（打てる長さと読める長さが食い違うと、
+#     `asaminami24` が `asaminami2` に読めて**別の ID として通用してしまう**）。
+#     ⇒ この定数が ID 欄の幅の単一ソースでもある（`views/batch_builder._WIDTHS`）。
+#     🔴 **上げるときは欄幅と画面の両方が要る**＝複数経路の窓は FHD 150% で
+#     余裕 3px しかなく、周波数・利得・距離は見出しが床で 1px も出ない
+#     （実測 2026-08-12）。数字だけ上げると見切れゲートが赤くなる。
+#   - `_MAX_PATH_ID_LEN` ＝ **出力ディレクトリ名として許す**長さ。人は打たない＝
+#     中継が `route1_h8` のように**生成した** ID がここに収まればよく、表の欄幅
+#     とは無関係。`report/multihop.py` の上限（12）＋接尾辞（`_h8`）がこの中に
+#     収まることを `tests/test_multihop.py` が固定している。
+#
+# ⛔ **どちらか一方に戻して「1 つにまとめる」ことはできない**＝16 に揃えると
+# B-057 が戻り、11 に揃えると中継の経路 ID が 8 文字まで削られる（無傷の窓を壊す）。
+MAX_TYPED_ID_LEN = 11
 _MAX_PATH_ID_LEN = 16
 _MAX_NOTE_LEN    = 40
 
@@ -228,8 +247,16 @@ def export_csv(rows: list[PathRow], csv_path: str) -> None:
 # ============================================================
 # バリデーション
 # ============================================================
-def validate_rows(rows: list[PathRow]) -> list[str]:
-    """PathRow リストを検証してエラーメッセージのリストを返す。空リストなら正常。"""
+def validate_rows(
+    rows: list[PathRow], *, max_id_len: int = MAX_TYPED_ID_LEN,
+) -> list[str]:
+    """PathRow リストを検証してエラーメッセージのリストを返す。空リストなら正常。
+
+    `max_id_len` は既定で「人が打てる長さ」＝表の ID 欄で読める長さ（B-057）。
+    ⚠️ **生成された行を検証する呼び出しだけが明示的に渡す**（中継の `_h8` 付き
+    ID）＝人が打っていないものに「表で読めるか」を要求しても意味が無く、逆に
+    ここを既定で緩めると CSV 取込が読めない ID を通してしまう。
+    """
     errors: list[str] = []
     if not rows:
         errors.append(i18n.t("verr_empty"))
@@ -252,9 +279,9 @@ def validate_rows(rows: list[PathRow]) -> list[str]:
         if not _PATH_ID_RE.fullmatch(pid):
             errors.append(i18n.t("verr_invalid_id").format(pid=repr(pid)))
             continue
-        if len(pid) > _MAX_PATH_ID_LEN:
+        if len(pid) > max_id_len:
             errors.append(i18n.t("verr_id_too_long").format(
-                pid=pid, max=_MAX_PATH_ID_LEN, n=len(pid)))
+                pid=pid, max=max_id_len, n=len(pid)))
         if len(r.note) > _MAX_NOTE_LEN:
             errors.append(i18n.t("verr_note_too_long").format(
                 pid=pid, max=_MAX_NOTE_LEN, n=len(r.note)))

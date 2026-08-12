@@ -946,59 +946,281 @@ def _entries_bound_to(win, variables) -> list:
             if w.winfo_class() == "TEntry" and str(w.cget("textvariable")) in names]
 
 
-def _dms_sample_length() -> int:
-    """画面に出る DMS 表記の文字数（**要求量そのもの**）。
+def _dms_samples() -> "list[str]":
+    """画面に出る DMS 表記のうち**一番幅を食う**もの（要求量そのもの）。
 
-    経度が 3 桁になる日本国内の座標で測る（`132°36'00.0"E`）＝ここが最長。
+    経度が 3 桁になる日本国内の座標（`132°36'00.0"E`）が最長。南緯・西経も
+    入れる＝半球記号が変わるだけだが、**書式を変えた日に片方だけ伸びる**ことが
+    あるので両方見る。
     """
     from core import coords as _coords
-    return len(_coords.format_dms(34.8, 132.6))
+    return [_coords.format_dms(34.8, 132.6), _coords.format_dms(-34.8, -132.6)]
 
 
-def test_relay_coordinate_fields_are_wide_enough_for_dms():
-    """座標欄が **DMS 表記を切らない**幅であること（B-046）。
+# 出荷し得る本文書体（`views/theme.py` が当てるもの＋その環境フォールバック）と、
+# DPI 100/125/150% で取り得るサイズ。⚠️ **入っていない書体は自動で飛ばす**
+# （`actual()` が別書体を返す＝その環境には無い）。
+_SHIPPING_FAMILIES = ("Segoe UI Variable Text", "Segoe UI",
+                      "Yu Gothic UI", "Meiryo UI")
+_SHIPPING_SIZES = (-11, -14, -17, -21, 9, 12)
+
+
+def _required_width_units(root, text: str) -> float:
+    """`text` を描くのに要る Tk の `width` 単位数（出荷し得る書体・サイズの最悪）。
+
+    🔑 **Tk の `width` の単位は「`0` の字の幅」**。だから必要量は
+    `measure(text) / measure("0")` で出る＝**文字数ではない**。B-046 は
+    「DMS は 27 文字だから幅 27」と決めたが、実際に要るのは **24.17 単位**で、
+    3 文字ぶん過大に予約していた（B-057 で判明）。逆に ID 欄は「11 文字だから
+    幅 11」で**足りなかった**（`asaminami24` は 11.67 単位要る）。同じ取り違えが
+    両方向に出た。
+
+    🔴 **なぜ実物の欄を測らないか**＝測ろうとして 2 度失敗した。ttk の Entry は
+    フォントを**スタイル側**に持つので `cget("font")` は空を返し、`sv_ttk` の
+    テーマ適用は**このリポジトリでは間欠的に失敗する**（`conftest.set_theme` が
+    リトライしているのはそのため）。結果、同じ検査が単独では緑・一括では赤に
+    なった。⇒ **書体を自分で列挙して比だけを見る**＝Tk の状態に一切依存しない。
+    """
+    import tkinter.font as tkfont
+
+    worst = 0.0
+    for family in _SHIPPING_FAMILIES:
+        for size in _SHIPPING_SIZES:
+            font = tkfont.Font(root=root, family=family, size=size)
+            if font.actual("family").lower() != family.lower():
+                continue                     # その環境に無い書体
+            worst = max(worst, font.measure(text) / font.measure("0"))
+    assert worst > 0, "測れる書体が 1 つも無い（環境が想定外）"
+    return worst
+
+
+def test_the_coordinate_fields_are_wide_enough_for_dms():
+    """座標欄が **DMS 表記を切らない**幅であること（B-046 / B-057）。
 
     ⚠️ **値のゲートでは捕まらない**＝欄はスクロールするので `get()` は完全な値を
     返し、`winfo_reqwidth` も要求どおり。**切れているのは描画された字だけ**。
 
     🔑 **`coords.DISPLAY_WIDTH_CHARS` と比べてはいけない**＝それは*守る対象*で、
     基準にすると定数を 21 に戻しても緑のままになる（実測で確認した＝壊れ方①）。
-    **実際に表示する DMS 文字列の長さ**から要求量を測る。
+    ここでは**書体から必要量を計算**して、定数がそれを満たすかを見る。
+
+    🔴 **文字数で測るのはやめた**（2026-08-12・B-057）＝旧版は「DMS は 27 文字
+    だから `width` 27 以上」を要求していたが、`width` の単位は `0` の字の幅で、
+    DMS は `°` `'` `"` `.` と細い字ばかり。**実際に要るのは 24.17 単位**で、
+    3 文字ぶん無駄に予約させていた（壊れ方③＝間違ったものを要求するゲート）。
+    その 3 文字が ID 欄の見切れ（B-057）を直す原資になった。
+
+    ⚠️ **南緯・西経も見る**＝半球記号が `S` / `W` に変わり、**`W` はこの文字列で
+    一番太い字**。`N/E` だけ見ていると 24 単位でも通ってしまい、実際に踏んだ。
     """
     pytest.importorskip("tkinter")
-    from views.multihop import MultiHopWindow
-    need = _dms_sample_length()
+    from core import coords as _coords
+
     root = make_themed_root()
     root.withdraw()
     try:
-        win = MultiHopWindow(root, _params())
-        ents = _entries_bound_to(win, [v["coord"] for v in win._wp_vars])
-        assert ents, "座標欄が見つからない"
-        for e in ents:
-            assert int(e.cget("width")) >= need, (
-                f"中継: 座標欄が DMS を切る幅（{e.cget('width')} < {need}）"
+        for lat, lon, label in ((34.8, 132.6, "北緯・東経"),
+                                (-34.8, -132.6, "南緯・西経")):
+            text = _coords.format_dms(lat, lon)
+            need = _required_width_units(root, text)
+            assert need <= _coords.DISPLAY_WIDTH_CHARS, (
+                f"座標欄が DMS（{label}）`{text}` を切る＝"
+                f"必要 {need:.2f} 単位 > 幅 {_coords.DISPLAY_WIDTH_CHARS} 単位。"
+                "`coords.DISPLAY_WIDTH_CHARS` を上げること。"
             )
     finally:
         root.destroy()
 
 
-def test_path_table_coordinate_cells_are_wide_enough_for_dms():
-    """複数経路の表の座標セルも同じ下限（B-046 の実害が出ていた場所）。"""
+def test_every_coordinate_field_has_the_same_width():
+    """**座標を入れる欄は、どの窓でも同じ幅**であること（B-046 / B-057）。
+
+    ⚠️ **実際のウィジェットを見る**＝定数を参照しているかをソースで確かめるのでは
+    なく、**組み上がった欄の `width`** を読む。宣言し忘れ（＝Tk 既定の 20 が
+    黙って下限になる）は、定数の参照を見る検査では捕まらない。
+
+    🔴 **ランチャーが実際にそうなっていた**（2026-08-12 発見）。他の 4 窓は
+    `DISPLAY_WIDTH_CHARS` に揃っていたのに、**座標を実際に打つランチャーだけが
+    幅を宣言しておらず**、Tk 既定の 20 文字が下限になって **150% 表示で DMS の
+    末尾が切れていた**。`fill="x"` で伸びるので 100% では足りており、
+    **「普段は足りている」が「宣言していない」を隠していた**。
+    ⇒ 伸びるかどうかと、下限を宣言するかは別の話。
+
+    ⚠️ **読み取り専用の凍結帯も対象**（条件探索）＝そこが切れると「何を固定した
+    のか分からない」＝帯の意味が消える。
+    """
+    pytest.importorskip("tkinter")
+    from core import coords as _coords
+    from views.batch_builder import BatchBuilderWindow
+    from views.launcher import SimLauncher
+    from views.multihop import MultiHopWindow
+    from views.scenario import ScenarioWindow
+
+    want = _coords.DISPLAY_WIDTH_CHARS
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        found: dict[str, list[int]] = {}
+
+        app = SimLauncher(root, lambda _t: None)
+        found["ランチャー"] = [int(app.entries[k].cget("width"))
+                              for k in ("start", "end")]
+
+        win = BatchBuilderWindow(root, _params())
+        found["複数経路"] = [int(win._row_entries[0][c].cget("width"))
+                            for c in (1, 2)]
+
+        mh = MultiHopWindow(root, _params())
+        found["中継経路"] = [int(e.cget("width")) for e in
+                            _entries_bound_to(mh, [v["coord"] for v in mh._wp_vars])]
+
+        scn = ScenarioWindow(root, _params())
+        found["条件探索"] = [int(e.cget("width")) for e in
+                            _entries_bound_to(scn, [scn._tx_var, scn._rx_var])]
+
+        for name, widths in found.items():
+            assert widths, f"{name}: 座標欄が 1 つも見つからない（探し方が古い）"
+            assert all(w == want for w in widths), (
+                f"{name} の座標欄が他の窓と違う幅（{widths} ≠ {want}）。"
+                "`coords.DISPLAY_WIDTH_CHARS` から取ること＝**幅を宣言しない**と "
+                "Tk 既定の 20 文字が下限になり、150% で DMS の末尾が切れる。"
+            )
+    finally:
+        root.destroy()
+
+
+def test_the_path_id_cell_shows_the_ids_the_validator_accepts():
+    """ID 欄が、検証の通す ID を**切らずに描ける**こと（B-057）。
+
+    ⚠️ **値のゲートでは捕まらない**＝欄はスクロールするので `get()` は完全な値を
+    返す。切れているのは描画された字だけで、実害は「短く見える」ではなく
+    **`asaminami24` が `asaminami2` という別の ID として読めてしまう**こと。
+
+    🔴 **保証は 2 段ある**（比例フォントなので 1 本にはできない）。`_PATH_ID_RE` が
+    通すのは `[A-Za-z0-9_-]` で、`W` / `M` は `0` の **1.83 倍**の幅がある＝
+    「N 文字ぶんの幅」は N 文字を収める保証にならない。いまの幅での実力：
+
+      - **どの字形でも `_ANY_GLYPH_LEN` 文字までは読める**（最悪 = `W` / `M` 連打）
+      - **通常幅の字なら上限 `MAX_TYPED_ID_LEN` ちょうどまで読める**
+        （`asaminami24` = 11.67 単位 / `hatsukaichi` = 10.00 単位 / 数字 = 11.00 単位）
+
+    ⇒ **大文字ばかりの長い ID は今も切れる**（ISSUES.md の B-057 に残留として記録）。
+    1 本にするには ID 欄を 21 単位にする（幅が無い）か等幅にする（書体を変えない
+    方針で見送り）しかない。
+    """
     pytest.importorskip("tkinter")
     from views.batch_builder import BatchBuilderWindow
-    need = _dms_sample_length()
+
+    width = BatchBuilderWindow._WIDTHS[1]
+    limit = b.MAX_TYPED_ID_LEN
     root = make_themed_root()
     root.withdraw()
     try:
-        win = BatchBuilderWindow(root, _params(), coord_format="dms")
-        for col in (1, 2):                      # 送信座標 / 受信座標
-            cell = win._row_entries[0][col]
-            assert int(cell.cget("width")) >= need, (
-                f"複数経路: 座標セル {col} が DMS を切る幅"
-                f"（{cell.cget('width')} < {need}）"
+        # ① どの字形でも読めると約束する長さ。⚠️ **上限より短いのは欠陥ではなく
+        #    比例フォントの帰結**＝上げるには幅を増やすしかない。
+        any_glyph_len = 7
+        assert any_glyph_len <= limit, "保証が上限を超えている＝記録が古い"
+        for ch in "WMO":
+            text = ch * any_glyph_len
+            need = _required_width_units(root, text)
+            assert need <= width, (
+                f"ID 欄が最悪字形 {any_glyph_len} 文字 `{text}` を切る"
+                f"（必要 {need:.2f} 単位 > 幅 {width} 単位）。"
             )
+        # ② 通常幅の字なら上限ちょうどまで（発見の発端が `asaminami24`）。
+        for text in ("asaminami24", "hatsukaichi", "0" * limit, "_" * limit):
+            need = _required_width_units(root, text)
+            assert need <= width, (
+                f"ID 欄が `{text}`（{len(text)} 文字）を切る＝**別の ID として"
+                f"読めてしまう**（B-057・必要 {need:.2f} 単位 > 幅 {width} 単位）。"
+                "ID 欄を広げるか、原資として `coords.DISPLAY_WIDTH_CHARS` を"
+                "見直すこと。"
+            )
+        # ③ **この検査が落ち得ること**を確かめる（壊れ方①）＝幅を超える ID は
+        #    必ず「切れる」と出ること。ここが緑だと上の主張は何も検査していない。
+        over = _required_width_units(root, "W" * (limit + 4))
+        assert over > width, (
+            "幅を大きく超える ID でも「収まる」と出る＝この検査は常に緑になる。"
+        )
     finally:
         root.destroy()
+
+
+def test_the_id_column_is_wider_than_the_limit_it_must_show():
+    """ID 列の幅が、通す上限より**広い**こと（B-057 の**補助**の網）。
+
+    🔑 **等号ではない**＝Tk の `width` は*平均*文字幅の単位なので、「11 文字ぶんの
+    幅」は 11 文字を収める保証にならない（`asaminami24` が幅 11 で切れた）。
+    ⇒ 幅は上限より**広く**取る必要があり、どれだけ広ければ足りるかはフォント
+    依存で静的には決まらない。
+
+    ⚠️ **主たる守りは上の描画検査**（実際に ID を入れて切れないことを見る）。ここは
+    「上限だけ上げて欄を広げ忘れた」形を名指しする補助で、単独では欠陥を検出しない。
+    **主たる守りと補助を取り違えないこと**（test_window_fit.py の minsize と同じ扱い）。
+    """
+    from views.batch_builder import BatchBuilderWindow
+    assert BatchBuilderWindow._WIDTHS[1] > b.MAX_TYPED_ID_LEN, (
+        f"ID 列の幅（{BatchBuilderWindow._WIDTHS[1]}）が "
+        f"batch.MAX_TYPED_ID_LEN（{b.MAX_TYPED_ID_LEN}）を上回っていない"
+        "＝平均文字幅の単位なので、上限ちょうどの幅では上限の文字数を収められない。"
+    )
+
+
+def test_the_verdict_column_still_fits_its_own_text():
+    """判定列が、そこに入る語（`OK` / `NG` / `ERR`）を切らないこと。
+
+    ID を広げる原資をこの列から出した（6 → 3・実測 24px）ので、**削りすぎて
+    いないことを対で置く**＝原資を出した側が新しい見切れになったら本末転倒。
+
+    ⚠️ **語を実装のソースから正規表現で拾ってはいけない**＝実装中に踏んだ。
+    `_set_row_verdict` の docstring に説明として `"ERROR"` と書いてあるため、
+    ソース走査は**画面に出ない語**を要求量として拾い、幅 5 を要求して落ちた
+    （壊れ方③＝間違ったものを要求するゲート）。⇒ **製品を動かして、実際に
+    貼られた文字列**を測る。
+
+    ⚠️ フォントも自分で測らない（上のゲートと同じ理由）＝**幅指定を外したときの
+    自然な要求幅**と、いまの列幅での要求幅を比べる。
+
+    🔴 **表示スケールを全部回すこと**＝実装中、この列を 3 まで詰めて 100% では
+    緑だった。`ERR` が切れるのは **125% と 150% だけ**で、96dpi しか見ない検査は
+    それを通す（見切れが実機でだけ出続けた B-021 と同じ形）。
+    """
+    pytest.importorskip("tkinter")
+    from views import theme
+    from views.batch_builder import BatchBuilderWindow
+
+    prev = i18n._lang
+    for lang in ("ja", "en"):
+        for dpi in (96, 120, 144):
+            root = make_themed_root()
+            root.withdraw()
+            try:
+                i18n.set_lang(lang)
+                theme.apply_fonts(root, dpi=dpi)
+                win = BatchBuilderWindow(root, _params())
+                root.update_idletasks()
+                pid = win._row_entries[0][0].get()
+                lbl = win._verdict_label(win._row_frames[0])
+                assert lbl is not None, "判定ラベルが無い（行の組み立てが変わった）"
+                fixed = lbl.winfo_reqwidth()       # 列幅で決まる確保量
+                for status in ("OK", "NG", "ERROR"):
+                    win._set_row_verdict(pid, status)
+                    lbl.update_idletasks()
+                    text = lbl.cget("text")
+                    assert text, f"判定 `{status}` が画面に出ていない"
+                    lbl.config(width=0)            # 幅指定を外した自然な要求量
+                    lbl.update_idletasks()
+                    natural = lbl.winfo_reqwidth()
+                    lbl.config(width=BatchBuilderWindow._WIDTHS[-3])
+                    assert natural <= fixed, (
+                        f"[{lang}/{dpi}dpi] 判定列が `{text}`（{status} の表示）を"
+                        f"切る（必要 {natural}px / 列 {fixed}px）"
+                        "＝ID を広げるために削りすぎた。"
+                    )
+            finally:
+                i18n.set_lang(prev)
+                theme.apply_fonts(root, dpi=96)
+                root.destroy()
 
 
 def _load_project_into(app, doc):

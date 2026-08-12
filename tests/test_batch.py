@@ -167,11 +167,39 @@ class TestValidateRows:
         assert len(errs) >= 2
 
     def test_path_id_too_long_rejected(self):
-        errs = batch.validate_rows([_row(path_id="p" * (batch._MAX_PATH_ID_LEN + 1))])
+        errs = batch.validate_rows(
+            [_row(path_id="p" * (batch.MAX_TYPED_ID_LEN + 1))])
         assert any("too long" in e for e in errs)
 
     def test_path_id_at_max_length_accepted(self):
-        assert batch.validate_rows([_row(path_id="p" * batch._MAX_PATH_ID_LEN)]) == []
+        assert batch.validate_rows(
+            [_row(path_id="p" * batch.MAX_TYPED_ID_LEN)]) == []
+
+    def test_the_default_limit_is_the_one_a_person_can_read(self):
+        """既定の ID 上限は**表で読める長さ**であること（B-057）。
+
+        ⚠️ **上の 2 本だけでは守れない**＝どちらも `MAX_TYPED_ID_LEN` を基準に
+        書いてあるので、既定が出力用の 16 に戻されても**定数ごと動いて緑のまま**
+        になる（[[feedback-promote-recurring-checks]] 壊れ方①）。ここは
+        **表に出せない長さが既定で通らないこと**を、もう一方の定数で名指しする。
+        """
+        assert batch.MAX_TYPED_ID_LEN < batch._MAX_PATH_ID_LEN
+        errs = batch.validate_rows(
+            [_row(path_id="p" * batch._MAX_PATH_ID_LEN)])
+        assert any("too long" in e for e in errs), (
+            "出力ディレクトリ名の上限（16）が、人が打つ側の既定にも使われている"
+            "＝複数経路の表で 5 文字ぶん読めない ID が通る（B-057 の再発）"
+        )
+
+    def test_generated_ids_may_use_the_longer_output_limit(self):
+        """**生成された** ID は出力用の上限まで通ること（中継の `_h8` 付き）。
+
+        逆向きの対＝上の検査だけだと「両方 11 に揃える」でも緑になり、そのとき
+        中継の経路 ID は黙って 8 文字まで縮む（無傷の窓を壊す）。
+        """
+        pid = "p" * batch._MAX_PATH_ID_LEN
+        assert batch.validate_rows(
+            [_row(path_id=pid)], max_id_len=batch._MAX_PATH_ID_LEN) == []
 
     def test_note_too_long_rejected(self):
         errs = batch.validate_rows([_row(note="x" * (batch._MAX_NOTE_LEN + 1))])
