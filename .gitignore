@@ -1,6 +1,6 @@
 # Build output. Normally these live outside the repository (RADIOSIM_BUILD_ROOT
-# — see README "開発環境のセットアップ"); the entries stay because that env var is
-# optional and the default output path is right here.
+# — see docs/developer_ja.md "開発環境のセットアップ"); the entries stay because
+# that env var is optional and the default output path is right here.
 dist/
 build/
 RadioSimPro-*.zip
@@ -19,21 +19,28 @@ radiosim_conf.json
 *.log
 build_log*.txt
 
-# --- OneDrive の同期競合コピー ----------------------------------------------
-# このリポジトリは OneDrive 配下にある。OneDrive は同期競合時に
-# 「<元の名前>-<マシン名>[-N].<拡張子>」というコピーを作るが、**元の名前が
-# ignore されていてもコピーは別名なので素通りする**。
-# 実例（2026-08-02）: radiosim.log は当時から ignore 済みだったのに、その競合
-# コピー radiosim-HP-OMEN25L.log（8.1MB）が commit・push され、公開リポの履歴
-# から消すのに filter-repo での全履歴書き換え＋SHA 参照 264 箇所の修正を要した。
+# --- 「元の名前を ignore しても、複製は別名なので素通りする」対策 -------------
+# 元の危険（2026-08-02）: radiosim.log は当時から ignore 済みだったのに、その
+# 同期競合コピー radiosim-HP-OMEN25L.log（8.1MB）が commit・push され、公開リポの
+# 履歴から消すのに filter-repo での全履歴書き換え＋SHA 参照 264 箇所の修正を要した。
 # ⚠️ 危険なのは容量ではなく**中身**＝同じ経路で ISSUES.md（未修正の脆弱性）や
 # issue_evidence/（実運用のスクショ）のコピーが公開される。
-# ⚠️ 以下は「知っているマシン名」しか止められない Tier-2。実効の門は
-# .git/hooks/pre-commit（履歴に入る前）と tests/test_repo_hygiene.py（CI で強制）。
+#
+# ⚠️ **前提が 1 つ変わった（2026-08-11・I-057）＝このリポジトリは OneDrive の外
+# （D: ドライブ）へ移した。** ⇒ 下の *-<マシン名>.* は OneDrive の同期競合が作る
+# 名前なので、**いまの置き場では発生しない**。それでも残す＝①置き場は将来また
+# 動き得る（実際 2026-07-27 に「移設しない」と決めたものが 2026-08-11 に覆った）
+# ②コストがゼロ。**ただし「当たっていないこと」を守れている証拠として数えない**。
 *-HP-OMEN25L.*
 *-HP-OMEN25L-[0-9].*
+#
+# ⬇ こちらは OneDrive とは無関係で**いまも起こる**（エクスプローラの複製・
+#   「コピー」ボタン）。移設で無効になったのは上の 2 行だけ。
 * - コピー*
 * - Copy*
+#
+# ⚠️ 以上はいずれも「知っている名前」しか止められない Tier-2。実効の門は
+# .git/hooks/pre-commit（履歴に入る前）と tests/test_repo_hygiene.py（CI で強制）。
 
 # Local issue tracker (bugs / improvement ideas) and its evidence files.
 # NOT ignored because it is a scratchpad — it is a long-lived ledger. It is
@@ -48,14 +55,19 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-# The project venv is expected to live outside the repository (see README
-# "開発環境のセットアップ"). This entry catches one created here anyway.
+# The project venv is expected to live outside the repository (see
+# docs/developer_ja.md "開発環境のセットアップ"). This entry catches one created
+# here anyway.
 .venv/
 
 # Testing
 .coverage
 htmlcov/
 .pytest_cache/
+# ruff は .ruff_cache/ の中に自前の .gitignore を書くので実害は出ていないが、
+# **無視の意図がツールの副作用に依存している**状態だった（依存が宣言されていない
+# ＝前提が動いた日に黙って壊れるクラス）。ここで明示する。
+.ruff_cache/
 
 # Local dev QA environment (intentionally NOT committed — see decision 2026-06-14):
 # local-LLM review scaffolding (Ollama/Qwen) + its project MCP registration.
