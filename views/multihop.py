@@ -100,6 +100,9 @@ class MultiHopWindow(tk.Toplevel):
         # 区間表の結果セル（`_sync_hops` が区間行と一緒に作り直す）＝結果は
         # **その結果を生んだ区間の行**に返る（I-041・結果一覧は廃止した）。
         self._hop_result_labels: list[dict[str, ttk.Label]] = []
+        # 区間の見出し（`A → B`）＝**行とは別に持つ**（B-073）。地点名が変わった
+        # ときに**見出しだけ**を書き換えるため＝行ごと作り直すと結果列も消える。
+        self._hop_name_labels: list[ttk.Label] = []
 
         self._pump = ProgressPump(self, self._dispatch_event)
 
@@ -445,6 +448,10 @@ class MultiHopWindow(tk.Toplevel):
                  "height": tk.StringVar(value=height)}
         for key in ("coord", "height"):
             self._watch_input(vars_[key])
+        # 名前は**別系統**で見張る（B-073）＝区間の見出しに写るだけで、結果の鮮度には
+        # 一切効かない。⚠️ `_watch_input` に相乗りさせてはいけない（そちらは結果を
+        # 捨てる側なので、名前を直した瞬間に受信レベルが消える）。
+        self._watch_name(vars_["name"])
         return vars_
 
     def _new_hop_vars(self) -> dict:
@@ -472,6 +479,20 @@ class MultiHopWindow(tk.Toplevel):
             win = _ref()
             if win is not None:
                 win._drop_stale_hop_results()
+        var.trace_add("write", _on_write)
+
+    def _watch_name(self, var: tk.StringVar) -> None:
+        """地点名が変わったら、区間の見出しを追従させる（B-073）。
+
+        ⚠️ **弱参照なのは `_watch_input` と同じ理由**（B-050＝`self` を掴むと窓が
+        GC されない）。地点の追加・削除で変数ごと捨てられるので、後始末の場所を
+        数え上げる方式は必ず漏れる。
+        """
+        ref = weakref.ref(self)
+        def _on_write(*_args, _ref=ref) -> None:
+            win = _ref()
+            if win is not None:
+                win._refresh_hop_labels()
         var.trace_add("write", _on_write)
 
     # ----------------------------------------------------------
@@ -688,13 +709,13 @@ class MultiHopWindow(tk.Toplevel):
         old = self._hop_vars
         self._hop_vars = []
         self._hop_result_labels = []
+        self._hop_name_labels = []
         for i in range(hops):
             vars_ = old[i] if i < len(old) else self._new_hop_vars()
             self._hop_vars.append(vars_)
-            label = (f"{self._wp_vars[i]['name'].get()} → "
-                     f"{self._wp_vars[i + 1]['name'].get()}")
-            ttk.Label(self._hop_grid, text=label).grid(
-                row=i + 1, column=0, padx=4, pady=1, sticky="w")
+            name_lbl = ttk.Label(self._hop_grid, text=self._hop_label_text(i))
+            name_lbl.grid(row=i + 1, column=0, padx=4, pady=1, sticky="w")
+            self._hop_name_labels.append(name_lbl)
             for col, key in enumerate(("freq", "gain_tx", "gain_rx"), start=1):
                 ttk.Entry(self._hop_grid, textvariable=vars_[key], width=10).grid(
                     row=i + 1, column=col, padx=4, pady=1)
@@ -708,6 +729,31 @@ class MultiHopWindow(tk.Toplevel):
             for col, key in enumerate(("rx", "margin", "status"), start=4):
                 cells[key].grid(row=i + 1, column=col, padx=4, pady=1, sticky="w")
             self._hop_result_labels.append(cells)
+
+    def _hop_label_text(self, i: int) -> str:
+        """区間 `i` の見出し（`A → B`）。**文言の出所はここ 1 つ**。
+
+        作る側（`_sync_hops`）と直す側（`_refresh_hop_labels`）で別々に組み立てると、
+        片方だけ書式が動いたときに**同じ窓の中で見出しの形が 2 種類**になる。
+        """
+        return (f"{self._wp_vars[i]['name'].get()} → "
+                f"{self._wp_vars[i + 1]['name'].get()}")
+
+    def _refresh_hop_labels(self) -> None:
+        """区間の見出しだけを地点名に追従させる（B-073）。
+
+        🔴 **行を作り直さない**＝`_sync_hops` を呼ぶと結果列も一緒に消える。
+        地点名は**結果の数字を作らない**ので（`_new_wp_vars` の約束・B-058/B-059）、
+        名前を直しただけで受信レベルが消えるのは「消しすぎ」側の欠陥になる。
+        ⇒ 触るのは `text` だけ。
+        """
+        for i, lbl in enumerate(self._hop_name_labels):
+            if i + 1 >= len(self._wp_vars):
+                break               # 地点の増減の途中＝この後 `_sync_hops` が来る
+            try:
+                lbl.configure(text=self._hop_label_text(i))
+            except tk.TclError:
+                break               # 破棄済みの行（作り直しと競合した）＝次の描画に任せる
 
     # ----------------------------------------------------------
     # 実行

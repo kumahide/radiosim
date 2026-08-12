@@ -754,6 +754,48 @@ class TestMultiHopWindow:
         finally:
             win.destroy(); root.destroy()
 
+    def _hop_labels(self, win):
+        return sorted(w.cget("text") for w in win._hop_grid.grid_slaves(column=0)
+                      if int(w.grid_info()["row"]) > 0)
+
+    def test_renaming_a_point_updates_the_hop_headings(self, default_params_dict):
+        """地点名を変えたら、区間表の見出しがその場で追従すること（B-073）。
+
+        ⚠️ **同じ窓の中で 2 つの表が別の名前を名乗る**のが害＝数字は正しいので、
+        気づかないまま「どの区間の話か」を取り違える。地点を足す/消すと作り直されて
+        直るので、**直っているように見える瞬間がある**のが厄介だった。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            assert self._hop_labels(win) == sorted(["TX → R1", "R1 → RX"])
+            win._wp_vars[1]["name"].set("HIROSHIMA")
+            assert self._hop_labels(win) == sorted(["TX → HIROSHIMA",
+                                                    "HIROSHIMA → RX"])
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_renaming_a_point_does_not_drop_the_results(self, default_params_dict):
+        """🔴 **名前を直しても結果は消えないこと**（B-058/B-059 の約束）。
+
+        見出しを追従させる素朴な直し方は「名前でも `_sync_hops` を呼ぶ」だが、
+        あれは**区間行を作り直す＝結果列も一緒に消す**。⇒ 見出しだけを触ること。
+        ここが無いと、B-073 を直したつもりで B-058 型の欠陥（消しすぎ）を作る。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            for cells in win._hop_result_labels:
+                cells["rx"].configure(text="-70.0")
+                cells["status"].configure(text="OK")
+            win._wp_vars[1]["name"].set("HIROSHIMA")
+            assert [c["rx"].cget("text") for c in win._hop_result_labels] \
+                == ["-70.0", "-70.0"], "名前を直しただけで結果が消えた"
+            assert [c["status"].cget("text") for c in win._hop_result_labels] \
+                == ["OK", "OK"]
+        finally:
+            win.destroy(); root.destroy()
+
     def test_delete_removes_a_relay_not_the_endpoint(self, default_params_dict):
         """削除で消えるのは**中継点**（送信点・受信点は残る）。"""
         root, win = self._win(default_params_dict)
