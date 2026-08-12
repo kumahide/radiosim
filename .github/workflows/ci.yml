@@ -1,8 +1,9 @@
 name: CI
 
-# Minimal CI: headless checks on the non-GUI code (models / simulation /
-# config / dem / batch). The tkinter GUI layer (views/*) can't run on a
-# headless runner, so it is exercised only by pyright's static check, not pytest.
+# 最小構成の CI＝**表示を持たない環境で回せる面だけ**を検査する
+# （models / simulation / config / dem / batch）。
+# ⚠️ tkinter の GUI 層（views/*）はヘッドレスのランナーでは動かせないので、
+# **pytest ではなく pyright の静的検査でしか触れていない**。
 
 on:
   push:
@@ -13,12 +14,12 @@ jobs:
   test:
     runs-on: ubuntu-latest
     env:
-      MPLBACKEND: Agg   # matplotlib must not try to open a display
-      # Declare that this runner has no display, so tests/conftest.py may skip the
-      # GUI layer. Without this declaration a failure to start Tk is a *failure*,
-      # not a skip -- on a machine that does have a display, "skipped" would hide
-      # a run in which no GUI wiring was checked at all (observed 2026-08-07:
-      # 106 of 112 tests skipped, exit code 0).
+      MPLBACKEND: Agg   # matplotlib に表示を開かせない
+      # このランナーには表示が無いことを**宣言**する＝tests/conftest.py はこの宣言が
+      # あるときだけ GUI 層を skip してよい。
+      # ⚠️ **宣言が無ければ Tk の起動失敗は skip ではなく失敗**にする。表示がある
+      # はずの機械で「skip」に倒すと、**GUI 配線を 1 つも検査しないまま緑**になる
+      # （2026-08-07 に実測＝112 本中 106 本が skip・終了コード 0）。
       RADIOSIM_HEADLESS: "1"
     steps:
       - uses: actions/checkout@v5
@@ -36,7 +37,7 @@ jobs:
           pip install -r requirements.txt -r requirements-dev.txt
 
       - name: Ruff (syntax + pyflakes)
-        run: ruff check .          # config from pyproject.toml [tool.ruff]
+        run: ruff check .          # 設定は pyproject.toml [tool.ruff]
 
       - name: Bandit (security static analysis)
         # 設定は pyproject.toml [tool.bandit]。-ll で Severity>=Medium のみゲート化

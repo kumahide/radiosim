@@ -1,18 +1,18 @@
-# Build output. Normally these live outside the repository (RADIOSIM_BUILD_ROOT
-# — see docs/developer_ja.md "開発環境のセットアップ"); the entries stay because
-# that env var is optional and the default output path is right here.
+# ビルド出力。通常はリポジトリの外に出る（`RADIOSIM_BUILD_ROOT`＝
+# docs/developer_ja.md「開発環境のセットアップ」）。それでも項目を残すのは、
+# この環境変数が任意で、未設定なら既定の出力先がここになるため。
 dist/
 build/
 RadioSimPro-*.zip
 
-# Generated icons
+# 生成されるアイコン
 icon.ico
 
-# Runtime data
+# 実行時に作られるデータ
 results/
 terrain_cache/
 
-# User settings & logs
+# 利用者の設定とログ
 radiosim_conf.json
 # ランタイムログはクラスごと除外する（radiosim.log / プロファイル / ローテーション
 # 分 / OneDrive の競合コピーを個別に列挙していたのをやめた＝列挙は必ず漏れる）。
@@ -42,11 +42,11 @@ build_log*.txt
 # ⚠️ 以上はいずれも「知っている名前」しか止められない Tier-2。実効の門は
 # .git/hooks/pre-commit（履歴に入る前）と tests/test_repo_hygiene.py（CI で強制）。
 
-# Local issue tracker (bugs / improvement ideas) and its evidence files.
-# NOT ignored because it is a scratchpad — it is a long-lived ledger. It is
-# untracked because this repository is PUBLIC and the ledger holds things that
-# must not be published: unfixed vulnerabilities and screenshots of real runs.
-# Do not start tracking these without revisiting that constraint.
+# 課題台帳（バグ／改善案）とその確証ファイル。
+# ⚠️ **走り書きだから無視しているのではない**＝版をまたいで生き続ける台帳である。
+# 追跡しないのは**このリポジトリが公開**で、台帳が公開してはいけないものを持つため
+# ＝未修正の脆弱性と、実運用のスクリーンショット。
+# ⇒ **追跡を始めるときは、必ずこの制約を検討し直すこと。**
 ISSUES.md
 issue_evidence/
 
@@ -55,12 +55,12 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-# The project venv is expected to live outside the repository (see
-# docs/developer_ja.md "開発環境のセットアップ"). This entry catches one created
-# here anyway.
+# プロジェクトの venv はリポジトリの外に置く前提
+# （docs/developer_ja.md「開発環境のセットアップ」）。この項目は、それでも
+# ここに作られてしまったものを拾う保険。
 .venv/
 
-# Testing
+# テスト
 .coverage
 htmlcov/
 .pytest_cache/
@@ -69,13 +69,13 @@ htmlcov/
 # ＝前提が動いた日に黙って壊れるクラス）。ここで明示する。
 .ruff_cache/
 
-# Local dev QA environment (intentionally NOT committed — see decision 2026-06-14):
-# local-LLM review scaffolding (Ollama/Qwen) + its project MCP registration.
-# Activation lives in .claude/ (ignored) and .git/hooks/ (not cloned).
+# ローカルの QA 環境（**意図的にコミットしない**＝2026-06-14 の決定）。
+# ローカル LLM のレビュー足場（Ollama/Qwen）と、そのプロジェクト MCP 登録。
+# 起動側は .claude/（無視対象）と .git/hooks/（clone されない）にある。
 tools/
 .mcp.json
 
-# Local-LLM QA Stop-hook output (review reports + dedup state)
+# ローカル LLM の QA Stop フックの出力（レビュー報告＋重複排除の状態）
 .qa/
 
 # IDE
