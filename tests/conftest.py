@@ -5,10 +5,14 @@ tests/conftest.py
 （外部ネットワーク・モーダルダイアログ・**開発機の設定と書き込み先**）。
 """
 
+import datetime
 import gc
+import json
 import logging
+import pathlib
 import shutil
 import socket
+import subprocess
 import tempfile
 import time
 import typing
@@ -343,13 +347,150 @@ def _unexpected_skips(reporter) -> int:
                if STRUCTURAL_SKIP not in str(getattr(r, "longrepr", "")))
 
 
+# ============================================================
+# 構造的に覆っていない面の報告と、表示のある機械の刻印（B-074(b)）
+# ============================================================
+# 🔴 **「走らなかった面がある」ことを、誰も報告していなかった。**
+# 上の予算が答えるのは「**この実行は何か検査したか**」で、B-074(b) が問うのは
+# 「**どの面を CI が構造的に一度も覆っていないか**」＝別の問い。実際 2.7 の目玉で
+# あるスケール追従のゲートは、CI で skip され続けたまま**開発機で赤**だった
+# （2026-08-11 に偶然フルスイートを回すまで、赤が存在しないのと同じだった）。
+#
+# ⛔ **「CI で GUI を走らせる」は解にならない**＝CI は ubuntu-latest で、
+# tests/test_window_fit.py が assert するのは **Windows のフォント実測ピクセル**。
+# xvfb を足しても数字が別物になるだけで、同じ検査にはならない。
+# ⇒ **求めるのは網羅ではなく可視性**＝走っていない面が CI の側から見え、
+# **誰がいつ回すか**が決まっていること（[[feedback-promote-recurring-checks]]
+# ＝注意書きを足すのではなく引き金へ昇格させる）。
+#
+# 対で 2 つ置く:
+#   ①**報告**（どの環境でも）＝構造的 skip をファイル単位で数えて出す。CI では
+#     さらに GITHUB_STEP_SUMMARY へ書き、**実行ページを開けば読める**ようにする。
+#   ②**刻印**（表示のある機械だけ）＝フルスイートが緑で終わったとき、その commit を
+#     `.qa/display_run.json` へ残す。release-check がこれを読み、HEAD と違えば
+#     「表示依存の面は回っていない」と声に出す。⚠️ **チェックリストの一行では
+#     足りない**＝読み飛ばしても何も残らない（それが 2026-08-11 の形）。
+_REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+#: 表示のある機械でフルスイートが通った事実の刻印（`.qa/` は git-ignore 済み）。
+DISPLAY_RUN_STAMP = _REPO_ROOT / ".qa" / "display_run.json"
+
+
+def _structural_skips_by_file(reporter) -> dict[str, int]:
+    """宣言済み skip を**テストファイル単位**で数える（＝覆っていない面の内訳）。"""
+    faces: dict[str, int] = {}
+    for r in reporter.stats.get("skipped", []):
+        if STRUCTURAL_SKIP not in str(getattr(r, "longrepr", "")):
+            continue
+        face = str(getattr(r, "nodeid", "?")).split("::")[0]
+        faces[face] = faces.get(face, 0) + 1
+    return faces
+
+
+def _write_step_summary(faces: dict[str, int], total: int) -> None:
+    """CI の実行ページに内訳を出す（GitHub Actions のときだけ）。
+
+    ⚠️ ここで失敗してもテストは落とさない＝**報告のための道具が、報告される中身を
+    壊してはいけない**。書けなければ端末の字だけが残る。
+    """
+    path = os.environ.get("GITHUB_STEP_SUMMARY")
+    if not path:
+        return
+    ran = total - sum(faces.values())
+    lines = [
+        "### この実行が構造的に覆っていない面",
+        "",
+        f"実行 {ran} 本 / 収集 {total} 本"
+        f"（**{sum(faces.values())} 本はこの環境では原理的に走らない**）",
+        "",
+        "| テストファイル | 走らなかった本数 |",
+        "| --- | ---: |",
+    ]
+    lines += [f"| `{f}` | {n} |" for f, n in sorted(faces.items(), key=lambda kv: -kv[1])]
+    lines += [
+        "",
+        "⚠️ **これは緑の一部ではない**＝上の面は、表示のある機械で誰かが回すまで"
+        "結果が存在しない。回した事実は `.qa/display_run.json` に刻まれる。",
+    ]
+    try:
+        with open(path, "a", encoding="utf-8") as fh:
+            fh.write("\n".join(lines) + "\n")
+    except OSError:
+        pass
+
+
+def _is_whole_suite(config) -> bool:
+    """スイート全体を回したか（＝刻印してよいか）。
+
+    🔴 **予算の `_SKIP_BUDGET_MIN_TESTS` を流用してはいけない。** あれは「部分実行を
+    見ない」ための floor であって、**全体を回した証明ではない**。実測 2026-08-12＝
+    `tests/test_window_fit.py` 1 ファイルだけで 100 本＝floor を超える。⇒ その 1 本
+    を回しただけで「表示のある機械で全部通った」と刻んでしまう＝**刻印が嘘をつく**
+    （[[feedback-promote-recurring-checks]] の「間違ったものを要求するゲート」）。
+    ⇒ **絞り込みが宣言されていないこと**を条件にする（選び方の側を見る）。
+    """
+    o = getattr(config, "option", None)
+    params = getattr(config, "invocation_params", None)
+    if o is None or params is None:
+        # 実際の pytest では必ずどちらも在る。分からないときに**刻まない**側へ倒すのは、
+        # 嘘の刻印（回っていないのに「回った」）のほうが、刻印が無いことより悪いため。
+        return False
+    positional = [a for a in params.args if not a.startswith("-")]
+    return not positional and not (
+        getattr(o, "keyword", "") or getattr(o, "markexpr", "")
+        or getattr(o, "deselect", None) or getattr(o, "lf", False)
+        or getattr(o, "failedfirst", False)
+    )
+
+
+def _stamp_display_run(total: int, faces: dict[str, int]) -> None:
+    """表示のある機械でフルスイートが通ったことを刻む（→ `DISPLAY_RUN_STAMP`）。"""
+    try:
+        head = subprocess.run(
+            ["git", "rev-parse", "HEAD"],
+            cwd=_REPO_ROOT, capture_output=True, text=True, timeout=10, check=False,
+        )
+        commit = head.stdout.strip() if head.returncode == 0 else ""
+        DISPLAY_RUN_STAMP.parent.mkdir(parents=True, exist_ok=True)
+        DISPLAY_RUN_STAMP.write_text(json.dumps({
+            "commit"    : commit,
+            "when"      : datetime.datetime.now().astimezone().isoformat(timespec="seconds"),
+            "collected" : total,
+            "ran"       : total - sum(faces.values()),
+            # 表示のある機械でも git-ignore の道具（.claude/ tools/）は無い場合がある
+            # ＝**0 を要求しない**。何が残ったかを書いて、読む側に判断させる。
+            "structural": faces,
+        }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    except (OSError, subprocess.SubprocessError):
+        pass        # 刻めなくてもテストの結果は変えない（release-check が「無い」と言う）
+
+
 def pytest_sessionfinish(session, exitstatus):
-    """大半が skip なら、終了コードを失敗にする（緑に化けさせない）。"""
-    if exitstatus != 0:
-        return                      # 既に赤＝上書きしない
+    """大半が skip なら失敗させ、覆っていない面を報告し、表示のある実行を刻む。"""
     reporter = session.config.pluginmanager.get_plugin("terminalreporter")
     total = session.testscollected
-    if reporter is None or total < _SKIP_BUDGET_MIN_TESTS:
+    full_run = reporter is not None and total >= _SKIP_BUDGET_MIN_TESTS
+
+    # ①報告と②刻印＝**部分実行では何も言わない**（`-k` の 1 ファイルを「覆っていない
+    # 面」と呼ぶと、毎回鳴る網になる＝[[feedback-promote-recurring-checks]]）。
+    if full_run:
+        faces = _structural_skips_by_file(reporter)
+        if faces:
+            reporter.write_sep(
+                "-",
+                f"この実行が構造的に覆っていない面: {sum(faces.values())}/{total} 本"
+                f"（{len(faces)} ファイル）"
+                + "".join(f"\n    {f}  {n} 本"
+                          for f, n in sorted(faces.items(), key=lambda kv: -kv[1])),
+                yellow=True,
+            )
+            _write_step_summary(faces, total)
+        if exitstatus == 0 and not _HEADLESS_DECLARED and _is_whole_suite(session.config):
+            _stamp_display_run(total, faces)
+
+    if exitstatus != 0:
+        return                      # 既に赤＝上書きしない
+    if not full_run:
         return
     skipped = _unexpected_skips(reporter)
     if skipped <= total * _SKIP_BUDGET_RATIO:

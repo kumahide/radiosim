@@ -56,5 +56,10 @@ jobs:
           core report views main.py
           buildtools/check_bundle_imports.py
 
+      # ⚠️ **この緑は「全部を検査した」ではない。** 表示依存の面はここでは構造的に
+      # 1 本も走らない（→ 冒頭のコメント）。走らなかった面の内訳は tests/conftest.py が
+      # **この実行のサマリページ**へ書くので、緑を受け取る前にそこを読むこと（B-074）。
+      # 回す責任の所在は release-check.mjs が .qa/display_run.json と HEAD を突き合わせて
+      # 声に出す＝「誰かが開発機で回したはず」を記憶に頼らない。
       - name: Pytest (with coverage gate)
         run: python -m pytest --cov

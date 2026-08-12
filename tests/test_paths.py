@@ -29,6 +29,18 @@ from core import config
 from core import dem
 from conftest import ORIGINAL_APP_PATHS, apply_app_path_isolation
 
+
+# 🔴 **偽のセッションが、本物の CI 実行ページを汚す。**
+# このモジュールは `pytest_sessionfinish` を偽のセッションで直接呼ぶ（網②③）。
+# その中の「覆っていない面」の報告は `GITHUB_STEP_SUMMARY` へ追記するので、CI では
+# **作り物の数字（1537 本中 385 本・ファイル名は `?`）が実行ページに 3 つ並ぶ**。
+# 2026-08-12 に実測して発見＝報告が信用できなくなる（読む人は本物と区別できない）。
+# ⇒ このモジュールの間だけ宣言を外す。⚠️ **偽のセッションを増やすときも同じ扱いに
+# すること**（[[feedback-user-examples-are-classes]]）。
+@pytest.fixture(autouse=True)
+def _fake_sessions_do_not_write_the_ci_summary(monkeypatch):
+    monkeypatch.delenv("GITHUB_STEP_SUMMARY", raising=False)
+
 #: `pytest.skip()` が投げる例外（`_no_display` の分岐を型で見分けるため）。
 _SKIPPED = pytest.skip.Exception
 
@@ -384,6 +396,168 @@ class TestGreenMeansItRan:
         """
         assert self._finish(collected=1000, skipped=0, structural=300) == 0
         assert self._finish(collected=1000, skipped=300) == 1
+
+
+# ============================================================
+# 網③ 構造的に覆っていない面が、CI の側から見えること（B-074(b)）
+# ============================================================
+# 予算（網②）が答えるのは「**この実行は何か検査したか**」で、ここが問うのは
+# 「**どの面を CI が構造的に一度も覆っていないか**」＝別の問い。2.7 のスケール追従の
+# ゲートは CI で skip されたまま開発機で赤く、RC も正式も通過した（B-074）。
+class TestUncoveredFacesAreReported:
+    """走らなかった面の内訳と、表示のある機械の刻印。"""
+
+    @staticmethod
+    def _reporter(faces: dict[str, int], unexplained: int = 0):
+        import conftest
+
+        class _Skip:
+            def __init__(self, longrepr, nodeid):
+                self.longrepr, self.nodeid = longrepr, nodeid
+
+        reports = [_Skip(conftest.structural_skip("表示なし"), f"{f}::test_{i}")
+                   for f, n in faces.items() for i in range(n)]
+        reports += [_Skip("理由不明", f"tests/test_x.py::test_{i}")
+                    for i in range(unexplained)]
+
+        class _Reporter:
+            stats = {"skipped": reports}
+            written: list = []
+            def write_sep(self, _sep, text, **_k): self.written.append(text)
+
+        return _Reporter()
+
+    def test_the_breakdown_names_the_files_that_never_ran(self):
+        """内訳は**ファイルを名指しする**こと（総数だけでは面が分からない）。
+
+        🔑 「385 本が走っていない」だけでは*どの面*かが分からず、**次に何を回せば
+        よいかが決まらない**。B-074 で欠けていたのは数ではなく所在。
+        """
+        import conftest
+
+        faces = conftest._structural_skips_by_file(
+            self._reporter({"tests/test_window_fit.py": 62, "tests/test_theme.py": 41})
+        )
+        assert faces == {"tests/test_window_fit.py": 62, "tests/test_theme.py": 41}
+
+    def test_undeclared_skips_are_not_called_structural(self):
+        """理由の分からない skip を「構造的」に混ぜないこと（変異検証）。
+
+        ⚠️ 混ぜると、**事故で落ちた面が「この環境には無いもの」として報告される**
+        ＝報告そのものが事故を隠す。
+        """
+        import conftest
+
+        faces = conftest._structural_skips_by_file(
+            self._reporter({"tests/test_theme.py": 3}, unexplained=40)
+        )
+        assert faces == {"tests/test_theme.py": 3}
+
+    def test_a_headless_run_reports_but_does_not_stamp(self, monkeypatch, tmp_path):
+        """CI（表示なし）は**報告するが刻まない**こと。
+
+        🔴 ここが逆になると、**CI の緑が「表示依存も回った」証明に化ける**＝B-074 の
+        事故そのものを機械で再生産する。
+        """
+        import conftest
+
+        stamp = tmp_path / "display_run.json"
+        summary = tmp_path / "step_summary.md"
+        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", True)
+        monkeypatch.setenv("GITHUB_STEP_SUMMARY", str(summary))
+        reporter = self._reporter({"tests/test_window_fit.py": 62})
+        self._finish_with(conftest, reporter, collected=1537, whole_suite=True)
+
+        assert not stamp.exists(), "表示の無い環境が刻んだ＝刻印が嘘をつく"
+        assert any("覆っていない面" in t for t in reporter.written), (
+            "走らなかった面を誰も報告していない（B-074 の状態そのもの）"
+        )
+        # 🔑 **端末の字だけでは B-074 は直らない**＝CI のログは誰も遡らない。実行ページ
+        # （GITHUB_STEP_SUMMARY）に出て初めて「CI の側から見える」になる。
+        written = summary.read_text(encoding="utf-8")
+        assert "tests/test_window_fit.py" in written and "62" in written
+
+    def test_a_display_run_of_the_whole_suite_is_stamped(self, monkeypatch, tmp_path):
+        """表示のある機械でスイート全体が緑なら、commit が刻まれること。"""
+        import conftest, json
+
+        stamp = tmp_path / "display_run.json"
+        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        self._finish_with(conftest, self._reporter({}), collected=1537, whole_suite=True)
+
+        assert stamp.exists(), "回ったのに刻印が残らない＝release-check が毎回鳴る"
+        data = json.loads(stamp.read_text(encoding="utf-8"))
+        assert data["ran"] == 1537
+        assert len(data["commit"]) == 40, "commit を刻んでいない＝HEAD と照合できない"
+
+    def test_a_narrowed_run_is_never_stamped(self, monkeypatch, tmp_path):
+        """⛔ **部分実行は刻まない**こと（刻印が嘘をつく形）。
+
+        🔴 実測 2026-08-12＝`tests/test_window_fit.py` 1 ファイルで **100 本**＝予算の
+        下限（`_SKIP_BUDGET_MIN_TESTS`）を超える。**本数を条件にすると、1 ファイル
+        回しただけで「全部通った」と刻む**（[[feedback-promote-recurring-checks]] の
+        「間違ったものを要求するゲート」）。⇒ 見るのは**絞り込みの宣言**のほう。
+        """
+        import conftest
+
+        stamp = tmp_path / "display_run.json"
+        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        # ⚠️ **全部 `whole_suite=True` から始める**＝位置引数を渡してしまうと、その 1 点
+        # だけで弾かれ、`-k` や `--lf` の条件は**一度も試されないまま緑**になる
+        # （最初にそう書いて実際に素通りした・2026-08-12）。
+        for narrowing in ({"args": ("tests/test_window_fit.py",)},
+                          {"keyword": "shrink_back"},
+                          {"markexpr": "not slow"},
+                          {"lf": True}):
+            self._finish_with(conftest, self._reporter({}), collected=1537,
+                              whole_suite=True, **narrowing)
+            assert not stamp.exists(), f"絞り込み {narrowing} を全体実行として刻んだ"
+
+    def test_a_red_run_is_never_stamped(self, monkeypatch, tmp_path):
+        """赤い実行を刻まないこと（通っていないものを「通った」と言わせない）。"""
+        import conftest
+
+        stamp = tmp_path / "display_run.json"
+        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        self._finish_with(conftest, self._reporter({}), collected=1537,
+                          whole_suite=True, exitstatus=1)
+        assert not stamp.exists()
+
+    @staticmethod
+    def _finish_with(conftest, reporter, collected: int, whole_suite: bool,
+                     exitstatus: int = 0, args: tuple = (), **option_kw):
+        """偽のセッションで `pytest_sessionfinish` を回す（実行の形を指定する）。"""
+        class _Option:
+            keyword = option_kw.get("keyword", "")
+            markexpr = option_kw.get("markexpr", "")
+            deselect = option_kw.get("deselect", None)
+            lf = option_kw.get("lf", False)
+            failedfirst = option_kw.get("failedfirst", False)
+
+        class _Params:
+            pass
+        _Params.args = args if args else (("--cov",) if whole_suite else ("tests",))
+
+        class _PM:
+            def get_plugin(self, _name): return reporter
+
+        class _Config:
+            pluginmanager = _PM()
+            option = _Option()
+            invocation_params = _Params()
+
+        class _Session:
+            config = _Config()
+            testscollected = collected
+
+        session = _Session()
+        session.exitstatus = exitstatus
+        conftest.pytest_sessionfinish(session, exitstatus)
+        return session.exitstatus
 
 
 # ============================================================
