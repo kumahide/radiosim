@@ -346,17 +346,17 @@ class TestAssignmentAudit:
     無いより悪い**ので、その形を下の 2 つのテストで名指しで固定する。
     """
 
-    def test_the_target_version_field_is_not_the_fix_version(self, hook):
-        """⛔ `対象版` 欄を行き先として読まないこと（実データの形で固定）。
+    def test_the_origin_version_field_is_not_the_destination(self, hook):
+        """⛔ `発生版` 欄を行き先として読まないこと（実データの形で固定）。
 
-        B-025 の実データ＝`対象版` は `2.5RC2（以前から同構造）`＝**発生元**で、
+        B-025 の実データ＝`発生版` は `2.5RC2（以前から同構造）`＝**発生元**で、
         直すのは状態欄が言う 3.2。欄を読むと 2.5 に振り分けてしまう。
         """
         doc = _doc(
             "### ★ B-025: DEM 取得が全滅しても黙って完走する",
             "",
             "- ★ **状態**: **対応中**。①③は ✅ 3.2 確定（呼び出し側と出力契約に触る）",
-            "- **対象版**: 2.5RC2（以前から同構造）",
+            "- **発生版**: 2.5RC2（以前から同構造）",
         )
         audit = hook.assignment_audit(doc)
         assert audit["assigned"] == {"3.2": ["B-025"]}, audit
@@ -403,11 +403,11 @@ class TestAssignmentAudit:
     def test_two_versions_in_one_state_line_go_to_ambiguous(self, hook):
         """版が 2 つ見えるものは**人に読ませる**（機械で当てにいかない）。
 
-        実データ＝B-065 の状態欄は「対象版＝2.8」と「2.7 で直さない理由」を
+        実データ＝B-065 の状態欄は「行き先＝2.8」と「2.7 で直さない理由」を
         両方含む。片方を選ぶ実装は、選び方を間違えても緑になる。
         """
         doc = _doc("### ★ B-065: t", "",
-                   "- ★ **状態**: 未着手（**対象版＝2.8**。2.7 で直さない理由は下）")
+                   "- ★ **状態**: 未着手（**行き先＝2.8**。2.7 で直さない理由は下）")
         audit = hook.assignment_audit(doc)
         assert audit["ambiguous"] == ["B-065"] and audit["unassigned"] == []
 
