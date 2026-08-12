@@ -939,6 +939,50 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
         root.destroy()
 
 
+def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
+    """**出したバーを、次に測るときの必要量へ持ち越さないこと**（B-074(a)）。
+
+    受け皿のバーは窓の中身なので、出したまま `winfo_reqwidth()` を読むと
+    **バー 1 本ぶんが必要量に載る**。すると「入らなくなって出したバー」が次の
+    測定を太らせ、**入るようになっても幅が戻らない**（実測 12px）。
+
+    ⚠️ **上の `..._screen_that_shrinks_and_grows_back` では捕まらなかった**＝
+    あちらは高さしか assert しておらず、**溢れるのは縦・残るのは幅**という
+    ずれた面に出る（縦バーが横幅を食う）。同じ往復を**幅で**見る。
+    ⚠️ DPI 経由の `..._shrink_back_when_dpi_falls` も同じ欠陥で赤くなるが、
+    あちらは「表示スケールを戻したら窓も戻る」という**約束**の検査で、原因を
+    名指ししていない（フォントの大きさが同時に動くので切り分けられない）。
+    """
+    screen = {"size": (1920, 1080)}
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: screen["size"])
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_scenario(root)
+        need_w = win._fit_need[0]
+        assert not win._fit_scroll.active[0], "前提が崩れている（最初からバーが出ている）"
+
+        screen["size"] = (1920, 800)               # 縦に入らなくなる＝縦バーが出る
+        window_fit.refit_all(root)
+        assert win._fit_scroll.active[0], "前提が崩れている（溢れたのにバーが出ない）"
+        assert win._fit_need[0] == need_w, (
+            "バーを出したこと自体が必要量を変えている"
+            f"（{need_w} → {win._fit_need[0]}）＝必要量は中身の話で、"
+            "バーはその結果でしかない。"
+        )
+
+        screen["size"] = (1920, 1080)              # また入るようになった
+        window_fit.refit_all(root)
+        assert win._fit_need[0] == need_w, (
+            f"必要幅が {win._fit_need[0]}px へ太ったまま（本来 {need_w}px）"
+            "＝出したままのバーを測ってしまい、そのぶんが必要量に焼き付いている。"
+            "窓幅は `grow_only` に守られて一度太ると戻らない。"
+        )
+    finally:
+        root.destroy()
+
+
 def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
     """測り直しで窓ごとの下限・加算が失われないこと。
 

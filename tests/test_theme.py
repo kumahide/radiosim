@@ -772,6 +772,59 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
     )
 
 
+def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
+    """**子窓だけ**を別 DPI のモニタへ移しても追従すること（B-065）。
+
+    旧実装は `<Configure>` を全トップレベルから拾いながら DPI を**常に `root` から**
+    測っていた＝ランチャーを 100% 側に残して子窓を 150% 側へ投げると、契機は来て
+    いるのに値が動かず、何も起きなかった。
+
+    ⚠️ **モックに窓を見せること**が、このテストの本体（Codex 指摘）。上の 2 本の
+    `lambda _w: …` は引数を捨てるので「どの窓を測ったか」を検査しておらず、
+    **root だけ測る実装でも緑になる**＝直したあとも同じ緑が出て、直った証拠に
+    ならない（[[feedback-promote-recurring-checks]] の「間違ったものを要求して
+    いるゲート」）。
+
+    🔴 **合わせるのはアプリ全体**＝Tk の名前付きフォントはインタプリタに 1 組しか
+    なく、窓ごとに別の大きさは持てない。ここで見るのは「動かした窓の DPI が
+    採用されること」で、「他の窓が 96 のままであること」ではない。
+    """
+    import tkinter as tk
+
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    at96 = _px(root)
+
+    win = tk.Toplevel(root)
+    win.geometry("200x100+10+10")
+    root.update()
+
+    dpi_of = {str(root): 96, str(win): 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = (                            # type: ignore[assignment]
+        lambda w: dpi_of.get(str(w.winfo_toplevel()), 96))
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        dpi_of[str(win)] = 144                      # 子窓だけ 150% 側へドラッグ
+        win.geometry("200x100+20+20")               # 移動＝<Configure>
+        root.update()
+        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
+        root.mainloop()
+
+        assert notified == [(144, True)], (
+            f"子窓の DPI 変化が拾えていない: {notified}"
+            "（ランチャーが 100% 側に残っている限り root の値は動かない）。"
+        )
+        assert _px(root) == round(at96 * 1.5), (
+            "通知は来たがフォントが貼り直されていない＝移した窓の字が小さいまま。"
+        )
+    finally:
+        theme.window_dpi = monkey                   # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+        win.destroy()
+
+
 # ============================================================
 # DPI 認識のレベル（I-054＝メニューバーを OS に追従させる唯一の口）
 # ============================================================

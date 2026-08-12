@@ -175,6 +175,14 @@ _base_px: "dict[str, int]" = {}
 # 英語へ戻せるよう、**書き換える前の値を必ず持っておく**。
 _base_family: "dict[str, str]" = {}
 
+# 最後に `apply_fonts` が使った DPI＝**いまアプリの字が従っている値**。
+# 🔴 **なぜ「アプリに 1 つ」なのか**（B-065）：Tk の名前付きフォントは
+# **インタプリタに 1 組**しかなく、`TkDefaultFont` を窓ごとに別の大きさにはできない。
+# ⇒ 複数モニタで DPI が違っても、**字の大きさはアプリ全体で 1 つ**にしかできない。
+# 追従は「**最後に表示環境が変わった窓**の DPI へ全体を合わせる」形になる
+# （2026-08-12 ユーザー決定＝動かした窓が正しくなるほうを取る）。
+_applied_dpi: "dict[str, int]" = {}
+
 
 # ------------------------------------------------------------
 # 日本語の書体（B-026）
@@ -293,6 +301,7 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
 
     if dpi is None:
         dpi = window_dpi(root)
+    _applied_dpi["value"] = dpi        # いま字が従っている値（B-065）
 
     names = list(_SV_FONTS.values())
     # 日本語のときは本文書体そのものを日本語を持つ書体へ差し替える（B-026）。
@@ -397,6 +406,14 @@ def watch_display(
     `bind_all` で全ウィンドウ分をまとめて拾う＝窓を1つ足すたびに配線を思い出す
     必要がない（[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
 
+    ⚠️ **測るのは窓ごと**（B-065）。旧実装は `<Configure>` を全トップレベルから
+    拾いながら、DPI を**常に `root` から**測っていた＝ランチャーを 100% 側に置いた
+    まま子窓だけを 150% 側へドラッグしても値が動かず、何も起きなかった。**契機の
+    網は正しく、測る先だけが 1 つに固定されていた**（＝拾えているので気づけない）。
+    🔴 **ただし追従できるのは「大きさ 1 つ」まで**＝Tk の名前付きフォントは
+    インタプリタに 1 組なので（`_applied_dpi` の註）、**動かした窓に全体を合わせる**。
+    別モニタに残した窓の字も一緒に変わるのは、この作りでは避けられない副作用。
+
     Args:
         on_change: 表示環境が変わった**あと**に呼ばれる。引数＝`(その時点の DPI,
             DPI が変わったか)`。窓の寸法を測り直す（`views.window_fit.refit_all`）
@@ -407,26 +424,58 @@ def watch_display(
     """
     from views import window_fit                    # 遅延 import（循環回避）
 
-    state: "dict[str, Any]" = {
-        "dpi": window_dpi(root), "screen": window_fit.screen_size(root), "after": None,
-    }
+    # 窓ごとの前回値。⚠️ **キーはウィジェットでなく Tk のパス名**＝ここは窓より
+    # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
+    # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
+    seen: "dict[str, tuple[int, tuple[int, int]]]" = {}
+    state: "dict[str, Any]" = {"after": None}
+
+    def _windows() -> "list[tk.Misc]":
+        return [root, *window_fit.toplevels(root)]
+
+    def _measure(win: tk.Misc) -> "tuple[int, tuple[int, int]] | None":
+        try:
+            return window_dpi(win), window_fit.screen_size(win)
+        except tk.TclError:
+            return None                             # 破棄途中の窓
+    for win in _windows():
+        got = _measure(win)
+        if got is not None:
+            seen[str(win)] = got
 
     def _check() -> None:
         state["after"] = None
-        try:
-            dpi = window_dpi(root)
-            screen = window_fit.screen_size(root)
-        except tk.TclError:
-            return            # 破棄済み
-        if dpi == state["dpi"] and screen == state["screen"]:
+        moved_dpi: "int | None" = None
+        screen_changed = False
+        alive: "set[str]" = set()
+        for win in _windows():
+            got = _measure(win)
+            if got is None:
+                continue
+            name = str(win)
+            alive.add(name)
+            dpi, screen = got
+            prev = seen.get(name)
+            seen[name] = got
+            if prev is None:
+                # 初めて見る窓。**いま字が従っている DPI と違えば契機**＝別 DPI の
+                # モニタ側で開かれた窓が、開いた瞬間だけ取り残されるのを防ぐ。
+                if dpi != _applied_dpi.get("value", dpi):
+                    moved_dpi = dpi
+                continue
+            if dpi != prev[0]:
+                moved_dpi = dpi
+            if screen != prev[1]:
+                screen_changed = True
+        for name in set(seen) - alive:
+            del seen[name]                          # 閉じた窓を溜めない
+        if moved_dpi is None and not screen_changed:
             return
-        dpi_changed = dpi != state["dpi"]
-        if dpi_changed:
-            state["dpi"] = dpi
-            apply_fonts(root, dpi=dpi)
-        state["screen"] = screen
+        if moved_dpi is not None:
+            apply_fonts(root, dpi=moved_dpi)
         if on_change is not None:
-            on_change(dpi, dpi_changed)
+            on_change(moved_dpi if moved_dpi is not None else window_dpi(root),
+                      moved_dpi is not None)
 
     def _on_configure(event: "tk.Event") -> None:
         # トップレベル自身の Configure だけ見る（子ウィジェットの分は無視）。

@@ -361,6 +361,15 @@ def fit_to_content(
     frozen = _freeze_table_columns(win, freeze=shrink)
     escape: "_ScrollEscape | None" = getattr(win, "_fit_scroll", None)
     if escape is not None:
+        # ⚠️ **前回出したバーを畳んでから測る**（B-074(a)）。下の測定は窓の
+        # `winfo_reqwidth()` を読むが、受け皿のバーは窓の中身なので**出たままだと
+        # その幅ぶん要求に載る**。すると「入らなくなって出したバー」が次の測定を
+        # 太らせ、**入るようになっても幅が戻らない**（実測＝150% で縦バーが出た
+        # あと 100% へ戻すと、窓幅にバー 1 本分の 12px が残る。高さが戻るのは
+        # 横バーが出ていないからで、直っていたわけではない）。
+        # 下の `escape.sync(...)` が必要なぶんを測り直して出し直すので、ここで
+        # 畳んでも「入らない窓のバーが消える」ことにはならない。
+        escape.sync(overflow_v=False, overflow_h=False)
         # 受け皿越しでも「中身がどれだけ要るか」を窓が正しく申告できる状態にする。
         escape.remeasure()
     win.update_idletasks()
@@ -430,7 +439,7 @@ def refit_all(root: "tk.Tk | tk.Toplevel", *, shrink: bool = False) -> None:
             話で、ユーザーが広げた窓を狭める理由にならない（B-022 の復帰は
             `lim_h` 側で既に効く）。
     """
-    for win in (root, *_toplevels(root)):
+    for win in (root, *toplevels(root)):
         # 窓自身が再測メソッドを持つならそちらを優先する。`_fit_kwargs` に残る
         # 加算値（バッチのスクロールバー幅）は**呼んだ時点の実測**なので、DPI が
         # 変わるとスクロールバー自体が太って数 px 足りなくなる。窓の側で測り直せる
@@ -451,8 +460,13 @@ def refit_all(root: "tk.Tk | tk.Toplevel", *, shrink: bool = False) -> None:
             win._fit_shrink = False     # type: ignore[attr-defined]
 
 
-def _toplevels(root: tk.Misc) -> "list[tk.Toplevel]":
-    """`root` 配下の Toplevel を集める（入れ子も辿る）。"""
+def toplevels(root: tk.Misc) -> "list[tk.Toplevel]":
+    """`root` 配下の Toplevel を集める（入れ子も辿る）。
+
+    ⚠️ **公開しているのは [views/theme](theme.py) が同じ窓の集合を見るため**
+    （B-065＝表示環境の監視も「開いている窓ぜんぶ」が単位）。窓の集め方が 2 つに
+    割れると、片方に映って片方に映らない窓が出る。
+    """
     found: list[tk.Toplevel] = []
     stack = list(root.winfo_children())
     while stack:
