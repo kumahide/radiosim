@@ -3,7 +3,7 @@ views/launcher_menu.py
 ======================
 ランチャーの**メニューバーと、そこからしか呼ばれない操作**（`SimLauncher` の Mixin）。
 
-テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・バージョン情報・README 表示。
+テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・バージョン情報・ドキュメント表示。
 
 ⚠️ **これは `SimLauncher` の一部**であって独立した部品ではない（`self.root` /
 `self.config` / `self.entries` を共有する）。分けたのは*読む単位*を小さくするため
@@ -28,7 +28,7 @@ if TYPE_CHECKING:
     from views.map_window import MapWindow
 
 
-#: README ビューアが埋め込める画像（同梱物に置いてよい形式だけ）。
+#: ドキュメントビューアが埋め込める画像（同梱物に置いてよい形式だけ）。
 _INLINE_IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
                        ".jpeg": "image/jpeg", ".gif": "image/gif"}
 
@@ -457,7 +457,7 @@ class _MenuMixin:
         from tkinter.scrolledtext import ScrolledText
         win = tk.Toplevel(self.root)
         win.transient(self.root)
-        win.title("README")
+        win.title(i18n.t("dlg_doc_title"))
         win.geometry("800x600")
         win.minsize(500, 400)
         st = ScrolledText(win, font="TkFixedFont", wrap="word")

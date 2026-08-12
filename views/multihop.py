@@ -279,7 +279,7 @@ class MultiHopWindow(tk.Toplevel):
             r.pack(fill="x")
         self._common_vars: dict[str, tk.StringVar] = {}
         for n, (label_key, attr, width) in enumerate((
-            ("lbl_b_p_tx",     "p_tx",     7),
+            ("lbl_p_tx",       "p_tx",     7),
             ("lbl_b_sens",     "sens",     7),
             ("lbl_b_veg_h",    "veg_h",    6),
             ("lbl_b_samples",  "num",      6),

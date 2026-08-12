@@ -196,7 +196,7 @@ python -m pip install -r requirements.txt
 | Pillow     | PNG tile image decoding                                                                     |
 | sv-ttk     | Windows 11-style UI theme                                                                   |
 | darkdetect | System dark mode detection                                                                  |
-| markdown   | README viewer (optional — the app works without it)                                        |
+| markdown   | Documentation viewer (optional — the app works without it)                                        |
 | truststore | SSL certificate verification in corporate proxy environments (optional — works without it) |
 | tkintermapview | Map window tile display (GSI pale map; the map feature degrades gracefully if absent) |
 
@@ -258,7 +258,7 @@ radiosim/
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
-│   ├── manual_ja.md      # Japanese user manual (bundled into the exe; opened by Help → Open README)
+│   ├── manual_ja.md      # Japanese user manual (bundled into the exe; opened by Help → Open Documentation)
 │   ├── manual_en.md      # English user manual (same)
 │   ├── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
 │   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values)
@@ -364,7 +364,7 @@ Selections are persisted to `radiosim_conf.json`.
 
 | Item        | Description                          |
 | ----------- | -------------------------------------- |
-| Open README | Opens this document in a browser       |
+| Open Documentation | Opens this document in a browser       |
 | About       | Shows the version from `version.py`    |
 
 > **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme/language/proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
@@ -808,7 +808,7 @@ Loading closes the open windows (batch / explorer / relay path) after asking for
 ```
 [View layer]
   views/launcher.py       Launcher window (core: input form, run, progress)
-  views/launcher_menu.py     └ Menu bar and its actions (theme/language/proxy/README)
+  views/launcher_menu.py     └ Menu bar and its actions (theme/language/proxy/documentation)
   views/launcher_project.py  └ Project (.rsproj) collect / save / load
   views/launcher_windows.py  └ Child windows and cross-window notifications
   views/tooltip.py        Input hint tooltip (standalone widget)

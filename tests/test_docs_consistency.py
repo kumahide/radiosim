@@ -655,7 +655,11 @@ def test_coverage_source_is_the_headless_layers():
 #
 #       対象は「追跡されている = 公開される」ファイル。この性質そのものが判定基準
 #       なので、ここでも手書きの一覧を持たず git に問い合わせる。
-_ISSUE_ID_RE = re.compile(r"\b[BI]-\d{3}\b")
+#       ⚠️ **語境界に `\b` を使わない**（2026-08-13・B-078 のクラス点検）＝Python の
+#       `\b` は *Unicode の*単語文字で境界を決めるので、`クラスB-078` や `B-078を直す`
+#       のように**日本語へ直に接した ID が素通りする**。対象は日本語の文書なので、
+#       この形はむしろ普通に書かれる。⇒ 境界は **ASCII の単語文字だけ**で見る。
+_ISSUE_ID_RE = re.compile(r"(?<![A-Za-z0-9_])[BI]-\d{3}(?![A-Za-z0-9_])")
 
 
 def _tracked_markdown() -> list[str]:

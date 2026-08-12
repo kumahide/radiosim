@@ -106,9 +106,16 @@ def _occurs_as_word(word: str, text: str) -> bool:
     """**禁止語の判定**＝英字は語境界で、日本語は部分一致で見る。
 
     語境界なしだと `hop` が `hopper` に当たる（＝毎回鳴るゲート）。
+
+    ⚠️ **`\\b` は使えない**（2026-08-13・I-082 の変異検証で発覚）＝Python の `\\b` は
+    *Unicode の*単語文字で境界を決めるので、`READMEを開く` の `README` と `を` の
+    あいだに境界が立たず、**日本語に直に接した英字の禁止語が丸ごと素通りする**。
+    ⇒ 境界とみなすのは **ASCII の単語文字だけ**にする（`hop` は `hopper` に当たらず、
+    `README` は `READMEを開く` に当たる）。
     """
     if word.isascii():
-        return re.search(rf"\b{re.escape(word)}\b", text, re.IGNORECASE) is not None
+        pat = rf"(?<![A-Za-z0-9_]){re.escape(word)}(?![A-Za-z0-9_])"
+        return re.search(pat, text, re.IGNORECASE) is not None
     return word in text
 
 
@@ -181,3 +188,23 @@ def test_no_term_is_banned_by_another_row():
         "ある行の「使わない言い換え」が、別の行の採用語になっている: "
         + ", ".join(conflicts)
     )
+
+
+# ============================================================
+# 4. 判定そのものの変異検証（このゲートが本当に鳴るか）
+# ============================================================
+@pytest.mark.parametrize("word,text,expected", [
+    # 🔴 実際に素通りしていた形（I-082 の変異検証で発覚）＝英字の禁止語が
+    #    日本語に直に接すると `\b` では境界が立たない。
+    ("README", "READMEを開く",   True),
+    ("README", "Open README",    True),
+    ("hop",    "hop count",      True),
+    # 語境界は保つ＝これらで鳴ってはいけない（毎回鳴るゲートにしない）。
+    ("hop",    "hopper",         False),
+    ("hop",    "multihop",       False),
+    ("README", "READMEs",        False),
+    # 日本語の禁止語は部分一致のまま。
+    ("ホップ", "ホップ数",        True),
+])
+def test_the_word_matcher_catches_what_it_claims(word: str, text: str, expected: bool):
+    assert _occurs_as_word(word, text) is expected

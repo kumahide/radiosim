@@ -2,7 +2,7 @@
 
 ![RadioSim Pro](../logo.png)
 
-> **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Help → Open README shows inside the app.
+> **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Help → Open Documentation shows inside the app.
 > To run it from source or work on the code, see [developer_en.md](developer_en.md).
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
@@ -155,7 +155,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 
 | Item         | Description                          |
 | ------------ | -------------------------------------- |
-| Open README  | Opens this document in a browser       |
+| Open Documentation | Opens this document in a browser       |
 | About        | Shows the installed version            |
 
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.

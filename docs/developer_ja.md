@@ -196,7 +196,7 @@ python -m pip install -r requirements.txt
 | Pillow     | PNG タイル画像デコード                                            |
 | sv-ttk     | Windows 11 スタイルの UI テーマ                                   |
 | darkdetect | システムのダークモード設定検出                                    |
-| markdown   | README ビューア（省略可、なくても動作します）                     |
+| markdown   | ドキュメントビューア（省略可、なくても動作します）                     |
 | truststore | 企業プロキシ環境での SSL 証明書検証（省略可、なくても動作します） |
 | tkintermapview | 地図タイルの表示（GSI 淡色地図。無い場合は地図機能のみ自動的に無効化） |
 
@@ -258,7 +258,7 @@ radiosim/
 ├── docs/                 # 読み物（開発者向け・利用者向けとも、入口の README.md を除いてここ）
 │   ├── developer_ja.md   # このファイル
 │   ├── developer_en.md   # 英語版の開発者ドキュメント
-│   ├── manual_ja.md      # 利用者向けマニュアル（exe に同梱・ヘルプ「READMEを開く」が開く）
+│   ├── manual_ja.md      # 利用者向けマニュアル（exe に同梱・ヘルプ「ドキュメントを開く」が開く）
 │   ├── manual_en.md      # 英語版の利用者向けマニュアル（同上）
 │   ├── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
 │   ├── screenshots.md    # スクショの撮り方（座標・条件・期待値・配置先の正典）
@@ -362,7 +362,7 @@ python main.py
 
 | 項目           | 説明                                 |
 | -------------- | -------------------------------------- |
-| READMEを開く   | このドキュメントをブラウザで表示       |
+| ドキュメントを開く | このドキュメントをブラウザで表示       |
 | バージョン情報 | `version.py` の版数を表示              |
 
 > **「パラメータ読込」と「アプリ設定を読込む」は領分が排他**＝前者はシミュレーション条件、後者はテーマ・言語・プロキシ。**互いに相手を書き換えません**（他人のファイルを開いた瞬間に表示言語やネットワーク設定が変わらないための設計）。
@@ -812,7 +812,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 ```
 [表示層]
   views/launcher.py       ランチャーウィンドウ（本体＝入力フォーム・実行・進捗）
-  views/launcher_menu.py     └ メニューバーとその操作（テーマ/言語/プロキシ/README）
+  views/launcher_menu.py     └ メニューバーとその操作（テーマ/言語/プロキシ/ドキュメント）
   views/launcher_project.py  └ プロジェクト（.rsproj）の収集・保存・読込
   views/launcher_windows.py  └ 子窓の開閉と窓どうしの通知（凍結方式の出所）
   views/tooltip.py        入力ヒントのツールチップ（窓に依存しない部品）

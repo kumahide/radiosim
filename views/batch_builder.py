@@ -268,7 +268,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
         _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
-        _field(row0, i18n.t("lbl_b_p_tx"),   "p_tx")
+        _field(row0, i18n.t("lbl_p_tx"),     "p_tx")
         _field(row0, i18n.t("lbl_b_gain_tx"), "gain_tx")
         _field(row0, i18n.t("lbl_b_gain_rx"), "gain_rx")
         _field(row0, i18n.t("lbl_b_sens"),    "sens")
