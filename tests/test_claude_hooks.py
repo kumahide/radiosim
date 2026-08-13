@@ -697,6 +697,37 @@ class TestRoadmapHeadingMatchesRow:
         assert rows and headings, "パーサが何も拾えていない"
         assert memcheck.check_heading_matches_row(rows, headings) == []
 
+    # -- 状態は「欄の先頭の記号」で読む（I-093）-----------------------------
+    #
+    # 🔴 実際に踏んだ誤検知＝2.8 の欄に「（消化した項目も同じ節に ✅ で残す）」と
+    # 注記を書いたら、**その版がリリース済みと読まれて鳴った**。表の欄は状態の
+    # ダッシュボードだが、括弧書きの注記が入ることは普通にある。
+    # ⛔ 「欄に ✅ を書くな」で直さない＝ゲートに合わせて書き方を狭める形（壊れ方③）。
+
+    def test_a_check_mark_inside_a_note_is_not_a_release(self, memcheck):
+        """今回の誤検知そのもの＝**文中**の `✅` を状態と読まないこと。"""
+        rows = [(1, "| 2.8 | 🔜 **着手（`2.8a1`）**（消化済みも同節に ✅ で残す） | … |")]
+        headings = [(9, "## 🔜 2.8（着手中）— テーマ「利用者の手に開く版」")]
+        assert memcheck.check_heading_matches_row(rows, headings) == []
+
+    def test_a_leading_check_mark_still_means_released(self, memcheck):
+        """⚠️ 本来の欠陥は**引き続き**捕まること（誤検知を消して網ごと殺さない）。"""
+        rows = [(1, "| 2.5 | ✅ **リリース済み**（注記に 🔜 の字を含む） | — |")]
+        headings = [(9, "## 🔜 2.5（RC 進行中）")]
+        assert memcheck.check_heading_matches_row(rows, headings) != []
+
+    def test_a_row_without_a_mark_falls_back_to_the_word(self, memcheck):
+        """記号を付けない書き方でも読めること（様式が変われば黙って全行無視、を避ける）。"""
+        assert memcheck.row_says_released("リリース済み（tag `2.2`）")
+        assert not memcheck.row_says_released("着手（`2.8a1`）")
+
+    def test_the_mark_reader_looks_only_at_the_head(self, memcheck):
+        """判定そのものの単体検査（分岐ごとに 1 本＝B-078 の教訓）。"""
+        assert memcheck.row_says_released("✅ リリース済み")
+        assert memcheck.row_says_released("**✅ リリース済み**")
+        assert not memcheck.row_says_released("🔜 着手（✅ 済みの項目も残す）")
+        assert not memcheck.row_says_released("⬜ 骨子確定（✅ 着手順も確定）")
+
 
 class TestMemoryIndexLineLength:
     """MEMORY.md の索引行が「要約」に留まっているかを機械で測る。
