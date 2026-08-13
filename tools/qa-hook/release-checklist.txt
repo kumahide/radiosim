@@ -7,7 +7,7 @@
   [ ] version.py APP_VERSION が目標版
   [ ] CHANGELOG.md に当該版セクション
   [ ] ⚠ 公開文書 ×4 本文に新機能を反映 — 利用者向け(docs/manual_ja|en＝exe 同梱)を最優先、次に開発者向け(docs/developer_ja|en)。H1 の版もこの 4 本（入口の README.md は版を持たない）
-  [ ] radiosim.spec 冒頭コメントの版を更新
+  （radiosim.spec の版は更新不要＝core.version から導出する。2026-08-13 に実物と照合）
   [ ] Tier-0 ゲート緑: pytest(test_docs_consistency 含む)/pyright/ruff/bandit
   [ ] ⛔ 表示のある機械でフルスイートを回した — 表示依存の面は CI で構造的に 1 本も走らない（ランナーに表示が無く、xvfb を足しても assert が Windows のフォント実測ピクセルなので同じ検査にならない）。回すと .qa/display_run.json へ自動で刻まれ、このスクリプトが上に字で出す（2026-08-12 に昇格＝B-074。2.7 のスケール追従ゲートは CI で skip・開発機で赤のまま RC と正式を通過した）
   [ ] ⛔ 独立レビュー(Codex/VS Code拡張)を受け、指摘を ISSUES.md へ起票し対応版を決めた — RC/正式はブロッキング(観点を指定せず生の差分を渡す/結果は原文で受ける/裏取りしてから受け入れる)
