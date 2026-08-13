@@ -241,50 +241,171 @@ def test_push_is_safe_from_worker_threads():
 
 
 # ============================================================
-# ワーカー → UI の投函（B-061）
+# ワーカー → UI の投函（B-061 → B-079）
 # ============================================================
-def test_post_to_ui_delivers_while_the_widget_lives():
-    """生きているウィジェットへは、そのまま投函されること。"""
+@pytest.fixture(autouse=True)
+def _empty_mailbox():
+    """投函の待ち行列はプロセスに 1 本なので、テスト間で持ち越さない。"""
+    from views import progress
+
+    def _drain():
+        while True:
+            try:
+                progress._UI_MAILBOX.get_nowait()
+            except Exception:
+                return
+
+    _drain()
+    yield
+    _drain()
+
+
+class _Root:
+    """`drain_ui_mailbox` の予約先（メインスレッド役）。"""
+
+    def __init__(self):
+        self.scheduled: list = []
+
+    def after(self, ms, cb):
+        self.scheduled.append((ms, cb))
+
+
+def test_post_to_ui_does_not_touch_tk_at_all():
+    """★ **投函でワーカーが Tk に触れないこと**（B-079 の芯）。
+
+    ⚠️ ここが `widget.after()` に戻ると、**破棄済みの窓へ投函したワーカーが
+    1 件あたり約 1.04 秒止まる**（`_tkinter` が非メインスレッドからの呼び出しを
+    100ms×10 回待ってから諦める）。例外を抑えても待ちは消えない＝B-061 の
+    修正では届かなかった残りがこれ。
+    """
     from views.progress import post_to_ui
+
+    class Widget:
+        def after(self, ms, cb):
+            raise AssertionError("ワーカースレッドから Tk を呼んだ")
+
+    post_to_ui(Widget(), lambda: None)          # 例外が出なければ良い
+
+
+def test_the_mailbox_is_delivered_on_the_main_thread():
+    """投函は、配達役（メインスレッド）に渡って初めて `after` になること。"""
+    from views.progress import drain_ui_mailbox, post_to_ui
 
     class Widget:
         def __init__(self): self.calls = []
         def after(self, ms, cb): self.calls.append((ms, cb))
 
     w = Widget()
-    assert post_to_ui(w, lambda: None) is True
-    assert len(w.calls) == 1 and w.calls[0][0] == 0
+    post_to_ui(w, lambda: None)
+    post_to_ui(w, lambda: None, delay_ms=120)
+    assert w.calls == [], "配達前に届いている＝投函がその場で Tk を呼んでいる"
+
+    drain_ui_mailbox(_Root())
+    assert [ms for ms, _ in w.calls] == [0, 120]
+
+
+def test_the_mailbox_keeps_each_item_addressed_to_its_own_widget():
+    """宛先は要素の側が持つ＝窓が複数あっても取り違えないこと。"""
+    from views.progress import drain_ui_mailbox, post_to_ui
+
+    class Widget:
+        def __init__(self): self.calls = []
+        def after(self, ms, cb): self.calls.append(cb)
+
+    a, b = Widget(), Widget()
+    post_to_ui(a, "a")
+    post_to_ui(b, "b")
+    drain_ui_mailbox(_Root())
+    assert a.calls == ["a"] and b.calls == ["b"]
 
 
 @pytest.mark.parametrize("error", [RuntimeError("main thread is not in main loop"),
                                    _FakeTclError("invalid command name")])
-def test_post_to_ui_is_quiet_when_the_widget_is_already_gone(error):
-    """**破棄済みへの投函は静かに諦める**こと（B-061）。
+def test_delivery_is_quiet_when_the_widget_is_already_gone(error):
+    """**破棄済みへの配達は静かに諦める**こと（B-061）。
 
     取得中に窓を閉じるのは利用者が普通にやる操作で、そのとき投函先はもう無い。
-    ⚠️ 例外はワーカースレッドで上がるので**画面に出ずログに残るだけ**＝
-    気づかれないまま配布される。
+    配達役はメインスレッドなので、ここで諦めても**ワーカーは待たされない**。
     """
-    from views.progress import post_to_ui
+    from views.progress import drain_ui_mailbox, post_to_ui
 
     class Dead:
         def after(self, ms, cb): raise error
 
-    assert post_to_ui(Dead(), lambda: None) is False
+    alive_calls = []
+
+    class Alive:
+        def after(self, ms, cb): alive_calls.append(cb)
+
+    post_to_ui(Dead(), lambda: None)
+    post_to_ui(Alive(), "後続")
+    drain_ui_mailbox(_Root())
+    assert alive_calls == ["後続"], "死んだ宛先 1 件で配達が止まっている"
 
 
-def test_post_to_ui_does_not_swallow_real_bugs():
+def test_delivery_does_not_swallow_real_bugs():
     """**飲むのは「Tk が無い」合図だけ**＝コールバック側の本物のバグは通す。
 
     ここを `except Exception` にすると、投函の失敗と実装の誤りが区別できなくなる。
     """
-    from views.progress import post_to_ui
+    from views.progress import drain_ui_mailbox, post_to_ui
 
     class Broken:
         def after(self, ms, cb): raise ValueError("これは本物のバグ")
 
+    post_to_ui(Broken(), lambda: None)
+    root = _Root()
     with pytest.raises(ValueError):
-        post_to_ui(Broken(), lambda: None)
+        drain_ui_mailbox(root)
+    assert root.scheduled, (
+        "本物のバグで配達そのものが止まった＝以後の投函が誰にも届かない"
+    )
+
+
+def test_delivery_schedules_the_next_round():
+    """一度きりで終わらないこと（投函はいつ来るか分からない）。"""
+    from views.progress import drain_ui_mailbox
+
+    root = _Root()
+    drain_ui_mailbox(root, interval_ms=1234)
+    assert [ms for ms, _ in root.scheduled] == [1234]
+
+
+def test_delivery_stops_when_the_root_is_gone():
+    """ルートが死んでいたら静かに止まること（終了時に例外を出さない）。"""
+    from views.progress import drain_ui_mailbox
+
+    class DeadRoot:
+        def after(self, ms, cb): raise _FakeTclError("application has been destroyed")
+
+    drain_ui_mailbox(DeadRoot())                # 例外が出なければ良い
+
+
+def test_posting_from_many_workers_loses_nothing():
+    """複数ワーカーからの投函が失われないこと（キューのスレッド安全性）。"""
+    from views.progress import drain_ui_mailbox, post_to_ui
+
+    class Widget:
+        def __init__(self): self.calls = []
+        def after(self, ms, cb): self.calls.append(cb)
+
+    w = Widget()
+
+    def worker(base):
+        for i in range(50):
+            post_to_ui(w, base * 100 + i)
+
+    threads = [threading.Thread(target=worker, args=(t,), daemon=True)
+               for t in range(4)]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    drain_ui_mailbox(_Root())
+    assert sorted(w.calls) == sorted(
+        base * 100 + i for base in range(4) for i in range(50)
+    )
 
 
 def test_no_worker_posts_to_tk_without_going_through_post_to_ui():

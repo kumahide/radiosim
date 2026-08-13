@@ -1286,3 +1286,62 @@ class TestTkGarbageIsSweptOnTheMainThread:
             )
         finally:
             root.destroy()
+
+    def test_the_launcher_starts_the_mailbox_delivery(self):
+        """配線＝ランチャーが**投函の配達役**も起動すること（B-079）。
+
+        投函はキューへの put だけになったので、ここが外れると
+        **例外も出ないまま全窓ぶんの通知が誰にも届かない**（完了しても画面が
+        変わらない）。掃除役と同じくルートに 1 つ置く形なので、外れ方も一斉。
+        """
+        from views import launcher as launcher_mod
+        from views import progress
+
+        started = []
+        root = make_themed_root()
+        root.withdraw()
+        try:
+            original = progress.drain_ui_mailbox
+            launcher_mod.progress.drain_ui_mailbox = (
+                lambda r, **k: started.append(r))
+            try:
+                launcher_mod.SimLauncher(root, lambda _t: None)
+            finally:
+                launcher_mod.progress.drain_ui_mailbox = original
+            assert started, (
+                "ランチャーが drain_ui_mailbox を起動していない＝ワーカーからの"
+                "投函が静かに溜まり続ける（完了・エラーが画面に出ない）"
+            )
+        finally:
+            root.destroy()
+
+    def test_a_worker_post_reaches_the_ui_through_the_real_tk_chain(self):
+        """実 Tk で、**ワーカーからの投函が実際に画面側で実行される**こと。
+
+        フェイクの scheduler では「予約した」までしか見えない。ここは
+        ランチャーが起動した配達の連鎖（`after` ポーリング）を本物で回し、
+        **ワーカースレッドが Tk に触れずに UI へ届く**ことを端から端まで見る。
+        """
+        import threading
+        import time
+
+        from views import launcher as launcher_mod
+        from views import progress
+
+        root = make_themed_root()
+        root.withdraw()
+        try:
+            launcher_mod.SimLauncher(root, lambda _t: None)
+            arrived: list = []
+            threading.Thread(
+                target=lambda: progress.post_to_ui(root, lambda: arrived.append(1)),
+                daemon=True,
+            ).start()
+
+            deadline = time.perf_counter() + 5.0
+            while not arrived and time.perf_counter() < deadline:
+                root.update()
+                time.sleep(0.01)
+            assert arrived, "ワーカーの投函が UI まで届かない（配達の連鎖が回っていない）"
+        finally:
+            root.destroy()
