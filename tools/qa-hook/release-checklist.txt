@@ -6,7 +6,7 @@
 リリース前チェックリスト（公開＝gh release 前に目視確認）:
   [ ] version.py APP_VERSION が目標版
   [ ] CHANGELOG.md に当該版セクション
-  [ ] ⚠ README ×4 本文に新機能を反映 — バイナリREADME(README_binary_ja/en)を最優先
+  [ ] ⚠ 公開文書 ×4 本文に新機能を反映 — 利用者向け(docs/manual_ja|en＝exe 同梱)を最優先、次に開発者向け(docs/developer_ja|en)。H1 の版もこの 4 本（入口の README.md は版を持たない）
   [ ] radiosim.spec 冒頭コメントの版を更新
   [ ] Tier-0 ゲート緑: pytest(test_docs_consistency 含む)/pyright/ruff/bandit
   [ ] ⛔ 表示のある機械でフルスイートを回した — 表示依存の面は CI で構造的に 1 本も走らない（ランナーに表示が無く、xvfb を足しても assert が Windows のフォント実測ピクセルなので同じ検査にならない）。回すと .qa/display_run.json へ自動で刻まれ、このスクリプトが上に字で出す（2026-08-12 に昇格＝B-074。2.7 のスケール追従ゲートは CI で skip・開発機で赤のまま RC と正式を通過した）
@@ -18,8 +18,8 @@
   [ ] 環境クイック確認: フック実働（SessionStart/Stop/pre-push）・Ollama 稼働・残課題リスト（4b以降/2.4スコープ）の再確認
       ※ CI の状態はこのスクリプトが上に字で出す（2026-08-11 に昇格＝「CI 緑」の 1 行は読み飛ばされ、赤のまま RC と正式を通過した）
   [ ] 大版（X.0）または環境変動（マシン/Python/主要依存の更新）後の初リリースなら: フル環境監査を実施するか判断（前回=2026-07-04/05・検査面はメモリ reference-full-audit-checklist が正典）
-  [ ] README のスクショが現行版の画面と一致するか目視照合（docs/screenshots.md が構図の正典）— 撮影は RC1 の実機確認と同時に済ませ、ここでは見比べるだけ。動いていたら撮り直す。⛔ ビルドより前に差し替える（画像は spec の datas でファイルとして同梱されるので、ビルド後に差し替えても配布物には入らない＝2.3RC1 と同じ穴。⚠️ 同梱 README 内に base64 は無いのが正常＝畳むのは README ビューアが描画するとき）
-  [ ] dist 同梱 README が更新版か grep 確認・exe FileVersion が目標版
+  [ ] 公開文書のスクショが現行版の画面と一致するか目視照合（docs/screenshots.md が構図の正典）— 撮影は RC1 の実機確認と同時に済ませ、ここでは見比べるだけ。動いていたら撮り直す。⛔ ビルドより前に差し替える（画像は spec の datas でファイルとして同梱されるので、ビルド後に差し替えても配布物には入らない＝2.3RC1 と同じ穴。⚠️ 同梱 README 内に base64 は無いのが正常＝畳むのは README ビューアが描画するとき）
+  [ ] dist 同梱の利用者向け文書（_internal\docs\manual_ja|en.md）が更新版か grep 確認・exe FileVersion が目標版
 公開の直後にやること:
   [ ] git fetch --tags でタグをローカルへ引き、git log --oneline -1 <tag> で指し先を確認（gh release create はタグをサーバ側で作るので、打ったのに手元では「無い」ように見える＝作成漏れと区別がつかない）
 自動ゲート緑は必要条件であって十分条件ではない（工程3=README本文反映は機械化しきれない残余）。
