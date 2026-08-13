@@ -13,7 +13,9 @@ views/launcher_menu.py
 
 import json
 import os
+import re
 import tkinter as tk
+from pathlib import Path
 from tkinter import filedialog, ttk
 from typing import TYPE_CHECKING, Callable
 
@@ -77,6 +79,149 @@ def inline_local_images(html_body: str, base_dir: str, doc_dir: str | None = Non
         return f'src="data:{mime};base64,{data}"'
 
     return _re.sub(r'src="([^"]+)"', _replace, html_body)
+
+
+#: `<a href="…">…</a>` を丸ごと拾う（Markdown 変換後のアンカーは入れ子にならない）。
+_ANCHOR_RE = re.compile(r'<a\b([^>]*?)href="([^"]+)"([^>]*)>(.*?)</a>', re.DOTALL)
+
+
+def _split_fragment(href: str) -> tuple[str, str]:
+    path, sep, frag = href.partition("#")
+    return path, (sep + frag)
+
+
+def local_link_target(href: str, doc_dir: str) -> str | None:
+    """**ローカル相対参照**の絶対パスを返す（外部 URL・ページ内アンカー・絶対パスは `None`）。
+
+    解決の基準は `inline_local_images` と同じ＝**その文書のあるディレクトリ**
+    （Markdown の相対パスの意味＝GitHub で読むときと同じ行き先になる）。
+    """
+    path, _frag = _split_fragment(href)
+    if not path or "://" in href or href.startswith(("data:", "mailto:")) \
+            or os.path.isabs(path):
+        return None
+    return os.path.abspath(os.path.join(doc_dir, path))
+
+
+def is_bundled(path: str, base_dir: str) -> bool:
+    """`path` が**同梱物の根の中**にあるか（境界は `inline_local_images` と同じ）。"""
+    root = os.path.abspath(base_dir)
+    try:
+        return os.path.commonpath([root, os.path.abspath(path)]) == root
+    except ValueError:                         # ドライブ違い（Windows）
+        return False
+
+
+def linked_local_docs(html_body: str, base_dir: str, doc_dir: str) -> list[str]:
+    """本文が指している**同梱物の中の `.md`** の絶対パス（重複なし・実在するものだけ）。
+
+    ビューアは「開いた 1 本」ではなく**そこから辿れる文書の一式**を書き出す。
+    ⇒ ここが推移閉包の 1 段ぶん（呼び出し側が空になるまで回す）。
+    """
+    found: list[str] = []
+    for m in _ANCHOR_RE.finditer(html_body):
+        target = local_link_target(m.group(2), doc_dir)
+        if (target is not None and is_bundled(target, base_dir)
+                and target.lower().endswith(".md")
+                and os.path.isfile(target) and target not in found):
+            found.append(target)
+    return found
+
+
+def rewrite_local_links(html_body: str, base_dir: str, doc_dir: str,
+                        doc_urls: dict) -> str:
+    """`<a href>` のローカル参照を**開ける行き先**へ書き換える。
+
+    **なぜ必要か**: Tier 1 の表示は一時ディレクトリへ書き出すので、相対リンクは
+    そこから解決される＝**同梱文書へのリンクも `../LICENSE` も必ず開けない**
+    （画像は `inline_local_images` で畳んでいたが、`<a href>` は素通しだった＝
+    2026-08-13 のユーザー報告）。
+
+    行き先の決め方は 3 つだけ:
+      1. **一緒に書き出した `.md`** → その一時 HTML（`doc_urls`＝絶対パス→URL）
+      2. **同梱物の中に実在するそれ以外のファイル** → `file://` の絶対 URI（OS へ）
+      3. **それ以外**（同梱物の外・実在しない） → **リンクを外して字だけ残す**
+
+    ⚠️ **3 が「開けないリンクを見せない」ための本体**＝配布物には開発者向け文書や
+    ソースが入らない構成もあり得るので、**押せるのに何も起きない**を作らない
+    （`×` と `＋` の置き方と同じ規則）。外部 URL とページ内アンカーは触らない。
+    ⚠️ **画像（`inline_local_images`）は同梱物の外を「素通し」にするが、リンクは
+    外す**＝素通しでも絵は出ないだけだが、リンクは**押せてしまう**ので扱いが違う。
+    """
+    def _replace(m: "re.Match[str]") -> str:
+        before, href, after, text = m.groups()
+        target = local_link_target(href, doc_dir)
+        if target is None:
+            return m.group(0)                  # 外部 URL / ページ内アンカー / 絶対パス
+        _path, frag = _split_fragment(href)
+        url = doc_urls.get(target)
+        if url is not None:
+            return f'<a{before}href="{url}{frag}"{after}>{text}</a>'
+        if is_bundled(target, base_dir) and os.path.isfile(target):
+            return f'<a{before}href="{Path(target).as_uri()}"{after}>{text}</a>'
+        return text                            # 開けない＝リンクを外す
+
+    return _ANCHOR_RE.sub(_replace, html_body)
+
+
+#: ドキュメントビューアの体裁（1 か所＝どの文書も同じ見た目で開く）。
+_DOC_STYLE = (
+    "body{font-family:Arial,sans-serif;margin:40px;max-width:900px;line-height:1.6}"
+    "h1,h2,h3{color:#333}"
+    "code{font-family:'BIZ UDGothic','MS Gothic',Consolas,'Courier New',monospace;"
+    "background:#f4f4f4;padding:2px 6px;border-radius:3px}"
+    "pre{font-family:'BIZ UDGothic','MS Gothic',Consolas,'Courier New',monospace;"
+    "background:#f4f4f4;padding:12px;border-radius:4px;overflow-x:auto;line-height:1.5}"
+    "img{width:100%;height:auto}"
+    "table{border-collapse:collapse;width:100%}"
+    "th,td{border:1px solid #ddd;padding:8px;text-align:left}"
+    "th{background:#455a64;color:white}"
+)
+
+
+def _doc_page(body: str, lang: str) -> str:
+    return (f'<!DOCTYPE html><html lang="{lang}">'
+            f'<head><meta charset="UTF-8"><style>{_DOC_STYLE}</style></head>'
+            f'<body>{body}</body></html>')
+
+
+def _out_name(src: str, base_dir: str) -> str:
+    """同梱物の中での位置から、一時ディレクトリでのファイル名を決める（衝突しない）。"""
+    rel = os.path.relpath(src, os.path.abspath(base_dir))
+    return re.sub(r"[^0-9A-Za-z_.-]", "_", rel)[:-3] + ".html"
+
+
+def render_doc_site(entry_path: str, base_dir: str, out_dir: str,
+                    to_html, lang: str = "ja") -> str:
+    """開く文書と**そこから辿れる同梱文書の一式**を書き出し、入口の HTML を返す。
+
+    **1 本だけ書き出すと、文書間のリンクは必ず死ぬ**（一時ディレクトリには相手が
+    いない）。⇒ 辿れる `.md` を推移的に集めて同じ体裁で書き出し、リンクは互いの
+    出力先へ向け直す＝**アプリで開いても GitHub で読むのと同じように行き来できる**。
+
+    `to_html` は Markdown → HTML の変換（呼び出し側が注入する＝この関数は
+    `markdown` ライブラリに依存しない＝テストから素の文字列で回せる）。
+    """
+    base = os.path.abspath(base_dir)
+    bodies: dict = {}
+    pending = [os.path.abspath(entry_path)]
+    while pending:
+        src = pending.pop(0)
+        if src in bodies:
+            continue
+        with open(src, encoding="utf-8") as f:
+            body = to_html(f.read())
+        # 画像は data URI へ畳む（<base href> を足さない＝アンカーを壊さない）。
+        bodies[src] = inline_local_images(body, base, os.path.dirname(src))
+        pending.extend(linked_local_docs(bodies[src], base, os.path.dirname(src)))
+
+    # **名前を全部決めてから**書き換える（相互リンクが処理順に依存しないように）。
+    names = {src: _out_name(src, base) for src in bodies}
+    for src, body in bodies.items():
+        body = rewrite_local_links(body, base, os.path.dirname(src), names)
+        with open(os.path.join(out_dir, names[src]), "w", encoding="utf-8") as f:
+            f.write(_doc_page(body, lang))
+    return os.path.join(out_dir, names[os.path.abspath(entry_path)])
 
 
 class _MenuMixin:
@@ -394,12 +539,12 @@ class _MenuMixin:
         # Tier 1: markdown ライブラリで HTML 変換 → ブラウザ表示
         try:
             import atexit
+            import shutil
             import tempfile
             import unicodedata as _ud
             import webbrowser
             import markdown as _md
             from markdown.extensions.toc import TocExtension
-            from pathlib import Path
 
             def _slugify(value: str, sep: str) -> str:
                 """GitHub 互換のアンカー ID 生成。文字・数字は保持し句読点は除去。"""
@@ -412,35 +557,19 @@ class _MenuMixin:
                         result.append(sep)
                 return "".join(result)
 
-            with open(path, encoding="utf-8") as f:
-                body = _md.markdown(
-                    f.read(),
+            def _to_html(text: str) -> str:
+                return _md.markdown(
+                    text,
                     extensions=["tables", "fenced_code", TocExtension(slugify=_slugify)],
                 )
-            # 画像を base64 に変換して埋め込む（<base href> 不要・アンカーリンク保護）
-            body = inline_local_images(body, base, os.path.dirname(path))
-            html = (
-                f'<!DOCTYPE html><html lang="{i18n.t("html_lang")}">'
-                '<head><meta charset="UTF-8"><style>'
-                "body{font-family:Arial,sans-serif;margin:40px;max-width:900px;line-height:1.6}"
-                "h1,h2,h3{color:#333}"
-                "code{font-family:'BIZ UDGothic','MS Gothic',Consolas,'Courier New',monospace;"
-                "background:#f4f4f4;padding:2px 6px;border-radius:3px}"
-                "pre{font-family:'BIZ UDGothic','MS Gothic',Consolas,'Courier New',monospace;"
-                "background:#f4f4f4;padding:12px;border-radius:4px;overflow-x:auto;line-height:1.5}"
-                "img{width:100%;height:auto}"
-                "table{border-collapse:collapse;width:100%}"
-                "th,td{border:1px solid #ddd;padding:8px;text-align:left}"
-                "th{background:#455a64;color:white}"
-                f"</style></head><body>{body}</body></html>"
-            )
-            with tempfile.NamedTemporaryFile(
-                mode="w", suffix=".html", encoding="utf-8", delete=False
-            ) as tmp:
-                tmp.write(html)
-                tmp_path = tmp.name
-            atexit.register(lambda p=tmp_path: os.unlink(p) if os.path.exists(p) else None)
-            webbrowser.open(Path(tmp_path).as_uri())
+
+            # 開く文書 1 本ではなく、そこから辿れる同梱文書の一式を書き出す
+            # （＝文書間のリンクが一時ディレクトリでも生きる・2026-08-13）。
+            out_dir = tempfile.mkdtemp(prefix="radiosim_doc_")
+            atexit.register(lambda d=out_dir: shutil.rmtree(d, ignore_errors=True))
+            entry = render_doc_site(path, base, out_dir, _to_html,
+                                    i18n.t("html_lang"))
+            webbrowser.open(Path(entry).as_uri())
             return
         except ImportError:
             pass

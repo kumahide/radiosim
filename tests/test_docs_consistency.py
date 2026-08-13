@@ -801,6 +801,107 @@ def test_the_manual_viewer_resolves_images_from_the_document_not_the_root(tmp_pa
     assert 'src="../../outside.png"' in out, "同梱物の外のファイルを読んでいる"
 
 
+# ------------------------------------------------------------
+# 文書の中のリンク（B-081）
+# ------------------------------------------------------------
+# ビューアは一時ディレクトリへ HTML を書き出す＝**相対リンクは必ず死ぬ**。画像は
+# data URI へ畳んでいたのに `<a href>` は素通しで、2026-08-13 に利用者から
+# 「リンクが開けません」と報告された。⇒ 辿れる文書を一緒に書き出して繋ぐ。
+_MD_LINK_RE = re.compile(r'(?<!!)\[[^\]]*\]\(([^)#][^)]*\.md)(?:#[^)]*)?\)')
+
+
+def _doc_link_refs(doc: str) -> set[str]:
+    """`doc` が指すローカル `.md` を**リポジトリ相対のパス**として返す。"""
+    import posixpath
+    text = (ROOT / doc).read_text(encoding="utf-8")
+    here = posixpath.dirname(doc)
+    return {posixpath.normpath(posixpath.join(here, m.group(1)))
+            for m in _MD_LINK_RE.finditer(text)}
+
+
+@pytest.mark.parametrize("doc", BUNDLED_MANUALS)
+def test_documents_linked_from_the_bundled_manual_are_also_bundled(doc):
+    """マニュアルから**辿れる文書も同梱**されていること（画像と同じ規則）。
+
+    ビューアは辿れる `.md` を一緒に書き出してリンクを繋ぐので、同梱されていない
+    文書へのリンクは**配布版でだけ黙って消える**（開発機では開けるので気づかない）。
+    """
+    refs = _doc_link_refs(doc)
+    assert refs, f"{doc}: 他の文書へのリンクが 1 つも無い（この検査が空振りしている）"
+    missing = sorted(r for r in refs if r not in _bundled_paths())
+    assert not missing, (
+        f"{doc} が指す文書が radiosim.spec の datas に無い"
+        f"（exe でだけリンクが消える）: {missing}"
+    )
+
+
+def test_the_manual_viewer_rewrites_links_to_places_that_can_be_opened(tmp_path):
+    """`<a href>` の 3 分岐（一緒に書き出した文書 / 同梱ファイル / 開けない）。
+
+    ⚠️ **開けないものは「リンクを外して字だけ残す」**＝押せるのに何も起きない
+    リンクを作らない。外部 URL とページ内アンカーには触らない。
+    """
+    from views.launcher_menu import rewrite_local_links
+
+    base = tmp_path / "bundle"
+    (base / "docs").mkdir(parents=True)
+    (base / "docs" / "manual.md").write_text("x", encoding="utf-8")
+    (base / "LICENSE").write_text("MIT", encoding="utf-8")
+    (tmp_path / "outside.md").write_text("x", encoding="utf-8")   # **実在する**外
+    names = {str(base / "docs" / "manual.md"): "docs_manual.html"}
+
+    body = ('<a href="manual.md#使い方">M</a>'
+            '<a href="../LICENSE">L</a>'
+            '<a href="../../outside.md">O</a>'
+            '<a href="missing.md">X</a>'
+            '<a href="https://example.com">W</a>'
+            '<a href="#概要">A</a>')
+    out = rewrite_local_links(body, str(base), str(base / "docs"), names)
+
+    assert 'href="docs_manual.html#使い方"' in out, "同梱文書が一緒に書き出した先を向いていない"
+    assert 'href="file:///' in out and "LICENSE" in out, "同梱ファイルが file:// になっていない"
+    assert ">O<" not in out.replace("<a", "@a"), "同梱物の外へのリンクが残っている"
+    assert "outside.md" not in out and "missing.md" not in out, (
+        "開けないリンクが残っている（押せるのに何も起きない）"
+    )
+    assert "O" in out and "X" in out, "リンクを外すときに字まで消している"
+    assert 'href="https://example.com"' in out, "外部 URL を触っている"
+    assert 'href="#概要"' in out, "ページ内アンカーを触っている"
+
+
+def test_the_manual_viewer_writes_every_document_it_can_reach(tmp_path):
+    """辿れる文書が**一式**書き出され、相互リンクが両方向で開けること。
+
+    1 本だけ書き出すと、文書間のリンクは一時ディレクトリに相手がいないので必ず
+    死ぬ。⚠️ 相互参照（A ⇄ B）で**止まる**ことも一緒に見る（推移閉包を素朴に
+    たどると戻ってくる）。
+    """
+    from views.launcher_menu import render_doc_site
+
+    base = tmp_path / "bundle"
+    (base / "docs").mkdir(parents=True)
+    (base / "docs" / "a.md").write_text("[to b](b.md)", encoding="utf-8")
+    (base / "docs" / "b.md").write_text("[to a](a.md)", encoding="utf-8")
+    out = tmp_path / "out"
+    out.mkdir()
+
+    def _to_html(text):                     # markdown ライブラリを使わない最小の変換
+        return re.sub(r"\[([^\]]*)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
+
+    entry = render_doc_site(str(base / "docs" / "a.md"), str(base), str(out),
+                            _to_html, "ja")
+
+    written = sorted(p.name for p in out.iterdir())
+    assert len(written) == 2, f"辿れる文書が一式そろっていない: {written}"
+    for name in written:
+        href = re.search(r'href="([^"]+)"', (out / name).read_text(encoding="utf-8"))
+        assert href, f"{name}: リンクが消えている"
+        assert (out / href.group(1)).exists(), (
+            f"{name}: リンク先 {href.group(1)} が書き出されていない"
+        )
+    assert Path(entry).name in written
+
+
 def test_the_license_text_ships_with_the_binary():
     """**配布物に `LICENSE` が入っている**こと。
 

@@ -45,6 +45,11 @@ datas = [
     # README（ヘルプメニューで表示）
     ("docs/manual_ja.md", "docs"),
     ("docs/manual_en.md", "docs"),
+    # マニュアルから**辿れる**文書も同梱する。ビューアは辿れる .md を一緒に
+    # 書き出してリンクを繋ぐので、入っていないと配布版でだけリンクが消える。
+    ("docs/developer_ja.md", "docs"),
+    ("docs/developer_en.md", "docs"),
+    ("docs/glossary.md", "docs"),
     # ライセンス本文（MIT は「複製物に許諾表示を含めること」を求める＝配布物に必須）
     ("LICENSE", "."),
     # ロゴ画像
