@@ -31,8 +31,11 @@ if TYPE_CHECKING:
 
 
 #: ドキュメントビューアが埋め込める画像（同梱物に置いてよい形式だけ）。
+#: ⚠️ **図は SVG で持つ**（層構成図＝docs/images/architecture_*.svg）ので `.svg` が要る。
+#: 無いと一時ディレクトリからの相対参照のまま残り、**図だけ黙って出ない**（B-081 と同型）。
 _INLINE_IMAGE_TYPES = {".png": "image/png", ".jpg": "image/jpeg",
-                       ".jpeg": "image/jpeg", ".gif": "image/gif"}
+                       ".jpeg": "image/jpeg", ".gif": "image/gif",
+                       ".svg": "image/svg+xml"}
 
 
 def inline_local_images(html_body: str, base_dir: str, doc_dir: str | None = None) -> str:

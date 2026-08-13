@@ -91,9 +91,34 @@ def test_file_tree_lists_all_modules(doc):
 
 # --- 2. アーキテクチャ層構成図: 全 view + コアモジュールを含むか -------------
 #       （今回見落とした図そのものをガードする）
+#
+# 🔑 **図の実体は SVG へ移した**ので、節の散文だけ見ても中身は分からない。⇒ 節が
+# 参照している SVG を開いて**図の中の字ごと**照合する（SVG はテキストなので読める）。
+# ⚠️ 参照が消える／SVG が無いときは**落とす**＝「節に何も書いていないから緑」という
+# 空振りを作らない（ゲートの壊れ方②「一度も落ちない」の予防）。
+#: ⚠️ 画像参照の形（`![…](…)` / `<img src>`）だけを拾う。素の丸括弧で拾うと
+#: 「（英語版は architecture_en.svg）」のような**散文の言及**まで参照とみなして落ちる。
+_SVG_REF_RE = re.compile(r'!\[[^\]]*\]\(([^)]+\.svg)\)|<img[^>]+src="([^"]+\.svg)"')
+
+
+def _architecture_text(doc: str) -> str:
+    """アーキテクチャ節の字＋そこが参照している SVG の字。"""
+    import posixpath
+    arch = _section(_read(doc), ["アーキテクチャ", "Architecture"])
+    refs = [m.group(1) or m.group(2) for m in _SVG_REF_RE.finditer(arch)]
+    assert refs, f"{doc}: architecture section references no SVG figure"
+    here = posixpath.dirname(doc)
+    parts = [arch]
+    for ref in refs:
+        path = ROOT / posixpath.normpath(posixpath.join(here, ref))
+        assert path.exists(), f"{doc}: architecture figure not found: {ref}"
+        parts.append(path.read_text(encoding="utf-8"))
+    return "\n".join(parts)
+
+
 @pytest.mark.parametrize("doc", DEV_DOCS)
 def test_architecture_diagram_lists_all_modules(doc):
-    arch = _section(_read(doc), ["アーキテクチャ", "Architecture"])
+    arch = _architecture_text(doc)
     for name in VIEW_MODULES + CORE_ARCH_MODULES:
         assert name in arch, f"{doc}: architecture layer diagram is missing {name}"
 
@@ -699,10 +724,15 @@ def test_public_docs_do_not_cite_issue_ids():
 # **リポジトリ相対へ畳む**（`docs/manual_ja.md` の `../logo.png` = `logo.png`）。
 # ⚠️ 畳まずに文字列のまま比べると、`images/shot_map.png` が spec の
 # `docs/images/shot_map.png` と一致せず**常に赤**になる（＝毎回鳴るゲート）。
-BUNDLED_MANUALS = ["docs/manual_ja.md", "docs/manual_en.md"]
+#
+# ⚠️ **開発者ドキュメントも同梱物**（マニュアルから辿れるのでビューアが一緒に書き出す）。
+# 層構成図を SVG にした時点で同じ穴が開くので、この検査の対象は「同梱される .md 全部」。
+BUNDLED_MANUALS = ["docs/manual_ja.md", "docs/manual_en.md",
+                   "docs/developer_ja.md", "docs/developer_en.md"]
 
-_IMG_MD_RE = re.compile(r'!\[[^\]]*\]\(([^)]+\.(?:png|jpg|jpeg|gif))\)')
-_IMG_HTML_RE = re.compile(r'<img[^>]+src="([^"]+\.(?:png|jpg|jpeg|gif))"')
+_IMG_EXT = r"png|jpg|jpeg|gif|svg"
+_IMG_MD_RE = re.compile(rf'!\[[^\]]*\]\(([^)]+\.(?:{_IMG_EXT}))\)')
+_IMG_HTML_RE = re.compile(rf'<img[^>]+src="([^"]+\.(?:{_IMG_EXT}))"')
 
 
 def _image_refs(doc: str) -> set[str]:
@@ -718,7 +748,8 @@ def _bundled_paths() -> set[str]:
     """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
     spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
     return {m.group(1).replace("\\", "/")
-            for m in re.finditer(r'\(\s*"([^"]+\.(?:png|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
+            for m in re.finditer(
+                r'\(\s*"([^"]+\.(?:png|svg|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
 
 
 @pytest.mark.parametrize("doc", BUNDLED_MANUALS)
@@ -758,13 +789,19 @@ def test_the_manual_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path)
     (base / "docs" / "images" / "shot.png").write_bytes(png)
     (tmp_path / "outside.png").write_bytes(png)          # **実在する**同梱物の外
 
+    # 図は SVG で持つ（層構成図）＝ラスタ画像だけ畳む実装だと**図だけ**出ない。
+    (base / "docs" / "images" / "arch.svg").write_text(
+        '<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
+
     body = ('<img src="logo.png">'
             '<img src="docs/images/shot.png">'
+            '<img src="docs/images/arch.svg">'
             '<img src="https://example.com/x.png">'
             '<img src="../outside.png">')
     out = inline_local_images(body, str(base))
 
     assert out.count("data:image/png;base64,") == 2, "同梱画像が 2 枚とも畳まれていない"
+    assert "data:image/svg+xml;base64," in out, "同梱の SVG 図が畳まれていない"
     assert 'src="https://example.com/x.png"' in out, "外部 URL を触っている"
     assert 'src="../outside.png"' in out, "同梱物の外のファイルを読んでいる"
 

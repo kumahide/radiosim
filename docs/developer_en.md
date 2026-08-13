@@ -262,7 +262,7 @@ radiosim/
 │   ├── manual_en.md      # English user manual (same)
 │   ├── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
 │   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values)
-│   └── images/           # Those screenshots (referenced by these four docs and README.md; also bundled into the exe)
+│   └── images/           # Those screenshots and the figures (architecture_*.svg = the layer diagram); also bundled into the exe
 ├── README.md             # Repository entry point (the one read first on GitHub)
 │
 │   # Tests are listed by **name only** — the "Testing" table is the source of truth
@@ -807,61 +807,11 @@ Loading closes the open windows (batch / explorer / relay path) after asking for
 
 ### Layer Structure
 
-```
-[View layer]
-  views/launcher.py       Launcher window (core: input form, run, progress)
-  views/launcher_menu.py     └ Menu bar and its actions (theme/language/proxy/documentation)
-  views/launcher_project.py  └ Project (.rsproj) collect / save / load
-  views/launcher_windows.py  └ Child windows and cross-window notifications
-  views/tooltip.py        Input hint tooltip (standalone widget)
-  views/graph.py          Graph window
-  views/map_window.py     Map window (core: mode switching, map widget)
-  views/map_picks.py         └ Picking sites and drawing paths
-  views/map_cache.py         └ DEM cache selection, download and overlay
-  views/map_style.py      Single source of map drawing constants (colors, margins, zoom)
-  views/batch_builder.py  Multiple Paths window (core: common settings, project info)
-  views/batch_table.py       └ Input table (add/duplicate/remove/reorder rows)
-  views/batch_io.py          └ CSV import/export and template
-  views/batch_run.py         └ Execution and progress
-  views/dialogs.py        Shared modal dialogs centered on the parent
-  views/errors.py         Unhandled Tk callback exceptions -> log + dialog (one sink for every window)
-  views/progress.py       Progress transport (queue + polling, shared by single/batch)
-  views/theme.py          Single source of theme colors and UI fonts (for tk.Menu / tk.Canvas outside ttk)
-  views/window_fit.py     Single implementation of window sizing (shared by every window)
-  views/scenario.py       Condition explorer window (compare / sweep)
-  -> Has side effects. Delegates calculation and I/O downward.
+![RadioSim Pro layer structure: a one-way dependency from views/ (the screen, tkinter) to report/ (the headless layer that produces output) to core/ (the foundation — calculation, data and configuration), listing the modules of each layer with their role.](images/architecture_en.svg)
 
-          |
-          v
-
-[Orchestrator layer]
-  simulation.py   DEM fetch management, terrain cache, calculation calls
-  batch.py        CSV I/O, validation, batch execution engine
-  scenario.py     Condition explorer runner (fixed terrain, N conditions, phases)
-  multihop.py     Relay path engine (waypoints are the source of truth; overall verdict is the weakest section)
-  project.py      Project files (.rsproj) — bundles the input set (never results, never app settings)
-  report_scenario.py Condition explorer output (line chart + table, CSV; headless)
-  report_common.py  Shared report parts (A4 skeleton, header/footer, document shell)
-  report_path.py    Per-path output generation (PNG/HTML/KML; headless)
-  report_summary.py Summary output generation (CSV/HTML/KML, all-pages document; headless)
-  report_map.py   Headless path-overlay map generation (tile fetch + compositing)
-
-          |
-          +---> [Pure calc. layer]  models.py
-          |     Propagation calc. (no side effects)
-          |
-          +---> [Pure rendering layer]  map_graphics.py
-          |     PIL drawing of markers/distance/north arrow (shared by UI and reports)
-          |
-          +---> [Pure conversion layer]  coords.py / units.py
-          |     Coordinate notation (DD <-> DMS) and distance display formatting (km -> m), no side effects
-          |
-          +---> [Config & validation layer]  config.py
-          |     App config I/O, input validation, logging
-          |
-          +---> [External dependency layer]  dem.py
-                DEM/pale tile HTTP fetch, elevation decode, cache, proxy
-```
+<!-- The figure itself is docs/images/architecture_en.svg (Japanese: architecture_ja.svg).
+     Add a module, add it to the figure too: tests/test_docs_consistency.py reads the
+     text inside the SVG to check the listing (so the figure cannot go stale on its own). -->
 
 ---
 

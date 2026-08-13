@@ -60,6 +60,9 @@ datas = [
     ("docs/images/shot_batch.png",   "docs/images"),
     ("docs/images/shot_scenario.png", "docs/images"),
     ("docs/images/shot_multihop.png", "docs/images"),
+    # 開発者ドキュメントの層構成図（同梱 developer_*.md から相対参照）
+    ("docs/images/architecture_ja.svg", "docs/images"),
+    ("docs/images/architecture_en.svg", "docs/images"),
 ]
 
 # icon.png が存在する場合のみ datas に追加する

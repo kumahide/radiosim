@@ -262,7 +262,7 @@ radiosim/
 │   ├── manual_en.md      # 英語版の利用者向けマニュアル（同上）
 │   ├── glossary.md       # 用語集（画面・レポートに出る語）＝tests/test_i18n_glossary.py が守る
 │   ├── screenshots.md    # スクショの撮り方（座標・条件・期待値・配置先の正典）
-│   └── images/           # そのスクショ（この 4 本と README.md から参照・exe にも同梱）
+│   └── images/           # そのスクショと図（architecture_*.svg＝層構成図）。exe にも同梱
 ├── README.md             # リポジトリの入口（GitHub で最初に読まれる 1 本）
 │
 │   # テストは**名前だけ**＝説明は「テスト」節の表が正典（同じ説明を 2 か所で持たない）。
@@ -811,61 +811,11 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ### レイヤー構成
 
-```
-[表示層]
-  views/launcher.py       ランチャーウィンドウ（本体＝入力フォーム・実行・進捗）
-  views/launcher_menu.py     └ メニューバーとその操作（テーマ/言語/プロキシ/ドキュメント）
-  views/launcher_project.py  └ プロジェクト（.rsproj）の収集・保存・読込
-  views/launcher_windows.py  └ 子窓の開閉と窓どうしの通知（凍結方式の出所）
-  views/tooltip.py        入力ヒントのツールチップ（窓に依存しない部品）
-  views/graph.py          グラフウィンドウ
-  views/map_window.py     地図（本体＝モード切替・地図ウィジェット）
-  views/map_picks.py         └ 地点の指定と経路の描画
-  views/map_cache.py         └ DEM キャッシュの範囲選択・取得・オーバーレイ
-  views/map_style.py      地図窓の描画定数（色・余白・ズーム）の単一ソース
-  views/batch_builder.py  複数経路ウィンドウ（本体＝共通設定・案件情報）
-  views/batch_table.py       └ 入力表（行の生成/複製/削除/並べ替え）
-  views/batch_io.py          └ CSV 入出力とテンプレート
-  views/batch_run.py         └ 実行と進捗
-  views/dialogs.py        親中央表示の共通モーダルダイアログ
-  views/errors.py         Tk コールバックの未捕捉例外をログ＋ダイアログへ（全窓を 1 か所で）
-  views/progress.py       進捗トランスポート（キュー＋ポーリング・単一/バッチ共用）
-  views/theme.py          テーマ色・UI フォントの単一ソース（ttk 管理外の tk.Menu / tk.Canvas 用）
-  views/window_fit.py     ウィンドウ寸法を中身に合わせる単一実装（全窓共通）
-  views/scenario.py       条件探索ウィンドウ（比較 / スイープ）
-  -> 副作用あり。計算・I/O は下位層に委譲。
+![RadioSim Pro のレイヤー構成。views/（画面・tkinter）→ report/（出力を作る層・ヘッドレス）→ core/（土台＝計算・データ・設定）の一方向の依存で、各層のモジュールを役割つきで並べた図。](images/architecture_ja.svg)
 
-          |
-          v
-
-[オーケストレーター層]
-  simulation.py   DEM 取得管理・地形キャッシュ・計算呼び出し
-  batch.py        CSV I/O・バリデーション・一括実行エンジン
-  scenario.py     条件探索の共有ランナー（terrain 固定・N 条件・相の宣言）
-  multihop.py     中継経路の実行エンジン（waypoint 列が source of truth・全体判定は min）
-  project.py      プロジェクトファイル（.rsproj）＝入力一式を束ねる（結果と app 設定は含めない）
-  report_scenario.py 条件探索の出力生成（折れ線＋表・CSV・ヘッドレス）
-  report_common.py  レポート共有部品（A4 骨格・ヘッダ/フッタ・文書外枠）
-  report_path.py    経路ごとの出力生成（PNG/HTML/KML・ヘッドレス）
-  report_summary.py サマリ出力生成（CSV/HTML/KML・全ページ連結・ヘッドレス）
-  report_map.py   レポート用 経路地図のヘッドレス生成（タイル取得＋合成）
-
-          |
-          +---> [純粋計算層]  models.py
-          |     伝搬計算（副作用ゼロ）
-          |
-          +---> [純粋描画層]  map_graphics.py
-          |     マーカー/距離/北矢印の PIL 描画（UI とレポートで共有）
-          |
-          +---> [純粋変換層]  coords.py / units.py
-          |     座標表記変換（DD ⇔ DMS）・距離の表示整形（km → m）・副作用ゼロ
-          |
-          +---> [設定・検証層]  config.py
-          |     アプリ設定 I/O・入力バリデーション・ロギング
-          |
-          +---> [外部依存層]  dem.py
-                DEM/淡色タイル HTTP 取得・標高デコード・キャッシュ・プロキシ
-```
+<!-- 図の実体は docs/images/architecture_ja.svg（英語版は architecture_en.svg）。
+     モジュールを足したら図にも足すこと＝tests/test_docs_consistency.py が
+     SVG の中の字を読んで網羅を検査する（図だけ古くなる壊れ方を止めるため）。 -->
 
 ---
 
