@@ -154,9 +154,13 @@ class _MenuMixin:
         lang_menu = tk.Menu(settings_menu, tearoff=False)
         self._themed_menus.append(lang_menu)
         self._lang_var = tk.StringVar(value=self.config.get("lang", "en"))
+        # 同梱の 2 つ＋利用者が `lang/` へ置いた分。⚠️ **外部の表示名は i18n を
+        # 通さない**＝その言語自身の字（`Français`）をファイルが名乗るのが正しく、
+        # 訳しようがない（`ALLOWED_LITERALS` の話ではなく、値がデータ）。
         for label, value in [
             (i18n.t("lang_en"), "en"),
             (i18n.t("lang_ja"), "ja"),
+            *[(name, code) for code, name in i18n.external_languages()],
         ]:
             lang_menu.add_radiobutton(
                 label    = label,

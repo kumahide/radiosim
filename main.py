@@ -236,6 +236,9 @@ def main() -> None:
     _set_window_icon(root)
     manager = _ThemeManager(root)
     cfg = config.load_config()
+    # 利用者が足した言語を先に登録する（`set_lang` は登録済みの言語しか受けない）。
+    # ⚠️ **読めなくても起動は続ける**＝報告はランチャーが画面で伝える。
+    i18n.load_external(config.LANG_DIR)
     i18n.set_lang(cfg.get("lang", "en"))
     _prof("config/i18n done")
     manager.apply(cfg.get("theme", "system"))

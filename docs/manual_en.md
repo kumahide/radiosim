@@ -145,7 +145,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Item               | Options                          | Description                                                        |
 | ------------------ | -------------------------------- | -------------------------------------------------------------------- |
 | Theme              | System / Light / Dark            | Window color theme                                                   |
-| Language           | English / 日本語                 | UI language (requires restart)                                       |
+| Language           | English / 日本語 (plus your own) | UI language (requires restart) → [Adding your own UI language](#adding-your-own-ui-language) |
 | Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
 | Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
 | Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file      |
@@ -161,6 +161,27 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
 > **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
+
+### Adding your own UI language
+
+Besides Japanese and English you can **add a translation of your own**. Create a `lang` folder next to the app, put `<language-code>.json` in it, and restart — the language then appears under Settings > Language.
+
+```json
+{
+  "_name": "Français",
+  "btn_run": "Exécuter",
+  "menu_help": "Aide"
+}
+```
+
+- `_name` is **the name shown in the language menu**. Write it in the language's own script — someone looking for their language is reading a screen they cannot read yet. Without it the file's code is shown instead.
+- **You do not have to translate everything.** Only the keys you write are replaced; **the rest stay in English**. New keys added in later versions will not break your file.
+- The most reliable key list is the bundled `core/i18n.py` (source distribution).
+- **Keep the placeholders — `{n}`, `{dir}` and friends — exactly as they appear in the English text.** A key whose placeholders differ **is not applied** (it stays English), and you are told at startup that some were skipped. ⚠️ Applying such a translation would crash the app the moment that screen opens; **skipping it is what prevents that**.
+- **Words that appear in reports (HTML) or KML are out of scope.** Artifact wording is a contract with whatever reads the files, so it does not move for the screen's convenience.
+- The bundled `ja` / `en` cannot be overridden (a `ja.json` is ignored).
+
+> ⚠️ **Layout is not guaranteed for languages you add.** Window sizes are verified against the length of the Japanese and English wording; longer wording may be clipped. Treat it as an **unofficial translation**.
 
 ### Coordinate Format (DD / DMS)
 

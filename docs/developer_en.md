@@ -83,7 +83,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 - Real-time antenna height and rain rate sliders in the graph window
 - Switchable coordinate notation (DD / DMS; `coords.py` is pure)
-- Japanese / English UI — switchable from the menu bar (`i18n.py` is the single source)
+- Japanese / English UI — switchable from the menu bar (`i18n.py` is the single source) — plus **user-supplied languages** (`lang/<code>.json`). `t()` has always fallen back to English per key, so an external table takes effect **only as far as it overrides**. ⛔ No plugin mechanism (one JSON shape, nothing else). ⚠️ **Artifact keys (`html_*` / `pl_*`) are not opened** — that would make the output contract vary per user. **A key whose placeholders (`{n}` …) differ from English is not applied, and the app says so at startup** (applying it would make `str.format` raise `KeyError` and take that screen down — nothing breaks silently)
 - System-aware dark mode (Light / Dark / System auto)
 
 ### Accuracy Statement
@@ -219,7 +219,7 @@ radiosim/
 │   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
-│   ├── i18n.py           # Multilingual string table
+│   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
 │   └── version.py        # Version information
 ├── report/               # The layer that produces output: engines and artifacts (headless)
 │   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
@@ -296,6 +296,7 @@ radiosim/
     ├── test_i18n_glossary.py
     ├── test_i18n_key_duplication.py
     ├── test_i18n_no_hardcoded_ui_text.py
+    ├── test_i18n_external.py
     ├── test_layers.py
     ├── test_paths.py
     ├── test_smoke.py
@@ -949,6 +950,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
 | `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_i18n_key_duplication.py` | i18n key gate (**no two keys hold the same on-screen wording**; fixing only one of them would put two words on screen). Artifact wording — report HTML and plot images — is out of scope: aligning screen and artifact names belongs to the output-contract release |
+| `test_i18n_external.py` | Gate for **user-supplied languages** (`lang/<code>.json`). **The rejection side is the point**: keys whose placeholders (`{n}` …) differ from English, keys unknown to English, artifact wording (`html_*` / `pl_*`) and non-string values are not applied, and the bundled `ja` / `en` cannot be overridden. Also checks that untranslated keys fall back to English and that one broken file does not stop the others. Includes **one test that demonstrates the `KeyError` you would get if the check were removed** — if that reason ever disappears, that test fails and says so |
 | `test_i18n_no_hardcoded_ui_text.py` | i18n bypass gate (**no natural language reaches the screen without going through i18n**: literals passed to the four screen-text doors in `views/` — `text=`, `label=`, `.title()`, `dialogs.*()` — fail if they contain English words or kana/kanji. Verdict words, units, symbols and number formats are out of scope — they are identical in both languages) |
 | `test_layers.py`         | Layering gate (dependencies flow one way: views -> report -> core; no import-time cycles; `core/` pulls no GUI toolkit or plotting library; no layer is empty, which would make the checks vacuous) |
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |

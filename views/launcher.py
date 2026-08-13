@@ -93,6 +93,26 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 拾わせると 20〜30 秒止まる**ので、先にこちらで回収してしまう。ルートに 1 つ
         # 置く形＝窓を足しても書き足す必要がない。理由と実測値は views/progress.py。
         progress.sweep_tk_garbage(root)
+        # 外部の言語ファイルで採用できなかった訳を**画面で言う**（B-025 と同型＝
+        # 黙って壊れさせない）。⚠️ 起動のたびに出す＝「直すまで言い続ける」ことに
+        # 意味がある（1 度きりの通知は、直す機会を逃した人には無かったのと同じ）。
+        root.after_idle(self._warn_about_rejected_translations)
+
+    def _warn_about_rejected_translations(self) -> None:
+        """`lang/` の訳のうち採用しなかったぶんを 1 通にまとめて知らせる。
+
+        ⛔ **ファイルごとに 1 通は出さない**＝置いた本数だけダイアログが並ぶと、
+        読まずに閉じる操作を教えることになる。
+        """
+        lines = [
+            i18n.t("lang_ext_rejected_line").format(
+                lang=name, n=len(rejected),
+                keys=", ".join(k for k, _r in rejected[:3] if k) or "-")
+            for _code, name, _ok, rejected in i18n.external_reports() if rejected
+        ]
+        if lines:
+            self._alert(i18n.t("lang_ext_title"),
+                        i18n.t("lang_ext_rejected") + "\n\n" + "\n".join(lines))
 
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。

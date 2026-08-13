@@ -2,7 +2,20 @@
 i18n.py
 =======
 UI 文字列翻訳テーブル。t(key) でロケール対応文字列を取得する。
+
+**利用者が言語を足せる**（I-074 と並ぶ 2.8 の芯）＝`lang/<コード>.json` を置くと
+言語メニューに現れる。仕組みは軽い＝`t()` は前からキー単位で英語へフォールバック
+するので、**外部の表は「上書きできた分だけ」効き、未訳のキーは自動で英語**になる。
+⛔ **プラグイン機構は作らない**（設計哲学⑤）＝読むのは JSON 1 種類だけ。
+
+⚠️ **開くのは画面の語だけ**（下の `_ARTIFACT_PREFIXES` で成果物を除く）。レポートや
+KML の語まで開くと、**出力契約が利用者ごとに変わる**＝それは `+0.1` ではなく `+1.0`
+の話になる（`docs/glossary.md` が「成果物の語は画面の都合で動かさない」と決めた線）。
 """
+
+import json
+import os
+import re
 
 _STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -31,6 +44,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "readme_binary_filename": "docs/manual_en.md",
         "dlg_readme_missing":   "Documentation file not found.",
         "dlg_doc_title":        "Documentation",
+        "lang_ext_title":       "External language files",
+        "lang_ext_rejected":    "Some translations were not applied and are shown in "
+                                "English instead. A translation is skipped when its "
+                                "placeholders (such as {n}) differ from the English "
+                                "text, or when the key is unknown.",
+        "lang_ext_rejected_line": "  {lang}: {n} skipped ({keys} …)",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
@@ -508,6 +527,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "readme_binary_filename": "docs/manual_ja.md",
         "dlg_readme_missing":   "ドキュメントファイルが見つかりません。",
         "dlg_doc_title":        "ドキュメント",
+        "lang_ext_title":       "外部の言語ファイル",
+        "lang_ext_rejected":    "一部の訳を採用しなかったので、そのキーは英語のまま"
+                                "表示します。差し込み（{n} など）が英語の文と違う"
+                                "場合と、キーが存在しない場合に採用しません。",
+        "lang_ext_rejected_line": "  {lang}: {n} 件（{keys} …）",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
@@ -974,3 +998,103 @@ def current_lang() -> str:
 def t(key: str) -> str:
     """現在の言語でキーに対応する文字列を返す。未定義の場合は英語フォールバック。"""
     return _STRINGS.get(_lang, _STRINGS["en"]).get(key, _STRINGS["en"].get(key, key))
+
+
+# ============================================================
+# 外部の言語ファイル（利用者が足す訳）
+# ============================================================
+#: 言語メニューに出す表示名。⚠️ **その言語自身の字で書く**（`Français`）＝選ぶ人は
+#: いま読めない言語の画面に居るので、英語名では自分の言語を見つけられない。
+_EXTERNAL_NAME_KEY = "_name"
+#: **開かないキー**＝成果物（HTML レポート・KML）の語。出力契約なので画面の都合で
+#: 動かさない。実測で `html_*` 70 + `pl_*` 18 = 88 キー。
+_ARTIFACT_PREFIXES = ("html_", "pl_")
+#: 同梱の言語は外部から上書きさせない（`ja.json` を置いて日本語を差し替えられると、
+#: 用語集ゲートが守っている画面語彙が黙って外れる）。
+_BUILTIN_LANGS = ("en", "ja")
+
+_PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
+
+
+def _placeholders(text: str) -> set:
+    """`{dir}` `{n}` のような差し込み名の集合。"""
+    return set(_PLACEHOLDER_RE.findall(text))
+
+
+def validate_external(table: dict) -> tuple:
+    """外部の訳 1 本を検査し、`(採用する訳, 却下した (キー, 理由) の列)` を返す。
+
+    **純関数**＝ファイルにもグローバルにも触らない（検査だけを単体で試せる形）。
+
+    🔴 **黙って壊れさせない**（B-025 と同型）＝いちばん危ないのは**差し込みの取り違え**。
+    実測で **57 キーが `{…}` を持つ**ので、訳す人が括弧を落とすと `str.format` が
+    `KeyError` を投げ、**その画面を開いた瞬間にアプリが止まる**。⇒ 読み込みの時点で
+    en と突き合わせ、**合わないキーは採用しない**（そのことは呼び出し側が画面で言う）。
+    """
+    base = _STRINGS["en"]
+    accepted: dict = {}
+    rejected: list = []
+    for key, value in table.items():
+        if key == _EXTERNAL_NAME_KEY:
+            continue
+        if not isinstance(value, str):
+            rejected.append((key, "not_text"))
+        elif key not in base:
+            rejected.append((key, "unknown"))
+        elif key.startswith(_ARTIFACT_PREFIXES):
+            rejected.append((key, "artifact"))
+        elif _placeholders(value) != _placeholders(base[key]):
+            rejected.append((key, "placeholder"))
+        else:
+            accepted[key] = value
+    return accepted, rejected
+
+
+#: 直近の読み込みの報告＝`(コード, 表示名, 採用数, 却下した (キー, 理由) の列)`。
+_external_reports: list = []
+
+
+def external_reports() -> list:
+    """直近の `load_external()` の報告（画面で知らせるのは呼び出し側の仕事）。"""
+    return list(_external_reports)
+
+
+def external_languages() -> list:
+    """言語メニューへ足す `(コード, 表示名)`。読み込めた言語だけが並ぶ。"""
+    return [(code, name) for code, name, _n, _rej in _external_reports]
+
+
+def load_external(dir_path: str) -> list:
+    """`<dir>/<コード>.json` を読み、**使える訳だけ**登録する。報告を返す。
+
+    ⚠️ **1 本が壊れていても他は読む**＝ここで例外を投げると、訳を 1 つ置き損ねた
+    利用者がアプリごと起動できなくなる。読めなかったファイルは報告に載せて次へ進む。
+    """
+    global _external_reports
+    _external_reports = []
+    if not os.path.isdir(dir_path):
+        return []
+    for name in sorted(os.listdir(dir_path)):
+        if not name.endswith(".json"):
+            continue
+        code = name[:-len(".json")]
+        if code in _BUILTIN_LANGS or not code:
+            _external_reports.append((code, code, 0, [("", "builtin")]))
+            continue
+        try:
+            with open(os.path.join(dir_path, name), encoding="utf-8") as f:
+                table = json.load(f)
+            if not isinstance(table, dict):
+                raise ValueError("top level is not an object")
+        # ⚠️ 例外の種類を絞らない＝JSON の壊れ方は無数にあるので、先に列挙するより
+        # 「読めなければ理由を持って次へ」が正しい（理由は報告に載り画面へ出る）。
+        except Exception as ex:  # noqa: BLE001
+            _external_reports.append((code, code, 0, [("", f"unreadable: {ex}")]))
+            continue
+        accepted, rejected = validate_external(table)
+        shown = table.get(_EXTERNAL_NAME_KEY)
+        _STRINGS[code] = accepted
+        _external_reports.append(
+            (code, shown if isinstance(shown, str) and shown else code,
+             len(accepted), rejected))
+    return external_reports()

@@ -59,6 +59,9 @@ def app_path(*parts: str) -> str:
 CONFIG_FILE = app_path("radiosim_conf.json")
 RESULTS_DIR = app_path("results")
 LOG_FILE    = app_path("radiosim.log")
+#: 利用者が置く言語ファイル（`<コード>.json`）の置き場。**読むだけ**＝アプリは
+#: ここへ書き込まないので、無ければ無いまま（作りに行かない）。
+LANG_DIR    = app_path("lang")
 
 
 # ============================================================
