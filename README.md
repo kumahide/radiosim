@@ -71,7 +71,7 @@
 
 ### Windows バイナリ版（Python 不要）
 
-1. [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro.zip` をダウンロード
+1. [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）をダウンロード
 2. ZIP を展開し `RadioSimPro.exe` をダブルクリック
 
 > 署名なし EXE のため SmartScreen 警告が出る場合があります。「詳細情報」→「実行」をクリックしてください。

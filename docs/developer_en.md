@@ -147,9 +147,12 @@ ZIP the `RadioSimPro/` folder from the build output:
 ```powershell
 # Honour RADIOSIM_BUILD_ROOT (falls back to dist/ next to the sources)
 $dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
-Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro.zip" -Force
+# Put the version in the file name, so the asset is identifiable on the Releases page
+Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-2.8.zip" -Force
 ```
 
+> ⚠️ **Put the version in the ZIP name** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). Building an unversioned name just means renaming it when attaching the release.
+>
 > ⚠️ **Do not hard-code `dist\RadioSimPro`** — where `RADIOSIM_BUILD_ROOT` is set it either fails or silently zips a stale artifact from the repository.
 
 ### Key `radiosim.spec` Settings
@@ -335,7 +338,7 @@ The following directories are created automatically in the project root on first
 
 ## Menus
 
-Three menus — **File / Settings / Help** (built in `_build_menu`, [views/launcher.py](../views/launcher.py)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
+Three menus — **File / Settings / Help** (built in `_build_menu`, [views/launcher_menu.py](../views/launcher_menu.py)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
 
 ### File
 
