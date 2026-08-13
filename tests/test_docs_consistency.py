@@ -604,6 +604,67 @@ _LOCAL_ONLY_DOCS = ["ISSUES.md", "issue_evidence/README.md"]
 _LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 
 
+# ============================================================
+# 公開文書の語彙も、画面と同じ 1 語にそろえる（2026-08-14・ユーザー指摘）
+# ============================================================
+# **用語集のゲート（`test_i18n_glossary.py`）は画面の字しか見ない。** そこを直しても
+# 文書は素通りするので、実際に**同じものを「窓」と「ウィンドウ」の 2 語で書いていた**
+# （文書 113 / 93 か所）。⇒ 文書の側にも同じ網を置く。
+#
+# 🔑 **正典は用語集の「文書でも 1 語にそろえる」表**＝ここに語を手書きで並べない。
+# 並べると用語集と二重管理になり、片方だけ増えた日に効かなくなる（実証 10 と同じ形）。
+#
+# ⚠️ **「使わない言い換え」列のほうを流用してはいけない**（最初にそう書いて落ちた）。
+# あちらは *画面* の規則で、文書の散文に当てると `マニュアル`（文書では普通に使う）や
+# `ホップ`（用語集自身が「使わない語」として引いている）まで禁じる＝**壊れ方③
+# 「間違ったものを要求している」**。文書まで縛る語は別の表で明示的に宣言する。
+#
+# ⚠️ 対象は**日本語の文書だけ**。⚠️ コードフェンスの中と表の行は除く＝ログや出力の
+# 実物を引用している行、禁止語そのものを載せている表まで直させないため。
+_WORDING_DOCS = ["README.md", "CHANGELOG.md", "docs/developer_ja.md",
+                 "docs/manual_ja.md", "docs/glossary.md", "docs/screenshots.md"]
+
+
+def _banned_ja_wording() -> list[str]:
+    """用語集の「文書でも 1 語にそろえる」表の**使わない**列。"""
+    text = _read("docs/glossary.md")
+    body = text.split("\n## 文書でも 1 語にそろえる\n", 1)[1].split("\n## ", 1)[0]
+    words: list[str] = []
+    for line in body.splitlines():
+        cells = [c.strip() for c in line.strip().strip("|").split("|")]
+        if len(cells) != 3 or cells[0] in ("使う", "") or set(cells[0]) <= {"-", ":"}:
+            continue
+        if cells[1] and not cells[1].isascii():
+            words.append(cells[1])
+    return words
+
+
+def _prose_lines(text: str):
+    """(行番号, 行) — コードフェンスの中と、用語集の表そのものは除く。"""
+    in_fence = False
+    for i, line in enumerate(text.splitlines(), 1):
+        if _FENCE_RE.match(line):
+            in_fence = not in_fence
+            continue
+        if in_fence or line.lstrip().startswith("|"):
+            continue
+        yield i, line
+
+
+@pytest.mark.parametrize("doc", _WORDING_DOCS)
+def test_public_docs_use_the_glossary_wording(doc):
+    """公開文書が、用語集で「使わない」と決めた語を書いていないこと。"""
+    banned = _banned_ja_wording()
+    assert banned, "用語集から禁止語を 1 つも読めていない（この検査が空振りしている）"
+    hits = [f"{doc}:{i} {w}"
+            for i, line in _prose_lines(_read(doc))
+            for w in banned if w in line]
+    assert not hits, (
+        "公開文書に、用語集で「使わない言い換え」と決めた語がある"
+        "（画面と文書で同じものを 2 語で呼ばない）: " + ", ".join(hits)
+    )
+
+
 def _iter_links(text: str):
     """(行番号, ラベル, ターゲット) を返す。コードフェンス内は対象外。"""
     in_fence = False

@@ -128,7 +128,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "proj_filetype":        "RadioSim project",
         "proj_saved":           "Project saved:\n{path}",
         "proj_loaded":          "Project loaded.\nWindows that are already open keep what you see — use \"Apply to this window\" in the bar at the top to pull the project in. Closed windows pick it up when you open them.",
-        # 読み込んだあとに各窓の上へ出す帯（I-061）＝**押したときだけ**差し替える。
+        # 読み込んだあとに各ウィンドウの上へ出す帯（I-061）＝**押したときだけ**差し替える。
         "proj_notice":          "A project was loaded. You can replace what this window holds.",
         "proj_notice_take":     "Apply to this window",
         "proj_warn_multihop":   "\n\n⚠️ The relay path was not saved because it has values that cannot be read: {reason}",
@@ -609,9 +609,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_save_project":     "プロジェクトファイルを保存",
         "proj_filetype":        "RadioSim プロジェクト",
         "proj_saved":           "プロジェクトを保存しました:\n{path}",
-        "proj_loaded":          "プロジェクトを読み込みました。\n開いている窓はそのままです（上の帯の「内容を取り込む」で差し替えられます）。閉じている窓は、開いたときに反映されます。",
-        # 読み込んだあとに各窓の上へ出す帯（I-061）＝**押したときだけ**差し替える。
-        "proj_notice":          "プロジェクトを読み込みました。この窓の内容を差し替えられます。",
+        "proj_loaded":          "プロジェクトを読み込みました。\n開いているウィンドウはそのままです（上の帯の「内容を取り込む」で差し替えられます）。閉じているウィンドウは、開いたときに反映されます。",
+        # 読み込んだあとに各ウィンドウの上へ出す帯（I-061）＝**押したときだけ**差し替える。
+        "proj_notice":          "プロジェクトを読み込みました。このウィンドウの内容を差し替えられます。",
         "proj_notice_take":     "内容を取り込む",
         "proj_warn_multihop":   "\n\n⚠️ 中継経路は読めない値があるため保存していません: {reason}",
         "proj_warn_batch":      "\n\n⚠️ 複数経路の行は「{id}」に読めない値があるため保存していません。",
@@ -911,7 +911,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_running":           "区間 {i} / {n} を計算中…",
         "mh_summary":           "全体判定: {status}   {label}: {margin} dB   （{worst}）",
         "mh_err_coord":         "地点 {no}（{name}）: 座標は「緯度, 経度」、アンテナ高は数値で入力してください。",
-        "mh_err_no_map":        "この窓からは地図を開けません。",
+        "mh_err_no_map":        "このウィンドウからは地図を開けません。",
         "map_mode_waypoints":   "中継点を追加",
         "map_status_waypoint":  "中継点の追加: 地図をクリックすると経路に地点を足します。",
         "mh_report_title":      "中継経路レポート",
