@@ -215,6 +215,10 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._relay_icon = ImageTk.PhotoImage(map_graphics.relay_icon())
         # 中継経路レイヤ（折れ線＋地点マーカー）。窓の地点列を写すだけで持たない。
         self._wp_objects: list = []
+        # レイヤごとの描き直しの状態（None / "drawing" / "pending"）。**再入を
+        # 畳むため**に持つ（B-080＝マーカーの削除が `canvas.update()` を回すので、
+        # 消している最中に次の通知が届く）。詳細は `_redraw_serialized`。
+        self._redraw_state: dict = {}
         # 距離ラベルのバッジ画像（テキスト＋半透明ピル背景）。距離ごとに作り直す。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
         self._dist_badge = None

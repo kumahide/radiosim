@@ -58,6 +58,7 @@ class _PickMixin:
         _committed: list
         _committed_images: list
         _wp_objects: list
+        _redraw_state: dict
 
         def _select_mode(self, value: str) -> None: ...
         def _set_idle(self) -> None: ...
@@ -67,8 +68,36 @@ class _PickMixin:
         """中継経路ウィンドウの地点列が変わったときの通知（追加・削除・編集）。"""
         self._refresh_waypoints()
 
+    def _redraw_serialized(self, key: str, draw) -> None:
+        """レイヤの描き直しを**直列化**する（B-080）。
+
+        描き直しの途中で `CanvasPositionMarker.delete()` が `canvas.update()` を
+        回すため、**消している最中に次の通知が届いて再入する**（素早い追加・削除で
+        実際に起きる）。再入をそのまま走らせると、内側が描いた分の上に外側が
+        もう 1 組を重ね、同じ経路が二重に載る（しかも外側の方が**古い状態**）。
+
+        ⇒ **走っている最中の要求は「あとで 1 回」に畳む**＝最後に読んだ地点列が
+        そのまま画面になる（地図は写しであって source of truth ではない、という
+        既存の約束をそのまま守る）。
+        """
+        state = self._redraw_state
+        if state.get(key) is not None:
+            state[key] = "pending"          # 割り込みは覚えておき、最後にやり直す
+            return
+        state[key] = "drawing"
+        try:
+            draw()
+            while state[key] == "pending":
+                state[key] = "drawing"
+                draw()
+        finally:
+            state[key] = None
+
     def _refresh_waypoints(self) -> None:
         """宛先の地点列から中継経路レイヤを描き直す。"""
+        self._redraw_serialized("waypoints", self._draw_waypoints)
+
+    def _draw_waypoints(self) -> None:
         self._clear_waypoint_visuals()
         if self._mode.get() != "waypoints" or self._waypoint_sink is None:
             return
@@ -93,12 +122,20 @@ class _PickMixin:
                 text_color=_MARKER_TEXT))
 
     def _clear_waypoint_visuals(self) -> None:
-        for obj in self._wp_objects:
+        # 🔴 **消す前に台帳ごと取り出す**（B-080）＝回しながら消してはいけない。
+        # `CanvasPositionMarker.delete()` は中で `canvas.update()` を回す
+        # （tkintermapview の実装）ので、**消している最中にイベントが 1 巡する**。
+        # そこへ地点列の変更通知が届くと `_refresh_waypoints` が再入し、内側が
+        # このリストを空にする ⇒ 外側の `for` は同じリストを見ているので途中で
+        # 終わり、**未削除のまま `clear()` で参照だけ捨てる**。捨てられた
+        # `CanvasPath` は `canvas_path_list` に生き残り、以後ずっと描かれ続ける
+        # （＝過去の経路が地図に残り、パンすると一緒に動く・2026-08-13 実機報告）。
+        objs, self._wp_objects = self._wp_objects, []
+        for obj in objs:
             try:
                 obj.delete()
             except Exception:
                 pass
-        self._wp_objects.clear()
 
     def on_append_target_closed(self) -> None:
         """append 先（バッチ）が閉じたときの通知。連続追加中なら座標入力へ戻す。"""
@@ -124,23 +161,28 @@ class _PickMixin:
 
     def _clear_coord_visuals(self) -> None:
         """マーカー・経路・距離ラベル・確定パスを地図から消す（座標値は保持する）。"""
-        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
-            if obj is not None:
-                obj.delete()
+        # **手放してから消す**（B-080）＝消している最中に再入されても、内側が
+        # 作り直した新しいマーカー・線を外側が None で上書きして取り落とさない。
+        objs = (self._tx_marker, self._rx_marker, self._path_line, self._dist_label)
         self._tx_marker = None
         self._rx_marker = None
         self._path_line = None
         self._dist_label = None
+        for obj in objs:
+            if obj is not None:
+                obj.delete()
         self._clear_committed_paths()
 
     # ----------------------------------------------------------
     # 追記モード（Phase D2）: 確定済みパスのライン表示
     # ----------------------------------------------------------
     def _clear_committed_paths(self) -> None:
-        for obj in self._committed:
+        # 台帳ごと取り出してから消す（理由は `_clear_waypoint_visuals`＝B-080）。
+        # ここもマーカーを含むので、消す途中でイベントが回る面が同じだけある。
+        objs, self._committed = self._committed, []
+        self._committed_images = []
+        for obj in objs:
             obj.delete()
-        self._committed.clear()
-        self._committed_images.clear()
 
     @staticmethod
     def _screen_bearing_deg(tx: tuple, rx: tuple) -> float:
@@ -164,6 +206,9 @@ class _PickMixin:
         距離バッジに path_id を添えて、バッチ表のどの行に対応するパスかを地図上で
         判別できるようにする（I-001）。
         """
+        self._redraw_serialized("committed", self._draw_committed_paths)
+
+    def _draw_committed_paths(self) -> None:
         self._clear_committed_paths()
         if self._append_sink is None:
             return
@@ -257,10 +302,11 @@ class _PickMixin:
 
         確定済みパス（_committed）には触れない＝append 後も軌跡は地図に残る。
         """
-        for obj in (self._tx_marker, self._rx_marker, self._path_line, self._dist_label):
+        objs = (self._tx_marker, self._rx_marker, self._path_line, self._dist_label)
+        self._tx_marker = self._rx_marker = self._path_line = self._dist_label = None
+        for obj in objs:                       # 手放してから消す（B-080）
             if obj is not None:
                 obj.delete()
-        self._tx_marker = self._rx_marker = self._path_line = self._dist_label = None
         self._tx_coord = self._rx_coord = None
         self._pick_next = "tx"
 
@@ -275,8 +321,9 @@ class _PickMixin:
     def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
         """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
         if role == "tx":
-            if self._tx_marker is not None:
-                self._tx_marker.delete()
+            old, self._tx_marker = self._tx_marker, None   # 手放してから消す（B-080）
+            if old is not None:
+                old.delete()
             self._tx_coord = (lat, lon)
             self._tx_marker = self._map.set_marker(
                 lat, lon, text=i18n.t("map_marker_tx"),
@@ -284,8 +331,9 @@ class _PickMixin:
                 text_color=_MARKER_TEXT,
             )
         else:
-            if self._rx_marker is not None:
-                self._rx_marker.delete()
+            old, self._rx_marker = self._rx_marker, None   # 手放してから消す（B-080）
+            if old is not None:
+                old.delete()
             self._rx_coord = (lat, lon)
             self._rx_marker = self._map.set_marker(
                 lat, lon, text=i18n.t("map_marker_rx"),
@@ -296,12 +344,12 @@ class _PickMixin:
 
     def _redraw_path(self) -> None:
         """TX/RX が揃っていれば 2 点を結ぶパス線と中点の距離ラベルを引き直す。"""
-        if self._path_line is not None:
-            self._path_line.delete()
-            self._path_line = None
-        if self._dist_label is not None:
-            self._dist_label.delete()
-            self._dist_label = None
+        line, self._path_line = self._path_line, None    # 手放してから消す（B-080）
+        label, self._dist_label = self._dist_label, None
+        if line is not None:
+            line.delete()
+        if label is not None:
+            label.delete()
         if self._tx_coord is not None and self._rx_coord is not None:
             # 既定 width=9 は太いので細線に。色は基調のシアンでノードと揃える。
             self._path_line = self._map.set_path(

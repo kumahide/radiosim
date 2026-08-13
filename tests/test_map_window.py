@@ -122,6 +122,7 @@ def _map_stub(mode: str, points):
     win._waypoint_sink = (None if points is None else
                           SimpleNamespace(waypoint_markers=lambda: points))
     win._tx_icon = win._rx_icon = win._relay_icon = None
+    win._redraw_state = {}
     return win
 
 
@@ -155,6 +156,76 @@ def test_waypoint_layer_needs_a_destination():
     win = _map_stub("waypoints", None)
     win._refresh_waypoints()
     assert not win._map.alive
+
+
+# ------------------------------------------------------------
+# 消している最中の割り込み（B-080）
+# ------------------------------------------------------------
+# tkintermapview の `CanvasPositionMarker.delete()` は中で `canvas.update()` を
+# 呼ぶ＝**消している最中にイベントが 1 巡する**。素早い追加・削除では、そこへ
+# 地点列の変更通知が届いて描き直しが再入した。**これはコメントでは守れない**
+# （実行時の制約はテストで表現する）ので、再入をフェイクの delete から起こす。
+class _ReentrantMapWidget(_FakeMapWidget):
+    """マーカーを消すと 1 度だけ描き直しが割り込むフェイク（`canvas.update()` の模型）。"""
+
+    def __init__(self):
+        super().__init__()
+        self.on_delete = None       # 割り込ませる呼び出し（1 回だけ）
+
+    def _make(self, kind):
+        obj = super()._make(kind)
+
+        def _delete(o=obj):
+            o.deleted = True
+            if o.kind != "marker":
+                return          # 割り込むのはマーカーの削除だけ（本物と同じ）
+            cb, self.on_delete = self.on_delete, None
+            if cb is not None:
+                cb()
+        obj.delete = _delete
+        return obj
+
+
+def test_waypoint_layer_survives_a_redraw_during_the_clear():
+    """消している最中に描き直しが割り込んでも、線を**取り落とさない**こと。
+
+    取り落とした `CanvasPath` は tkintermapview の `canvas_path_list` に生き残り、
+    **以後ずっと描かれ続ける**（過去の経路が地図に残り、パンすると一緒に動く＝
+    2026-08-13 の実機報告そのもの）。⇒ 生きているオブジェクトは必ず台帳
+    （`_wp_objects`）に載っていること、が守るべき不変条件。
+    """
+    win = _map_stub("waypoints", _THREE)
+    win._map = _ReentrantMapWidget()
+    win._map.on_delete = win._refresh_waypoints      # 消去中に 1 回割り込む
+    win._refresh_waypoints()
+    win._refresh_waypoints()
+
+    orphans = [o for o in win._map.alive if o not in win._wp_objects]
+    assert not orphans, f"台帳から外れた地図オブジェクトが {len(orphans)} 個残っている"
+    assert len(win._map.alive) == 4, (
+        f"折れ線 1 本＋地点 3 つのはずが {len(win._map.alive)}"
+        "（割り込みぶんが二重に描かれている）"
+    )
+
+
+def test_clearing_the_waypoint_layer_survives_a_redraw_of_its_own():
+    """**消去そのもの**が再入に耐えること（直列化の外から来る割り込み）。
+
+    描き直しの直列化（`_redraw_serialized`）は同じレイヤの再入しか畳めない。
+    消している最中のイベント 1 巡では**モード切替**のように別の口からも入って
+    来られる（`_apply_mode_visibility` は消去を直接呼ぶ）ので、消去ループ自身が
+    「台帳ごと取り出してから消す」形になっていないと、同じ取り落としが起きる。
+    """
+    win = _map_stub("waypoints", _THREE)
+    win._map = _ReentrantMapWidget()
+    win._refresh_waypoints()                          # 4 個ぶん置く
+    drawn = list(win._wp_objects)
+    win._map.on_delete = win._draw_waypoints          # 消去中に直接描き直される
+    win._clear_waypoint_visuals()
+
+    assert all(o.deleted for o in drawn), "古い地図オブジェクトが消え残っている"
+    orphans = [o for o in win._map.alive if o not in win._wp_objects]
+    assert not orphans, f"台帳から外れた地図オブジェクトが {len(orphans)} 個残っている"
 
 
 # ============================================================
