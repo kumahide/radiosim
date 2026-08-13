@@ -1348,3 +1348,124 @@ class TestParallelismFolding:
     def test_small_samples_are_not_judged(self, budget, tmp_path):
         """母数が足りなければ測らないこと（部分実行で跳ねる値を出さない）。"""
         assert budget.recent_parallelism(self._transcript(tmp_path, [["Bash"]] * 3)) is None
+
+
+# ============================================================
+# シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
+# ============================================================
+_DETOUR_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "no_shell_detours.py"))
+
+
+@pytest.fixture(scope="module")
+def detours():
+    """`.claude/no_shell_detours.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_DETOUR_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_no_shell_detours", _DETOUR_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_no_shell_detours"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+def _verdict(detours, command: str) -> str:
+    """判定だけを返す（`None` は "pass"）。"""
+    result = detours.check(command)
+    return "pass" if result is None else result[0]
+
+
+class TestShellDetourVerdicts:
+    """**強制する範囲が実測どおりであること**（I-092）。
+
+    ⚠️ ②（`cd`）は先頭語だけで決まったが、③は**同じ語でも形で変わる**＝
+    実測で 5 回に 1 回は専用ツールで置換できない使い方だった。⇒ ここが緩むと
+    「間違ったものを要求するゲート」（feedback-promote-recurring-checks の
+    壊れ方③）になり、フックごと信用を失う。
+    """
+
+    # ---- A：素の探索＝止める --------------------------------------
+    @pytest.mark.parametrize("command", [
+        'grep -n "foo" core/models.py',
+        'grep -rn "foo" --include=*.py .',
+        'cat core/version.py',
+        'head -60 ISSUES.md',
+        'sed -n "10,20p" core/dem.py',
+        'find core -name "*.py"',
+        'grep -n "foo" ISSUES.md | head -50',        # 件数を絞るだけ＝head_limit で足りる
+        r'grep -n "A\|B" core/i18n.py | head -40',  # ⚠️ `\|` はパイプではない
+        'RADIOSIM_HEADLESS=1 grep -n "foo" f.py',    # 環境変数の前置きは読み飛ばす
+        'ls docs/ && grep -n "foo" docs/manual_ja.md',
+    ])
+    def test_bare_searches_are_denied(self, detours, command):
+        assert _verdict(detours, command) == "deny", command
+
+    # ---- B/C/D/E：正当な形＝通す（助言のみ） -----------------------
+    @pytest.mark.parametrize("command", [
+        # B 集計＝専用ツールでは作れない値
+        'grep -oE "B-[0-9]+" ISSUES.md | sort -n | uniq -c',
+        'grep -n "対象版" ISSUES.md | cut -c1-120',
+        # ⚠️ 絞ってから整形する形＝**後段は全段を見ないと取りこぼす**
+        'grep -nE "④|⑤" memory/feedback_token_budget.md | head -25 | cut -c1-160',
+        'find core report views -name "*.py" | wc -l',
+        # C 自前の出力＝分けると往復が 1 増える
+        '"$PY" -m pytest -q > "$T/full.txt" 2>&1; tail -20 "$T/full.txt"',
+        'node tools/x.mjs > "$T/o.txt"; grep -E "^FAILED" "$T/o.txt"',
+        # D 二段フィルタ＝文脈を取ってから絞る
+        'grep -n "foo" -A 30 tests/test_x.py | grep -n "def "',
+        'grep -rn "validate_rows" --include=*.py . | grep -v "^./tests"',
+        # E 書き込み＝そもそも探索ではない
+        'cat >> tests/test_x.py << EOF\nbody\nEOF',
+        'cat core/a.py core/b.py > "$T/joined.py"',
+    ])
+    def test_legitimate_shapes_are_only_advised(self, detours, command):
+        assert _verdict(detours, command) == "warn", command
+
+    # ---- 触らない面 ------------------------------------------------
+    @pytest.mark.parametrize("command", [
+        'gh run view 123 | grep -n "failed"',        # パイプ後段＝正当な後処理
+        '"$RADIOSIM_PYTHON" -m pytest -q',
+        'git status --short',
+    ])
+    def test_untouched_shapes_pass(self, detours, command):
+        assert _verdict(detours, command) == "pass", command
+
+    def test_cd_is_still_denied_first(self, detours):
+        """②は据え置き＝③の絞り込みで `cd` の判定を薄めていないこと。"""
+        assert _verdict(detours, 'cd /tmp && ls') == "deny"
+        assert _verdict(detours, '(cd /tmp && ls)') == "pass"
+        # ③の絞り込み（集計は通す）を `cd` に適用していないこと
+        assert _verdict(detours, 'cd /tmp && ls | wc -l') == "deny"
+
+    def test_the_deny_message_names_what_still_passes(self, detours):
+        """**止めない形を、止めるときに言うこと**。
+
+        ⛔ 「探索は専用ツールで」とだけ言うと、集計やテスト出力の読み取りまで
+        禁じられたと読める＝**正当な使い方を萎縮させる**。ゲートは「何が通るか」
+        を同じ画面で言えないと、回避の口実か盲従のどちらかを育てる。
+        """
+        _, reason = detours.check('grep -n "foo" ISSUES.md')
+        for expected in ("sort", "wc -l", "tail", "後段"):
+            assert expected in reason, expected
+
+
+class TestPipeTailParsing:
+    """`|` の読み取り（実データ 331 件のうち 121 件を誤分類した箇所）。"""
+
+    @pytest.mark.parametrize("segment,tail", [
+        (r'grep -n "A\|B" f.py', ""),                   # 正規表現の選択
+        ('grep -n "a|b" f.py', ""),                      # 引用符の中
+        ('grep -n "x" f.py | head -5', " head -5"),
+        ("grep -n 'x' f.py | sort", " sort"),
+    ])
+    def test_only_real_pipes_are_pipes(self, detours, segment, tail):
+        assert detours._pipe_tail(segment) == tail
+
+    def test_discarding_stderr_is_not_writing_a_file(self, detours):
+        """`2>/dev/null` を「出力を作った」と読まないこと。
+
+        ⚠️ これを取り違えると `ls x 2>/dev/null && head -60 ISSUES.md` が
+        「自前の出力を読んでいる」ことになり、**素の探索を見逃す**（最初の
+        分類器はこれで C を 46 → 61 件に水増しした）。
+        """
+        assert _verdict(detours, 'ls ISSUES.md 2>/dev/null && head -60 ISSUES.md') == "deny"
