@@ -203,6 +203,50 @@ def test_the_language_menu_actually_offers_the_added_language(lang_dir):
         root.destroy()
 
 
+def test_an_added_language_can_be_restored_from_a_settings_file(lang_dir, tmp_path,
+                                                                monkeypatch):
+    """**設定ファイルからも外部言語を復元できること**（B-086）。
+
+    ⚠️ 上の 1 本（メニューに出る）が緑でも、これは落ちうる＝**選べるかどうかを
+    判定する場所が 2 つ**あり、片方だけが外部言語を知っていた。取り込み側は
+    `("en", "ja")` を直書きしており、`lang: "fr"` の設定を読み戻すと**言語だけ
+    黙って捨てられる**（他の項目が 1 つでもあれば成功表示まで出るので、利用者に
+    は「取り込めた」ように見える）。
+
+    🔑 **判定の口を `i18n.available_languages()` へ寄せた**＝`set_lang()` と同じ
+    表を見るので、片方だけ古くなることが原理的に起きない。
+    """
+    pytest.importorskip("tkinter")
+    from core import config                                    # noqa: PLC0415
+    from tests.conftest import make_themed_root                # noqa: PLC0415
+    from views import launcher_menu                            # noqa: PLC0415
+    from views.launcher import SimLauncher                     # noqa: PLC0415
+
+    _write(lang_dir, "fr", {"_name": "Français", "btn_run": "Exécuter"})
+    i18n.load_external(str(lang_dir))
+
+    settings = tmp_path / "settings.json"
+    settings.write_text(json.dumps({"lang": "fr", "theme": "dark"}), encoding="utf-8")
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app = SimLauncher(root, lambda _t: None)
+        monkeypatch.setattr(launcher_menu.filedialog, "askopenfilename",
+                            lambda **_kw: str(settings))
+        monkeypatch.setattr(config, "save_app", lambda _c: None)
+        monkeypatch.setattr(type(app), "_alert",
+                            lambda _s, _t, _m: None, raising=False)
+        app._on_load_app_settings()
+        assert app.config.get("lang") == "fr", (
+            "設定ファイルの外部言語が取り込まれていない"
+            f"（lang={app.config.get('lang')!r}）＝メニューでは選べるのに、"
+            "設定として保存したものは読み戻せない（B-086）。"
+        )
+    finally:
+        root.destroy()
+
+
 def _menu_labels(menu) -> list:
     """メニュー階層をたどって全項目のラベルを集める（カスケードの中まで）。"""
     out: list = []

@@ -986,6 +986,21 @@ def set_lang(lang: str) -> None:
         _lang = lang
 
 
+def available_languages() -> list:
+    """`set_lang()` が受ける言語コード＝同梱の 2 つ ＋ 読み込めた外部訳。
+
+    **`set_lang` と同じ表（`_STRINGS`）から答える**のが肝（2026-08-14・B-086）。
+    呼ぶ側が `("en", "ja")` と書くと、外部の訳を足しても**そこだけ古いまま黙って
+    残る**＝実際に `launcher_menu._on_load_app_settings` がそうなっていて、
+    `lang: "fr"` を書いた設定を読み戻しても言語だけ捨てられていた。
+    ⇒ **「選べるか」を判定する口をここ 1 つにする。**
+
+    ⚠️ 表示名が要るのは言語メニューだけなので、そちらは `external_languages()`
+    （コードと表示名の対）を使う。ここが返すのは**コードだけ**。
+    """
+    return list(_STRINGS)
+
+
 def current_lang() -> str:
     """いま使っている言語コード。
 

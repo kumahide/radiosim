@@ -1047,6 +1047,53 @@ def test_a_window_that_already_fits_is_not_moved(monkeypatch):
         root.destroy()
 
 
+# ------------------------------------------------------------
+# 別モニタ（B-085）— 引き戻してよいのは「知っている画面」に居る窓だけ
+# ------------------------------------------------------------
+# 🔴 **B-083 の修正が作った退行。** `screen_size()` が返すのは**プライマリモニタ
+# 1 枚**（Windows の Tk は `winfo_screenwidth/height` に `SM_CXSCREEN/SM_CYSCREEN`
+# を返す＝2026-08-14 に `ctypes` と突き合わせて実測）。そこへ無条件に `max(0, …)`
+# を当てると、**別モニタに置かれた正当な窓が主画面へ引き戻される**。
+#
+# ⚠️ **この 2 本は開発機（モニタ 1 枚）でも意味を持つ**＝検査しているのは
+# 「モニタが何枚あるか」ではなく「**知っている矩形の外に居る窓に手を出さない**」
+# という判断で、それは画面の枚数に依らず同じコードが決めている。
+@pytest.mark.parametrize("where,x,y", [
+    ("左のモニタ", -1400, 100),      # 負座標＝主画面の左に置かれたモニタ
+    ("上のモニタ", 100, -900),       # 負座標＝主画面の上に置かれたモニタ
+    ("右のモニタ", 2200, 100),       # 主画面の幅を超えた座標
+])
+def test_a_window_on_another_monitor_is_left_alone(where, x, y, monkeypatch):
+    """**別モニタの窓を主画面へ引き戻さないこと**（B-085）。
+
+    引き戻すと、利用者がサブモニタへ避けておいた窓が測り直しのたびに主画面へ
+    飛んでくる（`refit_all` は DPI 変更・画面変更でも走る）。**B-083 以前より
+    悪い**＝あの頃は位置を一切触らなかったので、この壊れ方は存在しなかった。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_multihop(root)
+        win.geometry(f"+{x}+{y}")
+        win.update_idletasks()
+        if window_fit.window_position(win) != (x, y):
+            pytest.skip(f"WM が窓を {where} へ置かせない＝この検査は成立しない")
+        window_fit.refit_all(root)
+        assert win._fit_pos == (x, y), (
+            f"[{where}] 別モニタの窓を動かした（{win._fit_pos} ≠ {(x, y)}）"
+            "＝`screen_size()` はプライマリモニタしか知らないので、そこを基準に"
+            "クランプすると正当な置き場所を主画面へ引き戻す（B-085）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 def test_dialogs_are_pulled_back_onto_the_screen(monkeypatch):
     """ダイアログも画面の中へ（親が下に寄っていれば子も外へ出る）。
 

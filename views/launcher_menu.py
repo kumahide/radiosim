@@ -497,9 +497,14 @@ class _MenuMixin:
                 dem.set_proxy(self.config["proxy_url"])
                 sim.clear_terrain_cache()
                 applied = True
-            lang_changed = app.get("lang") in ("en", "ja") and \
+            # ⚠️ 言語の白リストをここに書かない（B-086）＝外部の訳を足しても
+            # ここだけ `("en", "ja")` のまま残り、`lang: "fr"` の設定を読んでも
+            # **言語だけ黙って捨てられる**（他の項目があれば成功表示まで出る）。
+            # 判定は `set_lang` と同じ表を見る `i18n.available_languages()` へ。
+            langs = i18n.available_languages()
+            lang_changed = app.get("lang") in langs and \
                 app["lang"] != self.config.get("lang")
-            if app.get("lang") in ("en", "ja"):
+            if app.get("lang") in langs:
                 self.config["lang"] = app["lang"]
                 self._lang_var.set(app["lang"])
                 applied = True
