@@ -23,6 +23,7 @@ pytest ＝ Stop フックの決定論ゲート（`tools/qa-hook/gate.mjs`）が�
 """
 
 import importlib.util
+import io
 import json
 import os
 import pathlib
@@ -1384,6 +1385,105 @@ class TestParallelismFolding:
         high, _ = self._parallelism(
             analyzer, self._transcript(tmp_path / "b", [["Bash", "Read", "Grep"]] * 15))
         assert low == 1.0 and high == 3.0
+
+
+# ============================================================
+# セッションを区切る助言（トークン効率化の再立案・施策1／2026-08-14）
+# ============================================================
+# 🔑 **区切りは、効果に実測の裏づけがある唯一の施策**（5 セッション実測）＝
+# 立ち上げの下駄 33k・伸び 約 1,260 tok/応答・**後半を新セッションでやり直すと
+# 総入力が 56〜62% 減る**。⇒ 100 往復の時点で既に「切ったほうが 5 倍安い」。
+#
+# 🔴 **ここには 2026-08-14 までテストが 1 本も無かった。** その間、低い側の閾値
+# （200/320）は `systemMessage`＝**人間の画面にしか出ない形**で残っており、
+# **Claude に最初に届くのは 440**だった——**同じファイルの註が「systemMessage は
+# 届かない」と実証しているのに**である。⇒ *知っていることが配線に反映されていない*
+# 取りこぼしは、テストが無い面で起きる。
+
+
+class TestSessionSplitAdvice:
+    def _transcript(self, tmp_path, n, ctx=200_000):
+        """`n` 往復ぶんの記録（各応答が `ctx` の文脈を持つ）。"""
+        p = tmp_path / "t.jsonl"
+        p.write_text("\n".join(
+            json.dumps({"type": "assistant", "message": {
+                "id": f"m{i}", "content": [{"type": "text", "text": "x"}],
+                "usage": {"cache_read_input_tokens": ctx}}}, ensure_ascii=False)
+            for i in range(n)), encoding="utf-8")
+        return p
+
+    def _run(self, budget, monkeypatch, capsys, tmp_path, n, ctx=200_000):
+        path = self._transcript(tmp_path, n, ctx)
+        monkeypatch.setattr(budget, "_STATE", tmp_path / "state.json")
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+            {"transcript_path": str(path), "session_id": "s1"})))
+        try:
+            budget.main()          # 早期 return は sys.exit、最後まで来ると普通に返る
+        except SystemExit:
+            pass
+        out = capsys.readouterr().out.strip()
+        return json.loads(out) if out else {}
+
+    def test_the_first_threshold_reaches_the_model(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**最初の閾値で Claude に届くこと**（`systemMessage` へ戻さない）。
+
+        ⚠️ これが緩むと「発火しているのに誰の行動も変えない」に逆戻りする＝
+        2026-08-01 に実証済みの壊れ方。
+        """
+        first = min(budget._THRESHOLDS)
+        assert first <= 250, f"最初の閾値が遅すぎる（{first}）"
+        got = self._run(budget, monkeypatch, capsys, tmp_path, first)
+        assert got.get("decision") == "block", (
+            f"{first} 往復で Claude に届いていない（{got}）"
+            "＝人間の画面にだけ出る形に戻っている。"
+        )
+
+    def test_every_threshold_reaches_the_model(self, budget):
+        """助言の形は 1 つだけ＝**人間向けと Claude 向けに割らない**。"""
+        assert budget._THRESHOLDS == budget._BLOCKING_THRESHOLDS
+        src = open(_BUDGET_PATH, encoding="utf-8").read()
+        # ⚠️ 素の語で見ない＝**撤去の理由を書いた註にも同じ語が出る**（実装中に踏んだ）。
+        # 見るのは JSON のキーとして書かれた形だけ。
+        assert '"systemMessage"' not in src.split("def main")[1], (
+            "main に systemMessage の枝が戻っている（Claude に届かない）"
+        )
+
+    def test_the_advice_states_the_marginal_cost(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**限界費用を実数で言うこと**＝往復数だけでは高いかどうか分からない。
+
+        ⚠️ ここで出すのは**事実**（いまの 1 往復が何トークンか）であって、
+        「まとめよ」のような*行動の要求*ではない（I-091 で撤去した網との違い）。
+        """
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS), ctx=200_000)
+        reason = got.get("reason", "")
+        assert "200,000" in reason, f"いまの 1 往復の費用が出ていない: {reason}"
+        assert f"{budget._FRESH_CONTEXT:,}" in reason, "比較対象（立ち上げ）が無い"
+        assert "6.1 倍" in reason, f"何倍高いかが出ていない: {reason}"
+
+    def test_the_same_threshold_is_not_repeated(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """同じ閾値で二度言わないこと（毎回鳴る網にしない＝壊れ方②）。"""
+        first = min(budget._THRESHOLDS)
+        assert self._run(budget, monkeypatch, capsys, tmp_path, first)
+        path = self._transcript(tmp_path, first)
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(
+            {"transcript_path": str(path), "session_id": "s1"})))
+        with pytest.raises(SystemExit):
+            budget.main()
+        assert capsys.readouterr().out.strip() == "", "同じ閾値で二度言っている"
+
+    def test_latest_context_is_the_last_response(self, budget, tmp_path):
+        """限界費用は**最後の応答**の文脈（平均でも合計でもない）。"""
+        p = tmp_path / "t.jsonl"
+        p.write_text("\n".join(
+            json.dumps({"type": "assistant", "message": {
+                "id": f"m{i}", "content": [],
+                "usage": {"cache_read_input_tokens": c}}})
+            for i, c in enumerate((10_000, 50_000, 123_456))), encoding="utf-8")
+        assert budget.latest_context(p) == 123_456
 
 
 def test_the_stop_hook_no_longer_judges_parallelism(budget):
