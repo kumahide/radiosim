@@ -58,6 +58,7 @@ class _PickMixin:
         _committed: list
         _committed_images: list
         _wp_objects: list
+        _wp_images: list
         _redraw_state: dict
 
         def _select_mode(self, value: str) -> None: ...
@@ -107,6 +108,19 @@ class _PickMixin:
             # 折れ線＝**並びがそのまま経路**であることを地図でも見せる。
             self._wp_objects.append(
                 self._map.set_path(coords, color=_MAP_CYAN_HEX, width=3))
+            # 区間ごとの水平距離を中点に置く（他の 2 モードと同じ部品・同じ位置）。
+            # ⚠️ **この距離は画面のここにしか出ない**＝区間表の列は周波数・利得・
+            # 結果だけで距離を持たず、レポートに出るのは*斜距離*（用語集で別語）。
+            # ⇒ 重複表示ではなく、地図で初めて読める情報。
+            # ⚠️ 区間番号は添えない＝折れ線で順番が読め、地点名も既に出ている
+            # （複数経路の経路 ID は N 本を見分けるために要るが、ここは要らない）。
+            for a, b in zip(coords, coords[1:]):
+                mid = ((a[0] + b[0]) / 2, (a[1] + b[1]) / 2)
+                km = models.horizontal_distance_km(a[0], a[1], b[0], b[1])
+                badge = self._make_distance_badge(units.format_distance(km))
+                self._wp_images.append(badge)      # GC 防止に保持
+                self._wp_objects.append(self._map.set_marker(
+                    mid[0], mid[1], icon=badge, icon_anchor="center"))
         last = len(points) - 1
         for i, (name, lat, lon) in enumerate(points):
             # 先頭＝送信点（塗り）／末尾＝受信点（白抜き）／間＝中継点（リング）。
@@ -131,6 +145,7 @@ class _PickMixin:
         # `CanvasPath` は `canvas_path_list` に生き残り、以後ずっと描かれ続ける
         # （＝過去の経路が地図に残り、パンすると一緒に動く・2026-08-13 実機報告）。
         objs, self._wp_objects = self._wp_objects, []
+        self._wp_images = []
         for obj in objs:
             try:
                 obj.delete()
@@ -184,27 +199,23 @@ class _PickMixin:
         for obj in objs:
             obj.delete()
 
-    @staticmethod
-    def _screen_bearing_deg(tx: tuple, rx: tuple) -> float:
-        """TX→RX の方位（真北 0°・東 90°・時計回り）を平面近似で返す。
-
-        地図は北上固定なので矢じりの回転角に使う。緯度差・経度差（緯度補正）から
-        atan2(東, 北) で求める。重い測地計算は不要（描画向きの近似で十分）。
-        """
-        import math
-        dlat = rx[0] - tx[0]
-        dlon = (rx[1] - tx[1]) * math.cos(math.radians((tx[0] + rx[0]) / 2))
-        return math.degrees(math.atan2(dlon, dlat)) % 360
-
     def _refresh_committed_paths(self) -> None:
         """シンクが持つ既存パス（バッチ各行の座標）を地図上に表示する。
 
-        確定パスは **TX=塗りドット／RX=方位矢じり** ＋経路線＋中点の水平距離バッジ
-        で残す（TX/RX 文字ラベルは出さない）。形状で送受を区別するため、TX/RX が
-        近接・同一座標でも重なって判別不能にならない。追記モードでのみ意味を持ち、
-        バッチ表が source of truth なので毎回引き直すだけ。パース不能行は除外済み。
-        距離バッジに path_id を添えて、バッチ表のどの行に対応するパスかを地図上で
-        判別できるようにする（I-001）。
+        確定パスは **TX=塗りドット／RX=白抜きドット** ＋経路線＋中点の水平距離
+        バッジで残す＝**座標入力モードと同じ描き方**（文字ラベルだけは出さない）。
+        追記モードでのみ意味を持ち、バッチ表が source of truth なので毎回引き直す
+        だけ。パース不能行は除外済み。距離バッジに path_id を添えて、バッチ表の
+        どの行に対応するパスかを地図上で判別できるようにする（I-001）。
+
+        🔁 **RX は 2.8b1 まで「方位矢じり」だった**（2026-08-14 にユーザー判断で
+        撤回）。矢じりは *TX/RX が同一座標に重なっても判別できる* ための例外で、
+        複数経路を中継の代わりに使っていた時期に要ったもの。中継経路ウィンドウが
+        できて**その使い方をしなくなった**ので、例外を残す根拠が消えた。
+        ⇒ **根拠の消えた例外は畳む**（残る不統一のほうが読み手のコストになる）。
+        ⚠️ 失うのは「重なったときの判別」だけ＝送受の区別（塗り/白抜き）も向き
+        （塗り→白抜き）も形で読める。⚠️ **文字ラベルは付けない**＝N 本あるので、
+        全端点に `TX`/`RX` を出すと地図が字で埋まる。識別は距離バッジの path_id。
         """
         self._redraw_serialized("committed", self._draw_committed_paths)
 
@@ -215,15 +226,11 @@ class _PickMixin:
         for pid, tx, rx in self._append_sink.existing_paths():
             self._committed.append(
                 self._map.set_path([tx, rx], color=_MAP_CYAN_HEX, width=3))
-            # TX = 塗りドット（ラベルなし）。アイコンはアクティブピックと共用。
+            # 端点はアクティブピックと同じアイコン（TX=塗り / RX=白抜き）。
             self._committed.append(self._map.set_marker(
                 tx[0], tx[1], icon=self._tx_icon, icon_anchor="center"))
-            # RX = TX→RX 方位を指す矢じり（ラベルなし・別形状で送受を区別）。
-            arrow = ImageTk.PhotoImage(
-                map_graphics.arrow_icon(self._screen_bearing_deg(tx, rx)))
-            self._committed_images.append(arrow)   # GC 防止に保持
             self._committed.append(self._map.set_marker(
-                rx[0], rx[1], icon=arrow, icon_anchor="center"))
+                rx[0], rx[1], icon=self._rx_icon, icon_anchor="center"))
             # 中点に path_id ＋ 水平距離バッジ。
             mid = ((tx[0] + rx[0]) / 2, (tx[1] + rx[1]) / 2)
             km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])

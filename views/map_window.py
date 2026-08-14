@@ -205,7 +205,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 追記モードで既に確定したパスの地図オブジェクト（マーカー・線・距離バッジ）。
         # 座標値は持たない（バッチ表が source of truth）。毎回引き直す。
         self._committed: list = []
-        # 確定パスの PhotoImage（距離バッジ・RX 矢じり）保持リスト（GC 防止）。
+        # 確定パスの PhotoImage（距離バッジ）保持リスト（GC 防止）。
         self._committed_images: list = []
         # 端点のノードアイコン（半透明ハロー＋シアンノード。TX=塗り / RX=白抜き）。
         # PhotoImage は GC されると消えるためインスタンスに保持する。
@@ -213,8 +213,11 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._rx_icon = self._make_node_icon(hollow=True)
         # 中継点＝リング（送信点・受信点と**形で**区別する）。
         self._relay_icon = ImageTk.PhotoImage(map_graphics.relay_icon())
-        # 中継経路レイヤ（折れ線＋地点マーカー）。窓の地点列を写すだけで持たない。
+        # 中継経路レイヤ（折れ線＋地点マーカー＋区間の距離バッジ）。
+        # 中継経路ウィンドウの地点列を写すだけで、地図の側では持たない。
         self._wp_objects: list = []
+        # そのレイヤの PhotoImage（区間の距離バッジ）保持リスト（GC 防止）。
+        self._wp_images: list = []
         # レイヤごとの描き直しの状態（None / "drawing" / "pending"）。**再入を
         # 畳むため**に持つ（B-080＝マーカーの削除が `canvas.update()` を回すので、
         # 消している最中に次の通知が届く）。詳細は `_redraw_serialized`。

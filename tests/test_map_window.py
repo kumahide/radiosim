@@ -101,10 +101,14 @@ class _FakeMapWidget:
         return obj
 
     def set_marker(self, *a, **k):
-        return self._make("marker")
+        obj = self._make("marker")
+        obj.args, obj.kwargs = a, k       # 何をどこへ置いたかを見るテスト用
+        return obj
 
     def set_path(self, *a, **k):
-        return self._make("path")
+        obj = self._make("path")
+        obj.args, obj.kwargs = a, k
+        return obj
 
     @property
     def alive(self):
@@ -122,6 +126,11 @@ def _map_stub(mode: str, points):
     win._waypoint_sink = (None if points is None else
                           SimpleNamespace(waypoint_markers=lambda: points))
     win._tx_icon = win._rx_icon = win._relay_icon = None
+    win._wp_images = []
+    # 距離バッジの画像化だけは差し替える＝`ImageTk.PhotoImage` は Tk の root を
+    # 要求するので、root 無しのこの層では作れない（アイコンを None にしているのと
+    # 同じ理由）。ここが見たいのは**描き直しの規則**であって画像そのものではない。
+    win._make_distance_badge = lambda _text: None
     win._redraw_state = {}
     return win
 
@@ -134,11 +143,11 @@ def test_waypoint_layer_is_redrawn_not_appended():
     win = _map_stub("waypoints", _THREE)
     win._refresh_waypoints()
     first = len(win._map.alive)
-    assert first == 4, f"折れ線 1 本＋地点 3 つのはずが {first}"
+    assert first == 6, f"折れ線 1 本＋地点 3 つ＋区間の距離バッジ 2 つのはずが {first}"
 
     win._waypoint_sink = SimpleNamespace(waypoint_markers=lambda: _THREE[:2])
     win._refresh_waypoints()
-    assert len(win._map.alive) == 3, "古いマーカーが残っている（削除が反映されない）"
+    assert len(win._map.alive) == 4, "古いマーカーが残っている（削除が反映されない）"
 
 
 def test_waypoint_layer_is_cleared_outside_its_mode():
@@ -202,8 +211,8 @@ def test_waypoint_layer_survives_a_redraw_during_the_clear():
 
     orphans = [o for o in win._map.alive if o not in win._wp_objects]
     assert not orphans, f"台帳から外れた地図オブジェクトが {len(orphans)} 個残っている"
-    assert len(win._map.alive) == 4, (
-        f"折れ線 1 本＋地点 3 つのはずが {len(win._map.alive)}"
+    assert len(win._map.alive) == 6, (
+        f"折れ線 1 本＋地点 3 つ＋区間の距離バッジ 2 つのはずが {len(win._map.alive)}"
         "（割り込みぶんが二重に描かれている）"
     )
 
@@ -226,6 +235,74 @@ def test_clearing_the_waypoint_layer_survives_a_redraw_of_its_own():
     assert all(o.deleted for o in drawn), "古い地図オブジェクトが消え残っている"
     orphans = [o for o in win._map.alive if o not in win._wp_objects]
     assert not orphans, f"台帳から外れた地図オブジェクトが {len(orphans)} 個残っている"
+
+
+# ============================================================
+# 3 つのモードで同じ描き方をすること（2026-08-14・ユーザー指摘）
+# ============================================================
+# 地図は 3 通りの描き分けをしていた＝座標入力「線＋端点＋距離バッジ」／複数経路
+# 「線＋塗り＋**方位矢じり**＋バッジ」／中継「折れ線＋地点、**距離なし**」。
+# 矢じりは *TX/RX が同一座標に重なっても判別する* ための例外で、複数経路を中継の
+# 代わりに使っていた時期のもの。中継ウィンドウができてその使い方が無くなり、
+# **根拠の消えた例外だけが不統一として残った**。
+#
+# 🔑 **規則は「線＋端点アイコン＋中点に水平距離バッジ」の 1 つ**。散文で書くと
+# また 3 通りへ散るので、ここで固定する（[[feedback-promote-recurring-checks]]）。
+
+def _committed_stub(paths):
+    """`_refresh_committed_paths` を呼ぶのに要る最小限だけを持つ MapWindow。"""
+    from views.map_window import MapWindow
+
+    win = MapWindow.__new__(MapWindow)
+    win._map = _FakeMapWidget()
+    win._committed = []
+    win._committed_images = []
+    win._append_sink = SimpleNamespace(existing_paths=lambda: paths)
+    win._tx_icon, win._rx_icon = "TX_ICON", "RX_ICON"    # 同一性だけ見る目印
+    win._make_distance_badge = lambda text: f"BADGE:{text}"
+    win._redraw_state = {}
+    return win
+
+
+def test_committed_paths_use_the_same_endpoint_icons_as_the_active_pick():
+    """複数経路の確定パスの端点が、座標入力モードと**同じアイコン**であること。
+
+    ⛔ RX を別形状（方位矢じり）に戻さない＝2026-08-14 に撤回した例外。重なりの
+    判別と引き換えに、地図の描き方が 2 通りに割れていた。
+    """
+    win = _committed_stub([("p1", (34.5, 132.4), (34.6, 132.5))])
+    win._refresh_committed_paths()
+
+    icons = [o.kwargs.get("icon") for o in win._map.alive if o.kind == "marker"]
+    assert "TX_ICON" in icons, "TX が座標入力モードと同じアイコンで描かれていない"
+    assert "RX_ICON" in icons, (
+        "RX が座標入力モードと同じアイコンで描かれていない"
+        "（方位矢じりのような別形状へ戻っていないか）"
+    )
+
+
+def test_a_relay_path_labels_every_section_with_its_distance():
+    """中継経路は**区間ごと**に距離バッジを持つこと（地点 N なら N−1 個）。
+
+    ⚠️ この距離は**画面のここにしか出ない**＝区間表の列は周波数・利得・結果だけで
+    距離を持たず、レポートに出るのは*斜距離*（用語集で別語）。⇒ 消すと読めなくなる。
+    """
+    win = _map_stub("waypoints", _THREE)
+    badges = []
+    win._make_distance_badge = lambda text: badges.append(text) or f"BADGE:{text}"
+    win._refresh_waypoints()
+
+    assert len(badges) == len(_THREE) - 1, (
+        f"地点 {len(_THREE)} に対し区間の距離バッジが {len(badges)} 個"
+        "（区間の数＝地点数 − 1 と一致していない）"
+    )
+    assert all(b for b in badges), "距離バッジの字が空"
+    # 置く場所は区間の中点（両端の平均）。
+    mids = [o.args[:2] for o in win._map.alive
+            if o.kind == "marker" and str(o.kwargs.get("icon", "")).startswith("BADGE:")]
+    expected = [((a[1] + b[1]) / 2, (a[2] + b[2]) / 2)
+                for a, b in zip(_THREE, _THREE[1:])]
+    assert mids == expected, f"距離バッジが区間の中点に無い: {mids} != {expected}"
 
 
 # ============================================================

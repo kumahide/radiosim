@@ -218,7 +218,7 @@ Click the map to set **TX → RX** alternately; the picked points are written ba
 A mode for stacking paths into Multiple Paths straight from the map. Selecting the **Append to Multiple Paths** mode opens (and raises) the Multiple Paths window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
 
 - Each row's RF settings (frequency, antenna gains, antenna heights) are **frozen from the launcher values at the moment of adding**. The workflow is to fix your conditions in the launcher first, then stack paths.
-- All paths in the batch are drawn on the map. Committed paths use **TX = filled dot / RX = bearing arrowhead** (pointing along TX → RX) plus a distance label, so TX and RX stay distinguishable even when close together or at the same coordinates.
+- All paths in the batch are drawn on the map, **drawn exactly as in Pick Coordinates mode**: a filled marker for TX, a hollow one for RX, the path line, and a distance label at its midpoint. The label carries the path ID, so you can tell which row of the batch each path belongs to. ⚠️ **Where TX and RX sit at nearly the same place the two markers overlap and cannot be told apart** — use the Relay Path window for those.
 - Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
 - Closing the Multiple Paths window returns the map to Pick Coordinates mode.
 
@@ -461,7 +461,7 @@ Each relay point **receives and then transmits again**. That means:
 - Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
 - Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
-- **Pick from map** switches the map into waypoint mode; each click fills the next waypoint.
+- **Pick from map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
 - TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
 - Up to 7 relay points (8 sections).
 
