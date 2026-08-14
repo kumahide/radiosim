@@ -25,6 +25,7 @@ pytest ＝ Stop フックの決定論ゲート（`tools/qa-hook/gate.mjs`）が�
 import importlib.util
 import json
 import os
+import pathlib
 import sys
 
 import pytest
@@ -1276,7 +1277,7 @@ class TestCanonMovedButKept:
 
 
 # ============================================================
-# session_budget.py 並列度の畳み方（B-077・2026-08-13）
+# 並列度の畳み方（B-077・2026-08-13 ／ 計測の所在は I-091・2026-08-14 で 1 本化）
 # ============================================================
 # 🔴 **計測器が構造的に必ず 1.00 を返していた。**
 # jsonl は 1 応答を複数行へ分割し、**1 エントリに入る tool_use は最大 1 個**。
@@ -1286,15 +1287,46 @@ class TestCanonMovedButKept:
 # ⇒ 閾値 1.15 に永遠に届かず、何をしても鳴り続ける網だった（壊れ方②）。
 # ⚠️ **この罠は analyze_usage.py も、上の TestRoundtripCounting の docstring も
 # 既に知っていた**＝知識は在ったのに再実装で失われた。
+#
+# 🔁 **2026-08-14（I-091）＝計測の所在が 1 つになったので、ここも付け替えた。**
+# `session_budget.py` にあった並列度の網は撤去した（指標が「独立性」を測っておらず、
+# 逐次でしかあり得ない局面でも鳴る＝壊れ方③。理由は当該ファイルの註が正典）。
+# ⇒ **畳み方を持つ実装は `tools/token-usage/analyze_usage.py` だけになった**ので、
+# B-077 の教訓はそちらに掛ける。**「同じ計測が 2 か所」という B-077 の遠因も、
+# これで構造的に消えた**（片方だけ正しい、が起こり得ない）。
+
+
+def _load_analyzer():
+    path = os.path.abspath(os.path.join(
+        _HOOK_DIR, "..", "tools", "token-usage", "analyze_usage.py"))
+    spec = importlib.util.spec_from_file_location("_analyze_usage", path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_analyze_usage"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def analyzer():
+    return _load_analyzer()
 
 
 class TestParallelismFolding:
-    """並列度が「合算」で数えられていること（B-077）。"""
+    """並列度が「合算」で数えられていること（B-077）。
+
+    ⚠️ **規範ではなく計測の検査**＝ここが見るのは「数え方が正しいか」だけで、
+    「いくつであるべきか」は問わない（閾値は I-091 で撤去した）。
+    """
 
     def _entry(self, mid, tools=(), text=False):
         content = [{"type": "text", "text": "x"}] if text else []
         content += [{"type": "tool_use", "name": n} for n in tools]
-        return {"type": "assistant", "message": {"id": mid, "content": content}}
+        # ⚠️ `usage` が要る＝分析器は usage を持つ応答だけを母数に入れる
+        # （＝1 往復として数えられたものだけを並列度の分母にする）。
+        return {"type": "assistant",
+                "message": {"id": mid, "content": content,
+                            "usage": {"cache_read_input_tokens": 1}}}
 
     def _write(self, tmp_path, entries):
         p = tmp_path / "t.jsonl"
@@ -1311,43 +1343,61 @@ class TestParallelismFolding:
                 entries.append(self._entry(f"m{i}", tools=(t,)))   # 1 行 1 tool_use
         return self._write(tmp_path, entries)
 
-    def test_a_split_response_with_two_tools_counts_as_two(self, budget, tmp_path):
+    def _parallelism(self, analyzer, path):
+        """`analyze()` の結果から平均並列度を出す（`report()` と同じ数え方）。"""
+        par = analyzer.analyze(pathlib.Path(path))["parallelism"]
+        with_tool = sum(v for k, v in par.items() if k)
+        n_tools = sum(k * v for k, v in par.items())
+        return (n_tools / with_tool if with_tool else 0.0), with_tool
+
+    def test_a_split_response_with_two_tools_counts_as_two(self, analyzer, tmp_path):
         """🔴 **これが旧実装で 1.00 に潰れていた形。**"""
         path = self._transcript(tmp_path, [["Bash", "Read"]] * 15)
-        par, n = budget.recent_parallelism(path)
+        par, n = self._parallelism(analyzer, path)
         assert n == 15 and par == 2.0
 
-    def test_a_response_whose_first_entry_is_text_is_not_dropped(self, budget, tmp_path):
+    def test_a_response_whose_first_entry_is_text_is_not_dropped(self, analyzer, tmp_path):
         """先頭行が text だけの応答を分母から落とさないこと。
 
         実データではこれが多数派で、旧実装は 1 セッションあたり 43〜234 応答を
         丸ごと見落としていた。
         """
         path = self._transcript(tmp_path, [["Bash"]] * 15)
-        par, n = budget.recent_parallelism(path)
+        par, n = self._parallelism(analyzer, path)
         assert n == 15 and par == 1.0
 
-    def test_text_only_responses_stay_out_of_the_denominator(self, budget, tmp_path):
+    def test_text_only_responses_stay_out_of_the_denominator(self, analyzer, tmp_path):
         """会話だけの応答は数えない（「喋った量」の指標にしない）。"""
         path = self._transcript(tmp_path, [["Bash", "Read"]] * 15 + [[]] * 10)
-        par, n = budget.recent_parallelism(path)
+        par, n = self._parallelism(analyzer, path)
         assert n == 15 and par == 2.0
 
-    def test_the_value_is_not_structurally_pinned_to_one(self, budget, tmp_path):
+    def test_the_value_is_not_structurally_pinned_to_one(self, analyzer, tmp_path):
         """⚠️ **まとめ方が変われば数字が動くこと**（旧実装は動かなかった）。
 
-        これが無いと「1.15 に永遠に届かない＝毎回鳴る」に戻ったことに気づけない。
+        これが無いと「構造的に必ず 1.00」へ戻ったことに気づけない＝B-077 の本体。
         """
         for sub in ("a", "b"):
             (tmp_path / sub).mkdir(parents=True, exist_ok=True)
-        low = budget.recent_parallelism(self._transcript(tmp_path / "a", [["Bash"]] * 15))
-        high = budget.recent_parallelism(
-            self._transcript(tmp_path / "b", [["Bash", "Read", "Grep"]] * 15))
-        assert low[0] == 1.0 and high[0] == 3.0
+        low, _ = self._parallelism(
+            analyzer, self._transcript(tmp_path / "a", [["Bash"]] * 15))
+        high, _ = self._parallelism(
+            analyzer, self._transcript(tmp_path / "b", [["Bash", "Read", "Grep"]] * 15))
+        assert low == 1.0 and high == 3.0
 
-    def test_small_samples_are_not_judged(self, budget, tmp_path):
-        """母数が足りなければ測らないこと（部分実行で跳ねる値を出さない）。"""
-        assert budget.recent_parallelism(self._transcript(tmp_path, [["Bash"]] * 3)) is None
+
+def test_the_stop_hook_no_longer_judges_parallelism(budget):
+    """**撤去したものが戻っていないこと**（I-091・2026-08-14）。
+
+    ⚠️ これは「機能が無いこと」の検査＝規範としての並列度を復活させるなら、
+    まず I-091 の結論（指標が独立性を測っていない／block は配送しか強制しない）を
+    覆すこと。**黙って戻すと、間違ったものを要求する網が復活する。**
+    """
+    assert not hasattr(budget, "recent_parallelism"), (
+        "並列度の判定が session_budget.py に戻っている（計測は analyze_usage.py が持つ）"
+    )
+    src = open(os.path.join(_HOOK_DIR, "session_budget.py"), encoding="utf-8").read()
+    assert "_PARALLEL_FLOOR" not in src, "並列度の規範的な閾値が戻っている"
 
 
 # ============================================================
