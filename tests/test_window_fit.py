@@ -1048,27 +1048,45 @@ def test_a_window_that_already_fits_is_not_moved(monkeypatch):
 
 
 # ------------------------------------------------------------
-# 別モニタ（B-085）— 引き戻してよいのは「知っている画面」に居る窓だけ
+# 複数モニタ（B-085）— 収める先は「窓が載っているモニタ」
 # ------------------------------------------------------------
 # 🔴 **B-083 の修正が作った退行。** `screen_size()` が返すのは**プライマリモニタ
 # 1 枚**（Windows の Tk は `winfo_screenwidth/height` に `SM_CXSCREEN/SM_CYSCREEN`
 # を返す＝2026-08-14 に `ctypes` と突き合わせて実測）。そこへ無条件に `max(0, …)`
 # を当てると、**別モニタに置かれた正当な窓が主画面へ引き戻される**。
 #
-# ⚠️ **この 2 本は開発機（モニタ 1 枚）でも意味を持つ**＝検査しているのは
-# 「モニタが何枚あるか」ではなく「**知っている矩形の外に居る窓に手を出さない**」
-# という判断で、それは画面の枚数に依らず同じコードが決めている。
-@pytest.mark.parametrize("where,x,y", [
-    ("左のモニタ", -1400, 100),      # 負座標＝主画面の左に置かれたモニタ
-    ("上のモニタ", 100, -900),       # 負座標＝主画面の上に置かれたモニタ
-    ("右のモニタ", 2200, 100),       # 主画面の幅を超えた座標
+# 🔴 **最初の直しは「主画面の外なら別モニタ」で済ませ、2 巡目の独立レビューで
+# 差し戻された**（2026-08-15）＝**サブモニタを外したあと残った窓**は*どこにも無い
+# 場所*に居るので、別モニタ扱いで放置すると掴めないまま＝B-083 の救済の取り消し。
+# ⇒ 判定は**実在する矩形と重なるか**で行い、どれとも重ならない窓だけを引き戻す。
+# ⚠️ **そのとき足したゲート（「動かさないこと」）は捨てた**＝あれは*退行を正しい
+# 振る舞いとして固定する*網で、[[feedback-promote-recurring-checks]] の壊れ方③
+# （間違ったものを要求している）そのものだった。**直すときに邪魔をする網は、
+# 直す前に外す。**
+#
+# 🔑 **偽のモニタ構成を注入する**＝そうしないと複数モニタの論理は「2 枚つないだ
+# 機械」でしか検査できず、実質だれも検査しない（開発機は実測で `SM_CMONITORS = 1`）。
+_LEFT_MONITOR  = (-1920, 0, 0, 1080)        # 主画面の左に 1 枚
+_RIGHT_MONITOR = (1920, 0, 3840, 1080)      # 主画面の右に 1 枚
+_PRIMARY       = (0, 0, 1920, 1080)
+
+
+def _fake_monitors(monkeypatch, rects):
+    monkeypatch.setattr(window_fit, "monitors", lambda _w: list(rects))
+
+
+@pytest.mark.parametrize("where,rects,x,y", [
+    ("左のモニタ", (_PRIMARY, _LEFT_MONITOR),  -1400, 100),
+    ("右のモニタ", (_PRIMARY, _RIGHT_MONITOR),  2200, 100),
 ])
-def test_a_window_on_another_monitor_is_left_alone(where, x, y, monkeypatch):
-    """**別モニタの窓を主画面へ引き戻さないこと**（B-085）。
+def test_a_window_on_another_monitor_stays_on_that_monitor(where, rects, x, y,
+                                                           monkeypatch):
+    """**別モニタの窓は、そのモニタの中に収める**（主画面へ引き戻さない）。
 
     引き戻すと、利用者がサブモニタへ避けておいた窓が測り直しのたびに主画面へ
-    飛んでくる（`refit_all` は DPI 変更・画面変更でも走る）。**B-083 以前より
-    悪い**＝あの頃は位置を一切触らなかったので、この壊れ方は存在しなかった。
+    飛んでくる（`refit_all` は DPI 変更・画面変更でも走る）。⚠️ **「動かさない」
+    ことを検査しない**＝そのモニタの下端から溢れていれば、そこでは引き上げるのが
+    正しい。検査するのは**どのモニタの中に居るか**。
     """
     from views import theme
 
@@ -1077,6 +1095,7 @@ def test_a_window_on_another_monitor_is_left_alone(where, x, y, monkeypatch):
         root.withdraw()
         i18n.set_lang("ja")
         monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, rects)
         theme.apply_fonts(root, dpi=96)
         win, _ = _open_multihop(root)
         win.geometry(f"+{x}+{y}")
@@ -1084,13 +1103,85 @@ def test_a_window_on_another_monitor_is_left_alone(where, x, y, monkeypatch):
         if window_fit.window_position(win) != (x, y):
             pytest.skip(f"WM が窓を {where} へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
-        assert win._fit_pos == (x, y), (
-            f"[{where}] 別モニタの窓を動かした（{win._fit_pos} ≠ {(x, y)}）"
-            "＝`screen_size()` はプライマリモニタしか知らないので、そこを基準に"
-            "クランプすると正当な置き場所を主画面へ引き戻す（B-085）。"
+
+        left, top, right, bottom = rects[1]
+        px, py = win._fit_pos
+        w, h = win._fit_size
+        assert left <= px and px + w <= right, (
+            f"[{where}] 窓が別のモニタへ移された（x={px}, 幅 {w} / このモニタは "
+            f"{left}〜{right}）＝サブモニタへ避けた窓が測り直しのたびに"
+            "主画面へ飛んでくる（B-085）。"
+        )
+        assert top <= py and py + h <= bottom - window_fit.SCREEN_MARGIN, (
+            f"[{where}] 窓がそのモニタの外へ出ている（y={py}, 高さ {h} / "
+            f"使える下端 {bottom - window_fit.SCREEN_MARGIN}）。"
         )
     finally:
         theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_a_window_on_a_monitor_that_is_gone_is_pulled_back(monkeypatch):
+    """🔴 **消えたモニタに残った窓は主画面へ引き戻すこと**（B-085・2 巡目）。
+
+    サブモニタを外すと、そこに置いてあった窓の座標は*どのモニタにも属さない場所*
+    になる。この窓は画面のどこにも描かれないので、**タイトルバーを掴むことすら
+    できない**＝B-083 が救済したのとまったく同じ状態。「主画面の外だから触らない」
+    と書くと、この救済が黙って取り消される（**最初の直しがそうだった**）。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, (_PRIMARY,))      # サブモニタを外した状態
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_multihop(root)
+        win.geometry("+2200+100")                     # 外したモニタに残った座標
+        win.update_idletasks()
+        if window_fit.window_position(win) != (2200, 100):
+            pytest.skip("WM が窓を画面外へ置かせない＝この検査は成立しない")
+        window_fit.refit_all(root)
+
+        px, py = win._fit_pos
+        w, h = win._fit_size
+        assert 0 <= px and px + w <= _FHD_SCREEN[0], (
+            f"消えたモニタに残った窓を引き戻していない（x={px}, 幅 {w}）"
+            "＝画面のどこにも描かれず、掴むこともできない（B-083 の救済の取り消し）。"
+        )
+        assert 0 <= py and py + h <= _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN, (
+            f"引き戻した先が画面の外（y={py}, 高さ {h}）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_the_primary_monitor_agrees_with_what_tk_reports():
+    """**列挙したプライマリの矩形と Tk の `screen_size()` が一致すること。**
+
+    位置は `monitors()`（Win32 の実測ピクセル）で決め、大きさは `screen_size()`
+    （Tk）で決めている＝**2 つの座標系が食い違うと、入っているつもりの窓が出る**。
+    DPI 仮想化の設定が変わるとここが割れうるので、実機で突き合わせておく。
+
+    ⚠️ **モニタが 2 枚以上あるときは検査しない**＝プライマリは「原点が (0,0) の
+    矩形」だが、それを名指しで選ぶより*1 枚のときに厳密に見る*ほうが確実で、
+    食い違いが起きるとしたら DPI の話なので枚数には依らない。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        rects = window_fit._enumerate_monitor_rects()
+        if len(rects) != 1:
+            pytest.skip(f"モニタが {len(rects)} 枚＝この検査は 1 枚のときだけ成立する")
+        assert rects[0] == (0, 0, *window_fit.screen_size(root)), (
+            f"Win32 の矩形 {rects[0]} と Tk の画面 {window_fit.screen_size(root)} が"
+            "食い違っている＝位置と大きさが別の座標系で決まっており、"
+            "「入っているつもりの窓」が画面の外へ出る。"
+        )
+    finally:
         root.destroy()
 
 

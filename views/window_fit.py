@@ -124,39 +124,35 @@ def place_within_screen(
     ⚠️ **入っている窓は動かさない**＝測り直し（DPI 変更・画面変更）のたびに
     位置を書き戻すと、ユーザーが置いた場所が失われる。触るのは外へ出たときだけ。
 
-    ⛔ **知らない画面に居る窓も動かさない**（2026-08-14・B-085）
-    ------------------------------------------------------------
+    ⛔ **画面は 1 枚ではない**（2026-08-15・B-085）
+    ----------------------------------------------
     `screen_size()` が返すのは **プライマリモニタ 1 枚**（Windows の Tk は
     `winfo_screenwidth/height` に `SM_CXSCREEN/SM_CYSCREEN` を返す）。そこへ
     無条件に `max(0, …)` を当てると、**別モニタに置かれた正当な窓を主画面へ
     引き戻す**：左・上のモニタは負座標なので必ず 0 へ丸められ、右のモニタは
-    `min(x, screen_w - w)` で引き戻される。**B-083 の修正が作った退行**で、
-    直す前（位置を一切触らなかった頃）より悪い。
+    `min(x, screen_w - w)` で引き戻される。
 
-    ⇒ **判断できる窓だけを動かす**＝左上が「知っている画面」の中にある窓に限る。
-    外にある窓は*どのモニタに載っているか分からない*ので手を出さない。これで
-    B-083 の実害（カスケードで下へずれて下端が出る）はそのまま防げる
-    ＝あちらは左上が画面の中にあり、**下へ溢れる**壊れ方だった。
+    ⇒ **窓が載っているモニタの矩形の中へ**収める（`host_monitor`）。
 
-    ⚠️ **これは完全な答えではない**＝本当の答えは「窓が載っているモニタの作業
-    領域を OS に聞く」（`MonitorFromWindow` ＋ `GetMonitorInfo`）で、それは
-    **B-084 と同じ API**（余白 `SCREEN_MARGIN` を実際の作業領域から決める）。
-    全窓の `lim_h` が動く＝寸法ゲートを引き直す規模なので、そちらへ束ねてある。
-    ここでやるのは**退行を消すことだけ**。
+    ⚠️ **「主画面の外なら別モニタ」で済ませてはいけない**＝一度そう書いて Codex に
+    差し戻された（2026-08-15・2 巡目）。**サブモニタを外したあと `+2200+100` に
+    残った窓**は*どこにも無い場所*に居るので、別モニタ扱いで放置すると**掴めない
+    まま**になり、B-083 の救済をそのまま取り消す。**実在する矩形と重なるか**で
+    判定し、**どれとも重ならない窓だけを主画面へ引き戻す。**
+
+    ⚠️ **余白の当て方は変えていない**＝`rcWork`（作業領域）ではなく `rcMonitor`
+    を使い、下端に `SCREEN_MARGIN` を引く。作業領域へ乗り換えると全窓の置き場所が
+    動く＝それは B-084 の仕事。
     """
     win.update_idletasks()
     w, h = size if size is not None else (win.winfo_width(), win.winfo_height())
-    screen_w, screen_h = screen_size(win)
     x, y = window_position(win)
-    if not (0 <= x < screen_w and 0 <= y < screen_h):
-        # 知っている画面の外＝別モニタ。動かさず、今の位置をそのまま記録する
-        # （ゲートが読む口は 1 つに保つ）。
-        win._fit_pos = (x, y)           # type: ignore[attr-defined]
-        return x, y
-    # 画面より大きい窓では上限が負になり得る（下限 `min_h` が画面を超える場合）。
-    # そのときは左上を原点に寄せる＝下端は諦めるが、掴む場所は必ず残す。
-    new_x = max(0, min(x, screen_w - w))
-    new_y = max(0, min(y, screen_h - SCREEN_MARGIN - h))
+    left, top, right, bottom = host_monitor(win, (x, y, x + w, y + h))
+    # 窓がモニタより大きいと上限が下限を下回り得る（下限 `min_h` が画面を超える
+    # 場合）。そのときは左上をモニタの原点へ寄せる＝下端は諦めるが、掴む場所は
+    # 必ず残す。
+    new_x = max(left, min(x, right - w))
+    new_y = max(top, min(y, bottom - SCREEN_MARGIN - h))
     if (new_x, new_y) != (x, y):
         win.geometry(f"+{new_x}+{new_y}")
     win._fit_pos = (new_x, new_y)       # type: ignore[attr-defined]
@@ -176,6 +172,85 @@ def screen_size(win: "tk.Misc") -> tuple[int, int]:
          で、測り直しの口をここに 1 つだけ用意しておく。
     """
     return win.winfo_screenwidth(), win.winfo_screenheight()
+
+
+def _enumerate_monitor_rects() -> "list[tuple[int, int, int, int]]":
+    """OS に**実在するモニタの矩形**を聞く（`(左, 上, 右, 下)` の列・仮想座標系）。
+
+    取れなければ空を返す（Windows 以外・API が無い・呼び出しに失敗した場合）。
+    **判断は呼び出し側**＝ここは「聞けたかどうか」だけを返す。
+
+    ⚠️ **`rcWork`（作業領域）ではなく `rcMonitor`（モニタ全体）を使う**。作業領域は
+    タスクバーを除いた矩形なので、そちらへ乗り換えると**下端の余白の当て方が変わり、
+    全窓の置き場所が動く**＝それは B-084（余白を実際の作業領域から決める）の仕事で、
+    寸法ゲートを引き直す規模になる。ここでやるのは**モニタの原点を知ること**だけ。
+    """
+    try:
+        import ctypes                                  # 遅延 import（Windows 専用）
+        from ctypes import wintypes
+        user32 = ctypes.windll.user32
+    except (ImportError, AttributeError, OSError):
+        return []
+
+    class _RECT(ctypes.Structure):
+        _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
+                    ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
+
+    found: "list[tuple[int, int, int, int]]" = []
+
+    def _collect(_hmon, _hdc, rect, _data) -> int:
+        r = rect.contents
+        found.append((r.left, r.top, r.right, r.bottom))
+        return 1
+
+    proc = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
+                              ctypes.POINTER(_RECT), wintypes.LPARAM)
+    try:
+        # 第 4 引数の `lprcMonitor` がそのままモニタの矩形なので `GetMonitorInfo` は要らない。
+        user32.EnumDisplayMonitors(None, None, proc(_collect), 0)
+    except OSError:
+        return []
+    return found
+
+
+def monitors(win: "tk.Misc") -> "list[tuple[int, int, int, int]]":
+    """窓を置ける矩形の一覧。**聞けなければプライマリ 1 枚**として答える。
+
+    `screen_size()` と同じ「**1 か所を通す**」型（2026-08-15・B-085 の作り直し）。
+    テストはここを差し替えて**偽のモニタ構成**を注入する＝そうしないと、複数モニタの
+    論理は**モニタを 2 枚つないだ機械でしか検査できない**ことになり、実質だれも
+    検査しない（開発機は実測で `SM_CMONITORS = 1`）。
+    """
+    rects = _enumerate_monitor_rects()
+    if rects:
+        return rects
+    screen_w, screen_h = screen_size(win)
+    return [(0, 0, screen_w, screen_h)]
+
+
+def host_monitor(
+    win: "tk.Misc", rect: "tuple[int, int, int, int]"
+) -> "tuple[int, int, int, int]":
+    """窓 `rect`（左, 上, 右, 下）が**いちばん載っているモニタ**の矩形。
+
+    **どのモニタとも重なっていなければプライマリ**を返す＝それが「引き戻すべき窓」
+    （2026-08-15・B-085 の 2 巡目）。⚠️ **「主画面の外だから別モニタ」とは言えない**
+    ＝サブモニタを外したあと `+2200+100` に残った窓は、*どこにも無い場所*に居る。
+    そこを別モニタ扱いで放置すると**窓は掴めないまま**になり、B-083 の救済を取り消す。
+    """
+    x0, y0, x1, y1 = rect
+    best: "tuple[int, int, int, int] | None" = None
+    best_area = 0
+    for left, top, right, bottom in monitors(win):
+        w = min(x1, right) - max(x0, left)
+        h = min(y1, bottom) - max(y0, top)
+        area = w * h if w > 0 and h > 0 else 0
+        if area > best_area:
+            best, best_area = (left, top, right, bottom), area
+    if best is not None:
+        return best
+    screen_w, screen_h = screen_size(win)
+    return (0, 0, screen_w, screen_h)
 
 
 def scrollable_body(
