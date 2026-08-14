@@ -59,6 +59,7 @@ views/window_fit.py
 
 from __future__ import annotations
 
+import re
 import tkinter as tk
 from tkinter import ttk
 from typing import Any
@@ -67,6 +68,74 @@ from typing import Any
 # 従来はバッチ 80px / 条件探索 90px / ランチャー「画面の 92%」と窓ごとにばらけて
 # いたので、ここで 1 つに揃える（値そのものより、揃っていることに意味がある）。
 SCREEN_MARGIN = 90
+
+
+_GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
+
+
+def window_position(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
+    """窓の左上（**装飾枠**）の位置。
+
+    ⛔ **`winfo_x/y` を直接読まない**（2026-08-14 実測・B-083）＝**まだ画面に
+    出ていない窓では 0 を返す**。`fit_to_content` は `mainloop()` より前に走る
+    ので、そこで 0 を信じると「原点にある＝はみ出さない」と判定し、**クランプが
+    黙って無効になる**（同じ理由でゲートも 6 窓中 5 窓が空振りした＝実装中に踏んだ）。
+    `geometry()` は WM が決めた位置を返し、しかも**書き戻すときの座標系と同じ**。
+
+    ⚠️ `-x-y` 形式（右端・下端からの相対）は解釈が別物なので受けない＝その場合
+    だけ `winfo_x/y` へ落ちる（こちらが書くのは常に `+x+y`）。
+    """
+    m = _GEOMETRY.match(win.geometry())
+    if m is None:
+        return win.winfo_x(), win.winfo_y()
+    return int(m.group(1)), int(m.group(2))
+
+
+def place_within_screen(
+    win: "tk.Tk | tk.Toplevel", *, size: "tuple[int, int] | None" = None
+) -> tuple[int, int]:
+    """窓が画面から出ていたら、入る位置へ寄せる。決めた `(x, y)` を返す。
+
+    **なぜ大きさとは別に要るか**（B-083）
+    ------------------------------------
+    `fit_to_content` は `geometry(f"{w}x{h}")` と**大きさだけ**を渡すので、
+    置き場所は WM 任せ＝Windows の**カスケード配置**で `+78+78` → `+156+156` →
+    `+234+234` と 78px ずつ下がっていく（実測）。ランチャーは高さ 973px あるので、
+    2 番目のスロットに置かれた時点で下端が FHD の外へ出る。
+
+    ⚠️ **逃げ道（`scrollable_body`）はこの壊れ方に効かない**＝バーは
+    `need_h > h`（**窓の大きさ**に入らない）ときだけ出る。ここは大きさとしては
+    足りているので受け皿は「入っている」と判断し、バーが出ないまま下端が画面外へ
+    出る。**大きさの問題と位置の問題は別物。**
+
+    座標系（2026-08-14 実測）
+    ------------------------
+    `geometry()` の `+x+y` と `winfo_x/y` は**装飾枠の左上**、`winfo_rootx/rooty`
+    は**クライアント領域の左上**（差＝上 31px / 左 8px）。ここは前者で話す
+    ＝`geometry()` へ返す値と同じ座標系にしておかないと、書き戻すたびに装飾の
+    厚みぶん窓が上へ歩いていく。
+
+    余白の当て方
+    ------------
+    **下端だけ `SCREEN_MARGIN` を引く**（Windows のタスクバーは既定で下）。
+    装飾の上 31px もこの帯で吸収する。左右・上は 0＝画面に触れていてもよく、
+    ここで余白を要求すると**右端に寄せて置く**という正常な置き方を毎回崩す。
+
+    ⚠️ **入っている窓は動かさない**＝測り直し（DPI 変更・画面変更）のたびに
+    位置を書き戻すと、ユーザーが置いた場所が失われる。触るのは外へ出たときだけ。
+    """
+    win.update_idletasks()
+    w, h = size if size is not None else (win.winfo_width(), win.winfo_height())
+    screen_w, screen_h = screen_size(win)
+    x, y = window_position(win)
+    # 画面より大きい窓では上限が負になり得る（下限 `min_h` が画面を超える場合）。
+    # そのときは左上を原点に寄せる＝下端は諦めるが、掴む場所は必ず残す。
+    new_x = max(0, min(x, screen_w - w))
+    new_y = max(0, min(y, screen_h - SCREEN_MARGIN - h))
+    if (new_x, new_y) != (x, y):
+        win.geometry(f"+{new_x}+{new_y}")
+    win._fit_pos = (new_x, new_y)       # type: ignore[attr-defined]
+    return new_x, new_y
 
 
 def screen_size(win: "tk.Misc") -> tuple[int, int]:
@@ -404,6 +473,10 @@ def fit_to_content(
 
     win._fit_size = (w, h)              # type: ignore[attr-defined]
     win.geometry(f"{w}x{h}")
+    # 大きさが決まったら**置き場所も画面の中へ**（B-083）。⚠️ ここで `_fit_size`
+    # を渡す＝`winfo_width()` は未表示のあいだ 1 を返すので、実測から測ると
+    # 「どこに置いても入る」ことになり、このクランプは黙って無効になる。
+    place_within_screen(win, size=(w, h))
     _thaw_table_columns(frozen)
     return w, h
 

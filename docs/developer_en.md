@@ -251,7 +251,7 @@ radiosim/
 │   ├── errors.py         # Single sink that routes unhandled GUI exceptions to the log and a dialog
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
-│   ├── window_fit.py     # Single implementation of fit-window-to-content (clipping guard)
+│   ├── window_fit.py     # Single implementation of window size and position (clipping / off-screen guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay path window (waypoints are the input surface; hops are derived)
 │   ├── batch_builder.py  # Multiple Paths window (core: common settings, project info)
@@ -909,7 +909,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_i18n_external.py` | Gate for **user-supplied languages** (`lang/<code>.json`). **The rejection side is the point**: keys whose placeholders (`{n}` …) differ from English, keys unknown to English, artifact wording (`html_*` / `pl_*`) and non-string values are not applied, and the bundled `ja` / `en` cannot be overridden. Also checks that untranslated keys fall back to English and that one broken file does not stop the others. Includes **one test that demonstrates the `KeyError` you would get if the check were removed** — if that reason ever disappears, that test fails and says so |
 | `test_i18n_no_hardcoded_ui_text.py` | i18n bypass gate (**no natural language reaches the screen without going through i18n**: literals passed to the four screen-text doors in `views/` — `text=`, `label=`, `.title()`, `dialogs.*()` — fail if they contain English words or kana/kanji. Verdict words, units, symbols and number formats are out of scope — they are identical in both languages) |
 | `test_layers.py`         | Layering gate (dependencies flow one way: views -> report -> core; no import-time cycles; `core/` pulls no GUI toolkit or plotting library; no layer is empty, which would make the checks vacuous) |
-| `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, and **unregistered new windows** are caught statically) |
+| `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, **stays inside the desktop where it is placed**, and **unregistered new windows** are caught statically) |
 | `test_errors.py`         | Unhandled exceptions in GUI callbacks are logged **with a traceback** and surfaced in a dialog naming the log file (no stacked modals when errors repeat; the log survives even if the dialog cannot be shown) |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |
 | `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; normal startup resolves to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |

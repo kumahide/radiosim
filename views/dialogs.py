@@ -14,12 +14,23 @@ from tkinter import ttk
 from core import i18n
 
 
-def _center_on(parent: tk.Misc, dlg: tk.Toplevel) -> None:
-    """dlg を parent（が属するウィンドウ）の中央に配置する。"""
+def center_on(parent: tk.Misc, dlg: tk.Toplevel) -> None:
+    """dlg を parent（が属するウィンドウ）の中央に配置する。
+
+    ⚠️ **中央に置いてから、画面の中へ引き戻す**（B-083）＝親が画面の下端側に
+    寄っていると、中央合わせだけでは子が自分の高さの半分だけ外へ出る。親が
+    大きい窓（ランチャーは高さ 973px）だと実際に起きる。
+
+    ⚠️ **同じ計算が `launcher_menu` にも複製されていた**ので、ここへ寄せた
+    （2 か所あると、片方だけ直して片方に残る＝B-083 のクラス点検で見つけた形）。
+    """
+    from views import window_fit          # 遅延 import（循環回避）
+
     dlg.update_idletasks()
     x = parent.winfo_rootx() + (parent.winfo_width()  - dlg.winfo_width())  // 2
     y = parent.winfo_rooty() + (parent.winfo_height() - dlg.winfo_height()) // 2
     dlg.geometry(f"+{x}+{y}")
+    window_fit.place_within_screen(dlg)
 
 
 def _make(parent: tk.Misc, title: str, message: str) -> tuple[tk.Toplevel, ttk.Frame]:
@@ -40,7 +51,7 @@ def alert(parent: tk.Misc, title: str, message: str) -> None:
     """parent 中央に OK ダイアログを表示する（モーダル）。"""
     dlg, btns = _make(parent, title, message)
     ttk.Button(btns, text=i18n.t("dlg_ok"), command=dlg.destroy).pack()
-    _center_on(parent, dlg)
+    center_on(parent, dlg)
     dlg.wait_window()
 
 
@@ -55,7 +66,7 @@ def confirm(parent: tk.Misc, title: str, message: str) -> bool:
 
     ttk.Button(btns, text=i18n.t("dlg_yes"), command=_yes).pack(side="left", padx=6)
     ttk.Button(btns, text=i18n.t("dlg_no"), command=dlg.destroy).pack(side="left", padx=6)
-    _center_on(parent, dlg)
+    center_on(parent, dlg)
     dlg.wait_window()
     return result["ok"]
 
@@ -83,7 +94,7 @@ def choose(parent: tk.Misc, title: str, message: str,
             side="left", padx=6)
     ttk.Button(btns, text=cancel_label or i18n.t("dlg_close"),
                command=dlg.destroy).pack(side="left", padx=6)
-    _center_on(parent, dlg)
+    center_on(parent, dlg)
     dlg.wait_window()
     return result["key"]
 

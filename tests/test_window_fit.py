@@ -939,6 +939,149 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
         root.destroy()
 
 
+# ============================================================
+# 位置（B-083）— 大きさが入っていても、置き場所で外へ出る
+# ============================================================
+# 🔑 **ここまでのゲートは全部「大きさ」しか見ていなかった。**
+# `fit_to_content` は `geometry(f"{w}x{h}")` と**大きさだけ**を渡すので、窓が
+# どこに置かれるかは Windows 任せ＝**カスケード配置**（実測で `+78+78` → `+156+156`
+# → `+234+234` と 78px ずつ下がる）。ランチャーは高さ 973px あるので、2 番目の
+# スロットに置かれた時点で `156 + 装飾 31 + 973 = 1160px` となり FHD の外へ出る。
+#
+# ⚠️ **逃げ道（B-021②）はこの壊れ方に効かない**＝スクロールバーは
+# `need_h > h`（＝**窓の大きさ**に入らない）ときだけ出る。ここは大きさとしては
+# 足りているので受け皿は「入っている」と判断し、バーは出ないまま下端が画面外へ
+# 出る。**大きさの問題と位置の問題は別物**で、片方のゲートはもう片方を守らない。
+#
+# 実測（2026-08-14・`wm geometry` の意味）:
+#   - `geometry()` の `+x+y` と `winfo_x/y` は**装飾枠の左上**
+#   - `winfo_rootx/rooty` は**クライアント領域の左上**（差＝上 31px / 左 8px）
+#   ⇒ 装飾のぶんは下端の余白（`SCREEN_MARGIN`）で吸収する。
+def _cascade(win, x=156, y=156):
+    """Windows のカスケード配置を再現する（窓を斜め下へ置く）。
+
+    ⚠️ **置けたことを必ず確かめる**＝`winfo_x/y` は未表示のあいだ 0 を返すので、
+    それで検査すると窓は原点にあることになり**ゲートが黙って空振りする**
+    （実装中に実際に起きた＝6 窓のうち 5 窓が「はみ出していない」と報告した）。
+    """
+    win.geometry(f"+{x}+{y}")
+    win.update_idletasks()
+    assert window_fit.window_position(win) == (x, y), (
+        "前提が崩れている（窓を動かせていない）＝このテストは何も検査していない"
+    )
+
+
+@pytest.mark.parametrize("name", sorted(_WINDOWS))
+def test_every_window_stays_inside_the_screen(name, monkeypatch):
+    """**どの窓も、置かれた場所ごとデスクトップの中に収まっていること。**
+
+    大きさのゲート（`test_every_window_is_usable_on_fhd`）が全部緑でも、この
+    ゲートは落ちうる＝それが B-083。⚠️ **開発機の画面では絶対に発火しない**
+    （WQHD は縦 1350px 使える）ので、出荷先の画面を差し込んでから測る。
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        theme.apply_fonts(root, dpi=96)
+        opener, _ = _WINDOWS[name]
+        win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        screen_w, screen_h = _FHD_SCREEN
+        # ⚠️ **窓ごとに「確実に外へ出る位置」を計算して置く**。実機で起きたのは
+        # `+156+156`（カスケードの 2 番目）だが、その値を全窓へ当てると**背の低い窓は
+        # そこでも入ってしまい、その窓のぶんは何も検査しないテストになる**（実装中に
+        # 実際そうなった＝6 窓中 4 窓が素通り）。⇒ 各窓の高さから外へ出る位置を作る。
+        _cascade(win,
+                 x=max(0, screen_w - win._fit_size[0] + 40),
+                 y=screen_h - window_fit.SCREEN_MARGIN - win._fit_size[1] + 40)
+        window_fit.refit_all(root)          # 窓ごとの事情そのままで測り直させる
+
+        x, y = win._fit_pos
+        w, h = win._fit_size
+        assert x >= 0 and y >= 0, (
+            f"[{name}] 窓の左上が画面の外にある（{x}, {y}）＝タイトルバーを"
+            "掴めず、動かすこともできない。"
+        )
+        assert y + h <= screen_h - window_fit.SCREEN_MARGIN, (
+            f"[{name}] 窓の下端がデスクトップの外へ出ている"
+            f"（上端 {y}px + 高さ {h}px = {y + h}px / 使える高さ "
+            f"{screen_h - window_fit.SCREEN_MARGIN}px）。**大きさは入っているので"
+            "逃げ道（スクロール）は出ない**＝下端のボタン列に手が届かない（B-083）。"
+        )
+        assert x + w <= screen_w, (
+            f"[{name}] 窓の右端がデスクトップの外へ出ている"
+            f"（左端 {x}px + 幅 {w}px = {x + w}px / 画面 {screen_w}px）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_a_window_that_already_fits_is_not_moved(monkeypatch):
+    """**入っている窓は動かさないこと**（ゲートの壊れ方②＝毎回鳴る／勝手に動く）。
+
+    位置を毎回書き直す実装にすると、ユーザーが置いた場所が測り直しのたびに
+    リセットされる（DPI 変更・画面変更でも `refit_all` が走る）。**触るのは
+    外へ出ているときだけ。**
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_multihop(root)
+        _cascade(win, x=40, y=30)           # 十分に上＝そのままで入る置き場所
+        window_fit.refit_all(root)
+        assert win._fit_pos == (40, 30), (
+            f"入っている窓を動かした（{win._fit_pos} ≠ (40, 30)）"
+            "＝ユーザーが置いた場所が測り直しのたびに失われる。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_dialogs_are_pulled_back_onto_the_screen(monkeypatch):
+    """ダイアログも画面の中へ（親が下に寄っていれば子も外へ出る）。
+
+    `_center_on` は**親の中央**へ置くだけで画面を見ていなかった＝親が画面の
+    下端側にあると、子はその中央から自分の高さの半分だけ下へ出る。**同じ式が
+    `launcher_menu` にも複製されていた**ので、直すなら 1 本に寄せるところまでが
+    範囲（B-083 のクラス点検）。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    from views import dialogs
+
+    root = make_themed_root()
+    try:
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        root.geometry("400x300+200+1000")           # 親が画面の下端に寄っている
+        root.update_idletasks()
+        dlg = tk.Toplevel(root)
+        ttk.Label(dlg, text="x" * 40).pack()
+        tk.Frame(dlg, height=400, width=300).pack()
+        dlg.update_idletasks()
+        dialogs.center_on(root, dlg)
+        dlg.update_idletasks()
+        x, y = dlg.winfo_x(), dlg.winfo_y()
+        h = dlg.winfo_height()
+        assert y >= 0 and y + h <= _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN, (
+            f"ダイアログが画面の外へ出ている（上端 {y}px + 高さ {h}px）"
+            "＝ボタンに手が届かない。"
+        )
+        assert x >= 0, f"ダイアログの左端が画面の外（{x}px）"
+    finally:
+        root.destroy()
+
+
 def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
     """**出したバーを、次に測るときの必要量へ持ち越さないこと**（B-074(a)）。
 

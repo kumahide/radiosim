@@ -24,6 +24,7 @@ from core import dem
 from core import i18n
 from core import simulation as sim
 from core import version
+from views import dialogs
 from views import theme
 
 if TYPE_CHECKING:
@@ -430,10 +431,10 @@ class _MenuMixin:
         dlg.columnconfigure(1, weight=0)
         dlg.columnconfigure(2, weight=1)
 
-        dlg.update_idletasks()
-        x = self.root.winfo_rootx() + (self.root.winfo_width()  - dlg.winfo_width())  // 2
-        y = self.root.winfo_rooty() + (self.root.winfo_height() - dlg.winfo_height()) // 2
-        dlg.geometry(f"+{x}+{y}")
+        # ⚠️ 中央合わせは `dialogs.center_on` に寄せた（B-083）＝ここには同じ 4 行が
+        # 複製されており、**画面の中へ引き戻す処理を足すときに片方だけ直る**形
+        # だった（親が下端に寄っていれば子も外へ出る）。
+        dialogs.center_on(self.root, dlg)
 
     def _on_delete_all_cache(self) -> None:
         """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
