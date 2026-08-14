@@ -1159,6 +1159,60 @@ def test_a_window_on_a_monitor_that_is_gone_is_pulled_back(monkeypatch):
         root.destroy()
 
 
+def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
+    """🔴 **大きさの上限も、載っているモニタから取ること**（B-087）。
+
+    位置だけをモニタ基準にして大きさをプライマリ基準のままにすると、**解像度の
+    違うモニタで必ず溢れる**＝主画面 2560×1440 / サブ 1920×1080 の構成では、
+    必要高 1023px のランチャーが**主画面基準で 1023px のまま作られ**、サブ画面の
+    使える高さ 990px に対して 33px はみ出す。⚠️ **位置の調整では直らない**
+    （窓自体がモニタより高いので、上端を原点へ寄せても下端が出る）＝だから
+    `test_every_window_stays_inside_the_screen` では捕まらない。
+
+    ⚠️ **2 枚を同じ解像度にしたテストではこの欠陥は出ない**（独立レビュー 3 巡目の
+    指摘）＝**違う大きさのモニタを与えることが検査の中身**。
+    """
+    from views import theme
+
+    big   = (0, 0, 2560, 1440)                  # 主画面（広い）
+    small = (2560, 0, 4480, 1080)               # サブ画面（狭い）
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: (2560, 1440))
+        _fake_monitors(monkeypatch, (big, small))
+        # ⚠️ **溢れる条件を作ってから測る**＝実装中に 2 度空振りさせた（[[
+        # feedback-promote-recurring-checks]] の壊れ方①）。①中継経路は元から
+        # 990px に収まるので、上限をどちらから取っても同じ大きさになる
+        # ②ランチャーも 96dpi では必要高 916px（実測）で収まってしまう。
+        # ⇒ **いちばん背の高い窓（ランチャー）を 144dpi で**開く＝実測で必要高
+        # 1197px となり、サブ画面の上限 990px を確実に超える。
+        theme.apply_fonts(root, dpi=144)
+        win, _ = _open_launcher(root)
+        win.geometry(f"+{small[0] + 60}+40")     # サブ画面に置く
+        win.update_idletasks()
+        if window_fit.window_position(win) != (small[0] + 60, 40):
+            pytest.skip("WM が窓をサブ画面へ置かせない＝この検査は成立しない")
+        window_fit.refit_all(root)
+
+        _w, h = win._fit_size
+        _px, py = win._fit_pos
+        limit = small[3] - small[1] - window_fit.SCREEN_MARGIN
+        assert h <= limit, (
+            f"サブ画面（高さ {small[3] - small[1]}px）に置いた窓が、主画面基準の"
+            f"大きさで作られている（高さ {h}px / このモニタの上限 {limit}px）"
+            "＝下端がはみ出し、しかも**大きさとしては足りている**ので"
+            "逃げ道（スクロール）も出ない（B-087）。"
+        )
+        assert py + h <= small[3] - window_fit.SCREEN_MARGIN, (
+            f"サブ画面の下端から出ている（上端 {py}px + 高さ {h}px）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 def test_the_primary_monitor_agrees_with_what_tk_reports():
     """**列挙したプライマリの矩形と Tk の `screen_size()` が一致すること。**
 

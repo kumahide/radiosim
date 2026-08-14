@@ -92,7 +92,9 @@ def window_position(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
 
 
 def place_within_screen(
-    win: "tk.Tk | tk.Toplevel", *, size: "tuple[int, int] | None" = None
+    win: "tk.Tk | tk.Toplevel", *,
+    size: "tuple[int, int] | None" = None,
+    area: "tuple[int, int, int, int] | None" = None,
 ) -> tuple[int, int]:
     """窓が画面から出ていたら、入る位置へ寄せる。決めた `(x, y)` を返す。
 
@@ -143,11 +145,16 @@ def place_within_screen(
     ⚠️ **余白の当て方は変えていない**＝`rcWork`（作業領域）ではなく `rcMonitor`
     を使い、下端に `SCREEN_MARGIN` を引く。作業領域へ乗り換えると全窓の置き場所が
     動く＝それは B-084 の仕事。
+
+    Args:
+        area: 収める先のモニタ矩形。省略すると窓の位置から求める。**`fit_to_content`
+            は自分が寸法を決めるのに使った矩形をそのまま渡す**（B-087）＝大きさと
+            位置が別々のモニタを基準にすると、収めたつもりの窓が溢れる。
     """
     win.update_idletasks()
     w, h = size if size is not None else (win.winfo_width(), win.winfo_height())
     x, y = window_position(win)
-    left, top, right, bottom = host_monitor(win, (x, y, x + w, y + h))
+    left, top, right, bottom = area or host_monitor(win, (x, y, x + w, y + h))
     # 窓がモニタより大きいと上限が下限を下回り得る（下限 `min_h` が画面を超える
     # 場合）。そのときは左上をモニタの原点へ寄せる＝下端は諦めるが、掴む場所は
     # 必ず残す。
@@ -221,11 +228,18 @@ def monitors(win: "tk.Misc") -> "list[tuple[int, int, int, int]]":
     論理は**モニタを 2 枚つないだ機械でしか検査できない**ことになり、実質だれも
     検査しない（開発機は実測で `SM_CMONITORS = 1`）。
     """
-    rects = _enumerate_monitor_rects()
-    if rects:
-        return rects
     screen_w, screen_h = screen_size(win)
-    return [(0, 0, screen_w, screen_h)]
+    rects = _enumerate_monitor_rects()
+    if not rects:
+        return [(0, 0, screen_w, screen_h)]
+    # ⚠️ **プライマリだけは Tk の値を正とする**（原点が `(0, 0)` の矩形＝Windows の
+    # 定義）。理由は**テストの差し替え口を 1 つに保つため**＝既存のゲートは 20 本
+    # 以上が `screen_size` を差し替えて「出荷先の FHD」を注入している。ここで
+    # Win32 の実測だけを返すと、**差し替えたはずの画面が黙って無視され、開発機の
+    # 画面で測る緑**になる（[[feedback-promote-recurring-checks]] の壊れ方①）。
+    # 実機では両者は一致する＝`test_the_primary_monitor_agrees_with_what_tk_reports`。
+    return [(0, 0, screen_w, screen_h) if (r[0], r[1]) == (0, 0) else r
+            for r in rects]
 
 
 def host_monitor(
@@ -542,9 +556,20 @@ def fit_to_content(
         # 受け皿越しでも「中身がどれだけ要るか」を窓が正しく申告できる状態にする。
         escape.remeasure()
     win.update_idletasks()
-    screen_w, screen_h = screen_size(win)
-    lim_w = max(screen_w - SCREEN_MARGIN, min_w)
-    lim_h = max(screen_h - SCREEN_MARGIN, min_h)
+    # 🔴 **上限も「窓が載っているモニタ」から取る**（2026-08-15・B-087）。
+    # 位置だけをモニタ基準にして大きさをプライマリ基準のままにすると、**解像度の
+    # 違うモニタで必ず溢れる**＝主画面 2560×1440 / サブ 1920×1080 の構成では、
+    # 必要高 1023px のランチャーが主画面基準では 1023px のまま作られ、サブ画面の
+    # 使える高さ 990px に対して 33px はみ出す。**位置の調整では直らない**（窓自体が
+    # モニタより高いので、上端を原点に寄せても下端が出る）。⇒ 大きさと位置は
+    # **同じ 1 枚**を基準にする（下の `place_within_screen` へ同じ矩形を渡す）。
+    x0, y0 = window_position(win)
+    seen_w, seen_h = getattr(win, "_fit_size", (0, 0))
+    area = host_monitor(win, (x0, y0,
+                              x0 + max(seen_w, win.winfo_width(), 1),
+                              y0 + max(seen_h, win.winfo_height(), 1)))
+    lim_w = max(area[2] - area[0] - SCREEN_MARGIN, min_w)
+    lim_h = max(area[3] - area[1] - SCREEN_MARGIN, min_h)
 
     need_w = win.winfo_reqwidth()  + extra_w
     need_h = win.winfo_reqheight() + extra_h
@@ -576,7 +601,7 @@ def fit_to_content(
     # 大きさが決まったら**置き場所も画面の中へ**（B-083）。⚠️ ここで `_fit_size`
     # を渡す＝`winfo_width()` は未表示のあいだ 1 を返すので、実測から測ると
     # 「どこに置いても入る」ことになり、このクランプは黙って無効になる。
-    place_within_screen(win, size=(w, h))
+    place_within_screen(win, size=(w, h), area=area)
     _thaw_table_columns(frozen)
     return w, h
 
