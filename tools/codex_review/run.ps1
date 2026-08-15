@@ -105,6 +105,12 @@ Write-Host ("codex: {0}" -f $codex)
 if (-not (Test-Path $outDir)) { New-Item -ItemType Directory -Path $outDir -Force | Out-Null }
 
 # --- 巡番号の自動採番 ---
+#
+# ⚠️ 数えるのは**成立した巡だけ**（2026-08-16・Codex 9 巡目 P2）。異常終了した回の
+#    raw は下で `…_codex_FAILED_<時刻>.md` へ退避するので、この glob には掛からない。
+#    退避しないと「成立していない」と throw した回が採番を 1 つ進めてしまい、
+#    しかも同じ `-Round` で再実行すると「既にあります」で弾かれる＝**失敗した巡が
+#    番号を食ったまま再試行できない**という、8 巡目の直しが作った矛盾になる。
 if ($Round -le 0) {
     $used = Get-ChildItem $outDir -Filter 'round*_codex_raw.md' -ErrorAction SilentlyContinue |
         ForEach-Object { if ($_.Name -match '^round(\d+)_') { [int]$Matches[1] } }
@@ -123,14 +129,23 @@ if ($Mode -eq 'code') {
     $safeBase = ($Base -replace '[^\w.\-]', '_')
     $diffPath = Join-Path $outDir ("round{0}_diff_{1}_to_HEAD.diff" -f $Round, $safeBase)
 
+    # ⚠️ パイプで直に書かない（2026-08-16）。差分が空だと Set-Content が
+    #    **ファイルを作らない**ので、次の Get-Item が「パスが存在しません」で落ち、
+    #    *base の指定を間違えた*という本当の原因が見えなかった（実際に踏んだ＝
+    #    9 巡目で HEAD 自身を base に渡した）。⇒ 先に文字列で受けて自分で判定する。
     Push-Location $repoRoot
     try {
-        git diff "$Base..HEAD" | Set-Content -LiteralPath $diffPath -Encoding UTF8
+        $diffText = (git diff "$Base..HEAD" | Out-String)
         if ($LASTEXITCODE -ne 0) { throw "git diff が失敗しました（ref を確認してください）: $Base..HEAD" }
     } finally { Pop-Location }
 
+    if ([string]::IsNullOrWhiteSpace($diffText)) {
+        throw ("差分が空です: $Base..HEAD" +
+               " ⇒ base が HEAD 自身か、変更が git 管理外（ISSUES.md・memory は追跡していません）。" +
+               " 直したコミットそのものを見せたいなら base は 1 つ前（例 `<sha>^`）です。")
+    }
+    Set-Content -LiteralPath $diffPath -Value $diffText -Encoding UTF8
     $bytes = (Get-Item $diffPath).Length
-    if ($bytes -eq 0) { throw "差分が空です: $Base..HEAD" }
     Write-Host ("差分: {0}  ({1:N1} KB)" -f $diffPath, ($bytes / 1KB))
 
     $relDiff = $diffPath.Substring($repoRoot.Length).TrimStart('\')
@@ -159,9 +174,25 @@ else {
     # staging はリポジトリの外に置く。中に置くと、Codex が親を 1 つ上がるだけで
     # ISSUES.md に届く配置になる（届けること自体は上のとおり止められないが、
     # **偶然踏む確率**は下げられる）。
-    $workRoot = Join-Path ([IO.Path]::GetTempPath()) 'radiosim_codex_doc_review'
+    #
+    # ⚠️ 名前は clone とプロセスで分ける（2026-08-16・Codex 9 巡目 P2）。固定名だと
+    #    `%TEMP%` は全 clone 共通なので、別 clone や 2 本目の実行が**先発の staging を
+    #    再帰削除**し、Codex が欠損中の文書や別 clone の文書を読み得る。
+    #    リポジトリ内に置いていた頃は clone ごとに分かれていたので、**外へ出した
+    #    ことで失った分離を名前で取り戻す**（8 巡目の直しが作った退行）。
+    $repoTag = ([BitConverter]::ToString(
+        [Security.Cryptography.SHA1]::HashData(
+            [Text.Encoding]::UTF8.GetBytes($repoRoot.ToLowerInvariant()))
+    ) -replace '-', '').Substring(0, 8).ToLowerInvariant()
+    $stagePrefix = "radiosim_codex_doc_review_$repoTag"
+    $workRoot = Join-Path ([IO.Path]::GetTempPath()) ("{0}_{1}" -f $stagePrefix, $PID)
     $memDst   = Join-Path $workRoot 'memory'
 
+    # 同じ clone の**自分より前の実行**が残した staging だけを掃除する
+    # （他 clone の $repoTag は違うので触らない）。
+    Get-ChildItem ([IO.Path]::GetTempPath()) -Directory -Filter "$stagePrefix*" -ErrorAction SilentlyContinue |
+        Where-Object { $_.FullName -ne $workRoot } |
+        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
     if (Test-Path $workRoot) { Remove-Item $workRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $memDst -Force | Out-Null
 
@@ -222,10 +253,17 @@ if ($wrote) { Write-Host ("原文: {0}" -f $rawPath) }
 #    「レビュー完了」として通り、巡を 1 つ消化したことになってしまった。
 #    ⇒ raw は診断用に残したうえで throw する（黙って握りつぶさない）。
 if ($rc -ne 0) {
+    # 成立しなかった raw は採番の対象から外す（9 巡目 P2）。残すのは診断のため。
+    $failPath = $null
+    if ($wrote) {
+        $failPath = Join-Path $outDir ("round{0}_{1}_codex_FAILED_{2}.md" -f
+            $Round, $Mode, (Get-Date -Format 'yyyyMMdd-HHmmss'))
+        Move-Item -LiteralPath $rawPath -Destination $failPath -Force
+    }
     throw ("Codex が異常終了しました（exit=$rc）。" +
-           $(if ($wrote) { "raw は途中まで書かれている可能性があります: $rawPath" }
-             else { "raw は空です: $rawPath" }) +
-           " ⇒ この巡は成立していません。原因を見てから回し直してください。")
+           $(if ($failPath) { "途中まで書かれた raw は $failPath へ退避しました（採番には数えません）" }
+             else { "raw は書かれませんでした" }) +
+           " ⇒ この巡は成立していません。同じ -Round $Round で回し直せます。")
 }
 if (-not $wrote) {
     throw "Codex は正常終了しましたが返答を書きませんでした: $rawPath"

@@ -75,8 +75,33 @@ def test_the_raw_answer_lands_before_we_read_it(script):
 
 def test_a_nonzero_exit_fails_the_round(script):
     """途中まで書いて落ちた回を「レビュー完了」にしない。"""
-    assert re.search(r"if \(\$rc -ne 0\) \{\s*\n\s*throw", script), \
+    assert "if ($rc -ne 0) {" in script and "throw (\"Codex が異常終了" in script, \
         "異常終了で throw していない（巡を消化したことになってしまう）"
+
+
+def test_a_failed_round_does_not_consume_its_number(script):
+    """⛔ 失敗した巡が採番を食わないこと（9 巡目 P2＝8 巡目の直しが作った矛盾）。
+
+    採番は `*_codex_raw.md` を数えるので、失敗 raw をその名前のまま残すと
+    ①次回が次の番号へ進み ②同じ `-Round` では「既にあります」で弾かれる
+    ＝**成立していないと宣言した巡を、再試行できないまま消化する。**
+    """
+    assert "_codex_FAILED_" in script, "失敗 raw を採番対象外の名前へ退避していない"
+    assert re.search(r"Move-Item[^\n]*\$rawPath[^\n]*\$failPath", script), \
+        "失敗時に raw を退避していない"
+    # 退避先が採番の glob に掛からないこと（掛かると退避の意味が消える）
+    assert "-Filter 'round*_codex_raw.md'" in script
+    assert "_codex_FAILED_" not in "round*_codex_raw.md"
+
+
+def test_the_diff_is_written_only_when_it_is_not_empty(script):
+    """空の差分は、分かる文言で止める（base に HEAD 自身を渡した実例がある）。
+
+    以前はパイプで直に書いており、空だとファイルが作られず `Get-Item` が
+    「パスが存在しません」で落ちて、**base の誤りという本当の原因が見えなかった**。
+    """
+    assert "IsNullOrWhiteSpace($diffText)" in script
+    assert "差分が空です" in script
 
 
 # --- ⛔ 書いてはいけない主張（8 巡目 P1 の再発防止） ---------------------------
@@ -110,6 +135,20 @@ def test_the_staging_lives_outside_the_repository(script):
     """staging をリポジトリの中に置かない（親を 1 つ上がると ISSUES.md に届く）。"""
     assert "GetTempPath" in script, "staging がリポジトリ外に置かれていない"
     assert "Join-Path $outDir 'doc_review'" not in script
+
+
+def test_the_staging_name_is_unique_per_clone_and_process(script):
+    """⛔ staging の固定名を禁じる（9 巡目 P2＝8 巡目の直しが作った退行）。
+
+    `%TEMP%` は全 clone 共通なので、固定名だと別 clone や 2 本目の実行が
+    **先発の staging を再帰削除**し、Codex が欠損中／別 clone の文書を読み得る。
+    リポジトリ内に置いていた頃は clone ごとに分かれていた＝**外へ出したことで
+    失った分離**を、名前で取り戻す。
+    """
+    assert "$PID" in script, "プロセスごとに分かれていない"
+    assert "SHA1" in script and "repoTag" in script, "clone ごとに分かれていない"
+    # 掃除は自分の clone の staging だけを対象にすること
+    assert '-Filter "$stagePrefix*"' in script, "他 clone の staging まで消し得る"
 
 
 def test_the_extension_version_is_compared_semantically(script):
