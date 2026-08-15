@@ -222,6 +222,14 @@ A mode for stacking paths into Multiple Paths straight from the map. Selecting t
 - Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
 - Closing the Multiple Paths window returns the map to Pick Coordinates mode.
 
+### Waypoints mode
+
+A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click appends **one point to the end** of the list (this is not the alternating TX → RX pick of Pick Coordinates mode).
+
+- The map draws the polyline through the points and a **horizontal-distance badge for every hop**.
+- ⚠️ **That horizontal distance appears on the map only.** The hop table has no distance column, and the report carries the **slant distance** (a different quantity).
+- The map is a mirror of the Relay Path window. Adding and removing points is driven from that window, and the map follows it.
+
 ### Cache Management mode
 
 Review the DEM tile cache and prefetch or delete tiles for any area — intended for downloading what you need for offline use before heading to a site with poor connectivity. Normal simulations already cache the tiles around each path automatically, so **you do not need to open this for everyday use**.

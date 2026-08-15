@@ -266,7 +266,24 @@ _MODE_DOCS = [
     ("docs/developer_ja.md", "ja"), ("docs/developer_en.md", "en"),
     ("docs/manual_ja.md", "ja"), ("docs/manual_en.md", "en"),
 ]
-_MODE_KEYS = ["map_mode_coords", "map_mode_append", "map_mode_cache"]
+
+
+def _map_mode_i18n_keys() -> list[str]:
+    """マップウィンドウのモードの i18n キーを**実装から**採る（`_menu_i18n_keys` と同型）。
+
+    ⚠️ ここに手書きの一覧を置かない。**2026-08-15 に実際そうなっていた**（B-090・
+    Codex 独立レビュー 7 巡目）＝`["map_mode_coords", "map_mode_append",
+    "map_mode_cache"]` の 3 件のまま中継点モードが対象外で、全文書から中継点の
+    記述が消えてもこのゲートは緑だった。**同じファイルの `_button_keys` の
+    コメントは既に「モード 4 つ」と書いており、4 と 3 が同居していた。**
+    ⇒ [[feedback-user-examples-are-classes]]＝列挙で塞いだ穴は次に足す 1 本で開く。
+    """
+    src = (ROOT / "views" / "map_window.py").read_text(encoding="utf-8")
+    m = re.search(r"for value, key in \[(.*?)\]:", src, re.S)
+    assert m, "views/map_window.py: モードのタプル列が見つからない（このゲートが空振りする）"
+    keys = re.findall(r'"([a-z0-9_]+)"\s*\)', m.group(1))
+    assert keys, "views/map_window.py: モードの i18n キーを 1 つも採れていない"
+    return keys
 
 
 _MENU_SECTION_HEADERS = ["メニュー", "Menus"]
@@ -313,13 +330,28 @@ def test_menu_items_are_documented(doc, lang):
         )
 
 
+def test_the_map_mode_scanner_sees_every_mode():
+    """導出が**空振りしていない**ことを positive control で固定する（B-090）。
+
+    ⚠️ 手書きの一覧に戻す意図ではない。ここが止めるのは
+    「`for value, key in [...]` が動いて `re` が 0 件になり、
+    `test_map_mode_labels_listed` が**何も検査せず緑**になる」形
+    （[[feedback-radiosim-rules]]＝空振りするゲートは自分では言わない）。
+    """
+    keys = _map_mode_i18n_keys()
+    assert "map_mode_waypoints" in keys, "中継点モードを採れていない（B-090 の再発）"
+    assert len(keys) >= 4, f"モードが 4 つ未満しか採れていない: {keys}"
+    unknown = [k for k in keys if k not in i18n._STRINGS["en"]]
+    assert not unknown, f"i18n に無いキーを拾っている: {unknown}"
+
+
 @pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_map_mode_labels_listed(doc, lang):
     """マップウィンドウの全モードのボタンラベル（i18n が単一ソース）が各 README に
     載っているか。連続追加モードの追加のようなモード新設を反映し忘れるのを捕捉する
     （README が実際の UI ボタン名を名乗ることも保証する）。"""
     text = _read(doc)
-    for key in _MODE_KEYS:
+    for key in _map_mode_i18n_keys():
         label = i18n._STRINGS[lang][key]
         assert label in text, f"{doc}: map mode label {label!r} ({key}) is not documented"
 
