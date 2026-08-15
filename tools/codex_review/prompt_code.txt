@@ -1,0 +1,1 @@
+{DIFF_PATH} は RadioSim Pro の {BASE} から現在までの差分です。レビューしてください。
