@@ -383,8 +383,10 @@ def watch_display(
 ) -> None:
     """**表示環境が変わったら**フォントを貼り直し、窓を測り直させる。
 
-    見るのは 2 つ＝**DPI** と **画面サイズ**。どちらも窓の寸法の入力なので、
-    片方だけ監視すると片方の変化が素通りする。
+    見るのは 3 つ＝**DPI**・**画面サイズ**・**窓が載っているモニタ**。どれも窓の
+    寸法の入力なので、1 つでも見落とすとその変化が素通りする。⚠️ **3 つ目は
+    2026-08-15 に足した**（B-088）＝`screen_size()` は*プライマリ*の値なので、
+    **同じ DPI で解像度だけ違うモニタ**へ窓を動かしても 1 つ目も 2 つ目も動かない。
 
     - **DPI**（モニタ間の移動）: Tk 8.6 は `WM_DPICHANGED` を受けて**窓の
       大きさは**追従させるが、フォントは何もしない（`tk scaling` は起動時の
@@ -427,15 +429,19 @@ def watch_display(
     # 窓ごとの前回値。⚠️ **キーはウィジェットでなく Tk のパス名**＝ここは窓より
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
-    seen: "dict[str, tuple[int, tuple[int, int]]]" = {}
+    seen: "dict[str, tuple]" = {}
     state: "dict[str, Any]" = {"after": None}
 
-    def _windows() -> "list[tk.Misc]":
-        return [root, *window_fit.toplevels(root)]
+    def _windows() -> "list[tk.Tk | tk.Toplevel]":
+        # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
+        # として受けているが、位置や矩形を読む関数はトップレベルしか受けない
+        # （`geometry()` を持つのはそちらだけ）。`root` が Tk ならそれ自身が返る。
+        return [root.winfo_toplevel(), *window_fit.toplevels(root)]
 
-    def _measure(win: tk.Misc) -> "tuple[int, tuple[int, int]] | None":
+    def _measure(win: "tk.Tk | tk.Toplevel") -> "tuple | None":
         try:
-            return window_dpi(win), window_fit.screen_size(win)
+            return (window_dpi(win), window_fit.screen_size(win),
+                    window_fit.host_monitor(win, window_fit.window_rect(win)))
         except tk.TclError:
             return None                             # 破棄途中の窓
     for win in _windows():
@@ -454,7 +460,7 @@ def watch_display(
                 continue
             name = str(win)
             alive.add(name)
-            dpi, screen = got
+            dpi, screen, area = got
             prev = seen.get(name)
             seen[name] = got
             if prev is None:
@@ -465,7 +471,12 @@ def watch_display(
                 continue
             if dpi != prev[0]:
                 moved_dpi = dpi
-            if screen != prev[1]:
+            if screen != prev[1] or area != prev[2]:
+                # 🔴 **載っているモニタが変わった**のも契機（2026-08-15・B-088）。
+                # `screen_size()` はプライマリの値なので、**同じ DPI で解像度だけ
+                # 違うモニタ**へ窓をドラッグしても DPI も画面サイズも動かない
+                # ＝窓は広いほうの画面向けの大きさのまま残り、狭い画面で下端が
+                # はみ出す（B-087 の直しが**実運用では発火しない**状態だった）。
                 screen_changed = True
         for name in set(seen) - alive:
             del seen[name]                          # 閉じた窓を溜めない

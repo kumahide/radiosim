@@ -91,6 +91,20 @@ def window_position(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     return int(m.group(1)), int(m.group(2))
 
 
+def window_rect(win: "tk.Tk | tk.Toplevel") -> "tuple[int, int, int, int]":
+    """窓が占める矩形 `(左, 上, 右, 下)`（`geometry()` と同じ**装飾枠**の座標系）。
+
+    ⚠️ **未表示のあいだ `winfo_width/height` は 1 を返す**ので、決めた寸法
+    （`_fit_size`）と実測の**大きい方**を採る。`window_position` を使う理由は
+    あちらの註（`winfo_x/y` は未表示の窓で 0）。
+    """
+    x, y = window_position(win)
+    fit_w, fit_h = getattr(win, "_fit_size", (0, 0))
+    w = max(win.winfo_width(), fit_w, 1)
+    h = max(win.winfo_height(), fit_h, 1)
+    return (x, y, x + w, y + h)
+
+
 def place_within_screen(
     win: "tk.Tk | tk.Toplevel", *,
     size: "tuple[int, int] | None" = None,
@@ -563,11 +577,7 @@ def fit_to_content(
     # 使える高さ 990px に対して 33px はみ出す。**位置の調整では直らない**（窓自体が
     # モニタより高いので、上端を原点に寄せても下端が出る）。⇒ 大きさと位置は
     # **同じ 1 枚**を基準にする（下の `place_within_screen` へ同じ矩形を渡す）。
-    x0, y0 = window_position(win)
-    seen_w, seen_h = getattr(win, "_fit_size", (0, 0))
-    area = host_monitor(win, (x0, y0,
-                              x0 + max(seen_w, win.winfo_width(), 1),
-                              y0 + max(seen_h, win.winfo_height(), 1)))
+    area = host_monitor(win, window_rect(win))
     lim_w = max(area[2] - area[0] - SCREEN_MARGIN, min_w)
     lim_h = max(area[3] - area[1] - SCREEN_MARGIN, min_h)
 

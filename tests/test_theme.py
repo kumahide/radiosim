@@ -772,6 +772,59 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
     )
 
 
+def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, monkeypatch):
+    """🔴 **同じ DPI で解像度だけ違うモニタへ動かしても測り直すこと**（B-088）。
+
+    `screen_size()` は**プライマリの値**なので、2560×1440 の主画面から
+    1920×1080 のサブ画面へ窓をドラッグしても **DPI も画面サイズも動かない**
+    ＝監視は何も通知せず、窓は**広いほうの画面向けの大きさのまま**残る。
+    B-087（大きさの上限を載っているモニタから取る）は `fit_to_content` が
+    呼ばれれば正しく効くが、**呼ばれる契機が無かった**。
+
+    ⚠️ **`refit_all()` を直接呼ばない**のがこのテストの本体（独立レビュー 4 巡目の
+    指摘）＝直接呼ぶと「上限の計算」しか検査できず、**配線の抜けは素通りする**。
+    ここは `main.py` と同じ配線（`watch_display` → `refit_all`）を作り、
+    **窓を動かすだけ**で結果が変わることを見る。
+    """
+    import tkinter as tk
+
+    from views import window_fit
+
+    big   = (0, 0, 2560, 1440)
+    small = (2560, 0, 4480, 1080)
+    limit = small[3] - small[1] - window_fit.SCREEN_MARGIN      # 990
+
+    set_theme("dark")
+    theme.apply_fonts(root, dpi=96)
+    monkeypatch.setattr(theme, "window_dpi", lambda _w: 96)
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: (2560, 1440))
+    monkeypatch.setattr(window_fit, "monitors", lambda _w: [big, small])
+
+    win = tk.Toplevel(root)
+    tk.Frame(win, width=400, height=1200).pack()                # 主画面なら入る高さ
+    win.geometry("+100+40")                                     # まず主画面に置く
+    window_fit.fit_to_content(win)
+    root.update()
+    assert win._fit_size[1] > limit, (
+        f"前提が崩れている（主画面でも {win._fit_size[1]}px ≤ {limit}px）"
+        "＝サブ画面へ移しても値が変わらず、このテストは何も検査しない。"
+    )
+
+    theme.watch_display(root, lambda _d, changed:
+                        window_fit.refit_all(root, shrink=changed))
+    win.geometry(f"+{small[0] + 60}+40")                         # サブ画面へドラッグ
+    root.update()
+    root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
+    root.mainloop()
+
+    assert win._fit_size[1] <= limit, (
+        f"サブ画面へ動かしても測り直されていない（高さ {win._fit_size[1]}px / "
+        f"このモニタの上限 {limit}px）＝監視が見ているのは DPI と*プライマリの*"
+        "画面サイズだけで、**載っているモニタの変化を見ていない**（B-088）。"
+        "上限の計算（B-087）は正しくても、呼ばれなければ画面には出ない。"
+    )
+
+
 def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
     """**子窓だけ**を別 DPI のモニタへ移しても追従すること（B-065）。
 
