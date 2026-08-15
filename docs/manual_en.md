@@ -50,7 +50,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 #### Map
 
-- **Map** (3 modes): pick coordinates by clicking the map / continuously add paths from the map into Multiple Paths / visualize, prefetch, and delete DEM cache
+- **Map** (4 modes): pick coordinates by clicking the map / continuously add paths from the map into Multiple Paths / place waypoints for a relay route / visualize, prefetch, and delete DEM cache
 
 #### Calculation models
 
@@ -84,7 +84,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 ### Accuracy Statement
 
-The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss.
+The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss. ⚠️ **That range only holds for paths where the diffraction loss has not diverged** — on diverging paths the error is orders of magnitude larger, and **there is no way to tell in advance which paths diverge** (known defect, described below).
 This tool is intended solely for screening purposes — determining whether a field survey is necessary — and must not be used as the basis for final link design decisions.
 
 ---
@@ -202,7 +202,7 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open
 
 ![Map view with the transmit point, the receive point and the path between them; clicking the map picks up coordinates](images/shot_map.png)
 
-The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between three modes. The core simulation works without ever opening the map; the map is a convenience layer.
+The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between four modes (Pick Coordinates / Continuous Add / Waypoints / Cache). The core simulation works without ever opening the map; the map is a convenience layer.
 
 > On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
 
@@ -293,7 +293,7 @@ An input form is displayed on startup.
 | Project | Project name shown in the report header (applies to both Single and Multiple Paths reports) |
 | Note    | Free note. Shown on the **Single Mode report and the Multiple Paths summary page** (`summary.html` / `report_all.html`). **Not shown on per-path reports** — it describes the survey as a whole, so it is not repeated per path |
 
-> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Multiple Paths inherit these values. In Multiple Paths they are shown read-only (🔒) and pulled in with **"↻ Refresh from launcher"**.
+> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Multiple Paths inherit these values. In Multiple Paths they are shown read-only (🔒) and pulled in with **"↻ From Launcher"**.
 
 ### 2. The "Run" Button (Single Mode)
 
@@ -355,7 +355,7 @@ Click the **Multiple Paths** button in the launcher to open the dedicated window
 The **Dist (m)** column on the right is read-only and computed from the TX/RX coordinates (updated whenever a coordinate is committed). A mistyped coordinate shows up as an absurd distance, so it can be caught before running.
 
 - **+ Add row**: Adds a row that freezes a copy of the current launcher fields (coordinates, frequency, gains, antenna heights).
-- **Pick from map**: Opens the map in "Append to Multiple Paths" mode; every **TX → RX** pair you place adds one row (opening the map from this window is new in 2.7 — previously the flow could only be started from the map side).
+- **Pick on map**: Opens the map in "Append to Multiple Paths" mode; every **TX → RX** pair you place adds one row (opening the map from this window is new in 2.7 — previously the flow could only be started from the map side).
 - **Right-click a row**: Opens a per-row menu.
   - **→ Send to Single**: Loads that row's coordinates + RF into the launcher for adjustment.
   - **⟳ Update RF from Single**: Writes the launcher's current RF back into that row (**coordinates are kept**).
@@ -461,7 +461,7 @@ Each relay point **receives and then transmits again**. That means:
 - Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
 - Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
-- **Pick from map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
+- **Pick on map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
 - TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
 - Up to 7 relay points (8 sections).
 
@@ -708,7 +708,7 @@ The app writes no data to the registry or AppData. Deleting the folder is a comp
 ### Accuracy
 
 - DEM horizontal resolution (5–10 m) is the hard ceiling for accuracy; individual building obstructions are not modeled
-- The Deygout method is an approximation; errors of ±5–15 dB relative to measurements are expected
+- The Deygout method is an approximation; **on paths that do not diverge**, errors of ±5–15 dB relative to measurements are expected (**the range does not apply to diverging paths**)
 - 🔴 **Diffraction loss (the default Deygout method) can come out far too high, and there is no way to tell in advance which paths are trustworthy** (known defect, fix planned). A broad ridge is counted as many independent knife edges, so mountain paths reach **hundreds to thousands of dB**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you whether a result is safe**: over a smooth 25 m hill (10 km, 150 MHz) the Single method returns **0.0 dB** while Deygout returns **65 dB**, with Fresnel blockage still under 100%. **The same relief can differ by more than 10x depending on the shape of the terrain** (a narrow peak gives 5.7 dB under the same conditions). ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
 - 🛡 **What you can do about it today**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Deygout) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only), so it **can come out lower than Deygout**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
 - The vegetation model is empirical; species, density, and seasonal variation are not accounted for

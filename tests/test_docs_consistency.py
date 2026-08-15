@@ -33,16 +33,21 @@ ROOT = Path(__file__).resolve().parent.parent
 # --- 正準リスト（実装＝真実）-------------------------------------------------
 VIEW_MODULES = sorted(p.name for p in (ROOT / "views").glob("*.py") if p.name != "__init__.py")
 TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
-# 層構成図に必ず現れるべきコアモジュール（i18n/version/main は図の抽象度では
-# 省く設計なので対象外＝図の意図に合わせた allowlist）。
-CORE_ARCH_MODULES = [
-    "models.py", "simulation.py", "config.py", "dem.py",
-    "batch.py", "scenario.py",
-    "report_common.py", "report_path.py", "report_summary.py",
-    "report_scenario.py",
-    "report_map.py", "map_graphics.py", "coords.py",
-    "units.py",
-]
+# 層構成図とファイル構成ツリーに必ず現れるべき core/ report/ のモジュール。
+#
+# 🔴 **列挙をやめて実装から導く**（2026-08-15・②文書レビュー）＝以前は手書きの
+# allowlist で、**`core/runtime_env.py` が丸ごと抜けていた**（実ファイルと SVG には
+# 在るのに開発者文書のツリーに無く、しかもこのリストに無いので**検出できなかった**）。
+# ⇒ views/tests と同じく**ファイルシステムから導き**、図の抽象度で省くものだけを
+# 明示的に除く。**列挙で塞ぐ穴は、次に足す 1 本で開く。**
+#: 図の抽象度では省く設計のもの（ここだけが手書きで、増えたら理由を書く）。
+ARCH_EXCLUDED = {"__init__.py", "i18n.py", "version.py"}
+CORE_ARCH_MODULES = sorted(
+    p.name
+    for d in ("core", "report")
+    for p in (ROOT / d).glob("*.py")
+    if p.name not in ARCH_EXCLUDED
+)
 
 DEV_DOCS = ["docs/developer_ja.md", "docs/developer_en.md"]
 PIP_DOCS = ["README.md", "docs/developer_ja.md", "docs/developer_en.md"]

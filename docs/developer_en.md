@@ -54,7 +54,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 #### Map
 
-- **Map** (`views/map_window.py`, a single app-wide instance, 3 modes): pick coordinates / continuously add paths into Multiple Paths / visualize, prefetch, and delete DEM cache
+- **Map** (`views/map_window.py`, a single app-wide instance, 4 modes): pick coordinates / place waypoints / continuously add paths into Multiple Paths / visualize, prefetch, and delete DEM cache
 
 #### Calculation models (`models.py` — pure functions, zero side effects)
 
@@ -88,7 +88,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 ### Accuracy Statement
 
-The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss.
+The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss. ⚠️ **That range only holds for paths where the diffraction loss has not diverged** — on diverging paths the error is orders of magnitude larger, and **there is no way to tell in advance which paths diverge** (known defect, described below).
 This tool is intended solely for screening purposes — determining whether a field survey is necessary — and must not be used as the basis for final link design decisions.
 
 ---
@@ -222,6 +222,7 @@ radiosim/
 │   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
+│   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
 │   └── version.py        # Version information
 ├── report/               # The layer that produces output: engines and artifacts (headless)
@@ -927,7 +928,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 ### Accuracy
 
 - DEM horizontal resolution (5–10 m) is the hard ceiling for accuracy; individual building obstructions are not modeled
-- The Deygout method is an approximation; errors of ±5–15 dB relative to measurements are expected
+- The Deygout method is an approximation; **on paths that do not diverge**, errors of ±5–15 dB relative to measurements are expected (**the range does not apply to diverging paths**)
 - 🔴 **Diffraction loss (the default Deygout method) can come out far too high, and there is no way to tell in advance which paths are trustworthy** (known defect, fix planned). A broad ridge is counted as many independent knife edges, so mountain paths reach **hundreds to thousands of dB**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you whether a result is safe**: over a smooth 25 m hill (10 km, 150 MHz) the Single method returns **0.0 dB** while Deygout returns **65 dB**, with Fresnel blockage still under 100%. **The same relief can differ by more than 10x depending on the shape of the terrain** (a narrow peak gives 5.7 dB under the same conditions). ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
 - 🛡 **What you can do about it today**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Deygout) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only), so it **can come out lower than Deygout**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
 - The vegetation model is empirical; species, density, and seasonal variation are not accounted for
