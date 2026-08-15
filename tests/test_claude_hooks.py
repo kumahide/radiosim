@@ -935,6 +935,85 @@ class TestVersionSyncIgnoresDeltaNotation:
         assert self._run(memcheck, tmp_path, monkeypatch, "2.6b1")
 
 
+class TestVersionSyncFlagsClaimsNotMentions:
+    """古い版の**言及**で鳴らず、古い版を**現役だと主張**したときだけ鳴ること。
+
+    2026-08-15 に判定を反転した。旧設計は「歴史を語る語」を列挙して黙らせる形で、
+    その列挙を **2 度伸ばして 2 度漏れた**（`+0.1` の増分表記／「〜から更新」
+    「初回使用は」）。後者は毎セッション 3 件鳴り続けており、
+    [[feedback-promote-recurring-checks]] の**壊れ方②「毎回鳴る」**そのものだった。
+
+    🔑 この検査は**古い版にしか反応しない**。そして見出し・description に出る
+    古い版はほぼ全部が記録（更新履歴・取得時点）なので、除外側を数え上げる
+    設計が逆だった。⇒ 「いま現役だ」と主張する語があるときだけ鳴らす。
+
+    ⚠️ 取り逃し（現役と言わずに陳腐化した行）は設計上の受容。鳴りっぱなしで
+    advisory ごと読み飛ばされるより総量が小さい、という判断。
+    """
+
+    def _memo(self, tmp_path, text):
+        (tmp_path / "project_x.md").write_text(text, encoding="utf-8")
+
+    def _run(self, memcheck, tmp_path, monkeypatch, ver):
+        monkeypatch.setattr(memcheck, "MEM_DIR", tmp_path)
+        return memcheck.check_version_sync(ver)
+
+    # --- ① 黙るべきもの＝実データで実際に鳴っていた 3 つの形 -------------------
+    def test_a_superseded_condition_quoted_as_history_is_silent(
+            self, memcheck, tmp_path, monkeypatch):
+        """「『2.6 の後』から更新」＝更新履歴（project_radiosim_for_drone L87）。"""
+        self._memo(
+            tmp_path,
+            "## 4. 着手タイミング＝**3.x で要件が整ったら**"
+            "（2026-08-01 ユーザー決定・**「2.6 の後」から更新**）\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.8b3") == []
+
+    def test_a_description_recording_an_update_is_silent(
+            self, memcheck, tmp_path, monkeypatch):
+        """description の更新履歴（project_radiosim_for_drone L3）。"""
+        self._memo(
+            tmp_path,
+            "description: 着手は 2026-08-01 に「2.6 の後」→"
+            "「3.x で要件が整ったら」へ更新。未着手。\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.8b3") == []
+
+    def test_a_first_observed_at_stamp_is_silent(
+            self, memcheck, tmp_path, monkeypatch):
+        """「初回使用は `2.6RC2`」＝取得時点の記録（project_real_world_env_vdi L38）。"""
+        self._memo(
+            tmp_path,
+            "## 💻 別 FHD 実機の素性"
+            "（2026-08-03 ユーザー確認・初回使用は `2.6RC2` の実機確認）\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.8b3") == []
+
+    # --- ② 鳴るべきもの（変異検証）＝反転で本来の検出を失っていないこと -------
+    def test_calling_an_older_version_current_is_flagged(
+            self, memcheck, tmp_path, monkeypatch):
+        """⛔ これがこの検査の存在理由＝見出しが「現役は 2.6」のまま置き去り。"""
+        self._memo(tmp_path, "## 現役は 2.6（テーマ「中継点」）\n")
+        found = self._run(memcheck, tmp_path, monkeypatch, "2.8b3")
+        assert found and "2.6" in found[0]
+
+    def test_each_currency_word_fires(self, memcheck, tmp_path, monkeypatch):
+        """語を 1 つ増やしたつもりで**効いていない**のを防ぐ（空振りの自衛）。"""
+        for word in ("現役", "現在", "現行", "最新", "今は", "進行中", "作業中", "着手中"):
+            self._memo(tmp_path, f"## {word} 2.6 の話\n")
+            assert self._run(memcheck, tmp_path, monkeypatch, "2.8b3"), \
+                f"currency word not wired: {word}"
+
+    # --- ③ 間違ったものを要求していないこと -----------------------------------
+    def test_a_currency_claim_on_the_current_version_is_silent(
+            self, memcheck, tmp_path, monkeypatch):
+        """現役の版を現役だと言うのは正常（向きの除外が生きていること）。"""
+        self._memo(tmp_path, "## 🚧 現役は 2.8（進行中）\n")
+        assert self._run(memcheck, tmp_path, monkeypatch, "2.8b3") == []
+
+    def test_real_memory_is_clean(self, memcheck):
+        """実データで誤検知ゼロ（①の 3 件が実際に黙っていること）。"""
+        assert memcheck.check_version_sync(
+            memcheck._current_version() or "0.0") == []
+
+
 class TestUpdatedStampFreshness:
     """本文の「最終更新 YYYY-MM-DD」がファイル更新日より古くないこと。
 
