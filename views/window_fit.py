@@ -94,14 +94,24 @@ def window_position(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
 def window_rect(win: "tk.Tk | tk.Toplevel") -> "tuple[int, int, int, int]":
     """窓が占める矩形 `(左, 上, 右, 下)`（`geometry()` と同じ**装飾枠**の座標系）。
 
-    ⚠️ **未表示のあいだ `winfo_width/height` は 1 を返す**ので、決めた寸法
-    （`_fit_size`）と実測の**大きい方**を採る。`window_position` を使う理由は
-    あちらの註（`winfo_x/y` は未表示の窓で 0）。
+    ⚠️ **未表示のあいだ `winfo_width/height` は 1 を返す**ので、そのときだけ決めた
+    寸法（`_fit_size`）で代用する。`window_position` を使う理由はあちらの註
+    （`winfo_x/y` は未表示の窓で 0）。
+
+    ⛔ **表示済みの窓で「大きい方」を採ってはいけない**（2026-08-15・B-089）。
+    `_fit_size` は**最後に自動調整した寸法**で、**利用者が手で縮めても更新されない**
+    ＝大きい方を採ると矩形が右・下へ水増しされる。左・上のサブモニタの境界付近に
+    置いた窓では、その水増し分がプライマリと重なって `host_monitor` がプライマリを
+    選び、**手で縮めただけの窓が主画面へ引き戻される**（B-088 で監視に契機を足した
+    ので、ドラッグしなくても発火し得る）。**実寸が取れるならそれが正**。
     """
     x, y = window_position(win)
     fit_w, fit_h = getattr(win, "_fit_size", (0, 0))
-    w = max(win.winfo_width(), fit_w, 1)
-    h = max(win.winfo_height(), fit_h, 1)
+    w, h = win.winfo_width(), win.winfo_height()
+    if w <= 1:
+        w = max(fit_w, 1)                            # 未表示＝実寸が無い
+    if h <= 1:
+        h = max(fit_h, 1)
     return (x, y, x + w, y + h)
 
 

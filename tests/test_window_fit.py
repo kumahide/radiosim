@@ -1213,6 +1213,55 @@ def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
         root.destroy()
 
 
+def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypatch):
+    """🔴 **手で縮めた窓を、別モニタから引き戻さないこと**（B-089）。
+
+    `_fit_size` は**最後に自動調整した寸法**で、**利用者が手で縮めても更新されない**。
+    矩形をそこから作る（実寸との「大きい方」を採る）と、**右・下へ水増しされた
+    矩形**になる。左のサブモニタの境界付近に置いた窓では、その水増し分だけが
+    プライマリと重なるので `host_monitor` がプライマリを選び、**手で縮めただけの
+    窓が主画面へ飛ぶ**。⚠️ **B-088 で監視に契機を足したので、ドラッグしなくても
+    発火し得る**＝直前の版より起きやすくなっている。
+    """
+    import tkinter as tk
+
+    from views import theme
+
+    left = (-1920, 0, 0, 1080)
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, (_PRIMARY, left))
+        theme.apply_fonts(root, dpi=96)
+        win = tk.Toplevel(root)
+        tk.Frame(win, width=700, height=500).pack()
+        window_fit.fit_to_content(win)
+        root.update()
+
+        # 左のモニタの右端寄りへ置き、**手で小さくする**（_fit_size は 700×500 の
+        # まま残る＝ここが水増しの種）。
+        win.geometry("200x200+-300+100")
+        root.update()
+        if window_fit.window_position(win) != (-300, 100):
+            pytest.skip("WM が窓を左のモニタへ置かせない＝この検査は成立しない")
+        assert win.winfo_width() < win._fit_size[0], (
+            "前提が崩れている（手で縮められていない）＝水増しが起きないので"
+            "このテストは何も検査しない。"
+        )
+        window_fit.refit_all(root)
+
+        px, _py = win._fit_pos
+        assert px < 0, (
+            f"手で縮めただけの窓が主画面へ引き戻された（x={px}）＝矩形を "
+            "`_fit_size` から水増しして作ったため、`host_monitor` が"
+            "プライマリを選んでいる（B-089）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 def test_the_primary_monitor_agrees_with_what_tk_reports():
     """**列挙したプライマリの矩形と Tk の `screen_size()` が一致すること。**
 
