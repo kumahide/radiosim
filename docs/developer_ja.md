@@ -307,6 +307,7 @@ radiosim/
     ├── test_env_consistency.py
     ├── test_repo_hygiene.py
     ├── test_claude_hooks.py
+    ├── test_codex_review_tool.py
     └── test_qa_gate_cache.py
 ```
 
@@ -922,6 +923,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
 | `test_repo_hygiene.py`   | 追跡してはいけないファイルの門（OneDrive の同期競合コピー・公開できないクラス・実行時ログ・巨大ファイルが追跡下に無いこと）。`.git/hooks/pre-commit` と**同じ判定を共有**し、コミット前とCIの二重で守る |
 | `test_claude_hooks.py`   | ローカル開発フック（`.claude/`）の課題台帳パース。状態の註釈・ID 000・アーカイブ節の置き場・済の裏取り（コミット参照）を検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
+| `test_codex_review_tool.py` | 独立レビュー駆動スクリプト（`tools/codex_review/run.ps1`）。**独立性の芯**（入力文はファイルから読む・差し込みは差分パスと比較元だけ・`read-only` 固定・返答は原文でファイルへ）と、**書いてはいけない主張**（`-C` と `read-only` は読み取り範囲を狭めない＝canary で実測した事実に反する断定を禁止し、その開示が消えていないことも対で検査）。**対象が git-ignore ではないが実行は Windows 前提** |
 | `test_qa_gate_cache.py`  | QA ゲート（`tools/qa-hook/pytest-cache.mjs`）の再実行抑止キャッシュ。鍵が「作業ツリーの中身」で動くこと＝内容が変われば必ず走り、変わらなければ走らないことを検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 
 ---

@@ -308,6 +308,7 @@ radiosim/
     ├── test_env_consistency.py
     ├── test_repo_hygiene.py
     ├── test_claude_hooks.py
+    ├── test_codex_review_tool.py
     └── test_qa_gate_cache.py
 ```
 
@@ -919,6 +920,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
+| `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. **Skipped in CI** because the target is git-ignored (local pytest only) |
 
 ---

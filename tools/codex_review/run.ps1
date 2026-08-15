@@ -15,15 +15,16 @@
     5. codex exec は毎回あたらしいセッション。前の巡の指摘に引きずられない。
 
 .NOTES
-  ⚠️ 既知の制約（2026-08-15 実測）＝**Codex はファイルを読めるがシェルを実行できない。**
-  非対話で起動すると Codex 内蔵の Windows サンドボックスが CreateProcessAsUserW で
-  error 1312（ログオンセッションが無い）を返す。elevated / unelevated の両方で再現し、
-  こちらのサンドボックスを外しても変わらない＝対話セッションを持つ拡張との差。
-  ⇒ 読解に基づく指摘は出るが、**Codex 側でテストを走らせた裏取りは付かない**
-     （実際 7 巡目の返答が「指定 Python での再実行は完了できませんでした」と述べている）。
-  裏取りはこちらでやる工程なので運用上の穴にはならない。どうしても走らせたい回だけ
-  `--dangerously-bypass-approvals-and-sandbox` を足すことになるが、これは Codex に
-  無制限のコマンド実行を許すのでこのスクリプトでは既定にしない。
+  ⚠️ シェル実行は**間欠**（2026-08-16 訂正）。CreateProcessAsUserW error 1312 で
+  落ちる呼び出しがある一方、素直な形（`<python.exe> -m pytest …`）は通る。
+  8 巡目で Codex は実際に pytest を完走させ 293 件の成功を確認している。
+  🔴 **7 巡目の記録「シェルが動かない」は誤り**＝1 回の失敗から一般化した。
+  ⇒ **Codex 側の裏取りは付くこともあるが、当てにしない。** こちらで必ず実測する。
+
+  ⚠️ **読み取り範囲は狭まらない**（2026-08-16・canary で実測）。`-C` は作業
+  ディレクトリを決めるだけ、`-s read-only` は「書けない」であって「ここしか
+  読めない」ではない。docs モードの staging は範囲を*明示*する仕掛けであって
+  秘匿の保証ではない（詳細は下の docs 分岐のコメント）。
 
 .PARAMETER Mode
   code = ①コード面（差分）／ docs = ②ドキュメント/メモリ面
@@ -70,14 +71,28 @@ $memSrc   = $env:RADIOSIM_MEMORY_DIR
 #    そちらには codex-code-mode-host.exe が居らずファイル読み取りが fail closed になる
 #    （実測 2026-08-15＝差分を読めずレビュー不能で戻ってきた）。ホストは codex.exe の
 #    隣を見に行くので、両方が揃っている拡張の bin から起動するのが唯一の条件。
+#
+# ⚠️ 版の選び方は**意味的バージョンで比較**する（2026-08-16・Codex 8 巡目 P2）。
+#    ディレクトリ名の文字列順で並べると `…-26.810.9` が `…-26.810.10` より
+#    新しいと判定される。VS Code の更新で複数版が残ったときに古い CLI を掴み、
+#    sandbox やオプションの挙動が再現しなくなる。
 $codex = $env:CODEX_EXE
 if (-not $codex) {
     $cand = Get-ChildItem (Join-Path $env:USERPROFILE '.vscode\extensions') -Directory -ErrorAction SilentlyContinue |
         Where-Object Name -like 'openai.chatgpt-*' |
-        Sort-Object Name -Descending |
-        ForEach-Object { Join-Path $_.FullName 'bin\windows-x86_64\codex.exe' } |
-        Where-Object { (Test-Path $_) -and (Test-Path (Join-Path (Split-Path $_) 'codex-code-mode-host.exe')) }
-    $codex = $cand | Select-Object -First 1
+        ForEach-Object {
+            $v = $null
+            if ($_.Name -match 'openai\.chatgpt-(\d+(?:\.\d+)*)') {
+                [void][version]::TryParse($Matches[1], [ref]$v)
+            }
+            [pscustomobject]@{
+                Version = if ($v) { $v } else { [version]'0.0' }
+                Exe     = Join-Path $_.FullName 'bin\windows-x86_64\codex.exe'
+            }
+        } |
+        Where-Object { (Test-Path $_.Exe) -and (Test-Path (Join-Path (Split-Path $_.Exe) 'codex-code-mode-host.exe')) } |
+        Sort-Object Version -Descending
+    $codex = ($cand | Select-Object -First 1).Exe
 }
 if (-not $codex -or -not (Test-Path $codex)) {
     throw "codex.exe（code-mode host 同梱）が見つかりません。`$env:CODEX_EXE で明示できます。"
@@ -124,9 +139,27 @@ if ($Mode -eq 'code') {
 }
 else {
     # ⛔ ISSUES.md を渡さない（未修正の脆弱性・実機スクショを持つ）。
-    #    「読まないでください」と頼むのではなく、作業根を staging に切って
-    #    そもそも見えなくする。自動化で新しく増えた露出はここだけなので、ここは構造で塞ぐ。
-    $workRoot = Join-Path $outDir 'doc_review'
+    #
+    # 🔴 **2026-08-16 訂正＝これは「保証」ではない。** 当初このコメントは、
+    #    作業根を staging に切れば親の ISSUES.md には手が届かない、という趣旨の
+    #    強い言い方をしていた。**Codex 8 巡目 P1 の指摘どおり誤りだった**
+    #    （その断定の文言は `tests/test_codex_review_tool.py` が禁止語として
+    #    持っているので、ここには書き写さない）。`-C` は作業ディレクトリを
+    #    決めるだけで読み取り範囲を狭めず、`-s read-only` は「書けない」であって
+    #    「ここしか読めない」ではない。**canary で実測して確認済み**＝staging の
+    #    3 階層上に置いたファイルを Codex はそのまま読み出した
+    #    （`tests/test_codex_review_tool.py` に実測の記録）。
+    #
+    # ⇒ いま staging がしているのは **①渡す範囲を明示すること ②リポジトリを
+    #    作業根にしないこと**（自分で歩くときの起点が repo でなくなる）だけ。
+    #    **ISSUES.md を渡さないのは運用規則**であり、手渡し時代と強度は同じ。
+    #    強度を上げたと書かないこと（[[feedback-promote-recurring-checks]] 実証31
+    #    ＝「ここまでは大丈夫」は反例 1 つで嘘になる）。
+    #
+    # staging はリポジトリの外に置く。中に置くと、Codex が親を 1 つ上がるだけで
+    # ISSUES.md に届く配置になる（届けること自体は上のとおり止められないが、
+    # **偶然踏む確率**は下げられる）。
+    $workRoot = Join-Path ([IO.Path]::GetTempPath()) 'radiosim_codex_doc_review'
     $memDst   = Join-Path $workRoot 'memory'
 
     if (Test-Path $workRoot) { Remove-Item $workRoot -Recurse -Force }
@@ -153,7 +186,8 @@ else {
     $n  = (Get-ChildItem $memDst -Filter '*.md').Count
     $kb = ((Get-ChildItem $workRoot -Recurse -File | Measure-Object Length -Sum).Sum) / 1KB
     Write-Host ("渡す範囲: memory {0} 本 ＋ 公開文書 5 本 ＋ CHANGELOG  ({1:N1} KB)" -f $n, $kb)
-    Write-Host "ISSUES.md は staging の外（Codex からは見えません）"
+    Write-Host ("staging: {0}（リポジトリの外）" -f $workRoot)
+    Write-Host "⚠️ ISSUES.md は渡していません（ただし read-only は任意のパスを読めるので、これは運用規則であって保証ではありません）"
 
     $prompt = Get-Content (Join-Path $toolDir 'prompt_docs.txt') -Raw -Encoding UTF8
 }
@@ -180,9 +214,20 @@ Write-Host ("Codex 実行中（{0} 巡目 / {1}）… 返答は原文のまま {
 $rc = $LASTEXITCODE
 
 Write-Host ''
-if ((Test-Path $rawPath) -and (Get-Item $rawPath).Length -gt 0) {
-    Write-Host ("原文: {0}" -f $rawPath)
-    Write-Host '次の一手: 原文のまま ISSUES.md へ起票 → 実測で裏取り → 指摘のクラス全出現箇所を洗う'
-} else {
-    throw "Codex が返答を書きませんでした（exit=$rc）。$rawPath が空です。"
+$wrote = (Test-Path $rawPath) -and ((Get-Item $rawPath).Length -gt 0)
+if ($wrote) { Write-Host ("原文: {0}" -f $rawPath) }
+
+# ⚠️ 異常終了は必ず失敗にする（2026-08-16・Codex 8 巡目 P2）。
+#    以前は raw が非空かどうかだけを見ていたので、**途中まで書いて落ちた回**が
+#    「レビュー完了」として通り、巡を 1 つ消化したことになってしまった。
+#    ⇒ raw は診断用に残したうえで throw する（黙って握りつぶさない）。
+if ($rc -ne 0) {
+    throw ("Codex が異常終了しました（exit=$rc）。" +
+           $(if ($wrote) { "raw は途中まで書かれている可能性があります: $rawPath" }
+             else { "raw は空です: $rawPath" }) +
+           " ⇒ この巡は成立していません。原因を見てから回し直してください。")
 }
+if (-not $wrote) {
+    throw "Codex は正常終了しましたが返答を書きませんでした: $rawPath"
+}
+Write-Host '次の一手: 原文のまま ISSUES.md へ起票 → 実測で裏取り → 指摘のクラス全出現箇所を洗う'
