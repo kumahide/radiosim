@@ -60,7 +60,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_placeholder": "placeholders or format differ from English",
         "lang_ext_why_not_text": "value is not text",
         "lang_ext_why_builtin":  "bundled languages cannot be overridden",
-        "lang_ext_why_unreadable": "the file could not be read (JSON syntax)",
+        "lang_ext_why_unreadable": "the file could not be loaded (bad content or a "
+                                "failed read)",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
@@ -556,7 +557,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_placeholder": "差し込みや書式が英語と違います",
         "lang_ext_why_not_text": "文字列ではありません",
         "lang_ext_why_builtin":  "同梱の言語は上書きできません",
-        "lang_ext_why_unreadable": "ファイルを読めません（JSON の書式）",
+        # ⚠️ **原因を断定しない**（独立レビュー 21 巡目）＝ここは例外を種類で
+        # 絞らずに捕まえる場所なので、書式の誤りだけでなく権限・文字コード・
+        # 読み取り中の失敗・トップレベルが配列、のいずれでもここへ来る。
+        # **具体的な文言は例の欄に出る**（そちらが実際の診断）。
+        "lang_ext_why_unreadable": "ファイルを読み込めません（内容の形式か、読み取りの失敗）",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
