@@ -70,7 +70,17 @@ $ErrorActionPreference = 'Stop'
 $toolDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $toolDir)
 $outDir   = if ($OutDir) { $OutDir } else { Join-Path $repoRoot '.qa\codex_review' }
-$memSrc   = $env:RADIOSIM_MEMORY_DIR
+# memory はリポジトリの外（Claude Code のプロジェクト領域）にある。
+# ⚠️ **絶対パスを直書きしない**＝このファイルは公開物なので、手元のユーザー名と
+#    ディレクトリ構成がそのまま出るし、他の環境では動かない。
+#    宣言制（`RADIOSIM_MEMORY_DIR`）＋既定値の形にする
+#    （`RADIOSIM_PYTHON` と同じ型＝[[reference-build-invocation]]）。
+$memSrc = $env:RADIOSIM_MEMORY_DIR
+if (-not $memSrc) {
+    $memSrc = Join-Path $env:USERPROFILE (
+        '.claude\projects\{0}\memory' -f
+        ($repoRoot -replace '[:\\/]', '-').ToLowerInvariant().TrimEnd('-'))
+}
 
 # --- codex.exe を見つける（VS Code 拡張が同梱している実体。npm 導入は不要） ---
 #
@@ -221,6 +231,10 @@ else {
     New-Item -ItemType Directory -Path $memDst -Force | Out-Null
 
     # memory はワークスペースの外にあるので写す（写しが古くならないよう毎回作り直す）
+    if (-not (Test-Path $memSrc)) {
+        throw ("memory が見つかりません: $memSrc " +
+               "⇒ `$env:RADIOSIM_MEMORY_DIR で明示してください。")
+    }
     Copy-Item (Join-Path $memSrc '*.md') -Destination $memDst -Force
 
     # 公開文書 5 本 ＋ CHANGELOG は実体をコピー（staging の外は見せない）

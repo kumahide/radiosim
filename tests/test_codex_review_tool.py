@@ -156,6 +156,19 @@ def test_the_staging_name_is_unique_per_clone_and_process(script):
     assert '-Filter "$stagePrefix*"' in script, "他 clone の staging まで消し得る"
 
 
+def test_no_absolute_home_path_is_baked_in(script):
+    """⛔ 手元のユーザー名・ディレクトリ構成を公開物へ焼き込まない。
+
+    このスクリプトは公開リポジトリに入る。初版は memory の場所を
+    `C:\\Users\\<name>\\.claude\\...` と直書きしており、**git 履歴に残ると
+    取り消せない**形だった（push 直前に気づいた）。
+    ⇒ 宣言制（`RADIOSIM_MEMORY_DIR`）＋既定値の導出にする。
+    """
+    assert not re.search(r"[A-Za-z]:\\+Users\\+", script), \
+        "ユーザーのホームパスが直書きされている"
+    assert "RADIOSIM_MEMORY_DIR" in script, "memory の場所が宣言制になっていない"
+
+
 def test_the_extension_version_is_compared_semantically(script):
     """`0.4.9` を `0.4.10` より新しいと読まないこと（8 巡目 P2）。"""
     assert "Sort-Object Name -Descending" not in script, "文字列順で版を選んでいる"
