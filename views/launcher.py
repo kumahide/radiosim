@@ -102,21 +102,57 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 意味がある（1 度きりの通知は、直す機会を逃した人には無かったのと同じ）。
         root.after_idle(self._warn_about_rejected_translations)
 
+    #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
+    #: 理由と 1 対 1**（理由を足したらここも足す＝`tests/test_i18n_external.py`
+    #: が突き合わせる）。
+    _REJECT_REASON_KEYS = {
+        "artifact":    "lang_ext_why_artifact",
+        "unknown":     "lang_ext_why_unknown",
+        "placeholder": "lang_ext_why_placeholder",
+        "not_text":    "lang_ext_why_not_text",
+        "builtin":     "lang_ext_why_builtin",
+    }
+
     def _warn_about_rejected_translations(self) -> None:
         """`lang/` の訳のうち採用しなかったぶんを 1 通にまとめて知らせる。
 
         ⛔ **ファイルごとに 1 通は出さない**＝置いた本数だけダイアログが並ぶと、
         読まずに閉じる操作を教えることになる。
+
+        🔴 **理由ごとに分けて数える**（2026-08-16・実機試用のユーザー報告
+        「説明が分かりずらいです」）＝以前は理由を書かずに件数だけを出し、
+        本文には**あり得る理由を 2 つだけ**並べていた。⇒ 39 件すべてが
+        「成果物の語だから」で落ちた回に、**その理由が文面のどこにも無い**
+        という状態になった。**落ちた理由と、画面に書いてある理由が違う。**
+        ⇒ *列挙して説明する形は、列挙から漏れた理由が出た日に嘘になる。*
+        **実際に起きた理由だけを、起きた分だけ言う。**
         """
-        lines = [
-            i18n.t("lang_ext_rejected_line").format(
-                lang=name, n=len(rejected),
-                keys=", ".join(k for k, _r in rejected[:3] if k) or "-")
-            for _code, name, _ok, rejected in i18n.external_reports() if rejected
-        ]
+        lines: list = []
+        saw_artifact = False
+        for _code, name, _ok, rejected in i18n.external_reports():
+            if not rejected:
+                continue
+            by_reason: dict = {}
+            for key, reason in rejected:
+                by_reason.setdefault(reason, []).append(key)
+            lines.append(i18n.t("lang_ext_rejected_file").format(
+                lang=name, n=len(rejected)))
+            for reason, keys in by_reason.items():
+                saw_artifact = saw_artifact or reason == "artifact"
+                shown = [k for k in keys[:3] if k]
+                why_key = self._REJECT_REASON_KEYS.get(reason)
+                lines.append(i18n.t("lang_ext_rejected_line").format(
+                    why=i18n.t(why_key) if why_key else reason,
+                    n=len(keys),
+                    keys=", ".join(shown) + (" …" if len(keys) > len(shown) else "")
+                         if shown else "-"))
         if lines:
-            self._alert(i18n.t("lang_ext_title"),
-                        i18n.t("lang_ext_rejected") + "\n\n" + "\n".join(lines))
+            body = i18n.t("lang_ext_rejected") + "\n\n" + "\n".join(lines)
+            # ⚠️ **補足は出た理由にだけ添える**＝出ていない理由の説明を並べると、
+            # まさに今回の報告（説明と実際が食い違う）と同じ形に戻る。
+            if saw_artifact:
+                body += "\n\n" + i18n.t("lang_ext_artifact_note")
+            self._alert(i18n.t("lang_ext_title"), body)
 
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。

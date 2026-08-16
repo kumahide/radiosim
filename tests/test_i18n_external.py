@@ -134,6 +134,19 @@ _ARTIFACT_MODULES = (
     "report_path.py", "report_multihop.py", "report_scenario.py",
     "report_summary.py", "report_common.py", "report_map.py", "map_graphics.py",
 )
+def _a_key_with_only_n() -> str:
+    """差し込みが `{n}` 1 つだけの英語キーを 1 つ選ぶ（純関数）。
+
+    ⚠️ **キー名を直に書かない**＝文面を書き直した日にテストが道連れで落ちる
+    （2026-08-16 に実際に落ちた＝`lang_ext_rejected` から `{n}` を外したとき）。
+    見たいのは*その文面*ではなく「`{n}` を 1 つ持つ訳」なので、条件で選ぶ。
+    """
+    for key, text in i18n._STRINGS["en"].items():
+        if i18n._placeholders(text) == {"n"} and text.count("{") == 1:
+            return key
+    raise AssertionError("`{n}` を 1 つだけ持つキーが英語に無い")
+
+
 def _keys_returned_by(dotted: str, func: str) -> set:
     """`<モジュール>.<関数>` の中に書かれている i18n キーの literal（純関数）。
 
@@ -341,8 +354,7 @@ def test_a_translation_with_unbalanced_braces_is_rejected(lang_dir):
     差し込み名の集合だけを比べると**対になっていない括弧は差に現れない**ので
     素通りし、表示の瞬間に `ValueError` で止まっていた。
     """
-    key = "lang_ext_rejected"                       # en は `{n}` を 1 つ持つ
-    assert "{n}" in i18n._STRINGS["en"][key]
+    key = _a_key_with_only_n()
     _write(lang_dir, "fr", {key: "Sauté {n} traductions {"})
     i18n.load_external(str(lang_dir))
     i18n.set_lang("fr")
@@ -369,7 +381,7 @@ def test_a_translation_that_changes_the_format_spec_is_rejected(lang_dir):
     ⚠️ **指摘に添えられた例（`"{n:q}"`）自体は既に塞がっていた**——例は外れて
     いたがクラスは実在した、という記録のためにここへ両方を書く。
     """
-    key = "lang_ext_rejected"
+    key = _a_key_with_only_n()
     for broken in ("Sauté {n:{n}q} traductions",     # 入れ子＝18 巡目で見つかった穴
                    "Sauté {n:q} traductions",        # 以前から塞がっていた形
                    "Sauté {n!z} traductions"):
@@ -383,7 +395,7 @@ def test_a_translation_may_still_move_the_placeholder(lang_dir):
     禁じたのは `{…}` の**中身**を変えることだけで、文の中の**位置**は自由。
     """
     key = "lang_ext_rejected_line"
-    moved = "{n} 件 / {lang}（{keys} …）"           # 位置だけ入れ替えた
+    moved = "（{keys}）{n} 件 ・ {why}"              # 位置だけ入れ替えた
     accepted, rejected = i18n.validate_external({key: moved})
     assert rejected == [] and accepted == {key: moved}
 
@@ -409,6 +421,27 @@ def test_unbalanced_braces_would_crash_the_screen():
     broken = "Sauté {n} traductions {"
     with pytest.raises(ValueError):
         broken.format(n=3)
+
+
+def test_every_reject_reason_has_something_to_show_the_user():
+    """🔴 **落ちた理由が画面に出ること**（2026-08-16・実機試用の報告）。
+
+    以前は本文に**あり得る理由を 2 つだけ**書いていたので、**39 件すべてが
+    「成果物の語だから」で落ちた回に、その理由が文面のどこにも無かった**。
+    ⇒ 理由 → 説明の対応表を持ち、**`validate_external` が返しうる理由が
+    そこに 1 つ残らずあること**を要求する（理由を足した日に赤くなる）。
+
+    ⚠️ **説明文の実在まで見る**＝対応表にキー名だけ書いて i18n に無い、という
+    形（画面にキー名が生で出る）を防ぐ。
+    """
+    from views.launcher import SimLauncher
+
+    produced = {"artifact", "unknown", "placeholder", "not_text", "builtin"}
+    mapped = set(SimLauncher._REJECT_REASON_KEYS)
+    assert produced <= mapped, f"説明の無い理由がある: {sorted(produced - mapped)}"
+    for reason, key in SimLauncher._REJECT_REASON_KEYS.items():
+        for lang in ("en", "ja"):
+            assert key in i18n._STRINGS[lang], f"{reason} の説明が {lang} に無い"
 
 
 def test_unknown_keys_are_rejected(lang_dir):

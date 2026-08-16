@@ -47,10 +47,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_doc_title":        "Documentation",
         "lang_ext_title":       "External language files",
         "lang_ext_rejected":    "Some translations were not applied and are shown in "
-                                "English instead. A translation is skipped when its "
-                                "placeholders (such as {n}) differ from the English "
-                                "text, or when the key is unknown.",
-        "lang_ext_rejected_line": "  {lang}: {n} skipped ({keys} …)",
+                                "English instead.",
+        "lang_ext_rejected_file": "{lang} ({n} skipped)",
+        "lang_ext_rejected_line": "  - {why}: {n} ({keys})",
+        "lang_ext_artifact_note": "Note: \"artifact wording\" is the wording that "
+                                "appears in reports, KML, terrain profiles and "
+                                "graphs. It is a contract with whatever reads those "
+                                "files, so it does not move for the screen (this is "
+                                "not a mistake in your translation).",
+        "lang_ext_why_artifact": "artifact wording, which cannot be changed",
+        "lang_ext_why_unknown":  "key does not exist in English (typo?)",
+        "lang_ext_why_placeholder": "placeholders or format differ from English",
+        "lang_ext_why_not_text": "value is not text",
+        "lang_ext_why_builtin":  "bundled languages cannot be overridden",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
@@ -533,10 +542,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_readme_missing":   "ドキュメントファイルが見つかりません。",
         "dlg_doc_title":        "ドキュメント",
         "lang_ext_title":       "外部の言語ファイル",
-        "lang_ext_rejected":    "一部の訳を採用しなかったので、そのキーは英語のまま"
-                                "表示します。差し込み（{n} など）が英語の文と違う"
-                                "場合と、キーが存在しない場合に採用しません。",
-        "lang_ext_rejected_line": "  {lang}: {n} 件（{keys} …）",
+        "lang_ext_rejected":    "一部の訳を採用しませんでした。そのキーは英語の"
+                                "まま表示します。",
+        "lang_ext_rejected_file": "{lang}（{n} 件）",
+        "lang_ext_rejected_line": "  ・{why}: {n} 件（{keys}）",
+        "lang_ext_artifact_note": "※「成果物の語」はレポート・KML・断面図・"
+                                "グラフに出る語です。読み取る側との約束なので、"
+                                "画面の都合では変えません（訳の書き方の誤りでは"
+                                "ありません）。",
+        "lang_ext_why_artifact": "成果物の語なので変えられません",
+        "lang_ext_why_unknown":  "英語にないキーです（綴り違いなど）",
+        "lang_ext_why_placeholder": "差し込みや書式が英語と違います",
+        "lang_ext_why_not_text": "文字列ではありません",
+        "lang_ext_why_builtin":  "同梱の言語は上書きできません",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
