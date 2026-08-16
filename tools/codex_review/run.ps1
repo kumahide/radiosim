@@ -38,6 +38,12 @@
 .PARAMETER DryRun
   差分と入力文だけ作り、Codex を呼ばずに終わる。
 
+.PARAMETER OutDir
+  差分と原文の置き場（既定 `<repo>\.qa\codex_review`）。**検査から隔離した場所を
+  指すために在る**（2026-08-16・Codex 11 巡目 P1）＝実行時検査が実リポジトリの
+  成果物と同じ場所へ書き、後始末で `round<N>_*` を一括削除していたため、
+  正当な巡の成果物を消し得た。運用では指定しない。
+
 .EXAMPLE
   # 工程 4b の 1 巡目（前の正式タグから）
   & tools\codex_review\run.ps1 -Mode code -Base 2.7 -Round 1
@@ -55,14 +61,15 @@ param(
     [ValidateSet('code', 'docs')][string]$Mode = 'code',
     [string]$Base = 'HEAD~1',
     [int]$Round = 0,
-    [switch]$DryRun
+    [switch]$DryRun,
+    [string]$OutDir
 )
 
 $ErrorActionPreference = 'Stop'
 
 $toolDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $toolDir)
-$outDir   = Join-Path $repoRoot '.qa\codex_review'
+$outDir   = if ($OutDir) { $OutDir } else { Join-Path $repoRoot '.qa\codex_review' }
 $memSrc   = $env:RADIOSIM_MEMORY_DIR
 
 # --- codex.exe を見つける（VS Code 拡張が同梱している実体。npm 導入は不要） ---

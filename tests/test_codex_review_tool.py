@@ -187,40 +187,46 @@ def stub_codex(tmp_path):
     return stub
 
 
-def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex):
+def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp_path):
     """⛔ **空の raw を残して落ちた回**が、巡番号を食って再実行を拒まないこと。
 
     9 巡目の直しは「非空なら退避」だったので、この経路（空ファイル＋異常終了）
     だけが素通りし、`…_codex_raw.md` が残って採番も再実行も詰まっていた。
     ⇒ **サイズによらず退避する**ことを、実際に失敗させて確かめる。
+
+    ⚠️ **書き先は `-OutDir` で隔離する**（2026-08-16・Codex 11 巡目 P1）。初版は
+    実リポジトリの `.qa/codex_review` へ書き、後始末で `round900_*` を一括削除して
+    いた＝**正当な巡の成果物を消し得たし、並列実行では他ワーカーの作成中ファイルも
+    消し得た**。*検査が本番の置き場を汚さない*ことは、検査自身の要件。
     """
     if not shutil.which("pwsh"):
         pytest.skip("pwsh が無い環境")
     if not SCRIPT.exists():
         pytest.skip("run.ps1 が無い環境")
 
-    out_dir = ROOT / ".qa" / "codex_review"
-    round_no = 900  # 実運用の採番と衝突しない番号
-    raw = out_dir / f"round{round_no}_code_codex_raw.md"
-    made: list[Path] = []
-    try:
-        env = {**os.environ, "CODEX_EXE": str(stub_codex)}
-        proc = subprocess.run(
-            ["pwsh", "-NoProfile", "-File", str(SCRIPT),
-             "-Mode", "code", "-Base", "HEAD~1", "-Round", str(round_no)],
-            cwd=str(ROOT), env=env, capture_output=True, text=True,
-            encoding="utf-8", errors="replace", timeout=180,
-        )
-        made = sorted(out_dir.glob(f"round{round_no}_*"))
+    out_dir = tmp_path / "out"
+    out_dir.mkdir()
+    real_dir = ROOT / ".qa" / "codex_review"
+    before = {p.name for p in real_dir.glob("*")} if real_dir.exists() else set()
 
-        assert proc.returncode != 0, "異常終了が失敗として扱われていない"
-        assert not raw.exists(), (
-            "空の raw が採番対象の名前のまま残っている＝同じ -Round で再実行できない"
-        )
-        assert any("_codex_FAILED_" in p.name for p in made), (
-            f"失敗 raw が退避されていない: {[p.name for p in made]}"
-        )
-    finally:
-        for p in made:
-            p.unlink(missing_ok=True)
-        raw.unlink(missing_ok=True)
+    round_no = 900
+    env = {**os.environ, "CODEX_EXE": str(stub_codex)}
+    proc = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(SCRIPT),
+         "-Mode", "code", "-Base", "HEAD~1", "-Round", str(round_no),
+         "-OutDir", str(out_dir)],
+        cwd=str(ROOT), env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=180,
+    )
+    made = sorted(out_dir.glob(f"round{round_no}_*"))
+
+    assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+    assert not (out_dir / f"round{round_no}_code_codex_raw.md").exists(), (
+        "空の raw が採番対象の名前のまま残っている＝同じ -Round で再実行できない"
+    )
+    assert any("_codex_FAILED_" in p.name for p in made), (
+        f"失敗 raw が退避されていない: {[p.name for p in made]}"
+    )
+    # ⛔ 本番の置き場に 1 つも足していないこと（消していないことは自明にならない）
+    after = {p.name for p in real_dir.glob("*")} if real_dir.exists() else set()
+    assert after == before, f"検査が実リポジトリの置き場を触った: {after ^ before}"
