@@ -241,7 +241,9 @@ def _compare_table(run: scn.ScenarioRun) -> str:
                 delta = (f"<span class='delta'>({d:+.2f})</span>"
                          if abs(d) > 0.005 else "")
                 cells += f"<td>{_num(v, key)} {delta}</td>"
-        label = with_unit(i18n.t(key), unit)
+        # ⚠️ `_COMPARE_ROWS` の単位は `None` を取り得る（判定行など）＝空文字へ寄せる
+        # （`with_unit` は「単位が無ければ何も添えない」約束なので、そこへ渡せばよい）。
+        label = with_unit(i18n.t(key), unit or "")
         rows += f"<tr><td class='name'>{label}</td>{cells}</tr>\n"
 
     # 条件そのもの（何を変えたか）を下段に出す＝表だけ見て再現できるように。
