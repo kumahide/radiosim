@@ -60,6 +60,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_placeholder": "placeholders or format differ from English",
         "lang_ext_why_not_text": "value is not text",
         "lang_ext_why_builtin":  "bundled languages cannot be overridden",
+        "lang_ext_why_unreadable": "the file could not be read (JSON syntax)",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
@@ -555,6 +556,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_placeholder": "差し込みや書式が英語と違います",
         "lang_ext_why_not_text": "文字列ではありません",
         "lang_ext_why_builtin":  "同梱の言語は上書きできません",
+        "lang_ext_why_unreadable": "ファイルを読めません（JSON の書式）",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
@@ -1235,7 +1237,11 @@ def load_external(dir_path: str) -> list:
         # ⚠️ 例外の種類を絞らない＝JSON の壊れ方は無数にあるので、先に列挙するより
         # 「読めなければ理由を持って次へ」が正しい（理由は報告に載り画面へ出る）。
         except Exception as ex:  # noqa: BLE001
-            _external_reports.append((code, code, 0, [("", f"unreadable: {ex}")]))
+            # ⚠️ **理由は決まった語彙のまま**＝以前は `f"unreadable: {ex}"` と
+            # 理由そのものに詳細を埋めていたので、**画面の説明表に載らず内部の字が
+            # そのまま出た**（B-105 の 2 巡目・独立レビュー 20 巡目）。⇒ 詳細は
+            # キーの側（このタプルの第 1 要素＝例に出る欄）へ置く。
+            _external_reports.append((code, code, 0, [(str(ex), "unreadable")]))
             continue
         accepted, rejected = validate_external(table)
         shown = table.get(_EXTERNAL_NAME_KEY)

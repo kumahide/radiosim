@@ -111,6 +111,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         "placeholder": "lang_ext_why_placeholder",
         "not_text":    "lang_ext_why_not_text",
         "builtin":     "lang_ext_why_builtin",
+        "unreadable":  "lang_ext_why_unreadable",
     }
 
     def _warn_about_rejected_translations(self) -> None:

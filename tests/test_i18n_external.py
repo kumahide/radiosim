@@ -423,6 +423,35 @@ def test_unbalanced_braces_would_crash_the_screen():
         broken.format(n=3)
 
 
+def _reasons_produced_by_i18n() -> set:
+    """`core/i18n.py` が報告に載せる**却下理由の語彙**を AST で読む（純関数）。
+
+    拾うのは `(<何か>, "<理由>")` の形で報告へ積まれる 2 番目の要素。
+    ⛔ **f 文字列は理由に使わせない**＝内部の字（例外の文言）が理由の位置に
+    入ると、画面の説明表と結びつかない（実際にそうなっていた＝`unreadable:
+    {ex}`）。見つけたら落とす＝**詳細はキーの側へ置く**という約束を機械で守る。
+    """
+    path = os.path.join(os.path.dirname(__file__), "..", "core", "i18n.py")
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    reasons: set = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "append" and node.args):
+            continue
+        for tup in ast.walk(node.args[0]):
+            if not (isinstance(tup, ast.Tuple) and len(tup.elts) == 2):
+                continue
+            second = tup.elts[1]
+            if isinstance(second, ast.Constant) and isinstance(second.value, str):
+                reasons.add(second.value)
+            elif isinstance(second, ast.JoinedStr):
+                raise AssertionError(
+                    "却下理由を f 文字列で組んでいる＝画面の説明表と結びつかない: "
+                    + ast.unparse(tup))
+    return reasons
+
+
 def test_every_reject_reason_has_something_to_show_the_user():
     """🔴 **落ちた理由が画面に出ること**（2026-08-16・実機試用の報告）。
 
@@ -433,10 +462,17 @@ def test_every_reject_reason_has_something_to_show_the_user():
 
     ⚠️ **説明文の実在まで見る**＝対応表にキー名だけ書いて i18n に無い、という
     形（画面にキー名が生で出る）を防ぐ。
+
+    🔴 **理由の一覧を手で書かない**（独立レビュー 20 巡目の指摘）＝最初の版は
+    `produced` を固定集合で持っていたので、**`i18n` が理由を足しても改名しても
+    緑のまま**だった＝その日から画面には内部の字が出る。**私がこの版でずっと
+    直してきた「手書きの一覧はずれる」型が、検査の側にまた入っていた。**
+    ⇒ **理由を生む場所（`core/i18n.py`）から読む。**
     """
     from views.launcher import SimLauncher
 
-    produced = {"artifact", "unknown", "placeholder", "not_text", "builtin"}
+    produced = _reasons_produced_by_i18n()
+    assert len(produced) >= 5, f"理由を読み落としている（走査が壊れた）: {produced}"
     mapped = set(SimLauncher._REJECT_REASON_KEYS)
     assert produced <= mapped, f"説明の無い理由がある: {sorted(produced - mapped)}"
     for reason, key in SimLauncher._REJECT_REASON_KEYS.items():
