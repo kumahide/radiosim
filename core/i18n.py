@@ -16,7 +16,6 @@ KML の語まで開くと、**出力契約が利用者ごとに変わる**＝そ
 import json
 import os
 import re
-import string
 
 _STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -1029,7 +1028,12 @@ def t(key: str) -> str:
 _EXTERNAL_NAME_KEY = "_name"
 #: **開かないキー**＝成果物（HTML レポート・KML）の語。出力契約なので画面の都合で
 #: 動かさない。実測で `html_*` 70 + `pl_*` 18 = 88 キー。
-_ARTIFACT_PREFIXES = ("html_", "pl_")
+#: ⚠️ **`env_` と `scn_axis_` は動的に組まれる**（`t(f"env_{result.env_type}")` /
+#: `t(f"scn_axis_{axis}")`）＝**キーの名前がコードのどこにも書かれていない**ので、
+#: 1 つずつ数える形では必ず落ちる。⇒ 族ごと締め出す（2026-08-16・B-101 の 2 巡目）。
+#: ⚠️ **環境区分の語は画面にも出る**（ランチャーの選択欄）。それでも締め出す側に
+#: 置くのは、同じ語がレポートと断面図に焼き込まれるから＝**成果物が勝つ**。
+_ARTIFACT_PREFIXES = ("html_", "pl_", "env_", "scn_axis_")
 
 #: 🔴 **接頭辞では表せない成果物の語**（B-101）。**名前の形と「どこに出るか」は
 #: 一致していなかった**＝実測で `report/` の成果物モジュールが使う 70 キーのうち
@@ -1050,6 +1054,12 @@ _ARTIFACT_KEYS = frozenset({
     # 中継経路の HTML レポート
     "mh_hops", "mh_mode_label", "mh_overall",
     "mh_regenerative_note", "mh_report_title", "mh_worst_hop",
+    # 同上・**動的に引かれる分**（列の定数 `_HOP_COL_KEYS` と、判定で切り替わる
+    # 集約カードの語＝`report/multihop.py overall_display()` が出す 2 つ）。
+    # ⚠️ ここは*名前の形*が `mh_` で揃っているのに接頭辞にしていない＝`mh_err_*`
+    # （入力の検証メッセージ＝画面の語）が同じ形をしているため。
+    "mh_col_no", "mh_heights", "mh_section",
+    "mh_overall_margin", "mh_overall_shortfall",
     # 条件探索のグラフ・レポート
     "scn_compare_title", "scn_fixed_path", "scn_margin_axis",
     "scn_mode", "scn_samples", "scn_sweep_title",
@@ -1068,18 +1078,47 @@ def _placeholders(text: str) -> set:
     return set(_PLACEHOLDER_RE.findall(text))
 
 
+class _AnyValue:
+    """どんな書式指定にも応じる値（検査用）。属性・添字も自分を返す。"""
+
+    def __format__(self, spec: str) -> str:
+        return ""
+
+    def __getattr__(self, name: str) -> "_AnyValue":
+        return self
+
+    def __getitem__(self, key) -> "_AnyValue":
+        return self
+
+
+class _AnyMapping(dict):
+    """どの差し込み名にも `_AnyValue` を返す（名前の一致は別途見る）。"""
+
+    def __missing__(self, key):                      # noqa: D105
+        return _AnyValue()
+
+
 def _is_valid_format(text: str) -> bool:
     """`str.format()` に渡して壊れない書式文字列か（B-103）。
 
     🔴 **差し込み名の集合を比べるだけでは足りない**＝`"… {n} 件 {"` は集合が
     英語と一致するので採用され、**表示の瞬間に `ValueError` で止まる**（実測）。
     集合は正規表現で「対になった括弧」しか拾わないため、**対になっていない
-    括弧はそもそも集合に現れない**＝比べても差が出ない。⇒ 書式文字列として
-    読めるかを `Formatter().parse()` に聞く（読めなければ例外を投げる）。
+    括弧はそもそも集合に現れない**＝比べても差が出ない。
+
+    🔴 **`Formatter().parse()` に聞くだけでも足りない**（2026-08-16・独立レビュー
+    が直しの不備として指摘・実測）＝`parse()` は**変換指定子を検証しない**ので
+    `"{dir!z:{dir}}"` を読み通してしまい、表示時に `ValueError: Unknown
+    conversion specifier` になる。⇒ **本番と同じ `format` を実際に通す**。
+    *代役を本物に寄せる*＝B-099 で学んだのと同じ形（寛容な代役はその分だけ
+    検査を空振りさせる）。
+
+    ⚠️ 値は `_AnyValue`＝**差し込み名の当たり外れはここで見ない**（それは
+    `_placeholders` の突き合わせの仕事）。ここが見るのは**書式そのもの**。
     """
     try:
-        list(string.Formatter().parse(text))
-    except ValueError:
+        text.format_map(_AnyMapping())
+    except (ValueError, KeyError, IndexError, AttributeError, TypeError):
         return False
     return True
 

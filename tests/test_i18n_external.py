@@ -23,9 +23,9 @@ tests/test_i18n_external.py
   求めるのは「採用した訳が壊れていないこと」だけ。
 """
 
+import ast
 import json
 import os
-import re
 import sys
 
 import pytest
@@ -134,7 +134,153 @@ _ARTIFACT_MODULES = (
     "report_path.py", "report_multihop.py", "report_scenario.py",
     "report_summary.py", "report_common.py", "report_map.py", "map_graphics.py",
 )
-_T_CALL = re.compile(r"""\bt\(\s*["']([A-Za-z0-9_]+)["']""")
+def _keys_returned_by(dotted: str, func: str) -> set:
+    """`<モジュール>.<関数>` の中に書かれている i18n キーの literal（純関数）。
+
+    ⚠️ **キーを写さない**＝出所の関数を読む。写すと二重管理になり、片方だけ
+    増えた日に黙ってずれる（この検査が防ごうとしているものそのもの）。
+    """
+    path = os.path.join(os.path.dirname(__file__), "..",
+                        *dotted.split(".")) + ".py"
+    if not os.path.exists(path):
+        return set()
+    with open(path, encoding="utf-8") as fh:
+        tree = ast.parse(fh.read())
+    # `OVERALL_MARGIN_KEY = "mh_overall_margin"` のような定数も辿る
+    # （キーを直に書かず定数へ括り出すのは*良い書き方*なので、そこで見失わない）
+    consts = {n.targets[0].id: n.value.value
+              for n in tree.body
+              if isinstance(n, ast.Assign) and len(n.targets) == 1
+              and isinstance(n.targets[0], ast.Name)
+              and isinstance(n.value, ast.Constant)
+              and isinstance(n.value.value, str)}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.FunctionDef) and node.name == func:
+            found = {n.value for n in ast.walk(node)
+                     if isinstance(n, ast.Constant) and isinstance(n.value, str)}
+            found |= {consts[n.id] for n in ast.walk(node)
+                      if isinstance(n, ast.Name) and n.id in consts}
+            return {k for k in found if k in i18n._STRINGS["en"]}
+    return set()
+
+
+def _artifact_key_requests(source: str) -> "tuple[set, set, list]":
+    """成果物モジュール 1 本が `t()` に渡すものを **AST で** 読み解く（純関数）。
+
+    戻り値＝`(確定したキー, 要求する接頭辞, 読み解けなかった呼び出し)`。
+
+    🔴 **正規表現で `t("…")` だけを数える形は、実際に穴を残した**（B-101 の直しの
+    直後に独立レビューが指摘・実測で 5 キーが素通り）＝中継レポートは
+    `for key in _HOP_COL_KEYS: t(key)`、条件探索は `t(f"scn_axis_{axis}")` と
+    **動的に引く**ので、リテラルしか見ない検査からは*消えて見える*。
+    ⇒ **代役が本物より寛容だと、その分だけ検査は空振りする**（B-099 と同じ型）。
+
+    ⛔ **読み解けない引き方は「見なかったこと」にしない**＝呼び出しを返して
+    落とす。締め出しの網に穴を開けるより、書き方を 2 通り（リテラル／モジュール
+    定数）に狭める方を選ぶ（新しい引き方を足す日に、ここで気づける）。
+    """
+    tree = ast.parse(source)
+    consts: dict = {}                      # モジュール定数 → literal の列
+    for node in tree.body:
+        if not isinstance(node, ast.Assign):
+            continue
+        if not (len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
+            continue
+        if isinstance(node.value, (ast.Tuple, ast.List, ast.Set)):
+            vals = []
+            for e in node.value.elts:
+                if isinstance(e, ast.Constant) and isinstance(e.value, str):
+                    vals.append(e.value)
+                elif (isinstance(e, (ast.Tuple, ast.List)) and e.elts
+                      and isinstance(e.elts[0], ast.Constant)
+                      and isinstance(e.elts[0].value, str)):
+                    # `(キー, getter, 単位)` の行定義＝**先頭がキー**（列の表）
+                    vals.append(e.elts[0].value)
+            if len(vals) == len(node.value.elts):
+                consts[node.targets[0].id] = vals
+
+    # `from core import multihop as mh` の別名 → モジュールのパス
+    aliases: dict = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module:
+            for a in node.names:
+                aliases[a.asname or a.name] = f"{node.module}.{a.name}"
+
+    # 関数の戻り値からキーを受け取る形（`overall_key, _ = mh.overall_display(...)`）。
+    # ⚠️ **その関数の中の literal を読む**＝キーの出所を写して二重管理にしない。
+    from_call: dict = {}
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Assign) and isinstance(node.value, ast.Call)):
+            continue
+        fn = node.value.func
+        if not (isinstance(fn, ast.Attribute) and isinstance(fn.value, ast.Name)):
+            continue
+        mod = aliases.get(fn.value.id)
+        if mod is None:
+            continue
+        names = []
+        for tgt in node.targets:
+            names += ([e.id for e in tgt.elts if isinstance(e, ast.Name)]
+                      if isinstance(tgt, ast.Tuple) else
+                      ([tgt.id] if isinstance(tgt, ast.Name) else []))
+        found = _keys_returned_by(mod, fn.attr)
+        for nm in names:
+            if found:
+                from_call.setdefault(nm, set()).update(found)
+
+    keys: set = set()
+    prefixes: set = set()
+    unresolved: list = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        fn = node.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else (
+            fn.id if isinstance(fn, ast.Name) else None)
+        if name != "t" or not node.args:
+            continue
+        arg = node.args[0]
+        if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+            keys.add(arg.value)
+        elif isinstance(arg, ast.IfExp):
+            # `t("a" if cond else "b")` ＝両方の枝が literal なら両方
+            branches = [arg.body, arg.orelse]
+            vals = [b.value for b in branches
+                    if isinstance(b, ast.Constant) and isinstance(b.value, str)]
+            if len(vals) == 2:
+                keys.update(vals)
+            else:
+                unresolved.append(ast.unparse(node))
+        elif isinstance(arg, ast.Name) and arg.id in from_call:
+            keys.update(from_call[arg.id])
+        elif isinstance(arg, ast.JoinedStr):
+            # f"env_{…}" ＝先頭の literal を接頭辞として要求する
+            head = arg.values[0] if arg.values else None
+            if isinstance(head, ast.Constant) and isinstance(head.value, str):
+                prefixes.add(head.value)
+            else:
+                unresolved.append(ast.unparse(node))
+        elif isinstance(arg, ast.Name) and arg.id in consts:
+            keys.update(consts[arg.id])
+        elif isinstance(arg, ast.Name):
+            # ループ変数＝その出所（`for key in <定数>` / `for key, … in <定数>`）を辿る
+            hit = False
+            for n in ast.walk(tree):
+                if not (isinstance(n, ast.For) and isinstance(n.iter, ast.Name)
+                        and n.iter.id in consts):
+                    continue
+                tgt = n.target
+                first = (tgt if isinstance(tgt, ast.Name) else
+                         (tgt.elts[0] if isinstance(tgt, ast.Tuple) and tgt.elts
+                          else None))
+                if isinstance(first, ast.Name) and first.id == arg.id:
+                    keys.update(consts[n.iter.id])
+                    hit = True
+            if not hit:
+                unresolved.append(ast.unparse(node))
+        else:
+            unresolved.append(ast.unparse(node))
+    return keys, prefixes, unresolved
 
 
 def test_every_key_that_reaches_an_artifact_is_closed_to_external_translation():
@@ -142,30 +288,50 @@ def test_every_key_that_reaches_an_artifact_is_closed_to_external_translation():
 
     **手書きの一覧は必ずずれる**（B-090＝地図モードの一覧が 3 モード時代のまま
     残っていた）。⇒ *名前の形*を信じず、**成果物を組み立てるモジュールが実際に
-    引いているキー**を走査して、その全部が `validate_external` に却下されることを
-    要求する。⇒ レポートに語を 1 つ足した日に、締め出しを忘れればここが落ちる。
+    引いているキー**を読み解いて、その全部が `validate_external` に却下される
+    ことを要求する。⇒ レポートに語を 1 つ足した日に、締め出しを忘れれば赤くなる。
 
     ⚠️ **却下の理由まで見る**（`artifact`）＝「たまたま英語に無いキーだから
     却下された」のような別の理由で緑になるのを防ぐ。
     """
     repo = os.path.join(os.path.dirname(__file__), "..", "report")
     keys: dict = {}
+    prefixes: dict = {}
+    unresolved: dict = {}
     for name in _ARTIFACT_MODULES:
         path = os.path.join(repo, name)
         if not os.path.exists(path):
             continue
         with open(path, encoding="utf-8") as fh:
-            for key in _T_CALL.findall(fh.read()):
-                keys.setdefault(key, set()).add(name)
+            ks, ps, un = _artifact_key_requests(fh.read())
+        for k in ks:
+            keys.setdefault(k, set()).add(name)
+        for p in ps:
+            prefixes.setdefault(p, set()).add(name)
+        if un:
+            unresolved[name] = un
     assert keys, "成果物モジュールから 1 つもキーを拾えていない（走査が壊れている）"
+    assert not unresolved, (
+        "`t()` の引き方が読み解けない＝この検査から消えて見える。リテラルか"
+        f"モジュール定数で引くこと: {unresolved}"
+    )
 
-    table = {k: "X" for k in keys}
-    _accepted, rejected = i18n.validate_external(table)
+    # ① 確定したキーは 1 つ残らず却下されること
+    _accepted, rejected = i18n.validate_external({k: "X" for k in keys})
     reasons = dict(rejected)
     leaked = sorted(k for k in keys if reasons.get(k) != "artifact")
     assert not leaked, (
         "成果物へ出るのに外部訳で上書きできるキーがある＝出力契約が利用者ごとに"
         f"変わる: {[(k, sorted(keys[k])) for k in leaked]}"
+    )
+
+    # ② 動的に組む接頭辞は、**その接頭辞ごと**締め出されていること
+    #    （`env_los` を 1 つ塞いでも `env_urban` が開いていれば意味が無い）
+    open_prefixes = sorted(p for p in prefixes
+                           if not p.startswith(i18n._ARTIFACT_PREFIXES))
+    assert not open_prefixes, (
+        "成果物が接頭辞で組み立てるキー族が締め出されていない: "
+        f"{[(p, sorted(prefixes[p])) for p in open_prefixes]}"
     )
 
 
@@ -181,6 +347,31 @@ def test_a_translation_with_unbalanced_braces_is_rejected(lang_dir):
     i18n.load_external(str(lang_dir))
     i18n.set_lang("fr")
     assert i18n.t(key) == i18n._STRINGS["en"][key], "壊れた書式の訳を採用してしまった"
+
+
+def test_a_translation_with_an_unknown_conversion_is_rejected(lang_dir):
+    """🔴 **変換指定子まで見る**（B-103 の 2 巡目・独立レビュー指摘）。
+
+    `Formatter().parse()` は `!z` のような**未知の変換指定子を検証しない**ので、
+    括弧の対応だけを見る形では素通りしていた（実測）。
+    """
+    key = "batch_done"
+    broken = "{dir!z:{dir}}"
+    accepted, rejected = i18n.validate_external({key: broken})
+    assert accepted == {} and rejected == [(key, "placeholder")]
+
+
+def test_every_builtin_string_passes_the_format_check():
+    """⚠️ **毎回鳴る側へ倒れていないこと**＝同梱の ja / en が全部通ること。
+
+    書式検査を厳しくするたびに、**正しい訳まで落とす**危険が増える（ゲートの
+    壊れ方②）。同梱の 2 言語は定義上「正しい訳」なので、ここが赤くなったら
+    厳しくしすぎている。
+    """
+    for lang in ("en", "ja"):
+        bad = [k for k, v in i18n._STRINGS[lang].items()
+               if not i18n._is_valid_format(v)]
+        assert not bad, f"同梱の {lang} が書式検査に落ちる＝検査が厳しすぎる: {bad}"
 
 
 def test_unbalanced_braces_would_crash_the_screen():
