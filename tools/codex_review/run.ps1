@@ -155,7 +155,16 @@ if ($Mode -eq 'code') {
     $bytes = (Get-Item $diffPath).Length
     Write-Host ("差分: {0}  ({1:N1} KB)" -f $diffPath, ($bytes / 1KB))
 
-    $relDiff = $diffPath.Substring($repoRoot.Length).TrimStart('\')
+    # ⚠️ **リポジトリ配下のときだけ相対化する**（2026-08-16・Codex 12 巡目 P1）。
+    #    `-OutDir` を足した回に、ここが「差分は必ず repo の下」という前の前提の
+    #    ままだった＝外部ディレクトリを指すと `Substring` が無関係な位置で切り、
+    #    **存在しないパスを入力文に渡して Codex が差分を読めない**。
+    #    作業根（`-C`）は repo なので、外なら絶対パスで渡すのが正しい。
+    $relDiff = if ($diffPath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
+        $diffPath.Substring($repoRoot.Length).TrimStart('\')
+    } else {
+        $diffPath
+    }
     $prompt  = (Get-Content (Join-Path $toolDir 'prompt_code.txt') -Raw -Encoding UTF8).
                     Replace('{DIFF_PATH}', $relDiff).Replace('{BASE}', $Base)
 }

@@ -171,8 +171,14 @@ def test_the_extension_version_is_compared_semantically(script):
 
 _STUB = r"""
 # 失敗する codex の代役: -o のパスへ空ファイルを作り、非ゼロで終わる。
+# ⚠️ **受け取った入力文を必ず書き出す**（2026-08-16・Codex 12 巡目 P1）。
+#    初版の stub は入力文を捨てていたので、「入力文が存在しないパスを指す」
+#    という欠陥を検査が素通りした＝*代役が本物より寛容だと、検査は空振りする*。
 $out = $null
 for ($i = 0; $i -lt $args.Count; $i++) { if ($args[$i] -eq '-o') { $out = $args[$i + 1] } }
+if ($env:STUB_PROMPT_OUT) {
+    Set-Content -LiteralPath $env:STUB_PROMPT_OUT -Value $args[-1] -Encoding UTF8
+}
 if ($out) { New-Item -ItemType File -Path $out -Force | Out-Null }
 exit 3
 """
@@ -210,7 +216,9 @@ def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp
     before = {p.name for p in real_dir.glob("*")} if real_dir.exists() else set()
 
     round_no = 900
-    env = {**os.environ, "CODEX_EXE": str(stub_codex)}
+    prompt_out = tmp_path / "prompt.txt"
+    env = {**os.environ, "CODEX_EXE": str(stub_codex),
+           "STUB_PROMPT_OUT": str(prompt_out)}
     proc = subprocess.run(
         ["pwsh", "-NoProfile", "-File", str(SCRIPT),
          "-Mode", "code", "-Base", "HEAD~1", "-Round", str(round_no),
@@ -221,6 +229,18 @@ def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp
     made = sorted(out_dir.glob(f"round{round_no}_*"))
 
     assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+
+    # ⛔ 入力文が指す差分が**実在すること**（12 巡目 P1）。
+    #    Codex の作業根は repo なので、相対なら repo から、絶対ならそのまま解決する。
+    prompt = prompt_out.read_text(encoding="utf-8").strip()
+    m = re.search(r"(\S*round900_diff\S*\.diff)", prompt)
+    assert m, f"入力文が差分を名指ししていない: {prompt!r}"
+    named = Path(m.group(1))
+    resolved = named if named.is_absolute() else (ROOT / named)
+    assert resolved.exists(), (
+        f"入力文が存在しないパスを指している: {named} "
+        "（-OutDir がリポジトリ外だと相対化が壊れる）"
+    )
     assert not (out_dir / f"round{round_no}_code_codex_raw.md").exists(), (
         "空の raw が採番対象の名前のまま残っている＝同じ -Round で再実行できない"
     )
