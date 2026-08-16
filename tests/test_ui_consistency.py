@@ -25,7 +25,6 @@ window_fit の登録漏れ検出と同じ理由でここも一覧を 1 つに保
 
 import ast
 import os
-import re
 import sys
 from pathlib import Path
 
@@ -1716,12 +1715,27 @@ def test_refreshing_common_settings_clears_results_only_when_they_differ():
 # ============================================================
 # 単位の括弧を直書きしない（2.8RC1 に新設・2.8 で 3 度広げた）
 # ============================================================
-#: 単位を持つ変数の名前（`{unit}` `{uom}` など）。**括弧の中身が単位か**を、
-#: 名前で見分けるための語彙。⚠️ f 文字列全体を字で検索してはいけない
-#: （2026-08-17・独立レビュー 26 巡目＝`community_name` の `unit` に反応した）。
-_UNIT_NAMES = ("unit", "units", "uom")
-#: 単位そのものを直書きした形（`(dBm)` `(m)` `(mm/h)`）。
-_UNIT_TOKEN = re.compile(r"^[A-Za-zµ°%]{1,4}(/[A-Za-z]{1,3})?$")
+#: 単位を持つ変数の名前の**語尾**（`unit` / `power_unit` / `display_uom` …）。
+#: ⚠️ **完全一致では足りない**（2026-08-17・独立レビュー 27 巡目）＝自然な命名の
+#: `power_unit` が素通りし、「変数名を変えても捕まえる」という狙いを満たさなかった。
+#: ⚠️ f 文字列全体を字で検索してもいけない（26 巡目＝`community_name` に反応した）。
+_UNIT_NAME_SUFFIXES = ("unit", "units", "uom")
+
+
+def _known_units() -> set:
+    """アプリが実際に使っている単位の語彙（実装から導く）。
+
+    ⚠️ **「短い英字なら単位」ではない**（2026-08-17・独立レビュー 27 巡目）＝
+    `(Ctrl)` `(PDF)` `(Auto)` のような**注記**まで禁じてしまい、
+    [[feedback-promote-recurring-checks]] の壊れ方③（間違ったものを要求する）
+    になっていた。⇒ **語彙は手で書かずに実装から集める**（新しい単位を足した日に
+    この検査も一緒に賢くなる）。
+    """
+    from report.report_scenario import AXIS_UNITS, _COMPARE_ROWS
+
+    units = {u for u in AXIS_UNITS.values() if u}
+    units |= {unit for _key, _getter, unit in _COMPARE_ROWS if unit}
+    return units
 
 
 def _unit_bracket_offenders(source: str, where: str = "<snippet>") -> list[str]:
@@ -1745,20 +1759,23 @@ def _unit_bracket_offenders(source: str, where: str = "<snippet>") -> list[str]:
       - `f"{cur} / {tot}  ({pct}%)"`＝進捗の割合。単位ではない。
       - `f"{t('mode')} ({shortcut})"`＝注記。単位ではない。
     """
+    known_units = _known_units()
+
     def _is_unit_expr(node) -> bool:
-        """括弧の中身（差し込み 1 つ）が単位か＝名前で見る。"""
+        """括弧の中身（差し込み 1 つ）が単位か＝名前の**語尾**で見る。"""
         name = (getattr(node, "id", None) or getattr(node, "attr", None) or "")
-        return name.lower() in _UNIT_NAMES
+        low = name.lower()
+        return any(low == s or low.endswith("_" + s) for s in _UNIT_NAME_SUFFIXES)
 
     def _bracket_content_is_a_unit(parts: list) -> bool:
-        """`(` 以降の並びが「単位」か。定数なら語形、差し込みなら名前で見る。"""
+        """`(` 以降の並びが「単位」か。定数なら語彙、差し込みなら名前で見る。"""
         if not parts:
             return False
-        head = parts[0]
-        if isinstance(head, ast.Constant) and isinstance(head.value, str):
-            inner = head.value.strip().lstrip("(").split(")")[0].strip()
-            return bool(inner) and bool(_UNIT_TOKEN.match(inner))
-        return isinstance(head, ast.FormattedValue) and _is_unit_expr(head.value)
+        first = parts[0]
+        if isinstance(first, ast.Constant) and isinstance(first.value, str):
+            inner = first.value.strip().lstrip("(").split(")")[0].strip()
+            return inner in known_units
+        return isinstance(first, ast.FormattedValue) and _is_unit_expr(first.value)
 
     def _joined_offends(node: ast.JoinedStr) -> bool:
         """`f"{名前} ({unit})"`＝差し込みの直後に ` (` を継ぎ足す形。"""
@@ -1782,7 +1799,7 @@ def _unit_bracket_offenders(source: str, where: str = "<snippet>") -> list[str]:
         if isinstance(node, ast.Constant) and isinstance(node.value, str):
             text = node.value.strip()
             if text.startswith("(") and text.endswith(")"):
-                return bool(_UNIT_TOKEN.match(text[1:-1].strip()))
+                return text[1:-1].strip() in known_units
             return False
         if isinstance(node, ast.JoinedStr):
             head = node.values[0] if node.values else None
@@ -1811,6 +1828,8 @@ _MUST_FLAG = [
     'label = i18n.t(key) + (f" ({unit})" if unit else "")',  # ②変数（実際の欠陥）
     'label = f"{i18n.t(key)} ({unit})"',                    # ③加算を使わない形
     'label = f"{name} ({uom})"',                            # ④別名の単位変数
+    'label = f"{name} ({power_unit})"',                     # ⑤複合名（27 巡目）
+    'label = f"{name} ({display_uom})"',                    # ⑥複合名・別名（同上）
 ]
 _MUST_NOT_FLAG = [
     'label = with_unit(i18n.t(key), unit)',                 # 正しい書き方
@@ -1818,6 +1837,9 @@ _MUST_NOT_FLAG = [
     'html = f"<span class=\'delta\'>({d:+.2f})</span>"',    # 差し込みそのものを括る
     'title = f"{i18n.t(\'mode\')} ({shortcut})"',           # 単位ではない注記
     'msg = f"{community_name} ({status})"',                 # 名前に unit が紛れる
+    'title = f"{i18n.t(\'export\')} (PDF)"',                # 注記＝短い英字（27 巡目）
+    'title = f"{i18n.t(\'mode\')} (Ctrl)"',                 # 同上・ショートカット
+    'title = f"{label} (Auto)"',                            # 同上・状態の注記
 ]
 
 
