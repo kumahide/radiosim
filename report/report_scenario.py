@@ -241,7 +241,7 @@ def _compare_table(run: scn.ScenarioRun) -> str:
                 delta = (f"<span class='delta'>({d:+.2f})</span>"
                          if abs(d) > 0.005 else "")
                 cells += f"<td>{_num(v, key)} {delta}</td>"
-        label = i18n.t(key) + (f" ({unit})" if unit else "")
+        label = with_unit(i18n.t(key), unit)
         rows += f"<tr><td class='name'>{label}</td>{cells}</tr>\n"
 
     # 条件そのもの（何を変えたか）を下段に出す＝表だけ見て再現できるように。
@@ -261,7 +261,7 @@ def _compare_table(run: scn.ScenarioRun) -> str:
             cls = " class='changed'" if marked else ""
             cells += f"<td{cls}>{_param_text(key, v)}</td>"
         unit = AXIS_UNITS.get(key, "")
-        label = i18n.t(f"scn_axis_{key}") + (f" ({unit})" if unit else "")
+        label = with_unit(i18n.t(f"scn_axis_{key}"), unit)
         rows += f"<tr class='cond'><td class='name'>{label}</td>{cells}</tr>\n"
 
     return (

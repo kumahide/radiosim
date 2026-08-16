@@ -1723,18 +1723,51 @@ def test_unit_parentheses_are_not_hardcoded():
 
     ⚠️ 括弧の字は**言語ごとに違う**（ja は全角・前の空白なし／en は半角・前に空白）
     ので、直書きは「日本語を直すと英語が壊れる」形でもある。
+
+    🔴 **その宣言をした版の中で、さらに 2 口を数え落としていた**（2026-08-17・
+    独立レビュー）＝条件探索の**比較レポート**の 10 行と条件行が
+    `+ (f" ({unit})" if unit else "")` の形で残り、日本語だけ半角で出ていた。
+    **最初のこの検査が正規表現で `" (dBm)"` の形しか見ていなかったから**＝
+    単位を変数にした瞬間、検査からは消えて見える。⇒ **AST で「足している相手が
+    括弧で始まって括弧で終わる文字列か」を見る**（中身が定数か差し込みかを問わない）。
     """
-    import re as _re
+    import ast as _ast
     from pathlib import Path as _Path
+
+    def _literal_text(node) -> "str | None":
+        """定数文字列と f 文字列を、差し込みを `{}` に潰した字として読む。"""
+        if isinstance(node, _ast.Constant) and isinstance(node.value, str):
+            return node.value
+        if isinstance(node, _ast.JoinedStr):
+            out = ""
+            for part in node.values:
+                if isinstance(part, _ast.Constant) and isinstance(part.value, str):
+                    out += part.value
+                else:
+                    out += "{}"
+            return out
+        return None
+
+    def _looks_like_a_unit_suffix(node) -> bool:
+        text = _literal_text(node)
+        return bool(text) and text.strip().startswith("(") and text.strip().endswith(")")
 
     root = _Path(__file__).resolve().parents[1]
     bad: list[str] = []
-    pat = _re.compile(r'\+\s*"\s*\([A-Za-z%/µ]+\)"')
     for d in ("views", "report"):
         for path in (root / d).glob("*.py"):
-            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
-                if pat.search(line):
-                    bad.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+            tree = _ast.parse(path.read_text(encoding="utf-8"))
+            for node in _ast.walk(tree):
+                if not (isinstance(node, _ast.BinOp)
+                        and isinstance(node.op, _ast.Add)):
+                    continue
+                # `名前 + " (m)"` と `名前 + (f" ({unit})" if unit else "")` の両方
+                right = node.right
+                candidates = ([right.body, right.orelse]
+                              if isinstance(right, _ast.IfExp) else [right])
+                if any(_looks_like_a_unit_suffix(c) for c in candidates):
+                    bad.append(f"{path.relative_to(root)}:{node.lineno}: "
+                               f"{_ast.unparse(node)[:90]}")
     assert not bad, (
         "単位の括弧が直書きされている（report_scenario.with_unit を使う）:\n"
         + "\n".join(bad)
