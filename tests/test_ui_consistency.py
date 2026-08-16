@@ -1735,6 +1735,11 @@ def _known_units() -> set:
 
     units = {u for u in AXIS_UNITS.values() if u}
     units |= {unit for _key, _getter, unit in _COMPARE_ROWS if unit}
+    # ⚠️ **表の単位だけでは足りない**（2026-08-17・独立レビュー 28 巡目）＝割合は
+    # 表ではなく整形の側（`core.units.format_blocked_ratio()`）が付けるので、
+    # 上の 2 つからは集まらない。**集められない分だけをここに足す**（足したことが
+    # 見えるように、導出と分けて書く）。
+    units |= {"%"}
     return units
 
 
@@ -1830,6 +1835,7 @@ _MUST_FLAG = [
     'label = f"{name} ({uom})"',                            # ④別名の単位変数
     'label = f"{name} ({power_unit})"',                     # ⑤複合名（27 巡目）
     'label = f"{name} ({display_uom})"',                    # ⑥複合名・別名（同上）
+    'label = i18n.t(key) + " (%)"',                         # ⑦割合（28 巡目）
 ]
 _MUST_NOT_FLAG = [
     'label = with_unit(i18n.t(key), unit)',                 # 正しい書き方
