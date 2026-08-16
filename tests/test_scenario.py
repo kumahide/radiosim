@@ -569,9 +569,17 @@ class TestScenarioReport:
         assert body.startswith("-95")
 
     def test_axis_label_carries_the_unit(self):
+        """単位が付くこと。**括弧の字は言語ごとに違う**（2.8RC1）。
+
+        ja は全角（`送信アンテナ高（m）`）・en は半角（`TX antenna height (m)`）で、
+        括り方は i18n の `unit_wrap` が単一ソース。⇒ 字を直書きして照合しない。
+        """
         i18n.set_lang("ja")
-        assert report_scenario.axis_label("h_tx").endswith("(m)")
-        assert report_scenario.axis_label("rain_rate").endswith("(mm/h)")
+        assert report_scenario.axis_label("h_tx").endswith("（m）")
+        assert report_scenario.axis_label("rain_rate").endswith("（mm/h）")
+        i18n.set_lang("en")
+        assert report_scenario.axis_label("h_tx").endswith(" (m)")
+        i18n.set_lang("ja")
 
     def test_every_sweep_axis_has_a_label_and_unit_entry(self):
         """軸を足したとき i18n / 単位表の追随漏れを落とす。"""
@@ -624,7 +632,10 @@ class TestScenarioWindowSmoke:
             assert win._sweep_axis.get() == "h_tx"
             # 画面の項目名は**単位つき**（出所は report_scenario.AXIS_UNITS ＝
             # レポートと同じ一覧。画面だけ単位が無いと何を入れる欄か分からない）。
-            assert report_scenario.axis_label("h_tx") == i18n.t("scn_axis_h_tx") + " (m)"
+            # ⚠️ 括弧の字は**言語ごとに違う**ので直書きしない（2.8RC1）。
+            #    ja は全角・en は半角で、括り方は i18n の `unit_wrap` が単一ソース。
+            assert report_scenario.axis_label("h_tx") == report_scenario.with_unit(
+                i18n.t("scn_axis_h_tx"), "m")
         finally:
             win.destroy(); root.destroy()
 

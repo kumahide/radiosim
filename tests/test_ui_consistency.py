@@ -1708,3 +1708,34 @@ def test_refreshing_common_settings_clears_results_only_when_they_differ():
         )
     finally:
         root.destroy()
+
+
+# ============================================================
+# 単位の括弧を直書きしない（2.8RC1）
+# ============================================================
+def test_unit_parentheses_are_not_hardcoded():
+    """⛔ `名前 + " (dBm)"` の直書きを禁じる（括り方は i18n の `unit_wrap`）。
+
+    🔴 **2.8 は「共通設定のラベルの括弧を全角に統一した」と宣言したのに、
+    条件探索の画面とレポートだけ半角で残っていた**（画面 2 か所・レポート 3 か所）。
+    同じ量の単位が、窓によって `周波数（MHz）` と `周波数 (MHz)` の 2 通りで出る。
+    ⇒ 宣言は**口の全数を数えないと効かない**（[[feedback-user-examples-are-classes]]）。
+
+    ⚠️ 括弧の字は**言語ごとに違う**（ja は全角・前の空白なし／en は半角・前に空白）
+    ので、直書きは「日本語を直すと英語が壊れる」形でもある。
+    """
+    import re as _re
+    from pathlib import Path as _Path
+
+    root = _Path(__file__).resolve().parents[1]
+    bad: list[str] = []
+    pat = _re.compile(r'\+\s*"\s*\([A-Za-z%/µ]+\)"')
+    for d in ("views", "report"):
+        for path in (root / d).glob("*.py"):
+            for n, line in enumerate(path.read_text(encoding="utf-8").splitlines(), 1):
+                if pat.search(line):
+                    bad.append(f"{path.relative_to(root)}:{n}: {line.strip()}")
+    assert not bad, (
+        "単位の括弧が直書きされている（report_scenario.with_unit を使う）:\n"
+        + "\n".join(bad)
+    )

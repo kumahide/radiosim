@@ -246,6 +246,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_single_mode":     "Single Mode",  # HTML footer (per-path)
         "html_report_memo":     "Note:",
 
+        # 単位の括り方。**言語ごとに字が違う**ので i18n が持つ（日本語は全角・
+        # 前の空白なし／英語は半角・前に空白）。ここを 1 か所にしておかないと、
+        # 画面とレポートで同じ量の単位が違う字で出る（2.8RC1 で実際にそうなった）。
+        "unit_wrap":            " ({unit})",
         "html_status":          "Status",
         "html_rx_level":        "RX Level",
         "html_act_margin":      "Act Margin",
@@ -727,6 +731,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_batch_mode":      "一括シミュレーション",
         "html_single_mode":     "個別シミュレーション",
         "html_report_memo":     "メモ:",
+        "unit_wrap":            "（{unit}）",
         "html_status":          "判定",
         "html_rx_level":        "受信レベル",
         "html_act_margin":      "マージン",

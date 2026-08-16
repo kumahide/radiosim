@@ -71,11 +71,21 @@ def _param_text(key: str, value) -> str:
     return f"{value:g}" if isinstance(value, (int, float)) else str(value)
 
 
+def with_unit(name: str, unit: str) -> str:
+    """項目名に単位を添える（例: ``送信アンテナ高（m）`` / ``TX height (m)``）。
+
+    ⚠️ **括弧の字を直書きしない。** 日本語は全角・英語は半角と*言語ごとに違う*ので、
+    括り方そのものを i18n（`unit_wrap`）が持つ。直書きすると、同じ量の単位が
+    ウィンドウやレポートによって違う字で出る——**2.8 で「共通設定の括弧を全角に
+    統一した」と宣言しながら、条件探索の画面とレポートだけ半角で残っていた**
+    （2.8RC1 で処置）。宣言は口の全数を数えないと効かない。
+    """
+    return name + i18n.t("unit_wrap").format(unit=unit) if unit else name
+
+
 def axis_label(axis: str) -> str:
-    """スイープ軸の見出し（例: ``送信アンテナ高 (m)``）を返す。"""
-    name = i18n.t(f"scn_axis_{axis}")
-    unit = AXIS_UNITS.get(axis, "")
-    return f"{name} ({unit})" if unit else name
+    """スイープ軸の見出し（例: ``送信アンテナ高（m）``）を返す。"""
+    return with_unit(i18n.t(f"scn_axis_{axis}"), AXIS_UNITS.get(axis, ""))
 
 
 # ============================================================
@@ -296,8 +306,9 @@ def _sweep_table(run: scn.ScenarioRun) -> str:
     ＝連続的な変化を上から下へ追えることがスイープ表の価値だから。
     """
     head = "".join(f"<th>{h}</th>" for h in (
-        axis_label(run.axis), i18n.t("html_rx_level") + " (dBm)",
-        i18n.t("html_act_margin") + " (dB)", i18n.t("html_total_loss") + " (dB)",
+        axis_label(run.axis), with_unit(i18n.t("html_rx_level"), "dBm"),
+        with_unit(i18n.t("html_act_margin"), "dB"),
+        with_unit(i18n.t("html_total_loss"), "dB"),
         i18n.t("html_col_f1"), i18n.t("html_status"),
     ))
     rows = "".join(_sweep_row(p) for p in run.points)

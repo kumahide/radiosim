@@ -464,8 +464,9 @@ class ScenarioWindow(tk.Toplevel):
         self._tree = ttk.Treeview(self._result_box, columns=cols, show="headings",
                                   height=_RESULT_ROWS,
                                   style=theme.table_style(self))
-        headings = (i18n.t("scn_col_label"), i18n.t("html_rx_level") + " (dBm)",
-                    i18n.t("html_act_margin") + " (dB)", i18n.t("html_status"))
+        _unit = report_scenario.with_unit
+        headings = (i18n.t("scn_col_label"), _unit(i18n.t("html_rx_level"), "dBm"),
+                    _unit(i18n.t("html_act_margin"), "dB"), i18n.t("html_status"))
         widths = (220, 130, 130, 80)
         for col, head, w in zip(cols, headings, widths):
             self._tree.heading(col, text=head)
