@@ -737,6 +737,7 @@ The app writes no data to the registry or AppData. Deleting the folder is a comp
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
+- When monitors with different display scales are in use, moving a window to another monitor resizes the text of the whole application to match that scale. Only the menu bar strip (File / Settings / Help) is drawn by Windows, so it keeps the scale of the monitor its own window sits on and may look smaller (or larger) than the rest. This affects appearance only, not operation
 
 ---
 
