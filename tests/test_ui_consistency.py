@@ -1752,20 +1752,62 @@ def test_unit_parentheses_are_not_hardcoded():
         text = _literal_text(node)
         return bool(text) and text.strip().startswith("(") and text.strip().endswith(")")
 
+    def _joins_a_unit_onto_a_value(node: "_ast.JoinedStr") -> bool:
+        """`f"{名前} ({unit})"` のように、**差し込みの直後に ` (` を置く**形か。
+
+        🔴 **加算だけを見ていたら、この形が素通りした**（2026-08-17・独立レビュー
+        25 巡目）＝`f"{i18n.t(key)} ({unit})"` は `BinOp` ではないので、
+        「足している相手」を見る検査からは消えて見える。**3 度目の同じ盲点。**
+
+        ⚠️ **括弧を含む f 文字列を片端から禁じない**＝`f"<span>({d:+.2f})</span>"`
+        のような**差し込みそのものを括る**書き方は正しい。見るのは*直前が
+        差し込みで、そこへ ` (` を継ぎ足している*場合だけ。
+
+        ⚠️ **それでもまだ広すぎた**（実測で 3 件の誤検知＝`f"{cur} / {tot}  ({pct}%)"`
+        の進捗表示）。**ここが見たいのは「名前に単位を添える」形**なので、
+        *直前が語の取り出し（`i18n.t(...)`）である*か、*括弧の中身が単位の変数*で
+        あることまで求める（[[feedback-promote-recurring-checks]] の壊れ方③＝
+        間違ったものを要求するゲートにしない）。
+        """
+        def _is_label_lookup(node_) -> bool:
+            fn = getattr(node_, "func", None)
+            name = getattr(fn, "attr", None) or getattr(fn, "id", None)
+            return isinstance(node_, _ast.Call) and name == "t"
+
+        def _is_unit_value(part) -> bool:
+            if not (isinstance(part, _ast.Constant) and isinstance(part.value, str)):
+                return False
+            inner = part.value.strip()
+            return inner.startswith("(") and "unit" in _ast.unparse(node).lower()
+
+        prev_value = None
+        for part in node.values:
+            if isinstance(part, _ast.Constant) and isinstance(part.value, str):
+                if (prev_value is not None
+                        and part.value.lstrip(" ").startswith("(")
+                        and (_is_label_lookup(prev_value) or _is_unit_value(part))):
+                    return True
+                prev_value = None
+            else:
+                prev_value = getattr(part, "value", part)
+        return False
+
     root = _Path(__file__).resolve().parents[1]
     bad: list[str] = []
     for d in ("views", "report"):
         for path in (root / d).glob("*.py"):
             tree = _ast.parse(path.read_text(encoding="utf-8"))
             for node in _ast.walk(tree):
-                if not (isinstance(node, _ast.BinOp)
-                        and isinstance(node.op, _ast.Add)):
-                    continue
-                # `名前 + " (m)"` と `名前 + (f" ({unit})" if unit else "")` の両方
-                right = node.right
-                candidates = ([right.body, right.orelse]
-                              if isinstance(right, _ast.IfExp) else [right])
-                if any(_looks_like_a_unit_suffix(c) for c in candidates):
+                # ① `名前 + " (m)"` と `名前 + (f" ({unit})" if unit else "")`
+                if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Add):
+                    right = node.right
+                    candidates = ([right.body, right.orelse]
+                                  if isinstance(right, _ast.IfExp) else [right])
+                    if any(_looks_like_a_unit_suffix(c) for c in candidates):
+                        bad.append(f"{path.relative_to(root)}:{node.lineno}: "
+                                   f"{_ast.unparse(node)[:90]}")
+                # ② `f"{名前} ({unit})"`（加算を使わない書き方）
+                elif isinstance(node, _ast.JoinedStr) and _joins_a_unit_onto_a_value(node):
                     bad.append(f"{path.relative_to(root)}:{node.lineno}: "
                                f"{_ast.unparse(node)[:90]}")
     assert not bad, (
