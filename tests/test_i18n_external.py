@@ -361,6 +361,33 @@ def test_a_translation_with_an_unknown_conversion_is_rejected(lang_dir):
     assert accepted == {} and rejected == [(key, "placeholder")]
 
 
+def test_a_translation_that_changes_the_format_spec_is_rejected(lang_dir):
+    """🔴 **書式指定は言語ではない**（B-103 の 3 巡目・独立レビュー 18 巡目）。
+
+    `"{n:{n}q}"` は**名前の集合が英語と一致する**（入れ子の内側だけが名前として
+    拾われるため）が、実値が整数だと表示時に `ValueError` になる。
+    ⚠️ **指摘に添えられた例（`"{n:q}"`）自体は既に塞がっていた**——例は外れて
+    いたがクラスは実在した、という記録のためにここへ両方を書く。
+    """
+    key = "lang_ext_rejected"
+    for broken in ("Sauté {n:{n}q} traductions",     # 入れ子＝18 巡目で見つかった穴
+                   "Sauté {n:q} traductions",        # 以前から塞がっていた形
+                   "Sauté {n!z} traductions"):
+        accepted, rejected = i18n.validate_external({key: broken})
+        assert accepted == {} and rejected == [(key, "placeholder")], broken
+
+
+def test_a_translation_may_still_move_the_placeholder(lang_dir):
+    """⚠️ **厳しくしすぎない**＝訳者が語順を変えるのは正しい仕事。
+
+    禁じたのは `{…}` の**中身**を変えることだけで、文の中の**位置**は自由。
+    """
+    key = "lang_ext_rejected_line"
+    moved = "{n} 件 / {lang}（{keys} …）"           # 位置だけ入れ替えた
+    accepted, rejected = i18n.validate_external({key: moved})
+    assert rejected == [] and accepted == {key: moved}
+
+
 def test_every_builtin_string_passes_the_format_check():
     """⚠️ **毎回鳴る側へ倒れていないこと**＝同梱の ja / en が全部通ること。
 

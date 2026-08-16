@@ -16,6 +16,7 @@ KML の語まで開くと、**出力契約が利用者ごとに変わる**＝そ
 import json
 import os
 import re
+import string
 
 _STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -1078,6 +1079,27 @@ def _placeholders(text: str) -> set:
     return set(_PLACEHOLDER_RE.findall(text))
 
 
+def _format_signature(text: str) -> "set | None":
+    """差し込み 1 つ 1 つの **(名前, 変換, 書式指定)** の集合（読めなければ `None`）。
+
+    🔴 **名前だけを比べる形は、入れ子で抜けられる**（2026-08-16・独立レビュー
+    18 巡目のクラス指摘を実測で確認）＝`"{n:{n}q}"` は名前の集合が英語と一致し、
+    書式としても読めるので採用されるが、**実値が整数だと表示時に
+    `ValueError: Unknown format code 'q'` になる**。⚠️ *指摘に添えられていた例
+    （`"{n:q}"`）は既に塞がっていた*——名前の抽出が `n:q` を 1 つの名前として
+    拾うため。**例は外れていたがクラスは実在した**ので処方はこちらで決めた。
+
+    ⇒ **書式指定は言語ではない**（値の見せ方であって訳ではない）。⇒ 訳に許すのは
+    *文の中の位置を変えること*だけで、`{…}` の中身は英語と同じであることを要求する。
+    """
+    try:
+        return {(name, conv, spec)
+                for _lit, name, spec, conv in string.Formatter().parse(text)
+                if name is not None}
+    except ValueError:
+        return None                          # 書式として読めない＝採用しない
+
+
 class _AnyValue:
     """どんな書式指定にも応じる値（検査用）。属性・添字も自分を返す。"""
 
@@ -1147,7 +1169,9 @@ def validate_external(table: dict) -> tuple:
             rejected.append((key, "artifact"))
         elif not _is_valid_format(value):
             rejected.append((key, "placeholder"))
-        elif _placeholders(value) != _placeholders(base[key]):
+        elif _format_signature(value) != _format_signature(base[key]):
+            # 名前だけでなく**変換と書式指定まで**英語と同じであることを要求する
+            # （入れ子で抜けられた＝18 巡目）。`_placeholders` はここに含まれる。
             rejected.append((key, "placeholder"))
         else:
             accepted[key] = value
