@@ -23,8 +23,11 @@ window_fit の登録漏れ検出と同じ理由でここも一覧を 1 つに保
    レポート HTML の太字は**別の設計言語**（印刷物）なのでここでは見ない。
 """
 
+import ast
 import os
+import re
 import sys
+from pathlib import Path
 
 import pytest
 
@@ -1711,105 +1714,139 @@ def test_refreshing_common_settings_clears_results_only_when_they_differ():
 
 
 # ============================================================
-# 単位の括弧を直書きしない（2.8RC1）
+# 単位の括弧を直書きしない（2.8RC1 に新設・2.8 で 3 度広げた）
 # ============================================================
+#: 単位を持つ変数の名前（`{unit}` `{uom}` など）。**括弧の中身が単位か**を、
+#: 名前で見分けるための語彙。⚠️ f 文字列全体を字で検索してはいけない
+#: （2026-08-17・独立レビュー 26 巡目＝`community_name` の `unit` に反応した）。
+_UNIT_NAMES = ("unit", "units", "uom")
+#: 単位そのものを直書きした形（`(dBm)` `(m)` `(mm/h)`）。
+_UNIT_TOKEN = re.compile(r"^[A-Za-zµ°%]{1,4}(/[A-Za-z]{1,3})?$")
+
+
+def _unit_bracket_offenders(source: str, where: str = "<snippet>") -> list[str]:
+    """「名前に単位を括弧で添える」直書きを探す（純関数）。
+
+    ⛔ 括り方は i18n の `unit_wrap` が単一ソース＝**言語ごとに字が違う**
+    （ja は全角・前の空白なし／en は半角・前に空白）。直書きは「日本語を直すと
+    英語が壊れる」形でもある。
+
+    🔴 **この検査は 3 度、形を変えて素通りされた**（すべて 2026-08-17 の独立レビュー）:
+      1. 正規表現で `+ " (dBm)"` の**定数の形**しか見ていなかった
+         ⇒ 単位を変数にした `+ f" ({unit})"` が消えて見えた（実際に比較レポートで発生）。
+      2. AST にしたが `BinOp(Add)` に限っていた
+         ⇒ 加算を使わない `f"{t(key)} ({unit})"` が消えて見えた。
+      3. 「単位か」を **f 文字列全体の字**で見ていた
+         ⇒ `community_name` に反応し、`f"{label} ({uom})"` は見逃した。
+    ⇒ **見るのは「括弧の直前に値があるか」と「括弧の中身が単位か」の 2 点だけ**。
+
+    ⚠️ **括弧を含む書き方を片端から禁じない**（壊れ方③＝間違ったものを要求する）:
+      - `f"<span>({d:+.2f})</span>"`＝差し込みそのものを括る形は正しい。
+      - `f"{cur} / {tot}  ({pct}%)"`＝進捗の割合。単位ではない。
+      - `f"{t('mode')} ({shortcut})"`＝注記。単位ではない。
+    """
+    def _is_unit_expr(node) -> bool:
+        """括弧の中身（差し込み 1 つ）が単位か＝名前で見る。"""
+        name = (getattr(node, "id", None) or getattr(node, "attr", None) or "")
+        return name.lower() in _UNIT_NAMES
+
+    def _bracket_content_is_a_unit(parts: list) -> bool:
+        """`(` 以降の並びが「単位」か。定数なら語形、差し込みなら名前で見る。"""
+        if not parts:
+            return False
+        head = parts[0]
+        if isinstance(head, ast.Constant) and isinstance(head.value, str):
+            inner = head.value.strip().lstrip("(").split(")")[0].strip()
+            return bool(inner) and bool(_UNIT_TOKEN.match(inner))
+        return isinstance(head, ast.FormattedValue) and _is_unit_expr(head.value)
+
+    def _joined_offends(node: ast.JoinedStr) -> bool:
+        """`f"{名前} ({unit})"`＝差し込みの直後に ` (` を継ぎ足す形。"""
+        prev_is_value = False
+        for i, part in enumerate(node.values):
+            if isinstance(part, ast.Constant) and isinstance(part.value, str):
+                text = part.value
+                if prev_is_value and text.lstrip(" ").startswith("("):
+                    rest = text.lstrip(" ")[1:]
+                    tail = ([ast.Constant(value=rest)] if rest.strip(") ")
+                            else node.values[i + 1:])
+                    if _bracket_content_is_a_unit(tail):
+                        return True
+                prev_is_value = False
+            else:
+                prev_is_value = True
+        return False
+
+    def _suffix_offends(node) -> bool:
+        """`名前 + " (m)"` / `名前 + f" ({unit})"`＝足している相手が単位の括弧。"""
+        if isinstance(node, ast.Constant) and isinstance(node.value, str):
+            text = node.value.strip()
+            if text.startswith("(") and text.endswith(")"):
+                return bool(_UNIT_TOKEN.match(text[1:-1].strip()))
+            return False
+        if isinstance(node, ast.JoinedStr):
+            head = node.values[0] if node.values else None
+            if isinstance(head, ast.Constant) and head.value.strip().startswith("("):
+                return _bracket_content_is_a_unit(node.values[1:])
+        return False
+
+    bad: list[str] = []
+    for node in ast.walk(ast.parse(source)):
+        if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+            right = node.right
+            candidates = ([right.body, right.orelse]
+                          if isinstance(right, ast.IfExp) else [right])
+            if any(_suffix_offends(c) for c in candidates):
+                bad.append(f"{where}:{node.lineno}: {ast.unparse(node)[:90]}")
+        elif isinstance(node, ast.JoinedStr) and _joined_offends(node):
+            bad.append(f"{where}:{node.lineno}: {ast.unparse(node)[:90]}")
+    return bad
+
+
+#: 検出器そのものを試す例（独立レビュー 26 巡目の求めに応じて追加）。
+#: ⚠️ **ゲートを直すたびにここへ 1 行足す**＝「前に直した穴が開き直っていない」
+#: ことを、リポジトリの現状とは無関係に押さえるため。
+_MUST_FLAG = [
+    'label = i18n.t(key) + " (dBm)"',                       # ①定数の直書き
+    'label = i18n.t(key) + (f" ({unit})" if unit else "")',  # ②変数（実際の欠陥）
+    'label = f"{i18n.t(key)} ({unit})"',                    # ③加算を使わない形
+    'label = f"{name} ({uom})"',                            # ④別名の単位変数
+]
+_MUST_NOT_FLAG = [
+    'label = with_unit(i18n.t(key), unit)',                 # 正しい書き方
+    'text = f"{cur} / {tot}  ({pct}%)"',                    # 進捗の割合
+    'html = f"<span class=\'delta\'>({d:+.2f})</span>"',    # 差し込みそのものを括る
+    'title = f"{i18n.t(\'mode\')} ({shortcut})"',           # 単位ではない注記
+    'msg = f"{community_name} ({status})"',                 # 名前に unit が紛れる
+]
+
+
+@pytest.mark.parametrize("snippet", _MUST_FLAG)
+def test_the_unit_bracket_detector_flags_hardcoded_forms(snippet):
+    """⛔ 直書きの 4 形を必ず捕まえる（壊れ方①＝一度も落ちない、を封じる）。"""
+    assert _unit_bracket_offenders(snippet), f"見落とした: {snippet}"
+
+
+@pytest.mark.parametrize("snippet", _MUST_NOT_FLAG)
+def test_the_unit_bracket_detector_leaves_innocent_forms_alone(snippet):
+    """⛔ 単位でない括弧に鳴らない（壊れ方②③＝毎回鳴る／間違った要求、を封じる）。"""
+    assert not _unit_bracket_offenders(snippet), f"誤検知: {snippet}"
+
+
 def test_unit_parentheses_are_not_hardcoded():
-    """⛔ `名前 + " (dBm)"` の直書きを禁じる（括り方は i18n の `unit_wrap`）。
+    """⛔ 実装のどこにも単位の括弧の直書きが無いこと（リポジトリ全体）。
 
     🔴 **2.8 は「共通設定のラベルの括弧を全角に統一した」と宣言したのに、
     条件探索の画面とレポートだけ半角で残っていた**（画面 2 か所・レポート 3 か所）。
-    同じ量の単位が、窓によって `周波数（MHz）` と `周波数 (MHz)` の 2 通りで出る。
+    さらに**その宣言をした版の中で 2 口を数え落としていた**（比較レポート）。
     ⇒ 宣言は**口の全数を数えないと効かない**（[[feedback-user-examples-are-classes]]）。
-
-    ⚠️ 括弧の字は**言語ごとに違う**（ja は全角・前の空白なし／en は半角・前に空白）
-    ので、直書きは「日本語を直すと英語が壊れる」形でもある。
-
-    🔴 **その宣言をした版の中で、さらに 2 口を数え落としていた**（2026-08-17・
-    独立レビュー）＝条件探索の**比較レポート**の 10 行と条件行が
-    `+ (f" ({unit})" if unit else "")` の形で残り、日本語だけ半角で出ていた。
-    **最初のこの検査が正規表現で `" (dBm)"` の形しか見ていなかったから**＝
-    単位を変数にした瞬間、検査からは消えて見える。⇒ **AST で「足している相手が
-    括弧で始まって括弧で終わる文字列か」を見る**（中身が定数か差し込みかを問わない）。
     """
-    import ast as _ast
-    from pathlib import Path as _Path
-
-    def _literal_text(node) -> "str | None":
-        """定数文字列と f 文字列を、差し込みを `{}` に潰した字として読む。"""
-        if isinstance(node, _ast.Constant) and isinstance(node.value, str):
-            return node.value
-        if isinstance(node, _ast.JoinedStr):
-            out = ""
-            for part in node.values:
-                if isinstance(part, _ast.Constant) and isinstance(part.value, str):
-                    out += part.value
-                else:
-                    out += "{}"
-            return out
-        return None
-
-    def _looks_like_a_unit_suffix(node) -> bool:
-        text = _literal_text(node)
-        return bool(text) and text.strip().startswith("(") and text.strip().endswith(")")
-
-    def _joins_a_unit_onto_a_value(node: "_ast.JoinedStr") -> bool:
-        """`f"{名前} ({unit})"` のように、**差し込みの直後に ` (` を置く**形か。
-
-        🔴 **加算だけを見ていたら、この形が素通りした**（2026-08-17・独立レビュー
-        25 巡目）＝`f"{i18n.t(key)} ({unit})"` は `BinOp` ではないので、
-        「足している相手」を見る検査からは消えて見える。**3 度目の同じ盲点。**
-
-        ⚠️ **括弧を含む f 文字列を片端から禁じない**＝`f"<span>({d:+.2f})</span>"`
-        のような**差し込みそのものを括る**書き方は正しい。見るのは*直前が
-        差し込みで、そこへ ` (` を継ぎ足している*場合だけ。
-
-        ⚠️ **それでもまだ広すぎた**（実測で 3 件の誤検知＝`f"{cur} / {tot}  ({pct}%)"`
-        の進捗表示）。**ここが見たいのは「名前に単位を添える」形**なので、
-        *直前が語の取り出し（`i18n.t(...)`）である*か、*括弧の中身が単位の変数*で
-        あることまで求める（[[feedback-promote-recurring-checks]] の壊れ方③＝
-        間違ったものを要求するゲートにしない）。
-        """
-        def _is_label_lookup(node_) -> bool:
-            fn = getattr(node_, "func", None)
-            name = getattr(fn, "attr", None) or getattr(fn, "id", None)
-            return isinstance(node_, _ast.Call) and name == "t"
-
-        def _is_unit_value(part) -> bool:
-            if not (isinstance(part, _ast.Constant) and isinstance(part.value, str)):
-                return False
-            inner = part.value.strip()
-            return inner.startswith("(") and "unit" in _ast.unparse(node).lower()
-
-        prev_value = None
-        for part in node.values:
-            if isinstance(part, _ast.Constant) and isinstance(part.value, str):
-                if (prev_value is not None
-                        and part.value.lstrip(" ").startswith("(")
-                        and (_is_label_lookup(prev_value) or _is_unit_value(part))):
-                    return True
-                prev_value = None
-            else:
-                prev_value = getattr(part, "value", part)
-        return False
-
-    root = _Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[1]
     bad: list[str] = []
     for d in ("views", "report"):
         for path in (root / d).glob("*.py"):
-            tree = _ast.parse(path.read_text(encoding="utf-8"))
-            for node in _ast.walk(tree):
-                # ① `名前 + " (m)"` と `名前 + (f" ({unit})" if unit else "")`
-                if isinstance(node, _ast.BinOp) and isinstance(node.op, _ast.Add):
-                    right = node.right
-                    candidates = ([right.body, right.orelse]
-                                  if isinstance(right, _ast.IfExp) else [right])
-                    if any(_looks_like_a_unit_suffix(c) for c in candidates):
-                        bad.append(f"{path.relative_to(root)}:{node.lineno}: "
-                                   f"{_ast.unparse(node)[:90]}")
-                # ② `f"{名前} ({unit})"`（加算を使わない書き方）
-                elif isinstance(node, _ast.JoinedStr) and _joins_a_unit_onto_a_value(node):
-                    bad.append(f"{path.relative_to(root)}:{node.lineno}: "
-                               f"{_ast.unparse(node)[:90]}")
+            bad += _unit_bracket_offenders(path.read_text(encoding="utf-8"),
+                                           str(path.relative_to(root)))
     assert not bad, (
         "単位の括弧が直書きされている（report_scenario.with_unit を使う）:\n"
         + "\n".join(bad)
