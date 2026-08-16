@@ -12,7 +12,10 @@ staging の 3 階層上のファイルを Codex はそのまま読み出した�
 """
 from __future__ import annotations
 
+import os
 import re
+import shutil
+import subprocess
 from pathlib import Path
 
 import pytest
@@ -87,8 +90,10 @@ def test_a_failed_round_does_not_consume_its_number(script):
     ＝**成立していないと宣言した巡を、再試行できないまま消化する。**
     """
     assert "_codex_FAILED_" in script, "失敗 raw を採番対象外の名前へ退避していない"
-    assert re.search(r"Move-Item[^\n]*\$rawPath[^\n]*\$failPath", script), \
-        "失敗時に raw を退避していない"
+    assert re.search(r"Move-Item[^\n]*rawPath", script), "失敗時に raw を退避していない"
+    # ⚠️ 退避はサイズを条件にしない（10 巡目 P2＝空の raw が取りこぼされていた）
+    assert "if (-not (Test-Path $script:rawPath)) { return $null }" in script, \
+        "存在すれば必ず退避する形になっていない"
     # 退避先が採番の glob に掛からないこと（掛かると退避の意味が消える）
     assert "-Filter 'round*_codex_raw.md'" in script
     assert "_codex_FAILED_" not in "round*_codex_raw.md"
@@ -155,3 +160,67 @@ def test_the_extension_version_is_compared_semantically(script):
     """`0.4.9` を `0.4.10` より新しいと読まないこと（8 巡目 P2）。"""
     assert "Sort-Object Name -Descending" not in script, "文字列順で版を選んでいる"
     assert "[version]" in script
+
+
+# --- 実際に走らせる検査（10 巡目の指摘＝文字列照合では実行時条件を見られない） ---
+#
+# 🔑 Codex 10 巡目の締めの一言が正しかった＝「関連テスト13件は成功しましたが、
+#    現在の文字列ベースのテストでは上記の実行時条件を検出できていません」。
+#    **上の検査群は「そう書いてあるか」しか見ていない。** 失敗経路の後始末は
+#    実際に失敗させないと分からないので、stub の codex を噛ませて 1 本通す。
+
+_STUB = r"""
+# 失敗する codex の代役: -o のパスへ空ファイルを作り、非ゼロで終わる。
+$out = $null
+for ($i = 0; $i -lt $args.Count; $i++) { if ($args[$i] -eq '-o') { $out = $args[$i + 1] } }
+if ($out) { New-Item -ItemType File -Path $out -Force | Out-Null }
+exit 3
+"""
+
+
+@pytest.fixture
+def stub_codex(tmp_path):
+    """`codex.exe` の代役。隣に code-mode host のダミーも要る（起動前の検査）。"""
+    stub = tmp_path / "codex.ps1"
+    stub.write_text(_STUB, encoding="utf-8")
+    (tmp_path / "codex-code-mode-host.exe").write_bytes(b"")
+    return stub
+
+
+def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex):
+    """⛔ **空の raw を残して落ちた回**が、巡番号を食って再実行を拒まないこと。
+
+    9 巡目の直しは「非空なら退避」だったので、この経路（空ファイル＋異常終了）
+    だけが素通りし、`…_codex_raw.md` が残って採番も再実行も詰まっていた。
+    ⇒ **サイズによらず退避する**ことを、実際に失敗させて確かめる。
+    """
+    if not shutil.which("pwsh"):
+        pytest.skip("pwsh が無い環境")
+    if not SCRIPT.exists():
+        pytest.skip("run.ps1 が無い環境")
+
+    out_dir = ROOT / ".qa" / "codex_review"
+    round_no = 900  # 実運用の採番と衝突しない番号
+    raw = out_dir / f"round{round_no}_code_codex_raw.md"
+    made: list[Path] = []
+    try:
+        env = {**os.environ, "CODEX_EXE": str(stub_codex)}
+        proc = subprocess.run(
+            ["pwsh", "-NoProfile", "-File", str(SCRIPT),
+             "-Mode", "code", "-Base", "HEAD~1", "-Round", str(round_no)],
+            cwd=str(ROOT), env=env, capture_output=True, text=True,
+            encoding="utf-8", errors="replace", timeout=180,
+        )
+        made = sorted(out_dir.glob(f"round{round_no}_*"))
+
+        assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+        assert not raw.exists(), (
+            "空の raw が採番対象の名前のまま残っている＝同じ -Round で再実行できない"
+        )
+        assert any("_codex_FAILED_" in p.name for p in made), (
+            f"失敗 raw が退避されていない: {[p.name for p in made]}"
+        )
+    finally:
+        for p in made:
+            p.unlink(missing_ok=True)
+        raw.unlink(missing_ok=True)

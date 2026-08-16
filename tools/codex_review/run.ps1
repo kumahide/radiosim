@@ -188,11 +188,19 @@ else {
     $workRoot = Join-Path ([IO.Path]::GetTempPath()) ("{0}_{1}" -f $stagePrefix, $PID)
     $memDst   = Join-Path $workRoot 'memory'
 
-    # 同じ clone の**自分より前の実行**が残した staging だけを掃除する
-    # （他 clone の $repoTag は違うので触らない）。
+    # ⛔ **他プロセスの staging を消さない**（2026-08-16・Codex 10 巡目 P1）。
+    #    9 巡目の直しは `$PID` でパスを分けたのに、掃除のほうは「自分以外を全部」
+    #    消しており、**直したはずの競合が同一 clone 内でそのまま残っていた**
+    #    （分離した意味が掃除で打ち消されていた）。
+    # ⇒ 掃除してよいのは **PID がもう生きていない** staging だけ。
     Get-ChildItem ([IO.Path]::GetTempPath()) -Directory -Filter "$stagePrefix*" -ErrorAction SilentlyContinue |
         Where-Object { $_.FullName -ne $workRoot } |
-        ForEach-Object { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+        ForEach-Object {
+            $owner = 0
+            if ($_.Name -match '_(\d+)$') { $owner = [int]$Matches[1] }
+            $alive = $owner -gt 0 -and (Get-Process -Id $owner -ErrorAction SilentlyContinue)
+            if (-not $alive) { Remove-Item $_.FullName -Recurse -Force -ErrorAction SilentlyContinue }
+        }
     if (Test-Path $workRoot) { Remove-Item $workRoot -Recurse -Force }
     New-Item -ItemType Directory -Path $memDst -Force | Out-Null
 
@@ -252,20 +260,31 @@ if ($wrote) { Write-Host ("原文: {0}" -f $rawPath) }
 #    以前は raw が非空かどうかだけを見ていたので、**途中まで書いて落ちた回**が
 #    「レビュー完了」として通り、巡を 1 つ消化したことになってしまった。
 #    ⇒ raw は診断用に残したうえで throw する（黙って握りつぶさない）。
+# 成立しなかった raw は採番の対象から外す（9 巡目 P2）。残すのは診断のため。
+# ⚠️ **サイズを条件にしない**（2026-08-16・Codex 10 巡目 P2）。9 巡目の実装は
+#    「非空なら退避」だったので、**空の raw が作られて落ちた回**は退避されず
+#    `…_codex_raw.md` のまま残り、採番を進めたうえ再実行も拒否した
+#    ＝退避を入れた目的をそのまま取りこぼしていた。存在すれば必ず退避する。
+function Move-FailedRaw {
+    if (-not (Test-Path $script:rawPath)) { return $null }
+    $p = Join-Path $script:outDir ("round{0}_{1}_codex_FAILED_{2}.md" -f
+        $script:Round, $script:Mode, (Get-Date -Format 'yyyyMMdd-HHmmss-fff'))
+    Move-Item -LiteralPath $script:rawPath -Destination $p -Force
+    return $p
+}
+
 if ($rc -ne 0) {
-    # 成立しなかった raw は採番の対象から外す（9 巡目 P2）。残すのは診断のため。
-    $failPath = $null
-    if ($wrote) {
-        $failPath = Join-Path $outDir ("round{0}_{1}_codex_FAILED_{2}.md" -f
-            $Round, $Mode, (Get-Date -Format 'yyyyMMdd-HHmmss'))
-        Move-Item -LiteralPath $rawPath -Destination $failPath -Force
-    }
+    $failPath = Move-FailedRaw
     throw ("Codex が異常終了しました（exit=$rc）。" +
-           $(if ($failPath) { "途中まで書かれた raw は $failPath へ退避しました（採番には数えません）" }
+           $(if ($failPath) { "書かれかけの raw は $failPath へ退避しました（採番には数えません）" }
              else { "raw は書かれませんでした" }) +
            " ⇒ この巡は成立していません。同じ -Round $Round で回し直せます。")
 }
 if (-not $wrote) {
-    throw "Codex は正常終了しましたが返答を書きませんでした: $rawPath"
+    $failPath = Move-FailedRaw
+    throw ("Codex は正常終了しましたが返答を書きませんでした。" +
+           $(if ($failPath) { "空の raw は $failPath へ退避しました（採番には数えません）" }
+             else { "raw は作られませんでした: $rawPath" }) +
+           " ⇒ この巡は成立していません。同じ -Round $Round で回し直せます。")
 }
 Write-Host '次の一手: 原文のまま ISSUES.md へ起票 → 実測で裏取り → 指摘のクラス全出現箇所を洗う'
