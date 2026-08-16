@@ -16,6 +16,7 @@ KML の語まで開くと、**出力契約が利用者ごとに変わる**＝そ
 import json
 import os
 import re
+import string
 
 _STRINGS: dict[str, dict[str, str]] = {
     "en": {
@@ -1029,6 +1030,32 @@ _EXTERNAL_NAME_KEY = "_name"
 #: **開かないキー**＝成果物（HTML レポート・KML）の語。出力契約なので画面の都合で
 #: 動かさない。実測で `html_*` 70 + `pl_*` 18 = 88 キー。
 _ARTIFACT_PREFIXES = ("html_", "pl_")
+
+#: 🔴 **接頭辞では表せない成果物の語**（B-101）。**名前の形と「どこに出るか」は
+#: 一致していなかった**＝実測で `report/` の成果物モジュールが使う 70 キーのうち
+#: 19 キーが `html_` / `pl_` の外にあり、外部訳で上書きできてしまっていた。
+#:
+#: ⚠️ **この集合は手で書いた一覧なので、必ず実装からずれる**（B-090＝地図モードの
+#: 手書き一覧が 3 モード時代のまま残っていたのと同じ型）。⇒ ずれを人の注意で
+#: 防ごうとせず、**`tests/test_i18n_external.py` が成果物モジュールの `t()` を
+#: 走査して、ここに無いキーがあれば落ちる**（規約でなくゲートで押さえる）。
+#:
+#: ⚠️ **8 キーは画面にも出る**（`graph_*` / `legend_*` / `scn_compare_title` /
+#: `scn_sweep_title`）。ただし**その「画面」は断面図・比較グラフそのもの**＝保存
+#: すれば同じ図が成果物になるので、開けば結局出力契約が動く。⇒ 締め出す側に置く。
+_ARTIFACT_KEYS = frozenset({
+    # 断面図（PNG＝成果物。画面に出ている図と同一）
+    "graph_alt_axis", "graph_dist_axis",
+    "legend_fresnel", "legend_los", "legend_terrain", "legend_vegetation",
+    # 中継経路の HTML レポート
+    "mh_hops", "mh_mode_label", "mh_overall",
+    "mh_regenerative_note", "mh_report_title", "mh_worst_hop",
+    # 条件探索のグラフ・レポート
+    "scn_compare_title", "scn_fixed_path", "scn_margin_axis",
+    "scn_mode", "scn_samples", "scn_sweep_title",
+    # 単位の括り方（画面と成果物で同じ字にするための単一ソース＝2.8RC1）
+    "unit_wrap",
+})
 #: 同梱の言語は外部から上書きさせない（`ja.json` を置いて日本語を差し替えられると、
 #: 用語集ゲートが守っている画面語彙が黙って外れる）。
 _BUILTIN_LANGS = ("en", "ja")
@@ -1039,6 +1066,22 @@ _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 def _placeholders(text: str) -> set:
     """`{dir}` `{n}` のような差し込み名の集合。"""
     return set(_PLACEHOLDER_RE.findall(text))
+
+
+def _is_valid_format(text: str) -> bool:
+    """`str.format()` に渡して壊れない書式文字列か（B-103）。
+
+    🔴 **差し込み名の集合を比べるだけでは足りない**＝`"… {n} 件 {"` は集合が
+    英語と一致するので採用され、**表示の瞬間に `ValueError` で止まる**（実測）。
+    集合は正規表現で「対になった括弧」しか拾わないため、**対になっていない
+    括弧はそもそも集合に現れない**＝比べても差が出ない。⇒ 書式文字列として
+    読めるかを `Formatter().parse()` に聞く（読めなければ例外を投げる）。
+    """
+    try:
+        list(string.Formatter().parse(text))
+    except ValueError:
+        return False
+    return True
 
 
 def validate_external(table: dict) -> tuple:
@@ -1061,8 +1104,10 @@ def validate_external(table: dict) -> tuple:
             rejected.append((key, "not_text"))
         elif key not in base:
             rejected.append((key, "unknown"))
-        elif key.startswith(_ARTIFACT_PREFIXES):
+        elif key.startswith(_ARTIFACT_PREFIXES) or key in _ARTIFACT_KEYS:
             rejected.append((key, "artifact"))
+        elif not _is_valid_format(value):
+            rejected.append((key, "placeholder"))
         elif _placeholders(value) != _placeholders(base[key]):
             rejected.append((key, "placeholder"))
         else:

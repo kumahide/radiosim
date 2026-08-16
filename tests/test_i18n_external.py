@@ -25,6 +25,7 @@ tests/test_i18n_external.py
 
 import json
 import os
+import re
 import sys
 
 import pytest
@@ -123,6 +124,73 @@ def test_artifact_keys_are_not_open(lang_dir):
     i18n.set_lang("fr")
     assert i18n.t("html_col_note") == i18n._STRINGS["en"]["html_col_note"]
     assert i18n.t("pl_diff_model") == i18n._STRINGS["en"]["pl_diff_model"]
+
+
+#: 成果物（HTML レポート・断面図 PNG・グラフ）を組み立てるモジュール。
+#: ⚠️ **`report/` を丸ごと走査しない**＝同じ層に居る `batch.py` / `multihop.py` /
+#: `project.py` は**画面に出す検証メッセージ**（`verr_*` 等）も持っており、それらは
+#: 開いてよい語だから（実測＝走査対象を層で切ると 20 キーを誤って締め出す）。
+_ARTIFACT_MODULES = (
+    "report_path.py", "report_multihop.py", "report_scenario.py",
+    "report_summary.py", "report_common.py", "report_map.py", "map_graphics.py",
+)
+_T_CALL = re.compile(r"""\bt\(\s*["']([A-Za-z0-9_]+)["']""")
+
+
+def test_every_key_that_reaches_an_artifact_is_closed_to_external_translation():
+    """🔴 **締め出しの一覧が実装からずれていないこと**（B-101）。
+
+    **手書きの一覧は必ずずれる**（B-090＝地図モードの一覧が 3 モード時代のまま
+    残っていた）。⇒ *名前の形*を信じず、**成果物を組み立てるモジュールが実際に
+    引いているキー**を走査して、その全部が `validate_external` に却下されることを
+    要求する。⇒ レポートに語を 1 つ足した日に、締め出しを忘れればここが落ちる。
+
+    ⚠️ **却下の理由まで見る**（`artifact`）＝「たまたま英語に無いキーだから
+    却下された」のような別の理由で緑になるのを防ぐ。
+    """
+    repo = os.path.join(os.path.dirname(__file__), "..", "report")
+    keys: dict = {}
+    for name in _ARTIFACT_MODULES:
+        path = os.path.join(repo, name)
+        if not os.path.exists(path):
+            continue
+        with open(path, encoding="utf-8") as fh:
+            for key in _T_CALL.findall(fh.read()):
+                keys.setdefault(key, set()).add(name)
+    assert keys, "成果物モジュールから 1 つもキーを拾えていない（走査が壊れている）"
+
+    table = {k: "X" for k in keys}
+    _accepted, rejected = i18n.validate_external(table)
+    reasons = dict(rejected)
+    leaked = sorted(k for k in keys if reasons.get(k) != "artifact")
+    assert not leaked, (
+        "成果物へ出るのに外部訳で上書きできるキーがある＝出力契約が利用者ごとに"
+        f"変わる: {[(k, sorted(keys[k])) for k in leaked]}"
+    )
+
+
+def test_a_translation_with_unbalanced_braces_is_rejected(lang_dir):
+    """🔴 **書式文字列として壊れた訳は採用しない**（B-103）。
+
+    差し込み名の集合だけを比べると**対になっていない括弧は差に現れない**ので
+    素通りし、表示の瞬間に `ValueError` で止まっていた。
+    """
+    key = "lang_ext_rejected"                       # en は `{n}` を 1 つ持つ
+    assert "{n}" in i18n._STRINGS["en"][key]
+    _write(lang_dir, "fr", {key: "Sauté {n} traductions {"})
+    i18n.load_external(str(lang_dir))
+    i18n.set_lang("fr")
+    assert i18n.t(key) == i18n._STRINGS["en"][key], "壊れた書式の訳を採用してしまった"
+
+
+def test_unbalanced_braces_would_crash_the_screen():
+    """**弾かなければ何が起きるか**を実演する（上の検査の存在理由）。
+
+    ⚠️ `KeyError` ではなく `ValueError`＝**既存の実演では捕まらない型**だった。
+    """
+    broken = "Sauté {n} traductions {"
+    with pytest.raises(ValueError):
+        broken.format(n=3)
 
 
 def test_unknown_keys_are_rejected(lang_dir):
