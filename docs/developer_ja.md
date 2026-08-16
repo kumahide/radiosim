@@ -926,6 +926,22 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_codex_review_tool.py` | 独立レビュー駆動スクリプト（`tools/codex_review/run.ps1`）。**独立性の芯**（入力文はファイルから読む・差し込みは差分パスと比較元だけ・`read-only` 固定・返答は原文でファイルへ）と、**書いてはいけない主張**（`-C` と `read-only` は読み取り範囲を狭めない＝canary で実測した事実に反する断定を禁止し、その開示が消えていないことも対で検査）。**対象が git-ignore ではないが実行は Windows 前提** |
 | `test_qa_gate_cache.py`  | QA ゲート（`tools/qa-hook/pytest-cache.mjs`）の再実行抑止キャッシュ。鍵が「作業ツリーの中身」で動くこと＝内容が変われば必ず走り、変わらなければ走らないことを検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 
+### 独立レビュー（外部のレビュアーに差分を見せる）
+
+自動ゲートが緑なのは必要条件であって十分条件ではありません。**実装した本人は「何を意図したか」で読む**ので、保証の穴は構造的に見えません。RC・正式の前に、外部のレビュアー（Codex）へ差分を渡します。
+
+```powershell
+& tools\codex_review\run.ps1 -Mode code -Base <前のタグ>   # コード面
+& tools\codex_review\run.ps1 -Mode docs                    # 文書面
+```
+
+- 入力文は `tools/codex_review/prompt_*.txt` に固定してあり、**実行のたびに書き起こしません**。差し込むのは差分のパスと比較元だけで、観点（「ここを見て」）を混ぜる口がありません。
+- 渡すのは `git diff` の生出力です（要約・抜粋しない）。
+- 返答は**読む前に** `.qa/codex_review/round<N>_<mode>_codex_raw.md` へ原文で落ちます。後から要約と原文を突き合わせられます。
+- レビュアーには書き込みを許しません（`-s read-only`）。**発見はレビュアー、処方はこちら**——プロジェクトの設計意図を持たないので、処方はしばしば外れます。
+- ⚠️ **`read-only` は「書けない」であって「ここしか読めない」ではありません**（canary で実測）。文書面の staging は渡す範囲を*明示*する仕掛けであって、**それ以外を秘匿する保証ではありません**。
+- memory の場所は `RADIOSIM_MEMORY_DIR` で宣言できます（未設定ならリポジトリのパスから導出）。
+
 ---
 
 ## 既知の制限・注意事項

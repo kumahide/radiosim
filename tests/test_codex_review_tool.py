@@ -16,6 +16,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -218,6 +219,13 @@ def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp
     いた＝**正当な巡の成果物を消し得たし、並列実行では他ワーカーの作成中ファイルも
     消し得た**。*検査が本番の置き場を汚さない*ことは、検査自身の要件。
     """
+    # ⚠️ **`pwsh` の有無で分岐してはいけない**（2026-08-16・CI が赤くなった）。
+    #    GitHub の Linux ランナーには pwsh が入っているので skip が効かず、
+    #    Windows 前提のスクリプト（`$env:USERPROFILE`・`\` 区切り）をそのまま
+    #    実行して落ちた。**「道具が在るか」ではなく「その道具が意味を持つ OS か」**
+    #    を見る（[[feedback-no-wsl-push]]＝この製品は Windows ネイティブ前提）。
+    if sys.platform != "win32":
+        pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
     if not shutil.which("pwsh"):
         pytest.skip("pwsh が無い環境")
     if not SCRIPT.exists():

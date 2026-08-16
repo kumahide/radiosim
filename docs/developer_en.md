@@ -923,6 +923,22 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. **Skipped in CI** because the target is git-ignored (local pytest only) |
 
+### Independent review (showing the diff to an outside reviewer)
+
+Green gates are a necessary condition, not a sufficient one. **Whoever wrote the code reads it for what it was meant to do**, which makes gaps in its guarantees structurally invisible to them. Before an RC or a release, hand the diff to an outside reviewer (Codex).
+
+```powershell
+& tools\codex_review\run.ps1 -Mode code -Base <previous tag>   # code
+& tools\codex_review\run.ps1 -Mode docs                        # documents
+```
+
+- The prompt lives in `tools/codex_review/prompt_*.txt` and is **never retyped per run**. Only the diff path and the base are substituted, so there is no opening through which to inject a viewpoint ("look at X").
+- What goes over is the raw `git diff` output — never summarised or excerpted.
+- The answer lands verbatim in `.qa/codex_review/round<N>_<mode>_codex_raw.md` **before we read it**, so a summary can always be checked against the original.
+- The reviewer cannot write (`-s read-only`). **Findings come from the reviewer, prescriptions from us** — it does not carry the project's design intent, so its prescriptions are often off.
+- ⚠️ **`read-only` means "cannot write", not "can only read here"** (measured with a canary). The staging directory for the document pass makes the intended scope *explicit*; it does **not** guarantee that anything outside it stays hidden.
+- The memory location can be declared with `RADIOSIM_MEMORY_DIR` (otherwise derived from the repository path).
+
 ---
 
 ## Known Limitations
