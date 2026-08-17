@@ -307,6 +307,7 @@ radiosim/
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_repo_hygiene.py
+    ├── test_dev_check.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
     └── test_qa_gate_cache.py
@@ -883,6 +884,33 @@ Launching with a different interpreter logs a warning (to the log file and stder
 > tests skipped, exit code 0). A full run also **fails when more than 25% of the
 > tests skip**, whatever the reason.
 
+### One command for post-change verification (`dev-check`)
+
+`bandit` and `git diff --check` are needed alongside `pytest`, so there is a single
+entry point that runs them together.
+
+```powershell
+# Before committing (the real thing) — everything, with the same coverage gate as CI
+& "$env:RADIOSIM_PYTHON" buildtools/dev_check.py
+
+# While iterating — state the scope explicitly
+& "$env:RADIOSIM_PYTHON" buildtools/dev_check.py --tests tests/test_multihop.py
+```
+
+- **`ruff` and `pyright` are not run here.** `pytest` already runs both from inside
+  `tests/test_repo_hygiene.py`, so invoking them again would run the same checks
+  twice and split the target list across two places.
+- **`tests/test_repo_hygiene.py` is always added, even to a narrowed scope** — the
+  static analysis lives there, so dropping it means *going green without running a
+  single static check*.
+- **Changed files are only ever read to ADD gates, never to remove them** (touching
+  `docs/` adds `test_docs_consistency.py`). Guessing which tests are "related" and
+  dropping the rest creates a path that silently falls out of the run.
+- **The coverage gate applies to full runs only.** On a partial run the layers you
+  did not exercise count as 0%, so it would fail every time.
+- Output is **one line per check plus an excerpt of whatever failed**. Use
+  `--full-output` for the raw text.
+
 ### Test Suite
 
 | File                       | Coverage                                                                        |
@@ -914,6 +942,7 @@ Launching with a different interpreter logs a warning (to the log file and stder
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, **stays inside the desktop where it is placed**, and **unregistered new windows** are caught statically) |
 | `test_errors.py`         | Unhandled exceptions in GUI callbacks are logged **with a traceback** and surfaced in a dialog naming the log file (no stacked modals when errors repeat; the log survives even if the dialog cannot be shown) |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |
+| `test_dev_check.py`      | Gate for the verification runner itself (`buildtools/dev_check.py`). Detects a **hand-written gate table that has rotted and silently adds nothing**, and pins that a narrowed scope still picks up the static-analysis gate, that the coverage gate applies to full runs only, and that the output stays a summary |
 | `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; normal startup resolves to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |

@@ -306,6 +306,7 @@ radiosim/
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_repo_hygiene.py
+    ├── test_dev_check.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
     └── test_qa_gate_cache.py
@@ -886,6 +887,24 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 > 「緑」**になるためです（2026-08-07 に 112 本中 106 本 skip・終了コード 0 を実測）。
 > あわせて、**全体実行の skip が 25% を超えると失敗**します（理由を問わない網）。
 
+### 実装後の検証を 1 コマンドで（`dev-check`）
+
+`pytest` のほかに `bandit` と `git diff --check` が要るので、まとめて回す入口を置いてあります。
+
+```powershell
+# コミット前（本番）＝全件。CI と同じくカバレッジ門も掛かる
+& "$env:RADIOSIM_PYTHON" buildtools/dev_check.py
+
+# 実装の反復中＝範囲を明示する
+& "$env:RADIOSIM_PYTHON" buildtools/dev_check.py --tests tests/test_multihop.py
+```
+
+- **`ruff` と `pyright` はここでは回しません**。どちらも既に `tests/test_repo_hygiene.py` の中から `pytest` が回しているので、別に呼ぶと同じ検査が 2 回走り、対象の指定も 2 か所に割れます。
+- **範囲を絞っても `tests/test_repo_hygiene.py` は必ず足されます**。上のとおり静的検査がそこに同居しているためで、外れると *静的検査を 1 つも回さないまま緑* になります。
+- **変更ファイルは「足す」ためだけに見ます。「減らす」判断には使いません**（例＝`docs/` を触っていれば `test_docs_consistency.py` が足される）。関連テストを推定して減らすと、黙って外れる経路ができるためです。
+- **カバレッジ門は全件のときだけ**掛かります。部分実行に掛けると、回していない層が 0% で数えられて必ず割れます。
+- 出力は**検査ごとに 1 行＋落ちた検査の抜粋**です。全文は `--full-output`。
+
 ### テスト構成
 
 | テストファイル             | 主な対象                                                                   |
@@ -917,6 +936,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_window_fit.py`     | 見切れの横断ゲート（すべてのウィンドウが中身を収めているか・中身が増えたあとも収まるか・**置かれた場所ごとデスクトップの中に収まっているか**・**新しいウィンドウの登録漏れ**を静的に検出） |
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
+| `test_dev_check.py`      | 検証ランナー自身のゲート（`buildtools/dev_check.py`）。**手書きの対応表が腐って黙って何も足さなくなる**のを検出し、範囲を絞っても静的検査のゲートが必ず足されること・カバレッジ門が全件のときだけ掛かること・出力が要約に収まることを固定 |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・通常起動では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード）＋**テスト実行の隔離**（テストが開発機の実設定を読まず、実リポジトリへ書かないこと＝定数・既定引数・ログの出口の 3 面） |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
