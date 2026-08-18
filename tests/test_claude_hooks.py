@@ -1565,6 +1565,94 @@ class TestSessionSplitAdvice:
         assert budget.latest_context(p) == 123_456
 
 
+# ============================================================
+# 区切りの助言を「費用」でも鳴らす（I-105・2026-08-18）
+# ============================================================
+# 🔴 **このフックは自分で書いた判断材料で発火していなかった。**
+# `latest_context()` の註は「**区切るべきかの唯一の判断材料は 1 往復がいくらか**」と
+# 言うのに、**発火条件は往復数だけ**だった＝文脈が速く伸びる回では、高くなっている
+# のに一度も鳴らない。実例（発見した回そのもの）＝**83 往復で 1 往復 170k＝5.1 倍**、
+# 伸び 1,635 tok/応答（目安 1,260 より 30% 速い）。最初の閾値 200 往復に届くころには
+# 約 360k＝**11 倍**で、**一番高い時間帯を丸ごと素通り**していた。
+#
+# 🔑 **I-103 と同じクラス**＝*決め手でない量を条件にしていた*。⇒ 費用の梯子を対で置く。
+
+
+class TestMarginalCostTrigger:
+    """費用の梯子（`_COST_MULTIPLES`）＝往復数が少なくても高ければ鳴る。"""
+
+    def _run(self, budget, monkeypatch, capsys, tmp_path, n, ctx):
+        return TestSessionSplitAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, n, ctx)
+
+    def test_an_expensive_short_session_fires(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """🔴 **これが鳴らなかった形**＝往復数は最初の閾値の半分以下、費用は 5 倍。"""
+        n = min(budget._THRESHOLDS) // 2
+        got = self._run(budget, monkeypatch, capsys, tmp_path, n, 170_000)
+        assert got.get("decision") == "block", (
+            f"{n} 往復・1 往復 170k（立ち上げの 5.2 倍）で鳴っていない＝"
+            "費用の梯子が外れている"
+        )
+
+    def test_a_cheap_long_session_does_not_fire_on_cost(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """⚠️ **安ければ鳴らない**こと（毎回鳴る網にしない＝壊れ方②）。
+
+        往復数の梯子にも届いていない回では、費用の梯子も黙っていること。
+        """
+        n = min(budget._THRESHOLDS) - 1
+        got = self._run(budget, monkeypatch, capsys, tmp_path, n, 50_000)
+        assert got == {}, f"安いセッションで鳴っている: {got}"
+
+    def test_the_reason_names_which_ladder_fired(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**何で鳴ったかを言う**＝「まだ 83 往復なのに」と読み違えさせない。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS) // 2, 170_000)
+        assert "発火の理由" in got.get("reason", "")
+        assert "倍" in got["reason"].split("発火の理由")[1].splitlines()[0]
+
+    def test_the_same_cost_level_is_not_repeated(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """同じ倍率で二度言わないこと。"""
+        n = min(budget._THRESHOLDS) // 2
+        assert self._run(budget, monkeypatch, capsys, tmp_path, n, 170_000)
+        assert self._run(budget, monkeypatch, capsys, tmp_path, n, 170_000) == {}
+
+    def test_crossing_both_ladders_at_once_speaks_once(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """⚠️ **片方だけ状態を上げない**＝同じ内容を次の Stop で二度言う形になる。"""
+        n = min(budget._THRESHOLDS)
+        assert self._run(budget, monkeypatch, capsys, tmp_path, n, 200_000)
+        assert self._run(budget, monkeypatch, capsys, tmp_path, n, 200_000) == {}
+
+    def test_a_higher_cost_level_speaks_again(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**上の倍率へ上がったら言い直す**（黙って登り続けない）。"""
+        n = min(budget._THRESHOLDS) // 2
+        assert self._run(budget, monkeypatch, capsys, tmp_path, n, 140_000)
+        got = self._run(budget, monkeypatch, capsys, tmp_path, n, 280_000)
+        assert got.get("decision") == "block", "倍率が上がったのに黙っている"
+
+    def test_the_first_cost_level_is_near_a_hundred_roundtrips(self, budget):
+        """最初の倍率が**実測の判断地点**に合っていること。
+
+        ⚠️ 規範ではなく**実測との対応**の検査＝伸び 1,260〜1,635 tok/応答で
+        4 倍（132k）に達するのは 80〜100 往復＝[[feedback-token-budget]] の
+        「100 往復の時点で既に切ったほうが 5 倍安い」。ここが 10 倍などへ上がると
+        **一番高い時間帯を素通りする**元の欠陥に戻る。
+        """
+        first = min(budget._COST_MULTIPLES) * budget._FRESH_CONTEXT
+        assert 80 <= first / 1_635 <= 120, f"最初の倍率が実測と合っていない: {first:,}"
+
+    def test_the_old_integer_state_is_still_read(self, budget, tmp_path):
+        """移行の瞬間に**全部言い直さない**こと（旧状態は整数だった）。"""
+        assert budget._reached_levels({"s": 440}, "s") == {"trips": 440, "cost": 0}
+        assert budget._reached_levels({}, "s") == {"trips": 0, "cost": 0}
+        assert budget._reached_levels({"s": {"trips": 200, "cost": 6}}, "s") == {
+            "trips": 200, "cost": 6}
+
 def test_the_stop_hook_no_longer_judges_parallelism(budget):
     """**撤去したものが戻っていないこと**（I-091・2026-08-14）。
 
