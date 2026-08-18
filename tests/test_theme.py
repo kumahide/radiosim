@@ -22,8 +22,10 @@ import sys
 import os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+import time
+
 from core import i18n
-from conftest import make_tk_root, set_theme
+from conftest import PoisonedInterpreter, make_tk_root, pump_until, set_theme
 from views import theme
 
 _THEMES = ("light", "dark")
@@ -716,9 +718,10 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")              # 移動＝<Configure>
         root.update()
-        # デバウンス（_DISPLAY_DEBOUNCE_MS）を消化する
-        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
-        root.mainloop()
+        # デバウンス（_DISPLAY_DEBOUNCE_MS）を消化する。⚠️ **通知が来るまで回す**
+        # ＝締め切りを決め打ちにすると、追加の `<Configure>` でデバウンスが測り
+        # 直されたときに間欠で赤くなる（B-082）。
+        pump_until(root, lambda: notified)
         assert notified == [(144, True)], (
             f"DPI 変化が通知されていない、または「DPI が変わった」と伝わっていない:"
             f" {notified}（後者だと窓が縮む方向に測り直されない＝I-053）。"
@@ -758,8 +761,7 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
     win = tk.Toplevel(root)
     win.geometry("200x100+10+10")                  # <Configure> の契機
     root.update()
-    root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
-    root.mainloop()
+    pump_until(root, lambda: notified)              # 通知が来るまで回す（B-082）
 
     assert notified == [(96, False)], (
         f"画面サイズの変化が素通りしている、または「DPI が変わった」と誤って"
@@ -814,8 +816,9 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
                         window_fit.refit_all(root, shrink=changed))
     win.geometry(f"+{small[0] + 60}+40")                         # サブ画面へドラッグ
     root.update()
-    root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
-    root.mainloop()
+    # 測り直されるまで回す（B-082）。⚠️ **待つ条件は下の assert と同じもの**＝
+    # 「回し終えた」ではなく「結果が出た」で待つので、待ちの長さが結果を変えない。
+    pump_until(root, lambda: win._fit_size[1] <= limit)
 
     assert win._fit_size[1] <= limit, (
         f"サブ画面へ動かしても測り直されていない（高さ {win._fit_size[1]}px / "
@@ -862,8 +865,7 @@ def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
         dpi_of[str(win)] = 144                      # 子窓だけ 150% 側へドラッグ
         win.geometry("200x100+20+20")               # 移動＝<Configure>
         root.update()
-        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)
-        root.mainloop()
+        pump_until(root, lambda: notified)          # 通知が来るまで回す（B-082）
 
         assert notified == [(144, True)], (
             f"子窓の DPI 変化が拾えていない: {notified}"
@@ -876,6 +878,90 @@ def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
         theme.window_dpi = monkey                   # type: ignore[assignment]
         theme.apply_fonts(root, dpi=96)
         win.destroy()
+
+
+# ============================================================
+# テスト基盤そのもののゲート（B-082・2026-08-18）
+# ============================================================
+# 上の 4 本は**非同期の通知**を待つ。待ち方を間違えると「製品は正しいのにゲート
+# だけが間欠で赤くなる」＝[[feedback-promote-recurring-checks]] の壊れ方②で、
+# **赤でもとりあえずもう一度回す**を育てる一番たちの悪い形になる。⇒ 待ち方
+# （`conftest.pump_until`）と、テーマ読み込みの失敗の見分け（`PoisonedInterpreter`）
+# を、注意書きではなくここで検査する。
+
+
+class TestConditionalWaiting:
+    """`pump_until` は「条件」で待ち、「時間」では待たないこと。"""
+
+    def test_条件が立ったら待たずに返る(self, root):
+        """壊れ方②の逆＝立っているのに上限まで待つと、全体実行が遅くなるだけ。"""
+        state = {"n": 0}
+
+        def done():
+            state["n"] += 1
+            return state["n"] >= 2                  # 2 回目の走査で立つ
+
+        began = time.monotonic()
+        assert pump_until(root, done, timeout_ms=5000) is True
+        assert time.monotonic() - began < 1.0, "条件が立っているのに待ち続けている"
+
+    def test_立たなければ上限で諦める(self, root):
+        """壊れ方①＝配線が死んでいるのに緑のまま返る、が起きないこと。"""
+        began = time.monotonic()
+        assert pump_until(root, lambda: False, timeout_ms=200) is False
+        assert 0.15 < time.monotonic() - began < 3.0, "上限が効いていない"
+
+    def test_待ちの長さが結果を変えない(self, root):
+        """③間違ったものを要求していない＝見ているのは条件であって時間ではない。"""
+        assert pump_until(root, lambda: True, timeout_ms=1) is True
+
+
+class TestThemeLoadFailuresAreTold:
+    """テーマ tcl の失敗を、**待てば直る／直らない**で見分けること（B-082②）。"""
+
+    def test_既にある_はリトライしないで別の失敗にする(self):
+        """🔴 待っても消えない失敗＝5 回空回りしてから『読めない』と言わないこと。
+
+        `sv.tcl` は light → dark の順に source する。dark で一過性の read 失敗が
+        起きると light だけが作られた状態で「読み込み済み」の印が付かず、次の
+        試行は `theme create sun-valley-light` で **"already exists"** に当たる。
+        ⇒ **何度やっても同じ**なので、待つのではなく作り直す側へ知らせる。
+        """
+        import sv_ttk
+
+        calls = []
+
+        def 既にある(name, master=None):
+            calls.append(name)
+            raise tk.TclError("Theme sun-valley-light already exists")
+
+        原本 = sv_ttk.set_theme
+        sv_ttk.set_theme = 既にある
+        try:
+            with pytest.raises(PoisonedInterpreter):
+                set_theme("dark")
+        finally:
+            sv_ttk.set_theme = 原本
+        assert calls == ["dark"], f"待っても消えない失敗を再試行している: {len(calls)} 回"
+
+    def test_一過性の_read_失敗は今までどおり再試行する(self):
+        """②毎回鳴る、にしないこと＝吸収すべき失敗まで打ち切ったら本末転倒。"""
+        import sv_ttk
+
+        calls = []
+
+        def 二回失敗(name, master=None):
+            calls.append(name)
+            if len(calls) < 3:
+                raise tk.TclError("couldn't read file \"sv.tcl\": No error")
+
+        原本 = sv_ttk.set_theme
+        sv_ttk.set_theme = 二回失敗
+        try:
+            set_theme("dark")             # 例外にならないこと
+        finally:
+            sv_ttk.set_theme = 原本
+        assert len(calls) == 3
 
 
 # ============================================================

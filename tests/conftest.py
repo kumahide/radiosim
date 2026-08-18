@@ -770,6 +770,14 @@ def make_tk_root(pytest_module=None):
     _no_display(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
 
 
+class PoisonedInterpreter(Exception):
+    """テーマ tcl が**途中まで**入った Tk インタプリタ（B-082②）。
+
+    直し方は「作り直す」しか無いので、**一過性の read 失敗とは別の例外**にする
+    （同じ `TclError` のままだと、呼ぶ側が待って直そうとしてしまう）。
+    """
+
+
 def make_themed_root(theme_name: str = "dark"):
     """テーマとアプリのフォント設定まで済ませた Tk ルートを返す。
 
@@ -777,13 +785,48 @@ def make_themed_root(theme_name: str = "dark"):
     （sv_ttk の本文フォント）より小さく、そのまま測ると**実物より狭い前提**で
     ゲートが緑になる。実際 2.5b2 で、条件探索の必要幅 947px を「テーマ無しなら
     900px 未満」と測ってしまい、右端の条件列が見切れる実装を通した。
+
+    🔴 **汚れたインタプリタは捨てて作り直す**（B-082②）＝テーマ tcl が途中まで
+    入った Tk は、何度 `set_theme` を呼んでも直らない。**新しい Tk なら Tcl
+    インタプリタごと新品**なので、そこで読み直せば通る。
     """
     from views import theme as views_theme
 
-    root = make_tk_root()
-    set_theme(theme_name)
-    views_theme.apply_fonts(root)
-    return root
+    last = None
+    for _ in range(_TK_INIT_ATTEMPTS):
+        root = make_tk_root()
+        try:
+            set_theme(theme_name)
+        except PoisonedInterpreter as e:
+            last = e
+            root.destroy()                          # ⚠️ インタプリタごと捨てる
+            time.sleep(0.05)
+            continue
+        views_theme.apply_fonts(root)
+        return root
+    _no_display(f"sv_ttk テーマを読み込めない（作り直し {_TK_INIT_ATTEMPTS} 回）: {last}")
+
+
+# 汚れたインタプリタの見分け方（B-082 の症状②）。⚠️ **この文字列は sv.tcl の
+# 再 source が返す Tcl のメッセージ**（"Theme sun-valley-light already exists"）。
+_THEME_ALREADY_EXISTS = "already exists"
+
+
+def _interpreter_is_poisoned(err: "Exception") -> bool:
+    """テーマ tcl の**途中まで**が既にこのインタプリタへ入っているか（B-082②）。
+
+    🔴 **待っても消えない失敗**。`sv_ttk._load_theme` は「読み込み済み」の印を
+    **source が最後まで通ったときだけ** Tk ルートに付ける。ところが `sv.tcl` は
+    `light.tcl` → `dark.tcl` の順に source し、**`dark.tcl` の画像読み込みで
+    一過性の read 失敗が起きる**と、`sun-valley-light` だけが作られた状態で
+    印が付かないまま抜ける。⇒ 次の試行は `light.tcl` を頭から回し、
+    `ttk::style theme create sun-valley-light` で **"already exists"** に
+    ぶつかる＝**リトライは原理的に成功しない**（2026-08-14 に 5 回とも空回り）。
+
+    ⚠️ **Tcl にテーマを消す手段は無い**ので、直し方は 1 つだけ＝
+    **そのインタプリタ（＝Tk ルート）を捨てて作り直す**（`make_themed_root`）。
+    """
+    return _THEME_ALREADY_EXISTS in str(err)
 
 
 def set_theme(name: str) -> None:
@@ -792,6 +835,11 @@ def set_theme(name: str) -> None:
     上の `make_tk_root` と同じ一過性の read 失敗（"couldn't read file ...: No error"）が
     テーマ tcl の source でも起きる。ここで諦めると配色テストが落ちるので、
     Tk 初期化と同じくリトライで吸収する。
+
+    ⛔ **ただし「既にある」はリトライの対象ではない**（B-082②）＝`_interpreter_is_poisoned`
+    の註のとおり、待っても消えない。**5 回空回りしてから読み込み失敗として
+    落ちる**と、原因が「読めなかった」に見えて調査が丸ごと逸れるので、
+    ここで**別の失敗として**打ち切る。
     """
     import tkinter as tk
 
@@ -804,5 +852,48 @@ def set_theme(name: str) -> None:
             return
         except tk.TclError as e:
             last = e
+            if _interpreter_is_poisoned(e):
+                raise PoisonedInterpreter(str(e)) from e
             time.sleep(0.05)
     _no_display(f"sv_ttk テーマを読み込めない（{_TK_INIT_ATTEMPTS} 回試行）: {last}")
+
+
+# 表示環境の監視（`views.theme.watch_display`）を検証するテストは、**デバウンスを
+# 挟んだ非同期の通知**を待つ。ここを「決め打ちの締め切りまで `mainloop` を回す」
+# 形で書くと、機械の速さに結果を賭けることになる（B-082）。
+_PUMP_POLL_MS = 10
+
+
+def pump_until(root, done, timeout_ms: int = 5000, poll_ms: int = _PUMP_POLL_MS) -> bool:
+    """**条件が立つまで** Tk のイベントを回す（時間では待たない）。
+
+    ⚠️ **旧い書き方**＝`root.after(デバウンス + 80, root.quit)` → `root.mainloop()`。
+    これは「デバウンスの消化が締め切りに間に合う」ことに賭けている。実測した余裕は
+    **77ms しかなく**（B-082 の調査・単独実行 20 回）、デバウンスは `<Configure>`
+    が 1 つ来るたびに**測り直される**ので、`update()` の後に窓の配置が確定して
+    もう 1 つ届けば、その場で締め切りを超える。⇒ **製品は正しいのにゲートだけが
+    赤くなる**（[[feedback-promote-recurring-checks]] の壊れ方②）。
+
+    ⛔ **待ち時間を延ばして誤魔化さない。** `timeout_ms` は「壊れているものを
+    赤くする」ための上限であって、**待ちの長さで結果が変わってはいけない**
+    （立つ条件なら 260ms 前後で返る）。
+
+    Args:
+        root: イベントを回す Tk ウィジェット。
+        done: 立ったかどうかを返す呼び出し可能。**副作用を持たせない**。
+        timeout_ms: 立たなかったと諦めるまでの上限。
+        poll_ms: 回す間隔。
+
+    Returns:
+        条件が立てば `True`、上限まで立たなければ `False`。⚠️ **戻り値は捨ててよい**
+        ＝呼び出し側は今までどおり assert で落ちる（上限まで待った後に、同じ
+        メッセージで赤くなる）。
+    """
+    deadline = time.monotonic() + timeout_ms / 1000
+    while True:
+        root.update()                                  # 溜まったイベント（`after` 含む）を消化
+        if done():
+            return True
+        if time.monotonic() >= deadline:
+            return False
+        time.sleep(poll_ms / 1000)

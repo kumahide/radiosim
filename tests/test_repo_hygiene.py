@@ -591,6 +591,97 @@ class TestConfigHasOneSource:
         assert not missing, f"許可リストに実在しないファイルがある: {missing}"
 
 
+# ============================================================
+# 非同期の待ち方（B-082・2026-08-18）
+# ============================================================
+# 🔴 **締め切りを決めて `mainloop` を抜ける待ち方を禁じる。** `root.after(待ち時間,
+# root.quit)` → `root.mainloop()` は、「非同期の結果が締め切りまでに出る」ことを
+# **機械の速さに賭けている**。実測した余裕は 77ms しか無く（B-082・単独 20 回）、
+# デバウンスが `<Configure>` 1 つで測り直されればその場で足りなくなる＝**製品は
+# 正しいのにゲートだけが間欠で赤くなる**（[[feedback-promote-recurring-checks]] の
+# 壊れ方②で、しかも「赤でもとりあえずもう一度回す」を育てる一番たちの悪い形）。
+#
+# ⇒ 代わりに **`conftest.pump_until`（条件で待つ・上限つき）** を使う。注意書きでは
+#    なくゲートにするのは、**次に監視系のテストを書く人が思い出さないと再発する**ため。
+#
+# ⚠️ **走査するのは `tests/test_*.py` だけ**＝`conftest.py` には*禁じている書き方*を
+# 説明する docstring があり、そこを叩くと「間違ったものを要求するゲート」になる。
+_QUOTED_RE = re.compile(r'"[^"]*"' + r"|'[^']*'")
+_DEADLINE_WAIT_RE = re.compile(r"\.after\([^)]*\.quit\b")
+
+
+def deadline_waits(name: str, text: str) -> list[str]:
+    """テスト 1 本の中の「締め切りで `mainloop` を抜ける」行。
+
+    ⚠️ **文字列の中の言及は対象外**＝このゲート自身が「禁じている書き方」を
+    文字列で持っており（下の壊れ方①）、素で当てると**自分に噛みつく**。
+    実際の違反は `after` に `quit` を渡す**素の式**なので、引用符で囲まれた
+    範囲を落としてから当てれば取りこぼさない。
+    ⛔ **この docstring に禁止形をそのまま書かないこと**（引用符の外なので、
+    書いた瞬間にこの検査自身が違反になる＝一度実際に踏んだ）。
+    """
+    found = []
+    for i, line in enumerate(text.splitlines(), 1):
+        code = line.split("#", 1)[0]              # コメント内の言及は対象外
+        code = _QUOTED_RE.sub("", code)           # 文字列内の言及も対象外
+        if _DEADLINE_WAIT_RE.search(code):
+            found.append(f"{name}:{i}")
+    return found
+
+
+def _test_modules_with_text():
+    for path in sorted((ROOT / "tests").glob("test_*.py")):
+        yield path.relative_to(ROOT).as_posix(), path.read_text(encoding="utf-8")
+
+
+class TestAsyncWaitsAreConditional:
+    def test_テストが締め切りで_mainloop_を抜けない(self):
+        """本体の不変条件。"""
+        found = [v for rel, text in _test_modules_with_text()
+                 for v in deadline_waits(rel, text)]
+        assert not found, (
+            "締め切りを決めて mainloop を抜ける待ち方があります: " + ", ".join(found)
+            + "\n`conftest.pump_until(root, 条件)` で**条件が立つまで**回して"
+            "ください（B-082＝この書き方は全体実行で間欠的に赤くなります）。"
+        )
+
+    def test_壊れ方1_一度も落ちない_ことがない(self):
+        """①旧い書き方を与えたら必ず検出すること。"""
+        text = "        root.after(theme._DISPLAY_DEBOUNCE_MS + 80, root.quit)\n"
+        assert deadline_waits("tests/test_theme.py", text)
+
+    @pytest.mark.parametrize("code", [
+        "root.after(300, root.quit)",
+        "win.after(_DEBOUNCE + 80, win.quit)",             # 別の窓で待つ形
+        "self.root.after(500, self.root.quit)",            # 属性経由
+    ])
+    def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
+        assert deadline_waits("tests/test_新しい窓.py", code + "\n")
+
+    def test_壊れ方2_毎回鳴る_ことがない(self):
+        """②正しい書き方では沈黙すること。"""
+        正当 = (
+            "    pump_until(root, lambda: notified)\n"
+            "    root.after(50, tick)\n"                  # quit しない after は正当
+            "    root.quit()\n"                           # 直に抜けるのも対象外
+            "    root.mainloop()\n"
+            "    # root.after(300, root.quit) と書いてはいけない（説明のコメント）\n"
+        )
+        assert deadline_waits("tests/test_theme.py", 正当) == []
+
+    def test_壊れ方3_間違ったものを要求していない(self):
+        """③禁じているのは**待ち方**であって `after` でも `mainloop` でもない。
+
+        製品コードは対象外（窓を閉じる `after` は正当な実装）。⚠️ **範囲を決めて
+        いるのは走査面**（`deadline_waits` は渡された字だけを見る）なので、
+        「何を渡すか」の側を実在のファイル名で確かめる。
+        """
+        rels = [rel for rel, _ in _test_modules_with_text()]
+        assert "tests/test_theme.py" in rels            # テストは見る
+        assert "tests/conftest.py" not in rels          # 禁止例を説明する側は見ない
+        assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
+
+
 # --- pre-commit フックからの呼び出し口 ---------------------------------------
 
 if __name__ == "__main__":
