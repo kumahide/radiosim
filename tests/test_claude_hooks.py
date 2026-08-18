@@ -1698,3 +1698,257 @@ class TestPipeTailParsing:
         分類器はこれで C を 46 → 61 件に水増しした）。
         """
         assert _verdict(detours, 'ls ISSUES.md 2>/dev/null && head -60 ISSUES.md') == "deny"
+
+
+# ============================================================
+# 区間集計＝主指標「課題 1 件の完了コスト」（I-103・2026-08-18）
+# ============================================================
+# 🔑 **測る対象が間違っていると、効かない施策を追い続ける**（I-091 で実際にそうなった
+# ＝「平均並列度」は行動の代理指標でしかなく、**安くなったかを直接は答えない**）。
+# ⇒ 主指標を ①課題 1 件あたりの往復数 ②同・総入力 ③作業構成別の中央値
+# ④定型検証の往復数 に置き換え、並列度は補助診断へ降格した。
+#
+# ⚠️ **ここが守るのは「数え方」であって「いくつであるべきか」ではない**
+# （TestParallelismFolding と同じ姿勢＝規範的な閾値は置かない）。
+# 特に危ないのは**区間の境界**で、境界を取り違えるとコストの帰属が丸ごとずれる。
+# 実データで実際に踏んだ 3 つを、ここで固定する:
+#   1. `git -C <path> commit` が多数派（素朴な文字列一致では取れない）
+#   2. ヒアドキュメントの**本文の中の文字列**をコミットと誤認する（実データに在る）
+#   3. 課題 ID を本文全体から拾うと、*参照しただけ*の ID まで閉じたことになる
+#      （実データで 1 コミットが 8 件を閉じた）
+
+
+class TestCommitBoundaryDetection:
+    """区間の境界＝コミットの検出（コストの帰属はここで決まる）。"""
+
+    @pytest.mark.parametrize("cmd", [
+        "git commit -m 'x'",
+        "git add -A && git commit -F -",
+        "git -C d:/dev/radiosim-repo commit -q -F -",          # 実データの多数派
+        "git -C D:\\dev\\repo add -A; git -C D:\\dev\\repo commit -q -m",
+        "& $env:X -m pytest -q; git -C d:/r add -A; git -C d:/r commit -q -m",
+    ])
+    def test_real_commits_are_boundaries(self, analyzer, cmd):
+        assert analyzer.is_commit_command(cmd), cmd
+
+    @pytest.mark.parametrize("cmd", [
+        "git log --oneline -5",
+        "git status --short",
+        "git diff --check HEAD",
+        # 🔴 本文の中の文字列＝コマンドではない（実データに在る形）
+        "python - <<'HEOF'\nfor line in f:\n    if 'git commit' in line:\n        pass\nHEOF",
+    ])
+    def test_mentions_are_not_boundaries(self, analyzer, cmd):
+        assert not analyzer.is_commit_command(cmd), cmd
+
+    def test_the_summary_line_is_the_body_not_the_heredoc_marker(self, analyzer):
+        """要約は**本文の 1 行目**＝ヒアドキュメントの閉じ引用符を食い残さないこと。
+
+        ⚠️ 食い残すと要約が全部 `'` になり、**課題 ID を要約から拾えなくなる**
+        （実装中に実データで踏んだ）。
+        """
+        cmd = "git add -A && git commit -F - <<'MSG'\nfix: 直す（B-001）\n\n本文\nMSG"
+        assert analyzer._commit_subject(cmd) == "fix: 直す（B-001）"
+
+    def test_the_powershell_here_string_summary_is_read_too(self, analyzer):
+        cmd = "git add -A && git commit -m @'\nfix: 直す（B-001）\n\n本文\n'@"
+        assert analyzer._commit_subject(cmd) == "fix: 直す（B-001）"
+
+
+class TestIssueIntervals:
+    """区間 → 課題への束ね方。"""
+
+    def _resp(self, mid, ts, *, tools=(), ctx=1000):
+        """1 応答（分割されていない形）。`tools` は (名前, 入力) の列。"""
+        content = [{"type": "text", "text": "x"}]
+        content += [{"type": "tool_use", "name": n, "input": i, "id": f"{mid}-{k}"}
+                    for k, (n, i) in enumerate(tools)]
+        return {"type": "assistant", "timestamp": ts,
+                "message": {"id": mid, "content": content,
+                            "usage": {"cache_read_input_tokens": ctx}}}
+
+    def _commit(self, mid, ts, subject):
+        cmd = "git add -A && git commit -F - <<'MSG'\n" + subject + "\nMSG"
+        return self._resp(mid, ts, tools=[("Bash", {"command": cmd})])
+
+    def _write(self, tmp_path, entries, name="t.jsonl"):
+        p = tmp_path / name
+        p.write_text("\n".join(json.dumps(e, ensure_ascii=False) for e in entries),
+                     encoding="utf-8")
+        return [p]
+
+    def test_an_interval_runs_from_the_previous_commit_to_this_one(
+            self, analyzer, tmp_path):
+        paths = self._write(tmp_path, [
+            self._resp("a", "2026-08-18T01:00"),
+            self._resp("b", "2026-08-18T01:01"),
+            self._commit("c", "2026-08-18T01:02", "fix: 直す（B-001）"),
+            self._resp("d", "2026-08-18T01:03"),
+            self._commit("e", "2026-08-18T01:04", "fix: 直す（B-002）"),
+        ])
+        done, tail = analyzer.intervals(paths)
+        assert [iv.issues for iv in done] == [("B-001",), ("B-002",)]
+        assert [iv.roundtrips for iv in done] == [3, 2]   # コミットの応答を含む
+        assert tail == []
+
+    def test_work_after_the_last_commit_is_not_a_finished_interval(
+            self, analyzer, tmp_path):
+        """⚠️ 末尾の未コミット分を区間に数えない（*閉じていない*ものは母数の外）。"""
+        paths = self._write(tmp_path, [
+            self._commit("a", "2026-08-18T01:00", "fix: 直す（B-001）"),
+            self._resp("b", "2026-08-18T01:01"),
+        ])
+        done, tail = analyzer.intervals(paths)
+        assert len(done) == 1 and len(tail) == 1
+
+    def test_a_failed_commit_does_not_close_an_interval(self, analyzer, tmp_path):
+        """失敗したコミットで区切らない＝**やり直した分のコストが消える**のを防ぐ。"""
+        entries = [
+            self._commit("a", "2026-08-18T01:00", "fix: 直す（B-001）"),
+            self._resp("b", "2026-08-18T01:01"),
+            self._commit("c", "2026-08-18T01:02", "fix: 直す（B-001）"),
+        ]
+        # a の呼び出しだけ失敗した、という結果を足す
+        entries.insert(1, {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": "a-0", "is_error": True,
+             "content": "pre-commit hook failed"}]}})
+        done, _tail = analyzer.intervals(self._write(tmp_path, entries))
+        assert len(done) == 1, "失敗したコミットで区切っている"
+        assert done[0].roundtrips == 3
+
+    def test_issue_ids_come_from_the_summary_line_only(self, analyzer, tmp_path):
+        """🔴 本文の**参照 ID** を閉じた課題として数えないこと。"""
+        body = ("fix: 直す（B-001）\n\n"
+                "B-017 と形が似ているが別物。I-042 も参照した。")
+        paths = self._write(tmp_path, [
+            self._commit("a", "2026-08-18T01:00", body)])
+        done, _ = analyzer.intervals(paths)
+        assert done[0].issues == ("B-001",)
+
+    def test_a_commit_closing_two_issues_splits_the_cost(self, analyzer, tmp_path):
+        """⚠️ **総和が実測を超えないこと**＝両方に全額を付けない。"""
+        paths = self._write(tmp_path, [
+            self._resp("a", "2026-08-18T01:00"),
+            self._commit("b", "2026-08-18T01:01", "fix: 束ねて直す（B-001・B-002）"),
+        ])
+        done, _ = analyzer.intervals(paths)
+        agg = analyzer.per_issue(done)
+        assert set(agg) == {"B-001", "B-002"}
+        assert agg["B-001"]["往復"] == agg["B-002"]["往復"] == 1.0
+        assert sum(a["往復"] for a in agg.values()) == done[0].roundtrips
+
+    def test_the_same_issue_across_commits_is_one_item(self, analyzer, tmp_path):
+        """課題 1 件＝**コミット 1 本ではない**（B-106 は 6 コミットで 1 件だった）。"""
+        paths = self._write(tmp_path, [
+            self._commit("a", "2026-08-18T01:00", "fix: 直す（B-001）"),
+            self._resp("b", "2026-08-18T01:01"),
+            self._commit("c", "2026-08-18T01:02", "fix: 直す（B-001 の 2 巡目）"),
+        ])
+        agg = analyzer.per_issue(analyzer.intervals(paths)[0])
+        assert list(agg) == ["B-001"]
+        assert agg["B-001"]["区間"] == 2 and agg["B-001"]["往復"] == 3.0
+
+    def test_records_are_ordered_by_time_across_sessions(self, analyzer, tmp_path):
+        """課題は**セッションをまたぐ**＝記録の並びでなく時刻で束ねること。"""
+        for sub in ("a", "b"):
+            (tmp_path / sub).mkdir(exist_ok=True)
+        newer = self._write(tmp_path / "b", [
+            self._resp("c", "2026-08-18T02:00"),
+            self._commit("d", "2026-08-18T02:01", "fix: 直す（B-002）")], "s2.jsonl")
+        older = self._write(tmp_path / "a", [
+            self._resp("a", "2026-08-18T01:00"),
+            self._commit("b", "2026-08-18T01:01", "fix: 直す（B-001）")], "s1.jsonl")
+        done, _ = analyzer.intervals(newer + older)   # わざと新しい記録を先に渡す
+        assert [iv.issues for iv in done] == [("B-001",), ("B-002",)]
+
+
+class TestWorkKindAndVerification:
+    """主指標③（作業構成）と④（定型検証）の数え方。"""
+
+    def _r(self, analyzer, *tools):
+        return analyzer.Response(
+            mid="m", tools=[(n, i, f"t{k}") for k, (n, i) in enumerate(tools)])
+
+    def test_editing_counts_as_implementation(self, analyzer):
+        assert analyzer.classify(self._r(analyzer, ("Edit", {}))) == "実装"
+
+    def test_running_the_suite_counts_as_review(self, analyzer):
+        for cmd in ("& $env:RADIOSIM_PYTHON -m pytest -q",
+                    "python buildtools/dev_check.py",
+                    "git diff --check HEAD"):
+            assert analyzer.classify(
+                self._r(analyzer, ("Bash", {"command": cmd}))) == "レビュー", cmd
+
+    def test_reading_and_searching_count_as_exploration(self, analyzer):
+        assert analyzer.classify(self._r(analyzer, ("Read", {}), ("Grep", {}))) == "探索"
+
+    def test_a_response_with_no_tools_is_neither(self, analyzer):
+        """会話だけの往復を実装や探索に混ぜない（混ぜると③が読めなくなる）。"""
+        assert analyzer.classify(self._r(analyzer)) == "その他"
+
+    def test_implementation_wins_over_review_in_the_same_response(self, analyzer):
+        """実装とテストを 1 往復でやったら「実装」＝④は別勘定なので奪われない。"""
+        r = self._r(analyzer, ("Edit", {}), ("Bash", {"command": "pytest -q"}))
+        assert analyzer.classify(r) == "実装"
+        assert any(analyzer.is_verification(c) for c in r.commands())
+
+    @pytest.mark.parametrize("cmd,verify", [
+        ("& $env:RADIOSIM_PYTHON -m pytest tests/test_batch.py", True),
+        ("python buildtools/dev_check.py --tests tests/test_x.py", True),
+        ("ruff check .", True),
+        ("git diff --check HEAD", True),
+        ("git log --oneline", False),
+        ("python main.py", False),
+    ])
+    def test_routine_verification_is_recognised(self, analyzer, cmd, verify):
+        assert analyzer.is_verification(cmd) is verify, cmd
+
+
+class TestPrimaryMetricIsCompletionCost:
+    """⚠️ **主指標が並列度へ戻っていないこと**（I-103 の芯）。
+
+    🔑 [[feedback-promote-recurring-checks]] の「開示を書く仕事は『無いことの検査』を
+    対で置く」＝*主指標を入れ替えた* と書いた以上、**書いた保証をテストで持つ**。
+    """
+
+    def _report(self, analyzer, capsys, tmp_path):
+        iv = TestIssueIntervals()
+        paths = iv._write(tmp_path, [
+            iv._resp("a", "2026-08-18T01:00", tools=[("Read", {"file_path": "x"})]),
+            iv._commit("b", "2026-08-18T01:01", "fix: 直す（B-001）"),
+            iv._resp("c", "2026-08-18T01:02",
+                     tools=[("Bash", {"command": "pytest -q"})]),
+            iv._commit("d", "2026-08-18T01:03", "fix: 直す（I-002）"),
+        ])
+        analyzer.report_issues(paths)
+        return capsys.readouterr().out
+
+    def test_all_four_primary_metrics_are_reported(self, analyzer, capsys, tmp_path):
+        out = self._report(analyzer, capsys, tmp_path)
+        for label in ("API往復数", "総入力トークン", "定型検証の往復数",
+                      "実装", "探索", "レビュー"):
+            assert label in out, label
+
+    def test_parallelism_is_labelled_as_a_secondary_diagnostic(
+            self, analyzer, capsys, tmp_path):
+        """並列度は出してよいが、**主指標ではないと明示**されていること。"""
+        out = self._report(analyzer, capsys, tmp_path)
+        lines = out.splitlines()
+        i = next(n for n, ln in enumerate(lines) if "平均並列度" in ln)
+        assert any("補助診断" in ln for ln in lines[max(i - 1, 0):i + 1]), (
+            "並列度が主指標として出ている（I-091 の降格が戻っている）")
+
+    def test_the_numbers_move_with_the_transcript(self, analyzer, tmp_path):
+        """⚠️ **構造的に固定されていないこと**（B-077 の型＝動かない指標を作らない）。"""
+        iv = TestIssueIntervals()
+        for sub in ("a", "b"):
+            (tmp_path / sub).mkdir(exist_ok=True)
+        cheap = iv._write(tmp_path / "a", [
+            iv._commit("b", "2026-08-18T01:01", "fix: 直す（B-001）")])
+        pricey = iv._write(tmp_path / "b", [
+            iv._resp("x", "2026-08-18T01:00"),
+            iv._resp("y", "2026-08-18T01:00"),
+            iv._commit("b", "2026-08-18T01:01", "fix: 直す（B-001）")])
+        got = [analyzer.per_issue(analyzer.intervals(p)[0])["B-001"]["往復"]
+               for p in (cheap, pricey)]
+        assert got == [1.0, 3.0]
