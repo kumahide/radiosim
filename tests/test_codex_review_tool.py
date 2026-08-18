@@ -271,3 +271,99 @@ def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp
     # ⛔ 本番の置き場に 1 つも足していないこと（消していないことは自明にならない）
     after = {p.name for p in real_dir.glob("*")} if real_dir.exists() else set()
     assert after == before, f"検査が実リポジトリの置き場を触った: {after ^ before}"
+
+
+def _run_with_stub(stub_codex, tmp_path, out_dir_arg, cwd, round_no):
+    """stub の codex で 1 巡走らせ、`(proc, 入力文)` を返す。
+
+    stub は必ず異常終了する（`_STUB`）ので、ここで見られるのは
+    **Codex を呼ぶまでに組み立てたもの**＝入力文が名指しする差分のパス。
+    """
+    prompt_out = tmp_path / f"prompt_{round_no}.txt"
+    env = {**os.environ, "CODEX_EXE": str(stub_codex),
+           "STUB_PROMPT_OUT": str(prompt_out)}
+    proc = subprocess.run(
+        ["pwsh", "-NoProfile", "-File", str(SCRIPT),
+         "-Mode", "code", "-Base", "HEAD~1", "-Round", str(round_no),
+         "-OutDir", str(out_dir_arg)],
+        cwd=str(cwd), env=env, capture_output=True, text=True,
+        encoding="utf-8", errors="replace", timeout=180,
+    )
+    prompt = prompt_out.read_text(encoding="utf-8").strip() if prompt_out.exists() else ""
+    return proc, prompt
+
+
+def _diff_named_by(prompt: str) -> Path:
+    """入力文が名指しする差分のパス（Codex の作業根は repo なので相対は repo 基準）。"""
+    m = re.search(r"(\S*round\d+_diff\S*\.diff)", prompt)
+    assert m, f"入力文が差分を名指ししていない: {prompt!r}"
+    named = Path(m.group(1))
+    return named if named.is_absolute() else (ROOT / named)
+
+
+def test_a_sibling_directory_is_not_taken_for_a_child_of_the_repository(stub_codex, tmp_path):
+    r"""⛔ `<repo>-review` のような**兄弟**を「リポジトリ配下」と読まないこと（B-107）。
+
+    文字列の前方一致だけで配下を判定していたので、`D:\dev\radiosim-repo` と
+    `D:\dev\radiosim-repo-review` が「配下」になり、`Substring` が
+    `-review\…diff` という**存在しないパス**を切って Codex に渡していた
+    （＝差分を読めない巡になる）。境界（区切り文字）まで見るのが処方。
+
+    ⚠️ **兄弟でなければ再現しない**ので、置き場はリポジトリの隣に作る
+    （`tmp_path` では前方一致が起きない＝*代役が本物より寛容だと検査は空振りする*）。
+    後始末は finally で必ず行う。
+    """
+    if sys.platform != "win32":
+        pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
+    if not shutil.which("pwsh"):
+        pytest.skip("pwsh が無い環境")
+    if not SCRIPT.exists():
+        pytest.skip("run.ps1 が無い環境")
+
+    sibling = ROOT.parent / f"{ROOT.name}-review-pytest-{os.getpid()}"
+    sibling.mkdir()
+    try:
+        proc, prompt = _run_with_stub(stub_codex, tmp_path, sibling, ROOT, 901)
+        assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+        named = _diff_named_by(prompt)
+        assert named.exists(), (
+            f"入力文が存在しないパスを指している: {named} "
+            "（兄弟ディレクトリを配下と誤判定して相対化した）"
+        )
+        assert named.parent.resolve() == sibling.resolve(), (
+            f"差分が -OutDir の外に置かれた: {named}"
+        )
+    finally:
+        shutil.rmtree(sibling, ignore_errors=True)
+
+
+def test_a_relative_outdir_is_anchored_to_the_repository_not_the_caller(stub_codex, tmp_path):
+    """相対の `-OutDir` の基準を**リポジトリに固定**すること（B-107・原文の後段）。
+
+    基準が呼び出し元の作業ディレクトリだと、**同じ引数が呼ぶ場所で別の場所を指す**。
+    ⇒ ここでは repo の外を作業ディレクトリにして走らせ、置き場が repo 基準で
+    解決されることを見る（`.qa/` は git-ignore 済みなので後始末で消して足りる）。
+    """
+    if sys.platform != "win32":
+        pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
+    if not shutil.which("pwsh"):
+        pytest.skip("pwsh が無い環境")
+    if not SCRIPT.exists():
+        pytest.skip("run.ps1 が無い環境")
+
+    rel = f".qa/codex_review_pytest_{os.getpid()}"
+    expected = ROOT / rel
+    stray = tmp_path / rel
+    try:
+        proc, prompt = _run_with_stub(stub_codex, tmp_path, rel, tmp_path, 902)
+        assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+        assert not stray.exists(), (
+            f"相対 -OutDir が呼び出し元の作業ディレクトリ基準で解決された: {stray}"
+        )
+        named = _diff_named_by(prompt)
+        assert named.exists(), f"入力文が存在しないパスを指している: {named}"
+        assert named.parent.resolve() == expected.resolve(), (
+            f"相対 -OutDir がリポジトリ基準になっていない: {named}"
+        )
+    finally:
+        shutil.rmtree(expected, ignore_errors=True)

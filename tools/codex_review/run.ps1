@@ -69,7 +69,36 @@ $ErrorActionPreference = 'Stop'
 
 $toolDir  = Split-Path -Parent $MyInvocation.MyCommand.Path
 $repoRoot = Split-Path -Parent (Split-Path -Parent $toolDir)
-$outDir   = if ($OutDir) { $OutDir } else { Join-Path $repoRoot '.qa\codex_review' }
+
+# --- 「リポジトリの配下か」を境界まで見て判定する ---
+#
+# ⛔ **文字列の前方一致で配下を判定しない**（2026-08-17・Codex 23 巡目 P2＝B-107）。
+#    `StartsWith($repoRoot)` だけだと `…\radiosim-repo` と `…\radiosim-repo-review`
+#    のような**兄弟**が「配下」になり、`Substring` が `-review\…diff` という
+#    存在しないパスを切って Codex に渡す（＝差分を読めない巡になる）。
+#    ⇒ 双方を絶対パスへ正規化し、**区切り文字を含む prefix** で見る。
+#    🔴 これは B-099 と同じ型の 4 度目＝*入口を柔らかくしたら、出口の仮定が古くなる*。
+$repoPrefix = [IO.Path]::GetFullPath($repoRoot).TrimEnd(
+    [IO.Path]::DirectorySeparatorChar, [IO.Path]::AltDirectorySeparatorChar
+) + [IO.Path]::DirectorySeparatorChar
+
+function Get-PathRelativeToRepo([string]$Path) {
+    $full = [IO.Path]::GetFullPath($Path)
+    if ($full.StartsWith($script:repoPrefix, [StringComparison]::OrdinalIgnoreCase)) {
+        return $full.Substring($script:repoPrefix.Length)
+    }
+    return $full
+}
+
+# 相対の `-OutDir` の基準は**リポジトリに固定**する（同 P2 の後段）。
+# 既定でも呼び出し元の作業ディレクトリでもなく repo 基準＝同じ引数が呼ぶ場所で
+# 別の場所を指さない（このスクリプトの他のパスは全て repo 基準で組み立てている）。
+$outDir = if ($OutDir) {
+    if ([IO.Path]::IsPathRooted($OutDir)) { $OutDir } else { Join-Path $repoRoot $OutDir }
+} else {
+    Join-Path $repoRoot '.qa\codex_review'
+}
+$outDir = [IO.Path]::GetFullPath($outDir)
 # memory はリポジトリの外（Claude Code のプロジェクト領域）にある。
 # ⚠️ **絶対パスを直書きしない**＝このファイルは公開物なので、手元のユーザー名と
 #    ディレクトリ構成がそのまま出るし、他の環境では動かない。
@@ -170,11 +199,8 @@ if ($Mode -eq 'code') {
     #    ままだった＝外部ディレクトリを指すと `Substring` が無関係な位置で切り、
     #    **存在しないパスを入力文に渡して Codex が差分を読めない**。
     #    作業根（`-C`）は repo なので、外なら絶対パスで渡すのが正しい。
-    $relDiff = if ($diffPath.StartsWith($repoRoot, [StringComparison]::OrdinalIgnoreCase)) {
-        $diffPath.Substring($repoRoot.Length).TrimStart('\')
-    } else {
-        $diffPath
-    }
+    #    ⚠️ 配下かどうかの判定は上の `Get-PathRelativeToRepo`（境界まで見る＝B-107）。
+    $relDiff = Get-PathRelativeToRepo $diffPath
     $prompt  = (Get-Content (Join-Path $toolDir 'prompt_code.txt') -Raw -Encoding UTF8).
                     Replace('{DIFF_PATH}', $relDiff).Replace('{BASE}', $Base)
 }
