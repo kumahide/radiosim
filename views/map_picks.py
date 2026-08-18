@@ -24,8 +24,6 @@ from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
 
 if TYPE_CHECKING:
     from tkintermapview import TkinterMapView
-    from tkintermapview.canvas_path import CanvasPath
-    from tkintermapview.canvas_position_marker import CanvasPositionMarker
 
     from views.map_window import _AppendSink, _SingleSink, _WaypointSink
 
@@ -47,11 +45,8 @@ class _PickMixin:
         _waypoint_sink: "_WaypointSink | None"
         _tx_coord: "tuple | None"
         _rx_coord: "tuple | None"
-        _tx_marker: "CanvasPositionMarker | None"
-        _rx_marker: "CanvasPositionMarker | None"
-        _path_line: "CanvasPath | None"
-        _dist_label: "CanvasPositionMarker | None"
-        _dist_badge: "ImageTk.PhotoImage | None"
+        _pick_objects: list
+        _pick_images: list
         _tx_icon: ImageTk.PhotoImage
         _rx_icon: ImageTk.PhotoImage
         _relay_icon: ImageTk.PhotoImage
@@ -169,23 +164,11 @@ class _PickMixin:
 
     def _show_coord_visuals(self) -> None:
         """保持中の TX/RX 座標からマーカー・経路・距離ラベルを再構築する。"""
-        if self._tx_coord is not None:
-            self._set_pick_marker("tx", *self._tx_coord)
-        if self._rx_coord is not None:
-            self._set_pick_marker("rx", *self._rx_coord)
+        self._refresh_picks()
 
     def _clear_coord_visuals(self) -> None:
         """マーカー・経路・距離ラベル・確定パスを地図から消す（座標値は保持する）。"""
-        # **手放してから消す**（B-080）＝消している最中に再入されても、内側が
-        # 作り直した新しいマーカー・線を外側が None で上書きして取り落とさない。
-        objs = (self._tx_marker, self._rx_marker, self._path_line, self._dist_label)
-        self._tx_marker = None
-        self._rx_marker = None
-        self._path_line = None
-        self._dist_label = None
-        for obj in objs:
-            if obj is not None:
-                obj.delete()
+        self._clear_pick_visuals()
         self._clear_committed_paths()
 
     # ----------------------------------------------------------
@@ -309,13 +292,11 @@ class _PickMixin:
 
         確定済みパス（_committed）には触れない＝append 後も軌跡は地図に残る。
         """
-        objs = (self._tx_marker, self._rx_marker, self._path_line, self._dist_label)
-        self._tx_marker = self._rx_marker = self._path_line = self._dist_label = None
-        for obj in objs:                       # 手放してから消す（B-080）
-            if obj is not None:
-                obj.delete()
+        # **座標を先に落としてから描き直す**（B-104）＝地図は座標の写しなので、
+        # 消し方を別に持たない（持つと再入したとき 2 つの手順が食い違う）。
         self._tx_coord = self._rx_coord = None
         self._pick_next = "tx"
+        self._refresh_picks()
 
     def _make_node_icon(self, hollow: bool) -> ImageTk.PhotoImage:
         """端点のノードアイコンを Tk 用にラップして返す（描画は map_graphics）。"""
@@ -326,50 +307,66 @@ class _PickMixin:
         return ImageTk.PhotoImage(map_graphics.distance_badge(text))
 
     def _set_pick_marker(self, role: str, lat: float, lon: float) -> None:
-        """TX/RX マーカーを設置（既存は置換）し、両方揃えばパス線を描く。"""
+        """TX/RX の座標を控え、ピック層（マーカー・経路線・距離ラベル）を描き直す。
+
+        🔴 **座標を先に控えてから描き直す**（B-104）。以前はマーカーを消す→作る→
+        参照を持ち替える、を役割ごとに手で書いていたが、`delete()` は中で
+        `canvas.update()` を回すので**消している最中に次のクリックが届く**。内側が
+        作ったマーカーの参照を外側が上書きし、**孤児マーカーが地図に残り**、
+        `_tx_coord` も 1 回前のクリックに巻き戻っていた（素早い連続クリック）。
+        ⇒ 座標だけを持ち、描画は他の 2 レイヤ（waypoints・committed）と同じ
+        「台帳ごと消して座標から描き直す＋直列化」に揃える。
+        """
         if role == "tx":
-            old, self._tx_marker = self._tx_marker, None   # 手放してから消す（B-080）
-            if old is not None:
-                old.delete()
             self._tx_coord = (lat, lon)
-            self._tx_marker = self._map.set_marker(
-                lat, lon, text=i18n.t("map_marker_tx"),
+        else:
+            self._rx_coord = (lat, lon)
+        self._refresh_picks()
+
+    def _refresh_picks(self) -> None:
+        """ピック層を描き直す（再入は `_redraw_serialized` が畳む＝B-104）。"""
+        self._redraw_serialized("picks", self._draw_picks)
+
+    def _clear_pick_visuals(self) -> None:
+        # 台帳ごと取り出してから消す（理由は `_clear_waypoint_visuals`＝B-080）。
+        objs, self._pick_objects = self._pick_objects, []
+        self._pick_images = []
+        for obj in objs:
+            try:
+                obj.delete()
+            except Exception:
+                pass
+
+    def _draw_picks(self) -> None:
+        """TX/RX の座標からマーカーを置き、両方揃えばパス線と距離ラベルを描く。"""
+        self._clear_pick_visuals()
+        if self._mode.get() in ("cache", "waypoints"):
+            return          # モードが見た目を決める（`_apply_mode_visibility`）
+        if self._tx_coord is not None:
+            self._pick_objects.append(self._map.set_marker(
+                self._tx_coord[0], self._tx_coord[1], text=i18n.t("map_marker_tx"),
                 icon=self._tx_icon, icon_anchor="center",
                 text_color=_MARKER_TEXT,
-            )
-        else:
-            old, self._rx_marker = self._rx_marker, None   # 手放してから消す（B-080）
-            if old is not None:
-                old.delete()
-            self._rx_coord = (lat, lon)
-            self._rx_marker = self._map.set_marker(
-                lat, lon, text=i18n.t("map_marker_rx"),
+            ))
+        if self._rx_coord is not None:
+            self._pick_objects.append(self._map.set_marker(
+                self._rx_coord[0], self._rx_coord[1], text=i18n.t("map_marker_rx"),
                 icon=self._rx_icon, icon_anchor="center",
                 text_color=_MARKER_TEXT,
-            )
-        self._redraw_path()
-
-    def _redraw_path(self) -> None:
-        """TX/RX が揃っていれば 2 点を結ぶパス線と中点の距離ラベルを引き直す。"""
-        line, self._path_line = self._path_line, None    # 手放してから消す（B-080）
-        label, self._dist_label = self._dist_label, None
-        if line is not None:
-            line.delete()
-        if label is not None:
-            label.delete()
+            ))
         if self._tx_coord is not None and self._rx_coord is not None:
             # 既定 width=9 は太いので細線に。色は基調のシアンでノードと揃える。
-            self._path_line = self._map.set_path(
-                [self._tx_coord, self._rx_coord], color=_MAP_CYAN_HEX, width=3)
+            self._pick_objects.append(self._map.set_path(
+                [self._tx_coord, self._rx_coord], color=_MAP_CYAN_HEX, width=3))
             # 水平距離ラベルを中点に重ねる（半透明ピル背景つき＝pan/zoom 追従）。
             mid = ((self._tx_coord[0] + self._rx_coord[0]) / 2,
                    (self._tx_coord[1] + self._rx_coord[1]) / 2)
             km = models.horizontal_distance_km(*self._tx_coord, *self._rx_coord)
-            text = units.format_distance(km)
-            self._dist_badge = self._make_distance_badge(text)
-            self._dist_label = self._map.set_marker(
-                mid[0], mid[1], icon=self._dist_badge, icon_anchor="center",
-            )
+            badge = self._make_distance_badge(units.format_distance(km))
+            self._pick_images.append(badge)        # GC 防止に保持
+            self._pick_objects.append(self._map.set_marker(
+                mid[0], mid[1], icon=badge, icon_anchor="center",
+            ))
 
     def _fit_to_existing_paths(self) -> None:
         """append 先（バッチ）の既存パス群の外接 bbox に地図をフィットする。"""

@@ -484,3 +484,85 @@ def test_only_two_basemaps_are_offered():
         "背景の選択肢を増やすなら、UI の器（Combobox）と出典表記の対応、"
         "そして『2 つに留める』と決めた判断（ISSUES.md I-028）を見直すこと。"
     )
+
+
+# ------------------------------------------------------------
+# 座標入力モードのピック層も同じ再入に耐えること（B-104＝B-080 の残り面）
+# ------------------------------------------------------------
+# B-080 の処方（台帳ごと取り出してから消す／描き直しを直列化する）は waypoints と
+# committed の 2 面で止まっていた。**同じ機構は TX/RX のピックマーカーと経路線・
+# 距離ラベルにもある**＝`delete()` が `canvas.update()` を回すので、素早い連続
+# クリックでは消している最中に次のクリックが届く。
+#
+# 🔑 守るべき不変条件は 2 つ＝**①最後のクリックが座標に載る**（数値欄が
+# source of truth で、地図はそれを写す）**②生きている地図オブジェクトが
+# 台帳から外れない**（外れた分は消し手が無く、以後ずっと地図に残る）。
+
+def _pick_stub():
+    """`_set_pick_marker` を呼ぶのに要る最小限だけを持つ MapWindow。"""
+    from views.map_window import MapWindow
+
+    win = MapWindow.__new__(MapWindow)
+    win._map = _ReentrantMapWidget()
+    win._mode = SimpleNamespace(get=lambda: "coords")
+    win._tx_coord = None
+    win._rx_coord = None
+    win._pick_objects = []
+    win._pick_images = []
+    win._tx_icon, win._rx_icon = "TX_ICON", "RX_ICON"
+    win._make_distance_badge = lambda text: f"BADGE:{text}"
+    win._redraw_state = {}
+    return win
+
+
+def test_pick_marker_survives_a_click_during_the_clear():
+    """TX の置き換え中に次のクリックが割り込んでも、最後の 1 点だけが残ること。"""
+    win = _pick_stub()
+    win._set_pick_marker("tx", 34.5, 132.4)          # 1 回目（消すものは無い）
+    # 2 回目の「古い TX を消す」最中に 3 回目のクリックが届く。
+    win._map.on_delete = lambda: win._set_pick_marker("tx", 34.7, 132.7)
+    win._set_pick_marker("tx", 34.6, 132.5)
+
+    assert win._tx_coord == (34.7, 132.7), (
+        f"最後のクリックが座標に反映されていない（{win._tx_coord}）")
+    alive = win._map.alive
+    assert len(alive) == 1, (
+        f"地図に {len(alive)} 個残っている（TX は 1 つのはず＝孤児マーカー）")
+
+
+def test_pick_path_survives_a_click_during_the_clear():
+    """経路線・距離ラベルの引き直し中に割り込まれても、二重に載らないこと。"""
+    win = _pick_stub()
+    win._set_pick_marker("tx", 34.5, 132.4)
+    win._set_pick_marker("rx", 34.6, 132.5)          # 線＋距離ラベルが出る
+    win._map.on_delete = lambda: win._set_pick_marker("rx", 34.8, 132.8)
+    win._set_pick_marker("rx", 34.7, 132.7)
+
+    assert win._rx_coord == (34.8, 132.8), (
+        f"最後のクリックが座標に反映されていない（{win._rx_coord}）")
+    kinds = sorted(o.kind for o in win._map.alive)
+    assert kinds == ["marker", "marker", "marker", "path"], (
+        f"TX・RX・距離ラベル・線の 4 つのはずが {kinds}（割り込みぶんが残っている）")
+
+
+def test_resetting_the_pick_layer_survives_a_click_of_its_own():
+    """**リセットそのもの**が再入に耐えること（ペア確定 → 次の TX 待ちへ戻す途中）。
+
+    ここで割り込むクリックは利用者の 3 回目のクリックそのものなので、**捨てずに
+    新しい TX として生かす**（座標が正典・地図はその写し、という約束のまま）。
+    見るのは「最後のクリックが座標に載り、地図がその座標ちょうどの写しであること」。
+    """
+    win = _pick_stub()
+    win._set_pick_marker("tx", 34.5, 132.4)
+    win._set_pick_marker("rx", 34.6, 132.5)
+    drawn = list(win._map.alive)
+    win._map.on_delete = lambda: win._set_pick_marker("tx", 34.9, 132.9)
+    win._reset_active_pick()
+
+    assert all(o.deleted for o in drawn), "リセット前の地図オブジェクトが消え残っている"
+    assert win._tx_coord == (34.9, 132.9), (
+        f"割り込んだクリックが座標に載っていない（{win._tx_coord}）")
+    assert win._rx_coord is None, "RX がリセットされていない"
+    alive = win._map.alive
+    assert len(alive) == 1, (
+        f"地図に {len(alive)} 個残っている（TX 1 つだけが座標の写し）")

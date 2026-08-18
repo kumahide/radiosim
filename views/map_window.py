@@ -198,10 +198,12 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._waypoint_sink: "_WaypointSink | None" = None
         self._tx_coord: tuple | None = None
         self._rx_coord: tuple | None = None
-        self._tx_marker = None
-        self._rx_marker = None
-        self._path_line = None
-        self._dist_label = None         # path 中点の水平距離ラベル（マーカー）
+        # ピック層の地図オブジェクト（TX/RX マーカー・経路線・距離ラベル）。
+        # 座標値は上の 2 つが source of truth で、ここは**写しの台帳**＝消すときに
+        # 取り落とさないよう 1 本のリストで持つ（B-104。他の 2 レイヤと同じ形）。
+        self._pick_objects: list = []
+        # そのレイヤの PhotoImage（距離バッジ）保持リスト（GC 防止）。
+        self._pick_images: list = []
         # 追記モードで既に確定したパスの地図オブジェクト（マーカー・線・距離バッジ）。
         # 座標値は持たない（バッチ表が source of truth）。毎回引き直す。
         self._committed: list = []
@@ -222,9 +224,6 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 畳むため**に持つ（B-080＝マーカーの削除が `canvas.update()` を回すので、
         # 消している最中に次の通知が届く）。詳細は `_redraw_serialized`。
         self._redraw_state: dict = {}
-        # 距離ラベルのバッジ画像（テキスト＋半透明ピル背景）。距離ごとに作り直す。
-        # PhotoImage は GC されると消えるためインスタンスに保持する。
-        self._dist_badge = None
 
         self._bbox_polygon = None
         self._tile_polygons: list = []
