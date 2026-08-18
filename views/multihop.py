@@ -785,14 +785,32 @@ class MultiHopWindow(tk.Toplevel):
         地点名は**結果の数字を作らない**ので（`_new_wp_vars` の約束・B-058/B-059）、
         名前を直しただけで受信レベルが消えるのは「消しすぎ」側の欠陥になる。
         ⇒ 触るのは `text` だけ。
+
+        🔴 **触ったら測り直す**（2026-08-18・B-100）＝見出しは `地点名 → 地点名` で
+        **利用者の入力に従って伸びる**のに、`text` を書き換えるだけでは窓に伝わらず、
+        伸びたぶんが右へ押し出されて**「判定」列が見切れる**（実測＝区間表が
+        647 → 993px に伸びても窓は 801px のまま）。⚠️ **行を作り直さないことと、
+        測り直さないことは別**＝前者は B-073 で正しく、足りないのは後者の 1 手。
+        ⚠️ 既定の地点名（`TX`/`R1`/`RX`）では表が窓より狭いままなので**再現しない**
+        ＝固定データで試している限り出ない欠陥だった。
         """
+        changed = False
         for i, lbl in enumerate(self._hop_name_labels):
             if i + 1 >= len(self._wp_vars):
                 break               # 地点の増減の途中＝この後 `_sync_hops` が来る
             try:
                 lbl.configure(text=self._hop_label_text(i))
+                changed = True
             except tk.TclError:
                 break               # 破棄済みの行（作り直しと競合した）＝次の描画に任せる
+        if changed:
+            # ⚠️ **1 文字ごとに走る**（`trace_add` 経由）が、`fit_to_content` は
+            # `grow_only` なので**広がる方向にしか動かない**＝打っている最中に窓が
+            # 伸び縮みして揺れることはない。
+            try:
+                self._fit_to_content()
+            except tk.TclError:
+                pass                # 破棄途中の窓（閉じ際に変数が書き換わる経路）
 
     # ----------------------------------------------------------
     # 実行

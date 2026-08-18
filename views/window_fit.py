@@ -784,7 +784,20 @@ def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     を返す。ゲート側が「何と比べるか」を窓ごとに書き直さずに済ませるための口で、
     申告を信じきらないのは**申告そのものが間違っている窓**（測り忘れ・測り方の
     誤り）を通さないため。
+
+    🔴 **受け皿を先に測り直す**（2026-08-18・B-100）。逃げ道（`scrollable_body`）を
+    持つ窓では `winfo_reqwidth()` が**キャンバスの要求幅で頭打ちになる**＝それを
+    更新するのは `_ScrollEscape.remeasure()` だけで、呼ぶのは `fit_to_content` だけ。
+    ⇒ **測り直しを呼ばない経路で中身が伸びると、ここは伸びる前の値を返し続ける**
+    （実測＝中継経路の区間表が 647 → 993px に伸びても、この関数は 801px のまま）。
+    **申告も実測も同じ嘘をつくので、大きい方を採っても救われない。**
+    ⚠️ これは「窓が測り忘れている」ことを**ゲートから見えなくする**欠陥だった
+    ＝[[feedback-promote-recurring-checks]] の壊れ方③（間違ったものを要求して
+    いる）。B-100 は 1 つの窓の話に見えて、**横断ゲートの目そのものが塞がっていた。**
     """
+    escape: "_ScrollEscape | None" = getattr(win, "_fit_scroll", None)
+    if escape is not None:
+        escape.remeasure()
     win.update_idletasks()
     need_w, need_h = getattr(win, "_fit_need", (0, 0))
     return max(win.winfo_reqwidth(), need_w), max(win.winfo_reqheight(), need_h)

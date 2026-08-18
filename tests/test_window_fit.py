@@ -349,6 +349,167 @@ def test_scenario_window_width_follows_the_condition_count():
 
 
 # ============================================================
+# 組み立てたあとに**中身の幅が伸びる**経路（B-100）
+# ============================================================
+# 🔴 **これまでの「増え方」は全部“行・列が増える”形だった**（地点を足す・条件列を
+# 足す・CSV を読み込む）。B-100 はそれとは別のクラス＝**行も列も増えないまま、
+# 既にあるセルの中身だけが伸びる**（区間の見出しが `TX → R1` から利用者の入力した
+# 地点名へ変わる）。窓は測り直しを呼ばないので、伸びたぶんが右へ押し出されて
+# **「判定」列が見切れる**。⚠️ 利用者は判定列があることを知らないので、
+# **見切れていること自体に気づけない。**
+#
+# 🔑 **固定データで試している限り永久に出ない**＝既定の地点名（`TX`/`R1`/`RX`）では
+# 表が窓より狭いままではみ出さない。**環境の差ではなく入力の差**だった
+# （「実機で再現しない」と報告され、一度 [[project-real-world-env-vdi]] クラスと
+# 誤って書いた＝入力を動かして初めて開発機で再現した）。
+#
+# ⚠️ **処方を 2 回出して 2 回とも外した経緯があるので、ゲートを先に書いて赤を
+# 出してから処方する**（2 回目は変異検証で空振りと判明＝ゲートが無ければ
+# 「直った」と報告していた）。
+_LONG_NAME = "広島県安芸郡海田町役場庁舎"        # 13 字（B-100 の再現に使った名前）
+
+
+def test_the_multihop_window_follows_a_longer_place_name():
+    """🔴 **地点名を書き換えたら窓も測り直すこと**（B-100）。
+
+    ⚠️ **開いた後に書き換えるのが肝**＝プロジェクトを開いて最初から長い名前が
+    入っている場合は、組み立て後の `_fit_to_content()` が測るので再現しない。
+    """
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _ = _open_multihop(root)
+        win.update()
+        before = win._hop_grid.winfo_reqwidth()
+        for i, wp in enumerate(win._wp_vars):
+            wp["name"].set(f"{_LONG_NAME}{i}")   # 製品の経路（欄に打つのと同じ）
+        win.update()
+        grid = win._hop_grid.winfo_reqwidth()
+        assert grid > before, (
+            f"前提が崩れている（区間表が {before}px から伸びていない）"
+            "＝はみ出さない条件で試している。名前をもっと長くすること。"
+        )
+        assert grid <= win._fit_size[0], (
+            f"区間表（{grid}px）が窓（{win._fit_size[0]}px）に入っていない＝右端の"
+            "「判定」列が見切れる。利用者は判定列があることを知らないので、"
+            "**見切れていること自体に気づけない**（B-100）。"
+        )
+        _assert_fits(win, "multihop（長い地点名）")
+    finally:
+        root.destroy()
+
+
+def test_required_size_sees_content_that_grew_without_a_refit():
+    """🔴 **横断ゲートの目が塞がっていた**（B-100 の systemic な半分）。
+
+    逃げ道（`scrollable_body`）を持つ窓では、窓の `winfo_reqwidth()` が**受け皿の
+    キャンバスの要求幅で頭打ちになる**。それを更新するのは `_ScrollEscape.remeasure()`
+    だけで、呼ぶのは `fit_to_content` だけ＝**測り直しを呼び忘れた窓では、
+    `required_size()` も伸びる前の値を返し続ける**（実測＝区間表が 647 → 993px に
+    伸びても 801px のまま）。
+
+    ⇒ **窓の測り忘れという欠陥クラスが、ゲートから原理的に見えなかった。**
+    申告（`_fit_need`）も実測（`winfo_req*`）も同じ嘘をつくので「大きい方を採る」
+    では救われない（[[feedback-promote-recurring-checks]] の壊れ方③）。
+
+    ⚠️ ここは**製品が測り直しを呼ばない状態を作って**検査する＝呼んでしまうと
+    `fit_to_content` が `remeasure()` を通すので、この欠陥は再現しない。
+    """
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _ = _open_multihop(root)
+        win.update()
+        # 製品の測り直しを止めた状態で中身だけを伸ばす（＝呼び忘れの再現）。
+        win._fit_to_content = lambda: None
+        for i, wp in enumerate(win._wp_vars):
+            wp["name"].set(f"{_LONG_NAME}{i}")
+        win.update()
+        grid = win._hop_grid.winfo_reqwidth()
+        need_w = window_fit.required_size(win)[0]
+        assert need_w >= grid, (
+            f"必要幅が中身に届いていない（申告 {need_w}px / 区間表 {grid}px）＝"
+            "受け皿のキャンバス幅で頭打ちになっている。この状態では**窓が測り直しを"
+            "呼び忘れても横断ゲートが緑になる**（B-100 を通した経路そのもの）。"
+        )
+    finally:
+        root.destroy()
+
+
+def test_the_multihop_window_follows_the_results_that_arrive():
+    """**結果が届いて区間表が伸びる**面（B-100 のクラス点検・同型の疑い）。
+
+    区間表は結果セル（受信レベル・マージン・判定）が空のまま組み立てられ、実行後に
+    数字が入る＝**行も列も増えないまま中身だけが伸びる**という B-100 と同じ形。
+
+    ✅ **実測では伸びない**（2026-08-18＝993px のまま）。理由は結果セルが
+    `width=12/12/6` と**字数で場所を先に確保している**こと。⇒ ここは
+    **「伸びない」ほうを固定する**＝伸びるようになった日にこのゲートが赤くなり、
+    `_show_hop_result` 側にも測り直しが要ることに気づける。⚠️ **`_assert_fits` を
+    置くだけでは何も検査しない**（伸びないのだから常に緑）＝壊れ方①。
+    """
+    from types import SimpleNamespace
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _ = _open_multihop(root)
+        win.update()
+        before = win._hop_grid.winfo_reqwidth()
+        pr = SimpleNamespace(
+            status="OK",
+            result=SimpleNamespace(p_rx=-105.32, actual_margin=-20.32))
+        win._clear_hop_results()
+        for index in range(1, win._hop_count() + 1):
+            win._show_hop_result(index, pr)
+        win.update()
+        assert win._hop_grid.winfo_reqwidth() == before, (
+            f"結果が届いて区間表が伸びるようになった（{before}px → "
+            f"{win._hop_grid.winfo_reqwidth()}px）＝結果セルが字数で場所を確保して"
+            "いる前提が崩れた。**B-100 と同じ形**なので、`_show_hop_result` の側にも"
+            "測り直し（`_fit_to_content`）が要る。"
+        )
+        _assert_fits(win, "multihop（結果あり）")
+    finally:
+        root.destroy()
+
+
+def test_the_batch_table_reserves_its_cell_widths_up_front():
+    """**複数経路で、既存セルの中身だけが伸びる**面（B-100 のクラス点検）。
+
+    列の増減では `_fit_refit` を呼んでいる＝**未確認だったのは「列も行も増えず、
+    セルの中身だけが長くなる」場合**（長い経路 ID・長い備考）。
+
+    ✅ **実測では伸びない**（2026-08-18）。複数経路の行は `tk.Entry` で、
+    `_WIDTHS` が**字数で幅を決めている**＝中身が何文字でも要求幅は動かない
+    （中身は欄の中でスクロールする）。⇒ 中継経路と同じく**「伸びない」ほうを
+    固定する**＝可変幅のセルへ変えた日にここが赤くなる。
+    """
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, owner = _open_batch(root)
+        _grow_batch(owner)                       # 行を 1 本入れておく
+        win.update()
+        table = owner._table_frame
+        before = table.winfo_reqwidth()
+        entries = owner._row_entries[0]
+        entries[0].delete(0, "end")
+        entries[0].insert(0, "x" * 60)           # 経路 ID
+        entries[-1].delete(0, "end")
+        entries[-1].insert(0, "や" * 40)          # 備考
+        win.update()
+        assert table.winfo_reqwidth() == before, (
+            f"セルの中身だけで表が伸びるようになった（{before}px → "
+            f"{table.winfo_reqwidth()}px）＝`_WIDTHS` が字数で幅を決めている前提が"
+            "崩れた。**B-100 と同じ形**なので、欄を編集する経路にも測り直しが要る。"
+        )
+        _assert_fits(win, "batch（セルの中身を伸ばした）")
+    finally:
+        root.destroy()
+
+
+# ============================================================
 # 実機の画面に収まること（B-021）
 # ============================================================
 # 出荷先の画面＝**FHD（1920×1080）100%**。実効上限は SCREEN_MARGIN を引いた値で、
