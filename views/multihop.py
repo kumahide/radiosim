@@ -93,6 +93,9 @@ class MultiHopWindow(tk.Toplevel):
         self._coord_format    = coord_format
         self._running  = False
         self._last_run: "mh.MultiHopRun | None" = None
+        # 実行に出したときの各区間の入力（`_clear_hop_results` が控える）＝結果を
+        # 行へ返してよいかの照合に使う（B-102・複数経路の `_run_inputs` と同じ形）。
+        self._run_hop_inputs: list[tuple] = []
 
         # 画面の状態＝waypoint 列とホップ別 RF（**これが source of truth**）。
         self._wp_vars:  list[dict[str, tk.StringVar]] = []
@@ -534,6 +537,16 @@ class MultiHopWindow(tk.Toplevel):
             self._common_fingerprint(),
         )
 
+    def _hop_count(self) -> int:
+        """`_hop_input(i)` を安全に呼べる区間の数（1..この値）。
+
+        ⚠️ **3 つの列（区間行・区間変数・地点）の一番短いところで測る**＝表を
+        作り直している最中に呼ばれても添字で落ちないこと（トレースは値が書かれた
+        瞬間に走るので、地点表とホップ表が揃う前に来る経路があり得る）。
+        """
+        return min(len(self._hop_result_labels), len(self._hop_vars),
+                   max(len(self._wp_vars) - 1, 0))
+
     def _common_fingerprint(self) -> tuple:
         """凍結した共通設定の**値**の指紋。
 
@@ -560,8 +573,7 @@ class MultiHopWindow(tk.Toplevel):
         """
         # ⚠️ **表を作り直している最中に呼ばれても落ちないこと**＝トレースは値が
         # 書かれた瞬間に走るので、地点表とホップ表が揃う前に来る経路があり得る。
-        hops = min(len(self._hop_result_labels), len(self._hop_vars),
-                   max(len(self._wp_vars) - 1, 0))
+        hops = self._hop_count()
         for index, cells in enumerate(self._hop_result_labels[:hops], start=1):
             if not cells["status"].cget("text") and not cells["rx"].cget("text"):
                 continue                    # そもそも結果が入っていない
@@ -875,9 +887,23 @@ class MultiHopWindow(tk.Toplevel):
 
         判定は `batch.PathResult.status`＝**成果物だけ失敗した区間も ERR** になる
         （I-010・出所は 1 か所）。
+
+        ⚠️ **実行中も地点表は編集できる**（止めているのは実行ボタンだけ）。
+        🔴 **添字だけで引いてはいけない**（B-102）＝地点を消すと後ろの区間が繰り上がる
+        ので、`TX → R1` の結果が**別の地点対を表す行**（`TX → RX`）へ入る。下の早期
+        return は**末尾が縮んだときにしか効かない**（範囲内に居続けるため）。
+        ⇒ **実行に出したときの入力と照合し、違えば書かない**（複数経路＝B-068 と
+        同じ処方・規則は B-058／B-059 と 1 本＝**結果は、それを生んだ入力が変わった
+        時点で結果でなくなる**）。計算そのものは開始時に凍結した経路で走るので、
+        **成果物（レポート・CSV）は元から正しい**＝直しているのは画面だけ。
         """
         if not (1 <= index <= len(self._hop_result_labels)):
             return                          # 実行中に地点が変わった＝返す先が無い
+        sent = (self._run_hop_inputs[index - 1]
+                if index <= len(self._run_hop_inputs) else None)
+        if sent is not None and (index > self._hop_count()
+                                 or self._hop_input(index) != sent):
+            return                          # 実行に出した区間ではない（実行中に編集された）
         cells  = self._hop_result_labels[index - 1]
         status = pr.status
         r      = pr.result
@@ -892,7 +918,14 @@ class MultiHopWindow(tk.Toplevel):
         setattr(cells["status"], "_hop_input", self._hop_input(index))
 
     def _clear_hop_results(self) -> None:
-        """区間表の結果列を空にする（実行の開始時＝前回の結果を残さない）。"""
+        """区間表の結果列を空にする（実行の開始時＝前回の結果を残さない）。
+
+        あわせて**実行に出した各区間の入力の控え**を取る（`_show_hop_result` が
+        使う＝B-102）。複数経路の `_clear_verdicts` と同じ形で、控えるのは
+        「開始時の姿」だけ＝実行中に画面がどう変わっても、この控えは動かない。
+        """
+        self._run_hop_inputs = [self._hop_input(i)
+                                for i in range(1, self._hop_count() + 1)]
         for cells in self._hop_result_labels:
             for cell in cells.values():
                 cell.config(text="")

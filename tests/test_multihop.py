@@ -796,6 +796,90 @@ class TestMultiHopWindow:
         finally:
             win.destroy(); root.destroy()
 
+    # --------------------------------------------------------
+    # 実行中の編集（B-102）＝**そもそも返してよい行か**
+    # --------------------------------------------------------
+    # 🔑 I-041 の規則には 3 つの面がある＝①どこへ返すか（I-041）②いつ結果でなく
+    # なるか（B-058/B-059）③**そもそも返してよい行か**（B-068＝複数経路 /
+    # B-102＝中継経路）。中継は引き当てが**添字**なので、地点を消すと後ろの区間が
+    # 繰り上がり、`TX → R1` の結果が**別の地点対の行**へ入る。
+    # ⚠️ **対で書く**＝「書かない」だけを見ると、何も書かない実装で緑になる
+    # （過剰な抑止も欠陥＝B-058 側の壊れ方）。
+    @staticmethod
+    def _fake_hop_result(p_rx=-70.0, margin=3.0, status="OK"):
+        from types import SimpleNamespace
+        return SimpleNamespace(
+            status=status,
+            result=SimpleNamespace(p_rx=p_rx, actual_margin=margin))
+
+    def _start_run(self, win):
+        """実行の開始だけを真似る（DEM を引かない）＝控えを取って走行中にする。"""
+        win._running = True
+        win._clear_hop_results()
+
+    def test_a_hop_result_is_not_written_to_a_row_shifted_during_the_run(
+            self, default_params_dict):
+        """実行中に中継点を消したら、その結果を繰り上がった行へ書かないこと（B-102）。
+
+        `TX / R1 / RX` の区間 1（`TX → R1`）が返る前に `R1` を消すと、区間 1 の行は
+        `TX → RX` になる。**添字は範囲内に居続ける**ので早期 return は効かない
+        ＝控えと照合しなければ、別の地点対の結果として貼られる。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()                     # TX / R1 / RX（区間 2 本）
+            self._start_run(win)
+            win._delete_waypoint(1)                 # 実行中に R1 を消す
+            win._show_hop_result(1, self._fake_hop_result())
+
+            cells = win._hop_result_labels[0]
+            assert cells["status"].cget("text") == "", \
+                "消した中継点の結果が、繰り上がった区間の行に貼られた"
+            assert cells["rx"].cget("text") == ""
+            assert getattr(cells["status"], "_hop_input", None) is None, \
+                "現在の入力で出た結果として控えられた（以後の編集でも消えない）"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_a_hop_result_is_written_when_the_route_is_untouched(
+            self, default_params_dict):
+        """🔴 **触っていなければ、結果はちゃんと入ること**（消しすぎの防止）。
+
+        上の抑止だけを入れると「何も書かない」実装が緑になる＝**対で縛る**。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            self._start_run(win)
+            win._show_hop_result(1, self._fake_hop_result())
+
+            cells = win._hop_result_labels[0]
+            assert cells["status"].cget("text") == "OK", "触っていない区間に結果が入らない"
+            assert cells["rx"].cget("text") == "-70.00"
+            assert getattr(cells["status"], "_hop_input", None) \
+                == win._hop_input(1), "結果を生んだ入力の控えが取れていない"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_a_hop_result_is_not_written_when_its_own_inputs_were_edited(
+            self, default_params_dict):
+        """同じ添字のままでも、**その区間の入力が変われば書かない**（B-068 と同じ規則）。
+
+        地点の増減だけでなく、座標・高さ・区間 RF の編集でも「実行に出した姿」では
+        なくなる。⇒ 照合の対象は添字ではなく `_hop_input`。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            self._start_run(win)
+            win._wp_vars[1]["height"].set("50")     # 実行中に R1 の高さを変えた
+            win._show_hop_result(1, self._fake_hop_result())
+
+            assert win._hop_result_labels[0]["status"].cget("text") == "", \
+                "編集後の入力に、編集前の結果が貼られた"
+        finally:
+            win.destroy(); root.destroy()
+
     def test_delete_removes_a_relay_not_the_endpoint(self, default_params_dict):
         """削除で消えるのは**中継点**（送信点・受信点は残る）。"""
         root, win = self._win(default_params_dict)
