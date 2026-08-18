@@ -255,6 +255,7 @@ radiosim/
 │   ├── window_fit.py     # ウィンドウの寸法と位置を決める唯一の実装（見切れ・画面外防止）
 │   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
 │   ├── multihop.py       # 中継経路ウィンドウ（地点＝入力面・区間は導出）
+│   ├── frozen_common.py  # 凍結帯「共通設定」に何を出すかの単一ソース（複数経路・中継経路）
 │   ├── batch_builder.py  # 複数経路ウィンドウ（本体＝共通設定・案件情報）
 │   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）

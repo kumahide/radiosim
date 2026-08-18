@@ -324,6 +324,40 @@ def test_the_frozen_header_does_not_decide_the_scenario_window_width():
         root.destroy()
 
 
+def test_the_frozen_header_does_not_decide_the_multihop_window_width():
+    """中継経路の窓幅を**凍結帯が決めていない**こと（帯 ≦ 区間表）。
+
+    B-053 で帯を 859 → 620px 台へ下げ、「窓幅は区間表が決める」状態にしたばかり。
+    **I-101 で 6 → 11 欄にするのは、その成果を食う方向の変更**なので、ここで固定する
+    （窓新設時にも 6 欄を 1 行に並べて 125%/150% で 2088px を要求し、横断ゲートが
+    止めている）。⚠️ **欄を減らせとは要求しない**＝入れるなら**折り返して**入れる
+    （複数経路のように 1 行へ並べない）。
+
+    ⚠️ **見るのは「共通設定」の帯だけ**＝案件情報の帯は I-101 が触らないうえ、
+    **実測では en 781px / ja 764px と区間表を既に上回っている**（↻ ボタン＋説明＋
+    幅 20 文字の欄 2 つ）。ここへ混ぜると**この変更と無関係な理由で最初から赤**に
+    なり、ゲートが何を要求しているのか読めなくなる（壊れ方③）。⇒ 案件情報の側は
+    **別項目として起票した（B-108）**。**赤の原因を 1 つに保つ。**
+    """
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _ = _open_multihop(root)
+        win.update()
+        bands = [c for c in win._fit_scroll.body.winfo_children()
+                 if c.winfo_class() == "TLabelframe"
+                 and str(c.cget("text")) == i18n.t("batch_common_cfg")]
+        assert len(bands) == 1, "共通設定の帯が 1 つでない（見出しが変わった？）"
+        band = bands[0].winfo_reqwidth()
+        table = win._hop_grid.winfo_reqwidth()
+        assert band <= table, (
+            f"共通設定の帯が窓幅を決めている（帯 {band}px > 区間表 {table}px）＝"
+            "B-053 で下げた成果を食っている。欄を折り返して入れること。"
+        )
+    finally:
+        root.destroy()
+
+
 def test_scenario_window_width_follows_the_condition_count():
     """条件を増やしたときだけ窓が広がること（1 列の時点で最大幅になっていない）。
 

@@ -19,7 +19,7 @@ from core import i18n
 from core import simulation as sim
 from core.models import ENV_KEYS
 from report import batch
-from views import theme
+from views import frozen_common, theme
 from views.batch_io import _CsvMixin
 from views.batch_run import _RunMixin
 from views.batch_table import _TableMixin
@@ -231,6 +231,11 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         frame.pack(fill="x", padx=8, pady=(8, 0))
 
         self._common_vars: dict[str, tk.StringVar] = {}
+        # 帯に**実際に出した**項目（I-101）。⚠️ `_common_vars` では数えられない
+        # ＝env_type / diff_method は選択式なので別の変数（`_env_var`/`_diff_var`）で
+        # 持っており、キー集合を突き合わせると 2 つ足りないことになる。**組み立てた
+        # 場所で足す**＝一覧を別に書くと、欄を足した日に更新し忘れて黙ってずれる。
+        self._common_keys: list[str] = []
 
         # RF系／環境系をサブグループ化して境界を明示する（I-003）。見出しは
         # ランチャー側の同義グループ名（grp_radio_settings/grp_environment）を
@@ -251,6 +256,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             ttk.Label(f, text=label).pack(side="left")
             var = tk.StringVar(value=str(getattr(self._base_params, attr)))
             self._common_vars[attr] = var
+            self._common_keys.append(attr)
             # 共通設定はランチャー（source of truth）のスナップショット。直接編集
             # させず「↻ランチャーから更新」で取り込む（凍結方式の対称化）。
             # 素の tk.Entry＋背景色ハードコードだと sv_ttk のテーマに追従せず、
@@ -264,16 +270,15 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             # 「編集不可（ランチャーからの凍結値）」の視覚キューになる（I-004）。
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
-        _field(row0, i18n.t("lbl_b_freq"),    "freq_mhz")
-        _field(row0, i18n.t("lbl_p_tx"),     "p_tx")
-        _field(row0, i18n.t("lbl_b_gain_tx"), "gain_tx")
-        _field(row0, i18n.t("lbl_b_gain_rx"), "gain_rx")
-        _field(row0, i18n.t("lbl_b_sens"),    "sens")
-
-        _field(row1, i18n.t("lbl_b_veg_h"),    "veg_h")
-        _field(row1, i18n.t("lbl_b_k_factor"), "k_factor")
-        _field(row1, i18n.t("lbl_b_samples"),  "num", width=6)
-        _field(row1, i18n.t("lbl_b_rain"),     "rain_rate")
+        # ⚠️ **どの項目を出すかはここで決めない**（I-101）＝正典は
+        # [views/frozen_common](frozen_common.py)。窓ごとに並べていたせいで、
+        # 中継経路が 6 項目のまま 2 週間気づかれなかった。ここが決めるのは
+        # **並べ方**（RF 系を 1 行・環境系を 1 行）と欄の幅だけ。
+        for row, fields in ((row0, frozen_common.RADIO_FIELDS),
+                            (row1, frozen_common.ENV_FIELDS)):
+            for label_key, attr in fields:
+                _field(row, i18n.t(label_key), attr,
+                       width=6 if attr == "num" else 8)
 
         # Env Type Combobox
         f_env = ttk.Frame(row1)
@@ -292,6 +297,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             values=list(self._env_key_to_label.values()),
             state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
+        self._common_keys.append("env_type")
 
         # Diff Model Combobox
         f_diff = ttk.Frame(row1)
@@ -302,6 +308,17 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             f_diff, textvariable=self._diff_var, values=["deygout", "single"],
             state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
+        self._common_keys.append("diff_method")
+
+    def frozen_common_keys(self) -> "set[str]":
+        """凍結帯「共通設定」に**実際に出している**項目のキー集合（I-101）。
+
+        **窓をまたいで突き合わせるための唯一の口**＝`tests/test_ui_consistency.py`
+        がここを読み、複数経路と中継経路で集合が一致することを要求する。
+        ⚠️ **横断ゲートが縛っていたのは器だけだった**（↻/🔒 がどの枠に属するか）＝
+        中身は縛られておらず、中継経路が 6 項目のまま 2 週間気づかれなかった。
+        """
+        return set(self._common_keys)
 
     def _refresh_common_from_launcher(self) -> None:
         """ランチャーの現在値で Common Settings を上書きする（凍結方式の取り込み）。

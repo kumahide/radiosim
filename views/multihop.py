@@ -38,7 +38,7 @@ from core import coords
 from core import i18n
 from core import simulation as sim
 from report import multihop as mh
-from views import dialogs, theme, window_fit
+from views import dialogs, frozen_common, theme, window_fit
 from views.progress import ProgressPump
 
 # 地点の既定の地上高（ランチャーの h_tx を初期値に使う）。
@@ -274,30 +274,31 @@ class MultiHopWindow(tk.Toplevel):
 
         common = ttk.LabelFrame(parent, text=i18n.t("batch_common_cfg"), padding=(8, 2))
         common.pack(fill="x", pady=(0, 6))
-        # ⚠️ **2 行に折る**＝6 欄を 1 行に並べると 125%/150% で必要幅が 2000px を
-        # 超え、FHD（使える幅 1830px）に入らなくなる（横断ゲートが検出した）。
-        # 高さは 1 行ぶん増えるが、この窓は縦に余裕がある。
-        rows = [ttk.Frame(common), ttk.Frame(common)]
-        for r in rows:
-            r.pack(fill="x")
-        self._common_vars: dict[str, tk.StringVar] = {}
-        for n, (label_key, attr, width) in enumerate((
-            ("lbl_p_tx",       "p_tx",     7),
-            ("lbl_b_sens",     "sens",     7),
-            ("lbl_b_veg_h",    "veg_h",    6),
-            ("lbl_b_samples",  "num",      6),
-            ("lbl_b_rain",     "rain_rate", 6),
-            ("lbl_env_type", "env_type", 9),
-        )):
-            f = ttk.Frame(rows[0] if n < 3 else rows[1])
-            f.pack(side="left", padx=6)
-            ttk.Label(f, text=i18n.t(label_key)).pack(side="left")
-            var = tk.StringVar()
-            self._common_vars[attr] = var
-            ttk.Entry(f, textvariable=var, state="readonly", width=width).pack(
-                side="left", padx=(2, 0))
-            ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
+        # 🔴 **項目は複数経路と同じ 11 個**（2026-08-18・I-101）。長らく 6 個しか
+        # 出しておらず、**K ファクターと回折モデルは実行に効くのに画面のどこにも
+        # 出ていなかった**。⚠️ **一覧はここに書かない**＝出す項目の正典は
+        # [views/frozen_common](frozen_common.py)（窓ごとに並べると、また片方だけ
+        # 増えて気づかれない）。この窓が決めるのは**並べ方だけ**。
+        # ⚠️ **3 欄で折る**＝複数経路のように 1 行へ並べると帯が窓幅を決めてしまう
+        # （B-053 で 859 → 620px 台に下げた成果を食う方向。窓新設時にも 6 欄を 1 行に
+        # 並べて 125%/150% で 2088px を要求し、横断ゲートが止めている）。**窓幅を
+        # 決めてよいのは区間表**＝`test_the_frozen_header_does_not_decide_the_
+        # multihop_window_width` がそれを固定する。高さは増えるが縦には余裕がある。
+        self._common_vars = frozen_common.readonly_band(
+            common, fold=3,
+            widths={"freq_mhz": 7, "p_tx": 7, "sens": 7,
+                    "env_type": 9, "diff_method": 9})
         self._update_frozen()
+
+    def frozen_common_keys(self) -> "set[str]":
+        """凍結帯「共通設定」に**実際に出している**項目のキー集合（I-101）。
+
+        複数経路（`BatchBuilderWindow.frozen_common_keys`）と**同じ集合**であること
+        を `tests/test_ui_consistency.py` が要求する。⚠️ **将来 6 つ目の実行フローを
+        作るときも、帯の項目集合はそのゲートで自動的に縛られる**（それがこのメソッドを
+        窓ごとに置く理由＝一覧を 1 か所に書くと、窓を足した人が登録し忘れる）。
+        """
+        return set(self._common_vars)
 
     def _build_waypoints(self, parent: tk.Misc) -> None:
         """地点の表（**ここだけが座標と高さの入力面**）。"""
@@ -382,8 +383,7 @@ class MultiHopWindow(tk.Toplevel):
         self._memo_var.set(self._meta["memo"])
         p = self._base_params
         for attr, var in self._common_vars.items():
-            value = getattr(p, attr)
-            var.set(i18n.t(f"env_{value}") if attr == "env_type" else str(value))
+            var.set(frozen_common.display_value(attr, getattr(p, attr)))
 
     def _refresh_from_launcher(self) -> None:
         """ランチャーの現在値を取り込み直す（**黙って追従しない**＝凍結方式）。"""

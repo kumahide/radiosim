@@ -255,6 +255,7 @@ radiosim/
 │   ├── window_fit.py     # Single implementation of window size and position (clipping / off-screen guard)
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay path window (waypoints are the input surface; hops are derived)
+│   ├── frozen_common.py  # Single source for what the frozen "common settings" band shows
 │   ├── batch_builder.py  # Multiple Paths window (core: common settings, project info)
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
