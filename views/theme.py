@@ -243,6 +243,23 @@ def window_dpi(widget: tk.Misc) -> int:
         return _DPI_BASE
 
 
+def applied_dpi(widget: "tk.Misc | None" = None) -> int:
+    """**いまアプリの字が従っている DPI**（まだ当てていなければモニタの実 DPI）。
+
+    `window_dpi()` との違いは「モニタが何を言っているか」ではなく「**アプリが何に
+    合わせて描いているか**」を返すこと。⚠️ **寸法の見積りはこちらを見る**（B-084 の
+    装飾余白）＝字と枠が別の DPI を基準にすると、テストが `apply_fonts(dpi=144)` で
+    150% を再現しても余白だけ 100% のまま計算され、**再現したはずの条件が半分しか
+    再現しない**（＝ゲートが本番の壊れ方を見ない）。
+    """
+    got = _applied_dpi.get("value")
+    if got:
+        return int(got)
+    if widget is None:
+        return _DPI_BASE
+    return window_dpi(widget)
+
+
 def _scaled_px(base_px: int, dpi: int) -> int:
     """96dpi 基準のピクセル数を、実 DPI でのピクセル数へ。
 

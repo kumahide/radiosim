@@ -374,6 +374,31 @@ _FHD_SCREEN = (1920, 1080)
 # 出荷先で起こり得る表示スケール（100% / 125% / 150%）。
 _SHIP_DPIS = (96, 120, 144)
 
+# 🔴 **上限は DPI で動く**（2026-08-18・B-084）。`_FHD_LIMIT`（＝定数 90px を引いた
+# 990px）は **100% 表示だけの値**だった：出荷先のタスクバーは 100% で 48px、150% では
+# 72px あり、装飾（タイトルバー＋枠）も 39px → 63px と拡大する。定数はどちらの拡大も
+# 賄えないので、**150% では使える高さを 45px 過大に見積もっていた**（実機では窓の下端
+# 33px がタスクバーの裏）。⇒ 出荷先の条件は**偽のタスクバーを注入して**作る。
+#
+# ⚠️ **`_FHD_LIMIT` を消さない**＝あちらは「OS に聞けない環境の見積り」として
+# `usable_area` の保険側にまだ生きている（`test_the_constant_margin_is_kept_...`）。
+_FHD_TASKBAR_96 = 48                        # 出荷先のタスクバー（100% での実測）
+
+
+def _ship_on_fhd(monkeypatch, dpi):
+    """出荷先（FHD・指定 DPI）の画面とタスクバーを注入する。"""
+    taskbar = int(round(_FHD_TASKBAR_96 * dpi / 96))
+    monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+    monkeypatch.setattr(window_fit, "monitors", lambda _w: [(0, 0, *_FHD_SCREEN)])
+    monkeypatch.setattr(window_fit, "work_areas",
+                        lambda: {(0, 0, *_FHD_SCREEN): (0, 0, 1920, 1080 - taskbar)})
+
+
+def _ship_limits(win):
+    """出荷先で窓の**中身**に使える `(幅, 高さ)`（装飾のぶんは引いてある）。"""
+    left, top, right, bottom = window_fit.usable_area(win, (0, 0, *_FHD_SCREEN))
+    return (right - left, bottom - top)
+
 
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
@@ -397,12 +422,12 @@ def test_every_window_fits_without_scrolling_at_100_percent(name, lang, monkeypa
     try:
         root.withdraw()
         i18n.set_lang(lang)
-        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _ship_on_fhd(monkeypatch, 96)
         theme.apply_fonts(root, dpi=96)
         opener, _ = _WINDOWS[name]
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
         need_w, need_h = window_fit.required_size(win)
-        lim_w, lim_h = _FHD_LIMIT
+        lim_w, lim_h = _ship_limits(win)
         assert need_h <= lim_h, (
             f"[{name}/{lang}] FHD 100% で画面に入らない"
             f"（必要 {need_h}px / 使える高さ {lim_h}px ＝ {need_h - lim_h}px 超過）。"
@@ -436,12 +461,12 @@ def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
     try:
         root.withdraw()
         i18n.set_lang(lang)
-        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _ship_on_fhd(monkeypatch, dpi)
         theme.apply_fonts(root, dpi=dpi)
         opener, _ = _WINDOWS[name]
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
         need_w, need_h = window_fit.required_size(win)
-        lim_w, lim_h = _FHD_LIMIT
+        lim_w, lim_h = _ship_limits(win)
         label = f"{name}/{lang}/{dpi}dpi"
         assert need_w <= lim_w, (
             f"[{label}] 実機（FHD）の画面に幅が入らない"
@@ -484,7 +509,7 @@ def _open_on_fhd(root, name, dpi, monkeypatch):
     """FHD の画面・指定 DPI で窓を開く（`_fit_size` はその前提で決まる）。"""
     from views import theme
 
-    monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+    _ship_on_fhd(monkeypatch, dpi)
     theme.apply_fonts(root, dpi=dpi)
     opener, _ = _WINDOWS[name]
     win, owner = (opener(root, monkeypatch) if name == "map" else opener(root))
@@ -510,7 +535,7 @@ def test_window_that_cannot_fit_can_still_be_scrolled(name, dpi, monkeypatch):
         i18n.set_lang("ja")
         win, _owner = _open_on_fhd(root, name, dpi, monkeypatch)
         need_h = window_fit.required_size(win)[1]
-        lim_h = _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN
+        lim_h = _ship_limits(win)[1]
         assert need_h > lim_h, (
             f"[{name}/{dpi}dpi] 溢れない条件でテストしている"
             f"（必要 {need_h}px ≤ 上限 {lim_h}px）＝逃げ道が壊れていても緑になる。"
@@ -1285,6 +1310,170 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
             "「入っているつもりの窓」が画面の外へ出る。"
         )
     finally:
+        root.destroy()
+
+
+# ------------------------------------------------------------
+# 余白は定数ではなく作業領域から（B-084）
+# ------------------------------------------------------------
+# 🔴 **`SCREEN_MARGIN = 90` は 100% 表示専用の見積りだった。** 内訳は「タスクバー
+# 約 48px ＋ 装飾 31px」で、**どちらも DPI で拡大する**のに定数のまま。150% では
+# 装飾だけで 51px あり、残り 39px では 72px のタスクバーを賄えない
+# ⇒ 窓の下端 **33px が常にタスクバーの裏**（実測・2026-08-14）。
+#
+# ⚠️ **既存のゲートはこれを一度も見ていない**＝全部 `SCREEN_MARGIN` を期待値の
+# 側にも使っており、**定数が間違っていても定数どおりなら緑**になる（＝
+# [[feedback-promote-recurring-checks]] の壊れ方③＝間違ったものを要求している）。
+# ここで見るのは「定数どおりか」ではなく **OS が使えると言った矩形に収まるか**。
+#
+# 🔑 **偽のタスクバーを注入する**（`work_areas` を差し替える）＝そうしないと
+# 「タスクバーを避けられているか」は*この機械のタスクバーの高さ*でしか検査できず、
+# 出荷先（FHD・150% で 72px）の条件を再現できない。conftest の
+# `_taskbar_is_never_the_dev_machines` が既定で空にしてあるので、**見たいゲートだけ
+# が明示的に注入する**形になっている。
+def _fake_work_area(monkeypatch, monitor, work):
+    monkeypatch.setattr(window_fit, "work_areas", lambda: {monitor: work})
+
+
+def test_the_usable_height_comes_from_the_work_area(monkeypatch):
+    """🔴 **上限はタスクバーの実寸から決まること**（B-084）。
+
+    150% のタスクバーは 72px。定数 90px からは装飾 51px を引いて 39px しか
+    残らないので、**33px がタスクバーの裏に入る**。作業領域から決めていれば
+    上限はそのぶん下がる＝**古い定数より小さくなること**まで見る（そこを見ないと
+    「作業領域を読んだが結局同じ値」でも緑になる）。
+    """
+    from views import theme
+
+    work = (0, 0, 1920, 1008)                   # 150% のタスクバー（72px）
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, (_PRIMARY,))
+        _fake_work_area(monkeypatch, _PRIMARY, work)
+        theme.apply_fonts(root, dpi=144)        # 150%＝出荷先で起こり得る最大
+        win, _ = _open_launcher(root)
+
+        dec_w, dec_h = window_fit.decoration_size(win)
+        assert dec_h > 0, (
+            "装飾の寸法が 0＝クライアント領域と枠の差を測れていない。"
+            "この状態では上限がタイトルバーのぶんだけ常に大きすぎる。"
+        )
+        need_h = window_fit.required_size(win)[1]
+        assert need_h > work[3], (
+            f"溢れない条件でテストしている（必要 {need_h}px ≤ 作業領域 {work[3]}px）"
+            "＝上限の計算が壊れていても緑になる。"
+        )
+        x, y = win._fit_pos
+        w, h = win._fit_size
+        assert y + dec_h + h <= work[3], (
+            f"窓の下端がタスクバーの裏に入っている（上端 {y}px ＋ 装飾 {dec_h}px ＋ "
+            f"高さ {h}px = {y + dec_h + h}px / 作業領域の下端 {work[3]}px）＝B-084。"
+        )
+        assert x + dec_w + w <= work[2], (
+            f"窓の右端が作業領域から出ている（{x + dec_w + w}px / {work[2]}px）。"
+        )
+        assert h < _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN, (
+            f"上限が古い定数のまま（高さ {h}px ≧ "
+            f"{_FHD_SCREEN[1] - window_fit.SCREEN_MARGIN}px）＝作業領域を読んでいない。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_a_taskbar_on_the_left_edge_is_avoided_too(monkeypatch):
+    """**タスクバーが下以外の辺にあっても避けること**（B-084 のクラス点検）。
+
+    定数の余白は「下だけ 90px」なので、左・上・右にタスクバーを置いた構成では
+    **窓がその裏に入る**。作業領域は辺の位置ごと OS が面倒を見るので、乗り換えれば
+    この面もまとめて解ける＝**解けていることをここで確かめる**（解けていなければ
+    「下だけ直した」実装が通ってしまう）。
+    """
+    from views import theme
+
+    work = (120, 0, 1920, 1080)                 # 左端に 120px のタスクバー
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, (_PRIMARY,))
+        _fake_work_area(monkeypatch, _PRIMARY, work)
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_multihop(root)
+        win.geometry("+0+40")                   # タスクバーの裏へ置いてみる
+        win.update_idletasks()
+        if window_fit.window_position(win) != (0, 40):
+            pytest.skip("WM が窓を左端へ置かせない＝この検査は成立しない")
+        window_fit.refit_all(root)
+
+        x, _y = win._fit_pos
+        assert x >= work[0], (
+            f"窓の左端がタスクバーの裏に入っている（x={x} / 作業領域の左端 "
+            f"{work[0]}）＝余白を「下だけ」で考えている（B-084）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_the_decoration_allowance_grows_with_dpi():
+    """**装飾の見積りが DPI に従うこと**（実測が取れない窓＝保険側の経路）。
+
+    実測（`winfo_rootx/rooty` との差）が取れる窓では本物が返るが、まだ実現して
+    いない窓では定数へ落ちる。⚠️ **そこが 96dpi 固定だと、B-084 の本体（余白が
+    DPI に依らない）を保険の中に作り直すことになる。**
+    """
+    import tkinter as tk
+
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        win = tk.Toplevel(root)
+        win.withdraw()                          # 実現させない＝実測は取れない
+        theme.apply_fonts(root, dpi=96)
+        at96 = window_fit.decoration_size(win)
+        theme.apply_fonts(root, dpi=144)
+        at144 = window_fit.decoration_size(win)
+        assert at96[1] > 0 and at144[1] > at96[1], (
+            f"装飾の見積りが DPI で変わらない（96dpi {at96} / 144dpi {at144}）"
+            "＝150% ではタイトルバーが 51px あるので、96dpi 基準の 39px では"
+            "足りず、そのぶん窓がタスクバーの裏へ入る（B-084）。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_the_constant_margin_is_kept_when_the_os_cannot_be_asked(monkeypatch):
+    """**OS に聞けないときは従来どおり**（Windows 以外・API 無し）。
+
+    ⚠️ ここで装飾を*さらに*引くと二重になる＝`SCREEN_MARGIN = 90` は
+    「タスクバー 48 ＋ 装飾 31」を**既に含んだ**値。**保険の経路が本番より厳しく
+    なると、聞けない環境でだけ窓が理由なく縮む。**
+    """
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        monkeypatch.setattr(window_fit, "screen_size", lambda _w: _FHD_SCREEN)
+        _fake_monitors(monkeypatch, (_PRIMARY,))
+        monkeypatch.setattr(window_fit, "work_areas", dict)     # 何も聞けない
+        theme.apply_fonts(root, dpi=96)
+        win, _ = _open_multihop(root)
+        assert window_fit.usable_area(win, _PRIMARY) == (
+            0, 0, 1920, 1080 - window_fit.SCREEN_MARGIN), (
+            "作業領域を聞けないのに従来の見積り（SCREEN_MARGIN）へ落ちていない"
+            f"＝{window_fit.usable_area(win, _PRIMARY)}。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
         root.destroy()
 
 

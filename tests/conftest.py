@@ -747,6 +747,31 @@ def _language_never_leaks():
 
 
 @pytest.fixture(autouse=True)
+def _taskbar_is_never_the_dev_machines():
+    """**この機械のタスクバーを測定に混ぜない**（2026-08-18・B-084）。
+
+    `window_fit.usable_area()` は OS の作業領域（`rcWork`）から上限を決めるので、
+    既定のままだと**走らせた機械のタスクバーの高さ**が窓の寸法に入る。すると
+    寸法ゲートの数字が機械ごとに変わり、[[project-real-world-env-vdi]] で 6 回
+    踏んだ「開発機で緑・実機で壊れる」を**測り方の側から作り直す**ことになる
+    （とくに開発機がたまたま FHD なら、`screen_size` を FHD へ差し替えている
+    既存ゲート 20 本以上の期待値が黙って動く）。
+
+    ⇒ **既定は「OS に何も聞けない」**＝`SCREEN_MARGIN` による従来の見積り。
+    作業領域そのものを見たいゲートは、`window_fit.work_areas` を明示的に
+    差し替えて**偽のタスクバー**を注入する（tests/test_window_fit.py）。
+    """
+    from views import window_fit
+
+    real = window_fit.work_areas
+    window_fit.work_areas = lambda: {}          # type: ignore[assignment]
+    try:
+        yield
+    finally:
+        window_fit.work_areas = real            # type: ignore[assignment]
+
+
+@pytest.fixture(autouse=True)
 def _tk_garbage_never_escapes():
     """テストが残した循環ゴミを、**メインスレッドで**片付けてから次へ進む。"""
     yield

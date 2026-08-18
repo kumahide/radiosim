@@ -67,7 +67,22 @@ from typing import Any
 # 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
 # 従来はバッチ 80px / 条件探索 90px / ランチャー「画面の 92%」と窓ごとにばらけて
 # いたので、ここで 1 つに揃える（値そのものより、揃っていることに意味がある）。
+#
+# 🔴 **これは「OS に聞けなかったとき」の見積り**になった（2026-08-18・B-084）。
+# 90px は 100% 表示で「タスクバー（約 48px）＋装飾（31px）」を賄う値として選ばれて
+# いるが、**どちらも DPI で拡大する**のに定数のままなので、150% では 90 − 51 = 39px
+# しか残らず 72px のタスクバーを賄えない＝窓の下端 33px が常にタスクバーの裏に入る。
+# ⇒ 通常は `usable_area()` が**作業領域（`rcWork`）＋装飾の実測**から決める。
+# ここが効くのは Windows 以外・API が無い・呼び出しに失敗した場合だけ。
 SCREEN_MARGIN = 90
+
+# 装飾枠（タイトルバー・枠）が 96dpi で要求する外側の寸法（幅の左右合計・高さ）。
+# **実測が取れないときの保険**＝実測できる窓では `decoration_size()` が
+# `winfo_rootx/rooty` との差から本物を読む（100% で左右 8px・上 31px）。
+_DECORATION_96 = (16, 39)
+
+# `GetSystemMetricsForDpi` のインデックス（winuser.h）。
+_SM_CYCAPTION, _SM_CYSIZEFRAME, _SM_CXPADDEDBORDER = 4, 33, 92
 
 
 _GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
@@ -141,11 +156,12 @@ def place_within_screen(
     ＝`geometry()` へ返す値と同じ座標系にしておかないと、書き戻すたびに装飾の
     厚みぶん窓が上へ歩いていく。
 
-    余白の当て方
-    ------------
-    **下端だけ `SCREEN_MARGIN` を引く**（Windows のタスクバーは既定で下）。
-    装飾の上 31px もこの帯で吸収する。左右・上は 0＝画面に触れていてもよく、
-    ここで余白を要求すると**右端に寄せて置く**という正常な置き方を毎回崩す。
+    余白の当て方（2026-08-18・B-084 で作業領域へ移した）
+    ----------------------------------------------------
+    置いてよい矩形は `usable_area()` が返す＝**OS の作業領域から装飾のぶんを
+    引いた**もの。タスクバーがどの辺にあっても、DPI がいくつでも、そこに答えが
+    入っている。⚠️ **左右・上に自前の余白を足さない**＝ここで余白を要求すると
+    **右端に寄せて置く**という正常な置き方を毎回崩す。
 
     ⚠️ **入っている窓は動かさない**＝測り直し（DPI 変更・画面変更）のたびに
     位置を書き戻すと、ユーザーが置いた場所が失われる。触るのは外へ出たときだけ。
@@ -166,10 +182,6 @@ def place_within_screen(
     まま**になり、B-083 の救済をそのまま取り消す。**実在する矩形と重なるか**で
     判定し、**どれとも重ならない窓だけを主画面へ引き戻す。**
 
-    ⚠️ **余白の当て方は変えていない**＝`rcWork`（作業領域）ではなく `rcMonitor`
-    を使い、下端に `SCREEN_MARGIN` を引く。作業領域へ乗り換えると全窓の置き場所が
-    動く＝それは B-084 の仕事。
-
     Args:
         area: 収める先のモニタ矩形。省略すると窓の位置から求める。**`fit_to_content`
             は自分が寸法を決めるのに使った矩形をそのまま渡す**（B-087）＝大きさと
@@ -178,12 +190,13 @@ def place_within_screen(
     win.update_idletasks()
     w, h = size if size is not None else (win.winfo_width(), win.winfo_height())
     x, y = window_position(win)
-    left, top, right, bottom = area or host_monitor(win, (x, y, x + w, y + h))
+    monitor = area or host_monitor(win, (x, y, x + w, y + h))
+    left, top, right, bottom = usable_area(win, monitor)
     # 窓がモニタより大きいと上限が下限を下回り得る（下限 `min_h` が画面を超える
     # 場合）。そのときは左上をモニタの原点へ寄せる＝下端は諦めるが、掴む場所は
     # 必ず残す。
     new_x = max(left, min(x, right - w))
-    new_y = max(top, min(y, bottom - SCREEN_MARGIN - h))
+    new_y = max(top, min(y, bottom - h))
     if (new_x, new_y) != (x, y):
         win.geometry(f"+{new_x}+{new_y}")
     win._fit_pos = (new_x, new_y)       # type: ignore[attr-defined]
@@ -205,16 +218,22 @@ def screen_size(win: "tk.Misc") -> tuple[int, int]:
     return win.winfo_screenwidth(), win.winfo_screenheight()
 
 
-def _enumerate_monitor_rects() -> "list[tuple[int, int, int, int]]":
-    """OS に**実在するモニタの矩形**を聞く（`(左, 上, 右, 下)` の列・仮想座標系）。
+def _enumerate_monitors() -> "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int]]]":
+    """OS に**実在するモニタ**を聞く＝`(モニタ矩形, 作業領域)` の列（仮想座標系）。
 
     取れなければ空を返す（Windows 以外・API が無い・呼び出しに失敗した場合）。
     **判断は呼び出し側**＝ここは「聞けたかどうか」だけを返す。
 
-    ⚠️ **`rcWork`（作業領域）ではなく `rcMonitor`（モニタ全体）を使う**。作業領域は
-    タスクバーを除いた矩形なので、そちらへ乗り換えると**下端の余白の当て方が変わり、
-    全窓の置き場所が動く**＝それは B-084（余白を実際の作業領域から決める）の仕事で、
-    寸法ゲートを引き直す規模になる。ここでやるのは**モニタの原点を知ること**だけ。
+    **2 つを一緒に返す理由**（2026-08-18・B-084）＝この 2 つは**同じ列挙の 2 つの
+    フィールド**（`MONITORINFO` の `rcMonitor` / `rcWork`）で、別々に聞くと
+    「どのモニタの作業領域か」を突き合わせる仕事が呼ぶ側に生える。⚠️
+    `SystemParametersInfo(SPI_GETWORKAREA)` は**プライマリの作業領域しか返さない**
+    ので採らない（複数モニタで黙って間違える）。
+
+    - `rcMonitor`＝**モニタの原点を知る**ため（B-085＝別モニタに置かれた窓を
+      主画面へ引き戻さない）。
+    - `rcWork`＝**タスクバーを除いた実際に使える矩形**（B-084）。辺の位置も OS が
+      面倒を見るので、タスクバーが上・左・右にある構成もこれ 1 つで解ける。
     """
     try:
         import ctypes                                  # 遅延 import（Windows 専用）
@@ -227,21 +246,57 @@ def _enumerate_monitor_rects() -> "list[tuple[int, int, int, int]]":
         _fields_ = [("left", ctypes.c_long), ("top", ctypes.c_long),
                     ("right", ctypes.c_long), ("bottom", ctypes.c_long)]
 
-    found: "list[tuple[int, int, int, int]]" = []
+    class _MONITORINFO(ctypes.Structure):
+        _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT),
+                    ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
 
-    def _collect(_hmon, _hdc, rect, _data) -> int:
+    found: "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int]]]" = []
+
+    def _collect(hmon, _hdc, rect, _data) -> int:
         r = rect.contents
-        found.append((r.left, r.top, r.right, r.bottom))
+        monitor = (r.left, r.top, r.right, r.bottom)
+        work = monitor
+        info = _MONITORINFO()
+        info.cbSize = ctypes.sizeof(_MONITORINFO)
+        try:
+            # ⚠️ 失敗しても**モニタ矩形で代用して続ける**＝ここで例外を上げると
+            # 「作業領域が取れない 1 枚」のせいで**全モニタの列挙が消える**
+            # （＝B-085 で直した「別モニタの窓を引き戻さない」まで巻き添えになる）。
+            if user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
+                w = info.rcWork
+                work = (w.left, w.top, w.right, w.bottom)
+        except OSError:
+            pass
+        found.append((monitor, work))
         return 1
 
     proc = ctypes.WINFUNCTYPE(ctypes.c_int, ctypes.c_void_p, ctypes.c_void_p,
                               ctypes.POINTER(_RECT), wintypes.LPARAM)
     try:
-        # 第 4 引数の `lprcMonitor` がそのままモニタの矩形なので `GetMonitorInfo` は要らない。
         user32.EnumDisplayMonitors(None, None, proc(_collect), 0)
     except OSError:
         return []
     return found
+
+
+def _enumerate_monitor_rects() -> "list[tuple[int, int, int, int]]":
+    """実在するモニタの矩形だけ（`_enumerate_monitors` の `rcMonitor` 側）。"""
+    return [monitor for monitor, _work in _enumerate_monitors()]
+
+
+def work_areas() -> "dict[tuple[int, int, int, int], tuple[int, int, int, int]]":
+    """**モニタ矩形 → 作業領域**の対応。OS に聞けなければ空（＝何も知らない）。
+
+    `screen_size()` / `monitors()` と同じ「**1 か所を通す**」型（B-084）。
+    テストはここを差し替えて**偽のタスクバー**を注入する＝そうしないと、
+    「タスクバーを避けられているか」は**開発機のタスクバーの高さでしか検査できない**
+    ことになり、出荷先（FHD・150% でタスクバー 72px）の条件を再現できない。
+
+    ⚠️ **空を返すことに意味がある**＝呼ぶ側（`usable_area`）は従来どおり
+    `SCREEN_MARGIN` で見積もる。「聞けなかった」と「タスクバーが無い」を
+    同じ形（＝モニタ矩形と同じ作業領域）で返すと、区別が付かなくなる。
+    """
+    return {monitor: work for monitor, work in _enumerate_monitors()}
 
 
 def monitors(win: "tk.Misc") -> "list[tuple[int, int, int, int]]":
@@ -289,6 +344,99 @@ def host_monitor(
         return best
     screen_w, screen_h = screen_size(win)
     return (0, 0, screen_w, screen_h)
+
+
+def decoration_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
+    """装飾枠（タイトルバー・枠）が**クライアント領域の外に**要求する `(幅, 高さ)`。
+
+    **なぜ要るか**（B-084）＝`geometry(f"{w}x{h}")` が決めるのは**クライアント
+    領域**の寸法だが、画面を占めるのは**装飾を含めた枠**。作業領域（`rcWork`）は
+    枠の話なので、クライアントの上限を出すにはこの差を引かないといけない。
+    100% では 31px（上）だが 150% では 51px あり、**DPI で拡大する**
+    ＝定数で持つと高 DPI で足りない（それが B-084 の本体）。
+
+    ⛔ **窓から実測しない**（2026-08-18 に一度そう書いて捨てた）＝`winfo_rootx/rooty`
+    と `geometry()` の `+x+y` の差は、**同じ窓でも読む時点で変わる**（実装中に実測
+    ＝同じランチャーが 58px と 137px を返した。メニューバーの有無・WM がまだ確定
+    させていない配置が混ざる）。上限の計算に使う値が測るたびに変わると、**窓の
+    大きさが呼び出し順で変わる**＝再現しない見切れを自分で作ることになる。
+    ⇒ **OS に定義を聞く**（`GetSystemMetricsForDpi`＝DPI ごとの値を返す）。
+
+    下端・右端の枠は左端と同じ厚み（Windows）なので、高さ＝上の装飾＋下の枠、
+    幅＝枠 × 2 とする。100% で `(16, 39)`、150% で `(22, 56)`（実測）。
+    """
+    dpi = _applied_dpi(win)
+    got = _system_decoration(dpi)
+    if got is not None:
+        return got
+    # 聞けない環境（Windows 以外・API が古い）は 96dpi の実測値を比例させる。
+    return (int(round(_DECORATION_96[0] * dpi / 96)),
+            int(round(_DECORATION_96[1] * dpi / 96)))
+
+
+def _system_decoration(dpi: int) -> "tuple[int, int] | None":
+    """OS が言う装飾の寸法 `(幅, 高さ)`（聞けなければ None）。
+
+    `GetSystemMetricsForDpi` は Windows 10 1607+ で**DPI ごと**の値を返す
+    （素の `GetSystemMetrics` はプロセスの既定 DPI 固定＝高 DPI で 100% の値を
+    返し、B-084 の欠陥をそのまま再現する）。
+    """
+    try:
+        import ctypes                                  # 遅延 import（Windows 専用）
+        for_dpi = ctypes.windll.user32.GetSystemMetricsForDpi
+    except (ImportError, AttributeError, OSError):
+        return None
+    try:
+        caption = int(for_dpi(_SM_CYCAPTION, dpi))
+        frame = int(for_dpi(_SM_CYSIZEFRAME, dpi))
+        padded = int(for_dpi(_SM_CXPADDEDBORDER, dpi))
+    except OSError:
+        return None
+    if caption <= 0:
+        return None
+    border = frame + padded
+    return (border * 2, caption + border + border)
+
+
+def _applied_dpi(win: "tk.Misc") -> int:
+    """いまアプリの字が従っている DPI（取れなければ 96）。
+
+    ⚠️ **モニタの実 DPI ではなく「当たっている DPI」を見る**＝Tk の名前付き
+    フォントはインタプリタに 1 組しかないので、字の大きさはアプリ全体で 1 つ
+    （[views/theme](theme.py) の `_applied_dpi` の註）。装飾の見積りだけが
+    別の値に従うと、字と枠で基準が割れる。
+    """
+    try:
+        from views import theme                    # 遅延 import（循環回避）
+        return theme.applied_dpi(win)
+    except Exception:
+        return 96
+
+
+def usable_area(
+    win: "tk.Tk | tk.Toplevel", area: "tuple[int, int, int, int]"
+) -> "tuple[int, int, int, int]":
+    """モニタ `area` のうち、窓の**中身（クライアント領域）**を置いてよい矩形。
+
+    **装飾枠のぶんは引いてある**＝返り値の幅・高さがそのまま `geometry()` へ
+    渡してよい上限になり、`(左, 上)` がそのまま置いてよい左上になる。
+
+    🔴 **余白は定数ではなく OS の作業領域から決める**（2026-08-18・B-084）。
+    `SCREEN_MARGIN = 90` は 100% での「タスクバー 48 ＋ 装飾 31」を賄う値だが、
+    **どちらも DPI で拡大する**のに定数のままだったので、150% では窓の下端 33px が
+    常にタスクバーの裏に入っていた。作業領域なら**タスクバーの実寸**が入り、
+    **タスクバーが上・左・右にある構成**も同じ 1 つの式で解ける。
+
+    ⚠️ **聞けなかったときは従来どおり `SCREEN_MARGIN`**（Windows 以外・API 無し）。
+    その経路では装飾を**別に引かない**＝90px が装飾のぶんを既に含んでいるので、
+    引くと二重になる。
+    """
+    left, top, right, bottom = area
+    work = work_areas().get((left, top, right, bottom))
+    if work is None:
+        return (left, top, right, bottom - SCREEN_MARGIN)
+    dec_w, dec_h = decoration_size(win)
+    return (work[0], work[1], work[2] - dec_w, work[3] - dec_h)
 
 
 def scrollable_body(
@@ -588,8 +736,11 @@ def fit_to_content(
     # モニタより高いので、上端を原点に寄せても下端が出る）。⇒ 大きさと位置は
     # **同じ 1 枚**を基準にする（下の `place_within_screen` へ同じ矩形を渡す）。
     area = host_monitor(win, window_rect(win))
-    lim_w = max(area[2] - area[0] - SCREEN_MARGIN, min_w)
-    lim_h = max(area[3] - area[1] - SCREEN_MARGIN, min_h)
+    # 🔴 **上限は「作業領域から装飾を引いた寸法」**（2026-08-18・B-084）。定数の
+    # 余白は DPI で拡大するタスクバー・装飾を賄えず、150% で下端 33px が裏へ入る。
+    fit_l, fit_t, fit_r, fit_b = usable_area(win, area)
+    lim_w = max(fit_r - fit_l, min_w)
+    lim_h = max(fit_b - fit_t, min_h)
 
     need_w = win.winfo_reqwidth()  + extra_w
     need_h = win.winfo_reqheight() + extra_h
