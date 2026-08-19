@@ -95,9 +95,13 @@ class _SingleSink(Protocol):
 
 
 class _AppendSink(Protocol):
-    """連続 append シンク（バッチ・Phase D2）: ペア成立ごとに 1 行を追加する。"""
+    """連続 append シンク（複数経路・Phase D2）: ペア成立ごとに 1 行を追加する。"""
     def append_path(self, tx: tuple, rx: tuple) -> str: ...
     def existing_paths(self) -> list[tuple]: ...
+    # 「直す」口（I-098）＝`index` は `existing_paths()` の並びでの位置。
+    # `expect` は選んだ時点の経路 ID（照合用）。**動かせたときだけ True**。
+    def update_path_point(self, index: int, role: str, lat: float, lon: float,
+                          expect: str) -> bool: ...
 
 
 class _WaypointSink(Protocol):
@@ -111,6 +115,10 @@ class _WaypointSink(Protocol):
     """
     def append_waypoint(self, lat: float, lon: float) -> str: ...
     def waypoint_markers(self) -> "list[tuple[str, float, float]]": ...
+    # 「直す」口（I-098）＝`index` は `waypoint_markers()` の並びでの位置。
+    # `expect` は選んだ時点の地点名（照合用）。**動かせたときだけ True**。
+    def update_waypoint(self, index: int, lat: float, lon: float,
+                        expect: str) -> bool: ...
 
 
 # tkintermapview の after ループを止めてからウィジェットを破棄するまでの猶予 [ms]。
@@ -192,8 +200,15 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 既定は coords＝座標入力（マップ連携の主機能。タイル管理は補助レイヤ）。
         self._mode = tk.StringVar(value="coords")
 
-        # 座標入力モードの状態。次にどちらを置くか（交互）と、TX/RX のマーカー・線。
-        self._pick_next = "tx"
+        # 座標入力モードの状態。次にどちらを置くか（空いている方。両方そろって
+        # いれば None ＝「選んでから置き直す」＝I-098）と、TX/RX のマーカー・線。
+        self._pick_next: "str | None" = "tx"
+        # 選択中の点（I-098）。**どのレイヤの何番目か**だけを持ち、値は持たない
+        # （地図は写しであって source of truth ではない、という既存の約束のまま）。
+        self._selection = None
+        # 「選ぶ」ための押下の印。同じ押下から届く地図クリックを 1 回だけ捨てる
+        # （マーカーは押下で、地図クリックは離しで来る＝`_on_marker_click`）。
+        self._select_guard = False
         # 中継点モードの宛先（中継経路ウィンドウ）。モードを抜けたら手放す。
         self._waypoint_sink: "_WaypointSink | None" = None
         self._tx_coord: tuple | None = None
@@ -215,6 +230,13 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._rx_icon = self._make_node_icon(hollow=True)
         # 中継点＝リング（送信点・受信点と**形で**区別する）。
         self._relay_icon = ImageTk.PhotoImage(map_graphics.relay_icon())
+        # 選択中の見た目（I-098）＝**同じ形に琥珀のリングを重ねただけ**。役割は
+        # 形で読む約束なので、選択で形を変えない。3 つとも先に作っておく＝
+        # 選ぶたびに PhotoImage を作ると、参照を持ち損ねた瞬間に GC で消える。
+        self._tx_icon_sel = self._make_node_icon(hollow=False, selected=True)
+        self._rx_icon_sel = self._make_node_icon(hollow=True, selected=True)
+        self._relay_icon_sel = ImageTk.PhotoImage(
+            map_graphics.relay_icon(selected=True))
         # 中継経路レイヤ（折れ線＋地点マーカー＋区間の距離バッジ）。
         # 中継経路ウィンドウの地点列を写すだけで、地図の側では持たない。
         self._wp_objects: list = []
@@ -303,6 +325,9 @@ class MapWindow(_PickMixin, _CacheMixin):
     # ----------------------------------------------------------
     def _select_mode(self, value: str) -> None:
         """モードを選択し、セグメントボタンのスタイルを更新する。"""
+        # モードが変われば選べる点も変わる＝**選択は持ち越さない**（I-098）。
+        # 持ち越すと、別のモードで置いたクリックが前のモードの点を動かす。
+        self._selection = None
         self._mode.set(value)
         for v, btn in self._mode_buttons.items():
             btn.configure(style="Accent.TButton" if v == value else "TButton")
@@ -453,8 +478,16 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 座標入力モードでの素クリック → ピック。ライブラリがドラッグ（パン）と
         # クリックを内部で区別するため、キャッシュ管理の修飾キー操作とは競合しない。
         self._map.add_left_click_map_command(self._on_map_click)
+        # 選択の取り消し（I-098）＝**選んだ状態から抜ける道を必ず用意する**。
+        # 選択は次のクリックで使い切るが、気が変わったときに「どこか安全な場所を
+        # クリックする」しか手が無いと、その 1 回が入力を書き換えてしまう。
+        self._win.bind("<Escape>", lambda _e: self._deselect())
 
         cv = self._map.canvas
+        # 「選ぶための押下」の印を、押下 → 離しの 1 巡が終わったら降ろす（I-098）。
+        # ⚠️ **ライブラリの `<ButtonRelease-1>` より後**に張ること＝地図クリックの
+        # 配送はあちらから起きるので、先に降ろすと捨てるはずのクリックが素通りする。
+        cv.bind("<ButtonRelease-1>", self._clear_select_guard, add="+")
         # パン/ズーム終了時にカバレッジを自動再描画する。
         # tkintermapview 自身が canvas にバインド済みのため add="+" で相乗りする。
         for seq in ("<ButtonRelease-1>", "<MouseWheel>", "<Button-4>", "<Button-5>"):
@@ -507,9 +540,15 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 左: 動的メッセージ（アイドル時=操作ヒント / 操作中・直後=状態・結果）。
         # 複数行になり得るため justify=left。アイドル時はグレー表示。
         self._status_var = tk.StringVar(value="")
+        # 🔴 **状態バーに窓幅を決めさせない**（I-098・B-108 と同型の落ち穂）。
+        # 折り返し幅は下の `<Configure>` が**窓の実幅から**決め直すので、字が長い
+        # ほどラベルの要求幅が育ち、その要求がまた窓幅になる——という往復で、
+        # ヒントに 1 文足しただけで en/150% が出荷先の幅を越えた（横断ゲートが
+        # 赤で教えた）。⇒ **要求幅は `width` で床に固定し、実幅は伸縮で得る**
+        # （`fill="x", expand=True`）＝字の長さは折り返しの行数にだけ出る。
         self._status_label = ttk.Label(
             statusbar, textvariable=self._status_var, anchor="w", justify="left",
-            wraplength=600,
+            width=24, wraplength=380,
         )
         self._status_label.pack(side="left", fill="x", expand=True)
         # 幅に追従して折り返し幅を更新（統計表示分を右に確保する）。
@@ -592,25 +631,42 @@ class MapWindow(_PickMixin, _CacheMixin):
             self._progress.pack_forget()
 
     def _set_idle(self) -> None:
-        """アイドル状態: モードに応じた操作ヒントをグレーで表示する。"""
+        """アイドル状態: モードに応じた操作ヒントをグレーで表示する。
+
+        ⚠️ **選択中はアイドルではない**＝「次のクリックで移す」は状態なので、
+        `_set_status` の字を消してヒントに戻すと*何が起きるか*が読めなくなる。
+        """
         self._status_clear_id = None
+        if self._selection is not None:
+            self._set_status(
+                i18n.t("map_selected").format(label=self._selection.label))
+            return
         # MapWindow は tk ウィジェットではない（ウィンドウを内包する素のクラス）ので、
         # テーマ問い合わせにはラベル自身を渡す。
         self._status_label.config(foreground=theme.muted_foreground(self._status_label))
         mode = self._mode.get()
         if mode == "cache":
             self._status_var.set(i18n.t("tm_hint"))
-        elif mode == "append":
+            return
+        if mode == "append":
             key = "map_append_hint_tx" if self._pick_next == "tx" else "map_append_hint_rx"
-            self._status_var.set(i18n.t(key))
         elif mode == "waypoints":
             # ⚠️ ここが無いと**中継点モードなのに「TX を指定します」**と出る
             # （2026-08-01 の実機スクリーンショットで判明）。モードごとの分岐を
             # 足すときは、ヒント・表示レイヤ・宛先の 3 か所を揃えて足すこと。
-            self._status_var.set(i18n.t("map_status_waypoint"))
+            key = "map_status_waypoint"
+        elif self._pick_next is None:
+            # 座標入力で TX/RX が両方そろっている＝置く先が無い。**素のクリックは
+            # 何も書かない**ので、そう言う（I-098）。以前はここで「TX を指定します」
+            # と出し、実際に次のクリックが TX を潰していた。
+            self._status_var.set(i18n.t("map_select_hint"))
+            return
         else:
             key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
-            self._status_var.set(i18n.t(key))
+        # 「置き直せる」ことは**どのモードでも同じ 1 文**で言う（I-098）。文を
+        # モードごとのキーへ書き足すと、次にモードが増えたときに書き忘れる面が
+        # 増える＝語が 3 通りに散る型（[[feedback-promote-recurring-checks]]）。
+        self._status_var.set(i18n.t(key) + " " + i18n.t("map_move_affordance"))
 
     def _set_status(self, text: str, auto_clear: bool = False) -> None:
         """状態・結果文を通常色で設定。auto_clear=True なら一定時間後にヒントへ戻す。"""

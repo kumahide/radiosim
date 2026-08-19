@@ -1693,6 +1693,73 @@ class TestBatchTableWheelIsScopedToItsWindow:
         finally:
             win.destroy(); root.destroy()
 
+    def test_map_moves_the_row_the_map_actually_drew(self, default_params_dict):
+        """地図から端点を置き直す口（I-098）が、**写しの並びで位置を解く**こと。
+
+        地図が持っているのは `existing_paths()` の並びでの位置だけ＝読めない座標の
+        行は写しに出ないので、行番号として読むと**黙って別の行が動く**（B-068 /
+        B-102 と同じ型）。あわせて `expect`（選んだ時点の経路 ID）で照合する。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._row_entries.clear()
+            for f in win._row_frames:
+                f.destroy()
+            win._row_frames.clear()
+            win._add_row(["p1", "34.5, 132.4", "34.6, 132.5",
+                          "30", "10", "", "", "", ""])
+            win._add_row(["broken", "34.5", "", "30", "10", "", "", "", ""])
+            win._add_row(["p2", "34.7, 132.7", "34.8, 132.8",
+                          "30", "10", "", "", "", ""])
+            assert [pid for pid, _tx, _rx in win.existing_paths()] == ["p1", "p2"]
+
+            assert win.update_path_point(1, "rx", 34.9, 132.9, "p2") is True
+            assert win._row_entries[1][1].get() == "34.5", (
+                "地図に出ていない行が動いた＝写しの位置を行番号として読んでいる"
+            )
+            assert win._row_entries[2][2].get().startswith("34.9"), \
+                "選んだ行の RX が動いていない"
+            assert win._row_entries[2][1].get().startswith("34.7"), \
+                "同じ行の TX まで動いた"
+
+            assert win.update_path_point(0, "tx", 35.0, 133.0, "p2") is False, \
+                "経路 ID が食い違うのに書き戻した"
+            assert win.update_path_point(9, "tx", 35.0, 133.0, "p1") is False, \
+                "写しの並びの外を指しているのに書き戻した"
+            assert win._row_entries[0][1].get().startswith("34.5")
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_map_move_clears_the_verdict_of_that_row(self, default_params_dict):
+        """地図から直した行も、**手で直したときと同じ後始末**を通ること。
+
+        判定は「その結果を生んだ入力」に紐づく（I-041）ので、座標が変われば
+        取り下げる。ここが別経路になっていると**地図から直した行にだけ古い判定が
+        残る**＝読み手には実行し損ねた行と区別が付かない。
+        """
+        root, win = self._win(default_params_dict)
+        try:
+            win._row_entries.clear()
+            for f in win._row_frames:
+                f.destroy()
+            win._row_frames.clear()
+            win._add_row(["p1", "34.5, 132.4", "34.6, 132.5",
+                          "30", "10", "", "", "", ""])
+            win._clear_verdicts()
+            win._set_row_verdict("p1", "OK")
+            verdict = win._verdict_label(win._row_frames[0])
+            assert verdict is not None and verdict.cget("text") == "OK"
+            dist_before = win._distance_label(win._row_frames[0]).cget("text")
+
+            assert win.update_path_point(0, "rx", 35.5, 133.5, "p1") is True
+            assert verdict.cget("text") == "", (
+                "地図から直したのに古い判定が残っている（別経路の後始末）"
+            )
+            assert win._distance_label(win._row_frames[0]).cget("text") != dist_before, \
+                "水平距離が座標に追従していない"
+        finally:
+            win.destroy(); root.destroy()
+
     def test_the_wheel_ignores_the_rest_of_the_window(self, default_params_dict):
         """表の外（共通設定欄など）で回しても表は動かないこと。
 

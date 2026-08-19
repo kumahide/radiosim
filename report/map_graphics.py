@@ -28,13 +28,37 @@ STATUS_RGB = {
     "ERROR": (191, 54, 12),    # #bf360c
 }
 
+# 選択中の点を囲むリングの色（I-098＝地図で座標を置き直す）。
+# **基調色のシアンにしない**＝選択は「いま何が起きるか」を表す状態で、点の
+# 種別（送信点・受信点・中継点＝シアンの形で区別）とは別の軸。同じ色にすると
+# 「選ばれている」ことと「そういう点である」ことが見分けられない。
+# ⚠️ 判定色（緑/赤）も避ける＝地図の上で OK/NG と読まれる。
+SELECT_RGB = (255, 145, 0)     # 琥珀色（淡色地図でも航空写真でも沈まない）
 
-def node_icon(hollow: bool) -> Image.Image:
+
+def _selection_ring(d: "ImageDraw.ImageDraw", c: float, radius: float,
+                    scale: int) -> None:
+    """選択中を表すリングを描く（白の下敷き＋琥珀の線）。
+
+    白を 1 枚下に敷くのは、航空写真の明るい地面の上で琥珀が沈むため
+    （出典表記に背景色を持たせているのと同じ理由＝地の色は選べない）。
+    """
+    for r_, color, w in ((radius + 1.2 * scale, (255, 255, 255, 235), 2.4),
+                         (radius, SELECT_RGB + (255,), 2.2)):
+        d.ellipse([c - r_, c - r_, c + r_, c + r_],
+                  outline=color, width=int(w * scale))
+
+
+def node_icon(hollow: bool, selected: bool = False) -> Image.Image:
     """端点のノードアイコン（RGBA PIL Image）を生成する。
 
     半透明シアンのハロー（電波点の表現）＋白縁取りのシアンノード。
     hollow=False（TX）は塗りつぶし、hollow=True（RX）は白抜きで区別する。
     supersample → 縮小でアンチエイリアスする。
+
+    `selected=True` は**選択中**（次のクリックでここへ移す＝I-098）の見た目。
+    ⚠️ 形も塗りも変えない＝役割（送信点／受信点）は形で読む約束なので、
+    選択は**囲うだけ**で表す。
     """
     size, scale = 26, 4
     s = size * scale
@@ -49,6 +73,8 @@ def node_icon(hollow: bool) -> Image.Image:
     # ハロー（半透明・大）→ 電波を発する点であることを表す。
     disc(s * 0.46, fill=(r, g, b, 55))
     disc(s * 0.34, fill=(r, g, b, 90))
+    if selected:
+        _selection_ring(d, c, s * 0.40, scale)
     # ノード本体（白縁取りで地図上のコントラストを確保）。
     node_r = s * 0.22
     if hollow:   # RX: 白抜き（受信側）
@@ -60,7 +86,7 @@ def node_icon(hollow: bool) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
-def relay_icon() -> Image.Image:
+def relay_icon(selected: bool = False) -> Image.Image:
     """中継点（ホップの折れ点）のアイコン＝**ひし形**（RGBA PIL Image）。
 
     送信点（塗りの丸）・受信点（白抜きの丸）と**形で**区別する。丸のまま濃淡や
@@ -80,6 +106,8 @@ def relay_icon() -> Image.Image:
     # 淡いハロー（端点より控えめ＝主役は両端）。
     d.ellipse([c - s * 0.44, c - s * 0.44, c + s * 0.44, c + s * 0.44],
               fill=(r, g, b, 45))
+    if selected:
+        _selection_ring(d, c, s * 0.38, scale)
     # 塗りのひし形＋白縁（淡色地図でのコントラスト確保）。
     half = s * 0.30
     pts = [(c, c - half), (c + half, c), (c, c + half), (c - half, c)]

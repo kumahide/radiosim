@@ -56,11 +56,12 @@
 
   <!-- row 2 -->
   <g>
-    <rect class="card" x="34" y="254" width="341" height="96" rx="6" stroke="#c3d0ec"/>
+    <rect class="card" x="34" y="254" width="341" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="46" y="271" class="ctitle" fill="#24406e">そのほかの窓</text>
     <text x="46" y="292" class="mod">graph.py</text>    <text x="182" y="292" class="role">グラフ窓</text>
     <text x="46" y="312" class="mod">scenario.py</text> <text x="182" y="312" class="role">条件探索（比較 / スイープ）</text>
     <text x="46" y="332" class="mod">multihop.py</text> <text x="182" y="332" class="role">中継経路（地点が入力面）</text>
+    <text x="46" y="352" class="mod">multihop_map.py</text> <text x="182" y="352" class="role">中継経路と地図の受け渡し</text>
 
     <rect class="card" x="389" y="254" width="696" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="401" y="271" class="ctitle" fill="#24406e">全窓で共有する部品</text>

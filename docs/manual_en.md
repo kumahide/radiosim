@@ -208,7 +208,7 @@ The **"Map" button** at the bottom of the launcher opens an auxiliary window ove
 
 ### Pick Coordinates mode (default)
 
-Click the map to set **TX → RX** alternately; the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Click again at any time to re-place a point.
+Click the map to fill **whichever site is still empty** (TX first, then RX); the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Once both are set, a plain click no longer writes anything — select the marker you want to move (see below) so that re-placing one site never wipes the other.
 
 - Shows cyan endpoint markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
@@ -229,6 +229,15 @@ A mode for placing the points of a relay route from the map. Open the map from t
 - The map draws the polyline through the points and a **horizontal-distance badge for every hop**.
 - ⚠️ **That horizontal distance appears on the map only.** The hop table has no distance column, and the report carries the **slant distance** (a different quantity).
 - The map is a mirror of the Relay Path window. Adding and removing points is driven from that window, and the map follows it.
+
+### Moving a point you have already placed
+
+In all three input modes you can adjust a point on the map: **click its marker to select it** — it gets an amber ring and the status bar names it ("waypoint R1 selected", "RX of path p1 selected") — then **click the map where it should go**. The selection is used up by that one move, and **Esc** cancels it.
+
+- The rule is one line: **a plain click adds a point, a click after a selection moves the selected one.**
+- Dragging is still the map pan, on purpose: if dragging moved points, grabbing the map to scroll would silently rewrite your input.
+- The window remains the source of truth. If the point you selected has been deleted or reordered in the window meanwhile, the map refuses the move and asks you to select again — it never moves a different point instead.
+- ⚠️ **Terrain is sampled on a 5–10 m mesh.** If you move a point less than that, the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result.
 
 ### Cache Management mode
 

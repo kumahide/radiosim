@@ -244,15 +244,8 @@ class _TableMixin(_HostBase):
         # あわせて**確定した座標をこの窓の表記へ整形する**（I-060 R3）＝整形される
         # こと自体が「読めた」という返事になり、読めなければ原文が残るので parse の
         # 成否が目で分かる。表記は窓を開いた時点で凍結した `_coord_format`（G2）。
-        def _coords_committed(_e=None, es=entries, lbl=dist_lbl):
-            for c in (1, 2):
-                text = es[c].get()
-                shown = coords.reformat(text, self._coord_format)
-                if shown != text:
-                    es[c].delete(0, tk.END)
-                    es[c].insert(0, shown)
-            self._update_row_distance(es, lbl)
-            self._notify_paths_changed()
+        def _coords_committed(_e=None, f=row_frame, es=entries):
+            self._commit_row_coords(f, es)
 
         for col in (1, 2):
             entries[col].bind("<FocusOut>", _coords_committed, add="+")
@@ -331,6 +324,36 @@ class _TableMixin(_HostBase):
             self, min_w=self._BASE_W, min_h=self._BASE_H,
             extra_w=self._vsb.winfo_reqwidth() + self._TABLE_PAD_W,
         )
+
+    def _commit_row_coords(self, frame: ttk.Frame, entries: list[tk.Entry]) -> None:
+        """座標セルを確定したあとの後始末を**1 か所で**行う。
+
+        整形（I-060 R3）→ 水平距離 → 判定の取り下げ（I-041）→ 地図への通知、の
+        4 つが 1 組。**口は 2 つある**＝手で編集して確定したときと、地図で選んだ
+        端点を置き直したとき（I-098）。別々に書くと、片方だけ後始末が欠けて
+        「地図から直した行にだけ古い判定が残る」ような食い違いが生まれる。
+        """
+        for c in (1, 2):
+            text = entries[c].get()
+            shown = coords.reformat(text, self._coord_format)
+            if shown != text:
+                entries[c].delete(0, tk.END)
+                entries[c].insert(0, shown)
+        dist = self._distance_label(frame)
+        if dist is not None:
+            self._update_row_distance(entries, dist)
+        # 判定は**その結果を生んだ入力でなくなった行**から取り下げる（B-058 と
+        # 同じ判断＝値が変わったときだけ）。
+        verdict = self._verdict_label(frame)
+        if (verdict is not None and verdict.cget("text")
+                and self._row_values(entries) != getattr(verdict, "_verdict_input", None)):
+            verdict.config(text="")
+        self._notify_paths_changed()
+
+    def _distance_label(self, frame: ttk.Frame) -> "ttk.Label | None":
+        """行フレームの水平距離ラベルを返す（引き方は `_verdict_label` と同じ）。"""
+        slaves = frame.grid_slaves(row=0, column=len(self._WIDTHS) - 4)
+        return slaves[0] if slaves and isinstance(slaves[0], ttk.Label) else None
 
     def _update_row_distance(self, entries: list[tk.Entry], label: ttk.Label) -> None:
         """行の TX/RX 座標から水平距離を計算して読み取り専用ラベルへ反映する。

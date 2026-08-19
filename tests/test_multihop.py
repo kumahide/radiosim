@@ -25,6 +25,7 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core import config
+from core import coords
 from core import i18n
 from core import simulation as sim
 from report import batch
@@ -1010,6 +1011,56 @@ class TestMultiHopWindow:
             win._wp_vars[0]["coord"].set("34.54, 132.41")
             win._wp_vars[1]["coord"].set("34.5")       # 途中
             assert [n for n, _, _ in win.waypoint_markers()] == ["TX"]
+        finally:
+            win.destroy(); root.destroy()
+
+    # --------------------------------------------------------
+    # 地図から**置き直す**（I-098）
+    # --------------------------------------------------------
+    # 地図が持っているのは「写しの並びで何番目か」だけ。窓の行番号ではないので、
+    # 読めない座標の行があると 2 つはずれる。**ずれたまま書き戻すと、黙って別の
+    # 地点が動く**（B-068 / B-102 と同じ型）ので、位置の解き方と照合をここで固定する。
+
+    def test_map_moves_the_point_the_map_actually_drew(self, default_params_dict):
+        """写しの並びの位置が、**読めない行を飛ばした後の位置**として解けること。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()                       # TX / R1 / RX
+            win._wp_vars[0]["coord"].set("34.54, 132.41")
+            win._wp_vars[1]["coord"].set("34.5")      # 入力途中＝地図に出ない
+            win._wp_vars[2]["coord"].set("34.53, 132.40")
+            drawn = win.waypoint_markers()
+            assert [n for n, _, _ in drawn] == ["TX", "RX"]
+
+            assert win.update_waypoint(1, 34.52, 132.39, "RX") is True
+            assert win._wp_vars[1]["coord"].get() == "34.5", (
+                "地図に出ていない行（R1）が動いた＝写しの位置を行番号として読んでいる"
+            )
+            assert [n for n, _, _ in win.waypoint_markers()][1] == "RX"
+            lat, lon = coords.parse_pair(win._wp_vars[2]["coord"].get())
+            assert (round(lat, 5), round(lon, 5)) == (34.52, 132.39)
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_map_refuses_to_move_a_point_that_moved_away(self, default_params_dict):
+        """選んでから動かすまでに並びが変われば、**書き戻さずに断る**こと。"""
+        root, win = self._win(default_params_dict)
+        try:
+            win._on_add_point()
+            for i, c in enumerate(("34.54, 132.41", "34.535, 132.405",
+                                   "34.53, 132.40")):
+                win._wp_vars[i]["coord"].set(c)
+            before = [v["coord"].get() for v in win._wp_vars]
+
+            win._delete_waypoint(1)                   # 選んだ後に中継点が消えた
+            assert win.update_waypoint(1, 34.52, 132.39, "R1") is False, (
+                "消えた地点の位置へ書き戻した（別の地点が黙って動く）"
+            )
+            assert win.update_waypoint(9, 34.52, 132.39, "RX") is False, (
+                "写しの並びの外を指しているのに書き戻した"
+            )
+            assert [v["coord"].get() for v in win._wp_vars] == [
+                before[0], before[2]], "断ったのに座標が変わっている"
         finally:
             win.destroy(); root.destroy()
 

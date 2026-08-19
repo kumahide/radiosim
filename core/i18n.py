@@ -399,6 +399,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_append_added":     "Added path: {pid}",
         "map_marker_tx":        "TX",
         "map_marker_rx":        "RX",
+        # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
+        # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
+        "map_select_hint":      "Coordinate pick: TX and RX are both set. Click a marker to select it, then click the map to move it there.",
+        "map_selected":         "{label} selected: the next map click moves it there (Esc to cancel).",
+        "map_moved":            "Moved {label} ({dist}).",
+        "map_move_below_mesh":  "The move is smaller than the terrain mesh ({mesh} m), so the result may not change.",
+        "map_select_stale":     "The selected point is no longer there (the window has changed). Select it again.",
+        "map_label_path_point": "{role} of path {pid}",
+        "map_label_waypoint":   "waypoint {name}",
+        "map_move_affordance":  "Click a marker to select it, then click the map to move it.",
         "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
         "tm_dl_title":          "Download",
         "tm_dl_confirm":        "Download DEM for {n} areas?",
@@ -935,6 +945,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_append_added":     "行を追加しました: {pid}",
         "map_marker_tx":        "TX",
         "map_marker_rx":        "RX",
+        # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
+        # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
+        "map_select_hint":      "座標入力: TX と RX は指定済みです。マーカーをクリックして選ぶと、次のクリックでそこへ移せます。",
+        "map_selected":         "{label} を選択中: 次に地図をクリックするとそこへ移します（Esc で取り消し）。",
+        "map_moved":            "{label} を移動しました（{dist}）。",
+        "map_move_below_mesh":  "移動量が地形メッシュ（{mesh} m）より小さいため、計算結果は変わらないことがあります。",
+        "map_select_stale":     "選んでいた点が見当たりません（ウィンドウ側が変わりました）。選び直してください。",
+        "map_label_path_point": "経路 {pid} の {role}",
+        "map_label_waypoint":   "地点 {name}",
+        "map_move_affordance":  "マーカーをクリックして選ぶと、次のクリックでそこへ移せます。",
         "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
         "tm_dl_title":          "ダウンロード",
         "tm_dl_confirm":        "対象 {n} エリアの DEM をダウンロードしますか？",

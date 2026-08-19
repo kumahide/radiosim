@@ -125,7 +125,10 @@ def _map_stub(mode: str, points):
     win._mode = SimpleNamespace(get=lambda: mode)
     win._waypoint_sink = (None if points is None else
                           SimpleNamespace(waypoint_markers=lambda: points))
-    win._tx_icon = win._rx_icon = win._relay_icon = None
+    win._tx_icon, win._rx_icon, win._relay_icon = "TX_ICON", "RX_ICON", "RELAY_ICON"
+    win._tx_icon_sel, win._rx_icon_sel, win._relay_icon_sel = (
+        "TX_SEL", "RX_SEL", "RELAY_SEL")
+    win._selection = None
     win._wp_images = []
     # 距離バッジの画像化だけは差し替える＝`ImageTk.PhotoImage` は Tk の root を
     # 要求するので、root 無しのこの層では作れない（アイコンを None にしているのと
@@ -259,6 +262,9 @@ def _committed_stub(paths):
     win._committed_images = []
     win._append_sink = SimpleNamespace(existing_paths=lambda: paths)
     win._tx_icon, win._rx_icon = "TX_ICON", "RX_ICON"    # 同一性だけ見る目印
+    win._tx_icon_sel, win._rx_icon_sel = "TX_SEL", "RX_SEL"
+    win._relay_icon = win._relay_icon_sel = None
+    win._selection = None
     win._make_distance_badge = lambda text: f"BADGE:{text}"
     win._redraw_state = {}
     return win
@@ -303,6 +309,232 @@ def test_a_relay_path_labels_every_section_with_its_distance():
     expected = [((a[1] + b[1]) / 2, (a[2] + b[2]) / 2)
                 for a, b in zip(_THREE, _THREE[1:])]
     assert mids == expected, f"距離バッジが区間の中点に無い: {mids} != {expected}"
+
+
+# ============================================================
+# 選んでから置き直す（I-098）
+# ============================================================
+# 地図でできるのは長らく「置く」「足す」だけで、**「直す」が無かった**（座標を
+# 微調整する動線が数値欄の打ち直ししかない）。ドラッグは採らない＝素のドラッグは
+# パンで埋まっており、奪うと*入力が黙って書き換わる*誤操作を作る。
+# ⇒ **1 度目のクリックで選び、2 度目のクリックでそこへ移す**。
+#
+# ここで固定するのは 4 つ:
+#   ① 選ぶための押下から届く地図クリックを**その場への移動にしない**
+#   ② 2 度目のクリックが**選んだ点だけ**を動かす（素のクリックは今までどおり足す）
+#   ③ 座標入力で TX/RX が両方そろっているとき、素のクリックが**TX を潰さない**
+#   ④ 窓の側が変わっていたら**書き戻さずに断る**
+class _FakeWaypointSink:
+    """中継経路ウィンドウの代役（写しを返し、位置と名前で書き戻す）。"""
+
+    def __init__(self, points):
+        self.points = list(points)
+
+    def waypoint_markers(self):
+        return list(self.points)
+
+    def append_waypoint(self, lat, lon):
+        self.points.append((f"R{len(self.points)}", lat, lon))
+        return self.points[-1][0]
+
+    def update_waypoint(self, index, lat, lon, expect):
+        if not 0 <= index < len(self.points) or self.points[index][0] != expect:
+            return False
+        self.points[index] = (expect, lat, lon)
+        return True
+
+
+def _edit_stub(mode, *, waypoints=None, single=None):
+    """クリックの筋（選ぶ → 移す）を通すのに要る最小限だけを持つ MapWindow。"""
+    from views.map_window import MapWindow
+
+    win = MapWindow.__new__(MapWindow)
+    win._map = _FakeMapWidget()
+    win._map.fit_bounding_box = lambda *a, **k: None   # 表示範囲合わせは見ない
+    win._mode = SimpleNamespace(get=lambda: mode)
+    win._busy = False
+    win._selection = None
+    win._select_guard = False
+    win._pick_next = "tx"
+    win._tx_coord = win._rx_coord = None
+    win._pick_objects, win._pick_images = [], []
+    win._wp_objects, win._wp_images = [], []
+    win._committed, win._committed_images = [], []
+    win._tx_icon, win._rx_icon, win._relay_icon = "TX_ICON", "RX_ICON", "RELAY_ICON"
+    win._tx_icon_sel, win._rx_icon_sel, win._relay_icon_sel = (
+        "TX_SEL", "RX_SEL", "RELAY_SEL")
+    win._single_sink = single
+    win._append_sink = None
+    win._waypoint_sink = waypoints
+    win._make_distance_badge = lambda text: f"BADGE:{text}"
+    win._redraw_state = {}
+    win.status = []
+    win._set_status = lambda text, auto_clear=False: win.status.append(text)
+    win._set_idle = lambda: win.status.append("<idle>")
+    # 押下 → 離しの 1 巡（本物は canvas の `<ButtonRelease-1>` が呼ぶ）。
+    win._release = lambda w=win: w._clear_select_guard()
+    return win
+
+
+def _click_marker(win, n: int = 0):
+    """描かれたマーカーの n 番目を押す（tkintermapview は押下で command を呼ぶ）。"""
+    markers = [o for o in win._map.alive
+               if o.kind == "marker" and o.kwargs.get("command") is not None]
+    markers[n].kwargs["command"](markers[n])
+
+
+def test_selecting_a_marker_does_not_move_it_onto_itself():
+    """①選ぶための押下から届く地図クリックを捨てること。
+
+    🔴 マーカーの `<Button-1>` は**押した瞬間**に、地図の素クリックは**離した
+    瞬間**に来る（tkintermapview は押下と離しが同じ位置なら「クリック」と見なす）。
+    捨てないと、選んだ直後に**その場へ移す空振りの移動**が必ず 1 回入る。
+    """
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+
+    _click_marker(win, 0)                      # 押下＝選ぶ
+    win._on_map_click((34.55, 132.45))         # 離し＝同じクリックの続き
+    win._clear_select_guard()                  # 離しの後始末（本物は canvas から）
+
+    assert sink.points[0] == ("TX", 34.5, 132.4), "選んだだけで座標が動いた"
+    assert len(sink.points) == 2, "選ぶクリックが地点の追加として数えられた"
+    assert win._selection is not None, "選択が 1 回のクリックで消えている"
+
+
+def test_the_next_click_moves_only_the_selected_point():
+    """②2 度目のクリックは**選んだ点だけ**を動かし、選択は使い切ること。"""
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("R1", 34.55, 132.45),
+                              ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+
+    _click_marker(win, 1)                      # R1 を選ぶ
+    win._release(win)                          # 選んだ押下の 1 巡が終わる
+    win._on_map_click((34.7, 132.7))           # 次のクリック＝ここへ移す
+
+    assert sink.points[1] == ("R1", 34.7, 132.7), "選んだ点が移っていない"
+    assert sink.points[0] == ("TX", 34.5, 132.4)
+    assert sink.points[2] == ("RX", 34.6, 132.5)
+    assert len(sink.points) == 3, "移動のはずが地点を足している"
+    assert win._selection is None, "選択が残っている（次のクリックまで飲み込む）"
+
+
+def test_a_plain_click_still_appends_a_waypoint():
+    """②の裏＝**素のクリックは今までどおり足す**（規則は 1 つ: 素は足す・選んだら直す）。"""
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+
+    win._on_map_click((34.7, 132.7))
+
+    assert len(sink.points) == 3, "素のクリックで地点が足せなくなっている"
+
+
+def test_a_plain_click_no_longer_overwrites_tx_when_both_are_set():
+    """③座標入力で TX/RX が両方そろっているとき、素のクリックが TX を潰さないこと。
+
+    これが I-098 の穴そのもの＝`TX→RX→TX…` と機械的に切り替えていたので、両方
+    入った状態で開くと**次のクリックは必ず TX**。「RX だけ置き直す」ができず、
+    先に TX を潰してから打ち直すことになっていた。
+    """
+    from core import i18n
+
+    picks: list = []
+    single = SimpleNamespace(
+        apply_map_pick=lambda role, lat, lon: picks.append((role, lat, lon)),
+        current_path_coords=lambda: {"tx": (34.5, 132.4), "rx": (34.6, 132.5)},
+    )
+    win = _edit_stub("coords", single=single)
+    win._load_single_coords()
+    win._refresh_picks()                        # 本物は `_apply_mode_visibility` が呼ぶ
+    assert win._pick_next is None, "置く先が無いのに次のピック対象が残っている"
+
+    win._on_map_click((34.7, 132.7))
+    assert picks == [], "素のクリックが TX を上書きした（打ち直しを強いる穴）"
+    assert win.status[-1] == i18n.t("map_select_hint")
+
+    # 選んでからなら、その点だけが動く（RX を選んで RX だけ置き直す）。
+    _click_marker(win, 1)                       # 描画順は TX → RX
+    win._release(win)
+    win._on_map_click((34.7, 132.7))
+    assert picks == [("rx", 34.7, 132.7)], f"RX だけを置き直せていない: {picks}"
+
+
+def test_a_move_finer_than_the_terrain_mesh_says_so():
+    """⑤地形メッシュより小さい移動は、**そう言う**こと（画面は動くが結果は動かない）。
+
+    DEM は 5〜10m メッシュなので、それより細かく詰めても標高は同じ格子から拾われる。
+    ⇒ *縮尺で調整を禁じる*のではなく（地図を寄せただけで機能が消える死んだモードに
+    なる）、**起きたときにその場で言う**。判定に使うのは縮尺ではなく実際の移動量。
+    """
+    from core import dem
+    from core import i18n
+
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+
+    _click_marker(win, 0)
+    win._release(win)
+    win._on_map_click((34.50002, 132.4))        # 約 2m＝メッシュより細かい
+    note = i18n.t("map_move_below_mesh").format(mesh=f"{dem.FINEST_MESH_M:g}")
+    assert note in win.status[-1], f"細かすぎる移動を黙って受けた: {win.status[-1]}"
+
+    _click_marker(win, 0)
+    win._release(win)
+    win._on_map_click((34.51, 132.4))           # 約 1.1km＝十分に動いた
+    assert note not in win.status[-1], (
+        f"十分に動いたのに「変わらないかも」と言っている: {win.status[-1]}")
+
+
+def test_a_stale_selection_is_refused_instead_of_written():
+    """④窓の側が変わっていたら書き戻さず、選び直してもらうこと。
+
+    位置だけで書き戻すと**黙って別の点を動かす**（B-068 / B-102 と同じ型）。
+    """
+    from core import i18n
+
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("R1", 34.55, 132.45),
+                              ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+    _click_marker(win, 1)                       # R1 を選ぶ
+
+    sink.points.pop(1)                          # 窓の側で R1 が消えた
+    win._release(win)
+    win._on_map_click((34.7, 132.7))
+
+    assert sink.points == [("TX", 34.5, 132.4), ("RX", 34.6, 132.5)], (
+        "消えた地点の位置へ書き戻した（別の地点が黙って動く）"
+    )
+    assert win.status[-1] == i18n.t("map_select_stale")
+    assert win._selection is None
+
+
+def test_the_selected_point_is_drawn_with_its_own_icon():
+    """選択中は**見た目で分かる**こと（状態バーだけでは選択に気づけない）。
+
+    ⚠️ 形は変えない＝役割（送信点／受信点／中継点）は形で読む約束なので、
+    選択は囲うだけで表す。ここが見るのは「別のアイコンを引いていること」。
+    """
+    sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("R1", 34.55, 132.45),
+                              ("RX", 34.6, 132.5)])
+    win = _edit_stub("waypoints", waypoints=sink)
+    win._refresh_waypoints()
+    _click_marker(win, 1)
+
+    icons = [o.kwargs.get("icon") for o in win._map.alive
+             if o.kind == "marker" and o.kwargs.get("command") is not None]
+    assert icons == ["TX_ICON", "RELAY_SEL", "RX_ICON"], (
+        f"選択中の点が他と同じ見た目のまま: {icons}")
+
+    win._deselect()
+    icons = [o.kwargs.get("icon") for o in win._map.alive
+             if o.kind == "marker" and o.kwargs.get("command") is not None]
+    assert icons == ["TX_ICON", "RELAY_ICON", "RX_ICON"], (
+        f"選択を解いてもハイライトが残っている: {icons}")
 
 
 # ============================================================
@@ -472,6 +704,26 @@ def test_attribution_is_a_widget_over_the_canvas(monkeypatch):
         root.destroy()
 
 
+def test_the_selection_guard_is_lowered_on_button_release(monkeypatch):
+    """「選ぶための押下」の印が、押下 → 離しの 1 巡で必ず降りること（I-098）。
+
+    印は*次に届く地図クリックを 1 回だけ捨てる*ためのもの。マーカーを押したまま
+    地図を送った（クリックが届かなかった）ときに降ろす口が無いと、**次の本物の
+    クリックが飲み込まれる**＝押しても何も起きない状態が 1 回混ざる。
+    """
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        root.update()                    # 窓を実体化してからでないと届かない
+        win._select_guard = True
+        win._map.canvas.event_generate("<ButtonRelease-1>", x=5, y=5)
+        root.update()
+        assert win._select_guard is False, (
+            "離しても印が降りていない＝次のクリックが 1 回飲み込まれる"
+        )
+    finally:
+        root.destroy()
+
+
 def test_only_two_basemaps_are_offered():
     """背景の選択肢は**2 つだけ**（YAGNI の釘・I-028）。
 
@@ -510,6 +762,9 @@ def _pick_stub():
     win._pick_objects = []
     win._pick_images = []
     win._tx_icon, win._rx_icon = "TX_ICON", "RX_ICON"
+    win._tx_icon_sel, win._rx_icon_sel = "TX_SEL", "RX_SEL"
+    win._relay_icon = win._relay_icon_sel = None
+    win._selection = None
     win._make_distance_badge = lambda text: f"BADGE:{text}"
     win._redraw_state = {}
     return win

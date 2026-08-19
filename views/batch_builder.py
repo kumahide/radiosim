@@ -447,23 +447,58 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._add_row(defaults)
         return defaults[0]
 
+    def _readable_paths(self) -> list[tuple]:
+        """座標として読める行だけを `(行の位置, pid, tx, rx)` で返す。
+
+        🔑 **写しを作る口と、写しの位置を解く口を 1 つにする**（I-098）。地図は
+        「写しの並びで何番目か」しか持たないので、落とす規則が 2 か所にあると、
+        片方だけ変わった瞬間に**地図が指した点と表が動かす行がずれる**
+        （B-068 / B-102 と同じ、黙って別の行を触る型）。
+        """
+        out: list[tuple] = []
+        for i, entries in enumerate(self._row_entries):
+            try:
+                tx = coords.parse_pair(entries[1].get())
+                rx = coords.parse_pair(entries[2].get())
+            except ValueError:
+                continue
+            out.append((i, entries[0].get().strip(), tx, rx))
+        return out
+
     def existing_paths(self) -> list[tuple]:
         """表の各行の (path_id, TX座標, RX座標) を [(pid, tx, rx), ...] で返す
         （パース不能行は除外）。
 
         地図が確定済みパスを地図上に表示するために引く。path_id も返すのは、
         地図上で「どの行のパスか」を距離バッジへ添えて分かるようにするため
-        （I-001・バッチ表の各pathとマップウィンドウのpathの対応が不明瞭という指摘）。
+        （I-001・複数経路の各pathと地図のpathの対応が不明瞭という指摘）。
         """
-        out: list[tuple] = []
-        for entries in self._row_entries:
-            try:
-                tx = coords.parse_pair(entries[1].get())
-                rx = coords.parse_pair(entries[2].get())
-            except ValueError:
-                continue
-            out.append((entries[0].get().strip(), tx, rx))
-        return out
+        return [(pid, tx, rx) for _i, pid, tx, rx in self._readable_paths()]
+
+    def update_path_point(self, index: int, role: str, lat: float, lon: float,
+                          expect: str) -> bool:
+        """地図で選んだ確定パスの端点を置き直す（`_AppendSink` の実装・I-098）。
+
+        `index` は `existing_paths()` の並びでの位置、`role` は `"tx"` / `"rx"`。
+        **選んでから動かすまでのあいだに行が消える・並びが変わることがある**ので、
+        `expect`（選んだ時点の経路 ID）と食い違ったら**動かさずに断る**。
+
+        ⚠️ 座標欄を書き換えたら、**手で編集したときと同じ後始末**を通す＝表記の
+        整形・水平距離の更新・判定の消去・地図への通知。ここだけ別の道を通ると、
+        「地図から直した行にだけ古い判定が残る」ような食い違いが生まれる。
+        """
+        rows = self._readable_paths()
+        if not 0 <= index < len(rows):
+            return False
+        row, pid, _tx, _rx = rows[index]
+        if pid != expect:
+            return False
+        entries = self._row_entries[row]
+        col = 1 if role == "tx" else 2
+        entries[col].delete(0, tk.END)
+        entries[col].insert(0, coords.format_pair(lat, lon, self._coord_format))
+        self._commit_row_coords(self._row_frames[row], entries)
+        return True
 
     def _notify_paths_changed(self) -> None:
         """パス集合が変わった旨をランチャー→地図へ通知する（確定パス表示の追従）。

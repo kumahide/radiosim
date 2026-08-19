@@ -56,11 +56,12 @@
 
   <!-- row 2 -->
   <g>
-    <rect class="card" x="34" y="254" width="341" height="96" rx="6" stroke="#c3d0ec"/>
+    <rect class="card" x="34" y="254" width="341" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="46" y="271" class="ctitle" fill="#24406e">Other windows</text>
     <text x="46" y="292" class="mod">graph.py</text>    <text x="182" y="292" class="role">graph window</text>
     <text x="46" y="312" class="mod">scenario.py</text> <text x="182" y="312" class="role">compare / sweep</text>
     <text x="46" y="332" class="mod">multihop.py</text> <text x="182" y="332" class="role">relay path (waypoints in)</text>
+    <text x="46" y="352" class="mod">multihop_map.py</text> <text x="182" y="352" class="role">relay path &lt;-&gt; map handoff</text>
 
     <rect class="card" x="389" y="254" width="696" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="401" y="271" class="ctitle" fill="#24406e">Shared by every window</text>

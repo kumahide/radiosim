@@ -40,6 +40,7 @@ from core import i18n
 from core import simulation as sim
 from report import multihop as mh
 from views import dialogs, frozen_common, theme, window_fit
+from views.multihop_map import _MapSinkMixin
 from views.progress import ProgressPump
 
 # 地点の既定の地上高（ランチャーの h_tx を初期値に使う）。
@@ -49,7 +50,7 @@ _DEFAULT_NAMES = ("TX", "R1", "R2", "R3", "R4", "R5", "R6", "R7", "RX")
 _COORD_WIDTH = coords.DISPLAY_WIDTH_CHARS
 
 
-class MultiHopWindow(tk.Toplevel):
+class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
     """中継経路ウィンドウ（ランチャーが唯一のインスタンスを持つ）。"""
 
     # 幅の**下限**（実寸は中身から決まる＝`_fit_to_content`）。980 だったころは
@@ -700,65 +701,6 @@ class MultiHopWindow(tk.Toplevel):
         if index < len(self._hop_vars):
             self._hop_vars.pop(index)
         self._render_waypoints()
-
-    def _on_from_map(self) -> None:
-        """地図から順に拾う（宛先をこの窓へ切り替える）。
-
-        地図は**アプリ唯一のインスタンス**で、モードで宛先を切り替える設計
-        （2.3 D2）。ここはその 3 つ目のシンク＝**1 点ずつ順に足す**。
-
-        ⚠️ **親ウィジェットからメソッドを探さない**（`getattr(self.master, …)`）。
-        `self.master` は Tk のルートで、ランチャー（`SimLauncher`）はウィジェット
-        ではないため**必ず None になり、この機能は一度も動かなかった**。依存は
-        バッチの `load_params`・条件探索の `config_provider` と同じく**注入**する。
-        """
-        if self._map_opener is None:
-            dialogs.alert(self, i18n.t("dlg_input_error"), i18n.t("mh_err_no_map"))
-            return
-        self._map_opener(self)
-
-    def waypoint_markers(self) -> "list[tuple[str, float, float]]":
-        """地図が描き直すための現在の地点列（読めない座標の行は落とす）。
-
-        **地図は写すだけ**＝ここが唯一の出所（`_WaypointSink` の実装）。座標を
-        入力途中の行は座標として読めないので出さない（実行時の検証とは別物＝
-        地図の表示は「今読める点」で足りる）。
-        """
-        points: list[tuple[str, float, float]] = []
-        for vars_ in self._wp_vars:
-            try:
-                lat, lon = coords.parse_pair(vars_["coord"].get())
-            except ValueError:
-                continue
-            points.append((vars_["name"].get(), lat, lon))
-        return points
-
-    def _notify_map(self) -> None:
-        """地点列が変わったことを地図へ知らせる（開いていて中継点モードのときだけ効く）。
-
-        ⚠️ **削除も編集も通知する**＝追加のときだけ描くと、窓で消した地点が地図に
-        残る（2026-08-01 実機確認）。バッチ → 地図の `on_paths_changed` と同じ形。
-        """
-        if self._map_notify is not None:
-            self._map_notify()
-
-    def append_waypoint(self, lat: float, lon: float) -> str:
-        """地図からの 1 点追加（`_WaypointSink` の実装）。
-
-        空欄の地点があればそこを埋め、無ければ末尾に足す＝「TX と RX の枠だけ
-        ある状態」から地図で順に埋めていける。
-        """
-        for vars_ in self._wp_vars:
-            if not vars_["coord"].get().strip():
-                vars_["coord"].set(
-                    coords.format_pair(lat, lon, self._coord_format))
-                return vars_["name"].get()
-        # 空きが無ければ**中継点として**足す（受信点の手前＝_add_waypoint の約束）。
-        before = len(self._wp_vars)
-        self._add_waypoint(lat=lat, lon=lon)
-        if len(self._wp_vars) == before:
-            return ""                     # 上限に達していて足せなかった
-        return self._wp_vars[len(self._wp_vars) - 2]["name"].get()
 
     def _sync_hops(self) -> None:
         """地点の数に合わせてホップ行を作り直す（**導出**＝地点が先）。
