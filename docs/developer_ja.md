@@ -224,6 +224,7 @@ radiosim/
 │   ├── units.py          # 距離の表示整形（内部 km → 表示 m・純関数）
 │   ├── runtime_env.py    # 実行環境の事実（frozen か・同梱物の根・書き込み先の解決）
 │   ├── i18n.py           # 多言語文字列テーブル＋外部言語（lang/*.json）の検証と読み込み
+│   ├── failure.py        # 失敗メッセージの型（何が起きた／次に何をすべきか／詳細）
 │   └── version.py        # バージョン情報
 ├── report/               # 出力を作る層＝実行エンジンと成果物の生成（ヘッドレス）
 │   ├── batch.py          # 複数経路の実行エンジン（CSV I/O・バリデーション・実行）
@@ -295,6 +296,7 @@ radiosim/
     ├── test_theme.py
     ├── test_window_fit.py
     ├── test_errors.py
+    ├── test_failure_messages.py
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
@@ -936,6 +938,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_layers.py`         | 層の約束のゲート（依存は views → report → core の一方向・import 時に閉じる循環が無い・`core/` が GUI ツールキットと作図ライブラリを引かない・層が空になって検査が空振りしていない） |
 | `test_window_fit.py`     | 見切れの横断ゲート（すべてのウィンドウが中身を収めているか・中身が増えたあとも収まるか・**置かれた場所ごとデスクトップの中に収まっているか**・**新しいウィンドウの登録漏れ**を静的に検出） |
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
+| `test_failure_messages.py` | 失敗ダイアログの本文が**型**（何が起きた／次に何をすべきか／詳細）で組まれていること・「次の一手」の語彙が閉じていること・CSV 取り込みの検証が i18n を通っていること |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
 | `test_dev_check.py`      | 検証ランナー自身のゲート（`buildtools/dev_check.py`）。**手書きの対応表が腐って黙って何も足さなくなる**のを検出し、範囲を絞っても静的検査のゲートが必ず足されること・カバレッジ門が全件のときだけ掛かること・出力が要約に収まることを固定 |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・通常起動では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード）＋**テスト実行の隔離**（テストが開発機の実設定を読まず、実リポジトリへ書かないこと＝定数・既定引数・ログの出口の 3 面） |

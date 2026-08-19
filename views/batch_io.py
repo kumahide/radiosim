@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import TYPE_CHECKING
 
+from core import failure
 from core import i18n
 from report import batch
 from views import dialogs
@@ -51,7 +52,9 @@ class _CsvMixin(_HostBase):
         try:
             rows = batch.parse_csv(path)
         except Exception as e:
-            dialogs.alert(self, i18n.t("dlg_import_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_import_error"), failure.explain(
+                e, what=i18n.t("fail_import_csv"),
+                hint=i18n.t("fix_file_read")))
             return
 
         if self._row_entries:
@@ -90,7 +93,9 @@ class _CsvMixin(_HostBase):
                 i18n.t("dlg_export_saved").format(path=path),
             )
         except Exception as e:
-            dialogs.alert(self, i18n.t("dlg_export_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_export_error"), failure.explain(
+                e, what=i18n.t("fail_export_csv"), why=i18n.t("fail_why_stopped"),
+                hint=i18n.t("fix_file_write")))
 
     def _save_template(self) -> None:
         """ランチャーの現在値を 1 行目に書いたテンプレート CSV を保存する。"""
@@ -121,4 +126,6 @@ class _CsvMixin(_HostBase):
                 i18n.t("dlg_template_saved").format(path=path),
             )
         except Exception as e:
-            dialogs.alert(self, i18n.t("dlg_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_save_template"), why=i18n.t("fail_why_stopped"),
+                hint=i18n.t("fix_file_write")))

@@ -15,6 +15,7 @@ from tkinter import filedialog
 from typing import TYPE_CHECKING
 
 from core import config
+from core import failure
 from core import i18n
 from views import dialogs
 
@@ -120,7 +121,9 @@ class _ProjectMixin:
         except Exception as e:
             # 書けなかったことを黙らない（I-010 と同クラス）。
             config.logger.warning("Project save failed: %s", e)
-            self._alert(i18n.t("dlg_error"), str(e))
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_save_project"),
+                why=i18n.t("fail_why_stopped"), hint=i18n.t("fix_file_write")))
             return
         self._alert(i18n.t("dlg_success"),
                     i18n.t("proj_saved").format(path=file_path) + "".join(warnings))
@@ -137,11 +140,17 @@ class _ProjectMixin:
         try:
             doc = project.load(file_path)
         except project.ProjectError as e:
-            self._alert(i18n.t("dlg_error"), str(e))
+            # ⚠️ ProjectError の文は**既に日本語の診断**（何が壊れているか）＝
+            # 型の段落 3 に置く。型名を頭に付ける `explain` は使わない。
+            self._alert(i18n.t("dlg_error"), failure.message(
+                what=i18n.t("fail_load_project"),
+                hint=i18n.t("fix_file_read"), detail=str(e)))
             return
         except Exception as e:
             config.logger.warning("Project load failed: %s", e)
-            self._alert(i18n.t("dlg_error"), str(e))
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_load_project"),
+                hint=i18n.t("fix_file_read")))
             return
 
         # **窓は閉じない**（I-061・2026-08-07 ユーザー決定）。開いている窓には

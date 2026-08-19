@@ -126,12 +126,13 @@
     <text x="401" y="802" class="mod">coords.py</text><text x="537" y="802" class="role">座標表記（DD ⇔ DMS）</text>
     <text x="401" y="822" class="mod">units.py</text> <text x="537" y="822" class="role">距離の表示整形（km → m）</text>
 
-    <rect class="card" x="744" y="744" width="341" height="116" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">設定・環境・文字列</text>
     <text x="756" y="782" class="mod">config.py</text>     <text x="892" y="782" class="role">設定 I/O・検証・ログ</text>
     <text x="756" y="802" class="mod">runtime_env.py</text><text x="892" y="802" class="role">宣言された実行系の判定</text>
     <text x="756" y="822" class="mod">i18n.py</text>       <text x="892" y="822" class="role">文字列表＋ lang/*.json</text>
     <text x="756" y="842" class="mod">version.py</text>    <text x="892" y="842" class="role">バージョン情報</text>
+    <text x="756" y="862" class="mod">failure.py</text>    <text x="892" y="862" class="role">失敗メッセージの型</text>
   </g>
 
   <g>

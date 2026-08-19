@@ -142,17 +142,18 @@ def parse_csv(csv_path: str) -> list[PathRow]:
     with open(csv_path, newline="", encoding="utf-8-sig") as f:
         reader = csv.DictReader(f)
         if reader.fieldnames is None:
-            raise ValueError("CSV has no header row.")
+            raise ValueError(i18n.t("berr_no_header"))
         cols = {_norm_key(c) for c in reader.fieldnames}
         missing = _REQUIRED_COLS - cols
         if missing:
-            raise ValueError(f"Missing required columns: {sorted(missing)}")
+            raise ValueError(i18n.t("berr_missing_cols").format(
+                cols=", ".join(sorted(missing))))
 
         for line_no, raw in enumerate(reader, start=2):
             rows.append(_parse_csv_row(_normalize_row(raw), line_no))
 
     if not rows:
-        raise ValueError("CSV has no data rows.")
+        raise ValueError(i18n.t("berr_no_rows"))
     return rows
 
 
@@ -183,21 +184,28 @@ def _normalize_row(raw: dict) -> dict[str, str]:
 def _parse_csv_row(raw: dict, line: int) -> PathRow:
     pid = raw.get("id", "").strip()
     if not pid:
-        raise ValueError(f"Row {line}: 'id' is empty.")
+        raise ValueError(i18n.t("berr_id_empty").format(line=line))
 
     def _coord(key: str) -> tuple[float, float]:
         val = raw.get(key, "").strip()
         parts = val.split(",")
         if len(parts) != 2:
-            raise ValueError(f"Row {line}: '{key}' must be in 'lat, lon' format.")
-        return float(parts[0].strip()), float(parts[1].strip())
+            raise ValueError(i18n.t("berr_coord_format").format(line=line, key=key))
+        try:
+            return float(parts[0].strip()), float(parts[1].strip())
+        except ValueError:
+            # ⚠️ ここを素通りさせると `could not convert string to float: 'x'`
+            # という**英語の内部診断がそのまま画面へ出る**（I-100 で塞いだ穴）。
+            raise ValueError(i18n.t("berr_coord_invalid").format(
+                line=line, key=key, val=val)) from None
 
     def _float(key: str) -> float:
         val = raw.get(key, "").strip()
         try:
             return float(val)
         except ValueError:
-            raise ValueError(f"Row {line}: '{key}' is not a number: '{val}'")
+            raise ValueError(i18n.t("berr_not_number").format(
+                line=line, key=key, val=val)) from None
 
     def _opt_float(key: str) -> float | None:
         val = raw.get(key, "").strip()
@@ -206,7 +214,8 @@ def _parse_csv_row(raw: dict, line: int) -> PathRow:
         try:
             return float(val)
         except ValueError:
-            raise ValueError(f"Row {line}: '{key}' is not a number: '{val}'")
+            raise ValueError(i18n.t("berr_not_number").format(
+                line=line, key=key, val=val)) from None
 
     lat_tx, lon_tx = _coord("start")
     lat_rx, lon_rx = _coord("end")

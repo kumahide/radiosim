@@ -58,6 +58,7 @@ from matplotlib.figure import Figure
 from matplotlib.lines import Line2D
 from matplotlib.patches import Patch
 
+from core import failure
 from core import i18n
 from core import models
 from core import simulation as sim
@@ -551,7 +552,9 @@ class GraphWindow(tk.Toplevel):
                 os.startfile(save_dir)
         except Exception as e:
             logger.error("Save package failed: %s", e)
-            dialogs.alert(self, i18n.t("dlg_save_error"), str(e))
+            dialogs.alert(self, i18n.t("dlg_save_error"), failure.explain(
+                e, what=i18n.t("fail_save_graph"), why=i18n.t("fail_why_stopped"),
+                hint=i18n.t("fix_file_write")))
 
     def _on_close(self) -> None:
         if self._pending is not None:

@@ -31,6 +31,7 @@ import tkinter as tk
 from typing import Any
 
 from core import config
+from core import failure
 from core import i18n
 from views import dialogs
 
@@ -53,9 +54,15 @@ def install(root: tk.Tk) -> None:
             dialogs.alert(
                 root,
                 i18n.t("dlg_unexpected_error"),
-                i18n.t("dlg_unexpected_error_msg").format(
-                    error=f"{exc_type.__name__}: {exc_value}",
-                    log=config.LOG_FILE,
+                # I-100 の型で組む。**足したのは「次に何をすべきか」**＝以前は
+                # 起きたこと・詳細の在り処は書いてあるのに、読んだ人が次に何を
+                # すればよいかがどこにも無かった。
+                failure.message(
+                    what   = i18n.t("fail_unexpected"),
+                    why    = i18n.t("fail_why_aborted"),
+                    hint   = i18n.t("fix_retry_or_log"),
+                    detail = f"{exc_type.__name__}: {exc_value}\n"
+                             + i18n.t("fail_log_at").format(log=config.LOG_FILE),
                 ),
             )
         except Exception:

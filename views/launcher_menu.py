@@ -21,6 +21,7 @@ from typing import TYPE_CHECKING, Callable
 
 from core import config
 from core import dem
+from core import failure
 from core import i18n
 from core import simulation as sim
 from core import version
@@ -466,7 +467,9 @@ class _MenuMixin:
                 self._apply_sim_config(json.load(f))
             self._alert(i18n.t("dlg_success"), i18n.t("dlg_settings_ok"))
         except Exception as e:
-            self._alert(i18n.t("dlg_error"), str(e))
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_load_settings"),
+                hint=i18n.t("fix_file_read")))
 
     def _on_load_app_settings(self) -> None:
         """ファイルから app 設定（theme/lang/proxy_url）のみ取り込む。
@@ -521,7 +524,9 @@ class _MenuMixin:
             else:
                 self._alert(i18n.t("dlg_success"), i18n.t("dlg_app_settings_ok"))
         except Exception as e:
-            self._alert(i18n.t("dlg_error"), str(e))
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_load_settings"),
+                hint=i18n.t("fix_file_read")))
 
     def _on_about(self) -> None:
         self._alert(

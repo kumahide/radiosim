@@ -126,12 +126,13 @@
     <text x="401" y="802" class="mod">coords.py</text><text x="537" y="802" class="role">coordinates (DD ⇔ DMS)</text>
     <text x="401" y="822" class="mod">units.py</text> <text x="537" y="822" class="role">distance display (km → m)</text>
 
-    <rect class="card" x="744" y="744" width="341" height="116" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
     <text x="756" y="782" class="mod">config.py</text>     <text x="892" y="782" class="role">config I/O, validation, log</text>
     <text x="756" y="802" class="mod">runtime_env.py</text><text x="892" y="802" class="role">the declared interpreter</text>
     <text x="756" y="822" class="mod">i18n.py</text>       <text x="892" y="822" class="role">string table + lang/*.json</text>
     <text x="756" y="842" class="mod">version.py</text>    <text x="892" y="842" class="role">version information</text>
+    <text x="756" y="862" class="mod">failure.py</text>    <text x="892" y="862" class="role">failure message shape</text>
   </g>
 
   <g>

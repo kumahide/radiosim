@@ -25,6 +25,7 @@ import numpy as np
 from core import config
 from core import coords
 from core import dem
+from core import failure
 from core import i18n
 from core import models
 from core import units
@@ -83,12 +84,17 @@ _MAX_FETCH_WORKERS: int = 8
 _DEM_FAILURE_LIMIT: int = _MAX_FETCH_WORKERS
 
 
-class DemUnreachableError(RuntimeError):
+class DemUnreachableError(failure.UserFacingError, RuntimeError):
     """DEM をまったく取得できずに打ち切ったことを表す（B-025 ②）。
 
     **平坦な地形を正常値の顔で返さない**ための唯一の出口。3 フロー（単一・
     バッチ・条件探索）とも `on_error` がダイアログへ出すので、これを投げれば
     どのフローでもユーザーに届く。
+
+    ⚠️ **`UserFacingError` を継承しているのは「文が既に型に乗っている」印**
+    （I-100）＝`err_dem_unreachable` は何が起きた／なぜ止めた／次の一手を全部
+    持つ。これが無いと、受け側が「実行を完了できませんでした」でもう 1 枚
+    包み、**同じことを 2 回言う**。
     """
 
 

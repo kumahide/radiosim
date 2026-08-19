@@ -224,6 +224,7 @@ radiosim/
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
+│   ├── failure.py        # The shape of failure messages (what happened / what to do next / details)
 │   └── version.py        # Version information
 ├── report/               # The layer that produces output: engines and artifacts (headless)
 │   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
@@ -296,6 +297,7 @@ radiosim/
     ├── test_theme.py
     ├── test_window_fit.py
     ├── test_errors.py
+    ├── test_failure_messages.py
     ├── test_bundle_imports.py
     ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
@@ -942,6 +944,7 @@ entry point that runs them together.
 | `test_layers.py`         | Layering gate (dependencies flow one way: views -> report -> core; no import-time cycles; `core/` pulls no GUI toolkit or plotting library; no layer is empty, which would make the checks vacuous) |
 | `test_window_fit.py`     | Cross-window clipping gate (every window fits its content, still fits after content grows, **stays inside the desktop where it is placed**, and **unregistered new windows** are caught statically) |
 | `test_errors.py`         | Unhandled exceptions in GUI callbacks are logged **with a traceback** and surfaced in a dialog naming the log file (no stacked modals when errors repeat; the log survives even if the dialog cannot be shown) |
+| `test_failure_messages.py` | Failure dialogs are built from the shared **shape** (what happened / what to do next / details); the "what to do next" vocabulary stays closed; CSV import validation goes through i18n |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |
 | `test_dev_check.py`      | Gate for the verification runner itself (`buildtools/dev_check.py`). Detects a **hand-written gate table that has rotted and silently adds nothing**, and pins that a narrowed scope still picks up the static-analysis gate, that the coverage gate applies to full runs only, and that the output stays a summary |
 | `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; normal startup resolves to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |

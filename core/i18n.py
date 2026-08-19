@@ -66,10 +66,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "dlg_error":            "Error",
         "dlg_unexpected_error": "Unexpected error",
-        "dlg_unexpected_error_msg":
-            "The operation stopped because of an unexpected error.\n\n"
-            "{error}\n\n"
-            "The full details were written to:\n{log}",
+        # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /
+        # `fail_log_at` から `core.failure` が組む（I-100）。1 枚の型板に戻さない
+        # ＝戻した瞬間に「次に何をすべきか」を書き忘れられる形になる。
         "dlg_ok":               "OK",
         "dlg_close":            "Close",
         "dlg_open_report":      "Open report",
@@ -422,6 +421,41 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_layer_pale":       "Pale map",
         "map_layer_photo":      "Aerial photo",
 
+        # ===== Failure messages: the shared shape (I-100) =====
+        # 段落 1 = what (+ why) / 段落 2 = what to do next / 段落 3 = details.
+        # The wording is assembled in `core/failure.py`; nothing here is a full
+        # message on its own except `err_dem_unreachable` (the original model).
+        "fail_detail_label":    "Details:",
+        # 次の一手＝閉じた語彙（`core.failure.FIX_KEYS`）。
+        "fix_check_input":      "Correct the highlighted values and run again.",
+        "fix_file_write":       "Check that the destination folder is writable and "
+                                "that the file is not open in another app, then save "
+                                "again (you can also pick a different location).",
+        "fix_file_read":        "Check that the file is the one you meant and that it "
+                                "is not damaged, then try another file.",
+        "fix_retry_or_log":     "Try the same operation once more. If it keeps "
+                                "failing, report it together with the log file.",
+        "fix_edit_lang_file":   "Fix those keys in the language file so they match "
+                                "the English table, then restart the app.",
+        # 何が起きた（操作ごとに 1 つ）
+        "fail_unexpected":      "An unexpected error occurred.",
+        "fail_why_aborted":     "The operation was stopped.",
+        "fail_log_at":          "The full details were written to: {log}",
+        "fail_import_csv":      "The CSV could not be imported.",
+        "fail_export_csv":      "The CSV could not be exported.",
+        "fail_save_template":   "The template could not be saved.",
+        "fail_save_graph":      "The terrain profile could not be saved.",
+        "fail_save_project":    "The project file could not be saved.",
+        "fail_load_project":    "The project file could not be opened.",
+        "fail_save_settings":   "The settings could not be saved.",
+        "fail_load_settings":   "The app settings could not be loaded.",
+        "fail_refresh_common":  "The launcher values could not be taken in.",
+        "fail_run_single":      "The run did not finish.",
+        "fail_run_batch":       "The batch run did not finish.",
+        "fail_run_multihop":    "The relay path run did not finish.",
+        "fail_run_scenario":    "The condition sweep did not finish.",
+        "fail_why_stopped":     "Nothing was written.",
+
         # ===== Terrain fetch =====
         "err_dem_unreachable":  (
             "Could not download terrain data (DEM). The run was stopped so that "
@@ -515,6 +549,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_freq":            "[{pid}] freq out of range (1–100000): {val}",
         "verr_gain_tx":         "[{pid}] TX gain out of range (0–60): {val}",
         "verr_gain_rx":         "[{pid}] RX gain out of range (0–60): {val}",
+        #: 切り詰めたことを黙らない（I-100＝型の「詳細はどこ」）。
+        "verr_more":            "...and {n} more.",
+
+        # ===== Validation (CSV import) =====
+        # ⚠️ 画面へ出る字なので i18n を通す（I-100 で英語直書きから移した）。
+        "berr_no_header":       "The CSV has no header row.",
+        "berr_missing_cols":    "Required columns are missing: {cols}",
+        "berr_no_rows":         "The CSV has no data rows.",
+        "berr_id_empty":        "Row {line}: 'id' is empty.",
+        "berr_coord_format":    "Row {line}: '{key}' must be in \"lat, lon\" format.",
+        "berr_coord_invalid":   "Row {line}: '{key}' contains an invalid number: '{val}'",
+        "berr_not_number":      "Row {line}: '{key}' is not a number: '{val}'",
     },
 
     "ja": {
@@ -566,10 +612,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "dlg_error":            "エラー",
         "dlg_unexpected_error": "予期しないエラー",
-        "dlg_unexpected_error_msg":
-            "予期しないエラーが起きたため、処理を中断しました。\n\n"
-            "{error}\n\n"
-            "詳しい内容を次の場所に書き出しました:\n{log}",
+        # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /
+        # `fail_log_at` から `core.failure` が組む（I-100）。1 枚の型板に戻さない
+        # ＝戻した瞬間に「次に何をすべきか」を書き忘れられる形になる。
         "dlg_ok":               "OK",
         "dlg_close":            "閉じる",
         "dlg_open_report":      "レポートを開く",
@@ -912,6 +957,41 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_layer_pale":       "淡色地図",
         "map_layer_photo":      "航空写真",
 
+        # ===== 失敗メッセージの型（I-100） =====
+        # 段落 1 = 何が起きた（＋なぜ止めた）／段落 2 = 次に何をすべきか／
+        # 段落 3 = 詳細。組み立ては `core/failure.py`。ここに 1 文で完結する
+        # メッセージがあるのは `err_dem_unreachable`（型の出所）だけ。
+        "fail_detail_label":    "詳細:",
+        # 次の一手＝閉じた語彙（`core.failure.FIX_KEYS`）。
+        "fix_check_input":      "指摘された値を直して、もう一度実行してください。",
+        "fix_file_write":       "保存先のフォルダに書き込めるか、同じ名前のファイルが"
+                                "他のアプリで開かれていないかを確認して、保存し直して"
+                                "ください（別の場所を選ぶこともできます）。",
+        "fix_file_read":        "開こうとしたファイルが目的のものか、壊れていないかを"
+                                "確認して、別のファイルで試してください。",
+        "fix_retry_or_log":     "同じ操作をもう一度試してください。それでも起きる場合は、"
+                                "ログファイルを添えて報告してください。",
+        "fix_edit_lang_file":   "言語ファイルの該当キーを英語の表に合わせて直し、"
+                                "アプリを開き直してください。",
+        # 何が起きた（操作ごとに 1 つ）
+        "fail_unexpected":      "予期しないエラーが起きました。",
+        "fail_why_aborted":     "処理は中断しました。",
+        "fail_log_at":          "詳しい内容は次の場所に書き出しました: {log}",
+        "fail_import_csv":      "CSV を取り込めませんでした。",
+        "fail_export_csv":      "CSV を書き出せませんでした。",
+        "fail_save_template":   "テンプレートを保存できませんでした。",
+        "fail_save_graph":      "断面図を保存できませんでした。",
+        "fail_save_project":    "プロジェクトファイルを保存できませんでした。",
+        "fail_load_project":    "プロジェクトファイルを開けませんでした。",
+        "fail_save_settings":   "設定を保存できませんでした。",
+        "fail_load_settings":   "アプリ設定を読み込めませんでした。",
+        "fail_refresh_common":  "ランチャーの値を取り込めませんでした。",
+        "fail_run_single":      "実行を最後まで完了できませんでした。",
+        "fail_run_batch":       "複数経路の実行を最後まで完了できませんでした。",
+        "fail_run_multihop":    "中継経路の実行を最後まで完了できませんでした。",
+        "fail_run_scenario":    "条件探索の実行を最後まで完了できませんでした。",
+        "fail_why_stopped":     "ファイルには何も書かれていません。",
+
         # ===== Terrain fetch =====
         "err_dem_unreachable":  (
             "地形データ（DEM）を取得できませんでした。標高 0m の平坦な地形を"
@@ -1005,6 +1085,18 @@ _STRINGS: dict[str, dict[str, str]] = {
         "verr_freq":            "[{pid}] 周波数が範囲外 (1〜100000): {val}",
         "verr_gain_tx":         "[{pid}] 送信利得が範囲外 (0〜60): {val}",
         "verr_gain_rx":         "[{pid}] 受信利得が範囲外 (0〜60): {val}",
+        #: 切り詰めたことを黙らない（I-100＝型の「詳細はどこ」）。
+        "verr_more":            "…ほか {n} 件あります。",
+
+        # ===== 入力の検証（CSV 取り込み） =====
+        # ⚠️ 画面へ出る字なので i18n を通す（I-100 で英語直書きから移した）。
+        "berr_no_header":       "CSV に見出し行がありません。",
+        "berr_missing_cols":    "必須の列がありません: {cols}",
+        "berr_no_rows":         "CSV にデータ行がありません。",
+        "berr_id_empty":        "{line} 行目: 'id' が空です。",
+        "berr_coord_format":    "{line} 行目: '{key}' は「緯度, 経度」の形式で書いてください。",
+        "berr_coord_invalid":   "{line} 行目: '{key}' に無効な数値があります: '{val}'",
+        "berr_not_number":      "{line} 行目: '{key}' が数値ではありません: '{val}'",
     },
 }
 

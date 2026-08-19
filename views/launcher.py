@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Callable
 from core import config
 from core import coords
 from core import dem
+from core import failure
 from core import i18n
 from core import simulation as sim
 from core import version
@@ -148,12 +149,18 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                     keys=", ".join(shown) + (" …" if len(keys) > len(shown) else "")
                          if shown else "-"))
         if lines:
-            body = i18n.t("lang_ext_rejected") + "\n\n" + "\n".join(lines)
+            detail = "\n".join(lines)
             # ⚠️ **補足は出た理由にだけ添える**＝出ていない理由の説明を並べると、
             # まさに今回の報告（説明と実際が食い違う）と同じ形に戻る。
             if saw_artifact:
-                body += "\n\n" + i18n.t("lang_ext_artifact_note")
-            self._alert(i18n.t("lang_ext_title"), body)
+                detail += "\n\n" + i18n.t("lang_ext_artifact_note")
+            # I-100 の型（**続けた**側の失敗）＝何が起きた／なぜ続けられたかは
+            # `lang_ext_rejected` が持っていたが、**次に何をすべきかが無かった**。
+            self._alert(i18n.t("lang_ext_title"), failure.message(
+                what   = i18n.t("lang_ext_rejected"),
+                hint   = i18n.t("fix_edit_lang_file"),
+                detail = detail,
+            ))
 
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。
@@ -604,14 +611,15 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
         errors = config.validate_config(c)
         if errors:
-            self._alert(i18n.t("dlg_input_error"), "\n".join(errors))
+            self._alert(i18n.t("dlg_input_error"), failure.listing(errors))
             config.logger.warning("Validation failed: %s", errors)
             return
 
         try:
             params = sim.SimParams(c)
         except Exception as ex:
-            self._alert(i18n.t("dlg_error"), str(ex))
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                ex, what=i18n.t("fail_run_single"), hint=i18n.t("fix_check_input")))
             return
 
         # sim キーのみ保存。app 設定（theme/lang/proxy_url）は save_sim 内で保持される。
@@ -726,7 +734,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._progress_stop()
-        self._alert(i18n.t("dlg_error"), str(ex))
+        # ⚠️ DEM 取得の失敗（`DemUnreachableError`）は**既に型に乗っている**ので
+        # `explain` がそのまま通す＝ここで包むと同じことを 2 回言う。
+        self._alert(i18n.t("dlg_error"), failure.explain(
+            ex, what=i18n.t("fail_run_single"), hint=i18n.t("fix_retry_or_log")))
         self._run_btn.config(state="normal")
         self._prog_label.config(text=i18n.t("status_ready"))
         self._prog_bar.config(value=0)

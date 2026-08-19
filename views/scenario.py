@@ -39,6 +39,7 @@ from typing import Callable
 
 from core import config
 from core import coords
+from core import failure
 from core import i18n
 from core import scenario as scn
 from core import simulation as sim
@@ -350,7 +351,9 @@ class ScenarioWindow(tk.Toplevel):
         try:
             new_base = sim.SimParams(self._config_provider())
         except Exception as ex:
-            dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
+            dialogs.alert(self, i18n.t("dlg_input_error"), failure.message(
+                what=i18n.t("fail_refresh_common"),
+                hint=i18n.t("fix_check_input"), detail=str(ex)))
             return
         old_base = self._base_params
         self._base_params = new_base
@@ -757,7 +760,8 @@ class ScenarioWindow(tk.Toplevel):
         try:
             conditions, axis, values = self._conditions()
         except ValueError as ex:
-            dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
+            dialogs.alert(self, i18n.t("dlg_input_error"),
+                          failure.listing(str(ex).splitlines()))
             return
 
         base = self._base_params
@@ -858,7 +862,8 @@ class ScenarioWindow(tk.Toplevel):
         self._run_btn.config(state="normal")
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
-        dialogs.alert(self, i18n.t("dlg_error"), str(ex))
+        dialogs.alert(self, i18n.t("dlg_error"), failure.explain(
+            ex, what=i18n.t("fail_run_scenario"), hint=i18n.t("fix_retry_or_log")))
 
     def _open_report(self) -> None:
         if not self._last_dir:

@@ -16,6 +16,7 @@ from tkinter import ttk
 from typing import TYPE_CHECKING
 
 from core import config
+from core import failure
 from core import i18n
 from core import simulation as sim
 from report import batch
@@ -113,13 +114,16 @@ class _RunMixin(_HostBase):
         rows = self._read_table_rows()
         errors = batch.validate_rows(rows)
         if errors:
-            dialogs.alert(self, i18n.t("dlg_validation_error"), "\n".join(errors[:10]))
+            dialogs.alert(self, i18n.t("dlg_validation_error"),
+                          failure.listing(errors))
             return
 
         try:
             base_params = self._read_base_params()
         except Exception as e:
-            dialogs.alert(self, i18n.t("dlg_common_cfg_error"), str(e))
+            # 中身は共通設定の検証メッセージが 1 行 1 件で並んだもの。
+            dialogs.alert(self, i18n.t("dlg_common_cfg_error"),
+                          failure.listing(str(e).splitlines()))
             return
 
         self._running   = True
@@ -271,4 +275,5 @@ class _RunMixin(_HostBase):
         self._prog_bar.config(value=0)
         self._prog_count_label.config(text="")
         self._prog_label.config(text=i18n.t("batch_error_msg"))
-        dialogs.alert(self, i18n.t("dlg_batch_error"), str(ex))
+        dialogs.alert(self, i18n.t("dlg_batch_error"), failure.explain(
+            ex, what=i18n.t("fail_run_batch"), hint=i18n.t("fix_retry_or_log")))

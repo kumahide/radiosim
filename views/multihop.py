@@ -35,6 +35,7 @@ from tkinter import ttk
 from typing import Callable
 
 from core import coords
+from core import failure
 from core import i18n
 from core import simulation as sim
 from report import multihop as mh
@@ -392,7 +393,9 @@ class MultiHopWindow(tk.Toplevel):
             try:
                 self._base_params = sim.SimParams(self._config_provider())
             except Exception as ex:
-                dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
+                dialogs.alert(self, i18n.t("dlg_input_error"), failure.message(
+                    what=i18n.t("fail_refresh_common"),
+                    hint=i18n.t("fix_check_input"), detail=str(ex)))
                 return
         self._update_frozen()
         # 共通設定も区間結果の入力なので、取り込み直したら古い結果は結果でなくなる
@@ -854,12 +857,13 @@ class MultiHopWindow(tk.Toplevel):
         try:
             path = self._collect_path()
         except ValueError as ex:
-            dialogs.alert(self, i18n.t("dlg_input_error"), str(ex))
+            dialogs.alert(self, i18n.t("dlg_input_error"),
+                          failure.listing(str(ex).splitlines()))
             return
         errors = mh.validate_path(path)
         if errors:
             dialogs.alert(self, i18n.t("dlg_validation_error"),
-                          "\n".join(errors[:10]))
+                          failure.listing(errors))
             return
 
         self._running = True
@@ -1001,7 +1005,8 @@ class MultiHopWindow(tk.Toplevel):
         self._run_btn.config(state="normal")
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
-        dialogs.alert(self, i18n.t("dlg_error"), str(ex))
+        dialogs.alert(self, i18n.t("dlg_error"), failure.explain(
+            ex, what=i18n.t("fail_run_multihop"), hint=i18n.t("fix_retry_or_log")))
 
     def close_window(self) -> None:
         """他所（ランチャーのプロジェクト読込）から閉じるための公開口
