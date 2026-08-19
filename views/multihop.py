@@ -58,7 +58,12 @@ class MultiHopWindow(tk.Toplevel):
     # 指摘・B-053）。下限は「これ以上細くしない」ためのもので、既定幅を決める場所
     # ではない。⇒ 中身より下に置く（`minsize` も同時に下げること＝あちらが上なら
     # `geometry()` を上書きして効かない）。
-    _BASE_W = 780
+    # 🔴 **780 → 640 は B-108 の道連れ**（2026-08-18）＝案件情報の帯を折って幅を
+    # 返した瞬間、こんどは**下限が窓幅を決める側に回った**（en の必要幅 683px に対し
+    # 下限 780px＝97px の死んだ余白）。**B-053 で 980 → 780 に下げたとき、下限は
+    # 「そのときの帯の要求幅」に合わせていた**ので、帯が痩せると取り残される。
+    # ⇒ 中身のうち**最も細い言語**（en 683px・ja は 777px）より下に置く。
+    _BASE_W = 640
 
     def __init__(
         self,
@@ -76,7 +81,7 @@ class MultiHopWindow(tk.Toplevel):
         self.title(i18n.t("mh_window_title"))
         # ⚠️ `minsize` は `_BASE_W` より下に置く＝上にすると Tk が `geometry()` を
         # 上書きし、下限を下げても窓が細くならない（B-053 で実際に踏んだ）。
-        self.minsize(760, 560)
+        self.minsize(620, 560)
 
         self._base_params     = base_params
         self._config_provider = config_provider
@@ -249,29 +254,47 @@ class MultiHopWindow(tk.Toplevel):
         case.pack(fill="x", pady=(0, 4))
         self._project_var = tk.StringVar()
         self._memo_var    = tk.StringVar()
+        # ⚠️ **この窓だけ 2 行に折る**（2026-08-18・B-108）。欄の行と道具の行を
+        # 分けると、帯の要求幅は**両者の max**になる（1 行に並べると和になる）。
+        fields = ttk.Frame(case)
+        fields.pack(fill="x")
         for key, var in (("batch_project_name", self._project_var),
                          ("batch_memo",         self._memo_var)):
-            f = ttk.Frame(case)
+            f = ttk.Frame(fields)
             f.pack(side="left", padx=6, fill="x", expand=(key == "batch_memo"))
             ttk.Label(f, text=i18n.t(key)).pack(side="left")
             ttk.Entry(f, textvariable=var, state="readonly", width=20).pack(
                 side="left", padx=(2, 0), fill="x", expand=(key == "batch_memo"))
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
-        # 🔒 の意味と ↻ は**凍結した領域の 1 行目（案件情報の行）の右側**（条件探索と
+        # 🔒 の意味と ↻ は**凍結した領域の先頭（案件情報の帯）の右側**（条件探索と
         # 同じ置き方＝B-052）。以前は共通設定の 2 行目にあり、`↻`（`width=18` の
         # 文字数固定で 158px）と `🔒 ランチャーの値`（98px）が **6 欄のうち後半 3 欄と
         # 同じ行を分け合って**いた。その結果**この帯だけで 859px を要求し、窓幅を
         # 決めていた**（区間表 738px・地点表 605px）。移すと帯は 620px 台になり、
         # **窓幅は区間表＝この窓の主たる中身が決める**。
         # ⚠️ この 2 つは帯 1 つではなく**凍結領域全体**に効く（`↻` は案件情報と共通
-        # 設定をまとめて取り込む＝`_refresh_from_launcher`）ので、1 行目のほうが実態に
+        # 設定をまとめて取り込む＝`_refresh_from_launcher`）ので、先頭のほうが実態に
         # 近い。⚠️ `width=` は付けない＝文字数で幅を固定すると中身より広い帯を要求
         # する（I-046 で「実行」から外したのと同じ理由）。
-        ttk.Button(case, text=i18n.t("btn_refresh_common"),
+        #
+        # 🔴 **ただし B-053 で移した先が、こんどはここで窓幅を決めていた**（B-108）＝
+        # 欄 2 つ（各 20 文字）と ↻ と説明を**1 行に並べる**と帯は ja 764 / en 781px を
+        # 要求し、区間表（ja 741 / en 647px）を上回る。**共通設定を軽くした分が素直に
+        # こちらへ移っていた**＝帯を 1 つ測るだけでは凍結領域の要求幅は下がらない。
+        # ⇒ **欄を細くするのではなく、道具を次の行へ折る**（案件名・メモは利用者の
+        # 文字列をそのまま見せる欄で、下限を削ると読めなくなる＝B-046 と同じ筋）。
+        # この窓は**横が狭く縦に余裕がある**ので、共通設定を 3 欄で折ったのと同じ判断。
+        # ⚠️ **複数経路・条件探索は 1 行のまま**＝あちらは主たる中身（共通設定 1157〜
+        # 1238px・比較グリッド）が帯より広く、折っても幅は 1px も減らないうえ、条件
+        # 探索は高さ 986px で FHD の天井が近い（行を足すほうが害になる）。**帯に出す
+        # 項目は正典（`frozen_common`）だが、並べ方は窓ごと**＝ここは並べ方の話。
+        tools = ttk.Frame(case)
+        tools.pack(fill="x", pady=(2, 0))
+        ttk.Button(tools, text=i18n.t("btn_refresh_common"),
                    command=self._refresh_from_launcher).pack(side="right", padx=(6, 0))
-        ttk.Label(case, text=i18n.t("hint_common_readonly"),
-                  foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
+        ttk.Label(tools, text=i18n.t("hint_common_readonly"),
+                  foreground=theme.muted_foreground(tools)).pack(side="right", padx=6)
 
         common = ttk.LabelFrame(parent, text=i18n.t("batch_common_cfg"), padding=(8, 2))
         common.pack(fill="x", pady=(0, 6))

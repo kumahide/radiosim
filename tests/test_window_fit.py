@@ -334,10 +334,10 @@ def test_the_frozen_header_does_not_decide_the_multihop_window_width():
     （複数経路のように 1 行へ並べない）。
 
     ⚠️ **見るのは「共通設定」の帯だけ**＝案件情報の帯は I-101 が触らないうえ、
-    **実測では en 781px / ja 764px と区間表を既に上回っている**（↻ ボタン＋説明＋
-    幅 20 文字の欄 2 つ）。ここへ混ぜると**この変更と無関係な理由で最初から赤**に
-    なり、ゲートが何を要求しているのか読めなくなる（壊れ方③）。⇒ 案件情報の側は
-    **別項目として起票した（B-108）**。**赤の原因を 1 つに保つ。**
+    当時は **en 781px / ja 764px と区間表を上回っていた**（↻ ボタン＋説明＋幅 20
+    文字の欄 2 つ）。ここへ混ぜると**この変更と無関係な理由で最初から赤**になり、
+    ゲートが何を要求しているのか読めなくなる（壊れ方③）。⇒ 案件情報の側は
+    **別項目として起票し（B-108）、下の別ゲートで見る**。**赤の原因を 1 つに保つ。**
     """
     root = make_themed_root()
     root.withdraw()
@@ -355,6 +355,53 @@ def test_the_frozen_header_does_not_decide_the_multihop_window_width():
             "B-053 で下げた成果を食っている。欄を折り返して入れること。"
         )
     finally:
+        root.destroy()
+
+
+@pytest.mark.parametrize("lang", ["ja", "en"])
+def test_the_case_info_band_does_not_decide_the_multihop_window_width(lang):
+    """中継経路の窓幅を**案件情報の帯が決めていない**こと（帯 ≦ 区間表）。
+
+    **B-053 で潰したはずの形の、もう 1 面**（B-108）。あのとき下げたのは共通設定の
+    帯（859 → 620px 台）で、案件情報の帯は測っていなかった。実測（2026-08-18）＝
+    **帯 ja 764 / en 781px に対し区間表は ja 741 / en 647px** ＝帯が窓幅を決めていた。
+    ⚠️ **↻ と 🔒 の説明をこの帯へ移してきたのが B-053 そのもの**なので、共通設定を
+    軽くした分が素直にこちらへ移っていた＝**帯を 1 つ測るだけでは、凍結領域全体の
+    要求幅は下がらない。**
+
+    ⚠️ **言語で worst case が入れ替わる**＝日本語は帯も表も長く差は 23px だが、英語
+    は区間表だけが短くなる（647px）ので超過が 134px に開く。**ja だけ見ると「あと
+    少し」に見えて処方の大きさを読み違える**ので両方を回す。
+
+    ⚠️ **欄を細くせよとは要求しない**＝案件名・メモは利用者の文字列をそのまま見せる
+    欄で、下限を削ると読めなくなる（B-046 と同じ筋）。**この窓は横が狭く縦に余裕が
+    ある**ので、入れるなら**折り返して**入れる（共通設定を 3 欄で折ったのと同じ）。
+
+    ⚠️ **複数経路（BatchBuilderWindow）は同じ構造だが該当しない**＝帯の作りは同一
+    （2026-08-18 実測で 764/781px と一致）だが、あの窓は共通設定が 1157〜1238px を
+    要求するので**帯が窓幅を決める余地が無い**。⇒ クラスとしては点検済みで、直す
+    のはこの窓だけ＝**帯の項目は正典（`frozen_common`）だが、並べ方は窓ごと。**
+    """
+    prev = i18n._lang
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        i18n.set_lang(lang)
+        win, _ = _open_multihop(root)
+        win.update()
+        bands = [c for c in win._fit_scroll.body.winfo_children()
+                 if c.winfo_class() == "TLabelframe"
+                 and str(c.cget("text")) == i18n.t("batch_case_info")]
+        assert len(bands) == 1, "案件情報の帯が 1 つでない（見出しが変わった？）"
+        band = bands[0].winfo_reqwidth()
+        table = win._hop_grid.winfo_reqwidth()
+        assert band <= table, (
+            f"[{lang}] 案件情報の帯が窓幅を決めている"
+            f"（帯 {band}px > 区間表 {table}px）＝B-053 で潰した形がこの面に残って"
+            "いる。欄を細くするのではなく、折り返して入れること。"
+        )
+    finally:
+        i18n.set_lang(prev)
         root.destroy()
 
 

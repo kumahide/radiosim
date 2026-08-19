@@ -579,6 +579,13 @@ def test_the_refresh_pair_sits_on_the_first_row_of_the_frozen_area(app_windows, 
 
     ⇒ 「案件情報の枠の中」に揃える。⚠️ **並び順や padding までは縛らない**（窓ごとに
     右端の余りが違う）。縛るのは**どの枠に属するか**＝幅の問題が起きる場所そのもの。
+
+    ⚠️ **見るのは「子孫か」であって「直接の子か」ではない**（2026-08-18・B-108）＝
+    元は `winfo_parent() == case` と直接の子を要求していたが、**縛りたいのは所属する
+    枠**なのに*入れ子の深さ*まで要求していた（[[feedback-promote-recurring-checks]] の
+    壊れ方③）。中継経路で帯を 2 行に折る（道具を `Frame` に入れる）と、**枠は 1mm も
+    動いていないのにここが赤くなった**。⇒ 祖先で見る。**歴史上の欠陥（共通設定や
+    経路の帯に置く）は祖先が変わるので、これでも捕まる。**
     """
     _app, wins = app_windows
     win = wins[name]
@@ -596,9 +603,11 @@ def test_the_refresh_pair_sits_on_the_first_row_of_the_frozen_area(app_windows, 
             found["hint"] = w
     for key in ("refresh", "hint"):
         assert key in found, f"{name}: {key} が見つからない（文言が変わった？）"
-        assert found[key].winfo_parent() == case, (
+        # Tk のウィジェットパスは階層そのもの＝`case + "."` の前置で子孫を判定できる
+        # （`.` を付けるのは `…!labelframe` と `…!labelframe2` を取り違えないため）。
+        assert str(found[key]).startswith(case + "."), (
             f"{name}: {key} が案件情報の枠の外にある"
-            f"（{found[key].winfo_parent()} ≠ {case}）"
+            f"（{found[key]} は {case} の下に無い）"
         )
 
 
