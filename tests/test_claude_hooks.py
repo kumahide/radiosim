@@ -1842,6 +1842,21 @@ class TestCommitBoundaryDetection:
         cmd = "git add -A && git commit -m @'\nfix: 直す（B-001）\n\n本文\n'@"
         assert analyzer._commit_subject(cmd) == "fix: 直す（B-001）"
 
+    @pytest.mark.parametrize("tail", [
+        " && git log --oneline -1",
+        "&& git -C d:/r log -1",
+        "  ;  git status --short",
+    ])
+    def test_a_command_after_the_heredoc_marker_is_not_the_summary(self, analyzer, tail):
+        """🔴 B-109: 開き記号のうしろに続くコマンドを要約と取り違えないこと。
+
+        本文は**開き行の改行の後**から始まる（shell の規則）。取り違えると
+        要約に課題 ID が無くなり、その区間が `--issues` の**母数から黙って外れる**
+        （2026-08-19 に I-098 の区間 234 往復がまるごと落ちた実例）。
+        """
+        cmd = f"git commit -q -F - <<'MSG'{tail}\nfix: 直す（B-001）\n\n本文\nMSG"
+        assert analyzer._commit_subject(cmd) == "fix: 直す（B-001）"
+
 
 class TestIssueIntervals:
     """区間 → 課題への束ね方。"""
