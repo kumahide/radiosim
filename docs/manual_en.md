@@ -1,4 +1,4 @@
-# RadioSim Pro 2.8
+# RadioSim Pro 2.9
 
 ![RadioSim Pro](../logo.png)
 
@@ -478,6 +478,7 @@ Each relay point **receives and then transmits again**. That means:
 - Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
 - Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
+- The **Common Settings** panel at the top lists the **11 items** that feed the run (frequency, TX power, TX gain, RX gain, RX sensitivity / vegetation height, k-factor, terrain samples, rain rate, environment type, diffraction model) — the same items, shown the same way, as in the Multiple Paths window. It is **read-only**, shown as a snapshot of the launcher (the source of truth), and **↻ From Launcher** pulls in the current values. ⚠️ Frequency and TX/RX gain can be overridden per section as described above, so what you see here is **the value inherited when the cell is blank**.
 - **Pick on map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
 - TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
 - Up to 7 relay points (8 sections).
