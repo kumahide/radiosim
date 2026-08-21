@@ -212,6 +212,8 @@ Click the map to fill **whichever site is still empty** (TX first, then RX); the
 
 - Shows cyan endpoint markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
+- **Clearing or editing the launcher's coordinate fields updates the map straight away** (the numeric fields are the source of truth). Empty a field and a plain click places that site again.
+- **To place a site somewhere far away, right-click the map** ("Place TX here" / "Place RX here"). It works even when you have panned so far that the markers are off-screen, because you name the site instead of picking its marker.
 
 ### Continuous Add mode
 
@@ -235,6 +237,7 @@ A mode for placing the points of a relay route from the map. Open the map from t
 In all three input modes you can adjust a point on the map: **click its marker to select it** — it gets an amber ring and the status bar names it ("waypoint R1 selected", "RX of path p1 selected") — then **click the map where it should go**. The selection is used up by that one move, and **Esc** cancels it.
 
 - The rule is one line: **a plain click adds a point, a click after a selection moves the selected one.**
+- In Pick Coordinates and Append modes you can also **right-click the map** ("Place TX here" / "Place RX here") — the way in when the marker is off-screen.
 - Dragging is still the map pan, on purpose: if dragging moved points, grabbing the map to scroll would silently rewrite your input.
 - The window remains the source of truth. If the point you selected has been deleted or reordered in the window meanwhile, the map refuses the move and asks you to select again — it never moves a different point instead.
 - ⚠️ **Terrain is sampled on a 5–10 m mesh.** If you move a point less than that, the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result.

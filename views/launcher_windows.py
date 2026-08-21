@@ -261,6 +261,16 @@ class _ChildWindowsMixin:
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_paths_changed()
 
+    def _notify_map_coords_changed(self) -> None:
+        """ランチャーの座標欄が変わったとき、地図のピック層を追従させる（B-110）。
+
+        バッチ（`_notify_map_paths_changed`）・中継経路（`_notify_map_waypoints_changed`）
+        と**同じ形の 3 本目**＝地図が写している 3 つの層のうち、ここだけ通知が無く
+        「開いた時の値のまま」だった。
+        """
+        if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
+            self._map_win.on_single_coords_changed()
+
     def _notify_map_waypoints_changed(self) -> None:
         """中継経路の地点列が変わったとき、地図の中継点表示を追従させる。"""
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
@@ -280,5 +290,7 @@ class _ChildWindowsMixin:
             text = coords.reformat(val, fmt) if key in ("start", "end") else str(val)
             entry.delete(0, tk.END)
             entry.insert(0, text)
+        # 座標欄を書き換えた＝地図の写しも合わせる（打鍵ではないので届かない）。
+        self._notify_map_coords_changed()
         self.root.lift()
         self.root.focus_force()

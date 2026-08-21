@@ -443,6 +443,24 @@ class _PickMixin:
             self._set_status(i18n.t("map_select_hint"))
             return
         before = self._tx_coord if role == "tx" else self._rx_coord
+        if self._place_pick(role, lat, lon):
+            return          # ペアが成立して 1 行足した（状態は `_place_pick` が言う）
+        if sel is not None:
+            # 選んで動かした＝**選択は 1 回で使い切る**（置きっぱなしの選択が
+            # 次のクリックを飲み込まない）。移動量は状態バーで返す。
+            self._selection = None
+            self._refresh_picks()
+            self._report_move(sel.label, before, lat, lon)
+            return
+        self._set_idle()   # 次のピック対象をヒントに反映
+
+    def _place_pick(self, role: str, lat: float, lon: float) -> bool:
+        """TX/RX を (lat, lon) に置き、宛先へ書き戻す。**ペアが成立したら True**。
+
+        素のクリックと右クリックメニュー（`_place_from_menu`）の**共通の書き口**＝
+        「置く」規則を 2 か所に書かない（連続追加のペア成立・次のピック対象の
+        進め方が片方だけ古くなる型を作らない）。
+        """
         self._set_pick_marker(role, lat, lon)
         if self._append_sink is not None:
             # 連続追加（Phase D2）: RX 確定でペア成立 → 1 行を append し、
@@ -458,21 +476,60 @@ class _PickMixin:
                         i18n.t("map_append_added").format(pid=pid), auto_clear=True)
                 else:
                     self._set_idle()
-                return
-            self._advance_pick()
-        else:
+                return True
+        elif self._single_sink is not None:
             # 単一書き戻し（ランチャー）: ピックごとに start/end 欄へ反映。
-            if self._single_sink is not None:
-                self._single_sink.apply_map_pick(role, lat, lon)
-            self._advance_pick()
-        if sel is not None:
-            # 選んで動かした＝**選択は 1 回で使い切る**（置きっぱなしの選択が
-            # 次のクリックを飲み込まない）。移動量は状態バーで返す。
-            self._selection = None
-            self._refresh_picks()
-            self._report_move(sel.label, before, lat, lon)
+            self._single_sink.apply_map_pick(role, lat, lon)
+        self._advance_pick()
+        return False
+
+    # ----------------------------------------------------------
+    # 右クリック＝**ここに TX / RX を置く**（B-111）
+    # ----------------------------------------------------------
+    # 🔴 I-098 で素のクリックの上書きを止めたぶん、**両方そろった状態での置き直しは
+    # 「マーカーを選ぶ」1 本だけ**になった。⇒ 地図を遠くへ送るとその唯一の入口が
+    # *画面の外*にあり、新しい地点を置く動線ごと死ぬ（実機報告）。ここで足すのは
+    # **マーカーの位置に依存しない入口**であって、素クリックの規則は変えない
+    # （黙って書き換えない、という I-098 の芯はそのまま＝役割を明示して選ばせる）。
+    def _on_right_click(self, event) -> None:
+        """地図の右クリック → 置き直す役割を選ばせる。
+
+        ⚠️ **ライブラリの右クリックメニューを置き換えている**（`add="+"` ではなく
+        張り直し）＝tkintermapview の既定メニューは英語の「座標をクリップボードへ」
+        1 本で、押すと英語のダイアログが出る（[[feedback-japanese-everywhere]]）。
+        2 つのメニューが同時に出る形にはしない。
+        """
+        if self._busy or self._mode.get() not in ("coords", "append"):
             return
-        self._set_idle()   # 次のピック対象をヒントに反映
+        try:
+            lat, lon = self._map.convert_canvas_coords_to_decimal_coords(
+                event.x, event.y)
+        except Exception:
+            return
+        menu = tk.Menu(self._map, tearoff=0)
+        for role, key in (("tx", "map_menu_place_tx"), ("rx", "map_menu_place_rx")):
+            menu.add_command(
+                label=i18n.t(key),
+                command=lambda r=role, la=lat, lo=lon: self._place_from_menu(r, la, lo))
+        try:
+            menu.tk_popup(event.x_root, event.y_root)
+        finally:
+            menu.grab_release()
+
+    def _place_from_menu(self, role: str, lat: float, lon: float) -> None:
+        """右クリックメニューから TX/RX を置く（**役割は利用者が名指しした**）。"""
+        if self._busy or self._mode.get() not in ("coords", "append"):
+            return
+        before = self._tx_coord if role == "tx" else self._rx_coord
+        # 選択は持ち越さない＝役割を名指しした時点で「選んでから」の筋は終わっている
+        # （ハイライトは続く `_place_pick` の描き直しで落ちる）。
+        self._selection = None
+        if self._place_pick(role, lat, lon):
+            return
+        # 置き直しなら移動量を返す（初めて置いたなら `_report_move` がヒントへ戻す）。
+        self._report_move(
+            i18n.t("map_marker_tx" if role == "tx" else "map_marker_rx"),
+            before, lat, lon)
 
     def _move_selected(self, sel: "_Selected", lat: float, lon: float) -> None:
         """選択中の点を (lat, lon) へ移す（**書き戻す先は窓**＝地図は写し）。
@@ -611,6 +668,43 @@ class _PickMixin:
         lons = [p for _, tx, rx in paths for p in (tx[1], rx[1])]
         self._fit_to_path((max(lats), min(lons)), (min(lats), max(lons)))
 
+    def on_single_coords_changed(self) -> None:
+        """ランチャーの座標欄が変わったときの通知（手入力・消去・読み込み）。
+
+        🔴 **ピック層はランチャー数値欄の写し**＝他の 2 層（確定パス＝バッチ表 /
+        中継経路＝地点列）が既に通知で追従しているのに、**ここだけ「開いた時に
+        1 度読む」きり**だった。⇒ 欄を空にしてもマーカーが残り、しかも地図の側は
+        「TX/RX は指定済み」と思い続けるので**素のクリックが何も書かなくなる**
+        （置く先が無い＝I-098 の案内が出たまま抜けられない）。B-110 / B-111 は
+        どちらもこの 1 つの穴の別の顔。
+
+        ⚠️ **視野は動かさない**＝ここが `_load_single_coords` との違い。打鍵ごとに
+        届くので、中心やズームを合わせると*入力している最中に地図が飛ぶ*。
+        """
+        # 写しが要るのは座標入力モードだけ（連続追加のピックはバッチ行の下ごしらえで
+        # あって数値欄の写しではない＝モードを戻すとき `_load_single_coords` が走る）。
+        if self._mode.get() != "coords" or self._single_sink is None:
+            return
+        self._sync_single_coords()
+        self._refresh_picks()
+        self._set_idle()          # 置く先が戻れば、ヒントもそこへ戻る
+
+    def _sync_single_coords(self) -> tuple:
+        """ランチャー数値欄の TX/RX を取り込む（**視野には触れない**）。
+
+        戻り値は取り込んだ `(tx, rx)`＝呼び出し側が視野合わせに使う。
+        """
+        if self._single_sink is None:
+            return (None, None)
+        coords = self._single_sink.current_path_coords()
+        tx, rx = coords.get("tx"), coords.get("rx")
+        self._tx_coord, self._rx_coord = tx, rx
+        # 写しが入れ替わった＝**選択は持ち越さない**（選んだ点がもう無いことがある）。
+        self._drop_selection("pick")
+        # 次の入力対象＝**空いている方**（両方あれば「選んでから」＝I-098）。
+        self._advance_pick()
+        return (tx, rx)
+
     def _load_single_coords(self) -> None:
         """ランチャー数値欄の既存 TX/RX を取り込み、地図の中心とズームを合わせる。
 
@@ -619,12 +713,8 @@ class _PickMixin:
         """
         if self._single_sink is None:
             return
-        coords = self._single_sink.current_path_coords()
-        tx, rx = coords.get("tx"), coords.get("rx")
-        self._tx_coord, self._rx_coord = tx, rx
+        tx, rx = self._sync_single_coords()
         self._selection = None
-        # 次の入力対象＝**空いている方**（両方あれば「選んでから」＝I-098）。
-        self._advance_pick()
         # 既存座標があれば中心とズームを合わせる。
         if tx is not None and rx is not None:
             self._fit_to_path(tx, rx)

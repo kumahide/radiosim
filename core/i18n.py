@@ -401,7 +401,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_marker_rx":        "RX",
         # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
         # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
-        "map_select_hint":      "Coordinate pick: TX and RX are both set. Click a marker to select it, then click the map to move it there.",
+        "map_select_hint":      "Coordinate pick: TX and RX are both set. Click a marker to select it, then click the map to move it there. Right-click the map to place TX / RX at that spot.",
+        # Right-click menu (B-111): the way to re-place a point whose marker is off-screen.
+        "map_menu_place_tx":    "Place TX here",
+        "map_menu_place_rx":    "Place RX here",
         "map_selected":         "{label} selected: the next map click moves it there (Esc to cancel).",
         "map_moved":            "Moved {label} ({dist}).",
         "map_move_below_mesh":  "The move is smaller than the terrain mesh ({mesh} m), so the result may not change.",
@@ -947,7 +950,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_marker_rx":        "RX",
         # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
         # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
-        "map_select_hint":      "座標入力: TX と RX は指定済みです。マーカーをクリックして選ぶと、次のクリックでそこへ移せます。",
+        "map_select_hint":      "座標入力: TX と RX は指定済みです。マーカーをクリックして選ぶと、次のクリックでそこへ移せます。地図を右クリックすると、その場所へ TX / RX を置き直せます。",
+        # 右クリックメニュー（B-111）＝**マーカーが画面の外にあっても置き直せる**口。
+        "map_menu_place_tx":    "ここに TX を置く",
+        "map_menu_place_rx":    "ここに RX を置く",
         "map_selected":         "{label} を選択中: 次に地図をクリックするとそこへ移します（Esc で取り消し）。",
         "map_moved":            "{label} を移動しました（{dist}）。",
         "map_move_below_mesh":  "移動量が地形メッシュ（{mesh} m）より小さいため、計算結果は変わらないことがあります。",

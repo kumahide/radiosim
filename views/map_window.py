@@ -488,6 +488,11 @@ class MapWindow(_PickMixin, _CacheMixin):
         # ⚠️ **ライブラリの `<ButtonRelease-1>` より後**に張ること＝地図クリックの
         # 配送はあちらから起きるので、先に降ろすと捨てるはずのクリックが素通りする。
         cv.bind("<ButtonRelease-1>", self._clear_select_guard, add="+")
+        # 右クリック＝「ここに TX / RX を置く」（B-111）。**画面外のマーカーに
+        # 頼らない置き直しの入口**。⚠️ `add="+"` にしない＝ライブラリの既定
+        # メニュー（英語・座標コピーのみ）と 2 枚出ることになる。詳細は
+        # [views/map_picks.py](map_picks.py) の `_on_right_click`。
+        cv.bind("<Button-3>", self._on_right_click)
         # パン/ズーム終了時にカバレッジを自動再描画する。
         # tkintermapview 自身が canvas にバインド済みのため add="+" で相乗りする。
         for seq in ("<ButtonRelease-1>", "<MouseWheel>", "<Button-4>", "<Button-5>"):

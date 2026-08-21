@@ -545,6 +545,12 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             # ⚠️ 打鍵ごとには整形しない（編集できなくなる）＝確定の 2 契機だけ。
             e.bind("<FocusOut>", lambda _ev, k=key: self._reformat_entry(k), add="+")
             e.bind("<Return>",   lambda _ev, k=key: self._reformat_entry(k), add="+")
+            # **打鍵ごとに地図へ知らせる**（B-110）。整形は確定の 2 契機だけだが、
+            # *写しの追従は確定を待てない*＝欄を空にしたのにマーカーが残っている
+            # あいだ、地図は「TX/RX は指定済み」と思い続けてクリックを受けない。
+            # ⚠️ 知らせるだけで視野は動かさない（地図側で保証＝`on_single_coords_changed`）。
+            e.bind("<KeyRelease>",
+                   lambda _ev: self._notify_map_coords_changed(), add="+")
 
     # ----------------------------------------------------------
     # 座標形式（DD/DMS）切替
@@ -572,10 +578,12 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         if entry is None:
             return
         new_text = coords.reformat(entry.get(), self._coord_fmt_var.get())
-        if new_text == entry.get():
-            return                      # 変わらないなら触らない（カーソルを飛ばさない）
-        entry.delete(0, tk.END)
-        entry.insert(0, new_text)
+        if new_text != entry.get():
+            entry.delete(0, tk.END)     # 変わらないなら触らない（カーソルを飛ばさない）
+            entry.insert(0, new_text)
+        # **打鍵を伴わない書き換えもここを通る**（表記切替・プロジェクト読み込み）ので、
+        # 変化の有無に関わらず地図へ知らせる＝通知の口を 2 か所に分けない（B-110）。
+        self._notify_map_coords_changed()
 
     def _coords_to_dd(self, c: dict[str, str]) -> None:
         """config dict 中の start/end を DD 文字列へ正規化する（in-place）。

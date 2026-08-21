@@ -538,6 +538,122 @@ def test_the_selected_point_is_drawn_with_its_own_icon():
 
 
 # ============================================================
+# ピック層はランチャー数値欄の写し（B-110 / B-111）
+# ============================================================
+# 地図が写している 3 つの層のうち、確定パス（バッチ表）と中継経路（地点列）は
+# 通知で追従していたのに、**ピック層だけ「開いた時に 1 度読む」きり**だった。
+# ⇒ 欄を空にしてもマーカーが残り、しかも地図は「TX/RX は指定済み」と思い続ける
+# ので**素のクリックが何も書かなくなる**（置く先が無いという案内から抜けられない）。
+def _single_stub(coords_ref: dict):
+    """数値欄の代役（`coords_ref` を書き換えると欄を編集したことになる）。"""
+    picks: list = []
+    sink = SimpleNamespace(
+        apply_map_pick=lambda role, lat, lon: picks.append((role, lat, lon)),
+        current_path_coords=lambda: dict(coords_ref),
+    )
+    win = _edit_stub("coords", single=sink)
+    win._load_single_coords()
+    win._refresh_picks()          # 本物は `_apply_mode_visibility` が呼ぶ
+    return win, picks
+
+
+def _marker_count(win) -> int:
+    return len([o for o in win._map.alive
+                if o.kind == "marker" and o.kwargs.get("command") is not None])
+
+
+def test_clearing_the_launcher_coords_clears_the_map():
+    """①欄を消したら地図からも消えること（B-110）。"""
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, _picks = _single_stub(ref)
+    assert _marker_count(win) == 2
+
+    ref.clear()                                 # 欄を空にした
+    win.on_single_coords_changed()
+
+    assert _marker_count(win) == 0, "座標を消したのにマーカーが残っている"
+    assert win._tx_coord is None and win._rx_coord is None
+    assert not [o for o in win._map.alive if o.kind == "path"], (
+        "座標を消したのに経路線が残っている")
+
+
+def test_clearing_the_launcher_coords_reopens_the_plain_click():
+    """②消した後は、離れた場所への素のクリックがまた置けること（B-111）。
+
+    ここが「消しても描画が消えない」の実害＝残った写しのせいで `_pick_next` が
+    None のままになり、**新しい地点を置く動線そのものが死ぬ**。
+    """
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, picks = _single_stub(ref)
+    assert win._pick_next is None               # 両方そろっている＝置く先が無い
+
+    ref.clear()
+    win.on_single_coords_changed()
+    assert win._pick_next == "tx", "欄を空にしても「置く先が無い」ままになっている"
+
+    win._on_map_click((36.0, 140.0))            # 遠く離れた場所
+    assert picks == [("tx", 36.0, 140.0)], f"新しい地点を置けていない: {picks}"
+
+
+def test_right_click_places_a_point_whose_marker_is_off_screen():
+    """④両方そろっていても、右クリックなら**その場に置き直せる**こと（B-111）。
+
+    I-098 で素クリックの上書きを止めたぶん、置き直しの入口が「マーカーを選ぶ」
+    1 本になった＝地図を遠くへ送ると*その入口が画面の外*にあり、動線ごと死ぬ。
+    右クリックはマーカーの位置に依存しない（役割は利用者が名指しする）。
+    """
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, picks = _single_stub(ref)
+    assert win._pick_next is None               # 素のクリックは何も書かない状態
+
+    win._place_from_menu("tx", 36.0, 140.0)     # 遠く離れた場所へ TX を置き直す
+
+    assert picks == [("tx", 36.0, 140.0)], f"右クリックで置き直せていない: {picks}"
+    assert win._tx_coord == (36.0, 140.0)
+    assert win._rx_coord == (34.6, 132.5), "名指ししていない側まで動いた"
+    from core import i18n
+    assert win.status[-1].startswith(
+        i18n.t("map_moved").format(label=i18n.t("map_marker_tx"), dist="")[:6]), (
+        f"どれをどれだけ動かしたかを返していない: {win.status[-1]}")
+
+
+def test_right_click_placement_is_refused_outside_the_pick_modes():
+    """④の裏＝ピック層を持たないモードでは書かないこと。
+
+    キャッシュ管理・中継点モードで TX/RX を書くと、**そのモードでは見えない値**が
+    黙って変わる（モードが見た目を決める、という原則の裏返し）。
+    """
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, picks = _single_stub(ref)
+    win._mode = SimpleNamespace(get=lambda: "cache")
+
+    win._place_from_menu("tx", 36.0, 140.0)
+
+    assert picks == [], "キャッシュ管理モードで座標が書き換わった"
+    assert win._tx_coord == (34.5, 132.4)
+
+
+def test_editing_one_launcher_coord_does_not_move_the_view():
+    """③打鍵ごとに届く通知で**視野を動かさない**こと。
+
+    `_load_single_coords` は中心とズームを合わせるが、それを編集のたびにやると
+    *入力している最中に地図が飛ぶ*。追従するのは写しだけ。
+    """
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, _picks = _single_stub(ref)
+    moves: list = []
+    win._map.set_position = lambda *a, **k: moves.append(a)
+    win._map.set_zoom = lambda *a, **k: moves.append(a)
+    win._map.fit_bounding_box = lambda *a, **k: moves.append(a)
+
+    ref["rx"] = (35.9, 139.9)
+    win.on_single_coords_changed()
+
+    assert moves == [], f"編集のたびに地図の視野が動いた: {moves}"
+    assert win._rx_coord == (35.9, 139.9), "写しが新しい値になっていない"
+
+
+# ============================================================
 # 破棄経路の静的ガード
 # ============================================================
 # close_map_safely の docstring は「マップを破棄し得る経路は必ずこの関数を通す」
