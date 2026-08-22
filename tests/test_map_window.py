@@ -13,9 +13,9 @@ GUI 自体はヘッドレスで起こせないが、tkintermapview の after ル
 import ast
 import os
 import re
-from types import SimpleNamespace
+from types import MethodType, SimpleNamespace
 
-from views.map_window import _MAP_DRAIN_MS, close_map_safely
+from views.map_window import _MAP_DRAIN_MS, MapWindow, close_map_safely
 
 _VIEWS_DIR = os.path.join(os.path.dirname(__file__), "..", "views")
 
@@ -794,6 +794,92 @@ def test_map_widget_is_destroyed_only_through_close_map_safely():
 
 
 # ============================================================
+# 状態バーの字は `_pick_next` の従属変数（B-115）
+# ============================================================
+# 🔴 **開いた瞬間のヒントだけが取り残されていた**＝`_build_ui` が
+# `_pick_next = "tx"`（初期値）のままヒントを出し、その後の `_load_single_coords`
+# が写しを取り込んで `_pick_next` を derive し直すのに、**字を書き直さない**。
+# ⇒ ランチャーに座標が入っている（＝いちばん普通の）開き方では、両方のマーカーが
+# 出ているのに「地図をクリックして TX を指定します」と出続ける。**その案内どおりに
+# クリックしても何も起きない**うえ、右クリックで置き直せること（B-111）も伝わらない。
+#
+# ⚠️ 通知の側（`on_single_coords_changed`）は 2026-08-22 の時点で既に `_set_idle()`
+# を呼んでおり、コメントで理由まで書いてあった＝**同じ仕事の 2 つの入口のうち
+# 片方だけが直っていた**。B-112 のクラス点検が「選択を落とす場所」に閉じてしまい、
+# 本当のクラス（**`_pick_next` が動いたのに字が動かない場所**）を見ていなかった。
+def _hint_stub(monkeypatch, coords_ref: dict):
+    """本物の `_set_idle` を通す代役（字は `win.status` へ積む）。"""
+    from views import theme
+
+    monkeypatch.setattr(theme, "muted_foreground", lambda _w: "#808080")
+    picks: list = []
+    sink = SimpleNamespace(
+        apply_map_pick=lambda role, lat, lon: picks.append((role, lat, lon)),
+        current_path_coords=lambda: dict(coords_ref),
+    )
+    win = _edit_stub("coords", single=sink)
+    win._map.set_zoom = lambda *a, **k: None
+    win._map.set_position = lambda *a, **k: None
+    win._status_clear_id = None
+    win._status_var = SimpleNamespace(set=lambda t: win.status.append(t))
+    win._status_label = SimpleNamespace(config=lambda **_k: None)
+    # 本物を差し戻す（`_edit_stub` は筋を見るために差し替えている）。
+    win._set_idle = MethodType(MapWindow._set_idle, win)
+    win._set_status = MethodType(MapWindow._set_status, win)
+    return win, picks
+
+
+def _idle_hint(key_or_none):
+    """`_set_idle` が出すはずの字（None＝両方そろっている）。"""
+    from core import i18n
+
+    if key_or_none is None:
+        return i18n.t("map_select_hint")
+    return i18n.t(key_or_none) + " " + i18n.t("map_move_affordance")
+
+
+def test_opening_the_map_with_both_coords_says_they_are_already_set(monkeypatch):
+    """①ランチャーに両方入った状態で開いたら、開いた瞬間からそう言うこと。
+
+    実機の RC1 スクリーンショット（2026-08-22）で発覚。マーカーは 2 つ出ているのに
+    「地図をクリックして TX（送信点）を指定します」と出ていた。
+    """
+    ref = {"tx": (34.3966, 132.4596), "rx": (34.3714, 132.5347)}
+    win, _picks = _hint_stub(monkeypatch, ref)
+
+    win._set_idle()             # 本物は `_build_ui` の末尾（`_pick_next` は初期値 "tx"）
+    win._load_single_coords()   # 本物は `__init__` の続き（写しを取り込む）
+
+    assert win._pick_next is None, "両方そろっているのに置く先が残っている"
+    assert win.status[-1] == _idle_hint(None), (
+        f"開いた瞬間のヒントが取り残されている: {win.status[-1]}")
+
+
+def test_opening_the_map_with_one_coord_still_asks_for_the_other(monkeypatch):
+    """①の裏＝片方だけなら、空いている方を指す字のままであること。"""
+    ref = {"rx": (34.3714, 132.5347)}
+    win, _picks = _hint_stub(monkeypatch, ref)
+
+    win._set_idle()
+    win._load_single_coords()
+
+    assert win._pick_next == "tx"
+    assert win.status[-1] == _idle_hint("map_coords_hint_tx"), (
+        f"空いている方を指していない: {win.status[-1]}")
+
+
+def test_opening_the_map_with_no_coords_keeps_the_plain_hint(monkeypatch):
+    """①の裏 2＝何も入っていない開き方（従来どおり）。"""
+    win, _picks = _hint_stub(monkeypatch, {})
+
+    win._set_idle()
+    win._load_single_coords()
+
+    assert win._pick_next == "tx"
+    assert win.status[-1] == _idle_hint("map_coords_hint_tx")
+
+
+# ============================================================
 # 選択を落とす経路の静的ガード（B-112）
 # ============================================================
 # 選ぶと `_pick_next` に役割が入るので、**落とす側も同じだけの仕事をしないと**
@@ -810,7 +896,6 @@ _ALLOWED_SELECTION_CLEAR = {
     ("map_picks.py", "_PickMixin._on_map_click"),       # 移動が成立した直後
     ("map_picks.py", "_PickMixin._place_from_menu"),    # 直後に `_place_pick`
     ("map_picks.py", "_PickMixin._move_selected"),      # ピック層以外だけが来る
-    ("map_picks.py", "_PickMixin._load_single_coords"),  # 直前に `_sync_single_coords`
     ("map_window.py", "MapWindow.__init__"),            # 初期化（`_pick_next` も隣で置く）
 }
 

@@ -707,12 +707,20 @@ class _PickMixin:
             return
         self._sync_single_coords()
         self._refresh_picks()
-        self._set_idle()          # 置く先が戻れば、ヒントもそこへ戻る
 
     def _sync_single_coords(self) -> tuple:
         """ランチャー数値欄の TX/RX を取り込む（**視野には触れない**）。
 
         戻り値は取り込んだ `(tx, rx)`＝呼び出し側が視野合わせに使う。
+
+        🔴 **ヒントの更新までがここの仕事**（B-115）＝以前は呼び出し側の 2 つのうち
+        **通知（`on_single_coords_changed`）だけが `_set_idle()` を呼んで**おり、
+        開く側（`_load_single_coords`）が呼んでいなかった。⇒ ランチャーに座標が
+        入った状態で開くと、`_build_ui` が初期値（`_pick_next = "tx"`）のまま出した
+        字が残り、**マーカーは 2 つ出ているのに「地図をクリックして TX を指定します」**
+        と言い続ける（その案内どおりに押しても何も起きない）。
+        ⇒ **状態バーの字は `_pick_next` の従属変数**なので、derive し直す場所と
+        同じ場所で書き直す（呼び出し側の心がけにしない）。
         """
         if self._single_sink is None:
             return (None, None)
@@ -723,6 +731,7 @@ class _PickMixin:
         self._drop_selection("pick")
         # 次の入力対象＝**空いている方**（両方あれば「選んでから」＝I-098）。
         self._advance_pick()
+        self._set_idle()
         return (tx, rx)
 
     def _load_single_coords(self) -> None:
@@ -733,8 +742,11 @@ class _PickMixin:
         """
         if self._single_sink is None:
             return
+        # ⚠️ **選択を落とすのは写しを取り込む前**（B-115）＝`_sync_single_coords` が
+        # ヒントを書き直すので、その時点で選択が残っていると「◯◯ を選択中」の字が
+        # 出て、直後に黙って選択だけ消える（字と状態が食い違う）。
+        self._forget_selection()
         tx, rx = self._sync_single_coords()
-        self._selection = None
         # 既存座標があれば中心とズームを合わせる。
         if tx is not None and rx is not None:
             self._fit_to_path(tx, rx)
