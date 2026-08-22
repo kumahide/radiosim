@@ -1224,7 +1224,7 @@ def test_the_map_status_hints_can_be_wrapped():
     pytest.importorskip("tkinter")
     from core import i18n
 
-    keys = ("map_select_hint", "map_move_affordance", "map_place_affordance",
+    keys = ("map_pair_set", "map_move_affordance", "map_place_affordance",
             "map_coords_hint_tx", "map_coords_hint_rx",
             "map_append_hint_tx", "map_append_hint_rx",
             "map_status_waypoint", "map_selected", "tm_hint")

@@ -832,7 +832,7 @@ def _idle_hint(key_or_none):
     from core import i18n
 
     if key_or_none is None:
-        return (i18n.t("map_select_hint") + " " + i18n.t("map_move_affordance")
+        return (i18n.t("map_pair_set") + " " + i18n.t("map_move_affordance")
                 + " " + i18n.t("map_place_affordance"))
     return i18n.t(key_or_none) + " " + i18n.t("map_move_affordance")
 

@@ -126,6 +126,33 @@ def test_artifact_keys_are_not_open(lang_dir):
     assert i18n.t("pl_diff_model") == i18n._STRINGS["en"]["pl_diff_model"]
 
 
+def test_a_retired_key_is_reported_instead_of_silently_composed(lang_dir):
+    """⛔ **意味を変えたキーは「消して報告」＝黙って合成しない**（B-117）。
+
+    🔴 **外部訳が検査できるのは形式だけ**（差し込み・書式・型）で、*意味の変更*は
+    検出できない。完結した案内だったキーを「先頭の 1 文」に作り替えて合成すると、
+    **旧い訳を持つファイルではその 1 文に案内が丸ごと入ったまま後ろに 2 文が足され**、
+    重複した字と未訳の英語が混ざる（独立レビュー 33 巡目の指摘）。
+
+    ⇒ 断片には新しいキーを与え、**旧キーは英語から消す**。そうすれば旧い訳は
+    「英語にないキーです」として**起動時に利用者へ報告される**。
+    ここで見るのは「消えていること」と「報告に載ること」の 2 つ。
+    """
+    assert "map_select_hint" not in i18n._STRINGS["en"], (
+        "断片へ転用したキーが英語に残っている＝旧い外部訳が黙って合成される"
+    )
+    _write(lang_dir, "fr", {"map_select_hint": "Ancien texte complet."})
+    reports = i18n.load_external(str(lang_dir))
+
+    assert reports, "旧キーだけの訳が何も報告されずに読み込まれた"
+    assert "map_select_hint" in str(reports), (
+        f"引退したキーが報告に出ていない（利用者は気づけない）: {reports}"
+    )
+    assert i18n._STRINGS.get("fr", {}).get("map_select_hint") is None, (
+        "引退したキーが訳として登録されている"
+    )
+
+
 #: 成果物（HTML レポート・断面図 PNG・グラフ）を組み立てるモジュール。
 #: ⚠️ **`report/` を丸ごと走査しない**＝同じ層に居る `batch.py` / `multihop.py` /
 #: `project.py` は**画面に出す検証メッセージ**（`verr_*` 等）も持っており、それらは
