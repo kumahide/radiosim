@@ -218,11 +218,15 @@ def screen_size(win: "tk.Misc") -> tuple[int, int]:
     return win.winfo_screenwidth(), win.winfo_screenheight()
 
 
-def _enumerate_monitors() -> "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int]]]":
+def _enumerate_monitors() -> "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int] | None]]":
     """OS に**実在するモニタ**を聞く＝`(モニタ矩形, 作業領域)` の列（仮想座標系）。
 
     取れなければ空を返す（Windows 以外・API が無い・呼び出しに失敗した場合）。
     **判断は呼び出し側**＝ここは「聞けたかどうか」だけを返す。
+
+    ⚠️ **作業領域だけ聞けなかったモニタは `None`**（2026-08-22・B-114）＝モニタ矩形で
+    代用すると「タスクバーが無い」と**区別が付かなくなり**、`usable_area` が
+    `SCREEN_MARGIN` の保険を通らない（＝そのモニタでだけ B-084 が黙って戻る）。
 
     **2 つを一緒に返す理由**（2026-08-18・B-084）＝この 2 つは**同じ列挙の 2 つの
     フィールド**（`MONITORINFO` の `rcMonitor` / `rcWork`）で、別々に聞くと
@@ -250,18 +254,20 @@ def _enumerate_monitors() -> "list[tuple[tuple[int, int, int, int], tuple[int, i
         _fields_ = [("cbSize", ctypes.c_ulong), ("rcMonitor", _RECT),
                     ("rcWork", _RECT), ("dwFlags", ctypes.c_ulong)]
 
-    found: "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int]]]" = []
+    found: "list[tuple[tuple[int, int, int, int], tuple[int, int, int, int] | None]]" = []
 
     def _collect(hmon, _hdc, rect, _data) -> int:
         r = rect.contents
         monitor = (r.left, r.top, r.right, r.bottom)
-        work = monitor
+        work: "tuple[int, int, int, int] | None" = None
         info = _MONITORINFO()
         info.cbSize = ctypes.sizeof(_MONITORINFO)
         try:
-            # ⚠️ 失敗しても**モニタ矩形で代用して続ける**＝ここで例外を上げると
-            # 「作業領域が取れない 1 枚」のせいで**全モニタの列挙が消える**
-            # （＝B-085 で直した「別モニタの窓を引き戻さない」まで巻き添えになる）。
+            # ⚠️ 失敗しても**列挙は続ける**＝ここで例外を上げると「作業領域が
+            # 取れない 1 枚」のせいで**全モニタの列挙が消える**（＝B-085 で直した
+            # 「別モニタの窓を引き戻さない」まで巻き添えになる）。
+            # 🔴 ただし**モニタ矩形で代用しない**（B-114）＝代用すると呼ぶ側からは
+            # 「タスクバーが無い」と同じ形になり、保険の経路が死ぬ。不明は `None`。
             if user32.GetMonitorInfoW(hmon, ctypes.byref(info)):
                 w = info.rcWork
                 work = (w.left, w.top, w.right, w.bottom)
@@ -295,8 +301,12 @@ def work_areas() -> "dict[tuple[int, int, int, int], tuple[int, int, int, int]]"
     ⚠️ **空を返すことに意味がある**＝呼ぶ側（`usable_area`）は従来どおり
     `SCREEN_MARGIN` で見積もる。「聞けなかった」と「タスクバーが無い」を
     同じ形（＝モニタ矩形と同じ作業領域）で返すと、区別が付かなくなる。
+    ⚠️ **1 枚だけ聞けなかった場合も同じ**＝そのモニタは**この対応から落とす**
+    （B-114）。列挙そのもの（`monitors()`）には残るので、窓の置き場所は従来どおり
+    決まり、上限だけが `SCREEN_MARGIN` の見積りへ落ちる。
     """
-    return {monitor: work for monitor, work in _enumerate_monitors()}
+    return {monitor: work for monitor, work in _enumerate_monitors()
+            if work is not None}
 
 
 def monitors(win: "tk.Misc") -> "list[tuple[int, int, int, int]]":

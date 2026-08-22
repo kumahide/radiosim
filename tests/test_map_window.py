@@ -654,6 +654,87 @@ def test_editing_one_launcher_coord_does_not_move_the_view():
 
 
 # ============================================================
+# 選択を解いたら「置く先」も元に戻す（B-112）
+# ============================================================
+# 選ぶと `_pick_next` にその役割が入る（＝交互ピックの一般化）。ところが解く側は
+# `_selection` しか落としておらず、**役割の指名だけが残る**。⇒ Esc で解いた直後の
+# 素のクリックが、解いたはずの点を黙って動かす（I-098 の芯＝「素のクリックでは
+# 黙って書き換わらない」の裏切り）。
+def test_escape_also_forgets_which_point_was_selected():
+    """①Esc で解いたら、素のクリックはまた「何も書かない」に戻ること。"""
+    from core import i18n
+
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, picks = _single_stub(ref)
+    assert win._pick_next is None               # 両方そろっている＝置く先が無い
+
+    _click_marker(win, 0)                       # TX を選ぶ
+    win._release(win)
+    win._deselect()                             # Esc（本物は `<Escape>` から）
+
+    win._on_map_click((36.0, 140.0))
+    assert picks == [], f"解いたはずの点が素のクリックで動いた: {picks}"
+    assert win.status[-1] == i18n.t("map_select_hint")
+
+
+def test_clicking_the_same_marker_twice_also_forgets_it():
+    """①の裏＝同じマーカーをもう一度押して解いたときも同じであること。"""
+    ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
+    win, picks = _single_stub(ref)
+
+    _click_marker(win, 1)                       # RX を選ぶ
+    win._release(win)
+    _click_marker(win, 1)                       # もう一度押す＝解く
+    win._release(win)
+
+    assert win._selection is None
+    assert win._pick_next is None, "選択を解いても役割の指名が残っている"
+    win._on_map_click((36.0, 140.0))
+    assert picks == [], f"解いたはずの点が素のクリックで動いた: {picks}"
+
+
+# ============================================================
+# 連続追加のペア成立は「順番」ではなく「そろったこと」で決まる（B-113）
+# ============================================================
+# 素のクリックしか無かった頃は `TX → RX` の順しか作れなかったので、行を足す条件を
+# 「いま置いたのが RX」で代用できていた。B-111 の右クリックは**役割を名指しできる**
+# ＝`RX → TX` の順が実在するようになり、両方そろっても行が足されないまま
+# `_pick_next` が None になる（＝その先どこも押せない行き止まり）。
+def _append_stub():
+    added: list = []
+    win = _edit_stub("append")
+    win._append_sink = SimpleNamespace(
+        append_path=lambda tx, rx: (added.append((tx, rx)), f"P{len(added)}")[1],
+        existing_paths=lambda: [],
+    )
+    win._pick_next = "tx"
+    return win, added
+
+
+def test_the_pair_is_committed_whichever_role_is_placed_last():
+    """RX を先に置いても、TX がそろった時点で 1 行足すこと。"""
+    win, added = _append_stub()
+
+    win._place_from_menu("rx", 34.6, 132.5)     # 右クリック＝役割を名指し
+    win._place_from_menu("tx", 34.5, 132.4)
+
+    assert added == [((34.5, 132.4), (34.6, 132.5))], (
+        f"RX → TX の順だと経路が足されない: {added}")
+    assert win._pick_next == "tx", "次の TX 待ちに戻っていない（行き止まり）"
+
+
+def test_the_usual_order_still_commits_the_pair():
+    """裏＝従来どおり TX → RX の順でも 1 行だけ足すこと。"""
+    win, added = _append_stub()
+
+    win._on_map_click((34.5, 132.4))
+    win._on_map_click((34.6, 132.5))
+
+    assert added == [((34.5, 132.4), (34.6, 132.5))], f"従来の順が壊れた: {added}"
+    assert win._pick_next == "tx"
+
+
+# ============================================================
 # 破棄経路の静的ガード
 # ============================================================
 # close_map_safely の docstring は「マップを破棄し得る経路は必ずこの関数を通す」
@@ -709,6 +790,55 @@ def test_map_widget_is_destroyed_only_through_close_map_safely():
     assert found == _ALLOWED_MAP_DESTROY, (
         "マップ実体の破棄経路が変化した。close_map_safely を通しているか確認し、"
         f"意図した変更なら _ALLOWED_MAP_DESTROY を更新すること: {found}"
+    )
+
+
+# ============================================================
+# 選択を落とす経路の静的ガード（B-112）
+# ============================================================
+# 選ぶと `_pick_next` に役割が入るので、**落とす側も同じだけの仕事をしないと**
+# 指名だけが残る（＝素のクリックが黙って書き換える）。口は `_forget_selection`
+# 1 つに寄せてあるが、これは中身のテストでは守れない——新しい経路が
+# `self._selection = None` を書き写しても、落ちるものが無い。⇒ 直に落としてよい
+# 場所をここに固定し、増えたら落とす。
+#
+# ⚠️ 下の 4 か所が許されているのは「**直後か直前に座標が動き、`_advance_pick` が
+# 必ず走る**」から（＝指名は derive し直されている）。新しい経路を足すときは、
+# その条件を満たすか確かめ、満たさないなら `_forget_selection` を通すこと。
+_ALLOWED_SELECTION_CLEAR = {
+    ("map_picks.py", "_PickMixin._forget_selection"),   # 唯一の正規の口
+    ("map_picks.py", "_PickMixin._on_map_click"),       # 移動が成立した直後
+    ("map_picks.py", "_PickMixin._place_from_menu"),    # 直後に `_place_pick`
+    ("map_picks.py", "_PickMixin._move_selected"),      # ピック層以外だけが来る
+    ("map_picks.py", "_PickMixin._load_single_coords"),  # 直前に `_sync_single_coords`
+    ("map_window.py", "MapWindow.__init__"),            # 初期化（`_pick_next` も隣で置く）
+}
+
+# ⚠️ **タプル代入も拾う**＝`_forget_selection` 自身が
+# `sel, self._selection = self._selection, None` の形なので、`= None` だけを見ると
+# **正規の口も、それを書き写した新しい経路も、どちらも見えない**（ゲートの壊れ方①
+# ＝一度も落ちない）。値の側に `None` があることだけを条件にする。
+_SELECTION_CLEAR_RE = re.compile(r"\bself\._selection\s*=[^=]*\bNone\b")
+
+
+def test_the_selection_is_cleared_only_where_the_pick_target_is_re_derived():
+    """選択を直に落とす場所が増えていないこと（B-112 の再発防止）。"""
+    found: set[tuple[str, str]] = set()
+    for name in sorted(os.listdir(_VIEWS_DIR)):
+        if not name.endswith(".py"):
+            continue
+        path = os.path.join(_VIEWS_DIR, name)
+        with open(path, encoding="utf-8") as f:
+            src = f.read()
+        tree = ast.parse(src)
+        for i, line in enumerate(src.splitlines(), start=1):
+            if _SELECTION_CLEAR_RE.search(line):
+                found.add((name, _enclosing_qualname(tree, i)))
+
+    assert found == _ALLOWED_SELECTION_CLEAR, (
+        "選択を直に落とす場所が変化した。`_pick_next` が derive し直されるか確認し"
+        "（されないなら `_forget_selection` を通す）、意図した変更なら "
+        f"_ALLOWED_SELECTION_CLEAR を更新すること: {found}"
     )
 
 

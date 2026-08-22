@@ -327,7 +327,9 @@ class MapWindow(_PickMixin, _CacheMixin):
         """モードを選択し、セグメントボタンのスタイルを更新する。"""
         # モードが変われば選べる点も変わる＝**選択は持ち越さない**（I-098）。
         # 持ち越すと、別のモードで置いたクリックが前のモードの点を動かす。
-        self._selection = None
+        # ⚠️ `_selection` を直に落とさない（B-112）＝役割の指名（`_pick_next`）が
+        # 残ると、モードを往復しただけで素のクリックが黙って書き換える。
+        self._forget_selection()
         self._mode.set(value)
         for v, btn in self._mode_buttons.items():
             btn.configure(style="Accent.TButton" if v == value else "TButton")

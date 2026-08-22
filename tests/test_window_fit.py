@@ -1719,6 +1719,37 @@ def test_the_constant_margin_is_kept_when_the_os_cannot_be_asked(monkeypatch):
         root.destroy()
 
 
+def test_a_monitor_whose_work_area_is_unknown_is_not_reported_as_known(monkeypatch):
+    """🔴 **「聞けなかった」をモニタ矩形で代用しないこと**（B-114）。
+
+    `work_areas` の docstring は「聞けなかった」と「タスクバーが無い」を同じ形で
+    返さないと約束しているのに、列挙の側は `GetMonitorInfoW` が失敗すると
+    **`rcMonitor` をそのまま作業領域として登録**していた。⇒ `usable_area` は
+    「作業領域が取れた」と読み、`SCREEN_MARGIN` の保険を通らない＝**そのモニタ
+    でだけ B-084 が黙って戻る**（下端がタスクバーの裏）。
+
+    ⚠️ **モニタの列挙まで巻き添えにしない**（B-085＝別モニタに置かれた窓を主画面へ
+    引き戻さない）＝そこが元の代用の理由なので、両方を同じ回で見る。
+    """
+    import ctypes
+
+    try:
+        user32 = ctypes.windll.user32
+    except (AttributeError, OSError):            # Windows 以外
+        pytest.skip("Win32 API のある環境でのみ意味がある")
+
+    monkeypatch.setattr(user32, "GetMonitorInfoW", lambda *_a: 0, raising=False)
+    found = window_fit._enumerate_monitors()
+    assert found, "モニタの列挙まで消えている（B-085 の巻き添え）"
+    assert all(work is None for _monitor, work in found), (
+        f"作業領域を聞けなかったのに値を持っている: {found}")
+    assert window_fit.work_areas() == {}, (
+        "聞けなかったモニタが「作業領域が取れた」として並んでいる"
+        "＝usable_area が SCREEN_MARGIN の保険を通らない")
+    assert window_fit._enumerate_monitor_rects(), (
+        "作業領域が不明なせいでモニタ矩形まで落ちている")
+
+
 def test_dialogs_are_pulled_back_onto_the_screen(monkeypatch):
     """ダイアログも画面の中へ（親が下に寄っていれば子も外へ出る）。
 

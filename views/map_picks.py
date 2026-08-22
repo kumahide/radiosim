@@ -145,9 +145,25 @@ class _PickMixin:
             return False
         return (a.layer, a.pos, a.role) == (b.layer, b.pos, b.role)
 
+    def _forget_selection(self) -> "_Selected | None":
+        """選択を落とし、**役割の指名も座標から derive し直す**（描き直しはしない）。
+
+        🔴 **選択を落とす口はここ 1 つ**（B-112）＝選ぶ側は `_pick_next` に役割を
+        書き込む（上の `_select`）のに、解く側は `_selection` しか落としていなかった。
+        ⇒ Esc やモード切替で解いた直後の**素のクリックが、解いたはずの点を黙って
+        動かす**——I-098 の芯（素のクリックでは黙って書き換わらない）の裏切りになる。
+        ⇒ 指名は覚えておくものではなく**選択と一緒に derive し直すもの**として扱う。
+
+        戻り値は落とした選択（描き直したいレイヤを呼び出し側が知るため）。
+        """
+        sel, self._selection = self._selection, None
+        if sel is not None and sel.layer == "pick":
+            self._advance_pick()
+        return sel
+
     def _deselect(self) -> None:
         """選択を解いて、そのレイヤを描き直す（ハイライトを落とす）。"""
-        sel, self._selection = self._selection, None
+        sel = self._forget_selection()
         if sel is not None:
             self._redraw_layer(sel.layer)
         self._set_idle()
@@ -159,7 +175,7 @@ class _PickMixin:
         同じレイヤを 2 度描くことになる。
         """
         if self._selection is not None and self._selection.layer == layer:
-            self._selection = None
+            self._forget_selection()
 
     def _redraw_layer(self, layer: str) -> None:
         if layer == "waypoints":
@@ -463,9 +479,13 @@ class _PickMixin:
         """
         self._set_pick_marker(role, lat, lon)
         if self._append_sink is not None:
-            # 連続追加（Phase D2）: RX 確定でペア成立 → 1 行を append し、
+            # 連続追加（Phase D2）: 両方そろった時点でペア成立 → 1 行を append し、
             # アクティブなピックをリセットして次の TX 待ちに戻す（add 不要）。
-            if role == "rx" and self._tx_coord is not None and self._rx_coord is not None:
+            # 🔴 **「いま置いたのが RX か」では見ない**（B-113）＝素のクリックしか
+            # 無かった頃は `TX → RX` の順しか作れず、それで代用できていた。B-111 の
+            # 右クリックは**役割を名指しできる**ので `RX → TX` が実在する＝両方
+            # そろっても行が足されず、`_pick_next` も None になる（行き止まり）。
+            if self._tx_coord is not None and self._rx_coord is not None:
                 pid = self._append_sink.append_path(self._tx_coord, self._rx_coord)
                 # ⚠️ ペアが成立した時点で**アクティブなピックは無くなる**＝選んで
                 # 動かしていた場合もここで選択ごと消える（`_reset_active_pick`）。
