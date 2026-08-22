@@ -1176,6 +1176,77 @@ def test_the_coordinate_fields_are_wide_enough_for_dms():
         root.destroy()
 
 
+# ------------------------------------------------------------
+# 折り返す案内文には「折れる場所」が要る（B-116）
+# ------------------------------------------------------------
+# 🔴 **日本語には空白が無く、Tk は空白でしか折らない。** 状態バーの案内を 1 文に
+# まとめると、その全体が**分割不能な 1 語**になり、折り返し幅を越えた瞬間に行が
+# 不揃いに崩れる（実機で 3 行・1 行目が幅の 1 割だけ、という絵が撮れた）。
+# ⚠️ **英語では起きない**＝単語ごとに折れるので、長くなっても行は揃う。
+# ⇒ **見るのは全長ではなく「最長の分割不能語」**。全長で見ると、英語だけが
+# 引っかかって日本語が通る（＝間違ったものを要求するゲート＝壊れ方③）。
+#
+# 状態バーの折り返し幅は `max(200, statusbar 幅 - 200)` で、出荷し得るいちばん
+# 狭い条件で **560px** 程度（実機 1920×1080/100% の地図ウィンドウで実測）。
+_WRAP_BUDGET_PX = 560
+
+
+def _longest_unbreakable_px(root, text: str) -> tuple[int, str]:
+    """`text` の中でいちばん幅を食う「空白で切れない塊」（出荷書体の最悪）。"""
+    import tkinter.font as tkfont
+
+    runs = [r for r in text.split(" ") if r]
+    worst, worst_run = 0, ""
+    for family in _SHIPPING_FAMILIES:
+        for size in _SHIPPING_SIZES:
+            font = tkfont.Font(root=root, family=family, size=size)
+            if font.actual("family").lower() != family.lower():
+                continue
+            for run in runs:
+                w = font.measure(run)
+                if w > worst:
+                    worst, worst_run = w, run
+    assert worst > 0, "測れる書体が 1 つも無い（環境が想定外）"
+    return worst, worst_run
+
+
+def test_the_map_status_hints_can_be_wrapped():
+    """地図の状態バーに出る案内が、**折り返せる形**であること（B-116）。
+
+    ⚠️ **短いことは要求しない**＝長い案内が要ることはある。要求するのは
+    **途中で折れること**＝文の区切りに空白を入れて、1 つの塊が折り返し幅を
+    越えないようにする。⇒ 直し方は「文を削る」でも「空白を入れる」でもよい。
+
+    🔴 **これはゲートが無ければ絶対に捕まらない面**（2026-08-22）＝案内文は
+    どの自動検査にも掛からず、**実機のスクリーンショットを 1 枚ずつ見た人**が
+    気づくしかなかった（実際そうやって見つかった）。⇒ 検査の側へ降ろす。
+    """
+    pytest.importorskip("tkinter")
+    from core import i18n
+
+    keys = ("map_select_hint", "map_move_affordance", "map_place_affordance",
+            "map_coords_hint_tx", "map_coords_hint_rx",
+            "map_append_hint_tx", "map_append_hint_rx",
+            "map_status_waypoint", "map_selected", "tm_hint")
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        for lang in ("ja", "en"):
+            i18n.set_lang(lang)
+            for key in keys:
+                text = i18n.t(key)
+                width, run = _longest_unbreakable_px(root, text)
+                assert width <= _WRAP_BUDGET_PX, (
+                    f"[{lang}] `{key}` に折れない塊がある＝{width}px > "
+                    f"{_WRAP_BUDGET_PX}px。状態バーはこの塊を折れないので、"
+                    f"行が不揃いに崩れる（実機で 3 行になった型）。"
+                    f"文の区切りに空白を入れるか、文を短くすること: 「{run}」"
+                )
+    finally:
+        i18n.set_lang("ja")
+        root.destroy()
+
+
 def test_every_coordinate_field_has_the_same_width():
     """**座標を入れる欄は、どの窓でも同じ幅**であること（B-046 / B-057）。
 

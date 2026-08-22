@@ -199,6 +199,22 @@ class _PickMixin:
         """
         self._select_guard = False
 
+    def _select_hint_text(self) -> str:
+        """置く先が無いときの案内（**代わりの手を 2 つとも言う**）。
+
+        🔑 **組み立てはここ 1 か所**＝この字はアイドルのヒント（`_set_idle`）と、
+        素のクリックが何も書かなかったときの返事（`_on_map_click`）の 2 か所に出る。
+        2 か所で組むと**片方だけが古い案内のまま残る**（B-115 と同じ型）。
+        ⚠️ **素のクリックが使えないのはこの状態だけ**なので、ここだけ代わりの手
+        （選ぶ／右クリック）を両方言う（[[feedback-radiosim-rules]] の失敗の型＝
+        「次に何をすべきか」が必ず入る）。
+        🔴 **文の区切りの空白は折り返しの逃げ道**（2026-08-22・B-116）＝日本語は
+        空白が無く、Tk は空白でしか折れない。1 文にまとめると**分割不能な 1 語**が
+        折り返し幅を越え、行が不揃いに崩れる（実機で 3 行・1 行目が 1 割だけ）。
+        """
+        return (i18n.t("map_select_hint") + " " + i18n.t("map_move_affordance")
+                + " " + i18n.t("map_place_affordance"))
+
     def _advance_pick(self) -> None:
         """次の素クリックが書く先を決める（**空いている方を埋める**）。
 
@@ -456,7 +472,7 @@ class _PickMixin:
         role = self._pick_next
         if role is None:
             # 座標入力で両方そろっている＝素のクリックは*何も書かない*。
-            self._set_status(i18n.t("map_select_hint"))
+            self._set_status(self._select_hint_text())
             return
         before = self._tx_coord if role == "tx" else self._rx_coord
         if self._place_pick(role, lat, lon):

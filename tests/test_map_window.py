@@ -439,7 +439,6 @@ def test_a_plain_click_no_longer_overwrites_tx_when_both_are_set():
     入った状態で開くと**次のクリックは必ず TX**。「RX だけ置き直す」ができず、
     先に TX を潰してから打ち直すことになっていた。
     """
-    from core import i18n
 
     picks: list = []
     single = SimpleNamespace(
@@ -453,7 +452,7 @@ def test_a_plain_click_no_longer_overwrites_tx_when_both_are_set():
 
     win._on_map_click((34.7, 132.7))
     assert picks == [], "素のクリックが TX を上書きした（打ち直しを強いる穴）"
-    assert win.status[-1] == i18n.t("map_select_hint")
+    assert win.status[-1] == _idle_hint(None)
 
     # 選んでからなら、その点だけが動く（RX を選んで RX だけ置き直す）。
     _click_marker(win, 1)                       # 描画順は TX → RX
@@ -662,7 +661,6 @@ def test_editing_one_launcher_coord_does_not_move_the_view():
 # 黙って書き換わらない」の裏切り）。
 def test_escape_also_forgets_which_point_was_selected():
     """①Esc で解いたら、素のクリックはまた「何も書かない」に戻ること。"""
-    from core import i18n
 
     ref = {"tx": (34.5, 132.4), "rx": (34.6, 132.5)}
     win, picks = _single_stub(ref)
@@ -674,7 +672,7 @@ def test_escape_also_forgets_which_point_was_selected():
 
     win._on_map_click((36.0, 140.0))
     assert picks == [], f"解いたはずの点が素のクリックで動いた: {picks}"
-    assert win.status[-1] == i18n.t("map_select_hint")
+    assert win.status[-1] == _idle_hint(None)
 
 
 def test_clicking_the_same_marker_twice_also_forgets_it():
@@ -834,7 +832,8 @@ def _idle_hint(key_or_none):
     from core import i18n
 
     if key_or_none is None:
-        return i18n.t("map_select_hint")
+        return (i18n.t("map_select_hint") + " " + i18n.t("map_move_affordance")
+                + " " + i18n.t("map_place_affordance"))
     return i18n.t(key_or_none) + " " + i18n.t("map_move_affordance")
 
 

@@ -401,7 +401,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_marker_rx":        "RX",
         # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
         # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
-        "map_select_hint":      "Coordinate pick: TX and RX are both set. Click a marker to select it, then click the map to move it there. Right-click the map to place TX / RX at that spot.",
+        "map_select_hint":      "Coordinate pick: TX and RX are both set.",
         # Right-click menu (B-111): the way to re-place a point whose marker is off-screen.
         "map_menu_place_tx":    "Place TX here",
         "map_menu_place_rx":    "Place RX here",
@@ -411,7 +411,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_select_stale":     "The selected point is no longer there (the window has changed). Select it again.",
         "map_label_path_point": "{role} of path {pid}",
         "map_label_waypoint":   "waypoint {name}",
-        "map_move_affordance":  "Click a marker to select it, then click the map to move it.",
+        "map_move_affordance":  "Click a marker to select it, then click to move it.",
+        "map_place_affordance": "Right-click the map to place a site there.",
         "tm_hint":              "Ctrl+drag: download  |  Ctrl+Alt+drag: force re-download  |  Shift+Ctrl+drag: delete  |  drag: pan",
         "tm_dl_title":          "Download",
         "tm_dl_confirm":        "Download DEM for {n} areas?",
@@ -950,7 +951,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_marker_rx":        "RX",
         # 選んでから置き直す（I-098）。**「選択中」は状態**なので、置く先が無い
         # ときのヒントと、選んだ直後の告知と、動かした結果を別のキーで持つ。
-        "map_select_hint":      "座標入力: TX と RX は指定済みです。マーカーをクリックして選ぶと、次のクリックでそこへ移せます。地図を右クリックすると、その場所へ TX / RX を置き直せます。",
+        "map_select_hint":      "座標入力: TX と RX は指定済みです。",
         # 右クリックメニュー（B-111）＝**マーカーが画面の外にあっても置き直せる**口。
         "map_menu_place_tx":    "ここに TX を置く",
         "map_menu_place_rx":    "ここに RX を置く",
@@ -960,7 +961,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "map_select_stale":     "選んでいた点が見当たりません（ウィンドウ側が変わりました）。選び直してください。",
         "map_label_path_point": "経路 {pid} の {role}",
         "map_label_waypoint":   "地点 {name}",
-        "map_move_affordance":  "マーカーをクリックして選ぶと、次のクリックでそこへ移せます。",
+        "map_move_affordance":  "マーカーを選ぶと次のクリックで移せます。",
+        "map_place_affordance": "右クリックでその場所へ置き直せます。",
         "tm_hint":              "Ctrl＋ドラッグ:DL ／ Ctrl+Alt＋ドラッグ:強制再取得 ／ Shift＋Ctrl＋ドラッグ:削除 ／ ドラッグ:地図移動",
         "tm_dl_title":          "ダウンロード",
         "tm_dl_confirm":        "対象 {n} エリアの DEM をダウンロードしますか？",

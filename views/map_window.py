@@ -666,7 +666,9 @@ class MapWindow(_PickMixin, _CacheMixin):
             # 座標入力で TX/RX が両方そろっている＝置く先が無い。**素のクリックは
             # 何も書かない**ので、そう言う（I-098）。以前はここで「TX を指定します」
             # と出し、実際に次のクリックが TX を潰していた。
-            self._status_var.set(i18n.t("map_select_hint"))
+            # ⚠️ **組み立ては `_select_hint_text` の 1 か所**（素のクリックが何も
+            # 書かなかったときの返事と同じ字＝2 か所で組むと片方が古くなる）。
+            self._status_var.set(self._select_hint_text())
             return
         else:
             key = "map_coords_hint_tx" if self._pick_next == "tx" else "map_coords_hint_rx"
