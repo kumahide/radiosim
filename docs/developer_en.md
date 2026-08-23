@@ -267,7 +267,7 @@ radiosim/
 │   ├── developer_en.md   # This file
 │   ├── manual_ja.md      # Japanese user manual (bundled into the exe; opened by Help → Open Documentation)
 │   ├── manual_en.md      # English user manual (same)
-│   ├── glossary.md       # Glossary of on-screen terms (enforced by tests/test_i18n_glossary.py)
+│   ├── glossary.md       # Glossary of on-screen terms, in Japanese (enforced by tests/test_i18n_glossary.py)
 │   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values)
 │   └── images/           # Those screenshots and the figures (architecture_*.svg = the layer diagram); also bundled into the exe
 ├── README.md             # Repository entry point (the one read first on GitHub)
@@ -942,7 +942,7 @@ entry point that runs them together.
 | `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
-| `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
+| `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) — ⚠️ **written in Japanese; its `en` column gives the English wording to use** — against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_i18n_key_duplication.py` | i18n key gate (**no two keys hold the same on-screen wording**; fixing only one of them would put two words on screen). Artifact wording — report HTML and plot images — is out of scope: aligning screen and artifact names belongs to the output-contract release |
 | `test_i18n_external.py` | Gate for **user-supplied languages** (`lang/<code>.json`). **The rejection side is the point**: keys whose placeholders (`{n}` …) differ from English, keys unknown to English, artifact wording (`html_*` / `pl_*`) and non-string values are not applied, and the bundled `ja` / `en` cannot be overridden. Also checks that untranslated keys fall back to English and that one broken file does not stop the others. Includes **one test that demonstrates the `KeyError` you would get if the check were removed** — if that reason ever disappears, that test fails and says so |
 | `test_i18n_no_hardcoded_ui_text.py` | i18n bypass gate (**no natural language reaches the screen without going through i18n**: literals passed to the four screen-text doors in `views/` — `text=`, `label=`, `.title()`, `dialogs.*()` — fail if they contain English words or kana/kanji. Verdict words, units, symbols and number formats are out of scope — they are identical in both languages) |
