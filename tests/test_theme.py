@@ -60,6 +60,25 @@ def root():
         r.destroy()
 
 
+@pytest.mark.real_debounce
+def test_the_shipped_debounce_values_keep_their_order():
+    """⚠️ 縮めた値は**比を保っている**こと＝順序が壊れると別物を測ることになる。
+
+    実物の順序（`_DISPLAY_LANDING_MS * 2 < _DISPLAY_SETTLE_MS` など）は
+    `views/theme.py` の註が要求している関係で、テスト用の値でも同じでなければ
+    「速いから緑」になってしまう。
+    """
+    from conftest import FAST_DISPLAY_MS as _FAST_DISPLAY_MS
+    real = {name: getattr(theme, name) for name in _FAST_DISPLAY_MS}
+    assert real["_DISPLAY_LANDING_MS"] * 2 < real["_DISPLAY_SETTLE_MS"], (
+        "出荷する値の順序が壊れている（着地の確認が確かめ直しより後になる）")
+    fast = dict(_FAST_DISPLAY_MS)
+    assert fast["_DISPLAY_LANDING_MS"] * 2 < fast["_DISPLAY_SETTLE_MS"], (
+        "テスト用に縮めた値の順序が壊れている＝実物と違う経路を測ることになる")
+    assert fast["_DISPLAY_DEBOUNCE_MS"] < fast["_DISPLAY_DEBOUNCE_MAX_MS"], (
+        "縮めた値でデバウンスの締め切りが先に来る")
+
+
 def _relative_luminance(color: str) -> float:
     """WCAG の相対輝度。"""
     channels = []
@@ -694,8 +713,14 @@ def test_table_row_height_follows_the_font(root):
     assert high > low, f"DPI を上げても行高が変わらない（{low}px のまま）"
 
 
+@pytest.mark.real_debounce
 def test_watch_display_actually_fires_on_a_configure_event(root):
     """配線が実際に動くこと（監視 → 検知 → 貼り直し → 通知）。
+
+    🔑 **このファイルで唯一、出荷する待ち時間そのもので走る**（`real_debounce`）。
+    他は 1/25 に縮めているので、**出荷値で本当に通知が届くか**はここが唯一の証拠
+    ＝縮めた値でしか通らない実装（例：デバウンスが長すぎて発火しない）を素通り
+    させないための 1 本。
 
     ⚠️ **ここが本丸**。「イベントに繋いだつもりで一度も発火しない」は本プロジェクト
     が繰り返し踏んでいる形で、直近も `<<ThemeChanged>>` での貼り直しが root に

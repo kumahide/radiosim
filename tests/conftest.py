@@ -771,6 +771,36 @@ def _taskbar_is_never_the_dev_machines():
         window_fit.work_areas = real            # type: ignore[assignment]
 
 
+# 表示環境の監視（`views.theme.watch_display`）は「静けさ」を待つ設計なので、
+# テストは**実時間**を待たされる。⇒ 待ち時間の定数を**同じ比のまま** 1/25 に縮める。
+# 🔴 **速さに賭けるのとは違う**（B-082 の教訓は保つ）＝待ち方は `pump_until`
+# （条件で待つ）のままで、縮めるのは「アプリが自分に課している間隔」だけ。
+# 実測＝これだけで test_theme が 16.2 → 8.4 秒（2026-08-23）。
+FAST_DISPLAY_MS = {
+    "_DISPLAY_DEBOUNCE_MS"    : 10,    # 実物 250
+    "_DISPLAY_LANDING_MS"     : 10,    # 実物 250
+    "_DISPLAY_DEBOUNCE_MAX_MS": 30,    # 実物 750
+    "_DISPLAY_SETTLE_MS"      : 32,    # 実物 800
+}
+
+
+@pytest.fixture(autouse=True)
+def _fast_display_constants(request, monkeypatch):
+    """既定で待ち時間を縮める。**実物の値で通す経路は `real_debounce` で残す。**
+
+    ⚠️ **既定を「速い方」にするのが要点**＝監視のテストを新しく書く人が「速くする
+    指定」を思い出す必要が無い（[[feedback-promote-recurring-checks]]＝思い出す
+    規則にしない）。逆に、**出荷する値そのもので通す 1 本**が明示的に手を挙げる
+    （`@pytest.mark.real_debounce`）。その 1 本が無いと「縮めた値でしか通らない
+    実装」が素通りする。
+    """
+    if "real_debounce" in request.keywords:
+        return                                     # 出荷する値そのもので走る
+    from views import theme as _theme
+    for name, value in FAST_DISPLAY_MS.items():
+        monkeypatch.setattr(_theme, name, value)
+
+
 @pytest.fixture(autouse=True)
 def _tk_garbage_never_escapes():
     """テストが残した循環ゴミを、**メインスレッドで**片付けてから次へ進む。"""
