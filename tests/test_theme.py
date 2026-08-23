@@ -782,6 +782,46 @@ def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root
         theme.apply_fonts(root, dpi=96)
 
 
+def test_watch_display_restores_a_size_that_was_enlarged_after_the_change(root):
+    """↑の逆向き＝**大きくされた**ときも戻すこと（B-118・独立レビュー 35 巡目）。
+
+    🔴 **害の出る向きは契機によって逆になる**＝画面が狭くなった（解像度変更・
+    リモート再接続）ときは `fit_to_content` が窓を縮めるので、そこへ OS が元の
+    大きい寸法を戻すと**窓が画面からはみ出す**。最初の実装は「小さくされたとき
+    だけ」を見ており、この向きが素通りしていた（＝「解像度変更もまとめて塞いだ」
+    という当初の主張が誤りだった）。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144
+        win.geometry("201x100+10+10")
+        root.update()
+        pump_until(root, lambda: notified)
+
+        # 画面が狭くなって縮めた窓に、OS が元の大きい寸法を戻した相当。
+        win.geometry("400x300+10+10")
+        root.update()
+        pump_until(root, lambda: len(notified) >= 2)
+
+        assert len(notified) >= 2, (
+            "大きくされた側が素通りしている＝窓が画面からはみ出したまま戻らない。"
+        )
+    finally:
+        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
 def test_watch_display_does_not_refit_a_window_the_user_moved(root):
     """↑の裏＝**上書きされていなければ確かめ直しは何もしない**こと（B-118）。
 
