@@ -37,7 +37,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core import i18n
 from core import simulation as sim
-from conftest import make_themed_root
+from conftest import make_themed_root, structural_skip
 from views import window_fit
 
 _VIEWS_DIR = os.path.join(os.path.dirname(__file__), "..", "views")
@@ -866,7 +866,20 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
         i18n.set_lang("ja")
         win, _ = _open_scenario(root)
         escape = win._fit_scroll
-        assert not escape.active[0], "前提が崩れている（最初から溢れている）"
+        # 🔴 **前提は主張ではない**（2026-08-23・I-108）＝「開いた直後はまだ溢れて
+        # いない」は**その機械の画面が窓を持てるとき**にだけ成り立つ。実測＝表示
+        # スケール 150% では `need=(843, 989)` に対し画面が 1707x960 しかなく、
+        # 装飾を引いた 921 で頭打ちする ⇒ **開いた瞬間から逃げ道が出るのが正しい**。
+        # そこを `assert` で書いていたので、**製品ではなく実行環境が赤を出した**
+        # （Stop フックの QA ゲートが 150% のときだけ落ちる）。
+        # ⚠️ **`assert` を消すだけにしない**＝前提が崩れたまま下の主張だけ通ると、
+        # テストは緑のまま何も見なくなる（*一度も落ちないゲート*へ化ける）。
+        # ⇒ **宣言つきの skip**にして、「走らなかった」ことを台帳に残す。
+        if escape.active[0]:
+            pytest.skip(structural_skip(
+                f"画面がこの窓を持てない（need={win._fit_need} "
+                f"screen={win.winfo_screenwidth()}x{win.winfo_screenheight()}）"
+                "＝開いた直後から溢れているので、この検査の前提が無い"))
 
         need_h = win._fit_need[1]
         root.deiconify()

@@ -56,6 +56,11 @@ _FONTS = ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkFixedFont")
 #: ドラッグ中に数えた 6px 刻み（窓ごと）。
 _DRIFTS: "dict[str, int]" = {}
 
+#: **暴走**と呼ぶ下限（これ未満は「1 度の言い直し」＝正常系にも在る形）。
+#: 8.6 は 3 秒で 55 回・Tk 9 は 1 回だった（2026-08-23）＝間は大きく空いているので、
+#: 境目の値そのものに意味は無い。**0 と非 0 で切らない**ことだけが要点。
+_RUNAWAY_MIN = 5
+
 
 def log(tag: str, msg: str) -> None:
     print(f"{(time.perf_counter() - T0) * 1000:9.0f}ms  {tag:<6} {msg}", flush=True)
@@ -79,11 +84,30 @@ def set_dpi_awareness() -> str:
     return "none"
 
 
+def os_dpi(win: "tk.Misc") -> int:
+    """**OS が言う**この窓の DPI（`GetDpiForWindow`）。
+
+    🔴 **契機の検出に `winfo_fpixels("1i")` を使ってはいけない**（2026-08-23 に踏んだ）＝
+    **Tk 8.6 では起動時のスクリーン値で固定**で、スケールを変えても 1 も動かない
+    （`views/theme.py:220` に我々自身が書いてある）。それを見張る探針は**永久に
+    無言**になる＝1 度目の採取を丸ごと落とした。⇒ 製品（`theme._display_dpi`）と
+    **同じ API** で見る。
+    ⚠️ `winfo_fpixels` の側は**測る対象としては残す**＝Tk 9 がそこを更新するなら、
+    それ自体が「Tk が DPI を掴み直している」印になる。
+    """
+    try:
+        import ctypes
+        return int(ctypes.windll.user32.GetDpiForWindow(win.winfo_id()))
+    except Exception:
+        return 0
+
+
 def snapshot(root: tk.Tk) -> "dict[str, object]":
     """いまの「見え方」を 1 枚に固める（前後で引き算する材料）。"""
     shot: "dict[str, object]" = {
         "scaling": round(float(root.tk.call("tk", "scaling")), 4),
-        "dpi": int(root.winfo_fpixels("1i")),
+        "os_dpi": os_dpi(root),
+        "tk_fpixels": int(root.winfo_fpixels("1i")),
     }
     for name in _FONTS:
         try:
@@ -101,7 +125,7 @@ def report(before: "dict[str, object]", after: "dict[str, object]") -> bool:
     print("\n=== ③ フォント追従 ===", flush=True)
     print(f"{'項目':<16}{'変更前':<22}{'変更後':<22}{'追従':<6}", flush=True)
     followed = False
-    for key in ("scaling", "dpi", *_FONTS):
+    for key in ("scaling", "os_dpi", "tk_fpixels", *_FONTS):
         b, a = before.get(key), after.get(key)
         same = b == a
         if key in _FONTS and not same:
@@ -115,7 +139,7 @@ def report(before: "dict[str, object]", after: "dict[str, object]") -> bool:
     else:
         print("⛔ **③ 不通過**＝字は変わらない ⇒ Tk 9 でも DPI 追従の実装は要る "
               "（移行の実利がここで 1 つ消える）", flush=True)
-    print("⚠️ `scaling` / `dpi` だけが動いても③は通らない＝それは画面サイズ側"
+    print("⚠️ `scaling` / `os_dpi` だけが動いても③は通らない＝それは画面サイズ側"
           "（B-022）で、Tk 9 でも別途要る。", flush=True)
     return followed
 
@@ -220,19 +244,31 @@ def drag_all(root: tk.Tk, pair: "list[tuple[str, tk.Toplevel]]") -> None:
 def verdict() -> None:
     fixed = _DRIFTS.get("BARE-fixed", 0)
     resizable = _DRIFTS.get("BARE-resizable", 0)
-    print("\n=== B-119（Tk 8.6 の基準値＝fixed 55 回 / resizable 0 回）===", flush=True)
-    print(f"BARE-fixed      (0, 0)   {'🔴' if fixed else '✅'} {fixed} 回", flush=True)
-    print(f"BARE-resizable  (1, 1)   {'🔴' if resizable else '✅'} {resizable} 回",
-          flush=True)
-    if fixed:
-        print("\n⛔ **B-119 は Tk 9 でも残る**＝移行しても利用者への案内"
-              "（表示スケールを変えたら再起動）は外せない", flush=True)
+    print()
+    print("=== 暴走（Tk 8.6 の基準値＝fixed 55 回 / resizable 0 回）===", flush=True)
+    for name, hits in (("BARE-fixed      (0, 0)", fixed),
+                       ("BARE-resizable  (1, 1)", resizable)):
+        mark = "🔴" if hits >= _RUNAWAY_MIN else ("⚠️" if hits else "✅")
+        print(f"{name}   {mark} {hits} 回", flush=True)
+    print()
+    # 🔴 **「0 か否か」で判定しない**（2026-08-23 に踏んだ）＝暴走は**自励ループ**で、
+    # 8.6 では 3 秒に 55 回刻む。**1 回だけの 6px は「調整」**であって暴走ではない
+    # （スケール変更後に 1 度だけ言い直される形は正常系にも在る）。
+    # ⚠️ 0 と 55 の間を潰すと、**質の違う 2 つを同じ赤で塗る**＝結論を誤らせる。
+    if fixed >= _RUNAWAY_MIN:
+        print(f"⛔ **暴走は残る**（{fixed} 回＝自励ループ）＝移行しても"
+              "利用者への案内（表示スケールを変えたら再起動）は外せない", flush=True)
+    elif fixed:
+        print(f"⚠️ **暴走ではない**＝6px は {fixed} 回で止まった"
+              "（8.6 は同じ 3 秒で 55 回）。**自励ループは再現していない**が、"
+              "**0 でもない**＝1 度の言い直しは起きている", flush=True)
     else:
-        print("\n✅ **B-119 が消えた**＝移行の費用対効果を決める最大の材料"
-              "（ただし 8.6 で暴走することを同じ探針で確かめた上での比較か要確認）",
-              flush=True)
-    print("\n（窓は開いたままです＝閉じて構いません）", flush=True)
-
+        print("✅ **6px 刻みが 1 度も出なかった**", flush=True)
+    print("⚠️ **8.6 の基準値は別の探針で採ったもの**＝厳密な対照にするには、"
+          "この探針を 8.6 でも `--no-drag` 無しで 1 度回すこと"
+          "（対照が暴走しない巡は無効＝暴走の有無ではなく測り方を疑う）。", flush=True)
+    print()
+    print("（窓は開いたままです＝閉じて構いません）", flush=True)
 
 def main() -> None:
     no_drag = "--no-drag" in sys.argv
@@ -255,8 +291,9 @@ def main() -> None:
 
         🔑 ここで `apply_fonts` 相当のことを 1 行でもやると③の測定が壊れる
         （追従したのが Tk なのか我々なのか分からなくなる）。
+        ⚠️ **見るのは `os_dpi`**＝`winfo_fpixels` は 8.6 では動かない（上の註）。
         """
-        if not state["done"] and int(root.winfo_fpixels("1i")) != before["dpi"]:
+        if not state["done"] and os_dpi(root) != before["os_dpi"]:
             state["done"] = True
             # 追従が非同期の場合に取りこぼさないよう、少し置いてから固める。
             root.after(1500, settle)
