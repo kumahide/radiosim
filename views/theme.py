@@ -505,7 +505,7 @@ def watch_display(
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
     seen: "dict[str, tuple]" = {}
-    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None, "landing": None, "was_dpi": None}
+    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None, "landing": None, "was_dpi": {}}
 
     def _windows() -> "list[tk.Tk | tk.Toplevel]":
         # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
@@ -553,6 +553,12 @@ def watch_display(
                 continue
             if dpi != prev[0]:
                 moved_dpi = dpi
+                # 🔴 **移動元の DPI は窓ごと**（2026-08-23・独立レビュー 42 巡目）。
+                # `_applied_dpi["value"]` は**アプリ全体の字が従っている値**なので、
+                # 別 DPI のモニタに置いた子窓を戻す場合は移動元と一致しない
+                # （全体が 96 のまま 240 の子窓を 96 へ戻すと 96 と読めてしまい、
+                # 倍率が下がる向きの補正がまた拒否される＝41 巡目の直しが死ぬ）。
+                state["was_dpi"][name] = prev[0]
             if screen != prev[1] or area != prev[2]:
                 # 🔴 **載っているモニタが変わった**のも契機（2026-08-15・B-088）。
                 # `screen_size()` はプライマリの値なので、**同じ DPI で解像度だけ
@@ -562,12 +568,10 @@ def watch_display(
                 screen_changed = True
         for name in set(seen) - alive:
             del seen[name]                          # 閉じた窓を溜めない
+            state["was_dpi"].pop(name, None)
         if moved_dpi is None and not screen_changed:
             return
         if moved_dpi is not None:
-            # **貼り直す前の DPI**を控える＝`correct_landing` の物差しに要る
-            # （倍率が下がる向きでは、移動元の枠のほうが厚い＝41 巡目 P1）。
-            state["was_dpi"] = _applied_dpi.get("value")
             apply_fonts(root, dpi=moved_dpi)
         if on_change is not None:
             args = (moved_dpi if moved_dpi is not None else window_dpi(root),
@@ -625,7 +629,8 @@ def watch_display(
     def _land() -> None:
         state["landing"] = None
         for win in _windows():
-            window_fit.correct_landing(win, from_dpi=state["was_dpi"])
+            window_fit.correct_landing(
+                win, from_dpi=state["was_dpi"].pop(str(win), None))
 
     def _arm_settle(args: tuple) -> None:
         if state["settle"] is not None:

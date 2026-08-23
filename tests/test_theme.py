@@ -1467,6 +1467,58 @@ def test_a_dpi_change_checks_that_the_window_landed(root):
         theme.apply_fonts(root, dpi=96)
 
 
+def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
+    """🔴 **移動元の DPI は窓ごとに配線されていること**（独立レビュー 42 巡目・P1）。
+
+    `_applied_dpi["value"]` は**アプリ全体の字が従っている値**であって、いま動いた
+    窓の移動元とは限らない。別 DPI のモニタに置いた子窓を戻す構成では、全体が 96 の
+    まま 240 の子窓を 96 へ戻すと移動元も 96 と読めてしまい、**倍率が下がる向きの
+    補正がまた拒否される**（41 巡目で入れた直しが配線で死ぬ）。
+
+    ⚠️ **`correct_landing` に DPI を直接渡すテストでは、この配線ミスは捕まらない**
+    ＝計算を検査するテストは「呼ばれ方」を検査しない（B-087/B-088 で踏んだ型）。
+    ここは**製品と同じ配線**（`watch_display`）を通す。
+    """
+    import tkinter as tk
+
+    from views import window_fit
+
+    fake = {"dpi": 240}
+    monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    theme._pointer_is_down = lambda: False         # type: ignore[assignment]
+    seen_from: list = []
+    real_correct = window_fit.correct_landing
+    window_fit.correct_landing = (                 # type: ignore[assignment]
+        lambda win, *, from_dpi=None: seen_from.append(from_dpi) or
+        real_correct(win, from_dpi=from_dpi))
+    try:
+        # アプリ全体の字は 96 のまま（＝子窓だけが高 DPI 側に居る構成）。
+        theme.apply_fonts(root, dpi=96)
+        theme.watch_display(root, lambda _d, _c: None)
+        win = tk.Toplevel(root)
+        win.geometry("400x300+10+10")
+        win._fit_size = (400, 300)
+        win._fit_asked = (400, 300)
+        root.update()
+
+        fake["dpi"] = 96                           # 240 の子窓を 96 側へ戻した
+        win.geometry("401x300+10+10")
+        root.update()
+        pump_until(root, lambda: seen_from,
+                   timeout_ms=theme._DISPLAY_LANDING_MS * 4 + 600)
+
+        assert seen_from and seen_from[0] == 240, (
+            f"着地の確認へ渡った移動元の DPI: {seen_from}（期待 240）"
+            "＝アプリ全体の値を渡していると、倍率が下がる向きの補正が拒否される。"
+        )
+    finally:
+        window_fit.correct_landing = real_correct  # type: ignore[assignment]
+        theme.window_dpi = monkey_dpi              # type: ignore[assignment]
+        theme._pointer_is_down = monkey_ptr        # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
 def test_the_debounce_has_a_deadline_so_a_storm_cannot_starve_it(root):
     """🔴 **静けさが来なくても 1 度は測ること**（2026-08-23・B-119）。
 
