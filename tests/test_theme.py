@@ -732,6 +732,42 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         theme.apply_fonts(root, dpi=96)
 
 
+def test_pointer_is_down_sees_the_swapped_primary_button(monkeypatch):
+    """**主ボタンを右に入れ替えた利用者**でもガードが効くこと（B-119）。
+
+    🔴 `GetAsyncKeyState` の `VK_LBUTTON` は**物理の左ボタン**で、Windows の
+    「主ボタンを入れ替える」設定に従わない（独立レビュー 37 巡目）。⇒ 入れ替えて
+    いる人は**物理右ボタン**で窓を掴むので、左だけ見ているとガードが素通りし、
+    その人にだけ B-119 が残る。
+
+    ⚠️ **どちらが主かは見ない**（`SM_SWAPBUTTON` を読まない）＝欲しいのは
+    「マウスを握っているか」だけで、握っている間は測り直しを先送りするだけ。
+    """
+    import ctypes
+
+    try:
+        user32 = ctypes.windll.user32
+    except (AttributeError, OSError):
+        pytest.skip("Win32 API のある環境でのみ意味がある")
+
+    held = {"vk": None}
+    monkeypatch.setattr(
+        user32, "GetAsyncKeyState",
+        lambda vk: (-32768 if vk == held["vk"] else 0), raising=False)
+
+    held["vk"] = 0x01                      # 物理左ボタン（既定の主ボタン）
+    assert theme._pointer_is_down() is True, "左ボタンを握っているのに拾えていない"
+
+    held["vk"] = 0x02                      # 物理右ボタン（入れ替えた人の主ボタン）
+    assert theme._pointer_is_down() is True, (
+        "主ボタンを右に入れ替えた環境でガードが素通りする"
+        "（その人にだけドラッグ中の測り直しが残る）。"
+    )
+
+    held["vk"] = None                      # どちらも押していない
+    assert theme._pointer_is_down() is False, "握っていないのに掴んでいる扱い"
+
+
 def test_watch_display_waits_while_the_user_holds_the_window(root):
     """🔴 **掴んでいる最中に測り直さないこと**（B-119）。
 

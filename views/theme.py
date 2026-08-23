@@ -401,6 +401,10 @@ _DISPLAY_DEBOUNCE_MS = 250
 # ＝**アプリを再起動するまで直らない**（実機で再現・再起動すれば正しい大きさになる）。
 _DISPLAY_SETTLE_MS = 800
 
+#: マウスボタンの仮想キー。**物理の左右**であって「主ボタン」ではない（下の註）。
+_VK_LBUTTON = 0x01
+_VK_RBUTTON = 0x02
+
 
 def _pointer_is_down() -> bool:
     """左ボタンが押されている＝**利用者がいま窓を掴んでいる**（Windows のみ）。
@@ -418,10 +422,18 @@ def _pointer_is_down() -> bool:
     ⚠️ Tk のイベントでは分からない＝タイトルバーのドラッグは**ウィンドウマネージャ
     の中で完結**しており、`<Button-1>` も `<B1-Motion>` も飛んでこない
     （`<Configure>` だけが結果として届く）。だから OS に直接聞く。
+
+    ⚠️ **左右どちらのボタンも見る**（2026-08-23・独立レビュー 37 巡目）＝
+    `VK_LBUTTON` は**物理の左ボタン**で、Windows の「主ボタンを右に入れ替える」
+    設定には従わない。⇒ 入れ替えている利用者は**物理右ボタン**で窓を掴むので、
+    左だけ見ているとガードが素通りする。**どちらが主かを知る必要は無い**
+    （`SM_SWAPBUTTON` は読まない）＝欲しいのは「利用者がマウスを握っているか」
+    だけで、握っている間は測り直しを 250ms 先送りするだけだから、多めに拾って困らない。
     """
     try:
         import ctypes
-        return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+        get = ctypes.windll.user32.GetAsyncKeyState
+        return bool((get(_VK_LBUTTON) | get(_VK_RBUTTON)) & 0x8000)
     except Exception:
         return False
 
