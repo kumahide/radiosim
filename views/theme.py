@@ -394,6 +394,13 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
 # <Configure> は移動・リサイズのたびに飛ぶので、まとめて 1 回にする間隔。
 _DISPLAY_DEBOUNCE_MS = 250
 
+# 🔴 **追従を一発勝負にしないための「落ち着いた頃の確かめ」**（2026-08-23・B-118）。
+# 表示スケールの変更は**デスクトップ全体の作り直し**で、上のデバウンス（250ms の
+# 静けさ）の後にも OS 側の測り直しが届く。⇒ 我々が選んだ大きさが**上書きされる**
+# ことがあり、そのとき DPI はもう変わらないので `_check` は二度と発火しない
+# ＝**アプリを再起動するまで直らない**（実機で再現・再起動すれば正しい大きさになる）。
+_DISPLAY_SETTLE_MS = 800
+
 
 def watch_display(
     root: tk.Misc, on_change: "Callable[[int, bool], None] | None" = None
@@ -447,7 +454,7 @@ def watch_display(
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
     seen: "dict[str, tuple]" = {}
-    state: "dict[str, Any]" = {"after": None}
+    state: "dict[str, Any]" = {"after": None, "settle": None}
 
     def _windows() -> "list[tk.Tk | tk.Toplevel]":
         # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
@@ -502,8 +509,51 @@ def watch_display(
         if moved_dpi is not None:
             apply_fonts(root, dpi=moved_dpi)
         if on_change is not None:
-            on_change(moved_dpi if moved_dpi is not None else window_dpi(root),
-                      moved_dpi is not None)
+            args = (moved_dpi if moved_dpi is not None else window_dpi(root),
+                    moved_dpi is not None)
+            on_change(*args)
+            _arm_settle(args)
+
+    def _overridden(win: "tk.Tk | tk.Toplevel") -> bool:
+        """**選んだ大きさより小さくされている**か（＝誰かが上書きした）。
+
+        ⚠️ **小さい方向だけを見る**＝大きい側は「利用者が広げた窓」で、狭めるのは
+        余計なお世話（`grow_only` の約束そのもの）。害が出るのは中身が入らなくなる
+        小さい方向だけ。
+        """
+        chosen = getattr(win, "_fit_size", None)
+        if not chosen:
+            return False            # `fit_to_content` を通っていない窓は対象外
+        try:
+            return (win.winfo_width() < chosen[0]
+                    or win.winfo_height() < chosen[1])
+        except tk.TclError:
+            return False            # 破棄途中の窓
+
+    def _arm_settle(args: tuple) -> None:
+        if state["settle"] is not None:
+            try:
+                root.after_cancel(state["settle"])
+            except tk.TclError:
+                pass
+        state["settle"] = root.after(_DISPLAY_SETTLE_MS, lambda: _settle(args))
+
+    def _settle(args: tuple) -> None:
+        """落ち着いた頃に**選んだ大きさが残っているか**を確かめ、消えていたら測り直す。
+
+        🔴 **これが無いと追従は一発勝負**（B-118）＝デバウンスの静けさの後に OS が
+        窓を測り直すと、以後 DPI は変わらないので `_check` は二度と発火せず、
+        **再起動するまで直らない**（字だけ大きくなって窓は元のまま＝両方向に
+        スクロールバーが出る）。
+        ⚠️ **無条件にもう一度やるのではなく、上書きされたときだけ**＝素通りの
+        再実行にすると、利用者が変更直後に窓を動かしただけで元へ戻ってしまう。
+        """
+        state["settle"] = None
+        if on_change is None:
+            return
+        if not any(_overridden(win) for win in _windows()):
+            return
+        on_change(*args)
 
     def _on_configure(event: "tk.Event") -> None:
         # トップレベル自身の Configure だけ見る（子ウィジェットの分は無視）。

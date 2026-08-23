@@ -732,6 +732,96 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         theme.apply_fonts(root, dpi=96)
 
 
+def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root):
+    """🔴 **追従は一発勝負にしない**（B-118）＝落ち着いた頃に確かめ直すこと。
+
+    表示スケールの変更は**デスクトップ全体の作り直し**で、デバウンス（250ms の
+    静けさ）の後にも OS 側の測り直しが届く。そこで我々が選んだ大きさが上書き
+    されると、**以後 DPI はもう変わらないので `_check` は二度と発火しない**＝
+    字だけ大きくなって窓は元のまま（両方向にスクロールバーが出る）状態が
+    **アプリを再起動するまで直らない**。実機で再現し、再起動すれば正しい大きさに
+    なることまで確認した（＝寸法の計算ではなく追従の契機の欠陥）。
+
+    ⚠️ **無条件の再実行では駄目**（下の裏のテスト）＝スケールを変えた直後に
+    利用者が窓を動かしただけで元へ戻ってしまう。**上書きされたときだけ**動く。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)                 # `fit_to_content` が選んだ大きさ
+        root.update()
+
+        fake["dpi"] = 144                          # 表示スケールを 150% にした
+        win.geometry("201x100+10+10")
+        root.update()
+        pump_until(root, lambda: notified)
+        assert notified == [(144, True)], f"スケール変更が通知されていない: {notified}"
+
+        # ここで OS が後から窓を測り直した（＝我々の geometry が上書きされた）。
+        win.geometry("120x60+10+10")
+        root.update()
+        pump_until(root, lambda: len(notified) >= 2)
+
+        assert len(notified) >= 2, (
+            "選んだ大きさを奪われたまま、二度と測り直されない"
+            "（＝再起動するまで直らない）。"
+        )
+        assert notified[1] == (144, True), (
+            f"確かめ直しが「DPI が変わった」として来ていない: {notified}"
+            "（縮む方向の測り直しが効かない＝I-053）。"
+        )
+    finally:
+        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
+def test_watch_display_does_not_refit_a_window_the_user_moved(root):
+    """↑の裏＝**上書きされていなければ確かめ直しは何もしない**こと（B-118）。
+
+    ここが無いと処方が「変更後 800ms は何をしても元へ戻る」になり、
+    *利用者が窓を動かす自由*を奪う（[[feedback-promote-recurring-checks]] の
+    壊れ方②＝毎回鳴るゲートと同じ形を、製品の側で作ってしまう）。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144
+        win.geometry("201x100+10+10")
+        root.update()
+        pump_until(root, lambda: notified)
+
+        # 大きさはそのままで**位置だけ**動かした（＝利用者が窓を移動した）。
+        win.geometry("200x100+300+200")
+        root.update()
+        pump_until(root, lambda: len(notified) >= 2,
+                   timeout_ms=theme._DISPLAY_SETTLE_MS + 400)
+
+        assert notified == [(144, True)], (
+            f"上書きされていないのに測り直しが走った: {notified}"
+            "（窓を動かすたびに大きさが戻る＝利用者の操作を奪う）。"
+        )
+    finally:
+        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
 def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monkeypatch):
     """**DPI が変わらない画面サイズの変化**でも測り直しが走ること（B-022）。
 
