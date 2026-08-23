@@ -2330,3 +2330,64 @@ def test_the_landing_check_accepts_a_slip_from_the_higher_scale_it_came_from():
         )
     finally:
         root.destroy()
+
+
+def test_a_fixed_size_window_is_pinned_so_the_wm_cannot_drift_it():
+    """🔴 **動かせない窓は決めた寸法に留める**（B-119）。
+
+    表示スケールを実行中に変えたあと窓をドラッグすると、**Tk が枠の厚みを変更前の
+    値のまま再適用し続ける**ので、1 回あたり 6px ずつ痩せていく（実機ログ）。
+    我々のコードは 1 行も関与しておらず、寸法を出し直して打ち消そうとすると
+    **その要求自体がもう 1 回ぶんのずれを生む**。⇒ 止められるのは「OS に動かさせない」
+    ことだけ（実測で `wm minsize`/`maxsize` を揃えると暴走が停止した）。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        win.resizable(False, False)                 # ランチャーと同じ（元から固定）
+        ttk.Label(win, text="中身" * 20).pack()
+        w, h = window_fit.fit_to_content(win, min_w=300, min_h=200)
+        win.update()
+
+        assert window_fit.pin_size(win) is True, "動かせない窓が留められていない"
+        assert win.minsize() == [w, h] or tuple(win.minsize()) == (w, h), (
+            f"下限が決めた寸法になっていない: {win.minsize()}（期待 {(w, h)}）"
+        )
+        assert tuple(win.maxsize()) == (w, h), (
+            f"上限が決めた寸法になっていない: {win.maxsize()}（期待 {(w, h)}）"
+            "＝上限が空いていると、倍率を下げた向きで窓が太り続ける。"
+        )
+    finally:
+        root.destroy()
+
+
+def test_a_resizable_window_is_never_pinned():
+    """↑の裏＝**リサイズできる窓からは大きさの自由を奪わないこと**（B-119）。
+
+    ⚠️ ここを一般化すると、バッチ・条件探索・中継経路・グラフ・地図から**利用者の
+    リサイズを奪う**。B-119 の処方が代償なしで効くのは、ランチャーが元から
+    `resizable(False, False)` だからで、**その条件が無い窓へ広げてはいけない**。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        win.resizable(True, True)
+        ttk.Label(win, text="中身" * 20).pack()
+        window_fit.fit_to_content(win, min_w=300, min_h=200)
+        win.update()
+        before = tuple(win.maxsize())
+
+        assert window_fit.pin_size(win) is False, (
+            "リサイズできる窓を留めている（利用者から大きさの自由を奪う）"
+        )
+        assert tuple(win.maxsize()) == before, "上限が書き換えられている"
+    finally:
+        root.destroy()

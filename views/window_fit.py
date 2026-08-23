@@ -859,6 +859,43 @@ def correct_landing(
     return True
 
 
+def pin_size(win: "tk.Tk | tk.Toplevel") -> bool:
+    """**大きさを変えられない窓**を、決めた寸法にピン留めする。留めたら True。
+
+    🔴 **なぜ要るか**（2026-08-23・B-119）。表示スケールを実行中に変えたあと窓を
+    ドラッグすると、**Tk が枠の厚みを変更前の値のまま再適用し続ける**ので、窓が
+    **1 回あたり 6px ずつ痩せていく**（150% で `2 ×(11 − 8)`。倍率を下げた場合は
+    同じだけ太る）。実機ログで確定した性質は 3 つ:
+
+      - **我々のコードは 1 行も関与していない**（`wm geometry` の呼び出しは 0 件）。
+      - **打ち消そうとすると悪化する**＝寸法を出し直すと、その要求自体がもう 1 回
+        ぶんのずれを生む（`correct_landing` だけでは勝てない）。
+      - ⛔ **Tk の持っている値を外から直す道は無い**（窓の建て直し・ラッパー窓の
+        作り直し・メニューの付け直し・位置同時指定・往復指定は**すべて無効**）。
+
+    ⇒ **止められるのは「OS に動かさせない」ことだけ**＝`wm minsize` と `wm maxsize`
+    を決めた寸法に揃えると、Tk が何度再適用しても寸法が動かない（実測で暴走が停止）。
+
+    ⚠️ **大きさを変えられる窓には掛けない**＝掛ければ利用者から**リサイズを奪う**。
+    ランチャーは元から `resizable(False, False)` なので、ここでの固定は
+    **利用者から見て何も変わらない**（＝代償なしで効く唯一の窓）。
+    ⛔ **リサイズできる窓（バッチ・条件探索・中継経路・グラフ・地図）は対象外**
+    ＝同じ欠陥があるかは未確認で、あったとしても処方はこれではない。**確かめずに
+    広げない**（[[feedback-user-examples-are-classes]] の逆＝クラスの過剰一般化）。
+    """
+    want = getattr(win, "_fit_size", None)
+    if not want:
+        return False
+    try:
+        if any(win.wm_resizable()):
+            return False                # 利用者が大きさを変えられる窓は触らない
+        win.minsize(want[0], want[1])
+        win.maxsize(want[0], want[1])
+    except tk.TclError:
+        return False                    # 破棄途中の窓
+    return True
+
+
 def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     """`win` が中身を収めるのに必要な `(幅, 高さ)`。
 

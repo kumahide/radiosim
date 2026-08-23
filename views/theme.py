@@ -631,6 +631,13 @@ def watch_display(
         for win in _windows():
             window_fit.correct_landing(
                 win, from_dpi=state["was_dpi"].pop(str(win), None))
+            # 🔴 **言い直したうえで、動かせない窓は留める**（B-119）＝Tk は表示
+            # スケールを変えたあと枠の厚みを古い値のまま再適用し続けるので、
+            # ドラッグのたびに寸法が 6px ずつずれる。**打ち消す側では勝てない**
+            # （出し直す要求が、もう 1 回ぶんのずれを生む）ので、OS に動かさせない。
+            # ⚠️ 直前の言い直し（`608x1197`）はこの上限で `602x1197` に丸められる
+            # ＝結果として**決めた寸法にぴたりと着地する**（バーの出し入れも決着する）。
+            window_fit.pin_size(win)
 
     def _arm_settle(args: tuple) -> None:
         if state["settle"] is not None:

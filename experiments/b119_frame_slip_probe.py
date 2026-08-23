@@ -24,10 +24,51 @@
   * `SIZE` の直前に `WMGEO` がある       ⇒ その呼び出し元が犯人
   * `FRAME` が実際の DPI と食い違ったまま ⇒ **Tk の枠の厚みが古い**（本命の仮説）
 
-環境変数:
-  RADIOSIM_B119_REFRESH=1 …… DPI が変わったあとに窓を建て直して（withdraw →
-      deiconify）**Tk に枠の厚みを測り直させる**。これでドラッグの暴走が止まる
-      なら、直し方はそこだと確定する（候補の検証を 1 回の採取で済ませるため）。
+確定していること（2026-08-23 の採取 2 本）:
+  * ドリフト量は**両方向とも 6px** ＝ `装飾幅(144) − 装飾幅(96)` ＝ `2 ×(11 − 8)`
+    ⇒ **Tk が持っている枠の厚みがスケール変更前のまま**で、再適用のたびにその差が乗る。
+  * 暴走中に `WMGEO` は 1 行も出ない ⇒ **我々のコードは再適用していない**。
+  * `correct_landing`（RC6）は正しく動き、**ドラッグが始まるまでは安定している**。
+  * ⛔ **withdraw → deiconify では直らない**（`RADIOSIM_B119_REFRESH=1` で棄却済み）。
+
+環境変数（`RADIOSIM_B119_FIX` で 1 つ選ぶ）:
+  nomenu   …… **メニューバーを外して**起動する（切り分け）。これで暴走しなければ、
+               Tk の高さ計算（メニュー込み）が絡んでいると分かる。⚠️ 直し方ではなく
+               **原因の切り分け**（製品からメニューを外すことはしない）。
+  menu     …… DPI が変わったあとに**メニューバーを付け直す**（Tk に枠を測り直させる候補）。
+  override …… DPI が変わったあとに `overrideredirect` を往復させる（Tk の内部で
+               ラッパー窓を作り直させる候補。装飾が一瞬消える）。
+  refresh  …… withdraw → deiconify（**棄却済み**。対照として残してある）。
+  both     …… 大きさと位置を**1 つの要求**で出し直す（`WxH+X+Y`）。製品は大きさだけ
+               `fit_to_content` が、位置だけ `place_within_screen` が別々に出しており、
+               Tk がその 2 つを別の枠の値で解釈している可能性を潰す。**製品に入れやすい**。
+  twice    …… `w+1` → `w` と 2 度出す（Tk に往復させて枠を合わせ直させる）。**製品に入れやすい**。
+  release  …… `wm geometry ""` で要求そのものを手放す（Tk が中身の要求サイズに従う）。
+               ⚠️ 画面上限へのクランプが効かなくなるので、効いても採用は要検討。
+
+  ✅ minmax …… 決めた寸法で `wm minsize` / `wm maxsize` を**固定**する。
+               **これだけが効いた**（実測＝手当ての後、ドラッグ中も `SIZE` が 1 行も
+               出ない）。⇒ 製品では `pin_size()` として採用。ランチャーは元から
+               `resizable(False, False)` なので**利用者から見て何も変わらない**。
+  toolwindow …… `wm attributes -toolwindow` を往復させる（`overrideredirect` とは別の
+               経路で Tk にラッパー窓を作り直させる候補）。
+
+⛔ **棄却済み**（同じ発想に戻らないための記録）:
+  * `nomenu`  …… メニューバーを外しても**幅は 6px ずつ縮み続けた** ⇒ メニューは無関係。
+                  （ただし高さのドリフト 27px は +3px に変わった ⇒ **高さ側だけ**はメニュー由来）
+  * `refresh`  …… withdraw → deiconify では止まらない。
+  * `both`     …… 大きさと位置を 1 つの要求で出しても止まらない。
+  * `twice`    …… `w+1` → `w` の往復でも止まらない。
+  * `override` …… ラッパー窓を作り直しても止まらない。
+  * `noescape` …… **受け皿の `<Configure>` 処理を全部止めても幅は減り続ける**
+                   ⇒ 燃料は我々の受け皿ではない。⚠️ ただし**高さのドリフト（27px）は消えた**
+                   ＝高さ側だけは受け皿由来。**幅の 6px は Tk/WM の中だけで完結している。**
+  * `noitem`   …… `itemconfig` を値が変わるときだけにしても止まらない。
+  * `release`  …… `wm geometry ""` は**悪化**（608 ⇄ 596 を延々往復する振動になる）。
+  * `toolwindow` …… 効果なし。
+  🔑 **3 つに共通していたこと**＝手当てで寸法を出し直した**直後に必ず 6px 減る**。
+     ⇒ 手当ての中身ではなく「**寸法を要求する行為そのもの**」が 1 回ぶんのずれを生む。
+     ⇒ 直すべきは「ずれを打ち消す」ことではなく「**要求を繰り返させない**」こと。
 """
 from __future__ import annotations
 
@@ -45,7 +86,7 @@ import main as app_main                      # noqa: E402
 from views import theme, window_fit          # noqa: E402
 
 T0 = time.perf_counter()
-REFRESH = os.environ.get("RADIOSIM_B119_REFRESH") == "1"
+FIX = os.environ.get("RADIOSIM_B119_FIX", "").strip().lower()
 
 
 def log(kind: str, text: str) -> None:
@@ -107,6 +148,27 @@ def frame_of(win) -> str:
         return f"(測れない: {exc})"
 
 
+def patch_escape() -> None:
+    """受け皿の `<Configure>` 処理に手を入れる（**窓を建てる前に**呼ぶ＝`bind` は
+    生成時にメソッドを捕まえるので、後から差し替えても既存の配線には効かない）。"""
+    esc = window_fit._ScrollEscape
+    if FIX == "noescape":
+        esc._on_canvas_configure = lambda self, event: None   # type: ignore[assignment]
+        esc._on_body_configure = lambda self, event=None: None  # type: ignore[assignment]
+        esc._on_win_configure = lambda self, event: None      # type: ignore[assignment]
+        log("INIT", "受け皿の Configure 処理を全部止めた（切り分け）")
+    elif FIX == "noitem":
+        def idempotent(self, event):
+            want_w = max(event.width, self.body.winfo_reqwidth())
+            want_h = max(event.height, self.body.winfo_reqheight())
+            now = self.canvas.itemcget(self.item, "width"),                 self.canvas.itemcget(self.item, "height")
+            if (str(want_w), str(want_h)) == (str(now[0]), str(now[1])):
+                return                       # 変わらないなら要求を出さない
+            self.canvas.itemconfig(self.item, width=want_w, height=want_h)
+        esc._on_canvas_configure = idempotent  # type: ignore[assignment]
+        log("INIT", "itemconfig を『変わるときだけ』にした（候補）")
+
+
 def build() -> tk.Tk:
     import ctypes
     log("INIT", f"dpi awareness = {app_main._set_dpi_awareness(ctypes.windll)}")
@@ -120,10 +182,63 @@ def build() -> tk.Tk:
     theme.apply_fonts(root)
     SimLauncher(root, lambda *_a: None)
     root.title("B-119 probe（スケールを変えてからドラッグ）")
+    if FIX == "nomenu":
+        # 切り分け＝メニューバーを外すと暴走が消えるか。
+        try:
+            root.config(menu=tk.Menu(root))     # 空のメニュー＝帯が無くなる
+            log("INIT", "メニューバーを外した（切り分け）")
+        except tk.TclError as exc:
+            log("INIT", f"メニューを外せない: {exc}")
     return root
 
 
+def apply_fix(root: tk.Tk) -> None:
+    """DPI が変わったあとに、候補の手当てを 1 つ試す。"""
+    if FIX == "refresh":
+        root.withdraw(); root.deiconify()
+    elif FIX == "menu":
+        # メニューバーを付け直す＝Tk に高さを測り直させる候補。
+        menu = root["menu"]
+        if menu:
+            root.config(menu="")
+            root.update_idletasks()
+            root.config(menu=menu)
+    elif FIX == "override":
+        # ラッパー窓を作り直させる候補（装飾が一瞬消える）。
+        root.overrideredirect(True)
+        root.update_idletasks()
+        root.overrideredirect(False)
+    elif FIX == "both":
+        # 大きさと位置を 1 つの要求で出し直す。
+        w, h = getattr(root, "_fit_size", (root.winfo_width(), root.winfo_height()))
+        x, y = window_fit.window_position(root)
+        root.geometry(f"{w}x{h}+{x}+{y}")
+    elif FIX == "twice":
+        w, h = getattr(root, "_fit_size", (root.winfo_width(), root.winfo_height()))
+        root.geometry(f"{w + 1}x{h}")
+        root.update_idletasks()
+        root.geometry(f"{w}x{h}")
+    elif FIX == "release":
+        root.geometry("")               # 要求を手放す（中身の要求サイズに従う）
+    elif FIX == "minmax":
+        w, h = getattr(root, "_fit_size", (root.winfo_width(), root.winfo_height()))
+        root.minsize(w, h)
+        root.maxsize(w, h)
+    elif FIX == "toolwindow":
+        try:
+            root.attributes("-toolwindow", True)
+            root.update_idletasks()
+            root.attributes("-toolwindow", False)
+        except tk.TclError as exc:
+            log("FRAME", f"toolwindow を切り替えられない: {exc}")
+    else:
+        return
+    root.update_idletasks()
+    log("FRAME", f"手当て({FIX})の後: {frame_of(root)}")
+
+
 def main() -> None:
+    patch_escape()
     install_bars_probe()
     install_landing_probe()
     root = build()
@@ -132,10 +247,8 @@ def main() -> None:
     def on_change(dpi: int, changed: bool) -> None:
         log("REFIT", f"dpi={dpi} changed={changed}  frame: {frame_of(root)}")
         window_fit.refit_all(root, shrink=changed)
-        if changed and REFRESH:
-            # 候補の検証＝Tk に枠の厚みを測り直させる。
-            root.after(300, lambda: (root.withdraw(), root.deiconify(),
-                                     log("FRAME", f"建て直した後: {frame_of(root)}")))
+        if changed and FIX:
+            root.after(400, lambda: apply_fix(root))
 
     orig_ptr = theme._pointer_is_down
 
@@ -162,7 +275,7 @@ def main() -> None:
 
     root.bind("<Configure>", on_configure, add="+")
     log("FRAME", f"起動時: {frame_of(root)}")
-    log("INIT", f"REFRESH={'あり' if REFRESH else 'なし'}  start={last['size']}")
+    log("INIT", f"FIX={FIX or 'なし'}  start={last['size']}")
     print("\n--- ここから: 表示スケールを変更 → ランチャーをドラッグ ---\n", flush=True)
     root.mainloop()
 
