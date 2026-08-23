@@ -40,6 +40,7 @@ Windows では最初からアプリ側の責任）。
 activeforeground で守る）。
 """
 
+import time
 import tkinter as tk
 from tkinter import ttk
 from typing import Any, Callable
@@ -394,6 +395,14 @@ def apply_fonts(root: tk.Misc, *, dpi: "int | None" = None) -> None:
 # <Configure> は移動・リサイズのたびに飛ぶので、まとめて 1 回にする間隔。
 _DISPLAY_DEBOUNCE_MS = 250
 
+# 🔴 **デバウンスの上限**（2026-08-23・B-119）＝ここまで待ったら、まだ静かに
+# ならなくても 1 度は測る。デバウンスは「静けさ」を待つので、**静けさが二度と
+# 来ない状況では永久に明けない**＝実機では窓が 120ms ごとに 6px ずつ縮み続け、
+# その 2.5 秒間 `_check` も `_settle` も 1 度も動けなかった（ログで確認）。
+# ⚠️ **いちばん助けが要る状況こそ静かにならない**＝追従が止まるのは「何かが
+# 暴れているとき」なので、締め切りの無いデバウンスは追従の穴になる。
+_DISPLAY_DEBOUNCE_MAX_MS = 750
+
 # 🔴 **追従を一発勝負にしないための「落ち着いた頃の確かめ」**（2026-08-23・B-118）。
 # 表示スケールの変更は**デスクトップ全体の作り直し**で、上のデバウンス（250ms の
 # 静けさ）の後にも OS 側の測り直しが届く。⇒ 我々が選んだ大きさが**上書きされる**
@@ -490,7 +499,7 @@ def watch_display(
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
     seen: "dict[str, tuple]" = {}
-    state: "dict[str, Any]" = {"after": None, "settle": None}
+    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None}
 
     def _windows() -> "list[tk.Tk | tk.Toplevel]":
         # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
@@ -511,6 +520,7 @@ def watch_display(
 
     def _check() -> None:
         state["after"] = None
+        state["since"] = None           # 締め切りを数え直す（B-119）
         if _pointer_is_down():
             # 🔴 **掴んでいる間は測らない**（B-119）＝ここで `seen` を更新すると
             # 変化を**消費**してしまい、手を離した後に測り直す機会も消える。
@@ -609,8 +619,15 @@ def watch_display(
         if _pointer_is_down():
             _arm_settle(args)       # 掴んでいる間は待つ（B-119）
             return
-        if not any(_overridden(win) for win in _windows()):
+        overridden = [win for win in _windows() if _overridden(win)]
+        if not overridden:
             return
+        # 🔴 **上書きされた理由が「枠に呑まれた」なら、その分を覚えてから測り直す**
+        # （2026-08-23・B-119）。覚えずにもう一度同じ寸法を要求すると、Tk が同じだけ
+        # 呑んでまた足りなくなる＝**測り直しが巻き戻しにしかならず、6px ずつ縮み
+        # 続ける**（実機ログ＝602 を要求 → 596 が返る → 590 → 584 …）。
+        for win in overridden:
+            window_fit.learn_landing_slip(win)
         on_change(*args)
 
     def _on_configure(event: "tk.Event") -> None:
@@ -623,7 +640,15 @@ def watch_display(
                 root.after_cancel(state["after"])
             except tk.TclError:
                 pass
-        state["after"] = root.after(_DISPLAY_DEBOUNCE_MS, _check)
+            state["after"] = None
+        if state["since"] is None:
+            state["since"] = time.monotonic()       # この連続の始まり
+        # 🔴 **静けさが来なくても締め切りで 1 度は測る**（B-119）。
+        waited_ms = (time.monotonic() - state["since"]) * 1000
+        delay = _DISPLAY_DEBOUNCE_MS
+        if waited_ms >= _DISPLAY_DEBOUNCE_MAX_MS:
+            delay = 0                               # もう待たない
+        state["after"] = root.after(delay, _check)
 
     root.bind_all("<Configure>", _on_configure, add="+")
 

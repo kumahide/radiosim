@@ -84,6 +84,13 @@ _DECORATION_96 = (16, 39)
 # `GetSystemMetricsForDpi` のインデックス（winuser.h）。
 _SM_CYCAPTION, _SM_CYSIZEFRAME, _SM_CXPADDEDBORDER = 4, 33, 92
 
+# 🔴 **要求した寸法との差を「枠の取り分」として学ぶ上限**（2026-08-23・B-119）。
+# これ以上のずれは枠の話ではない（利用者が窓を掴んで変えた・WM が要求を拒んだ）
+# ので**学ばない**＝ここに上限が無いと、手で大きく変えた寸法を「毎回の下駄」として
+# 覚え込み、以後すべての測り直しがその分ずれる。実測で必要なのは 150% の
+# 幅 6px / 高さ 27px なので、桁 1 つぶんの余裕を見てこの値。
+_FIT_SLIP_MAX = 96
+
 
 _GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
 
@@ -778,13 +785,62 @@ def fit_to_content(
             escape.sync(overflow_v=need_h > h, overflow_h=need_w > w)
 
     win._fit_size = (w, h)              # type: ignore[attr-defined]
-    win.geometry(f"{w}x{h}")
+    # 🔴 **前回この窓が呑まれた分を足して要求する**（2026-08-23・B-119）。
+    # `geometry()` が決めるのはクライアント領域だが、Tk は**枠の厚みを別 DPI へ
+    # 移った直後も古い値のまま持っている**ので、要求より 6px 狭い窓が返る（実測
+    # ＝144dpi で `602x1197` を要求して `596x1197`。6px は装飾幅 16→22 の差）。
+    # 呑まれたままにすると `need_w > 実幅` が**永久に成立**し、Tk と WM が
+    # 引き算し合って 6px ずつ縮み続ける（＝B-119 の本体）。⇒ 差を足して要求する。
+    slip_w, slip_h = getattr(win, "_fit_slip", (0, 0))
+    win.geometry(f"{w + slip_w}x{h + slip_h}")
     # 大きさが決まったら**置き場所も画面の中へ**（B-083）。⚠️ ここで `_fit_size`
     # を渡す＝`winfo_width()` は未表示のあいだ 1 を返すので、実測から測ると
     # 「どこに置いても入る」ことになり、このクランプは黙って無効になる。
     place_within_screen(win, size=(w, h), area=area)
     _thaw_table_columns(frozen)
     return w, h
+
+
+def learn_landing_slip(win: "tk.Tk | tk.Toplevel") -> bool:
+    """**要求した寸法に着地したか**を確かめ、ずれていたら次回のぶんを覚える。
+
+    返り値＝**もう一度測り直す価値があるか**（覚えた＝True）。
+
+    🔴 **なぜ要るか**（2026-08-23・B-119）。別 DPI のモニタへ窓を移すと、Tk 8.6 は
+    **窓枠の厚みを移る前の DPI のまま**持っている。そこへ `fit_to_content` が
+    `geometry("602x1197")` と要求すると、返ってくる窓は `596x1197`＝**幅が 6px
+    呑まれる**（6px は装飾幅が 16→22 に増えた差そのもの）。呑まれた 6px は
+    `need_w(602) > 実幅(596)` を**永久に成立**させ、Tk が要求を出し直すたびに
+    また 6px 減る ⇒ **手を離しても止まらずに縮み続ける**（実機ログで確認）。
+
+    ⚠️ **測るのは「落ち着いた後」**＝要求した直後の `winfo_width()` はまだ古い値を
+    返す（実測で 178ms 遅れて届いた）。だから `fit_to_content` の中で同期的に
+    確かめるのではなく、[views/theme](theme.py) の `_settle`（変更の 800ms 後）から
+    呼ぶ。**確かめ直しの経路は B-118 で既に在る**ので、そこへ相乗りする。
+
+    ⚠️ **大きなずれは学ばない**（`_FIT_SLIP_MAX`）＝それは枠の話ではなく、利用者が
+    窓を掴んで変えた結果か、WM が要求を拒んだ結果。覚えると**その寸法を下駄として
+    永久に履く**ことになる。
+    """
+    want = getattr(win, "_fit_size", None)
+    if not want:
+        return False                    # `fit_to_content` を通っていない窓は対象外
+    try:
+        got_w, got_h = win.winfo_width(), win.winfo_height()
+    except tk.TclError:
+        return False                    # 破棄途中の窓
+    if got_w <= 1 or got_h <= 1:
+        return False                    # 未表示＝実寸がまだ無い
+    slip_w, slip_h = want[0] - got_w, want[1] - got_h
+    if slip_w == 0 and slip_h == 0:
+        return False                    # 要求どおり着地している
+    if abs(slip_w) > _FIT_SLIP_MAX or abs(slip_h) > _FIT_SLIP_MAX:
+        return False                    # 枠の話ではない（上の註）
+    # **足し込む**＝下駄を履いたうえでなお呑まれる分だけを増やす。DPI が戻れば
+    # 差は逆向きに出るので、同じ式で 0 へ帰る（一方通行にしない）。
+    had_w, had_h = getattr(win, "_fit_slip", (0, 0))
+    win._fit_slip = (had_w + slip_w, had_h + slip_h)   # type: ignore[attr-defined]
+    return True
 
 
 def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:

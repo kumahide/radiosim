@@ -1410,3 +1410,97 @@ def test_launcher_dropdowns_follow_dpi():
         )
     finally:
         root.destroy()
+
+
+def test_the_settle_learns_the_frame_slip_before_measuring_again(root):
+    """🔴 **確かめ直しを「巻き戻し」で終わらせないこと**（2026-08-23・B-119）。
+
+    別 DPI のモニタへ移った直後、Tk は**枠の厚みを移る前の DPI のまま**持っている
+    ので、`geometry("602x1197")` を要求しても `596x1197` が返る（実機ログ）。
+    確かめ直し（B-118）はこのずれを「上書きされた」と正しく見つけるが、**同じ寸法を
+    もう一度要求するだけ**なら Tk がまた 6px 呑む ⇒ 巻き戻しにしかならず、
+    実機では 602 → 596 → 590 → 584 … と**手を離しても縮み続けた**。
+
+    ⇒ 確かめ直しは、測り直す**前に**そのずれを覚えなければならない。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey = theme.window_dpi
+    theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144
+        win.geometry("201x100+10+10")
+        root.update()
+        pump_until(root, lambda: notified)
+        assert notified, "前提が崩れている（DPI 変更が通知されていない）"
+
+        # 枠が 6px 呑んだ＝要求した 200 に対して実寸が 194。
+        win.geometry("194x100+10+10")
+        root.update()
+        pump_until(root, lambda: len(notified) >= 2)
+
+        assert win._fit_slip == (6, 0), (
+            f"呑まれた分を覚えずに測り直している: {getattr(win, '_fit_slip', None)}"
+            "（＝次も同じ寸法を要求して同じだけ呑まれる＝6px ずつ縮み続ける）。"
+        )
+    finally:
+        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
+def test_the_debounce_has_a_deadline_so_a_storm_cannot_starve_it(root):
+    """🔴 **静けさが来なくても 1 度は測ること**（2026-08-23・B-119）。
+
+    デバウンスは「静けさ」を待つ作りなので、**静けさが二度と来ない状況では永久に
+    明けない**。実機ログでは窓が 120ms ごとに 6px ずつ縮み続け、その 2.5 秒のあいだ
+    `_check` も `_settle` も 1 度も動けなかった＝**いちばん助けが要る状況でこそ
+    追従が止まる**（暴れているときほど `<Configure>` は止まらない）。
+
+    ここでは 100ms ごとに `<Configure>` を出し続け（＝250ms の静けさは永遠に来ない）、
+    それでも測り直しが届くことを固定する。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
+    theme.window_dpi = lambda _w: fake["dpi"]           # type: ignore[assignment]
+    theme._pointer_is_down = lambda: False              # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    storm = {"n": 0, "on": True}
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144                               # 別 DPI のモニタへ入った
+
+        def bump() -> None:
+            if not storm["on"]:
+                return
+            storm["n"] += 1
+            win.geometry(f"200x100+{10 + storm['n'] % 5}+10")
+            root.after(100, bump)                       # デバウンス(250ms)より短い
+
+        bump()
+        pump_until(root, lambda: notified,
+                   timeout_ms=theme._DISPLAY_DEBOUNCE_MAX_MS * 3 + 500)
+
+        assert notified == [(144, True)], (
+            f"Configure が止まらない間、測り直しが 1 度も届かない: {notified}"
+            "（＝縮み続けている最中こそ追従が止まる＝B-119 で実際に起きた形）。"
+        )
+    finally:
+        storm["on"] = False
+        theme.window_dpi = monkey_dpi                   # type: ignore[assignment]
+        theme._pointer_is_down = monkey_ptr             # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)

@@ -2191,3 +2191,85 @@ class TestTkGarbageIsSweptOnTheMainThread:
             assert arrived, "ワーカーの投函が UI まで届かない（配達の連鎖が回っていない）"
         finally:
             root.destroy()
+
+
+def _swallow(win, dw: int, dh: int) -> None:
+    """WM が要求より `(dw, dh)` 小さい窓を返した状態を作る（B-119 の再現）。"""
+    win.update_idletasks()
+    win.geometry(f"{win.winfo_width() - dw}x{win.winfo_height() - dh}")
+    win.update()
+
+
+def test_a_frame_that_swallows_pixels_is_compensated_on_the_next_fit():
+    """🔴 **要求した寸法に着地しなかったぶんを、次の要求で足すこと**（B-119）。
+
+    実機（FHD/100% ＋ WQHD/150%）で撮ったログ＝別 DPI のモニタへ移った直後、
+    `geometry("602x1197")` を出しても返ってくる窓は **`596x1197`**。Tk 8.6 が
+    **窓枠の厚みを移る前の DPI のまま**持っているためで、6px は装飾幅が
+    16 → 22 に増えた差そのもの。
+
+    ⚠️ **呑まれた 6px を放っておくと止まらない**＝`need_w(602) > 実幅(596)` が
+    永久に成立し、Tk が要求を出し直すたびにまた 6px 減る ⇒ **手を離しても
+    6px ずつ縮み続ける**（実測＝602 → 596 → 590 → 584 …）。測り直しは同じ寸法を
+    要求するだけなので**巻き戻しにしかならない**（ログで 2 度確認）。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        ttk.Label(win, text="中身" * 20).pack()
+        w, h = window_fit.fit_to_content(win, min_w=300, min_h=200)
+        win.update()
+
+        _swallow(win, 6, 0)                      # 枠が幅を 6px 呑んだ
+        assert window_fit.learn_landing_slip(win) is True, (
+            "要求した寸法に着地していないのに、ずれを覚えていない"
+        )
+        assert win._fit_slip == (6, 0), f"覚えた下駄が違う: {win._fit_slip}"
+
+        asked: list = []
+        real = tk.Toplevel.geometry
+        win.geometry = (                          # 何を要求したかだけ記録する
+            lambda spec=None: (asked.append(spec) if spec else None) or real(win, spec))
+        window_fit.fit_to_content(win, min_w=300, min_h=200)
+
+        sizes = [s for s in asked if "x" in s]
+        assert sizes, "測り直しが大きさを要求していない"
+        assert sizes[0] == f"{w + 6}x{h}", (
+            f"呑まれた 6px を足さずに同じ寸法を要求している: {sizes[0]}（期待 {w + 6}x{h}）"
+            "＝Tk がまた 6px 呑むので、窓は縮み続ける（B-119 の本体）。"
+        )
+    finally:
+        root.destroy()
+
+
+def test_a_size_the_user_changed_is_not_learned_as_a_frame_slip():
+    """↑の裏＝**大きなずれは「枠の取り分」として覚えないこと**（B-119）。
+
+    ⚠️ ここに上限が無いと、利用者が手で縮めた寸法を**毎回の下駄**として履き、
+    以後すべての測り直しがその分ずれる（＝直したい欠陥より広い害になる）。
+    枠の差は実測で幅 6px / 高さ 27px なので、桁 1 つぶんの余裕が `_FIT_SLIP_MAX`。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        ttk.Label(win, text="中身" * 20).pack()
+        window_fit.fit_to_content(win, min_w=400, min_h=300)
+        win.update()
+
+        _swallow(win, window_fit._FIT_SLIP_MAX + 20, 0)   # 利用者が手で大きく縮めた
+        assert window_fit.learn_landing_slip(win) is False, (
+            "枠の差では説明できない大きさのずれを、下駄として覚えている"
+        )
+        assert getattr(win, "_fit_slip", (0, 0)) == (0, 0), (
+            f"下駄を履いてしまった: {win._fit_slip}"
+        )
+    finally:
+        root.destroy()
