@@ -465,7 +465,7 @@ class TestAssignmentAudit:
         """
         doc = _doc(
             "### ★ B-001: 版が 1 つ", "", "- ★ **状態**: 未着手（✅ 3.0 確定）",
-            "### ★ B-002: 版が 2 つ", "", "- ★ **状態**: 未着手（行き先＝2.8。2.7 では直さない）",
+            "### ★ B-002: 候補が 2 つ", "", "- ★ **状態**: 未着手（2.8＝器の都合。3.0＝出力契約の都合）",
             "### ★ B-003: 決めていないと明記", "", "- ★ **状態**: 保留（**設計判断待ち**）",
             "### ★ B-004: 何も書いていない", "", "- ★ **状態**: 未着手",
             "### ★ B-005: 済は対象外", "", "- ★ **状態**: 済",
@@ -479,16 +479,47 @@ class TestAssignmentAudit:
                  + len(a["ambiguous"]) + len(a["pending"]) + len(a["undeclared"]))
         assert total == 4, f"4 分類の合計が未対応の総数と合わない: {total}"
 
-    def test_two_versions_in_one_state_line_go_to_ambiguous(self, hook):
-        """版が 2 つ見えるものは**人に読ませる**（機械で当てにいかない）。
+    def test_two_candidates_in_one_state_line_go_to_ambiguous(self, hook):
+        """**候補が 2 つ残る**ものは人に読ませる（機械で当てにいかない）。
 
-        実データ＝B-065 の状態欄は「行き先＝2.8」と「2.7 で直さない理由」を
-        両方含む。片方を選ぶ実装は、選び方を間違えても緑になる。
+        片方を選ぶ実装は、選び方を間違えても緑になる。⇒ どちらも肯定形で
+        名指ししている欄は、機械が決めない。
         """
         doc = _doc("### ★ B-065: t", "",
-                   "- ★ **状態**: 未着手（**行き先＝2.8**。2.7 で直さない理由は下）")
+                   "- ★ **状態**: 未着手（**2.8 の器に載る**。3.0 の契約にも関わる）")
         audit = hook.assignment_audit(doc)
         assert audit["ambiguous"] == ["B-065"] and audit["undeclared"] == []
+
+    def test_a_version_that_is_ruled_out_is_not_a_candidate(self, hook):
+        """🔴 **否定された版は「2 つ目の候補」ではない**（2026-08-24・I-111）。
+
+        旧実装は「版が 2 つ見える」で曖昧に倒していたが、実データの 2 つ目は
+        **ほぼ常に「その版では直さない理由」**だった（B-065・B-119・I-109）。
+        ⇒ *選ぶ*のではなく、**候補でないものを候補から外す**。これは
+        「片方を選ぶ実装は間違えても緑になる」という旧方針と矛盾しない。
+
+        ⚠️ **この欄はブロッキングのゲートも読む**（`check_memory` の在庫照合）＝
+        ここを曖昧に倒すと、行き先でない版の在庫に積めと要求してリリースを止める
+        （2026-08-24 に実際に止まり、**台帳の日本語を削って**緑にした）。
+        """
+        doc = _doc("### ★ B-065: t", "",
+                   "- ★ **状態**: 未着手（**行き先＝2.8**。2.7 では直さない）")
+        audit = hook.assignment_audit(doc)
+        assert audit["assigned"] == {"2.8": ["B-065"]}, audit
+        assert audit["ambiguous"] == [] and audit["undeclared"] == []
+
+    def test_a_pending_state_word_needs_no_mark(self, hook):
+        """`保留` は台帳の凡例が「設計判断待ち」と定義している＝語だけで判断待ち。
+
+        実データ＝B-119（`保留（… 2.9 では直さない …Tk 9 の評価待ち）`）を、
+        旧実装は **2.9 行き**と読んでいた。2.9 は出荷済みなので、台帳は
+        *済んだ版に未対応項目がぶら下がって見える*状態だった。
+        """
+        doc = _doc("### ★ B-119: t", "",
+                   "- ★ **状態**: 保留（既知の制限・2.9 では直さない＝Tk 9 の評価待ち）")
+        audit = hook.assignment_audit(doc)
+        assert audit["pending"] == ["B-119"], audit
+        assert audit["assigned"] == {}, audit
 
     def test_closed_items_are_not_audited(self, hook):
         """済・却下に行き先は要らない。"""
@@ -1214,6 +1245,32 @@ class TestVersionInventorySync:
         """
         roadmap = self._ROADMAP + ["2. **B-061 の残留リスク**", "3. **I-999 台帳に無い**"]
         assert memcheck.check_ledger_matches_inventory(self._LEDGER, roadmap, "2.8") == []
+
+    def test_a_version_named_only_to_rule_it_out_is_not_demanded(self, memcheck):
+        """🔴 **リリースを止めた実データ**をそのまま固定する（2026-08-24・I-111）。
+
+        I-109 の行き先は 3.1 で、状態欄には「**⚠️ `2.9` には入れない**」と
+        *入れない理由*が書いてあった。旧実装はこれを「2.9 と確定した」と読み、
+        **2.9 の在庫の欠け**として正式リリース工程の Tier-0 を止めた。
+        ⇒ そのとき緑にした手は**台帳の日本語を削ること**だった（応急を 2 回）。
+
+        ⚠️ この検査は**在庫節が存在する**状態で書く＝節が無いと
+        `inventory_ids_for_version` が `None` を返して**丸ごと黙る**ので、
+        通っても何も言っていないことになる（*一度も落ちないゲート*）。
+        """
+        ledger = [
+            "## 💡 改善案",
+            "### ★ I-109: 追加言語のキー一覧が配布版の手元に無い",
+            "- ★ **状態**: 未着手（**✅ 3.1 確定＝ユーザー決定**＝配布の芯と一致する。"
+            "⚠️ **`2.9` には入れない**＝新しい約束が 1 つ増えるので `+0.1` の器ではない）",
+        ]
+        roadmap = ["## 🔜 2.9 — 直せるようにする版", "1. **I-098 地図で直せる**",
+                   "## 🔜 3.1 — 配布"]
+        assert memcheck.check_ledger_matches_inventory(ledger, roadmap, "2.9") == [], \
+            "行き先でない版の在庫に積めと要求している（I-111 の再発）"
+        # ⚠️ 対で見る＝**本当の行き先では鳴る**こと（上だけだと「常に黙る」で緑になる）
+        found = memcheck.check_ledger_matches_inventory(ledger, roadmap, "3.1")
+        assert found and "I-109" in found[0], "行き先の在庫の欠けを見逃している"
 
     def test_version_token_matching_has_boundaries(self, memcheck):
         """`2.8` が `12.8` や `2.85` に当たらないこと（版の取り違え）。"""
