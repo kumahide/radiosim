@@ -28,6 +28,26 @@ import { git } from "./git-changes.mjs";
 // A dirty file bigger than this is not worth hashing every turn -> just run.
 const MAX_HASH_BYTES = 8 * 1024 * 1024;
 
+// Trees the suite can only see the *existence* of, never the content (2026-08-23).
+// WHY: experiments/ holds one-off probes. They are not product code — nothing in
+// the app imports them, they are outside the build, the type check and coverage
+// (experiments/README.md) — and since test_smoke's walker skips the directory, no
+// test reads a line of them. What the suite still checks is that documented .py
+// references resolve (test_docs_consistency), which depends on the file EXISTING,
+// not on what it says. So: hash the path, not the bytes. Editing a probe stops
+// invalidating the cached pass; adding or deleting one still runs the suite.
+//
+// The cost of not doing this was concrete: iterating on a probe re-ran the whole
+// suite once per turn, which is the same complaint I-056 fixed one level up
+// ("the gate rings every time" — feedback-promote-recurring-checks, failure
+// mode 2). A gate that answers a question nobody asked is not free; here it was
+// the thing making the actual investigation slow.
+// ⚠️ **.py だけ**。`experiments/README.md` は test_docs_consistency が読む（公開
+// 文書として課題 ID の混入を検査している＝実際にこの変更中に捕まえた）ので、
+// あそこを内容ブラインドにすると本物の検出力が落ちる。**盲目にしてよいのは
+// 「どのテストも 1 行も読まないファイル」だけ。**
+const isContentBlind = (p) => p.startsWith("experiments/") && p.endsWith(".py");
+
 // git-ignored trees whose contents the suite still verifies (test_claude_hooks).
 const UNTRACKED_DEPS = [
   { dir: ".claude", suffix: ".py" },
@@ -55,6 +75,27 @@ function statLines(cwd, { dir, suffix }) {
     }
   }
   return lines;
+}
+
+/** Every .py under `dir` (recursively), by path only — never by content. */
+function listingLines(cwd, dir) {
+  const out = [];
+  const walk = (rel) => {
+    let names;
+    try {
+      names = readdirSync(join(cwd, rel), { withFileTypes: true });
+    } catch {
+      return; // missing tree: nothing to list (an empty listing is a valid state)
+    }
+    for (const entry of [...names].sort((a, b) => a.name.localeCompare(b.name))) {
+      if (entry.name === "__pycache__" || entry.name === ".git") continue;
+      const child = `${rel}${entry.name}`;
+      if (entry.isDirectory()) walk(`${child}/`);
+      else if (child.endsWith(".py")) out.push(`listing\t${child}`);
+    }
+  };
+  walk(dir.endsWith("/") ? dir : `${dir}/`);
+  return out;
 }
 
 /** Cache key for the current working tree, or null if it cannot be computed
@@ -87,6 +128,10 @@ export function pytestCacheKey(cwd) {
       parts.push(`${state}\t${path}\tgone`); // deleted: no content to hash
       continue;
     }
+    // Content-blind trees are represented once, by their file listing (below).
+    // Skipping the status entry too is deliberate: a dirty marker is itself a
+    // change of state, so leaving it in would move the key on the first edit.
+    if (isContentBlind(path)) continue;
     let st;
     try {
       st = statSync(abs);
@@ -107,8 +152,66 @@ export function pytestCacheKey(cwd) {
   }
 
   for (const dep of UNTRACKED_DEPS) parts.push(...statLines(cwd, dep));
+  // Content-blind trees: the suite only asks "does this file exist?", so the
+  // listing is the whole input. Editing a probe leaves it unchanged; adding or
+  // deleting one moves it.
+  parts.push(...listingLines(cwd, "experiments"));
 
   return createHash("sha256").update(parts.join("\n")).digest("hex");
+}
+
+function readCache(cwd) {
+  try {
+    return JSON.parse(readFileSync(join(cwd, CACHE_PATH), "utf-8")) || {};
+  } catch {
+    return {};
+  }
+}
+
+function writeCache(cwd, data) {
+  try {
+    writeFileSync(join(cwd, CACHE_PATH), JSON.stringify(data) + "\n", "utf-8");
+  } catch {
+    /* the cache is an optimisation; failing to write it only costs a rerun */
+  }
+}
+
+/** Note that a pytest run is starting (so a run that never returns is visible).
+ *
+ * 🔴 WHY (2026-08-23): the hook's pytest step was killed at the 120s hook timeout
+ * on every single turn for 15 days. Nothing noticed, because **the thing that
+ * dies cannot file the report**: no pass was recorded, so the cache never warmed,
+ * so the suite ran again next turn — and the gate verified nothing the whole
+ * time while costing two minutes a turn. A start marker turns that silence into
+ * evidence: if the next invocation still sees `startedAt`, the previous run did
+ * not come back. */
+export function markStart(cwd, key) {
+  writeCache(cwd, { ...readCache(cwd), startedAt: new Date().toISOString(), startedKey: key });
+}
+
+/** Note that a run ENDED (pass or fail) — always clears the start marker. */
+export function recordFinish(cwd, key, ok, durationMs) {
+  const data = { ...readCache(cwd) };
+  delete data.startedAt;
+  delete data.startedKey;
+  data.finishedAt = new Date().toISOString();
+  data.durationMs = durationMs;
+  if (ok && key) {
+    data.passedKey = key;
+    data.at = data.finishedAt;
+  }
+  writeCache(cwd, data);
+}
+
+/** Did the previous pytest run fail to come back (killed / crashed)? */
+export function lastRunWasCut(cwd) {
+  return Boolean(readCache(cwd).startedAt);
+}
+
+/** How long the last completed run took, in ms (0 when unknown). */
+export function lastDurationMs(cwd) {
+  const ms = readCache(cwd).durationMs;
+  return typeof ms === "number" ? ms : 0;
 }
 
 /** Did pytest already pass for exactly this key? */
@@ -123,15 +226,7 @@ export function isCachedPass(cwd, key) {
 }
 
 /** Remember that pytest passed for this key (best effort). */
-export function recordPass(cwd, key) {
+export function recordPass(cwd, key, durationMs = 0) {
   if (!key) return;
-  try {
-    writeFileSync(
-      join(cwd, CACHE_PATH),
-      JSON.stringify({ passedKey: key, at: new Date().toISOString() }) + "\n",
-      "utf-8",
-    );
-  } catch {
-    /* the cache is an optimisation; failing to write it only costs a rerun */
-  }
+  recordFinish(cwd, key, true, durationMs);
 }

@@ -25,10 +25,41 @@ import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
 import { changedPyEntries, isDeleted, changedLinesForFile } from "./git-changes.mjs";
-import { pytestCacheKey, isCachedPass, recordPass } from "./pytest-cache.mjs";
+import {
+  pytestCacheKey, isCachedPass, recordPass, recordFinish,
+  markStart, lastRunWasCut, lastDurationMs,
+} from "./pytest-cache.mjs";
 
 const MAX_OUT = 2500; // cap pytest output fed back to Claude
 const MAX_ITEMS = 25; // cap linter findings fed back to Claude
+// Warn while there is still headroom under the hook timeout.
+// 🔴 The gate's pytest step was killed at a 120s timeout on every turn for 15
+// days (2026-08-23) — silently, because a killed process files no report.
+// ⚠️ The threshold is derived from the CONFIGURED timeout, never hard-coded: a
+// constant here would stop matching the moment someone edits settings, which is
+// how the outage started (the suite grew past a ceiling nobody was watching).
+const WARN_FRACTION = 0.7;
+const FALLBACK_TIMEOUT_MS = 420 * 1000;
+
+/** The Stop-hook timeout configured for this gate, in ms. */
+export function gateTimeoutMs(cwd) {
+  for (const name of ["settings.local.json", "settings.json"]) {
+    let cfg;
+    try {
+      cfg = JSON.parse(readFileSync(join(cwd, ".claude", name), "utf-8"));
+    } catch {
+      continue;
+    }
+    for (const group of cfg?.hooks?.Stop || []) {
+      for (const h of group.hooks || []) {
+        if (String(h.command || "").includes("gate.mjs") && Number(h.timeout) > 0) {
+          return Number(h.timeout) * 1000;
+        }
+      }
+    }
+  }
+  return FALLBACK_TIMEOUT_MS;
+}
 
 function readStdin() {
   try {
@@ -106,8 +137,15 @@ function parseJson(s) {
 // --- diff-scoped linters: only findings on changed lines gate -----------------
 
 // pyright (type errors), diff-scoped to changed lines.
+// experiments/ is excluded on purpose: those one-off probes are declared outside
+// the type check (experiments/README.md) because they poke at Tk/Win32 internals
+// a typed API cannot describe. Gating on them blocks turns over throwaway code —
+// ruff (syntax/pyflakes) still covers them, which is what actually protects the
+// next person who runs a probe.
 function pyrightItems(cwd, py, files, keys, changedLines) {
-  const r = runCmd(cwd, py, ["-m", "pyright", "--outputjson", ...files]);
+  const typed = files.filter((f) => !norm(f).startsWith("experiments/"));
+  if (!typed.length) return [];
+  const r = runCmd(cwd, py, ["-m", "pyright", "--outputjson", ...typed]);
   if (r.missing) return [];
   const data = parseJson(r.stdout);
   if (!data) return [];
@@ -170,6 +208,7 @@ function lintSection(title, items) {
 // Returns { ok, report } for the deterministic gate.
 function runDeterministic(cwd, py, entries) {
   const failures = [];
+  const notes = [];
   const live = entries.filter((e) => !isDeleted(e));
   const files = live.map((e) => e.path);
 
@@ -198,16 +237,44 @@ function runDeterministic(cwd, py, entries) {
   if (existsSync(join(cwd, "tests"))) {
     const key = pytestCacheKey(cwd);
     if (!isCachedPass(cwd, key)) {
-      const r = runCmd(cwd, py, ["-m", "pytest"]);
+      // A run that never came back is only visible on the NEXT invocation: the
+      // process that gets killed cannot report anything (see markStart).
+      if (lastRunWasCut(cwd)) {
+        notes.push(
+          "⛔ 前回の pytest が**帰ってきていません**（フックの timeout で殺された可能性）。" +
+          "その間ゲートは何も検査しておらず、合格も記録できないので**毎ターン最初から走り直します**。" +
+          `フックの timeout（.claude/settings.local.json の gate.mjs）と、実測 ${
+            Math.round(lastDurationMs(cwd) / 1000)}秒 の突き合わせが要ります。`);
+      }
+      markStart(cwd, key);
+      // `-x`: a failing turn should come back fast. A green run costs the same
+      // either way, and the cache only ever records a green run, so stopping at
+      // the first failure changes how long a red turn takes, not what passes.
+      const started = Date.now();
+      const r = runCmd(cwd, py, ["-m", "pytest", "-x"]);
+      const ms = Date.now() - started;
       if (!r.missing && r.code !== 0) {
+        recordFinish(cwd, key, false, ms);
         failures.push(`### pytest\n\`\`\`\n${tail(r.stdout + r.stderr, MAX_OUT)}\n\`\`\``);
       } else if (!r.missing) {
-        recordPass(cwd, key);
+        recordPass(cwd, key, ms);
+      } else {
+        recordFinish(cwd, key, false, ms);   // pytest 自体が無い＝走っていない
+      }
+      // The precursor of the 15-day outage: the suite creeping up on the ceiling.
+      // Warn while there is still room, not after the gate has gone silent.
+      const limit = gateTimeoutMs(cwd);
+      if (ms > limit * WARN_FRACTION) {
+        notes.push(
+          `⚠️ スイートが ${Math.round(ms / 1000)} 秒かかりました（フックの timeout は ${
+            Math.round(limit / 1000)} 秒＝残り ${Math.round((limit - ms) / 1000)} 秒）。` +
+          "**超えた瞬間からゲートは黙って死にます**（2026-08-23 に 15 日間そうなっていた）。" +
+          "timeout を上げるか、スイートを速くしてください。");
       }
     }
   }
 
-  return { ok: failures.length === 0, report: failures.join("\n\n") };
+  return { ok: failures.length === 0, report: failures.join("\n\n"), notes };
 }
 
 async function main() {
@@ -238,18 +305,32 @@ async function main() {
     emit({ decision: "block", reason });
   }
   const det = runDeterministic(cwd, resolved.python, entries);
+  const notes = (det.notes || []).join("\n");
   if (!det.ok) {
     const reason =
       "Deterministic QA gate FAILED on the changed Python. Fix these before " +
-      `finishing:\n\n${det.report}`;
+      `finishing:\n\n${det.report}${notes ? `\n\n${notes}` : ""}`;
     if (stopActive) emit({ systemMessage: `[QA gate] failures remain\n\n${det.report}` });
     emit({ decision: "block", reason });
   }
+  // ⚠️ **合格しても黙らない**＝ゲート自身の不調（前回の run が帰ってこない／
+  // スイートが上限に近づいている）は、合格の裏でこそ起きる。2026-08-23 の 15 日間の
+  // 空白は「誰も何も言わなかった」ことで続いた。
+  if (notes) emit({ systemMessage: `[QA gate] ${notes}` });
 
   process.exit(0);
 }
 
-main().catch((err) => {
-  process.stderr.write(`qa-gate error: ${err && err.message}\n`);
-  process.exit(0);
-});
+// ⚠️ **import しただけでゲートを走らせない**（2026-08-23 に踏んだ＝ヘルパーを
+// 1 つ確かめるつもりで import したら全スイートが走り出した）。フックは
+// `node gate.mjs` と直接起動するので、そのときだけ実行する。テストや診断は
+// `gateTimeoutMs` のような関数を副作用なしで呼べる。
+const invokedDirectly =
+  process.argv[1] && import.meta.url.endsWith(process.argv[1].replace(/\\/g, "/").split("/").pop());
+
+if (invokedDirectly) {
+  main().catch((err) => {
+    process.stderr.write(`qa-gate error: ${err && err.message}\n`);
+    process.exit(0);
+  });
+}

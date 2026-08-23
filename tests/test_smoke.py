@@ -389,8 +389,15 @@ def test_progress_poll_does_not_overwrite_completion_state():
 _APP_ROOT = os.path.join(os.path.dirname(__file__), "..")
 
 # アプリ本体のソース（tests / .venv / build 成果物は対象外）。
+# 🔴 **`experiments/` も対象外**（2026-08-23）＝あそこは製品コードではなく
+# （アプリのどこからも import されず・配布物にも型検査にもカバレッジにも入らない
+# ＝`experiments/README.md`）、**スレッド規約はアプリの終了時の話**なので探針には
+# 掛からない。⇒ ここに残しておくと「探針を 1 行直すたびに全スイートが走る」
+# （QA ゲートの pytest は working tree の内容で決まるため）。**検証の速度を
+# 落としているだけで、守っているものが無い。**
 _SKIP_DIRS = {".venv", "build", "dist", "tests", "tools", "__pycache__",
-              ".git", "results", "terrain_cache", "basemap_pale", "issue_evidence"}
+              ".git", "results", "terrain_cache", "basemap_pale", "issue_evidence",
+              "experiments"}
 
 
 def _app_sources():
