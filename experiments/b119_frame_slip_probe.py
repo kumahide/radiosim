@@ -52,6 +52,10 @@
                `resizable(False, False)` なので**利用者から見て何も変わらない**。
   toolwindow …… `wm attributes -toolwindow` を往復させる（`overrideredirect` とは別の
                経路で Tk にラッパー窓を作り直させる候補）。
+  rebuild  …… **DPI が変わったあとに新しい窓を建てる**（切り分け）。⚠️ ここで確かめるのは
+               「**変更後に作った窓はずれるのか**」の 1 点だけ。ずれなければ「窓を作り直す」
+               方向（＝製品ではランチャーを建て直す）に望みがあり、ずれれば**その道も死ぬ**。
+               ⇒ 出てきた **NEW と書かれた窓をドラッグ**して、`NEWSZ` 行が出るかを見る。
 
 ⛔ **棄却済み**（同じ発想に戻らないための記録）:
   * `nomenu`  …… メニューバーを外しても**幅は 6px ずつ縮み続けた** ⇒ メニューは無関係。
@@ -224,6 +228,26 @@ def apply_fix(root: tk.Tk) -> None:
         w, h = getattr(root, "_fit_size", (root.winfo_width(), root.winfo_height()))
         root.minsize(w, h)
         root.maxsize(w, h)
+    elif FIX == "rebuild":
+        # 「DPI 変更後に作った窓はずれるか」を見るための、まっさらな窓。
+        fresh = tk.Toplevel(root)
+        fresh.title("NEW（この窓をドラッグしてください）")
+        fresh.resizable(False, False)
+        tk.Label(fresh, text="DPI 変更後に建てた窓／これをドラッグ").pack(
+            padx=40, pady=60)
+        fresh.geometry("500x400+120+120")
+        fresh.update_idletasks()
+        seen = {"size": (fresh.winfo_width(), fresh.winfo_height())}
+        log("FRAME", f"NEW の枠: {frame_of(fresh)}  size={seen['size']}")
+
+        def watch(_event=None) -> None:
+            now = (fresh.winfo_width(), fresh.winfo_height())
+            if now != seen["size"]:
+                dw, dh = now[0] - seen["size"][0], now[1] - seen["size"][1]
+                log("NEWSZ", f"{seen['size']} -> {now}  (Δ{dw:+d},{dh:+d})")
+                seen["size"] = now
+
+        fresh.bind("<Configure>", watch, add="+")
     elif FIX == "toolwindow":
         try:
             root.attributes("-toolwindow", True)
