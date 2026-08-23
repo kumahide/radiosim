@@ -2276,21 +2276,57 @@ def test_a_size_the_user_changed_is_not_said_again():
         root.destroy()
 
 
-def test_the_landing_check_scales_with_the_display_scale():
-    """**物差しが表示倍率に追従すること**（B-119・独立レビュー 40 巡目・P1）。
+def test_the_landing_check_scales_in_both_directions():
+    """**物差しが移動元と移動先の両方に追従すること**（B-119・独立レビュー 41 巡目）。
 
-    250% では装飾の差が 49px＝**定数の上限（48px）では弾かれてしまう**大きさ。
-    ここが倍率に追従していないと、高い倍率のモニタでだけ B-119 が残る。
+    🔴 **倍率が下がる向きが落ちていた**＝Tk が握っているのは**移動元**の枠の厚みなので、
+    250% → 100% では **49px** のずれが正当に起き得るのに、移動先（100%）の装飾は
+    **39px** しかない。移動先だけを物差しにすると `49 > 39` で補正が拒否され、
+    **戻る向きでだけ窓が誤った寸法に残る**（40 巡目で入れた「装飾を物差しにする」
+    という直しが、片方向にしか効いていなかった）。
+
+    ⚠️ **上がる向きのテストだけでは見えない**＝そちらは移動先の枠のほうが厚いので
+    必ず通る。**向きを両方書いて初めて検査になる。**
     """
-    assert window_fit._system_decoration(240) is not None, "この環境では測れない"
-    base = window_fit._system_decoration(96)
-    high = window_fit._system_decoration(240)
-    assert high is not None and base is not None
-    gap_h = high[1] - base[1]
-    assert gap_h > 48, (
-        f"前提が崩れている（250% の装飾の差が {gap_h}px）"
+    lo = window_fit._decoration_for(96)
+    hi = window_fit._decoration_for(240)
+    gap_h = hi[1] - lo[1]
+    assert gap_h > lo[1], (
+        f"前提が崩れている（250%→100% のずれ {gap_h}px が移動先の装飾 {lo[1]}px 以下）"
     )
-    assert high[1] >= gap_h, (
-        f"250% の装飾（{high[1]}px）が、そこで起き得るずれ（{gap_h}px）より小さい"
-        "＝物差しとして使えない。"
+    # 移動先だけを物差しにすると弾かれる大きさが、両方を見れば通ること。
+    room_one = lo[1]
+    room_both = max(lo[1], hi[1])
+    assert gap_h > room_one, "この向きが落ちる条件を再現できていない"
+    assert gap_h <= room_both, (
+        f"移動元も見た物差し（{room_both}px）でも、起き得るずれ（{gap_h}px）を賄えない"
     )
+
+
+def test_the_landing_check_accepts_a_slip_from_the_higher_scale_it_came_from():
+    """↑を製品の関数で固定する＝**移動元の DPI を渡せば、戻る向きも補正されること**。"""
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        ttk.Label(win, text="中身" * 20).pack()
+        window_fit.fit_to_content(win, min_w=400, min_h=300)
+        win.update()
+
+        # 250% から 100% へ戻ったときに起き得る大きさのずれ（移動先の装飾より大きい）。
+        gap = window_fit._decoration_for(240)[1] - window_fit._decoration_for(96)[1]
+        assert gap > window_fit.decoration_size(win)[1], "この環境では条件を作れない"
+        _swallow(win, 0, gap)
+
+        assert window_fit.correct_landing(win) is False, (
+            "前提が崩れている（移動先だけの物差しで通ってしまう）"
+        )
+        assert window_fit.correct_landing(win, from_dpi=240) is True, (
+            "移動元の枠の厚みを渡しても補正されない"
+            "＝倍率が下がる向きでだけ窓が誤った寸法に残る。"
+        )
+    finally:
+        root.destroy()

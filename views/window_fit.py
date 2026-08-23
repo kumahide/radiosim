@@ -376,7 +376,12 @@ def decoration_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     下端・右端の枠は左端と同じ厚み（Windows）なので、高さ＝上の装飾＋下の枠、
     幅＝枠 × 2 とする。100% で `(16, 39)`、150% で `(22, 56)`（実測）。
     """
-    dpi = _applied_dpi(win)
+    return _decoration_for(_applied_dpi(win))
+
+
+def _decoration_for(dpi: int) -> tuple[int, int]:
+    """`dpi` での装飾の寸法。**窓を持たずに聞ける**＝移動元の DPI の分も出せる
+    （2026-08-23・独立レビュー 41 巡目＝`correct_landing` の物差しに要る）。"""
     got = _system_decoration(dpi)
     if got is not None:
         return got
@@ -790,7 +795,9 @@ def fit_to_content(
     return w, h
 
 
-def correct_landing(win: "tk.Tk | tk.Toplevel") -> bool:
+def correct_landing(
+    win: "tk.Tk | tk.Toplevel", *, from_dpi: "int | None" = None
+) -> bool:
     """**要求した寸法に着地したか**を確かめ、届いていなければ 1 度だけ言い直す。
 
     返り値＝言い直したか。
@@ -831,7 +838,14 @@ def correct_landing(win: "tk.Tk | tk.Toplevel") -> bool:
     short_w, short_h = want[0] - got_w, want[1] - got_h
     if short_w == 0 and short_h == 0:
         return False                    # 要求どおり着地している
+    # 🔴 **物差しは移動元と移動先の大きい方**（2026-08-23・独立レビュー 41 巡目）。
+    # Tk が握っているのは**移動元**の厚みなので、**倍率が下がる向き**では移動先の
+    # 装飾より大きなずれが正当に起き得る（実測＝250%→100% では 49px 起き得るのに、
+    # 移動先の装飾は 39px しかなく、**戻る向きだけ補正が拒否されていた**）。
     room_w, room_h = decoration_size(win)
+    if from_dpi is not None:
+        was_w, was_h = _decoration_for(from_dpi)
+        room_w, room_h = max(room_w, was_w), max(room_h, was_h)
     if abs(short_w) > room_w or abs(short_h) > room_h:
         return False                    # 枠の話ではない（上の註）
     # 言い直す分は**要求**に足す（`_fit_size` は「決めた寸法」なので動かさない

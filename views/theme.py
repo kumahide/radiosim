@@ -505,7 +505,7 @@ def watch_display(
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
     seen: "dict[str, tuple]" = {}
-    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None, "landing": None}
+    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None, "landing": None, "was_dpi": None}
 
     def _windows() -> "list[tk.Tk | tk.Toplevel]":
         # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
@@ -565,6 +565,9 @@ def watch_display(
         if moved_dpi is None and not screen_changed:
             return
         if moved_dpi is not None:
+            # **貼り直す前の DPI**を控える＝`correct_landing` の物差しに要る
+            # （倍率が下がる向きでは、移動元の枠のほうが厚い＝41 巡目 P1）。
+            state["was_dpi"] = _applied_dpi.get("value")
             apply_fonts(root, dpi=moved_dpi)
         if on_change is not None:
             args = (moved_dpi if moved_dpi is not None else window_dpi(root),
@@ -622,7 +625,7 @@ def watch_display(
     def _land() -> None:
         state["landing"] = None
         for win in _windows():
-            window_fit.correct_landing(win)
+            window_fit.correct_landing(win, from_dpi=state["was_dpi"])
 
     def _arm_settle(args: tuple) -> None:
         if state["settle"] is not None:
