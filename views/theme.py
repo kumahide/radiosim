@@ -410,6 +410,12 @@ _DISPLAY_DEBOUNCE_MAX_MS = 750
 # ＝**アプリを再起動するまで直らない**（実機で再現・再起動すれば正しい大きさになる）。
 _DISPLAY_SETTLE_MS = 800
 
+# 🔴 **要求した寸法に着地したかを確かめるまでの待ち**（2026-08-23・B-119）。
+# 要求した直後には測れない＝実機ログでは `geometry()` の 178ms 後に実サイズが
+# 届いた。⚠️ **確かめ直し（800ms）より短くする**＝あちらが動く前に着地を直して
+# おかないと、「上書きされた」と読まれて同じ寸法を要求し直すだけになる。
+_DISPLAY_LANDING_MS = 250
+
 #: マウスボタンの仮想キー。**物理の左右**であって「主ボタン」ではない（下の註）。
 _VK_LBUTTON = 0x01
 _VK_RBUTTON = 0x02
@@ -499,7 +505,7 @@ def watch_display(
     # 長生きする状態なので、ウィジェットを掴むと閉じた窓が解放されない（B-050 で
     # 実際に踏んだ形）。消えた窓の分は毎回の走査で落とす。
     seen: "dict[str, tuple]" = {}
-    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None}
+    state: "dict[str, Any]" = {"after": None, "settle": None, "since": None, "landing": None}
 
     def _windows() -> "list[tk.Tk | tk.Toplevel]":
         # ⚠️ `winfo_toplevel()` を通すのは**型を正しく絞るため**＝`root` は `Misc`
@@ -565,6 +571,8 @@ def watch_display(
                     moved_dpi is not None)
             on_change(*args)
             _arm_settle(args)
+            if moved_dpi is not None:
+                _arm_landing()      # 着地したか（B-119＝枠の厚みが古いまま残る）
 
     def _overridden(win: "tk.Tk | tk.Toplevel") -> bool:
         """**選んだ大きさが残っていない**か（＝誰かが上書きした）。
@@ -594,6 +602,27 @@ def watch_display(
             return (win.winfo_width(), win.winfo_height()) != tuple(chosen)
         except tk.TclError:
             return False            # 破棄途中の窓
+
+    def _arm_landing() -> None:
+        """DPI が変わった測り直しの**着地**を 1 度だけ確かめる（B-119）。
+
+        ⚠️ **その場では測れない**＝要求した直後の `winfo_width()` はまだ古い値を
+        返す（実測で 178ms 遅れて届いた）。⚠️ **確かめ直し〔B-118〕とは別物**＝
+        あちらは「800ms 後にまだ我々の寸法が残っているか」を見る監視で、こちらは
+        「いま出した要求が通ったか」の 1 回きりの確認。**混ぜると、利用者が変えた
+        寸法まで枠のずれとして扱ってしまう**（独立レビュー 40 巡目・P2）。
+        """
+        if state["landing"] is not None:
+            try:
+                root.after_cancel(state["landing"])
+            except tk.TclError:
+                pass
+        state["landing"] = root.after(_DISPLAY_LANDING_MS, _land)
+
+    def _land() -> None:
+        state["landing"] = None
+        for win in _windows():
+            window_fit.correct_landing(win)
 
     def _arm_settle(args: tuple) -> None:
         if state["settle"] is not None:
@@ -626,12 +655,9 @@ def watch_display(
         # （2026-08-23・B-119）。覚えずにもう一度同じ寸法を要求すると、Tk が同じだけ
         # 呑んでまた足りなくなる＝**測り直しが巻き戻しにしかならず、6px ずつ縮み
         # 続ける**（実機ログ＝602 を要求 → 596 が返る → 590 → 584 …）。
-        # ⚠️ **DPI が変わった契機のときだけ学ぶ**（独立レビュー 39 巡目・P1）＝
-        # 枠の厚みが古いまま残るのは DPI が変わったときだけで、それ以外のずれは
-        # 定義上この現象ではない（利用者や OS が変えた寸法を下駄として履かない）。
-        for win in overridden:
-            window_fit.learn_landing_slip(win, after_dpi_change=args[1])
         on_change(*args)
+        if args[1]:
+            _arm_landing()          # DPI が変わった測り直しは着地を確かめる（B-119）
 
     def _on_configure(event: "tk.Event") -> None:
         # トップレベル自身の Configure だけ見る（子ウィジェットの分は無視）。

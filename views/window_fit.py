@@ -84,14 +84,6 @@ _DECORATION_96 = (16, 39)
 # `GetSystemMetricsForDpi` のインデックス（winuser.h）。
 _SM_CYCAPTION, _SM_CYSIZEFRAME, _SM_CXPADDEDBORDER = 4, 33, 92
 
-# 🔴 **要求した寸法との差を「枠の取り分」として学ぶ上限**（2026-08-23・B-119）。
-# これ以上のずれは枠の話ではない（利用者が窓を掴んで変えた・WM が要求を拒んだ）
-# ので**学ばない**＝ここに上限が無いと、手で大きく変えた寸法を「毎回の下駄」として
-# 覚え込み、以後すべての測り直しがその分ずれる。実測で必要なのは 150% の
-# 幅 6px / 高さ 27px なので、200% でも足りる幅を見てこの値。⚠️ **契機の縛り
-# （DPI が変わった直後だけ）と対で効く**＝上限だけでは「小さめの手動リサイズ」を
-# 拾ってしまう（独立レビュー 39 巡目・P1）。
-_FIT_SLIP_MAX = 48
 
 
 _GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
@@ -787,14 +779,9 @@ def fit_to_content(
             escape.sync(overflow_v=need_h > h, overflow_h=need_w > w)
 
     win._fit_size = (w, h)              # type: ignore[attr-defined]
-    # 🔴 **前回この窓が呑まれた分を足して要求する**（2026-08-23・B-119）。
-    # `geometry()` が決めるのはクライアント領域だが、Tk は**枠の厚みを別 DPI へ
-    # 移った直後も古い値のまま持っている**ので、要求より 6px 狭い窓が返る（実測
-    # ＝144dpi で `602x1197` を要求して `596x1197`。6px は装飾幅 16→22 の差）。
-    # 呑まれたままにすると `need_w > 実幅` が**永久に成立**し、Tk と WM が
-    # 引き算し合って 6px ずつ縮み続ける（＝B-119 の本体）。⇒ 差を足して要求する。
-    slip_w, slip_h = getattr(win, "_fit_slip", (0, 0))
-    win.geometry(f"{w + slip_w}x{h + slip_h}")
+    # **何を要求したか**を残す（`correct_landing` が着地を確かめる唯一の口）。
+    win._fit_asked = (w, h)             # type: ignore[attr-defined]
+    win.geometry(f"{w}x{h}")
     # 大きさが決まったら**置き場所も画面の中へ**（B-083）。⚠️ ここで `_fit_size`
     # を渡す＝`winfo_width()` は未表示のあいだ 1 を返すので、実測から測ると
     # 「どこに置いても入る」ことになり、このクランプは黙って無効になる。
@@ -803,12 +790,10 @@ def fit_to_content(
     return w, h
 
 
-def learn_landing_slip(
-    win: "tk.Tk | tk.Toplevel", *, after_dpi_change: bool
-) -> bool:
-    """**要求した寸法に着地したか**を確かめ、ずれていたら次回のぶんを覚える。
+def correct_landing(win: "tk.Tk | tk.Toplevel") -> bool:
+    """**要求した寸法に着地したか**を確かめ、届いていなければ 1 度だけ言い直す。
 
-    返り値＝**もう一度測り直す価値があるか**（覚えた＝True）。
+    返り値＝言い直したか。
 
     🔴 **なぜ要るか**（2026-08-23・B-119）。別 DPI のモニタへ窓を移すと、Tk 8.6 は
     **窓枠の厚みを移る前の DPI のまま**持っている。そこへ `fit_to_content` が
@@ -816,31 +801,26 @@ def learn_landing_slip(
     呑まれる**（6px は装飾幅が 16→22 に増えた差そのもの）。呑まれた 6px は
     `need_w(602) > 実幅(596)` を**永久に成立**させ、Tk が要求を出し直すたびに
     また 6px 減る ⇒ **手を離しても止まらずに縮み続ける**（実機ログで確認）。
+    ⇒ **足りない分を足して 1 度だけ言い直す**と、そこで燃料が尽きる。
+
+    ⚠️ **覚えない**（2026-08-23・独立レビュー 40 巡目）。最初は「呑まれた分」を
+    窓に持たせて次回の要求に足す形にしたが、**持つと汚染される**＝①利用者や OS が
+    変えた寸法まで「枠の取り分」として記録し、以後の測り直しがそれを黙って
+    取り消す ②誤りを弾くための上限が要り、その上限が**高い表示倍率で破れる**
+    （実測＝250% では装飾の差が 49px で、48px の上限を超える）。**その場で 1 度
+    直して忘れる**なら、間違えても次に持ち越さない。
 
     ⚠️ **測るのは「落ち着いた後」**＝要求した直後の `winfo_width()` はまだ古い値を
-    返す（実測で 178ms 遅れて届いた）。だから `fit_to_content` の中で同期的に
-    確かめるのではなく、[views/theme](theme.py) の `_settle`（変更の 800ms 後）から
-    呼ぶ。**確かめ直しの経路は B-118 で既に在る**ので、そこへ相乗りする。
+    返す（実測で 178ms 遅れて届いた）。呼ぶのは [views/theme](theme.py) の
+    `watch_display` が DPI 変更の測り直しの後に仕掛ける 1 回きりの確認。
 
-    ⚠️ **大きなずれは学ばない**（`_FIT_SLIP_MAX`）＝それは枠の話ではなく、利用者が
-    窓を掴んで変えた結果か、WM が要求を拒んだ結果。覚えると**その寸法を下駄として
-    永久に履く**ことになる。
-
-    🔴 **DPI が変わった直後にしか学ばない**（2026-08-23・独立レビュー 39 巡目・P1）＝
-    枠の厚みが古いままになるのは**DPI が変わったときだけ**なので、それ以外の
-    ずれは定義上この現象ではない。この縛りが無いと**あらゆるサイズ差を「枠の
-    取り分」として記録する**＝利用者や OS が寸法を変えただけの回でも下駄を履き、
-    実測では「利用者が広げた 20px を黙って取り消し、以後 `_fit_size` と実寸が
-    食い違ったまま振動する」状態になった。⚠️ **DPI が戻る側も学ぶ必要がある**
-    （差は逆向きに出て 0 へ帰る）ので「小さくなった側だけ」には絞らない。
-
-    Args:
-        after_dpi_change: **DPI が変わった契機の確かめ直しか**。偽なら何もしない。
+    ⚠️ **装飾の寸法より大きなずれは触らない**＝それは枠の話ではない（利用者が
+    窓を掴んで変えた・WM が要求を拒んだ）。**上限を定数で持たない**のが要点で、
+    装飾そのものを物差しにすれば表示倍率がいくつでも尺度が合う。
     """
-    if not after_dpi_change:
-        return False                    # 枠の話ではない（上の註）
+    asked = getattr(win, "_fit_asked", None)
     want = getattr(win, "_fit_size", None)
-    if not want:
+    if not asked or not want:
         return False                    # `fit_to_content` を通っていない窓は対象外
     try:
         got_w, got_h = win.winfo_width(), win.winfo_height()
@@ -848,15 +828,20 @@ def learn_landing_slip(
         return False                    # 破棄途中の窓
     if got_w <= 1 or got_h <= 1:
         return False                    # 未表示＝実寸がまだ無い
-    slip_w, slip_h = want[0] - got_w, want[1] - got_h
-    if slip_w == 0 and slip_h == 0:
+    short_w, short_h = want[0] - got_w, want[1] - got_h
+    if short_w == 0 and short_h == 0:
         return False                    # 要求どおり着地している
-    if abs(slip_w) > _FIT_SLIP_MAX or abs(slip_h) > _FIT_SLIP_MAX:
+    room_w, room_h = decoration_size(win)
+    if abs(short_w) > room_w or abs(short_h) > room_h:
         return False                    # 枠の話ではない（上の註）
-    # **足し込む**＝下駄を履いたうえでなお呑まれる分だけを増やす。DPI が戻れば
-    # 差は逆向きに出るので、同じ式で 0 へ帰る（一方通行にしない）。
-    had_w, had_h = getattr(win, "_fit_slip", (0, 0))
-    win._fit_slip = (had_w + slip_w, had_h + slip_h)   # type: ignore[attr-defined]
+    # 言い直す分は**要求**に足す（`_fit_size` は「決めた寸法」なので動かさない
+    # ＝確かめ直し〔B-118〕が見る基準がずれる）。
+    say = (asked[0] + short_w, asked[1] + short_h)
+    win._fit_asked = say                # type: ignore[attr-defined]
+    try:
+        win.geometry(f"{say[0]}x{say[1]}")
+    except tk.TclError:
+        return False
     return True
 
 

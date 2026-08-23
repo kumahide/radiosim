@@ -2200,8 +2200,8 @@ def _swallow(win, dw: int, dh: int) -> None:
     win.update()
 
 
-def test_a_frame_that_swallows_pixels_is_compensated_on_the_next_fit():
-    """🔴 **要求した寸法に着地しなかったぶんを、次の要求で足すこと**（B-119）。
+def test_a_frame_that_swallows_pixels_is_said_again_once():
+    """🔴 **要求した寸法に着地しなかったら 1 度だけ言い直すこと**（B-119）。
 
     実機（FHD/100% ＋ WQHD/150%）で撮ったログ＝別 DPI のモニタへ移った直後、
     `geometry("602x1197")` を出しても返ってくる窓は **`596x1197`**。Tk 8.6 が
@@ -2210,8 +2210,8 @@ def test_a_frame_that_swallows_pixels_is_compensated_on_the_next_fit():
 
     ⚠️ **呑まれた 6px を放っておくと止まらない**＝`need_w(602) > 実幅(596)` が
     永久に成立し、Tk が要求を出し直すたびにまた 6px 減る ⇒ **手を離しても
-    6px ずつ縮み続ける**（実測＝602 → 596 → 590 → 584 …）。測り直しは同じ寸法を
-    要求するだけなので**巻き戻しにしかならない**（ログで 2 度確認）。
+    6px ずつ縮み続ける**（実測＝602 → 596 → 590 → 584 …）。⇒ 足りない分を足して
+    言い直せば、そこで燃料が尽きる。
     """
     import tkinter as tk
     from tkinter import ttk
@@ -2225,33 +2225,35 @@ def test_a_frame_that_swallows_pixels_is_compensated_on_the_next_fit():
         win.update()
 
         _swallow(win, 6, 0)                      # 枠が幅を 6px 呑んだ
-        assert window_fit.learn_landing_slip(win, after_dpi_change=True) is True, (
-            "要求した寸法に着地していないのに、ずれを覚えていない"
-        )
-        assert win._fit_slip == (6, 0), f"覚えた下駄が違う: {win._fit_slip}"
 
         asked: list = []
         real = tk.Toplevel.geometry
         win.geometry = (                          # 何を要求したかだけ記録する
             lambda spec=None: (asked.append(spec) if spec else None) or real(win, spec))
-        window_fit.fit_to_content(win, min_w=300, min_h=200)
-
+        assert window_fit.correct_landing(win) is True, (
+            "要求した寸法に着地していないのに、言い直していない"
+        )
         sizes = [s for s in asked if "x" in s]
-        assert sizes, "測り直しが大きさを要求していない"
-        assert sizes[0] == f"{w + 6}x{h}", (
-            f"呑まれた 6px を足さずに同じ寸法を要求している: {sizes[0]}（期待 {w + 6}x{h}）"
-            "＝Tk がまた 6px 呑むので、窓は縮み続ける（B-119 の本体）。"
+        assert sizes == [f"{w + 6}x{h}"], (
+            f"言い直した寸法が違う: {sizes}（期待 {w + 6}x{h}）"
+            "＝呑まれた分を足さずに同じ寸法を要求すると、Tk がまた同じだけ呑む。"
+        )
+        assert win._fit_size == (w, h), (
+            "決めた寸法まで動かしている（確かめ直し〔B-118〕が見る基準がずれる）"
         )
     finally:
         root.destroy()
 
 
-def test_a_size_the_user_changed_is_not_learned_as_a_frame_slip():
-    """↑の裏＝**大きなずれは「枠の取り分」として覚えないこと**（B-119）。
+def test_a_size_the_user_changed_is_not_said_again():
+    """↑の裏＝**装飾の寸法より大きなずれには触らないこと**（B-119）。
 
-    ⚠️ ここに上限が無いと、利用者が手で縮めた寸法を**毎回の下駄**として履き、
-    以後すべての測り直しがその分ずれる（＝直したい欠陥より広い害になる）。
-    枠の差は実測で幅 6px / 高さ 27px なので、桁 1 つぶんの余裕が `_FIT_SLIP_MAX`。
+    それは枠の話ではなく、利用者が窓を掴んで変えた結果か WM が要求を拒んだ結果。
+
+    🔴 **物差しは装飾そのもの**（2026-08-23・独立レビュー 40 巡目・P1）＝最初は
+    定数の上限（48px）で弾いていたが、**装飾は表示倍率で伸びる**ので高い倍率で
+    破れた（実測＝250% では 96dpi との装飾の差が **49px** で上限を超え、本来直す
+    はずの縮み続けが残る）。装飾を物差しにすれば倍率がいくつでも尺度が合う。
     """
     import tkinter as tk
     from tkinter import ttk
@@ -2264,50 +2266,31 @@ def test_a_size_the_user_changed_is_not_learned_as_a_frame_slip():
         window_fit.fit_to_content(win, min_w=400, min_h=300)
         win.update()
 
-        _swallow(win, window_fit._FIT_SLIP_MAX + 20, 0)   # 利用者が手で大きく縮めた
-        assert window_fit.learn_landing_slip(win, after_dpi_change=True) is False, (
-            "枠の差では説明できない大きさのずれを、下駄として覚えている"
-        )
-        assert getattr(win, "_fit_slip", (0, 0)) == (0, 0), (
-            f"下駄を履いてしまった: {win._fit_slip}"
+        over = window_fit.decoration_size(win)[0] + 20     # 装飾より大きく縮めた
+        _swallow(win, over, 0)
+        assert window_fit.correct_landing(win) is False, (
+            "枠の差では説明できない大きさのずれにまで手を出している"
+            "（利用者が変えた寸法を黙って押し戻す）。"
         )
     finally:
         root.destroy()
 
 
-def test_a_size_change_without_a_dpi_change_is_not_learned():
-    """🔴 **枠のずれを学ぶのは DPI が変わった直後だけ**（独立レビュー 39 巡目・P1）。
+def test_the_landing_check_scales_with_the_display_scale():
+    """**物差しが表示倍率に追従すること**（B-119・独立レビュー 40 巡目・P1）。
 
-    枠の厚みが古いまま残るのは**DPI が変わったときだけ**なので、それ以外のずれは
-    定義上この現象ではない。⚠️ この縛りが無いと**あらゆるサイズ差を「枠の取り分」
-    として記録する**＝実測では、利用者が 20px 広げた窓に対して `-20` を覚え、
-    次の測り直しがその 20px を黙って取り消したうえ、`_fit_size`（620）と実寸（600）が
-    食い違ったまま**振動する**状態になった。
-
-    ⚠️ **上限（`_FIT_SLIP_MAX`）だけでは足りない**＝上限の内側に収まる手動リサイズは
-    素通りする。**契機の縛りと上限は対で効く。**
+    250% では装飾の差が 49px＝**定数の上限（48px）では弾かれてしまう**大きさ。
+    ここが倍率に追従していないと、高い倍率のモニタでだけ B-119 が残る。
     """
-    import tkinter as tk
-    from tkinter import ttk
-
-    root = make_themed_root()
-    root.withdraw()
-    try:
-        win = tk.Toplevel(root)
-        ttk.Label(win, text="中身" * 20).pack()
-        window_fit.fit_to_content(win, min_w=600, min_h=300)
-        win.update()
-
-        # 利用者が 20px 広げた（＝上限 48px の内側だが、DPI は変わっていない）。
-        win.geometry(f"{win.winfo_width() + 20}x{win.winfo_height()}")
-        win.update()
-
-        assert window_fit.learn_landing_slip(win, after_dpi_change=False) is False, (
-            "DPI が変わっていないのに、寸法の差を「枠の取り分」として学んでいる"
-        )
-        assert getattr(win, "_fit_slip", (0, 0)) == (0, 0), (
-            f"下駄を履いてしまった: {win._fit_slip}"
-            "（利用者が変えた寸法を次の測り直しが黙って取り消す）。"
-        )
-    finally:
-        root.destroy()
+    assert window_fit._system_decoration(240) is not None, "この環境では測れない"
+    base = window_fit._system_decoration(96)
+    high = window_fit._system_decoration(240)
+    assert high is not None and base is not None
+    gap_h = high[1] - base[1]
+    assert gap_h > 48, (
+        f"前提が崩れている（250% の装飾の差が {gap_h}px）"
+    )
+    assert high[1] >= gap_h, (
+        f"250% の装飾（{high[1]}px）が、そこで起き得るずれ（{gap_h}px）より小さい"
+        "＝物差しとして使えない。"
+    )

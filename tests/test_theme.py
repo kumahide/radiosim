@@ -1412,47 +1412,58 @@ def test_launcher_dropdowns_follow_dpi():
         root.destroy()
 
 
-def test_the_settle_learns_the_frame_slip_before_measuring_again(root):
-    """🔴 **確かめ直しを「巻き戻し」で終わらせないこと**（2026-08-23・B-119）。
+def test_a_dpi_change_checks_that_the_window_landed(root):
+    """🔴 **DPI が変わった測り直しは、着地したかまで見ること**（B-119）。
 
     別 DPI のモニタへ移った直後、Tk は**枠の厚みを移る前の DPI のまま**持っている
     ので、`geometry("602x1197")` を要求しても `596x1197` が返る（実機ログ）。
-    確かめ直し（B-118）はこのずれを「上書きされた」と正しく見つけるが、**同じ寸法を
-    もう一度要求するだけ**なら Tk がまた 6px 呑む ⇒ 巻き戻しにしかならず、
-    実機では 602 → 596 → 590 → 584 … と**手を離しても縮み続けた**。
+    呑まれた分を放っておくと `need > 実幅` が永久に成立し、Tk が要求を出し直す
+    たびにまた減る ⇒ **手を離しても縮み続ける**（602→596→590→584…）。
 
-    ⇒ 確かめ直しは、測り直す**前に**そのずれを覚えなければならない。
+    ⚠️ **確かめ直し〔B-118〕では代われない**＝あちらは 800ms 後に「我々の寸法が
+    残っているか」を見る監視で、そこへ相乗りすると**利用者が変えた寸法まで枠の
+    ずれとして扱う**（独立レビュー 40 巡目・P2）。⇒ 別の 1 回きりの確認にする。
     """
     import tkinter as tk
 
     fake = {"dpi": 96}
-    monkey = theme.window_dpi
+    monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
+    theme._pointer_is_down = lambda: False         # type: ignore[assignment]
     notified: "list[tuple[int, bool]]" = []
     try:
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        win._fit_size = (200, 100)                 # 決めた寸法
+        win._fit_asked = (200, 100)                # それをそのまま要求した
         root.update()
 
-        fake["dpi"] = 144
-        win.geometry("201x100+10+10")
+        fake["dpi"] = 144                          # 別 DPI のモニタへ入った
+        win.geometry("194x100+10+10")              # 枠が幅を 6px 呑んだ
         root.update()
         pump_until(root, lambda: notified)
         assert notified, "前提が崩れている（DPI 変更が通知されていない）"
 
-        # 枠が 6px 呑んだ＝要求した 200 に対して実寸が 194。
-        win.geometry("194x100+10+10")
-        root.update()
-        pump_until(root, lambda: len(notified) >= 2)
+        # ⚠️ **確かめ直し（800ms）より前に**着地が直ること＝ここを緩めると、
+        # `_settle` 側の仕掛けが肩代わりして緑になり、この経路の配線が固定できない
+        # （実際に変異検証が素通りした）。
+        assert theme._DISPLAY_LANDING_MS * 2 < theme._DISPLAY_SETTLE_MS, (
+            "前提が崩れている（着地の確認が確かめ直しより後になる）"
+        )
+        pump_until(root, lambda: getattr(win, "_fit_asked", None) != (200, 100),
+                   timeout_ms=theme._DISPLAY_LANDING_MS * 2)
 
-        assert win._fit_slip == (6, 0), (
-            f"呑まれた分を覚えずに測り直している: {getattr(win, '_fit_slip', None)}"
-            "（＝次も同じ寸法を要求して同じだけ呑まれる＝6px ずつ縮み続ける）。"
+        assert win._fit_asked == (206, 100), (
+            f"呑まれた 6px を足して言い直していない: {win._fit_asked}"
+            "（同じ寸法を要求し直すだけでは Tk がまた同じだけ呑む＝縮み続ける）。"
+        )
+        assert win._fit_size == (200, 100), (
+            "決めた寸法まで動かしている（確かめ直しが見る基準がずれる）"
         )
     finally:
-        theme.window_dpi = monkey                  # type: ignore[assignment]
+        theme.window_dpi = monkey_dpi              # type: ignore[assignment]
+        theme._pointer_is_down = monkey_ptr        # type: ignore[assignment]
         theme.apply_fonts(root, dpi=96)
 
 
