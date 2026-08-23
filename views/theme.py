@@ -402,6 +402,30 @@ _DISPLAY_DEBOUNCE_MS = 250
 _DISPLAY_SETTLE_MS = 800
 
 
+def _pointer_is_down() -> bool:
+    """左ボタンが押されている＝**利用者がいま窓を掴んでいる**（Windows のみ）。
+
+    🔴 **掴んでいる最中に窓を測り直してはいけない**（2026-08-23・B-119）＝
+    タイトルバーで窓を別 DPI のモニタへドラッグしていく途中は、
+    ①手が一瞬止まるたびにデバウンスが明けて ②境界をまたいでいる間は
+    「載っているモニタ」も DPI も振れる ⇒ **握っている窓が何度も測り直され、
+    引きずるほど縮んでいく**（実機報告）。⇒ **手を離してから測る。**
+
+    ⚠️ **取れなければ False**（＝掴んでいない扱い）。ここを True 側へ倒すと、
+    Win32 が使えない環境で**追従そのものが永久に止まる**——追従しないことの害
+    （見切れ・画面外）の方が、ドラッグ中に 1 度測り直す害より大きい。
+
+    ⚠️ Tk のイベントでは分からない＝タイトルバーのドラッグは**ウィンドウマネージャ
+    の中で完結**しており、`<Button-1>` も `<B1-Motion>` も飛んでこない
+    （`<Configure>` だけが結果として届く）。だから OS に直接聞く。
+    """
+    try:
+        import ctypes
+        return bool(ctypes.windll.user32.GetAsyncKeyState(0x01) & 0x8000)
+    except Exception:
+        return False
+
+
 def watch_display(
     root: tk.Misc, on_change: "Callable[[int, bool], None] | None" = None
 ) -> None:
@@ -475,6 +499,12 @@ def watch_display(
 
     def _check() -> None:
         state["after"] = None
+        if _pointer_is_down():
+            # 🔴 **掴んでいる間は測らない**（B-119）＝ここで `seen` を更新すると
+            # 変化を**消費**してしまい、手を離した後に測り直す機会も消える。
+            # ⇒ 何も見ずに待ち直す（次のデバウンスでまた来る）。
+            state["after"] = root.after(_DISPLAY_DEBOUNCE_MS, _check)
+            return
         moved_dpi: "int | None" = None
         screen_changed = False
         alive: "set[str]" = set()
@@ -563,6 +593,9 @@ def watch_display(
         """
         state["settle"] = None
         if on_change is None:
+            return
+        if _pointer_is_down():
+            _arm_settle(args)       # 掴んでいる間は待つ（B-119）
             return
         if not any(_overridden(win) for win in _windows()):
             return

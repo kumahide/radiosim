@@ -732,6 +732,89 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         theme.apply_fonts(root, dpi=96)
 
 
+def test_watch_display_waits_while_the_user_holds_the_window(root):
+    """🔴 **掴んでいる最中に測り直さないこと**（B-119）。
+
+    実機報告＝FHD/100% と WQHD/100%（→150% に変更）のデュアル環境で、
+    ランチャーを WQHD 側へ**ドラッグし続けると窓が縮んでいく**。
+    タイトルバーのドラッグ中は ①手が一瞬止まるたびにデバウンスが明け
+    ②境界をまたいでいる間は「載っているモニタ」も DPI も振れる ⇒
+    **握っている窓が何度も測り直される**。
+
+    ⚠️ **待つのであって、捨てるのではない**＝ここで `seen` を更新して変化を
+    消費すると、手を離した後に測り直す機会まで消える（下の裏のテスト）。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96}
+    monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
+    theme.window_dpi = lambda _w: fake["dpi"]           # type: ignore[assignment]
+    theme._pointer_is_down = lambda: True               # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144                               # 別 DPI のモニタへ入った
+        win.geometry("200x100+11+10")                   # ドラッグ中（掴んだまま）
+        root.update()
+        pump_until(root, lambda: notified,
+                   timeout_ms=theme._DISPLAY_DEBOUNCE_MS * 4 + 400)
+
+        assert notified == [], (
+            f"掴んでいる最中に測り直しが走った: {notified}"
+            "（引きずるほど窓が測り直される＝実機で縮んでいった形）。"
+        )
+    finally:
+        theme.window_dpi = monkey_dpi                   # type: ignore[assignment]
+        theme._pointer_is_down = monkey_ptr             # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
+def test_watch_display_catches_up_once_the_window_is_released(root):
+    """↑の裏＝**手を離したら測り直すこと**（B-119）。
+
+    待つ実装が「変化を捨てる」実装になっていると、ドラッグで別 DPI のモニタへ
+    移した窓が**そのまま取り残される**（字も大きさも 100% のまま）＝直したい
+    欠陥より悪い。⇒ 待っている間に変化を消費していないことを、ここで固定する。
+    """
+    import tkinter as tk
+
+    fake = {"dpi": 96, "down": True}
+    monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
+    theme.window_dpi = lambda _w: fake["dpi"]           # type: ignore[assignment]
+    theme._pointer_is_down = lambda: fake["down"]       # type: ignore[assignment]
+    notified: "list[tuple[int, bool]]" = []
+    try:
+        theme.watch_display(root, lambda d, c: notified.append((d, c)))
+        win = tk.Toplevel(root)
+        win.geometry("200x100+10+10")
+        win._fit_size = (200, 100)
+        root.update()
+
+        fake["dpi"] = 144
+        win.geometry("200x100+11+10")
+        root.update()
+        pump_until(root, lambda: notified,
+                   timeout_ms=theme._DISPLAY_DEBOUNCE_MS * 3 + 200)
+        assert notified == [], "前提が崩れている（掴んだままなのに測り直した）"
+
+        fake["down"] = False                            # 手を離した
+        pump_until(root, lambda: notified)
+
+        assert notified == [(144, True)], (
+            f"手を離しても測り直されない: {notified}"
+            "（待つ実装が変化を捨てている＝別 DPI へ移した窓が取り残される）。"
+        )
+    finally:
+        theme.window_dpi = monkey_dpi                   # type: ignore[assignment]
+        theme._pointer_is_down = monkey_ptr             # type: ignore[assignment]
+        theme.apply_fonts(root, dpi=96)
+
+
 def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root):
     """🔴 **追従は一発勝負にしない**（B-118）＝落ち着いた頃に確かめ直すこと。
 
