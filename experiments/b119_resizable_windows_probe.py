@@ -75,6 +75,17 @@ from typing import Any, Callable
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
+# 🔴 **判定表より先に出力の文字コードを決める**（2026-08-23・5 巡目で踏んだ）。
+# Windows の既定コンソールは cp932 で、この探針の行（⚠️ ★ ≈ …）を出せずに
+# `UnicodeEncodeError` で**採取の途中で死ぬ**＝実機で 1 回スケールを変えてもらった
+# その巡が丸ごと無駄になる。⚠️ **印を ASCII に落とす手当ては採らない**＝印は
+# ログを読む人の判定そのもの（`★6px 刻み` かどうか）で、削ると読み方が変わる。
+for _stream in (sys.stdout, sys.stderr):
+    try:
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:       # 差し替えられた stdout（テスト・パイプ）では黙って諦める
+        pass
+
 import main as app_main                      # noqa: E402
 from views import theme, window_fit          # noqa: E402
 
@@ -82,6 +93,15 @@ T0 = time.perf_counter()
 
 #: 見つけた窓ごとの前回サイズ（キーは Tk のパス名＝窓より長生きさせないため）。
 _SEEN: "dict[str, tuple[int, int]]" = {}
+
+#: 🔴 **自動ドラッグ中はポインタ監視を黙らせる**（2026-08-23・5 巡目で踏んだ）。
+#: 監視は「物理ボタンが上がっているのに `_GRABBED` が埋まっている」を*人が手を
+#: 離した*と読むので、**合成ドラッグの掴みを 100ms 以内に横取りして消す**。
+#: その巡では 8 窓すべてが `23〜101ms 掴んでいた／移動=0px` として台帳に載り、
+#: **実際には 3.5 秒暴走していたランチャーまで「動かず」**と記録された。
+#: ⇒ 判定表の「移動」列が丸ごと人工物になる＝**静かさの偽証**（この探針が 2 度
+#: 潰してきたのと同じ向きの欠陥・[[feedback-user-examples-are-classes]] の同系統④）。
+_AUTO: "dict[str, bool]" = {"on": False}
 
 #: いま掴んでいる窓（`GRAB` で入り `DROP` で出る）。`DRIFT` 行に載せる。
 _GRABBED: "dict[str, Any]" = {"key": None, "label": "-", "since": 0.0,
@@ -267,6 +287,12 @@ def poll_pointer(root: tk.Tk) -> None:
     ⚠️ ボタンの上下は `theme._pointer_is_down`（左右どちらも見る＝主ボタンを
     入れ替えている利用者でも拾う）。
     """
+    if _AUTO["on"]:
+        # 合成ドラッグの最中＝物理ボタンは上がったままなので、ここが動くと
+        # 掴みを横取りして消してしまう（上の `_AUTO` の註）。
+        root.after(100, lambda: poll_pointer(root))
+        return
+
     try:
         down = theme._pointer_is_down()
         px, py = root.winfo_pointerxy()
@@ -467,6 +493,8 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
     """
     import threading
     queue = list(targets)
+    _AUTO["on"] = True          # ポインタ監視を黙らせる（横取り防止・上の註）
+    drifts0 = {"n": 0}          # その窓のドラッグ**中に増えた**刻みだけ数える
 
     def step() -> None:
         while queue:
@@ -484,6 +512,7 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
                                 since=time.perf_counter(),
                                 size=(win.winfo_width(), win.winfo_height()),
                                 pos=_MOVED.get(key, 0))   # 道のりの基準点
+                drifts0["n"] = _DRIFTS.get(key, 0)         # 刻みの基準点
             except tk.TclError:
                 continue
             log("AUTO", f"{label(win)} を {seconds:.0f} 秒動かします")
@@ -493,14 +522,16 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
             thread.start()
             root.after(200, lambda t=thread: wait(t))
             return
+        _AUTO["on"] = False           # 人のドラッグを見る監視へ戻す
         done()
 
     def wait(thread) -> None:
         if thread.is_alive():
             root.after(200, lambda: wait(thread))
             return
-        finish()
-        root.after(700, step)          # 動かし終えた後の余韻も観測する（暴走は続く）
+        # ⚠️ **締めるのは余韻の後**＝手を離しても暴走は続く（B-119 の芯はそこ）。
+        # 先に締めると、いちばん効く 700ms が誰の分でもなくなる。
+        root.after(700, lambda: (finish(), step()))
 
     def finish() -> None:
         """1 窓ぶんの結果を締める（合成の移動には `DROP` が来ないので自前で）。"""
@@ -509,9 +540,11 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
             return
         # **道のり**で見る（往復させるので前後の差では 0 になり得る＝上の註）。
         moved = _MOVED.get(str(key), 0) - (_GRABBED["pos"] or 0)
+        # 刻みも**この巡で増えた分**（累計だと前の窓の暴走が全窓に載る）。
+        drifted = _DRIFTS.get(str(key), 0) - drifts0["n"]
         valid = moved >= _DRAG_MIN_PX
         log("DROP", f"{_GRABBED['label']}  移動={moved}px  "
-                    f"★6px 刻み={_DRIFTS.get(str(key), 0)} 回"
+                    f"★6px 刻み={drifted} 回（この巡）"
                     + ("" if valid else "  ⛔ **サンプルとして無効**（窓が動いていない）"))
         if valid:
             _DRAGGED.add(str(key))
@@ -674,6 +707,21 @@ def selftest() -> int:
         probe_win.minsize(*floor)
         check(f"{was}->{now}", classify(probe_win, was, now), want)
         probe_win.destroy()
+
+    print("④ ポインタ監視が合成の掴みを横取りしないか（5 巡目はこれで全滅した）",
+          flush=True)
+    #: 合成ドラッグ中は物理ボタンが上がったまま＝監視から見れば「手を離した」。
+    #: 守りが効いていなければ 1 回目の呼び出しで `_GRABBED` が消える。
+    _GRABBED.update(key=".fake", label="FAKE", since=time.perf_counter(),
+                    size=(500, 400), pos=0)
+    _AUTO["on"] = True
+    poll_pointer(root)
+    check("自動ドラッグ中は掴みが残る", _GRABBED["key"], ".fake")
+    # ⚠️ **裏も見る**＝守りを外せば実際に消えること（消えないなら、この検査は
+    # 何も見ていない＝「一度も落ちないゲート」になる）。
+    _AUTO["on"] = False
+    poll_pointer(root)
+    check("人のドラッグでは離したら締める", _GRABBED["key"], None)
 
     root.destroy()
     print(f"\n=== selftest: {'PASS' if ok else 'FAIL'} ===", flush=True)
