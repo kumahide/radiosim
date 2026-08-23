@@ -116,8 +116,13 @@ _DRAGGED: "set[str]" = set()
 #: 掴んだとみなす最短時間（これ未満は「窓を選んだだけ」）。
 _DRAG_MIN_MS = 1000
 
-#: 窓ごとの **★6px 刻み** の回数（判定表の唯一の数字）。
+#: 窓ごとの **★6px 刻み** の回数（累計）。
 _DRIFTS: "dict[str, int]" = {}
+
+#: 窓ごとの **★6px 刻み** のうち、**その窓を動かしている最中**に起きた分。
+#: 🔑 **判定表が見るのはこちら**（上の `verdict` の註＝累計にはスケール変更直後の
+#: 言い直し 1 回が必ず混ざる）。
+_DRAG_DRIFTS: "dict[str, int]" = {}
 
 #: 窓ごとの**位置**と、**動いた総量**（前後の差ではなく道のり）。
 #: 🔴 **前後の差では駄目**（2026-08-23・自己検査が捕まえた）＝観測のために窓を
@@ -381,6 +386,11 @@ def watch(win) -> None:
             grabbed = _GRABBED["label"] if _GRABBED["key"] is not None else "-"
             if classify(win, was, now).startswith("★"):
                 _DRIFTS[key] = _DRIFTS.get(key, 0) + 1
+                # **その窓を動かしている最中**の刻みだけ別に数える（判定表はこちら）。
+                # ⚠️ 別の窓を掴んでいる間に暴れた分は入れない＝「掴んだ窓と暴れた窓が
+                # 違う」こと自体が事実なので、まとめると消える。
+                if _GRABBED["key"] == key:
+                    _DRAG_DRIFTS[key] = _DRAG_DRIFTS.get(key, 0) + 1
             log("DRIFT", f"{label(win)}  {was} -> {now}  "
                          f"(Δ{now[0] - was[0]:+d},{now[1] - was[1]:+d}) "
                          f"{classify(win, was, now)}  掴んでいる窓={grabbed}  "
@@ -556,10 +566,16 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
 def verdict(root: tk.Tk) -> None:
     """**判定表**を出して終わる＝ログを読み直さなくても結論が分かる形にする。"""
     print("\n=== 判定 ===", flush=True)
-    print(f"{'窓':<34}{'resizable':<11}{'6px 刻み':<10}{'移動':<8}", flush=True)
+    # 🔴 **数えるのは「ドラッグ中の刻み」**（2026-08-23・6 巡目）＝累計だと
+    # **スケール変更直後の言い直し 1 回**（`correct_landing`＝6 窓すべてに出る正常な
+    # 1 発）が混ざり、リサイズできる窓まで `🔴 1 回` と出る。**そこが本題の分かれ目
+    # なので、混ぜたままの表は結論を逆に読ませる。**
+    print(f"{'窓':<34}{'resizable':<11}{'ドラッグ中の刻み':<12}{'（うち変更直後）':<12}"
+          f"{'移動':<8}", flush=True)
     for win in (root, *window_fit.toplevels(root)):
         key = str(win)
-        hits = _DRIFTS.get(key, 0)
+        hits = _DRAG_DRIFTS.get(key, 0)
+        before = _DRIFTS.get(key, 0) - hits
         if key not in _DRAGGED and hits == 0:
             continue
         try:
@@ -568,14 +584,14 @@ def verdict(root: tk.Tk) -> None:
             continue
         moved = "動いた" if key in _DRAGGED else "⛔ 動かず"
         mark = f"🔴 {hits} 回" if hits else "✅ 0 回"
-        print(f"{label(win).split('[')[0]:<34}{str(resizable):<11}{mark:<10}{moved:<8}",
-              flush=True)
+        print(f"{label(win).split('[')[0]:<34}{str(resizable):<11}{mark:<12}"
+              f"{before:<12}{moved:<8}", flush=True)
     print("\n⚠️ `⛔ 動かず` の行は**サンプルとして無効**（静かで当たり前）", flush=True)
     # 🔑 **対照が暴走していない巡は、巡ごと無効**（2026-08-23）。ランチャーと
     # BARE-fixed は本物のドラッグで暴走することが分かっている＝この 2 つが静かなら、
     # 疑うべきは「リサイズできる窓は安全」ではなく**測り方**（合成の移動が
     # タイトルバーのドラッグと同じ経路を通っていない・スケール変更が効いていない）。
-    controls = [key for key, hits in _DRIFTS.items() if hits]
+    controls = [key for key, hits in _DRAG_DRIFTS.items() if hits]
     fixed = [str(w) for w in (root, *window_fit.toplevels(root))
              if _resizable_off(w)]
     if any(key in controls for key in fixed):
@@ -723,6 +739,28 @@ def selftest() -> int:
     poll_pointer(root)
     check("人のドラッグでは離したら締める", _GRABBED["key"], None)
 
+    print("⑤ 判定表が数える刻みが、掴んでいる窓のものか（6 巡目で誤読しかけた）",
+          flush=True)
+    #: 累計（`_DRIFTS`）にはスケール変更直後の言い直しが必ず 1 回混ざる。表が
+    #: そちらを出すと、**リサイズできる窓まで `🔴 1 回`** と読める＝結論が逆になる。
+    _DRIFTS.clear()
+    _DRAG_DRIFTS.clear()
+    mark = tk.Toplevel(root)
+    mark.geometry("500x400+120+120")
+    watch(mark)
+    key = str(mark)
+    _GRABBED.update(key=None, label="-", size=None, pos=None)
+    mark.geometry("494x400")            # 誰も掴んでいない間の 6px（＝言い直し相当）
+    root.update()
+    _GRABBED.update(key=key, label="MARK", since=time.perf_counter(),
+                    size=(494, 400), pos=0)
+    mark.geometry("488x400")            # 掴んでいる間の 6px（＝暴走相当）
+    root.update()
+    check("累計は 2 回", _DRIFTS.get(key, 0), 2)
+    check("ドラッグ中は 1 回だけ", _DRAG_DRIFTS.get(key, 0), 1)
+    _GRABBED.update(key=None, label="-", size=None, pos=None)
+    mark.destroy()
+
     root.destroy()
     print(f"\n=== selftest: {'PASS' if ok else 'FAIL'} ===", flush=True)
     return 0 if ok else 1
@@ -746,6 +784,7 @@ def main() -> None:
         state["started"] = True
         _DRAGGED.clear()
         _DRIFTS.clear()
+        _DRAG_DRIFTS.clear()
         make_bare_pair(root)
         root.after(2500, begin)
 
