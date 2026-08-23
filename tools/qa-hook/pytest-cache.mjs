@@ -42,11 +42,14 @@ const MAX_HASH_BYTES = 8 * 1024 * 1024;
 // ("the gate rings every time" — feedback-promote-recurring-checks, failure
 // mode 2). A gate that answers a question nobody asked is not free; here it was
 // the thing making the actual investigation slow.
-// ⚠️ **.py だけ**。`experiments/README.md` は test_docs_consistency が読む（公開
-// 文書として課題 ID の混入を検査している＝実際にこの変更中に捕まえた）ので、
-// あそこを内容ブラインドにすると本物の検出力が落ちる。**盲目にしてよいのは
-// 「どのテストも 1 行も読まないファイル」だけ。**
-const isContentBlind = (p) => p.startsWith("experiments/") && p.endsWith(".py");
+// 2026-08-23（ユーザー決定）: **experiments/ の全ファイル**へ広げた。当初は .py
+// だけで、`experiments/README.md` を除外していた（test_docs_consistency が公開文書
+// として課題 ID の混入を検査しており、実際にこの日 1 件捕まえたため）。
+// ⚠️ **広げた代償を明示しておく**＝*その turn で experiments/ しか触っていない* 場合、
+// README の課題 ID 混入はその場では捕まらない。⇒ 次に他の何かを触った turn、
+// 遅くともリリース前の release-check で捕まる（**検出が消えるのではなく遅れる**）。
+// **盲目にしてよいのは「壊れても遅れて気づけば済むもの」までで、それ以上は広げない。**
+const isContentBlind = (p) => p.startsWith("experiments/");
 
 // git-ignored trees whose contents the suite still verifies (test_claude_hooks).
 const UNTRACKED_DEPS = [
@@ -152,9 +155,9 @@ export function pytestCacheKey(cwd) {
   }
 
   for (const dep of UNTRACKED_DEPS) parts.push(...statLines(cwd, dep));
-  // Content-blind trees: the suite only asks "does this file exist?", so the
-  // listing is the whole input. Editing a probe leaves it unchanged; adding or
-  // deleting one moves it.
+  // Content-blind trees: what still matters is which files exist, so the listing
+  // is the whole input. Editing anything under experiments/ leaves it unchanged;
+  // adding or deleting a file moves it (documented .py references must resolve).
   parts.push(...listingLines(cwd, "experiments"));
 
   return createHash("sha256").update(parts.join("\n")).digest("hex");
