@@ -2225,7 +2225,7 @@ def test_a_frame_that_swallows_pixels_is_compensated_on_the_next_fit():
         win.update()
 
         _swallow(win, 6, 0)                      # 枠が幅を 6px 呑んだ
-        assert window_fit.learn_landing_slip(win) is True, (
+        assert window_fit.learn_landing_slip(win, after_dpi_change=True) is True, (
             "要求した寸法に着地していないのに、ずれを覚えていない"
         )
         assert win._fit_slip == (6, 0), f"覚えた下駄が違う: {win._fit_slip}"
@@ -2265,11 +2265,49 @@ def test_a_size_the_user_changed_is_not_learned_as_a_frame_slip():
         win.update()
 
         _swallow(win, window_fit._FIT_SLIP_MAX + 20, 0)   # 利用者が手で大きく縮めた
-        assert window_fit.learn_landing_slip(win) is False, (
+        assert window_fit.learn_landing_slip(win, after_dpi_change=True) is False, (
             "枠の差では説明できない大きさのずれを、下駄として覚えている"
         )
         assert getattr(win, "_fit_slip", (0, 0)) == (0, 0), (
             f"下駄を履いてしまった: {win._fit_slip}"
+        )
+    finally:
+        root.destroy()
+
+
+def test_a_size_change_without_a_dpi_change_is_not_learned():
+    """🔴 **枠のずれを学ぶのは DPI が変わった直後だけ**（独立レビュー 39 巡目・P1）。
+
+    枠の厚みが古いまま残るのは**DPI が変わったときだけ**なので、それ以外のずれは
+    定義上この現象ではない。⚠️ この縛りが無いと**あらゆるサイズ差を「枠の取り分」
+    として記録する**＝実測では、利用者が 20px 広げた窓に対して `-20` を覚え、
+    次の測り直しがその 20px を黙って取り消したうえ、`_fit_size`（620）と実寸（600）が
+    食い違ったまま**振動する**状態になった。
+
+    ⚠️ **上限（`_FIT_SLIP_MAX`）だけでは足りない**＝上限の内側に収まる手動リサイズは
+    素通りする。**契機の縛りと上限は対で効く。**
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = tk.Toplevel(root)
+        ttk.Label(win, text="中身" * 20).pack()
+        window_fit.fit_to_content(win, min_w=600, min_h=300)
+        win.update()
+
+        # 利用者が 20px 広げた（＝上限 48px の内側だが、DPI は変わっていない）。
+        win.geometry(f"{win.winfo_width() + 20}x{win.winfo_height()}")
+        win.update()
+
+        assert window_fit.learn_landing_slip(win, after_dpi_change=False) is False, (
+            "DPI が変わっていないのに、寸法の差を「枠の取り分」として学んでいる"
+        )
+        assert getattr(win, "_fit_slip", (0, 0)) == (0, 0), (
+            f"下駄を履いてしまった: {win._fit_slip}"
+            "（利用者が変えた寸法を次の測り直しが黙って取り消す）。"
         )
     finally:
         root.destroy()

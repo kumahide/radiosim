@@ -25,7 +25,7 @@ import tkinter as tk
 import traceback
 from pathlib import Path
 
-REPO = Path(r"D:\dev\radiosim-repo")
+REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO))
 
 import main as app_main                      # noqa: E402

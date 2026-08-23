@@ -626,8 +626,11 @@ def watch_display(
         # （2026-08-23・B-119）。覚えずにもう一度同じ寸法を要求すると、Tk が同じだけ
         # 呑んでまた足りなくなる＝**測り直しが巻き戻しにしかならず、6px ずつ縮み
         # 続ける**（実機ログ＝602 を要求 → 596 が返る → 590 → 584 …）。
+        # ⚠️ **DPI が変わった契機のときだけ学ぶ**（独立レビュー 39 巡目・P1）＝
+        # 枠の厚みが古いまま残るのは DPI が変わったときだけで、それ以外のずれは
+        # 定義上この現象ではない（利用者や OS が変えた寸法を下駄として履かない）。
         for win in overridden:
-            window_fit.learn_landing_slip(win)
+            window_fit.learn_landing_slip(win, after_dpi_change=args[1])
         on_change(*args)
 
     def _on_configure(event: "tk.Event") -> None:

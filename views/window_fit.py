@@ -88,8 +88,10 @@ _SM_CYCAPTION, _SM_CYSIZEFRAME, _SM_CXPADDEDBORDER = 4, 33, 92
 # これ以上のずれは枠の話ではない（利用者が窓を掴んで変えた・WM が要求を拒んだ）
 # ので**学ばない**＝ここに上限が無いと、手で大きく変えた寸法を「毎回の下駄」として
 # 覚え込み、以後すべての測り直しがその分ずれる。実測で必要なのは 150% の
-# 幅 6px / 高さ 27px なので、桁 1 つぶんの余裕を見てこの値。
-_FIT_SLIP_MAX = 96
+# 幅 6px / 高さ 27px なので、200% でも足りる幅を見てこの値。⚠️ **契機の縛り
+# （DPI が変わった直後だけ）と対で効く**＝上限だけでは「小さめの手動リサイズ」を
+# 拾ってしまう（独立レビュー 39 巡目・P1）。
+_FIT_SLIP_MAX = 48
 
 
 _GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
@@ -801,7 +803,9 @@ def fit_to_content(
     return w, h
 
 
-def learn_landing_slip(win: "tk.Tk | tk.Toplevel") -> bool:
+def learn_landing_slip(
+    win: "tk.Tk | tk.Toplevel", *, after_dpi_change: bool
+) -> bool:
     """**要求した寸法に着地したか**を確かめ、ずれていたら次回のぶんを覚える。
 
     返り値＝**もう一度測り直す価値があるか**（覚えた＝True）。
@@ -821,7 +825,20 @@ def learn_landing_slip(win: "tk.Tk | tk.Toplevel") -> bool:
     ⚠️ **大きなずれは学ばない**（`_FIT_SLIP_MAX`）＝それは枠の話ではなく、利用者が
     窓を掴んで変えた結果か、WM が要求を拒んだ結果。覚えると**その寸法を下駄として
     永久に履く**ことになる。
+
+    🔴 **DPI が変わった直後にしか学ばない**（2026-08-23・独立レビュー 39 巡目・P1）＝
+    枠の厚みが古いままになるのは**DPI が変わったときだけ**なので、それ以外の
+    ずれは定義上この現象ではない。この縛りが無いと**あらゆるサイズ差を「枠の
+    取り分」として記録する**＝利用者や OS が寸法を変えただけの回でも下駄を履き、
+    実測では「利用者が広げた 20px を黙って取り消し、以後 `_fit_size` と実寸が
+    食い違ったまま振動する」状態になった。⚠️ **DPI が戻る側も学ぶ必要がある**
+    （差は逆向きに出て 0 へ帰る）ので「小さくなった側だけ」には絞らない。
+
+    Args:
+        after_dpi_change: **DPI が変わった契機の確かめ直しか**。偽なら何もしない。
     """
+    if not after_dpi_change:
+        return False                    # 枠の話ではない（上の註）
     want = getattr(win, "_fit_size", None)
     if not want:
         return False                    # `fit_to_content` を通っていない窓は対象外
