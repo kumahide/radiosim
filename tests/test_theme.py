@@ -1478,6 +1478,10 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
     ⚠️ **`correct_landing` に DPI を直接渡すテストでは、この配線ミスは捕まらない**
     ＝計算を検査するテストは「呼ばれ方」を検査しない（B-087/B-088 で踏んだ型）。
     ここは**製品と同じ配線**（`watch_display`）を通す。
+
+    ⚠️ **初めて見えた窓には移動元が無い**（`None` が渡る）＝別 DPI のモニタ側で
+    開かれた窓は「どこから来たか」を持たないので、物差しは移動先の装飾だけになる。
+    **控えめな側に倒してある**（触らない方向の誤りに寄せる）。
     """
     import tkinter as tk
 
@@ -1487,10 +1491,10 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
     monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
     theme._pointer_is_down = lambda: False         # type: ignore[assignment]
-    seen_from: list = []
+    seen_from: list = []                           # [(窓のパス名, 渡された DPI)]
     real_correct = window_fit.correct_landing
     window_fit.correct_landing = (                 # type: ignore[assignment]
-        lambda win, *, from_dpi=None: seen_from.append(from_dpi) or
+        lambda win, *, from_dpi=None: seen_from.append((str(win), from_dpi)) or
         real_correct(win, from_dpi=from_dpi))
     try:
         # アプリ全体の字は 96 のまま（＝子窓だけが高 DPI 側に居る構成）。
@@ -1501,15 +1505,37 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
         win._fit_size = (400, 300)
         win._fit_asked = (400, 300)
         root.update()
+        # ⚠️ **子窓が監視に登録されるまで待つ**（独立レビュー 43 巡目）＝
+        # `root.update()` はデバウンス（250ms）の完了を保証しないので、ここを
+        # 待たないと「子窓を知らないまま DPI が変わる」回が混じって不安定になる。
+        pump_until(root, lambda: False,
+                   timeout_ms=theme._DISPLAY_DEBOUNCE_MS * 2 + 200)
+        # ⚠️ **初めて見えた窓の分は数えない**＝そこには窓ごとの前回 DPI が無いので
+        # `None` が渡るのが正しい（下の註）。ここで数え直さないと、その 1 回目を
+        # 見て「配線されていない」と誤判定する。
+        seen_from.clear()
+        # 🔑 **アプリ全体の値と、子窓の前回値を食い違わせる**（これが指摘の条件）。
+        # 子窓が初めて見えた時点で全体は 240 に追従しているので、ここで 96 へ戻す
+        # ＝「全体は 96 のまま、子窓だけ 240 に居る」状態を作る。**これをやらないと
+        # 両者がたまたま一致し、アプリ全体の値を渡す実装でもゲートが緑になる**
+        # （実際に変異検証が素通りした）。
+        theme.apply_fonts(root, dpi=96)
 
         fake["dpi"] = 96                           # 240 の子窓を 96 側へ戻した
         win.geometry("401x300+10+10")
         root.update()
-        pump_until(root, lambda: seen_from,
+        pump_until(root, lambda: any(p == str(win) for p, _d in seen_from),
                    timeout_ms=theme._DISPLAY_LANDING_MS * 4 + 600)
 
-        assert seen_from and seen_from[0] == 240, (
-            f"着地の確認へ渡った移動元の DPI: {seen_from}（期待 240）"
+        # 🔴 **子窓の分だけを見る**（独立レビュー 43 巡目）＝`_land()` はルート窓から
+        # 順に処理するので、先頭を見るとルートの値で緑になり、**この配線ゲートが
+        # 検査したいものを検査しない**（壊れ方③）。
+        for_child = [d for path, d in seen_from if path == str(win)]
+        assert for_child, (
+            f"子窓の着地が確かめられていない（見えたのは {seen_from}）"
+        )
+        assert for_child[0] == 240, (
+            f"子窓へ渡った移動元の DPI: {for_child[0]}（期待 240）"
             "＝アプリ全体の値を渡していると、倍率が下がる向きの補正が拒否される。"
         )
     finally:
