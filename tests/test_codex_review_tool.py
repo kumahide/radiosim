@@ -103,11 +103,27 @@ def test_a_failed_round_does_not_consume_its_number(script):
 def test_the_diff_is_written_only_when_it_is_not_empty(script):
     """空の差分は、分かる文言で止める（base に HEAD 自身を渡した実例がある）。
 
-    以前はパイプで直に書いており、空だとファイルが作られず `Get-Item` が
-    「パスが存在しません」で落ちて、**base の誤りという本当の原因が見えなかった**。
+    ⚠️ **見るのは「判定していること」であって判定の書き方ではない**（2026-08-24）。
+    以前は文字列で受けてから `IsNullOrWhiteSpace` で見ていたが、その受け方自体が
+    差分を壊していた（B-122）。いまは 0 バイトのファイルとして表れる。
     """
-    assert "IsNullOrWhiteSpace($diffText)" in script
+    assert "(Get-Item $diffPath).Length -eq 0" in script
     assert "差分が空です" in script
+
+
+def test_the_diff_is_written_by_git_itself_not_through_powershell(script):
+    """⛔ **差分を PowerShell の文字列に通さない**（B-122）。
+
+    `git diff | Out-String` は ①コンソールのコードページで復号するので日本語が
+    壊れ ②行を幅で畳み直すので `diff --git` が直前行に連結される
+    ＝**独立レビューへ渡す「生の差分」が、渡す前に壊れる**。
+    """
+    assert 'git diff --output=' in script, "git に直接書かせていない"
+    # ⚠️ **コメント行は除く**＝*なぜそれを書かないか*の説明にその字が出るので、
+    #    素朴に禁じると「理由を書けないゲート」になる（説明ごと消す圧力がかかる）。
+    code = "\n".join(
+        ln for ln in script.splitlines() if not ln.lstrip().startswith("#"))
+    assert "Out-String" not in code, "差分が PowerShell の文字列を経由している"
 
 
 # --- ⛔ 書いてはいけない主張（8 巡目 P1 の再発防止） ---------------------------
@@ -367,3 +383,38 @@ def test_a_relative_outdir_is_anchored_to_the_repository_not_the_caller(stub_cod
         )
     finally:
         shutil.rmtree(expected, ignore_errors=True)
+
+
+def test_the_written_diff_is_byte_identical_to_git(stub_codex, tmp_path):
+    """🔑 **文字列照合では B-122 を見られない**ので、実際に書かせて突き合わせる。
+
+    書かれた `.diff` が `git diff` の出力と**バイト単位で同じ**であること。
+    ⚠️ **UTF-8 として復号できるかでは足りない**＝壊れた差分も UTF-8 としては
+    読めてしまう（round45 の実物がそうだった＝日本語が化けたまま復号は成功する）。
+    ⇒ 比べるのは**バイト列**。あわせて `git apply --stat` が通ることも見る
+    （行の連結はここで初めて corrupt patch として表に出る）。
+    """
+    if sys.platform != "win32":
+        pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
+    if not shutil.which("pwsh"):
+        pytest.skip("pwsh が無い環境")
+    if not SCRIPT.exists():
+        pytest.skip("run.ps1 が無い環境")
+
+    out_dir = tmp_path / "out903"
+    out_dir.mkdir()
+    proc, prompt = _run_with_stub(stub_codex, tmp_path, out_dir, ROOT, 903)
+    assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+    named = _diff_named_by(prompt)
+    assert named.exists(), f"入力文が存在しないパスを指している: {named}"
+
+    want = subprocess.run(["git", "diff", "HEAD~1..HEAD"], cwd=str(ROOT),
+                          capture_output=True, timeout=180).stdout
+    assert named.read_bytes() == want, (
+        "書かれた差分が git の出力と一致しない＝渡す前に壊れている"
+    )
+    applied = subprocess.run(["git", "apply", "--stat", str(named)], cwd=str(ROOT),
+                             capture_output=True, timeout=180)
+    assert applied.returncode == 0, (
+        f"差分がパッチとして壊れている: {applied.stderr.decode('utf-8', 'replace')}"
+    )

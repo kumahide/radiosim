@@ -175,22 +175,25 @@ if ($Mode -eq 'code') {
     $safeBase = ($Base -replace '[^\w.\-]', '_')
     $diffPath = Join-Path $outDir ("round{0}_diff_{1}_to_HEAD.diff" -f $Round, $safeBase)
 
-    # ⚠️ パイプで直に書かない（2026-08-16）。差分が空だと Set-Content が
-    #    **ファイルを作らない**ので、次の Get-Item が「パスが存在しません」で落ち、
-    #    *base の指定を間違えた*という本当の原因が見えなかった（実際に踏んだ＝
-    #    9 巡目で HEAD 自身を base に渡した）。⇒ 先に文字列で受けて自分で判定する。
+    # ⛔ **PowerShell に差分を通さない**（2026-08-24・B-122）。`git diff | Out-String`
+    #    は ①git の標準出力を**コンソールのコードページで復号**するので日本語が全滅し
+    #    ②`Out-String` が**行を幅で畳み直す**ので次の `diff --git` が直前行に連結される
+    #    （実測＝round45 で 4 か所・`git apply --stat` が corrupt patch で落ちた）。
+    #    ⇒ **git に直接バイト列を書かせる**（`--output`）。**独立レビューの芯は「生の
+    #    差分を渡す」ことなので、ここが壊れるとゲートそのものが空振りする。**
+    # ⚠️ 空の差分は「ファイルが無い」ではなく **0 バイトのファイル**で表れる
+    #    （2026-08-16 に踏んだ *base の指定間違い* は、下の長さ判定でそのまま出る）。
     Push-Location $repoRoot
     try {
-        $diffText = (git diff "$Base..HEAD" | Out-String)
+        git diff --output="$diffPath" "$Base..HEAD"
         if ($LASTEXITCODE -ne 0) { throw "git diff が失敗しました（ref を確認してください）: $Base..HEAD" }
     } finally { Pop-Location }
 
-    if ([string]::IsNullOrWhiteSpace($diffText)) {
+    if (-not (Test-Path -LiteralPath $diffPath) -or (Get-Item $diffPath).Length -eq 0) {
         throw ("差分が空です: $Base..HEAD" +
                " ⇒ base が HEAD 自身か、変更が git 管理外（ISSUES.md・memory は追跡していません）。" +
                " 直したコミットそのものを見せたいなら base は 1 つ前（例 `<sha>^`）です。")
     }
-    Set-Content -LiteralPath $diffPath -Value $diffText -Encoding UTF8
     $bytes = (Get-Item $diffPath).Length
     Write-Host ("差分: {0}  ({1:N1} KB)" -f $diffPath, ($bytes / 1KB))
 

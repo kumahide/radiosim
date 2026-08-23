@@ -420,6 +420,20 @@ class TestAssignmentAudit:
         assert audit["undeclared"] == [], f"{state!r} を未記入と誤判定"
         assert audit["assigned"] == {"3.0": ["B-001"]}, audit
 
+    def test_a_destination_without_a_number_is_pending_not_missing(self, hook):
+        """🔑 **番号が無いことと、行き先が無いことは別**（2026-08-24）。
+
+        [[project-roadmap]] の `+0.1` の受け皿は**番号を後から決める**器なので、
+        「受け皿へ入れると決めたが番号は未定」は*正規の運用*。これを取りこぼし
+        （`undeclared`）として鳴らすと、**規約どおり運用するほど鳴る**ゲートになる。
+        """
+        doc = _doc("### ★ B-120: t", "",
+                   "- ★ **状態**: 未着手（**✅ 次のマイナー〔`+0.1` の受け皿〕へ"
+                   "＝2026-08-24 ユーザー決定。版番号未定**＝切るときに決める）")
+        audit = hook.assignment_audit(doc)
+        assert audit["undeclared"] == [], audit
+        assert audit["pending"] == ["B-120"], audit
+
     def test_a_bare_open_item_is_flagged(self, hook):
         """行き先も判断待ちも書いていない項目は鳴ること（I-081・I-016 の形）。"""
         doc = _doc("### ★ I-081: 公開文書に旧番号の版が残っている", "",
