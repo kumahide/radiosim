@@ -37,6 +37,21 @@
 実データ 26 本＝判定 0 本変化／100 dB 超 13 → 2 本／hiroshima の標本数依存は
 120〜960 点で 38.82〜39.16（現行は 1860→2325）。多重回折は 6 本で残る。
 
+✅ **多重回折は「本当に独立した 2 峰」でちゃんと出る**（2026-08-25・Codex 49 巡目 P1
+   の裏取り）＝`独立2峰(高AT)` は Single 19.84 に対し Kν 40.84（2.06 倍）。
+   既定のアンテナ高の `2峰40m/80m` が Single と同値なのは、**谷でも F1 の 43%
+   しかクリアしていない**（実務の 60% ルールに届かない）＝電波的に独立していない
+   地形だから。⚠️ `_NU_THRESHOLD = -0.8` は実測すると **F1 の 57% クリアランス
+   ＝60% ルールそのもの**なので、θ=-0.8 で切るのは実務の標準と同じ物差し。
+
+⚠️ **残る限界（新しい保証を書かない）**:
+   - 深い遮蔽での標本間隔依存は消えない＝`veg_low_antenna`（富士山頂付近・
+     ν=81.63・F1 半径 5.7m）で 120→960 点が 80.33→94.87 dB（**+18%**）。
+     現行は +92% なので改善はしたが、「θ=-0.8 なら標本数に安定」は**言い過ぎ**。
+     正しくは「**不連続な跳び（39↔124）は消えるが、端点近傍の最大 ν が
+     標本間隔に依存する分は残る**」（2026-08-25・Codex 49 巡目 P2）。
+   - 真値との照合はしていない（実測でも基準実装でもない）。
+
 ⚠️ **「Bullington < Ep-Pet < Kν」という順序は一般には成り立たない**
    （2026-08-25・Codex 48 巡目 P1）＝fuji では成り立つが hiroshima では
    Kν が Ep-Pet の 0.56 倍。書けるのは「多くの回線で Ep-Pet の 1.0〜1.7 倍、
@@ -61,8 +76,8 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 from core import models  # noqa: E402
 
 from b032_deygout_probe import (  # noqa: E402
-    DIST_KM, FREQ_MHZ, H_RX, H_TX,
-    _profile, flat, narrow_peak, two_peaks, wide_hill,
+    DIST_KM, FREQ_MHZ, H_RX, H_RX_HIGH, H_TX, H_TX_HIGH,
+    _profile, flat, narrow_peak, two_peaks, two_peaks_clear, wide_hill,
 )
 
 
@@ -245,37 +260,41 @@ VARIANTS: dict[str, object] = {
 }
 
 
-def run(elevs, veg_h=0.0, dist_km=DIST_KM, variant=None) -> float:
+def run(elevs, veg_h=0.0, dist_km=DIST_KM, variant=None,
+        h_tx=H_TX, h_rx=H_RX) -> float:
     terrain = _profile(elevs, dist_km)
     orig = models._deygout_loss
     if variant is not None:
         models._deygout_loss = variant
     try:
         return models.calculate_propagation(
-            terrain, H_TX, H_RX, FREQ_MHZ, veg_h, 4 / 3, diff_method="deygout"
+            terrain, h_tx, h_rx, FREQ_MHZ, veg_h, 4 / 3, diff_method="deygout"
         ).diff_loss
     finally:
         models._deygout_loss = orig
 
 
-def single(elevs, veg_h=0.0, dist_km=DIST_KM) -> float:
+def single(elevs, veg_h=0.0, dist_km=DIST_KM, h_tx=H_TX, h_rx=H_RX) -> float:
     terrain = _profile(elevs, dist_km)
     return models.calculate_propagation(
-        terrain, H_TX, H_RX, FREQ_MHZ, veg_h, 4 / 3, diff_method="single"
+        terrain, h_tx, h_rx, FREQ_MHZ, veg_h, 4 / 3, diff_method="single"
     ).diff_loss
 
 
-CASES: list[tuple[str, np.ndarray, float, float]] = [
-    ("平地 0m",       flat(),            0.0,  DIST_KM),
-    ("広い丘 5m",     wide_hill(5),      0.0,  DIST_KM),
-    ("広い丘 25m",    wide_hill(24.999), 0.0,  DIST_KM),
-    ("広い丘 40m",    wide_hill(40),     0.0,  DIST_KM),
-    ("広い丘 80m",    wide_hill(80),     0.0,  DIST_KM),
-    ("細い峰 25m",    narrow_peak(25),   0.0,  DIST_KM),
-    ("細い峰 60m",    narrow_peak(60),   0.0,  DIST_KM),
-    ("2 つの峰 40m",  two_peaks(40),     0.0,  DIST_KM),
-    ("2 つの峰 80m",  two_peaks(80),     0.0,  DIST_KM),
-    ("キャノピー2km", np.zeros(200),     31.0, 2.0),
+CASES: list[tuple[str, np.ndarray, float, float, float, float]] = [
+    ("平地 0m",       flat(),            0.0,  DIST_KM, H_TX, H_RX),
+    ("広い丘 5m",     wide_hill(5),      0.0,  DIST_KM, H_TX, H_RX),
+    ("広い丘 25m",    wide_hill(24.999), 0.0,  DIST_KM, H_TX, H_RX),
+    ("広い丘 40m",    wide_hill(40),     0.0,  DIST_KM, H_TX, H_RX),
+    ("広い丘 80m",    wide_hill(80),     0.0,  DIST_KM, H_TX, H_RX),
+    ("細い峰 25m",    narrow_peak(25),   0.0,  DIST_KM, H_TX, H_RX),
+    ("細い峰 60m",    narrow_peak(60),   0.0,  DIST_KM, H_TX, H_RX),
+    # ⚠️ 既定のアンテナ高では谷で F1 の 43% しかクリアせず、電波的には独立していない
+    ("2峰40m(非独立)", two_peaks(40),    0.0,  DIST_KM, H_TX, H_RX),
+    ("2峰80m(非独立)", two_peaks(80),    0.0,  DIST_KM, H_TX, H_RX),
+    ("キャノピー2km", np.zeros(200),     31.0, 2.0, H_TX, H_RX),
+    # ⚠️ ここだけアンテナ高が違う＝**谷で F1 が十分クリアな「本当に独立した 2 峰」**
+    ("独立2峰(高AT)", two_peaks_clear(), 0.0,  DIST_KM, H_TX_HIGH, H_RX_HIGH),
 ]
 
 
@@ -287,11 +306,11 @@ def main() -> None:
     head = f"{'形':<14}{'Single':>9}" + "".join(f"{n:>15}" for n in names)
     print(head)
     print("-" * len(head))
-    for label, elevs, veg, dist in CASES:
-        s = single(elevs, veg, dist)
+    for label, elevs, veg, dist, htx, hrx in CASES:
+        s = single(elevs, veg, dist, htx, hrx)
         row = f"{label:<14}{s:>9.2f}"
         for n in names:
-            row += f"{run(elevs, veg, dist, VARIANTS[n]):>15.2f}"
+            row += f"{run(elevs, veg, dist, VARIANTS[n], htx, hrx):>15.2f}"
         print(row)
 
     # 標本数依存（深い遮蔽の顔）

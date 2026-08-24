@@ -73,6 +73,12 @@ def main() -> None:
           f"  ⇒ そこでの ν の最大 = "
           f"{max(list(nu[1:lo]) + list(nu[hi+1:-1]), default=float('nan')):.2f}")
     print(f"  LoS を超える点 = {int(np.sum(obs > los))} / {n}")
+    dips = [i for i in range(lo, hi + 1) if obs[i] <= los[i]]
+    if dips:
+        print(f"  ⚠️ 一体化範囲の中で LoS を下回る点 = {len(dips)} 点  "
+              f"ν = {', '.join(f'{nu[i]:.2f}' for i in dips[:12])}"
+              f"  （LoS 差 {', '.join(f'{obs[i]-los[i]:+.1f}m' for i in dips[:12])}）")
+        print("     ⇒ この ν が θ の近傍にあると、標本数で「繋がる/切れる」が入れ替わる")
     print()
 
     # ν の断面（20 点ごと）

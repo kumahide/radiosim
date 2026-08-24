@@ -121,7 +121,11 @@ def sample_dependence() -> None:
     """実データで標本数依存が消えるか（近似・線形補間で標本数だけ振る）。"""
     data  = json.loads(GOLDEN.read_text(encoding="utf-8"))
     links = {r["id"]: r for r in data["links"]}
-    targets = ["hiroshima_kure_ridge", "kobe_rokko", "fuji_kawaguchi"]
+    # ⚠️ **自分の主張の反例を対象から外さない**（2026-08-25・Codex 49 巡目 P2）。
+    #    表を横に広げるために 3 本へ絞ったとき、「θ=-0.8 だけが標本数に安定する」の
+    #    反例（veg_low_antenna は 80→95 dB）が落ちていた。
+    targets = ["hiroshima_kure_ridge", "kobe_rokko", "fuji_kawaguchi",
+               "veg_low_antenna", "takamatsu_yashima"]
     print()
     print("標本数依存（⚠️ 凍結配列の線形補間による近似）")
     names = [n for n in VARIANTS if n != "現行"]
@@ -129,7 +133,7 @@ def sample_dependence() -> None:
           + "".join(f"{n:>14}" for n in names))
     print("-" * (62 + 14 * len(names)))
     for tid in targets:
-        for n in (120, 180, 240, 360, 480, 720, 960):
+        for n in (120, 240, 480, 960):
             rec = links[tid]
             sg = recompute(rec, None, n=n, force_single=True)
             b  = recompute(rec, None, n=n)
