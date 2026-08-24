@@ -771,6 +771,105 @@ def _taskbar_is_never_the_dev_machines():
         window_fit.work_areas = real            # type: ignore[assignment]
 
 
+# ============================================================
+# 🔴 この機械そのものを測定に混ぜない（2026-08-24・I-108）
+# ============================================================
+# 🔑 **前提は主張ではない。** 寸法ゲートには「開いた直後はまだ溢れていない」の
+# ような**前提の行**があり、それは*走らせた機械の画面がその窓を持てるとき*にだけ
+# 成り立つ。2026-08-23 に実際に破れた＝表示スケール 150% の機械では条件探索の
+# 要求 `need=(843, 989)` に対し Tk が見る画面が **1707x960**（150% で縮む）しか
+# なく、装飾を引いた 921 で頭打ちする ⇒ **製品ではなく実行環境が QA ゲートを
+# 赤にした**（I-108・ブロッキングのフックが 150% のときだけ落ちた）。
+#
+# 上の `_taskbar_is_never_the_dev_machines` は同じ話の**タスクバーの口だけ**を
+# 塞いだものだった。機械が測定へ入り込む口は実測で 3 つある:
+#   ① 作業領域（タスクバーの実寸）… B-084 で塞いだ（上の fixture）
+#   ② **画面の大きさ**（`window_fit.screen_size`）… 表示スケールで縮む
+#   ③ **字が従う DPI**（`views.theme.window_dpi`）… `apply_fonts` の既定値で、
+#      これが動くと**必要量そのもの**（フォントの実測ピクセル）が動く
+# ⇒ ②③も**基準機（開発機 WQHD・100% ＝ 使える高さ 1350px）へ固定**する。
+#
+# ⚠️ **応急の手当て（前提を skip にする）では覆いが消える向きに壊れた**＝画面が
+# 狭い機械ほど検査が走らなくなり、[[project-real-world-env-vdi]]（実機は開発機
+# より 360px 低い）＝*いちばん壊れやすい機械でいちばん検査が薄い*。固定なら
+# **どの機械でも同じ本数が同じ数字で走る**。
+# ⚠️ 出荷先の条件（FHD・125%/150%）を見たいゲートは**従来どおり自分で差し替える**
+# （`_ship_on_fhd` 等・あとから当てた patch が勝つ）。ここは「何も指定しない
+# テストが黙って機械を読む」ことだけを止める。
+# ⚠️ **本物の機械を見たいテストは `@pytest.mark.real_machine`**（Tk と Win32 の
+# 座標系の突き合わせ）。数を増やさないこと＝付けたぶんだけ「この機械でしか意味の
+# ない検査」が戻る。台帳＝tests/test_window_fit.py の `_REAL_MACHINE_TESTS`。
+
+#: 測定の基準機＝開発機（WQHD・100%）。ここを動かすと寸法ゲートの数字が全部動く。
+REFERENCE_SCREEN = (2560, 1440)
+REFERENCE_DPI = 96
+
+
+def _pinned_screen(_win) -> "tuple[int, int]":
+    """基準機の画面（`window_fit.screen_size` の差し替え）。"""
+    return REFERENCE_SCREEN
+
+
+def _pinned_dpi(win) -> int:
+    """基準機の DPI（`views.theme.window_dpi` の差し替え）。
+
+    ⚠️ **答えだけを固定し、途中の副作用は本物のまま残す**（2026-08-24 に実測で
+    踏んだ）＝本物は `winfo_toplevel().winfo_id()` で Win32 に窓のハンドルを聞く。
+    この呼び出しは**その窓を実体化させる**ので、省くと Tk が版組みを確定させる
+    *時点*がずれ、まだ表示していない窓の最初の測定が **28px 太い**まま残った
+    （`grow_only` が floor に拾い、以後 3 本のゲートが赤）。
+    ⇒ 差し替えるのは「モニタが何と言ったか」だけにする。
+    """
+    try:
+        win.winfo_toplevel().winfo_id()
+    except Exception:
+        pass
+    return REFERENCE_DPI
+
+
+# 固定が**効いているか**をゲートから見分けるための印（値の一致だけで見ると、
+# たまたま基準機と同じ機械では固定を外しても緑になる＝壊れ方①）。
+_pinned_screen.is_the_pin = True                # type: ignore[attr-defined]
+_pinned_dpi.is_the_pin = True                   # type: ignore[attr-defined]
+
+
+#: 本物の口（最初のテストの setup で 1 度だけ捕まえる＝まだ誰も差し替えていない）。
+_REAL_DOORS: "dict[str, object]" = {}
+
+
+def _real_doors() -> "dict[str, object]":
+    from views import theme, window_fit
+
+    if not _REAL_DOORS:
+        _REAL_DOORS["screen"] = window_fit.screen_size
+        _REAL_DOORS["dpi"] = theme.window_dpi
+    return _REAL_DOORS
+
+
+@pytest.fixture(autouse=True)
+def _the_machine_is_never_the_dev_machines(request):
+    """**画面の大きさと DPI を基準機へ固定する**（2026-08-24・I-108）。
+
+    🔴 **後始末では直せない**（実測で踏んだ）＝`monkeypatch` は先に立ち上がる
+    autouse fixture（`dialog_calls`）が要求しているので、**その undo はここの
+    teardown より後に走る**。`monkeypatch.setattr(window_fit, "screen_size", …)`
+    を使う既存ゲートは 20 本以上あり、そこで捕まる「元の値」は*この固定*なので、
+    teardown で本物へ戻しても**直後に固定が入れ直される**＝以後ずっと漏れる。
+    実害＝`real_machine` のテストが**固定を見たまま緑**になっていた（壊れ方①）。
+    ⇒ **後始末に頼らず、毎テストの setup で入れ直す**（本物は最初に捕まえた
+    ものを使う）。次のテストが必ず正しい状態から始まるので、間の漏れは効かない。
+    """
+    from views import theme, window_fit
+
+    real = _real_doors()
+    want_real = "real_machine" in request.keywords
+    window_fit.screen_size = (                  # type: ignore[assignment]
+        real["screen"] if want_real else _pinned_screen)
+    theme.window_dpi = (                        # type: ignore[assignment]
+        real["dpi"] if want_real else _pinned_dpi)
+    yield
+
+
 # 表示環境の監視（`views.theme.watch_display`）は「静けさ」を待つ設計なので、
 # テストは**実時間**を待たされる。⇒ 待ち時間の定数を**同じ比のまま** 1/25 に縮める。
 # 🔴 **速さに賭けるのとは違う**（B-082 の教訓は保つ）＝待ち方は `pump_until`

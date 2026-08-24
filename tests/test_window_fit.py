@@ -37,7 +37,8 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core import i18n
 from core import simulation as sim
-from conftest import make_themed_root, structural_skip
+import conftest
+from conftest import make_themed_root
 from views import window_fit
 
 _VIEWS_DIR = os.path.join(os.path.dirname(__file__), "..", "views")
@@ -170,6 +171,130 @@ def _grow_scenario(win) -> None:
     from core import scenario as scn
     while len(win._cmp_cols) < scn.MAX_COMPARE_CONDITIONS:
         win._add_condition_column()
+
+
+# ============================================================
+# 0: 測る機械そのものを固定する（I-108）
+# ============================================================
+# 🔴 **走らせた機械が、寸法ゲートの前提を黙って変えていた。** 表示スケール 150% の
+# 機械では Tk が見る画面が 1707x960 まで縮み、字は 1.5 倍になる ⇒ 「開いた直後は
+# まだ溢れていない」という**前提の行**が破れて、製品ではなく実行環境が赤を出した
+# （2026-08-23・I-108）。固定の本体は conftest の
+# `_the_machine_is_never_the_dev_machines`（画面と DPI）＋
+# `_taskbar_is_never_the_dev_machines`（作業領域）で、ここはその**見張り**。
+#
+# ⚠️ **値の一致だけで見ない**＝たまたま基準機と同じ機械では、固定を外しても値は
+# 一致する（[[feedback-promote-recurring-checks]] の壊れ方①＝一度も落ちない）。
+# ⇒ 差し替えた関数そのものの印（`is_the_pin`）を見る。
+
+#: 本物の機械を見てよいテストと、その理由（`@pytest.mark.real_machine`）。
+#: ⚠️ **増やさないこと**＝1 本増えるごとに「この機械でしか意味のない検査」が戻る。
+_REAL_MACHINE_TESTS = {
+    "test_the_primary_monitor_agrees_with_what_tk_reports":
+        "Tk（`screen_size`）と Win32（`_enumerate_monitor_rects`）の座標系が"
+        "一致するかの突き合わせ＝**どちらも本物でなければ何も検査していない**",
+    "test_a_real_machine_test_really_escapes_the_pin":
+        "**外し方そのものの検査**＝`real_machine` が効いていないと、上の"
+        "突き合わせは固定どうしを比べて必ず緑になる（実際そうなっていた）",
+}
+
+
+@pytest.mark.real_machine
+def test_a_real_machine_test_really_escapes_the_pin():
+    """`real_machine` を付けたテストが**本物の口**を見ていること。
+
+    🔴 実際に破れた（2026-08-24）＝固定を fixture の teardown で戻していたが、
+    `monkeypatch` の undo が**そのあと**に走って固定を入れ直すため、以後の
+    `real_machine` テストは**固定を本物だと思ったまま緑**だった。上の突き合わせ
+    ゲートは「固定 vs 固定」を比べる形になり、一度も落ちない側へ化けていた。
+    """
+    from views import theme
+
+    for got, what in ((window_fit.screen_size, "window_fit.screen_size"),
+                      (theme.window_dpi, "views.theme.window_dpi")):
+        assert not getattr(got, "is_the_pin", False), (
+            f"{what} が基準機へ固定されたまま＝`real_machine` を付けたテストが"
+            "本物の機械を見ていない（固定どうしを比べる緑になる・I-108）。"
+        )
+
+
+def test_the_measuring_machine_is_pinned():
+    """画面と DPI が**この機械のもの**になっていないこと（I-108 の見張り）。"""
+    from views import theme
+
+    for got, what in ((window_fit.screen_size, "window_fit.screen_size"),
+                      (theme.window_dpi, "views.theme.window_dpi")):
+        assert getattr(got, "is_the_pin", False), (
+            f"{what} が基準機へ固定されていない＝寸法ゲートの数字が"
+            "**走らせた機械の表示スケール**で動く（I-108 の再発）。"
+            "conftest の _the_machine_is_never_the_dev_machines を見ること。"
+        )
+    root = make_themed_root()
+    try:
+        assert window_fit.screen_size(root) == conftest.REFERENCE_SCREEN
+        assert theme.window_dpi(root) == conftest.REFERENCE_DPI
+        assert window_fit.work_areas() == {}, (
+            "この機械のタスクバーが測定に混ざっている（B-084 の固定が外れた）。"
+        )
+    finally:
+        root.destroy()
+
+
+def _tests_marked_real_machine() -> "dict[str, str]":
+    """`@pytest.mark.real_machine` が付いたテスト名 → そのファイル。"""
+    found = {}
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    for name in sorted(os.listdir(tests_dir)):
+        if not (name.startswith("test_") and name.endswith(".py")):
+            continue
+        path = os.path.join(tests_dir, name)
+        with open(path, encoding="utf-8") as fh:
+            tree = ast.parse(fh.read(), filename=path)
+        for node in ast.walk(tree):
+            if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                continue
+            for dec in node.decorator_list:
+                if ast.unparse(dec).endswith("pytest.mark.real_machine"):
+                    found[node.name] = name
+    return found
+
+
+def test_only_declared_tests_see_the_real_machine():
+    """本物の機械を見るテストが**台帳どおり**であること。
+
+    ⚠️ 固定は「既定で効く」形なので、外す側（`real_machine`）が黙って増えると
+    I-108 がそのぶん戻る。**外すなら理由を書く**ところまでを 1 組にする。
+    """
+    marked = _tests_marked_real_machine()
+    assert set(marked) == set(_REAL_MACHINE_TESTS), (
+        f"real_machine を付けたテスト {sorted(marked)} と台帳 "
+        f"{sorted(_REAL_MACHINE_TESTS)} が食い違っている＝"
+        "_REAL_MACHINE_TESTS に「なぜ本物の機械が要るか」を書くこと（I-108）。"
+    )
+
+
+def test_no_test_asks_the_screen_behind_the_pin():
+    """テストが `winfo_screen*` を**直に**読んでいないこと（固定の抜け道）。
+
+    `window_fit.screen_size()` を通さずに Tk へ直接聞くと、固定を素通りして
+    **走らせた機械の画面**が測定へ入る（I-108 の応急版が実際にそう書いていた）。
+    """
+    tests_dir = os.path.dirname(os.path.abspath(__file__))
+    # ⚠️ 探す字を**組み立てて**作る＝この行自身を拾わないため（素で書くと、
+    # 検査そのものが唯一の違反者として毎回鳴る＝壊れ方②）。
+    banned = tuple("winfo_screen" + edge + "(" for edge in ("width", "height"))
+    offenders = []
+    for name in sorted(os.listdir(tests_dir)):
+        if not (name.startswith("test_") and name.endswith(".py")):
+            continue
+        with open(os.path.join(tests_dir, name), encoding="utf-8") as fh:
+            for lineno, line in enumerate(fh, 1):
+                if any(bad in line for bad in banned):
+                    offenders.append(f"{name}:{lineno}")
+    assert not offenders, (
+        f"テストが画面を直に読んでいる: {offenders}＝`window_fit.screen_size()` を"
+        "通すこと（固定を素通りして機械依存に戻る・I-108）。"
+    )
 
 
 # ============================================================
@@ -869,17 +994,17 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
         # 🔴 **前提は主張ではない**（2026-08-23・I-108）＝「開いた直後はまだ溢れて
         # いない」は**その機械の画面が窓を持てるとき**にだけ成り立つ。実測＝表示
         # スケール 150% では `need=(843, 989)` に対し画面が 1707x960 しかなく、
-        # 装飾を引いた 921 で頭打ちする ⇒ **開いた瞬間から逃げ道が出るのが正しい**。
-        # そこを `assert` で書いていたので、**製品ではなく実行環境が赤を出した**
-        # （Stop フックの QA ゲートが 150% のときだけ落ちる）。
-        # ⚠️ **`assert` を消すだけにしない**＝前提が崩れたまま下の主張だけ通ると、
-        # テストは緑のまま何も見なくなる（*一度も落ちないゲート*へ化ける）。
-        # ⇒ **宣言つきの skip**にして、「走らなかった」ことを台帳に残す。
-        if escape.active[0]:
-            pytest.skip(structural_skip(
-                f"画面がこの窓を持てない（need={win._fit_need} "
-                f"screen={win.winfo_screenwidth()}x{win.winfo_screenheight()}）"
-                "＝開いた直後から溢れているので、この検査の前提が無い"))
+        # 装飾を引いた 921 で頭打ちする ⇒ 開いた瞬間から逃げ道が出て、この検査の
+        # 前提が消える。**製品ではなく実行環境が赤を出していた。**
+        # ⚠️ 応急の手当ては「前提を宣言つき skip にする」だったが、それは*画面が
+        # 狭い機械ほど検査が走らない*向きに壊れる（実機は開発機より 360px 低い）。
+        # ⇒ **2026-08-24 に本筋へ差し替え**＝画面と DPI は conftest の
+        # `_the_machine_is_never_the_dev_machines` が基準機へ固定するので、この
+        # 前提はどの機械でも同じように成り立つ。**assert に戻してよい。**
+        assert not escape.active[0], (
+            f"前提が崩れている（開いた直後から溢れている・need={win._fit_need}）"
+            "＝手で縮める前に逃げ道が出ているので、この検査は何も見ていない。"
+        )
 
         need_h = win._fit_need[1]
         root.deiconify()
@@ -902,9 +1027,10 @@ def test_scroll_escape_stays_hidden_while_the_content_fits():
     try:
         root.withdraw()
         i18n.set_lang("ja")
-        win, _ = _open_scenario(root)          # 96dpi・開発機の画面＝余裕がある
+        win, _ = _open_scenario(root)          # 基準機（WQHD・100%）＝余裕がある
         escape = win._fit_scroll
         need_h = window_fit.required_size(win)[1]
+        # ⚠️ この前提も**機械に依らない**（I-108・conftest が画面と DPI を固定する）。
         assert need_h <= win._fit_size[1], "前提が崩れている（この画面で既に溢れている）"
         assert escape.active == (False, False)
         assert not escape.vsb.grid_info() and not escape.hsb.grid_info()
@@ -1542,6 +1668,7 @@ def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypat
         root.destroy()
 
 
+@pytest.mark.real_machine
 def test_the_primary_monitor_agrees_with_what_tk_reports():
     """**列挙したプライマリの矩形と Tk の `screen_size()` が一致すること。**
 
