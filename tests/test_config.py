@@ -9,6 +9,9 @@ i18n キーの網羅性チェック（TestI18n）は、検証メッセージ（v
 
 import json
 import os
+import unittest.mock as mock
+
+import pytest
 
 from core import config
 
@@ -183,6 +186,83 @@ class TestConfigIO:
         with open(path, encoding="utf-8") as f:
             data = json.load(f)
         assert "freq" in data
+
+
+# ============================================================
+# 設定の原子的な保存 — B-124 回帰ガード
+# ============================================================
+class TestAtomicConfigSave:
+    """**壊れた不変条件**＝「書き換えの途中で死んでも、前の内容は失われない」。
+
+    `open(path, "w")` を直に開くと**開いた時点で中身が消える**ので、`json.dump` の
+    最中に落ちれば空か途中までの JSON が残り、次の起動で `load_config` が握って
+    **全設定が既定値へ戻る**（`proxy_url` が消えると DEM 取得が全滅する）。
+
+    ⚠️ **「保存中に落ちる」は自然には再現しない**ので注入で書く＝ゲートが本当に
+    効いているかは変異検証（素の `open(path,"w")` に戻すと落ちる）で担保する。
+    """
+
+    def _seed(self, path):
+        seed = config.DEFAULT_CONFIG.copy()
+        seed["proxy_url"] = "http://proxy:8080"
+        seed["freq"] = "900.0"
+        config.save_config(seed, path)
+        return seed
+
+    def test_crash_midway_leaves_the_previous_config_intact(self, tmp_path, monkeypatch):
+        """保存の最中に落ちても、**前の設定が丸ごと残る**こと。"""
+        path = str(tmp_path / "conf.json")
+        self._seed(path)
+
+        def exploding_dump(*a, **kw):
+            raise KeyboardInterrupt("死んだことにする")
+
+        # json.dump の最中に死ぬ＝旧ファイルを開いて捨てたあとに落ちる形。
+        monkeypatch.setattr(config.json, "dump", exploding_dump)
+        with pytest.raises(KeyboardInterrupt):
+            config.save_config({"freq": "5800.0"}, path)
+
+        loaded = config.load_config(path)
+        assert loaded["proxy_url"] == "http://proxy:8080", "前の設定が消えた"
+        assert loaded["freq"] == "900.0"
+
+    def test_save_overwrites_an_existing_file(self, tmp_path):
+        """既存ファイルがあっても**上書きする**こと。
+
+        ⚠️ B-123 のヘルパ（`dem._write_tile_atomic`＝既に在るなら書かない）を
+        そのまま流用すると、ここが落ちる。**設定は上書きこそが目的。**
+        """
+        path = str(tmp_path / "conf.json")
+        self._seed(path)
+
+        updated = config.DEFAULT_CONFIG.copy()
+        updated["freq"] = "5800.0"
+        config.save_config(updated, path)
+
+        assert config.load_config(path)["freq"] == "5800.0"
+
+    def test_no_temp_file_is_left_behind(self, tmp_path, monkeypatch):
+        """成功しても失敗しても、一時ファイルを残さないこと。"""
+        path = str(tmp_path / "conf.json")
+        config.save_config(config.DEFAULT_CONFIG, path)
+        assert [p.name for p in tmp_path.iterdir()] == ["conf.json"]
+
+        def failing_dump(*a, **kw):
+            raise OSError("disk full")
+
+        monkeypatch.setattr(config.json, "dump", failing_dump)
+        config.save_config(config.DEFAULT_CONFIG, path)   # 例外は握られる
+        assert [p.name for p in tmp_path.iterdir()] == ["conf.json"]
+
+    def test_save_failure_does_not_raise(self, tmp_path, monkeypatch):
+        """保存に失敗してもアプリを止めない（従来どおり警告に留める）こと。"""
+        path = str(tmp_path / "conf.json")
+        monkeypatch.setattr(
+            config.json, "dump",
+            mock.Mock(side_effect=OSError("read-only file system")),
+        )
+        config.save_config(config.DEFAULT_CONFIG, path)   # 例外が出なければ合格
+        assert not os.path.exists(path)
 
 
 # ============================================================

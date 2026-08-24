@@ -17,6 +17,7 @@ import logging
 import math
 import os
 import sys
+import tempfile
 
 from core import i18n
 
@@ -216,12 +217,40 @@ def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
 
 
 def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
-    """現在の設定を JSON で保存する。"""
+    """現在の設定を JSON で**原子的に**保存する（B-124）。
+
+    同じディレクトリの一時ファイルへ書き切ってから `os.replace` する。⇒ **途中で
+    死んでも前の設定が丸ごと残る**。`open(path, "w")` を直に開くと**開いた時点で
+    中身が消える**ので、`json.dump` の最中に落ちれば空か途中までの JSON が残り、
+    次の起動で `load_config` が握って**全設定が既定値へ戻る**（`proxy_url` が
+    消えると DEM 取得が全滅する＝結果が黙って平坦になる入口）。
+
+    **書き方は `report/project.py::save` に揃えてある**（2026-08-03 に同じ不変条件で
+    先に直された面＝`tempfile.mkstemp` で名前を OS に作らせ、`fsync` してから
+    `os.replace`）。⛔ **`dem._write_tile_atomic` は流用しない**: あちらは「既に在る
+    なら書かない」（同じ URL のタイルは同じ内容）だが、**設定は上書きこそが目的**で真逆。
+
+    ⚠️ **1 点だけ `project.py` と違う＝例外を上げずに握る。** あちらは「保存しました」
+    と出す前に失敗を知る必要がある（`.rsproj` は唯一の永続化手段）が、設定の保存は
+    **画面の操作の副作用**として起きるので、書けなかったからといってアプリを止めない
+    （前の設定のまま動き続けられる）。従来の契約をそのまま保つ。
+    """
+    directory = os.path.dirname(os.path.abspath(path))
+    tmp = None
     try:
-        with open(path, "w", encoding="utf-8") as f:
+        fd, tmp = tempfile.mkstemp(dir=directory, prefix=".radiosim_conf-", suffix=".tmp")
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
             json.dump(config, f, indent=4, ensure_ascii=False)
+            f.flush()
+            os.fsync(f.fileno())   # 電源断でも「空のファイルに置き換わる」を避ける
+        os.replace(tmp, path)      # 同一ディレクトリ＝原子的。既存は最後まで無傷
     except Exception as e:
         logger.warning("Config save error: %s", e)
+        if tmp is not None:
+            try:
+                os.unlink(tmp)
+            except OSError:
+                pass
 
 
 # ------------------------------------------------------------
