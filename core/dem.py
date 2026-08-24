@@ -18,6 +18,7 @@ import math
 import os
 import queue
 import threading
+import time
 import urllib.request
 
 import numpy as np
@@ -63,6 +64,12 @@ DEM_LAYERS: list[tuple[str, int]] = [
 FINEST_MESH_M: float = 5.0
 
 _MAX_PREFETCH_WORKERS: int = 8
+
+# ディスクキャッシュのタイルを読むときの粘り（B-123）。
+# `os.replace` が走っている一瞬だけ Windows は置換先を開かせないので、
+# そこで諦めるとその点が 0.0 に化ける。置換は数ミリ秒で終わる。
+_TILE_READ_ATTEMPTS: int = 3
+_TILE_READ_RETRY_S: float = 0.01
 
 # 淡色地図（レポート添付の経路オーバーレイ地図 = report_map.py が使用）。
 # DEM レイヤーと違いズームが可変なので、キャッシュパスにズームを含めて
@@ -261,6 +268,84 @@ def get_elevation(lat: float, lon: float) -> float:
         return 0.0
 
 
+def _read_cached_tile(cache_path: str) -> "np.ndarray | None":
+    """ディスクキャッシュのタイルを読む。**読めなければ None＝キャッシュミス扱い**。
+
+    キャッシュは常に捨てて取り直せるものなので、**読み取りの失敗を致命にしない**。
+    ここで例外を上へ投げると `get_elevation` の except に握られて **0.0**（＝海抜
+    0m と区別されない）になる＝B-123 で塞いだ穴を読み側に開け直すことになる。
+
+    ⚠️ **書き込みを原子的にしても、Windows には読めない一瞬が残る**（2026-08-24 に
+    冷えたキャッシュ 61 タイルの実測で `[Errno 13] Permission denied` が 1 点＝
+    その点が 0.0 になった）: `os.replace` が走っている最中、置換先を開こうとした
+    スレッドは共有違反で弾かれる。**内容は壊れていない**ので、数ミリ秒おいて
+    読み直せばまず取れる。⇒ 短く粘ってから諦める（諦めても呼び出し側は
+    ネットワーク取得へ落ちるだけで、値は正しく埋まる）。
+    """
+    for attempt in range(_TILE_READ_ATTEMPTS):
+        try:
+            return np.array(Image.open(cache_path).convert("RGB"))
+        except (OSError, ValueError) as e:
+            # PIL の UnidentifiedImageError は OSError 派生。
+            if attempt == _TILE_READ_ATTEMPTS - 1:
+                logger.debug(
+                    "cached tile unreadable (treated as cache miss): path=%s error=%s",
+                    cache_path, e,
+                )
+                return None
+            time.sleep(_TILE_READ_RETRY_S)
+    return None
+
+
+def _write_tile_atomic(cache_path: str, img_data: bytes) -> None:
+    """タイル画像を**原子的に**ディスクキャッシュへ書く（B-123）。
+
+    同一ディレクトリの一時ファイルへ書いてから `os.replace` する。⇒ 他のスレッド
+    から見える `cache_path` は**常に「無いか、完全か」のどちらか**になる。
+
+    なぜ必要か（2026-08-24 に実測）: 隣り合う標高サンプルは同じタイルを共有する
+    ので、並列取得では**同じタイルを別スレッドが同時に要求する**。素の
+    `open(path, "wb")` だと、書き込み途中（0 バイト〜途中まで）のファイルを
+    `_fetch_tile` 冒頭の `Image.open` が掴み、復号に失敗する。失敗した点は
+    `get_elevation` の except に握られて **0.0**（＝海抜 0m と区別されない）になり、
+    落ちも止まりもせず**結果が黙って楽観側へ振れる**（26 回線で 4 点）。
+
+    ⛔ ロックでは直さない（タイル取得は並列であることに意味がある）。⚠️ 一時ファイル
+    名はプロセス／スレッドで衝突してはならない（`.tmp` 固定だと同じ競合を別の場所に
+    作るだけ）。⚠️ 書けなかったこと自体は**致命ではない**（次回また取りに行くだけ）
+    ので、失敗は握って記録に留める＝ここで例外を上げると `get_elevation` の except に
+    落ちて**通信は成功しているのに 0.0 になる**（直す当の欠陥を別経路で作る）。
+
+    ⚠️ **Windows は「読まれている最中のファイル」への置換を拒む**（WinError 5・
+    2026-08-24 に冷えたキャッシュ 61 タイルの実測）。別スレッドが先に書き終えた同じ
+    タイルを `_fetch_tile` 冒頭が開いている最中に起きる＝**内容は同じ**なので失う
+    情報は無い。⇒ ①既に在るなら**書きに行かない** ②それでも競合したら **debug** へ
+    （正常運用で warning を鳴らさない）。本当に書けない側〔ディスクフル・権限〕は
+    `cache_path` が不在のまま残るので warning で区別できる。
+    """
+    if os.path.exists(cache_path):
+        # 同じ URL のタイル＝同じ内容。上書きしても得るものが無く、競合だけ増える。
+        return
+
+    tmp_path = f"{cache_path}.{os.getpid()}.{threading.get_ident()}.tmp"
+    try:
+        with open(tmp_path, "wb") as f:
+            f.write(img_data)
+        os.replace(tmp_path, cache_path)
+    except OSError as e:
+        if os.path.exists(cache_path):
+            logger.debug(
+                "tile cache write skipped (already written by another thread): "
+                "path=%s error=%s", cache_path, e,
+            )
+        else:
+            logger.warning("tile cache write failed: path=%s error=%s", cache_path, e)
+        try:
+            os.remove(tmp_path)
+        except OSError:
+            pass
+
+
 def _fetch_tile(
     layer_id: str,
     zoom: int,
@@ -283,7 +368,10 @@ def _fetch_tile(
         f"/{zoom}/{xtile}/{ytile}.png"
     )
     if os.path.exists(cache_path):
-        return np.array(Image.open(cache_path).convert("RGB"))
+        # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
+        cached = _read_cached_tile(cache_path)
+        if cached is not None:
+            return cached
 
     try:
         logger.debug(
@@ -296,8 +384,7 @@ def _fetch_tile(
             img_data = res.content
             arr = np.array(Image.open(io.BytesIO(img_data)).convert("RGB"))
             os.makedirs(cache_subdir, exist_ok=True)
-            with open(cache_path, "wb") as f:
-                f.write(img_data)
+            _write_tile_atomic(cache_path, img_data)
             return arr
 
         if res.status_code == 404:
@@ -326,7 +413,9 @@ def _fetch_tile(
             layer_id, xtile, ytile, e,
         )
         if os.path.exists(cache_path):
-            return np.array(Image.open(cache_path).convert("RGB"))
+            cached = _read_cached_tile(cache_path)
+            if cached is not None:
+                return cached
         _network_trouble.flag = True
         return None
 

@@ -227,6 +227,253 @@ class TestFetchTile:
 
 
 # ============================================================
+# タイルキャッシュの原子的な書き込み — B-123 回帰ガード
+# ============================================================
+class TestAtomicTileWrite:
+    """**壊れた不変条件**＝「他スレッドから見えるキャッシュファイルは、常に完全」。
+
+    非原子的な `open(cache_path, "wb")` だと、並列取得中に**書き込み途中の PNG**を
+    別スレッドが開いて復号に失敗し、その点が黙って標高 0.0（＝海抜 0m と区別が
+    つかない）になる（2026-08-24 に実測＝26 回線で 4 点）。
+
+    ⚠️ **速さに頼ったテストは「一度も落ちないゲート」になる**（素の書き込みは速く、
+    運任せでは途中を捕まえられない）。⇒ 書き込みを**分割して遅くしたフェイク**を
+    噛ませ、競合を必ず起こす形にしてから測る。
+    """
+
+    def _png_bytes(self, seed=0, size=256):
+        from PIL import Image
+        import io
+        buf = io.BytesIO()
+        # 一様色は PNG が極端に縮むので、分割書き込みが効く程度の大きさを作る。
+        img = Image.fromarray(
+            np.random.default_rng(seed).integers(0, 256, (size, size, 3), dtype=np.uint8)
+        )
+        img.save(buf, format="PNG")
+        return buf.getvalue()
+
+    def _slow_open(self, monkeypatch, target_path, chunk=512, delay=0.001):
+        """`target_path` への "wb" だけ、分割＋スリープで書くように差し替える。"""
+        import builtins
+        import time
+        real_open = builtins.open
+
+        class _SlowFile:
+            def __init__(self, fh):
+                self._fh = fh
+
+            def write(self, data):
+                for i in range(0, len(data), chunk):
+                    self._fh.write(data[i:i + chunk])
+                    self._fh.flush()
+                    os.fsync(self._fh.fileno())
+                    time.sleep(delay)
+                return len(data)
+
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *exc):
+                return self._fh.__exit__(*exc)
+
+        def fake_open(path, mode="r", *a, **kw):
+            fh = real_open(path, mode, *a, **kw)
+            if "b" in mode and "w" in mode and str(path).startswith(str(target_path)):
+                return _SlowFile(fh)
+            return fh
+
+        monkeypatch.setattr(builtins, "open", fake_open)
+
+    def test_partial_file_is_never_visible_at_cache_path(self, tmp_path, monkeypatch):
+        """書き込みの最中、`cache_path` には**途中のファイルが一切見えない**こと。
+
+        ⚠️ 監視側は `getsize` だけを見る（開かない）＝ Windows で読み取り中の
+        `os.replace` が PermissionError になるのを避け、製品の並列度を再現する。
+        """
+        import threading
+        import time
+
+        data = self._png_bytes()
+        cache_path = str(tmp_path / "tile.png")
+        self._slow_open(monkeypatch, cache_path)
+
+        stop = threading.Event()
+        partial_sizes = []
+
+        def watcher():
+            while not stop.is_set():
+                try:
+                    size = os.path.getsize(cache_path)
+                except OSError:
+                    continue          # 無い＝正常（「無いか、完全か」の片側）
+                if size != len(data):
+                    partial_sizes.append(size)
+                time.sleep(0)
+
+        t = threading.Thread(target=watcher, daemon=True)
+        t.start()
+        try:
+            dem._write_tile_atomic(cache_path, data)
+        finally:
+            stop.set()
+            t.join(timeout=5)
+
+        assert not partial_sizes, (
+            f"書き込み途中のファイルが cache_path に見えた（サイズ {partial_sizes[:5]}）"
+        )
+        assert os.path.getsize(cache_path) == len(data)
+
+    def test_concurrent_writers_leave_a_decodable_tile(self, tmp_path, monkeypatch):
+        """同じタイルを 4 スレッドが同時に書いても、残るのは**どれか 1 つの完全な
+        内容**であること（混ざらない）。
+
+        ⚠️ 4 者に**別々の内容**を書かせる＝全員が同じバイト列だと、混ざっても結果が
+        同じになり、一時ファイル名の衝突を見逃す。
+        """
+        import threading
+        from PIL import Image
+
+        payloads = [self._png_bytes(seed=i) for i in range(4)]
+        cache_path = str(tmp_path / "tile.png")
+        self._slow_open(monkeypatch, cache_path)
+
+        threads = [
+            threading.Thread(target=dem._write_tile_atomic, args=(cache_path, d))
+            for d in payloads
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        with open(cache_path, "rb") as f:
+            written = f.read()
+        assert written in payloads, "複数スレッドの書き込みが混ざった内容が残っている"
+
+        arr = np.array(Image.open(cache_path).convert("RGB"))
+        assert arr.shape == (256, 256, 3)
+        # 一時ファイルを置き去りにしない。
+        assert [p.name for p in tmp_path.iterdir()] == ["tile.png"]
+
+    def test_transient_read_failure_is_retried(self, tmp_path, monkeypatch):
+        """一瞬読めなかっただけのキャッシュは、粘って読み直すこと。
+
+        `os.replace` が走っている最中、Windows は置換先を開かせない
+        （実測＝`[Errno 13] Permission denied`）。ここで諦めると**内容は健全なのに
+        その点が 0.0 になる**。
+        """
+        from PIL import Image
+        cache_path = tmp_path / "tile.png"
+        Image.new("RGB", (256, 256), (0, 39, 16)).save(str(cache_path))
+
+        calls = []
+        real_pil_open = Image.open
+
+        def flaky_open(path, *a, **kw):
+            calls.append(str(path))
+            if len(calls) == 1:
+                raise PermissionError(13, "Permission denied")
+            return real_pil_open(path, *a, **kw)
+
+        monkeypatch.setattr(dem.Image, "open", flaky_open)
+        arr = dem._read_cached_tile(str(cache_path))
+
+        assert arr is not None and arr.shape == (256, 256, 3)
+        assert len(calls) == 2, "1 回で諦めている（＝置換中の一瞬で 0.0 に化ける）"
+
+    def test_unreadable_cache_falls_back_to_network(self, tmp_path, monkeypatch):
+        """粘っても読めないキャッシュは**キャッシュミス扱い**にして取り直すこと。
+
+        ⚠️ ここで例外を上げると `get_elevation` の except に握られて 0.0 になる＝
+        書き込み側で塞いだ穴を読み側に開け直す。
+        """
+        cache_path = tmp_path / "tile.png"
+        cache_path.write_bytes(b"not a png at all")
+
+        fake_response = mock.Mock()
+        fake_response.status_code = 200
+        fake_response.content     = self._png_bytes(seed=7)
+        fake_session = mock.Mock()
+        fake_session.get.return_value = fake_response
+        monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
+        monkeypatch.setattr(dem, "_TILE_READ_RETRY_S", 0.0)
+
+        arr = dem._fetch_tile(
+            "dem5a_png", 15, 0, 0, str(tmp_path), str(cache_path)
+        )
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (256, 256, 3)
+        assert fake_session.get.called, "ネットワークへ落ちていない（0.0 になる経路）"
+
+    def test_existing_tile_is_not_rewritten(self, tmp_path, monkeypatch):
+        """既に完全なタイルが在るなら**書きに行かない**こと。
+
+        同じ URL のタイルは同じ内容なので、上書きしても得るものが無く、
+        Windows の「読まれている最中は置換できない」競合だけを増やす。
+        """
+        import builtins
+        cache_path = tmp_path / "tile.png"
+        cache_path.write_bytes(b"already-here")
+
+        real_open = builtins.open
+        opened = []
+
+        def spy_open(path, mode="r", *a, **kw):
+            if "w" in mode:
+                opened.append(str(path))
+            return real_open(path, mode, *a, **kw)
+
+        monkeypatch.setattr(builtins, "open", spy_open)
+        dem._write_tile_atomic(str(cache_path), self._png_bytes())
+
+        assert opened == [], f"既存タイルがあるのに書きに行った: {opened}"
+        assert cache_path.read_bytes() == b"already-here"
+
+    def test_write_failure_is_swallowed_and_leaves_no_temp(self, tmp_path, monkeypatch):
+        """キャッシュに書けなくても**例外を上げない**こと（＋一時ファイルを残さない）。
+
+        ここで例外を上げると `get_elevation` の except に落ち、**通信は成功して
+        いるのに 0.0** になる＝直そうとしている欠陥そのものを別経路で作る。
+        """
+        import builtins
+        real_open = builtins.open
+
+        def failing_open(path, mode="r", *a, **kw):
+            if "b" in mode and "w" in mode and str(path).startswith(str(tmp_path)):
+                raise OSError("disk full")
+            return real_open(path, mode, *a, **kw)
+
+        monkeypatch.setattr(builtins, "open", failing_open)
+
+        cache_path = str(tmp_path / "tile.png")
+        dem._write_tile_atomic(cache_path, b"x" * 100)   # 例外が出なければ合格
+
+        assert not os.path.exists(cache_path)
+        assert list(tmp_path.iterdir()) == []
+
+    def test_fetch_tile_returns_array_even_if_cache_write_fails(
+        self, tmp_path, monkeypatch
+    ):
+        """書き込みに失敗しても `_fetch_tile` は取得済みの配列を返すこと。"""
+        fake_response = mock.Mock()
+        fake_response.status_code = 200
+        fake_response.content     = self._png_bytes()
+        fake_session = mock.Mock()
+        fake_session.get.return_value = fake_response
+        monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
+        monkeypatch.setattr(
+            dem, "_write_tile_atomic",
+            mock.Mock(side_effect=lambda p, d: None),
+        )
+
+        arr = dem._fetch_tile(
+            "dem5a_png", 15, 0, 0, str(tmp_path), str(tmp_path / "t.png")
+        )
+        assert isinstance(arr, np.ndarray)
+        assert arr.shape == (256, 256, 3)
+
+
+# ============================================================
 # 失敗タイルの負キャッシュ（_failed_tiles）— B-010 回帰ガード
 # ============================================================
 class TestFailedTileNegativeCache:
