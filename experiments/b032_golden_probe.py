@@ -31,9 +31,10 @@ GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 
 VARIANTS = {
     "現行":       None,
-    "G1:陰h+深1": make_variant("los", 1, False, shadow_gate="height"),
-    "KG:K+陰h":   make_variant("los", 20, False, shadow_gate="height", one_edge=True),
-    "K1:K+深1":   make_variant("los", 1, False, one_edge=True),
+    "G1:陰h+深1": make_variant("los", 1,  False, shadow_gate="height"),
+    "Kν:ν体":     make_variant("los", 20, False, one_edge="nu"),
+    "KνG:ν体+陰": make_variant("los", 20, False, shadow_gate="height", one_edge="nu"),
+    "VG1:谷+陰+深1": make_variant("los", 1, False, shadow_gate="height", one_edge="valley"),
 }
 
 
@@ -117,17 +118,17 @@ def sample_dependence() -> None:
     data  = json.loads(GOLDEN.read_text(encoding="utf-8"))
     links = {r["id"]: r for r in data["links"]}
     targets = ["hiroshima_kure_ridge", "veg_low_antenna", "fuji_kawaguchi",
-               "takamatsu_yashima", "kobe_rokko"]
+               "takamatsu_yashima", "kobe_rokko", "kyoto_hiei"]
     print()
     print("標本数依存（⚠️ 凍結配列の線形補間による近似）")
-    print(f"{'id':<24}{'n':>6}{'Single':>10}{'現行':>12}{'KG:K+陰h':>12}")
+    print(f"{'id':<24}{'n':>6}{'Single':>10}{'現行':>12}{'Kν:ν体':>12}")
     print("-" * 64)
     for tid in targets:
         for n in (120, 240, 480, 960):
             rec = links[tid]
             sg = recompute(rec, None, n=n, force_single=True)
             b  = recompute(rec, None, n=n)
-            g  = recompute(rec, VARIANTS["KG:K+陰h"], n=n)
+            g  = recompute(rec, VARIANTS["Kν:ν体"], n=n)
             print(f"{tid:<24}{n:>6}{sg['diff_loss']:>10.2f}"
                   f"{b['diff_loss']:>12.2f}{g['diff_loss']:>12.2f}")
         print()

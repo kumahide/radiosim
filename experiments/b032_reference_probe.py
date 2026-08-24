@@ -6,8 +6,9 @@
 
 並べる手法:
   Single          : 現行の単一障害物（最大 ν 1 点だけ）
-  Bullington      : TX/RX から見た最大仰角の 2 直線の交点を等価ナイフエッジ 1 枚とみなす
-                    （ITU-R P.526 の一般地形法の芯。多重回折を 1 枚に潰すので**下寄り**）
+  Bullington      : TX/RX から見た最大仰角の 2 直線の交点を等価ナイフエッジ 1 枚とみなし、
+                    P.526 §4.5.1 の補正項を掛ける（一般地形法の芯。多重回折を
+                    1 枚に潰すので**下寄り**）
   Epstein-Peterson: 各障害物を隣の障害物の頂点を端点として順に足す
                     （Deygout と並ぶ古典。障害物が離れていると妥当・近いと過大）
   G1              : 候補処方の第 1 案（陰ゲート + 深さ 1）＝**まだ甘い**（下記）
@@ -38,7 +39,8 @@ from b032_variants_probe import make_variant  # noqa: E402
 
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 G1 = make_variant("los", 1, False, shadow_gate="height")
-KG = make_variant("los", 20, False, shadow_gate="height", one_edge=True)
+KN = make_variant("los", 20, False, one_edge="nu")                       # 陰ゲートなし
+KG = make_variant("los", 20, False, shadow_gate="height", one_edge="nu")  # 陰ゲートあり
 
 
 def _geometry(rec: dict):
@@ -65,30 +67,44 @@ def _nu(h: float, d1: float, d2: float, lam: float) -> float:
 
 
 def bullington(obs, d_m, tx_abs, rx_abs, lam) -> float:
-    """等価ナイフエッジ 1 枚に潰す（ITU-R P.526 の Bullington 構成）。"""
+    """ITU-R P.526 §4.5.1 の Bullington（見通し側も ν を出し、補正項を掛ける）。
+
+    ⚠️ **2026-08-25 訂正（Codex 47 巡目 P1）**＝当初の実装は
+    ①見通し経路を即 0.0 とし ②全ケースに掛かる補正項を落としていた。
+    どちらも P.526 の手順と違い、「標準手法との照合」を名乗れない値だった。
+    """
     D = float(d_m[-1] - d_m[0])
     inner = slice(1, -1)
     d1 = np.maximum(d_m[inner] - d_m[0], 1.0)
     d2 = np.maximum(d_m[-1] - d_m[inner], 1.0)
 
-    slope_tx = (obs[inner] - tx_abs) / d1          # TX から見た仰角
-    slope_rx = (obs[inner] - rx_abs) / d2          # RX から見た仰角
-    i_tx = int(np.argmax(slope_tx)); m_tx = float(slope_tx[i_tx])
-    i_rx = int(np.argmax(slope_rx)); m_rx = float(slope_rx[i_rx])
-
     los_slope = (rx_abs - tx_abs) / D
-    if m_tx <= los_slope:
-        return 0.0                                  # 見通し（遮蔽なし）
+    slope_tx  = (obs[inner] - tx_abs) / d1          # TX から見た仰角
+    m_tx      = float(np.max(slope_tx))
 
-    # 2 直線 tx_abs + m_tx·x = rx_abs + m_rx·(D - x) の交点
-    denom = m_tx + m_rx
-    if denom <= 0:
+    if m_tx <= los_slope:
+        # 見通し＝地形が LoS を切らない。P.526 はここでも最大 ν を求めて J(ν) を出す
+        # （F1 に食い込んでいれば損失が付く）。
+        los  = tx_abs + los_slope * (d_m[inner] - d_m[0])
+        nu   = (obs[inner] - los) * np.sqrt(
+            2.0 / np.maximum(lam * d1 * d2 / (d1 + d2), 1e-9))
+        l_uc = models._diffraction_loss_fk(float(np.max(np.nan_to_num(nu))))
+    else:
+        slope_rx = (obs[inner] - rx_abs) / d2        # RX から見た仰角
+        m_rx     = float(np.max(slope_rx))
+        denom    = m_tx + m_rx
+        if denom <= 0:
+            return 0.0
+        # 2 直線 tx_abs + m_tx·x = rx_abs + m_rx·(D - x) の交点＝等価ナイフエッジ
+        x_b   = min(max((rx_abs - tx_abs + m_rx * D) / denom, 1.0), D - 1.0)
+        h_b   = tx_abs + m_tx * x_b
+        los_b = tx_abs + los_slope * x_b
+        l_uc  = models._diffraction_loss_fk(_nu(h_b - los_b, x_b, D - x_b, lam))
+
+    if l_uc <= 0.0:
         return 0.0
-    x_b = (rx_abs - tx_abs + m_rx * D) / denom
-    x_b = min(max(x_b, 1.0), D - 1.0)
-    h_b = tx_abs + m_tx * x_b                       # 等価エッジの絶対高度
-    los_b = tx_abs + los_slope * x_b
-    return models._diffraction_loss_fk(_nu(h_b - los_b, x_b, D - x_b, lam))
+    # P.526 の補正項（全ケースに掛かる）
+    return l_uc + (1.0 - float(np.exp(-l_uc / 6.0))) * (10.0 + 0.02 * (D / 1000.0))
 
 
 def _obstacles(obs, d_m, tx_abs, rx_abs) -> list[int]:
@@ -168,7 +184,7 @@ def main() -> None:
     print("   系統の違う手法が同程度を返すかだけを見る。")
     print()
     head = (f"{'id':<24}{'障害物数':>8}{'Single':>9}{'Bulling':>9}"
-            f"{'Ep-Pet':>9}{'G1':>9}{'KG':>9}{'現行':>11}")
+            f"{'Ep-Pet':>9}{'Kν':>9}{'KνG':>9}{'現行':>11}")
     print(head)
     print("-" * len(head))
     for tid in TARGETS:
@@ -180,7 +196,7 @@ def main() -> None:
             f"{run_variant(rec, None, 'single'):>9.2f}"
             f"{bullington(obs, d_m, tx_abs, rx_abs, lam):>9.2f}"
             f"{epstein_peterson(obs, d_m, tx_abs, rx_abs, lam):>9.2f}"
-            f"{run_variant(rec, G1):>9.2f}"
+            f"{run_variant(rec, KN):>9.2f}"
             f"{run_variant(rec, KG):>9.2f}"
             f"{run_variant(rec, None):>11.2f}"
         )
