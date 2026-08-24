@@ -142,6 +142,8 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
                                h=self._base_params.h_rx)
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # 以後の測り直しは畳んでよい（I-107）＝組み立て中は同期のまま。
+        window_fit.ready(self)
 
     def _launcher_endpoints(self):
         """ランチャーの送受信座標（読めなければ `None`）＝TX / RX の初期値（I-044）。
@@ -393,6 +395,15 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         self._summary_label.pack(anchor="w")
 
     def _fit_to_content(self) -> None:
+        """中身に合わせて測り直す。**連続した呼び出しは 1 回に畳む**（I-107）。
+
+        ⚠️ 地点の増減・地点名の 1 文字ごと（`trace_add`）と**利用者の 1 操作ごとに
+        走る**経路で、1 回 0.22 秒かかる（実測）。畳むのは回数だけで、追従そのものは
+        落とさない（[views/window_fit](window_fit.py) の `fit_soon` の註）。
+        """
+        window_fit.fit_soon(self, self._fit_now)
+
+    def _fit_now(self) -> None:
         window_fit.fit_to_content(self, min_w=self._BASE_W)
 
     # ----------------------------------------------------------

@@ -148,6 +148,8 @@ class ScenarioWindow(tk.Toplevel):
             self._apply_spec(initial_spec)
         self._fit_to_content()
         self.protocol("WM_DELETE_WINDOW", self._on_close)
+        # 以後の測り直しは畳んでよい（I-107）＝組み立て中は同期のまま。
+        window_fit.ready(self)
 
     # ----------------------------------------------------------
     # プロジェクト（`.rsproj`）との受け渡し
@@ -396,7 +398,13 @@ class ScenarioWindow(tk.Toplevel):
 
         測り方そのものは [views/window_fit](views/window_fit.py) に集約してある
         （見切れは窓ごとに直しては再発してきたクラスなので、実装を 1 つにする）。
+
+        ⚠️ **連続した呼び出しは 1 回に畳む**（I-107）＝条件列の追加は 1 列ごとに
+        ここへ来る。畳むのは回数だけで、追従は落とさない（`fit_soon` の註）。
         """
+        window_fit.fit_soon(self, self._fit_now)
+
+    def _fit_now(self) -> None:
         window_fit.fit_to_content(self, min_w=self._BASE_W)
 
     # ----------------------------------------------------------

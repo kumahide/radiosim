@@ -72,6 +72,7 @@
     <text x="754" y="292" class="mod">theme.py</text>      <text x="890" y="292" class="role">theme colors, UI fonts</text>
     <text x="754" y="312" class="mod">window_fit.py</text> <text x="890" y="312" class="role">window sizing (no clipping)</text>
     <text x="754" y="332" class="mod">tooltip.py</text>    <text x="890" y="332" class="role">input hints</text>
+    <text x="754" y="352" class="mod">window_scroll.py</text> <text x="890" y="352" class="role">scroll escape (too big)</text>
   </g>
 
   <line class="arrow" x1="560" y1="388" x2="560" y2="412"/>

@@ -1832,6 +1832,79 @@ def test_the_decoration_allowance_grows_with_dpi():
         root.destroy()
 
 
+def test_two_windows_on_different_monitors_get_different_decorations(monkeypatch):
+    """**装飾は窓ごとに聞くこと**（2026-08-24・B-120）。
+
+    🔑 **字と装飾は別物**＝字（Tk の名前付きフォント）はインタプリタに 1 組しか
+    ないので全体値が正しく、**装飾は Windows が窓ごとに描く**ので窓ごとの値が
+    正しい。以前はどちらも `applied_dpi`（＝最後に DPI 変更を検出した窓に合わせた
+    全体値）で計算していたため、**倍率の違う複数モニタ**でだけ B-084 が戻っていた
+    （150% 側の窓の装飾を 39px と見積もるが実際は 56px ＝クライアント領域を 17px
+    大きく取り、下端がタスクバーの裏へ）。
+
+    ⚠️ **窓を 1 つしか建てないゲートでは、この欠陥は原理的に見えない**
+    （[[feedback-promote-recurring-checks]] の壊れ方①＝一度も落ちない）。⇒ **2 つ
+    建てて、片方だけ別倍率のモニタに載せる。**
+    """
+    import tkinter as tk
+
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        here = tk.Toplevel(root)                # ルートと同じモニタ（100%）
+        there = tk.Toplevel(root)               # 別倍率のモニタ（150%）
+        for w in (here, there):
+            w.withdraw()
+        theme.apply_fonts(root, dpi=96)
+        # モニタが窓ごとに違う DPI を言う状況を作る（実機の「2 枚目だけ 150%」）。
+        monkeypatch.setattr(theme, "window_dpi",
+                            lambda w: 144 if w is there else 96)
+        same = window_fit.decoration_size(here)
+        other = window_fit.decoration_size(there)
+        assert other[1] > same[1], (
+            f"別倍率のモニタに載せた窓の装飾が同じ（{same} / {other}）＝"
+            "アプリ全体の 1 つの DPI で見積もっている（B-120）。150% 側は"
+            "タイトルバーだけで 51px あるので、そのぶん下端がタスクバーの裏へ入る。"
+        )
+        assert same == window_fit._decoration_for(96), (
+            f"ルートと同じモニタの窓まで値が変わった（{same}）＝"
+            "**字が従っている DPI**（`apply_fonts(dpi=…)` で再現する条件）が"
+            "効かなくなり、ゲートが 150% を再現できなくなる。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
+def test_the_applied_dpi_still_decides_the_decoration_when_nothing_moved(monkeypatch):
+    """**単一モニタでは従来どおり全体値**（B-120 の直し方の対の検査）。
+
+    ゲートは `apply_fonts(dpi=144)` で 150% を再現する（モニタは 96 のまま）。
+    ここで窓の実 DPI へ単純に差し替えると、**装飾だけ 100% で計算され**、
+    再現したはずの条件が半分しか再現しない＝[views/theme](../views/theme.py) の
+    `applied_dpi` の註が書いている壊れ方を、逆向きに踏む。
+    """
+    import tkinter as tk
+
+    from views import theme
+
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        win = tk.Toplevel(root)
+        win.withdraw()
+        theme.apply_fonts(root, dpi=144)        # 150% を再現（モニタは 96 のまま）
+        assert window_fit.decoration_size(win) == window_fit._decoration_for(144), (
+            "`apply_fonts(dpi=144)` で作った 150% が装飾に効いていない＝"
+            "出荷先の条件を再現するゲート（FHD × 150%）が半分しか再現しない。"
+        )
+    finally:
+        theme.apply_fonts(root, dpi=96)
+        root.destroy()
+
+
 def test_the_constant_margin_is_kept_when_the_os_cannot_be_asked(monkeypatch):
     """**OS に聞けないときは従来どおり**（Windows 以外・API 無し）。
 
@@ -1988,6 +2061,119 @@ def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
         # バッチは「列幅同期からやり直す」再測を自前で持つ＝DPI が変わって
         # スクロールバー自体が太っても正しく測れる（保存済みの加算値は古くなる）。
         assert getattr(win, "_fit_refit", None) is not None
+    finally:
+        root.destroy()
+
+
+# ============================================================
+# 2': 測り直しを畳む（I-107）・同じ測り直しを 2 度しない（I-106）
+# ============================================================
+# 🔴 **速さの話に見えて、守るのは追従そのもの**＝畳んだせいで「中身が増えたのに
+# 窓が広がらない」が起きたら、それは B-021（見切れ 6 回）の再発を自分で作ったこと
+# になる。⇒ ここで固定するのは 2 つ:
+#   ① 連続した操作では**測り直しが 1 回に畳まれる**（利用者の手が止まらない）
+#   ② それでも**測る口（`required_size`）から見れば必ず最新**である
+#      ＝畳んだ結果を「まだ測っていない窓」として読ませない（B-100 の逆流を作らない）
+
+
+def test_repeated_changes_are_measured_once(monkeypatch):
+    """①連続した地点追加が**1 回の測り直し**に畳まれること（I-107）。
+
+    実測（2026-08-23）＝中継経路の `_fit_to_content` は **1 回 0.22 秒**で、地点を
+    足すたびに走っていた＝10 点入れると合計 2 秒ぶん手が止まる。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_multihop(root)
+        win.update()
+        calls = []
+        real_fit = window_fit.fit_to_content
+        monkeypatch.setattr(window_fit, "fit_to_content",
+                            lambda w, **kw: (calls.append(w), real_fit(w, **kw))[1])
+
+        for _ in range(4):                      # 利用者が地点を 4 つ足す
+            win._add_waypoint()
+
+        assert calls == [], (
+            f"地点を足すたびに測り直している（{len(calls)} 回）＝1 回 0.22 秒ぶん"
+            "手が止まる（I-107）。"
+        )
+        # ②畳んでも、測る口から見れば最新であること（＝ゲートは騙されない）。
+        need_w, need_h = window_fit.required_size(win)
+        assert len(calls) == 1, (
+            f"畳んだ測り直しが流れていない／2 回以上走った（{len(calls)} 回）"
+        )
+        assert (need_w, need_h) == win._fit_need, (
+            "測り直しの結果が窓の申告と食い違う＝畳んだぶんが落ちている。"
+        )
+        _assert_fits(win, "multihop（畳んだ測り直しのあと）")
+    finally:
+        root.destroy()
+
+
+def test_a_folded_measurement_still_reaches_the_window():
+    """①の裏＝**畳んだ測り直しは、次のアイドルで必ず走る**こと（I-107）。
+
+    `required_size` を呼ぶのはゲートであって製品ではない。**製品の経路**（イベント
+    ループへ戻る）でも窓が追従することを見る＝ここが効かないと、利用者の画面では
+    「地点を足しても窓が広がらない」になる（B-021 の再発を自分で作る形）。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_multihop(root)
+        win.update()
+        before = win._fit_size[1]
+        for _ in range(4):
+            win._add_waypoint()
+        root.update()                           # ＝イベントループへ戻る（アイドル）
+        assert getattr(win, "_fit_soon_id", None) is None, "溜まりが残っている"
+        assert win._fit_size[1] > before, (
+            f"地点を 4 つ足しても窓の高さが {before}px のまま＝畳んだ測り直しが"
+            "どこにも届いていない（追従そのものを落とした＝B-021 の再発）。"
+        )
+    finally:
+        root.destroy()
+
+
+def test_the_same_measurement_is_not_repeated(monkeypatch):
+    """②同じ中身をもう一度測り直さないこと（I-106）。
+
+    `remeasure` の呼び口は `fit_to_content` と `required_size` の 2 つで、どちらも
+    「測る前に必ず呼ぶ」設計（B-100 でそう直した）＝**同じ答えにしかならない
+    測り直しが何度も回る**。⚠️ 脱出は**記憶ではなく出来上がり**で判断する
+    （記憶を持つと、記憶が古いという B-100 と同じ壊れ方の口を作る）。
+    """
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        i18n.set_lang("ja")
+        win, _ = _open_multihop(root)
+        win.update()
+        window_fit.required_size(win)           # ここでそろう
+        escape = win._fit_scroll
+        touched = []
+        real = escape.canvas.configure
+        monkeypatch.setattr(escape.canvas, "configure",
+                            lambda *a, **kw: (touched.append(kw or a), real(*a, **kw))[1])
+
+        escape.remeasure()
+        assert touched == [], (
+            f"中身が変わっていないのに測り直している（{touched}）＝"
+            "`update_idletasks` が 1 回 0.08 秒かかる（I-106）。"
+        )
+
+        # 🔴 **中身が伸びたら必ず働くこと**＝B-100 の逆流を作らないための対の検査
+        # （あのときは「申告も実測も同じ嘘」をつき、横断ゲートの目が塞がった）。
+        win._add_waypoint()                     # 測り直しは畳まれる＝中身だけ伸びる
+        escape.remeasure()
+        assert touched, (
+            "中身が伸びたのに測り直しが素通りした＝受け皿が古い要求幅を返し続ける"
+            "（B-100 そのもの＝横断ゲートが窓の測り忘れを見られなくなる）。"
+        )
     finally:
         root.destroy()
 

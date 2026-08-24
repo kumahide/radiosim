@@ -1304,6 +1304,46 @@ def test_every_coordinate_field_has_the_same_width():
         root.destroy()
 
 
+def test_the_row_menu_is_reused_instead_of_piling_up(monkeypatch):
+    """**行の右クリックメニューを毎回作らない**こと（2026-08-24・B-121 のクラス点検）。
+
+    🔴 **起票は地図の右クリックだったが、同じ壊れ方がここにもあった**（壊れた不変
+    条件＝「開くたびに作るウィジェットは、閉じるときに捨てるか、作らずに使い回す」）。
+    しかも**行ごとに右クリックできる**ぶん、地図より速く積み上がる。
+    ⚠️ 起票時のクラス点検は「その場で `tk.Menu` を作っているのは地図だけ」と書いて
+    いた＝**数え方に穴があった**（[[feedback-user-examples-are-classes]] ⑤）。
+    """
+    pytest.importorskip("tkinter")
+    import tkinter as tk
+    from types import SimpleNamespace
+
+    from views.batch_builder import BatchBuilderWindow
+
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win = BatchBuilderWindow(root, _params())
+        monkeypatch.setattr(tk.Menu, "tk_popup", lambda self, *a, **k: None)
+        event = SimpleNamespace(x_root=100, y_root=200)
+        frame = win._row_entries[0][0].master
+        for _ in range(5):
+            win._show_row_menu(event, frame, win._row_entries[0])
+
+        menus = [w for w in win.winfo_children() if isinstance(w, tk.Menu)]
+        assert len(menus) == 1, (
+            f"右クリック 5 回でメニューが {len(menus)} 個残っている（B-121）＝"
+            "窓を閉じるまで解放されず、テーマ・DPI 変更時の走査対象も増え続ける。"
+        )
+        labels = [menus[0].entrycget(i, "label")
+                  for i in range(menus[0].index("end") + 1)
+                  if menus[0].type(i) == "command"]
+        assert i18n.t("menu_dup") in labels and i18n.t("menu_del") in labels, (
+            f"使い回したメニューの中身が組み直されていない: {labels}"
+        )
+    finally:
+        root.destroy()
+
+
 def test_the_path_id_cell_shows_the_ids_the_validator_accepts():
     """ID 欄が、検証の通す ID を**切らずに描ける**こと（B-057）。
 

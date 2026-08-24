@@ -19,7 +19,7 @@ from core import i18n
 from core import simulation as sim
 from core.models import ENV_KEYS
 from report import batch
-from views import frozen_common, theme
+from views import frozen_common, theme, window_fit
 from views.batch_io import _CsvMixin
 from views.batch_run import _RunMixin
 from views.batch_table import _TableMixin
@@ -166,6 +166,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._run_sync()          # 同期 → その中で窓を中身に合わせる
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
+        # 以後の測り直しは畳んでよい（I-107）＝組み立て中は同期のまま。
+        window_fit.ready(self)
 
     # ----------------------------------------------------------
     # UI 構築

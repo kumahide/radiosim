@@ -55,6 +55,11 @@ views/window_fit.py
 できるから入っている」ことになり、**免除条項を別の場所に作り直すだけ**になる
 （B-021 で 6 回目を通した仕掛けそのもの）。ゲートが「入らない」と言い続け、
 そのうえで実害が消えている、という状態を保つ。
+
+🔑 **受け皿そのものの実装は [views/window_scroll](window_scroll.py) にある**
+（2026-08-24 に分けた）＝関心事が 2 つあるため（*測って合わせる* と *合わせても
+入らなかったときに手が届く*）。**窓から見た口は今までどおり `window_fit` の
+`scrollable_body()`** で、出し入れの判断も引き続き `fit_to_content` が握る。
 """
 
 from __future__ import annotations
@@ -63,6 +68,11 @@ import re
 import tkinter as tk
 from tkinter import ttk
 from typing import Any
+
+# 逃げ道の実装（`scrollable_body` はここから公開し直す＝窓の側の呼び口は変えない）。
+# ⚠️ `_ScrollEscape` も**同じクラス実体**を指す＝`window_fit._ScrollEscape.sync` を
+# 差し替える探針（experiments/b119_frame_slip_probe.py）がそのまま効く。
+from views.window_scroll import _ScrollEscape, scrollable_body  # noqa: F401
 
 # 画面いっぱいまでは広げない（タスクバー・ウィンドウ枠のぶんを残す）。
 # 従来はバッチ 80px / 条件探索 90px / ランチャー「画面の 92%」と窓ごとにばらけて
@@ -375,8 +385,10 @@ def decoration_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
 
     下端・右端の枠は左端と同じ厚み（Windows）なので、高さ＝上の装飾＋下の枠、
     幅＝枠 × 2 とする。100% で `(16, 39)`、150% で `(22, 56)`（実測）。
+
+    🔴 **DPI は「この窓」に聞く**（2026-08-24・B-120）＝下の `_decoration_dpi` の註。
     """
-    return _decoration_for(_applied_dpi(win))
+    return _decoration_for(_decoration_dpi(win))
 
 
 def _decoration_for(dpi: int) -> tuple[int, int]:
@@ -419,14 +431,54 @@ def _applied_dpi(win: "tk.Misc") -> int:
 
     ⚠️ **モニタの実 DPI ではなく「当たっている DPI」を見る**＝Tk の名前付き
     フォントはインタプリタに 1 組しかないので、字の大きさはアプリ全体で 1 つ
-    （[views/theme](theme.py) の `_applied_dpi` の註）。装飾の見積りだけが
-    別の値に従うと、字と枠で基準が割れる。
+    （[views/theme](theme.py) の `_applied_dpi` の註）。**字の話はこれで正しい。**
     """
     try:
         from views import theme                    # 遅延 import（循環回避）
         return theme.applied_dpi(win)
     except Exception:
         return 96
+
+
+def _monitor_dpi(win: "tk.Misc") -> "int | None":
+    """`win` が載っているモニタが言う DPI（聞けなければ None）。"""
+    try:
+        from views import theme                    # 遅延 import（循環回避）
+        got = int(theme.window_dpi(win))
+    except Exception:
+        return None
+    return got if got > 0 else None
+
+
+def _decoration_dpi(win: "tk.Misc") -> int:
+    """**装飾の見積りに使う DPI**（2026-08-24・B-120）。
+
+    🔑 **字と装飾は別物**＝字（Tk の名前付きフォント）はインタプリタに 1 組しか
+    ないので全体値（`applied_dpi`）が正しく、**装飾は Windows が窓ごとに描く**ので
+    窓ごとの値が正しい。以前ここは両方を全体値で束ねており、**倍率の違う複数
+    モニタ**でだけ B-084（下端がタスクバーの裏）が戻っていた（150% 側の窓の装飾を
+    39px と見積もるが実際は 56px ＝クライアント領域を 17px 大きく取る）。
+
+    ⚠️ **窓の実 DPI へ単純に差し替えると、今度はテストが条件を再現できない**＝
+    ゲートは `apply_fonts(dpi=144)` で 150% を作るが、モニタは 96 のままなので
+    **装飾だけ 100% で計算される**（[views/theme](theme.py) の `applied_dpi` の註が
+    書いている「再現したはずの条件が半分しか再現しない」を逆向きに踏む）。
+
+    ⇒ **全体値が基準にした窓（＝ルート）と同じ DPI に居る窓では全体値をそのまま
+    使い、違う DPI に居る窓だけ自分の値を使う。** 実機ではルートと同じモニタに居る
+    窓は両者が一致するので何も変わらず、**別倍率のモニタへ出した窓だけが正される**。
+    """
+    applied = _applied_dpi(win)
+    own = _monitor_dpi(win)
+    if own is None:
+        return applied
+    try:
+        root_dpi = _monitor_dpi(win._root())        # type: ignore[attr-defined]
+    except Exception:
+        root_dpi = None
+    if root_dpi is None or own == root_dpi:
+        return applied              # 基準と同じモニタ＝全体値が正しい（＋再現可能）
+    return own                      # 別倍率のモニタ＝この窓の枠はこの DPI で描かれる
 
 
 def usable_area(
@@ -453,179 +505,6 @@ def usable_area(
         return (left, top, right, bottom - SCREEN_MARGIN)
     dec_w, dec_h = decoration_size(win)
     return (work[0], work[1], work[2] - dec_w, work[3] - dec_h)
-
-
-def scrollable_body(
-    win: "tk.Tk | tk.Toplevel", *, padding: "int | tuple[int, int]" = 0
-) -> ttk.Frame:
-    """`win` の中身を入れる受け皿を作り、その内側のフレームを返す。
-
-    窓は以後この戻り値へ組み立てる（`win` へ直接 pack しない）。**中身が窓に入る
-    あいだはスクロールバーを出さない**ので、見た目・タブ順・レイアウトは受け皿が
-    無いときと変わらない。入らなくなった時だけバーが現れる。
-
-    出し入れの判断は `fit_to_content` が行う（寸法を決めるのはあちらの仕事で、
-    ここは器だけ持つ）。
-
-    Args:
-        padding: 内側フレームの padding。**受け皿を挟む前に窓が持っていた
-            外周 padding をここへ移す**（`ttk.Frame(win, padding=10)` を
-            そのまま受け皿の中へ入れると、スクロール領域の外側に padding が
-            残って下端が隠れる）。
-    """
-    holder = ttk.Frame(win)
-    holder.pack(fill="both", expand=True)
-    holder.rowconfigure(0, weight=1)
-    holder.columnconfigure(0, weight=1)
-
-    # tk.Canvas は ttk 管理外＝テーマに追従しないので、生成時点のテーマ背景色を
-    # 明示的に合わせる（出所は views/theme.py。`ttk.Style().lookup` は sun-valley
-    # では常に空を返し、黙って無指定になる＝B-008）。
-    from views import theme                       # 遅延 import（循環回避）
-    canvas = tk.Canvas(holder, borderwidth=0, highlightthickness=0,
-                       bg=theme.palette(holder)["bg"])
-    canvas.grid(row=0, column=0, sticky="nsew")
-    vsb = ttk.Scrollbar(holder, orient="vertical",   command=canvas.yview)
-    hsb = ttk.Scrollbar(holder, orient="horizontal", command=canvas.xview)
-    canvas.configure(yscrollcommand=vsb.set, xscrollcommand=hsb.set)
-
-    body = ttk.Frame(canvas, padding=padding)
-    item = canvas.create_window((0, 0), window=body, anchor="nw")
-
-    escape = _ScrollEscape(win, canvas, body, item, vsb, hsb)
-    win._fit_scroll = escape                       # type: ignore[attr-defined]
-    return body
-
-
-def _has_own_scroll(widget: "tk.Misc | None", *, stop: tk.Misc) -> bool:
-    """`widget` か、その祖先（`stop` まで）が**自分でスクロールできる**か。
-
-    ホイールのイベントはトップレベルまで上がってくるが、途中に結果一覧
-    （Treeview）のような自前のスクロールを持つウィジェットがあれば、そちらが
-    既に動かしている。受け皿まで一緒に動かすと**一度のホイールで二重に流れる**
-    ので、その場合は手を出さない。`yview()` が `(0.0, 1.0)` の間は「中身が全部
-    見えている＝そのウィジェットは動けない」ので、受け皿の仕事になる。
-    """
-    node = widget
-    while node is not None and node is not stop:
-        yview: "Any" = getattr(node, "yview", None)
-        if callable(yview):
-            try:
-                view: "Any" = yview()
-                first, last = (float(v) for v in view)
-            except (tk.TclError, TypeError, ValueError):
-                first, last = 0.0, 1.0
-            if (first, last) != (0.0, 1.0):
-                return True
-        node = getattr(node, "master", None)
-    return False
-
-
-class _ScrollEscape:
-    """「入らないときだけスクロールする」受け皿の中身（`scrollable_body` 用）。
-
-    肝は **キャンバスの*要求*サイズを中身の要求サイズに合わせ続ける**こと。
-    こうすると窓の `winfo_reqheight()` は受け皿が無いときと同じ値を返すので、
-    `fit_to_content` も横断ゲートも「中身がどれだけ要るか」を今までどおり測れる
-    （＝スクロールできることを理由に必要量を小さく偽らない）。窓が実際にその
-    高さを取れなければキャンバスだけが縮み、差分がスクロール量になる。
-    """
-
-    def __init__(self, win, canvas, body, item, vsb, hsb) -> None:
-        self.win, self.canvas, self.body = win, canvas, body
-        self.item, self.vsb, self.hsb = item, vsb, hsb
-        self.active = (False, False)               # (縦, 横) バーを出しているか
-        body.bind("<Configure>",   self._on_body_configure)
-        canvas.bind("<Configure>", self._on_canvas_configure)
-        # ⚠️ **`bind_all` は使わない**。Tk のバインドタグは
-        # 「ウィジェット → クラス → トップレベル → all」なので、**トップレベルに
-        # 束ねればこの窓の中だけに効く**。`bind_all` だと(1)他の窓のホイールまで
-        # 拾い(2)後から `bind_all` した窓に**上書きされ**(3)その窓が閉じるときの
-        # `unbind_all` で**こちらの分まで消える**（バッチ表が実際に bind_all して
-        # いる）。窓に閉じたバインドなら、この 3 つがまとめて起きない。
-        win.bind("<MouseWheel>", self._on_mousewheel)
-        # **ユーザーが窓を縮めたときも**バーを出す。`fit_to_content` は開いたときと
-        # 中身が増えたときにしか走らないので、これが無いと「手で小さくしたら下端が
-        # 消えて、スクロールもできない」になる（リサイズできる窓＝グラフ窓で露見）。
-        win.bind("<Configure>", self._on_win_configure, add="+")
-
-    # -- 中身とキャンバスの同期 --------------------------------
-    def remeasure(self) -> None:
-        """キャンバスの**要求**サイズを中身の要求サイズへ合わせ直す。
-
-        ⚠️ `<Configure>` 任せにはできない。あれは*実際の*サイズが変わったときしか
-        飛ばないが、フォントが大きくなった（DPI 変更）ときに変わるのは中身の
-        *要求*サイズだけで、窓が固定サイズなら実際のサイズは動かない
-        ＝**要求が伝わらず、窓は元の幅のまま字だけ大きくなって見切れる**
-        （実装中に踏んだ。`test_windows_are_refitted_when_dpi_grows` が捕まえた）。
-        だから `fit_to_content` が測る前に、ここを明示的に呼ぶ。
-        """
-        self.win.update_idletasks()
-        need_w, need_h = self.body.winfo_reqwidth(), self.body.winfo_reqheight()
-        self.canvas.configure(width=need_w, height=need_h)
-        self._sync_scrollregion()
-        self.win.update_idletasks()
-
-    def _sync_scrollregion(self) -> None:
-        """スクロールできる範囲＝**中身の要求サイズ**（キャンバスより大きい側）。
-
-        ⚠️ `bbox("all")` から取らない＝あれは*描かれている*大きさで、窓が未実現の
-        あいだや `<Configure>` が飛ぶ前は中身より小さい値を返す。そのままだと
-        「バーは出ているのに下端まで送れない」状態になる（実装中に踏んだ）。
-        """
-        w = max(self.body.winfo_reqwidth(),  self.canvas.winfo_width())
-        h = max(self.body.winfo_reqheight(), self.canvas.winfo_height())
-        self.canvas.configure(scrollregion=(0, 0, w, h))
-
-    def _on_body_configure(self, _event=None) -> None:
-        self._sync_scrollregion()
-
-    def _on_canvas_configure(self, event) -> None:
-        # 窓のほうが中身より大きいときは中身を引き伸ばす（`fill="both"` や
-        # `side="bottom"` で組んである既存のレイアウトを、受け皿の中でも
-        # そのまま成立させるため）。
-        self.canvas.itemconfig(
-            self.item,
-            width=max(event.width,  self.body.winfo_reqwidth()),
-            height=max(event.height, self.body.winfo_reqheight()),
-        )
-
-    def _on_win_configure(self, event) -> None:
-        """窓の実サイズと必要量を突き合わせてバーを出し入れする。
-
-        ⚠️ 比べるのは `_fit_size`（**決めた寸法**）ではなく**今の実サイズ**＝
-        ユーザーが手で変えた結果はそちらにしか現れない。`sync` は状態が変わった
-        ときだけ触るので、この handler が Configure を呼び戻して無限に往復する
-        ことはない。
-        """
-        if event.widget is not self.win:
-            return                       # 子ウィジェットの Configure は無視
-        need_w, need_h = getattr(self.win, "_fit_need", (0, 0))
-        self.sync(overflow_v=need_h > event.height, overflow_h=need_w > event.width)
-
-    def _on_mousewheel(self, event) -> None:
-        if not self.active[0]:
-            return                                 # 溢れていない＝スクロールしない
-        if _has_own_scroll(event.widget, stop=self.body):
-            return                                 # 中の一覧・表が自分で処理する
-        self.canvas.yview_scroll(int(-1 * (event.delta / 120)), "units")
-
-    # -- 出し入れ ----------------------------------------------
-    def sync(self, *, overflow_v: bool, overflow_h: bool) -> tuple[int, int]:
-        """バーを出し入れし、**そのために余分に要る (幅, 高さ)** を返す。
-
-        縦バーを出せばその幅だけ中身の使える幅が減る（＝窓をそのぶん広げないと
-        横にも溢れる）。`fit_to_content` が返り値を見て一度だけ測り直す。
-        """
-        if (overflow_v, overflow_h) != self.active:
-            (self.vsb.grid(row=0, column=1, sticky="ns") if overflow_v
-             else self.vsb.grid_remove())
-            (self.hsb.grid(row=1, column=0, sticky="ew") if overflow_h
-             else self.hsb.grid_remove())
-            self.active = (overflow_v, overflow_h)
-            self.win.update_idletasks()
-        return (self.vsb.winfo_reqwidth() if overflow_v else 0,
-                self.hsb.winfo_reqheight() if overflow_h else 0)
 
 
 def _tables(win: "tk.Misc") -> "list[ttk.Treeview]":
@@ -689,6 +568,104 @@ def _thaw_table_columns(trees: "list[ttk.Treeview]") -> None:
             tree.column(col, stretch=stretch)
 
 
+def ready(win: "tk.Tk | tk.Toplevel") -> None:
+    """**この窓は組み立て終わった**＝以後の測り直しは畳んでよい（I-107）。
+
+    窓の `__init__` の最後で呼ぶ。⚠️ **呼び忘れても壊れない**（`fit_soon` が
+    従来どおり同期で測るだけ＝速くならないが、間違った寸法にはならない）。
+    ⇒ 新しい窓を足した人が忘れても、**安全側**に倒れる。
+    """
+    win._fit_ready = True                       # type: ignore[attr-defined]
+
+
+def fit_soon(win: "tk.Tk | tk.Toplevel", run: "Any") -> bool:
+    """**連続する測り直しを `after_idle` で 1 回に畳む**（2026-08-24・I-107）。
+
+    `run` は「この窓の測り直し 1 回ぶん」を行う引数なしの呼び出し可能物
+    （窓ごとに下限・加算値が違うので、**何を測るかは窓が持つ**）。畳んだかどうかを
+    返す（真＝あとで走る）。
+
+    **なぜ要るか**＝地点を 1 つ足すたびに `fit_to_content` が走り、**1 回 0.22 秒**
+    利用者の手が止まる（実測・中継経路）。同型は 3 つ＝中継経路の地点追加・条件探索の
+    条件列追加・バッチ表の列幅追従で、**窓を開くだけでも 3 回連続で走っている**。
+
+    ⚠️ **畳むのは回数であって、追従そのものではない**（B-021 の再発を自分で作らない）。
+    アイドルは*次の描画より前*に来るので、利用者から見た「中身が増えたら窓が広がる」は
+    1 フレームも遅れない。**測る側から見て遅れないこと**は 2 つで担保する:
+
+      1. **組み立てが終わるまでは同期で測る**（`ready()` を通るまで）＝`__init__`
+         から戻った時点で寸法は決まっていないといけない（`_fit_size` / `_fit_need`
+         を読む口が窓の外にもある＝置き場所の計算・横断ゲート）。畳んでよいのは
+         *出ている窓を利用者が触っている*あいだだけで、そこが 0.22 秒待たされて
+         いる当人でもある。
+      2. `required_size()` と `refit_all()` は**先に溜まりを流す／捨てる**。
+         横断ゲートはここを通るので、**畳んだせいでゲートが古い値を見ることはない**。
+      3. **一度きりの条件（`_fit_shrink`）が立っているあいだは畳まない**＝あれは
+         `refit_all` がその 1 回のために立てて `finally` で下ろす印なので、
+         アイドルまで持ち越すと**縮む向きの測り直しが黙って効かなくなる**
+         （実装中に踏んだ＝`shrink` のゲート 3 本が赤）。
+    """
+    if not getattr(win, "_fit_ready", False):
+        run()                       # 組み立て中＝同期（上の 1）
+        return False
+    if getattr(win, "_fit_shrink", False):
+        run()                       # 一度きりの条件は持ち越せない（上の 3）
+        return False
+    win._fit_soon_run = run                     # type: ignore[attr-defined]
+    if getattr(win, "_fit_soon_id", None) is not None:
+        return True                 # 既に予約済み＝最新の呼び出しで上書きするだけ
+    try:
+        win._fit_soon_id = win.after_idle(      # type: ignore[attr-defined]
+            lambda: _run_soon_fit(win))
+    except tk.TclError:
+        win._fit_soon_id = None                 # type: ignore[attr-defined]
+        run()                       # 破棄途中など＝畳めないならその場で測る
+        return False
+    return True
+
+
+def _run_soon_fit(win: "tk.Tk | tk.Toplevel") -> None:
+    """溜まっていた測り直しを 1 回だけ走らせる（`fit_soon` の実体）。"""
+    win._fit_soon_id = None                     # type: ignore[attr-defined]
+    run = getattr(win, "_fit_soon_run", None)
+    win._fit_soon_run = None                    # type: ignore[attr-defined]
+    if run is None:
+        return
+    try:
+        run()
+    except tk.TclError:
+        pass                        # 破棄途中の窓（閉じ際に溜まりが走る経路）
+
+
+def _drop_soon_fit(win: "tk.Misc") -> None:
+    """溜まっている測り直しを**捨てる**（いま同じ仕事をするので走らせない）。"""
+    after_id = getattr(win, "_fit_soon_id", None)
+    win._fit_soon_run = None                    # type: ignore[attr-defined]
+    if after_id is None:
+        return
+    win._fit_soon_id = None                     # type: ignore[attr-defined]
+    try:
+        win.after_cancel(after_id)
+    except (tk.TclError, ValueError):
+        pass
+
+
+def flush_fit(win: "tk.Misc") -> bool:
+    """溜まっている測り直しがあれば**いま**走らせる。走らせたかを返す。
+
+    🔑 **これがあるから畳んでよい**＝「測る前に必ず呼ぶ」口（`required_size` /
+    `refit_all`）がここを通るので、**畳んだ結果を誰かが古い値として読むことがない**。
+    """
+    if getattr(win, "_fit_soon_id", None) is None:
+        return False
+    try:
+        win.after_cancel(win._fit_soon_id)      # type: ignore[attr-defined]
+    except (tk.TclError, ValueError):
+        pass
+    _run_soon_fit(win)                          # type: ignore[arg-type]
+    return True
+
+
 def fit_to_content(
     win: "tk.Tk | tk.Toplevel",
     *,
@@ -715,6 +692,10 @@ def fit_to_content(
         実際に `geometry()` へ渡した `(幅, 高さ)`。同じ値を `win._fit_size` に、
         必要量を `win._fit_need` に残す（横断ゲートが読む唯一の口）。
     """
+    # 畳んで待たせていた測り直しは、いまここで済む（I-107）。⚠️ **窓ごとに溜めるのは
+    # 1 本だけ**＝どの窓も測り直しの口は 1 つ（`_fit_to_content` / `_fit_refit`）で、
+    # 同じ窓に別条件の測り直しが並ぶことはない。
+    _drop_soon_fit(win)
     # 呼び出しの内容を残す＝DPI 変更などで**同じ条件のまま測り直す**ため
     # （refit_all が使う。窓ごとに min_w / extra_w が違うので、これが無いと
     # 貼り直し側が窓ごとの事情を知らないと再測できない）。
@@ -877,6 +858,9 @@ def required_size(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:
     ＝[[feedback-promote-recurring-checks]] の壊れ方③（間違ったものを要求して
     いる）。B-100 は 1 つの窓の話に見えて、**横断ゲートの目そのものが塞がっていた。**
     """
+    # 🔴 **溜まっている測り直しを先に流す**（2026-08-24・I-107）＝畳んだ結果を
+    # 「まだ測っていない窓」として読ませないため。ここは横断ゲートの入口でもある。
+    flush_fit(win)
     escape: "_ScrollEscape | None" = getattr(win, "_fit_scroll", None)
     if escape is not None:
         escape.remeasure()
@@ -908,6 +892,10 @@ def refit_all(root: "tk.Tk | tk.Toplevel", *, shrink: bool = False) -> None:
         # 加算値（バッチのスクロールバー幅）は**呼んだ時点の実測**なので、DPI が
         # 変わるとスクロールバー自体が太って数 px 足りなくなる。窓の側で測り直せる
         # なら、その方が正しい。
+        # 畳んで待っている測り直しは、これから同じ窓を測るので捨てる（I-107）。
+        # ⚠️ **流す（`flush_fit`）ではなく捨てる**＝流すと*古い DPI のまま* 1 回
+        # 測ってから測り直すことになり、`grow_only` の floor に古い値が焼き付く。
+        _drop_soon_fit(win)
         refit = getattr(win, "_fit_refit", None)
         kwargs: "dict[str, Any]" = getattr(win, "_fit_kwargs", {})
         if refit is None and not kwargs:

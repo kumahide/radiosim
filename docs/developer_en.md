@@ -254,6 +254,7 @@ radiosim/
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
 │   ├── window_fit.py     # Single implementation of window size and position (clipping / off-screen guard)
+│   ├── window_scroll.py  # Scroll escape for windows whose content is larger than the screen
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
 │   ├── multihop.py       # Relay path window (waypoints are the input surface; hops are derived)
 │   ├── multihop_map.py   # Relay path <-> map handoff (waypoint copy, append/move from the map; mixin)

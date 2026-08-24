@@ -84,6 +84,7 @@ class _PickMixin:
         _wp_objects: list
         _wp_images: list
         _redraw_state: dict
+        _pick_menu_widget: "tk.Menu | None"      # 右クリックメニュー（B-121）
 
         def _select_mode(self, value: str) -> None: ...
         def _set_idle(self) -> None: ...
@@ -550,8 +551,11 @@ class _PickMixin:
                 event.x, event.y)
         except Exception:
             return
-        menu = tk.Menu(self._map, tearoff=0)
+        menu = self._pick_menu()
+        menu.delete(0, "end")
         for role, key in (("tx", "map_menu_place_tx"), ("rx", "map_menu_place_rx")):
+            # ⚠️ **ラベルは毎回組み直す**＝言語の切り替えに追従させるため
+            # （使い回すのはウィジェットであって、その中身ではない）。
             menu.add_command(
                 label=i18n.t(key),
                 command=lambda r=role, la=lat, lo=lon: self._place_from_menu(r, la, lo))
@@ -559,6 +563,25 @@ class _PickMixin:
             menu.tk_popup(event.x_root, event.y_root)
         finally:
             menu.grab_release()
+
+    def _pick_menu(self) -> tk.Menu:
+        """右クリックメニューの**実体は窓に 1 つ**（2026-08-24・B-121）。
+
+        以前は右クリックのたびに `tk.Menu` を作っており、`finally` は
+        `grab_release()` だけだった＝**メニューは親（地図）の子として残り続ける**
+        ので、地図を閉じるまで Tcl ウィジェットとクロージャが積み上がり、DPI・
+        テーマ変更時の走査対象（[views/theme](theme.py) の `_walk_menus`）も
+        増え続ける。
+
+        ⛔ **`finally` で `destroy()` する案は採らない**（起票元の後半）＝
+        `tk_popup` が戻る時点を前提にしており、**選んだコマンドが走る前に親を
+        消す**形になり得る。使い回せばその前提そのものが要らない。
+        """
+        menu: "tk.Menu | None" = getattr(self, "_pick_menu_widget", None)
+        if menu is None or not menu.winfo_exists():
+            menu = tk.Menu(self._map, tearoff=0)
+            self._pick_menu_widget = menu       # type: ignore[attr-defined]
+        return menu
 
     def _place_from_menu(self, role: str, lat: float, lon: float) -> None:
         """右クリックメニューから TX/RX を置く（**役割は利用者が名指しした**）。"""

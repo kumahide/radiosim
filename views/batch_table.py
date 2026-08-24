@@ -315,7 +315,14 @@ class _TableMixin(_HostBase):
 
         測り方は [views/window_fit](views/window_fit.py) に集約（縮めない・画面幅で
         頭打ち・決めた寸法を `_fit_size` に残す＝横断ゲートが読む口）。
+
+        ⚠️ **連続した呼び出しは 1 回に畳む**（I-107）。加算値（スクロールバー幅）は
+        **畳んだ先で測る**＝予約した時点の値で測ると、そのあいだに DPI が変わった
+        ときにバーの太さが古いまま焼き付く。
         """
+        window_fit.fit_soon(self, self._fit_width_now)
+
+    def _fit_width_now(self) -> None:
         # ⚠️ ここから `_run_sync()` を呼ばないこと（相互再帰になる）。同期の直後に
         # こちらが呼ばれる向きに一本化してある。
         # 行はキャンバスの中にあり、縦スクロールバーと外周 padding は
@@ -524,8 +531,19 @@ class _TableMixin(_HostBase):
     # per-row 往復（右クリックメニュー・案A）
     # ----------------------------------------------------------
     def _show_row_menu(self, event, frame: ttk.Frame, entries: list[tk.Entry]) -> None:
-        """行の右クリックメニューを表示する。"""
-        menu = tk.Menu(self, tearoff=0)
+        """行の右クリックメニューを表示する。
+
+        🔴 **メニューの実体は窓に 1 つ**（2026-08-24・B-121 のクラス点検）＝毎回
+        `tk.Menu` を作ると**親の子として残り続ける**（`finally` は `grab_release()`
+        だけ）。行ごとに右クリックできるここは、**地図より速く積み上がる**。
+        ⚠️ 中身（ラベルと、その行に束ねたコマンド）は**毎回組み直す**＝使い回すのは
+        ウィジェットだけ。行を掴んだままのコマンドが残ると、消した行を操作できてしまう。
+        """
+        menu: "tk.Menu | None" = getattr(self, "_row_menu_widget", None)
+        if menu is None or not menu.winfo_exists():
+            menu = tk.Menu(self, tearoff=0)
+            self._row_menu_widget = menu        # type: ignore[attr-defined]
+        menu.delete(0, "end")
         if self._load_params is not None:
             menu.add_command(
                 label=i18n.t("menu_send_to_single"),

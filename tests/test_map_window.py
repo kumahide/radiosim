@@ -616,6 +616,64 @@ def test_right_click_places_a_point_whose_marker_is_off_screen():
         f"どれをどれだけ動かしたかを返していない: {win.status[-1]}")
 
 
+def test_the_right_click_menu_is_reused_instead_of_piling_up(monkeypatch):
+    """**右クリックのたびにメニューを作らない**こと（2026-08-24・B-121）。
+
+    以前は `_on_right_click` が毎回 `tk.Menu` を作り、`finally` は
+    `grab_release()` だけだった＝メニューは**親（地図）の子として残り続ける**ので、
+    長く開けたまま右クリックを繰り返すと Tcl ウィジェットとクロージャが積み上がり、
+    DPI・テーマ変更時の走査対象（`theme._walk_menus`）も増え続ける。
+
+    ⚠️ **ラベルは使い回さない**＝言語を切り替えたら次に開くメニューは新しい言語で
+    出ること（使い回すのはウィジェットであって、その中身ではない）。
+    """
+    import tkinter as tk
+    from tkinter import ttk
+
+    import pytest
+
+    from core import i18n
+
+    pytest.importorskip("tkinter")
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        i18n.set_lang("ja")
+        holder = ttk.Frame(root)
+        holder.convert_canvas_coords_to_decimal_coords = (   # type: ignore[attr-defined]
+            lambda x, y: (35.0, 139.0))
+        win = MapWindow.__new__(MapWindow)
+        win._map = holder
+        win._mode = SimpleNamespace(get=lambda: "coords")
+        win._busy = False
+        # メニューを実際に出すと掴み（grab）が残るので、出す口だけ塞ぐ。
+        monkeypatch.setattr(tk.Menu, "tk_popup", lambda self, *a, **k: None)
+        event = SimpleNamespace(x=10, y=20, x_root=100, y_root=200)
+
+        for _ in range(5):
+            win._on_right_click(event)
+
+        menus = [w for w in holder.winfo_children() if isinstance(w, tk.Menu)]
+        assert len(menus) == 1, (
+            f"右クリック 5 回でメニューが {len(menus)} 個残っている（B-121）＝"
+            "地図を閉じるまで解放されず、テーマ・DPI 変更時の走査対象も増え続ける。"
+        )
+        assert menus[0].index("end") == 1, (
+            "使い回したメニューの項目が積み上がっている（毎回 2 項目のはず）。"
+        )
+        assert menus[0].entrycget(0, "label") == i18n.t("map_menu_place_tx")
+
+        i18n.set_lang("en")
+        win._on_right_click(event)
+        assert menus[0].entrycget(0, "label") == i18n.t("map_menu_place_tx"), (
+            "言語を切り替えてもメニューの字が古いまま＝ウィジェットと一緒に"
+            "**ラベルまで**使い回している（B-121 の処方は毎回組み直すこと）。"
+        )
+    finally:
+        i18n.set_lang("ja")
+        root.destroy()
+
+
 def test_right_click_placement_is_refused_outside_the_pick_modes():
     """④の裏＝ピック層を持たないモードでは書かないこと。
 
