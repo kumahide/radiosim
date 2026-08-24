@@ -32,9 +32,10 @@ GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 VARIANTS = {
     "現行":       None,
     "G1:陰h+深1": make_variant("los", 1,  False, shadow_gate="height"),
-    "Kν:ν体":     make_variant("los", 20, False, one_edge="nu"),
-    "KνG:ν体+陰": make_variant("los", 20, False, shadow_gate="height", one_edge="nu"),
-    "VG1:谷+陰+深1": make_variant("los", 1, False, shadow_gate="height", one_edge="valley"),
+    "ν>-0.8(二値)": make_variant("los", 20, False, one_edge="nu:-0.8"),
+    "VS:0.4":     make_variant("los", 20, False, one_edge="valley", separation=0.4),
+    "VS:0.8":     make_variant("los", 20, False, one_edge="valley", separation=0.8),
+    "VS:1.6":     make_variant("los", 20, False, one_edge="valley", separation=1.6),
 }
 
 
@@ -45,9 +46,12 @@ def recompute(rec: dict, variant, n: int | None = None, force_single: bool = Fal
         # ⚠️ 近似＝凍結配列を線形補間して標本数だけ振る（本物の再取得ではない）。
         #    標本数依存が「在るか無いか」を見るための目安として使う。
         elevs = np.interp(np.linspace(0, 1, n), np.linspace(0, 1, len(elevs)), elevs)
+    # ⚠️ earth_k は渡さない＝既定 4/3（2026-08-25・Codex 48 巡目 P1）。
+    #    `k_factor` は**ライス K の表示値で曲率とは無関係**（tests/golden_corpus_gen.py
+    #    の同じ注意書きを読まずに渡していた）。渡すと製品と違う地形で測ることになり、
+    #    実際 ライス K だけ違う fuji_kawaguchi / fuji_ricek_low が別の値に分かれていた。
     terrain = models.calculate_terrain_profile(
         elevs, inp["lat_tx"], inp["lon_tx"], inp["lat_rx"], inp["lon_rx"],
-        earth_k=inp["k_factor"],
     )
     orig = models._deygout_loss
     if variant is not None:
@@ -117,20 +121,22 @@ def sample_dependence() -> None:
     """実データで標本数依存が消えるか（近似・線形補間で標本数だけ振る）。"""
     data  = json.loads(GOLDEN.read_text(encoding="utf-8"))
     links = {r["id"]: r for r in data["links"]}
-    targets = ["hiroshima_kure_ridge", "veg_low_antenna", "fuji_kawaguchi",
-               "takamatsu_yashima", "kobe_rokko", "kyoto_hiei"]
+    targets = ["hiroshima_kure_ridge", "kobe_rokko", "fuji_kawaguchi"]
     print()
     print("標本数依存（⚠️ 凍結配列の線形補間による近似）")
-    print(f"{'id':<24}{'n':>6}{'Single':>10}{'現行':>12}{'Kν:ν体':>12}")
-    print("-" * 64)
+    names = [n for n in VARIANTS if n != "現行"]
+    print(f"{'id':<24}{'n':>6}{'Single':>10}{'現行':>12}"
+          + "".join(f"{n:>14}" for n in names))
+    print("-" * (62 + 14 * len(names)))
     for tid in targets:
-        for n in (120, 240, 480, 960):
+        for n in (120, 180, 240, 360, 480, 720, 960):
             rec = links[tid]
             sg = recompute(rec, None, n=n, force_single=True)
             b  = recompute(rec, None, n=n)
-            g  = recompute(rec, VARIANTS["Kν:ν体"], n=n)
-            print(f"{tid:<24}{n:>6}{sg['diff_loss']:>10.2f}"
-                  f"{b['diff_loss']:>12.2f}{g['diff_loss']:>12.2f}")
+            row = (f"{tid:<24}{n:>6}{sg['diff_loss']:>10.2f}{b['diff_loss']:>12.2f}")
+            for nm in names:
+                row += f"{recompute(rec, VARIANTS[nm], n=n)['diff_loss']:>14.2f}"
+            print(row)
         print()
 
 

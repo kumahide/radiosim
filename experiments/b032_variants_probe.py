@@ -14,16 +14,36 @@
                 ⇒ 一体化と併せると `Single` とほぼ同値まで落ちる（Bullington より下）
                 ＝多重回折という Deygout の存在理由が消える。**採用しない**。
   one_edge    : **1 つの連続した遮蔽体は 1 枚のナイフエッジ**。範囲の切り方 3 通り:
-                "los"    LoS を超える連続区間 ⇒ 損失は ν > -0.8 で始まるのに範囲を
-                         高さで決めており条件が食い違う（Codex 47 巡目 P2）。
-                "nu"     ν > -0.8 の連続区間＝**損失の開始条件と同じ物差し**。✅
-                "valley" 谷（極小点）で区切る ⇒ 完全に平坦な面では極小が定まらず
-                         キャノピーで 478 dB。**失格**。
+                "los"     LoS を超える連続区間。⇒ 損失は ν > -0.8 で始まるのに範囲を
+                          高さで決めており条件が食い違う（Codex 47 巡目 P2）。
+                          閾値の近傍にある地形（hiroshima）が標本数で 39↔124 dB と跳ぶ。
+                "nu[:θ]"  ν > θ の連続区間（既定 θ = -0.8 = `_NU_THRESHOLD`）。
+                          **"los" は θ=0.0 と同じ**なので、これは連続したつまみ。
+                "valley"  谷（極小点）で区切る。⇒ 単体では平坦面で極小が定まらず
+                          キャノピーで 478 dB。**失格**。
+  separation  : 二値の一体化を滑らかにする案＝副区間の寄与に
+                w = clip((ν_sub - ν_valley)/SCALE, 0, 1) を掛ける。
+                ⇒ 合成地形では全条件を通ったが、**実地形で失格**（hiroshima 1557 dB）。
+                   実地形は細かい凹凸だらけで「単調に下る」判定がすぐ止まり、
+                   谷が無数にできて副障害物も無数になる。
+                   🔑 **滑らかな合成だけで処方を決めてはいけない。**
 
-✅ **採用候補 = Kν（one_edge="nu" のみ・陰ゲートなし）**
-   実データ 26 本＝判定 0 本変化／100 dB 超 13 → 2 本／標本数依存は最大 +18%
-   （現行は +630%）。Bullington < Epstein-Peterson < Kν の順序が保たれる
-   ＝Deygout は Ep-Pet より上に出る手法なので、性格として正しい側に居る。
+✅ **採用 = Kν（one_edge="nu"・θ = -0.8 のみ／陰ゲートも深さ制限も要らない）**
+
+なぜ θ = -0.8 か＝**一体化の境界を「損失が始まるのと同じ物差し」で決める**ので、
+境界と損失の有無が一致し、標本数で「繋がる/切れる」が入れ替わらない。
+θ を -0.2〜-0.4 に取ると hiroshima が 39↔124 dB と跳ぶ（境界が損失条件とずれる）。
+
+実データ 26 本＝判定 0 本変化／100 dB 超 13 → 2 本／hiroshima の標本数依存は
+120〜960 点で 38.82〜39.16（現行は 1860→2325）。多重回折は 6 本で残る。
+
+⚠️ **「Bullington < Ep-Pet < Kν」という順序は一般には成り立たない**
+   （2026-08-25・Codex 48 巡目 P1）＝fuji では成り立つが hiroshima では
+   Kν が Ep-Pet の 0.56 倍。書けるのは「多くの回線で Ep-Pet の 1.0〜1.7 倍、
+   一部では `Single` と同値」まで。**1 行から一般化しない。**
+   なお hiroshima が `Single` と同値なのは正しい＝9km 連続の山塊で谷でも
+   LoS 差 +31〜42m（F1 半径の 1.3〜1.8 倍上）＝1 枚の巨大な障害物。
+   詳細は `b032_terrain_probe.py` で断面を見る。
 
 使い方:
     & "$env:RADIOSIM_PYTHON" experiments/b032_variants_probe.py
@@ -46,7 +66,8 @@ from b032_deygout_probe import (  # noqa: E402
 )
 
 
-def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str = "segment", shadow_gate: str = "off", one_edge: str = "off"):
+def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str = "segment", shadow_gate: str = "off", one_edge: str = "off",
+                 separation: float = 0.0):
     """`models._deygout_loss` と差し替え可能な実装を返す。
 
     nu_basis: "segment"（現行＝区間ごとの d1·d2）/ "full"（全経路の d1·d2）
@@ -145,19 +166,20 @@ def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str 
                 lo -= 1
             while hi < N - 1 and over[hi + 1]:
                 hi += 1
-        elif one_edge == "nu":
-            # 損失の開始条件と揃えた案。⛔ **行き過ぎ**＝ν > -0.8 は緩いので
-            #    2 つの峰の間の谷まで 1 体に畳み、多重回折が消えて `Single` と
-            #    同値になる（＝Deygout の存在理由が無くなる）。**失格**。
-            over = v_arr > models._NU_THRESHOLD
+        elif one_edge.startswith("nu"):
+            # ✅ 採用。**"los" は ν > 0 と同じ**なので、この閾値は
+            # 「LoS 超過だけを 1 体と見る（0.0）」から「F1 の 57% まで 1 体と見る
+            # （-0.8＝損失の開始条件と同じ物差し）」までの**連続したつまみ**。
+            # θ = -0.8 だけが標本数に安定する（境界と損失の有無が一致するため）。
+            thr = float(one_edge.split(":")[1]) if ":" in one_edge else models._NU_THRESHOLD
+            over = v_arr > thr
             while lo > 0 and over[lo - 1]:
                 lo -= 1
             while hi < N - 1 and over[hi + 1]:
                 hi += 1
         elif one_edge == "valley":
-            # ✅ 採用案＝**同じ山体は谷（極小点）で区切る**。主峰から下り続ける
-            #    限り同じ障害物、上がり始めたらそこから先は別の障害物。
-            #    条件の食い違い（P2）は「範囲を高さで決めない」ことで解ける。
+            # ⛔ 失格（単体では平坦面で極小が定まらずキャノピー 478 dB／
+            #    separation と組んでも実地形で発散）。探索の記録として残す。
             while lo > 0 and obs_surface[lo - 1] <= obs_surface[lo]:
                 lo -= 1
             while hi < N - 1 and obs_surface[hi + 1] <= obs_surface[hi]:
@@ -170,13 +192,38 @@ def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str 
         if one_edge == "off":
             left_edge = right_edge = edge
 
+        # ── S: 分離度による連続的な重み（二値の一体化を滑らかにしたもの）────
+        # 副区間の主障害物候補を先に見つけ、**それと主障害物の間の谷の深さ**で
+        # 寄与を減衰させる。`sep = ν_sub - ν_valley`＝谷が副障害物より F1 の
+        # 何割ぶん低いか。二値の閾値と違い、境界の近傍で標本数によって
+        # 39 dB ↔ 124 dB のように跳ばない（2026-08-25）。
+        def _sep_weight(side: str) -> float:
+            if separation <= 0.0:
+                return 1.0
+            # ⚠️ 「区間内の最大 ν」を副障害物にしてはいけない＝主峰から連続的に
+            #    下るので**必ず主峰の隣**が選ばれ、谷が無く重みが常に 0 になる。
+            #    ⇒ **主峰から下り続けた先の谷を越えてから**、その先の極大を探す。
+            j = peak_idx
+            if side == "left":
+                while j > 0 and v_arr[j - 1] <= v_arr[j]:
+                    j -= 1
+                rest = v_arr[1:j]           # 谷より手前（端点は除く）
+            else:
+                while j < N - 1 and v_arr[j + 1] <= v_arr[j]:
+                    j += 1
+                rest = v_arr[j + 1:-1]      # 谷より先（端点は除く）
+            if len(rest) == 0:
+                return 0.0                  # 谷の向こうに障害物が無い＝同じ山体
+            sep = float(np.max(rest)) - float(v_arr[j])
+            return float(min(max(sep / separation, 0.0), 1.0))
+
         sub = 0.0
         if lo >= 2 and _emerges(left_obs, left_d, tx_abs, peak_h, "left"):
-            sub += loss_fn(
+            sub += _sep_weight("left") * loss_fn(
                 left_obs, left_d, tx_abs, left_edge, lam, depth + 1,
             )
         if hi <= N - 3 and _emerges(right_obs, right_d, peak_h, rx_abs, "right"):
-            sub += loss_fn(
+            sub += _sep_weight("right") * loss_fn(
                 right_obs, right_d, right_edge, rx_abs, lam, depth + 1,
             )
 
@@ -191,11 +238,10 @@ def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str 
 VARIANTS: dict[str, object] = {
     "現行":       None,   # models._deygout_loss をそのまま
     "G1:陰h+深1": make_variant("los", 1,  False, shadow_gate="height"),
-    "K:LoS体":    make_variant("los", 20, False, one_edge="los"),
-    "Kν:ν体":     make_variant("los", 20, False, one_edge="nu"),
-    "V:谷体":     make_variant("los", 20, False, one_edge="valley"),
-    "VG:谷+陰h":  make_variant("los", 20, False, shadow_gate="height", one_edge="valley"),
-    "VG1:VG+深1": make_variant("los", 1,  False, shadow_gate="height", one_edge="valley"),
+    "✅Kν(θ=-0.8)": make_variant("los", 20, False, one_edge="nu:-0.8"),
+    "ν>0.0(=LoS)": make_variant("los", 20, False, one_edge="los"),
+    "ν>-0.4":     make_variant("los", 20, False, one_edge="nu:-0.4"),
+    "VS:谷+分離0.8": make_variant("los", 20, False, one_edge="valley", separation=0.8),
 }
 
 

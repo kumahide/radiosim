@@ -11,12 +11,23 @@
                     1 枚に潰すので**下寄り**）
   Epstein-Peterson: 各障害物を隣の障害物の頂点を端点として順に足す
                     （Deygout と並ぶ古典。障害物が離れていると妥当・近いと過大）
-  G1              : 候補処方の第 1 案（陰ゲート + 深さ 1）＝**まだ甘い**（下記）
-  KG              : 採用候補（1 体 1 枚 + 陰ゲート）
+  θ=0.0           : 落選案＝LoS を超える連続範囲を 1 枚に畳む（標本数で跳ぶ）
+  Kν              : ✅ 採用＝ν > -0.8 の連続範囲を 1 枚に畳む
 
-🔑 この探針が決めたこと＝**G1 は「LoS を超える障害物が 1 つしかない」回線でも
-   3 手法が一致する値の 2 倍を返していた**（凸面の裾が陰ゲートをすり抜ける）。
-   KG はその 4 本で `Single`/`Bullington`/`Epstein-Peterson` と完全一致する。
+🔑 この探針が落とした案 2 つ:
+   ① **陰ゲート案 G1 は「LoS を超える障害物が 1 つしかない」回線でも
+      3 手法が一致する値の 2 倍を返していた**（凸面の裾が陰ゲートをすり抜ける）。
+   ② 一体化に陰ゲートを重ねると逆に **Bullington より下**まで落ち、多重回折が消える。
+
+⚠️ **手法の大小に一般的な順序は無い**（2026-08-25・Codex 48 巡目 P1）＝
+   `fuji_kawaguchi` では Bullington < Ep-Pet < Kν だが、`hiroshima_kure_ridge`
+   では Kν = Single < Bullington < Ep-Pet と逆になる。**1 行から一般化しない。**
+
+🔑 **`hiroshima` の Ep-Pet 70.44 と「障害物数 3」のほうが人工的**（地形を見て判明・
+   `b032_terrain_probe.py`）＝この経路は 9km 連続の山塊で、谷でも LoS 差 +31〜42m
+   （F1 半径 12〜24m の 1.3〜1.8 倍**上**）＝電波は一度も回り込めない。
+   3 と数えたのは **LoS をわずか数 m 下回る点が 3 か所ある**ためで、
+   F1 半径に対して無意味な凹み。⇒ Kν が 1 枚と見るほうが物理に合う。
 
 使い方:
     & "$env:RADIOSIM_PYTHON" experiments/b032_reference_probe.py
@@ -39,17 +50,20 @@ from b032_variants_probe import make_variant  # noqa: E402
 
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 G1 = make_variant("los", 1, False, shadow_gate="height")
-KN = make_variant("los", 20, False, one_edge="nu")                       # 陰ゲートなし
-KG = make_variant("los", 20, False, shadow_gate="height", one_edge="nu")  # 陰ゲートあり
+KL = make_variant("los", 20, False, one_edge="los")      # θ=0.0
+KN = make_variant("los", 20, False, one_edge="nu:-0.8")  # ✅ 採用 Kν
 
 
 def _geometry(rec: dict):
     """calculate_propagation と同じ障害物面・LoS・波長を組み直す。"""
     inp     = rec["input"]
     elevs   = np.array(rec["raw_elevs"], dtype=float)
+    # ⚠️ earth_k は渡さない＝既定 4/3（2026-08-25・Codex 48 巡目 P1）。
+    #    `k_factor` は**ライス K の表示値で曲率とは無関係**（tests/golden_corpus_gen.py
+    #    の同じ注意書きを読まずに渡していた）。渡すと製品と違う地形で測ることになり、
+    #    実際 ライス K だけ違う fuji_kawaguchi / fuji_ricek_low が別の値に分かれていた。
     terrain = models.calculate_terrain_profile(
         elevs, inp["lat_tx"], inp["lon_tx"], inp["lat_rx"], inp["lon_rx"],
-        earth_k=inp["k_factor"],
     )
     ec      = terrain.elevs_with_curve
     tx_abs  = float(ec[0])  + inp["h_tx"]
@@ -151,9 +165,12 @@ def epstein_peterson(obs, d_m, tx_abs, rx_abs, lam) -> float:
 def run_variant(rec: dict, variant, method: str | None = None) -> float:
     inp     = rec["input"]
     elevs   = np.array(rec["raw_elevs"], dtype=float)
+    # ⚠️ earth_k は渡さない＝既定 4/3（2026-08-25・Codex 48 巡目 P1）。
+    #    `k_factor` は**ライス K の表示値で曲率とは無関係**（tests/golden_corpus_gen.py
+    #    の同じ注意書きを読まずに渡していた）。渡すと製品と違う地形で測ることになり、
+    #    実際 ライス K だけ違う fuji_kawaguchi / fuji_ricek_low が別の値に分かれていた。
     terrain = models.calculate_terrain_profile(
         elevs, inp["lat_tx"], inp["lon_tx"], inp["lat_rx"], inp["lon_rx"],
-        earth_k=inp["k_factor"],
     )
     orig = models._deygout_loss
     if variant is not None:
@@ -184,7 +201,7 @@ def main() -> None:
     print("   系統の違う手法が同程度を返すかだけを見る。")
     print()
     head = (f"{'id':<24}{'障害物数':>8}{'Single':>9}{'Bulling':>9}"
-            f"{'Ep-Pet':>9}{'Kν':>9}{'KνG':>9}{'現行':>11}")
+            f"{'Ep-Pet':>9}{'K:LoS体':>9}{'Kν':>9}{'現行':>11}")
     print(head)
     print("-" * len(head))
     for tid in TARGETS:
@@ -196,8 +213,8 @@ def main() -> None:
             f"{run_variant(rec, None, 'single'):>9.2f}"
             f"{bullington(obs, d_m, tx_abs, rx_abs, lam):>9.2f}"
             f"{epstein_peterson(obs, d_m, tx_abs, rx_abs, lam):>9.2f}"
+            f"{run_variant(rec, KL):>9.2f}"
             f"{run_variant(rec, KN):>9.2f}"
-            f"{run_variant(rec, KG):>9.2f}"
             f"{run_variant(rec, None):>11.2f}"
         )
 
