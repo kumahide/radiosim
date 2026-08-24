@@ -776,6 +776,89 @@ class TestRoadmapHeadingMatchesRow:
         assert not memcheck.row_says_released("⬜ 骨子確定（✅ 着手順も確定）")
 
 
+class TestRoadmapSectionPlacement:
+    """版を切り替えたときに、版の節を並べ替えたか（check 17）。
+
+    ロードマップ自身の様式が決めている 2 つの配置＝①リリースしたら §アーカイブ
+    へ落とす ②現役の版の節は表のすぐ下に置く。**2026-08-24 の版の切り替わりで
+    2 つとも破れた**（2.9 がアーカイブの外に残り、次の版の 3.0 は §3.x の中の
+    H3 のままだった＝どちらもユーザー指摘）。版あたり 1 回しか来ない工程なので
+    想起では守れない＝位置だけを機械で見る。
+    """
+
+    _ARCHIVE = 100
+    _RELEASED_ROW = [(9, "| 2.9 | ✅ リリース済 | — |")]
+    _NEXT_ROW = [(9, "| 3.0 | 🔜 **次の版** | 結果の信頼性と出力契約 |")]
+
+    def test_released_section_left_above_the_archive_is_flagged(self, memcheck):
+        """事故その 1＝出し終えた版の節が現役の位置に残っている。"""
+        headings = [(1, "## 現在地"), (44, "## ✅ 2.9（リリース済み）"),
+                    (self._ARCHIVE, "## 🗄 アーカイブ")]
+        found = memcheck.check_section_placement(
+            self._RELEASED_ROW, headings, self._ARCHIVE)
+        assert any("アーカイブ" in f for f in found)
+
+    def test_next_version_without_its_own_section_is_flagged(self, memcheck):
+        """事故その 2＝次の版が §3.x の中の H3 のままで、表の直下に居ない。"""
+        headings = [(1, "## 現在地"), (50, "## ⬜ 3.x — 哲学「製品成熟」"),
+                    (self._ARCHIVE, "## 🗄 アーカイブ")]
+        found = memcheck.check_section_placement(
+            self._NEXT_ROW, headings, self._ARCHIVE)
+        assert any("繰り上げ" in f for f in found)
+
+    def test_next_version_buried_in_the_archive_is_flagged(self, memcheck):
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (120, "## 🔜 3.0 — 結果の信頼性と出力契約")]
+        found = memcheck.check_section_placement(
+            self._NEXT_ROW, headings, self._ARCHIVE)
+        assert any("戻す" in f for f in found)
+
+    def test_correct_placement_is_silent(self, memcheck):
+        headings = [(1, "## 現在地"), (44, "## 🔜 3.0 — 結果の信頼性と出力契約"),
+                    (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (110, "## ✅ 2.9（リリース済み）")]
+        rows = self._RELEASED_ROW + self._NEXT_ROW
+        assert memcheck.check_section_placement(rows, headings, self._ARCHIVE) == []
+
+    def test_a_version_mentioned_in_a_heading_is_not_that_version_section(
+            self, memcheck):
+        """⛔ 見出しに版の字が含まれるかで見ない＝§次のマイナーの見出しは
+        「§2.9 を切って器を再設置」を含み、2.9 の節に化ける。"""
+        headings = [(1, "## 現在地"),
+                    (44, "## 🧺 次のマイナー（2026-08-14 に §2.9 を切って器を再設置）"),
+                    (self._ARCHIVE, "## 🗄 アーカイブ")]
+        assert memcheck.check_section_placement(
+            self._RELEASED_ROW, headings, self._ARCHIVE) == []
+
+    def test_a_released_version_without_any_section_is_silent(self, memcheck):
+        """古い版は §アーカイブ の中で 1 行に畳まれ H2 節を持たないことがある。"""
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ")]
+        assert memcheck.check_section_placement(
+            self._RELEASED_ROW, headings, self._ARCHIVE) == []
+
+    def test_骨子確定_rows_are_not_treated_as_the_current_version(self, memcheck):
+        """⬜ の行（3.1〜3.5）は H3 のままで正しい＝毎回鳴らせない。"""
+        rows = [(9, "| 3.1 | ⬜ 骨子確定 | 配布の信頼性 |")]
+        headings = [(1, "## 現在地"), (50, "## ⬜ 3.x"),
+                    (self._ARCHIVE, "## 🗄 アーカイブ")]
+        assert memcheck.check_section_placement(rows, headings, self._ARCHIVE) == []
+
+    def test_the_next_mark_reader_looks_only_at_the_head(self, memcheck):
+        """判定そのものの単体検査（row_says_released と同じ読み方＝I-093）。"""
+        assert memcheck.row_says_next("🔜 **次の版**")
+        assert not memcheck.row_says_next("✅ リリース済（🔜 の字を含む注記）")
+        assert not memcheck.row_says_next("⬜ 骨子確定")
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        """実データで誤検知ゼロ＝パーサが何も拾えていない形にもならないこと。"""
+        headings = memcheck._roadmap_headings()
+        rows = memcheck._dashboard_rows()
+        assert rows and headings, "パーサが何も拾えていない"
+        assert memcheck._archive_lineno(headings), "§アーカイブ を見つけられていない"
+        assert memcheck.check_section_placement(
+            rows, headings, memcheck._archive_lineno(headings)) == []
+
+
 class TestMemoryIndexLineLength:
     """MEMORY.md の索引行が「要約」に留まっているかを機械で測る。
 
