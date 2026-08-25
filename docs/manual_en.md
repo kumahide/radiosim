@@ -751,6 +751,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
 | `note` | — | The note from the input CSV (free text) |
 | `error` | — | Why it failed; empty for a path that succeeded |
+| `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -774,6 +775,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `slant_m` | m | Slant distance (integer) |
 | `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
 | `error` | — | Why it failed; empty for a section that succeeded |
+| `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
 
@@ -806,6 +808,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `rain_mmh` | mm/h | Rain rate |
 | `env_type` | — | Env type |
 | `diff_method` | — | Diffraction model |
+| `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 
 ⚠️ **Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` produces two columns with the same name** (the second column is the axis, the later one is the value used for that condition). A reader that addresses columns by name keeps the later one, so **read the second column by position**.
 

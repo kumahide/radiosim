@@ -504,4 +504,7 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # `artifact_error`）＝`error` だけを見ると、ERROR と書いた行の
                 # 理由欄が空になる。バッチの `summary.csv` と同じ埋め方にする。
                 report_common.csv_cell(str(pr.error or pr.artifact_error or "")),
+                # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
+                # （F1 半径の何倍まで食い込んでいるか）＝I-077。
+                units.csv_f1_depth(r.blocked_ratio) if r else "",
             ])

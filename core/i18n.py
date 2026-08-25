@@ -242,6 +242,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_diff_model":        "Diff Model",
         "pl_k_factor":          "K-Factor (est.)",
         "pl_f1_obs":            "F1 Obs",
+        "pl_f1_depth":          "F1 Depth",
         "pl_slant_dist":        "Slant Dist",
 
         # ===== Env types =====
@@ -383,6 +384,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_total_loss":  "Total Loss",
         "html_col_slant":       "Slant (m)",
         "html_col_f1":          "F1 (%)",
+        "html_col_f1_depth":    "F1 Depth (×F1)",
         "html_col_note":        "Note",
         "html_col_graph":       "Graph",
 
@@ -802,6 +804,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_diff_model":        "回折モデル",
         "pl_k_factor":          "ライスK（推定）",
         "pl_f1_obs":            "F1遮蔽率",
+        "pl_f1_depth":          "F1侵入深さ",
         "pl_slant_dist":        "斜距離",
 
         # ===== Env types =====
@@ -933,6 +936,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_total_loss":  "総損失 (dB)",
         "html_col_slant":       "斜距離 (m)",
         "html_col_f1":          "F1遮蔽 (%)",
+        "html_col_f1_depth":    "F1侵入深さ (×F1)",
         "html_col_note":        "備考",
         "html_col_graph":       "グラフ",
 

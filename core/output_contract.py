@@ -65,6 +65,11 @@ class CsvContract:
 TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m")
 
 # --- 複数経路（バッチ）------------------------------------------------------
+# 🆕 `f1_depth_x`（3.0a1 / I-077）は **末尾に足してある**（規約 1 の最初の実例）。
+# `f1_pct` の隣に置くほうが読みやすいが、**既存列の位置を動かすと位置で読む相手が
+# 静かに壊れる**＝読みやすさより互換を採る。3 本の CSV とも同じ扱いにした
+# （`summary.csv` / `hops.csv` / `scenario.csv`。HTML 台帳のほうは位置の契約が
+# 無いので `f1_pct` の隣に置いてある＝**人が読む面と機械が読む面で並びが違う**）。
 SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
     "h_tx", "h_rx",
@@ -72,6 +77,7 @@ SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "fspl_db", "diff_db", "veg_db", "env_db",
     "rain_db", "gas_db", "total_loss_db",
     "slant_m", "f1_pct", "note", "error",
+    "f1_depth_x",
 )
 
 # --- 中継経路 ---------------------------------------------------------------
@@ -79,6 +85,7 @@ HOPS_CSV_COLUMNS: tuple[str, ...] = (
     "group_id", "hop_index", "hop_id", "from", "to", "status",
     "freq_mhz", "gain_tx_dbi", "gain_rx_dbi", "h_tx", "h_rx",
     "rx_dbm", "margin_db", "slant_m", "f1_pct", "error",
+    "f1_depth_x",
 )
 
 # --- 条件探索 ---------------------------------------------------------------
@@ -92,6 +99,7 @@ SCENARIO_CSV_COLUMNS: tuple[str, ...] = (
     "f1_pct", "slant_m",
     "freq_mhz", "p_tx_dbm", "gain_tx_dbi", "gain_rx_dbi", "sens_dbm",
     "h_tx", "h_rx", "veg_h", "rain_mmh", "env_type", "diff_method",
+    "f1_depth_x",
 )
 
 

@@ -142,3 +142,119 @@ class TestBlockedRatioFormattingIsNotScattered:
         assert prop.blocked_ratio > units.BLOCKED_RATIO_MAX, \
             "テスト地形が浅すぎる（クランプの検証にならない）"
         assert units.format_blocked_ratio(prop.blocked_ratio) == "100.0 %"
+
+
+# ============================================================
+# F1 侵入深さ（I-077 / 3.0a1）
+# ============================================================
+class TestFormatF1Depth:
+    """頭打ちで消えていた情報を、**単位の違う別の量**として出す。
+
+    争点は「100%」が *ちょうど完全遮蔽* と *深く突き抜けている* の 2 つの意味を
+    持つこと（B-032 の発散は 3.0a1 で塞いだので、発散の印としては要らない）。
+    """
+
+    def test_it_is_the_ratio_in_units_of_the_f1_radius(self):
+        assert units.f1_depth(250.0) == 2.5
+        assert units.format_f1_depth(250.0) == "2.50 ×F1"
+
+    def test_below_full_obstruction(self):
+        assert units.format_f1_depth(63.2) == "0.63 ×F1"
+
+    def test_zero(self):
+        assert units.format_f1_depth(0.0) == "0.00 ×F1"
+
+    @pytest.mark.parametrize("raw", [150.0, 7109.9, 1e6])
+    def test_never_clamped(self, raw):
+        """🔑 **こちらは頭打ちしない**（頭打ちする側は `format_blocked_ratio`）。"""
+        assert float(units.format_f1_depth(raw, unit=False)) > 1.0
+        assert units.f1_depth(raw) == raw / 100.0
+
+    def test_the_printed_resolution_is_one_percent(self):
+        """⚠️ **2 桁なので 1% 未満の超過は `1.00` に丸まる**（書式も契約＝規約 3）。
+
+        この量が意味を持つのは 1.0 を超えてからなので、桁の少なさを取っている
+        （率が 0.1% 刻みなのに対し、こちらは 1% 刻み相当）。
+        """
+        assert units.format_f1_depth(100.0001, unit=False) == "1.00"
+        assert units.f1_depth(100.0001) > 1.0, "生値のほうは丸めていない"
+
+    def test_no_unit_variant_for_tables_with_unit_in_header(self):
+        assert units.format_f1_depth(7109.9, unit=False) == "71.10"
+
+    def test_csv_matches_display(self):
+        for raw in (12.3, 100.0, 7109.9):
+            assert units.csv_f1_depth(raw) == units.format_f1_depth(raw, unit=False)
+
+    def test_it_separates_what_the_ratio_cannot(self):
+        """I-077 の本体＝**率が同じ字になる 2 つの経路が、深さでは分かれる**こと。"""
+        exact, deep = 100.0, 2500.0
+        assert units.format_blocked_ratio(exact) == units.format_blocked_ratio(deep)
+        assert units.format_f1_depth(exact) != units.format_f1_depth(deep)
+        assert units.format_f1_depth(exact) == "1.00 ×F1"
+
+    def test_the_unit_is_not_a_percent(self):
+        """⚠️ **率を 2 列並べない**のが処方の芯（単位が違えば取り違えない）。"""
+        assert "%" not in units.format_f1_depth(7109.9)
+        assert units.F1_DEPTH_UNIT in units.format_f1_depth(7109.9)
+
+
+def _shows(text: str) -> tuple[bool, bool]:
+    """ソース 1 本が「率を出しているか / 深さを出しているか」を返す。
+
+    判定を関数に切り出してあるのは、**この判定そのものを変異検証できる**ように
+    するため（下の `test_the_face_detector_catches_what_it_claims`）。
+    """
+    import re
+    return (
+        re.search(r"units\.(format|csv)_blocked_ratio", text) is not None,
+        re.search(r"units\.(format|csv)_f1_depth", text) is not None,
+    )
+
+
+class TestEveryFaceThatShowsTheRatioAlsoShowsTheDepth:
+    """**率を出す面は、必ず深さも出す**（I-077 のクラス点検を機械で持つ）。
+
+    ⚠️ 面を列挙して数えると、**次に足した 1 面で穴が開く**
+    （→ [[feedback-user-examples-are-classes]]）ので、**実装側を数えてから引く**
+    ＝率を呼んでいるファイルを見つけ、そのファイルに深さが無ければ落とす。
+    率を出さない面（per-path レポート＝I-099）には何も要求しない。
+    """
+
+    @staticmethod
+    def _sources():
+        root = os.path.join(os.path.dirname(__file__), "..")
+        out = []
+        for layer in ("core", "report", "views"):
+            d = os.path.join(root, layer)
+            for name in sorted(os.listdir(d)):
+                if not name.endswith(".py") or name == "units.py":
+                    continue
+                path = os.path.join(d, name)
+                out.append((f"{layer}/{name}",
+                            open(path, encoding="utf-8").read()))
+        return out
+
+    def test_the_scan_finds_faces_at_all(self):
+        """ゲートが空振りしていないこと（呼び方を変えたら読み方も直す合図）。"""
+        faces = [n for n, t in self._sources() if _shows(t)[0]]
+        assert len(faces) >= 5, f"率を出す面を数え切れていない: {faces}"
+
+    def test_no_face_shows_the_ratio_alone(self):
+        offenders = [n for n, t in self._sources()
+                     if _shows(t) == (True, False)]
+        assert not offenders, (
+            f"F1 遮蔽率だけを出している面がある: {offenders}。"
+            "100% 頭打ちはそこで 2 つの意味を持つので、`units.format_f1_depth` /"
+            "`units.csv_f1_depth` も並べること（I-077）"
+        )
+
+    @pytest.mark.parametrize("text,expected", [
+        ("units.format_blocked_ratio(r.blocked_ratio)", (True, False)),
+        ("units.csv_blocked_ratio(x)", (True, False)),
+        ("units.format_f1_depth(x)", (False, True)),
+        ("units.csv_blocked_ratio(x); units.csv_f1_depth(x)", (True, True)),
+        ("# blocked_ratio は models の生値", (False, False)),
+    ])
+    def test_the_face_detector_catches_what_it_claims(self, text, expected):
+        assert _shows(text) == expected

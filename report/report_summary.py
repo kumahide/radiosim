@@ -65,6 +65,9 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     report_common.csv_cell(pr.row.note),
                     report_common.csv_cell(pr.artifact_error)
                     if pr.artifact_error is not None else "",
+                    # 末尾＝出力契約の規約 1（追加は末尾のみ）。`f1_pct` の隣では
+                    # ないので、並べて読むときは列名で引くこと（I-077）。
+                    units.csv_f1_depth(r.blocked_ratio),
                 ])
             else:
                 writer.writerow([
@@ -73,6 +76,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     "", "", "", "", "", "", "", "", "", "", "",
                     report_common.csv_cell(pr.row.note),
                     report_common.csv_cell(pr.error),
+                    "",
                 ])
 
 
@@ -86,6 +90,7 @@ _SUMMARY_COL_KEYS = (
     "html_col_rx", "html_col_margin", "html_col_fspl", "html_col_diff",
     "html_col_veg", "html_col_env", "html_col_rain", "html_col_gas",
     "html_col_total_loss", "html_col_slant", "html_col_f1",
+    "html_col_f1_depth",
     "html_col_note", "html_col_graph",
 )
 
@@ -238,7 +243,10 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
                 f"<td class='s-err'>ERROR</td>"
                 f"<td>{freq_disp}</td><td>{gain_tx_disp}</td><td>{gain_rx_disp}</td>"
                 f"<td>{h_tx_disp}</td><td>{h_rx_disp}</td>"
-                f"<td colspan='11'>{error_esc}</td>"
+                # 幅は**列数から引く**（先頭 7 列＋備考＋グラフの 9 列以外）。
+                # 直に数を書くと、列を足した日に理由欄だけが 1 列ずれる（I-077 で
+                # 実際に踏んだ＝中継台帳は最初から引き算で書いてあった）。
+                f"<td colspan='{len(_SUMMARY_COL_KEYS) - 9}'>{error_esc}</td>"
                 f"<td class='c-note'>{note_esc}</td>"
                 f"<td></td></tr>\n"
             )
@@ -282,6 +290,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
+            f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
             f"<td class='c-note'>{note_esc}</td>"
             f"{graph_cell}</tr>\n"
         )

@@ -87,6 +87,7 @@ _HOP_COL_KEYS = (
     "mh_heights", "html_col_rx", "html_col_margin", "html_col_fspl",
     "html_col_diff", "html_col_veg", "html_col_env", "html_col_rain",
     "html_col_gas", "html_col_total_loss", "html_col_slant", "html_col_f1",
+    "html_col_f1_depth",
     "html_col_graph",
 )
 # ⚠️ **備考列はバッチにあってここには無い**（意図的）。中継のホップは
@@ -191,6 +192,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             f"<td>{r.total_loss:.1f}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
+            f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
             f"{graph_cell}</tr>\n"
         )
 

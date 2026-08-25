@@ -635,6 +635,26 @@ class TestSummaryGainColumns:
         assert data[header.index("gain_tx_dbi")] == "9.0"
         assert data[header.index("gain_rx_dbi")] == "6.0"
 
+    def test_summary_csv_carries_the_uncapped_f1_depth(self, tmp_path,
+                                                       default_params_dict):
+        """`f1_pct` が頭打ちで潰れる情報を `f1_depth_x` が持つこと（I-077）。
+
+        🔑 **実際に書いたファイルで見る**＝列の並びを AST で数えるゲート
+        （`tests/test_output_contract.py`）とは別の口で、**値が正しい列に入って
+        いるか**まで確かめる。
+        """
+        import csv as _csv
+
+        pr = self._result(default_params_dict)
+        pr.result.blocked_ratio = 851.0          # 深い山越え＝F1 半径の 8.51 倍
+        report_summary._save_summary_csv([pr], str(tmp_path))
+        with open(os.path.join(str(tmp_path), "summary.csv"), encoding="utf-8") as f:
+            header, data = list(_csv.reader(f))[:2]
+
+        assert len(data) == len(header), "行の値の数が見出しと合っていない"
+        assert data[header.index("f1_pct")] == "100.0", "率は頭打ちのまま"
+        assert data[header.index("f1_depth_x")] == "8.51", "深さは頭打ちしない"
+
     def test_summary_html_has_gain_headers(self, tmp_path, default_params_dict):
         i18n.set_lang("en")
         report_summary.save_summary_html([self._result(default_params_dict)], str(tmp_path))

@@ -239,6 +239,9 @@ class GraphWindow(tk.Toplevel):
             ("diff_model", "pl_diff_model", ""),
             ("k_factor",   "pl_k_factor",   ""),
             ("f1_obs",     "pl_f1_obs",     "%"),
+            # 遮蔽率は 100% で頭打ちなので、**突き抜けた分はこちらでしか読めない**
+            # （I-077）。単位が違う（×F1）ので 2 行が同じ量に見えない。
+            ("f1_depth",   "pl_f1_depth",   units.F1_DEPTH_UNIT),
             ("slant",      "pl_slant_dist", "m"),
         ))
 
@@ -499,6 +502,8 @@ class GraphWindow(tk.Toplevel):
         # 単位は列が持つので `unit=False`（この 2 つは units.py が書式の出所）。
         self._vars["f1_obs"].set(
             units.format_blocked_ratio(r.blocked_ratio, unit=False))
+        self._vars["f1_depth"].set(
+            units.format_f1_depth(r.blocked_ratio, unit=False))
         self._vars["slant"].set(units.format_distance(r.slant_dist_km, unit=False))
 
     # ----------------------------------------------------------

@@ -297,6 +297,7 @@ def _sweep_row(p: scn.ScenarioPoint) -> str:
         f"<td>{r.actual_margin:+.2f}</td>"
         f"<td>{r.total_loss:.2f}</td>"
         f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
+        f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
         f"<td class='s-{cls}'>{r.status}</td></tr>\n"
     )
 
@@ -312,7 +313,7 @@ def _sweep_table(run: scn.ScenarioRun) -> str:
         axis_label(run.axis), with_unit(i18n.t("html_rx_level"), "dBm"),
         with_unit(i18n.t("html_act_margin"), "dB"),
         with_unit(i18n.t("html_total_loss"), "dB"),
-        i18n.t("html_col_f1"), i18n.t("html_status"),
+        i18n.t("html_col_f1"), i18n.t("html_col_f1_depth"), i18n.t("html_status"),
     ))
     rows = "".join(_sweep_row(p) for p in run.points)
     cls = "scn dense" if len(run.points) > _SWEEP_DENSE_ROWS else "scn"
@@ -414,4 +415,7 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
                 f"{val('veg_h', base.veg_h):g}",
                 f"{val('rain_rate', base.rain_rate):g}",
                 val("env_type", base.env_type), val("diff_method", base.diff_method),
+                # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
+                # （F1 半径の何倍まで食い込んでいるか）＝I-077。
+                units.csv_f1_depth(r.blocked_ratio),
             ])
