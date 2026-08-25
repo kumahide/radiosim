@@ -208,7 +208,7 @@ The **"Map" button** at the bottom of the launcher opens an auxiliary window ove
 
 ### Pick Coordinates mode (default)
 
-Click the map to fill **whichever site is still empty** (TX first, then RX); the picked points are written back to the launcher's start/end coordinate fields (the numeric fields are always the source of truth). Once both are set, a plain click no longer writes anything — select the marker you want to move (see below) so that re-placing one site never wipes the other.
+Click the map to fill **whichever site is still empty** (TX first, then RX); the picked points are written back to the launcher's TX / RX coordinate fields (the numeric fields are always the source of truth). Once both are set, a plain click no longer writes anything — select the marker you want to move (see below) so that re-placing one site never wipes the other.
 
 - Shows cyan endpoint markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
 - Dragging pans the map (coordinates update only on a committed click).
@@ -283,8 +283,8 @@ An input form is displayed on startup.
 
 | Field                   | Description                                                   |
 | ----------------------- | ------------------------------------------------------------- |
-| Start Coords (Lat, Lon) | TX station latitude and longitude (e.g.`34.5429, 132.4118`) |
-| End Coords (Lat, Lon)   | RX station latitude and longitude                             |
+| TX Coords (Lat, Lon)    | TX station latitude and longitude (e.g.`34.5429, 132.4118`) |
+| RX Coords (Lat, Lon)    | RX station latitude and longitude                             |
 | TX Antenna Height (m)   | TX antenna height above ground                                |
 | RX Antenna Height (m)   | RX antenna height above ground                                |
 

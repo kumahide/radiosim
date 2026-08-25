@@ -838,7 +838,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
             return
         errors = mh.validate_path(path)
         if errors:
-            dialogs.alert(self, i18n.t("dlg_validation_error"),
+            dialogs.alert(self, i18n.t("dlg_input_error"),
                           failure.listing(errors))
             return
 

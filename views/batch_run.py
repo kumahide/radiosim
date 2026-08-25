@@ -119,7 +119,7 @@ class _RunMixin(_HostBase):
         rows = self._read_table_rows()
         errors = batch.validate_rows(rows)
         if errors:
-            dialogs.alert(self, i18n.t("dlg_validation_error"),
+            dialogs.alert(self, i18n.t("dlg_input_error"),
                           failure.listing(errors))
             return
 

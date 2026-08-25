@@ -161,7 +161,7 @@ def test_the_title_set_is_not_empty_and_covers_the_known_failures():
     titles = failure_titles()
     for key in ("dlg_error", "dlg_import_error", "dlg_export_error",
                 "dlg_save_error", "dlg_batch_error", "dlg_input_error",
-                "dlg_validation_error", "dlg_common_cfg_error",
+                "dlg_common_cfg_error",
                 "dlg_unexpected_error"):
         assert key in titles, f"失敗の題が集合から漏れている: {key}"
 
