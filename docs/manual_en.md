@@ -304,7 +304,7 @@ An input form is displayed on startup.
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Sampling Points       | Number of terrain sample points (10–2000; more = higher accuracy but longer retrieval) |
+| Terrain Resolution    | One of High (approx. 5 m) / Medium (approx. 10 m) / Low (approx. 20 m). **You pick the level; the number of points follows from the path length** (the resolved count and the effective spacing are shown right below it). Default: Medium |
 
 #### Project Info (optional)
 
@@ -429,7 +429,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ![Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG](images/shot_scenario.png)
 
-A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and sample count are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
+A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and the terrain resolution are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
 
 The toggle at the top switches between two modes. After changing coordinates or parameters in the launcher, press **"↻ From Launcher"** at the top right to pull them in (**until you do, the run uses the values shown on screen** — what you see is what is computed).
 
@@ -437,7 +437,7 @@ The toggle at the top switches between two modes. After changing coordinates or 
 
 - The leftmost **Base** column is the launcher's current values (read-only) — the reference never moves.
 - In columns **Cond 1 ... Cond 5**, change only the fields you care about (they start as copies of the base). "+ Condition" adds up to 5 columns.
-- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and sample count cannot be varied** (comparing different paths is what Multiple Paths is for).
+- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and terrain resolution cannot be varied** (comparing different paths is what Multiple Paths is for).
 - The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.44 (+13.56)`). Rows that differ are tinted.
 
 ### Sweep (one axis, N points)
@@ -481,7 +481,7 @@ Each relay point **receives and then transmits again**. That means:
 - Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
 - Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
-- The **Common Settings** panel at the top lists the **11 items** that feed the run (frequency, TX power, TX gain, RX gain, RX sensitivity / vegetation height, k-factor, terrain samples, rain rate, environment type, diffraction model) — the same items, shown the same way, as in the Multiple Paths window. It is **read-only**, shown as a snapshot of the launcher (the source of truth), and **↻ From Launcher** pulls in the current values. ⚠️ Frequency and TX/RX gain can be overridden per section as described above, so what you see here is **the value inherited when the cell is blank**.
+- The **Common Settings** panel at the top lists the **11 items** that feed the run (frequency, TX power, TX gain, RX gain, RX sensitivity / vegetation height, k-factor, terrain resolution, rain rate, environment type, diffraction model) — the same items, shown the same way, as in the Multiple Paths window. It is **read-only**, shown as a snapshot of the launcher (the source of truth), and **↻ From Launcher** pulls in the current values. ⚠️ Frequency and TX/RX gain can be overridden per section as described above, so what you see here is **the value inherited when the cell is blank**.
 - **Pick on map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
 - TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
 - Up to 7 relay points (8 sections).
@@ -548,7 +548,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | TX/RX Height      | 0                              | 500     | m      |
 | Vegetation Height | 0                              | 100     | m      |
 | Rician K-Factor   | 0                              | 30      | —     |
-| Sampling Points   | 10                             | 2,000   | points |
+| Terrain Resolution | High / Medium / Low           | —       | —      |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
 | Diff Method       | deygout / single               | —      |        |
@@ -752,6 +752,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `note` | — | The note from the input CSV (free text) |
 | `error` | — | Why it failed; empty for a path that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
+| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path length, so it differs from row to row within one CSV (the effective spacing is roughly `slant_m` / (samples − 1)) |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -776,6 +777,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
 | `error` | — | Why it failed; empty for a section that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
+| `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section length, so it differs between sections of one route |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
 
@@ -819,7 +821,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
 | `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution) |
 
-⚠️ **The row count is exactly the number of sampling points.**
+⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path length).
 
 ---
 

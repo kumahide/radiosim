@@ -38,7 +38,7 @@ from __future__ import annotations
 import tkinter as tk
 from tkinter import ttk
 
-from core import i18n
+from core import i18n, terrain_grid
 
 # 帯に出す項目＝`(i18n の見出しキー, SimParams の属性名)`。**順序も含めて正典**。
 RADIO_FIELDS = (
@@ -51,7 +51,7 @@ RADIO_FIELDS = (
 ENV_FIELDS = (
     ("lbl_b_veg_h",    "veg_h"),
     ("lbl_b_k_factor", "k_factor"),
-    ("lbl_b_samples",  "num"),
+    ("lbl_b_resolution", "resolution"),
     ("lbl_b_rain",     "rain_rate"),
 )
 # 選択肢を持つ 2 つ。**複数経路では Combobox・中継経路では読み取り専用の欄**と
@@ -72,8 +72,27 @@ def display_value(attr: str, value: object) -> str:
     凍結した帯だけ `deygout` / `los` と内部キーで出ると、**同じ値が窓によって
     別の言葉に見える**（⑧）。表示ラベルの出所は i18n の 1 か所。
     """
-    prefix = {"env_type": "env_", "diff_method": "diff_opt_"}.get(attr)
+    prefix = {"env_type": "env_", "diff_method": "diff_opt_",
+              "resolution": "res_"}.get(attr)
     return i18n.t(f"{prefix}{value}") if prefix else str(value)
+
+
+def resolution_key(label: str) -> str:
+    """表示ラベル（`高（約 5 m）`）→ 内部キー（`high`）。**逆写しの唯一の口**。
+
+    ⚠️ 帯は**表示ラベル**を持つ（上の `display_value`）ので、実行のために内部キーへ
+    戻す必要がある。`env_type` は窓ごとに `_env_label_to_key` を持っていたが、
+    段階は 3 窓（複数経路・中継経路・条件探索）に出るので**ここに 1 つだけ**置く。
+
+    🔑 **読めなかったら既定へ黙って化かさない**＝原文をそのまま返し、値域の検査
+    （`config.validate_value`）に落とさせる。既定へ寄せると、**利用者が選んでいない
+    段階で実行が通り、しかもそれが画面のどこにも出ない**（この窓の共通設定は
+    「検証されないまま計算へ届く」欠陥の再発点＝B-018 のクラス）。
+    """
+    for key in terrain_grid.RESOLUTION_KEYS:
+        if i18n.t(f"res_{key}") == label:
+            return key
+    return label
 
 
 def readonly_field(parent: tk.Misc, label_key: str, var: tk.StringVar,

@@ -20,6 +20,8 @@ from core import dem
 from core import failure
 from core import i18n
 from core import simulation as sim
+from core import terrain_grid
+from core import units
 from core import version
 from core.models import ENV_DEFAULT, ENV_KEYS
 from views import dialogs, progress, theme, window_fit
@@ -45,7 +47,6 @@ _TIP_KEYS: dict[str, str] = {
     "sens":     "tip_sens",
     "veg_h":    "tip_veg_h",
     "k_factor": "tip_k_factor",
-    "samples":  "tip_samples",
     "rain_rate": "tip_rain_rate",
 }
 
@@ -336,9 +337,14 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         for lbl_key, entry_key in [
             ("lbl_veg_h",    "veg_h"),
             ("lbl_k_factor", "k_factor"),
-            ("lbl_samples",  "samples"),
         ]:
             self._add_row(g, i18n.t(lbl_key), entry_key)
+
+        # 地形の解像度（I-069）＝**数ではなく段階を選ぶ**。点数は距離から解かれる
+        # ので、**解決後の点数と実効間隔をその場で読み取り専用で出す**。
+        # 🔴 ここが黙るのが最悪の壊れ方＝天井に張り付いて「高」と「中」が同じ答えに
+        # なっても、画面が同じ顔をしていれば誰も気づけない（実効間隔がそれを言う）。
+        self._build_resolution_row(g)
 
     def _build_case_group(self, parent: tk.Widget) -> None:
         """案件名・自由メモ（レポートの自己同定ヘッダに載る任意メタ情報）。
@@ -514,6 +520,68 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         except Exception as e:
             config.logger.warning("Logo load failed: %s", e)
 
+    def _build_resolution_row(self, parent: tk.Widget) -> None:
+        """地形の解像度（段階）の選択欄＋解決後の点数・実効間隔の読み取り欄（I-069）。
+
+        ⚠️ **点数は入力ではない**ので `self.entries` には入れない（`_on_run` /
+        `_current_config` が段階のキーを足す）。段階は `env_type` / `diff_method` と
+        同じ「表示ラベルで見せ、内部キーで持つ」形＝窓が違っても同じ語に見える。
+        """
+        f = ttk.Frame(parent)
+        f.pack(fill="x", pady=2, padx=10)
+        ttk.Label(f, text=i18n.t("lbl_resolution"), width=22,
+                  anchor="w").pack(side="left")
+        self._res_key_to_label = {
+            k: i18n.t(f"res_{k}") for k in terrain_grid.RESOLUTION_KEYS}
+        self._res_label_to_key = {v: k for k, v in self._res_key_to_label.items()}
+        saved = str(self.config.get("resolution", terrain_grid.RESOLUTION_DEFAULT))
+        self._res_var = tk.StringVar(
+            value=self._res_key_to_label.get(
+                saved, self._res_key_to_label[terrain_grid.RESOLUTION_DEFAULT]))
+        cb = ttk.Combobox(
+            f, textvariable=self._res_var,
+            values=list(self._res_key_to_label.values()),
+            state="readonly", width=16,
+        )
+        cb.pack(side="right", expand=True, fill="x")
+        Tooltip(cb, i18n.t("tip_resolution"))
+        cb.bind("<<ComboboxSelected>>",
+                lambda _ev: self._update_resolution_readout(), add="+")
+
+        # 解決後の点数と実効間隔（読み取り専用の 1 行）。
+        row = ttk.Frame(parent)
+        row.pack(fill="x", padx=10)
+        self._res_readout = ttk.Label(
+            row, anchor="e", foreground=theme.muted_foreground(row),
+            font=theme.ui_font(row, "small"))
+        self._res_readout.pack(side="right")
+        self._update_resolution_readout()
+
+    def _resolution_key(self) -> str:
+        """いま選ばれている段階の内部キー（表示ラベルからの逆写しはここだけ）。"""
+        return self._res_label_to_key.get(
+            self._res_var.get(), terrain_grid.RESOLUTION_DEFAULT)
+
+    def _update_resolution_readout(self) -> None:
+        """解決後の点数と実効間隔を出し直す（座標が読めないうちは伏せる）。
+
+        🔑 **実行と同じ口（`sim.resolve_samples`）で解く**＝画面に出た N と実際に
+        使われる N がずれる余地を作らない。
+        """
+        readout = getattr(self, "_res_readout", None)
+        if readout is None:
+            return
+        try:
+            lat_tx, lon_tx = coords.parse_pair(self.entries["start"].get())
+            lat_rx, lon_rx = coords.parse_pair(self.entries["end"].get())
+        except Exception:
+            readout.config(text=i18n.t("res_readout_unknown"))
+            return
+        n, spacing = sim.resolve_samples(
+            lat_tx, lon_tx, lat_rx, lon_rx, self._resolution_key())
+        readout.config(text=i18n.t("res_readout").format(
+            n=n, spacing=units.format_spacing(spacing)))
+
     def _add_row(self, parent: tk.Widget, label: str, key: str) -> None:
         f = ttk.Frame(parent)
         f.pack(fill="x", pady=2, padx=10)
@@ -551,6 +619,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             # ⚠️ 知らせるだけで視野は動かさない（地図側で保証＝`on_single_coords_changed`）。
             e.bind("<KeyRelease>",
                    lambda _ev: self._notify_map_coords_changed(), add="+")
+            # 点数は**座標が決める**ので、打鍵のたびに読み取り欄も追従させる
+            # （I-069）。距離が変われば N も実効間隔も変わる。
+            e.bind("<KeyRelease>",
+                   lambda _ev: self._update_resolution_readout(), add="+")
 
     # ----------------------------------------------------------
     # 座標形式（DD/DMS）切替
@@ -615,6 +687,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
         c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        c["resolution"] = self._resolution_key()
         self._coords_to_dd(c)  # DMS 入力でも downstream には DD を渡す
 
         errors = config.validate_config(c)
@@ -775,8 +848,17 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                     self._diff_key_to_label["deygout"],
                 )
             )
+        if "resolution" in conf:
+            self._res_var.set(
+                self._res_key_to_label.get(
+                    str(conf["resolution"]),
+                    self._res_key_to_label[terrain_grid.RESOLUTION_DEFAULT],
+                )
+            )
         # ファイルの座標は DD。現在の表示形式（DMS かも）へ整形し直す。
         self._refresh_coord_display()
+        # 座標が変われば点数も変わる（読み込みは座標を丸ごと差し替える）。
+        self._update_resolution_readout()
 
 
 
@@ -790,5 +872,6 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
         c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        c["resolution"]  = self._resolution_key()
         self._coords_to_dd(c)
         return c

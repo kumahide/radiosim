@@ -76,7 +76,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
     _COMMON_CFG_MAP = {
         "freq_mhz": "freq",   "p_tx":     "p_tx",   "gain_tx": "gain_tx",
         "gain_rx":  "gain_rx", "sens":    "sens",   "veg_h":   "veg_h",
-        "k_factor": "k_factor", "num":    "samples", "rain_rate": "rain_rate",
+        "k_factor": "k_factor", "rain_rate": "rain_rate",
+        # 地形の解像度は**段階の語**（I-069）＝帯には表示ラベルを出し、実行には
+        # 内部キーへ戻す（`frozen_common.resolution_key`）。
+        "resolution": "resolution",
     }
 
     @property
@@ -149,7 +152,6 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # 実行中のパス内進捗（標高取得 done/samples）をバーへ滑らかに反映するための
         # 実行時状態（_on_path_progress_tick が参照）。
         self._run_cur     = 0
-        self._run_samples = 0
 
         self._build_ui()
         # DPI 変更などで貼り直すときは、列幅同期からやり直す（フォントが変われば
@@ -256,7 +258,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             f = ttk.Frame(parent)
             f.pack(side="left", padx=6)
             ttk.Label(f, text=label).pack(side="left")
-            var = tk.StringVar(value=str(getattr(self._base_params, attr)))
+            var = tk.StringVar(value=frozen_common.display_value(
+                attr, getattr(self._base_params, attr)))
             self._common_vars[attr] = var
             self._common_keys.append(attr)
             # 共通設定はランチャー（source of truth）のスナップショット。直接編集
@@ -280,7 +283,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
                             (row1, frozen_common.ENV_FIELDS)):
             for label_key, attr in fields:
                 _field(row, i18n.t(label_key), attr,
-                       width=6 if attr == "num" else 8)
+                       width=11 if attr == "resolution" else 8)
 
         # Env Type Combobox
         f_env = ttk.Frame(row1)
@@ -332,7 +335,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         c = self._config_provider()
         for attr, ckey in self._COMMON_CFG_MAP.items():
             if ckey in c and attr in self._common_vars:
-                self._common_vars[attr].set(str(c[ckey]))
+                self._common_vars[attr].set(
+                    frozen_common.display_value(attr, c[ckey]))
         env = c.get("env_type", "los")
         self._env_var.set(
             self._env_key_to_label.get(env, self._env_key_to_label["los"])

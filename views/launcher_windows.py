@@ -33,6 +33,7 @@ class _ChildWindowsMixin:
         _coord_fmt_var: tk.StringVar
 
         def _current_config(self) -> dict[str, str]: ...
+        def _update_resolution_readout(self) -> None: ...
         def _current_meta(self) -> dict[str, str]: ...
         def _project_doc(self) -> "project.ProjectDoc": ...
         def _open_window(self, attr: str): ...
@@ -190,6 +191,9 @@ class _ChildWindowsMixin:
         text = coords.format_pair(lat, lon, self._coord_fmt_var.get())
         entry.delete(0, tk.END)
         entry.insert(0, text)
+        # 地図で置き直すと距離が変わる＝**点数も実効間隔も変わる**（I-069）。
+        # 打鍵ではないのでバインドには届かない＝ここで明示的に出し直す。
+        self._update_resolution_readout()
 
     def current_path_coords(self) -> dict:
         """数値欄の TX/RX 座標を {"tx": (lat, lon)|None, "rx": ...} で返す。
@@ -292,5 +296,6 @@ class _ChildWindowsMixin:
             entry.insert(0, text)
         # 座標欄を書き換えた＝地図の写しも合わせる（打鍵ではないので届かない）。
         self._notify_map_coords_changed()
+        self._update_resolution_readout()
         self.root.lift()
         self.root.focus_force()

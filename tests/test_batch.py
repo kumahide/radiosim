@@ -432,18 +432,47 @@ class TestFindObsSegments:
 # ============================================================
 class TestMakeParams:
 
-    def _base(self, env_type: str, rain_rate: float, diff_method: str) -> sim.SimParams:
+    def _base(self, env_type: str, rain_rate: float, diff_method: str,
+              resolution: str = "") -> sim.SimParams:
         c = {
             "start": "34.54, 132.41", "end": "34.53, 132.40",
             "h_tx": "30.0", "h_rx": "10.0", "freq": "2400.0",
             "p_tx": "20.0", "gain_tx": "3.0", "gain_rx": "3.0",
             "sens": "-85.0", "veg_h": "10.0", "k_factor": "1.333",
-            "samples": "50",
+            "samples": "50", "resolution": resolution,
             "env_type": env_type,
             "rain_rate": str(rain_rate),
             "diff_method": diff_method,
         }
         return sim.SimParams(c)
+
+    def test_each_row_resolves_its_own_sample_count(self):
+        """**行ごとに点数が解かれる**こと（I-069 の芯）。
+
+        🔴 以前は共通設定の 1 つの数（既定 200）が**全行に一律で当たっていた**＝
+        500m の行では実効 2.5m、20km の行では実効 100m（尾根を 1 点で跨ぐ）と、
+        **同じ入力が行によって別の意味**になっていた。段階を渡す形にしたので、
+        長い行ほど点数が増える。⚠️ ここが壊れると症状は「長距離だけ精度が落ちる」
+        という、成果物を見ても気づけない形で出る。
+        """
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout",
+                          resolution="medium")
+        short = batch.PathRow(path_id="s", lat_tx=34.54, lon_tx=132.41,
+                              lat_rx=34.545, lon_rx=132.41,
+                              h_tx=30.0, h_rx=10.0)      # 約 0.55 km
+        long_ = batch.PathRow(path_id="l", lat_tx=34.54, lon_tx=132.41,
+                              lat_rx=34.72, lon_rx=132.41,
+                              h_tx=30.0, h_rx=10.0)      # 約 20 km
+        n_short = _make_params(short, base).num
+        n_long  = _make_params(long_,  base).num
+        assert n_long > n_short * 10, (
+            f"行の長さが点数に効いていない（短 {n_short} / 長 {n_long}）"
+        )
+        # どちらも**同じ刻み**であること＝それが「段階」の意味。
+        for row, n in ((short, n_short), (long_, n_long)):
+            dist_m = models.horizontal_distance_km(
+                row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx) * 1000.0
+            assert dist_m / (n - 1) == pytest.approx(10.0, rel=0.05)
 
     def test_env_rain_diff_always_from_base(self):
         """env_type / rain_rate / diff_method は PathRow にかかわらず base から取得されること。"""
@@ -1031,7 +1060,8 @@ class TestProcessOne:
         i18n.set_lang("en")
         monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
         base = sim.SimParams(default_params_dict)
-        pr = batch._process_one(_row(), base, str(tmp_path), lambda p: None)
+        pr = batch._process_one(_row(), base, str(tmp_path),
+                                lambda done, tot: None)
         assert pr.ok and pr.error is None
         assert pr.terrain is not None and pr.params is not None
         assert pr.save_dir == os.path.join(str(tmp_path), "path01")
@@ -1050,7 +1080,7 @@ class TestProcessOne:
         base = sim.SimParams(default_params_dict)
         pr = batch._process_one(
             _row(path_id="bad", freq_mhz=_FAIL_FREQ), base, str(tmp_path),
-            lambda p: None,
+            lambda done, tot: None,
         )
         assert not pr.ok
         assert isinstance(pr.error, RuntimeError)
@@ -1089,7 +1119,7 @@ class TestRunBatch:
         batch.run_batch(
             rows, base,
             on_path_start    = lambda i, n, pid: ev["start"].append((i, n, pid)),
-            on_path_progress = lambda p: None,
+            on_path_progress = lambda done, tot: None,
             on_path_complete = lambda i, n, pr: ev["complete"].append((i, n, pr)),
             on_batch_complete = _on_batch,
             on_error          = _on_error,
@@ -1569,7 +1599,10 @@ class TestCommonSettingsValidation:
     @pytest.mark.parametrize("attr,bad", [
         ("freq_mhz",  "0"),          # ZeroDivisionError
         ("freq_mhz",  "-100"),       # ValueError
-        ("num",       "999999"),     # 巨大サンプルで固まる
+        # 🔑 **`num`（サンプル数）はもう共通設定に無い**（I-069・3.0）＝点数は
+        # 行ごとに解かれる値になったので、**巨大な数を打ち込む口そのものが消えた**。
+        # 代わりに段階の語が壊れている場合をここで見る（写しの逆写しが失敗した形）。
+        ("resolution", "ultra"),      # 語彙に無い段階
         ("veg_h",     "-50"),        # 黙って計算が通る
         ("rain_rate", "-10"),        # 黙って計算が通る
         ("k_factor",  "inf"),        # 範囲比較を素通りして判定 OK まで出る

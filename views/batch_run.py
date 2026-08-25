@@ -20,7 +20,7 @@ from core import failure
 from core import i18n
 from core import simulation as sim
 from report import batch
-from views import dialogs
+from views import dialogs, frozen_common
 
 if TYPE_CHECKING:
     from views.progress import ProgressPump
@@ -58,7 +58,6 @@ class _RunMixin(_HostBase):
         _prog_label: ttk.Label
         _prog_count_label: ttk.Label
         _run_cur: int
-        _run_samples: int
 
         def _read_table_rows(self) -> list[batch.PathRow]: ...
         def _clear_verdicts(self) -> None: ...
@@ -67,6 +66,10 @@ class _RunMixin(_HostBase):
     # ----------------------------------------------------------
     # 実行
     # ----------------------------------------------------------
+    def _resolution_key(self) -> str:
+        """凍結帯に出ている解像度の**表示ラベル**を内部キーへ戻す（I-069）。"""
+        return frozen_common.resolution_key(self._common_vars["resolution"].get())
+
     def _read_base_params(self) -> sim.SimParams:
         """Common Settings の現在値から SimParams を生成する。"""
         c: dict[str, str] = {
@@ -81,7 +84,7 @@ class _RunMixin(_HostBase):
             "sens"       : self._common_vars["sens"].get(),
             "veg_h"      : self._common_vars["veg_h"].get(),
             "k_factor"   : self._common_vars["k_factor"].get(),
-            "samples"    : self._common_vars["num"].get(),
+            "resolution" : self._resolution_key(),
             "rain_rate"  : self._common_vars["rain_rate"].get(),
             "env_type"   : self._env_label_to_key.get(self._env_var.get(), "los"),
             "diff_method": self._diff_var.get(),
@@ -90,7 +93,9 @@ class _RunMixin(_HostBase):
         # の生の入力（窓を開いたときのスナップショット／↻更新）で、ランチャー自身は
         # 実行時にしか検証しない＝単一実行を一度も走らせなければ無検証のまま届く。
         # SimParams は float 化しかしないので、freq=0（ZeroDivisionError）や
-        # samples=999999（DEM 取得後に固まる）、inf/nan が計算まで通ってしまう。
+        # inf/nan が計算まで通ってしまう。⚠️ **点数の暴走はもう検証の対象ではない**
+        # （I-069＝数で入れる口が無くなり、点数は距離と段階から解かれる）。
+        # 代わりに見るのは**段階の語が語彙のどれか**＝`resolution`。
         # B-016（条件探索）と同じ欠陥のバッチ版で、範囲の出所も同じ VALIDATION_RULES。
         #
         # start/end は検証しない：実際の座標は各行が持ち（validate_rows が検証済み）、
@@ -99,7 +104,7 @@ class _RunMixin(_HostBase):
         errors = [
             f"[{key}] {reason}"
             for key in ("freq", "p_tx", "gain_tx", "gain_rx", "sens",
-                        "veg_h", "k_factor", "samples", "rain_rate",
+                        "veg_h", "k_factor", "resolution", "rain_rate",
                         "env_type", "diff_method")
             if (reason := config.validate_value(key, c[key])) is not None
         ]
@@ -128,7 +133,6 @@ class _RunMixin(_HostBase):
 
         self._running   = True
         self._run_cur     = 0
-        self._run_samples = base_params.num
         self._run_btn.config(state="disabled")
         self._prog_bar.config(maximum=len(rows), value=0)
         self._prog_label.config(text=i18n.t("batch_starting"))
@@ -144,7 +148,7 @@ class _RunMixin(_HostBase):
             rows              = rows,
             base_params       = base_params,
             on_path_start     = lambda cur, tot, pid, p=push: p(("start",    (cur, tot, pid))),
-            on_path_progress  = lambda done, p=push: p(("progress", (done,))),
+            on_path_progress  = lambda done, tot, p=push: p(("progress", (done, tot))),
             on_path_complete  = lambda cur, tot, pr,  p=push: p(("done",     (cur, tot, pr))),
             on_batch_complete = lambda d,   rs,        p=push: p(("complete", (d, rs))),
             on_error          = lambda ex,             p=push: p(("error",    (ex,))),
@@ -183,17 +187,21 @@ class _RunMixin(_HostBase):
         self._prog_label.config(text=f"▶  {pid}")
         self._prog_count_label.config(text=f"{cur - 1} / {tot}  ({pct}%)")
 
-    def _on_path_progress_tick(self, done: int) -> None:
-        """パス内の標高取得進捗（0..samples）をバーへ小数値として反映する。
+    def _on_path_progress_tick(self, done: int, total: int) -> None:
+        """パス内の標高取得進捗（0..その行の点数）をバーへ小数値として反映する。
 
         バーの目盛り（maximum）はパス本数のまま、現在パスの内部進捗を小数部として
         加算する。従来 on_path_progress が no-op でパス境界でしかバーが動かず、
         DEM キャッシュ済みだと一瞬で完了してバーが「機能していない」ように見えた
         （β報告）。単発シングル実行（launcher._on_progress）と同じ fetch 進捗を使う。
+
+        ⚠️ **分母は行が持ってくる**（I-069）＝点数は行の距離と解像度の段階から
+        解かれるので、共通設定から 1 つの分母を借りると**行ごとにバーの伸び方が
+        狂う**（短い行は途中で満ちて止まり、長い行は最後まで届かない）。
         """
-        if not self._running or self._run_samples <= 0:
+        if not self._running or total <= 0:
             return
-        frac = min(done / self._run_samples, 1.0) * _FETCH_FRAC
+        frac = min(done / total, 1.0) * _FETCH_FRAC
         self._prog_bar.config(value=(self._run_cur - 1) + frac)
 
     def _on_path_stage(self, stage: str) -> None:

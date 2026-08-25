@@ -83,7 +83,7 @@ def _run(path, base_params, tmp_path, monkeypatch, stub_visuals=True, **kwargs):
     mh.run_multihop(
         path, base_params,
         on_hop_start    = lambda i, n, pid: None,
-        on_hop_progress = lambda v: None,
+        on_hop_progress = lambda done, tot: None,
         on_hop_complete = lambda i, n, pr: None,
         on_complete     = lambda run: (out.append(run), done.set()),
         on_error        = lambda ex: (err.append(ex), done.set()),

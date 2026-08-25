@@ -852,7 +852,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         mh.run_multihop(
             path, self._base_params,
             on_hop_start    = lambda i, n, pid, p=push: p(("start", (i, n, pid))),
-            on_hop_progress = lambda v: None,
+            on_hop_progress = lambda done, tot: None,
             on_hop_complete = lambda i, n, pr, p=push: p(("hop", (i, n, pr))),
             on_complete     = lambda run, p=push: p(("complete", (run,))),
             on_error        = lambda ex,  p=push: p(("error", (ex,))),

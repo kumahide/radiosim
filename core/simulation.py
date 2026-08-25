@@ -29,6 +29,7 @@ from core import failure
 from core import i18n
 from core import models
 from core import output_contract
+from core import terrain_grid
 from core import units
 
 logger = logging.getLogger("radiosim")
@@ -37,10 +38,34 @@ logger = logging.getLogger("radiosim")
 # ============================================================
 # シミュレーションパラメータ
 # ============================================================
+def resolve_samples(
+    lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+) -> tuple[int, float]:
+    """2 地点と解像度の段階から `(点数, 実効間隔[m])` を返す（I-069）。
+
+    🔑 **画面の読み取り欄と実行が、同じ値を同じ経路で得るための唯一の口**。
+    ⚠️ 見せる側が自前で `recommended_samples` を呼ぶと、**画面に出た N と実際に
+    使われた N がずれる余地**ができる（しかも「ずれた」ことは誰にも見えない）。
+    """
+    dist_m = models.horizontal_distance_km(
+        lat_tx, lon_tx, lat_rx, lon_rx) * units.KM_TO_M
+    n = terrain_grid.recommended_samples(dist_m, level)
+    return n, terrain_grid.effective_spacing_m(dist_m, n)
+
+
 class SimParams:
     """
     View から渡される実行パラメータ。
     文字列の設定値を型変換して保持する。
+
+    🔑 **地形の標本数（`num`）はここで解く**（I-069）＝画面からは「解像度の段階」
+    しか来ない。**距離は座標から地形取得の前に分かる**ので、`SimParams` が
+    組み上がった時点で点数は確定できる。
+
+    ⚠️ **この 1 か所で解くことに意味がある**＝バッチと中継は共通設定の段階を
+    行／区間が引き継ぎ、`SimParams` は**行ごと・区間ごとに作られる**。だから
+    「500m の行にも 20km の行にも同じ 200 点が当たる」という以前の形が、
+    呼び出し側を 1 行も変えずに解消する（→ `report.batch._make_params`）。
     """
     def __init__(self, c: dict[str, str]) -> None:
         s_parts = c["start"].split(",")
@@ -58,7 +83,19 @@ class SimParams:
         self.sens:        float = float(c["sens"])
         self.veg_h:       float = float(c["veg_h"])
         self.k_factor:    float = float(c["k_factor"])
-        self.num:         int   = max(10, int(c["samples"]))
+        # 解像度の段階 → 点数。**段階が来ていればそれが正典**（画面はこちらだけ）。
+        # ⚠️ `samples` は**再現のための固定入力**の口として残す（回帰コーパスの
+        # 生成器・保存済みの解決後 N を読み戻す経路）。画面からは決して来ない
+        # ＝「同じことを言う入口が 2 つ」にはならない（入口は段階ただ 1 つ）。
+        self.resolution: str = str(
+            c.get("resolution", "") or terrain_grid.RESOLUTION_DEFAULT)
+        if "resolution" in c and c["resolution"]:
+            self.num: int = resolve_samples(
+                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx,
+                self.resolution,
+            )[0]
+        else:
+            self.num = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
         self.diff_method: str   = c.get("diff_method", "deygout")
         self.env_type:    str   = c.get("env_type", models.ENV_DEFAULT)
         self.rain_rate:   float = float(c.get("rain_rate", "0.0"))
@@ -379,6 +416,10 @@ def _save_settings(
         "sens"        : params.sens,
         "veg_h"       : params.veg_h,
         "k_factor"    : params.k_factor,
+        # 🔑 **入力（段階）と結果（点数）の両方を残す**（I-069）＝読み戻すのは
+        # `resolution` の側（`config.select_sim` が拾うのはこちらだけ）。`samples`
+        # は**その実行が実際に何点で刻んだか**の記録で、入力としては使われない。
+        "resolution"  : params.resolution,
         "samples"     : params.num,
         "diff_method" : params.diff_method,
         "env_type"    : params.env_type,
@@ -409,6 +450,9 @@ def _save_report(
 ) -> None:
     tx_site = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_site = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
+    _, spacing = resolve_samples(
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+        params.resolution)
     text = (
         "=== RADIO LINK REPORT ===\n\n"
         f"Date: {datetime.now()}\n\n"
@@ -444,6 +488,11 @@ def _save_report(
         f"F1 Obstruct   : {units.format_blocked_ratio(result.blocked_ratio)}\n"
         f"F1 Depth      : {units.format_f1_depth(result.blocked_ratio)}\n"
         f"Slant Dist    : {units.format_distance(result.slant_dist_km)}\n"
+        # どれだけ細かく地形を見た答えなのか（I-069）。**段階だけでは足りない**
+        # ＝天井に張り付くと「高」でも実効間隔は粗くなる（数字のほうが正典）。
+        f"Terrain Res   : {params.resolution}\n"
+        f"Samples       : {params.num} "
+        f"({units.format_spacing(spacing)} m spacing)\n"
     )
     path = os.path.join(save_dir, "report.txt")
     with open(path, "w", encoding="utf-8") as f:

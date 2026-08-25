@@ -20,6 +20,7 @@ import sys
 import tempfile
 
 from core import i18n
+from core import terrain_grid
 
 # ============================================================
 # パス解決
@@ -128,14 +129,17 @@ VALIDATION_RULES: dict[str, tuple] = {
     "h_rx"     : (0.0,    500.0,    "err_h_rx"),
     "veg_h"    : (0.0,    100.0,    "err_veg_h"),
     "k_factor" : (0.0,    30.0,     "err_k_factor"),
-    "samples"  : (10,     2000,     "err_samples"),
     "rain_rate": (0.0,    200.0,    "err_rain_rate"),
 }
+# ⚠️ `samples` はここに**無い**（I-069・3.0）＝地形の標本数は利用者の入力ではなく
+# **距離と解像度の段階から解かれる値**になった（→ `terrain_grid.recommended_samples`）。
+# 値域の検査は「段階が語彙のどれか」＝`VALID_RESOLUTIONS` の側へ移した。
 
 # `SimParams` の属性名 → `VALIDATION_RULES` のキー（名前が違うものだけ）。
-# ランチャーは config のキー（freq / samples）で持ち、計算側は属性名（freq_mhz /
-# num）で持つという歴史的なずれがあるので、**値域の出所を 1 つに保つための橋**。
-_ATTR_TO_RULE_KEY = {"freq_mhz": "freq", "num": "samples"}
+# ランチャーは config のキー（freq）で持ち、計算側は属性名（freq_mhz）で持つという
+# 歴史的なずれがあるので、**値域の出所を 1 つに保つための橋**。
+# ⚠️ `num` → `samples` の橋は 3.0（I-069）で外した＝`num` はもう入力ではない。
+_ATTR_TO_RULE_KEY = {"freq_mhz": "freq"}
 
 
 def validate_value(attr: str, value: "float | str") -> "str | None":
@@ -154,6 +158,9 @@ def validate_value(attr: str, value: "float | str") -> "str | None":
     if attr == "diff_method":
         return None if value in VALID_DIFF_METHODS else (
             f"{i18n.t('err_diff_method')}: {sorted(VALID_DIFF_METHODS)}")
+    if attr == "resolution":
+        return None if value in VALID_RESOLUTIONS else (
+            f"{i18n.t('err_resolution')}: {sorted(VALID_RESOLUTIONS)}")
 
     rule = VALIDATION_RULES.get(_ATTR_TO_RULE_KEY.get(attr, attr))
     if rule is None:
@@ -182,7 +189,10 @@ DEFAULT_CONFIG: dict[str, str] = {
     "sens"       : "-85.0",
     "veg_h"      : "10.0",
     "k_factor"   : "10.0",
-    "samples"    : "200",
+    # 地形の解像度（I-069）＝**段階の語**（点数は距離から解かれる）。既定は
+    # 「中（約 10m）」＝全国カバーの 10m メッシュと同じ刻み。旧既定の「200 点」は
+    # 5km で実効 25m・20km で実効 100m と**距離によって意味が変わっていた**。
+    "resolution" : terrain_grid.RESOLUTION_DEFAULT,
     "env_type"   : "los",
     "rain_rate"  : "0.0",
     "diff_method": "deygout",
@@ -309,6 +319,10 @@ def select_app(values: dict) -> dict:
 # バリデーション用許容値セット（validate_config で参照）
 VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
 VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
+# ⚠️ 段階の語彙は**写さずに引く**（I-069）＝`terrain_grid` は標準ライブラリだけの
+# 純粋な層なので、この層から import してよい（`VALID_ENV_TYPES` が `models.ENV_KEYS`
+# の写しになっているのとは違い、ここには写しが無い）。
+VALID_RESOLUTIONS:  frozenset[str] = frozenset(terrain_grid.RESOLUTION_KEYS)
 # 旧名（内部参照の互換）。新規コードは公開名を使うこと。
 _VALID_ENV_TYPES    = VALID_ENV_TYPES
 _VALID_DIFF_METHODS = VALID_DIFF_METHODS
@@ -356,6 +370,14 @@ def validate_config(c: dict[str, str]) -> list[str]:
         errors.append(
             f"[env_type] {i18n.t('err_env_type')}: {sorted(_VALID_ENV_TYPES)}"
             f" (value: '{env_raw}')"
+        )
+
+    # 地形の解像度（段階）のバリデーション（I-069）
+    res_raw = c.get("resolution", DEFAULT_CONFIG["resolution"]).strip()
+    if res_raw not in VALID_RESOLUTIONS:
+        errors.append(
+            f"[resolution] {i18n.t('err_resolution')}: {sorted(VALID_RESOLUTIONS)}"
+            f" (value: '{res_raw}')"
         )
 
     # diff_method のバリデーション

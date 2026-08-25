@@ -375,7 +375,7 @@ def run_multihop(
     path:             MultiHopPath,
     base_params:      sim.SimParams,
     on_hop_start:     Callable[[int, int, str], None],
-    on_hop_progress:  Callable[[int], None],
+    on_hop_progress:  Callable[[int, int], None],
     on_hop_complete:  Callable[[int, int, batch.PathResult], None],
     on_complete:      Callable[[MultiHopRun], None],
     on_error:         Callable[[Exception], None],
@@ -507,4 +507,7 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
                 # （F1 半径の何倍まで食い込んでいるか）＝I-077。
                 units.csv_f1_depth(r.blocked_ratio) if r else "",
+                # 何点で刻んだ答えか（I-069）＝**区間ごとに違う**（短い区間は
+                # 点が少なく、長い区間は多い＝同じ段階でもそうなるのが正しい）。
+                str(p.num) if p else "",
             ])

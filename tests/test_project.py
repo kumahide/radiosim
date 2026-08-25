@@ -40,7 +40,7 @@ def _doc() -> project.ProjectDoc:
                   "h_tx": "30.0", "h_rx": "10.0", "freq": "2400.0",
                   "p_tx": "20.0", "gain_tx": "3.0", "gain_rx": "3.0",
                   "sens": "-85.0", "veg_h": "10.0", "k_factor": "10.0",
-                  "samples": "200", "env_type": "los", "rain_rate": "0.0",
+                  "resolution": "medium", "env_type": "los", "rain_rate": "0.0",
                   "diff_method": "deygout"},
         batch_rows = [
             batch.PathRow(path_id="P1", lat_tx=34.5, lon_tx=132.4,

@@ -334,7 +334,7 @@ def run_batch(
     rows:              list[PathRow],
     base_params:       sim.SimParams,
     on_path_start:     Callable[[int, int, str], None],
-    on_path_progress:  Callable[[int], None],
+    on_path_progress:  Callable[[int, int], None],
     on_path_complete:  Callable[[int, int, "PathResult"], None],
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
@@ -355,6 +355,10 @@ def run_batch(
 
     on_path_stage は 1 パス内の段階通知（"fetch" / "render"）。所要時間の大半は
     "render"（matplotlib 描画）なので、呼び出し側はこれで表示を切り替える。
+
+    ⚠️ **`on_path_progress` は `(取得済み, その行の点数)` の 2 つを渡す**（I-069）＝
+    地形の標本数は**行ごとに解かれる**ようになったので、呼び出し側が共通設定から
+    分母を持つことはできない（持たせると、長い行ほどバーが途中で止まって見える）。
     """
     threading.Thread(
         target = _run_thread,
@@ -369,7 +373,7 @@ def _run_thread(
     rows:              list[PathRow],
     base_params:       sim.SimParams,
     on_path_start:     Callable[[int, int, str], None],
-    on_path_progress:  Callable[[int], None],
+    on_path_progress:  Callable[[int, int], None],
     on_path_complete:  Callable[[int, int, "PathResult"], None],
     on_batch_complete: Callable[[str, list["PathResult"]], None],
     on_error:          Callable[[Exception], None],
@@ -425,7 +429,7 @@ def _process_one(
     row:         PathRow,
     base:        sim.SimParams,
     batch_dir:   str,
-    on_progress: Callable[[int], None],
+    on_progress: Callable[[int, int], None],
     coord_format: str = "dd",
     on_stage:     "Callable[[str], None] | None" = None,
     project_name: str = "",
@@ -434,7 +438,8 @@ def _process_one(
         params    = _make_params(row, base)
         if on_stage:
             on_stage("fetch")
-        raw_elevs = _fetch_sync(params, on_progress)
+        # 分母（この行の点数）は params が決まって初めて分かる＝**進捗と一緒に渡す**。
+        raw_elevs = _fetch_sync(params, lambda done: on_progress(done, params.num))
         terrain   = models.calculate_terrain_profile(
             raw_elevs = raw_elevs,
             lat_tx    = params.lat_tx,
@@ -512,7 +517,10 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         "sens"       : str(base.sens),
         "veg_h"      : str(base.veg_h),
         "k_factor"   : str(base.k_factor),
-        "samples"    : str(base.num),
+        # 🔑 **段階を渡す＝点数は行の座標から解かれる**（I-069）。以前はここで
+        # `base.num` を渡しており、**500m の行にも 20km の行にも同じ 200 点**が
+        # 当たっていた（＝共通設定の 1 つの数が、行によって別の意味になっていた）。
+        "resolution" : base.resolution,
         "env_type"   : base.env_type,
         "rain_rate"  : str(base.rain_rate),
         "diff_method": base.diff_method,

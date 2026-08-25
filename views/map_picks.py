@@ -15,9 +15,9 @@ from typing import TYPE_CHECKING, NamedTuple
 
 from PIL import ImageTk
 
-from core import dem
 from core import i18n
 from core import models
+from core import terrain_grid
 from core import units
 from report import map_graphics
 from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
@@ -636,9 +636,9 @@ class _PickMixin:
         km = models.horizontal_distance_km(before[0], before[1], lat, lon)
         text = i18n.t("map_moved").format(
             label=label, dist=units.format_distance(km))
-        if km * units.KM_TO_M < dem.FINEST_MESH_M:
+        if km * units.KM_TO_M < terrain_grid.FINEST_MESH_M:
             text += " " + i18n.t("map_move_below_mesh").format(
-                mesh=f"{dem.FINEST_MESH_M:g}")
+                mesh=f"{terrain_grid.FINEST_MESH_M:g}")
         self._set_status(text, auto_clear=True)
 
     def _reset_active_pick(self) -> None:

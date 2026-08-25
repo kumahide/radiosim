@@ -219,6 +219,7 @@ radiosim/
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
+│   ├── terrain_grid.py   # DEM grid and terrain resolution (level -> sample count, pure functions)
 │   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
@@ -293,6 +294,7 @@ radiosim/
     ├── test_report_map.py
     ├── test_map_window.py
     ├── test_coords.py
+    ├── test_terrain_grid.py
     ├── test_units.py
     ├── test_output_contract.py
     ├── test_mpl_fonts.py
@@ -458,7 +460,7 @@ An input form is displayed on startup.
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Sampling Points       | Number of terrain sample points (10–2000; more = higher accuracy but longer retrieval) |
+| Terrain Resolution    | One of High (approx. 5 m) / Medium (approx. 10 m) / Low (approx. 20 m). **You pick the level; the number of points follows from the path length** (the resolved count and the effective spacing are shown right below it). Default: Medium |
 
 ### 2. The "Run" Button (Single Mode)
 
@@ -576,7 +578,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 Open it with the **Condition Explorer** button in the launcher (`views/scenario.py`). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
 
 - **Terrain is fetched once.** `run_scenario()` walks FETCH → CALC (→ RENDER), and the fetch happens once at the front. `_fetch_sync()` goes through `fetch_elevations_cached()`, so re-running the same path with different conditions never re-downloads DEM — which is exactly how this screen is used.
-- **A condition is a delta.** `Condition` is an override dict on top of the base params, and `scenario.OVERRIDABLE` is the single source of what may be overridden. **Coordinates and sample count are not in it** (comparing paths themselves is what Multiple Paths is for). Compare mode allows up to `MAX_COMPARE_CONDITIONS` columns.
+- **A condition is a delta.** `Condition` is an override dict on top of the base params, and `scenario.OVERRIDABLE` is the single source of what may be overridden. **Coordinates and terrain resolution are not in it** (comparing paths themselves is what Multiple Paths is for). Compare mode allows up to `MAX_COMPARE_CONDITIONS` columns.
 - **Compare and sweep share one computation path.** A sweep is turned into conditions first: `linspace_values()` → `sweep_conditions(axis, values)` → `evaluate()`. Axes are `SWEEP_AXES`, point count is capped by `MAX_SWEEP_POINTS`. **Only the input construction branches**; evaluation and the result types (`ScenarioRun` / `ScenarioPoint`) are single.
 - **Progress is declared as phases.** `Phase` / `Phases` (`FETCH`, `CALC`, `RENDER`) carry relative weights, and report generation runs inside the worker thread as the RENDER phase via `artifacts`. **Do not generate reports in the View after completion** — it freezes the GUI and that time never shows up in the progress bar (a defect this project has shipped twice).
 - **Validation precedes the fetch.** `validate_base()` rejects bad base values before any download (failing after the fetch throws away the user's wait). Conditions validate themselves in `Condition`.
@@ -613,7 +615,7 @@ Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It
 | TX/RX Height      | 0                              | 500     | m      |
 | Vegetation Height | 0                              | 100     | m      |
 | Rician K-Factor   | 0                              | 30      | —     |
-| Sampling Points   | 10                             | 2,000   | points |
+| Terrain Resolution | High / Medium / Low           | —       | —      |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
 | Diff Method       | deygout / single               | —      |        |
@@ -830,6 +832,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `note` | — | The note from the input CSV (free text) |
 | `error` | — | Why it failed; empty for a path that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
+| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path length, so it differs from row to row within one CSV (the effective spacing is roughly `slant_m` / (samples − 1)) |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -854,6 +857,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
 | `error` | — | Why it failed; empty for a section that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
+| `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section length, so it differs between sections of one route |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
 
@@ -897,7 +901,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
 | `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution) |
 
-⚠️ **The row count is exactly the number of sampling points.**
+⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path length).
 
 ---
 
@@ -1047,6 +1051,7 @@ entry point that runs them together.
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
+| `test_terrain_grid.py`   | Terrain resolution (level -> sample count, level ordering and effective spacing, where the ceiling bites, a single place that resolves it, no numeric sample-count input) |
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|

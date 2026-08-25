@@ -68,6 +68,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     # 末尾＝出力契約の規約 1（追加は末尾のみ）。`f1_pct` の隣では
                     # ないので、並べて読むときは列名で引くこと（I-077）。
                     units.csv_f1_depth(r.blocked_ratio),
+                    # 何点で刻んだ答えか（I-069）＝**行ごとに違う**。
+                    str(pr.params.num) if pr.params else "",
                 ])
             else:
                 writer.writerow([
@@ -77,6 +79,7 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     report_common.csv_cell(pr.row.note),
                     report_common.csv_cell(pr.error),
                     "",
+                    str(pr.params.num) if pr.params else "",
                 ])
 
 

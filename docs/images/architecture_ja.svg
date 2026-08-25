@@ -128,6 +128,7 @@
     <text x="401" y="802" class="mod">coords.py</text><text x="537" y="802" class="role">座標表記（DD ⇔ DMS）</text>
     <text x="401" y="822" class="mod">units.py</text> <text x="537" y="822" class="role">距離の表示整形（km → m）</text>
     <text x="401" y="842" class="mod">output_contract.py</text><text x="537" y="842" class="role">成果物 CSV の列仕様</text>
+    <text x="401" y="862" class="mod">terrain_grid.py</text><text x="537" y="862" class="role">解像度の段階 → 点数</text>
 
     <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">設定・環境・文字列</text>

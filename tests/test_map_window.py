@@ -468,8 +468,8 @@ def test_a_move_finer_than_the_terrain_mesh_says_so():
     ⇒ *縮尺で調整を禁じる*のではなく（地図を寄せただけで機能が消える死んだモードに
     なる）、**起きたときにその場で言う**。判定に使うのは縮尺ではなく実際の移動量。
     """
-    from core import dem
     from core import i18n
+    from core import terrain_grid
 
     sink = _FakeWaypointSink([("TX", 34.5, 132.4), ("RX", 34.6, 132.5)])
     win = _edit_stub("waypoints", waypoints=sink)
@@ -478,7 +478,8 @@ def test_a_move_finer_than_the_terrain_mesh_says_so():
     _click_marker(win, 0)
     win._release(win)
     win._on_map_click((34.50002, 132.4))        # 約 2m＝メッシュより細かい
-    note = i18n.t("map_move_below_mesh").format(mesh=f"{dem.FINEST_MESH_M:g}")
+    note = i18n.t("map_move_below_mesh").format(
+        mesh=f"{terrain_grid.FINEST_MESH_M:g}")
     assert note in win.status[-1], f"細かすぎる移動を黙って受けた: {win.status[-1]}"
 
     _click_marker(win, 0)

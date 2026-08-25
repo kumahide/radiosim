@@ -47,6 +47,18 @@ def format_distance(km: float, *, unit: bool = True) -> str:
     return f"{text} m" if unit else text
 
 
+def format_spacing(spacing_m: float) -> str:
+    """標本間隔 [m] を人が読む表記へ整形する（例: 9.14 → ``9.1``・単位なし）。
+
+    ⚠️ **`format_distance` を使い回さない**（I-069）＝あちらは経路長を m 整数へ
+    丸める（20,153 m）。標本間隔は **1 m 未満から数百 m まで**動き、しかも
+    「高（約 5 m）を選んだのに実効 9.1 m」という**張り付きの検出そのもの**が
+    用途なので、整数に丸めると見るべき差が消える。単位はラベル側が持つ。
+    """
+    value = float(spacing_m)
+    return f"{value:.1f}" if value < 100 else f"{round(value):,}"
+
+
 def csv_distance(km: float, *, decimals: int = 0) -> str:
     """距離 [km] を CSV 用の m 値へ整形する（桁区切りなし・単位なし）。
 

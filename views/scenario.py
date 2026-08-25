@@ -276,7 +276,7 @@ class ScenarioWindow(tk.Toplevel):
         ttk.Label(case, text=i18n.t("hint_common_readonly"),
                   foreground=theme.muted_foreground(case)).pack(side="right", padx=6)
 
-        # この窓が振れない前提（座標と samples）。**振れる前提は比較タブの
+        # この窓が振れない前提（座標と地形の解像度）。**振れる前提は比較タブの
         # ベース列に出る**ので、ここには出さない（二重に見せない）。
         # 枠名は「経路」＝「固定した」は凍結方式の言い方で、**同じことを右端の
         # 🔒 ヒントが既に言っている**（同じ意味を 2 通りで言わない・I-048）。
@@ -300,7 +300,11 @@ class ScenarioWindow(tk.Toplevel):
         for label_key, var, expand, width in (
             ("scn_tx_coord", self._tx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
             ("scn_rx_coord", self._rx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
-            ("scn_samples",  self._samples_var, False, 6),
+            # 地形の解像度（I-069）＝**段階の語ではなく、解けた結果を出す**。
+            # 「高（約 5 m）」と書いても、天井に張り付けばそれは嘘になる＝
+            # **実効間隔こそがこの窓で言うべきこと**（点数はその根拠）。
+            # ⚠️ 2 欄に割らない＝この窓は帯が窓幅を決めてはいけない（B-052）。
+            ("lbl_b_resolution", self._samples_var, False, 15),
         ):
             f = ttk.Frame(row)
             f.pack(side="left", padx=6, fill="x", expand=expand)
@@ -336,7 +340,11 @@ class ScenarioWindow(tk.Toplevel):
         p = self._base_params
         self._tx_var.set(coords.format_pair(p.lat_tx, p.lon_tx, self._coord_format))
         self._rx_var.set(coords.format_pair(p.lat_rx, p.lon_rx, self._coord_format))
-        self._samples_var.set(str(p.num))
+        # 天井への張り付きは**実効間隔**にしか出ないので、点数と並べて出す。
+        _, spacing = sim.resolve_samples(
+            p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, p.resolution)
+        self._samples_var.set(i18n.t("res_fixed_value").format(
+            n=p.num, spacing=units.format_spacing(spacing)))
 
     def _refresh_from_launcher(self) -> None:
         """ランチャーの現在値（**座標を含む**）を取り込み直す。
