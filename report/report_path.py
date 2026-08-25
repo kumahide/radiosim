@@ -308,6 +308,13 @@ def path_sheet_html(
 
     sheet_id = f' id="{report_id}"' if report_id else ""
 
+    # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
+    # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。
+    # ⛔ 率だけを載せない＝率は 100% で頭打ち（I-077）なので、突き抜けた分は
+    # 侵入深さ（`×F1`）でしか読めない。単位が違うので 2 行が同じ量には見えない。
+    # 見出しは台帳（サマリ・中継）と同じ i18n キーを使う＝4 面で字を揃える。
+    # 値は単位なし（見出しが単位を持つ）＝台帳の <td> と同じ書式。
+
     return f"""<section class="sheet path"{sheet_id}>
 <div class="fit-outer"><div class="fit">
 {report_common.page_header(i18n.t('html_path_title'), project_name, report_id)}
@@ -362,6 +369,8 @@ def path_sheet_html(
     <table class="info">
       <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
       <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
+      <tr><td>{i18n.t('html_col_f1')}</td><td>{units.format_blocked_ratio(result.blocked_ratio, unit=False)}</td></tr>
+      <tr><td>{i18n.t('html_col_f1_depth')}</td><td>{units.format_f1_depth(result.blocked_ratio, unit=False)}</td></tr>
       <tr><td>{i18n.t('html_rain_rate')}</td><td>{params.rain_rate} mm/h</td></tr>
     </table>
   </div>

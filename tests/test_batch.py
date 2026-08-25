@@ -612,6 +612,41 @@ class TestSavePathHtmlMap:
         assert "data:image/png;base64,TERRAINB64" in html
 
 
+class TestSavePathHtmlF1:
+    """per-path レポートが **F1 遮蔽率と侵入深さを対で**出すこと（I-099）。
+
+    ⚠️ 率だけ出す形に戻ると `tests/test_units.py` の面の走査でも落ちるが、
+    あちらは「呼んでいるか」しか見ない。ここは**実際に書いたファイルの中身**で、
+    頭打ちで潰れた分が侵入深さ側に残っているところまで確かめる。
+    """
+
+    def _render(self, tmp_path, flat_terrain, default_params_dict, blocked_ratio):
+        i18n.set_lang("ja")
+        params = sim.SimParams(default_params_dict)
+        result = _make_result()
+        result.blocked_ratio = blocked_ratio
+        report_path.save_path_html(
+            flat_terrain, result, params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_deep_intrusion_shows_both_the_clamped_ratio_and_the_depth(
+            self, tmp_path, flat_terrain, default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, 851.0)
+        assert f"<td>{i18n.t('html_col_f1')}</td><td>100.0</td>" in html, \
+            "率は 100% で頭打ち（台帳と同じ書式・単位は見出し側）"
+        assert f"<td>{i18n.t('html_col_f1_depth')}</td><td>8.51</td>" in html, \
+            "頭打ちで潰れた分は侵入深さ（×F1）に残ること"
+
+    def test_clear_path_shows_zero_on_both(self, tmp_path, flat_terrain,
+                                           default_params_dict):
+        html = self._render(tmp_path, flat_terrain, default_params_dict, 0.0)
+        assert f"<td>{i18n.t('html_col_f1')}</td><td>0.0</td>" in html
+        assert f"<td>{i18n.t('html_col_f1_depth')}</td><td>0.00</td>" in html
+
+
 class TestSavePathHtmlCoordFormat:
     """HTML レポートの座標セルが coord_format に従うこと（既定 DD）。"""
 
