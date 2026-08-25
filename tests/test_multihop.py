@@ -1230,3 +1230,114 @@ class TestOverallDisplay:
         assert i18n.t(mh.OVERALL_SHORTFALL_KEY) in html
         assert i18n.t(mh.OVERALL_MARGIN_KEY) not in html
         assert "12.4 dB" in html
+
+
+# ============================================================
+# 全体判定の状態語（B-071）
+# ============================================================
+class TestOverallStatus:
+    """**判定不能を不成立と言い切らない**（B-071）。
+
+    区間表と件数カードは `ERROR` と言っているのに、全体判定だけが `run.ok` の
+    二値から語を作っていたので `NG` に潰れていた＝**同じ成果物の中で食い違う**。
+    読み手は「計算できたが回線が成立しない」と「判定できなかった」を区別できない。
+
+    ⚠️ **純関数のテストだけでは足りない**（`TestOverallDisplay` の最後の 1 本と
+    同じ理由）＝呼び出し側が `"OK" if run.ok else "NG"` を書いたままでも純関数は
+    緑のままになる。**画面の字とレポートの字**まで見て初めて単一ソースが立つ。
+    """
+
+    def test_healthy_run_keeps_the_two_ordinary_words(self, base, tmp_path,
+                                                       monkeypatch):
+        """ERR が無いときは従来どおり OK / NG（**語彙を増やしただけ**にしない）。"""
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 8.0
+            h.result.status = "OK"
+        assert mh.overall_status(run) == "OK"
+        run.hops[0].result.actual_margin = -12.4
+        run.hops[0].result.status = "NG"
+        assert mh.overall_status(run) == "NG"
+
+    def test_a_failed_hop_makes_the_overall_error_not_ng(self, base, tmp_path,
+                                                          monkeypatch):
+        """計算に失敗した区間があれば全体は `ERROR`（`NG` ではない）。"""
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 8.0
+            h.result.status = "OK"
+        run.hops[1].result = None
+        assert run.hops[1].status == "ERROR", "前提: 区間表は ERROR と言っている"
+        assert mh.overall_status(run) == "ERROR", (
+            "判定不能な区間があるのに、全体判定が回線不成立（NG）と言い切っている"
+        )
+
+    def test_a_missing_artifact_also_makes_the_overall_error(self, base, tmp_path,
+                                                              monkeypatch):
+        """**成果物だけ欠けた区間**も同じ（判定の出所は `PathResult.status`・I-010 ③）。
+
+        電波的には全区間 OK なので、`status` を見ずに `result` の有無だけを見ると
+        ここが素通りする（`worst` / `overall_margin` が踏んだのと同じ穴）。
+        """
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 20.0
+            h.result.status = "OK"
+        run.hops[0].artifact_error = RuntimeError("仕組んだ描画失敗")
+        assert mh.overall_status(run) == "ERROR"
+
+    def test_a_run_without_hops_is_not_judged_either(self, base, tmp_path,
+                                                      monkeypatch):
+        """区間が 1 つも無い実行も `ERROR`＝**材料が無いことを NG と言わない**。
+
+        `overall_margin` は同じ条件で既に `None`（語れない）を返しており、
+        状態語だけが「不成立」と断定していると、そこでも 2 つの面が食い違う。
+        """
+        run = mh.MultiHopRun(path=_path(3), hops=[], save_dir=str(tmp_path))
+        assert run.overall_margin is None, "前提: 全体マージンは語れない"
+        assert mh.overall_status(run) == "ERROR"
+
+    def test_the_report_card_says_error_and_is_not_painted_as_ng(
+            self, base, tmp_path, monkeypatch):
+        """レポートの集約カードが `ERROR` の字と `err` の色で出ること。
+
+        字だけ直して色を直さないと、**判定不能が不成立と同じ赤**で塗られる
+        （成果物の上では色も語のうち）。
+        """
+        from report import report_multihop
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 20.0
+            h.result.status = "OK"
+        run.hops[1].result = None
+        html = report_multihop.route_sheet_html(run)
+        card = html.split(f'{i18n.t("mh_overall")}</div>', 1)[1][:120]
+        assert ">ERROR<" in card, f"全体判定のカードが ERROR と言っていない: {card}"
+        # ⚠️ **件数カードの `card ng`（NG が 0 件）と混ざる**ので、全体判定の
+        # カードそのものを見る（`err` の有無を文書全体で数えると必ず素通りする）。
+        overall_card = f'<div class="card err"><div class="lbl">{i18n.t("mh_overall")}'
+        assert overall_card in html, "判定不能のカードが不成立の色で塗られている"
+
+    def test_the_window_summary_says_the_same_word(self, default_params_dict,
+                                                    base, tmp_path, monkeypatch):
+        """画面のサマリ 1 行も同じ語（**成果物とだけ揃えても半分**）。"""
+        from conftest import make_themed_root
+        import views.multihop as vm
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 20.0
+            h.result.status = "OK"
+        run.hops[1].result = None
+
+        monkeypatch.setattr(vm.dialogs, "choose", lambda *a, **k: None)
+        root = make_themed_root()
+        root.withdraw()
+        i18n.set_lang("ja")
+        win = vm.MultiHopWindow(root, sim.SimParams(default_params_dict))
+        try:
+            win._on_complete(run)
+            text = str(win._summary_label.cget("text"))
+            assert "ERROR" in text, f"画面のサマリが ERROR と言っていない: {text}"
+            assert "NG" not in text, f"判定不能を NG と言い切っている: {text}"
+        finally:
+            win.destroy(); root.destroy()

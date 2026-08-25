@@ -597,6 +597,7 @@ Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It
 - **The runner reuses batch.** `hop_rows(path)` lowers sections into `batch.PathRow`, and `run_multihop()` takes the same callback shape as `batch.run_batch()` (same `ProgressPump` usage). ⚠️ **One section = one DEM fetch**, so download volume scales with section count (adjacent sections share an endpoint, so tile caching does help).
 - **`batch.PathResult.status` is the single source of the verdict.** Not only a section whose computation failed but also **a section whose artifacts are missing** drops out of OK. The overall verdict is the tightest section — **losses are never summed**.
 - **`overall_display()` owns the wording of the summary card.** The same number is labelled "overall margin (smallest headroom)" when OK and "largest shortfall" when NG (sign flipped). Screen and report both take the wording from that one function.
+- **`overall_status()` owns the overall state word.** It returns the same **three values** a section does (`OK` / `NG` / `ERROR`), and it is `ERROR` whenever any section is. ⛔ Do not build the word out of the `run.ok` boolean — `ok` can only answer "did the chain close", so "could not be judged" collapses into "did not close" and the screen summary and the report card end up contradicting the section table and the ERR count inside the same deliverable (which is exactly how they were broken). Judge with `ok`; show `overall_status()`.
 - **Inserting and deleting a waypoint are each other's inverse.** The `＋` on a row inserts "the section **leaving** that point" as blank; the `×` drops the same section. Section variables are **reused by position**, so moving waypoints alone shifts the frequency and gains after the edit by one — **the screen still looks natural while a different section's settings are used for the computation**. A round trip (insert, then delete at the same position) is required by test to return exactly to the previous state.
 - **Relay points are meant to be placed, not dragged around to explore.** Moving one triggers a fresh fetch; sweeping heights or conditions is the Condition Explorer's job.
 
@@ -859,7 +860,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section length, so it differs between sections of one route |
 
-⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **ERR whenever any section could not be judged (ERR)**.
 
 #### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
 

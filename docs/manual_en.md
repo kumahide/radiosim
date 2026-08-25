@@ -492,6 +492,8 @@ Each relay point **receives and then transmits again**. That means:
 
 **Run** processes the sections in order, filling the result list section by section (received level, margin, verdict), and finishes with the overall verdict (the tightest section).
 
+⚠️ **The overall verdict has the same three values as a section: OK / NG / ERR.** If even one section could not be judged (ERR), the overall verdict is **ERR** as well — which is not the same thing as "computed, but the link does not close" (NG). In that case the overall margin is shown as `—` rather than a number, because a path containing a section that could not be judged has no headroom to speak of. The section table shows which section is ERR.
+
 The following are saved to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 | File | Contents |
@@ -779,7 +781,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section length, so it differs between sections of one route |
 
-⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **ERR whenever any section could not be judged (ERR)**.
 
 #### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
 

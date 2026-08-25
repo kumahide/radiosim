@@ -946,15 +946,17 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
 
         # **全体判定＋どの区間が決めているか**を必ず併記する（min だけ出さない）。
         # 集約の語と符号は `mh.overall_display` が単一ソース（I-052）＝レポートの
-        # カードと同じ語・同じ数字になる。
+        # カードと同じ語・同じ数字になる。**状態語は `mh.overall_status`**（B-071）
+        # ＝`run.ok` の二値から作ると ERROR が NG に潰れ、区間表と食い違う。
         label_key, margin_txt = mh.overall_display(run, digits=2)
+        overall_status = mh.overall_status(run)
         worst  = run.worst
         worst_label = "—"
         if worst is not None:
             idx = run.hops.index(worst)
             worst_label = f"#{idx + 1} {mh.hop_label(run.path, idx)}"
         self._summary_label.config(text=i18n.t("mh_summary").format(
-            status="OK" if run.ok else "NG",
+            status=overall_status,
             label=i18n.t(label_key),
             margin=margin_txt,
             worst=worst_label))

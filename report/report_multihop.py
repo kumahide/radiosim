@@ -47,6 +47,9 @@ def route_sheet_css() -> str:
 .sheet.multihop .card .val{font-size:15px;font-weight:bold;color:#333}
 .sheet.multihop .card.ok .val{color:#2e7d32}
 .sheet.multihop .card.ng .val{color:#c62828}
+/* 判定不能（B-071）＝**不成立と同じ赤で塗らない**。橙は区間表の `tr.err` と
+   バッチ台帳の `.card.err` に揃える（同じ意味は同じ色・⑧）。 */
+.sheet.multihop .card.err .val{color:#e65100}
 .sheet.multihop table.hops{border-collapse:collapse;width:100%;table-layout:auto;
   background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .sheet.multihop table.hops th{background:#455a64;color:white;padding:4px;
@@ -96,6 +99,16 @@ _HOP_COL_KEYS = (
 # 区間ごとの自由記述を入力できるようにした日に、ここへ戻すこと。
 
 
+def _verdict_class(status: str) -> str:
+    """判定の語（`OK` / `NG` / `ERROR`）→ この文書の CSS クラス（`ok` / `ng` / `err`）。
+
+    **区間の行と全体判定のカードが同じ対応表を見る**（B-071）＝片方だけに `err` が
+    無いと、判定不能の全体カードが**不成立と同じ赤**で塗られる。画面側の同じ口は
+    `views/theme.verdict_key`（あちらは配色キー・こちらは HTML のクラス名）。
+    """
+    return {"OK": "ok", "NG": "ng"}.get(status, "err")
+
+
 def _hop_header_cells() -> str:
     """ホップ台帳の `<th>` 群（単位は 2 行目へ落とす＝バッチ台帳と同じ規則）。"""
     cells = []
@@ -120,7 +133,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     へ、False なら `route1_h1/report.html` へ飛ばす（`report_summary` と同じ流儀）。
     """
     worst = run.worst
-    status_cls = "ok" if run.ok else "ng"
+    # 全体判定の語は `mh.overall_status` が単一ソース（B-071）＝区間表・件数カード
+    # と**同じ 3 つの語**（ERROR を NG に潰さない）。画面のサマリ 1 行も同じ口を通る。
+    overall_status = mh.overall_status(run)
+    status_cls = _verdict_class(overall_status)
     # 集約カードの語と符号は `mh.overall_display` が単一ソース（I-052）＝画面の
     # サマリ 1 行と同じ語・同じ数字になる。
     overall_key, overall_val = mh.overall_display(run, digits=1)
@@ -143,7 +159,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         classes = []
         r = pr.result
-        classes.append({"OK": "ok", "NG": "ng"}.get(pr.status, "err"))
+        classes.append(_verdict_class(pr.status))
         if pr is worst:
             classes.append("worst")
         cls = " ".join(classes)
@@ -227,7 +243,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + '<div class="cards">'
         + f'<div class="card {status_cls}"><div class="lbl">'
           f'{i18n.t("mh_overall")}</div><div class="val">'
-          f'{"OK" if run.ok else "NG"}</div></div>'
+          f'{overall_status}</div></div>'
         + f'<div class="card {status_cls}"><div class="lbl">'
           f'{i18n.t(overall_key)}</div><div class="val">{overall_txt}</div></div>'
         + f'<div class="card"><div class="lbl">{i18n.t("mh_hops")}</div>'

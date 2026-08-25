@@ -254,6 +254,33 @@ class MultiHopRun:
         return min(margins)
 
 
+def overall_status(run: MultiHopRun) -> str:
+    """全体判定の**語**（`"OK"` / `"NG"` / `"ERROR"`）＝**ここだけが作る**（B-071）。
+
+    🔑 **語彙は区間と同じ**（`batch.PathResult.status`）＝同じ成果物の中で、区間表・
+    件数カード・全体判定が**同じ 3 つの語**で話す。`run.ok` の**二値**から語を作ると
+    `ERROR` が `NG` に潰れ、「計算できたが回線不成立」と「判定できなかった」が
+    読み手に区別できなくなる（区間表と件数は `ERROR` と言っているのに、全体だけが
+    `NG` と言う——同じ紙の上で食い違う）。
+
+    ⚠️ **`ok` を置き換えるものではない**＝`ok` は「鎖が成立したか」という真偽で、
+    集約規則（min）の意味論そのもの。こちらは**それを人に見せる語**で、`ok` が
+    答えられない第 3 の状態（判定不能）を持つ。⇒ 判定に使うのは `ok`、
+    画面と成果物に書くのは `overall_status`。
+
+    ⚠️ **区間が 1 つも無い実行も `ERROR`**＝判定の材料が無いことを「NG」と
+    言い切らない（`overall_margin` も同じ条件で `None` を返している）。
+
+    ⛔ **`run.ok` から語を作る式を、画面やレポートへ書き戻さないこと。**
+    `overall_display`（語と数値）と対で、**状態語もここが単一ソース**。
+    """
+    require_runnable(run.path, "overall_status")   # 規則の出所は 1 か所
+    # 判定の出所は `batch.PathResult.status`（I-010 ③）＝成果物が欠けた区間も含む。
+    if not run.hops or any(h.status == "ERROR" for h in run.hops):
+        return "ERROR"
+    return "OK" if run.ok else "NG"
+
+
 #: 集約カードの語（I-052）。**判定で切り替える**ので、キーを 2 つ持つ。
 OVERALL_MARGIN_KEY    = "mh_overall_margin"      # OK＝設計余裕の KPI
 OVERALL_SHORTFALL_KEY = "mh_overall_shortfall"   # NG＝あと何 dB 足りないか
@@ -447,7 +474,7 @@ def _run_thread(
         report_multihop.save_report_all_html(run, project_name, memo, map_b64)
         logger.info("Multihop complete: %s in %.2fs (overall %s)",
                     path.path_id, time.perf_counter() - t0,
-                    "OK" if run.ok else "NG")
+                    overall_status(run))
         on_complete(run)
 
     except Exception as ex:
