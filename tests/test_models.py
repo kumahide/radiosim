@@ -542,7 +542,7 @@ class TestEnvCoeffs:
     def test_env_loss_within_bounds(self, flat_terrain):
         """各環境区分で Env Loss が定義された min/max 範囲内に収まる。"""
         for env, coeffs in models.ENV_COEFFS.items():
-            min_db, max_db = coeffs[4], coeffs[5]  # veg_c 除去後: min=index4, max=index5
+            min_db, max_db = coeffs[2], coeffs[3]  # (base, dist, min, max)
             r = models.calculate_propagation(flat_terrain, **self.PARAMS, env_type=env)
             assert min_db <= r.env_loss <= max_db, (
                 f"{env}: env_loss={r.env_loss:.2f} out of [{min_db}, {max_db}]"
@@ -568,13 +568,33 @@ class TestEnvCoeffs:
         )
 
         # 同一の地形条件で _env_loss を直接呼ぶ → veg_loss に依存しないはず
-        base_result = models._env_loss(
-            blocked_ratio=30.0, slant_dist_km=1.0, diff_loss=5.0, env_type="suburban"
-        )
+        base_result = models._env_loss(slant_dist_km=1.0, env_type="suburban")
         # 旧実装では veg_loss=0 と veg_loss=40 で結果が違った
         # 新実装では引数そのものがないため常に同じ
         assert isinstance(base_result, float)
         assert 3.0 <= base_result <= 30.0  # suburban の min/max 範囲内
+
+    def test_env_loss_independent_of_obstruction(self):
+        """
+        Env Loss が遮蔽に由来する量に依存しないこと（回折の二重計上の解消）。
+
+        F1 の部分遮蔽も回折損も、回折損 J(ν) が既に表現しているもの。
+        環境損失がそれを再び損失へ換算すると二重計上になり、しかも
+        「回折としては 0 dB であるべき帯」にも 0〜数 dB が積まれていた。
+        ⇒ **引数そのものを持たない**ことで制約を表現する（veg_loss と同じ形）。
+        """
+        import inspect
+        sig = inspect.signature(models._env_loss)
+        for name in ("blocked_ratio", "diff_loss"):
+            assert name not in sig.parameters, (
+                f"{name} が _env_loss の引数に残っている（回折の二重計上が復活している）"
+            )
+        # 係数テーブルの側にも遮蔽由来の列を戻さない
+        for env, coeffs in models.ENV_COEFFS.items():
+            assert len(coeffs) == 4, (
+                f"{env}: ENV_COEFFS は (base, dist, min, max) の 4 列"
+                f"（遮蔽率係数・回折係数は 3.0 で外した）"
+            )
 
 
 # ================================================================

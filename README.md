@@ -22,13 +22,13 @@
 - **アンテナ高・周波数の当たり付け** — 1 本の経路で条件を振り、成立ラインを探す
 - **複数経路の一括計算（バッチ計算）** — CSV に並べた N 本をまとめて回し、レポートを自動生成
 
-**使わないほうがよい用途**: 回線設計の最終判断。DEM の水平解像度は 5〜10m で、回折損の実質精度は **±5〜15 dB** 程度です。⚠️ **この範囲が当てはまるのは、回折損が発散していない経路だけです**——発散する経路では誤差はこの桁に収まらず、しかも**どの経路が発散するかを事前に見分けられません**（下記）。
+**使わないほうがよい用途**: 回線設計の最終判断。DEM の水平解像度は 5〜10m で、回折損の実質精度は **±5〜15 dB** 程度です。⚠️ **この範囲は、複数の障害物が重なる経路には当てはまりません**——合成損失は実測とも基準実装とも突き合わせていません（下記）。
 
-> 🔴 **回折損が過大に出ることがあり、どの経路で信頼できるかを事前に見分ける方法がありません**（既知の欠陥・修正予定）。既定の Deygout 法は、尾根のような**広がりのある障害物**を多数の独立した稜線として数えてしまい、山越えでは**数百〜数千 dB**になります。⚠️ **起伏の大きさでも F1 遮蔽率でも判定できません**＝起伏 25m の滑らかな丘（10km・150MHz）で `Single` 法 **0.0 dB** に対し Deygout 法は **65 dB**（F1 遮蔽率は 100% 未満のまま）。同じ起伏でも**地形の形しだいで 10 倍以上変わります**。⚠️ F1 遮蔽率は表示上 **100% で頭打ち**なので、率の側からは異常に気づけません。
+> 🔴 **回折損が過大に出ることがあり、どの経路で信頼できるかを事前に見分ける方法がありません。** 3.0 で「尾根のような**広がりのある障害物**を多数の独立した稜線として数える」欠陥を直し、**山越えで数百〜数千 dB になる発散は解消しました**（代表 26 経路で回折損 100 dB 超が 13 本 → 2 本）。ただし**過大に出る可能性そのものが消えたわけではありません**＝①複数の峰にまたがる経路の合成損失は、系統の違う 2 手法と並べて桁を確かめただけで、**どれが真の値に近いかは分かりません**（手法の大小に一般的な順序はありません）。②深く遮蔽された経路では、**地形サンプル数を増やすと回折損が増えます**（120 点 → 960 点で +18%）。⚠️ **起伏の大きさでも F1 遮蔽率でも、どの経路が過大になるかは判定できません。**⚠️ F1 遮蔽率は表示上 **100% で頭打ち**なので、率の側からは異常に気づけません。
 >
-> 🛡 **今できる自衛策** — **「回折モデル」を `Single` に切り替えて計算し直し、2 つの値を見比べてください。**大きく食い違う経路では既定（Deygout）の値を信用しないでください。⚠️ **これは正しさを決める手段ではなく、結果がモデルの選び方にどれだけ依存しているかの診断**です（差が小さくても正しさは保証されません）。`Single` は複数障害物の合成損失を表現しないので **Deygout より小さく出ることがあります**が、それが真の値に近いという意味ではありません。
+> 🛡 **自衛策** — **「回折モデル」を `Single` に切り替えて計算し直し、2 つの値を見比べてください。**大きく食い違う経路では既定（Deygout）の値を信用しないでください。⚠️ **これは正しさを決める手段ではなく、結果がモデルの選び方にどれだけ依存しているかの診断**です（差が小さくても正しさは保証されません）。`Single` は複数障害物の合成損失を表現しないので **Deygout より小さく出ることがあります**が、それが真の値に近いという意味ではありません。
 >
-> *🔴 **Diffraction loss can come out far too high, and no advance test tells you which paths are safe.** Neither relief nor Fresnel blockage predicts it: over a smooth 25 m hill, `Single` returns 0.0 dB where Deygout returns 65 dB. Fresnel blockage is **capped at 100%** wherever it is shown, so the percentage will not warn you either. **Mitigation**: re-run with the Diffraction Model set to `Single` and compare — where the two differ substantially, do not trust the default.*
+> *🔴 **Diffraction loss can still come out too high, and no advance test tells you which paths are safe.** Version 3.0 removed the divergence that produced hundreds to thousands of dB over mountains, but multi-obstacle results have not been checked against measurements or a reference implementation, and on deeply obstructed paths raising the terrain sample count still raises the diffraction loss (+18% from 120 to 960 samples). Neither relief nor Fresnel blockage predicts which paths are affected. Fresnel blockage is **capped at 100%** wherever it is shown, so the percentage will not warn you either. **Mitigation**: re-run with the Diffraction Model set to `Single` and compare — where the two differ substantially, do not trust the default.*
 
 ## 主な機能
 

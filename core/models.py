@@ -19,7 +19,9 @@ numpy / math のみに依存し、matplotlib / tkinter / requests を一切 impo
   single  : 単一障害物 Fresnel-Kirchhoff（ITU-R P.526 のナイフエッジ式）
   deygout : **独自の Deygout 実装**（P.526 のナイフエッジ式 J(ν) を使うが、P.526 の
             完全法ではない）。最大遮蔽点を主障害物として再帰的に分割し損失を加算する。
-            再帰打ち切り条件: ν < NU_THRESHOLD (-0.8) または区間幅 < MIN_SEGMENT_M。
+            再帰打ち切り条件: ν <= NU_THRESHOLD (-0.8) または区間幅 < MIN_SEGMENT_M。
+            主障害物を含む「ν > NU_THRESHOLD が連続する範囲」は 1 枚のナイフエッジ
+            として再帰から外す（下の NOTE の Kν）。
             ⚠️ **「P.526 準拠」とは名乗らない**（2026-08-09・Codex 指摘で訂正）＝
             現行 P.526-16 は複数障害物に孤立円筒モデル、一般地形に Bullington を
             含む完全法を定めているが、**本実装は円筒近似も Bullington も標準の
@@ -42,17 +44,26 @@ numpy / math のみに依存し、matplotlib / tkinter / requests を一切 impo
 #   広い丘 80m   : 頂点高度 578.62 dB / 本実装 1141.73 dB
 #   ⇒ **頂点高度より悪化しにくい**のは事実で、この端点の選択自体は妥当。
 #
-# 🔴 **ただし「過大評価を抑制できている」という意味ではない**（B-032）。
+# 🔴 **ただし端点の選択だけでは過大評価は止まらなかった**。
 #   旧 NOTE は「見通し地形で 0 dB に収束／過大 pessimistic を抑制／高サンプル
-#   密度でも安定」と書いていたが、**いずれも頂点高度方式との相対でしか成り立たない**:
-#     - 収束: 広い丘 25m は ν が全区間で負（＝どの部分区間も「見通し」）なのに
-#             33 回の再帰を足して 65.25 dB を返す（single は 0.00 dB）。
-#     - 抑制: 山越えでは 1000〜2400 dB。実機の 794m の回線で 1956.8 dB の実績。
-#     - 安定: 広い丘は標本数に安定（51〜801 点で 56.5〜65.4 dB）だが、
-#             深い山越えは標本数依存（51/101/201/401 点で 231/268/313/364 dB）。
-#             **同じ欠陥の 2 つの現れ方**なので、修正時は両方で検証すること。
-#   ⇒ 修正は 3.0（結果の信頼性と出力契約）。**この NOTE は撤回しない**＝
-#     「頂点高度に戻せば直る」という誤った処方を防ぐために残す。
+#   密度でも安定」と書いていたが、**いずれも頂点高度方式との相対でしか成り立たず**、
+#   広がった遮蔽体では別の経路で同じ過大化が起きていた（山越えで 1000〜2400 dB・
+#   実機の 794m の回線で 1956.8 dB）。**この NOTE は撤回しない**＝
+#   「頂点高度に戻せば直る」という誤った処方を防ぐために残す。
+#
+# ✅ **2026-08-25（3.0）に発散そのものを塞いだ＝Kν**:
+#   機構は「**区間を割るほど d1·d2/(d1+d2) が縮んで ν が人工的に増える**」ことだった
+#   （Single が見通しと判定する ν=-0.79 の丘が、割った先で ν=-0.06 になる）。
+#   ⇒ **ν > _NU_THRESHOLD が連続する範囲は 1 枚のナイフエッジとして再帰から外す**。
+#   一体化の境界を損失の開始条件と同じ物差しで切るので、標本数で境界が跳ばない。
+#   実測: 広い丘 25m 65.25 → 5.49 dB（Single 0.00）／実データ 26 本で回折損
+#   100 dB 超が 13 本 → 2 本／9km 連続の山塊は Single と同値（断面で裏取り済み＝
+#   谷でも LoS 差 +31〜42m あり電波は一度も回り込めない＝1 枚と見るのが正しい）。
+#   ⚠️ **多重回折は残る**＝谷で F1 が十分クリアな独立 2 峰では Single の約 2 倍。
+#   ⚠️ **残る限界**＝深い遮蔽では端点近傍の最大 ν が標本間隔に依存する分が残る
+#   （120→960 点で +18%・修正前は +92%）。**「標本数に安定」とは言えない。**
+#   ⚠️ **真値との照合ではない**＝Bullington（P.526 §4.5.1）と Epstein-Peterson を
+#   独立に組んで並べただけで、**手法の大小に一般的な順序は無い**。
 
 import bisect
 import math
@@ -66,27 +77,32 @@ import numpy as np
 # ============================================================
 
 # 環境区分ごとの Env Loss 係数テーブル
-# {env_type: (base_dB, blocked_coeff, dist_coeff, diff_coeff, min_dB, max_dB)}
+# {env_type: (base_dB, dist_coeff, min_dB, max_dB)}
 #
 #   base_dB      : ベース損失（マルチパス・散乱の最低限）
-#   blocked_coeff: Fresnel 遮蔽率 [%] に対する係数
 #   dist_coeff   : スラント距離 [km] に対する係数
-#   diff_coeff   : 回折損 [dB] に対する係数
 #   min_dB       : Env Loss の下限 [dB]
 #   max_dB       : Env Loss の上限 [dB]
 #
 # 根拠:
-#   urban   : 高密度建物・多重反射。ベース高め、遮蔽と距離の影響大。
+#   urban   : 高密度建物・多重反射。ベース高め、距離の影響大。
 #   suburban: 中密度。標準的な値。
 #   rural   : 農村・開けた土地。反射体が少なくベース低め。
 #   los     : 見通し（水上・平地）。散乱・反射が最小。
+#
+# 🔑 **Env Loss は「モデル化していない現地要因」だけを持つ**（3.0・2026-08-24 決定）。
+#   かつては遮蔽由来の 2 項（Fresnel 遮蔽率 × blocked_coeff・回折損 × diff_coeff）を
+#   含んでいたが、**F1 の部分遮蔽は独立した損失ではなく回折の弱い側そのもの**であり、
+#   回折損 J(ν) が既にそれを表現している ⇒ **回折の二重計上**だった。しかも
+#   「回折としては 0 dB であるべき帯」にも 0〜数 dB を積んでいた。
+#   ⚠️ **合計は減る＝スクリーニングとして安全側ではなくなる**ことを承知のうえの決定。
+#   veg_c を除去したのも同じ筋（Veg Loss は独立項として total_loss に加算するため）。
 ENV_COEFFS: dict[str, tuple] = {
-    #           base  blk   dist  diff  min   max
-    # veg_c を除去: Veg Loss は独立項として total_loss に加算するため
-    "urban"   : (10.0, 0.08, 1.20, 0.15, 6.0, 30.0),
-    "suburban": ( 6.0, 0.05, 0.80, 0.10, 3.0, 30.0),
-    "rural"   : ( 4.0, 0.03, 0.50, 0.08, 2.0, 25.0),
-    "los"     : ( 2.0, 0.01, 0.30, 0.05, 1.0, 15.0),
+    #           base  dist  min   max
+    "urban"   : (10.0, 1.20, 6.0, 30.0),
+    "suburban": ( 6.0, 0.80, 3.0, 30.0),
+    "rural"   : ( 4.0, 0.50, 2.0, 25.0),
+    "los"     : ( 2.0, 0.30, 1.0, 15.0),
 }
 
 # ランチャー表示用ラベル → env_type キーのマッピング
@@ -380,7 +396,7 @@ def calculate_propagation(
     )
 
     # Env Loss（環境区分別推定）
-    env_loss  = _env_loss(blocked_ratio, slant_dist_km, diff_loss, env_type)
+    env_loss  = _env_loss(slant_dist_km, env_type)
     # current_k: 表示・参考用のライスファクター推定値。
     # ライスファクター K は見通し成分と散乱成分の電力比 [dB] であり、
     # 障害物による回折損が増えると見通し成分が失われ K が低下する。
@@ -444,13 +460,23 @@ def _deygout_loss(
 
     ⚠️ **P.526 準拠ではない**＝使っているのは P.526 のナイフエッジ式 J(ν) だけで、
     複数障害物の孤立円筒モデル・Bullington・標準の補正項は持たない（→ モジュール
-    冒頭の NOTE）。**広がりのある障害物で過大評価する既知の欠陥がある**（B-032）。
+    冒頭の NOTE）。
 
     アルゴリズム:
       1. 区間内で ν が最大の点（主障害物 Pm）を探す。
-      2. ν(Pm) < _NU_THRESHOLD ならこの区間の損失は 0 dB。
-      3. そうでなければ J(ν(Pm)) を加算し、
-         左区間 [TX, Pm] と右区間 [Pm, RX] を再帰処理する。
+      2. ν(Pm) <= _NU_THRESHOLD ならこの区間の損失は 0 dB。
+      3. そうでなければ J(ν(Pm)) を加算し、**Pm を含む ν > _NU_THRESHOLD の
+         連続範囲 [lo, hi] を 1 枚のナイフエッジとして再帰から外し**、
+         その外側の左区間 [TX, lo] と右区間 [hi, RX] だけを再帰処理する。
+
+    🔑 **3 が B-032 の処方**（2026-08-25・Kν）。区間を割るほど d1·d2/(d1+d2) が
+    縮んで ν が人工的に増えるため、広がった遮蔽体を割ると**同じ山を何度も数える**
+    （実機の 794m の回線で回折損 1956.8 dB）。一体化の境界を損失の開始条件と
+    同じ _NU_THRESHOLD で切ることで、この自己増殖を断つ。⚠️ **多重回折そのものは
+    残る**＝谷で F1 が十分クリアな独立 2 峰では single の約 2 倍を返す。
+    ⚠️ **残る限界**＝深い遮蔽では端点近傍の最大 ν が標本間隔に依存する分が残る
+    （不連続な跳びは消えるが「標本数に完全に安定」とは言えない）。真値との
+    照合ではなく、Bullington / Epstein-Peterson との相互比較で妥当性を見ている。
 
     Args:
         obs_surface : 障害物面（地形 + 植生）の絶対高度 [m]（全区間）
@@ -501,28 +527,41 @@ def _deygout_loss(
     # 主障害物の回折損
     loss = _diffraction_loss_fk(v_peak)
 
-    # 主障害物位置での LoS 高度（再帰の端点として使用）
+    # ── 主障害物が属する「1 枚のナイフエッジ」の範囲を求める ────
+    # ν > _NU_THRESHOLD が連続する範囲は**ひとつの遮蔽体**とみなし、
+    # まるごと再帰の対象から外す（B-032 の処方＝Kν・2026-08-25）。
+    # 境界の物差しを損失の開始条件（_NU_THRESHOLD）と揃えてあるので、
+    # 「損失を生む点だけが一体化される」＝標本数で境界が跳ばない。
+    over   = v_arr > _NU_THRESHOLD
+    lo, hi = peak_idx, peak_idx
+    while lo > 0 and over[lo - 1]:
+        lo -= 1
+    while hi < N - 1 and over[hi + 1]:
+        hi += 1
+
+    # 遮蔽体の両端での LoS 高度（再帰の端点として使用）
     # ※ 障害物頂点高度ではなく LoS 上の点を使うことで
     #    サブ区間の LoS が元の LoS に対して連続的になる
-    los_at_peak = float(los[peak_idx])
+    los_at_lo = float(los[lo])
+    los_at_hi = float(los[hi])
 
-    # ── 左区間（TX 〜 主障害物）の再帰 ──────────────────────────
-    if peak_idx >= 2:
+    # ── 左区間（TX 〜 遮蔽体の手前端）の再帰 ────────────────────
+    if lo >= 2:
         loss += _deygout_loss(
-            obs_surface = obs_surface[:peak_idx + 1],
-            d_m_axis    = d_m_axis[:peak_idx + 1],
+            obs_surface = obs_surface[:lo + 1],
+            d_m_axis    = d_m_axis[:lo + 1],
             tx_abs      = tx_abs,
-            rx_abs      = los_at_peak,
+            rx_abs      = los_at_lo,
             lam         = lam,
             depth       = depth + 1,
         )
 
-    # ── 右区間（主障害物 〜 RX）の再帰 ──────────────────────────
-    if peak_idx <= N - 3:
+    # ── 右区間（遮蔽体の奥端 〜 RX）の再帰 ──────────────────────
+    if hi <= N - 3:
         loss += _deygout_loss(
-            obs_surface = obs_surface[peak_idx:],
-            d_m_axis    = d_m_axis[peak_idx:],
-            tx_abs      = los_at_peak,
+            obs_surface = obs_surface[hi:],
+            d_m_axis    = d_m_axis[hi:],
+            tx_abs      = los_at_hi,
             rx_abs      = rx_abs,
             lam         = lam,
             depth       = depth + 1,
@@ -571,27 +610,27 @@ def _vegetation_loss(
 
 
 def _env_loss(
-    blocked_ratio: float,
     slant_dist_km: float,
-    diff_loss: float,
     env_type: str = ENV_DEFAULT,
 ) -> float:
     """
     環境損失推定値（マルチパス・大気変動・散乱等の経験的近似）。
 
-    Veg Loss は total_loss に独立項として加算されるため、ここには含めない。
+    ⚠️ **遮蔽に由来する量を引数に取らない**（`blocked_ratio` / `diff_loss`）。
+    F1 の部分遮蔽も回折損も、回折損 J(ν) が既に表現しているものであり、
+    ここで再び損失へ換算すると二重計上になる（→ ENV_COEFFS の註）。
+    Veg Loss も total_loss に独立項として加算されるため、ここには含めない。
+    **この制約はシグネチャで表現してある**＝引数が無ければ依存しようがない。
 
     Args:
         env_type: "urban" | "suburban" | "rural" | "los"
                   ENV_COEFFS で定義された環境区分。未知の値は ENV_DEFAULT ("los") にフォールバック。
     """
-    base, blk_c, dist_c, diff_c, min_db, max_db = ENV_COEFFS.get(
+    base, dist_c, min_db, max_db = ENV_COEFFS.get(
         env_type, ENV_COEFFS[ENV_DEFAULT]
     )
     env = base
-    env += min(blocked_ratio, 100.0) * blk_c
     env += slant_dist_km * dist_c
-    env += diff_loss  * diff_c
     return float(max(min_db, min(max_db, env)))
 
 

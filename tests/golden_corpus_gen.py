@@ -236,8 +236,12 @@ def build() -> dict:
 def main() -> None:
     os.makedirs(os.path.dirname(OUT_PATH), exist_ok=True)
     data = build()
-    with open(OUT_PATH, "w", encoding="utf-8") as f:
+    # 原子的に置き換える＝途中で例外が出ても既存のコーパスを切らない
+    # （`open(path, "w")` を直に開くと、その時点でファイルが 0 バイトになる）
+    tmp = OUT_PATH + ".tmp"
+    with open(tmp, "w", encoding="utf-8") as f:
         json.dump(data, f, ensure_ascii=False, indent=1)
+    os.replace(tmp, OUT_PATH)
     size_kb = os.path.getsize(OUT_PATH) / 1024
     print(f"\nwrote {OUT_PATH}  ({size_kb:.0f} KB, {len(data['links'])} links)")
 
