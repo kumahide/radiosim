@@ -856,15 +856,15 @@ class TestReportV2A4Skeleton:
     def test_path_html_has_a4_frame(self, tmp_path, flat_terrain, default_params_dict):
         html = self._path_html(tmp_path, flat_terrain, default_params_dict)
         self._assert_a4_frame(html, "path")
-        # per-path（単一）レポートのフッタは「個別」＝バッチ固定ラベルにしない
-        assert "Single Mode" in html
-        assert "Batch Mode" not in html
+        # per-path（単一）レポートのフッタは「個別」＝複数経路の固定ラベルにしない
+        assert i18n.t("html_single_mode") in html
+        assert i18n.t("html_batch_mode") not in html
 
     def test_summary_html_has_a4_frame(self, tmp_path, default_params_dict):
         html = self._summary_html(tmp_path, default_params_dict)
         self._assert_a4_frame(html, "summary")
-        # summary（一括）レポートのフッタはバッチ
-        assert "Batch Mode" in html
+        # summary（複数経路）レポートのフッタは複数経路
+        assert i18n.t("html_batch_mode") in html
 
     def test_summary_table_repeats_header_and_avoids_row_break(
         self, tmp_path, default_params_dict
@@ -906,7 +906,8 @@ class TestReportV2CaseInfo:
 
     def test_project_name_in_summary_header(self, tmp_path, default_params_dict):
         html = self._summary_html(tmp_path, default_params_dict, project_name="Site A Survey")
-        assert '<p class="ph-title">Site A Survey - Batch Simulation Report</p>' in html
+        assert (f'<p class="ph-title">Site A Survey - {i18n.t("html_batch_title")}</p>'
+                in html)
 
     def test_batch_report_id_in_path_header(self, tmp_path, flat_terrain, default_params_dict):
         # バッチ per-path は report_id（path_id）をタイトル末尾に残す。単一は付けない。

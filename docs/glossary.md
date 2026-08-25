@@ -39,19 +39,18 @@ silence). Change the table and `i18n.py` in the same commit.*
 for the same thing is not. ⚠️ Never list an abbreviation in the “使わない言い換え” column —
 that would turn the gate against the column headers themselves.*
 
-**成果物（レポート HTML）の語は、画面の語と食い違うことがある。**
-`html_batch_mode` / `html_batch_title` は `一括シミュレーション` のまま——画面では
-`複数経路` と呼んでいるものが、レポートのフッタと表題だけ別の語で出る。**残っているのは
-この 1 組だけ**＝**直す回は課題台帳で別に立ててある**（この表に宿題を置いたままにしない）。⚠️ このため
-`一括シミュレーション` は「使わない言い換え」に載せていない（載せた瞬間、まだ触らないと
-決めた成果物側が赤くなる）。
+**成果物（レポート HTML）の語も、いまは画面と同じ 1 語**（2026-08-26 に最後の 1 組を揃えた）。
+レポートの表題とフッタだけが `一括シミュレーション` と名乗っていたが、画面は同じ機能を
+`複数経路` と呼んでいた。⇒ **`一括` と `Batch` は「使わない言い換え」へ**（下の表）。
+⚠️ **出力契約は別の話**＝CSV の**列名とファイル名**は読む側との約束なので、画面の語に
+揃えない（`summary.csv` の見出しは英字の識別子のまま）。**揃えるのは人が読む字だけ。**
 
-*The reports can still use a word the screen does not. `html_batch_mode` /
-`html_batch_title` say `一括シミュレーション` (“Batch Simulation”) where the screen says
-`複数経路` / `Multiple Paths`. **This is the last such pair**, and it is tracked as its own
-entry in the issue ledger rather than left as a note buried here. It is deliberately absent from the “words we do
-not use” column, because listing it would fail the gate on an artifact we have not yet
-agreed to touch.*
+*The reports now use the same word as the screen (the last pair was aligned on 2026-08-26):
+the report title and footer used to say “Batch Simulation” where the screen said
+`複数経路` / `Multiple Paths`, so `一括` and `Batch` are now in the “do not use” column.
+⚠️ **The output contract is a separate matter**: CSV column names and file names are a
+promise to whatever reads them and are never bent to match the screen. Only the wording a
+human reads is aligned.*
 
 ## 表の読み方
 
@@ -99,7 +98,8 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 終了 | 同じ範囲の上端。 *The upper end of that same swept range.* | To | — |
 | メモ | **実行 1 回**に付ける自由記述。レポートの見出しに `メモ:` として出る。 *A free-text note attached to one run; it appears in the report header as `Note:`.* | Note | — |
 | 備考 | **1 行（＝1 経路）**に付ける記述。複数経路の表とサマリ台帳の列見出しになる。 *A note attached to one row (one path); it is a column header in the multiple-paths table and in the summary ledger.* | Remarks | — |
-| 複数経路 | N 本の**独立した**回線をまとめて回すウィンドウ。1 行 = 1 経路（→ 中継経路は 1 本の内訳）。 *The window that runs N independent links in one go; one row = one path (a relay path is the breakdown of a single link).* | Multiple Paths | バッチ |
+| 個別 | 1 本の回線を 1 回だけ計算する実行（ランチャーの実行ボタン）。成果物のフッタは `個別シミュレーション`。 *A run that computes one link once, started from the launcher's Run button; the report footer says “Single Mode”.* | Single Mode | シングル |
+| 複数経路 | N 本の**独立した**回線をまとめて回すウィンドウ。1 行 = 1 経路（→ 中継経路は 1 本の内訳）。**レポートの表題・フッタもこの語**。 *The window that runs N independent links in one go; one row = one path (a relay path is the breakdown of a single link). The report title and footer use this word too.* | Multiple Paths | バッチ / 一括 / Batch |
 | 地図 | 座標を拾い、DEM キャッシュを見るための補助のウィンドウ。**入力の道具**であって実行フローではない。 *A helper window for picking coordinates and inspecting the DEM cache — an input tool, not a step of the run.* | Map | マップウィンドウ |
 | ウィンドウ | アプリが開く画面の単位（ランチャー・地図・複数経路・条件探索・中継経路・グラフ）。**開いた時点の値で凍結し、見えている値で実行する**のがこのアプリの流儀。 *One screen the app opens (launcher, map, multiple paths, scenario, relay path, graph). It freezes its values when opened and runs with what is on screen — the house style of this app.* | Window | 窓 |
 | ドキュメント | ヘルプから開く同梱の文書。**実行形態で中身が変わる**（バイナリ版は利用者向け・ソース実行は開発者向け）ので、画面では**どちらも指す上位語**で呼ぶ。 *The bundled documents opened from Help. What they contain depends on how the app runs (user manual for the binary, developer docs from source), so the screen uses the term that covers both.* | Documentation | README / マニュアル |
@@ -139,6 +139,8 @@ and table rows are exempt, so that lines quoting real log or output text are lef
 残りのうち**画面だけで閉じる組は 2.7〜2.8a1 で片付けた**。
 **成果物にも出る 5 組は 3.0a1（2026-08-26）で片付けた**＝語を動かすと
 レポートの字が動くので、出力契約の版までまとめて据え置いていた組。
+**同じ回で、機能そのものの名前が食い違っていた最後の 2 件も揃えた**
+（レポートの `一括シミュレーション` → `複数経路` ／ メニューの `シングル` → `個別`）。
 
 *On 2026-08-01, four defects of the same shape — one thing called by two words — surfaced in
 a single session. In one of them (“section”) the number was right but the word carried it as

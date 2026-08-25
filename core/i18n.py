@@ -260,7 +260,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== HTML per-path report =====
         "html_path_title":      "Radio Link Report",
         "html_generated":       "Generated",
-        "html_batch_mode":      "Batch Mode",  # HTML footer (summary)
+        "html_batch_mode":      "Multiple Paths",  # HTML footer (summary)
         "html_single_mode":     "Single Mode",  # HTML footer (per-path)
         "html_report_memo":     "Note:",
 
@@ -364,9 +364,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "scn_axis_diff_method": "Diffraction Model",
 
         # ===== HTML summary report =====
-        "html_batch_title":     "Batch Simulation Report",
+        "html_batch_title":     "Multiple Paths Report",
         # report_all.html（summary + all per-path sheets in one document）
-        "html_all_title":       "Batch Report (All Pages)",
+        "html_all_title":       "Multiple Paths Report (All Pages)",
         "html_all_link":        "Print all pages at once (report_all.html)",
         "html_total":           "Total",
         "html_ok":              "OK",
@@ -473,7 +473,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fail_load_settings":   "The app settings could not be loaded.",
         "fail_refresh_common":  "The launcher values could not be taken in.",
         "fail_run_single":      "The run did not finish.",
-        "fail_run_batch":       "The batch run did not finish.",
+        "fail_run_batch":       "The Multiple Paths run did not finish.",
         "fail_run_multihop":    "The relay path run did not finish.",
         "fail_run_scenario":    "The condition sweep did not finish.",
         "fail_why_stopped":     "Nothing was written.",
@@ -756,7 +756,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_clear_all":        "全削除",
         "btn_refresh_common":   "↻ ランチャーから更新",
         "hint_common_readonly": "🔒 ランチャーの値",
-        "menu_send_to_single":  "→ シングルへ送る",
+        "menu_send_to_single":  "→ 個別へ送る",
         "menu_update_rf":       "⟳ RF をランチャーで更新",
         "menu_dup":             "⧉ 複製",
         "menu_del":             "× 削除",
@@ -827,7 +827,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== HTML per-path report =====
         "html_path_title":      "無線回線レポート",
         "html_generated":       "生成日時",
-        "html_batch_mode":      "一括シミュレーション",
+        "html_batch_mode":      "複数経路",
         "html_single_mode":     "個別シミュレーション",
         "html_report_memo":     "メモ:",
         "unit_wrap":            "（{unit}）",
@@ -921,9 +921,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "scn_axis_diff_method": "回折モデル",
 
         # ===== HTML summary report =====
-        "html_batch_title":     "一括シミュレーションレポート",
+        "html_batch_title":     "複数経路レポート",
         # report_all.html（サマリ＋全 per-path を 1 文書へ連結）
-        "html_all_title":       "一括レポート（全ページ）",
+        "html_all_title":       "複数経路レポート（全ページ）",
         "html_all_link":        "全ページをまとめて印刷（report_all.html）",
         "html_total":           "合計",
         "html_ok":              "OK",
