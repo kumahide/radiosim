@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from core import i18n
+from core import output_contract
 from core import units
 from core import version
 from report import report_common
@@ -37,14 +38,9 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
     path = os.path.join(batch_dir, "summary.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow([
-            "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
-            "h_tx", "h_rx",
-            "rx_dbm", "margin_db",
-            "fspl_db", "diff_db", "veg_db", "env_db",
-            "rain_db", "gas_db", "total_loss_db",
-            "slant_m", "f1_pct", "note", "error",
-        ])
+        # 見出しは出力契約が単一ソース（→ core/output_contract.py）＝ここに列を
+        # 手書きすると「行に値を足したのに見出しを足し忘れる」がすり抜ける。
+        writer.writerow(list(output_contract.SUMMARY_CSV_COLUMNS))
         for pr in results:
             freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
             gain_tx_val = f"{pr.params.gain_tx:.1f}"  if pr.params else ""

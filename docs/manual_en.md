@@ -713,6 +713,111 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `report_all.html` | Summary + every path in one printable document |
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
+
+### Output column specification (the output contract) and its change policy
+
+Spreadsheet formulas and roll-up scripts reference **column names and their order directly**. RadioSim therefore treats the **file name, column names, column order and value format of every machine-readable artifact as a contract**, governed by the following policy (written down in 3.0).
+
+- **New columns are appended at the end only.** Existing columns never move (some readers address them by position).
+- **Removing, renaming or redefining a column is announced one version ahead.** The announcement goes into both the CHANGELOG and this document (one alone does not reach a reader who only has the binary).
+- **The value format (unit, decimals, clamping) is part of the contract too.** When a unit changes, the column name changes with it (e.g. `slant_km` → `slant_m` in 2.5), so an old formula fails loudly instead of reading the wrong number.
+- **The file name is part of the contract.** When "what one row means" changes, we add a **new file** rather than new columns (e.g. the relay path writes `hops.csv` instead of pushing per-section columns into `summary.csv`).
+
+⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
+
+⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
+
+#### `summary.csv` (Multiple Paths — **one row per path**)
+
+| Column | Unit | Meaning |
+| --- | --- | --- |
+| `id` | — | Path ID (the `id` of the input CSV) |
+| `status` | — | Status (`OK` / `NG` / `ERROR`) |
+| `freq_mhz` | MHz | Frequency |
+| `gain_tx_dbi` | dBi | TX antenna gain |
+| `gain_rx_dbi` | dBi | RX antenna gain |
+| `h_tx` | m | TX antenna height |
+| `h_rx` | m | RX antenna height |
+| `rx_dbm` | dBm | RX level |
+| `margin_db` | dB | Margin (RX level − threshold) |
+| `fspl_db` | dB | Free-space path loss |
+| `diff_db` | dB | Diffraction loss |
+| `veg_db` | dB | Vegetation attenuation |
+| `env_db` | dB | Environmental loss |
+| `rain_db` | dB | Rain attenuation |
+| `gas_db` | dB | Gaseous attenuation |
+| `total_loss_db` | dB | Total loss |
+| `slant_m` | m | Slant distance (integer) |
+| `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
+| `note` | — | The note from the input CSV (free text) |
+| `error` | — | Why it failed; empty for a path that succeeded |
+
+⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
+
+#### `hops.csv` (Relay Path — **one row per section**, N rows per path)
+
+| Column | Unit | Meaning |
+| --- | --- | --- |
+| `group_id` | — | Path ID (the same value on every section of that path) |
+| `hop_index` | — | Section number (starts at 1) |
+| `hop_id` | — | Section ID |
+| `from` | — | Name of the waypoint the section starts at |
+| `to` | — | Name of the waypoint the section ends at |
+| `status` | — | Status of the section (`OK` / `NG` / `ERROR`) |
+| `freq_mhz` | MHz | Frequency |
+| `gain_tx_dbi` | dBi | TX antenna gain |
+| `gain_rx_dbi` | dBi | RX antenna gain |
+| `h_tx` | m | TX antenna height |
+| `h_rx` | m | RX antenna height |
+| `rx_dbm` | dBm | RX level |
+| `margin_db` | dB | Margin |
+| `slant_m` | m | Slant distance (integer) |
+| `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
+| `error` | — | Why it failed; empty for a section that succeeded |
+
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin.
+
+#### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
+
+| Column | Unit | Meaning |
+| --- | --- | --- |
+| `label` | — | Condition name (the axis value in a sweep) |
+| `condition` | — | ⚠️ **The second column is the only one whose name changes**: in a sweep it becomes the axis name (`freq_mhz` and so on) and carries that axis value. In compare mode it stays `condition` and carries the condition name |
+| `status` | — | Status (`OK` / `NG` / `ERROR`) |
+| `rx_dbm` | dBm | RX level |
+| `margin_db` | dB | Margin |
+| `total_loss_db` | dB | Total loss |
+| `fspl_db` | dB | Free-space path loss |
+| `diff_db` | dB | Diffraction loss |
+| `veg_db` | dB | Vegetation attenuation |
+| `env_db` | dB | Environmental loss |
+| `rain_db` | dB | Rain attenuation |
+| `gas_db` | dB | Gaseous attenuation |
+| `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
+| `slant_m` | m | Slant distance (integer) |
+| `freq_mhz` | MHz | Frequency used for this condition |
+| `p_tx_dbm` | dBm | TX power |
+| `gain_tx_dbi` | dBi | TX antenna gain |
+| `gain_rx_dbi` | dBi | RX antenna gain |
+| `sens_dbm` | dBm | Threshold |
+| `h_tx` | m | TX antenna height |
+| `h_rx` | m | RX antenna height |
+| `veg_h` | m | Vegetation height |
+| `rain_mmh` | mm/h | Rain rate |
+| `env_type` | — | Env type |
+| `diff_method` | — | Diffraction model |
+
+⚠️ **Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` produces two columns with the same name** (the second column is the axis, the later one is the value used for that condition). A reader that addresses columns by name keeps the later one, so **read the second column by position**.
+
+#### `terrain_profile.csv` (Single Mode — **one row per terrain sample**)
+
+| Column | Unit | Meaning |
+| --- | --- | --- |
+| `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution) |
+
+⚠️ **The row count is exactly the number of sampling points.**
+
 ---
 
 ## Uninstall

@@ -465,16 +465,14 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
     """
     import csv
 
+    from core import output_contract
     from report import report_common
 
     path_csv = os.path.join(run_dir, "hops.csv")
     with open(path_csv, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow([
-            "group_id", "hop_index", "hop_id", "from", "to", "status",
-            "freq_mhz", "gain_tx_dbi", "gain_rx_dbi", "h_tx", "h_rx",
-            "rx_dbm", "margin_db", "slant_m", "f1_pct", "error",
-        ])
+        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
+        w.writerow(list(output_contract.HOPS_CSV_COLUMNS))
         for i, pr in enumerate(run.hops):
             ends = hop_endpoints(run.path, i)
             wp_from = ends[0].name if ends else ""

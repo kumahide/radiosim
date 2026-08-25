@@ -25,6 +25,7 @@ from pathlib import Path
 import pytest
 
 from core import i18n
+from core import output_contract
 from core import version
 from report import batch
 
@@ -259,6 +260,116 @@ def test_batch_csv_columns_listed(doc):
     section = _section(_read(doc), ["複数経路", "Multiple Paths"])
     for col in batch.CSV_COLUMNS:
         assert col in section, f"{doc}: batch CSV section is missing column '{col}'"
+
+
+# --- 7-2. 出力列の仕様（出力契約）: 全成果物 CSV の列が全 README に載っているか ---
+#       背景（2026-08-25・3.0「列仕様の明文化＋変更規約」）: 出力列は**どのガードにも
+#       掛かっていなかった**＝守られていたのは入力 CSV（上の 7）だけで、`summary.csv`
+#       の `slant_m` 等は README にも未記載だった＝**変えても機械的には誰も気づかない**。
+#       利用者の集計シートは列名と並びをそのまま参照するので、ここが無いと
+#       「黙って壊す」経路が開いたままになる。
+#
+# 🔑 **単一ソースは実装側**（`core/output_contract.py`）＝文書に書いた列を数えるのでは
+#    なく、**契約の列を文書に探す**。列を足した人が文書を直すまでここが赤いままになる。
+_OUTPUT_SECTION_HEADERS = ["保存パッケージ", "Save Package"]
+
+#: 変更規約が全 README に在ることの目印（言語ごと）。
+_CHANGE_POLICY_MARKERS = {
+    "ja": ["列の追加は末尾のみ", "1 つ前の版で予告"],
+    "en": ["appended at the end only", "one version ahead"],
+}
+
+#: ⛔ **書いてはいけない形**＝「列は変わらない」という保証（→ 変更規約は*変えるときの
+#: 道*であって凍結の約束ではない）。開示を書く仕事には「無いことの検査」を対で置く
+#: （→ [[feedback-promote-recurring-checks]]）。
+_FORBIDDEN_FROZEN_CLAIM = [
+    r"列(?:名|の並び)?は(?:今後|将来)?(?:一切)?変わりません",
+    r"列を変更することはありません",
+    r"columns? (?:will )?never change",
+    r"columns? (?:are|is) frozen",
+]
+
+
+def _output_subsection(section: str, filename: str) -> str:
+    """出力列の節のうち、そのファイルの `#### \\`名前\\`` 見出しから次の `#### ` まで。
+
+    🔴 **節ぜんたいを見ると、列の抜けを取りこぼす**（2026-08-25 の変異検証で実際に
+    緑のままだった）＝`slant_m` や `status` は 3 つの表に出るので、**1 つの表から
+    落としても節のどこかには残る**。⇒ 表ごとに切って数える。
+    """
+    marker = f"#### `{filename}`"
+    assert marker in section, f"出力列の節に {filename} の表が無い"
+    body = section.split(marker, 1)[1]
+    return body.split("\n#### ", 1)[0]
+
+
+def _missing_columns(section: str, contract) -> list[str]:
+    """契約の列のうち、**そのファイルの表に**コード表記で載っていないもの。
+
+    ⚠️ 素の語で探さない＝`from` `to` `status` `note` のような列名は散文にも出るので、
+    バッククォート付きで探さないと**説明文に紛れて緑になる**（偽の在庫）。
+    """
+    body = _output_subsection(section, contract.filename)
+    return [c for c in contract.columns if f"`{c}`" not in body]
+
+
+@pytest.mark.parametrize("doc", ALL_DOCS)
+def test_output_csv_columns_listed(doc):
+    """成果物 CSV の**全列**（`core.output_contract` が単一ソース）が載っているか。"""
+    section = _section(_read(doc), _OUTPUT_SECTION_HEADERS)
+    for contract in output_contract.CSV_CONTRACTS:
+        assert f"`{contract.filename}`" in section, (
+            f"{doc}: 出力列の節に {contract.filename} が載っていない"
+        )
+        missing = _missing_columns(section, contract)
+        assert not missing, (
+            f"{doc}: {contract.filename} の列が載っていない: {missing}"
+            "（列を足したら 4 文書すべてに載せること＝出力契約）"
+        )
+
+
+def test_the_column_gate_catches_a_column_that_is_not_documented():
+    """このゲートが**列の足し忘れで実際に赤くなる**こと（変異検証）。
+
+    ゲートの壊れ方②「一度も落ちない」の予防＝合成の契約を 1 列足して食わせる。
+    """
+    from dataclasses import replace
+
+    section = _section(_read(ALL_DOCS[0]), _OUTPUT_SECTION_HEADERS)
+    real = output_contract.CSV_CONTRACTS[1]
+    assert not _missing_columns(section, real), "前提: いまの文書は全列を載せている"
+    mutated = replace(real, columns=real.columns + ("margin_db_v2",))
+    assert _missing_columns(section, mutated) == ["margin_db_v2"], (
+        "文書に無い列を足してもゲートが赤くならない（この検査は空振りしている）"
+    )
+
+
+@pytest.mark.parametrize("doc", ALL_DOCS)
+def test_column_change_policy_is_stated(doc):
+    """**変更規約**（末尾追加のみ／削除・改名は 1 版前に予告）が載っているか。
+
+    ⚠️ **列仕様を明文化しただけだと「二度と変えられない」に化ける。** 規約は
+    *変えるときに通る道*を先に書いたものなので、列の表と対で置く。
+    """
+    section = _section(_read(doc), _OUTPUT_SECTION_HEADERS)
+    for lang in _readme_langs(doc):
+        for marker in _CHANGE_POLICY_MARKERS[lang]:
+            assert marker in section, (
+                f"{doc}: 出力列の変更規約が無い（{lang} の目印 '{marker}' が見つからない）"
+            )
+
+
+@pytest.mark.parametrize("doc", ALL_DOCS)
+def test_no_frozen_column_claim(doc):
+    """**「列は変わらない」と約束していない**こと（規約は凍結ではない）。"""
+    text = _read(doc)
+    for pat in _FORBIDDEN_FROZEN_CLAIM:
+        m = re.search(pat, text)
+        assert m is None, (
+            f"{doc}: 列を凍結する約束が書かれている（'{m.group(0)}'）。"
+            "規約が言うのは*変えるときの道*（末尾追加・1 版前の予告）であって、"
+            "変えないことではない"
+        )
 
 
 # doc の言語 → i18n の言語キー。バイナリ/開発者の両系統を言語ごとに照合する。

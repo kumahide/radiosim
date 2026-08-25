@@ -25,6 +25,7 @@ import io
 import os
 
 from core import i18n
+from core import output_contract
 from core import scenario as scn
 from core import units
 from report import mpl_fonts
@@ -385,14 +386,9 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
     path = os.path.join(save_dir, "scenario.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        w.writerow([
-            "label", run.axis or "condition", "status",
-            "rx_dbm", "margin_db", "total_loss_db",
-            "fspl_db", "diff_db", "veg_db", "env_db", "rain_db", "gas_db",
-            "f1_pct", "slant_m",
-            "freq_mhz", "p_tx_dbm", "gain_tx_dbi", "gain_rx_dbi", "sens_dbm",
-            "h_tx", "h_rx", "veg_h", "rain_mmh", "env_type", "diff_method",
-        ])
+        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。2 列目だけが
+        # 可変＝スイープでは軸の名前になる（比較では `condition`）。
+        w.writerow(list(output_contract.scenario_csv_columns(run.axis)))
         base = run.base_params
         for p in run.points:
             o = p.overrides

@@ -28,6 +28,7 @@ from core import dem
 from core import failure
 from core import i18n
 from core import models
+from core import output_contract
 from core import units
 
 logger = logging.getLogger("radiosim")
@@ -392,7 +393,8 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
     path = os.path.join(save_dir, "terrain_profile.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
-        writer.writerow(["Distance_m", "Elevation_m"])
+        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
+        writer.writerow(list(output_contract.TERRAIN_CSV_COLUMNS))
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs):
             writer.writerow([round(units.km_to_m(float(d)), 1), round(float(h), 2)])
 

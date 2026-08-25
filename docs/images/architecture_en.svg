@@ -122,11 +122,12 @@
     <text x="46" y="782" class="mod">simulation.py</text><text x="182" y="782" class="role">DEM fetch, terrain, calc</text>
     <text x="46" y="802" class="mod">scenario.py</text>  <text x="182" y="802" class="role">condition explorer runner</text>
 
-    <rect class="card" x="389" y="744" width="341" height="116" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="389" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="401" y="761" class="ctitle" fill="#7a4f16">Pure (no side effects)</text>
     <text x="401" y="782" class="mod">models.py</text><text x="537" y="782" class="role">propagation calculation</text>
     <text x="401" y="802" class="mod">coords.py</text><text x="537" y="802" class="role">coordinates (DD ⇔ DMS)</text>
     <text x="401" y="822" class="mod">units.py</text> <text x="537" y="822" class="role">distance display (km → m)</text>
+    <text x="401" y="842" class="mod">output_contract.py</text><text x="537" y="842" class="role">artifact CSV column spec</text>
 
     <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
