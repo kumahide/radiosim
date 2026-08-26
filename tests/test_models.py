@@ -14,6 +14,7 @@ models.py のユニットテスト。
   - LinkBudgetResult          : diff_method フィールド
 """
 
+import inspect
 import math
 
 import numpy as np
@@ -713,6 +714,33 @@ class TestScopeNotes:
     def test_ground_reflection_is_declared(self):
         """地面反射（2 波干渉）は考慮していない＝**席の予約**（3.4 で実装）。"""
         assert "ground_reflection" in models.SCOPE_ALWAYS
+
+    def test_the_earth_k_note_is_declared(self):
+        """等価地球半径の固定は**常に効く前提**＝周波数にも設定にも依らない。"""
+        assert "earth_k_fixed" in models.SCOPE_ALWAYS
+
+    def test_the_curvature_formulas_use_the_declared_constant(self):
+        """🔴 **刻印の K と、式が実際に使う K は同じ 1 つ**であること。
+
+        ⚠️ 見ているのは字ではなく**既定値**＝曲率を使う 3 か所のどれかを
+        `4/3` と直書きに戻すと、刻印だけが定数を指したまま静かにずれる
+        （開示は片方だけ動くと嘘になる面）。字の側は
+        `tests/test_report.py` が同じ定数から見る。
+        """
+        t = models.calculate_terrain_profile(
+            np.array([0.0, 0.0, 0.0]), 35.0, 139.0, 35.01, 139.01,
+        )
+        assert t.earth_k == pytest.approx(models.EARTH_K_STANDARD)
+        assert (
+            inspect.signature(models.elevation_angle_deg)
+            .parameters["earth_k"].default
+            == models.EARTH_K_STANDARD
+        )
+        assert (
+            inspect.signature(models.calculate_terrain_profile)
+            .parameters["earth_k"].default
+            == models.EARTH_K_STANDARD
+        )
 
     def test_the_order_is_the_same_on_every_face(self):
         keys = models.scope_notes(430.0, diff_method="deygout",

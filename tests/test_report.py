@@ -492,6 +492,20 @@ class TestHandlingSectionContent:
         assert str(int(models.GAS_RANGE_GHZ[1])) in lines
         assert str(int(models.VEG_COEFF_RANGE_GHZ[1])) in lines
 
+    def test_the_earth_k_in_the_prose_is_the_one_the_formula_used(self):
+        """🔴 **K の字は、曲率補正が実際に使った値そのもの**であること。
+
+        ⚠️ 定数と突き合わせない＝**式の出力**（既定で作った `TerrainProfile` の
+        `earth_k`）と突き合わせる。そうしないと「字にも定数にも 1.33 と書いてあり、
+        式だけ別の値を使っている」が緑のまま通る（刻印の怖さはこの向き）。
+        """
+        i18n.set_lang("en")
+        t = models.calculate_terrain_profile(
+            np.array([0.0, 0.0, 0.0]), 35.0, 139.0, 35.01, 139.01,
+        )
+        line = disclosure.handling_lines(("earth_k_fixed",))[0]
+        assert f"{t.earth_k:.2f}" in line, (line, t.earth_k)
+
     def test_the_calibration_seat_is_always_present_and_empty(self):
         """較正の席（3.5 で埋まる）＝**空でも欄を置く**。"""
         i18n.set_lang("en")

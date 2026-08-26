@@ -37,6 +37,7 @@ def _scope_args(key: str) -> dict:
     gas_lo, gas_hi = models.GAS_RANGE_GHZ
     veg_lo, veg_hi = models.VEG_COEFF_RANGE_GHZ
     return {
+        "earth_k_fixed":     {"k": f"{float(models.EARTH_K_STANDARD):.2f}"},
         "rain_zeroed":       {"lo": _ghz(models.RAIN_MIN_GHZ)},
         "rain_extrapolated": {"hi": _ghz(models.RAIN_TABLE_MAX_GHZ)},
         "gas_zeroed":        {"lo": _ghz(gas_lo)},

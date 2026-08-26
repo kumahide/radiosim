@@ -142,12 +142,21 @@ GAS_RANGE_GHZ: tuple[float, float] = (1.0, 350.0)
 #: 外側（1 GHz 未満 / 6 GHz 以上）は同じ形の式を伸ばして使っている。
 VEG_COEFF_RANGE_GHZ: tuple[float, float] = (1.0, 6.0)
 
+#: 等価地球半径係数 K の標準大気値（**製品はこの 1 値だけを使う**＝利用者は選べない）。
+#: ⚠️ **ライス K ファクターとは無関係**（名前が似ているだけ・`k_factor` は別物）。
+#: 🔑 **刻印の対象**＝K が下がる時間帯（サブリフラクション）は地形の見かけの凸量が
+#: 増えて回線が落ちるが、**この計算はその時間帯を見ていない**。⇒ `earth_k_fixed`。
+#: 曲率を使う 3 か所（`TerrainProfile` / `elevation_angle_deg` /
+#: `calculate_terrain_profile`）の既定は**この定数ひとつ**を指す＝字と式が別々に動かない。
+EARTH_K_STANDARD: float = 4 / 3
+
 #: **常に当てはまる前提**（周波数にも設定にも依らない）。順序はそのまま帳票の並び。
 SCOPE_ALWAYS: tuple[str, ...] = (
     "dem_surface",        # DEM は地表面モデル＝建物・樹木を含まない
     "veg_uniform",        # 植生高は入力した一律値
     "env_empirical",      # 環境損失は区分選択の経験値
     "ground_reflection",  # 地面反射（2 波干渉）は考慮していない
+    "earth_k_fixed",      # 等価地球半径は標準大気に固定＝K が振れる時間帯を見ていない
 )
 
 #: 刻印の全語彙＝**帳票に出る順**（面が違っても並びは同じ）。
@@ -231,7 +240,7 @@ class TerrainProfile:
     d_km_axis:         np.ndarray   # 各サンプル点の水平距離 [km]
     horiz_dist_km:     float        # 水平総距離 [km]
     num_samples:       int
-    earth_k:           float = 4/3  # 等価地球半径係数（ライスKとは無関係）
+    earth_k:           float = EARTH_K_STANDARD  # 等価地球半径係数（ライスKとは無関係）
 
 
 @dataclass
@@ -311,7 +320,7 @@ def bearing_deg(
 
 def elevation_angle_deg(
     h_near_abs_m: float, h_far_abs_m: float, dist_m: float,
-    earth_k: float = 4 / 3,
+    earth_k: float = EARTH_K_STANDARD,
 ) -> float:
     """近端アンテナの局所水平面から遠端アンテナを見込む仰角[deg]（初期指向）。
 
@@ -356,7 +365,7 @@ def calculate_terrain_profile(
     lon_tx: float,
     lat_rx: float,
     lon_rx: float,
-    earth_k: float = 4 / 3,
+    earth_k: float = EARTH_K_STANDARD,
 ) -> TerrainProfile:
     """
     生標高配列から TerrainProfile を生成する。

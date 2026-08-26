@@ -410,6 +410,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Environment loss is an empirical figure picked from the area class.",
         "html_scope_ground_reflection":
             "Ground reflection (two-ray interference) is not modelled.",
+        "html_scope_earth_k_fixed":
+            "Earth curvature uses the standard-atmosphere factor K = {k}, fixed. Periods "
+            "when refraction departs from it (sub-refraction, ducting) are not covered.",
         "html_scope_diff_deygout":
             "Diffraction uses the Deygout method, which assumes sharp ridges: where "
             "obstacles of similar height stand in a row it can read too high.",
@@ -1001,6 +1004,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "環境損失は、選んだ区分から引いた経験値です。",
         "html_scope_ground_reflection":
             "地面反射（2 波干渉）は考慮していません。",
+        "html_scope_earth_k_fixed":
+            "地球曲率は標準大気の等価地球半径係数 K = {k} に固定しています＝"
+            "大気の屈折がそこから外れる時間帯（サブリフラクション・ダクト）は見ていません。",
         "html_scope_diff_deygout":
             "回折は鋭い稜線を仮定する Deygout 法です＝同程度の障害物が並ぶ経路では"
             "過大に出ることがあります。",
