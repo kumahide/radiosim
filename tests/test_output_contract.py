@@ -198,3 +198,59 @@ def test_the_axis_column_can_collide_with_a_fixed_column():
     for axis in collide:
         cols = oc.scenario_csv_columns(axis)
         assert cols.count(axis) == 2, "重なりの形が変わった（契約の説明を見直すこと）"
+
+
+# --- 予告（I-112・3.0 で予告 → 3.1 で改名）-----------------------------------
+#: 予告が載っていなければならない公開文書。**4 本ぜんぶ**＝規約 2「片方だけだと
+#: 配布版だけを見る利用者に届かない」の「片方」は言語でも文書でも起きる。
+_PUBLIC_DOCS = (
+    "docs/manual_ja.md", "docs/manual_en.md",
+    "docs/developer_ja.md", "docs/developer_en.md",
+)
+
+
+def test_the_rename_is_announced_everywhere_while_the_collision_stands():
+    """**重なりが残っている間は、予告が 5 か所すべてに載っていること**（I-112）。
+
+    🔑 これは**規約 2 を自分で通した最初の実例**の見張り＝予告は CHANGELOG と
+    公開文書の両方に要る。⚠️ **1 本だけ書き忘れた状態で出荷する**のがこの規約の
+    唯一の壊れ方なので、そこだけを機械で見る。
+
+    ⚠️ 3.1 で改名すれば重なりは消え、この検査は何も要求しなくなる（そのとき
+    予告の字を消すのは人の仕事＝**古い予告が残ることまでは見ていない**）。
+    """
+    from core import scenario as scn
+
+    collide = set(scn.SWEEP_AXES) & set(oc.SCENARIO_CSV_COLUMNS)
+    if not collide:
+        return                                  # 改名済み＝予告は役目を終えている
+
+    missing = []
+    for rel in ("CHANGELOG.md",) + _PUBLIC_DOCS:
+        text = (ROOT / rel).read_text(encoding="utf-8")
+        if not _announces_the_rename(text):
+            missing.append(rel)
+    assert not missing, (
+        "I-112 の予告が載っていない文書がある: " + repr(missing) + "。"
+        "列の改名は 1 つ前の版で予告する（変更規約 2）＝"
+        "CHANGELOG と公開文書 4 本の両方に載せること"
+    )
+
+
+def _announces_the_rename(text: str) -> bool:
+    """その文書が「3.1 で 2 列目の名前が変わる」と告げているか。
+
+    判定を関数に切り出してあるのは変異検証のため（下の自己検査）。**版番号と
+    「予告」の意思表示の両方**を求める＝重なりの説明だけでは予告にならない。
+    """
+    return ("3.1" in text) and ("📣" in text)
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("📣 予告（3.1 で直します）: 2 列目の列名を変えます", True),
+    ("⚠️ 同じ名前の列が 2 つ出ます（2 列目は位置で読んでください）", False),
+    ("📣 3.0 で何かをします", False),
+    ("3.1 で直します", False),
+])
+def test_the_announcement_detector_catches_what_it_claims(text, expected):
+    assert _announces_the_rename(text) is expected

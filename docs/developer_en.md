@@ -896,6 +896,11 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` produces two columns with the same name** (the second column is the axis, the later one is the value used for that condition). A reader that addresses columns by name keeps the later one, so **read the second column by position**.
 
+> 📣 **Announcement (this is fixed in 3.1)**: the duplicate is our fault, not the reader's, so **3.1 gives the second column a fixed name and stops emitting the same name twice** (the axis name will be carried elsewhere). The new column name will be given in the 3.1 CHANGELOG.
+> - **If you read the second column by position, nothing changes for you.**
+> - **If you address columns by name, you will need one pass of maintenance in 3.1** — including code that currently looks for `condition` in compare mode.
+> - ⚠️ **Nothing changes in 3.0**; this version only announces it, as required by change policy 2 (*removing, renaming or redefining a column is announced one version ahead*).
+
 #### `terrain_profile.csv` (Single Mode — **one row per terrain sample**)
 
 | Column | Unit | Meaning |
