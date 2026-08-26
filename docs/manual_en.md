@@ -716,6 +716,17 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
 
+### The "How to read this result" section in the reports
+
+**Every report carries this section at the bottom** — the four HTML reports (single path, the Multiple Paths ledger, relay path, condition explorer) and `report.txt` — from 3.0 onwards. A report gets printed and handed on, and **the person who receives it reads neither this manual nor the notes on screen**. So the assumptions, and how far the formulas actually used reach, are written into the report itself.
+
+- **Always present**: elevations come from a **bare-earth model** (no buildings, no trees); vegetation height is **the single value entered**, applied along the whole path; environment loss is an **empirical figure taken from the area class**; **ground reflection (two-ray interference) is not modelled**.
+- **Present when they apply**: the `Deygout` model assumes sharp ridges and can read too high where obstacles of similar height stand in a row; rain or gaseous attenuation was **out of range and taken as 0 dB** (below 1 GHz); the vegetation coefficient was evaluated **outside its 1–6 GHz definition**. ⚠️ **A link with no rain assumed gets no rain note** — limits of things that were not calculated are not listed.
+- **Reports that hold several links on one sheet** (Multiple Paths, relay, explorer) show every note that applies to **at least one** of them.
+- A **calibration profile** field is shown. It always reads **not applied** — results have never been compared against measurements.
+
+⚠️ **No number changes because of this section** — it states what was already true. ⚠️ The Multiple Paths ledger now fits **26 rows on one A4 page** (four fewer than before; beyond that it flows onto a second page).
+
 ### Output column specification (the output contract) and its change policy
 
 Spreadsheet formulas and roll-up scripts reference **column names and their order directly**. RadioSim therefore treats the **file name, column names, column order and value format of every machine-readable artifact as a contract**, governed by the following policy (written down in 3.0).
@@ -726,6 +737,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 - **The file name is part of the contract.** When "what one row means" changes, we add a **new file** rather than new columns (e.g. the relay path writes `hops.csv` instead of pushing per-section columns into `summary.csv`).
 
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
+
+> 🔴 **Format change in 3.0 (policy 3 applied to itself)**: **dB values now carry one decimal instead of two** (`-93.20` → `-93.2`). This covers `rx_dbm`, `margin_db`, `fspl_db`, `diff_db`, `veg_db`, `env_db`, `rain_db`, `gas_db`, `total_loss_db` and the two gain columns, in **all three CSVs** (`summary.csv` / `hops.csv` / `scenario.csv`). **No column or file name changes** — `-93.2` is the same number as `-93.20`, so **anything reading the value as a number keeps working**. ⚠️ **Fix anything that relies on the digit count of the text.** The reason: 0.01 dB was a precision this calculation does not have (the elevation grid is 5–10 m wide and carries metres of error of its own, vegetation height is a single assumed value, environment loss is an empirical figure per area class). **The maths is unchanged — only what is shown was coarsened.**
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 

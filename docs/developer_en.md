@@ -224,6 +224,7 @@ radiosim/
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
 │   ├── output_contract.py # Column spec of the artifact CSVs = single source of the output contract (pure data)
+│   ├── disclosure.py     # Wording of the "How to read this result" section in the reports (assumptions, scope notes, pure functions)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
 │   ├── failure.py        # The shape of failure messages (what happened / what to do next / details)

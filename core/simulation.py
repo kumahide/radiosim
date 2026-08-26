@@ -25,6 +25,7 @@ import numpy as np
 from core import config
 from core import coords
 from core import dem
+from core import disclosure
 from core import failure
 from core import i18n
 from core import models
@@ -470,17 +471,18 @@ def _save_report(
         "[LINK BUDGET]\n"
         f"Diff Model    : {result.diff_method}\n"
         f"Env Type      : {result.env_type}\n"
-        f"EIRP          : {result.eirp:.2f} dBm\n"
-        f"FSPL          : {result.fspl:.2f} dB\n"
-        f"Diffraction   : {result.diff_loss:.2f} dB\n"
-        f"Vegetation    : {result.veg_loss:.2f} dB\n"
-        f"Env Loss      : {result.env_loss:.2f} dB\n"
-        f"Rain Loss     : {result.rain_loss:.2f} dB\n"
-        f"Gas Loss      : {result.gas_loss:.2f} dB\n"
-        f"Total Loss    : {result.total_loss:.2f} dB\n"
-        f"RX Level      : {result.p_rx:.2f} dBm\n"
-        f"Sensitivity   : {params.sens:.2f} dBm\n"
-        f"Act Margin    : {result.actual_margin:.2f} dB\n"
+        # 桁は `units.format_db` が単一ソース（0.1 dB＝持っている精度）。
+        f"EIRP          : {units.format_db(result.eirp, unit='dBm')}\n"
+        f"FSPL          : {units.format_db(result.fspl, unit='dB')}\n"
+        f"Diffraction   : {units.format_db(result.diff_loss, unit='dB')}\n"
+        f"Vegetation    : {units.format_db(result.veg_loss, unit='dB')}\n"
+        f"Env Loss      : {units.format_db(result.env_loss, unit='dB')}\n"
+        f"Rain Loss     : {units.format_db(result.rain_loss, unit='dB')}\n"
+        f"Gas Loss      : {units.format_db(result.gas_loss, unit='dB')}\n"
+        f"Total Loss    : {units.format_db(result.total_loss, unit='dB')}\n"
+        f"RX Level      : {units.format_db(result.p_rx, unit='dBm')}\n"
+        f"Sensitivity   : {units.format_db(params.sens, unit='dBm')}\n"
+        f"Act Margin    : {units.format_db(result.actual_margin, unit='dB')}\n"
         f"Status        : {result.status}\n\n"
         "[ENVIRONMENT]\n"
         f"Initial K     : {params.k_factor:.2f}\n"
@@ -492,7 +494,15 @@ def _save_report(
         # ＝天井に張り付くと「高」でも実効間隔は粗くなる（数字のほうが正典）。
         f"Terrain Res   : {params.resolution}\n"
         f"Samples       : {params.num} "
-        f"({units.format_spacing(spacing)} m spacing)\n"
+        f"({units.format_spacing(spacing)} m spacing)\n\n"
+        # 「この結果をどう扱うか」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
+        # （report.txt だけ開示を持たない、が起きないように）。
+        + disclosure.handling_text(models.scope_notes(
+            params.freq_mhz,
+            diff_method=result.diff_method,
+            rain_rate=params.rain_rate,
+            veg_h=params.veg_h,
+        ))
     )
     path = os.path.join(save_dir, "report.txt")
     with open(path, "w", encoding="utf-8") as f:

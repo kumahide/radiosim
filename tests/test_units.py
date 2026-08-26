@@ -258,3 +258,147 @@ class TestEveryFaceThatShowsTheRatioAlsoShowsTheDepth:
     ])
     def test_the_face_detector_catches_what_it_claims(self, text, expected):
         assert _shows(text) == expected
+
+
+#: 桁指定の書式（`.2f` / `+.1f`）とみなす形（正規表現はここで 1 度だけ組む）。
+_SPEC_RE = '[+ ]?\\.\\d+f'
+#: 属性名を語境界つきで探す型板。
+_WORD_RE = '\\b%s\\b'
+
+
+# ============================================================
+# 損失・レベルの有効桁（3.0a1 / ロードマップ §3.0 の 9）
+# ============================================================
+
+
+class TestFormatDb:
+    def test_one_decimal(self):
+        assert units.format_db(-93.246) == "-93.2"
+
+    def test_rounds_and_does_not_truncate(self):
+        assert units.format_db(12.06) == "12.1"
+
+    def test_signed_variant_for_margins(self):
+        """符号そのものが読みどころの量（マージン）は正号を出す。"""
+        assert units.format_db(4.2, signed=True) == "+4.2"
+        assert units.format_db(-4.2, signed=True) == "-4.2"
+
+    def test_unit_is_optional_because_headers_carry_it(self):
+        assert units.format_db(-93.2, unit="dBm") == "-93.2 dBm"
+        assert " " not in units.format_db(-93.2)
+
+    def test_csv_matches_display(self):
+        """**人が読む面と機械が読む面で桁を食い違わせない**（ユーザー決定）。"""
+        for v in (-93.246, 0.0, 1234.56):
+            assert units.csv_db(v) == units.format_db(v)
+
+    def test_csv_never_adds_a_plus_sign(self):
+        """CSV の値は数値として読めること＝`+` を足さない。"""
+        assert units.csv_db(4.2) == "4.2"
+
+    def test_the_visible_step_follows_the_decimals(self):
+        """差を出す/出さないの境目も桁から引く（`(+0.0)` を作らないための量）。"""
+        assert units.DB_VISIBLE_STEP == 10.0 ** -units.DB_DECIMALS
+        assert units.format_db(units.DB_VISIBLE_STEP, signed=True) == "+0.1"
+
+    def test_it_does_not_claim_a_precision_the_inputs_do_not_have(self):
+        """🔑 **この回の芯**＝0.01 dB 刻みは持っていない精度の主張だった。
+
+        DEM は水平 5〜10m・標高にも数 m の誤差、植生高は仮定値、環境損失は経験値。
+        ⇒ **0.001 dB しか違わない 2 つの結果は、同じ字で出るのが正しい。**
+        """
+        assert units.format_db(-93.200) == units.format_db(-93.201)
+
+
+#: dB / dBm / dBi を持つ属性名（`LinkBudgetResult` / `SimParams` の実物）。
+#: ⚠️ **距離・高さ・周波数は入れない**（あちらは `units` の別の口が持つ）。
+_DB_ATTRS = (
+    "p_rx", "actual_margin", "fspl", "diff_loss", "veg_loss", "env_loss",
+    "rain_loss", "gas_loss", "total_loss", "eirp", "sens", "gain_tx", "gain_rx",
+)
+
+
+def _hand_formatted_db(source: str) -> list[str]:
+    """ソース 1 本の中で **dB の値を素の書式指定で整形している** 箇所を返す。
+
+    判定を関数に切り出してあるのは、**この判定そのものを変異検証できる**ように
+    するため（下の `test_the_detector_catches_what_it_claims`）。見るのは
+    f-string の差し込み（`ast.FormattedValue`）だけ＝`{x:.2f}` の形。
+    """
+    import ast
+    import re
+
+    try:
+        tree = ast.parse(source)
+    except SyntaxError:                      # 走査対象は必ず読めるはず（保険）
+        return ["<unparsable>"]
+    hits = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.FormattedValue) or node.format_spec is None:
+            continue
+        spec = "".join(
+            v.value for v in node.format_spec.values
+            if isinstance(v, ast.Constant) and isinstance(v.value, str)
+        )
+        if not re.fullmatch(_SPEC_RE, spec):
+            continue                          # 桁を指定していない差し込みは対象外
+        expr = ast.unparse(node.value)
+        if any(re.search(_WORD_RE % a, expr) for a in _DB_ATTRS):
+            hits.append(expr + ":" + spec)
+    return hits
+
+
+class TestNobodyFormatsDbByHand:
+    """**dB の桁は `units` が単一ソース**（3.0a1 のクラス点検を機械で持つ）。
+
+    ⚠️ 面を列挙して数えると**次に足した 1 面で穴が開く**
+    （→ [[feedback-user-examples-are-classes]]）ので、**実装側を数えてから引く**
+    ＝ソースの中に「dB の値を `:.2f` で書いている差し込み」があれば落とす。
+    桁を戻したいときは `units.DB_DECIMALS` を動かす＝全面が一度に動く。
+    """
+
+    @staticmethod
+    def _sources():
+        root = os.path.join(os.path.dirname(__file__), "..")
+        out = []
+        for layer in ("core", "report", "views"):
+            d = os.path.join(root, layer)
+            for name in sorted(os.listdir(d)):
+                if not name.endswith(".py") or name == "units.py":
+                    continue
+                path = os.path.join(d, name)
+                out.append((f"{layer}/{name}",
+                            open(path, encoding="utf-8").read()))
+        return out
+
+    def test_the_scan_reads_the_real_modules(self):
+        """ゲートが空振りしていないこと（読めていなければ緑は無意味）。"""
+        names = [n for n, _ in self._sources()]
+        assert "core/simulation.py" in names
+        assert len(names) >= 20, names
+
+    def test_no_module_formats_a_db_value_by_hand(self):
+        offenders = {}
+        for name, text in self._sources():
+            hits = _hand_formatted_db(text)
+            if hits:
+                offenders[name] = hits
+        assert not offenders, (
+            "dB の桁を手書きしている面がある: " + repr(offenders) + "。"
+            "`units.format_db` / `units.csv_db` を通すこと（3.0a1）＝"
+            "0.01 dB 刻みは DEM 誤差・仮定値の前では持っていない精度の主張で、"
+            "面ごとに書くと同じ量が面によって違う桁で出る"
+        )
+
+    @pytest.mark.parametrize("text,expected", [
+        ('f"{r.p_rx:.2f}"', ["r.p_rx:.2f"]),
+        ('f"{r.actual_margin:+.2f}"', ["r.actual_margin:+.2f"]),
+        ('f"{r.total_loss:.1f}"', ["r.total_loss:.1f"]),
+        ('f"{units.format_db(r.p_rx)}"', []),
+        ('f"{terrain.horiz_dist_km:.2f}"', []),
+        ('f"{p.freq_mhz:.1f}"', []),
+        ('f"{r.p_rx}"', []),
+        ("# r.p_rx を .2f で出していた（3.0a1 で廃止）", []),
+    ])
+    def test_the_detector_catches_what_it_claims(self, text, expected):
+        assert _hand_formatted_db(text) == expected

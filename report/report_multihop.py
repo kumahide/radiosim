@@ -24,6 +24,7 @@ import html as _html
 import os
 
 from core import i18n
+from core import models
 from core import units
 from report import multihop as mh
 from report import report_common
@@ -197,15 +198,15 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             f"<td class='c-status'>{pr.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
-            f"<td>{r.p_rx:.1f}</td>"
-            f"<td>{r.actual_margin:+.1f}</td>"
-            f"<td>{r.fspl:.1f}</td>"
-            f"<td>{r.diff_loss:.1f}</td>"
-            f"<td>{r.veg_loss:.1f}</td>"
-            f"<td>{r.env_loss:.1f}</td>"
-            f"<td>{r.rain_loss:.1f}</td>"
-            f"<td>{r.gas_loss:.1f}</td>"
-            f"<td>{r.total_loss:.1f}</td>"
+            f"<td>{units.format_db(r.p_rx)}</td>"
+            f"<td>{units.format_db(r.actual_margin, signed=True)}</td>"
+            f"<td>{units.format_db(r.fspl)}</td>"
+            f"<td>{units.format_db(r.diff_loss)}</td>"
+            f"<td>{units.format_db(r.veg_loss)}</td>"
+            f"<td>{units.format_db(r.env_loss)}</td>"
+            f"<td>{units.format_db(r.rain_loss)}</td>"
+            f"<td>{units.format_db(r.gas_loss)}</td>"
+            f"<td>{units.format_db(r.total_loss)}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
             f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
@@ -262,6 +263,17 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + _hop_header_cells()
         + '</tr></thead><tbody>' + rows_html + '</tbody></table>'
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
+        # 「この結果をどう扱うか」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
+        # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。
+        + report_common.handling_notes_html(models.scope_notes_union(
+            models.scope_notes(
+                pr.params.freq_mhz,
+                diff_method=pr.result.diff_method,
+                rain_rate=pr.params.rain_rate,
+                veg_h=pr.params.veg_h,
+            )
+            for pr in run.hops if pr.result is not None and pr.params is not None
+        ))
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'
     )

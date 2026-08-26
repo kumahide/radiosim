@@ -25,6 +25,7 @@ import io
 import os
 
 from core import i18n
+from core import models
 from core import output_contract
 from core import scenario as scn
 from core import units
@@ -225,7 +226,7 @@ def _compare_table(run: scn.ScenarioRun) -> str:
     head = "".join(f"<th>{_html.escape(p.label)}</th>" for p in pts)
 
     def _num(v: float, key: str) -> str:
-        return f"{v:+.2f}" if key.endswith("margin") else f"{v:.2f}"
+        return units.format_db(v, signed=key.endswith("margin"))
 
     rows = ""
     for key, getter, unit in _COMPARE_ROWS:
@@ -239,8 +240,12 @@ def _compare_table(run: scn.ScenarioRun) -> str:
             cells = f"<td>{_num(base, key)}</td>"
             for v in vals[1:]:
                 d = v - base
-                delta = (f"<span class='delta'>({d:+.2f})</span>"
-                         if abs(d) > 0.005 else "")
+                # ⚠️ **出す・出さないの境目も桁と一緒に動かす**（3.0a1）。
+                # 表示が 0.1 dB 刻みになったので、閾値を 0.005 のままにすると
+                # `(+0.0)` という**中身のない差**が出る（半刻み＝出せば必ず読める）。
+                delta = (f"<span class='delta'>"
+                         f"({units.format_db(d, signed=True)})</span>"
+                         if abs(d) >= units.DB_VISIBLE_STEP / 2 else "")
                 cells += f"<td>{_num(v, key)} {delta}</td>"
         # ⚠️ `_COMPARE_ROWS` の単位は `None` を取り得る（判定行など）＝空文字へ寄せる
         # （`with_unit` は「単位が無ければ何も添えない」約束なので、そこへ渡せばよい）。
@@ -293,9 +298,9 @@ def _sweep_row(p: scn.ScenarioPoint) -> str:
         # 同じ値が経路によってエスケープされたりされなかったりする非対称は、
         # 片方だけ直った状態を将来また作る（2026-07-26 Codex レビュー指摘）。
         f"<td>{_html.escape(p.label)}</td>"
-        f"<td>{r.p_rx:.2f}</td>"
-        f"<td>{r.actual_margin:+.2f}</td>"
-        f"<td>{r.total_loss:.2f}</td>"
+        f"<td>{units.format_db(r.p_rx)}</td>"
+        f"<td>{units.format_db(r.actual_margin, signed=True)}</td>"
+        f"<td>{units.format_db(r.total_loss)}</td>"
         f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
         f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
         f"<td class='s-{cls}'>{r.status}</td></tr>\n"
@@ -344,6 +349,22 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         )
     table = _sweep_table(run) if run.kind == "sweep" else _compare_table(run)
 
+    # 「この結果をどう扱うか」（3.0a1）。⚠️ **条件探索は 1 枚で N 条件を載せる**
+    # ＝周波数や植生高そのものを軸に振れるので、刻印は**点ごとに解いて和集合**を取る
+    # （基準の条件だけを見ると、軸で範囲外へ出た点の注記が消える）。
+    base = run.base_params
+    handling = report_common.handling_notes_html(models.scope_notes_union(
+        models.scope_notes(
+            # ⚠️ `overrides` は**軸によって値の型が違う**（`env_type` は文字列）＝
+            # 数として使う 3 つはここで float に寄せる（pyright が拾う面）。
+            float(p.overrides.get("freq_mhz", base.freq_mhz)),
+            diff_method=p.result.diff_method,
+            rain_rate=float(p.overrides.get("rain_rate", base.rain_rate)),
+            veg_h=float(p.overrides.get("veg_h", base.veg_h)),
+        )
+        for p in run.points if p.result is not None
+    ))
+
     return f"""<section class="sheet scenario">
 <div class="fit-outer"><div class="fit">
 {report_common.page_header(title, project_name)}
@@ -351,6 +372,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
 {_meta_block(run)}
 {chart_block}
 {table}
+{handling}
 </div></div>
 {report_common.page_footer(i18n.t("scn_mode"))}
 </section>"""
@@ -401,9 +423,12 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
             label = report_common.csv_cell(p.label)
             w.writerow([
                 label, o.get(run.axis, "") if run.axis else label, r.status,
-                f"{r.p_rx:.2f}", f"{r.actual_margin:.2f}", f"{r.total_loss:.2f}",
-                f"{r.fspl:.2f}", f"{r.diff_loss:.2f}", f"{r.veg_loss:.2f}",
-                f"{r.env_loss:.2f}", f"{r.rain_loss:.2f}", f"{r.gas_loss:.2f}",
+                # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**。
+                units.csv_db(r.p_rx), units.csv_db(r.actual_margin),
+                units.csv_db(r.total_loss),
+                units.csv_db(r.fspl), units.csv_db(r.diff_loss),
+                units.csv_db(r.veg_loss), units.csv_db(r.env_loss),
+                units.csv_db(r.rain_loss), units.csv_db(r.gas_loss),
                 units.csv_blocked_ratio(r.blocked_ratio),
                 units.csv_distance(r.slant_dist_km),
                 f"{val('freq_mhz', base.freq_mhz):g}",

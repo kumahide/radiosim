@@ -20,6 +20,7 @@ from datetime import datetime
 from typing import TYPE_CHECKING
 
 from core import i18n
+from core import models
 from core import output_contract
 from core import units
 from core import version
@@ -43,8 +44,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
         writer.writerow(list(output_contract.SUMMARY_CSV_COLUMNS))
         for pr in results:
             freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
-            gain_tx_val = f"{pr.params.gain_tx:.1f}"  if pr.params else ""
-            gain_rx_val = f"{pr.params.gain_rx:.1f}"  if pr.params else ""
+            gain_tx_val = units.csv_db(pr.params.gain_tx) if pr.params else ""
+            gain_rx_val = units.csv_db(pr.params.gain_rx) if pr.params else ""
             h_tx_val = f"{pr.row.h_tx:.1f}"
             h_rx_val = f"{pr.row.h_rx:.1f}"
             if pr.result is not None:
@@ -55,11 +56,13 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                 writer.writerow([
                     report_common.csv_cell(pr.row.path_id), pr.status,
                     freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
-                    f"{r.p_rx:.2f}",          f"{r.actual_margin:.2f}",
-                    f"{r.fspl:.2f}",           f"{r.diff_loss:.2f}",
-                    f"{r.veg_loss:.2f}",       f"{r.env_loss:.2f}",
-                    f"{r.rain_loss:.2f}",      f"{r.gas_loss:.2f}",
-                    f"{r.total_loss:.2f}",
+                    # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**
+                    # なので、変えた版の CHANGELOG と公開文書に書いてある。
+                    units.csv_db(r.p_rx),          units.csv_db(r.actual_margin),
+                    units.csv_db(r.fspl),          units.csv_db(r.diff_loss),
+                    units.csv_db(r.veg_loss),      units.csv_db(r.env_loss),
+                    units.csv_db(r.rain_loss),     units.csv_db(r.gas_loss),
+                    units.csv_db(r.total_loss),
                     units.csv_distance(r.slant_dist_km),
                     units.csv_blocked_ratio(r.blocked_ratio),
                     report_common.csv_cell(pr.row.note),
@@ -231,8 +234,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     rows_html = ""
     for pr in results:
         freq_disp    = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"
-        gain_tx_disp = f"{pr.params.gain_tx:.1f}"  if pr.params else "—"
-        gain_rx_disp = f"{pr.params.gain_rx:.1f}"  if pr.params else "—"
+        gain_tx_disp = units.format_db(pr.params.gain_tx) if pr.params else "—"
+        gain_rx_disp = units.format_db(pr.params.gain_rx) if pr.params else "—"
         h_tx_disp = f"{pr.row.h_tx:.1f}"
         h_rx_disp = f"{pr.row.h_rx:.1f}"
         pid_safe  = pr.row.path_id          # validated: [A-Za-z0-9_-]+ — safe for href
@@ -282,21 +285,34 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"<td>{gain_rx_disp}</td>"
             f"<td>{h_tx_disp}</td>"
             f"<td>{h_rx_disp}</td>"
-            f"<td>{r.p_rx:.1f}</td>"
-            f"<td>{r.actual_margin:+.1f}</td>"
-            f"<td>{r.fspl:.1f}</td>"
-            f"<td>{r.diff_loss:.1f}</td>"
-            f"<td>{r.veg_loss:.1f}</td>"
-            f"<td>{r.env_loss:.1f}</td>"
-            f"<td>{r.rain_loss:.1f}</td>"
-            f"<td>{r.gas_loss:.1f}</td>"
-            f"<td>{r.total_loss:.1f}</td>"
+            f"<td>{units.format_db(r.p_rx)}</td>"
+            f"<td>{units.format_db(r.actual_margin, signed=True)}</td>"
+            f"<td>{units.format_db(r.fspl)}</td>"
+            f"<td>{units.format_db(r.diff_loss)}</td>"
+            f"<td>{units.format_db(r.veg_loss)}</td>"
+            f"<td>{units.format_db(r.env_loss)}</td>"
+            f"<td>{units.format_db(r.rain_loss)}</td>"
+            f"<td>{units.format_db(r.gas_loss)}</td>"
+            f"<td>{units.format_db(r.total_loss)}</td>"
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
             f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
             f"<td class='c-note'>{note_esc}</td>"
             f"{graph_cell}</tr>\n"
         )
+
+    # 「この結果をどう扱うか」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
+    # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には
+    # 書いていない*ことになる）。計算できなかった行は条件が確定していないので数えない。
+    handling = report_common.handling_notes_html(models.scope_notes_union(
+        models.scope_notes(
+            pr.params.freq_mhz,
+            diff_method=pr.result.diff_method,
+            rain_rate=pr.params.rain_rate,
+            veg_h=pr.params.veg_h,
+        )
+        for pr in results if pr.result is not None and pr.params is not None
+    ))
 
     # 案件メモ（サーベイ全体の自由注記）。非空時のみヘッダ直下（p1）に小ブロック表示。
     if memo:
@@ -352,6 +368,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 {rows_html}
 </tbody>
 </table>
+{handling}
 {report_common.page_footer(i18n.t("html_batch_mode"))}
 </section>"""
 
@@ -420,8 +437,10 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
             )
             freq_s   = f"{pr.params.freq_mhz:.1f} MHz"
             desc_esc = _html.escape(
-                f"Freq: {freq_s} | RX: {pr.result.p_rx:.1f} dBm | "
-                f"Margin: {pr.result.actual_margin:+.1f} dB"
+                f"Freq: {freq_s} | "
+                f"RX: {units.format_db(pr.result.p_rx, unit='dBm')} | "
+                f"Margin: "
+                f"{units.format_db(pr.result.actual_margin, signed=True, unit='dB')}"
             )
             # 線は実測どおり引ける（地形がある）が、**振り分けは判定に従う**＝
             # 成果物が欠けた経路は Error フォルダへ入る（I-010・台帳と食い違わせない）。

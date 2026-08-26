@@ -868,7 +868,10 @@ class ScenarioWindow(tk.Toplevel):
         self._tree.delete(*self._tree.get_children())
         for p in run.points:
             self._tree.insert("", "end", values=(
-                p.label, f"{p.result.p_rx:.2f}", f"{p.result.actual_margin:+.2f}",
+                # 桁は `units.format_db` が単一ソース（0.1 dB）。
+                p.label,
+                units.format_db(p.result.p_rx),
+                units.format_db(p.result.actual_margin, signed=True),
                 p.result.status,
             ), tags=("ok" if p.ok else "ng",))
 

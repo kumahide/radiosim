@@ -21,7 +21,9 @@ import xml.etree.ElementTree as ET
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 import numpy as np
+import pytest
 
+from core import disclosure
 from core import i18n
 from core import models
 from core import simulation as sim
@@ -380,3 +382,137 @@ class TestSaveReportAllHtml:
         assert ".no-print{display:none !important}" in html
         # 単体では per-path は別ファイル参照のまま
         assert "href='p01/report.html'" in html
+
+
+# ============================================================
+# 「この結果をどう扱うか」節（3.0a1 / ロードマップ §3.0 の 9）
+# ============================================================
+
+
+def _builds_a_sheet(text: str) -> bool:
+    """そのソースが**帳票の 1 面を組み立てているか**（自己同定フッタを置くか）。
+
+    面を列挙せず**実装側の印**で数える＝新しい帳票を足しても、フッタを置いた
+    時点でこのゲートの対象に入る（→ [[feedback-user-examples-are-classes]]）。
+    """
+    return "report_common.page_footer(" in text
+
+
+def _carries_the_handling_section(text: str) -> bool:
+    """そのソースが「この結果をどう扱うか」を出しているか。"""
+    return ("handling_notes_html(" in text) or ("handling_text(" in text)
+
+
+class TestEveryArtifactFaceCarriesTheHandlingSection:
+    """**帳票を組み立てる面は、必ず開示の節も出す**（3.0a1 のクラス点検）。
+
+    🔑 開示を書く仕事には「無いことの検査」を対で置く
+    （→ [[feedback-promote-recurring-checks]]）＝*ここまでは大丈夫*という主張は、
+    反例 1 つで嘘になる。⇒ **節を持たない帳票が 1 面でもあれば落とす。**
+    """
+
+    @staticmethod
+    def _sources():
+        root = os.path.join(os.path.dirname(__file__), "..")
+        out = []
+        for layer in ("core", "report", "views"):
+            d = os.path.join(root, layer)
+            for name in sorted(os.listdir(d)):
+                if not name.endswith(".py") or name == "report_common.py":
+                    continue
+                path = os.path.join(d, name)
+                out.append((layer + "/" + name,
+                            open(path, encoding="utf-8").read()))
+        return out
+
+    def test_the_scan_finds_the_faces_at_all(self):
+        """ゲートが空振りしていないこと（4 種の A4 シートが見えているか）。"""
+        faces = [n for n, t in self._sources() if _builds_a_sheet(t)]
+        assert len(faces) >= 4, "帳票の面を数え切れていない: " + repr(faces)
+
+    def test_no_sheet_is_published_without_it(self):
+        offenders = [n for n, t in self._sources()
+                     if _builds_a_sheet(t) and not _carries_the_handling_section(t)]
+        assert not offenders, (
+            "開示の節を持たない帳票がある: " + repr(offenders) + "。"
+            "`report_common.handling_notes_html(models.scope_notes(...))` を"
+            "フッタの前に置くこと（3.0a1）＝成果物は一人歩きするので、"
+            "前提と適用範囲は帳票そのものが持つ"
+        )
+
+    def test_the_plain_text_report_carries_it_too(self):
+        """`report.txt` は HTML と別の書き手なので、別に見る。"""
+        root = os.path.join(os.path.dirname(__file__), "..")
+        text = open(os.path.join(root, "core", "simulation.py"),
+                    encoding="utf-8").read()
+        assert _carries_the_handling_section(text), (
+            "report.txt だけ開示を持たない（HTML の帳票と同じ 1 本を引くこと）"
+        )
+
+    @pytest.mark.parametrize("text,expected", [
+        ("report_common.page_footer(i18n.t('x'))", (True, False)),
+        ("report_common.page_footer(x) + handling_notes_html(y)", (True, True)),
+        ("disclosure.handling_text(keys)", (False, True)),
+        ("# フッタは page_footer が置く", (False, False)),
+    ])
+    def test_the_detector_catches_what_it_claims(self, text, expected):
+        assert (_builds_a_sheet(text), _carries_the_handling_section(text)) == expected
+
+
+class TestHandlingSectionContent:
+    """節の**中身**＝差し込みが埋まっていること・両言語にあること。"""
+
+    def teardown_method(self):
+        # 言語は他のテストと共有の状態なので、触ったら必ず戻す（I-108）。
+        i18n.set_lang("en")
+
+    @pytest.mark.parametrize("lang", ["en", "ja"])
+    def test_every_scope_note_has_wording_in_both_languages(self, lang):
+        i18n.set_lang(lang)
+        for key in models.SCOPE_NOTE_ORDER:
+            text = i18n.t("html_scope_" + key)
+            assert text != "html_scope_" + key, (
+                lang + " に " + key + " の字が無い（キー名がそのまま出る）"
+            )
+
+    @pytest.mark.parametrize("lang", ["en", "ja"])
+    def test_no_placeholder_survives_into_the_report(self, lang):
+        """🔑 範囲の数字は式の定数から差し込む＝波括弧が利用者の目に出ないこと。"""
+        i18n.set_lang(lang)
+        for line in disclosure.handling_lines(models.SCOPE_NOTE_ORDER):
+            assert "{" not in line and "}" not in line, (
+                "差し込みが埋まっていない: " + line
+            )
+
+    def test_the_bounds_come_from_the_formulas_not_from_the_prose(self):
+        """字の中の数字が、式の使っている定数と同じであること。"""
+        i18n.set_lang("en")
+        lines = " ".join(disclosure.handling_lines(models.SCOPE_NOTE_ORDER))
+        assert str(int(models.RAIN_TABLE_MAX_GHZ)) in lines
+        assert str(int(models.GAS_RANGE_GHZ[1])) in lines
+        assert str(int(models.VEG_COEFF_RANGE_GHZ[1])) in lines
+
+    def test_the_calibration_seat_is_always_present_and_empty(self):
+        """較正の席（3.5 で埋まる）＝**空でも欄を置く**。"""
+        i18n.set_lang("en")
+        line = disclosure.calibration_line()
+        assert i18n.t("html_calib_profile") in line
+        assert i18n.t("html_calib_none") in line
+
+    def test_the_text_report_lists_every_line_it_was_given(self):
+        i18n.set_lang("en")
+        keys = models.scope_notes(430.0, diff_method="deygout",
+                                  rain_rate=10.0, veg_h=5.0)
+        text = disclosure.handling_text(keys)
+        assert "[HOW TO READ THIS RESULT]" in text
+        for line in disclosure.handling_lines(keys):
+            assert line in text
+        assert disclosure.calibration_line() in text
+
+    def test_the_html_section_escapes_and_lists_every_line(self):
+        i18n.set_lang("en")
+        keys = models.scope_notes(2400.0, diff_method="single")
+        html = report_common.handling_notes_html(keys)
+        assert html.count("<li>") == len(keys)
+        assert 'class="handling"' in html
+        assert i18n.t("html_handling_title") in html

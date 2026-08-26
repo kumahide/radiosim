@@ -515,11 +515,12 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # ここも同じ 1 か所から引く。
                 pr.status,
                 f"{p.freq_mhz:.1f}" if p else "",
-                f"{p.gain_tx:.1f}"  if p else "",
-                f"{p.gain_rx:.1f}"  if p else "",
+                units.format_db(p.gain_tx) if p else "",
+                units.format_db(p.gain_rx) if p else "",
                 f"{pr.row.h_tx:.1f}", f"{pr.row.h_rx:.1f}",
-                f"{r.p_rx:.2f}" if r else "",
-                f"{r.actual_margin:.2f}" if r else "",
+                # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**。
+                units.csv_db(r.p_rx) if r else "",
+                units.csv_db(r.actual_margin) if r else "",
                 # ⚠️ **整形は `units` が単一ソース**（B-060）。手書きすると、
                 # ここのように「% を % で割り増す」誤りが静かに入る＝
                 # `blocked_ratio` は models の時点で既に **%**（`* 100` 済み）で、

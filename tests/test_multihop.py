@@ -347,8 +347,10 @@ class TestRunMultihop:
             assert r is not None, "前提: 結果のあるホップで比べる"
             assert row["f1_pct"]   == units.csv_blocked_ratio(r.blocked_ratio)
             assert row["slant_m"]  == units.csv_distance(r.slant_dist_km)
-            assert row["rx_dbm"]   == f"{r.p_rx:.2f}"
-            assert row["margin_db"] == f"{r.actual_margin:.2f}"
+            # 桁は `units.csv_db` が単一ソース（3.0a1＝0.1 dB）。**ここに数字を
+            # 書き写さない**＝写すと、桁を動かした日に「どちらが正か」が 2 つになる。
+            assert row["rx_dbm"]   == units.csv_db(r.p_rx)
+            assert row["margin_db"] == units.csv_db(r.actual_margin)
             # 率を名乗る列は 100% を超えない（超えるのは侵入深さであって率ではない）
             assert float(row["f1_pct"]) <= units.BLOCKED_RATIO_MAX
 
@@ -856,7 +858,7 @@ class TestMultiHopWindow:
 
             cells = win._hop_result_labels[0]
             assert cells["status"].cget("text") == "OK", "触っていない区間に結果が入らない"
-            assert cells["rx"].cget("text") == "-70.00"
+            assert cells["rx"].cget("text") == units.format_db(-70.0)
             assert getattr(cells["status"], "_hop_input", None) \
                 == win._hop_input(1), "結果を生んだ入力の控えが取れていない"
         finally:

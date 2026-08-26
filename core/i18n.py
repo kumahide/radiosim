@@ -394,6 +394,43 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_note":        "Remarks",
         "html_col_graph":       "Graph",
 
+        # ===== How to read this result (3.0a1) =====
+        # 🔑 **成果物が一人歩きした先で効く節**＝レポートを受け取った人は、公開文書も
+        # 画面の但し書きも見ない。⚠️ **数字は差し込みで受ける**（`{lo}` `{hi}`）＝
+        # 範囲の値は `core/models.py` の定数が単一ソースで、字と式が別々に動かない。
+        "html_handling_title":  "How to read this result",
+        "html_handling_lead":   "A desktop screening estimate. It assumes the following, "
+                                "and the notes below say how far the formulas used here reach.",
+        "html_scope_dem_surface":
+            "Elevations come from a bare-earth model: buildings and trees are not in it.",
+        "html_scope_veg_uniform":
+            "Vegetation height is the single value entered, applied along the whole path "
+            "(not the actual height at each point).",
+        "html_scope_env_empirical":
+            "Environment loss is an empirical figure picked from the area class.",
+        "html_scope_ground_reflection":
+            "Ground reflection (two-ray interference) is not modelled.",
+        "html_scope_diff_deygout":
+            "Diffraction uses the Deygout method, which assumes sharp ridges: where "
+            "obstacles of similar height stand in a row it can read too high.",
+        "html_scope_rain_zeroed":
+            "Rain attenuation (ITU-R P.838-3) is out of range below {lo} GHz and was taken as 0 dB.",
+        "html_scope_rain_extrapolated":
+            "Rain attenuation is extrapolated: the coefficient table ends at {hi} GHz and "
+            "its end value was used.",
+        "html_scope_gas_zeroed":
+            "Atmospheric (gas) attenuation (ITU-R P.676-13) is out of range below {lo} GHz "
+            "and was taken as 0 dB.",
+        "html_scope_gas_extrapolated":
+            "Atmospheric (gas) attenuation is above its valid range ({lo}-{hi} GHz).",
+        "html_scope_veg_extrapolated":
+            "The vegetation coefficient is defined between {lo} and {hi} GHz; outside that "
+            "band the same formula is stretched.",
+        # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
+        # 「較正していない結果」が同じ顔で出る。
+        "html_calib_profile":   "Calibration profile",
+        "html_calib_none":      "not applied (never compared against measurements)",
+
         # ===== Tile Manager =====
         "map_window_title":     "Map",
         "map_mode_label":       "Mode:",
@@ -950,6 +987,36 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_f1_depth":    "F1侵入深さ (×F1)",
         "html_col_note":        "備考",
         "html_col_graph":       "グラフ",
+
+        # ===== この結果をどう扱うか（3.0a1） =====
+        "html_handling_title":  "この結果をどう扱うか",
+        "html_handling_lead":   "机上のスクリーニング推定です。次を前提としており、"
+                                "以下はこの計算に使った式がどこまでを名乗れるかです。",
+        "html_scope_dem_surface":
+            "標高データは地表面モデルです＝建物・樹木の高さを含みません。",
+        "html_scope_veg_uniform":
+            "植生高は入力した一律の値を経路全体に当てています"
+            "（場所ごとの実際の高さではありません）。",
+        "html_scope_env_empirical":
+            "環境損失は、選んだ区分から引いた経験値です。",
+        "html_scope_ground_reflection":
+            "地面反射（2 波干渉）は考慮していません。",
+        "html_scope_diff_deygout":
+            "回折は鋭い稜線を仮定する Deygout 法です＝同程度の障害物が並ぶ経路では"
+            "過大に出ることがあります。",
+        "html_scope_rain_zeroed":
+            "降雨減衰（ITU-R P.838-3）は {lo} GHz 未満が範囲外のため 0 dB として扱いました。",
+        "html_scope_rain_extrapolated":
+            "降雨減衰は外挿です＝係数表は {hi} GHz までで、その端の値を使いました。",
+        "html_scope_gas_zeroed":
+            "大気減衰（ITU-R P.676-13）は {lo} GHz 未満が範囲外のため 0 dB として扱いました。",
+        "html_scope_gas_extrapolated":
+            "大気減衰は有効範囲（{lo}〜{hi} GHz）を超えています。",
+        "html_scope_veg_extrapolated":
+            "植生減衰の係数は {lo}〜{hi} GHz で定義されており、その外側では"
+            "同じ式を伸ばして使っています。",
+        "html_calib_profile":   "較正プロファイル",
+        "html_calib_none":      "未適用（実測と突き合わせていません）",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

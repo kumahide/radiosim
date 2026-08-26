@@ -38,6 +38,7 @@ from core import coords
 from core import failure
 from core import i18n
 from core import simulation as sim
+from core import units
 from report import multihop as mh
 from views import dialogs, frozen_common, theme, window_fit
 from views.multihop_map import _MapSinkMixin
@@ -905,9 +906,13 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         cells  = self._hop_result_labels[index - 1]
         status = pr.status
         r      = pr.result
-        cells["rx"].config(text=f"{r.p_rx:.2f}" if r is not None else "—")
+        # 桁は `units.format_db` が単一ソース（0.1 dB）＝**画面とレポートで
+        # 精度の主張を食い違わせない**（個別シミュレーションの欄は元から 0.1 dB）。
+        cells["rx"].config(
+            text=units.format_db(r.p_rx) if r is not None else "—")
         cells["margin"].config(
-            text=f"{r.actual_margin:+.2f}" if r is not None else "—")
+            text=units.format_db(r.actual_margin, signed=True)
+            if r is not None else "—")
         cells["status"].config(
             text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
             foreground=theme.verdict_colors(self)[theme.verdict_key(status)])

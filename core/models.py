@@ -116,6 +116,111 @@ ENV_DEFAULT: str = "los"
 
 
 # ============================================================
+# 適用範囲（3.0a1 / ロードマップ §3.0 の 9）
+# ------------------------------------------------------------
+# 🔑 **物理を 1 行も足さない**＝ここに置くのは「いま使った式が、どこまでを名乗れるか」
+# だけ。値を変える権限は無い（純述語＝入力から真偽を返すのみ）。
+#
+# 🔴 **範囲の数字は、式が実際に使っている数字と同じものを指す**。刻印だけ別に書くと
+# 「0 dB として扱ったのに、そうは書いていない」が静かに起きる（開示は片方だけ直ると
+# 嘘になる面）。⇒ 下の定数を `calculate_rain_loss` / `calculate_gas_loss` /
+# `_vegetation_loss` が**そのまま**参照し、`scope_notes()` も同じ定数から引く。
+# `tests/test_models.py` が「0 になったのに刻印が無い」周波数を掃いて落とす。
+# ============================================================
+
+#: 降雨減衰（P.838-3）を計算する下限 [GHz]。これ未満は 0 dB として扱う。
+RAIN_MIN_GHZ: float = 1.0
+
+#: P.838-3 の係数表が持つ上限 [GHz]。これを超える周波数は**端値でクランプ**する
+#: ＝内挿ではなく外挿なので、刻印の対象。
+RAIN_TABLE_MAX_GHZ: float = 40.0
+
+#: 大気減衰（P.676-13 Annex 2）の有効範囲 [GHz]。下側の外は 0 dB として扱う。
+GAS_RANGE_GHZ: tuple[float, float] = (1.0, 350.0)
+
+#: 植生減衰の係数分岐の境目 [GHz]（`_vegetation_loss`）。**この内側が本来の定義**で、
+#: 外側（1 GHz 未満 / 6 GHz 以上）は同じ形の式を伸ばして使っている。
+VEG_COEFF_RANGE_GHZ: tuple[float, float] = (1.0, 6.0)
+
+#: **常に当てはまる前提**（周波数にも設定にも依らない）。順序はそのまま帳票の並び。
+SCOPE_ALWAYS: tuple[str, ...] = (
+    "dem_surface",        # DEM は地表面モデル＝建物・樹木を含まない
+    "veg_uniform",        # 植生高は入力した一律値
+    "env_empirical",      # 環境損失は区分選択の経験値
+    "ground_reflection",  # 地面反射（2 波干渉）は考慮していない
+)
+
+#: 刻印の全語彙＝**帳票に出る順**（面が違っても並びは同じ）。
+#: ⚠️ この並びが i18n キー `html_scope_<名前>` の一覧そのものになる。
+SCOPE_NOTE_ORDER: tuple[str, ...] = SCOPE_ALWAYS + (
+    "diff_deygout",       # Deygout は鋭い稜線を仮定する
+    "rain_zeroed",        # 降雨: 範囲外につき 0 として扱った
+    "rain_extrapolated",  # 降雨: 係数表の端値で外挿した
+    "gas_zeroed",         # 大気: 範囲外につき 0 として扱った
+    "gas_extrapolated",   # 大気: 有効範囲の上を超えている
+    "veg_extrapolated",   # 植生: 係数の定義域の外側
+)
+
+
+def scope_notes(
+    freq_mhz: float,
+    *,
+    diff_method: str = "deygout",
+    rain_rate: float = 0.0,
+    veg_h: float = 0.0,
+) -> tuple[str, ...]:
+    """この条件の結果に付く**適用範囲の刻印**を、帳票の並びで返す（純述語）。
+
+    Args:
+        freq_mhz:    周波数 [MHz]
+        diff_method: 回折モデル（``"deygout"`` / ``"single"``）
+        rain_rate:   降雨率 [mm/h]（0 なら降雨の刻印は付かない＝計算していない）
+        veg_h:       植生高 [m]（0 なら植生の刻印は付かない＝同上）
+
+    ⚠️ **計算していない項目の刻印は付けない**＝降雨率 0 の回線に「降雨は範囲外」と
+    書くと、読み手は*降雨を見込んだのに落とされた*と読む。**出したのは「使った式の
+    限界」だけ**にする。
+    """
+    freq_ghz = float(freq_mhz) / 1000.0
+    hits = set(SCOPE_ALWAYS)
+
+    if diff_method == "deygout":
+        hits.add("diff_deygout")
+
+    if float(rain_rate) > 0.0:
+        if freq_ghz < RAIN_MIN_GHZ:
+            hits.add("rain_zeroed")
+        elif freq_ghz > RAIN_TABLE_MAX_GHZ:
+            hits.add("rain_extrapolated")
+
+    gas_lo, gas_hi = GAS_RANGE_GHZ
+    if freq_ghz < gas_lo:
+        hits.add("gas_zeroed")
+    elif freq_ghz > gas_hi:
+        hits.add("gas_extrapolated")
+
+    if float(veg_h) > 0.0:
+        veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
+        if freq_ghz < veg_lo or freq_ghz >= veg_hi:
+            hits.add("veg_extrapolated")
+
+    return tuple(k for k in SCOPE_NOTE_ORDER if k in hits)
+
+
+def scope_notes_union(note_groups) -> tuple[str, ...]:
+    """複数の回線ぶんの刻印を 1 つに畳む（台帳・中継・条件探索の帳票用）。
+
+    ⚠️ **台帳は 1 枚で N 本を載せる**＝周波数も設定も行ごとに違いうるので、
+    「どれか 1 本にでも当てはまる刻印」を出す（消すと*その行には書いていない*
+    ことになる）。⇒ **和集合**。並びは `SCOPE_NOTE_ORDER` が決める。
+    """
+    hits: set[str] = set()
+    for group in note_groups:
+        hits.update(group)
+    return tuple(k for k in SCOPE_NOTE_ORDER if k in hits)
+
+
+# ============================================================
 # データクラス
 # ============================================================
 @dataclass
@@ -587,10 +692,13 @@ def _vegetation_loss(
         los_vals: LoS 線高度配列 [m]
         f1:       Fresnel 第1ゾーン半径配列 [m]
     """
+    # 境目は `VEG_COEFF_RANGE_GHZ` が単一ソース＝**刻印（scope_notes）と同じ数字**を
+    # 見る（開示だけ別に書くと、片方を動かした日に嘘になる）。
+    veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
     freq_ghz = freq_mhz / 1000.0
-    if freq_ghz < 1.0:
+    if freq_ghz < veg_lo:
         coeff = 0.12 * (freq_ghz ** 0.5)
-    elif freq_ghz < 6.0:
+    elif freq_ghz < veg_hi:
         coeff = 0.20 * (freq_ghz ** 0.7)
     else:
         coeff = 0.35 * (freq_ghz ** 0.9)
@@ -706,8 +814,9 @@ def calculate_rain_loss(
                 V 列は _P838_TABLE に定義済みだが現在未使用。
         - 等価路程長補正: 地上短距離用途では d_eff = d_slant で近似
         - 1 GHz 未満: 降雨減衰は実用上無視できるため 0 dB
+          （下限は `RAIN_MIN_GHZ`＝**刻印 `scope_notes` と同じ定数**）
     """
-    if rain_rate <= 0.0 or freq_mhz < 1000.0:
+    if rain_rate <= 0.0 or freq_mhz < RAIN_MIN_GHZ * 1000.0:
         return 0.0
     k, alpha = _p838_coeffs(freq_mhz)
     gamma_r  = k * (rain_rate ** alpha)   # 比減衰量 [dB/km]
@@ -736,12 +845,13 @@ def calculate_gas_loss(
         water_vapor_density : 水蒸気密度 [g/m³]（デフォルト 7.5 g/m³）
 
     Notes:
-        - 有効範囲: 1〜350 GHz（P.676-13 Annex 2）
+        - 有効範囲: 1〜350 GHz（P.676-13 Annex 2）＝`GAS_RANGE_GHZ`
+          （**刻印 `scope_notes` と同じ定数**）
         - 1 GHz 未満は誤差が大きくなるため 0 dB を返す
         - 60 GHz 付近の酸素吸収ピーク（約 15 dB/km）も再現する
     """
     freq_ghz = freq_mhz / 1000.0
-    if freq_ghz < 1.0:
+    if freq_ghz < GAS_RANGE_GHZ[0]:
         return 0.0
 
     T  = temperature_c + 273.15   # 絶対温度 [K]

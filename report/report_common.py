@@ -22,6 +22,7 @@ from __future__ import annotations
 import html as _html
 from datetime import datetime
 
+from core import disclosure
 from core import i18n
 from core import version
 
@@ -100,6 +101,22 @@ body{font-family:Arial,sans-serif;font-size:13px}
   white-space:nowrap;padding-left:12px}
 .page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;
   color:#aaa;font-size:10px;display:flex;justify-content:space-between}
+/* 「この結果をどう扱うか」節（3.0a1）。**4 種のシートが同じ 1 本を引く**ので
+   `.sheet.path` 等へはスコープしない（クラス名が固有＝連結しても衝突しない）。
+   小さく畳んで最下部に置く＝per-path は A4 1 枚の縮小フィットの中に入るため、
+   本文を押しのけない字送りにしてある。印刷で節が割れないよう break-inside:avoid。 */
+.handling{margin-top:7px;padding-top:4px;border-top:1px solid #e0e6e9;
+  break-inside:avoid}
+.handling h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
+.handling .hd-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
+/* 2 段組みにするのは**台帳の行数を食わないため**。実測（Edge --print-to-pdf・
+   A4 1 枚に載る経路の数）＝節なし 30 行／1 段の節 25 行／**2 段の節 26 行**。
+   開示を足した代わりに台帳が 1 枚で済まなくなる、という取り引きを薄める。
+   ⚠️ それでも 4 行ぶんは食う＝26 行を超えるサーベイは 2 枚目に入る。 */
+.handling ul{margin:0;padding-left:13px;font-size:8px;color:#78909c;line-height:1.35;
+  column-count:2;column-gap:14px}
+.handling li{break-inside:avoid}
+.handling .hd-calib{margin:3px 0 0;font-size:8px;color:#b0bec5;font-style:italic}
 @media screen{
   /* min-width:max-content ＝ 窓が A4 幅(210mm)より狭くても body が内容幅まで広がり、
      中央寄せシートが左へはみ出して左端が見切れる（水平スクロールで届かない）のを防ぐ。
@@ -250,3 +267,41 @@ def html_document(doc_title: str, css: str, body: str) -> str:
 {body}
 </body>
 </html>"""
+
+
+# ============================================================
+# 「この結果をどう扱うか」節（3.0a1 / ロードマップ §3.0 の 9）
+# ------------------------------------------------------------
+# 🔑 **存在理由＝成果物は一人歩きする**。レポートを受け取った人は、README の
+# 開示も画面の但し書きも見ない。⇒ **前提と適用範囲を、帳票そのものに焼き込む。**
+#
+# 🔑 **物理を 1 行も足していない**＝出るのは `models.scope_notes()` が返した刻印
+# だけで、範囲の数字（1 GHz・40 GHz・350 GHz・1〜6 GHz）は**式が使っている定数
+# そのもの**を差し込む。⇒ *式を変えたのに開示だけ古い* が起きない。
+#
+# ⚠️ **5 面が同じ 1 本を引く**（per-path / 台帳 / 中継 / 条件探索 / report.txt）。
+# 面ごとに書き写すと、次に足した 1 面だけ節を持たない形になる
+# （→ [[feedback-user-examples-are-classes]]）。ゲート＝
+# `tests/test_report.py::TestEveryArtifactFaceCarriesTheHandlingSection`。
+# ============================================================
+
+
+def handling_notes_html(note_keys) -> str:
+    """「この結果をどう扱うか」節の HTML 断片を返す（**4 種のシート共通**）。
+
+    字は `core.disclosure` が単一ソース（`report.txt` と同じ 1 本）。ここが持つのは
+    **体裁だけ**＝節タグとクラス名（CSS は `a4_base_css` の `.handling`）。
+    """
+    items = "".join(
+        f"<li>{_html.escape(line)}</li>"
+        for line in disclosure.handling_lines(note_keys)
+    )
+    return (
+        '<section class="handling">'
+        f'<h4>{_html.escape(i18n.t("html_handling_title"))}</h4>'
+        f'<p class="hd-lead">{_html.escape(i18n.t("html_handling_lead"))}</p>'
+        f'<ul>{items}</ul>'
+        f'<p class="hd-calib">'
+        f'{_html.escape(disclosure.calibration_line())}</p>'
+        '</section>'
+    )

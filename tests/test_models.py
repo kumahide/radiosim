@@ -691,3 +691,111 @@ class TestPropagationRainGas:
         lb50 = models.calculate_link_budget(r50, **dict(freq_mhz=11000.0, p_tx=20.0,
                                                          gain_tx=3.0, gain_rx=3.0, sens=-85.0))
         assert lb50.total_loss > lb0.total_loss
+
+
+# ============================================================
+# 適用範囲の刻印（3.0a1 / ロードマップ §3.0 の 9）
+# ============================================================
+class TestScopeNotes:
+    """**刻印は、式が実際にやったことと一致していなければならない。**
+
+    🔑 開示の怖さはここ＝「0 dB として扱った」と書いていないのに 0 にしている、
+    あるいはその逆。⇒ **式を掃いて、0 になった条件に刻印があるかを機械で見る**
+    （散文の一致確認では、片方を動かした日に静かにずれる）。
+    """
+
+    def test_the_always_notes_are_always_there(self):
+        for freq in (30.0, 430.0, 2400.0, 5800.0, 60000.0):
+            keys = models.scope_notes(freq)
+            for always in models.SCOPE_ALWAYS:
+                assert always in keys, (always, freq)
+
+    def test_ground_reflection_is_declared(self):
+        """地面反射（2 波干渉）は考慮していない＝**席の予約**（3.4 で実装）。"""
+        assert "ground_reflection" in models.SCOPE_ALWAYS
+
+    def test_the_order_is_the_same_on_every_face(self):
+        keys = models.scope_notes(430.0, diff_method="deygout",
+                                  rain_rate=5.0, veg_h=3.0)
+        assert list(keys) == [k for k in models.SCOPE_NOTE_ORDER if k in keys]
+
+    #: 掃く周波数 [GHz]＝**範囲の境目をまたぐ**ように選ぶ（片側だけ見ると、
+    #: 式の側だけを動かした変異が緑のまま通る＝実際に踏んだ）。
+    _SWEEP_GHZ = (0.03, 0.15, 0.43, 0.9, 0.999, 1.0, 1.5, 2.4, 5.8,
+                  12.0, 40.0, 45.0, 100.0, 400.0)
+
+    @pytest.mark.parametrize("freq_ghz", _SWEEP_GHZ)
+    def test_the_rain_note_tracks_the_formula_exactly(self, freq_ghz):
+        """🔴 **式が 0 dB を返した条件と、刻印が出る条件は同一集合**であること。
+
+        「0 dB として扱った」と書いていないのに 0 にしている（またはその逆）を
+        掃いて捕まえる。⚠️ 下限の側だけを試すと、**式の下限だけを動かした変異が
+        緑のまま通る**（2026-08-26 に実際に踏んだ）＝境目の両側を掃く。
+        """
+        freq_mhz = freq_ghz * 1000.0
+        zeroed = models.calculate_rain_loss(freq_mhz, 1.0, 50.0) == 0.0
+        declared = "rain_zeroed" in models.scope_notes(freq_mhz, rain_rate=50.0)
+        assert declared is zeroed, (
+            str(freq_ghz) + " GHz: 式は " + ("0 dB" if zeroed else "0 でない値")
+            + " を返したのに、刻印は " + ("有り" if declared else "無し")
+        )
+
+    def test_rain_notes_are_absent_when_no_rain_was_assumed(self):
+        """⚠️ **計算していない項目の刻印は付けない**（降雨率 0 の回線）。"""
+        keys = models.scope_notes(430.0, rain_rate=0.0)
+        assert not [k for k in keys if k.startswith("rain_")]
+
+    def test_rain_above_the_table_is_declared_extrapolated(self):
+        assert "rain_extrapolated" in models.scope_notes(
+            (models.RAIN_TABLE_MAX_GHZ + 5.0) * 1000.0, rain_rate=10.0)
+
+    def test_the_declared_table_top_is_the_real_table_top(self):
+        """🔴 刻印の 40 GHz は**係数表の実際の端**であること（写し間違い防止）。"""
+        assert models.RAIN_TABLE_MAX_GHZ == models._P838_TABLE[-1][0]
+
+    @pytest.mark.parametrize("freq_ghz", _SWEEP_GHZ)
+    def test_the_gas_note_tracks_the_formula_exactly(self, freq_ghz):
+        """大気減衰も同じ＝0 dB にした条件と刻印の条件が同一集合であること。"""
+        freq_mhz = freq_ghz * 1000.0
+        zeroed = models.calculate_gas_loss(freq_mhz, 1.0) == 0.0
+        declared = "gas_zeroed" in models.scope_notes(freq_mhz)
+        assert declared is zeroed, str(freq_ghz) + " GHz で食い違っている"
+
+    def test_gas_inside_the_range_has_no_note(self):
+        assert "gas_zeroed" not in models.scope_notes(2400.0)
+        assert models.calculate_gas_loss(2400.0, 1.0) > 0.0
+
+    def test_gas_above_the_range_is_declared(self):
+        hi = models.GAS_RANGE_GHZ[1]
+        assert "gas_extrapolated" in models.scope_notes((hi + 10.0) * 1000.0)
+
+    @pytest.mark.parametrize("freq_mhz,expected", [
+        (430.0, True),      # 1 GHz 未満＝係数の定義域の外
+        (2400.0, False),    # 1〜6 GHz＝本来の定義域
+        (5800.0, False),
+        (6000.0, True),     # 6 GHz 以上＝外側（同じ式を伸ばしている）
+        (24000.0, True),
+    ])
+    def test_the_vegetation_coefficient_branch_is_declared(self, freq_mhz, expected):
+        keys = models.scope_notes(freq_mhz, veg_h=5.0)
+        assert ("veg_extrapolated" in keys) is expected
+
+    def test_no_vegetation_note_when_no_vegetation_was_given(self):
+        assert "veg_extrapolated" not in models.scope_notes(430.0, veg_h=0.0)
+
+    def test_the_deygout_assumption_is_declared_only_for_deygout(self):
+        assert "diff_deygout" in models.scope_notes(430.0, diff_method="deygout")
+        assert "diff_deygout" not in models.scope_notes(430.0, diff_method="single")
+
+    def test_union_keeps_one_of_each_in_the_canonical_order(self):
+        """台帳は N 本を 1 枚に載せる＝**どれか 1 本に当てはまる刻印**を出す。"""
+        a = models.scope_notes(430.0, diff_method="single", veg_h=5.0)
+        b = models.scope_notes(2400.0, diff_method="deygout", rain_rate=10.0)
+        merged = models.scope_notes_union([a, b])
+        assert set(merged) == set(a) | set(b)
+        assert len(merged) == len(set(merged)), "重複している"
+        assert list(merged) == [k for k in models.SCOPE_NOTE_ORDER if k in merged]
+
+    def test_union_of_nothing_is_empty(self):
+        """1 本も計算できなかった台帳では、当てにならない刻印を出さない。"""
+        assert models.scope_notes_union([]) == ()

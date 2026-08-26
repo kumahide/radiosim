@@ -308,6 +308,15 @@ def path_sheet_html(
 
     sheet_id = f' id="{report_id}"' if report_id else ""
 
+    # 「この結果をどう扱うか」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
+    # 刻印は `models.scope_notes` が純述語で決める（この面は並べるだけ＝物理を持たない）。
+    handling = report_common.handling_notes_html(models.scope_notes(
+        params.freq_mhz,
+        diff_method=result.diff_method,
+        rain_rate=params.rain_rate,
+        veg_h=params.veg_h,
+    ))
+
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
     # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。
     # ⛔ 率だけを載せない＝率は 100% で頭打ち（I-077）なので、突き抜けた分は
@@ -321,9 +330,9 @@ def path_sheet_html(
 {memo_block}
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>
-  <div class="card"><div class="lbl">{i18n.t('html_rx_level')}</div><div class="val">{result.p_rx:.1f} dBm</div></div>
-  <div class="card {status_cls}"><div class="lbl">{i18n.t('html_act_margin')}</div><div class="val">{result.actual_margin:+.1f} dB</div></div>
-  <div class="card"><div class="lbl">{i18n.t('html_total_loss')}</div><div class="val">{result.total_loss:.1f} dB</div></div>
+  <div class="card"><div class="lbl">{i18n.t('html_rx_level')}</div><div class="val">{units.format_db(result.p_rx, unit='dBm')}</div></div>
+  <div class="card {status_cls}"><div class="lbl">{i18n.t('html_act_margin')}</div><div class="val">{units.format_db(result.actual_margin, signed=True, unit='dB')}</div></div>
+  <div class="card"><div class="lbl">{i18n.t('html_total_loss')}</div><div class="val">{units.format_db(result.total_loss, unit='dB')}</div></div>
 </div>
 
 <img class="graph" src="data:image/png;base64,{img_b64}" alt="Terrain Profile">
@@ -353,17 +362,17 @@ def path_sheet_html(
   <div class="col">
     <h3>{i18n.t('html_link_budget')}</h3>
     <table class="info">
-      <tr><td>{i18n.t('html_eirp')}</td><td class="n">{result.eirp:.2f}<span class="u">dBm</span></td></tr>
-      <tr><td>{i18n.t('html_fspl')}</td><td class="n">{result.fspl:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_diff_loss')}</td><td class="n">{result.diff_loss:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_veg_loss')}</td><td class="n">{result.veg_loss:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_env_loss')}</td><td class="n">{result.env_loss:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_rain_loss')}</td><td class="n">{result.rain_loss:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_gas_loss')}</td><td class="n">{result.gas_loss:.2f}<span class="u">dB</span></td></tr>
-      <tr><td>{i18n.t('html_rx_ant_gain')}</td><td class="n">+{params.gain_rx:.2f}<span class="u">dBi</span></td></tr>
-      <tr><td><b>{i18n.t('html_rx_level')}</b></td><td class="n"><b>{result.p_rx:.2f}<span class="u">dBm</span></b></td></tr>
-      <tr><td>{i18n.t('html_threshold')}</td><td class="n">{params.sens:.2f}<span class="u">dBm</span></td></tr>
-      <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{result.actual_margin:+.2f}<span class="u">dB</span></b></td></tr>
+      <tr><td>{i18n.t('html_eirp')}</td><td class="n">{units.format_db(result.eirp)}<span class="u">dBm</span></td></tr>
+      <tr><td>{i18n.t('html_fspl')}</td><td class="n">{units.format_db(result.fspl)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_diff_loss')}</td><td class="n">{units.format_db(result.diff_loss)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_veg_loss')}</td><td class="n">{units.format_db(result.veg_loss)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_env_loss')}</td><td class="n">{units.format_db(result.env_loss)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_rain_loss')}</td><td class="n">{units.format_db(result.rain_loss)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_gas_loss')}</td><td class="n">{units.format_db(result.gas_loss)}<span class="u">dB</span></td></tr>
+      <tr><td>{i18n.t('html_rx_ant_gain')}</td><td class="n">{units.format_db(params.gain_rx, signed=True)}<span class="u">dBi</span></td></tr>
+      <tr><td><b>{i18n.t('html_rx_level')}</b></td><td class="n"><b>{units.format_db(result.p_rx)}<span class="u">dBm</span></b></td></tr>
+      <tr><td>{i18n.t('html_threshold')}</td><td class="n">{units.format_db(params.sens)}<span class="u">dBm</span></td></tr>
+      <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{units.format_db(result.actual_margin, signed=True)}<span class="u">dB</span></b></td></tr>
     </table>
     <h3 style="margin-top:9px">{i18n.t('html_environment')}</h3>
     <table class="info">
@@ -375,6 +384,7 @@ def path_sheet_html(
     </table>
   </div>
 </div>
+{handling}
 </div></div>
 {report_common.page_footer(i18n.t("html_single_mode"))}
 </section>"""
@@ -480,8 +490,10 @@ def save_path_kml(
     los_color = "ff00aa00" if result.status == "OK" else "ff00a5ff"
     path_id   = _html.escape(os.path.basename(save_dir))
     desc_esc  = _html.escape(
-        f"Freq: {params.freq_mhz} MHz | RX: {result.p_rx:.1f} dBm | "
-        f"Margin: {result.actual_margin:+.1f} dB | Status: {result.status}"
+        f"Freq: {params.freq_mhz} MHz | "
+        f"RX: {units.format_db(result.p_rx, unit='dBm')} | "
+        f"Margin: {units.format_db(result.actual_margin, signed=True, unit='dB')} | "
+        f"Status: {result.status}"
     )
 
     # 遮蔽区間（地形がフレネル下辺を超える部分）
@@ -521,7 +533,7 @@ def save_path_kml(
   </Placemark>
   <Placemark>
     <name>RX</name>
-    <description>{_html.escape(f"h_rx={h_rx:.1f} m | {result.p_rx:.1f} dBm ({result.status})")}</description>
+    <description>{_html.escape(f"h_rx={h_rx:.1f} m | {units.format_db(result.p_rx, unit='dBm')} ({result.status})")}</description>
     <Point>
       <altitudeMode>absolute</altitudeMode>
       <coordinates>{params.lon_rx:.6f},{params.lat_rx:.6f},{rx_alt:.1f}</coordinates>

@@ -481,17 +481,19 @@ class GraphWindow(tk.Toplevel):
         混ぜると右寄せしても小数点が揃わない＝桁揃えが崩れる。
         """
         p = self._params
-        self._vars["eirp"].set(f"{r.eirp:.1f}")
+        # 桁は `units.format_db` が単一ソース（0.1 dB）＝**この面が持っていた桁が
+        # 正しく、成果物のほうが 0.01 dB を名乗っていた**（3.0a1 で揃えた）。
+        self._vars["eirp"].set(units.format_db(r.eirp))
         for key, value in (
             ("fspl", r.fspl), ("diff_loss", r.diff_loss), ("veg_loss", r.veg_loss),
             ("env_loss", r.env_loss), ("rain_loss", r.rain_loss),
             ("gas_loss", r.gas_loss), ("total_loss", r.total_loss),
         ):
-            self._vars[key].set(f"{value:.1f}")
-        self._vars["gain_rx"].set(f"{p.gain_rx:+.1f}")
-        self._vars["p_rx"].set(f"{r.p_rx:.1f}")
-        self._vars["sens"].set(f"{p.sens:.1f}")
-        self._vars["margin"].set(f"{r.actual_margin:.1f}")
+            self._vars[key].set(units.format_db(value))
+        self._vars["gain_rx"].set(units.format_db(p.gain_rx, signed=True))
+        self._vars["p_rx"].set(units.format_db(r.p_rx))
+        self._vars["sens"].set(units.format_db(p.sens))
+        self._vars["margin"].set(units.format_db(r.actual_margin))
         self._vars["status"].set(r.status)
 
         self._vars["env_type"].set(i18n.t(f"env_{r.env_type}"))
