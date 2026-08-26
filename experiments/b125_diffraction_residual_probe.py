@@ -7,10 +7,13 @@
 
   ① [[B-127]] **再帰の深さ**が上限 `_MAX_DEPTH` に届いているか
      ⇒ 実データの最大は **3**（実効 5m でも 3）＝いまは触れていない ⇒ 重要度を「低」へ。
-  ② [[B-126]] **`_MIN_SEGMENT_M`（50m）で打ち切った回数**
+  ② [[B-126]] **区間幅の下限（当時の `_MIN_SEGMENT_M` = 50m）で打ち切った回数**
      ⇒ 実効 20m / 10m で **0 回**、実効 5m で **3 回**（fuji 2 本・kagoshima）
      ＝**「高」を選んだときだけ効く打ち切りがある**。50m という長さは標本間隔に対する
-     点数が解像度で変わるので、幾何ではなく設定で発火が決まっている。
+     点数が解像度で変わるので、幾何ではなく設定で発火が決まっていた。
+     ✅ **2026-08-26 に製品から撤去した**＝下限を 0m / 50m / 200m のどれにしても
+     実データ 26 本・合成 5 形状 × 標本数 3 通りで値が完全に一致した（＝値を 1 つも
+     決めていなかった）。**この探針は撤去前の姿を残すため 50m を焼き付けて数える。**
   ③ [[B-125]] **`single` と `deygout` の「見通し」の物差しの差**
      ＝`single` は ν<0 で 0 dB（[models.py] の `v_max < 0`）、`deygout` は ν<=-0.8。
      ⇒ **-0.8 < ν < 0 の帯を `single` だけが捨てる**。26 本中 **2 本が実際にその帯**
@@ -43,6 +46,10 @@ from core import models  # noqa: E402
 
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 
+#: 撤去した区間幅の下限 [m]（B-126）。**製品にはもう無い**＝この探針が「撤去前は
+#: 何回発火していたか」を数え続けられるように、当時の値をここに焼き付けてある。
+_REMOVED_MIN_SEGMENT_M: float = 50.0
+
 #: 解像度の段階（I-069）＝実効間隔 [m]。名前は画面の語に合わせる。
 STEPS_M: tuple[tuple[str, float], ...] = (("低", 20.0), ("中", 10.0), ("高", 5.0))
 
@@ -60,7 +67,7 @@ def _traced(*args, **kwargs):
     if d_axis is not None:
         if len(d_axis) < 3:
             _stats["n_cut"] = _stats.get("n_cut", 0) + 1
-        elif float(d_axis[-1]) - float(d_axis[0]) < models._MIN_SEGMENT_M:
+        elif float(d_axis[-1]) - float(d_axis[0]) < _REMOVED_MIN_SEGMENT_M:
             _stats["span_cut"] = _stats.get("span_cut", 0) + 1
     return _orig_deygout(*args, **kwargs)
 
@@ -148,7 +155,7 @@ def main() -> None:
 
     print(f"\n① 最大再帰深さ = {max_depth} / 上限 {models._MAX_DEPTH}"
           f"（[[B-127]]＝上限に届いていないが、届いても痕跡は残らない）")
-    print(f"② `_MIN_SEGMENT_M`({models._MIN_SEGMENT_M:g}m) の打ち切り = {span_cut} 回"
+    print(f"② 区間幅の下限({_REMOVED_MIN_SEGMENT_M:g}m・撤去済み) の打ち切り = {span_cut} 回"
           f"（[[B-126]]・この標本数では）")
     print(f"③ ν が {models._NU_THRESHOLD} 〜 0 の帯にある回線 = {len(band)} 本"
           f"（[[B-125]]＝`single` だけが捨てている dB）")

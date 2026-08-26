@@ -485,11 +485,17 @@ def calculate_propagation(
         if len(v_params) == 0 or np.all(np.isnan(v_params)):
             diff_loss = 0.0
         else:
-            v_max     = float(np.nanmax(v_params))
-            diff_loss = (
-                0.0 if v_max < 0
-                else _diffraction_loss_fk(v_params[int(np.nanargmax(v_params))])
-            )
+            # 🔑 **見通しの判定は `_diffraction_loss_fk` ただ 1 つに任せる**（B-125）。
+            # かつてここに `v_max < 0 なら 0 dB` という**独自の打ち切り**があり、
+            # `deygout` 側の `_NU_THRESHOLD`(-0.8) と物差しが食い違っていた:
+            #   ①**-0.8 < ν < 0 の帯を single だけが捨てる**（J(-0.5)=1.96・
+            #     J(-0.2)=4.33・J(-0.05)=5.60 dB）＝実データ 26 本のうち 2 本が
+            #     この帯にいる（かすめる回線ほど入りやすい）。
+            #   ②**ν=0 に 6.03 dB の段差**ができる＝クリアランスが 1cm 変わると
+            #     6 dB 跳ぶ。閾値を J(ν)≈0 の点（-0.8）に置く deygout 側は連続。
+            # ⇒ B-032 で「一体化の境界と損失の開始条件は同じ物差しで切る」と
+            #    決めた原則の、`single` 側の取りこぼしだった。
+            diff_loss = _diffraction_loss_fk(float(np.nanmax(v_params)))
 
     # ── Fresnel 遮蔽率（両モデル共通、表示用） ──────────────────
     fresnel_lower = los_vals - f1
@@ -541,8 +547,15 @@ def calculate_propagation(
 
 # Deygout 再帰の打ち切り閾値
 _NU_THRESHOLD:    float = -0.8   # これ以下は回折損 0 dB として打ち切る（ITU-R P.526 の見通し判定相当）
-_MIN_SEGMENT_M:   float = 50.0   # セグメント幅がこれ未満なら打ち切る
 _MAX_DEPTH:       int   = 20     # 再帰上限（無限ループ防止）
+# ⛔ **`_MIN_SEGMENT_M`（区間幅 50m 未満で打ち切る）は撤去した**（B-126・2026-08-26）。
+#   ①**値を 1 つも決めていなかった**＝実データ 26 本・合成 5 形状 × 標本数 3 通りの
+#     全条件で、この下限を 0m / 50m / 200m のどれにしても結果が完全に一致した。
+#   ②**長さで書いた下限は解像度で意味が変わる**＝区間の幅は標本間隔の倍数なので、
+#     「50m」は実効 20m では 2 点ぶん・実効 5m では 10 点ぶん。実際に**実効 5m の
+#     ときだけ 3 本で発火**していた（発火が幾何ではなく設定で決まっていた）。
+#   ⇒ 幾何の下限は **`N < 3`（区間に内点が無い）だけで足りる**。再帰の停止は
+#     `N < 3` と `_MAX_DEPTH` が保証する（区間は必ず点数が減るので必ず尽きる）。
 
 
 def _diffraction_loss_fk(v: float) -> float:
@@ -552,12 +565,17 @@ def _diffraction_loss_fk(v: float) -> float:
     """
     if v <= _NU_THRESHOLD:
         return 0.0
-    return float(
+    # ⚠️ **負を返させない**＝閾値のすぐ上（-0.80 < ν < -0.79 あたり）で J(ν) は
+    # **-0.06 dB まで負に振れる**。損失として負の値は意味を持たず、0.1 dB 刻みの
+    # 帳票では `-0.1 dB` と印字されてしまう（B-125 の掃きテストで踏んだ）。
+    # 🔑 **打ち切りの側で切らずにここで切る**＝両モデルが同じ 1 本を通るので、
+    # 片方だけが負を出す形（＝B-125 そのもの）を作り直さずに済む。
+    return max(0.0, float(
         6.9
         + 20 * math.log10(
             math.sqrt((v - 0.1) ** 2 + 1) + v - 0.1
         )
-    )
+    ))
 
 
 
@@ -607,9 +625,6 @@ def _deygout_loss(
     d_start = float(d_m_axis[0])
     d_end   = float(d_m_axis[-1])
     span_m  = d_end - d_start
-
-    if span_m < _MIN_SEGMENT_M:
-        return 0.0
 
     # ── LoS（直線）高さを各サンプル点で計算 ─────────────────────
     los = np.linspace(tx_abs, rx_abs, N)

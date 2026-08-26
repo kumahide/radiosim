@@ -711,6 +711,75 @@ class TestScopeNotes:
             for always in models.SCOPE_ALWAYS:
                 assert always in keys, (always, freq)
 
+    def test_the_recursion_terminates_without_a_length_floor(self):
+        """🔴 **区間幅の下限を外しても再帰は必ず尽きる**こと（B-126）。
+
+        `_MIN_SEGMENT_M`（50m）を撤去した＝停止を保証しているのは
+        **`N < 3`（区間に内点が無い）と `_MAX_DEPTH` の 2 つだけ**。⇒ 区間が
+        最も細かく割れる形（1 点おきの鋸歯・高密度）で**止まること・有限値を
+        返すこと**を固定する。⚠️ これを置かないと、撤去が
+        「動いたから大丈夫」の域を出ない。
+        """
+        raw = np.zeros(5001)
+        raw[1::2] = 40.0          # 1 点おきに 40m ＝ 区間が最小まで割れる形
+        terrain = models.calculate_terrain_profile(
+            raw, 34.54, 132.41, 34.54, 132.46,
+        )
+        loss = models.calculate_propagation(
+            terrain, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method="deygout",
+        ).diff_loss
+        assert math.isfinite(loss)
+        assert loss >= 0.0
+
+    def test_the_two_diffraction_models_agree_on_where_loss_starts(self):
+        """🔴 **`single` と `deygout` が「見通し」と呼ぶ範囲は同じ**であること（B-125）。
+
+        ⚠️ **値の一致は求めない**＝多重回折の分だけ `deygout` が上に出るのは
+        仕様。見るのは **0 dB かどうかの境目だけ**。`single` に独自の
+        `v_max < 0` があった頃は、`-0.8 < ν < 0` の帯で **single が 0.00 dB・
+        deygout が最大 6.03 dB** を返していた（実データ 26 本中 2 本がこの帯）。
+
+        ⚠️ 障害物の高さを 0.5m 刻みで掃くのは、**境目をまたぐ点を必ず含める**ため
+        （片側だけ見ると、閾値を動かした変異が緑のまま通る）。
+        """
+        for h in np.arange(0.0, 40.0, 0.5):
+            raw = np.zeros(201)
+            raw[100] = float(h)
+            terrain = models.calculate_terrain_profile(
+                raw, 34.54, 132.41, 34.54, 132.46,
+            )
+            losses = {
+                method: models.calculate_propagation(
+                    terrain, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method=method,
+                ).diff_loss
+                for method in ("single", "deygout")
+            }
+            assert (losses["single"] == 0.0) == (losses["deygout"] == 0.0), (
+                h, losses,
+            )
+            # 🔴 **どちらのモデルも負の損失を返さない**＝J(ν) は閾値のすぐ上で
+            # -0.06 dB まで負に振れる（0.1 dB 刻みの帳票に `-0.1 dB` と出る）。
+            assert losses["single"] >= 0.0 and losses["deygout"] >= 0.0, (h, losses)
+
+    def test_the_single_model_has_no_step_at_the_line_of_sight(self):
+        """🔴 **`single` は ν=0 の前後で跳ばない**こと（B-125 の段差の側）。
+
+        独自の打ち切りがあった頃は **ν=0 の直前 0.00 dB → 直後 6.03 dB**。
+        ⇒ クリアランスが 1cm 変わると 6 dB 動く回線があった。
+        """
+        raw = np.zeros(201)
+        terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        # LoS ちょうど（ν=0）を挟む 2 点＝30m アンテナ同士の見通し線上に障害物を置く
+        losses = []
+        for h in (29.98, 30.02):
+            raw[100] = h
+            t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+            losses.append(models.calculate_propagation(
+                t, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method="single",
+            ).diff_loss)
+        assert abs(losses[1] - losses[0]) < 1.0, losses
+        assert terrain.num_samples == 201
+
     def test_ground_reflection_is_declared(self):
         """地面反射（2 波干渉）は考慮していない＝**席の予約**（3.4 で実装）。"""
         assert "ground_reflection" in models.SCOPE_ALWAYS

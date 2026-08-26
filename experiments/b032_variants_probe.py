@@ -101,7 +101,10 @@ def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str 
         d_start = float(d_m_axis[0])
         d_end   = float(d_m_axis[-1])
         span_m  = d_end - d_start
-        if span_m < models._MIN_SEGMENT_M:
+        # ⚠️ 50.0 は **当時の `models._MIN_SEGMENT_M`**（2026-08-26 に B-126 で製品から
+        #    撤去した＝値を 1 つも決めていなかったため）。**この探針は当時の候補を
+        #    当時の姿で再現するのが仕事**なので、定数を追わずここに焼き付けておく。
+        if span_m < 50.0:
             return 0.0
 
         los    = np.linspace(tx_abs, rx_abs, N)
