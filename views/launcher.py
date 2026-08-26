@@ -23,7 +23,7 @@ from core import simulation as sim
 from core import terrain_grid
 from core import units
 from core import version
-from core.models import ENV_DEFAULT, ENV_KEYS
+from core.models import ENV_DEFAULT, ENV_KEYS, normalize_diff_method
 from views import dialogs, progress, theme, window_fit
 from views.launcher_menu import _MenuMixin
 from views.launcher_project import _ProjectMixin
@@ -314,14 +314,14 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             f_diff, text=i18n.t("lbl_diff_method"), width=22, anchor="w",
         ).pack(side="left")
         self._diff_key_to_label = {
-            "deygout": i18n.t("diff_opt_deygout"),
+            "bullington": i18n.t("diff_opt_bullington"),
             "single":  i18n.t("diff_opt_single"),
         }
         self._diff_label_to_key = {v: k for k, v in self._diff_key_to_label.items()}
-        saved_diff = self.config.get("diff_method", "deygout")
+        saved_diff = normalize_diff_method(self.config.get("diff_method", "bullington"))
         self._diff_var = tk.StringVar(
             value=self._diff_key_to_label.get(
-                saved_diff, self._diff_key_to_label["deygout"]
+                saved_diff, self._diff_key_to_label["bullington"]
             )
         )
         cb_diff = ttk.Combobox(
@@ -686,7 +686,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
     def _on_run(self) -> None:
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
-        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "bullington")
         c["resolution"] = self._resolution_key()
         self._coords_to_dd(c)  # DMS 入力でも downstream には DD を渡す
 
@@ -845,7 +845,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             self._diff_var.set(
                 self._diff_key_to_label.get(
                     str(conf["diff_method"]),
-                    self._diff_key_to_label["deygout"],
+                    self._diff_key_to_label["bullington"],
                 )
             )
         if "resolution" in conf:
@@ -871,7 +871,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
-        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "deygout")
+        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "bullington")
         c["resolution"]  = self._resolution_key()
         self._coords_to_dd(c)
         return c

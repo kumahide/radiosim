@@ -455,7 +455,7 @@ class TestMakeParams:
         長い行ほど点数が増える。⚠️ ここが壊れると症状は「長距離だけ精度が落ちる」
         という、成果物を見ても気づけない形で出る。
         """
-        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout",
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="bullington",
                           resolution="medium")
         short = batch.PathRow(path_id="s", lat_tx=34.54, lon_tx=132.41,
                               lat_rx=34.545, lon_rx=132.41,
@@ -496,7 +496,7 @@ class TestMakeParams:
             lat_rx=34.53, lon_rx=132.40,
             h_tx=30.0, h_rx=10.0, freq_mhz=None,
         )
-        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="bullington")
         result = _make_params(row, base)
         assert result.freq_mhz == pytest.approx(2400.0)
 
@@ -508,7 +508,7 @@ class TestMakeParams:
             lat_rx=34.53, lon_rx=132.40,
             h_tx=30.0, h_rx=10.0, freq_mhz=5800.0,
         )
-        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="bullington")
         result = _make_params(row, base)
         assert result.freq_mhz == pytest.approx(5800.0)
 
@@ -520,7 +520,7 @@ class TestMakeParams:
             lat_rx=34.53, lon_rx=132.40,
             h_tx=30.0, h_rx=10.0,
         )
-        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="bullington")
         result = _make_params(row, base)
         assert result.gain_tx == pytest.approx(3.0)
         assert result.gain_rx == pytest.approx(3.0)
@@ -533,7 +533,7 @@ class TestMakeParams:
             lat_rx=34.53, lon_rx=132.40,
             h_tx=30.0, h_rx=10.0, gain_tx=15.0, gain_rx=9.0,
         )
-        base = self._base(env_type="los", rain_rate=0.0, diff_method="deygout")
+        base = self._base(env_type="los", rain_rate=0.0, diff_method="bullington")
         result = _make_params(row, base)
         assert result.gain_tx == pytest.approx(15.0)
         assert result.gain_rx == pytest.approx(9.0)

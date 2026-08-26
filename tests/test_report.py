@@ -515,7 +515,7 @@ class TestHandlingSectionContent:
 
     def test_the_text_report_lists_every_line_it_was_given(self):
         i18n.set_lang("en")
-        keys = models.scope_notes(430.0, diff_method="deygout",
+        keys = models.scope_notes(430.0, diff_method="bullington",
                                   rain_rate=10.0, veg_h=5.0)
         text = disclosure.handling_text(keys)
         assert "[HOW TO READ THIS RESULT]" in text

@@ -41,7 +41,7 @@ def _doc() -> project.ProjectDoc:
                   "p_tx": "20.0", "gain_tx": "3.0", "gain_rx": "3.0",
                   "sens": "-85.0", "veg_h": "10.0", "k_factor": "10.0",
                   "resolution": "medium", "env_type": "los", "rain_rate": "0.0",
-                  "diff_method": "deygout"},
+                  "diff_method": "bullington"},
         batch_rows = [
             batch.PathRow(path_id="P1", lat_tx=34.5, lon_tx=132.4,
                           lat_rx=34.6, lon_rx=132.5, h_tx=30.0, h_rx=10.0,

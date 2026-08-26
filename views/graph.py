@@ -498,7 +498,7 @@ class GraphWindow(tk.Toplevel):
 
         self._vars["env_type"].set(i18n.t(f"env_{r.env_type}"))
         self._vars["diff_model"].set(
-            i18n.t("html_model_deygout") if r.diff_method == "deygout"
+            i18n.t("html_model_bullington") if r.diff_method == "bullington"
             else i18n.t("html_model_single"))
         self._vars["k_factor"].set(f"{r.current_k:.1f}")
         # 単位は列が持つので `unit=False`（この 2 つは units.py が書式の出所）。

@@ -10,66 +10,43 @@ numpy / math のみに依存し、matplotlib / tkinter / requests を一切 impo
   LinkBudgetResult  (dataclass): リンクバジェット最終結果
   calculate_terrain_profile()  : TerrainProfile を生成
   calculate_propagation()      : Fresnel / 回折損 / 植生減衰を計算
-                                  diff_method="single"|"deygout" で切り替え
+                                  diff_method="single"|"bullington" で切り替え
   calculate_rain_loss()        : 降雨減衰 (ITU-R P.838-3)
   calculate_gas_loss()         : 大気減衰 (ITU-R P.676-13 Annex 2)
   calculate_link_budget()      : EIRP → P_rx → Act Margin を計算
 
 回折モデル:
-  single  : 単一障害物 Fresnel-Kirchhoff（ITU-R P.526 のナイフエッジ式）
-  deygout : **独自の Deygout 実装**（P.526 のナイフエッジ式 J(ν) を使うが、P.526 の
-            完全法ではない）。最大遮蔽点を主障害物として再帰的に分割し損失を加算する。
-            再帰打ち切り条件: ν <= NU_THRESHOLD (-0.8) または区間幅 < MIN_SEGMENT_M。
-            主障害物を含む「ν > NU_THRESHOLD が連続する範囲」は 1 枚のナイフエッジ
-            として再帰から外す（下の NOTE の Kν）。
-            ⚠️ **「P.526 準拠」とは名乗らない**（2026-08-09・Codex 指摘で訂正）＝
-            現行 P.526-16 は複数障害物に孤立円筒モデル、一般地形に Bullington を
-            含む完全法を定めているが、**本実装は円筒近似も Bullington も標準の
-            補正項も持たない**。持っているのは J(ν) と再帰の構成だけ。
+  single     : 単一障害物 Fresnel-Kirchhoff（ITU-R P.526 のナイフエッジ式 J(ν)）
+  bullington : **Bullington 等価ナイフエッジ**（ITU-R P.526 §4.5.1）＝両端から見た
+               仰角が最大の点を結ぶ 2 本の接線の交点を 1 枚の障害物とみなし、標準の
+               補正項 `(1 - exp(-Luc/6))(10 + 0.02·d_km)` を掛ける。
+               ⚠️ **「P.452 準拠」とも「P.526 準拠」とも名乗らない**＝採ったのは
+               P.526 §4.5.1 の 1 手法だけで、**球面回折の項**（P.452 §4.2.1 の
+               Delta-Bullington の第 2 項）も clutter も ducting も持たない。
+               → `_spherical_earth_loss`（席）と刻印 `diff_bullington`。
 """
-# NOTE（2026-08-09 に実測で書き直した。旧版の主張は下の「実測」を参照）:
-# 古典的な Deygout 実装では、
-# 主障害物の頂点高度（peak height）を
-# 再帰区間の端点として使用する流儀も存在する。
-#
-# しかし高解像度 DEM や植生レイヤを含む実地形では、
-# サブ区間 LoS が段階的に持ち上がり、
-# ν パラメータと回折損が再帰的に過大化しやすい。
-#
-# 本実装では主障害物位置における「元の LoS 高度」を再帰端点として使用する。
-#
-# ✅ **実測（2026-08-09・同一条件で端点の取り方だけを変えて比較）**:
-#   平地 0m      : 頂点高度 214.96 dB / 本実装 1.35 dB
-#   広い丘 25m   : 頂点高度 229.48 dB / 本実装 65.25 dB
-#   広い丘 80m   : 頂点高度 578.62 dB / 本実装 1141.73 dB
-#   ⇒ **頂点高度より悪化しにくい**のは事実で、この端点の選択自体は妥当。
-#
-# 🔴 **ただし端点の選択だけでは過大評価は止まらなかった**。
-#   旧 NOTE は「見通し地形で 0 dB に収束／過大 pessimistic を抑制／高サンプル
-#   密度でも安定」と書いていたが、**いずれも頂点高度方式との相対でしか成り立たず**、
-#   広がった遮蔽体では別の経路で同じ過大化が起きていた（山越えで 1000〜2400 dB・
-#   実機の 794m の回線で 1956.8 dB）。**この NOTE は撤回しない**＝
-#   「頂点高度に戻せば直る」という誤った処方を防ぐために残す。
-#
-# ✅ **2026-08-25（3.0）に発散そのものを塞いだ＝Kν**:
-#   機構は「**区間を割るほど d1·d2/(d1+d2) が縮んで ν が人工的に増える**」ことだった
-#   （Single が見通しと判定する ν=-0.79 の丘が、割った先で ν=-0.06 になる）。
-#   ⇒ **ν > _NU_THRESHOLD が連続する範囲は 1 枚のナイフエッジとして再帰から外す**。
-#   一体化の境界を損失の開始条件と同じ物差しで切るので、標本数で境界が跳ばない。
-#   実測: 広い丘 25m 65.25 → 5.49 dB（Single 0.00）／実データ 26 本で回折損
-#   100 dB 超が 13 本 → 2 本／9km 連続の山塊は Single と同値（断面で裏取り済み＝
-#   谷でも LoS 差 +31〜42m あり電波は一度も回り込めない＝1 枚と見るのが正しい）。
-#   ⚠️ **多重回折は残る**＝谷で F1 が十分クリアな独立 2 峰では Single の約 2 倍。
-#   ⚠️ **残る限界**＝深い遮蔽では端点近傍の最大 ν が標本間隔に依存する分が残る
-#   （120→960 点で +18%・修正前は +92%）。**「標本数に安定」とは言えない。**
-#   ⚠️ **真値との照合ではない**＝Bullington（P.526 §4.5.1）と Epstein-Peterson を
-#   独立に組んで並べただけで、**手法の大小に一般的な順序は無い**。
-
 import bisect
 import math
 from dataclasses import dataclass
 
 import numpy as np
+
+# 🔑 **回折は `core/diffraction.py` が持つ**（2026-08-26 に分割・B-130）。
+#    ここで再輸出するのは**呼び出し側を 1 行も変えないため**＝
+#    `models._diffraction_loss_fk` / `models.DIFF_METHOD_MULTI` は今までどおり動く。
+from core.diffraction import (  # noqa: F401  （再輸出）
+    DIFF_METHOD_ALIASES,
+    DIFF_METHOD_KEYS,
+    DIFF_METHOD_MULTI,
+    DIFF_METHOD_SINGLE,
+    _bullington_loss,
+    _diffraction_loss_fk,
+    _multi_obstacle_loss,
+    _smooth_earth_surface,
+    _spherical_earth_loss,
+    _NU_THRESHOLD,
+    normalize_diff_method,
+)
 
 
 # ============================================================
@@ -162,7 +139,7 @@ SCOPE_ALWAYS: tuple[str, ...] = (
 #: 刻印の全語彙＝**帳票に出る順**（面が違っても並びは同じ）。
 #: ⚠️ この並びが i18n キー `html_scope_<名前>` の一覧そのものになる。
 SCOPE_NOTE_ORDER: tuple[str, ...] = SCOPE_ALWAYS + (
-    "diff_deygout",       # Deygout は鋭い稜線を仮定する
+    "diff_bullington",    # Bullington は離れた尾根で小さめに出る＋球面項が無い
     "rain_zeroed",        # 降雨: 範囲外につき 0 として扱った
     "rain_extrapolated",  # 降雨: 係数表の端値で外挿した
     "gas_zeroed",         # 大気: 範囲外につき 0 として扱った
@@ -174,7 +151,7 @@ SCOPE_NOTE_ORDER: tuple[str, ...] = SCOPE_ALWAYS + (
 def scope_notes(
     freq_mhz: float,
     *,
-    diff_method: str = "deygout",
+    diff_method: str = DIFF_METHOD_MULTI,
     rain_rate: float = 0.0,
     veg_h: float = 0.0,
 ) -> tuple[str, ...]:
@@ -182,7 +159,7 @@ def scope_notes(
 
     Args:
         freq_mhz:    周波数 [MHz]
-        diff_method: 回折モデル（``"deygout"`` / ``"single"``）
+        diff_method: 回折モデル（``"bullington"`` / ``"single"``。旧名 ``"deygout"`` も受ける）
         rain_rate:   降雨率 [mm/h]（0 なら降雨の刻印は付かない＝計算していない）
         veg_h:       植生高 [m]（0 なら植生の刻印は付かない＝同上）
 
@@ -193,8 +170,8 @@ def scope_notes(
     freq_ghz = float(freq_mhz) / 1000.0
     hits = set(SCOPE_ALWAYS)
 
-    if diff_method == "deygout":
-        hits.add("diff_deygout")
+    if normalize_diff_method(diff_method) == DIFF_METHOD_MULTI:
+        hits.add("diff_bullington")
 
     if float(rain_rate) > 0.0:
         if freq_ghz < RAIN_MIN_GHZ:
@@ -254,7 +231,7 @@ class PropagationResult:
     blocked_ratio: float   # Fresnel 第1ゾーン遮蔽率 [%]
     slant_dist_km: float   # スラント距離 [km]
     current_k:     float   # 推定ライスKファクター（表示専用、計算不使用）
-    diff_method:   str     # 使用した回折モデル ("single" | "deygout")
+    diff_method:   str     # 使用した回折モデル ("single" | "bullington")
     env_type:      str     # 環境区分 ("urban"|"suburban"|"rural"|"los")
 
 
@@ -276,7 +253,7 @@ class LinkBudgetResult:
     current_k:     float
     blocked_ratio: float
     slant_dist_km: float
-    diff_method:   str          # 使用した回折モデル ("single" | "deygout")
+    diff_method:   str          # 使用した回折モデル ("single" | "bullington")
     env_type:      str          # 環境区分 ("urban"|"suburban"|"rural"|"los")
 
 
@@ -432,7 +409,7 @@ def calculate_propagation(
     freq_mhz: float,
     veg_h: float,
     initial_k: float,
-    diff_method: str = "deygout",
+    diff_method: str = DIFF_METHOD_MULTI,
     env_type: str = ENV_DEFAULT,
     rain_rate: float = 0.0,
 ) -> PropagationResult:
@@ -440,8 +417,9 @@ def calculate_propagation(
     Fresnel 第1ゾーン・回折損・植生減衰・Env Loss・降雨減衰・大気減衰を計算する。
 
     Args:
-        diff_method: "single" = 単一障害物 Fresnel-Kirchhoff（従来）
-                     "deygout" = 独自の Deygout 実装（P.526 のナイフエッジ式を使用・多重回折対応）
+        diff_method: "single" = 単一障害物 Fresnel-Kirchhoff
+                     "bullington" = Bullington 等価ナイフエッジ（P.526 §4.5.1・複数障害物）
+                     ⚠️ 旧名 "deygout" も受ける（`normalize_diff_method`）
         env_type   : "urban" | "suburban" | "rural" | "los"
         rain_rate  : 降雨率 [mm/h]（0 = 降雨なし）
     """
@@ -469,8 +447,11 @@ def calculate_propagation(
     obstruction_surface = elevs + veg_h
 
     # ── 回折損の計算（モデル切り替え） ──────────────────────────
-    if diff_method == "deygout":
-        diff_loss = _deygout_loss(
+    # 🔴 **ここでも正規化する**＝`SimParams` を通さずに直接呼ぶ経路（探針・外部
+    #    スクリプト・将来の呼び出し）が旧名 `deygout` を渡すと、**黙って single の
+    #    枝へ落ちて別のモデルの答えを返す**（2026-08-26 にゲートが実際に捕まえた）。
+    if normalize_diff_method(diff_method) == DIFF_METHOD_MULTI:
+        diff_loss = _multi_obstacle_loss(
             obstruction_surface, d_m_axis, tx_abs, rx_abs, lam
         )
     else:
@@ -487,12 +468,12 @@ def calculate_propagation(
         else:
             # 🔑 **見通しの判定は `_diffraction_loss_fk` ただ 1 つに任せる**（B-125）。
             # かつてここに `v_max < 0 なら 0 dB` という**独自の打ち切り**があり、
-            # `deygout` 側の `_NU_THRESHOLD`(-0.8) と物差しが食い違っていた:
+            # 複数障害物モデル側の `_NU_THRESHOLD`(-0.8) と物差しが食い違っていた:
             #   ①**-0.8 < ν < 0 の帯を single だけが捨てる**（J(-0.5)=1.96・
             #     J(-0.2)=4.33・J(-0.05)=5.60 dB）＝実データ 26 本のうち 2 本が
             #     この帯にいる（かすめる回線ほど入りやすい）。
             #   ②**ν=0 に 6.03 dB の段差**ができる＝クリアランスが 1cm 変わると
-            #     6 dB 跳ぶ。閾値を J(ν)≈0 の点（-0.8）に置く deygout 側は連続。
+            #     6 dB 跳ぶ。閾値を J(ν)≈0 の点（-0.8）に置く複数障害物モデル側は連続。
             # ⇒ B-032 で「一体化の境界と損失の開始条件は同じ物差しで切る」と
             #    決めた原則の、`single` 側の取りこぼしだった。
             diff_loss = _diffraction_loss_fk(float(np.nanmax(v_params)))
@@ -539,164 +520,6 @@ def calculate_propagation(
         diff_method   = diff_method,
         env_type      = env_type,
     )
-
-
-# ──────────────────────────────────────────────────────────────
-# 回折損ヘルパー
-# ──────────────────────────────────────────────────────────────
-
-# Deygout 再帰の打ち切り閾値
-_NU_THRESHOLD:    float = -0.8   # これ以下は回折損 0 dB として打ち切る（ITU-R P.526 の見通し判定相当）
-_MAX_DEPTH:       int   = 20     # 再帰上限（無限ループ防止）
-# ⛔ **`_MIN_SEGMENT_M`（区間幅 50m 未満で打ち切る）は撤去した**（B-126・2026-08-26）。
-#   ①**値を 1 つも決めていなかった**＝実データ 26 本・合成 5 形状 × 標本数 3 通りの
-#     全条件で、この下限を 0m / 50m / 200m のどれにしても結果が完全に一致した。
-#   ②**長さで書いた下限は解像度で意味が変わる**＝区間の幅は標本間隔の倍数なので、
-#     「50m」は実効 20m では 2 点ぶん・実効 5m では 10 点ぶん。実際に**実効 5m の
-#     ときだけ 3 本で発火**していた（発火が幾何ではなく設定で決まっていた）。
-#   ⇒ 幾何の下限は **`N < 3`（区間に内点が無い）だけで足りる**。再帰の停止は
-#     `N < 3` と `_MAX_DEPTH` が保証する（区間は必ず点数が減るので必ず尽きる）。
-
-
-def _diffraction_loss_fk(v: float) -> float:
-    """
-    Fresnel-Kirchhoff 回折損 J(ν)。
-    ν <= -0.8 のとき損失なし（完全見通し）。
-    """
-    if v <= _NU_THRESHOLD:
-        return 0.0
-    # ⚠️ **負を返させない**＝閾値のすぐ上（-0.80 < ν < -0.79 あたり）で J(ν) は
-    # **-0.06 dB まで負に振れる**。損失として負の値は意味を持たず、0.1 dB 刻みの
-    # 帳票では `-0.1 dB` と印字されてしまう（B-125 の掃きテストで踏んだ）。
-    # 🔑 **打ち切りの側で切らずにここで切る**＝両モデルが同じ 1 本を通るので、
-    # 片方だけが負を出す形（＝B-125 そのもの）を作り直さずに済む。
-    return max(0.0, float(
-        6.9
-        + 20 * math.log10(
-            math.sqrt((v - 0.1) ** 2 + 1) + v - 0.1
-        )
-    ))
-
-
-
-def _deygout_loss(
-    obs_surface: np.ndarray,
-    d_m_axis:    np.ndarray,
-    tx_abs:      float,
-    rx_abs:      float,
-    lam:         float,
-    depth:       int = 0,
-) -> float:
-    """
-    独自の Deygout 実装による多重回折損 [dB]。
-
-    ⚠️ **P.526 準拠ではない**＝使っているのは P.526 のナイフエッジ式 J(ν) だけで、
-    複数障害物の孤立円筒モデル・Bullington・標準の補正項は持たない（→ モジュール
-    冒頭の NOTE）。
-
-    アルゴリズム:
-      1. 区間内で ν が最大の点（主障害物 Pm）を探す。
-      2. ν(Pm) <= _NU_THRESHOLD ならこの区間の損失は 0 dB。
-      3. そうでなければ J(ν(Pm)) を加算し、**Pm を含む ν > _NU_THRESHOLD の
-         連続範囲 [lo, hi] を 1 枚のナイフエッジとして再帰から外し**、
-         その外側の左区間 [TX, lo] と右区間 [hi, RX] だけを再帰処理する。
-
-    🔑 **3 が B-032 の処方**（2026-08-25・Kν）。区間を割るほど d1·d2/(d1+d2) が
-    縮んで ν が人工的に増えるため、広がった遮蔽体を割ると**同じ山を何度も数える**
-    （実機の 794m の回線で回折損 1956.8 dB）。一体化の境界を損失の開始条件と
-    同じ _NU_THRESHOLD で切ることで、この自己増殖を断つ。⚠️ **多重回折そのものは
-    残る**＝谷で F1 が十分クリアな独立 2 峰では single の約 2 倍を返す。
-    ⚠️ **残る限界**＝深い遮蔽では端点近傍の最大 ν が標本間隔に依存する分が残る
-    （不連続な跳びは消えるが「標本数に完全に安定」とは言えない）。真値との
-    照合ではなく、Bullington / Epstein-Peterson との相互比較で妥当性を見ている。
-
-    Args:
-        obs_surface : 障害物面（地形 + 植生）の絶対高度 [m]（全区間）
-        d_m_axis    : 各サンプル点の TX からの水平距離 [m]（全区間）
-        tx_abs      : TX アンテナ絶対高度 [m]
-        rx_abs      : RX アンテナ絶対高度 [m]
-        lam         : 波長 [m]
-        depth       : 現在の再帰深さ（上限 _MAX_DEPTH）
-    """
-    N = len(obs_surface)
-    if N < 3 or depth >= _MAX_DEPTH:
-        return 0.0
-
-    d_start = float(d_m_axis[0])
-    d_end   = float(d_m_axis[-1])
-    span_m  = d_end - d_start
-
-    # ── LoS（直線）高さを各サンプル点で計算 ─────────────────────
-    los = np.linspace(tx_abs, rx_abs, N)
-
-    # ── 各サンプル点の ν を計算 ──────────────────────────────────
-    # d_m_axis は区間内の絶対距離なので TX 基準に正規化する
-    d_rel   = d_m_axis - d_start          # TX からの相対距離 [m]
-    d1_arr  = np.maximum(d_rel, 1.0)
-    d2_arr  = np.maximum(span_m - d_rel, 1.0)
-
-    h_obs   = obs_surface - los           # 正=遮蔽
-    denom   = lam * d1_arr * d2_arr / (d1_arr + d2_arr)
-    denom   = np.maximum(denom, 1e-9)
-    v_arr   = h_obs * np.sqrt(2.0 / denom)
-    v_arr   = np.nan_to_num(v_arr)
-
-    # 端点を除いた内側サンプルのみを主障害物候補とする
-    if N <= 2:
-        return 0.0
-    inner_v   = v_arr[1:-1]
-    peak_inner = int(np.argmax(inner_v))
-    peak_idx   = peak_inner + 1           # 全体インデックスに変換
-    v_peak     = float(v_arr[peak_idx])
-
-    # ν < 閾値 → この区間は見通し
-    if v_peak <= _NU_THRESHOLD:
-        return 0.0
-
-    # 主障害物の回折損
-    loss = _diffraction_loss_fk(v_peak)
-
-    # ── 主障害物が属する「1 枚のナイフエッジ」の範囲を求める ────
-    # ν > _NU_THRESHOLD が連続する範囲は**ひとつの遮蔽体**とみなし、
-    # まるごと再帰の対象から外す（B-032 の処方＝Kν・2026-08-25）。
-    # 境界の物差しを損失の開始条件（_NU_THRESHOLD）と揃えてあるので、
-    # 「損失を生む点だけが一体化される」＝標本数で境界が跳ばない。
-    over   = v_arr > _NU_THRESHOLD
-    lo, hi = peak_idx, peak_idx
-    while lo > 0 and over[lo - 1]:
-        lo -= 1
-    while hi < N - 1 and over[hi + 1]:
-        hi += 1
-
-    # 遮蔽体の両端での LoS 高度（再帰の端点として使用）
-    # ※ 障害物頂点高度ではなく LoS 上の点を使うことで
-    #    サブ区間の LoS が元の LoS に対して連続的になる
-    los_at_lo = float(los[lo])
-    los_at_hi = float(los[hi])
-
-    # ── 左区間（TX 〜 遮蔽体の手前端）の再帰 ────────────────────
-    if lo >= 2:
-        loss += _deygout_loss(
-            obs_surface = obs_surface[:lo + 1],
-            d_m_axis    = d_m_axis[:lo + 1],
-            tx_abs      = tx_abs,
-            rx_abs      = los_at_lo,
-            lam         = lam,
-            depth       = depth + 1,
-        )
-
-    # ── 右区間（遮蔽体の奥端 〜 RX）の再帰 ──────────────────────
-    if hi <= N - 3:
-        loss += _deygout_loss(
-            obs_surface = obs_surface[hi:],
-            d_m_axis    = d_m_axis[hi:],
-            tx_abs      = los_at_hi,
-            rx_abs      = rx_abs,
-            lam         = lam,
-            depth       = depth + 1,
-        )
-
-    return float(loss)
 
 
 def _vegetation_loss(

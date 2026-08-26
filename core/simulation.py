@@ -97,7 +97,10 @@ class SimParams:
             )[0]
         else:
             self.num = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
-        self.diff_method: str   = c.get("diff_method", "deygout")
+        # ⚠️ **旧名 `deygout` はここで受ける**（入力の境目 1 か所・B-130）＝
+        #    5 フローすべてがこの `SimParams` を通るので、ここだけで全部が揃う。
+        self.diff_method: str   = models.normalize_diff_method(
+            c.get("diff_method", models.DIFF_METHOD_MULTI))
         self.env_type:    str   = c.get("env_type", models.ENV_DEFAULT)
         self.rain_rate:   float = float(c.get("rain_rate", "0.0"))
 

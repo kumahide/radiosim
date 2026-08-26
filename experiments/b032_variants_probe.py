@@ -62,7 +62,13 @@
 
 使い方:
     & "$env:RADIOSIM_PYTHON" experiments/b032_variants_probe.py
+
+⚠️ **2026-08-26 に製品の回折モデルが Bullington へ替わった**（B-130）。
+この探針が「現行」と呼ぶのは**もう製品の既定ではない**（差し替え先の名前も
+`_deygout_loss` から `_multi_obstacle_loss` になった）。
+**当時の判断の記録として読むこと**＝数字は当時のもの。
 """
+
 from __future__ import annotations
 
 import math
@@ -83,7 +89,7 @@ from b032_deygout_probe import (  # noqa: E402
 
 def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str = "segment", shadow_gate: str = "off", one_edge: str = "off",
                  separation: float = 0.0):
-    """`models._deygout_loss` と差し替え可能な実装を返す。
+    """`models._multi_obstacle_loss` と差し替え可能な実装を返す。
 
     nu_basis: "segment"（現行＝区間ごとの d1·d2）/ "full"（全経路の d1·d2）
       "full" は「区間を割っても同じ障害物の ν が増えない」＝発散の機構そのものを断つ。
@@ -254,7 +260,7 @@ def make_variant(endpoint: str, max_depth: int, causebrook: bool, nu_basis: str 
 
 
 VARIANTS: dict[str, object] = {
-    "現行":       None,   # models._deygout_loss をそのまま
+    "現行":       None,   # models._multi_obstacle_loss をそのまま
     "G1:陰h+深1": make_variant("los", 1,  False, shadow_gate="height"),
     "✅Kν(θ=-0.8)": make_variant("los", 20, False, one_edge="nu:-0.8"),
     "ν>0.0(=LoS)": make_variant("los", 20, False, one_edge="los"),
@@ -266,15 +272,15 @@ VARIANTS: dict[str, object] = {
 def run(elevs, veg_h=0.0, dist_km=DIST_KM, variant=None,
         h_tx=H_TX, h_rx=H_RX) -> float:
     terrain = _profile(elevs, dist_km)
-    orig = models._deygout_loss
+    orig = models._multi_obstacle_loss
     if variant is not None:
-        models._deygout_loss = variant
+        models._multi_obstacle_loss = variant
     try:
         return models.calculate_propagation(
             terrain, h_tx, h_rx, FREQ_MHZ, veg_h, 4 / 3, diff_method="deygout"
         ).diff_loss
     finally:
-        models._deygout_loss = orig
+        models._multi_obstacle_loss = orig
 
 
 def single(elevs, veg_h=0.0, dist_km=DIST_KM, h_tx=H_TX, h_rx=H_RX) -> float:

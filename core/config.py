@@ -195,7 +195,7 @@ DEFAULT_CONFIG: dict[str, str] = {
     "resolution" : terrain_grid.RESOLUTION_DEFAULT,
     "env_type"   : "los",
     "rain_rate"  : "0.0",
-    "diff_method": "deygout",
+    "diff_method": "bullington",
     "theme"      : "system",
     "lang"       : "en",
     "proxy_url"  : "",
@@ -318,7 +318,11 @@ def select_app(values: dict) -> dict:
 
 # バリデーション用許容値セット（validate_config で参照）
 VALID_ENV_TYPES:    frozenset[str] = frozenset({"urban", "suburban", "rural", "los"})
-VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "deygout"})
+# ⚠️ **`core/models.py` の `DIFF_METHOD_KEYS` の写し**（`VALID_ENV_TYPES` と同じ扱い＝
+# この層は `models` を import しない）。**ずれは `tests/test_config.py` が機械で見る。**
+VALID_DIFF_METHODS: frozenset[str] = frozenset({"single", "bullington"})
+#: 旧名 → 新名（入力だけ受ける）。`models.DIFF_METHOD_ALIASES` の写し。
+DIFF_METHOD_ALIASES: dict[str, str] = {"deygout": "bullington"}
 # ⚠️ 段階の語彙は**写さずに引く**（I-069）＝`terrain_grid` は標準ライブラリだけの
 # 純粋な層なので、この層から import してよい（`VALID_ENV_TYPES` が `models.ENV_KEYS`
 # の写しになっているのとは違い、ここには写しが無い）。
@@ -381,7 +385,11 @@ def validate_config(c: dict[str, str]) -> list[str]:
         )
 
     # diff_method のバリデーション
-    diff_raw = c.get("diff_method", "deygout").strip()
+    # ⚠️ **旧名を受けてから検査する**＝2.x〜3.0a1 の `.rsproj`／設定／入力 CSV に
+    #    `deygout` が残っている（B-130 で手法ごと差し替えた）。受けないと**保存済みの
+    #    案件が「不正な値」で開けなくなる**。
+    diff_raw = c.get("diff_method", "bullington").strip()
+    diff_raw = DIFF_METHOD_ALIASES.get(diff_raw, diff_raw)
     if diff_raw not in _VALID_DIFF_METHODS:
         errors.append(
             f"[diff_method] {i18n.t('err_diff_method')}: {sorted(_VALID_DIFF_METHODS)}"

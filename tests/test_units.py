@@ -136,7 +136,7 @@ class TestBlockedRatioFormattingIsNotScattered:
         terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.53, 132.40)
         prop = models.calculate_propagation(
             terrain=terrain, h_tx=5.0, h_rx=5.0, freq_mhz=2400.0,
-            veg_h=0.0, initial_k=1.33, diff_method="deygout",
+            veg_h=0.0, initial_k=1.33, diff_method="bullington",
             env_type="rural", rain_rate=0.0,
         )
         assert prop.blocked_ratio > units.BLOCKED_RATIO_MAX, \

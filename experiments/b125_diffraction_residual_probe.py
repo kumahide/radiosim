@@ -1,32 +1,30 @@
-"""B-125〜B-128（B-032 を直した**後**に回折損へ残っているもの）を実データで数える探針。
+"""回折損の「残り」を実データで数える探針（B-125〜B-130）。
 
 ⚠️ 製品コードではない。`tests/data/golden_links.json` は標高配列を凍結しているので、
 **ネットワークに触らず**実経路 26 本で再計算できる（`b032_golden_probe.py` と同じ土俵）。
 
-測るのは 4 つ＝**起票の重要度をこの数字で決めた**（2026-08-26）:
+⚠️ **2026-08-26 に製品の回折モデルが Bullington へ替わった**（B-130）。この探針も
+そこで作り替えた。**測れなくなった 2 つを先に書いておく**（同じ問いが再燃したときの記録）:
 
-  ① [[B-127]] **再帰の深さ**が上限 `_MAX_DEPTH` に届いているか
-     ⇒ 実データの最大は **3**（実効 5m でも 3）＝いまは触れていない ⇒ 重要度を「低」へ。
-  ② [[B-126]] **区間幅の下限（当時の `_MIN_SEGMENT_M` = 50m）で打ち切った回数**
-     ⇒ 実効 20m / 10m で **0 回**、実効 5m で **3 回**（fuji 2 本・kagoshima）
-     ＝**「高」を選んだときだけ効く打ち切りがある**。50m という長さは標本間隔に対する
-     点数が解像度で変わるので、幾何ではなく設定で発火が決まっていた。
-     ✅ **2026-08-26 に製品から撤去した**＝下限を 0m / 50m / 200m のどれにしても
-     実データ 26 本・合成 5 形状 × 標本数 3 通りで値が完全に一致した（＝値を 1 つも
-     決めていなかった）。**この探針は撤去前の姿を残すため 50m を焼き付けて数える。**
-  ③ [[B-125]] **`single` と `deygout` の「見通し」の物差しの差**
-     ＝`single` は ν<0 で 0 dB（[models.py] の `v_max < 0`）、`deygout` は ν<=-0.8。
-     ⇒ **-0.8 < ν < 0 の帯を `single` だけが捨てる**。26 本中 **2 本が実際にその帯**
-     （`nagoya_grazing_900` ν=-0.425 で 2.53 dB／`niigata_grazing_900` で 2.47 dB）。
-     `single` は ν=0 に **6.03 dB の段差**を持つ（`deygout` 側は連続）。
+  ⛔ ①**再帰の深さ**（`_MAX_DEPTH`）と ②**区間幅の下限**（`_MIN_SEGMENT_M`）は
+     **もう存在しない**＝どちらも独自 Deygout 実装の再帰に付いていた打ち切りで、
+     Bullington は再帰しないので概念ごと消えた。
+     - 当時の実測＝**深さは最大 3 / 上限 20**（B-127＝上限には届いていなかった）。
+     - **幅の下限は値を 1 つも決めていなかった**（B-126＝0m/50m/200m で結果が一致）。
+
+いま測るのは 3 つ:
+
+  ③ [[B-125]] **`single` と複数障害物モデルが「見通し」と呼ぶ範囲が一致しているか**
+     ＝かつて `single` だけが ν<0 で切っており、-0.8 < ν < 0 の帯（26 本中 2 本が
+     実際にそこにいた）で 0 dB と出していた。**いまは J(ν) の 1 本に寄せてある。**
   ④ [[B-128]] **解像度の段階（低 20m / 中 10m / 高 5m）で回折損がどれだけ動くか**
-     ⇒ 動くのは深い遮蔽の 3 本だけ（`veg_low_antenna` 87.86→95.48 dB＝**+8.7%**、
-     `shizuoka_nihondaira` +8.0%、`kobe_rokko` +3.2%）。残り 23 本は 1% 未満。
-
-⚠️ **標本数の振り直しは凍結配列の線形内挿**＝本物の再取得ではない（`b032_golden_probe.py`
-の `recompute` と同じ近似）。**依存が「在るか無いか」を見る目安**として使う。
-⚠️ **`earth_k` は渡さない**＝既定 `EARTH_K_STANDARD`（`k_factor` はライス K で曲率とは
-無関係＝B-032 の 48 巡目で踏んだ罠）。
+     ⚠️ **Bullington にして悪化した**＝1% を超えて動く回線が 3 → 6 本、
+     最大が +8.7% → **+14.8%**（`veg_low_antenna`）。**開示に書いてある数字はこれ。**
+  ⑤ [[B-130]] **入力に対する連続性**＝植生高・アンテナ高を掃いて、
+     **刻みを 1/10 にしたとき最大段差も 1/10 になるか**を見る。
+     🔑 **これが跳び（崖）と急な坂を区別する唯一の方法**＝1m 刻みの差分を跳びと
+     呼ぶと読み違える（2026-08-26 に実際に踏んだ）。
+     実測＝旧実装 **比 1.00（崖・最大 84.6 dB）** / Bullington **比 0.19**。
 
 使い方:
     & "$env:RADIOSIM_PYTHON" experiments/b125_diffraction_residual_probe.py
@@ -46,45 +44,13 @@ from core import models  # noqa: E402
 
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 
-#: 撤去した区間幅の下限 [m]（B-126）。**製品にはもう無い**＝この探針が「撤去前は
-#: 何回発火していたか」を数え続けられるように、当時の値をここに焼き付けてある。
-_REMOVED_MIN_SEGMENT_M: float = 50.0
-
 #: 解像度の段階（I-069）＝実効間隔 [m]。名前は画面の語に合わせる。
 STEPS_M: tuple[tuple[str, float], ...] = (("低", 20.0), ("中", 10.0), ("高", 5.0))
 
-_orig_deygout = models._deygout_loss
-_stats: dict[str, int] = {}
-
-
-def _traced(*args, **kwargs):
-    """`_deygout_loss` を包んで、**打ち切りが効いた回数**を数える。
-
-    ⚠️ 製品は打ち切りの痕跡を一切残さない（→ [[B-127]]）ので、外から包むしかない。
-    """
-    d_axis = kwargs.get("d_m_axis", args[1] if len(args) > 1 else None)
-    _stats["max_depth"] = max(_stats.get("max_depth", 0), int(kwargs.get("depth", 0)))
-    if d_axis is not None:
-        if len(d_axis) < 3:
-            _stats["n_cut"] = _stats.get("n_cut", 0) + 1
-        elif float(d_axis[-1]) - float(d_axis[0]) < _REMOVED_MIN_SEGMENT_M:
-            _stats["span_cut"] = _stats.get("span_cut", 0) + 1
-    return _orig_deygout(*args, **kwargs)
-
 
 def _load() -> list[dict]:
-    recs = json.loads(GOLDEN.read_text(encoding="utf-8"))
-    if isinstance(recs, dict):
-        recs = recs.get("links") or recs.get("cases") or list(recs.values())
-    return list(recs)
-
-
-def _name(rec: dict, idx: int) -> str:
-    for key in ("name", "id", "label", "case"):
-        value = rec.get(key)
-        if isinstance(value, str):
-            return value
-    return f"#{idx}"
+    doc = json.loads(GOLDEN.read_text(encoding="utf-8"))
+    return doc["links"] if isinstance(doc, dict) and "links" in doc else doc
 
 
 def _terrain(rec: dict, n: int | None = None):
@@ -97,16 +63,17 @@ def _terrain(rec: dict, n: int | None = None):
     )
 
 
-def _prop(inp: dict, terrain, method: str):
+def _loss(rec, method, n=None, veg=None, dh=0.0) -> float:
+    inp, terrain = _terrain(rec, n)
     return models.calculate_propagation(
-        terrain, inp["h_tx"], inp["h_rx"], inp["freq_mhz"], inp["veg_h"],
-        inp["k_factor"], diff_method=method,
-        env_type=inp["env_type"], rain_rate=inp["rain_rate"],
-    )
+        terrain, inp["h_tx"] + dh, inp["h_rx"] + dh, inp["freq_mhz"],
+        inp["veg_h"] if veg is None else veg, inp["k_factor"],
+        diff_method=method, env_type=inp["env_type"], rain_rate=inp["rain_rate"],
+    ).diff_loss
 
 
-def _nu_max(inp: dict, terrain) -> float:
-    """`single` が主障害物として選ぶ点の ν（＝製品の `single` 枝と同じ式）。"""
+def _nu_max(rec) -> float:
+    inp, terrain = _terrain(rec)
     elevs = terrain.elevs_with_curve
     n     = terrain.num_samples
     los   = np.linspace(float(elevs[0]) + inp["h_tx"],
@@ -116,89 +83,89 @@ def _nu_max(inp: dict, terrain) -> float:
     total = terrain.horiz_dist_km * 1000
     d1    = np.maximum(d_m, 1.0)
     d2    = np.maximum(total - d_m, 1.0)
-    sqrt_term = np.sqrt(np.maximum(0, 2 * (d1 + d2) / (lam * d1 * d2 + 1e-9)))
-    nu = (elevs + inp["veg_h"] - los) * np.nan_to_num(sqrt_term)
+    nu = (elevs + inp["veg_h"] - los) * np.nan_to_num(
+        np.sqrt(np.maximum(0, 2 * (d1 + d2) / (lam * d1 * d2 + 1e-9))))
     return float(np.nanmax(np.nan_to_num(nu)))
+
+
+def _report_band(recs) -> None:
+    print("=== ③ 2 つのモデルが「見通し」と呼ぶ範囲は一致しているか（B-125）===")
+    band = disagree = 0
+    for rec in recs:
+        nu  = _nu_max(rec)
+        sgl = _loss(rec, "single")
+        mul = _loss(rec, models.DIFF_METHOD_MULTI)
+        if models._NU_THRESHOLD < nu < 0.0:
+            band += 1
+            print(f"  帯の中: {rec['id']:24s} nu={nu:+.3f}  single={sgl:6.2f}  "
+                  f"{models.DIFF_METHOD_MULTI}={mul:6.2f}")
+        if (sgl == 0.0) != (mul == 0.0):
+            disagree += 1
+            print(f"  [!] 食い違い: {rec['id']:24s} single={sgl:.2f} / {mul:.2f}")
+    print(f"  => nu が {models._NU_THRESHOLD}〜0 の帯にいる回線 {band} 本 / "
+          f"0 dB かどうかが食い違う回線 {disagree} 本（0 であること）")
+
+
+def _report_resolution(recs) -> None:
+    print("\n=== ④ 解像度の段階で回折損がどれだけ動くか（B-128）===")
+    print(f"{'link':24s} " + " ".join(f"{lb}({s:g}m)".rjust(9) for lb, s in STEPS_M)
+          + f" {'低→高':>7s}")
+    moved = []
+    for rec in recs:
+        _, base = _terrain(rec)
+        dist_m = base.horiz_dist_km * 1000
+        vals = []
+        for _, step in STEPS_M:
+            n = max(3, min(int(dist_m / step) + 1, 20000))
+            vals.append(_loss(rec, models.DIFF_METHOD_MULTI, n=n))
+        if vals[0] > 0.5:
+            ratio = (vals[2] / vals[0] - 1.0) * 100
+            moved.append((abs(ratio), rec["id"], ratio))
+            if abs(ratio) > 1.0:
+                print(f"{rec['id'][:24]:24s} " + " ".join(f"{v:9.2f}" for v in vals)
+                      + f" {ratio:+6.1f}%")
+    moved.sort(reverse=True)
+    print(f"  => 1% を超えて動く回線 {sum(1 for m, _, _ in moved if m > 1.0)} / "
+          f"{len(moved)} 本（最大 {moved[0][2]:+.1f}% = {moved[0][1]}）")
+
+
+def _report_continuity(recs) -> None:
+    print("\n=== ⑤ 入力に対する連続性（B-130）===")
+    print("  刻みを 1/10 にして最大段差も 1/10 になるか（比が小さいほど連続）")
+    worst = (0.0, "", "")
+    for rec in recs:
+        for sweep in ("veg_h", "antenna"):
+            def at(x, _rec=rec, _sweep=sweep):
+                return (_loss(_rec, models.DIFF_METHOD_MULTI, veg=float(x))
+                        if _sweep == "veg_h"
+                        else _loss(_rec, models.DIFF_METHOD_MULTI, dh=float(x)))
+
+            def max_step(step, _at=at):
+                xs = np.arange(0.0, 20.0 + step / 2, step)
+                vals = [_at(x) for x in xs]
+                return max(abs(vals[j + 1] - vals[j]) for j in range(len(vals) - 1))
+
+            coarse = max_step(1.0)
+            if coarse < 0.5:
+                continue
+            fine  = max_step(0.1)
+            ratio = fine / coarse
+            if ratio > worst[0]:
+                worst = (ratio, rec["id"], sweep)
+            if ratio > 0.3:
+                print(f"{rec['id'][:24]:24s} {sweep:>8s} 刻1.0m={coarse:7.2f} "
+                      f"刻0.1m={fine:7.2f} 比={ratio:5.2f}  [!] 不連続の疑い")
+    print(f"  => 最悪の比 {worst[0]:.2f}（{worst[1]} / {worst[2]}）"
+          f"  ＝ 0.3 未満なら連続、1.0 付近なら崖")
 
 
 def main() -> None:
     recs = _load()
-
-    print("=== ①②③ 現行の標本数（凍結配列そのまま）===")
-    print(f"{'link':26s} {'dist_km':>7s} {'N':>5s} {'間隔m':>6s} {'deygout':>8s} "
-          f"{'深さ':>4s} {'幅切':>4s} {'single':>7s} {'sgl@-0.8':>8s} {'差dB':>6s}")
-    max_depth = span_cut = 0
-    band: list[tuple[str, float, float]] = []
-    for idx, rec in enumerate(recs):
-        name = _name(rec, idx)
-        inp, terrain = _terrain(rec)
-        _stats.clear()
-        models._deygout_loss = _traced
-        try:
-            deyg = _prop(inp, terrain, "deygout").diff_loss
-        finally:
-            models._deygout_loss = _orig_deygout
-        sgl  = _prop(inp, terrain, "single").diff_loss
-        nu   = _nu_max(inp, terrain)
-        # `deygout` と同じ物差し（ν<=-0.8）で切った場合の `single`
-        sgl_at_threshold = models._diffraction_loss_fk(nu)
-        depth = _stats.get("max_depth", 0)
-        cuts  = _stats.get("span_cut", 0)
-        max_depth = max(max_depth, depth)
-        span_cut += cuts
-        if models._NU_THRESHOLD < nu < 0.0:
-            band.append((name, nu, sgl_at_threshold))
-        spacing = terrain.horiz_dist_km * 1000 / max(terrain.num_samples - 1, 1)
-        print(f"{name[:26]:26s} {terrain.horiz_dist_km:7.2f} {terrain.num_samples:5d} "
-              f"{spacing:6.1f} {deyg:8.2f} {depth:4d} {cuts:4d} "
-              f"{sgl:7.2f} {sgl_at_threshold:8.2f} {sgl_at_threshold - sgl:6.2f}")
-
-    print(f"\n① 最大再帰深さ = {max_depth} / 上限 {models._MAX_DEPTH}"
-          f"（[[B-127]]＝上限に届いていないが、届いても痕跡は残らない）")
-    print(f"② 区間幅の下限({_REMOVED_MIN_SEGMENT_M:g}m・撤去済み) の打ち切り = {span_cut} 回"
-          f"（[[B-126]]・この標本数では）")
-    print(f"③ ν が {models._NU_THRESHOLD} 〜 0 の帯にある回線 = {len(band)} 本"
-          f"（[[B-125]]＝`single` だけが捨てている dB）")
-    for name, nu, loss in band:
-        print(f"     {name:26s} ν={nu:+.3f}  single=0.00 / J(ν)={loss:.2f} dB")
-    print("   参考＝J(ν) の値: " + " / ".join(
-        f"J({v:+.2f})={models._diffraction_loss_fk(v):.2f}"
-        for v in (-0.80, -0.50, -0.20, -0.05, 0.00)
-    ) + "  ⇒ `single` は ν=0 に 6.03 dB の段差を持つ")
-
-    print("\n=== ④ 解像度の段階で回折損がどれだけ動くか（[[B-128]]）===")
-    print(f"{'link':26s} " + " ".join(f"{label}({step:g}m)".rjust(9)
-                                      for label, step in STEPS_M)
-          + f" {'低→高':>7s} {'深さ':>4s} {'幅切':>4s}")
-    worst: list[tuple[float, str]] = []
-    for idx, rec in enumerate(recs):
-        name = _name(rec, idx)
-        _, base = _terrain(rec)
-        dist_m = base.horiz_dist_km * 1000
-        values: list[float] = []
-        depth = cuts = 0
-        for _, step in STEPS_M:
-            n = max(3, min(int(dist_m / step) + 1, 20000))
-            inp, terrain = _terrain(rec, n)
-            _stats.clear()
-            models._deygout_loss = _traced
-            try:
-                values.append(_prop(inp, terrain, "deygout").diff_loss)
-            finally:
-                models._deygout_loss = _orig_deygout
-            depth = max(depth, _stats.get("max_depth", 0))
-            cuts += _stats.get("span_cut", 0)
-        ratio = (values[-1] / values[0] - 1.0) * 100 if values[0] > 0.01 else float("nan")
-        if values[0] > 0.01:
-            worst.append((ratio, name))
-        print(f"{name[:26]:26s} " + " ".join(f"{v:9.2f}" for v in values)
-              + f" {ratio:6.1f}% {depth:4d} {cuts:4d}")
-    worst.sort(reverse=True)
-    print("\n④ 動きの大きい順: " + " / ".join(f"{n} {r:+.1f}%" for r, n in worst[:3]))
-    # ⚠️ 出力に絵文字を混ぜない＝Windows の cp932 コンソールで `UnicodeEncodeError`
-    #    になり、**表を全部出したあとで落ちる**（2026-08-26 に踏んだ）。
-    print("注意: 判定（OK/NG）への影響はこの探針では見ていない＝"
-          "`b032_golden_probe.py` が同じコーパスで見る面（起票時は判定 0 本変化）。")
+    _report_band(recs)
+    _report_resolution(recs)
+    _report_continuity(recs)
+    print("\n注意: 判定（OK/NG）への影響はこの探針では見ていない＝"
+          "`b032_golden_probe.py` が同じコーパスで見る面。")
 
 
 if __name__ == "__main__":

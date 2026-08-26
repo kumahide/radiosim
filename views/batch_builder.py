@@ -310,7 +310,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ttk.Label(f_diff, text=i18n.t("lbl_b_diff_model")).pack(side="left")
         self._diff_var = tk.StringVar(value=self._base_params.diff_method)
         ttk.Combobox(
-            f_diff, textvariable=self._diff_var, values=["deygout", "single"],
+            f_diff, textvariable=self._diff_var, values=["bullington", "single"],
             state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
         self._common_keys.append("diff_method")

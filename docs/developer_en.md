@@ -60,7 +60,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 - Automatic terrain profile generation from GSI DEM PNG tiles (5 m / 10 m mesh)
 - Earth curvature correction (standard atmosphere K = 4/3, fixed)
-- Diffraction loss calculation using Deygout / Fresnel-Kirchhoff methods
+- Diffraction loss calculation using Bullington / Fresnel-Kirchhoff methods
 - Vegetation attenuation (LoS intrusion depth model)
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
@@ -216,6 +216,7 @@ radiosim/
 │
 ├── core/                 # Foundation: calculation, data, config. Pulls neither tkinter nor matplotlib
 │   ├── models.py         # Pure calculation logic (no side effects)
+│   ├── diffraction.py    # Diffraction loss (Bullington edge + spherical-earth seat)
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
@@ -620,7 +621,7 @@ Open it with the **Relay Path** button in the launcher (`views/multihop.py`). It
 | Terrain Resolution | High / Medium / Low           | —       | —      |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
-| Diff Method       | deygout / single               | —      |        |
+| Diff Method       | bullington / single            | —      |        |
 
 ---
 
@@ -653,11 +654,13 @@ When the 1st Fresnel zone is obstructed by terrain or vegetation, diffraction lo
 
 ### Diffraction Loss
 
-#### Deygout Method (default, **custom implementation**)
+#### Bullington Method (default, ITU-R P.526 4.5.1)
 
-A recursive model that handles multiple diffraction edges: the worst obstruction is taken as the main obstacle, the path is split around it, and losses are summed recursively.
+Replaces several obstacles with a single **equivalent knife edge**: two tangent lines are drawn from each end to the terrain point of maximum elevation angle, and their intersection becomes the obstacle. The standard correction term `(1 - exp(-Luc/6)) x (10 + 0.02 x d[km])` is then applied.
 
-⚠️ **This is not "ITU-R P.526 compliant"** (wording corrected 2026-08-09). The only thing taken from P.526 is the **knife-edge loss function J(ν)**. The current P.526-16 specifies a **cylinder model** for multiple obstacles and **Bullington** for general terrain, plus standard correction terms — **none of which are implemented here**. ⇒ **Broad obstacles are over-estimated** (known defect — see Known Limitations above).
+🔑 **Version 3.0 replaced the previous custom Deygout implementation with this** (history under Known Limitations). The reason was not accuracy but **continuity**: the old implementation counted obstacles, so **changing vegetation height or antenna height by 1 m could change the count and move the result by 84 dB** (raising an antenna by 1 m made the link 84 dB worse). The equivalent edge moves continuously as the terrain moves, so that jump cannot occur by construction.
+
+⚠️ **This does not claim compliance with ITU-R P.526 or P.452.** Only this one method from P.526 4.5.1 is implemented; the **spherical-earth term** added by the full method of P.452 4.2.1 (Delta-Bullington), clutter, and ducting are not included.
 
 #### Fresnel-Kirchhoff Loss J(ν)
 
@@ -1108,9 +1111,9 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 ### Accuracy
 
 - DEM horizontal resolution (5–10 m) is the hard ceiling for accuracy; individual building obstructions are not modeled
-- The Deygout method is an approximation; **on single-obstacle paths**, errors of ±5–15 dB relative to measurements are expected (**the range says nothing about the combined loss of several overlapping obstacles**)
-- 🔴 **Diffraction loss (the default Deygout method) can still come out too high, and there is no way to tell in advance which paths are trustworthy.** Version 3.0 fixed the defect that counted a broad ridge as many independent knife edges, removing the divergence that drove mountain paths to hundreds or thousands of dB (across 26 representative paths, results above 100 dB fell from 13 to 2; the smooth 25 m hill went from 65 dB to 5.5 dB). **The possibility of an over-estimate has not gone away**: (1) for paths crossing several peaks, the **combined loss has only been placed alongside two structurally different methods** (Bullington and Epstein-Peterson) to check its order of magnitude — it has not been checked against measurements or a reference implementation, and **there is no general ordering between the methods** (Deygout is the largest on some paths and the smallest on others); (2) on deeply obstructed paths, **raising the terrain sample count raises the diffraction loss** (+18% from 120 to 960 samples; it was +92% before the fix). ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you which paths are affected** — relief is not a predictor. ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
-- 🛡 **What you can do about it**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Deygout) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only), so it **can come out lower than Deygout**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
+- The Bullington method is an approximation; **on single-obstacle paths**, errors of ±5–15 dB relative to measurements are expected (**the range says nothing about the combined loss of several overlapping obstacles**)
+- 🔴 **Diffraction loss can come out too high or too low, and there is no way to tell in advance which paths are trustworthy.** Version 3.0 replaced the diffraction model with the **Bullington equivalent knife edge (ITU-R P.526 4.5.1)**, removing two defects: the divergence that drove mountain paths to hundreds or thousands of dB, and a **discontinuity that moved the result by 84 dB when vegetation height or antenna height changed by 1 m** (raising an antenna by 1 m made the diffraction loss 84 dB worse). **The possibility of being wrong has not gone away**: (1) the combined loss has only been placed alongside two structurally different methods (Epstein-Peterson and the previous custom implementation) to check its order of magnitude — it has **not been checked against measurements or a reference implementation**; (2) **where two or more ridges are well separated the result reads low** (a known property of this method, accepted by the standard that defines it); (3) on a single hill it now reads **higher** than before, by the standard correction term; (4) on deeply obstructed paths, **raising the terrain sample count raises the diffraction loss** (up to +14.8% going from 20 m to 5 m effective spacing); (5) the **spherical-earth term is not included**, so a **long, flat path with low antennas beyond the radio horizon** (over sea or tidal flats) can read low — none of the 26 representative paths met that condition, but **the product does not check for it**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you which paths are affected** — relief is not a predictor. ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
+- 🛡 **What you can do about it**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Bullington) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only) and does not apply the standard correction term, so it **comes out lower than Bullington**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
 - The vegetation model is empirical; species, density, and seasonal variation are not accounted for
 - Environmental loss coefficients are empirical; suitability for specific regions is not guaranteed
 

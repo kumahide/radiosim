@@ -57,17 +57,17 @@ class TestSimParams:
         p = sim.SimParams(default_params_dict)
         assert p.diff_method == "single"
 
-    def test_diff_method_deygout(self, default_params_dict):
-        """diff_method="deygout" が正しくパースされる。"""
-        default_params_dict["diff_method"] = "deygout"
+    def test_diff_method_bullington(self, default_params_dict):
+        """diff_method="bullington" が正しくパースされる。"""
+        default_params_dict["diff_method"] = "bullington"
         p = sim.SimParams(default_params_dict)
-        assert p.diff_method == "deygout"
+        assert p.diff_method == "bullington"
 
-    def test_diff_method_default_is_deygout(self, default_params_dict):
-        """diff_method キーが存在しない場合のデフォルトは "deygout"。"""
+    def test_diff_method_default_is_bullington(self, default_params_dict):
+        """diff_method キーが存在しない場合のデフォルトは "bullington"。"""
         default_params_dict.pop("diff_method", None)
         p = sim.SimParams(default_params_dict)
-        assert p.diff_method == "deygout"
+        assert p.diff_method == "bullington"
 
     def test_env_type_parsed(self, default_params_dict):
         """env_type が正しくパースされる。"""
@@ -523,14 +523,14 @@ class TestRunCalculation:
         result = sim.run_calculation(flat_terrain, 10.0, 10.0, params)
         assert result.diff_method == "single"
 
-    def test_diff_method_deygout_reflected(self, flat_terrain, default_params_dict):
-        """params.diff_method="deygout" が結果の diff_method に引き継がれる。"""
-        default_params_dict["diff_method"] = "deygout"
+    def test_diff_method_bullington_reflected(self, flat_terrain, default_params_dict):
+        """params.diff_method="bullington" が結果の diff_method に引き継がれる。"""
+        default_params_dict["diff_method"] = "bullington"
         params = sim.SimParams(default_params_dict)
         result = sim.run_calculation(flat_terrain, 10.0, 10.0, params)
-        assert result.diff_method == "deygout"
+        assert result.diff_method == "bullington"
 
-    def test_deygout_diff_loss_gte_single_on_ridge(self, default_params_dict):
+    def test_bullington_diff_loss_gte_single_on_ridge(self, default_params_dict):
         """尾根地形で Deygout の回折損 >= Single の回折損。"""
         raw = np.zeros(201)
         raw[100] = 50.0
@@ -540,10 +540,10 @@ class TestRunCalculation:
         default_params_dict["diff_method"] = "single"
         r_single = sim.run_calculation(terrain, 10.0, 10.0, sim.SimParams(default_params_dict))
 
-        default_params_dict["diff_method"] = "deygout"
-        r_deygout = sim.run_calculation(terrain, 10.0, 10.0, sim.SimParams(default_params_dict))
+        default_params_dict["diff_method"] = "bullington"
+        r_bullington = sim.run_calculation(terrain, 10.0, 10.0, sim.SimParams(default_params_dict))
 
-        assert r_deygout.diff_loss >= r_single.diff_loss - 0.5
+        assert r_bullington.diff_loss >= r_single.diff_loss - 0.5
 
     def test_env_type_reflected_in_result(self, flat_terrain, default_params_dict):
         """params.env_type が結果の env_type に引き継がれる。"""
@@ -641,14 +641,14 @@ class TestSavePackage:
             content = f.read()
         assert "Diff Model    : single" in content
 
-    def test_report_contains_diff_model_deygout(self, tmp_path, flat_terrain,
+    def test_report_contains_diff_model_bullington(self, tmp_path, flat_terrain,
                                                 default_params_dict, monkeypatch):
-        """report.txt に Diff Model: deygout が含まれること。"""
+        """report.txt に Diff Model: bullington が含まれること。"""
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
-                                  monkeypatch, diff_method="deygout")
+                                  monkeypatch, diff_method="bullington")
         with open(os.path.join(save_dir, "report.txt"), encoding="utf-8") as f:
             content = f.read()
-        assert "Diff Model    : deygout" in content
+        assert "Diff Model    : bullington" in content
 
     def test_report_dd_by_default(self, tmp_path, flat_terrain,
                                   default_params_dict, monkeypatch):
@@ -682,17 +682,17 @@ class TestSavePackage:
                                                 default_params_dict, monkeypatch):
         """settings.json に diff_method キーが保存されること。"""
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
-                                  monkeypatch, diff_method="deygout")
+                                  monkeypatch, diff_method="bullington")
         with open(os.path.join(save_dir, "settings.json"), encoding="utf-8") as f:
             settings = json.load(f)
         assert "diff_method" in settings
-        assert settings["diff_method"] == "deygout"
+        assert settings["diff_method"] == "bullington"
 
     def test_settings_json_roundtrip(self, tmp_path, flat_terrain,
                                      default_params_dict, monkeypatch):
         """settings.json を読み込んで SimParams を再構築できること。"""
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
-                                  monkeypatch, diff_method="deygout")
+                                  monkeypatch, diff_method="bullington")
         with open(os.path.join(save_dir, "settings.json"), encoding="utf-8") as f:
             saved = json.load(f)
 
@@ -714,7 +714,7 @@ class TestSavePackage:
             "rain_rate"  : str(saved.get("rain_rate", 0.0)),
         }
         p = sim.SimParams(restored)
-        assert p.diff_method == "deygout"
+        assert p.diff_method == "bullington"
         assert p.env_type == default_params_dict.get("env_type", "los")
         assert p.rain_rate == pytest.approx(0.0)
 

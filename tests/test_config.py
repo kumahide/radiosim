@@ -36,7 +36,7 @@ class TestValidateConfig:
             "k_factor"   : "10.0",
             "samples"    : "200",
             "rain_rate"  : "0.0",
-            "diff_method": "deygout",
+            "diff_method": "bullington",
         }
 
     def test_valid_input_no_errors(self):
@@ -130,9 +130,9 @@ class TestValidateConfig:
         c["diff_method"] = "invalid"
         assert any("diff_method" in e for e in config.validate_config(c))
 
-    def test_diff_method_deygout_is_valid(self):
+    def test_diff_method_bullington_is_valid(self):
         c = self._valid()
-        c["diff_method"] = "deygout"
+        c["diff_method"] = "bullington"
         assert config.validate_config(c) == []
 
     def test_diff_method_single_is_valid(self):

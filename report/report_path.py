@@ -269,7 +269,9 @@ def path_sheet_html(
     tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
     status_cls  = "ok" if result.status == "OK" else "ng"
-    model_label = i18n.t("html_model_deygout") if result.diff_method == "deygout" else i18n.t("html_model_single")
+    model_label = (i18n.t("html_model_bullington")
+                   if result.diff_method == "bullington"
+                   else i18n.t("html_model_single"))
     env_label   = i18n.t(f"env_{result.env_type}")
 
     # A-0 アンテナ初期指向（AZ/EL）。既存データ（座標・アンテナ高・地形標高・地球

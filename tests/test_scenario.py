@@ -130,7 +130,9 @@ class TestConditionValidatesValues:
             scn.Condition(label="A", overrides={"p_tx": value})
 
     @pytest.mark.parametrize("key,value", [
-        ("env_type", "forest"), ("diff_method", "bullington"),
+        # ⚠️ **実在しない値を選ぶ**＝"bullington" は 2026-08-26 に有効値になった
+        #    （B-130）。ここが緑のまま意味を失う典型なので、未実装の手法名にした。
+        ("env_type", "forest"), ("diff_method", "epstein_peterson"),
     ])
     def test_rejects_unknown_choice(self, key, value):
         with pytest.raises(ValueError, match=value):
@@ -1069,11 +1071,11 @@ class TestBaseValuesAndLabels:
         assert "—" not in row[0]
 
     def test_categorical_values_use_localized_labels(self, terrain, base):
-        """環境・回折モデルは内部キー（los / deygout）でなく i18n ラベルで出す。"""
+        """環境・回折モデルは内部キー（los / bullington）でなく i18n ラベルで出す。"""
         html = report_scenario.scenario_sheet_html(self._compare_run(terrain, base))
         assert i18n.t("env_urban") in html
         assert i18n.t("html_model_single") in html
-        for raw in (">urban<", ">single<", ">los<", ">deygout<"):
+        for raw in (">urban<", ">single<", ">los<", ">bullington<"):
             assert raw not in html, f"内部キーが露出している: {raw}"
 
 

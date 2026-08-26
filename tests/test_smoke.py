@@ -57,7 +57,7 @@ _BATCH_PARAMS = {
     "start": "34.5429, 132.4118", "end": "34.5389, 132.4050",
     "h_tx": "30.0", "h_rx": "10.0", "freq": "2400.0", "p_tx": "20.0",
     "gain_tx": "3.0", "gain_rx": "3.0", "sens": "-85.0", "veg_h": "10.0",
-    "k_factor": "10.0", "samples": "50", "diff_method": "deygout",
+    "k_factor": "10.0", "samples": "50", "diff_method": "bullington",
     "env_type": "los", "rain_rate": "0.0",
 }
 
@@ -555,7 +555,7 @@ def test_graph_window_is_a_toplevel_that_does_not_block():
             "h_tx": "30", "h_rx": "30", "freq": "2400", "p_tx": "13",
             "gain_tx": "2", "gain_rx": "2", "sens": "-90", "veg_h": "20",
             "k_factor": "10", "samples": "50", "env_type": "los",
-            "rain_rate": "0", "diff_method": "deygout",
+            "rain_rate": "0", "diff_method": "bullington",
         })
         closed: list[str] = []
         # **ここが返ってくること自体**が検査（返らなければテストが固まる）。

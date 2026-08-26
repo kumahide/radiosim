@@ -1186,12 +1186,20 @@ _PUBLIC_DOCS = ["README.md", *ALL_DOCS]
 # ②事前に見分けられないこと ③自衛策（`Single` と見比べる）、そして 3.0 で
 # 発散を塞いだあとに**残った限界** ④合成損失を真値と照合していないこと
 # ⑤標本数を増やすと回折損が増えること。
+# 🔁 **2026-08-26（B-130）に目印を足した**＝回折モデルを Bullington へ替えたので、
+#   開示すべき限界が 5 つ → 7 つになった（**消さずに足す**）:
+#     ⑥**離れた尾根では小さめに出る**＝この手法の既知の性質（過大の側だけ書くと嘘）
+#     ⑦**球面回折の項が無い**＝低いアンテナ × 長距離 × 平坦（海上）で過小になりうる
+#   ⚠️ **⑤の数字も変わった**（標本数依存が +18% → 最大 +14.8%・測り方は実効間隔）。
+#   目印は**数字ではなく概念**にしてあるので、数字の更新でゲートは動かない。
 _DIVERGENCE_MARKERS = {
     "ja": ["過大", "起伏の大きさでも", "`Single`",
-           "実測とも基準実装とも突き合わせていません", "サンプル数を増やすと"],
+           "実測とも基準実装とも突き合わせていません", "サンプル数を増やすと",
+           "小さめに出ます", "球面回折の項"],
     "en": ["too high", "Neither", "`Single`",
            "not been checked against measurements or a reference implementation",
-           "raising the terrain sample count"],
+           "raising the terrain sample count",
+           "reads low", "spherical-earth term"],
 }
 _CLAMP_MARKERS = {
     "ja": ["100% で頭打ち"],
@@ -1234,6 +1242,11 @@ _FORBIDDEN_UNBACKED_CLAIM = [
     (r"bracket the truth", "the two models bracketing the true value"),
     # 見出しで「Deygout ＝ P.526 準拠」と名乗る形（本文の否定文は拾わない）
     (r"^#+.*Deygout.*P\.526", "見出しで Deygout を P.526 準拠と名乗っている"),
+    # 🆕 **標準への準拠を名乗る形**（2026-08-26・B-130）＝採ったのは P.526 §4.5.1 の
+    #   1 手法だけで、P.452 の完全法（球面回折・clutter・ducting）は持たない。
+    #   ⚠️ 本文の否定文（「準拠とは名乗りません」）を拾わないよう**見出しに限る**。
+    (r"^#+.*(P\.452|P\.526)\s*準拠", "見出しで標準への準拠を名乗っている"),
+    (r"^#+.*(P\.452|P\.526)[- ]compliant", "heading claims compliance with the standard"),
     # 🔴 **片側だけの方向保証**（2026-08-09・Codex 4 巡目で残留が判明）。
     # 「挟む」を消しても「Single は過小評価する」が残っていた＝**上下限保証の片側**。
     # ⚠️ 前回のゲートはこれを見逃した＝**禁じたのは合成語（「挟む」）だけで、

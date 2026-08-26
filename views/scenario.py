@@ -58,9 +58,9 @@ _COMPARE_FIELDS: tuple[tuple[str, str], ...] = (
 )
 
 # 選択肢は**内部キーで持ち、表示は i18n ラベル**（ランチャーと同じ流儀）。
-# 以前はキー（los / deygout …）をそのまま見せており、ja でも英語のままだった。
+# 以前はキー（los / bullington …）をそのまま見せており、ja でも英語のままだった。
 _ENV_KEYS  = ("los", "rural", "suburban", "urban")
-_DIFF_KEYS = ("deygout", "single")
+_DIFF_KEYS = ("bullington", "single")
 
 
 def _axis_label(key: str) -> str:

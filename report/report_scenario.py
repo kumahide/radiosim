@@ -68,7 +68,7 @@ def _param_text(key: str, value) -> str:
     if key == "env_type":
         return i18n.t(f"env_{value}")
     if key == "diff_method":
-        return i18n.t("html_model_deygout" if value == "deygout"
+        return i18n.t("html_model_bullington" if value == "bullington"
                       else "html_model_single")
     return f"{value:g}" if isinstance(value, (int, float)) else str(value)
 

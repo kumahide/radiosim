@@ -44,7 +44,7 @@ _PARAMS = {
     "veg_h"      : "10.0",
     "k_factor"   : "10.0",
     "samples"    : "50",
-    "diff_method": "deygout",
+    "diff_method": "bullington",
     "env_type"   : "los",
     "rain_rate"  : "0.0",
 }

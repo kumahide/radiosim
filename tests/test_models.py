@@ -6,9 +6,9 @@ models.py のユニットテスト。
 カバー範囲:
   - _diffraction_loss_fk      : Fresnel-Kirchhoff 回折損
   - _nu                       : Fresnel パラメータ計算
-  - _deygout_loss             : Deygout 多重回折損
+  - _bullington_loss          : Bullington 等価ナイフエッジ（複数障害物）
   - calculate_terrain_profile : 地形プロファイル生成
-  - calculate_propagation     : 伝搬計算（single / deygout 両モデル）
+  - calculate_propagation     : 伝搬計算（single / bullington 両モデル）
   - calculate_link_budget     : リンクバジェット
   - PropagationResult         : diff_method フィールド
   - LinkBudgetResult          : diff_method フィールド
@@ -23,6 +23,7 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from core import diffraction
 from core import models
 
 
@@ -84,7 +85,7 @@ class TestDiffractionLossFk:
 
 # ================================================================
 # ================================================================
-# _deygout_loss
+# _bullington_loss
 # ================================================================
 class TestHorizontalDistanceKm:
     def test_zero_for_same_point(self):
@@ -253,25 +254,25 @@ class TestCalculateTerrainProfile:
 # calculate_propagation
 # ================================================================
 class TestCalculatePropagation:
-    """single / deygout 両モデルの共通挙動 + モデル固有の挙動。"""
+    """single / bullington 両モデルの共通挙動 + モデル固有の挙動。"""
 
     PARAMS = dict(h_tx=10.0, h_rx=10.0, freq_mhz=2400.0, veg_h=5.0, initial_k=10.0)
 
     # ── 共通: フィールドの存在と型 ──────────────────────────────
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_returns_propagation_result(self, flat_terrain, method):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
         assert isinstance(r, models.PropagationResult)
 
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_diff_method_field(self, flat_terrain, method):
         """diff_method フィールドが引数と一致する。"""
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
         assert r.diff_method == method
 
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_all_fields_finite(self, flat_terrain, method):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
@@ -279,17 +280,21 @@ class TestCalculatePropagation:
                       r.blocked_ratio, r.slant_dist_km, r.current_k):
             assert math.isfinite(field)
 
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_flat_los_diff_loss_near_zero(self, flat_terrain, method):
         """平坦見通し地形では回折損が小さい。
-        Deygout は植生層（veg_h=5m）が LoS に近い場合に
-        わずかな損失を計上することがあるため、許容値を 2 dB とする。
+
+        ⚠️ **許容値 5 dB の内訳**（2026-08-26・B-130 で 2 dB から広げた）＝
+        この条件は植生 5m が F1 に 60.8% 食い込んでおり、**素の J(ν) が 1.56 dB**。
+        `bullington` はそこに**標準の補正項**
+        `(1 - exp(-Luc/6))(10 + 0.02·d_km)` が乗って **3.86 dB** になる。
+        ⇒ **見ているのは「桁で外れていないか」**であって、モデル間の一致ではない。
         """
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
-        assert r.diff_loss == pytest.approx(0.0, abs=2.0)
+        assert r.diff_loss == pytest.approx(0.0, abs=5.0)
 
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_nonnegative_losses(self, single_ridge_terrain, method):
         r = models.calculate_propagation(single_ridge_terrain, **self.PARAMS,
                                          diff_method=method)
@@ -363,34 +368,34 @@ class TestCalculatePropagation:
             )
 
     # ── デフォルト引数は "single" ────────────────────────────────
-    def test_default_method_is_deygout(self, flat_terrain):
+    def test_default_method_is_bullington(self, flat_terrain):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS)
-        assert r.diff_method == "deygout"
+        assert r.diff_method == "bullington"
 
     # ── モデル固有: 2 本尾根で Deygout >= Single ─────────────────
-    def test_deygout_gte_single_on_double_ridge(self, double_ridge_terrain):
+    def test_bullington_gte_single_on_double_ridge(self, double_ridge_terrain):
         r_s = models.calculate_propagation(double_ridge_terrain, **self.PARAMS,
                                            diff_method="single")
         r_d = models.calculate_propagation(double_ridge_terrain, **self.PARAMS,
-                                           diff_method="deygout")
+                                           diff_method="bullington")
         assert r_d.diff_loss >= r_s.diff_loss - 0.5
 
     # ── env_loss の範囲 ──────────────────────────────────────────
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_env_loss_in_range(self, flat_terrain, method):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
         assert 3.0 <= r.env_loss <= 30.0
 
     # ── current_k は非負 ────────────────────────────────────────
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_current_k_nonnegative(self, single_ridge_terrain, method):
         r = models.calculate_propagation(single_ridge_terrain, **self.PARAMS,
                                          diff_method=method)
         assert r.current_k >= 0.0
 
     # ── slant_dist >= horiz_dist ─────────────────────────────────
-    @pytest.mark.parametrize("method", ["single", "deygout"])
+    @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_slant_dist_gte_horiz(self, flat_terrain, method):
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
@@ -418,7 +423,7 @@ class TestCalculateLinkBudget:
 
     def test_diff_method_propagated(self):
         """diff_method が PropagationResult から LinkBudgetResult に引き継がれる。"""
-        for method in ["single", "deygout"]:
+        for method in ["single", "bullington"]:
             r = models.calculate_link_budget(self._prop(method), **self.RADIO)
             assert r.diff_method == method
 
@@ -461,7 +466,7 @@ class TestCalculateLinkBudget:
             diff_loss=80.0, veg_loss=40.0, env_loss=30.0,
             rain_loss=5.0,  gas_loss=1.0,
             blocked_ratio=200.0, slant_dist_km=50.0,
-            current_k=0.0, diff_method="deygout", env_type="urban",
+            current_k=0.0, diff_method="bullington", env_type="urban",
         )
         r = models.calculate_link_budget(prop, **self.RADIO)
         assert r.status == "NG"
@@ -711,6 +716,110 @@ class TestScopeNotes:
             for always in models.SCOPE_ALWAYS:
                 assert always in keys, (always, freq)
 
+    # ========================================================
+    # 旧名の受け口と、球面回折の席（B-130）
+    # ========================================================
+    def test_the_old_model_name_is_still_accepted(self):
+        """🔴 **利用者の保存物が壊れない**こと＝`deygout` は入力として受ける。
+
+        2.x〜3.0a1 の `.rsproj`・設定・入力 CSV には旧名が入っている。
+        **受けるのは入力だけ**で、返るのは常に新名（出力は新名で書く）。
+        """
+        assert models.normalize_diff_method("deygout") == models.DIFF_METHOD_MULTI
+        assert models.normalize_diff_method(" deygout ") == models.DIFF_METHOD_MULTI
+        assert models.normalize_diff_method("single") == models.DIFF_METHOD_SINGLE
+        # 旧名で計算しても新名と同じ結果になる（別の枝へ落ちない）
+        raw = np.zeros(201)
+        raw[100] = 60.0
+        terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        old = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                           diff_method="deygout").diff_loss
+        new = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                           diff_method=models.DIFF_METHOD_MULTI).diff_loss
+        assert old == pytest.approx(new)
+
+    def test_the_spherical_earth_seat_is_empty_but_wired(self, monkeypatch):
+        """🔑 **席が埋まった日に配線が動く**ことを、いま固定しておく（B-130）。
+
+        `_spherical_earth_loss` は常に 0 dB（未実装＝地表の電気定数と偏波が要る）。
+        ⚠️ **「いま 0 を返す」だけを検査すると、席の配線が死んでいても緑**になる。
+        ⇒ 席を埋めて、P.452 §4.2.1 の形
+        `Ld = Lbulla + max(Ldsph - Lbulls, 0)` で効くことまで見る。
+        """
+        raw = np.zeros(201)
+        raw[100] = 60.0
+        terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        base = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                            diff_method=models.DIFF_METHOD_MULTI).diff_loss
+        assert models._spherical_earth_loss(
+            terrain.d_km_axis * 1000, 30.0, 30.0, 0.125,
+            models._smooth_earth_surface(terrain.elevs_with_curve,
+                                         terrain.d_km_axis * 1000),
+        ) == 0.0
+
+        monkeypatch.setattr(diffraction, "_spherical_earth_loss",
+                            lambda *a, **k: 40.0)
+        filled = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                              diff_method=models.DIFF_METHOD_MULTI).diff_loss
+        assert filled > base, "席を埋めても第 2 項が効いていない＝配線が死んでいる"
+
+    # ========================================================
+    # 回折損は入力に対して連続であること（B-130）
+    # ========================================================
+    #: 掃く量＝**利用者が実際に動かす入力**（植生高・両端アンテナ高）。
+    _CONTINUITY_SWEEPS = ("veg_h", "antenna_h")
+
+    def _diff_loss_at(self, raw, veg_h, dh, method):
+        terrain = models.calculate_terrain_profile(
+            raw, 34.54, 132.41, 34.54, 132.46,
+        )
+        return models.calculate_propagation(
+            terrain, 30.0 + dh, 30.0 + dh, 2400.0, veg_h, 10.0,
+            diff_method=method,
+        ).diff_loss
+
+    @pytest.mark.parametrize("sweep", _CONTINUITY_SWEEPS)
+    @pytest.mark.parametrize("method", ["single", "bullington"])
+    def test_diffraction_loss_is_continuous_in_the_inputs(self, sweep, method):
+        """🔴 **入力を細かく動かせば、出力も細かくしか動かない**こと（B-130）。
+
+        🔑 **判定は「刻みを 1/10 にしたら最大段差も 1/10 になるか」**＝
+        *跳び*と*急な坂*はこれでしか区別できない。⚠️ 1m 刻みの差分を跳びと
+        呼ぶと読み違える（2026-08-26 に実際に踏んだ＝坂を崖と報告しかけた）。
+
+        **これが在れば防げたもの**＝旧実装（独自 Deygout）は、`ν > -0.8` の
+        連続区間が繋がった瞬間に障害物の枚数が 2→1 に変わり、**植生高やアンテナ高を
+        1m 動かすだけで 84.6 dB 跳んだ**（アンテナを上げたら 84 dB 悪くなる）。
+        比は 1.00＝刻みを細かくしても段差が残る＝崖。Bullington は 0.19。
+        """
+        # 2 つの峰＝枚数の切り替わりが起きうる形（旧実装が跳んだのはこの形）
+        raw = np.zeros(241)
+        raw[80] = 38.0
+        raw[160] = 40.0
+
+        # 🔴 **範囲は固定して刻みだけ細かくする**＝範囲まで 1/10 にすると、
+        #    粗い側と細かい側が**別の区間**を見ることになり、崖を跨がない
+        #    （2026-08-26 にこの形の穴を作って変異が素通りした）。
+        span = 30.0
+
+        def max_step(step):
+            xs = np.arange(0.0, span + step / 2, step)
+            vals = [
+                self._diff_loss_at(raw, float(x), 0.0, method) if sweep == "veg_h"
+                else self._diff_loss_at(raw, 5.0, float(x), method)
+                for x in xs
+            ]
+            return max(abs(vals[j + 1] - vals[j]) for j in range(len(vals) - 1))
+
+        coarse = max_step(1.0)
+        fine   = max_step(0.1)
+        if coarse < 0.5:
+            return  # そもそも動かない条件（この形では起きない）＝判定不能
+        assert fine / coarse < 0.5, (
+            f"{method}/{sweep}: 刻みを 1/10 にしても段差が {fine:.2f} dB 残る"
+            f"（粗い刻みでは {coarse:.2f} dB）＝不連続（崖）がある"
+        )
+
     def test_the_recursion_terminates_without_a_length_floor(self):
         """🔴 **区間幅の下限を外しても再帰は必ず尽きる**こと（B-126）。
 
@@ -726,18 +835,18 @@ class TestScopeNotes:
             raw, 34.54, 132.41, 34.54, 132.46,
         )
         loss = models.calculate_propagation(
-            terrain, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method="deygout",
+            terrain, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method="bullington",
         ).diff_loss
         assert math.isfinite(loss)
         assert loss >= 0.0
 
     def test_the_two_diffraction_models_agree_on_where_loss_starts(self):
-        """🔴 **`single` と `deygout` が「見通し」と呼ぶ範囲は同じ**であること（B-125）。
+        """🔴 **`single` と `bullington` が「見通し」と呼ぶ範囲は同じ**であること（B-125）。
 
-        ⚠️ **値の一致は求めない**＝多重回折の分だけ `deygout` が上に出るのは
+        ⚠️ **値の一致は求めない**＝複数障害物ぶん `bullington` が上に出るのは
         仕様。見るのは **0 dB かどうかの境目だけ**。`single` に独自の
         `v_max < 0` があった頃は、`-0.8 < ν < 0` の帯で **single が 0.00 dB・
-        deygout が最大 6.03 dB** を返していた（実データ 26 本中 2 本がこの帯）。
+        bullington が最大 6.03 dB** を返していた（実データ 26 本中 2 本がこの帯）。
 
         ⚠️ 障害物の高さを 0.5m 刻みで掃くのは、**境目をまたぐ点を必ず含める**ため
         （片側だけ見ると、閾値を動かした変異が緑のまま通る）。
@@ -752,14 +861,14 @@ class TestScopeNotes:
                 method: models.calculate_propagation(
                     terrain, 30.0, 30.0, 2400.0, 0.0, 10.0, diff_method=method,
                 ).diff_loss
-                for method in ("single", "deygout")
+                for method in ("single", "bullington")
             }
-            assert (losses["single"] == 0.0) == (losses["deygout"] == 0.0), (
+            assert (losses["single"] == 0.0) == (losses["bullington"] == 0.0), (
                 h, losses,
             )
             # 🔴 **どちらのモデルも負の損失を返さない**＝J(ν) は閾値のすぐ上で
             # -0.06 dB まで負に振れる（0.1 dB 刻みの帳票に `-0.1 dB` と出る）。
-            assert losses["single"] >= 0.0 and losses["deygout"] >= 0.0, (h, losses)
+            assert losses["single"] >= 0.0 and losses["bullington"] >= 0.0, (h, losses)
 
     def test_the_single_model_has_no_step_at_the_line_of_sight(self):
         """🔴 **`single` は ν=0 の前後で跳ばない**こと（B-125 の段差の側）。
@@ -812,7 +921,7 @@ class TestScopeNotes:
         )
 
     def test_the_order_is_the_same_on_every_face(self):
-        keys = models.scope_notes(430.0, diff_method="deygout",
+        keys = models.scope_notes(430.0, diff_method="bullington",
                                   rain_rate=5.0, veg_h=3.0)
         assert list(keys) == [k for k in models.SCOPE_NOTE_ORDER if k in keys]
 
@@ -880,14 +989,14 @@ class TestScopeNotes:
     def test_no_vegetation_note_when_no_vegetation_was_given(self):
         assert "veg_extrapolated" not in models.scope_notes(430.0, veg_h=0.0)
 
-    def test_the_deygout_assumption_is_declared_only_for_deygout(self):
-        assert "diff_deygout" in models.scope_notes(430.0, diff_method="deygout")
-        assert "diff_deygout" not in models.scope_notes(430.0, diff_method="single")
+    def test_the_bullington_assumption_is_declared_only_for_bullington(self):
+        assert "diff_bullington" in models.scope_notes(430.0, diff_method="bullington")
+        assert "diff_bullington" not in models.scope_notes(430.0, diff_method="single")
 
     def test_union_keeps_one_of_each_in_the_canonical_order(self):
         """台帳は N 本を 1 枚に載せる＝**どれか 1 本に当てはまる刻印**を出す。"""
         a = models.scope_notes(430.0, diff_method="single", veg_h=5.0)
-        b = models.scope_notes(2400.0, diff_method="deygout", rain_rate=10.0)
+        b = models.scope_notes(2400.0, diff_method="bullington", rain_rate=10.0)
         merged = models.scope_notes_union([a, b])
         assert set(merged) == set(a) | set(b)
         assert len(merged) == len(set(merged)), "重複している"

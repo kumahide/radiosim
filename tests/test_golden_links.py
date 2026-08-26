@@ -136,7 +136,7 @@ class TestCorpusCoverage:
         assert envs == set(models.ENV_COEFFS), f"未カバーの env_type: {set(models.ENV_COEFFS) - envs}"
 
     def test_covers_both_diff_methods(self):
-        assert {link["input"]["diff_method"] for link in LINKS} == {"single", "deygout"}
+        assert {link["input"]["diff_method"] for link in LINKS} == {"single", "bullington"}
 
     def test_covers_both_verdicts(self):
         assert {link["expected"]["status"] for link in LINKS} == {"OK", "NG"}

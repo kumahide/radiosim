@@ -135,7 +135,7 @@ def test_the_readout_and_the_run_agree(monkeypatch):
         h_tx="30", h_rx="10", freq="2400", p_tx="20",
         gain_tx="3", gain_rx="3", sens="-85", veg_h="10", k_factor="10",
         resolution="high", env_type="los", rain_rate="0.0",
-        diff_method="deygout",
+        diff_method="bullington",
     )
     params = sim.SimParams(c)
     shown, spacing = sim.resolve_samples(

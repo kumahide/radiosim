@@ -10,7 +10,13 @@
 
 使い方:
     & "$env:RADIOSIM_PYTHON" experiments/b032_golden_probe.py
+
+⚠️ **2026-08-26 に製品の回折モデルが Bullington へ替わった**（B-130）。
+この探針が「現行」と呼ぶのは**もう製品の既定ではない**（差し替え先の名前も
+`_deygout_loss` から `_multi_obstacle_loss` になった）。
+**当時の判断の記録として読むこと**＝数字は当時のもの。
 """
+
 from __future__ import annotations
 
 import json
@@ -53,9 +59,9 @@ def recompute(rec: dict, variant, n: int | None = None, force_single: bool = Fal
     terrain = models.calculate_terrain_profile(
         elevs, inp["lat_tx"], inp["lon_tx"], inp["lat_rx"], inp["lon_rx"],
     )
-    orig = models._deygout_loss
+    orig = models._multi_obstacle_loss
     if variant is not None:
-        models._deygout_loss = variant
+        models._multi_obstacle_loss = variant
     try:
         prop = models.calculate_propagation(
             terrain, inp["h_tx"], inp["h_rx"], inp["freq_mhz"], inp["veg_h"],
@@ -67,7 +73,7 @@ def recompute(rec: dict, variant, n: int | None = None, force_single: bool = Fal
             inp["gain_tx"], inp["gain_rx"], inp["sens"],
         )
     finally:
-        models._deygout_loss = orig
+        models._multi_obstacle_loss = orig
     return {
         "diff_loss": prop.diff_loss,
         "p_rx":      budget.p_rx,

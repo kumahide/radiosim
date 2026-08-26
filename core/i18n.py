@@ -94,7 +94,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_env_type":         "Env Type",
         "lbl_rain":             "Rain Rate (mm/h)",
         "lbl_diff_method":      "Diffraction Model",
-        "diff_opt_deygout":     "Deygout",
+        "diff_opt_bullington":  "Bullington",
         "diff_opt_single":      "Single",
         "lbl_coord_format":     "Coordinate Display",
         "coord_fmt_dd":         "Decimal Degrees (DD)",
@@ -111,7 +111,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tip_start":            'lat, lon   e.g. "34.54, 132.41"',
         "tip_end":              'lat, lon   e.g. "34.53, 132.41"',
         "tip_rain_rate":        "Rain rate   0 – 200 mm/h",
-        "tip_diff_method":      "Diffraction model: Deygout (multi-knife) or Single",
+        "tip_diff_method":      "Diffraction model: Bullington (multiple obstacles) or Single",
         "tip_h_tx":             "TX antenna height   0 – 500 m",
         "tip_h_rx":             "RX antenna height   0 – 500 m",
         "tip_freq":             "Frequency   1 – 100 000 MHz",
@@ -304,7 +304,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_type":        "Env Type",
         "html_diff_model":      "Diff Model",
         "html_rain_rate":       "Rain Rate",
-        "html_model_deygout":   "Deygout",
+        "html_model_bullington": "Bullington",
         "html_model_single":    "Single",
 
         # ===== Scenario explorer (A-1 compare / A-2 sweep) =====
@@ -413,9 +413,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_earth_k_fixed":
             "Earth curvature uses the standard-atmosphere factor K = {k}, fixed. Periods "
             "when refraction departs from it (sub-refraction, ducting) are not covered.",
-        "html_scope_diff_deygout":
-            "Diffraction uses the Deygout method, which assumes sharp ridges: where "
-            "obstacles of similar height stand in a row it can read too high.",
+        "html_scope_diff_bullington":
+            "Diffraction over several obstacles uses the Bullington equivalent knife "
+            "edge (ITU-R P.526 4.5.1). Where two or more ridges are well separated it "
+            "reads low, and the spherical-earth term of the full method is not included.",
         "html_scope_rain_zeroed":
             "Rain attenuation (ITU-R P.838-3) is out of range below {lo} GHz and was taken as 0 dB.",
         "html_scope_rain_extrapolated":
@@ -702,7 +703,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_env_type":         "環境区分",
         "lbl_rain":             "降雨強度（mm/h）",
         "lbl_diff_method":      "回折モデル",
-        "diff_opt_deygout":     "Deygout",
+        "diff_opt_bullington":  "Bullington",
         "diff_opt_single":      "Single",
         "lbl_coord_format":     "座標の表示形式",
         "coord_fmt_dd":         "十進度（DD）",
@@ -719,7 +720,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tip_start":            '緯度, 経度   例: "34.54, 132.41"',
         "tip_end":              '緯度, 経度   例: "34.53, 132.41"',
         "tip_rain_rate":        "降雨強度   0〜200 mm/h",
-        "tip_diff_method":      "回折モデル: Deygout（多重ナイフエッジ）/ Single",
+        "tip_diff_method":      "回折モデル: Bullington（複数障害物）/ Single",
         "tip_h_tx":             "送信アンテナ高   0〜500 m",
         "tip_h_rx":             "受信アンテナ高   0〜500 m",
         "tip_freq":             "周波数   1〜100000 MHz",
@@ -907,7 +908,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_env_type":        "環境区分",
         "html_diff_model":      "回折モデル",
         "html_rain_rate":       "降雨強度",
-        "html_model_deygout":   "Deygout",
+        "html_model_bullington": "Bullington",
         "html_model_single":    "Single",
 
         # ===== 条件探索（A-1 比較 / A-2 スイープ） =====
@@ -1007,9 +1008,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_earth_k_fixed":
             "地球曲率は標準大気の等価地球半径係数 K = {k} に固定しています＝"
             "大気の屈折がそこから外れる時間帯（サブリフラクション・ダクト）は見ていません。",
-        "html_scope_diff_deygout":
-            "回折は鋭い稜線を仮定する Deygout 法です＝同程度の障害物が並ぶ経路では"
-            "過大に出ることがあります。",
+        "html_scope_diff_bullington":
+            "複数の障害物の回折は Bullington の等価ナイフエッジ（ITU-R P.526 §4.5.1）"
+            "です＝離れた 2 つ以上の尾根がある経路では小さめに出ます。"
+            "完全法の球面回折の項は含めていません。",
         "html_scope_rain_zeroed":
             "降雨減衰（ITU-R P.838-3）は {lo} GHz 未満が範囲外のため 0 dB として扱いました。",
         "html_scope_rain_extrapolated":
