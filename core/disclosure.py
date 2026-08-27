@@ -21,6 +21,12 @@ from __future__ import annotations
 
 from core import i18n
 from core import models
+from core import terrain_grid
+
+
+def _m(value: float) -> str:
+    """間隔の値 [m] を字にする（`5.0` → `5`）。"""
+    return f"{float(value):g}"
 
 
 def _ghz(value: float) -> str:
@@ -36,6 +42,10 @@ def _scope_args(key: str) -> dict:
     """
     gas_lo, gas_hi = models.GAS_RANGE_GHZ
     veg_lo, veg_hi = models.VEG_COEFF_RANGE_GHZ
+    # 解像度の刻印（B-128）＝**段階の目標間隔も `terrain_grid` の定数から差し込む**
+    # （字に 5 / 10 / 20 を直書きすると、段階を組み替えた日に開示だけ古くなる）。
+    spacing = terrain_grid.RESOLUTION_SPACING_M
+    span = {"coarse": _m(max(spacing.values())), "fine": _m(min(spacing.values()))}
     return {
         "earth_k_fixed":     {"k": f"{float(models.EARTH_K_STANDARD):.2f}"},
         "rain_zeroed":       {"lo": _ghz(models.RAIN_MIN_GHZ)},
@@ -43,6 +53,10 @@ def _scope_args(key: str) -> dict:
         "gas_zeroed":        {"lo": _ghz(gas_lo)},
         "gas_extrapolated":  {"lo": _ghz(gas_lo), "hi": _ghz(gas_hi)},
         "veg_extrapolated":  {"lo": _ghz(veg_lo), "hi": _ghz(veg_hi)},
+        **{
+            f"resolution_{level}": {"m": _m(value), **span}
+            for level, value in spacing.items()
+        },
     }.get(key, {})
 
 

@@ -27,6 +27,7 @@ from core import disclosure
 from core import i18n
 from core import models
 from core import simulation as sim
+from core import terrain_grid
 from report import batch
 from report import report_common
 from report import report_path
@@ -505,6 +506,46 @@ class TestHandlingSectionContent:
         )
         line = disclosure.handling_lines(("earth_k_fixed",))[0]
         assert f"{t.earth_k:.2f}" in line, (line, t.earth_k)
+
+    def test_the_resolution_step_reaches_every_face(self):
+        """🔴 **刻印を足しただけでは届かない**＝呼ぶ側が段階を渡すこと（B-128）。
+
+        `resolution` を渡し忘れた面は、**帳票が「どの解像度で出したか」を黙ったまま**
+        値だけ出す＝*刻印を書いたのに出ていない*という、いちばん気づけない壊れ方に
+        なる（→ [[feedback-promote-recurring-checks]] の「開示を書く仕事は
+        『無いことの検査』を対で置く」）。⚠️ 見ているのは**呼び出しの形**で、
+        「節を持つか」は `TestHandlingSectionIsOnEverySheet` の側。
+        """
+        root = os.path.join(os.path.dirname(__file__), "..")
+        offenders = []
+        for rel in ("core/simulation.py", "report/report_path.py",
+                    "report/report_summary.py", "report/report_multihop.py",
+                    "report/report_scenario.py"):
+            text = open(os.path.join(root, *rel.split("/")), encoding="utf-8").read()
+            calls = text.count("models.scope_notes(")
+            passed = text.count("resolution=")
+            if calls == 0 or passed < calls:
+                offenders.append(f"{rel}（呼び出し {calls} 件・渡している {passed} 件）")
+        assert not offenders, (
+            "解像度の段階を刻印へ渡していない面がある: " + repr(offenders)
+        )
+
+    def test_the_resolution_spacings_come_from_the_resolver(self):
+        """字の中の 5 / 10 / 20 m は、点数を解く側の定数そのものであること。
+
+        ⚠️ **「その数が行のどこかに在る」では緩すぎる**＝同じ行が
+        「20 m → 5 m で +14.8%」という*別の 2 つの間隔*も名乗るので、
+        目標間隔を直書きに変えても素通りした（変異検証で実際に踏んだ）。
+        ⇒ **名乗っている場所ごと**見る（この節は英語で確かめる）。
+        """
+        i18n.set_lang("en")
+        for level, spacing in terrain_grid.RESOLUTION_SPACING_M.items():
+            line = disclosure.handling_lines((f"resolution_{level}",))[0]
+            assert f"({spacing:g} m target spacing)" in line, (level, line)
+        # 段階を細かくすると増える、と言うための 2 つの端も定数から来ること。
+        span = terrain_grid.RESOLUTION_SPACING_M.values()
+        line = disclosure.handling_lines(("resolution_medium",))[0]
+        assert f"from {max(span):g} m to {min(span):g} m" in line, line
 
     def test_the_calibration_seat_is_always_present_and_empty(self):
         """較正の席（3.5 で埋まる）＝**空でも欄を置く**。"""

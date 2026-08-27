@@ -430,6 +430,30 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_veg_extrapolated":
             "The vegetation coefficient is defined between {lo} and {hi} GHz; outside that "
             "band the same formula is stretched.",
+        "html_scope_diff_veg_serial":
+            "Where terrain blocks the path, the diffraction loss and the vegetation "
+            "attenuation are both charged for the same stretch. The total therefore reads "
+            "high (the safe side); how the two should combine has not been checked against "
+            "measurements.",
+        "html_scope_rice_k_empirical":
+            "The Rice K factor shown is an empirical estimate derived from the diffraction "
+            "loss (initial K minus diff_loss/3). It is not used in the calculation and has "
+            "never been compared against measurements.",
+        "html_scope_resolution_high":
+            "Terrain was sampled at the \"high\" resolution step ({m} m target spacing). "
+            "On deeply shadowed paths a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
+            "is part of this answer.",
+        "html_scope_resolution_medium":
+            "Terrain was sampled at the \"medium\" resolution step ({m} m target spacing). "
+            "On deeply shadowed paths a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
+            "is part of this answer.",
+        "html_scope_resolution_low":
+            "Terrain was sampled at the \"low\" resolution step ({m} m target spacing). "
+            "On deeply shadowed paths a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
+            "is part of this answer.",
         # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
         # 「較正していない結果」が同じ顔で出る。
         "html_calib_profile":   "Calibration profile",
@@ -1023,6 +1047,28 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_veg_extrapolated":
             "植生減衰の係数は {lo}〜{hi} GHz で定義されており、その外側では"
             "同じ式を伸ばして使っています。",
+        "html_scope_diff_veg_serial":
+            "地形が見通しを切る区間では、回折損と植生減衰を重ねて計上しています"
+            "＝合計損失は大きめ（安全側）に出ます。2 つをどう合成するのが正しいかは、"
+            "まだ実測と突き合わせていません。",
+        "html_scope_rice_k_empirical":
+            "表示している現在のライスKファクターは、回折損からの経験的な推定です"
+            "（初期値 − 回折損/3）＝計算には使っておらず、実測との対応も取っていません。",
+        "html_scope_resolution_high":
+            "この結果は地形の解像度「高」（目標 {m} m 間隔）で出したものです。"
+            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
+            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
+            "選んだ段階もこの答えの一部です。",
+        "html_scope_resolution_medium":
+            "この結果は地形の解像度「中」（目標 {m} m 間隔）で出したものです。"
+            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
+            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
+            "選んだ段階もこの答えの一部です。",
+        "html_scope_resolution_low":
+            "この結果は地形の解像度「低」（目標 {m} m 間隔）で出したものです。"
+            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
+            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
+            "選んだ段階もこの答えの一部です。",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測と突き合わせていません）",
 

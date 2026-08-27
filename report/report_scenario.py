@@ -361,6 +361,9 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
             diff_method=p.result.diff_method,
             rain_rate=float(p.overrides.get("rain_rate", base.rain_rate)),
             veg_h=float(p.overrides.get("veg_h", base.veg_h)),
+            # ⚠️ 解像度は**凍結帯の値**＝軸にならない（座標と同じく、変えると
+            # DEM 取得が要り「同一経路を掘る」前提から外れる＝`scenario.py`）。
+            resolution=base.resolution,
         )
         for p in run.points if p.result is not None
     ))

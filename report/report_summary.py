@@ -310,6 +310,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             diff_method=pr.result.diff_method,
             rain_rate=pr.params.rain_rate,
             veg_h=pr.params.veg_h,
+            resolution=pr.params.resolution,
         )
         for pr in results if pr.result is not None and pr.params is not None
     ))

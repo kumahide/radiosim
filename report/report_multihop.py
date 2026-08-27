@@ -271,6 +271,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 diff_method=pr.result.diff_method,
                 rain_rate=pr.params.rain_rate,
                 veg_h=pr.params.veg_h,
+                resolution=pr.params.resolution,
             )
             for pr in run.hops if pr.result is not None and pr.params is not None
         ))

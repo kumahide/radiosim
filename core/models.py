@@ -34,6 +34,7 @@ import numpy as np
 # 🔑 **回折は `core/diffraction.py` が持つ**（2026-08-26 に分割・B-130）。
 #    ここで再輸出するのは**呼び出し側を 1 行も変えないため**＝
 #    `models._diffraction_loss_fk` / `models.DIFF_METHOD_MULTI` は今までどおり動く。
+from core import terrain_grid
 from core.diffraction import (  # noqa: F401  （再輸出）
     DIFF_METHOD_ALIASES,
     DIFF_METHOD_KEYS,
@@ -134,17 +135,26 @@ SCOPE_ALWAYS: tuple[str, ...] = (
     "env_empirical",      # 環境損失は区分選択の経験値
     "ground_reflection",  # 地面反射（2 波干渉）は考慮していない
     "earth_k_fixed",      # 等価地球半径は標準大気に固定＝K が振れる時間帯を見ていない
+    "rice_k_empirical",   # 表示のライス K は回折損からの経験的な推定（I-114）
+)
+
+#: 解像度の段階ごとの刻印（B-128）。**段階ぶん 1 つずつ持つ**＝差し込みで受けると
+#: 「どの段階で出した値か」が翻訳の外に出てしまい、和集合（台帳）で畳めなくなる。
+SCOPE_RESOLUTION: tuple[str, ...] = tuple(
+    f"resolution_{level}" for level in terrain_grid.RESOLUTION_KEYS
 )
 
 #: 刻印の全語彙＝**帳票に出る順**（面が違っても並びは同じ）。
 #: ⚠️ この並びが i18n キー `html_scope_<名前>` の一覧そのものになる。
 SCOPE_NOTE_ORDER: tuple[str, ...] = SCOPE_ALWAYS + (
     "diff_bullington",    # Bullington は離れた尾根で小さめに出る＋球面項が無い
+) + SCOPE_RESOLUTION + (
     "rain_zeroed",        # 降雨: 範囲外につき 0 として扱った
     "rain_extrapolated",  # 降雨: 係数表の端値で外挿した
     "gas_zeroed",         # 大気: 範囲外につき 0 として扱った
     "gas_extrapolated",   # 大気: 有効範囲の上を超えている
     "veg_extrapolated",   # 植生: 係数の定義域の外側
+    "diff_veg_serial",    # 遮蔽区間で回折損と植生減衰を重ねている（B-132）
 )
 
 
@@ -154,6 +164,7 @@ def scope_notes(
     diff_method: str = DIFF_METHOD_MULTI,
     rain_rate: float = 0.0,
     veg_h: float = 0.0,
+    resolution: str = "",
 ) -> tuple[str, ...]:
     """この条件の結果に付く**適用範囲の刻印**を、帳票の並びで返す（純述語）。
 
@@ -162,6 +173,9 @@ def scope_notes(
         diff_method: 回折モデル（``"bullington"`` / ``"single"``。旧名 ``"deygout"`` も受ける）
         rain_rate:   降雨率 [mm/h]（0 なら降雨の刻印は付かない＝計算していない）
         veg_h:       植生高 [m]（0 なら植生の刻印は付かない＝同上）
+        resolution:  地形の解像度の段階（`terrain_grid.RESOLUTION_KEYS`）。
+                     **知らない語・空なら刻印を出さない**＝どの段階で出した値かを
+                     言えないなら、名乗らないほうが正直（B-128）
 
     ⚠️ **計算していない項目の刻印は付けない**＝降雨率 0 の回線に「降雨は範囲外」と
     書くと、読み手は*降雨を見込んだのに落とされた*と読む。**出したのは「使った式の
@@ -189,6 +203,13 @@ def scope_notes(
         veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
         if freq_ghz < veg_lo or freq_ghz >= veg_hi:
             hits.add("veg_extrapolated")
+        # 🔑 **植生を入れた回線だけ**（B-132）＝`veg_h=0` なら植生減衰は必ず 0 dB
+        # （B-131 で頭打ちにした）ので、重ねようがない。**直してから名乗る**
+        # ＝先に B-131 を直したので、この刻印は*実際に 2 項が並ぶ回線*にだけ付く。
+        hits.add("diff_veg_serial")
+
+    if str(resolution) in terrain_grid.RESOLUTION_KEYS:
+        hits.add(f"resolution_{resolution}")
 
     return tuple(k for k in SCOPE_NOTE_ORDER if k in hits)
 

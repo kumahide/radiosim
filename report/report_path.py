@@ -317,6 +317,7 @@ def path_sheet_html(
         diff_method=result.diff_method,
         rain_rate=params.rain_rate,
         veg_h=params.veg_h,
+        resolution=params.resolution,
     ))
 
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが

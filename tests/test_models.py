@@ -25,6 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core import diffraction
 from core import models
+from core import terrain_grid
 
 
 # ================================================================
@@ -1046,6 +1047,55 @@ class TestScopeNotes:
     def test_the_bullington_assumption_is_declared_only_for_bullington(self):
         assert "diff_bullington" in models.scope_notes(430.0, diff_method="bullington")
         assert "diff_bullington" not in models.scope_notes(430.0, diff_method="single")
+
+    # ── 刻印 3 件（B-128 / B-132 / I-114・3.0a1 の着手順 11）────────
+    def test_the_rice_k_estimate_is_always_declared(self):
+        """I-114: **表示のライス K は根拠の無い推定**＝常に名乗ること。
+
+        ⚠️ 条件つきにしない＝`current_k` は毎回必ず出る量なので、
+        「計算していない項目の刻印は付けない」の例外ではなく**常に該当する**。
+        """
+        assert "rice_k_empirical" in models.SCOPE_ALWAYS
+        assert "rice_k_empirical" in models.scope_notes(2400.0)
+
+    @pytest.mark.parametrize("veg_h,expected", [(0.0, False), (0.1, True), (25.0, True)])
+    def test_the_serial_sum_is_declared_only_when_there_is_vegetation(
+        self, veg_h, expected
+    ):
+        """B-132: **2 項が実際に並ぶ回線だけ**が名乗ること。
+
+        🔑 [[B-131]] を先に直したので `veg_h=0` の植生減衰は必ず 0 dB＝
+        重ねようがない。**直してから名乗る**の順序が、この述語の形に出ている。
+        """
+        keys = models.scope_notes(2400.0, veg_h=veg_h)
+        assert ("diff_veg_serial" in keys) is expected
+
+    @pytest.mark.parametrize("level", ["high", "medium", "low"])
+    def test_the_resolution_step_is_declared(self, level):
+        """B-128: **どの段階で出した値か**を刻印が名乗ること。"""
+        keys = models.scope_notes(2400.0, resolution=level)
+        assert f"resolution_{level}" in keys
+
+    def test_only_one_resolution_note_can_fire(self):
+        keys = models.scope_notes(2400.0, resolution="high")
+        assert len([k for k in keys if k.startswith("resolution_")]) == 1
+
+    @pytest.mark.parametrize("level", ["", "ultra", "HIGH", "medium "])
+    def test_an_unknown_step_declares_nothing(self, level):
+        """⚠️ **言えないなら名乗らない**＝知らない語で段階を騙らないこと。"""
+        keys = models.scope_notes(2400.0, resolution=level)
+        assert not [k for k in keys if k.startswith("resolution_")]
+
+    def test_the_resolution_vocabulary_is_the_one_the_app_resolves_with(self):
+        """🔴 刻印の段階と、点数を解く段階は**同じ語彙**であること。
+
+        ⚠️ 片方に段階を足すと、**その段階では刻印だけが黙る**（帳票が
+        「どの解像度で出したか」を言わないまま値だけ変わる）。
+        """
+        assert models.SCOPE_RESOLUTION == tuple(
+            f"resolution_{k}" for k in terrain_grid.RESOLUTION_KEYS
+        )
+        assert all(k in models.SCOPE_NOTE_ORDER for k in models.SCOPE_RESOLUTION)
 
     def test_union_keeps_one_of_each_in_the_canonical_order(self):
         """台帳は N 本を 1 枚に載せる＝**どれか 1 本に当てはまる刻印**を出す。"""

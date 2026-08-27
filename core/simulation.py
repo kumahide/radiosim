@@ -505,6 +505,7 @@ def _save_report(
             diff_method=result.diff_method,
             rain_rate=params.rain_rate,
             veg_h=params.veg_h,
+            resolution=params.resolution,
         ))
     )
     path = os.path.join(save_dir, "report.txt")
