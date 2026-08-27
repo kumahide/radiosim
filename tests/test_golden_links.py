@@ -168,6 +168,53 @@ class TestCorpusCoverage:
               for e, i in zip(exp, (link["input"] for link in LINKS))]
         assert any(0.0 < k < k0 for k, k0 in ks),             "current_k が内挿帯（0 < k < initial_k）にある回線が無い"
 
+    def test_no_vegetation_means_no_vegetation_loss(self):
+        """**植生高 0m の回線は植生減衰 0 dB**（B-131 の回帰ゲート・コーパス側）。
+
+        旧実装は侵入深さを `veg_top - los` のまま使っていたため、`veg_h=0` でも
+        **地形が LoS を超えた量**を植生の吸収として請求していた（26 本中 16 本・
+        うち 12 本が上限 45 dB）。地形の遮蔽は回折損の担当なので、ここは 0 が唯一の答え。
+        """
+        bad = [link["id"] for link in LINKS
+               if link["input"]["veg_h"] == 0 and link["expected"]["veg_loss"] != 0.0]
+        assert not bad, f"植生が無いのに植生減衰が立っている回線: {bad}"
+
+    def test_covers_the_vegetation_band(self):
+        """植生減衰が**上限 45 dB の内側**にある回線を必ず持つこと。
+
+        「かすめ」帯（`test_covers_the_grazing_band`）と同じ理由＝**上限に張り付いた
+        回線だけのコーパスは、植生の係数を何倍にしても全通過する**。実際 B-131 の
+        発見時、*植生の効きを測るために作った対*（`veg_none` / `veg_low_antenna`）は
+        **両方とも 45.00 dB** で、植生について何も検査していなかった。
+        """
+        vegs = [link["expected"]["veg_loss"] for link in LINKS]
+        assert any(0.0 < v < 45.0 for v in vegs), \
+            "植生減衰が 0 でも上限でもない回線が無い（係数を変えても気づけない）"
+
+    def test_has_a_same_route_vegetation_contrast(self):
+        """**同一経路で植生高だけが違う対**があり、その対で値が実際に動くこと。
+
+        コーパス全体で band を満たしていても、*対照そのもの*が飽和していれば
+        「植生を足しても変わらない」に見える（B-131 の対がまさにそれだった）。
+        """
+        def route(link):
+            i = link["input"]
+            return (i["lat_tx"], i["lon_tx"], i["lat_rx"], i["lon_rx"],
+                    i["h_tx"], i["h_rx"], i["freq_mhz"], i["samples"])
+
+        pairs = []
+        for a in LINKS:
+            for b in LINKS:
+                if route(a) == route(b) and a["input"]["veg_h"] < b["input"]["veg_h"]:
+                    pairs.append((a, b))
+        assert pairs, "同一経路で植生高だけが違う対がコーパスに無い"
+        assert any(
+            a["expected"]["veg_loss"] != b["expected"]["veg_loss"]
+            and b["expected"]["veg_loss"] < 45.0
+            for a, b in pairs
+        ), ("植生の対がすべて飽和している（上限に張り付いた対は対照にならない）: "
+            + ", ".join(f"{a['id']}/{b['id']}" for a, b in pairs))
+
     def test_elevations_are_real_terrain(self):
         """標高配列が実 DEM 由来＝定数列や合成波形でないこと。"""
         for link in LINKS:

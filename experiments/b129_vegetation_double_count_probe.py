@@ -92,7 +92,7 @@ class Link:
 
     def veg_loss(self, veg_h: float, mask: np.ndarray | None = None) -> float:
         return float(models._vegetation_loss(
-            self._surface(veg_h, mask), self.los, self.f1,
+            self._surface(veg_h, mask), veg_h, self.los, self.f1,
             self.inp["freq_mhz"], self.terrain.horiz_dist_km, self.n,
         ))
 

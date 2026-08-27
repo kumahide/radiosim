@@ -486,9 +486,11 @@ def calculate_propagation(
     blocked_ratio = max(0.0, (f1_intrusion[worst_idx] / safe_f1_w) * 100)
 
     # 植生減衰（植生頂点 = 地表高 + veg_h を LoS 線と比較）
+    # ⚠️ `veg_h` も渡す＝**LoS を超えた分のうち「植生の中」だけ**を数えるため
+    #    （地表そのものが LoS を超えた分は回折損が表している＝B-131）。
     veg_top  = elevs + veg_h
     veg_loss = _vegetation_loss(
-        veg_top, los_vals, f1, freq_mhz, terrain.horiz_dist_km, N
+        veg_top, veg_h, los_vals, f1, freq_mhz, terrain.horiz_dist_km, N
     )
 
     slant_dist_km = math.sqrt(
@@ -524,6 +526,7 @@ def calculate_propagation(
 
 def _vegetation_loss(
     veg_top: np.ndarray,
+    veg_h: float,
     los_vals: np.ndarray,
     f1: np.ndarray,
     freq_mhz: float,
@@ -550,16 +553,20 @@ def _vegetation_loss(
     ネットワーク不使用）。⚠️ **差を見るときは `veg_h=0` の値を引く**＝引かずに割ると
     「決定点が植生損の 89.8% を占める」という*地形の値を植生の手柄にした数字*が出る。
 
-    🔴 **ただし、この関数には別の欠陥が 2 つ残っている**（上の却下はそれらを免じない）:
-      1. **B-131**＝`veg_top = elevs + veg_h` なので、**`veg_h=0`（植生なし）でも
-         地形が LoS を切っていれば損失が立つ**（コーパス 26 本中 16 本・うち 12 本が上限
-         45 dB）。**裸の岩山を「植生」として減衰させている**＝*地形ぶん*は本当に二重計上。
-      2. **B-132**＝ここで出した値は `calculate_link_budget` が回折損と**直列に足す**。
-         `penetration` が正になるのは **LoS より上だけ**＝**立つのは遮蔽区間だけ**なので、
-         回折が主役の区間と完全に重なる（同じエネルギーの別経路を 2 回請求している疑い）。
+    ✅ **B-131 は 3.0a1 で直した**＝以前は `veg_top - los_vals` をそのまま侵入深さに
+    していたので、**`veg_h=0`（植生なし）でも地形が LoS を切っていれば損失が立った**
+    （コーパス 26 本中 16 本・うち 12 本が上限 45 dB＝*裸の岩山を「植生」として
+    減衰させていた*）。⇒ **侵入深さを `veg_h` で頭打ちにする**＝電波が植生の中を通る
+    厚みは高々キャノピー高で、それを超える分は**地表**が作った遮蔽＝回折損の担当。
+
+    🔴 **ただし、この関数には別の欠陥が 1 つ残っている**（上の却下はそれを免じない）:
+      - **B-132**＝ここで出した値は `calculate_link_budget` が回折損と**直列に足す**。
+        `penetration` が正になるのは **LoS より上だけ**＝**立つのは遮蔽区間だけ**なので、
+        回折が主役の区間と完全に重なる（同じエネルギーの別経路を 2 回請求している疑い）。
 
     Args:
         veg_top:  植生頂点高度配列 = 地表高 + veg_h  [m]
+        veg_h:    植生高 [m]（**侵入深さの上限**＝B-131）
         los_vals: LoS 線高度配列 [m]
         f1:       Fresnel 第1ゾーン半径配列 [m]
     """
@@ -578,7 +585,11 @@ def _vegetation_loss(
 
     # 植生頂点が LoS 線を超えた量（正値 = LoS に侵入している）
     penetration   = veg_top - los_vals
-    intrusion_depth = np.maximum(0, penetration)
+    # 🔑 **上限は `veg_h`**（B-131）＝超過分のうち電波が実際に*植生の中*を通る厚みは
+    # 高々キャノピーの高さ。`veg_top - los` をそのまま使うと、**地表が LoS を超えた分**
+    # （＝回折損が既に表している量）まで植生の吸収として請求してしまう。
+    # `veg_h=0` なら上限 0 ＝ 植生が 1 本も無ければ 0 dB、しかも `veg_h` に対して連続。
+    intrusion_depth = np.clip(penetration, 0.0, max(float(veg_h), 0.0))
 
     # Fresnel 半径で正規化して重み付け（0〜1）
     f1_safe    = np.maximum(f1, 1e-6)

@@ -139,12 +139,23 @@ LINKS: list[dict] = [
          sens=-95, veg_h=0, k=1.33, samples=240, env="rural", diff="bullington", rain=0),
 
     # --- 植生・低アンテナ（veg_loss と NG 判定の基準） ---
-    dict(id="veg_low_antenna", start=(35.3620, 138.7300), end=(35.3350, 138.6800),
-         h_tx=3, h_rx=3, freq=2400, p_tx=20, gain_tx=6, gain_rx=6,
-         sens=-85, veg_h=25, k=1.33, samples=180, env="rural", diff="bullington", rain=0),
-    dict(id="veg_none", start=(35.3620, 138.7300), end=(35.3350, 138.6800),
-         h_tx=3, h_rx=3, freq=2400, p_tx=20, gain_tx=6, gain_rx=6,
-         sens=-85, veg_h=0, k=1.33, samples=180, env="rural", diff="bullington", rain=0),
+    # 🔴 **経路を差し替えた**（2026-08-27・B-131 の処方 3）＝旧経路（富士山麓
+    #    35.3620,138.7300 → 35.3350,138.6800）は**地形だけで 60 dB 超の遮蔽**があり、
+    #    `veg_h=1m` でも veg_loss が**上限 45 dB に張り付く**（実測）。⇒ *植生の効きを
+    #    測るために作った対*なのに、**植生について何も検査していなかった**
+    #    （B-131 を直す前は 2 本とも 45.00 dB＝差ゼロ）。
+    # ⚠️ **上限に張り付く回線は対照にならない**＝係数を何倍にしても値が動かない。
+    #    差し替え先は `morioka_iwate` と同じ経路（**DEM は既に取る回線＝新規取得を
+    #    増やさない**）で、アンテナを 3m に下げたもの。実測＝
+    #      `veg_none`(veg_h=0)  : veg_loss 0.00 / diff_loss 0.00 / 判定 OK（完全見通し）
+    #      `veg_low_antenna`(10): veg_loss 26.33（**上限の内側**）/ 判定 NG
+    #    ⇒ **植生の有無だけで OK↔NG が裏返る対**になり、係数を動かせば必ず気づく。
+    dict(id="veg_low_antenna", start=(39.7020, 141.1545), end=(39.8530, 141.0010),
+         h_tx=3, h_rx=3, freq=900, p_tx=25, gain_tx=12, gain_rx=12,
+         sens=-95, veg_h=10, k=1.33, samples=220, env="rural", diff="bullington", rain=0),
+    dict(id="veg_none", start=(39.7020, 141.1545), end=(39.8530, 141.0010),
+         h_tx=3, h_rx=3, freq=900, p_tx=25, gain_tx=12, gain_rx=12,
+         sens=-95, veg_h=0, k=1.33, samples=220, env="rural", diff="bullington", rain=0),
     dict(id="sapporo_teine", start=(43.0621, 141.3544), end=(43.0870, 141.2100),
          h_tx=90, h_rx=160, freq=5600, p_tx=23, gain_tx=20, gain_rx=20,
          sens=-80, veg_h=18, k=1.33, samples=200, env="suburban", diff="bullington", rain=30),

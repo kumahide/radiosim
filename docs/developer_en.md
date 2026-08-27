@@ -676,11 +676,16 @@ Applies J(ν) only to the maximum ν across all sample points. Fast, but it does
 ### Vegetation Attenuation
 
 ```
-Intrusion depth(d) = max(0, veg_top(d) - LoS(d))
+Intrusion depth(d) = clip(veg_top(d) - LoS(d), 0, vegetation height)
 Weight(d)          = clip(intrusion depth / r₁(d), 0, 1)
 Effective length   = Σ[weight(d)] × sample spacing
 Veg Loss           = min(effective length × coeff, 45 dB)
 ```
+
+> ⚠️ **The intrusion depth is capped at the vegetation height.** The thickness of vegetation the
+> signal can pass through is at most the canopy height; anything beyond that is the ground itself
+> blocking the line of sight, which the diffraction loss already accounts for.
+> **A vegetation height of 0 m therefore always yields 0 dB** (corrected in 3.0).
 
 | Frequency band | coeff         |
 | -------------- | ------------- |
@@ -691,15 +696,19 @@ Veg Loss           = min(effective length × coeff, 45 dB)
 ### Environmental Loss
 
 ```
-Env Loss = base + blocked_ratio × blk_c + slant_dist × dist_c + diff_loss × diff_c
+Env Loss = base + slant_dist × dist_c
 ```
 
-| Environment | base | blk_c | dist_c | diff_c | min | max  |
-| ----------- | ---- | ----- | ------ | ------ | --- | ---- |
-| Urban       | 10.0 | 0.08  | 1.20   | 0.15   | 6.0 | 30.0 |
-| Suburban    | 6.0  | 0.05  | 0.80   | 0.10   | 3.0 | 30.0 |
-| Rural       | 4.0  | 0.03  | 0.50   | 0.08   | 2.0 | 25.0 |
-| LoS         | 2.0  | 0.01  | 0.30   | 0.05   | 1.0 | 15.0 |
+> ⚠️ **Shadowing-derived quantities (F1 obstruction ratio, diffraction loss) are not included.**
+> Terrain blocking the line of sight is already expressed by the diffraction loss; folding it into
+> the environmental loss as well would double-count it (removed in 3.0).
+
+| Environment | base | dist_c | min | max  |
+| ----------- | ---- | ------ | --- | ---- |
+| Urban       | 10.0 | 1.20   | 6.0 | 30.0 |
+| Suburban    | 6.0  | 0.80   | 3.0 | 30.0 |
+| Rural       | 4.0  | 0.50   | 2.0 | 25.0 |
+| LoS         | 2.0  | 0.30   | 1.0 | 15.0 |
 
 ### Rain Attenuation (ITU-R P.838-3)
 

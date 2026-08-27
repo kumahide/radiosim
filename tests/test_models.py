@@ -339,6 +339,57 @@ class TestCalculatePropagation:
         )
         assert r.veg_loss == pytest.approx(0.0, abs=1e-6)
 
+    def test_veg_loss_zero_when_no_vegetation_even_if_terrain_blocks(
+        self, single_ridge_terrain
+    ):
+        """
+        B-131: 植生高 0m なら、地形が LoS を切っていても Veg Loss = 0 になること。
+
+        バグ再現: 旧実装は侵入深さを `veg_top - los` のまま使っていたため、
+        `veg_h=0`（＝植生頂点は地表そのもの）でも**地形が LoS を超えた量**を
+        植生の吸収として請求していた（裸の岩山を「植生」として減衰させていた）。
+        地形の遮蔽は回折損が表しているので、ここでは 0 でなければならない。
+        """
+        r = models.calculate_propagation(
+            single_ridge_terrain,
+            h_tx=0.0, h_rx=0.0,
+            freq_mhz=2400.0,
+            veg_h=0.0,
+            initial_k=10.0,
+        )
+        assert r.diff_loss > 0.0, "前提が崩れている（地形が LoS を切っていない）"
+        assert r.veg_loss == pytest.approx(0.0, abs=1e-9), (
+            "植生が 1 本も無いのに Veg Loss が立っている（B-131）"
+        )
+
+    def test_veg_loss_capped_by_veg_height_on_blocking_terrain(
+        self, single_ridge_terrain
+    ):
+        """
+        B-131: 遮蔽地形でも、Veg Loss は「植生ぶん」だけで決まること。
+
+        尾根の高さを 2 倍にしても（地形ぶんの超過は増えるが植生高は同じ）、
+        Veg Loss は変わってはならない。⇒ 侵入深さが `veg_h` で頭打ちであること。
+        """
+        raw_tall = np.zeros(201)
+        raw_tall[100] = 100.0        # single_ridge_terrain は 50m
+        tall_ridge = models.calculate_terrain_profile(
+            raw_tall, 34.54, 132.41, 34.54, 132.46
+        )
+        # 上限 45 dB に張り付くと差が見えないので、植生高は小さく取る
+        kw = dict(h_tx=0.0, h_rx=0.0, freq_mhz=2400.0, veg_h=0.05, initial_k=10.0)
+
+        r_low  = models.calculate_propagation(single_ridge_terrain, **kw)
+        r_tall = models.calculate_propagation(tall_ridge, **kw)
+
+        assert r_low.veg_loss < 45.0, "上限に張り付いていて差が見えない"
+        assert r_tall.blocked_ratio > r_low.blocked_ratio, (
+            "前提が崩れている（地形ぶんの超過が増えていない）"
+        )
+        assert r_tall.veg_loss == pytest.approx(r_low.veg_loss, rel=1e-9), (
+            "地形を高くしただけで植生減衰が動いている（地形ぶんを数えている＝B-131）"
+        )
+
     def test_veg_loss_increases_with_veg_height(self):
         """
         植生頂点の LoS への侵入量が大きいほど Veg Loss が単調増加すること。
@@ -357,8 +408,11 @@ class TestCalculatePropagation:
 
         results = []
         for excess in [0.05, 0.10, 0.20, 0.30]:
+            # 地表は LoS と同じ高さ（10.0）＝超過分はすべて植生ぶん
             veg_top = np.full(N, 10.0 + excess)
-            loss = models._vegetation_loss(veg_top, los_vals, f1, freq_mhz, horiz_km, N)
+            loss = models._vegetation_loss(
+                veg_top, excess, los_vals, f1, freq_mhz, horiz_km, N
+            )
             assert loss < 45.0, f"excess={excess}m で上限45dBに達した"
             results.append(loss)
 
