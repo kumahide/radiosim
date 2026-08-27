@@ -18,6 +18,7 @@ from PIL import Image
 
 from core import dem
 from report import map_graphics
+from report import report_common
 from report import report_map
 
 
@@ -161,12 +162,15 @@ class TestRenderPathMap:
         assert isinstance(img, Image.Image)
         assert img.width > img.height
 
-    def test_output_aspect_is_15_5(self, monkeypatch):
-        # 出力の幅/高さ ≈ 15:5（断面図 15:6 より横長＝A4 縦1枚に収めるため地図側を
-        # 詰めた設計。経路の水平/垂直の対応は上下配置で保つ）。
+    def test_output_aspect_matches_the_profile_figure(self, monkeypatch):
+        # 出力の幅/高さ ≈ 15:4.5＝**地形断面図と同じ比**（2026-08-28 に 15:5 から変更）。
+        # 🔑 **断面図の figsize から引く**＝数字を書き写すと、片方だけ変えた日に
+        # 「揃えてある」という設計意図が黙って壊れる（2 枚は width:100% で縦に並ぶ）。
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
-        assert img.width / img.height == pytest.approx(15 / 5, rel=0.03)
+        assert isinstance(img, Image.Image)   # 取得失敗（None）を比の検査より先に落とす
+        w_in, h_in = report_common.PROFILE_FIGSIZE
+        assert img.width / img.height == pytest.approx(w_in / h_in, rel=0.03)
 
     def test_no_gray_fill_after_rotation(self, monkeypatch):
         # 回転 expand のグレー余白（_MISSING_RGB）がバンド内に残らない

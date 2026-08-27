@@ -394,70 +394,58 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_note":        "Remarks",
         "html_col_graph":       "Graph",
 
-        # ===== How to read this result (3.0a1) =====
+        # ===== Notes on handling this result (3.0a1) =====
         # 🔑 **成果物が一人歩きした先で効く節**＝レポートを受け取った人は、公開文書も
         # 画面の但し書きも見ない。⚠️ **数字は差し込みで受ける**（`{lo}` `{hi}`）＝
         # 範囲の値は `core/models.py` の定数が単一ソースで、字と式が別々に動かない。
-        "html_handling_title":  "How to read this result",
-        "html_handling_lead":   "A desktop screening estimate. It assumes the following, "
-                                "and the notes below say how far the formulas used here reach.",
+        "html_handling_title":  "Notes on handling this result",
+        "html_handling_lead":   "A desktop screening estimate. Assumptions and limits:",
         "html_scope_dem_surface":
-            "Elevations come from a bare-earth model: buildings and trees are not in it.",
+            "Elevations: bare-earth model (no buildings or trees).",
         "html_scope_veg_uniform":
-            "Vegetation height is the single value entered, applied along the whole path "
-            "(not the actual height at each point).",
+            "Vegetation height: the single value entered, applied along the whole path.",
         "html_scope_env_empirical":
-            "Environment loss is an empirical figure picked from the area class.",
+            "Environment loss: empirical figure for the area class.",
         "html_scope_ground_reflection":
-            "Ground reflection (two-ray interference) is not modelled.",
+            "Ground reflection (two-ray interference): not modelled.",
         "html_scope_earth_k_fixed":
-            "Earth curvature uses the standard-atmosphere factor K = {k}, fixed. Periods "
-            "when refraction departs from it (sub-refraction, ducting) are not covered.",
+            "Earth curvature: fixed at standard-atmosphere K = {k} "
+            "(sub-refraction and ducting not covered).",
         "html_scope_diff_bullington":
-            "Diffraction over several obstacles uses the Bullington equivalent knife "
-            "edge (ITU-R P.526 4.5.1). Where two or more ridges are well separated it "
-            "reads low, and the spherical-earth term of the full method is not included.",
+            "Diffraction: Bullington equivalent knife edge (ITU-R P.526 4.5.1) — "
+            "reads low where ridges are well separated; no spherical-earth term.",
         "html_scope_rain_zeroed":
-            "Rain attenuation (ITU-R P.838-3) is out of range below {lo} GHz and was taken as 0 dB.",
+            "Rain attenuation: out of range below {lo} GHz, taken as 0 dB.",
         "html_scope_rain_extrapolated":
-            "Rain attenuation is extrapolated: the coefficient table ends at {hi} GHz and "
-            "its end value was used.",
+            "Rain attenuation: extrapolated (coefficient table ends at {hi} GHz).",
         "html_scope_gas_zeroed":
-            "Atmospheric (gas) attenuation (ITU-R P.676-13) is out of range below {lo} GHz "
-            "and was taken as 0 dB.",
+            "Gas attenuation: out of range below {lo} GHz, taken as 0 dB.",
         "html_scope_gas_extrapolated":
-            "Atmospheric (gas) attenuation is above its valid range ({lo}-{hi} GHz).",
+            "Gas attenuation: outside its valid range ({lo}-{hi} GHz).",
         "html_scope_veg_extrapolated":
-            "The vegetation coefficient is defined between {lo} and {hi} GHz; outside that "
-            "band the same formula is stretched.",
+            "Vegetation coefficient: defined for {lo}-{hi} GHz, extrapolated outside it.",
         "html_scope_diff_veg_serial":
-            "Where terrain blocks the path, the diffraction loss and the vegetation "
-            "attenuation are both charged for the same stretch. The total therefore reads "
-            "high (the safe side); how the two should combine has not been checked against "
-            "measurements.",
+            "Shadowed stretches are charged both diffraction loss and vegetation "
+            "attenuation — the total reads high (safe side), and is unverified.",
         "html_scope_rice_k_empirical":
-            "The Rice K factor shown is an empirical estimate derived from the diffraction "
-            "loss (initial K minus diff_loss/3). It is not used in the calculation and has "
-            "never been compared against measurements.",
+            "Rice K: empirical estimate from the diffraction loss (display only, "
+            "not used in the calculation).",
         "html_scope_resolution_high":
-            "Terrain was sampled at the \"high\" resolution step ({m} m target spacing). "
-            "On deeply shadowed paths a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
-            "is part of this answer.",
+            "Terrain sampled at the \"high\" resolution step ({m} m target spacing); "
+            "a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m).",
         "html_scope_resolution_medium":
-            "Terrain was sampled at the \"medium\" resolution step ({m} m target spacing). "
-            "On deeply shadowed paths a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
-            "is part of this answer.",
+            "Terrain sampled at the \"medium\" resolution step ({m} m target spacing); "
+            "a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m).",
         "html_scope_resolution_low":
-            "Terrain was sampled at the \"low\" resolution step ({m} m target spacing). "
-            "On deeply shadowed paths a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m), so the resolution step "
-            "is part of this answer.",
+            "Terrain sampled at the \"low\" resolution step ({m} m target spacing); "
+            "a finer step raises the diffraction loss "
+            "(up to +14.8% measured from {coarse} m to {fine} m).",
         # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
         # 「較正していない結果」が同じ顔で出る。
         "html_calib_profile":   "Calibration profile",
-        "html_calib_none":      "not applied (never compared against measurements)",
+        "html_calib_none":      "not applied (no measurement comparison)",
 
         # ===== Tile Manager =====
         "map_window_title":     "Map",
@@ -1016,61 +1004,48 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_note":        "備考",
         "html_col_graph":       "グラフ",
 
-        # ===== この結果をどう扱うか（3.0a1） =====
-        "html_handling_title":  "この結果をどう扱うか",
-        "html_handling_lead":   "机上のスクリーニング推定です。次を前提としており、"
-                                "以下はこの計算に使った式がどこまでを名乗れるかです。",
+        # ===== 結果の取扱に関する補足（3.0a1） =====
+        "html_handling_title":  "結果の取扱に関する補足",
+        "html_handling_lead":   "机上のスクリーニング推定です。前提と適用範囲は次のとおり。",
         "html_scope_dem_surface":
-            "標高データは地表面モデルです＝建物・樹木の高さを含みません。",
+            "標高：地表面モデル（建物・樹木を含まない）",
         "html_scope_veg_uniform":
-            "植生高は入力した一律の値を経路全体に当てています"
-            "（場所ごとの実際の高さではありません）。",
+            "植生高：入力した一律の値を経路全体に適用",
         "html_scope_env_empirical":
-            "環境損失は、選んだ区分から引いた経験値です。",
+            "環境損失：選んだ区分の経験値",
         "html_scope_ground_reflection":
-            "地面反射（2 波干渉）は考慮していません。",
+            "地面反射（2 波干渉）：考慮なし",
         "html_scope_earth_k_fixed":
-            "地球曲率は標準大気の等価地球半径係数 K = {k} に固定しています＝"
-            "大気の屈折がそこから外れる時間帯（サブリフラクション・ダクト）は見ていません。",
+            "地球曲率：標準大気 K = {k} 固定（サブリフラクション・ダクトは対象外）",
         "html_scope_diff_bullington":
-            "複数の障害物の回折は Bullington の等価ナイフエッジ（ITU-R P.526 §4.5.1）"
-            "です＝離れた 2 つ以上の尾根がある経路では小さめに出ます。"
-            "完全法の球面回折の項は含めていません。",
+            "回折：Bullington 等価ナイフエッジ（ITU-R P.526 §4.5.1）"
+            "＝離れた尾根では小さめ・球面回折の項なし",
         "html_scope_rain_zeroed":
-            "降雨減衰（ITU-R P.838-3）は {lo} GHz 未満が範囲外のため 0 dB として扱いました。",
+            "降雨減衰：{lo} GHz 未満は範囲外のため 0 dB",
         "html_scope_rain_extrapolated":
-            "降雨減衰は外挿です＝係数表は {hi} GHz までで、その端の値を使いました。",
+            "降雨減衰：外挿（係数表は {hi} GHz まで）",
         "html_scope_gas_zeroed":
-            "大気減衰（ITU-R P.676-13）は {lo} GHz 未満が範囲外のため 0 dB として扱いました。",
+            "大気減衰：{lo} GHz 未満は範囲外のため 0 dB",
         "html_scope_gas_extrapolated":
-            "大気減衰は有効範囲（{lo}〜{hi} GHz）を超えています。",
+            "大気減衰：有効範囲（{lo}〜{hi} GHz）の外",
         "html_scope_veg_extrapolated":
-            "植生減衰の係数は {lo}〜{hi} GHz で定義されており、その外側では"
-            "同じ式を伸ばして使っています。",
+            "植生減衰の係数：{lo}〜{hi} GHz の定義域外を外挿",
         "html_scope_diff_veg_serial":
-            "地形が見通しを切る区間では、回折損と植生減衰を重ねて計上しています"
-            "＝合計損失は大きめ（安全側）に出ます。2 つをどう合成するのが正しいかは、"
-            "まだ実測と突き合わせていません。",
+            "遮蔽区間：回折損と植生減衰を重ねて計上"
+            "＝合計は大きめ（安全側）・合成方法は未検証",
         "html_scope_rice_k_empirical":
-            "表示している現在のライスKファクターは、回折損からの経験的な推定です"
-            "（初期値 − 回折損/3）＝計算には使っておらず、実測との対応も取っていません。",
+            "ライス K：回折損からの経験的な推定（表示のみ・計算には未使用）",
         "html_scope_resolution_high":
-            "この結果は地形の解像度「高」（目標 {m} m 間隔）で出したものです。"
-            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
-            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
-            "選んだ段階もこの答えの一部です。",
+            "地形の解像度「高」（目標 {m} m 間隔）で計算"
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
         "html_scope_resolution_medium":
-            "この結果は地形の解像度「中」（目標 {m} m 間隔）で出したものです。"
-            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
-            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
-            "選んだ段階もこの答えの一部です。",
+            "地形の解像度「中」（目標 {m} m 間隔）で計算"
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
         "html_scope_resolution_low":
-            "この結果は地形の解像度「低」（目標 {m} m 間隔）で出したものです。"
-            "深く遮蔽された経路では、段階を細かくすると回折損が増えます"
-            "（実効 {coarse} m → {fine} m で最大 +14.8%・実測）＝"
-            "選んだ段階もこの答えの一部です。",
+            "地形の解像度「低」（目標 {m} m 間隔）で計算"
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
         "html_calib_profile":   "較正プロファイル",
-        "html_calib_none":      "未適用（実測と突き合わせていません）",
+        "html_calib_none":      "未適用（実測との突き合わせなし）",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

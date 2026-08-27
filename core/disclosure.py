@@ -1,7 +1,7 @@
 """
 core/disclosure.py
 ==================
-「この結果をどう扱うか」＝**帳票に焼き込む前提と適用範囲の字**（ヘッドレス・純関数）。
+「結果の取扱に関する補足」＝**帳票に焼き込む前提と適用範囲の字**（ヘッドレス・純関数）。
 
 🔑 **存在理由＝成果物は一人歩きする**。レポートを受け取った人は README の開示も
 画面の但し書きも見ない。⇒ 前提（DEM は地表面モデル／植生高は一律値／環境損失は
@@ -83,14 +83,14 @@ def calibration_line() -> str:
 
 
 def handling_text(note_keys) -> str:
-    """「この結果をどう扱うか」節の**素のテキスト**（`report.txt` 用）。
+    """「結果の取扱に関する補足」節の**素のテキスト**（`report.txt` 用）。
 
     見出しは英字の角括弧＝`report.txt` の他の節（`[LINK BUDGET]` 等）と同じ字面に
     合わせる。中身は表示言語に従う（レポート本文と同じ扱い）。
     """
     body = "\n".join(f"- {line}" for line in handling_lines(note_keys))
     return (
-        "[HOW TO READ THIS RESULT]\n"
+        "[NOTES ON HANDLING THIS RESULT]\n"
         f"{i18n.t('html_handling_lead')}\n"
         f"{body}\n"
         f"- {calibration_line()}\n"

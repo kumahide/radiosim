@@ -16,8 +16,8 @@ GSI 淡色地図タイルを取得・ステッチし、TX/RX マーカー・経�
   方角の手がかりに北矢印を重ねる（2026-06-16）。回転で生じる余白（グレー）を
   出さないよう、経路に沿った水平バンドの north-up 外接矩形ぶんを取得し、回転後に
   バンドだけを切り出す。
-- 出力アスペクトは地形断面図（15:6）に合わせ、レポートで縦に並べたとき同じ
-  width:100% で高さが揃うようにする（2026-06-16）。
+- 出力アスペクトは地形断面図に合わせ（`report_common.PROFILE_FIGSIZE` が単一ソース）、
+  レポートで縦に並べたとき同じ width:100% で高さが揃うようにする（2026-06-16）。
 
 2 種類の地図を生成する（2026-07-10）:
 - `render_path_map`   … per-path レポート用。1経路・経路を水平化する回転あり。
@@ -38,6 +38,7 @@ from core import dem
 from core import models
 from core import units
 from report import map_graphics
+from report import report_common
 
 logger = logging.getLogger(__name__)
 
@@ -54,11 +55,13 @@ _CROP_INSET_PX  = 2
 # 回転リサンプルでラスター文字が甘くなるのを抑えるスーパーサンプル倍率
 # （×2 で高解像に回転→縮小）。追加のタイル取得は不要。
 _SUPERSAMPLE    = 2
-# 出力アスペクト比（幅/高さ）。レポートでは地形断面 PNG（Figure(figsize=(15, 6))）
-# と width:100% で縦に並ぶ。経路の水平位置関係が読めれば十分なため、地図は断面図
-# より横長の 15:5 とし、A4 縦1枚に収めるべく地図側の高さを詰める（断面図と高さは
-# 揃わないが、経路の水平／垂直の対応は上下配置で保つ）。half_h を half_w から決める。
-_OUTPUT_ASPECT  = 15 / 5
+# 出力アスペクト比（幅/高さ）。レポートでは地形断面 PNG（`report_path` の
+# `Figure(figsize=(15, 4.5))`）と width:100% で縦に並ぶ。**断面図と同じ 15:4.5** に
+# してあるので、上下に並べたとき 2 枚の高さが揃う（2026-08-28 に 15:5 から変更＝
+# 縦の予算を詰めて縮小フィットの発火を止めた。それまでは断面図 15:6・地図 15:5 で
+# 高さが揃っていなかった）。⚠️ **片方だけ変えないこと**＝揃わなくなる。
+# half_h を half_w から決める。
+_OUTPUT_ASPECT  = report_common.PROFILE_FIGSIZE[0] / report_common.PROFILE_FIGSIZE[1]
 
 _LatLon = tuple[float, float]
 
@@ -152,7 +155,7 @@ def render_path_map(
 
     取得できたタイルの割合が min_fetch_frac 未満なら「地図取得不可」として
     None を返す（灰色の欠けが目立つ中途半端な地図を黙って埋め込まない）。
-    出力アスペクト（幅/高さ）は aspect で固定（既定＝レポート断面図と同じ 15:6）。
+    出力アスペクト（幅/高さ）は aspect で固定（既定＝レポート断面図と同じ比）。
     """
     try:
         zoom = choose_zoom(tx, rx, max_tiles, min_zoom, max_zoom, margin_frac, aspect)

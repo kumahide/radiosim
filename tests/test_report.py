@@ -386,7 +386,7 @@ class TestSaveReportAllHtml:
 
 
 # ============================================================
-# 「この結果をどう扱うか」節（3.0a1 / ロードマップ §3.0 の 9）
+# 「結果の取扱に関する補足」節（3.0a1 / ロードマップ §3.0 の 9）
 # ============================================================
 
 
@@ -400,7 +400,7 @@ def _builds_a_sheet(text: str) -> bool:
 
 
 def _carries_the_handling_section(text: str) -> bool:
-    """そのソースが「この結果をどう扱うか」を出しているか。"""
+    """そのソースが「結果の取扱に関する補足」を出しているか。"""
     return ("handling_notes_html(" in text) or ("handling_text(" in text)
 
 
@@ -559,7 +559,7 @@ class TestHandlingSectionContent:
         keys = models.scope_notes(430.0, diff_method="bullington",
                                   rain_rate=10.0, veg_h=5.0)
         text = disclosure.handling_text(keys)
-        assert "[HOW TO READ THIS RESULT]" in text
+        assert "[NOTES ON HANDLING THIS RESULT]" in text
         for line in disclosure.handling_lines(keys):
             assert line in text
         assert disclosure.calibration_line() in text

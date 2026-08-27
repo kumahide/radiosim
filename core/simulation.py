@@ -498,7 +498,7 @@ def _save_report(
         f"Terrain Res   : {params.resolution}\n"
         f"Samples       : {params.num} "
         f"({units.format_spacing(spacing)} m spacing)\n\n"
-        # 「この結果をどう扱うか」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
+        # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。
         + disclosure.handling_text(models.scope_notes(
             params.freq_mhz,

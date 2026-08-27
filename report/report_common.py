@@ -26,6 +26,13 @@ from core import disclosure
 from core import i18n
 from core import version
 
+# 帳票へ width:100% で並べる横長図の縦横比（matplotlib の figsize と同じ〔幅, 高さ〕）。
+# 🔑 **断面図（report_path）と経路地図（report_map）が同じ 1 本を引く**＝2 枚は上下に
+# 並ぶので、比が違うと高さが揃わない。⚠️ **これは「絵の好み」ではなく A4 1 枚の縦の
+# 予算**＝15:6 だった頃は図 2 枚で本文の約半分を食い、既定の内容でも縮小フィットが
+# 0.82 倍で常時発火していた（2026-08-28 に実測して 15:4.5 へ）。
+PROFILE_FIGSIZE: tuple[float, float] = (15.0, 4.5)
+
 # ============================================================
 # CSV セルの安全化（B-012 / Formula Injection）
 # ------------------------------------------------------------
@@ -101,7 +108,7 @@ body{font-family:Arial,sans-serif;font-size:13px}
   white-space:nowrap;padding-left:12px}
 .page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;
   color:#aaa;font-size:10px;display:flex;justify-content:space-between}
-/* 「この結果をどう扱うか」節（3.0a1）。**4 種のシートが同じ 1 本を引く**ので
+/* 「結果の取扱に関する補足」節（3.0a1）。**4 種のシートが同じ 1 本を引く**ので
    `.sheet.path` 等へはスコープしない（クラス名が固有＝連結しても衝突しない）。
    小さく畳んで最下部に置く＝per-path は A4 1 枚の縮小フィットの中に入るため、
    本文を押しのけない字送りにしてある。印刷で節が割れないよう break-inside:avoid。 */
@@ -210,18 +217,41 @@ def fit_to_page_script() -> str:
     印字域は @page 余白（上 14mm・下 8mm）に合わせて 297−14−8=275mm。下余白を詰めた
     ぶん縮小目標が印字域に近づき、縦の下部余白が減る。transform-origin は top right＝
     右寄せなので、縮小で生じる横余白は左側に出る。
+
+    🔑 **ヘッダとフッタは縮小対象の外**（どちらも `.sheet` 直下＝`.fit` の外）。
+    自己同定の字が内容量しだいで縮むと、シートごとに題字の大きさが変わって読みにくい。
+    ⇒ 2 つの**実高を測って**印字域から引き、残りを `.fit` の持ち分にする（決め打ちの
+    mm を書かない＝余白やフォントを変えた日に目標だけ古くならない）。
     """
     return '''<script>
 (function(){
+  function px(v){ var n=parseFloat(v); return isFinite(n)?n:0; }
+  function chromeH(sheet){
+    /* .fit の外に置いたヘッダ/フッタの合計高＝縮小されない持ち分。
+       ⛔ **フッタの margin-top は数えない**＝`margin-top:auto` は用紙の余りを
+       そのまま吸う値で、getComputedStyle は "auto" ではなく**使われた px** を返す。
+       これを足すと「中身が短いほど chrome が大きい」＝目標高が中身の高さに
+       追従してしまい、収まっている紙でも縮小が始まる（2026-08-28 に実測で発覚）。
+       ⇒ 数えるのは**枠そのものの高さと、余りではない側の余白だけ**。 */
+    var h=0, kids=sheet?sheet.children:[];
+    for(var i=0;i<kids.length;i++){
+      var el=kids[i], c=""+(el.className||"");
+      var isHead=c.indexOf("page-header")>=0, isFoot=c.indexOf("page-footer")>=0;
+      if(!isHead&&!isFoot) continue;
+      var cs=getComputedStyle(el);
+      h+=el.getBoundingClientRect().height+px(cs.marginBottom);
+      if(isHead) h+=px(cs.marginTop);   /* ヘッダの上余白は実寸（auto ではない） */
+    }
+    return h;
+  }
   function fitOne(el){
     var outer=el.parentNode;
     el.style.transform="none";
     outer.style.height=""; outer.style.overflow="";
     var pxPerMm=96/25.4;
-    /* フッタは .fit の外（.sheet 直下・最下部固定）へ出したので、その高さ分(約6mm)を
-       印字域から引いて .fit の縮小目標/クリップ箱を決める。 */
-    var target=(297-14-8-8-6)*pxPerMm;   /* 縮小目標高（印字域275−安全8mm−フッタ6mm） */
-    var box=(297-14-8-1-6)*pxPerMm;      /* クリップ箱高（印字域275−安全1mm−フッタ6mm） */
+    var chrome=chromeH(outer.parentNode);
+    var target=(297-14-8-8)*pxPerMm-chrome;  /* 縮小目標高（印字域275−安全8mm−ヘッダ/フッタ） */
+    var box=(297-14-8-1)*pxPerMm-chrome;     /* クリップ箱高（印字域275−安全1mm−ヘッダ/フッタ） */
     var h=el.scrollHeight;
     if(h>target){
       var s=target/h;
@@ -270,7 +300,7 @@ def html_document(doc_title: str, css: str, body: str) -> str:
 
 
 # ============================================================
-# 「この結果をどう扱うか」節（3.0a1 / ロードマップ §3.0 の 9）
+# 「結果の取扱に関する補足」節（3.0a1 / ロードマップ §3.0 の 9）
 # ------------------------------------------------------------
 # 🔑 **存在理由＝成果物は一人歩きする**。レポートを受け取った人は、README の
 # 開示も画面の但し書きも見ない。⇒ **前提と適用範囲を、帳票そのものに焼き込む。**
@@ -287,7 +317,7 @@ def html_document(doc_title: str, css: str, body: str) -> str:
 
 
 def handling_notes_html(note_keys) -> str:
-    """「この結果をどう扱うか」節の HTML 断片を返す（**4 種のシート共通**）。
+    """「結果の取扱に関する補足」節の HTML 断片を返す（**4 種のシート共通**）。
 
     字は `core.disclosure` が単一ソース（`report.txt` と同じ 1 本）。ここが持つのは
     **体裁だけ**＝節タグとクラス名（CSS は `a4_base_css` の `.handling`）。

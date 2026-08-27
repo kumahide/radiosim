@@ -727,7 +727,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `{id}/`        | Per-path package (same structure as Single Mode) |
 
 
-### The "How to read this result" section in the reports
+### The "Notes on handling this result" section in the reports
 
 **Every report carries this section at the bottom** — the four HTML reports (single path, the Multiple Paths ledger, relay path, condition explorer) and `report.txt` — from 3.0 onwards. A report gets printed and handed on, and **the person who receives it reads neither this manual nor the notes on screen**. So the assumptions, and how far the formulas actually used reach, are written into the report itself.
 

@@ -263,7 +263,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + _hop_header_cells()
         + '</tr></thead><tbody>' + rows_html + '</tbody></table>'
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
-        # 「この結果をどう扱うか」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
+        # 「結果の取扱に関する補足」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
         # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。
         + report_common.handling_notes_html(models.scope_notes_union(
             models.scope_notes(

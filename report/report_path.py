@@ -126,7 +126,9 @@ def save_profile_png(
     N     = t.num_samples
     y_min = float(np.min(t.raw_elevs)) - 30
 
-    fig    = Figure(figsize=(15, 6))
+    # 図の縦横比は `report_common.PROFILE_FIGSIZE`（地図と共有＝上下に並べて高さが揃う）。
+    # ⚠️ **ここに数字を書き戻さないこと**＝片方だけ変えた日に揃わなくなる。
+    fig    = Figure(figsize=report_common.PROFILE_FIGSIZE)
     fig.patch.set_facecolor("white")
     canvas = FigureCanvasAgg(fig)
 
@@ -213,7 +215,8 @@ def path_sheet_css() -> str:
     """
     return """
 /* --- per-path シート --- */
-/* ヘッダ/フッタの余白を詰めて縮小フィットの余地を増やす（summary は据え置き） */
+/* ヘッダ/フッタの余白を詰めて縮小フィットの余地を増やす（summary は据え置き）。
+   ヘッダも .fit の外＝フッタ同様に縮小されない（題字の大きさをシート間で揃える）。 */
 .sheet.path .page-header{padding-bottom:4px;margin-bottom:7px}
 /* フッタは summary 同様に用紙最下部へ固定（.sheet を縦フレックス＋margin-top:auto）。
    .fit の外に出したので縮小フィットの transform/clip の影響を受けない。 */
@@ -223,20 +226,25 @@ def path_sheet_css() -> str:
 .sheet.path .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f;break-inside:avoid}
 .sheet.path .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
 .sheet.path .cards{display:flex;gap:12px;margin-bottom:6px;break-inside:avoid}
-.sheet.path .card{background:white;border:1px solid #eee;border-radius:8px;padding:4px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}
+.sheet.path .card{background:white;border:1px solid #eee;border-radius:8px;padding:2px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}
 .sheet.path .card .lbl{font-size:9px;color:#999;text-transform:uppercase}
 .sheet.path .card .val{font-size:15px;font-weight:bold;color:#333}
 .sheet.path .card.ok .val{color:#2e7d32}.sheet.path .card.ng .val{color:#c62828}
 .sheet.path .graph{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:6px}
 .sheet.path .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:10px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:6px}
 .sheet.path .cols{display:flex;gap:16px;margin-bottom:2px}
-.sheet.path .col{flex:1;background:white;border-radius:8px;padding:8px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.sheet.path .col{flex:1;background:white;border-radius:8px;padding:6px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 .sheet.path .col h3{margin:0 0 5px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:3px}
 .sheet.path table.info{border-collapse:collapse;width:100%}
-.sheet.path table.info td{padding:2px 6px;border-bottom:1px solid #f0f0f0;font-size:12px}
+.sheet.path table.info td{padding:1px 6px;border-bottom:1px solid #f0f0f0;font-size:11px}
 .sheet.path table.info td:first-child{color:#888;width:50%}
 .sheet.path table.info td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sheet.path table.info td.n .u{color:#999;display:inline-block;width:2.6em;text-align:left;margin-left:6px}
+/* 「結果の取扱に関する補足」は per-path だけ 3 段組みにする（他のシートは 2 段のまま）。
+   ⚠️ **ここだけ狭いのには理由がある**＝per-path は 1 枚に図 2 枚と表 2 列を載せるので、
+   縦の予算がいちばん厳しい。台帳・中継・条件探索は行数の勝負で、字を小さくしても
+   その分だけ行が増えるわけではない（→ a4_base_css の `.handling`）。 */
+.sheet.path .handling ul{font-size:7.5px;line-height:1.25;column-count:3}
 """
 
 
@@ -310,7 +318,7 @@ def path_sheet_html(
 
     sheet_id = f' id="{report_id}"' if report_id else ""
 
-    # 「この結果をどう扱うか」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
+    # 「結果の取扱に関する補足」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
     # 刻印は `models.scope_notes` が純述語で決める（この面は並べるだけ＝物理を持たない）。
     handling = report_common.handling_notes_html(models.scope_notes(
         params.freq_mhz,
@@ -328,8 +336,8 @@ def path_sheet_html(
     # 値は単位なし（見出しが単位を持つ）＝台帳の <td> と同じ書式。
 
     return f"""<section class="sheet path"{sheet_id}>
-<div class="fit-outer"><div class="fit">
 {report_common.page_header(i18n.t('html_path_title'), project_name, report_id)}
+<div class="fit-outer"><div class="fit">
 {memo_block}
 <div class="cards">
   <div class="card {status_cls}"><div class="lbl">{i18n.t('html_status')}</div><div class="val">{result.status}</div></div>

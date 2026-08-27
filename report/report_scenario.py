@@ -349,7 +349,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         )
     table = _sweep_table(run) if run.kind == "sweep" else _compare_table(run)
 
-    # 「この結果をどう扱うか」（3.0a1）。⚠️ **条件探索は 1 枚で N 条件を載せる**
+    # 「結果の取扱に関する補足」（3.0a1）。⚠️ **条件探索は 1 枚で N 条件を載せる**
     # ＝周波数や植生高そのものを軸に振れるので、刻印は**点ごとに解いて和集合**を取る
     # （基準の条件だけを見ると、軸で範囲外へ出た点の注記が消える）。
     base = run.base_params
@@ -369,8 +369,8 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
     ))
 
     return f"""<section class="sheet scenario">
-<div class="fit-outer"><div class="fit">
 {report_common.page_header(title, project_name)}
+<div class="fit-outer"><div class="fit">
 {memo_block}
 {_meta_block(run)}
 {chart_block}

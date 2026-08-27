@@ -301,7 +301,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"{graph_cell}</tr>\n"
         )
 
-    # 「この結果をどう扱うか」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
+    # 「結果の取扱に関する補足」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
     # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には
     # 書いていない*ことになる）。計算できなかった行は条件が確定していないので数えない。
     handling = report_common.handling_notes_html(models.scope_notes_union(
