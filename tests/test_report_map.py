@@ -481,10 +481,14 @@ class TestBurnedTextStaysReadable:
         on_page = px * report_common.A4_CONTENT_WIDTH_PX / width
         assert on_page == pytest.approx(report_common.MIN_FIGURE_TEXT_PX)
 
-    def test_the_floor_is_above_the_smallest_type_in_the_report(self):
-        # 帳票の最小字＝開示節の CSS 8px。出典がそれより小さいと読めない。
-        # ⚠️ per-path は縮小フィット（最大 0.82 倍）が上に乗るので、そこも見る。
-        assert report_common.MIN_FIGURE_TEXT_PX * 0.82 >= 8.0
+    def test_the_floor_is_at_least_the_smallest_type_in_the_report(self):
+        """帳票の最小字（開示節の CSS 8px）を下回らないこと。
+
+        ⚠️ **縮小フィット（per-path・最大 0.82 倍）は掛けない**＝比べる相手の
+        開示節も同じ `.fit` の中で同率に縮むので、両者の比は変わらない
+        （2026-08-28 に 0.82 を掛けて比べたのは誤りだった）。
+        """
+        assert report_common.MIN_FIGURE_TEXT_PX >= 8.0
 
     @pytest.mark.parametrize("path", (((34.54, 132.41), (34.53, 132.40)),
                                       ((35.70, 139.70), (35.62, 139.81))))
