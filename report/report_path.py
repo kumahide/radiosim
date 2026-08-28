@@ -24,6 +24,7 @@ from typing import TYPE_CHECKING
 import numpy as np
 
 from core import coords
+from core import disclosure
 from core import i18n
 from core import models
 from core import units
@@ -180,6 +181,14 @@ def save_profile_png(
         framealpha=0.9,
         borderaxespad=0,
     )
+
+    # 標高データの出典（B-134）＝**図そのものへ焼く**。断面図は `profile.png` として
+    # 単独で配られ、台帳のサムネイルからも開けるので、帳票の開示節に書くだけでは
+    # **図と出典が離れる**（地図で同じ判断をした＝B-133）。字は `core.disclosure` が
+    # 単一ソース＝帳票の節と同じ 1 本を引く。
+    # ⚠️ 軸の外（figure 座標の右下）に置く＝地形の絵に重ねない。
+    fig.text(0.995, 0.012, disclosure.data_source_line(),
+             ha="right", va="bottom", fontsize=9, color="#666666")
 
     # PNG をディスクに保存しつつ、同じ描画を Base64 にも変換する
     png_path = os.path.join(save_dir, "profile.png")

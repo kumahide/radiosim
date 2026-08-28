@@ -124,6 +124,8 @@ body{font-family:Arial,sans-serif;font-size:13px}
   column-count:2;column-gap:14px}
 .handling li{break-inside:avoid}
 .handling .hd-calib{margin:3px 0 0;font-size:8px;color:#b0bec5;font-style:italic}
+/* 出典は事実の刻印なので、較正の席（斜体・淡色＝空席の印）とは分けて素の字で置く。 */
+.handling .hd-source{margin:2px 0 0;font-size:8px;color:#78909c}
 @media screen{
   /* min-width:max-content ＝ 窓が A4 幅(210mm)より狭くても body が内容幅まで広がり、
      中央寄せシートが左へはみ出して左端が見切れる（水平スクロールで届かない）のを防ぐ。
@@ -333,5 +335,7 @@ def handling_notes_html(note_keys) -> str:
         f'<ul>{items}</ul>'
         f'<p class="hd-calib">'
         f'{_html.escape(disclosure.calibration_line())}</p>'
+        f'<p class="hd-source">'
+        f'{_html.escape(disclosure.data_source_line())}</p>'
         '</section>'
     )

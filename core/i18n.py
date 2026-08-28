@@ -447,6 +447,12 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_calib_profile":   "Calibration profile",
         "html_calib_none":      "not applied (no measurement comparison)",
 
+        # 標高データの出典（B-134）＝**帳票と地形断面図の両方に出す 1 本の字**。
+        # ⚠️ 図に焼く側は隅の帯なので、これ以上長くしないこと。
+        "html_elev_source":
+            "Elevation data: GSI Tiles (elevation), Geospatial Information "
+            "Authority of Japan",
+
         # ===== Tile Manager =====
         "map_window_title":     "Map",
         "map_mode_label":       "Mode:",
@@ -1046,6 +1052,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測との突き合わせなし）",
+
+        # 標高データの出典（B-134）
+        "html_elev_source":     "標高データの出典: 国土地理院 地理院タイル（標高タイル）",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

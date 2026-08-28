@@ -230,6 +230,36 @@ class TestSaveProfilePng:
             assert f.read(8) == b"\x89PNG\r\n\x1a\n"
         assert os.path.exists(os.path.join(str(tmp_path), "report.html"))
 
+    def test_the_profile_figure_carries_the_elevation_source(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
+        """**地形断面図そのものに標高データの出典が焼かれる**こと（B-134）。
+
+        🔑 **開示の節に書いてあるだけでは足りない**＝`profile.png` は単独の
+        ファイルとして配られ、台帳のサムネイルからも直接開かれるので、
+        **図と出典が離れる**（地図で同じ判断をした＝[[B-133]]）。
+        ⚠️ 画像の画素からは字が読めないので、**配線**（図に置いたか・どこへ）を見る。
+        """
+        from matplotlib.figure import Figure
+        i18n.set_lang("ja")
+        seen: list = []
+        real = Figure.text
+        monkeypatch.setattr(
+            Figure, "text",
+            lambda self, x, y, s, **kw: (seen.append((x, y, s)),
+                                         real(self, x, y, s, **kw))[1],
+        )
+        monkeypatch.setattr(report_path.report_map, "render_path_map_b64",
+                            lambda *a, **k: None)
+        params = sim.SimParams(default_params_dict)
+        report_path.save_profile_png(
+            flat_terrain, _make_result(), params, 30.0, 10.0, str(tmp_path)
+        )
+        hit = [(x, y) for x, y, s in seen if s == disclosure.data_source_line()]
+        assert hit, f"断面図に標高データの出典が無い: {[s for *_, s in seen]}"
+        x, y = hit[0]
+        assert x > 0.5 and y < 0.5, "出典は図の右下（軸の外）へ置く"
+
+
 
 class TestSavePathVisuals:
 
@@ -563,6 +593,21 @@ class TestHandlingSectionContent:
         for line in disclosure.handling_lines(keys):
             assert line in text
         assert disclosure.calibration_line() in text
+        assert disclosure.data_source_line() in text
+
+    def test_the_elevation_source_is_always_stated(self):
+        """標高データの出典は**条件によらず常に出る**こと（B-134）。
+
+        ⚠️ 適用範囲の刻印（`html_scope_*`）と違い、出典は*事実*なので
+        `models.scope_notes()` の判定に混ぜない＝周波数や入力を変えても消えない。
+        """
+        for lang in ("en", "ja"):
+            i18n.set_lang(lang)
+            line = disclosure.data_source_line()
+            assert line == i18n.t("html_elev_source") and line
+            assert line not in disclosure.handling_lines(models.SCOPE_NOTE_ORDER)
+        i18n.set_lang("ja")
+        assert "地理院" in disclosure.data_source_line()
 
     def test_the_html_section_escapes_and_lists_every_line(self):
         i18n.set_lang("en")
@@ -571,3 +616,5 @@ class TestHandlingSectionContent:
         assert html.count("<li>") == len(keys)
         assert 'class="handling"' in html
         assert i18n.t("html_handling_title") in html
+        # 出典（B-134）は**全帳票が通る 1 か所**＝この節に入れることで 5 面へ届く。
+        assert disclosure.data_source_line() in html

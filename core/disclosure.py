@@ -82,6 +82,22 @@ def calibration_line() -> str:
     return f'{i18n.t("html_calib_profile")}: {i18n.t("html_calib_none")}'
 
 
+def data_source_line() -> str:
+    """標高データの出典（B-134）。**帳票の 5 面と地形断面図が引く 1 本の字**。
+
+    🔑 **地図タイルの出典（B-133）とは置き場が違う**＝地図は 3 面にしか出ないので
+    画像へ焼けば足りたが、**標高データは全面の土台**（条件探索のように断面図を
+    持たない帳票も、値は標高から出ている）。⇒ **全面が必ず通る開示の節**に置き、
+    図だけ抜き出して渡される断面図には*加えて*焼く（`report_path`）。
+
+    ⚠️ **「較正の席」と同じ扱いにする**（`calibration_line`）＝刻印の列
+    （`html_scope_*`）に混ぜない。あちらは**条件によって出たり出なかったりする**
+    適用範囲の話で、出典は**常に出る事実**。混ぜると `models.scope_notes()` が
+    出典まで判定することになる。
+    """
+    return i18n.t("html_elev_source")
+
+
 def handling_text(note_keys) -> str:
     """「結果の取扱に関する補足」節の**素のテキスト**（`report.txt` 用）。
 
@@ -94,4 +110,5 @@ def handling_text(note_keys) -> str:
         f"{i18n.t('html_handling_lead')}\n"
         f"{body}\n"
         f"- {calibration_line()}\n"
+        f"- {data_source_line()}\n"
     )
