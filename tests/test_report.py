@@ -259,6 +259,74 @@ class TestSaveProfilePng:
         x, y = hit[0]
         assert x > 0.5 and y < 0.5, "出典は図の右下（軸の外）へ置く"
 
+    def test_the_profile_source_is_readable_once_the_page_shrinks_it(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
+        """断面図の出典が、A4 に載せた後も読める大きさであること（B-135）。
+
+        🔴 この図は **A4 幅へ 0.31 倍**に縮んで載る＝図の中で 9pt と書いたときは
+        **5.7px**まで落ちていた（帳票の最小字 8px を下回る）。
+        ⇒ 大きさは `report_common.figure_text_pt` が図の幅から決める。
+        """
+        from matplotlib.figure import Figure
+        i18n.set_lang("ja")
+        seen: list = []
+        real = Figure.text
+        monkeypatch.setattr(
+            Figure, "text",
+            lambda self, x, y, s, **kw: (seen.append((s, kw.get("fontsize"))),
+                                         real(self, x, y, s, **kw))[1],
+        )
+        monkeypatch.setattr(report_path.report_map, "render_path_map_b64",
+                            lambda *a, **k: None)
+        params = sim.SimParams(default_params_dict)
+        report_path.save_profile_png(
+            flat_terrain, _make_result(), params, 30.0, 10.0, str(tmp_path)
+        )
+        pt = next(fs for s, fs in seen if s == disclosure.data_source_line())
+        width_px = report_common.PROFILE_FIGSIZE[0] * report_path._PROFILE_DPI
+        on_page = (pt * report_path._PROFILE_DPI / 72.0
+                   * report_common.A4_CONTENT_WIDTH_PX / width_px)
+        assert on_page == pytest.approx(report_common.MIN_FIGURE_TEXT_PX)
+
+    @pytest.mark.parametrize("lang", ("ja", "en"))
+    def test_the_profile_source_does_not_collide_with_the_axis_label(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch, lang):
+        """出典が距離軸のラベルへ食い込まないこと（B-135）。
+
+        🔴 出典は**軸ラベルと同じ行**（図の下端）に入る。字を読める大きさへ上げた
+        とき、**英語では 148px 食い込んでいた**（文言が長かった）。⇒ 文言を地図の
+        出典と同じ書式へ短くして解いたので、**また伸ばした日にここで落ちる**。
+        ⚠️ **製品が作った図そのものを測る**＝同じ構成を組み直すと、組み方の違いが
+        そのまま嘘になる（[[feedback_synthetic_cases_lie]]）。
+        """
+        from matplotlib.figure import Figure
+        i18n.set_lang(lang)
+        gaps: list[float] = []
+        real = Figure.savefig
+
+        def _spy(self, *a, **k):
+            out = real(self, *a, **k)
+            rend = self.canvas.get_renderer()
+            src = [t for t in self.texts
+                   if t.get_text() == disclosure.data_source_line()]
+            if src and self.axes:
+                label = self.axes[0].xaxis.label
+                gaps.append(src[0].get_window_extent(rend).x0
+                            - label.get_window_extent(rend).x1)
+            return out
+
+        monkeypatch.setattr(Figure, "savefig", _spy)
+        monkeypatch.setattr(report_path.report_map, "render_path_map_b64",
+                            lambda *a, **k: None)
+        params = sim.SimParams(default_params_dict)
+        report_path.save_profile_png(
+            flat_terrain, _make_result(), params, 30.0, 10.0, str(tmp_path)
+        )
+        assert gaps, "出典か軸ラベルを測れなかった（図の組み方が変わった）"
+        assert min(gaps) > 0, (
+            f"[{lang}] 出典が距離軸のラベルへ {-min(gaps):.0f}px 食い込んでいる"
+        )
+
 
 
 class TestSavePathVisuals:

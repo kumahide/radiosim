@@ -448,10 +448,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_calib_none":      "not applied (no measurement comparison)",
 
         # 標高データの出典（B-134）＝**帳票と地形断面図の両方に出す 1 本の字**。
-        # ⚠️ 図に焼く側は隅の帯なので、これ以上長くしないこと。
-        "html_elev_source":
-            "Elevation data: GSI Tiles (elevation), Geospatial Information "
-            "Authority of Japan",
+        # ⚠️ **これ以上長くしないこと**（B-135）＝断面図では距離軸のラベルと同じ行に
+        # 入るので、機関名まで書いていた頃は**英語で 148px 食い込んでいた**。
+        # 🔑 地図タイルの出典（`tm_attr_*`）と**同じ書式**に揃えてある＝「地理院タイル」
+        # は固有名なので、機関名を重ねなくても出所は特定できる。
+        "html_elev_source":     "Elevation data source: GSI Tiles (elevation)",
 
         # ===== Tile Manager =====
         "map_window_title":     "Map",
@@ -1054,7 +1055,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_calib_none":      "未適用（実測との突き合わせなし）",
 
         # 標高データの出典（B-134）
-        "html_elev_source":     "標高データの出典: 国土地理院 地理院タイル（標高タイル）",
+        "html_elev_source":     "標高データの出典: 地理院タイル（標高タイル）",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

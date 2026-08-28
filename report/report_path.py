@@ -38,6 +38,11 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger("radiosim")
 
+#: 断面図 PNG の解像度。⚠️ **図に焼く字の大きさがこれに依存する**（B-135＝
+#: `report_common.figure_text_pt` は pt→px の換算に dpi を使う）ので、`savefig` に
+#: 数字を直書きせずここを引く＝片方だけ変えると字だけ実寸が変わる。
+_PROFILE_DPI = 150
+
 
 def save_path_visuals(pr: PathResult, coord_format: str = "dd",
                       project_name: str = "") -> "Exception | None":
@@ -187,15 +192,19 @@ def save_profile_png(
     # **図と出典が離れる**（地図で同じ判断をした＝B-133）。字は `core.disclosure` が
     # 単一ソース＝帳票の節と同じ 1 本を引く。
     # ⚠️ 軸の外（figure 座標の右下）に置く＝地形の絵に重ねない。
+    # 字の大きさは**図の幅から**決める（B-135）＝この図は A4 幅へ 0.31 倍に縮んで
+    # 載るので、9pt と書いたときは 5.7px まで落ちて読めなかった。
     fig.text(0.995, 0.012, disclosure.data_source_line(),
-             ha="right", va="bottom", fontsize=9, color="#666666")
+             ha="right", va="bottom", color="#666666",
+             fontsize=report_common.figure_text_pt(
+                 report_common.PROFILE_FIGSIZE[0] * _PROFILE_DPI, _PROFILE_DPI))
 
     # PNG をディスクに保存しつつ、同じ描画を Base64 にも変換する
     png_path = os.path.join(save_dir, "profile.png")
-    fig.savefig(png_path, dpi=150)
+    fig.savefig(png_path, dpi=_PROFILE_DPI)
 
     buf = io.BytesIO()
-    fig.savefig(buf, format="png", dpi=150)
+    fig.savefig(buf, format="png", dpi=_PROFILE_DPI)
     img_b64 = base64.b64encode(buf.getvalue()).decode()
 
     # Figure と Canvas の循環参照をメインスレッドで即時解放する。

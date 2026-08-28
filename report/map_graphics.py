@@ -241,7 +241,8 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
 
 
 
-def attribution_badge(text: str, scale: int = 2) -> Image.Image:
+def attribution_badge(text: str, font_px: float = 11.0,
+                      scale: int = 2) -> Image.Image:
     """出典表記の帯（RGBA）を返す。**地図画像そのものへ焼き込む**ために使う。
 
     ⛔ **帳票側で HTML のキャプションにしない**（B-133 の対応方針）＝帳票の地図は
@@ -252,8 +253,12 @@ def attribution_badge(text: str, scale: int = 2) -> Image.Image:
     合わせる＝同じ色・同じ右下・同じ文言（`ATTR_KEYS` から引いた 1 つの訳）。
     ⚠️ **ピルにしない**＝出典は地図の一部であって強調物ではない。距離バッジ
     （`pill_badge`）と同じ形にすると、読む人が「値のラベル」として拾ってしまう。
+
+    ⚠️ **`font_px` は呼ぶ側が図の幅から決める**（B-135＝`report_common.figure_text_px`）。
+    既定の 11px は**画像を等倍で見るとき**の値で、帳票のように縮めて載せる面が
+    そのまま使うと読めない（実測 6.6〜7.8px まで落ちていた）。
     """
-    font = load_font(11 * scale, text)
+    font = load_font(round(font_px * scale), text)
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     l, t, r, b = probe.textbbox((0, 0), text, font=font)
     tw, th = r - l, b - t

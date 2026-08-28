@@ -90,7 +90,10 @@ def _paste_attribution(img: "Image.Image") -> None:
     対の維持は `_ATTR_KEY` のコメントのとおりテストが受け持つ。
     """
     text  = i18n.t(_ATTR_KEY)
-    badge = map_graphics.attribution_badge(text)
+    # 字の大きさは**この画像の幅**から決める（B-135）＝帳票では A4 幅へ縮めて
+    # 載るので、固定 px だと経路の長さ（＝画像の幅）で実寸が変わってしまう。
+    badge = map_graphics.attribution_badge(
+        text, font_px=report_common.figure_text_px(img.width))
     img.paste(
         badge,
         (img.width - badge.width - _ATTR_MARGIN_PX,

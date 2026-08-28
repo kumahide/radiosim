@@ -28,6 +28,12 @@ def _attribution_text() -> str:
     return i18n.t(report_map._ATTR_KEY)
 
 
+def _expected_badge(img: Image.Image) -> Image.Image:
+    """その画像に貼られるはずの出典帯（**幅から字の大きさが決まる**＝B-135）。"""
+    return map_graphics.attribution_badge(
+        _attribution_text(), font_px=report_common.figure_text_px(img.width))
+
+
 def _missing_fill_count(img: Image.Image) -> int:
     """`_MISSING_RGB` の画素数を、**出典帯の領域を除いて**数える。
 
@@ -38,7 +44,7 @@ def _missing_fill_count(img: Image.Image) -> int:
     決めることになる。除くのは帯が占める矩形だけで、他は従来どおり全数見る。
     """
     fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
-    badge = map_graphics.attribution_badge(_attribution_text())
+    badge = _expected_badge(img)
     m = report_map._ATTR_MARGIN_PX
     fill[img.height - badge.height - m:, img.width - badge.width - m:] = False
     return int(fill.sum())
@@ -440,7 +446,7 @@ class TestAttribution:
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
         assert isinstance(img, Image.Image)
-        badge = map_graphics.attribution_badge(_attribution_text())
+        badge = _expected_badge(img)
         m   = report_map._ATTR_MARGIN_PX
         arr = np.asarray(img)
         region = arr[img.height - badge.height - m:img.height - m,
@@ -451,3 +457,49 @@ class TestAttribution:
         opposite = arr[img.height - badge.height - m:img.height - m,
                        m:m + badge.width]
         assert (opposite == 200).all(axis=2).mean() > 0.9
+
+
+# ============================================================
+# 図に焼く字の大きさ（B-135）＝A4 に載せた後で読めるか
+# ============================================================
+class TestBurnedTextStaysReadable:
+    """🔴 **図の中の px は、そのままの大きさでは読めない**（B-135）。
+
+    帳票の図は width:100% で A4 の印字幅へ縮めて載る＝**縮小率のぶん字も縮む**。
+    実測で 5.7〜7.8px まで落ち、帳票の最小字（開示節の 8px）を下回っていた
+    （ユーザー指摘「地図の出典が小さく過ぎて読めません」）。
+    ⚠️ **図ごとに解像度が違う**ので、px や pt を直接書くと実寸がバラバラになる。
+    """
+
+    def _fake_tile(self, *args, **kwargs):
+        return np.full((256, 256, 3), 200, dtype=np.uint8)
+
+    @pytest.mark.parametrize("width", (600, 975, 1044, 1140, 2250))
+    def test_the_size_is_derived_so_the_page_size_is_constant(self, width):
+        # どんな幅の図でも、A4 に載せた後の実寸は同じ（＝下限ちょうど）。
+        px = report_common.figure_text_px(width)
+        on_page = px * report_common.A4_CONTENT_WIDTH_PX / width
+        assert on_page == pytest.approx(report_common.MIN_FIGURE_TEXT_PX)
+
+    def test_the_floor_is_above_the_smallest_type_in_the_report(self):
+        # 帳票の最小字＝開示節の CSS 8px。出典がそれより小さいと読めない。
+        # ⚠️ per-path は縮小フィット（最大 0.82 倍）が上に乗るので、そこも見る。
+        assert report_common.MIN_FIGURE_TEXT_PX * 0.82 >= 8.0
+
+    @pytest.mark.parametrize("path", (((34.54, 132.41), (34.53, 132.40)),
+                                      ((35.70, 139.70), (35.62, 139.81))))
+    def test_the_map_source_is_sized_from_the_image_it_is_pasted_on(
+            self, monkeypatch, path):
+        """**地図の出典は、その画像の幅から大きさが決まる**こと。
+
+        🔑 経路の長さで画像の幅が変わる＝固定 px だと**経路ごとに実寸が変わる**。
+        ⇒ 幅の違う 2 枚で帯の大きさが変わり、A4 に載せた後は揃うことを見る。
+        """
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map(*path)
+        assert isinstance(img, Image.Image)
+        badge = _expected_badge(img)
+        on_page = badge.height * report_common.A4_CONTENT_WIDTH_PX / img.width
+        # 帯の高さ＝字＋余白なので、字そのもの（下限）より大きく、その 2 倍未満。
+        assert report_common.MIN_FIGURE_TEXT_PX < on_page < \
+            report_common.MIN_FIGURE_TEXT_PX * 2
