@@ -226,7 +226,12 @@ def _artifact_key_requests(source: str) -> "tuple[set, set, list]":
             continue
         if not (len(node.targets) == 1 and isinstance(node.targets[0], ast.Name)):
             continue
-        if isinstance(node.value, (ast.Tuple, ast.List, ast.Set)):
+        if isinstance(node.value, ast.Constant) and isinstance(node.value.value, str):
+            # 単一のモジュール定数（`_ATTR_KEY = "tm_attr_pale"`）＝B-133 で追加。
+            # 🔑 **網は広がる方向**＝これまで unresolved で落としていた形を
+            # *キーとして拾えるようにする*ので、締め出しの対象が増える（緩めていない）。
+            consts[node.targets[0].id] = [node.value.value]
+        elif isinstance(node.value, (ast.Tuple, ast.List, ast.Set)):
             vals = []
             for e in node.value.elts:
                 if isinstance(e, ast.Constant) and isinstance(e.value, str):

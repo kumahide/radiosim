@@ -17,9 +17,31 @@ import pytest
 from PIL import Image
 
 from core import dem
+from core import i18n
 from report import map_graphics
 from report import report_common
 from report import report_map
+
+
+def _attribution_text() -> str:
+    """いま焼かれる出典表記（製品と同じキーから引く）。"""
+    return i18n.t(report_map._ATTR_KEY)
+
+
+def _missing_fill_count(img: Image.Image) -> int:
+    """`_MISSING_RGB` の画素数を、**出典帯の領域を除いて**数える。
+
+    帯は白地＋濃グレー文字なので、縁のアンチエイリアスが白→#333 の途中で
+    (229,229,229) を**通り得る**＝そのままだと「タイルが欠けた」ことを見る検査が
+    帯の 1 画素で落ちる（B-133 の実装中に実際に落ちた）。
+    ⚠️ **帯の色や不透明度をずらして避けない**＝検査の都合で刻印の見た目を
+    決めることになる。除くのは帯が占める矩形だけで、他は従来どおり全数見る。
+    """
+    fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
+    badge = map_graphics.attribution_badge(_attribution_text())
+    m = report_map._ATTR_MARGIN_PX
+    fill[img.height - badge.height - m:, img.width - badge.width - m:] = False
+    return int(fill.sum())
 
 
 # ============================================================
@@ -178,8 +200,7 @@ class TestRenderPathMap:
         # _fake_tile は全画素 200 なので 229=_MISSING_RGB は必ず埋め色。
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map((35.70, 139.70), (35.62, 139.81))
-        fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
-        assert int(fill.sum()) == 0
+        assert _missing_fill_count(img) == 0
 
     def test_returns_none_when_all_tiles_fail(self, monkeypatch):
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
@@ -294,8 +315,7 @@ class TestRenderPathsMap:
         # north-up＝タイル格子と平行に切り出すので欠け（_MISSING_RGB）は出ない。
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_paths_map(_TWO_PATHS)
-        fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
-        assert int(fill.sum()) == 0
+        assert _missing_fill_count(img) == 0
 
     def test_status_colors_are_drawn(self, monkeypatch):
         # OK（緑）と NG（赤）の線が両方とも画素として現れる＝台帳の行色と対応。
@@ -346,3 +366,88 @@ class TestRenderPathsMap:
     def test_b64_wrapper_none_when_render_fails(self, monkeypatch):
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
         assert report_map.render_paths_map_b64(_TWO_PATHS) is None
+
+
+# ============================================================
+# 出典表記（B-133）＝地理院タイルの表示義務
+# ============================================================
+class TestAttribution:
+    """**帳票へ焼く地図にも出典が要る**（B-133）。
+
+    🔴 この欠陥の正体は「UI の地図には出したが、同じ絵を帳票へ焼くもう一方の
+    経路が引き継がなかった」こと＝*字が抜けていた*のではなく**配線が無かった**。
+    なので検査も字でなく**配線**を見る（[[feedback_promote_recurring_checks]] の
+    実証 50）＝どの地図関数から呼んでも帯が貼られること・文言がタイルのレイヤから
+    引かれていること・UI と帳票が同じ表を引いていることの 3 点。
+    """
+
+    def _fake_tile(self, *args, **kwargs):
+        return np.full((256, 256, 3), 200, dtype=np.uint8)
+
+    def test_layer_to_source_text_is_single_sourced(self):
+        # UI（views/map_window.py の `_TILE_LAYERS`）と帳票が**同じ表**を引く。
+        # ⚠️ ここが 2 つあると「航空写真を見ながら『出典: 淡色地図』」が生まれる。
+        from views import map_window
+        for key, layer in map_window._TILE_LAYERS.items():
+            assert layer.attr_key == map_graphics.ATTR_KEYS[key]
+
+    def test_every_tile_layer_has_a_source_text(self):
+        # タイルを足したら出典も足さないと通らない（対で持つことの強制）。
+        for key, attr_key in map_graphics.ATTR_KEYS.items():
+            assert i18n.t(attr_key) and i18n.t(attr_key) != attr_key, key
+        assert dem.BASEMAP_LAYER in map_graphics.ATTR_KEYS
+
+    def test_report_source_text_matches_the_tile_it_actually_draws(self):
+        """帳票が焼く文言が、**実際に取ってくるタイル**の出典であること。
+
+        🔑 ここが `report_map._ATTR_KEY` をリテラルで書ける根拠＝キーを直に
+        書くのは外部翻訳ゲート（B-101）が `t()` の引数を静的に読むためで、
+        **レイヤとの対はこの 1 本が受け持つ**。帳票のタイルを淡色から替えたら
+        （`dem.BASEMAP_LAYER`）、キーを直さない限りここで落ちる。
+        """
+        assert report_map._ATTR_KEY == map_graphics.ATTR_KEYS[dem.BASEMAP_LAYER]
+
+    def test_source_text_is_readable_not_tofu(self):
+        # 日本語の出典が**豆腐（□）にならない**フォントで焼けること。
+        # 読めない刻印は無いのと同じ＝表示義務を満たさない。
+        text  = "出典: 地理院タイル（淡色地図）"
+        font  = map_graphics.load_font(22, text)
+        empty = map_graphics.load_font(22, "").getbbox(text)
+        assert font.getbbox(text) is not None
+        # 既定フォントしか無い環境では判定できないので、その場合だけ見送る。
+        if getattr(font, "path", None) is None:
+            pytest.skip("no TrueType font available")
+        assert not str(getattr(font, "path", "")).lower().startswith("arial")
+        assert empty is not None    # ASCII 経路も壊れていないこと
+
+    @pytest.mark.parametrize("render", ("path", "paths"))
+    def test_rendered_map_carries_the_source_badge(self, monkeypatch, render):
+        # **両方の地図関数**が帯を貼ること（片方だけ直すのを止める）。
+        seen: list[str] = []
+        real = map_graphics.attribution_badge
+        monkeypatch.setattr(
+            map_graphics, "attribution_badge",
+            lambda text, *a, **k: (seen.append(text), real(text, *a, **k))[1],
+        )
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = (report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
+               if render == "path" else report_map.render_paths_map(_TWO_PATHS))
+        assert isinstance(img, Image.Image)
+        assert seen == [_attribution_text()], "出典の帯が貼られていない"
+
+    def test_the_badge_is_pasted_at_the_bottom_right(self, monkeypatch):
+        # 右下＝地図出典の慣例位置。北矢印（右上）と重ならないことも兼ねる。
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
+        img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
+        assert isinstance(img, Image.Image)
+        badge = map_graphics.attribution_badge(_attribution_text())
+        m   = report_map._ATTR_MARGIN_PX
+        arr = np.asarray(img)
+        region = arr[img.height - badge.height - m:img.height - m,
+                     img.width - badge.width - m:img.width - m]
+        # 帯は不透明の白地なので、その矩形にはタイルの地色（200）が残らない。
+        assert (region == 200).all(axis=2).mean() < 0.5
+        # 逆に**左下**は素のタイルのまま＝隅を取り違えていない。
+        opposite = arr[img.height - badge.height - m:img.height - m,
+                       m:m + badge.width]
+        assert (opposite == 200).all(axis=2).mean() > 0.9

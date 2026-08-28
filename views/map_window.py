@@ -65,24 +65,21 @@ class _TileLayer(NamedTuple):
     attr_key:  str          # 出典表記（i18n キー）＝**タイルと対で持つ**
 
 
+# ⚠️ **出典表記（attr_key）と配色は `map_graphics` から引く**（B-133）＝帳票に焼く
+# 地図も同じ表記を出す必要があり、ここに書き写すと**片方だけ直る**。実際に帳票側は
+# 出典が抜けたまま出荷されていた（UI だけ B-027 で直していた）。
 _TILE_LAYERS: dict[str, _TileLayer] = {
     "pale": _TileLayer(
         "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
-        18, "map_layer_pale", "tm_attr_pale"),
+        18, "map_layer_pale", map_graphics.ATTR_KEYS["pale"]),
     "photo": _TileLayer(
         "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
-        18, "map_layer_photo", "tm_attr_photo"),
+        18, "map_layer_photo", map_graphics.ATTR_KEYS["photo"]),
 }
 _DEFAULT_LAYER = "pale"
 
-# 出典表記の配色。**背景を持たせるのは切り替え対策**＝淡色地図（明るい）と
-# 航空写真（暗い・多色）では地の色が真逆で、地に直接描くとどちらかで必ず
-# 読めなくなる（B-009＝ダークでツールチップが判読不能、と同型）。ウィジェットに
-# 背景色を持たせれば**レイヤに依存しない 1 経路**で済む。
-# ⚠️ ここは地図の上＝**アプリのテーマではなくタイルの上での可読性**で決める
-# （sv_ttk のダークに合わせると航空写真の暗部で沈む）。
-_ATTR_FG = "#333333"
-_ATTR_BG = "#FFFFFF"
+_ATTR_FG = map_graphics.ATTR_FG
+_ATTR_BG = map_graphics.ATTR_BG
 
 # 開いたとき設定中 TX/RX を収めるよう自動ズームする際のパラメータ。
 

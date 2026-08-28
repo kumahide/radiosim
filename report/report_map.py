@@ -35,6 +35,7 @@ import numpy as np
 from PIL import Image, ImageDraw
 
 from core import dem
+from core import i18n
 from core import models
 from core import units
 from report import map_graphics
@@ -63,7 +64,39 @@ _SUPERSAMPLE    = 2
 # half_h を half_w から決める。
 _OUTPUT_ASPECT  = report_common.PROFILE_FIGSIZE[0] / report_common.PROFILE_FIGSIZE[1]
 
+# 出典表記を置く隅の余白（px）。北矢印は右上に貼るので**右下**に置く
+# （地図出典の慣例位置でもある）。
+_ATTR_MARGIN_PX = 4
+# 焼き込む出典表記の i18n キー。⚠️ **リテラルで書く**＝`t()` の引数は静的に読める
+# 形（リテラルかモジュール定数）でなければならない（B-101 の外部翻訳ゲート）。
+# 🔑 **`dem.BASEMAP_LAYER` と対であることはテストが縛る**（`map_graphics.ATTR_KEYS`
+# と突き合わせる）＝帳票のタイルを替えた日に、ここを直さないと赤くなる。
+_ATTR_KEY = "tm_attr_pale"
+
 _LatLon = tuple[float, float]
+
+
+def _paste_attribution(img: "Image.Image") -> None:
+    """出典表記を画像の右下へ焼き込む（B-133）。
+
+    🔑 **地図を描く 2 つの関数が必ずここを通る**のが対応の芯＝出典が抜けたのは
+    「UI の地図には出したが、同じ絵を帳票へ焼くもう一方の経路が引き継がなかった」
+    ためで、面ごとに書き足す形（per-path / summary / 中継の 3 か所）にすると
+    **4 つ目の地図を足した人がまた落とす**。3 面はいずれも `render_path_map` /
+    `render_paths_map` の戻り値を使うので、ここ 1 か所で全面が満たされる。
+
+    ⚠️ **文言はタイルのレイヤと対で保つ**＝帳票は淡色固定だが、対を崩すと
+    **レイヤを替えた日に嘘の出典が焼かれる**（UI 側は I-028 で同じ轍を踏んでいる）。
+    対の維持は `_ATTR_KEY` のコメントのとおりテストが受け持つ。
+    """
+    text  = i18n.t(_ATTR_KEY)
+    badge = map_graphics.attribution_badge(text)
+    img.paste(
+        badge,
+        (img.width - badge.width - _ATTR_MARGIN_PX,
+         img.height - badge.height - _ATTR_MARGIN_PX),
+        badge,
+    )
 
 
 class _BandPx(NamedTuple):
@@ -258,6 +291,7 @@ def render_path_map(
         arrow = map_graphics.north_arrow(-sin_a, -cos_a)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
+        _paste_attribution(cropped)
         return cropped
     except Exception:
         logger.warning("report_map: failed to render path map", exc_info=True)
@@ -439,6 +473,7 @@ def render_paths_map(
         arrow = map_graphics.north_arrow(0.0, -1.0)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
+        _paste_attribution(cropped)
         return cropped
     except Exception:
         logger.warning("report_map: failed to render paths map", exc_info=True)

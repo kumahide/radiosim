@@ -28,12 +28,59 @@ STATUS_RGB = {
     "ERROR": (191, 54, 12),    # #bf360c
 }
 
+# 出典表記（B-133）。**地理院タイルは出典の表示義務がある**ので、タイルを描く面は
+# どれもこれを出す。⚠️ **レイヤ→表記の対応はここが単一ソース**＝UI（map_window の
+# `_TILE_LAYERS`）と帳票（report_map）が同じ表を引く。片方だけ持つと「航空写真を
+# 見ながら『出典: 淡色地図』」という*事実と食い違う刻印*が生まれる（I-028）。
+ATTR_KEYS: dict[str, str] = {
+    "pale":  "tm_attr_pale",
+    "photo": "tm_attr_photo",
+}
+
+# 出典表記の配色。**背景を持たせるのは切り替え対策**＝淡色地図（明るい）と航空写真
+# （暗い・多色）では地の色が真逆で、地に直接描くとどちらかで必ず読めなくなる
+# （B-009＝ダークでツールチップが判読不能、と同型）。⚠️ ここは地図の上＝**アプリの
+# テーマではなくタイルの上での可読性**で決める（sv_ttk のダークに合わせると
+# 航空写真の暗部で沈む）。UI は Tk の色文字列として、帳票は PIL の RGB として使う。
+ATTR_FG = "#333333"
+ATTR_BG = "#FFFFFF"
+ATTR_FG_RGB = (0x33, 0x33, 0x33)
+ATTR_BG_RGB = (0xFF, 0xFF, 0xFF)
+
 # 選択中の点を囲むリングの色（I-098＝地図で座標を置き直す）。
 # **基調色のシアンにしない**＝選択は「いま何が起きるか」を表す状態で、点の
 # 種別（送信点・受信点・中継点＝シアンの形で区別）とは別の軸。同じ色にすると
 # 「選ばれている」ことと「そういう点である」ことが見分けられない。
 # ⚠️ 判定色（緑/赤）も避ける＝地図の上で OK/NG と読まれる。
 SELECT_RGB = (255, 145, 0)     # 琥珀色（淡色地図でも航空写真でも沈まない）
+
+
+# 図の中に焼く文字のフォント候補。**ASCII 用と日本語用を分ける**＝出典表記
+# （B-133）で初めて地図の上に日本語が乗った。Arial には仮名も漢字も無いので、
+# 従来の候補だけだと「出典: 地理院タイル（淡色地図）」が**豆腐（□）で焼かれる**
+# ＝表示義務を満たさない画像が出来上がる（読めない刻印は無いのと同じ）。
+# ⚠️ ファイル名で引く（PIL は Windows のフォント置き場を名前で探す）＝
+# matplotlib 側（`mpl_fonts.py`）は**フォント名**で引くので候補表は共有できない。
+_ASCII_FONTS = ("arialbd.ttf", "arial.ttf")
+_CJK_FONTS   = ("YuGothB.ttc", "YuGothM.ttc", "meiryob.ttc", "meiryo.ttc",
+                "msgothic.ttc")
+
+
+def load_font(px: int, text: str = "") -> "ImageFont.FreeTypeFont | ImageFont.ImageFont":
+    """`text` を描けるフォントを `px` で返す（見つからなければ既定フォント）。
+
+    **描く文字列を見て候補を選ぶ**のがこの関数の要点＝呼ぶ側が「これは日本語が
+    来る欄だ」と覚えておく必要をなくす。訳を足した言語が非 ASCII でも同じ経路で
+    拾える（[[feedback_japanese_everywhere]] の欄が増えても壊れない）。
+    """
+    names = (_CJK_FONTS + _ASCII_FONTS if not text.isascii()
+             else _ASCII_FONTS)
+    for name in names:
+        try:
+            return ImageFont.truetype(name, px)
+        except OSError:
+            continue
+    return ImageFont.load_default()
 
 
 def _selection_ring(d: "ImageDraw.ImageDraw", c: float, radius: float,
@@ -136,13 +183,7 @@ def pill_badge(
     ラベルはステータス色（STATUS_RGB）を渡して台帳の行色と対応づける。
     """
     scale = 2
-    try:
-        font = ImageFont.truetype("arialbd.ttf", 13 * scale)
-    except OSError:
-        try:
-            font = ImageFont.truetype("arial.ttf", 13 * scale)
-        except OSError:
-            font = ImageFont.load_default()
+    font = load_font(13 * scale, text)
     # テキスト寸法を計測してパディング込みのバッジサイズを決める。
     probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
     l, t, r, b = probe.textbbox((0, 0), text, font=font)
@@ -192,13 +233,36 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
         hy = tip[1] + math.sin(ang + da) * s * 0.11
         d.line([tip, (hx, hy)], fill=ink, width=int(2.2 * scale))
     # "N" を北（tip）側に置く。
-    try:
-        font = ImageFont.truetype("arialbd.ttf", int(s * 0.22))
-    except OSError:
-        font = ImageFont.load_default()
+    font = load_font(int(s * 0.22), "N")
     nl_x, nl_y = c + ux * r * 1.55, c + uy * r * 1.55
     l, t, rr, bb = d.textbbox((0, 0), "N", font=font)
     d.text((nl_x - (rr - l) / 2 - l, nl_y - (bb - t) / 2 - t), "N", font=font, fill=ink)
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
+
+def attribution_badge(text: str, scale: int = 2) -> Image.Image:
+    """出典表記の帯（RGBA）を返す。**地図画像そのものへ焼き込む**ために使う。
+
+    ⛔ **帳票側で HTML のキャプションにしない**（B-133 の対応方針）＝帳票の地図は
+    画像だけを抜き出して資料へ貼られる使われ方をするので、絵と出典が別の要素だと
+    **貼った先で出典が剥がれる**。焼き込めば画像が単独で義務を満たす。
+
+    見た目は UI の出典ラベル（`views/map_window.py` が `place` する Tk ラベル）に
+    合わせる＝同じ色・同じ右下・同じ文言（`ATTR_KEYS` から引いた 1 つの訳）。
+    ⚠️ **ピルにしない**＝出典は地図の一部であって強調物ではない。距離バッジ
+    （`pill_badge`）と同じ形にすると、読む人が「値のラベル」として拾ってしまう。
+    """
+    font = load_font(11 * scale, text)
+    probe = ImageDraw.Draw(Image.new("RGBA", (1, 1)))
+    l, t, r, b = probe.textbbox((0, 0), text, font=font)
+    tw, th = r - l, b - t
+    padx, pady = 5 * scale, 3 * scale
+    w, h = int(tw + padx * 2), int(th + pady * 2)
+    img = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+    d = ImageDraw.Draw(img)
+    # 地の色は選べないので背景を持たせる（不透明＝タイルの模様が文字に混ざらない）。
+    d.rectangle([0, 0, w - 1, h - 1], fill=ATTR_BG_RGB + (235,))
+    d.text((padx - l, pady - t), text, font=font, fill=ATTR_FG_RGB + (255,))
+    return img.resize((max(1, w // scale), max(1, h // scale)),
+                      Image.Resampling.LANCZOS)
