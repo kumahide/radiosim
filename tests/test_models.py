@@ -1044,6 +1044,43 @@ class TestScopeNotes:
     def test_no_vegetation_note_when_no_vegetation_was_given(self):
         assert "veg_extrapolated" not in models.scope_notes(430.0, veg_h=0.0)
 
+    @pytest.mark.parametrize("veg_h,expected", [(0.0, False), (0.1, True), (25.0, True)])
+    def test_the_uniform_height_assumption_is_declared_only_with_vegetation(
+        self, veg_h, expected
+    ):
+        """I-116: 「植生高は入力した一律値」も**植生を入れた回線だけ**が名乗ること。
+
+        🔴 **ここだけが無条件で残っていた**＝植生の刻印は他の 2 つ
+        （`veg_extrapolated` / `diff_veg_serial`）が既に「植生を入れた回線だけ」に
+        絞られているのに、`veg_uniform` は `SCOPE_ALWAYS` に置かれたままだった。
+        ⇒ [[B-131]] で立てた原則（**入力が 0 の項は名乗らない**）の適用漏れ。
+        ⚠️ **これは字数を削る話ではなく、当事者でない回線に前提を語らない話**。
+        """
+        keys = models.scope_notes(430.0, veg_h=veg_h)
+        assert ("veg_uniform" in keys) is expected
+        assert "veg_uniform" not in models.SCOPE_ALWAYS
+
+    def test_the_order_still_lists_every_note_exactly_once(self):
+        """並びの表が**出る条件から独立**していること（I-116 で 2 つが分かれた）。
+
+        ⚠️ `SCOPE_ALWAYS` の連結で並びを作れなくなったので、**書き写した並びが
+        語彙を取りこぼしていないか**をここで縛る（手書きの一覧は必ずずれる）。
+        """
+        order = models.SCOPE_NOTE_ORDER
+        assert len(order) == len(set(order)), "並びに重複がある"
+        for key in models.SCOPE_ALWAYS + models.SCOPE_RESOLUTION:
+            assert key in order, key
+        # 条件つきの刻印も 1 つ残らず並びに載っていること（実際に出しうる全条件）。
+        seen = set()
+        for freq in (430.0, 2400.0, 60000.0, 400000.0):
+            for veg in (0.0, 5.0):
+                for rain in (0.0, 50.0):
+                    for res in ("", "high", "medium", "low"):
+                        seen |= set(models.scope_notes(
+                            freq, diff_method="bullington", rain_rate=rain,
+                            veg_h=veg, resolution=res))
+        assert seen <= set(order), f"並びに無い刻印が出る: {seen - set(order)}"
+
     def test_the_bullington_assumption_is_declared_only_for_bullington(self):
         assert "diff_bullington" in models.scope_notes(430.0, diff_method="bullington")
         assert "diff_bullington" not in models.scope_notes(430.0, diff_method="single")

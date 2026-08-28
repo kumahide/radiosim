@@ -367,7 +367,6 @@ def handling_notes_html(note_keys) -> str:
     return (
         '<section class="handling">'
         f'<h4>{_html.escape(i18n.t("html_handling_title"))}</h4>'
-        f'<p class="hd-lead">{_html.escape(i18n.t("html_handling_lead"))}</p>'
         f'<ul>{items}</ul>'
         f'<p class="hd-calib">'
         f'{_html.escape(disclosure.calibration_line())}</p>'

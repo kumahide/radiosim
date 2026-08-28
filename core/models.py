@@ -129,9 +129,13 @@ VEG_COEFF_RANGE_GHZ: tuple[float, float] = (1.0, 6.0)
 EARTH_K_STANDARD: float = 4 / 3
 
 #: **常に当てはまる前提**（周波数にも設定にも依らない）。順序はそのまま帳票の並び。
+#: ⚠️ **`veg_uniform` はここに無い**（2026-08-28・I-116）＝植生高 0 の回線に
+#: 「植生高は入力した一律値」と書いても**その回線には効いていない**。植生の刻印は
+#: 他の 2 つ（`veg_extrapolated` / `diff_veg_serial`）が既に「植生を入れた回線だけ」に
+#: 絞られており、**ここだけが無条件で残っていた**＝[[B-131]] で立てた原則
+#: （入力が 0 の項は名乗らない）の適用漏れ。
 SCOPE_ALWAYS: tuple[str, ...] = (
     "dem_surface",        # DEM は地表面モデル＝建物・樹木を含まない
-    "veg_uniform",        # 植生高は入力した一律値
     "env_empirical",      # 環境損失は区分選択の経験値
     "ground_reflection",  # 地面反射（2 波干渉）は考慮していない
     "earth_k_fixed",      # 等価地球半径は標準大気に固定＝K が振れる時間帯を見ていない
@@ -146,7 +150,15 @@ SCOPE_RESOLUTION: tuple[str, ...] = tuple(
 
 #: 刻印の全語彙＝**帳票に出る順**（面が違っても並びは同じ）。
 #: ⚠️ この並びが i18n キー `html_scope_<名前>` の一覧そのものになる。
-SCOPE_NOTE_ORDER: tuple[str, ...] = SCOPE_ALWAYS + (
+#: ⚠️ **`veg_uniform` は「常に出る」ではないが、並びは前提の仲間**（`dem_surface` の
+#: 次）＝*出る条件*と*出る順*は別物なので、`SCOPE_ALWAYS` の連結では表せない。
+SCOPE_NOTE_ORDER: tuple[str, ...] = (
+    "dem_surface",
+    "veg_uniform",        # 植生高は入力した一律値（植生を入れた回線だけ）
+    "env_empirical",
+    "ground_reflection",
+    "earth_k_fixed",
+    "rice_k_empirical",
     "diff_bullington",    # Bullington は離れた尾根で小さめに出る＋球面項が無い
 ) + SCOPE_RESOLUTION + (
     "rain_zeroed",        # 降雨: 範囲外につき 0 として扱った
@@ -200,6 +212,8 @@ def scope_notes(
         hits.add("gas_extrapolated")
 
     if float(veg_h) > 0.0:
+        # 植生を入れた回線だけが「一律値を経路全体に適用した」の当事者（I-116）。
+        hits.add("veg_uniform")
         veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
         if freq_ghz < veg_lo or freq_ghz >= veg_hi:
             hits.add("veg_extrapolated")

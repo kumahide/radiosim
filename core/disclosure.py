@@ -107,7 +107,7 @@ def handling_text(note_keys) -> str:
     body = "\n".join(f"- {line}" for line in handling_lines(note_keys))
     return (
         "[NOTES ON HANDLING THIS RESULT]\n"
-        f"{i18n.t('html_handling_lead')}\n"
+        f"{i18n.t('html_handling_title')}\n"
         f"{body}\n"
         f"- {calibration_line()}\n"
         f"- {data_source_line()}\n"

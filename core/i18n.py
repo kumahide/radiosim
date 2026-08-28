@@ -398,8 +398,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 🔑 **成果物が一人歩きした先で効く節**＝レポートを受け取った人は、公開文書も
         # 画面の但し書きも見ない。⚠️ **数字は差し込みで受ける**（`{lo}` `{hi}`）＝
         # 範囲の値は `core/models.py` の定数が単一ソースで、字と式が別々に動かない。
-        "html_handling_title":  "Notes on handling this result",
-        "html_handling_lead":   "A desktop screening estimate. Assumptions and limits:",
+        # 前置きの行は畳んで見出しに入れた（I-116）＝「机上のスクリーニング推定」は
+        # 捨てられない性格づけだが、独立した 1 行を使うほどではない。
+        "html_handling_title":
+            "Notes on handling this result (desktop screening estimate)",
         "html_scope_dem_surface":
             "Elevations: bare-earth model (no buildings or trees).",
         "html_scope_veg_uniform":
@@ -1012,8 +1014,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_graph":       "グラフ",
 
         # ===== 結果の取扱に関する補足（3.0a1） =====
-        "html_handling_title":  "結果の取扱に関する補足",
-        "html_handling_lead":   "机上のスクリーニング推定です。前提と適用範囲は次のとおり。",
+        "html_handling_title":  "結果の取扱に関する補足（机上のスクリーニング推定）",
         "html_scope_dem_surface":
             "標高：地表面モデル（建物・樹木を含まない）",
         "html_scope_veg_uniform":
