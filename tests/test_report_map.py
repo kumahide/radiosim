@@ -16,6 +16,7 @@ import numpy as np
 import pytest
 from PIL import Image
 
+from conftest import require_burnable_font
 from core import dem
 from core import i18n
 from report import map_graphics
@@ -498,7 +499,12 @@ class TestBurnedTextStaysReadable:
 
         🔑 経路の長さで画像の幅が変わる＝固定 px だと**経路ごとに実寸が変わる**。
         ⇒ 幅の違う 2 枚で帯の大きさが変わり、A4 に載せた後は揃うことを見る。
+
+        ⚠️ **測っているのは実際に焼かれた字の高さ**なので、**その字が引ける機械**
+        でしか成立しない（I-118＝ubuntu の CI では PIL が既定のビットマップ字に
+        落ち、要求した px と無関係な高さになる）。
         """
+        require_burnable_font(_attribution_text())
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_tile)
         img = report_map.render_path_map(*path)
         assert isinstance(img, Image.Image)
