@@ -17,6 +17,7 @@ from typing import TYPE_CHECKING, Callable
 from core import config
 from core import coords
 from core import dem
+from core import dem_prefetch
 from core import failure
 from core import i18n
 from core import simulation as sim
@@ -708,7 +709,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._run_btn.config(state="disabled")
 
         # Phase 1: bbox 内の DEM タイルを事前取得
-        tile_count = dem.count_bbox_tiles(
+        tile_count = dem_prefetch.count_bbox_tiles(
             params.lat_tx, params.lon_tx,
             params.lat_rx, params.lon_rx,
         )
@@ -723,7 +724,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
         def _run_prefetch() -> None:
             try:
-                dem.prefetch_tiles(
+                dem_prefetch.prefetch_tiles(
                     params.lat_tx, params.lon_tx,
                     params.lat_rx, params.lon_rx,
                     progress_cb=_prefetch_progress,

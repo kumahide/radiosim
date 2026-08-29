@@ -220,6 +220,7 @@ radiosim/
 │   ├── simulation.py     # ViewModel / オーケストレーター
 │   ├── config.py         # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
 │   ├── dem.py            # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
+│   ├── dem_prefetch.py   # 面での事前取得（bbox → 位置の列挙・優先順位つき降下・ワーカープール）
 │   ├── terrain_grid.py   # DEM の格子と地形の解像度（段階→点数の解決・純関数）
 │   ├── scenario.py       # 条件探索の共有ランナー（A-1 比較 / A-2 スイープ・相の宣言・ヘッドレス）
 │   ├── coords.py         # 座標表記変換（DD ⇔ DMS・純関数）

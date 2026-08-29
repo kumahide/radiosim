@@ -220,6 +220,7 @@ radiosim/
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
+│   ├── dem_prefetch.py   # Area prefetch (bbox -> positions, priority descent, worker pool)
 │   ├── terrain_grid.py   # DEM grid and terrain resolution (level -> sample count, pure functions)
 │   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)

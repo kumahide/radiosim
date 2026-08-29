@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1026" width="1120" height="1026"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1046" width="1120" height="1046"
      role="img" aria-labelledby="ttl desc" font-family="'BIZ UDPGothic','Meiryo','Yu Gothic','Hiragino Sans',sans-serif">
   <title id="ttl">RadioSim Pro レイヤー構成</title>
   <desc id="desc">層は views / report / core の 3 つ。依存は views → report → core の一方向で、各層に属するモジュールを役割つきで並べた図。</desc>
@@ -20,7 +20,7 @@
     </style>
   </defs>
 
-  <rect width="1120" height="1006" fill="#ffffff"/>
+  <rect width="1120" height="1026" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — レイヤー構成</text>
   <text x="20" y="57" class="note">層はディレクトリで表す。依存は views → report → core の一方向で、2 つの層から使うものは「下」へ置く（shared/ のような箱は作らない）。</text>
@@ -142,14 +142,15 @@
   </g>
 
   <g>
-    <rect class="card" x="34" y="894" width="341" height="56" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="34" y="894" width="341" height="76" rx="6" stroke="#f0dcbe"/>
     <text x="46" y="911" class="ctitle" fill="#7a4f16">外部依存を閉じ込める</text>
     <text x="46" y="932" class="mod">dem.py</text><text x="182" y="932" class="role">DEM / タイル取得・キャッシュ</text>
+    <text x="46" y="952" class="mod">dem_prefetch.py</text><text x="182" y="952" class="role">面での事前取得</text>
 
     <text x="401" y="920" class="note">HTTP・プロキシ・ディスクキャッシュはこの 1 本の中だけ。</text>
     <text x="401" y="940" class="note">＝ ほかの層は「取れた標高」しか知らない。</text>
   </g>
 
-  <text x="20" y="992" class="note">main.py は層に属さない（起動して views を組み立てるだけ）。層をまたぐ逆流と import 時の循環は tests/test_layers.py が機械で止める。</text>
-  <text x="20" y="1012" class="note">この図の元は docs/images/architecture_ja.svg。モジュールの網羅は tests/test_docs_consistency.py が検査する。</text>
+  <text x="20" y="1012" class="note">main.py は層に属さない（起動して views を組み立てるだけ）。層をまたぐ逆流と import 時の循環は tests/test_layers.py が機械で止める。</text>
+  <text x="20" y="1032" class="note">この図の元は docs/images/architecture_ja.svg。モジュールの網羅は tests/test_docs_consistency.py が検査する。</text>
 </svg>

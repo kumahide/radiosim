@@ -15,6 +15,7 @@ import requests
 
 from core import config
 from core import dem
+from core import dem_prefetch
 
 
 # ============================================================
@@ -765,19 +766,19 @@ class TestCountBboxTiles:
     def test_returns_zoom14_position_count(self):
         """count_bbox_tiles は zoom-14 位置数（エリア数）を返す。"""
         lat1, lon1, lat2, lon2 = 34.54, 132.41, 34.53, 132.40
-        count = dem.count_bbox_tiles(lat1, lon1, lat2, lon2)
-        positions = list(dem._iter_dem_positions(lat1, lon1, lat2, lon2))
+        count = dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2)
+        positions = list(dem_prefetch._iter_dem_positions(lat1, lon1, lat2, lon2))
         assert count == len(positions)
 
     def test_returns_positive_integer(self):
-        count = dem.count_bbox_tiles(34.54, 132.41, 34.53, 132.40)
+        count = dem_prefetch.count_bbox_tiles(34.54, 132.41, 34.53, 132.40)
         assert isinstance(count, int)
         assert count > 0
 
     def test_inverted_coords_same_result(self):
         """入力座標の順序に依存しないこと。"""
-        assert dem.count_bbox_tiles(34.54, 132.41, 34.53, 132.40) == \
-               dem.count_bbox_tiles(34.53, 132.40, 34.54, 132.41)
+        assert dem_prefetch.count_bbox_tiles(34.54, 132.41, 34.53, 132.40) == \
+               dem_prefetch.count_bbox_tiles(34.53, 132.40, 34.54, 132.41)
 
 
 # ============================================================
@@ -787,7 +788,7 @@ class TestIterDemPositions:
 
     def test_yields_tuples_with_correct_structure(self):
         """各 yield 値が (x14, y14, subdir, path, zoom15_tiles) の構造を持つ。"""
-        positions = list(dem._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        positions = list(dem_prefetch._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
         assert len(positions) > 0
         for x14, y14, subdir, path, zoom15_tiles in positions:
             assert isinstance(x14, int)
@@ -798,15 +799,15 @@ class TestIterDemPositions:
 
     def test_zoom15_tiles_are_sub_tiles_of_zoom14(self):
         """zoom-15 サブタイルが対応する zoom-14 の子タイル範囲内に収まること。"""
-        positions = list(dem._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        positions = list(dem_prefetch._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
         for x14, y14, _, _, zoom15_tiles in positions:
             for x15, y15, *_ in zoom15_tiles:
                 assert x14 * 2 <= x15 <= x14 * 2 + 1
                 assert y14 * 2 <= y15 <= y14 * 2 + 1
 
     def test_inverted_coords_same_result(self):
-        pos_ab = list(dem._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
-        pos_ba = list(dem._iter_dem_positions(34.53, 132.40, 34.54, 132.41))
+        pos_ab = list(dem_prefetch._iter_dem_positions(34.54, 132.41, 34.53, 132.40))
+        pos_ba = list(dem_prefetch._iter_dem_positions(34.53, 132.40, 34.54, 132.41))
         assert [(x, y) for x, y, *_ in pos_ab] == [(x, y) for x, y, *_ in pos_ba]
 
 
@@ -828,7 +829,7 @@ class TestProcessPosition:
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: None)
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(dem_path), [], False, counts, lock)
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(dem_path), [], False, counts, lock)
         assert counts["skipped"] == 1
         assert counts["downloaded_5a"] == counts["downloaded_5b"] == counts["downloaded_dem"] == 0
 
@@ -848,7 +849,7 @@ class TestProcessPosition:
                          subdir5b, str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert counts["downloaded_5a"] == 1
         assert counts["downloaded_5b"] == 0
@@ -867,7 +868,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert counts["downloaded_5b"] == 1
         assert counts["downloaded_dem"] == 0
@@ -885,7 +886,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert counts["downloaded_dem"] == 1
         assert counts["failed"] == 0
@@ -906,7 +907,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(dem_path),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(dem_path),
                                  zoom15, True, counts, lock)
         assert counts["skipped"] == 0
         assert counts["downloaded_5a"] == 1
@@ -936,7 +937,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert counts["downloaded_5a"] == 1
         assert counts["downloaded_5b"] == 1
@@ -958,7 +959,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert counts["downloaded_5a"] == 1
         assert counts["downloaded_5b"] == 1
@@ -978,7 +979,7 @@ class TestProcessPosition:
                          str(tmp_path), str(tmp_path / "5b.png"))]
         counts = self._make_counts()
         lock = threading.Lock()
-        dem._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
+        dem_prefetch._process_position(0, 0, str(tmp_path), str(tmp_path / "dem.png"),
                                  zoom15, False, counts, lock)
         assert fetch_calls == ["dem5a_png"]
         assert counts["downloaded_dem"] == 0
@@ -989,7 +990,7 @@ class TestProcessPosition:
         arr[0, 0] = (128, 0, 0)   # 無効値
         arr[0, 1] = (0, 0, 1)     # 標高 0.01m（有効）
         arr[1, 0] = (128, 0, 1)   # 有効（b!=0）
-        mask = dem._void_mask(arr)
+        mask = dem_prefetch._void_mask(arr)
         assert mask[0, 0] and not mask[0, 1] and not mask[1, 0] and not mask[1, 1]
 
 
@@ -1013,12 +1014,12 @@ class TestPrefetchTiles:
         # CACHE_DIR を空の一時ディレクトリにしてスキップ条件（既存キャッシュ）を外す。
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         monkeypatch.setattr(dem, "_fetch_tile", fetch)
-        return dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, **kw)
+        return dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, **kw)
 
     def _seed_dem14(self, tmp_path):
         """1 点 bbox に対応する dem_png(zoom-14) キャッシュファイルを実パスへ置く。"""
         from PIL import Image
-        positions = list(dem._iter_dem_positions(self.LAT, self.LON, self.LAT, self.LON))
+        positions = list(dem_prefetch._iter_dem_positions(self.LAT, self.LON, self.LAT, self.LON))
         _, _, dem14_subdir, dem14_path, _ = positions[0]
         os.makedirs(dem14_subdir, exist_ok=True)
         Image.new("RGB", (256, 256)).save(dem14_path)
@@ -1058,10 +1059,76 @@ class TestPrefetchTiles:
         calls = []
         monkeypatch.setattr(dem, "_fetch_tile",
                             lambda layer_id, *a, **kw: calls.append(layer_id))
-        res = dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=False)
+        res = dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=False)
         assert res["skipped"] == 1
         assert res["downloaded_5a"] == res["downloaded_dem"] == 0
         assert calls == []
+
+    def _seed_broken_dem14(self, tmp_path):
+        """dem_png(zoom-14) の位置に**壊れた**キャッシュを置く（書き込み途中の形）。"""
+        from PIL import Image
+        import io as _io
+        positions = list(dem_prefetch._iter_dem_positions(
+            self.LAT, self.LON, self.LAT, self.LON))
+        _, _, dem14_subdir, dem14_path, _ = positions[0]
+        os.makedirs(dem14_subdir, exist_ok=True)
+        buf = _io.BytesIO()
+        Image.new("RGB", (256, 256)).save(buf, format="PNG")
+        data = buf.getvalue()
+        with open(dem14_path, "wb") as f:      # 末尾が欠けた PNG＝書き込み途中
+            f.write(data[:len(data) // 2])
+        return dem14_path
+
+    def test_broken_cache_is_not_treated_as_resolved(self, tmp_path, monkeypatch):
+        """壊れたタイルを「取得済み」と読まないこと（B-141）。
+
+        🔴 **B-136 と同じ不変条件の、事前取得側の口**＝計算経路は自己修復するように
+        直したが、こちらは**存在するだけでスキップ**していた。事前取得の目的は
+        *オフラインで使えること*なので、ここで見逃すと**面を取り切ったつもりで
+        現地で粗い層か標高 0 に落ちる**。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed_broken_dem14(tmp_path)
+        calls = []
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: (calls.append(layer_id), self._tile())[1])
+
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, force=False)
+
+        assert res["skipped"] == 0, "壊れたキャッシュを解決済みとして飛ばしている"
+        assert calls, "取り直しに行っていない"
+
+    def test_broken_5m_cache_is_not_treated_as_resolved(self, tmp_path, monkeypatch):
+        """**同じ関数の中に口は 2 つある**＝5a/5b 側も可読性で見ること（B-141）。
+
+        ⚠️ 上の dem_png 側だけを検査すると、**5a/5b の早期スキップを存在判定へ
+        戻す変異が素通りする**（実測＝変異 M8）。
+        """
+        from PIL import Image
+        import io as _io
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        positions = list(dem_prefetch._iter_dem_positions(
+            self.LAT, self.LON, self.LAT, self.LON))
+        _, _, _, _, zoom15 = positions[0]
+        _, _, subdir5a, path5a, _, _ = zoom15[0]
+        os.makedirs(subdir5a, exist_ok=True)
+        buf = _io.BytesIO()
+        Image.new("RGB", (256, 256)).save(buf, format="PNG")
+        data = buf.getvalue()
+        with open(path5a, "wb") as f:
+            f.write(data[:len(data) // 2])      # 壊れた 5a（dem_png は不在）
+
+        calls = []
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: (calls.append(layer_id), self._tile())[1])
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, force=False)
+
+        assert "dem5a_png" in calls, "壊れた 5m タイルを解決済みとして飛ばしている"
 
     def test_force_ignores_cache(self, tmp_path, monkeypatch):
         """force=True なら dem_png キャッシュ済みでもスキップせず再取得する。"""
@@ -1069,7 +1136,7 @@ class TestPrefetchTiles:
         self._seed_dem14(tmp_path)
         monkeypatch.setattr(dem, "_fetch_tile",
                             lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
-        res = dem.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=True)
+        res = dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, force=True)
         assert res["skipped"] == 0
         assert res["downloaded_5a"] == 1
 
@@ -1096,8 +1163,8 @@ class TestPrefetchTiles:
 
     def test_empty_positions_returns_zeros(self, monkeypatch):
         """対象 zoom-14 位置が無い場合はワーカー開始前にゼロ集計を返す。"""
-        monkeypatch.setattr(dem, "_iter_dem_positions", lambda *a, **kw: iter([]))
-        res = dem.prefetch_tiles(35.0, 139.0, 35.0, 139.0)
+        monkeypatch.setattr(dem_prefetch, "_iter_dem_positions", lambda *a, **kw: iter([]))
+        res = dem_prefetch.prefetch_tiles(35.0, 139.0, 35.0, 139.0)
         assert res == {"area_total": 0, "downloaded_5a": 0, "downloaded_5b": 0,
                        "downloaded_dem": 0, "skipped": 0, "failed": 0}
 
@@ -1205,7 +1272,7 @@ class TestScanCacheOverlay:
         self._touch(tmp_path, "dem_png", x14 + 1, y14)
         wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
         cached = dem.count_cached_areas(*wide)
-        total = dem.count_bbox_tiles(*wide)
+        total = dem_prefetch.count_bbox_tiles(*wide)
         assert cached == 2
         assert total > cached   # 範囲総数は未取得を含むので多い
 

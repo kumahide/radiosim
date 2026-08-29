@@ -16,6 +16,7 @@ import tkinter as tk
 from typing import TYPE_CHECKING
 
 from core import dem
+from core import dem_prefetch
 from core import i18n
 from views import dialogs
 from views import progress
@@ -115,7 +116,7 @@ class _CacheMixin:
             # 表示する対象数は force の有無で変わる:
             #   force ON  → 全エリア再取得（総数）
             #   force OFF → キャッシュ済みはスキップされるので新規分のみ
-            total = dem.count_bbox_tiles(*bbox)
+            total = dem_prefetch.count_bbox_tiles(*bbox)
             n = total if force else total - dem.count_cached_areas(*bbox)
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
@@ -257,7 +258,7 @@ class _CacheMixin:
                 done=done, total=total, pct=pct)))
 
         t0 = time.perf_counter()
-        dl_result = dem.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
+        dl_result = dem_prefetch.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
         logger.info("Tile download complete in %.2fs: %s",
                     time.perf_counter() - t0, dl_result)
         progress.post_to_ui(self._win, lambda: self._on_download_done(dl_result))
