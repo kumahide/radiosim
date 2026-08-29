@@ -1130,6 +1130,73 @@ class TestPrefetchTiles:
 
         assert "dem5a_png" in calls, "壊れた 5m タイルを解決済みとして飛ばしている"
 
+    def test_broken_dem_is_refetched_even_when_the_5m_tiles_are_readable(
+        self, tmp_path, monkeypatch
+    ):
+        """壊れた 10m タイルは、**5m が読めても**取り直すこと（B-142）。
+
+        🔴 **B-141 のゲートが狭かった**＝「5m キャッシュが無い」条件しか見ておらず、
+        *5m に欠損があって 10m まで降りた位置*（ごく普通のキャッシュ状態）で
+        **壊れた 10m が取り直されないまま残る**のを検出できなかった。
+        早期 return を通り抜けた理由は **不在** と **壊れている** の 2 通りある。
+        """
+        from PIL import Image
+        import io as _io
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        positions = list(dem_prefetch._iter_dem_positions(
+            self.LAT, self.LON, self.LAT, self.LON))
+        _, _, dem14_subdir, dem14_path, zoom15 = positions[0]
+
+        buf = _io.BytesIO()
+        Image.new("RGB", (256, 256)).save(buf, format="PNG")
+        good = buf.getvalue()
+        os.makedirs(dem14_subdir, exist_ok=True)
+        with open(dem14_path, "wb") as f:
+            f.write(good[:len(good) // 2])          # 壊れた 10m
+        for _x, _y, subdir5a, path5a, _s5b, _p5b in zoom15:
+            os.makedirs(subdir5a, exist_ok=True)
+            with open(path5a, "wb") as f:
+                f.write(good)                        # 読める 5m（＝continue する側）
+
+        calls = []
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: (calls.append(layer_id), self._tile())[1])
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, force=False)
+
+        assert "dem_png" in calls, (
+            "壊れた 10m タイルを取り直していない（5m が読めるので降下を飛ばした）"
+        )
+
+    def test_force_does_not_redownload_the_10m_tile_when_5m_resolves_it(
+        self, tmp_path, monkeypatch
+    ):
+        """**対の検査**＝`force` では「在る＝壊れている」が成り立たないこと（B-142）。
+
+        ⚠️ これが無いと、上の検査は「在れば常に 10m を取り直す」という
+        *行き過ぎた直し*でも緑のままになる（実測＝変異 M12 が素通りした）。
+        `force` は「読める在庫を無視して取り直す」なので、**在ることが壊れている
+        ことを含意しない**＝5m で解決した位置まで 10m へ降りるのは無駄な取得。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed_dem14(tmp_path)                   # 読める 10m が在る
+        calls = []
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: (calls.append(layer_id),
+                                        self._tile() if layer_id == "dem5a_png"
+                                        else None)[1])
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, force=True)
+
+        assert "dem5a_png" in calls
+        assert "dem_png" not in calls, (
+            "5m で解決した位置なのに 10m まで降りている（無駄な取得）"
+        )
+
     def test_force_ignores_cache(self, tmp_path, monkeypatch):
         """force=True なら dem_png キャッシュ済みでもスキップせず再取得する。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))

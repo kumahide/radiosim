@@ -138,7 +138,13 @@ def _process_position(
             counts["skipped"] += 1
         return
 
-    need_dem = False
+    # 🔴 **壊れて残っている dem_png は、5m が読めても必ず取り直す**（B-142）＝
+    #    上の早期 return を通り抜けた理由は 2 通りある（**不在** か **壊れている**）。
+    #    下の降下は *不在* のほうだけを想定しており、5a/5b が読めれば `continue` して
+    #    `need_dem` が立たない ⇒ **壊れた 10m タイルが取り直されないまま残る**
+    #    （5m に欠損があって 10m まで降りた位置＝ごく普通のキャッシュ状態で起きる）。
+    #    ⚠️ `force` のときは在っても壊れていないので、この含意は成り立たない。
+    need_dem = (not force) and os.path.exists(dem14_path)
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
         # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
         # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
