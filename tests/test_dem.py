@@ -1170,6 +1170,40 @@ class TestPrefetchTiles:
             "壊れた 10m タイルを取り直していない（5m が読めるので降下を飛ばした）"
         )
 
+    def test_force_also_repairs_a_broken_10m_tile(self, tmp_path, monkeypatch):
+        """`force` でも壊れた 10m は修復対象にすること（B-144）。
+
+        🔴 **B-142 の直しが `force` を素通りさせた**＝条件を `not force` で切ったため、
+        *強制再取得*なのに壊れたファイルが残った（名前に反する）。
+        ⇒ 見るのは「在るのに読めない」だけで、`force` は独立した軸。
+        """
+        from PIL import Image
+        import io as _io
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        positions = list(dem_prefetch._iter_dem_positions(
+            self.LAT, self.LON, self.LAT, self.LON))
+        _, _, dem14_subdir, dem14_path, _zoom15 = positions[0]
+        buf = _io.BytesIO()
+        Image.new("RGB", (256, 256)).save(buf, format="PNG")
+        good = buf.getvalue()
+        os.makedirs(dem14_subdir, exist_ok=True)
+        with open(dem14_path, "wb") as f:
+            f.write(good[:len(good) // 2])           # 壊れた 10m
+
+        calls = []
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: (calls.append(layer_id),
+                                        self._tile() if layer_id == "dem5a_png"
+                                        else None)[1])
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, force=True)
+
+        assert "dem_png" in calls, (
+            "force なのに壊れた 10m を取り直していない（5m が解決したので降りなかった）"
+        )
+
     def test_force_does_not_redownload_the_10m_tile_when_5m_resolves_it(
         self, tmp_path, monkeypatch
     ):

@@ -133,7 +133,8 @@ def _process_position(
     再プリフェッチ時の「解決済みは無視」を成立させる。⚠️ **見るのは存在ではなく
     可読性**（B-141）＝壊れたタイルを終端マーカーと読むと、そこだけ永久に埋まらない。
     """
-    if not force and _is_cached(dem14_path):
+    dem14_ok = _is_cached(dem14_path)
+    if not force and dem14_ok:
         with lock:
             counts["skipped"] += 1
         return
@@ -143,8 +144,11 @@ def _process_position(
     #    下の降下は *不在* のほうだけを想定しており、5a/5b が読めれば `continue` して
     #    `need_dem` が立たない ⇒ **壊れた 10m タイルが取り直されないまま残る**
     #    （5m に欠損があって 10m まで降りた位置＝ごく普通のキャッシュ状態で起きる）。
-    #    ⚠️ `force` のときは在っても壊れていないので、この含意は成り立たない。
-    need_dem = (not force) and os.path.exists(dem14_path)
+    # ⚠️ **`force` かどうかで条件を分けない**（B-144＝B-142 の直しが `force` を
+    #    素通りさせた）＝`force` は*強制再取得*なのだから、壊れたものが残るのは
+    #    その名前に反する。**見るのは「在るのに読めない」だけ**で、`force` は
+    #    「読めても取り直す」を足すだけの独立した軸。
+    need_dem = os.path.exists(dem14_path) and not dem14_ok
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
         # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
         # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
