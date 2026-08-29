@@ -64,6 +64,10 @@ SELECT_FIELDS = (
 # 帯に出るべき属性の全体（窓間の突き合わせの基準）。
 ALL_KEYS = frozenset(attr for _k, attr in RADIO_FIELDS + ENV_FIELDS + SELECT_FIELDS)
 
+# その実行に当てはまらない項目の印（B-140）。**空欄にしない**＝欄が空だと
+# 「読み込みに失敗した」と区別がつかない。語ではなく記号にするのは訳を増やさないため。
+NOT_APPLICABLE = "—"
+
 
 def display_value(attr: str, value: object) -> str:
     """帯に出す文字列。**選択式の 2 つはキーでなく表示ラベル**を出す。
@@ -72,12 +76,14 @@ def display_value(attr: str, value: object) -> str:
     凍結した帯だけ `deygout` / `los` と内部キーで出ると、**同じ値が窓によって
     別の言葉に見える**（⑧）。表示ラベルの出所は i18n の 1 か所。
     """
-    # ⚠️ **画面は段階しか表現できない**（B-137）＝段階を持たない基底（`samples` を
-    #    直接渡す互換の口＝回帰コーパスの生成器・探針）から窓を建てるときは、
-    #    **これから走らせる実行の入力**として既定の段階を出す。帳票・保存・刻印の
-    #    「*その実行が使った段階*」とは役割が違う（あちらは名乗れないなら黙る）。
+    # 🔴 **ここで既定を補ってはいけない**（B-140＝B-137 の直しが作った欠陥）＝
+    #    この関数は**帯を入力として読み直す窓**（複数経路）と**基底をそのまま実行へ
+    #    渡す窓**（中継経路＝`run_multihop(path, self._base_params)`）の両方が使う。
+    #    段階を持たない基底に既定を差し込むと、**中継経路は帯に「中」と出しながら
+    #    固定 N で走る**（帯の申告と実行がずれる）。⇒ **名乗れないものは名乗らない**。
+    #    既定が要るのは*帯を入力として使う側*なので、補うのはその窓の仕事。
     if attr == "resolution" and not value:
-        value = terrain_grid.RESOLUTION_DEFAULT
+        return NOT_APPLICABLE
     prefix = {"env_type": "env_", "diff_method": "diff_opt_",
               "resolution": "res_"}.get(attr)
     return i18n.t(f"{prefix}{value}") if prefix else str(value)

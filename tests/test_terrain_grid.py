@@ -22,10 +22,12 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from core import config              # noqa: E402
+from core import i18n                # noqa: E402
 from core import models              # noqa: E402
 from core import simulation as sim   # noqa: E402
 from core import terrain_grid as tg  # noqa: E402
 from core import units               # noqa: E402
+from views import frozen_common      # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -233,8 +235,14 @@ def test_the_effective_spacing_comes_from_the_samples_actually_used():
     assert abs(sim.effective_spacing(p) - from_level) > 0.1
 
 
-def test_a_fixed_n_run_round_trips_through_its_saved_settings(tmp_path):
-    """保存した `settings.json` を読み戻すと、**同じ点数**で再現すること。"""
+def test_a_fixed_n_run_round_trips_only_for_direct_callers(tmp_path):
+    """保存した `settings.json` を **`SimParams` へ直に渡せば**同じ点数で再現すること。
+
+    🔴 **製品の「パラメータ読込」では再現しない**（B-140＝B-137 の直しの申告が
+    広すぎた）＝画面の読込は `config.select_sim` を通り、`samples` は `SIM_KEYS` に
+    無いので捨てられる。**それは欠陥ではなく I-069 の決定**（数で入れる口は無い）＝
+    だからこの検査は*直に組む側*（生成器・探針）だけを名乗る。下でそれも見る。
+    """
     p = sim.SimParams(_fixed_n_config())
     sim._save_settings(p, 30.0, 10.0, str(tmp_path))
     saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
@@ -247,3 +255,22 @@ def test_a_fixed_n_run_round_trips_through_its_saved_settings(tmp_path):
         **({"resolution": saved["resolution"]} if "resolution" in saved else {}),
     })
     assert reloaded.num == p.num
+
+    # 🔑 **製品経路は固定 N を運ばない**ことを、そう書いてある側で確かめる
+    #    （代役が本物より寛容だと、その差の分だけ検査は空振りする）。
+    assert "samples" not in config.select_sim(saved)
+
+
+def test_the_band_does_not_invent_a_level_it_will_not_use():
+    """帯は、段階を持たない基底に**既定を差し込まない**こと（B-140）。
+
+    🔴 中継経路は帯を表示したうえで**基底をそのまま実行へ渡す**
+    （`run_multihop(path, self._base_params)`）ので、表示だけ「中」にすると
+    **帯の申告と実行がずれる**。⇒ 名乗れないものは名乗らない（`—`）。
+    """
+    shown = frozen_common.display_value("resolution", "")
+    assert shown == frozen_common.NOT_APPLICABLE
+    for level in tg.RESOLUTION_KEYS:
+        assert shown != i18n.t(f"res_{level}")
+    # 対の検査＝段階があるときは従来どおり表示ラベルを出す。
+    assert frozen_common.display_value("resolution", "high") == i18n.t("res_high")

@@ -448,7 +448,11 @@ def _save_settings(
         # は**その実行が実際に何点で刻んだか**の記録で、入力としては使われない。
         # ⚠️ **段階が無い実行（固定 N）では書かない**（B-137）＝空でも書くと、
         # 読み戻したときに「段階がある」側の枝へ落ちて**点数が別物になる**。
-        # 書かなければ `samples` が拾われ、固定 N がそのまま再現する。
+        # ⚠️ **これで「製品から再現できる」わけではない**（B-140＝この直しの申告が
+        # 広すぎた）＝画面の「パラメータ読込」は `config.select_sim` を通り、
+        # `samples` は `SIM_KEYS` に無いので捨てられる。固定 N を読み戻せるのは
+        # `SimParams` を直に組む側（生成器・探針）だけ＝**入口は段階ただ 1 つ**
+        # という I-069 の決定そのもの。
         **({"resolution": params.resolution} if params.resolution else {}),
         "samples"     : params.num,
         "diff_method" : params.diff_method,

@@ -17,6 +17,7 @@ from typing import Callable
 from core import coords
 from core import i18n
 from core import simulation as sim
+from core import terrain_grid
 from core.models import ENV_KEYS
 from report import batch
 from views import frozen_common, theme, window_fit
@@ -258,8 +259,14 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             f = ttk.Frame(parent)
             f.pack(side="left", padx=6)
             ttk.Label(f, text=label).pack(side="left")
-            var = tk.StringVar(value=frozen_common.display_value(
-                attr, getattr(self._base_params, attr)))
+            value = getattr(self._base_params, attr)
+            # ⚠️ **この帯は入力**（実行は `_read_base_params` が帯から組み直す）＝
+            #    段階を持たない基底から建てたときはここで既定を補う（B-140）。
+            #    中継経路の帯は*基底をそのまま実行へ渡す*ので補わない＝
+            #    **補ってよいのは、補った値が実際に使われる窓だけ。**
+            if attr == "resolution" and not value:
+                value = terrain_grid.RESOLUTION_DEFAULT
+            var = tk.StringVar(value=frozen_common.display_value(attr, value))
             self._common_vars[attr] = var
             self._common_keys.append(attr)
             # 共通設定はランチャー（source of truth）のスナップショット。直接編集
