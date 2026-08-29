@@ -694,7 +694,11 @@ class TestAsyncWaitsAreConditional:
 #
 # ⚠️ **走査するのは `tests/test_*.py` だけ**＝`conftest.py` は*正しい建て方*の実装
 # そのもの（素の `tk.Tk()` を持つのが仕事）なので、叩くと壊れ方③になる。
-_RAW_TK_ROOT_RE = re.compile(r"(?<![\w.])(?:tk|tkinter)\.Tk\(\)")
+# ⚠️ **引数と空白を許す**（`\(\)` の完全一致では足りない）＝`tk.Tk(className="x")` や
+# `tk.Tk( )`、開き括弧で改行する呼び方も**同じように落ちる**のに素通りしていた
+# （2026-08-29・独立レビュー 56 巡目の P2＝**入れたその日に自分の直しが指摘された**）。
+# ⛔ **括弧の中は見ない**＝見た瞬間に「行」で切れなくなる。呼び出しの**開き**だけを見る。
+_RAW_TK_ROOT_RE = re.compile(r"(?<![\w.])(?:tk|tkinter)\.Tk\s*\(")
 _TRIPLE_QUOTED_RE = re.compile(r'"""(?:.|\n)*?"""' + r"|'''(?:.|\n)*?'''")
 
 
@@ -740,6 +744,9 @@ class TestTkRootsGoThroughConftest:
         "root = tkinter.Tk()",                  # import 名が違う形
         "self.root = tk.Tk()",                  # 属性へ入れる形
         "with contextlib.closing(tk.Tk()) as r:",   # 直に渡す形
+        'root = tk.Tk(className="radiosim")',   # 引数つき（56 巡目の指摘）
+        "root = tk.Tk( )",                      # 空白を挟む形（同上）
+        "root = tk.Tk(",                        # 開き括弧で改行する形（同上）
     ])
     def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
         assert raw_tk_roots("tests/test_新しい窓.py", code + "\n")
@@ -751,6 +758,8 @@ class TestTkRootsGoThroughConftest:
             "    root = make_themed_root('dark')\n"
             "    top = tk.Toplevel(root)\n"          # 既にルートが在る側は対象外
             "    win._root = fake.Tk()\n"            # 別物（フェイク）の同名は対象外
+            "    assert isinstance(root, tk.Tk)\n"   # 呼ばない参照は対象外
+            "    monkeypatch.setattr(tk.Tk, 'report_callback_exception', f)\n"
             "    # root = tk.Tk() と書いてはいけない（説明のコメント）\n"
             '    assert "tk.Tk()" not in text\n'     # 文字列の中の言及も対象外
         )
