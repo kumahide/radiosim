@@ -520,7 +520,12 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         # 🔑 **段階を渡す＝点数は行の座標から解かれる**（I-069）。以前はここで
         # `base.num` を渡しており、**500m の行にも 20km の行にも同じ 200 点**が
         # 当たっていた（＝共通設定の 1 つの数が、行によって別の意味になっていた）。
-        "resolution" : base.resolution,
+        # ⚠️ **段階を持たない共通設定（固定 N の互換の口）はその点数を引き継ぐ**
+        #    （B-137）＝空の段階を渡すと行の側で解けない。この枝に落ちるのは
+        #    段階を経由しない呼び出し（回帰コーパスの生成器・探針）だけで、
+        #    そこでは「全行が同じ点数」こそが要求されたもの。
+        **({"resolution": base.resolution} if base.resolution
+           else {"samples": str(base.num)}),
         "env_type"   : base.env_type,
         "rain_rate"  : str(base.rain_rate),
         "diff_method": base.diff_method,

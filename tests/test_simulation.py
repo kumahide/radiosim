@@ -24,6 +24,8 @@ from core import config
 from core import dem
 from core import models
 from core import simulation as sim
+from core import terrain_grid as tg
+from core import units
 
 
 # ============================================================
@@ -623,6 +625,41 @@ class TestSavePackage:
         assert os.path.exists(os.path.join(save_dir, "terrain_profile.csv"))
         assert os.path.exists(os.path.join(save_dir, "settings.json"))
         assert os.path.exists(os.path.join(save_dir, "report.txt"))
+
+    def test_report_spacing_comes_from_the_samples_actually_used(
+        self, tmp_path, flat_terrain, default_params_dict, monkeypatch
+    ):
+        """帳票の実効間隔は**実際に刻んだ点数**から出ること（B-137）。
+
+        🔴 **これは配線の検査**＝`simulation.effective_spacing` を直接呼ぶ検査は、
+        `_save_report` が*段階から計算し直す*形へ戻っても緑のままだった
+        （実測＝変異 M2 が素通り）。「計算」を検査するテストは「呼ばれること」を
+        検査しない（→ [[feedback-independent-review]]）。
+        """
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+
+        params = sim.SimParams(default_params_dict)
+        expected = units.format_spacing(sim.effective_spacing(params))
+        assert f"Samples       : {params.num} ({expected} m spacing)" in text, text
+
+        # 段階から計算し直した値とは実際に食い違う＝この検査が空振りでないこと。
+        _, from_level = sim.resolve_samples(
+            params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+            tg.RESOLUTION_DEFAULT)
+        assert units.format_spacing(from_level) != expected
+
+    def test_report_does_not_claim_a_level_it_did_not_use(
+        self, tmp_path, flat_terrain, default_params_dict, monkeypatch
+    ):
+        """段階を経由しない実行の帳票は、段階を**名乗らない**こと（B-137）。"""
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "Terrain Res   : (fixed sample count)" in text, text
+        for level in tg.RESOLUTION_KEYS:
+            assert f"Terrain Res   : {level}" not in text
 
     def test_report_contains_status(self, tmp_path, flat_terrain,
                                     default_params_dict, monkeypatch):

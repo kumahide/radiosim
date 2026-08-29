@@ -3,14 +3,17 @@ tests/test_terrain_grid.py
 ==========================
 地形の解像度（I-069）＝**段階から点数を解く**層のゲート。
 
-守っているのは 3 つ：
+守っているのは 4 つ：
   1. **段階が段階として効く**（高 < 中 < 低 の順に細かい・実務の距離帯で天井に
      張り付かない）。⇒ 旧上限 2000 の失敗そのものの再発防止。
   2. **点数の解き方が 1 か所しかない**（画面と実行が同じ口を通る）。
   3. **数で入れる口が復活しない**（入力は段階だけ）。
+  4. **固定 N の互換の口は段階を名乗らない**（B-137）＝帳票・保存・刻印が
+     *使っていない段階*を名乗らないこと。
 """
 
 import ast
+import json
 import os
 import sys
 
@@ -19,8 +22,10 @@ import pytest
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 from core import config              # noqa: E402
+from core import models              # noqa: E402
 from core import simulation as sim   # noqa: E402
 from core import terrain_grid as tg  # noqa: E402
+from core import units               # noqa: E402
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -161,3 +166,84 @@ def test_the_sample_count_is_not_an_input_any_more():
 def test_a_broken_level_is_rejected_by_the_validator():
     assert config.validate_value("resolution", "ultra") is not None
     assert config.validate_value("resolution", "high") is None
+
+
+# ============================================================
+# 4. 固定 N モード（互換の口）は段階を名乗らない — B-137 回帰ガード
+# ============================================================
+#
+# **壊れた不変条件**＝「帳票・保存・刻印が名乗る段階は、その実行が実際に使った段階」。
+# `samples` だけを渡す互換の口（回帰コーパスの生成器・探針）では段階を経由しないのに、
+# 以前は `resolution` を既定値で埋めていたため、**使っていない段階を名乗っていた**。
+def _fixed_n_config(n: str = "800") -> dict[str, str]:
+    return dict(
+        start="34.5429, 132.4118", end="34.5629, 132.4318",
+        h_tx="30", h_rx="10", freq="2400", p_tx="20",
+        gain_tx="3", gain_rx="3", sens="-85", veg_h="0", k_factor="10",
+        samples=n, env_type="los", rain_rate="0.0", diff_method="bullington",
+    )
+
+
+def test_fixed_sample_count_does_not_claim_a_level():
+    """固定 N で作った実行は、段階を**空**にすること（＝名乗らない）。"""
+    p = sim.SimParams(_fixed_n_config())
+    assert p.num == 800
+    assert p.resolution == "", (
+        "使っていない段階を名乗っている（帳票・保存・刻印がこの値を引く）"
+    )
+
+
+def test_a_level_run_still_claims_its_level():
+    """**対の検査**＝段階を渡した実行は、いままでどおり名乗ること。
+
+    ⚠️ これが無いと、上の検査は「段階を常に空にする」直しでも緑になる
+    （B-128 の刻印が全部消えても気づけない）。
+    """
+    c = dict(_fixed_n_config(), resolution="high")
+    del c["samples"]
+    p = sim.SimParams(c)
+    assert p.resolution == "high"
+    assert p.num == sim.resolve_samples(
+        p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, "high")[0]
+
+
+def test_the_stamp_is_silent_when_no_level_was_used():
+    """段階を名乗らない実行では、解像度の刻印が**出ない**こと（B-128 と B-137 の境目）。"""
+    p = sim.SimParams(_fixed_n_config())
+    keys = models.scope_notes(p.freq_mhz, resolution=p.resolution)
+    assert not [k for k in keys if k in models.SCOPE_RESOLUTION]
+
+    p_level = sim.SimParams(dict(_fixed_n_config(), resolution="high"))
+    keys_level = models.scope_notes(p_level.freq_mhz, resolution=p_level.resolution)
+    assert [k for k in keys_level if k in models.SCOPE_RESOLUTION], (
+        "段階を使った実行で刻印が消えている（B-128 の退行）"
+    )
+
+
+def test_the_effective_spacing_comes_from_the_samples_actually_used():
+    """実効間隔は**実際に刻んだ点数**から出ること（段階から計算し直さない）。"""
+    p = sim.SimParams(_fixed_n_config())
+    dist_m = models.horizontal_distance_km(
+        p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx) * units.KM_TO_M
+    assert sim.effective_spacing(p) == pytest.approx(
+        tg.effective_spacing_m(dist_m, p.num))
+    # 段階から計算し直した値とは実際に食い違う（＝この検査が空振りでないこと）
+    _, from_level = sim.resolve_samples(
+        p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, tg.RESOLUTION_DEFAULT)
+    assert abs(sim.effective_spacing(p) - from_level) > 0.1
+
+
+def test_a_fixed_n_run_round_trips_through_its_saved_settings(tmp_path):
+    """保存した `settings.json` を読み戻すと、**同じ点数**で再現すること。"""
+    p = sim.SimParams(_fixed_n_config())
+    sim._save_settings(p, 30.0, 10.0, str(tmp_path))
+    saved = json.loads((tmp_path / "settings.json").read_text(encoding="utf-8"))
+
+    assert "resolution" not in saved, (
+        "名乗れない段階を保存している（読み戻すと点数が別物になる）"
+    )
+    reloaded = sim.SimParams({
+        **_fixed_n_config(), "samples": str(saved["samples"]),
+        **({"resolution": saved["resolution"]} if "resolution" in saved else {}),
+    })
+    assert reloaded.num == p.num

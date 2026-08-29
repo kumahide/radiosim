@@ -295,7 +295,8 @@ def _read_cached_tile(cache_path: str) -> "np.ndarray | None":
     return None
 
 
-def _write_tile_atomic(cache_path: str, img_data: bytes) -> None:
+def _write_tile_atomic(cache_path: str, img_data: bytes, *,
+                       replace_broken: bool = False) -> None:
     """タイル画像を**原子的に**ディスクキャッシュへ書く（B-123）。
 
     同一ディレクトリの一時ファイルへ書いてから `os.replace` する。⇒ 他のスレッド
@@ -319,9 +320,11 @@ def _write_tile_atomic(cache_path: str, img_data: bytes) -> None:
     タイルを `_fetch_tile` 冒頭が開いている最中に起きる＝**内容は同じ**なので失う
     情報は無い。⇒ ①既に在るなら**書きに行かない** ②それでも競合したら **debug** へ
     （正常運用で warning を鳴らさない）。本当に書けない側〔ディスクフル・権限〕は
-    `cache_path` が不在のまま残るので warning で区別できる。
+    `cache_path` が不在のまま残るので warning で区別できる。⚠️ **この①は「読めない」
+    相手には成り立たない**（B-136＝壊れたキャッシュが永久に居座る）ので、**読み側が**
+    読めないと確定した時だけ置換を許す（`replace_broken`）。
     """
-    if os.path.exists(cache_path):
+    if os.path.exists(cache_path) and not replace_broken:
         # 同じ URL のタイル＝同じ内容。上書きしても得るものが無く、競合だけ増える。
         return
 
@@ -331,7 +334,8 @@ def _write_tile_atomic(cache_path: str, img_data: bytes) -> None:
             f.write(img_data)
         os.replace(tmp_path, cache_path)
     except OSError as e:
-        if os.path.exists(cache_path):
+        # ⚠️ **握り潰してよいのは中身が読める時だけ**（B-136・置換の回は必ず在る）。
+        if os.path.exists(cache_path) and _read_cached_tile(cache_path) is not None:
             logger.debug(
                 "tile cache write skipped (already written by another thread): "
                 "path=%s error=%s", cache_path, e,
@@ -365,11 +369,12 @@ def _fetch_tile(
         f"https://cyberjapandata.gsi.go.jp/xyz/{layer_id}"
         f"/{zoom}/{xtile}/{ytile}.png"
     )
-    if os.path.exists(cache_path):
-        # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
-        cached = _read_cached_tile(cache_path)
-        if cached is not None:
-            return cached
+    # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
+    # **読めなかったことは書き側へ持ち越す**＝壊れた相手だけ置換してよい（B-136）。
+    cached = _read_cached_tile(cache_path) if os.path.exists(cache_path) else None
+    if cached is not None:
+        return cached
+    cache_is_broken = os.path.exists(cache_path)
 
     try:
         logger.debug(
@@ -382,7 +387,7 @@ def _fetch_tile(
             img_data = res.content
             arr = np.array(Image.open(io.BytesIO(img_data)).convert("RGB"))
             os.makedirs(cache_subdir, exist_ok=True)
-            _write_tile_atomic(cache_path, img_data)
+            _write_tile_atomic(cache_path, img_data, replace_broken=cache_is_broken)
             return arr
 
         if res.status_code == 404:

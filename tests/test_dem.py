@@ -405,6 +405,59 @@ class TestAtomicTileWrite:
         assert arr.shape == (256, 256, 3)
         assert fake_session.get.called, "ネットワークへ落ちていない（0.0 になる経路）"
 
+    def test_unreadable_cache_is_replaced_by_the_refetch(self, tmp_path, monkeypatch):
+        """読めないと確定したキャッシュは、取り直したデータで**置き換わる**こと（B-136）。
+
+        ⚠️ これが無いと、上の `..._falls_back_to_network` は**緑のまま欠陥を見逃す**
+        ＝その回の値は正しいので「取り直せている」と読めてしまう。壊れたファイルが
+        残り続けると、**オフラインや通信失敗の回に粗い層か標高 0 へ落ちる**（B-123 で
+        塞いだ穴の残り半分）。
+        """
+        cache_path = tmp_path / "tile.png"
+        cache_path.write_bytes(b"not a png at all")
+
+        payload = self._png_bytes(seed=11)
+        fake_response = mock.Mock()
+        fake_response.status_code = 200
+        fake_response.content     = payload
+        fake_session = mock.Mock()
+        fake_session.get.return_value = fake_response
+        monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
+        monkeypatch.setattr(dem, "_TILE_READ_RETRY_S", 0.0)
+
+        dem._fetch_tile("dem5a_png", 15, 0, 0, str(tmp_path), str(cache_path))
+
+        assert cache_path.read_bytes() == payload, (
+            "壊れたキャッシュが残っている（次の起動でまた取りに行き、"
+            "オフラインなら標高 0 へ落ちる）"
+        )
+        assert dem._read_cached_tile(str(cache_path)) is not None
+        # 一時ファイルを置き去りにしない。
+        assert [p.name for p in tmp_path.iterdir()] == ["tile.png"]
+
+    def test_repair_does_not_rewrite_a_readable_tile(self, tmp_path, monkeypatch):
+        """**読める**キャッシュは、置換の口を開けたあとも書き直さないこと（B-136 の対）。
+
+        ⚠️ 「無いことの検査」を対で置く＝直しが行き過ぎて *常に上書き* になると、
+        B-123 で避けた競合（Windows は読まれている最中の置換を拒む）が戻る。
+        ここが緑でなければ、上の置換テストは*ただ上書きしているだけ*と区別できない。
+        """
+        from PIL import Image
+        cache_path = tmp_path / "tile.png"
+        Image.new("RGB", (256, 256), (1, 2, 3)).save(str(cache_path))
+        before = cache_path.read_bytes()
+
+        fake_session = mock.Mock()
+        monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
+
+        arr = dem._fetch_tile(
+            "dem5a_png", 15, 0, 0, str(tmp_path), str(cache_path)
+        )
+
+        assert isinstance(arr, np.ndarray)
+        assert not fake_session.get.called, "読めるキャッシュがあるのに取得へ行った"
+        assert cache_path.read_bytes() == before
+
     def test_existing_tile_is_not_rewritten(self, tmp_path, monkeypatch):
         """既に完全なタイルが在るなら**書きに行かない**こと。
 
@@ -463,7 +516,9 @@ class TestAtomicTileWrite:
         monkeypatch.setattr(dem, "_get_session", lambda: fake_session)
         monkeypatch.setattr(
             dem, "_write_tile_atomic",
-            mock.Mock(side_effect=lambda p, d: None),
+            # ⚠️ **代役が本物より狭いと、その差の分だけ検査が空振りする**
+            #    （`replace_broken` を受け取らない代役は呼び出し形の変化を隠す）。
+            mock.Mock(side_effect=lambda p, d, **kw: None),
         )
 
         arr = dem._fetch_tile(

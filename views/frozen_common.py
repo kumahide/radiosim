@@ -72,6 +72,12 @@ def display_value(attr: str, value: object) -> str:
     凍結した帯だけ `deygout` / `los` と内部キーで出ると、**同じ値が窓によって
     別の言葉に見える**（⑧）。表示ラベルの出所は i18n の 1 か所。
     """
+    # ⚠️ **画面は段階しか表現できない**（B-137）＝段階を持たない基底（`samples` を
+    #    直接渡す互換の口＝回帰コーパスの生成器・探針）から窓を建てるときは、
+    #    **これから走らせる実行の入力**として既定の段階を出す。帳票・保存・刻印の
+    #    「*その実行が使った段階*」とは役割が違う（あちらは名乗れないなら黙る）。
+    if attr == "resolution" and not value:
+        value = terrain_grid.RESOLUTION_DEFAULT
     prefix = {"env_type": "env_", "diff_method": "diff_opt_",
               "resolution": "res_"}.get(attr)
     return i18n.t(f"{prefix}{value}") if prefix else str(value)

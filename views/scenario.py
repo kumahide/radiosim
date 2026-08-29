@@ -341,8 +341,8 @@ class ScenarioWindow(tk.Toplevel):
         self._tx_var.set(coords.format_pair(p.lat_tx, p.lon_tx, self._coord_format))
         self._rx_var.set(coords.format_pair(p.lat_rx, p.lon_rx, self._coord_format))
         # 天井への張り付きは**実効間隔**にしか出ないので、点数と並べて出す。
-        _, spacing = sim.resolve_samples(
-            p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, p.resolution)
+        # ⚠️ **段階から計算し直さない**（B-137）＝隣に出す `p.num` と同じ根から出す。
+        spacing = sim.effective_spacing(p)
         self._samples_var.set(i18n.t("res_fixed_value").format(
             n=p.num, spacing=units.format_spacing(spacing)))
 

@@ -54,6 +54,21 @@ def resolve_samples(
     return n, terrain_grid.effective_spacing_m(dist_m, n)
 
 
+def effective_spacing(params: "SimParams") -> float:
+    """**その実行が実際に刻んだ**標本間隔 [m]（B-137）。
+
+    🔑 `resolve_samples` との違いは**どちらを正典にするか**＝あちらは*入力の段階*
+    から点数を解く口（画面の読み取り欄と実行が同じ答えを得るため）、こちらは
+    **確定した点数から間隔を出す**口。⚠️ **見せる側が段階から計算し直すと、
+    段階を経由しない実行（固定 N＝回帰コーパスの生成器・探針）で
+    実際と食い違う**（実測＝800 点で刻んだのに「10.02m 間隔」と表示していた）。
+    ⇒ *やったこと*を見せる面は、必ずこちらを通す。
+    """
+    dist_m = models.horizontal_distance_km(
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx) * units.KM_TO_M
+    return terrain_grid.effective_spacing_m(dist_m, params.num)
+
+
 class SimParams:
     """
     View から渡される実行パラメータ。
@@ -88,14 +103,22 @@ class SimParams:
         # ⚠️ `samples` は**再現のための固定入力**の口として残す（回帰コーパスの
         # 生成器・保存済みの解決後 N を読み戻す経路）。画面からは決して来ない
         # ＝「同じことを言う入口が 2 つ」にはならない（入口は段階ただ 1 つ）。
-        self.resolution: str = str(
-            c.get("resolution", "") or terrain_grid.RESOLUTION_DEFAULT)
-        if "resolution" in c and c["resolution"]:
+        # 🔴 **固定 N モードでは段階を名乗らない**（B-137・2026-08-29 の独立レビュー）
+        #    ＝以前はここで `resolution` を既定値（`medium`）で埋めていたため、
+        #    **800 点で刻んだ実行が「中」を名乗り**、①`settings.json` に書いた段階を
+        #    読み戻すと点数が別物になり（800 → 288）②帳票の実効間隔が段階から
+        #    計算し直されて実際と食い違い（3.60m を 10.02m と表示）③**B-128 の刻印が
+        #    使っていない段階を名乗った**。空にすると `models.scope_notes` の
+        #    「知らない語・空なら刻印を出さない」と噛み合う＝*言えないなら名乗らない*。
+        level = str(c.get("resolution", "") or "")
+        if level:
+            self.resolution: str = level
             self.num: int = resolve_samples(
                 self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx,
                 self.resolution,
             )[0]
         else:
+            self.resolution = ""
             self.num = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
         # ⚠️ **旧名 `deygout` はここで受ける**（入力の境目 1 か所・B-130）＝
         #    5 フローすべてがこの `SimParams` を通るので、ここだけで全部が揃う。
@@ -423,7 +446,10 @@ def _save_settings(
         # 🔑 **入力（段階）と結果（点数）の両方を残す**（I-069）＝読み戻すのは
         # `resolution` の側（`config.select_sim` が拾うのはこちらだけ）。`samples`
         # は**その実行が実際に何点で刻んだか**の記録で、入力としては使われない。
-        "resolution"  : params.resolution,
+        # ⚠️ **段階が無い実行（固定 N）では書かない**（B-137）＝空でも書くと、
+        # 読み戻したときに「段階がある」側の枝へ落ちて**点数が別物になる**。
+        # 書かなければ `samples` が拾われ、固定 N がそのまま再現する。
+        **({"resolution": params.resolution} if params.resolution else {}),
         "samples"     : params.num,
         "diff_method" : params.diff_method,
         "env_type"    : params.env_type,
@@ -454,9 +480,8 @@ def _save_report(
 ) -> None:
     tx_site = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_site = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
-    _, spacing = resolve_samples(
-        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
-        params.resolution)
+    # ⚠️ **段階からではなく、実際に刻んだ点数から出す**（B-137）。
+    spacing = effective_spacing(params)
     text = (
         "=== RADIO LINK REPORT ===\n\n"
         f"Date: {datetime.now()}\n\n"
@@ -495,7 +520,8 @@ def _save_report(
         f"Slant Dist    : {units.format_distance(result.slant_dist_km)}\n"
         # どれだけ細かく地形を見た答えなのか（I-069）。**段階だけでは足りない**
         # ＝天井に張り付くと「高」でも実効間隔は粗くなる（数字のほうが正典）。
-        f"Terrain Res   : {params.resolution}\n"
+        # ⚠️ 段階を経由しない実行（固定 N）は**段階を名乗らない**（B-137）。
+        f"Terrain Res   : {params.resolution or '(fixed sample count)'}\n"
         f"Samples       : {params.num} "
         f"({units.format_spacing(spacing)} m spacing)\n\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
