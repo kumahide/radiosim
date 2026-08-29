@@ -633,10 +633,13 @@ def test_the_right_click_menu_is_reused_instead_of_piling_up(monkeypatch):
 
     import pytest
 
+    from conftest import make_tk_root
     from core import i18n
 
     pytest.importorskip("tkinter")
-    root = tk.Tk()
+    # ⛔ 素の `tk.Tk()` を呼ばない＝表示の無い機械（CI）では TclError で**落ちる**。
+    # `make_tk_root` は同じ失敗を宣言つきの skip にする（2026-08-29・CI 赤の正体）。
+    root = make_tk_root()
     root.withdraw()
     try:
         i18n.set_lang("ja")

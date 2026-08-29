@@ -682,6 +682,106 @@ class TestAsyncWaitsAreConditional:
         assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
 
 
+# ============================================================
+# 🔴 **テストが素の `tk.Tk()` でルートを建てるのを禁じる。** 表示の無い機械では
+# `TclError: no display name` で**落ちる**＝ヘッドレスの CI が赤くなる。`conftest`
+# の `make_tk_root` / `make_themed_root` は同じ失敗を**宣言つきの skip** にするので、
+# 表示のある機械でだけ走り、無い機械では静かに飛ぶ。
+#
+# ⚠️ **実際に起きた**（2026-08-29 に発見・I-117）＝B-121 のゲートが素の `tk.Tk()` を
+# 呼んでおり、**CI が 6 回連続で赤**（2026-08-25〜27）。誰も気づかないまま RC の
+# 直前まで来た（見つけたのは `release-check.mjs` の CI 行＝2026-08-11 の昇格が効いた）。
+#
+# ⚠️ **走査するのは `tests/test_*.py` だけ**＝`conftest.py` は*正しい建て方*の実装
+# そのもの（素の `tk.Tk()` を持つのが仕事）なので、叩くと壊れ方③になる。
+_RAW_TK_ROOT_RE = re.compile(r"(?<![\w.])(?:tk|tkinter)\.Tk\(\)")
+_TRIPLE_QUOTED_RE = re.compile(r'"""(?:.|\n)*?"""' + r"|'''(?:.|\n)*?'''")
+
+
+def _without_docstrings(text: str) -> str:
+    """三重引用符の塊を落とす（**行数は保つ**＝行番号がずれると報告が嘘になる）。"""
+    return _TRIPLE_QUOTED_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+
+
+def raw_tk_roots(name: str, text: str) -> list[str]:
+    """テスト 1 本の中の「素の `tk.Tk()` でルートを建てている」行。
+
+    ⚠️ **文字列・コメント・docstring の中の言及は対象外**＝この規則を説明する字が
+    本文に出てくる（この docstring 自身・上の注記・テスト側の「呼ばない」コメント・
+    `test_smoke.py` の冒頭の説明）ので、素で当てると**説明ごと違反になる**
+    （実際、最初の実装は自分自身に噛みついた）。
+    """
+    found = []
+    for i, line in enumerate(_without_docstrings(text).splitlines(), 1):
+        code = line.split("#", 1)[0]              # コメント内の言及は対象外
+        code = _QUOTED_RE.sub("", code)           # 文字列内の言及も対象外
+        if _RAW_TK_ROOT_RE.search(code):
+            found.append(f"{name}:{i}")
+    return found
+
+
+class TestTkRootsGoThroughConftest:
+    def test_テストが素の_tk_root_を建てない(self):
+        """本体の不変条件。"""
+        found = [v for rel, text in _test_modules_with_text()
+                 for v in raw_tk_roots(rel, text)]
+        assert not found, (
+            "素の Tk ルートを建てているテストがあります: " + ", ".join(found)
+            + "\n`conftest.make_tk_root()`（寸法を測るなら `make_themed_root()`）を"
+            "使ってください＝表示の無い機械では宣言つきの skip になります"
+            "（I-117＝この書き方で CI が 6 回連続で赤になりました）。"
+        )
+
+    def test_壊れ方1_一度も落ちない_ことがない(self):
+        """①旧い書き方を与えたら必ず検出すること。"""
+        assert raw_tk_roots("tests/test_map_window.py", "    root = tk.Tk()\n")
+
+    @pytest.mark.parametrize("code", [
+        "root = tkinter.Tk()",                  # import 名が違う形
+        "self.root = tk.Tk()",                  # 属性へ入れる形
+        "with contextlib.closing(tk.Tk()) as r:",   # 直に渡す形
+    ])
+    def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
+        assert raw_tk_roots("tests/test_新しい窓.py", code + "\n")
+
+    def test_壊れ方2_毎回鳴る_ことがない(self):
+        """②正しい書き方では沈黙すること。"""
+        正当 = (
+            "    root = make_tk_root()\n"
+            "    root = make_themed_root('dark')\n"
+            "    top = tk.Toplevel(root)\n"          # 既にルートが在る側は対象外
+            "    win._root = fake.Tk()\n"            # 別物（フェイク）の同名は対象外
+            "    # root = tk.Tk() と書いてはいけない（説明のコメント）\n"
+            '    assert "tk.Tk()" not in text\n'     # 文字列の中の言及も対象外
+        )
+        assert raw_tk_roots("tests/test_theme.py", 正当) == []
+
+    def test_壊れ方2b_docstring_の説明では鳴らない(self):
+        """②の続き＝**説明する字**は違反ではない（`test_smoke.py` の冒頭が実例）。"""
+        説明 = (
+            "def test_x():\n"
+            '    """ヘッドレスでは root = tk.Tk() が TclError になる。"""\n'
+            "    root = make_tk_root()\n"
+        )
+        assert raw_tk_roots("tests/test_smoke.py", 説明) == []
+
+    def test_行番号が_docstring_を落としてもずれない(self):
+        """報告の行番号が本物であること（落とした塊のぶん詰めてはいけない）。"""
+        text = 'x = 1\n"""説明\nの\n塊"""\nroot = tk.Tk()\n'
+        assert raw_tk_roots("tests/test_x.py", text) == ["tests/test_x.py:5"]
+
+    def test_壊れ方3_間違ったものを要求していない(self):
+        """③禁じているのは**テストの建て方**であって `tkinter` でも製品でもない。
+
+        `conftest.py` は正しい建て方の実装そのもの（素の `tk.Tk()` を持つのが
+        仕事）なので、走査面に入れてはいけない。
+        """
+        rels = [rel for rel, _ in _test_modules_with_text()]
+        assert "tests/test_map_window.py" in rels       # テストは見る
+        assert "tests/conftest.py" not in rels          # 建てる側は見ない
+        assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
+
+
 # --- pre-commit フックからの呼び出し口 ---------------------------------------
 
 if __name__ == "__main__":
