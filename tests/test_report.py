@@ -30,6 +30,7 @@ from core import simulation as sim
 from core import terrain_grid
 from report import batch
 from report import report_common
+from report import report_multihop
 from report import report_path
 from report import report_summary
 
@@ -386,6 +387,43 @@ class TestSheetCssIsScoped:
         unscoped = [s for s in _selectors(report_summary.summary_sheet_css())
                     if ".sheet.summary" not in s]
         assert unscoped == [], f"未スコープの summary セレクタ: {unscoped}"
+
+    @pytest.mark.parametrize("css_of", ["multihop", "summary"])
+    def test_summary_cards_never_break_a_word(self, css_of):
+        """サマリのカードは**縮まず折り返す**こと（B-155）。
+
+        🔴 **既定の flex は幅が足りないと中身を縮めて字を折る**＝実機の帳票で
+        `全体マージ / ン（最小余裕）` と語の途中で改行された（A4 の印字幅 688px に
+        対しカード列の必要幅が約 697px）。⇒ ①行を折る（`flex-wrap:wrap`）
+        ②カードは縮めない（`flex:0 0 auto`）③ラベルと値は `nowrap`。
+
+        ⚠️ **「A4 に収まるか」を測るゲートにはできない**（ブラウザが要る）＝代わりに
+        *収まらなかったときの壊れ方*を縛る。⚠️ **2 つの台帳を同時に見る**＝カードは
+        同じ意味関係を同じ見せ方で出す面（⑧）なので、片方だけ直すと次に食い違う。
+        """
+        css = (report_multihop.route_sheet_css() if css_of == "multihop"
+               else report_summary.summary_sheet_css())
+        scope = f".sheet.{css_of}"
+        assert f"{scope} .cards" in css and "flex-wrap:wrap" in css, (
+            f"{css_of}: カード列が折り返さない（幅が足りないと縮んで字が折れる）")
+        assert "flex:0 0 auto" in css, f"{css_of}: カードが縮む設定のまま"
+        for part in (".card .lbl", ".card .val"):
+            block = css.split(f"{scope} {part}", 1)
+            assert len(block) == 2, (css_of, part)
+            assert "white-space:nowrap" in block[1].split("}", 1)[0], (
+                f"{css_of}: {part} が語の途中で折れる")
+
+    def test_the_user_named_card_is_bounded(self):
+        """**利用者が付けた字を持つカード**（区間名）には上限があること（B-155）。
+
+        ⚠️ ここだけは `nowrap` にできない＝地点名の長さに上限が無いので、
+        1 つの長い名前がカード列を丸ごと押し広げる。⇒ `max-width` で折る側に倒す。
+        """
+        css = report_multihop.route_sheet_css()
+        block = css.split(".sheet.multihop .card.hop .val", 1)
+        assert len(block) == 2, "区間名のカードに固有の指定が無い"
+        rule = block[1].split("}", 1)[0]
+        assert "max-width" in rule and "white-space:normal" in rule, rule
 
     def test_fit_script_processes_every_sheet(self):
         """縮小フィットは文書内の全 `.fit` を対象にする（連結文書は N 枚ある）。"""

@@ -147,13 +147,17 @@ def summary_sheet_css() -> str:
     """
     return """
 /* --- summary シート（台帳） --- */
-.sheet.summary .cards{display:flex;gap:12px;margin-bottom:20px;break-inside:avoid}
+/* ⚠️ **中継の台帳と同じ作りにする**（B-155）＝縮めずに折り返す。ここは 4 枚とも
+   短い語なので今は 1 行に収まるが、**カードは同じ意味関係を同じ見せ方で出す面**
+   （⑧）なので、片方だけ「縮んで語中で折れる」作りを残さない。 */
+.sheet.summary .cards{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:20px;
+  break-inside:avoid}
 /* カードの高さは per-path レポートと揃える＝高さを決める余白・ラベル/数値の
    フォントを per-path と同値にする（padding 6px・lbl 9px・val 15px）。
    件数表示なので数値は小さめでも十分読める。 */
-.sheet.summary .card{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px}
-.sheet.summary .card .lbl{font-size:9px;color:#999;text-transform:uppercase}
-.sheet.summary .card .val{font-size:15px;font-weight:bold;color:#333}
+.sheet.summary .card{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px;flex:0 0 auto}
+.sheet.summary .card .lbl{font-size:9px;color:#999;text-transform:uppercase;white-space:nowrap}
+.sheet.summary .card .val{font-size:15px;font-weight:bold;color:#333;white-space:nowrap}
 .sheet.summary .card.ok .val{color:#2e7d32}.sheet.summary .card.ng .val{color:#c62828}.sheet.summary .card.err .val{color:#e65100}
 /* 台帳は 20 列あり A4 印字域（182mm）に収める必要がある。**table-layout:auto**＝
    各列を内容の実幅（nowrap）に合わせて配分する。以前の table-layout:fixed（等幅）は

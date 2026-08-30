@@ -18,7 +18,7 @@ from core import coords
 from core import i18n
 from core import simulation as sim
 from core import terrain_grid
-from core.models import ENV_KEYS
+from core.models import DIFF_METHOD_KEYS, DIFF_METHOD_MULTI, ENV_KEYS
 from report import batch
 from views import frozen_common, theme, window_fit
 from views.batch_io import _CsvMixin
@@ -318,9 +318,21 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         f_diff = ttk.Frame(row1)
         f_diff.pack(side="left", padx=6)
         ttk.Label(f_diff, text=i18n.t("lbl_b_diff_model")).pack(side="left")
-        self._diff_var = tk.StringVar(value=self._base_params.diff_method)
+        # 🔴 **表示ラベルを出す**（B-156）＝ここは内部キー（`bullington`）をそのまま
+        #    並べており、**ランチャー・中継経路が `Bullington` と出しているのに
+        #    この窓だけ小文字**、しかも英語環境で訳が当たらなかった。隣の `env_type`
+        #    は同じ窓で既に写しを作っている＝**揃っていなかったのはここだけ**。
+        #    ⚠️ **保存・実行に渡すのはキーのまま**（下の `_diff_label_to_key`）。
+        self._diff_key_to_label = {k: i18n.t(f"diff_opt_{k}")
+                                   for k in DIFF_METHOD_KEYS}
+        self._diff_label_to_key = {v: k for k, v in self._diff_key_to_label.items()}
+        self._diff_var = tk.StringVar(
+            value=self._diff_key_to_label.get(
+                self._base_params.diff_method,
+                self._diff_key_to_label[DIFF_METHOD_MULTI]))
         ttk.Combobox(
-            f_diff, textvariable=self._diff_var, values=["bullington", "single"],
+            f_diff, textvariable=self._diff_var,
+            values=list(self._diff_key_to_label.values()),
             state="readonly", width=9,
         ).pack(side="left", padx=(2, 0))
         self._common_keys.append("diff_method")
@@ -351,7 +363,12 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._env_var.set(
             self._env_key_to_label.get(env, self._env_key_to_label["los"])
         )
-        self._diff_var.set(c.get("diff_method", self._diff_var.get()))
+        diff = c.get("diff_method", "")
+        if diff:
+            # ⚠️ **ここも写しを通す**（B-156）＝取り込み直しだけ内部キーに戻ると、
+            #    ↻ を押した瞬間に語が小文字へ化ける。
+            self._diff_var.set(self._diff_key_to_label.get(
+                diff, self._diff_key_to_label[DIFF_METHOD_MULTI]))
         if self._meta_provider is not None:
             meta = self._meta_provider()
             self._project_name_var.set(meta.get("project_name", ""))

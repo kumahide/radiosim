@@ -41,11 +41,27 @@ def route_sheet_css() -> str:
     """
     return """
 /* --- multihop シート（中継経路の内訳＋全体判定） --- */
-.sheet.multihop .cards{display:flex;gap:12px;margin-bottom:16px;break-inside:avoid}
+/* 🔴 **カードは「縮めない・折り返す」**（B-155）＝既定の flex は幅が足りないと
+   *中身を縮めて字を折る*ので、`全体マージ / ン（最小余裕）` のように**語の途中で
+   改行**される。A4 の印字幅は 182mm（`report_common.A4_CONTENT_WIDTH_PX` ＝ 688px）
+   に対し 7 枚の必要幅は約 697px で、**既定では必ず縮む側に入っていた**。
+   ⇒ ①`wrap` で行を折る（カードごと次の行へ）②`flex:0 0 auto` で縮めない
+   ③ラベルと値は `nowrap`＝**語の途中では絶対に折らない**。
+   ⚠️ **幅を詰めて 1 行に収める直し方は採らない**＝区間名は*利用者が付ける地点名*
+   なので必要幅に上限が無く、「いま収まる」直しは名前が長い日にまた崩れる。 */
+.sheet.multihop .cards{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;
+  break-inside:avoid}
 .sheet.multihop .card{background:white;border:1px solid #eee;border-radius:8px;
-  padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:90px}
-.sheet.multihop .card .lbl{font-size:9px;color:#999;text-transform:uppercase}
-.sheet.multihop .card .val{font-size:15px;font-weight:bold;color:#333}
+  padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;
+  min-width:90px;flex:0 0 auto}
+.sheet.multihop .card .lbl{font-size:9px;color:#999;text-transform:uppercase;
+  white-space:nowrap}
+.sheet.multihop .card .val{font-size:15px;font-weight:bold;color:#333;
+  white-space:nowrap}
+/* 区間名のカードだけは**利用者の字**（地点名）を持つので、上限を与えて折る。
+   ⚠️ ここだけ `nowrap` を外す＝1 つの長い名前が行全体を押し広げないため。 */
+.sheet.multihop .card.hop .val{white-space:normal;max-width:160px;
+  overflow-wrap:anywhere}
 .sheet.multihop .card.ok .val{color:#2e7d32}
 .sheet.multihop .card.ng .val{color:#c62828}
 /* 判定不能（B-071）＝**不成立と同じ赤で塗らない**。橙は区間表の `tr.err` と
@@ -254,7 +270,8 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
           f'{i18n.t(overall_key)}</div><div class="val">{overall_txt}</div></div>'
         + f'<div class="card"><div class="lbl">{i18n.t("mh_hops")}</div>'
           f'<div class="val">{len(run.hops)}</div></div>'
-        + f'<div class="card"><div class="lbl">{i18n.t("mh_worst_hop")}</div>'
+        # ⚠️ `hop` クラス＝**中身が利用者の字**（地点名）だと CSS へ伝える印（B-155）。
+        + f'<div class="card hop"><div class="lbl">{i18n.t("mh_worst_hop")}</div>'
           f'<div class="val">{worst_label}</div></div>'
         + f'<div class="card ok"><div class="lbl">{i18n.t("html_ok")}</div>'
           f'<div class="val">{ok_count}</div></div>'

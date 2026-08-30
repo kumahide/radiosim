@@ -34,7 +34,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
 from core import config
 from core import i18n
+from core import models
 from core import simulation as sim
+from core import terrain_grid
 from report import batch as b
 from conftest import make_themed_root
 
@@ -83,6 +85,51 @@ def app_windows():
     finally:
         root.destroy()
         i18n.set_lang(lang_before)
+
+
+# ============================================================
+# 0. 選択肢は**訳した語**で出す（内部キーを画面に出さない）
+# ============================================================
+# 🔴 **同じ値が窓によって別の言葉に見える**のを止める（B-156）＝複数経路の
+# 「回折モデル」だけ `values=["bullington","single"]` と**内部キーを直接**並べており、
+# ランチャー・中継経路が `Bullington` と出しているのにここだけ小文字、しかも
+# 英語環境で訳が当たらなかった。同じ窓の `env_type` は写しを作っていた＝
+# **揃っていなかったのは 1 か所だけ**。
+# ⇒ **面を数えずに窓を走査する**＝次に選択肢を足した窓でも効く。
+_INTERNAL_VOCAB = {
+    **{k: f"env_{k}" for k in models.ENV_KEYS},
+    **{k: f"diff_opt_{k}" for k in models.DIFF_METHOD_KEYS},
+    **{k: f"res_{k}" for k in terrain_grid.RESOLUTION_KEYS},
+}
+
+
+def _comboboxes(widget):
+    for child in widget.winfo_children():
+        if child.winfo_class() == "TCombobox":
+            yield child
+        yield from _comboboxes(child)
+
+
+@pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
+def test_no_combobox_offers_an_internal_key(app_windows, name):
+    """選択肢に**内部キーがそのまま**並んでいないこと。
+
+    ⚠️ **見るのは「キーと同じ字が出ていないか」**＝訳の中身は問わない
+    （語を変えるのは翻訳の仕事で、ここが縛るのは *キーを出さない* ことだけ）。
+    ⚠️ キーと訳が同じ語になる場合（英語で `single` → `Single` など）は
+    **大小の違いも含めて**別の字なので、素の一致だけを落とす。
+    """
+    _app, windows = app_windows
+    offenders = []
+    for cb in _comboboxes(windows[name]):
+        for value in cb.cget("values"):
+            v = str(value)
+            if v in _INTERNAL_VOCAB and v != i18n.t(_INTERNAL_VOCAB[v]):
+                offenders.append(v)
+    assert not offenders, (
+        f"{name}: 選択肢に内部キーが出ている {sorted(set(offenders))}"
+        "（i18n の表示ラベルへ写して、実行と保存のときにキーへ戻すこと）"
+    )
 
 
 # ============================================================
