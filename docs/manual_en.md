@@ -304,7 +304,7 @@ An input form is displayed on startup.
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Terrain Resolution    | One of High 5 m mesh / Medium 10 m mesh / Low 20 m steps. **You pick the level; the app resolves the points.** "High" and "medium" place a sample at each edge of every DEM pixel the path crosses, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("low" alone keeps a 20 m even spacing and skips pixels by design). The resolved count and **the size of one pixel** are shown right below it. Default: Medium |
+| Terrain Resolution    | One of High ~4 m px / Medium ~8 m px / Low 20 m spacing. Note that the label names **the size of the pixel the samples are placed on**, not which elevation data is read: elevations always come from the finest layer available, whichever level you pick. The pixel is 3.3-4.4 m across Japan, hence the "~". **You pick the level; the app resolves the points.** "High" and "medium" place a sample at each edge of every DEM pixel the path crosses, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("low" alone keeps a 20 m even spacing and skips pixels by design). The resolved count and **the size of one pixel** are shown right below it. Default: Medium |
 
 #### Project Info (optional)
 

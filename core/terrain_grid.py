@@ -334,6 +334,16 @@ def _rough_dist_m(lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float) ->
     return 2 * r_earth_m * math.atan2(math.sqrt(a), math.sqrt(1 - a))
 
 
+# 段階のラベルに書く 1 画素の寸法を、どの緯度で代表させるか [deg]（B-151）。
+# 🔑 **画面のラベルは経路を知らない**（座標を入れる前から出ている）ので、代表値が要る。
+# 日本の南北のほぼ真ん中を採る＝実際の値は 3.3〜4.4m（z15）の幅で振れるので、
+# ラベルには「約」を付け、**その経路の実値は読み取り欄が出す**（`resolve_samples`）。
+# ⚠️ **`WORST_CASE_LAT_DEG`（46°）は使わない**＝あれは*刻みを決める*ための最悪値で、
+# ラベルは「たいていこれくらい」を言う欄。役割が違う数字を共有すると、
+# どちらかを動かした日にもう片方が意味を失う。
+LABEL_LAT_DEG: float = 35.0
+
+
 def grid_step_m(lat_deg: float, level: str) -> float:
     """その段階が**実際に見ている地形の刻み** [m]（画面・帳票へ出す値）。
 

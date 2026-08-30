@@ -488,6 +488,57 @@ def test_the_rough_distance_matches_the_models_formula():
             models.horizontal_distance_km(*a, *b) * 1000.0, rel=1e-9)
 
 
+# ============================================================
+# 6. **段階の語が、段階が実際にしていることと合っている**（B-151）
+# ============================================================
+# 🔴 **段階は「どの層が答えるか」を選んでいない**＝`dem.get_elevation` は段階を
+# 受け取らず、常に `DEM_LAYERS` の順（5m → 5m → 10m）で試す。だから「中 10m
+# メッシュ」は**10m メッシュのデータで計算した**と読めてしまい、実際は 5m 層が
+# 答えている。⇒ ラベルで**層を名乗らない**。段階が本当に選んでいるのは
+# *標本を置く画素の格子*なので、その画素の寸法を名乗る。
+@pytest.mark.parametrize("level", _NO_SKIP_LEVELS)
+def test_the_level_label_names_the_pixel_not_the_layer(level):
+    """段階のラベルが**画素の寸法**を名乗り、**層を名乗らない**こと。
+
+    ⚠️ **数は定数から引く**（→ `pixel_size_m` / `LABEL_LAT_DEG`）＝写した数字は
+    層構成や代表緯度を動かした日にずれる（B-148 で「約 5 m」が嘘になった形）。
+    """
+    i18n.set_lang("ja")
+    label = i18n.t(f"res_{level}")
+    px = round(tg.pixel_size_m(tg.LABEL_LAT_DEG, tg.RESOLUTION_ZOOM[level]))
+    assert f"{px}m" in label, (
+        f"{level}: ラベル {label!r} に画素の寸法 {px}m が無い"
+    )
+    for nominal in ("メッシュ", "mesh", "層"):
+        assert nominal not in label, (
+            f"{level}: ラベル {label!r} が層を名乗っている"
+            "（段階は取得層を選んでいない＝B-151）"
+        )
+
+
+def test_the_english_level_label_names_the_pixel_too():
+    """**対の検査**＝英語側だけ層の名前が残る形を落とす（面は 2 言語ある）。"""
+    i18n.set_lang("en")
+    try:
+        for level in _NO_SKIP_LEVELS:
+            label = i18n.t(f"res_{level}")
+            px = round(tg.pixel_size_m(tg.LABEL_LAT_DEG, tg.RESOLUTION_ZOOM[level]))
+            assert f"{px} m" in label, (level, label)
+            assert "mesh" not in label.lower(), (level, label)
+    finally:
+        i18n.set_lang("ja")
+
+
+def test_the_coarse_level_label_names_its_spacing():
+    """「低」だけは**等間隔**なので、間隔を名乗る（画素ではない）。"""
+    i18n.set_lang("ja")
+    label = i18n.t("res_low")
+    assert f"{tg.RESOLUTION_SPACING_M['low']:g}m" in label, label
+    assert "画素" not in label, (
+        "「低」が画素を名乗っている（あの段階は画素を飛ばす等間隔＝仕様）"
+    )
+
+
 def test_the_zoom_table_matches_the_dem_layers():
     """段階が見ている層のズームが、**実際に取りに行く層**と一致すること。
 

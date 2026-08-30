@@ -102,9 +102,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "Vegetation Height (m)",
         "lbl_k_factor":         "Rician K-Factor (initial)",
         "lbl_resolution":       "Terrain Resolution",
-        "res_high":             "High 5 m mesh",
-        "res_medium":           "Medium 10 m mesh",
-        "res_low":              "Low 20 m steps",
+        # B-151: the level does NOT choose which DEM layer answers (the finest
+        # available one always does), so the label must not name a layer. What the
+        # level really picks is the pixel grid the samples are placed on, so the
+        # label names that pixel. Numbers: `terrain_grid.pixel_size_m` at
+        # `LABEL_LAT_DEG` (they vary 3.3-4.4 m across Japan, hence "~").
+        # ⚠️ **`px` と縮める**＝`pixels` と綴ると凍結帯が窓幅を決める（中継経路で
+        # 実測 658px > 区間表 647px・B-053 の成果を食う）。ja の「画素」と同じ意味。
+        "res_high":             "High ~4 m px",
+        "res_medium":           "Medium ~8 m px",
+        "res_low":              "Low 20 m spacing",
         "res_readout":          "{n} points  /  approx. {spacing} m apart",
         # B-150: the "high" / "medium" steps place samples on DEM pixel edges, so the
         # samples are NOT evenly spaced. What is shown is the pixel size itself.
@@ -740,9 +747,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "植生高（m）",
         "lbl_k_factor":         "初期ライスKファクター",
         "lbl_resolution":       "地形の解像度",
-        "res_high":             "高 5m メッシュ",
-        "res_medium":           "中 10m メッシュ",
-        "res_low":              "低 20m 刻み",
+        # B-151：段階は**どの層が答えるかを選んでいない**（常に取れる中で最も細かい層が
+        # 答える）ので、ラベルで層を名乗ってはいけない。段階が実際に選んでいるのは
+        # **標本を置く画素の格子**なので、その画素を名乗る。数字は
+        # `terrain_grid.pixel_size_m`（`LABEL_LAT_DEG`）＝日本で 3.3〜4.4m と振れるので「約」。
+        "res_high":             "高 約4m 画素",
+        "res_medium":           "中 約8m 画素",
+        "res_low":              "低 20m 間隔",
         "res_readout":          "{n} 点  /  実効 約 {spacing} m 間隔",
         # B-150：「高」「中」は DEM 画素の縁に標本を置く＝**等間隔ではない**ので、
         # 「間隔」ではなく*画素の寸法*を出す（平均を出すと等間隔だと読める）。
