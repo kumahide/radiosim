@@ -106,8 +106,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "res_medium":           "Medium 10 m mesh",
         "res_low":              "Low 20 m steps",
         "res_readout":          "{n} points  /  approx. {spacing} m apart",
+        # B-150: the "high" / "medium" steps place samples on DEM pixel edges, so the
+        # samples are NOT evenly spaced. What is shown is the pixel size itself.
+        "res_readout_pixel":    "{n} points  /  one per {spacing} m DEM pixel",
         "res_readout_unknown":  "points: enter both coordinates",
-        "res_fixed_value":      "{n} pts / {spacing} m",
+        # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
+        # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
+        "res_fixed_value":      "{n} pts/{spacing} m",
+        "res_fixed_value_pixel": "{n} pts/{spacing} m px",
         "tip_start":            'lat, lon   e.g. "34.54, 132.41"',
         "tip_end":              'lat, lon   e.g. "34.53, 132.41"',
         "tip_rain_rate":        "Rain rate   0 – 200 mm/h",
@@ -433,17 +439,19 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Rice K: empirical estimate from the diffraction loss (display only, "
             "not used in the calculation).",
         "html_scope_resolution_high":
-            "Terrain sampled at the \"high\" resolution step ({m} m target spacing); "
-            "a finer step raises the diffraction loss "
-            "(up to +28.6% measured from {coarse} m to {fine} m).",
+            "Terrain sampled at the \"high\" resolution step: one sample at each edge "
+            "of every 5 m-layer DEM pixel the path crosses "
+            "({px_lo}-{px_hi} m per pixel in Japan); a coarser step lowers the "
+            "diffraction loss (up to +407% measured against \"low\", {m} m spacing).",
         "html_scope_resolution_medium":
-            "Terrain sampled at the \"medium\" resolution step ({m} m target spacing); "
-            "a finer step raises the diffraction loss "
-            "(up to +28.6% measured from {coarse} m to {fine} m).",
+            "Terrain sampled at the \"medium\" resolution step: one sample at each edge "
+            "of every 10 m-layer DEM pixel the path crosses "
+            "({px_lo}-{px_hi} m per pixel in Japan); a coarser step lowers the "
+            "diffraction loss (up to +407% measured against \"low\", {m} m spacing).",
         "html_scope_resolution_low":
-            "Terrain sampled at the \"low\" resolution step ({m} m target spacing); "
-            "a finer step raises the diffraction loss "
-            "(up to +28.6% measured from {coarse} m to {fine} m).",
+            "Terrain sampled at the \"low\" resolution step ({m} m spacing, which "
+            "skips DEM pixels by design); a finer step raises the diffraction loss "
+            "(up to +407% measured against \"high\").",
         # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
         # 「較正していない結果」が同じ顔で出る。
         "html_calib_profile":   "Calibration profile",
@@ -736,8 +744,14 @@ _STRINGS: dict[str, dict[str, str]] = {
         "res_medium":           "中 10m メッシュ",
         "res_low":              "低 20m 刻み",
         "res_readout":          "{n} 点  /  実効 約 {spacing} m 間隔",
+        # B-150：「高」「中」は DEM 画素の縁に標本を置く＝**等間隔ではない**ので、
+        # 「間隔」ではなく*画素の寸法*を出す（平均を出すと等間隔だと読める）。
+        "res_readout_pixel":    "{n} 点  /  DEM 画素 {spacing} m ごと",
         "res_readout_unknown":  "点数：送受信の座標を入れてください",
-        "res_fixed_value":      "{n} 点 / {spacing} m",
+        # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
+        # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
+        "res_fixed_value":      "{n} 点/{spacing} m",
+        "res_fixed_value_pixel": "{n} 点/画素 {spacing} m",
         "tip_start":            '緯度, 経度   例: "34.54, 132.41"',
         "tip_end":              '緯度, 経度   例: "34.53, 132.41"',
         "tip_rain_rate":        "降雨強度   0〜200 mm/h",
@@ -1044,14 +1058,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_rice_k_empirical":
             "ライス K：回折損からの経験的な推定（表示のみ・計算には未使用）",
         "html_scope_resolution_high":
-            "地形の解像度「高」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
+            "地形の解像度「高」＝経路が通る 5m 層 DEM 画素の縁ごとに標本を置いて計算"
+            "（1 画素は日本で {px_lo}〜{px_hi} m）"
+            "＝段階を粗くすると回折損は小さく出る（「低」＝{m} m 間隔との実測差 最大 +407%）",
         "html_scope_resolution_medium":
-            "地形の解像度「中」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
+            "地形の解像度「中」＝経路が通る 10m 層 DEM 画素の縁ごとに標本を置いて計算"
+            "（1 画素は日本で {px_lo}〜{px_hi} m）"
+            "＝段階を粗くすると回折損は小さく出る（「低」＝{m} m 間隔との実測差 最大 +407%）",
         "html_scope_resolution_low":
-            "地形の解像度「低」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
+            "地形の解像度「低」（{m} m 間隔・画素を飛ばす刻み）で計算"
+            "＝段階を細かくすると回折損が増える（「高」との実測差 最大 +407%）",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測との突き合わせなし）",
 

@@ -446,6 +446,8 @@ def _process_one(
             lon_tx    = params.lon_tx,
             lat_rx    = params.lat_rx,
             lon_rx    = params.lon_rx,
+            # ⚠️ **標高を読んだ位置をそのまま渡す**（B-150）＝等間隔ではない。
+            frac_axis = params.sample_fracs,
         )
         result = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
 

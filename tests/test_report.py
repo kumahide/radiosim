@@ -629,21 +629,26 @@ class TestHandlingSectionContent:
         )
 
     def test_the_resolution_spacings_come_from_the_resolver(self):
-        """字の中の 5 / 10 / 20 m は、点数を解く側の定数そのものであること。
+        """字の中の数字が、点数を解く側の定数そのものであること。
 
-        ⚠️ **「その数が行のどこかに在る」では緩すぎる**＝同じ行が
-        「20 m → 5 m で +14.8%」という*別の 2 つの間隔*も名乗るので、
-        目標間隔を直書きに変えても素通りした（変異検証で実際に踏んだ）。
+        ⚠️ **「その数が行のどこかに在る」では緩すぎる**＝同じ行が*別の間隔*も
+        名乗るので、目標間隔を直書きに変えても素通りした（変異検証で実際に踏んだ）。
         ⇒ **名乗っている場所ごと**見る（この節は英語で確かめる）。
+        🔴 **見る数字が変わった**（B-150）＝「高」「中」は等間隔で刻まないので、
+        名乗るのは目標間隔ではなく **1px の寸法（日本の幅）**。
         """
         i18n.set_lang("en")
-        for level, spacing in terrain_grid.RESOLUTION_SPACING_M.items():
+        low_m = terrain_grid.RESOLUTION_SPACING_M["low"]
+        for level in terrain_grid.RESOLUTION_KEYS:
             line = disclosure.handling_lines((f"resolution_{level}",))[0]
-            assert f"({spacing:g} m target spacing)" in line, (level, line)
-        # 段階を細かくすると増える、と言うための 2 つの端も定数から来ること。
-        span = terrain_grid.RESOLUTION_SPACING_M.values()
-        line = disclosure.handling_lines(("resolution_medium",))[0]
-        assert f"from {max(span):g} m to {min(span):g} m" in line, line
+            assert f"{low_m:g} m spacing" in line, (level, line)
+            if not terrain_grid.samples_are_pixel_edges(level):
+                continue
+            zoom = terrain_grid.RESOLUTION_ZOOM[level]
+            lo, hi = disclosure._JAPAN_LAT_SPAN
+            span = (f"{terrain_grid.pixel_size_m(hi, zoom):.1f}-"
+                    f"{terrain_grid.pixel_size_m(lo, zoom):.1f} m per pixel")
+            assert span in line, (level, span, line)
 
     def test_the_calibration_seat_is_always_present_and_empty(self):
         """較正の席（3.5 で埋まる）＝**空でも欄を置く**。"""

@@ -129,7 +129,6 @@ def save_profile_png(
 
     t     = terrain
     elevs = t.elevs_with_curve
-    N     = t.num_samples
     y_min = float(np.min(t.raw_elevs)) - 30
 
     # 図の縦横比は `report_common.PROFILE_FIGSIZE`（地図と共有＝上下に並べて高さが揃う）。
@@ -152,7 +151,8 @@ def save_profile_png(
 
     tx_abs = float(elevs[0])  + h_tx
     rx_abs = float(elevs[-1]) + h_rx
-    los    = np.linspace(tx_abs, rx_abs, N)
+    # ⚠️ 見通し線は**標本の位置**で引く（B-150＝等間隔ではない）。
+    los    = t.los_line(tx_abs, rx_abs)
     f1     = models.fresnel_zone_radii(t.d_km_axis, t.horiz_dist_km, params.freq_mhz)
 
     ax.plot(d_m, los, color="red", linestyle="--", lw=1.5)
@@ -505,15 +505,16 @@ def save_path_kml(
       - 1st Fresnel Zone 上辺・下辺
       - Fresnel Obstruction（遮蔽区間を赤でハイライト）
     """
-    N    = terrain.num_samples
-    t    = np.linspace(0, 1, N)
+    # ⚠️ **標本の位置は等間隔ではない**（B-150）＝`linspace` で作り直すと、
+    #    標高を読んだ場所と KML の折れ線が別の点になる。
+    t    = terrain.frac_axis
     lats = params.lat_tx + (params.lat_rx - params.lat_tx) * t
     lons = params.lon_tx + (params.lon_rx - params.lon_tx) * t
     elev = terrain.raw_elevs.astype(float)
 
     tx_alt = float(elev[0])  + h_tx
     rx_alt = float(elev[-1]) + h_rx
-    los    = np.linspace(tx_alt, rx_alt, N)
+    los    = terrain.los_line(tx_alt, rx_alt)
     f1     = models.fresnel_zone_radii(terrain.d_km_axis, terrain.horiz_dist_km, params.freq_mhz)
 
     los_color = "ff00aa00" if result.status == "OK" else "ff00a5ff"

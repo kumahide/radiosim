@@ -578,10 +578,14 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         except Exception:
             readout.config(text=i18n.t("res_readout_unknown"))
             return
-        n, spacing = sim.resolve_samples(
-            lat_tx, lon_tx, lat_rx, lon_rx, self._resolution_key())
-        readout.config(text=i18n.t("res_readout").format(
-            n=n, spacing=units.format_spacing(spacing)))
+        level = self._resolution_key()
+        n, spacing = sim.resolve_samples(lat_tx, lon_tx, lat_rx, lon_rx, level)
+        # ⚠️ **「間隔」と名乗れるのは等間隔で刻む段階だけ**（B-150）＝「高」「中」は
+        #    DEM 画素の縁に標本を置くので、出す数字は*画素の寸法*。
+        readout.config(text=i18n.t(
+            "res_readout_pixel" if terrain_grid.samples_are_pixel_edges(level, n)
+            else "res_readout"
+        ).format(n=n, spacing=units.format_spacing(spacing)))
 
     def _add_row(self, parent: tk.Widget, label: str, key: str) -> None:
         f = ttk.Frame(parent)

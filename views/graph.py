@@ -103,6 +103,9 @@ def show_graph(
         lon_tx    = params.lon_tx,
         lat_rx    = params.lat_rx,
         lon_rx    = params.lon_rx,
+        # ⚠️ **標高を読んだ位置をそのまま渡す**（B-150）＝渡さないと等間隔として
+        #    並べ直され、画素の縁で刻んだ標高が別の距離に貼りつく。
+        frac_axis = params.sample_fracs,
     )
     return GraphWindow(parent, params, terrain, project_name, memo, on_close,
                        coord_format)
@@ -455,7 +458,7 @@ class GraphWindow(tk.Toplevel):
         elevs = t.elevs_with_curve
         tx_abs = float(elevs[0])  + h_tx
         rx_abs = float(elevs[-1]) + h_rx
-        los_vals = np.linspace(tx_abs, rx_abs, t.num_samples)
+        los_vals = t.los_line(tx_abs, rx_abs)
 
         d_m = units.km_to_m(t.d_km_axis)
         self._los_line.set_data(d_m, los_vals)

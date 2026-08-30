@@ -470,14 +470,21 @@ class TestMakeParams:
             f"行の長さが点数に効いていない（短 {n_short} / 長 {n_long}）"
         )
         # どちらも**同じ刻み**であること＝それが「段階」の意味。
+        # 🔴 **見る量が変わった**（B-150）＝段階は等間隔ではなく **DEM 画素の縁**に
+        # 標本を置くので、`距離 ÷ (点数−1)` は*平均*でしかない（画素ごとに違う）。
+        # ⇒ 「1 画素あたり何点か」を見る＝行の長さが変わっても 2 点/画素で一定。
+        # ⚠️ 刻みの値は**段階の側から引く**（数を書き写さない）＝B-148 で「中」の
+        # 目標間隔が公称 10m から実 1px の半分へ変わったとき、ここに書いた 10.0 が
+        # 古くなった（写した数はこうしてずれる）。
         for row, n in ((short, n_short), (long_, n_long)):
             dist_m = models.horizontal_distance_km(
                 row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx) * 1000.0
-            # ⚠️ 刻みの値は**段階の定数から引く**（数を書き写さない）＝B-148 で
-            # 「中」の目標間隔が公称 10m から**実 1px の半分**へ変わったとき、
-            # ここに書いた 10.0 が古くなった（写した数はこうしてずれる）。
-            assert dist_m / (n - 1) == pytest.approx(
-                terrain_grid.RESOLUTION_SPACING_M["medium"], rel=0.05)
+            px_m = terrain_grid.grid_step_m(row.lat_tx, "medium")
+            per_pixel = n / (dist_m / px_m)
+            assert per_pixel == pytest.approx(2.0, rel=0.1), (
+                f"{row.path_id}: 画素 1 つあたり {per_pixel:.2f} 点"
+                "（縁の 2 点で刻んでいない）"
+            )
 
     def test_env_rain_diff_always_from_base(self):
         """env_type / rain_rate / diff_method は PathRow にかかわらず base から取得されること。"""

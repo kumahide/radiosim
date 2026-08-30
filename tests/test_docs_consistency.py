@@ -1369,12 +1369,16 @@ _PUBLIC_DOCS = ["README.md", *ALL_DOCS]
 #   ⚠️ **⑤の数字も変わった**（標本数依存が +18% → 最大 +14.8%・測り方は実効間隔）。
 #   目印は**数字ではなく概念**にしてあるので、数字の更新でゲートは動かない。
 _DIVERGENCE_MARKERS = {
+    # ⚠️ **目印が 1 つ変わった**（B-150・2026-08-30）＝「サンプル数を増やすと」は
+    #    *刻みの細かさが自由変数だった頃*の言い方。「高」「中」は DEM 画素の縁に
+    #    標本を置くようになり、**その中に刻みという自由度が無い**（細かくしても
+    #    動かない）。開示すべき事実は**段階を上げると増える**ことへ変わった。
     "ja": ["過大", "起伏の大きさでも", "`Single`",
-           "実測とも基準実装とも突き合わせていません", "サンプル数を増やすと",
+           "実測とも基準実装とも突き合わせていません", "解像度を上げると回折損が増えます",
            "小さめに出ます", "球面回折の項"],
     "en": ["too high", "Neither", "`Single`",
            "not been checked against measurements or a reference implementation",
-           "raising the terrain sample count",
+           "a finer terrain resolution",
            "reads low", "spherical-earth term"],
 }
 _CLAMP_MARKERS = {

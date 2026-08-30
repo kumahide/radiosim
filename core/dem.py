@@ -28,6 +28,7 @@ import numpy as np
 import requests
 from PIL import Image
 
+from core import terrain_grid
 from core import version
 from core.config import app_path, logger
 
@@ -154,24 +155,11 @@ def network_failed() -> bool:
     return bool(getattr(_network_trouble, "flag", False))
 
 
-def lonlat_to_pixel(lat: float, lon: float, zoom: int) -> tuple[float, float]:
-    """緯度・経度を指定ズームの「グローバルピクセル座標」（小数）に変換する。
-
-    Web Mercator 順射影。タイル境界で floor せず小数のまま `(world_px_x,
-    world_px_y)` を返す。各タイルは 256px 四方なので `tile_x * 256 = タイル
-    左端の world_px_x`。タイル選択（_tile_coords）と、レポート地図
-    （report_map.py）の経路端点ピクセル投影の双方がこの 1 つの式を使う。
-    """
-    n       = 2.0 ** zoom
-    xtile_f = (lon + 180.0) / 360.0 * n
-    ytile_f = (
-        1.0
-        - math.log(
-            math.tan(math.radians(lat))
-            + 1 / math.cos(math.radians(lat))
-        ) / math.pi
-    ) / 2.0 * n
-    return xtile_f * 256.0, ytile_f * 256.0
+# 🔑 **式の本体は `terrain_grid`**（B-150 で移した）＝*どの画素を読むか*は「格子の
+# 事実」の側で、標本の置き方（`path_sample_fractions`）が同じ式を要る。ここは
+# **別名**＝写しではないので、片方だけ動くことがない。タイル選択（`_tile_coords`）と
+# レポート地図（`report_map.py`）の経路端点ピクセル投影は従来どおりこの名前を引く。
+lonlat_to_pixel = terrain_grid.lonlat_to_pixel
 
 
 def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]:

@@ -39,32 +39,58 @@ ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 _PRACTICAL_KM = [0.5, 1, 2, 5, 10, 20, 30, 48]
 
 
+def _north_path(km: float, lat: float = 34.54, lon: float = 132.41):
+    """真北へ `km` の経路（点数の比較用＝方位の効きは §5 が見る）。"""
+    return (lat, lon, lat + km / 111.32, lon)
+
+
+def _n(km: float, level: str, lat: float = 34.54) -> int:
+    return len(tg.path_sample_fractions(*_north_path(km, lat), level))
+
+
 @pytest.mark.parametrize("km", _PRACTICAL_KM)
 def test_finer_level_never_gives_fewer_points(km):
     """同じ経路なら 高 ≥ 中 ≥ 低 の点数になる（段階の向きが逆転しない）。"""
-    m = km * 1000.0
-    high, med, low = (tg.recommended_samples(m, k) for k in ("high", "medium", "low"))
+    high, med, low = (_n(km, k) for k in ("high", "medium", "low"))
     assert high >= med >= low, f"{km}km で段階の順序が壊れている: {high}/{med}/{low}"
 
 
 @pytest.mark.parametrize("km", _PRACTICAL_KM)
-@pytest.mark.parametrize("level", ["high", "medium", "low"])
-def test_the_level_actually_delivers_its_spacing(km, level):
-    """**実効間隔が名乗った間隔とほぼ一致する**（＝天井に潰されていない）。
+@pytest.mark.parametrize("level", ["high", "medium"])
+def test_the_level_actually_delivers_its_grid(km, level):
+    """**その段階の画素 1 つにつき 2 点**が置かれている（＝天井に潰されていない）。
 
     🔴 **これが I-069 の芯**＝旧上限 2000 では、コーパス 26 本のうち 12 本で「高」が
     上限に張り付き、6 本は「高」と「中」が**同じ結果**、48km の 1 本は 3 段階すべてが
     同じ結果だった（2026-08-25 実測）。**利用者が選んだ段階が答えに出ない**なら、
     段階を選ばせる意味そのものが無い。⇒ 実務の距離帯では必ず届くことを固定する。
+
+    🔴 **見る量が変わった**（B-150）＝以前は「実効間隔＝目標間隔」を見ていた。
+    段階は等間隔で刻まなくなったので、**画素あたりの点数**で見る（縁が 2 つ）。
+    """
+    lat, lon, lat2, lon2 = _north_path(km)
+    n = _n(km, level)
+    px_m = tg.grid_step_m(lat, level)
+    per_pixel = n / (km * 1000.0 / px_m)
+    assert per_pixel == pytest.approx(2.0, rel=0.1), (
+        f"{km}km / {level}: 画素 1 つあたり {per_pixel:.2f} 点"
+        f"（点数 {n}・1px {px_m:.2f}m・天井 {tg.SAMPLES_CEILING} に"
+        "張り付いていないか）"
+    )
+
+
+@pytest.mark.parametrize("km", _PRACTICAL_KM)
+def test_the_coarse_level_stays_evenly_spaced(km):
+    """「低」だけは**等間隔のまま**であること＝*粗いが速い*と名乗った段階。
+
+    ⚠️ 対の検査（画素の縁で刻む 2 段階の裏）＝ここが無いと、3 段階を同じ刻み方に
+    揃える直しが黙って通る（段階の意味の違いが消える）。
     """
     m = km * 1000.0
-    n = tg.recommended_samples(m, level)
-    spacing = tg.effective_spacing_m(m, n)
-    target = tg.RESOLUTION_SPACING_M[level]
-    assert spacing == pytest.approx(target, rel=0.05), (
-        f"{km}km / {level}: 実効 {spacing:.2f}m が目標 {target}m と違う"
-        f"（点数 {n}・天井 {tg.SAMPLES_CEILING} に張り付いていないか）"
-    )
+    n = _n(km, "low")
+    assert tg.effective_spacing_m(m, n) == pytest.approx(
+        tg.RESOLUTION_SPACING_M["low"], rel=0.05)
+    assert not tg.samples_are_pixel_edges("low")
 
 
 def test_the_ceiling_only_bites_at_absurd_distances():
@@ -73,8 +99,27 @@ def test_the_ceiling_only_bites_at_absurd_distances():
     天井を残すのは座標の打ち間違い（地球半周など）で点数が爆発しないため。
     ⇒ 「効かないなら外せ」ではなく「**実務では効かない高さに置く**」が答え。
     """
-    assert tg.recommended_samples(48_000, "high") < tg.SAMPLES_CEILING
+    assert _n(48.0, "high") < tg.SAMPLES_CEILING
+    assert len(tg.path_sample_fractions(
+        34.54, 132.41, -34.54, 132.41, "high")) == tg.SAMPLES_CEILING
     assert tg.recommended_samples(5_000_000, "high") == tg.SAMPLES_CEILING
+
+
+@pytest.mark.parametrize("lat", [24.0, 34.54, 46.0])
+@pytest.mark.parametrize("bearing", [0.0, 30.0, 45.0, 60.0, 90.0])
+def test_a_hundred_km_still_fits_under_the_ceiling(lat, bearing):
+    """**100km を「高」で刻んでも天井に当たらない**こと（B-148 の約束・B-150 で再計算）。
+
+    🔴 **天井に当たると等間隔へ落ちる**＝そこから先は画素を飛ばす。つまり天井が低いと
+    *直した不変条件が距離の先で黙って破れる*。⚠️ **斜めが最悪**（縦横の境界を両方
+    跨ぐので通過画素が最大 √2 倍）＝真北・真東だけ見ると 1.4 倍ぶん見落とす。
+    """
+    n = len(tg.path_sample_fractions(
+        lat, 141.0, *_endpoint(lat, 141.0, 100.0, bearing), "high"))
+    assert n < tg.SAMPLES_CEILING, (
+        f"緯度 {lat}° / 方位 {bearing}°: 100km で {n} 点＝天井 "
+        f"{tg.SAMPLES_CEILING} に当たり、等間隔へ落ちている"
+    )
 
 
 @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
@@ -154,7 +199,10 @@ def test_the_readout_and_the_run_agree(monkeypatch):
     shown, spacing = sim.resolve_samples(
         params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, "high")
     assert shown == params.num
-    assert spacing == pytest.approx(tg.RESOLUTION_SPACING_M["high"], rel=0.05)
+    # ⚠️ 2 つめは**画素の寸法**（B-150）＝「高」「中」は等間隔で刻まない。
+    assert spacing == pytest.approx(
+        tg.grid_step_m((params.lat_tx + params.lat_rx) / 2.0, "high"))
+    assert spacing == pytest.approx(sim.effective_spacing(params))
 
 
 # ============================================================
@@ -296,49 +344,148 @@ _JAPAN_LATS = [24.0, 30.0, 34.54, 40.0, 45.52, 46.0]
 _NO_SKIP_LEVELS = ["high", "medium"]
 
 
+# 🔴 **このゲートは 2026-08-30 に作り直した（B-150）。** 前身は経路長を 1px 幅で
+# 区切った**1 次元の代理**を見ており、方位も実タイル座標も見ていなかった＝
+# *主張していること（画素を飛ばさない）を検査していなかった*
+# （[[feedback-promote-recurring-checks]] の壊れ方③「間違ったものを要求している」）。
+# ⇒ **実タイル座標で経路をなぞり、通過画素を直接列挙する。**
+#
+# ⚠️ **斜めを必ず入れる**＝1 次元では成り立つ「1px の半分」が破れるのは、
+#    1 歩で縦横の境界を**同時に**跨いだときだけ。真北・真東だけ見ると素通りする。
+_BEARINGS = [0.0, 12.5, 45.0, 67.5, 90.0, 123.0, 200.0, 315.0]
+
+
+def _endpoint(lat: float, lon: float, km: float, bearing_deg: float):
+    """出発点から方位・距離で行き先を出す（球面・テスト側の独立な式）。"""
+    import math
+
+    r = 6371.0
+    d = km / r
+    b = math.radians(bearing_deg)
+    p1 = math.radians(lat)
+    p2 = math.asin(math.sin(p1) * math.cos(d)
+                   + math.cos(p1) * math.sin(d) * math.cos(b))
+    l2 = math.radians(lon) + math.atan2(
+        math.sin(b) * math.sin(d) * math.cos(p1),
+        math.cos(d) - math.sin(p1) * math.sin(p2))
+    return math.degrees(p2), math.degrees(l2)
+
+
+def _pixel_at(lat: float, lon: float, zoom: int) -> tuple[int, int]:
+    """**製品がその点で読む画素**（`dem._tile_coords` そのもの）。"""
+    from core import dem
+
+    xt, yt, px, py = dem._tile_coords(lat, lon, zoom)
+    return (xt * 256 + px, yt * 256 + py)
+
+
+def _traversed(a, b, zoom: int, per_px: int = 24) -> dict[tuple[int, int], list[float]]:
+    """経路が通る画素と、その画素にいる区間 `[t...]`（**密な走査＝独立な参照**）。
+
+    ⚠️ 実装（`_crossing_fractions`）を呼ばない＝**同じ式で採点しない**。
+    ⚠️ 走査の刻みより短くかすめる画素は参照側も拾えない＝このゲートは
+    *取りこぼしを見逃す*ことはあっても、**無いものを落とすことはない**。
+    """
+    n = max(int(_dist_km(a, b) * 1000.0 / tg.pixel_size_m(a[0], zoom) * per_px), 2000)
+    out: dict[tuple[int, int], list[float]] = {}
+    for i in range(n + 1):
+        t = i / n
+        lat = a[0] + (b[0] - a[0]) * t
+        lon = a[1] + (b[1] - a[1]) * t
+        out.setdefault(_pixel_at(lat, lon, zoom), []).append(t)
+    return out
+
+
+def _dist_km(a, b) -> float:
+    return models.horizontal_distance_km(a[0], a[1], b[0], b[1])
+
+
 @pytest.mark.parametrize("lat", _JAPAN_LATS)
 @pytest.mark.parametrize("level", _NO_SKIP_LEVELS)
-@pytest.mark.parametrize("km", [0.2, 0.4, 1.0, 5.0, 20.0, 48.0, 100.0])
-def test_no_pixel_of_the_dem_is_ever_skipped(km, level, lat):
-    """標本が **DEM の画素を 1 つも飛ばさない**こと（日本のどの緯度でも）。
+@pytest.mark.parametrize("bearing", _BEARINGS)
+def test_no_pixel_of_the_dem_is_ever_skipped(bearing, level, lat):
+    """標本が **DEM の画素を 1 つも飛ばさない**こと（実タイル座標・全方位）。
 
-    🔴 **これが B-148 の本体**＝公称 5m で刻んでいた版は、日本の全緯度で目標間隔が
-    1px の 1.15〜1.51 倍あり、**画素を 2 度読む位置と 1 度も読まない位置が交互に**
-    出ていた（`N` と `2N` が完全に同じ答えになるのがその証拠）。実測でマージンが
-    29.2 dB 振れ、OK / NG が裏返った。
-
-    ⚠️ **見るのは「経路上の各画素に標本が最低 1 点入るか」**＝間隔と 1px を比べる
-    だけでは、天井に張り付いた距離帯（点数が頭打ち）を見落とす。
+    🔴 **B-148 で直したつもりで半分しか直っていなかった不変条件**（B-150）。
+    公称 5m で刻んでいた版は目標間隔が 1px の 1.15〜1.51 倍あり画素を飛ばしていた
+    （実測でマージンが 29.2 dB 振れ判定が裏返った）。1px の半分にしても、
+    **2 次元では縦横の境界を同時に跨いだ画素が抜ける**（403m の経路で 146 画素中 23 個）。
     """
-    dist_m = km * 1000.0
-    n = tg.recommended_samples(dist_m, level)
-    px = tg.pixel_size_m(lat, tg.RESOLUTION_ZOOM[level])
-    # 経路を 1px ごとの区画に割り、どの区画にも標本が入っていること。
-    visited = {int((i * dist_m / (n - 1)) // px) for i in range(n)}
-    expected = set(range(int(dist_m // px) + 1))
-    missed = sorted(expected - visited)
+    zoom = tg.RESOLUTION_ZOOM[level]
+    a = (lat, 132.41)
+    b = _endpoint(*a, 0.6, bearing)
+    ref = _traversed(a, b, zoom)
+    sampled = {_pixel_at(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, zoom)
+               for t in tg.path_sample_fractions(*a, *b, level)}
+    missed = sorted(set(ref) - sampled)
     assert not missed, (
-        f"{km}km / {level} / 緯度 {lat}°: 画素 {len(missed)} 個を飛ばしている"
-        f"（例 {missed[:3]}・実効 {tg.effective_spacing_m(dist_m, n):.2f}m /"
-        f" 1px {px:.2f}m・点数 {n}）"
+        f"緯度 {lat}° / 方位 {bearing}° / {level}: 通過 {len(ref)} 画素のうち "
+        f"{len(missed)} 個に標本が無い（例 {missed[:3]}）"
     )
+
+
+@pytest.mark.parametrize("bearing", [12.5, 45.0, 67.5, 200.0])
+def test_each_pixel_is_sampled_at_both_edges_of_its_chord(bearing):
+    """各画素の**弦の両端**に標本が置かれていること（B-150 の芯）。
+
+    🔑 **「1 画素に 1 点」では足りない**＝DEM は画素の中で一定の階段状の場で、
+    Bullington の接線を決めるのは**棚の縁**。実測（`hiroshima_short_grazing`）＝
+    弦の中点だけだと 21.74 dB、**両端なら 27.02 dB**（25 万点の収束値 27.014 と一致）。
+    ⇒ ここが「1 点」に戻ると、**値は静かに 5 dB 低く出る**（誰も落ちない）。
+
+    ⚠️ 見るのは点数ではなく**弦をどれだけ覆っているか**＝2 点でも中央に寄せて
+    置けば「2 点ある」は満たせる。
+    """
+    zoom = tg.RESOLUTION_ZOOM["high"]
+    a = (34.54, 132.41)
+    b = _endpoint(*a, 0.4, bearing)
+    ref = _traversed(a, b, zoom)
+    fracs = tg.path_sample_fractions(*a, *b, "high")
+
+    inside: dict[tuple[int, int], list[float]] = {}
+    for t in fracs:
+        p = _pixel_at(a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, zoom)
+        inside.setdefault(p, []).append(t)
+
+    thin = 0
+    for px, ts in ref.items():
+        chord = max(ts) - min(ts)
+        if chord < 1e-4:            # 角をかすめただけ＝縁も中も区別がつかない
+            thin += 1
+            continue
+        got = inside.get(px, [])
+        covered = (max(got) - min(got)) / chord if len(got) >= 2 else 0.0
+        assert covered > 0.85, (
+            f"方位 {bearing}° の画素 {px}: 弦の {covered:.0%} しか覆っていない"
+            f"（標本 {len(got)} 点）＝棚の縁が標本になっていない"
+        )
+    assert thin < len(ref) / 2, "かすめる画素ばかりで検査になっていない"
 
 
 @pytest.mark.parametrize("level", _NO_SKIP_LEVELS)
-def test_the_target_spacing_is_derived_from_the_real_pixel(level):
-    """目標間隔が**実 1px から引かれている**こと（公称メッシュではなく）。
+def test_the_two_dimensional_claim_is_not_made_by_a_spacing_rule(level):
+    """**間隔で刻む口が「高」「中」に残っていない**こと（B-150）。
 
-    ⚠️ 上のゲートと重ねて置く理由＝あちらは *結果* を見るので、天井を上げるなど
-    別の手でも通せてしまう。ここでは *引き方* を見る（1px ちょうどにしない）。
+    ⚠️ 「1px の半分で刻む」は 1 次元でしか成り立たない主張だった。値を合わせる
+    直し方（目標間隔をさらに細かくする）で上のゲートを通せてしまわないよう、
+    *引き方*の側も縛る＝あの 2 段階は**画素の縁で刻む**と名乗ること。
     """
-    px_worst = tg.pixel_size_m(tg.WORST_CASE_LAT_DEG, tg.RESOLUTION_ZOOM[level])
-    target = tg.RESOLUTION_SPACING_M[level]
-    assert target <= px_worst / 2.0, (
-        f"{level}: 目標 {target}m が最悪緯度の 1px（{px_worst:.2f}m）の半分を超えている"
-    )
-    assert target > px_worst / 2.0 - 0.01, (
-        f"{level}: 目標 {target}m が必要より細かい（丸めは 0.01m 単位の切り捨て）"
-    )
+    assert tg.samples_are_pixel_edges(level)
+    assert tg.grid_step_m(34.54, level) == pytest.approx(
+        tg.pixel_size_m(34.54, tg.RESOLUTION_ZOOM[level]))
+
+
+def test_the_rough_distance_matches_the_models_formula():
+    """点数を解くための距離が `models.horizontal_distance_km` と一致すること。
+
+    ⚠️ `terrain_grid` は純粋な層（`models` を import しない）ので式が 2 か所ある＝
+    **写しはコメントでなくテストで縛る**（[[feedback-radiosim-rules]]）。
+    """
+    for a, b in (((34.54, 132.41), (34.55, 132.42)),
+                 ((45.0, 141.0), (43.0, 143.5)),
+                 ((24.3, 124.0), (24.31, 124.02))):
+        assert tg._rough_dist_m(*a, *b) == pytest.approx(
+            models.horizontal_distance_km(*a, *b) * 1000.0, rel=1e-9)
 
 
 def test_the_zoom_table_matches_the_dem_layers():

@@ -128,6 +128,27 @@ def resolution_field_width() -> int:
                for key in terrain_grid.RESOLUTION_KEYS) + 1   # 余白 1
 
 
+def sampling_field_width() -> int:
+    """点数と刻みの欄が**要求する**幅（文字数）＝短いほうの字から引く（B-150）。
+
+    🔴 **ここだけは「いちばん長い字」に合わせられない**（`resolution_field_width`
+    との違い）＝条件探索の帯は**窓幅を決めてはいけない**（B-052）ので、幅の予算が
+    「条件 5 列のグリッド」で頭打ちになっている。実測＝いちばん長い字
+    （`90000 点 / 画素 20.1 m`＝23 桁）を要求すると帯が 976px になり、グリッドの
+    911px を超えて**帯が窓幅を決めてしまう**。
+    ⇒ **要求するのは短いほうの字（等間隔の形）だけ**にし、残りは `expand` で
+    受ける（窓は帯より広いので、実際の描画幅はこれより広い）。
+    ⚠️ **数のべた書きに戻さないこと**＝字を変えた日にどれだけ足りないかが分からなくなる。
+    ⚠️ **最悪の値で測る**＝点数は天井（5 桁）、刻みは 2 桁（「低」の 20.1m）。
+    ⚠️ **全角は 2 つぶん**（→ `_display_width`）。
+    """
+    from core import simulation as sim   # 遅延＝帯を建てる時だけで足りる
+
+    plain = sim.SAMPLING_READOUT_KEYS[True][0]
+    return _display_width(
+        i18n.t(plain).format(n=terrain_grid.SAMPLES_CEILING, spacing="20.1"))
+
+
 def readonly_field(parent: tk.Misc, label_key: str, var: tk.StringVar,
                    width: int) -> None:
     """読み取り専用の 1 欄（見出し＋欄＋🔒）を `parent` の左から積む。

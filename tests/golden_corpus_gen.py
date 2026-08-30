@@ -189,10 +189,46 @@ LINKS: list[dict] = [
          h_tx=30, h_rx=15, freq=2400, p_tx=20, gain_tx=12, gain_rx=12,
          sens=-85, veg_h=10, k=10.0, samples=245, env="los",
          diff="bullington", rain=0),
+
+    # --- 段階で解いた回線（B-150・2026-08-30 追加）-------------------------
+    # 🔴 **コーパスの穴だった**＝28 本すべてが `samples=` の**固定 N＝等間隔**で、
+    #    製品の既定経路（段階 → 標本器）を**1 本も通っていなかった**。B-150 で
+    #    「高」「中」は DEM 画素の縁に標本を置く（等間隔ではない）ようになったので、
+    #    固定 N のままでは**新しい標本器の答えを 1 つも凍結できない**。
+    # ⚠️ **固定 N の 28 本はそのまま据え置く**（2026-08-30 ユーザー決定）＝あちらは
+    #    「物理モデルを変えていないこと」を示す側の検査。ここは*刻み方*の側。
+    # ⚠️ **経路は既存の 403m を使い回す**＝新しい DEM タイルを 1 枚も増やさない
+    #    （④ 外部 API 配慮）。3 段階そろえるのは、**段階が段階として効くこと**と
+    #    **「低」だけは等間隔のまま**であることを同時に凍結するため。
+    dict(id="short_grazing_high", start=(34.538484, 132.398151),
+         end=(34.542107, 132.398108),
+         h_tx=30, h_rx=10, freq=2400, p_tx=20, gain_tx=12, gain_rx=12,
+         sens=-85, veg_h=10, k=10.0, resolution="high", env="los",
+         diff="bullington", rain=0),
+    dict(id="short_grazing_medium", start=(34.538484, 132.398151),
+         end=(34.542107, 132.398108),
+         h_tx=30, h_rx=10, freq=2400, p_tx=20, gain_tx=12, gain_rx=12,
+         sens=-85, veg_h=10, k=10.0, resolution="medium", env="los",
+         diff="bullington", rain=0),
+    dict(id="short_grazing_low", start=(34.538484, 132.398151),
+         end=(34.542107, 132.398108),
+         h_tx=30, h_rx=10, freq=2400, p_tx=20, gain_tx=12, gain_rx=12,
+         sens=-85, veg_h=10, k=10.0, resolution="low", env="los",
+         diff="bullington", rain=0),
+    # 🔑 **両端が植生の中に入る対**（アンテナ 3m・キャノピー 10m）＝植生減衰は
+    #    *長さ*を積む項なので、**等間隔でない距離軸で積めているか**はここでしか
+    #    見えない（`veg_low_antenna` の固定 N 版と同じ形を、段階の側にも置く）。
+    dict(id="short_veg_low_antenna_high", start=(34.538484, 132.398151),
+         end=(34.542107, 132.398108),
+         h_tx=3, h_rx=3, freq=900, p_tx=25, gain_tx=6, gain_rx=6,
+         sens=-95, veg_h=10, k=1.33, resolution="high", env="rural",
+         diff="bullington", rain=0),
 ]
 
 
 def _params(link: dict) -> sim.SimParams:
+    # ⚠️ **段階と固定 N は排他**（B-137）＝段階を渡した行は点数を渡さない
+    #    （渡すと「使っていない段階を名乗る」形が復活する）。
     return sim.SimParams({
         "start": f"{link['start'][0]}, {link['start'][1]}",
         "end":   f"{link['end'][0]}, {link['end'][1]}",
@@ -200,7 +236,9 @@ def _params(link: dict) -> sim.SimParams:
         "freq": str(link["freq"]), "p_tx": str(link["p_tx"]),
         "gain_tx": str(link["gain_tx"]), "gain_rx": str(link["gain_rx"]),
         "sens": str(link["sens"]), "veg_h": str(link["veg_h"]),
-        "k_factor": str(link["k"]), "samples": str(link["samples"]),
+        "k_factor": str(link["k"]),
+        **({"resolution": link["resolution"]} if link.get("resolution")
+           else {"samples": str(link["samples"])}),
         "env_type": link["env"], "diff_method": link["diff"],
         "rain_rate": str(link["rain"]),
     })
@@ -232,6 +270,7 @@ def build() -> dict:
             raw_elevs=raw,
             lat_tx=params.lat_tx, lon_tx=params.lon_tx,
             lat_rx=params.lat_rx, lon_rx=params.lon_rx,
+            frac_axis=params.sample_fracs,   # 標高を読んだ位置そのもの（B-150）
         )   # ⚠️ earth_k は既定 4/3＝単一/バッチと同じ呼び方（params.k_factor は
             #    ライス K の表示値で曲率とは無関係＝production と同じ経路を通す）
         result = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
@@ -245,6 +284,10 @@ def build() -> dict:
                 "gain_tx": params.gain_tx, "gain_rx": params.gain_rx,
                 "sens": params.sens, "veg_h": params.veg_h,
                 "k_factor": params.k_factor, "samples": params.num,
+                # ⚠️ **段階も残す**（B-150）＝段階で解いた行は、標本の**位置**まで
+                # 再現しないと同じ答えにならない（等間隔ではない）。検査側は
+                # この語から `SimParams` を組み直して標本器そのものを通す。
+                **({"resolution": params.resolution} if params.resolution else {}),
                 "env_type": params.env_type, "diff_method": params.diff_method,
                 "rain_rate": params.rain_rate,
             },

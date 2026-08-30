@@ -246,13 +246,40 @@ def scope_notes_union(note_groups) -> tuple[str, ...]:
 # ============================================================
 @dataclass
 class TerrainProfile:
-    """地形プロファイルと座標情報。"""
+    """地形プロファイルと座標情報。
+
+    ⚠️ **標本は等間隔とは限らない**（B-150）＝「高」「中」は DEM 画素の縁に標本を
+    置くので、間隔は画素ごとに違う。**位置を知りたい側は必ず `d_km_axis` を見る**
+    （`np.linspace(0, N)` で作り直すと、その面だけ別の経路を描く）。
+    """
     raw_elevs:         np.ndarray   # 生標高 [m]
     elevs_with_curve:  np.ndarray   # 地球曲率補正済み標高 [m]
     d_km_axis:         np.ndarray   # 各サンプル点の水平距離 [km]
     horiz_dist_km:     float        # 水平総距離 [km]
     num_samples:       int
     earth_k:           float = EARTH_K_STANDARD  # 等価地球半径係数（ライスKとは無関係）
+
+    @property
+    def frac_axis(self) -> np.ndarray:
+        """各標本の**経路上の位置**（TX=0.0 〜 RX=1.0）。
+
+        🔑 **緯度経度・見通し線・地図の折れ線は全部これで引く**（B-150）＝標本が
+        等間隔でなくなったので、`np.linspace(0, 1, N)` で作り直す面は**実際に
+        標高を読んだ場所とは違う場所**を描く。新しい状態は持たない
+        （距離軸を総距離で割るだけ＝2 つの真実を作らない）。
+        """
+        if self.horiz_dist_km <= 0:
+            return np.zeros(self.num_samples)
+        return np.asarray(self.d_km_axis, dtype=float) / self.horiz_dist_km
+
+    def los_line(self, tx_abs: float, rx_abs: float) -> np.ndarray:
+        """各標本の位置での見通し線の高度 [m]（TX 側の絶対高 → RX 側の絶対高）。
+
+        ⚠️ **`np.linspace(tx_abs, rx_abs, N)` は使えない**（B-150）＝標本が等間隔で
+        ないので、それだと標本の位置と見通し線がずれる（回折損・遮蔽率・植生減衰・
+        グラフ・帳票が**全部**この線を引く）。
+        """
+        return tx_abs + (rx_abs - tx_abs) * self.frac_axis
 
 
 @dataclass
@@ -378,6 +405,7 @@ def calculate_terrain_profile(
     lat_rx: float,
     lon_rx: float,
     earth_k: float = EARTH_K_STANDARD,
+    frac_axis: "np.ndarray | list[float] | None" = None,
 ) -> TerrainProfile:
     """
     生標高配列から TerrainProfile を生成する。
@@ -390,6 +418,12 @@ def calculate_terrain_profile(
         earth_k: 等価地球半径係数。標準大気 = 4/3 ≈ 1.333。
                  ダクト条件では大きく（10 以上）、負の屈折では小さくなる。
                  デフォルトは標準大気（4/3）。
+        frac_axis: **標高を読んだ位置**（TX=0.0 〜 RX=1.0・`raw_elevs` と同じ長さ）。
+                 省略すると等間隔（従来どおり）。
+                 🔑 **「高」「中」は等間隔ではない**（B-150）＝DEM 画素の縁に標本を
+                 置くので、取得側（`simulation.SimParams.sample_fracs`）が実際に
+                 読んだ位置をそのまま渡す。**渡し忘れると標高と距離の対応がずれる**
+                 （同じ配列を等間隔だと思って並べ直すことになる）。
     """
     R_earth = 6371.0
     Re      = R_earth * max(earth_k, 0.1)  # 0 除算防止
@@ -397,7 +431,10 @@ def calculate_terrain_profile(
     horiz_dist_km = horizontal_distance_km(lat_tx, lon_tx, lat_rx, lon_rx)
 
     num_samples = len(raw_elevs)
-    d_km_axis   = np.linspace(0, horiz_dist_km, num_samples)
+    if frac_axis is None:
+        d_km_axis = np.linspace(0, horiz_dist_km, num_samples)
+    else:
+        d_km_axis = np.asarray(frac_axis, dtype=float) * horiz_dist_km
 
     curvature_correction = (
         d_km_axis * (horiz_dist_km - d_km_axis)
@@ -460,12 +497,12 @@ def calculate_propagation(
     """
     elevs = terrain.elevs_with_curve
     d_km  = terrain.d_km_axis
-    N     = terrain.num_samples
 
     tx_abs = float(elevs[0])  + h_tx
     rx_abs = float(elevs[-1]) + h_rx
 
-    los_vals = np.linspace(tx_abs, rx_abs, N)
+    # ⚠️ **標本の位置で引く**（B-150）＝等間隔ではないので `linspace` は使えない。
+    los_vals = terrain.los_line(tx_abs, rx_abs)
 
     lam           = 299792458 / (freq_mhz * 1e6)
     d_m_axis      = d_km * 1000
@@ -525,7 +562,7 @@ def calculate_propagation(
     #    （地表そのものが LoS を超えた分は回折損が表している＝B-131）。
     veg_top  = elevs + veg_h
     veg_loss = _vegetation_loss(
-        veg_top, veg_h, los_vals, f1, freq_mhz, terrain.horiz_dist_km, N
+        veg_top, veg_h, los_vals, f1, freq_mhz, d_m_axis
     )
 
     slant_dist_km = math.sqrt(
@@ -565,8 +602,7 @@ def _vegetation_loss(
     los_vals: np.ndarray,
     f1: np.ndarray,
     freq_mhz: float,
-    horiz_dist_km: float,
-    num_samples: int,
+    d_m_axis: np.ndarray,
 ) -> float:
     """
     植生頂点が LoS 線に侵入した深さから減衰量 [dB] を推定する。
@@ -604,6 +640,8 @@ def _vegetation_loss(
         veg_h:    植生高 [m]（**侵入深さの上限**＝B-131）
         los_vals: LoS 線高度配列 [m]
         f1:       Fresnel 第1ゾーン半径配列 [m]
+        d_m_axis: **各標本の水平距離** [m]（B-150）＝ここは*長さ*を数える項なので、
+                  標本が等間隔でなくなった以上「点数 × 一定間隔」では出せない。
     """
     # 境目は `VEG_COEFF_RANGE_GHZ` が単一ソース＝**刻印（scope_notes）と同じ数字**を
     # 見る（開示だけ別に書くと、片方を動かした日に嘘になる）。
@@ -615,8 +653,6 @@ def _vegetation_loss(
         coeff = 0.20 * (freq_ghz ** 0.7)
     else:
         coeff = 0.35 * (freq_ghz ** 0.9)
-
-    sample_spacing_m = (horiz_dist_km * 1000) / max(num_samples - 1, 1)
 
     # 植生頂点が LoS 線を超えた量（正値 = LoS に侵入している）
     penetration   = veg_top - los_vals
@@ -630,7 +666,12 @@ def _vegetation_loss(
     f1_safe    = np.maximum(f1, 1e-6)
     veg_weight = np.clip(intrusion_depth / f1_safe, 0, 1.0)
 
-    veg_effective_length = np.sum(veg_weight) * sample_spacing_m
+    # 🔑 **重みを距離で積む**（B-150）＝以前は `Σ重み × 一定間隔` だった。
+    # ①「高」「中」は等間隔でなくなった ②等間隔でも旧式は**両端に丸ごと 1 間隔を
+    # 与えていた**（N 点に N 個の短冊を掛けるので、経路長 (N−1)Δ より 1 つ多い）。
+    # 台形則なら両端は半分になり、どちらの形でも「LoS へ侵入している区間の長さ」に
+    # 一致する。⚠️ 端で植生が侵入している回線だけ値が動く（内側だけなら不動）。
+    veg_effective_length = float(np.trapezoid(veg_weight, np.asarray(d_m_axis, float)))
     return min(veg_effective_length * coeff, 45.0)
 
 

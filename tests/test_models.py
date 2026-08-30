@@ -412,7 +412,7 @@ class TestCalculatePropagation:
             # 地表は LoS と同じ高さ（10.0）＝超過分はすべて植生ぶん
             veg_top = np.full(N, 10.0 + excess)
             loss = models._vegetation_loss(
-                veg_top, excess, los_vals, f1, freq_mhz, horiz_km, N
+                veg_top, excess, los_vals, f1, freq_mhz, d_m
             )
             assert loss < 45.0, f"excess={excess}m で上限45dBに達した"
             results.append(loss)

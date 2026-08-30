@@ -60,6 +60,9 @@ _TEXT_FIELDS = ("status", "diff_method", "env_type")
 
 
 def _params(inp: dict) -> sim.SimParams:
+    # 🔑 **段階を持つ行は段階で組み直す**（B-150）＝点数だけ渡すと等間隔になり、
+    #    **画素の縁で刻んだ標本器そのものが検査から外れる**（凍結したのは
+    #    「その段階が出す答え」であって「N 点の等間隔の答え」ではない）。
     return sim.SimParams({
         "start": f"{inp['lat_tx']}, {inp['lon_tx']}",
         "end":   f"{inp['lat_rx']}, {inp['lon_rx']}",
@@ -67,7 +70,9 @@ def _params(inp: dict) -> sim.SimParams:
         "freq": str(inp["freq_mhz"]), "p_tx": str(inp["p_tx"]),
         "gain_tx": str(inp["gain_tx"]), "gain_rx": str(inp["gain_rx"]),
         "sens": str(inp["sens"]), "veg_h": str(inp["veg_h"]),
-        "k_factor": str(inp["k_factor"]), "samples": str(inp["samples"]),
+        "k_factor": str(inp["k_factor"]),
+        **({"resolution": inp["resolution"]} if inp.get("resolution")
+           else {"samples": str(inp["samples"])}),
         "env_type": inp["env_type"], "diff_method": inp["diff_method"],
         "rain_rate": str(inp["rain_rate"]),
     })
@@ -78,11 +83,13 @@ def _terrain(link: dict, params: sim.SimParams) -> models.TerrainProfile:
 
     ⚠️ earth_k は既定（4/3）＝単一・バッチと同じ呼び方。`params.k_factor` は
     ライス K の表示値で曲率とは無関係（models.calculate_terrain_profile 参照）。
+    ⚠️ **標本の位置も `params` から渡す**（B-150）＝段階で解いた行は等間隔でない。
     """
     return models.calculate_terrain_profile(
         raw_elevs=np.array(link["raw_elevs"], dtype=float),
         lat_tx=params.lat_tx, lon_tx=params.lon_tx,
         lat_rx=params.lat_rx, lon_rx=params.lon_rx,
+        frac_axis=params.sample_fracs,
     )
 
 
@@ -221,6 +228,40 @@ class TestCorpusCoverage:
             elevs = np.array(link["raw_elevs"], dtype=float)
             assert len(elevs) == link["input"]["samples"]
             assert float(np.std(elevs)) > 0.0, f"{link['id']}: 平坦な合成地形に見える"
+
+    def test_covers_every_resolution_level(self):
+        """**段階で解いた回線**が 3 段階そろっていること（B-150）。
+
+        🔴 28 本すべてが固定 N（等間隔）だった間、**製品の既定の刻み方**
+        （段階 → 画素の縁）はコーパスに 1 本も無かった＝標本器を丸ごと入れ替えても
+        全通過する状態だった。⚠️ 「低」も要る＝あそこだけ等間隔のままなので、
+        3 段階が同じ道を通っていないことをここで固定する。
+        """
+        levels = {link["input"].get("resolution", "") for link in LINKS}
+        assert {"high", "medium", "low"} <= levels, (
+            f"段階で解いた回線が足りない（在るのは {sorted(levels)}）"
+        )
+
+    def test_level_runs_do_not_sample_evenly(self):
+        """段階で解いた回線の標本が**等間隔ではない**こと（B-150 の芯）。
+
+        ⚠️ これが無いと、標本器が等間隔へ戻っても値だけ合わせれば通ってしまう。
+        「低」は等間隔が仕様なので対象外（→ `samples_are_pixel_edges`）。
+        """
+        from core import terrain_grid as tg
+
+        checked = []
+        for link in LINKS:
+            level = link["input"].get("resolution", "")
+            if not tg.samples_are_pixel_edges(level):
+                continue
+            t = np.diff(np.asarray(_params(link["input"]).sample_fracs))
+            checked.append(link["id"])
+            assert float(t.max() / t.min()) > 1.5, (
+                f"{link['id']}: 標本が等間隔に見える（最大/最小 = "
+                f"{t.max() / t.min():.2f}）"
+            )
+        assert checked, "画素の縁で刻む回線がコーパスに無い"
 
 
 # ============================================================

@@ -46,7 +46,7 @@ from core import simulation as sim
 from core import units
 from report import project
 from report import report_scenario
-from views import dialogs, theme, window_fit
+from views import dialogs, frozen_common, theme, window_fit
 from views.progress import ProgressPump
 
 # 比較タブで編集できる項目（順に並ぶ）。値は文字列で持ち、実行時に変換する
@@ -302,9 +302,15 @@ class ScenarioWindow(tk.Toplevel):
             ("scn_rx_coord", self._rx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
             # 地形の解像度（I-069）＝**段階の語ではなく、解けた結果を出す**。
             # 「高 5m メッシュ」と書いても、天井に張り付けばそれは嘘になる＝
-            # **実効間隔こそがこの窓で言うべきこと**（点数はその根拠）。
+            # **実際に刻んだ結果こそがこの窓で言うべきこと**（点数はその根拠）。
             # ⚠️ 2 欄に割らない＝この窓は帯が窓幅を決めてはいけない（B-052）。
-            ("lbl_b_resolution", self._samples_var, False, 15),
+            # ⚠️ **幅は字から引き、伸びる側に置く**（B-150）＝15 のべた書きは、画素の
+            #    縁を名乗る字が増えた時点で足りなくなる（B-149 と同じ切れ方）。ただし
+            #    いちばん長い字をそのまま要求すると帯が窓幅を決めてしまう（B-052）ので、
+            #    **要求は短いほうの字・残りは `expand` で受ける**
+            #    （→ `frozen_common.sampling_field_width` の註）。
+            ("lbl_b_resolution", self._samples_var, True,
+             frozen_common.sampling_field_width()),
         ):
             f = ttk.Frame(row)
             f.pack(side="left", padx=6, fill="x", expand=expand)
@@ -340,11 +346,10 @@ class ScenarioWindow(tk.Toplevel):
         p = self._base_params
         self._tx_var.set(coords.format_pair(p.lat_tx, p.lon_tx, self._coord_format))
         self._rx_var.set(coords.format_pair(p.lat_rx, p.lon_rx, self._coord_format))
-        # 天井への張り付きは**実効間隔**にしか出ないので、点数と並べて出す。
+        # 天井への張り付きは**刻みの数字**にしか出ないので、点数と並べて出す。
         # ⚠️ **段階から計算し直さない**（B-137）＝隣に出す `p.num` と同じ根から出す。
-        spacing = sim.effective_spacing(p)
-        self._samples_var.set(i18n.t("res_fixed_value").format(
-            n=p.num, spacing=units.format_spacing(spacing)))
+        # ⚠️ **字も実行の側が決める**（B-150）＝等間隔か画素の縁かで名乗る語が違う。
+        self._samples_var.set(sim.sampling_readout(p))
 
     def _refresh_from_launcher(self) -> None:
         """ランチャーの現在値（**座標を含む**）を取り込み直す。

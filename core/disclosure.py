@@ -42,10 +42,13 @@ def _scope_args(key: str) -> dict:
     """
     gas_lo, gas_hi = models.GAS_RANGE_GHZ
     veg_lo, veg_hi = models.VEG_COEFF_RANGE_GHZ
-    # 解像度の刻印（B-128）＝**段階の目標間隔も `terrain_grid` の定数から差し込む**
+    # 解像度の刻印（B-128）＝**段階の数字も `terrain_grid` から差し込む**
     # （字に 5 / 10 / 20 を直書きすると、段階を組み替えた日に開示だけ古くなる）。
+    # 🔴 **差し込む量が変わった**（B-150）＝「高」「中」は等間隔で刻まなくなったので、
+    # 名乗れるのは目標間隔ではなく **DEM 画素の寸法**。緯度で縮むため*日本の幅*で出す
+    # （南端 24°＝いちばん大きい／北端 46°＝いちばん小さい）。
     spacing = terrain_grid.RESOLUTION_SPACING_M
-    span = {"coarse": _m(max(spacing.values())), "fine": _m(min(spacing.values()))}
+    coarse = {"m": _m(spacing["low"])}
     return {
         "earth_k_fixed":     {"k": f"{float(models.EARTH_K_STANDARD):.2f}"},
         "rain_zeroed":       {"lo": _ghz(models.RAIN_MIN_GHZ)},
@@ -54,10 +57,32 @@ def _scope_args(key: str) -> dict:
         "gas_extrapolated":  {"lo": _ghz(gas_lo), "hi": _ghz(gas_hi)},
         "veg_extrapolated":  {"lo": _ghz(veg_lo), "hi": _ghz(veg_hi)},
         **{
-            f"resolution_{level}": {"m": _m(value), **span}
-            for level, value in spacing.items()
+            f"resolution_{level}": _resolution_args(level, coarse)
+            for level in spacing
         },
     }.get(key, {})
+
+
+#: 日本の南端・北端（`terrain_grid.WORST_CASE_LAT_DEG` と対になる南側）。
+#: 1px の地上寸法は `cos φ` で縮むので、**この 2 つが幅の両端**。
+_JAPAN_LAT_SPAN: tuple[float, float] = (24.0, terrain_grid.WORST_CASE_LAT_DEG)
+
+
+def _resolution_args(level: str, coarse: dict) -> dict:
+    """解像度の刻印の差し込み値（段階ごとに**名乗れる量が違う**）。
+
+    「高」「中」＝画素の縁で刻む ⇒ 出せるのは *1px の寸法*（日本の幅）。
+    「低」＝等間隔で刻む ⇒ 従来どおり目標間隔。
+    """
+    if not terrain_grid.samples_are_pixel_edges(level):
+        return dict(coarse)
+    zoom = terrain_grid.RESOLUTION_ZOOM[level]
+    lo, hi = _JAPAN_LAT_SPAN
+    return {
+        "px_hi": f"{terrain_grid.pixel_size_m(lo, zoom):.1f}",
+        "px_lo": f"{terrain_grid.pixel_size_m(hi, zoom):.1f}",
+        **coarse,
+    }
 
 
 def handling_lines(note_keys) -> list[str]:

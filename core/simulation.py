@@ -42,31 +42,66 @@ logger = logging.getLogger("radiosim")
 def resolve_samples(
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
 ) -> tuple[int, float]:
-    """2 地点と解像度の段階から `(点数, 実効間隔[m])` を返す（I-069）。
+    """2 地点と解像度の段階から `(点数, 地形の刻み[m])` を返す（I-069）。
 
     🔑 **画面の読み取り欄と実行が、同じ値を同じ経路で得るための唯一の口**。
-    ⚠️ 見せる側が自前で `recommended_samples` を呼ぶと、**画面に出た N と実際に
+    ⚠️ 見せる側が自前で `path_sample_fractions` を呼ぶと、**画面に出た N と実際に
     使われた N がずれる余地**ができる（しかも「ずれた」ことは誰にも見えない）。
+
+    🔴 **2 つめの戻り値の意味が変わった**（B-150）＝以前は「実効間隔（距離÷点数−1）」。
+    「高」「中」は **DEM 画素の縁**に標本を置くので**等間隔ではなく**、平均の間隔を
+    出すと*等間隔で刻んだ*と読める（B-139 と同じ「読み方の案内が誤っている」形）。
+    ⇒ 実際に効いている量＝**その緯度での 1px の寸法**を出す。
+    「低」は等間隔のままなので、従来どおり目標間隔が返る。
+    どちらを名乗るかは `terrain_grid.samples_are_pixel_edges` が答える。
     """
-    dist_m = models.horizontal_distance_km(
-        lat_tx, lon_tx, lat_rx, lon_rx) * units.KM_TO_M
-    n = terrain_grid.recommended_samples(dist_m, level)
-    return n, terrain_grid.effective_spacing_m(dist_m, n)
+    fracs = terrain_grid.path_sample_fractions(
+        lat_tx, lon_tx, lat_rx, lon_rx, level)
+    return len(fracs), terrain_grid.grid_step_m((lat_tx + lat_rx) / 2.0, level)
 
 
 def effective_spacing(params: "SimParams") -> float:
-    """**その実行が実際に刻んだ**標本間隔 [m]（B-137）。
+    """**その実行が実際に刻んだ**地形の刻み [m]（B-137 / B-150）。
 
     🔑 `resolve_samples` との違いは**どちらを正典にするか**＝あちらは*入力の段階*
     から点数を解く口（画面の読み取り欄と実行が同じ答えを得るため）、こちらは
-    **確定した点数から間隔を出す**口。⚠️ **見せる側が段階から計算し直すと、
+    **確定した実行から出す**口。⚠️ **見せる側が段階から計算し直すと、
     段階を経由しない実行（固定 N＝回帰コーパスの生成器・探針）で
     実際と食い違う**（実測＝800 点で刻んだのに「10.02m 間隔」と表示していた）。
     ⇒ *やったこと*を見せる面は、必ずこちらを通す。
+
+    ⚠️ **段階を名乗る実行では画素の寸法**（B-150）＝画素の縁で刻む以上「N 点を
+    等間隔で」という読み方が成り立たない。固定 N は等間隔なので従来どおり。
     """
+    if terrain_grid.samples_are_pixel_edges(params.resolution, params.num):
+        return terrain_grid.grid_step_m(
+            (params.lat_tx + params.lat_rx) / 2.0, params.resolution)
     dist_m = models.horizontal_distance_km(
         params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx) * units.KM_TO_M
     return terrain_grid.effective_spacing_m(dist_m, params.num)
+
+
+#: 点数と刻みを出す字のキー（`compact` の別に**両方**）。⚠️ **欄の幅を決める側**
+#: （`views.frozen_common.sampling_field_width`）がここを読む＝字を足したらこの表に
+#: 足す。足し忘れると**その字だけ欄からはみ出す**（B-149 と同じ形）。
+SAMPLING_READOUT_KEYS: dict[bool, tuple[str, str]] = {
+    True:  ("res_fixed_value", "res_fixed_value_pixel"),   # 凍結帯（狭い）
+    False: ("res_readout",     "res_readout_pixel"),       # ランチャーの読み取り欄
+}
+
+
+def sampling_readout(params: "SimParams", compact: bool = True) -> str:
+    """点数と地形の刻みの 1 行（**名乗りを決める唯一の口**・B-150）。
+
+    ⚠️ **面ごとに条件を書かない**＝「等間隔で刻んだのか／画素の縁で刻んだのか」で
+    名乗る語が変わるので、面ごとに書くと**片方の面だけ古い名乗り**になる
+    （B-137 で実際に起きた形）。`compact` は幅の都合だけ（凍結帯は狭い）。
+    """
+    plain, pixel = SAMPLING_READOUT_KEYS[bool(compact)]
+    base = pixel if terrain_grid.samples_are_pixel_edges(
+        params.resolution, params.num) else plain
+    return i18n.t(base).format(
+        n=params.num, spacing=units.format_spacing(effective_spacing(params)))
 
 
 class SimParams:
@@ -110,16 +145,20 @@ class SimParams:
         #    計算し直されて実際と食い違い（3.60m を 10.02m と表示）③**B-128 の刻印が
         #    使っていない段階を名乗った**。空にすると `models.scope_notes` の
         #    「知らない語・空なら刻印を出さない」と噛み合う＝*言えないなら名乗らない*。
+        # 🔑 **持つのは「どこで標高を読むか」の並び**（B-150）＝点数はその長さ。
+        #    以前は点数だけを持ち、位置は使う側が `linspace` で作り直していた。
+        #    画素の縁で刻むと位置は等間隔でなくなるので、**位置そのものを運ぶ**
+        #    （作り直す面が 1 つでも残ると、そこだけ別の場所の標高を並べる）。
         level = str(c.get("resolution", "") or "")
         if level:
             self.resolution: str = level
-            self.num: int = resolve_samples(
-                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx,
-                self.resolution,
-            )[0]
+            self.sample_fracs: list[float] = terrain_grid.path_sample_fractions(
+                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution)
         else:
             self.resolution = ""
-            self.num = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
+            n = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
+            self.sample_fracs = [i / (n - 1) for i in range(n)]
+        self.num: int = len(self.sample_fracs)
         # ⚠️ **旧名 `deygout` はここで受ける**（入力の境目 1 か所・B-130）＝
         #    5 フローすべてがこの `SimParams` を通るので、ここだけで全部が揃う。
         self.diff_method: str   = models.normalize_diff_method(
@@ -163,6 +202,18 @@ class DemUnreachableError(failure.UserFacingError, RuntimeError):
     """
 
 
+def sample_coords(params: SimParams) -> tuple[np.ndarray, np.ndarray]:
+    """各標本の緯度・経度（`(lats, lons)`）＝**経路の定義はここ 1 か所**（B-150）。
+
+    標高を読む側（`fetch_elevations`）と、その経路を描く側（帳票の地図）が
+    **同じ点**を指すために通す口。⚠️ 見せる側が `linspace` で作り直すと、
+    *標高を読んだ場所*と*地図に描いた線*が別物になる。
+    """
+    t = np.asarray(params.sample_fracs, dtype=float)
+    return (params.lat_tx + (params.lat_rx - params.lat_tx) * t,
+            params.lon_tx + (params.lon_rx - params.lon_tx) * t)
+
+
 def fetch_elevations(
     params: SimParams,
     on_progress: Callable[[int], None],
@@ -189,8 +240,9 @@ def fetch_elevations(
                 params.lat_rx, params.lon_rx,
                 params.freq_mhz, params.num,
             )
-            lats = np.linspace(params.lat_tx, params.lat_rx, params.num)
-            lons = np.linspace(params.lon_tx, params.lon_rx, params.num)
+            # ⚠️ **標本の位置は `params` が持っている**（B-150）＝ここで
+            #    `linspace` を作ると、画素の縁で刻んだ位置と食い違う。
+            lats, lons = sample_coords(params)
 
             raw_elevs: list[float] = [0.0] * params.num
             completed  = 0
@@ -271,13 +323,16 @@ def fetch_elevations(
 # lat_tx / lon_tx / lat_rx / lon_rx / num が一致すれば再取得しない。
 # k_factor は raw_elevs に影響しない（曲率補正は calculate_terrain_profile で適用）
 # ため、キャッシュキーには含めない。
-_TerrainCacheKey = tuple[float, float, float, float, int]
+_TerrainCacheKey = tuple[float, float, float, float, int, str]
 _terrain_cache: dict[_TerrainCacheKey, np.ndarray] = {}
 _terrain_cache_lock = threading.Lock()
 
 
 def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
-    return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, params.num)
+    # ⚠️ **段階も鍵に入れる**（B-150）＝点数は同じでも標本の**位置**が違う実行が
+    # あり得る（段階で解いた並びと固定 N の等間隔）。位置が違えば標高も違う。
+    return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+            params.num, params.resolution)
 
 
 def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
@@ -526,8 +581,12 @@ def _save_report(
         # ＝天井に張り付くと「高」でも実効間隔は粗くなる（数字のほうが正典）。
         # ⚠️ 段階を経由しない実行（固定 N）は**段階を名乗らない**（B-137）。
         f"Terrain Res   : {params.resolution or '(fixed sample count)'}\n"
+        # ⚠️ **「間隔」ではなく「刻み」**（B-150）＝段階を名乗る実行は DEM 画素の縁で
+        # 刻むので等間隔ではない。出す数字は*画素の寸法*（→ `effective_spacing`）。
         f"Samples       : {params.num} "
-        f"({units.format_spacing(spacing)} m spacing)\n\n"
+        f"({units.format_spacing(spacing)} m "
+        f"{'DEM pixel' if terrain_grid.samples_are_pixel_edges(params.resolution, params.num) else 'spacing'})"
+        "\n\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。
         + disclosure.handling_text(models.scope_notes(
