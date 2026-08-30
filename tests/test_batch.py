@@ -24,6 +24,7 @@ from core import config
 from core import i18n
 from core import models
 from core import simulation as sim
+from core import terrain_grid
 from report import batch
 from report import report_path
 from report import report_summary
@@ -472,7 +473,11 @@ class TestMakeParams:
         for row, n in ((short, n_short), (long_, n_long)):
             dist_m = models.horizontal_distance_km(
                 row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx) * 1000.0
-            assert dist_m / (n - 1) == pytest.approx(10.0, rel=0.05)
+            # ⚠️ 刻みの値は**段階の定数から引く**（数を書き写さない）＝B-148 で
+            # 「中」の目標間隔が公称 10m から**実 1px の半分**へ変わったとき、
+            # ここに書いた 10.0 が古くなった（写した数はこうしてずれる）。
+            assert dist_m / (n - 1) == pytest.approx(
+                terrain_grid.RESOLUTION_SPACING_M["medium"], rel=0.05)
 
     def test_env_rain_diff_always_from_base(self):
         """env_type / rain_rate / diff_method は PathRow にかかわらず base から取得されること。"""

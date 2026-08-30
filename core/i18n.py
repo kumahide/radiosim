@@ -102,9 +102,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "Vegetation Height (m)",
         "lbl_k_factor":         "Rician K-Factor (initial)",
         "lbl_resolution":       "Terrain Resolution",
-        "res_high":             "High (approx. 5 m)",
-        "res_medium":           "Medium (approx. 10 m)",
-        "res_low":              "Low (approx. 20 m)",
+        "res_high":             "High (5 m mesh)",
+        "res_medium":           "Medium (10 m mesh)",
+        "res_low":              "Low (20 m steps)",
         "res_readout":          "{n} points  /  approx. {spacing} m apart",
         "res_readout_unknown":  "points: enter both coordinates",
         "res_fixed_value":      "{n} pts / {spacing} m",
@@ -435,15 +435,15 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_resolution_high":
             "Terrain sampled at the \"high\" resolution step ({m} m target spacing); "
             "a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m).",
+            "(up to +28.6% measured from {coarse} m to {fine} m).",
         "html_scope_resolution_medium":
             "Terrain sampled at the \"medium\" resolution step ({m} m target spacing); "
             "a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m).",
+            "(up to +28.6% measured from {coarse} m to {fine} m).",
         "html_scope_resolution_low":
             "Terrain sampled at the \"low\" resolution step ({m} m target spacing); "
             "a finer step raises the diffraction loss "
-            "(up to +14.8% measured from {coarse} m to {fine} m).",
+            "(up to +28.6% measured from {coarse} m to {fine} m).",
         # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
         # 「較正していない結果」が同じ顔で出る。
         "html_calib_profile":   "Calibration profile",
@@ -732,9 +732,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "植生高（m）",
         "lbl_k_factor":         "初期ライスKファクター",
         "lbl_resolution":       "地形の解像度",
-        "res_high":             "高（約 5 m）",
-        "res_medium":           "中（約 10 m）",
-        "res_low":              "低（約 20 m）",
+        "res_high":             "高（5m メッシュ）",
+        "res_medium":           "中（10m メッシュ）",
+        "res_low":              "低（20m 刻み）",
         "res_readout":          "{n} 点  /  実効 約 {spacing} m 間隔",
         "res_readout_unknown":  "点数：送受信の座標を入れてください",
         "res_fixed_value":      "{n} 点 / {spacing} m",
@@ -1045,13 +1045,13 @@ _STRINGS: dict[str, dict[str, str]] = {
             "ライス K：回折損からの経験的な推定（表示のみ・計算には未使用）",
         "html_scope_resolution_high":
             "地形の解像度「高」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
         "html_scope_resolution_medium":
             "地形の解像度「中」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
         "html_scope_resolution_low":
             "地形の解像度「低」（目標 {m} m 間隔）で計算"
-            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +14.8%）",
+            "＝段階を細かくすると回折損が増える（{coarse} m → {fine} m で最大 +28.6%）",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測との突き合わせなし）",
 

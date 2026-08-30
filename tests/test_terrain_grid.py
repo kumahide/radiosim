@@ -99,9 +99,15 @@ def test_the_default_level_is_a_real_level():
     assert set(tg.RESOLUTION_SPACING_M) == set(tg.RESOLUTION_KEYS)
 
 
-def test_the_finest_level_matches_the_finest_mesh():
-    """いちばん細かい段階は **DEM の 1px そのもの**（表が 2 つに割れていない）。"""
-    assert tg.RESOLUTION_SPACING_M["high"] == tg.FINEST_MESH_M
+def test_the_finest_level_is_finer_than_the_nominal_mesh():
+    """いちばん細かい段階は **公称メッシュより細かい**こと（B-148）。
+
+    🔴 **この検査は 2026-08-30 に向きが反転した**＝以前は「『高』の目標間隔＝
+    `FINEST_MESH_M`（5m）」を固定しており、**欠陥そのものをゲートで固定していた**。
+    公称 5m の層でも Web メルカトルの実 1px は日本で 3.3〜4.4m なので、
+    公称で刻むと画素を飛ばす。⇒ 守るべきは**一致**ではなく**公称より細かい**こと。
+    """
+    assert tg.RESOLUTION_SPACING_M["high"] < tg.FINEST_MESH_M
 
 
 # ============================================================
@@ -274,3 +280,79 @@ def test_the_band_does_not_invent_a_level_it_will_not_use():
         assert shown != i18n.t(f"res_{level}")
     # 対の検査＝段階があるときは従来どおり表示ラベルを出す。
     assert frozen_common.display_value("resolution", "high") == i18n.t("res_high")
+
+
+# ============================================================
+# 5. **画素を飛ばさない**（B-148）
+# ============================================================
+# 🔑 **検査は「定数が変わったか」ではなく「1px より細かく刻めているか」**。
+# 目標間隔を定数で見るゲートは、**次に緯度や層の構成を変えた日に素通りする**
+# （実際、旧実装の `FINEST_MESH_M = 5.0` は「5m メッシュ」としては正しく、
+# 誤っていたのは*それを刻みに使ったこと*だった＝定数を見ても分からない）。
+#
+# 日本の緯度帯（南端 24°＝沖ノ鳥島近辺 〜 北端 46°＝宗谷岬の北）。
+_JAPAN_LATS = [24.0, 30.0, 34.54, 40.0, 45.52, 46.0]
+# 「低」は対象外＝*粗いが速い*と名乗っている段階（画素を飛ばすのは仕様）。
+_NO_SKIP_LEVELS = ["high", "medium"]
+
+
+@pytest.mark.parametrize("lat", _JAPAN_LATS)
+@pytest.mark.parametrize("level", _NO_SKIP_LEVELS)
+@pytest.mark.parametrize("km", [0.2, 0.4, 1.0, 5.0, 20.0, 48.0, 100.0])
+def test_no_pixel_of_the_dem_is_ever_skipped(km, level, lat):
+    """標本が **DEM の画素を 1 つも飛ばさない**こと（日本のどの緯度でも）。
+
+    🔴 **これが B-148 の本体**＝公称 5m で刻んでいた版は、日本の全緯度で目標間隔が
+    1px の 1.15〜1.51 倍あり、**画素を 2 度読む位置と 1 度も読まない位置が交互に**
+    出ていた（`N` と `2N` が完全に同じ答えになるのがその証拠）。実測でマージンが
+    29.2 dB 振れ、OK / NG が裏返った。
+
+    ⚠️ **見るのは「経路上の各画素に標本が最低 1 点入るか」**＝間隔と 1px を比べる
+    だけでは、天井に張り付いた距離帯（点数が頭打ち）を見落とす。
+    """
+    dist_m = km * 1000.0
+    n = tg.recommended_samples(dist_m, level)
+    px = tg.pixel_size_m(lat, tg.RESOLUTION_ZOOM[level])
+    # 経路を 1px ごとの区画に割り、どの区画にも標本が入っていること。
+    visited = {int((i * dist_m / (n - 1)) // px) for i in range(n)}
+    expected = set(range(int(dist_m // px) + 1))
+    missed = sorted(expected - visited)
+    assert not missed, (
+        f"{km}km / {level} / 緯度 {lat}°: 画素 {len(missed)} 個を飛ばしている"
+        f"（例 {missed[:3]}・実効 {tg.effective_spacing_m(dist_m, n):.2f}m /"
+        f" 1px {px:.2f}m・点数 {n}）"
+    )
+
+
+@pytest.mark.parametrize("level", _NO_SKIP_LEVELS)
+def test_the_target_spacing_is_derived_from_the_real_pixel(level):
+    """目標間隔が**実 1px から引かれている**こと（公称メッシュではなく）。
+
+    ⚠️ 上のゲートと重ねて置く理由＝あちらは *結果* を見るので、天井を上げるなど
+    別の手でも通せてしまう。ここでは *引き方* を見る（1px ちょうどにしない）。
+    """
+    px_worst = tg.pixel_size_m(tg.WORST_CASE_LAT_DEG, tg.RESOLUTION_ZOOM[level])
+    target = tg.RESOLUTION_SPACING_M[level]
+    assert target <= px_worst / 2.0, (
+        f"{level}: 目標 {target}m が最悪緯度の 1px（{px_worst:.2f}m）の半分を超えている"
+    )
+    assert target > px_worst / 2.0 - 0.01, (
+        f"{level}: 目標 {target}m が必要より細かい（丸めは 0.01m 単位の切り捨て）"
+    )
+
+
+def test_the_zoom_table_matches_the_dem_layers():
+    """段階が見ている層のズームが、**実際に取りに行く層**と一致すること。
+
+    ⚠️ `RESOLUTION_ZOOM` は `dem.DEM_LAYERS` の写し＝**写しはテストで縛る**
+    （`terrain_grid` は純粋な層なので `dem` を import できない＝I-069）。
+    """
+    from core import dem
+
+    zooms = [z for _id, z in dem.DEM_LAYERS]
+    assert tg.RESOLUTION_ZOOM["high"] == min(zooms) + 1 == max(zooms), (
+        "5m 層（最優先）のズームと『高』が見ている層がずれている", zooms
+    )
+    assert tg.RESOLUTION_ZOOM["medium"] == min(zooms), (
+        "10m 層（全国カバー）のズームと『中』が見ている層がずれている", zooms
+    )
