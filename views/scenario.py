@@ -297,9 +297,13 @@ class ScenarioWindow(tk.Toplevel):
         # ⚠️ 座標が読めない凍結帯は帯の意味を失う（何を固定したのか分からない）。
         # 実測＝スライス D の帯の作り直しで必要幅は 870 → 1009px（高さ 986px は
         # 不変＝実機の高さ予算 990px に対する余裕 4px を減らしていない）。
+        # 🔴 **余りは刻みの欄だけに渡す**（B-154）＝座標欄の 27 文字は *DMS が切れない
+        #    下限*であって、それ以上広げても読めるものは増えない。3 欄で等分すると、
+        #    **足りていないのは刻みの欄だけなのに余りが座標へ流れる**（実機のスクショで
+        #    末尾の `m` が半分切れた）。⇒ 伸びるのはこの 1 欄だけにする。
         for label_key, var, expand, width in (
-            ("scn_tx_coord", self._tx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
-            ("scn_rx_coord", self._rx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
+            ("scn_tx_coord", self._tx_var,      False, coords.DISPLAY_WIDTH_CHARS),
+            ("scn_rx_coord", self._rx_var,      False, coords.DISPLAY_WIDTH_CHARS),
             # 地形の解像度（I-069）＝**段階の語ではなく、解けた結果を出す**。
             # 「高 5m メッシュ」と書いても、天井に張り付けばそれは嘘になる＝
             # **実際に刻んだ結果こそがこの窓で言うべきこと**（点数はその根拠）。
@@ -315,9 +319,14 @@ class ScenarioWindow(tk.Toplevel):
             f = ttk.Frame(row)
             f.pack(side="left", padx=6, fill="x", expand=expand)
             ttk.Label(f, text=i18n.t(label_key)).pack(side="left")
-            ttk.Entry(f, textvariable=var, state="readonly", width=width).pack(
-                side="left", padx=(2, 0), fill="x", expand=expand)
+            entry = ttk.Entry(f, textvariable=var, state="readonly", width=width)
+            entry.pack(side="left", padx=(2, 0), fill="x", expand=expand)
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
+            if var is self._samples_var:
+                # ⚠️ **測るためだけの参照**（B-154 のゲート）＝この欄は宣言幅では
+                #    なく `expand` の配分で決まるので、**実際に描かれた幅**を見る
+                #    以外に「切れていない」ことを確かめる方法が無い。
+                self._samples_entry = entry
 
         self._update_path_label()
         self._update_meta_label()

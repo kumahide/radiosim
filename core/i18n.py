@@ -120,7 +120,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
         # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
         "res_fixed_value":      "{n} pts/{spacing} m",
-        "res_fixed_value_pixel": "{n} pts/{spacing} m px",
+        "res_fixed_value_pixel": "{n} pts/{spacing}m px",
         "tip_start":            'lat, lon   e.g. "34.54, 132.41"',
         "tip_end":              'lat, lon   e.g. "34.53, 132.41"',
         "tip_rain_rate":        "Rain rate   0 – 200 mm/h",
@@ -762,7 +762,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
         # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
         "res_fixed_value":      "{n} 点/{spacing} m",
-        "res_fixed_value_pixel": "{n} 点/画素 {spacing} m",
+        "res_fixed_value_pixel": "{n} 点/画素{spacing}m",
         "tip_start":            '緯度, 経度   例: "34.54, 132.41"',
         "tip_end":              '緯度, 経度   例: "34.53, 132.41"',
         "tip_rain_rate":        "降雨強度   0〜200 mm/h",

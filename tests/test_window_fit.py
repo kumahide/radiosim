@@ -419,6 +419,66 @@ def _scenario_band_width(win) -> int:
     return max(b.winfo_reqwidth() for b in bands[:2])
 
 
+# 凍結帯の欄を測るときに**わざと当てる書体**（B-154）。
+# 🔴 **開発機の書体では実機の切れ方が再現しない**＝実機（AVD）は `Yu Gothic UI` が
+# 無く `Meiryo UI` へ落ちる。同じ 10pt でも「0」の幅が 7px → 8px、日本語の字は
+# もっと広がるので、**開発機で「収まる」欄が実機で切れる**（実際に切れた絵が
+# スクリーンショットに写った）。⇒ **候補の書体を全部当てて測る**。
+_BAND_FONT_FAMILIES = ["Yu Gothic UI", "Meiryo UI", "Segoe UI Variable Text"]
+
+
+@pytest.mark.parametrize("family", _BAND_FONT_FAMILIES)
+@pytest.mark.parametrize("lang", ["ja", "en"])
+@pytest.mark.parametrize("conditions", [1, 5])
+def test_the_frozen_sampling_field_shows_its_whole_value(lang, conditions, family):
+    """凍結帯の「刻み」の欄が、**いちばん長い値でも切れずに描ける**こと（B-154）。
+
+    🔴 **宣言した `width` を見ても分からない**＝この欄は幅の予算（帯は窓幅を決めて
+    はいけない・B-052）に収めるため**短いほうの字だけを要求し、残りを `expand` で
+    受ける**。⇒ *実際に描かれた幅*と*字の幅*を突き合わせる以外に確かめようがない。
+    ⚠️ **これを宣言幅（文字数）で書いたゲートは、実機で切れている絵をそのまま通す**
+    ——`width=15` は「0 の幅 15 個ぶん」であって**日本語 15 文字ではない**。
+
+    ⚠️ **テーマを当てた窓で測る**＝素の Tk は 9pt、製品は sv_ttk の 10pt。
+    ⚠️ **書体も当てる**（→ `_BAND_FONT_FAMILIES`）＝開発機と実機で違う。
+    ⚠️ **最悪の値で測る**＝点数は天井、刻みは 2 桁（「低」の 20.1m）。
+    """
+    from tkinter import font as tkfont
+
+    from core import terrain_grid as tg
+
+    prev = i18n._lang
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        i18n.set_lang(lang)
+        fonts = [tkfont.nametofont(n, root=root)
+                 for n in ("TkDefaultFont", "TkTextFont")]
+        if family not in tkfont.families(root):
+            pytest.skip(f"{family} がこの機械に無い")
+        for f in fonts:
+            f.configure(family=family, size=10)
+        win, owner = _open_scenario(root)
+        while len(owner._cmp_cols) < conditions:
+            owner._add_condition_column()
+        worst = i18n.t("res_fixed_value_pixel").format(
+            n=tg.SAMPLES_CEILING, spacing="20.1")
+        owner._samples_var.set(worst)
+        win.update_idletasks()
+        win.deiconify()
+        win.geometry(f"{win.winfo_reqwidth()}x{win.winfo_reqheight()}")
+        win.update()
+        drawn = owner._samples_entry.winfo_width()
+        need = fonts[1].measure(worst) + 8      # 内側の余白
+        assert drawn >= need, (
+            f"[{lang}/条件{conditions}列/{family}] 刻みの欄が {drawn}px しかなく、"
+            f"値 {worst!r}（{need}px）の末尾が切れる"
+        )
+    finally:
+        i18n.set_lang(prev)
+        root.destroy()
+
+
 def test_the_frozen_header_does_not_decide_the_scenario_window_width():
     """条件探索の窓幅を**凍結帯が決めていない**こと（帯 ≦ 条件 5 列のグリッド）。
 
