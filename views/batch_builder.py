@@ -289,8 +289,11 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         for row, fields in ((row0, frozen_common.RADIO_FIELDS),
                             (row1, frozen_common.ENV_FIELDS)):
             for label_key, attr in fields:
+                # 段階の欄だけは**ラベルの長さから引く**（B-149）＝数で書くと
+                # ラベルを変えた日に切れる（実際に切れた）。
                 _field(row, i18n.t(label_key), attr,
-                       width=11 if attr == "resolution" else 8)
+                       width=(frozen_common.resolution_field_width()
+                              if attr == "resolution" else 8))
 
         # Env Type Combobox
         f_env = ttk.Frame(row1)

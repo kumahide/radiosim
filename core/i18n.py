@@ -102,9 +102,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "Vegetation Height (m)",
         "lbl_k_factor":         "Rician K-Factor (initial)",
         "lbl_resolution":       "Terrain Resolution",
-        "res_high":             "High (5 m mesh)",
-        "res_medium":           "Medium (10 m mesh)",
-        "res_low":              "Low (20 m steps)",
+        "res_high":             "High 5 m mesh",
+        "res_medium":           "Medium 10 m mesh",
+        "res_low":              "Low 20 m steps",
         "res_readout":          "{n} points  /  approx. {spacing} m apart",
         "res_readout_unknown":  "points: enter both coordinates",
         "res_fixed_value":      "{n} pts / {spacing} m",
@@ -732,9 +732,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_veg_h":            "植生高（m）",
         "lbl_k_factor":         "初期ライスKファクター",
         "lbl_resolution":       "地形の解像度",
-        "res_high":             "高（5m メッシュ）",
-        "res_medium":           "中（10m メッシュ）",
-        "res_low":              "低（20m 刻み）",
+        "res_high":             "高 5m メッシュ",
+        "res_medium":           "中 10m メッシュ",
+        "res_low":              "低 20m 刻み",
         "res_readout":          "{n} 点  /  実効 約 {spacing} m 間隔",
         "res_readout_unknown":  "点数：送受信の座標を入れてください",
         "res_fixed_value":      "{n} 点 / {spacing} m",
@@ -1502,3 +1502,4 @@ def load_external(dir_path: str) -> list:
             (code, shown if isinstance(shown, str) and shown else code,
              len(accepted), rejected))
     return external_reports()
+

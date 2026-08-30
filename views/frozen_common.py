@@ -36,6 +36,7 @@ views/frozen_common.py
 from __future__ import annotations
 
 import tkinter as tk
+import unicodedata
 from tkinter import ttk
 
 from core import i18n, terrain_grid
@@ -107,6 +108,26 @@ def resolution_key(label: str) -> str:
     return label
 
 
+def _display_width(text: str) -> int:
+    """Tk の `width`（"0" の幅が 1）でいくつ要る字か。**全角は 2 つぶん**。"""
+    return sum(2 if unicodedata.east_asian_width(ch) in "WF" else 1
+               for ch in text)
+
+
+def resolution_field_width() -> int:
+    """段階の欄に要る幅（文字数）＝**いちばん長いラベルから引く**（B-149）。
+
+    🔴 **数で書くと、ラベルを変えた日に切れる**＝実際に `高（約 5 m）` →
+    `高 5m メッシュ`（B-148）で複数経路の 11 も中継経路の 6 も足りなくなり、
+    **閉じ括弧が消えた状態で配布物のスクリーンショットまで進んだ**。
+    ⚠️ **言語で変わる**ので定数にはできない（英語は `High 5 m mesh`）＝
+    窓を建てるたびに引く。⚠️ **全角は 2 つぶん**で数える（`len()` だと日本語で
+    半分の幅になる＝これが 6 という数字の出どころでもある）。
+    """
+    return max(_display_width(i18n.t(f"res_{key}"))
+               for key in terrain_grid.RESOLUTION_KEYS) + 1   # 余白 1
+
+
 def readonly_field(parent: tk.Misc, label_key: str, var: tk.StringVar,
                    width: int) -> None:
     """読み取り専用の 1 欄（見出し＋欄＋🔒）を `parent` の左から積む。
@@ -151,3 +172,4 @@ def readonly_band(parent: tk.Misc, *, widths: "dict[str, int]",
             vars_[attr] = tk.StringVar()
             readonly_field(rows[-1], label_key, vars_[attr], widths.get(attr, 6))
     return vars_
+

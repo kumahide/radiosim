@@ -304,7 +304,7 @@ An input form is displayed on startup.
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
 | Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Terrain Resolution    | One of High (5 m mesh) / Medium (10 m mesh) / Low (20 m steps). **You pick the level; the number of points follows from the path length** (the resolved count and the effective spacing are shown right below it). Default: Medium |
+| Terrain Resolution    | One of High 5 m mesh / Medium 10 m mesh / Low 20 m steps. **You pick the level; the number of points follows from the path length** (the resolved count and the effective spacing are shown right below it). Default: Medium |
 
 #### Project Info (optional)
 

@@ -315,6 +315,9 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         self._common_vars = frozen_common.readonly_band(
             common, fold=3,
             widths={"freq_mhz": 7, "p_tx": 7, "sens": 7,
+                    # 段階の欄は**ラベルの長さから引く**（B-149）＝既定の 6 では
+                    # `高（約 5 m）` の時点で既に切れていた（B-148 でさらに悪化）。
+                    "resolution": frozen_common.resolution_field_width(),
                     "env_type": 9, "diff_method": 9})
         self._update_frozen()
 

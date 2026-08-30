@@ -301,7 +301,7 @@ class ScenarioWindow(tk.Toplevel):
             ("scn_tx_coord", self._tx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
             ("scn_rx_coord", self._rx_var,      True,  coords.DISPLAY_WIDTH_CHARS),
             # 地形の解像度（I-069）＝**段階の語ではなく、解けた結果を出す**。
-            # 「高（5m メッシュ）」と書いても、天井に張り付けばそれは嘘になる＝
+            # 「高 5m メッシュ」と書いても、天井に張り付けばそれは嘘になる＝
             # **実効間隔こそがこの窓で言うべきこと**（点数はその根拠）。
             # ⚠️ 2 欄に割らない＝この窓は帯が窓幅を決めてはいけない（B-052）。
             ("lbl_b_resolution", self._samples_var, False, 15),

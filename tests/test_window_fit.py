@@ -2656,3 +2656,67 @@ def test_the_landing_check_accepts_a_slip_from_the_higher_scale_it_came_from():
         )
     finally:
         root.destroy()
+
+
+# ============================================================
+# 凍結帯の欄が中身を切らないこと（B-149）
+# ============================================================
+def _readonly_entries(widget, out=None):
+    """`readonly` の Entry を再帰で集める（凍結帯の欄）。"""
+    out = [] if out is None else out
+    for child in widget.winfo_children():
+        if child.winfo_class() == "TEntry" and "readonly" in str(child.state()):
+            out.append(child)
+        _readonly_entries(child, out)
+    return out
+
+
+@pytest.mark.parametrize("lang", ["ja", "en"])
+@pytest.mark.parametrize("opener", ["batch", "multihop"])
+def test_the_frozen_resolution_field_shows_the_whole_label(opener, lang):
+    """凍結帯の「解像度」欄が、段階のラベルを**切らずに**出せること。
+
+    🔴 **欄幅を数で書いていたので、ラベルを長くした日に切れた**（B-148 →
+    `高（5m メッシュ）`）＝複数経路は閉じ括弧が消え、中継経路は `高（5m` まで
+    しか出ず、**その状態で配布物のスクリーンショットまで進んだ**（RC2 の撮り直しで
+    人が気づいた）。⚠️ 中継経路は**それ以前から切れていた**（既定の 6 文字）。
+
+    ⚠️ **見るのは「幅の定数が変わったか」ではなく「字が入るか」**＝定数を見る検査は
+    次にラベルを変えた日に素通りする。⇒ **実際の書体で測った字の幅**と欄の幅を比べる。
+    ⚠️ **`resolution_field_width()` と突き合わせるのも不可**（欄も検査も同じ関数を
+    見るので、関数が誤っていても両方動いて緑）。
+    """
+    import tkinter.font as tkfont
+    from tkinter import ttk
+    from core import i18n as _i18n
+    from core import terrain_grid as _tg
+
+    _i18n.set_lang(lang)
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        win, _owner = _WINDOWS[opener][0](root)
+        win.update()
+        var = win._common_vars["resolution"]
+        entries = [e for e in _readonly_entries(win)
+                   if str(e.cget("textvariable")) == str(var)]
+        assert len(entries) == 1, f"{opener}: 解像度の欄が 1 つでない"
+        entry = entries[0]
+        font = tkfont.Font(font=entry.cget("font") or "TkDefaultFont")
+        widest = max(font.measure(_i18n.t(f"res_{k}")) for k in _tg.RESOLUTION_KEYS)
+        # 欄の内側（枠・余白を除いた描画域）＝**その場で測る**。ttk の Entry は
+        # 枠幅を cget で聞けない（テーマが持つ）ので、同じ書体の欄を 2 つ建てて
+        # `width` に対する直線を引き、切片＝枠の取り分を外す。
+        probes = [ttk.Entry(win, width=w, state="readonly") for w in (10, 20)]
+        per_char = (probes[1].winfo_reqwidth() - probes[0].winfo_reqwidth()) / 10.0
+        chrome = probes[0].winfo_reqwidth() - per_char * 10
+        for probe in probes:
+            probe.destroy()
+        inner = entry.winfo_reqwidth() - chrome
+        assert inner >= widest, (
+            f"{opener} / {lang}: 解像度の欄が狭い（欄の内側 {inner}px < "
+            f"いちばん長いラベル {widest}px）＝ラベルの末尾が切れる"
+        )
+    finally:
+        root.destroy()
+    _i18n.set_lang("ja")
