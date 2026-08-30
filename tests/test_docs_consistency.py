@@ -241,6 +241,61 @@ def test_architecture_diagram_keeps_every_line_inside_its_card(doc):
         )
 
 
+#: 字の高さ（class → font-size）。**`.style` の実値と対で持つ**＝片方だけ動かすと
+#: この検査が甘くなる（`test_architecture_diagram_font_sizes_match_the_stylesheet`）。
+ARCH_FONT_PX = {"lname": 16.0, "lrule": 12.5, "ctitle": 12.5,
+                "mod": 13.0, "role": 11.5, "note": 12.0}
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_font_sizes_match_the_stylesheet(doc):
+    """上の表が図の `<style>` の実値と一致すること（写しはテストで縛る）。"""
+    import re
+
+    css = (ROOT / doc).read_text(encoding="utf-8")
+    for cls, px in ARCH_FONT_PX.items():
+        m = re.search(rf"\.{cls}\s*{{[^}}]*font-size:\s*([\d.]+)px", css)
+        assert m and float(m[1]) == px, (
+            f"{doc}: .{cls} の font-size が図（{m[1] if m else '無し'}）と"
+            f"テストの表（{px}）で食い違う"
+        )
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_never_draws_text_across_a_card_edge(doc):
+    """字がカードの枠線を跨がないこと。
+
+    🔴 **B-153**＝カードを 3 行ぶん伸ばした（`height` 116 → 176）のに、その真下に
+    置いてある注記を動かさなかったので、**注記の上半分がカードの内側に入り下端の
+    枠線を跨いだ**。⚠️ **既存の 4 本は 1 本も落ちなかった**＝どれも `mod` / `role`
+    しか見ておらず、**`note` とカードの当たりは検査の外**だった（B-147 の直しが
+    残した同じクラスの穴＝ゲートの壊れ方①）。
+
+    🔑 **字の横幅は推定しない**＝等幅でない書体・実体参照（`&lt;`）で必ずずれる
+    （実際、幅を数える探針は en の `role` を偽陽性で挙げた）。**始点 `x` が
+    カードの横幅の内側にある字だけ**を対象に、**縦の重なりだけ**を見る。
+    ⇒ 「カードの中の字」か「カードの上下に完全に外れた字」かの二択に縛れる。
+    """
+    _size, _b, cards, texts, _bg = _svg_geometry(doc)
+    assert cards, f"{doc}: カードが拾えていない"
+    for classes, x, y in texts:
+        cls = next((c for c in classes if c in ARCH_FONT_PX), None)
+        if cls is None:
+            continue
+        top, bottom = y - ARCH_FONT_PX[cls] * 0.95, y + ARCH_FONT_PX[cls] * 0.25
+        for cx, cy, cw, ch in cards:
+            if not (cx <= x < cx + cw):
+                continue                      # 横に外れている＝この字は無関係
+            cy1 = cy + ch
+            if top >= cy and bottom <= cy1:
+                continue                      # このカードの中身
+            assert bottom <= cy or top >= cy1, (
+                f"{doc}: [{cls}] ({x}, {y}) の字がカード "
+                f"({cx}, {cy})-({cx + cw}, {cy1}) の枠線を跨いでいる"
+                "（カードを伸ばしたら、その下に置いた字も動かす）"
+            )
+
+
 def test_architecture_diagrams_share_the_same_layout():
     """ja / en の幾何が一致すること（2 枚は同じ図の複製＝片方だけ直すとずれる）。"""
     ja, en = (_svg_geometry(doc) for doc in ARCH_SVGS)

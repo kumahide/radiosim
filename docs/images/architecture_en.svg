@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1046" width="1120" height="1046"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1066" width="1120" height="1066"
      role="img" aria-labelledby="ttl desc" font-family="Arial,Helvetica,'Segoe UI',sans-serif">
   <title id="ttl">RadioSim Pro layer structure</title>
   <desc id="desc">Three layers — views, report and core — with a one-way dependency from views to report to core, listing the modules of each layer with their role.</desc>
@@ -20,7 +20,7 @@
     </style>
   </defs>
 
-  <rect width="1120" height="1046" fill="#ffffff"/>
+  <rect width="1120" height="1066" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — Layer Structure</text>
   <text x="20" y="57" class="note">Layers are directories. The dependency runs one way: views → report → core. Anything used by two layers moves down, never into a shared/ box.</text>
@@ -112,7 +112,7 @@
   <line class="arrow" x1="560" y1="668" x2="560" y2="692"/>
 
   <!-- ============================= core ============================== -->
-  <rect class="band" x="20" y="696" width="1080" height="288" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
+  <rect class="band" x="20" y="696" width="1080" height="308" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
   <text x="34" y="720" class="lname" fill="#7a4f16">core/ — the foundation (calculation, data, configuration)</text>
   <text x="1086" y="720" class="lrule" text-anchor="end">Imports neither tkinter nor matplotlib.</text>
 
@@ -142,17 +142,15 @@
   </g>
 
   <g>
-    <rect class="card" x="34" y="894" width="341" height="76" rx="6" stroke="#f0dcbe"/>
-    <text x="46" y="911" class="ctitle" fill="#7a4f16">Where external I/O is confined</text>
-    <text x="46" y="932" class="mod">dem.py</text><text x="182" y="932" class="role">DEM / tiles, cache, proxy</text>
-    <text x="46" y="952" class="mod">dem_prefetch.py</text><text x="182" y="952" class="role">area prefetch</text>
+    <rect class="card" x="34" y="914" width="341" height="76" rx="6" stroke="#f0dcbe"/>
+    <text x="46" y="931" class="ctitle" fill="#7a4f16">Where external I/O is confined</text>
+    <text x="46" y="952" class="mod">dem.py</text><text x="182" y="952" class="role">DEM / tiles, cache, proxy</text>
+    <text x="46" y="972" class="mod">dem_prefetch.py</text><text x="182" y="972" class="role">area prefetch</text>
 
-    <text x="401" y="920" class="note">HTTP, proxies and the disk cache exist inside this one module only</text>
-    <text x="401" y="940" class="note">— every other layer only ever sees elevations that were already fetched.</text>
+    <text x="401" y="940" class="note">HTTP, proxies and the disk cache exist inside this one module only</text>
+    <text x="401" y="960" class="note">— every other layer only ever sees elevations that were already fetched.</text>
   </g>
 
-  <text x="20" y="1012" class="note">main.py belongs to no layer (it starts the app and assembles views). Upward dependencies and import-time cycles are stopped by tests/test_layers.py.</text>
-  <text x="20" y="1032" class="note">The source of this figure is docs/images/architecture_en.svg; tests/test_docs_consistency.py checks that it lists every module.</text>
+  <text x="20" y="1032" class="note">main.py belongs to no layer (it starts the app and assembles views). Upward dependencies and import-time cycles are stopped by tests/test_layers.py.</text>
+  <text x="20" y="1052" class="note">The source of this figure is docs/images/architecture_en.svg; tests/test_docs_consistency.py checks that it lists every module.</text>
 </svg>
-
-
