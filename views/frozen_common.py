@@ -172,4 +172,3 @@ def readonly_band(parent: tk.Misc, *, widths: "dict[str, int]",
             vars_[attr] = tk.StringVar()
             readonly_field(rows[-1], label_key, vars_[attr], widths.get(attr, 6))
     return vars_
-

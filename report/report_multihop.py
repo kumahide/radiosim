@@ -318,4 +318,3 @@ def save_report_all_html(run: MultiHopRun, project_name: str = "", memo: str = "
     with open(os.path.join(run.save_dir, "report_all.html"), "w",
               encoding="utf-8") as f:
         f.write(doc)
-

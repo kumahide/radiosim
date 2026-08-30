@@ -505,4 +505,3 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
 
     with open(os.path.join(batch_dir, "summary.kml"), "w", encoding="utf-8") as f:
         f.write(kml)
-

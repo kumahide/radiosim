@@ -1502,4 +1502,3 @@ def load_external(dir_path: str) -> list:
             (code, shown if isinstance(shown, str) and shown else code,
              len(accepted), rejected))
     return external_reports()
-
