@@ -129,6 +129,127 @@ def test_architecture_diagram_lists_all_modules(doc):
         assert name in arch, f"{doc}: architecture layer diagram is missing {name}"
 
 
+# --- 2b. 層構成図のレイアウト: 行を 1 本足したときに落ちること ---------------
+#
+# 🔑 **上の 2 が見ているのは「字が在るか」だけ**＝役割の字が 1 つ上の行と重なって
+# いても、カードが帯を突き抜けていても、背景が図の下端まで届いていなくても緑になる
+# （実際に 3 つとも同時に起きた＝B-147。**ゲートの壊れ方①「一度も落ちない」**）。
+#
+# 🔴 **クラスは「図の中の座標を手で足したこと」**＝行を 1 本足すと
+#   ①その行の座標 ②親カードの高さ ③親帯の高さ ④背景 ⑤全体の height
+# の **5 か所が連動する**のに、機械はどれも見ていなかった。ここで①②③④を見る
+# （⑤は④の検査が兼ねる＝背景は svg の height と突き合わせる）。
+# ⚠️ **ja / en は「もう 1 例」ではなく同一の図の複製**＝手で同期させている以上、
+# 片方だけ直すと必ずずれるので、**2 枚の幾何が一致すること自体**も検査する。
+ARCH_SVGS = ["docs/images/architecture_ja.svg", "docs/images/architecture_en.svg"]
+
+
+def _svg_geometry(doc: str):
+    """SVG から帯・カード・字の座標を拾う（描画はせず座標だけを見る）。"""
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(ROOT / doc).getroot()
+    size = (float(root.get("width")), float(root.get("height")))
+    bands, cards, texts, backgrounds = [], [], [], []
+    for el in root.iter():
+        tag = el.tag.rsplit("}", 1)[-1]
+        classes = (el.get("class") or "").split()
+        if tag == "rect":
+            box = (float(el.get("x", 0)), float(el.get("y", 0)),
+                   float(el.get("width")), float(el.get("height")))
+            if "band" in classes:
+                bands.append(box)
+            elif "card" in classes:
+                cards.append(box)
+            elif not classes:
+                backgrounds.append(box)
+        elif tag == "text":
+            texts.append((classes, float(el.get("x")), float(el.get("y"))))
+    return size, bands, cards, texts, backgrounds
+
+
+def _inside(box, outer) -> bool:
+    x, y, w, h = box
+    ox, oy, ow, oh = outer
+    return x >= ox and y >= oy and x + w <= ox + ow and y + h <= oy + oh
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_background_covers_the_whole_figure(doc):
+    """背景の白が図の下端まで届くこと（透明地・暗色地でも注記が読める）。"""
+    (width, height), _b, _c, _t, backgrounds = _svg_geometry(doc)
+    assert backgrounds, f"{doc}: 背景の rect が無い"
+    assert any(bg[2] >= width and bg[3] >= height for bg in backgrounds), (
+        f"{doc}: 背景 {backgrounds} が図（{width}×{height}）を覆っていない"
+        "＝はみ出した領域の字は透明地／暗色地で読めない"
+    )
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_cards_stay_inside_their_band(doc):
+    """カードが親の帯からはみ出さないこと（行を足して帯を広げ忘れると落ちる）。"""
+    _size, bands, cards, _t, _bg = _svg_geometry(doc)
+    assert bands and cards, f"{doc}: 帯またはカードが拾えていない"
+    for card in cards:
+        # 親＝カードの左上を含む帯（はみ出していても親は決まる）。
+        parents = [b for b in bands
+                   if b[0] <= card[0] < b[0] + b[2] and b[1] <= card[1] < b[1] + b[3]]
+        assert parents, f"{doc}: どの帯にも属さないカード {card}"
+        assert _inside(card, parents[0]), (
+            f"{doc}: カード {card} が帯 {parents[0]} を突き抜けている"
+            "（行を足したら帯の高さも足す）"
+        )
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_pairs_each_module_with_its_role(doc):
+    """モジュール名と役割が**同じ行に**並ぶこと。
+
+    片方の `y` だけを直し忘れると、役割が 1 つ上の行の役割と**同じ座標に描かれて
+    字が重なる**（B-147 ①）。字の有無では見えないので、行（y）の対応で見る。
+    """
+    _size, _b, cards, texts, _bg = _svg_geometry(doc)
+    for card in cards:
+        rows = {"mod": [], "role": []}
+        for classes, x, y in texts:
+            kind = "mod" if "mod" in classes else ("role" if "role" in classes else None)
+            if kind and card[0] <= x <= card[0] + card[2] \
+                    and card[1] <= y <= card[1] + card[3]:
+                rows[kind].append(y)
+        assert sorted(rows["mod"]) == sorted(rows["role"]), (
+            f"{doc}: カード {card} でモジュール名と役割の行がずれている"
+            f"（mod={sorted(rows['mod'])} / role={sorted(rows['role'])}）"
+            "＝同じ y に 2 つの役割が描かれると字が重なる"
+        )
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_keeps_every_line_inside_its_card(doc):
+    """モジュールの行が、必ずどれかのカードの内側に在ること。
+
+    ⚠️ **これが無いと上のペア検査が「行を足した日」に空振りする**＝カードの外へ
+    こぼれた行は、対応表からも一緒に抜けるので釣り合ってしまう（ゲートの壊れ方①）。
+    """
+    _size, _b, cards, texts, _bg = _svg_geometry(doc)
+    for classes, x, y in texts:
+        if "mod" not in classes and "role" not in classes:
+            continue
+        assert any(c[0] <= x <= c[0] + c[2] and c[1] <= y <= c[1] + c[3]
+                   for c in cards), (
+            f"{doc}: ({x}, {y}) の行がカードの外へこぼれている"
+            "（行を足したらカードの高さも足す）"
+        )
+
+
+def test_architecture_diagrams_share_the_same_layout():
+    """ja / en の幾何が一致すること（2 枚は同じ図の複製＝片方だけ直すとずれる）。"""
+    ja, en = (_svg_geometry(doc) for doc in ARCH_SVGS)
+    assert ja == en, (
+        "architecture_ja.svg と architecture_en.svg のレイアウトがずれている"
+        "（座標は手で同期させているので、片方だけ直すと必ずずれる）"
+    )
+
+
 # --- 3. テスト表: 全テストファイルを列挙しているか ---------------------------
 @pytest.mark.parametrize("doc", DEV_DOCS)
 def test_test_table_lists_all_test_files(doc):

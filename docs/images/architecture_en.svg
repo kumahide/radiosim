@@ -20,7 +20,7 @@
     </style>
   </defs>
 
-  <rect width="1120" height="1026" fill="#ffffff"/>
+  <rect width="1120" height="1046" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — Layer Structure</text>
   <text x="20" y="57" class="note">Layers are directories. The dependency runs one way: views → report → core. Anything used by two layers moves down, never into a shared/ box.</text>
@@ -112,7 +112,7 @@
   <line class="arrow" x1="560" y1="668" x2="560" y2="692"/>
 
   <!-- ============================= core ============================== -->
-  <rect class="band" x="20" y="696" width="1080" height="268" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
+  <rect class="band" x="20" y="696" width="1080" height="288" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
   <text x="34" y="720" class="lname" fill="#7a4f16">core/ — the foundation (calculation, data, configuration)</text>
   <text x="1086" y="720" class="lrule" text-anchor="end">Imports neither tkinter nor matplotlib.</text>
 
@@ -130,7 +130,7 @@
     <text x="401" y="842" class="mod">output_contract.py</text><text x="537" y="842" class="role">artifact CSV column spec</text>
     <text x="401" y="862" class="mod">terrain_grid.py</text><text x="537" y="862" class="role">resolution → sample count</text>
     <text x="401" y="882" class="mod">diffraction.py</text><text x="537" y="882" class="role">diffraction loss (Bullington)</text>
-    <text x="401" y="902" class="mod">disclosure.py</text><text x="537" y="882" class="role">report disclosure wording</text>
+    <text x="401" y="902" class="mod">disclosure.py</text><text x="537" y="902" class="role">report disclosure wording</text>
 
     <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
@@ -154,3 +154,5 @@
   <text x="20" y="1012" class="note">main.py belongs to no layer (it starts the app and assembles views). Upward dependencies and import-time cycles are stopped by tests/test_layers.py.</text>
   <text x="20" y="1032" class="note">The source of this figure is docs/images/architecture_en.svg; tests/test_docs_consistency.py checks that it lists every module.</text>
 </svg>
+
+

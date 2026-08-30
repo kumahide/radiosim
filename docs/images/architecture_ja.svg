@@ -20,7 +20,7 @@
     </style>
   </defs>
 
-  <rect width="1120" height="1026" fill="#ffffff"/>
+  <rect width="1120" height="1046" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — レイヤー構成</text>
   <text x="20" y="57" class="note">層はディレクトリで表す。依存は views → report → core の一方向で、2 つの層から使うものは「下」へ置く（shared/ のような箱は作らない）。</text>
@@ -112,7 +112,7 @@
   <line class="arrow" x1="560" y1="668" x2="560" y2="692"/>
 
   <!-- ============================= core ============================== -->
-  <rect class="band" x="20" y="696" width="1080" height="268" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
+  <rect class="band" x="20" y="696" width="1080" height="288" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
   <text x="34" y="720" class="lname" fill="#7a4f16">core/ — 土台（計算・データ・設定）</text>
   <text x="1086" y="720" class="lrule" text-anchor="end">tkinter も matplotlib も引かない。</text>
 
@@ -130,7 +130,7 @@
     <text x="401" y="842" class="mod">output_contract.py</text><text x="537" y="842" class="role">成果物 CSV の列仕様</text>
     <text x="401" y="862" class="mod">terrain_grid.py</text><text x="537" y="862" class="role">解像度の段階 → 点数</text>
     <text x="401" y="882" class="mod">diffraction.py</text><text x="537" y="882" class="role">回折損（Bullington・J(ν)）</text>
-    <text x="401" y="902" class="mod">disclosure.py</text><text x="537" y="882" class="role">帳票の開示の字（前提・適用範囲）</text>
+    <text x="401" y="902" class="mod">disclosure.py</text><text x="537" y="902" class="role">帳票の開示の字（前提・適用範囲）</text>
 
     <rect class="card" x="744" y="744" width="341" height="136" rx="6" stroke="#f0dcbe"/>
     <text x="756" y="761" class="ctitle" fill="#7a4f16">設定・環境・文字列</text>
@@ -154,3 +154,6 @@
   <text x="20" y="1012" class="note">main.py は層に属さない（起動して views を組み立てるだけ）。層をまたぐ逆流と import 時の循環は tests/test_layers.py が機械で止める。</text>
   <text x="20" y="1032" class="note">この図の元は docs/images/architecture_ja.svg。モジュールの網羅は tests/test_docs_consistency.py が検査する。</text>
 </svg>
+
+
+
