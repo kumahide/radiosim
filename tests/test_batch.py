@@ -1866,3 +1866,56 @@ class TestBatchTableWheelIsScopedToItsWindow:
             assert moved == [], f"表の外で回したのに動いた: {moved}"
         finally:
             win.destroy(); root.destroy()
+
+
+# ============================================================
+# ERROR 行の理由が台帳の幅を押し広げないこと（B-145）
+# ============================================================
+class TestSummaryErrorReasonFitsOnPaper:
+    """自由文の理由を colspan で流し込む台帳が、A4 の印字域を突き抜けないこと。
+
+    ⚠️ **見ているのは「クラスが入っているか」ではなく幅そのもの**＝クラスを足した
+    だけのゲートは、`nowrap` が残っていても緑になる（B-145 の対応欄）。
+    絶対値（182mm）で測らない理由は tests/table_fit.py の冒頭に書いてある
+    ＝字の実寸は機械のフォント次第なので、**理由を伸ばしたときの増分**で見る。
+    """
+
+    # 実際に出る形（OneDrive のロック・パス長超過はどれも空白の無い長いパスを吐く）
+    LONG_REASON = (
+        "PermissionError: [WinError 5] "
+        r"C:\Users\example\OneDrive\Documents\radiosim\results\batch_20260830_093121"
+        r"\path03_very_long_identifier\report.html "
+    ) * 3
+    SHORT_REASON = "boom"
+
+    def _html(self, tmp_path, default_params_dict, reason: str) -> str:
+        params = sim.SimParams(default_params_dict)
+        ok_row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        er_row = batch.PathRow("p02", 34.46, 132.30, 34.40, 132.20, 30.0, 10.0)
+        results = [
+            batch.PathResult(row=ok_row, result=_make_result(), params=params),
+            batch.PathResult(row=er_row, result=None, params=None,
+                             error=RuntimeError(reason)),
+        ]
+        i18n.set_lang("en")
+        out = tmp_path / reason[:8].strip().replace(":", "_")
+        out.mkdir()
+        report_summary.save_summary_html(results, str(out))
+        with open(os.path.join(str(out), "summary.html"), encoding="utf-8") as f:
+            return f.read()
+
+    def test_a_long_error_reason_does_not_widen_the_ledger(self, tmp_path,
+                                                           default_params_dict):
+        from tests import table_fit
+
+        sheet = (("div", frozenset({"sheet", "summary"})),)
+        narrow = table_fit.table_min_width_px(
+            self._html(tmp_path, default_params_dict, self.SHORT_REASON),
+            "summary", ancestors=sheet)
+        wide = table_fit.table_min_width_px(
+            self._html(tmp_path, default_params_dict, self.LONG_REASON),
+            "summary", ancestors=sheet)
+        assert wide == pytest.approx(narrow, abs=1.0), (
+            "ERROR 行の理由が長いだけで台帳が広がる＝右端の列が A4 の印字域の外へ出る"
+            f"（{narrow:.0f}px → {wide:.0f}px）"
+        )

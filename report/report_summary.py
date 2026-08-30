@@ -182,6 +182,12 @@ def summary_sheet_css() -> str:
    "ridg/e cros/sing" と語中で割れないように）。長い連続語だけ必要時に分割する。 */
 .sheet.summary table.summary td.c-note{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:break-word}
+/* ERROR 行の理由（自由文・colspan）も折り返す（B-145）。nowrap のままだと
+   **折り返せない 1 行が table-layout:auto の表全体を押し広げ**、備考・グラフ列が
+   A4 の印字域（182mm）の外へ出る。理由には空白の無い長い連続語（Windows の
+   パス・例外クラス名）が入るので、備考の break-word では割れない＝anywhere。 */
+.sheet.summary table.summary td.c-reason{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:anywhere}
 .sheet.summary table.summary tr{break-inside:avoid}
 /* 備考（自由文）とグラフだけ幅を抑える（auto だと長い備考が幅を奪いすぎるため）。
    数値・ID 列は幅指定せず内容に追従させる。 */
@@ -252,7 +258,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
                 # 幅は**列数から引く**（先頭 7 列＋備考＋グラフの 9 列以外）。
                 # 直に数を書くと、列を足した日に理由欄だけが 1 列ずれる（I-077 で
                 # 実際に踏んだ＝中継台帳は最初から引き算で書いてあった）。
-                f"<td colspan='{len(_SUMMARY_COL_KEYS) - 9}'>{error_esc}</td>"
+                f"<td class='c-reason' colspan='{len(_SUMMARY_COL_KEYS) - 9}'>{error_esc}</td>"
                 f"<td class='c-note'>{note_esc}</td>"
                 f"<td></td></tr>\n"
             )
@@ -499,3 +505,4 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
 
     with open(os.path.join(batch_dir, "summary.kml"), "w", encoding="utf-8") as f:
         f.write(kml)
+

@@ -60,6 +60,11 @@ def route_sheet_css() -> str:
 .sheet.multihop table.hops td{padding:3px 4px;font-size:9px;border-bottom:1px solid #eee;
   text-align:right;white-space:nowrap}
 .sheet.multihop table.hops td.c-name{text-align:left}
+/* ERROR 行の理由（自由文・colspan）は折り返す（B-145・バッチ台帳と同型）。
+   nowrap のままだと折り返せない 1 行が表全体を押し広げ、右端の列が A4 の
+   印字域の外へ出る。空白の無い長い連続語が入るので anywhere。 */
+.sheet.multihop table.hops td.c-reason{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:anywhere}
 .sheet.multihop tr.ok td.c-status{color:#2e7d32;font-weight:bold}
 .sheet.multihop tr.ng td.c-status{color:#c62828;font-weight:bold}
 .sheet.multihop tr.err td{color:#e65100}
@@ -169,7 +174,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 f"<tr class='{cls}'><td>{i + 1}</td>"
                 f"<td class='c-name'>{wp_from} → {wp_to}</td>"
                 f"<td class='c-status'>ERROR</td>"
-                f"<td colspan='{len(_HOP_COL_KEYS) - 3}'>"
+                f"<td class='c-reason' colspan='{len(_HOP_COL_KEYS) - 3}'>"
                 f"{_html.escape(str(pr.error))}</td></tr>\n"
             )
             continue
@@ -313,3 +318,4 @@ def save_report_all_html(run: MultiHopRun, project_name: str = "", memo: str = "
     with open(os.path.join(run.save_dir, "report_all.html"), "w",
               encoding="utf-8") as f:
         f.write(doc)
+

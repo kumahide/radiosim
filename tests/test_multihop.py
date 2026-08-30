@@ -1343,3 +1343,49 @@ class TestOverallStatus:
             assert "NG" not in text, f"判定不能を NG と言い切っている: {text}"
         finally:
             win.destroy(); root.destroy()
+
+
+# ============================================================
+# ERROR 行の理由が区間表の幅を押し広げないこと（B-145）
+# ============================================================
+class TestHopLedgerErrorReasonFitsOnPaper:
+    """自由文の理由を colspan で流し込む面の**2 つ目**（1 つ目＝バッチ台帳）。
+
+    見ているのは幅そのもの（クラスの有無ではない）。増分で測る理由は
+    tests/table_fit.py の冒頭にある。
+    """
+
+    LONG_REASON = (
+        "PermissionError: [WinError 5] "
+        r"C:\Users\example\OneDrive\Documents\radiosim\results\route_20260830_093121"
+        r"\route1_h1_very_long_identifier\report.html "
+    ) * 3
+    SHORT_REASON = "boom"
+
+    def _html(self, base, tmp_path, monkeypatch, reason: str) -> str:
+        from report import report_multihop
+
+        monkeypatch.setattr("report.report_path.save_path_visuals", lambda *a, **k: None)
+        i18n.set_lang("ja")
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        broken = run.hops[0]
+        run.hops[0] = batch.PathResult(row=broken.row, result=None, params=None,
+                                       error=RuntimeError(reason))
+        return ("<style>" + report_multihop.route_sheet_css() + "</style>"
+                + report_multihop.route_sheet_html(run))
+
+    def test_a_long_error_reason_does_not_widen_the_hop_ledger(
+            self, base, tmp_path, monkeypatch):
+        from tests import table_fit
+
+        sheet = (("section", frozenset({"sheet", "multihop"})),)
+        narrow = table_fit.table_min_width_px(
+            self._html(base, tmp_path, monkeypatch, self.SHORT_REASON),
+            "hops", ancestors=sheet)
+        wide = table_fit.table_min_width_px(
+            self._html(base, tmp_path, monkeypatch, self.LONG_REASON),
+            "hops", ancestors=sheet)
+        assert wide == pytest.approx(narrow, abs=1.0), (
+            "ERROR 区間の理由が長いだけで区間表が広がる＝右端の列が紙の外へ出る"
+            f"（{narrow:.0f}px → {wide:.0f}px）"
+        )
