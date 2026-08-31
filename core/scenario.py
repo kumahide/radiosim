@@ -353,6 +353,12 @@ def run_scenario(
                 raw_elevs=raw,
                 lat_tx=base_params.lat_tx, lon_tx=base_params.lon_tx,
                 lat_rx=base_params.lat_rx, lon_rx=base_params.lon_rx,
+                # ⚠️ **標高を読んだ位置をそのまま渡す**（B-150／落としたのが B-157）
+                #    ＝渡さないと等間隔として並べ直され、画素の縁で刻んだ標高が
+                #    別の距離に貼りつく。ここを落としても*この面の中だけ*を見る
+                #    テストは全部緑のままなので、守っているのは面をまたぐ一致の
+                #    ゲート（`TestScenarioBaseMatchesSingleRun`）。
+                frac_axis=base_params.sample_fracs,
             )
             t_fetch = time.perf_counter() - t0
 

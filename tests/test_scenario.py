@@ -445,6 +445,78 @@ class TestRunScenario:
 
 
 # ============================================================
+# 面をまたぐ一致（条件探索のベース ⇔ 個別）
+# ============================================================
+class TestScenarioBaseMatchesSingleRun:
+    """**同じ経路・同じ条件なら、条件探索のベースと個別が同じ答えを出す**（B-157）。
+
+    🔑 **これが無かったので B-157 が素通りした**＝面ごとに別々に検査していて、
+    *面をまたいで同じ答えになること*を誰も見ていなかった。地形の作り方
+    （`calculate_terrain_profile` へ何を渡すか）は 4 面に分かれて書かれており、
+    1 面だけ引数を落としても、その面の中だけを見るテストは全部緑のままになる。
+    ⚠️ **引数の有無を見る形にはしない**（`frac_axis=` を grep する検査は、
+    渡した値が間違っていても通る）＝**出てくる値で比べる**。
+    """
+
+    # ⚠️ **段階（解像度）を指定する**＝固定 N モードは定義上どの面でも等間隔で、
+    #    そこだけで比べると**一度も落ちないゲート**になる（B-150 以後の欠陥は
+    #    「画素の縁＝非等間隔」でしか現れない）。
+    def _staged_base(self, default_params_dict):
+        d = dict(default_params_dict)
+        d.pop("samples", None)
+        d["resolution"] = "high"
+        return sim.SimParams(d)
+
+    def test_sample_positions_are_actually_uneven(self, default_params_dict):
+        """前提の確認＝この経路の標本が**本当に非等間隔**であること。
+
+        ここが等間隔だと下の一致検査は何も測らない（[[feedback-synthetic-cases-lie]]
+        ＝対照のラベルが嘘をつく）。刻みの最大 / 最小で見る。
+        """
+        base = self._staged_base(default_params_dict)
+        steps = np.diff(np.asarray(base.sample_fracs, dtype=float))
+        assert base.num > 2
+        assert steps.max() / steps.min() > 2.0, (
+            "この経路の標本が等間隔＝B-157 の欠陥が現れない条件になっている"
+            f"（刻み比 {steps.max() / steps.min():.3f}）")
+
+    def test_base_point_matches_single_simulation(self, default_params_dict,
+                                                  monkeypatch):
+        """条件探索のベース点と、個別シミュレーションの受信レベルが一致する。"""
+        base = self._staged_base(default_params_dict)
+
+        # 個別の面（views/graph.py と同じ形）で解いた答え
+        raw = np.zeros(base.num)
+        raw[base.num // 2 - 3:base.num // 2 + 3] = 120.0
+        terrain_single = models.calculate_terrain_profile(
+            raw_elevs=raw,
+            lat_tx=base.lat_tx, lon_tx=base.lon_tx,
+            lat_rx=base.lat_rx, lon_rx=base.lon_rx,
+            frac_axis=base.sample_fracs,
+        )
+        expected = sim.run_calculation(
+            terrain_single, base.h_tx, base.h_rx, base)
+
+        # 条件探索の面（上書き無しのベース 1 点だけ）
+        run = _run_sync(monkeypatch, base, [scn.Condition("base", {})])
+        actual = run.points[0].result
+
+        assert actual.actual_margin == pytest.approx(
+            expected.actual_margin, abs=1e-9), (
+            "条件探索のベースと個別でマージンが違う"
+            f"（探索 {actual.actual_margin:.3f} dB / 個別 "
+            f"{expected.actual_margin:.3f} dB）")
+        assert actual.diff_loss == pytest.approx(expected.diff_loss, abs=1e-9)
+        assert actual.blocked_ratio == pytest.approx(
+            expected.blocked_ratio, abs=1e-9)
+        # 🔑 **距離軸そのものを比べる**＝マージンが偶然一致しても、標本の位置が
+        #    ずれていればここで落ちる（欠陥の所在に一番近い面）。
+        np.testing.assert_allclose(
+            np.asarray(run.terrain.d_km_axis),
+            np.asarray(terrain_single.d_km_axis), atol=1e-12)
+
+
+# ============================================================
 # レポート（A4 シート・CSV）
 # ============================================================
 class TestScenarioReport:
