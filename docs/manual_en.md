@@ -336,7 +336,7 @@ After retrieval completes, the terrain cross-section graph is displayed.
 | Cyan band           | 1st Fresnel Zone                                         |
 | Black vertical bars | TX / RX antennas                                         |
 
-⚠️ **A finely stepped terrain outline is normal** (on "high" and "medium") — elevation is **constant inside one DEM pixel**, and the profile draws the pixels the path actually crosses. **One step is one DEM pixel** (3.3–4.4 m depending on latitude); the data is neither coarse nor broken. The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" is evenly spaced at 20 m, so it shows no steps — but it skips pixels instead.
+⚠️ **A finely stepped terrain outline is normal** (on "high" and "medium") — samples are placed **at the edges of every grid cell the path crosses**, and elevation is **constant inside one DEM pixel**, so the outline comes out as shelves and risers. The data is neither coarse nor broken; pixels that used to be skipped are now all drawn. The width of a step is the sampling grid: **about 3.3–4.4 m on "high", and twice that (about 6.6–8.7 m) on "medium"**, depending on latitude. ⚠️ **Only on "high" does one step correspond to one DEM pixel** — the "medium" grid is *coarser than the layer the elevations come from* (5 m mesh), so the two ends of one cell can read different pixels. The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" is evenly spaced at 20 m, so it shows no steps — but it skips pixels instead.
 
 #### Sliders
 
