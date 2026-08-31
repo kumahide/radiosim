@@ -29,12 +29,51 @@ from core import models
 from core import simulation as sim
 from core import terrain_grid
 from report import batch
+from report import multihop as mh
 from report import report_common
 from report import report_multihop
 from report import report_path
 from report import report_summary
 
 _KML_NS = "{http://www.opengis.net/kml/2.2}"
+
+
+def _css_px(css: str, selector: str, prop: str, index: int = 0) -> float:
+    """`selector` の宣言ブロックから `prop` の px 値を読む（`index`＝何個目の数）。
+
+    ⚠️ **CSS を読む側でも「書いてあるはず」を仮定しない**＝プロパティが消えたら
+    KeyError で落ちる（既定値で補うと、消えたことが見えないまま予算だけ通る）。
+    """
+    body = css.split(selector, 1)
+    assert len(body) == 2, f"セレクタが無い: {selector}"
+    rule = body[1].split("}", 1)[0]
+    for decl in rule.replace("\n", " ").split(";"):
+        name, _, value = decl.partition(":")
+        if name.strip() == prop:
+            nums = re.findall(r"(-?[\d.]+)px", value)
+            assert len(nums) > index, f"{selector} {prop}: px が足りない（{value}）"
+            return float(nums[index])
+    raise KeyError(f"{selector} に {prop} が無い")
+
+
+# Arial のおよその送り幅（em 比）。**上振れ側**に取る＝近似で「収まる」と誤判定
+# しないため。全角（CJK・全角記号）は 1em。
+_EM_UPPER, _EM_OTHER, _EM_THIN = 0.75, 0.62, 0.30
+
+
+def _text_px(text: str, font_px: float) -> float:
+    """`font_px` で描いたときの `text` のおよその幅（px・上振れ側の見積り）。"""
+    total = 0.0
+    for ch in text:
+        if ord(ch) > 0x2E7F:            # CJK 帯（かな・漢字・全角記号）＝1em
+            total += 1.0
+        elif ch in " .,()":
+            total += _EM_THIN
+        elif ch.isupper():
+            total += _EM_UPPER
+        else:
+            total += _EM_OTHER
+    return total * font_px
 
 
 def _make_result(status: str = "OK") -> models.LinkBudgetResult:
@@ -418,12 +457,95 @@ class TestSheetCssIsScoped:
 
         ⚠️ ここだけは `nowrap` にできない＝地点名の長さに上限が無いので、
         1 つの長い名前がカード列を丸ごと押し広げる。⇒ `max-width` で折る側に倒す。
+        🔴 **上限は「カード」に掛かっていること**＝`.val` に掛けても `flex:0 0 auto`
+        の幅（max-content）は締まらず、実測でカードが 238px に膨らんだ（B-155）。
         """
         css = report_multihop.route_sheet_css()
         block = css.split(".sheet.multihop .card.hop .val", 1)
         assert len(block) == 2, "区間名のカードに固有の指定が無い"
+        assert "white-space:normal" in block[1].split("}", 1)[0], block[1]
+        card = css.split(".sheet.multihop .card.hop{", 1)
+        assert len(card) == 2 and "max-width" in card[1].split("}", 1)[0], (
+            "区間名のカード自体に max-width が無い（値に掛けても効かない）")
+
+    @pytest.mark.parametrize("css_of", ["multihop", "summary"])
+    def test_both_ledgers_bind_their_thumbnails(self, css_of):
+        """**両方の台帳**が、表の画像をセルに従わせること（B-155）。
+
+        🔴 **揃っていなかったのは中継のほうだけ**だった＝バッチ台帳は最初から
+        `td img{max-width:100%}` を持っており、中継は持っていなかったので
+        サムネイルの実寸（断面図 15:4.5 ＝ 高さ 40px なら幅 133px）が列の最小幅に
+        なり、**表が A4 の印字域を 51px はみ出した**（実測）。⚠️ **2 つ同時に見る**
+        ＝片方だけ直すと、次に足した台帳でまた同じ日が来る（⑧）。
+        """
+        css = (report_multihop.route_sheet_css() if css_of == "multihop"
+               else report_summary.summary_sheet_css())
+        table = "table.hops" if css_of == "multihop" else "table.summary"
+        block = css.split(f".sheet.{css_of} {table} td img", 1)
+        assert len(block) == 2, f"{css_of}: 表の画像に指定が無い"
         rule = block[1].split("}", 1)[0]
-        assert "max-width" in rule and "white-space:normal" in rule, rule
+        assert "max-width:100%" in rule and "height:auto" in rule, (
+            f"{css_of}: 画像が実寸を主張する（{rule}）")
+
+    def test_card_row_fits_a4(self):
+        """中継のサマリカード **7 枚が A4 の印字幅に 1 行で収まる**こと（B-155）。
+
+        🔴 **前のゲートは「壊れ方」しか縛っておらず、欠陥のほうを固定していた**
+        （[[feedback-promote-recurring-checks]] 実証52）＝語中で折れないことは
+        通ったが、実機では 5+2 に割れて **OK / NG / エラーというひと組の内訳が
+        行をまたいだ**。折り返しは*下限*であって直しではない。⇒ ここで幅そのものを
+        見積もり、収まらなければ落とす。
+
+        ⚠️ **ブラウザは要らないが、字の幅は近似**（Arial のおよその送り幅・全角は
+        1em）＝だから**上振れ側**の係数を使い、余った幅（headroom）も 5% 以上を
+        要求する。近似なので「ちょうど収まる」は収まらないものとして扱う。
+        ⚠️ **全語彙で回す**＝英語はラベルが `text-transform:uppercase` で伸びる。
+        """
+        css = report_multihop.route_sheet_css()
+        pad = _css_px(css, ".sheet.multihop .card{", "padding", index=1)
+        min_w = _css_px(css, ".sheet.multihop .card{", "min-width")
+        gap = _css_px(css, ".sheet.multihop .cards{", "gap")
+        # ⚠️ 上限は**カード**に掛かっている（`.val` に掛けても max-content の
+        # 見積りを締めない＝実測で 238px に膨らんだ）。読む先を間違えない。
+        hop_max = _css_px(css, ".sheet.multihop .card.hop{", "max-width")
+        lbl_px = _css_px(css, ".sheet.multihop .card .lbl{", "font-size")
+        val_px = _css_px(css, ".sheet.multihop .card .val{", "font-size")
+
+        lang0 = i18n.current_lang()
+        try:
+            for lang in i18n.available_languages():
+                i18n.set_lang(lang)
+                # (ラベル, 値, 幅の上限) ＝ 上限は区間名のカードだけ（利用者の字）。
+                cards = [
+                    (i18n.t("mh_overall"), "ERROR", None),
+                    # 語は判定で入れ替わる（I-052）＝**長いほう**で予算を組む。
+                    (max((i18n.t(mh.OVERALL_MARGIN_KEY),
+                          i18n.t(mh.OVERALL_SHORTFALL_KEY)), key=len),
+                     "-999.9 dB", None),
+                    (i18n.t("mh_hops"), "999", None),
+                    (i18n.t("mh_worst_hop"), "", hop_max),
+                    (i18n.t("html_ok"), "999", None),
+                    (i18n.t("html_ng"), "999", None),
+                    (i18n.t("html_error"), "999", None),
+                ]
+                total = gap * (len(cards) - 1)
+                for label, value, cap in cards:
+                    width = max(min_w, _text_px(label.upper(), lbl_px) + 2 * pad,
+                                _text_px(value, val_px) + 2 * pad)
+                    if cap is not None:
+                        # 上限つきのカードは**使い切る前提**で予算を組む。ただし
+                        # ラベルは nowrap なので上限を超えうる＝大きいほうを採る。
+                        width = max(min_w, _text_px(label.upper(), lbl_px) + 2 * pad,
+                                    cap)
+                    total += width
+                limit = report_common.A4_CONTENT_WIDTH_PX
+                headroom = (limit - total) / limit
+                assert headroom >= 0.05, (
+                    f"{lang}: カード列 {total:.0f}px が A4 印字幅 {limit:.0f}px に"
+                    f"1 行で収まらない（余裕 {headroom:.1%}）＝折り返して"
+                    "「ひと組の内訳」が行をまたぐ")
+        finally:
+            i18n.set_lang(lang0)
 
     def test_fit_script_processes_every_sheet(self):
         """縮小フィットは文書内の全 `.fit` を対象にする（連結文書は N 枚ある）。"""

@@ -41,27 +41,37 @@ def route_sheet_css() -> str:
     """
     return """
 /* --- multihop シート（中継経路の内訳＋全体判定） --- */
-/* 🔴 **カードは「縮めない・折り返す」**（B-155）＝既定の flex は幅が足りないと
-   *中身を縮めて字を折る*ので、`全体マージ / ン（最小余裕）` のように**語の途中で
-   改行**される。A4 の印字幅は 182mm（`report_common.A4_CONTENT_WIDTH_PX` ＝ 688px）
-   に対し 7 枚の必要幅は約 697px で、**既定では必ず縮む側に入っていた**。
-   ⇒ ①`wrap` で行を折る（カードごと次の行へ）②`flex:0 0 auto` で縮めない
-   ③ラベルと値は `nowrap`＝**語の途中では絶対に折らない**。
-   ⚠️ **幅を詰めて 1 行に収める直し方は採らない**＝区間名は*利用者が付ける地点名*
-   なので必要幅に上限が無く、「いま収まる」直しは名前が長い日にまた崩れる。 */
-.sheet.multihop .cards{display:flex;flex-wrap:wrap;gap:8px;margin-bottom:16px;
+/* 🔴 **カードは「縮めない・折り返す」＋7 枚ぶんの幅の予算を持つ**（B-155）。
+   既定の flex は幅が足りないと*中身を縮めて字を折る*ので、`全体マージ /
+   ン（最小余裕）` のように**語の途中で改行**された。⇒ ①`wrap` で行を折る
+   ②`flex:0 0 auto` で縮めない ③ラベルと値は `nowrap`。
+   🔴 **ここまでで止めたのが B-155 の直し残し**（2026-08-31 に実機で再指摘）＝
+   語中では折れなくなったが**カードが 5+2 に割れ**、OK / NG / エラーという
+   *ひと組の内訳*が行をまたいで散った。折り返しは**壊れ方の下限**であって
+   直しではない。⇒ 余白（20→8px）・最小幅（90→60px）・間隔（8→6px）を詰め、
+   **7 枚が A4 の印字幅 182mm（`report_common.A4_CONTENT_WIDTH_PX` ＝ 688px）に
+   必ず収まる予算**にする。区間名は*利用者が付ける地点名*で長さに上限が無いので、
+   予算が成立するのは下の区間名カードの `max-width` が**そのカードの幅を締めて
+   いる**から（値側に掛けても締まらない＝下の注記）。
+   ⚠️ 予算はゲート（`TestSheetCssIsScoped::test_card_row_fits_a4`）が全語彙で
+   計算する＝ラベルを足す・語彙を増やすときはそちらが落ちる。 */
+.sheet.multihop .cards{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:16px;
   break-inside:avoid}
 .sheet.multihop .card{background:white;border:1px solid #eee;border-radius:8px;
-  padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;
-  min-width:90px;flex:0 0 auto}
+  padding:6px 8px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;
+  min-width:60px;flex:0 0 auto}
 .sheet.multihop .card .lbl{font-size:9px;color:#999;text-transform:uppercase;
   white-space:nowrap}
 .sheet.multihop .card .val{font-size:15px;font-weight:bold;color:#333;
   white-space:nowrap}
 /* 区間名のカードだけは**利用者の字**（地点名）を持つので、上限を与えて折る。
-   ⚠️ ここだけ `nowrap` を外す＝1 つの長い名前が行全体を押し広げないため。 */
-.sheet.multihop .card.hop .val{white-space:normal;max-width:160px;
-  overflow-wrap:anywhere}
+   ⚠️ ここだけ `nowrap` を外す＝1 つの長い名前が行全体を押し広げないため。
+   🔴 **上限はカードに掛ける（値に掛けても効かない）**＝`flex:0 0 auto` の幅は
+   中身の max-content で決まり、`.val` の `max-width` はその見積りを締めない
+   （実測：長い地点名で `.val` に 130px を掛けてもカードは 238px に膨らみ、
+   英語だけ 2 行に割れた）。⚠️ **この 146px が上の予算の前提。** */
+.sheet.multihop .card.hop{max-width:146px}
+.sheet.multihop .card.hop .val{white-space:normal;overflow-wrap:anywhere}
 .sheet.multihop .card.ok .val{color:#2e7d32}
 .sheet.multihop .card.ng .val{color:#c62828}
 /* 判定不能（B-071）＝**不成立と同じ赤で塗らない**。橙は区間表の `tr.err` と
@@ -69,13 +79,23 @@ def route_sheet_css() -> str:
 .sheet.multihop .card.err .val{color:#e65100}
 .sheet.multihop table.hops{border-collapse:collapse;width:100%;table-layout:auto;
   background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.sheet.multihop table.hops th{background:#455a64;color:white;padding:4px;
+/* 🔴 **左右の余白は 2px**（B-155）＝16 列 × 左右で **64px** が余白に消えており、
+   その 64px は**地点名の列とグラフ列**（＝幅を融通できる 2 列）から取られていた。
+   数値列は nowrap で自分の幅を主張するので、詰めるならここしかない。 */
+.sheet.multihop table.hops th{background:#455a64;color:white;padding:4px 2px;
   text-align:center;vertical-align:bottom;font-size:8px;white-space:nowrap;
   border-right:1px solid rgba(255,255,255,.22)}
 .sheet.multihop table.hops th .u{display:block;font-size:7px;font-weight:normal;opacity:.8}
-.sheet.multihop table.hops td{padding:3px 4px;font-size:9px;border-bottom:1px solid #eee;
+.sheet.multihop table.hops td{padding:3px 2px;font-size:9px;border-bottom:1px solid #eee;
   text-align:right;white-space:nowrap}
-.sheet.multihop table.hops td.c-name{text-align:left}
+/* 🔴 **区間名は「利用者が付けた字」＝幅に上限が無い**（B-155）ので、既定の
+   `nowrap` から外して折り返す。⚠️ nowrap のままだと `table-layout:auto` の
+   最小幅が**名前の全長**になり、**表ごと A4 の印字域の外へ出る**（実測＝長い
+   地点名で表が 1086px／印字幅 688px）。`c-reason`（B-145）と同じ壊れ方で、
+   直し方も同じ。`min-width` は短い名前が 1 行で読める下限、`max-width` は
+   1 つの長い名前がグラフ列を潰さないための上限。 */
+.sheet.multihop table.hops td.c-name{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:anywhere;min-width:96px;max-width:150px}
 /* ERROR 行の理由（自由文・colspan）は折り返す（B-145・バッチ台帳と同型）。
    nowrap のままだと折り返せない 1 行が表全体を押し広げ、右端の列が A4 の
    印字域の外へ出る。空白の無い長い連続語が入るので anywhere。 */
@@ -93,7 +113,13 @@ def route_sheet_css() -> str:
 .sheet.multihop .map img{width:100%;border:1px solid #ddd;border-radius:4px}
 .sheet.multihop .map{margin-bottom:10px}
 .sheet.multihop .note{font-size:9px;color:#777;margin-top:8px}
-/* 台帳のグラフ列とヘッダの単位行＝**バッチ台帳と同じ見せ方**（⑧）。 */
+/* 台帳のグラフ列とヘッダの単位行＝**バッチ台帳と同じ見せ方**（⑧）。
+   🔴 **画像はセルに従わせる**（`max-width:100%`・B-155）＝これが無いと
+   `max-height:40px` から決まる**実寸**（断面図は 15:4.5 なので 133px）が列の
+   最小幅になり、**表が A4 の印字域を 51px はみ出した**（実測）。バッチ台帳は
+   最初からこの 1 行を持っていた（`report_summary` の `td img`）＝**揃って
+   いなかったのはこちらだけ**。⚠️ `height:auto` を必ず添える（幅だけ縛ると潰れる）。 */
+.sheet.multihop table.hops td img{max-width:100%;height:auto}
 .sheet.multihop table.hops img.thumb{max-height:40px;border:1px solid #ddd;
   border-radius:3px;vertical-align:middle}
 .sheet.multihop .all-link{margin:0 0 10px;font-size:11px}

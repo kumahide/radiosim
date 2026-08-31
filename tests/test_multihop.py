@@ -704,6 +704,56 @@ class TestRouteSheet:
         unscoped = [s for s in selectors if not s.startswith(".sheet.multihop")]
         assert not unscoped, f"スコープされていないセレクタ: {unscoped}"
 
+    def test_unbounded_cells_are_not_nowrap(self, base, tmp_path, monkeypatch):
+        """区間表に**幅の上限が無い中身**を `nowrap` / 実寸のまま置かないこと（B-155）。
+
+        🔴 **`table-layout:auto` の最小幅は「折り返せない中身の全長」**＝表は
+        `width:100%` と書いてあっても*縮めない*ので、**表ごと A4 の印字域の外へ
+        出る**。実測（Edge・印字幅 688px）＝グラフ列のサムネイルが実寸 129px を
+        主張して **739px**、さらに長い地点名を入れると **1086px**。
+
+        ⚠️ **これは「収まる幅か」の検査ではない**（それはブラウザが要る）＝
+        *幅に上限の無い中身*が 2 種（**利用者の字**・**画像**）あることを知って
+        いて、その 2 種に上限が掛かっているかだけを見る。⚠️ **クラスは数えず
+        描いた HTML を走査する**＝列が増えた日に検査が置いていかれないため。
+        """
+        import re as _re
+        from report import report_multihop
+
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        html = report_multihop.route_sheet_html(run)
+        css = report_multihop.route_sheet_css()
+
+        def rule_for(selector):
+            block = css.split(selector, 1)
+            assert len(block) == 2, f"{selector} の指定が無い"
+            return block[1].split("}", 1)[0].replace("\n", " ")
+
+        # 既定は nowrap（数値列は 1 行で読ませたい）＝だからこそ例外が要る。
+        assert "white-space:nowrap" in rule_for(".sheet.multihop table.hops td{")
+
+        cells = _re.findall(r"<td([^>]*)>(.*?)</td>", html, _re.S)
+        names = {wp.name for wp in run.path.waypoints}
+        checked = {"user_text": 0, "image": 0}
+        for attrs, inner in cells:
+            cls = (_re.search(r"class='([^']*)'", attrs) or
+                   _re.search(r'class="([^"]*)"', attrs))
+            classes = cls.group(1).split() if cls else []
+            if any(n in inner for n in names):        # 利用者が付けた字
+                assert classes, f"利用者の字を持つセルに印が無い: {inner[:60]}"
+                rule = rule_for(f".sheet.multihop table.hops td.{classes[0]}{{")
+                assert "white-space:normal" in rule and "overflow-wrap" in rule, (
+                    f"td.{classes[0]} が折り返さない＝名前の全長が表の最小幅になる")
+                assert "max-width" in rule, (
+                    f"td.{classes[0]} に上限が無い＝長い名前が他の列を潰す")
+                checked["user_text"] += 1
+            if "<img" in inner:                        # 画像は実寸を主張する
+                rule = rule_for(".sheet.multihop table.hops td img{")
+                assert "max-width:100%" in rule and "height:auto" in rule, (
+                    "表の画像がセルに従わない＝実寸が列の最小幅になる")
+                checked["image"] += 1
+        assert all(checked.values()), f"検査対象を 1 つも描けていない: {checked}"
+
 
 # ============================================================
 # 中継経路ウィンドウ（入力面）
