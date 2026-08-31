@@ -5,7 +5,7 @@ import pathlib
 import random
 import sys
 
-sys.path.insert(0, str(pathlib.Path(r"D:\dev\radiosim-repo\tools\token-usage")))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "token-usage"))
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 import analyze_usage as A  # noqa: E402
 from measure_scope import classify_target, targets_of  # noqa: E402

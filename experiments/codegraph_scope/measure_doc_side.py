@@ -14,7 +14,7 @@ import pathlib
 import re
 import sys
 
-sys.path.insert(0, str(pathlib.Path(r"D:\dev\radiosim-repo\tools\token-usage")))
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "token-usage"))
 import analyze_usage as A  # noqa: E402
 
 DOC_RE = re.compile(r"\.(md|txt|tsv|csv|json)$", re.I)

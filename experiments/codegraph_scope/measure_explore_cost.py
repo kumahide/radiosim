@@ -8,7 +8,7 @@ import json
 import pathlib
 import sys
 
-sys.path.insert(0, r"D:\dev\radiosim-repo\tools\token-usage")
+sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "token-usage"))
 import analyze_usage as A  # noqa: E402
 
 

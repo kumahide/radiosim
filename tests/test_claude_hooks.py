@@ -2209,3 +2209,144 @@ class TestPrimaryMetricIsCompletionCost:
         got = [analyzer.per_issue(analyzer.intervals(p)[0])["B-001"]["往復"]
                for p in (cheap, pricey)]
         assert got == [1.0, 3.0]
+
+
+# ============================================================
+# ledger.py ＝ 台帳／ロードマップの「節だけを 1 回で取り出す」CLI
+# ============================================================
+# **なぜ在るか**（2026-08-31・ユーザー決定）＝実測で台帳へのアクセスは
+# `Read` 236 + `Grep` 162 ＝ 約 400 呼び出しあり、形はほぼ「Grep で行番号を
+# 探す → Read で節を取る」の 2 段だった（`experiments/codegraph_scope/`）。
+# ⚠️ **見込みは 1〜2%** と分かった上で採っている（桁は変わらない）。
+#
+# ここで守るのは**切り出しの境界**＝節が隣の項目へ溢れる／途中で切れると、
+# 「読んだつもりで別の課題を読む」形になり、**素の Read より危ない**。
+
+
+class TestIssueSection:
+    """`issue_section` は 1 つの項目の節をちょうど切り出す（純関数）。"""
+
+    LEDGER = _doc(
+        "## 未対応",
+        "",
+        "### ★ B-001: 最初の項目",
+        "- ★ **状態**: **未着手**",
+        "本文 A",
+        "",
+        "#### 内訳（小見出しは節の一部）",
+        "本文 B",
+        "",
+        "### ★ B-002: 次の項目",
+        "- ★ **状態**: **対応中**",
+        "本文 C",
+        "",
+        "## ✅ 済んだもの（アーカイブ）",
+        "",
+        "### ★ B-003: 済んだ項目",
+        "本文 D",
+    )
+
+    def test_it_returns_just_that_item(self, hook):
+        got = hook.issue_section(self.LEDGER, "B-001")
+        assert got[0].startswith("### ★ B-001:")
+        assert "本文 A" in got and "本文 B" in got
+        assert "本文 C" not in got, "次の項目へ溢れている"
+
+    def test_a_deeper_heading_stays_inside(self, hook):
+        got = hook.issue_section(self.LEDGER, "B-001")
+        assert any(ln.startswith("#### ") for ln in got), (
+            "小見出しで節が切れている＝本文の途中で打ち切られる")
+
+    def test_a_shallower_heading_closes_the_section(self, hook):
+        """アーカイブ見出し（H2）で閉じる＝節が台帳の末尾まで伸びない。"""
+        got = hook.issue_section(self.LEDGER, "B-002")
+        assert "本文 C" in got
+        assert not any("アーカイブ" in ln for ln in got)
+        assert "本文 D" not in got
+
+    def test_it_finds_items_in_the_archive_too(self, hook):
+        assert "本文 D" in hook.issue_section(self.LEDGER, "B-003")
+
+    def test_an_unknown_id_is_empty_not_wrong(self, hook):
+        """⚠️ **無い ID に「それらしい節」を返さない**＝取り違えが一番害が大きい。"""
+        assert hook.issue_section(self.LEDGER, "B-999") == []
+
+    def test_a_duplicated_id_returns_both(self, hook):
+        """同じ ID が 2 か所にある事故（`duplicate_ids` の由来）を握り潰さない。"""
+        dup = _doc(
+            "### ★ B-072: 未対応節のほう",
+            "本文 X",
+            "",
+            "## ✅ アーカイブ",
+            "### ★ B-072: アーカイブのほう",
+            "本文 Y",
+        )
+        got = hook.issue_section(dup, "B-072")
+        assert "本文 X" in got and "本文 Y" in got, (
+            "片方だけ返すと、衝突しているのに 1 件に見える")
+
+    def test_the_real_ledger_yields_a_known_item(self, hook):
+        """実データでも動く（合成だけで通す検査にしない）。"""
+        lines = hook._issue_lines()
+        if not lines:
+            pytest.skip("ISSUES.md が無い")
+        ids = hook.issue_id_headings(lines)
+        assert ids, "台帳に項目が 1 件も無い"
+        body = hook.issue_section(lines, ids[0])
+        assert body and ids[0] in body[0]
+
+
+class TestRoadmapSection:
+    """`roadmap_section` は版の H2 節をちょうど切り出す（純関数）。"""
+
+    ROADMAP = _doc(
+        "# ロードマップ",
+        "",
+        "## 現在地",
+        "表の行",
+        "",
+        "## 🔜 3.1 — 配布の信頼性（**次の版**）",
+        "3.1 の本文",
+        "",
+        "### 3.1 の中の小見出し",
+        "小見出しの本文",
+        "",
+        "## 3.2 — サポート性",
+        "3.2 の本文",
+    )
+
+    def test_it_returns_just_that_version(self, memcheck):
+        got = memcheck.roadmap_section(self.ROADMAP, "3.1")
+        assert got[0].startswith("## 🔜 3.1")
+        assert "3.1 の本文" in got and "小見出しの本文" in got
+        assert "3.2 の本文" not in got, "次の版へ溢れている"
+
+    def test_an_absent_version_is_empty(self, memcheck):
+        assert memcheck.roadmap_section(self.ROADMAP, "9.9") == []
+
+    def test_it_does_not_match_a_version_merely_mentioned(self, memcheck):
+        """⛔ **見出しに版の字が含まれるかで見てはいけない**（check 17 で踏んだ穴）。
+
+        「§次のマイナー」の見出しが本文で 2.9 を名指ししていても、2.9 の節ではない。
+        """
+        rm = _doc(
+            "## 🆕 次のマイナー（番号未定）＝**2026-08-14 に §2.9 を切って器を再設置**",
+            "器の本文",
+            "",
+            "## 2.9 — 本物の 2.9",
+            "2.9 の本文",
+        )
+        got = memcheck.roadmap_section(rm, "2.9")
+        assert "2.9 の本文" in got
+        assert "器の本文" not in got, "版を名指ししただけの見出しに化けている"
+
+    def test_the_real_roadmap_yields_the_current_version(self, memcheck):
+        path = memcheck.MEM_DIR / "project_roadmap.md"
+        if not path.exists():
+            pytest.skip("ロードマップが無い")
+        lines = path.read_text(encoding="utf-8").splitlines()
+        versions = {v for v in (memcheck._heading_version(ln)
+                                for ln in lines if ln.startswith("## ")) if v}
+        assert versions, "版を宣言する H2 見出しが 1 つも無い"
+        one = sorted(versions)[0]
+        assert memcheck.roadmap_section(lines, one), f"§{one} の節が取れない"
