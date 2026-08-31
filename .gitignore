@@ -88,7 +88,6 @@ htmlcov/
 # `_retired/` へ移動しているのはそのため）。
 # ⇒ **無視するのは「LLM 足場」と「個人の作業ログ」だけ**にする。
 tools/qa-mcp/
-tools/qa-hook/doc-review.mjs
 tools/qa-hook/model-eval.mjs
 tools/qa-hook/_retired/
 # Claude Code のトランスクリプト（＝個人の作業ログ）を解析する道具。

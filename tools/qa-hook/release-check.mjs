@@ -4,14 +4,20 @@
 //
 //   node tools/qa-hook/release-check.mjs [tag]
 //
-// Two jobs, both ADVISORY (always exits 0, never blocks a push or build):
-//   (1) run the doc<->behavior review (runDocReview, the existing pair table)
-//       so behavioral-prose drift surfaces at the version boundary — the exact
-//       cadence doc-review is meant for (not per-diff);
-//   (2) print the machine-mechanical release checklist so the manual step that
-//       has slipped before (binary README not reflecting new features — the
-//       2.3RC1 reship) is put in front of the human/Claude at the release
-//       decision point, even when the /release skill was bypassed.
+// Jobs, all ADVISORY (always exits 0, never blocks a push or build): report the
+// CI colour, report whether the display-dependent suite has run for this commit,
+// and print the machine-mechanical release checklist so the manual step that has
+// slipped before (binary README not reflecting new features — the 2.3RC1 reship)
+// is put in front of the human/Claude at the release decision point, even when
+// the /release skill was bypassed.
+//
+// 🔁 **2026-08-31 に doc⇔挙動の助言レビュー（ローカル LLM・qwen3:8b）を外した。**
+// 通算で真陽性は導入時の 1 件（GitHub issue #15 の再発防止）だけで、以後 7 回の
+// 報告はすべて偽陽性か既裁定の再掲だった。しかも一度 ENOENT で 1 か月死んでいて、
+// **非ゲート・常に exit 0 なので「死んでいる」と「指摘なし」が区別できなかった**
+// （[[feedback-promote-recurring-checks]] の壊れ方①）。受け持っていた面＝「挙動の
+// 散文 ⇔ 実装」は Codex の①コード面（`tools/codex_review/run.ps1 -Mode code`）が
+// リポジトリ全体を見て実際に拾っている（B-161・I-038・Deygout の未開示など）。
 //
 // Wired from three decision points (see .claude/commands/release.md): the
 // pre-push hook (version-tag push), /release step 4, and build.bat's tail
@@ -25,35 +31,11 @@
 // it has one authoritative location the /release procedure points at, instead
 // of a second hardcoded copy that silently drifts.
 //
-// Config (env, optional): same as doc-review.mjs (OLLAMA_URL,
-// RADIOSIM_QA_DOC_MODEL, RADIOSIM_QA_DOC_NUM_CTX).
+// このスクリプトは Ollama にもローカル LLM の足場にも依存しない（2026-08-31 以降）。
 
-import { existsSync, readFileSync } from "node:fs";
+import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
-
-// ⚠️ **doc⇔挙動レビューは任意部品**（動的 import）。本体（`tools/qa-mcp/`）は
-// ローカル LLM の足場なので**追跡しない**＝clone には存在しない。静的 import だと
-// その環境で**モジュール読み込みごと落ち**、チェックリストも刻印照合も出なくなる
-// （2026-08-12・I-090 で tools/ の一部を追跡へ移した際に判明）。
-// 🔑 **無いときは静かに飛ばす**＝「Ollama が落ちている」（＝在るはずのものが動いて
-// いない）とは別の状態なので、同じ声で鳴らさない。鳴らすと clone した人には毎回
-// 鳴る警告になる（[[feedback-promote-recurring-checks]] の「毎回鳴る」壊れ方）。
-const DOC_REVIEW_LIB = join(dirname(fileURLToPath(import.meta.url)),
-                            "..", "qa-mcp", "lib", "doc-review.mjs");
-
-async function loadDocReview() {
-  if (!existsSync(DOC_REVIEW_LIB)) return null;
-  try {
-    return (await import("../qa-mcp/lib/doc-review.mjs")).runDocReview;
-  } catch {
-    return null;
-  }
-}
-
-const OLLAMA_URL = process.env.OLLAMA_URL || "http://localhost:11434";
-const MODEL = process.env.RADIOSIM_QA_DOC_MODEL || "qwen3:8b";
-const NUM_CTX = parseInt(process.env.RADIOSIM_QA_DOC_NUM_CTX || "8192", 10);
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECKLIST_FILE = join(HERE, "release-checklist.txt");
@@ -75,98 +57,22 @@ function loadChecklist() {
   }
 }
 
-// Quick reachability probe so a skipped doc-review is LOUD, not silent: if
-// Ollama is down every pair errors and the checklist alone could look like a
-// clean pass. A 2s AbortController timeout keeps a release from hanging on it.
-async function ollamaReachable() {
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 2000);
-  try {
-    const res = await fetch(`${OLLAMA_URL}/api/tags`, { signal: ctrl.signal });
-    return res.ok;
-  } catch {
-    return false;
-  } finally {
-    clearTimeout(t);
-  }
-}
-
 async function main() {
   const root = process.cwd();
   const tag = process.argv.slice(2).find((a) => !a.startsWith("--"));
 
   process.stderr.write(
     `\n[QA RELEASE] version-boundary advisory${tag ? ` (${tag})` : ""} — ` +
-      `doc<->behavior review + release checklist. Advisory only; never blocks.\n`,
+      `CI / display-run stamp / release checklist. Advisory only; never blocks.\n`,
   );
 
-  // (1) doc<->behavior review over the existing pair table.
-  const runDocReview = await loadDocReview();
-  if (!runDocReview) {
-    // 足場ごと無い環境（clone）＝この検査はそもそも配線されていない。
-    process.stderr.write(
-      "\n[QA DOC] 未配線 — doc⇔挙動レビューはローカル QA 環境の部品です" +
-        "（tools/qa-mcp/ は非追跡）。以下のチェックリストと突き合わせは通常どおり動きます。\n",
-    );
-  } else if (!(await ollamaReachable())) {
-    process.stderr.write(
-      `\n⚠⚠ [QA DOC] SKIPPED — Ollama に接続できません (${OLLAMA_URL})。` +
-        `doc⇔挙動レビューは走っていません。\n` +
-        `   → 版節目レビューの一部が未実施です。Ollama を起動して再実行` +
-        `（node tools/qa-hook/release-check.mjs）するか、doc⇔挙動を手動確認せよ。\n`,
-    );
-  } else {
-    process.stderr.write(`\n[QA DOC ${MODEL}] checking doc<->behavior pairs...\n`);
-    let issues = 0;
-    let errors = 0;
-    let ran = 0;
-    try {
-      const results = await runDocReview({
-        root,
-        url: OLLAMA_URL,
-        model: MODEL,
-        numCtx: NUM_CTX,
-      });
-      for (const r of results) {
-        ran++;
-        if (r.error) {
-          errors++;
-          process.stderr.write(`\n### ${r.title}\n[error] ${r.error}\n`);
-        } else if (r.ok) {
-          process.stderr.write(`\n### ${r.title}\nNO ISSUES FOUND.\n`);
-        } else {
-          issues++;
-          process.stderr.write(`\n### ${r.title}\n${r.text}\n`);
-        }
-      }
-      // Reachable up front but every pair still errored ⇒ treat as "did not run"
-      // and warn loudly rather than let the checklist imply a clean pass.
-      if (ran > 0 && errors === ran) {
-        process.stderr.write(
-          `\n⚠⚠ [QA DOC] 全 ${ran} ペアがエラー — doc⇔挙動レビューは実質未実施。` +
-            `手動で確認せよ。\n`,
-        );
-      } else {
-        process.stderr.write(
-          `\n[QA DOC] done — ${issues} pair(s) with candidate mismatches, ` +
-            `${errors} error(s). Advisory only; confirm before acting.\n`,
-        );
-      }
-    } catch (e) {
-      process.stderr.write(
-        `\n⚠⚠ [QA DOC] SKIPPED — レビュー実行時エラー (${e && e.message})。` +
-          `doc⇔挙動は手動確認せよ。\n`,
-      );
-    }
-  }
-
-  // (2) CI status — asked, not remembered.
+  // (1) CI status — asked, not remembered.
   process.stderr.write("\n" + await ciStatusLine() + "\n");
 
-  // (3) 表示依存の面が、この commit で回っているか（B-074(b)）。
+  // (2) 表示依存の面が、この commit で回っているか（B-074(b)）。
   process.stderr.write("\n" + (await displayRunLine(root)) + "\n");
 
-  // (4) machine-mechanical release checklist (single-sourced).
+  // (3) machine-mechanical release checklist (single-sourced).
   process.stderr.write("\n" + loadChecklist() + "\n");
   process.exit(0);
 }
