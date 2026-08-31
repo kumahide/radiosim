@@ -47,6 +47,17 @@ def test_unparsable_falls_back_to_zero():
     assert version_tuple("バージョン不明") == (0, 0, 0, 0)
 
 
+def test_a_typo_never_passes_as_a_final_release():
+    """🔴 **数字で始まる壊れた版の字を、正式版として受理しないこと。**
+
+    先頭一致で解くと `'3.0RCx'` は `'3.0'` として通り、**正式版の最高位**を
+    名乗る（正式を最大にしたぶん、緩さの被害が重い）。
+    """
+    for typo in ("3.0RCx", "3.0-preview1", "3.0RC", "3.0.1.2", "3.0rc1", "3.0 "):
+        assert version_tuple(typo) == (0, 0, 0, 0), (
+            f"{typo!r} が版として受理された（={version_tuple(typo)}）")
+
+
 def test_current_version_is_representable():
     """いま名乗っている版が、4 数字へ落ちること（0 埋めの事故を検出する）。"""
     t = version_tuple(APP_VERSION)
