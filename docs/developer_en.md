@@ -299,6 +299,7 @@ radiosim/
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
+    ├── test_version.py
     ├── test_output_contract.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
@@ -1075,6 +1076,7 @@ entry point that runs them together.
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_terrain_grid.py`   | Terrain resolution (level -> sample positions, level ordering, **no DEM pixel skipped in real tile coordinates and both chord edges sampled**, where the ceiling bites, a single place that resolves it, no numeric sample-count input) |
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
+| `test_version.py`        | Version string -> the Windows 4-number version (`core.version.version_tuple`). Checks the **ordering** a -> b -> RC -> final, so a final release never looks numerically older than its own RCs (the conversion used to live inside the spec, out of reach of any test) |
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |

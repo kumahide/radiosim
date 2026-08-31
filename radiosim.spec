@@ -10,7 +10,6 @@
 #   dist/ build/、RADIOSIM_BUILD_ROOT を設定するとその配下）。
 #
 
-import re
 import sys
 from pathlib import Path
 
@@ -81,19 +80,10 @@ from PyInstaller.utils.win32.versioninfo import (
 
 from core import version as _ver   # 層はディレクトリ（2.7 スライス H）
 
-def _to_ver_tuple(v: str) -> tuple:
-    """'2.0' → (2, 0, 0, 0)、'2.1.3' → (2, 1, 3, 0)、'2.0RC2' → (2, 0, 0, 2)"""
-    m = re.match(r"(\d+)\.(\d+)(?:\.(\d+))?(?:RC(\d+))?", v)
-    if not m:
-        return (0, 0, 0, 0)
-    return (
-        int(m.group(1)),
-        int(m.group(2)),
-        int(m.group(3) or 0),
-        int(m.group(4) or 0),
-    )
-
-_ver_tuple = _to_ver_tuple(_ver.APP_VERSION)
+# 🔴 **変換はここに持たない**（B-162）＝spec は PyInstaller が exec するファイルで
+# テストから import できず、**4 数字の版を決める規則をどのゲートも見ていなかった**。
+# ⇒ 規則は `core/version.py` に置き、ここは呼ぶだけにする（`tests/test_version.py`）。
+_ver_tuple = _ver.version_tuple()
 
 _version_info = VSVersionInfo(
     ffi=FixedFileInfo(

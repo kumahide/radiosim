@@ -298,6 +298,7 @@ radiosim/
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
+    ├── test_version.py
     ├── test_output_contract.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
@@ -1067,6 +1068,7 @@ setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 | `test_coords.py`         | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
 | `test_terrain_grid.py`   | 地形の解像度（段階→標本位置の解決・段階の順序・**実タイル座標で画素を飛ばさないこと／画素の縁の両方に標本が入ること**・天井の効く距離・解き方の口が 1 つであること・数で入れる口が復活しないこと） |
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |
+| `test_version.py`        | 版の字 → Windows の 4 数字バージョン（`core.version.version_tuple`）。**a → b → RC → 正式が単調増加すること**を順序で検査する＝正式版が同じ版の RC より数値で古くならないこと（変換は spec の中に在り、テストから触れなかった） |
 | `test_output_contract.py`| 成果物 CSV の列仕様（台帳が全書き手を数えているか・見出しが契約由来か・値の数が列数と合うか・条件探索の可変列） |
 | `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
 | `test_progress.py`       | 進捗トランスポート（開始/停止のライフサイクル・停止後の残存ポーリング・最新値のみ描画・スレッド安全性） |

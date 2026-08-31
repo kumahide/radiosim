@@ -336,7 +336,7 @@ After retrieval completes, the terrain cross-section graph is displayed.
 | Cyan band           | 1st Fresnel Zone                                         |
 | Black vertical bars | TX / RX antennas                                         |
 
-⚠️ **A finely jagged, stepped terrain outline is normal** — the profile is simply **the points where elevation was read, joined up**, and on "high" and "medium" they are read **every few metres** (at the boundaries of a grid roughly 4 m wide on "high", 8 m on "medium"). The data is neither coarse nor broken: the finer you look, the more of the real relief you see. (On "high", elevation is constant within one pixel, so the shelf-and-riser shape comes out especially clearly.) The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" samples evenly every 20 m, so its line is smoother — but it skips the fine relief. "Low" is evenly spaced at 20 m, so it shows no steps — but it skips pixels instead.
+⚠️ **A finely jagged, stepped terrain outline is normal** — the profile is simply **the points where elevation was read, joined up**, and on "high" and "medium" they are read **every few metres** (at the boundaries of a grid roughly 4 m wide on "high", 8 m on "medium"). The data is neither coarse nor broken: the finer you look, the more of the real relief you see. (On "high", elevation is constant within one pixel, so the shelf-and-riser shape comes out especially clearly.) The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" samples evenly every 20 m, so its line is smoother — but it skips the fine relief.
 
 #### Sliders
 
