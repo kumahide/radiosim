@@ -67,7 +67,7 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 #### Output and reports (`report_*.py` — all headless)
 
-- **A4 reports (v2)**: per-path / summary as a single print-ready A4 page (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer)
+- **A4 reports (v2)**: per-path / summary in a print-ready A4 portrait frame (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer). ⚠️ **Only the per-path report is guaranteed to fit one page** — the ledger paginates (the per-path shrink-to-fit cannot be applied to it, as it cuts the table across a page break)
 - **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
 - Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
 - **All-paths overview map** in the summary report (color-coded by verdict)
@@ -148,7 +148,9 @@ ZIP the `RadioSimPro/` folder from the build output:
 # Honour RADIOSIM_BUILD_ROOT (falls back to dist/ next to the sources)
 $dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
 # Put the version in the file name, so the asset is identifiable on the Releases page
-Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-2.8.zip" -Force
+# Read the version from version.py — do not copy it into this document (a copy goes stale on the next release)
+$ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$ver.zip" -Force
 ```
 
 > ⚠️ **Put the version in the ZIP name** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). Building an unversioned name just means renaming it when attaching the release.

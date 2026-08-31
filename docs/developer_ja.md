@@ -67,7 +67,7 @@ TX（送信局）と RX（受信局）の座標・アンテナ高・無線設定
 
 #### 出力・レポート（`report_*.py`＝すべてヘッドレス）
 
-- **A4 レポート（v2）**: per-path / summary を A4 縦 1 枚の印刷確定枠で出力（`@page A4`＋Ctrl+P でゼロ依存 PDF 化・自己同定ヘッダ/フッタ）
+- **A4 レポート（v2）**: per-path / summary を A4 縦の印刷確定枠で出力（`@page A4`＋Ctrl+P でゼロ依存 PDF 化・自己同定ヘッダ/フッタ）。⚠️ **1 枚に収まるのは per-path だけ**＝台帳は改ページする（per-path の縮小フィットは表が切れるので台帳には掛けられない）
 - **アンテナ初期指向 AZ/EL**: 相手局へ正対する真方位・仰角を per-path レポートに両端ぶん表示（既存データからの幾何計算＝初期値）
 - HTML レポートへの経路地図の自動添付（TX/RX・経路・距離を地図に重ねて埋め込み）
 - **全経路を 1 枚に俯瞰する地図**（summary・判定で色分け）
@@ -148,7 +148,9 @@ dist/
 # 出力先は RADIOSIM_BUILD_ROOT に従う（未設定ならリポジトリ直下の dist/）
 $dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
 # 配布物の名前には版を入れる（Releases に並んだとき、どの版か見て分かるように）
-Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-2.8.zip" -Force
+# 版は version.py から引く＝この手順書に版を書き写さない（写すと版を上げた日に嘘になる）
+$ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
+Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$ver.zip" -Force
 ```
 
 > ⚠️ **ZIP の名前に版を入れる**＝公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。版なしの名前で作ると、Releases に添付するときに付け直すことになります。

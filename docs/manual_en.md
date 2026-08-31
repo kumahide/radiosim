@@ -63,7 +63,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 #### Output and reports
 
-- **A4 reports (v2)**: per-path / summary rendered as a single print-ready A4 page. Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
+- **A4 reports (v2)**: per-path / summary rendered in a print-ready A4 portrait frame (**the per-path report always fits one page**; the summary ledger flows onto a second page once it has enough rows). Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
 - **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
 - **Automatic path map** in HTML reports (TX/RX, path, and distance overlaid on a map)
 - **All-paths overview map** in the summary report (color-coded by verdict)
@@ -302,7 +302,7 @@ An input form is displayed on startup.
 | Field                 | Description                                                                             |
 | --------------------- | --------------------------------------------------------------------------------------- |
 | Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
-| Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
+| Vegetation Height (m) | Average **canopy** height, applied uniformly along the path. You may use building heights as a proxy in urban areas, but **individual buildings are not modelled** (see Known Limitations) — this is a uniform-canopy approximation |
 | Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
 | Terrain Resolution    | One of High ~4 m px / Medium ~8 m px / Low 20 m spacing. Note that the label names **the size of the pixel the samples are placed on**, not which elevation data is read: elevations always come from the finest layer available, whichever level you pick. The pixel is 3.3-4.4 m across Japan, hence the "~". **You pick the level; the app resolves the points.** "High" and "medium" place a sample at each edge of every DEM pixel the path crosses, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("low" alone keeps a 20 m even spacing and skips pixels by design). The resolved count and **the size of one pixel** are shown right below it. Default: Medium |
 
@@ -708,7 +708,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
-> **A4 reports (v2)**: `report.html` / `summary.html` are rendered as a single print-ready A4 page (`@page A4` / `@media print`). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
+> **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page beyond 26 rows** (see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
 > **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking a thumbnail in the ledger jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
