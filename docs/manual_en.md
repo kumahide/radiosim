@@ -336,6 +336,8 @@ After retrieval completes, the terrain cross-section graph is displayed.
 | Cyan band           | 1st Fresnel Zone                                         |
 | Black vertical bars | TX / RX antennas                                         |
 
+⚠️ **A finely stepped terrain outline is normal** (on "high" and "medium") — elevation is **constant inside one DEM pixel**, and the profile draws the pixels the path actually crosses. **One step is one DEM pixel** (3.3–4.4 m depending on latitude); the data is neither coarse nor broken. The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" is evenly spaced at 20 m, so it shows no steps — but it skips pixels instead.
+
 #### Sliders
 
 | Slider    | Range       | Description                           |
