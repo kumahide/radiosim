@@ -476,8 +476,15 @@ def test_pyright_finds_no_type_errors_in_app_modules():
     assert not missing, (
         f"ci.yml の pyright が層を取りこぼしている: {sorted(missing)}（対象={targets}）"
     )
+    # ⚠️ `--pythonpath` を明示する（B-165）。pyright の node CLI は import 解決に
+    # 使う Python を `VIRTUAL_ENV` 等のシェル状態から自力で探しており、venv を
+    # activate せず `sys.executable` を直接叩く運用（このリポジトリの既定＝
+    # `RADIOSIM_PYTHON` 宣言制）では見つけられず、numpy 等が軒並み未解決になって
+    # 365+ 件の偽陽性が出た（実機・2026-09-02）。sys.executable を明示すれば
+    # ambient なシェル状態に関係なく同じ結果になる。
     proc = subprocess.run(
-        [sys.executable, "-m", "pyright", "--outputjson", *targets],
+        [sys.executable, "-m", "pyright",
+         "--pythonpath", sys.executable, "--outputjson", *targets],
         cwd=ROOT, capture_output=True, text=True, errors="replace",
     )
     if "No module named pyright" in proc.stderr:
