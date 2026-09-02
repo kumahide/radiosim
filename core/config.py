@@ -16,6 +16,7 @@ import json
 import logging
 import math
 import os
+import shutil
 import sys
 import tempfile
 
@@ -33,17 +34,19 @@ from core import terrain_grid
 #      展開する一時ディレクトリ＝読み出し専用で、プロセス終了時に消える。
 #      書き込み先には絶対に使わない（同梱 README やアイコンの読み出しは
 #      views/launcher.py が _MEIPASS を使う＝そちらが正しい用途）。
-#
-#   OS 標準の場所（%APPDATA% 等）への移設は将来版（3.0）の仕事。ここでは
-#   基準を固定するだけで、通常起動時の保存先は従来と完全に同じになる。
 # ============================================================
 def app_base_dir() -> str:
-    """アプリが書き込む先の基準ディレクトリ（凍結時は exe の隣、そうでなければソースの隣）。
+    """凍結時は exe の隣、そうでなければソースの隣（**ポータブル配置の基準**）。
 
     ⚠️ **「ソースの隣」＝リポジトリ直下**であって、このファイルの隣ではない。
     2.7 スライス H でこのモジュールが `core/` へ入ったので、`__file__` の親を
-    そのまま使うと保存先が `<repo>/core/results` へ黙ってずれる（設定・ログ・
-    DEM キャッシュも同じ経路）。⇒ **層のぶんだけ 1 つ上がる。**
+    そのまま使うと保存先が `<repo>/core/results` へ黙ってずれる。⇒ **層の
+    ぶんだけ 1 つ上がる。**
+
+    🔑 **3.1 以降、これは「書き込み先そのもの」ではなくポータブル配置の基準**
+    （旧配置の移行元・`portable.txt` の探索場所・LANG_DIR・スクリプト実行時の
+    書き込み先）。通常の（凍結・非ポータブル）書き込み先は `_config_base_dir()` /
+    `cache_log_base_dir()` / `_results_dir()`（OS 標準の場所）を通る。
     """
     if getattr(sys, "frozen", False):
         return os.path.dirname(sys.executable)
@@ -51,19 +54,157 @@ def app_base_dir() -> str:
 
 
 def app_path(*parts: str) -> str:
-    """`app_base_dir()` を基準に絶対パスを組み立てる。書き込み先はすべてこれを通す。"""
+    """`app_base_dir()` を基準に絶対パスを組み立てる。ポータブル配置専用。"""
     return os.path.join(app_base_dir(), *parts)
+
+
+# ------------------------------------------------------------
+# ポータブル判定（3.1・旧未決 A-4）
+#   スクリプト実行は常にポータブル扱い＝結果・設定・キャッシュはリポジトリ配下
+#   に留まる（README がスクリプト版を「正式版」と位置づけている）。凍結時は
+#   exe の隣に `portable.txt` があるかどうかだけで決める＝分岐点はここ1箇所。
+# ------------------------------------------------------------
+def is_portable() -> bool:
+    """ポータブル配置（exe／スクリプトの隣に書く）なら真。"""
+    if not getattr(sys, "frozen", False):
+        return True
+    return os.path.isfile(app_path("portable.txt"))
+
+
+# ------------------------------------------------------------
+# OS 標準フォルダ（3.1・非ポータブル配置の基準）
+#   Windows の Known Folder API（SHGetKnownFolderPath）を使う＝環境変数や
+#   `expanduser("~")` は OneDrive の Known Folder Move で実フォルダが移設され
+#   ていても追従しない（企業環境で実際に起きる＝[[project_real_world_env_vdi]]
+#   と同種の「実機は開発機と違う」罠）。取得できないとき（非 Windows／失敗）は
+#   環境変数 → 最後は app_base_dir() へ段階的に落ちる。
+# ------------------------------------------------------------
+_FOLDERID_ROAMING_APP_DATA = "{3EB685DB-65F9-4CF6-A03A-E3EF65729F3D}"
+_FOLDERID_LOCAL_APP_DATA   = "{F1B32785-6FBA-4FCF-9D55-7B8E7F157091}"
+_FOLDERID_DOCUMENTS        = "{FDD39AD0-238F-46AF-ADB4-6C85480369C7}"
+
+
+def _known_folder_path(guid: str) -> "str | None":
+    """Windows の Known Folder を解決する。非 Windows／失敗時は None。"""
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        class _GUID(ctypes.Structure):
+            _fields_ = [
+                ("Data1", ctypes.c_ulong), ("Data2", ctypes.c_ushort),
+                ("Data3", ctypes.c_ushort), ("Data4", ctypes.c_ubyte * 8),
+            ]
+
+        clsid = _GUID()
+        if ctypes.windll.ole32.CLSIDFromString(guid, ctypes.byref(clsid)) != 0:
+            return None
+        path_ptr = ctypes.c_wchar_p()
+        hresult = ctypes.windll.shell32.SHGetKnownFolderPath(
+            ctypes.byref(clsid), 0, 0, ctypes.byref(path_ptr))
+        if hresult != 0 or not path_ptr.value:
+            return None
+        path = path_ptr.value
+        ctypes.windll.ole32.CoTaskMemFree(path_ptr)
+        return path
+    except Exception:
+        return None
+
+
+def _appdata_dir() -> str:
+    return (_known_folder_path(_FOLDERID_ROAMING_APP_DATA)
+            or os.environ.get("APPDATA") or app_base_dir())
+
+
+def _local_appdata_dir() -> str:
+    return (_known_folder_path(_FOLDERID_LOCAL_APP_DATA)
+            or os.environ.get("LOCALAPPDATA") or app_base_dir())
+
+
+def _documents_dir() -> str:
+    return (_known_folder_path(_FOLDERID_DOCUMENTS)
+            or os.path.join(os.path.expanduser("~"), "Documents"))
+
+
+# ------------------------------------------------------------
+# 書き込み先の基準（ポータブル／非ポータブルで分岐する唯一の場所）
+#   設定＝%APPDATA%（ローミング対象＝軽量な JSON 1 個・複数端末で持ち歩く価値
+#   がある）。キャッシュ・ログ＝%LOCALAPPDATA%（ローミング対象にすると企業
+#   環境で profile を壊す）。結果＝ドキュメント（利用者が自分で開きに行く
+#   成果物を隠しフォルダに置かない）。
+# ------------------------------------------------------------
+def _config_base_dir() -> str:
+    return app_base_dir() if is_portable() else os.path.join(_appdata_dir(), "RadioSim")
+
+
+def cache_log_base_dir() -> str:
+    """ログと DEM キャッシュが共有する基準（dem.py の CACHE_DIR もこれを通す）。"""
+    return app_base_dir() if is_portable() else os.path.join(_local_appdata_dir(), "RadioSim")
+
+
+def _results_dir() -> str:
+    if is_portable():
+        return app_path("results")
+    return os.path.join(_documents_dir(), "RadioSim")
 
 
 # ============================================================
 # 定数
 # ============================================================
-CONFIG_FILE = app_path("radiosim_conf.json")
-RESULTS_DIR = app_path("results")
-LOG_FILE    = app_path("radiosim.log")
+CONFIG_FILE = os.path.join(_config_base_dir(), "radiosim_conf.json")
+RESULTS_DIR = _results_dir()
+LOG_FILE    = os.path.join(cache_log_base_dir(), "radiosim.log")
 #: 利用者が置く言語ファイル（`<コード>.json`）の置き場。**読むだけ**＝アプリは
-#: ここへ書き込まないので、無ければ無いまま（作りに行かない）。
+#: ここへ書き込まないので、無ければ無いまま（作りに行かない）。ポータブル・
+#: 非ポータブルを問わず exe／スクリプトの隣（同梱物を探す場所と同じ基準）。
 LANG_DIR    = app_path("lang")
+
+
+# ============================================================
+# 旧配置からの移行（3.1）
+#   旧配置＝ exe／スクリプトの隣（= app_path()、2.x 〜 3.0 の唯一の書き込み先）。
+#   ポータブル判定が真の間は旧配置と新配置が同じ場所なので何もしない。
+#   **コピーのみ・旧は残す**（削除は次版）＝移行失敗＝過去結果の喪失が最大
+#   リスクなので、失敗しても壊れるのは「まだ移行できていない」だけに留める。
+#   キャッシュは再生成可能なので移行対象に含めない（DEM は取得し直せばよい）。
+# ============================================================
+def _migrate_legacy_data() -> None:
+    if is_portable():
+        return
+    _migrate_config_file()
+    _migrate_results_dir()
+
+
+def _migrate_config_file() -> None:
+    old = app_path("radiosim_conf.json")
+    if os.path.exists(CONFIG_FILE) or not os.path.isfile(old):
+        return
+    try:
+        os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+        shutil.copy2(old, CONFIG_FILE)
+        logger.info("Migrated legacy config: %s -> %s", old, CONFIG_FILE)
+    except OSError as e:
+        logger.warning("Legacy config migration failed: %s", e)
+
+
+def _migrate_results_dir() -> None:
+    old = app_path("results")
+    if not os.path.isdir(old):
+        return
+    try:
+        os.makedirs(RESULTS_DIR, exist_ok=True)
+        for name in os.listdir(old):
+            src = os.path.join(old, name)
+            dst = os.path.join(RESULTS_DIR, name)
+            if os.path.exists(dst):
+                continue                          # 既に移行済み＝上書きしない
+            if os.path.isdir(src):
+                shutil.copytree(src, dst)
+            else:
+                shutil.copy2(src, dst)
+    except OSError as e:
+        logger.warning("Legacy results migration failed: %s", e)
 
 
 # ============================================================
@@ -103,6 +244,10 @@ def new_run_dir(prefix: str, timestamp: str) -> str:
 #   ERROR   : 致命的エラー（保存失敗・計算例外）
 # ============================================================
 def setup_logging() -> logging.Logger:
+    # 新配置（%LOCALAPPDATA%\RadioSim 等）は初回起動でまだ存在しない＝
+    # FileHandler は作成しないので先に掘る（B-014 の続き＝書き込み先の存在も
+    # 解決器の責任にする）。
+    os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -114,6 +259,8 @@ def setup_logging() -> logging.Logger:
     return logging.getLogger("radiosim")
 
 logger = setup_logging()
+os.makedirs(os.path.dirname(CONFIG_FILE), exist_ok=True)
+_migrate_legacy_data()
 
 # ============================================================
 # 入力バリデーションルール

@@ -315,6 +315,7 @@ radiosim/
     ├── test_i18n_external.py
     ├── test_layers.py
     ├── test_paths.py
+    ├── test_write_locations.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
@@ -1089,7 +1090,8 @@ entry point that runs them together.
 | `test_failure_messages.py` | Failure dialogs are built from the shared **shape** (what happened / what to do next / details); the "what to do next" vocabulary stays closed; CSV import validation goes through i18n |
 | `test_bundle_imports.py` | Gate for the bundle-import gate itself (real warn lines from the failing `2.6RC1` build as fixtures; `(conditional)`, `missing module` and allowlisted pairs must stay silent; a missing report must not count as a pass) |
 | `test_dev_check.py`      | Gate for the verification runner itself (`buildtools/dev_check.py`). Detects a **hand-written gate table that has rotted and silently adds nothing**, and pins that a narrowed scope still picks up the static-analysis gate, that the coverage gate applies to full runs only, and that the output stays a summary |
-| `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; normal startup resolves to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |
+| `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; portable installs resolve to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |
+| `test_write_locations.py` | Migration to OS-standard write locations (%APPDATA% etc.), portable detection (`portable.txt`), staged Known Folder fallback (API failure → env var → default), and migration from the legacy layout (copy only, legacy files kept, new files never overwritten, cache excluded from migration) (3.1) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |

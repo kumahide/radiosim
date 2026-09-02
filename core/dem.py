@@ -30,14 +30,15 @@ from PIL import Image
 
 from core import terrain_grid
 from core import version
-from core.config import app_path, logger
+from core.config import cache_log_base_dir, logger
 
 # ============================================================
 # DEM タイルキャッシュのルートディレクトリ
-#   基準は config.app_path（＝exe／スクリプトの位置）で cwd に依存しない（B-014）。
+#   基準は config.cache_log_base_dir()（ポータブル＝exe／スクリプトの位置、
+#   非ポータブル＝%LOCALAPPDATA%\RadioSim）で cwd に依存しない（B-014）。
 #   テストは dem.CACHE_DIR を monkeypatch して一時ディレクトリへ差し替える。
 # ============================================================
-CACHE_DIR = app_path("terrain_cache")
+CACHE_DIR = os.path.join(cache_log_base_dir(), "terrain_cache")
 
 # ============================================================
 # DEM タイルクライアント

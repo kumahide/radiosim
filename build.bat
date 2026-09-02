@@ -164,6 +164,15 @@ echo [INFO] Creating runtime directories...
 if not exist "%APP_DIR%\terrain_cache" mkdir "%APP_DIR%\terrain_cache"
 if not exist "%APP_DIR%\results"       mkdir "%APP_DIR%\results"
 
+rem ---- Portable marker (3.1): this build is still ZIP-distributed (the exe's
+rem      own folder is writable and the whole folder is meant to move as a
+rem      unit), so it must keep behaving like the pre-3.1 "next to the exe"
+rem      layout. core.config.is_portable() decides that per-file, by checking
+rem      for this marker next to the exe (its absence means "installed to a
+rem      possibly read-only location" -> OS-standard folders). Once the Inno
+rem      Setup installer lands (3.1 stage 6) it must NOT ship this file.
+echo. > "%APP_DIR%\portable.txt"
+
 echo.
 echo ============================================================
 echo [SUCCESS] Build complete!

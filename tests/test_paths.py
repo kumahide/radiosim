@@ -10,11 +10,13 @@ tests/test_paths.py
 
 このテストが守るのは 2 つ:
   1. cwd を変えても保存先が動かないこと（本丸）
-  2. **通常起動では従来と完全に同じパスを指すこと**（＝互換性を壊していない。
-     既存の設定・キャッシュ・結果が引き続き読める）
+  2. **ポータブル配置（スクリプト実行／`portable.txt` 付き exe）では従来と
+     完全に同じパスを指すこと**（＝互換性を壊していない。既存の設定・キャッシュ・
+     結果が引き続き読める）
 
-OS 標準の場所（%APPDATA% 等）への移設は将来版（3.0）の仕事で、ここでは
-基準を固定するだけ＝挙動は不変。
+3.1 で OS 標準の場所（%APPDATA% 等）への移設・ポータブル判定・旧配置からの
+移行を実装した（[[project_roadmap]] §3.1 段1）。解決器そのもの
+（`is_portable` / `_appdata_dir` 等）と移行の検査は tests/test_write_locations.py。
 """
 
 import importlib
@@ -115,10 +117,12 @@ class TestCwdIndependence:
 
 
 # ============================================================
-# 互換性＝通常起動では従来と同じ場所
+# 互換性＝ポータブル配置（テスト時＝スクリプト実行）では従来と同じ場所
 # ============================================================
 class TestBackwardCompatibility:
-    """基準を固定するだけで移設はしない。通常起動の保存先は従来どおり。"""
+    """ポータブル配置（テストが検証できるのはこちら＝frozen でない）の保存先は
+    従来どおり。非ポータブル配置（OS 標準の場所）は tests/test_write_locations.py。
+    """
 
     def test_paths_match_legacy_layout(self):
         assert ORIGINAL_APP_PATHS["CONFIG_FILE"] == os.path.join(REPO_ROOT, "radiosim_conf.json")
