@@ -96,6 +96,68 @@ class TestSimParams:
         p = sim.SimParams(default_params_dict)
         assert p.rain_rate == pytest.approx(0.0)
 
+    def test_fixed_n_has_no_pixel_groups(self, default_params_dict):
+        """固定 N（段階を名乗らない口）は画素セルの対応表を持たない（B-160）。"""
+        default_params_dict.pop("resolution", None)
+        p = sim.SimParams(default_params_dict)
+        assert p.sample_pixel_groups is None
+
+    def test_a_resolution_level_has_pixel_groups_aligned_with_sample_fracs(
+        self, default_params_dict
+    ):
+        """段階（高・中）を選んだ実行は `sample_pixel_groups` を
+        `sample_fracs` と同じ長さで持つ（B-160＝表示側が畳むための対応表）。
+        """
+        default_params_dict["resolution"] = "high"
+        p = sim.SimParams(default_params_dict)
+        assert p.sample_pixel_groups is not None
+        assert len(p.sample_pixel_groups) == len(p.sample_fracs)
+
+
+# ============================================================
+# resolve_samples
+# ============================================================
+class TestResolveSamples:
+    def test_normal_run_reports_the_pixel_size(self):
+        """天井に当たらない実行は、従来どおり**画素の寸法**を返す（B-150）。"""
+        n, spacing = sim.resolve_samples(34.54, 132.41, 34.545, 132.415, "high")
+        assert spacing == pytest.approx(
+            tg.grid_step_m((34.54 + 34.545) / 2.0, "high"))
+
+    def test_ceiling_fallback_reports_the_effective_spacing_not_the_pixel_size(
+        self,
+    ):
+        """🔴 **B-159**＝天井で等間隔へ落ちた実行は、間隔として画素の寸法を
+        返していた（`resolve_samples` の第2戻り値が常に `grid_step_m`）。
+        等間隔へ落ちた以上、返すべきは *距離 ÷（点数−1）* の実効間隔。
+        """
+        # 44°N から方位 45° へ 150km＝B-158 の実測で天井（90000）に当たる経路。
+        import math
+
+        def _dest(lat, lon, brng, km):
+            r = 6371.0
+            d = km / r
+            b = math.radians(brng)
+            p1 = math.radians(lat)
+            p2 = math.asin(math.sin(p1) * math.cos(d)
+                           + math.cos(p1) * math.sin(d) * math.cos(b))
+            l2 = math.radians(lon) + math.atan2(
+                math.sin(b) * math.sin(d) * math.cos(p1),
+                math.cos(d) - math.sin(p1) * math.sin(p2))
+            return math.degrees(p2), math.degrees(l2)
+
+        lat_rx, lon_rx = _dest(44.0, 141.0, 45.0, 150.0)
+        n, spacing = sim.resolve_samples(44.0, 141.0, lat_rx, lon_rx, "high")
+        assert n == tg.SAMPLES_CEILING
+        assert not tg.samples_are_pixel_edges("high", n)
+
+        dist_m = models.horizontal_distance_km(
+            44.0, 141.0, lat_rx, lon_rx) * units.KM_TO_M
+        expected = tg.effective_spacing_m(dist_m, n)
+        assert spacing == pytest.approx(expected)
+        assert spacing != pytest.approx(
+            tg.grid_step_m((44.0 + lat_rx) / 2.0, "high"))
+
 
 # ============================================================
 # fetch_elevations

@@ -122,6 +122,21 @@ def test_a_hundred_km_still_fits_under_the_ceiling(lat, bearing):
     )
 
 
+@pytest.mark.parametrize("bearing", [0.0, 30.0, 45.0, 60.0, 90.0])
+@pytest.mark.parametrize("km", [100.0, 110.0, 120.0, 150.0])
+def test_the_ceiling_never_lets_diagonal_paths_through(km, bearing):
+    """🔴 **B-158**＝天井判定がユークリッド距離（`span_px`）の見積りだと、斜め
+    45° の経路で約 √2 倍過小評価し、110〜150km で `SAMPLES_CEILING` を超えて
+    いた（44°N・45°・150km で実測 124,588 点）。境界を列挙した後の実数で
+    判定すれば、どの方位でも天井を超えない。
+    """
+    n = len(tg.path_sample_fractions(
+        44.0, 141.0, *_endpoint(44.0, 141.0, km, bearing), "high"))
+    assert n <= tg.SAMPLES_CEILING, (
+        f"{km}km・方位 {bearing}°: {n} 点＝天井 {tg.SAMPLES_CEILING} を超えた"
+    )
+
+
 @pytest.mark.parametrize("bad", [0.0, -1.0, float("nan"), float("inf")])
 def test_broken_distance_falls_back_to_the_floor(bad):
     """距離が読めない／0 でも落ちない（下限を返す）。"""
@@ -554,3 +569,63 @@ def test_the_zoom_table_matches_the_dem_layers():
     assert tg.RESOLUTION_ZOOM["medium"] == min(zooms), (
         "10m 層（全国カバー）のズームと『中』が見ている層がずれている", zooms
     )
+
+
+# ============================================================
+# 6. 表示専用の画素セル対応表（B-160・処方(a)）
+# ============================================================
+@pytest.mark.parametrize("level", ["high", "medium"])
+def test_pixel_groups_align_with_the_sample_list(level):
+    """`sample_pixel_groups` は `path_sample_fractions` と**同じ長さ**で、
+    非減少（セル番号が経路の順に単調に増える）こと。
+    """
+    args = (34.54, 132.41, 34.545, 132.415, level)
+    fracs = tg.path_sample_fractions(*args)
+    groups = tg.sample_pixel_groups(*args)
+    assert groups is not None
+    assert len(groups) == len(fracs)
+    assert groups == sorted(groups)
+    assert groups[0] == 0
+
+
+@pytest.mark.parametrize("level", ["low"])
+def test_pixel_groups_are_absent_where_there_is_no_pixel_structure(level):
+    """「低」は等間隔のまま＝画素セルという概念が無いので `None`。"""
+    args = (34.54, 132.41, 34.545, 132.415, level)
+    assert tg.sample_pixel_groups(*args) is None
+
+
+def test_pixel_groups_are_absent_when_the_ceiling_swallows_the_route():
+    """天井フォールバックへ落ちた実行も等間隔＝画素セルは無い（`None`）。
+
+    ⚠️ **[[B-159]] と同じ判定を共有する**＝ここで `None` を返すことが
+    `samples_are_pixel_edges` の「天井に当たったら画素の縁ではない」と揃う。
+    """
+    assert tg.sample_pixel_groups(
+        34.54, 132.41, -34.54, 132.41, "high") is None
+
+
+def test_collapse_pixel_groups_folds_each_cells_chord_endpoints_to_its_center():
+    """🔴 **B-160 処方(a)**＝画素セルの弦の両端 2 点（棚の縁）を、表示専用の
+    コピーでは中心 1 点へ畳む。セル数（`sample_pixel_groups` の最大値+1）と
+    畳んだ後の点数が一致すること。
+    """
+    args = (34.54, 132.41, 34.545, 132.415, "high")
+    fracs = tg.path_sample_fractions(*args)
+    groups = tg.sample_pixel_groups(*args)
+    assert groups is not None
+    display = tg.collapse_pixel_groups(fracs, groups)
+    assert len(display) == groups[-1] + 1
+    assert len(display) < len(fracs)          # 少なくとも 1 セルは 2 点持つ
+    assert display == sorted(display)          # 順序は保たれる
+    # 両端の畳んだ点は、元の両端セル（TX=0.0・RX=1.0 を含む）の中に収まる。
+    assert 0.0 <= display[0] < fracs[1]
+    assert fracs[-2] < display[-1] <= 1.0
+
+
+def test_collapse_pixel_groups_is_a_no_op_without_pixel_structure():
+    """`groups=None`（「低」・天井フォールバック）ではそのまま返す＝
+    元から等間隔で階段が出ない実行に、表示専用の処理が触らないこと。
+    """
+    values = [0.1, 0.4, 0.9]
+    assert tg.collapse_pixel_groups(values, None) == values

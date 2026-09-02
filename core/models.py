@@ -522,11 +522,16 @@ def calculate_propagation(
     # 🔴 **ここでも正規化する**＝`SimParams` を通さずに直接呼ぶ経路（探針・外部
     #    スクリプト・将来の呼び出し）が旧名 `deygout` を渡すと、**黙って single の
     #    枝へ落ちて別のモデルの答えを返す**（2026-08-26 にゲートが実際に捕まえた）。
-    if normalize_diff_method(diff_method) == DIFF_METHOD_MULTI:
+    # 🔴 **B-138**＝分岐にしか使わず捨てていた正規化名を、そのまま結果に載せる
+    #    値として使い回す＝`PropagationResult.diff_method` が実際に計算したモデル名
+    #    と一致する（旧名・単一障害物モデルへ落ちた未知の値も含めて）。
+    resolved_diff_method = normalize_diff_method(diff_method)
+    if resolved_diff_method == DIFF_METHOD_MULTI:
         diff_loss = _multi_obstacle_loss(
             obstruction_surface, d_m_axis, tx_abs, rx_abs, lam
         )
     else:
+        resolved_diff_method = DIFF_METHOD_SINGLE
         # 従来の単一障害物モデル
         clearance = obstruction_surface - los_vals
         sqrt_term = np.sqrt(
@@ -571,6 +576,9 @@ def calculate_propagation(
     )
 
     # Env Loss（環境区分別推定）
+    # 🔴 **B-138**＝未知の区分は `_env_loss` の中で `ENV_DEFAULT` へ黙って落ちる
+    #    （既定の計算で使う）ので、結果に載せる名もそれへ揃える。
+    resolved_env_type = env_type if env_type in ENV_COEFFS else ENV_DEFAULT
     env_loss  = _env_loss(slant_dist_km, env_type)
     # current_k: 表示・参考用のライスファクター推定値。
     # ライスファクター K は見通し成分と散乱成分の電力比 [dB] であり、
@@ -591,8 +599,8 @@ def calculate_propagation(
         blocked_ratio = blocked_ratio,
         slant_dist_km = slant_dist_km,
         current_k     = current_k,
-        diff_method   = diff_method,
-        env_type      = env_type,
+        diff_method   = resolved_diff_method,
+        env_type      = resolved_env_type,
     )
 
 

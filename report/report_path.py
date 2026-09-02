@@ -27,6 +27,7 @@ from core import coords
 from core import disclosure
 from core import i18n
 from core import models
+from core import terrain_grid
 from core import units
 from report import mpl_fonts
 from report import report_common
@@ -143,11 +144,17 @@ def save_profile_png(
     ax.set_facecolor("white")
     ax.tick_params(labelsize=15)
 
-    veg_top = elevs + params.veg_h
     # 距離軸は表示のみ m へ換算する（内部・物理式は km 据え置き＝units 参照）。
     d_m = units.km_to_m(t.d_km_axis)
-    ax.fill_between(d_m, elevs,   y_min,   color="#8B4513", alpha=0.4)
-    ax.fill_between(d_m, veg_top, elevs,   color="green",   alpha=0.3)
+
+    # 🔴 B-160＝画素の弦の両端 2 点をそのまま折れ線で結ぶと階段状に見える
+    # （計算はここでは何も変わらない・描画専用のコピーにだけ処方(a)を通す）。
+    groups = params.sample_pixel_groups
+    d_m_disp   = terrain_grid.collapse_pixel_groups(list(d_m), groups)
+    elevs_disp = terrain_grid.collapse_pixel_groups(list(elevs), groups)
+    veg_top_disp = [e + params.veg_h for e in elevs_disp]
+    ax.fill_between(d_m_disp, elevs_disp,    y_min,      color="#8B4513", alpha=0.4)
+    ax.fill_between(d_m_disp, veg_top_disp,  elevs_disp, color="green",   alpha=0.3)
 
     tx_abs = float(elevs[0])  + h_tx
     rx_abs = float(elevs[-1]) + h_rx
@@ -464,7 +471,11 @@ def save_path_html(
 # KML 出力（per-path）
 # ============================================================
 
-def _kml_line_coords(lats: np.ndarray, lons: np.ndarray, alts: np.ndarray) -> str:
+def _kml_line_coords(
+    lats: "np.ndarray | list[float]",
+    lons: "np.ndarray | list[float]",
+    alts: "np.ndarray | list[float]",
+) -> str:
     """KML <coordinates> 内容（lon,lat,alt の改行区切り）を返す。"""
     return "\n".join(
         f"          {float(lo):.6f},{float(la):.6f},{float(al):.1f}"
@@ -516,6 +527,13 @@ def save_path_kml(
     rx_alt = float(elev[-1]) + h_rx
     los    = terrain.los_line(tx_alt, rx_alt)
     f1     = models.fresnel_zone_radii(terrain.d_km_axis, terrain.horiz_dist_km, params.freq_mhz)
+
+    # 🔴 B-160＝地形の折れ線だけ、画素の弦の両端 2 点を中心 1 点へ畳む（処方(a)）。
+    # LoS・Fresnel・遮蔽区間は元の標本列のまま（計算・判定に使う添字を変えない）。
+    groups = params.sample_pixel_groups
+    terrain_lats = terrain_grid.collapse_pixel_groups(list(lats), groups)
+    terrain_lons = terrain_grid.collapse_pixel_groups(list(lons), groups)
+    terrain_elev = terrain_grid.collapse_pixel_groups(list(elev), groups)
 
     los_color = "ff00aa00" if result.status == "OK" else "ff00a5ff"
     path_id   = _html.escape(os.path.basename(save_dir))
@@ -578,7 +596,7 @@ def save_path_kml(
       <LineString>
         <altitudeMode>absolute</altitudeMode>
         <coordinates>
-{_kml_line_coords(lats, lons, elev)}
+{_kml_line_coords(terrain_lats, terrain_lons, terrain_elev)}
         </coordinates>
       </LineString>
     </Placemark>

@@ -244,45 +244,105 @@ def path_sample_fractions(
     ⚠️ **返すのは経路のパラメータ**（緯度・経度ではない）＝標本の位置を運ぶ器は
     これ 1 つにする。緯度経度は呼ぶ側が `tx + (rx - tx) * t` で作る（製品の
     `np.linspace` と同じ内挿＝経路の定義を 2 か所に持たない）。
+
+    どの標本がどの画素セルに属すかは `sample_pixel_groups`（表示専用・B-160）。
+    """
+    out, _ = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level)
+    return out
+
+
+def sample_pixel_groups(
+    lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+) -> "list[int] | None":
+    """`path_sample_fractions` の各標本が属する画素セルの番号（表示専用・B-160）。
+
+    🔑 **計算には使わない**＝物理は `path_sample_fractions` の並びをそのまま使う。
+    ここは「画素の弦の両端 2 点を、描画のときだけ中心 1 点へ畳む」ため（処方(a)）の
+    対応表を渡すためだけに在る。「低」・固定 N・天井フォールバック（画素構造が無い、
+    または崩した）実行では **None**＝呼ぶ側は `collapse_pixel_groups` に通せば、
+    None のときは元の並びをそのまま返す。
+    """
+    _, groups = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level)
+    return groups
+
+
+def collapse_pixel_groups(
+    values: "list[float]", groups: "list[int] | None",
+) -> list[float]:
+    """画素セルの弦の両端 2 点を中心 1 点（平均）へ畳む（表示専用・B-160 処方(a)）。
+
+    `groups` は `sample_pixel_groups` の戻り値（`values` と同じ並び・同じ長さ）。
+    ⚠️ **計算値には触れない**＝呼ぶ側は描画用にコピーした配列にだけ通す。
+    `groups` が None の実行（画素構造が無い）はそのまま返す。
+    """
+    if groups is None:
+        return list(values)
+    out: list[float] = []
+    i, n = 0, len(groups)
+    while i < n:
+        j = i
+        total = 0.0
+        while j < n and groups[j] == groups[i]:
+            total += values[j]
+            j += 1
+        out.append(total / (j - i))
+        i = j
+    return out
+
+
+def _path_sample_fractions_impl(
+    lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+) -> "tuple[list[float], list[int] | None]":
+    """`path_sample_fractions` / `sample_pixel_groups` の共通実装。
+
+    2 つ目の戻り値＝各標本が属する画素セルの番号（B-160）。画素構造が無い
+    （「低」・知らない語・天井フォールバック等）実行では None。
     """
     zoom = RESOLUTION_ZOOM.get(level)
     if zoom is None:
         # 「低」と知らない語＝等間隔（知らない語の落とし先は `recommended_samples`）。
         n = recommended_samples(_rough_dist_m(lat_tx, lon_tx, lat_rx, lon_rx), level)
-        return _uniform(n)
+        return _uniform(n), None
 
     coords = (lat_tx, lon_tx, lat_rx, lon_rx)
     if not all(math.isfinite(v) for v in coords):
-        return _uniform(SAMPLES_MIN)
+        return _uniform(SAMPLES_MIN), None
 
     x0, y0 = lonlat_to_pixel(lat_tx, lon_tx, zoom)
     x1, y1 = lonlat_to_pixel(lat_rx, lon_rx, zoom)
     span_px = math.hypot(x1 - x0, y1 - y0)
     if span_px <= 0.0:
-        return _uniform(SAMPLES_MIN)
-
-    # 画素が多すぎる（座標の打ち間違いで地球半周など）＝天井で等間隔へ落とす。
-    # ⚠️ **落ちたことは点数として画面に出る**（天井の値がそのまま出る）。
-    if span_px * 2.0 + 2.0 > SAMPLES_CEILING:
-        return _uniform(SAMPLES_CEILING)
+        return _uniform(SAMPLES_MIN), None
 
     cuts = _crossing_fractions(x0, y0, x1, y1, lat_tx, lat_rx, zoom)
 
     inset = _EDGE_INSET_PX / span_px
     out: list[float] = []
+    groups: list[int] = []
     edges = [0.0] + cuts + [1.0]
-    for lo, hi in zip(edges, edges[1:]):
+    for cell_id, (lo, hi) in enumerate(zip(edges, edges[1:])):
         if hi - lo <= 2.0 * inset:
             out.append((lo + hi) / 2.0)      # 端をかすめただけの画素＝1 点で足りる
+            groups.append(cell_id)
         else:
             out.append(lo + inset)
             out.append(hi - inset)
+            groups.append(cell_id)
+            groups.append(cell_id)
+
+    # 画素が多すぎる（座標の打ち間違いで地球半周など）＝天井で等間隔へ落とす。
+    # ⚠️ **落ちたことは点数として画面に出る**（天井の値がそのまま出る）。
+    # 🔑 見積り（`span_px`＝ユークリッド距離）で先に弾くと斜めの経路で約 √2 倍
+    # 過小評価する（B-158）ので、境界を列挙した後の実数で判定する。
+    if len(out) > SAMPLES_CEILING:
+        return _uniform(SAMPLES_CEILING), None
+
     # 両端は**きっかり TX / RX**（`elevs[0]` / `elevs[-1]` がアンテナの足元になる）。
     out[0] = 0.0
     out[-1] = 1.0
     if len(out) < SAMPLES_MIN:
-        return _uniform(SAMPLES_MIN)
-    return out
+        return _uniform(SAMPLES_MIN), None
+    return out, groups
 
 
 def _crossing_fractions(

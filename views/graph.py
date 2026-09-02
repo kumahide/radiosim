@@ -62,6 +62,7 @@ from core import failure
 from core import i18n
 from core import models
 from core import simulation as sim
+from core import terrain_grid
 from core import units
 from report import mpl_fonts
 from report import report_path
@@ -334,14 +335,21 @@ class GraphWindow(tk.Toplevel):
     def _build_static_terrain(self) -> None:
         t = self._terrain
         y_min = float(np.min(t.raw_elevs)) - 30
-        veg_top = t.elevs_with_curve + self._params.veg_h
 
         # 距離軸は表示のみ m へ換算する（内部・物理式は km 据え置き＝units 参照）。
         d_m = units.km_to_m(t.d_km_axis)
 
-        self._ax.fill_between(d_m, t.elevs_with_curve, y_min,
+        # 🔴 B-160＝画素の弦の両端 2 点をそのまま折れ線で結ぶと階段状に見える
+        # （計算はここでは何も変わらない・描画専用のコピーにだけ処方(a)を通す）。
+        groups = self._params.sample_pixel_groups
+        d_m_disp    = terrain_grid.collapse_pixel_groups(list(d_m), groups)
+        elevs_disp  = terrain_grid.collapse_pixel_groups(
+            list(t.elevs_with_curve), groups)
+        veg_top_disp = [e + self._params.veg_h for e in elevs_disp]
+
+        self._ax.fill_between(d_m_disp, elevs_disp, y_min,
                               color=_TERRAIN_COLOR, alpha=0.4)
-        self._ax.fill_between(d_m, veg_top, t.elevs_with_curve,
+        self._ax.fill_between(d_m_disp, veg_top_disp, elevs_disp,
                               color=_VEG_COLOR, alpha=0.3)
 
         self._ax.set_xlabel(i18n.t("graph_dist_axis"))
@@ -360,7 +368,7 @@ class GraphWindow(tk.Toplevel):
             h_px = fig_h_in * self._fig.dpi * pos.height
             vexag = models.vertical_exaggeration(
                 t.horiz_dist_km * 1000.0,
-                float(np.max(veg_top)) - y_min,
+                float(np.max(veg_top_disp)) - y_min,
                 w_px, h_px,
             )
             self._ax.text(

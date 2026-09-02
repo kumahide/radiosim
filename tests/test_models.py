@@ -599,6 +599,8 @@ class TestEnvCoeffs:
         r_los     = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                                  env_type="los")
         assert r_unknown.env_loss == pytest.approx(r_los.env_loss, rel=1e-6)
+        # 🔴 B-138＝計算は los へ落ちているのに、名だけ未知の値が残っていた。
+        assert r_unknown.env_type == "los"
 
     def test_env_loss_within_bounds(self, flat_terrain):
         """各環境区分で Env Loss が定義された min/max 範囲内に収まる。"""
@@ -792,6 +794,21 @@ class TestScopeNotes:
         new = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
                                            diff_method=models.DIFF_METHOD_MULTI).diff_loss
         assert old == pytest.approx(new)
+
+    def test_diff_method_field_is_the_normalized_name(self):
+        """🔴 **B-138**＝`.diff_method` に旧名がそのまま残らない（分岐にしか
+        使っていなかった正規化を、結果にも通す）。単一障害物モデルへ落ちた
+        未知の値も、実際に計算したモデル名（`single`）へ揃える。
+        """
+        raw = np.zeros(201)
+        raw[100] = 60.0
+        terrain = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        r = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                         diff_method="deygout")
+        assert r.diff_method == models.DIFF_METHOD_MULTI
+        r2 = models.calculate_propagation(terrain, 30.0, 30.0, 2400.0, 0.0, 10.0,
+                                          diff_method="not-a-real-method")
+        assert r2.diff_method == models.DIFF_METHOD_SINGLE
 
     def test_the_spherical_earth_seat_is_empty_but_wired(self, monkeypatch):
         """🔑 **席が埋まった日に配線が動く**ことを、いま固定しておく（B-130）。

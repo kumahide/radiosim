@@ -54,10 +54,18 @@ def resolve_samples(
     ⇒ 実際に効いている量＝**その緯度での 1px の寸法**を出す。
     「低」は等間隔のままなので、従来どおり目標間隔が返る。
     どちらを名乗るかは `terrain_grid.samples_are_pixel_edges` が答える。
+
+    ⚠️ **天井（`SAMPLES_CEILING`）で等間隔へ落ちた実行も「画素の縁」ではない**
+    （B-159）＝`samples_are_pixel_edges` は点数も見て判定するので、そこへ委ねる。
     """
     fracs = terrain_grid.path_sample_fractions(
         lat_tx, lon_tx, lat_rx, lon_rx, level)
-    return len(fracs), terrain_grid.grid_step_m((lat_tx + lat_rx) / 2.0, level)
+    n = len(fracs)
+    if terrain_grid.samples_are_pixel_edges(level, n):
+        return n, terrain_grid.grid_step_m((lat_tx + lat_rx) / 2.0, level)
+    dist_m = models.horizontal_distance_km(
+        lat_tx, lon_tx, lat_rx, lon_rx) * units.KM_TO_M
+    return n, terrain_grid.effective_spacing_m(dist_m, n)
 
 
 def effective_spacing(params: "SimParams") -> float:
@@ -154,10 +162,15 @@ class SimParams:
             self.resolution: str = level
             self.sample_fracs: list[float] = terrain_grid.path_sample_fractions(
                 self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution)
+            # 表示専用（B-160）＝断面図が画素の弦の両端 2 点をそのまま折れ線で結ぶと
+            # 階段状に見える。物理には使わない対応表なので固定 N のときは持たない。
+            self.sample_pixel_groups: "list[int] | None" = terrain_grid.sample_pixel_groups(
+                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution)
         else:
             self.resolution = ""
             n = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
             self.sample_fracs = [i / (n - 1) for i in range(n)]
+            self.sample_pixel_groups = None
         self.num: int = len(self.sample_fracs)
         # ⚠️ **旧名 `deygout` はここで受ける**（入力の境目 1 か所・B-130）＝
         #    5 フローすべてがこの `SimParams` を通るので、ここだけで全部が揃う。
