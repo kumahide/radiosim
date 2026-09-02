@@ -129,7 +129,7 @@ build.bat
 
 ### 出力
 
-既定はリポジトリ直下の `dist/`。環境変数 **`RADIOSIM_BUILD_ROOT`** を設定するとその配下の `dist/` `build/` へ出力します（クラウド同期フォルダの中でビルドしていて、毎回の作り直しを同期させたくない場合に使います）。
+リポジトリ直下の `dist/`。
 
 ```
 dist/
@@ -145,8 +145,7 @@ dist/
 ビルド出力の `RadioSimPro/` フォルダをそのまま ZIP 圧縮して配布します。
 
 ```powershell
-# 出力先は RADIOSIM_BUILD_ROOT に従う（未設定ならリポジトリ直下の dist/）
-$dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
+$dist = "dist"
 # 配布物の名前には版を入れる（Releases に並んだとき、どの版か見て分かるように）
 # 版は version.py から引く＝この手順書に版を書き写さない（写すと版を上げた日に嘘になる）
 $ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
@@ -154,8 +153,6 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$
 ```
 
 > ⚠️ **ZIP の名前に版を入れる**＝公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。版なしの名前で作ると、Releases に添付するときに付け直すことになります。
->
-> ⚠️ **`dist\RadioSimPro` と直書きしない**＝`RADIOSIM_BUILD_ROOT` を設定している環境では、失敗するか**リポジトリ側の古い成果物を誤って圧縮**します。
 
 ### `radiosim.spec` の主な設定
 
@@ -996,9 +993,6 @@ D:\dev\radiosim\venv\Scripts\python.exe -m pip install -r requirements.txt -r re
 rem 3. その python.exe を「検証にもビルドにも使う唯一の環境」として宣言する
 rem    （設定後はシェルを開き直すこと。ビルドとローカル QA フックがこれを見ます）
 setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
-
-rem 4. 任意：dist / build もクラウド同期の外へ出す
-setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 ```
 
 `tests/test_env_consistency.py` が、pytest を走らせている環境の実版と `requirements.txt` のピンの一致を検証します（ずれた瞬間にテストが落ちます）。

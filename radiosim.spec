@@ -6,8 +6,7 @@
 #   直接叩く場合も、pytest を走らせている venv の python で:
 #     <venv>\Scripts\python.exe -m PyInstaller radiosim.spec --noconfirm
 #
-# 出力先: build.bat が --distpath / --workpath で渡す（既定はリポジトリ直下の
-#   dist/ build/、RADIOSIM_BUILD_ROOT を設定するとその配下）。
+# 出力先: build.bat が --distpath / --workpath で渡す（リポジトリ直下の dist/ build/）。
 #
 
 import sys

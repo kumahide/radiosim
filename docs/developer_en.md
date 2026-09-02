@@ -129,7 +129,7 @@ build.bat
 
 ### Output
 
-Defaults to `dist/` next to the sources. Set **`RADIOSIM_BUILD_ROOT`** to place `dist/` and `build/` elsewhere — useful when the repository lives inside a cloud-synced folder and you do not want every rebuild to re-upload.
+`dist/` next to the sources.
 
 ```
 dist/
@@ -145,8 +145,7 @@ dist/
 ZIP the `RadioSimPro/` folder from the build output:
 
 ```powershell
-# Honour RADIOSIM_BUILD_ROOT (falls back to dist/ next to the sources)
-$dist = if ($env:RADIOSIM_BUILD_ROOT) { "$env:RADIOSIM_BUILD_ROOT\dist" } else { "dist" }
+$dist = "dist"
 # Put the version in the file name, so the asset is identifiable on the Releases page
 # Read the version from version.py — do not copy it into this document (a copy goes stale on the next release)
 $ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
@@ -154,8 +153,6 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$
 ```
 
 > ⚠️ **Put the version in the ZIP name** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). Building an unversioned name just means renaming it when attaching the release.
->
-> ⚠️ **Do not hard-code `dist\RadioSimPro`** — where `RADIOSIM_BUILD_ROOT` is set it either fails or silently zips a stale artifact from the repository.
 
 ### Key `radiosim.spec` Settings
 
@@ -994,9 +991,6 @@ D:\dev\radiosim\venv\Scripts\python.exe -m pip install -r requirements.txt -r re
 rem 3. Declare that interpreter as the single environment used for both
 rem    verification and builds (reopen the shell afterwards)
 setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
-
-rem 4. Optional: keep dist / build out of the synced folder as well
-setx RADIOSIM_BUILD_ROOT D:\dev\radiosim
 ```
 
 `tests/test_env_consistency.py` verifies that the versions actually installed in the interpreter running pytest match the pins in `requirements.txt`, so drift fails the suite the moment it appears.

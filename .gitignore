@@ -1,6 +1,4 @@
-# ビルド出力。通常はリポジトリの外に出る（`RADIOSIM_BUILD_ROOT`＝
-# docs/developer_ja.md「開発環境のセットアップ」）。それでも項目を残すのは、
-# この環境変数が任意で、未設定なら既定の出力先がここになるため。
+# ビルド出力（build.bat が --distpath / --workpath で作る）。
 dist/
 build/
 RadioSimPro-*.zip

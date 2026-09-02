@@ -21,8 +21,6 @@ rem  Environment declaration (2.6a1 / B-020)
 rem ------------------------------------------------------------
 rem  RADIOSIM_PYTHON     = the one python.exe used for BOTH verification and
 rem                        the shipped build. REQUIRED.
-rem  RADIOSIM_BUILD_ROOT = where dist / build go. Optional; defaults to the
-rem                        repository root.
 rem
 rem  Why declared, not discovered: this script used to build with whatever
 rem  python was on PATH, so the binary shipped with 8 transitive dependencies
@@ -48,13 +46,8 @@ if not exist "%RADIOSIM_PYTHON%" (
 )
 set "PY=%RADIOSIM_PYTHON%"
 
-if defined RADIOSIM_BUILD_ROOT (
-    set "DIST_DIR=%RADIOSIM_BUILD_ROOT%\dist"
-    set "WORK_DIR=%RADIOSIM_BUILD_ROOT%\build"
-) else (
-    set "DIST_DIR=%~dp0dist"
-    set "WORK_DIR=%~dp0build"
-)
+set "DIST_DIR=%~dp0dist"
+set "WORK_DIR=%~dp0build"
 set "APP_DIR=%DIST_DIR%\RadioSimPro"
 
 rem ---- "clean" subcommand: wipe regenerable artifacts, caches, logs, zips ----
@@ -72,21 +65,12 @@ if /i "%~1"=="clean" (
     echo [INFO] Cleaning build artifacts, caches, logs, and distribution zips...
     if exist "%WORK_DIR%"      rmdir /s /q "%WORK_DIR%"
     if exist "%DIST_DIR%"      rmdir /s /q "%DIST_DIR%"
-    rem Also sweep any leftovers from before dist/build moved out of the repo.
-    if exist "%~dp0build"      rmdir /s /q "%~dp0build"
-    if exist "%~dp0dist"       rmdir /s /q "%~dp0dist"
     if exist .pytest_cache     rmdir /s /q .pytest_cache
     if exist .ruff_cache       rmdir /s /q .ruff_cache
     if exist __pycache__       rmdir /s /q __pycache__
     if exist views\__pycache__ rmdir /s /q views\__pycache__
     if exist tests\__pycache__ rmdir /s /q tests\__pycache__
-    rem Distribution zips live next to DIST_DIR once RADIOSIM_BUILD_ROOT is set,
-    rem so sweeping only the repo root silently kept them (same 2026-08-04 review).
-    rem 2026-08-11 (independent review): the follow-up line used to look INSIDE
-    rem DIST_DIR *after* DIST_DIR was already removed above - dead either way,
-    rem and one level off from where the zips actually sit. Sweep the build root.
     del /q RadioSimPro-*.zip 2>nul
-    if defined RADIOSIM_BUILD_ROOT del /q "%RADIOSIM_BUILD_ROOT%\RadioSimPro-*.zip" 2>nul
     del /q build_log.txt 2>nul
     del /q radiosim.log 2>nul
     del /q .coverage 2>nul
