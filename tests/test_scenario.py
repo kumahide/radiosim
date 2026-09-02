@@ -591,7 +591,8 @@ class TestScenarioReport:
         report_scenario.save_scenario_csv(run, str(tmp_path))
         rows = (tmp_path / "scenario.csv").read_text(encoding="utf-8").splitlines()
         assert len(rows) == 1 + len(run.points)
-        assert rows[0].startswith("label,h_tx,status")
+        assert rows[0].startswith("label,axis_value,status")
+        assert rows[0].endswith(",axis")
         # 桁区切りは入れない（表計算が数値として読めること）
         assert "," in rows[1] and '"' not in rows[1]
 

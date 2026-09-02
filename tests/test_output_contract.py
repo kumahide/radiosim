@@ -172,85 +172,41 @@ def test_data_rows_have_one_value_per_column(contract):
         )
 
 
-# --- 条件探索の可変列 --------------------------------------------------------
-def test_sweep_axis_replaces_only_the_second_column():
-    base = oc.SCENARIO_CSV_COLUMNS
-    got = oc.scenario_csv_columns("p_tx")
-    assert got[1] == "p_tx", "スイープの軸が 2 列目に出ていない"
-    assert got[:1] + got[2:] == base[:1] + base[2:], "軸以外の列まで動いている"
-    assert oc.scenario_csv_columns(None) == base, "比較モードの既定名が変わっている"
-    assert oc.scenario_csv_columns("") == base
+# --- 条件探索の軸列（I-112・3.1 で改名済み）---------------------------------
+def test_scenario_axis_value_column_is_fixed():
+    """2 列目は `axis_value` に固定され、軸を何に選んでも動かないこと。
 
-
-def test_the_axis_column_can_collide_with_a_fixed_column():
-    """軸名が固定列と同名になりうることを、契約として明文化しておく。
-
-    ⚠️ **これは「直った」ではなく「そういう契約だ」を固定する検査**＝辞書で読む
-    相手は後勝ちになる。直すときは列の改名＝1 版前の予告が要る（変更規約 2）。
+    以前は 2 列目がスイープ軸の名前そのもの（`freq_mhz` など）に差し替わり、
+    後ろの同名固定列と見出しが重複した（I-112）。3.1 でこの可変性を無くした。
     """
-    from core import scenario as scn
-
-    collide = sorted(set(scn.SWEEP_AXES) & set(oc.SCENARIO_CSV_COLUMNS))
-    assert collide == ["freq_mhz", "h_rx", "h_tx", "veg_h"], (
-        f"軸と固定列の重なりが変わった: {collide}。"
-        "列を足す／軸を足すときは、この重なりが増えていないか見ること"
-    )
-    for axis in collide:
-        cols = oc.scenario_csv_columns(axis)
-        assert cols.count(axis) == 2, "重なりの形が変わった（契約の説明を見直すこと）"
+    assert oc.SCENARIO_CSV_COLUMNS[1] == "axis_value"
 
 
-# --- 予告（I-112・3.0 で予告 → 3.1 で改名）-----------------------------------
-#: 予告が載っていなければならない公開文書。**4 本ぜんぶ**＝規約 2「片方だけだと
-#: 配布版だけを見る利用者に届かない」の「片方」は言語でも文書でも起きる。
-_PUBLIC_DOCS = (
-    "docs/manual_ja.md", "docs/manual_en.md",
-    "docs/developer_ja.md", "docs/developer_en.md",
-)
+def test_scenario_axis_name_column_is_appended_at_the_tail():
+    """軸の名前そのものは末尾の `axis` 列が持つこと（規約 1＝追加は末尾のみ）。"""
+    assert oc.SCENARIO_CSV_COLUMNS[-1] == "axis"
 
 
-def test_the_rename_is_announced_everywhere_while_the_collision_stands():
-    """**重なりが残っている間は、予告が 5 か所すべてに載っていること**（I-112）。
+def test_scenario_columns_no_longer_collide():
+    """`axis_value` が固定名になった以上、軸を選んでも見出しの重複が起きないこと。
 
-    🔑 これは**規約 2 を自分で通した最初の実例**の見張り＝予告は CHANGELOG と
-    公開文書の両方に要る。⚠️ **1 本だけ書き忘れた状態で出荷する**のがこの規約の
-    唯一の壊れ方なので、そこだけを機械で見る。
-
-    ⚠️ 3.1 で改名すれば重なりは消え、この検査は何も要求しなくなる（そのとき
-    予告の字を消すのは人の仕事＝**古い予告が残ることまでは見ていない**）。
+    ⚠️ 固定列そのものに `freq_mhz` 等が**残っている**のは意図どおり（その条件で
+    使った値の列）＝ここで見るのは「同じ名前が 2 回出るか」であって、軸名と
+    同じ字の列が存在すること自体ではない。
     """
-    from core import scenario as scn
-
-    collide = set(scn.SWEEP_AXES) & set(oc.SCENARIO_CSV_COLUMNS)
-    if not collide:
-        return                                  # 改名済み＝予告は役目を終えている
-
-    missing = []
-    for rel in ("CHANGELOG.md",) + _PUBLIC_DOCS:
-        text = (ROOT / rel).read_text(encoding="utf-8")
-        if not _announces_the_rename(text):
-            missing.append(rel)
-    assert not missing, (
-        "I-112 の予告が載っていない文書がある: " + repr(missing) + "。"
-        "列の改名は 1 つ前の版で予告する（変更規約 2）＝"
-        "CHANGELOG と公開文書 4 本の両方に載せること"
+    names = list(oc.SCENARIO_CSV_COLUMNS)
+    assert len(names) == len(set(names)), (
+        f"scenario.csv の列見出しに重複がある: {names}"
     )
 
 
-def _announces_the_rename(text: str) -> bool:
-    """その文書が「3.1 で 2 列目の名前が変わる」と告げているか。
+# --- 水平距離（B-139・3.1 で列追加）------------------------------------------
+def test_summary_has_horizontal_distance_column_at_the_tail():
+    """`slant_m`（斜距離）だけでは実効間隔が復元できない問題への対処。
 
-    判定を関数に切り出してあるのは変異検証のため（下の自己検査）。**版番号と
-    「予告」の意思表示の両方**を求める＝重なりの説明だけでは予告にならない。
+    `slant_m` は送受信のアンテナ高と標高差を含む斜距離なので、
+    `slant_m ÷ (samples − 1)` は実効間隔の近似にしかならない（短距離・急峻な
+    経路ほど誤差が大きい）。水平距離を列として持てば、読む側がその近似計算を
+    するかどうかを選べる。規約 1＝末尾に追加。
     """
-    return ("3.1" in text) and ("📣" in text)
-
-
-@pytest.mark.parametrize("text,expected", [
-    ("📣 予告（3.1 で直します）: 2 列目の列名を変えます", True),
-    ("⚠️ 同じ名前の列が 2 つ出ます（2 列目は位置で読んでください）", False),
-    ("📣 3.0 で何かをします", False),
-    ("3.1 で直します", False),
-])
-def test_the_announcement_detector_catches_what_it_claims(text, expected):
-    assert _announces_the_rename(text) is expected
+    assert oc.SUMMARY_CSV_COLUMNS[-1] == "horiz_m"

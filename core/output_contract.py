@@ -47,6 +47,19 @@ core/output_contract.py
   **画面は元から 0.1 dB** で、成果物だけが 2 桁を名乗っていた。
 - **告知**＝CHANGELOG と公開文書の両方（規約 2 と同じ道＝配布版だけを見る利用者に
   届かない書き方をしない）。桁は `core/units.py` の `DB_DECIMALS` が単一ソース。
+
+------------------------------------------------------------------------------
+📌 **規約 2 を自分で通した実例**（I-112・3.0a1 で予告 → 3.1 で改名）
+------------------------------------------------------------------------------
+`scenario.csv` の 2 列目は、以前はスイープ軸の名前そのもの（`freq_mhz` など）に
+差し替わっていた＝軸に `freq_mhz` / `h_tx` / `h_rx` / `veg_h` を選ぶと、後ろに
+並ぶ同名の固定列と**見出しが 2 回出る**（`csv.DictReader` やpandas は後勝ちで読む
+ので、軸の値が静かに捨てられる）。
+- **3.1 で 2 列目を固定名 `axis_value` にした**（値そのものは変えていない＝
+  比較では条件名、スイープでは軸の値）。**軸の名前**（比較では空文字列）は
+  末尾に追加した `axis` 列へ移した（規約 1＝追加は末尾のみ）。
+- これで軸に何を選んでも見出しの重複は起きない。**古い予告の文言**（CHANGELOG
+  3.0 節・公開文書）は歴史的記録として残し、いま在る列の説明だけを実態に直す。
 """
 
 from __future__ import annotations
@@ -63,15 +76,12 @@ class CsvContract:
         row_meaning: 「1 行 = 何か」。**行の意味が変わるなら別ファイル**（規約 4）。
         columns:     見出し行そのもの（並びも契約）。
         writer:      これを書く関数（`module:function`）。ゲートが実在を確かめる。
-        variable:    実行時に字が変わる唯一の列があるならその位置の既定名。
-                     いまは条件探索の軸だけ（→ `scenario_csv_columns`）。
     """
 
     filename: str
     row_meaning: str
     columns: tuple[str, ...]
     writer: str
-    variable: str = ""
 
 
 # --- 個別シミュレーション ----------------------------------------------------
@@ -94,6 +104,12 @@ TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m")
 # 静かに壊れる**＝読みやすさより互換を採る。3 本の CSV とも同じ扱いにした
 # （`summary.csv` / `hops.csv` / `scenario.csv`。HTML 台帳のほうは位置の契約が
 # 無いので `f1_pct` の隣に置いてある＝**人が読む面と機械が読む面で並びが違う**）。
+#
+# 🆕 `horiz_m`（3.1 / B-139）＝**水平距離**。`slant_m` は送受信のアンテナ高と
+# 標高差を含む斜距離なので、`slant_m ÷ (samples − 1)` は実効間隔の近似にしか
+# ならず（短距離・急峻な経路ほど誤差が大きい＝実測 +16.6%）、しかも成果物には
+# 復元する手がかりが無かった。水平距離をそのまま列にすれば、その割り算をする
+# かどうかは読む側の判断に戻せる。規約 1＝末尾に追加。
 SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
     "h_tx", "h_rx",
@@ -103,6 +119,7 @@ SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "slant_m", "f1_pct", "note", "error",
     "f1_depth_x",
     "samples",
+    "horiz_m",
 )
 
 # --- 中継経路 ---------------------------------------------------------------
@@ -115,38 +132,20 @@ HOPS_CSV_COLUMNS: tuple[str, ...] = (
 )
 
 # --- 条件探索 ---------------------------------------------------------------
-#: 2 列目の既定名（比較モード）。スイープでは**軸の名前**に置き換わる唯一の可変列。
-SCENARIO_CSV_AXIS_COLUMN = "condition"
-
+# 🔁 **2 列目は 3.1 で `axis_value` に固定した**（I-112・3.0a1 で予告済み）。
+# 以前はスイープで軸の名前（`freq_mhz` など）に差し替わり、同名の固定列と
+# 見出しが 2 回出た。値の意味は変えていない（比較＝条件名／スイープ＝軸の値）。
+# 軸の名前そのものは `axis` 列（末尾＝規約 1）に移した＝比較では空文字列。
 SCENARIO_CSV_COLUMNS: tuple[str, ...] = (
-    "label", SCENARIO_CSV_AXIS_COLUMN, "status",
+    "label", "axis_value", "status",
     "rx_dbm", "margin_db", "total_loss_db",
     "fspl_db", "diff_db", "veg_db", "env_db", "rain_db", "gas_db",
     "f1_pct", "slant_m",
     "freq_mhz", "p_tx_dbm", "gain_tx_dbi", "gain_rx_dbi", "sens_dbm",
     "h_tx", "h_rx", "veg_h", "rain_mmh", "env_type", "diff_method",
     "f1_depth_x",
+    "axis",
 )
-
-
-def scenario_csv_columns(axis: str | None) -> tuple[str, ...]:
-    """条件探索の見出し行を返す（スイープでは 2 列目が軸の名前になる）。
-
-    ⚠️ **軸の名前は固定列と衝突しうる**（`freq_mhz` `h_tx` `h_rx` `veg_h` の 4 軸は
-    同名の固定列を持つ＝見出しに同じ字が 2 回出る）。列を辞書で読む相手にとっては
-    後勝ちになるので、**位置で読むか、2 列目を軸の値として読む**こと。
-
-    📣 **3.1 で直す（3.0 で予告済み・I-112）**＝2 列目に**固定の名前**を与え、
-    同じ名前が 2 回出る形をやめる（軸の名前は別の場所で持つ）。**新しい列名は
-    3.1 で決める**＝3.0 の予告は*方向*だけを約束している（ユーザー決定 2026-08-26）。
-    ⚠️ 予告は **CHANGELOG と公開文書 4 本**に載せてある＝規約 2 を自分で通した最初の
-    実例。載っているかは `tests/test_output_contract.py` が重なりの続く間だけ見張る。
-    """
-    if not axis:
-        return SCENARIO_CSV_COLUMNS
-    return tuple(
-        axis if i == 1 else c for i, c in enumerate(SCENARIO_CSV_COLUMNS)
-    )
 
 
 #: 全成果物 CSV の台帳（**新しい CSV を足したらここにも足す**）。
@@ -174,6 +173,5 @@ CSV_CONTRACTS: tuple[CsvContract, ...] = (
         row_meaning="1 行 = 1 条件（スイープでは 1 点）",
         columns=SCENARIO_CSV_COLUMNS,
         writer="report.report_scenario:save_scenario_csv",
-        variable=SCENARIO_CSV_AXIS_COLUMN,
     ),
 )

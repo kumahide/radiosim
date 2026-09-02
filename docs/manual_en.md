@@ -781,6 +781,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `error` | — | Why it failed; empty for a path that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **no spacing can be derived from this count**; the pixel size that actually applies is stated in the report's handling notes |
+| `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this column — not `slant_m` — when you want the effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -814,7 +815,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `label` | — | Condition name (the axis value in a sweep) |
-| `condition` | — | ⚠️ **The second column is the only one whose name changes**: in a sweep it becomes the axis name (`freq_mhz` and so on) and carries that axis value. In compare mode it stays `condition` and carries the condition name |
+| `axis_value` | — | The condition name in compare mode (same value as `label`), or the axis value in a sweep |
 | `status` | — | Status (`OK` / `NG` / `ERROR`) |
 | `rx_dbm` | dBm | RX level |
 | `margin_db` | dB | Margin |
@@ -839,13 +840,9 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `env_type` | — | Env type |
 | `diff_method` | — | Diffraction model |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
+| `axis` | — | Name of the sweep axis (e.g. `freq_mhz`); empty in compare mode |
 
-⚠️ **Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` produces two columns with the same name** (the second column is the axis, the later one is the value used for that condition). A reader that addresses columns by name keeps the later one, so **read the second column by position**.
-
-> 📣 **Announcement (this is fixed in 3.1)**: the duplicate is our fault, not the reader's, so **3.1 gives the second column a fixed name and stops emitting the same name twice** (the axis name will be carried elsewhere). The new column name will be given in the 3.1 CHANGELOG.
-> - **If you read the second column by position, nothing changes for you.**
-> - **If you address columns by name, you will need one pass of maintenance in 3.1** — including code that currently looks for `condition` in compare mode.
-> - ⚠️ **Nothing changes in 3.0**; this version only announces it, as required by change policy 2 (*removing, renaming or redefining a column is announced one version ahead*).
+⚠️ Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` still puts a same-named fixed column (e.g. `freq_mhz`) alongside `axis_value` — they mean different things: `axis_value` is the value being swept, while the fixed column is **the actual value used for every parameter in that row**.
 
 #### `terrain_profile.csv` (Single Mode — **one row per terrain sample**)
 

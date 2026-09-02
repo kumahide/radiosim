@@ -412,9 +412,10 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
     path = os.path.join(save_dir, "scenario.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         w = csv.writer(f)
-        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。2 列目だけが
-        # 可変＝スイープでは軸の名前になる（比較では `condition`）。
-        w.writerow(list(output_contract.scenario_csv_columns(run.axis)))
+        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
+        # 3.1（I-112）で 2 列目を固定名 `axis_value` にし、軸の名前は末尾の
+        # `axis` 列へ移した＝どの軸を選んでも見出しの重複が起きない。
+        w.writerow(list(output_contract.SCENARIO_CSV_COLUMNS))
         base = run.base_params
         for p in run.points:
             o = p.overrides
@@ -443,7 +444,9 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
                 f"{val('veg_h', base.veg_h):g}",
                 f"{val('rain_rate', base.rain_rate):g}",
                 val("env_type", base.env_type), val("diff_method", base.diff_method),
-                # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
-                # （F1 半径の何倍まで食い込んでいるか）＝I-077。
+                # 頭打ちしない側の量（F1 半径の何倍まで食い込んでいるか）＝I-077。
                 units.csv_f1_depth(r.blocked_ratio),
+                # 末尾＝出力契約の規約 1（追加は末尾のみ）。軸の名前そのもの
+                # （比較では空文字列）＝I-112。
+                run.axis,
             ])

@@ -73,6 +73,11 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     units.csv_f1_depth(r.blocked_ratio),
                     # 何点で刻んだ答えか（I-069）＝**行ごとに違う**。
                     str(pr.params.num) if pr.params else "",
+                    # 水平距離（B-139）＝`slant_m` は斜距離なので、実効間隔を
+                    # 割り出すには水平距離が要る。標本は等間隔とは限らない
+                    # （B-150）ので、割り算はあくまで読む側の近似計算。
+                    units.csv_distance(pr.terrain.horiz_dist_km)
+                    if pr.terrain is not None else "",
                 ])
             else:
                 writer.writerow([
@@ -83,6 +88,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     report_common.csv_cell(pr.error),
                     "",
                     str(pr.params.num) if pr.params else "",
+                    units.csv_distance(pr.terrain.horiz_dist_km)
+                    if pr.terrain is not None else "",
                 ])
 
 
