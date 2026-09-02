@@ -9,7 +9,7 @@ version.py
 import re
 
 APP_NAME    = "RadioSim Pro"
-APP_VERSION = "3.0"
+APP_VERSION = "3.1a1"
 APP_FULL    = f"{APP_NAME} {APP_VERSION}"
 COPYRIGHT   = "© 2026 BearValley AI Craftworks. All rights reserved."
 USER_AGENT  = f"Mozilla/5.0 RadioSim/{APP_VERSION}"
