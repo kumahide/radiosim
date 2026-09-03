@@ -1075,6 +1075,10 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
     monkeypatch.setattr(theme, "window_dpi", lambda _w: 96)
     monkeypatch.setattr(window_fit, "screen_size", lambda _w: (2560, 1440))
     monkeypatch.setattr(window_fit, "monitors", lambda _w: [big, small])
+    # 🔴 実マウスの物理ボタン状態（Win32 API）を固定する（I-121）＝ここを本物に
+    # 任せると、全数実行の数分間に実際にボタンが押される偶然と重なったときだけ
+    # 「掴んでいる最中」と誤認され、測り直しが先送りされ続けて flaky になる。
+    monkeypatch.setattr(theme, "_pointer_is_down", lambda: False)
 
     win = tk.Toplevel(root)
     tk.Frame(win, width=400, height=1200).pack()                # 主画面なら入る高さ
@@ -1102,7 +1106,7 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
     )
 
 
-def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
+def test_watch_display_follows_a_child_window_moved_to_another_monitor(root, monkeypatch):
     """**子窓だけ**を別 DPI のモニタへ移しても追従すること（B-065）。
 
     旧実装は `<Configure>` を全トップレベルから拾いながら DPI を**常に `root` から**
@@ -1124,6 +1128,9 @@ def test_watch_display_follows_a_child_window_moved_to_another_monitor(root):
     set_theme("dark")
     theme.apply_fonts(root, dpi=96)
     at96 = _px(root)
+    # 🔴 実マウスの物理ボタン状態（Win32 API）を固定する（I-121）＝理由は
+    # 直前のテストと同じ（全数実行の間だけ本物のボタン状態と重なって flaky になる）。
+    monkeypatch.setattr(theme, "_pointer_is_down", lambda: False)
 
     win = tk.Toplevel(root)
     win.geometry("200x100+10+10")
