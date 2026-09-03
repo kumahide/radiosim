@@ -1280,6 +1280,13 @@ class TestScanCacheOverlay:
     LAT, LON = 34.54, 132.41
 
     def _touch(self, root, layer_id, x, y):
+        from PIL import Image
+        d = os.path.join(root, layer_id, str(x))
+        os.makedirs(d, exist_ok=True)
+        Image.new("RGB", (2, 2)).save(os.path.join(d, f"{y}.png"))
+
+    def _touch_broken(self, root, layer_id, x, y):
+        """壊れた（読めない）タイルを置く（B-143）。"""
         d = os.path.join(root, layer_id, str(x))
         os.makedirs(d, exist_ok=True)
         with open(os.path.join(d, f"{y}.png"), "wb") as f:
@@ -1381,6 +1388,27 @@ class TestScanCacheOverlay:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         assert dem.count_cached_areas(*self.WIDE) == 0
 
+    def test_broken_tile_excluded(self, tmp_path, monkeypatch):
+        """壊れたタイルは件数表示・塗りのどちらにも「取得済み」として現れない（B-143）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        self._touch(tmp_path, "dem_png", x14, y14)          # 読める
+        self._touch_broken(tmp_path, "dem_png", x14 + 1, y14)  # 壊れている
+        wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
+        assert dem.count_cached_areas(*wide) == 1
+        cells = dem.scan_cache_overlay(*wide, 14)
+        assert not any(c["x"] == x14 + 1 and c["y"] == y14 for c in cells)
+
+    def test_repaired_tile_becomes_visible_after_rewrite(self, tmp_path, monkeypatch):
+        """壊れたタイルが上書きで直ったら、次の走査で取得済みとして現れる（メモがstat変化で追従）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        self._touch_broken(tmp_path, "dem_png", x14, y14)
+        wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
+        assert dem.count_cached_areas(*wide) == 0   # メモに「壊れている」を記録
+        self._touch(tmp_path, "dem_png", x14, y14)   # stat（mtime/size）が変わる
+        assert dem.count_cached_areas(*wide) == 1    # メモが古いと踏んだままにならない
+
 
 class TestCoverageOutline:
 
@@ -1388,10 +1416,10 @@ class TestCoverageOutline:
     WIDE = (46.0, 128.0, 30.0, 146.0)
 
     def _touch(self, root, layer_id, x, y):
+        from PIL import Image
         d = os.path.join(root, layer_id, str(x))
         os.makedirs(d, exist_ok=True)
-        with open(os.path.join(d, f"{y}.png"), "wb") as f:
-            f.write(b"\x89PNG")
+        Image.new("RGB", (2, 2)).save(os.path.join(d, f"{y}.png"))
 
     def test_empty_cache_no_loops(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))

@@ -130,6 +130,37 @@ _cache_lock = threading.Lock()
 # ガード: tests/test_dem.py::TestFailedTileNegativeCache
 _failed_tiles: set[tuple] = set()
 
+# タイルの「読める/壊れている」検証結果のメモ（B-143）。
+# キー=キャッシュパス、値=((mtime_ns, size), 読めたか)。_cache_lock で保護する。
+#
+# 存在だけ見る走査（_scan_cached_positions）は速いが、壊れたタイルを取得済み
+# として扱う（B-143）。かといって走査のたびに毎回 Image.open で検証すると
+# 対話 UI（パン/ズームのたび）に対して重すぎる（2026-08-29 実測: 536 枚で
+# +169ms・1 万枚で約 3.2 秒）。⇒ 検証結果を (mtime_ns, size) 付きで憶えておき、
+# stat が前回と一致する限り再検証しない。ファイルは書くときだけ変わる
+# （タイルは URL=内容で不変・上書きは壊れタイルの置換のみ）ので、通常運用は
+# 「一度読めば以後はほぼ existence-only 相当」に落ち着く。
+# ガード: tests/test_dem.py::TestScanCachedPositions::test_broken_tile_excluded
+_tile_validity_memo: dict[str, tuple[tuple[int, int], bool]] = {}
+
+
+def _is_tile_readable_memoized(cache_path: str, st: "os.stat_result") -> bool:
+    """`cache_path` が読めるかを (mtime_ns, size) 付きメモで判定する（B-143）。
+
+    stat が前回検証時と変わっていなければメモの結果をそのまま返す＝
+    Image.open による復号（重い）を省く。変わっていた（新規/上書き）ときだけ
+    実際に読んで検証し、メモを更新する。
+    """
+    key = (st.st_mtime_ns, st.st_size)
+    with _cache_lock:
+        cached = _tile_validity_memo.get(cache_path)
+    if cached is not None and cached[0] == key:
+        return cached[1]
+    valid = _read_cached_tile(cache_path) is not None
+    with _cache_lock:
+        _tile_validity_memo[cache_path] = (key, valid)
+    return valid
+
 
 # ------------------------------------------------------------
 # 「取れなかった」を戻り値を変えずに知らせる口（B-025 ②）
@@ -531,11 +562,16 @@ def _scan_cached_positions(
     lat_n: float, lat_s: float,
     lon_w: float, lon_e: float,
 ) -> dict[tuple[int, int], int]:
-    """表示範囲内のキャッシュ済みタイルを zoom-14 セル単位で集約する。
+    """表示範囲内の**読める**キャッシュ済みタイルを zoom-14 セル単位で集約する。
 
     実在するキャッシュファイルだけを走査するため計算量はキャッシュ量に比例し、
     地理的範囲には比例しない。各レイヤーの x ディレクトリ一覧を起点に走査し、
     表示範囲外を間引く。
+
+    壊れたタイル（B-143）は含めない。`os.scandir` の `DirEntry.stat()` は
+    Windows では列挙時に得た情報を使うため追加の syscall にならず、その
+    (mtime, size) を `_is_tile_readable_memoized` の鍵にすることで、初回以外は
+    Image.open による復号なしに existence-only 相当の速さで判定できる。
 
     Returns: {(x14, y14): 最高 priority}
     """
@@ -548,33 +584,40 @@ def _scan_cached_positions(
         x_max, y_max, _, _ = _tile_coords(lat_s, lon_e, tile_zoom)
         shift = tile_zoom - 14    # zoom-15(5a/5b)→1, zoom-14(dem)→0
         try:
-            x_names = os.listdir(layer_dir)
+            x_entries = os.scandir(layer_dir)
         except OSError:
             continue
-        for x_name in x_names:
-            try:
-                x = int(x_name)
-            except ValueError:
-                continue
-            if x < x_min or x > x_max:
-                continue
-            x_dir = os.path.join(layer_dir, x_name)
-            try:
-                y_names = os.listdir(x_dir)
-            except OSError:
-                continue
-            for fname in y_names:
-                if not fname.endswith(".png"):
-                    continue
+        with x_entries:
+            for x_entry in x_entries:
                 try:
-                    y = int(fname[:-4])
+                    x = int(x_entry.name)
                 except ValueError:
                     continue
-                if y < y_min or y > y_max:
+                if x < x_min or x > x_max:
                     continue
-                key = (x >> shift, y >> shift)
-                if base.get(key, 0) < priority:
-                    base[key] = priority
+                try:
+                    y_entries = os.scandir(x_entry.path)
+                except OSError:
+                    continue
+                with y_entries:
+                    for y_entry in y_entries:
+                        if not y_entry.name.endswith(".png"):
+                            continue
+                        try:
+                            y = int(y_entry.name[:-4])
+                        except ValueError:
+                            continue
+                        if y < y_min or y > y_max:
+                            continue
+                        try:
+                            st = y_entry.stat()
+                        except OSError:
+                            continue
+                        if not _is_tile_readable_memoized(y_entry.path, st):
+                            continue
+                        key = (x >> shift, y >> shift)
+                        if base.get(key, 0) < priority:
+                            base[key] = priority
     return base
 
 
@@ -753,12 +796,14 @@ def delete_tile_cache(
     deleted = 0
     errors  = 0
     keys_to_clear: set[tuple] = set()
+    paths_to_clear: set[str] = set()
     for layer_id, _, x, y, _, cache_path in tiles:
         if os.path.exists(cache_path):
             try:
                 os.remove(cache_path)
                 deleted += 1
                 keys_to_clear.add((layer_id, x, y))
+                paths_to_clear.add(cache_path)
             except OSError as e:
                 logger.warning("delete_tile_cache: %s", e)
                 errors += 1
@@ -766,6 +811,8 @@ def delete_tile_cache(
         for key in keys_to_clear:
             _tile_cache.pop(key, None)
             _failed_tiles.discard(key)
+        for path in paths_to_clear:
+            _tile_validity_memo.pop(path, None)
 
     # 淡色地図（basemap）タイルは範囲削除の対象にしない。範囲削除はマップ
     # ウィンドウで可視化される DEM カバレッジに対する操作であり、basemap は
@@ -816,5 +863,6 @@ def delete_all_tile_cache() -> dict:
     with _cache_lock:
         _tile_cache.clear()
         _failed_tiles.clear()
+        _tile_validity_memo.clear()
     logger.info("delete_all_tile_cache: deleted=%d", deleted)
     return {"deleted": deleted}
