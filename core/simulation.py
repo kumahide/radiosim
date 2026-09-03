@@ -16,6 +16,7 @@ import csv
 import json
 import logging
 import os
+import queue
 import threading
 from datetime import datetime
 from typing import Callable
@@ -236,8 +237,14 @@ def fetch_elevations(
     """
     GSI DEM から標高を並列取得する。別スレッドで実行すること。
 
-    daemon=True Thread + Semaphore で最大 _MAX_FETCH_WORKERS 並列にリクエストを投げ、
+    固定 `_MAX_FETCH_WORKERS` 本の常駐ワーカーがキューから標本を引いて取得し、
     完了した件数を on_progress に通知する。結果は座標インデックス順に整列して返す。
+
+    🔑 **ワーカーは常駐＝点ごとに新規 OS スレッドを作らない**（B-152）＝
+    以前は 1 点 1 スレッド（`sem.acquire()` の後に `threading.Thread(...).start()`）
+    だったため、キャッシュ命中でネットワーク待ちが無くても**スレッド生成そのものが
+    N に比例するコスト**になっていた（実測：N=60,000 で取得コストを 0 にしても
+    機構だけで数秒）。ワーカー数は固定のまま変えていない。
 
     Args:
         params:      シミュレーションパラメータ
@@ -262,7 +269,7 @@ def fetch_elevations(
             failures   = 0
             successes  = 0
             lock       = threading.Lock()
-            sem        = threading.Semaphore(_MAX_FETCH_WORKERS)
+            abort      = threading.Event()
 
             worker_error: list[Exception] = []
 
@@ -286,32 +293,40 @@ def fetch_elevations(
                         else:
                             successes += 1
                         on_progress(completed)
-                    # ⚠️ 解放は**カウンタを更新しきってから**。先に解放すると、
-                    # 下の「全ワーカーの終了待ち」が数え終える前に抜ける。
-                    sem.release()
+                        if successes == 0 and failures >= _DEM_FAILURE_LIMIT:
+                            abort.set()
 
-            def _should_abort() -> bool:
-                with lock:
-                    return successes == 0 and failures >= _DEM_FAILURE_LIMIT
-
+            # 未取得の (idx, lat, lon) を積んだキュー＋ワーカー数ぶんの終了印。
+            # 常駐ワーカーがここから引き続ける＝スレッド生成は起動時の
+            # `_MAX_FETCH_WORKERS` 本だけ（点数に比例しない）。
+            work: "queue.Queue[tuple[int, float, float] | None]" = queue.Queue()
             for i, (la, lo) in enumerate(zip(lats, lons)):
-                if _should_abort():
-                    break                      # これ以上投げない（待ち時間を捨てる）
-                sem.acquire()
-                threading.Thread(
-                    target=_fetch_one, args=(i, la, lo), daemon=True
-                ).start()
-
-            # 全ワーカーの終了を待つ＝許可証を全部回収できたら誰も走っていない。
-            # （完了件数のイベントで待つと、打ち切って投げ終えなかったぶん永久に
-            #   揃わない。「投げた数」を数え直すより許可証を数える方が確実。）
+                work.put((i, la, lo))
             for _ in range(_MAX_FETCH_WORKERS):
-                sem.acquire()
+                work.put(None)
+
+            def _worker() -> None:
+                while True:
+                    item = work.get()
+                    if item is None:
+                        return
+                    if abort.is_set():
+                        continue           # これ以上取得しない（待ち時間を捨てる）
+                    _fetch_one(*item)
+
+            workers = [
+                threading.Thread(target=_worker, daemon=True)
+                for _ in range(_MAX_FETCH_WORKERS)
+            ]
+            for w in workers:
+                w.start()
+            for w in workers:
+                w.join()
 
             if worker_error:
                 raise worker_error[0]
 
-            if _should_abort():
+            if abort.is_set():
                 logger.error(
                     "Terrain fetch aborted: %d consecutive DEM failures with no "
                     "success (check proxy settings). start=(%.6f,%.6f) end=(%.6f,%.6f)",
