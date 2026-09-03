@@ -318,6 +318,11 @@ class _MenuMixin:
                 value    = value,
                 command  = lambda v=value: self._on_lang_select(v),
             )
+        lang_menu.add_separator()
+        lang_menu.add_command(
+            label   = i18n.t("btn_lang_template"),
+            command = self._on_export_lang_template,
+        )
         settings_menu.add_cascade(label=i18n.t("menu_language"), menu=lang_menu)
 
         coord_fmt_menu = tk.Menu(settings_menu, tearoff=False)
@@ -386,6 +391,29 @@ class _MenuMixin:
         self.config["lang"] = lang
         config.save_app(self.config)
         self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
+
+    def _on_export_lang_template(self) -> None:
+        """訳のひな形（全キー＋英語の値）を JSON で書き出す（I-109）。"""
+        # lang/ を先に作る＝保存ダイアログの初期フォルダとして選べるようにする
+        # （無いフォルダはダイアログで選べず、初回の利用者ほど遠回りになる）。
+        os.makedirs(config.LANG_DIR, exist_ok=True)
+        path = filedialog.asksaveasfilename(
+            parent           = self.root,
+            defaultextension = ".json",
+            filetypes        = [("JSON files", "*.json")],
+            initialdir       = config.LANG_DIR,
+            initialfile      = "_template.json",
+        )
+        if not path:
+            return
+        try:
+            i18n.write_template(path)
+            self._alert(i18n.t("btn_lang_template"),
+                        i18n.t("dlg_lang_template_saved").format(path=path))
+        except Exception as e:
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_save_lang_template"), why=i18n.t("fail_why_stopped"),
+                hint=i18n.t("fix_file_write")))
 
     def _on_proxy_settings(self) -> None:
         dlg = tk.Toplevel(self.root)

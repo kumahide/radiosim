@@ -375,6 +375,7 @@ Selections are persisted to `radiosim_conf.json`.
 | -------------------- | --------------------------- | ----------------------------------------------------------------- |
 | Theme                | System / Light / Dark       | Window color theme                                                |
 | Language             | English / 日本語            | UI language (requires restart)                                    |
+| Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
 | Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
 | Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file   |

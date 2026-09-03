@@ -34,6 +34,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_proxy_settings":  "Proxy Settings...",
         "menu_load_app_settings":"Load App Settings...",
         "menu_delete_all_cache":"Delete All Cache...",
+        "btn_lang_template":    "Export Translation Template...",
+        "dlg_lang_template_saved": "Translation template saved:\n{path}\n\n"
+                                "Edit the values, save it as <language code>.json "
+                                "in the lang folder, and it will appear in this menu.",
+        "fail_save_lang_template": "The translation template could not be saved.",
         "dlg_proxy_title":      "Proxy Settings",
         "dlg_proxy_url_label":  "Proxy URL",
         "dlg_proxy_hint":       "Leave blank to use system proxy settings.",
@@ -677,6 +682,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_proxy_settings":  "プロキシ設定...",
         "menu_load_app_settings":"アプリ設定を読込む...",
         "menu_delete_all_cache":"全キャッシュ削除...",
+        "btn_lang_template":    "訳のひな形を書き出す...",
+        "dlg_lang_template_saved": "訳のひな形を保存しました:\n{path}\n\n"
+                                "値を書き換えて lang フォルダに <言語コード>.json "
+                                "として置くと、この言語メニューに現れます。",
+        "fail_save_lang_template": "訳のひな形を保存できませんでした。",
         "dlg_proxy_title":      "プロキシ設定",
         "dlg_proxy_url_label":  "プロキシ URL",
         "dlg_proxy_hint":       "空白にするとシステム設定を使用します",
@@ -1529,3 +1539,27 @@ def load_external(dir_path: str) -> list:
             (code, shown if isinstance(shown, str) and shown else code,
              len(accepted), rejected))
     return external_reports()
+
+
+def translatable_keys() -> dict:
+    """訳せるキーと英語の値（成果物の語＝`_ARTIFACT_PREFIXES`/`_ARTIFACT_KEYS` は除く）。
+
+    ここに載らないキーを外部訳ファイルに書いても `validate_external` が
+    `"artifact"` で却下するだけなので、ひな形には最初から入れない（I-109）。
+    """
+    return {
+        key: value for key, value in _STRINGS["en"].items()
+        if not key.startswith(_ARTIFACT_PREFIXES) and key not in _ARTIFACT_KEYS
+    }
+
+
+def write_template(path: str) -> None:
+    """訳のひな形（全キー＋英語の値）を `path` へ JSON で書き出す（I-109）。
+
+    利用者は値だけ書き換えて `lang/<言語コード>.json` として置けば、言語メニュー
+    に現れる。先頭の `_name` はその言語自身の字（`Français` 等）に書き換える欄。
+    """
+    data = {_EXTERNAL_NAME_KEY: "English"}
+    data.update(translatable_keys())
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(data, f, ensure_ascii=False, indent=2)

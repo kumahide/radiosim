@@ -647,6 +647,48 @@ def _menu_labels(menu) -> list:
     return out
 
 
+# ============================================================
+# 4. 訳のひな形（I-109）
+# ============================================================
+
+def test_the_template_excludes_artifact_keys():
+    """ひな形は**成果物の語を最初から積まない**＝載っていても必ず却下されるだけ。"""
+    keys = i18n.translatable_keys()
+    for key in keys:
+        assert not key.startswith(i18n._ARTIFACT_PREFIXES), key
+        assert key not in i18n._ARTIFACT_KEYS, key
+    # 何百キーもある画面語のうち代表 1 つが載っていることも見ておく。
+    assert keys.get("btn_run") == "Run"
+
+
+def test_the_template_round_trips_with_zero_rejections(tmp_path):
+    """書き出したひな形は、**手を加えなくても** `validate_external` を全採用で通る。
+
+    これは「英語のコピーを言語として使えるか」の検査ではなく、**ひな形自身が
+    英語の書式と 1 文字も違わない**ことの検査＝ズレていれば採用側のゲート
+    （`validate_external`）が何かを却下するはずで、0 件でなければ検出できる。
+    """
+    path = tmp_path / "_template.json"
+    i18n.write_template(str(path))
+    table = json.loads(path.read_text(encoding="utf-8"))
+    assert table["_name"] == "English"
+    accepted, rejected = i18n.validate_external(table)
+    assert rejected == []
+    assert accepted == i18n.translatable_keys()
+
+
+def test_the_template_appears_in_the_menu_when_installed(lang_dir):
+    """ひな形をそのまま `<コード>.json` として置けば、他の外部言語と同じく読める。"""
+    path = lang_dir / "zz.json"
+    i18n.write_template(str(path))
+    table = json.loads(path.read_text(encoding="utf-8"))
+    table["_name"] = "Zzz"
+    path.write_text(json.dumps(table, ensure_ascii=False), encoding="utf-8")
+
+    i18n.load_external(str(lang_dir))
+    assert ("zz", "Zzz") in i18n.external_languages()
+
+
 def test_rejections_are_reported_for_the_screen(lang_dir):
     """採用しなかったことが**報告に残る**こと（黙って落とさない＝B-025 と同型）。
 
