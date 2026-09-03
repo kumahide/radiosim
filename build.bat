@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 rem ============================================================
 rem  ASCII ONLY - DO NOT ADD JAPANESE (OR ANY NON-ASCII) TO THIS FILE.
@@ -81,8 +81,16 @@ if /i "%~1"=="clean" (
     exit /b 0
 )
 
+rem ---- "installer" subcommand: build the app, then wrap it in an Inno Setup
+rem installer instead of leaving it as a ZIP-shaped portable folder (3.1 stage
+rem 6). Everything below runs the same way in both modes except: the portable
+rem marker is skipped, and an Inno Setup pass runs after the PyInstaller build
+rem succeeds. Usage: build.bat installer
+set "MODE=zip"
+if /i "%~1"=="installer" set "MODE=installer"
+
 echo ============================================================
-echo RadioSim Pro - Build Script
+echo RadioSim Pro - Build Script (%MODE%)
 echo ============================================================
 echo.
 
@@ -164,14 +172,34 @@ echo [INFO] Creating runtime directories...
 if not exist "%APP_DIR%\terrain_cache" mkdir "%APP_DIR%\terrain_cache"
 if not exist "%APP_DIR%\results"       mkdir "%APP_DIR%\results"
 
-rem ---- Portable marker (3.1): this build is still ZIP-distributed (the exe's
-rem      own folder is writable and the whole folder is meant to move as a
-rem      unit), so it must keep behaving like the pre-3.1 "next to the exe"
-rem      layout. core.config.is_portable() decides that per-file, by checking
-rem      for this marker next to the exe (its absence means "installed to a
-rem      possibly read-only location" -> OS-standard folders). Once the Inno
-rem      Setup installer lands (3.1 stage 6) it must NOT ship this file.
-echo. > "%APP_DIR%\portable.txt"
+rem ---- Portable marker (3.1): the ZIP mode is still portable (the exe's own
+rem      folder is writable and the whole folder is meant to move as a unit),
+rem      so it must keep behaving like the pre-3.1 "next to the exe" layout.
+rem      core.config.is_portable() decides that per-file, by checking for this
+rem      marker next to the exe (its absence means "installed to a possibly
+rem      read-only location" -> OS-standard folders). The installer mode must
+rem      NOT ship this file, so it is only written in "zip" mode.
+if /i "%MODE%"=="zip" (
+    echo. > "%APP_DIR%\portable.txt"
+)
+
+rem ---- Optional code-signing hook (3.1 stage 6 / project-code-signing memory).
+rem      Signing itself is on hold (tracked separately) - this is only the
+rem      switch, so turning it on later needs one env var, not a script
+rem      rewrite. RADIOSIM_SIGNTOOL, if set, is called as:
+rem        "%RADIOSIM_SIGNTOOL%" <path-to-file-to-sign>
+rem      and must handle its own certificate/timestamp-server flags itself
+rem      (e.g. a small wrapper .bat around signtool.exe). Absent by default.
+if defined RADIOSIM_SIGNTOOL (
+    echo.
+    echo [INFO] Signing %APP_DIR%\RadioSimPro.exe ...
+    call "%RADIOSIM_SIGNTOOL%" "%APP_DIR%\RadioSimPro.exe"
+    if errorlevel 1 (
+        echo [ERROR] Code signing failed for RadioSimPro.exe.
+        pause
+        exit /b 1
+    )
+)
 
 echo.
 echo ============================================================
@@ -180,9 +208,56 @@ echo.
 echo Output : %APP_DIR%\
 echo Exe    : %APP_DIR%\RadioSimPro.exe
 echo.
-echo Zip the output folder for distribution.
+if /i "%MODE%"=="zip" (
+    echo Zip the output folder for distribution.
+) else (
+    echo Continuing to the installer step below.
+)
 echo ============================================================
 echo.
+
+if /i "%MODE%"=="installer" (
+    echo [INFO] Building installer ^(Inno Setup^)...
+    if not defined RADIOSIM_ISCC (
+        echo [ERROR] RADIOSIM_ISCC is not set.
+        echo         Point it at Inno Setup's compiler, then reopen the shell:
+        echo           setx RADIOSIM_ISCC "C:\Program Files ^(x86^)\Inno Setup 6\ISCC.exe"
+        pause
+        exit /b 1
+    )
+    if not exist "%RADIOSIM_ISCC%" (
+        echo [ERROR] RADIOSIM_ISCC points at a file that does not exist:
+        echo           %RADIOSIM_ISCC%
+        pause
+        exit /b 1
+    )
+    for /f "usebackq delims=" %%V in (`%PY% -c "from core import version as v; print(v.APP_VERSION)"`) do set "APP_VER=%%V"
+    "%RADIOSIM_ISCC%" /DAppVersion="!APP_VER!" /O"%DIST_DIR%" "%~dp0installer\radiosim.iss"
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Installer build failed. Check the error messages above.
+        pause
+        exit /b 1
+    )
+    set "SETUP_EXE=%DIST_DIR%\RadioSimPro-Setup-!APP_VER!.exe"
+    if defined RADIOSIM_SIGNTOOL (
+        echo.
+        echo [INFO] Signing !SETUP_EXE! ...
+        call "%RADIOSIM_SIGNTOOL%" "!SETUP_EXE!"
+        if errorlevel 1 (
+            echo [ERROR] Code signing failed for the installer.
+            pause
+            exit /b 1
+        )
+    )
+    echo.
+    echo ============================================================
+    echo [SUCCESS] Installer complete!
+    echo.
+    echo Installer : !SETUP_EXE!
+    echo ============================================================
+    echo.
+)
 
 rem ---- Version-boundary advisory: RC/final builds create their tag server-side
 rem      via "gh release create", so they never pass through the pre-push hook.
