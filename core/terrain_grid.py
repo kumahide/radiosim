@@ -433,4 +433,9 @@ def samples_are_pixel_edges(level: str, samples: "int | None" = None) -> bool:
     """
     if level not in RESOLUTION_ZOOM:
         return False
-    return samples is None or samples < SAMPLES_CEILING
+    # ⚠️ **`<=` で揃える**（Codex 独立レビュー round69 P2）＝生成側
+    # （`path_sample_fractions`）は `len(out) > SAMPLES_CEILING` のときだけ
+    # 等間隔へフォールバックする＝`len(out) == SAMPLES_CEILING` は画素の縁の
+    # ままなので、ここも同じ境界（`samples == SAMPLES_CEILING` は画素の縁）で
+    # 判定しないと、天井ちょうどの実行だけ実効間隔の名乗りが実体と食い違う。
+    return samples is None or samples <= SAMPLES_CEILING

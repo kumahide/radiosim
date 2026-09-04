@@ -871,10 +871,14 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ## Uninstall
 
+**Installer build**: Uninstall `RadioSimPro` from "Apps & features" (or the Start menu). ⚠️ **Settings, cache, logs, and results** (`%APPDATA%\RadioSim\`, `%LOCALAPPDATA%\RadioSim\`, `Documents\RadioSim\`) are **not removed automatically**. Delete those folders manually too if you want a completely clean removal.
+
+**Portable build**:
+
 1. Confirm the app is not running.
 2. Delete the entire extracted folder.
 
-The app writes no data to the registry or AppData. Deleting the folder is a complete uninstall.
+The portable build keeps settings, cache, and results inside the extracted folder, so deleting the folder is a complete uninstall (and it writes nothing to the registry).
 
 ---
 

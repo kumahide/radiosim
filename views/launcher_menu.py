@@ -396,7 +396,17 @@ class _MenuMixin:
         """訳のひな形（全キー＋英語の値）を JSON で書き出す（I-109）。"""
         # lang/ を先に作る＝保存ダイアログの初期フォルダとして選べるようにする
         # （無いフォルダはダイアログで選べず、初回の利用者ほど遠回りになる）。
-        os.makedirs(config.LANG_DIR, exist_ok=True)
+        # ⚠️ **LANG_DIR は exe／スクリプトの隣で固定**（3.1 の保存先移設の対象外）
+        #    なので、書込禁止のインストール先（インストーラ版・非ポータブル）では
+        #    ここが失敗しうる（Codex 独立レビュー round69 P2）。以前は try の外に
+        #    あり、失敗が未処理例外のままユーザーに見えていなかった。
+        try:
+            os.makedirs(config.LANG_DIR, exist_ok=True)
+        except OSError as e:
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_save_lang_template"), why=i18n.t("fail_why_stopped"),
+                hint=i18n.t("fix_file_write")))
+            return
         path = filedialog.asksaveasfilename(
             parent           = self.root,
             defaultextension = ".json",

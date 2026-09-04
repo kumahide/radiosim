@@ -194,17 +194,34 @@ def _migrate_results_dir() -> None:
         return
     try:
         os.makedirs(RESULTS_DIR, exist_ok=True)
-        for name in os.listdir(old):
-            src = os.path.join(old, name)
-            dst = os.path.join(RESULTS_DIR, name)
-            if os.path.exists(dst):
-                continue                          # 既に移行済み＝上書きしない
-            if os.path.isdir(src):
-                shutil.copytree(src, dst)
-            else:
-                shutil.copy2(src, dst)
+        names = os.listdir(old)
     except OSError as e:
         logger.warning("Legacy results migration failed: %s", e)
+        return
+    # ⚠️ **1 件ずつ独立して失敗させる**（Codex 独立レビュー round69 P1）＝以前は
+    # 全件を 1 つの try で囲んでいたため、1 件の失敗（権限・容量不足等）で
+    # 後続の未移行フォルダも移行されないまま打ち切られていた。
+    for name in names:
+        src = os.path.join(old, name)
+        dst = os.path.join(RESULTS_DIR, name)
+        if os.path.exists(dst):
+            continue                              # 既に移行済み＝上書きしない
+        try:
+            if os.path.isdir(src):
+                # **一時名へコピーしてから rename**＝`copytree` が途中で失敗すると
+                # `dst` に不完全なフォルダだけが残り、次回起動時は
+                # `os.path.exists(dst)` が真になって「移行済み」と誤認し、
+                # 二度と直らなくなる（同レビューの指摘）。rename は同一ボリューム
+                # 上ならほぼ原子的なので、`dst` は「完全な移行結果」でしか現れない。
+                tmp_dst = dst + ".migrating"
+                if os.path.exists(tmp_dst):
+                    shutil.rmtree(tmp_dst, ignore_errors=True)
+                shutil.copytree(src, tmp_dst)
+                os.rename(tmp_dst, dst)
+            else:
+                shutil.copy2(src, dst)
+        except OSError as e:
+            logger.warning("Legacy results migration failed for %s: %s", name, e)
 
 
 # ============================================================
