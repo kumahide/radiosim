@@ -102,24 +102,36 @@ This tool is intended solely for screening purposes — determining whether a fi
 
 ## Installation & Launch
 
-### Installation
+There are two distribution forms. Both are Windows binaries with identical features.
 
-1. Extract the distribution ZIP file to any folder.
+### Installer (recommended)
+
+1. Download `RadioSimPro-Setup-<version>.exe` from [Releases](https://github.com/kumahide/radiosim/releases) and run it.
+2. Administrator rights are not required (by default it installs into your own user profile). Follow the prompts to finish.
+3. Launch `RadioSimPro` from the Start menu.
+
+The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It writes nothing but the exe itself into the install folder, so installing under a write-protected location (e.g. under `Program Files`) works fine.
+
+| Contents                                        | Location                     |
+| ------------------------------------------------ | ----------------------------- |
+| UI settings and last-used input values (`radiosim_conf.json`) | `%APPDATA%\RadioSim\`        |
+| DEM tile disk cache, logs                        | `%LOCALAPPDATA%\RadioSim\`   |
+| Saved-package output (`results/`)                | `Documents\RadioSim\` (not a hidden folder, since you open it yourself) |
+
+> If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated).
+
+### Portable build (ZIP)
+
+1. Extract the distribution ZIP file (`RadioSimPro-<version>.zip`) to any folder.
 2. Place the extracted folder wherever you like. The app can be moved freely.
 
 > **Note**: Do not modify the folder structure. `RadioSimPro.exe` cannot run as a standalone file.
 
+The portable build ships with a `portable.txt` marker next to the exe, so settings, cache, logs, and results are all created **inside that same folder** (`terrain_cache/`, `results/`, `radiosim_conf.json`). This suits carrying the app on a USB drive.
+
 ### Launch
 
-Double-click `RadioSimPro.exe`.
-
-On first launch, the following directories and files are created automatically in the same folder as the exe:
-
-| Path                   | Contents                                            |
-| ---------------------- | --------------------------------------------------- |
-| `terrain_cache/`     | Disk cache for DEM tiles (persists across sessions) |
-| `results/`           | Output destination for saved packages               |
-| `radiosim_conf.json` | UI settings and last-used input values              |
+Launch the installer build from the Start menu, or double-click `RadioSimPro.exe` for the portable build.
 
 ---
 
@@ -336,7 +348,7 @@ After retrieval completes, the terrain cross-section graph is displayed.
 | Cyan band           | 1st Fresnel Zone                                         |
 | Black vertical bars | TX / RX antennas                                         |
 
-⚠️ **A finely jagged, stepped terrain outline is normal** — the profile is simply **the points where elevation was read, joined up**, and on "high" and "medium" they are read **every few metres** (at the boundaries of a grid roughly 4 m wide on "high", 8 m on "medium"). The data is neither coarse nor broken: the finer you look, the more of the real relief you see. (On "high", elevation is constant within one pixel, so the shelf-and-riser shape comes out especially clearly.) The same thing shows up in the rows of the saved `terrain_profile.csv` (see "Save Package" below). "Low" samples evenly every 20 m, so its line is smoother — but it skips the fine relief.
+On "high" and "medium", terrain samples are placed at DEM pixel boundaries (see "Terrain resolution" above), but this profile graph (and the terrain outline in report PNGs and KML) **collapses samples that share a pixel to that pixel's centre** before drawing the line, so the outline is smooth. ⚠️ **This is a display-only adjustment** — the underlying calculation (e.g. diffraction loss) still uses the uncollapsed sample list, so values are unaffected. The saved `terrain_profile.csv` writes the uncollapsed samples as-is, so its rows still form a staircase (see "Save Package" below). "Low" samples evenly every 20 m, so its line is already smooth — but it skips the fine relief.
 
 #### Sliders
 

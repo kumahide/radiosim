@@ -154,6 +154,21 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$
 
 > ⚠️ **ZIP の名前に版を入れる**＝公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。版なしの名前で作ると、Releases に添付するときに付け直すことになります。
 
+`build.bat` は既定で **ZIP 用のポータブル配置**（`portable.txt` を `RadioSimPro/` 直下へ同梱）を作ります。`core.config.is_portable()` はこのファイルの有無で分岐します（無ければ「インストール先が書込禁止かもしれない」と見なし、OS 標準の場所〔`%APPDATA%` 等〕へ書きます）。
+
+### インストーラのビルド（Inno Setup・3.1 段6）
+
+```bat
+build.bat installer
+```
+
+`build.bat` と同じビルドを行ったうえで、[installer/radiosim.iss](../installer/radiosim.iss)（Inno Setup）を使って `RadioSimPro-Setup-<版>.exe` を生成します。**`portable.txt` は同梱しません**（インストール先は常に非ポータブル扱い＝設定・キャッシュ・ログ・結果は OS 標準の場所）。
+
+- **前提条件**: [Inno Setup](https://jrsoftware.org/isinfo.php) 導入済み（`winget install JRSoftware.InnoSetup` 等）＋環境変数 `RADIOSIM_ISCC` に `ISCC.exe` のフルパスを設定（例: `setx RADIOSIM_ISCC "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`）。未設定・実体なしならビルドを中止します。
+- **インストール先の既定**: `{autopf}`（`PrivilegesRequired=lowest`＝管理者権限が無ければユーザー配下、あればユーザーが選べる）。
+- **出力先**: ビルド出力と同じ `dist/`（`RadioSimPro-Setup-<版>.exe`）。
+- **署名**: `RADIOSIM_SIGNTOOL` が定義済みなら、exe 本体と同じ 1 か所の呼び出しでインストーラにも署名します（未定義なら未署名のまま＝[[project_code_signing]] のとおり実施はトリガー時）。
+
 ### `radiosim.spec` の主な設定
 
 | 設定 | 内容 |

@@ -154,6 +154,21 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$
 
 > ⚠️ **Put the version in the ZIP name** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). Building an unversioned name just means renaming it when attaching the release.
 
+By default, `build.bat` produces the **portable ZIP layout** (a `portable.txt` marker bundled inside `RadioSimPro/`). `core.config.is_portable()` branches on whether this file exists (its absence means "the install location may be read-only", so the app writes to OS-standard locations such as `%APPDATA%` instead).
+
+### Building the Installer (Inno Setup, 3.1 stage 6)
+
+```bat
+build.bat installer
+```
+
+Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](../installer/radiosim.iss) (Inno Setup) to produce `RadioSimPro-Setup-<version>.exe`. **`portable.txt` is not bundled** — the install is always treated as non-portable (settings, cache, logs, and results go to OS-standard locations).
+
+- **Prerequisites**: [Inno Setup](https://jrsoftware.org/isinfo.php) installed (e.g. `winget install JRSoftware.InnoSetup`) and the environment variable `RADIOSIM_ISCC` pointing at the full path to `ISCC.exe` (e.g. `setx RADIOSIM_ISCC "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`). The build aborts if it is unset or points at a nonexistent file.
+- **Default install location**: `{autopf}` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
+- **Output**: same `dist/` folder as the regular build (`RadioSimPro-Setup-<version>.exe`).
+- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise — see [[project_code_signing]], on hold until a trigger).
+
 ### Key `radiosim.spec` Settings
 
 | Setting | Details |
