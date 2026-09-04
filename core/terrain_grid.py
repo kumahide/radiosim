@@ -433,9 +433,13 @@ def samples_are_pixel_edges(level: str, samples: "int | None" = None) -> bool:
     """
     if level not in RESOLUTION_ZOOM:
         return False
-    # ⚠️ **`<=` で揃える**（Codex 独立レビュー round69 P2）＝生成側
-    # （`path_sample_fractions`）は `len(out) > SAMPLES_CEILING` のときだけ
-    # 等間隔へフォールバックする＝`len(out) == SAMPLES_CEILING` は画素の縁の
-    # ままなので、ここも同じ境界（`samples == SAMPLES_CEILING` は画素の縁）で
-    # 判定しないと、天井ちょうどの実行だけ実効間隔の名乗りが実体と食い違う。
-    return samples is None or samples <= SAMPLES_CEILING
+    # ⚠️ **`<` のまま**（Codex 独立レビュー round69 P2 は検討したが不採用）＝
+    # `samples == SAMPLES_CEILING` は「画素の縁が自然にちょうど天井と一致した」
+    # 場合と「天井超過で `_uniform(SAMPLES_CEILING)` へ落ちた」場合の**両方**が
+    # 同じ値になり、この関数は `samples` の値だけからは区別できない
+    # （`test_ceiling_fallback_reports_the_effective_spacing_not_the_pixel_size`
+    # が実測した経路も後者＝フォールバック）。実際に天井へ当たる経路は
+    # ほぼ確実に後者（フォールバック）なので、`<=` へ揃えるとこの多数派を
+    # 誤って画素の縁と判定してしまう＝`<` のまま少数派（自然にちょうど天井と
+    # 一致する画素の縁）を誤判定するほうが安全側。
+    return samples is None or samples < SAMPLES_CEILING
