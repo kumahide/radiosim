@@ -156,7 +156,7 @@ Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$
 
 `build.bat` は既定で **ZIP 用のポータブル配置**（`portable.txt` を `RadioSimPro/` 直下へ同梱）を作ります。`core.config.is_portable()` はこのファイルの有無で分岐します（無ければ「インストール先が書込禁止かもしれない」と見なし、OS 標準の場所〔`%APPDATA%` 等〕へ書きます）。
 
-### インストーラのビルド（Inno Setup・3.1 段6）
+### インストーラのビルド（Inno Setup）
 
 ```bat
 build.bat installer

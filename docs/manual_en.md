@@ -112,6 +112,8 @@ There are two distribution forms. Both are Windows binaries with identical featu
 
 The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine.
 
+> ⚠️ **There is one exception** — [Adding your own UI language](#adding-your-own-ui-language) reads and writes a `lang` folder inside the install folder. With the default install (no administrator rights, into your own user profile) this is fine, but **if you install under `Program Files` with administrator rights the app cannot write there** (neither the template export nor placing your own translation will work). When it cannot write, it tells you so and stops — it never fails silently.
+
 | Contents                                        | Location                     |
 | ------------------------------------------------ | ----------------------------- |
 | UI settings and last-used input values (`radiosim_conf.json`) | `%APPDATA%\RadioSim\`        |
