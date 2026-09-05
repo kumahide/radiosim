@@ -517,6 +517,8 @@ _CONFIG_READ_ALLOWED = {
     "core/config.py":     "定義そのもの",
     "main.py":            "起動時の読み込み（アプリの入口）",
     "views/launcher.py":  "凍結の出所＝ランチャーが読んで子窓へ渡す",
+    "core/env_facts.py":  "環境事実の収集層＝いまの設定そのものを事実として読む"
+                          "（画面の凍結一貫性とは別の関心・3.2 段5）",
 }
 
 # `config.load_config()` と、`from config import load_config`（別名で持ち込んで

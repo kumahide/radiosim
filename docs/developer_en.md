@@ -243,6 +243,7 @@ radiosim/
 │   ├── output_contract.py # Column spec of the artifact CSVs = single source of the output contract (pure data)
 │   ├── disclosure.py     # Wording of the "Notes on handling this result" section in the reports (assumptions, scope notes, pure functions)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
+│   ├── env_facts.py      # Environment-facts collection layer (version, config, recent log, cache stats, env info; coordinates redacted)
 │   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
 │   ├── failure.py        # The shape of failure messages (what happened / what to do next / details)
 │   └── version.py        # Version information
@@ -335,6 +336,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
+    ├── test_env_facts.py
     ├── test_repo_hygiene.py
     ├── test_dev_check.py
     ├── test_claude_hooks.py
@@ -1109,6 +1111,7 @@ entry point that runs them together.
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
+| `test_env_facts.py`      | Gate for the environment-facts collection layer (`core/env_facts.py`). TX/RX coordinates embedded in the log or config are redacted (`start`/`end`, the log's `start=(…) end=(…)`); a proxy URL keeps its host but has its credentials masked; `collect()` returns the 5 keys shared by the stamp, the diagnostics ZIP, and legacy-layout detection |
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
