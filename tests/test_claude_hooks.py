@@ -510,6 +510,27 @@ class TestAssignmentAudit:
         assert audit["assigned"] == {"2.8": ["B-065"]}, audit
         assert audit["ambiguous"] == [] and audit["undeclared"] == []
 
+    def test_the_destination_form_wins_over_versions_named_as_timing(self, hook):
+        """🔴 **リリースを 2 度目に止めた実データ**をそのまま固定する（2026-09-05・I-127）。
+
+        I-127 の行き先は `3.2` で、状態欄は **`行き先＝3.2`** と*いちばん明示的な形*で
+        そう書いていた。ところがその形が宣言形として登録されておらず、二段目
+        （否定されていない節の版を拾う）へ落ちて、**同じ欄に時期として出てくる
+        `3.1`**（「`3.1RC2` の受け入れ中は main を動かさない」「`3.1` 正式の公開後に
+        マージする」）まで行き先として読んだ。⇒ `3.1` 正式の Tier-0 が止まった。
+
+        🔑 **否定語では防げない**＝この 2 文はどちらも否定形ではない（*行き先でない
+        版を、否定せずに名指しする*形が実在する）。⇒ **肯定形の宣言を増やすほうで直す。**
+        ⚠️ **版は backtick で囲まれ得る**（実データがそう書いている）。
+        """
+        doc = _doc("### ★ I-127: t", "",
+                   "- ★ **状態**: **対応中**（実装・検証済み）＝行き先＝`3.2`。"
+                   "`3.1RC2` の受け入れ中に main を動かさないため feature ブランチに"
+                   "置いてある。**3.1 正式の公開後にマージする**")
+        audit = hook.assignment_audit(doc)
+        assert audit["assigned"] == {"3.2": ["I-127"]}, audit
+        assert audit["ambiguous"] == [] and audit["undeclared"] == []
+
     def test_a_pending_state_word_needs_no_mark(self, hook):
         """`保留` は台帳の凡例が「設計判断待ち」と定義している＝語だけで判断待ち。
 
