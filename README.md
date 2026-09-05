@@ -75,7 +75,7 @@
 
 **インストーラ版（推奨）**: [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-Setup-<版>.exe` をダウンロードして実行（管理者権限不要）。設定・キャッシュ・結果は OS 標準の場所（`%APPDATA%`／`%LOCALAPPDATA%`／ドキュメント）へ保存されます。
 
-**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip`（例: `RadioSimPro-3.1.zip`）をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。
+**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip` をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。
 
 > 署名なし EXE のため SmartScreen 警告が出る場合があります。「詳細情報」→「実行」をクリックしてください。詳細は [docs/manual_ja.md](docs/manual_ja.md#インストール・起動) を参照してください。
 

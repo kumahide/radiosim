@@ -40,7 +40,11 @@ _CACHE_MJS = os.path.join(_REPO, "tools", "qa-hook", "pytest-cache.mjs")
 pytestmark = [
     pytest.mark.skipif(
         not os.path.exists(_CACHE_MJS),
-        reason=structural_skip("tools/ は git-ignore（CI には存在しない）。ローカルのみ検証する。"),
+        # ⚠️ **理由の字を 2026-09-05 に実態へ直した（独立レビュー②・round73）**＝
+        # `tools/` を丸ごと無視していたのは I-090（2026-08-12）までで、いまは
+        # `pytest-cache.mjs` も git 管理下にある＝**CI にも存在し、ここは skip しない**。
+        # 判定は元から「在るか」なので**挙動は当時から正しく、古かったのは字だけ**。
+        reason=structural_skip("QA ゲート本体が無い環境（ローカルのみ検証する）。"),
     ),
     pytest.mark.skipif(shutil.which("node") is None, reason="node が無い環境"),
 ]

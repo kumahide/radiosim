@@ -266,15 +266,22 @@ if /i "%MODE%"=="installer" (
     rem   (C:\Program Files\... runs "C:\Program" and APP_VER reaches ISCC empty,
     rem   so the Setup name and version come out wrong).
     rem   => Drop the quoting tightrope; the plain "%PY%" form works here.
-    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "%TEMP%\radiosim_appver.txt"
+    rem   The name carries %RANDOM% (2026-09-05, Codex round72 P2): a fixed name in
+    rem   %TEMP% is shared by every checkout and every build on the machine, so two
+    rem   builds at once would overwrite or delete each other's version file (and it
+    rem   would clobber an unrelated file that happens to have that name).
+    rem   Delete it on the failure path too, not only on success.
+    set "VERFILE=%TEMP%\radiosim_appver_%RANDOM%.txt"
+    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "!VERFILE!"
     if errorlevel 1 (
         echo.
         echo [ERROR] Failed to read APP_VERSION with "%PY%".
+        del "!VERFILE!" >nul 2>&1
         pause
         exit /b 1
     )
-    set /p APP_VER=<"%TEMP%\radiosim_appver.txt"
-    del "%TEMP%\radiosim_appver.txt" >nul 2>&1
+    set /p APP_VER=<"!VERFILE!"
+    del "!VERFILE!" >nul 2>&1
     if not defined APP_VER (
         echo.
         echo [ERROR] APP_VERSION came back empty. Aborting the installer build.

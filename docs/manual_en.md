@@ -160,7 +160,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Language           | English / 日本語 (plus your own) | UI language (requires restart) → [Adding your own UI language](#adding-your-own-ui-language) |
 | Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
 | Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
-| Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file      |
+| Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
 ### Help
@@ -170,7 +170,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Open Documentation | Opens this document in a browser       |
 | About        | Shows the installed version            |
 
-> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
+> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy, coordinate format). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
 > **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
@@ -528,12 +528,12 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | Included | Not included |
 | --- | --- |
 | Coordinates and all parameters (the launcher inputs) | **Results** (those belong to `results/`) |
-| Project info (name and free note) | **App settings** (theme, language, proxy) |
+| Project info (name and free note) | **App settings** (theme, language, proxy, coordinate format) |
 | Multiple Paths rows | Window positions, sizes, open/closed state |
 | Explorer conditions (compare columns / sweep axis and range) | |
 | Relay path waypoints and sections | |
 
-**Leaving out theme, language and proxy is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
+**Leaving out theme, language, proxy and coordinate format is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
 
 ### Saving
 
@@ -792,7 +792,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `note` | — | The note from the input CSV (free text) |
 | `error` | — | Why it failed; empty for a path that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
-| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **no spacing can be derived from this count**; the pixel size that actually applies is stated in the report's handling notes |
+| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this column — not `slant_m` — when you want the effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.

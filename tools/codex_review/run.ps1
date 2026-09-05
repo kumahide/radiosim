@@ -266,11 +266,15 @@ else {
     }
     Copy-Item (Join-Path $memSrc '*.md') -Destination $memDst -Force
 
-    # 公開文書 5 本 ＋ CHANGELOG は実体をコピー（staging の外は見せない）
+    # 公開文書 6 本 ＋ CHANGELOG は実体をコピー（staging の外は見せない）
+    # 🔴 **glossary.md は 2026-09-05 に足した（round73 が自分で気づいた）**＝画面に出る語の
+    #    正典で、しかも exe に同梱される（`radiosim.spec` の datas）のに**この面へ一度も
+    #    渡していなかった**＝日英の用語整合だけが構造的に無検査だった。
     $docs = @(
         'README.md', 'CHANGELOG.md',
         'docs\manual_ja.md', 'docs\manual_en.md',
-        'docs\developer_ja.md', 'docs\developer_en.md'
+        'docs\developer_ja.md', 'docs\developer_en.md',
+        'docs\glossary.md'
     )
     foreach ($d in $docs) {
         $src = Join-Path $repoRoot $d
@@ -283,7 +287,7 @@ else {
 
     $n  = (Get-ChildItem $memDst -Filter '*.md').Count
     $kb = ((Get-ChildItem $workRoot -Recurse -File | Measure-Object Length -Sum).Sum) / 1KB
-    Write-Host ("渡す範囲: memory {0} 本 ＋ 公開文書 5 本 ＋ CHANGELOG  ({1:N1} KB)" -f $n, $kb)
+    Write-Host ("渡す範囲: memory {0} 本 ＋ 公開文書 6 本 ＋ CHANGELOG  ({1:N1} KB)" -f $n, $kb)
     Write-Host ("staging: {0}（リポジトリの外）" -f $workRoot)
     Write-Host "⚠️ ISSUES.md は渡していません（ただし read-only は任意のパスを読めるので、これは運用規則であって保証ではありません）"
 

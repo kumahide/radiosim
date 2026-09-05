@@ -231,7 +231,7 @@ radiosim/
 │
 ├── core/                 # Foundation: calculation, data, config. Pulls neither tkinter nor matplotlib
 │   ├── models.py         # Pure calculation logic (no side effects)
-│   ├── diffraction.py    # Diffraction loss (Bullington edge + spherical-earth seat)
+│   ├── diffraction.py    # Diffraction loss (Bullington edge; spherical-earth term NOT implemented)
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
@@ -394,7 +394,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
 | Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
-| Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file   |
+| Load App Settings... | —                           | Imports **only** theme, language, proxy and coordinate format from a settings file   |
 | Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
 
 ### Help
@@ -865,7 +865,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `note` | — | The note from the input CSV (free text) |
 | `error` | — | Why it failed; empty for a path that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
-| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **no spacing can be derived from this count**; the pixel size that actually applies is stated in the report's handling notes |
+| `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this — not `slant_m` — for effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
@@ -956,7 +956,7 @@ A single JSON file that bundles **the whole input set**. Read and written from *
 | `scenario` | Explorer conditions, **kept as the on-screen strings** |
 | `multihop` | Relay waypoints and per-section RF |
 
-**Never included**: results (that is what `results/` is for), app settings (theme / language / proxy), window geometry or open/closed state. App settings are excluded so that opening someone else's project cannot silently switch your language or proxy — both the reader and the writer go through `config.select_sim`.
+**Never included**: results (that is what `results/` is for), app settings (theme / language / proxy / coordinate format), window geometry or open/closed state. App settings are excluded so that opening someone else's project cannot silently switch your language or proxy — both the reader and the writer go through `config.select_sim`.
 
 ### Compatibility rules
 
@@ -1112,7 +1112,7 @@ entry point that runs them together.
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
-| `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. **Skipped in CI** because the target is git-ignored (local pytest only) |
+| `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
 
 ### Independent review (showing the diff to an outside reviewer)
 
