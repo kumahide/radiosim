@@ -260,7 +260,27 @@ echo.
 
 if /i "%MODE%"=="installer" (
     echo [INFO] Building installer ^(Inno Setup^)...
-    for /f "usebackq delims=" %%V in (`%PY% -c "from core import version as v; print(v.APP_VERSION)"`) do set "APP_VER=%%V"
+    rem Read APP_VERSION through a temp file (2026-09-05, Codex round71 P1).
+    rem   Inside the backquotes of `for /f`, quoting as "%PY%" breaks cmd parsing,
+    rem   and leaving it bare breaks on a Python path that contains spaces
+    rem   (C:\Program Files\... runs "C:\Program" and APP_VER reaches ISCC empty,
+    rem   so the Setup name and version come out wrong).
+    rem   => Drop the quoting tightrope; the plain "%PY%" form works here.
+    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "%TEMP%\radiosim_appver.txt"
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Failed to read APP_VERSION with "%PY%".
+        pause
+        exit /b 1
+    )
+    set /p APP_VER=<"%TEMP%\radiosim_appver.txt"
+    del "%TEMP%\radiosim_appver.txt" >nul 2>&1
+    if not defined APP_VER (
+        echo.
+        echo [ERROR] APP_VERSION came back empty. Aborting the installer build.
+        pause
+        exit /b 1
+    )
     "%RADIOSIM_ISCC%" /DAppVersion="!APP_VER!" /O"%DIST_DIR%" "%~dp0installer\radiosim.iss"
     if errorlevel 1 (
         echo.

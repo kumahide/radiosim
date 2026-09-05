@@ -274,6 +274,17 @@ def collapse_pixel_groups(
     `groups` は `sample_pixel_groups` の戻り値（`values` と同じ並び・同じ長さ）。
     ⚠️ **計算値には触れない**＝呼ぶ側は描画用にコピーした配列にだけ通す。
     `groups` が None の実行（画素構造が無い）はそのまま返す。
+
+    🔴 **両端は畳まずに残す（2026-09-05・独立レビュー round71 P2）**＝端の画素も
+    平均すると、折れ線の先頭が TX の足元に、末尾が RX の足元に**届かなくなる**
+    （実測＝常に半画素分＝`level` に依らず 1.83 m。1,216 m の回線では 0.15% だが、
+    **100 m の回線では 1.8%**＝アンテナの根元と地形のあいだに空白が見える）。
+    ⚠️ **高さはずれない**＝同じ画素の中の標本は DEM の読みが同じ値なので、
+    畳んでも標高は変わらず、**ずれるのは距離軸だけ**だった。
+    ⛔ **「端がずれたときだけ足す」形にしない**＝呼ぶ側は距離・標高・緯度・経度を
+    *同じ `groups` で別々に*通すので、**長さが `values` の中身で変わると面ごとに
+    列がずれる**。⇒ 常に 2 点足す（端の画素は「畳んだ中心」と「端そのもの」の
+    両方が並ぶ＝同じ標高なので、絵の上では水平な線分が半画素ぶん伸びるだけ）。
     """
     if groups is None:
         return list(values)
@@ -287,7 +298,9 @@ def collapse_pixel_groups(
             j += 1
         out.append(total / (j - i))
         i = j
-    return out
+    if not out:
+        return out
+    return [values[0]] + out + [values[-1]]
 
 
 def _path_sample_fractions_impl(
@@ -313,6 +326,19 @@ def _path_sample_fractions_impl(
     span_px = math.hypot(x1 - x0, y1 - y0)
     if span_px <= 0.0:
         return _uniform(SAMPLES_MIN), None
+
+    # 🔴 **列挙の前に「明らかな超過」を落とす（2026-09-05・独立レビュー round71 P1）**。
+    # 下の天井判定（`len(out) > SAMPLES_CEILING`）は B-158 の直しで*列挙の後*へ移した
+    # ので、**落ちる経路ほど先に全境界を作ってしまう**＝実測（合法な座標の打ち間違い・
+    # 東京→ホノルル）で **25.3 秒・1.19 GB**、しかも製品は標本と画素グループで
+    # この経路を 2 回通る（約 50 秒）。
+    # 🔑 **`span_px` は標本数を*下から*押さえる**＝跨ぐ境界の数は `|Δx|+|Δy|` で、
+    # `span_px = hypot(Δx, Δy) ≤ |Δx|+|Δy| ≤ 標本数`。⇒ **`span_px` が既に天井を
+    # 超えていれば、実数はもっと超える**ので、ここで落としても B-158（見積りで
+    # 早まって落とすと斜めの経路を取りこぼす）は再発しない。
+    # ⛔ **この判定で下の実数判定を置き換えない**＝置き換えると B-158 そのものに戻る。
+    if span_px > SAMPLES_CEILING:
+        return _uniform(SAMPLES_CEILING), None
 
     cuts = _crossing_fractions(x0, y0, x1, y1, lat_tx, lat_rx, zoom)
 

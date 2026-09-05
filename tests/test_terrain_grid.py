@@ -615,12 +615,59 @@ def test_collapse_pixel_groups_folds_each_cells_chord_endpoints_to_its_center():
     groups = tg.sample_pixel_groups(*args)
     assert groups is not None
     display = tg.collapse_pixel_groups(fracs, groups)
-    assert len(display) == groups[-1] + 1
+    # セル 1 つにつき 1 点＋**両端の 2 点**（下の端点の検査を参照）。
+    assert len(display) == groups[-1] + 1 + 2
     assert len(display) < len(fracs)          # 少なくとも 1 セルは 2 点持つ
     assert display == sorted(display)          # 順序は保たれる
-    # 両端の畳んだ点は、元の両端セル（TX=0.0・RX=1.0 を含む）の中に収まる。
-    assert 0.0 <= display[0] < fracs[1]
-    assert fracs[-2] < display[-1] <= 1.0
+
+
+def test_collapse_pixel_groups_keeps_the_route_ends_exactly():
+    """🔴 **畳んだ折れ線が TX / RX の足元まで届くこと**（2026-09-05・round71 P2）。
+
+    端の画素まで平均すると、地形の折れ線は**常に半画素ぶん内側**で始まり／終わる
+    （実測 1.83 m・`level` に依らない）。1,216 m の回線では 0.15% で目に見えないが、
+    **100 m の回線では 1.8%**＝アンテナの根元と地形のあいだに空白が開く。
+
+    ⚠️ **長さは `values` の中身に依らないこと**まで見る＝呼ぶ側（画面・帳票 PNG・
+    KML）は距離・標高・緯度・経度を*同じ `groups` で別々に*通すので、**中身で
+    長さが変わると面ごとに列がずれる**（端が既に一致している配列でも 2 点足す）。
+    """
+    args = (35.68, 139.77, 35.68, 139.7712, "high")     # 約 100 m
+    fracs = tg.path_sample_fractions(*args)
+    groups = tg.sample_pixel_groups(*args)
+    assert groups is not None
+    display = tg.collapse_pixel_groups(fracs, groups)
+    assert display[0] == fracs[0] == 0.0, "折れ線の先頭が TX の足元に届いていない"
+    assert display[-1] == fracs[-1] == 1.0, "折れ線の末尾が RX の足元に届いていない"
+
+    flat = tg.collapse_pixel_groups([0.0] * len(groups), groups)
+    assert len(flat) == len(display), "長さが values の中身で変わる＝面ごとに列がずれる"
+
+
+def test_the_ceiling_is_not_paid_for_before_it_is_applied():
+    """🔴 **天井に落ちる経路で、落ちる前に巨大な列を作らないこと**（round71 P1）。
+
+    B-158 の直しで天井判定を*列挙の後*へ移したため、**落ちる経路ほど先に全境界を
+    作る**状態になっていた＝実測（東京→ホノルル＝合法な座標の打ち間違い）で
+    **25.3 秒・ピーク 1.19 GB**、しかも製品は標本と画素グループでこの経路を
+    2 回通る（約 50 秒）。
+
+    ⚠️ **時間で測らない**（機械の速さで鳴る網になる）＝*確保した量*を見る。
+    上限 100 MB は直す前の 1/10 以下＝**直しを外すと必ず落ちる**（変異検証済み）。
+    """
+    import tracemalloc
+
+    tracemalloc.start()
+    try:
+        fracs = tg.path_sample_fractions(35.68, 139.77, 21.31, -157.86, "high")
+        _, peak = tracemalloc.get_traced_memory()
+    finally:
+        tracemalloc.stop()
+    assert len(fracs) == tg.SAMPLES_CEILING, "天井へ落ちる前提が崩れている"
+    assert peak < 100e6, (
+        f"天井へ落ちる経路で {peak/1e6:.0f} MB 確保した"
+        "＝上限を適用する前にコストを払っている"
+    )
 
 
 def test_collapse_pixel_groups_is_a_no_op_without_pixel_structure():
