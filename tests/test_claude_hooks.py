@@ -27,7 +27,9 @@ import io
 import json
 import os
 import pathlib
+import subprocess
 import sys
+import time
 
 import pytest
 
@@ -2350,3 +2352,221 @@ class TestRoadmapSection:
         assert versions, "版を宣言する H2 見出しが 1 つも無い"
         one = sorted(versions)[0]
         assert memcheck.roadmap_section(lines, one), f"§{one} の節が取れない"
+
+
+# ===========================================================================
+# I-128: 退避（`.claude/mirror_memory.py`）— 「意図しない移行」に耐えるための門
+# ===========================================================================
+
+_MIRROR_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "mirror_memory.py"))
+
+
+def _load_mirror():
+    """`.claude/mirror_memory.py` を単体モジュールとして読み込む。"""
+    spec = importlib.util.spec_from_file_location("_mirror_memory", _MIRROR_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_mirror_memory"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def mirror():
+    if not os.path.exists(_MIRROR_PATH):
+        pytest.skip(structural_skip(".claude/mirror_memory.py は git-ignore（CI には無い）"))
+    return _load_mirror()
+
+
+class TestBackupTargets:
+    """**何を退避するか**は散文でなくここで固定する。
+
+    🔴 **穴の実例（2026-09-05・I-128）**＝[[project_machine_replacement]] の段 1 の
+    棚卸し表は `.git/hooks` を「**clone に来ない**」と 🔴 で印していたのに、
+    `BACKUP_TARGETS` には入っていなかった。**棚卸し（散文）と実装が食い違っても
+    誰も気づかない**＝退避は「動かなかったこと」が見えないので、ここへ落とす。
+    """
+
+    def test_it_carries_the_git_hooks(self, mirror):
+        """🔴 `pre-commit` / `pre-push` は clone に来ない＝失うと再構成が要る。"""
+        rels = [rel for rel, _name in mirror.BACKUP_TARGETS]
+        assert os.path.join(".git", "hooks") in rels
+
+    def test_the_hooks_are_not_stored_under_a_dot_git_name(self, mirror):
+        """⛔ 箱の中に `.git/` を作ると git が箱を壊れた作業ツリーと誤認する。"""
+        for rel, name in mirror.BACKUP_TARGETS:
+            if rel == os.path.join(".git", "hooks"):
+                assert not name.startswith(".git")
+
+    def test_it_carries_the_git_identity(self, mirror):
+        """🔴 `.git/config` は **git の身元がここにしか無い**（global は未設定）。
+
+        無いと新しい clone で `Author identity unknown` になり commit が止まる。
+        2026-09-05 に凍結リポを建てたときに実際に踏んだ。
+        """
+        rels = [rel for rel, _name in mirror.BACKUP_TARGETS]
+        assert os.path.join(".git", "config") in rels
+
+    def test_it_carries_the_qa_stamps(self, mirror):
+        rels = [rel for rel, _name in mirror.BACKUP_TARGETS]
+        assert ".qa" in rels
+
+    def test_it_still_carries_the_four_originals(self, mirror):
+        """既存 4 点を落としていないこと（拡張のついでに減らさない）。"""
+        rels = [rel for rel, _name in mirror.BACKUP_TARGETS]
+        for rel in ("ISSUES.md", "issue_evidence", ".claude", "tools"):
+            assert rel in rels
+
+    def test_it_does_not_carry_what_can_be_regenerated(self, mirror):
+        """⛔ 再取得・再生成できるものは運ばない（同期を重くしていた正体）。"""
+        rels = [rel for rel, _name in mirror.BACKUP_TARGETS]
+        for rel in ("terrain_cache", "results", "venv", "dist", "build"):
+            assert rel not in rels
+
+    def test_build_leftovers_are_skipped(self, mirror):
+        assert ".pyc" in mirror.SKIP_SUFFIX
+        assert ".sample" in mirror.SKIP_SUFFIX, "git が作る雛形まで運んでいる"
+
+
+class TestFreezeGuard:
+    """🔴 **凍結リポへの push は取り違えると公開事故になる。**
+
+    製品リポ `kumahide/radiosim` は **public**。退避一式（課題台帳・メモリ）は
+    git 管理外にする判断のもとで書かれているので、間違って製品リポへ push すると
+    **その判断ごと壊れる**。⇒ 門をコメントでなくここで固定する
+    （[[feedback-radiosim]]「実行時制約はコメントでなくテストで表現する」）。
+    """
+
+    def test_the_target_is_not_the_public_product_repo(self, mirror):
+        assert mirror.FREEZE_SLUG != "kumahide/radiosim"
+        assert mirror.FREEZE_SLUG.endswith("-backup")
+
+    def _tiny_repo(self, tmp_path, mirror, monkeypatch, remote_url):
+        """小さな git リポを建て、そこを凍結先に差し替える。
+
+        ⚠️ **答えだけ固定して副作用は残す**＝退避対象は `ISSUES.md` 1 点に絞るが、
+        コピーそのものは本物を走らせる（[[feedback-radiosim]]）。
+        """
+        subprocess.run(["git", "init", "-b", "main", "-q", str(tmp_path)], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "config", "user.email", "t@e"], check=True)
+        subprocess.run(["git", "-C", str(tmp_path), "remote", "add", "origin", remote_url],
+                       check=True)
+        monkeypatch.setattr(mirror, "FREEZE_DIR", str(tmp_path))
+        monkeypatch.setattr(mirror, "BACKUP_TARGETS", (("ISSUES.md", "ISSUES.md"),))
+        return tmp_path
+
+    def test_it_refuses_to_push_to_the_product_repo(self, tmp_path, mirror, monkeypatch):
+        """⛔ remote が凍結リポでなければ **commit までで止まる**（push しない）。"""
+        # ⛔ **到達しないホストを使う。** 本物の `github.com/kumahide/radiosim` を
+        # 書くと、**門が壊れた瞬間にこのテストが public リポへ退避一式を push する**
+        # ＝守るはずの事故をテストが起こす。名前だけ製品リポに似せて、宛先は死なせる。
+        box = self._tiny_repo(tmp_path, mirror, monkeypatch,
+                              "https://example.invalid/kumahide/radiosim.git")
+        note = mirror._freeze()
+        assert "push 中止" in note, f"取り違え先へ push しかけている: {note!r}"
+        # commit は残る＝直せば次回送られる（止めても失わない）。
+        log = subprocess.run(["git", "-C", str(box), "log", "--oneline"],
+                             capture_output=True, text=True,
+                             encoding="utf-8", errors="replace")
+        assert log.stdout.strip(), "止めたついでにコミットまで捨てている"
+
+    def test_it_is_silent_when_the_freeze_repo_is_absent(self, tmp_path, mirror, monkeypatch):
+        """未配線の機械（CI・他マシン）では黙る＝セッションを妨げない。"""
+        monkeypatch.setattr(mirror, "FREEZE_DIR", str(tmp_path / "nope"))
+        assert mirror._freeze() == ""
+
+    def test_regenerable_diffs_stay_out_of_the_freeze(self, mirror):
+        """`.qa/**/*.diff` は git から再生成できる＝巡ごとに膨らませない。"""
+        assert ".diff" in mirror.FREEZE_SKIP_SUFFIX
+
+
+class TestBackupHealthDisclosure:
+    """**退避が止まっていることを鳴らす**（I-128 の「無いことの検査」）。
+
+    🔴 実例＝2026-09-05 に箱の `ISSUES.md` が **5 日 stale**（新機で書いた 67KB が
+    未退避）だったのを、人が偶然尋ねるまで誰も知らなかった。退避系は黙って止まる
+    ので、**開示を対で置く**（[[feedback-promote-recurring-checks]]）。
+
+    ⚠️ 新しい門は**壊れ方 3 種を全部通す**＝①鳴らない ②毎回鳴る ③違うものを要求する。
+    """
+
+    def test_it_says_nothing_when_the_backups_are_fresh(self, hook, tmp_path, monkeypatch):
+        """②毎回鳴るゲートにしない＝正常時は無音。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
+        # 凍結が未配線なら 1 行出るので、そこは配線済みに見せる。
+        (tmp_path / "freeze" / ".git").mkdir(parents=True)
+        assert hook._backup_health() == []
+
+    def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
+        """①一度も落ちない門にしない＝わざと古くして鳴らす。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        stale = box / "ISSUES.md"
+        stale.write_text("x", encoding="utf-8")
+        old = time.time() - 5 * 24 * 60 * 60
+        os.utime(stale, (old, old))
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
+        (tmp_path / "freeze" / ".git").mkdir(parents=True)
+        out = hook._backup_health()
+        assert any("OneDrive" in line and "古い" in line for line in out), out
+
+    def test_it_fires_when_onedrive_itself_is_missing(self, hook, tmp_path, monkeypatch):
+        """🔴 `_backup()` が黙って `return ""` する条件そのものを鳴らす。"""
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", tmp_path / "nowhere" / "box")
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
+        (tmp_path / "freeze" / ".git").mkdir(parents=True)
+        out = hook._backup_health()
+        assert any("黙って止まっている" in line for line in out), out
+
+    def test_it_fires_when_the_freeze_repo_is_not_wired(self, hook, tmp_path, monkeypatch):
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "absent")
+        out = hook._backup_health()
+        assert any("未配線" in line for line in out), out
+
+
+class TestBackupWiring:
+    """**この機械で実際に配線されているか**（設定と実物の突き合わせ）。
+
+    🔴 穴の実例＝退避が `SessionEnd` 1 本にしか乗っておらず、**セッションが正常に
+    終わらないと運ばれない**。機械が突然死ぬとき最後のセッションもたいてい正常
+    終了していない＝**鮮度が一番落ちた瞬間に退避が要る**。
+    """
+
+    def _settings(self):
+        path = pathlib.Path(_HOOK_DIR) / "settings.local.json"
+        if not path.exists():
+            pytest.skip(structural_skip("settings.local.json は git-ignore"))
+        return json.loads(path.read_text(encoding="utf-8"))
+
+    def _commands(self, event):
+        hooks = self._settings().get("hooks", {})
+        return [h["command"] for block in hooks.get(event, []) for h in block["hooks"]]
+
+    def test_the_backup_runs_at_session_start_too(self):
+        """⛔ `SessionEnd` だけに乗せない＝異常終了ぶんが次の起動で埋まるように。"""
+        cmds = self._commands("SessionStart")
+        assert any("mirror_memory.py" in c for c in cmds), cmds
+
+    def test_the_backup_still_runs_at_session_end(self):
+        cmds = self._commands("SessionEnd")
+        assert any("mirror_memory.py" in c for c in cmds), cmds
+
+    def test_the_freeze_remote_points_at_the_backup_repo(self, mirror):
+        """実物の remote が凍結リポを向いているか（向いていなければ push は起きない）。"""
+        if not os.path.isdir(os.path.join(mirror.FREEZE_DIR, ".git")):
+            pytest.skip(structural_skip("凍結リポはこの機械に無い"))
+        url = subprocess.run(
+            ["git", "-C", mirror.FREEZE_DIR, "remote", "get-url", "origin"],
+            capture_output=True, text=True, encoding="utf-8", errors="replace",
+        ).stdout.strip()
+        assert mirror.FREEZE_SLUG in url, url
