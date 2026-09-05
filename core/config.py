@@ -149,6 +149,19 @@ def _results_dir() -> str:
     return os.path.join(_documents_dir(), "RadioSim")
 
 
+def _user_lang_dir() -> str:
+    """利用者が追加言語を**書ける**置き場（I-130）。
+
+    ポータブル配置では `app_path("lang")` そのもの（exe／スクリプトの隣が
+    そもそも書ける）。非ポータブル配置では `_config_base_dir()`（設定ファイルと
+    同じ場所＝`%APPDATA%\\RadioSim`）配下の `lang`＝**利用者が書けることが
+    保証されている場所**（設定の保存先と同じ根拠）。
+    """
+    if is_portable():
+        return app_path("lang")
+    return os.path.join(_config_base_dir(), "lang")
+
+
 # ============================================================
 # 定数
 # ============================================================
@@ -158,7 +171,21 @@ LOG_FILE    = os.path.join(cache_log_base_dir(), "radiosim.log")
 #: 利用者が置く言語ファイル（`<コード>.json`）の置き場。**読むだけ**＝アプリは
 #: ここへ書き込まないので、無ければ無いまま（作りに行かない）。ポータブル・
 #: 非ポータブルを問わず exe／スクリプトの隣（同梱物を探す場所と同じ基準）。
+#: ⚠️ **非ポータブル配置では書込禁止のことがある**（[[I-130]]・管理者昇格して
+#: `Program Files` へ入れた場合）＝書き込み先は `USER_LANG_DIR` を使うこと。
 LANG_DIR    = app_path("lang")
+
+#: 利用者が追加言語を**書ける**置き場（I-130）。読む側（`i18n.load_external`）は
+#: `LANG_DIR` と両方を見る＝同梱の `lang/`（読み取り専用のまま）を残しつつ、
+#: 書ける場所も対象に足す。
+USER_LANG_DIR = _user_lang_dir()
+
+#: 起動プロファイラ（`RADIOSIM_PROFILE`）が追記するログ。**書き込み先の基準は
+#: `LOG_FILE` と同じ**（B-174）＝以前は `app_path()`（ポータブル配置専用）に
+#: 固定されていたため、非ポータブルで書込禁止の場所へ入れた場合に失敗が
+#: `except Exception: pass` で握り潰されていた（診断専用ログが**いちばん要る
+#: 場面で黙って消える**）。
+PROFILE_LOG_FILE = os.path.join(cache_log_base_dir(), "radiosim_profile.log")
 
 
 # ============================================================

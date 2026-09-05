@@ -121,6 +121,19 @@ class TestWriteBaseSwitchesOnPortability:
         monkeypatch.setattr(config, "_local_appdata_dir", lambda: r"C:\AppData\Local")
         assert config._config_base_dir() != config.cache_log_base_dir()
 
+    def test_user_lang_dir_is_app_path_lang_when_portable(self, monkeypatch):
+        monkeypatch.setattr(config, "is_portable", lambda: True)
+        assert config._user_lang_dir() == config.app_path("lang")
+
+    def test_user_lang_dir_is_appdata_radiosim_lang_when_not_portable(self, monkeypatch):
+        """I-130: 非ポータブルでは書込禁止のことがある `LANG_DIR`（exe隣）ではなく、
+        設定と同じ `%APPDATA%\\RadioSim` 配下（利用者が書けることが保証された場所）
+        を使うこと。"""
+        monkeypatch.setattr(config, "is_portable", lambda: False)
+        monkeypatch.setattr(config, "_appdata_dir", lambda: r"C:\AppData\Roaming")
+        assert config._user_lang_dir() == os.path.join(
+            r"C:\AppData\Roaming", "RadioSim", "lang")
+
 
 # ============================================================
 # 旧配置からの移行＝コピーのみ・旧は残す・新は上書きしない

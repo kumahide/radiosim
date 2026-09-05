@@ -396,12 +396,14 @@ class _MenuMixin:
         """訳のひな形（全キー＋英語の値）を JSON で書き出す（I-109）。"""
         # lang/ を先に作る＝保存ダイアログの初期フォルダとして選べるようにする
         # （無いフォルダはダイアログで選べず、初回の利用者ほど遠回りになる）。
-        # ⚠️ **LANG_DIR は exe／スクリプトの隣で固定**（3.1 の保存先移設の対象外）
-        #    なので、書込禁止のインストール先（インストーラ版・非ポータブル）では
-        #    ここが失敗しうる（Codex 独立レビュー round69 P2）。以前は try の外に
-        #    あり、失敗が未処理例外のままユーザーに見えていなかった。
+        # ⚠️ **`USER_LANG_DIR` へ書く（I-130）**＝同梱の `LANG_DIR`（exe／スクリプト
+        #    の隣・読み取り専用）は非ポータブルで書込禁止のことがある（インストーラ
+        #    版・管理者昇格で `Program Files` へ入れた場合＝Codex 独立レビュー
+        #    round69 P2）。`USER_LANG_DIR` は利用者が書けることが保証された場所
+        #    （ポータブルでは `LANG_DIR` と同じ）。以前は try の外にあり、失敗が
+        #    未処理例外のままユーザーに見えていなかった。
         try:
-            os.makedirs(config.LANG_DIR, exist_ok=True)
+            os.makedirs(config.USER_LANG_DIR, exist_ok=True)
         except OSError as e:
             self._alert(i18n.t("dlg_error"), failure.explain(
                 e, what=i18n.t("fail_save_lang_template"), why=i18n.t("fail_why_stopped"),
@@ -411,7 +413,7 @@ class _MenuMixin:
             parent           = self.root,
             defaultextension = ".json",
             filetypes        = [("JSON files", "*.json")],
-            initialdir       = config.LANG_DIR,
+            initialdir       = config.USER_LANG_DIR,
             initialfile      = "_template.json",
         )
         if not path:

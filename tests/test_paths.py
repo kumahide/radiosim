@@ -130,6 +130,17 @@ class TestBackwardCompatibility:
         assert ORIGINAL_APP_PATHS["LOG_FILE"]    == os.path.join(REPO_ROOT, "radiosim.log")
         assert ORIGINAL_APP_PATHS["CACHE_DIR"]   == os.path.join(REPO_ROOT, "terrain_cache")
 
+    def test_profile_log_shares_cache_log_base_dir(self):
+        """B-174: 起動プロファイラのログは LOG_FILE と同じ基準（ポータブルでは
+        `app_base_dir()`）へ書くこと。以前は常に `app_path()` に固定されており、
+        非ポータブルの書込禁止先で失敗が握り潰されていた。"""
+        assert config.PROFILE_LOG_FILE == config.app_path("radiosim_profile.log")
+        assert os.path.dirname(config.PROFILE_LOG_FILE) == config.cache_log_base_dir()
+
+    def test_user_lang_dir_matches_lang_dir_when_portable(self):
+        """I-130: ポータブル配置では書ける場所と読む場所が同じ（従来どおり）。"""
+        assert config.USER_LANG_DIR == config.LANG_DIR
+
 
 # ============================================================
 # ★クラス点検＝全フローが同じ解決器を通る

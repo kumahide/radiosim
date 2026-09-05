@@ -110,15 +110,14 @@ There are two distribution forms. Both are Windows binaries with identical featu
 2. Administrator rights are not required (by default it installs into your own user profile). Follow the prompts to finish.
 3. Launch `RadioSimPro` from the Start menu.
 
-The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine.
-
-> ⚠️ **There is one exception** — [Adding your own UI language](#adding-your-own-ui-language) reads and writes a `lang` folder inside the install folder. With the default install (no administrator rights, into your own user profile) this is fine, but **if you install under `Program Files` with administrator rights the app cannot write there** (neither the template export nor placing your own translation will work). When it cannot write, it tells you so and stops — it never fails silently.
+The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine. [Adding your own UI language](#adding-your-own-ui-language) uses one of these same locations (the "added UI language files" row below), so it carries the same guarantee.
 
 | Contents                                        | Location                     |
 | ------------------------------------------------ | ----------------------------- |
 | UI settings and last-used input values (`radiosim_conf.json`) | `%APPDATA%\RadioSim\`        |
 | DEM tile disk cache, logs                        | `%LOCALAPPDATA%\RadioSim\`   |
 | Saved-package output (`results/`)                | `Documents\RadioSim\` (not a hidden folder, since you open it yourself) |
+| Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\lang\` |
 
 > If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated).
 
@@ -180,7 +179,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 
 ### Adding your own UI language
 
-Besides Japanese and English you can **add a translation of your own**. Create a `lang` folder next to the app, put `<language-code>.json` in it, and restart — the language then appears under Settings > Language.
+Besides Japanese and English you can **add a translation of your own**. Where you put it depends on which build you have — the **installer build** uses `%APPDATA%\RadioSim\lang`, the **portable build** uses a `lang` folder next to the app. Put `<language-code>.json` there and restart — the language then appears under Settings > Language.
 
 ```json
 {
@@ -192,7 +191,7 @@ Besides Japanese and English you can **add a translation of your own**. Create a
 
 - `_name` is **the name shown in the language menu**. Write it in the language's own script — someone looking for their language is reading a screen they cannot read yet. Without it the file's code is shown instead.
 - **You do not have to translate everything.** Only the keys you write are replaced; **the rest stay in English**. New keys added in later versions will not break your file.
-- You can get the key list from **Settings > Language > Export Translation Template...**, which writes `_template.json` (every key, with its English value). Edit the values and save it as `<language code>.json` in the `lang` folder to finish. The same keys also live in the source file `core/i18n.py` (<https://github.com/kumahide/radiosim>), but ⚠️ **that file is not part of the binary (exe) distribution** — use the template export instead to check key names.
+- You can get the key list from **Settings > Language > Export Translation Template...**, which writes `_template.json` (every key, with its English value; the save dialog opens to the location above). Edit the values and save it as `<language code>.json` in the same folder to finish. The same keys also live in the source file `core/i18n.py` (<https://github.com/kumahide/radiosim>), but ⚠️ **that file is not part of the binary (exe) distribution** — use the template export instead to check key names.
 - **Keep the placeholders — `{n}`, `{dir}` and friends — exactly as they appear in the English text.** A key whose placeholders differ **is not applied** (it stays English), and at startup you are told what was skipped **grouped by reason** (how many per reason, with up to three examples). ⚠️ **Nothing appears when everything was applied** — silence means "no problems", not "the file was ignored" (whether it loaded is visible in **Settings > Language**). ⚠️ Applying such a translation would crash the app the moment that screen opens; **skipping it is what prevents that**. ⚠️ **The format spec inside a placeholder (the `.2f` in `{n:.2f}`) must match English too** — only the **position** in the sentence is yours to move.
 - **Words that appear in artifacts are out of scope.** This covers reports (HTML) and KML, and also **the wording inside the terrain profile and comparison graphs** (axis names, legends, titles, the way units are bracketed) and **the environment types** (Urban / Suburban / Rural / LoS). Artifact wording is a contract with whatever reads the files, so it does not move for the screen's convenience. ⚠️ **These also show on screen with the same wording**: a figure becomes an artifact as soon as you save it, and the environment wording is written into reports and profiles, so the on-screen side cannot be translated on its own.
 - The bundled `ja` / `en` cannot be overridden (a `ja.json` is ignored).

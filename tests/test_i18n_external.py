@@ -561,6 +561,43 @@ def test_an_empty_directory_is_silent(lang_dir):
 
 
 # ============================================================
+# 3b. 複数ディレクトリ（I-130＝同梱の読み取り専用 LANG_DIR ＋ 利用者が書ける
+#     USER_LANG_DIR の両方を見る）
+# ============================================================
+
+def test_multiple_directories_are_all_read(lang_dir, tmp_path):
+    """2 つのディレクトリに別の言語があれば両方とも登録されること。"""
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    _write(lang_dir, "fr", {"_name": "Français"})
+    _write(other_dir, "de", {"_name": "Deutsch"})
+    i18n.load_external(str(lang_dir), str(other_dir))
+    langs = i18n.external_languages()
+    assert ("fr", "Français") in langs
+    assert ("de", "Deutsch") in langs
+
+
+def test_later_directory_wins_on_same_code(lang_dir, tmp_path):
+    """同じ言語コードが両方にあれば**後に渡した方**が勝つ（利用者が書ける場所を
+    後に渡すことで、同梱の陳腐な訳を上書きできる）。"""
+    other_dir = tmp_path / "other"
+    other_dir.mkdir()
+    _write(lang_dir, "fr", {"_name": "Français (bundled)", "btn_run": "A"})
+    _write(other_dir, "fr", {"_name": "Français (user)", "btn_run": "B"})
+    i18n.load_external(str(lang_dir), str(other_dir))
+    assert ("fr", "Français (user)") in i18n.external_languages()
+    i18n.set_lang("fr")
+    assert i18n.t("btn_run") == "B"
+
+
+def test_a_missing_directory_among_several_does_not_break_the_others(lang_dir, tmp_path):
+    """複数ディレクトリの一部が存在しなくても、残りは読めること。"""
+    _write(lang_dir, "fr", {"_name": "Français"})
+    i18n.load_external(str(tmp_path / "does-not-exist"), str(lang_dir))
+    assert ("fr", "Français") in i18n.external_languages()
+
+
+# ============================================================
 # 4. 報告（＝画面で言うための材料）
 # ============================================================
 

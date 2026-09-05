@@ -1501,43 +1501,59 @@ def external_languages() -> list:
     return [(code, name) for code, name, _n, _rej in _external_reports]
 
 
-def load_external(dir_path: str) -> list:
+def load_external(*dir_paths: str) -> list:
     """`<dir>/<コード>.json` を読み、**使える訳だけ**登録する。報告を返す。
+
+    複数ディレクトリを渡せる（I-130＝同梱の読み取り専用 `LANG_DIR` と、利用者が
+    書ける `USER_LANG_DIR` の両方を見る）。**同じコードが複数箇所にあれば後に
+    渡した方が勝つ**（`_STRINGS` への代入も報告も上書きされる）。
 
     ⚠️ **1 本が壊れていても他は読む**＝ここで例外を投げると、訳を 1 つ置き損ねた
     利用者がアプリごと起動できなくなる。読めなかったファイルは報告に載せて次へ進む。
     """
     global _external_reports
-    _external_reports = []
-    if not os.path.isdir(dir_path):
-        return []
-    for name in sorted(os.listdir(dir_path)):
-        if not name.endswith(".json"):
+    # ⚠️ **`.append` の形をそのまま残す**＝`tests/test_i18n_external.py` の
+    # `_reasons_produced_by_i18n` がソースを AST 走査し、`X.append((.., "理由"))`
+    # の形から却下理由の語彙を機械で拾う。ここを辞書代入に書き換えると走査が
+    # 理由を読み落とし、画面に説明の無い理由が出ても検査が気づかなくなる。
+    merged: dict[str, tuple] = {}
+    for dir_path in dir_paths:
+        if not os.path.isdir(dir_path):
             continue
-        code = name[:-len(".json")]
-        if code in _BUILTIN_LANGS or not code:
-            _external_reports.append((code, code, 0, [("", "builtin")]))
-            continue
-        try:
-            with open(os.path.join(dir_path, name), encoding="utf-8") as f:
-                table = json.load(f)
-            if not isinstance(table, dict):
-                raise ValueError("top level is not an object")
-        # ⚠️ 例外の種類を絞らない＝JSON の壊れ方は無数にあるので、先に列挙するより
-        # 「読めなければ理由を持って次へ」が正しい（理由は報告に載り画面へ出る）。
-        except Exception as ex:  # noqa: BLE001
-            # ⚠️ **理由は決まった語彙のまま**＝以前は `f"unreadable: {ex}"` と
-            # 理由そのものに詳細を埋めていたので、**画面の説明表に載らず内部の字が
-            # そのまま出た**（B-105 の 2 巡目・独立レビュー 20 巡目）。⇒ 詳細は
-            # キーの側（このタプルの第 1 要素＝例に出る欄）へ置く。
-            _external_reports.append((code, code, 0, [(str(ex), "unreadable")]))
-            continue
-        accepted, rejected = validate_external(table)
-        shown = table.get(_EXTERNAL_NAME_KEY)
-        _STRINGS[code] = accepted
-        _external_reports.append(
-            (code, shown if isinstance(shown, str) and shown else code,
-             len(accepted), rejected))
+        reports: list = []
+        for name in sorted(os.listdir(dir_path)):
+            if not name.endswith(".json"):
+                continue
+            code = name[:-len(".json")]
+            if code in _BUILTIN_LANGS or not code:
+                reports.append((code, code, 0, [("", "builtin")]))
+                continue
+            try:
+                with open(os.path.join(dir_path, name), encoding="utf-8") as f:
+                    table = json.load(f)
+                if not isinstance(table, dict):
+                    raise ValueError("top level is not an object")
+            # ⚠️ 例外の種類を絞らない＝JSON の壊れ方は無数にあるので、先に列挙する
+            # より「読めなければ理由を持って次へ」が正しい（理由は報告に載り画面
+            # へ出る）。
+            except Exception as ex:  # noqa: BLE001
+                # ⚠️ **理由は決まった語彙のまま**＝以前は `f"unreadable: {ex}"` と
+                # 理由そのものに詳細を埋めていたので、**画面の説明表に載らず内部の
+                # 字がそのまま出た**（B-105 の 2 巡目・独立レビュー 20 巡目）。⇒
+                # 詳細はキーの側（このタプルの第 1 要素＝例に出る欄）へ置く。
+                reports.append((code, code, 0, [(str(ex), "unreadable")]))
+                continue
+            accepted, rejected = validate_external(table)
+            shown = table.get(_EXTERNAL_NAME_KEY)
+            _STRINGS[code] = accepted
+            reports.append(
+                (code, shown if isinstance(shown, str) and shown else code,
+                 len(accepted), rejected))
+        # 同じディレクトリ内の重複コード（同名 .json は無い）はそのままだが、
+        # **後のディレクトリが同じコードを勝たせる**ため、辞書へ順に上書きする。
+        for entry in reports:
+            merged[entry[0]] = entry
+    _external_reports = list(merged.values())
     return external_reports()
 
 

@@ -67,12 +67,12 @@ def _prof_flush() -> None:
         prev = t
     text = "\n".join(lines) + "\n"
     try:
-        # 書き込み先の基準は config の解決器へ一本化する（B-014）。ここで判定を
-        # 再実装しない。**遅延 import 必須**＝モジュール先頭で config を読むと、
-        # 下の truststore 注入（他の import より先に実行する必要がある）より
-        # 前に import 連鎖が走ってしまう。この関数は実行時にしか呼ばれない。
-        from core.config import app_path
-        with open(app_path("radiosim_profile.log"), "a", encoding="utf-8") as f:
+        # 書き込み先の基準は config の解決器へ一本化する（B-014・B-174）。ここで
+        # 判定を再実装しない。**遅延 import 必須**＝モジュール先頭で config を
+        # 読むと、下の truststore 注入（他の import より先に実行する必要がある）
+        # より前に import 連鎖が走ってしまう。この関数は実行時にしか呼ばれない。
+        from core.config import PROFILE_LOG_FILE
+        with open(PROFILE_LOG_FILE, "a", encoding="utf-8") as f:
             f.write(text)
     except Exception:
         pass
@@ -238,7 +238,10 @@ def main() -> None:
     cfg = config.load_config()
     # 利用者が足した言語を先に登録する（`set_lang` は登録済みの言語しか受けない）。
     # ⚠️ **読めなくても起動は続ける**＝報告はランチャーが画面で伝える。
-    i18n.load_external(config.LANG_DIR)
+    # 同梱の読み取り専用 `LANG_DIR` と、利用者が書ける `USER_LANG_DIR`（I-130・
+    # 非ポータブルでは別の場所）の両方を見る。ポータブル配置では同じ場所を
+    # 二重に走査するだけ（同じ結果になる）。
+    i18n.load_external(config.LANG_DIR, config.USER_LANG_DIR)
     # 設定ファイルが在ればその中身、無ければ初回既定の解決（I-127＝インストーラで
     # 選ばれた言語 → OS の表示言語 → "en"）。以後は利用者の選択が常に優先。
     i18n.set_lang(config.startup_lang(cfg))
