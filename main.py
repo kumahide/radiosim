@@ -239,7 +239,9 @@ def main() -> None:
     # 利用者が足した言語を先に登録する（`set_lang` は登録済みの言語しか受けない）。
     # ⚠️ **読めなくても起動は続ける**＝報告はランチャーが画面で伝える。
     i18n.load_external(config.LANG_DIR)
-    i18n.set_lang(cfg.get("lang", "en"))
+    # 設定ファイルが在ればその中身、無ければ初回既定の解決（I-127＝インストーラで
+    # 選ばれた言語 → OS の表示言語 → "en"）。以後は利用者の選択が常に優先。
+    i18n.set_lang(config.startup_lang(cfg))
     _prof("config/i18n done")
     manager.apply(cfg.get("theme", "system"))
     # 全窓の既定フォントを sv_ttk の本文フォントへ揃える（窓ごとの font= を廃止）。

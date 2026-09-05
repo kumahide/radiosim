@@ -163,6 +163,8 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
+> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ Once you pick a language under **Settings > Language**, your choice always wins from then on (a reinstall over the top does not change it).
+
 ### Help
 
 | Item         | Description                          |

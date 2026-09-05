@@ -368,6 +368,86 @@ DEFAULT_CONFIG: dict[str, str] = {
 
 
 # ============================================================
+# 初回起動の表示言語（3.2・I-127）
+#   `DEFAULT_CONFIG["lang"]` は固定で "en"。これは**設定ファイルが既に在るとき
+#   の欠損補完**としては正しい（2.x からの利用者の画面を勝手に変えない）が、
+#   **まだ 1 度も起動していない人**には「利用者が既に示した情報」を無視した値に
+#   なる。⇒ 設定ファイルが無いときだけ ①インストーラが置いた種 → ②OS の表示
+#   言語 → ③"en" の順で解く。
+#
+#   ⚠️ **効くのは「設定ファイルがまだ存在しないとき」だけ**＝以後は利用者の
+#      選択が常に優先（言語メニューと喧嘩しない）。判定を `load_config` の中や
+#      `DEFAULT_CONFIG` 側に入れないのはこのため（あちらは欠損キーの補完器で、
+#      既定値そのものを動的にすると「`lang` の既定は `en`」を前提にした検査が
+#      環境依存になる）。
+#   ⚠️ 候補は**同梱 2 言語だけ**。外部の `lang/<コード>.json` は対象にしない
+#      （読めるとは限らず、初回既定が利用者の置いたファイル次第で変わる）。
+# ============================================================
+#: インストーラが置く「ウィザードで選ばれた言語」の種。**読むだけ**＝アプリは
+#: ここへ書かない（LANG_DIR と同じ思想）。ポータブル zip には存在しない。
+#: ⛔ インストーラから `radiosim_conf.json` を直接書く案は採らない＝ウィザードは
+#:    管理者へ昇格され得る（別ユーザーの %APPDATA% に書く）うえ、上書き
+#:    インストールで既存の設定を壊し、`save_config` の原子的書き込みの外から
+#:    設定ファイルを触ることになる。
+INSTALL_LANG_FILE = app_path("install_lang.txt")
+
+#: Inno Setup の `[Languages]` の `Name` → アプリの言語コード。
+_INSTALLER_LANG_CODES: dict[str, str] = {"japanese": "ja", "english": "en"}
+
+#: LANGID の主要言語 ID（下位 10 bit）。ja-JP も ja-JP_radstr も 0x11。
+_LANG_JAPANESE = 0x11
+
+
+def _installer_lang() -> "str | None":
+    """インストーラが置いた種を読む。無い／読めない／未知の値なら None。"""
+    try:
+        with open(INSTALL_LANG_FILE, "r", encoding="utf-8") as f:
+            name = f.read().strip().lower()
+    except OSError:
+        return None
+    return _INSTALLER_LANG_CODES.get(name)
+
+
+def _os_ui_lang() -> "str | None":
+    """OS の表示言語（ユーザー既定 UI 言語）を同梱言語へ丸める。
+
+    ⚠️ 見るのは**表示言語**であって地域書式ではない（日本在住で英語 UI を選んで
+    いる人は英語で出す）。非 Windows／取得失敗は None。
+    """
+    if os.name != "nt":
+        return None
+    try:
+        import ctypes
+
+        langid = ctypes.windll.kernel32.GetUserDefaultUILanguage()
+    except Exception:
+        return None
+    if not langid:
+        return None
+    return "ja" if (langid & 0x3FF) == _LANG_JAPANESE else "en"
+
+
+def initial_lang() -> str:
+    """初回起動の表示言語。①インストーラの種 → ②OS の表示言語 → ③"en"。
+
+    ①が②より先なのは「利用者が明示的に選んだ」ぶん証拠として強いから
+    （英語 UI の Windows で日本語ウィザードを選ぶ人がいる）。
+    """
+    return _installer_lang() or _os_ui_lang() or DEFAULT_CONFIG["lang"]
+
+
+def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
+    """起動時に `i18n.set_lang` へ渡す言語コードを決める。
+
+    設定ファイルが在れば**その中身が常に優先**（利用者の選択）。無いときだけ
+    `initial_lang()` で解く。
+    """
+    if os.path.exists(path):
+        return cfg.get("lang", DEFAULT_CONFIG["lang"])
+    return initial_lang()
+
+
+# ============================================================
 # 設定ファイル
 # ============================================================
 def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
