@@ -84,3 +84,26 @@ Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{
 
 [Run]
 Filename: "{app}\{#AppExeName}"; Description: "{cm:LaunchProgram,RadioSim Pro}"; Flags: nowait postinstall skipifsilent
+
+[UninstallDelete]
+; install_lang.txt は [Files] ではなく [Code] が作るので uninsdeletefile が使えない。
+; アンインストールで消し残さないよう、ここで明示的に消す。
+Type: files; Name: "{app}\install_lang.txt"
+
+[Code]
+{ 3.2・I-127: ウィザードで選ばれた言語をアプリへ引き継ぐ。
+  値は [Languages] の Name（japanese / english）をそのまま書く＝アプリ側
+  （core/config.py の _INSTALLER_LANG_CODES）が言語コードへ写す。
+
+  ⛔ %APPDATA%\RadioSim\radiosim_conf.json を直接書かない:
+     PrivilegesRequiredOverridesAllowed=dialog で管理者へ昇格され得るため、
+     書き込む %APPDATA% が別ユーザー（管理者）のものになり得る。加えて
+     上書きインストールで既存の設定を壊す。⇒ **アプリが読むだけの種**を置く。
+
+  アプリ側はこれを「設定ファイルがまだ無いとき」しか見ないので、上書き
+  インストールで言語を選び直しても既存利用者の選択は変わらない。 }
+procedure CurStepChanged(CurStep: TSetupStep);
+begin
+  if CurStep = ssPostInstall then
+    SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False);
+end;

@@ -9,11 +9,17 @@ i18n キーの網羅性チェック（TestI18n）は、検証メッセージ（v
 
 import json
 import os
+import re
+import sys
+import types
 import unittest.mock as mock
+from pathlib import Path
 
 import pytest
 
 from core import config
+
+ROOT = Path(__file__).resolve().parent.parent
 
 
 # ============================================================
@@ -420,3 +426,156 @@ class TestNewRunDir:
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path / "results"))
         d = config.new_run_dir("batch", "20260726_120000")
         assert os.path.isdir(d)
+
+
+# ============================================================
+# 初回起動の表示言語（I-127）
+# ============================================================
+class TestStartupLang:
+    """設定ファイルが**まだ無いとき**だけ、既に手元にある環境情報から解く。
+
+    ⚠️ 逆側（設定ファイルが在るときは何があっても中身が勝つ）のほうが重い＝
+    利用者が言語メニューで選んだ結果を、インストーラの種や OS の言語で
+    上書きしてはいけない。
+    """
+
+    def test_existing_config_file_wins_over_seeds(self, tmp_path, monkeypatch):
+        """設定ファイルが在れば、種があっても cfg の値をそのまま返す。"""
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text("{}", encoding="utf-8")
+        monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
+        monkeypatch.setattr(config, "_os_ui_lang", lambda: "ja")
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+
+    def test_existing_config_file_without_lang_key_falls_back_to_default(self, tmp_path):
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text("{}", encoding="utf-8")
+        assert config.startup_lang({}, str(path)) == config.DEFAULT_CONFIG["lang"]
+
+    def test_missing_config_file_resolves_initial(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
+        assert config.startup_lang({"lang": "en"}, str(tmp_path / "none.json")) == "ja"
+
+    # --- 解決の順序 ---------------------------------------------------
+    def test_installer_seed_beats_os(self, monkeypatch):
+        """利用者が明示的に選んだ種のほうが、OS の言語より強い証拠。"""
+        monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
+        monkeypatch.setattr(config, "_os_ui_lang", lambda: "en")
+        assert config.initial_lang() == "ja"
+
+    def test_os_used_when_no_seed(self, monkeypatch):
+        """ポータブル zip（種が無い）は OS の表示言語で決まる。"""
+        monkeypatch.setattr(config, "_installer_lang", lambda: None)
+        monkeypatch.setattr(config, "_os_ui_lang", lambda: "ja")
+        assert config.initial_lang() == "ja"
+
+    def test_falls_back_to_default_when_nothing_known(self, monkeypatch):
+        monkeypatch.setattr(config, "_installer_lang", lambda: None)
+        monkeypatch.setattr(config, "_os_ui_lang", lambda: None)
+        assert config.initial_lang() == config.DEFAULT_CONFIG["lang"]
+
+    def test_resolved_lang_is_always_bundled(self, monkeypatch):
+        """解決結果は同梱言語のいずれか（未知のコードを set_lang へ渡さない）。"""
+        from core import i18n
+        monkeypatch.setattr(config, "_installer_lang", lambda: None)
+        assert config.initial_lang() in i18n._BUILTIN_LANGS
+
+    # --- インストーラが置く種 -----------------------------------------
+    @pytest.mark.parametrize("written,expected", [
+        ("japanese", "ja"),
+        ("english", "en"),
+        ("  Japanese\r\n", "ja"),   # 前後の空白・改行・大小は無視する
+        ("french", None),           # [Languages] を増やして写し忘れたとき
+        ("", None),
+    ])
+    def test_installer_seed_values(self, tmp_path, monkeypatch, written, expected):
+        seed = tmp_path / "install_lang.txt"
+        seed.write_text(written, encoding="utf-8")
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(seed))
+        assert config._installer_lang() == expected
+
+    def test_installer_seed_absent(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
+        assert config._installer_lang() is None
+
+    def test_installer_seed_unreadable_is_not_fatal(self, tmp_path, monkeypatch):
+        """読めない種（フォルダを掴んだ等）で起動が落ちないこと。"""
+        d = tmp_path / "install_lang.txt"
+        d.mkdir()
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(d))
+        assert config._installer_lang() is None
+
+    # --- OS の表示言語 -------------------------------------------------
+    @pytest.mark.parametrize("langid,expected", [
+        (0x0411, "ja"),   # ja-JP
+        (0x0409, "en"),   # en-US
+        (0x0809, "en"),   # en-GB
+        (0x0407, "en"),   # de-DE ＝同梱していないので英語へ丸める
+        (0, None),        # 取得失敗
+    ])
+    def test_os_ui_lang_mapping(self, monkeypatch, langid, expected):
+        monkeypatch.setattr(config.os, "name", "nt")
+        monkeypatch.setitem(sys.modules, "ctypes", _fake_ctypes(langid))
+        assert config._os_ui_lang() == expected
+
+    def test_os_ui_lang_non_windows(self, monkeypatch):
+        monkeypatch.setattr(config.os, "name", "posix")
+        assert config._os_ui_lang() is None
+
+    def test_os_ui_lang_survives_ctypes_failure(self, monkeypatch):
+        """API が無い／落ちる環境でも None を返すだけ（起動を止めない）。"""
+        monkeypatch.setattr(config.os, "name", "nt")
+        monkeypatch.setitem(sys.modules, "ctypes", _fake_ctypes(boom=True))
+        assert config._os_ui_lang() is None
+
+
+class _FakeKernel32:
+    def __init__(self, langid: int, boom: bool):
+        self._langid, self._boom = langid, boom
+
+    def GetUserDefaultUILanguage(self) -> int:
+        if self._boom:
+            raise OSError("no such entry point")
+        return self._langid
+
+
+def _fake_ctypes(langid: int = 0, boom: bool = False):
+    """`import ctypes` を差し替えるためのスタブ（答えだけ固定する）。"""
+    mod = types.ModuleType("ctypes")
+    mod.windll = types.SimpleNamespace(kernel32=_FakeKernel32(langid, boom))
+    return mod
+
+
+class TestInstallerLangSeedContract:
+    """インストーラ（.iss）とアプリ（config.py）の**言語名の写し**が一致すること。
+
+    ウィザードに言語を足したのに `_INSTALLER_LANG_CODES` へ写し忘れると、
+    その言語を選んだ人だけが黙って英語で起動する（実害が出るまで気づけない）。
+    """
+
+    ISS = ROOT / "installer" / "radiosim.iss"
+
+    def _iss(self) -> str:
+        return self.ISS.read_text(encoding="utf-8")
+
+    def test_wizard_languages_match_the_mapping(self):
+        names = set(re.findall(r'^Name:\s*"([^"]+)";\s*MessagesFile:',
+                               self._iss(), re.MULTILINE))
+        assert names == set(config._INSTALLER_LANG_CODES), (
+            "installer/radiosim.iss の [Languages] と "
+            "config._INSTALLER_LANG_CODES がずれている")
+
+    def test_installer_writes_the_seed_app_reads(self):
+        """種のファイル名が両側で同じであること。"""
+        name = os.path.basename(config.INSTALL_LANG_FILE)
+        iss = self._iss()
+        assert "{app}\\" + name in iss
+        assert "ActiveLanguage()" in iss
+
+    def test_seed_is_removed_on_uninstall(self):
+        """[Code] が作るので uninsdeletefile が効かない＝明示的な削除が要る。"""
+        iss = self._iss()
+        name = os.path.basename(config.INSTALL_LANG_FILE)
+        assert re.search(r"^\[UninstallDelete\]", iss, re.MULTILINE)
+        assert re.search(r'^Type:\s*files;\s*Name:\s*"\{app\}\\' + re.escape(name),
+                         iss, re.MULTILINE)
