@@ -89,6 +89,48 @@ rem succeeds. Usage: build.bat installer
 set "MODE=zip"
 if /i "%~1"=="installer" set "MODE=installer"
 
+rem ---- Check the Inno Setup compiler BEFORE the PyInstaller run, not after
+rem it (same reason as the Tk 9 guard below: a four-minute build should not
+rem happen just to fail on an environment variable).
+if /i "%MODE%"=="installer" (
+    if not defined RADIOSIM_ISCC (
+        echo [ERROR] RADIOSIM_ISCC is not set.
+        echo         Point it at Inno Setup 7's compiler, then reopen the shell
+        echo         ^(install it with: winget install JRSoftware.InnoSetup.7^):
+        echo           setx RADIOSIM_ISCC "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"
+        echo         A machine-wide install puts it under
+        echo         C:\Program Files ^(x86^)\Inno Setup 7\ISCC.exe instead.
+        pause
+        exit /b 1
+    )
+    if not exist "%RADIOSIM_ISCC%" (
+        echo [ERROR] RADIOSIM_ISCC points at a file that does not exist:
+        echo           %RADIOSIM_ISCC%
+        pause
+        exit /b 1
+    )
+    rem  I-125: released installers are built with Inno Setup 7. The .iss
+    rem  deliberately uses nothing that 7 removed, so a RADIOSIM_ISCC still
+    rem  pointing at a 6.x compiler would compile happily and ship an
+    rem  installer built by the line upstream stopped updating - a silent
+    rem  mismatch, so this is a stop, not a note (same shape as the
+    rem  RADIOSIM_PYTHON declaration above). Declare
+    rem  RADIOSIM_ISCC_ANY_VERSION=1 to build with another major on purpose.
+    if not defined RADIOSIM_ISCC_ANY_VERSION (
+        "%RADIOSIM_ISCC%" 2>&1 | findstr /c:"Inno Setup 7 Command-Line Compiler" >nul
+        if errorlevel 1 (
+            echo [ERROR] RADIOSIM_ISCC is not an Inno Setup 7 compiler:
+            echo           %RADIOSIM_ISCC%
+            echo         Released installers are built with Inno Setup 7
+            echo         ^(winget install JRSoftware.InnoSetup.7^). Point
+            echo         RADIOSIM_ISCC at that ISCC.exe, or declare
+            echo         RADIOSIM_ISCC_ANY_VERSION=1 to build anyway.
+            pause
+            exit /b 1
+        )
+    )
+)
+
 echo ============================================================
 echo RadioSim Pro - Build Script (%MODE%)
 echo ============================================================
@@ -218,20 +260,6 @@ echo.
 
 if /i "%MODE%"=="installer" (
     echo [INFO] Building installer ^(Inno Setup^)...
-    if not defined RADIOSIM_ISCC (
-        echo [ERROR] RADIOSIM_ISCC is not set.
-        echo         Point it at Inno Setup 7's compiler, then reopen the shell
-        echo         ^(install it with: winget install JRSoftware.InnoSetup.7^):
-        echo           setx RADIOSIM_ISCC "%%LOCALAPPDATA%%\Programs\Inno Setup 7\ISCC.exe"
-        pause
-        exit /b 1
-    )
-    if not exist "%RADIOSIM_ISCC%" (
-        echo [ERROR] RADIOSIM_ISCC points at a file that does not exist:
-        echo           %RADIOSIM_ISCC%
-        pause
-        exit /b 1
-    )
     for /f "usebackq delims=" %%V in (`%PY% -c "from core import version as v; print(v.APP_VERSION)"`) do set "APP_VER=%%V"
     "%RADIOSIM_ISCC%" /DAppVersion="!APP_VER!" /O"%DIST_DIR%" "%~dp0installer\radiosim.iss"
     if errorlevel 1 (

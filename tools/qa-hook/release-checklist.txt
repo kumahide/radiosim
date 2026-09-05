@@ -22,9 +22,11 @@
   [ ] 公開文書のスクショが現行版の画面と一致するか目視照合（docs/screenshots.md が構図の正典）— 撮影は RC1 の実機確認と同時に済ませ、ここでは見比べるだけ。動いていたら撮り直す。⛔ ビルドより前に差し替える（画像は spec の datas でファイルとして同梱されるので、ビルド後に差し替えても配布物には入らない＝2.3RC1 と同じ穴。⚠️ 同梱 README 内に base64 は無いのが正常＝畳むのは README ビューアが描画するとき）
   [ ] dist 同梱の利用者向け文書（_internal\docs\manual_ja|en.md）が更新版か grep 確認・exe FileVersion が目標版
   [ ] ⛔ 3.1以降: インストーラも別ビルド（build.bat installer）した — zipモードとは別に PyInstaller をやり直す仕様。RadioSimPro-Setup-X.Y[RCn].exe の存在・日時を確認（v3.1RC1 でこの工程が丸ごと抜け、gh release に zip しか上がらなかった）
-  [ ] ⛔ gh release create に zip とインストーラ exe の**両方**を渡した／公開直後に gh release view <tag> でアセット2本を確認した（欠けていたら gh release upload で追加）
+  [ ] ⛔ インストーラをコンパイルしたのは Inno Setup 7 か（build.bat が版を確かめて止めるが、RADIOSIM_ISCC_ANY_VERSION=1 を宣言していると素通りする＝I-125）
   [ ] ⛔ 公開の**前に** push 済みか＝git status -sb が ahead を出していないこと（gh release create --target main が見るのは**リモートの** main。未 push だと 1 つ前のコミットにタグが打たれ、zip の中身とタグの指すソースが食い違う＝2026-08-16 の 2.8RC1 で実際に踏んだ。fetch して気づいたので、下の「直後」より 1 段手前に置く）
+  [ ] ⛔ push を確かめた**後で** gh release create に zip とインストーラ exe の**両方**を渡した（この項目より前に release を作ると、1 つ上の「未 push のまま古い main にタグを打つ」を自分で誘発する）
 公開の直後にやること:
+  [ ] ⛔ gh release view <tag> でアセットが 2 本（zip とインストーラ exe）あることを確認した（欠けていたら gh release upload <tag> <ファイル> で追加）— v3.1RC1 は zip 1 本のまま公開され、後から気づいた
   [ ] ロードマップの節を並べ替えた＝①出した版の節を §アーカイブ へ ②次の版の節を現在地の直下へ（どちらも**節ごと移動・書き写さない**。見出しの階層だけ H2/H3 を揃える）― 2026-08-24 に 2 つとも破れた。check_memory.py の check 17 が Stop ごとに鳴る
   [ ] git fetch --tags でタグをローカルへ引き、git log --oneline -1 <tag> で指し先を確認（gh release create はタグをサーバ側で作るので、打ったのに手元では「無い」ように見える＝作成漏れと区別がつかない）
 自動ゲート緑は必要条件であって十分条件ではない（工程3=README本文反映は機械化しきれない残余）。
