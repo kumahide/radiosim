@@ -168,7 +168,7 @@ build.bat installer
   - **配布ビルドは Inno Setup 7 系で作ります**＝`build.bat` がコンパイラの版を確かめ、7 でなければ中止します。`radiosim.iss` は 6.7 系でもそのままコンパイルできますが（7 で廃止された機能を 1 つも使っていないため）、**黙って 6 で作った配布物が出てしまう**のを防ぐための門です（上流の更新は 6.7.3〔2026-05-26〕を最後に 7 系へ移っています）。意図して別の版で作るときだけ `RADIOSIM_ISCC_ANY_VERSION=1` を宣言してください。
 - **インストール先の既定**: `{autopf}`（`PrivilegesRequired=lowest`＝管理者権限が無ければユーザー配下、あればユーザーが選べる）。
 - **出力先**: ビルド出力と同じ `dist/`（`RadioSimPro-Setup-<版>.exe`）。
-- **署名**: `RADIOSIM_SIGNTOOL` が定義済みなら、exe 本体と同じ 1 か所の呼び出しでインストーラにも署名します（未定義なら未署名のまま＝[[project_code_signing]] のとおり実施はトリガー時）。
+- **署名**: `RADIOSIM_SIGNTOOL` が定義済みなら、exe 本体と同じ 1 か所の呼び出しでインストーラにも署名します（未定義なら未署名のまま）。現在の配布物は未署名です＝証明書の取得は、署名なしでは配布先で導入がブロックされる状況が実際に出た時点で判断します。
 
 ### `radiosim.spec` の主な設定
 
@@ -178,7 +178,7 @@ build.bat installer
 | EXE ファイルプロパティ | `version.py` の `APP_VERSION` / `COPYRIGHT` から自動生成 |
 | `console=False` | コンソールウィンドウを非表示 |
 | UPX 圧縮 | インストール済みの場合のみ有効 |
-| `docs/manual_*.md` / `docs/images/` / `logo.png` | バイナリに同梱（`sys._MEIPASS` で参照） |
+| `docs/manual_*.md` / `docs/developer_*.md` / `docs/glossary.md` / `docs/images/` / `logo.png` / `LICENSE` | バイナリに同梱（`sys._MEIPASS` で参照）。マニュアルから辿れる文書も入れる＝入っていないと配布版でだけリンクが切れる |
 
 ### トラブルシューティング
 

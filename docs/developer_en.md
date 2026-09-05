@@ -168,7 +168,7 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
   - **Released installers are built with Inno Setup 7** — `build.bat` checks the compiler's major version and stops if it is not 7. `radiosim.iss` still compiles unchanged under 6.7.x (it uses none of the features 7 removed), so the check exists to stop a 6-built installer from shipping unnoticed (upstream development moved to 7 after 6.7.3, 2026-05-26). Declare `RADIOSIM_ISCC_ANY_VERSION=1` to build with another major version on purpose.
 - **Default install location**: `{autopf}` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
 - **Output**: same `dist/` folder as the regular build (`RadioSimPro-Setup-<version>.exe`).
-- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise — see [[project_code_signing]], on hold until a trigger).
+- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise). Released builds are currently unsigned; obtaining a certificate will be decided if and when an unsigned build is actually blocked at a deployment site.
 
 ### Key `radiosim.spec` Settings
 
@@ -178,7 +178,7 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
 | EXE file properties | Auto-generated from `APP_VERSION` / `COPYRIGHT` in `version.py` |
 | `console=False` | No console window shown to the user |
 | UPX compression | Enabled only when UPX is installed |
-| `docs/manual_*.md` / `docs/images/` / `logo.png` | Bundled into the binary; accessed via `sys._MEIPASS` |
+| `docs/manual_*.md` / `docs/developer_*.md` / `docs/glossary.md` / `docs/images/` / `logo.png` / `LICENSE` | Bundled into the binary; accessed via `sys._MEIPASS`. Documents reachable from the manual are bundled too — otherwise those links break only in the packaged build |
 
 ### Troubleshooting
 
