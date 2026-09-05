@@ -412,7 +412,7 @@ Selections are persisted to `radiosim_conf.json`.
 
 **A notation (display) setting, not an input mode.** `coords.parse_pair` accepts both DD and DMS leniently and everything is normalised to DD before the calculation (values reaching `simulation.SimParams` are always DD).
 
-⚠️ Fields are reformatted in only three places — startup, notation switch, and settings/project load — **never on entry commit** (Enter / focus-out). So typing DD while DMS is selected leaves the text as typed: **not a fault**, but the screen gives no signal that the value was accepted (a known rough edge).
+Fields are reformatted on startup, on a notation switch, on settings/project load, and **on entry commit** (Enter / focus-out). ⚠️ **All three editable coordinate fields reformat on commit** (launcher `views/launcher.py`, Multiple Paths table `views/batch_table.py`, Multi-hop `views/multihop.py` — aligned in 2.7): **the reformat itself is the acknowledgement that the parse succeeded**, and unreadable input is left as typed. ⚠️ The coordinates in Scenario Sweep (`views/scenario.py`) are **read-only** (a frozen snapshot of the launcher), so they are outside this rule — they are only reformatted when `_update_path_label` redraws them.
 
 ### Proxy Settings
 

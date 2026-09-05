@@ -110,7 +110,7 @@ There are two distribution forms. Both are Windows binaries with identical featu
 2. Administrator rights are not required (by default it installs into your own user profile). Follow the prompts to finish.
 3. Launch `RadioSimPro` from the Start menu.
 
-The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It writes nothing but the exe itself into the install folder, so installing under a write-protected location (e.g. under `Program Files`) works fine.
+The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine.
 
 | Contents                                        | Location                     |
 | ------------------------------------------------ | ----------------------------- |
@@ -200,7 +200,7 @@ Besides Japanese and English you can **add a translation of your own**. Create a
 This selects **how coordinates are displayed**. It is not an input mode switch.
 
 - **Input fields accept either notation.** With DMS selected you can still type `34.8, 132.6` (DD), and with DD selected you can still type `34°48'00.0"N, 132°36'00.0"E`. Everything is normalised to decimal degrees before the calculation runs.
-- **Fields are reformatted into the selected notation when you switch the format, or when settings/a project are loaded.** Committing an entry does not reformat it, so **what you just typed stays in the form you typed it** — this is not a fault.
+- **Fields are reformatted into the selected notation when you switch the format, when settings/a project are loaded, and when you commit an entry** (press Enter or move to another field). The reformatting itself is the acknowledgement that the value was read. **Input that could not be read stays exactly as you typed it** — that is the signal it was not accepted as a coordinate, so retype it.
 
 ### Proxy Settings
 
