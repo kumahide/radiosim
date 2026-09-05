@@ -933,3 +933,113 @@ def apply_menu_theme(menus: "list[tk.Menu]", widget: tk.Misc) -> None:
             menu.configure(**options)
         except tk.TclError:
             pass   # 破棄済みのメニューは無視する
+
+
+# ------------------------------------------------------------
+# タイトルバー（非クライアント領域・I-132）
+# ------------------------------------------------------------
+# 非クライアント領域（タイトルバー・枠）は Windows が描くので sv_ttk も
+# `palette()` も届かない。`DwmSetWindowAttribute` で OS に申告する。
+_DWMWA_USE_IMMERSIVE_DARK_MODE = 20       # Windows 10 20H1+ / Windows 11
+_DWMWA_USE_IMMERSIVE_DARK_MODE_OLD = 19   # Windows 10 1809〜1909
+_DWMWA_BORDER_COLOR = 34                  # Windows 11 のみ
+_DWMWA_CAPTION_COLOR = 35                 # Windows 11 のみ
+_DWMWA_TEXT_COLOR = 36                    # Windows 11 のみ
+
+
+def _decorated_hwnd(win: tk.Misc, windll: "Any | None" = None) -> "int | None":
+    """`win` の非クライアント領域を持つ HWND（Windows のみ・取れなければ None）。
+
+    🔴 **`winfo_id()` はそのまま渡せない**（I-132 実装上の落とし穴①）＝Tk は
+    トップレベルをもう1段 HWND で包んでおり、`winfo_id()` が返すのはクライアント
+    領域側の子 HWND。それを `DwmSetWindowAttribute` に渡しても **`S_OK`（成功）が
+    返るのに見た目は何も変わらない**＝失敗が返らないので気づけない
+    （[[feedback-diff-before-gui-repro]] の「包んで測る」対象）。装飾を持つのは
+    `GetParent(winfo_id())` の側。
+
+    Args:
+        windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物）。
+    """
+    import sys
+    if sys.platform != "win32":
+        return None
+    import ctypes
+    dll = windll if windll is not None else ctypes.windll
+    try:
+        child = win.winfo_id()
+        parent = dll.user32.GetParent(child)
+        return int(parent) if parent else None
+    except Exception:
+        return None
+
+
+def _colorref(rgb_hex: str) -> int:
+    """`#rrggbb` → `COLORREF`（`0x00BBGGRR`＝RGB とバイト順が逆）。"""
+    r, g, b = (int(rgb_hex[i:i + 2], 16) for i in (1, 3, 5))
+    return (b << 16) | (g << 8) | r
+
+
+def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
+    """`win` のタイトルバー・枠を現在テーマへ合わせる（Windows のみ）。
+
+    呼び出し元は 2 つに集約する＝**`<<ThemeChanged>>`**（テーマの切替）と
+    **新規トップレベルの生成直後**（[main.py](../main.py)・[views/dialogs.py]
+    (dialogs.py)・[views/map_window.py](map_window.py)・
+    [views/launcher_menu.py](launcher_menu.py)）。片方だけだと「あとから開いた
+    窓だけ白い」「切り替えた瞬間だけ直らない」のどちらかが残る
+    （[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
+
+    ⚠️ **表示済みの窓は即座に塗り替わらないことがある**＝マップ（表示）の前に
+    当てるのが安全（I-132 実装上の落とし穴③）。
+
+    Args:
+        windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物。
+            `_set_dpi_awareness` と同じ注入の形）。
+    Returns:
+        実際に申告できたか（Windows でない・HWND が取れない場合は False）。
+        ヘッドレスでは実際の色は測れないので、**ゲートで見られるのは「呼んだか」
+        まで**（I-132 実装上の落とし穴⑤）。
+    """
+    import ctypes
+    dll = windll if windll is not None else ctypes.windll
+    hwnd = _decorated_hwnd(win, dll)
+    if not hwnd:
+        return False
+    dwm = dll.dwmapi
+    dark = current_theme(win) == "dark"
+    # `ctypes.pointer()`（`byref()` ではなく）＝テストの代役から中身を読めるように
+    # する。実際の DwmSetWindowAttribute 呼び出しでも同様に使える。
+    value = ctypes.pointer(ctypes.c_int(1 if dark else 0))
+    ok = dwm.DwmSetWindowAttribute(
+        ctypes.c_void_p(hwnd), _DWMWA_USE_IMMERSIVE_DARK_MODE,
+        value, ctypes.sizeof(value.contents)) == 0
+    if not ok:
+        ok = dwm.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd), _DWMWA_USE_IMMERSIVE_DARK_MODE_OLD,
+            value, ctypes.sizeof(value.contents)) == 0
+    # Windows 11 のみ＝任意色（`theme.palette()` をそのまま流す＝配色の出所を増やさ
+    # ない）。失敗しても致命的でない＝上のダーク/ライト2択が主でここは仕上げ。
+    colors = palette(win)
+    for attr, key in (
+        (_DWMWA_CAPTION_COLOR, "bg"), (_DWMWA_TEXT_COLOR, "fg"),
+        (_DWMWA_BORDER_COLOR, "bg"),
+    ):
+        cref = ctypes.pointer(ctypes.c_int(_colorref(colors[key])))
+        dwm.DwmSetWindowAttribute(
+            ctypes.c_void_p(hwnd), attr, cref, ctypes.sizeof(cref.contents))
+    return ok
+
+
+def apply_title_bars(root: tk.Misc) -> None:
+    """`root` と配下の全トップレベルへタイトルバーの配色を当て直す。
+
+    `watch_display` の窓の集め方（[views/window_fit.toplevels](window_fit.py)）と
+    同じ集合を使う＝集め方が2つに割れると片方に映って片方に映らない窓が出る。
+    """
+    from views import window_fit          # 遅延 import（循環回避）
+
+    for win in (root.winfo_toplevel(), *window_fit.toplevels(root)):
+        try:
+            apply_title_bar_theme(win)
+        except tk.TclError:
+            pass   # 破棄途中のウィジェット

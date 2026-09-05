@@ -244,6 +244,11 @@ def main() -> None:
     i18n.set_lang(config.startup_lang(cfg))
     _prof("config/i18n done")
     manager.apply(cfg.get("theme", "system"))
+    # タイトルバー・枠は Windows が描くので sv_ttk が届かない（I-132）。切替の
+    # たびに <<ThemeChanged>> で開いている全トップレベルへ当て直す（新規に開いた
+    # 窓は各々の生成元がマップ前に個別に当てる＝views/dialogs.py 等）。
+    theme.apply_title_bars(root)
+    root.bind("<<ThemeChanged>>", lambda _e: theme.apply_title_bars(root), add="+")
     # 全窓の既定フォントを sv_ttk の本文フォントへ揃える（窓ごとの font= を廃止）。
     # テーマ適用の**後**に呼ぶ（sv.tcl が名前付きフォントを作るのがテーマ読み込み時）。
     theme.apply_fonts(root)

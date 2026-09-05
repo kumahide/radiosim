@@ -427,6 +427,7 @@ class _MenuMixin:
 
     def _on_proxy_settings(self) -> None:
         dlg = tk.Toplevel(self.root)
+        theme.apply_title_bar_theme(dlg)   # マップ前に当てる（I-132）
         dlg.transient(self.root)
         dlg.title(i18n.t("dlg_proxy_title"))
         dlg.resizable(False, False)
@@ -641,6 +642,7 @@ class _MenuMixin:
     def _show_readme_text(self, path: str) -> None:
         from tkinter.scrolledtext import ScrolledText
         win = tk.Toplevel(self.root)
+        theme.apply_title_bar_theme(win)   # マップ前に当てる（I-132）
         win.transient(self.root)
         win.title(i18n.t("dlg_doc_title"))
         win.geometry("800x600")
