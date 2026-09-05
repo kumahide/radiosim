@@ -2554,6 +2554,47 @@ class TestBackupHealthDisclosure:
         out = hook._backup_health()
         assert any("未配線" in line for line in out), out
 
+    def test_freeze_lines_name_which_repo_they_are_about(self, hook, tmp_path, monkeypatch):
+        """I-133①: 「凍結:」の1行だけでは製品リポの話と区別がつかない＝パスを書く。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        freeze = tmp_path / "freeze"
+        subprocess.run(["git", "init", str(freeze)], capture_output=True, check=True)
+        old_ts = "946684800 +0000"  # 2000-01-01 ＝確実に BACKUP_STALE_SEC より古い
+        subprocess.run(
+            ["git", "-C", str(freeze), "commit", "--allow-empty", "-m", "x"],
+            capture_output=True, check=True,
+            env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t",
+                 "GIT_AUTHOR_DATE": old_ts, "GIT_COMMITTER_DATE": old_ts},
+        )
+        monkeypatch.setattr(hook, "_FREEZE_BOX", freeze)
+        out = hook._backup_health()
+        stale_lines = [line for line in out if "最後のコミット" in line]
+        assert stale_lines and str(freeze) in stale_lines[0], out
+
+    def test_it_fires_when_the_freeze_repo_has_no_origin_main_to_count_against(
+        self, hook, tmp_path, monkeypatch,
+    ):
+        """I-133②: `origin/main` を数えられないとき黙って素通りしない。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        freeze = tmp_path / "freeze"
+        subprocess.run(["git", "init", str(freeze)], capture_output=True, check=True)
+        subprocess.run(
+            ["git", "-C", str(freeze), "commit", "--allow-empty", "-m", "x"],
+            capture_output=True, check=True,
+            env={**os.environ, "GIT_AUTHOR_NAME": "t", "GIT_AUTHOR_EMAIL": "t@t",
+                 "GIT_COMMITTER_NAME": "t", "GIT_COMMITTER_EMAIL": "t@t"},
+        )
+        monkeypatch.setattr(hook, "_FREEZE_BOX", freeze)
+        out = hook._backup_health()
+        assert any("参照が無い" in line and str(freeze) in line for line in out), out
+
 
 class TestBackupWiring:
     """**この機械で実際に配線されているか**（設定と実物の突き合わせ）。

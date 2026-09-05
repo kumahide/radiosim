@@ -889,6 +889,56 @@ class TestDeclaredInterpreter:
         monkeypatch.setenv(runtime_env.DECLARED_ENV, "Z:/missing/python.exe")
         assert runtime_env.interpreter_mismatch() is not None
 
+
+class TestDoubleQuietIsCapped:
+    """`-q` を二重に打っても集計行が消えない（I-122）。
+
+    🔑 **原因は表示の謎ではなかった**＝`pyproject.toml` の `addopts` が既に `-q`
+    を宣言しているので、人が慣習でもう一度 `-q` を打つと verbosity が `-2`
+    （`-qq` 相当）になり、pytest はそこで「N passed in Ys」の締めの1行を
+    出さなくなる。実測で機械固有の表示バグではないと確認済み。
+    """
+
+    def test_minus_two_is_raised_to_minus_one(self):
+        import conftest
+
+        class FakeOption:
+            verbose = -2
+
+        class FakeConfig:
+            option = FakeOption()
+
+        cfg = FakeConfig()
+        conftest._cap_double_quiet(cfg)
+        assert cfg.option.verbose == -1
+
+    def test_a_single_quiet_is_left_alone(self):
+        """②毎回介入するゲートにしない＝正常な `-q` 1 回はそのまま。"""
+        import conftest
+
+        class FakeOption:
+            verbose = -1
+
+        class FakeConfig:
+            option = FakeOption()
+
+        cfg = FakeConfig()
+        conftest._cap_double_quiet(cfg)
+        assert cfg.option.verbose == -1
+
+    def test_verbose_mode_is_left_alone(self):
+        import conftest
+
+        class FakeOption:
+            verbose = 1
+
+        class FakeConfig:
+            option = FakeOption()
+
+        cfg = FakeConfig()
+        conftest._cap_double_quiet(cfg)
+        assert cfg.option.verbose == 1
+
     def test_a_frozen_build_never_warns(self, monkeypatch):
         """配布 exe では判定そのものをしない（利用者に無関係な警告を出さない）。
 
