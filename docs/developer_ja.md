@@ -164,7 +164,8 @@ build.bat installer
 
 `build.bat` と同じビルドを行ったうえで、[installer/radiosim.iss](../installer/radiosim.iss)（Inno Setup）を使って `RadioSimPro-Setup-<版>.exe` を生成します。**`portable.txt` は同梱しません**（インストール先は常に非ポータブル扱い＝設定・キャッシュ・ログ・結果は OS 標準の場所）。
 
-- **前提条件**: [Inno Setup](https://jrsoftware.org/isinfo.php) 導入済み（`winget install JRSoftware.InnoSetup` 等）＋環境変数 `RADIOSIM_ISCC` に `ISCC.exe` のフルパスを設定（例: `setx RADIOSIM_ISCC "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`）。未設定・実体なしならビルドを中止します。
+- **前提条件**: [Inno Setup 7](https://jrsoftware.org/isinfo.php) 導入済み（`winget install JRSoftware.InnoSetup.7`）＋環境変数 `RADIOSIM_ISCC` に `ISCC.exe` のフルパスを設定（例: `setx RADIOSIM_ISCC "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"`）。未設定・実体なしならビルドを中止します。
+  - **配布ビルドは Inno Setup 7 系で作っています。** `radiosim.iss` は 6.7 系でもそのままコンパイルできますが（7 で廃止された機能を 1 つも使っていないため）、上流の更新は 6.7.3〔2026-05-26〕を最後に 7 系へ移っています。6 系のコンパイラで作ったインストーラも動きますが、配布物は 7 系で揃えてください。
 - **インストール先の既定**: `{autopf}`（`PrivilegesRequired=lowest`＝管理者権限が無ければユーザー配下、あればユーザーが選べる）。
 - **出力先**: ビルド出力と同じ `dist/`（`RadioSimPro-Setup-<版>.exe`）。
 - **署名**: `RADIOSIM_SIGNTOOL` が定義済みなら、exe 本体と同じ 1 か所の呼び出しでインストーラにも署名します（未定義なら未署名のまま＝[[project_code_signing]] のとおり実施はトリガー時）。

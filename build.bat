@@ -220,8 +220,9 @@ if /i "%MODE%"=="installer" (
     echo [INFO] Building installer ^(Inno Setup^)...
     if not defined RADIOSIM_ISCC (
         echo [ERROR] RADIOSIM_ISCC is not set.
-        echo         Point it at Inno Setup's compiler, then reopen the shell:
-        echo           setx RADIOSIM_ISCC "C:\Program Files ^(x86^)\Inno Setup 6\ISCC.exe"
+        echo         Point it at Inno Setup 7's compiler, then reopen the shell
+        echo         ^(install it with: winget install JRSoftware.InnoSetup.7^):
+        echo           setx RADIOSIM_ISCC "%%LOCALAPPDATA%%\Programs\Inno Setup 7\ISCC.exe"
         pause
         exit /b 1
     )

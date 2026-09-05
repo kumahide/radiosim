@@ -164,7 +164,8 @@ build.bat installer
 
 Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](../installer/radiosim.iss) (Inno Setup) to produce `RadioSimPro-Setup-<version>.exe`. **`portable.txt` is not bundled** — the install is always treated as non-portable (settings, cache, logs, and results go to OS-standard locations).
 
-- **Prerequisites**: [Inno Setup](https://jrsoftware.org/isinfo.php) installed (e.g. `winget install JRSoftware.InnoSetup`) and the environment variable `RADIOSIM_ISCC` pointing at the full path to `ISCC.exe` (e.g. `setx RADIOSIM_ISCC "C:\Program Files (x86)\Inno Setup 6\ISCC.exe"`). The build aborts if it is unset or points at a nonexistent file.
+- **Prerequisites**: [Inno Setup 7](https://jrsoftware.org/isinfo.php) installed (`winget install JRSoftware.InnoSetup.7`) and the environment variable `RADIOSIM_ISCC` pointing at the full path to `ISCC.exe` (e.g. `setx RADIOSIM_ISCC "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"`). The build aborts if it is unset or points at a nonexistent file.
+  - **Released installers are built with Inno Setup 7.** `radiosim.iss` still compiles unchanged under 6.7.x (it uses none of the features 7 removed), but upstream development moved to 7 after 6.7.3 (2026-05-26). Installers produced by a 6.x compiler work fine; keep the published ones on 7.
 - **Default install location**: `{autopf}` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
 - **Output**: same `dist/` folder as the regular build (`RadioSimPro-Setup-<version>.exe`).
 - **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise — see [[project_code_signing]], on hold until a trigger).

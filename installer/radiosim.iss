@@ -1,5 +1,11 @@
 ; RadioSim Pro - Inno Setup インストーラスクリプト（3.1 段6）
 ;
+; コンパイラ: Inno Setup 7（3.1RC2 以降・I-125 の選定検証の結論）。このファイルは
+;   7 で廃止された機能（EnableFsRedirection / {sysnative} / 32bit からの 64bit
+;   type library 登録 / WizardResizable）を 1 つも使っていないので 6.7 系でも
+;   そのままコンパイルできるが、上流の更新は 6.7.3（2026-05-26）を最後に 7 系
+;   へ移っているため、配布ビルドは 7 系で揃える。
+;
 ; 起動方法: build.bat installer から呼ぶ（AppVersion を core/version.py の
 ; APP_VERSION から /DAppVersion=... で渡す。単体で ISCC にかける場合は
 ; 下の #ifndef で "0.0.0-dev" が使われる）。

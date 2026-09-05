@@ -34,6 +34,7 @@
 ### 開発環境
 
 - 依存 3 件を更新した（`Markdown` / `ruff` / `pyinstaller`）。`numpy` は `Requires-Python>=3.12` が本プロジェクトの Python 3.11 前提と衝突するため 2.4.4 に据え置いた。
+- **インストーラのビルドを Inno Setup 7 系へ切り替えた。** 当初の 6.7.3 は「実装した日に winget が配っていた安定版だった」という成り行きで選んでおり、比較検討をしていなかった。代替（NSIS・WiX Toolset・MSIX・ZIP のみ）と並べて評価し直した結果、外部依存が `ISCC.exe` 1 本で済む Inno Setup の続投が本プロジェクトの条件に最も合うと確認したうえで、上流の更新が続いている 7 系へ移した。`installer/radiosim.iss` の記述は変えていない（7 で廃止された機能を 1 つも使っていないため）。
 - `RADIOSIM_BUILD_ROOT` を廃し、ビルド出力（`dist`/`build`）をリポジトリ直下へ戻した。分離していた理由（OneDrive 同期の churn 対策）は、リポジトリ自体が OneDrive の外へ移った時点で無くなっている。
 
 ## [3.0] — 2026-08-31
