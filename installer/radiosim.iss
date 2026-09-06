@@ -113,8 +113,8 @@ begin
 end;
 
 { B-184: アンインストールで設定/キャッシュ/結果も消せるようにする。
-  [UninstallDelete] は固定パスの無条件削除しか書けず確認を挟めないので、
-  usPostUninstall で確認ダイアログを出してから DelTree する。既定は「残す」
+  上の UninstallDelete セクションは固定パスの無条件削除しか書けず確認を
+  挟めないので、usPostUninstall で確認ダイアログを出してから DelTree する。既定は「残す」
   （MsgBox の既定ボタンは No）＝サイレントアンインストールでは何も消えず
   従来どおり（利用者データを黙って失わせない）。 }
 procedure UninstallStepChanged(CurUninstallStep: TUninstallStep);
