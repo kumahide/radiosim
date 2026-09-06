@@ -2632,3 +2632,29 @@ class TestBackupWiring:
             capture_output=True, text=True, encoding="utf-8", errors="replace",
         ).stdout.strip()
         assert mirror.FREEZE_SLUG in url, url
+
+
+def test_real_ledger_has_exactly_the_three_sections():
+    """台帳の H2 が「バグ／改善案／アーカイブ」の 3 つ**だけ**・この順であること。
+
+    🔴 **2026-09-06 に実際に壊れていた**＝過去のセッションが本文を heredoc 経由で
+    書いたため `\n` が改行に化け、`"\n## 用語\n"` という**文字列リテラルの中身**が
+    行頭の `## 用語` として落ちた。Markdown は見出しと読むので、**そこから下の
+    224 項目が「改善案」節の外**へ出た（[[feedback-heredoc-backslash]]）。
+    誰も見ていなかったので、ユーザーが目で気づくまで残った。
+
+    ⚠️ **見出しの「順」まで見る**＝アーカイブが本文節より前に来ると、
+    `misplaced_open_items()` が見出し以降を全部アーカイブ扱いにするため、
+    **本文節の未対応まで「誤置」と鳴る**（同日に実際に 3 件が偽で鳴っていた）。
+    """
+    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
+    if not os.path.exists(ledger):
+        pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
+    with open(ledger, encoding="utf-8") as f:
+        heads = [ln for ln in f.read().splitlines() if ln.startswith("## ")]
+    assert len(heads) == 3, f"H2 が 3 つでない（本文の字が見出しに化けていないか）: {heads}"
+    assert "バグ" in heads[0], heads
+    assert "改善案" in heads[1], heads
+    assert "アーカイブ" in heads[2], (
+        "アーカイブ節は末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
+    )
