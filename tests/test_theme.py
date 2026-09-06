@@ -1443,6 +1443,10 @@ class _FakeDwmDll:
                 outer.calls.append(("GetParent", child))
                 return outer._parent_hwnd
 
+            def SetWindowPos(self, hwnd, after, x, y, cx, cy, flags):  # noqa: N802
+                outer.calls.append(("SetWindowPos", hwnd.value, flags))
+                return 1
+
         class _Dwmapi:
             def DwmSetWindowAttribute(self, hwnd, attr, value_ref, size):  # noqa: N802
                 raw = value_ref.contents.value
@@ -1515,6 +1519,35 @@ def test_apply_title_bar_theme_without_hwnd_sends_nothing(root):
     assert not any(c[0] == "DwmSetWindowAttribute" for c in fake.calls), (
         "HWND が無いのに DwmSetWindowAttribute を呼んでいる"
     )
+
+
+def test_apply_title_bar_theme_forces_a_repaint_of_the_decorated_hwnd(root):
+    """申告後に `SetWindowPos(SWP_FRAMECHANGED)` で表示済みの窓を再描画させること（B-177）。
+
+    `DwmSetWindowAttribute` は成功（`S_OK`）を返すのに、表示済みの窓は何かが
+    再描画を誘発するまで見た目が変わらないことがある。ランチャー（`root`）だけが
+    テーマ設定ダイアログを閉じた際のフォーカス復帰でたまたま再描画され、他の
+    開いている窓（マップ・ダイアログ等）は追従しなかった。
+    """
+    set_theme("dark")
+    fake = _FakeDwmDll(parent_hwnd=5555)
+    theme.apply_title_bar_theme(root, fake)
+    pos_calls = [c for c in fake.calls if c[0] == "SetWindowPos"]
+    assert pos_calls, "SetWindowPos を一度も呼んでいない"
+    hwnd, flags = pos_calls[0][1], pos_calls[0][2]
+    assert hwnd == 5555, "GetParent が返した装飾側 HWND ではなく別の値へ送っている"
+    assert flags & theme._SWP_FRAMECHANGED, "SWP_FRAMECHANGED を立てていない"
+    assert flags & theme._SWP_NOMOVE and flags & theme._SWP_NOSIZE, (
+        "位置・大きさを変えない指定が抜けている"
+    )
+    assert flags & theme._SWP_NOACTIVATE, "フォーカスを奪う指定になっている"
+
+
+def test_apply_title_bar_theme_without_hwnd_does_not_call_set_window_pos(root):
+    """HWND が取れないときは `SetWindowPos` も呼ばないこと。"""
+    fake = _FakeDwmDll(parent_hwnd=0)
+    theme.apply_title_bar_theme(root, fake)
+    assert not any(c[0] == "SetWindowPos" for c in fake.calls)
 
 
 def test_apply_title_bars_covers_root_and_open_toplevels(root):

@@ -946,16 +946,18 @@ _DWMWA_BORDER_COLOR = 34                  # Windows 11 のみ
 _DWMWA_CAPTION_COLOR = 35                 # Windows 11 のみ
 _DWMWA_TEXT_COLOR = 36                    # Windows 11 のみ
 
+# `SetWindowPos` の非移動フラグ（B-177＝申告だけでは塗り替わらない窓を明示的に再描画）。
+_SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOZORDER = 0x0001, 0x0002, 0x0004
+_SWP_NOACTIVATE, _SWP_FRAMECHANGED = 0x0010, 0x0020
+
 
 def _decorated_hwnd(win: tk.Misc, windll: "Any | None" = None) -> "int | None":
     """`win` の非クライアント領域を持つ HWND（Windows のみ・取れなければ None）。
 
-    🔴 **`winfo_id()` はそのまま渡せない**（I-132 実装上の落とし穴①）＝Tk は
-    トップレベルをもう1段 HWND で包んでおり、`winfo_id()` が返すのはクライアント
-    領域側の子 HWND。それを `DwmSetWindowAttribute` に渡しても **`S_OK`（成功）が
-    返るのに見た目は何も変わらない**＝失敗が返らないので気づけない
-    （[[feedback-diff-before-gui-repro]] の「包んで測る」対象）。装飾を持つのは
-    `GetParent(winfo_id())` の側。
+    🔴 **`winfo_id()` はそのまま渡せない**（I-132 落とし穴①）＝Tk はトップレベルを
+    もう1段 HWND で包んでおり、`winfo_id()` が返すのはクライアント領域側の子 HWND。
+    それを渡しても `DwmSetWindowAttribute` は **`S_OK`（成功）を返すのに見た目は
+    変わらない**（[[feedback-diff-before-gui-repro]]）。装飾を持つのは `GetParent()` の側。
 
     Args:
         windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物）。
@@ -982,23 +984,17 @@ def _colorref(rgb_hex: str) -> int:
 def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
     """`win` のタイトルバー・枠を現在テーマへ合わせる（Windows のみ）。
 
-    呼び出し元は 2 つに集約する＝**`<<ThemeChanged>>`**（テーマの切替）と
-    **新規トップレベルの生成直後**（[main.py](../main.py)・[views/dialogs.py]
-    (dialogs.py)・[views/map_window.py](map_window.py)・
-    [views/launcher_menu.py](launcher_menu.py)）。片方だけだと「あとから開いた
-    窓だけ白い」「切り替えた瞬間だけ直らない」のどちらかが残る
-    （[[feedback-promote-recurring-checks]]：思い出す規則にしない）。
-
-    ⚠️ **表示済みの窓は即座に塗り替わらないことがある**＝マップ（表示）の前に
-    当てるのが安全（I-132 実装上の落とし穴③）。
+    呼び出し元は 2 つに集約する＝`<<ThemeChanged>>`（テーマの切替）と新規トップレベルの
+    生成直後（[main.py](../main.py)・dialogs.py・map_window.py・launcher_menu.py）。
+    片方だけだと「あとから開いた窓だけ白い」「切替の瞬間だけ直らない」が残る
+    （[[feedback-promote-recurring-checks]]）。⚠️ **表示済みの窓は即座に塗り替わらない
+    ことがある**（I-132 落とし穴③）＝下の `SetWindowPos(SWP_FRAMECHANGED)` で促す（B-177）。
 
     Args:
-        windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物。
-            `_set_dpi_awareness` と同じ注入の形）。
+        windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物）。
     Returns:
-        実際に申告できたか（Windows でない・HWND が取れない場合は False）。
-        ヘッドレスでは実際の色は測れないので、**ゲートで見られるのは「呼んだか」
-        まで**（I-132 実装上の落とし穴⑤）。
+        実際に申告できたか。ヘッドレスでは色まで測れないので、ゲートで見られるのは
+        「呼んだか」まで（I-132 落とし穴⑤）。
     """
     import ctypes
     dll = windll if windll is not None else ctypes.windll
@@ -1007,8 +1003,7 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
         return False
     dwm = dll.dwmapi
     dark = current_theme(win) == "dark"
-    # `ctypes.pointer()`（`byref()` ではなく）＝テストの代役から中身を読めるように
-    # する。実際の DwmSetWindowAttribute 呼び出しでも同様に使える。
+    # `ctypes.pointer()`（`byref()` ではなく）＝テストの代役から中身を読めるようにする。
     value = ctypes.pointer(ctypes.c_int(1 if dark else 0))
     ok = dwm.DwmSetWindowAttribute(
         ctypes.c_void_p(hwnd), _DWMWA_USE_IMMERSIVE_DARK_MODE,
@@ -1017,8 +1012,7 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
         ok = dwm.DwmSetWindowAttribute(
             ctypes.c_void_p(hwnd), _DWMWA_USE_IMMERSIVE_DARK_MODE_OLD,
             value, ctypes.sizeof(value.contents)) == 0
-    # Windows 11 のみ＝任意色（`theme.palette()` をそのまま流す＝配色の出所を増やさ
-    # ない）。失敗しても致命的でない＝上のダーク/ライト2択が主でここは仕上げ。
+    # Windows 11 のみ＝任意色（`palette()` をそのまま流す）。失敗しても致命的でない。
     colors = palette(win)
     for attr, key in (
         (_DWMWA_CAPTION_COLOR, "bg"), (_DWMWA_TEXT_COLOR, "fg"),
@@ -1027,14 +1021,20 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
         cref = ctypes.pointer(ctypes.c_int(_colorref(colors[key])))
         dwm.DwmSetWindowAttribute(
             ctypes.c_void_p(hwnd), attr, cref, ctypes.sizeof(cref.contents))
+    # 表示中の窓へ即座に反映させる（B-177）。移動・大きさ・フォーカスは変えない。
+    try:
+        dll.user32.SetWindowPos(
+            ctypes.c_void_p(hwnd), None, 0, 0, 0, 0,
+            _SWP_NOSIZE | _SWP_NOMOVE | _SWP_NOZORDER | _SWP_NOACTIVATE | _SWP_FRAMECHANGED)
+    except Exception:
+        pass
     return ok
 
 
 def apply_title_bars(root: tk.Misc) -> None:
     """`root` と配下の全トップレベルへタイトルバーの配色を当て直す。
 
-    `watch_display` の窓の集め方（[views/window_fit.toplevels](window_fit.py)）と
-    同じ集合を使う＝集め方が2つに割れると片方に映って片方に映らない窓が出る。
+    `watch_display` と同じ窓の集め方（`window_fit.toplevels`）を使う（割れると穴になる）。
     """
     from views import window_fit          # 遅延 import（循環回避）
 
