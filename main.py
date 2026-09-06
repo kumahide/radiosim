@@ -238,6 +238,18 @@ def main() -> None:
     # アクティブ化するまで白いまま**残っていた。⇒ 申告が終わって
     # `deiconify()` するまで窓を見せない（テストの `root.withdraw()` と同じ形）。
     root.withdraw()
+    # 🔴 **`withdraw()` のままでは DWM 申告が黙って失敗する**（B-176＝上の対策の
+    # 取り残し）＝Windows は非クライアント領域を持つ「装飾つき HWND（ラッパー）」
+    # を、窓が一度も map（表示）されないうちは作らない。`winfo_id()` が返すのは
+    # クライアント側の子 HWND のままで、`GetParent()` は 0 を返す＝
+    # `DwmSetWindowAttribute` に渡す先が無く、成功も失敗も返らず何も起きない
+    # （実機で実測・`hex(GetParent(winfo_id()))` が `withdraw()` のままだと
+    # 常に `0`）。⇒ **画面には出さずにラッパーだけ作る**＝`-alpha 0`（完全透明）
+    # にしてから `deiconify()` し、`update_idletasks()` で map 処理を即時に
+    # 終わらせる（`update()` は外部イベントも処理してしまうので使わない）。
+    root.attributes("-alpha", 0.0)
+    root.deiconify()
+    root.update_idletasks()
     # 以降に作る窓・コールバックすべてを覆うので、**何よりも先に**入れる
     # （ここより前で落ちたものは stderr へ消える＝I-059）。
     errors.install(root)
@@ -274,7 +286,9 @@ def main() -> None:
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")
-    root.deiconify()          # 申告と組み立てが終わってから見せる（I-132 再発）
+    # 窓は既に map 済み（上の `-alpha 0` トリック）＝残るは見せるだけなので
+    # `deiconify()` でなく透明度を戻す（B-176）。
+    root.attributes("-alpha", 1.0)
     if _PROF_ON:
         root.update()  # 初回描画を強制してレイアウト/ペイント時間を計測に含める
         _prof("first paint (update)")
