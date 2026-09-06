@@ -143,17 +143,9 @@ dist/
 
 ### Creating a Distribution Package
 
-ZIP the `RadioSimPro/` folder from the build output:
+`build.bat` (no arguments) **builds the ZIP itself**: compressing the `RadioSimPro/` output folder into `dist\RadioSimPro-<version>.zip` is now part of what `[SUCCESS]` means. The version comes from `core/version.py`'s `APP_VERSION` at build time (do not copy it into this document — a copy goes stale on the next release). There is no longer a separate `Compress-Archive` step for a human to run.
 
-```powershell
-$dist = "dist"
-# Put the version in the file name, so the asset is identifiable on the Releases page
-# Read the version from version.py — do not copy it into this document (a copy goes stale on the next release)
-$ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$ver.zip" -Force
-```
-
-> ⚠️ **Put the version in the ZIP name** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). Building an unversioned name just means renaming it when attaching the release.
+> ⚠️ **The ZIP name carries the version** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). `build.bat` names it this way automatically.
 
 By default, `build.bat` produces the **portable ZIP layout** (a `portable.txt` marker bundled inside `RadioSimPro/`). `core.config.is_portable()` branches on whether this file exists (its absence means "the install location may be read-only", so the app writes to OS-standard locations such as `%APPDATA%` instead).
 

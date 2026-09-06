@@ -143,17 +143,9 @@ dist/
 
 ### 配布パッケージの作成
 
-ビルド出力の `RadioSimPro/` フォルダをそのまま ZIP 圧縮して配布します。
+`build.bat`（引数なし）が **ZIP まで自動で作ります**。ビルド出力の `RadioSimPro/` フォルダを `dist\RadioSimPro-<版>.zip` へ圧縮するところまでが `[SUCCESS]` の一部です。版は `core/version.py` の `APP_VERSION` から実行時に取得します（この手順書に版を書き写さない＝写すと版を上げた日に嘘になる）。人が別途 `Compress-Archive` を叩く工程は無くなりました。
 
-```powershell
-$dist = "dist"
-# 配布物の名前には版を入れる（Releases に並んだとき、どの版か見て分かるように）
-# 版は version.py から引く＝この手順書に版を書き写さない（写すと版を上げた日に嘘になる）
-$ver = (Select-String -Path core\version.py -Pattern 'APP_VERSION\s*=\s*"([^"]+)"').Matches[0].Groups[1].Value
-Compress-Archive -Path "$dist\RadioSimPro" -DestinationPath "$dist\RadioSimPro-$ver.zip" -Force
-```
-
-> ⚠️ **ZIP の名前に版を入れる**＝公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。版なしの名前で作ると、Releases に添付するときに付け直すことになります。
+> ⚠️ **ZIP の名前に版を入れる**＝公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。この命名は `build.bat` が自動で行います。
 
 `build.bat` は既定で **ZIP 用のポータブル配置**（`portable.txt` を `RadioSimPro/` 直下へ同梱）を作ります。`core.config.is_portable()` はこのファイルの有無で分岐します（無ければ「インストール先が書込禁止かもしれない」と見なし、OS 標準の場所〔`%APPDATA%` 等〕へ書きます）。
 

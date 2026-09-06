@@ -243,6 +243,53 @@ if defined RADIOSIM_SIGNTOOL (
     )
 )
 
+rem ---- I-126: zip mode used to stop after printing "zip it yourself" and
+rem      leave the actual Compress-Archive to a human running a separate
+rem      command later. That gap let a stale zip (built before a same-session
+rem      doc fix) ship next to a freshly-rebuilt exe with nothing checking the
+rem      two agreed - caught only by a manual hash comparison right before
+rem      3.1RC2's publish. Building the zip here, from the APP_DIR this run
+rem      just produced, removes the human step instead of adding a check for
+rem      its absence.
+if /i "%MODE%"=="zip" (
+    echo.
+    echo [INFO] Creating distribution zip...
+    set "VERFILE=%TEMP%\radiosim_appver_%RANDOM%.txt"
+    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "!VERFILE!"
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Failed to read APP_VERSION with "%PY%".
+        del "!VERFILE!" >nul 2>&1
+        pause
+        exit /b 1
+    )
+    set /p APP_VER=<"!VERFILE!"
+    del "!VERFILE!" >nul 2>&1
+    if not defined APP_VER (
+        echo.
+        echo [ERROR] APP_VERSION came back empty. Aborting the zip build.
+        pause
+        exit /b 1
+    )
+    set "ZIP_FILE=%DIST_DIR%\RadioSimPro-!APP_VER!.zip"
+    if exist "!ZIP_FILE!" del /q "!ZIP_FILE!"
+    powershell -NoProfile -Command "Compress-Archive -Path '%APP_DIR%' -DestinationPath '!ZIP_FILE!' -Force"
+    if errorlevel 1 (
+        echo.
+        echo [ERROR] Zip creation failed. Check the error messages above.
+        pause
+        exit /b 1
+    )
+    if not exist "!ZIP_FILE!" (
+        echo.
+        echo [ERROR] Zip creation reported success but the file is missing:
+        echo           !ZIP_FILE!
+        pause
+        exit /b 1
+    )
+    echo [OK] Zip created: !ZIP_FILE!
+)
+
 echo.
 echo ============================================================
 echo [SUCCESS] Build complete!
@@ -251,7 +298,7 @@ echo Output : %APP_DIR%\
 echo Exe    : %APP_DIR%\RadioSimPro.exe
 echo.
 if /i "%MODE%"=="zip" (
-    echo Zip the output folder for distribution.
+    echo Zip    : !ZIP_FILE!
 ) else (
     echo Continuing to the installer step below.
 )
