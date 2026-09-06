@@ -724,6 +724,33 @@ class TestSavePackage:
         for level in tg.RESOLUTION_KEYS:
             assert f"Terrain Res   : {level}" not in text
 
+    def test_report_contains_dem_fail_rate(self, tmp_path, flat_terrain,
+                                           default_params_dict, monkeypatch):
+        """report.txt に DEM Fail Rate 行が含まれること（3.2 段7・B-025 ③）。
+
+        `flat_terrain` は全点取得済み（nan なし）なので 0.0 %。単一ソースは
+        `models.TerrainProfile.fail_pct`（CSV 出力契約の `dem_fail_pct` と同じ）。
+        """
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Fail Rate : 0.0 %" in text, text
+
+    def test_report_dem_fail_rate_reflects_actual_failures(
+        self, tmp_path, default_params_dict, monkeypatch
+    ):
+        """一部の標本が nan（通信失敗）の地形では、その割合を名乗ること。"""
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        raw = np.zeros(100)
+        raw[:25] = np.nan
+        terrain = models.calculate_terrain_profile(
+            raw, 34.5429, 132.4118, 34.5389, 132.4050)
+        params = sim.SimParams(default_params_dict)
+        result = _make_result(params.diff_method)
+        save_dir = sim.save_package(terrain, result, params, 30.0, 10.0)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Fail Rate : 25.0 %" in text, text
+
     def test_report_contains_status(self, tmp_path, flat_terrain,
                                     default_params_dict, monkeypatch):
         """report.txt に Status 行が含まれること。"""

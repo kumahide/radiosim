@@ -203,6 +203,10 @@ def _meta_block(run: scn.ScenarioRun) -> str:
         f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'
         f'　/　{i18n.t("html_horiz_dist")}: {units.format_distance(run.terrain.horiz_dist_km)}'
         f'　/　{i18n.t("scn_samples")}: {p.num}'
+        # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝地形は 1 回だけ取得して
+        # 固定するので（`core/scenario.py`）、台帳のような行ごとの列ではなく
+        # `scenario.csv` の `dem_fail_pct` と同じ単一の値を 1 回だけ示す。
+        f'　/　{i18n.t("pl_dem_fail")}: {units.format_fail_pct(run.terrain.fail_pct)}'
         f'</div>'
     )
 

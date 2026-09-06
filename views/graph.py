@@ -247,6 +247,9 @@ class GraphWindow(tk.Toplevel):
             # （I-077）。単位が違う（×F1）ので 2 行が同じ量に見えない。
             ("f1_depth",   "pl_f1_depth",   units.F1_DEPTH_UNIT),
             ("slant",      "pl_slant_dist", "m"),
+            # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝画面にも出す
+            # （CSV 出力契約の `dem_fail_pct` と同じ単一ソース＝`terrain.fail_pct`）。
+            ("dem_fail",   "pl_dem_fail",   "%"),
         ))
 
     def _panel_rows(self, parent: ttk.LabelFrame, rows) -> None:
@@ -518,6 +521,8 @@ class GraphWindow(tk.Toplevel):
         self._vars["f1_depth"].set(
             units.format_f1_depth(r.blocked_ratio, unit=False))
         self._vars["slant"].set(units.format_distance(r.slant_dist_km, unit=False))
+        self._vars["dem_fail"].set(
+            units.format_fail_pct(self._terrain.fail_pct, unit=False))
 
     # ----------------------------------------------------------
     # 保存・クローズ

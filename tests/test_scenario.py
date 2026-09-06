@@ -30,6 +30,7 @@ from core import i18n
 from core import models
 from core import scenario as scn
 from core import simulation as sim
+from core import units
 from report import report_scenario
 
 
@@ -559,6 +560,19 @@ class TestScenarioReport:
         html = report_scenario.scenario_sheet_html(self._run(terrain, base, "compare"))
         assert "class='diff'" not in html
         assert "tr.diff" not in report_scenario.scenario_sheet_css()
+
+    def test_meta_block_shows_dem_fail_rate(self, terrain, base):
+        """固定した地形の DEM 取得失敗率が経路情報に出ること（3.2 段7・B-025 ③）。
+
+        条件探索は地形を 1 回だけ取得して固定する（`run.terrain`）ので、
+        `scenario.csv` の `dem_fail_pct` と同じ単一の値を 1 回だけ示す。
+        """
+        i18n.set_lang("en")
+        run = self._run(terrain, base, "sweep")
+        html = report_scenario.scenario_sheet_html(
+            run, chart_b64=report_scenario.render_sweep_png_b64(run))
+        assert i18n.t("pl_dem_fail") in html
+        assert units.format_fail_pct(run.terrain.fail_pct) in html
 
     def test_compare_sheet_lists_the_changed_conditions(self, terrain, base):
         """表だけ見て再現できること（何を変えたかが載る）。"""

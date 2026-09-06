@@ -109,7 +109,7 @@ _SUMMARY_COL_KEYS = (
     "html_col_rx", "html_col_margin", "html_col_fspl", "html_col_diff",
     "html_col_veg", "html_col_env", "html_col_rain", "html_col_gas",
     "html_col_total_loss", "html_col_slant", "html_col_f1",
-    "html_col_f1_depth",
+    "html_col_f1_depth", "html_col_dem_fail",
     "html_col_note", "html_col_graph",
 )
 
@@ -320,6 +320,9 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
             f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
             f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
+            # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝`summary.csv` の
+            # `dem_fail_pct` と同じ単一ソース（`pr.terrain.fail_pct`）。
+            f"<td>{units.format_fail_pct(pr.terrain.fail_pct, unit=False) if pr.terrain else '—'}</td>"
             f"<td class='c-note'>{note_esc}</td>"
             f"{graph_cell}</tr>\n"
         )

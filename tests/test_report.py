@@ -642,6 +642,18 @@ class TestSaveReportAllHtml:
         # 単体では per-path は別ファイル参照のまま
         assert "href='p01/report.html'" in html
 
+    def test_dem_fail_rate_appears_in_summary_table_and_per_path_sheet(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
+        """DEM 取得の失敗率が台帳の列にも per-path シートにも出ること（3.2 段7）。
+
+        `flat_terrain` は全点取得済み（`fail_pct` = 0.0）＝出力契約の
+        `dem_fail_pct` と同じ単一ソースを HTML 側でも読んでいることの配線検査。
+        """
+        results = self._results(tmp_path, flat_terrain, default_params_dict, monkeypatch)
+        html = self._render(tmp_path, results)
+        assert i18n.t("html_col_dem_fail") in html
+        assert html.count("<td>0.0</td>") >= 2  # 台帳の各行 + per-path の環境表
+
 
 # ============================================================
 # 「結果の取扱に関する補足」節（3.0a1 / ロードマップ §3.0 の 9）

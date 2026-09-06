@@ -417,6 +417,7 @@ def path_sheet_html(
       <tr><td>{i18n.t('html_col_f1')}</td><td>{units.format_blocked_ratio(result.blocked_ratio, unit=False)}</td></tr>
       <tr><td>{i18n.t('html_col_f1_depth')}</td><td>{units.format_f1_depth(result.blocked_ratio, unit=False)}</td></tr>
       <tr><td>{i18n.t('html_rain_rate')}</td><td>{params.rain_rate} mm/h</td></tr>
+      <tr><td>{i18n.t('html_col_dem_fail')}</td><td>{units.format_fail_pct(terrain.fail_pct, unit=False)}</td></tr>
     </table>
   </div>
 </div>

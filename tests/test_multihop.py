@@ -580,6 +580,23 @@ class TestRouteSheet:
         assert "worst" in html, "最も苦しい区間に印が付いていない"
         assert i18n.t("mh_worst_hop") in html
 
+    def test_sheet_shows_dem_fail_rate_per_hop(self, base, tmp_path, monkeypatch):
+        """DEM 取得の失敗率が区間ごとの列に出ること（3.2 段7・B-025 ③）。
+
+        `hops.csv` の `dem_fail_pct`（区間ごとに terrain が別）と同じ単一ソース
+        （`pr.terrain.fail_pct`）を HTML の台帳側でも読んでいることの配線検査。
+        """
+        from report import report_multihop
+
+        i18n.set_lang("en")
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        html = report_multihop.route_sheet_html(run)
+        # ヘッダは「名前 (単位)」を 2 行に割るので、名前側だけを見る
+        # （→ report_multihop._hop_header_cells）。
+        assert "DEM Fail" in html
+        for pr in run.hops:
+            assert units.format_fail_pct(pr.terrain.fail_pct, unit=False) in html
+
     def test_sheet_states_the_relay_model(self, base, tmp_path, monkeypatch):
         """**再生中継であること**をレポートに明記する（受動反射は対象外）。
 

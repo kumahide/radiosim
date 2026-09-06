@@ -456,7 +456,7 @@ def _process_one(
         sim._save_settings(params, params.h_tx, params.h_rx, path_dir)
         sim._save_terrain_csv(terrain, path_dir)
         sim._save_report(result, params, params.h_tx, params.h_rx, path_dir,
-                         coord_format)
+                         coord_format, terrain)
         pr = PathResult(
             row      = row,
             result   = result,

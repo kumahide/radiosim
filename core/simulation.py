@@ -507,7 +507,7 @@ def save_package(
 
     _save_settings(params, h_tx, h_rx, save_dir)
     _save_terrain_csv(terrain, save_dir)
-    _save_report(result, params, h_tx, h_rx, save_dir, coord_format)
+    _save_report(result, params, h_tx, h_rx, save_dir, coord_format, terrain)
 
     logger.info("Package saved: %s", save_dir)
     return save_dir
@@ -578,6 +578,7 @@ def _save_report(
     h_rx: float,
     save_dir: str,
     coord_format: str = "dd",
+    terrain: "models.TerrainProfile | None" = None,
 ) -> None:
     tx_site = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_site = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
@@ -628,7 +629,12 @@ def _save_report(
         f"Samples       : {params.num} "
         f"({units.format_spacing(spacing)} m "
         f"{'DEM pixel' if terrain_grid.samples_are_pixel_edges(params.resolution, params.num) else 'spacing'})"
-        "\n\n"
+        "\n"
+        # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝CSV 出力契約の
+        # `dem_fail_pct` と同じ単一ソース（`models.TerrainProfile.fail_pct`）。
+        + (f"DEM Fail Rate : {units.format_fail_pct(terrain.fail_pct)}\n"
+           if terrain is not None else "")
+        + "\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。
         + disclosure.handling_text(models.scope_notes(
