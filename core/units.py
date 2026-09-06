@@ -101,6 +101,25 @@ def format_blocked_ratio(pct: float, *, unit: bool = True) -> str:
     return f"{v:.1f} %" if unit else f"{v:.1f}"
 
 
+def format_fail_pct(pct: float, *, unit: bool = True) -> str:
+    """DEM 取得の失敗率 [%] を人が読む表記へ整形する（頭打ちなし・0〜100 の値）。
+
+    ⚠️ **表示側（画面・report.html への刻印）は 3.2 段7 の仕事**（ISSUES.md
+    B-025 ③）＝ここは桁（1 桁）の単一ソースとして今のうちに置くだけで、
+    3.2 の CSV 出力契約（`csv_fail_pct`）はこの桁を借りる側。
+
+    Args:
+        pct:  `models.TerrainProfile.fail_pct`（0〜100 の生値）
+        unit: 単位 ``%`` を付けるか（列見出しに単位がある表では False）
+    """
+    return f"{float(pct):.1f} %" if unit else f"{float(pct):.1f}"
+
+
+def csv_fail_pct(pct: float) -> str:
+    """DEM 取得の失敗率 [%] を CSV 用へ整形する（単位なし）。"""
+    return format_fail_pct(pct, unit=False)
+
+
 def csv_blocked_ratio(pct: float) -> str:
     """F1 遮蔽率 [%] を CSV 用へ整形する（100% で頭打ち・単位なし）。
 

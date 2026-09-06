@@ -217,6 +217,29 @@ class TestCalculateTerrainProfile:
     def test_num_samples(self, flat_terrain):
         assert flat_terrain.num_samples == 100
 
+    def test_fail_pct_zero_when_no_nan(self, flat_terrain):
+        """nan が無ければ失敗率は 0%（ISSUES.md B-025 ③）。"""
+        assert flat_terrain.fail_pct == pytest.approx(0.0)
+
+    def test_fail_pct_all_nan(self):
+        """全点 nan なら失敗率は 100%。"""
+        raw = np.full(10, np.nan)
+        t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        assert t.fail_pct == pytest.approx(100.0)
+
+    def test_fail_pct_partial_nan(self):
+        """一部だけ nan なら、その割合が正しく出ること。"""
+        raw = np.zeros(4)
+        raw[1] = np.nan
+        t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        assert t.fail_pct == pytest.approx(25.0)
+
+    def test_fail_pct_ignores_legitimate_zero(self):
+        """海抜0mの正当な値（nan ではない 0.0）は失敗として数えないこと。"""
+        raw = np.zeros(10)
+        t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        assert t.fail_pct == pytest.approx(0.0)
+
     def test_earth_k_stored_in_profile(self):
         """calculate_terrain_profile に渡した earth_k が TerrainProfile に保持されること。"""
         raw = np.zeros(100)

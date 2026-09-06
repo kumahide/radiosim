@@ -449,4 +449,8 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
                 # 末尾＝出力契約の規約 1（追加は末尾のみ）。軸の名前そのもの
                 # （比較では空文字列）＝I-112。
                 run.axis,
+                # DEM 取得の失敗率（ISSUES.md B-025 ③）＝条件探索は terrain を
+                # 1 回だけ取得して固定し条件を振る（`core/scenario.py`）ので
+                # **全行が同じ値**になる。
+                units.csv_fail_pct(run.terrain.fail_pct),
             ])

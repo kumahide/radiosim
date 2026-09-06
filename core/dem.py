@@ -163,12 +163,14 @@ def _is_tile_readable_memoized(cache_path: str, st: "os.stat_result") -> bool:
 
 
 # ------------------------------------------------------------
-# 「取れなかった」を戻り値を変えずに知らせる口（B-025 ②）
+# 「取れなかった」を知らせる口（B-025 ②③・当初は戻り値を変えずに知らせていたが
+# 3.2 で `get_elevation` の戻り値そのものが `nan` を返せるようになった＝③参照）
 # ------------------------------------------------------------
-# `get_elevation` は失敗しても 0.0 を返す（契約の是正は 3.x）。呼び出し側が
-# 「取れなかった」ことに気づけないと、Proxy 未設定の環境で**平坦な地形を正しい顔で
-# 配り続ける**。そこで戻り値には触らず、**直前の呼び出しが通信の失敗で終わったか**
-# だけをスレッドローカルに置く。
+# `get_elevation` は通信の失敗が絡む「取れなかった」を `nan` で返す（3.2）。
+# 呼び出し側が「取れなかった」ことに気づけないと、Proxy 未設定の環境で**平坦な
+# 地形を正しい顔で配り続ける**。戻り値（`nan` かどうか）だけでも判別できるが、
+# **直前の呼び出しが通信の失敗で終わったか**をスレッドローカルにも置いておく
+# （B-025 ②の打ち切り判定・③の `nan` 分岐が両方ここを読む＝二重に持たない）。
 #
 # なぜスレッドローカルか：標高取得は 1 点 1 スレッドで並列に走る（simulation の
 # ワーカー）ので、モジュール変数だと隣の点の結果を読む。呼ぶ側は自分のスレッドで
@@ -179,11 +181,19 @@ def _is_tile_readable_memoized(cache_path: str, st: "os.stat_result") -> bool:
 # 正常に起きることで、通信は成功している。ここを混ぜると**海の上を通る経路が
 # 「ネットワーク異常」として打ち切られる**（B-010 で負キャッシュに一時失敗を
 # 混ぜたのと鏡像の誤り）。
+#
+# 🔑 **不変条件**（3.2）＝`get_elevation()` が `nan` を返す ⟺ 直後の
+# `network_failed()` が真。どちらか一方だけを直す変更をしないこと。
 _network_trouble = threading.local()
 
 
 def network_failed() -> bool:
-    """**このスレッドの直前の `get_elevation`** が通信の失敗で終わったか。"""
+    """**このスレッドの直前の `get_elevation`** が通信の失敗で終わったか。
+
+    3.2 以降はこれと同じ答えを `math.isnan(get_elevation(...))` でも得られる
+    （不変条件＝上のコメント）。既存の打ち切りロジック（B-025 ②）は
+    こちらを読み続ける。
+    """
     return bool(getattr(_network_trouble, "flag", False))
 
 
@@ -213,15 +223,21 @@ def get_elevation(lat: float, lon: float) -> float:
 
     DEM_LAYERS の順（5m → 5m → 10m）に試み、
     タイル取得成功かつデコード値が有効（!= 0.0）なら返す。
-    すべて失敗・無効値の場合は 0.0 を返す。
 
-    ⚠️ **この 0.0 は「海抜 0m」と「取れなかった」を区別しない**（戻り値契約の
-    是正は呼び出し側 ~30 箇所と出力契約に触るので 3.x＝ISSUES.md B-025 ①）。
-    そのままだと Proxy 未設定などで取得が全滅したときに**平坦な地形が正常値の顔で
-    出てくる**ので、**取れなかったことだけは別口で知らせる**＝直後に
-    `network_failed()` を読むと、この呼び出しが**通信の失敗**で終わったかが分かる
-    （B-025 ②）。戻り値には触っていないので既存の呼び出し側・テストのフェイクは
-    そのまま動く（フェイクは「成功」として扱われる＝安全側）。
+    🔑 **不変条件＝`nan` を返すのは `network_failed()` が真のときだけ**
+    （3.2 / ISSUES.md B-025 ①）。全レイヤ消尽・例外のどちらでも、**通信の失敗
+    （タイムアウト・5xx・429・例外）が絡んでいた場合だけ** `nan`（＝「取れな
+    かった」）を返す。**404（国土地理院に元々データが無い＝海上・日本域外）で
+    全滅した場合や、通信は成功して単に無効ピクセルだった場合は従来どおり
+    `0.0`** を返す＝海抜 0m の正当な値・正常な海上経路を `nan` に巻き込まない
+    （B-010 の鏡像の誤りをまた作らない）。
+
+    ⚠️ **`0.0` はいまも「海抜 0m」と「404 で取れなかった」を区別しない**（そこは
+    3.2 の対象外＝出力契約の `Elevation_m` は 3.3 まで意味を変えない、
+    `core/output_contract.py` の予告を参照）。区別できるようになったのは
+    「通信の失敗」の側だけ。呼ぶ側は `get_elevation()` → `network_failed()` と
+    続けて読めば、返ってきた値が `nan` かどうかと**同じ答え**が得られる
+    （B-025 ②で先に立てた `network_failed()` をそのまま契約の判定に使い回す）。
     """
     _network_trouble.flag = False
     try:
@@ -273,17 +289,28 @@ def get_elevation(lat: float, lon: float) -> float:
                 layer_id, lat, lon,
             )
 
+        if _network_trouble.flag:
+            logger.warning(
+                "All DEM layers exhausted for lat=%.6f lon=%.6f after network "
+                "trouble, returning nan", lat, lon,
+            )
+            return math.nan
         logger.warning(
-            "All DEM layers exhausted for lat=%.6f lon=%.6f, returning 0.0",
-            lat, lon,
+            "All DEM layers exhausted for lat=%.6f lon=%.6f (no network trouble, "
+            "likely no coverage), returning 0.0", lat, lon,
         )
         return 0.0
 
     except Exception as e:
+        # ⚠️ **不変条件を保つ**＝ここで返す値が `nan` である以上
+        # `network_failed()` も真にする（B-025 ①）。デコード周りの想定外の
+        # 例外は「通信は成功したが値が海抜0m」より「取れなかった」に近い
+        # ＝安全側（見せない）に倒す。
+        _network_trouble.flag = True
         logger.error(
             "Elevation decode error: lat=%.6f lon=%.6f error=%s", lat, lon, e
         )
-        return 0.0
+        return math.nan
 
 
 def _read_cached_tile(cache_path: str) -> "np.ndarray | None":

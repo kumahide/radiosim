@@ -538,4 +538,9 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # 何点で刻んだ答えか（I-069）＝**区間ごとに違う**（短い区間は
                 # 点が少なく、長い区間は多い＝同じ段階でもそうなるのが正しい）。
                 str(p.num) if p else "",
+                # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
+                # `models.TerrainProfile.fail_pct`。区間ごとに DEM 取得が
+                # 別なので、区間ごとに違う値になる（`summary.csv` と同じ形）。
+                units.csv_fail_pct(pr.terrain.fail_pct)
+                if pr.terrain is not None else "",
             ])

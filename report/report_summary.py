@@ -78,6 +78,10 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     # （B-150）ので、割り算はあくまで読む側の近似計算。
                     units.csv_distance(pr.terrain.horiz_dist_km)
                     if pr.terrain is not None else "",
+                    # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
+                    # `models.TerrainProfile.fail_pct`。
+                    units.csv_fail_pct(pr.terrain.fail_pct)
+                    if pr.terrain is not None else "",
                 ])
             else:
                 writer.writerow([
@@ -89,6 +93,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     "",
                     str(pr.params.num) if pr.params else "",
                     units.csv_distance(pr.terrain.horiz_dist_km)
+                    if pr.terrain is not None else "",
+                    units.csv_fail_pct(pr.terrain.fail_pct)
                     if pr.terrain is not None else "",
                 ])
 

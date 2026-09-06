@@ -364,18 +364,23 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
 
 
 def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
-    """全点が厳密に 0.0＝DEM が 1 点も取れなかった形か。
+    """全点が通信の失敗（`nan`）＝DEM が 1 点も取れなかった形か。
 
-    `dem.get_elevation` は全レイヤ失敗時に「取れなかった」ではなく `0.0` を返す
-    ため、Proxy 未設定などで取得が全滅すると**標高 0m の平坦地形**が正常値の顔で
-    出てくる（ISSUES.md B-025）。戻り値契約そのものの是正は呼び出し側 ~30 箇所と
-    出力契約に触るので 3.x 送りだが、**その値が地形キャッシュへ焼き付いて
-    「Proxy を直してもアプリを再起動するまで直らない」状態になる**のはここで防げる。
+    🔴 **3.2 で `== 0.0` から `nan` 判定へ変えた**（ISSUES.md B-025 ①）＝
+    `dem.get_elevation` が全レイヤ失敗時に「取れなかった」を `nan` で返せる
+    ようになったので、こちらも「たまたま全部 0.0」ではなく「全部が通信の
+    失敗」を条件にできる。以前は 404（国土地理院に元々データが無い＝海上・
+    日本域外を含む）で全滅した場合も `0.0` しか無く区別できなかったため、
+    「全点 0.0」を失敗の代理指標にしていた。
 
-    海上だけを通る経路も all 0 になり得る。その場合に払う代償は「毎回取り直す」
-    だけで、誤った平坦地形を配り続けるより安い。
+    Proxy 未設定などで取得が全滅すると、その値が地形キャッシュへ焼き付いて
+    「Proxy を直してもアプリを再起動するまで直らない」状態になる（ISSUES.md
+    B-025）ので、キャッシュしない条件をここで判定する。
+
+    海上だけを通る経路は 404 の全滅＝`nan` にならず `0.0` のままなので、
+    ここには当たらない（通信は成功しているのでキャッシュしてよい＝正しい）。
     """
-    return raw_elevs.size > 0 and bool(np.all(raw_elevs == 0.0))
+    return raw_elevs.size > 0 and bool(np.all(np.isnan(raw_elevs)))
 
 
 def fetch_elevations_cached(
@@ -554,7 +559,16 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
         # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
         writer.writerow(list(output_contract.TERRAIN_CSV_COLUMNS))
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs):
-            writer.writerow([round(units.km_to_m(float(d)), 1), round(float(h), 2)])
+            # `Elevation_m` の意味は 3.3 まで変えない（規約2＝3.2 で予告済み・
+            # core/output_contract.py）＝取れなかった（nan）点も従来どおり 0.0
+            # を書く。**新設の `elev_source` だけが正直な信号**（ISSUES.md B-025 ③）。
+            unavailable = bool(np.isnan(h))
+            elev_m = 0.0 if unavailable else float(h)
+            writer.writerow([
+                round(units.km_to_m(float(d)), 1),
+                round(elev_m, 2),
+                "unavailable" if unavailable else "gsi_dem",
+            ])
 
 
 def _save_report(

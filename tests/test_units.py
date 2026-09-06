@@ -101,6 +101,32 @@ class TestFormatBlockedRatio:
         assert units.csv_blocked_ratio(7109.9) == "100.0"
 
 
+# ============================================================
+# DEM 取得の失敗率（ISSUES.md B-025 ③・3.2）
+# ============================================================
+class TestFormatFailPct:
+    """「率(%)」だが `blocked_ratio` と違い頭打ちしない（0〜100 の値しか来ない）。"""
+
+    def test_normal_value_passes_through(self):
+        assert units.format_fail_pct(12.3) == "12.3 %"
+
+    def test_zero(self):
+        assert units.format_fail_pct(0.0) == "0.0 %"
+
+    def test_hundred_not_clamped_because_never_exceeds(self):
+        assert units.format_fail_pct(100.0) == "100.0 %"
+
+    def test_no_unit_variant_for_tables_with_unit_in_header(self):
+        assert units.format_fail_pct(12.3, unit=False) == "12.3"
+
+    def test_csv_matches_display(self):
+        for raw in (0.0, 12.3, 100.0):
+            assert units.csv_fail_pct(raw) == units.format_fail_pct(raw, unit=False)
+
+    def test_csv_has_no_unit(self):
+        assert units.csv_fail_pct(12.3) == "12.3"
+
+
 class TestBlockedRatioFormattingIsNotScattered:
     """遮蔽率の書式が表示側のインライン f-string へ戻らないこと。
 

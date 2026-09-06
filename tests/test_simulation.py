@@ -418,8 +418,8 @@ class TestFetchElevationsCached:
         call_count = {"n": 0}
         def counting_get(la, lo):
             call_count["n"] += 1
-            # ⚠️ 0.0 を返さない：全点 0.0 は「DEM 全滅」としてキャッシュされない
-            # （B-025）ので、0.0 だとキャッシュの共有可否を検査できなくなる。
+            # ⚠️ nan を返さない：全点 nan は「DEM 全滅」としてキャッシュされない
+            # （B-025・3.2）ので、nan だとキャッシュの共有可否を検査できなくなる。
             return 120.0
         monkeypatch.setattr(dem, "get_elevation", counting_get)
 
@@ -442,8 +442,8 @@ class TestFetchElevationsCached:
 
     def test_cache_hit_calls_on_progress_with_total(self, default_params_dict, monkeypatch):
         """キャッシュヒット時は on_progress(num) が呼ばれてプログレスバーが満杯になること。"""
-        # ⚠️ 0.0 を返さない：全点 0.0 はキャッシュされない（B-025）ため、2回目が
-        # キャッシュヒットにならず、この検査が素通りしてしまう。
+        # ⚠️ nan を返さない：全点 nan はキャッシュされない（B-025・3.2）ため、
+        # 2回目がキャッシュヒットにならず、この検査が素通りしてしまう。
         monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 120.0)
         params = sim.SimParams(default_params_dict)
 
@@ -467,11 +467,12 @@ class TestFetchElevationsCached:
         done2.wait(timeout=5)
         assert params.num in progress_vals  # 満杯値が渡されている
 
-    # --- DEM 全滅（all 0）を焼き付けない -----------------------------------
-    # B-025：`dem.get_elevation` は全レイヤ失敗時に「取れなかった」ではなく 0.0 を
-    # 返すため、Proxy 未設定などで取得が全滅すると標高 0m の平坦地形が正常値の顔で
-    # 出る。それが地形キャッシュに入ると、**Proxy を直してもアプリを再起動するまで
-    # 直らない**（キャッシュはプロセス常駐）。戻り値契約そのものの是正は 3.x。
+    # --- DEM 全滅（all nan）を焼き付けない -----------------------------------
+    # B-025：`dem.get_elevation` は全レイヤが通信の失敗で終わると `nan` を返す
+    # （3.2 で契約を是正済み・以前は「取れなかった」ことが `0.0` と区別できな
+    # かった）。Proxy 未設定などで取得が全滅すると標高 0m の平坦地形が正常値の
+    # 顔で出ていたのがこの不具合で、それが地形キャッシュに入ると**Proxy を
+    # 直してもアプリを再起動するまで直らない**（キャッシュはプロセス常駐）。
 
     def _run_once(self, params, on_complete=None):
         done = threading.Event()
@@ -486,11 +487,11 @@ class TestFetchElevationsCached:
         done.wait(timeout=5)
 
     def test_all_zero_result_is_not_cached(self, default_params_dict, monkeypatch):
-        """全点 0.0 の結果はキャッシュに入らず、次回はやり直すこと。"""
+        """全点 nan（通信の失敗）の結果はキャッシュに入らず、次回はやり直すこと。"""
         call_count = {"n": 0}
         def failing_get(la, lo):
             call_count["n"] += 1
-            return 0.0                      # ＝全レイヤ失敗時の戻り値
+            return np.nan                   # ＝全レイヤが通信の失敗で終わった戻り値（3.2）
         monkeypatch.setattr(dem, "get_elevation", failing_get)
 
         params = sim.SimParams(default_params_dict)
@@ -500,17 +501,17 @@ class TestFetchElevationsCached:
 
         self._run_once(params)
         assert call_count["n"] == after_first + params.num, (
-            "全点 0.0 の地形がキャッシュされている"
+            "全点 nan の地形がキャッシュされている"
             "＝Proxy を直しても再起動するまで平坦地形が返り続ける"
         )
 
     def test_all_zero_result_is_still_delivered(self, default_params_dict, monkeypatch):
-        """キャッシュしないだけで、結果自体は今までどおり返ること。
+        """キャッシュしないだけで、結果自体は今までどおり返ること（値は nan のまま）。
 
         ここで握り潰すと「実行したのに何も起きない」になる。失敗の伝播と画面での
         提示は別の対応（B-025 の ②③）で、この変更の担当ではない。
         """
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: np.nan)
         params = sim.SimParams(default_params_dict)
 
         got = {}
@@ -527,7 +528,7 @@ class TestFetchElevationsCached:
         state = {"fail": True, "n": 0}
         def flaky_get(la, lo):
             state["n"] += 1
-            return 0.0 if state["fail"] else 120.0
+            return np.nan if state["fail"] else 120.0
         monkeypatch.setattr(dem, "get_elevation", flaky_get)
 
         params = sim.SimParams(default_params_dict)
@@ -825,5 +826,28 @@ class TestSavePackage:
         with open(os.path.join(save_dir, "terrain_profile.csv"),
                   newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        assert rows[0] == ["Distance_m", "Elevation_m"]
+        assert rows[0] == ["Distance_m", "Elevation_m", "elev_source"]
         assert len(rows) - 1 == flat_terrain.num_samples
+
+    def test_terrain_csv_marks_failed_samples_as_unavailable(
+        self, tmp_path, default_params_dict, monkeypatch,
+    ):
+        """nan の標本は `Elevation_m=0.0`・`elev_source=unavailable` になること
+        （ISSUES.md B-025 ③）。実値の標本は `gsi_dem`。`Elevation_m` の意味は
+        3.3 まで変えない（規約2）ので、値そのものは従来どおり 0.0 のまま。
+        """
+        import csv
+        raw = np.array([10.0, np.nan, 20.0])
+        terrain = models.calculate_terrain_profile(
+            raw, 34.5429, 132.4118, 34.5389, 132.4050,
+        )
+        monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        params = sim.SimParams(default_params_dict)
+        result = _make_result("single")
+        save_dir = sim.save_package(terrain, result, params, 30.0, 10.0)
+        with open(os.path.join(save_dir, "terrain_profile.csv"),
+                  newline="", encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert rows[1][1:] == ["10.0", "gsi_dem"]
+        assert rows[2][1:] == ["0.0", "unavailable"]
+        assert rows[3][1:] == ["20.0", "gsi_dem"]

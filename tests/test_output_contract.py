@@ -183,8 +183,12 @@ def test_scenario_axis_value_column_is_fixed():
 
 
 def test_scenario_axis_name_column_is_appended_at_the_tail():
-    """軸の名前そのものは末尾の `axis` 列が持つこと（規約 1＝追加は末尾のみ）。"""
-    assert oc.SCENARIO_CSV_COLUMNS[-1] == "axis"
+    """軸の名前そのものは `axis` 列が持つこと（規約 1＝追加は末尾のみ）。
+
+    3.2 で `dem_fail_pct` がさらに後ろへ追加されたので、もう絶対の末尾ではない
+    （末尾判定は `test_scenario_has_dem_fail_pct_column_at_the_tail` へ移した）。
+    """
+    assert "axis" in oc.SCENARIO_CSV_COLUMNS
 
 
 def test_scenario_columns_no_longer_collide():
@@ -201,12 +205,36 @@ def test_scenario_columns_no_longer_collide():
 
 
 # --- 水平距離（B-139・3.1 で列追加）------------------------------------------
-def test_summary_has_horizontal_distance_column_at_the_tail():
+def test_summary_has_horizontal_distance_column():
     """`slant_m`（斜距離）だけでは実効間隔が復元できない問題への対処。
 
     `slant_m` は送受信のアンテナ高と標高差を含む斜距離なので、
     `slant_m ÷ (samples − 1)` は実効間隔の近似にしかならない（短距離・急峻な
     経路ほど誤差が大きい）。水平距離を列として持てば、読む側がその近似計算を
-    するかどうかを選べる。規約 1＝末尾に追加。
+    するかどうかを選べる。規約 1＝末尾に追加（3.2 で `dem_fail_pct` がさらに
+    後ろへ追加されたので、もう絶対の末尾ではない＝末尾判定は下のテストへ移した）。
     """
-    assert oc.SUMMARY_CSV_COLUMNS[-1] == "horiz_m"
+    assert "horiz_m" in oc.SUMMARY_CSV_COLUMNS
+
+
+# --- DEM 取得の失敗率（ISSUES.md B-025 ③・3.2 で列追加）----------------------
+def test_summary_has_dem_fail_pct_column_at_the_tail():
+    """`dem_fail_pct`＝通信の失敗が絡んだ標本の割合。規約1＝末尾に追加。"""
+    assert oc.SUMMARY_CSV_COLUMNS[-1] == "dem_fail_pct"
+
+
+def test_hops_has_dem_fail_pct_column_at_the_tail():
+    assert oc.HOPS_CSV_COLUMNS[-1] == "dem_fail_pct"
+
+
+def test_scenario_has_dem_fail_pct_column_at_the_tail():
+    assert oc.SCENARIO_CSV_COLUMNS[-1] == "dem_fail_pct"
+
+
+def test_terrain_has_elev_source_column_at_the_tail():
+    """`elev_source`＝この標本の標高の出所（ISSUES.md B-025 ③）。
+
+    `elev_ok`（真偽）ではなく文字列にしたのは、3.3 で DEM ソースが増える
+    拡張のときに列の意味を変えずに値の種類だけ増やせるようにするため。
+    """
+    assert oc.TERRAIN_CSV_COLUMNS[-1] == "elev_source"

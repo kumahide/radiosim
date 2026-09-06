@@ -272,6 +272,19 @@ class TerrainProfile:
             return np.zeros(self.num_samples)
         return np.asarray(self.d_km_axis, dtype=float) / self.horiz_dist_km
 
+    @property
+    def fail_pct(self) -> float:
+        """DEM 取得の失敗率 [%]（`raw_elevs` に占める `nan` の標本の割合）。
+
+        ⚠️ **「取れなかった」だけを数える**（ISSUES.md B-025 ③）＝海抜0mの
+        正当な値や、国土地理院に元々データが無い（404・海上・日本域外）点は
+        含まない。それらは通信が成功しているので `raw_elevs` は `nan` に
+        ならない（`dem.get_elevation` の不変条件＝`core/dem.py`）。
+        """
+        if self.num_samples == 0:
+            return 0.0
+        return float(np.isnan(self.raw_elevs).mean() * 100.0)
+
     def los_line(self, tx_abs: float, rx_abs: float) -> np.ndarray:
         """各標本の位置での見通し線の高度 [m]（TX 側の絶対高 → RX 側の絶対高）。
 

@@ -85,7 +85,20 @@ class CsvContract:
 
 
 # --- 個別シミュレーション ----------------------------------------------------
-TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m")
+# 🆕 `elev_source`（3.2 / ISSUES.md B-025 ③）＝**この標本の標高がどこから来たか**
+# （`"gsi_dem"` = 国土地理院 DEM から取得できた／`"unavailable"` = 取れなかった）。
+# 文字列にした理由＝`elev_ok`（真偽）ではなく `elev_source` にしたのは、3.3 で
+# DEM ソースが増える拡張のとき**列そのものの意味を変えずに値の種類だけ増やせる**
+# ため（真偽だと 3.3 で意味変更＝規約2の予告が要る改名になる）。今回は「取れた
+# /取れなかった」の2値に留め、どのレイヤーが答えたかまでは持たない。
+#
+# 🔴 **`Elevation_m` の意味は 3.3 まで変えない**（規約2の予告・3.2 で告知）＝
+# `dem.get_elevation` は 3.2 で「取れなかった」を内部的に `nan` で返せるように
+# なったが（`core/dem.py`）、出力契約側は `3.1` に予告が無かったため
+# `Elevation_m` は今回もこれまでどおり「取得失敗＝0.0」のまま書く。**3.3 で
+# 空欄／nan へ変える**（読む側が pandas なら NaN・Excel なら数式の扱いが変わる
+# ため、事前に CHANGELOG と公開文書へ告知してから実施する＝ISSUES.md B-025）。
+TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m", "elev_source")
 
 # --- 複数経路（バッチ）------------------------------------------------------
 # 🆕 `samples`（3.0a1 / I-069）＝**その回線で実際に地形を刻んだ点数**。利用者は
@@ -110,6 +123,14 @@ TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m")
 # ならず（短距離・急峻な経路ほど誤差が大きい＝実測 +16.6%）、しかも成果物には
 # 復元する手がかりが無かった。水平距離をそのまま列にすれば、その割り算をする
 # かどうかは読む側の判断に戻せる。規約 1＝末尾に追加。
+#
+# 🆕 `dem_fail_pct`（3.2 / ISSUES.md B-025 ③）＝**その回線で DEM 取得が通信の
+# 失敗で終わった標本の割合 [%]**（`models.TerrainProfile.fail_pct` が単一
+# ソース）。海抜0mの正当な値や、国土地理院に元々データが無い（404・海上・
+# 日本域外）標本は含まない＝それらは通信が成功しているので数えない
+# （`core/dem.py` の不変条件）。この列が 0 より大きい経路は、地形の一部が
+# 「取れなかった穴」を含んだまま計算されている（穴は `elev_source` を持つ
+# `terrain_profile.csv` からしか特定できない＝単一シミュレーションのみ）。
 SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
     "h_tx", "h_rx",
@@ -120,15 +141,20 @@ SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "f1_depth_x",
     "samples",
     "horiz_m",
+    "dem_fail_pct",
 )
 
 # --- 中継経路 ---------------------------------------------------------------
+# 🆕 `dem_fail_pct`（3.2 / ISSUES.md B-025 ③）＝`summary.csv` と同じ意味・
+# 同じ単一ソース（`models.TerrainProfile.fail_pct`）。区間（ホップ）ごとに
+# DEM 取得が別なので、行（区間）ごとに違う値になる。
 HOPS_CSV_COLUMNS: tuple[str, ...] = (
     "group_id", "hop_index", "hop_id", "from", "to", "status",
     "freq_mhz", "gain_tx_dbi", "gain_rx_dbi", "h_tx", "h_rx",
     "rx_dbm", "margin_db", "slant_m", "f1_pct", "error",
     "f1_depth_x",
     "samples",
+    "dem_fail_pct",
 )
 
 # --- 条件探索 ---------------------------------------------------------------
@@ -136,6 +162,10 @@ HOPS_CSV_COLUMNS: tuple[str, ...] = (
 # 以前はスイープで軸の名前（`freq_mhz` など）に差し替わり、同名の固定列と
 # 見出しが 2 回出た。値の意味は変えていない（比較＝条件名／スイープ＝軸の値）。
 # 軸の名前そのものは `axis` 列（末尾＝規約 1）に移した＝比較では空文字列。
+#
+# 🆕 `dem_fail_pct`（3.2 / ISSUES.md B-025 ③）＝条件探索は「DEM 取得 1 回 +
+# 純計算を N 回」（`core/scenario.py`）＝terrain を固定して条件だけ振るので、
+# **全行が同じ値**になる（`summary.csv`/`hops.csv` とは違い行ごとには変わらない）。
 SCENARIO_CSV_COLUMNS: tuple[str, ...] = (
     "label", "axis_value", "status",
     "rx_dbm", "margin_db", "total_loss_db",
@@ -145,6 +175,7 @@ SCENARIO_CSV_COLUMNS: tuple[str, ...] = (
     "h_tx", "h_rx", "veg_h", "rain_mmh", "env_type", "diff_method",
     "f1_depth_x",
     "axis",
+    "dem_fail_pct",
 )
 
 

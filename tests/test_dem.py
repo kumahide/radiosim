@@ -6,6 +6,7 @@ HTTP 通信は monkeypatch で差し替え、ネットワーク接続不要。
 """
 
 import json
+import math
 import os
 import unittest.mock as mock
 
@@ -605,17 +606,18 @@ class TestFailedTileNegativeCache:
 
     # ── 「取れなかった」を別口で知らせる（B-025 ②）────────────────────
     def test_network_failure_is_reported_alongside_the_zero(self, monkeypatch):
-        """通信で失敗したら `network_failed()` が立つこと。
+        """通信で失敗したら `nan` を返し、`network_failed()` も立つこと（3.2）。
 
-        戻り値は 0.0 のまま（契約は 3.x まで変えない）なので、**これが「取れて
-        いない」を知る唯一の手段**。ここが立たないと、呼び出し側は標高 0m の
-        平坦地形を正常値として配り続ける（B-025 の実害そのもの）。
+        🔴 **3.2 で戻り値そのものが変わった**（ISSUES.md B-025 ①）＝以前は
+        `network_failed()` だけが「取れていない」を知る唯一の手段だったが、
+        今は戻り値（`nan`）自体がそれを語る。両方が同時に真であること
+        （不変条件）を確かめる。
         """
         self._mock_session(
             monkeypatch,
             lambda *a, **k: (_ for _ in ()).throw(requests.RequestException("timeout")),
         )
-        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert math.isnan(dem.get_elevation(34.5429, 132.4118))
         assert dem.network_failed(), "通信の失敗が呼び出し側に伝わらない"
 
     def test_sea_tiles_404_are_not_a_network_failure(self, monkeypatch):
@@ -654,8 +656,8 @@ class TestFailedTileNegativeCache:
 
         self._mock_session(monkeypatch, get_impl)
 
-        # 1回目：全レイヤが一時失敗 → 0.0、負キャッシュは汚れない。
-        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        # 1回目：全レイヤが一時失敗 → nan（3.2）、負キャッシュは汚れない。
+        assert math.isnan(dem.get_elevation(34.5429, 132.4118))
         assert not dem._failed_tiles, "一時失敗を負キャッシュに入れてはならない"
 
         # 2回目：回復後は正しい標高（100.0 m）を取得できる。
@@ -673,6 +675,20 @@ class TestFailedTileNegativeCache:
         # 2回目：全レイヤが負キャッシュ済み → _fetch_tile を呼ばず get 追加なし。
         assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
         assert fake.get.call_count == calls_after_first
+
+    def test_unexpected_exception_returns_nan_and_sets_network_failed(self, monkeypatch):
+        """デコード周りの想定外の例外も `nan` になり、`network_failed()` も立つこと。
+
+        🆕 3.2（ISSUES.md B-025 ①）＝以前はここも `0.0`（＝海抜0mと区別が付か
+        ない）だった。**不変条件**（`nan` ⟺ `network_failed()`）を、通信失敗
+        以外の想定外の例外でも保つことを確かめる。
+        """
+        self._mock_session(
+            monkeypatch,
+            lambda *a, **k: (_ for _ in ()).throw(ValueError("corrupt tile")),
+        )
+        assert math.isnan(dem.get_elevation(34.5429, 132.4118))
+        assert dem.network_failed(), "想定外の例外で不変条件が壊れている"
 
 
 # ============================================================
