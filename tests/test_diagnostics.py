@@ -165,6 +165,44 @@ class TestBuildPackage:
         assert names == {"diagnostics.json",
                           os.path.join("results", "batch_1", "summary.csv").replace(os.sep, "/")}
 
+    def test_saving_over_the_selected_result_file_does_not_include_itself(
+            self, tmp_path, _fake_facts, monkeypatch):
+        """B-183 の再発防止（Codex round78）＝単一ファイルとして選択した
+        成果物そのものへ上書き保存しても、既存の中身を巻き込まない。"""
+        results_dir = tmp_path / "results"
+        results_dir.mkdir()
+        target = results_dir / "old_diag.zip"
+        target.write_bytes(b"stale zip bytes")
+        monkeypatch.setattr(diagnostics.config, "RESULTS_DIR", str(results_dir))
+
+        diagnostics.build_package(str(target), selected_results=["old_diag.zip"])
+        with zipfile.ZipFile(str(target)) as zf:
+            names = zf.namelist()
+        assert names == ["diagnostics.json"]
+
+    def test_self_exclusion_is_case_insensitive_on_windows(
+            self, tmp_path, _fake_facts, monkeypatch):
+        """Codex round78＝保存先パスの大小文字が成果物側と食い違っても自己除外が効くこと。
+
+        `os.path.abspath()` はケースを正規化しないため、素の集合比較だと
+        ドライブ文字や大小が違う同一ファイルを別物として扱ってしまう。
+        """
+        results_dir = tmp_path / "results"
+        run_dir = results_dir / "batch_1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "summary.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        monkeypatch.setattr(diagnostics.config, "RESULTS_DIR", str(results_dir))
+
+        zip_path = str(run_dir / "diag.zip")
+        # ディレクトリ名の大小文字だけ違う「別表記の同じパス」を保存先として
+        # 渡す（NTFS は大小文字を区別しないため、物理的には同じファイルに書ける）。
+        zip_path_other_case = str(results_dir / "BATCH_1" / "diag.zip")
+        diagnostics.build_package(zip_path_other_case, selected_results=["batch_1"])
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+        assert names == {"diagnostics.json",
+                          os.path.join("results", "batch_1", "summary.csv").replace(os.sep, "/")}
+
     def test_writes_atomically_final_file_is_never_truncated(self, tmp_path, _fake_facts):
         """`os.replace` を使うので、書き終わるまで `zip_path` に断片が現れない。"""
         zip_path = str(tmp_path / "diag.zip")

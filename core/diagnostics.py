@@ -89,7 +89,14 @@ def build_package(zip_path: str, selected_facts: "set[str] | None" = None,
     # B-183＝一時 ZIP・最終保存先が選択済み成果物（results/<run>）の中に
     # 収まっていると、後続の os.walk(src) が生成中の自分自身を発見して
     # 取り込んでしまう。走査対象からこの2つのパスだけを明示的に除外する。
-    _self_paths = {os.path.abspath(tmp), os.path.abspath(zip_path)}
+    # ⚠️ **Windows では大文字小文字を無視した比較にする**（Codex round78）＝
+    # `os.path.abspath()` はケースを正規化しないため、`zip_path` と
+    # `config.RESULTS_DIR` でドライブ文字の大小が食い違うだけで一致判定が
+    # 外れ、除外が空振りする。`os.path.normcase` で比較用の値だけ揃える。
+    def _norm(p: str) -> str:
+        return os.path.normcase(os.path.abspath(p))
+
+    _self_paths = {_norm(tmp), _norm(zip_path)}
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("diagnostics.json",
@@ -100,12 +107,14 @@ def build_package(zip_path: str, selected_facts: "set[str] | None" = None,
                     for dirpath, _dirs, filenames in os.walk(src):
                         for fn in filenames:
                             full = os.path.join(dirpath, fn)
-                            if os.path.abspath(full) in _self_paths:
+                            if _norm(full) in _self_paths:
                                 continue
                             arc = os.path.join(
                                 "results", name, os.path.relpath(full, src))
                             zf.write(full, arc)
-                elif os.path.isfile(src):
+                # 単一ファイルが選択対象そのもの（＝保存先と同じファイルを
+                # 上書き保存するケース）でも、同じ除外判定を通す（Codex round78）。
+                elif os.path.isfile(src) and _norm(src) not in _self_paths:
                     zf.write(src, os.path.join("results", name))
         os.replace(tmp, zip_path)
     except Exception:
