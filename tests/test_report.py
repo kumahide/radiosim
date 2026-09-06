@@ -554,6 +554,50 @@ class TestSheetCssIsScoped:
         assert re.search(r"querySelector\s*\(", js) is None, \
             "単数形 querySelector が残っている（連結文書で2枚目以降が縮まない）"
 
+    def test_fit_script_no_longer_clamps_left_gutter_to_zero(self):
+        """B-146: 旧実装は左ガターを `Math.max(0, ...)` で 0 に丸めていた。
+
+        0 に丸まると box-shadow の左への張り出し（.graph blur 4px 等）が
+        `overflow:hidden` の境界でそのまま切れる＝左端クリップ。
+        """
+        js = report_common.fit_to_page_script()
+        assert "Math.max(0," not in js, \
+            "左ガターを0に丸める旧実装が残っている（B-146 再発）"
+
+    @staticmethod
+    def _fit_tx(client_width: float, s: float, gutter: float = 6) -> tuple:
+        """report_common.fit_to_page_script() の tx 計算を Python 側で再現する。
+
+        JS を実行できないテスト環境なので、同じ式を複製して不変条件だけ検算する
+        （B-146: 「txが0でないか」ではなく「左右とも影の張り出しを吸収できるか」）。
+        """
+        slack = client_width * (1 - s)
+        tx = slack - gutter if slack > 2 * gutter else slack / 2
+        left_gap = tx
+        right_gap = slack - tx
+        return left_gap, right_gap
+
+    @pytest.mark.parametrize("client_width,s", [
+        (800, 0.999),   # ほぼ等倍＝slack が極小
+        (800, 0.99),
+        (800, 0.9),
+        (800, 0.5),
+        (300, 0.95),
+    ])
+    def test_fit_tx_reserves_gutter_on_both_sides(self, client_width, s):
+        """左右どちらのガターも 0 未満にならず、slack に十分な余裕があれば
+        両側とも box-shadow の最大張り出し(4px)以上を確保する。"""
+        left_gap, right_gap = self._fit_tx(client_width, s)
+        assert left_gap >= 0
+        assert right_gap >= 0
+        slack = client_width * (1 - s)
+        if slack > 12:  # 2*gutter
+            assert left_gap >= 4, "左ガターが影の張り出し(4px)未満"
+            assert right_gap == pytest.approx(6)
+        else:
+            # 余白が両側分に満たない極端なケースは対称配分にする
+            assert left_gap == pytest.approx(right_gap)
+
 
 # ============================================================
 # report_all.html（サマリ＋全 per-path を 1 文書へ連結・I-013）

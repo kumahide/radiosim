@@ -293,10 +293,14 @@ def fit_to_page_script() -> str:
     var h=el.scrollHeight;
     if(h>target){
       var s=target/h;
-      var gutter=6;                    /* 右枠線・影がクリップされないための右ガター(px) */
-      /* 右寄せ量＝横余白の大半を左へ。ただし僅少スケール時に負値になると左端が
-         クリップされる（見切れ）ため 0 未満にしない。 */
-      var tx=Math.max(0, outer.clientWidth*(1-s)-gutter);
+      var gutter=6;                    /* 左右の枠線・影がクリップされないためのガター(px) */
+      /* 横余白を左右へ振り分ける。右には gutter 分を確保しつつ、左にも同じ
+         gutter 分を保証する（旧実装は左を「余った分」任せで 0 に丸めており、
+         僅少スケール時に box-shadow の左への張り出しが切れていた＝B-146）。
+         余白が両ガター分に満たない極端な場合は均等に割って対称にする
+         （そのときは s がほぼ1＝影の張り出しも元々小さいので対称配分で足りる）。 */
+      var slack=outer.clientWidth*(1-s);
+      var tx=slack>2*gutter ? slack-gutter : slack/2;
       el.style.transformOrigin="top left";
       el.style.transform="translateX("+tx+"px) scale("+s+")";
       outer.style.height=box+"px";
