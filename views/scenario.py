@@ -124,6 +124,7 @@ class ScenarioWindow(tk.Toplevel):
         coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
+        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
         self.title(i18n.t("scn_window_title"))
         self.minsize(780, 520)
 

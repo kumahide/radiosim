@@ -174,6 +174,40 @@ def _grow_scenario(win) -> None:
 
 
 # ============================================================
+# -1: 全窓がタイトルバーの配色を申告していること（B-178）
+# ============================================================
+# ⚠️ **窓ごとに手書きで気づく形は既に一度崩れた**＝I-132 実装時に口を呼んだのは
+# main.py・views/dialogs.py・views/map_window.py・views/launcher_menu.py のみで、
+# ランチャーから開く主要窓のうちバッチ・条件探索・中継経路・地形断面グラフの
+# 4 つは呼び出しが漏れていた（ユーザー報告「ランチャー以外のタイトルバーが
+# ダークにならない」）。**この登録（`_WINDOWS`）は既に window_fit の見切れ
+# ゲートが「登録漏れが起きないこと」を別途保証している**ので、ここへ相乗りすれば
+# 新しい窓を足した人がこの申告を書き忘れても自動的に検査対象になる。
+# ⛔ **`launcher` は対象外**＝ランチャーの窓（root）はアプリの入口（main.py）が
+# 申告する対象で、`SimLauncher` 自身の責務ではない。
+@pytest.mark.parametrize("name", sorted(n for n in _WINDOWS if n != "launcher"))
+def test_every_child_window_applies_the_title_bar_theme_on_open(name, monkeypatch):
+    """開いた直後に `theme.apply_title_bar_theme` を呼んでいること（B-178）。"""
+    from views import theme
+
+    calls: list[object] = []
+    monkeypatch.setattr(
+        theme, "apply_title_bar_theme", lambda win, *a, **k: calls.append(win))
+    root = make_themed_root()
+    try:
+        root.withdraw()
+        opener, _ = _WINDOWS[name]
+        win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
+        assert win in calls, (
+            f"[{name}] 生成直後に theme.apply_title_bar_theme を呼んでいない"
+            "（テーマ切替まで待たないと、ダークテーマで開いた瞬間から"
+            "タイトルバーだけ白いまま浮く＝B-178）。"
+        )
+    finally:
+        root.destroy()
+
+
+# ============================================================
 # 0: 測る機械そのものを固定する（I-108）
 # ============================================================
 # 🔴 **走らせた機械が、寸法ゲートの前提を黙って変えていた。** 表示スケール 150% の

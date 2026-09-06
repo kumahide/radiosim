@@ -80,6 +80,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
+        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
         self.title(i18n.t("mh_window_title"))
         # ⚠️ `minsize` は `_BASE_W` より下に置く＝上にすると Tk が `geometry()` を
         # 上書きし、下限を下げても窓が細くならない（B-053 で実際に踏んだ）。
