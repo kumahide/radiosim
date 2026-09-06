@@ -180,6 +180,10 @@ class TestBuildPackage:
             names = zf.namelist()
         assert names == ["diagnostics.json"]
 
+    @pytest.mark.skipif(
+        os.name != "nt",
+        reason="別表記の同じパスに書けるのは大小文字を区別しない NTFS だけ"
+               "（CI の ubuntu では BATCH_1 と batch_1 は物理的に別物）")
     def test_self_exclusion_is_case_insensitive_on_windows(
             self, tmp_path, _fake_facts, monkeypatch):
         """Codex round78＝保存先パスの大小文字が成果物側と食い違っても自己除外が効くこと。
