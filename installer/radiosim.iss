@@ -63,6 +63,10 @@ PrivilegesRequiredOverridesAllowed=dialog
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[CustomMessages]
+japanese.DeleteDataConfirm=設定ファイル・DEM キャッシュ・保存結果も削除しますか？%n（「いいえ」を選ぶと、次回インストール時にも設定が引き継がれます）
+english.DeleteDataConfirm=Also delete settings, DEM cache, and saved results?%n(Choose No to keep them for the next install.)
+
 [Files]
 ; dist\RadioSimPro\ の一式をそのまま同梱する。ただし:
 ;  - portable.txt は build.bat installer が最初から作らないので通常は存在しない
@@ -106,4 +110,28 @@ procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
     SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False);
+end;
+
+{ B-184: アンインストールで設定/キャッシュ/結果も消せるようにする。
+  [UninstallDelete] は固定パスの無条件削除しか書けず確認を挟めないので、
+  usPostUninstall で確認ダイアログを出してから DelTree する。既定は「残す」
+  （MsgBox の既定ボタンは No）＝サイレントアンインストールでは何も消えず
+  従来どおり（利用者データを黙って失わせない）。 }
+procedure UninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  AppData, LocalAppData, Documents: string;
+begin
+  if CurUninstallStep = usPostUninstall then
+  begin
+    AppData      := ExpandConstant('{userappdata}\RadioSim');
+    LocalAppData := ExpandConstant('{localappdata}\RadioSim');
+    Documents    := ExpandConstant('{userdocs}\RadioSim');
+    if (DirExists(AppData) or DirExists(LocalAppData) or DirExists(Documents))
+       and (MsgBox(CustomMessage('DeleteDataConfirm'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+    begin
+      DelTree(AppData, True, True, True);
+      DelTree(LocalAppData, True, True, True);
+      DelTree(Documents, True, True, True);
+    end;
+  end;
 end;

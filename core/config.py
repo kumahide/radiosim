@@ -504,11 +504,23 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     """起動時に `i18n.set_lang` へ渡す言語コードを決める。
 
     設定ファイルが在れば**その中身が常に優先**（利用者の選択）。無いときだけ
-    `initial_lang()` で解く。
+    `initial_lang()` で解く——その場でファイルへ書き戻す（B-184）。
+
+    ⚠️ **書き戻さないと、初回起動中の最初の `save_config`（メニュー操作でなく
+    ても、フォームからの「シングル」実行が `save_sim`→`_save_subset` 経由で
+    設定ファイルを初めて生成する）が `load_config` の既定値（`lang="en"`）を
+    土台に書き出し、解決したはずの言語が消える**（実機で確認済み: 日本語で
+    インストール→初回起動→シングル実行→再起動で英語に戻る）。ここで確定した
+    時点のファイルを作っておけば、以後のどの `_save_subset` も正しい `lang`
+    を土台に合流する。
     """
     if os.path.exists(path):
         return cfg.get("lang", DEFAULT_CONFIG["lang"])
-    return initial_lang()
+    lang = initial_lang()
+    resolved = DEFAULT_CONFIG.copy()
+    resolved["lang"] = lang
+    save_config(resolved, path)
+    return lang
 
 
 # ============================================================
