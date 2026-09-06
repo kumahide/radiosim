@@ -880,7 +880,18 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ## Uninstall
 
-**Installer build**: Uninstall `RadioSimPro` from "Apps & features" (or the Start menu). ⚠️ **Settings, cache, logs, and results** (`%APPDATA%\RadioSim\`, `%LOCALAPPDATA%\RadioSim\`, `Documents\RadioSim\`) are **not removed automatically**. Delete those folders manually too if you want a completely clean removal.
+**Installer build**: Uninstall `RadioSimPro` from "Apps & features" (or the Start menu).
+
+At the end of the uninstall you can choose, **by category**, which data to remove from this PC. **Only the boxes you tick are deleted**, and **nothing is ticked by default (everything is kept)**. Only categories that actually exist are listed.
+
+| Choice | What is deleted | What you lose |
+| --- | --- | --- |
+| UI settings and last used input values | `%APPDATA%\RadioSim\radiosim_conf.json` | The next install starts from the defaults |
+| DEM tile disk cache and logs | `%LOCALAPPDATA%\RadioSim\` | Elevation data is fetched again on the next run |
+| Saved result packages | `Documents\RadioSim\` | ⚠️ **Past results are gone** (they cannot be recreated) |
+| Display language files you added | `%APPDATA%\RadioSim\lang\` | Translations you added are gone (the bundled Japanese and English remain) |
+
+Anything left unticked stays on this PC and is picked up again by the next install.
 
 **Portable build**:
 

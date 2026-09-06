@@ -1,4 +1,4 @@
-; RadioSim Pro - Inno Setup インストーラスクリプト（3.1 段6）
+﻿; RadioSim Pro - Inno Setup インストーラスクリプト（3.1 段6）
 ;
 ; コンパイラ: Inno Setup 7（3.1RC2 以降・I-125 の選定検証の結論）。このファイルは
 ;   7 で廃止された機能（EnableFsRedirection / {sysnative} / 32bit からの 64bit
@@ -64,8 +64,23 @@ Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
 [CustomMessages]
-japanese.DeleteDataConfirm=設定ファイル・DEM キャッシュ・保存結果も削除しますか？%n（「いいえ」を選ぶと、次回インストール時にも設定が引き継がれます）
-english.DeleteDataConfirm=Also delete settings, DEM cache, and saved results?%n(Choose No to keep them for the next install.)
+; I-139: 削除対象を 4 種に割り、それぞれチェックボックスで選ばせる。
+; ⚠️ 見出し（UninstData*）は下の [Code] が **CustomMessages のキー名** として
+; 文字列で参照する（DataNames に入る）＝キーを改名したら [Code] も直すこと。
+japanese.UninstDataTitle=RadioSim Pro のデータの削除
+japanese.UninstDataIntro=下のデータはアンインストールしても残ります。この PC から消したいものだけチェックしてください。
+japanese.UninstDataSettings=UI 設定・最後に使用した入力値
+japanese.UninstDataCache=DEM タイルのディスクキャッシュ・ログ
+japanese.UninstDataResults=保存パッケージの出力先
+japanese.UninstDataLang=追加した表示言語ファイル
+japanese.UninstDataHint=チェックを外したものはそのまま残り、次回インストール時に引き継がれます。
+english.UninstDataTitle=Remove RadioSim Pro data
+english.UninstDataIntro=The data below is kept when you uninstall. Tick only what you want removed from this PC.
+english.UninstDataSettings=UI settings and last used input values
+english.UninstDataCache=DEM tile disk cache and logs
+english.UninstDataResults=Saved result packages
+english.UninstDataLang=Display language files you added
+english.UninstDataHint=Anything left unticked stays on this PC and is picked up again by the next install.
 
 [Files]
 ; dist\RadioSimPro\ の一式をそのまま同梱する。ただし:
@@ -112,26 +127,204 @@ begin
     SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False);
 end;
 
-{ B-184: アンインストールで設定/キャッシュ/結果も消せるようにする。
+{ I-137 → I-139: アンインストールで設定/キャッシュ/結果/追加言語を消せるようにする。
   上の UninstallDelete セクションは固定パスの無条件削除しか書けず確認を
-  挟めないので、usPostUninstall で確認ダイアログを出してから DelTree する。既定は「残す」
-  （MsgBox の既定ボタンは No）＝サイレントアンインストールでは何も消えず
-  従来どおり（利用者データを黙って失わせない）。 }
-procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+  挟めないので、usPostUninstall で自前のダイアログを出してから消す。
+
+  I-137 の初版は「全部まとめて消すか / 何も消さないか」の 2 択（MsgBox）だった。
+  4 種は消したい理由がまるで違う（キャッシュは再取得できるが保存パッケージは
+  作り直せない）ので、種別ごとのチェックボックスに割った＝ I-139。
+
+  ⛔ 既定は全部オフ（＝残す）。サイレントアンインストールでは**ダイアログを
+     出さずに何も消さない**（モーダルを出すと無人実行が固まるので、既定ボタン
+     任せにせず UninstallSilent で明示的に抜ける）。 }
+
 var
-  AppData, LocalAppData, Documents: string;
+  { 削除候補。DataNames[i] は [CustomMessages] のキー名、DataPaths[i] は実体
+    （フォルダでもファイルでもよい）。CollectRemovableData が**実在するものだけ**
+    を積むので、この 2 本の長さがそのまま画面に出る行数になる。 }
+  DataNames: TArrayOfString;
+  DataPaths: TArrayOfString;
+
+procedure AddRemovableData(const Name, Path: string);
+var
+  N: Integer;
 begin
-  if CurUninstallStep = usPostUninstall then
-  begin
-    AppData      := ExpandConstant('{userappdata}\RadioSim');
-    LocalAppData := ExpandConstant('{localappdata}\RadioSim');
-    Documents    := ExpandConstant('{userdocs}\RadioSim');
-    if (DirExists(AppData) or DirExists(LocalAppData) or DirExists(Documents))
-       and (MsgBox(CustomMessage('DeleteDataConfirm'), mbConfirmation, MB_YESNO or MB_DEFBUTTON2) = IDYES) then
+  if not (FileExists(Path) or DirExists(Path)) then
+    Exit;
+  N := GetArrayLength(DataNames);
+  SetArrayLength(DataNames, N + 1);
+  SetArrayLength(DataPaths, N + 1);
+  DataNames[N] := Name;
+  DataPaths[N] := Path;
+end;
+
+{ 4 種の実体は core/config.py の保存先解決と 1 対 1 で対応する:
+    設定       %APPDATA%\RadioSim\radiosim_conf.json  … _config_base_dir()
+    キャッシュ %LOCALAPPDATA%\RadioSim\               … cache_log_base_dir()
+                 （terrain_cache\ と radiosim*.log しか置かないので丸ごと消す）
+    保存結果   ドキュメント\RadioSim\                  … _results_dir()
+    追加言語   %APPDATA%\RadioSim\lang\               … _user_lang_dir()
+  ⚠️ 設定と追加言語は**同じ親フォルダの中**なので、親ごと消してはいけない
+     （片方だけ選んだときにもう片方まで消える）。
+  ⛔ このコメントに Inno の定数を波括弧つきで書かない: 波括弧はコメントの
+     終端そのものなので、途中で閉じて残りが構文エラーになる（1710b9f と同型）。 }
+procedure CollectRemovableData;
+var
+  ConfigBase: string;
+begin
+  SetArrayLength(DataNames, 0);
+  SetArrayLength(DataPaths, 0);
+  ConfigBase := ExpandConstant('{userappdata}\RadioSim');
+  AddRemovableData('UninstDataSettings', ConfigBase + '\radiosim_conf.json');
+  AddRemovableData('UninstDataCache',    ExpandConstant('{localappdata}\RadioSim'));
+  AddRemovableData('UninstDataResults',  ExpandConstant('{userdocs}\RadioSim'));
+  AddRemovableData('UninstDataLang',     ConfigBase + '\lang');
+end;
+
+{ 選択ダイアログ。戻り値 True＝OK が押された。Chosen[i] は 1 なら削除する。
+  アンインストール側にはウィザードが無いので CreateCustomForm で自前に建てる。 }
+function AskRemovableData(var Chosen: TArrayOfInteger): Boolean;
+var
+  Form: TSetupForm;
+  Intro, Hint, PathLabel: TLabel;
+  { 上限は CollectRemovableData が積む種類の数。増やすときは**両方**直すこと
+    （足りないと実行時に添字が飛ぶ＝コンパイルでは分からない）。
+    ずれの検出は tests/test_config.py::test_choice_count_fits_the_checkbox_array。 }
+  Boxes: array[0..3] of TNewCheckBox;
+  OkButton, CancelButton: TNewButton;
+  I, Count, Y, ButtonWidth: Integer;
+begin
+  Count := GetArrayLength(DataPaths);
+  SetArrayLength(Chosen, Count);
+  for I := 0 to Count - 1 do
+    Chosen[I] := 0;
+
+  { ⚠️ CreateCustomForm は**引数を取る**（古い資料にある引数なしの版で書くと
+    「Invalid number of parameters」でコンパイルが止まる＝実際に踏んだ）。
+    引数は 幅・高さ・横リサイズ可否・縦リサイズ可否。高さは行数で決まるので
+    ここでは仮置きし、最後に ClientHeight で確定させる。
+    ※ この 4 引数版は手元の Inno 6 / 7 の両方でコンパイルを確認済み。 }
+  Form := CreateCustomForm(ScaleX(470), ScaleY(320), False, False);
+  try
+    Form.Caption := CustomMessage('UninstDataTitle');
+
+    Intro := TLabel.Create(Form);
+    Intro.Parent   := Form;
+    Intro.Left     := ScaleX(16);
+    Intro.Top      := ScaleY(16);
+    Intro.Width    := Form.ClientWidth - ScaleX(32);
+    Intro.WordWrap := True;
+    Intro.AutoSize := True;
+    Intro.Caption  := CustomMessage('UninstDataIntro');
+
+    Y := Intro.Top + Intro.Height + ScaleY(14);
+    for I := 0 to Count - 1 do
     begin
-      DelTree(AppData, True, True, True);
-      DelTree(LocalAppData, True, True, True);
-      DelTree(Documents, True, True, True);
+      Boxes[I] := TNewCheckBox.Create(Form);
+      Boxes[I].Parent  := Form;
+      Boxes[I].Left    := ScaleX(20);
+      Boxes[I].Top     := Y;
+      Boxes[I].Width   := Form.ClientWidth - ScaleX(36);
+      Boxes[I].Height  := ScaleY(17);
+      Boxes[I].Checked := False;
+      Boxes[I].Caption := CustomMessage(DataNames[I]);
+
+      { 実体のパスを添える。I-137 の起票にあったとおり、利用者には
+        %APPDATA% などの保存先が分かりにくい＝何が消えるのかを名前だけで
+        判断させない。 }
+      PathLabel := TLabel.Create(Form);
+      PathLabel.Parent     := Form;
+      PathLabel.Left       := ScaleX(38);
+      PathLabel.Top        := Y + ScaleY(19);
+      PathLabel.Width      := Form.ClientWidth - ScaleX(54);
+      PathLabel.Height     := ScaleY(14);
+      PathLabel.AutoSize   := False;
+      PathLabel.Font.Color := clGray;
+      PathLabel.Caption    := DataPaths[I];
+
+      Y := Y + ScaleY(42);
+    end;
+
+    Hint := TLabel.Create(Form);
+    Hint.Parent   := Form;
+    Hint.Left     := ScaleX(16);
+    Hint.Top      := Y;
+    Hint.Width    := Form.ClientWidth - ScaleX(32);
+    Hint.WordWrap := True;
+    Hint.AutoSize := True;
+    Hint.Caption  := CustomMessage('UninstDataHint');
+
+    Y := Hint.Top + Hint.Height + ScaleY(16);
+
+    OkButton := TNewButton.Create(Form);
+    OkButton.Parent      := Form;
+    OkButton.Height      := ScaleY(23);
+    OkButton.Top         := Y;
+    OkButton.Caption     := SetupMessage(msgButtonOK);
+    OkButton.ModalResult := mrOk;
+    OkButton.Default     := True;
+
+    CancelButton := TNewButton.Create(Form);
+    CancelButton.Parent      := Form;
+    CancelButton.Height      := ScaleY(23);
+    CancelButton.Top         := Y;
+    CancelButton.Caption     := SetupMessage(msgButtonCancel);
+    CancelButton.ModalResult := mrCancel;
+    CancelButton.Cancel      := True;
+
+    { 訳の長さでボタン幅が足りなくならないよう、両方の見出しから幅を出す
+      （日本語の「キャンセル」と英語の "Cancel" で必要幅が違う）。 }
+    ButtonWidth := Form.CalculateButtonWidth([OkButton.Caption, CancelButton.Caption]);
+    OkButton.Width     := ButtonWidth;
+    CancelButton.Width := ButtonWidth;
+    CancelButton.Left  := Form.ClientWidth - ScaleX(16) - ButtonWidth;
+    OkButton.Left      := CancelButton.Left - ScaleX(8) - ButtonWidth;
+
+    Form.ClientHeight := Y + OkButton.Height + ScaleY(16);
+
+    Result := Form.ShowModal = mrOk;
+    if Result then
+      for I := 0 to Count - 1 do
+        if Boxes[I].Checked then
+          Chosen[I] := 1;
+  finally
+    Form.Free;
+  end;
+end;
+
+procedure DeleteSelectedData(const Chosen: TArrayOfInteger);
+var
+  I: Integer;
+  Path: string;
+begin
+  for I := 0 to GetArrayLength(DataPaths) - 1 do
+  begin
+    if Chosen[I] <> 0 then
+    begin
+      Path := DataPaths[I];
+      if DirExists(Path) then
+        DelTree(Path, True, True, True)
+      else
+        DeleteFile(Path);
     end;
   end;
+  { 設定と追加言語を両方消すと %APPDATA%\RadioSim が空殻で残る。RemoveDir は
+    空のときしか成功しないので、片方だけ消した場合は何も起きない。 }
+  RemoveDir(ExpandConstant('{userappdata}\RadioSim'));
+end;
+
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
+var
+  Chosen: TArrayOfInteger;
+begin
+  if CurUninstallStep <> usPostUninstall then
+    Exit;
+  if UninstallSilent then
+    Exit;
+  CollectRemovableData;
+  if GetArrayLength(DataPaths) = 0 then
+    Exit;
+  if AskRemovableData(Chosen) then
+    DeleteSelectedData(Chosen);
 end;

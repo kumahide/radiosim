@@ -556,7 +556,7 @@ class TestInstallerLangSeedContract:
     ISS = ROOT / "installer" / "radiosim.iss"
 
     def _iss(self) -> str:
-        return self.ISS.read_text(encoding="utf-8")
+        return self.ISS.read_text(encoding="utf-8-sig")
 
     def test_wizard_languages_match_the_mapping(self):
         names = set(re.findall(r'^Name:\s*"([^"]+)";\s*MessagesFile:',
@@ -610,8 +610,20 @@ class TestInstallerCodeIsReachable:
 
     ISS = ROOT / "installer" / "radiosim.iss"
 
+    def test_iss_is_utf8_with_bom(self):
+        """ISCC は BOM が無い `.iss` を**システムの ANSI コードページ**で読む。
+
+        開発機・実機とも日本語 Windows（CP932）なので、BOM 無しの UTF-8 だと
+        [CustomMessages] の日本語がそのまま文字化けして画面に出る。ISCC は
+        エラーにしないので、**BOM の有無はビルドでは絶対に分からない**。
+        """
+        head = self.ISS.read_bytes()[:3]
+        assert head == b"\xef\xbb\xbf", (
+            "installer/radiosim.iss に UTF-8 BOM が無い＝日本語メッセージが "
+            "CP932 として読まれて文字化けする")
+
     def test_every_uncalled_routine_is_a_real_event_name(self):
-        iss = self.ISS.read_text(encoding="utf-8")
+        iss = self.ISS.read_text(encoding="utf-8-sig")
         code = iss.split("[Code]", 1)[1] if "[Code]" in iss else ""
         defs = re.findall(r"^\s*(?:procedure|function)\s+(\w+)", code, re.MULTILINE)
         assert defs, "[Code] にルーチンが 1 つも見つからない（節の切り出しが壊れた？）"
@@ -624,12 +636,79 @@ class TestInstallerCodeIsReachable:
                 f"[Code] の {name} は Inno のイベント名でもなく、"
                 "どこからも呼ばれていない＝黙って死んでいる")
 
+    #: I-139 の選択肢（[CustomMessages] のキー名）と、それぞれが消す実体の目印。
+    #: 目印は core/config.py の保存先解決と 1 対 1 に対応する＝どちらかを動かしたら
+    #: 対がずれる（インストーラだけ古い場所を消しに行く事故を止める）。
+    _UNINSTALL_CHOICES = {
+        "UninstDataSettings": "{userappdata}\\RadioSim\\radiosim_conf.json",
+        "UninstDataCache":    "{localappdata}\\RadioSim",
+        "UninstDataResults":  "{userdocs}\\RadioSim",
+        "UninstDataLang":     "{userappdata}\\RadioSim\\lang",
+    }
+
+    @staticmethod
+    def _flatten_path_expr(line: str) -> str:
+        """[Code] のパス式を素の文字列へ潰す（`ConfigBase + '\\lang'` → 実体）。"""
+        line = line.replace("ConfigBase", "ExpandConstant('{userappdata}\\RadioSim')")
+        # `ExpandConstant('...')` を中身へ、`' + '` の連結を消す
+        line = re.sub(r"ExpandConstant\('([^']*)'\)", r"'\1'", line)
+        return line.replace("' + '", "")
+
     def test_uninstall_confirmation_is_wired(self):
-        """I-137 の確認ダイアログが、実際に走る経路に載っていること。"""
-        iss = self.ISS.read_text(encoding="utf-8")
+        """I-137→I-139 の削除ダイアログが、実際に走る経路に載っていること。"""
+        iss = self.ISS.read_text(encoding="utf-8-sig")
         assert "procedure CurUninstallStepChanged" in iss
         body = iss.split("procedure CurUninstallStepChanged", 1)[1]
         assert "usPostUninstall" in body
-        assert "DeleteDataConfirm" in body
-        assert re.search(r"^japanese\.DeleteDataConfirm=", iss, re.MULTILINE)
-        assert re.search(r"^english\.DeleteDataConfirm=", iss, re.MULTILINE)
+        # ダイアログを建てる側と、選択を実行する側の両方が呼ばれていること
+        assert "AskRemovableData" in body
+        assert "DeleteSelectedData" in body
+        # サイレントアンインストールでモーダルを出して固まらせない（明示的に抜ける）
+        assert "UninstallSilent" in body
+
+    def test_every_choice_is_offered_and_translated(self):
+        """4 つの選択肢が、日英そろって定義され、[Code] から参照されていること。"""
+        iss = self.ISS.read_text(encoding="utf-8-sig")
+        code = iss.split("[Code]", 1)[1]
+        for key in self._UNINSTALL_CHOICES:
+            assert re.search(r"^japanese\." + key + "=", iss, re.MULTILINE), key
+            assert re.search(r"^english\." + key + "=", iss, re.MULTILINE), key
+            assert f"'{key}'" in code, f"{key} が [Code] のどこからも積まれていない"
+
+    def test_each_choice_targets_the_path_config_py_uses(self):
+        """選択肢の削除対象が、アプリが実際に書く場所と一致していること。"""
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        for key, marker in self._UNINSTALL_CHOICES.items():
+            line = next((ln for ln in code.splitlines() if f"'{key}'" in ln), None)
+            assert line is not None, key
+            flat = self._flatten_path_expr(line)
+            assert marker in flat, f"{key} の削除対象が {marker} ではない: {line!r}"
+
+    def test_choice_count_fits_the_checkbox_array(self):
+        """選択肢の数が、ダイアログのチェックボックス配列の上限を超えないこと。
+
+        `Boxes: array[0..N] of TNewCheckBox` は固定長。選択肢だけ増やしても
+        ISCC は通り、**実行時に添字が飛ぶ**（実機のアンインストールでしか出ない）。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        choices = len(re.findall(r"^\s*AddRemovableData\(", code, re.MULTILINE))
+        assert choices == len(self._UNINSTALL_CHOICES)
+        m = re.search(r"Boxes:\s*array\[0\.\.(\d+)\]\s*of\s*TNewCheckBox", code)
+        assert m, "チェックボックス配列の宣言が見つからない"
+        assert choices <= int(m.group(1)) + 1, (
+            f"選択肢 {choices} 件に対し Boxes の上限が {int(m.group(1)) + 1} 件しかない")
+
+    def test_settings_and_lang_are_not_deleted_via_their_parent(self):
+        """設定と追加言語は同じ親（%APPDATA%\\RadioSim）にいる＝親ごと消さないこと。
+
+        親を `DelTree` すると、「設定だけ消す」を選んだ人の追加言語ファイルまで
+        巻き添えで消える（逆も同じ）。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        for line in code.splitlines():
+            if "DelTree" in line:
+                assert "userappdata" not in line, (
+                    f"%APPDATA%\\RadioSim を丸ごと消している: {line!r}")
+        # 空になった親の後片付けは RemoveDir（空でなければ何もしない）で行う
+        assert re.search(r"RemoveDir\(ExpandConstant\('\{userappdata\}\\RadioSim'\)\)",
+                         code)
