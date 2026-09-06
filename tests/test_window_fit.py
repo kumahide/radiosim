@@ -2251,6 +2251,9 @@ _EXEMPT = {
         "ツールチップ（overrideredirect）。自然サイズ・位置のみ指定。",
     ("launcher_menu.py", "_on_proxy_settings"):
         "プロキシ設定ダイアログ＝サイズを指定せず自然サイズで開く（位置のみ）。",
+    ("launcher_menu.py", "_on_save_diagnostics"):
+        "診断パッケージダイアログ＝サイズを指定せず自然サイズで開く（位置のみ）。"
+        "結果一覧は Listbox 自身が高さ 6 行で頭打ちにする（3.2 段9）。",
     ("launcher_menu.py", "_show_readme_text"):
         "README ビューア＝スクロール前提の閲覧窓（resizable・中身は本文テキスト）。",
 }

@@ -244,6 +244,7 @@ radiosim/
 │   ├── disclosure.py     # 帳票の「結果の取扱に関する補足」の字（前提・適用範囲の刻印・純関数）
 │   ├── runtime_env.py    # 実行環境の事実（frozen か・同梱物の根・書き込み先の解決）
 │   ├── env_facts.py      # 環境事実の収集層（版・設定・直近ログ・キャッシュ統計・環境情報。座標は伏せる）
+│   ├── diagnostics.py    # 診断パッケージの ZIP 生成（パス中のユーザー名を伏字化・成果物は既定除外）
 │   ├── i18n.py           # 多言語文字列テーブル＋外部言語（lang/*.json）の検証と読み込み
 │   ├── failure.py        # 失敗メッセージの型（何が起きた／次に何をすべきか／詳細）
 │   └── version.py        # バージョン情報
@@ -336,6 +337,7 @@ radiosim/
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_env_facts.py
+    ├── test_diagnostics.py
     ├── test_repo_hygiene.py
     ├── test_dev_check.py
     ├── test_claude_hooks.py
@@ -402,6 +404,7 @@ python main.py
 | 項目           | 説明                                 |
 | -------------- | -------------------------------------- |
 | ドキュメントを開く | このドキュメントをブラウザで表示       |
+| 診断パッケージを保存... | `core/diagnostics.py` が ZIP を組み立てる（環境事実は既定選択・`results/` の成果物は既定除外）→ [ユーザーマニュアルのヘルプ節](../docs/manual_ja.md#ヘルプ) |
 | バージョン情報 | `version.py` の版数を表示              |
 
 > **「パラメータ読込」と「アプリ設定を読込む」は領分が排他**＝前者はシミュレーション条件、後者はテーマ・言語・プロキシ・座標表示形式。**互いに相手を書き換えません**（他人のファイルを開いた瞬間に表示言語やネットワーク設定が変わらないための設計）。
@@ -1108,6 +1111,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
 | `test_env_facts.py`      | 環境事実の収集層（`core/env_facts.py`）のゲート。ログ・設定に混じる TX/RX 座標が伏せ字になること（`start`/`end`・ログの `start=(…) end=(…)`）・プロキシ URL の資格情報だけが伏せられホストは残ること・`collect()` が刻印/診断 ZIP/残骸通知が共有する 5 キーを返すこと |
+| `test_diagnostics.py`    | 診断パッケージ（`core/diagnostics.py`）のゲート。パス中のユーザー名が伏せ字になること・既定では成果物が 1 件も ZIP に入らないこと（選んだものだけ `results/` 配下に入る）・ZIP 生成が原子的であること（失敗時に壊れた ZIP や一時ファイルを残さない） |
 | `test_repo_hygiene.py`   | 追跡してはいけないファイルの門（OneDrive の同期競合コピー・公開できないクラス・実行時ログ・巨大ファイルが追跡下に無いこと）。`.git/hooks/pre-commit` と**同じ判定を共有**し、コミット前とCIの二重で守る |
 | `test_claude_hooks.py`   | ローカル開発フック（`.claude/`）の課題台帳パース。状態の註釈・ID 000・アーカイブ節の置き場・済の裏取り（コミット参照）を検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 | `test_codex_review_tool.py` | 独立レビュー駆動スクリプト（`tools/codex_review/run.ps1`）。**独立性の芯**（入力文はファイルから読む・差し込みは差分パスと比較元だけ・`read-only` 固定・返答は原文でファイルへ）と、**書いてはいけない主張**（`-C` と `read-only` は読み取り範囲を狭めない＝canary で実測した事実に反する断定を禁止し、その開示が消えていないことも対で検査）。**対象が git-ignore ではないが実行は Windows 前提** |

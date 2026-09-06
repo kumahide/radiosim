@@ -69,6 +69,27 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "failed read)",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
+        "menu_diagnostics":     "Save Diagnostic Package...",
+        "dlg_diagnostics_title": "Diagnostic Package",
+        "dlg_diagnostics_intro": "Pick what to include, then choose where to save "
+                                "the zip. Attach it to a bug report or support "
+                                "request.",
+        "dlg_diagnostics_facts_group": "Environment facts",
+        "diag_item_version":     "App version",
+        "diag_item_config":      "Settings (coordinates and proxy credentials are "
+                                "masked)",
+        "diag_item_recent_log":  "Recent log lines (coordinates are masked)",
+        "diag_item_cache_stats": "DEM/tile cache statistics",
+        "diag_item_environment": "Runtime environment (OS, DPI, proxy configured)",
+        "diag_item_paths":       "Storage locations (usernames are masked)",
+        "dlg_diagnostics_results_group": "Result files (unchecked by default)",
+        "dlg_diagnostics_results_hint": "These may contain your project's "
+                                "coordinates. Only check the ones you are willing "
+                                "to share.",
+        "dlg_diagnostics_no_results": "No saved results found.",
+        "btn_save_diagnostics":  "Save...",
+        "dlg_diagnostics_saved": "Diagnostic package saved:\n{path}",
+        "fail_save_diagnostics": "The diagnostic package could not be saved.",
         "dlg_error":            "Error",
         "dlg_unexpected_error": "Unexpected error",
         # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /
@@ -721,6 +742,25 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_unreadable": "ファイルを読み込めません（内容の形式か、読み取りの失敗）",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
+        "menu_diagnostics":     "診断パッケージを保存...",
+        "dlg_diagnostics_title": "診断パッケージ",
+        "dlg_diagnostics_intro": "含める項目を選んでから、ZIP の保存先を指定して"
+                                "ください。不具合報告やサポートへの問い合わせに"
+                                "添付できます。",
+        "dlg_diagnostics_facts_group": "環境事実",
+        "diag_item_version":     "アプリのバージョン",
+        "diag_item_config":      "設定（座標・プロキシの資格情報は伏字）",
+        "diag_item_recent_log":  "直近のログ（座標は伏字）",
+        "diag_item_cache_stats": "DEM／タイルキャッシュの統計",
+        "diag_item_environment": "実行環境（OS・DPI・プロキシ設定の有無）",
+        "diag_item_paths":       "保存先のパス（ユーザー名は伏字）",
+        "dlg_diagnostics_results_group": "結果ファイル（既定でチェックなし）",
+        "dlg_diagnostics_results_hint": "案件の座標が含まれることがあります。"
+                                "共有してよいものだけチェックしてください。",
+        "dlg_diagnostics_no_results": "保存済みの結果が見つかりません。",
+        "btn_save_diagnostics":  "保存...",
+        "dlg_diagnostics_saved": "診断パッケージを保存しました:\n{path}",
+        "fail_save_diagnostics": "診断パッケージを保存できませんでした。",
         "dlg_error":            "エラー",
         "dlg_unexpected_error": "予期しないエラー",
         # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /

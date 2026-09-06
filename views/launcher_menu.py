@@ -14,6 +14,7 @@ views/launcher_menu.py
 import json
 import os
 import re
+import time
 import tkinter as tk
 from pathlib import Path
 from tkinter import filedialog, ttk
@@ -21,6 +22,7 @@ from typing import TYPE_CHECKING, Callable
 
 from core import config
 from core import dem
+from core import diagnostics
 from core import failure
 from core import i18n
 from core import simulation as sim
@@ -359,6 +361,10 @@ class _MenuMixin:
             label   = i18n.t("menu_open_readme"),
             command = self._on_open_readme,
         )
+        help_menu.add_command(
+            label   = i18n.t("menu_diagnostics"),
+            command = self._on_save_diagnostics,
+        )
         help_menu.add_separator()
         help_menu.add_command(
             label   = i18n.t("menu_about"),
@@ -568,6 +574,96 @@ class _MenuMixin:
             self._alert(i18n.t("dlg_error"), failure.explain(
                 e, what=i18n.t("fail_load_settings"),
                 hint=i18n.t("fix_file_read")))
+
+    def _on_save_diagnostics(self) -> None:
+        """診断パッケージ（3.2 段9）を保存する。
+
+        保存前に「何が入るか」を見せて取捨選択させる（判断点②）＝環境事実
+        （`diagnostics.FACT_ITEMS`）は既定でチェック済み、`results/` の中身は
+        **既定でチェックなし**（入力座標＝顧客の案件情報のため）。
+        """
+        dlg = tk.Toplevel(self.root)
+        theme.apply_title_bar_theme(dlg)   # マップ前に当てる（I-132）
+        dlg.transient(self.root)
+        dlg.title(i18n.t("dlg_diagnostics_title"))
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        ttk.Label(dlg, text=i18n.t("dlg_diagnostics_intro"), wraplength=420,
+                 justify="left").grid(
+            row=0, column=0, sticky="w", padx=16, pady=(16, 10))
+
+        ttk.Label(dlg, text=i18n.t("dlg_diagnostics_facts_group")).grid(
+            row=1, column=0, sticky="w", padx=16)
+        fact_vars: dict[str, tk.BooleanVar] = {}
+        facts_frame = ttk.Frame(dlg)
+        facts_frame.grid(row=2, column=0, sticky="w", padx=28, pady=(2, 10))
+        for i, item_id in enumerate(diagnostics.FACT_ITEMS):
+            var = tk.BooleanVar(value=True)
+            fact_vars[item_id] = var
+            ttk.Checkbutton(facts_frame, text=i18n.t(f"diag_item_{item_id}"),
+                           variable=var).grid(row=i, column=0, sticky="w")
+
+        ttk.Label(dlg, text=i18n.t("dlg_diagnostics_results_group")).grid(
+            row=3, column=0, sticky="w", padx=16)
+        ttk.Label(dlg, text=i18n.t("dlg_diagnostics_results_hint"), wraplength=420,
+                 justify="left", foreground=theme.muted_foreground(dlg)).grid(
+            row=4, column=0, sticky="w", padx=16)
+
+        results = diagnostics.list_result_runs()
+        listbox: "tk.Listbox | None" = None
+        if results:
+            list_frame = ttk.Frame(dlg)
+            list_frame.grid(row=5, column=0, sticky="w", padx=28, pady=(4, 10))
+            listbox = tk.Listbox(list_frame, selectmode="extended",
+                                 height=min(len(results), 6), width=48,
+                                 exportselection=False)
+            for name in results:
+                listbox.insert("end", name)
+            listbox.pack(side="left")
+            scrollbar = ttk.Scrollbar(list_frame, orient="vertical",
+                                      command=listbox.yview)
+            listbox.configure(yscrollcommand=scrollbar.set)
+            scrollbar.pack(side="left", fill="y")
+        else:
+            ttk.Label(dlg, text=i18n.t("dlg_diagnostics_no_results"),
+                     foreground=theme.muted_foreground(dlg)).grid(
+                row=5, column=0, sticky="w", padx=28, pady=(4, 10))
+
+        btns = ttk.Frame(dlg)
+        btns.grid(row=6, column=0, sticky="e", padx=16, pady=(0, 16))
+
+        def _on_save() -> None:
+            selected_facts = {item_id for item_id, var in fact_vars.items()
+                              if var.get()}
+            selected_results = ([results[i] for i in listbox.curselection()]
+                                if listbox is not None else [])
+            path = filedialog.asksaveasfilename(
+                parent           = dlg,
+                defaultextension = ".zip",
+                filetypes        = [("ZIP files", "*.zip")],
+                initialfile      = "radiosim_diagnostics_"
+                                    f"{time.strftime('%Y%m%d_%H%M%S')}.zip",
+            )
+            if not path:
+                return
+            try:
+                diagnostics.build_package(path, selected_facts, selected_results)
+            except Exception as e:
+                self._alert(i18n.t("dlg_error"), failure.explain(
+                    e, what=i18n.t("fail_save_diagnostics"),
+                    hint=i18n.t("fix_file_write")))
+                return
+            dlg.destroy()
+            self._alert(i18n.t("dlg_diagnostics_title"),
+                       i18n.t("dlg_diagnostics_saved").format(path=path))
+
+        ttk.Button(btns, text=i18n.t("btn_cancel"), command=dlg.destroy).pack(
+            side="left", padx=(0, 6))
+        ttk.Button(btns, text=i18n.t("btn_save_diagnostics"),
+                  style="Accent.TButton", command=_on_save).pack(side="left")
+
+        dialogs.center_on(self.root, dlg)
 
     def _on_about(self) -> None:
         self._alert(
