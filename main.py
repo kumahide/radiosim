@@ -229,6 +229,15 @@ def main() -> None:
     _warn_if_not_the_declared_interpreter()
     _setup_windows_platform()
     root = tk.Tk()
+    # 🔴 **表示前に隠す**（I-132 再発）＝`tk.Tk()` は生成と同時に窓を画面へ出す。
+    # 出したあとに `apply_title_bar_theme` で DWM へダーク/ライトを申告しても、
+    # 非クライアント領域（タイトルバー）はその場では塗り替わらないことがある
+    # （実装上の落とし穴③・[views/theme.py](views/theme.py) の docstring）。設定
+    # 画面での切替が効くのは、ダイアログを閉じた際のフォーカス復帰が非クライアント
+    # 領域の再描画を誘発するため＝**起動直後はその契機が無く、次に何かが窓を
+    # アクティブ化するまで白いまま**残っていた。⇒ 申告が終わって
+    # `deiconify()` するまで窓を見せない（テストの `root.withdraw()` と同じ形）。
+    root.withdraw()
     # 以降に作る窓・コールバックすべてを覆うので、**何よりも先に**入れる
     # （ここより前で落ちたものは stderr へ消える＝I-059）。
     errors.install(root)
@@ -265,6 +274,7 @@ def main() -> None:
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")
+    root.deiconify()          # 申告と組み立てが終わってから見せる（I-132 再発）
     if _PROF_ON:
         root.update()  # 初回描画を強制してレイアウト/ペイント時間を計測に含める
         _prof("first paint (update)")
