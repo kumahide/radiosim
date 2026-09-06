@@ -117,7 +117,7 @@ end;
   挟めないので、usPostUninstall で確認ダイアログを出してから DelTree する。既定は「残す」
   （MsgBox の既定ボタンは No）＝サイレントアンインストールでは何も消えず
   従来どおり（利用者データを黙って失わせない）。 }
-procedure UninstallStepChanged(CurUninstallStep: TUninstallStep);
+procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
 var
   AppData, LocalAppData, Documents: string;
 begin

@@ -579,3 +579,57 @@ class TestInstallerLangSeedContract:
         assert re.search(r"^\[UninstallDelete\]", iss, re.MULTILINE)
         assert re.search(r'^Type:\s*files;\s*Name:\s*"\{app\}\\' + re.escape(name),
                          iss, re.MULTILINE)
+
+
+# Inno Setup が呼び出すイベント関数の名前（6.x / 7.x 共通）。ここに無い名前の
+# ルーチンは、自分で呼ばない限り**誰にも呼ばれない**（ISCC は警告も出さない）。
+_INNO_EVENT_FUNCTIONS = {
+    # セットアップ側
+    "InitializeSetup", "DeinitializeSetup", "InitializeWizard",
+    "CurStepChanged", "CurPageChanged", "CurInstallProgressChanged",
+    "NextButtonClick", "BackButtonClick", "CancelButtonClick",
+    "ShouldSkipPage", "CheckPassword", "CheckSerial", "NeedRestart",
+    "UpdateReadyMemo", "RegisterPreviousData", "PrepareToInstall",
+    "GetCustomSetupExitCode",
+    # アンインストーラ側
+    "InitializeUninstall", "DeinitializeUninstall",
+    "InitializeUninstallProgressForm", "CurUninstallStepChanged",
+    "UninstallNeedRestart",
+}
+
+
+class TestInstallerCodeIsReachable:
+    """`.iss` の [Code] に書いたルーチンが本当に呼ばれること（B-186）。
+
+    Inno のイベント関数は**名前の一致だけ**で結び付く。綴りを 1 文字違えても
+    ISCC は黙ってコンパイルを通し、そのルーチンは一度も実行されない。
+    I-137（アンインストール時の削除確認）を `UninstallStepChanged` という
+    存在しない名前で書いてしまい、実機のアンインストールでダイアログが
+    出ないまま出荷しかけた＝**テストが無ければ実機でしか気づけない**。
+    """
+
+    ISS = ROOT / "installer" / "radiosim.iss"
+
+    def test_every_uncalled_routine_is_a_real_event_name(self):
+        iss = self.ISS.read_text(encoding="utf-8")
+        code = iss.split("[Code]", 1)[1] if "[Code]" in iss else ""
+        defs = re.findall(r"^\s*(?:procedure|function)\s+(\w+)", code, re.MULTILINE)
+        assert defs, "[Code] にルーチンが 1 つも見つからない（節の切り出しが壊れた？）"
+        for name in defs:
+            if name in _INNO_EVENT_FUNCTIONS:
+                continue
+            # 自分の定義行を除いて、どこかから呼ばれていれば助っ人関数として正当
+            calls = len(re.findall(r"\b" + re.escape(name) + r"\b", iss))
+            assert calls > 1, (
+                f"[Code] の {name} は Inno のイベント名でもなく、"
+                "どこからも呼ばれていない＝黙って死んでいる")
+
+    def test_uninstall_confirmation_is_wired(self):
+        """I-137 の確認ダイアログが、実際に走る経路に載っていること。"""
+        iss = self.ISS.read_text(encoding="utf-8")
+        assert "procedure CurUninstallStepChanged" in iss
+        body = iss.split("procedure CurUninstallStepChanged", 1)[1]
+        assert "usPostUninstall" in body
+        assert "DeleteDataConfirm" in body
+        assert re.search(r"^japanese\.DeleteDataConfirm=", iss, re.MULTILINE)
+        assert re.search(r"^english\.DeleteDataConfirm=", iss, re.MULTILINE)
