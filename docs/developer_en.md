@@ -30,7 +30,8 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 18. [Development Environment](#development-environment)
 19. [Testing](#testing)
 20. [Known Limitations](#known-limitations)
-21. [Copyright](#copyright)
+21. [Reporting Bugs](#reporting-bugs)
+22. [Copyright](#copyright)
 
 ---
 
@@ -1169,6 +1170,14 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
+
+---
+
+## Reporting Bugs
+
+Please report bugs and feature requests via [GitHub Issues](https://github.com/kumahide/radiosim/issues).
+
+**Attach the zip created by Help → "Save Diagnostic Package..." (`core/diagnostics.py`).** It bundles the version, settings, recent log, cache statistics, environment info, and storage paths; coordinates, credentials, and usernames in paths are masked automatically (see [Help](#help)). Result files are unchecked by default, so you choose whether to include project data.
 
 ---
 

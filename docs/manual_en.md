@@ -28,7 +28,8 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 14. [Save Package](#save-package)
 15. [Uninstall](#uninstall)
 16. [Known Limitations](#known-limitations)
-17. [Copyright](#copyright)
+17. [Reporting Bugs](#reporting-bugs)
+18. [Copyright](#copyright)
 
 ---
 
@@ -918,6 +919,14 @@ The portable build keeps settings, cache, and results inside the extracted folde
 - The terrain cache is cleared on restart; the disk cache persists across sessions
 - 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk 8.6), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ **We verified by measurement that the newer Tk (9.0) does not have this problem**, but moving to it depends on other conditions (support in the Python runtime we build on), so there is no date yet
 - When monitors with different display scales are in use, moving a window to another monitor resizes the text of the whole application to match that scale. Only the menu bar strip (File / Settings / Help) is drawn by Windows, so it keeps the scale of the monitor its own window sits on and may look smaller (or larger) than the rest. This affects appearance only, not operation
+
+---
+
+## Reporting Bugs
+
+Please report bugs and feature requests via [GitHub Issues](https://github.com/kumahide/radiosim/issues).
+
+**Attach the zip created by Help → "Save Diagnostic Package..."** It bundles the version, settings, recent log, cache statistics, environment info, and storage paths; coordinates, credentials, and usernames in paths are masked automatically (see [Help](#help)). Result files are unchecked by default, so you choose whether to include project data.
 
 ---
 
