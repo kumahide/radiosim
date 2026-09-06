@@ -114,6 +114,30 @@ _SUMMARY_COL_KEYS = (
 )
 
 
+# 幅を効かせる列（→ CSS の `col.c-note` / `col.c-graph`）は**列キーで引く**。
+# `<colgroup>` を手書きで並べていた頃は、列を足すたびに末尾の 2 本が 1 列ずつ
+# 手前へずれ（B-185＝f1_depth と dem_fail の 2 回ぶん）、幅の指定が「F1 侵入深さ」と
+# 「DEM 失敗」に当たって**備考が幅を奪い放題**になっていた（＝台帳の崩れ）。
+# 列数を引き算で書く ERROR 行の colspan と同じ理由＝**位置は書かない**。
+_SUMMARY_COL_CLASSES = {
+    "html_col_id":     "c-id",
+    "html_col_status": "c-status",
+    "html_col_freq":   "c-freq",
+    "html_col_note":   "c-note",
+    "html_col_graph":  "c-graph",
+}
+
+
+def _summary_colgroup() -> str:
+    """台帳の `<colgroup>`（列キーと 1:1）を返す。"""
+    cols = "".join(
+        f'<col class="{_SUMMARY_COL_CLASSES[key]}">'
+        if key in _SUMMARY_COL_CLASSES else "<col>"
+        for key in _SUMMARY_COL_KEYS
+    )
+    return f"<colgroup>{cols}</colgroup>"
+
+
 def _summary_header_cells() -> str:
     """台帳の <th> 群を返す。単位（"… (dBm)"）は 2 行目へ落とす。
 
@@ -383,11 +407,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 </div>
 {map_block}
 <table class="summary">
-<colgroup>
-  <col class="c-id"><col class="c-status"><col class="c-freq">
-  <col><col><col><col><col><col><col><col><col><col><col><col><col><col><col>
-  <col class="c-note"><col class="c-graph">
-</colgroup>
+{_summary_colgroup()}
 <thead>
 <tr>{_summary_header_cells()}</tr>
 </thead>

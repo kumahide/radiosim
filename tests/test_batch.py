@@ -1931,3 +1931,57 @@ class TestSummaryErrorReasonFitsOnPaper:
             "ERROR 行の理由が長いだけで台帳が広がる＝右端の列が A4 の印字域の外へ出る"
             f"（{narrow:.0f}px → {wide:.0f}px）"
         )
+
+
+# ============================================================
+# 台帳の <colgroup> が列と 1:1 であること（B-185）
+# ============================================================
+class TestSummaryColgroupMatchesColumns:
+    """幅指定（`col.c-note` / `col.c-graph`）が**狙った列に当たっている**こと。
+
+    ⚠️ **幅を測るゲート（TestSummaryErrorReasonFitsOnPaper）はこの欠陥を通す**＝
+    tests/table_fit.py は `<colgroup>` を見ない（セルの CSS だけを解く）ので、
+    `<col>` が 2 本足りず備考・グラフの幅指定が 2 列手前へずれていても緑のままだった。
+    実際に f1_depth・dem_fail を足した 2 回ぶんずれ、備考が幅を奪って台帳が崩れた。
+    見るのは本数と**キーとの対応**の 2 つ（本数だけだと入れ替わりを通す）。
+    """
+
+    def _colgroup(self, tmp_path, default_params_dict) -> list[str]:
+        """生成物の `<col>` を「その列のクラス（無ければ空文字）」の並びで返す。"""
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        results = [batch.PathResult(row=row, result=_make_result(), params=params)]
+        i18n.set_lang("ja")
+        report_summary.save_summary_html(results, str(tmp_path))
+        with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
+            html = f.read()
+        m = re.search(r"<colgroup>(.*?)</colgroup>", html, re.S)
+        assert m is not None, "台帳に <colgroup> が無い"
+        self.html = html
+        cols = []
+        for col in re.findall(r"<col\b[^>]*>", m.group(1)):
+            cls = re.search(r'class="([^"]*)"', col)
+            cols.append(cls.group(1) if cls else "")
+        return cols
+
+    def test_one_col_per_column(self, tmp_path, default_params_dict):
+        cols = self._colgroup(tmp_path, default_params_dict)
+        n_th = len(re.findall(r"<th\b", self.html))
+        assert len(cols) == len(report_summary._SUMMARY_COL_KEYS) == n_th, (
+            "<colgroup> の本数が列数と違う＝以降の幅指定が手前の列へずれる"
+            f"（col {len(cols)} 本 / 列 {len(report_summary._SUMMARY_COL_KEYS)} / "
+            f"th {n_th}）"
+        )
+
+    def test_width_classes_land_on_their_own_column(self, tmp_path,
+                                                    default_params_dict):
+        cols = self._colgroup(tmp_path, default_params_dict)
+        for key, cls in report_summary._SUMMARY_COL_CLASSES.items():
+            want = report_summary._SUMMARY_COL_KEYS.index(key)
+            # 本数が足りない形（実際に踏んだ壊れ方）でも、添字例外でなく
+            # 「どこに当たっているか」を言って落ちること。
+            got = cols[want] if want < len(cols) else "（列が無い）"
+            assert got == cls, (
+                f"{cls} が {key} の列（{want} 番目）に当たっていない"
+                f"（当たっている列: {cols.index(cls) if cls in cols else 'なし'}）"
+            )
