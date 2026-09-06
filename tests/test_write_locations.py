@@ -237,3 +237,36 @@ class TestLegacyMigration:
     def test_cache_is_not_migrated(self):
         """キャッシュは再生成可能＝移行対象に含めない（roadmap の明示判断）。"""
         assert not hasattr(config, "_migrate_cache")
+
+    def test_legacy_leftovers_empty_when_portable(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "is_portable", lambda: True)
+        monkeypatch.setattr(config, "app_base_dir", lambda: str(tmp_path))
+        (tmp_path / "radiosim_conf.json").write_text("{}", encoding="utf-8")
+        (tmp_path / "results").mkdir()
+        assert config.legacy_leftovers() == {}
+
+    def test_legacy_leftovers_empty_when_nothing_left(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "is_portable", lambda: False)
+        monkeypatch.setattr(config, "app_base_dir", lambda: str(tmp_path))
+        assert config.legacy_leftovers() == {}
+
+    def test_legacy_leftovers_reports_both(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "is_portable", lambda: False)
+        monkeypatch.setattr(config, "app_base_dir", lambda: str(tmp_path))
+        old_config = tmp_path / "radiosim_conf.json"
+        old_config.write_text("{}", encoding="utf-8")
+        old_results = tmp_path / "results"
+        old_results.mkdir()
+
+        found = config.legacy_leftovers()
+
+        assert found == {"config": str(old_config), "results": str(old_results)}
+
+    def test_legacy_leftovers_reports_only_what_exists(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(config, "is_portable", lambda: False)
+        monkeypatch.setattr(config, "app_base_dir", lambda: str(tmp_path))
+        old_config = tmp_path / "radiosim_conf.json"
+        old_config.write_text("{}", encoding="utf-8")
+        # results サブフォルダは作らない
+
+        assert config.legacy_leftovers() == {"config": str(old_config)}

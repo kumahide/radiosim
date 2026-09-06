@@ -120,7 +120,7 @@ The installer build stores **settings, cache, logs, and results in OS-standard l
 | Saved-package output (`results/`)                | `Documents\RadioSim\` (not a hidden folder, since you open it yourself) |
 | Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\lang\` |
 
-> If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated).
+> If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated). As long as the old copies remain, a dialog naming their location appears on every launch. Once you've confirmed the new location has everything you need, delete the old ones manually (the dialog stops once they're gone).
 
 ### Portable build (ZIP)
 

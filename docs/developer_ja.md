@@ -326,6 +326,7 @@ radiosim/
     ├── test_layers.py
     ├── test_paths.py
     ├── test_write_locations.py
+    ├── test_legacy_leftover_notice.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
@@ -1100,6 +1101,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_dev_check.py`      | 検証ランナー自身のゲート（`buildtools/dev_check.py`）。**手書きの対応表が腐って黙って何も足さなくなる**のを検出し、範囲を絞っても静的検査のゲートが必ず足されること・カバレッジ門が全件のときだけ掛かること・出力が要約に収まることを固定 |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・ポータブル配置では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード）＋**テスト実行の隔離**（テストが開発機の実設定を読まず、実リポジトリへ書かないこと＝定数・既定引数・ログの出口の 3 面） |
 | `test_write_locations.py` | OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判定（`portable.txt`）・Known Folder 解決の段階的フォールバック（API失敗→環境変数→既定）・旧配置からの移行（コピーのみ・旧は残す・新は上書きしない・キャッシュは移行対象外）（3.1） |
+| `test_legacy_leftover_notice.py` | 旧配置に残ったデータ（設定・過去の結果）を起動時に案内する画面側の配線（3.2）。`config.legacy_leftovers()` の検出結果が空なら何も出さない・見つかった分だけ本文に列挙する・見つかっていない側は本文に出さないことを見る |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |

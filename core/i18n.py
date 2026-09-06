@@ -90,6 +90,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_save_diagnostics":  "Save...",
         "dlg_diagnostics_saved": "Diagnostic package saved:\n{path}",
         "fail_save_diagnostics": "The diagnostic package could not be saved.",
+        "legacy_leftover_title": "Leftover data from the old location",
+        "legacy_leftover_intro": "Data from before the 3.1 storage-location "
+                                "change is still next to the app (it was "
+                                "copied to the new location, not moved):",
+        "legacy_leftover_config":  "- Settings: {path}",
+        "legacy_leftover_results": "- Past results: {path}",
+        "legacy_leftover_hint":  "Once you've confirmed the new location has "
+                                "everything you need, you can delete these "
+                                "manually (RadioSim does not delete them for "
+                                "you). This notice reappears on every launch "
+                                "until they are gone.",
         "dlg_error":            "Error",
         "dlg_unexpected_error": "Unexpected error",
         # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /
@@ -761,6 +772,16 @@ _STRINGS: dict[str, dict[str, str]] = {
         "btn_save_diagnostics":  "保存...",
         "dlg_diagnostics_saved": "診断パッケージを保存しました:\n{path}",
         "fail_save_diagnostics": "診断パッケージを保存できませんでした。",
+        "legacy_leftover_title": "旧配置に残っているデータ",
+        "legacy_leftover_intro": "3.1 の保存先変更より前のデータが、アプリの隣に"
+                                "まだ残っています（新しい保存先へはコピー済み・"
+                                "元は残す設計です）：",
+        "legacy_leftover_config":  "- 設定: {path}",
+        "legacy_leftover_results": "- 過去の結果: {path}",
+        "legacy_leftover_hint":  "新しい保存先に必要なものが揃っていることを確認"
+                                "できたら、これらは手動で削除してください（自動"
+                                "では削除しません）。消えるまで、この案内は起動の"
+                                "たびに表示されます。",
         "dlg_error":            "エラー",
         "dlg_unexpected_error": "予期しないエラー",
         # ⚠️ 本文は `fail_unexpected` / `fail_why_aborted` / `fix_retry_or_log` /

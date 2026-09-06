@@ -104,6 +104,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 黙って壊れさせない）。⚠️ 起動のたびに出す＝「直すまで言い続ける」ことに
         # 意味がある（1 度きりの通知は、直す機会を逃した人には無かったのと同じ）。
         root.after_idle(self._warn_about_rejected_translations)
+        root.after_idle(self._warn_about_legacy_data)
 
     #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
     #: 理由と 1 対 1**（理由を足したらここも足す＝`tests/test_i18n_external.py`
@@ -163,6 +164,28 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 hint   = i18n.t("fix_edit_lang_file"),
                 detail = detail,
             ))
+
+    def _warn_about_legacy_data(self) -> None:
+        """3.1 の保存先移設で exe の隣に残った旧配置のデータを知らせる（3.2）。
+
+        `config._migrate_legacy_data` は**コピーのみ・旧は残す**設計（過去結果
+        の喪失を避けるため削除は行わない）＝残骸は必ず生じる。削除まではせず、
+        `config.legacy_leftovers()` の検出結果をここで案内する。
+
+        ⚠️ **起動のたびに出す**＝`_warn_about_rejected_translations` と同じ理由
+        （直すまで言い続ける）。利用者が手動で削除すれば、その回から出なくなる。
+        """
+        found = config.legacy_leftovers()
+        if not found:
+            return
+        lines = [i18n.t("legacy_leftover_intro")]
+        if "config" in found:
+            lines.append(i18n.t("legacy_leftover_config").format(path=found["config"]))
+        if "results" in found:
+            lines.append(i18n.t("legacy_leftover_results").format(path=found["results"]))
+        lines.append("")
+        lines.append(i18n.t("legacy_leftover_hint"))
+        self._alert(i18n.t("legacy_leftover_title"), "\n".join(lines))
 
     def _fit_window_to_content(self) -> None:
         """ウィンドウを中身の必要量に合わせる（端の切り落とし防止）。

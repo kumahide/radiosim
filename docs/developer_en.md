@@ -327,6 +327,7 @@ radiosim/
     ├── test_layers.py
     ├── test_paths.py
     ├── test_write_locations.py
+    ├── test_legacy_leftover_notice.py
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
@@ -1108,6 +1109,7 @@ entry point that runs them together.
 | `test_dev_check.py`      | Gate for the verification runner itself (`buildtools/dev_check.py`). Detects a **hand-written gate table that has rotted and silently adds nothing**, and pins that a narrowed scope still picks up the static-analysis gate, that the coverage gate applies to full runs only, and that the output stays a summary |
 | `test_paths.py`          | Write-target path resolution (config, results, log and DEM cache do not depend on the current directory; portable installs resolve to the legacy locations; static guard that the resolver is not re-implemented elsewhere) **plus test-run isolation** (tests never read the developer's real settings nor write into the repository: constants, default arguments and the open log handler) |
 | `test_write_locations.py` | Migration to OS-standard write locations (%APPDATA% etc.), portable detection (`portable.txt`), staged Known Folder fallback (API failure → env var → default), and migration from the legacy layout (copy only, legacy files kept, new files never overwritten, cache excluded from migration) (3.1) |
+| `test_legacy_leftover_notice.py` | The screen-side wiring for the startup notice about data left behind at the old location (settings, past results) (3.2). Checks that nothing is shown when `config.legacy_leftovers()` finds nothing, that only what was found is listed in the body, and that a path that was not found never appears in the body |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |

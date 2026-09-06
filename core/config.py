@@ -196,6 +196,19 @@ PROFILE_LOG_FILE = os.path.join(cache_log_base_dir(), "radiosim_profile.log")
 #   リスクなので、失敗しても壊れるのは「まだ移行できていない」だけに留める。
 #   キャッシュは再生成可能なので移行対象に含めない（DEM は取得し直せばよい）。
 # ============================================================
+#: 旧配置（exe／スクリプトの隣）のパス。移行（コピーのみ・旧は残す）と、
+#: 残骸検出（`legacy_leftovers()`）の両方がこの2つを見る＝基準を1か所にする。
+#: ⚠️ **関数のまま**＝定数にすると `app_path()`（→ `app_base_dir()`）の結果が
+#: import 時点で凍結され、テストが `app_base_dir` を monkeypatch しても
+#: 効かなくなる（実際に踏んだ＝`TestLegacyMigration` の4本が固定パスへ落ちた）。
+def _legacy_config_file() -> str:
+    return app_path("radiosim_conf.json")
+
+
+def _legacy_results_dir() -> str:
+    return app_path("results")
+
+
 def _migrate_legacy_data() -> None:
     if is_portable():
         return
@@ -204,7 +217,7 @@ def _migrate_legacy_data() -> None:
 
 
 def _migrate_config_file() -> None:
-    old = app_path("radiosim_conf.json")
+    old = _legacy_config_file()
     if os.path.exists(CONFIG_FILE) or not os.path.isfile(old):
         return
     try:
@@ -216,7 +229,7 @@ def _migrate_config_file() -> None:
 
 
 def _migrate_results_dir() -> None:
-    old = app_path("results")
+    old = _legacy_results_dir()
     if not os.path.isdir(old):
         return
     try:
@@ -249,6 +262,30 @@ def _migrate_results_dir() -> None:
                 shutil.copy2(src, dst)
         except OSError as e:
             logger.warning("Legacy results migration failed for %s: %s", name, e)
+
+
+def legacy_leftovers() -> "dict[str, str]":
+    """3.1 移行後、exe／スクリプトの隣に残っている旧配置のパスを返す。
+
+    `_migrate_legacy_data()` は**コピーのみ・旧は残す**（過去結果の喪失を避ける
+    ため削除は次版に送った設計＝2026-07-25 決定）。その結果として残骸は必ず
+    生じるので、削除まではせず**検出して知らせる**側をここに置く（3.2・
+    ロードマップ「旧配置の残骸を検出して知らせる」）。呼び出し側（起動時の
+    案内）が実際の通知を行う＝ここは検出のみで副作用を持たない。
+
+    戻り値のキーは `"config"` / `"results"`（見つかった分だけ・パスの文字列）。
+    ポータブル配置では旧配置＝新配置なので常に空。
+    """
+    if is_portable():
+        return {}
+    found: dict[str, str] = {}
+    old_config = _legacy_config_file()
+    if os.path.isfile(old_config):
+        found["config"] = old_config
+    old_results = _legacy_results_dir()
+    if os.path.isdir(old_results):
+        found["results"] = old_results
+    return found
 
 
 # ============================================================
