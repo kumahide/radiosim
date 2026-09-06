@@ -240,6 +240,28 @@ class TestCalculateTerrainProfile:
         t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
         assert t.fail_pct == pytest.approx(0.0)
 
+    def test_elevs_with_curve_has_no_nan_when_raw_has_partial_nan(self):
+        """B-181＝raw_elevs の nan（DEM 取得失敗）が elevs_with_curve に伝播しないこと。
+
+        伝わると np.argmax() を含む下流の伝搬計算（最大障害物探索・回折損・
+        受信電力）が丸ごと nan に汚染される。raw_elevs 自体は nan を保持し続け、
+        fail_pct はこれまでどおり正しく答える。
+        """
+        raw = np.zeros(10)
+        raw[3] = np.nan
+        t = models.calculate_terrain_profile(raw, 34.54, 132.41, 34.54, 132.46)
+        assert not np.any(np.isnan(t.elevs_with_curve))
+        assert np.isnan(t.raw_elevs[3])
+        assert t.fail_pct == pytest.approx(10.0)
+
+    def test_elevs_with_curve_treats_nan_as_zero_elevation(self):
+        """B-181＝nan は計算上、DEM のカバレッジ外と同じ中立値 0.0 として扱う。"""
+        raw_with_nan = np.array([np.nan, 0.0, 0.0])
+        raw_with_zero = np.array([0.0, 0.0, 0.0])
+        t_nan = models.calculate_terrain_profile(raw_with_nan, 34.54, 132.41, 34.54, 132.46)
+        t_zero = models.calculate_terrain_profile(raw_with_zero, 34.54, 132.41, 34.54, 132.46)
+        assert t_nan.elevs_with_curve == pytest.approx(t_zero.elevs_with_curve)
+
     def test_earth_k_stored_in_profile(self):
         """calculate_terrain_profile に渡した earth_k が TerrainProfile に保持されること。"""
         raw = np.zeros(100)

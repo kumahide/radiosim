@@ -39,6 +39,18 @@ from core import version
 _COORD_LOG_PATTERN = re.compile(r"start=\([^)]*\)\s*end=\([^)]*\)")
 _COORD_LOG_MASK = "start=(***) end=(***)"
 
+#: `core/dem.py` の DEM 警告・エラーログが使う別書式（"lat=35.123456 lon=139.123456"）。
+#: **B-180**＝上の `_COORD_LOG_PATTERN` は `simulation.py` の書式しか拾わず、
+#: この書式は素通りしていた（座標伏字化の列挙漏れ）。
+_LATLON_LOG_PATTERN = re.compile(r"lat=-?\d+(?:\.\d+)?\s+lon=-?\d+(?:\.\d+)?")
+_LATLON_LOG_MASK = "lat=*** lon=***"
+
+#: プロキシ URL の認証情報（`user:password@host`）を伏せる。**B-180**＝
+#: `dem.set_proxy()` がホスト情報ごと URL 全体をログへ記録するため、
+#: 資格情報入りの URL がそのまま直近ログへ残っていた。
+_PROXY_CRED_LOG_PATTERN = re.compile(r"(://)[^/@\s]+@")
+_PROXY_CRED_LOG_MASK = r"\1***@"
+
 #: 収集する末尾行数。多すぎると「直近の挙動を見る」という収集層の趣旨から外れ、
 #: ログ全体を持ち出す器になってしまう。
 _LOG_TAIL_LINES = 200
@@ -48,8 +60,11 @@ _SENSITIVE_CONFIG_KEYS = ("start", "end")
 
 
 def _redact_log_line(line: str) -> str:
-    """1 行の座標を伏せ字にして返す（座標を含まない行はそのまま）。"""
-    return _COORD_LOG_PATTERN.sub(_COORD_LOG_MASK, line)
+    """1 行の座標・プロキシ認証情報を伏せ字にして返す（該当しない行はそのまま）。"""
+    line = _COORD_LOG_PATTERN.sub(_COORD_LOG_MASK, line)
+    line = _LATLON_LOG_PATTERN.sub(_LATLON_LOG_MASK, line)
+    line = _PROXY_CRED_LOG_PATTERN.sub(_PROXY_CRED_LOG_MASK, line)
+    return line
 
 
 def recent_log_lines(*, path: "str | None" = None, limit: int = _LOG_TAIL_LINES) -> list[str]:

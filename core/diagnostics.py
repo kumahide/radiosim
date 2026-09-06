@@ -86,6 +86,10 @@ def build_package(zip_path: str, selected_facts: "set[str] | None" = None,
     directory = os.path.dirname(os.path.abspath(zip_path)) or "."
     fd, tmp = tempfile.mkstemp(dir=directory, prefix=".radiosim_diag-", suffix=".zip")
     os.close(fd)
+    # B-183＝一時 ZIP・最終保存先が選択済み成果物（results/<run>）の中に
+    # 収まっていると、後続の os.walk(src) が生成中の自分自身を発見して
+    # 取り込んでしまう。走査対象からこの2つのパスだけを明示的に除外する。
+    _self_paths = {os.path.abspath(tmp), os.path.abspath(zip_path)}
     try:
         with zipfile.ZipFile(tmp, "w", zipfile.ZIP_DEFLATED) as zf:
             zf.writestr("diagnostics.json",
@@ -96,6 +100,8 @@ def build_package(zip_path: str, selected_facts: "set[str] | None" = None,
                     for dirpath, _dirs, filenames in os.walk(src):
                         for fn in filenames:
                             full = os.path.join(dirpath, fn)
+                            if os.path.abspath(full) in _self_paths:
+                                continue
                             arc = os.path.join(
                                 "results", name, os.path.relpath(full, src))
                             zf.write(full, arc)

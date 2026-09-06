@@ -148,6 +148,23 @@ class TestBuildPackage:
         assert not os.path.exists(zip_path)
         assert os.listdir(tmp_path) == []
 
+    def test_saving_into_the_selected_result_dir_does_not_include_itself(
+            self, tmp_path, _fake_facts, monkeypatch):
+        """B-183＝保存先が選択済み成果物と同じディレクトリでも、生成中の ZIP
+        自身（一時ファイル・最終ファイルとも）を取り込まない。"""
+        results_dir = tmp_path / "results"
+        run_dir = results_dir / "batch_1"
+        run_dir.mkdir(parents=True)
+        (run_dir / "summary.csv").write_text("a,b\n1,2\n", encoding="utf-8")
+        monkeypatch.setattr(diagnostics.config, "RESULTS_DIR", str(results_dir))
+
+        zip_path = str(run_dir / "diag.zip")
+        diagnostics.build_package(zip_path, selected_results=["batch_1"])
+        with zipfile.ZipFile(zip_path) as zf:
+            names = set(zf.namelist())
+        assert names == {"diagnostics.json",
+                          os.path.join("results", "batch_1", "summary.csv").replace(os.sep, "/")}
+
     def test_writes_atomically_final_file_is_never_truncated(self, tmp_path, _fake_facts):
         """`os.replace` を使うので、書き終わるまで `zip_path` に断片が現れない。"""
         zip_path = str(tmp_path / "diag.zip")

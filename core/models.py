@@ -437,6 +437,15 @@ def calculate_terrain_profile(
                  置くので、取得側（`simulation.SimParams.sample_fracs`）が実際に
                  読んだ位置をそのまま渡す。**渡し忘れると標高と距離の対応がずれる**
                  （同じ配列を等間隔だと思って並べ直すことになる）。
+
+    🔴 **B-181＝`elevs_with_curve` は `nan` を持ち出さない**＝`raw_elevs` は
+    DEM 取得失敗（通信トラブル）を `nan` で持ち得るが（`core/dem.py` の不変条件・
+    `fail_pct` の元）、それをそのまま曲率補正へ足すと `np.argmax()` を含む
+    下流の伝搬計算（最大障害物探索・回折損・受信電力）が丸ごと `nan` に
+    汚染される。**開示用の信号（`raw_elevs` / `fail_pct` / `elev_source`）と
+    計算に使う値を分離する**＝計算側だけ `nan` を `0.0`（`dem.get_elevation()`
+    がカバレッジ外で返すのと同じ中立値）に置き換える。`raw_elevs` 自体は
+    従来どおり `nan` を保持するので、`fail_pct` の答えは変わらない。
     """
     R_earth = 6371.0
     Re      = R_earth * max(earth_k, 0.1)  # 0 除算防止
@@ -453,9 +462,11 @@ def calculate_terrain_profile(
         d_km_axis * (horiz_dist_km - d_km_axis)
     ) / (2 * Re) * 1000
 
+    elevs_for_calc = np.where(np.isnan(raw_elevs), 0.0, raw_elevs)
+
     return TerrainProfile(
         raw_elevs        = raw_elevs,
-        elevs_with_curve = raw_elevs + curvature_correction,
+        elevs_with_curve = elevs_for_calc + curvature_correction,
         d_km_axis        = d_km_axis,
         horiz_dist_km    = horiz_dist_km,
         num_samples      = num_samples,

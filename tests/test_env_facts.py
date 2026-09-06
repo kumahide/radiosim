@@ -49,6 +49,30 @@ class TestRecentLogLines:
         assert "34.542900" not in line
         assert "start=(***) end=(***)" in line
 
+    def test_redacts_lat_lon_formatted_coordinates(self, tmp_path):
+        """B-180＝`core/dem.py` の DEM 警告が使う `lat=... lon=...` 書式も伏せる。"""
+        path = tmp_path / "radiosim.log"
+        path.write_text(
+            "All DEM layers exhausted for lat=35.123456 lon=139.123456 "
+            "after network trouble, returning nan\n",
+            encoding="utf-8",
+        )
+        line = env_facts.recent_log_lines(path=str(path))[0]
+        assert "35.123456" not in line
+        assert "139.123456" not in line
+        assert "lat=*** lon=***" in line
+
+    def test_redacts_proxy_credentials(self, tmp_path):
+        """B-180＝プロキシ URL の認証情報（`user:password@host`）を伏せる。"""
+        path = tmp_path / "radiosim.log"
+        path.write_text(
+            "Proxy configured: 'http://user:secret@proxy.example.com:8080'\n",
+            encoding="utf-8",
+        )
+        line = env_facts.recent_log_lines(path=str(path))[0]
+        assert "user:secret" not in line
+        assert "://***@proxy.example.com:8080" in line
+
     def test_lines_without_coordinates_are_untouched(self, tmp_path):
         path = tmp_path / "radiosim.log"
         path.write_text("Terrain fetch complete: 10 samples\n", encoding="utf-8")
