@@ -268,6 +268,7 @@ radiosim/
 │   ├── errors.py         # Single sink that routes unhandled GUI exceptions to the log and a dialog
 │   ├── progress.py       # Progress transport (worker thread -> main thread)
 │   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
+│   ├── title_bar.py      # Declares the title bar / window frame colors (drawn by Windows) to DWM
 │   ├── window_fit.py     # Single implementation of window size and position (clipping / off-screen guard)
 │   ├── window_scroll.py  # Scroll escape for windows whose content is larger than the screen
 │   ├── scenario.py       # Condition explorer window (compare / sweep)
@@ -315,6 +316,7 @@ radiosim/
     ├── test_progress.py
     ├── test_runner_logging.py
     ├── test_theme.py
+    ├── test_title_bar.py
     ├── test_window_fit.py
     ├── test_errors.py
     ├── test_failure_messages.py
@@ -1096,6 +1098,7 @@ entry point that runs them together.
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |
 | `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
 | `test_theme.py`          | Plain tk widget colors (color source from sv_ttk, fg/bg contrast, applied to every menu and re-applied on theme switch) and UI fonts (labels match entries, dynamically created widgets, no hardcoded font families) |
+| `test_title_bar.py`      | Title bar / frame declaration (picking the decorated HWND, dark vs light value, fallback to the legacy attribute number, and **declaring only once the window is mapped** — before that there is no HWND to send to) |
 | `test_ui_consistency.py` | Cross-window consistency gate (run button at the right end of the progress bar, Accent only on "run", verdict colors sourced from theme, **no bold on screen**) |
 | `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) — **bilingual: every rule carries its English counterpart, and each row's `定義` cell ends with an English sentence; the `en` column is the wording to use on screen** — against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_i18n_key_duplication.py` | i18n key gate (**no two keys hold the same on-screen wording**; fixing only one of them would put two words on screen). Artifact wording — report HTML and plot images — is out of scope: aligning screen and artifact names belongs to the output-contract release |

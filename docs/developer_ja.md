@@ -268,6 +268,7 @@ radiosim/
 │   ├── errors.py         # GUI の未捕捉例外をログ＋ダイアログへ流す単一の受け皿
 │   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
 │   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色・UI フォント（sv_ttk 由来）
+│   ├── title_bar.py      # タイトルバー・窓枠（Windows が描く領域）の配色を DWM へ申告する
 │   ├── window_fit.py     # ウィンドウの寸法と位置を決める唯一の実装（見切れ・画面外防止）
 │   ├── window_scroll.py  # 入らないときの逃げ道（中身が画面より大きい窓のスクロール受け皿）
 │   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
@@ -314,6 +315,7 @@ radiosim/
     ├── test_progress.py
     ├── test_runner_logging.py
     ├── test_theme.py
+    ├── test_title_bar.py
     ├── test_window_fit.py
     ├── test_errors.py
     ├── test_failure_messages.py
@@ -1088,6 +1090,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_progress.py`       | 進捗トランスポート（開始/停止のライフサイクル・停止後の残存ポーリング・最新値のみ描画・スレッド安全性） |
 | `test_runner_logging.py` | バックグラウンド実行（バッチ / 条件探索 / 中継経路）の失敗が **traceback つき**でログに残ること |
 | `test_theme.py`          | 素の tk ウィジェットの配色（sv_ttk からの色取得・前景/背景のコントラスト・全メニューへの適用とテーマ切替追従）と UI フォント（ラベルと入力欄の一致・動的生成ウィジェット・書体の直書き禁止） |
+| `test_title_bar.py`      | タイトルバー・窓枠の申告（装飾側 HWND の選び方・ダーク/ライトの値・旧属性番号への退避・**窓がマップされてから申告しているか**＝生成直後は送り先が無く空振りする） |
 | `test_ui_consistency.py` | ウィンドウをまたいで同じであるべきものの横断ゲート（実行ボタンは進捗バーの右端・Accent は「走らせる」だけ・判定色の出所は theme・**画面で太字を使わない**） |
 | `test_i18n_glossary.py`  | 画面語彙のゲート（[glossary.md](glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
 | `test_i18n_key_duplication.py` | i18n キーのゲート（**画面に出る同じ字を 2 つのキーで持たない**。片方だけ直すと画面に 2 通りの語が出るため。成果物＝レポート HTML・グラフ画像の語は対象外＝画面と成果物の名前を揃えるのは出力の版の仕事） |

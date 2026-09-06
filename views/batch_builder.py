@@ -20,7 +20,7 @@ from core import simulation as sim
 from core import terrain_grid
 from core.models import DIFF_METHOD_KEYS, DIFF_METHOD_MULTI, ENV_KEYS
 from report import batch
-from views import frozen_common, theme, window_fit
+from views import frozen_common, theme, title_bar, window_fit
 from views.batch_io import _CsvMixin
 from views.batch_run import _RunMixin
 from views.batch_table import _TableMixin
@@ -106,7 +106,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         map_opener:      "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
-        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
+        title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
         self.title(i18n.t("batch_window_title"))
         # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
         # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が

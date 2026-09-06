@@ -66,7 +66,7 @@ from core import terrain_grid
 from core import units
 from report import mpl_fonts
 from report import report_path
-from views import dialogs, theme, window_fit
+from views import dialogs, title_bar, window_fit
 
 logger = logging.getLogger("radiosim")
 
@@ -135,7 +135,7 @@ class GraphWindow(tk.Toplevel):
         coord_format: str = "dd",
     ) -> None:
         super().__init__(parent)
-        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
+        title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
         # タイトルはソフト名を名乗らず**周波数だけ**（I-034）。レポート図が既に
         # そうしており、画面側だけが揃っていなかった。
         self.title(f"{params.freq_mhz} MHz")

@@ -28,7 +28,7 @@ from core import i18n
 from core import simulation as sim
 from core import version
 from views import dialogs
-from views import theme
+from views import theme, title_bar
 
 if TYPE_CHECKING:
     from views.map_window import MapWindow
@@ -435,7 +435,7 @@ class _MenuMixin:
 
     def _on_proxy_settings(self) -> None:
         dlg = tk.Toplevel(self.root)
-        theme.apply_title_bar_theme(dlg)   # マップ前に当てる（I-132）
+        title_bar.follow_title_bar(dlg)   # マップされ次第当てる（I-132・B-179）
         dlg.transient(self.root)
         dlg.title(i18n.t("dlg_proxy_title"))
         dlg.resizable(False, False)
@@ -583,7 +583,7 @@ class _MenuMixin:
         **既定でチェックなし**（入力座標＝顧客の案件情報のため）。
         """
         dlg = tk.Toplevel(self.root)
-        theme.apply_title_bar_theme(dlg)   # マップ前に当てる（I-132）
+        title_bar.follow_title_bar(dlg)   # マップされ次第当てる（I-132・B-179）
         dlg.transient(self.root)
         dlg.title(i18n.t("dlg_diagnostics_title"))
         dlg.resizable(False, False)
@@ -740,7 +740,7 @@ class _MenuMixin:
     def _show_readme_text(self, path: str) -> None:
         from tkinter.scrolledtext import ScrolledText
         win = tk.Toplevel(self.root)
-        theme.apply_title_bar_theme(win)   # マップ前に当てる（I-132）
+        title_bar.follow_title_bar(win)   # マップされ次第当てる（I-132・B-179）
         win.transient(self.root)
         win.title(i18n.t("dlg_doc_title"))
         win.geometry("800x600")

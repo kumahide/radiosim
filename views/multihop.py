@@ -40,7 +40,7 @@ from core import i18n
 from core import simulation as sim
 from core import units
 from report import multihop as mh
-from views import dialogs, frozen_common, theme, window_fit
+from views import dialogs, frozen_common, theme, title_bar, window_fit
 from views.multihop_map import _MapSinkMixin
 from views.progress import ProgressPump
 
@@ -80,7 +80,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
-        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
+        title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
         self.title(i18n.t("mh_window_title"))
         # ⚠️ `minsize` は `_BASE_W` より下に置く＝上にすると Tk が `geometry()` を
         # 上書きし、下限を下げても窓が細くならない（B-053 で実際に踏んだ）。

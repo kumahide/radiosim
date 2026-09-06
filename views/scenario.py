@@ -46,7 +46,7 @@ from core import simulation as sim
 from core import units
 from report import project
 from report import report_scenario
-from views import dialogs, frozen_common, theme, window_fit
+from views import dialogs, frozen_common, theme, title_bar, window_fit
 from views.progress import ProgressPump
 
 # 比較タブで編集できる項目（順に並ぶ）。値は文字列で持ち、実行時に変換する
@@ -124,7 +124,7 @@ class ScenarioWindow(tk.Toplevel):
         coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
-        theme.apply_title_bar_theme(self)   # 表示前に当てる（I-132・B-178）
+        title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
         self.title(i18n.t("scn_window_title"))
         self.minsize(780, 520)
 

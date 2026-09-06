@@ -37,7 +37,7 @@ from core import dem
 from core import i18n
 from report import map_graphics
 from tkintermapview import TkinterMapView
-from views import theme, window_fit
+from views import theme, title_bar, window_fit
 from views.map_cache import _CacheMixin
 from views.map_picks import _PickMixin
 from views.progress import ProgressPump
@@ -187,7 +187,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._sync_proxy()
 
         self._win = tk.Toplevel(parent)
-        theme.apply_title_bar_theme(self._win)   # マップ前に当てる（I-132）
+        title_bar.follow_title_bar(self._win)   # マップされ次第当てる（I-132・B-179）
         self._win.title(i18n.t("map_window_title"))
         # タイル取得の進捗は単一/バッチと同じ部品で受ける（実行のあいだだけ回す）。
         self._pump = ProgressPump(self._win, self._render_progress, latest_only=True)

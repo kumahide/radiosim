@@ -187,21 +187,42 @@ def _grow_scenario(win) -> None:
 # 申告する対象で、`SimLauncher` 自身の責務ではない。
 @pytest.mark.parametrize("name", sorted(n for n in _WINDOWS if n != "launcher"))
 def test_every_child_window_applies_the_title_bar_theme_on_open(name, monkeypatch):
-    """開いた直後に `theme.apply_title_bar_theme` を呼んでいること（B-178）。"""
-    from views import theme
+    """開いたあと、**申告が届く状態で** `title_bar.apply_title_bar_theme` を呼ぶこと（B-178・B-179）。
 
-    calls: list[object] = []
-    monkeypatch.setattr(
-        theme, "apply_title_bar_theme", lambda win, *a, **k: calls.append(win))
+    🔴 **「呼んだか」だけでは足りなかった**（2026-09-06・B-179＝ゲートの壊れ方③
+    「間違ったものを要求している」の実例）。B-178 はこの登録の全窓へ
+    `__init__` の 1 行を足して緑になったが、**製品は直っていなかった**＝Tk が
+    装飾側 HWND（ラッパー）を作るのは窓をマップするときで、生成直後の
+    `GetParent()` は 0。呼び出しは**送り先が無いまま静かに空振り**していた。
+    ⇒ 見るのは「**窓がマップされている状態で申告したか**」。
+    """
+    from views import title_bar
+
+    calls: list[tuple] = []
+
+    def spy(win, *a, **k):
+        # ⚠️ 記録するのは窓と**そのときマップされていたか**（＝申告が届く状態か）。
+        try:
+            mapped = bool(win.winfo_ismapped())
+        except Exception:
+            mapped = False
+        calls.append((win, mapped))
+        return mapped
+
+    monkeypatch.setattr(title_bar, "apply_title_bar_theme", spy)
     root = make_themed_root()
     try:
         root.withdraw()
         opener, _ = _WINDOWS[name]
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
-        assert win in calls, (
-            f"[{name}] 生成直後に theme.apply_title_bar_theme を呼んでいない"
-            "（テーマ切替まで待たないと、ダークテーマで開いた瞬間から"
-            "タイトルバーだけ白いまま浮く＝B-178）。"
+        assert any(w is win for w, _ in calls), (
+            f"[{name}] title_bar.apply_title_bar_theme を一度も呼んでいない"
+            "（ダークテーマで開いた瞬間からタイトルバーだけ白いまま浮く＝B-178）。"
+        )
+        win.update()          # ここで <Map> が処理される（follow_title_bar の予約）
+        assert any(w is win and mapped for w, mapped in calls), (
+            f"[{name}] 窓がマップされる前にしか申告していない＝装飾側 HWND がまだ"
+            "無いので黙って空振りする（B-179）。title_bar.follow_title_bar を使うこと。"
         )
     finally:
         root.destroy()

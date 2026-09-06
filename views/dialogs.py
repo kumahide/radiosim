@@ -12,7 +12,7 @@ import tkinter as tk
 from tkinter import ttk
 
 from core import i18n
-from views import theme
+from views import title_bar
 
 
 def center_on(parent: tk.Misc, dlg: tk.Toplevel) -> None:
@@ -36,7 +36,7 @@ def center_on(parent: tk.Misc, dlg: tk.Toplevel) -> None:
 
 def _make(parent: tk.Misc, title: str, message: str) -> tuple[tk.Toplevel, ttk.Frame]:
     dlg = tk.Toplevel(parent)
-    theme.apply_title_bar_theme(dlg)   # マップ前に当てる（I-132）
+    title_bar.follow_title_bar(dlg)   # マップされ次第当てる（I-132・B-179）
     dlg.transient(parent.winfo_toplevel())
     dlg.title(title)
     dlg.resizable(False, False)
