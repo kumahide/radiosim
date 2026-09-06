@@ -114,7 +114,7 @@ _SUMMARY_COL_KEYS = (
 )
 
 
-# 幅を効かせる列（→ CSS の `col.c-note` / `col.c-graph`）は**列キーで引く**。
+# CSS で名指しする列（幅＝`col.c-note`／字揃え＝`td.c-graph` 等）は**列キーで引く**。
 # `<colgroup>` を手書きで並べていた頃は、列を足すたびに末尾の 2 本が 1 列ずつ
 # 手前へずれ（B-185＝f1_depth と dem_fail の 2 回ぶん）、幅の指定が「F1 侵入深さ」と
 # 「DEM 失敗」に当たって**備考が幅を奪い放題**になっていた（＝台帳の崩れ）。
@@ -136,6 +136,27 @@ def _summary_colgroup() -> str:
         for key in _SUMMARY_COL_KEYS
     )
     return f"<colgroup>{cols}</colgroup>"
+
+
+# 備考（自由文）を**列の中に置ける長さの上限**（B-187・2026-09-06 ユーザー決定）。
+# 22 列の台帳では備考列に読める幅を回す余地が無く（ID に 46px の下限を与えると
+# 印字域 688px を使い切る）、長い備考は列の中で**1 文字ずつ縦に割れて**行が伸びた
+# （日本語は空白が無くてもどこでも折れる）。これを超えたら、その行の下へ
+# **備考だけの 1 行**を流す＝ERROR 行の理由（`c-reason`）と同じ作り（⑧）。
+# 8 文字＝実測で最も狭くなる備考列（ERROR 行を含む台帳の 23px）で 3 行に収まる長さ。
+_NOTE_INLINE_MAX = 8
+
+
+def _note_overflow_row(row_cls: str, note_esc: str) -> str:
+    """列に入りきらない備考を流す 1 行（空文字＝流す必要なし）。"""
+    if len(note_esc) == 0:
+        return ""
+    return (
+        f"<tr class='{row_cls} note-row'>"
+        f"<td class='c-note-full' colspan='{len(_SUMMARY_COL_KEYS)}'>"
+        f"<span class='lbl'>{_html.escape(i18n.t('html_col_note'))}</span>"
+        f"{note_esc}</td></tr>\n"
+    )
 
 
 def _summary_header_cells() -> str:
@@ -206,7 +227,11 @@ def summary_sheet_css() -> str:
    per-path の縮小フィット（transform）は使えない＝改ページに効かず表が切れるため。 */
 .sheet.summary table.summary{border-collapse:collapse;width:100%;table-layout:auto;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
 /* ヘッダは中央・下揃え・**折り返し禁止**（列幅は内容に追従するので語中で折れない）。 */
-.sheet.summary table.summary th{background:#455a64;color:white;padding:4px 4px;text-align:center;
+/* ⚠️ **左右の余白は 2px**（B-187）＝22 列あるので 1 列あたり 2px 削るだけで表全体が
+   88px 縮む。ここが 4px だったとき、列の最小幅の合計は 730px で A4 の印字域
+   （182mm＝688px）を 42px はみ出し、**備考が空でも表が用紙から出ていた**。
+   はみ出している間は `<col>` の `width` が丸ごと捨てられる（下の col.c-note の註）。 */
+.sheet.summary table.summary th{background:#455a64;color:white;padding:4px 2px;text-align:center;
   vertical-align:bottom;font-size:8px;white-space:nowrap;line-height:1.2;
   border-right:1px solid rgba(255,255,255,.22)}
 /* 単位は 2 行目・小さめ・やや淡色（ヘッダ幅を名前だけで決めさせる）。 */
@@ -214,15 +239,34 @@ def summary_sheet_css() -> str:
 /* 数値セルは右寄せ＋折り返し禁止で列内に整列させ、隣接列とは縦罫線で仕切る
    （桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに見えないように）。
    ID・判定は左/中央、備考のみ自由文なので折り返し可。 */
-.sheet.summary table.summary td{padding:4px 4px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
+.sheet.summary table.summary td{padding:4px 2px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
   font-size:9px;text-align:right;white-space:nowrap}
 .sheet.summary table.summary th:last-child,.sheet.summary table.summary td:last-child{border-right:none}
-.sheet.summary table.summary td.c-id{text-align:left}
+/* ID は利用者が CSV に書いた自由文（長さの上限が無い）＝**折り返す**（B-187）。
+   nowrap のままだと "hatsukaichi_kita_relay" のような ID 1 つで表が印字域を
+   28px はみ出した（実測）。区切りの無い長い識別子が来るので anywhere で割る。
+   ⚠️ `min-width` を必ず添える＝anywhere だけだと最小幅が **1 文字**になり、余った
+   幅が備考へ回って ID が縦に 1 文字ずつ割れた（13px まで潰れた・実測）。 */
+.sheet.summary table.summary td.c-id{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:anywhere;min-width:46px}
 .sheet.summary table.summary td.c-status{text-align:center}
 /* 備考は自由文。overflow-wrap:break-word で**空白で折り返す**（"ridge crossing" が
-   "ridg/e cros/sing" と語中で割れないように）。長い連続語だけ必要時に分割する。 */
+   "ridg/e cros/sing" と語中で割れないように）。長い連続語だけ必要時に分割する。
+   ⚠️ **ここに来るのは短い備考だけ**（`_NOTE_INLINE_MAX`）＝長い備考は下の
+   `.note-row` へ流す。列に幅を回す余地が無いので、下限は与えない。 */
 .sheet.summary table.summary td.c-note{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:break-word}
+/* 列に入りきらない備考を流す行（B-187）＝**ERROR 行の理由と同じ見せ方**（⑧）。
+   行色は元の行と同じ（`tr.ok` 等）ままにして、どの経路の備考かを色で辿らせる。
+   ⚠️ 割り方は ERROR 行の理由と同じ **anywhere**＝備考には空白の無い長い連続語
+   （型番・URL・日本語の一文）が入り、break-word では割れずに表を押し広げる。
+   幅は 1 行ぶん有るので、空白で折れる文はそこで折れる（語中では割れない）。 */
+.sheet.summary table.summary td.c-note-full{text-align:left;white-space:normal;
+  word-break:normal;overflow-wrap:anywhere;font-size:9px;color:#555;
+  padding:2px 6px 5px}
+.sheet.summary table.summary td.c-note-full .lbl{color:#999;margin-right:6px}
+/* 備考行は元の行と地続きに見せる（間の罫線を消す）。 */
+.sheet.summary table.summary tr.note-row td{border-top:none}
 /* ERROR 行の理由（自由文・colspan）も折り返す（B-145）。nowrap のままだと
    **折り返せない 1 行が table-layout:auto の表全体を押し広げ**、備考・グラフ列が
    A4 の印字域（182mm）の外へ出る。理由には空白の無い長い連続語（Windows の
@@ -230,10 +274,14 @@ def summary_sheet_css() -> str:
 .sheet.summary table.summary td.c-reason{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:anywhere}
 .sheet.summary table.summary tr{break-inside:avoid}
-/* 備考（自由文）とグラフだけ幅を抑える（auto だと長い備考が幅を奪いすぎるため）。
-   数値・ID 列は幅指定せず内容に追従させる。 */
-.sheet.summary table.summary col.c-note{width:90px}.sheet.summary table.summary col.c-graph{width:46px}
-.sheet.summary table.summary td img{max-width:100%;height:auto}
+/* 備考（自由文）だけ幅を抑える（auto だと長い備考が幅を奪いすぎるため）。
+   数値・ID 列は幅指定せず内容に追従させる。
+   ⚠️ **この指定が効くのは表が印字域に収まっている間だけ**（B-187）＝列の最小幅の
+   合計が親の幅を超えると `table-layout:auto` は `<col>` の `width` を捨て、全列を
+   最小幅で配る。当たり先を直した（B-185）だけでは何も変わらなかったのはこのため。 */
+.sheet.summary table.summary col.c-note{width:90px}
+/* グラフ列はリンク文字（サムネイルは置かない・B-187）＝幅指定は要らない。 */
+.sheet.summary table.summary td.c-graph{text-align:center}
 /* フッタを用紙の最下部へ。.sheet を縦フレックスにして .page-footer を margin-top:auto で
    押し下げる（画面は .sheet が 297mm 高なので下端へ／印刷は下記 min-height で1枚目を
    用紙高に合わせる）。summary 専用＝per-path はフッタが縮小フィット .fit の内側にあり
@@ -288,21 +336,26 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         pid_safe  = pr.row.path_id          # validated: [A-Za-z0-9_-]+ — safe for href
         pid_esc   = _html.escape(pr.row.path_id)
         note_esc  = _html.escape(pr.row.note)
+        # 長さの判定は**エスケープ前**（"&" が "&amp;" で 5 文字に化けるため）。
+        note_fits = len(pr.row.note) <= _NOTE_INLINE_MAX
+        note_cell = note_esc if note_fits else ""
         if pr.result is None:
             error_esc = _html.escape(str(pr.error))
             rows_html += (
                 f"<tr class='err'>"
-                f"<td>{pid_esc}</td>"
-                f"<td class='s-err'>ERROR</td>"
+                f"<td class='c-id'>{pid_esc}</td>"
+                f"<td class='c-status s-err'>ERROR</td>"
                 f"<td>{freq_disp}</td><td>{gain_tx_disp}</td><td>{gain_rx_disp}</td>"
                 f"<td>{h_tx_disp}</td><td>{h_rx_disp}</td>"
                 # 幅は**列数から引く**（先頭 7 列＋備考＋グラフの 9 列以外）。
                 # 直に数を書くと、列を足した日に理由欄だけが 1 列ずれる（I-077 で
                 # 実際に踏んだ＝中継台帳は最初から引き算で書いてあった）。
                 f"<td class='c-reason' colspan='{len(_SUMMARY_COL_KEYS) - 9}'>{error_esc}</td>"
-                f"<td class='c-note'>{note_esc}</td>"
-                f"<td></td></tr>\n"
+                f"<td class='c-note'>{note_cell}</td>"
+                f"<td class='c-graph'></td></tr>\n"
             )
+            if not note_fits:
+                rows_html += _note_overflow_row("err", note_esc)
             continue
         r   = pr.result
         # 判定は `pr.status`＝**成果物が欠けた経路はここで ERROR になる**（I-010）。
@@ -313,10 +366,16 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         # 連結文書では文書内アンカー（#p01）へ、単体では p01/report.html へ飛ばす。
         href = f"#{pid_safe}" if anchor_links else f"{pid_safe}/report.html"
         if pr.artifact_error is None:
+            # 🔴 **サムネイルは置かない**（B-187）＝22 列の台帳は列の最小幅の合計で
+            # 既に A4 の印字域（182mm）を超えており、`table-layout:auto` はこのとき
+            # `<col>` の `width` を捨てて全列を最小幅で配る。断面図（15:4.5）は
+            # `max-width:100%` でその最小幅（ヘッダ「グラフ」＝33px）まで縮み、
+            # **24×9px の帯**になって何の図か分からなかった（実測）。列幅を実寸
+            # （高さ 40px なら 133px）まで広げる余地は無いので、**リンク文字にする**
+            # （2026-09-06 ユーザー決定）。断面図は per-path レポートで見る。
             graph_cell = (
-                f"<td><a href='{href}'>"
-                f"<img src='{pid_safe}/profile.png' style='max-height:40px;border:1px solid #ddd;border-radius:3px;vertical-align:middle;'>"
-                f"</a></td>"
+                f"<td class='c-graph'><a href='{href}'>"
+                f"{_html.escape(i18n.t('html_graph_link'))}</a></td>"
             )
         else:
             graph_cell = (
@@ -325,8 +384,12 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             )
         rows_html += (
             f"<tr class='{cls}'>"
-            f"<td>{pid_esc}</td>"
-            f"<td class='s-{cls}'>{pr.status}</td>"
+            # ⚠️ **`c-id` / `c-status` はここで付ける**（B-187）＝CSS には最初から
+            # `td.c-id` / `td.c-status` があったのに `<td>` 側にクラスが無く、
+            # ID の左寄せも判定の中央寄せも**一度も効いていなかった**（`<col>` の
+            # クラスは列に当たっても `<td>` には降りてこない）。
+            f"<td class='c-id'>{pid_esc}</td>"
+            f"<td class='c-status s-{cls}'>{pr.status}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{gain_tx_disp}</td>"
             f"<td>{gain_rx_disp}</td>"
@@ -347,9 +410,11 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝`summary.csv` の
             # `dem_fail_pct` と同じ単一ソース（`pr.terrain.fail_pct`）。
             f"<td>{units.format_fail_pct(pr.terrain.fail_pct, unit=False) if pr.terrain else '—'}</td>"
-            f"<td class='c-note'>{note_esc}</td>"
+            f"<td class='c-note'>{note_cell}</td>"
             f"{graph_cell}</tr>\n"
         )
+        if not note_fits:
+            rows_html += _note_overflow_row(cls, note_esc)
 
     # 「結果の取扱に関する補足」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
     # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には

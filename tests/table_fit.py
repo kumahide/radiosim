@@ -32,8 +32,8 @@ import re
 _EM_ASCII = 0.55        # 欧文の平均字幅
 _EM_WIDE  = 1.0         # 全角（日本語の理由文が入り得る）
 
-# セルの左右パディング＋縦罫線（report_summary / report_multihop で 4px + 4px + 1px）
-_CELL_CHROME_PX = 9.0
+# セルの左右パディング＋縦罫線（report_summary / report_multihop で 2px + 2px + 1px）
+_CELL_CHROME_PX = 5.0
 
 
 def _char_em(ch: str) -> float:

@@ -1985,3 +1985,82 @@ class TestSummaryColgroupMatchesColumns:
                 f"{cls} が {key} の列（{want} 番目）に当たっていない"
                 f"（当たっている列: {cols.index(cls) if cls in cols else 'なし'}）"
             )
+
+
+# ============================================================
+# 台帳が印字域からはみ出さないための守り（B-187）
+# ============================================================
+class TestSummaryLedgerKeepsItsWidth:
+    """自由文（ID・備考）が伸びても台帳の最小幅が動かないこと。
+
+    🔴 **B-185 で直したのは当たり先だけで、崩れは何も変わらなかった**（実測で
+    列幅・画像寸法とも修正前と 1px も違わなかった）＝`table-layout:auto` は列の
+    最小幅の合計が親の幅を超えると `<col>` の `width` を丸ごと捨てる。だから
+    「幅指定が正しい列に当たっているか」（TestSummaryColgroupMatchesColumns）は
+    **崩れの検査になっていない**。ここで見るのは*表を押し広げる入力があるか*で、
+    tests/table_fit.py の増分比較（絶対値は測らない＝字の実寸は機械依存）を使う。
+    """
+
+    LONG_NOTE = "尾根越え・要現地確認（樹木の成長で余裕が減る可能性）" * 3
+    LONG_ID   = "hatsukaichi_kita_relay_extra_long_identifier"
+    SHEET     = (("div", frozenset({"sheet", "summary"})),)
+
+    def _min_width(self, tmp_path, default_params_dict, *, path_id="p01", note=""):
+        from tests import table_fit
+
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow(path_id, 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
+        row.note = note
+        results = [batch.PathResult(row=row, result=_make_result(), params=params)]
+        i18n.set_lang("ja")
+        out = tmp_path / f"{path_id[:12]}_{len(note)}"
+        out.mkdir()
+        report_summary.save_summary_html(results, str(out))
+        with open(os.path.join(str(out), "summary.html"), encoding="utf-8") as f:
+            self.html = f.read()
+        return table_fit.table_min_width_px(self.html, "summary", ancestors=self.SHEET)
+
+    def test_a_long_note_does_not_widen_the_ledger(self, tmp_path,
+                                                   default_params_dict):
+        """長い備考は列に残さず**下段の 1 行へ流す**（列に置くと表が広がる）。"""
+        narrow = self._min_width(tmp_path, default_params_dict, note="")
+        wide   = self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
+        assert wide == pytest.approx(narrow, abs=1.0), (
+            "備考が長いだけで台帳が広がる＝右端の列が A4 の印字域の外へ出る"
+            f"（{narrow:.0f}px → {wide:.0f}px）"
+        )
+
+    def test_a_long_note_is_still_readable(self, tmp_path, default_params_dict):
+        """流した先で**全文が読める**こと（幅を守るために消してはいない）。
+
+        ⚠️ 幅だけを見ると「備考を捨てる」実装も緑になる＝*出したうえで*収める。
+        """
+        self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
+        # ⚠️ クラス名は **CSS にも書いてある**＝`<td ...>` を探す（名前を探す検査は
+        # 備考行が 1 つも出ていなくても緑になる）。
+        assert "<td class='c-note-full'" in self.html, "長い備考を流す行が出ていない"
+        assert self.LONG_NOTE in self.html, "流した備考の全文が出ていない"
+
+    def test_a_long_path_id_does_not_widen_the_ledger(self, tmp_path,
+                                                      default_params_dict):
+        """ID は利用者が CSV に書く自由文＝長くても表を押し広げないこと。"""
+        narrow = self._min_width(tmp_path, default_params_dict, path_id="p01")
+        wide   = self._min_width(tmp_path, default_params_dict,
+                                 path_id=self.LONG_ID)
+        assert wide == pytest.approx(narrow, abs=1.0), (
+            "ID が長いだけで台帳が広がる（折り返しが効いていない）"
+            f"（{narrow:.0f}px → {wide:.0f}px）"
+        )
+
+    def test_no_thumbnail_image_in_the_ledger(self, tmp_path, default_params_dict):
+        """グラフ列に**画像を置かない**こと（B-187）。
+
+        断面図は 15:4.5 なので、この 22 列の台帳で回せる列幅（実測 33px）へ
+        `max-width:100%` で縮めると **24×9px** になり、何の図か分からなかった。
+        高さ 40px を保つには 133px 要る＝印字域に余地が無いのでリンク文字にした。
+        """
+        self._min_width(tmp_path, default_params_dict)
+        assert "<img" not in self.html.split("<table")[1], (
+            "台帳にサムネイルが戻っている（列幅では潰れて読めない）"
+        )
+        assert i18n.t("html_graph_link") in self.html, "グラフ列のリンク文字が無い"

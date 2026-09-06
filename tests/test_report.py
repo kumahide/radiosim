@@ -33,6 +33,7 @@ from report import multihop as mh
 from report import report_common
 from report import report_multihop
 from report import report_path
+from report import report_scenario
 from report import report_summary
 
 _KML_NS = "{http://www.opengis.net/kml/2.2}"
@@ -468,15 +469,20 @@ class TestSheetCssIsScoped:
         assert len(card) == 2 and "max-width" in card[1].split("}", 1)[0], (
             "区間名のカード自体に max-width が無い（値に掛けても効かない）")
 
-    @pytest.mark.parametrize("css_of", ["multihop", "summary"])
+    # サムネイルを**置いている**台帳だけを見る。バッチ台帳は 2026-09-06 に置くのを
+    # やめた（B-187）＝22 列では列幅が 33px しか回らず、`max-width:100%` に従うと
+    # 24×9px の帯になって読めなかった。**置かないこと自体**は
+    # tests/test_batch.py::TestSummaryLedgerKeepsItsWidth::test_no_thumbnail_image_in_the_ledger
+    # が見る＝ここへ戻す（縛りだけ足す）と、また潰れた図が出る。
+    @pytest.mark.parametrize("css_of", ["multihop"])
     def test_both_ledgers_bind_their_thumbnails(self, css_of):
-        """**両方の台帳**が、表の画像をセルに従わせること（B-155）。
+        """サムネイルを載せる台帳が、表の画像をセルに従わせること（B-155）。
 
         🔴 **揃っていなかったのは中継のほうだけ**だった＝バッチ台帳は最初から
         `td img{max-width:100%}` を持っており、中継は持っていなかったので
         サムネイルの実寸（断面図 15:4.5 ＝ 高さ 40px なら幅 133px）が列の最小幅に
-        なり、**表が A4 の印字域を 51px はみ出した**（実測）。⚠️ **2 つ同時に見る**
-        ＝片方だけ直すと、次に足した台帳でまた同じ日が来る（⑧）。
+        なり、**表が A4 の印字域を 51px はみ出した**（実測）。⚠️ 台帳を足したら
+        ここへ足す＝片方だけ直すと、次に足した台帳でまた同じ日が来る（⑧）。
         """
         css = (report_multihop.route_sheet_css() if css_of == "multihop"
                else report_summary.summary_sheet_css())
@@ -907,3 +913,43 @@ class TestHandlingSectionContent:
         assert i18n.t("html_handling_title") in html
         # 出典（B-134）は**全帳票が通る 1 か所**＝この節に入れることで 5 面へ届く。
         assert disclosure.data_source_line() in html
+
+
+# ============================================================
+# 生成する CSS が壊れていないこと（B-187 の作業中に 2 回踏んだ）
+# ============================================================
+class TestStylesheetsParse:
+    """帳票の CSS に、規則の外へこぼれた地の文が無いこと。
+
+    🔴 **註を書き足すときに `*/` の内側へ入れ損ね、コメントが 1 行で閉じて残りが
+    地の文になった**（B-187 の作業中に 2 回）。CSS はそこから先の規則ごと落とすので、
+    `td.c-id` の折り返しが丸ごと効かず、**直したはずの崩れがそのまま出た**。
+    ⚠️ 見た目のテストでは気づけない＝ブラウザは黙って無視し、
+    tests/table_fit.py は最初にコメントを剥がすので**同じ嘘を信じる**。
+    """
+
+    CSS_SOURCES = {
+        "common":   lambda: report_common.a4_base_css(),
+        "summary":  lambda: report_summary.summary_sheet_css(),
+        "path":     lambda: report_path.path_sheet_css(),
+        "multihop": lambda: report_multihop.route_sheet_css(),
+        "scenario": lambda: report_scenario.scenario_sheet_css(),
+    }
+
+    @pytest.mark.parametrize("name", sorted(CSS_SOURCES))
+    def test_comments_are_closed(self, name):
+        css = self.CSS_SOURCES[name]()
+        assert css.count("/*") == css.count("*/"), (
+            f"{name}: コメントの開き {css.count('/*')} と閉じ {css.count('*/')} が合わない"
+        )
+
+    @pytest.mark.parametrize("name", sorted(CSS_SOURCES))
+    def test_no_prose_outside_the_rules(self, name):
+        """宣言ブロックの外に残るのはセレクタだけ＝**非 ASCII は地の文の証拠**。"""
+        css = re.sub(r"/\*.*?\*/", "", self.CSS_SOURCES[name](), flags=re.S)
+        outside = re.sub(r"\{[^{}]*\}", "", css)
+        stray = sorted({ch for ch in outside if ord(ch) > 0x7F})
+        assert not stray, (
+            f"{name}: 規則の外に地の文がある（コメントの閉じ忘れ）＝{stray[:8]}"
+            f" … {outside.strip()[:160]}"
+        )
