@@ -356,7 +356,12 @@ begin
     無関係な RadioSim のデータを消す**。どちらへ外れても取り返しがつかないので、
     場所だけ案内して手を出さない。🔑 同じ危険はインストール側で既に認識済み＝
     上の CurStepChanged が設定を直接書かず種を置いているのがそれ。 }
-  if IsAdminInstallMode then
+  { ⛔ ここは IsAdmin（実行中のプロセスが管理者権限を持つか）であって
+    IsAdminInstallMode（インストールが全ユーザー向けモードだったか）ではない。
+    取り違えると、ユーザー向けに入れたアンインストーラを「管理者として実行」した
+    ときに条件が偽のまま素通りし、**防ごうとしている誤削除がそのまま起きる**
+    （Codex round81 の指摘・2026-09-07）。 }
+  if IsAdmin then
   begin
     MsgBox(FmtMessage(CustomMessage('UninstDataElevated'),
                       [ManualCleanupPaths]), mbInformation, MB_OK);

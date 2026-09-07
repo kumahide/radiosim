@@ -724,16 +724,26 @@ class TestInstallerCodeIsReachable:
 
         ⚠️ この分岐は **CollectRemovableData / AskRemovableData より前**でなければ
         意味が無い（後ろに置くと、間違ったプロファイルを走査した結果を見せてしまう）。
+
+        🔴 **判定は `IsAdmin` であって `IsAdminInstallMode` ではない**（Codex round81）
+        ＝後者は「インストールが全ユーザー向けモードだったか」であって実行中の権限では
+        ない。取り違えると、ユーザー向けに入れたアンインストーラを「管理者として実行」
+        したときに条件が偽のまま素通りし、**防ごうとしている誤削除がそのまま起きる**。
+        ⇒ ここは名前を**縛る**（初版はこの取り違えを仕様として固定していた）。
         """
         code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
         body = code.split("procedure CurUninstallStepChanged", 1)[1]
-        guard = body.find("IsAdminInstallMode")
-        assert guard != -1, "昇格の分岐が CurUninstallStepChanged に無い"
+        m = re.search(r"\bif IsAdmin then\b", body)
+        assert m, "昇格の分岐が `if IsAdmin then` になっていない"
+        guard = m.start()
+        assert not re.search(r"\bif IsAdminInstallMode then\b", body), (
+            "IsAdminInstallMode は『全ユーザー向けモードだったか』であって実行中の権限ではない"
+        )
         for later in ("CollectRemovableData", "AskRemovableData", "DeleteSelectedData"):
             pos = body.find(later)
             assert pos > guard, f"{later} が昇格の分岐より前にある"
         # 分岐の中で Exit している＝素通りして削除へ進まない。
-        assert re.search(r"IsAdminInstallMode.*?Exit;", body, re.S), \
+        assert re.search(r"\bif IsAdmin then\b.*?Exit;", body, re.S), \
             "昇格の分岐が Exit で抜けていない"
 
     def test_failed_deletions_are_reported(self):
