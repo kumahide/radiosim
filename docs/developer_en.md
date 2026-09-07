@@ -161,7 +161,7 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
   - **Released installers are built with Inno Setup 7** — `build.bat` checks the compiler's major version and stops if it is not 7. `radiosim.iss` still compiles unchanged under 6.7.x (it uses none of the features 7 removed), so the check exists to stop a 6-built installer from shipping unnoticed (upstream development moved to 7 after 6.7.3, 2026-05-26). Declare `RADIOSIM_ISCC_ANY_VERSION=1` to build with another major version on purpose.
 - **Default install location**: `{autopf}` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
 - **Output**: same `dist/` folder as the regular build (`RadioSimPro-Setup-<version>.exe`).
-- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise). Released builds are currently unsigned; obtaining a certificate will be decided if and when an unsigned build is actually blocked at a deployment site.
+- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise). Released builds are currently unsigned. ⚠️ **An unsigned build actually being blocked was confirmed on 2026-09-07** — Windows 11 Smart App Control (on by default after a clean install) refuses to run the setup body that the installer extracts into `%TEMP%` (see the troubleshooting table above). **Obtaining a certificate is under consideration but not yet decided**: a self-signed certificate does not help (Smart App Control requires a trusted signer or established reputation), and whether the free OV-class services clear it has not been tested. Until then, the guidance is the portable ZIP.
 
 ### Key `radiosim.spec` Settings
 
@@ -180,6 +180,8 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
 | `ModuleNotFoundError` on launch | Remove the module from `excludes`, or add it to `hiddenimports` in `radiosim.spec`, then rebuild |
 | Error messages not visible | Change `console=False` to `console=True` in `radiosim.spec` and rebuild |
 | SmartScreen warning on target machine | Expected for unsigned executables — click "More info" → "Run anyway" |
+| Installer aborts with "Error 4551: This file is blocked by application control policy" on target machine | **Not SmartScreen — an outright execution block, with no way to continue.** Windows 11 Smart App Control (on by default after a clean install) or an organization's application control policy is rejecting the unsigned `setup.tmp` that Inno Setup extracts into `%TEMP%`. **It is not a Mark-of-the-Web issue, so "Unblock" does nothing.** Point the user at the portable ZIP for now; code signing is the permanent fix. See "When Windows blocks the installer" in `docs/manual_en.md` |
+| Checking whether this is happening on a given machine | `Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational` records the blocked file and policy ID under EventID `3033` / `3077`. Smart App Control state lives in `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy` under `VerifiedAndReputablePolicyState` (`0`=off / `1`=on and enforcing / `2`=evaluation) |
 
 ---
 

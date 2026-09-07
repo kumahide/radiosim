@@ -1,0 +1,35 @@
+<!--
+  インストーラ検証用の Windows Sandbox 設定（B-191 / 2026-09-07 新設）
+
+  なぜ要るか:
+    開発機は Windows 11 のクリーンインストールなので Smart App Control が既定オンで、
+    未署名のインストーラを実行できない（B-191）。⛔ 開発機の SAC はオフにしない
+    ＝オフは事実上不可逆（再び有効にするには Windows の再インストールが必要）で、
+    「利用者と同じ壁がある唯一の検証環境」を失う。
+    Sandbox は SAC の無いクリーン環境が毎回使い捨てで手に入るので、
+    インストール／アンインストールの検証にはこちらを使う。
+
+  使い方:
+    このファイルをダブルクリックする。Sandbox の中で
+      C:\Users\WDAGUtilityAccount\Desktop\dist\RadioSimPro-Setup-<版>.exe
+    を実行する（デスクトップに dist が読み取り専用でマップされる）。
+
+  ⚠️ 注意:
+    - 閉じると中身は全部消える。アンインストールの検証（残ったデータの削除）には
+      むしろ好都合だが、確認したいログや帳票は閉じる前に取り出すこと。
+    - 読み取り専用マップなので、Sandbox 側から dist を汚す事故は起きない。
+    - Sandbox には Smart App Control が無い＝ここで通ることは
+      「利用者の環境で通る」証拠にならない。それを見るのは開発機の側の役目。
+-->
+<Configuration>
+  <MappedFolders>
+    <MappedFolder>
+      <HostFolder>D:\dev\radiosim-repo\dist</HostFolder>
+      <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\dist</SandboxFolder>
+      <ReadOnly>true</ReadOnly>
+    </MappedFolder>
+  </MappedFolders>
+  <Networking>Enable</Networking>
+  <ClipboardRedirection>true</ClipboardRedirection>
+  <MemoryInMB>8192</MemoryInMB>
+</Configuration>

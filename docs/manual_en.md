@@ -122,6 +122,34 @@ The installer build stores **settings, cache, logs, and results in OS-standard l
 
 > If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated). As long as the old copies remain, a dialog naming their location appears on every launch. Once you've confirmed the new location has everything you need, delete the old ones manually (the dialog stops once they're gone).
 
+### When Windows blocks the installer
+
+The distributed executables are not code-signed, so Windows may step in before running them. **There are two ways this happens, and they need different responses.**
+
+**① You can continue (SmartScreen warning)**
+
+If you see the blue "Windows protected your PC" screen, click **"More info" → "Run anyway"** to continue. This is the ordinary warning for unsigned executables, and it can appear for either the installer or the portable build.
+
+**② You cannot continue (blocked by application control)**
+
+The installer may abort immediately — before showing a single wizard page — with this error:
+
+```
+Unable to execute file in the temporary directory. Setup aborted.
+Error 4551: This file is blocked by application control policy.
+```
+
+This is **not SmartScreen — it is Windows refusing to run the file at all**. Unlike ①, **there is no button to continue**, and "Unblock" in the file's properties has no effect either. The two common causes are:
+
+- **Smart App Control** (Windows 11) is turned on. It is **on by default on a clean Windows 11 installation**.
+- Your organization deploys an **application control policy** that forbids running unsigned programs.
+
+⚠️ **The very same file may be blocked on one attempt and allowed on the next.** This decision depends on an online reputation check rather than on a fixed rule, so **waiting a while and trying again sometimes works** (we saw the identical installer launch fine 30 minutes later). The reverse is also true: one successful run is no guarantee for the next.
+
+> **If you are blocked, use the "Portable build (ZIP)" below instead.** It does not go through an installer, so it may still launch on the same PC (⚠️ the portable executable is subject to the same check, so this is not guaranteed either).
+>
+> ⚠️ If the portable build is blocked as well, **ask your IT administrator**. We deliberately do not tell you how to turn Smart App Control off: **once it is off, re-enabling it requires reinstalling Windows**, and turning it off removes that protection from every other program on the machine, not just RadioSim.
+
 ### Portable build (ZIP)
 
 1. Extract the distribution ZIP file (`RadioSimPro-<version>.zip`) to any folder.
