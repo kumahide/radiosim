@@ -74,6 +74,12 @@ japanese.UninstDataCache=DEM タイルのディスクキャッシュ・ログ
 japanese.UninstDataResults=保存パッケージの出力先
 japanese.UninstDataLang=追加した表示言語ファイル
 japanese.UninstDataHint=チェックを外したものはそのまま残り、次回インストール時に引き継がれます。
+; B-188: 管理者へ昇格したアンインストールでは、この案内だけ出して 1 件も消さない。
+japanese.UninstDataElevated=このアンインストールは管理者として実行されているため、RadioSim Pro を使っていた利用者のデータの場所を特定できません（この PC から誤って別の人のデータを消さないよう、ここでは何も削除しません）。%n%n残るデータを消したい場合は、そのユーザーでサインインしてから次の場所を手動で削除してください:%n%n  %1
+; B-189: 消せなかったものを黙って成功にしない。
+japanese.UninstDataFailed=次のデータは削除できませんでした（ファイルが開かれている・アクセス権が無い等）。手動で削除してください:%n%n%1
+english.UninstDataElevated=This uninstall is running as an administrator, so it cannot tell where the data of the person who used RadioSim Pro is stored. Nothing has been deleted, so that another user's data is not removed by mistake.%n%nTo remove the remaining data, sign in as that user and delete these locations by hand:%n%n  %1
+english.UninstDataFailed=The following data could not be deleted (a file is open, permissions are missing, and so on). Please delete it by hand:%n%n%1
 english.UninstDataTitle=Remove RadioSim Pro data
 english.UninstDataIntro=The data below is kept when you uninstall. Tick only what you want removed from this PC.
 english.UninstDataSettings=UI settings and last used input values
@@ -293,11 +299,16 @@ begin
   end;
 end;
 
+{ 消せなかったものを黙って成功にしない（B-189）。Inno の削除 API は例外を投げず
+  **戻り値で失敗を返す**ので、見ないと失敗が消える。⇒ 実際に消えたかを DirExists /
+  FileExists で確かめ直し、残ったパスを積んで最後に見せる。⚠️ 戻り値ではなく実体を
+  見るのは、DelTree が「一部だけ消せた」場合も True を返し得るため。 }
 procedure DeleteSelectedData(const Chosen: TArrayOfInteger);
 var
   I: Integer;
-  Path: string;
+  Path, Failed: string;
 begin
+  Failed := '';
   for I := 0 to GetArrayLength(DataPaths) - 1 do
   begin
     if Chosen[I] <> 0 then
@@ -307,11 +318,27 @@ begin
         DelTree(Path, True, True, True)
       else
         DeleteFile(Path);
+      if DirExists(Path) or FileExists(Path) then
+        Failed := Failed + '  ' + Path + #13#10;
     end;
   end;
   { 設定と追加言語を両方消すと %APPDATA%\RadioSim が空殻で残る。RemoveDir は
     空のときしか成功しないので、片方だけ消した場合は何も起きない。 }
   RemoveDir(ExpandConstant('{userappdata}\RadioSim'));
+  if Failed <> '' then
+    MsgBox(FmtMessage(CustomMessage('UninstDataFailed'), [Failed]),
+           mbError, MB_OK);
+end;
+
+{ 昇格時に案内する場所（B-188）。**実体のパスへ展開しない**＝展開すると管理者の
+  プロファイルが出てしまい、案内としてまさに間違ったものを見せることになる。
+  環境変数の書き方のまま出して、読む人が自分のアカウントで開けるようにする。
+  ⛔ ここも波括弧を書かない: 定数の展開に見えるうえ、コメントなら途中で閉じる。 }
+function ManualCleanupPaths: string;
+begin
+  Result := '%APPDATA%\RadioSim' + #13#10
+          + '  %LOCALAPPDATA%\RadioSim' + #13#10
+          + '  %USERPROFILE%\Documents\RadioSim';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);
@@ -322,6 +349,19 @@ begin
     Exit;
   if UninstallSilent then
     Exit;
+  { ⛔ 昇格したアンインストールでは 1 件も消さない（B-188）。プロファイル系の定数は
+    **アンインストーラを実行している側**を指すので、標準ユーザーが管理者の資格情報を
+    入れて消した場合、見ているのはアプリを使っていた人ではなく管理者のプロファイル。
+    ⇒ 候補が 1 件も出ない（「もう残っていない」と読める）か、**その管理者自身の
+    無関係な RadioSim のデータを消す**。どちらへ外れても取り返しがつかないので、
+    場所だけ案内して手を出さない。🔑 同じ危険はインストール側で既に認識済み＝
+    上の CurStepChanged が設定を直接書かず種を置いているのがそれ。 }
+  if IsAdminInstallMode then
+  begin
+    MsgBox(FmtMessage(CustomMessage('UninstDataElevated'),
+                      [ManualCleanupPaths]), mbInformation, MB_OK);
+    Exit;
+  end;
   CollectRemovableData;
   if GetArrayLength(DataPaths) = 0 then
     Exit;

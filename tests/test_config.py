@@ -712,3 +712,51 @@ class TestInstallerCodeIsReachable:
         # 空になった親の後片付けは RemoveDir（空でなければ何もしない）で行う
         assert re.search(r"RemoveDir\(ExpandConstant\('\{userappdata\}\\RadioSim'\)\)",
                          code)
+
+    def test_elevated_uninstall_deletes_nothing(self):
+        """管理者へ昇格したアンインストールでは 1 件も消さないこと（B-188）。
+
+        プロファイル系の定数（userappdata / localappdata / userdocs）は
+        **アンインストーラを実行している側**を指す。標準ユーザーが管理者の資格情報を
+        入れて消すと、見ているのはアプリを使っていた人ではなく管理者のプロファイル＝
+        候補が 1 件も出ない（「もう残っていない」と読める）か、その管理者自身の
+        無関係なデータを消す。⇒ 昇格時は場所の案内だけ出して手を出さない。
+
+        ⚠️ この分岐は **CollectRemovableData / AskRemovableData より前**でなければ
+        意味が無い（後ろに置くと、間違ったプロファイルを走査した結果を見せてしまう）。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        body = code.split("procedure CurUninstallStepChanged", 1)[1]
+        guard = body.find("IsAdminInstallMode")
+        assert guard != -1, "昇格の分岐が CurUninstallStepChanged に無い"
+        for later in ("CollectRemovableData", "AskRemovableData", "DeleteSelectedData"):
+            pos = body.find(later)
+            assert pos > guard, f"{later} が昇格の分岐より前にある"
+        # 分岐の中で Exit している＝素通りして削除へ進まない。
+        assert re.search(r"IsAdminInstallMode.*?Exit;", body, re.S), \
+            "昇格の分岐が Exit で抜けていない"
+
+    def test_failed_deletions_are_reported(self):
+        """消せなかったものを黙って成功にしないこと（B-189）。
+
+        Inno の削除 API は例外を投げず**戻り値で失敗を返す**ので、見なければ失敗が
+        消える。⚠️ 戻り値ではなく実体（DirExists / FileExists）を見る＝DelTree は
+        「一部だけ消せた」場合も True を返し得る。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        body = code.split("procedure DeleteSelectedData", 1)[1].split("\nprocedure ", 1)[0]
+        assert re.search(r"if DirExists\(Path\) or FileExists\(Path\) then", body), \
+            "削除後に実体が残っていないか確かめていない"
+        assert "UninstDataFailed" in body, "消せなかったパスを利用者へ見せていない"
+
+    def test_elevated_message_does_not_expand_the_wrong_profile(self):
+        """昇格時の案内が、実体のパスへ展開されていないこと（B-188）。
+
+        ExpandConstant で展開すると**管理者のプロファイル**が出る＝案内としてまさに
+        間違ったものを見せる。環境変数の書き方のまま出して、読む人が自分のアカウントで
+        開けるようにする。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        body = code.split("function ManualCleanupPaths", 1)[1].split("\nprocedure ", 1)[0]
+        assert "ExpandConstant" not in body, "昇格時の案内が実体のパスへ展開されている"
+        assert "%APPDATA%" in body and "%LOCALAPPDATA%" in body

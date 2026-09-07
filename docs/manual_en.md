@@ -431,7 +431,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 | File                         | Contents                                                         |
 | ---------------------------- | ---------------------------------------------------------------- |
-| `summary.html`             | Summary report for all paths (with graph thumbnails)             |
+| `summary.html`             | Summary report for all paths (a ledger, one row per path)        |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible; distances in metres) |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
 | `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
@@ -727,7 +727,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 
 > **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page beyond 26 rows** (see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
-> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking a thumbnail in the ledger jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
+> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking "Open" in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
 > **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
@@ -739,7 +739,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 
 | File             | Contents                                         |
 | ---------------- | ------------------------------------------------ |
-| `summary.html` | All-path summary with thumbnails                 |
+| `summary.html` | All-path summary ledger                          |
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
 | `report_all.html` | Summary + every path in one printable document |
@@ -891,7 +891,9 @@ At the end of the uninstall you can choose, **by category**, which data to remov
 | Saved result packages | `Documents\RadioSim\` | ⚠️ **Past results are gone** (they cannot be recreated) |
 | Display language files you added | `%APPDATA%\RadioSim\lang\` | Translations you added are gone (the bundled Japanese and English remain) |
 
-Anything left unticked stays on this PC and is picked up again by the next install.
+Anything left unticked stays on this PC and is picked up again by the next install. If something could not be deleted (a file left open, for example), its path is shown.
+
+> **If you uninstall as an administrator, these choices are not offered and nothing is deleted.** The locations visible in that case are not necessarily those of the person who used the app (the locations are shown instead, so that person can sign in and delete them by hand).
 
 **Portable build**:
 

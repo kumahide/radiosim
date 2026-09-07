@@ -273,6 +273,11 @@ def summary_sheet_css() -> str:
    パス・例外クラス名）が入るので、備考の break-word では割れない＝anywhere。 */
 .sheet.summary table.summary td.c-reason{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:anywhere}
+/* 改ページを避ける単位は **1 経路**＝`<tbody>`（B-190）。`tr` にだけ掛けると
+   経路行と `.note-row` は別の行なので**あいだで改ページし得る**。備考行には ID が
+   無いので、次ページの先頭へ落ちるとどの経路の備考か読めない。⇒ 1 経路の行を
+   `<tbody>` で括り（表は `<tbody>` を複数持てる）、括りごと避ける。 */
+.sheet.summary table.summary tbody{break-inside:avoid}
 .sheet.summary table.summary tr{break-inside:avoid}
 /* 備考（自由文）だけ幅を抑える（auto だと長い備考が幅を奪いすぎるため）。
    数値・ID 列は幅指定せず内容に追従させる。
@@ -342,6 +347,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         if pr.result is None:
             error_esc = _html.escape(str(pr.error))
             rows_html += (
+                # 1 経路＝1 つの `<tbody>`（B-190）。備考行を道連れに改ページを避ける。
+                f"<tbody>"
                 f"<tr class='err'>"
                 f"<td class='c-id'>{pid_esc}</td>"
                 f"<td class='c-status s-err'>ERROR</td>"
@@ -356,6 +363,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             )
             if not note_fits:
                 rows_html += _note_overflow_row("err", note_esc)
+            rows_html += "</tbody>\n"
             continue
         r   = pr.result
         # 判定は `pr.status`＝**成果物が欠けた経路はここで ERROR になる**（I-010）。
@@ -383,6 +391,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
                 f"{_html.escape(i18n.t('html_artifact_missing'))}</td>"
             )
         rows_html += (
+            # 1 経路＝1 つの `<tbody>`（B-190）。備考行を道連れに改ページを避ける。
+            f"<tbody>"
             f"<tr class='{cls}'>"
             # ⚠️ **`c-id` / `c-status` はここで付ける**（B-187）＝CSS には最初から
             # `td.c-id` / `td.c-status` があったのに `<td>` 側にクラスが無く、
@@ -415,6 +425,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         )
         if not note_fits:
             rows_html += _note_overflow_row(cls, note_esc)
+        rows_html += "</tbody>\n"
 
     # 「結果の取扱に関する補足」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
     # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には
@@ -476,9 +487,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 <thead>
 <tr>{_summary_header_cells()}</tr>
 </thead>
-<tbody>
 {rows_html}
-</tbody>
 </table>
 {handling}
 {report_common.page_footer(i18n.t("html_batch_mode"))}

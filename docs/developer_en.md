@@ -580,7 +580,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 | File                         | Contents                                                         |
 | ---------------------------- | ---------------------------------------------------------------- |
-| `summary.html`             | Summary report for all paths (with graph thumbnails)             |
+| `summary.html`             | Summary report for all paths (a ledger, one row per path)        |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
 | `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
 | `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
@@ -801,7 +801,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 
 | File             | Contents                                         |
 | ---------------- | ------------------------------------------------ |
-| `summary.html` | All-path summary with thumbnails                 |
+| `summary.html` | All-path summary ledger                          |
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
 | `report_all.html` | Summary + every path in one printable document |

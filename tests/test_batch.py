@@ -2064,3 +2064,23 @@ class TestSummaryLedgerKeepsItsWidth:
             "台帳にサムネイルが戻っている（列幅では潰れて読めない）"
         )
         assert i18n.t("html_graph_link") in self.html, "グラフ列のリンク文字が無い"
+
+    def test_a_note_row_cannot_be_split_from_its_path(self, tmp_path,
+                                                      default_params_dict):
+        """備考行と経路行が**同じ `<tbody>` の中**にあること（B-190）。
+
+        `break-inside:avoid` は要素に掛かるので、`tr` にだけ掛けると経路行と
+        `.note-row` のあいだで改ページし得る。備考行には ID が無いので、次ページの
+        先頭へ落ちると**どの経路の備考か読者に分からない**（判定が同じ行が続くと
+        なおさら）。⇒ 1 経路の行を `<tbody>` で括り、括りごと避ける。
+        """
+        self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
+        table = self.html.split("<table")[1].split("</table>")[0]
+        groups = table.split("<tbody>")[1:]
+        assert len(groups) == 1, f"1 経路なのに <tbody> が {len(groups)} 個ある"
+        group = groups[0].split("</tbody>")[0]
+        assert "c-note-full" in group, "備考行が経路行と同じ <tbody> の外にある"
+        # 括りを避ける指定が CSS 側に在ること（<tbody> だけ足しても改ページは止まらない）。
+        assert "table.summary tbody{break-inside:avoid}" in self.html, (
+            "<tbody> 単位で改ページを避ける指定が無い"
+        )
