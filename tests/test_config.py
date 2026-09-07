@@ -759,6 +759,32 @@ class TestInstallerCodeIsReachable:
             "削除後に実体が残っていないか確かめていない"
         assert "UninstDataFailed" in body, "消せなかったパスを利用者へ見せていない"
 
+    #: ISCC が section tag として読む見出し（このファイルが実際に使うもの）。
+    _ISS_SECTIONS = frozenset({
+        "[Setup]", "[Languages]", "[CustomMessages]", "[Files]",
+        "[Icons]", "[Tasks]", "[Run]", "[UninstallDelete]", "[Code]",
+    })
+
+    def test_no_line_starts_with_a_bracket_outside_a_section_tag(self):
+        """行頭の `[` は必ずセクション見出しであること。
+
+        🔴 **同じクラスで 2 度落ちている**＝ISCC は**行頭（前の空白は無視）の角括弧を
+        セクションタグとして読む**ので、そこに配列リテラルやコメント中の `[Foo]` が
+        来ると `Invalid section tag` でコンパイルごと止まる。
+          1. `1710b9f`＝コメントの中に `[UninstallDelete]` と書いた。
+          2. 2026-09-07＝`FmtMessage(..., [ManualCleanupPaths])` を折り返して
+             `[` が行頭に来た（B-188 の実装）。
+        ⚠️ **2 度ともフルテストは全緑のままで、実際のビルドでしか出なかった**＝
+        pytest には ISCC が無く、`.iss` は「文字列として」しか見ていない。
+        ⇒ [[feedback_promote_recurring_checks]] に従い、注意書きではなくここで縛る。
+        """
+        for n, line in enumerate(self.ISS.read_text(encoding="utf-8-sig").splitlines(), 1):
+            if line.lstrip().startswith("["):
+                assert line.strip() in self._ISS_SECTIONS, (
+                    f"{n} 行目の行頭に `[` がある＝ISCC はセクション見出しとして読む"
+                    f"（Invalid section tag でビルドが落ちる）: {line!r}"
+                )
+
     def test_elevated_message_does_not_expand_the_wrong_profile(self):
         """昇格時の案内が、実体のパスへ展開されていないこと（B-188）。
 

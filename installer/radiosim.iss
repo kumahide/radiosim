@@ -363,8 +363,11 @@ begin
     （Codex round81 の指摘・2026-09-07）。 }
   if IsAdmin then
   begin
-    MsgBox(FmtMessage(CustomMessage('UninstDataElevated'),
-                      [ManualCleanupPaths]), mbInformation, MB_OK);
+    { ⛔ 配列リテラルの `[` を**行頭に置かない**（前の空白は関係ない）＝ISCC は
+      行頭の角括弧を**セクションタグ**として読むので "Invalid section tag" で落ちる。
+      1710b9f と同じクラス（あれはコメントの中、これはコードの中）。 }
+    MsgBox(FmtMessage(CustomMessage('UninstDataElevated'), [ManualCleanupPaths]),
+           mbInformation, MB_OK);
     Exit;
   end;
   CollectRemovableData;
