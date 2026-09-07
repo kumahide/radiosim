@@ -149,7 +149,7 @@ dist/
 
 By default, `build.bat` produces the **portable ZIP layout** (a `portable.txt` marker bundled inside `RadioSimPro/`). `core.config.is_portable()` branches on whether this file exists (its absence means "the install location may be read-only", so the app writes to OS-standard locations such as `%APPDATA%` instead).
 
-### Building the Installer (Inno Setup, 3.1 stage 6)
+### Building the Installer (Inno Setup)
 
 ```bat
 build.bat installer
@@ -519,11 +519,11 @@ Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
 
 Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
 
-### 4. Saving and Loading Settings
+### 4. Automatic Saving of Input Values
 
-- Input values are automatically saved to `radiosim_conf.json` each time Single Mode is run
-- **Load Settings**: Loads a previous `settings.json` and restores it to the input form
-- **Open Results**: Opens the `results/` folder in Explorer
+Input values are saved to `radiosim_conf.json` every time Single Mode runs, and restored on the next launch (no explicit save step).
+
+Importing from a file, and carrying an input set between machines, is done from the [File menu](#file) (**Load Parameters...** / **Open Project... / Save Project As...**).
 
 ---
 
@@ -938,7 +938,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). ⚠️ **Stays `0.0` for a sample that could not be fetched** (this meaning will not change before 3.3) — check `elev_source` to see whether it actually succeeded |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). ⚠️ **Stays `0.0` for a sample that could not be fetched** — check `elev_source` to see whether it actually succeeded. **In 3.3 this becomes an empty cell (NaN)** (rule 2 announcement — it reads as NaN in pandas and changes how formulas behave in Excel) |
 | `elev_source` | — | Where this sample's elevation came from. `gsi_dem` = fetched from the GSI DEM; `unavailable` = could not be fetched (network failure) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).

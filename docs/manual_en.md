@@ -869,7 +869,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). ⚠️ **Stays `0.0` for a sample that could not be fetched** (this meaning will not change before 3.3) — check `elev_source` to see whether it actually succeeded |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). ⚠️ **Stays `0.0` for a sample that could not be fetched** — check `elev_source` to see whether it actually succeeded. **In 3.3 a sample that could not be fetched will be written as an empty cell (NaN) instead of `0.0`** (how that reads depends on the software you open it with, so it is announced here one version ahead) |
 | `elev_source` | — | Where this sample's elevation came from. `gsi_dem` = fetched from the GSI DEM; `unavailable` = could not be fetched (network failure) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
