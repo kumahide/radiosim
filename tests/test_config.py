@@ -581,6 +581,49 @@ class TestInstallerLangSeedContract:
                          iss, re.MULTILINE)
 
 
+# 日本語のグリフを**自前で持っている** UI フォント（GDI のフォントリンクに
+# 頼らずに描ける）。ここに無いフォント（Segoe UI・Tahoma・MS Shell Dlg 2 など）を
+# 指定する／指定しないと、フォントリンクの無い環境で日本語が全部トーフになる。
+_JA_CAPABLE_UI_FONTS = {
+    "Yu Gothic UI", "Meiryo UI", "MS UI Gothic",
+    "Yu Gothic", "Meiryo", "MS Gothic",
+}
+
+
+class TestInstallerJapaneseDialogFont:
+    """日本語ウィザードを**日本語グリフを自前で持つフォント**で描くこと（B-192）。
+
+    Inno の既定は 9pt Segoe UI で、Segoe UI に日本語のグリフは無い。普段それが
+    読めているのは GDI のフォントリンク（`FontLink\\SystemLink`）が Segoe UI から
+    日本語フォントへ橋渡ししているからにすぎず、**この橋は環境によって無い**。
+    実測（2026-09-07）＝開発機の SystemLink は 83 項目、Windows Sandbox は 1 項目
+    だけで、同じインストーラのウィザードがそこでは全面トーフになった（日本語
+    フォントの実体は在る＝欠けているのは橋だけ）。同梱の Japanese.isl は
+    DialogFontName を設定しないので、**.iss の [LangOptions] で明示するしかない。**
+
+    ⚠️ ビルドでは絶対に分からない（ISCC は何も言わず、開発機では橋があるので
+    見た目も正常）＝ここで留めないと配布物になるまで気づけない。
+    """
+
+    ISS = ROOT / "installer" / "radiosim.iss"
+
+    def _iss(self) -> str:
+        return self.ISS.read_text(encoding="utf-8-sig")
+
+    def test_japanese_dialog_font_is_declared_and_can_draw_japanese(self):
+        iss = self._iss()
+        m = re.search(r"^japanese\.DialogFontName\s*=\s*(.+?)\s*$",
+                      iss, re.MULTILINE)
+        assert m, (
+            "installer/radiosim.iss の [LangOptions] に "
+            "japanese.DialogFontName が無い＝Inno の既定（Segoe UI）で日本語を"
+            "描くことになり、フォントリンクの無い環境でトーフになる（B-192）")
+        assert m.group(1) in _JA_CAPABLE_UI_FONTS, (
+            f"japanese.DialogFontName={m.group(1)} は日本語グリフを自前で持つ"
+            f"フォントではない＝フォントリンク頼みのままになる。"
+            f"使えるのは {sorted(_JA_CAPABLE_UI_FONTS)}")
+
+
 # Inno Setup が呼び出すイベント関数の名前（6.x / 7.x 共通）。ここに無い名前の
 # ルーチンは、自分で呼ばない限り**誰にも呼ばれない**（ISCC は警告も出さない）。
 _INNO_EVENT_FUNCTIONS = {
@@ -761,8 +804,9 @@ class TestInstallerCodeIsReachable:
 
     #: ISCC が section tag として読む見出し（このファイルが実際に使うもの）。
     _ISS_SECTIONS = frozenset({
-        "[Setup]", "[Languages]", "[CustomMessages]", "[Files]",
-        "[Icons]", "[Tasks]", "[Run]", "[UninstallDelete]", "[Code]",
+        "[Setup]", "[Languages]", "[LangOptions]", "[CustomMessages]",
+        "[Files]", "[Icons]", "[Tasks]", "[Run]", "[UninstallDelete]",
+        "[Code]",
     })
 
     def test_no_line_starts_with_a_bracket_outside_a_section_tag(self):

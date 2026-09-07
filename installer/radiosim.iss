@@ -63,6 +63,32 @@ PrivilegesRequiredOverridesAllowed=dialog
 Name: "japanese"; MessagesFile: "compiler:Languages\Japanese.isl"
 Name: "english"; MessagesFile: "compiler:Default.isl"
 
+[LangOptions]
+; B-192: 日本語のダイアログを**日本語グリフを自前で持つフォント**で描く。
+;
+;   同梱の Japanese.isl は DialogFontName を設定していない＝Inno の既定
+;   （9pt Segoe UI）で日本語を描くことになる。Segoe UI に日本語のグリフは無く、
+;   普段それが読めているのは GDI のフォントリンク
+;     HKLM\SOFTWARE\Microsoft\Windows NT\CurrentVersion\FontLink\SystemLink
+;   が Segoe UI → Yu Gothic UI / Meiryo UI へ橋渡ししているからにすぎない。
+;
+;   ⚠️ この橋は環境によって無い。実測（2026-09-07・Windows Sandbox 内）:
+;     - 開発機の SystemLink は 83 項目（Segoe UI・Tahoma などを含む）
+;     - Sandbox の SystemLink は **1 項目だけ**（SimSun-ExtG のみ）
+;     - 一方 meiryo.ttc / msgothic.ttc / YuGoth*.ttc の実体と登録はどちらにも在る
+;   ＝フォントが無いのではなく**橋が無い**。結果、Sandbox ではウィザードの
+;   日本語がすべてトーフになる（タイトルバーだけ読めるのは、そこを描くのが
+;   Inno ではなく OS＝ja-JP のキャプションフォントが Yu Gothic UI 直だから）。
+;
+;   🔑 アプリ本体は同じ Sandbox で正常に出る（Tk が OS の UI フォント＝
+;   Yu Gothic UI を直に使い、フォントリンクに依存しないため）。ここで
+;   Yu Gothic UI を選ぶのは、その本体と同じフォントに揃える意味もある。
+;
+;   フォントが無い環境（日本語補助フォントを入れていない英語 Windows 等）では
+;   Inno が 9pt Segoe UI へ差し戻す＝指定しなかった場合と同じ挙動に落ちるだけで、
+;   新たに壊れるものは無い。
+japanese.DialogFontName=Yu Gothic UI
+
 [CustomMessages]
 ; I-139: 削除対象を 4 種に割り、それぞれチェックボックスで選ばせる。
 ; ⚠️ 見出し（UninstData*）は下の [Code] が **CustomMessages のキー名** として
