@@ -224,6 +224,27 @@ begin
   AddRemovableData('UninstDataLang',     ConfigBase + '\lang');
 end;
 
+{ 折り返すラベルの中身と幅を、この順番でしか入れられないようにする（B-200）。
+  ⛔ TLabel は AutoSize を True にした**その瞬間**に今の Caption で自分の幅を測り直す。
+     Caption がまだ空だと「空白 1 個ぶん」に潰れ（実測 20px＝1 文字ぶん）、あとから
+     入れた日本語はその 20px の中で折り返される＝1 行 1 文字の縦書きになる。
+     実測（Inno 7・DPI 125%・ClientWidth 564）:
+       Width→WordWrap→AutoSize→Caption の順  … W=20  H=450
+       WordWrap→Caption→Width→AutoSize の順  … W=472 H=15
+  ⚠️ 英語だと目立たない: DT_WORDBREAK は単語の途中で折らないので、幅が潰れていても
+     1 行 1 単語になるだけで「少し縦長」に見える。日本語は文字単位で折れるので
+     全部が縦一列になる＝**同じ欠陥が言語で違う顔をする**。
+  🔑 幅は AutoSize が最長行まで縮める（＝返ってくる Width は指定値以下）。
+     以後この窓に折り返すラベルを足すときは、直に組まずここを通すこと。 }
+procedure SetWrappedCaption(L: TLabel; const Text: string; const W: Integer);
+begin
+  L.WordWrap := True;
+  L.AutoSize := False;
+  L.Caption  := Text;
+  L.Width    := W;
+  L.AutoSize := True;
+end;
+
 { 選択ダイアログ。戻り値 True＝OK が押された。Chosen[i] は 1 なら削除する。
   アンインストール側にはウィザードが無いので CreateCustomForm で自前に建てる。 }
 function AskRemovableData(var Chosen: TArrayOfInteger): Boolean;
@@ -255,10 +276,8 @@ begin
     Intro.Parent   := Form;
     Intro.Left     := ScaleX(16);
     Intro.Top      := ScaleY(16);
-    Intro.Width    := Form.ClientWidth - ScaleX(32);
-    Intro.WordWrap := True;
-    Intro.AutoSize := True;
-    Intro.Caption  := CustomMessage('UninstDataIntro');
+    SetWrappedCaption(Intro, CustomMessage('UninstDataIntro'),
+                      Form.ClientWidth - ScaleX(32));
 
     Y := Intro.Top + Intro.Height + ScaleY(14);
     for I := 0 to Count - 1 do
@@ -292,10 +311,8 @@ begin
     Hint.Parent   := Form;
     Hint.Left     := ScaleX(16);
     Hint.Top      := Y;
-    Hint.Width    := Form.ClientWidth - ScaleX(32);
-    Hint.WordWrap := True;
-    Hint.AutoSize := True;
-    Hint.Caption  := CustomMessage('UninstDataHint');
+    SetWrappedCaption(Hint, CustomMessage('UninstDataHint'),
+                      Form.ClientWidth - ScaleX(32));
 
     Y := Hint.Top + Hint.Height + ScaleY(16);
 

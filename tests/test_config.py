@@ -809,6 +809,37 @@ class TestInstallerCodeIsReachable:
         assert re.search(r"\bif IsAdmin then\b.*?Exit;", body, re.S), \
             "昇格の分岐が Exit で抜けていない"
 
+    def test_wrapping_labels_get_their_caption_before_autosize(self):
+        """折り返すラベルは Caption を入れてから AutoSize を立てること（B-200）。
+
+        TLabel は `AutoSize := True` になった**その瞬間**に、その時の Caption で
+        自分の幅を測り直す。Caption がまだ空だと幅が「空白 1 個ぶん」に潰れ、
+        あとから入れた文字はその幅の中で折り返される＝**1 行 1 文字の縦書き**。
+        実測（Inno 7・DPI 125%・ClientWidth 564）: 誤った順で W=20 / H=450、
+        正しい順で W=472 / H=15。
+
+        ⚠️ **英語で見ても気づけない**＝DT_WORDBREAK は単語の途中で折らないので、
+        幅が潰れていても 1 行 1 単語になるだけ。日本語は文字単位で折れるので
+        全部が縦一列になる。⇒ 目視ではなくここで縛る。
+        """
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        # 註（`{ … }`）を落としてから見る＝説明文に書いた語を実装と取り違えない
+        code = re.sub(r"\{[^{}]*\}", "", code, flags=re.S)
+        body = code.split("procedure SetWrappedCaption", 1)
+        assert len(body) == 2, "折り返しラベルを組み立てる SetWrappedCaption が無い"
+        body = body[1].split("\nprocedure ", 1)[0].split("\nfunction ", 1)[0]
+        caption = body.find("L.Caption")
+        autosize_on = body.find("L.AutoSize := True")
+        assert caption >= 0 and autosize_on >= 0, body
+        assert caption < autosize_on, "Caption より前に AutoSize を立てている（幅が潰れる）"
+        assert body.find("L.Width") < autosize_on, "幅を決める前に AutoSize を立てている"
+
+        # 折り返すラベルが**この手続きを通らずに**組まれていないこと。
+        # （通らない経路を作った時点で、同じ順番の間違いをやり直せてしまう）
+        outside = code.replace(body, "")
+        assert "WordWrap" not in outside, \
+            "SetWrappedCaption を通らずに WordWrap を立てているラベルがある"
+
     def test_failed_deletions_are_reported(self):
         """消せなかったものを黙って成功にしないこと（B-189）。
 
