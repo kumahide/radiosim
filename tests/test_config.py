@@ -590,8 +590,21 @@ _JA_CAPABLE_UI_FONTS = {
 }
 
 
+#: Inno Setup の [LangOptions] が持つ **font 名**の指定と、それが描く場所。
+#:
+#: 🔑 **ここが「クラスの全部」**＝Inno Setup 7 の Default.isl が挙げる font 系は
+#: この 2 つで打ち止め（`*FontSize` / `*BaseScale*` は寸法であってグリフの有無には
+#: 効かないので、トーフの原因にはならない）。**片方だけ指定して閉じたつもりに
+#: なったのが B-193**（B-192 は DialogFontName しか塞がず、完了ページの見出しを
+#: 描く WelcomeFontName が既定の Segoe UI のまま残った）。
+_ISS_FONT_OPTIONS = {
+    "DialogFontName": "通常のダイアログの文字（既定 9pt Segoe UI）",
+    "WelcomeFontName": "Welcome ページと完了ページの見出し（既定 12pt Segoe UI）",
+}
+
+
 class TestInstallerJapaneseDialogFont:
-    """日本語ウィザードを**日本語グリフを自前で持つフォント**で描くこと（B-192）。
+    """日本語ウィザードを**日本語グリフを自前で持つフォント**で描くこと（B-192 / B-193）。
 
     Inno の既定は 9pt Segoe UI で、Segoe UI に日本語のグリフは無い。普段それが
     読めているのは GDI のフォントリンク（`FontLink\\SystemLink`）が Segoe UI から
@@ -599,7 +612,12 @@ class TestInstallerJapaneseDialogFont:
     実測（2026-09-07）＝開発機の SystemLink は 83 項目、Windows Sandbox は 1 項目
     だけで、同じインストーラのウィザードがそこでは全面トーフになった（日本語
     フォントの実体は在る＝欠けているのは橋だけ）。同梱の Japanese.isl は
-    DialogFontName を設定しないので、**.iss の [LangOptions] で明示するしかない。**
+    font 名を 1 つも設定しないので、**.iss の [LangOptions] で明示するしかない。**
+
+    ⛔ **塞ぐ口は 2 つある**（B-193）＝`_ISS_FONT_OPTIONS` を見ること。B-192 の
+    修正は DialogFontName だけを指定し、**完了ページの見出しを描く
+    WelcomeFontName を残した**（独立レビュー round84 が指摘）。この検査が
+    片方しか見ていなかったため、**足りない側を検査が肯定していた**。
 
     ⚠️ ビルドでは絶対に分からない（ISCC は何も言わず、開発機では橋があるので
     見た目も正常）＝ここで留めないと配布物になるまで気づけない。
@@ -610,16 +628,18 @@ class TestInstallerJapaneseDialogFont:
     def _iss(self) -> str:
         return self.ISS.read_text(encoding="utf-8-sig")
 
-    def test_japanese_dialog_font_is_declared_and_can_draw_japanese(self):
+    @pytest.mark.parametrize("option", sorted(_ISS_FONT_OPTIONS))
+    def test_japanese_font_is_declared_and_can_draw_japanese(self, option):
         iss = self._iss()
-        m = re.search(r"^japanese\.DialogFontName\s*=\s*(.+?)\s*$",
+        where = _ISS_FONT_OPTIONS[option]
+        m = re.search(rf"^japanese\.{option}\s*=\s*(.+?)\s*$",
                       iss, re.MULTILINE)
         assert m, (
-            "installer/radiosim.iss の [LangOptions] に "
-            "japanese.DialogFontName が無い＝Inno の既定（Segoe UI）で日本語を"
-            "描くことになり、フォントリンクの無い環境でトーフになる（B-192）")
+            f"installer/radiosim.iss の [LangOptions] に japanese.{option} が"
+            f"無い＝{where}が Inno の既定（Segoe UI）で描かれ、フォントリンクの"
+            f"無い環境でトーフになる（B-192 / B-193）")
         assert m.group(1) in _JA_CAPABLE_UI_FONTS, (
-            f"japanese.DialogFontName={m.group(1)} は日本語グリフを自前で持つ"
+            f"japanese.{option}={m.group(1)} は日本語グリフを自前で持つ"
             f"フォントではない＝フォントリンク頼みのままになる。"
             f"使えるのは {sorted(_JA_CAPABLE_UI_FONTS)}")
 

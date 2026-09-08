@@ -2,15 +2,27 @@
   インストーラ検証用の Windows Sandbox 設定（B-191 / 2026-09-07 新設）
 
   なぜ要るか:
-    開発機は Windows 11 のクリーンインストールなので Smart App Control が既定オンで、
-    未署名のインストーラを実行できない（B-191）。⛔ 開発機の SAC はオフにしない
-    ＝オフは事実上不可逆（再び有効にするには Windows の再インストールが必要）で、
-    「利用者と同じ壁がある唯一の検証環境」を失う。
+    開発機は Windows 11 のクリーンインストールで、Smart App Control が実際にオンに
+    なっている（＝SAC はクリーンインストールした環境でのみ有効になり得て、評価期間を
+    経て自動的にオン／オフが決まる。B-194 で断定を訂正した）。そのため未署名の
+    インストーラを実行できない（B-191）。⛔ 開発機の SAC はオフにしない＝
+    「利用者と同じ壁がある唯一の検証環境」を失うから。
+    ⚠️ 以前ここには「オフは事実上不可逆（再有効化には Windows の再インストールが
+    必要）」と書いていたが、Microsoft は「最近の Windows Update により、
+    クリーンインストールなしで Windows セキュリティから再度有効にできる」と
+    案内している（B-194）。⇒ **オフにしない理由は「戻せないから」ではなく
+    「検証環境としての価値を失うから」。**
     Sandbox は SAC の無いクリーン環境が毎回使い捨てで手に入るので、
     インストール／アンインストールの検証にはこちらを使う。
 
   使い方:
-    このファイルをダブルクリックする。Sandbox の中で
+    ⛔ 先に下の <HostFolder> を**自分の環境のリポジトリの dist へ書き換える**
+    （I-141）。既定値はこの開発機の位置（D:\dev\radiosim-repo\dist）で、
+    別のドライブ・別の場所へ clone した環境ではそのままでは起動しない。
+    Windows Sandbox の .wsb は <HostFolder> に環境変数を展開しない（絶対パス
+    必須）ので、ファイルの中だけで可搬にはできない＝ここで人が書き換える。
+
+    書き換えたらこのファイルをダブルクリックする。Sandbox の中で
       C:\Users\WDAGUtilityAccount\Desktop\dist\RadioSimPro-Setup-<版>.exe
     を実行する（デスクトップに dist が読み取り専用でマップされる）。
 
@@ -30,6 +42,7 @@
 <Configuration>
   <MappedFolders>
     <MappedFolder>
+      <!-- ⛔ この開発機の位置。clone 先が違うなら書き換える（I-141）。 -->
       <HostFolder>D:\dev\radiosim-repo\dist</HostFolder>
       <SandboxFolder>C:\Users\WDAGUtilityAccount\Desktop\dist</SandboxFolder>
       <ReadOnly>true</ReadOnly>

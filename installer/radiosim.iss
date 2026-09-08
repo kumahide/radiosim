@@ -87,7 +87,17 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 ;   フォントが無い環境（日本語補助フォントを入れていない英語 Windows 等）では
 ;   Inno が 9pt Segoe UI へ差し戻す＝指定しなかった場合と同じ挙動に落ちるだけで、
 ;   新たに壊れるものは無い。
+;   ⛔ B-193: **フォント指定は 1 つではない**。Inno Setup 7 の Default.isl が
+;   挙げている font 名の指定は 2 つあり、描く場所が違う:
+;     - DialogFontName  (既定  9pt Segoe UI) … 通常のダイアログの文字
+;     - WelcomeFontName (既定 12pt Segoe UI) … Welcome ページと**完了ページ**の見出し
+;   WizardStyle=modern では Welcome ページは既定で出ないが、**完了ページは
+;   DisableFinishedPage を切っていない限り必ず出る**＝DialogFontName だけを
+;   指定しても、最後の 1 画面の見出しがトーフのまま残る（B-192 の取り残し。
+;   独立レビュー round84 が指摘）。⇒ **2 つとも指定して初めてこのクラスが閉じる。**
+;   （*FontSize / *BaseScale* は寸法であってグリフの有無には効かないので対象外。）
 japanese.DialogFontName=Yu Gothic UI
+japanese.WelcomeFontName=Yu Gothic UI
 
 [CustomMessages]
 ; I-139: 削除対象を 4 種に割り、それぞれチェックボックスで選ばせる。

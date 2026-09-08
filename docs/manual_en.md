@@ -141,14 +141,14 @@ Error 4551: This file is blocked by application control policy.
 
 This is **not SmartScreen — it is Windows refusing to run the file at all**. Unlike ①, **there is no button to continue**, and "Unblock" in the file's properties has no effect either. The two common causes are:
 
-- **Smart App Control** (Windows 11) is turned on. It is **on by default on a clean Windows 11 installation**.
+- **Smart App Control** (Windows 11) is turned on. It can only become active on a **clean Windows 11 installation (or after resetting the PC)**, and even then it first runs in an *evaluation* state before Windows automatically turns it either on or off; it is also limited to certain regions. ⚠️ **To see which state your PC is in, go to Settings > Privacy & security > Windows Security > App & browser control.**
 - Your organization deploys an **application control policy** that forbids running unsigned programs.
 
 ⚠️ **The very same file may be blocked on one attempt and allowed on the next.** This decision depends on an online reputation check rather than on a fixed rule, so **waiting a while and trying again sometimes works** (we saw the identical installer launch fine 30 minutes later). The reverse is also true: one successful run is no guarantee for the next.
 
 > **If you are blocked, use the "Portable build (ZIP)" below instead.** It does not go through an installer, so it may still launch on the same PC (⚠️ the portable executable is subject to the same check, so this is not guaranteed either).
 >
-> ⚠️ If the portable build is blocked as well, **ask your IT administrator**. We deliberately do not tell you how to turn Smart App Control off: **once it is off, re-enabling it requires reinstalling Windows**, and turning it off removes that protection from every other program on the machine, not just RadioSim.
+> ⚠️ If the portable build is blocked as well, **ask your IT administrator**. We deliberately do not tell you how to turn Smart App Control off: **doing so removes that protection from every program on the machine, not just RadioSim.** Lowering a machine-wide security setting to run one application is not a trade we recommend.
 
 ### Portable build (ZIP)
 
