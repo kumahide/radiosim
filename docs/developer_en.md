@@ -407,7 +407,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Save Diagnostic Package... | `core/diagnostics.py` builds the zip (environment facts selected by default; `results/` artifacts opt-in) → [Help section of the user manual](../docs/manual_en.md#help) |
 | About       | Shows the version from `version.py`    |
 
-> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme/language/proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
+> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language, proxy and coordinate format. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
 
 > **The Map is not in the menus** — it opens from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
@@ -1169,6 +1169,8 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
+- **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk 8.6 and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0 is free of it (measured), but moving there waits on the Python runtime we build on. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
+- **Moving a window between monitors with different display scales leaves the menu bar strip at the old scale** (Windows draws the HMENU). Appearance only
 
 ---
 

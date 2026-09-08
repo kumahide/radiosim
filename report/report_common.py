@@ -152,10 +152,16 @@ body{font-family:Arial,sans-serif;font-size:13px}
   break-inside:avoid}
 .handling h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
 .handling .hd-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
-/* 2 段組みにするのは**台帳の行数を食わないため**。実測（Edge --print-to-pdf・
-   A4 1 枚に載る経路の数）＝節なし 30 行／1 段の節 25 行／**2 段の節 26 行**。
-   開示を足した代わりに台帳が 1 枚で済まなくなる、という取り引きを薄める。
-   ⚠️ それでも 4 行ぶんは食う＝26 行を超えるサーベイは 2 枚目に入る。 */
+/* 2 段組みにするのは**台帳の行数を食わないため**。開示を足した代わりに台帳が
+   1 枚で済まなくなる、という取り引きを薄める。
+   ⚠️ **ここに「N 行入る」と書かない**（2026-09-08 に書き直し）＝実測すると
+   条件で大きく動く。同じ 3.2RC4 で Edge --print-to-pdf・素の台帳（備考なし・
+   短い ID・全行 OK）を測った値は:
+       俯瞰地図あり（＝batch.py の実運用経路）… 日本語 25 行 / 英語 30 行
+       俯瞰地図なし（地図の取得に失敗した回）… 日本語 32 行 / 英語 38 行
+   **日英で違うのは節の文章量が違うから**で、刻印の数は条件（回折モデル・降雨・
+   植生・解像度）でも変わる。⇒ 固定値を註や文書に書くと必ず古くなる。
+   公開文書には範囲（25〜30 行）と「条件で前後する」ことだけを書いてある。 */
 .handling ul{margin:0;padding-left:13px;font-size:8px;color:#78909c;line-height:1.35;
   column-count:2;column-gap:14px}
 .handling li{break-inside:avoid}

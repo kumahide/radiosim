@@ -753,7 +753,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
-> **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page beyond 26 rows** (see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
+> **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page once the rows no longer fit** (roughly **25–30 rows**, depending on the overview map and the notes; see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
 > **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking "Open" in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
@@ -783,7 +783,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 - **Reports that hold several links on one sheet** (Multiple Paths, relay, explorer) show every note that applies to **at least one** of them.
 - A **calibration profile** field is shown. It always reads **not applied** — results have never been compared against measurements.
 
-⚠️ **No number changes because of this section** — it states what was already true. ⚠️ The Multiple Paths ledger now fits **26 rows on one A4 page** (four fewer than before; beyond that it flows onto a second page).
+⚠️ **No number changes because of this section** — it states what was already true. ⚠️ **How many rows the Multiple Paths ledger fits on one A4 page varies** with the length of this section and whether the overview map is present (measured: roughly **25–30 rows**; the rest flows onto a second page). **It is not a fixed count** — the set of scope notes changes with the conditions.
 
 ### Output column specification (the output contract) and its change policy
 
