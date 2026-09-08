@@ -141,7 +141,7 @@ Error 4551: This file is blocked by application control policy.
 
 This is **not SmartScreen — it is Windows refusing to run the file at all**. Unlike ①, **there is no button to continue**, and "Unblock" in the file's properties has no effect either. The two common causes are:
 
-- **Smart App Control** (Windows 11) is turned on. It can only become active on a **clean Windows 11 installation (or after resetting the PC)**, and even then it first runs in an *evaluation* state before Windows automatically turns it either on or off; it is also limited to certain regions. ⚠️ **To see which state your PC is in, go to Settings > Privacy & security > Windows Security > App & browser control.**
+- **Smart App Control** (Windows 11) is turned on. It first runs in an *evaluation* state before Windows automatically turns it either on or off; it is also limited to certain regions. ⚠️ **To see which state your PC is in, go to Settings > Privacy & security > Windows Security > App & browser control.** If it reads "On", the feature is active — you cannot tell from how Windows was installed (a fresh install or an upgrade).
 - Your organization deploys an **application control policy** that forbids running unsigned programs.
 
 ⚠️ **The very same file may be blocked on one attempt and allowed on the next.** This decision depends on an online reputation check rather than on a fixed rule, so **waiting a while and trying again sometimes works** (we saw the identical installer launch fine 30 minutes later). The reverse is also true: one successful run is no guarantee for the next.
