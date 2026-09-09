@@ -832,7 +832,14 @@ class TestInstallerCodeIsReachable:
         autosize_on = body.find("L.AutoSize := True")
         assert caption >= 0 and autosize_on >= 0, body
         assert caption < autosize_on, "Caption より前に AutoSize を立てている（幅が潰れる）"
-        assert body.find("L.Width") < autosize_on, "幅を決める前に AutoSize を立てている"
+        # ⚠️ `find` の不在は `-1`＝**「いちばん前」として比較に通る**。`< autosize_on`
+        # だけで見ると、幅を決める行を**丸ごと消しても緑**になる（独立レビュー
+        # round90 が指摘・実測で確認＝L.Width の行を削除しても 1 passed だった）。
+        # ⇒ 存在と順番を 1 つの式で縛る。同型（不在が満たす側へ落ちる比較）は
+        # このファイルでここだけ＝806 行目は `> guard` なので不在なら落ちる。
+        width = body.find("L.Width")
+        assert 0 <= width < autosize_on, \
+            "幅を決めていない、または AutoSize を立てた後で決めている"
 
         # 折り返すラベルが**この手続きを通らずに**組まれていないこと。
         # （通らない経路を作った時点で、同じ順番の間違いをやり直せてしまう）
