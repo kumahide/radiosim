@@ -124,7 +124,7 @@ The installer build stores **settings, cache, logs, and results in OS-standard l
 
 ### When Windows blocks the installer
 
-The distributed executables are not code-signed, so Windows may step in before running them. **There are two ways this happens, and they need different responses.**
+The distributed executables are not code-signed, so Windows may step in before running them. **Below are the ways we have actually run into** (there may well be others). **Some let you continue and some do not, and they need different responses.**
 
 **① You can continue (SmartScreen warning)**
 
@@ -139,12 +139,11 @@ Unable to execute file in the temporary directory. Setup aborted.
 Error 4551: This file is blocked by application control policy.
 ```
 
-This is **not SmartScreen — it is Windows refusing to run the file at all**. Unlike ①, **there is no button to continue**, and "Unblock" in the file's properties has no effect either. The two common causes are:
+This is **not SmartScreen — it is Windows refusing to run the file at all**. Unlike ①, **there is no button to continue**, and "Unblock" in the file's properties has no effect either. These are the environments where we have seen it:
 
-- **Smart App Control** (Windows 11) is turned on. ⚠️ **To see where your PC stands, go to Settings > Privacy & security > Windows Security > App & browser control.** If it reads "On", the feature is active. **How it got that way — Windows turning it on by itself, someone turning it on in Settings, or how Windows was installed — does not matter here**; only the current setting does. Note that the feature is offered in certain regions only.
-- Your organization deploys an **application control policy** that forbids running unsigned programs.
-
-⚠️ **The very same file may be blocked on one attempt and allowed on the next.** This decision depends on an online reputation check rather than on a fixed rule, so **waiting a while and trying again sometimes works** (we saw the identical installer launch fine 30 minutes later). The reverse is also true: one successful run is no guarantee for the next.
+- A PC with **Smart App Control** (Windows 11) turned on. ⚠️ **To see where your PC stands, go to Settings > Privacy & security > Windows Security > App & browser control.** If it reads "On", the feature is active. **How it got that way — Windows turning it on by itself, someone turning it on in Settings, or how Windows was installed — does not matter here**; only the current setting does.
+  - ⚠️ **In this case the very same file may be blocked on one attempt and allowed on the next.** We saw a blocked installer launch fine 30 minutes later with nothing changed. **Waiting a while and trying again sometimes works**, but the reverse holds too: one successful run is no guarantee for the next.
+- A PC that has an **application control policy** forbidding unsigned programs (your organization may set this). Here, waiting does not help — ask your administrator.
 
 > **If you are blocked, use the "Portable build (ZIP)" below instead.** It does not go through an installer, so it may still launch on the same PC (⚠️ the portable executable is subject to the same check, so this is not guaranteed either).
 >
