@@ -93,7 +93,7 @@ def _open_multihop(root):
 
 
 def _open_map(root, monkeypatch):
-    """地図ウィンドウ（`TkinterMapView` はフェイクに差し替える）。
+    """地図ウィンドウ（`MapWidget` はフェイクに差し替える）。
 
     差し替えるのは**タイル取得のためにネットワークへ出る部品だけ**で、見切れの
     起点であるモードバー・各モードのパネル・ステータス行は本物を組み立てる。
@@ -122,7 +122,7 @@ def _open_map(root, monkeypatch):
         def get_zoom(self): return 8
 
     import views.map_window as mw
-    monkeypatch.setattr(mw, "TkinterMapView", _FakeMap)
+    monkeypatch.setattr(mw, "MapWidget", _FakeMap)
     win = mw.MapWindow(root, {"proxy_url": ""})
     return win._win, win
 

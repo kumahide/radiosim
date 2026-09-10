@@ -36,8 +36,8 @@ from PIL import ImageTk
 from core import dem
 from core import i18n
 from report import map_graphics
-from tkintermapview import TkinterMapView
 from views import theme, title_bar, window_fit
+from views.map_adapter import MapWidget
 from views.map_cache import _CacheMixin
 from views.map_picks import _PickMixin
 from views.progress import ProgressPump
@@ -470,7 +470,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
-        self._map = TkinterMapView(self._win, corner_radius=0)
+        self._map = MapWidget(self._win, corner_radius=0)
         self._layer = _DEFAULT_LAYER
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)

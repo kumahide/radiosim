@@ -24,8 +24,7 @@ from views.map_style import (_FIT_MARGIN, _FIT_MIN_SPAN, _MARKER_TEXT,
                              _SINGLE_ZOOM, _MAP_CYAN_HEX)
 
 if TYPE_CHECKING:
-    from tkintermapview import TkinterMapView
-
+    from views.map_adapter import MapWidget as TkinterMapView
     from views.map_window import _AppendSink, _SingleSink, _WaypointSink
 
 

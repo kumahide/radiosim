@@ -265,6 +265,7 @@ radiosim/
 │   ├── map_window.py     # 地図（本体＝モード切替・地図ウィジェット）
 │   ├── map_picks.py      # 地点の指定と経路の描画（Mixin）
 │   ├── map_cache.py      # DEM キャッシュの範囲選択・取得・オーバーレイ（Mixin）
+│   ├── map_adapter.py    # tkintermapview への唯一の依存点（防火扉・3.3 段2）
 │   ├── map_style.py      # 地図ウィンドウの描画定数（色・余白・ズーム）の単一ソース
 │   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
 │   ├── errors.py         # GUI の未捕捉例外をログ＋ダイアログへ流す単一の受け皿

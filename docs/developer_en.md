@@ -265,6 +265,7 @@ radiosim/
 │   ├── map_window.py     # Map window (core: mode switching, map widget)
 │   ├── map_picks.py      # Picking sites and drawing paths (mixin)
 │   ├── map_cache.py      # DEM cache selection, download and overlay (mixin)
+│   ├── map_adapter.py    # Sole dependency point on tkintermapview (fire door, 3.3 stage 2)
 │   ├── map_style.py      # Single source of map drawing constants (colors, margins, zoom)
 │   ├── dialogs.py        # Shared modal dialogs centered on the parent window
 │   ├── errors.py         # Single sink that routes unhandled GUI exceptions to the log and a dialog

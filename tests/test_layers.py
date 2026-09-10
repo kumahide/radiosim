@@ -210,6 +210,27 @@ def test_core_knows_nothing_about_screens_or_plots(path):
     )
 
 
+@pytest.mark.parametrize(
+    "path",
+    sorted(
+        p for p in (ROOT / "views").glob("*.py")
+        if p.stem != "map_adapter"
+    ) + sorted((ROOT / "report").glob("*.py")),
+    ids=lambda p: p.name,
+)
+def test_only_map_adapter_imports_tkintermapview(path):
+    """`tkintermapview` を引けるのは `views/map_adapter.py` だけ（3.3 段2）。
+
+    地図ライブラリの差し替え可能性（防火扉）は、import の集約点が1つで
+    あることでしか保てない。他のファイルが直接 import すると、差し替え時に
+    このファイルも探して書き換える羽目になる。
+    """
+    assert "tkintermapview" not in _external_roots(path), (
+        f"{path.relative_to(ROOT)} が tkintermapview を直接 import している。"
+        "`views/map_adapter.py` 経由にすること（`MapWidget` / `MapPolygon`）。"
+    )
+
+
 def test_the_layers_are_not_empty():
     """3 層とも実体があること（空なら上の検査は何も見ていない）。
 

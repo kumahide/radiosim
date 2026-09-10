@@ -994,7 +994,7 @@ def test_the_selection_is_cleared_only_where_the_pick_target_is_re_derived():
 def _open_map_window(monkeypatch):
     """地図窓をフェイクのタイル部品で開く（ネットワークへ出ない）。
 
-    差し替えるのは `TkinterMapView` だけ＝レイヤ切り替えの配線（Combobox →
+    差し替えるのは `MapWidget` だけ＝レイヤ切り替えの配線（Combobox →
     `set_tile_server` → 出典表記）は本物を通す。
     """
     import tkinter as tk
@@ -1026,7 +1026,7 @@ def _open_map_window(monkeypatch):
         def get_position(self): return (35.0, 139.0)
         def get_zoom(self): return 8
 
-    monkeypatch.setattr(mw, "TkinterMapView", _FakeMap)
+    monkeypatch.setattr(mw, "MapWidget", _FakeMap)
     root = make_themed_root()
     root.withdraw()
     win = mw.MapWindow(root, {"proxy_url": ""})

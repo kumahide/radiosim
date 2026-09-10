@@ -23,9 +23,8 @@ from views import progress
 from views.map_style import _LEVEL_COLORS, _OUTLINE_COLOR
 
 if TYPE_CHECKING:
-    from tkintermapview import TkinterMapView
-    from tkintermapview.canvas_polygon import CanvasPolygon
-
+    from views.map_adapter import MapPolygon as CanvasPolygon
+    from views.map_adapter import MapWidget as TkinterMapView
     from views.progress import ProgressPump
 
 logger = __import__("logging").getLogger("radiosim")

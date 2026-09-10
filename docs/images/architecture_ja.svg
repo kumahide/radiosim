@@ -41,10 +41,11 @@
 
     <rect class="card" x="389" y="124" width="341" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="401" y="141" class="ctitle" fill="#24406e">地図（本体＋ Mixin）</text>
-    <text x="401" y="162" class="mod">map_window.py</text><text x="537" y="162" class="role">本体＝モード切替</text>
-    <text x="401" y="182" class="mod">map_picks.py</text> <text x="537" y="182" class="role">地点の指定と経路の描画</text>
-    <text x="401" y="202" class="mod">map_cache.py</text> <text x="537" y="202" class="role">DEM キャッシュの操作</text>
-    <text x="401" y="222" class="mod">map_style.py</text> <text x="537" y="222" class="role">描画定数の単一ソース</text>
+    <text x="401" y="160" class="mod">map_window.py</text><text x="537" y="160" class="role">本体＝モード切替</text>
+    <text x="401" y="176" class="mod">map_picks.py</text> <text x="537" y="176" class="role">地点の指定と経路の描画</text>
+    <text x="401" y="192" class="mod">map_cache.py</text> <text x="537" y="192" class="role">DEM キャッシュの操作</text>
+    <text x="401" y="208" class="mod">map_adapter.py</text><text x="537" y="208" class="role">tkintermapview の唯一の依存点</text>
+    <text x="401" y="224" class="mod">map_style.py</text> <text x="537" y="224" class="role">描画定数の単一ソース</text>
 
     <rect class="card" x="744" y="124" width="341" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="756" y="141" class="ctitle" fill="#24406e">複数経路（本体＋ Mixin）</text>
