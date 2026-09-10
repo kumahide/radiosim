@@ -229,7 +229,9 @@ radiosim/
 │   ├── diffraction.py    # 回折損（Bullington 等価ナイフエッジ。球面回折は未実装）
 │   ├── simulation.py     # ViewModel / オーケストレーター
 │   ├── config.py         # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
-│   ├── dem.py            # DEM/淡色タイル取得・標高デコード・キャッシュ・プロキシ（外部依存を閉じ込め）
+│   ├── dem.py            # DEM/淡色タイルの1点取得・標高デコード・タイルキャッシュI/O・プロキシ（外部依存を閉じ込め）
+│   ├── dem_sources.py    # DEMソースの宣言ファイル（URL/デコード方式/無効値/出典・利用条件）
+│   ├── dem_cache.py      # タイルキャッシュの棚卸し・カバレッジ表示・削除
 │   ├── dem_prefetch.py   # 面での事前取得（bbox → 位置の列挙・優先順位つき降下・ワーカープール）
 │   ├── terrain_grid.py   # DEM の格子と地形の解像度（段階→点数の解決・純関数）
 │   ├── scenario.py       # 条件探索の共有ランナー（A-1 比較 / A-2 スイープ・相の宣言・ヘッドレス）
@@ -302,6 +304,7 @@ radiosim/
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
+    ├── test_dem_sources.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_scenario.py
@@ -943,7 +946,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 | 列 | 単位 | 内容 |
 | --- | --- | --- |
 | `Distance_m` | m | 送信点からの水平距離（0.1 m 刻み） |
-| `Elevation_m` | m | 標高（地球曲率の補正を掛ける前の生の値・0.01 m 刻み）。⚠️ **取れなかった標本もここは `0.0` のまま**——取れたかどうかは `elev_source` で判断する。**3.3 で空欄（NaN）へ変える**（規約 2 の予告＝pandas なら NaN・Excel なら数式の扱いが変わる） |
+| `Elevation_m` | m | 標高（地球曲率の補正を掛ける前の生の値・0.01 m 刻み）。**取れなかった標本は空欄**（3.2 で予告・3.3 で実施＝規約2）——`0.0` は海抜0mの正当な値の意味に一本化。取れたかどうかは `elev_source` で判断する |
 | `elev_source` | — | この標本の標高の出所。`gsi_dem`＝国土地理院 DEM から取得できた／`unavailable`＝通信の失敗で取れなかった |
 
 ⚠️ **行数は、その実行で地形を刻んだ点数そのものです**（解像度の段階と経路で決まります）。
@@ -1084,6 +1087,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
+| `test_dem_sources.py`    | DEM ソース宣言（URL テンプレート・デコード方式の列挙ディスパッチ・GSI/Terrarium/Mapbox Terrain-RGB の式） |
 | `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
 | `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
 | `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |

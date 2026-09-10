@@ -33,7 +33,7 @@ from typing import Callable, NamedTuple, Protocol, cast
 
 from PIL import ImageTk
 
-from core import dem
+from core import dem_cache
 from core import i18n
 from report import map_graphics
 from views import theme, title_bar, window_fit
@@ -720,7 +720,7 @@ class MapWindow(_PickMixin, _CacheMixin):
     # 範囲削除（Shift+Ctrl＋ドラッグ → 確認 → 実行）
     # ----------------------------------------------------------
     def _do_delete(self, bbox: tuple) -> None:
-        result = dem.delete_tile_cache(*bbox)
+        result = dem_cache.delete_tile_cache(*bbox)
         self._set_status(i18n.t("tm_delete_done").format(deleted=result["deleted"]), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 削除結果を自動表示に反映
@@ -746,7 +746,7 @@ class MapWindow(_PickMixin, _CacheMixin):
     # キャッシュ統計
     # ----------------------------------------------------------
     def _refresh_stats(self) -> None:
-        stats = dem.get_cache_stats()
+        stats = dem_cache.get_cache_stats()
         mb = stats["size_bytes"] / (1024 * 1024)
         self._stats_var.set(i18n.t("tm_stats").format(count=stats["count"], mb=f"{mb:.1f}"))
 

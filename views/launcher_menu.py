@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING, Callable
 
 from core import config
 from core import dem
+from core import dem_cache
 from core import diagnostics
 from core import failure
 from core import i18n
@@ -490,7 +491,7 @@ class _MenuMixin:
             i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm")
         ):
             return
-        result = dem.delete_all_tile_cache()
+        result = dem_cache.delete_all_tile_cache()
         # マップウィンドウが開いていれば表示を更新する。
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_external_delete_all(result["deleted"])

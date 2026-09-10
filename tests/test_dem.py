@@ -16,6 +16,7 @@ import requests
 
 from core import config
 from core import dem
+from core import dem_cache
 from core import dem_prefetch
 
 
@@ -737,40 +738,40 @@ class TestProxy:
 class TestEnumerateBbox:
 
     def test_returns_6_tuple_per_tile(self):
-        tiles = dem._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
+        tiles = dem_cache._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
         assert all(len(t) == 6 for t in tiles)
 
     def test_covers_all_dem_layers(self):
-        tiles = dem._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
+        tiles = dem_cache._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
         layer_ids = {t[0] for t in tiles}
         assert layer_ids == {lid for lid, _ in dem.DEM_LAYERS}
 
     def test_at_least_one_tile_per_layer(self):
-        tiles = dem._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
+        tiles = dem_cache._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
         for layer_id, _ in dem.DEM_LAYERS:
             assert any(t[0] == layer_id for t in tiles)
 
     def test_inverted_coords_same_result(self):
         """lat1/lon1 が NW でなくても同じ結果を返す（入力順に依存しない）。"""
-        tiles_nw_se = dem._enumerate_bbox(34.54, 132.40, 34.53, 132.41)
-        tiles_se_nw = dem._enumerate_bbox(34.53, 132.41, 34.54, 132.40)
+        tiles_nw_se = dem_cache._enumerate_bbox(34.54, 132.40, 34.53, 132.41)
+        tiles_se_nw = dem_cache._enumerate_bbox(34.53, 132.41, 34.54, 132.40)
         assert set(t[:4] for t in tiles_nw_se) == set(t[:4] for t in tiles_se_nw)
 
     def test_larger_area_returns_more_tiles(self):
-        small = dem._enumerate_bbox(34.540, 132.410, 34.539, 132.409)
-        large = dem._enumerate_bbox(34.600, 132.500, 34.400, 132.300)
+        small = dem_cache._enumerate_bbox(34.540, 132.410, 34.539, 132.409)
+        large = dem_cache._enumerate_bbox(34.600, 132.500, 34.400, 132.300)
         assert len(large) > len(small)
 
     def test_tile_coords_in_valid_range(self):
         """タイル座標がズームレベルに対して有効な範囲内であること。"""
-        tiles = dem._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
+        tiles = dem_cache._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
         for layer_id, zoom, x, y, subdir, cache_path in tiles:
             assert 0 <= x < 2 ** zoom
             assert 0 <= y < 2 ** zoom
 
     def test_cache_path_contains_layer_and_coords(self):
         """cache_path が layer_id / x / y.png の構造を持つこと。"""
-        tiles = dem._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
+        tiles = dem_cache._enumerate_bbox(34.54, 132.41, 34.53, 132.40)
         for layer_id, zoom, x, y, subdir, cache_path in tiles:
             assert layer_id in cache_path
             assert str(x) in cache_path
@@ -1310,7 +1311,7 @@ class TestScanCacheOverlay:
 
     def test_empty_cache_returns_empty(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        assert dem.scan_cache_overlay(
+        assert dem_cache.scan_cache_overlay(
             self.LAT, self.LON, self.LAT - 0.01, self.LON + 0.01, 14
         ) == []
 
@@ -1321,7 +1322,7 @@ class TestScanCacheOverlay:
         x15, y15, _, _ = dem._tile_coords(self.LAT, self.LON, 15)
         self._touch(tmp_path, "dem_png", x14, y14)
         self._touch(tmp_path, "dem5a_png", x15, y15)
-        cells = dem.scan_cache_overlay(
+        cells = dem_cache.scan_cache_overlay(
             self.LAT + 0.01, self.LON - 0.01,
             self.LAT - 0.01, self.LON + 0.01, 14,
         )
@@ -1334,7 +1335,7 @@ class TestScanCacheOverlay:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
         self._touch(tmp_path, "dem_png", x14, y14)
-        cells = dem.scan_cache_overlay(
+        cells = dem_cache.scan_cache_overlay(
             self.LAT + 0.01, self.LON - 0.01,
             self.LAT - 0.01, self.LON + 0.01, 14,
         )
@@ -1347,7 +1348,7 @@ class TestScanCacheOverlay:
         x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
         self._touch(tmp_path, "dem_png", x14, y14)
         # はるか遠方の小範囲を指定（対象タイルを含まない）
-        cells = dem.scan_cache_overlay(43.07, 141.34, 43.06, 141.35, 14)
+        cells = dem_cache.scan_cache_overlay(43.07, 141.34, 43.06, 141.35, 14)
         assert cells == []
 
     # 日本全域を覆う bbox（filtering の端数で対象タイルを落とさないため広めに取る）
@@ -1365,7 +1366,7 @@ class TestScanCacheOverlay:
         for dx in range(4):
             for dy in range(4):
                 self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
-        cells = dem.scan_cache_overlay(*self.WIDE, 12)
+        cells = dem_cache.scan_cache_overlay(*self.WIDE, 12)
         assert len(cells) == 1
         assert cells[0]["zoom"] == 12
         assert cells[0]["level"] == "dem"
@@ -1379,7 +1380,7 @@ class TestScanCacheOverlay:
                 if dx == 0 and dy == 0:
                     continue   # 1 隅を欠けさせる → 全体統合は不可
                 self._touch(tmp_path, "dem_png", x0 + dx, y0 + dy)
-        cells = dem.scan_cache_overlay(*self.WIDE, 12)
+        cells = dem_cache.scan_cache_overlay(*self.WIDE, 12)
         # 単一の粗いセルにはならない（過大表示を防ぐ）
         assert len(cells) > 1
         # 細粒度（zoom-14）のセルが残る
@@ -1395,14 +1396,14 @@ class TestScanCacheOverlay:
         self._touch(tmp_path, "dem_png", x14, y14)
         self._touch(tmp_path, "dem_png", x14 + 1, y14)
         wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
-        cached = dem.count_cached_areas(*wide)
+        cached = dem_cache.count_cached_areas(*wide)
         total = dem_prefetch.count_bbox_tiles(*wide)
         assert cached == 2
         assert total > cached   # 範囲総数は未取得を含むので多い
 
     def test_count_cached_areas_zero_when_empty(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        assert dem.count_cached_areas(*self.WIDE) == 0
+        assert dem_cache.count_cached_areas(*self.WIDE) == 0
 
     def test_broken_tile_excluded(self, tmp_path, monkeypatch):
         """壊れたタイルは件数表示・塗りのどちらにも「取得済み」として現れない（B-143）。"""
@@ -1411,8 +1412,8 @@ class TestScanCacheOverlay:
         self._touch(tmp_path, "dem_png", x14, y14)          # 読める
         self._touch_broken(tmp_path, "dem_png", x14 + 1, y14)  # 壊れている
         wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
-        assert dem.count_cached_areas(*wide) == 1
-        cells = dem.scan_cache_overlay(*wide, 14)
+        assert dem_cache.count_cached_areas(*wide) == 1
+        cells = dem_cache.scan_cache_overlay(*wide, 14)
         assert not any(c["x"] == x14 + 1 and c["y"] == y14 for c in cells)
 
     def test_repaired_tile_becomes_visible_after_rewrite(self, tmp_path, monkeypatch):
@@ -1421,9 +1422,9 @@ class TestScanCacheOverlay:
         x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
         self._touch_broken(tmp_path, "dem_png", x14, y14)
         wide = (self.LAT + 0.1, self.LON - 0.1, self.LAT - 0.1, self.LON + 0.1)
-        assert dem.count_cached_areas(*wide) == 0   # メモに「壊れている」を記録
+        assert dem_cache.count_cached_areas(*wide) == 0   # メモに「壊れている」を記録
         self._touch(tmp_path, "dem_png", x14, y14)   # stat（mtime/size）が変わる
-        assert dem.count_cached_areas(*wide) == 1    # メモが古いと踏んだままにならない
+        assert dem_cache.count_cached_areas(*wide) == 1    # メモが古いと踏んだままにならない
 
 
 class TestCoverageOutline:
@@ -1439,14 +1440,14 @@ class TestCoverageOutline:
 
     def test_empty_cache_no_loops(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        assert dem.coverage_outline(*self.WIDE) == []
+        assert dem_cache.coverage_outline(*self.WIDE) == []
 
     def test_single_cell_is_rectangle(self, tmp_path, monkeypatch):
         """単一セル → 4 頂点の矩形ループ1個。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
         self._touch(tmp_path, "dem_png", x14, y14)
-        loops = dem.coverage_outline(*self.WIDE)
+        loops = dem_cache.coverage_outline(*self.WIDE)
         assert len(loops) == 1
         assert len(loops[0]) == 4
 
@@ -1456,7 +1457,7 @@ class TestCoverageOutline:
         x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
         self._touch(tmp_path, "dem_png", x14, y14)
         self._touch(tmp_path, "dem_png", x14 + 1, y14)
-        loops = dem.coverage_outline(*self.WIDE)
+        loops = dem_cache.coverage_outline(*self.WIDE)
         assert len(loops) == 1
         assert len(loops[0]) == 4   # 内部の共有辺は相殺され角は4つ
 
@@ -1469,7 +1470,7 @@ class TestCoverageOutline:
                 if dx == 1 and dy == 1:
                     continue
                 self._touch(tmp_path, "dem_png", x14 + dx, y14 + dy)
-        loops = dem.coverage_outline(*self.WIDE)
+        loops = dem_cache.coverage_outline(*self.WIDE)
         assert len(loops) == 1
         assert len(loops[0]) == 6
 
@@ -1520,7 +1521,7 @@ class TestBasemapTiles:
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
         assert os.path.exists(path)
-        dem.delete_tile_cache(*self.WIDE)
+        dem_cache.delete_tile_cache(*self.WIDE)
         assert os.path.exists(path)
 
     def test_delete_all_tile_cache_removes_basemap(self, tmp_path, monkeypatch):
@@ -1533,7 +1534,7 @@ class TestBasemapTiles:
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
         assert os.path.exists(path)
-        dem.delete_all_tile_cache()
+        dem_cache.delete_all_tile_cache()
         assert not os.path.exists(path)
 
 
@@ -1552,7 +1553,7 @@ class TestCacheDeletion:
 
     def _seed_bbox_tiles(self) -> list[tuple]:
         """bbox 内の全 DEM タイルを実ファイルとして作成し、タイルリストを返す。"""
-        tiles = dem._enumerate_bbox(*self.BBOX)
+        tiles = dem_cache._enumerate_bbox(*self.BBOX)
         for _, _, _, _, subdir, cache_path in tiles:
             os.makedirs(subdir, exist_ok=True)
             with open(cache_path, "wb") as f:
@@ -1581,7 +1582,7 @@ class TestCacheDeletion:
         dem._tile_cache[("dem_png", 0, 0)] = np.zeros(1)
         dem._failed_tiles.add((layer_id, x, y))
 
-        res = dem.delete_tile_cache(*self.BBOX)
+        res = dem_cache.delete_tile_cache(*self.BBOX)
 
         assert res == {"deleted": len(tiles), "errors": 0}
         assert all(not os.path.exists(p) for *_, p in tiles)
@@ -1594,11 +1595,11 @@ class TestCacheDeletion:
         """未取得エリアの範囲削除は deleted=0（存在しないものを数えない）。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         self._fresh_memory_cache(monkeypatch)
-        assert dem.delete_tile_cache(*self.BBOX) == {"deleted": 0, "errors": 0}
+        assert dem_cache.delete_tile_cache(*self.BBOX) == {"deleted": 0, "errors": 0}
 
     def test_get_cache_stats_missing_dir_is_zero(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "no_such_dir"))
-        assert dem.get_cache_stats() == {"count": 0, "size_bytes": 0}
+        assert dem_cache.get_cache_stats() == {"count": 0, "size_bytes": 0}
 
     def test_get_cache_stats_counts_png_only(self, tmp_path, monkeypatch):
         """枚数・総バイト数は .png のみ集計（ログ等の同居ファイルを数えない）。"""
@@ -1608,7 +1609,7 @@ class TestCacheDeletion:
         (d / "1.png").write_bytes(b"abc")
         (d / "2.png").write_bytes(b"abcde")
         (d / "note.txt").write_bytes(b"zz")
-        assert dem.get_cache_stats() == {"count": 2, "size_bytes": 8}
+        assert dem_cache.get_cache_stats() == {"count": 2, "size_bytes": 8}
 
     def test_delete_all_removes_png_and_clears_memory(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
@@ -1620,7 +1621,7 @@ class TestCacheDeletion:
         (d / "2.png").write_bytes(b"\x89PNG")
         (tmp_path / "keep.txt").write_bytes(b"keep")
 
-        res = dem.delete_all_tile_cache()
+        res = dem_cache.delete_all_tile_cache()
 
         assert res == {"deleted": 1}
         assert not (d / "2.png").exists()

@@ -559,14 +559,13 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
         # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
         writer.writerow(list(output_contract.TERRAIN_CSV_COLUMNS))
         for d, h in zip(terrain.d_km_axis, terrain.raw_elevs):
-            # `Elevation_m` の意味は 3.3 まで変えない（規約2＝3.2 で予告済み・
-            # core/output_contract.py）＝取れなかった（nan）点も従来どおり 0.0
-            # を書く。**新設の `elev_source` だけが正直な信号**（ISSUES.md B-025 ③）。
+            # 🔴 **3.3 で `Elevation_m` の意味を変えた**（規約2＝3.2 で予告済み・
+            # core/output_contract.py）＝取れなかった（nan）点は `0.0` ではなく
+            # 空欄（CSV の空フィールド＝pandas は NaN として読む）を書く。
             unavailable = bool(np.isnan(h))
-            elev_m = 0.0 if unavailable else float(h)
             writer.writerow([
                 round(units.km_to_m(float(d)), 1),
-                round(elev_m, 2),
+                "" if unavailable else round(float(h), 2),
                 "unavailable" if unavailable else "gsi_dem",
             ])
 

@@ -859,9 +859,9 @@ class TestSavePackage:
     def test_terrain_csv_marks_failed_samples_as_unavailable(
         self, tmp_path, default_params_dict, monkeypatch,
     ):
-        """nan の標本は `Elevation_m=0.0`・`elev_source=unavailable` になること
-        （ISSUES.md B-025 ③）。実値の標本は `gsi_dem`。`Elevation_m` の意味は
-        3.3 まで変えない（規約2）ので、値そのものは従来どおり 0.0 のまま。
+        """nan の標本は `Elevation_m=`（空欄）・`elev_source=unavailable` になること
+        （ISSUES.md B-025 ③・3.2 で予告・3.3 で実施＝規約2）。実値の標本は `gsi_dem`。
+        `0.0` は海抜0mの正当な値の意味に一本化された。
         """
         import csv
         raw = np.array([10.0, np.nan, 20.0])
@@ -876,5 +876,5 @@ class TestSavePackage:
                   newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
         assert rows[1][1:] == ["10.0", "gsi_dem"]
-        assert rows[2][1:] == ["0.0", "unavailable"]
+        assert rows[2][1:] == ["", "unavailable"]
         assert rows[3][1:] == ["20.0", "gsi_dem"]

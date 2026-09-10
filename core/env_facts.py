@@ -31,7 +31,7 @@ import re
 import sys
 
 from core import config
-from core import dem
+from core import dem_cache
 from core import version
 
 #: ログの座標を伏せる正規表現。`simulation.py` の 3 箇所が使う
@@ -147,6 +147,6 @@ def collect() -> dict:
         "version": version.APP_VERSION,
         "config": sanitized_config(),
         "recent_log": recent_log_lines(),
-        "cache_stats": dem.get_cache_stats(),
+        "cache_stats": dem_cache.get_cache_stats(),
         "environment": environment_info(),
     }

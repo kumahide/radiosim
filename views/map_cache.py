@@ -15,7 +15,7 @@ import time
 import tkinter as tk
 from typing import TYPE_CHECKING
 
-from core import dem
+from core import dem_cache
 from core import dem_prefetch
 from core import i18n
 from views import dialogs
@@ -116,7 +116,7 @@ class _CacheMixin:
             #   force ON  → 全エリア再取得（総数）
             #   force OFF → キャッシュ済みはスキップされるので新規分のみ
             total = dem_prefetch.count_bbox_tiles(*bbox)
-            n = total if force else total - dem.count_cached_areas(*bbox)
+            n = total if force else total - dem_cache.count_cached_areas(*bbox)
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
             msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
@@ -126,7 +126,7 @@ class _CacheMixin:
                 self._clear_selection()
         else:   # delete
             # 削除は実際にキャッシュ済みのエリアのみが対象
-            n = dem.count_cached_areas(*bbox)
+            n = dem_cache.count_cached_areas(*bbox)
             if dialogs.confirm(
                 self._win, i18n.t("tm_delete_title"),
                 i18n.t("tm_delete_confirm").format(n=n),
@@ -196,8 +196,8 @@ class _CacheMixin:
         ).start()
 
     def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int) -> None:
-        cells = dem.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
-        outline = dem.coverage_outline(nw[0], nw[1], se[0], se[1])
+        cells = dem_cache.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
+        outline = dem_cache.coverage_outline(nw[0], nw[1], se[0], se[1])
         # 走査中に地図窓を閉じられている可能性がある（B-061）
         progress.post_to_ui(self._win,
                             lambda: self._draw_overlay_cells(cells, outline))
@@ -210,8 +210,8 @@ class _CacheMixin:
         # 隣接セルの塗りを繋げて内部グリッド線を出さない。
         for c in cells:
             x, y, z = c["x"], c["y"], c["zoom"]
-            lat_n, lon_w = dem.tile_to_latlng(x,     y,     z)
-            lat_s, lon_e = dem.tile_to_latlng(x + 1, y + 1, z)
+            lat_n, lon_w = dem_cache.tile_to_latlng(x,     y,     z)
+            lat_s, lon_e = dem_cache.tile_to_latlng(x + 1, y + 1, z)
             color = _LEVEL_COLORS.get(c["level"], "#CCCCCC")
             p = self._map.set_polygon(
                 [(lat_n, lon_w), (lat_n, lon_e), (lat_s, lon_e), (lat_s, lon_w)],
@@ -232,7 +232,7 @@ class _CacheMixin:
 
     def _estimate_mb(self, n_areas: int) -> str:
         """DL 容量の目安 [MB] を文字列で返す。平均タイルサイズは実キャッシュから推定。"""
-        stats = dem.get_cache_stats()
+        stats = dem_cache.get_cache_stats()
         avg = stats["size_bytes"] / stats["count"] if stats["count"] else self._DEFAULT_TILE_BYTES
         mb = n_areas * self._TILES_PER_AREA * avg / (1024 * 1024)
         return f"{mb:.1f}"

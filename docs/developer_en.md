@@ -229,7 +229,9 @@ radiosim/
 │   ├── diffraction.py    # Diffraction loss (Bullington edge; spherical-earth term NOT implemented)
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
-│   ├── dem.py            # DEM/pale tile fetch, elevation decode, cache, proxy (external deps confined)
+│   ├── dem.py            # DEM/pale tile single-point fetch, elevation decode, tile cache I/O, proxy (external deps confined)
+│   ├── dem_sources.py    # DEM source declaration file (URL/decode method/invalid value/attribution/terms)
+│   ├── dem_cache.py      # Tile cache inventory, coverage display, deletion
 │   ├── dem_prefetch.py   # Area prefetch (bbox -> positions, priority descent, worker pool)
 │   ├── terrain_grid.py   # DEM grid and terrain resolution (level -> sample count, pure functions)
 │   ├── scenario.py       # Condition explorer runner (A-1 compare / A-2 sweep; phases; headless)
@@ -303,6 +305,7 @@ radiosim/
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
+    ├── test_dem_sources.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_scenario.py
@@ -946,7 +949,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). ⚠️ **Stays `0.0` for a sample that could not be fetched** — check `elev_source` to see whether it actually succeeded. **In 3.3 this becomes an empty cell (NaN)** (rule 2 announcement — it reads as NaN in pandas and changes how formulas behave in Excel) |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched is an empty cell** (announced in 3.2, applied in 3.3 — rule 2) — `0.0` now means only a genuine sea-level elevation. Check `elev_source` to see whether the fetch actually succeeded |
 | `elev_source` | — | Where this sample's elevation came from. `gsi_dem` = fetched from the GSI DEM; `unavailable` = could not be fetched (network failure) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
@@ -1093,6 +1096,7 @@ entry point that runs them together.
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
+| `test_dem_sources.py`    | DEM source declarations (URL template, decode-method dispatch, GSI/Terrarium/Mapbox Terrain-RGB formulas) |
 | `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
 | `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke, combined report (sheet CSS scoping, in-document anchors) |
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |

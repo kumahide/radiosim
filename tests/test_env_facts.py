@@ -191,7 +191,7 @@ class TestEnvironmentInfo:
 class TestCollect:
     def test_returns_the_five_shared_keys(self, monkeypatch):
         monkeypatch.setattr(env_facts, "recent_log_lines", lambda: ["line"])
-        monkeypatch.setattr(env_facts.dem, "get_cache_stats",
+        monkeypatch.setattr(env_facts.dem_cache, "get_cache_stats",
                              lambda: {"count": 1, "size_bytes": 2})
         facts = env_facts.collect()
         assert set(facts) == {
