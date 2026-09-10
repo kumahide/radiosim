@@ -2468,6 +2468,50 @@ class TestRoadmapSection:
         assert memcheck.roadmap_section(lines, one), f"§{one} の節が取れない"
 
 
+class TestIntakeReviewNudge:
+    """新しい版の最初の作業＝着手前の在庫精査の合図（2026-09-10 ルール化）。
+
+    鳴るのは「正式のまま」と「alpha」だけ・確定した作業順の見出しが在れば黙る。
+    """
+
+    BEFORE = _doc(
+        "## 🔜 3.3 — 経路と依存の耐性（**次の版**）",
+        "本文",
+        "## ✅ 3.2（リリース済み）",
+    )
+    DRAFT = BEFORE + ["### 🧭 3.3 の作業順（2026-09-10 案・ユーザー承認待ち）"]
+    CONFIRMED = BEFORE + ["### 🧭 3.3 の作業順（2026-09-10 確定・着手前の在庫精査で組んだ）"]
+
+    @pytest.mark.parametrize("ver", ["3.2", "3.3a1", "3.3a2"])
+    def test_it_rings_until_the_order_is_confirmed(self, hook, ver):
+        for rm in (self.BEFORE, self.DRAFT):
+            got = hook.intake_review_nudge(ver, rm)
+            assert "在庫精査" in got and "3.3" in got, (ver, got)
+
+    @pytest.mark.parametrize("ver", ["3.2", "3.3a1"])
+    def test_a_confirmed_order_silences_it(self, hook, ver):
+        assert hook.intake_review_nudge(ver, self.CONFIRMED) == ""
+
+    @pytest.mark.parametrize("ver", ["3.3b1", "3.3RC2"])
+    def test_beta_and_rc_are_silent(self, hook, ver):
+        """b/RC で鳴っても手遅れ＝鳴り続けるだけの壊れ方②になる。"""
+        assert hook.intake_review_nudge(ver, self.BEFORE) == ""
+
+    def test_another_versions_confirmed_order_does_not_count(self, hook):
+        rm = self.BEFORE + ["### 🧭 3.2 の作業順（2026-09-05 確定・着手前の在庫精査で組んだ）"]
+        assert "在庫精査" in hook.intake_review_nudge("3.2", rm)
+
+    def test_the_released_version_still_marked_next_is_left_to_check_17(self, hook):
+        """出した版が 🔜 のまま＝節の並べ替えの漏れ。そちらのゲートの管轄なので二重に鳴らさない。"""
+        rm = _doc("## 🔜 3.2 — サポート性（**次の版**）", "本文")
+        assert hook.intake_review_nudge("3.2", rm) == ""
+
+    def test_an_unnumbered_next_version_still_rings(self, hook):
+        """次の版が番号未定（🔜 の節が無い）でも、精査そのものは要る。"""
+        got = hook.intake_review_nudge("3.2", _doc("## ✅ 3.2（リリース済み）"))
+        assert "在庫精査" in got
+
+
 # ===========================================================================
 # I-128: 退避（`.claude/mirror_memory.py`）— 「意図しない移行」に耐えるための門
 # ===========================================================================
