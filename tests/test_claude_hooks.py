@@ -1550,6 +1550,60 @@ class TestStateContradictsResponse:
 
 
 # ============================================================
+# check_memory.py check 17 ＝ 段の完了マーク ⇔ 台帳の状態（I-143）
+# ============================================================
+# 2026-09-10・I-143 は ISSUES.md では「済」になったのに、ロードマップの
+# `段1` 行には完了マークが付かないまま残った＝手順は進んだのにロードマップが
+# 追従しなかった。check 13・16 のどちらも見ていない向き（台帳の状態は正しく
+# 「済」だった＝矛盾はロードマップの側にだけある）。
+
+
+class TestStageMarksSync:
+    """段の行が参照する課題が全部「済」なら、行にも完了マークを要求する。"""
+
+    _DONE_ISSUE = ["## ✅ 確認済み・対応済み（アーカイブ）",
+                   "### ★ I-143: 何かの改善", "- ★ **状態**: **済**（`3.3a1` / `3f8acdf`）"]
+    _OPEN_ISSUE = ["## 💡 改善案", "### ★ I-140: 別の改善", "- ★ **状態**: 未着手"]
+
+    def test_a_done_issue_without_a_completion_mark_is_flagged(self, memcheck):
+        """I-143 の実際の形（段の行に完了マークが無いまま「済」が確定）。"""
+        states = memcheck.issue_states_by_id(self._DONE_ISSUE)
+        roadmap = ["## 🔜 3.3 — 版", "- **段1（帳票・a1 の枠）**＝[[I-143]]（台帳 9 列）。"]
+        found = memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
+        assert found and "I-143" in found[0]
+
+    def test_a_completion_mark_silences_it(self, memcheck):
+        """完了マークが付いていれば鳴らないこと（②毎回鳴るを避ける）。"""
+        states = memcheck.issue_states_by_id(self._DONE_ISSUE)
+        roadmap = ["## 🔜 3.3 — 版",
+                   "- **段1（帳票・a1 の枠）＝✅ 完了（2026-09-10）**＝[[I-143]]。"]
+        assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
+
+    def test_a_still_open_issue_is_not_demanded(self, memcheck):
+        """参照する課題がまだ未着手/対応中なら、完了マークは要らない（①一度も鳴らないを避けつつ）。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.3 — 版", "- **段5（配布摩擦）**＝[[I-140]] の調査。"]
+        assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
+
+    def test_a_partially_done_stage_is_not_demanded(self, memcheck):
+        """一部だけ済んだ段は対象外（実データに実例あり＝3.1 段2）。"""
+        states = memcheck.issue_states_by_id(
+            self._DONE_ISSUE + ["### ★ I-140: 別の改善", "- ★ **状態**: 対応中"])
+        roadmap = ["## 🔜 3.3 — 版", "- **段9（混在）**＝I-143 は済、I-140 はコード済。"]
+        assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
+
+    def test_other_versions_are_not_demanded(self, memcheck):
+        """別の版の節にある段は対象外。"""
+        states = memcheck.issue_states_by_id(self._DONE_ISSUE)
+        roadmap = ["## 🔜 3.0 — 版", "- **段1（帳票）**＝[[I-143]]。", "## 🔜 3.3 — 版"]
+        assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（今回の抜けを直したので 0 件）。"""
+        assert memcheck.check_stage_sync() == []
+
+
+# ============================================================
 # check_memory.py check 14/15 ＝ 索引の揮発物（I-086）と正典移動（I-087）
 # ============================================================
 
