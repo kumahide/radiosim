@@ -656,9 +656,14 @@ Applies J(ν) only to the maximum ν across all sample points. Fast, but it does
 ```
 Intrusion depth(d) = clip(veg_top(d) - LoS(d), 0, vegetation height)
 Weight(d)          = clip(intrusion depth / r₁(d), 0, 1)
-Effective length   = Σ[weight(d)] × sample spacing
+Effective length   = Σᵢ [(weight(dᵢ) + weight(dᵢ₊₁)) / 2 × (dᵢ₊₁ − dᵢ)]
 Veg Loss           = min(effective length × coeff, 45 dB)
 ```
+
+> **The effective length is integrated over the actual distance between adjacent samples**
+> (trapezoidal rule). Samples are not necessarily evenly spaced (see "Terrain resolution"), so it is
+> not computed as "sum of weights × a fixed spacing". Each end sample covers half an interval
+> (corrected in 3.0).
 
 > ⚠️ **The intrusion depth is capped at the vegetation height.** The thickness of vegetation the
 > signal can pass through is at most the canopy height; anything beyond that is the ground itself
