@@ -581,21 +581,25 @@ class TestRouteSheet:
         assert i18n.t("mh_worst_hop") in html
 
     def test_sheet_shows_dem_fail_rate_per_hop(self, base, tmp_path, monkeypatch):
-        """DEM 取得の失敗率が区間ごとの列に出ること（3.2 段7・B-025 ③）。
+        """DEM 取得の失敗率が区間の判定セルに ⚠ で出ること（I-143 決定 2）。
 
-        `hops.csv` の `dem_fail_pct`（区間ごとに terrain が別）と同じ単一ソース
-        （`pr.terrain.fail_pct`）を HTML の台帳側でも読んでいることの配線検査。
+        3.2 段7（B-025 ③）で列に出していたものを、22→9 列化（I-143）の際に
+        **判定セルの ⚠ ＋台帳下の 1 行**へ移した。`hops.csv` の `dem_fail_pct`
+        （区間ごとに terrain が別）と同じ単一ソース（`pr.terrain.fail_pct`）を
+        HTML の台帳側でも読んでいることの配線検査。
         """
         from report import report_multihop
 
         i18n.set_lang("en")
         run = self._run_with_report(base, tmp_path, monkeypatch)
+        # `_fake_fetch` は全点成功する地形しか作らない＝ここでは配線だけを見る
+        # ため、実行後の terrain の標本を直に nan にする（`fail_pct` はそこから
+        # 導出するプロパティで直接は書けない）。
+        run.hops[0].terrain.raw_elevs[0] = np.nan
+        expected = run.hops[0].terrain.fail_pct
         html = report_multihop.route_sheet_html(run)
-        # ヘッダは「名前 (単位)」を 2 行に割るので、名前側だけを見る
-        # （→ report_multihop._hop_header_cells）。
-        assert "DEM Fail" in html
-        for pr in run.hops:
-            assert units.format_fail_pct(pr.terrain.fail_pct, unit=False) in html
+        assert "⚠" in html, "DEM 失敗の区間に印が付いていない"
+        assert units.format_fail_pct(expected) in html, "台帳下の注記に失敗率が出ていない"
 
     def test_sheet_states_the_relay_model(self, base, tmp_path, monkeypatch):
         """**再生中継であること**をレポートに明記する（受動反射は対象外）。
@@ -628,9 +632,8 @@ class TestRouteSheet:
             set(report_multihop._HOP_COL_KEYS)
         # ⚠️ 備考列は**意図的に外してある**＝中継の備考は `hop_rows` が入れる
         # 「A → B」の導出物で、載せると区間列と同じ文字が並ぶだけになる。
-        missing = {k for k in ("html_col_fspl", "html_col_diff", "html_col_veg",
-                               "html_col_env", "html_col_rain", "html_col_gas",
-                               "html_col_total_loss",
+        missing = {k for k in ("html_col_fspl", "html_col_total_loss",
+                               "html_col_rx", "html_col_margin", "mh_heights",
                                "html_col_graph")} - shared
         assert "html_col_note" not in report_multihop._HOP_COL_KEYS, (
             "区間名と同じ文字が並ぶ備考列が復活している"

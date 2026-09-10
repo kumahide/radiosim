@@ -692,17 +692,46 @@ class TestSaveReportAllHtml:
         # 単体では per-path は別ファイル参照のまま
         assert "href='p01/report.html'" in html
 
-    def test_dem_fail_rate_appears_in_summary_table_and_per_path_sheet(
+    def test_dem_fail_rate_appears_in_per_path_sheet(
             self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
-        """DEM 取得の失敗率が台帳の列にも per-path シートにも出ること（3.2 段7）。
+        """DEM 取得の失敗率が per-path シートに出ること（3.2 段7）。
 
-        `flat_terrain` は全点取得済み（`fail_pct` = 0.0）＝出力契約の
-        `dem_fail_pct` と同じ単一ソースを HTML 側でも読んでいることの配線検査。
+        🔁 **I-143（2026-09-10）で台帳の列は判定セルの ⚠ ＋台帳下の注記へ移った**
+        （`flat_terrain` は `fail_pct` = 0.0 なので台帳側には何も出ない＝
+        `test_multihop.TestRouteSheet.test_sheet_shows_dem_fail_rate_per_hop`
+        が ⚠ 側を検査する）。ここは per-path シートの環境表が出力契約の
+        `dem_fail_pct` と同じ単一ソースを読んでいることの配線検査。
         """
         results = self._results(tmp_path, flat_terrain, default_params_dict, monkeypatch)
         html = self._render(tmp_path, results)
         assert i18n.t("html_col_dem_fail") in html
-        assert html.count("<td>0.0</td>") >= 2  # 台帳の各行 + per-path の環境表
+        assert "<td>0.0</td>" in html  # per-path の環境表
+
+    def test_note_is_passed_to_the_individual_report_memo(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
+        """備考は台帳でなく**個別レポート**のメモへ渡る（I-143 決定 2）。
+
+        22→9 列化（I-143）で台帳から備考列を落とした分、`p01/report.html` の
+        メモ欄（既存の `report-memo`）へ載せる＝`save_profile_png` の呼び出しに
+        `memo=pr.row.note` を渡す配線検査。
+        """
+        i18n.set_lang("ja")
+        monkeypatch.setattr(report_path.report_map, "render_path_map_b64",
+                            lambda *a, **k: None)
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.5429, 132.4118, 34.5389, 132.4050, 30.0, 10.0)
+        row.note = "尾根越え・要現地確認"
+        save_dir = tmp_path / "p01"
+        save_dir.mkdir()
+        pr = batch.PathResult(row=row, result=_make_result(), terrain=flat_terrain,
+                              params=params, save_dir=str(save_dir))
+        report_path.save_path_visuals(pr)
+        html = (save_dir / "report.html").read_text(encoding="utf-8")
+        assert row.note in html, "個別レポートに備考が載っていない"
+        assert 'class="report-memo"' in html
+
+        summary_html = report_summary.summary_sheet_html([pr])
+        assert row.note not in summary_html, "備考が台帳側にも残っている（二重管理）"
 
 
 # ============================================================

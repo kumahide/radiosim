@@ -731,14 +731,19 @@ class TestSummaryGainColumns:
         assert data[header.index("f1_pct")] == "100.0", "率は頭打ちのまま"
         assert data[header.index("f1_depth_x")] == "8.51", "深さは頭打ちしない"
 
-    def test_summary_html_has_gain_headers(self, tmp_path, default_params_dict):
+    def test_summary_html_has_no_gain_headers(self, tmp_path, default_params_dict):
+        """🔁 **I-143（2026-09-10）で HTML 台帳から利得列を落とした**＝22→9 列化。
+
+        利得は内訳（`summary.csv` の `gain_tx_dbi` / `gain_rx_dbi`）に残る。
+        """
         i18n.set_lang("en")
         report_summary.save_summary_html([self._result(default_params_dict)], str(tmp_path))
         with open(os.path.join(str(tmp_path), "summary.html"), encoding="utf-8") as f:
             html = f.read()
+        assert "TX Gain" not in html
+        assert "RX Gain" not in html
         # 単位は 2 行目（.u span）へ分離されるので、名前と単位を個別に確認する。
-        assert 'TX Gain<span class="u">(dBi)</span>' in html
-        assert 'RX Gain<span class="u">(dBi)</span>' in html
+        assert 'Heights<span class="u">(TX / RX)</span>' in html
 
 
 # ============================================================
@@ -1434,13 +1439,13 @@ class TestSummaryPathsMap:
 
     def test_table_uses_auto_layout_and_nowrap(self, tmp_path,
                                                default_params_dict):
-        # 20 列の台帳は table-layout:auto で各列を内容幅に合わせる（ヘッダ・数値とも
+        # 9 列の台帳は table-layout:auto で各列を内容幅に合わせる（ヘッダ・数値とも
         # nowrap で折り返さない）。等幅 fixed だとヘッダが語中で折れ・長い数値が
-        # はみ出したため auto へ切替。備考のみ折り返し可（空白優先）。回帰ガード。
+        # はみ出したため auto へ切替。ID・ERROR 行の理由のみ折り返し可。回帰ガード。
         html = self._summary_html(tmp_path, self._results(default_params_dict), None)
         assert "table-layout:auto" in html
         assert "white-space:nowrap" in html
-        assert "word-break:normal;overflow-wrap:break-word" in html
+        assert "word-break:normal;overflow-wrap:anywhere" in html
 
     def test_summary_columns_are_separated_and_footer_pinned(self, tmp_path,
                                                              default_params_dict):
@@ -1937,7 +1942,7 @@ class TestSummaryErrorReasonFitsOnPaper:
 # 台帳の <colgroup> が列と 1:1 であること（B-185）
 # ============================================================
 class TestSummaryColgroupMatchesColumns:
-    """幅指定（`col.c-note` / `col.c-graph`）が**狙った列に当たっている**こと。
+    """幅指定（`col.c-id` / `col.c-graph`）が**狙った列に当たっている**こと。
 
     ⚠️ **幅を測るゲート（TestSummaryErrorReasonFitsOnPaper）はこの欠陥を通す**＝
     tests/table_fit.py は `<colgroup>` を見ない（セルの CSS だけを解く）ので、
@@ -2001,7 +2006,6 @@ class TestSummaryLedgerKeepsItsWidth:
     tests/table_fit.py の増分比較（絶対値は測らない＝字の実寸は機械依存）を使う。
     """
 
-    LONG_NOTE = "尾根越え・要現地確認（樹木の成長で余裕が減る可能性）" * 3
     LONG_ID   = "hatsukaichi_kita_relay_extra_long_identifier"
     SHEET     = (("div", frozenset({"sheet", "summary"})),)
 
@@ -2020,27 +2024,6 @@ class TestSummaryLedgerKeepsItsWidth:
             self.html = f.read()
         return table_fit.table_min_width_px(self.html, "summary", ancestors=self.SHEET)
 
-    def test_a_long_note_does_not_widen_the_ledger(self, tmp_path,
-                                                   default_params_dict):
-        """長い備考は列に残さず**下段の 1 行へ流す**（列に置くと表が広がる）。"""
-        narrow = self._min_width(tmp_path, default_params_dict, note="")
-        wide   = self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
-        assert wide == pytest.approx(narrow, abs=1.0), (
-            "備考が長いだけで台帳が広がる＝右端の列が A4 の印字域の外へ出る"
-            f"（{narrow:.0f}px → {wide:.0f}px）"
-        )
-
-    def test_a_long_note_is_still_readable(self, tmp_path, default_params_dict):
-        """流した先で**全文が読める**こと（幅を守るために消してはいない）。
-
-        ⚠️ 幅だけを見ると「備考を捨てる」実装も緑になる＝*出したうえで*収める。
-        """
-        self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
-        # ⚠️ クラス名は **CSS にも書いてある**＝`<td ...>` を探す（名前を探す検査は
-        # 備考行が 1 つも出ていなくても緑になる）。
-        assert "<td class='c-note-full'" in self.html, "長い備考を流す行が出ていない"
-        assert self.LONG_NOTE in self.html, "流した備考の全文が出ていない"
-
     def test_a_long_path_id_does_not_widen_the_ledger(self, tmp_path,
                                                       default_params_dict):
         """ID は利用者が CSV に書く自由文＝長くても表を押し広げないこと。"""
@@ -2052,35 +2035,23 @@ class TestSummaryLedgerKeepsItsWidth:
             f"（{narrow:.0f}px → {wide:.0f}px）"
         )
 
-    def test_no_thumbnail_image_in_the_ledger(self, tmp_path, default_params_dict):
-        """グラフ列に**画像を置かない**こと（B-187）。
+    def test_thumbnail_image_is_in_the_ledger(self, tmp_path, default_params_dict):
+        """グラフ列に**サムネイルを戻す**こと（I-143・2026-09-10 ユーザー決定）。
 
-        断面図は 15:4.5 なので、この 22 列の台帳で回せる列幅（実測 33px）へ
-        `max-width:100%` で縮めると **24×9px** になり、何の図か分からなかった。
-        高さ 40px を保つには 133px 要る＝印字域に余地が無いのでリンク文字にした。
+        🔁 B-187（22 列時代）は幅の予算が無くリンク文字にしていたが、9 列化
+        （I-143）で中継台帳（19 列でもサムネイルが出る）と同等の余地ができた。
         """
         self._min_width(tmp_path, default_params_dict)
-        assert "<img" not in self.html.split("<table")[1], (
-            "台帳にサムネイルが戻っている（列幅では潰れて読めない）"
+        table = self.html.split("<table")[1]
+        assert "<img" in table and "class='thumb'" in table, (
+            "台帳にサムネイルが無い（リンク文字のまま）"
         )
-        assert i18n.t("html_graph_link") in self.html, "グラフ列のリンク文字が無い"
 
-    def test_a_note_row_cannot_be_split_from_its_path(self, tmp_path,
-                                                      default_params_dict):
-        """備考行と経路行が**同じ `<tbody>` の中**にあること（B-190）。
-
-        `break-inside:avoid` は要素に掛かるので、`tr` にだけ掛けると経路行と
-        `.note-row` のあいだで改ページし得る。備考行には ID が無いので、次ページの
-        先頭へ落ちると**どの経路の備考か読者に分からない**（判定が同じ行が続くと
-        なおさら）。⇒ 1 経路の行を `<tbody>` で括り、括りごと避ける。
-        """
-        self._min_width(tmp_path, default_params_dict, note=self.LONG_NOTE)
-        table = self.html.split("<table")[1].split("</table>")[0]
-        groups = table.split("<tbody>")[1:]
-        assert len(groups) == 1, f"1 経路なのに <tbody> が {len(groups)} 個ある"
-        group = groups[0].split("</tbody>")[0]
-        assert "c-note-full" in group, "備考行が経路行と同じ <tbody> の外にある"
-        # 括りを避ける指定が CSS 側に在ること（<tbody> だけ足しても改ページは止まらない）。
-        assert "table.summary tbody{break-inside:avoid}" in self.html, (
-            "<tbody> 単位で改ページを避ける指定が無い"
-        )
+    def test_the_ledger_has_no_note_column(self, tmp_path, default_params_dict):
+        """備考は台帳の列ではなく**個別レポートのメモ**へ移る（I-143 決定 2）。"""
+        note = "尾根越え・要現地確認（樹木の成長で余裕が減る可能性）"
+        self._min_width(tmp_path, default_params_dict, note=note)
+        assert note not in self.html, "備考が台帳側に残っている（二重管理）"
+        assert "html_col_note" not in [
+            k for k in report_summary._SUMMARY_COL_KEYS
+        ], "備考列がまだ定義されている"

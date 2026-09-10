@@ -445,8 +445,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_dem_fail":    "DEM Fail (%)",
         "html_col_note":        "Remarks",
         "html_col_graph":       "Graph",
-        # バッチ台帳のグラフ列はリンク文字（サムネイルではない・B-187）。
-        "html_graph_link":      "Open",
+        # DEM 取得に失敗した標本を含む経路（区間）の注記（I-143 決定 2）＝
+        # 台帳の下に 1 行だけ（列は持たない）。続けて "p03 (12.0 %), ..." が付く。
+        "html_dem_fail_notice":
+            "Paths with terrain-fetch failures: ",
 
         # ===== Notes on handling this result (3.0a1) =====
         # 🔑 **成果物が一人歩きした先で効く節**＝レポートを受け取った人は、公開文書も
@@ -1114,8 +1116,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_col_dem_fail":    "DEM失敗 (%)",
         "html_col_note":        "備考",
         "html_col_graph":       "グラフ",
-        # バッチ台帳のグラフ列はリンク文字（サムネイルではない・B-187）。
-        "html_graph_link":      "開く",
+        # DEM 取得に失敗した標本を含む経路（区間）の注記（I-143 決定 2）＝
+        # 台帳の下に 1 行だけ（列は持たない）。続けて「p03（12.0 %）、…」が付く。
+        "html_dem_fail_notice":
+            "地形の取得に失敗した標本を含む経路：",
 
         # ===== 結果の取扱に関する補足（3.0a1） =====
         "html_handling_title":  "結果の取扱に関する補足（机上のスクリーニング推定）",

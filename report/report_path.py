@@ -82,7 +82,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
         pr.sheet_html = save_profile_png(
             pr.terrain, pr.result, pr.params,
             pr.params.h_tx, pr.params.h_rx, pr.save_dir, coord_format,
-            project_name, report_id=pr.row.path_id,
+            project_name, memo=pr.row.note, report_id=pr.row.path_id,
         )
         save_path_kml(
             pr.terrain, pr.result, pr.params,

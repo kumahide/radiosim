@@ -124,22 +124,20 @@ def route_sheet_css() -> str:
   border-radius:3px;vertical-align:middle}
 .sheet.multihop .all-link{margin:0 0 10px;font-size:11px}
 .sheet.multihop .all-link a{color:#00695c}
+/* DEM 取得の失敗率（I-143 決定 2）＝台帳の下に 1 行だけ（列は持たない）。 */
+.sheet.multihop .dem-fail-note{color:#777;font-size:9px;margin:4px 0 0}
 """
 
 
 # ホップ台帳の列＝**バッチ台帳（`report_summary._SUMMARY_COL_KEYS`）と同じ並び**に
-# 揃える（2026-08-01 ユーザー決定「バッチの仕様と合わせたい」）。違うのは先頭 2 列
-# （バッチ＝ID / 判定、こちらは # / 区間 → 判定）と、per-hop では意味を持たない
-# 送受利得を落とし、代わりに「送/受アンテナ高」を 1 列にまとめるところだけ。
+# 揃える（2026-08-01 ユーザー決定「バッチの仕様と合わせたい」・I-143 で 9 列化した
+# あとも継続）。違うのは先頭 2 列（バッチ＝ID / 判定、こちらは # / 区間 → 判定）だけ。
 # ⚠️ 列を足すときは**両方の台帳を見て決める**（片方だけ増やすと、同じ「1 本の
 # 回線の内訳」を見る 2 つの面がまた食い違う）。
 _HOP_COL_KEYS = (
     "mh_col_no", "mh_section", "html_col_status", "html_col_freq",
-    "mh_heights", "html_col_rx", "html_col_margin", "html_col_fspl",
-    "html_col_diff", "html_col_veg", "html_col_env", "html_col_rain",
-    "html_col_gas", "html_col_total_loss", "html_col_slant", "html_col_f1",
-    "html_col_f1_depth", "html_col_dem_fail",
-    "html_col_graph",
+    "mh_heights", "html_col_fspl", "html_col_total_loss", "html_col_rx",
+    "html_col_margin", "html_col_graph",
 )
 # ⚠️ **備考列はバッチにあってここには無い**（意図的）。中継のホップは
 # `hop_rows` が備考へ「A → B」を入れる導出物なので、載せると**区間列と同じ
@@ -198,6 +196,8 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
     names = " → ".join(_html.escape(w.name) for w in run.path.waypoints)
     rows_html = ""
+    # DEM 取得に失敗した標本を含む区間（I-143 決定 2）＝バッチ台帳と同じ扱い。
+    dem_fail_entries: list[tuple[str, float]] = []
     for i, pr in enumerate(run.hops):
         # 区間の端点は `multihop` が決める（接続規則を表示側へ書き写さない）。
         ends    = mh.hop_endpoints(run.path, i)
@@ -211,6 +211,11 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         if pr is worst:
             classes.append("worst")
         cls = " ".join(classes)
+        dem_mark = ""
+        if pr.terrain is not None and pr.terrain.fail_pct > 0:
+            dem_mark = " ⚠"
+            dem_fail_entries.append((f"#{i + 1} {ends[0].name} → {ends[1].name}"
+                                     if ends else f"#{i + 1}", pr.terrain.fail_pct))
         if r is None:
             rows_html += (
                 f"<tr class='{cls}'><td>{i + 1}</td>"
@@ -242,24 +247,13 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
             f"<td class='c-name'>{name_cell}</td>"
-            f"<td class='c-status'>{pr.status}</td>"
+            f"<td class='c-status'>{pr.status}{dem_mark}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
+            f"<td>{units.format_db(r.fspl)}</td>"
+            f"<td>{units.format_db(r.total_loss)}</td>"
             f"<td>{units.format_db(r.p_rx)}</td>"
             f"<td>{units.format_db(r.actual_margin, signed=True)}</td>"
-            f"<td>{units.format_db(r.fspl)}</td>"
-            f"<td>{units.format_db(r.diff_loss)}</td>"
-            f"<td>{units.format_db(r.veg_loss)}</td>"
-            f"<td>{units.format_db(r.env_loss)}</td>"
-            f"<td>{units.format_db(r.rain_loss)}</td>"
-            f"<td>{units.format_db(r.gas_loss)}</td>"
-            f"<td>{units.format_db(r.total_loss)}</td>"
-            f"<td>{units.format_distance(r.slant_dist_km, unit=False)}</td>"
-            f"<td>{units.format_blocked_ratio(r.blocked_ratio, unit=False)}</td>"
-            f"<td>{units.format_f1_depth(r.blocked_ratio, unit=False)}</td>"
-            # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝`hops.csv` の
-            # `dem_fail_pct` と同じ単一ソース（`pr.terrain.fail_pct`）。
-            f"<td>{units.format_fail_pct(pr.terrain.fail_pct, unit=False) if pr.terrain else '—'}</td>"
             f"{graph_cell}</tr>\n"
         )
 
@@ -313,6 +307,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + '<table class="hops"><thead><tr>'
         + _hop_header_cells()
         + '</tr></thead><tbody>' + rows_html + '</tbody></table>'
+        + report_common.dem_fail_notice_html(dem_fail_entries)
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
         # 「結果の取扱に関する補足」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
         # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。

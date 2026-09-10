@@ -24,6 +24,7 @@ from datetime import datetime
 
 from core import disclosure
 from core import i18n
+from core import units
 from core import version
 
 # 帳票へ width:100% で並べる横長図の縦横比（matplotlib の figsize と同じ〔幅, 高さ〕）。
@@ -211,6 +212,25 @@ def page_header(title: str, project_name: str = "", report_id: str = "") -> str:
         f'<p class="ph-title">{title_line}</p>'
         f'<div class="ph-right">{i18n.t("html_generated")}: {gen}</div>'
         '</header>'
+    )
+
+
+def dem_fail_notice_html(entries: "list[tuple[str, float]]") -> str:
+    """DEM 取得に失敗した標本を含む経路（区間）の注記を返す（空なら空文字）。
+
+    I-143 決定 2＝DEM 失敗率は台帳の列でなく**判定セルの ⚠ ＋台帳下の 1 行**で
+    出す（列を落としても信号を消さないため＝3.2 で入れた失敗率の開示・B-025 ③）。
+    entries は `(表示名, fail_pct)` の失敗率が 0 より大きいものだけを渡すこと。
+    """
+    if not entries:
+        return ""
+    items = "、".join(
+        f"{_html.escape(name)}（{units.format_fail_pct(pct)}）"
+        for name, pct in entries
+    )
+    return (
+        f'<p class="dem-fail-note">{_html.escape(i18n.t("html_dem_fail_notice"))}'
+        f'{items}</p>'
     )
 
 
