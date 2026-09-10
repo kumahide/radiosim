@@ -570,6 +570,37 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
             ])
 
 
+def _dem_acquired_range(params: SimParams) -> "tuple[str, str] | None":
+    """このレポートの地形標本が使ったタイルの**取得日**の範囲（最古〜最新）。
+
+    3.3 段4e＝出所刻印「取得日」。**実行日ではなくタイルを取った日**（詳細は
+    `dem.tile_acquired_date`）。全標本を `dem.tile_acquired_date` で解決し直す
+    ＝この関数はネットワークへ一切出ない（標高取得＝`fetch_elevations` が
+    先に終わっている前提）ので、その時点で未取得のタイルがあればその標本だけ
+    None になる。1 点も分からなければこの関数自体も None（キャッシュ情報が
+    読めない・全滅など）。
+    """
+    lats, lons = sample_coords(params)
+    dates = [d for d in (dem.tile_acquired_date(la, lo) for la, lo in zip(lats, lons))
+             if d is not None]
+    if not dates:
+        return None
+    return min(dates), max(dates)
+
+
+def _format_dem_acquired_line(acquired: "tuple[str, str] | None") -> str:
+    """`_dem_acquired_range` の結果を report.txt の1行にする（無ければ空文字）。
+
+    同一日なら単一の日付、幅があれば "A to B" にする（経路が広域だとタイルが
+    別日にまたがり得る）。
+    """
+    if acquired is None:
+        return ""
+    oldest, newest = acquired
+    value = oldest if oldest == newest else f"{oldest} to {newest}"
+    return f"DEM Acquired  : {value}\n"
+
+
 def _save_report(
     result: models.LinkBudgetResult,
     params: SimParams,
@@ -633,6 +664,9 @@ def _save_report(
         # `dem_fail_pct` と同じ単一ソース（`models.TerrainProfile.fail_pct`）。
         + (f"DEM Fail Rate : {units.format_fail_pct(terrain.fail_pct)}\n"
            if terrain is not None else "")
+        # DEM の取得日（3.3 段4e＝出所刻印の最後の要素）＝実行日（上の Date:）
+        # ではなく、地形標本が実際に使ったタイルがいつキャッシュされたか。
+        + _format_dem_acquired_line(_dem_acquired_range(params))
         + "\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。

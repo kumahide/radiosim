@@ -665,6 +665,9 @@ class TestSavePackage:
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
                   diff_method="single", coord_format="dd"):
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        # 空のキャッシュ（=常に「取得日不明」）に固定＝実機のキャッシュに
+        # たまたま同じ座標が残っていても結果が揺れないようにする（3.3 段4e）。
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "empty_dem_cache"))
         default_params_dict["diff_method"] = diff_method
         params = sim.SimParams(default_params_dict)
         result = _make_result(diff_method)
@@ -741,6 +744,7 @@ class TestSavePackage:
     ):
         """一部の標本が nan（通信失敗）の地形では、その割合を名乗ること。"""
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "empty_dem_cache"))
         raw = np.zeros(100)
         raw[:25] = np.nan
         terrain = models.calculate_terrain_profile(
@@ -750,6 +754,41 @@ class TestSavePackage:
         save_dir = sim.save_package(terrain, result, params, 30.0, 10.0)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
         assert "DEM Fail Rate : 25.0 %" in text, text
+
+    def test_report_contains_dem_acquired_date(self, tmp_path, flat_terrain,
+                                               default_params_dict, monkeypatch):
+        """report.txt に DEM Acquired 行が含まれること（3.3 段4e＝出所刻印の
+        最後の要素）。**実行日（Date:）ではなくタイルの取得日**＝単一ソースは
+        `dem.tile_acquired_date`。
+        """
+        monkeypatch.setattr(dem, "tile_acquired_date", lambda lat, lon: "2026-08-01")
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Acquired  : 2026-08-01" in text, text
+
+    def test_report_dem_acquired_shows_range_when_tiles_differ(
+        self, tmp_path, flat_terrain, default_params_dict, monkeypatch
+    ):
+        """標本ごとにタイルの取得日が違えば、最古〜最新の範囲で示す（広域の経路は
+        タイルが別日にまたがり得る）。"""
+        dates = iter(["2026-08-01", "2026-09-10"] * 100_000)
+        monkeypatch.setattr(dem, "tile_acquired_date",
+                            lambda lat, lon: next(dates))
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Acquired  : 2026-08-01 to 2026-09-10" in text, text
+
+    def test_report_omits_dem_acquired_when_unavailable(
+        self, tmp_path, flat_terrain, default_params_dict, monkeypatch
+    ):
+        """1点も取得日が分からなければ行ごと出さない（既定のテスト環境＝空の
+        キャッシュはこれに当たる＝`_run_save` が固定した空ディレクトリ）。"""
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Acquired" not in text, text
 
     def test_report_contains_status(self, tmp_path, flat_terrain,
                                     default_params_dict, monkeypatch):
@@ -869,6 +908,7 @@ class TestSavePackage:
             raw, 34.5429, 132.4118, 34.5389, 132.4050,
         )
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "empty_dem_cache"))
         params = sim.SimParams(default_params_dict)
         result = _make_result("single")
         save_dir = sim.save_package(terrain, result, params, 30.0, 10.0)

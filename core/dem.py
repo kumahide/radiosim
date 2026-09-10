@@ -29,6 +29,7 @@ import queue
 import threading
 import time
 import urllib.request
+from datetime import date
 
 import numpy as np
 import requests
@@ -344,6 +345,47 @@ def get_elevation(lat: float, lon: float) -> float:
             "Elevation decode error: lat=%.6f lon=%.6f error=%s", lat, lon, e
         )
         return math.nan
+
+
+def tile_acquired_date(lat: float, lon: float) -> "str | None":
+    """指定座標の標高の根拠になったタイルの**取得日**（ISO 8601 の日付・ローカル
+    タイムゾーン）。3.3 段4e＝出所刻印「取得日」の値。
+
+    🔑 **「実行日」ではなく「タイルを取った日」**＝DEM はディスクキャッシュ経由
+    なので、キャッシュヒットでは過去の日付になり得る。それこそが「このレポートの
+    地形データが実際にはいつのものか」という監査上の答え（実行日は report.txt の
+    `Date:` 行が別に持っている）。
+
+    ⚠️ **ネットワークへは絶対に出ない**（`get_elevation` と違い `_fetch_tile` を
+    呼ばない）＝レポート保存時にシミュレーション本体が既に取得し終えたタイルの
+    「いま何が刻まれているか」だけを読む純粋な参照。**未取得のタイルがあっても
+    取りに行かず、その層は無視して次へ進む**（`get_elevation` と同じ優先順位・
+    同じ有効性判定〔!= 0.0〕をキャッシュ済みの範囲だけでなぞる）。該当タイルが
+    1 つも無ければ None（呼び出し側＝レポート保存でここが起きるのは、対応する
+    `get_elevation` 呼び出しが `nan`/`0.0` を返した点＝失敗率に既に出ている）。
+    """
+    for layer_id, zoom in DEM_LAYERS:
+        xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
+        tile_key   = (layer_id, xtile, ytile)
+        cache_path = os.path.join(CACHE_DIR, layer_id, str(xtile), f"{ytile}.png")
+
+        with _cache_lock:
+            arr = _tile_cache.get(tile_key)
+        if arr is None:
+            if not os.path.exists(cache_path):
+                continue
+            arr = _read_cached_tile(cache_path)
+            if arr is None:
+                continue
+
+        if _decode_elevation(arr[py, px]) == 0.0:
+            continue
+        try:
+            mtime = os.path.getmtime(cache_path)
+        except OSError:
+            continue
+        return date.fromtimestamp(mtime).isoformat()
+    return None
 
 
 def _read_cached_tile(cache_path: str) -> "np.ndarray | None":

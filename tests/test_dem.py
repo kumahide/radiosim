@@ -145,6 +145,102 @@ class TestGetElevation:
         assert not any(was_held), "ロック保持中にネットワーク取得が行われた"
 
 
+# ============================================================
+# tile_acquired_date（3.3 段4e＝出所刻印「取得日」）
+# ============================================================
+class TestTileAcquiredDate:
+
+    _LAT, _LON = 10.0, 20.0   # 他のテストと衝突しない座標（実在チェックは無い）
+
+    @pytest.fixture(autouse=True)
+    def clear_tile_cache(self):
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def _write_layer0_tile(self, tmp_path, pixel, mtime=None):
+        """DEM_LAYERS[0]（最優先レイヤ）のタイルファイルをディスクに置く。
+
+        Returns: 書いたファイルパス。
+        """
+        from PIL import Image
+
+        layer_id, zoom = dem.DEM_LAYERS[0]
+        xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
+        subdir = os.path.join(str(tmp_path), layer_id, str(xtile))
+        os.makedirs(subdir, exist_ok=True)
+        path = os.path.join(subdir, f"{ytile}.png")
+        Image.new("RGB", (256, 256), pixel).save(path)
+        if mtime is not None:
+            os.utime(path, (mtime, mtime))
+        return path
+
+    def test_returns_none_when_no_tile_cached_anywhere(self, tmp_path, monkeypatch):
+        """メモリにもディスクにも無ければ None（ネットワークへは出ない）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+
+    def test_returns_none_for_invalid_pixel(self, tmp_path, monkeypatch):
+        """全レイヤが無効値ピクセル（(128,0,0)）なら None（get_elevation と同じ判定）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._write_layer0_tile(tmp_path, (128, 0, 0))
+        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+
+    def test_never_calls_fetch_tile(self, tmp_path, monkeypatch):
+        """未取得のタイルがあっても取りに行かない（`_fetch_tile` を一切呼ばない）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        called = []
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: called.append(1))
+        dem.tile_acquired_date(self._LAT, self._LON)
+        assert not called
+
+    def test_reflects_disk_tile_mtime_not_now(self, tmp_path, monkeypatch):
+        """答えは**タイルファイルの mtime**（＝実行日ではない）。
+
+        `os.utime` で過去日付を焼き込んだファイルから、その日付がそのまま
+        返ることを確かめる＝「実行日」と混同していないことの検査。
+        """
+        import datetime as dt
+
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        old = dt.datetime(2020, 1, 2, 3, 4, 5)
+        self._write_layer0_tile(tmp_path, (0, 39, 16), mtime=old.timestamp())
+
+        result = dem.tile_acquired_date(self._LAT, self._LON)
+        assert result == "2020-01-02"
+        assert result != dt.date.today().isoformat()
+
+    def test_reflects_disk_mtime_even_when_tile_is_in_memory(self, tmp_path, monkeypatch):
+        """`_tile_cache`（メモリ）にヒットする経路でも、日付の根拠は結局
+        ディスクファイルの mtime（メモリ配列自体はいつ書かれたかを持たない）。
+        `get_elevation` はメモリヒットのとき `_fetch_tile`/ファイル読み直しを
+        しないが、`tile_acquired_date` は常にファイルの mtime を見に行く。
+        """
+        import datetime as dt
+
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        old = dt.datetime(2019, 6, 15)
+        self._write_layer0_tile(tmp_path, (0, 39, 16), mtime=old.timestamp())
+        layer_id, zoom = dem.DEM_LAYERS[0]
+        xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
+        dem._tile_cache[(layer_id, xtile, ytile)] = np.full(
+            (256, 256, 3), [0, 39, 16], dtype=np.uint8)
+
+        assert dem.tile_acquired_date(self._LAT, self._LON) == "2019-06-15"
+
+    def test_returns_none_when_memory_tile_has_no_disk_file(self, tmp_path, monkeypatch):
+        """メモリにはあるがディスク実体が消えている（異常系）場合は None。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        layer_id, zoom = dem.DEM_LAYERS[0]
+        xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
+        dem._tile_cache[(layer_id, xtile, ytile)] = np.full(
+            (256, 256, 3), [0, 39, 16], dtype=np.uint8)
+
+        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+
+
 class TestFetchTile:
 
     def _mock_session(self, monkeypatch, *, side_effect=None, return_value=None):
