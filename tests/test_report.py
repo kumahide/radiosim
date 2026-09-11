@@ -982,3 +982,127 @@ class TestStylesheetsParse:
             f"{name}: 規則の外に地の文がある（コメントの閉じ忘れ）＝{stray[:8]}"
             f" … {outside.strip()[:160]}"
         )
+
+
+# ============================================================
+# 台帳の見せ方は 1 か所から配る（B-207 / B-208）
+# ============================================================
+class TestLedgersShareOneLook:
+    """バッチの台帳・中継の台帳・条件探索の表が**同じ色に同じ意味**を持つこと。
+
+    🔴 **中継の台帳だけが CSS を別に書いていた**＝同じ薄黄が、バッチでは「NG」、
+    中継では「最も苦しい区間」（中身は OK）を意味していた（B-207）。縦罫線と判定の
+    中央寄せも片方にしか無かった（B-208）。どちらも*片方だけ直した*跡なので、
+    ここでは値を比べるのではなく**同じ 1 本を引いているか**と**上書きしていないか**を見る。
+    ⚠️ **列の幅（余りをどの列が受け取るか）はブラウザが要るので測れない**＝
+    Edge で実測した値は ISSUES.md の B-208 に残してある。ここは列の印（`c-flex`）だけ。
+    """
+
+    SHEETS = {
+        "summary":  (lambda: report_summary.summary_sheet_css(), "summary"),
+        "multihop": (lambda: report_multihop.route_sheet_css(), "hops"),
+        "scenario": (lambda: report_scenario.scenario_sheet_css(), None),
+    }
+    VERDICT_SELECTOR = re.compile(r"(tr\.(ok|ng|err)\b|\.s-(ok|ng|err)\b|\.card\.(ok|ng|err)\b)")
+
+    @staticmethod
+    def _rules(css: str):
+        """`(セレクタ, 宣言)` の列（コメントと @media の中は除く）。"""
+        css = re.sub(r"/\*.*?\*/", "", css, flags=re.S)
+        css = re.sub(r"@media[^{]*\{(?:[^{}]*\{[^{}]*\})*[^{}]*\}", "", css)
+        return [(sel.strip(), body) for sel, body in re.findall(r"([^{}]+)\{([^{}]*)\}", css)]
+
+    @pytest.mark.parametrize("sheet", sorted(SHEETS))
+    def test_verdict_colors_come_from_one_place(self, sheet):
+        """判定の色は `report_common.verdict_css` から来て、シート側で上書きしないこと。"""
+        get_css, _ = self.SHEETS[sheet]
+        css = get_css()
+        shared = report_common.verdict_css(sheet)
+        assert shared in css, f"{sheet}: 判定の色を共通の 1 本から引いていない"
+        own = self._rules(css.replace(shared, ""))
+        overrides = [sel for sel, _ in own if self.VERDICT_SELECTOR.search(sel)]
+        assert not overrides, f"{sheet}: 判定の色をシート側で書き直している: {overrides}"
+
+    @pytest.mark.parametrize("sheet", ["summary", "multihop"])
+    def test_row_shading_means_only_the_verdict(self, sheet):
+        """行の地を塗るのは判定（`tr.ok` / `tr.ng` / `tr.err`）だけ（B-207）。
+
+        「最も苦しい区間」のような*判定以外の印*を地の色で出すと、同じ色が別の
+        意味を持つ（中継の `tr.worst` が NG と同じ薄黄だった）。
+        """
+        get_css, _ = self.SHEETS[sheet]
+        verdicts = set(report_common.VERDICT_CLASS.values())
+        offenders = []
+        for sel, body in self._rules(get_css()):
+            if not re.search(r"background(-color)?\s*:", body):
+                continue
+            for part in sel.split(","):
+                for cls in re.findall(r"tr\.([\w-]+)", part):
+                    if cls not in verdicts:
+                        offenders.append(part.strip())
+        assert not offenders, f"{sheet}: 判定以外の意味で行の地を塗っている: {offenders}"
+
+    def test_error_color_is_the_map_color(self):
+        """ERROR の字の色＝地図の線の色（`map_graphics.STATUS_RGB`）＝1 色だけ。"""
+        from report import map_graphics
+
+        err = map_graphics.STATUS_HEX["ERROR"]
+        assert err == "#{:02x}{:02x}{:02x}".format(*map_graphics.STATUS_RGB["ERROR"])
+        css = report_common.verdict_css("summary")
+        assert f".s-err{{color:{err}" in css and f".card.err .val{{color:{err}" in css
+        # 条件探索の橙（`td.changed`＝ベースから変えた条件）は判定ではないので見ない。
+        for sheet in ("summary", "multihop"):
+            assert "#e65100" not in self.SHEETS[sheet][0]().lower(), (
+                f"{sheet}: ERROR の 2 色目（#e65100）が残っている")
+
+    @pytest.mark.parametrize("sheet", ["summary", "multihop"])
+    def test_both_ledgers_share_one_skeleton(self, sheet):
+        """台帳の骨格（罫線・余白・判定の中央寄せ）は共通の 1 本（B-208）。
+
+        中継の台帳には縦罫線も判定の中央寄せも無かった＝別々に書いた CSS の片方
+        だけに足した跡。⇒ シート側に `th{` / `td{` の素の規則を置かせない。
+        """
+        get_css, table = self.SHEETS[sheet]
+        css = get_css()
+        shared = report_common.ledger_table_css(sheet, table)
+        assert shared in css, f"{sheet}: 台帳の骨格を共通の 1 本から引いていない"
+        own = self._rules(css.replace(shared, ""))
+        t = f".sheet.{sheet} table.{table}"
+        bare = [sel for sel, _ in own if sel in (t, f"{t} th", f"{t} td")]
+        assert not bare, f"{sheet}: 台帳の骨格をシート側で書き直している: {bare}"
+        rules = dict(self._rules(shared))
+        assert "text-align:center" in rules[f"{t} td.c-status"]
+        assert "border-right:1px solid" in rules[f"{t} td"]
+
+    def test_only_flexible_columns_take_the_spare_width(self):
+        """余りの幅を受け取るのは ID / 区間名とグラフの列だけ（B-208）。
+
+        数値の列が余りを受け取ると、見出しが長く値が短い列（アンテナ高）で値の左に
+        大きな空きができ、中央寄せの見出しから値が右へずれて見える。
+        """
+        assert report_summary._SUMMARY_FLEX_KEYS == {"html_col_id", "html_col_graph"}
+        assert report_multihop._HOP_FLEX_KEYS == {"mh_section", "html_col_graph"}
+        shared = dict(self._rules(report_common.ledger_table_css("summary", "summary")))
+        assert "width:1px" in shared[".sheet.summary table.summary th"]
+        assert "width:auto" in shared[".sheet.summary table.summary th.c-flex"]
+
+    @pytest.mark.parametrize("lang", ["ja", "en"])
+    def test_heights_header_keeps_its_qualifier_on_the_unit_line(self, lang):
+        """アンテナ高の見出しは「（送 / 受）」を単位の行へ落とす（B-208）。
+
+        1 行目に残すと見出しが値（"40.0 / 20.0"）の約 2 倍の幅になり、その列だけ
+        値の左に空きができた。英語は以前 m まで落ちていた。
+        ⚠️ **文言で直している**（`mh_heights` を他の列と同じ「名前 (単位)」の形に
+        した）＝コードに特例を持たない。文言を戻すと、ここが落ちる。
+        """
+        lang0 = i18n.current_lang()
+        try:
+            i18n.set_lang(lang)
+            th = report_common.ledger_header_cells([("mh_heights", i18n.t("mh_heights"))])
+        finally:
+            i18n.set_lang(lang0)
+        m = re.fullmatch(r'<th>([^<]*)<span class="u">([^<]*)</span></th>', th)
+        assert m, th
+        head, unit = m.groups()
+        assert "(" not in head and "（" not in head, f"{lang}: 1 行目に括弧が残っている: {head}"
+        assert unit.endswith(", m)"), f"{lang}: 単位 m が無い: {unit}"

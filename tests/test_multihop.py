@@ -579,6 +579,31 @@ class TestRouteSheet:
         html = report_multihop.route_sheet_html(run)
         assert "worst" in html, "最も苦しい区間に印が付いていない"
         assert i18n.t("mh_worst_hop") in html
+        # 🔁 B-207＝印は**判定の印と別の手段**で出す。行の地（判定）を残したまま
+        # `worst` を足す＝判定のクラスを「最も苦しい区間」で置き換えない。
+        rows = re.findall(r"<tr class='([^']*)'>", html)
+        worst_rows = [r.split() for r in rows if "worst" in r.split()]
+        assert len(worst_rows) == 1, rows
+        verdict = report_multihop._verdict_class(run.worst.status)
+        assert verdict in worst_rows[0], (
+            f"最も苦しい区間の行が判定の地の色を失っている: {worst_rows[0]}")
+        # 印だけ置いて意味を言わないと、読み手は自分の知っている意味（NG）で読む。
+        assert i18n.t("mh_worst_mark_note") in html, "左端の太線の凡例が無い"
+
+    def test_status_cells_use_the_batch_verdict_classes(self, base, tmp_path,
+                                                         monkeypatch):
+        """区間の判定の字は**バッチの台帳と同じクラス**（`s-ok` 等）で塗る（B-207）。
+
+        以前は `tr.ok td.c-status` などの別の規則で塗り、ERROR は行全体の字を
+        別の橙（#e65100）にしていた＝同じ判定が 2 つの台帳で違う見え方をしていた。
+        """
+        from report import report_multihop
+
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        html = report_multihop.route_sheet_html(run)
+        for pr in run.hops:
+            cls = report_multihop._verdict_class(pr.status)
+            assert f"<td class='c-status s-{cls}'>{pr.status}" in html, pr.status
 
     def test_sheet_shows_dem_fail_rate_per_hop(self, base, tmp_path, monkeypatch):
         """DEM 取得の失敗率が区間の判定セルに ⚠ で出ること（I-143 決定 2）。

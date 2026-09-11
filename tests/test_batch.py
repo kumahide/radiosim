@@ -743,7 +743,9 @@ class TestSummaryGainColumns:
         assert "TX Gain" not in html
         assert "RX Gain" not in html
         # 単位は 2 行目（.u span）へ分離されるので、名前と単位を個別に確認する。
-        assert 'Heights<span class="u">(TX / RX)</span>' in html
+        # 🔁 B-208＝「(TX / RX)」と単位 m を 2 行目へ一緒に落とす（以前の英語は
+        # 汎用の「名前 (単位)」規則に拾われて m が落ちていた）。
+        assert 'Heights<span class="u">(TX / RX, m)</span>' in html
 
 
 # ============================================================
@@ -1462,8 +1464,8 @@ class TestSummaryPathsMap:
         html = self._summary_html(tmp_path, self._results(default_params_dict), None)
         assert 'RX<span class="u">(dBm)</span>' in html
         assert "th .u{display:block" in html
-        # 単位の無いヘッダ（ID）は素のまま。
-        assert "<th>ID</th>" in html
+        # 単位の無いヘッダ（ID）は素のまま（`c-flex`＝余りの幅を受け取る列・B-208）。
+        assert '<th class="c-flex">ID</th>' in html
 
     def test_specs_carry_coords_status_and_label(self, monkeypatch,
                                                  default_params_dict):

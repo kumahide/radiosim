@@ -26,6 +26,7 @@ import os
 from core import i18n
 from core import models
 from core import units
+from report import map_graphics
 from report import multihop as mh
 from report import report_common
 from report import report_summary
@@ -39,7 +40,8 @@ def route_sheet_css() -> str:
     `.cards` を別値で持つので、素のセレクタで書くと連結文書で後勝ちの上書きが
     起き、どちらかのレイアウトが壊れる（`report_summary` と同じ約束）。
     """
-    return """
+    return (report_common.ledger_table_css("multihop", "hops")
+            + report_common.verdict_css("multihop") + """
 /* --- multihop シート（中継経路の内訳＋全体判定） --- */
 /* 🔴 **カードは「縮めない・折り返す」＋7 枚ぶんの幅の予算を持つ**（B-155）。
    既定の flex は幅が足りないと*中身を縮めて字を折る*ので、`全体マージ /
@@ -72,22 +74,12 @@ def route_sheet_css() -> str:
    英語だけ 2 行に割れた）。⚠️ **この 146px が上の予算の前提。** */
 .sheet.multihop .card.hop{max-width:146px}
 .sheet.multihop .card.hop .val{white-space:normal;overflow-wrap:anywhere}
-.sheet.multihop .card.ok .val{color:#2e7d32}
-.sheet.multihop .card.ng .val{color:#c62828}
-/* 判定不能（B-071）＝**不成立と同じ赤で塗らない**。橙は区間表の `tr.err` と
-   バッチ台帳の `.card.err` に揃える（同じ意味は同じ色・⑧）。 */
-.sheet.multihop .card.err .val{color:#e65100}
-.sheet.multihop table.hops{border-collapse:collapse;width:100%;table-layout:auto;
-  background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-/* 🔴 **左右の余白は 2px**（B-155）＝16 列 × 左右で **64px** が余白に消えており、
-   その 64px は**地点名の列とグラフ列**（＝幅を融通できる 2 列）から取られていた。
-   数値列は nowrap で自分の幅を主張するので、詰めるならここしかない。 */
-.sheet.multihop table.hops th{background:#455a64;color:white;padding:4px 2px;
-  text-align:center;vertical-align:bottom;font-size:8px;white-space:nowrap;
-  border-right:1px solid rgba(255,255,255,.22)}
-.sheet.multihop table.hops th .u{display:block;font-size:7px;font-weight:normal;opacity:.8}
-.sheet.multihop table.hops td{padding:3px 2px;font-size:9px;border-bottom:1px solid #eee;
-  text-align:right;white-space:nowrap}
+/* 判定の色（カードの数字・区間の行の地・判定の字）と台帳の骨格（罫線・余白・
+   数値の右寄せ・判定の中央寄せ・ERROR 行の理由の折り返し）は
+   `report_common.verdict_css` / `ledger_table_css` が**バッチの台帳と共通で配る**
+   （B-207 / B-208）。判定不能（B-071）は不成立と同じ赤で塗らない＝ERROR の色。
+   🔴 以前はここが別に書かれていて、**同じ薄黄がバッチでは NG、ここでは
+   「最も苦しい区間」（中身は OK）**を意味していた。 */
 /* 🔴 **区間名は「利用者が付けた字」＝幅に上限が無い**（B-155）ので、既定の
    `nowrap` から外して折り返す。⚠️ nowrap のままだと `table-layout:auto` の
    最小幅が**名前の全長**になり、**表ごと A4 の印字域の外へ出る**（実測＝長い
@@ -96,19 +88,16 @@ def route_sheet_css() -> str:
    1 つの長い名前がグラフ列を潰さないための上限。 */
 .sheet.multihop table.hops td.c-name{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:anywhere;min-width:96px;max-width:150px}
-/* ERROR 行の理由（自由文・colspan）は折り返す（B-145・バッチ台帳と同型）。
-   nowrap のままだと折り返せない 1 行が表全体を押し広げ、右端の列が A4 の
-   印字域の外へ出る。空白の無い長い連続語が入るので anywhere。 */
-.sheet.multihop table.hops td.c-reason{text-align:left;white-space:normal;
-  word-break:normal;overflow-wrap:anywhere}
-.sheet.multihop tr.ok td.c-status{color:#2e7d32;font-weight:bold}
-.sheet.multihop tr.ng td.c-status{color:#c62828;font-weight:bold}
-.sheet.multihop tr.err td{color:#e65100}
 /* 成果物が欠けた区間のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。 */
-.sheet.multihop table.hops td.c-missing{color:#e65100;text-align:center}
+.sheet.multihop table.hops td.c-missing{color:""" + map_graphics.STATUS_HEX["ERROR"] + """;text-align:center}
 /* 全体判定を決めているホップ＝**一番苦しい区間**を目で拾えるようにする
-   （次の一手はここに打つので、表の中で最初に見つかるべき行）。 */
-.sheet.multihop tr.worst td{background:#fff8e1}
+   （次の一手はここに打つので、表の中で最初に見つかるべき行）。
+   🔴 **行の地は塗らない**（B-207）＝地の色は判定（OK / NG / ERROR）の印で、
+   以前ここで塗っていた薄黄はバッチの台帳の「NG」と同じ色だった＝全区間 OK の
+   経路で OK の行を NG と読ませていた。⇒ **行の左端の太線**（判定の色と
+   ぶつからない見出しの色）で示し、表の下の凡例（`mh_worst_mark_note`）で言う。
+   地の色と違って罫線は印刷の既定（背景のグラフィックなし）でも消えない。 */
+.sheet.multihop table.hops tr.worst td:first-child{border-left:3px solid #455a64}
 .sheet.multihop .route-line{font-size:10px;color:#555;margin:0 0 10px}
 .sheet.multihop .map img{width:100%;border:1px solid #ddd;border-radius:4px}
 .sheet.multihop .map{margin-bottom:10px}
@@ -126,7 +115,7 @@ def route_sheet_css() -> str:
 .sheet.multihop .all-link a{color:#00695c}
 /* DEM 取得の失敗率（I-143 決定 2）＝台帳の下に 1 行だけ（列は持たない）。 */
 .sheet.multihop .dem-fail-note{color:#777;font-size:9px;margin:4px 0 0}
-"""
+""")
 
 
 # ホップ台帳の列＝**バッチ台帳（`report_summary._SUMMARY_COL_KEYS`）と同じ並び**に
@@ -152,22 +141,19 @@ def _verdict_class(status: str) -> str:
     無いと、判定不能の全体カードが**不成立と同じ赤**で塗られる。画面側の同じ口は
     `views/theme.verdict_key`（あちらは配色キー・こちらは HTML のクラス名）。
     """
-    return {"OK": "ok", "NG": "ng"}.get(status, "err")
+    return report_common.verdict_class(status)
+
+
+#: 余りの幅を受け取る列（B-208）＝バッチの台帳の ID・グラフに当たる 2 列。
+_HOP_FLEX_KEYS = frozenset({"mh_section", "html_col_graph"})
 
 
 def _hop_header_cells() -> str:
-    """ホップ台帳の `<th>` 群（単位は 2 行目へ落とす＝バッチ台帳と同じ規則）。"""
-    cells = []
-    for key in _HOP_COL_KEYS:
-        label = i18n.t(key)
-        if label.endswith(")") and " (" in label:
-            name, unit = label.split(" (", 1)
-            cells.append(f'<th>{name}<span class="u">({unit}</span></th>')
-        elif key == "mh_heights":
-            cells.append(f'<th>{label}<span class="u">(m)</span></th>')
-        else:
-            cells.append(f"<th>{label}</th>")
-    return "".join(cells)
+    """ホップ台帳の `<th>` 群（規則は `report_common.ledger_header_cells`＝バッチと共通）。"""
+    labels = []
+    for key in _HOP_COL_KEYS:              # 訳はここで引く（→ ledger_header_cells の ⚠️）
+        labels.append((key, i18n.t(key)))
+    return report_common.ledger_header_cells(labels, _HOP_FLEX_KEYS)
 
 
 def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
@@ -205,12 +191,11 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         wp_to   = _html.escape(ends[1].name if ends else "")
         pid     = pr.row.path_id                 # validated: [A-Za-z0-9_-]+
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
-        classes = []
         r = pr.result
-        classes.append(_verdict_class(pr.status))
-        if pr is worst:
-            classes.append("worst")
-        cls = " ".join(classes)
+        verdict = _verdict_class(pr.status)
+        # 行の地は判定（`tr.ok` / `tr.ng` / `tr.err`）、最も苦しい区間は `worst`
+        # （左端の太線）＝**2 つの印を別の手段で出す**（B-207）。
+        cls = verdict + (" worst" if pr is worst else "")
         dem_mark = ""
         if pr.terrain is not None and pr.terrain.fail_pct > 0:
             dem_mark = " ⚠"
@@ -220,7 +205,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             rows_html += (
                 f"<tr class='{cls}'><td>{i + 1}</td>"
                 f"<td class='c-name'>{wp_from} → {wp_to}</td>"
-                f"<td class='c-status'>ERROR</td>"
+                f"<td class='c-status s-{verdict}'>ERROR</td>"
                 f"<td class='c-reason' colspan='{len(_HOP_COL_KEYS) - 3}'>"
                 f"{_html.escape(str(pr.error))}</td></tr>\n"
             )
@@ -247,7 +232,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
             f"<td class='c-name'>{name_cell}</td>"
-            f"<td class='c-status'>{pr.status}{dem_mark}</td>"
+            f"<td class='c-status s-{verdict}'>{pr.status}{dem_mark}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
             f"<td>{units.format_db(r.fspl)}</td>"
@@ -308,6 +293,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + _hop_header_cells()
         + '</tr></thead><tbody>' + rows_html + '</tbody></table>'
         + report_common.dem_fail_notice_html(dem_fail_entries)
+        # 左端の太線の凡例（B-207）＝印だけ置いて意味を言わないと、読み手は
+        # 色や線を自分の知っている意味（NG など）で読む。
+        + (f'<p class="note">{i18n.t("mh_worst_mark_note")}</p>'
+           if worst is not None else "")
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
         # 「結果の取扱に関する補足」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
         # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。

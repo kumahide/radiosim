@@ -641,7 +641,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_hops":              "Sections",
         "mh_worst_hop":         "Weakest section",
         "mh_section":           "Section",
-        "mh_heights":           "Heights (TX / RX)",
+        "mh_heights":           "Heights (TX / RX, m)",
+        "mh_worst_mark_note":   "The row with a thick bar at its left edge is the weakest section (the one that decides the overall verdict). Row shading shows each section's verdict (OK / NG / ERROR).",
         "mh_regenerative_note": "Each section is an independent link budget (regenerative relay): losses are not added across sections, and the overall verdict is the weakest section. If any section could not be judged (ERROR), the overall verdict is ERROR as well — not NG, which means the link does not close. Passive reflectors are out of scope.",
         "mh_err_too_few":       "A relay path needs at least 2 waypoints (TX and RX).",
         "mh_err_too_many":      "Too many sections (max {max}).",
@@ -1295,7 +1296,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_hops":              "区間数",
         "mh_worst_hop":         "最も苦しい区間",
         "mh_section":           "区間",
-        "mh_heights":           "アンテナ高（送 / 受）",
+        "mh_heights":           "アンテナ高 (送 / 受, m)",
+        "mh_worst_mark_note":   "左端に太線のある行が最も苦しい区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / NG / ERROR）を表します。",
         "mh_regenerative_note": "各区間は独立したリンクバジェットです（再生中継）。区間をまたいで損失は加算せず、全体判定は最も余裕の少ない区間で決まります。判定できなかった区間（ERROR）が 1 つでもあれば全体判定も ERROR です（回線が成立しない NG とは別物）。受動反射（反射板）は対象外です。",
         "mh_err_too_few":       "中継経路には地点が 2 つ以上必要です（送信点と受信点）。",
         "mh_err_too_many":      "区間が多すぎます（最大 {max}）。",
@@ -1432,6 +1434,7 @@ _ARTIFACT_KEYS = frozenset({
     # 中継経路の HTML レポート
     "mh_hops", "mh_mode_label", "mh_overall",
     "mh_regenerative_note", "mh_report_title", "mh_worst_hop",
+    "mh_worst_mark_note",
     # 同上・**動的に引かれる分**（列の定数 `_HOP_COL_KEYS` と、判定で切り替わる
     # 集約カードの語＝`report/multihop.py overall_display()` が出す 2 つ）。
     # ⚠️ ここは*名前の形*が `mh_` で揃っているのに接頭辞にしていない＝`mh_err_*`

@@ -24,6 +24,7 @@ from core import models
 from core import output_contract
 from core import units
 from core import version
+from report import map_graphics
 from report import report_common
 from report import report_map
 from report import report_path
@@ -137,26 +138,18 @@ def _summary_colgroup() -> str:
     return f"<colgroup>{cols}</colgroup>"
 
 
-def _summary_header_cells() -> str:
-    """台帳の <th> 群を返す。単位（"… (dBm)"）は 2 行目へ落とす。
+#: 余りの幅を受け取る列（B-208）＝**幅を融通できる列**。ID は利用者の字（左寄せ
+#: なので右に空きがあっても不自然でない）、グラフはサムネイルを中央に置く。
+#: 数値の列は中身の幅に止める＝値と見出しの位置がずれない。
+_SUMMARY_FLEX_KEYS = frozenset({"html_col_id", "html_col_graph"})
 
-    "受信レベル (dBm)" のように "名前 (単位)" 形式のヘッダは、単位を `.u`（改行＋
-    小さめ）で 2 行目に置く。これで各ヘッダの必要幅が max(名前, 単位) に縮み、
-    列が横に広がりにくく表が印字域に収まりやすい。単位の無いヘッダはそのまま
-    1 行。`mh_heights`（アンテナ高）は中継台帳（`report_multihop`）と同じ扱い＝
-    ⑧ 同じ意味は同じ見せ方（i18n 文言に単位が無いのでここで "(m)" を補う）。
-    """
-    cells = []
-    for key in _SUMMARY_COL_KEYS:
-        label = i18n.t(key)
-        if label.endswith(")") and " (" in label:
-            name, unit = label.split(" (", 1)
-            cells.append(f'<th>{name}<span class="u">({unit}</span></th>')
-        elif key == "mh_heights":
-            cells.append(f'<th>{label}<span class="u">(m)</span></th>')
-        else:
-            cells.append(f"<th>{label}</th>")
-    return "".join(cells)
+
+def _summary_header_cells() -> str:
+    """台帳の <th> 群を返す（規則は `report_common.ledger_header_cells`＝中継と共通）。"""
+    labels = []
+    for key in _SUMMARY_COL_KEYS:          # 訳はここで引く（→ ledger_header_cells の ⚠️）
+        labels.append((key, i18n.t(key)))
+    return report_common.ledger_header_cells(labels, _SUMMARY_FLEX_KEYS)
 
 
 def render_summary_map_b64(results: list[PathResult]) -> "str | None":
@@ -184,7 +177,8 @@ def summary_sheet_css() -> str:
     `.cards` を別値で持つため、素のセレクタで書くと連結文書（report_all.html）で
     後勝ちの上書きが起き、どちらかのレイアウトが壊れる。
     """
-    return """
+    return (report_common.ledger_table_css("summary", "summary")
+            + report_common.verdict_css("summary") + """
 /* --- summary シート（台帳） --- */
 /* ⚠️ **中継の台帳と同じ作りにする**（B-155）＝縮めずに折り返す。ここは 4 枚とも
    短い語なので今は 1 行に収まるが、**カードは同じ意味関係を同じ見せ方で出す面**
@@ -197,30 +191,13 @@ def summary_sheet_css() -> str:
 .sheet.summary .card{background:white;border:1px solid #eee;border-radius:8px;padding:6px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:80px;flex:0 0 auto}
 .sheet.summary .card .lbl{font-size:9px;color:#999;text-transform:uppercase;white-space:nowrap}
 .sheet.summary .card .val{font-size:15px;font-weight:bold;color:#333;white-space:nowrap}
-.sheet.summary .card.ok .val{color:#2e7d32}.sheet.summary .card.ng .val{color:#c62828}.sheet.summary .card.err .val{color:#e65100}
-/* 台帳は 9 列（I-143・2026-09-10）＝**table-layout:auto** で各列を内容の実幅
-   （nowrap）に合わせて配分する。以前の table-layout:fixed（等幅）は狭い列に
-   ヘッダ日本語が押し込まれて語中で折れ（"受信レ/ベル"）、長い数値（"-1672.4"）が
-   セル幅を超えて罫線からはみ出した。auto＋小さめフォント（ヘッダ 8px／データ 9px）
-   なら、極端値（受信レベル -1871.0 等）を含む行でも 1 行に収まり 1 枚に納まることを
-   実測（Edge --print-to-pdf）。値が空の列は詰まり、桁の大きい列へ幅が回る。
-   per-path の縮小フィット（transform）は使えない＝改ページに効かず表が切れるため。 */
-.sheet.summary table.summary{border-collapse:collapse;width:100%;table-layout:auto;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-/* ヘッダは中央・下揃え・**折り返し禁止**（列幅は内容に追従するので語中で折れない）。 */
-/* ⚠️ **左右の余白は 2px**（B-187）＝列数が多いほど 1 列あたりの削りが効く。
-   ここが 4px だった頃は 22 列で最小幅の合計が印字域をはみ出し、`<col>` の
-   `width` が丸ごと捨てられて表が崩れた。9 列に減ってからも据え置く。 */
-.sheet.summary table.summary th{background:#455a64;color:white;padding:4px 2px;text-align:center;
-  vertical-align:bottom;font-size:8px;white-space:nowrap;line-height:1.2;
-  border-right:1px solid rgba(255,255,255,.22)}
-/* 単位は 2 行目・小さめ・やや淡色（ヘッダ幅を名前だけで決めさせる）。 */
-.sheet.summary table.summary th .u{display:block;font-size:7px;font-weight:normal;opacity:.8}
-/* 数値セルは右寄せ＋折り返し禁止で列内に整列させ、隣接列とは縦罫線で仕切る
-   （桁の大きい値でも "受信レベル｜マージン｜FSPL" が地続きに見えないように）。
-   ID・判定は左/中央、ERROR 行の理由のみ自由文なので折り返し可。 */
-.sheet.summary table.summary td{padding:4px 2px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
-  font-size:9px;text-align:right;white-space:nowrap}
-.sheet.summary table.summary th:last-child,.sheet.summary table.summary td:last-child{border-right:none}
+/* 台帳の骨格（罫線・余白・数値の右寄せ・判定の中央寄せ・ERROR 行の理由の折り返し）と
+   判定の色は `report_common.ledger_table_css` / `verdict_css` が中継の台帳と共通で
+   配る（B-207 / B-208）。ここに書くのはバッチの台帳にしか無い列だけ。
+   ⚠️ 台帳は 9 列（I-143）＝**table-layout:auto**。以前の table-layout:fixed（等幅）は
+   狭い列にヘッダ日本語が押し込まれて語中で折れ（"受信レ/ベル"）、長い数値が罫線から
+   はみ出した。per-path の縮小フィット（transform）は使えない＝改ページに効かず表が
+   切れるため。 */
 /* ID は利用者が CSV に書いた自由文（長さの上限が無い）＝**折り返す**（B-187）。
    nowrap のままだと "hatsukaichi_kita_relay" のような ID 1 つで表が印字域を
    28px はみ出した（実測）。区切りの無い長い識別子が来るので anywhere で割る。
@@ -228,17 +205,10 @@ def summary_sheet_css() -> str:
    幅が別の列へ回って ID が縦に 1 文字ずつ割れた（13px まで潰れた・実測）。 */
 .sheet.summary table.summary td.c-id{text-align:left;white-space:normal;
   word-break:normal;overflow-wrap:anywhere;min-width:46px}
-.sheet.summary table.summary td.c-status{text-align:center}
-/* ERROR 行の理由（自由文・colspan）は折り返す（B-145）。nowrap のままだと
-   **折り返せない 1 行が table-layout:auto の表全体を押し広げ**、グラフ列が
-   A4 の印字域（182mm）の外へ出る。理由には空白の無い長い連続語（Windows の
-   パス・例外クラス名）が入るので anywhere で割る。備考（I-143 決定 3）も同じ
-   セルへ一緒に載るので同じ割り方でよい。 */
-.sheet.summary table.summary td.c-reason{text-align:left;white-space:normal;
-  word-break:normal;overflow-wrap:anywhere}
-/* 改ページを避ける単位は **1 行**（`tr`）＝備考が別行に分かれなくなった
-   （I-143）ので、B-190 の per-tbody 括りはもう要らない。 */
-.sheet.summary table.summary tr{break-inside:avoid}
+/* ERROR 行の理由（自由文・colspan・`td.c-reason`）は共通の骨格が折り返す（B-145）。
+   nowrap のままだと**折り返せない 1 行が表全体を押し広げ**、グラフ列が A4 の印字域の
+   外へ出る。備考（I-143 決定 3）も同じセルへ一緒に載るので同じ割り方でよい。
+   改ページを避ける単位は **1 行**（`tr`・同じく共通）＝B-190 の per-tbody 括りは不要。 */
 /* グラフ列のサムネイル（I-143＝リンク文字から戻す）＝中継台帳と同じ寸法
    （`report_multihop.route_sheet_css` の `img.thumb` と揃える・⑧）。 */
 .sheet.summary table.summary td.c-graph{text-align:center}
@@ -251,20 +221,21 @@ def summary_sheet_css() -> str:
 .sheet.summary{display:flex;flex-direction:column}
 .sheet.summary .page-footer{margin-top:auto}
 @media print{.sheet.summary{min-height:calc(297mm - 14mm - 8mm)}}
-.sheet.summary tr.ok{background:#f1f8e9}.sheet.summary tr.ng{background:#fff8e1}.sheet.summary tr.err{background:#fce4ec}
-.sheet.summary .s-ok{color:#2e7d32;font-weight:bold}.sheet.summary .s-ng{color:#c62828;font-weight:bold}.sheet.summary .s-err{color:#bf360c;font-weight:bold}
 .sheet.summary .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}
 .sheet.summary .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
 .sheet.summary .paths-map{display:block;width:100%;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px;break-inside:avoid}
-/* 成果物が欠けた経路のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。 */
-.sheet.summary td.c-missing{color:#e65100;font-size:8px;text-align:center}
+/* 成果物が欠けた経路のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。
+   字の色は ERROR の判定色（その行は ERROR になる＝`PathResult.status`）。
+   ⚠️ `table.summary` まで書く＝`.sheet.summary td.c-missing` では骨格の `td` より
+   詳細度が低く、中央寄せも 8px も**一度も効いていなかった**（B-208 の作業中に発見）。 */
+.sheet.summary table.summary td.c-missing{color:""" + map_graphics.STATUS_HEX["ERROR"] + """;font-size:8px;text-align:center}
 .sheet.summary .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}
 /* DEM 取得の失敗率（I-143 決定 2）＝台帳の下に 1 行だけ（列は持たない）。 */
 .sheet.summary .dem-fail-note{color:#777;font-size:9px;margin:4px 0 0}
 /* 連結レポートへの導線（画面のみ・印刷では消える＝.no-print） */
 .sheet.summary .all-link{margin:0 0 10px;font-size:11px}
 .sheet.summary .all-link a{color:#00695c}
-"""
+""")
 
 
 def summary_sheet_html(results: list[PathResult], project_name: str = "",
@@ -328,7 +299,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         # 数値は計算できているのでセルには残す（値まで消すと、何が起きたのか
         # 分からなくなる）。欠けているのはグラフ列のサムネイルなので、そこへ
         # 「成果物なし」を出す＝**リンク切れの画像で気づかせない**。
-        cls = {"OK": "ok", "NG": "ng"}.get(pr.status, "err")
+        cls = report_common.verdict_class(pr.status)
         # 連結文書では文書内アンカー（#p01）へ、単体では p01/report.html へ飛ばす。
         href = f"#{pid_safe}" if anchor_links else f"{pid_safe}/report.html"
         if pr.artifact_error is None:

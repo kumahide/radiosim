@@ -178,8 +178,8 @@ def scenario_sheet_css() -> str:
    1 行 ≒ 15px に収まる値＝41 点でも A4 縦 1 枚（→ _SWEEP_DENSE_ROWS の見積り）。 */
 .sheet.scenario table.scn.dense th{font-size:8px;padding:2px 4px}
 .sheet.scenario table.scn.dense td{font-size:9px;padding:1px 5px;line-height:1.15}
-.sheet.scenario tr.ok{background:#f1f8e9}.sheet.scenario tr.ng{background:#fff8e1}
-.sheet.scenario .s-ok{color:#2e7d32;font-weight:bold}.sheet.scenario .s-ng{color:#c62828;font-weight:bold}
+/* スイープ表の行の地（判定）と判定の字の色は `report_common.verdict_css` が
+   バッチ・中継の台帳と共通で配る（B-207＝同じ色は同じ意味）。 */
 /* 比較シート：数値行に地の色は付けない（→ _compare_table の「視覚の文法」）。
    差の在処と大きさはセル内の Δ が示す。 */
 .sheet.scenario .delta{color:#00695c;font-weight:bold;font-size:9px;margin-left:2px}
@@ -191,7 +191,7 @@ def scenario_sheet_css() -> str:
 .sheet.scenario tr.cond:first-of-type td{border-top:2px solid #cfd8dc}
 .sheet.scenario .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f}
 .sheet.scenario .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
-"""
+""" + report_common.verdict_css("scenario")
 
 
 def _meta_block(run: scn.ScenarioRun) -> str:

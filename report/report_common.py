@@ -368,6 +368,106 @@ def html_document(doc_title: str, css: str, body: str) -> str:
 
 
 # ============================================================
+# 台帳の見せ方（B-207 / B-208）
+# ------------------------------------------------------------
+# 🔴 **バッチの台帳と中継の台帳が CSS を別々に書いていた**＝同じ薄黄が、バッチでは
+# 「NG」、中継では「最も苦しい区間」（中身は OK）を意味していた（B-207）。縦罫線と
+# 判定の中央寄せも片方にしか無かった（B-208）。どちらも*片方だけ直した*跡で、
+# 突き合わせる仕組みが無かったことが原因。⇒ **表の骨格と判定の色はここから配る**。
+# シート固有の CSS に残すのは、そのシートにしか無い列（ID・区間名・サムネイル）だけ。
+# ============================================================
+#: 判定ごとの行の地の色（字の色は `map_graphics.STATUS_HEX`）。**判定以外の意味で
+#: 行の地を塗らない**＝行を目立たせたいときは地の色でなく罫線などの別の手段を使う。
+VERDICT_ROW_BG = {"OK": "#f1f8e9", "NG": "#fff8e1", "ERROR": "#fce4ec"}
+#: 判定の語 → CSS クラス（`batch.PathResult.status` の 3 語）。
+VERDICT_CLASS = {"OK": "ok", "NG": "ng", "ERROR": "err"}
+
+
+def verdict_class(status: str) -> str:
+    """判定の語（`OK` / `NG` / `ERROR`）→ CSS クラス（`ok` / `ng` / `err`）。
+
+    知らない語は `err`（判定できないものを OK / NG の色で塗らない＝B-071）。
+    """
+    return VERDICT_CLASS.get(status, "err")
+
+
+def verdict_css(sheet: str) -> str:
+    """判定の色（行の地・判定の字・件数カードの数字）を `.sheet.<sheet>` へ配る。
+
+    🔑 **3 つの帳票（バッチ・中継・条件探索）が同じ 1 本を引く**＝同じ色は同じ
+    意味（[[feedback_design_philosophy]] ⑧）。字の色は地図の線と同じ
+    `map_graphics.STATUS_HEX`（ERROR が 2 色あった＝B-207）。
+    """
+    from report import map_graphics      # PIL を読むのは使うときだけ
+    s = f".sheet.{sheet}"
+    rules = []
+    for status, cls in VERDICT_CLASS.items():
+        color = map_graphics.STATUS_HEX[status]
+        rules.append(f"{s} tr.{cls}{{background:{VERDICT_ROW_BG[status]}}}")
+        rules.append(f"{s} .s-{cls}{{color:{color};font-weight:bold}}")
+        rules.append(f"{s} .card.{cls} .val{{color:{color}}}")
+    return "\n" + "\n".join(rules) + "\n"
+
+
+def ledger_table_css(sheet: str, table: str) -> str:
+    """台帳（1 行 1 経路・1 区間の表）の骨格を `.sheet.<sheet> table.<table>` へ配る。
+
+    列の幅の決まり方（B-208）:
+      - **既定の列は中身の幅ぴったり**（`th` の `width:1px`＝`table-layout:auto` では
+        「指定幅と最小幅の大きいほう」になり、`nowrap` の数値列は中身の幅に止まる）。
+      - **余りを受け取るのは `th.c-flex` の列だけ**（ID・区間名・グラフ＝幅を融通
+        できる列）。以前は余り（約 240px）が**全列へ中身の幅に比例して**配られ、
+        見出しが長く値が短いアンテナ高の列だけ値の左に 70〜80px の空きができた。
+      - 左右の余白は 6px（条件探索の表と同じ）。2px は 22 列時代（B-187）の値で、
+        9 列になってからは値が隣の罫線に貼りつくだけだった。
+    ⚠️ **印字域（182mm）に収まるかは Edge で実測して決めた**（この表は B-145・
+    B-155・B-187 で 3 度はみ出している）。余白を広げるときは測り直すこと。
+    """
+    t = f".sheet.{sheet} table.{table}"
+    return f"""
+{t}{{border-collapse:collapse;width:100%;table-layout:auto;background:white;
+  box-shadow:0 1px 3px rgba(0,0,0,.12)}}
+{t} th{{background:#455a64;color:white;padding:4px 6px;text-align:center;
+  vertical-align:bottom;font-size:8px;white-space:nowrap;line-height:1.2;
+  border-right:1px solid rgba(255,255,255,.22);width:1px}}
+{t} th.c-flex{{width:auto}}
+{t} th .u{{display:block;font-size:7px;font-weight:normal;opacity:.8}}
+{t} td{{padding:4px 6px;border-bottom:1px solid #eee;border-right:1px solid #e6e6e6;
+  font-size:9px;text-align:right;white-space:nowrap}}
+{t} th:last-child,{t} td:last-child{{border-right:none}}
+{t} td.c-status{{text-align:center}}
+{t} td.c-reason{{text-align:left;white-space:normal;word-break:normal;overflow-wrap:anywhere}}
+{t} tr{{break-inside:avoid}}
+"""
+
+
+def ledger_header_cells(labels, flex_keys=frozenset()) -> str:
+    """台帳の `<th>` 群を返す（`labels` は `(i18n キー, 訳した文言)` の列）。
+
+    ⚠️ **訳は呼び出し側で引く**＝`tests/test_i18n_external.py` は `t()` の引数を
+    *モジュール定数を回すループ*までしか辿れないので、ここで `i18n.t(key)` を呼ぶと
+    列のキーが外部訳の検査から消える（列の定数は各帳票のモジュールにある）。
+
+    "受信レベル (dBm)" のように "名前 (単位)" 形式のヘッダは、単位を `.u`（改行＋
+    小さめ）で 2 行目に置く。これで各ヘッダの必要幅が max(名前, 単位) に縮み、
+    列が横に広がりにくい。**アンテナ高も同じ形**（`mh_heights`＝"アンテナ高 (送 / 受, m)"）。
+    🔁 B-208 までは文言が "アンテナ高（送 / 受）" で、全角の括弧がこの規則に拾われず
+    1 行目に残り、**この見出しだけが値の約 2 倍の幅で列を決めていた**（単位 "(m)" は
+    ここで補っており、英語は汎用の規則に拾われて "(m)" が落ちていた）。
+    `flex_keys` の列は余りの幅を受け取る（`ledger_table_css` の `th.c-flex`）。
+    """
+    cells = []
+    for key, label in labels:
+        attr = ' class="c-flex"' if key in flex_keys else ""
+        if label.endswith(")") and " (" in label:
+            name, unit = label.split(" (", 1)
+            cells.append(f'<th{attr}>{name}<span class="u">({unit}</span></th>')
+        else:
+            cells.append(f"<th{attr}>{label}</th>")
+    return "".join(cells)
+
+
+# ============================================================
 # 「結果の取扱に関する補足」節（3.0a1 / ロードマップ §3.0 の 9）
 # ------------------------------------------------------------
 # 🔑 **存在理由＝成果物は一人歩きする**。レポートを受け取った人は、README の
