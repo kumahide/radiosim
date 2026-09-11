@@ -109,12 +109,22 @@ def route_sheet_css() -> str:
    最初からこの 1 行を持っていた（`report_summary` の `td img`）＝**揃って
    いなかったのはこちらだけ**。⚠️ `height:auto` を必ず添える（幅だけ縛ると潰れる）。 */
 .sheet.multihop table.hops td img{max-width:100%;height:auto}
+/* グラフ列のサムネイルは中央に置く＝バッチ台帳の `td.c-graph` と同じ（⑧）。
+   🔴 以前はクラスが無く、骨格の td の右寄せ（数値列用）に落ちて**バッチでは
+   中央・ここでは右寄せ**に食い違っていた。 */
+.sheet.multihop table.hops td.c-graph{text-align:center}
 .sheet.multihop table.hops img.thumb{max-height:40px;border:1px solid #ddd;
   border-radius:3px;vertical-align:middle}
 .sheet.multihop .all-link{margin:0 0 10px;font-size:11px}
 .sheet.multihop .all-link a{color:#00695c}
 /* DEM 取得の失敗率（I-143 決定 2）＝台帳の下に 1 行だけ（列は持たない）。 */
 .sheet.multihop .dem-fail-note{color:#777;font-size:9px;margin:4px 0 0}
+/* フッタを用紙の最下部へ＝バッチ台帳（`report_summary.summary_sheet_css`）と同じ
+   作り（⑧）。🔴 以前はこれが無く、**バッチでは用紙の下端・ここでは本文の直後**に
+   フッタが来ていた。 */
+.sheet.multihop{display:flex;flex-direction:column}
+.sheet.multihop .page-footer{margin-top:auto}
+@media print{.sheet.multihop{min-height:calc(297mm - 14mm - 8mm)}}
 """)
 
 
@@ -215,7 +225,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         # 成果物が欠けた区間は、判定を ERROR にしてサムネイルの代わりに字を出す
         # （I-010・バッチ台帳と同じ扱い＝リンク切れの画像で気づかせない）。
         if pr.artifact_error is None:
-            graph_cell = (f"<td><a href='{href}'>"
+            graph_cell = (f"<td class='c-graph'><a href='{href}'>"
                           f"<img src='{pid_safe}/profile.png' class='thumb'></a></td>")
         else:
             graph_cell = (f"<td class='c-missing'>"

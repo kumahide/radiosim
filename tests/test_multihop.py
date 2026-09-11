@@ -741,13 +741,49 @@ class TestRouteSheet:
         from report import report_multihop
 
         css = report_multihop.route_sheet_css()
-        selectors = [
-            line.split("{")[0].strip()
-            for line in css.splitlines()
-            if "{" in line and not line.strip().startswith(("/*", "*"))
-        ]
+        selectors = []
+        for line in css.splitlines():
+            if "{" not in line or line.strip().startswith(("/*", "*")):
+                continue
+            parts = line.split("{")
+            # `@media print{.sheet.multihop{…}}` は**中のセレクタ**を見る
+            # （@media 自体はセレクタではない＝素通りさせると中身が無検査になる）。
+            selectors.append((parts[1] if parts[0].strip().startswith("@media")
+                              else parts[0]).strip())
         unscoped = [s for s in selectors if not s.startswith(".sheet.multihop")]
         assert not unscoped, f"スコープされていないセレクタ: {unscoped}"
+
+    def test_layout_matches_batch_ledger(self, base, tmp_path, monkeypatch):
+        """フッタの位置とグラフ列の寄せが**バッチ台帳と同じ**であること。
+
+        🔴 2026-09-12 に実機で指摘＝バッチはフッタが用紙の下端・グラフが中央、
+        中継はフッタが本文の直後・グラフが右寄せ（骨格の td の右寄せに落ちて
+        いた）。同じ「台帳」の面なので同じ見せ方にする（⑧）。
+        """
+        from report import report_multihop, report_summary
+
+        batch_css = report_summary.summary_sheet_css()
+        relay_css = report_multihop.route_sheet_css()
+        for rule in (
+            "{display:flex;flex-direction:column}",
+            " .page-footer{margin-top:auto}",
+            "@media print{%s{min-height:calc(297mm - 14mm - 8mm)}}",
+            " td.c-graph{text-align:center}",
+        ):
+            def scoped(sheet, table):
+                if rule.startswith("@media"):
+                    return rule % f".sheet.{sheet}"
+                if rule.startswith(" td."):
+                    return f".sheet.{sheet} table.{table}{rule}"
+                return f".sheet.{sheet}{rule}"
+            assert scoped("summary", "summary") in batch_css, rule
+            assert scoped("multihop", "hops") in relay_css, \
+                f"バッチ台帳にある指定が中継に無い: {rule}"
+
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        html = report_multihop.route_sheet_html(run)
+        assert html.count("<td class='c-graph'>") == len(run.hops), \
+            "グラフ列のセルに c-graph が付いていない（中央寄せが効かない）"
 
     def test_unbounded_cells_are_not_nowrap(self, base, tmp_path, monkeypatch):
         """区間表に**幅の上限が無い中身**を `nowrap` / 実寸のまま置かないこと（B-155）。
