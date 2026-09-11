@@ -995,9 +995,15 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 
 ![RadioSim Pro のレイヤー構成。views/（画面・tkinter）→ report/（出力を作る層・ヘッドレス）→ core/（土台＝計算・データ・設定）の一方向の依存で、各層のモジュールを役割つきで並べた図。](images/architecture_ja.svg)
 
-<!-- 図の実体は docs/images/architecture_ja.svg（英語版は architecture_en.svg）。
-     モジュールを足したら図にも足すこと＝tests/test_docs_consistency.py が
-     SVG の中の字を読んで網羅を検査する（図だけ古くなる壊れ方を止めるため）。 -->
+**この図は生成物です。SVG を手で直さないでください。** `docs/images/architecture_ja.svg` と `architecture_en.svg` は、`buildtools/architecture_figure.py` の中の 1 つの表（帯 → カード → 行〔モジュール名・役割 ja・役割 en〕）から書き出します。座標・カードの寸法・図の寸法はすべて計算で決まり、字の幅は候補の書体で実測した**上限**で見積もるので、役割が長くなればカードのほうが広がります（字がはみ出すことはありません）。生成スクリプトは配布版には含まれません（リポジトリで作業してください）。
+
+モジュールを足したら、表に行を足して作り直します。
+
+```powershell
+& "$env:RADIOSIM_PYTHON" buildtools/architecture_figure.py
+```
+
+`tests/test_docs_consistency.py` が、SVG が生成物と違うとき（手で直した／表を直して作り直し忘れた）、字が隣の字や箱の右端に届くとき、図にモジュールが欠けているときに落ちます。表の書体を替えるときは、Windows で `buildtools/architecture_figure.py --measure` を実行してその出力を `_ASCII_EM` に貼り、Windows でテストを通してください（書体の検査は Windows の書体が無い CI では skip されます）。
 
 ---
 

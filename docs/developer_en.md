@@ -994,9 +994,15 @@ Loading closes the open windows (batch / explorer / relay path) after asking for
 
 ![RadioSim Pro layer structure: a one-way dependency from views/ (the screen, tkinter) to report/ (the headless layer that produces output) to core/ (the foundation — calculation, data and configuration), listing the modules of each layer with their role.](images/architecture_en.svg)
 
-<!-- The figure itself is docs/images/architecture_en.svg (Japanese: architecture_ja.svg).
-     Add a module, add it to the figure too: tests/test_docs_consistency.py reads the
-     text inside the SVG to check the listing (so the figure cannot go stale on its own). -->
+**The figure is generated — do not edit the SVG by hand.** Both `docs/images/architecture_en.svg` and `architecture_ja.svg` are written from a single table in `buildtools/architecture_figure.py` (bands → cards → rows of module / Japanese role / English role). Every coordinate, card size and the figure size are computed, and text widths are estimated with an upper bound measured over the candidate fonts, so a long role widens the card instead of running past it. The build tools are not part of the distributed binary; use the repository.
+
+When you add a module, add a row to the table and regenerate:
+
+```powershell
+& "$env:RADIOSIM_PYTHON" buildtools/architecture_figure.py
+```
+
+`tests/test_docs_consistency.py` fails if an SVG differs from the generator's output (a hand edit, or a table change you forgot to regenerate), if any text runs into the next one or past its box, and if the figure misses a module. If you change the fonts in the table, run `buildtools/architecture_figure.py --measure` on Windows, paste its output into `_ASCII_EM`, and run the tests there (the font check is skipped on CI, which has no Windows fonts).
 
 ---
 

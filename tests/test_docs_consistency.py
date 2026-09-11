@@ -139,9 +139,154 @@ def test_architecture_diagram_lists_all_modules(doc):
 #   ①その行の座標 ②親カードの高さ ③親帯の高さ ④背景 ⑤全体の height
 # の **5 か所が連動する**のに、機械はどれも見ていなかった。ここで①②③④を見る
 # （⑤は④の検査が兼ねる＝背景は svg の height と突き合わせる）。
-# ⚠️ **ja / en は「もう 1 例」ではなく同一の図の複製**＝手で同期させている以上、
-# 片方だけ直すと必ずずれるので、**2 枚の幾何が一致すること自体**も検査する。
+#
+# 🔴 **B-209（3 度目）で方式を替えた＝図は `buildtools/architecture_figure.py` の表から
+# 生成する**。壊れ方を見つけるたびにゲートを 1 本ずつ足してきた（B-147 で 4 本・
+# B-153 で 2 本）が、**横方向は最初から検査の外**で、行を足すたびに黙ってはみ出した
+# （その 6 本は 1 本も落ちなかった）。**数え上げたゲートは数え漏れの分だけ次に壊れる**
+# ⇒ ゲートの芯を「**生成物と一致**」1 本に寄せた（手で直すと赤・表を直して生成し
+# 忘れても赤）。下の構造の検査は、生成器の割り付けの誤りを捕まえる網として残す。
+# ⚠️ 旧「ja / en の幾何が一致」は**撤去した**＝手で同期していた頃の安全策で、いまは
+# 言語ごとに字の幅を見積もって割り付ける（幾何は違ってよい）。
 ARCH_SVGS = ["docs/images/architecture_ja.svg", "docs/images/architecture_en.svg"]
+
+
+def _load_architecture_figure():
+    """生成器をモジュールとして読み込む（`buildtools` はパッケージではない）。"""
+    import importlib.util
+    import sys
+
+    path = ROOT / "buildtools" / "architecture_figure.py"
+    spec = importlib.util.spec_from_file_location("architecture_figure", path)
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules.setdefault("architecture_figure", mod)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+architecture_figure = _load_architecture_figure()
+
+
+@pytest.mark.parametrize("lang", architecture_figure.LANGS)
+def test_architecture_diagram_is_the_generator_output(lang):
+    """リポジトリの SVG が生成器の出力と一致すること（B-209 の芯）。
+
+    改行だけは正規化する＝作業ツリーは `core.autocrlf` で CRLF になり得る（索引は LF）。
+    """
+    path = architecture_figure.OUTPUTS[lang]
+    current = path.read_text(encoding="utf-8").replace("\r\n", "\n")
+    assert current == architecture_figure.render(lang), (
+        f"{path.name} が生成器の出力と違う＝手で直したか、表を直して生成し忘れた。"
+        "表（buildtools/architecture_figure.py）を直して"
+        " `python buildtools/architecture_figure.py` で作り直す"
+    )
+
+
+#: 字の右端に残す最小の空き（px）。生成器の余白（`CARD_PAD` など）より小さく取る
+#: ＝生成器の割り付けが崩れたときだけ落ち、余白の調整では落ちない。
+_ARCH_CLEAR = 6.0
+
+
+def _svg_texts(doc: str):
+    """SVG の字を (class, x, y, text-anchor, 字) で拾う。"""
+    import xml.etree.ElementTree as ET
+
+    root = ET.parse(ROOT / doc).getroot()
+    out = []
+    for el in root.iter():
+        if el.tag.rsplit("}", 1)[-1] != "text":
+            continue
+        classes = (el.get("class") or "").split()
+        cls = next((c for c in classes if c in architecture_figure.STYLE), None)
+        if cls is None:
+            continue                          # 題（class なし）は図の幅の検査に任せる
+        out.append((cls, float(el.get("x")), float(el.get("y")),
+                    el.get("text-anchor", "start"), el.text or ""))
+    return out
+
+
+@pytest.mark.parametrize("doc", ARCH_SVGS)
+def test_architecture_diagram_text_never_runs_into_the_next_or_off_its_box(doc):
+    """字が、同じ行の次の字にも、自分の箱（カード→帯→図）の右端にも届かないこと。
+
+    🔴 **B-209**＝行を足すたびに役割がカードの右端を越え、英語版は図の外まで出た。
+    **横方向は B-153 で「推定しない」と決めて検査の外に置いていた**（書体で幅が
+    変わるから）。🔑 **それは推定をやめる理由ではなく、上限で推定する理由だった**＝
+    幅は生成器の上限表（候補の書体の最大）で見積もる。
+    """
+    lang = "ja" if doc.endswith("_ja.svg") else "en"
+    (width, _h), bands, cards, _t, _bg = _svg_geometry(doc)
+    spans = []
+    for cls, x, y, anchor, text in _svg_texts(doc):
+        w = architecture_figure.text_width(text, cls, lang)
+        x0, x1 = (x - w, x) if anchor == "end" else (x, x + w)
+        box = next((b for b in cards + bands
+                    if b[0] <= x0 <= b[0] + b[2] and b[1] <= y <= b[1] + b[3]),
+                   (0.0, 0.0, width, 0.0))
+        assert x0 >= box[0] + _ARCH_CLEAR - 1e-6 and x1 <= box[0] + box[2] - _ARCH_CLEAR + 1e-6, (
+            f"{doc}: [{cls}] {text!r} が箱 {box} からはみ出す"
+            f"（字 {x0:.1f}–{x1:.1f}）"
+        )
+        spans.append((y, x0, x1, cls, text))
+    for y, x0, x1, cls, text in spans:
+        for y2, a0, _a1, cls2, text2 in spans:
+            if y2 == y and x0 < a0:
+                assert x1 + _ARCH_CLEAR <= a0 + 1e-6, (
+                    f"{doc}: [{cls}] {text!r}（右端 {x1:.1f}）が同じ行の "
+                    f"[{cls2}] {text2!r}（始点 {a0:.1f}）に食い込む"
+                )
+
+
+def _figure_chars(lang: str) -> set[str]:
+    li = architecture_figure.LANGS.index(lang)
+    f = architecture_figure
+    texts = [f.TITLE[li], f.LEAD[li]] + [t[li] for t in f.FOOTER]
+    for band in f.BANDS:
+        texts += [band.name[li], band.rule[li]]
+        for row in band.rows:
+            for it in row:
+                if isinstance(it, f.Card):
+                    texts.append(it.title[li])
+                    texts += [r[1 + li] for col in it.columns for r in col]
+                else:
+                    texts += [ln[li] for ln in it.lines]
+    return set("".join(texts))
+
+
+def test_architecture_width_table_is_an_upper_bound_of_the_measured_fonts():
+    """上限表が、候補の書体で実測した字幅を下回らないこと（Windows で書体があるときだけ）。
+
+    表を実測より小さくすると、その書体で描かれたときにまたはみ出す。CI（ubuntu）には
+    書体が無いので skip ＝**表を触る回は Windows でこのテストを通す**。
+    """
+    import sys
+
+    if sys.platform != "win32":
+        pytest.skip("候補の書体は Windows にしか無い")
+    fonts = Path("C:/Windows/Fonts")
+    missing = [n for files in architecture_figure._MEASURED_FONTS.values()
+               for n, _i in files if not (fonts / n).exists()]
+    if missing:
+        pytest.skip(f"候補の書体が無い: {missing}")
+    ImageFont = pytest.importorskip("PIL.ImageFont")
+
+    measured = architecture_figure.measure_ascii_em(fonts)
+    for face, table in architecture_figure._ASCII_EM.items():
+        for k, (have, real) in enumerate(zip(table, measured[face])):
+            assert have >= real - 1e-9, (
+                f"{face}: {chr(0x20 + k)!r} の上限 {have} が実測 {real:.4f} を下回る"
+                "（`--measure` の出力を貼り直す）"
+            )
+    # ASCII 以外は一律 1 em で見積もる＝図に使っている字が本当に 1 em 以下か。
+    for lang in architecture_figure.LANGS:
+        wide = sorted(c for c in _figure_chars(lang) if ord(c) > 0x7E)
+        for weight in ("regular", "bold"):
+            for name, idx in architecture_figure._MEASURED_FONTS[f"{lang}-{weight}"]:
+                font = ImageFont.truetype(str(fonts / name), size=1000, index=idx)
+                over = [c for c in wide if font.getlength(c) / 1000
+                        > architecture_figure._WIDE_EM + 1e-9]
+                assert not over, f"{name}: 1 em を超える字 {over}（上限の扱いを見直す）"
 
 
 def _svg_geometry(doc: str):
@@ -275,6 +420,9 @@ def test_architecture_diagram_never_draws_text_across_a_card_edge(doc):
     （実際、幅を数える探針は en の `role` を偽陽性で挙げた）。**始点 `x` が
     カードの横幅の内側にある字だけ**を対象に、**縦の重なりだけ**を見る。
     ⇒ 「カードの中の字」か「カードの上下に完全に外れた字」かの二択に縛れる。
+    ⚠️ **横方向は B-209 で別の検査に切り出した**（上の
+    `test_architecture_diagram_text_never_runs_into_the_next_or_off_its_box`＝
+    「推定しない」をやめ、書体の上限で推定する）。
     """
     _size, _b, cards, texts, _bg = _svg_geometry(doc)
     assert cards, f"{doc}: カードが拾えていない"
@@ -294,15 +442,6 @@ def test_architecture_diagram_never_draws_text_across_a_card_edge(doc):
                 f"({cx}, {cy})-({cx + cw}, {cy1}) の枠線を跨いでいる"
                 "（カードを伸ばしたら、その下に置いた字も動かす）"
             )
-
-
-def test_architecture_diagrams_share_the_same_layout():
-    """ja / en の幾何が一致すること（2 枚は同じ図の複製＝片方だけ直すとずれる）。"""
-    ja, en = (_svg_geometry(doc) for doc in ARCH_SVGS)
-    assert ja == en, (
-        "architecture_ja.svg と architecture_en.svg のレイアウトがずれている"
-        "（座標は手で同期させているので、片方だけ直すと必ずずれる）"
-    )
 
 
 # --- 3. テスト表: 全テストファイルを列挙しているか ---------------------------

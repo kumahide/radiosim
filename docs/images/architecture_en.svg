@@ -1,5 +1,6 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1120 1146" width="1120" height="1146"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1222 1166" width="1222" height="1166"
      role="img" aria-labelledby="ttl desc" font-family="Arial,Helvetica,'Segoe UI',sans-serif">
+  <!-- Generated (B-209): do not edit by hand. Edit the table and regenerate (developer guide, “Layer Structure”). -->
   <title id="ttl">RadioSim Pro layer structure</title>
   <desc id="desc">Three layers — views, report and core — with a one-way dependency from views to report to core, listing the modules of each layer with their role.</desc>
 
@@ -20,143 +21,127 @@
     </style>
   </defs>
 
-  <rect width="1120" height="1146" fill="#ffffff"/>
+  <rect width="1222" height="1166" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — Layer Structure</text>
   <text x="20" y="57" class="note">Layers are directories. The dependency runs one way: views → report → core. Anything used by two layers moves down, never into a shared/ box.</text>
 
-  <!-- ============================= views ============================= -->
-  <rect class="band" x="20" y="76" width="1080" height="328" rx="10" fill="#eef2fb" stroke="#c3d0ec"/>
+  <!-- views -->
+  <rect class="band" x="20" y="76" width="1182" height="348" rx="10" fill="#eef2fb" stroke="#c3d0ec"/>
   <text x="34" y="100" class="lname" fill="#24406e">views/ — the screen (tkinter)</text>
-  <text x="1086" y="100" class="lrule" text-anchor="end">Has side effects. Delegates calculation and I/O downward.</text>
-
-  <!-- row 1 -->
+  <text x="1188" y="100" class="lrule" text-anchor="end">Has side effects. Delegates calculation and I/O downward.</text>
   <g>
-    <rect class="card" x="34" y="124" width="341" height="116" rx="6" stroke="#c3d0ec"/>
+    <rect class="card" x="34" y="124" width="377" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="46" y="141" class="ctitle" fill="#24406e">Launcher (core + mixins)</text>
-    <text x="46" y="162" class="mod">launcher.py</text>        <text x="182" y="162" class="role">form, run, progress</text>
-    <text x="46" y="182" class="mod">launcher_menu.py</text>   <text x="182" y="182" class="role">menu bar and its actions</text>
-    <text x="46" y="202" class="mod">launcher_project.py</text><text x="182" y="202" class="role">.rsproj save / load</text>
-    <text x="46" y="222" class="mod">launcher_windows.py</text><text x="182" y="222" class="role">child windows, notifications</text>
-
-    <rect class="card" x="389" y="124" width="341" height="116" rx="6" stroke="#c3d0ec"/>
-    <text x="401" y="141" class="ctitle" fill="#24406e">Map (core + mixins)</text>
-    <text x="401" y="160" class="mod">map_window.py</text><text x="537" y="160" class="role">mode switching, widget</text>
-    <text x="401" y="176" class="mod">map_picks.py</text> <text x="537" y="176" class="role">picking sites, drawing paths</text>
-    <text x="401" y="192" class="mod">map_cache.py</text> <text x="537" y="192" class="role">DEM cache operations</text>
-    <text x="401" y="208" class="mod">map_adapter.py</text><text x="537" y="208" class="role">sole dependency on tkintermapview</text>
-    <text x="401" y="224" class="mod">map_style.py</text> <text x="537" y="224" class="role">single source of constants</text>
-
-    <rect class="card" x="744" y="124" width="341" height="116" rx="6" stroke="#c3d0ec"/>
-    <text x="756" y="141" class="ctitle" fill="#24406e">Multiple Paths (core + mixins)</text>
-    <text x="756" y="162" class="mod">batch_builder.py</text><text x="892" y="162" class="role">common settings, case info</text>
-    <text x="756" y="182" class="mod">batch_table.py</text>  <text x="892" y="182" class="role">input table (row editing)</text>
-    <text x="756" y="202" class="mod">batch_io.py</text>     <text x="892" y="202" class="role">CSV import/export, template</text>
-    <text x="756" y="222" class="mod">batch_run.py</text>    <text x="892" y="222" class="role">execution and progress</text>
+    <text x="46" y="162" class="mod">launcher.py</text> <text x="207" y="162" class="role">form, run, progress</text>
+    <text x="46" y="182" class="mod">launcher_menu.py</text> <text x="207" y="182" class="role">menu bar and its actions</text>
+    <text x="46" y="202" class="mod">launcher_project.py</text> <text x="207" y="202" class="role">.rsproj save / load</text>
+    <text x="46" y="222" class="mod">launcher_windows.py</text> <text x="207" y="222" class="role">child windows, notifications</text>
+    <rect class="card" x="425" y="124" width="374" height="136" rx="6" stroke="#c3d0ec"/>
+    <text x="437" y="141" class="ctitle" fill="#24406e">Map (core + mixins)</text>
+    <text x="437" y="162" class="mod">map_window.py</text> <text x="598" y="162" class="role">mode switching, widget</text>
+    <text x="437" y="182" class="mod">map_picks.py</text> <text x="598" y="182" class="role">picking sites, drawing paths</text>
+    <text x="437" y="202" class="mod">map_cache.py</text> <text x="598" y="202" class="role">DEM cache operations</text>
+    <text x="437" y="222" class="mod">map_adapter.py</text> <text x="598" y="222" class="role">sole dependency on tkintermapview</text>
+    <text x="437" y="242" class="mod">map_style.py</text> <text x="598" y="242" class="role">single source of constants</text>
+    <rect class="card" x="813" y="124" width="375" height="116" rx="6" stroke="#c3d0ec"/>
+    <text x="825" y="141" class="ctitle" fill="#24406e">Multiple Paths (core + mixins)</text>
+    <text x="825" y="162" class="mod">batch_builder.py</text> <text x="986" y="162" class="role">common settings, case info</text>
+    <text x="825" y="182" class="mod">batch_table.py</text> <text x="986" y="182" class="role">input table (row editing)</text>
+    <text x="825" y="202" class="mod">batch_io.py</text> <text x="986" y="202" class="role">CSV import/export, template</text>
+    <text x="825" y="222" class="mod">batch_run.py</text> <text x="986" y="222" class="role">execution and progress</text>
   </g>
-
-  <!-- row 2 -->
   <g>
-    <rect class="card" x="34" y="254" width="341" height="116" rx="6" stroke="#c3d0ec"/>
-    <text x="46" y="271" class="ctitle" fill="#24406e">Other windows</text>
-    <text x="46" y="292" class="mod">graph.py</text>    <text x="182" y="292" class="role">graph window</text>
-    <text x="46" y="312" class="mod">scenario.py</text> <text x="182" y="312" class="role">compare / sweep</text>
-    <text x="46" y="332" class="mod">multihop.py</text> <text x="182" y="332" class="role">relay path (waypoints in)</text>
-    <text x="46" y="352" class="mod">multihop_map.py</text> <text x="182" y="352" class="role">relay path &lt;-&gt; map handoff</text>
-
-    <rect class="card" x="389" y="254" width="696" height="136" rx="6" stroke="#c3d0ec"/>
-    <text x="401" y="271" class="ctitle" fill="#24406e">Shared by every window</text>
-    <text x="401" y="292" class="mod">dialogs.py</text>    <text x="537" y="292" class="role">modals centered on the parent</text>
-    <text x="401" y="312" class="mod">errors.py</text>     <text x="537" y="312" class="role">sink for unhandled exceptions</text>
-    <text x="401" y="332" class="mod">progress.py</text>   <text x="537" y="332" class="role">progress transport (queue)</text>
-    <text x="401" y="352" class="mod">frozen_common.py</text>   <text x="537" y="352" class="role">Frozen band’s item list</text>
-    <text x="754" y="292" class="mod">theme.py</text>      <text x="890" y="292" class="role">theme colors, UI fonts</text>
-    <text x="754" y="312" class="mod">window_fit.py</text> <text x="890" y="312" class="role">window sizing (no clipping)</text>
-    <text x="754" y="332" class="mod">tooltip.py</text>    <text x="890" y="332" class="role">input hints</text>
-    <text x="754" y="352" class="mod">window_scroll.py</text> <text x="890" y="352" class="role">scroll escape (too big)</text>
-    <text x="754" y="372" class="mod">title_bar.py</text>   <text x="890" y="372" class="role">title bar (drawn by the OS)</text>
+    <rect class="card" x="34" y="274" width="377" height="116" rx="6" stroke="#c3d0ec"/>
+    <text x="46" y="291" class="ctitle" fill="#24406e">Other windows</text>
+    <text x="46" y="312" class="mod">graph.py</text> <text x="207" y="312" class="role">graph window</text>
+    <text x="46" y="332" class="mod">scenario.py</text> <text x="207" y="332" class="role">compare / sweep</text>
+    <text x="46" y="352" class="mod">multihop.py</text> <text x="207" y="352" class="role">relay path (waypoints in)</text>
+    <text x="46" y="372" class="mod">multihop_map.py</text> <text x="207" y="372" class="role">relay path &lt;-&gt; map handoff</text>
+    <rect class="card" x="425" y="274" width="763" height="136" rx="6" stroke="#c3d0ec"/>
+    <text x="437" y="291" class="ctitle" fill="#24406e">Shared by every window</text>
+    <text x="437" y="312" class="mod">dialogs.py</text> <text x="598" y="312" class="role">modals centered on the parent</text>
+    <text x="437" y="332" class="mod">errors.py</text> <text x="598" y="332" class="role">sink for unhandled exceptions</text>
+    <text x="437" y="352" class="mod">progress.py</text> <text x="598" y="352" class="role">progress transport (queue)</text>
+    <text x="437" y="372" class="mod">frozen_common.py</text> <text x="598" y="372" class="role">Frozen band’s item list</text>
+    <text x="825" y="312" class="mod">theme.py</text> <text x="986" y="312" class="role">theme colors, UI fonts</text>
+    <text x="825" y="332" class="mod">window_fit.py</text> <text x="986" y="332" class="role">window sizing (no clipping)</text>
+    <text x="825" y="352" class="mod">tooltip.py</text> <text x="986" y="352" class="role">input hints</text>
+    <text x="825" y="372" class="mod">window_scroll.py</text> <text x="986" y="372" class="role">scroll escape (too big)</text>
+    <text x="825" y="392" class="mod">title_bar.py</text> <text x="986" y="392" class="role">title bar (drawn by the OS)</text>
   </g>
 
-  <line class="arrow" x1="560" y1="408" x2="560" y2="432"/>
+  <line class="arrow" x1="611" y1="428" x2="611" y2="452"/>
 
-  <!-- ============================ report ============================= -->
-  <rect class="band" x="20" y="436" width="1080" height="248" rx="10" fill="#eefaf3" stroke="#bfe3d1"/>
-  <text x="34" y="460" class="lname" fill="#1c5c3f">report/ — the layer that produces output</text>
-  <text x="1086" y="460" class="lrule" text-anchor="end">Headless: it runs with no display (tests and CI drive it directly).</text>
-
+  <!-- report -->
+  <rect class="band" x="20" y="456" width="1182" height="248" rx="10" fill="#eefaf3" stroke="#bfe3d1"/>
+  <text x="34" y="480" class="lname" fill="#1c5c3f">report/ — the layer that produces output</text>
+  <text x="1188" y="480" class="lrule" text-anchor="end">Headless: it runs with no display (tests and CI drive it directly).</text>
   <g>
-    <rect class="card" x="34" y="484" width="341" height="96" rx="6" stroke="#bfe3d1"/>
-    <text x="46" y="501" class="ctitle" fill="#1c5c3f">Execution engines</text>
-    <text x="46" y="522" class="mod">batch.py</text>   <text x="182" y="522" class="role">multiple paths (CSV + run)</text>
-    <text x="46" y="542" class="mod">multihop.py</text><text x="182" y="542" class="role">relay path (sections, min)</text>
-    <text x="46" y="562" class="mod">project.py</text> <text x="182" y="562" class="role">.rsproj read / write</text>
-
-    <rect class="card" x="389" y="484" width="696" height="96" rx="6" stroke="#bfe3d1"/>
-    <text x="401" y="501" class="ctitle" fill="#1c5c3f">Artifact generation</text>
-    <text x="401" y="522" class="mod">report_common.py</text>  <text x="537" y="522" class="role">A4 skeleton, header / footer</text>
-    <text x="401" y="542" class="mod">report_path.py</text>    <text x="537" y="542" class="role">per path (PNG/HTML/KML)</text>
-    <text x="401" y="562" class="mod">report_summary.py</text> <text x="537" y="562" class="role">summary, all-pages document</text>
-    <text x="754" y="522" class="mod">report_scenario.py</text><text x="890" y="522" class="role">line chart + table</text>
-    <text x="754" y="542" class="mod">report_multihop.py</text><text x="890" y="542" class="role">relay sheet, hops.csv</text>
-    <text x="754" y="562" class="mod">report_map.py</text>     <text x="890" y="562" class="role">path map (tiles, stitched)</text>
+    <rect class="card" x="34" y="504" width="377" height="96" rx="6" stroke="#bfe3d1"/>
+    <text x="46" y="521" class="ctitle" fill="#1c5c3f">Execution engines</text>
+    <text x="46" y="542" class="mod">batch.py</text> <text x="207" y="542" class="role">multiple paths (CSV + run)</text>
+    <text x="46" y="562" class="mod">multihop.py</text> <text x="207" y="562" class="role">relay path (sections, min)</text>
+    <text x="46" y="582" class="mod">project.py</text> <text x="207" y="582" class="role">.rsproj read / write</text>
+    <rect class="card" x="425" y="504" width="763" height="96" rx="6" stroke="#bfe3d1"/>
+    <text x="437" y="521" class="ctitle" fill="#1c5c3f">Artifact generation</text>
+    <text x="437" y="542" class="mod">report_common.py</text> <text x="598" y="542" class="role">A4 skeleton, header / footer</text>
+    <text x="437" y="562" class="mod">report_path.py</text> <text x="598" y="562" class="role">per path (PNG/HTML/KML)</text>
+    <text x="437" y="582" class="mod">report_summary.py</text> <text x="598" y="582" class="role">summary, all-pages document</text>
+    <text x="825" y="542" class="mod">report_scenario.py</text> <text x="986" y="542" class="role">line chart + table</text>
+    <text x="825" y="562" class="mod">report_multihop.py</text> <text x="986" y="562" class="role">relay sheet, hops.csv</text>
+    <text x="825" y="582" class="mod">report_map.py</text> <text x="986" y="582" class="role">path map (tiles, stitched)</text>
   </g>
-
   <g>
-    <rect class="card" x="34" y="594" width="341" height="76" rx="6" stroke="#bfe3d1"/>
-    <text x="46" y="611" class="ctitle" fill="#1c5c3f">Shared drawing parts</text>
-    <text x="46" y="632" class="mod">map_graphics.py</text><text x="182" y="632" class="role">map overlays (pure PIL)</text>
-    <text x="46" y="652" class="mod">mpl_fonts.py</text>   <text x="182" y="652" class="role">matplotlib Japanese fonts</text>
-
-    <text x="401" y="620" class="note">The screen (views/) and the reports must draw the same picture, so the drawing lives down here too</text>
-    <text x="401" y="640" class="note">— what two layers share becomes a resident of the lower layer, not a shared/ box.</text>
+    <rect class="card" x="34" y="614" width="377" height="76" rx="6" stroke="#bfe3d1"/>
+    <text x="46" y="631" class="ctitle" fill="#1c5c3f">Shared drawing parts</text>
+    <text x="46" y="652" class="mod">map_graphics.py</text> <text x="207" y="652" class="role">map overlays (pure PIL)</text>
+    <text x="46" y="672" class="mod">mpl_fonts.py</text> <text x="207" y="672" class="role">matplotlib Japanese fonts</text>
+    <text x="437" y="640" class="note">The screen (views/) and the reports must draw the same picture, so the drawing lives down here too</text>
+    <text x="437" y="660" class="note">— what two layers share becomes a resident of the lower layer, not a shared/ box.</text>
   </g>
 
-  <line class="arrow" x1="560" y1="688" x2="560" y2="712"/>
+  <line class="arrow" x1="611" y1="708" x2="611" y2="732"/>
 
-  <!-- ============================= core ============================== -->
-  <rect class="band" x="20" y="716" width="1080" height="368" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
-  <text x="34" y="740" class="lname" fill="#7a4f16">core/ — the foundation (calculation, data, configuration)</text>
-  <text x="1086" y="740" class="lrule" text-anchor="end">Imports neither tkinter nor matplotlib.</text>
-
+  <!-- core -->
+  <rect class="band" x="20" y="736" width="1182" height="368" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
+  <text x="34" y="760" class="lname" fill="#7a4f16">core/ — the foundation (calculation, data, configuration)</text>
+  <text x="1188" y="760" class="lrule" text-anchor="end">Imports neither tkinter nor matplotlib.</text>
   <g>
-    <rect class="card" x="34" y="764" width="341" height="116" rx="6" stroke="#f0dcbe"/>
-    <text x="46" y="781" class="ctitle" fill="#7a4f16">Orchestration</text>
-    <text x="46" y="802" class="mod">simulation.py</text><text x="182" y="802" class="role">DEM fetch, terrain, calc</text>
-    <text x="46" y="822" class="mod">scenario.py</text>  <text x="182" y="822" class="role">condition explorer runner</text>
-
-    <rect class="card" x="389" y="764" width="341" height="176" rx="6" stroke="#f0dcbe"/>
-    <text x="401" y="781" class="ctitle" fill="#7a4f16">Pure (no side effects)</text>
-    <text x="401" y="802" class="mod">models.py</text><text x="537" y="802" class="role">propagation calculation</text>
-    <text x="401" y="822" class="mod">coords.py</text><text x="537" y="822" class="role">coordinates (DD ⇔ DMS)</text>
-    <text x="401" y="842" class="mod">units.py</text> <text x="537" y="842" class="role">distance display (km → m)</text>
-    <text x="401" y="862" class="mod">output_contract.py</text><text x="537" y="862" class="role">artifact CSV column spec</text>
-    <text x="401" y="882" class="mod">terrain_grid.py</text><text x="537" y="882" class="role">resolution → sample count</text>
-    <text x="401" y="902" class="mod">diffraction.py</text><text x="537" y="902" class="role">diffraction loss (Bullington)</text>
-    <text x="401" y="922" class="mod">disclosure.py</text><text x="537" y="922" class="role">report disclosure wording</text>
-
-    <rect class="card" x="744" y="764" width="341" height="176" rx="6" stroke="#f0dcbe"/>
-    <text x="756" y="781" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
-    <text x="756" y="802" class="mod">config.py</text>     <text x="892" y="802" class="role">config I/O, validation, log</text>
-    <text x="756" y="822" class="mod">runtime_env.py</text><text x="892" y="822" class="role">the declared interpreter</text>
-    <text x="756" y="842" class="mod">env_facts.py</text>  <text x="892" y="842" class="role">environment facts (diagnostics, stamps)</text>
-    <text x="756" y="862" class="mod">i18n.py</text>       <text x="892" y="862" class="role">string table + lang/*.json</text>
-    <text x="756" y="882" class="mod">version.py</text>    <text x="892" y="882" class="role">version information</text>
-    <text x="756" y="902" class="mod">failure.py</text>    <text x="892" y="902" class="role">failure message shape</text>
-    <text x="756" y="922" class="mod">diagnostics.py</text><text x="892" y="922" class="role">diagnostic package (artifacts opt-in)</text>
+    <rect class="card" x="34" y="784" width="377" height="76" rx="6" stroke="#f0dcbe"/>
+    <text x="46" y="801" class="ctitle" fill="#7a4f16">Orchestration</text>
+    <text x="46" y="822" class="mod">simulation.py</text> <text x="207" y="822" class="role">DEM fetch, terrain, calc</text>
+    <text x="46" y="842" class="mod">scenario.py</text> <text x="207" y="842" class="role">condition explorer runner</text>
+    <rect class="card" x="425" y="784" width="374" height="176" rx="6" stroke="#f0dcbe"/>
+    <text x="437" y="801" class="ctitle" fill="#7a4f16">Pure (no side effects)</text>
+    <text x="437" y="822" class="mod">models.py</text> <text x="598" y="822" class="role">propagation calculation</text>
+    <text x="437" y="842" class="mod">coords.py</text> <text x="598" y="842" class="role">coordinates (DD ⇔ DMS)</text>
+    <text x="437" y="862" class="mod">units.py</text> <text x="598" y="862" class="role">distance display (km → m)</text>
+    <text x="437" y="882" class="mod">output_contract.py</text> <text x="598" y="882" class="role">artifact CSV column spec</text>
+    <text x="437" y="902" class="mod">terrain_grid.py</text> <text x="598" y="902" class="role">resolution → sample count</text>
+    <text x="437" y="922" class="mod">diffraction.py</text> <text x="598" y="922" class="role">diffraction loss (Bullington)</text>
+    <text x="437" y="942" class="mod">disclosure.py</text> <text x="598" y="942" class="role">report disclosure wording</text>
+    <rect class="card" x="813" y="784" width="375" height="176" rx="6" stroke="#f0dcbe"/>
+    <text x="825" y="801" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
+    <text x="825" y="822" class="mod">config.py</text> <text x="986" y="822" class="role">config I/O, validation, log</text>
+    <text x="825" y="842" class="mod">runtime_env.py</text> <text x="986" y="842" class="role">the declared interpreter</text>
+    <text x="825" y="862" class="mod">env_facts.py</text> <text x="986" y="862" class="role">env facts (diagnostics, stamps)</text>
+    <text x="825" y="882" class="mod">i18n.py</text> <text x="986" y="882" class="role">string table + lang/*.json</text>
+    <text x="825" y="902" class="mod">version.py</text> <text x="986" y="902" class="role">version information</text>
+    <text x="825" y="922" class="mod">failure.py</text> <text x="986" y="922" class="role">failure message shape</text>
+    <text x="825" y="942" class="mod">diagnostics.py</text> <text x="986" y="942" class="role">diagnostic package (artifacts opt-in)</text>
   </g>
-
   <g>
-    <rect class="card" x="34" y="954" width="341" height="116" rx="6" stroke="#f0dcbe"/>
-    <text x="46" y="971" class="ctitle" fill="#7a4f16">DEM layer</text>
-    <text x="46" y="992" class="mod">dem.py</text><text x="182" y="992" class="role">DEM / tile single fetch, cache I/O</text>
-    <text x="46" y="1012" class="mod">dem_sources.py</text><text x="182" y="1012" class="role">DEM source declarations (URL, decode method)</text>
-    <text x="46" y="1032" class="mod">dem_cache.py</text><text x="182" y="1032" class="role">cache inventory, coverage, deletion</text>
-    <text x="46" y="1052" class="mod">dem_prefetch.py</text><text x="182" y="1052" class="role">area prefetch</text>
-
-    <text x="401" y="980" class="note">HTTP, proxies and the disk cache exist inside dem.py only</text>
-    <text x="401" y="1000" class="note">— every other layer only ever sees elevations that were already fetched.</text>
+    <rect class="card" x="34" y="974" width="377" height="116" rx="6" stroke="#f0dcbe"/>
+    <text x="46" y="991" class="ctitle" fill="#7a4f16">DEM layer</text>
+    <text x="46" y="1012" class="mod">dem.py</text> <text x="207" y="1012" class="role">DEM / tile single fetch, cache I/O</text>
+    <text x="46" y="1032" class="mod">dem_sources.py</text> <text x="207" y="1032" class="role">source declarations (URL, decoding)</text>
+    <text x="46" y="1052" class="mod">dem_cache.py</text> <text x="207" y="1052" class="role">cache inventory, coverage, deletion</text>
+    <text x="46" y="1072" class="mod">dem_prefetch.py</text> <text x="207" y="1072" class="role">area prefetch</text>
+    <text x="437" y="1000" class="note">HTTP, proxies and the disk cache exist inside dem.py only</text>
+    <text x="437" y="1020" class="note">— every other layer only ever sees elevations that were already fetched.</text>
   </g>
 
-  <text x="20" y="1112" class="note">main.py belongs to no layer (it starts the app and assembles views). Upward dependencies and import-time cycles are stopped by tests/test_layers.py.</text>
-  <text x="20" y="1132" class="note">The source of this figure is docs/images/architecture_en.svg; tests/test_docs_consistency.py checks that it lists every module.</text>
+  <text x="20" y="1132" class="note">main.py belongs to no layer (it starts the app and assembles views). Upward dependencies and import-time cycles are stopped by tests/test_layers.py.</text>
+  <text x="20" y="1152" class="note">This figure is generated from a single table (no hand-written coordinates); see “Layer Structure” in the developer guide for how to regenerate and check it.</text>
 </svg>
