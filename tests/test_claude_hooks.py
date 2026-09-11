@@ -1325,6 +1325,102 @@ class TestUpdatedStampFreshness:
         assert memcheck.check_updated_stamps() == []
 
 
+class TestDashboardStageMatchesVersion:
+    """現在地表の現行版の行が version.py の段階と一致すること（check 18・I-145）。
+
+    2026-09-12、version.py は `3.3b1` なのに表の 3.3 の行は「🔜 次の版／`3.3a1`
+    着手」のままだった＝a1 に入ったときも b1 に上がったときも追従していなかった。
+    """
+
+    @staticmethod
+    def _rows(*rows):
+        return list(enumerate(rows, start=26))
+
+    def test_beta_row_left_as_next_is_flagged(self, memcheck):
+        """実際に起きた形＝段階を言わず、次の一手が a1 のまま。"""
+        found = memcheck.check_dashboard_stage(
+            self._rows("| 3.3 | 🔜 次の版 | `3.3a1` 着手（在庫精査） |"), "3.3b1")
+        assert any("ベータ" in f for f in found)
+        assert any("3.3a1" in f for f in found)
+
+    def test_row_that_names_its_stage_passes(self, memcheck):
+        rows = self._rows("| 3.2 | ✅ リリース済 | — |",
+                          "| 3.3 | 🚧 ベータ | 段9（開発機確認）→ RC1 |")
+        assert memcheck.check_dashboard_stage(rows, "3.3b1") == []
+
+    def test_each_stage_needs_its_own_word(self, memcheck):
+        row = self._rows("| 3.3 | 🚧 ベータ | RC1 の準備 |")
+        assert memcheck.check_dashboard_stage(row, "3.3a1") != []
+        assert memcheck.check_dashboard_stage(row, "3.3RC1") != []
+        rc = self._rows("| 3.3 | 🚧 RC | 試用 |")
+        assert memcheck.check_dashboard_stage(rc, "3.3RC2") == []
+
+    def test_release_needs_leading_check_mark(self, memcheck):
+        """正式は先頭の ✅ で読む（row_says_released と同じ・I-093）。"""
+        assert memcheck.check_dashboard_stage(
+            self._rows("| 3.3 | 🚧 RC | 公開 |"), "3.3") != []
+        assert memcheck.check_dashboard_stage(
+            self._rows("| 3.3 | ✅ リリース済 | — |"), "3.3") == []
+
+    def test_earlier_tag_of_same_version_is_flagged(self, memcheck):
+        """前の段階のタグが次の一手に残っていたら鳴る。今の段階・次の段階は鳴らない。"""
+        stale = self._rows("| 3.3 | 🚧 RC | `3.3RC1` の試用結果待ち |")
+        assert any("3.3RC1" in f for f in
+                   memcheck.check_dashboard_stage(stale, "3.3RC2"))
+        ahead = self._rows("| 3.3 | 🚧 ベータ | `3.3RC1` を作る |")
+        assert memcheck.check_dashboard_stage(ahead, "3.3b1") == []
+
+    def test_other_versions_tags_are_ignored(self, memcheck):
+        """別の版（13.3・3.30 等）のタグを現行版と取り違えない。"""
+        rows = self._rows("| 3.3 | 🚧 ベータ | `13.3a1` と `3.30a1` は無関係 |")
+        assert memcheck.check_dashboard_stage(rows, "3.3b1") == []
+
+    def test_missing_row_is_flagged(self, memcheck):
+        rows = self._rows("| 3.2 | ✅ リリース済 | — |")
+        assert any("行が無い" in f for f in
+                   memcheck.check_dashboard_stage(rows, "3.3a1"))
+
+    def test_real_memory_is_clean(self, memcheck):
+        assert memcheck.check_roadmap_stage() == []
+
+
+class TestRoadmapDashboardBlocksStop:
+    """日付と表の食い違いは advisory でなく Stop を止めること（I-145）。
+
+    advisory は次の SessionStart でしか読まれない＝直し忘れた回には届かない。
+    """
+
+    def _run_main(self, memcheck, monkeypatch, capsys, finding, gate=None):
+        monkeypatch.setattr(memcheck, "_current_version", lambda: "3.3b1")
+        for name in dir(memcheck):
+            if name.startswith("check_") and callable(getattr(memcheck, name)):
+                monkeypatch.setattr(memcheck, name, lambda *a, **k: [])
+        monkeypatch.setattr(memcheck, "check_updated_stamps", lambda: [finding])
+        monkeypatch.setattr(memcheck, "PENDING_ADVISORY",
+                            memcheck.PROJ_DIR / ".claude" / ".pending_advisory.test")
+        if gate is None:
+            monkeypatch.delenv("MEMORY_GATE", raising=False)
+        else:
+            monkeypatch.setenv("MEMORY_GATE", gate)
+        monkeypatch.setattr(sys, "argv", ["check_memory.py"])
+        try:
+            memcheck.main()
+        finally:
+            memcheck.PENDING_ADVISORY.unlink(missing_ok=True)
+        return json.loads(capsys.readouterr().out)
+
+    def test_stale_stamp_blocks(self, memcheck, monkeypatch, capsys):
+        out = self._run_main(memcheck, monkeypatch, capsys, "日付の直し忘れ")
+        assert out.get("decision") == "block"
+        assert "日付の直し忘れ" in out["reason"]
+
+    def test_escape_hatch_keeps_it_as_advisory(self, memcheck, monkeypatch, capsys):
+        out = self._run_main(memcheck, monkeypatch, capsys, "日付の直し忘れ",
+                             gate="advisory")
+        assert "decision" not in out
+        assert "日付の直し忘れ" in out["systemMessage"]
+
+
 # ============================================================
 # 存在しないモジュール参照（check 6）— I-072
 # ============================================================
