@@ -3,6 +3,12 @@ dist/
 build/
 RadioSimPro-*.zip
 
+# Nuitka の実測用スクラッチビルド（I-140 段5・配布物ではない）
+nuitka_out/
+nuitka_out_onefile/
+nuitka_build_log.txt
+nuitka_build_onefile_log.txt
+
 # 生成されるアイコン
 icon.ico
 
