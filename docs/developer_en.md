@@ -229,6 +229,7 @@ radiosim/
 │   ├── diffraction.py    # Diffraction loss (Bullington edge; spherical-earth term NOT implemented)
 │   ├── ground_reflection.py # Ground-reflection (two-ray) amplitude envelope, never mixed into received power (pure)
 │   ├── sensitivity.py    # Perturbation re-run, produces margin[dB] ranges (model unchanged; pure)
+│   ├── residuals.py      # Residual vs. measurement: layered median/spread by env class × band × distance band (pure)
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile single-point fetch, elevation decode, tile cache I/O, proxy (external deps confined)
@@ -251,6 +252,7 @@ radiosim/
 │   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
 │   ├── multihop.py       # Relay path engine (A-3; waypoints to hops, min aggregation)
 │   ├── project.py        # Project file (.rsproj) I/O — bundles the whole input set
+│   ├── residuals.py      # Extracts PathResult rows into core/residuals.py's residual samples (report → core, one direction)
 │   ├── report_common.py  # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
 │   ├── report_path.py    # Per-path output generation (PNG/HTML/KML)
 │   ├── report_summary.py # Batch summary output generation (CSV/HTML/KML, all-pages document)
@@ -306,6 +308,8 @@ radiosim/
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
+    ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
+    ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -1110,6 +1114,8 @@ entry point that runs them together.
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
+| `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
+| `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |

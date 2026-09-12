@@ -178,6 +178,7 @@ BANDS: list[Band] = [
                     ("batch.py", "複数経路（CSV・一括実行）", "multiple paths (CSV + run)"),
                     ("multihop.py", "中継経路（区間を導出・min）", "relay path (sections, min)"),
                     ("project.py", ".rsproj の読み書き", ".rsproj read / write"),
+                    ("residuals.py", "PathResult → 残差標本の抽出", "PathResult → residual samples"),
                 ]]),
                 Card(("成果物の生成", "Artifact generation"), [
                     [
@@ -229,6 +230,7 @@ BANDS: list[Band] = [
                     ("ground_reflection.py", "地面反射の振幅包絡線（2波干渉）",
                      "ground reflection envelope (two-ray)"),
                     ("sensitivity.py", "摂動再計算＝余裕度の幅", "perturbation re-run, margin range"),
+                    ("residuals.py", "実測との残差＝層別の中央値・ばらつき", "measured residual, layered stats"),
                     ("disclosure.py", "帳票の開示の字（前提・適用範囲）", "report disclosure wording"),
                 ]]),
                 Card(("設定・環境・文字列", "Config, environment, strings"), [[
