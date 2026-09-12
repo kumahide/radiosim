@@ -41,6 +41,7 @@ FIX_KEYS = (
     "fix_file_read",       # 開いたファイルを確かめる
     "fix_retry_or_log",    # もう一度試し、続くならログを添えて報告
     "fix_edit_lang_file",  # 言語ファイルの該当キーを直す
+    "fix_edit_dem_sources_file",  # DEM ソース宣言ファイルの該当項目を直す
 )
 # ⚠️ **ネットワーク／プロキシの一手は語彙に置いていない**＝その文は
 # `err_dem_unreachable` の中に既にあり（型の出所そのもの）、取り出して別キーに

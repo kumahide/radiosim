@@ -17,13 +17,19 @@ Terrain-RGB の 2 種しかないので、列挙で足りる。
 `DEM_LAYERS` 直後のコメントが正典（3.3 段4b）。ここは「何を足せるか」の宣言で、
 「1 回の計算でどれを使うか」の規則はそちらが持つ。
 
-🔴 **3.3 時点で `SOURCES` に在るのは国土地理院のみ**＝Terrarium / Mapbox の
-デコード関数は将来ソースを足すときのための実装で、`dem.py` は現状これらを
-呼ばない（アクティブなソースは `GSI_DEM` だけ）。
+🔑 **3.4 段1＝利用者が宣言ファイルで足す入口**（I-147）。`load_user_sources()` が
+`core/config.py:USER_DEM_SOURCES_FILE`（TOML・利用者が手で書く・アプリは読む
+だけで書き戻さない）を読み、検証を通った宣言だけを `DemSourceSpec` へ変換する。
+**組み込みで登録するのは国土地理院だけ**のまま（このモジュールは import 時に
+ネットワーク／ファイル I/O を一切行わない＝読み込みは呼び出し側が明示的に
+`load_user_sources()` を呼んだときだけ）。
 """
 
 from __future__ import annotations
 
+import os
+import re
+import tomllib
 from dataclasses import dataclass
 from enum import Enum
 from typing import Callable
@@ -113,3 +119,170 @@ _DECODERS: dict[DecodeMethod, Callable[[int, int, int], float]] = {
 def decode(method: DecodeMethod, r: int, g: int, b: int) -> float:
     """RGB ピクセルを標高 [m] へデコードする。列挙からディスパッチするだけ（`eval` 禁止）。"""
     return _DECODERS[method](r, g, b)
+
+
+# ==============================================================================
+# 利用者の宣言ファイル（3.4 段1・I-147）
+# ==============================================================================
+
+#: `SOURCES`（組み込み）と衝突させない予約語＝`core/output_contract.py` の
+#: `elev_source` 列がこの2値を既に使っている（取得成功／取得失敗）。
+_RESERVED_SOURCE_IDS = frozenset({"gsi_dem", "unavailable"})
+
+#: `source_id` の許容書式＝英数字と `_-` のみ。**ディスクキャッシュのフォルダ名
+#: にそのまま使う**（`core/dem.py` のキャッシュパス分離）ので、`..`・`/`・`\\`
+#: を含む値を通すとパストラバーサルになり得る。この正規表現は許可リスト方式
+#: （危険文字を拒否するのではなく、安全な文字だけを許す）。
+_SOURCE_ID_RE = re.compile(r"^[A-Za-z0-9_-]+$")
+
+#: `url_template` が満たすべき最低条件。`{layer}` は複数レイヤ宣言のときだけ必須
+#: （`_validate_source` 側で `layers` の長さを見て判定する）。
+_URL_REQUIRED_PLACEHOLDERS = ("{z}", "{x}", "{y}")
+
+#: 直近の `load_user_sources()` の却下報告＝`(source_id または見出し, 却下理由キー)`。
+#: `i18n.external_reports()` と同型（画面で知らせるのは呼び出し側の仕事）。
+_load_reports: list[tuple[str, str]] = []
+
+#: 直近に読み込めた利用者宣言（`all_sources()` が `SOURCES` に足す）。
+_user_sources: list[DemSourceSpec] = []
+
+
+def _validate_source(raw: dict, seen_ids: set[str]) -> "tuple[DemSourceSpec | None, str, str]":
+    """1 つの `[[source]]` テーブルを検証する。
+
+    Returns: (成功なら DemSourceSpec、失敗なら None, 見出し（source_id かエラー
+    文脈用の代用語）, 却下理由キー（成功時は空文字列）)
+    """
+    label = str(raw.get("source_id") or "(source_id 欠落)")
+
+    source_id = raw.get("source_id")
+    if not isinstance(source_id, str) or not _SOURCE_ID_RE.match(source_id):
+        return None, label, "dem_src_bad_id"
+    if source_id in _RESERVED_SOURCE_IDS:
+        return None, source_id, "dem_src_id_reserved"
+    if source_id in seen_ids:
+        return None, source_id, "dem_src_id_duplicate"
+
+    display_name = raw.get("display_name")
+    if not isinstance(display_name, str) or not display_name.strip():
+        return None, source_id, "dem_src_missing_field"
+
+    decode_raw = raw.get("decode")
+    try:
+        decode_method = DecodeMethod(decode_raw)
+    except ValueError:
+        return None, source_id, "dem_src_bad_decode"
+
+    layers_raw = raw.get("layers")
+    if not isinstance(layers_raw, list) or not layers_raw:
+        return None, source_id, "dem_src_bad_layers"
+    layers: list[tuple[str, int]] = []
+    for item in layers_raw:
+        if (not isinstance(item, (list, tuple)) or len(item) != 2
+                or not isinstance(item[0], str) or not item[0]
+                or not isinstance(item[1], int) or isinstance(item[1], bool)):
+            return None, source_id, "dem_src_bad_layers"
+        layers.append((item[0], item[1]))
+
+    url_template = raw.get("url_template")
+    if not isinstance(url_template, str) or not url_template.startswith("https://"):
+        return None, source_id, "dem_src_bad_url"
+    if not all(ph in url_template for ph in _URL_REQUIRED_PLACEHOLDERS):
+        return None, source_id, "dem_src_bad_url"
+    if len(layers) > 1 and "{layer}" not in url_template:
+        return None, source_id, "dem_src_bad_url"
+
+    invalid_rgb_raw = raw.get("invalid_rgb")
+    invalid_rgb: "tuple[int, int, int] | None" = None
+    if invalid_rgb_raw is not None:
+        if (not isinstance(invalid_rgb_raw, (list, tuple)) or len(invalid_rgb_raw) != 3
+                or not all(isinstance(v, int) and not isinstance(v, bool)
+                           for v in invalid_rgb_raw)):
+            return None, source_id, "dem_src_bad_invalid_rgb"
+        invalid_rgb = (invalid_rgb_raw[0], invalid_rgb_raw[1], invalid_rgb_raw[2])
+
+    attribution = raw.get("attribution")
+    terms_url = raw.get("terms_url")
+    if not isinstance(attribution, str) or not attribution.strip():
+        return None, source_id, "dem_src_missing_field"
+    if not isinstance(terms_url, str) or not terms_url.strip():
+        return None, source_id, "dem_src_missing_field"
+
+    spec = DemSourceSpec(
+        source_id=source_id,
+        display_name=display_name,
+        layers=tuple(layers),
+        url_template=url_template,
+        decode=decode_method,
+        invalid_rgb=invalid_rgb,
+        attribution=attribution,
+        terms_url=terms_url,
+    )
+    return spec, source_id, ""
+
+
+def load_user_sources(path: str) -> "tuple[list[DemSourceSpec], list[tuple[str, str]]]":
+    """利用者の宣言ファイル（TOML）を読み検証する。**読むだけ**＝書き戻さない。
+
+    `core/i18n.py:load_external` と同じ設計＝①ファイルが無ければ空 ②例外を
+    投げて起動を止めない（1 つの `[[source]]` が壊れていても他は読む）。
+
+    Returns: (検証を通った DemSourceSpec のリスト, [(source_id, 却下理由キー)])
+    """
+    if not os.path.isfile(path):
+        return [], []
+
+    try:
+        with open(path, "rb") as f:
+            doc = tomllib.load(f)
+    except (OSError, tomllib.TOMLDecodeError):
+        return [], [("(dem_sources.toml)", "dem_src_file_unreadable")]
+
+    sources_raw = doc.get("source")
+    if not isinstance(sources_raw, list):
+        return [], []
+
+    specs: list[DemSourceSpec] = []
+    reports: list[tuple[str, str]] = []
+    seen_ids: set[str] = set()
+    for raw in sources_raw:
+        if not isinstance(raw, dict):
+            reports.append(("(source)", "dem_src_bad_table"))
+            continue
+        spec, label, reason = _validate_source(raw, seen_ids)
+        if spec is None:
+            reports.append((label, reason))
+            continue
+        seen_ids.add(spec.source_id)
+        specs.append(spec)
+    return specs, reports
+
+
+def load_from(path: str) -> None:
+    """`load_user_sources(path)` を呼び、結果をモジュール状態へ反映する。
+
+    起動時に 1 回呼ぶ（`main.py`）。以後 `all_sources()`/`resolve()` はこの結果を
+    参照する。**読み込みに失敗しても例外を投げない**（起動を止めない）。
+    """
+    global _user_sources, _load_reports
+    _user_sources, _load_reports = load_user_sources(path)
+
+
+def load_reports() -> list[tuple[str, str]]:
+    """直近の `load_from()` の却下報告（画面で知らせるのは呼び出し側の仕事）。"""
+    return list(_load_reports)
+
+
+def all_sources() -> tuple[DemSourceSpec, ...]:
+    """組み込み（`SOURCES`）＋利用者が宣言ファイルで足したソースの単一台帳。"""
+    return SOURCES + tuple(_user_sources)
+
+
+def resolve(source_id: str) -> DemSourceSpec:
+    """`source_id` から `DemSourceSpec` を引く。見つからなければ `GSI_DEM` へ
+    フォールバックする（プロジェクトファイルが参照するソースを利用者が宣言
+    ファイルから削除済みのケース。呼び出し側で警告する）。"""
+    for spec in all_sources():
+        if spec.source_id == source_id:
+            return spec
+    return GSI_DEM

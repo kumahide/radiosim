@@ -67,6 +67,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lang_ext_why_builtin":  "bundled languages cannot be overridden",
         "lang_ext_why_unreadable": "the file could not be loaded (bad content or a "
                                 "failed read)",
+        # ===== DEM sources declared by the user (3.4 stage1 / I-147) =====
+        "dem_src_title":        "DEM source declarations",
+        "dem_src_rejected":     "Some declared DEM sources could not be used and "
+                                "are not available.",
+        "dem_src_rejected_line": "  - {id}: {why}",
+        "fix_edit_dem_sources_file": "Fix the entry in dem_sources.toml so it "
+                                "matches the format described in the manual, then "
+                                "restart RadioSim.",
+        "dem_src_bad_id":       "source_id is missing or contains characters "
+                                "other than letters, digits, '_' or '-'",
+        "dem_src_id_reserved":  "source_id is reserved (gsi_dem / unavailable)",
+        "dem_src_id_duplicate": "source_id is used more than once in this file",
+        "dem_src_missing_field": "a required field is missing or empty",
+        "dem_src_bad_decode":   "decode is not one of the supported methods",
+        "dem_src_bad_layers":   "layers is empty or malformed",
+        "dem_src_bad_url":      "url_template must start with https:// and "
+                                "contain {z}, {x} and {y}",
+        "dem_src_bad_invalid_rgb": "invalid_rgb must be three integers",
+        "dem_src_file_unreadable": "the file could not be parsed as TOML",
+        "dem_src_bad_table":    "entry is not a table",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "menu_diagnostics":     "Save Diagnostic Package...",
@@ -232,6 +252,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_b_resolution":     "Resolution",
         "lbl_b_rain":           "Rain (mm/h)",
         "lbl_b_diff_model":     "Diff Model",
+        "lbl_dem_source":       "DEM Source",
         "btn_add_row":          "+ Add Row",
         "btn_import_csv":       "Import CSV",
         "btn_export_csv":       "Export CSV",
@@ -756,6 +777,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 読み取り中の失敗・トップレベルが配列、のいずれでもここへ来る。
         # **具体的な文言は例の欄に出る**（そちらが実際の診断）。
         "lang_ext_why_unreadable": "ファイルを読み込めません（内容の形式か、読み取りの失敗）",
+        # ===== 利用者が足した DEM ソース（3.4 段1・I-147） =====
+        "dem_src_title":        "DEM ソースの宣言",
+        "dem_src_rejected":     "宣言した DEM ソースの一部を使えませんでした。",
+        "dem_src_rejected_line": "  ・{id}: {why}",
+        "fix_edit_dem_sources_file": "dem_sources.toml の該当項目をドキュメントの"
+                                "書式に合わせて直し、RadioSim を再起動してください。",
+        "dem_src_bad_id":       "source_id が無いか、英数字と '_' '-' 以外の文字を"
+                                "含んでいます",
+        "dem_src_id_reserved":  "source_id が予約語です（gsi_dem / unavailable）",
+        "dem_src_id_duplicate": "source_id がファイル内で重複しています",
+        "dem_src_missing_field": "必須項目が無いか空です",
+        "dem_src_bad_decode":   "decode がサポートする方式のいずれでもありません",
+        "dem_src_bad_layers":   "layers が空か形式が正しくありません",
+        "dem_src_bad_url":      "url_template は https:// で始まり "
+                                "{z}・{x}・{y} を含む必要があります",
+        "dem_src_bad_invalid_rgb": "invalid_rgb は整数 3 つで指定してください",
+        "dem_src_file_unreadable": "ファイルを TOML として解釈できませんでした",
+        "dem_src_bad_table":    "項目がテーブル形式ではありません",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "menu_diagnostics":     "診断パッケージを保存...",
@@ -914,6 +953,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "lbl_b_resolution":     "解像度",
         "lbl_b_rain":           "降雨量（mm/h）",
         "lbl_b_diff_model":     "回折モデル",
+        "lbl_dem_source":       "DEM ソース",
         "btn_add_row":          "+ 行を追加",
         "btn_import_csv":       "CSVインポート",
         "btn_export_csv":       "CSVエクスポート",

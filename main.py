@@ -97,6 +97,7 @@ import darkdetect
 import sv_ttk
 
 from core import config
+from core import dem_sources
 from core import i18n
 from core import runtime_env
 from views import errors, theme, title_bar, window_fit
@@ -263,6 +264,11 @@ def main() -> None:
     # 非ポータブルでは別の場所）の両方を見る。ポータブル配置では同じ場所を
     # 二重に走査するだけ（同じ結果になる）。
     i18n.load_external(config.LANG_DIR, config.USER_LANG_DIR)
+    # 利用者が足した DEM ソースの宣言ファイルを読む（3.4 段1・I-147）。
+    # ⚠️ **読めなくても起動は続ける**＝報告はランチャーが画面で伝える
+    # （`_warn_about_rejected_dem_sources`）。同じ設計＝`i18n.load_external` の
+    # すぐ下に置く。
+    dem_sources.load_from(config.USER_DEM_SOURCES_FILE)
     # 設定ファイルが在ればその中身、無ければ初回既定の解決（I-127＝インストーラで
     # 選ばれた言語 → OS の表示言語 → "en"）。以後は利用者の選択が常に優先。
     i18n.set_lang(config.startup_lang(cfg))

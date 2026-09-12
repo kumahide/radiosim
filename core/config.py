@@ -180,6 +180,12 @@ LANG_DIR    = app_path("lang")
 #: 書ける場所も対象に足す。
 USER_LANG_DIR = _user_lang_dir()
 
+#: 利用者が DEM ソースを足す宣言ファイル（I-147・3.4 段1）の置き場。**読むだけ**
+#: ＝アプリはここへ書き込まない。`USER_LANG_DIR` と同じ基準（設定フォルダ）だが
+#: `lang/*.json` のようなディレクトリ列挙ではなく単一ファイル（TOML の
+#: `[[source]]` 配列テーブルに複数ソースを書く）。
+USER_DEM_SOURCES_FILE = os.path.join(_config_base_dir(), "dem_sources.toml")
+
 #: 起動プロファイラ（`RADIOSIM_PROFILE`）が追記するログ。**書き込み先の基準は
 #: `LOG_FILE` と同じ**（B-174）＝以前は `app_path()`（ポータブル配置専用）に
 #: 固定されていたため、非ポータブルで書込禁止の場所へ入れた場合に失敗が
@@ -424,6 +430,12 @@ DEFAULT_CONFIG: dict[str, str] = {
     "env_type"   : "los",
     "rain_rate"  : "0.0",
     "diff_method": "bullington",
+    # DEM ソース（I-147）＝`core/dem_sources.py` の `source_id`。既定は国土地理院
+    # （組み込みの唯一のアクティブソース）。有効な値の集合は起動時に読み込む
+    # 利用者の宣言ファイル次第で動くので、他の選択式（env_type 等）と違い
+    # ここには VALID_* frozenset を置かない（`dem_sources.resolve()` が
+    # 未知の値を GSI へフォールバックさせる）。
+    "dem_source" : "gsi_dem",
     "theme"      : "system",
     "lang"       : "en",
     "proxy_url"  : "",

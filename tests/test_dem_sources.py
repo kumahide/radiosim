@@ -1,8 +1,10 @@
 """
 tests/test_dem_sources.py
 =========================
-dem_sources.py（DEM ソースの宣言ファイル・3.3 段4c）のユニットテスト。
+dem_sources.py（DEM ソースの宣言ファイル・3.3 段4c／3.4 段1）のユニットテスト。
 """
+
+import textwrap
 
 import pytest
 
@@ -103,3 +105,140 @@ class TestDecodeMapboxTerrainRgb:
         base = dem_sources._decode_mapbox_terrain_rgb(0, 0, 0)
         stepped = dem_sources._decode_mapbox_terrain_rgb(0, 0, 1)
         assert stepped - base == pytest.approx(0.1, abs=1e-9)
+
+
+# ============================================================
+# 利用者の宣言ファイル（3.4 段1・I-147）
+# ============================================================
+_VALID_TERRARIUM_TOML = textwrap.dedent("""\
+    [[source]]
+    source_id = "terrarium_aws"
+    display_name = "Terrarium (AWS Open Data)"
+    layers = [["terrarium", 12]]
+    url_template = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+    decode = "terrarium"
+    attribution = "AWS Open Data Terrain Tiles"
+    terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+    """)
+
+
+@pytest.fixture(autouse=True)
+def _reset_user_sources():
+    """`load_from` が触るモジュール状態を各テストの前後で空に戻す。"""
+    dem_sources._user_sources = []
+    dem_sources._load_reports = []
+    yield
+    dem_sources._user_sources = []
+    dem_sources._load_reports = []
+
+
+class TestLoadUserSources:
+
+    def test_missing_file_returns_empty(self, tmp_path):
+        specs, reports = dem_sources.load_user_sources(str(tmp_path / "nope.toml"))
+        assert specs == []
+        assert reports == []
+
+    def test_valid_declaration_is_accepted(self, tmp_path):
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(_VALID_TERRARIUM_TOML, encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert reports == []
+        assert len(specs) == 1
+        spec = specs[0]
+        assert spec.source_id == "terrarium_aws"
+        assert spec.decode is dem_sources.DecodeMethod.TERRARIUM
+        assert spec.layers == (("terrarium", 12),)
+
+    def test_unreadable_toml_is_reported_not_raised(self, tmp_path):
+        path = tmp_path / "dem_sources.toml"
+        path.write_text("this is not [ valid toml", encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert specs == []
+        assert len(reports) == 1
+        assert reports[0][1] == "dem_src_file_unreadable"
+
+    def test_one_broken_source_does_not_block_the_others(self, tmp_path):
+        """1 つが壊れていても他は読む（`i18n.load_external` と同じ設計）。"""
+        broken_and_valid = _VALID_TERRARIUM_TOML + textwrap.dedent("""\
+
+            [[source]]
+            source_id = "broken"
+            display_name = "Broken"
+            layers = [["x", 10]]
+            url_template = "not-a-url"
+            decode = "terrarium"
+            attribution = "x"
+            terms_url = "https://example.com"
+            """)
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(broken_and_valid, encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert [s.source_id for s in specs] == ["terrarium_aws"]
+        assert [r for r in reports if r[0] == "broken"]
+
+    @pytest.mark.parametrize("mutate,reason", [
+        (lambda d: d.__setitem__("source_id", "gsi_dem"), "dem_src_id_reserved"),
+        (lambda d: d.__setitem__("source_id", "unavailable"), "dem_src_id_reserved"),
+        (lambda d: d.__setitem__("source_id", "../etc"), "dem_src_bad_id"),
+        (lambda d: d.__setitem__("source_id", "has space"), "dem_src_bad_id"),
+        (lambda d: d.__setitem__("decode", "eval"), "dem_src_bad_decode"),
+        (lambda d: d.__setitem__("decode", "os.system('x')"), "dem_src_bad_decode"),
+        (lambda d: d.__setitem__("url_template", "http://example.com/{z}/{x}/{y}.png"),
+         "dem_src_bad_url"),
+        (lambda d: d.__setitem__("url_template", "https://example.com/{z}/{x}.png"),
+         "dem_src_bad_url"),
+        (lambda d: d.__setitem__("layers", []), "dem_src_bad_layers"),
+        (lambda d: d.__setitem__("layers", [["a", "not-an-int"]]), "dem_src_bad_layers"),
+        (lambda d: d.pop("attribution"), "dem_src_missing_field"),
+        (lambda d: d.pop("terms_url"), "dem_src_missing_field"),
+    ])
+    def test_invalid_declaration_is_rejected(self, mutate, reason):
+        raw = {
+            "source_id": "terrarium_aws",
+            "display_name": "Terrarium",
+            "layers": [["terrarium", 12]],
+            "url_template": "https://s3.amazonaws.com/x/{z}/{x}/{y}.png",
+            "decode": "terrarium",
+            "attribution": "AWS Open Data",
+            "terms_url": "https://example.com",
+        }
+        mutate(raw)
+        spec, _label, got_reason = dem_sources._validate_source(raw, set())
+        assert spec is None
+        assert got_reason == reason
+
+    def test_duplicate_source_id_is_rejected(self, tmp_path):
+        doubled = _VALID_TERRARIUM_TOML + _VALID_TERRARIUM_TOML
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(doubled, encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert len(specs) == 1
+        assert any(r[1] == "dem_src_id_duplicate" for r in reports)
+
+
+class TestLoadFromAndResolve:
+
+    def test_load_from_missing_file_leaves_only_gsi(self, tmp_path):
+        dem_sources.load_from(str(tmp_path / "nope.toml"))
+        assert dem_sources.all_sources() == (dem_sources.GSI_DEM,)
+        assert dem_sources.load_reports() == []
+
+    def test_load_from_valid_file_extends_all_sources(self, tmp_path):
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(_VALID_TERRARIUM_TOML, encoding="utf-8")
+        dem_sources.load_from(str(path))
+        ids = [s.source_id for s in dem_sources.all_sources()]
+        assert ids == ["gsi_dem", "terrarium_aws"]
+
+    def test_resolve_finds_user_source(self, tmp_path):
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(_VALID_TERRARIUM_TOML, encoding="utf-8")
+        dem_sources.load_from(str(path))
+        assert dem_sources.resolve("terrarium_aws").source_id == "terrarium_aws"
+
+    def test_resolve_falls_back_to_gsi_for_unknown_id(self):
+        assert dem_sources.resolve("no-such-source") is dem_sources.GSI_DEM
+
+    def test_resolve_falls_back_to_gsi_for_known_default(self):
+        assert dem_sources.resolve("gsi_dem") is dem_sources.GSI_DEM

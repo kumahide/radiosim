@@ -22,16 +22,38 @@ import math
 import os
 
 from core import dem
+from core import dem_sources
 from core.config import logger
 
 
-# 精度レベルの優先順位（大きいほど高精度）: (layer_id, tile_zoom, level, priority)
-_OVERLAY_LAYERS: list[tuple[str, int, str, int]] = [
-    ("dem5a_png", 15, "5a",  3),
-    ("dem5b_png", 15, "5b",  2),
-    ("dem_png",   14, "dem", 1),
-]
-_PRIORITY_TO_LEVEL: dict[int, str] = {3: "5a", 2: "5b", 1: "dem"}
+# 国土地理院のレベルラベル＝**既存の "5a"/"5b"/"dem" を1文字も変えない**
+# （`views/map_style.py` の `_LEVEL_COLORS` と地図色分けが直接依存している）。
+_GSI_LEVEL_LABELS: dict[str, str] = {
+    "dem5a_png": "5a", "dem5b_png": "5b", "dem_png": "dem",
+}
+
+
+def _overlay_layers(
+    source: "dem_sources.DemSourceSpec | None" = None,
+) -> list[tuple[str, int, str, int]]:
+    """精度レベルの優先順位（大きいほど高精度）: (layer_id, tile_zoom, level, priority)。
+
+    3.4 段1（I-147）＝`source` 引数で層構成を一般化。省略時は国土地理院で、
+    レベルラベル・優先度とも従来どおり（"5a"=3 / "5b"=2 / "dem"=1）。それ以外の
+    ソースは `layer_id` そのものをレベルラベルにする（3層固定を崩さず、
+    ソースごとに層数が違ってもよいようにする）。
+    """
+    src = source if source is not None else dem_sources.GSI_DEM
+    n = len(src.layers)
+    is_gsi = src.source_id == dem_sources.GSI_DEM.source_id
+    return [
+        (layer_id, zoom, _GSI_LEVEL_LABELS[layer_id] if is_gsi else layer_id, n - i)
+        for i, (layer_id, zoom) in enumerate(src.layers)
+    ]
+
+
+def _priority_to_level(source: "dem_sources.DemSourceSpec | None" = None) -> dict[int, str]:
+    return {priority: level for _layer_id, _zoom, level, priority in _overlay_layers(source)}
 
 
 def tile_to_latlng(x: int, y: int, zoom: int) -> tuple[float, float]:
@@ -45,6 +67,7 @@ def tile_to_latlng(x: int, y: int, zoom: int) -> tuple[float, float]:
 def _scan_cached_positions(
     lat_n: float, lat_s: float,
     lon_w: float, lon_e: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> dict[tuple[int, int], int]:
     """表示範囲内の**読める**キャッシュ済みタイルを zoom-14 セル単位で集約する。
 
@@ -59,9 +82,15 @@ def _scan_cached_positions(
 
     Returns: {(x14, y14): 最高 priority}
     """
+    # ⚠️ **集約単位は常に zoom-14 セル**（GSI の `dem_png` と同じ基準・地図側の
+    # 表示ズームともここで揃える）＝`scan_cache_overlay` の統合ループが zoom=14
+    # を起点に決め打ちしているため。3.4 段1 時点では**ズーム 14 未満のレイヤを
+    # 持つ利用者ソースはカバレッジ表示の対象外**（標高取得そのものは影響を
+    # 受けない＝この関数は地図のカバレッジ表示専用）。
+    src = source if source is not None else dem_sources.GSI_DEM
     base: dict[tuple[int, int], int] = {}
-    for layer_id, tile_zoom, _level, priority in _OVERLAY_LAYERS:
-        layer_dir = os.path.join(dem.CACHE_DIR, layer_id)
+    for layer_id, tile_zoom, _level, priority in _overlay_layers(src):
+        layer_dir = dem.source_layer_dir(src.source_id, layer_id)
         if not os.path.isdir(layer_dir):
             continue
         x_min, y_min, _, _ = dem._tile_coords(lat_n, lon_w, tile_zoom)
@@ -108,6 +137,7 @@ def _scan_cached_positions(
 def count_cached_areas(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> int:
     """bbox 内で実際にキャッシュ済みの zoom-14 エリア数を返す（削除対象の件数表示用）。
 
@@ -118,13 +148,14 @@ def count_cached_areas(
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
-    return len(_scan_cached_positions(lat_n, lat_s, lon_w, lon_e))
+    return len(_scan_cached_positions(lat_n, lat_s, lon_w, lon_e, source))
 
 
 def scan_cache_overlay(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
     overlay_zoom: int,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> list[dict]:
     """表示範囲内のキャッシュを「適応的粒度」のセルに集約して返す（自動表示用）。
 
@@ -139,7 +170,8 @@ def scan_cache_overlay(
     Returns:
         [{"x": int, "y": int, "zoom": int, "level": str}, ...]
         zoom はセルごとに異なる（overlay_zoom 〜 14）。
-        level は "5a" | "5b" | "dem"。
+        level は国土地理院なら "5a" | "5b" | "dem"、それ以外のソース（3.4 段1）
+        では宣言した `layer_id` そのもの。
     """
     # dem_png は zoom-14 が上限のため overlay_zoom は 14 以下に丸める。
     overlay_zoom = max(2, min(14, overlay_zoom))
@@ -148,8 +180,10 @@ def scan_cache_overlay(
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
 
-    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)   # zoom-14 base
+    src = source if source is not None else dem_sources.GSI_DEM
+    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e, src)   # zoom-14 base
     result: list[dict] = []
+    priority_to_level = _priority_to_level(src)
 
     # 14 → overlay_zoom へ向けてボトムアップに統合する。
     # 親に統合できない（=部分的な）セルはその時点の zoom で確定出力する。
@@ -170,14 +204,14 @@ def scan_cache_overlay(
                 for c in children:
                     result.append(
                         {"x": c[0], "y": c[1], "zoom": zoom,
-                         "level": _PRIORITY_TO_LEVEL[current[c]]}
+                         "level": priority_to_level[current[c]]}
                     )
         current = promoted
         zoom -= 1
 
     # 最後まで統合された（=完全に埋まった）セルを overlay_zoom で出力
     for (x, y), prio in current.items():
-        result.append({"x": x, "y": y, "zoom": zoom, "level": _PRIORITY_TO_LEVEL[prio]})
+        result.append({"x": x, "y": y, "zoom": zoom, "level": priority_to_level[prio]})
 
     return result
 
@@ -204,6 +238,7 @@ def _simplify_grid_loop(pts: list[tuple[int, int]]) -> list[tuple[int, int]]:
 def coverage_outline(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> list[list[tuple[float, float]]]:
     """キャッシュ済み領域の和集合の外周（と穴の境界）を緯度経度ループで返す。
 
@@ -219,7 +254,7 @@ def coverage_outline(
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
-    base = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e)
+    base = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e, source)
 
     # 各セルの 4 辺を一定の回転方向で有向辺として登録し、逆向きがあれば相殺する。
     edges: set[tuple[tuple[int, int], tuple[int, int]]] = set()
@@ -270,23 +305,25 @@ def coverage_outline(
 def _enumerate_bbox(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> list[tuple]:
     """bbox 内の全タイル座標を (layer_id, zoom, x, y, subdir, cache_path) のリストで返す。
 
     Web Mercator では x が東向き増加、y が南向き増加。
     NW コーナー（最大緯度・最小経度）が最小の (x, y) になる。
     """
+    src = source if source is not None else dem_sources.GSI_DEM
     lat_n = max(lat1, lat2)
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
     tasks: list[tuple] = []
-    for layer_id, zoom in dem.DEM_LAYERS:
+    for layer_id, zoom in src.layers:
         x0, y0, _, _ = dem._tile_coords(lat_n, lon_w, zoom)  # NW: 最小 (x, y)
         x1, y1, _, _ = dem._tile_coords(lat_s, lon_e, zoom)  # SE: 最大 (x, y)
         for x in range(x0, x1 + 1):
             for y in range(y0, y1 + 1):
-                subdir     = os.path.join(dem.CACHE_DIR, layer_id, str(x))
+                subdir     = dem._cache_subdir_for(src.source_id, layer_id, x)
                 cache_path = os.path.join(subdir, f"{y}.png")
                 tasks.append((layer_id, zoom, x, y, subdir, cache_path))
     return tasks
@@ -295,13 +332,15 @@ def _enumerate_bbox(
 def delete_tile_cache(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> dict:
     """bbox 内のキャッシュファイルを削除し、メモリキャッシュも消去する。
 
     Returns:
         {"deleted": int, "errors": int}
     """
-    tiles = _enumerate_bbox(lat1, lon1, lat2, lon2)
+    src = source if source is not None else dem_sources.GSI_DEM
+    tiles = _enumerate_bbox(lat1, lon1, lat2, lon2, src)
     deleted = 0
     errors  = 0
     keys_to_clear: set[tuple] = set()
@@ -311,7 +350,7 @@ def delete_tile_cache(
             try:
                 os.remove(cache_path)
                 deleted += 1
-                keys_to_clear.add((layer_id, x, y))
+                keys_to_clear.add((src.source_id, layer_id, x, y))
                 paths_to_clear.add(cache_path)
             except OSError as e:
                 logger.warning("delete_tile_cache: %s", e)

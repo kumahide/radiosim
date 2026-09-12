@@ -15,6 +15,7 @@ from tkinter import ttk
 from typing import Callable
 
 from core import coords
+from core import dem_sources
 from core import i18n
 from core import simulation as sim
 from core import terrain_grid
@@ -255,6 +256,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         row0.pack(fill="x")
         row1 = ttk.Frame(grp_env)
         row1.pack(fill="x")
+        # DEM ソースは 2 行目（3.4 段1）＝row1 に足すと FHD で窓が入り切らない
+        # （`tests/test_window_fit.py::test_every_window_is_usable_on_fhd`）。
+        row2 = ttk.Frame(grp_env)
+        row2.pack(fill="x")
 
         def _field(parent: tk.Widget, label: str, attr: str, width: int = 8) -> None:
             f = ttk.Frame(parent)
@@ -338,6 +343,32 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ).pack(side="left", padx=(2, 0))
         self._common_keys.append("diff_method")
 
+        # DEM ソース Combobox（3.4 段1・I-147）＝env_type/diff_method と同じ形
+        # （表示名は `DemSourceSpec.display_name`＝i18n ではなくソース宣言が単一
+        # ソース）。組み込み＋利用者が宣言ファイルで足したソースの一覧を出す。
+        # ⚠️ **row1 ではなく row2**＝同じ行に足すと FHD 144dpi で窓幅が超過する。
+        f_dem = ttk.Frame(row2)
+        f_dem.pack(side="left", padx=6)
+        ttk.Label(f_dem, text=i18n.t("lbl_dem_source")).pack(side="left")
+        self._dem_source_key_to_label = {
+            s.source_id: s.display_name for s in dem_sources.all_sources()
+        }
+        self._dem_source_label_to_key = {
+            v: k for k, v in self._dem_source_key_to_label.items()
+        }
+        self._dem_source_var = tk.StringVar(
+            value=self._dem_source_key_to_label.get(
+                self._base_params.dem_source,
+                self._dem_source_key_to_label[dem_sources.GSI_DEM.source_id],
+            )
+        )
+        ttk.Combobox(
+            f_dem, textvariable=self._dem_source_var,
+            values=list(self._dem_source_key_to_label.values()),
+            state="readonly", width=16,
+        ).pack(side="left", padx=(2, 0))
+        self._common_keys.append("dem_source")
+
     def frozen_common_keys(self) -> "set[str]":
         """凍結帯「共通設定」に**実際に出している**項目のキー集合（I-101）。
 
@@ -370,6 +401,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             #    ↻ を押した瞬間に語が小文字へ化ける。
             self._diff_var.set(self._diff_key_to_label.get(
                 diff, self._diff_key_to_label[DIFF_METHOD_MULTI]))
+        dem_source = c.get("dem_source", "")
+        if dem_source:
+            self._dem_source_var.set(self._dem_source_key_to_label.get(
+                dem_source, self._dem_source_key_to_label[dem_sources.GSI_DEM.source_id]))
         if self._meta_provider is not None:
             meta = self._meta_provider()
             self._project_name_var.set(meta.get("project_name", ""))

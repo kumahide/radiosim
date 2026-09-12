@@ -39,7 +39,7 @@ import tkinter as tk
 import unicodedata
 from tkinter import ttk
 
-from core import i18n, terrain_grid
+from core import dem_sources, i18n, terrain_grid
 
 # 帯に出す項目＝`(i18n の見出しキー, SimParams の属性名)`。**順序も含めて正典**。
 RADIO_FIELDS = (
@@ -55,11 +55,12 @@ ENV_FIELDS = (
     ("lbl_b_resolution", "resolution"),
     ("lbl_b_rain",     "rain_rate"),
 )
-# 選択肢を持つ 2 つ。**複数経路では Combobox・中継経路では読み取り専用の欄**と
+# 選択肢を持つ 3 つ。**複数経路では Combobox・中継経路では読み取り専用の欄**と
 # 見せ方が違うので、上の 2 つとは別に持つ（*出すかどうか*は同じく必須）。
 SELECT_FIELDS = (
     ("lbl_env_type",    "env_type"),
     ("lbl_b_diff_model", "diff_method"),
+    ("lbl_dem_source",  "dem_source"),   # 3.4 段1（I-147）
 )
 
 # 帯に出るべき属性の全体（窓間の突き合わせの基準）。
@@ -85,6 +86,10 @@ def display_value(attr: str, value: object) -> str:
     #    既定が要るのは*帯を入力として使う側*なので、補うのはその窓の仕事。
     if attr == "resolution" and not value:
         return NOT_APPLICABLE
+    # `dem_source`（3.4 段1）＝表示名は i18n ではなく `DemSourceSpec.display_name`
+    # が単一ソース（利用者が宣言ファイルで足した名前をそのまま出す）。
+    if attr == "dem_source":
+        return dem_sources.resolve(str(value)).display_name
     prefix = {"env_type": "env_", "diff_method": "diff_opt_",
               "resolution": "res_"}.get(attr)
     return i18n.t(f"{prefix}{value}") if prefix else str(value)

@@ -26,6 +26,7 @@ import numpy as np
 from core import config
 from core import coords
 from core import dem
+from core import dem_sources
 from core import disclosure
 from core import failure
 from core import i18n
@@ -179,6 +180,10 @@ class SimParams:
             c.get("diff_method", models.DIFF_METHOD_MULTI))
         self.env_type:    str   = c.get("env_type", models.ENV_DEFAULT)
         self.rain_rate:   float = float(c.get("rain_rate", "0.0"))
+        # DEM ソース（3.4 段1・I-147）＝`core/dem_sources.py` の `source_id`。
+        # 未知の値（利用者が宣言ファイルから削除済み等）は `dem_sources.resolve()`
+        # が国土地理院へフォールバックする＝ここでは文字列のまま持ち回るだけ。
+        self.dem_source:  str   = c.get("dem_source", dem_sources.GSI_DEM.source_id)
 
 
 # ============================================================
@@ -264,6 +269,11 @@ def fetch_elevations(
             #    `linspace` を作ると、画素の縁で刻んだ位置と食い違う。
             lats, lons = sample_coords(params)
 
+            # 3.4 段1（I-147）＝1 回の計算につき 1 ソースを解決する（ループの
+            # 外で 1 回だけ）。未知の source_id は国土地理院へフォールバック
+            # （`dem_sources.resolve` の契約）。
+            dem_source = dem_sources.resolve(params.dem_source)
+
             raw_elevs: list[float] = [0.0] * params.num
             # 標本ごとに「標高を返したタイル」＝出所刻印「取得日」の根拠（B-213）
             source_tiles: list["tuple | None"] = [None] * params.num
@@ -279,7 +289,7 @@ def fetch_elevations(
                 nonlocal completed, failures, successes
                 failed = True          # 何が起きても finally で参照できる初期値
                 try:
-                    raw_elevs[idx] = dem.get_elevation(la, lo)
+                    raw_elevs[idx] = dem.get_elevation(la, lo, dem_source)
                     # 「取れなかった」は戻り値に出ない（0.0 は海抜 0m と同じ顔）。
                     # 直後に聞くのが唯一の判別手段＝B-025 ②。
                     failed = dem.network_failed()
@@ -566,7 +576,7 @@ def save_package(
     os.makedirs(save_dir, exist_ok=True)
 
     _save_settings(params, h_tx, h_rx, save_dir)
-    _save_terrain_csv(terrain, save_dir)
+    _save_terrain_csv(terrain, save_dir, params.dem_source)
     _save_report(result, params, h_tx, h_rx, save_dir, coord_format, terrain)
 
     logger.info("Package saved: %s", save_dir)
@@ -612,7 +622,14 @@ def _save_settings(
         json.dump(settings, f, indent=4, ensure_ascii=False)
 
 
-def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
+def _save_terrain_csv(
+    terrain: models.TerrainProfile, save_dir: str, dem_source_id: str,
+) -> None:
+    # 3.4 段1（I-147）＝**実際に使われたソース**を書く。`dem_source_id` は
+    # 利用者が宣言ファイルから削除済みの値かもしれない（`fetch_elevations` は
+    # `dem_sources.resolve()` で国土地理院へフォールバックして取得している）ので、
+    # ここでも同じ解決を通し、実際に効いたソースの `source_id` と一致させる。
+    source_id = dem_sources.resolve(dem_source_id).source_id
     path = os.path.join(save_dir, "terrain_profile.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -626,7 +643,7 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
             writer.writerow([
                 round(units.km_to_m(float(d)), 1),
                 "" if unavailable else round(float(h), 2),
-                "unavailable" if unavailable else "gsi_dem",
+                "unavailable" if unavailable else source_id,
             ])
 
 
@@ -641,6 +658,17 @@ def _format_dem_acquired_line(acquired: "tuple[str, str] | None") -> str:
     oldest, newest = acquired
     value = oldest if oldest == newest else f"{oldest} to {newest}"
     return f"DEM Acquired  : {value}\n"
+
+
+def _format_dem_source_line(dem_source_id: str) -> str:
+    """report.txt の「DEM ソース」出所刻印（3.4 段1・I-147）。
+
+    国土地理院のみだった 3.3 まではソース名を刻む意味が薄かった（唯一なので）。
+    利用者が宣言ファイルで足したソースが計算に効き得るようになった以上、
+    **どのソース（宣言のどの版）で計算したか**を成果物に残す必要がある。
+    """
+    src = dem_sources.resolve(dem_source_id)
+    return f"DEM Source    : {src.display_name} ({src.attribution})\n"
 
 
 def _save_report(
@@ -712,6 +740,7 @@ def _save_report(
         # （B-213）＝ここでタイルもキャッシュも引き直さない。
         + _format_dem_acquired_line(
             terrain.dem_acquired if terrain is not None else None)
+        + _format_dem_source_line(params.dem_source)
         + "\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。

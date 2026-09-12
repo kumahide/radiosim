@@ -741,6 +741,32 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 - **ディスクキャッシュ**: `terrain_cache/` に保存、アプリを終了しても保持されます
 - **地形キャッシュ**: 同じ TX/RX 座標・サンプル数なら DEM 再取得をスキップ（アプリ再起動でリセット）
 
+### DEM ソースを足す（利用者拡張）
+
+組み込みの標高データは国土地理院 DEM だけですが、リモートの XYZ PNG タイル（Terrarium 方式・Mapbox Terrain-RGB 方式のいずれか）を使う DEM ソースを、設定フォルダの宣言ファイルで自分で足せます。**改善するのはカバー範囲であって精度ではありません**（国土地理院の範囲外＝日本国外で標高が取れるようになるだけで、10m メッシュより細かくなるわけではありません）。
+
+設定フォルダ（`radiosim_conf.json` と同じ場所）に `dem_sources.toml` を作り、`[[source]]` を 1 つずつ書きます。例（Terrarium・AWS Open Data Terrain Tiles）:
+
+```toml
+[[source]]
+source_id = "terrarium_aws"
+display_name = "Terrarium (AWS Open Data)"
+layers = [["terrarium", 12]]
+url_template = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+decode = "terrarium"
+attribution = "AWS Open Data Terrain Tiles"
+terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+```
+
+- `source_id`: 英数字と `_` `-` のみ。`gsi_dem` / `unavailable` とは重複させられません（出力 CSV の `elev_source` 列の予約値のため）。
+- `decode`: `"terrarium"` または `"mapbox_terrain_rgb"` のいずれか（式を書き込む欄ではありません）。
+- `url_template`: `https://` 始まりで `{z}` `{x}` `{y}` を含む必要があります（レイヤを複数書くときは `{layer}` も必須）。
+- `layers`: `[レイヤID, ズーム]` の配列。優先順位の高い順に並べます。
+
+書けたらランチャーを再起動すると、「環境」グループの **DEM ソース** で選べるようになります。**1 回の計算で使うソースは 1 つだけ**です（経路の途中でソースが切り替わることはありません）。宣言の一部が壊れていても、その項目だけが無効になり起動は止まりません（誤りはランチャー起動時の通知に出ます）。
+
+⚠️ **基準面（datum）はソースごとに異なり得ます**＝同じ経路を国土地理院と外部ソースの両方で計算して数値を直接比較しないでください。⚠️ 利用条件は足した利用者ご自身でお確かめください（`terms_url` に案内先があります）。
+
 ---
 
 ## 保存パッケージ

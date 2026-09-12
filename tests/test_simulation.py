@@ -167,7 +167,7 @@ class TestFetchElevations:
 
     def test_calls_on_complete_with_array(self, default_params_dict, monkeypatch):
         """on_complete が numpy 配列で呼ばれること。"""
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 100.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo, *_a: 100.0)
 
         results = {}
         done    = threading.Event()
@@ -191,7 +191,7 @@ class TestFetchElevations:
 
     def test_on_progress_called_for_each_sample(self, default_params_dict, monkeypatch):
         """on_progress がサンプル数だけ呼ばれること。"""
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 0.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo, *_a: 0.0)
         default_params_dict["samples"] = "20"
 
         progress_calls = []
@@ -215,7 +215,7 @@ class TestFetchElevations:
         """例外発生時に on_error が呼ばれること。"""
         monkeypatch.setattr(
             dem, "get_elevation",
-            lambda la, lo: (_ for _ in ()).throw(RuntimeError("network fail")),
+            lambda la, lo, *_a: (_ for _ in ()).throw(RuntimeError("network fail")),
         )
 
         errors = {}
@@ -251,7 +251,7 @@ class TestDemCircuitBreaker:
 
     def _run(self, params, *, elevation, failed, samples_seen=None):
         """フェイクの DEM で 1 回走らせ、(完了した配列, 例外) を返す。"""
-        def _get(la, lo):
+        def _get(la, lo, *_a):
             if samples_seen is not None:
                 samples_seen.append((la, lo))
             return elevation(la, lo) if callable(elevation) else elevation
@@ -320,7 +320,7 @@ class TestDemCircuitBreaker:
             state["n"] += 1
             return state["n"] % 3 == 0      # 3 点に 1 点は通信失敗
 
-        out = self._run(params, elevation=lambda la, lo: 120.0, failed=failed)
+        out = self._run(params, elevation=lambda la, lo, *_a: 120.0, failed=failed)
         assert "error" not in out, f"取れているのに落ちた: {out.get('error')!r}"
         assert len(out["elevs"]) == params.num
 
@@ -352,7 +352,7 @@ class TestFetchElevationsCached:
     def test_cache_miss_calls_get_elevation(self, default_params_dict, monkeypatch):
         """キャッシュミス時は get_elevation が呼ばれること。"""
         call_count = {"n": 0}
-        def counting_get(la, lo):
+        def counting_get(la, lo, *_a):
             call_count["n"] += 1
             return 100.0
         monkeypatch.setattr(dem, "get_elevation", counting_get)
@@ -371,7 +371,7 @@ class TestFetchElevationsCached:
     def test_cache_hit_skips_get_elevation(self, default_params_dict, monkeypatch):
         """同一パラメータで2回目の呼び出しは get_elevation を呼ばないこと。"""
         call_count = {"n": 0}
-        def counting_get(la, lo):
+        def counting_get(la, lo, *_a):
             call_count["n"] += 1
             return 100.0
         monkeypatch.setattr(dem, "get_elevation", counting_get)
@@ -399,7 +399,7 @@ class TestFetchElevationsCached:
 
     def test_cache_hit_returns_same_array(self, default_params_dict, monkeypatch):
         """キャッシュヒット時に返る配列が1回目と同じ値であること。"""
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 42.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo, *_a: 42.0)
         params = sim.SimParams(default_params_dict)
 
         results = {}
@@ -417,7 +417,7 @@ class TestFetchElevationsCached:
     def test_different_coords_not_shared(self, default_params_dict, monkeypatch):
         """TX/RX 座標が異なる場合はキャッシュを共有しないこと。"""
         call_count = {"n": 0}
-        def counting_get(la, lo):
+        def counting_get(la, lo, *_a):
             call_count["n"] += 1
             # ⚠️ nan を返さない：全点 nan は「DEM 全滅」としてキャッシュされない
             # （B-025・3.2）ので、nan だとキャッシュの共有可否を検査できなくなる。
@@ -445,7 +445,7 @@ class TestFetchElevationsCached:
         """キャッシュヒット時は on_progress(num) が呼ばれてプログレスバーが満杯になること。"""
         # ⚠️ nan を返さない：全点 nan はキャッシュされない（B-025・3.2）ため、
         # 2回目がキャッシュヒットにならず、この検査が素通りしてしまう。
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: 120.0)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo, *_a: 120.0)
         params = sim.SimParams(default_params_dict)
 
         # 1回目でキャッシュ生成
@@ -490,7 +490,7 @@ class TestFetchElevationsCached:
     def test_all_zero_result_is_not_cached(self, default_params_dict, monkeypatch):
         """全点 nan（通信の失敗）の結果はキャッシュに入らず、次回はやり直すこと。"""
         call_count = {"n": 0}
-        def failing_get(la, lo):
+        def failing_get(la, lo, *_a):
             call_count["n"] += 1
             return np.nan                   # ＝全レイヤが通信の失敗で終わった戻り値（3.2）
         monkeypatch.setattr(dem, "get_elevation", failing_get)
@@ -512,7 +512,7 @@ class TestFetchElevationsCached:
         ここで握り潰すと「実行したのに何も起きない」になる。失敗の伝播と画面での
         提示は別の対応（B-025 の ②③）で、この変更の担当ではない。
         """
-        monkeypatch.setattr(dem, "get_elevation", lambda la, lo: np.nan)
+        monkeypatch.setattr(dem, "get_elevation", lambda la, lo, *_a: np.nan)
         params = sim.SimParams(default_params_dict)
 
         got = {}
@@ -527,7 +527,7 @@ class TestFetchElevationsCached:
         地理院サーバーへ余計な負荷をかける（設計方針④）。
         """
         state = {"fail": True, "n": 0}
-        def flaky_get(la, lo):
+        def flaky_get(la, lo, *_a):
             state["n"] += 1
             return np.nan if state["fail"] else 120.0
         monkeypatch.setattr(dem, "get_elevation", flaky_get)
@@ -549,7 +549,7 @@ class TestFetchElevationsCached:
         部分的な 0 を疑い始めると正当な地形を捨てることになる。
         """
         call_count = {"n": 0}
-        def mostly_zero_get(la, lo):
+        def mostly_zero_get(la, lo, *_a):
             call_count["n"] += 1
             return 0.0 if call_count["n"] > 1 else 30.0
         monkeypatch.setattr(dem, "get_elevation", mostly_zero_get)
@@ -693,7 +693,7 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
         first_5m = [True]
         valid = (0, 39, 16)          # 有効な標高（!= 0.0）になる画素
 
-        def fake(layer_id, zoom, xtile, ytile, cache_subdir, cache_path):
+        def fake(layer_id, zoom, xtile, ytile, cache_subdir, cache_path, source=None):
             if layer_id == dem.DEM_LAYERS[0][0]:
                 if first_5m[0]:
                     first_5m[0] = False
@@ -701,7 +701,7 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
                     return None
             elif layer_id != dem.DEM_LAYERS[-1][0]:
                 with dem._cache_lock:
-                    dem._failed_tiles.add((layer_id, xtile, ytile))
+                    dem._failed_tiles.add(("gsi_dem", layer_id, xtile, ytile))
                 return None
             if not os.path.exists(cache_path):
                 os.makedirs(cache_subdir, exist_ok=True)

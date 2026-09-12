@@ -460,7 +460,7 @@ def _process_one(
         path_dir = os.path.join(batch_dir, row.path_id)
         os.makedirs(path_dir, exist_ok=True)
         sim._save_settings(params, params.h_tx, params.h_rx, path_dir)
-        sim._save_terrain_csv(terrain, path_dir)
+        sim._save_terrain_csv(terrain, path_dir, params.dem_source)
         sim._save_report(result, params, params.h_tx, params.h_rx, path_dir,
                          coord_format, terrain)
         pr = PathResult(
@@ -537,6 +537,7 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         "env_type"   : base.env_type,
         "rain_rate"  : str(base.rain_rate),
         "diff_method": base.diff_method,
+        "dem_source" : base.dem_source,   # 3.4 段1（I-147）
     }
     return sim.SimParams(c)
 

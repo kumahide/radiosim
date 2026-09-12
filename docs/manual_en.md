@@ -742,6 +742,32 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 - **Disk cache**: Tiles saved to `terrain_cache/`, persists across sessions
 - **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart)
 
+### Adding a DEM Source (User Extension)
+
+The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it only lets you get elevation outside Japan, where GSI has no data; it does not give you a finer mesh than 10 m).
+
+Create `dem_sources.toml` in the settings folder (the same folder as `radiosim_conf.json`) and add one `[[source]]` entry per source. Example (Terrarium, AWS Open Data Terrain Tiles):
+
+```toml
+[[source]]
+source_id = "terrarium_aws"
+display_name = "Terrarium (AWS Open Data)"
+layers = [["terrarium", 12]]
+url_template = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+decode = "terrarium"
+attribution = "AWS Open Data Terrain Tiles"
+terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+```
+
+- `source_id`: letters, digits, `_` and `-` only. Cannot be `gsi_dem` or `unavailable` (reserved values of the `elev_source` output CSV column).
+- `decode`: either `"terrarium"` or `"mapbox_terrain_rgb"` (this is a fixed choice, not a place to write an expression).
+- `url_template`: must start with `https://` and contain `{z}`, `{x}` and `{y}` (also `{layer}` if you declare more than one layer).
+- `layers`: an array of `[layer_id, zoom]` pairs, listed from highest to lowest priority.
+
+After saving the file, restart the launcher and the new source appears in the **DEM Source** field of the Environment group. **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens.
+
+⚠️ **The vertical datum can differ between sources** — do not directly compare numbers from the same path computed with GSI and with an external source. ⚠️ Checking the terms of use is your own responsibility (see the `terms_url` for each source).
+
 ---
 
 ## Save Package

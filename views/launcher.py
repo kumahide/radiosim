@@ -18,6 +18,7 @@ from core import config
 from core import coords
 from core import dem
 from core import dem_prefetch
+from core import dem_sources
 from core import failure
 from core import i18n
 from core import simulation as sim
@@ -105,6 +106,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 意味がある（1 度きりの通知は、直す機会を逃した人には無かったのと同じ）。
         root.after_idle(self._warn_about_rejected_translations)
         root.after_idle(self._warn_about_legacy_data)
+        # 利用者が足した DEM ソース宣言のうち使えなかったぶんを画面で言う
+        # （3.4 段1・I-147＝上と同じ理由で毎回出す）。
+        root.after_idle(self._warn_about_rejected_dem_sources)
 
     #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
     #: 理由と 1 対 1**（理由を足したらここも足す＝`tests/test_i18n_external.py`
@@ -164,6 +168,27 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 hint   = i18n.t("fix_edit_lang_file"),
                 detail = detail,
             ))
+
+    def _warn_about_rejected_dem_sources(self) -> None:
+        """宣言ファイルの DEM ソースのうち使えなかったぶんを 1 通で知らせる（I-147）。
+
+        `_warn_about_rejected_translations` と同じ形＝**壊れた宣言だけを落として
+        起動は続ける**（`dem_sources.load_from` が main.py で先に済ませている）。
+        起動のたびに出す＝直すまで言い続ける。
+        """
+        reports = dem_sources.load_reports()
+        if not reports:
+            return
+        lines = [
+            i18n.t("dem_src_rejected_line").format(
+                id=source_id, why=i18n.t(reason))
+            for source_id, reason in reports
+        ]
+        self._alert(i18n.t("dem_src_title"), failure.message(
+            what   = i18n.t("dem_src_rejected"),
+            hint   = i18n.t("fix_edit_dem_sources_file"),
+            detail = "\n".join(lines),
+        ))
 
     def _warn_about_legacy_data(self) -> None:
         """3.1 の保存先移設で exe の隣に残った旧配置のデータを知らせる（3.2）。
@@ -357,6 +382,36 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         )
         cb_diff.pack(side="right", expand=True, fill="x")
         Tooltip(cb_diff, i18n.t("tip_diff_method"))
+
+        # DEM ソース Combobox（3.4 段1・I-147）＝env_type/diff_method と同じ
+        # readonly 選択式。組み込み（国土地理院）＋利用者が宣言ファイルで足した
+        # ソースの一覧を出す（入力画面は作らない＝一覧を出すだけ）。
+        f_dem = ttk.Frame(g)
+        f_dem.pack(fill="x", pady=2, padx=10)
+        ttk.Label(
+            f_dem, text=i18n.t("lbl_dem_source"), width=22, anchor="w",
+        ).pack(side="left")
+        self._dem_source_key_to_label = {
+            s.source_id: s.display_name for s in dem_sources.all_sources()
+        }
+        self._dem_source_label_to_key = {
+            v: k for k, v in self._dem_source_key_to_label.items()
+        }
+        saved_dem_source = self.config.get("dem_source", dem_sources.GSI_DEM.source_id)
+        self._dem_source_var = tk.StringVar(
+            value=self._dem_source_key_to_label.get(
+                saved_dem_source,
+                self._dem_source_key_to_label[dem_sources.GSI_DEM.source_id],
+            )
+        )
+        cb_dem_source = ttk.Combobox(
+            f_dem,
+            textvariable = self._dem_source_var,
+            values       = list(self._dem_source_key_to_label.values()),
+            state        = "readonly",
+            width        = 16,
+        )
+        cb_dem_source.pack(side="right", expand=True, fill="x")
 
         for lbl_key, entry_key in [
             ("lbl_veg_h",    "veg_h"),
@@ -887,6 +942,13 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                     self._diff_key_to_label["bullington"],
                 )
             )
+        if "dem_source" in conf:
+            self._dem_source_var.set(
+                self._dem_source_key_to_label.get(
+                    str(conf["dem_source"]),
+                    self._dem_source_key_to_label[dem_sources.GSI_DEM.source_id],
+                )
+            )
         if "resolution" in conf:
             self._res_var.set(
                 self._res_key_to_label.get(
@@ -911,6 +973,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         c = {k: self.entries[k].get() for k in self.entries}
         c["env_type"]    = self._env_label_to_key.get(self._env_var.get(), "los")
         c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "bullington")
+        c["dem_source"]  = self._dem_source_label_to_key.get(
+            self._dem_source_var.get(), dem_sources.GSI_DEM.source_id)
         c["resolution"]  = self._resolution_key()
         self._coords_to_dd(c)
         return c

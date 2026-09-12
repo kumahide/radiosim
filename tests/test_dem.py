@@ -18,6 +18,7 @@ from core import config
 from core import dem
 from core import dem_cache
 from core import dem_prefetch
+from core import dem_sources
 
 
 # ============================================================
@@ -180,7 +181,7 @@ class TestTileAcquiredDate:
     def _layer0_key(self):
         layer_id, zoom = dem.DEM_LAYERS[0]
         xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
-        return (layer_id, xtile, ytile)
+        return ("gsi_dem", layer_id, xtile, ytile)
 
     def test_returns_none_when_tile_has_no_disk_file(self, tmp_path, monkeypatch):
         """ディスクに実体が無ければ None（メモリにだけある異常系も含む）。"""
@@ -233,7 +234,7 @@ class TestLastSourceTile:
     def _key(self, layer_index):
         layer_id, zoom = dem.DEM_LAYERS[layer_index]
         xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
-        return (layer_id, xtile, ytile)
+        return ("gsi_dem", layer_id, xtile, ytile)
 
     def test_names_the_fallback_layer_when_the_first_fails(self, monkeypatch):
         """先頭レイヤが一時失敗して最後のレイヤで値が出たら、答えは最後のレイヤ。"""
@@ -265,6 +266,92 @@ class TestLastSourceTile:
         dem._tile_cache.clear()
         assert dem.get_elevation(self._LAT, self._LON) == 0.0   # 全レイヤ 404 相当
         assert dem.last_source_tile() is None
+
+
+# ============================================================
+# 単一ソース強制（3.4 段1・I-147）
+# `core/dem.py` の `DEM_LAYERS` 直後の規則＝1 回の `get_elevation` 呼び出しは
+# 単一ソースの `layers` だけを降下し、プロバイダをまたいだ降下フォールバックを
+# しない。
+# ============================================================
+class TestSingleSourcePerCalculation:
+
+    _LAT, _LON = 10.0, 20.0
+
+    _OTHER_SOURCE = dem_sources.DemSourceSpec(
+        source_id="other_source",
+        display_name="Other Source",
+        layers=(("layer_a", 10), ("layer_b", 9)),
+        url_template="https://example.com/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Other",
+        terms_url="https://example.com",
+    )
+
+    @pytest.fixture(autouse=True)
+    def clear_tile_cache(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def test_only_the_given_sources_layers_are_tried(self, monkeypatch):
+        """`source=` を渡すと、その `layers` だけを降下し GSI の層は一切見ない。"""
+        seen_layers: list[str] = []
+
+        def fake(layer_id, *_a, **_kw):
+            seen_layers.append(layer_id)
+            return None   # 全滅させて全レイヤを踏ませる
+
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        dem.get_elevation(self._LAT, self._LON, self._OTHER_SOURCE)
+
+        assert seen_layers == ["layer_a", "layer_b"]
+        gsi_layer_ids = {lid for lid, _z in dem.DEM_LAYERS}
+        assert not gsi_layer_ids & set(seen_layers), (
+            "他ソースの計算経路で国土地理院のレイヤへ降下フォールバックしている"
+        )
+
+    def test_default_source_is_gsi(self, monkeypatch):
+        """`source` 省略時は国土地理院＝既存の挙動を変えない。"""
+        seen_layers: list[str] = []
+
+        def fake(layer_id, *_a, **_kw):
+            seen_layers.append(layer_id)
+            return None
+
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        dem.get_elevation(self._LAT, self._LON)
+
+        assert seen_layers == [lid for lid, _z in dem.DEM_LAYERS]
+
+    def test_tile_cache_is_namespaced_by_source(self, monkeypatch):
+        """別ソースのタイルキャッシュキーは `source_id` を含み、GSI と衝突しない。"""
+        valid = (0, 39, 16)
+
+        def fake(layer_id, zoom, xtile, ytile, cache_subdir, cache_path, source=None):
+            return np.full((256, 256, 3), valid, dtype=np.uint8)
+
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        dem.get_elevation(self._LAT, self._LON, self._OTHER_SOURCE)
+
+        assert any(key[0] == "other_source" for key in dem._tile_cache)
+        assert not any(key[0] == "gsi_dem" for key in dem._tile_cache)
+
+    def test_disk_cache_path_is_namespaced_by_source(self):
+        """別ソースのディスクキャッシュは `CACHE_DIR/<source_id>/...` へ分離される。"""
+        path = dem._cache_subdir_for("other_source", "layer_a", 123)
+        assert os.path.normpath(path) == os.path.normpath(
+            os.path.join(dem.CACHE_DIR, "other_source", "layer_a", "123"))
+
+    def test_gsi_disk_cache_path_is_unchanged(self):
+        """国土地理院はソース分離の対象外＝既存キャッシュを移さない（完了条件①）。"""
+        path = dem._cache_subdir_for("gsi_dem", "dem5a_png", 123)
+        assert os.path.normpath(path) == os.path.normpath(
+            os.path.join(dem.CACHE_DIR, "dem5a_png", "123"))
 
 
 class TestFetchTile:
@@ -706,7 +793,7 @@ class TestFailedTileNegativeCache:
             "dem_png", 14, 111, 222, str(tmp_path), str(tmp_path / "a.png")
         )
         assert result is None
-        assert ("dem_png", 111, 222) in dem._failed_tiles
+        assert ("gsi_dem", "dem_png", 111, 222) in dem._failed_tiles
 
     def test_transient_5xx_does_not_populate_failed_tiles(self, tmp_path, monkeypatch):
         self._mock_session(monkeypatch, lambda *a, **k: self._status(503))
@@ -1699,19 +1786,20 @@ class TestCacheDeletion:
             f.write(b"\x89PNG")
 
         # メモリキャッシュ: bbox 内キーは消え、bbox 外キーは残ること。
+        # 3.4 段1（I-147）＝キーは (source_id, layer_id, x, y) の4要素。
         layer_id, _, x, y, _, _ = tiles[0]
-        dem._tile_cache[(layer_id, x, y)] = np.zeros(1)
-        dem._tile_cache[("dem_png", 0, 0)] = np.zeros(1)
-        dem._failed_tiles.add((layer_id, x, y))
+        dem._tile_cache[("gsi_dem", layer_id, x, y)] = np.zeros(1)
+        dem._tile_cache[("gsi_dem", "dem_png", 0, 0)] = np.zeros(1)
+        dem._failed_tiles.add(("gsi_dem", layer_id, x, y))
 
         res = dem_cache.delete_tile_cache(*self.BBOX)
 
         assert res == {"deleted": len(tiles), "errors": 0}
         assert all(not os.path.exists(p) for *_, p in tiles)
         assert os.path.exists(outside_file)
-        assert (layer_id, x, y) not in dem._tile_cache
-        assert ("dem_png", 0, 0) in dem._tile_cache
-        assert (layer_id, x, y) not in dem._failed_tiles
+        assert ("gsi_dem", layer_id, x, y) not in dem._tile_cache
+        assert ("gsi_dem", "dem_png", 0, 0) in dem._tile_cache
+        assert ("gsi_dem", layer_id, x, y) not in dem._failed_tiles
 
     def test_missing_files_count_zero(self, tmp_path, monkeypatch):
         """未取得エリアの範囲削除は deleted=0（存在しないものを数えない）。"""

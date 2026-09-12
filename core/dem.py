@@ -266,11 +266,39 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
     return xtile, ytile, px, py
 
 
-def get_elevation(lat: float, lon: float) -> float:
-    """
-    国土地理院 DEM PNG から標高 [m] を取得する。
+def source_layer_dir(source_id: str, layer_id: str) -> str:
+    """レイヤ 1 つぶんのディスクキャッシュの根（3.4 段1＝ソースごとに分離）。
 
-    DEM_LAYERS の順（5m → 5m → 10m）に試み、
+    🔑 **国土地理院は現状の場所のまま**（`CACHE_DIR/<layer_id>/`）＝既存の
+    キャッシュを移さない（I-147 完了条件①）。それ以外のソースは
+    `CACHE_DIR/<source_id>/<layer_id>/` へ分ける＝利用者の宣言した `layer_id`
+    が国土地理院のレイヤ名（`dem5a_png` 等）や他ソースと衝突してもファイルが
+    混ざらない。`core/dem_cache.py` のカバレッジ走査もここを通る。
+    """
+    if source_id == dem_sources.GSI_DEM.source_id:
+        return os.path.join(CACHE_DIR, layer_id)
+    return os.path.join(CACHE_DIR, source_id, layer_id)
+
+
+def _cache_subdir_for(source_id: str, layer_id: str, xtile: int) -> str:
+    """タイル 1 枚ぶんのディスクキャッシュ置き場（`source_layer_dir` の下の x 桁）。"""
+    return os.path.join(source_layer_dir(source_id, layer_id), str(xtile))
+
+
+def get_elevation(
+    lat: float, lon: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
+) -> float:
+    """
+    DEM PNG タイルから標高 [m] を取得する。
+
+    Args:
+        source: 標高ソース（3.4 段1・I-147）。省略時は国土地理院（`GSI_DEM`）＝
+            **単一の計算経路の中で降下するのは常にこの 1 ソースの `layers` だけ**
+            （`core/dem.py` の `DEM_LAYERS` 直後の規則＝プロバイダをまたいだ
+            降下フォールバックをしない）。
+
+    `source.layers` の順（高精度 → 低精度）に試み、
     タイル取得成功かつデコード値が有効（!= 0.0）なら返す。
 
     🔑 **不変条件＝`nan` を返すのは `network_failed()` が真のときだけ**
@@ -288,13 +316,14 @@ def get_elevation(lat: float, lon: float) -> float:
     続けて読めば、返ってきた値が `nan` かどうかと**同じ答え**が得られる
     （B-025 ②で先に立てた `network_failed()` をそのまま契約の判定に使い回す）。
     """
+    src = source if source is not None else dem_sources.GSI_DEM
     _network_trouble.flag = False
     _source_tile.key = None
     try:
-        for layer_id, zoom in DEM_LAYERS:
+        for layer_id, zoom in src.layers:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
-            tile_key     = (layer_id, xtile, ytile)
-            cache_subdir = os.path.join(CACHE_DIR, layer_id, str(xtile))
+            tile_key     = (src.source_id, layer_id, xtile, ytile)
+            cache_subdir = _cache_subdir_for(src.source_id, layer_id, xtile)
             cache_path   = os.path.join(cache_subdir, f"{ytile}.png")
 
             # ── キャッシュ確認（ロック保持は辞書参照のみ）────────────
@@ -304,7 +333,7 @@ def get_elevation(lat: float, lon: float) -> float:
                 cached = _tile_cache.get(tile_key)
 
             if cached is not None:
-                elev = _decode_elevation(cached[py, px])
+                elev = _decode_elevation(cached[py, px], src)
                 if elev != 0.0:
                     _network_trouble.flag = False
                     _source_tile.key = tile_key
@@ -316,7 +345,7 @@ def get_elevation(lat: float, lon: float) -> float:
                 continue
 
             # ── キャッシュミス：ロックを解放してネットワーク取得 ─────
-            arr = _fetch_tile(layer_id, zoom, xtile, ytile, cache_subdir, cache_path)
+            arr = _fetch_tile(layer_id, zoom, xtile, ytile, cache_subdir, cache_path, src)
 
             # ── 取得結果を書き込み ────────────────────────────────────
             #   arr is None のときの負キャッシュ登録は _fetch_tile 側で行う
@@ -330,7 +359,7 @@ def get_elevation(lat: float, lon: float) -> float:
                     continue
                 _tile_cache.setdefault(tile_key, arr)  # 競合時は先着優先
 
-            elev = _decode_elevation(arr[py, px])
+            elev = _decode_elevation(arr[py, px], src)
             if elev != 0.0:
                 # 別レイヤで通信に失敗していても、値が取れたなら失敗ではない。
                 _network_trouble.flag = False
@@ -366,9 +395,9 @@ def get_elevation(lat: float, lon: float) -> float:
 
 
 def tile_acquired_date(tile_key: tuple) -> "str | None":
-    """タイル `(layer_id, xtile, ytile)`（＝`last_source_tile()` の答え）の
-    **取得日**（ISO 8601 の日付・ローカルタイムゾーン）。3.3 段4e＝出所刻印
-    「取得日」の値。
+    """タイル `(source_id, layer_id, xtile, ytile)`（＝`last_source_tile()` の答え・
+    3.4 段1でソース識別子が先頭に加わった）の**取得日**（ISO 8601 の日付・
+    ローカルタイムゾーン）。3.3 段4e＝出所刻印「取得日」の値。
 
     🔑 **「実行日」ではなく「タイルを取った日」**＝DEM はディスクキャッシュ経由
     なので、キャッシュヒットでは過去の日付になり得る。それこそが「このレポートの
@@ -380,8 +409,8 @@ def tile_acquired_date(tile_key: tuple) -> "str | None":
     標高を返したのとは別のタイルを答え得る（`last_source_tile` の註）。
     ⚠️ **ネットワークへは出ない**。ディスクに実体が無ければ None。
     """
-    layer_id, xtile, ytile = tile_key
-    cache_path = os.path.join(CACHE_DIR, layer_id, str(xtile), f"{ytile}.png")
+    source_id, layer_id, xtile, ytile = tile_key
+    cache_path = os.path.join(_cache_subdir_for(source_id, layer_id, xtile), f"{ytile}.png")
     try:
         mtime = os.path.getmtime(cache_path)
     except OSError:
@@ -478,6 +507,7 @@ def _fetch_tile(
     ytile: int,
     cache_subdir: str,
     cache_path: str,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> "np.ndarray | None":
     """タイル画像を取得して numpy 配列で返す。失敗時は None。
 
@@ -487,12 +517,13 @@ def _fetch_tile(
       - 一時失敗（タイムアウト・接続エラー・5xx/429 等）: 回復し得るので
         _failed_tiles には登録しない。登録すると回復後もそのタイルを無視し
         続け、標高が誤る（= B-010）。
+
+    Args:
+        source: URL テンプレートの出所（3.4 段1）。省略時は国土地理院
+            （淡色地図＝`BASEMAP_LAYER` の取得もここを通るので既定にしてある）。
     """
-    # 淡色地図（BASEMAP_LAYER="pale"）も DEM も同じ国土地理院タイルサーバーなので
-    # URL テンプレートは GSI_DEM のものを共用する（宣言ファイル・3.3 段4c）。
-    url = dem_sources.GSI_DEM.url_template.format(
-        layer=layer_id, z=zoom, x=xtile, y=ytile
-    )
+    src = source if source is not None else dem_sources.GSI_DEM
+    url = src.url_template.format(layer=layer_id, z=zoom, x=xtile, y=ytile)
     # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
     # **読めなかったことは書き側へ持ち越す**＝壊れた相手だけ置換してよい（B-136）。
     cached = _read_cached_tile(cache_path) if os.path.exists(cache_path) else None
@@ -517,7 +548,7 @@ def _fetch_tile(
         if res.status_code == 404:
             # 恒久欠落 = 負キャッシュに登録して再リクエストを抑止。
             with _cache_lock:
-                _failed_tiles.add((layer_id, xtile, ytile))
+                _failed_tiles.add((src.source_id, layer_id, xtile, ytile))
             logger.debug(
                 "tile absent (404) layer=%s tile=(%d,%d)",
                 layer_id, xtile, ytile,
@@ -547,12 +578,16 @@ def _fetch_tile(
         return None
 
 
-def _decode_elevation(rgb: np.ndarray) -> float:
-    """RGB ピクセル値から標高 [m] をデコードする（現在の唯一のアクティブソース＝
-    `dem_sources.GSI_DEM`）。デコード式そのものは [core/dem_sources.py](dem_sources.py)
-    の宣言（3.3 段4c）が単一ソース。"""
+def _decode_elevation(
+    rgb: np.ndarray,
+    source: "dem_sources.DemSourceSpec | None" = None,
+) -> float:
+    """RGB ピクセル値から標高 [m] をデコードする。省略時は国土地理院
+    （`dem_sources.GSI_DEM`）。デコード式そのものは [core/dem_sources.py](dem_sources.py)
+    の宣言（3.3 段4c／3.4 段1）が単一ソース。"""
+    src = source if source is not None else dem_sources.GSI_DEM
     r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
-    return dem_sources.decode(dem_sources.DecodeMethod.GSI_DEM, r, g, b)
+    return dem_sources.decode(src.decode, r, g, b)
 
 
 # ============================================================
