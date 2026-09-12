@@ -1128,6 +1128,40 @@ class TestProcessOne:
         assert any(f.endswith(".png") for f in produced), "断面 PNG が無い"
         assert any(f.endswith(".kml") for f in produced), "KML が無い"
 
+    def test_report_keeps_the_dem_acquired_date(
+            self, tmp_path, default_params_dict, monkeypatch):
+        """バッチの各 report.txt にも `DEM Acquired` が出ること（B-213 追補・Codex 100 巡目）。
+
+        🔴 取得日を結果（`TerrainProfile.dem_acquired`）へ運ぶ形にしたとき、単一実行の
+        配線だけ直してバッチ（`_fetch_sync` → `_process_one`）を落とした＝バッチの
+        report.txt から行が必ず消えた。**本物の `fetch_elevations` を通し、タイルの
+        読み込みと日付だけを差し替える**（`fetch_elevations` ごと差し替えると、取得日を
+        確定する段そのものを飛ばしてしまい、配線の抜けが見えない）。
+        """
+        from core import dem
+        i18n.set_lang("en")
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "dem"))
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        sim.clear_terrain_cache()
+        valid = (0, 39, 16)          # 有効な標高（!= 0.0）になる画素
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda *a, **k: np.full((256, 256, 3), valid, dtype=np.uint8))
+        monkeypatch.setattr(dem, "tile_acquired_date", lambda key: "2026-08-01")
+        try:
+            pr = batch._process_one(_row(), sim.SimParams(default_params_dict),
+                                    str(tmp_path), lambda done, tot: None)
+        finally:
+            dem._tile_cache.clear()
+            dem._failed_tiles.clear()
+            sim.clear_terrain_cache()
+        assert pr.ok and pr.terrain is not None, pr.error
+        assert pr.terrain.dem_acquired == ("2026-08-01", "2026-08-01")
+        with open(os.path.join(pr.save_dir, "report.txt"), encoding="utf-8") as f:
+            text = f.read()
+        assert "DEM Acquired  : 2026-08-01" in text, text
+
     def test_fetch_failure_is_contained_in_result(
             self, tmp_path, default_params_dict, monkeypatch):
         """DEM 取得失敗は例外を漏らさず PathResult(error=...) に封じ込める。"""
