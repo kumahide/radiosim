@@ -561,18 +561,19 @@ http://proxy.example.com:8080
 
 必須列: `id, start, end, h_tx, h_rx`
 
-省略可能列: `freq, gain_tx, gain_rx, note`
+省略可能列: `freq, gain_tx, gain_rx, note, meas_dbm, meas_method, feeder_loss_db, env_class`
 
 ```csv
-id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note
-path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,メイン回線
-path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線
+id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note,meas_dbm,meas_method,feeder_loss_db,env_class
+path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,メイン回線,-78.5,spot,2.1,suburban
+path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 ```
 
 - `start` / `end` は「緯度, 経度」の形式でダブルクォートで囲んでください
 - `freq` / `gain_tx` / `gain_rx` を省略した場合は共通設定の値が使われます（**リンク識別属性**＝経路ごとに変えられる）。環境区分・降雨強度・回折モデルは共通設定で一括指定します
 - `gain_tx` / `gain_rx` 列のない旧 CSV もそのまま読めます（後方互換・利得は共通設定を継承）
 - 列名は**大小文字と前後の空白を区別しません**（`ID,Start,…` でも読めます）。`id` は**大小文字を区別せず**一意である必要があります（`p01` と `P01` は同じ出力フォルダになるため重複として弾かれます）
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ（3.4/3.5）用の任意列（単一ソース＝`batch.PathRow`）。現時点ではパース・書き出しのみで、残差計算はまだ実装していない（3.4 段5 の予定）。`meas_method` は `spot` / `mean` の想定値。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
 
 ### 共通設定（ランチャーのスナップショット）
 

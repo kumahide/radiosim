@@ -563,18 +563,19 @@ The **Dist(m)** column on the right is read-only and is computed from the TX/RX 
 
 Required columns: `id, start, end, h_tx, h_rx`
 
-Optional columns: `freq, gain_tx, gain_rx, note`
+Optional columns: `freq, gain_tx, gain_rx, note, meas_dbm, meas_method, feeder_loss_db, env_class`
 
 ```csv
-id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note
-path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link
-path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
+id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note,meas_dbm,meas_method,feeder_loss_db,env_class
+path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link,-78.5,spot,2.1,suburban
+path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 ```
 
 - `start` / `end` must be quoted because they contain a comma
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements (3.4/3.5); single source is `batch.PathRow`. For now they are only parsed and written back — residual calculation is not implemented yet (planned for 3.4 stage 5). `meas_method` is expected to be `spot` or `mean`. **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 

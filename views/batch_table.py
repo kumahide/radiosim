@@ -167,7 +167,16 @@ class _TableMixin(_HostBase):
         end   = coords.reformat(c.get("end", ""),   self._coord_format)
         return self._frozen_row(idx, start, end)
 
-    def _add_row(self, row_data: "batch.PathRow | list[str] | None" = None) -> None:
+    def _add_row(self, row_data: "batch.PathRow | list[str] | None" = None, *,
+                 meas: "dict | None" = None) -> None:
+        """行を1つ追加する。
+
+        `meas` は実測突合せ用の任意フィールド（`meas_dbm` など・3.4 段3）で、
+        表には列を持たない。**並行リストではなく行フレームの属性として運ぶ**
+        （`_verdict_label` と同じ理由＝行が消えれば一緒に消える）。`row_data` が
+        `PathRow` ならそこから取り、`list`（複製・並べ替えの内部呼び出し）なら
+        呼び出し側が明示的に渡す。
+        """
         idx      = len(self._row_frames)
         row_frame = ttk.Frame(self._table_frame)
         row_frame.pack(fill="x")
@@ -187,6 +196,12 @@ class _TableMixin(_HostBase):
                 str(row_data.gain_rx) if row_data.gain_rx is not None else "",
                 row_data.note,
             ]
+            meas = {
+                "meas_dbm":       row_data.meas_dbm,
+                "meas_method":    row_data.meas_method,
+                "feeder_loss_db": row_data.feeder_loss_db,
+                "env_class":      row_data.env_class,
+            }
         elif self._config_provider is not None:
             # 凍結方式：その時点のランチャー欄（座標＋RF）を文字列コピーして固定。
             defaults = self._frozen_defaults(idx)
@@ -294,6 +309,7 @@ class _TableMixin(_HostBase):
         for e in entries:
             e.bind("<Button-3>", _menu)
 
+        row_frame._meas = dict(meas) if meas is not None else {}  # type: ignore[attr-defined]
         self._row_entries.append(entries)
         self._canvas.update_idletasks()
         self._canvas.yview_moveto(1.0)
@@ -525,7 +541,11 @@ class _TableMixin(_HostBase):
             n += 1
         vals = list(vals)
         vals[0] = new_pid
-        self._add_row(vals)
+        meas = {}
+        if entries in self._row_entries:
+            src_frame = self._row_frames[self._row_entries.index(entries)]
+            meas = getattr(src_frame, "_meas", {})
+        self._add_row(vals, meas=meas)
 
     # ----------------------------------------------------------
     # per-row 往復（右クリックメニュー・案A）
@@ -644,9 +664,12 @@ class _TableMixin(_HostBase):
     def _move_row(self, from_idx: int, to_idx: int) -> None:
         """from_idx の行を to_idx 位置に移動してテーブルを再構築する。"""
         all_vals = [[e.get() for e in entries] for entries in self._row_entries]
+        all_meas = [getattr(f, "_meas", {}) for f in self._row_frames]
         item = all_vals.pop(from_idx)
+        meas_item = all_meas.pop(from_idx)
         adjusted = to_idx - 1 if to_idx > from_idx else to_idx
         all_vals.insert(adjusted, item)
+        all_meas.insert(adjusted, meas_item)
         # 並べ替えはパス集合が不変なので地図再描画は不要。逐次通知を抑止して
         # 再構築し、終了後の通知も行わない（_add_row 側の通知も抑止される）。
         self._suspend_notify = True
@@ -655,8 +678,8 @@ class _TableMixin(_HostBase):
                 f.destroy()
             self._row_frames.clear()
             self._row_entries.clear()
-            for vals in all_vals:
-                self._add_row(vals)
+            for vals, meas in zip(all_vals, all_meas):
+                self._add_row(vals, meas=meas)
         finally:
             self._suspend_notify = False
         self._run_sync()
@@ -679,9 +702,10 @@ class _TableMixin(_HostBase):
     def _read_table_rows(self) -> list[batch.PathRow]:
         """テーブルの入力内容を PathRow リストに変換する。NaN でパース失敗を表現する。"""
         rows: list[batch.PathRow] = []
-        for entries in self._row_entries:
+        for entries, frame in zip(self._row_entries, self._row_frames):
             vals = [e.get().strip() for e in entries]
             pid, start, end, h_tx_s, h_rx_s, freq_s, gain_tx_s, gain_rx_s, note = vals
+            meas = getattr(frame, "_meas", {})
 
             if not pid and not start and not end:
                 continue  # 完全空行はスキップ
@@ -721,6 +745,10 @@ class _TableMixin(_HostBase):
                 gain_tx  = _parse_opt_float(gain_tx_s),
                 gain_rx  = _parse_opt_float(gain_rx_s),
                 note     = note,
+                meas_dbm       = meas.get("meas_dbm"),
+                meas_method    = meas.get("meas_method", ""),
+                feeder_loss_db = meas.get("feeder_loss_db"),
+                env_class      = meas.get("env_class", ""),
             ))
         return rows
 

@@ -1431,6 +1431,90 @@ class TestParseCsvOptionalColumns:
         row = batch._parse_csv_row(self._raw(gain_tx="", freq=" "), line=2)
         assert row.gain_tx is None and row.freq_mhz is None
 
+    def test_measurement_columns_round_trip(self, tmp_path):
+        # 実測突合せ用の任意列（3.4 段3・I-147 の隣＝roadmap 3.4）。
+        row = batch._parse_csv_row(self._raw(
+            meas_dbm="-78.5", meas_method="spot",
+            feeder_loss_db="2.1", env_class="suburban"), line=2)
+        assert row.meas_dbm == -78.5
+        assert row.meas_method == "spot"
+        assert row.feeder_loss_db == 2.1
+        assert row.env_class == "suburban"
+
+        csv_path = str(tmp_path / "out.csv")
+        batch.export_csv([row], csv_path)
+        reloaded = batch.parse_csv(csv_path)[0]
+        assert reloaded.meas_dbm == -78.5
+        assert reloaded.meas_method == "spot"
+        assert reloaded.feeder_loss_db == 2.1
+        assert reloaded.env_class == "suburban"
+
+    def test_measurement_columns_default_blank(self):
+        row = batch._parse_csv_row(self._raw(), line=2)
+        assert row.meas_dbm is None
+        assert row.meas_method == ""
+        assert row.feeder_loss_db is None
+        assert row.env_class == ""
+
+
+class TestMeasurementColumnsSurviveTheTable:
+    """実測突合せ用の任意列は表に列を持たないため、CSV インポート後に**複製・
+    並べ替えをしても失われない**こと（3.4 段3）。
+
+    表の行は `_row_entries`（Entry の文字列）だけで構成され、`meas_*` は
+    行フレームの属性として運ばれる（`_verdict_label` と同じ「並行リストを
+    持たない」設計＝I-041 の注記）。複製・並べ替えはいずれも行を作り直す
+    経路（`_add_row` を list 引数で呼ぶ）を通るため、そこで meas を渡し忘れると
+    利用者が現地でしか記録できない値が黙って消える。
+    """
+
+    def _win(self, default_params_dict):
+        from conftest import make_tk_root
+        import views.batch_builder as bb
+
+        root = make_tk_root()
+        root.withdraw()
+        win = bb.BatchBuilderWindow(root, sim.SimParams(default_params_dict))
+        return root, win
+
+    def _import_one_row(self, win, tmp_path):
+        csv_path = str(tmp_path / "in.csv")
+        batch.export_csv([batch.PathRow(
+            path_id="p01", lat_tx=34.54, lon_tx=132.41,
+            lat_rx=34.53, lon_rx=132.40, h_tx=30.0, h_rx=10.0,
+            meas_dbm=-78.5, meas_method="spot",
+            feeder_loss_db=2.1, env_class="suburban",
+        )], csv_path)
+        win.replace_rows(batch.parse_csv(csv_path))
+
+    def test_survives_duplicate(self, default_params_dict, tmp_path):
+        root, win = self._win(default_params_dict)
+        try:
+            self._import_one_row(win, tmp_path)
+            win._dup_row(win._row_entries[0])
+            rows = win._read_table_rows()
+            assert len(rows) == 2
+            for row in rows:
+                assert row.meas_dbm == -78.5
+                assert row.meas_method == "spot"
+                assert row.feeder_loss_db == 2.1
+                assert row.env_class == "suburban"
+        finally:
+            win.destroy(); root.destroy()
+
+    def test_survives_move(self, default_params_dict, tmp_path):
+        root, win = self._win(default_params_dict)
+        try:
+            self._import_one_row(win, tmp_path)
+            win._add_row(["p02", "", "", "20", "5", "", "", "", ""])
+            win._move_row(0, 2)
+            rows = {row.path_id: row for row in win._read_table_rows()}
+            assert rows["p01"].meas_dbm == -78.5
+            assert rows["p01"].env_class == "suburban"
+            assert rows["p02"].meas_dbm is None
+        finally:
+            win.destroy(); root.destroy()
+
 
 # ============================================================
 # レポート v2 ＝ summary の全パス俯瞰地図（スライス③a）

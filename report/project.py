@@ -367,6 +367,10 @@ _BATCH_ROW_FIELDS = (
     Field("freq_mhz", OPT_NUMBER),
     Field("gain_tx",  OPT_NUMBER), Field("gain_rx", OPT_NUMBER),
     Field("note",     TEXT),
+    Field("meas_dbm",       OPT_NUMBER),
+    Field("meas_method",    TEXT),
+    Field("feeder_loss_db", OPT_NUMBER),
+    Field("env_class",      TEXT),
 )
 
 # 条件探索＝`ScenarioSpec` の写し
@@ -569,8 +573,8 @@ def from_dict(data: dict) -> ProjectDoc:
     return doc
 
 
-# ⚠️ **`_row_from_dict` は削除した**（2026-08-05・I-065）＝バッチ行 11 項目の
-#    読みは `_BATCH_ROW_FIELDS` の 11 行になった。要素が dict であることの検査は
+# ⚠️ **`_row_from_dict` は削除した**（2026-08-05・I-065）＝バッチ行の
+#    読みは `_BATCH_ROW_FIELDS` の各行になった。要素が dict であることの検査は
 #    `_dicts` が既に担っているので、関数側の `isinstance` も不要になっている。
 
 
@@ -589,7 +593,8 @@ def unreadable_row(rows: "list[batch.PathRow] | None") -> "batch.PathRow | None"
         return None
     for row in rows:
         for value in (row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx,
-                      row.h_tx, row.h_rx, row.freq_mhz, row.gain_tx, row.gain_rx):
+                      row.h_tx, row.h_rx, row.freq_mhz, row.gain_tx, row.gain_rx,
+                      row.meas_dbm, row.feeder_loss_db):
             if value is not None and not math.isfinite(value):
                 return row
     return None

@@ -74,6 +74,11 @@ class PathRow:
     gain_tx:  float | None = None
     gain_rx:  float | None = None
     note:     str          = ""
+    # 実測突合せ（3.4/3.5）用の任意列。省略した行は残差計算の対象から除外する。
+    meas_dbm:        float | None = None
+    meas_method:     str          = ""
+    feeder_loss_db:  float | None = None
+    env_class:       str          = ""
 
 
 @dataclass
@@ -128,7 +133,8 @@ _REQUIRED_COLS = {"id", "start", "end", "h_tx", "h_rx"}
 
 # CSV スキーマの正準（出力ヘッダ順）。required の後に optional。
 # ドキュメント整合テストはこの定数を単一ソースに README の CSV 節を照合する。
-CSV_COLUMNS = ["id", "start", "end", "h_tx", "h_rx", "freq", "gain_tx", "gain_rx", "note"]
+CSV_COLUMNS = ["id", "start", "end", "h_tx", "h_rx", "freq", "gain_tx", "gain_rx", "note",
+               "meas_dbm", "meas_method", "feeder_loss_db", "env_class"]
 OPTIONAL_COLS = [c for c in CSV_COLUMNS if c not in _REQUIRED_COLS]
 
 def parse_csv(csv_path: str) -> list[PathRow]:
@@ -231,6 +237,10 @@ def _parse_csv_row(raw: dict, line: int) -> PathRow:
         gain_tx  = _opt_float("gain_tx"),
         gain_rx  = _opt_float("gain_rx"),
         note     = raw.get("note", "").strip(),
+        meas_dbm       = _opt_float("meas_dbm"),
+        meas_method    = raw.get("meas_method", "").strip(),
+        feeder_loss_db = _opt_float("feeder_loss_db"),
+        env_class      = raw.get("env_class", "").strip(),
     )
 
 
@@ -250,6 +260,10 @@ def export_csv(rows: list[PathRow], csv_path: str) -> None:
                 r.gain_tx  if r.gain_tx  is not None else "",
                 r.gain_rx  if r.gain_rx  is not None else "",
                 r.note,
+                r.meas_dbm if r.meas_dbm is not None else "",
+                r.meas_method,
+                r.feeder_loss_db if r.feeder_loss_db is not None else "",
+                r.env_class,
             ])
 
 

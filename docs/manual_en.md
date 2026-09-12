@@ -435,17 +435,30 @@ The **Dist (m)** column on the right is read-only and computed from the TX/RX co
 
 Required columns: `id, start, end, h_tx, h_rx`
 
-Optional columns: `freq, gain_tx, gain_rx, note`
+Optional columns: `freq, gain_tx, gain_rx, note, meas_dbm, meas_method, feeder_loss_db, env_class`
 
 ```csv
-id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note
-path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link
-path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link
+id,start,end,h_tx,h_rx,freq,gain_tx,gain_rx,note,meas_dbm,meas_method,feeder_loss_db,env_class
+path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link,-78.5,spot,2.1,suburban
+path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 ```
 
 - `start` / `end` must be quoted because they contain a comma
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings values when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are for matching field measurements against the model. See "Recording field measurements" below
+
+#### Recording field measurements
+
+Filling in a measured receive level lets a future version compare it against the model's prediction (residual). **These values can only be recorded at measurement time** — they cannot be added later, so capture them on site.
+
+- `meas_dbm`: measured receive level (dBm)
+- `meas_method`: `spot` (a single-point reading) or `mean` (spatial average over multiple points). **Spot readings can be off by ±5-10 dB due to multipath**, so mark them as `spot` to keep them distinguishable when the data is later used for statistics
+- `feeder_loss_db`: feed-line loss (cable type, length, and connectors combined, dB)
+- `env_class`: self-assessed environment class (`urban` / `suburban` / `rural` / `los`). This is not visible in the DEM, so record it based on what you actually saw on site
+- Enter the **actual installed height** in `h_tx` / `h_rx` — not the planned/design value
+
+The following also matter but have no dedicated CSV column — keep them as separate notes or photos so the measurement's value isn't lost later: date/time and weather, the receiver model and reading unit (dBm / S-meter / raw RSSI) and whether it was calibrated, transmit power and antenna models, and anything along the path the DEM doesn't show (buildings on a ridgeline, tree species/height, etc.).
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
 
 ### Common Settings (a snapshot of the launcher)
