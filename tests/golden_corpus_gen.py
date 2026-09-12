@@ -88,7 +88,10 @@ LINKS: list[dict] = [
          h_tx=160, h_rx=120, freq=900, p_tx=25, gain_tx=12, gain_rx=12,
          sens=-95, veg_h=18, k=1.33, samples=240, env="rural", diff="bullington", rain=0),
 
-    # --- 山岳・長距離（曲率と k ファクタが効く） ---
+    # --- 山岳・長距離（回折損が大きい帯） ---
+    # ⚠️ 曲率（earth_k）は振らない＝製品が等価地球半径係数を 4/3 固定にしている
+    #    （CHANGELOG.md「等価地球半径係数・4/3 固定」／刻印 earth_k_fixed）。
+    #    振れないものを振ると名乗らない（B-175）。
     dict(id="fuji_kawaguchi", start=(35.5045, 138.7688), end=(35.4870, 138.6870),
          h_tx=110, h_rx=110, freq=2400, p_tx=20, gain_tx=18, gain_rx=18,
          sens=-85, veg_h=20, k=1.33, samples=200, env="rural", diff="bullington", rain=0),
