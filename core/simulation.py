@@ -12,6 +12,7 @@ ViewModel 相当のオーケストレーター。
 View はこのモジュールを呼ぶだけでよく、計算や I/O の詳細を知らない。
 """
 
+import copy
 import csv
 import json
 import logging
@@ -509,6 +510,42 @@ def clear_terrain_cache() -> None:
     """
     with _terrain_cache_lock:
         _terrain_cache.clear()
+
+
+def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray:
+    """`params` の座標で、`level`（`terrain_grid.RESOLUTION_KEYS`）の解像度の標高配列を
+    同期取得する（3.4 段4・感度計算の「解像度」軸専用）。
+
+    `params` 自体は変更しない（別解像度用の複製を作って渡す）。`fetch_elevations_cached`
+    を通すので、DEM タイル自体は既にキャッシュ済みなら再取得は起きない
+    （`core/scenario.py::_fetch_sync` と同じパターンの同期化）。
+    """
+    alt = copy.copy(params)
+    alt.resolution = level
+    alt.sample_fracs = terrain_grid.path_sample_fractions(
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level)
+    alt.sample_pixel_groups = terrain_grid.sample_pixel_groups(
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level)
+    alt.num = len(alt.sample_fracs)
+
+    out: list[np.ndarray] = []
+    err: list[Exception] = []
+    done = threading.Event()
+
+    def _on_complete(elevs: np.ndarray) -> None:
+        out.append(elevs)
+        done.set()
+
+    def _on_error(ex: Exception) -> None:
+        err.append(ex)
+        done.set()
+
+    fetch_elevations_cached(alt, on_progress=lambda n: None,
+                             on_complete=_on_complete, on_error=_on_error)
+    done.wait()
+    if err:
+        raise err[0]
+    return out[0]
 
 
 # ============================================================

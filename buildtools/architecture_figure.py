@@ -226,6 +226,9 @@ BANDS: list[Band] = [
                     ("output_contract.py", "成果物 CSV の列仕様", "artifact CSV column spec"),
                     ("terrain_grid.py", "解像度の段階 → 点数", "resolution → sample count"),
                     ("diffraction.py", "回折損（Bullington・J(ν)）", "diffraction loss (Bullington)"),
+                    ("ground_reflection.py", "地面反射の振幅包絡線（2波干渉）",
+                     "ground reflection envelope (two-ray)"),
+                    ("sensitivity.py", "摂動再計算＝余裕度の幅", "perturbation re-run, margin range"),
                     ("disclosure.py", "帳票の開示の字（前提・適用範囲）", "report disclosure wording"),
                 ]]),
                 Card(("設定・環境・文字列", "Config, environment, strings"), [[

@@ -227,6 +227,8 @@ radiosim/
 ├── core/                 # Foundation: calculation, data, config. Pulls neither tkinter nor matplotlib
 │   ├── models.py         # Pure calculation logic (no side effects)
 │   ├── diffraction.py    # Diffraction loss (Bullington edge; spherical-earth term NOT implemented)
+│   ├── ground_reflection.py # Ground-reflection (two-ray) amplitude envelope, never mixed into received power (pure)
+│   ├── sensitivity.py    # Perturbation re-run, produces margin[dB] ranges (model unchanged; pure)
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile single-point fetch, elevation decode, tile cache I/O, proxy (external deps confined)
@@ -302,6 +304,8 @@ radiosim/
     ├── test_models.py
     ├── test_golden_links.py   # Regression corpus (golden link-budget values + purity invariants)
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
+    ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
+    ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -1104,6 +1108,8 @@ entry point that runs them together.
 | `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for 26 representative links (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
+| `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
+| `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |

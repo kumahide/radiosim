@@ -227,6 +227,8 @@ radiosim/
 ├── core/                 # 土台＝計算・データ・設定。tkinter も matplotlib も引かない
 │   ├── models.py         # 純粋計算ロジック（副作用ゼロ）
 │   ├── diffraction.py    # 回折損（Bullington 等価ナイフエッジ。球面回折は未実装）
+│   ├── ground_reflection.py # 地面反射（2波干渉）の振幅包絡線・受信電力へは混ぜない（純関数）
+│   ├── sensitivity.py    # 摂動再計算＝余裕度[dB]の幅を出す（モデル無変更・純関数）
 │   ├── simulation.py     # ViewModel / オーケストレーター
 │   ├── config.py         # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
 │   ├── dem.py            # DEM/淡色タイルの1点取得・標高デコード・タイルキャッシュI/O・プロキシ（外部依存を閉じ込め）
@@ -301,6 +303,8 @@ radiosim/
     ├── test_models.py
     ├── test_golden_links.py   # 回帰コーパス（代表回線のゴールデン値＋純関数の不変条件）
     ├── golden_corpus_gen.py  # 同コーパスの生成器（手動実行・実 DEM を取得）
+    ├── test_ground_reflection.py  # 地面反射の振幅包絡線（3.4 段4）
+    ├── test_sensitivity.py    # 摂動再計算エンジン（3.4 段4）
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -1093,6 +1097,8 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・hops.csv／合成シート）|
 | `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・節の欠損は「持たない」・新しい schema の拒否・破損の扱い）|
 | `test_golden_links.py`   | 回帰コーパス＝代表回線 26 本の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
+| `test_ground_reflection.py` | 地面反射（2波干渉）の振幅包絡線＝反射点が両端から十分離れているかの判定・既存の計算経路を変えないことの回帰（3.4 段4） |
+| `test_sensitivity.py`    | 摂動再計算エンジン＝各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・多ホップの argmin 入れ替わり（3.4 段4） |
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
