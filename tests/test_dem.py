@@ -177,23 +177,24 @@ class TestTileAcquiredDate:
             os.utime(path, (mtime, mtime))
         return path
 
-    def test_returns_none_when_no_tile_cached_anywhere(self, tmp_path, monkeypatch):
-        """メモリにもディスクにも無ければ None（ネットワークへは出ない）。"""
-        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+    def _layer0_key(self):
+        layer_id, zoom = dem.DEM_LAYERS[0]
+        xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
+        return (layer_id, xtile, ytile)
 
-    def test_returns_none_for_invalid_pixel(self, tmp_path, monkeypatch):
-        """全レイヤが無効値ピクセル（(128,0,0)）なら None（get_elevation と同じ判定）。"""
+    def test_returns_none_when_tile_has_no_disk_file(self, tmp_path, monkeypatch):
+        """ディスクに実体が無ければ None（メモリにだけある異常系も含む）。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        self._write_layer0_tile(tmp_path, (128, 0, 0))
-        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+        dem._tile_cache[self._layer0_key()] = np.full(
+            (256, 256, 3), [0, 39, 16], dtype=np.uint8)
+        assert dem.tile_acquired_date(self._layer0_key()) is None
 
     def test_never_calls_fetch_tile(self, tmp_path, monkeypatch):
-        """未取得のタイルがあっても取りに行かない（`_fetch_tile` を一切呼ばない）。"""
+        """未取得のタイルでも取りに行かない（`_fetch_tile` を一切呼ばない）。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         called = []
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: called.append(1))
-        dem.tile_acquired_date(self._LAT, self._LON)
+        dem.tile_acquired_date(self._layer0_key())
         assert not called
 
     def test_reflects_disk_tile_mtime_not_now(self, tmp_path, monkeypatch):
@@ -208,37 +209,62 @@ class TestTileAcquiredDate:
         old = dt.datetime(2020, 1, 2, 3, 4, 5)
         self._write_layer0_tile(tmp_path, (0, 39, 16), mtime=old.timestamp())
 
-        result = dem.tile_acquired_date(self._LAT, self._LON)
+        result = dem.tile_acquired_date(self._layer0_key())
         assert result == "2020-01-02"
         assert result != dt.date.today().isoformat()
 
-    def test_reflects_disk_mtime_even_when_tile_is_in_memory(self, tmp_path, monkeypatch):
-        """`_tile_cache`（メモリ）にヒットする経路でも、日付の根拠は結局
-        ディスクファイルの mtime（メモリ配列自体はいつ書かれたかを持たない）。
-        `get_elevation` はメモリヒットのとき `_fetch_tile`/ファイル読み直しを
-        しないが、`tile_acquired_date` は常にファイルの mtime を見に行く。
-        """
-        import datetime as dt
 
+# ============================================================
+# last_source_tile（B-213＝取得日の根拠は「標高を返したタイル」）
+# ============================================================
+class TestLastSourceTile:
+
+    _LAT, _LON = 10.0, 20.0
+
+    @pytest.fixture(autouse=True)
+    def clear_tile_cache(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        old = dt.datetime(2019, 6, 15)
-        self._write_layer0_tile(tmp_path, (0, 39, 16), mtime=old.timestamp())
-        layer_id, zoom = dem.DEM_LAYERS[0]
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def _key(self, layer_index):
+        layer_id, zoom = dem.DEM_LAYERS[layer_index]
         xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
-        dem._tile_cache[(layer_id, xtile, ytile)] = np.full(
-            (256, 256, 3), [0, 39, 16], dtype=np.uint8)
+        return (layer_id, xtile, ytile)
 
-        assert dem.tile_acquired_date(self._LAT, self._LON) == "2019-06-15"
+    def test_names_the_fallback_layer_when_the_first_fails(self, monkeypatch):
+        """先頭レイヤが一時失敗して最後のレイヤで値が出たら、答えは最後のレイヤ。"""
+        def fake(layer_id, *_a):
+            if layer_id == dem.DEM_LAYERS[-1][0]:
+                return np.full((256, 256, 3), [0, 39, 16], dtype=np.uint8)
+            dem._network_trouble.flag = True
+            return None
 
-    def test_returns_none_when_memory_tile_has_no_disk_file(self, tmp_path, monkeypatch):
-        """メモリにはあるがディスク実体が消えている（異常系）場合は None。"""
-        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
-        layer_id, zoom = dem.DEM_LAYERS[0]
-        xtile, ytile, _, _ = dem._tile_coords(self._LAT, self._LON, zoom)
-        dem._tile_cache[(layer_id, xtile, ytile)] = np.full(
-            (256, 256, 3), [0, 39, 16], dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        assert dem.get_elevation(self._LAT, self._LON) != 0.0
+        assert dem.last_source_tile() == self._key(-1)
 
-        assert dem.tile_acquired_date(self._LAT, self._LON) is None
+    def test_names_the_memory_hit(self, monkeypatch):
+        """メモリのタイルに命中した点も、そのタイルを答える。"""
+        dem._tile_cache[self._key(0)] = np.full((256, 256, 3), [0, 39, 16],
+                                                dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a: None)
+        dem.get_elevation(self._LAT, self._LON)
+        assert dem.last_source_tile() == self._key(0)
+
+    def test_is_none_when_no_value_came_back(self, monkeypatch):
+        """値を返さなかった点（全レイヤ失敗）は None＝前の点のタイルを持ち越さない。"""
+        dem._tile_cache[self._key(0)] = np.full((256, 256, 3), [0, 39, 16],
+                                                dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a: None)
+        dem.get_elevation(self._LAT, self._LON)
+        assert dem.last_source_tile() is not None
+        dem._tile_cache.clear()
+        assert dem.get_elevation(self._LAT, self._LON) == 0.0   # 全レイヤ 404 相当
+        assert dem.last_source_tile() is None
 
 
 class TestFetchTile:

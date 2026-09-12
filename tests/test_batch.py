@@ -2011,13 +2011,17 @@ class TestSummaryLedgerKeepsItsWidth:
     LONG_ID   = "hatsukaichi_kita_relay_extra_long_identifier"
     SHEET     = (("div", frozenset({"sheet", "summary"})),)
 
-    def _min_width(self, tmp_path, default_params_dict, *, path_id="p01", note=""):
+    def _min_width(self, tmp_path, default_params_dict, *, path_id="p01", note="",
+                   artifact_failed=False):
         from tests import table_fit
 
         params = sim.SimParams(default_params_dict)
         row = batch.PathRow(path_id, 34.54, 132.41, 34.53, 132.40, 30.0, 10.0)
         row.note = note
-        results = [batch.PathResult(row=row, result=_make_result(), params=params)]
+        pr = batch.PathResult(row=row, result=_make_result(), params=params)
+        if artifact_failed:
+            pr.artifact_error = RuntimeError("boom")
+        results = [pr]
         i18n.set_lang("ja")
         out = tmp_path / f"{path_id[:12]}_{len(note)}"
         out.mkdir()
@@ -2036,6 +2040,31 @@ class TestSummaryLedgerKeepsItsWidth:
             "ID が長いだけで台帳が広がる（折り返しが効いていない）"
             f"（{narrow:.0f}px → {wide:.0f}px）"
         )
+
+    def test_a_long_note_on_an_artifact_failure_does_not_widen_the_ledger(
+            self, tmp_path, default_params_dict):
+        """成果物の保存に失敗した行は、備考をグラフ列（`td.c-missing`）へ出す
+        （I-143 決定 3）＝自由文なので長くても表を押し広げないこと（B-214）。
+
+        🔴 `c-missing` は骨格の `td{white-space:nowrap}` をそのまま継いでいた＝
+        備考が長いほど表が広がり、印字域の外へ出た（実測 516px → 1148px）。
+        """
+        def width(note):
+            self._min_width(tmp_path, default_params_dict,
+                            path_id=f"p{len(note):03d}", note=note, artifact_failed=True)
+            assert "c-missing" in self.html, "成果物失敗の行になっていない（前提）"
+            from tests import table_fit
+            return table_fit.table_min_width_px(self.html, "summary",
+                                                ancestors=self.SHEET)
+
+        narrow = width("x")
+        for note in ("尾根越え・要現地確認（樹木の成長で余裕が減る可能性）" * 3,
+                     "ridge crossing, needs site survey (tree growth) " * 3):
+            wide = width(note)
+            assert wide == pytest.approx(narrow, abs=1.0), (
+                "成果物失敗の行の備考が長いだけで台帳が広がる"
+                f"（{narrow:.0f}px → {wide:.0f}px）"
+            )
 
     def test_thumbnail_image_is_in_the_ledger(self, tmp_path, default_params_dict):
         """グラフ列に**サムネイルを戻す**こと（I-143・2026-09-10 ユーザー決定）。

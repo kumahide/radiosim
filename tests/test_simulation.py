@@ -660,6 +660,77 @@ def _make_result(diff_method="single", env_type="los"):
     )
 
 
+class TestDemAcquiredFollowsTheTileActuallyUsed:
+    """刻印「DEM Acquired」は**標高を返したタイル**の取得日であること（B-213）。
+
+    🔴 **保存時に座標からタイルを引き直していた**（3.3 段4e の初版）＝5m タイルが
+    一時失敗して 10m の古いタイルで計算した標本も、同じ回の後の標本で 5m が取れて
+    いると、保存時には 5m の日付に化けた（一時失敗は負キャッシュしない＝B-010
+    なので、後の標本では 5m が取れる）。見るのは「古いタイルで計算した標本の日付が
+    範囲に残るか」。
+    """
+
+    OLD = "2026-08-01"
+
+    @pytest.fixture(autouse=True)
+    def _isolated_tiles(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "dem"))
+        # 1 本のワーカーで順に取る＝「先の標本で失敗・後の標本で成功」を決定的にする
+        monkeypatch.setattr(sim, "_MAX_FETCH_WORKERS", 1)
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def _fake_fetch_tile(self):
+        """5a＝最初の 1 回だけ一時失敗・以後は今日のタイル／5b＝データ無し（404）／
+        10m＝8 月 1 日に取った古いタイル。"""
+        import datetime as dt
+        from PIL import Image
+
+        first_5m = [True]
+        valid = (0, 39, 16)          # 有効な標高（!= 0.0）になる画素
+
+        def fake(layer_id, zoom, xtile, ytile, cache_subdir, cache_path):
+            if layer_id == dem.DEM_LAYERS[0][0]:
+                if first_5m[0]:
+                    first_5m[0] = False
+                    dem._network_trouble.flag = True
+                    return None
+            elif layer_id != dem.DEM_LAYERS[-1][0]:
+                with dem._cache_lock:
+                    dem._failed_tiles.add((layer_id, xtile, ytile))
+                return None
+            if not os.path.exists(cache_path):
+                os.makedirs(cache_subdir, exist_ok=True)
+                Image.new("RGB", (256, 256), valid).save(cache_path)
+                if layer_id == dem.DEM_LAYERS[-1][0]:
+                    old = dt.datetime.fromisoformat(self.OLD + "T12:00:00").timestamp()
+                    os.utime(cache_path, (old, old))
+            return np.full((256, 256, 3), valid, dtype=np.uint8)
+
+        return fake
+
+    def test_fallback_tile_date_survives_a_later_success(self, default_params_dict,
+                                                         monkeypatch):
+        import datetime as dt
+
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_fetch_tile())
+        params = sim.SimParams(default_params_dict)
+        done, box = threading.Event(), {}
+        sim.fetch_elevations(params, lambda n: None,
+                             lambda e: (box.setdefault("elevs", e), done.set()),
+                             lambda ex: (box.setdefault("error", ex), done.set()))
+        assert done.wait(timeout=10) and "error" not in box, box
+
+        acquired = sim._dem_acquired_range(params)
+        assert acquired == (self.OLD, dt.date.today().isoformat()), (
+            "10m の古いタイルで計算した標本の取得日が消えている"
+            f"（保存時にタイルを引き直している＝{acquired}）"
+        )
+
+
 class TestSavePackage:
 
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
@@ -758,10 +829,12 @@ class TestSavePackage:
     def test_report_contains_dem_acquired_date(self, tmp_path, flat_terrain,
                                                default_params_dict, monkeypatch):
         """report.txt に DEM Acquired 行が含まれること（3.3 段4e＝出所刻印の
-        最後の要素）。**実行日（Date:）ではなくタイルの取得日**＝単一ソースは
-        `dem.tile_acquired_date`。
+        最後の要素）。**実行日（Date:）ではなくタイルの取得日**＝値は標高を
+        取った時点で確定したもの（`_dem_acquired_range`・B-213。取得側の検査は
+        TestDemAcquiredFollowsTheTileActuallyUsed）。
         """
-        monkeypatch.setattr(dem, "tile_acquired_date", lambda lat, lon: "2026-08-01")
+        monkeypatch.setattr(sim, "_dem_acquired_range",
+                            lambda params: ("2026-08-01", "2026-08-01"))
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
@@ -772,9 +845,8 @@ class TestSavePackage:
     ):
         """標本ごとにタイルの取得日が違えば、最古〜最新の範囲で示す（広域の経路は
         タイルが別日にまたがり得る）。"""
-        dates = iter(["2026-08-01", "2026-09-10"] * 100_000)
-        monkeypatch.setattr(dem, "tile_acquired_date",
-                            lambda lat, lon: next(dates))
+        monkeypatch.setattr(sim, "_dem_acquired_range",
+                            lambda params: ("2026-08-01", "2026-09-10"))
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
@@ -783,8 +855,8 @@ class TestSavePackage:
     def test_report_omits_dem_acquired_when_unavailable(
         self, tmp_path, flat_terrain, default_params_dict, monkeypatch
     ):
-        """1点も取得日が分からなければ行ごと出さない（既定のテスト環境＝空の
-        キャッシュはこれに当たる＝`_run_save` が固定した空ディレクトリ）。"""
+        """1点も取得日が分からなければ行ごと出さない（既定のテスト環境＝この経路の
+        地形を取っていない＝`_record_dem_acquired` が一度も走っていない）。"""
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()

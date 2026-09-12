@@ -231,6 +231,21 @@ def network_failed() -> bool:
     return bool(getattr(_network_trouble, "flag", False))
 
 
+# 🔑 **直前の `get_elevation` が値を返したタイル**（B-213）＝出所刻印「取得日」の
+# 根拠。`network_failed()` と同じくスレッドローカルで、呼ぶ側は自分のスレッドで
+# `get_elevation` → `last_source_tile()` と続けて読む。
+# ⚠️ **保存時に座標からタイルを引き直さない**＝一時失敗は負キャッシュしない
+# （B-010）ので、先の標本が 10m で計算されても、後の標本で 5m が取れていると
+# 引き直しは 5m を答える（3.3 段4e の初版で実際に起きた）。
+_source_tile = threading.local()
+
+
+def last_source_tile() -> "tuple | None":
+    """**このスレッドの直前の `get_elevation`** が標高を返したタイルのキー
+    `(layer_id, xtile, ytile)`。値を返さなかった（`nan`/`0.0`）なら None。"""
+    return getattr(_source_tile, "key", None)
+
+
 # 🔑 **式の本体は `terrain_grid`**（B-150 で移した）＝*どの画素を読むか*は「格子の
 # 事実」の側で、標本の置き方（`path_sample_fractions`）が同じ式を要る。ここは
 # **別名**＝写しではないので、片方だけ動くことがない。タイル選択（`_tile_coords`）と
@@ -274,6 +289,7 @@ def get_elevation(lat: float, lon: float) -> float:
     （B-025 ②で先に立てた `network_failed()` をそのまま契約の判定に使い回す）。
     """
     _network_trouble.flag = False
+    _source_tile.key = None
     try:
         for layer_id, zoom in DEM_LAYERS:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
@@ -291,6 +307,7 @@ def get_elevation(lat: float, lon: float) -> float:
                 elev = _decode_elevation(cached[py, px])
                 if elev != 0.0:
                     _network_trouble.flag = False
+                    _source_tile.key = tile_key
                     return elev
                 logger.debug(
                     "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
@@ -317,6 +334,7 @@ def get_elevation(lat: float, lon: float) -> float:
             if elev != 0.0:
                 # 別レイヤで通信に失敗していても、値が取れたなら失敗ではない。
                 _network_trouble.flag = False
+                _source_tile.key = tile_key
                 return elev
             logger.debug(
                 "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
@@ -347,45 +365,28 @@ def get_elevation(lat: float, lon: float) -> float:
         return math.nan
 
 
-def tile_acquired_date(lat: float, lon: float) -> "str | None":
-    """指定座標の標高の根拠になったタイルの**取得日**（ISO 8601 の日付・ローカル
-    タイムゾーン）。3.3 段4e＝出所刻印「取得日」の値。
+def tile_acquired_date(tile_key: tuple) -> "str | None":
+    """タイル `(layer_id, xtile, ytile)`（＝`last_source_tile()` の答え）の
+    **取得日**（ISO 8601 の日付・ローカルタイムゾーン）。3.3 段4e＝出所刻印
+    「取得日」の値。
 
     🔑 **「実行日」ではなく「タイルを取った日」**＝DEM はディスクキャッシュ経由
     なので、キャッシュヒットでは過去の日付になり得る。それこそが「このレポートの
     地形データが実際にはいつのものか」という監査上の答え（実行日は report.txt の
-    `Date:` 行が別に持っている）。
+    `Date:` 行が別に持っている）。根拠はディスクのファイルの mtime（メモリの配列は
+    いつ書かれたかを持たない）。
 
-    ⚠️ **ネットワークへは絶対に出ない**（`get_elevation` と違い `_fetch_tile` を
-    呼ばない）＝レポート保存時にシミュレーション本体が既に取得し終えたタイルの
-    「いま何が刻まれているか」だけを読む純粋な参照。**未取得のタイルがあっても
-    取りに行かず、その層は無視して次へ進む**（`get_elevation` と同じ優先順位・
-    同じ有効性判定〔!= 0.0〕をキャッシュ済みの範囲だけでなぞる）。該当タイルが
-    1 つも無ければ None（呼び出し側＝レポート保存でここが起きるのは、対応する
-    `get_elevation` 呼び出しが `nan`/`0.0` を返した点＝失敗率に既に出ている）。
+    ⚠️ **引数は座標ではなくタイル**（B-213）＝座標からタイルを引き直すと、
+    標高を返したのとは別のタイルを答え得る（`last_source_tile` の註）。
+    ⚠️ **ネットワークへは出ない**。ディスクに実体が無ければ None。
     """
-    for layer_id, zoom in DEM_LAYERS:
-        xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
-        tile_key   = (layer_id, xtile, ytile)
-        cache_path = os.path.join(CACHE_DIR, layer_id, str(xtile), f"{ytile}.png")
-
-        with _cache_lock:
-            arr = _tile_cache.get(tile_key)
-        if arr is None:
-            if not os.path.exists(cache_path):
-                continue
-            arr = _read_cached_tile(cache_path)
-            if arr is None:
-                continue
-
-        if _decode_elevation(arr[py, px]) == 0.0:
-            continue
-        try:
-            mtime = os.path.getmtime(cache_path)
-        except OSError:
-            continue
-        return date.fromtimestamp(mtime).isoformat()
-    return None
+    layer_id, xtile, ytile = tile_key
+    cache_path = os.path.join(CACHE_DIR, layer_id, str(xtile), f"{ytile}.png")
+    try:
+        mtime = os.path.getmtime(cache_path)
+    except OSError:
+        return None
+    return date.fromtimestamp(mtime).isoformat()
 
 
 def _read_cached_tile(cache_path: str) -> "np.ndarray | None":

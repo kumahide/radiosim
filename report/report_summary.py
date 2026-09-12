@@ -227,7 +227,9 @@ def summary_sheet_css() -> str:
 /* 成果物が欠けた経路のグラフ列（I-010）＝リンク切れの画像を出さず字で言う。
    字の色は ERROR の判定色（その行は ERROR になる＝`PathResult.status`）。
    ⚠️ `table.summary` まで書く＝`.sheet.summary td.c-missing` では骨格の `td` より
-   詳細度が低く、中央寄せも 8px も**一度も効いていなかった**（B-208 の作業中に発見）。 */
+   詳細度が低く、中央寄せも 8px も**一度も効いていなかった**（B-208 の作業中に発見）。
+   折り返しは共通の骨格が持つ（B-214）＝備考（I-143 決定 3）がここへ一緒に載るので、
+   nowrap のままだと長い備考 1 つで表が印字域を超えた（実測 688px → 1042px）。 */
 .sheet.summary table.summary td.c-missing{color:""" + map_graphics.STATUS_HEX["ERROR"] + """;font-size:8px;text-align:center}
 .sheet.summary .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:12px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px}
 /* DEM 取得の失敗率（I-143 決定 2）＝台帳の下に 1 行だけ（列は持たない）。 */

@@ -439,6 +439,7 @@ def ledger_table_css(sheet: str, table: str) -> str:
 {t} th:last-child,{t} td:last-child{{border-right:none}}
 {t} td.c-status{{text-align:center}}
 {t} td.c-reason{{text-align:left;white-space:normal;word-break:normal;overflow-wrap:anywhere}}
+{t} td.c-missing{{white-space:normal;word-break:normal;overflow-wrap:anywhere}}
 {t} tr{{break-inside:avoid}}
 """
 

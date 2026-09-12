@@ -265,6 +265,10 @@ def fetch_elevations(
             lats, lons = sample_coords(params)
 
             raw_elevs: list[float] = [0.0] * params.num
+            # 標本ごとに「標高を返したタイル」＝出所刻印「取得日」の根拠（B-213）
+            source_tiles: list["tuple | None"] = [None] * params.num
+            with _dem_acquired_lock:
+                _dem_acquired.pop(_terrain_cache_key(params), None)
             completed  = 0
             failures   = 0
             successes  = 0
@@ -281,6 +285,7 @@ def fetch_elevations(
                     # 「取れなかった」は戻り値に出ない（0.0 は海抜 0m と同じ顔）。
                     # 直後に聞くのが唯一の判別手段＝B-025 ②。
                     failed = dem.network_failed()
+                    source_tiles[idx] = dem.last_source_tile()
                 except Exception as e:
                     failed = True
                     with lock:
@@ -336,6 +341,7 @@ def fetch_elevations(
                 raise DemUnreachableError(i18n.t("err_dem_unreachable"))
 
             logger.info("Terrain fetch complete: %d samples", params.num)
+            _record_dem_acquired(params, source_tiles)
             on_complete(np.array(raw_elevs))
 
         except Exception as ex:
@@ -361,6 +367,28 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
     # あり得る（段階で解いた並びと固定 N の等間隔）。位置が違えば標高も違う。
     return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
             params.num, params.resolution)
+
+
+# 出所刻印「取得日」（3.3 段4e）＝**標高を取った時点で確定させ、地形と同じ鍵で
+# 持つ**（B-213）。保存時に座標からタイルを引き直すと、標高を返したのとは別の
+# タイルの日付を答え得る（`dem.last_source_tile` の註）。地形キャッシュに命中した
+# 実行は、その地形を取った回の値をそのまま使う（同じタイルで計算しているので正しい）。
+_dem_acquired: dict[_TerrainCacheKey, "tuple[str, str] | None"] = {}
+_dem_acquired_lock = threading.Lock()
+
+
+def _record_dem_acquired(params: SimParams, source_tiles) -> None:
+    """標本ごとの「標高を返したタイル」から取得日の範囲（最古〜最新）を確定する。
+
+    日付はタイルごとに 1 回だけ引く（標本は数万点あり得るがタイルは数枚）。
+    1 枚も分からなければ None（全点が取れなかった・ディスクに実体が無いなど）。
+    """
+    dates = [d for d in (dem.tile_acquired_date(k)
+                         for k in {k for k in source_tiles if k is not None})
+             if d is not None]
+    with _dem_acquired_lock:
+        _dem_acquired[_terrain_cache_key(params)] = (
+            (min(dates), max(dates)) if dates else None)
 
 
 def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
@@ -439,6 +467,8 @@ def clear_terrain_cache() -> None:
     """地形キャッシュを全消去する（テスト・デバッグ用）。"""
     with _terrain_cache_lock:
         _terrain_cache.clear()
+    with _dem_acquired_lock:
+        _dem_acquired.clear()
 
 
 # ============================================================
@@ -574,18 +604,12 @@ def _dem_acquired_range(params: SimParams) -> "tuple[str, str] | None":
     """このレポートの地形標本が使ったタイルの**取得日**の範囲（最古〜最新）。
 
     3.3 段4e＝出所刻印「取得日」。**実行日ではなくタイルを取った日**（詳細は
-    `dem.tile_acquired_date`）。全標本を `dem.tile_acquired_date` で解決し直す
-    ＝この関数はネットワークへ一切出ない（標高取得＝`fetch_elevations` が
-    先に終わっている前提）ので、その時点で未取得のタイルがあればその標本だけ
-    None になる。1 点も分からなければこの関数自体も None（キャッシュ情報が
-    読めない・全滅など）。
+    `dem.tile_acquired_date`）。値は**標高を取った時点で確定したもの**を読むだけ
+    （`_record_dem_acquired`・B-213）＝ここでタイルを引き直さない。この経路の
+    地形をまだ取っていない・1 枚も分からなければ None（行ごと出さない）。
     """
-    lats, lons = sample_coords(params)
-    dates = [d for d in (dem.tile_acquired_date(la, lo) for la, lo in zip(lats, lons))
-             if d is not None]
-    if not dates:
-        return None
-    return min(dates), max(dates)
+    with _dem_acquired_lock:
+        return _dem_acquired.get(_terrain_cache_key(params))
 
 
 def _format_dem_acquired_line(acquired: "tuple[str, str] | None") -> str:
