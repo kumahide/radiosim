@@ -986,7 +986,9 @@ A single JSON file that bundles **the whole input set**. Read and written from *
 
 ### How loading works
 
-Loading closes the open windows (batch / explorer / relay path) after asking for confirmation, then they pick the new state up when reopened. This matches the app-wide rule that a window freezes its inputs when it opens, so no window needs a separate injection path.
+Loading **does not close the windows** (changed in 2.7). A `views.dialogs.show_notice` bar appears over each open window, and the contents are replaced by `replace_rows` / `apply_project_spec` / `apply_project_path` **only when its button is pressed**.
+
+⚠️ **This is not wired into the existing `↻ From Launcher` button.** That button touches only the frozen band (common settings / project info) and never the rows or points the user entered; adding the replacement there would cause the accident "I pressed it to refresh the common settings and my rows disappeared".
 
 ---
 

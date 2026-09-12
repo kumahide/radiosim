@@ -99,7 +99,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 開始 | 条件探索で**軸を掃引する範囲**の下端。⚠️ 経路の端（送信点・受信点）はこの語で呼ばない。 *The lower end of the swept range in the scenario window. The ends of a path (TX / RX point) are never called this.* | From | — |
 | 終了 | 同じ範囲の上端。 *The upper end of that same swept range.* | To | — |
 | メモ | **実行 1 回**に付ける自由記述。レポートの見出しに `メモ:` として出る。 *A free-text note attached to one run; it appears in the report header as `Note:`.* | Note | — |
-| 備考 | **1 行（＝1 経路）**に付ける記述。複数経路の表とサマリ台帳の列見出しになる。 *A note attached to one row (one path); it is a column header in the multiple-paths table and in the summary ledger.* | Remarks | — |
+| 備考 | **1 行（＝1 経路）**に付ける記述。複数経路の表の列見出しになる。台帳には列が無く、各経路の個別レポートのメモ欄に出る（個別レポートが作られない失敗した経路だけ、台帳の理由欄に併記）。 *A note attached to one row (one path); it is a column header in the multiple-paths table. The summary ledger has no such column: the note appears in the memo field of that path's own report (only for a failed path, which has no report of its own, is it added to the reason cell in the ledger).* | Remarks | — |
 | 個別 | 1 本の回線を 1 回だけ計算する実行（ランチャーの実行ボタン）。成果物のフッタは `個別シミュレーション`。 *A run that computes one link once, started from the launcher's Run button; the report footer says “Single Mode”.* | Single Mode | シングル |
 | 複数経路 | N 本の**独立した**回線をまとめて回すウィンドウ。1 行 = 1 経路（→ 中継経路は 1 本の内訳）。**レポートの表題・フッタもこの語**。 *The window that runs N independent links in one go; one row = one path (a relay path is the breakdown of a single link). The report title and footer use this word too.* | Multiple Paths | バッチ / 一括 / Batch |
 | 地図 | 座標を拾い、DEM キャッシュを見るための補助のウィンドウ。**入力の道具**であって実行フローではない。 *A helper window for picking coordinates and inspecting the DEM cache — an input tool, not a step of the run.* | Map | マップウィンドウ |

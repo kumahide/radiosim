@@ -486,7 +486,7 @@ The toggle at the top switches between two modes. After changing coordinates or 
 - The leftmost **Base** column is the launcher's current values (read-only) — the reference never moves.
 - In columns **Cond 1 ... Cond 5**, change only the fields you care about (they start as copies of the base). "+ Condition" adds up to 5 columns.
 - You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and terrain resolution cannot be varied** (comparing different paths is what Multiple Paths is for).
-- The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.44 (+13.56)`). Rows that differ are tinted.
+- The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.4 (+13.6)`). Rows that differ are tinted.
 
 ### Sweep (one axis, N points)
 
