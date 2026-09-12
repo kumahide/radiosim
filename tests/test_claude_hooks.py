@@ -1390,12 +1390,13 @@ class TestRoadmapDashboardBlocksStop:
     advisory は次の SessionStart でしか読まれない＝直し忘れた回には届かない。
     """
 
-    def _run_main(self, memcheck, monkeypatch, capsys, finding, gate=None):
+    def _run_main(self, memcheck, monkeypatch, capsys, finding, gate=None,
+                  source="check_updated_stamps"):
         monkeypatch.setattr(memcheck, "_current_version", lambda: "3.3b1")
         for name in dir(memcheck):
             if name.startswith("check_") and callable(getattr(memcheck, name)):
                 monkeypatch.setattr(memcheck, name, lambda *a, **k: [])
-        monkeypatch.setattr(memcheck, "check_updated_stamps", lambda: [finding])
+        monkeypatch.setattr(memcheck, source, lambda: [finding])
         monkeypatch.setattr(memcheck, "PENDING_ADVISORY",
                             memcheck.PROJ_DIR / ".claude" / ".pending_advisory.test")
         if gate is None:
@@ -1419,6 +1420,13 @@ class TestRoadmapDashboardBlocksStop:
                              gate="advisory")
         assert "decision" not in out
         assert "日付の直し忘れ" in out["systemMessage"]
+
+    def test_format_finding_blocks(self, memcheck, monkeypatch, capsys):
+        """書式の外れ（check 19・I-146）も同じく Stop を止める。"""
+        out = self._run_main(memcheck, monkeypatch, capsys, "段の行の型の外れ",
+                             source="check_roadmap_format_real")
+        assert out.get("decision") == "block"
+        assert "段の行の型の外れ" in out["reason"]
 
 
 # ============================================================
@@ -1669,11 +1677,26 @@ class TestStageMarksSync:
         assert found and "I-143" in found[0]
 
     def test_a_completion_mark_silences_it(self, memcheck):
-        """完了マークが付いていれば鳴らないこと（②毎回鳴るを避ける）。"""
+        """完了マーク（行の先頭の ✅）が付いていれば鳴らないこと（②毎回鳴るを避ける）。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
         roadmap = ["## 🔜 3.3 — 版",
-                   "- **段1（帳票・a1 の枠）＝✅ 完了（2026-09-10）**＝[[I-143]]。"]
+                   "- ✅ **段1（帳票・a1 の枠）**（2026-09-10）＝[[I-143]]。"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
+
+    def test_an_in_progress_mark_is_flagged(self, memcheck):
+        """先頭が 🚧 のままなら鳴る（I-146＝旧実装は先頭に記号がある行を拾っていなかった）。"""
+        states = memcheck.issue_states_by_id(self._DONE_ISSUE)
+        roadmap = ["## 🔜 3.3 — 版",
+                   "- 🚧 **段1（帳票・a1 の枠）**（2026-09-10〜）＝[[I-143]]。"]
+        found = memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
+        assert found and "I-143" in found[0]
+
+    def test_the_word_zumi_in_the_body_is_not_a_mark(self, memcheck):
+        """本文の「済」は完了マークではない（I-146＝段の本文は「確認済み」等を普通に含む）。"""
+        states = memcheck.issue_states_by_id(self._DONE_ISSUE)
+        roadmap = ["## 🔜 3.3 — 版",
+                   "- 🚧 **段1（帳票）**（2026-09-10〜）＝[[I-143]]。実測は確認済み。"]
+        assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
 
     def test_a_still_open_issue_is_not_demanded(self, memcheck):
         """参照する課題がまだ未着手/対応中なら、完了マークは要らない（①一度も鳴らないを避けつつ）。"""
@@ -1697,6 +1720,97 @@ class TestStageMarksSync:
     def test_real_data_is_clean(self, memcheck):
         """実データで鳴らないこと（今回の抜けを直したので 0 件）。"""
         assert memcheck.check_stage_sync() == []
+
+
+class TestRoadmapFormat:
+    """ロードマップの書式（§📐 書き方の規約）の外形を止める（check 19・I-146）。
+
+    ユーザー指摘「追記の度に書き方が変わり、非効率です」＝統一の直前は、段の
+    「完了」の書き方が 4 通り・文中の ✅ が 124 行・版の見出しの型が 3 通りだった。
+    """
+
+    def _fmt(self, memcheck, *lines):
+        return memcheck.check_roadmap_format(list(lines))
+
+    # ── ✅ の位置 ──
+    def test_a_mid_sentence_check_mark_is_flagged(self, memcheck):
+        found = self._fmt(memcheck, "- **段3（評価）**＝規約を読んだ。✅ **ユーザーの目視 OK**。")
+        assert any("先頭にだけ" in f for f in found)
+
+    def test_a_check_mark_inside_the_bold_is_flagged(self, memcheck):
+        """`**✅ …**`＝記号が太字の中に入った形（旧アーカイブに多かった）。"""
+        assert self._fmt(memcheck, "- **✅ 実機β検証**（2026-07-21）＝全項目 OK。")
+
+    def test_a_leading_check_mark_passes(self, memcheck):
+        assert self._fmt(memcheck,
+                         "- ✅ **署名**（2026-09-11）＝比較表を作り直した。",
+                         "  - ✅ **子の出来事**（2026-09-12）＝済んだ。",
+                         "1. ✅ **番号付き**（2026-09-10）＝本文。",
+                         "> - ✅ **引用の中の箇条**＝本文。") == []
+
+    def test_tables_inline_code_and_fences_are_not_prose(self, memcheck):
+        assert self._fmt(memcheck,
+                         "| 3.2 | ✅ リリース済 | — |",
+                         "例＝× `→ ✅ **3.3 に入れる**`",
+                         "```", "文中 ✅ でもコード塊の中は見ない", "```") == []
+
+    # ── 🆕 ──
+    def test_new_badge_is_flagged(self, memcheck):
+        assert any("🆕" in f for f in self._fmt(memcheck, "- 🆕 **何かを足す**（2026-09-12）"))
+
+    # ── 見出し ──
+    def test_bold_in_a_heading_is_flagged(self, memcheck):
+        assert any("太字" in f for f in self._fmt(memcheck, "### ⬜ 3.4 — 感度（**モデル無変更**）"))
+
+    def test_an_unknown_heading_icon_is_flagged(self, memcheck):
+        assert any("🔨" in f for f in self._fmt(memcheck, "### 🔨 着手前の判断点"))
+
+    def test_known_icons_and_plain_headings_pass(self, memcheck):
+        assert self._fmt(memcheck,
+                         "### 🧭 3.3 の作業順（2026-09-10 確定）",
+                         "### 🗳 判断点", "### 📋 記録", "### 🚫 やらないこと",
+                         "### 決着ログ", "## 現在地（最終更新: 2026-09-12）",
+                         "## 🛰 関連プロダクト", "## 🚧 3.x — 哲学「製品成熟」") == []
+
+    # ── 版の H2 見出し ──
+    def test_the_old_version_heading_is_flagged(self, memcheck):
+        """統一前の実例（テーマが括弧の後ろ・経過が見出しの中）。"""
+        found = self._fmt(memcheck, "## ✅ 3.2（リリース済み 2026-09-10＝tag `3.2` ／ "
+                                    "着手 2026-09-05）— テーマ「サポート性と自己申告」")
+        assert any("版の見出し" in f for f in found)
+
+    def test_a_released_heading_needs_the_release_date(self, memcheck):
+        found = self._fmt(memcheck, "## ✅ 3.2 — サポート性と自己申告")
+        assert any("リリース" in f for f in found)
+
+    def test_the_new_version_headings_pass(self, memcheck):
+        assert self._fmt(memcheck,
+                         "## ✅ 3.2 — サポート性と自己申告（2026-09-10 リリース）",
+                         "## 🚧 3.3 — 経路と依存の耐性",
+                         "## 🔜 3.4 — 実測突合せ＋感度") == []
+
+    # ── 段の行 ──
+    def test_the_old_stage_forms_are_flagged(self, memcheck):
+        """統一前に並んでいた 4 通りの書き方（どれも実データにあった）。"""
+        for old in ("- **段0（版の頭）＝✅ 完了（2026-09-10）**＝宣言。",
+                    "- ✅ **段6（a→b の版区切り整合）完了（2026-09-11）**＝1 巡。",
+                    "- **段1（本丸）＝実装・検証済み（2026-09-03）・コミット済み（`d34d755`）**＝移設。",
+                    "- **段4（防火扉②＝DEM ソース）**＝分割→宣言ファイル。"):
+            assert any("段の行" in f for f in self._fmt(memcheck, old)), old
+
+    def test_the_new_stage_form_passes(self, memcheck):
+        assert self._fmt(memcheck,
+                         "- ✅ **段1（帳票・a1 の枠）**（2026-09-10・`3f8acdf`）＝[[I-143]]。",
+                         "- 🚧 **段11（RC1）**（2026-09-12〜）＝配布まで済み。",
+                         "- ⬜ **段12（正式）**＝未着手。") == []
+
+    def test_findings_are_capped(self, memcheck):
+        found = self._fmt(memcheck, *["- 🆕 **x**"] * 40)
+        assert len(found) == memcheck._FMT_MAX_FINDINGS + 2     # 見出し行＋「ほか N 件」
+        assert "ほか" in found[-1]
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        assert memcheck.check_roadmap_format_real() == []
 
 
 # ============================================================
