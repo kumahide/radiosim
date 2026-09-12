@@ -12,6 +12,7 @@ DEM 取得は monkeypatch でモックし、ネットワーク不要。
   - import os を末尾から先頭に移動
 """
 
+import dataclasses
 import os
 import json
 import threading
@@ -712,23 +713,57 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
 
         return fake
 
+    @staticmethod
+    def _fetch(params) -> dict:
+        """`fetch_elevations_cached` を 1 回回し、`on_acquired` と `on_complete` の
+        受け取りを順に記録して返す。"""
+        done = threading.Event()
+        box: dict = {"order": []}
+
+        def _acquired(value) -> None:
+            box["order"].append("acquired")
+            box["acquired"] = value
+
+        def _complete(elevs) -> None:
+            box["order"].append("complete")
+            done.set()
+
+        def _error(ex: Exception) -> None:
+            box["error"] = ex
+            done.set()
+
+        sim.fetch_elevations_cached(params, lambda n: None, _complete, _error,
+                                    on_acquired=_acquired)
+        assert done.wait(timeout=10) and "error" not in box, box
+        return box
+
     def test_fallback_tile_date_survives_a_later_success(self, default_params_dict,
                                                          monkeypatch):
         import datetime as dt
 
         monkeypatch.setattr(dem, "_fetch_tile", self._fake_fetch_tile())
-        params = sim.SimParams(default_params_dict)
-        done, box = threading.Event(), {}
-        sim.fetch_elevations(params, lambda n: None,
-                             lambda e: (box.setdefault("elevs", e), done.set()),
-                             lambda ex: (box.setdefault("error", ex), done.set()))
-        assert done.wait(timeout=10) and "error" not in box, box
-
-        acquired = sim._dem_acquired_range(params)
+        box = self._fetch(sim.SimParams(default_params_dict))
+        acquired = box["acquired"]
         assert acquired == (self.OLD, dt.date.today().isoformat()), (
             "10m の古いタイルで計算した標本の取得日が消えている"
             f"（保存時にタイルを引き直している＝{acquired}）"
         )
+        # 窓は on_complete で開く＝その時点で取得日が手元に無いと抱えられない
+        assert box["order"] == ["acquired", "complete"], box["order"]
+
+    def test_cache_hit_hands_over_the_date_of_the_fetch_that_filled_it(
+            self, default_params_dict, monkeypatch):
+        """地形キャッシュに命中した実行も、その地形を取った回の取得日を受け取ること
+        （同じタイルで計算しているので正しい）。"""
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_fetch_tile())
+        params = sim.SimParams(default_params_dict)
+        first = self._fetch(params)["acquired"]
+        # 2 回目はタイルを 1 枚も読まない（読めば今日のタイルが混ざり得る）
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda *a, **k: pytest.fail("キャッシュ命中なのにタイルを読んだ"))
+        hit = self._fetch(params)
+        assert hit["acquired"] == first, hit
+        assert hit["order"] == ["acquired", "complete"], hit["order"]
 
 
 class TestSavePackage:
@@ -830,12 +865,12 @@ class TestSavePackage:
                                                default_params_dict, monkeypatch):
         """report.txt に DEM Acquired 行が含まれること（3.3 段4e＝出所刻印の
         最後の要素）。**実行日（Date:）ではなくタイルの取得日**＝値は標高を
-        取った時点で確定したもの（`_dem_acquired_range`・B-213。取得側の検査は
-        TestDemAcquiredFollowsTheTileActuallyUsed）。
+        取った時点で確定し地形と一緒に運ばれたもの（`TerrainProfile.dem_acquired`・
+        B-213。取得側の検査は TestDemAcquiredFollowsTheTileActuallyUsed）。
         """
-        monkeypatch.setattr(sim, "_dem_acquired_range",
-                            lambda params: ("2026-08-01", "2026-08-01"))
-        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+        terrain = dataclasses.replace(flat_terrain,
+                                      dem_acquired=("2026-08-01", "2026-08-01"))
+        save_dir = self._run_save(tmp_path, terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
         assert "DEM Acquired  : 2026-08-01" in text, text
@@ -845,18 +880,33 @@ class TestSavePackage:
     ):
         """標本ごとにタイルの取得日が違えば、最古〜最新の範囲で示す（広域の経路は
         タイルが別日にまたがり得る）。"""
-        monkeypatch.setattr(sim, "_dem_acquired_range",
-                            lambda params: ("2026-08-01", "2026-09-10"))
-        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+        terrain = dataclasses.replace(flat_terrain,
+                                      dem_acquired=("2026-08-01", "2026-09-10"))
+        save_dir = self._run_save(tmp_path, terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
         assert "DEM Acquired  : 2026-08-01 to 2026-09-10" in text, text
 
+    def test_report_dem_acquired_survives_clearing_the_terrain_cache(
+        self, tmp_path, flat_terrain, default_params_dict, monkeypatch
+    ):
+        """地形キャッシュを消しても、手元の結果の取得日は report.txt に出ること
+        （Codex 99 巡目＝結果の窓を開いたままプロキシ設定の OK を押すと
+        `clear_terrain_cache` が走る。初版の修正は取得日を鍵で引く共有の辞書に
+        置いていたので、ここで行が消えた）。"""
+        terrain = dataclasses.replace(flat_terrain,
+                                      dem_acquired=("2026-08-01", "2026-08-01"))
+        sim.clear_terrain_cache()
+        save_dir = self._run_save(tmp_path, terrain, default_params_dict,
+                                  monkeypatch)
+        text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()
+        assert "DEM Acquired  : 2026-08-01" in text, text
+
     def test_report_omits_dem_acquired_when_unavailable(
         self, tmp_path, flat_terrain, default_params_dict, monkeypatch
     ):
-        """1点も取得日が分からなければ行ごと出さない（既定のテスト環境＝この経路の
-        地形を取っていない＝`_record_dem_acquired` が一度も走っていない）。"""
+        """1点も取得日が分からなければ行ごと出さない（`flat_terrain` は取得を
+        経ていない＝`dem_acquired` は None）。"""
         save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
                                   monkeypatch)
         text = open(os.path.join(save_dir, "report.txt"), encoding="utf-8").read()

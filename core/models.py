@@ -258,6 +258,10 @@ class TerrainProfile:
     horiz_dist_km:     float        # 水平総距離 [km]
     num_samples:       int
     earth_k:           float = EARTH_K_STANDARD  # 等価地球半径係数（ライスKとは無関係）
+    # 出所刻印「取得日」＝標高を返したタイルの取得日の範囲（最古, 最新）・不明なら None。
+    # 🔑 **標高を取った時点で確定し、標高と一緒に運ぶ**（B-213）＝保存時に座標や
+    # キャッシュから引き直さない（`simulation.fetch_elevations_cached` の `on_acquired`）。
+    dem_acquired:      "tuple[str, str] | None" = None
 
     @property
     def frac_axis(self) -> np.ndarray:

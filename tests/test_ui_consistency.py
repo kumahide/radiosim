@@ -762,6 +762,56 @@ def test_graph_window_saves_with_the_coord_format_it_was_opened_with(monkeypatch
         root.destroy()
 
 
+def test_graph_window_keeps_the_dem_acquired_date_it_was_opened_with(monkeypatch,
+                                                                    tmp_path):
+    """単一実行の窓が、**取得のときに届いた** DEM 取得日で report.txt を書くこと。
+
+    🔴 Codex 99 巡目（B-213 の処方への指摘）＝取得日を地形キャッシュと同じ鍵の
+    別辞書に置いていたので、窓を開いたままプロキシ設定の OK（`clear_terrain_cache`）を
+    押すと、後の保存で `DEM Acquired` の行が消えた。見るのは**ランチャー → 窓 →
+    保存**の配線（取得日を運ぶ口は `on_acquired` → `show_graph(dem_acquired=)` →
+    `TerrainProfile.dem_acquired` の 3 段で、どこか 1 つ落とすと行が消える）。
+    """
+    pytest.importorskip("tkinter")
+    import numpy as np
+
+    from views import graph as g
+    from views.progress import drain_ui_mailbox
+
+    acquired = ("2026-08-01", "2026-08-01")
+
+    def _fake_cached(params, on_progress, on_complete, on_error, on_acquired=None):
+        if on_acquired is not None:
+            on_acquired(acquired)
+        on_complete(np.full(params.num, 10.0))
+
+    monkeypatch.setattr(sim, "fetch_elevations_cached", _fake_cached)
+    monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
+    monkeypatch.setattr(g.report_path, "save_profile_png", lambda *a, **k: None)
+    monkeypatch.setattr(g.report_path, "save_path_kml", lambda *a, **k: None)
+    monkeypatch.setattr(g.dialogs, "choose", lambda *a, **k: None)
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app = _launcher(root)
+        app._start_simulation(_params())
+        drain_ui_mailbox(root)                  # 取得完了は投函箱で UI へ渡る
+        root.update()
+        win = getattr(app, "_graph_win", None)
+        assert win is not None, "取得完了の後にグラフ窓が開いていない"
+
+        sim.clear_terrain_cache()               # プロキシ設定の OK と同じ
+        win._on_save()
+        [save_dir] = [d for d in tmp_path.iterdir() if d.is_dir()]
+        text = (save_dir / "report.txt").read_text(encoding="utf-8")
+        assert "DEM Acquired  : 2026-08-01" in text, (
+            "窓を開いた時点の取得日が保存に届いていない（キャッシュ消去で消えるか、"
+            f"ランチャー → 窓の受け渡しが落ちている）:\n{text}"
+        )
+    finally:
+        root.destroy()
+
+
 # ============================================================
 # 6. 入口の語彙（2.7 スライス D）
 # ============================================================

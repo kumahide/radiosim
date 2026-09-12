@@ -85,6 +85,7 @@ def show_graph(
     memo: str = "",
     on_close: "Callable[[], None] | None" = None,
     coord_format: str = "dd",
+    dem_acquired: "tuple[str, str] | None" = None,
 ) -> "GraphWindow":
     """地形断面ウィンドウを開く（**ブロックしない**）。
 
@@ -96,6 +97,8 @@ def show_graph(
         memo:         レポートの自由メモ（ランチャーから踏襲・空可）
         on_close:     窓が閉じられたときに呼ばれる（呼び出し元の参照を外す用）。
         coord_format: 人が読むレポートの座標表記（ランチャーが凍結して渡す）。
+        dem_acquired: `raw_elevs` を取ったタイルの取得日の範囲（B-213）＝窓が抱えて
+                      保存の report.txt に出す。窓を開いた後にキャッシュが消えても残る。
     """
     mpl_fonts.apply_japanese_font()
     terrain = models.calculate_terrain_profile(
@@ -108,6 +111,7 @@ def show_graph(
         #    並べ直され、画素の縁で刻んだ標高が別の距離に貼りつく。
         frac_axis = params.sample_fracs,
     )
+    terrain.dem_acquired = dem_acquired
     return GraphWindow(parent, params, terrain, project_name, memo, on_close,
                        coord_format)
 

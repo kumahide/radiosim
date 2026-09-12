@@ -267,8 +267,6 @@ def fetch_elevations(
             raw_elevs: list[float] = [0.0] * params.num
             # 標本ごとに「標高を返したタイル」＝出所刻印「取得日」の根拠（B-213）
             source_tiles: list["tuple | None"] = [None] * params.num
-            with _dem_acquired_lock:
-                _dem_acquired.pop(_terrain_cache_key(params), None)
             completed  = 0
             failures   = 0
             successes  = 0
@@ -341,7 +339,8 @@ def fetch_elevations(
                 raise DemUnreachableError(i18n.t("err_dem_unreachable"))
 
             logger.info("Terrain fetch complete: %d samples", params.num)
-            _record_dem_acquired(params, source_tiles)
+            # 同じスレッドで直後に呼ぶ on_complete へだけ渡す（`last_dem_acquired`）
+            _fetch_local.dem_acquired = _acquired_range(source_tiles)
             on_complete(np.array(raw_elevs))
 
         except Exception as ex:
@@ -358,7 +357,10 @@ def fetch_elevations(
 # k_factor は raw_elevs に影響しない（曲率補正は calculate_terrain_profile で適用）
 # ため、キャッシュキーには含めない。
 _TerrainCacheKey = tuple[float, float, float, float, int, str]
-_terrain_cache: dict[_TerrainCacheKey, np.ndarray] = {}
+# 値は (raw_elevs, 取得日の範囲)＝**取得日は標高と同じ項目に持つ**（B-213）。
+# 別の辞書に分けると寿命が別になり、片方だけ消える・上書きされる。
+_terrain_cache: dict[_TerrainCacheKey,
+                     "tuple[np.ndarray, tuple[str, str] | None]"] = {}
 _terrain_cache_lock = threading.Lock()
 
 
@@ -369,15 +371,17 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
             params.num, params.resolution)
 
 
-# 出所刻印「取得日」（3.3 段4e）＝**標高を取った時点で確定させ、地形と同じ鍵で
-# 持つ**（B-213）。保存時に座標からタイルを引き直すと、標高を返したのとは別の
-# タイルの日付を答え得る（`dem.last_source_tile` の註）。地形キャッシュに命中した
-# 実行は、その地形を取った回の値をそのまま使う（同じタイルで計算しているので正しい）。
-_dem_acquired: dict[_TerrainCacheKey, "tuple[str, str] | None"] = {}
-_dem_acquired_lock = threading.Lock()
+# 出所刻印「取得日」（3.3 段4e）＝**標高を取った時点で確定させ、標高と一緒に
+# 運ぶ**（B-213）。保存時に座標からタイルを引き直すと、標高を返したのとは別の
+# タイルの日付を答え得る（`dem.last_source_tile` の註）。
+# 🔴 **鍵で引ける共有の辞書に置かない**（Codex 99 巡目）＝初版の修正は地形と同じ鍵の
+# 別辞書に置いたため、結果の窓を開いたままプロキシ設定の OK（`clear_terrain_cache`）を
+# 押すと、後で保存した report.txt から行が消えた。**値は結果（`TerrainProfile`）が
+# 持つ**＝取得スレッドから `on_acquired` で呼び出し側へ渡し、窓がそれを抱える。
+_fetch_local = threading.local()
 
 
-def _record_dem_acquired(params: SimParams, source_tiles) -> None:
+def _acquired_range(source_tiles) -> "tuple[str, str] | None":
     """標本ごとの「標高を返したタイル」から取得日の範囲（最古〜最新）を確定する。
 
     日付はタイルごとに 1 回だけ引く（標本は数万点あり得るがタイルは数枚）。
@@ -386,9 +390,20 @@ def _record_dem_acquired(params: SimParams, source_tiles) -> None:
     dates = [d for d in (dem.tile_acquired_date(k)
                          for k in {k for k in source_tiles if k is not None})
              if d is not None]
-    with _dem_acquired_lock:
-        _dem_acquired[_terrain_cache_key(params)] = (
-            (min(dates), max(dates)) if dates else None)
+    return (min(dates), max(dates)) if dates else None
+
+
+def last_dem_acquired() -> "tuple[str, str] | None":
+    """直前に `fetch_elevations` が `on_complete` を呼んだ取得の取得日の範囲。
+
+    **`on_complete` の中から（同じスレッドで）だけ読む**＝取得スレッドに固有の値
+    （`dem.network_failed()` / `dem.last_source_tile()` と同じ口）。読んだら消す＝
+    偽の取得（テストの差し替え）が別のスレッドで `on_complete` を呼んでも、前の
+    取得の値を持ち越さない。
+    """
+    value = getattr(_fetch_local, "dem_acquired", None)
+    _fetch_local.dem_acquired = None
+    return value
 
 
 def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
@@ -416,6 +431,7 @@ def fetch_elevations_cached(
     on_progress: Callable[[int], None],
     on_complete: Callable[[np.ndarray], None],
     on_error: Callable[[Exception], None],
+    on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
 ) -> None:
     """
     キャッシュ付き標高取得。
@@ -423,6 +439,11 @@ def fetch_elevations_cached(
     TX/RX 座標とサンプル数が前回と同じであれば DEM を再取得せず、
     キャッシュした raw_elevs を即座に on_complete へ渡す。
     変更があった場合は fetch_elevations を呼び出してキャッシュを更新する。
+
+    Args:
+        on_acquired: その標高の DEM 取得日の範囲（`_acquired_range`・無ければ None）を
+                     受け取る。**`on_complete` の直前に同じスレッドで 1 回だけ**呼ぶ
+                     （B-213＝取得日は標高と一緒に結果へ運ぶ。保存時に引き直さない）。
     """
     key = _terrain_cache_key(params)
 
@@ -436,13 +457,18 @@ def fetch_elevations_cached(
             params.lat_rx, params.lon_rx,
             params.num,
         )
+        elevs, acquired = cached
         # プログレスバーを満杯にしてから完了通知（UI の一貫性のため）
         on_progress(params.num)
-        on_complete(cached.copy())
+        # 命中した地形を取った回の値＝同じタイルで計算しているので正しい
+        if on_acquired is not None:
+            on_acquired(acquired)
+        on_complete(elevs.copy())
         return
 
     # キャッシュミス → 実取得してキャッシュに保存
     def _on_complete_and_cache(raw_elevs: np.ndarray) -> None:
+        acquired = last_dem_acquired()
         if _is_total_dem_failure(raw_elevs):
             # 取得が全滅した結果は保持しない（B-025）。結果自体は今までどおり
             # 返す＝ここで握り潰すと「何も起きない」になるため。呼び出し側への
@@ -457,18 +483,22 @@ def fetch_elevations_cached(
             )
         else:
             with _terrain_cache_lock:
-                _terrain_cache[key] = raw_elevs.copy()
+                _terrain_cache[key] = (raw_elevs.copy(), acquired)
+        if on_acquired is not None:
+            on_acquired(acquired)
         on_complete(raw_elevs)
 
     fetch_elevations(params, on_progress, _on_complete_and_cache, on_error)
 
 
 def clear_terrain_cache() -> None:
-    """地形キャッシュを全消去する（テスト・デバッグ用）。"""
+    """地形キャッシュを全消去する（テスト・デバッグ用）。
+
+    ⚠️ 開いている結果の取得日は消えない＝値は結果（`TerrainProfile.dem_acquired`）が
+    持っている（B-213・Codex 99 巡目）。
+    """
     with _terrain_cache_lock:
         _terrain_cache.clear()
-    with _dem_acquired_lock:
-        _dem_acquired.clear()
 
 
 # ============================================================
@@ -600,20 +630,8 @@ def _save_terrain_csv(terrain: models.TerrainProfile, save_dir: str) -> None:
             ])
 
 
-def _dem_acquired_range(params: SimParams) -> "tuple[str, str] | None":
-    """このレポートの地形標本が使ったタイルの**取得日**の範囲（最古〜最新）。
-
-    3.3 段4e＝出所刻印「取得日」。**実行日ではなくタイルを取った日**（詳細は
-    `dem.tile_acquired_date`）。値は**標高を取った時点で確定したもの**を読むだけ
-    （`_record_dem_acquired`・B-213）＝ここでタイルを引き直さない。この経路の
-    地形をまだ取っていない・1 枚も分からなければ None（行ごと出さない）。
-    """
-    with _dem_acquired_lock:
-        return _dem_acquired.get(_terrain_cache_key(params))
-
-
 def _format_dem_acquired_line(acquired: "tuple[str, str] | None") -> str:
-    """`_dem_acquired_range` の結果を report.txt の1行にする（無ければ空文字）。
+    """`TerrainProfile.dem_acquired` を report.txt の1行にする（無ければ空文字）。
 
     同一日なら単一の日付、幅があれば "A to B" にする（経路が広域だとタイルが
     別日にまたがり得る）。
@@ -690,7 +708,10 @@ def _save_report(
            if terrain is not None else "")
         # DEM の取得日（3.3 段4e＝出所刻印の最後の要素）＝実行日（上の Date:）
         # ではなく、地形標本が実際に使ったタイルがいつキャッシュされたか。
-        + _format_dem_acquired_line(_dem_acquired_range(params))
+        # 値は**標高を取った時点で確定し、地形と一緒に運ばれてきたもの**を読むだけ
+        # （B-213）＝ここでタイルもキャッシュも引き直さない。
+        + _format_dem_acquired_line(
+            terrain.dem_acquired if terrain is not None else None)
         + "\n"
         # 「結果の取扱に関する補足」（3.0a1）＝HTML の帳票と**同じ 1 本**を引く
         # （report.txt だけ開示を持たない、が起きないように）。

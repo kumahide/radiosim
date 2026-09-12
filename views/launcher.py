@@ -777,9 +777,17 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 v, i18n.t("status_fetching_pct").format(pct=pct)
             )
 
+        # 取得日は on_complete の直前に同じスレッドで届く（B-213）＝標高と一緒に窓へ渡す
+        acquired: list = [None]
+
+        def _on_acquired(value) -> None:
+            acquired[0] = value
+
         def _on_complete(elevs) -> None:
             # ワーカースレッドから呼ばれる＝投函先が生きているとは限らない（B-061）
-            progress.post_to_ui(self.root, lambda: self._on_fetch_complete(params, elevs))
+            dem_acquired = acquired[0]
+            progress.post_to_ui(self.root, lambda: self._on_fetch_complete(
+                params, elevs, dem_acquired))
 
         def _on_error(ex: Exception) -> None:
             progress.post_to_ui(self.root, lambda: self._on_fetch_error(ex))
@@ -789,9 +797,11 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             on_progress = _on_progress,
             on_complete = _on_complete,
             on_error    = _on_error,
+            on_acquired = _on_acquired,
         )
 
-    def _on_fetch_complete(self, params: sim.SimParams, raw_elevs) -> None:
+    def _on_fetch_complete(self, params: sim.SimParams, raw_elevs,
+                           dem_acquired=None) -> None:
         self._progress_stop()
         self._run_btn.config(state="normal")
         # ここから先（matplotlib の遅延 import＋グラフ構築）が単一実行の体感時間の
@@ -827,6 +837,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             # app 設定（座標表記）は開く時点で凍結して渡す＝窓が保存のたびに
             # `config.load_config()` を読み直さない（I-055 ②・2.7 スライス G2）。
             coord_format = self._coord_fmt_var.get(),
+            dem_acquired = dem_acquired,
         )
         # 窓が出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
         # したため、表示直前に呼ばれる `on_ready` フックが要った（戻り値を待つと
