@@ -497,6 +497,8 @@ Clicking the button runs data retrieval in two phases.
 1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly.
 2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
 
+> **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC** (the cache file's modification time, `dem.tile_acquired_date`), not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). Computing this value never touches the network. To recompute with fresh tiles, force re-download that area in Cache Management mode.
+
 ### 3. Graph Window
 
 After retrieval completes, the terrain cross-section graph is displayed.
