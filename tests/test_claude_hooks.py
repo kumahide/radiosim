@@ -27,6 +27,7 @@ import io
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import time
@@ -785,6 +786,23 @@ def memcheck():
     return _load_check_memory()
 
 
+def test_check_numbers_are_unique():
+    """`check_memory.py` の検査番号（節見出し `# ── check N:`）が重複しない。
+
+    2026-09-12・I-148＝check 12 と check 17 がそれぞれ 2 つの別の検査を名乗って
+    いた（後から足した側が空き番号を確かめずに振った）。「check 17 が鳴った」と
+    書いても、どちらの保証の話か読み手に区別がつかない。番号は手で振るので、
+    採番の仕組みを持つ `B-/I-` や Codex の巡目と違い、衝突を止めるものが無かった。
+    """
+    if not os.path.exists(_CHECK_MEMORY_PATH):
+        pytest.skip("check_memory.py は git-ignore（CI には存在しない）")
+    with open(_CHECK_MEMORY_PATH, encoding="utf-8") as fh:
+        nums = re.findall(r"^# ── check (\d+):", fh.read(), flags=re.MULTILINE)
+    assert nums, "節見出しの形が変わった＝この検査が何も見ていない"
+    dup = sorted({n for n in nums if nums.count(n) > 1}, key=int)
+    assert not dup, f"同じ番号を 2 つ以上の検査が名乗っている: check {', '.join(dup)}"
+
+
 class TestRoadmapDashboardHygiene:
     """ロードマップ現在地表の「片方のセルだけ古い」を機械で拾う。
 
@@ -1152,7 +1170,7 @@ class TestVersionSyncIgnoresDeltaNotation:
     `+1.0` は [[feedback-branch-strategy]]「見つけたものをどの版で直すか」の
     用語で**今後も見出しに現れる**ので、その場しのぎの言い換えでは再発する。
 
-    check 11（本文の日付）・check 12（布石の記法）と**同じクラス**＝
+    check 11（本文の日付）・check 20（布石の記法）と**同じクラス**＝
     パターンが一致しただけの「言及」を「宣言」と取り違える誤検知。
     """
 
@@ -1654,7 +1672,7 @@ class TestStateContradictsResponse:
 
 
 # ============================================================
-# check_memory.py check 17 ＝ 段の完了マーク ⇔ 台帳の状態（I-143）
+# check_memory.py check 21 ＝ 段の完了マーク ⇔ 台帳の状態（I-143）
 # ============================================================
 # 2026-09-10・I-143 は ISSUES.md では「済」になったのに、ロードマップの
 # `段1` 行には完了マークが付かないまま残った＝手順は進んだのにロードマップが
