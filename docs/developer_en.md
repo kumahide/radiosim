@@ -693,7 +693,7 @@ Replaces several obstacles with a single **equivalent knife edge**: two tangent 
 #### Fresnel-Kirchhoff Loss J(ν)
 
 ```
-J(ν) = 6.9 + 20 × log₁₀(√((ν - 0.1)² + 1) + ν - 0.1)  [dB]  (ν > -0.8)
+J(ν) = max(0, 6.9 + 20 × log₁₀(√((ν - 0.1)² + 1) + ν - 0.1))  [dB]  (ν > -0.8)
 J(ν) = 0                                                          (ν ≤ -0.8)
 ```
 

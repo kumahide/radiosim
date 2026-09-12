@@ -645,7 +645,7 @@ Replaces several obstacles with a single **equivalent knife edge**: two tangent 
 #### Fresnel-Kirchhoff Loss J(ν)
 
 ```
-J(ν) = 6.9 + 20 × log₁₀(√((ν - 0.1)² + 1) + ν - 0.1)  [dB]  (ν > -0.8)
+J(ν) = max(0, 6.9 + 20 × log₁₀(√((ν - 0.1)² + 1) + ν - 0.1))  [dB]  (ν > -0.8)
 J(ν) = 0                                                          (ν ≤ -0.8)
 ```
 
@@ -761,7 +761,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 
 > **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page once the rows no longer fit** (roughly **8–9 rows** with the overview map, or **about 14 rows** when the map could not be fetched — the profile thumbnails make each row taller than before, and the count also depends on the notes; see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
 >
-> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (page 1 = the summary ledger, pages 2+ = one A4 page per path). Clicking the **profile thumbnail** in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
+> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (the summary ledger first, then one A4 page per path). Clicking the **profile thumbnail** in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
 > **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
