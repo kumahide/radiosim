@@ -531,6 +531,35 @@ class TestUncoveredFacesAreReported:
                               whole_suite=True, **narrowing)
             assert not stamp.exists(), f"絞り込み {narrowing} を全体実行として刻んだ"
 
+    @pytest.mark.parametrize("argv, narrowed", [
+        (["-p", "no:cacheprovider"], False),   # B-215 の実例
+        (["-o", "console_output_style=classic"], False),
+        (["-W", "ignore::DeprecationWarning"], False),
+        (["-p", "no:cacheprovider", "sub"], True),
+    ])
+    def test_option_values_are_not_paths(self, tmp_path, argv, narrowed):
+        """⛔ **値を別の引数で取るオプション**をパスの絞り込みと見ないこと（B-215）。
+
+        🔴 以前は `-` で始まらない引数を全部パスと数えていた＝`-p no:cacheprovider`
+        でフルスイートを回しても刻まず、release-check が 🔴🔴 を出した。判定の元
+        （`config.args_source`）を**実物の pytest に作らせて**確かめる＝偽の config
+        では、pytest が引数をどう分けるかは検査できない。
+        """
+        import subprocess
+        import textwrap
+
+        (tmp_path / "sub").mkdir()
+        (tmp_path / "sub" / "test_x.py").write_text("def test_x(): pass\n", encoding="utf-8")
+        (tmp_path / "conftest.py").write_text(textwrap.dedent("""
+            import pathlib
+            def pytest_configure(config):
+                pathlib.Path(__file__).with_name("src.txt").write_text(config.args_source.name)
+        """), encoding="utf-8")
+        subprocess.run([sys.executable, "-m", "pytest", "-q", "--co", *argv],
+                       cwd=tmp_path, capture_output=True, timeout=60, check=False)
+        got = (tmp_path / "src.txt").read_text()
+        assert (got == "ARGS") is narrowed, f"{argv} → {got}"
+
     def test_a_red_run_is_never_stamped(self, monkeypatch, tmp_path):
         """赤い実行を刻まないこと（通っていないものを「通った」と言わせない）。"""
         import conftest
@@ -553,9 +582,10 @@ class TestUncoveredFacesAreReported:
             lf = option_kw.get("lf", False)
             failedfirst = option_kw.get("failedfirst", False)
 
-        class _Params:
-            pass
-        _Params.args = args if args else (("--cov",) if whole_suite else ("tests",))
+        # `args` を渡したらパスの絞り込み（pytest なら ARGS になる形）として扱う。
+        # 実物の pytest がオプションの値をどう分けるかは `test_option_values_are_not_paths`。
+        src = pytest.Config.ArgsSource
+        narrowed_by_path = bool(args) or not whole_suite
 
         class _PM:
             def get_plugin(self, _name): return reporter
@@ -563,7 +593,7 @@ class TestUncoveredFacesAreReported:
         class _Config:
             pluginmanager = _PM()
             option = _Option()
-            invocation_params = _Params()
+            args_source = src.ARGS if narrowed_by_path else src.TESTPATHS
 
         class _Session:
             config = _Config()

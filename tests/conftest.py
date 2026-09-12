@@ -443,15 +443,21 @@ def _is_whole_suite(config) -> bool:
     を回しただけで「表示のある機械で全部通った」と刻んでしまう＝**刻印が嘘をつく**
     （[[feedback-promote-recurring-checks]] の「間違ったものを要求するゲート」）。
     ⇒ **絞り込みが宣言されていないこと**を条件にする（選び方の側を見る）。
+
+    パスの絞り込みは **pytest が解析した `config.args_source`** で見る（B-215）。
+    🔴 以前は `invocation_params.args` のうち `-` で始まらないものを位置引数と数えて
+    いた＝`-p no:cacheprovider` の `no:cacheprovider` のような**オプションの値**まで
+    パスと見て、全体を回しても刻まなかった。**引数の文法を自分で解析しない。**
     """
     o = getattr(config, "option", None)
-    params = getattr(config, "invocation_params", None)
-    if o is None or params is None:
+    source = getattr(config, "args_source", None)
+    if o is None or source is None:
         # 実際の pytest では必ずどちらも在る。分からないときに**刻まない**側へ倒すのは、
         # 嘘の刻印（回っていないのに「回った」）のほうが、刻印が無いことより悪いため。
         return False
-    positional = [a for a in params.args if not a.startswith("-")]
-    return not positional and not (
+    # ARGS＝コマンド行でパスを渡した（`tests` と全体を渡しても刻まない側＝保守的）。
+    # それ以外（TESTPATHS / INVOCATION_DIR）＝パスを渡していない。
+    return source is not pytest.Config.ArgsSource.ARGS and not (
         getattr(o, "keyword", "") or getattr(o, "markexpr", "")
         or getattr(o, "deselect", None) or getattr(o, "lf", False)
         or getattr(o, "failedfirst", False)
