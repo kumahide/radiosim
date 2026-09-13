@@ -243,7 +243,7 @@ def path_sheet_css() -> str:
 /* --- per-path シート --- */
 /* ヘッダ/フッタの余白を詰めて縮小フィットの余地を増やす（summary は据え置き）。
    ヘッダも .fit の外＝フッタ同様に縮小されない（題字の大きさをシート間で揃える）。 */
-.sheet.path .page-header{padding-bottom:4px;margin-bottom:7px}
+.sheet.path .page-header{padding-bottom:2px;margin-bottom:4px}
 /* フッタは summary 同様に用紙最下部へ固定（.sheet を縦フレックス＋margin-top:auto）。
    .fit の外に出したので縮小フィットの transform/clip の影響を受けない。
    ⚠️ **印刷では適用しない**（B-212＝理由は report_summary の同型コメントを見よ）。
@@ -251,21 +251,21 @@ def path_sheet_css() -> str:
    同じ壊れ方をし得るので他の3シートと揃えて外す。 */
 @media screen{.sheet.path{display:flex;flex-direction:column}}
 @media screen{.sheet.path .page-footer{margin-top:auto}}
-.sheet.path .page-footer{padding-top:4px}
+.sheet.path .page-footer{padding-top:2px}
 .sheet.path .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f;break-inside:avoid}
 .sheet.path .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
-.sheet.path .cards{display:flex;gap:12px;margin-bottom:6px;break-inside:avoid}
-.sheet.path .card{background:white;border:1px solid #eee;border-radius:8px;padding:2px 20px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}
-.sheet.path .card .lbl{font-size:9px;color:#999;text-transform:uppercase}
-.sheet.path .card .val{font-size:15px;font-weight:bold;color:#333}
+.sheet.path .cards{display:flex;gap:12px;margin-bottom:3px;break-inside:avoid}
+.sheet.path .card{background:white;border:1px solid #eee;border-radius:8px;padding:0 14px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}
+.sheet.path .card .lbl{font-size:8px;color:#999;text-transform:uppercase}
+.sheet.path .card .val{font-size:14px;font-weight:bold;color:#333}
 .sheet.path .card.ok .val{color:#2e7d32}.sheet.path .card.ng .val{color:#c62828}
-.sheet.path .graph{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:6px}
+.sheet.path .graph{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:3px}
 .sheet.path .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:10px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:6px}
 .sheet.path .cols{display:flex;gap:16px;margin-bottom:2px}
-.sheet.path .col{flex:1;background:white;border-radius:8px;padding:6px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
-.sheet.path .col h3{margin:0 0 5px;font-size:13px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:3px}
+.sheet.path .col{flex:1;background:white;border-radius:8px;padding:3px 14px;box-shadow:0 1px 3px rgba(0,0,0,.12)}
+.sheet.path .col h3{margin:0 0 2px;font-size:12px;color:#455a64;border-bottom:1px solid #eee;padding-bottom:1px}
 .sheet.path table.info{border-collapse:collapse;width:100%}
-.sheet.path table.info td{padding:1px 6px;border-bottom:1px solid #f0f0f0;font-size:11px}
+.sheet.path table.info td{padding:0 5px;border-bottom:1px solid #f0f0f0;font-size:10px;line-height:1.2}
 .sheet.path table.info td:first-child{color:#888;width:50%}
 .sheet.path table.info td.n{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
 .sheet.path table.info td.n .u{color:#999;display:inline-block;width:2.6em;text-align:left;margin-left:6px}
@@ -419,7 +419,7 @@ def path_sheet_html(
       <tr><td>{i18n.t('html_aim_tx')}</td><td>{az_tx_rx:.1f}° / {el_tx_rx:+.1f}°</td></tr>
       <tr><td>{i18n.t('html_aim_rx')}</td><td>{az_rx_tx:.1f}° / {el_rx_tx:+.1f}°</td></tr>
     </table>
-    <h3 style="margin-top:9px">{i18n.t('html_environment')}</h3>
+    <h3 style="margin-top:4px">{i18n.t('html_environment')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
       <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
@@ -444,7 +444,7 @@ def path_sheet_html(
       <tr><td>{i18n.t('html_threshold')}</td><td class="n">{units.format_db(params.sens)}<span class="u">dBm</span></td></tr>
       <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{units.format_db(result.actual_margin, signed=True)}<span class="u">dB</span></b></td></tr>
     </table>
-    <h3 style="margin-top:9px">{i18n.t('html_radio_settings')}</h3>
+    <h3 style="margin-top:4px">{i18n.t('html_radio_settings')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
       <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
