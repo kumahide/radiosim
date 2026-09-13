@@ -405,6 +405,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 for pr in run.hops if pr.result is not None and pr.params is not None
             ),
             _mh_sens, sens_note=_mh_sens_note,
+            dem_source_ids=(
+                pr.params.dem_source for pr in run.hops
+                if pr.result is not None and pr.params is not None
+            ),
         )
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'

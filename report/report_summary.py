@@ -343,16 +343,22 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     # 「結果の取扱に関する補足」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
     # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には
     # 書いていない*ことになる）。計算できなかった行は条件が確定していないので数えない。
-    handling = report_common.handling_section_html(models.scope_notes_union(
-        models.scope_notes(
-            pr.params.freq_mhz,
-            diff_method=pr.result.diff_method,
-            rain_rate=pr.params.rain_rate,
-            veg_h=pr.params.veg_h,
-            resolution=pr.params.resolution,
-        )
-        for pr in results if pr.result is not None and pr.params is not None
-    ))
+    handling = report_common.handling_section_html(
+        models.scope_notes_union(
+            models.scope_notes(
+                pr.params.freq_mhz,
+                diff_method=pr.result.diff_method,
+                rain_rate=pr.params.rain_rate,
+                veg_h=pr.params.veg_h,
+                resolution=pr.params.resolution,
+            )
+            for pr in results if pr.result is not None and pr.params is not None
+        ),
+        dem_source_ids=(
+            pr.params.dem_source for pr in results
+            if pr.result is not None and pr.params is not None
+        ),
+    )
 
     # 実測残差の層別表（3.4 段6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ
     # だけに出る（0 件なら空表を出さない＝`residuals_table_html` が空文字を返す）。

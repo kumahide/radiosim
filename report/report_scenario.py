@@ -390,6 +390,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
             for p in run.points if p.result is not None
         ),
         sens_result, sens_note=i18n.t("html_sens_base_only"),
+        dem_source_ids=base.dem_source,
     )
 
     return f"""<section class="sheet scenario">

@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+from core import dem_sources
 from core import i18n
 from core import models
 from core import terrain_grid
@@ -120,8 +121,10 @@ def calibration_line() -> str:
     return f'{i18n.t("html_calib_profile")}: {i18n.t("html_calib_none")}'
 
 
-def data_source_line() -> str:
-    """標高データの出典（B-134）。**帳票の 5 面と地形断面図が引く 1 本の字**。
+def data_source_line(dem_source_ids=None) -> str:
+    """標高データの出典（B-134／B-216 で実際に使ったソースへ追従）。
+
+    **帳票の 5 面と地形断面図が引く 1 本の字**。
 
     🔑 **地図タイルの出典（B-133）とは置き場が違う**＝地図は 3 面にしか出ないので
     画像へ焼けば足りたが、**標高データは全面の土台**（条件探索のように断面図を
@@ -132,15 +135,42 @@ def data_source_line() -> str:
     （`html_scope_*`）に混ぜない。あちらは**条件によって出たり出なかったりする**
     適用範囲の話で、出典は**常に出る事実**。混ぜると `models.scope_notes()` が
     出典まで判定することになる。
+
+    Args:
+        dem_source_ids: 実際に使った `dem_sources` の `source_id`。単一の
+            文字列、複数本（台帳・多ホップ）を渡す場合は反復可能なもの、
+            省略時は国土地理院（3.3 以前と同じ既定）。**複数の異なるソースが
+            混じっていれば「複数」と表示する**（1 本を代表に選んで嘘をつかない）。
+
+    ⚠️ **`report.txt` の `DEM Source:` 行（`_format_dem_source_line`）と値は同じ
+    出所**（`dem_sources.resolve()`）＝ HTML と `report.txt` で出典が食い違わない。
+    **`attribution` は含めない**＝B-135 の「機関名を重ねなくても出所は特定できる」
+    という既存の方針を維持し、断面図の距離軸ラベルと同じ行に収める字数を抑える。
     """
-    return i18n.t("html_elev_source")
+    if dem_source_ids is None:
+        ids: set[str] = set()
+    elif isinstance(dem_source_ids, str):
+        ids = {dem_source_ids}
+    else:
+        ids = set(dem_source_ids)
+    if not ids:
+        ids = {dem_sources.GSI_DEM.source_id}
+    if len(ids) == 1:
+        value = dem_sources.resolve(next(iter(ids))).display_name
+    else:
+        value = i18n.t("html_elev_source_mixed")
+    return f'{i18n.t("html_elev_source_prefix")}: {value}'
 
 
-def handling_text(note_keys) -> str:
+def handling_text(note_keys, dem_source_ids=None) -> str:
     """「結果の取扱に関する補足」節の**素のテキスト**（`report.txt` 用）。
 
     見出しは英字の角括弧＝`report.txt` の他の節（`[LINK BUDGET]` 等）と同じ字面に
     合わせる。中身は表示言語に従う（レポート本文と同じ扱い）。
+
+    Args:
+        dem_source_ids: `data_source_line()` へそのまま渡す（B-216）。渡さないと
+            国土地理院と表示される。
     """
     body = "\n".join(f"- {line}" for line in handling_lines(note_keys))
     return (
@@ -148,5 +178,5 @@ def handling_text(note_keys) -> str:
         f"{i18n.t('html_handling_title')}\n"
         f"{body}\n"
         f"- {calibration_line()}\n"
-        f"- {data_source_line()}\n"
+        f"- {data_source_line(dem_source_ids)}\n"
     )

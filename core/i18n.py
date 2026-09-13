@@ -591,7 +591,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 入るので、機関名まで書いていた頃は**英語で 148px 食い込んでいた**。
         # 🔑 地図タイルの出典（`tm_attr_*`）と**同じ書式**に揃えてある＝「地理院タイル」
         # は固有名なので、機関名を重ねなくても出所は特定できる。
-        "html_elev_source":     "Elevation data source: GSI Tiles (elevation)",
+        "html_elev_source_prefix": "Elevation data source",
+        "html_elev_source_mixed":  "Multiple (varies by path)",
 
         # ===== Tile Manager =====
         "map_window_title":     "Map",
@@ -1313,8 +1314,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_residuals_col_median":   "中央値 (dB)",
         "html_residuals_col_iqr":      "ばらつき（四分位範囲、dB）",
 
-        # 標高データの出典（B-134）
-        "html_elev_source":     "標高データの出典: 地理院タイル（標高タイル）",
+        # 標高データの出典（B-134／B-216）
+        "html_elev_source_prefix": "標高データの出典",
+        "html_elev_source_mixed":  "複数（経路ごとに異なる）",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

@@ -202,7 +202,7 @@ def save_profile_png(
     # ⚠️ 軸の外（figure 座標の右下）に置く＝地形の絵に重ねない。
     # 字の大きさは**図の幅から**決める（B-135）＝この図は A4 幅へ 0.31 倍に縮んで
     # 載るので、9pt と書いたときは 5.7px まで落ちて読めなかった。
-    fig.text(0.995, 0.012, disclosure.data_source_line(),
+    fig.text(0.995, 0.012, disclosure.data_source_line(params.dem_source),
              ha="right", va="bottom", color="#666666",
              fontsize=report_common.figure_text_pt(
                  report_common.PROFILE_FIGSIZE[0] * _PROFILE_DPI, _PROFILE_DPI))
@@ -382,7 +382,8 @@ def path_sheet_html(
         scope_keys = tuple(k for k in scope_keys if k != "diff_bullington")
     if "diff_veg_compose" in sens_result.axes:
         scope_keys = tuple(k for k in scope_keys if k != "diff_veg_serial")
-    handling = report_common.handling_section_html(scope_keys, sens_result)
+    handling = report_common.handling_section_html(
+        scope_keys, sens_result, dem_source_ids=params.dem_source)
 
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
     # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。

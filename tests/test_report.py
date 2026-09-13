@@ -950,10 +950,26 @@ class TestHandlingSectionContent:
         for lang in ("en", "ja"):
             i18n.set_lang(lang)
             line = disclosure.data_source_line()
-            assert line == i18n.t("html_elev_source") and line
+            assert line.startswith(i18n.t("html_elev_source_prefix")) and line
             assert line not in disclosure.handling_lines(models.SCOPE_NOTE_ORDER)
         i18n.set_lang("ja")
-        assert "地理院" in disclosure.data_source_line()
+        assert "国土地理院" in disclosure.data_source_line()
+
+    def test_the_elevation_source_follows_the_selected_dem_source(self):
+        """選んだ DEM ソースが出典の字へ反映されること（B-216）。
+
+        単一ソースなら実名を、複数の異なるソースが混じっていれば「複数」を出す
+        ＝1 本を代表に選んで残りのソースについて嘘をつかない。
+        """
+        from core import dem_sources
+        i18n.set_lang("ja")
+        gsi_line = disclosure.data_source_line(dem_sources.GSI_DEM.source_id)
+        assert dem_sources.GSI_DEM.display_name in gsi_line
+        mixed_line = disclosure.data_source_line(
+            ["gsi_dem", "some_other_source"])
+        assert i18n.t("html_elev_source_mixed") in mixed_line
+        same_twice_line = disclosure.data_source_line(["gsi_dem", "gsi_dem"])
+        assert dem_sources.GSI_DEM.display_name in same_twice_line
 
     def test_the_html_section_escapes_and_lists_every_line(self):
         i18n.set_lang("en")

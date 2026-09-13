@@ -689,6 +689,7 @@ def handling_section_html(
     sens: "core_sensitivity.SensitivityResult | None" = None,
     *,
     sens_note: str = "",
+    dem_source_ids=None,
 ) -> str:
     """「結果の取扱に関する補足」節の HTML 断片を返す（**4 種のシート共通**）。
 
@@ -702,6 +703,9 @@ def handling_section_html(
             この面はまだ感度を計算していない（表は出ない）。
         sens_note: 感度表の下に添える 1 行。**scenario / multihop は必ず渡す**＝
             この表が N 本のうちどの 1 本の値かを明示する（モジュール docstring）。
+        dem_source_ids: この面が実際に使った DEM ソースの `source_id`（単一文字列
+            または反復可能）。**渡さないと国土地理院と表示される**（B-216 で
+            固定文言だった名残の既定値）＝呼び出し側は必ず渡す。
     """
     items = "".join(
         f"<li>{_html.escape(line)}</li>"
@@ -714,7 +718,7 @@ def handling_section_html(
         f'<p class="hd-calib">'
         f'{_html.escape(disclosure.calibration_line())}</p>'
         f'<p class="hd-source">'
-        f'{_html.escape(disclosure.data_source_line())}</p>'
+        f'{_html.escape(disclosure.data_source_line(dem_source_ids))}</p>'
         + _sensitivity_inner_html(sens, sens_note) +
         '</section>'
     )
