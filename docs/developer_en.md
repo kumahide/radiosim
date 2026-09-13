@@ -1,4 +1,4 @@
-# RadioSim Pro 3.3
+# RadioSim Pro 3.4
 
 > **Intended reader**: developers who run it from source or work on the code.
 > If you only want to know how to use the app, see [manual_en.md](manual_en.md).
@@ -584,7 +584,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements (3.4/3.5); single source is `batch.PathRow`. For now they are only parsed and written back — residual calculation is not implemented yet (planned for 3.4 stage 5). `meas_method` is expected to be `spot` or `mean`. **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; single source is `batch.PathRow`. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean` (`spot` rows can be excluded from the statistics). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 
