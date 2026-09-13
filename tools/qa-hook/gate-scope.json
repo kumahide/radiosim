@@ -1,0 +1,18 @@
+{
+  "_comment": "gate.mjs（Stop フックの毎ターン pytest）と buildtools/dev_check.py が共に読む、変更ファイル→追加テストの対応表（I-154）。片方だけ書き換えて対応が腐るのを防ぐため、単一の出所をここに置く。左＝変更パスの前方一致（リポジトリ相対・`/` 区切り・git diff --name-only の形式）、右＝足すテスト。減らすことはしない。",
+  "always_tests": "tests/test_repo_hygiene.py",
+  "extra_gates": [
+    [["docs/", "README", "CHANGELOG.md"], ["tests/test_docs_consistency.py"]],
+    [["lang/", "core/i18n.py"], [
+      "tests/test_i18n_external.py",
+      "tests/test_i18n_glossary.py",
+      "tests/test_i18n_key_duplication.py",
+      "tests/test_i18n_no_hardcoded_ui_text.py"
+    ]],
+    [["requirements", "pyproject.toml"], ["tests/test_env_consistency.py"]],
+    [["radiosim.spec"], ["tests/test_bundle_imports.py"]],
+    [["buildtools/"], ["tests/test_bundle_imports.py", "tests/test_dev_check.py"]],
+    [[".claude/"], ["tests/test_claude_hooks.py"]],
+    [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
+  ]
+}

@@ -39,6 +39,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import re
 import subprocess  # nosec B404 — 開発機で決定論的な検査器を呼ぶだけ（入力は自前）
 import sys
@@ -49,26 +50,24 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent.parent
 
+# 対応表の単一の出所（I-154）＝ `tools/qa-hook/gate.mjs`（Stop フックの毎ターン
+# pytest）もここを読む。手書きの対応表を 2 か所に書くと片方だけ痩せて気づけない
+# （dev_check.py 自身が元々ここで警告していた話そのもの）ので、外部ファイルへ
+# 出して両方が読む形にした。
+_GATE_SCOPE = json.loads(
+    (ROOT / "tools" / "qa-hook" / "gate-scope.json").read_text(encoding="utf-8")
+)
+
 # 範囲を絞ったときに **必ず足す** テスト。ruff / pyright のゲートがここに同居して
 # いるので、これを外すと「静的検査を 1 つも回さないまま緑」になる。
-ALWAYS_TESTS = "tests/test_repo_hygiene.py"
+ALWAYS_TESTS: str = _GATE_SCOPE["always_tests"]
 
 # 変更ファイルに応じて **足す** 追加ゲート（減らすことはしない）。
 # 左＝変更パスの前方一致（リポジトリ相対・`/` 区切り）、右＝足すテスト。
 # ⚠️ 右側が実在することは tests/test_dev_check.py が検査する（対応表が腐って
 #    黙って外れるのを防ぐ＝手書きリストを置く以上、腐り検出を対で置く）。
 EXTRA_GATES: list[tuple[tuple[str, ...], tuple[str, ...]]] = [
-    (("docs/", "README", "CHANGELOG.md"), ("tests/test_docs_consistency.py",)),
-    (("lang/", "core/i18n.py"), (
-        "tests/test_i18n_external.py",
-        "tests/test_i18n_glossary.py",
-        "tests/test_i18n_key_duplication.py",
-        "tests/test_i18n_no_hardcoded_ui_text.py",
-    )),
-    (("requirements", "pyproject.toml"), ("tests/test_env_consistency.py",)),
-    (("radiosim.spec",), ("tests/test_bundle_imports.py",)),
-    (("buildtools/",), ("tests/test_bundle_imports.py", "tests/test_dev_check.py")),
-    ((".claude/",), ("tests/test_claude_hooks.py",)),
+    (tuple(prefixes), tuple(tests)) for prefixes, tests in _GATE_SCOPE["extra_gates"]
 ]
 
 # 落ちた検査から抜き出す行数の上限（要約の設計制約）。

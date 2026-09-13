@@ -3,9 +3,20 @@
 //
 // Fires when Claude finishes a turn. If any *.py changed in the working tree,
 // run the DETERMINISTIC GATE (authoritative): pyright + ruff + bandit on the
-// changed lines, and pytest (whole suite). Failure -> block with the errors.
+// changed lines, and pytest — SCOPED to the tests affected by what changed
+// (see scopedTests below). Failure -> block with the errors.
 // pytest is skipped when it already passed for this exact working-tree content
-// (see pytest-cache.mjs — I-056: same suite, once per turn, for no new input).
+// AND scope (see pytest-cache.mjs — I-056: same suite, once per turn, for no
+// new input).
+//
+// 🔴 2026-09-13 (I-154): pytest here used to run the WHOLE suite every turn.
+// That was correct but got slow as the suite grew (2m29s at I-056 -> 7m28s),
+// and a full run costs the same whether one file or fifty changed. The full
+// suite still runs once, authoritatively, right before a commit — see
+// tools/qa-hook/pre-commit-gate.mjs (a PreToolUse hook on `git commit`/`git
+// push`). What is lost by scoping the per-turn run is not detection, only
+// timing: a break outside the affected scope is caught at commit time instead
+// of the same turn (accepted trade-off — see memory project_qa_gate_timing).
 //
 // The local-LLM (Qwen) second opinion used to run here as stage 2, then moved
 // to pre-push / on-demand. RETIRED 2026-07-26: it returned summaries rather
@@ -24,7 +35,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { changedPyEntries, isDeleted, changedLinesForFile } from "./git-changes.mjs";
+import { changedPyEntries, changedAllPaths, isDeleted, changedLinesForFile } from "./git-changes.mjs";
 import {
   pytestCacheKey, isCachedPass, recordPass, recordFinish,
   markStart, lastRunWasCut, lastDurationMs,
@@ -77,7 +88,10 @@ function emit(obj) {
 // The project venv lives outside the repo (outside OneDrive) since 2.6a1, so it
 // cannot be discovered by looking next to the sources. It must be declared.
 // Returns { python } or { error } — never a guess.
-function resolvePython() {
+// Exported so tools/qa-hook/pre-commit-gate.mjs (the full-suite commit gate,
+// I-154) shares the exact same resolution instead of a second copy that could
+// drift from this one.
+export function resolvePython() {
   const p = process.env.RADIOSIM_PYTHON;
   if (!p) {
     return {
@@ -132,6 +146,55 @@ function parseJson(s) {
   } catch {
     return null;
   }
+}
+
+// --- pytest scope (I-154): affected tests only, not the whole suite --------
+
+// Shared with buildtools/dev_check.py (single source of truth — a second,
+// hand-copied table is how one half quietly goes stale while the other keeps
+// working; see memory project_qa_gate_timing §注意).
+function loadGateScope(cwd) {
+  try {
+    return JSON.parse(readFileSync(join(cwd, "tools", "qa-hook", "gate-scope.json"), "utf-8"));
+  } catch {
+    return { always_tests: "tests/test_repo_hygiene.py", extra_gates: [] };
+  }
+}
+
+// A changed file's own test, by the repo's naming convention (e.g.
+// `core/sensitivity.py` -> `tests/test_sensitivity.py`). Only ever ADDS a
+// target — a file with no same-named test simply contributes nothing here
+// (other files' EXTRA_GATES prefixes may still catch it).
+function ownTestFor(path) {
+  const base = path.split("/").pop();
+  if (!base || !base.endsWith(".py")) return null;
+  return `tests/test_${base.slice(0, -3)}.py`;
+}
+
+/** The pytest targets this turn's changes justify: each changed file's own
+ *  test (if one exists by naming convention) + EXTRA_GATES prefix matches +
+ *  ALWAYS_TESTS. Never narrows below ALWAYS_TESTS; only ever adds. */
+function scopedTests(cwd, allPaths) {
+  const scope = loadGateScope(cwd);
+  const targets = new Set([scope.always_tests]);
+
+  for (const raw of allPaths) {
+    const path = norm(raw);
+    if (/^tests\/test_.*\.py$/.test(path)) {
+      targets.add(path); // a changed test is its own target
+      continue;
+    }
+    const own = ownTestFor(path);
+    if (own && existsSync(join(cwd, own))) targets.add(own);
+  }
+
+  for (const [prefixes, tests] of scope.extra_gates || []) {
+    if (allPaths.some((p) => prefixes.some((pre) => norm(p).startsWith(pre)))) {
+      for (const t of tests) targets.add(t);
+    }
+  }
+
+  return [...targets].sort();
 }
 
 // --- diff-scoped linters: only findings on changed lines gate -----------------
@@ -210,7 +273,7 @@ function lintSection(title, items) {
 }
 
 // Returns { ok, report } for the deterministic gate.
-function runDeterministic(cwd, py, entries) {
+function runDeterministic(cwd, py, entries, allPaths) {
   const failures = [];
   const notes = [];
   const live = entries.filter((e) => !isDeleted(e));
@@ -235,11 +298,15 @@ function runDeterministic(cwd, py, entries) {
     if (lint.length) failures.push(lint.join("\n\n"));
   }
 
-  // pytest (whole suite; pyproject sets testpaths=tests) — pass/fail wholesale.
-  // Skipped when the suite already passed for this exact working-tree content
-  // (I-056: holding an uncommitted .py re-ran the identical suite every turn).
+  // pytest — SCOPED to the tests this turn's changes justify (I-154), not the
+  // whole suite (that still runs once, authoritatively, at commit time — see
+  // tools/qa-hook/pre-commit-gate.mjs). Skipped when this exact scope already
+  // passed for this exact working-tree content (I-056: holding an uncommitted
+  // .py re-ran the identical suite every turn; the scope is now part of the
+  // cache key so a scoped pass and a full pass never share a slot).
   if (existsSync(join(cwd, "tests"))) {
-    const key = pytestCacheKey(cwd);
+    const targets = scopedTests(cwd, allPaths);
+    const key = pytestCacheKey(cwd, targets.join(","));
     if (!isCachedPass(cwd, key)) {
       // A run that never came back is only visible on the NEXT invocation: the
       // process that gets killed cannot report anything (see markStart).
@@ -255,7 +322,7 @@ function runDeterministic(cwd, py, entries) {
       // either way, and the cache only ever records a green run, so stopping at
       // the first failure changes how long a red turn takes, not what passes.
       const started = Date.now();
-      const r = runCmd(cwd, py, ["-m", "pytest", "-x"]);
+      const r = runCmd(cwd, py, ["-m", "pytest", "-x", ...targets]);
       const ms = Date.now() - started;
       if (!r.missing && r.code !== 0) {
         recordFinish(cwd, key, false, ms);
@@ -291,9 +358,10 @@ async function main() {
   const cwd = input.cwd || process.cwd();
   const stopActive = Boolean(input.stop_hook_active);
 
-  let entries;
+  let entries, allPaths;
   try {
     entries = changedPyEntries(cwd);
+    allPaths = changedAllPaths(cwd);
   } catch {
     process.exit(0); // not a git repo
   }
@@ -308,7 +376,7 @@ async function main() {
     if (stopActive) emit({ systemMessage: `[QA gate] cannot run\n\n${resolved.error}` });
     emit({ decision: "block", reason });
   }
-  const det = runDeterministic(cwd, resolved.python, entries);
+  const det = runDeterministic(cwd, resolved.python, entries, allPaths);
   const notes = (det.notes || []).join("\n");
   if (!det.ok) {
     const reason =

@@ -17,9 +17,12 @@ tests/test_claude_hooks.py
 どちらも「出力の件数を数える」以外に発見手段が無い形＝散文の注意書きでは守れない。
 ここを Tier-0（テスト）へ落とすのがこのファイルの役割。
 
-**CI では skip される**（対象が git-ignore で存在しないため）。実効性はローカルの
-pytest ＝ Stop フックの決定論ゲート（`tools/qa-hook/gate.mjs`）が毎回全スイートを
-走らせることで担保する。テスト本体は追跡され、対象だけが非追跡という構成。
+**CI では skip される**（対象が git-ignore で存在しないため）。テスト本体は追跡され、
+対象だけが非追跡という構成。実効性はローカルの pytest が担保する＝**2026-09-13
+（I-154）以降、Stop フックの決定論ゲート（`tools/qa-hook/gate.mjs`）は毎ターン
+「変更が正当化する範囲」だけを回す**（`.claude/` を触った回はこのファイルが
+その範囲に入る＝`tools/qa-hook/gate-scope.json` の対応表）。**フル実行は commit/push
+の直前に 1 回**（`tools/qa-hook/pre-commit-gate.mjs`）が最後の砦になる。
 """
 
 import importlib.util

@@ -30,6 +30,24 @@ export function changedPyEntries(cwd) {
   return [...new Map(entries.map((e) => [e.path, e])).values()];
 }
 
+/** Every changed path from `git status --porcelain` (any extension, excluding
+ *  .venv) — unlike changedPyEntries, not limited to *.py. Used to decide which
+ *  EXTRA_GATES prefixes (docs/, lang/, requirements, …) apply this turn. */
+export function changedAllPaths(cwd) {
+  const out = git(cwd, ["status", "--porcelain"]);
+  const paths = [];
+  for (const raw of out.split("\n")) {
+    if (!raw.trim()) continue;
+    let path = raw.slice(3);
+    if (path.includes(" -> ")) path = path.split(" -> ").pop(); // rename
+    path = path.replace(/^"|"$/g, "");
+    const norm = path.replace(/\\/g, "/");
+    if (norm.includes(".venv/") || norm.startsWith(".venv")) continue;
+    paths.push(norm);
+  }
+  return [...new Set(paths)];
+}
+
 /** Is this a deleted entry? (no content to check) */
 export function isDeleted(entry) {
   return entry.status.includes("D");

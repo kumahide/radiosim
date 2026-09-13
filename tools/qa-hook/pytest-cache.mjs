@@ -102,8 +102,15 @@ function listingLines(cwd, dir) {
 }
 
 /** Cache key for the current working tree, or null if it cannot be computed
- *  (caller must then run pytest). */
-export function pytestCacheKey(cwd) {
+ *  (caller must then run pytest).
+ *
+ * `scopeSignature` distinguishes a scoped run (I-154: per-turn gate now runs
+ * only the tests affected by the changed files) from the full suite — a
+ * partial-run green is not the same fact as a full-run green, so they must
+ * never share a cache slot. Pass the sorted, joined list of pytest targets;
+ * the full-suite caller passes a fixed literal instead. Omitting it keeps the
+ * pre-I-154 key shape (a constant scope line for every caller). */
+export function pytestCacheKey(cwd, scopeSignature = "") {
   let head;
   try {
     head = git(cwd, ["rev-parse", "HEAD"]).trim();
@@ -159,6 +166,7 @@ export function pytestCacheKey(cwd) {
   // is the whole input. Editing anything under experiments/ leaves it unchanged;
   // adding or deleting a file moves it (documented .py references must resolve).
   parts.push(...listingLines(cwd, "experiments"));
+  parts.push(`scope\t${scopeSignature}`);
 
   return createHash("sha256").update(parts.join("\n")).digest("hex");
 }
