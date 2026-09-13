@@ -328,6 +328,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "env_suburban":         "Suburban",
         "env_rural":            "Rural",
         "env_los":              "LoS",
+        "env_unspecified":      "Unspecified",
 
         # ===== HTML per-path report =====
         "html_path_title":      "Radio Link Report",
@@ -1080,6 +1081,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "env_suburban":         "郊外",
         "env_rural":            "農村",
         "env_los":              "見通し",
+        "env_unspecified":      "未指定",
 
         # ===== HTML per-path report =====
         "html_path_title":      "無線回線レポート",

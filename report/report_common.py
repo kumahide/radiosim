@@ -24,6 +24,7 @@ from datetime import datetime
 
 from core import disclosure
 from core import i18n
+from core import models
 from core import residuals as core_residuals
 from core import sensitivity as core_sensitivity
 from core import units
@@ -678,12 +679,25 @@ def sensitivity_table_html(
 # （空表を出さない＝呼び出し側が空リストのときは空文字を返す）。
 # ============================================================
 
+#: `env_class` が名乗る値のうち、i18n の `env_*` 訳を持つもの（ランチャーの
+#: 選択肢＝`models.ENV_KEYS` と、空欄の正規化値＝`UNSPECIFIED_LABEL`）。
+#: それ以外（利用者が CSV に書いた自由記述）は訳さずそのまま表示する。
+_ENV_CLASS_LABEL_KEYS = frozenset(models.ENV_KEYS) | {core_residuals.UNSPECIFIED_LABEL}
+
+
+def _env_class_label(value: str) -> str:
+    """`env_class` の表示名（ランチャーと同じ訳・未知の自由記述はそのまま）。"""
+    if value in _ENV_CLASS_LABEL_KEYS:
+        return i18n.t(f"env_{value}")
+    return value
+
+
 def residuals_table_html(stats: "list[core_residuals.LayerStats]") -> str:
     """残差の層別表の HTML 断片を返す（`stats` が空なら空文字）。"""
     if not stats:
         return ""
     rows = "".join(
-        f"<tr><td>{_html.escape(s.env_class)}</td>"
+        f"<tr><td>{_html.escape(_env_class_label(s.env_class))}</td>"
         f"<td>{_html.escape(s.band)}</td>"
         f"<td>{_html.escape(s.distance_band)}</td>"
         f"<td>{s.n}</td>"

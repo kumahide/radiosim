@@ -158,6 +158,21 @@ class TestResidualsTableHtml:
         assert i18n.t("html_residuals_title") in html
         assert html.count("<tr>") == len(stats) + 1  # +1 は見出し行
 
+    def test_known_env_class_is_translated_like_the_launcher(self):
+        """B-218＝`urban`/`unspecified` は生の英字でなくランチャーと同じ訳で出る。"""
+        stats = [core_residuals.LayerStats(
+            core_residuals.UNSPECIFIED_LABEL, "<1GHz", "<5km", 1, 0.0, 0.0)]
+        html = report_common.residuals_table_html(stats)
+        assert i18n.t("env_unspecified") in html
+        assert core_residuals.UNSPECIFIED_LABEL not in html
+
+    def test_unknown_free_text_env_class_passes_through(self):
+        """CSV の自由記述（既定の 4 区分でも unspecified でもない値）は訳さず素通し。"""
+        stats = [core_residuals.LayerStats(
+            "山間部", "<1GHz", "<5km", 1, 0.0, 0.0)]
+        html = report_common.residuals_table_html(stats)
+        assert "山間部" in html
+
 
 # ============================================================
 # report_path.py：地面反射の disclosure ⇔ 感度表の切り替え（段6の核心）
