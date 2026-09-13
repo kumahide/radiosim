@@ -419,12 +419,14 @@ def path_sheet_html(
       <tr><td>{i18n.t('html_aim_tx')}</td><td>{az_tx_rx:.1f}° / {el_tx_rx:+.1f}°</td></tr>
       <tr><td>{i18n.t('html_aim_rx')}</td><td>{az_rx_tx:.1f}° / {el_rx_tx:+.1f}°</td></tr>
     </table>
-    <h3 style="margin-top:9px">{i18n.t('html_radio_settings')}</h3>
+    <h3 style="margin-top:9px">{i18n.t('html_environment')}</h3>
     <table class="info">
-      <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
-      <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
-      <tr><td>{i18n.t('html_tx_gain')}</td><td>{params.gain_tx} dBi</td></tr>
-      <tr><td>{i18n.t('html_rx_gain')}</td><td>{params.gain_rx} dBi</td></tr>
+      <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
+      <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
+      <tr><td>{i18n.t('html_col_f1')}</td><td>{units.format_blocked_ratio(result.blocked_ratio, unit=False)}</td></tr>
+      <tr><td>{i18n.t('html_col_f1_depth')}</td><td>{units.format_f1_depth(result.blocked_ratio, unit=False)}</td></tr>
+      <tr><td>{i18n.t('html_rain_rate')}</td><td>{params.rain_rate} mm/h</td></tr>
+      <tr><td>{i18n.t('html_col_dem_fail')}</td><td>{units.format_fail_pct(terrain.fail_pct, unit=False)}</td></tr>
     </table>
   </div>
   <div class="col">
@@ -442,14 +444,12 @@ def path_sheet_html(
       <tr><td>{i18n.t('html_threshold')}</td><td class="n">{units.format_db(params.sens)}<span class="u">dBm</span></td></tr>
       <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{units.format_db(result.actual_margin, signed=True)}<span class="u">dB</span></b></td></tr>
     </table>
-    <h3 style="margin-top:9px">{i18n.t('html_environment')}</h3>
+    <h3 style="margin-top:9px">{i18n.t('html_radio_settings')}</h3>
     <table class="info">
-      <tr><td>{i18n.t('html_env_type')}</td><td>{env_label}</td></tr>
-      <tr><td>{i18n.t('html_diff_model')}</td><td>{model_label}</td></tr>
-      <tr><td>{i18n.t('html_col_f1')}</td><td>{units.format_blocked_ratio(result.blocked_ratio, unit=False)}</td></tr>
-      <tr><td>{i18n.t('html_col_f1_depth')}</td><td>{units.format_f1_depth(result.blocked_ratio, unit=False)}</td></tr>
-      <tr><td>{i18n.t('html_rain_rate')}</td><td>{params.rain_rate} mm/h</td></tr>
-      <tr><td>{i18n.t('html_col_dem_fail')}</td><td>{units.format_fail_pct(terrain.fail_pct, unit=False)}</td></tr>
+      <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
+      <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
+      <tr><td>{i18n.t('html_tx_gain')}</td><td>{params.gain_tx} dBi</td></tr>
+      <tr><td>{i18n.t('html_rx_gain')}</td><td>{params.gain_rx} dBi</td></tr>
     </table>
   </div>
 </div>
