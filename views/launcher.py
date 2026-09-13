@@ -767,11 +767,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
     # イベントハンドラ
     # ----------------------------------------------------------
     def _on_run(self) -> None:
-        c = {k: self.entries[k].get() for k in self.entries}
-        c["env_type"] = self._env_label_to_key.get(self._env_var.get(), "suburban")
-        c["diff_method"] = self._diff_label_to_key.get(self._diff_var.get(), "bullington")
-        c["resolution"] = self._resolution_key()
-        self._coords_to_dd(c)  # DMS 入力でも downstream には DD を渡す
+        # _current_config() と別に組み立てると DEM ソースなどの新しいキーが
+        # 片方だけに足されて食い違う（B-221）。単一の組み立てへ統一する。
+        c = self._current_config()
 
         errors = config.validate_config(c)
         if errors:

@@ -154,6 +154,52 @@ def test_report_meta_flows_from_launcher():
         root.destroy()
 
 
+def test_run_button_passes_the_selected_dem_source(monkeypatch):
+    """単一経路の実行ボタンが選んだ DEM ソースを計算へ渡すこと（B-221）。
+
+    `_on_run` が `_current_config()` と別に config dict を組み立てており、
+    そちらにだけ `dem_source` が足りていなかった（I-147 段1）＝海外の座標を
+    選んでも常に国土地理院で計算される欠陥の回帰ガード。修正は `_on_run` を
+    `_current_config()` へ一本化すること。
+    """
+    pytest.importorskip("tkinter")
+    from core import dem_sources
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr("views.launcher.dem_prefetch.count_bbox_tiles",
+                         lambda *a, **k: 0)
+    monkeypatch.setattr("views.launcher.threading.Thread",
+                         lambda *a, **k: type("T", (), {"start": lambda self: None})())
+
+    captured = {}
+    from core import simulation as sim
+    real_sim_params = sim.SimParams
+
+    def _spy(c):
+        p = real_sim_params(c)
+        captured["dem_source"] = p.dem_source
+        return p
+
+    monkeypatch.setattr("views.launcher.sim.SimParams", _spy)
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        app._dem_source_var.set("Fake Source")
+        app._on_run()
+        assert captured.get("dem_source") == "fake_src"
+    finally:
+        root.destroy()
+
+
 # ============================================================
 # プロジェクト（`.rsproj`）の UI 配線（5c-2）
 # ============================================================
