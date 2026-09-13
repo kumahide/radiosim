@@ -18,6 +18,9 @@ terrain_cache/
 
 # 利用者の設定とログ
 radiosim_conf.json
+# 利用者の DEM ソース宣言（core/dem_sources.py・I-147）。試験用に repo 直下へ
+# 置くことがあるが、利用者ローカルの設定なので radiosim_conf.json と同じ扱い。
+dem_sources.toml
 # 利用者が置く言語ファイル（lang/<コード>.json）。⚠️ 非公式訳という位置づけなので
 # リポジトリでは預からない＝本体へ取り込むなら PR で受けて i18n.py へ入れる。
 lang/
