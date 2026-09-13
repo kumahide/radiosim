@@ -244,10 +244,13 @@ def path_sheet_css() -> str:
    ヘッダも .fit の外＝フッタ同様に縮小されない（題字の大きさをシート間で揃える）。 */
 .sheet.path .page-header{padding-bottom:4px;margin-bottom:7px}
 /* フッタは summary 同様に用紙最下部へ固定（.sheet を縦フレックス＋margin-top:auto）。
-   .fit の外に出したので縮小フィットの transform/clip の影響を受けない。 */
-.sheet.path{display:flex;flex-direction:column}
-.sheet.path .page-footer{margin-top:auto;padding-top:4px}
-@media print{.sheet.path{min-height:calc(297mm - 14mm - 8mm)}}
+   .fit の外に出したので縮小フィットの transform/clip の影響を受けない。
+   ⚠️ **印刷では適用しない**（B-212＝理由は report_summary の同型コメントを見よ）。
+   per-path は .fit が安全 8mm を残して縮小するため実害は未確認だが、同じ CSS 形は
+   同じ壊れ方をし得るので他の3シートと揃えて外す。 */
+@media screen{.sheet.path{display:flex;flex-direction:column}}
+@media screen{.sheet.path .page-footer{margin-top:auto}}
+.sheet.path .page-footer{padding-top:4px}
 .sheet.path .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:5px 10px;margin-bottom:6px;font-size:11px;color:#37474f;break-inside:avoid}
 .sheet.path .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
 .sheet.path .cards{display:flex;gap:12px;margin-bottom:6px;break-inside:avoid}

@@ -121,10 +121,10 @@ def route_sheet_css() -> str:
 .sheet.multihop .dem-fail-note{color:#777;font-size:9px;margin:4px 0 0}
 /* フッタを用紙の最下部へ＝バッチ台帳（`report_summary.summary_sheet_css`）と同じ
    作り（⑧）。🔴 以前はこれが無く、**バッチでは用紙の下端・ここでは本文の直後**に
-   フッタが来ていた。 */
-.sheet.multihop{display:flex;flex-direction:column}
-.sheet.multihop .page-footer{margin-top:auto}
-@media print{.sheet.multihop{min-height:calc(297mm - 14mm - 8mm)}}
+   フッタが来ていた。⚠️ **印刷では適用しない**（B-212＝理由は report_summary の
+   同型コメントを見よ）＝印刷は本文直後の通常フローに戻る（バッチと再び同じ形）。 */
+@media screen{.sheet.multihop{display:flex;flex-direction:column}}
+@media screen{.sheet.multihop .page-footer{margin-top:auto}}
 """)
 
 

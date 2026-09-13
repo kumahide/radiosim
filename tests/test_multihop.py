@@ -759,15 +759,18 @@ class TestRouteSheet:
         🔴 2026-09-12 に実機で指摘＝バッチはフッタが用紙の下端・グラフが中央、
         中継はフッタが本文の直後・グラフが右寄せ（骨格の td の右寄せに落ちて
         いた）。同じ「台帳」の面なので同じ見せ方にする（⑧）。
+        ⚠️ **画面の下端固定のみバッチと揃える**（B-212＝印刷は共通 CSS 側
+        （`report_common.a4_base_css` の `.handling`/`.page-footer` の break
+        糊付け）でフッタだけの白紙ページを防ぐため、印刷での下端固定は
+        両者とも外した）。
         """
         from report import report_multihop, report_summary
 
         batch_css = report_summary.summary_sheet_css()
         relay_css = report_multihop.route_sheet_css()
         for rule in (
-            "{display:flex;flex-direction:column}",
-            " .page-footer{margin-top:auto}",
-            "@media print{%s{min-height:calc(297mm - 14mm - 8mm)}}",
+            "@media screen{%s{display:flex;flex-direction:column}}",
+            "@media screen{%s .page-footer{margin-top:auto}}",
             " td.c-graph{text-align:center}",
         ):
             def scoped(sheet, table):

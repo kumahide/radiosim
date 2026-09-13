@@ -159,10 +159,12 @@ def scenario_sheet_css() -> str:
     """
     return """
 /* --- 条件探索シート（比較 / スイープ） --- */
-.sheet.scenario{display:flex;flex-direction:column}
+/* フッタの用紙最下部固定は画面のみ（B-212＝印刷では適用しない・理由は
+   report_summary.summary_css の同型コメントを見よ）。 */
+@media screen{.sheet.scenario{display:flex;flex-direction:column}}
+@media screen{.sheet.scenario .page-footer{margin-top:auto}}
 .sheet.scenario .page-header{padding-bottom:4px;margin-bottom:7px}
-.sheet.scenario .page-footer{margin-top:auto;padding-top:4px}
-@media print{.sheet.scenario{min-height:calc(297mm - 14mm - 8mm)}}
+.sheet.scenario .page-footer{padding-top:4px}
 .sheet.scenario .meta{background:white;border-radius:8px;padding:6px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);font-size:11px;color:#455a64}
 .sheet.scenario .meta b{color:#222}
 .sheet.scenario .chart{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:8px}

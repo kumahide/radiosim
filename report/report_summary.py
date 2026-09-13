@@ -214,13 +214,17 @@ def summary_sheet_css() -> str:
 .sheet.summary table.summary td.c-graph{text-align:center}
 .sheet.summary table.summary img.thumb{max-height:40px;max-width:100%;height:auto;
   border:1px solid #ddd;border-radius:3px;vertical-align:middle}
-/* フッタを用紙の最下部へ。.sheet を縦フレックスにして .page-footer を margin-top:auto で
-   押し下げる（画面は .sheet が 297mm 高なので下端へ／印刷は下記 min-height で1枚目を
-   用紙高に合わせる）。summary 専用＝per-path はフッタが縮小フィット .fit の内側にあり
-   別扱い（ページ最下部固定は縮小スケールと競合するため触らない）。 */
-.sheet.summary{display:flex;flex-direction:column}
-.sheet.summary .page-footer{margin-top:auto}
-@media print{.sheet.summary{min-height:calc(297mm - 14mm - 8mm)}}
+/* フッタを用紙の最下部へ（画面のみ）。.sheet を縦フレックスにして .page-footer を
+   margin-top:auto で押し下げる。⚠️ **印刷では適用しない**（B-212）＝flex 縦幅を
+   min-height で1枚ぶんに強制し margin-top:auto で埋めると、台帳が用紙高に近い件数
+   （実測9行）で Chromium の改ページ計算がフッタだけを2枚目へ送り、フッタのみの
+   白紙ページが出る（フッタは分割不可の1ブロックとして扱われ、境界のわずかな
+   はみ出しでも丸ごと次ページへ落ちる）。印刷はフッタを本文直後の通常フローに戻し、
+   分割の判断をブラウザの表の改ページ機構（thead 再掲・行単位）だけに委ねる。
+   summary 専用＝per-path はフッタが縮小フィット .fit の内側にあり別扱い
+   （ページ最下部固定は縮小スケールと競合するため触らない）。 */
+@media screen{.sheet.summary{display:flex;flex-direction:column}}
+@media screen{.sheet.summary .page-footer{margin-top:auto}}
 .sheet.summary .report-memo{background:#f7f9fa;border:1px solid #e0e6e9;border-radius:6px;padding:8px 12px;margin-bottom:16px;font-size:12px;color:#37474f;break-inside:avoid}
 .sheet.summary .report-memo .rm-label{color:#90a4ae;font-weight:bold;margin-right:4px}
 .sheet.summary .paths-map{display:block;width:100%;border-radius:6px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:16px;break-inside:avoid}

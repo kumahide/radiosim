@@ -144,13 +144,20 @@ body{font-family:Arial,sans-serif;font-size:13px}
 .page-header .ph-right{text-align:right;font-size:10px;color:#888;
   white-space:nowrap;padding-left:12px}
 .page-footer{margin-top:10px;padding-top:6px;border-top:1px solid #ddd;
-  color:#aaa;font-size:10px;display:flex;justify-content:space-between}
+  color:#aaa;font-size:10px;display:flex;justify-content:space-between;
+  break-before:avoid}
+/* ⚠️ `break-before:avoid`（B-212）＝直前の `.handling`（break-after:avoid と対）と
+   フッタを1単位として糊付けする。糊付けしないと、本文が用紙にほぼぴったり収まる
+   件数のとき、フッタだけが次ページへ落ち「フッタだけの白紙ページ」になる
+   （Chromium はフッタを分割不可の1ブロックとして扱い、残りわずかな余白に
+   収まらなければ丸ごと次ページへ送るため）。糊付け後は収まらない側（直前の
+   `.handling` ごと）が次ページへ回り、白紙ページは出ない。 */
 /* 「結果の取扱に関する補足」節（3.0a1）。**4 種のシートが同じ 1 本を引く**ので
    `.sheet.path` 等へはスコープしない（クラス名が固有＝連結しても衝突しない）。
    小さく畳んで最下部に置く＝per-path は A4 1 枚の縮小フィットの中に入るため、
    本文を押しのけない字送りにしてある。印刷で節が割れないよう break-inside:avoid。 */
 .handling{margin-top:7px;padding-top:4px;border-top:1px solid #e0e6e9;
-  break-inside:avoid}
+  break-inside:avoid;break-after:avoid}
 .handling h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
 .handling .hd-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
 /* 2 段組みにするのは**台帳の行数を食わないため**。開示を足した代わりに台帳が
