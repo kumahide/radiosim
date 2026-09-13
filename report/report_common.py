@@ -315,9 +315,19 @@ def fit_to_page_script() -> str:
     一様スケール中は右側にわずかな余白が出るが、確実に全要素が1枚に収まる方を採る。
 
     肝は「縮小目標高」と「クリップ箱高」を分けること。画面 scrollHeight は印刷の実寸
-    より数 mm 低く出るため、縮小は厳しめ（安全 8mm）にし、クリップ箱はそれより緩い
-    （安全 1mm）に取る。こうすると印刷での縮小後コンテンツは箱に収まってクリップされず、
+    より数 mm 低く出るため、縮小は厳しめ（安全 15mm）にし、クリップ箱はそれより緩い
+    （安全 4mm）に取る。こうすると印刷での縮小後コンテンツは箱に収まってクリップされず、
     箱は印字域内なので1頁で確定する。内容が元々収まる時は縮小も箱固定もせず等倍。
+
+    ⚠️ **安全マージンは 2026-09-13 に 8mm/1mm → 15mm/4mm へ拡大した（B-223）**＝
+    断面図PNG・地図PNGを実際に埋め込む本番経路（`report_path.save_path_visuals`）で
+    測ると、旧の 8mm では画面と印刷のズレを吸収しきれず、`.fit-outer`
+    （固定高＋overflow:hidden＝分割不可の1ブロック）がヘッダ直後の残り余白に
+    収まらず**丸ごと次ページへ送られ、1枚目がヘッダだけの白紙になっていた**
+    （空 `img_b64=""` の合成条件だけで検証していたときは画像の高さぶんが
+    無く縮小が発生しなかったため未検出＝[[feedback_synthetic_cases_lie]]）。
+    Edge `--print-to-pdf` で実像入りの複数リンクを掃引し、8mm 刻みでは 12mm から
+    1頁に収まったが、環境差を吸収する余地を見て 15mm/4mm を採用した。
 
     印字域は @page 余白（上 14mm・下 8mm）に合わせて 297−14−8=275mm。下余白を詰めた
     ぶん縮小目標が印字域に近づき、縦の下部余白が減る。transform-origin は top right＝
@@ -355,8 +365,8 @@ def fit_to_page_script() -> str:
     outer.style.height=""; outer.style.overflow="";
     var pxPerMm=96/25.4;
     var chrome=chromeH(outer.parentNode);
-    var target=(297-14-8-8)*pxPerMm-chrome;  /* 縮小目標高（印字域275−安全8mm−ヘッダ/フッタ） */
-    var box=(297-14-8-1)*pxPerMm-chrome;     /* クリップ箱高（印字域275−安全1mm−ヘッダ/フッタ） */
+    var target=(297-14-8-15)*pxPerMm-chrome; /* 縮小目標高（印字域275−安全15mm−ヘッダ/フッタ） */
+    var box=(297-14-8-4)*pxPerMm-chrome;     /* クリップ箱高（印字域275−安全4mm−ヘッダ/フッタ） */
     var h=el.scrollHeight;
     if(h>target){
       var s=target/h;
