@@ -48,7 +48,9 @@ def _doc() -> project.ProjectDoc:
                           note="1 本目"),
             batch.PathRow(path_id="P2", lat_tx=34.7, lon_tx=132.6,
                           lat_rx=34.8, lon_rx=132.7, h_tx=20.0, h_rx=5.0,
-                          freq_mhz=400.0, gain_tx=12.0, gain_rx=2.0),
+                          freq_mhz=400.0, gain_tx=12.0, gain_rx=2.0,
+                          meas_dbm=-78.5, meas_method="spot",
+                          feeder_loss_db=2.1, env_class="suburban"),
         ],
         scenario = project.ScenarioSpec(
             mode="sweep",

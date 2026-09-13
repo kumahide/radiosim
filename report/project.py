@@ -487,6 +487,10 @@ def _row_to_dict(row: batch.PathRow) -> dict:
         "h_tx":    row.h_tx,   "h_rx":   row.h_rx,
         "freq_mhz": row.freq_mhz, "gain_tx": row.gain_tx, "gain_rx": row.gain_rx,
         "note":    row.note,
+        "meas_dbm":       row.meas_dbm,
+        "meas_method":    row.meas_method,
+        "feeder_loss_db": row.feeder_loss_db,
+        "env_class":      row.env_class,
     }
 
 
