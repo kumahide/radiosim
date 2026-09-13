@@ -22,6 +22,7 @@ from typing import TYPE_CHECKING
 from core import i18n
 from core import models
 from core import output_contract
+from core import residuals as core_residuals
 from core import units
 from core import version
 from report import map_graphics
@@ -353,6 +354,19 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         for pr in results if pr.result is not None and pr.params is not None
     ))
 
+    # 実測残差の層別表（3.4 段6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ
+    # だけに出る（0 件なら空表を出さない＝`residuals_table_html` が空文字を返す）。
+    # ⚠️ **`report.residuals` はここで遅延 import**＝`report.residuals` は
+    # `report.batch` を読み込むが、`report.batch` は module レベルで
+    # `report_summary` を読み込む（サマリ生成に使うため）ので、ここで module
+    # レベル import すると `report_summary
+    # → residuals → batch → report_summary` の循環になる（`report_common.
+    # verdict_css` が `report.map_graphics` を遅延 import しているのと同じ理由）。
+    from report import residuals as report_residuals
+    samples = report_residuals.samples_from_results(results)
+    layered_stats = core_residuals.compute_layered_stats(samples)
+    residuals_html = report_common.residuals_table_html(layered_stats)
+
     # 案件メモ（サーベイ全体の自由注記）。非空時のみヘッダ直下（p1）に小ブロック表示。
     if memo:
         memo_block = (
@@ -403,6 +417,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 {rows_html}</tbody>
 </table>
 {report_common.dem_fail_notice_html(dem_fail_entries)}
+{residuals_html}
 {handling}
 {report_common.page_footer(i18n.t("html_batch_mode"))}
 </section>"""

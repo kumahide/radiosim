@@ -18,6 +18,7 @@ sensitivity.py
 
 この段（段4）は**計算のみ**。帳票への表示配線は段6。
 """
+import dataclasses
 from dataclasses import dataclass
 from typing import Callable
 
@@ -94,16 +95,46 @@ def _margin_for_hop(hop: HopInputs) -> float:
     )
 
 
-def _rebuild_terrain(
+def rebuild_terrain(
     terrain: models.TerrainProfile,
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float,
     raw_elevs: np.ndarray,
 ) -> models.TerrainProfile:
+    """`terrain` と同じ緯度経度・曲率・標本位置のまま、標高だけ差し替えて作り直す。
+
+    🔑 **公開関数にした理由（段6）**＝多ホップの argmin（`report_multihop.py`）が
+    「全ホップへ同じ DEM オフセットを一括適用する」ために同じ再構築を要る。
+    private のままだと帳票層が同じロジックを書き写すことになる（二重管理）。
+    """
     return models.calculate_terrain_profile(
         raw_elevs = raw_elevs,
         lat_tx = lat_tx, lon_tx = lon_tx, lat_rx = lat_rx, lon_rx = lon_rx,
         earth_k = terrain.earth_k,
         frac_axis = terrain.frac_axis,
+    )
+
+
+def shift_dem(terrain: models.TerrainProfile, delta_m: float) -> models.TerrainProfile:
+    """`terrain` の標高を一律 `delta_m` だけ底上げ/沈める（緯度経度を使わない軽量版）。
+
+    🔑 **多ホップの argmin（段6・`report_multihop.py`）専用**＝`rebuild_terrain` は
+    緯度経度から水平距離・曲率補正を作り直すが、DEM の系統誤差は**曲率と無関係に
+    標高だけ動く**ので、既存の曲率補正量（`elevs_with_curve − raw_elevs`、`nan` は
+    0 扱い）を保ったまま両方へ同じ量を足すだけでよい。`report.batch.PathResult`
+    は緯度経度を `row` 側に持ち `HopInputs` には無いので、これなら座標を
+    引き回さずに全ホップへ同じ摂動を一括適用できる。
+
+    `nan`（DEM 取得失敗の標本）はそのまま `nan` を保つ（`fail_pct` の算出源）。
+    """
+    raw = np.asarray(terrain.raw_elevs, dtype=float)
+    curve = np.asarray(terrain.elevs_with_curve, dtype=float)
+    curvature_correction = curve - np.where(np.isnan(raw), 0.0, raw)
+    new_raw = raw + delta_m
+    new_calc_base = np.where(np.isnan(new_raw), 0.0, new_raw)
+    return dataclasses.replace(
+        terrain,
+        raw_elevs        = new_raw,
+        elevs_with_curve = new_calc_base + curvature_correction,
     )
 
 
@@ -133,7 +164,7 @@ def compute_link_sensitivity(
     def margin_with(*, raw_elevs=None, veg_h_v=None, env_type_v=None, diff_method_v=None) -> float:
         t = terrain
         if raw_elevs is not None:
-            t = _rebuild_terrain(terrain, lat_tx, lon_tx, lat_rx, lon_rx, raw_elevs)
+            t = rebuild_terrain(terrain, lat_tx, lon_tx, lat_rx, lon_rx, raw_elevs)
         return _margin_for(
             t, h_tx, h_rx, freq_mhz,
             veg_h if veg_h_v is None else veg_h_v,
@@ -201,7 +232,7 @@ def compute_link_sensitivity(
         margins = [baseline_margin]
         for level in terrain_grid.RESOLUTION_KEYS:
             alt_raw = fetch_alt_resolution(level)
-            alt_terrain = _rebuild_terrain(terrain, lat_tx, lon_tx, lat_rx, lon_rx, alt_raw)
+            alt_terrain = rebuild_terrain(terrain, lat_tx, lon_tx, lat_rx, lon_rx, alt_raw)
             margins.append(_margin_for(
                 alt_terrain, h_tx, h_rx, freq_mhz, veg_h, initial_k,
                 diff_method, env_type, rain_rate, p_tx, gain_tx, gain_rx, sens,

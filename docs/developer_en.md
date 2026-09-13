@@ -310,6 +310,7 @@ radiosim/
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
     ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
+    ├── test_report_sensitivity.py  # Sensitivity/residual table wiring in the reports (3.4 step 6)
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -1116,6 +1117,7 @@ entry point that runs them together.
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
 | `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
+| `test_report_sensitivity.py` | Sensitivity/residual table wiring in the reports: the ground-reflection disclosure swaps for the sensitivity row only when the envelope is available, the residual table stays hidden with zero samples, the multi-hop argmin note (3.4 step 6) |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |

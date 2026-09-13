@@ -309,6 +309,7 @@ radiosim/
     ├── test_sensitivity.py    # 摂動再計算エンジン（3.4 段4）
     ├── test_residuals.py      # 実測との残差計算（3.4 段5）
     ├── test_report_residuals.py  # PathResult → 残差標本の抽出（3.4 段5）
+    ├── test_report_sensitivity.py  # 感度表/残差表の帳票配線（3.4 段6）
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -1105,6 +1106,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_sensitivity.py`    | 摂動再計算エンジン＝各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・多ホップの argmin 入れ替わり（3.4 段4） |
 | `test_residuals.py`      | 実測との残差計算＝帯域/距離帯の境目・給電線損失の補正方向・層（環境区分×帯域×距離帯）ごとの中央値/IQR/件数・スポット測定の除外（3.4 段5） |
 | `test_report_residuals.py` | `PathResult` → 残差標本の抽出＝実測値の無い行／計算失敗行を除外すること（3.4 段5） |
+| `test_report_sensitivity.py` | 感度表・残差表の帳票配線＝地面反射の disclosure ⇔ 感度表の切り替え条件・残差表は標本 0 件で非表示・多ホップの argmin 注記（3.4 段6） |
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |

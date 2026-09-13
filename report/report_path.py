@@ -27,6 +27,7 @@ from core import coords
 from core import disclosure
 from core import i18n
 from core import models
+from core import sensitivity
 from core import terrain_grid
 from core import units
 from report import mpl_fonts
@@ -273,6 +274,8 @@ def path_sheet_css() -> str:
    縦の予算がいちばん厳しい。台帳・中継・条件探索は行数の勝負で、字を小さくしても
    その分だけ行が増えるわけではない（→ a4_base_css の `.handling`）。 */
 .sheet.path .handling ul{font-size:7.5px;line-height:1.25;column-count:3}
+/* 感度表も per-path の縦の予算が厳しい前提に合わせて詰める（.handling と同じ理由）。 */
+.sheet.path .sensitivity th,.sheet.path .sensitivity td{font-size:7.5px;padding:1px 4px}
 """
 
 
@@ -346,15 +349,34 @@ def path_sheet_html(
 
     sheet_id = f' id="{report_id}"' if report_id else ""
 
+    # 感度表（3.4 段6）＝既存パイプラインを摂動条件で数回まわし、余裕度[dB]の幅を
+    # 出す（モデルは 1 行も変えない）。terrain・params・result は per-path が
+    # 既に持っている値をそのまま渡すだけ＝新しい入力は増えない。
+    sens_result = sensitivity.compute_link_sensitivity(
+        terrain, params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+        h_tx, h_rx, params.freq_mhz, params.veg_h, params.k_factor,
+        result.diff_method, result.env_type, params.rain_rate,
+        params.p_tx, params.gain_tx, params.gain_rx, params.sens,
+    )
+    sensitivity_html = report_common.sensitivity_table_html(sens_result)
+
     # 「結果の取扱に関する補足」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
     # 刻印は `models.scope_notes` が純述語で決める（この面は並べるだけ＝物理を持たない）。
-    handling = report_common.handling_notes_html(models.scope_notes(
+    # ⚠️ **地面反射だけ例外**（3.4 段6）＝この面は 1 本の回線しか見ないので、感度表の
+    # 地面反射の行（上で計算済み）が求まったら、disclosure 側の「考慮していない」は
+    # 二重に言わず外す。求まらない回線（`sens_result.ground_reflection is None`）は
+    # 幅にできない＝disclosure をそのまま残す（`report_common.sensitivity_table_html`
+    # の docstring の判断基準どおり）。
+    scope_keys = models.scope_notes(
         params.freq_mhz,
         diff_method=result.diff_method,
         rain_rate=params.rain_rate,
         veg_h=params.veg_h,
         resolution=params.resolution,
-    ))
+    )
+    if sens_result.ground_reflection is not None:
+        scope_keys = tuple(k for k in scope_keys if k != "ground_reflection")
+    handling = report_common.handling_notes_html(scope_keys)
 
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
     # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。
@@ -424,6 +446,7 @@ def path_sheet_html(
     </table>
   </div>
 </div>
+{sensitivity_html}
 {handling}
 </div></div>
 {report_common.page_footer(i18n.t("html_single_mode"))}

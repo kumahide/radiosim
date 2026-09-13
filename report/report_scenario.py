@@ -28,6 +28,7 @@ from core import i18n
 from core import models
 from core import output_contract
 from core import scenario as scn
+from core import sensitivity
 from core import units
 from report import mpl_fonts
 from report import report_common
@@ -355,10 +356,26 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         )
     table = _sweep_table(run) if run.kind == "sweep" else _compare_table(run)
 
+    # 感度表（3.4 段6）＝**ベース条件（先頭の点）だけ**を計算する。N 条件・N 点を
+    # 振っている面へさらに感度軸を掛け合わせると計算量・表の両方が膨らむため、
+    # 「基準に対してどれだけ動きうるか」の参考値として 1 本だけ示す（下の disclosure
+    # とは別に `note=` で「ベースだけ」と明示する＝`report_common.sensitivity_table_html`
+    # のモジュール docstring）。
+    base = run.base_params
+    sens_result = sensitivity.compute_link_sensitivity(
+        run.terrain, base.lat_tx, base.lon_tx, base.lat_rx, base.lon_rx,
+        base.h_tx, base.h_rx, base.freq_mhz, base.veg_h, base.k_factor,
+        base.diff_method, base.env_type, base.rain_rate,
+        base.p_tx, base.gain_tx, base.gain_rx, base.sens,
+    )
+    sensitivity_html = report_common.sensitivity_table_html(
+        sens_result, note=i18n.t("html_sens_base_only"),
+    )
+
     # 「結果の取扱に関する補足」（3.0a1）。⚠️ **条件探索は 1 枚で N 条件を載せる**
     # ＝周波数や植生高そのものを軸に振れるので、刻印は**点ごとに解いて和集合**を取る
-    # （基準の条件だけを見ると、軸で範囲外へ出た点の注記が消える）。
-    base = run.base_params
+    # （基準の条件だけを見ると、軸で範囲外へ出た点の注記が消える）。`base` は
+    # 感度表の計算で既に取得済み（上）。
     handling = report_common.handling_notes_html(models.scope_notes_union(
         models.scope_notes(
             # ⚠️ `overrides` は**軸によって値の型が違う**（`env_type` は文字列）＝
@@ -381,6 +398,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
 {_meta_block(run)}
 {chart_block}
 {table}
+{sensitivity_html}
 {handling}
 </div></div>
 {report_common.page_footer(i18n.t("scn_mode"))}

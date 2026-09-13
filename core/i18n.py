@@ -528,6 +528,57 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_calib_profile":   "Calibration profile",
         "html_calib_none":      "not applied (no measurement comparison)",
 
+        # ===== 感度表（3.4 段6） =====
+        # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
+        # の `sensitivity_table_html` docstring）。モデルは変えず、既存パイプラインを
+        # 摂動条件で数回まわした余裕度の幅を示すだけ。
+        "html_sensitivity_title":
+            "Sensitivity to input uncertainty (screening estimate)",
+        "html_sensitivity_lead":
+            "Margin recomputed with each input perturbed one at a time "
+            "(the model itself is unchanged).",
+        "html_sens_col_axis":     "Perturbed input",
+        "html_sens_col_baseline": "Baseline (dB)",
+        "html_sens_col_low":      "Low (dB)",
+        "html_sens_col_high":     "High (dB)",
+        "html_sens_axis_dem_elev":
+            "DEM elevation ±{m} m",
+        "html_sens_axis_veg_h":
+            "Vegetation height ±{pct}%",
+        "html_sens_axis_env_type":
+            "Environment class, one step",
+        "html_sens_axis_diff_method":
+            "Diffraction model: single knife-edge vs. Bullington",
+        "html_sens_axis_diff_veg_compose":
+            "Diffraction + vegetation loss: summed vs. larger-of",
+        "html_sens_axis_resolution":
+            "Terrain resolution step",
+        "html_sens_axis_ground_reflection":
+            "Ground reflection (two-ray envelope — a width, not a position)",
+        "html_sens_worst_hop":
+            "Row shown for the weakest section: {hop}.",
+        "html_sens_argmin_same":
+            "Perturbing {axis} the same way across every section leaves the "
+            "weakest section unchanged ({hop}).",
+        "html_sens_argmin_shift":
+            "Perturbing {axis} the same way across every section shifts the "
+            "weakest section to {hop} (baseline: {baseline_hop}).",
+        "html_sens_base_only":
+            "Reference value for the base condition only — not evaluated for "
+            "the other points on this sheet.",
+
+        # ===== 実測残差の層別表（3.4 段6） =====
+        "html_residuals_title": "Measured-vs-predicted residuals, by layer",
+        "html_residuals_lead":
+            "Residual = predicted minus measured (feeder loss added back in). "
+            "Positive: the model reads high.",
+        "html_residuals_col_env":      "Environment",
+        "html_residuals_col_band":     "Band",
+        "html_residuals_col_distance": "Distance",
+        "html_residuals_col_n":        "n",
+        "html_residuals_col_median":   "Median (dB)",
+        "html_residuals_col_iqr":      "IQR (dB)",
+
         # 標高データの出典（B-134）＝**帳票と地形断面図の両方に出す 1 本の字**。
         # ⚠️ **これ以上長くしないこと**（B-135）＝断面図では距離軸のラベルと同じ行に
         # 入るので、機関名まで書いていた頃は**英語で 148px 食い込んでいた**。
@@ -1205,6 +1256,49 @@ _STRINGS: dict[str, dict[str, str]] = {
             "＝段階を細かくすると回折損が増える（「高」との実測差 最大 +407%）",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測との突き合わせなし）",
+
+        # ===== 感度表（3.4 段6） =====
+        "html_sensitivity_title": "入力の不確かさに対する感度（机上のスクリーニング推定）",
+        "html_sensitivity_lead":
+            "各入力を 1 つずつ振ってマージンを再計算した値（モデル自体は変えていない）。",
+        "html_sens_col_axis":     "振った入力",
+        "html_sens_col_baseline": "基準 (dB)",
+        "html_sens_col_low":      "低め (dB)",
+        "html_sens_col_high":     "高め (dB)",
+        "html_sens_axis_dem_elev":
+            "DEM 標高 ±{m} m",
+        "html_sens_axis_veg_h":
+            "植生高 ±{pct}%",
+        "html_sens_axis_env_type":
+            "環境区分 1 段",
+        "html_sens_axis_diff_method":
+            "回折モデル：single ⇄ Bullington",
+        "html_sens_axis_diff_veg_compose":
+            "回折損＋植生減衰：和 ⇄ 大きいほう",
+        "html_sens_axis_resolution":
+            "地形の解像度の段階",
+        "html_sens_axis_ground_reflection":
+            "地面反射（2 波干渉の包絡線＝位置ではなく幅）",
+        "html_sens_worst_hop":
+            "最も苦しい区間（{hop}）についての行。",
+        "html_sens_argmin_same":
+            "{axis} を全区間へ同じ向きで振っても、最も苦しい区間は変わらない（{hop}）。",
+        "html_sens_argmin_shift":
+            "{axis} を全区間へ同じ向きで振ると、最も苦しい区間が {hop} に変わる"
+            "（基準は {baseline_hop}）。",
+        "html_sens_base_only":
+            "ベース条件（1 点）だけの参考値。この面の他の条件には未評価。",
+
+        # ===== 実測残差の層別表（3.4 段6） =====
+        "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",
+        "html_residuals_lead":
+            "残差 = 予測 − 実測（給電線損失を引き戻し後）。正の値は予測が高め。",
+        "html_residuals_col_env":      "環境区分",
+        "html_residuals_col_band":     "帯域",
+        "html_residuals_col_distance": "距離帯",
+        "html_residuals_col_n":        "件数",
+        "html_residuals_col_median":   "中央値 (dB)",
+        "html_residuals_col_iqr":      "ばらつき IQR (dB)",
 
         # 標高データの出典（B-134）
         "html_elev_source":     "標高データの出典: 地理院タイル（標高タイル）",

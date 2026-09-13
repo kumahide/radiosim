@@ -24,6 +24,8 @@ from datetime import datetime
 
 from core import disclosure
 from core import i18n
+from core import residuals as core_residuals
+from core import sensitivity as core_sensitivity
 from core import units
 from core import version
 
@@ -178,6 +180,34 @@ body{font-family:Arial,sans-serif;font-size:13px}
 .handling .hd-calib{margin:3px 0 0;font-size:8px;color:#b0bec5;font-style:italic}
 /* 出典は事実の刻印なので、較正の席（斜体・淡色＝空席の印）とは分けて素の字で置く。 */
 .handling .hd-source{margin:2px 0 0;font-size:8px;color:#78909c}
+/* 感度表（3.4 段6）＝**`.handling` の直前に置く**（`sensitivity_table_html` の
+   呼び出し順）。`.handling` を `.page-footer` の直前に保つ（B-212 の糊付けは
+   両者の隣接に依存する）ので、新しい節はその**手前**へ挿す。骨格は `.handling`
+   に揃える（同じ「補足」の仲間・見た目が違うと読み手が別の重みで読む）。 */
+.sensitivity{margin-top:7px;padding-top:4px;border-top:1px solid #e0e6e9;
+  break-inside:avoid}
+.sensitivity h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
+.sensitivity .sn-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
+.sensitivity table{width:100%;border-collapse:collapse;margin-top:1px}
+.sensitivity th,.sensitivity td{font-size:8px;padding:1px 5px;text-align:right;
+  border-bottom:1px solid #eef2f3;white-space:nowrap}
+.sensitivity th:first-child,.sensitivity td:first-child{text-align:left;
+  white-space:normal}
+.sensitivity th{color:#78909c;font-weight:normal}
+.sensitivity .sn-note{margin:3px 0 0;font-size:8px;color:#78909c}
+/* 実測残差の層別表（3.4 段6）＝標本が 1 件も無いバッチには出さない
+   （呼び出し側が空なら渡さない＝`residuals_table_html` は空文字を返す）。
+   骨格は `.sensitivity` と揃える（同じ「補足」の仲間）。 */
+.residuals{margin-top:7px;padding-top:4px;border-top:1px solid #e0e6e9;
+  break-inside:avoid}
+.residuals h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
+.residuals .rs-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
+.residuals table{width:100%;border-collapse:collapse;margin-top:1px}
+.residuals th,.residuals td{font-size:8px;padding:1px 5px;text-align:right;
+  border-bottom:1px solid #eef2f3;white-space:nowrap}
+.residuals th:first-child,.residuals td:first-child{text-align:left;
+  white-space:normal}
+.residuals th{color:#78909c;font-weight:normal}
 @media screen{
   /* min-width:max-content ＝ 窓が A4 幅(210mm)より狭くても body が内容幅まで広がり、
      中央寄せシートが左へはみ出して左端が見切れる（水平スクロールで届かない）のを防ぐ。
@@ -512,5 +542,168 @@ def handling_notes_html(note_keys) -> str:
         f'{_html.escape(disclosure.calibration_line())}</p>'
         f'<p class="hd-source">'
         f'{_html.escape(disclosure.data_source_line())}</p>'
+        '</section>'
+    )
+
+
+# ============================================================
+# 感度表（3.4 段6 / ロードマップ §3.4）
+# ------------------------------------------------------------
+# 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**のがこの節の存在理由
+# （ロードマップ 3.4 段4 の注記）。**単独で出さない**＝地面反射の幅だけを図に
+# 描くと「それ以外は正確」という含意が生まれるので、他の摂動軸（DEM 標高・
+# 植生高・環境区分・回折モデル・回折+植生の合成・解像度）と**同じ表の 1 行**
+# として並べる。値は `core.sensitivity.compute_link_sensitivity` が既存の
+# 計算パイプラインを摂動条件で数回まわしただけ（モデルは 1 行も変えない）。
+#
+# ⚠️ **disclosure（`handling_notes_html`）側の扱いは面によって違う**:
+#   - **per-path**（1 本の回線だけを見る面）＝`envelope` が求まったら
+#     `core.models.scope_notes()` の `"ground_reflection"` を disclosure から
+#     外し、この表の 1 行に**置き換える**（→ report_path.py）。求まらない
+#     回線（`envelope is None`）は disclosure の「考慮していない」をそのまま
+#     残す（幅にできないものを無理に幅で語らない）。
+#   - **scenario / multihop**（N 本の条件・区間の和集合で disclosure を出す面）
+#     ＝この表は**そのうちの 1 本（ベース条件／最も苦しい区間）だけ**の参考値
+#     なので、disclosure は**外さない**（他の N-1 本には envelope が無い＝
+#     置き換えると「全部に効いた」という誤った含意になる）。`note=` 引数で
+#     「この表はどの 1 本の値か」を明示し、単独で図に描いた含意（②）を避ける。
+# ============================================================
+
+#: 表に出す順（先頭が i18n キー＝`_compare_table` の `_COMPARE_ROWS` と同じ形。
+#: `tests/test_i18n_external.py` はこの「先頭がキー」の並びをループ変数越しに
+#: 読み解く＝キーを直書きせず定数へ括り出しても締め出しの網から漏れない）。
+#: 型は `tuple[tuple[str, str], ...]`（先頭が i18n キー・次が `SensitivityResult.axes`
+#: の辞書キー）。⚠️ **型注釈付き代入（`x: T = ...`）にしないこと**＝
+#: `tests/test_i18n_external.py` の走査は素の `ast.Assign` しかモジュール定数として
+#: 拾えない（`ast.AnnAssign` は対象外）＝注釈を付けた瞬間にこの定数が「読み解けない
+#: 呼び方」として落ちる（実装時に実際に踏んだ）。
+_SENSITIVITY_AXES = (
+    ("html_sens_axis_dem_elev",         "dem_elev"),
+    ("html_sens_axis_veg_h",            "veg_h"),
+    ("html_sens_axis_env_type",         "env_type"),
+    ("html_sens_axis_diff_method",      "diff_method"),
+    ("html_sens_axis_diff_veg_compose", "diff_veg_compose"),
+)
+
+
+def sensitivity_axis_label(i18n_key: str) -> str:
+    """感度表の軸ラベルを返す（DEM・植生高だけ摂動量を差し込む）。
+
+    摂動量は `core.sensitivity` の定数が単一ソース＝値を変えた日に表の文言
+    だけ古くなることがない（`core.disclosure._scope_args` と同じ考え方）。
+    公開関数＝`report_multihop.py` の argmin 注記も同じラベルを引く（軸名の
+    字が表と注記で食い違わないように）。
+    """
+    text = i18n.t(i18n_key)
+    if i18n_key == "html_sens_axis_dem_elev":
+        return text.format(m=f"{core_sensitivity.DEM_PERTURB_M:g}")
+    if i18n_key == "html_sens_axis_veg_h":
+        return text.format(pct=f"{core_sensitivity.VEG_PERTURB_FRAC * 100:g}")
+    return text
+
+
+def _sensitivity_row(label: str, baseline: float, low: float, high: float) -> str:
+    return (
+        f"<tr><td>{_html.escape(label)}</td>"
+        f"<td>{units.format_db(baseline, signed=True)}</td>"
+        f"<td>{units.format_db(low, signed=True)}</td>"
+        f"<td>{units.format_db(high, signed=True)}</td></tr>"
+    )
+
+
+def sensitivity_table_html(
+    sens: "core_sensitivity.SensitivityResult | None",
+    *,
+    note: str = "",
+) -> str:
+    """感度表（摂動軸ごとの余裕度[dB]の幅）の HTML 断片を返す（空なら空文字）。
+
+    Args:
+        sens: `core.sensitivity.compute_link_sensitivity` の戻り値。`None` なら
+            計算していない（成果物が欠けた回線など）＝空文字を返す。
+        note: 表の下に添える 1 行。**scenario / multihop は必ず渡す**＝この表が
+            N 本のうちどの 1 本の値かを明示する（上のモジュール docstring）。
+            省略時は空（per-path は回線が 1 本しかないので不要）。
+    """
+    if sens is None:
+        return ""
+    rows = []
+    for i18n_key, axis_key in _SENSITIVITY_AXES:
+        axis = sens.axes.get(axis_key)
+        if axis is None:
+            continue
+        rows.append(_sensitivity_row(
+            sensitivity_axis_label(i18n_key), axis.baseline, axis.low, axis.high,
+        ))
+    if sens.resolution is not None:
+        rows.append(_sensitivity_row(
+            i18n.t("html_sens_axis_resolution"),
+            sens.resolution.baseline, sens.resolution.low, sens.resolution.high,
+        ))
+    if sens.ground_reflection is not None:
+        env = sens.ground_reflection
+        rows.append(_sensitivity_row(
+            i18n.t("html_sens_axis_ground_reflection"),
+            sens.baseline_margin,
+            sens.baseline_margin - env.null_depth_db,
+            sens.baseline_margin + env.constructive_gain_db,
+        ))
+    if not rows:
+        return ""
+    note_html = f'<p class="sn-note">{_html.escape(note)}</p>' if note else ""
+    return (
+        '<section class="sensitivity">'
+        f'<h4>{_html.escape(i18n.t("html_sensitivity_title"))}</h4>'
+        f'<p class="sn-lead">{_html.escape(i18n.t("html_sensitivity_lead"))}</p>'
+        '<table><thead><tr>'
+        f'<th>{_html.escape(i18n.t("html_sens_col_axis"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_sens_col_baseline"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_sens_col_low"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_sens_col_high"))}</th>'
+        '</tr></thead><tbody>'
+        + "".join(rows) +
+        '</tbody></table>'
+        + note_html +
+        '</section>'
+    )
+
+
+# ============================================================
+# 実測残差の層別表（3.4 段6 / ロードマップ §3.4）
+# ------------------------------------------------------------
+# バッチに実測値（`meas_dbm`）が 1 行でも入っていれば、環境区分×帯域×距離帯
+# ごとの中央値・ばらつき（IQR）・件数を表で示す。計算は
+# `core.residuals.compute_layered_stats`（モデルは変えない・測るだけ）。
+# 標本が 0 件（実測値を誰も入力していないバッチ）なら**何も表示しない**
+# （空表を出さない＝呼び出し側が空リストのときは空文字を返す）。
+# ============================================================
+
+def residuals_table_html(stats: "list[core_residuals.LayerStats]") -> str:
+    """残差の層別表の HTML 断片を返す（`stats` が空なら空文字）。"""
+    if not stats:
+        return ""
+    rows = "".join(
+        f"<tr><td>{_html.escape(s.env_class)}</td>"
+        f"<td>{_html.escape(s.band)}</td>"
+        f"<td>{_html.escape(s.distance_band)}</td>"
+        f"<td>{s.n}</td>"
+        f"<td>{units.format_db(s.median_db, signed=True)}</td>"
+        f"<td>{units.format_db(s.iqr_db)}</td></tr>"
+        for s in stats
+    )
+    return (
+        '<section class="residuals">'
+        f'<h4>{_html.escape(i18n.t("html_residuals_title"))}</h4>'
+        f'<p class="rs-lead">{_html.escape(i18n.t("html_residuals_lead"))}</p>'
+        '<table><thead><tr>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_env"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_band"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_distance"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_n"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_median"))}</th>'
+        f'<th>{_html.escape(i18n.t("html_residuals_col_iqr"))}</th>'
+        '</tr></thead><tbody>'
+        + rows +
+        '</tbody></table>'
         '</section>'
     )

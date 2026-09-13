@@ -20,11 +20,13 @@ per-hop のシート（`report_path`）はバッチと同じものをそのま�
 
 from __future__ import annotations
 
+import dataclasses
 import html as _html
 import os
 
 from core import i18n
 from core import models
+from core import sensitivity
 from core import units
 from report import map_graphics
 from report import multihop as mh
@@ -142,6 +144,79 @@ _HOP_COL_KEYS = (
 # `hop_rows` が備考へ「A → B」を入れる導出物なので、載せると**区間列と同じ
 # 文字が並ぶだけ**＝情報がゼロの列になる（列を揃えること自体が目的ではない）。
 # 区間ごとの自由記述を入力できるようにした日に、ここへ戻すこと。
+
+
+# ============================================================
+# 感度表＋律速区間の argmin（3.4 段6）
+# ------------------------------------------------------------
+# 🔑 **「min の感度」は「感度の min」ではない**（ロードマップ 3.4）＝全体判定を
+# 決めている区間（`run.worst`）の感度表**に加えて**、全区間へ同じ向きの摂動を
+# 一括で与えたときに律速区間が入れ替わるかを見る（`core.sensitivity.
+# compute_multihop_argmin`）。摂動軸は **DEM 標高の系統誤差**だけを試す＝
+# 複数ホップに物理的に同じ向きで乗るのはこの誤差だけ（植生高や環境区分の
+# 読み取り誤差は区間ごとに独立で、一括摂動の前提＝`compute_multihop_argmin`
+# の docstring に合わない）。
+# ============================================================
+
+def _multihop_sensitivity_html(run: MultiHopRun, worst) -> str:
+    """最も苦しい区間の感度表＋律速区間の argmin 注記（HTML 断片・空なら空文字）。
+
+    **全区間が計算できているときだけ**出す＝1 区間でも失敗していれば
+    （成果物なし・計算エラー）律速区間の入れ替わりを判定できない。
+    """
+    hops = run.hops
+    if worst is None or worst.result is None:
+        return ""
+    if any(pr.result is None or pr.terrain is None or pr.params is None
+           for pr in hops):
+        return ""
+
+    worst_idx = hops.index(worst)
+    worst_label = mh.hop_label(run.path, worst_idx)
+
+    sens_result = sensitivity.compute_link_sensitivity(
+        worst.terrain, worst.row.lat_tx, worst.row.lon_tx,
+        worst.row.lat_rx, worst.row.lon_rx,
+        worst.row.h_tx, worst.row.h_rx, worst.params.freq_mhz, worst.params.veg_h,
+        worst.params.k_factor, worst.result.diff_method, worst.result.env_type,
+        worst.params.rain_rate, worst.params.p_tx, worst.params.gain_tx,
+        worst.params.gain_rx, worst.params.sens,
+    )
+
+    hop_inputs: "list[sensitivity.HopInputs]" = []
+    for pr in hops:
+        assert pr.terrain is not None and pr.params is not None and pr.result is not None
+        hop_inputs.append(sensitivity.HopInputs(
+            terrain=pr.terrain, h_tx=pr.row.h_tx, h_rx=pr.row.h_rx,
+            freq_mhz=pr.params.freq_mhz, veg_h=pr.params.veg_h,
+            initial_k=pr.params.k_factor, diff_method=pr.result.diff_method,
+            env_type=pr.result.env_type, rain_rate=pr.params.rain_rate,
+            p_tx=pr.params.p_tx, gain_tx=pr.params.gain_tx, gain_rx=pr.params.gain_rx,
+            sens=pr.params.sens,
+        ))
+    axis_label = report_common.sensitivity_axis_label("html_sens_axis_dem_elev")
+
+    # 両方向を試し、**より苦しい side**（律速区間が入れ替わるほう）を悲観条件として
+    # 報告する＝どちらの向きが系統誤差の実際の向きかは分からないので、片方だけ
+    # 試して「変わらない」と言い切らない。
+    shift_note = ""
+    for delta in (-sensitivity.DEM_PERTURB_M, sensitivity.DEM_PERTURB_M):
+        idx, _margin = sensitivity.compute_multihop_argmin(
+            hop_inputs,
+            lambda h, d=delta: dataclasses.replace(h, terrain=sensitivity.shift_dem(h.terrain, d)),
+        )
+        if idx != worst_idx:
+            shift_note = i18n.t("html_sens_argmin_shift").format(
+                axis=axis_label,
+                hop=mh.hop_label(run.path, idx),
+                baseline_hop=worst_label,
+            )
+            break
+    if not shift_note:
+        shift_note = i18n.t("html_sens_argmin_same").format(axis=axis_label, hop=worst_label)
+
+    note = i18n.t("html_sens_worst_hop").format(hop=worst_label) + " " + shift_note
+    return report_common.sensitivity_table_html(sens_result, note=note)
 
 
 def _verdict_class(status: str) -> str:
@@ -308,6 +383,9 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + (f'<p class="note">{i18n.t("mh_worst_mark_note")}</p>'
            if worst is not None else "")
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
+        # 感度表＋律速区間の argmin（3.4 段6）＝全区間が計算できているときだけ出る
+        # （`_multihop_sensitivity_html` の中で判定）。
+        + _multihop_sensitivity_html(run, worst)
         # 「結果の取扱に関する補足」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
         # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。
         + report_common.handling_notes_html(models.scope_notes_union(
