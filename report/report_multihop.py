@@ -158,18 +158,20 @@ _HOP_COL_KEYS = (
 # の docstring に合わない）。
 # ============================================================
 
-def _multihop_sensitivity_html(run: MultiHopRun, worst) -> str:
-    """最も苦しい区間の感度表＋律速区間の argmin 注記（HTML 断片・空なら空文字）。
+def _multihop_sensitivity(run: MultiHopRun, worst):
+    """ワースト区間の感度＋律速区間の argmin 注記（`(SensitivityResult, note)`）。
 
     **全区間が計算できているときだけ**出す＝1 区間でも失敗していれば
-    （成果物なし・計算エラー）律速区間の入れ替わりを判定できない。
+    （成果物なし・計算エラー）律速区間の入れ替わりを判定できない
+    （`(None, "")` を返す＝`report_common.handling_section_html` は `sens=None`
+    なら感度の節を出さない）。
     """
     hops = run.hops
     if worst is None or worst.result is None:
-        return ""
+        return None, ""
     if any(pr.result is None or pr.terrain is None or pr.params is None
            for pr in hops):
-        return ""
+        return None, ""
 
     worst_idx = hops.index(worst)
     worst_label = mh.hop_label(run.path, worst_idx)
@@ -216,7 +218,7 @@ def _multihop_sensitivity_html(run: MultiHopRun, worst) -> str:
         shift_note = i18n.t("html_sens_argmin_same").format(axis=axis_label, hop=worst_label)
 
     note = i18n.t("html_sens_worst_hop").format(hop=worst_label) + " " + shift_note
-    return report_common.sensitivity_table_html(sens_result, note=note)
+    return sens_result, note
 
 
 def _verdict_class(status: str) -> str:
@@ -345,6 +347,8 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         f'<a href="report_all.html">{_html.escape(i18n.t("html_all_link"))}</a></p>'
     )
 
+    _mh_sens, _mh_sens_note = _multihop_sensitivity(run, worst)
+
     return (
         '<section class="sheet multihop">'
         + report_common.page_header(i18n.t("mh_report_title"), project_name,
@@ -383,21 +387,25 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + (f'<p class="note">{i18n.t("mh_worst_mark_note")}</p>'
            if worst is not None else "")
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
-        # 感度表＋律速区間の argmin（3.4 段6）＝全区間が計算できているときだけ出る
-        # （`_multihop_sensitivity_html` の中で判定）。
-        + _multihop_sensitivity_html(run, worst)
-        # 「結果の取扱に関する補足」（3.0a1）。⚠️ 刻印は**区間の和集合**＝区間ごとに
-        # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す。
-        + report_common.handling_notes_html(models.scope_notes_union(
-            models.scope_notes(
-                pr.params.freq_mhz,
-                diff_method=pr.result.diff_method,
-                rain_rate=pr.params.rain_rate,
-                veg_h=pr.params.veg_h,
-                resolution=pr.params.resolution,
-            )
-            for pr in run.hops if pr.result is not None and pr.params is not None
-        ))
+        # 「結果の取扱に関する補足」（3.0a1）＋ ワースト区間の感度・argmin（3.4 段6・
+        # B-219 で1節へ統合）。⚠️ disclosure の刻印は**区間の和集合**＝区間ごとに
+        # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す
+        # （感度表はワースト区間だけの参考値なので disclosure は外さない＝
+        # `_multihop_sensitivity` が全区間成功のときだけ `(SensitivityResult, note)`
+        # を返し、それ以外は `(None, "")` で感度の節を出さない）。
+        + report_common.handling_section_html(
+            models.scope_notes_union(
+                models.scope_notes(
+                    pr.params.freq_mhz,
+                    diff_method=pr.result.diff_method,
+                    rain_rate=pr.params.rain_rate,
+                    veg_h=pr.params.veg_h,
+                    resolution=pr.params.resolution,
+                )
+                for pr in run.hops if pr.result is not None and pr.params is not None
+            ),
+            _mh_sens, sens_note=_mh_sens_note,
+        )
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'
     )

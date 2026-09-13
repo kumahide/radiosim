@@ -273,9 +273,14 @@ def path_sheet_css() -> str:
    ⚠️ **ここだけ狭いのには理由がある**＝per-path は 1 枚に図 2 枚と表 2 列を載せるので、
    縦の予算がいちばん厳しい。台帳・中継・条件探索は行数の勝負で、字を小さくしても
    その分だけ行が増えるわけではない（→ a4_base_css の `.handling`）。 */
-.sheet.path .handling ul{font-size:7.5px;line-height:1.25;column-count:3}
-/* 感度表も per-path の縦の予算が厳しい前提に合わせて詰める（.handling と同じ理由）。 */
-.sheet.path .sensitivity th,.sheet.path .sensitivity td{font-size:7.5px;padding:1px 4px}
+/* ⚠️ **8px が下限**（B-219）＝これより詰めると帳票の最小字を割る。3.4 段6 は
+   7.5px まで詰めていたが、感度表と補足節を1節へ統合し重複する行を削ったことで
+   8px のまま収まるようになった（実測は Edge --print-to-pdf で確認）。 */
+.sheet.path .handling ul{font-size:8px;line-height:1.3;column-count:3}
+.sheet.path .sensitivity th,.sheet.path .sensitivity td{font-size:8px;padding:1px 4px}
+.sheet.path .sensitivity h5{font-size:9px;margin:4px 0 2px}
+.sheet.path .sensitivity .sn-lead,.sheet.path .sensitivity .sn-note,
+.sheet.path .sensitivity .sn-unchanged,.sheet.path .sensitivity .sn-ground-note{font-size:8px;margin:2px 0}
 """
 
 
@@ -358,15 +363,12 @@ def path_sheet_html(
         result.diff_method, result.env_type, params.rain_rate,
         params.p_tx, params.gain_tx, params.gain_rx, params.sens,
     )
-    sensitivity_html = report_common.sensitivity_table_html(sens_result)
-
     # 「結果の取扱に関する補足」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
     # 刻印は `models.scope_notes` が純述語で決める（この面は並べるだけ＝物理を持たない）。
-    # ⚠️ **地面反射だけ例外**（3.4 段6）＝この面は 1 本の回線しか見ないので、感度表の
-    # 地面反射の行（上で計算済み）が求まったら、disclosure 側の「考慮していない」は
-    # 二重に言わず外す。求まらない回線（`sens_result.ground_reflection is None`）は
-    # 幅にできない＝disclosure をそのまま残す（`report_common.sensitivity_table_html`
-    # の docstring の判断基準どおり）。
+    # ⚠️ **感度表の行と同じ前提を二重に語る刻印は外す**（B-219）＝この面は 1 本の
+    # 回線しか見ないので、対応する摂動軸が求まったら disclosure 側の定性的な注意書き
+    # は感度表の定量的な行に**置き換える**（求まらないものは disclosure をそのまま残す
+    # ＝`report_common.handling_section_html` の docstring の判断基準どおり）。
     scope_keys = models.scope_notes(
         params.freq_mhz,
         diff_method=result.diff_method,
@@ -376,7 +378,11 @@ def path_sheet_html(
     )
     if sens_result.ground_reflection is not None:
         scope_keys = tuple(k for k in scope_keys if k != "ground_reflection")
-    handling = report_common.handling_notes_html(scope_keys)
+    if "diff_method" in sens_result.axes:
+        scope_keys = tuple(k for k in scope_keys if k != "diff_bullington")
+    if "diff_veg_compose" in sens_result.axes:
+        scope_keys = tuple(k for k in scope_keys if k != "diff_veg_serial")
+    handling = report_common.handling_section_html(scope_keys, sens_result)
 
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
     # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。
@@ -446,7 +452,6 @@ def path_sheet_html(
     </table>
   </div>
 </div>
-{sensitivity_html}
 {handling}
 </div></div>
 {report_common.page_footer(i18n.t("html_single_mode"))}

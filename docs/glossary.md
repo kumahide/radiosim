@@ -74,6 +74,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 用語 | 定義 | en | 使わない言い換え |
 |---|---|---|---|
 | 区間 | 中継経路で隣り合う 2 地点を結ぶ 1 本の回線。数えるのは**リンクの本数**＝「地点数 − 1」。区間ごとに独立したリンクバジェットを持つ。 *One link between two adjacent waypoints of a relay path; what is counted is the number of links (waypoints − 1), and each section carries its own link budget.* | Section | ホップ / hop |
+| ワースト区間 | 中継経路で、全体判定を決めている区間（**最もマージンの小さい区間**）。画面・帳票とも同じ 1 語で呼ぶ。 *The section of a relay path that decides the overall verdict — the one with the smallest margin.* | Weakest section | 最も苦しい区間 / 律速区間 |
 | 地点 | 中継経路が通る点すべて（送信点・中継点・受信点）。利用者が入力する面はこちらで、区間はここから導かれる。 *Every point a relay path runs through (TX, relay and RX points). This is what the user enters; sections are derived from it.* | Waypoint | ノード / node |
 | 中継点 | 地点のうち、送信点でも受信点でもないもの。 *A waypoint that is neither the TX nor the RX point.* | Relay | リレー |
 | マージン | 受信レベル − 受信感度（dB）。正なら OK。 *RX level minus RX threshold, in dB; OK when positive.* | Margin | 余裕度 |

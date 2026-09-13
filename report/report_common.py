@@ -181,13 +181,13 @@ body{font-family:Arial,sans-serif;font-size:13px}
 .handling .hd-calib{margin:3px 0 0;font-size:8px;color:#b0bec5;font-style:italic}
 /* 出典は事実の刻印なので、較正の席（斜体・淡色＝空席の印）とは分けて素の字で置く。 */
 .handling .hd-source{margin:2px 0 0;font-size:8px;color:#78909c}
-/* 感度表（3.4 段6）＝**`.handling` の直前に置く**（`sensitivity_table_html` の
-   呼び出し順）。`.handling` を `.page-footer` の直前に保つ（B-212 の糊付けは
-   両者の隣接に依存する）ので、新しい節はその**手前**へ挿す。骨格は `.handling`
-   に揃える（同じ「補足」の仲間・見た目が違うと読み手が別の重みで読む）。 */
-.sensitivity{margin-top:7px;padding-top:4px;border-top:1px solid #e0e6e9;
-  break-inside:avoid}
-.sensitivity h4{margin:0 0 2px;font-size:9px;color:#607d8b;letter-spacing:.04em}
+/* 感度の変動幅（3.4 段6 / B-219 で `.handling` の内側の子節へ統合）＝
+   見出し「机上のスクリーニング推定」を二重に出さないため、独立した
+   `<section>` ではなく `.handling` の末尾（出典の後）に置く `<div>` にした。
+   骨格は `.handling` に揃えるが、見出しは 1 段軽い `<h5>`（子節の印）。 */
+.sensitivity{margin-top:5px;padding-top:3px;border-top:1px dashed #e0e6e9}
+.sensitivity h5{margin:0 0 2px;font-size:8px;color:#607d8b;letter-spacing:.03em;
+  font-weight:bold}
 .sensitivity .sn-lead{margin:0 0 2px;font-size:8px;color:#90a4ae}
 .sensitivity table{width:100%;border-collapse:collapse;margin-top:1px}
 .sensitivity th,.sensitivity td{font-size:8px;padding:1px 5px;text-align:right;
@@ -195,7 +195,8 @@ body{font-family:Arial,sans-serif;font-size:13px}
 .sensitivity th:first-child,.sensitivity td:first-child{text-align:left;
   white-space:normal}
 .sensitivity th{color:#78909c;font-weight:normal}
-.sensitivity .sn-note{margin:3px 0 0;font-size:8px;color:#78909c}
+.sensitivity .sn-note,.sensitivity .sn-unchanged,.sensitivity .sn-ground-note{
+  margin:3px 0 0;font-size:8px;color:#78909c}
 /* 実測残差の層別表（3.4 段6）＝標本が 1 件も無いバッチには出さない
    （呼び出し側が空なら渡さない＝`residuals_table_html` は空文字を返す）。
    骨格は `.sensitivity` と揃える（同じ「補足」の仲間）。 */
@@ -525,30 +526,8 @@ def ledger_header_cells(labels, flex_keys=frozenset()) -> str:
 # ============================================================
 
 
-def handling_notes_html(note_keys) -> str:
-    """「結果の取扱に関する補足」節の HTML 断片を返す（**4 種のシート共通**）。
-
-    字は `core.disclosure` が単一ソース（`report.txt` と同じ 1 本）。ここが持つのは
-    **体裁だけ**＝節タグとクラス名（CSS は `a4_base_css` の `.handling`）。
-    """
-    items = "".join(
-        f"<li>{_html.escape(line)}</li>"
-        for line in disclosure.handling_lines(note_keys)
-    )
-    return (
-        '<section class="handling">'
-        f'<h4>{_html.escape(i18n.t("html_handling_title"))}</h4>'
-        f'<ul>{items}</ul>'
-        f'<p class="hd-calib">'
-        f'{_html.escape(disclosure.calibration_line())}</p>'
-        f'<p class="hd-source">'
-        f'{_html.escape(disclosure.data_source_line())}</p>'
-        '</section>'
-    )
-
-
 # ============================================================
-# 感度表（3.4 段6 / ロードマップ §3.4）
+# 感度の変動幅（3.4 段6 / B-219 で「結果の取扱に関する補足」へ統合）
 # ------------------------------------------------------------
 # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**のがこの節の存在理由
 # （ロードマップ 3.4 段4 の注記）。**単独で出さない**＝地面反射の幅だけを図に
@@ -557,18 +536,40 @@ def handling_notes_html(note_keys) -> str:
 # として並べる。値は `core.sensitivity.compute_link_sensitivity` が既存の
 # 計算パイプラインを摂動条件で数回まわしただけ（モデルは 1 行も変えない）。
 #
-# ⚠️ **disclosure（`handling_notes_html`）側の扱いは面によって違う**:
-#   - **per-path**（1 本の回線だけを見る面）＝`envelope` が求まったら
-#     `core.models.scope_notes()` の `"ground_reflection"` を disclosure から
-#     外し、この表の 1 行に**置き換える**（→ report_path.py）。求まらない
-#     回線（`envelope is None`）は disclosure の「考慮していない」をそのまま
-#     残す（幅にできないものを無理に幅で語らない）。
+# 🔴 **B-219＝見出しと感度表を「結果の取扱に関する補足」の 1 節へ統合した**
+# （2026-09-13）。理由＝同じ前提（回折モデル・回折+植生の合成・解像度・地面反射）
+# を disclosure の箇条と感度表の行が二重に語り、per-path で本文が約 0.87 倍に
+# 縮んで最小字（8px）を割った（実測）。あわせて表は基準列を外し「変動幅」1列へ、
+# 変化しない軸（低め=高め=基準）はまとめて 1 行の注記にする。
+#
+# ⚠️ **disclosure 側の扱いは面によって違う**（据え置き）:
+#   - **per-path**（1 本の回線だけを見る面）＝該当する摂動軸が求まったら、
+#     `core.models.scope_notes()` の対応する刻印（`ground_reflection` /
+#     `diff_bullington` / `diff_veg_serial`）を disclosure から外し、感度表の
+#     1 行に**置き換える**（→ report_path.py）。求まらないもの（地面反射の
+#     envelope が `None` 等）は disclosure の言葉をそのまま残す。
 #   - **scenario / multihop**（N 本の条件・区間の和集合で disclosure を出す面）
-#     ＝この表は**そのうちの 1 本（ベース条件／最も苦しい区間）だけ**の参考値
+#     ＝この表は**そのうちの 1 本（ベース条件／ワースト区間）だけ**の参考値
 #     なので、disclosure は**外さない**（他の N-1 本には envelope が無い＝
-#     置き換えると「全部に効いた」という誤った含意になる）。`note=` 引数で
-#     「この表はどの 1 本の値か」を明示し、単独で図に描いた含意（②）を避ける。
+#     置き換えると「全部に効いた」という誤った含意になる）。`sens_note=` 引数で
+#     「この表はどの 1 本の値か」を明示する。
 # ============================================================
+
+#: 表示桁（`units.format_db` の 0.1dB 刻み）で同じ値に丸まる差は「変化なし」＝
+#: 表の行を増やさずまとめる（B-219）。
+_SENS_UNCHANGED_EPS_DB = 0.05
+
+
+def _axis_is_unchanged(low: float, high: float) -> bool:
+    return abs(float(high) - float(low)) < _SENS_UNCHANGED_EPS_DB
+
+
+def _sensitivity_range_row(label: str, low: float, high: float) -> str:
+    return (
+        f"<tr><td>{_html.escape(label)}</td>"
+        f"<td>{units.format_db(low, signed=True)} 〜 "
+        f"{units.format_db(high, signed=True)}</td></tr>"
+    )
 
 #: 表に出す順（先頭が i18n キー＝`_compare_table` の `_COMPARE_ROWS` と同じ形。
 #: `tests/test_i18n_external.py` はこの「先頭がキー」の並びをループ変数越しに
@@ -612,59 +613,109 @@ def _sensitivity_row(label: str, baseline: float, low: float, high: float) -> st
     )
 
 
-def sensitivity_table_html(
-    sens: "core_sensitivity.SensitivityResult | None",
-    *,
-    note: str = "",
+def _sensitivity_inner_html(
+    sens: "core_sensitivity.SensitivityResult | None", sens_note: str,
 ) -> str:
-    """感度表（摂動軸ごとの余裕度[dB]の幅）の HTML 断片を返す（空なら空文字）。
+    """感度の変動幅（見出し・導入文・表・注記）の内側 HTML（`<div>` 1 個・空なら空文字）。
 
-    Args:
-        sens: `core.sensitivity.compute_link_sensitivity` の戻り値。`None` なら
-            計算していない（成果物が欠けた回線など）＝空文字を返す。
-        note: 表の下に添える 1 行。**scenario / multihop は必ず渡す**＝この表が
-            N 本のうちどの 1 本の値かを明示する（上のモジュール docstring）。
-            省略時は空（per-path は回線が 1 本しかないので不要）。
+    `handling_section_html` からだけ呼ぶ（節タグ・見出しの重複回避は呼び出し側の責務）。
     """
     if sens is None:
         return ""
-    rows = []
+    rows: "list[str]" = []
+    unchanged: "list[str]" = []
     for i18n_key, axis_key in _SENSITIVITY_AXES:
         axis = sens.axes.get(axis_key)
         if axis is None:
             continue
-        rows.append(_sensitivity_row(
-            sensitivity_axis_label(i18n_key), axis.baseline, axis.low, axis.high,
-        ))
+        label = sensitivity_axis_label(i18n_key)
+        if _axis_is_unchanged(axis.low, axis.high):
+            unchanged.append(label)
+        else:
+            rows.append(_sensitivity_range_row(label, axis.low, axis.high))
     if sens.resolution is not None:
-        rows.append(_sensitivity_row(
-            i18n.t("html_sens_axis_resolution"),
-            sens.resolution.baseline, sens.resolution.low, sens.resolution.high,
-        ))
+        label = i18n.t("html_sens_axis_resolution")
+        if _axis_is_unchanged(sens.resolution.low, sens.resolution.high):
+            unchanged.append(label)
+        else:
+            rows.append(_sensitivity_range_row(
+                label, sens.resolution.low, sens.resolution.high,
+            ))
+    ground_note_html = ""
     if sens.ground_reflection is not None:
         env = sens.ground_reflection
-        rows.append(_sensitivity_row(
+        rows.append(_sensitivity_range_row(
             i18n.t("html_sens_axis_ground_reflection"),
-            sens.baseline_margin,
             sens.baseline_margin - env.null_depth_db,
             sens.baseline_margin + env.constructive_gain_db,
         ))
-    if not rows:
+        ground_note_html = (
+            f'<p class="sn-ground-note">'
+            f'{_html.escape(i18n.t("html_sens_ground_reflection_note"))}</p>'
+        )
+    if not rows and not unchanged:
         return ""
-    note_html = f'<p class="sn-note">{_html.escape(note)}</p>' if note else ""
+
+    lead = i18n.t("html_sensitivity_lead").format(
+        baseline=units.format_db(sens.baseline_margin, signed=True, unit="dB"),
+    )
+    table_html = ""
+    if rows:
+        table_html = (
+            '<table><thead><tr>'
+            f'<th>{_html.escape(i18n.t("html_sens_col_axis"))}</th>'
+            f'<th>{_html.escape(i18n.t("html_sens_col_range"))}</th>'
+            '</tr></thead><tbody>'
+            + "".join(rows) +
+            '</tbody></table>'
+        )
+    unchanged_html = (
+        f'<p class="sn-unchanged">'
+        f'{_html.escape(i18n.t("html_sens_unchanged").format(list="、".join(unchanged)))}'
+        f'</p>' if unchanged else ""
+    )
+    note_html = f'<p class="sn-note">{_html.escape(sens_note)}</p>' if sens_note else ""
     return (
-        '<section class="sensitivity">'
-        f'<h4>{_html.escape(i18n.t("html_sensitivity_title"))}</h4>'
-        f'<p class="sn-lead">{_html.escape(i18n.t("html_sensitivity_lead"))}</p>'
-        '<table><thead><tr>'
-        f'<th>{_html.escape(i18n.t("html_sens_col_axis"))}</th>'
-        f'<th>{_html.escape(i18n.t("html_sens_col_baseline"))}</th>'
-        f'<th>{_html.escape(i18n.t("html_sens_col_low"))}</th>'
-        f'<th>{_html.escape(i18n.t("html_sens_col_high"))}</th>'
-        '</tr></thead><tbody>'
-        + "".join(rows) +
-        '</tbody></table>'
-        + note_html +
+        '<div class="sensitivity">'
+        f'<h5>{_html.escape(i18n.t("html_sensitivity_title"))}</h5>'
+        f'<p class="sn-lead">{_html.escape(lead)}</p>'
+        + table_html + unchanged_html + ground_note_html + note_html +
+        '</div>'
+    )
+
+
+def handling_section_html(
+    note_keys,
+    sens: "core_sensitivity.SensitivityResult | None" = None,
+    *,
+    sens_note: str = "",
+) -> str:
+    """「結果の取扱に関する補足」節の HTML 断片を返す（**4 種のシート共通**）。
+
+    B-219（2026-09-13）で、感度の変動幅（`sens`）をこの節の中へ統合した
+    （見出し「机上のスクリーニング推定」が二重に出ないように・本文が縮んで
+    最小字を割っていたのを解消）。
+
+    Args:
+        note_keys: `core.models.scope_notes()` 等が返す disclosure の刻印キー列。
+        sens: `core.sensitivity.compute_link_sensitivity` の戻り値。`None` なら
+            この面はまだ感度を計算していない（表は出ない）。
+        sens_note: 感度表の下に添える 1 行。**scenario / multihop は必ず渡す**＝
+            この表が N 本のうちどの 1 本の値かを明示する（モジュール docstring）。
+    """
+    items = "".join(
+        f"<li>{_html.escape(line)}</li>"
+        for line in disclosure.handling_lines(note_keys)
+    )
+    return (
+        '<section class="handling">'
+        f'<h4>{_html.escape(i18n.t("html_handling_title"))}</h4>'
+        f'<ul>{items}</ul>'
+        f'<p class="hd-calib">'
+        f'{_html.escape(disclosure.calibration_line())}</p>'
+        f'<p class="hd-source">'
+        f'{_html.escape(disclosure.data_source_line())}</p>'
+        + _sensitivity_inner_html(sens, sens_note) +
         '</section>'
     )
 

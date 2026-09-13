@@ -359,7 +359,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
     # 感度表（3.4 段6）＝**ベース条件（先頭の点）だけ**を計算する。N 条件・N 点を
     # 振っている面へさらに感度軸を掛け合わせると計算量・表の両方が膨らむため、
     # 「基準に対してどれだけ動きうるか」の参考値として 1 本だけ示す（下の disclosure
-    # とは別に `note=` で「ベースだけ」と明示する＝`report_common.sensitivity_table_html`
+    # とは別に `sens_note=` で「ベースだけ」と明示する＝`report_common.handling_section_html`
     # のモジュール docstring）。
     base = run.base_params
     sens_result = sensitivity.compute_link_sensitivity(
@@ -368,28 +368,29 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         base.diff_method, base.env_type, base.rain_rate,
         base.p_tx, base.gain_tx, base.gain_rx, base.sens,
     )
-    sensitivity_html = report_common.sensitivity_table_html(
-        sens_result, note=i18n.t("html_sens_base_only"),
+    # 「結果の取扱に関する補足」（3.0a1）＋ 感度の変動幅（3.4 段6・B-219 で1節へ統合）。
+    # ⚠️ **条件探索は 1 枚で N 条件を載せる**＝周波数や植生高そのものを軸に振れる
+    # ので、刻印は**点ごとに解いて和集合**を取る（基準の条件だけを見ると、軸で
+    # 範囲外へ出た点の注記が消える）。感度表は**ベース条件だけ**の参考値なので
+    # disclosure は外さない（`report_common.handling_section_html` の docstring）。
+    # `base` は感度表の計算で既に取得済み（上）。
+    handling = report_common.handling_section_html(
+        models.scope_notes_union(
+            models.scope_notes(
+                # ⚠️ `overrides` は**軸によって値の型が違う**（`env_type` は文字列）＝
+                # 数として使う 3 つはここで float に寄せる（pyright が拾う面）。
+                float(p.overrides.get("freq_mhz", base.freq_mhz)),
+                diff_method=p.result.diff_method,
+                rain_rate=float(p.overrides.get("rain_rate", base.rain_rate)),
+                veg_h=float(p.overrides.get("veg_h", base.veg_h)),
+                # ⚠️ 解像度は**凍結帯の値**＝軸にならない（座標と同じく、変えると
+                # DEM 取得が要り「同一経路を掘る」前提から外れる＝`scenario.py`）。
+                resolution=base.resolution,
+            )
+            for p in run.points if p.result is not None
+        ),
+        sens_result, sens_note=i18n.t("html_sens_base_only"),
     )
-
-    # 「結果の取扱に関する補足」（3.0a1）。⚠️ **条件探索は 1 枚で N 条件を載せる**
-    # ＝周波数や植生高そのものを軸に振れるので、刻印は**点ごとに解いて和集合**を取る
-    # （基準の条件だけを見ると、軸で範囲外へ出た点の注記が消える）。`base` は
-    # 感度表の計算で既に取得済み（上）。
-    handling = report_common.handling_notes_html(models.scope_notes_union(
-        models.scope_notes(
-            # ⚠️ `overrides` は**軸によって値の型が違う**（`env_type` は文字列）＝
-            # 数として使う 3 つはここで float に寄せる（pyright が拾う面）。
-            float(p.overrides.get("freq_mhz", base.freq_mhz)),
-            diff_method=p.result.diff_method,
-            rain_rate=float(p.overrides.get("rain_rate", base.rain_rate)),
-            veg_h=float(p.overrides.get("veg_h", base.veg_h)),
-            # ⚠️ 解像度は**凍結帯の値**＝軸にならない（座標と同じく、変えると
-            # DEM 取得が要り「同一経路を掘る」前提から外れる＝`scenario.py`）。
-            resolution=base.resolution,
-        )
-        for p in run.points if p.result is not None
-    ))
 
     return f"""<section class="sheet scenario">
 {report_common.page_header(title, project_name)}
@@ -398,7 +399,6 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
 {_meta_block(run)}
 {chart_block}
 {table}
-{sensitivity_html}
 {handling}
 </div></div>
 {report_common.page_footer(i18n.t("scn_mode"))}

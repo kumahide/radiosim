@@ -531,23 +531,24 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== 感度表（3.4 段6） =====
         # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
-        # の `sensitivity_table_html` docstring）。モデルは変えず、既存パイプラインを
+        # の `handling_section_html` docstring）。モデルは変えず、既存パイプラインを
         # 摂動条件で数回まわした余裕度の幅を示すだけ。
         "html_sensitivity_title":
-            "Sensitivity to input uncertainty (screening estimate)",
+            "Sensitivity to input uncertainty",
         "html_sensitivity_lead":
-            "Margin recomputed with each input perturbed one at a time "
-            "(the model itself is unchanged).",
-        "html_sens_col_axis":     "Perturbed input",
-        "html_sens_col_baseline": "Baseline (dB)",
-        "html_sens_col_low":      "Low (dB)",
-        "html_sens_col_high":     "High (dB)",
+            "Baseline margin: {baseline}. Shows how much the margin moves when "
+            "each input is perturbed one at a time (the model itself is "
+            "unchanged; unchanged rows are grouped below).",
+        "html_sens_col_axis":     "Input",
+        "html_sens_col_range":    "Margin range (dB)",
+        "html_sens_unchanged":
+            "No measurable change: {list}",
         "html_sens_axis_dem_elev":
             "DEM elevation ±{m} m",
         "html_sens_axis_veg_h":
             "Vegetation height ±{pct}%",
         "html_sens_axis_env_type":
-            "Environment class, one step",
+            "Environment class (to the adjacent one)",
         "html_sens_axis_diff_method":
             "Diffraction model: single knife-edge vs. Bullington",
         "html_sens_axis_diff_veg_compose":
@@ -556,6 +557,11 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Terrain resolution step",
         "html_sens_axis_ground_reflection":
             "Ground reflection (two-ray envelope — a width, not a position)",
+        "html_sens_ground_reflection_note":
+            "This width is a rough estimate — destructive (lower bound) and "
+            "constructive (upper bound) interference from the grazing angle "
+            "and surface roughness at the specular point. It does not say "
+            "where a null actually falls.",
         "html_sens_worst_hop":
             "Row shown for the weakest section: {hop}.",
         "html_sens_argmin_same":
@@ -565,8 +571,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Perturbing {axis} the same way across every section shifts the "
             "weakest section to {hop} (baseline: {baseline_hop}).",
         "html_sens_base_only":
-            "Reference value for the base condition only — not evaluated for "
-            "the other points on this sheet.",
+            "Reference value for the base condition only — the other points "
+            "on this report were not evaluated.",
 
         # ===== 実測残差の層別表（3.4 段6） =====
         "html_residuals_title": "Measured-vs-predicted residuals, by layer",
@@ -1228,8 +1234,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_earth_k_fixed":
             "地球曲率：標準大気 K = {k} 固定（サブリフラクション・ダクトは対象外）",
         "html_scope_diff_bullington":
-            "回折：Bullington 等価ナイフエッジ（ITU-R P.526 §4.5.1）"
-            "＝離れた尾根では小さめ・球面回折の項なし",
+            "回折：Bullington 等価ナイフエッジ（ITU-R P.526 §4.5.1）。"
+            "尾根どうしが離れているほど小さめに出て、球面回折の項は含まない",
         "html_scope_rain_zeroed":
             "降雨減衰：{lo} GHz 未満は範囲外のため 0 dB",
         "html_scope_rain_extrapolated":
@@ -1241,66 +1247,71 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_veg_extrapolated":
             "植生減衰の係数：{lo}〜{hi} GHz の定義域外を外挿",
         "html_scope_diff_veg_serial":
-            "遮蔽区間：回折損と植生減衰を重ねて計上"
-            "＝合計は大きめ（安全側）・合成方法は未検証",
+            "遮蔽区間：回折損と植生減衰を重ねて計上するため、"
+            "合計は大きめ（安全側）に出る。合成方法自体は未検証",
         "html_scope_rice_k_empirical":
             "ライス K：回折損からの経験的な推定（表示のみ・計算には未使用）",
         "html_scope_resolution_high":
-            "地形の解像度「高」＝経路が通る 5m 層 DEM 画素の縁ごとに標本を置いて計算"
-            "（1 画素は日本で {px_lo}〜{px_hi} m）"
-            "＝段階を粗くすると回折損は小さく出る（「低」＝{m} m 間隔との実測差 最大 +407%）",
+            "地形の解像度は「高」（経路が通る 5m 層 DEM 画素の縁ごとに標本を置いて計算・"
+            "1 画素は日本で {px_lo}〜{px_hi} m）。段階を粗くすると回折損は小さく出るため、"
+            "「低」（{m} m 間隔）との実測差は最大 +407%",
         "html_scope_resolution_medium":
-            "地形の解像度「中」＝経路が通る 10m 層 DEM 画素の縁ごとに標本を置いて計算"
-            "（1 画素は日本で {px_lo}〜{px_hi} m）"
-            "＝段階を粗くすると回折損は小さく出る（「低」＝{m} m 間隔との実測差 最大 +407%）",
+            "地形の解像度は「中」（経路が通る 10m 層 DEM 画素の縁ごとに標本を置いて計算・"
+            "1 画素は日本で {px_lo}〜{px_hi} m）。段階を粗くすると回折損は小さく出るため、"
+            "「低」（{m} m 間隔）との実測差は最大 +407%",
         "html_scope_resolution_low":
-            "地形の解像度「低」（{m} m 間隔・画素を飛ばす刻み）で計算"
-            "＝段階を細かくすると回折損が増える（「高」との実測差 最大 +407%）",
+            "地形の解像度は「低」（{m} m 間隔で画素を飛ばして計算）。段階を細かくすると"
+            "回折損が増えるため、「高」との実測差は最大 +407%",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測との突き合わせなし）",
 
-        # ===== 感度表（3.4 段6） =====
-        "html_sensitivity_title": "入力の不確かさに対する感度（机上のスクリーニング推定）",
+        # ===== 感度表（3.4 段6 / B-219 で表を1列に再構成） =====
+        "html_sensitivity_title": "入力の不確かさに対する感度",
         "html_sensitivity_lead":
-            "各入力を 1 つずつ振ってマージンを再計算した値（モデル自体は変えていない）。",
-        "html_sens_col_axis":     "振った入力",
-        "html_sens_col_baseline": "基準 (dB)",
-        "html_sens_col_low":      "低め (dB)",
-        "html_sens_col_high":     "高め (dB)",
+            "基準条件のマージンは {baseline}。主な入力を 1 つずつ振ったときの"
+            "マージンの変動幅を示す（モデル自体は変えていない。変化しない項目は"
+            "まとめて記す）。",
+        "html_sens_col_axis":     "入力",
+        "html_sens_col_range":    "変動幅 (dB)",
+        "html_sens_unchanged":
+            "変化なし：{list}",
         "html_sens_axis_dem_elev":
             "DEM 標高 ±{m} m",
         "html_sens_axis_veg_h":
             "植生高 ±{pct}%",
         "html_sens_axis_env_type":
-            "環境区分 1 段",
+            "環境区分（隣の区分へ）",
         "html_sens_axis_diff_method":
             "回折モデル：single ⇄ Bullington",
         "html_sens_axis_diff_veg_compose":
-            "回折損＋植生減衰：和 ⇄ 大きいほう",
+            "回折損と植生減衰の合算：足し合わせ ⇄ 大きい方のみ",
         "html_sens_axis_resolution":
             "地形の解像度の段階",
         "html_sens_axis_ground_reflection":
-            "地面反射（2 波干渉の包絡線＝位置ではなく幅）",
+            "地面反射（2 波干渉の包絡線。ヌルの位置ではなく変動の幅を示す）",
+        "html_sens_ground_reflection_note":
+            "この幅は、鏡面反射点の擦過角と地表の粗さから見積もった、破壊的干渉（下限）"
+            "と建設的干渉（上限）の目安。ヌルが実際に起きる位置までは分からない。",
         "html_sens_worst_hop":
-            "最も苦しい区間（{hop}）についての行。",
+            "ワースト区間（{hop}）についての行。",
         "html_sens_argmin_same":
-            "{axis} を全区間へ同じ向きで振っても、最も苦しい区間は変わらない（{hop}）。",
+            "{axis} を全区間へ同じ向きで振っても、ワースト区間は変わらない（{hop}）。",
         "html_sens_argmin_shift":
-            "{axis} を全区間へ同じ向きで振ると、最も苦しい区間が {hop} に変わる"
+            "{axis} を全区間へ同じ向きで振ると、ワースト区間が {hop} に変わる"
             "（基準は {baseline_hop}）。",
         "html_sens_base_only":
-            "ベース条件（1 点）だけの参考値。この面の他の条件には未評価。",
+            "ベース条件（1 点）だけの参考値。この帳票に載る他の条件は計算していない。",
 
         # ===== 実測残差の層別表（3.4 段6） =====
         "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",
         "html_residuals_lead":
-            "残差 = 予測 − 実測（給電線損失を引き戻し後）。正の値は予測が高め。",
+            "残差 = 予測 − 実測（給電線損失を補正した後の値）。正の値は予測が高め。",
         "html_residuals_col_env":      "環境区分",
         "html_residuals_col_band":     "帯域",
         "html_residuals_col_distance": "距離帯",
         "html_residuals_col_n":        "件数",
         "html_residuals_col_median":   "中央値 (dB)",
-        "html_residuals_col_iqr":      "ばらつき IQR (dB)",
+        "html_residuals_col_iqr":      "ばらつき（四分位範囲、dB）",
 
         # 標高データの出典（B-134）
         "html_elev_source":     "標高データの出典: 地理院タイル（標高タイル）",
@@ -1430,10 +1441,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_overall_margin":    "全体マージン（最小余裕）",
         "mh_overall_shortfall": "最大不足",
         "mh_hops":              "区間数",
-        "mh_worst_hop":         "最も苦しい区間",
+        "mh_worst_hop":         "ワースト区間",
         "mh_section":           "区間",
         "mh_heights":           "アンテナ高 (送 / 受, m)",
-        "mh_worst_mark_note":   "左端に太線のある行が最も苦しい区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / NG / ERROR）を表します。",
+        "mh_worst_mark_note":   "左端に太線のある行がワースト区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / NG / ERROR）を表します。",
         "mh_regenerative_note": "各区間は独立したリンクバジェットです（再生中継）。区間をまたいで損失は加算せず、全体判定は最も余裕の少ない区間で決まります。判定できなかった区間（ERROR）が 1 つでもあれば全体判定も ERROR です（回線が成立しない NG とは別物）。受動反射（反射板）は対象外です。",
         "mh_err_too_few":       "中継経路には地点が 2 つ以上必要です（送信点と受信点）。",
         "mh_err_too_many":      "区間が多すぎます（最大 {max}）。",

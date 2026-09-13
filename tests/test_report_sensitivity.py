@@ -83,16 +83,19 @@ def _hop_result(link_id: str, path_id: str) -> batch.PathResult:
 
 
 # ============================================================
-# report_common.sensitivity_table_html / residuals_table_html（純関数）
+# report_common.handling_section_html（感度の変動幅） / residuals_table_html
+# （純関数）＝ B-219 で「結果の取扱に関する補足」1節へ統合。
 # ============================================================
-class TestSensitivityTableHtml:
+class TestHandlingSectionSensitivityPart:
     def setup_method(self):
         i18n.set_lang("en")
 
-    def test_none_returns_empty_string(self):
-        assert report_common.sensitivity_table_html(None) == ""
+    def test_sens_none_has_no_sensitivity_block(self):
+        html = report_common.handling_section_html(("dem_surface",), None)
+        assert 'class="handling"' in html
+        assert 'class="sensitivity"' not in html
 
-    def test_axes_are_rendered_as_rows(self):
+    def test_axes_are_rendered_as_range_rows(self):
         sens = sv.SensitivityResult(
             baseline_margin=1.0,
             axes={
@@ -103,15 +106,33 @@ class TestSensitivityTableHtml:
             ground_reflection=None,
             resolution=None,
         )
-        html = report_common.sensitivity_table_html(sens)
+        html = report_common.handling_section_html((), sens)
         assert 'class="sensitivity"' in html
         assert i18n.t("html_sensitivity_title") in html
+        # 基準値は導入文へ 1 回だけ書く（表の列からは外した＝B-219）。
+        assert "1.0" in html
         # DEM の摂動量が文言へ差し込まれている（値の直書きではない＝単一ソース）。
         assert f"{sv.DEM_PERTURB_M:g}" in html
-        assert html.count("<tr>") == 4  # 見出し行 + 3 軸
+        assert html.count("<tr>") == 4  # 見出し行 + 3 軸（全部変化あり）
         assert i18n.t("html_sens_axis_ground_reflection") not in html
 
-    def test_ground_reflection_row_uses_envelope(self):
+    def test_unchanged_axes_are_grouped_not_listed_as_rows(self):
+        """低め=高め=基準の軸は表の行にせず、まとめて 1 行の注記にする（B-219）。"""
+        sens = sv.SensitivityResult(
+            baseline_margin=2.0,
+            axes={
+                "dem_elev": sv.AxisRange("dem_elev", 2.0, -1.0, 5.0),
+                "diff_veg_compose": sv.AxisRange("diff_veg_compose", 2.0, 2.0, 2.0),
+            },
+            ground_reflection=None, resolution=None,
+        )
+        html = report_common.handling_section_html((), sens)
+        assert html.count("<tr>") == 2  # 見出し行 + dem_elev だけ
+        assert "No measurable change" in html
+        assert report_common.sensitivity_axis_label(
+            "html_sens_axis_diff_veg_compose") in html
+
+    def test_ground_reflection_row_uses_envelope_and_carries_a_footnote(self):
         env = sv.ground_reflection.TwoRayEnvelope(
             frac=0.5, sigma_h_m=1.0, grazing_deg=2.0, roughness="smooth",
             null_depth_db=12.0, constructive_gain_db=6.0,
@@ -119,25 +140,27 @@ class TestSensitivityTableHtml:
         sens = sv.SensitivityResult(
             baseline_margin=5.0, axes={}, ground_reflection=env, resolution=None,
         )
-        html = report_common.sensitivity_table_html(sens)
+        html = report_common.handling_section_html((), sens)
         assert i18n.t("html_sens_axis_ground_reflection") in html
+        assert i18n.t("html_sens_ground_reflection_note") in html
         # low = baseline - null_depth, high = baseline + constructive_gain
         assert "-7.0" in html   # 5.0 - 12.0
         assert "+11.0" in html  # 5.0 + 6.0
 
-    def test_no_rows_returns_empty_string(self):
+    def test_no_axes_at_all_has_no_sensitivity_block(self):
         sens = sv.SensitivityResult(
             baseline_margin=0.0, axes={}, ground_reflection=None, resolution=None,
         )
-        assert report_common.sensitivity_table_html(sens) == ""
+        html = report_common.handling_section_html((), sens)
+        assert 'class="sensitivity"' not in html
 
-    def test_note_is_appended(self):
+    def test_sens_note_is_appended(self):
         sens = sv.SensitivityResult(
             baseline_margin=1.0,
             axes={"dem_elev": sv.AxisRange("dem_elev", 1.0, 0.0, 2.0)},
             ground_reflection=None, resolution=None,
         )
-        html = report_common.sensitivity_table_html(sens, note="hello note")
+        html = report_common.handling_section_html((), sens, sens_note="hello note")
         assert "hello note" in html
 
 
@@ -272,13 +295,15 @@ class TestMultihopSensitivity:
             row=ok_hop.row, result=None, error=RuntimeError("boom"),
         )
         run = mh.MultiHopRun(path=_mh_path(3), hops=[ok_hop, failed_hop])
-        assert report_multihop._multihop_sensitivity_html(run, run.worst) == ""
+        sens, note = report_multihop._multihop_sensitivity(run, run.worst)
+        assert sens is None and note == ""
 
     def test_present_when_all_hops_succeed(self):
         h1 = _hop_result("tokyo_urban_2400", "route1_h1")
         h2 = _hop_result("hiroshima_kure_ridge", "route1_h2")
         run = mh.MultiHopRun(path=_mh_path(3), hops=[h1, h2])
-        html = report_multihop._multihop_sensitivity_html(run, run.worst)
+        sens, note = report_multihop._multihop_sensitivity(run, run.worst)
+        html = report_common.handling_section_html((), sens, sens_note=note)
         assert i18n.t("html_sensitivity_title") in html
         assert i18n.t("html_sens_worst_hop").format(
             hop=mh.hop_label(run.path, run.hops.index(run.worst))

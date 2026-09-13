@@ -750,8 +750,12 @@ def _builds_a_sheet(text: str) -> bool:
 
 
 def _carries_the_handling_section(text: str) -> bool:
-    """そのソースが「結果の取扱に関する補足」を出しているか。"""
-    return ("handling_notes_html(" in text) or ("handling_text(" in text)
+    """そのソースが「結果の取扱に関する補足」を出しているか。
+
+    ⚠️ **B-219 で `handling_notes_html` → `handling_section_html` に改名**
+    （感度の変動幅を同じ節へ統合したため）。
+    """
+    return ("handling_section_html(" in text) or ("handling_text(" in text)
 
 
 class TestEveryArtifactFaceCarriesTheHandlingSection:
@@ -786,7 +790,7 @@ class TestEveryArtifactFaceCarriesTheHandlingSection:
                      if _builds_a_sheet(t) and not _carries_the_handling_section(t)]
         assert not offenders, (
             "開示の節を持たない帳票がある: " + repr(offenders) + "。"
-            "`report_common.handling_notes_html(models.scope_notes(...))` を"
+            "`report_common.handling_section_html(models.scope_notes(...))` を"
             "フッタの前に置くこと（3.0a1）＝成果物は一人歩きするので、"
             "前提と適用範囲は帳票そのものが持つ"
         )
@@ -802,7 +806,7 @@ class TestEveryArtifactFaceCarriesTheHandlingSection:
 
     @pytest.mark.parametrize("text,expected", [
         ("report_common.page_footer(i18n.t('x'))", (True, False)),
-        ("report_common.page_footer(x) + handling_notes_html(y)", (True, True)),
+        ("report_common.page_footer(x) + handling_section_html(y)", (True, True)),
         ("disclosure.handling_text(keys)", (False, True)),
         ("# フッタは page_footer が置く", (False, False)),
     ])
@@ -954,7 +958,7 @@ class TestHandlingSectionContent:
     def test_the_html_section_escapes_and_lists_every_line(self):
         i18n.set_lang("en")
         keys = models.scope_notes(2400.0, diff_method="single")
-        html = report_common.handling_notes_html(keys)
+        html = report_common.handling_section_html(keys)
         assert html.count("<li>") == len(keys)
         assert 'class="handling"' in html
         assert i18n.t("html_handling_title") in html
