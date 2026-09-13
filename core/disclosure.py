@@ -19,6 +19,8 @@ HTML 帳票の**両方**がこの字を引くため。層の向きは `views →
 
 from __future__ import annotations
 
+from fractions import Fraction
+
 from core import i18n
 from core import models
 from core import terrain_grid
@@ -27,6 +29,17 @@ from core import terrain_grid
 def _m(value: float) -> str:
     """間隔の値 [m] を字にする（`5.0` → `5`）。"""
     return f"{float(value):g}"
+
+
+def _fraction(value: float) -> str:
+    """比の値を分数の字にする（`4/3` の float 表現 → `"4/3"`）。
+
+    ⚠️ **`.2f` の小数（`1.33`）は名乗らない**（B-220）＝公開文書はすべて `4/3` と
+    書いており、帳票だけ小数だと同じ前提の表記が割れる。`limit_denominator` で
+    浮動小数の丸め誤差を吸収する（分母 10 で十分＝この値は変わらない定数）。
+    """
+    frac = Fraction(float(value)).limit_denominator(10)
+    return f"{frac.numerator}/{frac.denominator}"
 
 
 def _ghz(value: float) -> str:
@@ -50,7 +63,7 @@ def _scope_args(key: str) -> dict:
     spacing = terrain_grid.RESOLUTION_SPACING_M
     coarse = {"m": _m(spacing["low"])}
     return {
-        "earth_k_fixed":     {"k": f"{float(models.EARTH_K_STANDARD):.2f}"},
+        "earth_k_fixed":     {"k": _fraction(models.EARTH_K_STANDARD)},
         "rain_zeroed":       {"lo": _ghz(models.RAIN_MIN_GHZ)},
         "rain_extrapolated": {"hi": _ghz(models.RAIN_TABLE_MAX_GHZ)},
         "gas_zeroed":        {"lo": _ghz(gas_lo)},

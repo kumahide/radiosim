@@ -17,6 +17,7 @@ import os
 import re
 import sys
 import xml.etree.ElementTree as ET
+from fractions import Fraction
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -846,15 +847,32 @@ class TestHandlingSectionContent:
         """🔴 **K の字は、曲率補正が実際に使った値そのもの**であること。
 
         ⚠️ 定数と突き合わせない＝**式の出力**（既定で作った `TerrainProfile` の
-        `earth_k`）と突き合わせる。そうしないと「字にも定数にも 1.33 と書いてあり、
+        `earth_k`）と突き合わせる。そうしないと「字にも定数にも 4/3 と書いてあり、
         式だけ別の値を使っている」が緑のまま通る（刻印の怖さはこの向き）。
+
+        ⚠️ **B-220 で `.2f`（`1.33`）から分数（`4/3`）へ変えた**＝公開文書はすべて
+        `4/3` と書いており、帳票だけ小数だと同じ前提の表記が割れていた。
         """
         i18n.set_lang("en")
         t = models.calculate_terrain_profile(
             np.array([0.0, 0.0, 0.0]), 35.0, 139.0, 35.01, 139.01,
         )
         line = disclosure.handling_lines(("earth_k_fixed",))[0]
-        assert f"{t.earth_k:.2f}" in line, (line, t.earth_k)
+        frac = Fraction(float(t.earth_k)).limit_denominator(10)
+        assert f"{frac.numerator}/{frac.denominator}" in line, (line, t.earth_k)
+
+    def test_public_docs_do_not_use_the_decimal_k_the_report_dropped(self):
+        """B-220＝公開文書は帳票と同じ「K = 4/3」で書き、`1.33` を残さない。
+
+        ⚠️ `k_factor`/`current_k`（ライス K・別の量）の 1.33 は対象外＝
+        地球曲率の文脈（`K = 1.33`）だけを見る。
+        """
+        root = os.path.join(os.path.dirname(__file__), "..")
+        for relpath in ("docs/manual_ja.md", "docs/manual_en.md"):
+            text = open(os.path.join(root, relpath), encoding="utf-8").read()
+            assert "K = 1.33" not in text, (
+                f"{relpath}: 地球曲率の表記が帳票（K = 4/3）と食い違う「K = 1.33」を含む"
+            )
 
     def test_the_resolution_step_reaches_every_face(self):
         """🔴 **刻印を足しただけでは届かない**＝呼ぶ側が段階を渡すこと（B-128）。
