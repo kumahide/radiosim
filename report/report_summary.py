@@ -23,6 +23,7 @@ from core import i18n
 from core import models
 from core import output_contract
 from core import residuals as core_residuals
+from core import sensitivity
 from core import units
 from core import version
 from report import map_graphics
@@ -340,6 +341,32 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"{graph_cell}</tr>\n"
         )
 
+    # 感度表（3.4 段6 で漏れていた面＝B-226）＝**ワースト経路（actual_margin 最小）**
+    # だけを計算する。バッチは N 本の独立経路の集合で条件探索の base_params のような
+    # 単一の基準が無いため、中継の「ワースト区間」と同じ考え方で 1 本を選ぶ
+    # （最も余裕が無い経路を見せるのが実務上いちばん有用）。計算できた経路が
+    # 1 本も無ければ感度は出さない（`handling_section_html` は sens=None で節を省く）。
+    def _margin(pr: PathResult) -> float:
+        assert pr.result is not None
+        return pr.result.actual_margin
+
+    computed = [pr for pr in results
+                if pr.result is not None and pr.terrain is not None and pr.params is not None]
+    sens_result = None
+    sens_note = ""
+    if computed:
+        worst = min(computed, key=_margin)
+        assert worst.result is not None and worst.terrain is not None and worst.params is not None
+        sens_result = sensitivity.compute_link_sensitivity(
+            worst.terrain, worst.row.lat_tx, worst.row.lon_tx,
+            worst.row.lat_rx, worst.row.lon_rx,
+            worst.row.h_tx, worst.row.h_rx, worst.params.freq_mhz, worst.params.veg_h,
+            worst.params.k_factor, worst.result.diff_method, worst.result.env_type,
+            worst.params.rain_rate, worst.params.p_tx, worst.params.gain_tx,
+            worst.params.gain_rx, worst.params.sens,
+        )
+        sens_note = i18n.t("html_sens_worst_path").format(path=worst.row.path_id)
+
     # 「結果の取扱に関する補足」（3.0a1）。⚠️ **台帳は 1 枚で N 本を載せる**ので
     # 刻印は**和集合**＝どれか 1 本にでも当てはまる注記を出す（消すと*その行には
     # 書いていない*ことになる）。計算できなかった行は条件が確定していないので数えない。
@@ -354,6 +381,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             )
             for pr in results if pr.result is not None and pr.params is not None
         ),
+        sens_result, sens_note=sens_note,
         dem_source_ids=(
             pr.params.dem_source for pr in results
             if pr.result is not None and pr.params is not None

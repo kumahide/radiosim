@@ -573,6 +573,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_sens_base_only":
             "Reference value for the base condition only — the other points "
             "on this report were not evaluated.",
+        "html_sens_worst_path":
+            "Row shown for the weakest path: {path}. The other paths in this "
+            "report were not evaluated.",
 
         # ===== 実測残差の層別表（3.4 段6） =====
         "html_residuals_title": "Measured-vs-predicted residuals, by layer",
@@ -1302,6 +1305,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "（基準は {baseline_hop}）。",
         "html_sens_base_only":
             "ベース条件（1 点）だけの参考値。この帳票に載る他の条件は計算していない。",
+        "html_sens_worst_path":
+            "ワースト経路（{path}）についての行。この帳票の他の経路は計算していない。",
 
         # ===== 実測残差の層別表（3.4 段6） =====
         "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",

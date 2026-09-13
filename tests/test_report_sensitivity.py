@@ -13,6 +13,7 @@ tests/test_report_sensitivity.py
 裏取りは `tests/test_sensitivity.py` / `tests/test_ground_reflection.py` /
 `tests/test_residuals.py` / `tests/test_report_residuals.py` が担う。
 """
+import dataclasses
 import json
 import os
 import sys
@@ -253,6 +254,35 @@ def test_scenario_sheet_shows_base_only_sensitivity_note():
     assert i18n.t("html_sens_base_only") in html
     # 条件探索は N 条件の和集合なので、地面反射の disclosure はそのまま残る。
     assert i18n.t("html_scope_ground_reflection") in html
+
+
+# ============================================================
+# report_summary.py：ワースト経路（B-226）だけの感度表（注記つき）
+# ============================================================
+def test_summary_sheet_shows_worst_path_sensitivity_note():
+    """B-226＝複数経路サマリで、感度表が actual_margin 最小の経路 1 本ぶん出る。"""
+    i18n.set_lang("en")
+    pr1 = _hop_result("tokyo_urban_2400", "p01")
+    pr2 = _hop_result("tokyo_urban_2400", "p02")
+    assert pr1.result is not None and pr2.result is not None
+    # p02 のほうがマージンが小さくなるよう細工する（実物の値を壊さず複製で調整）。
+    pr2.result = dataclasses.replace(
+        pr2.result, actual_margin=pr1.result.actual_margin - 10.0
+    )
+    html = report_summary.summary_sheet_html([pr1, pr2])
+    assert i18n.t("html_sensitivity_title") in html
+    assert i18n.t("html_sens_worst_path").format(path="p02") in html
+    # バッチは N 本の和集合なので、地面反射の disclosure はそのまま残る。
+    assert i18n.t("html_scope_ground_reflection") in html
+
+
+def test_summary_sheet_has_no_sensitivity_without_computed_paths():
+    """全経路が計算失敗（ERROR）なら基準点が無いので感度表は出ない。"""
+    i18n.set_lang("en")
+    pr = _hop_result("tokyo_urban_2400", "p01")
+    pr.result = None
+    html = report_summary.summary_sheet_html([pr])
+    assert i18n.t("html_sensitivity_title") not in html
 
 
 # ============================================================
