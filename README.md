@@ -6,9 +6,9 @@
 
 **国土地理院 DEM（数値標高モデル）を自動で取得し、地形断面・回折損・フレネル第1ゾーン遮蔽率・リンクバジェットを計算する Windows デスクトップアプリです。** 送信点と受信点の座標・アンテナ高・周波数を入れるだけで、その回線が通りそうかを数秒で判定します。**現地調査に出る前のスクリーニング**に用途を絞ったツールで、無料・MIT ライセンス・インストール不要の Windows バイナリも配布しています。
 
-> **標高データが国土地理院タイル前提のため、対象は日本国内の回線に限られます。**
+> **組み込みの標高データは国土地理院タイルのみです。日本国外の標高は利用者が宣言ファイルで外部 DEM ソースを追加すれば取得できますが、背景地図は国土地理院タイル固定のため、地図から座標を拾う・航空写真で確認する・帳票に地図を載せるといった機能は日本国内でしか使えません。**（詳細は下記 FAQ「日本国外の回線には使えますか？」）
 
-*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. Because it relies on GSI tiles, **it covers links inside Japan only**. English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
+*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. The only built-in elevation source is GSI, but you can add an external DEM source for elevations outside Japan via a declaration file; the background map stays fixed to GSI tiles, so picking coordinates on the map, aerial-photo confirmation, and the map embedded in reports remain Japan-only. English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
 
 <img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
@@ -100,7 +100,9 @@ python main.py
 
 ### 日本国外の回線には使えますか？
 
-使えません。標高データが国土地理院のタイル前提です。海外の DEM に対応する予定は**現行版にはありません**（将来の版で DEM の入手先を増やすことは検討していますが、時期も可否も未定です）。
+限定的に使えます。組み込みで登録されている標高データは国土地理院のタイルだけですが、利用者が設定フォルダに宣言ファイルを置くと、外部の標高タイル（XYZ PNG）を DEM ソースとして追加できます（3.4〜）。改善するのはカバー範囲であって精度ではありません。
+
+ただし**背景地図（淡色地図・航空写真）は国土地理院タイル固定のまま**です。日本国外では、地図をクリックして座標を指定する機能・航空写真での現地確認・帳票に載る経路地図の画像は使えません（座標は数値で直接入力してください）。背景地図を利用者が追加する仕組みは今後の検討課題です。
 
 ### 有料ですか？ 商用利用できますか？
 

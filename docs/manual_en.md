@@ -759,6 +759,8 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it only lets you get elevation outside Japan, where GSI has no data; it does not give you a finer mesh than 10 m).
 
+⚠️ **The background map (pale map / aerial photo) stays fixed to GSI tiles** — this source extension does not apply to it. Even once an external DEM source gives you elevation outside Japan, picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only (enter coordinates outside Japan as numbers directly).
+
 Create `dem_sources.toml` in the settings folder (the same folder as `radiosim_conf.json`) and add one `[[source]]` entry per source. Example (Terrarium, AWS Open Data Terrain Tiles):
 
 ```toml
@@ -1007,7 +1009,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Data Coverage
 
-- **DEM coverage is Japan only.** GSI tiles do not cover areas outside Japan; coordinates outside Japan will return elevation 0 m
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)" (the background map is not covered by this and stays Japan-only)
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 
