@@ -596,6 +596,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # は固有名なので、機関名を重ねなくても出所は特定できる。
         "html_elev_source_prefix": "Elevation data source",
         "html_elev_source_mixed":  "Multiple (varies by path)",
+        "html_elev_source_gsi_dem": "GSI DEM",
 
         # ===== Tile Manager =====
         "map_window_title":     "Map",
@@ -1322,6 +1323,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 標高データの出典（B-134／B-216）
         "html_elev_source_prefix": "標高データの出典",
         "html_elev_source_mixed":  "複数（経路ごとに異なる）",
+        "html_elev_source_gsi_dem": "国土地理院 DEM",
 
         # ===== Tile Manager =====
         "map_window_title":     "地図",

@@ -142,8 +142,14 @@ def data_source_line(dem_source_ids=None) -> str:
             省略時は国土地理院（3.3 以前と同じ既定）。**複数の異なるソースが
             混じっていれば「複数」と表示する**（1 本を代表に選んで嘘をつかない）。
 
-    ⚠️ **`report.txt` の `DEM Source:` 行（`_format_dem_source_line`）と値は同じ
-    出所**（`dem_sources.resolve()`）＝ HTML と `report.txt` で出典が食い違わない。
+    ⚠️ **`report.txt` の `DEM Source:` 行（`_format_dem_source_line`）とは
+    出所（`dem_sources.resolve()`）は同じだが、**組み込みソース（国土地理院）
+    の文字列は表示言語で訳す**（B-227）＝`display_name` は Japanese 固定文字列
+    のため、英語帳票では地形断面図を描く matplotlib のフォント（英語モードでは
+    日本語フォントを適用しない＝`report/mpl_fonts.py`）に日本語グリフが無く
+    豆腐化していた。`report.txt` は素のテキストなのでこの問題が起きず、
+    宣言そのままの `display_name` を刻む（利用者が宣言したソースは訳しようが
+    ないので、そちらは HTML 側もそのまま出す）。
     **`attribution` は含めない**＝B-135 の「機関名を重ねなくても出所は特定できる」
     という既存の方針を維持し、断面図の距離軸ラベルと同じ行に収める字数を抑える。
     """
@@ -156,7 +162,11 @@ def data_source_line(dem_source_ids=None) -> str:
     if not ids:
         ids = {dem_sources.GSI_DEM.source_id}
     if len(ids) == 1:
-        value = dem_sources.resolve(next(iter(ids))).display_name
+        spec = dem_sources.resolve(next(iter(ids)))
+        if spec.source_id == dem_sources.GSI_DEM.source_id:
+            value = i18n.t("html_elev_source_gsi_dem")
+        else:
+            value = spec.display_name
     else:
         value = i18n.t("html_elev_source_mixed")
     return f'{i18n.t("html_elev_source_prefix")}: {value}'
