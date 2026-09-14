@@ -660,6 +660,7 @@ def _save_settings(
         "diff_method" : params.diff_method,
         "env_type"    : params.env_type,
         "rain_rate"   : params.rain_rate,
+        "dem_source"  : params.dem_source,
     }
     path = os.path.join(save_dir, "settings.json")
     with open(path, "w", encoding="utf-8") as f:

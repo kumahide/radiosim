@@ -52,6 +52,8 @@ class _RunMixin(_HostBase):
         _env_label_to_key: dict[str, str]
         _diff_var: tk.StringVar
         _diff_label_to_key: "dict[str, str]"
+        _dem_source_var: tk.StringVar
+        _dem_source_label_to_key: "dict[str, str]"
         _pump: "ProgressPump"
         _running: bool
         _run_btn: ttk.Button
@@ -92,6 +94,8 @@ class _RunMixin(_HostBase):
             #    出すが、実行と保存に渡すのは常にキー（`env_type` と同じ形）。
             "diff_method": self._diff_label_to_key.get(
                 self._diff_var.get(), self._diff_var.get()),
+            "dem_source" : self._dem_source_label_to_key.get(
+                self._dem_source_var.get(), self._dem_source_var.get()),
         }
         # **値域の検証はここが関門**（B-018）。共通設定は readonly だが、値はランチャー
         # の生の入力（窓を開いたときのスナップショット／↻更新）で、ランチャー自身は

@@ -587,6 +587,11 @@ def _decode_elevation(
     の宣言（3.3 段4c／3.4 段1）が単一ソース。"""
     src = source if source is not None else dem_sources.GSI_DEM
     r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
+    # B-229＝宣言された無効値ピクセルは、GSI の自前処理（_decode_gsi_dem）と
+    # 同じ「取れなかった」規約（0.0＝呼び出し側が次レイヤ/次経路へ回す）に
+    # 合流させる。デコーダへそのまま渡すと、無効値が異常な標高として採用される。
+    if src.invalid_rgb is not None and (r, g, b) == src.invalid_rgb:
+        return 0.0
     return dem_sources.decode(src.decode, r, g, b)
 
 

@@ -810,12 +810,14 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
 class TestSavePackage:
 
     def _run_save(self, tmp_path, flat_terrain, default_params_dict, monkeypatch,
-                  diff_method="single", coord_format="dd"):
+                  diff_method="single", coord_format="dd", dem_source=None):
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         # 空のキャッシュ（=常に「取得日不明」）に固定＝実機のキャッシュに
         # たまたま同じ座標が残っていても結果が揺れないようにする（3.3 段4e）。
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "empty_dem_cache"))
         default_params_dict["diff_method"] = diff_method
+        if dem_source is not None:
+            default_params_dict["dem_source"] = dem_source
         params = sim.SimParams(default_params_dict)
         result = _make_result(diff_method)
         save_dir = sim.save_package(flat_terrain, result, params, 30.0, 10.0,
@@ -1016,6 +1018,19 @@ class TestSavePackage:
             settings = json.load(f)
         assert "diff_method" in settings
         assert settings["diff_method"] == "bullington"
+
+    def test_settings_json_contains_dem_source(self, tmp_path, flat_terrain,
+                                               default_params_dict, monkeypatch):
+        """settings.json に dem_source キーが保存されること（B-230）。
+
+        修正前はこのキーが無く、「パラメータ読込」で外部 DEM ソースの計算結果を
+        読み込むと国土地理院へ戻ってしまい、計算を再現できなかった。
+        """
+        save_dir = self._run_save(tmp_path, flat_terrain, default_params_dict,
+                                  monkeypatch, dem_source="terrarium_aws")
+        with open(os.path.join(save_dir, "settings.json"), encoding="utf-8") as f:
+            settings = json.load(f)
+        assert settings.get("dem_source") == "terrarium_aws"
 
     def test_settings_json_roundtrip(self, tmp_path, flat_terrain,
                                      default_params_dict, monkeypatch):

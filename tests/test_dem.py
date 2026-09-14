@@ -76,6 +76,29 @@ class TestDecodeElevation:
         rgb = np.array([(x >> 16) & 0xFF, (x >> 8) & 0xFF, x & 0xFF], dtype=np.uint8)
         assert dem._decode_elevation(rgb) == pytest.approx((x - 16777216) * 0.01, abs=0.01)
 
+    def test_external_source_invalid_rgb_returns_zero(self):
+        """外部ソースの `invalid_rgb` 宣言が実際にデコードで参照されること（B-229）。
+
+        修正前は `invalid_rgb` が検証だけ通り、デコード時に一切参照されて
+        いなかった＝無効値ピクセルが Terrarium の式でそのまま `-32768.0m` に
+        デコードされていた。
+        """
+        src = dem_sources.DemSourceSpec(
+            source_id="fake_terrarium", display_name="Fake Terrarium",
+            layers=(("fake", 10),),
+            url_template="https://example.invalid/{z}/{x}/{y}.png",
+            decode=dem_sources.DecodeMethod.TERRARIUM,
+            invalid_rgb=(0, 0, 0),
+            attribution="Fake", terms_url="https://example.invalid",
+        )
+        rgb = np.array([0, 0, 0], dtype=np.uint8)
+        assert dem._decode_elevation(rgb, src) == pytest.approx(0.0)
+        # 無効値でないピクセルは通常どおりデコードされる（回帰していないことの確認）。
+        rgb_valid = np.array([128, 0, 0], dtype=np.uint8)
+        assert dem._decode_elevation(rgb_valid, src) == pytest.approx(
+            dem_sources.decode(dem_sources.DecodeMethod.TERRARIUM, 128, 0, 0)
+        )
+
 
 # ============================================================
 # get_elevation / _fetch_tile（monkeypatch）

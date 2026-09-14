@@ -200,6 +200,37 @@ def test_run_button_passes_the_selected_dem_source(monkeypatch):
         root.destroy()
 
 
+def test_batch_read_base_params_passes_the_selected_dem_source(monkeypatch):
+    """バッチ画面で選んだ DEM ソースが `_read_base_params()` の出力に含まれること（B-228）。
+
+    `_read_base_params()` が `SimParams` 用の辞書を手で組み立てており、
+    `dem_source` キーが漏れていた＝バッチ実行では選択に関わらず常に国土地理院で
+    計算される欠陥の回帰ガード。
+    """
+    pytest.importorskip("tkinter")
+    from core import dem_sources
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        bw = app.ensure_batch_window()
+        bw._dem_source_var.set("Fake Source")
+        p = bw._read_base_params()
+        assert p.dem_source == "fake_src"
+    finally:
+        root.destroy()
+
+
 # ============================================================
 # プロジェクト（`.rsproj`）の UI 配線（5c-2）
 # ============================================================
