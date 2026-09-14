@@ -16,6 +16,7 @@ import dataclasses
 import os
 import json
 import threading
+import types
 from unittest import mock
 
 import numpy as np
@@ -23,6 +24,7 @@ import pytest
 
 from core import config
 from core import dem
+from core import dem_sources
 from core import models
 from core import simulation as sim
 from core import terrain_grid as tg
@@ -440,6 +442,45 @@ class TestFetchElevationsCached:
 
         # 2つの異なるルート分が取得されている
         assert call_count["n"] == params_a.num + params_b.num
+
+    def test_different_dem_source_not_shared(self, default_params_dict, monkeypatch):
+        """DEM ソースが異なる場合はキャッシュを共有しないこと（B-225）。
+
+        座標・標本数・段階が同一でも、DEM ソースを切り替えたら地形を
+        取り直す。初版はキャッシュキーに `dem_source` が入っておらず、
+        ソースを切り替えても前回ソースの標高を黙って使い回していた。
+        """
+        call_count = {"n": 0}
+        def counting_get(la, lo, *_a):
+            call_count["n"] += 1
+            return 120.0
+        monkeypatch.setattr(dem, "get_elevation", counting_get)
+        # `resolve` を恒等写像にする：組み込みソースが GSI_DEM 一つしかなく、
+        # 未知の source_id は本来フォールバックしてしまうため、ここでは
+        # 「解決結果が異なる2ソース」を直接作って検査する。
+        monkeypatch.setattr(
+            dem_sources, "resolve",
+            lambda source_id: types.SimpleNamespace(source_id=source_id),
+        )
+
+        gsi = default_params_dict.copy()
+        gsi["dem_source"] = "gsi_dem"
+        params_gsi = sim.SimParams(gsi)
+
+        aws = default_params_dict.copy()
+        aws["dem_source"] = "terrarium_aws"
+        params_aws = sim.SimParams(aws)
+
+        for params in (params_gsi, params_aws):
+            done = threading.Event()
+            sim.fetch_elevations_cached(
+                params=params, on_progress=lambda v: None,
+                on_complete=lambda e: done.set(), on_error=lambda ex: None,
+            )
+            done.wait(timeout=5)
+
+        # 2つの異なるソース分が取得されている（使い回していない）
+        assert call_count["n"] == params_gsi.num + params_aws.num
 
     def test_cache_hit_calls_on_progress_with_total(self, default_params_dict, monkeypatch):
         """キャッシュヒット時は on_progress(num) が呼ばれてプログレスバーが満杯になること。"""

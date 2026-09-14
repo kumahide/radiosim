@@ -364,10 +364,12 @@ def fetch_elevations(
 # 地形キャッシュ
 # ============================================================
 # 地形取得に影響するパラメータをキーとして raw_elevs を保持する。
-# lat_tx / lon_tx / lat_rx / lon_rx / num が一致すれば再取得しない。
+# lat_tx / lon_tx / lat_rx / lon_rx / num / dem_source が一致すれば再取得しない。
 # k_factor は raw_elevs に影響しない（曲率補正は calculate_terrain_profile で適用）
 # ため、キャッシュキーには含めない。
-_TerrainCacheKey = tuple[float, float, float, float, int, str]
+# ⚠️ **DEM ソースも鍵に入れる**（B-225）＝ソースを切り替えても前回ソースの
+# 地形を使い回してしまい、選んだソースと違う地形で計算結果が出る。
+_TerrainCacheKey = tuple[float, float, float, float, int, str, str]
 # 値は (raw_elevs, 取得日の範囲)＝**取得日は標高と同じ項目に持つ**（B-213）。
 # 別の辞書に分けると寿命が別になり、片方だけ消える・上書きされる。
 _terrain_cache: dict[_TerrainCacheKey,
@@ -378,8 +380,13 @@ _terrain_cache_lock = threading.Lock()
 def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
     # ⚠️ **段階も鍵に入れる**（B-150）＝点数は同じでも標本の**位置**が違う実行が
     # あり得る（段階で解いた並びと固定 N の等間隔）。位置が違えば標高も違う。
+    # ⚠️ **DEM ソースは解決後の source_id を鍵にする**（B-225）＝未知の
+    # source_id は `dem_sources.resolve()` が国土地理院へフォールバックして
+    # 取得する（実際に fetch_elevations_cached が使うのと同じ解決規則）ため、
+    # 生の params.dem_source をそのまま鍵にすると同じ地形なのに別キー扱いになる。
+    resolved_source = dem_sources.resolve(params.dem_source).source_id
     return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
-            params.num, params.resolution)
+            params.num, params.resolution, resolved_source)
 
 
 # 出所刻印「取得日」（3.3 段4e）＝**標高を取った時点で確定させ、標高と一緒に
