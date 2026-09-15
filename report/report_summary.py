@@ -279,7 +279,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         h_rx_disp = f"{pr.row.h_rx:.1f}"
         pid_safe  = pr.row.path_id          # validated: [A-Za-z0-9_-]+ — safe for href
         pid_esc   = _html.escape(pr.row.path_id)
-        note_esc  = _html.escape(pr.row.note)
+        # 備考は折り返す欄（`c-reason` / `c-missing`）にしか載らない（B-243）。
+        note_esc  = report_common.escape_keeping_units(pr.row.note)
         dem_mark = ""
         if pr.terrain is not None and pr.terrain.fail_pct > 0:
             dem_mark = " ⚠"
@@ -407,7 +408,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         memo_block = (
             f'<div class="report-memo">'
             f'<span class="rm-label">{i18n.t("html_report_memo")}</span> '
-            f'{_html.escape(memo)}</div>'
+            f'{report_common.escape_keeping_units(memo)}</div>'
         )
     else:
         memo_block = ""

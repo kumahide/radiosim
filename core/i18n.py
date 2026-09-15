@@ -529,7 +529,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 較正の席（3.5 で埋まる）＝**空でも欄を置く**。欄が無いと「較正した結果」と
         # 「較正していない結果」が同じ顔で出る。
         "html_calib_profile":   "Calibration profile",
-        "html_calib_none":      "not applied (no measurement comparison)",
+        # ⚠️ 「実測と比べていない」とは書かない＝3.4 の実測残差表が同じシートに
+        # 載る（B-244）。欠けているのは**実測による補正**のほう。
+        "html_calib_none":      "not applied (not corrected with measurements)",
 
         # ===== 感度表（3.4 段6） =====
         # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
@@ -1272,7 +1274,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "地形の解像度は「低」（{m} m 間隔で画素を飛ばして計算）。段階を細かくすると"
             "回折損が増えるため、「高」との実測差は最大 +407%",
         "html_calib_profile":   "較正プロファイル",
-        "html_calib_none":      "未適用（実測との突き合わせなし）",
+        "html_calib_none":      "未適用（実測による補正なし）",
 
         # ===== 感度表（3.4 段6 / B-219 で表を1列に再構成） =====
         "html_sensitivity_title": "入力の不確かさに対する感度",

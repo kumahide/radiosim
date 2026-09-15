@@ -347,7 +347,7 @@ def path_sheet_html(
         memo_block = (
             f'<div class="report-memo">'
             f'<span class="rm-label">{i18n.t("html_report_memo")}</span> '
-            f'{_html.escape(memo)}</div>'
+            f'{report_common.escape_keeping_units(memo)}</div>'
         )
     else:
         memo_block = ""

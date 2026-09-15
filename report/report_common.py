@@ -65,6 +65,16 @@ def keep_unit_with_value(text: str) -> str:
     """
     return _UNIT_GAP.sub(NBSP, text)
 
+
+def escape_keeping_units(text: str) -> str:
+    """折り返す欄へ載せる字を、値と単位を同じ行に留めてからエスケープする。
+
+    **利用者の字（案件名・メモ・備考・地点名）にも通す**＝「アンテナ高 10 m」の
+    ように単位つきの数を書ける欄は、帳票側の字と同じ割れ方をする（B-243＝B-242 を
+    帳票の字だけに掛けて、同じ欄に並ぶ利用者の字を取りこぼした）。
+    """
+    return _html.escape(keep_unit_with_value(text))
+
 # ============================================================
 # 図に焼く字の大きさ（B-135）
 # ------------------------------------------------------------
@@ -272,7 +282,7 @@ def page_header(title: str, project_name: str = "", report_id: str = "") -> str:
     不要）、project_name / report_id はユーザー由来なのでエスケープする。
     """
     gen = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
-    proj = _html.escape(project_name)
+    proj = escape_keeping_units(project_name)
     title_line = f"{proj} - {title}" if proj else title
     if report_id:
         title_line += f" — {_html.escape(report_id)}"
@@ -294,7 +304,7 @@ def dem_fail_notice_html(entries: "list[tuple[str, float]]") -> str:
     if not entries:
         return ""
     items = "、".join(
-        f"{_html.escape(name)}（{units.format_fail_pct(pct)}）"
+        escape_keeping_units(f"{name}（{units.format_fail_pct(pct)}）")
         for name, pct in entries
     )
     return (

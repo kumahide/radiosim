@@ -348,7 +348,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         memo_block = (
             f'<div class="report-memo">'
             f'<span class="rm-label">{i18n.t("html_report_memo")}</span> '
-            f'{_html.escape(memo)}</div>'
+            f'{report_common.escape_keeping_units(memo)}</div>'
         )
     chart_block = ""
     if chart_b64:

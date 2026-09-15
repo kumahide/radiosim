@@ -1661,3 +1661,31 @@ def test_no_unbacked_accuracy_claim(doc):
             f"{doc}: 裏の取れていない保証が書かれている（{what}／'{m.group(0)[:60]}'）。"
             "言えるのは「差が大きければモデル依存が強い」という診断まで。"
         )
+
+
+# ============================================================
+# 4.0 の `status` 予告は 5 か所で同じ値域を言う（B-238 → B-244）
+# ------------------------------------------------------------
+# 予告は変更規約 2 で公開文書 4 本＋CHANGELOG に同じ文として載せる。B-238 は
+# 「5 か所を同時に直した」と記録したが、**英語の利用者向けマニュアルだけ**「現在 2 値・
+# 4.0 で ERR」のまま `3.4RC1` の配布物に入った（Codex round111）。
+# ⇒ 1 か所ずつ目で確かめる代わりに、5 か所の予告文が**現行の ERROR と 4.0 の ERROR を
+# 両方言っている**ことと、旧い言い方が無いことを機械で見る。
+# ============================================================
+_STATUS_NOTICE_DOCS = [*ALL_DOCS, "CHANGELOG.md"]
+
+
+@pytest.mark.parametrize("doc", _STATUS_NOTICE_DOCS)
+def test_status_notice_keeps_error_in_both_the_current_and_the_4_0_values(doc):
+    lines = [ln for ln in _read(doc).splitlines() if "**REVIEW**" in ln]
+    assert lines, f"{doc}: 4.0 の `status` 予告（**REVIEW**）が見つからない"
+    line = lines[0]
+    assert line.count("**ERROR**") >= 2, (
+        f"{doc}: 予告が現行の値域と 4.0 の値域の両方に ERROR を書いていない"
+        "（現行は OK / NG / ERROR の 3 値・4.0 でも ERROR は改名しない）"
+    )
+    assert "**ERR**" not in line, f"{doc}: 4.0 の値を ERR と書いている（改名と読める）"
+    # 「`status == "OK"` のような 2 値の読み方」は正しい文なので、値域を言い切る形だけ見る。
+    assert not re.search(r"2-value|two-value|2 値です", line), (
+        f"{doc}: 現行の `status` を 2 値と書いている"
+    )

@@ -571,6 +571,27 @@ class TestRouteSheet:
                 "ホップ別のマージンが載っていない（min だけでは次の一手が決まらない）"
             )
 
+    def test_waypoint_names_and_memo_keep_units_with_values(self, base, tmp_path,
+                                                            monkeypatch):
+        """地点名・メモ（利用者の字）も値と単位を同じ行に留める（B-243）。
+
+        区間名の欄（`c-name`）・経路の行・メモの行は折り返すので、「鉄塔 30 m」の
+        `m` だけが次の行へ落ち得る＝B-242 と同じ割れ方。
+        """
+        import dataclasses
+
+        from report import report_common, report_multihop
+
+        i18n.set_lang("ja")
+        run = self._run_with_report(base, tmp_path, monkeypatch)
+        wps = run.path.waypoints
+        run.path = dataclasses.replace(run.path, waypoints=type(wps)(
+            dataclasses.replace(w, name=f"鉄塔 {i + 1}0 m") for i, w in enumerate(wps)))
+        html = report_multihop.route_sheet_html(run, memo="アンテナ高 10 m")
+        nb = report_common.NBSP
+        assert not re.search(r"\d m(?![A-Za-z])", html), "地点名・メモの単位が割れ得る"
+        assert html.count(f"0{nb}m") >= len(wps) + 1
+
     def test_sheet_marks_the_weakest_hop(self, base, tmp_path, monkeypatch):
         """全体判定を決めている区間が**目で拾える**こと。"""
         from report import report_multihop
@@ -622,9 +643,13 @@ class TestRouteSheet:
         # 導出するプロパティで直接は書けない）。
         run.hops[0].terrain.raw_elevs[0] = np.nan
         expected = run.hops[0].terrain.fail_pct
+        from report import report_common
+
         html = report_multihop.route_sheet_html(run)
         assert "⚠" in html, "DEM 失敗の区間に印が付いていない"
-        assert units.format_fail_pct(expected) in html, "台帳下の注記に失敗率が出ていない"
+        # 注記は折り返す段落＝値と `%` の間は改行しない空白（B-243）。
+        assert (report_common.keep_unit_with_value(units.format_fail_pct(expected))
+                in html), "台帳下の注記に失敗率が出ていない"
 
     def test_sheet_states_the_relay_model(self, base, tmp_path, monkeypatch):
         """**再生中継であること**をレポートに明記する（受動反射は対象外）。

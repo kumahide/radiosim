@@ -1180,3 +1180,64 @@ class TestKeepUnitWithValue:
         body = html.split("<ul>", 1)[1].split("</ul>", 1)[0]
         assert self.NB in body, "単位つきの値が 1 つも無い条件では何も測れない"
         assert not re.search(r"\d (?:%|m|dB|GHz|MHz)(?![A-Za-z])", body), body
+
+
+class TestKeepUnitWithValueBesideUserText:
+    """B-242 の取りこぼし（B-243）＝**同じ折り返す欄に並ぶ利用者の字と DEM 失敗注記**。
+
+    B-242 は帳票が組み立てる字にだけ掛けたので、同じセル・同じ段落に載る備考・メモ・
+    地点名（「アンテナ高 10 m」）と、`format_fail_pct` を素通しした注記が割れたまま
+    残っていた（Codex round110）。
+    """
+
+    NB = report_common.NBSP
+    SPLIT = re.compile(r"\d (?:%|m)(?![A-Za-z])")
+
+    def test_dem_fail_notice_keeps_the_percent_with_its_value(self):
+        i18n.set_lang("ja")
+        html = report_common.dem_fail_notice_html([("#1 鉄塔 30 m → B", 12.5)])
+        assert not self.SPLIT.search(html), html
+        assert f"30{self.NB}m" in html and f"12.5{self.NB}%" in html
+
+    def test_escape_keeping_units_still_escapes(self):
+        assert (report_common.escape_keeping_units("<b> 10 m")
+                == f"&lt;b&gt; 10{self.NB}m")
+
+    @pytest.mark.parametrize("artifact_failed", [False, True])
+    def test_summary_note_beside_the_reason_keeps_units(
+            self, tmp_path, flat_terrain, default_params_dict, artifact_failed):
+        """備考が載るのは折り返す欄だけ（計算失敗＝`c-reason`／成果物欠け＝`c-missing`）。"""
+        i18n.set_lang("ja")
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.5429, 132.4118, 34.5389, 132.4050, 30.0, 10.0)
+        row.note = "アンテナ高 10 m で再測定"
+        if artifact_failed:
+            pr = batch.PathResult(row=row, result=_make_result(), terrain=flat_terrain,
+                                  params=params, save_dir=str(tmp_path),
+                                  artifact_error=OSError("disk full"))
+            cell = "c-missing"
+        else:
+            pr = batch.PathResult(row=row, result=None, terrain=flat_terrain,
+                                  params=params, error=ValueError("標高 12 m が欠けた"))
+            cell = "c-reason"
+        html = report_summary.summary_sheet_html([pr])
+        td = html.split(f"class='{cell}'", 1)[1].split("</td>", 1)[0]
+        assert f"10{self.NB}m" in td, td
+        assert not self.SPLIT.search(td), td
+
+    def test_path_sheet_memo_keeps_units(
+            self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
+        i18n.set_lang("ja")
+        monkeypatch.setattr(report_path.report_map, "render_path_map_b64",
+                            lambda *a, **k: None)
+        params = sim.SimParams(default_params_dict)
+        row = batch.PathRow("p01", 34.5429, 132.4118, 34.5389, 132.4050, 30.0, 10.0)
+        row.note = "アンテナ高 10 m で再測定"
+        save_dir = tmp_path / "p01"
+        save_dir.mkdir()
+        pr = batch.PathResult(row=row, result=_make_result(), terrain=flat_terrain,
+                              params=params, save_dir=str(save_dir))
+        report_path.save_path_visuals(pr)
+        html = (save_dir / "report.html").read_text(encoding="utf-8")
+        memo = html.split('class="report-memo"', 1)[1].split("</div>", 1)[0]
+        assert f"10{self.NB}m" in memo, memo

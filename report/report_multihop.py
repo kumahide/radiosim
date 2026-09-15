@@ -240,15 +240,17 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
 
     # 経路の並び。**鎖のときだけ「A → B → C」と読める**（星なら中心と枝の関係に
     # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
-    names = " → ".join(_html.escape(w.name) for w in run.path.waypoints)
+    names = " → ".join(report_common.escape_keeping_units(w.name)
+                       for w in run.path.waypoints)
     rows_html = ""
     # DEM 取得に失敗した標本を含む区間（I-143 決定 2）＝バッチ台帳と同じ扱い。
     dem_fail_entries: list[tuple[str, float]] = []
     for i, pr in enumerate(run.hops):
         # 区間の端点は `multihop` が決める（接続規則を表示側へ書き写さない）。
         ends    = mh.hop_endpoints(run.path, i)
-        wp_from = _html.escape(ends[0].name if ends else "")
-        wp_to   = _html.escape(ends[1].name if ends else "")
+        # 区間名の欄（`c-name`）は折り返す＝地点名の中の「30 m」も割れる（B-243）。
+        wp_from = report_common.escape_keeping_units(ends[0].name if ends else "")
+        wp_to   = report_common.escape_keeping_units(ends[1].name if ends else "")
         pid     = pr.row.path_id                 # validated: [A-Za-z0-9_-]+
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         r = pr.result
@@ -305,12 +307,14 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     worst_label = "—"
     if worst is not None:
         idx = run.hops.index(worst)
-        worst_label = f"#{idx + 1} " + _html.escape(mh.hop_label(run.path, idx))
+        worst_label = f"#{idx + 1} " + report_common.escape_keeping_units(
+            mh.hop_label(run.path, idx))
 
     map_html = (f"<div class='map'><img src='data:image/png;base64,{map_b64}'></div>"
                 if map_b64 else
                 f"<p class='note'>{i18n.t('html_map_unavailable')}</p>")
-    memo_html = (f"<p class='route-line'>{_html.escape(memo)}</p>" if memo else "")
+    memo_html = (f"<p class='route-line'>{report_common.escape_keeping_units(memo)}</p>"
+                 if memo else "")
     # 全ページ連結（`report_all.html`）への導線＝**バッチ台帳と同じ**（単体の
     # route.html にだけ出し、連結文書では自分自身への案内になるので出さない。
     # 画面でだけ見える＝印刷では消える）。中継は report_all.html を作っていたのに
