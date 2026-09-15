@@ -20,7 +20,6 @@ per-hop のシート（`report_path`）はバッチと同じものをそのま�
 
 from __future__ import annotations
 
-import dataclasses
 import html as _html
 import os
 
@@ -152,10 +151,11 @@ _HOP_COL_KEYS = (
 # 🔑 **「min の感度」は「感度の min」ではない**（ロードマップ 3.4）＝全体判定を
 # 決めている区間（`run.worst`）の感度表**に加えて**、全区間へ同じ向きの摂動を
 # 一括で与えたときに律速区間が入れ替わるかを見る（`core.sensitivity.
-# compute_multihop_argmin`）。摂動軸は **DEM 標高の系統誤差**だけを試す＝
-# 複数ホップに物理的に同じ向きで乗るのはこの誤差だけ（植生高や環境区分の
-# 読み取り誤差は区間ごとに独立で、一括摂動の前提＝`compute_multihop_argmin`
-# の docstring に合わない）。
+# compute_multihop_argmin`）——という設計だったが、⛔ **3.4RC1 でこの注記は
+# 止めた**（B-232）。一括で与えられる摂動軸は **DEM 標高の系統誤差**だけで
+# （植生高や環境区分の読み取り誤差は区間ごとに独立＝一括摂動の前提に合わない）、
+# そのただ 1 本が**一律シフトゆえ原理的に無反応**だったため、どんな入力でも
+# 「変わらない」としか出なかった。戻すのは摂動の与え方を決め直す 3.5。
 # ============================================================
 
 def _multihop_sensitivity(run: MultiHopRun, worst):
@@ -185,39 +185,12 @@ def _multihop_sensitivity(run: MultiHopRun, worst):
         worst.params.gain_rx, worst.params.sens,
     )
 
-    hop_inputs: "list[sensitivity.HopInputs]" = []
-    for pr in hops:
-        assert pr.terrain is not None and pr.params is not None and pr.result is not None
-        hop_inputs.append(sensitivity.HopInputs(
-            terrain=pr.terrain, h_tx=pr.row.h_tx, h_rx=pr.row.h_rx,
-            freq_mhz=pr.params.freq_mhz, veg_h=pr.params.veg_h,
-            initial_k=pr.params.k_factor, diff_method=pr.result.diff_method,
-            env_type=pr.result.env_type, rain_rate=pr.params.rain_rate,
-            p_tx=pr.params.p_tx, gain_tx=pr.params.gain_tx, gain_rx=pr.params.gain_rx,
-            sens=pr.params.sens,
-        ))
-    axis_label = report_common.sensitivity_axis_label("html_sens_axis_dem_elev")
-
-    # 両方向を試し、**より苦しい side**（律速区間が入れ替わるほう）を悲観条件として
-    # 報告する＝どちらの向きが系統誤差の実際の向きかは分からないので、片方だけ
-    # 試して「変わらない」と言い切らない。
-    shift_note = ""
-    for delta in (-sensitivity.DEM_PERTURB_M, sensitivity.DEM_PERTURB_M):
-        idx, _margin = sensitivity.compute_multihop_argmin(
-            hop_inputs,
-            lambda h, d=delta: dataclasses.replace(h, terrain=sensitivity.shift_dem(h.terrain, d)),
-        )
-        if idx != worst_idx:
-            shift_note = i18n.t("html_sens_argmin_shift").format(
-                axis=axis_label,
-                hop=mh.hop_label(run.path, idx),
-                baseline_hop=worst_label,
-            )
-            break
-    if not shift_note:
-        shift_note = i18n.t("html_sens_argmin_same").format(axis=axis_label, hop=worst_label)
-
-    note = i18n.t("html_sens_worst_hop").format(hop=worst_label) + " " + shift_note
+    # ⛔ **律速区間の入れ替わり注記は 3.4RC1 から出さない**（B-232）＝唯一の摂動軸
+    # だった「DEM 標高を全区間へ同じ向きで振る」が**原理的に無反応**（一律シフトでは
+    # どの区間のクリアランスも変わらない）なので、どんな入力でも「ワースト区間は
+    # 変わらない」としか出ず、**確かめていないことを確かめたように書いていた**。
+    # 摂動の与え方を設計し直す 3.5（[[B-232]]）で、注記ごと戻す。
+    note = i18n.t("html_sens_worst_hop").format(hop=worst_label)
     return sens_result, note
 
 

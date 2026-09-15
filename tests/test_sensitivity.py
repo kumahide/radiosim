@@ -123,6 +123,47 @@ def test_dem_elev_perturbation_uses_documented_magnitude():
     assert sv.DEM_PERTURB_M == 3.0
 
 
+@pytest.mark.parametrize("link_id", list(LINKS.keys()))
+def test_dem_elev_axis_is_not_emitted(link_id):
+    """DEM 標高の軸は出さない（B-232）。
+
+    出すと帳票が「変化なし：DEM 標高 ±3 m」と**事実に反する開示**を書く
+    （下の `test_uniform_dem_shift_is_inert` が、その幅が原理的にゼロである
+    ことを示す）。3.5 で摂動の与え方を設計し直したら、このテストを外して
+    「幅が出ること」を要求する側へ書き換える。
+    """
+    assert "dem_elev" not in _compute(link_id).axes
+
+
+@pytest.mark.parametrize("link_id", list(LINKS.keys()))
+def test_uniform_dem_shift_is_inert(link_id):
+    """標高を経路全体へ一律に動かしても余裕度は 1 mdB も動かない（B-232 の根拠）。
+
+    h_tx/h_rx は地表からの相対高なので、地形と両端が同じ量だけ動けば見通し線と
+    地形の相対関係は変わらない＝**「DEM の系統誤差」を一律シフトで表すと、
+    検出できない摂動を選んでいることになる**。この性質が崩れた日（＝摂動の
+    与え方を変えた日）に、上の「軸を出さない」判断ごと見直させるための固定。
+    """
+    link = LINKS[link_id]
+    params = _params(link["input"])
+    terrain = _terrain(link, params)
+
+    def _margin(t: models.TerrainProfile) -> float:
+        prop = models.calculate_propagation(
+            t, params.h_tx, params.h_rx, params.freq_mhz, params.veg_h,
+            params.k_factor, params.diff_method, params.env_type, params.rain_rate,
+        )
+        return models.calculate_link_budget(
+            prop, params.freq_mhz, params.p_tx, params.gain_tx, params.gain_rx,
+            params.sens,
+        ).actual_margin
+
+    baseline = _margin(terrain)
+    for delta in (-sv.DEM_PERTURB_M, sv.DEM_PERTURB_M):
+        shifted = _margin(sv.shift_dem(terrain, delta))
+        assert shifted == pytest.approx(baseline, abs=1e-6), (link_id, delta)
+
+
 def test_multihop_argmin_can_flip():
     """全ホップへ同じ摂動を適用すると、律速ホップ（argmin）が入れ替わり得る。"""
     def _hop(link_id: str) -> sv.HopInputs:

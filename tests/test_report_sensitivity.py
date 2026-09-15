@@ -305,7 +305,7 @@ def test_summary_sheet_shows_residuals_section_with_measurements():
 
 
 # ============================================================
-# report_multihop.py：律速区間の感度表＋argmin 注記
+# report_multihop.py：律速区間の感度表（argmin 注記は B-232 で止めている）
 # ============================================================
 def _mh_path(n: int) -> mh.MultiHopPath:
     pts = [mh.Waypoint(name=f"P{i}", lat=34.5 + i * 0.01, lon=132.4, h=10.0)
@@ -338,6 +338,34 @@ class TestMultihopSensitivity:
         assert i18n.t("html_sens_worst_hop").format(
             hop=mh.hop_label(run.path, run.hops.index(run.worst))
         ).split(".")[0] in html
+
+    def test_argmin_note_is_not_emitted(self):
+        """律速区間の入れ替わり注記は出さない（B-232）。
+
+        唯一の摂動軸（DEM 標高を全区間へ一括シフト）が原理的に無反応で、
+        どんな入力でも「変わらない」としか書けなかった＝**確かめていないことを
+        確かめたように書いていた**。3.5 で摂動を設計し直したら戻す。
+        """
+        h1 = _hop_result("tokyo_urban_2400", "route1_h1")
+        h2 = _hop_result("hiroshima_kure_ridge", "route1_h2")
+        run = mh.MultiHopRun(path=_mh_path(3), hops=[h1, h2])
+        _sens, note = report_multihop._multihop_sensitivity(run, run.worst)
+        for key in ("html_sens_argmin_same", "html_sens_argmin_shift"):
+            stem = i18n.t(key).split("{")[0].strip()
+            assert stem and stem not in note, key
+
+    def test_dem_elev_is_not_named_as_unchanged(self):
+        """帳票が「変化なし：DEM 標高 ±3 m」と書かないこと（B-232）。
+
+        軸を出さない判断が core 側だけで済んでいるか（帳票が独自に軸名を
+        並べ直していないか）を、**製品と同じ経路で作った感度結果**で見る。
+        """
+        h1 = _hop_result("tokyo_urban_2400", "route1_h1")
+        run = mh.MultiHopRun(path=_mh_path(2), hops=[h1])
+        sens, note = report_multihop._multihop_sensitivity(run, run.worst)
+        html = report_common.handling_section_html((), sens, sens_note=note)
+        assert report_common.sensitivity_axis_label(
+            "html_sens_axis_dem_elev") not in html
 
 
 if __name__ == "__main__":

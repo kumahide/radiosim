@@ -11,10 +11,12 @@ sensitivity.py
 「新しい物理」ではないので models.py には足さない）。
 
 軸（ロードマップ 3.4 段4 で確定）:
-  DEM 標高±／植生高±／環境区分1段／回折 single⇄bullington／
+  植生高±／環境区分1段／回折 single⇄bullington／
   回折+植生の合成（B-132・和⇄大きいほう）／解像度（B-128・要 DEM 再取得）／
   地面反射の包絡線（`core/ground_reflection.py`）。
-  多ホップは「全体の min」だけでなく「悲観条件でどのホップが律速か（argmin）」も出す。
+  ⛔ **DEM 標高±は 3.4RC1 から出さない**（B-232＝一律シフトでは幅が原理的に
+  ゼロで、帳票が「変化なし」と誤った開示を出していた）。多ホップの argmin も
+  同じ摂動を使うため注記ごと止めている（`report_multihop.py`）。設計し直しは 3.5。
 
 この段（段4）は**計算のみ**。帳票への表示配線は段6。
 """
@@ -176,10 +178,16 @@ def compute_link_sensitivity(
 
     axes: "dict[str, AxisRange]" = {}
 
-    # ── DEM 標高± ──────────────────────────────────────────
-    m_lo = margin_with(raw_elevs=np.asarray(terrain.raw_elevs, dtype=float) - DEM_PERTURB_M)
-    m_hi = margin_with(raw_elevs=np.asarray(terrain.raw_elevs, dtype=float) + DEM_PERTURB_M)
-    axes["dem_elev"] = AxisRange("dem_elev", baseline_margin, min(m_lo, m_hi), max(m_lo, m_hi))
+    # ── DEM 標高±（B-232 で 3.4RC1 から出さない）─────────────
+    # 🔴 **一律シフトでは幅が原理的にゼロになる**＝h_tx/h_rx は地表からの相対高
+    # （AGL）なので、地形も両端も同じ量だけ動かすと LOS の基準線とクリアランスの
+    # 相対関係が一切変わらない。計算しても必ず `low == high == baseline` になり、
+    # 帳票は「変化なし：DEM 標高 ±3 m」と**事実に反する開示**を出していた
+    # （＝DEM の不確かさが margin に効かない、と読める）。⇒ **言えないなら名乗らない**
+    # （3.0a1 の刻印と同じ原則）。軸そのものをここで出さない。
+    # ⚠️ **摂動の与え方をどう設計し直すか（端点据え置き／区間ごと独立／軸を諦める）は
+    # 3.5 の判断**＝[[B-232]]。`DEM_PERTURB_M` と `shift_dem` はそのときのために残す。
+    # この性質は `tests/test_sensitivity.py::test_uniform_dem_shift_is_inert` が固定する。
 
     # ── 植生高± ────────────────────────────────────────────
     # 🔑 入力していない量は振らない（`scope_notes` の `veg_uniform` と同じ原則）。
