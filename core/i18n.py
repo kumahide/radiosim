@@ -79,6 +79,8 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "other than letters, digits, '_' or '-'",
         "dem_src_id_reserved":  "source_id is reserved (gsi_dem / unavailable)",
         "dem_src_id_duplicate": "source_id is used more than once in this file",
+        "dem_src_display_name_duplicate": "display_name is already used by "
+                                "the built-in GSI source or another entry",
         "dem_src_missing_field": "a required field is missing or empty",
         "dem_src_bad_decode":   "decode is not one of the supported methods",
         "dem_src_bad_layers":   "layers is empty or malformed",
@@ -850,6 +852,8 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "含んでいます",
         "dem_src_id_reserved":  "source_id が予約語です（gsi_dem / unavailable）",
         "dem_src_id_duplicate": "source_id がファイル内で重複しています",
+        "dem_src_display_name_duplicate": "display_name が組み込みの国土地理院、"
+                                "または他の宣言と重複しています",
         "dem_src_missing_field": "必須項目が無いか空です",
         "dem_src_bad_decode":   "decode がサポートする方式のいずれでもありません",
         "dem_src_bad_layers":   "layers が空か形式が正しくありません",

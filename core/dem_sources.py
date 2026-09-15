@@ -27,6 +27,7 @@ Terrain-RGB の 2 種しかないので、列挙で足りる。
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import tomllib
@@ -121,6 +122,19 @@ def decode(method: DecodeMethod, r: int, g: int, b: int) -> float:
     return _DECODERS[method](r, g, b)
 
 
+def definition_fingerprint(src: DemSourceSpec) -> str:
+    """ソース定義（URL・デコード方式・無効値・レイヤ構成）から短いハッシュを作る。
+
+    B-236＝`source_id` を変えずに `dem_sources.toml` の中身（URL・デコード方式等）
+    だけ書き換えると、旧ディスクキャッシュのタイルを新しいデコーダで読み直して
+    しまい、誤った標高が静かに返る。`core/dem.py:source_layer_dir` がこの値を
+    利用者ソースのキャッシュ置き場に含めることで、定義が変われば別ディレクトリ
+    になり自動的に無効化される（旧ディレクトリは残るが二度と読まれない）。
+    """
+    payload = repr((src.url_template, src.decode.value, src.invalid_rgb, src.layers))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+
+
 # ==============================================================================
 # 利用者の宣言ファイル（3.4 段1・I-147）
 # ==============================================================================
@@ -147,7 +161,9 @@ _load_reports: list[tuple[str, str]] = []
 _user_sources: list[DemSourceSpec] = []
 
 
-def _validate_source(raw: dict, seen_ids: set[str]) -> "tuple[DemSourceSpec | None, str, str]":
+def _validate_source(
+    raw: dict, seen_ids: set[str], seen_names: set[str],
+) -> "tuple[DemSourceSpec | None, str, str]":
     """1 つの `[[source]]` テーブルを検証する。
 
     Returns: (成功なら DemSourceSpec、失敗なら None, 見出し（source_id かエラー
@@ -166,6 +182,12 @@ def _validate_source(raw: dict, seen_ids: set[str]) -> "tuple[DemSourceSpec | No
     display_name = raw.get("display_name")
     if not isinstance(display_name, str) or not display_name.strip():
         return None, source_id, "dem_src_missing_field"
+    # B-237＝表示名は画面の Combobox で人が見分ける唯一の手がかり。組み込み
+    # （国土地理院）や他の宣言と同じ表示名を許すと、`display_name → source_id`
+    # の逆引きが後勝ちで別ソースを指すようになり、画面上は既定に見えても
+    # 実際には別ソースが実行される（黙って誤る）。
+    if display_name in seen_names:
+        return None, source_id, "dem_src_display_name_duplicate"
 
     decode_raw = raw.get("decode")
     try:
@@ -245,15 +267,19 @@ def load_user_sources(path: str) -> "tuple[list[DemSourceSpec], list[tuple[str, 
     specs: list[DemSourceSpec] = []
     reports: list[tuple[str, str]] = []
     seen_ids: set[str] = set()
+    # 組み込み（国土地理院）の表示名も先に予約する＝宣言ファイルが同じ表示名を
+    # 名乗って画面上「国土地理院 DEM」に見える別ソースを実行させないため（B-237）。
+    seen_names: set[str] = {GSI_DEM.display_name}
     for raw in sources_raw:
         if not isinstance(raw, dict):
             reports.append(("(source)", "dem_src_bad_table"))
             continue
-        spec, label, reason = _validate_source(raw, seen_ids)
+        spec, label, reason = _validate_source(raw, seen_ids, seen_names)
         if spec is None:
             reports.append((label, reason))
             continue
         seen_ids.add(spec.source_id)
+        seen_names.add(spec.display_name)
         specs.append(spec)
     return specs, reports
 

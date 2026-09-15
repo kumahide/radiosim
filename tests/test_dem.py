@@ -365,16 +365,32 @@ class TestSingleSourcePerCalculation:
         assert not any(key[0] == "gsi_dem" for key in dem._tile_cache)
 
     def test_disk_cache_path_is_namespaced_by_source(self):
-        """別ソースのディスクキャッシュは `CACHE_DIR/<source_id>/...` へ分離される。"""
-        path = dem._cache_subdir_for("other_source", "layer_a", 123)
+        """別ソースのディスクキャッシュは `CACHE_DIR/<source_id>/<定義ハッシュ>/...` へ分離される。"""
+        fp = dem_sources.definition_fingerprint(self._OTHER_SOURCE)
+        path = dem._cache_subdir_for(self._OTHER_SOURCE, "layer_a", 123)
         assert os.path.normpath(path) == os.path.normpath(
-            os.path.join(dem.CACHE_DIR, "other_source", "layer_a", "123"))
+            os.path.join(dem.CACHE_DIR, "other_source", fp, "layer_a", "123"))
 
     def test_gsi_disk_cache_path_is_unchanged(self):
         """国土地理院はソース分離の対象外＝既存キャッシュを移さない（完了条件①）。"""
-        path = dem._cache_subdir_for("gsi_dem", "dem5a_png", 123)
+        path = dem._cache_subdir_for(dem_sources.GSI_DEM, "dem5a_png", 123)
         assert os.path.normpath(path) == os.path.normpath(
             os.path.join(dem.CACHE_DIR, "dem5a_png", "123"))
+
+    def test_disk_cache_path_changes_when_source_definition_changes(self):
+        """`source_id` が同じでも定義（URL 等）が変わればキャッシュ置き場も変わる（B-236）。
+
+        変わらないと、宣言ファイルを書き換えたのに旧タイルを新しい解釈で
+        読み直し、誤った標高が静かに返る。
+        """
+        import dataclasses
+        redefined = dataclasses.replace(
+            self._OTHER_SOURCE,
+            url_template="https://example.com/changed/{layer}/{z}/{x}/{y}.png",
+        )
+        path_before = dem._cache_subdir_for(self._OTHER_SOURCE, "layer_a", 123)
+        path_after = dem._cache_subdir_for(redefined, "layer_a", 123)
+        assert path_before != path_after
 
 
 class TestFetchTile:

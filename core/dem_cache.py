@@ -90,7 +90,7 @@ def _scan_cached_positions(
     src = source if source is not None else dem_sources.GSI_DEM
     base: dict[tuple[int, int], int] = {}
     for layer_id, tile_zoom, _level, priority in _overlay_layers(src):
-        layer_dir = dem.source_layer_dir(src.source_id, layer_id)
+        layer_dir = dem.source_layer_dir(src, layer_id)
         if not os.path.isdir(layer_dir):
             continue
         x_min, y_min, _, _ = dem._tile_coords(lat_n, lon_w, tile_zoom)
@@ -323,7 +323,7 @@ def _enumerate_bbox(
         x1, y1, _, _ = dem._tile_coords(lat_s, lon_e, zoom)  # SE: 最大 (x, y)
         for x in range(x0, x1 + 1):
             for y in range(y0, y1 + 1):
-                subdir     = dem._cache_subdir_for(src.source_id, layer_id, x)
+                subdir     = dem._cache_subdir_for(src, layer_id, x)
                 cache_path = os.path.join(subdir, f"{y}.png")
                 tasks.append((layer_id, zoom, x, y, subdir, cache_path))
     return tasks

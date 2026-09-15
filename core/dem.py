@@ -266,23 +266,28 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
     return xtile, ytile, px, py
 
 
-def source_layer_dir(source_id: str, layer_id: str) -> str:
+def source_layer_dir(src: "dem_sources.DemSourceSpec", layer_id: str) -> str:
     """レイヤ 1 つぶんのディスクキャッシュの根（3.4 段1＝ソースごとに分離）。
 
     🔑 **国土地理院は現状の場所のまま**（`CACHE_DIR/<layer_id>/`）＝既存の
     キャッシュを移さない（I-147 完了条件①）。それ以外のソースは
-    `CACHE_DIR/<source_id>/<layer_id>/` へ分ける＝利用者の宣言した `layer_id`
-    が国土地理院のレイヤ名（`dem5a_png` 等）や他ソースと衝突してもファイルが
-    混ざらない。`core/dem_cache.py` のカバレッジ走査もここを通る。
+    `CACHE_DIR/<source_id>/<定義のハッシュ>/<layer_id>/` へ分ける＝利用者の
+    宣言した `layer_id` が国土地理院のレイヤ名（`dem5a_png` 等）や他ソースと
+    衝突してもファイルが混ざらない。**定義のハッシュ**（B-236）＝`source_id` は
+    同じまま `dem_sources.toml` の URL・デコード方式・無効値だけ書き換えても、
+    旧タイルを新しい解釈で読み直さないための自動無効化（旧ディレクトリは
+    残るが二度と読まれない）。`core/dem_cache.py` のカバレッジ走査もここを通る。
     """
-    if source_id == dem_sources.GSI_DEM.source_id:
+    if src.source_id == dem_sources.GSI_DEM.source_id:
         return os.path.join(CACHE_DIR, layer_id)
-    return os.path.join(CACHE_DIR, source_id, layer_id)
+    return os.path.join(
+        CACHE_DIR, src.source_id, dem_sources.definition_fingerprint(src), layer_id,
+    )
 
 
-def _cache_subdir_for(source_id: str, layer_id: str, xtile: int) -> str:
+def _cache_subdir_for(src: "dem_sources.DemSourceSpec", layer_id: str, xtile: int) -> str:
     """タイル 1 枚ぶんのディスクキャッシュ置き場（`source_layer_dir` の下の x 桁）。"""
-    return os.path.join(source_layer_dir(source_id, layer_id), str(xtile))
+    return os.path.join(source_layer_dir(src, layer_id), str(xtile))
 
 
 def get_elevation(
@@ -323,7 +328,7 @@ def get_elevation(
         for layer_id, zoom in src.layers:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
             tile_key     = (src.source_id, layer_id, xtile, ytile)
-            cache_subdir = _cache_subdir_for(src.source_id, layer_id, xtile)
+            cache_subdir = _cache_subdir_for(src, layer_id, xtile)
             cache_path   = os.path.join(cache_subdir, f"{ytile}.png")
 
             # ── キャッシュ確認（ロック保持は辞書参照のみ）────────────
@@ -410,7 +415,11 @@ def tile_acquired_date(tile_key: tuple) -> "str | None":
     ⚠️ **ネットワークへは出ない**。ディスクに実体が無ければ None。
     """
     source_id, layer_id, xtile, ytile = tile_key
-    cache_path = os.path.join(_cache_subdir_for(source_id, layer_id, xtile), f"{ytile}.png")
+    # ⚠️ **いま解決できる定義でしか探せない**（B-236）＝利用者が宣言ファイルを
+    # 書き換えた後にこの関数を呼ぶと、旧定義のハッシュのディレクトリが分から
+    # ず見つからない（None）ことがある。誤った日付を返すよりは安全な劣化。
+    src = dem_sources.resolve(source_id)
+    cache_path = os.path.join(_cache_subdir_for(src, layer_id, xtile), f"{ytile}.png")
     try:
         mtime = os.path.getmtime(cache_path)
     except OSError:

@@ -4,6 +4,7 @@ tests/test_dem_sources.py
 dem_sources.py（DEM ソースの宣言ファイル・3.3 段4c／3.4 段1）のユニットテスト。
 """
 
+import dataclasses
 import textwrap
 
 import pytest
@@ -139,6 +140,29 @@ class TestLoadUserSources:
         assert specs == []
         assert reports == []
 
+    def test_definition_fingerprint_changes_with_url_template(self):
+        """定義（URL 等）が変われば `definition_fingerprint` も変わる（B-236）。
+
+        `source_id` を変えずに宣言ファイルの中身だけ書き換えたとき、この値が
+        変わらないとディスクキャッシュが旧タイルを新しい解釈で読み直してしまう。
+        """
+        base = dem_sources.DemSourceSpec(
+            source_id="x", display_name="X", layers=(("a", 10),),
+            url_template="https://example.invalid/{z}/{x}/{y}.png",
+            decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+            attribution="A", terms_url="https://example.invalid",
+        )
+        changed_url = dataclasses.replace(
+            base, url_template="https://example.invalid/v2/{z}/{x}/{y}.png",
+        )
+        changed_decode = dataclasses.replace(
+            base, decode=dem_sources.DecodeMethod.MAPBOX_TERRAIN_RGB,
+        )
+        fp_base = dem_sources.definition_fingerprint(base)
+        assert fp_base == dem_sources.definition_fingerprint(base), "同じ定義なら同じ値"
+        assert fp_base != dem_sources.definition_fingerprint(changed_url)
+        assert fp_base != dem_sources.definition_fingerprint(changed_decode)
+
     def test_valid_declaration_is_accepted(self, tmp_path):
         path = tmp_path / "dem_sources.toml"
         path.write_text(_VALID_TERRARIUM_TOML, encoding="utf-8")
@@ -204,7 +228,7 @@ class TestLoadUserSources:
             "terms_url": "https://example.com",
         }
         mutate(raw)
-        spec, _label, got_reason = dem_sources._validate_source(raw, set())
+        spec, _label, got_reason = dem_sources._validate_source(raw, set(), set())
         assert spec is None
         assert got_reason == reason
 
@@ -215,6 +239,31 @@ class TestLoadUserSources:
         specs, reports = dem_sources.load_user_sources(str(path))
         assert len(specs) == 1
         assert any(r[1] == "dem_src_id_duplicate" for r in reports)
+
+    def test_display_name_colliding_with_gsi_is_rejected(self, tmp_path):
+        """表示名が組み込み（国土地理院）と同じ宣言は拒否される（B-237）。
+
+        拒否しないと `display_name → source_id` の逆引きが後勝ちになり、
+        画面上「国土地理院 DEM」に見えるのに実際には別ソースが実行される。
+        """
+        toml = _VALID_TERRARIUM_TOML.replace(
+            'display_name = "Terrarium (AWS Open Data)"',
+            'display_name = "国土地理院 DEM"',
+        )
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(toml, encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert specs == []
+        assert any(r[1] == "dem_src_display_name_duplicate" for r in reports)
+
+    def test_display_name_colliding_between_two_declarations_is_rejected(self, tmp_path):
+        """2 件目以降の宣言どうしでも表示名の重複は拒否される（B-237）。"""
+        second = _VALID_TERRARIUM_TOML.replace("terrarium_aws", "terrarium_aws2")
+        path = tmp_path / "dem_sources.toml"
+        path.write_text(_VALID_TERRARIUM_TOML + second, encoding="utf-8")
+        specs, reports = dem_sources.load_user_sources(str(path))
+        assert len(specs) == 1
+        assert any(r[1] == "dem_src_display_name_duplicate" for r in reports)
 
 
 class TestLoadFromAndResolve:
