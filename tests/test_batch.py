@@ -659,6 +659,30 @@ class TestSavePathHtmlF1:
         assert f"<td>{i18n.t('html_col_f1_depth')}</td><td>0.00</td>" in html
 
 
+class TestSavePathHtmlRainRate:
+    """降雨強度はスライダー欄と同じ整数で出すこと（B-241）。
+
+    グラフ窓のスライダーは `ttk.Scale.get()` の生の float を返すので、
+    書式指定が無いと `41.49659863945578 mm/h` が帳票に載っていた
+    （欄の表示は `.0f` の `41`）。計算に入る値は変えない＝丸めるのは帳票の字だけ。
+    """
+
+    def test_slider_float_is_printed_as_the_integer_the_slider_showed(
+            self, tmp_path, flat_terrain, default_params_dict):
+        i18n.set_lang("ja")
+        params = sim.SimParams(default_params_dict)
+        params.rain_rate = 41.49659863945578
+        report_path.save_path_html(
+            flat_terrain, _make_result(), params, 30.0, 10.0,
+            str(tmp_path), "TERRAINB64", map_b64=None,
+        )
+        with open(os.path.join(str(tmp_path), "report.html"), encoding="utf-8") as f:
+            html = f.read()
+        assert f"<td>{i18n.t('html_rain_rate')}</td><td>41 mm/h</td>" in html
+        assert "41.4965" not in html
+        assert params.rain_rate == 41.49659863945578, "計算側の値は丸めない"
+
+
 class TestSavePathHtmlCoordFormat:
     """HTML レポートの座標セルが coord_format に従うこと（既定 DD）。"""
 

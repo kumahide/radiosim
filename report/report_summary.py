@@ -285,7 +285,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             dem_mark = " ⚠"
             dem_fail_entries.append((pr.row.path_id, pr.terrain.fail_pct))
         if pr.result is None:
-            error_esc = _html.escape(str(pr.error))
+            # 理由の欄は折り返すので値と単位を同じ行に留める（B-242）。
+            error_esc = _html.escape(report_common.keep_unit_with_value(str(pr.error)))
             # I-143 決定 3＝計算に失敗した経路は個別レポートが作られないので、
             # 備考をここに一緒に載せないと HTML のどこにも出なくなる。
             if pr.row.note:

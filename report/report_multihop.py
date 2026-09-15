@@ -267,7 +267,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 f"<td class='c-name'>{wp_from} → {wp_to}</td>"
                 f"<td class='c-status s-{verdict}'>ERROR</td>"
                 f"<td class='c-reason' colspan='{len(_HOP_COL_KEYS) - 3}'>"
-                f"{_html.escape(str(pr.error))}</td></tr>\n"
+                f"{_html.escape(report_common.keep_unit_with_value(str(pr.error)))}</td></tr>\n"
             )
             continue
         freq_disp = f"{pr.params.freq_mhz:.1f}" if pr.params else "—"

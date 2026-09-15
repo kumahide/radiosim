@@ -20,6 +20,7 @@ UI 知識ゼロ・副作用なし（純関数のみ＝文字列を返すだけ�
 from __future__ import annotations
 
 import html as _html
+import re
 from datetime import datetime
 
 from core import disclosure
@@ -36,6 +37,33 @@ from core import version
 # 予算**＝15:6 だった頃は図 2 枚で本文の約半分を食い、既定の内容でも縮小フィットが
 # 0.82 倍で常時発火していた（2026-08-28 に実測して 15:4.5 へ）。
 PROFILE_FIGSIZE: tuple[float, float] = (15.0, 4.5)
+
+# ============================================================
+# 値と単位を同じ行に留める（B-242）
+# ------------------------------------------------------------
+# `core.units.format_*` は値と単位を**半角空白**で繋ぐ（`7,440 m` / `0.0 %`）。
+# HTML ではそこが折り返し可能点になり、帯や箇条が 1px でも印字幅を超えると
+# **単位だけが次の行へ落ちる**（3.4RC1 の条件探索レポートで実際に起きた）。
+# ⇒ 帳票の自由に折り返す字だけ、その空白を改行しない空白（U+00A0）へ替える。
+# ⚠️ **`units` 側は変えない**＝同じ関数を画面（Tk）と report.txt も引くので、
+# 帳票の組版の都合をそちらへ持ち込まない。表のセル（`td`）は既定で
+# `white-space:nowrap` なので通す必要はない。
+# ============================================================
+NBSP = " "
+_UNIT_GAP = re.compile(
+    r"(?<=\d) (?=(?:%|°|" + re.escape(units.F1_DEPTH_UNIT)
+    + r"|dBm|dBi|dB|GHz|MHz|kHz|Hz|km|mm/h|m)(?![A-Za-z]))"
+)
+
+
+def keep_unit_with_value(text: str) -> str:
+    """数値の直後の半角空白のうち、単位の手前にあるものを U+00A0 に替える。
+
+    折り返しそのものは止めない（`white-space` は触らない）＝**値と単位が別の行に
+    分かれることだけ**を防ぐ。エスケープ前の素の文字列に掛ける（U+00A0 は
+    `html.escape` を素通りする）。
+    """
+    return _UNIT_GAP.sub(NBSP, text)
 
 # ============================================================
 # 図に焼く字の大きさ（B-135）
@@ -576,7 +604,7 @@ def _axis_is_unchanged(low: float, high: float) -> bool:
 
 def _sensitivity_range_row(label: str, low: float, high: float) -> str:
     return (
-        f"<tr><td>{_html.escape(label)}</td>"
+        f"<tr><td>{_html.escape(keep_unit_with_value(label))}</td>"
         f"<td>{units.format_db(low, signed=True)} 〜 "
         f"{units.format_db(high, signed=True)}</td></tr>"
     )
@@ -666,9 +694,9 @@ def _sensitivity_inner_html(
     if not rows and not unchanged:
         return ""
 
-    lead = i18n.t("html_sensitivity_lead").format(
+    lead = keep_unit_with_value(i18n.t("html_sensitivity_lead").format(
         baseline=units.format_db(sens.baseline_margin, signed=True, unit="dB"),
-    )
+    ))
     table_html = ""
     if rows:
         table_html = (
@@ -681,10 +709,13 @@ def _sensitivity_inner_html(
         )
     unchanged_html = (
         f'<p class="sn-unchanged">'
-        f'{_html.escape(i18n.t("html_sens_unchanged").format(list="、".join(unchanged)))}'
+        f'{_html.escape(keep_unit_with_value(i18n.t("html_sens_unchanged").format(list="、".join(unchanged))))}'
         f'</p>' if unchanged else ""
     )
-    note_html = f'<p class="sn-note">{_html.escape(sens_note)}</p>' if sens_note else ""
+    note_html = (
+        f'<p class="sn-note">{_html.escape(keep_unit_with_value(sens_note))}</p>'
+        if sens_note else ""
+    )
     return (
         '<div class="sensitivity">'
         f'<h5>{_html.escape(i18n.t("html_sensitivity_title"))}</h5>'
@@ -718,7 +749,7 @@ def handling_section_html(
             固定文言だった名残の既定値）＝呼び出し側は必ず渡す。
     """
     items = "".join(
-        f"<li>{_html.escape(line)}</li>"
+        f"<li>{_html.escape(keep_unit_with_value(line))}</li>"
         for line in disclosure.handling_lines(note_keys)
     )
     return (
@@ -726,7 +757,7 @@ def handling_section_html(
         f'<h4>{_html.escape(i18n.t("html_handling_title"))}</h4>'
         f'<ul>{items}</ul>'
         f'<p class="hd-calib">'
-        f'{_html.escape(disclosure.calibration_line())}</p>'
+        f'{_html.escape(keep_unit_with_value(disclosure.calibration_line()))}</p>'
         f'<p class="hd-source">'
         f'{_html.escape(disclosure.data_source_line(dem_source_ids))}</p>'
         + _sensitivity_inner_html(sens, sens_note) +

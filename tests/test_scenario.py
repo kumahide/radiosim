@@ -31,6 +31,7 @@ from core import models
 from core import scenario as scn
 from core import simulation as sim
 from core import units
+from report import report_common
 from report import report_scenario
 
 
@@ -572,7 +573,23 @@ class TestScenarioReport:
         html = report_scenario.scenario_sheet_html(
             run, chart_b64=report_scenario.render_sweep_png_b64(run))
         assert i18n.t("pl_dem_fail") in html
-        assert units.format_fail_pct(run.terrain.fail_pct) in html
+        assert report_common.keep_unit_with_value(
+            units.format_fail_pct(run.terrain.fail_pct)) in html
+
+    def test_meta_block_keeps_each_value_with_its_unit(self, terrain, base):
+        """帯は折り返してよいが、値と単位のあいだでは折らないこと（B-242）。
+
+        3.4RC1 で帯が印字幅を 1px 超え、末尾の `0.0 %` の `%` だけが次の行へ
+        落ちた。半角空白は HTML の折り返し可能点なので、値と単位の間は U+00A0。
+        """
+        i18n.set_lang("ja")
+        run = self._run(terrain, base, "compare")
+        meta = report_scenario._meta_block(run)
+        dist = units.format_distance(run.terrain.horiz_dist_km)
+        fail = units.format_fail_pct(run.terrain.fail_pct)
+        assert dist not in meta and fail not in meta, "半角空白のままでは折れる"
+        assert dist.replace(" ", " ") in meta
+        assert fail.replace(" ", " ") in meta
 
     def test_compare_sheet_lists_the_changed_conditions(self, terrain, base):
         """表だけ見て再現できること（何を変えたかが載る）。"""

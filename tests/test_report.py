@@ -1144,3 +1144,39 @@ class TestLedgersShareOneLook:
         head, unit = m.groups()
         assert "(" not in head and "（" not in head, f"{lang}: 1 行目に括弧が残っている: {head}"
         assert unit.endswith(", m)"), f"{lang}: 単位 m が無い: {unit}"
+
+
+class TestKeepUnitWithValue:
+    """帳票の折り返す字で、値と単位が別の行へ分かれないこと（B-242）。
+
+    `core.units.format_*` は半角空白で繋ぐ（画面・txt も同じ関数を引く）ので、
+    HTML の組み立て側でだけ U+00A0 に替える。
+    """
+
+    NB = report_common.NBSP
+
+    @pytest.mark.parametrize("text", [
+        "7,440 m", "0.0 %", "+24.3 dB", "-83.0 dBm", "5.0 dBi", "2.4 GHz",
+        "920 MHz", "20 km", "41 mm/h", "12.5 °", "8.51 ×F1",
+    ])
+    def test_the_space_before_a_unit_becomes_non_breaking(self, text):
+        assert report_common.keep_unit_with_value(text) == text.replace(" ", self.NB)
+
+    @pytest.mark.parametrize("text", [
+        "3 steps",       # 単位ではない語
+        "10 min",        # m で始まるが単位ではない
+        "a m",           # 数字の後ではない
+        "7,440　m",      # 全角空白は触らない
+    ])
+    def test_other_spaces_are_left_breakable(self, text):
+        assert report_common.keep_unit_with_value(text) == text
+
+    def test_the_handling_section_keeps_units_with_values(self):
+        """4 シート共通の補足節（2 段組み・8px）＝割れやすい面に効いていること。"""
+        i18n.set_lang("ja")
+        keys = models.scope_notes(430.0, diff_method="bullington",
+                                  rain_rate=10.0, veg_h=5.0)
+        html = report_common.handling_section_html(keys)
+        body = html.split("<ul>", 1)[1].split("</ul>", 1)[0]
+        assert self.NB in body, "単位つきの値が 1 つも無い条件では何も測れない"
+        assert not re.search(r"\d (?:%|m|dB|GHz|MHz)(?![A-Za-z])", body), body
