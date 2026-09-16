@@ -1405,6 +1405,33 @@ class TestDashboardStageMatchesVersion:
         assert memcheck.check_roadmap_stage() == []
 
 
+class TestLedgerIdsForVersion:
+    """`ledger.py version` が読む未対応台帳の行き先抽出（`ledger_ids_for_version`）。
+
+    2026-09-16、`3.5` の在庫精査で B-233 が取りこぼされていた。原因は状態欄が
+    `**一部対応**` と書かれていたこと＝台帳の凡例（L20）が定める 5 語
+    （未着手／対応中／済／保留／却下）の外で、`_OPEN_STATE_RE` が拾えない
+    （I-129 と同型＝語彙の外を書くと未対応の数から黙って消える）。
+    """
+
+    def test_in_vocabulary_state_with_a_destination_is_picked_up(self, memcheck):
+        lines = ["### ★ B-001: t", "",
+                 "- ★ **状態**: 対応中（配線そのものは未着手＝行き先＝`3.5`）"]
+        assert memcheck.ledger_ids_for_version(lines, "3.5") == ["B-001"]
+
+    def test_out_of_vocabulary_state_word_is_invisible_even_with_a_destination(
+            self, memcheck):
+        """🔴 実際に起きた形＝`一部対応` は 5 語の外なので拾われない（B-233 の再発防止）。"""
+        lines = ["### ★ B-002: t", "",
+                 "- ★ **状態**: **一部対応**（配線そのものは未着手＝行き先＝`3.5`）"]
+        assert memcheck.ledger_ids_for_version(lines, "3.5") == []
+
+    def test_destination_pointing_elsewhere_is_not_pulled_in(self, memcheck):
+        lines = ["### ★ B-003: t", "",
+                 "- ★ **状態**: 対応中（保留＝較正の判断点〔番号未定・実測待ち〕）"]
+        assert memcheck.ledger_ids_for_version(lines, "3.5") == []
+
+
 class TestRoadmapDashboardBlocksStop:
     """日付と表の食い違いは advisory でなく Stop を止めること（I-145）。
 
