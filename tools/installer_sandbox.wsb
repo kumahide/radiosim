@@ -26,6 +26,13 @@
        ⚠️ 読み取り専用マップのせいではない（ローカルへコピーしても同じ）。
        ⚠️ 判定は時点で反転する（B-191）＝前に通ったことは根拠にならない。
        ⇒ **この環境を「未署名でも通る逃げ道」として予定に組まないこと。**
+    🔧 そのため下の <LogonCommand> で、ログオン時に Sandbox の中だけ SAC を
+       オフにしている（2026-09-16 追加。値を 0 にして CiTool -r でポリシーを
+       読み直させる）。書き換えるのは使い捨ての Sandbox の中だけで、ホストの
+       SAC には触れない（上の「開発機の SAC はオフにしない」とは矛盾しない）。
+       ⚠️ LogonCommand はこの機械で不発だった実績がある（2026-09-08）＝
+       **効いたかは中で上の reg query を引いて 0x0 になっているかで確かめる**。
+       0x1 のままなら、中で管理者の cmd から同じ 2 行を手で実行する。
 
   使い方:
     ⛔ 先に下の <HostFolder> を**自分の環境のリポジトリの dist へ書き換える**
@@ -47,7 +54,10 @@
        書いてあった＝上の 🔴 で直した誤りが、この 1 行だけ残っていた。B-199 の
        訂正が同じファイルの中で届いていなかった。理由は変わったが結論は同じで、
        SAC を継承していても**判定は時点で反転する**ので、ここで 1 回通ったことは
-       何も保証しない。それを見るのは開発機の側の役目。）
+       何も保証しない。それを見るのは開発機の側の役目。
+       2026-09-16 からは中の SAC をオフにしているので、なおさら SAC の判定に
+       ついては何も分からない＝ここで見るのはインストール／アンインストールの
+       動きだけ。）
     - ⛔ Sandbox は GDI のフォントリンク（FontLink\SystemLink）を持っていない
       （開発機 83 項目に対し Sandbox は 1 項目だけ）。日本語フォントの実体は
       在るのに橋が無いので、フォントリンク頼みで日本語を描く UI はここでだけ
@@ -67,4 +77,7 @@
   <Networking>Enable</Networking>
   <ClipboardRedirection>true</ClipboardRedirection>
   <MemoryInMB>8192</MemoryInMB>
+  <LogonCommand>
+    <Command>cmd.exe /c "reg add HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy /v VerifiedAndReputablePolicyState /t REG_DWORD /d 0 /f &amp;&amp; CiTool.exe -r"</Command>
+  </LogonCommand>
 </Configuration>
