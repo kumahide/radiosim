@@ -798,10 +798,19 @@ def _env_class_label(value: str) -> str:
     return value
 
 
-def residuals_table_html(stats: "list[core_residuals.LayerStats]") -> str:
-    """残差の層別表の HTML 断片を返す（`stats` が空なら空文字）。"""
+def residuals_table_html(stats: "list[core_residuals.LayerStats]",
+                          exclude_spot: bool = False) -> str:
+    """残差の層別表の HTML 断片を返す（`stats` が空なら空文字）。
+
+    exclude_spot=True のとき、集計の基準（spot 測定を除いていること＝B-233）を
+    表の直前に一言添える＝**何を数えたかを暗黙にしない**（哲学）。
+    """
     if not stats:
         return ""
+    spot_note = (
+        f'<p class="rs-lead">{_html.escape(i18n.t("html_residuals_spot_excluded"))}</p>'
+        if exclude_spot else ""
+    )
     rows = "".join(
         f"<tr><td>{_html.escape(_env_class_label(s.env_class))}</td>"
         f"<td>{_html.escape(s.band)}</td>"
@@ -815,6 +824,7 @@ def residuals_table_html(stats: "list[core_residuals.LayerStats]") -> str:
         '<section class="residuals">'
         f'<h4>{_html.escape(i18n.t("html_residuals_title"))}</h4>'
         f'<p class="rs-lead">{_html.escape(i18n.t("html_residuals_lead"))}</p>'
+        + spot_note +
         '<table><thead><tr>'
         f'<th>{_html.escape(i18n.t("html_residuals_col_env"))}</th>'
         f'<th>{_html.escape(i18n.t("html_residuals_col_band"))}</th>'

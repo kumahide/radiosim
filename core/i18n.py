@@ -235,6 +235,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "batch_case_info":      " Case Info ",
         "batch_project_name":   "Project",
         "batch_memo":           "Note",
+        "batch_exclude_spot":   "Exclude spot measurements from stats",
         "col_id":               "ID",
         "col_start":            "TX (lat, lon)",
         "col_end":              "RX (lat, lon)",
@@ -586,6 +587,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_residuals_lead":
             "Residual = predicted minus measured (feeder loss added back in). "
             "Positive: the model reads high.",
+        "html_residuals_spot_excluded":
+            "Spot measurements are excluded from the stats below.",
         "html_residuals_col_env":      "Environment",
         "html_residuals_col_band":     "Band",
         "html_residuals_col_distance": "Distance",
@@ -1003,6 +1006,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "batch_case_info":      " 案件情報 ",
         "batch_project_name":   "案件名",
         "batch_memo":           "メモ",
+        "batch_exclude_spot":   "スポット測定を統計から除外",
         "col_id":               "ID",
         "col_start":            "送信座標（緯度, 経度）",
         "col_end":              "受信座標（緯度, 経度）",
@@ -1319,6 +1323,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",
         "html_residuals_lead":
             "残差 = 予測 − 実測（給電線損失を補正した後の値）。正の値は予測が高め。",
+        "html_residuals_spot_excluded":
+            "スポット測定は以下の統計から除外しています。",
         "html_residuals_col_env":      "環境区分",
         "html_residuals_col_band":     "帯域",
         "html_residuals_col_distance": "距離帯",

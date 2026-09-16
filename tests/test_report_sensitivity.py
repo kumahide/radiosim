@@ -197,6 +197,18 @@ class TestResidualsTableHtml:
         html = report_common.residuals_table_html(stats)
         assert "山間部" in html
 
+    def test_exclude_spot_default_omits_the_note(self):
+        """既定（exclude_spot=False）では除外の注記を出さない（B-233）。"""
+        stats = [core_residuals.LayerStats("urban", "<1GHz", "<5km", 3, 2.5, 1.0)]
+        html = report_common.residuals_table_html(stats)
+        assert i18n.t("html_residuals_spot_excluded") not in html
+
+    def test_exclude_spot_true_adds_the_note(self):
+        """exclude_spot=True のときは集計の基準が変わったことを表の直前に明示する。"""
+        stats = [core_residuals.LayerStats("urban", "<1GHz", "<5km", 3, 2.5, 1.0)]
+        html = report_common.residuals_table_html(stats, exclude_spot=True)
+        assert i18n.t("html_residuals_spot_excluded") in html
+
 
 # ============================================================
 # report_path.py：地面反射の disclosure ⇔ 感度表の切り替え（段6の核心）
@@ -274,6 +286,25 @@ def test_summary_sheet_shows_worst_path_sensitivity_note():
     assert i18n.t("html_sens_worst_path").format(path="p02") in html
     # バッチは N 本の和集合なので、地面反射の disclosure はそのまま残る。
     assert i18n.t("html_scope_ground_reflection") in html
+
+
+def test_summary_sheet_html_exclude_spot_reaches_the_residuals_table():
+    """`summary_sheet_html(exclude_spot=True)` が実際に `spot` 行を集計から
+    外し、注記も出ること（B-233＝画面のチェックボックスの配線先）。"""
+    i18n.set_lang("en")
+    pr1 = _hop_result("tokyo_urban_2400", "p01")
+    pr2 = _hop_result("tokyo_urban_2400", "p02")
+    pr1.row = dataclasses.replace(pr1.row, meas_dbm=-70.0, meas_method="spot")
+    pr2.row = dataclasses.replace(pr2.row, meas_dbm=-70.0, meas_method="mean")
+
+    html_default = report_summary.summary_sheet_html([pr1, pr2])
+    assert i18n.t("html_residuals_col_n") in html_default
+    assert i18n.t("html_residuals_spot_excluded") not in html_default
+    assert ">2<" in html_default  # 両方の標本が入る（spot も除外されない）
+
+    html_excluded = report_summary.summary_sheet_html([pr1, pr2], exclude_spot=True)
+    assert i18n.t("html_residuals_spot_excluded") in html_excluded
+    assert ">1<" in html_excluded  # spot の 1 件が抜けて mean の 1 件だけ残る
 
 
 def test_summary_sheet_has_no_sensitivity_without_computed_paths():

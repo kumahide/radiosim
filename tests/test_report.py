@@ -971,6 +971,25 @@ class TestHandlingSectionContent:
         same_twice_line = disclosure.data_source_line(["gsi_dem", "gsi_dem"])
         assert dem_sources.GSI_DEM.display_name in same_twice_line
 
+    def test_external_source_carries_a_definition_fingerprint(self, monkeypatch):
+        """外部ソースの出典には宣言内容のハッシュが付くこと（I-147 残り(a)）。
+
+        組み込み（国土地理院）は宣言ファイルを持たず書き換えが起き得ないので
+        付けない＝上のテストで確認済み（display_name のみ）。
+        """
+        from core import dem_sources
+        fake = dem_sources.DemSourceSpec(
+            source_id="fake_src", display_name="Fake Source",
+            layers=(("fake_layer", 12),), url_template="https://example.invalid/{z}/{x}/{y}.png",
+            decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+            attribution="Fake", terms_url="https://example.invalid",
+        )
+        monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+        i18n.set_lang("ja")
+        line = disclosure.data_source_line("fake_src")
+        assert "Fake Source" in line
+        assert f"[{dem_sources.definition_fingerprint(fake)}]" in line
+
     def test_the_html_section_escapes_and_lists_every_line(self):
         i18n.set_lang("en")
         keys = models.scope_notes(2400.0, diff_method="single")

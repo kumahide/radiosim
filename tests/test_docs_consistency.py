@@ -24,10 +24,10 @@ from pathlib import Path
 
 import pytest
 
+from core import batch_csv_schema
 from core import i18n
 from core import output_contract
 from core import version
-from report import batch
 
 ROOT = Path(__file__).resolve().parent.parent
 
@@ -571,11 +571,11 @@ ALL_DOCS = ["docs/developer_ja.md", "docs/developer_en.md",
 
 @pytest.mark.parametrize("doc", ALL_DOCS)
 def test_batch_csv_columns_listed(doc):
-    """バッチ CSV の全列（batch.CSV_COLUMNS が単一ソース）が各 README の
+    """バッチ CSV の全列（batch_csv_schema.CSV_COLUMNS が単一ソース）が各 README の
     複数経路の節に載っているか。gain_tx/gain_rx 追加のような
     スキーマ変更をドキュメント全系統へ反映し忘れるのを捕捉する。"""
     section = _section(_read(doc), ["複数経路", "Multiple Paths"])
-    for col in batch.CSV_COLUMNS:
+    for col in batch_csv_schema.CSV_COLUMNS:
         assert col in section, f"{doc}: batch CSV section is missing column '{col}'"
 
 

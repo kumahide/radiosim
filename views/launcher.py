@@ -788,7 +788,17 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         config.save_sim(c)
         self._run_btn.config(state="disabled")
 
-        # Phase 1: bbox 内の DEM タイルを事前取得
+        # Phase 1: bbox 内の DEM タイルを事前取得。
+        # ⚠️ **国土地理院ソースのときだけ**（B-235）＝`dem_prefetch` の降下ロジック
+        # （5a→5b→dem_png・void-mask）は国土地理院専用で、外部ソースへ回しても
+        # 意味を持たない（`core/dem_prefetch.py` 冒頭コメント）。ソース未指定は
+        # 国土地理院として扱う（`SimParams.dem_source` の既定と同じ）。外部ソース
+        # 選択時はここを飛ばして Phase 2（点ごとの取得＝`dem.get_elevation` が
+        # 選択ソースへ正しく振る）へ直行し、無駄な GSI タイル要求を出さない。
+        if params.dem_source != dem_sources.GSI_DEM.source_id:
+            self._start_simulation(params)
+            return
+
         tile_count = dem_prefetch.count_bbox_tiles(
             params.lat_tx, params.lon_tx,
             params.lat_rx, params.lon_rx,

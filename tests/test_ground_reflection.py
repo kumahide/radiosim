@@ -100,3 +100,16 @@ def test_null_depth_db_zero_reflection_is_zero_db():
 
 def test_null_depth_db_full_reflection_is_infinite():
     assert gr.null_depth_db(1.0) == float("inf")
+
+
+def test_detrended_rms_uses_real_distance_not_sample_index():
+    """非等間隔標本の完全な直線斜面は RMS が 0 に近いこと（B-234）。
+
+    `core/ground_reflection.py:89`（旧）が `np.arange(n)`（標本の連番）を
+    回帰の x 軸にしており、実際の距離軸ではなかった。距離 `[0, 1, 10]`・
+    標高 `2x+5`（完全な直線斜面）の非等間隔標本を渡すと、間隔の粗密が
+    傾きの誤差として残差に漏れ、RMS が `3.771m` になっていた（Codex 実測）。
+    """
+    x = np.array([0.0, 1.0, 10.0])
+    values = 2.0 * x + 5.0
+    assert gr.detrended_rms(x, values) == pytest.approx(0.0, abs=1e-9)

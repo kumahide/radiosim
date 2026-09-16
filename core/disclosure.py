@@ -152,6 +152,9 @@ def data_source_line(dem_source_ids=None) -> str:
     ないので、そちらは HTML 側もそのまま出す）。
     **`attribution` は含めない**＝B-135 の「機関名を重ねなくても出所は特定できる」
     という既存の方針を維持し、断面図の距離軸ラベルと同じ行に収める字数を抑える。
+    **利用者が宣言した外部ソースだけ**、宣言内容のハッシュ（`[xxxxxxxxxxxx]`）を
+    末尾に添える（I-147 残り(a)）＝組み込み（国土地理院）は宣言ファイルを持たず
+    書き換えが起き得ないので付けない。
     """
     if dem_source_ids is None:
         ids: set[str] = set()
@@ -166,7 +169,11 @@ def data_source_line(dem_source_ids=None) -> str:
         if spec.source_id == dem_sources.GSI_DEM.source_id:
             value = i18n.t("html_elev_source_gsi_dem")
         else:
-            value = spec.display_name
+            # I-147 残り(a)＝宣言内容のハッシュ（B-236 と同じ fingerprint）を
+            # 添える。`source_id` を変えずに URL・デコード方式だけ書き換えても
+            # 別物と分かるように（ディスクキャッシュの自動無効化と同じ根拠）。
+            fp = dem_sources.definition_fingerprint(spec)
+            value = f"{spec.display_name} [{fp}]"
     else:
         value = i18n.t("html_elev_source_mixed")
     return f'{i18n.t("html_elev_source_prefix")}: {value}'

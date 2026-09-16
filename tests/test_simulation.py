@@ -604,6 +604,48 @@ class TestFetchElevationsCached:
 
 
 # ============================================================
+# _format_dem_source_line（report.txt の DEM ソース刻印）
+# ============================================================
+class TestFormatDemSourceLine:
+    """I-147 残り(a)＝外部ソースだけ宣言内容のハッシュを末尾に添えること。"""
+
+    def test_gsi_source_has_no_fingerprint_suffix(self):
+        line = sim._format_dem_source_line(dem_sources.GSI_DEM.source_id)
+        assert line == f"DEM Source    : {dem_sources.GSI_DEM.display_name} ({dem_sources.GSI_DEM.attribution})\n"
+        assert "[" not in line
+
+    def test_external_source_has_a_fingerprint_suffix(self, monkeypatch):
+        fake = dem_sources.DemSourceSpec(
+            source_id="fake_src", display_name="Fake Source",
+            layers=(("fake_layer", 12),), url_template="https://example.invalid/{z}/{x}/{y}.png",
+            decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+            attribution="Fake Attribution", terms_url="https://example.invalid",
+        )
+        monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+        line = sim._format_dem_source_line("fake_src")
+        fp = dem_sources.definition_fingerprint(fake)
+        assert line == f"DEM Source    : Fake Source (Fake Attribution) [{fp}]\n"
+
+    def test_fingerprint_changes_when_the_declaration_changes(self, monkeypatch):
+        """`source_id` を変えずに URL だけ書き換えたら別のハッシュになること
+        （B-236 のキャッシュ無効化と同じ根拠）。"""
+        base = dem_sources.DemSourceSpec(
+            source_id="fake_src", display_name="Fake Source",
+            layers=(("fake_layer", 12),), url_template="https://example.invalid/a/{z}/{x}/{y}.png",
+            decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+            attribution="Fake", terms_url="https://example.invalid",
+        )
+        rewritten = dataclasses.replace(
+            base, url_template="https://example.invalid/b/{z}/{x}/{y}.png")
+
+        monkeypatch.setattr(dem_sources, "_user_sources", [base])
+        line_before = sim._format_dem_source_line("fake_src")
+        monkeypatch.setattr(dem_sources, "_user_sources", [rewritten])
+        line_after = sim._format_dem_source_line("fake_src")
+        assert line_before != line_after
+
+
+# ============================================================
 # run_calculation
 # ============================================================
 class TestRunCalculation:

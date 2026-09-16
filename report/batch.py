@@ -25,6 +25,7 @@ from core import config
 from core import i18n
 from core import models
 from core import simulation as sim
+from core.batch_csv_schema import CSV_COLUMNS, _REQUIRED_COLS
 from report import report_path
 from report import report_summary
 
@@ -129,13 +130,9 @@ class PathResult:
 # ============================================================
 # CSV I/O
 # ============================================================
-_REQUIRED_COLS = {"id", "start", "end", "h_tx", "h_rx"}
-
-# CSV スキーマの正準（出力ヘッダ順）。required の後に optional。
-# ドキュメント整合テストはこの定数を単一ソースに README の CSV 節を照合する。
-CSV_COLUMNS = ["id", "start", "end", "h_tx", "h_rx", "freq", "gain_tx", "gain_rx", "note",
-               "meas_dbm", "meas_method", "feeder_loss_db", "env_class"]
-OPTIONAL_COLS = [c for c in CSV_COLUMNS if c not in _REQUIRED_COLS]
+# 列の契約（列名・順序・必須/任意）は core/batch_csv_schema.py が単一ソース
+# （I-159＝RadioSim Tracer が apps 越しに report/ を import せず契約だけ読めるように）。
+# ドキュメント整合テストもそちらを単一ソースに README の CSV 節を照合する。
 
 def parse_csv(csv_path: str) -> list[PathRow]:
     """
@@ -356,6 +353,7 @@ def run_batch(
     on_path_stage:     "Callable[[str], None] | None" = None,
     project_name:      str = "",
     memo:              str = "",
+    exclude_spot:      bool = False,
 ) -> None:
     """バッチ実行をバックグラウンドスレッドで開始する。
 
@@ -365,7 +363,8 @@ def run_batch(
     report_map は Figure+FigureCanvasAgg と PIL のみで tkinter に触れないため
     ワーカースレッドから安全に呼べる（→ save_profile_png の docstring）。GUI を
     固めないために必ずここで生成すること。project_name / memo はレポートの
-    ヘッダに載る自由文字列。
+    ヘッダに載る自由文字列。exclude_spot は残差の層別表（`core/residuals.py`）
+    から `meas_method == "spot"` の標本を除くか（既定 False・B-233）。
 
     on_path_stage は 1 パス内の段階通知（"fetch" / "render"）。所要時間の大半は
     "render"（matplotlib 描画）なので、呼び出し側はこれで表示を切り替える。
@@ -378,7 +377,7 @@ def run_batch(
         target = _run_thread,
         args   = (rows, base_params, on_path_start, on_path_progress,
                   on_path_complete, on_batch_complete, on_error, coord_format,
-                  on_path_stage, project_name, memo),
+                  on_path_stage, project_name, memo, exclude_spot),
         daemon = True,
     ).start()
 
@@ -395,6 +394,7 @@ def _run_thread(
     on_path_stage:     "Callable[[str], None] | None" = None,
     project_name:      str = "",
     memo:              str = "",
+    exclude_spot:      bool = False,
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -422,11 +422,12 @@ def _run_thread(
         map_b64 = report_summary.render_summary_map_b64(path_results)
         logger.info("Summary map complete in %.2fs", time.perf_counter() - t_sum)
         report_summary.save_summary_html(path_results, batch_dir, project_name,
-                                         memo, map_b64)
+                                         memo, map_b64, exclude_spot=exclude_spot)
         # 全ページ連結レポート（Ctrl+P 一発で全パスぶんの PDF）。per-path の
         # シート断片は実行中に PathResult へ溜めてあるので追加コストは連結のみ。
         report_summary.save_report_all_html(path_results, batch_dir,
-                                            project_name, memo, map_b64)
+                                            project_name, memo, map_b64,
+                                            exclude_spot=exclude_spot)
         report_summary.save_summary_kml(path_results, batch_dir)
         report_summary._save_summary_csv(path_results, batch_dir)
         logger.info("Batch complete: %d paths in %.2fs (summary %.2fs) → %s",

@@ -16,7 +16,7 @@ core/output_contract.py
 すべて数え**、台帳に無い書き手を落とす（列挙で塞いだ穴は、次に足す 1 本で開く
 → [[feedback-user-examples-are-classes]]）。
 
-⚠️ **入力 CSV（`report.batch.CSV_COLUMNS`）はここに置かない**＝あれはアプリ自身が
+⚠️ **入力 CSV（`core.batch_csv_schema.CSV_COLUMNS`）はここに置かない**＝あれはアプリ自身が
 読み戻す**交換フォーマット**で、契約の向きが逆（我々が読む側の約束）。実際に扱いも
 分かれている＝成果物は `report_common.csv_cell()` で数式化を止めるが、交換物には
 掛けない（`'` を足すと再インポートで値が変わる＝往復が壊れる・B-012）。

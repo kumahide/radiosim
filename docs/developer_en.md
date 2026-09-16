@@ -241,6 +241,7 @@ radiosim/
 │   ├── coords.py         # Coordinate notation conversion (DD <-> DMS, pure functions)
 │   ├── units.py          # Distance display formatting (internal km -> displayed m, pure functions)
 │   ├── output_contract.py # Column spec of the artifact CSVs = single source of the output contract (pure data)
+│   ├── batch_csv_schema.py # Column spec of the batch input CSV (names/order/required-optional) = single source (pure data)
 │   ├── disclosure.py     # Wording of the "Notes on handling this result" section in the reports (assumptions, scope notes, pure functions)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── env_facts.py      # Environment-facts collection layer (version, config, recent log, cache stats, env info; coordinates redacted)
@@ -584,7 +585,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; single source is `batch.PathRow`. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean` (`core/residuals.py` accepts `compute_layered_stats(exclude_spot=True)`, but **no product path enables it in this release** — `spot` rows are counted like any other). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; single source is `batch.PathRow`. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 

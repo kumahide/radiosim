@@ -54,6 +54,7 @@ class _RunMixin(_HostBase):
         _diff_label_to_key: "dict[str, str]"
         _dem_source_var: tk.StringVar
         _dem_source_label_to_key: "dict[str, str]"
+        _exclude_spot_var: tk.BooleanVar
         _pump: "ProgressPump"
         _running: bool
         _run_btn: ttk.Button
@@ -164,6 +165,7 @@ class _RunMixin(_HostBase):
             on_path_stage     = lambda stage, p=push: p(("stage", (stage,))),
             project_name      = self._project_name_var.get().strip(),
             memo              = self._memo_var.get().strip(),
+            exclude_spot      = self._exclude_spot_var.get(),
         )
 
     # ----------------------------------------------------------

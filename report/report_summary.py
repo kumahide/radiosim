@@ -248,7 +248,8 @@ def summary_sheet_css() -> str:
 
 def summary_sheet_html(results: list[PathResult], project_name: str = "",
                        memo: str = "", map_b64: "str | None" = None,
-                       anchor_links: bool = False) -> str:
+                       anchor_links: bool = False,
+                       exclude_spot: bool = False) -> str:
     """summary（台帳）の A4 シート断片（`<section class="sheet summary">`）を返す。
 
     anchor_links=False（既定・単体の summary.html）＝台帳のグラフ列は
@@ -261,6 +262,10 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     小ブロックとして表示する（サーベイ全体の注記＝summary のみ）。
     map_b64 は全パス俯瞰地図（render_summary_map_b64 の戻り）。None のときは
     地図を省き注記を表示する（per-path と同じベストエフォート）。
+
+    exclude_spot=True なら実測残差の層別表から `meas_method == "spot"` の
+    標本を除く（`core/residuals.py:compute_layered_stats` へそのまま渡す・
+    B-233＝画面から有効にする手段が無かった）。
     """
     # 判定の出所は `PathResult.status` 1 か所（I-010 ③）＝ここで条件を書き直すと、
     # 成果物だけ失敗した経路が台帳で「OK」に数え直される。
@@ -400,8 +405,8 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     # verdict_css` が `report.map_graphics` を遅延 import しているのと同じ理由）。
     from report import residuals as report_residuals
     samples = report_residuals.samples_from_results(results)
-    layered_stats = core_residuals.compute_layered_stats(samples)
-    residuals_html = report_common.residuals_table_html(layered_stats)
+    layered_stats = core_residuals.compute_layered_stats(samples, exclude_spot=exclude_spot)
+    residuals_html = report_common.residuals_table_html(layered_stats, exclude_spot=exclude_spot)
 
     # 案件メモ（サーベイ全体の自由注記）。非空時のみヘッダ直下（p1）に小ブロック表示。
     if memo:
@@ -461,12 +466,14 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 
 def save_summary_html(results: list[PathResult], batch_dir: str,
                       project_name: str = "", memo: str = "",
-                      map_b64: "str | None" = None) -> None:
+                      map_b64: "str | None" = None,
+                      exclude_spot: bool = False) -> None:
     """バッチの summary.html（台帳 1 枚）を生成する。引数は summary_sheet_html 参照。"""
     html = report_common.html_document(
         _html.escape(i18n.t("html_batch_title")),
         summary_sheet_css(),
-        summary_sheet_html(results, project_name, memo, map_b64),
+        summary_sheet_html(results, project_name, memo, map_b64,
+                           exclude_spot=exclude_spot),
     )
     with open(os.path.join(batch_dir, "summary.html"), "w", encoding="utf-8") as f:
         f.write(html)
@@ -474,7 +481,8 @@ def save_summary_html(results: list[PathResult], batch_dir: str,
 
 def save_report_all_html(results: list[PathResult], batch_dir: str,
                          project_name: str = "", memo: str = "",
-                         map_b64: "str | None" = None) -> None:
+                         map_b64: "str | None" = None,
+                         exclude_spot: bool = False) -> None:
     """report_all.html（サマリ＋全 per-path を 1 文書へ連結）を生成する。
 
     狙い＝**Ctrl+P 一発で全ページぶんの PDF**（従来は台帳から 1 経路ずつ開いて
@@ -493,7 +501,7 @@ def save_report_all_html(results: list[PathResult], batch_dir: str,
         doc_title = f"{project_name} - {doc_title}"
 
     sheets = [summary_sheet_html(results, project_name, memo, map_b64,
-                                 anchor_links=True)]
+                                 anchor_links=True, exclude_spot=exclude_spot)]
     sheets += [pr.sheet_html for pr in results if pr.sheet_html]
 
     html = report_common.html_document(

@@ -86,20 +86,26 @@ def null_depth_db(gamma_eff: float) -> float:
     return -20.0 * math.log10(residual)
 
 
-def detrended_rms(values: np.ndarray) -> float:
-    """一次傾斜を除いた残差の RMS [m]（区間の「うねり」＝ sigma_h）。"""
+def detrended_rms(x: np.ndarray, values: np.ndarray) -> float:
+    """一次傾斜を除いた残差の RMS [m]（区間の「うねり」＝ sigma_h）。
+
+    ⚠️ **`x` は標本の連番ではなく実距離**（B-234）＝標本は等間隔とは限らない
+    （B-150）ので、標本の並び順を等間隔と仮定して `np.arange(n)` を回帰の
+    x 軸にすると、完全な直線斜面（平面）でも間隔の粗密が傾きの誤差として
+    residual に漏れ、RMS が偽の粗さを示す。
+    """
     n = len(values)
     if n < 3:
         return 0.0
-    idx = np.arange(n, dtype=float)
-    mean_x = idx.mean()
+    x = np.asarray(x, dtype=float)
+    mean_x = x.mean()
     mean_y = float(values.mean())
-    sxx = float(np.sum((idx - mean_x) ** 2))
+    sxx = float(np.sum((x - mean_x) ** 2))
     if sxx <= 0.0:
         return 0.0
-    sxy = float(np.sum((idx - mean_x) * (values - mean_y)))
+    sxy = float(np.sum((x - mean_x) * (values - mean_y)))
     slope = sxy / sxx
-    res = values - (mean_y + slope * (idx - mean_x))
+    res = values - (mean_y + slope * (x - mean_x))
     return float(np.sqrt(np.mean(res ** 2)))
 
 
@@ -137,11 +143,14 @@ def compute_two_ray_envelope(
     # ⚠️ 標本は等間隔とは限らない（B-150）ので、距離窓で選ぶ（インデックス窓は使わない）。
     d_m_axis = np.asarray(terrain.d_km_axis, dtype=float) * 1000.0
     in_window = np.abs(d_m_axis - d1) <= SIGMA_WINDOW_HALF_M
+    window_x = d_m_axis[in_window]
     window_elevs = np.asarray(terrain.raw_elevs, dtype=float)[in_window]
-    window_elevs = window_elevs[~np.isnan(window_elevs)]
+    valid = ~np.isnan(window_elevs)
+    window_x = window_x[valid]
+    window_elevs = window_elevs[valid]
     if len(window_elevs) < 3:
         return None
-    sigma_h_m = detrended_rms(window_elevs)
+    sigma_h_m = detrended_rms(window_x, window_elevs)
 
     sigma_max = rayleigh_sigma_max(psi, lam)
     roughness = "smooth" if sigma_h_m < sigma_max else "rough"

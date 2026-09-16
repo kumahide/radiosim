@@ -711,9 +711,16 @@ def _format_dem_source_line(dem_source_id: str) -> str:
     国土地理院のみだった 3.3 まではソース名を刻む意味が薄かった（唯一なので）。
     利用者が宣言ファイルで足したソースが計算に効き得るようになった以上、
     **どのソース（宣言のどの版）で計算したか**を成果物に残す必要がある。
+
+    ⚠️ **外部ソースだけ宣言内容のハッシュを末尾に添える**（I-147 残り(a)）＝
+    `source_id` を変えずに `dem_sources.toml` の URL・デコード方式だけ書き換えても
+    別物と分かるように（`core/dem_sources.py:definition_fingerprint` と同じ値）。
     """
     src = dem_sources.resolve(dem_source_id)
-    return f"DEM Source    : {src.display_name} ({src.attribution})\n"
+    if src.source_id == dem_sources.GSI_DEM.source_id:
+        return f"DEM Source    : {src.display_name} ({src.attribution})\n"
+    fp = dem_sources.definition_fingerprint(src)
+    return f"DEM Source    : {src.display_name} ({src.attribution}) [{fp}]\n"
 
 
 def _save_report(

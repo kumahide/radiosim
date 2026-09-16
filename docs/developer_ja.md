@@ -241,6 +241,7 @@ radiosim/
 │   ├── coords.py         # 座標表記変換（DD ⇔ DMS・純関数）
 │   ├── units.py          # 距離の表示整形（内部 km → 表示 m・純関数）
 │   ├── output_contract.py # 成果物 CSV の列仕様＝出力契約の単一ソース（純データ）
+│   ├── batch_csv_schema.py # バッチ入力 CSV の列仕様（列名・順序・必須/任意）の単一ソース（純データ）
 │   ├── disclosure.py     # 帳票の「結果の取扱に関する補足」の字（前提・適用範囲の刻印・純関数）
 │   ├── runtime_env.py    # 実行環境の事実（frozen か・同梱物の根・書き込み先の解決）
 │   ├── env_facts.py      # 環境事実の収集層（版・設定・直近ログ・キャッシュ統計・環境情報。座標は伏せる）
@@ -582,7 +583,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 - `freq` / `gain_tx` / `gain_rx` を省略した場合は共通設定の値が使われます（**リンク識別属性**＝経路ごとに変えられる）。環境区分・降雨強度・回折モデルは共通設定で一括指定します
 - `gain_tx` / `gain_rx` 列のない旧 CSV もそのまま読めます（後方互換・利得は共通設定を継承）
 - 列名は**大小文字と前後の空白を区別しません**（`ID,Start,…` でも読めます）。`id` は**大小文字を区別せず**一意である必要があります（`p01` と `P01` は同じ出力フォルダになるため重複として弾かれます）
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（単一ソース＝`batch.PathRow`）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、複数経路のサマリレポートへ表として載る（`report/residuals.py` が `PathResult` から標本を抽出）。`meas_method` は `spot` / `mean` の想定値（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)` で除外できるが、**現行版の帳票からは有効にする手段が無い**＝`spot` の行も集計に入る）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（単一ソース＝`batch.PathRow`）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、複数経路のサマリレポートへ表として載る（`report/residuals.py` が `PathResult` から標本を抽出）。`meas_method` は `spot` / `mean` の想定値。複数経路画面の「スポット測定を統計から除外」チェックボックスで `spot` の行を集計から外せる（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)`）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
 
 ### 共通設定（ランチャーのスナップショット）
 

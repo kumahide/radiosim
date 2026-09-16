@@ -200,6 +200,46 @@ def test_run_button_passes_the_selected_dem_source(monkeypatch):
         root.destroy()
 
 
+def test_run_skips_gsi_prefetch_for_external_dem_source(monkeypatch):
+    """外部 DEM ソース選択時、単一経路の実行が国土地理院専用の事前取得
+    （`dem_prefetch`）を呼ばないこと（B-235）。
+
+    `core/dem_prefetch.py` の 3 レイヤ降下（5a→5b→dem_png・void-mask）は
+    国土地理院専用で、海外の長距離経路では大量の 404 を処理したあと外部 DEM を
+    改めて取得していた（不要な通信と待ち時間）。Phase 1（事前取得）は国土地理院
+    ソースのときだけ実行し、外部ソースは Phase 2（点ごとの取得）へ直行する。
+    """
+    pytest.importorskip("tkinter")
+    from core import dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 12),), url_template="https://example.invalid/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr("views.launcher.threading.Thread",
+                         lambda *a, **k: type("T", (), {"start": lambda self: None})())
+
+    called = {"count_bbox_tiles": False, "prefetch_tiles": False}
+    monkeypatch.setattr("views.launcher.dem_prefetch.count_bbox_tiles",
+                         lambda *a, **k: called.__setitem__("count_bbox_tiles", True) or 0)
+    monkeypatch.setattr("views.launcher.dem_prefetch.prefetch_tiles",
+                         lambda *a, **k: called.__setitem__("prefetch_tiles", True) or {})
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        app._dem_source_var.set("Fake Source")
+        app._on_run()
+        assert called == {"count_bbox_tiles": False, "prefetch_tiles": False}
+    finally:
+        root.destroy()
+
+
 def test_batch_read_base_params_passes_the_selected_dem_source(monkeypatch):
     """バッチ画面で選んだ DEM ソースが `_read_base_params()` の出力に含まれること（B-228）。
 

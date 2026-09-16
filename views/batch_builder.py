@@ -230,6 +230,16 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
                 foreground=theme.muted_foreground(frame),
             ).pack(side="right", padx=6)
 
+        # 実測突合せの残差表（`core/residuals.py`）から spot 測定を除く選択（B-233）。
+        # ⚠️ **凍結値ではない**（ランチャーに対応する項目が無い＝この窓だけの
+        # レポート表示オプション）。上の 🔒 な項目と違い state="readonly" も付けない。
+        # `False`（除外しない＝従来どおり全標本を集計）が既定。
+        self._exclude_spot_var = tk.BooleanVar(value=False)
+        ttk.Checkbutton(
+            frame, text=i18n.t("batch_exclude_spot"),
+            variable=self._exclude_spot_var,
+        ).pack(side="right", padx=6)
+
     def _build_common_settings(self) -> None:
         frame = ttk.LabelFrame(
             self, text=i18n.t("batch_common_cfg"),

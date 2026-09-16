@@ -225,6 +225,7 @@ BANDS: list[Band] = [
                     ("coords.py", "座標表記（DD ⇔ DMS）", "coordinates (DD ⇔ DMS)"),
                     ("units.py", "距離の表示整形（km → m）", "distance display (km → m)"),
                     ("output_contract.py", "成果物 CSV の列仕様", "artifact CSV column spec"),
+                    ("batch_csv_schema.py", "バッチ入力 CSV の列仕様", "batch input CSV column spec"),
                     ("terrain_grid.py", "解像度の段階 → 点数", "resolution → sample count"),
                     ("diffraction.py", "回折損（Bullington・J(ν)）", "diffraction loss (Bullington)"),
                     ("ground_reflection.py", "地面反射の振幅包絡線（2波干渉）",

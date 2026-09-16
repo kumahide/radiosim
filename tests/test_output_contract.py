@@ -36,7 +36,7 @@ _FuncDef = ast.FunctionDef | ast.AsyncFunctionDef
 _ALLOWED_UNREGISTERED = {
     "report.batch:export_csv":
         "入力 CSV＝アプリ自身が読み戻す交換フォーマットで、契約の向きが逆"
-        "（単一ソースは `batch.CSV_COLUMNS`）。成果物ではないので出力契約の"
+        "（単一ソースは `core.batch_csv_schema.CSV_COLUMNS`）。成果物ではないので出力契約の"
         "台帳には載せない（→ core/output_contract.py の冒頭）",
 }
 
