@@ -1449,6 +1449,32 @@ class TestRoadmapDashboardBlocksStop:
         assert out.get("decision") == "block"
         assert "段の行の型の外れ" in out["reason"]
 
+    @pytest.mark.parametrize("source", ["check_dashboard_rules_real",
+                                        "check_inventory_real",
+                                        "check_renumber_real"])
+    def test_roadmap_self_contradictions_block(self, memcheck, monkeypatch, capsys, source):
+        """check 22〜24（I-157）も Stop を止める。"""
+        out = self._run_main(memcheck, monkeypatch, capsys, "自己矛盾", source=source)
+        assert out.get("decision") == "block"
+
+    def test_stale_trigger_is_only_advisory(self, memcheck, monkeypatch, capsys):
+        """check 25 は言い回しの揺れで取りこぼすので止めない。"""
+        monkeypatch.setattr(memcheck, "_current_version", lambda: "3.3b1")
+        for name in dir(memcheck):
+            if name.startswith("check_") and callable(getattr(memcheck, name)):
+                monkeypatch.setattr(memcheck, name, lambda *a, **k: [])
+        monkeypatch.setattr(memcheck, "check_stale_triggers_real", lambda v: ["古い引き金"])
+        monkeypatch.setattr(memcheck, "PENDING_ADVISORY",
+                            memcheck.PROJ_DIR / ".claude" / ".pending_advisory.test")
+        monkeypatch.delenv("MEMORY_GATE", raising=False)
+        monkeypatch.setattr(sys, "argv", ["check_memory.py"])
+        try:
+            memcheck.main()
+        finally:
+            memcheck.PENDING_ADVISORY.unlink(missing_ok=True)
+        out = json.loads(capsys.readouterr().out)
+        assert "decision" not in out and "古い引き金" in out["systemMessage"]
+
 
 # ============================================================
 # 存在しないモジュール参照（check 6）— I-072
@@ -1832,6 +1858,204 @@ class TestRoadmapFormat:
 
     def test_real_roadmap_is_clean(self, memcheck):
         assert memcheck.check_roadmap_format_real() == []
+
+
+class TestDashboardRules:
+    """現在地表の様式 ⑤ の機械で見られる条（check 22・I-157）。
+
+    2026-09-16、3.4 を正式にした回で 3.3 の行を消し忘れ、リリース済みが 2 行
+    並んだ（ユーザー指摘）。様式は「最新版だけ」と書いてあったが検査が無かった。
+    """
+
+    @staticmethod
+    def _section(*lines):
+        return list(enumerate(lines, start=18))
+
+    def test_two_released_rows_are_flagged(self, memcheck):
+        """実際に起きた形。"""
+        found = memcheck.check_dashboard_rules(self._section(
+            "| 版 | 状態 | 次の一手 |", "|----|------|----|",
+            "| 3.3 | ✅ リリース済 | — |", "| 3.4 | ✅ リリース済 | — |",
+            "| 3.5 | 🔜 次の版 | 段0 |"))
+        assert any("2 行" in f and "3.3" in f for f in found)
+
+    def test_the_current_shape_passes(self, memcheck):
+        assert memcheck.check_dashboard_rules(self._section(
+            "> 表の書き方は ⑤。版区切りの記録は版の節へ。",
+            "| 版 | 状態 | 次の一手 |", "|----|------|----|",
+            "| 3.4 | ✅ リリース済 | — |", "| 3.5 | 🔜 次の版 | 段0 |",
+            "| 較正 | ⬜ **判断点**（番号未定） | 実測が 1 回回ったら |")) == []
+
+    def test_a_released_row_keeps_no_next_step(self, memcheck):
+        found = memcheck.check_dashboard_rules(self._section(
+            "| 3.4 | ✅ リリース済 | RC3 から昇格 |"))
+        assert any("`—` だけ" in f for f in found)
+
+    def test_state_cell_carries_only_mark_and_word(self, memcheck):
+        """2.8 の欄が「ベータ（`2.8b1`・2026-08-13）＝予定作業 23 件…」に育った形。"""
+        found = memcheck.check_dashboard_rules(self._section(
+            "| 2.8 | 🚧 ベータ（`2.8b1`・2026-08-13）＝23 件 | RC1 |"))
+        assert any("日付" in f and "タグ" in f and "件数" in f for f in found)
+
+    def test_latest_is_never_written(self, memcheck):
+        found = memcheck.check_dashboard_rules(self._section(
+            "| 2.4 | ✅ リリース済 | `--latest` |"))
+        assert any("--latest" in f for f in found)
+
+    def test_boundary_records_stay_out_of_the_section(self, memcheck):
+        found = memcheck.check_dashboard_rules(self._section(
+            "### ✅ a→b の版区切り整合（2026-08-13）",
+            "- 2.7b1 の版区切り整合を 1 巡した"))
+        assert len(found) == 2
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        assert memcheck.check_dashboard_rules_real() == []
+
+
+class TestInventoryMatchesLedger:
+    """受け皿の在庫 ⇔ ISSUES.md の状態欄（check 23・I-157）。
+
+    2026-09-16、受け皿を 3.5 として切ったのに一覧が「受け皿の規約」に残り、
+    「受け皿に 6 件」と読めた（ユーザー指摘「版割り済みがなぜ残っているのですか？」）。
+    逆向き（決めたのに積み忘れ）は 2026-08-12 の I-078 で起きている。
+    """
+
+    ROADMAP = [
+        "## 🔜 3.5 — ソースの拡張",
+        "### 📋 3.5 の中身（受け皿から切った項目）",
+        "- [[I-151]]＝文言",
+        "### 📋 受け皿の規約（2026-08-01 新設）",
+        "- [[I-200]]＝積んだ項目",
+        "## 🛰 関連プロダクト",
+        "- [[I-151]]＝節の外は在庫ではない",
+    ]
+
+    def test_ids_are_read_only_inside_the_inventory(self, memcheck):
+        assert [i for _, i in memcheck.inventory_ids(self.ROADMAP)] == ["I-200"]
+
+    def test_a_restored_h2_inventory_is_read(self, memcheck):
+        lines = ["## 🧺 次のマイナー（番号未定）", "- [[B-300]]＝x", "## ❓ 未決"]
+        assert [i for _, i in memcheck.inventory_ids(lines)] == ["B-300"]
+
+    def test_a_cut_item_left_in_the_inventory_is_flagged(self, memcheck):
+        """実際に起きた形＝台帳は行き先＝`3.5` なのに受け皿に居る。"""
+        found = memcheck.check_inventory_vs_ledger(
+            self.ROADMAP, {"I-200": "未着手（行き先＝`3.5`〔受け皿を切った〕）"})
+        assert any("版割り済み" in f and "I-200" in f for f in found)
+
+    def test_a_done_item_left_in_the_inventory_is_flagged(self, memcheck):
+        found = memcheck.check_inventory_vs_ledger(
+            self.ROADMAP, {"I-200": "**済**（`3.5a1`）"})
+        assert any("済" in f and "I-200" in f for f in found)
+
+    def test_plus_point_one_is_not_a_version(self, memcheck):
+        """「行き先＝`+0.1`」は版割りではない（0.1 を版番号と読まない）。"""
+        assert memcheck.check_inventory_vs_ledger(
+            self.ROADMAP, {"I-200": "未着手（行き先＝`+0.1`＝受け皿）"}) == []
+
+    def test_an_item_bound_for_the_inventory_but_missing_is_flagged(self, memcheck):
+        """I-078 の形＝割り振りは決めたが積む手が落ちた。"""
+        found = memcheck.check_inventory_vs_ledger(self.ROADMAP, {
+            "I-200": "未着手（受け皿）",
+            "I-201": "未着手（+0.1＝受け皿へ）",
+            "I-202": "未着手（行き先＝`3.5`〔受け皿を切った〕）",
+            "I-203": "**済**（受け皿から 2.8 で消化）",
+            "I-204": "対応中（2026-09-16 に受け皿を切った版で扱う）",
+        })
+        assert len(found) == 1 and "I-201" in found[0]
+
+    def test_real_data_is_clean(self, memcheck):
+        assert memcheck.check_inventory_real() == []
+
+
+class TestRenumberLeftovers:
+    """改番の表が宣言した旧い意味が現役の節に残る（check 24・I-157）。
+
+    2026-09-16、3.5 を「較正」から「ソースの拡張」へ改番した後も、§4.x などが
+    「§3.5 の判断点」を旧い意味で参照していた。
+    """
+
+    TABLE = [
+        "| 新 | 中身 | 旧 | 旧番号のまま残ると誤読する語 |",
+        "|---|---|---|---|",
+        "| **3.5** | ソースの拡張 | §次のマイナー | — |",
+        "| **較正（番号未定）** | ローカル較正 | 3.5 | `較正`・`の判断点`・`側` |",
+        "",
+    ]
+
+    def _run(self, memcheck, *body, states=None):
+        return memcheck.check_renumber_leftovers(
+            self.TABLE + list(body), states or {})
+
+    def test_declarations_are_read_from_the_fourth_column(self, memcheck):
+        decls, rows = memcheck.renumber_declarations(self.TABLE)
+        assert decls == [("3.5", ["較正", "の判断点", "側"])]
+        assert rows == {1, 2, 3, 4}
+
+    def test_the_old_meaning_is_flagged(self, memcheck):
+        """実際に残っていた形。"""
+        found = self._run(memcheck,
+                          "1. 処方＝§3.5 の判断点が「4.0 側」と判定したもの",
+                          "- 経験係数の較正なら 3.5 側")
+        assert len(found) == 2
+
+    def test_the_new_meaning_and_marked_history_pass(self, memcheck):
+        assert self._run(memcheck,
+                         "- ⬜ **段0（版の頭）**＝`3.5a1` 宣言",
+                         "3.5 は判断点の手前ではなく横にある",
+                         "＝§較正（当時の 3.5）の判断点が既に",
+                         "旧 3.5 側の記述",
+                         "⚠️ 他の節の「§3.5 の判断点」は、この節を指す",
+                         "🔁 2026-09-16 に改番＝3.5 の判断点を外した",
+                         "13.5 の判断点・3.50 側は別の番号") == []
+
+    def test_archive_and_fences_are_records(self, memcheck):
+        assert self._run(memcheck,
+                         "```", "3.5 側", "```",
+                         "## 🗄 アーカイブ（済んだ版）",
+                         "- 採否は 3.5 側で決める") == []
+
+    def test_open_ledger_states_are_checked(self, memcheck):
+        found = self._run(memcheck, states={
+            "I-151": "未着手（3.5 の判断点で決める）",
+            "I-100": "**済**（3.5 の判断点で決めた）",
+        })
+        assert len(found) == 1 and "I-151" in found[0]
+
+    def test_no_declaration_means_no_check(self, memcheck):
+        assert memcheck.check_renumber_leftovers(["§3.5 の判断点"], {}) == []
+
+    def test_real_data_is_clean(self, memcheck):
+        assert memcheck.check_renumber_real() == []
+
+
+class TestStaleTriggers:
+    """出し終えた版に結び付いた「〜で決める」（check 25・advisory・I-157）。
+
+    2026-09-16、3.4 を出した後も §4.x が「確定は 3.4 の a→b 前方見直し」のままだった。
+    """
+
+    def test_a_trigger_on_a_released_version_is_flagged(self, memcheck):
+        found = memcheck.check_stale_triggers(
+            ["### ⬜ 4.1 以降（版割り未確定＝確定は 3.4 の a→b 前方見直し）",
+             "- 採否は 3.3 の在庫精査で決める"], "3.4")
+        assert len(found) == 2
+
+    def test_the_current_and_future_versions_pass(self, memcheck):
+        lines = ["- 確定は 3.5 の a→b", "- 4.0 の着手前の在庫精査で決める"]
+        assert memcheck.check_stale_triggers(lines, "3.5a1") == []
+        assert memcheck.check_stale_triggers(["- 確定は 3.4 の a→b"], "3.4RC2") == []
+
+    def test_a_released_current_version_is_past(self, memcheck):
+        assert memcheck.check_stale_triggers(["- 確定は 3.4 の a→b"], "3.4") != []
+
+    def test_archive_and_inline_code_are_ignored(self, memcheck):
+        assert memcheck.check_stale_triggers(
+            ["例＝`確定は 3.3 の a→b`", "## 🗄 アーカイブ", "- 確定は 3.3 の a→b"],
+            "3.4") == []
+
+    def test_real_data_is_clean(self, memcheck):
+        assert memcheck.check_stale_triggers_real(memcheck._current_version()) == []
 
 
 # ============================================================
