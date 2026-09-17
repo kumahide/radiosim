@@ -34,6 +34,7 @@ from typing import Callable, NamedTuple, Protocol, cast
 from PIL import ImageTk
 
 from core import dem_cache
+from core import dem_sources
 from core import i18n
 from core import tile_sources
 from report import map_graphics
@@ -431,18 +432,36 @@ class MapWindow(_PickMixin, _CacheMixin):
         中継点だけが外れていた。
         """
         if self._mode.get() == "cache":
+            if len(self._cache_sources) > 1 and not self._cache_src_bar.winfo_ismapped():
+                self._cache_src_bar.pack(side="left")
             self._clear_coord_visuals()
             self._clear_waypoint_visuals()
             self._refresh_overlay()
         elif self._mode.get() == "waypoints":
+            self._cache_src_bar.pack_forget()
             self._clear_tile_overlays()
             self._clear_coord_visuals()
             self._refresh_waypoints()
         else:
+            self._cache_src_bar.pack_forget()
             self._clear_tile_overlays()
             self._clear_waypoint_visuals()
             self._show_coord_visuals()
             self._refresh_committed_paths()
+
+    def _current_cache_source(self) -> "dem_sources.DemSourceSpec | None":
+        """キャッシュ管理モードで選択中の DEM ソース（範囲削除・カバレッジ表示用）。
+
+        選べるソースが 1 つ（国土地理院のみ）なら欄ごと出していないので、
+        `None` を返して呼び出し側の既定（国土地理院）に委ねる。
+        """
+        if len(self._cache_sources) <= 1:
+            return None
+        source_id = self._cache_src_label_to_id.get(self._cache_src_var.get())
+        return dem_sources.resolve(source_id) if source_id else None
+
+    def _on_cache_source_changed(self, _event=None) -> None:
+        self._refresh_overlay()
 
     # ----------------------------------------------------------
     # 中継経路レイヤ（中継点モード）
@@ -498,6 +517,29 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._layer_box.set(self._layers[_DEFAULT_LAYER].label())
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
+
+        # 対象 DEM ソース（I-155・3.5 段3）＝キャッシュ管理モードの範囲削除・
+        # カバレッジ表示だけに効く（プリフェッチは国土地理院専用のまま＝
+        # I-147 残り(b)・別課題）。[[I-153]] と同じ「選択肢が1つなら出さない」
+        # 規則＝宣言ファイルでソースを足していない大多数の利用者には出さない。
+        # cache モード以外でも欄自体は隠さず作るが、`_apply_mode_visibility` が
+        # 表示/非表示を切り替える（他モードでは意味を持たない選択肢のため）。
+        self._cache_sources = list(dem_sources.all_sources())
+        self._cache_src_label_to_id = {
+            s.display_name: s.source_id for s in self._cache_sources
+        }
+        self._cache_src_var = tk.StringVar(value=self._cache_sources[0].display_name)
+        self._cache_src_bar = ttk.Frame(modebar)
+        if len(self._cache_sources) > 1:
+            ttk.Label(self._cache_src_bar, text=i18n.t("tm_cache_source_label")).pack(
+                side="left", padx=(16, 4))
+            cb_cache_src = ttk.Combobox(
+                self._cache_src_bar, textvariable=self._cache_src_var,
+                values=[s.display_name for s in self._cache_sources],
+                state="readonly", width=16,
+            )
+            cb_cache_src.bind("<<ComboboxSelected>>", self._on_cache_source_changed)
+            cb_cache_src.pack(side="left")
 
         self._map = MapWidget(self._win, corner_radius=0)
         self._layer = _DEFAULT_LAYER
@@ -748,8 +790,8 @@ class MapWindow(_PickMixin, _CacheMixin):
     # ----------------------------------------------------------
     # 範囲削除（Shift+Ctrl＋ドラッグ → 確認 → 実行）
     # ----------------------------------------------------------
-    def _do_delete(self, bbox: tuple) -> None:
-        result = dem_cache.delete_tile_cache(*bbox)
+    def _do_delete(self, bbox: tuple, source: "dem_sources.DemSourceSpec | None" = None) -> None:
+        result = dem_cache.delete_tile_cache(*bbox, source=source)
         self._set_status(i18n.t("tm_delete_done").format(deleted=result["deleted"]), auto_clear=True)
         self._refresh_stats()
         self._refresh_overlay()   # 削除結果を自動表示に反映

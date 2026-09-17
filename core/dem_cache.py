@@ -20,6 +20,7 @@ DEM タイルキャッシュの**在庫調査・カバレッジ表示・削除**
 
 import math
 import os
+import shutil
 
 from core import dem
 from core import dem_sources
@@ -372,16 +373,12 @@ def delete_tile_cache(
     return {"deleted": deleted, "errors": errors}
 
 
-def get_cache_stats() -> dict:
-    """キャッシュディレクトリ全体の枚数と総バイト数を返す。
-
-    Returns:
-        {"count": int, "size_bytes": int}
-    """
+def _walk_stats(root: str) -> dict:
+    """`root` 配下の PNG を数え上げる（存在しなければ空の集計を返す）。"""
     count = 0
     size  = 0
-    if os.path.exists(dem.CACHE_DIR):
-        for dirpath, _, filenames in os.walk(dem.CACHE_DIR):
+    if os.path.exists(root):
+        for dirpath, _, filenames in os.walk(root):
             for fname in filenames:
                 if fname.endswith(".png"):
                     count += 1
@@ -392,22 +389,74 @@ def get_cache_stats() -> dict:
     return {"count": count, "size_bytes": size}
 
 
-def delete_all_tile_cache() -> dict:
-    """全キャッシュファイルを削除し、メモリキャッシュも消去する。
+def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
+    """キャッシュの枚数と総バイト数を返す。
+
+    I-155（3.5 段3）＝`source` を指定すると**そのソースの DEM タイルだけ**を
+    集計する（背景地図・他ソースは含めない）。省略時は従来どおり
+    `CACHE_DIR` 全体（全ソース＋背景地図）を合算する＝**後方互換**。
+
+    Returns:
+        {"count": int, "size_bytes": int}
+    """
+    if source is None:
+        return _walk_stats(dem.CACHE_DIR)
+    total = {"count": 0, "size_bytes": 0}
+    for layer_id, _zoom in source.layers:
+        layer_stats = _walk_stats(dem.source_layer_dir(source, layer_id))
+        total["count"] += layer_stats["count"]
+        total["size_bytes"] += layer_stats["size_bytes"]
+    return total
+
+
+def get_basemap_cache_stats() -> dict:
+    """背景地図（帳票サムネイル用の淡色地図）キャッシュの枚数と総バイト数。
+
+    I-155（3.5 段3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
+    独立した対象として扱うための対。地図窓プレビューの背景タイルは
+    `tkintermapview` が持ちこの層には含まれない（`fetch_basemap_tiles` の
+    ディスクキャッシュのみが対象）。
+    """
+    return _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+
+
+def delete_all_tile_cache(
+    sources: "list[dem_sources.DemSourceSpec] | None" = None,
+    include_basemap: bool = True,
+) -> dict:
+    """キャッシュファイルを削除し、メモリキャッシュも消去する。
+
+    I-155（3.5 段3）＝`sources`/`include_basemap` でソース単位の削除に対応。
+    **省略時（両方とも既定値）は従来どおり `CACHE_DIR` 配下を無差別に全消し**
+    する＝既存呼び出し側（テスト含む）との後方互換。
 
     Returns:
         {"deleted": int}
     """
     deleted = 0
-    if os.path.exists(dem.CACHE_DIR):
-        for dirpath, _, filenames in os.walk(dem.CACHE_DIR):
-            for fname in filenames:
-                if fname.endswith(".png"):
-                    try:
-                        os.remove(os.path.join(dirpath, fname))
-                        deleted += 1
-                    except OSError as e:
-                        logger.warning("delete_all_tile_cache: %s", e)
+    if sources is None and include_basemap:
+        if os.path.exists(dem.CACHE_DIR):
+            for dirpath, _, filenames in os.walk(dem.CACHE_DIR):
+                for fname in filenames:
+                    if fname.endswith(".png"):
+                        try:
+                            os.remove(os.path.join(dirpath, fname))
+                            deleted += 1
+                        except OSError as e:
+                            logger.warning("delete_all_tile_cache: %s", e)
+    else:
+        targets: list[str] = []
+        for src in (sources or []):
+            targets.extend(dem.source_layer_dir(src, layer_id) for layer_id, _z in src.layers)
+        if include_basemap:
+            targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+        for root in targets:
+            stats = _walk_stats(root)
+            deleted += stats["count"]
+            try:
+                shutil.rmtree(root, ignore_errors=True)
+            except OSError as e:
+                logger.warning("delete_all_tile_cache: %s", e)
     with dem._cache_lock:
         dem._tile_cache.clear()
         dem._failed_tiles.clear()

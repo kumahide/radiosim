@@ -2311,6 +2311,10 @@ _EXEMPT = {
         "結果一覧は Listbox 自身が高さ 6 行で頭打ちにする（3.2 段9）。",
     ("launcher_menu.py", "_show_readme_text"):
         "README ビューア＝スクロール前提の閲覧窓（resizable・中身は本文テキスト）。",
+    ("launcher_menu.py", "_open_delete_all_cache_dialog"):
+        "全キャッシュ削除のソース選択ダイアログ＝サイズを指定せず自然サイズで開く"
+        "（位置のみ）。中身はチェックボックス数個とボタンで、_on_save_diagnostics "
+        "と同じ形（I-155・3.5 段3）。",
 }
 
 

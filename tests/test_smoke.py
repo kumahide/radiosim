@@ -197,6 +197,84 @@ def test_dem_source_row_shown_when_a_declared_source_exists(monkeypatch):
         root.destroy()
 
 
+def test_delete_all_cache_keeps_single_confirm_when_only_gsi(monkeypatch):
+    """I-155＝ソースが1つ（国土地理院のみ）のときは従来どおりの単純確認のまま
+    （[[I-153]] と同じ「選択肢が1つなら出さない」規則）。"""
+    pytest.importorskip("tkinter")
+    from core import dem_cache
+    from views.launcher import SimLauncher
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        app._confirm = lambda *a, **k: True
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            dem_cache, "delete_all_tile_cache",
+            lambda **kw: (calls.append(kw), {"deleted": 0})[1])
+        app._alert = lambda *a, **k: None
+        app._on_delete_all_cache()
+        assert calls == [{}]   # 引数無し＝全体を無差別に消す既定のまま
+    finally:
+        root.destroy()
+
+
+def _find_widget(parent, predicate):
+    for w in parent.winfo_children():
+        if predicate(w):
+            return w
+        found = _find_widget(w, predicate)
+        if found is not None:
+            return found
+    return None
+
+
+def test_delete_all_cache_offers_source_checkboxes_when_multiple_sources(monkeypatch):
+    """複数 DEM ソースがあるとき、ソース単位のチェック（既定＝全選択）付き
+    ダイアログへ切り替わり、選んだソース＋背景地図だけを削除対象にできること
+    （I-155・3.5 段3）。"""
+    pytest.importorskip("tkinter")
+    from tkinter import ttk
+    from core import dem_cache, dem_sources, i18n
+    from views.launcher import SimLauncher
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        calls: list[dict] = []
+        monkeypatch.setattr(
+            dem_cache, "delete_all_tile_cache",
+            lambda **kw: (calls.append(kw), {"deleted": 0})[1])
+        app._alert = lambda *a, **k: None
+        before = set(app.root.winfo_children())
+
+        app._on_delete_all_cache()   # 単純確認は呼ばれず、ダイアログが開くこと
+
+        opened = [w for w in app.root.winfo_children() if w not in before]
+        assert opened, "複数ソースがあるのにダイアログが開かなかった"
+        dlg = opened[-1]
+        ok_btn = _find_widget(
+            dlg, lambda w: isinstance(w, ttk.Button) and w.cget("text") == i18n.t("dlg_ok"))
+        assert ok_btn is not None
+        ok_btn.invoke()   # 既定＝全選択のまま OK
+
+        assert len(calls) == 1
+        got_ids = {s.source_id for s in calls[0]["sources"]}
+        assert got_ids == {"gsi_dem", "fake_src"}
+        assert calls[0]["include_basemap"] is True
+    finally:
+        root.destroy()
+
+
 def test_run_button_passes_the_selected_dem_source(monkeypatch):
     """単一経路の実行ボタンが選んだ DEM ソースを計算へ渡すこと（B-221）。
 

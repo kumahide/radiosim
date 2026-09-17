@@ -1096,6 +1096,78 @@ def test_attribution_is_a_widget_over_the_canvas(monkeypatch):
         root.destroy()
 
 
+# ============================================================
+# キャッシュ管理モードの対象ソース選択（I-155・3.5 段3）
+# ============================================================
+def test_cache_source_bar_hidden_when_only_gsi_is_available(monkeypatch):
+    """[[I-153]] と同じ規則＝選べる DEM ソースが国土地理院だけなら欄を出さない。"""
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        assert len(win._cache_sources) == 1
+        win._select_mode("cache")
+        assert not win._cache_src_bar.winfo_ismapped()
+        assert win._current_cache_source() is None
+    finally:
+        root.destroy()
+
+
+def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(monkeypatch):
+    """宣言ファイルでソースを足した利用者には欄を出し、選んだソースが
+    範囲削除・カバレッジ表示（`scan_cache_overlay`/`coverage_outline`）へ
+    そのまま渡ること。プリフェッチ（ダウンロード）は対象外（I-147 残り(b)）。
+    """
+    from core import dem_cache, dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        assert len(win._cache_sources) == 2
+        win._select_mode("cache")
+        win._win.update_idletasks()   # pack の反映を待つ（geometry は idle 処理）
+        assert win._cache_src_bar.winfo_ismapped()
+        # 既定は国土地理院（先頭）のまま。
+        assert win._current_cache_source() is dem_sources.GSI_DEM
+
+        win._cache_src_var.set("Fake Source")
+        assert win._current_cache_source() is fake
+
+        seen: dict = {}
+
+        def _fake_scan(lat1, lon1, lat2, lon2, overlay_zoom, source=None):
+            seen["scan_source"] = source
+            return []
+
+        def _fake_outline(lat1, lon1, lat2, lon2, source=None):
+            seen["outline_source"] = source
+            return []
+
+        monkeypatch.setattr(dem_cache, "scan_cache_overlay", _fake_scan)
+        monkeypatch.setattr(dem_cache, "coverage_outline", _fake_outline)
+        # `_overlay_worker` を直接呼ぶ（`_refresh_overlay` はワーカースレッドを
+        # 起こすので、テストからは非同期にせず本体だけ検証する）。
+        win._overlay_worker((35.0, 139.0), (34.9, 139.1), 10, win._current_cache_source())
+
+        assert seen["scan_source"] is fake
+        assert seen["outline_source"] is fake
+
+        # 他モードへ移ると欄は隠れるが、選択値は保持される（往復で失われない）。
+        win._select_mode("coords")
+        win._win.update_idletasks()
+        assert not win._cache_src_bar.winfo_ismapped()
+        assert win._cache_src_var.get() == "Fake Source"
+    finally:
+        root.destroy()
+
+
 def test_the_selection_guard_is_lowered_on_button_release(monkeypatch):
     """「選ぶための押下」の印が、押下 → 離しの 1 巡で必ず降りること（I-098）。
 

@@ -1877,3 +1877,102 @@ class TestCacheDeletion:
         assert (tmp_path / "keep.txt").exists()   # .png 以外は消さない
         assert dem._tile_cache == {}
         assert dem._failed_tiles == set()
+
+
+# ============================================================
+# I-155（3.5 段3）＝キャッシュ管理のソース対応（get_cache_stats(source=)・
+# get_basemap_cache_stats・delete_all_tile_cache(sources=, include_basemap=)）
+# ============================================================
+class TestCacheStatsAndDeletionBySource:
+    """複数 DEM ソースがあるときの、ソース単位の集計・削除の不変条件。
+
+    既定（引数省略）は従来どおり全体を対象にする＝**後方互換**を
+    `TestCacheDeletion` 側の無指定呼び出しが既に守っている。ここでは
+    引数を渡したときにソースの外を触らないことだけを見る。
+    """
+
+    EXTERNAL = dem_sources.DemSourceSpec(
+        source_id="ext_src",
+        display_name="External",
+        layers=(("terrarium", 12),),
+        url_template="https://example.com/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.com/terms",
+    )
+
+    def _seed(self, root, layer_dir: str, n: int, nbytes: int = 4) -> None:
+        d = os.path.join(root, *layer_dir.split("/"))
+        os.makedirs(d, exist_ok=True)
+        for i in range(n):
+            with open(os.path.join(d, f"{i}.png"), "wb") as f:
+                f.write(b"x" * nbytes)
+
+    def test_get_cache_stats_scopes_to_source(self, tmp_path, monkeypatch):
+        """`source=` を渡すと、そのソースの層だけを数える（他ソースは含めない）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        # 国土地理院（`CACHE_DIR/<layer_id>/...`）に 2 枚。
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        # 外部ソース（`CACHE_DIR/<source_id>/<fingerprint>/<layer_id>/...`）に 3 枚。
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+        assert dem_cache.get_cache_stats(self.EXTERNAL) == \
+            {"count": 3, "size_bytes": 12}
+        # 省略時は従来どおり全体（両ソース合算）。
+        assert dem_cache.get_cache_stats() == {"count": 5, "size_bytes": 20}
+
+    def test_get_basemap_cache_stats_is_independent_of_dem(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
+
+        assert dem_cache.get_basemap_cache_stats() == {"count": 1, "size_bytes": 4}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+
+    def test_delete_all_tile_cache_with_no_args_wipes_everything(self, tmp_path, monkeypatch):
+        """引数省略＝後方互換（従来どおり CACHE_DIR 全体を無差別に消す）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
+
+        res = dem_cache.delete_all_tile_cache()
+
+        assert res == {"deleted": 3}
+        assert dem_cache.get_cache_stats() == {"count": 0, "size_bytes": 0}
+
+    def test_delete_all_tile_cache_by_source_leaves_others_untouched(self, tmp_path, monkeypatch):
+        """`sources=[GSI]` かつ `include_basemap=False` は他ソース・basemap を残す。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._fresh_memory_cache = lambda mp: (
+            mp.setattr(dem, "_tile_cache", {}), mp.setattr(dem, "_failed_tiles", set()))
+        self._fresh_memory_cache(monkeypatch)
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[dem_sources.GSI_DEM], include_basemap=False)
+
+        assert res == {"deleted": 2}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 0, "size_bytes": 0}
+        assert dem_cache.get_cache_stats(self.EXTERNAL) == {"count": 3, "size_bytes": 12}
+        assert dem_cache.get_basemap_cache_stats() == {"count": 1, "size_bytes": 4}
+
+    def test_delete_all_tile_cache_basemap_only(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
+
+        res = dem_cache.delete_all_tile_cache(sources=[], include_basemap=True)
+
+        assert res == {"deleted": 1}
+        assert dem_cache.get_basemap_cache_stats() == {"count": 0, "size_bytes": 0}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}

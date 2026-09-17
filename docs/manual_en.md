@@ -300,6 +300,8 @@ Review the DEM tile cache and prefetch or delete tiles for any area — intended
 
 Unshaded areas are not yet cached.
 
+If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display and range deletion apply to whichever source you pick there (prefetch always targets GSI). The dropdown is hidden when GSI is the only available source.
+
 **Controls (mouse gestures)**
 
 | Gesture                       | Action                                  |
@@ -309,7 +311,7 @@ Unshaded areas are not yet cached.
 | Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
 | Shift + Ctrl + drag           | Delete the cache for an area            |
 
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache.
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap) so you can choose what to delete.
 
 > **Be considerate of the tile server**: Tiles are fetched from GSI's public servers. Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 

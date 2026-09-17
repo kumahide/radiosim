@@ -23,6 +23,7 @@ from typing import TYPE_CHECKING, Callable
 from core import config
 from core import dem
 from core import dem_cache
+from core import dem_sources
 from core import diagnostics
 from core import failure
 from core import i18n
@@ -486,12 +487,65 @@ class _MenuMixin:
         dialogs.center_on(self.root, dlg)
 
     def _on_delete_all_cache(self) -> None:
-        """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。"""
-        if not self._confirm(
-            i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm")
-        ):
+        """全 DEM/地図タイルキャッシュを削除する（設定メニューから実行）。
+
+        I-155（3.5 段3）＝宣言ファイルで DEM ソースを足していない大多数の
+        利用者には、従来どおりの単純な確認ダイアログを出す（[[I-153]] と同じ
+        「選択肢が1つなら出さない」規則）。複数ソースがあるときだけ
+        ソース単位のチェック（既定＝全選択）付きダイアログへ切り替える。
+        """
+        sources = list(dem_sources.all_sources())
+        if len(sources) <= 1:
+            if not self._confirm(
+                i18n.t("tm_delete_all_title"), i18n.t("tm_delete_all_confirm")
+            ):
+                return
+            self._finish_delete_all(dem_cache.delete_all_tile_cache())
             return
-        result = dem_cache.delete_all_tile_cache()
+        self._open_delete_all_cache_dialog(sources)
+
+    def _open_delete_all_cache_dialog(self, sources: list) -> None:
+        """複数 DEM ソースがあるときの、ソース単位選択つき全削除ダイアログ。"""
+        dlg = tk.Toplevel(self.root)
+        title_bar.follow_title_bar(dlg)   # マップされ次第当てる（I-132・B-179）
+        dlg.transient(self.root)
+        dlg.title(i18n.t("tm_delete_all_title"))
+        dlg.resizable(False, False)
+        dlg.grab_set()
+
+        ttk.Label(dlg, text=i18n.t("tm_delete_all_confirm"), wraplength=420,
+                 justify="left").grid(row=0, column=0, sticky="w", padx=16, pady=(16, 10))
+
+        src_vars: dict[str, tk.BooleanVar] = {}
+        frame = ttk.Frame(dlg)
+        frame.grid(row=1, column=0, sticky="w", padx=28, pady=(0, 4))
+        for i, src in enumerate(sources):
+            var = tk.BooleanVar(value=True)
+            src_vars[src.source_id] = var
+            ttk.Checkbutton(frame, text=src.display_name, variable=var).grid(
+                row=i, column=0, sticky="w")
+        basemap_var = tk.BooleanVar(value=True)
+        ttk.Checkbutton(frame, text=i18n.t("tm_delete_all_basemap"),
+                       variable=basemap_var).grid(
+            row=len(sources), column=0, sticky="w")
+
+        def _on_ok() -> None:
+            chosen = [s for s in sources if src_vars[s.source_id].get()]
+            result = dem_cache.delete_all_tile_cache(
+                sources=chosen, include_basemap=basemap_var.get())
+            dlg.destroy()
+            self._finish_delete_all(result)
+
+        btns = ttk.Frame(dlg)
+        btns.grid(row=2, column=0, sticky="e", padx=16, pady=(10, 16))
+        ttk.Button(btns, text=i18n.t("btn_cancel"), command=dlg.destroy).pack(
+            side="left", padx=(0, 6))
+        ttk.Button(btns, text=i18n.t("dlg_ok"), style="Accent.TButton",
+                  command=_on_ok).pack(side="left")
+
+        dialogs.center_on(self.root, dlg)
+
+    def _finish_delete_all(self, result: dict) -> None:
         # マップウィンドウが開いていれば表示を更新する。
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_external_delete_all(result["deleted"])

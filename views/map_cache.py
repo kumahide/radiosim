@@ -58,8 +58,9 @@ class _CacheMixin:
         def _show_progress(self) -> None: ...
         def _hide_progress(self) -> None: ...
         def _clear_selection(self) -> None: ...
-        def _do_delete(self, bbox: tuple) -> None: ...
+        def _do_delete(self, bbox: tuple, source: object = None) -> None: ...
         def _on_download_done(self, dl_result: dict) -> None: ...
+        def _current_cache_source(self) -> object: ...
 
     # ----------------------------------------------------------
     # Ctrl＋ドラッグによる矩形選択
@@ -125,13 +126,15 @@ class _CacheMixin:
             else:
                 self._clear_selection()
         else:   # delete
-            # 削除は実際にキャッシュ済みのエリアのみが対象
-            n = dem_cache.count_cached_areas(*bbox)
+            # 削除は実際にキャッシュ済みのエリアのみが対象。I-155（3.5 段3）＝
+            # 選択中の DEM ソースに対して行う（背景地図は対象外＝既存の注記どおり）。
+            source = self._current_cache_source()
+            n = dem_cache.count_cached_areas(*bbox, source=source)
             if dialogs.confirm(
                 self._win, i18n.t("tm_delete_title"),
                 i18n.t("tm_delete_confirm").format(n=n),
             ):
-                self._do_delete(bbox)
+                self._do_delete(bbox, source)
             else:
                 self._clear_selection()
 
@@ -191,13 +194,15 @@ class _CacheMixin:
             overlay_zoom = max(2, min(14, int(round(self._map.zoom))))
         except Exception:
             return
+        source = self._current_cache_source()
         threading.Thread(
-            target=self._overlay_worker, args=(nw, se, overlay_zoom), daemon=True
+            target=self._overlay_worker, args=(nw, se, overlay_zoom, source), daemon=True
         ).start()
 
-    def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int) -> None:
-        cells = dem_cache.scan_cache_overlay(nw[0], nw[1], se[0], se[1], overlay_zoom)
-        outline = dem_cache.coverage_outline(nw[0], nw[1], se[0], se[1])
+    def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int, source=None) -> None:
+        cells = dem_cache.scan_cache_overlay(
+            nw[0], nw[1], se[0], se[1], overlay_zoom, source=source)
+        outline = dem_cache.coverage_outline(nw[0], nw[1], se[0], se[1], source=source)
         # 走査中に地図窓を閉じられている可能性がある（B-061）
         progress.post_to_ui(self._win,
                             lambda: self._draw_overlay_cells(cells, outline))
