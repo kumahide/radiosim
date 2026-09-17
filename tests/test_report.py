@@ -1260,3 +1260,23 @@ class TestKeepUnitWithValueBesideUserText:
         html = (save_dir / "report.html").read_text(encoding="utf-8")
         memo = html.split('class="report-memo"', 1)[1].split("</div>", 1)[0]
         assert f"10{self.NB}m" in memo, memo
+
+
+class TestPathSheetRightColumnOrder:
+    """I-156＝右列は「無線設定 → リンクバジェット」の順（入力→結果）。
+
+    report.txt は既に [RADIO SETTINGS] → [LINK BUDGET] の順であり、
+    HTML だけ逆だった食い違いを固定する回帰テスト。
+    """
+
+    def test_radio_settings_precedes_link_budget(self, flat_terrain, default_params_dict):
+        i18n.set_lang("ja")
+        params = sim.SimParams(default_params_dict)
+        html = report_path.path_sheet_html(
+            flat_terrain, _make_result(), params, h_tx=30.0, h_rx=10.0,
+            img_b64="",
+        )
+        radio_pos = html.find(i18n.t("html_radio_settings"))
+        budget_pos = html.find(i18n.t("html_link_budget"))
+        assert radio_pos != -1 and budget_pos != -1
+        assert radio_pos < budget_pos, html

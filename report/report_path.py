@@ -430,7 +430,14 @@ def path_sheet_html(
     </table>
   </div>
   <div class="col">
-    <h3>{i18n.t('html_link_budget')}</h3>
+    <h3>{i18n.t('html_radio_settings')}</h3>
+    <table class="info">
+      <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
+      <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
+      <tr><td>{i18n.t('html_tx_gain')}</td><td>{params.gain_tx} dBi</td></tr>
+      <tr><td>{i18n.t('html_rx_gain')}</td><td>{params.gain_rx} dBi</td></tr>
+    </table>
+    <h3 style="margin-top:4px">{i18n.t('html_link_budget')}</h3>
     <table class="info">
       <tr><td>{i18n.t('html_eirp')}</td><td class="n">{units.format_db(result.eirp)}<span class="u">dBm</span></td></tr>
       <tr><td>{i18n.t('html_fspl')}</td><td class="n">{units.format_db(result.fspl)}<span class="u">dB</span></td></tr>
@@ -443,13 +450,6 @@ def path_sheet_html(
       <tr><td><b>{i18n.t('html_rx_level')}</b></td><td class="n"><b>{units.format_db(result.p_rx)}<span class="u">dBm</span></b></td></tr>
       <tr><td>{i18n.t('html_threshold')}</td><td class="n">{units.format_db(params.sens)}<span class="u">dBm</span></td></tr>
       <tr><td><b>{i18n.t('html_act_margin')}</b></td><td class="n"><b>{units.format_db(result.actual_margin, signed=True)}<span class="u">dB</span></b></td></tr>
-    </table>
-    <h3 style="margin-top:4px">{i18n.t('html_radio_settings')}</h3>
-    <table class="info">
-      <tr><td>{i18n.t('html_frequency')}</td><td>{params.freq_mhz} MHz</td></tr>
-      <tr><td>{i18n.t('html_tx_power')}</td><td>{params.p_tx} dBm</td></tr>
-      <tr><td>{i18n.t('html_tx_gain')}</td><td>{params.gain_tx} dBi</td></tr>
-      <tr><td>{i18n.t('html_rx_gain')}</td><td>{params.gain_rx} dBi</td></tr>
     </table>
   </div>
 </div>
