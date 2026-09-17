@@ -386,11 +386,16 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # DEM ソース Combobox（3.4 段1・I-147）＝env_type/diff_method と同じ
         # readonly 選択式。組み込み（国土地理院）＋利用者が宣言ファイルで足した
         # ソースの一覧を出す（入力画面は作らない＝一覧を出すだけ）。
+        #
+        # I-153（3.5 段3）＝読み込めたソースが国土地理院だけのときは欄ごと
+        # 出さない（宣言ファイルを書いていない大多数の利用者には、選択肢が
+        # 1 つしかない欄がランチャーの縦幅を 1 行ぶん食うだけ）。⚠️ **欄を
+        # 隠しても `_dem_source_var`／`dem_source` は生かし続ける**＝
+        # `_current_config()` と分岐窓の凍結スナップショットが読む値が消えると
+        # 既定値への黙った依存になる（issue 論点1）。`f_dem` を pack しない
+        # だけで、値の保持・保存・復元の経路は変えない。
         f_dem = ttk.Frame(g)
-        f_dem.pack(fill="x", pady=2, padx=10)
-        ttk.Label(
-            f_dem, text=i18n.t("lbl_dem_source"), width=22, anchor="w",
-        ).pack(side="left")
+        self._f_dem_source_row = f_dem  # I-153＝テストから表示/非表示を確認する
         self._dem_source_key_to_label = {
             s.source_id: s.display_name for s in dem_sources.all_sources()
         }
@@ -404,14 +409,19 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 self._dem_source_key_to_label[dem_sources.GSI_DEM.source_id],
             )
         )
-        cb_dem_source = ttk.Combobox(
-            f_dem,
-            textvariable = self._dem_source_var,
-            values       = list(self._dem_source_key_to_label.values()),
-            state        = "readonly",
-            width        = 16,
-        )
-        cb_dem_source.pack(side="right", expand=True, fill="x")
+        if len(self._dem_source_key_to_label) > 1:
+            f_dem.pack(fill="x", pady=2, padx=10)
+            ttk.Label(
+                f_dem, text=i18n.t("lbl_dem_source"), width=22, anchor="w",
+            ).pack(side="left")
+            cb_dem_source = ttk.Combobox(
+                f_dem,
+                textvariable = self._dem_source_var,
+                values       = list(self._dem_source_key_to_label.values()),
+                state        = "readonly",
+                width        = 16,
+            )
+            cb_dem_source.pack(side="right", expand=True, fill="x")
 
         for lbl_key, entry_key in [
             ("lbl_veg_h",    "veg_h"),

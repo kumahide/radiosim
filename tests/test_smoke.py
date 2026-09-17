@@ -154,6 +154,49 @@ def test_report_meta_flows_from_launcher():
         root.destroy()
 
 
+def test_dem_source_row_hidden_when_only_gsi_is_available():
+    """I-153＝読み込めた DEM ソースが国土地理院だけのとき、欄ごと出さない。
+
+    宣言ファイルを書いていない大多数の利用者の画面から 1 行減る。値の保持・
+    保存経路（`_dem_source_var`・`dem_source` キー）は隠れていても生きている
+    こと（論点1＝黙った既定値依存にしない）も合わせて確認する。
+    """
+    pytest.importorskip("tkinter")
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        assert not app._f_dem_source_row.winfo_ismapped()
+        assert app._dem_source_var.get() == "国土地理院 DEM"
+        assert app._current_config()["dem_source"] == "gsi_dem"
+    finally:
+        root.destroy()
+
+
+def test_dem_source_row_shown_when_a_declared_source_exists(monkeypatch):
+    """I-153 の裏側＝宣言ファイルでソースを足した利用者には欄を出し続ける。"""
+    pytest.importorskip("tkinter")
+    from core import dem_sources
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+        assert app._f_dem_source_row.winfo_ismapped()
+    finally:
+        root.destroy()
+
+
 def test_run_button_passes_the_selected_dem_source(monkeypatch):
     """単一経路の実行ボタンが選んだ DEM ソースを計算へ渡すこと（B-221）。
 

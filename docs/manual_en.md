@@ -779,7 +779,7 @@ terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 - `url_template`: must start with `https://` and contain `{z}`, `{x}` and `{y}` (also `{layer}` if you declare more than one layer).
 - `layers`: an array of `[layer_id, zoom]` pairs, listed from highest to lowest priority.
 
-After saving the file, restart the launcher and the new source appears in the **DEM Source** field of the Environment group. **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens.
+After saving the file, restart the launcher and the **DEM Source** field itself appears in the Environment group, with the new source selectable (if there is no declaration file, or only the built-in GSI source could be loaded, this field is not shown at all). **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens.
 
 ⚠️ **The vertical datum can differ between sources** — do not directly compare numbers from the same path computed with GSI and with an external source. ⚠️ Checking the terms of use is your own responsibility (see the `terms_url` for each source).
 
