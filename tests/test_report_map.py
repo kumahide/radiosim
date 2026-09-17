@@ -396,7 +396,7 @@ class TestAttribution:
         # ⚠️ ここが 2 つあると「航空写真を見ながら『出典: 淡色地図』」が生まれる。
         from views import map_window
         for key, layer in map_window._TILE_LAYERS.items():
-            assert layer.attr_key == map_graphics.ATTR_KEYS[key]
+            assert layer.attr() == i18n.t(map_graphics.ATTR_KEYS[key])
 
     def test_every_tile_layer_has_a_source_text(self):
         # タイルを足したら出典も足さないと通らない（対で持つことの強制）。

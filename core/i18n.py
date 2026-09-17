@@ -89,6 +89,22 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dem_src_bad_invalid_rgb": "invalid_rgb must be three integers",
         "dem_src_file_unreadable": "the file could not be parsed as TOML",
         "dem_src_bad_table":    "entry is not a table",
+        # ===== Background map tile sources declared by the user (3.5 stage3 / I-152) =====
+        # 🔑 Reuses several dem_src_* reason keys for identical wording
+        # (source_id / required-field / unreadable-file / bad-table messages) —
+        # see the comment in core/tile_sources.py:_validate_source.
+        "tile_src_title":        "Background map source declarations",
+        "tile_src_rejected":     "Some declared background map sources could not be "
+                                "used and are not available.",
+        "fix_edit_tile_sources_file": "Fix the entry in tile_sources.toml so it "
+                                "matches the format described in the manual, then "
+                                "restart RadioSim.",
+        "tile_src_id_reserved":  "source_id is reserved (pale / photo)",
+        "tile_src_display_name_duplicate": "display_name is already used by "
+                                "another entry in this file",
+        "tile_src_bad_url":      "url must start with https:// and contain "
+                                "{z}, {x} and {y}",
+        "tile_src_bad_max_zoom": "max_zoom must be an integer from 1 to 22",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
         "menu_diagnostics":     "Save Diagnostic Package...",
@@ -867,6 +883,19 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dem_src_bad_invalid_rgb": "invalid_rgb は整数 3 つで指定してください",
         "dem_src_file_unreadable": "ファイルを TOML として解釈できませんでした",
         "dem_src_bad_table":    "項目がテーブル形式ではありません",
+        # ===== 利用者が足した背景地図タイルソース（3.5 段3・I-152） =====
+        # 🔑 理由キーの一部は `dem_src_*` を再利用（同じ文言の重複を避ける）。
+        # 詳細は core/tile_sources.py:_validate_source のコメント。
+        "tile_src_title":        "背景地図ソースの宣言",
+        "tile_src_rejected":     "宣言した背景地図ソースの一部を使えませんでした。",
+        "fix_edit_tile_sources_file": "tile_sources.toml の該当項目をドキュメントの"
+                                "書式に合わせて直し、RadioSim を再起動してください。",
+        "tile_src_id_reserved":  "source_id が予約語です（pale / photo）",
+        "tile_src_display_name_duplicate": "display_name がファイル内の他の宣言と"
+                                "重複しています",
+        "tile_src_bad_url":      "url は https:// で始まり "
+                                "{z}・{x}・{y} を含む必要があります",
+        "tile_src_bad_max_zoom": "max_zoom は 1〜22 の整数で指定してください",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
         "menu_diagnostics":     "診断パッケージを保存...",

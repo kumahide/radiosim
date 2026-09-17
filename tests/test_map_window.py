@@ -1130,6 +1130,32 @@ def test_only_two_basemaps_are_offered():
     )
 
 
+def test_declared_tile_source_is_offered_alongside_the_built_ins(monkeypatch):
+    """I-152（3.5 段3）＝宣言ファイルで足した背景地図が組み込み 2 択に合流すること。
+
+    組み込み（`_TILE_LAYERS`）は `test_only_two_basemaps_are_offered` のとおり
+    2 つで固定のまま＝ここで確かめるのは `_all_tile_layers()` が呼び出し側
+    （`MapWindow.__init__`）へ合成した結果を渡していること。
+    """
+    from core import tile_sources
+    fake = tile_sources.TileSourceSpec(
+        source_id="osm", display_name="OpenStreetMap",
+        url="https://tile.example.invalid/{z}/{x}/{y}.png",
+        max_zoom=19, attribution="(c) OSM", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(tile_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        assert "OpenStreetMap" in win._layer_labels
+        win._apply_layer("osm")
+        assert win._map.tile_calls[-1] == (
+            "https://tile.example.invalid/{z}/{x}/{y}.png", 19)
+        assert win._attribution.cget("text") == "(c) OSM"
+    finally:
+        root.destroy()
+
+
 # ------------------------------------------------------------
 # 座標入力モードのピック層も同じ再入に耐えること（B-104＝B-080 の残り面）
 # ------------------------------------------------------------

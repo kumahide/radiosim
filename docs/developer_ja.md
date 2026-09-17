@@ -234,6 +234,7 @@ radiosim/
 │   ├── config.py         # アプリ設定 I/O・入力バリデーション・ロギング（外部依存は最小）
 │   ├── dem.py            # DEM/淡色タイルの1点取得・標高デコード・タイルキャッシュI/O・プロキシ（外部依存を閉じ込め）
 │   ├── dem_sources.py    # DEMソースの宣言ファイル（URL/デコード方式/無効値/出典・利用条件）
+│   ├── tile_sources.py   # 背景地図タイルソースの宣言ファイル（URL/最大ズーム/出典・利用条件）
 │   ├── dem_cache.py      # タイルキャッシュの棚卸し・カバレッジ表示・削除
 │   ├── dem_prefetch.py   # 面での事前取得（bbox → 位置の列挙・優先順位つき降下・ワーカープール）
 │   ├── terrain_grid.py   # DEM の格子と地形の解像度（段階→点数の解決・純関数）
@@ -315,6 +316,7 @@ radiosim/
     ├── test_config.py
     ├── test_dem.py
     ├── test_dem_sources.py
+    ├── test_tile_sources.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_scenario.py
@@ -1119,6 +1121,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
 | `test_dem_sources.py`    | DEM ソース宣言（URL テンプレート・デコード方式の列挙ディスパッチ・GSI/Terrarium/Mapbox Terrain-RGB の式） |
+| `test_tile_sources.py`   | 背景地図タイルソース宣言（URL/max_zoom/出典の検証・予約 ID・表示名重複の拒否） |
 | `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
 | `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
 | `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |

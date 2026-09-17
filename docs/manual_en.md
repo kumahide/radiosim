@@ -759,7 +759,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it only lets you get elevation outside Japan, where GSI has no data; it does not give you a finer mesh than 10 m).
 
-⚠️ **The background map (pale map / aerial photo) stays fixed to GSI tiles** — this source extension does not apply to it. Even once an external DEM source gives you elevation outside Japan, picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only (enter coordinates outside Japan as numbers directly).
+⚠️ **The background map (pale map / aerial photo) is extended through a separate declaration file from the DEM source** (see "Adding a Background Map Source" below). Adding a DEM source alone does not change that picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only.
 
 Create `dem_sources.toml` in the settings folder (the same folder as `radiosim_conf.json`) and add one `[[source]]` entry per source. Example (Terrarium, AWS Open Data Terrain Tiles):
 
@@ -782,6 +782,28 @@ terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 After saving the file, restart the launcher and the **DEM Source** field itself appears in the Environment group, with the new source selectable (if there is no declaration file, or only the built-in GSI source could be loaded, this field is not shown at all). **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens.
 
 ⚠️ **The vertical datum can differ between sources** — do not directly compare numbers from the same path computed with GSI and with an external source. ⚠️ Checking the terms of use is your own responsibility (see the `terms_url` for each source).
+
+### Adding a Background Map Source (User Extension)
+
+The built-in background maps (pale map / aerial photo in the map window) stay fixed to GSI tiles, but you can add your own background-map source — a remote XYZ tile service — through a declaration file separate from the DEM source one. **The background map is display-only and does not affect calculation results** (it is a separate axis from the DEM source, which is fixed to one per calculation, and it is not part of the "conditions" saved with a project).
+
+Create `tile_sources.toml` in the settings folder. Example:
+
+```toml
+[[source]]
+source_id = "osm"
+display_name = "OpenStreetMap"
+url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+max_zoom = 19
+attribution = "(c) OpenStreetMap contributors"
+terms_url = "https://www.openstreetmap.org/copyright"
+```
+
+- `source_id`: letters, digits, `_` and `-` only. Cannot be `pale` or `photo` (the built-in two).
+- `url`: must start with `https://` and contain `{z}`, `{x}` and `{y}`.
+- `max_zoom`: an integer from 1 to 22.
+
+After saving the file, reopen the map window and `display_name` appears as an added choice in the background selector Combobox at the top. If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens. `attribution` is shown verbatim at the bottom-right of the map (unlike the built-in two, it is not translated). ⚠️ Checking the terms of use is your own responsibility — RadioSim prefetches and caches tiles, which may not be allowed by every tile server's terms.
 
 ---
 

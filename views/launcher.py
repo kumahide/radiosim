@@ -19,6 +19,7 @@ from core import coords
 from core import dem
 from core import dem_prefetch
 from core import dem_sources
+from core import tile_sources
 from core import failure
 from core import i18n
 from core import simulation as sim
@@ -109,6 +110,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 利用者が足した DEM ソース宣言のうち使えなかったぶんを画面で言う
         # （3.4 段1・I-147＝上と同じ理由で毎回出す）。
         root.after_idle(self._warn_about_rejected_dem_sources)
+        # 利用者が足した背景地図タイルソース宣言のうち使えなかったぶんも
+        # 同じ理由で毎回言う（3.5 段3・I-152）。
+        root.after_idle(self._warn_about_rejected_tile_sources)
 
     #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
     #: 理由と 1 対 1**（理由を足したらここも足す＝`tests/test_i18n_external.py`
@@ -187,6 +191,25 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._alert(i18n.t("dem_src_title"), failure.message(
             what   = i18n.t("dem_src_rejected"),
             hint   = i18n.t("fix_edit_dem_sources_file"),
+            detail = "\n".join(lines),
+        ))
+
+    def _warn_about_rejected_tile_sources(self) -> None:
+        """宣言ファイルの背景地図ソースのうち使えなかったぶんを 1 通で知らせる
+        （3.5 段3・I-152）。`_warn_about_rejected_dem_sources` と同じ形。"""
+        reports = tile_sources.load_reports()
+        if not reports:
+            return
+        # `dem_src_rejected_line` を再利用（同じ書式の重複を避ける＝
+        # `core/tile_sources.py:_validate_source` のコメント参照）。
+        lines = [
+            i18n.t("dem_src_rejected_line").format(
+                id=source_id, why=i18n.t(reason))
+            for source_id, reason in reports
+        ]
+        self._alert(i18n.t("tile_src_title"), failure.message(
+            what   = i18n.t("tile_src_rejected"),
+            hint   = i18n.t("fix_edit_tile_sources_file"),
             detail = "\n".join(lines),
         ))
 

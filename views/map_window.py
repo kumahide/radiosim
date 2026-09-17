@@ -35,6 +35,7 @@ from PIL import ImageTk
 
 from core import dem_cache
 from core import i18n
+from core import tile_sources
 from report import map_graphics
 from views import theme, title_bar, window_fit
 from views.map_adapter import MapWidget
@@ -61,22 +62,45 @@ logger = __import__("logging").getLogger("radiosim")
 class _TileLayer(NamedTuple):
     url:       str
     max_zoom:  int
-    label_key: str          # 選択欄に出す名前（i18n キー）
-    attr_key:  str          # 出典表記（i18n キー）＝**タイルと対で持つ**
+    label:     Callable[[], str]   # 選択欄に出す名前
+    attr:      Callable[[], str]   # 出典表記＝**タイルと対で持つ**
 
 
-# ⚠️ **出典表記（attr_key）と配色は `map_graphics` から引く**（B-133）＝帳票に焼く
+# ⚠️ **出典表記（attr）と配色は `map_graphics` から引く**（B-133）＝帳票に焼く
 # 地図も同じ表記を出す必要があり、ここに書き写すと**片方だけ直る**。実際に帳票側は
 # 出典が抜けたまま出荷されていた（UI だけ B-027 で直していた）。
+#
+# 組み込みの label/attr は **i18n キー越し**（言語追従）＝関数で包んで、利用者が
+# 宣言ファイルで足す背景地図（`core/tile_sources.py`・3.5 段3・I-152）の**翻訳しない
+# 固定文字列**と同じ `_TileLayer` 型で扱えるようにする（`_all_tile_layers()` 参照）。
 _TILE_LAYERS: dict[str, _TileLayer] = {
     "pale": _TileLayer(
         "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
-        18, "map_layer_pale", map_graphics.ATTR_KEYS["pale"]),
+        18, lambda: i18n.t("map_layer_pale"),
+        lambda: i18n.t(map_graphics.ATTR_KEYS["pale"])),
     "photo": _TileLayer(
         "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
-        18, "map_layer_photo", map_graphics.ATTR_KEYS["photo"]),
+        18, lambda: i18n.t("map_layer_photo"),
+        lambda: i18n.t(map_graphics.ATTR_KEYS["photo"])),
 }
 _DEFAULT_LAYER = "pale"
+
+
+def _all_tile_layers() -> dict[str, _TileLayer]:
+    """組み込み（`_TILE_LAYERS`）＋利用者が宣言ファイルで足した背景地図の合成。
+
+    利用者ぶんは `source_id` をキーにし、`display_name`/`attribution` を
+    そのまま返す関数として包む（宣言ファイルの文字列は翻訳しない＝
+    `core/dem_sources.py` の `display_name` と同じ扱い）。
+    """
+    layers = dict(_TILE_LAYERS)
+    for spec in tile_sources.all_sources():
+        layers[spec.source_id] = _TileLayer(
+            spec.url, spec.max_zoom,
+            (lambda dn=spec.display_name: dn),
+            (lambda a=spec.attribution: a),
+        )
+    return layers
 
 _ATTR_FG = map_graphics.ATTR_FG
 _ATTR_BG = map_graphics.ATTR_BG
@@ -460,13 +484,18 @@ class MapWindow(_PickMixin, _CacheMixin):
         # セグメントボタン、こちらは Combobox。同じ形にすると「4 つ目のモード」に
         # 見えて、選ぶ軸が 2 本あることが読み取れなくなる。
         ttk.Label(modebar, text=i18n.t("map_layer_label")).pack(side="left", padx=(16, 4))
+        # I-152（3.5 段3）＝組み込み 2 択に、宣言ファイルで足した背景地図を合成する。
+        # `_all_tile_layers()` は起動時に読み込んだ `tile_sources` の状態を毎回
+        # 参照するだけ（ウィンドウを開くたびの読み直しは不要＝main.py が起動時
+        # 1 回で済ませている）。
+        self._layers = _all_tile_layers()
         self._layer_labels = {
-            i18n.t(spec.label_key): key
-            for key, spec in _TILE_LAYERS.items()
+            spec.label(): key
+            for key, spec in self._layers.items()
         }
         self._layer_box = ttk.Combobox(
-            modebar, values=list(self._layer_labels), state="readonly", width=10)
-        self._layer_box.set(i18n.t(_TILE_LAYERS[_DEFAULT_LAYER].label_key))
+            modebar, values=list(self._layer_labels), state="readonly", width=14)
+        self._layer_box.set(self._layers[_DEFAULT_LAYER].label())
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
@@ -523,7 +552,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 子ウィジェットは canvas の中身より常に上に描かれるので、`place` すれば
         # z 順の争いが構造的に消える（背景色もウィジェットが持てる＝下敷き不要）。
         self._attribution = tk.Label(
-            self._map, text=i18n.t(_TILE_LAYERS[_DEFAULT_LAYER].attr_key),
+            self._map, text=self._layers[_DEFAULT_LAYER].attr(),
             fg=_ATTR_FG, bg=_ATTR_BG, font=theme.ui_font(self._win, "small"),
             padx=4, pady=1,
         )
@@ -601,10 +630,10 @@ class MapWindow(_PickMixin, _CacheMixin):
         **常時 2 択で行き来できること**が要件で、「写真＋注記の重ね合わせ」は
         2 レイヤ同時描画になり `tkintermapview` の作りから見て割に合わない＝やらない。
         """
-        spec = _TILE_LAYERS[key]
+        spec = self._layers[key]
         self._layer = key
         self._map.set_tile_server(spec.url, max_zoom=spec.max_zoom)
-        self._attribution.config(text=i18n.t(spec.attr_key))
+        self._attribution.config(text=spec.attr())
 
 
         # ⚠️ ここには「カバレッジ描画で上に来るため出典を持ち上げ直す」という

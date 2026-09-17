@@ -252,6 +252,8 @@ BANDS: list[Band] = [
                      "DEM / tile single fetch, cache I/O"),
                     ("dem_sources.py", "DEM ソースの宣言（URL・復号）",
                      "source declarations (URL, decoding)"),
+                    ("tile_sources.py", "背景地図ソースの宣言（URL・最大ズーム）",
+                     "background map source declarations (URL, max zoom)"),
                     ("dem_cache.py", "キャッシュ棚卸し・カバレッジ・削除",
                      "cache inventory, coverage, deletion"),
                     ("dem_prefetch.py", "面での事前取得", "area prefetch"),

@@ -234,6 +234,7 @@ radiosim/
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile single-point fetch, elevation decode, tile cache I/O, proxy (external deps confined)
 │   ├── dem_sources.py    # DEM source declaration file (URL/decode method/invalid value/attribution/terms)
+│   ├── tile_sources.py   # Background map tile source declaration file (URL/max zoom/attribution/terms)
 │   ├── dem_cache.py      # Tile cache inventory, coverage display, deletion
 │   ├── dem_prefetch.py   # Area prefetch (bbox -> positions, priority descent, worker pool)
 │   ├── terrain_grid.py   # DEM grid and terrain resolution (level -> sample count, pure functions)
@@ -316,6 +317,7 @@ radiosim/
     ├── test_config.py
     ├── test_dem.py
     ├── test_dem_sources.py
+    ├── test_tile_sources.py
     ├── test_batch.py
     ├── test_report.py
     ├── test_scenario.py
@@ -1130,6 +1132,7 @@ entry point that runs them together.
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
 | `test_dem_sources.py`    | DEM source declarations (URL template, decode-method dispatch, GSI/Terrarium/Mapbox Terrain-RGB formulas) |
+| `test_tile_sources.py`   | Background map tile source declarations (URL/max_zoom/attribution validation, reserved IDs, duplicate display-name rejection) |
 | `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |
 | `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke, combined report (sheet CSS scoping, in-document anchors) |
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |

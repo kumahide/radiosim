@@ -186,6 +186,11 @@ USER_LANG_DIR = _user_lang_dir()
 #: `[[source]]` 配列テーブルに複数ソースを書く）。
 USER_DEM_SOURCES_FILE = os.path.join(_config_base_dir(), "dem_sources.toml")
 
+#: 利用者が背景地図タイルソースを足す宣言ファイル（I-152・3.5 段3）の置き場。
+#: `USER_DEM_SOURCES_FILE` と同じ基準（設定フォルダ・読むだけ）。DEM ソースと
+#: 背景地図ソースは別軸（計算条件か表示かの違い）なのでファイルも分ける。
+USER_TILE_SOURCES_FILE = os.path.join(_config_base_dir(), "tile_sources.toml")
+
 #: 起動プロファイラ（`RADIOSIM_PROFILE`）が追記するログ。**書き込み先の基準は
 #: `LOG_FILE` と同じ**（B-174）＝以前は `app_path()`（ポータブル配置専用）に
 #: 固定されていたため、非ポータブルで書込禁止の場所へ入れた場合に失敗が
