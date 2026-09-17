@@ -80,7 +80,7 @@ def route_sheet_css() -> str:
    `report_common.verdict_css` / `ledger_table_css` が**バッチの台帳と共通で配る**
    （B-207 / B-208）。判定不能（B-071）は不成立と同じ赤で塗らない＝ERROR の色。
    🔴 以前はここが別に書かれていて、**同じ薄黄がバッチでは NG、ここでは
-   「最も苦しい区間」（中身は OK）**を意味していた。 */
+   「ワースト区間」（中身は OK）**を意味していた。 */
 /* 🔴 **区間名は「利用者が付けた字」＝幅に上限が無い**（B-155）ので、既定の
    `nowrap` から外して折り返す。⚠️ nowrap のままだと `table-layout:auto` の
    最小幅が**名前の全長**になり、**表ごと A4 の印字域の外へ出る**（実測＝長い
@@ -255,7 +255,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         r = pr.result
         verdict = _verdict_class(pr.status)
-        # 行の地は判定（`tr.ok` / `tr.ng` / `tr.err`）、最も苦しい区間は `worst`
+        # 行の地は判定（`tr.ok` / `tr.ng` / `tr.err`）、ワースト区間は `worst`
         # （左端の太線）＝**2 つの印を別の手段で出す**（B-207）。
         cls = verdict + (" worst" if pr is worst else "")
         dem_mark = ""

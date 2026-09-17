@@ -12,8 +12,8 @@ this file, so a translated copy would be a canon no machine ever checks. One row
 by splitting on the exact heading text (`## 用語`, `## 文書でも 1 語にそろえる`). The English
 of each heading is on the line right below it.*
 
-- **対象**＝利用者の目に触れる字（`i18n.py` の ja/en 文字列）。
-- **対象外**＝コード内部の識別子・`i18n` のキー名・`{…}` の差し込み名・
+- **対象**: 利用者の目に触れる字（`i18n.py` の ja/en 文字列）。
+- **対象外**: コード内部の識別子・`i18n` のキー名・`{…}` の差し込み名・
   CSV の列名やファイル名（**出力契約**なので、読む側の互換のほうが優先する）。
   実装語彙と画面語彙は別物で、揃えようとすると改名の波及リスクだけが増える。
 
@@ -42,7 +42,7 @@ that would turn the gate against the column headers themselves.*
 **成果物（レポート HTML）の語も、いまは画面と同じ 1 語**（2026-08-26 に最後の 1 組を揃えた）。
 レポートの表題とフッタだけが `一括シミュレーション` と名乗っていたが、画面は同じ機能を
 `複数経路` と呼んでいた。⇒ **`一括` と `Batch` は「使わない言い換え」へ**（下の表）。
-⚠️ **出力契約は別の話**＝CSV の**列名とファイル名**は読む側との約束なので、画面の語に
+⚠️ **出力契約は別の話。** CSV の**列名とファイル名**は読む側との約束なので、画面の語に
 揃えない（`summary.csv` の見出しは英字の識別子のまま）。**揃えるのは人が読む字だけ。**
 
 *The reports now use the same word as the screen (the last pair was aligned on 2026-08-26):
@@ -73,7 +73,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 
 | 用語 | 定義 | en | 使わない言い換え |
 |---|---|---|---|
-| 区間 | 中継経路で隣り合う 2 地点を結ぶ 1 本の回線。数えるのは**リンクの本数**＝「地点数 − 1」。区間ごとに独立したリンクバジェットを持つ。 *One link between two adjacent waypoints of a relay path; what is counted is the number of links (waypoints − 1), and each section carries its own link budget.* | Section | ホップ / hop |
+| 区間 | 中継経路で隣り合う 2 地点を結ぶ 1 本の回線。数えるのは**リンクの本数**（「地点数 − 1」）。区間ごとに独立したリンクバジェットを持つ。 *One link between two adjacent waypoints of a relay path; what is counted is the number of links (waypoints − 1), and each section carries its own link budget.* | Section | ホップ / hop |
 | ワースト区間 | 中継経路で、全体判定を決めている区間（**最もマージンの小さい区間**）。画面・帳票とも同じ 1 語で呼ぶ。 *The section of a relay path that decides the overall verdict — the one with the smallest margin.* | Weakest section | 最も苦しい区間 / 律速区間 |
 | 地点 | 中継経路が通る点すべて（送信点・中継点・受信点）。利用者が入力する面はこちらで、区間はここから導かれる。 *Every point a relay path runs through (TX, relay and RX points). This is what the user enters; sections are derived from it.* | Waypoint | ノード / node |
 | 中継点 | 地点のうち、送信点でも受信点でもないもの。 *A waypoint that is neither the TX nor the RX point.* | Relay | リレー |
@@ -81,26 +81,26 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 受信レベル | 受信アンテナ利得まで含めた、受信端に届く電力（dBm）。 *The power arriving at the receiver, RX antenna gain included (dBm).* | RX Level | 受信強度 / 電界強度 / RSSI |
 | 受信感度 | 判定の基準にする受信レベルの下限（dBm）。機器のカタログ値を利用者が入れる。 *The lowest RX level used as the pass/fail basis (dBm), taken from the radio's datasheet and entered by the user.* | Threshold | 閾値 / しきい値 |
 | 判定 | OK / NG / ERR の 3 値。OK・NG は**マージンの符号**で決まり、ERR は**計算か成果物の生成に失敗して判定できなかった**ことを表す（レポートでは `ERROR`）。 *One of OK / NG / ERR. OK and NG follow the sign of the margin; ERR means no judgement was possible because the calculation or the report failed (`ERROR` in the reports).* | Status | ステータス |
-| 全体判定 | 中継経路ぜんたいの判定。**区間と同じ 3 値**（OK / NG / ERR）。**最もマージンの小さい区間の判定**がそのまま全体になる（区間をまたいで損失は足さない）。判定できなかった区間（ERR）が 1 つでもあれば**全体も ERR**＝「計算できたが回線が成立しない（NG）」とは区別する。 *The status of a whole relay path — the same three values as a section. The status of the section with the smallest margin becomes the overall one; losses are never summed across sections. A single ERR section makes the whole path ERR, which stays distinct from “computed, but the link does not close” (NG).* | Overall | 総合判定 |
+| 全体判定 | 中継経路ぜんたいの判定。**区間と同じ 3 値**（OK / NG / ERR）。**最もマージンの小さい区間の判定**がそのまま全体になる（区間をまたいで損失は足さない）。判定できなかった区間（ERR）が 1 つでもあれば**全体も ERR**とし、「計算できたが回線が成立しない（NG）」とは区別する。 *The status of a whole relay path — the same three values as a section. The status of the section with the smallest margin becomes the overall one; losses are never summed across sections. A single ERR section makes the whole path ERR, which stays distinct from “computed, but the link does not close” (NG).* | Overall | 総合判定 |
 | 斜距離 | 送受アンテナ間の距離（**高低差を含む**）。 *Distance between the two antennas, height difference included.* | Slant Dist | 直線距離 |
 | 水平距離 | 送受地点を地表へ投影した距離（**高低差を含まない**）。 *Distance between the two sites projected onto the ground, height difference excluded.* | Horiz Dist | 地表距離 |
 | 総損失 | FSPL・回折・植生・環境・降雨・大気の各損失の合計（dB）。 *The sum of the FSPL, diffraction, vegetation, environment, rain and gas losses (dB).* | Total Loss | 伝搬損失 |
 | 伝搬環境 | 環境まわりの入力欄の**まとまりの見出し**（環境区分・降雨強度など）。**1 つの区分を指す語ではない**（→ 環境区分）。 *The heading over the group of environment inputs (env type, rain rate, …). It never names a single class (→ Env Type).* | Environment | — |
 | 環境区分 | 環境損失を決める 4 択（市街地 / 郊外 / 農村 / 見通し）。 *The four-way choice that sets the environment loss (urban / suburban / rural / line-of-sight).* | Env Type | 地域区分 / 環境タイプ |
 | 植生高 | 地表からの植生の高さ（m）。経路全体へ一律に与える。 *Height of the vegetation above ground (m), applied uniformly along the whole path.* | Vegetation Height | 樹高 |
-| 回折損失 | 障害物の上を回り込んで届く分の損失（dB）。**幾何で決まる**＝等価ナイフエッジ 1 枚の位置と高さで決まり、障害物が経路上でどれだけ続くかには依らない。 *The loss over an obstacle that the signal bends around (dB). It follows the geometry — the position and height of a single equivalent knife edge — not how far the obstacle runs along the path.* | Diff Loss | — |
-| 植生損失 | 見通し線より上に出た植生の中を通る**長さ**から見積もる損失（dB）。上限 45 dB。**回折損失とは別の量**＝あちらは幾何で決まり、こちらは長さで決まる。 *The loss estimated from the length of vegetation the signal travels through above the line of sight (dB), capped at 45 dB. It is a different quantity from the diffraction loss: that one follows geometry, this one follows length.* | Veg Loss | — |
-| ライスKファクター | 見通し波と散乱波の電力比（0〜30）。**語順はこの 1 つ**＝`Kファクター（ライス）` とは書かない。 *The ratio of line-of-sight to scattered power (0–30). One word order only.* | Rician K-Factor | Kファクター（ライス） |
+| 回折損失 | 障害物の上を回り込んで届く分の損失（dB）。**幾何で決まる**。等価ナイフエッジ 1 枚の位置と高さで決まり、障害物が経路上でどれだけ続くかには依らない。 *The loss over an obstacle that the signal bends around (dB). It follows the geometry — the position and height of a single equivalent knife edge — not how far the obstacle runs along the path.* | Diff Loss | — |
+| 植生損失 | 見通し線より上に出た植生の中を通る**長さ**から見積もる損失（dB）。上限 45 dB。**回折損失とは別の量**で、あちらは幾何で決まり、こちらは長さで決まる。 *The loss estimated from the length of vegetation the signal travels through above the line of sight (dB), capped at 45 dB. It is a different quantity from the diffraction loss: that one follows geometry, this one follows length.* | Veg Loss | — |
+| ライスKファクター | 見通し波と散乱波の電力比（0〜30）。**語順はこの 1 つ**。`Kファクター（ライス）` とは書かない。 *The ratio of line-of-sight to scattered power (0–30). One word order only.* | Rician K-Factor | Kファクター（ライス） |
 | F1遮蔽率 | 第 1 フレネルゾーンの断面のうち、地形・植生に遮られた割合（%）。 *The share of the first Fresnel zone cross-section blocked by terrain or vegetation (%).* | F1 Obs | フレネル遮蔽率 |
-| F1侵入深さ | 障害物が第 1 フレネルゾーンへ**どれだけ深く**食い込んでいるか。数えるのは **F1 半径の倍数**（×F1）で、**100% で頭打ちにしない**＝遮蔽率が 100% でも、1.00 なら*ちょうど*完全遮蔽、2.50 なら半径の 2.5 倍まで突き抜けている。 *How deep an obstacle reaches into the first Fresnel zone, counted in multiples of the F1 radius (×F1) and never capped: 1.00 is exactly full obstruction, 2.50 reaches 2.5 radii past it.* | F1 Depth | 侵入率 / 遮蔽深さ |
-| 地形の解像度 | 地形を刻む細かさの段階（高＝約 4m 画素 / 中＝約 8m 画素 / 低＝20m 間隔）。⚠️ **名前が指すのは標本を置く画素の大きさ**で、*読む標高データの層*ではない（標高は段階によらず取れる中で最も細かい層から返る）。**利用者が選ぶのは段階だけ**で、点数はアプリが解く。⚠️ 「高」「中」は**その層の DEM 画素の縁ごと**に標本を置く＝**等間隔ではない**（「低」だけ 20m の等間隔）。 *The step at which the terrain is sampled (High = ~4 m pixels / Medium = ~8 m pixels / Low = 20 m spacing). The name refers to the size of the pixel a sample is placed on, not to the elevation layer that answers (elevations always come from the finest layer available). The user picks the step only; the app resolves the points. "High" and "medium" sample at the edges of each DEM pixel — not evenly spaced.* | Terrain Resolution | 地形サンプル数 / 分解能 |
-| サンプル数 | 経路上で実際に標高を取った点の数。**解像度の段階と経路から決まる**結果であって、入力ではない（経路の長さだけでなく**向きと緯度**でも変わる＝斜めの経路ほど多い）。⚠️ **個々の標本の間隔はこの点数からは割り出せない**（等間隔ではないため。平均的な間隔だけは `horiz_m ÷ (samples − 1)` で近似できる）。 *How many points along the path an elevation was actually taken at — a result of the resolution step and the path (its bearing and latitude too, not just its length), never an input. The individual spacings cannot be derived from it (the samples are not evenly spaced); only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`.* | Samples | 標本数 |
+| F1侵入深さ | 障害物が第 1 フレネルゾーンへ**どれだけ深く**食い込んでいるか。数えるのは **F1 半径の倍数**（×F1）で、**100% で頭打ちにしない**。遮蔽率が 100% でも、1.00 なら*ちょうど*完全遮蔽、2.50 なら半径の 2.5 倍まで突き抜けている。 *How deep an obstacle reaches into the first Fresnel zone, counted in multiples of the F1 radius (×F1) and never capped: 1.00 is exactly full obstruction, 2.50 reaches 2.5 radii past it.* | F1 Depth | 侵入率 / 遮蔽深さ |
+| 地形の解像度 | 地形を刻む細かさの段階（高: 約 4m 画素 / 中: 約 8m 画素 / 低: 20m 間隔）。⚠️ **名前が指すのは標本を置く画素の大きさ**で、*読む標高データの層*ではない（標高は段階によらず取れる中で最も細かい層から返る）。**利用者が選ぶのは段階だけ**で、点数はアプリが解く。⚠️ 「高」「中」は**その層の DEM 画素の縁ごと**に標本を置くため**等間隔ではない**（「低」だけ 20m の等間隔）。 *The step at which the terrain is sampled (High = ~4 m pixels / Medium = ~8 m pixels / Low = 20 m spacing). The name refers to the size of the pixel a sample is placed on, not to the elevation layer that answers (elevations always come from the finest layer available). The user picks the step only; the app resolves the points. "High" and "medium" sample at the edges of each DEM pixel — not evenly spaced.* | Terrain Resolution | 地形サンプル数 / 分解能 |
+| サンプル数 | 経路上で実際に標高を取った点の数。**解像度の段階と経路から決まる**結果であって、入力ではない（経路の長さだけでなく**向きと緯度**でも変わり、斜めの経路ほど多い）。⚠️ **個々の標本の間隔はこの点数からは割り出せない**（等間隔ではないため。平均的な間隔だけは `horiz_m ÷ (samples − 1)` で近似できる）。 *How many points along the path an elevation was actually taken at — a result of the resolution step and the path (its bearing and latitude too, not just its length), never an input. The individual spacings cannot be derived from it (the samples are not evenly spaced); only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`.* | Samples | 標本数 |
 | 経路 | 送信点から受信点までの 1 本のつながり。中継経路なら途中の中継点も含む。 *One connection from the TX point to the RX point, relay points included when it is a relay path.* | Path | Route |
 | アンテナ高 | 地表からアンテナまでの高さ（m）。**地物の高さではない**（→ 植生高）。 *Height of the antenna above the ground (m) — not the height of anything standing on it (→ Vegetation Height).* | Antenna Height | 地上高 |
 | 開始 | 条件探索で**軸を掃引する範囲**の下端。⚠️ 経路の端（送信点・受信点）はこの語で呼ばない。 *The lower end of the swept range in the scenario window. The ends of a path (TX / RX point) are never called this.* | From | — |
 | 終了 | 同じ範囲の上端。 *The upper end of that same swept range.* | To | — |
 | メモ | **実行 1 回**に付ける自由記述。レポートの見出しに `メモ:` として出る。 *A free-text note attached to one run; it appears in the report header as `Note:`.* | Note | — |
-| 備考 | **1 行（＝1 経路）**に付ける記述。複数経路の表の列見出しになる。台帳には列が無く、各経路の個別レポートのメモ欄に出る（個別レポートが作られない失敗した経路だけ、台帳の理由欄に併記）。 *A note attached to one row (one path); it is a column header in the multiple-paths table. The summary ledger has no such column: the note appears in the memo field of that path's own report (only for a failed path, which has no report of its own, is it added to the reason cell in the ledger).* | Remarks | — |
+| 備考 | **1 行（1 経路）**に付ける記述。複数経路の表の列見出しになる。台帳には列が無く、各経路の個別レポートのメモ欄に出る（個別レポートが作られない失敗した経路だけ、台帳の理由欄に併記）。 *A note attached to one row (one path); it is a column header in the multiple-paths table. The summary ledger has no such column: the note appears in the memo field of that path's own report (only for a failed path, which has no report of its own, is it added to the reason cell in the ledger).* | Remarks | — |
 | 個別 | 1 本の回線を 1 回だけ計算する実行（ランチャーの実行ボタン）。成果物のフッタは `個別シミュレーション`。 *A run that computes one link once, started from the launcher's Run button; the report footer says “Single Mode”.* | Single Mode | シングル |
 | 複数経路 | N 本の**独立した**回線をまとめて回すウィンドウ。1 行 = 1 経路（→ 中継経路は 1 本の内訳）。**レポートの表題・フッタもこの語**。 *The window that runs N independent links in one go; one row = one path (a relay path is the breakdown of a single link). The report title and footer use this word too.* | Multiple Paths | バッチ / 一括 / Batch |
 | 地図 | 座標を拾い、DEM キャッシュを見るための補助のウィンドウ。**入力の道具**であって実行フローではない。 *A helper window for picking coordinates and inspecting the DEM cache — an input tool, not a step of the run.* | Map | マップウィンドウ |
@@ -113,7 +113,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 
 **上の表は「画面に出したら失敗」の規則**なので、文書の散文には効かない（説明のために
 禁止語そのものを引く行があり、`マニュアル` のように文書では普通に使う語もある）。
-**文書の散文まで縛るのはこの表だけ**＝画面と文書で同じものを 2 語で呼んでいた組。
+**文書の散文まで縛るのはこの表だけ**で、画面と文書で同じものを 2 語で呼んでいた組。
 
 *The table above is a rule about what may reach the screen, so it cannot be applied to the
 prose of the documents: some lines quote a banned word in order to explain it, and a word
@@ -132,6 +132,34 @@ the documents called one thing by two names — are enforced in prose as well.*
 screen side is covered by the table above and `tests/test_i18n_glossary.py`). ⚠️ Code fences
 and table rows are exempt, so that lines quoting real log or output text are left alone.*
 
+## 使わない言い換え（棚卸の記録）
+
+*A record of wordings ruled out during the 2026-09-17 audit.*
+
+**ユーザー指摘（2026-09-17）を受けた棚卸で見つかった「無理な和語化」の対応表。**
+上の 2 つの表（画面語・文書語）に載らない組も、再発防止のためここへ残す。
+
+*The table below records "unnaturally Japanized" wordings found while auditing the
+public documents and reports after a 2026-09-17 user report. It also covers pairs that
+do not fit the two tables above (screen words, document words).*
+
+| 使う | 使わない | 経緯 |
+|---|---|---|
+| ワースト区間 | 最も苦しい区間 | 画面・帳票では既に「ワースト区間」（上の用語表・row「ワースト区間」参照）。コード内のコメントとテストの失敗メッセージにだけ古い言い回しが残っていたため、2026-09-17 に揃えた |
+
+**「サンプル数」と「標本」は今回は統一しなかった。** 画面の `scn_samples`（条件探索の
+掃引点数）と、文書が繰り返す「標本」（地形の標高を取った点）は**別の概念**で、
+たまたま似た言葉を使っているだけと確認した（前者は利用者が入力する掃引の本数、
+後者はアプリが解像度の段階から自動で決める点数）。無理に 1 語へそろえると、
+かえって別概念が同じ語で呼ばれる新しい欠陥になるため、現状維持とする。
+
+*"サンプル数" and "標本" were **not** merged this round. The screen's `scn_samples`
+(the number of points in a scenario sweep) and the "標本" that recurs in the documents
+(terrain elevation sample points) turned out to be different concepts that merely share
+similar wording — the former is a sweep count the user enters, the latter a point count
+the app derives from the resolution step. Forcing them into one word would create a new
+defect where two different concepts share a name, so both wordings stay as they are.*
+
 ## この表ができた経緯
 
 *Where this table came from.*
@@ -140,7 +168,7 @@ and table rows are exempt, so that lines quoting real log or output text are lef
 そのうち「区間」は、数字（リンクの本数）が正しいのに**語だけが別の量として伝わる**
 という形の表記バグで、2.6b で `ホップ` → `区間` へ直した。
 残りのうち**画面だけで閉じる組は 2.7〜2.8a1 で片付けた**。
-**成果物にも出る 5 組は 3.0a1（2026-08-26）で片付けた**＝語を動かすと
+**成果物にも出る 5 組は 3.0a1（2026-08-26）で片付けた**。語を動かすと
 レポートの字が動くので、出力契約の版までまとめて据え置いていた組。
 **同じ回で、機能そのものの名前が食い違っていた最後の 2 件も揃えた**
 （レポートの `一括シミュレーション` → `複数経路` ／ メニューの `シングル` → `個別`）。

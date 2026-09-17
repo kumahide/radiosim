@@ -18,6 +18,7 @@ import re
 import sys
 import xml.etree.ElementTree as ET
 from fractions import Fraction
+from pathlib import Path
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
@@ -1048,7 +1049,7 @@ class TestLedgersShareOneLook:
     """バッチの台帳・中継の台帳・条件探索の表が**同じ色に同じ意味**を持つこと。
 
     🔴 **中継の台帳だけが CSS を別に書いていた**＝同じ薄黄が、バッチでは「NG」、
-    中継では「最も苦しい区間」（中身は OK）を意味していた（B-207）。縦罫線と判定の
+    中継では「ワースト区間」（中身は OK）を意味していた（B-207）。縦罫線と判定の
     中央寄せも片方にしか無かった（B-208）。どちらも*片方だけ直した*跡なので、
     ここでは値を比べるのではなく**同じ 1 本を引いているか**と**上書きしていないか**を見る。
     ⚠️ **列の幅（余りをどの列が受け取るか）はブラウザが要るので測れない**＝
@@ -1084,7 +1085,7 @@ class TestLedgersShareOneLook:
     def test_row_shading_means_only_the_verdict(self, sheet):
         """行の地を塗るのは判定（`tr.ok` / `tr.ng` / `tr.err`）だけ（B-207）。
 
-        「最も苦しい区間」のような*判定以外の印*を地の色で出すと、同じ色が別の
+        「ワースト区間」のような*判定以外の印*を地の色で出すと、同じ色が別の
         意味を持つ（中継の `tr.worst` が NG と同じ薄黄だった）。
         """
         get_css, _ = self.SHEETS[sheet]
@@ -1280,3 +1281,66 @@ class TestPathSheetRightColumnOrder:
         budget_pos = html.find(i18n.t("html_link_budget"))
         assert radio_pos != -1 and budget_pos != -1
         assert radio_pos < budget_pos, html
+
+
+# ============================================================
+# 成果物の文言が「○○＝△△」の説明形を使っていないこと（2026-09-17・ユーザー指摘）
+# ------------------------------------------------------------
+# 画面文言（i18n の ja 値）は `test_i18n_glossary.py`（I-150）が既に締め出しているが、
+# `report/*.py` はレポート自身が組み立てる文字列リテラル（見出し・注記・凡例）も
+# 持っており、そちらは i18n を経由しないので上の検査の外にある。
+#
+# 🔑 **docstring は対象外**＝関数・クラス・モジュールの説明文は開発者向けの散文で、
+# 成果物には出ない。AST で「そのブロックの最初の式文である文字列定数」だけを
+# docstring として除外し、残りの文字列リテラルだけを見る。
+import ast as _ast
+
+
+def _docstring_node_ids(tree: _ast.AST) -> set:
+    """モジュール/関数/クラスの docstring として使われている Constant ノードの id 集合。"""
+    ids = set()
+    candidates = [tree] + [n for n in _ast.walk(tree)
+                            if isinstance(n, (_ast.FunctionDef, _ast.AsyncFunctionDef,
+                                               _ast.ClassDef))]
+    for node in candidates:
+        body = getattr(node, "body", None)
+        if body and isinstance(body[0], _ast.Expr) \
+                and isinstance(body[0].value, _ast.Constant) \
+                and isinstance(body[0].value.value, str):
+            ids.add(id(body[0].value))
+    return ids
+
+
+def _non_docstring_literals(path: Path) -> list[str]:
+    """そのファイルの、docstring ではない文字列リテラルの一覧。"""
+    tree = _ast.parse(path.read_text(encoding="utf-8"))
+    skip = _docstring_node_ids(tree)
+    return [n.value for n in _ast.walk(tree)
+            if isinstance(n, _ast.Constant) and isinstance(n.value, str)
+            and id(n) not in skip]
+
+
+REPORT_PY_FILES = sorted((Path(__file__).resolve().parent.parent / "report").glob("*.py"))
+
+
+def _strip_css_comments(s: str) -> str:
+    """CSS の `/* ... */` を落とす。
+
+    CSS の中の `/* */` は Python の `#` と同じ**開発者向けコメント**で、
+    ブラウザは描画しない＝利用者の目に触れる「成果物の文言」ではない。
+    ここを見ると、レイアウトの設計判断メモ（多くが「＝」で書かれている）を
+    大量の偽陽性として拾ってしまう。
+    """
+    return re.sub(r"/\*.*?\*/", "", s, flags=re.S)
+
+
+@pytest.mark.parametrize("path", REPORT_PY_FILES, ids=lambda p: p.name)
+def test_report_output_strings_never_use_the_equals_explanation_form(path):
+    """`report/*.py` の文字列リテラル（docstring・CSS コメントを除く）が
+    「○○＝△△」の説明形を使っていないこと（I-150 の成果物版）。"""
+    offenders = [s for s in _non_docstring_literals(path)
+                 if "＝" in _strip_css_comments(s)]
+    assert not offenders, (
+        f"{path.name}: 成果物の文字列に「○○＝△△」の説明形が残っている"
+        "（自然な日本語の文へ書き直すこと）: " + ", ".join(offenders)
+    )

@@ -391,7 +391,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         1 行 = 1 結果なので、一覧を持つと**同じ数字が窓の中に 2 か所**できる。
         一覧を持つのは条件探索（1 条件から結果が N 件出る＝1:1 でない）だけ。
 
-        全体判定が残るのは重複ではない＝**区間をまたいだ集約**（最も苦しい区間が
+        全体判定が残るのは重複ではない＝**区間をまたいだ集約**（ワースト区間が
         どれか）で、区間表のどの行にも書けない情報（[[glossary]] の「全体判定」）。
         """
         self._result_box = ttk.LabelFrame(parent, text=i18n.t("mh_result"), padding=8)

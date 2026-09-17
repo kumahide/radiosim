@@ -598,16 +598,16 @@ class TestRouteSheet:
 
         run = self._run_with_report(base, tmp_path, monkeypatch)
         html = report_multihop.route_sheet_html(run)
-        assert "worst" in html, "最も苦しい区間に印が付いていない"
+        assert "worst" in html, "ワースト区間に印が付いていない"
         assert i18n.t("mh_worst_hop") in html
         # 🔁 B-207＝印は**判定の印と別の手段**で出す。行の地（判定）を残したまま
-        # `worst` を足す＝判定のクラスを「最も苦しい区間」で置き換えない。
+        # `worst` を足す＝判定のクラスを「ワースト区間」で置き換えない。
         rows = re.findall(r"<tr class='([^']*)'>", html)
         worst_rows = [r.split() for r in rows if "worst" in r.split()]
         assert len(worst_rows) == 1, rows
         verdict = report_multihop._verdict_class(run.worst.status)
         assert verdict in worst_rows[0], (
-            f"最も苦しい区間の行が判定の地の色を失っている: {worst_rows[0]}")
+            f"ワースト区間の行が判定の地の色を失っている: {worst_rows[0]}")
         # 印だけ置いて意味を言わないと、読み手は自分の知っている意味（NG）で読む。
         assert i18n.t("mh_worst_mark_note") in html, "左端の太線の凡例が無い"
 

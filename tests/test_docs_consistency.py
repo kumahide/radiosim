@@ -1130,6 +1130,30 @@ def test_public_docs_use_the_glossary_wording(doc):
     )
 
 
+# ============================================================
+# 公開文書の散文が「○○＝△△」の説明形を使っていないこと（2026-09-17・ユーザー指摘）
+# ------------------------------------------------------------
+# 🔴 「○○○○＝△△△△△という説明は筋が悪い」＝画面文言（i18n の ja 文字列）は
+# 既に `test_i18n_glossary.py::test_japanese_ui_text_never_uses_the_equals_explanation_form`
+# （I-150）が締め出しているが、あの検査が見るのは画面だけで公開文書は素通りする。
+# 実際に manual_ja.md 38 行・developer_ja.md 96 行・README.md 2 行が同じ形だった。
+# ⇒ 対象を公開文書へ広げ、同じ記号そのものを締め出す（表の行とコードフェンスの
+# 中は `_prose_lines` が既に除外している＝ログや出力の実物を引用した行や、
+# 定義そのものを載せる表までは書き直させない）。
+_EQUALS_DOCS = ["README.md", "docs/manual_ja.md", "docs/developer_ja.md"]
+
+
+@pytest.mark.parametrize("doc", _EQUALS_DOCS)
+def test_public_docs_never_use_the_equals_explanation_form(doc):
+    """公開文書の散文が「○○＝△△」の説明形を使っていないこと（I-150 の文書版）。"""
+    hits = [f"{doc}:{i} {line.strip()}"
+            for i, line in _prose_lines(_read(doc)) if "＝" in line]
+    assert not hits, (
+        "公開文書に「○○＝△△」の説明形が残っている"
+        "（自然な日本語の文へ書き直すこと）: " + ", ".join(hits)
+    )
+
+
 def _iter_links(text: str):
     """(行番号, ラベル, ターゲット) を返す。コードフェンス内は対象外。"""
     in_fence = False
