@@ -1,0 +1,41 @@
+# 動作確認用の DEM ソース宣言（qa_fixtures/）。
+#
+# ⚠️ これは配布物ではない＝ビルドの成果物には入れない。`buildtools/deploy_qa_fixtures.py`
+#    がビルド後に dist\RadioSimPro\ へ配る（zip を作った後なので配布 zip には入らない）。
+#
+# 書式の正典は docs/manual_ja.md「DEM ソースを足す（利用者拡張）」。
+# ここの 2 件はどちらも**妥当な宣言**＝起動時の通知に誤りは出ない。
+# 誤りの側（不正な宣言をはじくこと）を確かめたいときは、下のコメントを参照。
+
+# ① 実際に標高を取れるソース（AWS Open Data Terrain Tiles・鍵不要）。
+#    国土地理院の範囲外（日本国外）で標高が取れることの確認に使う。
+[[source]]
+source_id = "terrarium_aws"
+display_name = "Terrarium (AWS Open Data)"
+layers = [["terrarium", 12]]
+url_template = "https://s3.amazonaws.com/elevation-tiles-prod/terrarium/{z}/{x}/{y}.png"
+decode = "terrarium"
+attribution = "AWS Open Data Terrain Tiles"
+terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
+
+# ② 2 件目＝**選択肢が 3 つ以上あるときの見え方**を確かめるための当て馬。
+#    ホスト名は予約ドメイン（例示用・RFC 2606）なので通信は必ず失敗する
+#    ＝「ソースを選べること」「取得失敗が DEM 取得失敗率に出ること」の確認用で、
+#    標高を取る目的では使わない。display_name をわざと長くしてあるのは、
+#    地図ウィンドウの「対象 DEM ソース」欄の幅が中身に追従することの確認のため
+#    （B-252＝欄が窓の右端で見切れていた）。
+[[source]]
+source_id = "qa_offline_probe"
+display_name = "QA 確認用（通信は必ず失敗します）"
+layers = [["terrarium", 12]]
+url_template = "https://dem.example.invalid/{z}/{x}/{y}.png"
+decode = "terrarium"
+attribution = "QA fixture (not a real source)"
+terms_url = "https://example.invalid/terms"
+
+# 誤りの側を確かめたいとき（このファイルを直接いじらず、コピーしてから壊す）:
+#   - `source_id = "gsi_dem"`      → 予約値との重複ではじかれる
+#   - `decode = "hoge"`            → 未知のデコード方式としてはじかれる
+#   - `url_template` から {z} を消す → プレースホルダ不足としてはじかれる
+# いずれも「その項目だけが無効・起動は止まらない」ことと、ランチャー起動時の
+# 通知に理由が出ることを確認する。

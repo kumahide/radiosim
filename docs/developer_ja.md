@@ -354,6 +354,7 @@ radiosim/
     ├── test_diagnostics.py
     ├── test_repo_hygiene.py
     ├── test_dev_check.py
+    ├── test_qa_fixtures.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
     └── test_qa_gate_cache.py
@@ -1103,6 +1104,22 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 - **カバレッジ門は全件のときだけ**掛かります。部分実行に掛けると、回していない層が 0% で数えられて必ず割れます。
 - 出力は**検査ごとに 1 行＋落ちた検査の抜粋**です。全文は `--full-output`。
 
+### 動作確認用の設定ファイル（`qa_fixtures/`）
+
+利用者拡張の宣言ファイル（`dem_sources.toml` / `tile_sources.toml`）は、ポータブル配置では exe の隣、つまり `dist\RadioSimPro\` から読みます。ここはビルドのたびに作り直されるので、手で置いた確認用の設定は毎回消えます。そこで **正本を `qa_fixtures/` に置き、ビルドの後に配る**ようにしてあります。
+
+```powershell
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py            # dist\RadioSimPro\ へ
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --repo     # ソースから起動して確認する場合
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --appdata  # インストーラ版で確認する場合
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --remove   # 配ったものを片付ける
+```
+
+- ⛔ **`build.bat` からは呼びません。** ビルドの途中で配ると、確認用の設定が配布 zip とインストーラに入ります。配るのは**ビルドが終わった後**だけです。
+- 配置先は**製品のコードに聞きます**（`core.config.USER_DEM_SOURCES_FILE`）。ここに置き場を書き写すと、製品側が動いた日に黙ってずれます。
+- 何がどの確認のために入っているかは `qa_fixtures/README.md`。正本は**妥当な宣言だけ**で、誤りをはじくことを確かめるときはコピーを壊して使います（正本が壊れていると、他の確認をするたびに毎回エラー通知が出ます）。
+- `tests/test_qa_fixtures.py` が**製品の読み込み器で実際に読んで**検証します。宣言ファイルの書式は版とともに変わるので、正本が古びると「確認したかった機能ではなく設定の誤りを見ている」状態になり、しかも**欄が出ないという同じ見え方**をします。
+
 ### テスト構成
 
 | テストファイル             | 主な対象                                                                   |
@@ -1146,6 +1163,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
 | `test_failure_messages.py` | 失敗ダイアログの本文が**型**（何が起きた／次に何をすべきか／詳細）で組まれていること・「次の一手」の語彙が閉じていること・CSV 取り込みの検証が i18n を通っていること |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
+| `test_qa_fixtures.py`    | 動作確認用の設定ファイル（`qa_fixtures/`）が製品の読み込み器で実際に読めること・DEM ソース欄が現れる条件（組み込み以外に 1 つ以上）を満たすこと・配る側（`buildtools/deploy_qa_fixtures.py`）の対象一覧と置き場の中身がずれないこと |
 | `test_dev_check.py`      | 検証ランナー自身のゲート（`buildtools/dev_check.py`）。**手書きの対応表が腐って黙って何も足さなくなる**のを検出し、範囲を絞っても静的検査のゲートが必ず足されること・カバレッジ門が全件のときだけ掛かること・出力が要約に収まることを固定 |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・ポータブル配置では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード）＋**テスト実行の隔離**（テストが開発機の実設定を読まず、実リポジトリへ書かないこと。定数・既定引数・ログの出口の 3 面） |
 | `test_write_locations.py` | OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判定（`portable.txt`）・Known Folder 解決の段階的フォールバック（API失敗→環境変数→既定）・旧配置からの移行（コピーのみ・旧は残す・新は上書きしない・キャッシュは移行対象外）（3.1） |

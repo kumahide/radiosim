@@ -167,6 +167,7 @@ def scenario_sheet_css() -> str:
 .sheet.scenario .page-header{padding-bottom:4px;margin-bottom:7px}
 .sheet.scenario .page-footer{padding-top:4px}
 .sheet.scenario .meta{background:white;border-radius:8px;padding:6px 14px;margin-bottom:8px;box-shadow:0 1px 3px rgba(0,0,0,.12);font-size:11px;color:#455a64}
+.sheet.scenario .meta .kv{white-space:nowrap}
 .sheet.scenario .meta b{color:#222}
 .sheet.scenario .chart{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:8px}
 .sheet.scenario table.scn{border-collapse:collapse;width:100%;background:white;box-shadow:0 1px 3px rgba(0,0,0,.12)}
@@ -200,20 +201,29 @@ def scenario_sheet_css() -> str:
 def _meta_block(run: scn.ScenarioRun) -> str:
     """経路（固定された前提）を 1 行で示す＝「何を固定して何を振ったか」。"""
     p = run.base_params
-    # 帯は折り返してよいが、値と単位は同じ行に留める（B-242）。
+    # 帯は折り返してよいが、**「項目: 値 単位」の 1 組の中では折らない**
+    # （B-251）＝折れてよいのは組と組の区切り（全角空白）だけ。B-242 は値と
+    # 単位のあいだだけを留めたので、項目名と値のあいだ（「DEM取得失敗率:」の
+    # 直後）で折れて値だけが次の行に落ちていた。
     keep = report_common.keep_unit_with_value
-    return (
-        f'<div class="meta">'
-        f'<b>{i18n.t("scn_fixed_path")}</b>: '
-        f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'
-        f'　/　{i18n.t("html_horiz_dist")}: {keep(units.format_distance(run.terrain.horiz_dist_km))}'
-        f'　/　{i18n.t("scn_samples")}: {p.num}'
+    items = [
+        (i18n.t("scn_fixed_path"),
+         f'{p.lat_tx:.5f}, {p.lon_tx:.5f} → {p.lat_rx:.5f}, {p.lon_rx:.5f}'),
+        (i18n.t("html_horiz_dist"),
+         keep(units.format_distance(run.terrain.horiz_dist_km))),
+        (i18n.t("scn_samples"), str(p.num)),
         # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝地形は 1 回だけ取得して
         # 固定するので（`core/scenario.py`）、台帳のような行ごとの列ではなく
         # `scenario.csv` の `dem_fail_pct` と同じ単一の値を 1 回だけ示す。
-        f'　/　{i18n.t("pl_dem_fail")}: {keep(units.format_fail_pct(run.terrain.fail_pct))}'
-        f'</div>'
-    )
+        (i18n.t("pl_dem_fail"),
+         keep(units.format_fail_pct(run.terrain.fail_pct))),
+    ]
+    # 先頭（経路）だけ項目名を太字にする（従来の見た目のまま）。
+    parts = [
+        f'<span class="kv">{f"<b>{k}</b>" if i == 0 else k}: {v}</span>'
+        for i, (k, v) in enumerate(items)
+    ]
+    return f'<div class="meta">{"　/　".join(parts)}</div>'
 
 
 def _compare_table(run: scn.ScenarioRun) -> str:

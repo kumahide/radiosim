@@ -1168,6 +1168,35 @@ def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(m
         root.destroy()
 
 
+def test_cache_source_bar_is_not_clipped_when_entering_cache_mode(monkeypatch):
+    """B-252＝窓は既定モード（座標入力）で中身に合わせるので、キャッシュ管理
+    モードでしか出ない「対象 DEM ソース」欄が窓幅に入っておらず、切り替えた
+    瞬間に帯の右端から見切れていた。欄が要求幅どおりに置かれること。"""
+    from core import dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source With A Long Name",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._select_mode("cache")
+        win._win.update_idletasks()
+        bar = win._cache_src_bar
+        assert bar.winfo_ismapped()
+        assert bar.winfo_width() >= bar.winfo_reqwidth()
+        right = bar.winfo_rootx() + bar.winfo_width()
+        assert right <= win._win.winfo_rootx() + win._win.winfo_width()
+    finally:
+        root.destroy()
+
+
 def test_the_selection_guard_is_lowered_on_button_release(monkeypatch):
     """「選ぶための押下」の印が、押下 → 離しの 1 巡で必ず降りること（I-098）。
 

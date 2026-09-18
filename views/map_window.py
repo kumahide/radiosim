@@ -434,6 +434,10 @@ class MapWindow(_PickMixin, _CacheMixin):
         if self._mode.get() == "cache":
             if len(self._cache_sources) > 1 and not self._cache_src_bar.winfo_ismapped():
                 self._cache_src_bar.pack(side="left")
+                # 構築時に幅は確保済みだが、利用者が窓を狭めていたら欄が見切れる
+                # （B-252）＝**広げるだけ**の測り直し（`grow_only` 既定）。
+                window_fit.fit_to_content(
+                    self._win, min_w=self._BASE_W, min_h=self._BASE_H)
             self._clear_coord_visuals()
             self._clear_waypoint_visuals()
             self._refresh_overlay()
@@ -652,7 +656,15 @@ class MapWindow(_PickMixin, _CacheMixin):
         # ＝ここを固定寸法のままにすると他の窓とまったく同じ形で見切れる
         # （B-002 / I-000 / I-023 / I-024 と同じクラス。2.5b2 の横断ゲート追加で
         # 「この窓だけ実測追従になっていない」ことが分かった）。
+        # 🔴 **「対象 DEM ソース」欄はキャッシュ管理モードでしか出ない**ので、
+        # 既定モード（座標入力）のまま測ると窓幅にこの欄が入らず、切り替えた瞬間に
+        # モード帯の右端から見切れた（B-252）。**測るあいだだけ置いて幅を確保する**。
+        reserve = len(self._cache_sources) > 1 and not self._cache_src_bar.winfo_ismapped()
+        if reserve:
+            self._cache_src_bar.pack(side="left")
         window_fit.fit_to_content(self._win, min_w=self._BASE_W, min_h=self._BASE_H)
+        if reserve and self._mode.get() != "cache":
+            self._cache_src_bar.pack_forget()
 
 
     # ----------------------------------------------------------

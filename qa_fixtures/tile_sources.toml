@@ -1,0 +1,16 @@
+# 動作確認用の背景地図ソース宣言（qa_fixtures/）。dem_sources.toml と同じ扱い
+# ＝配布物ではなく、`buildtools/deploy_qa_fixtures.py` がビルド後に配る。
+#
+# 書式の正典は docs/manual_ja.md「背景地図ソースを足す（利用者拡張）」。
+# 組み込みの 2 択（淡色地図・航空写真）に、この 1 件が地図ウィンドウ上部の
+# 背景選択へ加わる。国土地理院の範囲外で背景地図が出ることの確認に使う。
+#
+# ⚠️ OpenStreetMap のタイルは公共サーバ＝**広い範囲の事前取得には使わない**
+#    （利用規約に反する）。確認は画面に出る範囲を眺める程度に留める。
+[[source]]
+source_id = "osm"
+display_name = "OpenStreetMap"
+url = "https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+max_zoom = 19
+attribution = "(c) OpenStreetMap contributors"
+terms_url = "https://www.openstreetmap.org/copyright"

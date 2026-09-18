@@ -576,6 +576,23 @@ class TestScenarioReport:
         assert report_common.keep_unit_with_value(
             units.format_fail_pct(run.terrain.fail_pct)) in html
 
+    def test_meta_block_keeps_label_value_and_unit_together(self, terrain, base):
+        """「項目: 値 単位」の 1 組の中では折らないこと（B-251）。
+        折れてよいのは組と組の区切りだけ。"""
+        import re
+        i18n.set_lang("ja")
+        run = self._run(terrain, base, "compare")
+        html = report_scenario.scenario_sheet_html(run)
+        m = re.search(r'<div class="meta">(.*?)</div>', html)
+        assert m is not None
+        meta = m.group(1)
+        kvs = re.findall(r'<span class="kv">(.*?)</span>', meta)
+        assert len(kvs) == 4
+        assert kvs[-1].startswith(i18n.t("pl_dem_fail") + ": ")
+        # 塊の外に残るのは区切りだけ。
+        assert re.sub(r'<span class="kv">.*?</span>', "", meta) == "　/　" * 3
+        assert ".meta .kv{white-space:nowrap}" in report_scenario.scenario_sheet_css()
+
     def test_meta_block_keeps_each_value_with_its_unit(self, terrain, base):
         """帯は折り返してよいが、値と単位のあいだでは折らないこと（B-242）。
 
