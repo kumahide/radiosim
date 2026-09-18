@@ -330,6 +330,24 @@ def _enumerate_bbox(
     return tasks
 
 
+def _clear_terrain_cache() -> None:
+    """地形プロファイルのメモリキャッシュも捨てる（B-249・2026-09-19）。
+
+    **なぜ下位層から上位層を呼ぶか**（層の向き＝2026-09-19 ユーザー選択）＝削除の
+    入口は 3 か所（地図窓の範囲削除・ランチャーの全削除 2 経路）あり、画面側で
+    2 つ並べて呼ぶ形にすると**入口が増えたときに呼び忘れる**。ここで呼べば構造的に
+    起きない。`simulation` は `dem_cache` を import しないので循環にはならないが、
+    **import は関数内に置く**（この層はキャッシュ管理パネルからしか動かないので、
+    起動時に計算層を引きずり込まない）。
+
+    ⚠️ **範囲削除でも全部捨てる**＝地形キャッシュの鍵は経路の端点と標本数で、
+    タイルの bbox と突き合わせられない。取り直すだけで**計算の数字は変わらない**
+    （同じソースの同じ地形）ので、残して食い違うより捨てるほうが安全側。
+    """
+    from core import simulation
+    simulation.clear_terrain_cache()
+
+
 def delete_tile_cache(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
@@ -369,6 +387,7 @@ def delete_tile_cache(
     # DEM のみ）。見えないものを範囲指定で黙って消すのを避け、件数表示
     # （count_cached_areas=DEM のみ）とも整合させる。basemap は「全キャッシュ
     # 削除」（delete_all_tile_cache）でのみ消える。
+    _clear_terrain_cache()
     logger.info("delete_tile_cache: deleted=%d errors=%d", deleted, errors)
     return {"deleted": deleted, "errors": errors}
 
@@ -461,5 +480,6 @@ def delete_all_tile_cache(
         dem._tile_cache.clear()
         dem._failed_tiles.clear()
         dem._tile_validity_memo.clear()
+    _clear_terrain_cache()
     logger.info("delete_all_tile_cache: deleted=%d", deleted)
     return {"deleted": deleted}

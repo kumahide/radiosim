@@ -455,9 +455,16 @@ class TestDuplicateIds:
         assert hook.duplicate_ids(doc) == []
 
     def test_the_template_is_not_counted(self, hook):
-        """記入例テンプレ（HTML コメント内）は項目ではない。"""
+        """記入例テンプレ（HTML コメント内）は項目ではない。
+
+        ⚠️ **例を実データの形へ直した**（2026-09-19・B-250）＝ここは元々
+        `### ★ B-001:` と**数字入り**で書いていたが、実データのテンプレは
+        `B-0XX`（数字でない）。B-250 で「コメントが数字入りの ID 見出しを飲み込んで
+        いたら閉じ忘れとして落とす」検査を入れたので、数字入りの例は**規約違反の側**
+        になった（→ `TestUnclosedCommentIsNotSwallowed`）。
+        """
         doc = _doc("## 🐞 バグ",
-                   "<!--", "### ★ B-001: （症状を一言で）", "-->",
+                   "<!--", "### ★ B-0XX: （症状を一言で）", "-->",
                    _item("B-001", "未着手"))
         assert hook.duplicate_ids(doc) == []
 
@@ -470,6 +477,53 @@ class TestDuplicateIds:
         doc = _doc("## 🐞 バグ", _item("B-060", "未着手"), _item("I-010", "未着手"),
                    _ARCHIVE_HEAD, _item("B-072", "済", resp="`abc1234`"))
         assert hook.next_free_ids(doc) == {"B": "B-073", "I": "I-011"}
+
+
+class TestUnclosedCommentIsNotSwallowed:
+    """閉じていない `<!--` を**黙って飲み込まない**こと（2026-09-19 新設・B-250）。
+
+    実際に起きた形＝アーカイブ節にテンプレの案内文だけを写した `<!--` が 2 本、
+    閉じの `-->` 無しで残り、そこから後ろの見出しが**まるごと走査から落ちた**。
+    `next_free_ids` は使用済みの `B-236` を「次の空き」と答え、**その番号に従って
+    実際に衝突した**（I-160 が I-159 と重複起票）。1 か月近く誰も気づかなかったのは、
+    走査が**何も言わずに**見出しを捨てていたため。
+
+    ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
+    - **一度も落ちない**: 下の 1 件目が、実際に起きた形（案内文だけのコメントの直後に
+      実在の項目が続く）で例外になることを確かめる。
+    - **毎回鳴る**: 正しく閉じたテンプレ（`B-0XX`＝数字でない）と、コメント内の
+      **見出しでない** ID 参照では鳴らないことを固定する。
+    - **間違ったものを要求している**: 要求は「コメントが項目の見出しを飲み込んで
+      いない」ことだけ。コメントの位置も、本数も、中身も要求しない。
+    """
+
+    def test_an_unclosed_comment_swallowing_an_item_raises(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-074", "未着手"),
+                   "<!-- 新しいバグは、下のテンプレ（このコメント内）を複製して追記する。",
+                   "     項目は常に降順（新しい ID が上）。",
+                   "",
+                   _item("B-072", "済", resp="`abc1234`"))
+        with pytest.raises(ValueError) as e:
+            hook.issue_id_headings(doc)
+        assert "閉じていません" in str(e.value)
+
+    def test_a_properly_closed_template_is_still_silent(self, hook):
+        """テンプレ本体（`B-0XX`＝数字でない）は従来どおり黙って飛ばす。"""
+        doc = _doc("## 🐞 バグ",
+                   "<!--", "### ★ B-0XX: （症状を一言で）", "-->",
+                   _item("B-074", "未着手"))
+        assert hook.issue_id_headings(doc) == ["B-074"]
+
+    def test_a_reference_inside_a_comment_is_not_a_swallowed_item(self, hook):
+        """コメント内の ID **参照**（見出しでない）では鳴らない。
+
+        実データにこの形がある＝欠番の断り書き（`<!-- ID B-030 は欠番 … -->`）や、
+        起票の由来をまとめた注記（`<!-- ⬇️ B-125〜B-128 は … -->`）。
+        """
+        doc = _doc("## 🐞 バグ",
+                   "<!-- ID B-030 は欠番（改善案 I-053 へ再分類）。再利用しない。 -->",
+                   _item("B-074", "未着手"))
+        assert hook.issue_id_headings(doc) == ["B-074"]
 
 
 class TestAssignmentAudit:

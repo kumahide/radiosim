@@ -24,6 +24,7 @@ import pytest
 
 from core import config
 from core import dem
+from core import dem_cache
 from core import dem_sources
 from core import models
 from core import simulation as sim
@@ -398,6 +399,54 @@ class TestFetchElevationsCached:
         )
         done2.wait(timeout=5)
         assert call_count["n"] == first_count  # 追加呼び出しなし
+
+    def _fetch_once(self, params) -> None:
+        done = threading.Event()
+        sim.fetch_elevations_cached(
+            params=params, on_progress=lambda v: None,
+            on_complete=lambda e: done.set(), on_error=lambda ex: None,
+        )
+        done.wait(timeout=5)
+
+    @pytest.mark.parametrize("delete", [
+        lambda: dem_cache.delete_all_tile_cache(),
+        lambda: dem_cache.delete_tile_cache(34.540, 132.410, 34.539, 132.409),
+    ], ids=["delete_all", "delete_bbox"])
+    def test_deleting_the_tile_cache_also_drops_the_terrain_cache(
+            self, delete, default_params_dict, tmp_path, monkeypatch):
+        """キャッシュを削除したら、次の計算で DEM を取り直すこと（B-249）。
+
+        **症状そのものを測る**（[[feedback-measure-the-symptom]]）＝見るのは
+        `_terrain_cache` が空かどうかではなく、削除の**後**に実際に取りに行くか。
+        実機で起きた形＝全キャッシュ削除（`deleted=193`）の 2 分後に同じ経路が
+        `Terrain cache hit` になり、タイルがディスクへ戻らなかった。
+
+        ⚠️ **範囲削除でも落ちる**＝地形キャッシュの鍵は経路の端点と標本数で、
+        タイルの bbox と突き合わせられないので範囲削除でも全部捨てる（取り直す
+        だけで計算の数字は変わらない＝同じソースの同じ地形）。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        call_count = {"n": 0}
+
+        def counting_get(la, lo, *_a):
+            call_count["n"] += 1
+            return 100.0
+
+        monkeypatch.setattr(dem, "get_elevation", counting_get)
+        params = sim.SimParams(default_params_dict)
+
+        self._fetch_once(params)
+        first = call_count["n"]
+        assert first == params.num
+        self._fetch_once(params)
+        assert call_count["n"] == first, "前提が崩れている＝2 回目はキャッシュヒット"
+
+        delete()
+
+        self._fetch_once(params)
+        assert call_count["n"] == first * 2, (
+            "キャッシュ削除後も地形キャッシュが残り、DEM を取り直していない"
+        )
 
     def test_cache_hit_returns_same_array(self, default_params_dict, monkeypatch):
         """キャッシュヒット時に返る配列が1回目と同じ値であること。"""
