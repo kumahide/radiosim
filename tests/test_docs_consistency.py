@@ -20,6 +20,7 @@ tests/test_docs_consistency.py
 
 import ast
 import re
+from html import unescape
 from pathlib import Path
 
 import pytest
@@ -1086,8 +1087,12 @@ _LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 #
 # ⚠️ 対象は**日本語の文書だけ**。⚠️ コードフェンスの中と表の行は除く＝ログや出力の
 # 実物を引用している行、禁止語そのものを載せている表まで直させないため。
+# ⚠️ **図も対象**（2026-09-19）＝`architecture_ja.svg` は開発者ガイドから開く
+# 配布物なのに、ここでも下の「＝」の検査でも対象から落ちていた（散文の .md だけを
+# 並べていたため）。図の字は `_visible_lines` が `<text>` から読む。
 _WORDING_DOCS = ["README.md", "CHANGELOG.md", "docs/developer_ja.md",
-                 "docs/manual_ja.md", "docs/glossary.md", "docs/screenshots.md"]
+                 "docs/manual_ja.md", "docs/glossary.md", "docs/screenshots.md",
+                 "docs/images/architecture_ja.svg"]
 
 
 def _banned_ja_wording() -> list[str]:
@@ -1122,7 +1127,7 @@ def test_public_docs_use_the_glossary_wording(doc):
     banned = _banned_ja_wording()
     assert banned, "用語集から禁止語を 1 つも読めていない（この検査が空振りしている）"
     hits = [f"{doc}:{i} {w}"
-            for i, line in _prose_lines(_read(doc))
+            for i, line in _visible_lines(doc)
             for w in banned if w in line]
     assert not hits, (
         "公開文書に、用語集で「使わない言い換え」と決めた語がある"
@@ -1140,18 +1145,100 @@ def test_public_docs_use_the_glossary_wording(doc):
 # ⇒ 対象を公開文書へ広げ、同じ記号そのものを締め出す（表の行とコードフェンスの
 # 中は `_prose_lines` が既に除外している＝ログや出力の実物を引用した行や、
 # 定義そのものを載せる表までは書き直させない）。
-_EQUALS_DOCS = ["README.md", "docs/manual_ja.md", "docs/developer_ja.md"]
+#
+# 🔴 **対象を手で並べていたから 2 度目が出た**（2026-09-19・ユーザー指摘）。
+# 最初の実装は README / manual_ja / developer_ja の 3 本を literal で持っていて、
+# **同じ配布物である `docs/images/architecture_ja.svg`（層構成図・exe 同梱）が
+# 素通りした**。図には 8 か所の説明形が残っていた。⇒ 対象は並べずに
+# `radiosim.spec` の同梱一覧から引く＝新しい日本語の同梱文書を足したら、
+# 何も書かなくてもこの検査に入る。
+def _bundled_paths() -> set[str]:
+    """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
+    spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
+    return {m.group(1).replace("\\", "/")
+            for m in re.finditer(
+                r'\(\s*"([^"]+\.(?:png|svg|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
 
 
-@pytest.mark.parametrize("doc", _EQUALS_DOCS)
+_SVG_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
+_SVG_TEXT_RE = re.compile(r"<(text|title|desc)\b[^>]*>(.*?)</\1>", re.S)
+
+
+#: 同梱はされないが、日本語で公開しているリポジトリの文書（ここだけは並べる）。
+#: ⚠️ **同梱されるものは並べない**（`radiosim.spec` から引く）。
+_PUBLIC_JA_EXTRAS = ["README.md", "docs/screenshots.md"]
+
+
+def _japanese_public_texts() -> list[str]:
+    """利用者に届く日本語のテキスト資産（同梱される .md / .svg ＋ 上の 2 本）。"""
+    bundled = sorted(p for p in _bundled_paths()
+                     if p.endswith((".md", ".svg")) and "_en" not in p)
+    return _PUBLIC_JA_EXTRAS + bundled
+
+
+def _visible_lines(doc: str):
+    """(行番号, 利用者の目に映る字)。Markdown は散文の行、SVG は描画される字。"""
+    text = _read(doc)
+    if not doc.endswith(".svg"):
+        yield from _prose_lines(text)
+        return
+    # SVG のコメントは描画されない（生成物の注記など）＝行番号を保ったまま落とす。
+    text = _SVG_COMMENT_RE.sub(lambda m: "\n" * m.group(0).count("\n"), text)
+    for m in _SVG_TEXT_RE.finditer(text):
+        yield text.count("\n", 0, m.start()) + 1, unescape(m.group(2))
+
+
+@pytest.mark.parametrize("doc", _japanese_public_texts())
 def test_public_docs_never_use_the_equals_explanation_form(doc):
-    """公開文書の散文が「○○＝△△」の説明形を使っていないこと（I-150 の文書版）。"""
-    hits = [f"{doc}:{i} {line.strip()}"
-            for i, line in _prose_lines(_read(doc)) if "＝" in line]
+    """公開文書・図の字が「○○＝△△」の説明形を使っていないこと（I-150 の文書版）。"""
+    hits = [f"{doc}:{i} {line.strip()}" for i, line in _visible_lines(doc) if "＝" in line]
     assert not hits, (
         "公開文書に「○○＝△△」の説明形が残っている"
         "（自然な日本語の文へ書き直すこと）: " + ", ".join(hits)
     )
+
+
+# CHANGELOG は**節ごとに扱いが違う**＝出荷した版の記録は書き換えない（2026-09-13
+# ユーザー承認）ので、ファイル単位では上の検査に入れられない。⇒ **まだ配布して
+# いない節だけ**を見る。配布した時点で節に日付が入り、その節は検査から外れる。
+_UNRELEASED_HEADING_RE = re.compile(r"^## \[[^\]]+\][^\n]*未リリース")
+
+
+def _unreleased_changelog_lines() -> list[tuple[int, str]]:
+    """CHANGELOG の未リリース節の散文（行番号, 行）。節が無ければ空。"""
+    text = _read("CHANGELOG.md")
+    start = end = None
+    for i, line in enumerate(text.splitlines(), 1):
+        if not line.startswith("## "):
+            continue
+        if _UNRELEASED_HEADING_RE.match(line):
+            start = i
+        elif start is not None and end is None:
+            end = i
+    if start is None:
+        return []
+    return [(i, line) for i, line in _prose_lines(text)
+            if start < i < (end if end is not None else 10 ** 9)]
+
+
+def test_the_unreleased_changelog_never_uses_the_equals_explanation_form():
+    """まだ配布していない CHANGELOG の節が「○○＝△△」の説明形を使っていないこと。"""
+    lines = _unreleased_changelog_lines()
+    if not lines:
+        pytest.skip("CHANGELOG に未リリースの節が無い（直前の版を出した直後）")
+    hits = [f"CHANGELOG.md:{i} {line.strip()}" for i, line in lines if "＝" in line]
+    assert not hits, (
+        "未リリースの CHANGELOG に「○○＝△△」の説明形が残っている"
+        "（配布した後は書き換えられないので、出す前に直すこと）: " + ", ".join(hits)
+    )
+
+
+def test_the_equals_form_gate_covers_the_bundled_figure():
+    """この検査が図まで見ていること（対象を手で並べ直して図が落ちるのを防ぐ）。"""
+    docs = _japanese_public_texts()
+    assert "docs/images/architecture_ja.svg" in docs, f"層構成図が対象から落ちている: {docs}"
+    assert any(line for _, line in _visible_lines("docs/images/architecture_ja.svg")), \
+        "図から字を 1 つも読めていない（この検査が空振りしている）"
 
 
 def _iter_links(text: str):
@@ -1292,14 +1379,6 @@ def _image_refs(doc: str) -> set[str]:
     here = posixpath.dirname(doc)
     return {posixpath.normpath(posixpath.join(here, m.group(1)))
             for r in (_IMG_MD_RE, _IMG_HTML_RE) for m in r.finditer(text)}
-
-
-def _bundled_paths() -> set[str]:
-    """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
-    spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
-    return {m.group(1).replace("\\", "/")
-            for m in re.finditer(
-                r'\(\s*"([^"]+\.(?:png|svg|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
 
 
 @pytest.mark.parametrize("doc", BUNDLED_MANUALS)

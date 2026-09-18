@@ -122,13 +122,14 @@ BANDS: list[Band] = [
         rows=[
             [
                 Card(("ランチャー（本体＋ Mixin）", "Launcher (core + mixins)"), [[
-                    ("launcher.py", "本体＝入力・実行・進捗", "form, run, progress"),
+                    ("launcher.py", "本体（入力・実行・進捗）", "form, run, progress"),
                     ("launcher_menu.py", "メニューバーと操作", "menu bar and its actions"),
                     ("launcher_project.py", ".rsproj の保存・読込", ".rsproj save / load"),
-                    ("launcher_windows.py", "子窓の開閉と通知", "child windows, notifications"),
+                    ("launcher_windows.py", "子ウィンドウの開閉と通知",
+                     "child windows, notifications"),
                 ]]),
                 Card(("地図（本体＋ Mixin）", "Map (core + mixins)"), [[
-                    ("map_window.py", "本体＝モード切替", "mode switching, widget"),
+                    ("map_window.py", "本体（モード切替）", "mode switching, widget"),
                     ("map_picks.py", "地点の指定と経路の描画", "picking sites, drawing paths"),
                     ("map_cache.py", "DEM キャッシュの操作", "DEM cache operations"),
                     ("map_adapter.py", "tkintermapview の唯一の依存点",
@@ -136,20 +137,20 @@ BANDS: list[Band] = [
                     ("map_style.py", "描画定数の単一ソース", "single source of constants"),
                 ]]),
                 Card(("複数経路（本体＋ Mixin）", "Multiple Paths (core + mixins)"), [[
-                    ("batch_builder.py", "本体＝共通設定・案件", "common settings, case info"),
+                    ("batch_builder.py", "本体（共通設定・案件）", "common settings, case info"),
                     ("batch_table.py", "入力表（行の操作）", "input table (row editing)"),
                     ("batch_io.py", "CSV 入出力と雛形", "CSV import/export, template"),
                     ("batch_run.py", "実行と進捗", "execution and progress"),
                 ]]),
             ],
             [
-                Card(("そのほかの窓", "Other windows"), [[
-                    ("graph.py", "グラフ窓", "graph window"),
+                Card(("そのほかのウィンドウ", "Other windows"), [[
+                    ("graph.py", "グラフウィンドウ", "graph window"),
                     ("scenario.py", "条件探索（比較 / スイープ）", "compare / sweep"),
                     ("multihop.py", "中継経路（地点が入力面）", "relay path (waypoints in)"),
                     ("multihop_map.py", "中継経路と地図の受け渡し", "relay path <-> map handoff"),
                 ]]),
-                Card(("全窓で共有する部品", "Shared by every window"), [
+                Card(("全ウィンドウで共有する部品", "Shared by every window"), [
                     [
                         ("dialogs.py", "親中央のモーダル", "modals centered on the parent"),
                         ("errors.py", "未捕捉例外の受け皿", "sink for unhandled exceptions"),
@@ -158,7 +159,8 @@ BANDS: list[Band] = [
                     ],
                     [
                         ("theme.py", "テーマ色・UI 書体", "theme colors, UI fonts"),
-                        ("window_fit.py", "窓の寸法（見切れ防止）", "window sizing (no clipping)"),
+                        ("window_fit.py", "ウィンドウの寸法（見切れ防止）",
+                         "window sizing (no clipping)"),
                         ("tooltip.py", "入力ヒント", "input hints"),
                         ("window_scroll.py", "入らない時の逃げ道", "scroll escape (too big)"),
                         ("title_bar.py", "タイトルバー（OS 描画）", "title bar (drawn by the OS)"),
@@ -169,7 +171,7 @@ BANDS: list[Band] = [
     ),
     Band(
         name=("report/ — 出力を作る層", "report/ — the layer that produces output"),
-        rule=("ヘッドレス＝画面が無くても動く（テスト・CI もここを直接まわす）。",
+        rule=("画面が無くても動くヘッドレス（テスト・CI もここを直接まわす）。",
               "Headless: it runs with no display (tests and CI drive it directly)."),
         fill="#eefaf3", stroke="#bfe3d1", ink="#1c5c3f",
         rows=[
@@ -202,7 +204,7 @@ BANDS: list[Band] = [
                     ("画面（views/）とレポートが同じ絵を出すために、描画も「下」へ置いている。",
                      "The screen (views/) and the reports must draw the same picture, "
                      "so the drawing lives down here too"),
-                    ("＝ 2 つの層から使うものは共有の箱ではなく、下の層の住人にする。",
+                    ("つまり 2 つの層から使うものは、共有の箱ではなく下の層の住人にする。",
                      "— what two layers share becomes a resident of the lower layer, "
                      "not a shared/ box."),
                 ]),
@@ -230,8 +232,8 @@ BANDS: list[Band] = [
                     ("diffraction.py", "回折損（Bullington・J(ν)）", "diffraction loss (Bullington)"),
                     ("ground_reflection.py", "地面反射の振幅包絡線（2波干渉）",
                      "ground reflection envelope (two-ray)"),
-                    ("sensitivity.py", "摂動再計算＝余裕度の幅", "perturbation re-run, margin range"),
-                    ("residuals.py", "実測との残差＝層別の中央値・ばらつき", "measured residual, layered stats"),
+                    ("sensitivity.py", "摂動再計算で余裕度の幅を出す", "perturbation re-run, margin range"),
+                    ("residuals.py", "実測との残差を層別に集計", "measured residual, layered stats"),
                     ("disclosure.py", "帳票の開示の字（前提・適用範囲）", "report disclosure wording"),
                 ]]),
                 Card(("設定・環境・文字列", "Config, environment, strings"), [[
@@ -261,7 +263,7 @@ BANDS: list[Band] = [
                 Notes([
                     ("HTTP・プロキシ・ディスクキャッシュは dem.py の中だけ。",
                      "HTTP, proxies and the disk cache exist inside dem.py only"),
-                    ("＝ ほかの層は「取れた標高」しか知らない。",
+                    ("つまり、ほかの層は「取れた標高」しか知らない。",
                      "— every other layer only ever sees elevations that were already fetched."),
                 ]),
             ],
