@@ -12,6 +12,9 @@ RadioSim Tracer（仮称）の**測定セッション**＝1 回の測定を 1 �
     <session_id>/
       session.json   … ヘッダと端点。開始時に 1 回書き、以後は書き換えない
       samples.csv    … 受信サンプル。**追記のみ**
+      events.csv     … 作業者の操作（設置・移動・終了）。**追記のみ**
+      uart.bin       … UART の生のバイト列。**追記のみ**
+      uart_index.csv … 生のバイト列を PC が受けた時刻（読み出し 1 回 1 行）。**追記のみ**
       gnss.csv       … 位置の時系列（任意）。**追記のみ**
 
 ヘッダを JSON、サンプルを追記 CSV に割ったのは、**電源が落ちる測定**を前提にする
@@ -37,6 +40,7 @@ import json
 import os
 import tempfile
 from dataclasses import asdict, dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Iterator
 
@@ -45,6 +49,9 @@ SCHEMA_VERSION = 1
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
+EVENTS_FILE = "events.csv"
+RAW_FILE = "uart.bin"
+RAW_INDEX_FILE = "uart_index.csv"
 GNSS_FILE = "gnss.csv"
 
 # --- 語彙（値の集合を閉じておく。綴り違いが黙って別の意味になるのを防ぐ） -------
@@ -83,6 +90,28 @@ SAMPLE_COLUMNS = (
     "noise_floor_raw",   # 雑音フロアの生値（整数・dBm ではない）
     "config_id",         # 設定番号。積分窓・検波方式はここから引く
     "spatial_slot",      # 空間平均の置き場所の番号（PC 側が付ける）
+)
+
+# 作業者の操作。空間平均の置き場所の区切りは**サンプルではなくここから**決める＝
+# 移動中に 1 つも受からなかった置き場所は、サンプルからは存在ごと見えない
+# （見えないまま捨てると、いちばん悪い場所の打ち切りが数から落ちる）。
+#   place … 置き場所に据えた（以後の受信はこの番号の置き場所）
+#   move  … 動かし始めた（次の place までの受信はどの窓にも入れない）
+#   stop  … 測定を終えた（最後の置き場所の末尾はここまで）
+EVENT_KINDS = ("place", "move", "stop")
+
+# 移動中に受けたサンプルの置き場所の番号。**捨てずに残し、窓には入れない。**
+MOVING_SLOT = -1
+
+EVENT_COLUMNS = (
+    "pc_utc",            # 操作した時刻（UTC・ISO 8601）。サンプルの pc_utc と同じ時計
+    "kind",
+    "spatial_slot",      # place のときの置き場所の番号（それ以外は MOVING_SLOT）
+)
+
+RAW_INDEX_COLUMNS = (
+    "pc_utc",            # その読み出しを PC が受けた時刻
+    "end_offset",        # uart.bin の、その読み出しの終わりのバイト位置
 )
 
 GNSS_COLUMNS = (
@@ -231,6 +260,15 @@ class RxSample:
 
 
 @dataclass(frozen=True)
+class Event:
+    """作業者の操作 1 回ぶん。"""
+
+    pc_utc: str
+    kind: str
+    spatial_slot: int = MOVING_SLOT
+
+
+@dataclass(frozen=True)
 class PositionFix:
     """位置の時系列の 1 点（任意）。"""
 
@@ -307,6 +345,62 @@ def validate_header(header: SessionHeader) -> None:
     _validate_endpoint(header.rx, "rx")
 
 
+def parse_utc(value: str) -> datetime:
+    """ISO 8601 の UTC を読む。**時差の無い時刻は受け付けない**＝PC の現地時刻が
+    混ざると、イベントとサンプルの前後が 9 時間ずれたまま黙って対応づけられる。"""
+    try:
+        parsed = datetime.fromisoformat(value)
+    except ValueError as e:
+        raise SessionError(f"時刻が ISO 8601 ではありません: {value!r}") from e
+    if parsed.tzinfo is None or parsed.utcoffset() != timedelta(0):
+        raise SessionError(f"時刻が UTC ではありません: {value!r}")
+    return parsed
+
+
+def format_utc(moment: datetime) -> str:
+    """UTC の時刻を µ 秒まで書く（`parse_utc` で読み戻せる形）。"""
+    return moment.astimezone(timezone.utc).strftime("%Y-%m-%dT%H:%M:%S.%fZ")
+
+
+def validate_events(events: list[Event], *, finished: bool = True) -> None:
+    """操作の並びの約束。**区切りを決める材料なので、崩れた並びから窓を作らない。**
+
+    `place` で始まり、`place → move|stop`・`move → place|stop` と進み、`stop` で
+    終わる。置き場所の番号は使い回さない（同じ番号が 2 か所を指すと、後から
+    どちらの場所の値か分からない）。`finished=False` は測定中（まだ `stop` が無い）。
+    """
+    if not events:
+        if finished:
+            raise SessionError("操作の記録がありません（place から始まります）")
+        return
+    used: set[int] = set()
+    previous: Event | None = None
+    for event in events:
+        _require(event.kind, EVENT_KINDS, "操作の種類")
+        moment = parse_utc(event.pc_utc)
+        if previous is None:
+            if event.kind != "place":
+                raise SessionError(f"操作の記録が place で始まっていません: {event.kind}")
+        else:
+            if previous.kind == "stop":
+                raise SessionError("stop の後に操作があります")
+            if event.kind == previous.kind:
+                raise SessionError(f"{event.kind} が続いています（{event.pc_utc}）")
+            if moment < parse_utc(previous.pc_utc):
+                raise SessionError(f"操作の時刻が戻っています: {event.pc_utc}")
+        if event.kind == "place":
+            if event.spatial_slot < 0:
+                raise SessionError(f"置き場所の番号が負です: {event.spatial_slot}")
+            if event.spatial_slot in used:
+                raise SessionError(f"置き場所の番号を使い回しています: {event.spatial_slot}")
+            used.add(event.spatial_slot)
+        elif event.spatial_slot != MOVING_SLOT:
+            raise SessionError(f"{event.kind} に置き場所の番号が付いています")
+        previous = event
+    if finished and events[-1].kind != "stop":
+        raise SessionError("操作の記録が stop で終わっていません（測定が途中で止まった）")
+
+
 # --- 書き出し ----------------------------------------------------------------
 
 
@@ -344,6 +438,9 @@ def create_session(root: str | os.PathLike[str], header: SessionHeader) -> Path:
     directory.mkdir(parents=True)
     _write_json_atomic(directory / HEADER_FILE, asdict(header))
     _write_csv_header(directory / SAMPLES_FILE, SAMPLE_COLUMNS)
+    _write_csv_header(directory / EVENTS_FILE, EVENT_COLUMNS)
+    _write_csv_header(directory / RAW_INDEX_FILE, RAW_INDEX_COLUMNS)
+    (directory / RAW_FILE).touch()
     return directory
 
 
@@ -363,6 +460,70 @@ def append_rx_samples(directory: str | os.PathLike[str], samples: list[RxSample]
             writer.writerow([getattr(s, c) for c in SAMPLE_COLUMNS])
         f.flush()
         os.fsync(f.fileno())   # 測定中に電源が落ちても、書けた分はディスクに在る
+
+
+def append_event(directory: str | os.PathLike[str], event: Event) -> None:
+    """操作を 1 つ**追記**する。書く前に、それまでの並びに続けて約束を通るか見る。"""
+    history = list(read_events(directory))
+    validate_events(history + [event], finished=False)
+    _append_rows(Path(directory) / EVENTS_FILE, [[getattr(event, c) for c in EVENT_COLUMNS]])
+
+
+def append_raw(directory: str | os.PathLike[str], chunk: bytes, pc_utc: str) -> None:
+    """UART の生のバイト列を**追記**し、受けた時刻を索引に 1 行足す。
+
+    ⚠️ 本体（バイト列）を先に書く。索引が先だと、間で落ちたときに**無いバイトを
+    指す索引**が残る（逆なら、索引の無い末尾が残るだけで読み直せる）。
+    """
+    parse_utc(pc_utc)
+    raw = Path(directory) / RAW_FILE
+    with raw.open("ab") as f:
+        f.write(chunk)
+        f.flush()
+        os.fsync(f.fileno())
+        end = f.tell()
+    _append_rows(Path(directory) / RAW_INDEX_FILE, [[pc_utc, end]])
+
+
+def read_raw(directory: str | os.PathLike[str]) -> Iterator[tuple[str, bytes]]:
+    """生のバイト列を、**読み出したときの区切りと時刻のまま**返す。"""
+    directory = Path(directory)
+    data = (directory / RAW_FILE).read_bytes()
+    start = 0
+    for row in _read_rows(directory / RAW_INDEX_FILE, RAW_INDEX_COLUMNS, "生ログの索引"):
+        end = int(row["end_offset"])
+        if not start <= end <= len(data):
+            raise SessionError(
+                f"生ログの索引が本体を指していません: {end}（本体は {len(data)} バイト）"
+            )
+        yield row["pc_utc"], data[start:end]
+        start = end
+
+
+def read_events(directory: str | os.PathLike[str]) -> Iterator[Event]:
+    for row in _read_rows(Path(directory) / EVENTS_FILE, EVENT_COLUMNS, "操作の記録"):
+        yield Event(
+            pc_utc=row["pc_utc"], kind=row["kind"], spatial_slot=int(row["spatial_slot"])
+        )
+
+
+def _append_rows(path: Path, rows: list[list[object]]) -> None:
+    if not path.exists():
+        raise SessionError(f"追記先がありません: {path}")
+    with path.open("a", encoding="utf-8", newline="") as f:
+        csv.writer(f).writerows(rows)
+        f.flush()
+        os.fsync(f.fileno())
+
+
+def _read_rows(path: Path, columns: tuple[str, ...], what: str) -> Iterator[dict[str, str]]:
+    with path.open("r", encoding="utf-8", newline="") as f:
+        reader = csv.DictReader(f)
+        if tuple(reader.fieldnames or ()) != columns:
+            raise SessionError(
+                f"{what}の列が違います: {reader.fieldnames}（期待は {list(columns)}）"
+            )
+        yield from reader
 
 
 def append_position_fixes(
@@ -406,7 +567,11 @@ def read_header(directory: str | os.PathLike[str]) -> SessionHeader:
         raise SessionError(f"ヘッダがありません: {path}") from e
     except json.JSONDecodeError as e:
         raise SessionError(f"ヘッダが壊れています: {path}（{e}）") from e
+    return header_from_dict(payload)
 
+
+def header_from_dict(payload: dict[str, Any]) -> SessionHeader:
+    """dict からヘッダを組み、約束を通す（読み戻しと雛形からの組み立ての共通の口）。"""
     nested = dict(payload)
     nested["provenance"] = _build(Provenance, payload.get("provenance", {}), "刻印")
     for key in ("tx", "rx"):

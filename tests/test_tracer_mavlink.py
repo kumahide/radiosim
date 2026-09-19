@@ -19,6 +19,7 @@ tests/test_tracer_mavlink.py
 from __future__ import annotations
 
 import struct
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -453,6 +454,13 @@ def _header() -> S.SessionHeader:
     )
 
 
+def _at(seq_time: float) -> str:
+    """番号 seq_time のパケットが届く時刻（送信間隔 100 ms）。"""
+    return S.format_utc(
+        datetime(2026, 9, 19, 1, 0, tzinfo=timezone.utc) + timedelta(seconds=seq_time * 0.1)
+    )
+
+
 def test_frames_lost_on_the_uart_show_up_as_censoring(dialect):
     """🚨 **UART で落ちた分は、電波で届かなかった分と見分けが付かない。**
 
@@ -467,11 +475,12 @@ def test_frames_lost_on_the_uart_show_up_as_censoring(dialect):
 
     messages, stats = R.read_log(log)
     assert stats.crc_errors >= 1
-    samples = R.rx_samples(messages, lambda m: "2026-09-19T01:00:00Z")
+    samples = R.rx_samples(messages, lambda m: _at(m.fields["seq"]))
     assert len(samples) == 19                        # 1 つだけ欠ける
 
     header = _header()
-    windows = A.aggregate(header, samples)
+    events = [S.Event(_at(0.5), "place", 0), S.Event(_at(20.5), "stop")]
+    windows = A.aggregate(header, samples, events)
     assert [w.received for w in windows] == [10, 9]  # 期待は 10/窓（1 秒 ÷ 100 ms）
     assert windows[0].censored is False
     assert windows[1].censored is True               # 受信率 0.9 未満＝値を出さない

@@ -92,7 +92,47 @@ def iter_messages(
     （その数は測定の解釈に使うので、汚さない）。
     """
     stats = stats if stats is not None else ReadStats()
-    dialect = dialect or load_dialect()
+    messages, consumed = _parse(data, stats, dialect or load_dialect())
+    # 末尾で切れている。**残りを雑音として数えない**＝測定が途中で止まったことと、
+    # 線が汚れていることは別の事実。
+    stats.truncated_tail += len(data) - consumed
+    yield from messages
+
+
+class FrameStream:
+    """**細切れに届く**バイト列を読む（UART は 1 回の読み出しでフレームの途中まで
+    しか来ないことが普通にある）。
+
+    フレームの途中で切れた分は次の `feed` まで持ち越す。⚠️ 持ち越しを捨てると、
+    **読み出しの区切りに跨ったフレームだけ**が落ち、落ちた数は読み出しの間隔で
+    変わる＝電波と無関係な「欠け」が打ち切りの根拠に混ざる。
+    どう区切って渡しても、1 回で渡したときと**同じメッセージ・同じエラー数**になる。
+    """
+
+    def __init__(self, stats: ReadStats | None = None, dialect: Dialect | None = None):
+        self.stats = stats if stats is not None else ReadStats()
+        self._dialect = dialect or load_dialect()
+        self._pending = b""
+
+    def feed(self, data: bytes) -> list[Message]:
+        buffer = self._pending + data
+        messages, consumed = _parse(buffer, self.stats, self._dialect)
+        self._pending = buffer[consumed:]
+        return messages
+
+    def close(self) -> None:
+        """終わり。持ち越しが残っていれば、それは末尾で切れたフレーム。"""
+        self.stats.truncated_tail += len(self._pending)
+        self._pending = b""
+
+
+def _parse(data: bytes, stats: ReadStats, dialect: Dialect) -> tuple[list[Message], int]:
+    """読めるところまで読み、`(メッセージ, 読み終えたバイト数)` を返す。
+
+    末尾の不完全なフレームは**読み終えたことにしない**（数えもしない）＝続きが
+    来るかどうかは呼び手にしか分からない。
+    """
+    messages: list[Message] = []
     index = 0
     size = len(data)
     while index < size:
@@ -101,18 +141,14 @@ def iter_messages(
             index += 1
             continue
         if index + _HEADER_LEN > size:
-            stats.truncated_tail += size - index
-            return
+            break
         payload_len = data[index + 1]
         incompat = data[index + 2]
         total = _HEADER_LEN + payload_len + _CHECKSUM_LEN
         if incompat & _INCOMPAT_SIGNED:
             total += _SIGNATURE_LEN
         if index + total > size:
-            # 末尾で切れている。**残りを雑音として数えない**＝測定が途中で止まった
-            # ことと、線が汚れていることは別の事実。
-            stats.truncated_tail += size - index
-            return
+            break
         msgid = int.from_bytes(data[index + 7:index + 10], "little")
         definition = dialect.message(msgid)
         if definition is None:
@@ -133,15 +169,16 @@ def iter_messages(
             index += 1
             continue
         stats.frames += 1
-        yield Message(
+        messages.append(Message(
             name=definition.name,
             msgid=msgid,
             fields=decode_payload(definition, payload),
             link_seq=data[index + 4],
             sysid=data[index + 5],
             compid=data[index + 6],
-        )
+        ))
         index += total
+    return messages, index
 
 
 def read_log(

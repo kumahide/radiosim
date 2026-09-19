@@ -194,7 +194,8 @@ def load_dialect(path: str | None = None) -> Dialect:
     """XML を読んで定義を組み立てる（同じ XML は 1 回だけ読む）。"""
     xml_path = Path(path) if path else DIALECT_XML
     try:
-        root = ElementTree.parse(xml_path).getroot()
+        # B314 の抑止: 読むのはリポジトリ内の自前の定義（外から受け取ったものではない）
+        root = ElementTree.parse(xml_path).getroot()  # nosec B314
     except FileNotFoundError as e:
         raise DialectError(f"ダイアレクトの XML がありません: {xml_path}") from e
     except ElementTree.ParseError as e:

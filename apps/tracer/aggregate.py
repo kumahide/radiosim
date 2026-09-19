@@ -3,7 +3,8 @@ apps/tracer/aggregate.py
 ========================
 受信サンプルを**窓ごとにまとめ**、本体のバッチ CSV へ書き出す（Tracer phase 1・増分2）。
 
-    samples.csv（生値・1 受信 1 行） → 窓（受信率と代表値） → バッチ CSV（1 窓 1 行）
+    samples.csv（生値・1 受信 1 行）＋ events.csv（置き場所の区切り）
+      → 窓（受信率と代表値） → バッチ CSV（1 窓 1 行）
 
 **窓はシーケンス番号で刻む（時刻ではない）。** TX は等間隔で番号付きのパケットを
 送るので、窓の期待パケット数は `集計窓の長さ ÷ 送信間隔` で決まり、その範囲に
@@ -27,16 +28,27 @@ apps/tracer/aggregate.py
 
 from __future__ import annotations
 
+import bisect
 import csv
+import math
 import os
 import tempfile
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Iterable
 
 from core.batch_csv_schema import CSV_COLUMNS
 
-from apps.tracer.session import RxSample, SessionError, SessionHeader, to_dbm
+from apps.tracer.session import (
+    Event,
+    RxSample,
+    SessionError,
+    SessionHeader,
+    parse_utc,
+    to_dbm,
+    validate_events,
+)
 
 # 2.4 GHz 帯のチャネル → 中心周波数 [MHz]。**表で持つ**（式で書くと 14 番だけ外れる）。
 # 設定メッセージのチャネル番号から本体の `freq` 列を作るのに使う。
@@ -84,49 +96,98 @@ def window_seq_count(header: SessionHeader) -> int:
     return count
 
 
-def aggregate(header: SessionHeader, samples: Iterable[RxSample]) -> list[Window]:
+def aggregate(
+    header: SessionHeader, samples: Iterable[RxSample], events: list[Event]
+) -> list[Window]:
     """受信サンプルを窓へまとめる。**サンプルはシーケンス番号の昇順**で渡すこと。
 
-    窓は `(config_id, spatial_slot)` が変わらない区間（以下「区間」）の中だけで刻む。
-    設定が変われば無線の条件そのものが違い、置き場所が変われば別の場所を測っている
-    ので、跨いで平均すると**混ざったものが 1 つの実測値として本体へ入る**。
+    窓は**置き場所に据えていた間**（操作の記録の `place` から次の `move`/`stop` まで）
+    の中だけで刻み、跨がない。置き場所が変われば別の場所を測っているので、跨いで
+    平均すると**混ざったものが 1 つの実測値として本体へ入る**。移動中はどの窓にも
+    入れない。
 
-    ⚠️ **区間の終わりは「次の区間の先頭 − 1」とする。** 最後に届いたパケットで
-    区切ると、リンクが落ちて一切届かなくなった末尾が**そもそも窓にならず、打ち切りが
-    消える**（§5-4 が避けようとしているのがまさにこれ）。次の区間があれば、その手前
-    までは TX が送り続けていたと分かる。
-    ⚠️ 残る穴は**セッション最後の区間の末尾**＝受信が途絶えた後どこまで送ったかは、
-    サンプルからは分からない。⇒ 停止の時刻は CLI（増分4）が記録する。
+    🔑 **区切りはサンプルではなく操作の記録から決める。** サンプルの側から区切ると
+    - 受信が途絶えた末尾が窓にならず、**打ち切りが静かに減る**（§5-4 が避けたい偏り）
+    - 1 つも受からなかった置き場所は**存在ごと見えない**（いちばん悪い場所が消える）
+    操作の時刻を「TX がその時点までに送った番号」へ直せば、受からなかった分も
+    分母に入る（→ `_SeqClock`）。
     """
+    validate_events(events)
     per_window = window_seq_count(header)
     ordered = list(samples)
+    _check_samples(header, ordered)
     if not ordered:
-        return []
-    _check_order_and_config(header, ordered)
+        # 時刻を番号へ直す手がかりが無い。機材の不具合（チャネル違いなど）と電波の
+        # 弱さを見分けられないので、「全部打ち切り」とも言えない。
+        raise SessionError(
+            "受信サンプルが 1 つもないので窓を作れません（機材の設定を確かめてください）"
+        )
+    clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms / 1000.0)
+    by_seq = {s.seq: s for s in ordered}
+    key_config = header.rx.radio.config_id
 
-    segments = _segments(ordered)
     windows: list[Window] = []
-    for position, (key, members) in enumerate(segments):
-        first_seq = members[0].seq
-        if position + 1 < len(segments):
-            last_seq = segments[position + 1][1][0].seq - 1
-        else:
-            last_seq = members[-1].seq
-        by_seq = {s.seq: s for s in members}
-        start = first_seq
-        while start <= last_seq:
-            if start + per_window - 1 > last_seq:
-                # 端数の窓は出さない。**分母が足りない**ので受信率が意味を持たず、
-                # 「置き場所を移した」のか「届かなかった」のか区別できない。
-                break
+    for slot, placed_at, left_at in _placements(events):
+        start = clock.last_sent(placed_at) + 1
+        last = clock.last_sent(left_at)
+        # 端数の窓は出さない。**分母が足りない**ので受信率が意味を持たない。
+        while start + per_window - 1 <= last:
             got = [by_seq[q] for q in range(start, start + per_window) if q in by_seq]
-            windows.append(_make_window(header, len(windows), key, start, per_window, got))
+            windows.append(
+                _make_window(header, len(windows), (key_config, slot), start, per_window, got)
+            )
             start += per_window
     return windows
 
 
-def _check_order_and_config(header: SessionHeader, samples: list[RxSample]) -> None:
+def _placements(events: list[Event]) -> list[tuple[int, datetime, datetime]]:
+    """`(置き場所, 据えた時刻, 離れた時刻)` の並び。離れた＝次の move か stop。"""
+    spans = []
+    for current, following in zip(events, events[1:]):
+        if current.kind == "place":
+            spans.append(
+                (current.spatial_slot, parse_utc(current.pc_utc), parse_utc(following.pc_utc))
+            )
+    return spans
+
+
+class _SeqClock:
+    """PC の時刻 →「TX がその時点までに送った最後の番号」。
+
+    TX は等間隔に番号を振るので、届いたサンプル 1 つを基準にすれば、届かなかった
+    時間帯の番号も `基準の番号 + 経過 ÷ 送信間隔` で分かる。基準には**その時刻の
+    直前に届いたサンプル**（無ければ直後）を使う＝外挿の距離を短くして、TX と PC の
+    時計の進み方の差（水晶の ppm 級）を効かせない。
+
+    ⚠️ 受信の遅れ（UART・USB）ぶん番号が 1 つ前後するが、窓は数十パケットで、
+    区切りの端数の窓は出さないので、窓の中身には効かない。
+    """
+
+    def __init__(self, samples: list[RxSample], interval_s: float):
+        self._interval_s = interval_s
+        self._times: list[float] = []
+        self._seqs: list[int] = []
+        for s in samples:
+            moment = parse_utc(s.pc_utc).timestamp()
+            if self._times and moment < self._times[-1]:
+                # PC の時計が戻った（時刻合わせ）。直すと番号の対応が崩れる。
+                raise SessionError(
+                    f"サンプルの受信時刻が戻っています: seq {s.seq} の {s.pc_utc}"
+                )
+            self._times.append(moment)
+            self._seqs.append(s.seq)
+
+    def last_sent(self, moment: datetime) -> int:
+        t = moment.timestamp()
+        index = bisect.bisect_right(self._times, t) - 1
+        index = max(index, 0)
+        offset = (t - self._times[index]) / self._interval_s
+        return self._seqs[index] + math.floor(offset)
+
+
+def _check_samples(header: SessionHeader, samples: list[RxSample]) -> None:
     expected_config = header.rx.radio.config_id
+    expected_tx = header.tx.device_id
     previous = None
     for s in samples:
         if s.config_id != expected_config:
@@ -136,23 +197,18 @@ def _check_order_and_config(header: SessionHeader, samples: list[RxSample]) -> N
                 f"ヘッダに無い設定番号のサンプルがあります: {s.config_id}"
                 f"（ヘッダの RX は {expected_config}）"
             )
+        if s.tx_id != expected_tx:
+            # 近くで別の送信機が動いている。番号の系列が別物なので、混ぜると
+            # 受信率も平均も意味を失う。
+            raise SessionError(
+                f"ヘッダの TX と違う送信機のサンプルがあります: {s.tx_id}"
+                f"（ヘッダの TX は {expected_tx}）"
+            )
         if previous is not None and s.seq <= previous:
             raise SessionError(
                 f"サンプルがシーケンス番号の昇順ではありません: {previous} の次が {s.seq}"
             )
         previous = s.seq
-
-
-def _segments(samples: list[RxSample]) -> list[tuple[tuple[int, int], list[RxSample]]]:
-    """`(config_id, spatial_slot)` が変わらない連続区間へ割る。"""
-    segments: list[tuple[tuple[int, int], list[RxSample]]] = []
-    for s in samples:
-        key = (s.config_id, s.spatial_slot)
-        if not segments or segments[-1][0] != key:
-            segments.append((key, [s]))
-        else:
-            segments[-1][1].append(s)
-    return segments
 
 
 def _make_window(

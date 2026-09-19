@@ -361,3 +361,59 @@ def test_sample_columns_must_match(tmp_path):
     (directory / S.SAMPLES_FILE).write_text("seq,rssi_raw\n1,-140\n", encoding="utf-8")
     with pytest.raises(S.SessionError, match="列が違います"):
         list(S.read_rx_samples(directory))
+
+
+# --- 操作の記録（置き場所の区切り） --------------------------------------------
+
+
+def _ev(kind: str, second: int, slot: int = S.MOVING_SLOT) -> S.Event:
+    return S.Event(f"2026-09-19T01:00:{second:02d}.000000Z", kind, slot)
+
+
+def test_a_well_formed_sequence_of_operations_passes():
+    S.validate_events([
+        _ev("place", 0, 0), _ev("move", 10), _ev("place", 20, 1), _ev("stop", 30),
+    ])
+
+
+@pytest.mark.parametrize("events, message", [
+    ([_ev("move", 0), _ev("stop", 1)], "place で始まって"),
+    ([_ev("place", 0, 0), _ev("place", 1, 1), _ev("stop", 2)], "続いて"),
+    ([_ev("place", 0, 0), _ev("move", 1), _ev("place", 2, 0), _ev("stop", 3)], "使い回し"),
+    ([_ev("place", 0, 0), _ev("stop", 1), _ev("move", 2)], "stop の後"),
+    ([_ev("place", 5, 0), _ev("stop", 4)], "戻って"),
+    ([_ev("place", 0, 0), _ev("move", 1, 3), _ev("stop", 2)], "番号が付いて"),
+    ([_ev("place", 0, 0)], "stop で終わって"),
+    ([], "記録がありません"),
+])
+def test_a_broken_sequence_of_operations_is_refused(events, message):
+    """崩れた並びから窓を作らないこと（区切りを決める材料なので）。
+
+    とくに**置き場所の番号の使い回し**＝同じ番号が 2 か所を指すと、後からどちらの
+    場所の値か分からない。
+    """
+    with pytest.raises(S.SessionError, match=message):
+        S.validate_events(events)
+
+
+def test_an_unfinished_sequence_is_allowed_while_measuring():
+    S.validate_events([_ev("place", 0, 0), _ev("move", 1)], finished=False)
+    S.validate_events([], finished=False)
+
+
+def test_times_must_be_utc():
+    """時差の無い時刻（PC の現地時刻）を受け付けないこと＝9 時間ずれたまま対応づく。"""
+    with pytest.raises(S.SessionError, match="UTC"):
+        S.parse_utc("2026-09-19T10:00:00")
+    with pytest.raises(S.SessionError, match="UTC"):
+        S.parse_utc("2026-09-19T10:00:00+09:00")
+    assert S.parse_utc(S.format_utc(S.parse_utc("2026-09-19T01:00:00Z"))).hour == 1
+
+
+def test_an_event_that_breaks_the_order_is_not_appended(tmp_path):
+    """追記の前に、それまでの並びに続けて約束を通るか見ること（書いてから気づかない）。"""
+    directory = S.create_session(tmp_path, _header())
+    S.append_event(directory, _ev("place", 0, 0))
+    with pytest.raises(S.SessionError):
+        S.append_event(directory, _ev("place", 1, 1))
+    assert [e.kind for e in S.read_events(directory)] == ["place"]

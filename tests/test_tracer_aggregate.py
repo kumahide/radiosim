@@ -17,6 +17,7 @@ tests/test_tracer_aggregate.py
 from __future__ import annotations
 
 import csv
+from datetime import datetime, timedelta, timezone
 
 import pytest
 
@@ -97,12 +98,23 @@ def _header(censor_rate: float = 0.9, window_s: float = 1.0, **kwargs) -> S.Sess
     return S.SessionHeader(**values)
 
 
-def _sample(seq: int, rssi_raw: int = -140, slot: int = 0, config_id: int = 1) -> S.RxSample:
+_BASE = datetime(2026, 9, 19, 1, 0, 0, tzinfo=timezone.utc)
+
+
+def _t(seq_time: float) -> str:
+    """「番号 seq_time のパケットが届く時刻」（送信間隔 100 ms）。"""
+    return S.format_utc(_BASE + timedelta(seconds=seq_time * 0.1))
+
+
+def _sample(
+    seq: int, rssi_raw: int = -140, slot: int = 0, config_id: int = 1,
+    tx_id: str = "aa:bb:cc:dd:ee:01",
+) -> S.RxSample:
     return S.RxSample(
-        pc_utc=f"2026-09-19T01:00:{seq % 60:02d}Z",
+        pc_utc=_t(seq),
         radio_time_us=1_000_000 + seq * 100_000,
         seq=seq,
-        tx_id="aa:bb:cc:dd:ee:01",
+        tx_id=tx_id,
         rssi_raw=rssi_raw,
         noise_floor_raw=-190,
         config_id=config_id,
@@ -110,9 +122,23 @@ def _sample(seq: int, rssi_raw: int = -140, slot: int = 0, config_id: int = 1) -
     )
 
 
-def _run(seqs, header=None, **sample_kwargs) -> list[A.Window]:
+def _events(*steps: tuple[str, float, int]) -> list[S.Event]:
+    """`(種類, 番号で測った時刻, 置き場所)` の並び → 操作の記録。"""
+    return [
+        S.Event(_t(when), kind, slot if kind == "place" else S.MOVING_SLOT)
+        for kind, when, slot in steps
+    ]
+
+
+def _run(seqs, header=None, stop_at: float | None = None, **sample_kwargs) -> list[A.Window]:
+    """置き場所 0 に据えたまま測り、最後の受信の直後（または `stop_at`）に終える。"""
     header = header or _header()
-    return A.aggregate(header, [_sample(q, **sample_kwargs) for q in seqs])
+    seqs = list(seqs)
+    events = _events(
+        ("place", seqs[0] - 0.5, 0),
+        ("stop", seqs[-1] + 0.5 if stop_at is None else stop_at, 0),
+    )
+    return A.aggregate(header, [_sample(q, **sample_kwargs) for q in seqs], events)
 
 
 # --- 窓の刻み ----------------------------------------------------------------
@@ -148,7 +174,8 @@ def test_the_mean_is_taken_in_the_db_domain_not_in_power():
     strong, weak = -100, -180                      # 生値 → −146 dBm / −186 dBm
     header = _header(window_s=0.2)                 # 2 パケットで 1 窓
     samples = [_sample(100, rssi_raw=strong), _sample(101, rssi_raw=weak)]
-    got = A.aggregate(header, samples)[0].meas_dbm
+    events = _events(("place", 99.5, 0), ("stop", 101.5, 0))
+    got = A.aggregate(header, samples, events)[0].meas_dbm
     assert got == pytest.approx((-146.0 + -186.0) / 2)      # dB 平均 = −166 dBm
     assert got != pytest.approx(-149.0, abs=1.0)            # 電力平均なら約 −149 dBm
 
@@ -162,12 +189,9 @@ def test_a_partly_received_window_is_censored_instead_of_averaged():
     🔑 **弱いパケットから先に落ちる**ので、届いた分の平均は楽観側へ偏る。
     「少しでも届いたのだから平均すればよい」が、較正の偽陽性を作る。
     """
-    # ⚠️ 末尾に満ちた窓を 1 つ足してある＝**最後の区間の端数は窓にならない**ので、
-    # 途切れた窓だけを並べると何も出ない（この穴は増分4 の停止時刻で塞ぐ）。
-    windows = _run([100, 101, 102, 103, 104] + list(range(110, 120)))
-    assert [w.receive_rate for w in windows] == [pytest.approx(0.5), pytest.approx(1.0)]
+    windows = _run([100, 101, 102, 103, 104], stop_at=109.5)
+    assert [w.receive_rate for w in windows] == [pytest.approx(0.5)]
     assert windows[0].censored and windows[0].meas_dbm is None
-    assert not windows[1].censored
 
 
 def test_a_window_that_received_nothing_still_exists():
@@ -178,20 +202,64 @@ def test_a_window_that_received_nothing_still_exists():
     assert windows[1].first_pc_utc == ""
 
 
-def test_the_tail_of_a_segment_is_recovered_from_the_next_segment():
-    """置き場所を移す直前に途絶えた区間が、窓にならずに消えないこと。
+def test_the_tail_before_a_move_is_not_lost():
+    """動かす直前に途絶えた分が、窓にならずに消えないこと。
 
     ⚠️ 区間の終わりを「最後に届いたパケット」で切ると、リンクが落ちた末尾が
     そもそも窓にならない＝**打ち切りが静かに減る**（§5-4 が避けたい偏り）。
+    区切りは操作の時刻から「TX がそこまでに送った番号」を出して決める。
     """
     samples = (
         [_sample(q, slot=1) for q in range(100, 110)]     # 満ちた窓
         + [_sample(q, slot=1) for q in range(110, 112)]   # 次の窓は 2 個で途絶
-        + [_sample(q, slot=2) for q in range(120, 130)]   # 置き場所を移した
+        + [_sample(q, slot=2) for q in range(120, 130)]   # 据え直した
     )
-    windows = A.aggregate(_header(), samples)
+    events = _events(
+        ("place", 99.5, 1), ("move", 119.5, 0), ("place", 119.7, 2), ("stop", 129.5, 0)
+    )
+    windows = A.aggregate(_header(), samples, events)
     assert [(w.spatial_slot, w.received) for w in windows] == [(1, 10), (1, 2), (2, 10)]
     assert windows[1].censored
+
+
+def test_the_tail_of_the_session_is_closed_by_the_stop():
+    """最後の置き場所の末尾が、終了の記録まで窓になること（増分2 で残した穴）。
+
+    受信が途絶えた後も TX は送り続けている。終了の時刻が無いと、その分の打ち切りが
+    **セッションの最後でだけ**消える。
+    """
+    windows = _run(range(100, 110), stop_at=129.5)
+    assert [(w.seq_start, w.received) for w in windows] == [(100, 10), (110, 0), (120, 0)]
+
+
+def test_a_slot_that_received_nothing_still_has_windows():
+    """1 つも受からなかった置き場所も、打ち切りの窓として残ること。
+
+    🔑 サンプルから区切ると、この置き場所は**存在ごと見えない**＝いちばん悪い場所が
+    数から落ちる。操作の記録から区切るので、受信ゼロでも窓ができる。
+    """
+    samples = [_sample(q, slot=0) for q in range(100, 110)] + [
+        _sample(q, slot=2) for q in range(140, 150)
+    ]
+    events = _events(
+        ("place", 99.5, 0), ("move", 109.5, 0),
+        ("place", 110.3, 1), ("move", 130.3, 0),         # ここでは 1 つも受からない
+        ("place", 139.5, 2), ("stop", 149.5, 0),
+    )
+    windows = A.aggregate(_header(), samples, events)
+    slot1 = [w for w in windows if w.spatial_slot == 1]
+    assert [(w.seq_start, w.received) for w in slot1] == [(111, 0), (121, 0)]
+    assert all(w.censored for w in slot1)
+
+
+def test_samples_received_while_moving_are_not_in_any_window():
+    """移動中に受けたものは窓に入れないこと（どちらの場所の値でもない）。"""
+    samples = [_sample(q) for q in range(100, 130)]
+    events = _events(
+        ("place", 99.5, 0), ("move", 109.5, 0), ("place", 119.5, 1), ("stop", 129.5, 0)
+    )
+    windows = A.aggregate(_header(), samples, events)
+    assert [(w.spatial_slot, w.seq_start) for w in windows] == [(0, 100), (1, 120)]
 
 
 def test_the_censored_fraction_is_reported():
@@ -210,7 +278,10 @@ def test_windows_do_not_cross_a_spatial_slot():
         [_sample(q, slot=1) for q in range(100, 105)]
         + [_sample(q, slot=2) for q in range(105, 115)]
     )
-    windows = A.aggregate(_header(), samples)
+    events = _events(
+        ("place", 99.5, 1), ("move", 104.5, 0), ("place", 104.6, 2), ("stop", 114.5, 0)
+    )
+    windows = A.aggregate(_header(), samples, events)
     # 置き場所 1 は 5 個しか無く**端数の窓**なので出ない。2 は 10 個で 1 窓。
     assert [(w.spatial_slot, w.received) for w in windows] == [(2, 10)]
 
@@ -233,8 +304,33 @@ def test_samples_must_be_in_sequence_order():
         _run([100, 102, 101])
 
 
-def test_no_samples_gives_no_windows():
-    assert A.aggregate(_header(), []) == []
+def test_a_sample_from_another_transmitter_is_refused():
+    """ヘッダの TX と違う送信機のサンプルを混ぜないこと（番号の系列が別物）。"""
+    with pytest.raises(S.SessionError, match="違う送信機"):
+        _run(range(100, 110), tx_id="aa:bb:cc:dd:ee:99")
+
+
+def test_no_samples_is_an_error_not_an_empty_result():
+    """1 つも受からなかったセッションを「窓 0 個」で済ませないこと。
+
+    時刻を番号へ直す手がかりが無く、機材の不具合と電波の弱さも見分けられない。
+    黙って空を返すと、いちばん悪い測定が何も無かったことになる。
+    """
+    with pytest.raises(S.SessionError, match="1 つもない"):
+        A.aggregate(_header(), [], _events(("place", 0, 0), ("stop", 10, 0)))
+
+
+def test_the_session_must_have_been_stopped():
+    """終了の記録が無い並びから窓を作らないこと（末尾がどこまでか分からない）。"""
+    with pytest.raises(S.SessionError, match="stop で終わって"):
+        A.aggregate(_header(), [_sample(100)], _events(("place", 99.5, 0)))
+
+
+def test_a_clock_that_goes_back_is_refused():
+    """受信時刻が戻った列から番号を出さないこと（時刻と番号の対応が崩れる）。"""
+    samples = [_sample(100), S.RxSample(**{**_sample(101).__dict__, "pc_utc": _t(90)})]
+    with pytest.raises(S.SessionError, match="戻って"):
+        A.aggregate(_header(), samples, _events(("place", 89, 0), ("stop", 102, 0)))
 
 
 # --- 本体のバッチ CSV への受け渡し -------------------------------------------

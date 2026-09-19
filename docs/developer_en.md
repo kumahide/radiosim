@@ -298,6 +298,8 @@ radiosim/
 │   └── tracer/           # Field-measurement helper (separate app, in development; not part of the main build)
 │       ├── session.py    # Measurement session (one run = one folder: JSON header + append-only CSV)
 │       ├── aggregate.py  # Groups received samples into windows, marks censored ones, writes the batch CSV
+│       ├── recorder.py   # Records while measuring (appends UART bytes and operator actions to the session; rebuilds samples from the raw log)
+│       ├── cli.py        # Command line (write a header template, record, export to the batch CSV)
 │       └── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
 │           ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
 │           └── reader.py  # Splits a UART log into frames and turns them into received samples
@@ -336,6 +338,7 @@ radiosim/
     ├── test_tracer_session.py
     ├── test_tracer_aggregate.py
     ├── test_tracer_mavlink.py
+    ├── test_tracer_recorder.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1047,12 +1050,13 @@ When you add a module, add a row to the table and regenerate:
 
 ## Development Environment
 
-Dependencies are declared in **two files**:
+Dependencies are declared in **two files** (the third row below belongs to the separate field-measurement helper):
 
 | File | Contents | Ships in the binary? |
 | --- | --- | --- |
 | `requirements.txt` | Runtime dependencies (numpy / matplotlib / requests …) | **Yes** |
 | `requirements-dev.txt` | Testing, static analysis, packaging (pytest / pytest-cov / pyright / ruff / bandit / PyInstaller) | **No** |
+| `requirements-tracer.txt` | pyserial, used by the field-measurement helper (`apps/tracer`) to open the serial port. Not needed by the tests (CI does not install it) | **No** (separate app) |
 
 They are separate because mixing development tooling into the runtime dependency list risks bundling it into the EXE. **Both are pinned** — the PyInstaller pin matters most, since it decides the bootloader inside the shipped binary; leaving it unpinned means the release was built by whatever version was newest that day.
 
@@ -1138,7 +1142,8 @@ entry point that runs them together.
 | `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_tracer_session.py` | Measurement sessions of the field-measurement helper (`apps/tracer`): header round-trip, samples are append-only, the header is written atomically, endpoint positions accept both a session constant and a time series, time averaging and spatial averaging live in separate fields, raw values are never overwritten with converted ones, feeder loss is not folded into the conversion, a CLAS height is accepted only with a Fix solution, out-of-vocabulary values and an empty measurement-configuration ID are rejected |
-| `test_tracer_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/tracer`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, the tail of a segment never disappears, windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
+| `test_tracer_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/tracer`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, spatial-slot boundaries come from the operator log (what was lost just before a move or the stop does not disappear, a slot that received nothing still gets windows, samples received while moving go into no window), windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
+| `test_tracer_recorder.py` | Recording and the command line of the field-measurement helper (`apps/tracer`): a frame split across serial reads is not lost (any split gives the same messages and error counts), no session is created before the RX settings arrive but the raw bytes before that are kept, samples rebuilt from the raw log match what was written live, an unfilled template or another unit's calibration does not start a recording, a settings change ends the session, samples from another pair are not written, a session without a stop record is not exported silently |
 | `test_tracer_mavlink.py` | MAVLink decoding in the field-measurement helper (`apps/tracer`): the wire field order follows type size rather than XML order, CRC_EXTRA is derived from the definition, a truncated payload is zero-filled, a frame that fails its CRC never becomes a sample, an unknown message id is skipped whole so the error count is not inflated, a cut-off tail is distinguished from corruption, the frame link sequence is never used as the measurement sequence number, and frames lost on the UART surface as censoring |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
