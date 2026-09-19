@@ -37,7 +37,7 @@ def _calibration() -> S.Calibration:
     )
 
 
-def _radio(config_id: int = 1) -> S.RadioSettings:
+def _radio(config_id: int = 1, sensitivity_dbm: float | None = -98.0) -> S.RadioSettings:
     return S.RadioSettings(
         config_id=config_id,
         firmware_version="0123456789ab",
@@ -49,7 +49,7 @@ def _radio(config_id: int = 1) -> S.RadioSettings:
         integration_window_us=1000,
         integration_samples=10,
         antenna="external",
-        sensitivity_dbm=-98.0,
+        sensitivity_dbm=sensitivity_dbm,
     )
 
 
@@ -73,7 +73,7 @@ def _endpoint(role: str, **kwargs) -> S.Endpoint:
         feeder_loss_db=1.5,
         antenna_gain_dbi=2.0,
         calibration=_calibration(),
-        radio=_radio(),
+        radio=_radio(sensitivity_dbm=None if role == "tx" else -98.0),   # TX は受けない
         position=_position(),
         orientation=S.Orientation(azimuth_deg=210.0, elevation_deg=-1.0, source="コンパス"),
     )
@@ -111,6 +111,8 @@ def _samples(count: int = 3) -> list[S.RxSample]:
             rssi_raw=-140 + i,
             noise_floor_raw=-190,
             config_id=1,
+            tx_config_id=4,
+            sample_seq=7 + i,
             spatial_slot=2,
         )
         for i in range(count)
@@ -304,6 +306,15 @@ def test_measurement_config_id_is_required(tmp_path):
     """
     with pytest.raises(S.SessionError, match="測定構成 ID"):
         S.create_session(tmp_path, _header(tx=_endpoint("tx", measurement_config_id="")))
+
+
+def test_the_tx_has_no_sensitivity_and_the_rx_must_have_one(tmp_path):
+    """TX は受けないので受信感度を持たせない（値があると、どこかで RX の感度と取り違えて
+    「感度以下（〜未満）」の文面に乗り得る）。RX は必須（打ち切りの文面になる）。"""
+    with pytest.raises(S.SessionError, match="TX に受信感度"):
+        S.create_session(tmp_path, _header(tx=_endpoint("tx", radio=_radio())))
+    with pytest.raises(S.SessionError, match="受信感度が範囲の外"):
+        S.create_session(tmp_path, _header(rx=_endpoint("rx", radio=_radio(sensitivity_dbm=None))))
 
 
 def test_roles_are_not_swapped(tmp_path):

@@ -217,18 +217,20 @@ def to_rx_sample(message: Message, pc_utc: str, spatial_slot: int = 0) -> RxSamp
         rssi_raw=f["rssi_raw"],
         noise_floor_raw=f["noise_floor_raw"],
         config_id=f["config_id"],
+        tx_config_id=f["tx_config_id"],
+        sample_seq=f["sample_seq"],
         spatial_slot=spatial_slot,
     )
 
 
 def to_radio_settings(
-    message: Message, sensitivity_dbm: float, dialect: Dialect | None = None
+    message: Message, sensitivity_dbm: float | None, dialect: Dialect | None = None
 ) -> RadioSettings:
     """`TRACER_CONFIG` を無線設定へ（セッションのヘッダを組むときに使う）。
 
     **受信感度は引数**＝ファームは自分の感度を知らない（データシートと受け入れ
     試験で決める値）。`meas_dbm` を出さない窓の「感度以下（〜未満）」の文面に
-    そのまま乗るので、ここで既定値をでっち上げない。
+    そのまま乗るので、ここで既定値をでっち上げない。TX の設定なら `None`（受けない）。
     """
     if message.name != "TRACER_CONFIG":
         raise SessionError(f"設定メッセージではありません: {message.name}")

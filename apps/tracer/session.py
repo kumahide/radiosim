@@ -45,7 +45,9 @@ from pathlib import Path
 from typing import Any, Iterator
 
 # セッション形式の版。読み手が知らない版を黙って読まないための番号。
-SCHEMA_VERSION = 1
+# 2＝TX の無線設定を機器（空中の中継）から取り、サンプルに TX の設定番号と
+#   送信機ごとの通し番号を足した（増分5 の続き）。
+SCHEMA_VERSION = 2
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -88,7 +90,9 @@ SAMPLE_COLUMNS = (
     "tx_id",             # 送信機の個体 ID
     "rssi_raw",          # 受信レベルの生値（整数・dBm ではない）
     "noise_floor_raw",   # 雑音フロアの生値（整数・dBm ではない）
-    "config_id",         # 設定番号。積分窓・検波方式はここから引く
+    "config_id",         # RX の設定番号。積分窓・検波方式はここから引く
+    "tx_config_id",      # TX の設定番号（受けたパケットに載っていたもの）
+    "sample_seq",        # ファームが振った通し番号（送信機ごと）。欠けは PC までの間の落ち
     "spatial_slot",      # 空間平均の置き場所の番号（PC 側が付ける）
 )
 
@@ -179,7 +183,9 @@ class RadioSettings:
     integration_window_us: int
     integration_samples: int         # **時間平均**の件数（空間平均とは別の場所）
     antenna: str
-    sensitivity_dbm: float           # 受信感度。打ち切りの「〜未満」の値になる
+    # 受信感度。打ち切りの「〜未満」の値になる。**TX では None**（受けないので値が無い。
+    # 機器は感度を知らないので、RX でも雛形に書いた値）。
+    sensitivity_dbm: float | None
 
 
 @dataclass(frozen=True)
@@ -256,6 +262,8 @@ class RxSample:
     rssi_raw: int
     noise_floor_raw: int
     config_id: int
+    tx_config_id: int
+    sample_seq: int
     spatial_slot: int = 0
 
 
@@ -310,10 +318,15 @@ def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
     _require(endpoint.radio.detector, DETECTORS, f"{expected_role} の検波方式")
     _require(endpoint.radio.antenna, ANTENNAS, f"{expected_role} のアンテナ切替")
     low, high = SENSITIVITY_RANGE_DBM
-    if not low <= endpoint.radio.sensitivity_dbm <= high:
+    sensitivity = endpoint.radio.sensitivity_dbm
+    if expected_role == "tx":
+        if sensitivity is not None:
+            # TX は受けない。値があると、どこかで RX の感度と取り違えて使われ得る。
+            raise SessionError(f"TX に受信感度があります: {sensitivity}（TX は受けません）")
+    elif sensitivity is None or not low <= sensitivity <= high:
         raise SessionError(
             f"{expected_role} の受信感度が範囲の外です: "
-            f"{endpoint.radio.sensitivity_dbm}（{low:g}〜{high:g} dBm）"
+            f"{sensitivity}（{low:g}〜{high:g} dBm）"
         )
     if not endpoint.measurement_config_id:
         # 刻印の 1 項目目。これが無いと、後から「どの構成で取ったか」を辿れない。
@@ -610,6 +623,8 @@ def read_rx_samples(directory: str | os.PathLike[str]) -> Iterator[RxSample]:
                 rssi_raw=int(row["rssi_raw"]),
                 noise_floor_raw=int(row["noise_floor_raw"]),
                 config_id=int(row["config_id"]),
+                tx_config_id=int(row["tx_config_id"]),
+                sample_seq=int(row["sample_seq"]),
                 spatial_slot=int(row["spatial_slot"]),
             )
 

@@ -65,7 +65,7 @@ def _endpoint(role: str, **kwargs) -> S.Endpoint:
         feeder_loss_db=1.5 if role == "rx" else 2.0,
         antenna_gain_dbi=2.0,
         calibration=_calibration(),
-        radio=_radio(),
+        radio=_radio(sensitivity_dbm=None if role == "tx" else -98.0),   # TX は受けない
         position=S.Position(
             lat=35.0 if role == "tx" else 35.1,
             lon=139.0 if role == "tx" else 139.1,
@@ -108,8 +108,10 @@ def _t(seq_time: float) -> str:
 
 def _sample(
     seq: int, rssi_raw: int = -140, slot: int = 0, config_id: int = 1,
-    tx_id: str = "aa:bb:cc:dd:ee:01",
+    tx_id: str = "aa:bb:cc:dd:ee:01", sample_seq: int = 0, tx_config_id: int = 1,
 ) -> S.RxSample:
+    """`sample_seq` の既定は全部 0＝番号が進まないので、**PC までの間の欠けは数えない**
+    （`link_gaps` は番号が進んだところだけを見る）。欠けを試すテストは明示して渡す。"""
     return S.RxSample(
         pc_utc=_t(seq),
         radio_time_us=1_000_000 + seq * 100_000,
@@ -118,6 +120,8 @@ def _sample(
         rssi_raw=rssi_raw,
         noise_floor_raw=-190,
         config_id=config_id,
+        tx_config_id=tx_config_id,
+        sample_seq=sample_seq,
         spatial_slot=slot,
     )
 
@@ -331,6 +335,84 @@ def test_a_clock_that_goes_back_is_refused():
     samples = [_sample(100), S.RxSample(**{**_sample(101).__dict__, "pc_utc": _t(90)})]
     with pytest.raises(S.SessionError, match="戻って"):
         A.aggregate(_header(), samples, _events(("place", 89, 0), ("stop", 102, 0)))
+
+
+def test_a_sample_from_another_tx_config_is_refused():
+    """TX の設定が変わった後のサンプルを混ぜないこと（送信間隔が違えば窓の分母が別物）。"""
+    with pytest.raises(S.SessionError, match="TX の設定番号"):
+        _run(range(100, 110), tx_config_id=7)
+
+
+# --- 受信機から PC までの間で落ちた分（§6.6 の提案①） --------------------------
+
+
+def _received(pairs, slot: int = 0) -> list[S.RxSample]:
+    """`(seq, sample_seq)` の並び → サンプル。sample_seq はファームが受信時に振った番号。"""
+    return [_sample(q, sample_seq=n, slot=slot) for q, n in pairs]
+
+
+def _windows(pairs, first: int = 100, last: int = 119) -> list[A.Window]:
+    events = _events(("place", first - 0.5, 0), ("stop", last + 0.5, 0))
+    return A.aggregate(_header(), _received(pairs), events)
+
+
+def test_samples_lost_after_reception_are_taken_out_of_the_denominator():
+    """🔑 電波では届いたが PC までの間で落ちた分を、打ち切りの根拠にしないこと。
+
+    108〜112 はファームが番号（8〜12）を振ったが PC に届かなかった＝番号の欠けが
+    ちょうど seq の欠けと同じ数なので、どの窓の分か番号で分かる（窓を跨いでも）。
+    落ち方は受信レベルと関係ないので、残りは偏りの無い部分集合。
+    """
+    kept = [q for q in range(100, 120) if not 108 <= q <= 112]
+    windows = _windows([(q, q - 100) for q in kept])
+    assert [w.received for w in windows] == [8, 7]
+    assert [w.link_lost for w in windows] == [2, 3]
+    assert [w.receive_rate for w in windows] == [1.0, 1.0]
+    assert not any(w.censored for w in windows)
+
+
+def test_a_mixed_gap_inside_one_window_is_credited_to_that_window():
+    """電波の欠け（103）と PC までの欠け（104＝番号 3）が混ざっていても、両端が同じ窓に
+    あれば、その窓の分として分母から引くこと。"""
+    pairs = [(100, 0), (101, 1), (102, 2)] + [(q, q - 101) for q in range(105, 110)]
+    windows = _windows(pairs, last=109)
+    assert windows[0].link_lost == 1
+    assert windows[0].receive_rate == pytest.approx(8 / 9)
+    assert windows[0].censored                          # 8/9 < 0.9＝電波の欠けは残る
+
+
+def test_a_mixed_gap_across_windows_is_not_credited_anywhere():
+    """⚠️ 混ざっていて窓を跨ぐものは、どの窓の分か分からない＝**どの窓にも振らない**。
+
+    振ると、本当は電波で欠けた分まで分母から消え、受信率が高く見える（打ち切りが
+    減る＝§5-4 が避けたい向き）。数は総数の側にだけ残る。
+    """
+    # 108(番号 8) → [109 は電波で欠け] → [110 は番号 9 で PC までに落ちた] → 111(番号 10)
+    pairs = [(q, q - 100) for q in range(100, 109)] + [(q, q - 101) for q in range(111, 120)]
+    windows = _windows(pairs)
+    assert [w.link_lost for w in windows] == [0, 0]
+    assert A.link_lost_total(_received(pairs)) == 1
+
+
+def test_a_sample_sequence_that_goes_back_is_not_counted_as_lost():
+    """受信機が再起動すると通し番号は 0 に戻る＝何件落ちたか分からないので、落ちたことに
+    しない（数えると、大きな負の数や、でたらめな正の数が分母から消える）。"""
+    pairs = [(q, 500 + q - 100) for q in range(100, 105)] + [(q, q - 105) for q in range(105, 110)]
+    windows = _windows(pairs, last=109)
+    assert windows[0].link_lost == 0 and windows[0].received == 10
+    assert A.link_lost_total(_received(pairs)) == 0
+
+
+def test_a_window_lost_entirely_after_reception_is_not_censored():
+    """窓の全部が PC までの間で落ちた＝電波については何も分からない。「感度以下」では
+    ないので打ち切りに数えず、行の note もそれと分かる文面にする。"""
+    pairs = [(q, q - 100) for q in range(100, 110)] + [(q, q - 100) for q in range(120, 130)]
+    windows = _windows(pairs, last=129)
+    assert [w.lost_on_link for w in windows] == [False, True, False]
+    assert not any(w.censored for w in windows)
+    assert A.censored_fraction(windows) == 0.0
+    row = _rows(windows)[1]
+    assert row["meas_dbm"] == "" and row["note"] == A.LINK_LOST_NOTE
 
 
 # --- 本体のバッチ CSV への受け渡し -------------------------------------------

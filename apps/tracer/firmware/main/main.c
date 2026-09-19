@@ -102,6 +102,7 @@ void app_main(void)
     int8_t actual_power_qdbm = 0;
     radio_start(&settings, mac, &actual_power_qdbm);
     tracer_config_t config = make_config(&settings, mac, actual_power_qdbm);
+    radio_run(&config);                 /* TX はこの設定を空中へも 1 秒ごとに送る */
     link_send_config(&config);
 
     int64_t last_config = esp_timer_get_time();

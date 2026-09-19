@@ -22,6 +22,13 @@ apps/tracer/aggregate.py
 実装を同じ領域に揃える。⚠️ **速いフェージングが窓に入ると、dB 平均は真の平均電力
 より低く出る**（負に偏る）。受け入れ試験（§6.1-3 の段0）でこの偏りを測る。
 
+**受信機から PC までの間で落ちた分は、電波の欠けに数えない**（§6.6 の提案①）。
+ファームは受信した時点でサンプルに通し番号（`sample_seq`・送信機ごと）を振るので、
+その番号の欠けは「電波では届いたが、キュー・USB・UART のどこかで落ちた」数になる。
+落ち方は受信レベルと関係ないので、窓の受信率の**分母から引く**（残りは偏りの無い
+部分集合）。⚠️ 電波の欠けと混ざっていて、しかも窓を跨ぐものは、どの窓の分か分からない
+＝**どの窓にも振らない**（受信率を高く見せる向きには動かさない）。
+
 ⚠️ **この層は打ち切りの「しきい値そのもの」を決めない**＝しきい値は受け入れ試験で
 決めてセッションの刻印に入れる値で、コードの定数ではない。
 """
@@ -63,20 +70,33 @@ class Window:
     config_id: int
     spatial_slot: int           # 空間平均の置き場所。窓はここを跨がない
     seq_start: int              # この窓が覆うシーケンス番号の先頭
-    seq_count: int              # 期待パケット数（分母）
+    seq_count: int              # 期待パケット数
     received: int               # 実際に届いた数（分子）
-    meas_dbm: float | None      # 打ち切りなら None
+    link_lost: int              # 電波では届いたが PC までの間で落ちたと分かっている数
+    meas_dbm: float | None      # 打ち切り・記録の欠落なら None
     noise_floor_raw_mean: float | None
     first_pc_utc: str           # 届いた最初/最後の PC 時刻（空＝1 つも届かなかった）
     last_pc_utc: str
 
     @property
+    def radio_expected(self) -> int:
+        """受信率の分母＝期待数から、PC までの間で落ちた分を除いたもの。"""
+        return self.seq_count - self.link_lost
+
+    @property
     def receive_rate(self) -> float:
-        return self.received / self.seq_count
+        """電波の受信率。記録の欠落（分母 0）の窓では意味を持たないので 0。"""
+        return self.received / self.radio_expected if self.radio_expected else 0.0
+
+    @property
+    def lost_on_link(self) -> bool:
+        """窓の全部が PC までの間で落ちた＝電波については何も分からない窓。
+        「感度以下」ではないので、打ち切りに数えない。"""
+        return self.radio_expected == 0
 
     @property
     def censored(self) -> bool:
-        return self.meas_dbm is None
+        return self.meas_dbm is None and not self.lost_on_link
 
 
 def window_seq_count(header: SessionHeader) -> int:
@@ -124,6 +144,7 @@ def aggregate(
         )
     clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms / 1000.0)
     by_seq = {s.seq: s for s in ordered}
+    gaps = link_gaps(ordered)
     key_config = header.rx.radio.config_id
 
     windows: list[Window] = []
@@ -133,11 +154,50 @@ def aggregate(
         # 端数の窓は出さない。**分母が足りない**ので受信率が意味を持たない。
         while start + per_window - 1 <= last:
             got = [by_seq[q] for q in range(start, start + per_window) if q in by_seq]
+            lost = _link_lost_in(gaps, start, per_window)
             windows.append(
-                _make_window(header, len(windows), (key_config, slot), start, per_window, got)
+                _make_window(
+                    header, len(windows), (key_config, slot), start, per_window, got, lost
+                )
             )
             start += per_window
     return windows
+
+
+def link_gaps(samples: list[RxSample]) -> list[tuple[int, int, int]]:
+    """`(前の seq, 次の seq, その間で PC までに落ちた数)` の並び（seq の昇順のサンプル）。
+
+    通し番号が戻ったところ（受信機の再起動・ファームの表の入れ替え）は数えない＝
+    何件落ちたか分からないので、落ちたことにしない。
+    """
+    gaps = []
+    for a, b in zip(samples, samples[1:]):
+        lost = b.sample_seq - a.sample_seq - 1
+        if lost > 0:
+            gaps.append((a.seq, b.seq, lost))
+    return gaps
+
+
+def link_lost_total(samples: list[RxSample]) -> int:
+    """セッション全体で PC までの間に落ちた数（窓に振れなかった分も含む）。"""
+    return sum(lost for _a, _b, lost in link_gaps(samples))
+
+
+def _link_lost_in(gaps: list[tuple[int, int, int]], start: int, count: int) -> int:
+    """窓 `[start, start + count)` に振れる「PC までの間で落ちた数」。"""
+    end = start + count
+    total = 0
+    for a, b, lost in gaps:
+        between = b - a - 1
+        if lost == between:
+            # 間の番号は全部 PC までの間で落ちた＝どの窓の分か番号で分かる。
+            total += max(0, min(b, end) - max(a + 1, start))
+        elif lost < between and start <= a and b < end:
+            # 電波の欠けと混ざっているが、両端が同じ窓の中＝この窓の分。
+            total += lost
+        # それ以外（窓を跨いで混ざっている・数が合わない）は振らない。振ると、
+        # 本当は電波で欠けた分まで分母から消え、受信率が高く見える。
+    return total
 
 
 def _placements(events: list[Event]) -> list[tuple[int, datetime, datetime]]:
@@ -187,6 +247,7 @@ class _SeqClock:
 
 def _check_samples(header: SessionHeader, samples: list[RxSample]) -> None:
     expected_config = header.rx.radio.config_id
+    expected_tx_config = header.tx.radio.config_id
     expected_tx = header.tx.device_id
     previous = None
     for s in samples:
@@ -196,6 +257,12 @@ def _check_samples(header: SessionHeader, samples: list[RxSample]) -> None:
             raise SessionError(
                 f"ヘッダに無い設定番号のサンプルがあります: {s.config_id}"
                 f"（ヘッダの RX は {expected_config}）"
+            )
+        if s.tx_config_id != expected_tx_config:
+            # TX の設定が変わった後のサンプル。送信間隔が違えば窓の分母が別物になる。
+            raise SessionError(
+                f"ヘッダに無い TX の設定番号のサンプルがあります: {s.tx_config_id}"
+                f"（ヘッダの TX は {expected_tx_config}）"
             )
         if s.tx_id != expected_tx:
             # 近くで別の送信機が動いている。番号の系列が別物なので、混ぜると
@@ -218,9 +285,11 @@ def _make_window(
     seq_start: int,
     seq_count: int,
     got: list[RxSample],
+    link_lost: int,
 ) -> Window:
     config_id, spatial_slot = key
-    rate = len(got) / seq_count
+    radio_expected = seq_count - link_lost
+    rate = len(got) / radio_expected if radio_expected else 0.0
     censored = rate < header.provenance.censor_min_receive_rate
     if censored or not got:
         meas_dbm = None
@@ -236,6 +305,7 @@ def _make_window(
         seq_start=seq_start,
         seq_count=seq_count,
         received=len(got),
+        link_lost=link_lost,
         meas_dbm=meas_dbm,
         noise_floor_raw_mean=noise,
         first_pc_utc=got[0].pc_utc if got else "",
@@ -244,10 +314,14 @@ def _make_window(
 
 
 def censored_fraction(windows: list[Window]) -> float:
-    """打ち切りになった窓の割合（§6.1-2B＝集計は Tracer 側の仕事）。"""
-    if not windows:
+    """打ち切りになった窓の割合（§6.1-2B＝集計は Tracer 側の仕事）。
+
+    分母は電波について何か分かった窓だけ（記録の欠落の窓は除く）。
+    """
+    measured = [w for w in windows if not w.lost_on_link]
+    if not measured:
         return 0.0
-    return sum(1 for w in windows if w.censored) / len(windows)
+    return sum(1 for w in measured if w.censored) / len(measured)
 
 
 # --- 本体のバッチ CSV への書き出し -------------------------------------------
@@ -260,6 +334,10 @@ def censoring_note(header: SessionHeader) -> str:
     本体は `meas_method` を見ずに、値が入っていればそれを実測として使う（→ §6.1-2B）。
     """
     return f"感度以下（{header.rx.radio.sensitivity_dbm:g} dBm 未満）"
+
+
+# 窓の全部が PC までの間で落ちた行の `note`。値が空なので本体は残差から外す。
+LINK_LOST_NOTE = "記録の欠落（受信機から PC までの間）"
 
 
 def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[object]]:
@@ -294,7 +372,7 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
             CHANNEL_MHZ[channel],
             header.tx.antenna_gain_dbi - header.tx.feeder_loss_db,
             header.rx.antenna_gain_dbi,
-            censoring_note(header) if w.censored else "",
+            censoring_note(header) if w.censored else (LINK_LOST_NOTE if w.lost_on_link else ""),
             "" if w.meas_dbm is None else round(w.meas_dbm, 2),
             header.meas_method,
             header.rx.feeder_loss_db,

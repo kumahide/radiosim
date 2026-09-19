@@ -19,6 +19,7 @@ tests/test_tracer_mavlink.py
 from __future__ import annotations
 
 import struct
+from dataclasses import replace
 from datetime import datetime, timedelta, timezone
 
 import pytest
@@ -41,8 +42,8 @@ def dialect() -> D.Dialect:
 _WIRE_ORDER = {
     "TRACER_TX_PACKET": ("tx_time_us", "seq", "config_id", "tx_id"),
     "TRACER_RX_SAMPLE": (
-        "rx_time_us", "seq", "rssi_raw", "noise_floor_raw", "config_id",
-        "rx_id", "tx_id",
+        "rx_time_us", "seq", "sample_seq", "rssi_raw", "noise_floor_raw", "config_id",
+        "tx_config_id", "rx_id", "tx_id",
     ),
     "TRACER_CONFIG": (
         "integration_window_us", "config_id", "rate_kbps", "tx_power_cdbm",
@@ -60,9 +61,10 @@ _CRC_SPEC = {
     ],
     "TRACER_RX_SAMPLE": [
         ("uint64_t", "rx_time_us", 0), ("uint32_t", "seq", 0),
+        ("uint32_t", "sample_seq", 0),
         ("int16_t", "rssi_raw", 0), ("int16_t", "noise_floor_raw", 0),
-        ("uint16_t", "config_id", 0), ("uint8_t", "rx_id", 6),
-        ("uint8_t", "tx_id", 6),
+        ("uint16_t", "config_id", 0), ("uint16_t", "tx_config_id", 0),
+        ("uint8_t", "rx_id", 6), ("uint8_t", "tx_id", 6),
     ],
     "TRACER_CONFIG": [
         ("uint32_t", "integration_window_us", 0), ("uint16_t", "config_id", 0),
@@ -116,11 +118,16 @@ def _rx_payload(
     rssi_raw: int = -71,
     noise_floor_raw: int = -95,
     config_id: int = 1,
+    tx_config_id: int = 2,
+    sample_seq: int = 9,
     rx_id: bytes = b"\xaa\xbb\xcc\xdd\xee\x02",
     tx_id: bytes = b"\xaa\xbb\xcc\xdd\xee\x01",
 ) -> bytes:
     return (
-        struct.pack("<QIhhH", rx_time_us, seq, rssi_raw, noise_floor_raw, config_id)
+        struct.pack(
+            "<QIIhhHH", rx_time_us, seq, sample_seq, rssi_raw, noise_floor_raw,
+            config_id, tx_config_id,
+        )
         + rx_id
         + tx_id
     )
@@ -187,7 +194,7 @@ def test_the_wire_order_really_differs_from_the_xml_order(dialect):
     並べ替えを丸ごと消しても緑のままになる。
     """
     xml_order = ("rx_id", "tx_id", "seq", "rx_time_us", "rssi_raw",
-                 "noise_floor_raw", "config_id")
+                 "noise_floor_raw", "config_id", "tx_config_id", "sample_seq")
     assert _WIRE_ORDER["TRACER_RX_SAMPLE"] != xml_order
 
 
@@ -198,7 +205,7 @@ def test_the_crc_extra_is_built_from_the_definition(dialect, name):
 
 
 def test_the_payload_size_matches_the_fields(dialect):
-    assert dialect.messages_by_name["TRACER_RX_SAMPLE"].payload_size == 30
+    assert dialect.messages_by_name["TRACER_RX_SAMPLE"].payload_size == 36
     assert dialect.messages_by_name["TRACER_TX_PACKET"].payload_size == 20
     assert dialect.messages_by_name["TRACER_CONFIG"].payload_size == 40
 
@@ -216,6 +223,8 @@ def test_a_frame_decodes_to_the_values_that_were_packed(dialect):
     assert f["rssi_raw"] == -71          # 符号つき＝正の大きな値として読まないこと
     assert f["noise_floor_raw"] == -95
     assert f["config_id"] == 1
+    assert f["tx_config_id"] == 2
+    assert f["sample_seq"] == 9
     assert f["tx_id"] == (0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0x01)
 
 
@@ -323,6 +332,8 @@ def test_the_pc_adds_only_the_time_and_the_spatial_slot(dialect):
     assert sample.rssi_raw == -71                    # 換算しない
     assert sample.noise_floor_raw == -95
     assert sample.spatial_slot == 3
+    assert sample.tx_config_id == 2                  # TX の設定番号（RX のものではない）
+    assert sample.sample_seq == 9                    # ファームが振った通し番号
     assert sample.tx_id == "aa:bb:cc:dd:ee:01"
     assert sample.pc_utc == "2026-09-19T01:00:00Z"
 
@@ -436,7 +447,8 @@ def _header() -> S.SessionHeader:
         return S.Endpoint(
             role=role, measurement_config_id=f"{role}-esp32c6-rod",
             device_id="aa:bb:cc:dd:ee:01", feeder_loss_db=1.5, antenna_gain_dbi=2.0,
-            calibration=calibration, radio=radio,
+            calibration=calibration,
+            radio=radio if role == "rx" else replace(radio, config_id=2, sensitivity_dbm=None),
             position=S.Position(
                 lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=height,
                 height_source="survey",
@@ -461,27 +473,47 @@ def _at(seq_time: float) -> str:
     )
 
 
-def test_frames_lost_on_the_uart_show_up_as_censoring(dialect):
-    """🚨 **UART で落ちた分は、電波で届かなかった分と見分けが付かない。**
-
-    どちらも「`TRACER_RX_SAMPLE` が来ない」としてしか現れず、集計では同じ欠けに
-    なる。⇒ 読み取り側がエラーを**数えて外へ出している**ことが、この測定を信じて
-    よいかの唯一の手がかりになる（しきい値は受け入れ試験で決める）。
-    """
-    log = b"".join(_rx_frame(dialect, seq=n) for n in range(1, 11))
-    broken = bytearray(_rx_frame(dialect, seq=11))
-    broken[R._HEADER_LEN] ^= 0xFF
-    log += bytes(broken) + b"".join(_rx_frame(dialect, seq=n) for n in range(12, 21))
-
+def _windows_of(dialect, log: bytes) -> tuple[list[A.Window], R.ReadStats]:
     messages, stats = R.read_log(log)
-    assert stats.crc_errors >= 1
     samples = R.rx_samples(messages, lambda m: _at(m.fields["seq"]))
-    assert len(samples) == 19                        # 1 つだけ欠ける
-
-    header = _header()
     events = [S.Event(_at(0.5), "place", 0), S.Event(_at(20.5), "stop")]
-    windows = A.aggregate(header, samples, events)
+    return A.aggregate(_header(), samples, events), stats
+
+
+def test_a_frame_lost_on_the_uart_is_not_counted_as_censoring(dialect):
+    """🔑 **UART で落ちた分を、電波で届かなかった分と見分ける**（§6.6 の提案①）。
+
+    ファームは受信した時点で通し番号（`sample_seq`）を振る＝UART で化けて落ちた
+    サンプルは、その番号の欠けとして見える。落ち方は受信レベルと関係ないので、
+    窓の受信率の分母から引く（打ち切りにしない）。
+    """
+    frames = [_rx_frame(dialect, seq=n, sample_seq=n, tx_config_id=2) for n in range(1, 21)]
+    broken = bytearray(frames[10])                   # seq 11 が UART で化けた
+    broken[R._HEADER_LEN] ^= 0xFF
+    frames[10] = bytes(broken)
+
+    windows, stats = _windows_of(dialect, b"".join(frames))
+    assert stats.crc_errors >= 1                     # 化けは化けとして数えている
     assert [w.received for w in windows] == [10, 9]  # 期待は 10/窓（1 秒 ÷ 100 ms）
-    assert windows[0].censored is False
-    assert windows[1].censored is True               # 受信率 0.9 未満＝値を出さない
+    assert [w.link_lost for w in windows] == [0, 1]
+    assert windows[1].receive_rate == 1.0            # 分母は 9
+    assert not any(w.censored for w in windows)
+
+
+def test_a_packet_lost_in_the_air_is_still_censoring(dialect):
+    """対照＝**電波で**届かなかった分は、今までどおり打ち切りの根拠になる。
+
+    ファームは受からなかったパケットに番号を振らない（振りようがない）ので、
+    通し番号は途切れずに続く。⚠️ 上のテストだけだと「欠けは全部 UART のせい」にする
+    実装でも通る。
+    """
+    kept = [n for n in range(1, 21) if n != 11]      # seq 11 は空中で消えた
+    log = b"".join(
+        _rx_frame(dialect, seq=n, sample_seq=i, tx_config_id=2) for i, n in enumerate(kept)
+    )
+    windows, stats = _windows_of(dialect, log)
+    assert stats.crc_errors == 0
+    assert [w.received for w in windows] == [10, 9]
+    assert [w.link_lost for w in windows] == [0, 0]
+    assert windows[1].censored is True               # 受信率 0.9＜0.95＝値を出さない
     assert A.censored_fraction(windows) == 0.5

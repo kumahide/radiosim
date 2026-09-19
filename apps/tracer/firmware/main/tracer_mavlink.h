@@ -102,8 +102,8 @@ typedef enum {
 #define LEN_TRACER_TX_PACKET 20
 #define CRC_EXTRA_TRACER_TX_PACKET 140
 #define MSGID_TRACER_RX_SAMPLE 42101
-#define LEN_TRACER_RX_SAMPLE 30
-#define CRC_EXTRA_TRACER_RX_SAMPLE 183
+#define LEN_TRACER_RX_SAMPLE 36
+#define CRC_EXTRA_TRACER_RX_SAMPLE 225
 #define MSGID_TRACER_CONFIG 42102
 #define LEN_TRACER_CONFIG 40
 #define CRC_EXTRA_TRACER_CONFIG 236
@@ -206,7 +206,7 @@ static inline size_t tracer_tx_packet_pack(uint8_t *frame, uint8_t link_seq, uin
                                LEN_TRACER_TX_PACKET, CRC_EXTRA_TRACER_TX_PACKET);
 }
 
-/* --- TRACER_RX_SAMPLE（ワイヤ上の並び: rx_time_us, seq, rssi_raw, noise_floor_raw, config_id, rx_id, tx_id） --- */
+/* --- TRACER_RX_SAMPLE（ワイヤ上の並び: rx_time_us, seq, sample_seq, rssi_raw, noise_floor_raw, config_id, tx_config_id, rx_id, tx_id） --- */
 typedef struct {
     uint8_t rx_id[6];
     uint8_t tx_id[6];
@@ -215,31 +215,37 @@ typedef struct {
     int16_t rssi_raw;
     int16_t noise_floor_raw;
     uint16_t config_id;
+    uint16_t tx_config_id;
+    uint32_t sample_seq;
 } tracer_rx_sample_t;
 
 static inline void tracer_rx_sample_encode_payload(uint8_t *p, const tracer_rx_sample_t *m)
 {
     tracer_put_u64(p + 0, (uint64_t)m->rx_time_us);
     tracer_put_u32(p + 8, (uint32_t)m->seq);
-    tracer_put_u16(p + 12, (uint16_t)m->rssi_raw);
-    tracer_put_u16(p + 14, (uint16_t)m->noise_floor_raw);
-    tracer_put_u16(p + 16, (uint16_t)m->config_id);
-    for (int i = 0; i < 6; i++) tracer_put_u8(p + 18 + i * 1, (uint8_t)m->rx_id[i]);
-    for (int i = 0; i < 6; i++) tracer_put_u8(p + 24 + i * 1, (uint8_t)m->tx_id[i]);
+    tracer_put_u32(p + 12, (uint32_t)m->sample_seq);
+    tracer_put_u16(p + 16, (uint16_t)m->rssi_raw);
+    tracer_put_u16(p + 18, (uint16_t)m->noise_floor_raw);
+    tracer_put_u16(p + 20, (uint16_t)m->config_id);
+    tracer_put_u16(p + 22, (uint16_t)m->tx_config_id);
+    for (int i = 0; i < 6; i++) tracer_put_u8(p + 24 + i * 1, (uint8_t)m->rx_id[i]);
+    for (int i = 0; i < 6; i++) tracer_put_u8(p + 30 + i * 1, (uint8_t)m->tx_id[i]);
 }
 
 /* 短い payload（v2 の末尾切り詰め）はゼロで埋め戻し、長い分（拡張）は捨てる。 */
 static inline void tracer_rx_sample_decode_payload(const uint8_t *src, uint8_t len, tracer_rx_sample_t *m)
 {
-    uint8_t p[30] = {0};
-    memcpy(p, src, len < 30 ? len : 30);
+    uint8_t p[36] = {0};
+    memcpy(p, src, len < 36 ? len : 36);
     m->rx_time_us = (uint64_t)tracer_get_u64(p + 0);
     m->seq = (uint32_t)tracer_get_u32(p + 8);
-    m->rssi_raw = (int16_t)tracer_get_u16(p + 12);
-    m->noise_floor_raw = (int16_t)tracer_get_u16(p + 14);
-    m->config_id = (uint16_t)tracer_get_u16(p + 16);
-    for (int i = 0; i < 6; i++) m->rx_id[i] = (uint8_t)tracer_get_u8(p + 18 + i * 1);
-    for (int i = 0; i < 6; i++) m->tx_id[i] = (uint8_t)tracer_get_u8(p + 24 + i * 1);
+    m->sample_seq = (uint32_t)tracer_get_u32(p + 12);
+    m->rssi_raw = (int16_t)tracer_get_u16(p + 16);
+    m->noise_floor_raw = (int16_t)tracer_get_u16(p + 18);
+    m->config_id = (uint16_t)tracer_get_u16(p + 20);
+    m->tx_config_id = (uint16_t)tracer_get_u16(p + 22);
+    for (int i = 0; i < 6; i++) m->rx_id[i] = (uint8_t)tracer_get_u8(p + 24 + i * 1);
+    for (int i = 0; i < 6; i++) m->tx_id[i] = (uint8_t)tracer_get_u8(p + 30 + i * 1);
 }
 
 /* フレームを frame に組み、長さを返す（frame は TRACER_MAX_FRAME_LEN バイト以上）。 */
@@ -314,8 +320,8 @@ static inline size_t tracer_config_pack(uint8_t *frame, uint8_t link_seq, uint8_
 /* --- 見本（Python 側で組んだフレーム・gen_c.py の golden_values） --- */
 static const tracer_tx_packet_t TRACER_GOLDEN_MSG_TRACER_TX_PACKET = { .tx_time_us = 15906611102759988753ULL, .seq = 2036088610u, .config_id = 20531u, .tx_id = {0u, 0u, 0u, 0u, 0u, 0u} };
 static const uint8_t TRACER_GOLDEN_FRAME_TRACER_TX_PACKET[26] = { 0xFD, 0x0E, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x74, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x85, 0xA2, 0xBF, 0xDC, 0x22, 0x3F, 0x5C, 0x79, 0x33, 0x50, 0x7A, 0x00 };
-static const tracer_rx_sample_t TRACER_GOLDEN_MSG_TRACER_RX_SAMPLE = { .rx_time_us = 15906611102759988753ULL, .seq = 2036088610u, .rssi_raw = -51, .noise_floor_raw = -68, .config_id = 29269u, .rx_id = {103u, 110u, 117u, 124u, 131u, 138u}, .tx_id = {0u, 0u, 0u, 0u, 0u, 0u} };
-static const uint8_t TRACER_GOLDEN_FRAME_TRACER_RX_SAMPLE[36] = { 0xFD, 0x18, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x75, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x85, 0xA2, 0xBF, 0xDC, 0x22, 0x3F, 0x5C, 0x79, 0xCD, 0xFF, 0xBC, 0xFF, 0x55, 0x72, 0x67, 0x6E, 0x75, 0x7C, 0x83, 0x8A, 0x66, 0x55 };
+static const tracer_rx_sample_t TRACER_GOLDEN_MSG_TRACER_RX_SAMPLE = { .rx_time_us = 15906611102759988753ULL, .seq = 2036088610u, .sample_seq = 2322419763u, .rssi_raw = -68, .noise_floor_raw = -85, .config_id = 33638u, .tx_config_id = 38007u, .rx_id = {137u, 144u, 151u, 158u, 165u, 172u}, .tx_id = {0u, 0u, 0u, 0u, 0u, 0u} };
+static const uint8_t TRACER_GOLDEN_FRAME_TRACER_RX_SAMPLE[42] = { 0xFD, 0x1E, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x75, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x85, 0xA2, 0xBF, 0xDC, 0x22, 0x3F, 0x5C, 0x79, 0x33, 0x50, 0x6D, 0x8A, 0xBC, 0xFF, 0xAB, 0xFF, 0x66, 0x83, 0x77, 0x94, 0x89, 0x90, 0x97, 0x9E, 0xA5, 0xAC, 0xF2, 0x95 };
 static const tracer_config_t TRACER_GOLDEN_MSG_TRACER_CONFIG = { .integration_window_us = 1749757457u, .config_id = 16162u, .rate_kbps = 20531u, .tx_power_cdbm = -68, .tx_interval_ms = 29269u, .integration_samples = 33638u, .role = 119u, .device_id = {137u, 144u, 151u, 158u, 165u, 172u}, .firmware_version = "g102firmware_ve", .channel = 170u, .detector = 187u, .antenna = 0u };
 static const uint8_t TRACER_GOLDEN_FRAME_TRACER_CONFIG[51] = { 0xFD, 0x27, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x76, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x22, 0x3F, 0x33, 0x50, 0xBC, 0xFF, 0x55, 0x72, 0x66, 0x83, 0x77, 0x89, 0x90, 0x97, 0x9E, 0xA5, 0xAC, 0x67, 0x31, 0x30, 0x32, 0x66, 0x69, 0x72, 0x6D, 0x77, 0x61, 0x72, 0x65, 0x5F, 0x76, 0x65, 0x00, 0xAA, 0xBB, 0x42, 0x19 };
 

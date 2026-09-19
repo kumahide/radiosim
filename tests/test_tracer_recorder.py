@@ -57,10 +57,14 @@ def _frame(dialect: D.Dialect, name: str, payload: bytes, link_seq: int = 0) -> 
 
 
 def _sample_frame(
-    dialect: D.Dialect, seq: int, rssi_raw: int = -140, tx: bytes = TX_MAC, config_id: int = 1
+    dialect: D.Dialect, seq: int, rssi_raw: int = -140, tx: bytes = TX_MAC, config_id: int = 1,
+    tx_config_id: int = 2, sample_seq: int | None = None,
 ) -> bytes:
     payload = (
-        struct.pack("<QIhhH", 1_000_000 + seq * 100_000, seq, rssi_raw, -190, config_id)
+        struct.pack(
+            "<QIIhhHH", 1_000_000 + seq * 100_000, seq,
+            seq if sample_seq is None else sample_seq, rssi_raw, -190, config_id, tx_config_id,
+        )
         + RX_MAC
         + tx
     )
@@ -69,16 +73,28 @@ def _sample_frame(
 
 def _config_frame(
     dialect: D.Dialect, *, role: int = 1, config_id: int = 1, channel: int = 6,
-    device: bytes = RX_MAC,
+    device: bytes = RX_MAC, interval_ms: int = 100,
 ) -> bytes:
     payload = (
-        struct.pack("<IHHhHH", 1000, config_id, 1000, 1300, 100, 10)
+        struct.pack("<IHHhHH", 1000, config_id, 1000, 1300, interval_ms, 10)
         + bytes([role])
         + device
         + b"5aab362".ljust(16, b"\x00")
         + bytes([channel, 2, 2])
     )
     return _frame(dialect, "TRACER_CONFIG", payload)
+
+
+def _tx_config_frame(dialect: D.Dialect, **kwargs) -> bytes:
+    """TX が空中で送り、RX が中継してきた設定（role が tx）。"""
+    values = dict(role=0, config_id=2, device=TX_MAC)
+    values.update(kwargs)
+    return _config_frame(dialect, **values)
+
+
+def _configs(dialect: D.Dialect) -> bytes:
+    """セッションを始めるのに要る 2 つ（RX 自身の設定と、中継された TX の設定）。"""
+    return _config_frame(dialect) + _tx_config_frame(dialect)
 
 
 def _t(seq_time: float) -> str:
@@ -107,12 +123,6 @@ def _filled_template() -> dict:
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=height, height_source="survey"
         )
-    template["tx"]["radio"] = dict(
-        config_id=1, firmware_version="5aab362", channel=6, rate_kbps=1000,
-        tx_power_cdbm=1300, tx_interval_ms=100, detector="mean",
-        integration_window_us=1000, integration_samples=10, antenna="external",
-        sensitivity_dbm=-98.0,
-    )
     template["rx"]["radio"] = {"sensitivity_dbm": -98.0}
     return template
 
@@ -146,13 +156,34 @@ def test_the_rx_radio_in_the_template_is_only_the_sensitivity():
         REC.check_template(template)
 
 
-def test_the_header_takes_the_rx_radio_from_the_device(dialect):
-    config = R.read_log(_config_frame(dialect, channel=11))[0][0]
+def test_the_template_cannot_carry_the_tx_radio():
+    """🔑 TX の無線設定を雛形に書かせないこと（§6.6 の提案②）。
+
+    書けると、実機と食い違った送信間隔が黙ってヘッダに入り、窓の期待パケット数が
+    別の値になる（送信間隔が実は 200 ms なら、全窓が受信率 50%＝打ち切りに見える）。
+    """
+    template = _filled_template()
+    template["tx"]["radio"] = {"tx_interval_ms": 100}
+    with pytest.raises(S.SessionError, match="tx.radio"):
+        REC.check_template(template)
+
+
+def _message(dialect, frame: bytes) -> R.Message:
+    return R.read_log(frame, dialect)[0][0]
+
+
+def test_the_header_takes_both_radios_from_the_devices(dialect):
     header = REC.build_header(
-        _filled_template(), config, started_utc=_t(0), software_commit="abc123", dialect=dialect
+        _filled_template(),
+        _message(dialect, _config_frame(dialect, channel=11)),
+        _message(dialect, _tx_config_frame(dialect, interval_ms=200)),
+        started_utc=_t(0), software_commit="abc123", dialect=dialect,
     )
     assert header.rx.radio.channel == 11                # 機器の値
     assert header.rx.radio.sensitivity_dbm == -98.0     # 雛形の値
+    assert header.tx.radio.tx_interval_ms == 200        # 中継された TX の値
+    assert header.tx.radio.config_id == 2
+    assert header.tx.radio.sensitivity_dbm is None      # TX は受けない
     assert header.tx.device_id == "aa:bb:cc:dd:ee:01"   # 小文字へ揃える
     assert header.provenance.software_commit == "abc123"
     assert header.session_id == "20260919T010000Z"
@@ -160,10 +191,20 @@ def test_the_header_takes_the_rx_radio_from_the_device(dialect):
 
 def test_another_rx_unit_is_refused(dialect):
     """🔑 雛形と違う個体を挿したまま測らないこと＝**別の個体の校正**が掛かった dBm が出る。"""
-    config = R.read_log(_config_frame(dialect, device=b"\xaa\xbb\xcc\xdd\xee\x77"))[0][0]
+    rx = _message(dialect, _config_frame(dialect, device=b"\xaa\xbb\xcc\xdd\xee\x77"))
     with pytest.raises(S.SessionError, match="校正値が別の個体"):
         REC.build_header(
-            _filled_template(), config, started_utc=_t(0), software_commit="abc", dialect=dialect
+            _filled_template(), rx, _message(dialect, _tx_config_frame(dialect)),
+            started_utc=_t(0), software_commit="abc", dialect=dialect,
+        )
+
+
+def test_another_tx_unit_is_refused(dialect):
+    tx = _message(dialect, _tx_config_frame(dialect, device=b"\xaa\xbb\xcc\xdd\xee\x77"))
+    with pytest.raises(S.SessionError, match="TX の個体 ID"):
+        REC.build_header(
+            _filled_template(), _message(dialect, _config_frame(dialect)), tx,
+            started_utc=_t(0), software_commit="abc", dialect=dialect,
         )
 
 
@@ -177,7 +218,7 @@ def _messy_log(dialect: D.Dialect) -> bytes:
     broken[12] ^= 0xFF
     return (
         b"\x00\x13garbage"
-        + _config_frame(dialect)
+        + _configs(dialect)
         + b"".join(_sample_frame(dialect, q) for q in range(1, 5))
         + bytes(broken)
         + unknown
@@ -247,7 +288,7 @@ def test_a_recording_starts_at_the_rx_config_and_keeps_the_raw_bytes(tmp_path, d
     rec.feed(b"boot noise", _t(0))
     _feed_seq(rec, dialect, [1])                        # 設定の前＝サンプルにしない
     assert rec.state == "waiting" and rec.directory is None
-    rec.feed(_config_frame(dialect), _t(2))
+    rec.feed(_configs(dialect), _t(2))
     assert rec.state == "placed" and rec.slot == 0
     _feed_seq(rec, dialect, range(3, 13))
     rec.stop(_t(12.5))
@@ -259,9 +300,21 @@ def test_a_recording_starts_at_the_rx_config_and_keeps_the_raw_bytes(tmp_path, d
     assert [e.kind for e in S.read_events(directory)] == ["place", "stop"]
 
 
+def test_the_sample_sequence_is_written_as_the_firmware_numbered_it(tmp_path, dialect):
+    """ファームの通し番号と TX の設定番号を、そのまま samples.csv に残すこと
+    （PC までの間で落ちた数は、書き出すときにここから数える）。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_configs(dialect), _t(0))
+    rec.feed(_sample_frame(dialect, 1, sample_seq=40), _t(1))
+    rec.feed(_sample_frame(dialect, 2, sample_seq=42), _t(2))
+    rec.stop(_t(3))
+    written = list(S.read_rx_samples(rec.directory))
+    assert [(s.sample_seq, s.tx_config_id) for s in written] == [(40, 2), (42, 2)]
+
+
 def test_moving_and_placing_are_recorded_and_tag_the_samples(tmp_path, dialect):
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     _feed_seq(rec, dialect, range(0, 10))
     rec.move(_t(9.5))
     _feed_seq(rec, dialect, range(10, 15))
@@ -277,7 +330,7 @@ def test_moving_and_placing_are_recorded_and_tag_the_samples(tmp_path, dialect):
 
 def test_placing_requires_moving_first(tmp_path, dialect):
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     with pytest.raises(S.SessionError, match="移動中でない"):
         rec.place(_t(1))
 
@@ -285,15 +338,59 @@ def test_placing_requires_moving_first(tmp_path, dialect):
 def test_a_clock_that_goes_back_is_refused(tmp_path, dialect):
     """読み出しと操作の時刻が戻ったら止めること（読み直すと別の置き場所に振り分けられる）。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(5))
+    rec.feed(_configs(dialect), _t(5))
     with pytest.raises(S.SessionError, match="戻って"):
         rec.move(_t(4))
+
+
+def test_the_recording_waits_for_the_tx_config_too(tmp_path, dialect):
+    """RX の設定だけではセッションを作らないこと＝TX の設定が分からないまま測ると、
+    窓の分母（送信間隔）が雛形頼みに戻る。他の TX から中継された設定では始めない。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_config_frame(dialect), _t(0))              # RX の設定だけ
+    assert rec.state == "waiting" and rec.waiting_for == ["tx"]
+    rec.feed(_tx_config_frame(dialect, device=b"\x09" * 6), _t(1))    # 近くの別の TX
+    assert rec.state == "waiting"
+    _feed_seq(rec, dialect, [2])
+    rec.feed(_tx_config_frame(dialect), _t(3))
+    assert rec.state == "placed" and rec.header is not None
+    _feed_seq(rec, dialect, range(4, 8))
+    rec.stop(_t(8))
+    assert [s.seq for s in S.read_rx_samples(rec.directory)] == [4, 5, 6, 7]
+
+
+def test_a_tx_config_change_ends_the_session(tmp_path, dialect):
+    """中継された TX の設定が変わったら終えること（同じ設定の再送は続ける）。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_configs(dialect), _t(-1))
+    _feed_seq(rec, dialect, range(0, 3))
+    rec.feed(_tx_config_frame(dialect), _t(3))          # 再送
+    rec.feed(_tx_config_frame(dialect, device=b"\x09" * 6, interval_ms=50), _t(3.5))  # 別の TX
+    assert rec.state == "placed"
+    rec.feed(_tx_config_frame(dialect, config_id=3, interval_ms=200), _t(4))
+    assert rec.state == "stopped" and rec.config_changed
+
+
+def test_a_sample_from_a_changed_tx_ends_the_session(tmp_path, dialect):
+    """TX の設定番号が変わったサンプルが、中継された設定より**先に**届いても終えること。
+
+    ⚠️ そのサンプルは書かない＝ヘッダの TX の設定（送信間隔）で窓を刻むと、分母が
+    別物になる。
+    """
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_configs(dialect), _t(-1))
+    _feed_seq(rec, dialect, range(0, 3))
+    rec.feed(_sample_frame(dialect, 0, tx_config_id=3), _t(3))   # TX が再起動した
+    assert rec.state == "stopped" and rec.config_changed
+    assert [s.seq for s in S.read_rx_samples(rec.directory)] == [0, 1, 2]
+    again = REC.replay(rec.directory, dialect)
+    assert again.samples == list(S.read_rx_samples(rec.directory))
 
 
 def test_samples_from_another_pair_are_kept_raw_but_not_written(tmp_path, dialect):
     """近くで別の組が動いていたら、そのサンプルは書かずに数えること（生ログには残る）。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     _feed_seq(rec, dialect, range(0, 3))
     rec.feed(_sample_frame(dialect, 500, tx=b"\x01\x02\x03\x04\x05\x06"), _t(3))
     rec.stop(_t(4))
@@ -304,9 +401,9 @@ def test_samples_from_another_pair_are_kept_raw_but_not_written(tmp_path, dialec
 def test_a_config_change_ends_the_session(tmp_path, dialect):
     """RX の設定が途中で変わったら終えること（ヘッダは書き換えない約束）。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     _feed_seq(rec, dialect, range(0, 5))
-    rec.feed(_config_frame(dialect), _t(5))             # 同じ設定の再送は続ける
+    rec.feed(_configs(dialect), _t(5))             # 同じ設定の再送は続ける
     assert rec.state == "placed"
     rec.feed(_sample_frame(dialect, 6) + _config_frame(dialect, channel=11), _t(6))
     assert rec.state == "stopped" and rec.config_changed
@@ -327,7 +424,7 @@ def test_stopping_before_the_config_creates_nothing(tmp_path, dialect):
 def _chunked_session(tmp_path, dialect, seed: int) -> REC.Recorder:
     """細切れの読み出し・操作・雑音・化け・別の組・設定の変更を混ぜた測定。"""
     rng = random.Random(seed)
-    stream = b"noise" + _config_frame(dialect)
+    stream = b"noise" + _configs(dialect)
     plan = []
     for q in range(0, 60):
         if rng.random() < 0.15:
@@ -373,7 +470,7 @@ def test_replaying_samples_that_arrived_with_the_config_gives_the_same_samples(t
     ライブでは書いた設定直後のサンプルが、読み直しでは消える。
     """
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect) + _sample_frame(dialect, 0) + _sample_frame(dialect, 1), _t(1))
+    rec.feed(_configs(dialect) + _sample_frame(dialect, 0) + _sample_frame(dialect, 1), _t(1))
     _feed_seq(rec, dialect, range(2, 5))
     rec.stop(_t(5))
     written = list(S.read_rx_samples(rec.directory))
@@ -383,7 +480,7 @@ def test_replaying_samples_that_arrived_with_the_config_gives_the_same_samples(t
 
 def test_replaying_a_config_change_gives_the_same_samples(tmp_path, dialect):
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     _feed_seq(rec, dialect, range(0, 5))
     rec.feed(_sample_frame(dialect, 6) + _config_frame(dialect, channel=11), _t(6))
     again = REC.replay(rec.directory, dialect)
@@ -393,7 +490,7 @@ def test_replaying_a_config_change_gives_the_same_samples(tmp_path, dialect):
 def test_the_raw_index_must_point_into_the_raw_bytes(tmp_path, dialect):
     """索引が本体の外を指していたら読めたことにしないこと（書きかけで落ちた形）。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-1))
+    rec.feed(_configs(dialect), _t(-1))
     rec.stop(_t(0))
     with (rec.directory / S.RAW_INDEX_FILE).open("a", encoding="utf-8", newline="") as f:
         csv.writer(f).writerow([_t(1), 10_000])
@@ -413,7 +510,7 @@ def test_the_template_command_writes_a_template_and_does_not_overwrite(tmp_path,
 
 def test_export_writes_the_batch_csv(tmp_path, dialect, capsys):
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-0.5))
+    rec.feed(_configs(dialect), _t(-0.5))
     _feed_seq(rec, dialect, range(0, 10))
     rec.stop(_t(29.5))                                  # 後半は受からずに終えた
     out = tmp_path / "out.csv"
@@ -427,7 +524,7 @@ def test_export_writes_the_batch_csv(tmp_path, dialect, capsys):
 def test_export_of_an_unfinished_session_needs_recover(tmp_path, dialect, capsys):
     """終了の記録が無い（途中で落ちた）セッションを黙って書き出さないこと。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-0.5))
+    rec.feed(_configs(dialect), _t(-0.5))
     _feed_seq(rec, dialect, range(0, 20))               # stop を呼ばずに落ちた
     out = tmp_path / "out.csv"
     assert cli.main(["export", str(rec.directory), str(out)]) == 2
@@ -440,7 +537,7 @@ def test_export_of_an_unfinished_session_needs_recover(tmp_path, dialect, capsys
 def test_export_warns_when_samples_disagree_with_the_raw_log(tmp_path, dialect, capsys):
     """samples.csv が生ログと食い違っていたら、書き出しても成功と言わないこと。"""
     rec = _recorder(tmp_path, dialect)
-    rec.feed(_config_frame(dialect), _t(-0.5))
+    rec.feed(_configs(dialect), _t(-0.5))
     _feed_seq(rec, dialect, range(0, 10))
     rec.stop(_t(9.5))
     S.append_rx_samples(rec.directory, [])              # 形は崩さずに

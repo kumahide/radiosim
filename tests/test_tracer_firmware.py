@@ -195,10 +195,26 @@ def _rx_config(dialect: D.Dialect, **overrides) -> bytes:
     return G.encode_frame(dialect.messages_by_name["TRACER_CONFIG"], values, link_seq=0)
 
 
+def _tx_config(dialect: D.Dialect, **overrides) -> bytes:
+    """TX が空中で送り、RX が**そのまま**中継した設定（`radio.c` の中継）。"""
+    enums = dialect.enums
+    values = dict(
+        config_id=2, role=enums["TRACER_ROLE"]["TRACER_ROLE_TX"], device_id=TX_MAC,
+        firmware_version="0123456789", channel=6, rate_kbps=1000,
+        tx_power_cdbm=1500, tx_interval_ms=100,
+        detector=enums["TRACER_DETECTOR"]["TRACER_DETECTOR_INSTANT"],
+        integration_window_us=0, integration_samples=1,
+        antenna=enums["TRACER_ANTENNA"]["TRACER_ANTENNA_EXTERNAL"],
+    )
+    values.update(overrides)
+    return G.encode_frame(dialect.messages_by_name["TRACER_CONFIG"], values, link_seq=0)
+
+
 def _rx_sample(dialect: D.Dialect, seq: int) -> bytes:
     values = dict(
         rx_id=RX_MAC, tx_id=TX_MAC, seq=seq, rx_time_us=5_000_000 + seq * 100_000,
         rssi_raw=-60 - seq % 7, noise_floor_raw=-95, config_id=3,
+        tx_config_id=2, sample_seq=seq,
     )
     return G.encode_frame(dialect.messages_by_name["TRACER_RX_SAMPLE"], values, link_seq=seq)
 
@@ -222,12 +238,6 @@ def _template() -> dict:
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=10.0, height_source="survey"
         )
-    template["tx"]["radio"] = dict(
-        config_id=2, firmware_version="0123456789", channel=6, rate_kbps=1000,
-        tx_power_cdbm=1500, tx_interval_ms=100, detector="instant",
-        integration_window_us=0, integration_samples=1, antenna="external",
-        sensitivity_dbm=-98.0,
-    )
     template["rx"]["radio"] = {"sensitivity_dbm": -98.0}
     return template
 
@@ -243,6 +253,9 @@ def test_a_recording_joins_a_running_rx_and_survives_the_resends(tmp_path, diale
         chunk = _rx_sample(dialect, seq)
         if seq % 10 == 5:
             chunk = _rx_config(dialect) + chunk if seq % 20 == 5 else chunk + _rx_config(dialect)
+        if seq % 10 == 3:
+            # TX の設定は RX の中継で届く（RX 自身の設定とは別の周期）
+            chunk = _tx_config(dialect) + chunk
         rec.feed(chunk, _t(seq))
     rec.stop(_t(40))
 
@@ -261,7 +274,7 @@ def test_a_changed_config_from_the_firmware_still_ends_the_session(tmp_path, dia
     """再送を読み飛ばす仕組みが、本当に変わった設定（コマンドで再起動した）まで
     読み飛ばしていない。"""
     rec = REC.Recorder(tmp_path, _template(), software_commit="abc123")
-    rec.feed(_rx_config(dialect) + _rx_sample(dialect, 0), _t(0))
+    rec.feed(_rx_config(dialect) + _tx_config(dialect) + _rx_sample(dialect, 0), _t(0))
     rec.feed(_rx_config(dialect) + _rx_sample(dialect, 1), _t(1))
     rec.feed(_rx_config(dialect, config_id=4, channel=11), _t(2))
     assert rec.config_changed and rec.state == "stopped"

@@ -30,7 +30,12 @@ import time
 from pathlib import Path
 from typing import Any
 
-from apps.tracer.aggregate import aggregate, censored_fraction, write_batch_csv
+from apps.tracer.aggregate import (
+    aggregate,
+    censored_fraction,
+    link_lost_total,
+    write_batch_csv,
+)
 from apps.tracer.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.tracer.session import (
     Event,
@@ -92,7 +97,8 @@ def _template(path: Path) -> int:
         json.dumps(header_template(), indent=2, ensure_ascii=False) + "\n", encoding="utf-8"
     )
     print(f"雛形を書き出しました: {path}")
-    print("null の欄を埋めてください。rx.radio は受信感度だけ（残りは RX から届きます）。")
+    print("null の欄を埋めてください。rx.radio は受信感度だけ（残りは RX から届きます）。"
+          "TX の無線設定は書きません（TX が空中で送り、RX が中継します）。")
     return 0
 
 
@@ -119,7 +125,7 @@ def _record(args: argparse.Namespace) -> int:
         opened = serial.Serial(args.port, args.baud, timeout=0.1)
     except serial.SerialException as e:
         raise SessionError(f"ポートを開けません: {args.port}（{e}）") from e
-    print("RX の設定を待っています…（q で中止）")
+    print("RX と TX の設定を待っています…（q で中止）")
     started_wait = time.monotonic()
     hinted = False
     last_status = 0.0
@@ -132,10 +138,14 @@ def _record(args: argparse.Namespace) -> int:
                     break                                 # 設定が変わった
                 if recorder.state == "waiting" and not hinted \
                         and time.monotonic() - started_wait > _WAIT_HINT_S:
-                    # RX は設定を 1 秒ごとに送る（増分5）＝届かないのは配線か
-                    # ポート・ファームの側。
-                    print("設定が届きません。ポートと RX の電源、RX の役割（role rx）を"
-                          "確かめてください。")
+                    # RX も TX も設定を 1 秒ごとに送る（増分5）＝届かないのは配線か
+                    # ポート・ファームの側（TX なら電波の側）。
+                    if "rx" in recorder.waiting_for:
+                        print("RX の設定が届きません。ポートと RX の電源、RX の役割"
+                              "（role rx）を確かめてください。")
+                    else:
+                        print("TX の設定が届きません（RX は動いています）。TX の電源・"
+                              "チャネル・個体 ID（雛形の tx.device_id）を確かめてください。")
                     hinted = True
                 key = keys.poll()
                 if key == "q":
@@ -158,7 +168,8 @@ def _record(args: argparse.Namespace) -> int:
         print("設定が届かないまま終えました（セッションは作っていません）。")
         return 1
     if recorder.config_changed:
-        print("RX の設定が途中で変わったので終えました。続けるなら新しいセッションで測ってください。")
+        print("RX か TX の設定が途中で変わったので終えました。続けるなら新しいセッションで"
+              "測ってください。")
     print(f"セッション: {recorder.directory}（受信 {recorder.samples_written} 件）")
     _print_read_stats(recorder.stats, recorder.foreign)
     return 0
@@ -245,6 +256,13 @@ def _export(args: argparse.Namespace) -> int:
     censored = sum(1 for w in windows if w.censored)
     print(f"書き出しました: {args.out}")
     print(f"窓 {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）")
+    # 電波で届いたのに PC までの間で落ちた分（打ち切りには数えていない）。窓に振れた分が
+    # 総数より少なければ、残りは電波の欠けと混ざっていてどの窓の分か分からなかった。
+    lost_on_link = sum(1 for w in windows if w.lost_on_link)
+    print(
+        f"受信機から PC までの間で落ちたサンプル {link_lost_total(samples)} 件"
+        f"（窓に振った {sum(w.link_lost for w in windows)} 件・全部落ちた窓 {lost_on_link} 個）"
+    )
     for slot in sorted({w.spatial_slot for w in windows}):
         members = [w for w in windows if w.spatial_slot == slot]
         cut = sum(1 for w in members if w.censored)
