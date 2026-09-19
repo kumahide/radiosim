@@ -299,6 +299,8 @@ radiosim/
 │       ├── session.py    # Measurement session (one run = one folder: JSON header + append-only CSV)
 │       ├── aggregate.py  # Groups received samples into windows, marks censored ones, writes the batch CSV
 │       └── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
+│           ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
+│           └── reader.py  # Splits a UART log into frames and turns them into received samples
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
@@ -333,6 +335,7 @@ radiosim/
     ├── test_multihop.py
     ├── test_tracer_session.py
     ├── test_tracer_aggregate.py
+    ├── test_tracer_mavlink.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1136,6 +1139,7 @@ entry point that runs them together.
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_tracer_session.py` | Measurement sessions of the field-measurement helper (`apps/tracer`): header round-trip, samples are append-only, the header is written atomically, endpoint positions accept both a session constant and a time series, time averaging and spatial averaging live in separate fields, raw values are never overwritten with converted ones, feeder loss is not folded into the conversion, a CLAS height is accepted only with a Fix solution, out-of-vocabulary values and an empty measurement-configuration ID are rejected |
 | `test_tracer_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/tracer`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, the tail of a segment never disappears, windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
+| `test_tracer_mavlink.py` | MAVLink decoding in the field-measurement helper (`apps/tracer`): the wire field order follows type size rather than XML order, CRC_EXTRA is derived from the definition, a truncated payload is zero-filled, a frame that fails its CRC never becomes a sample, an unknown message id is skipped whole so the error count is not inflated, a cut-off tail is distinguished from corruption, the frame link sequence is never used as the measurement sequence number, and frames lost on the UART surface as censoring |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
