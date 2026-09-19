@@ -300,9 +300,11 @@ radiosim/
 │       ├── aggregate.py  # Groups received samples into windows, marks censored ones, writes the batch CSV
 │       ├── recorder.py   # Records while measuring (appends UART bytes and operator actions to the session; rebuilds samples from the raw log)
 │       ├── cli.py        # Command line (write a header template, record, export to the batch CSV)
-│       └── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
-│           ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
-│           └── reader.py  # Splits a UART log into frames and turns them into received samples
+│       ├── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
+│       │   ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
+│       │   ├── reader.py  # Splits a UART log into frames and turns them into received samples
+│       │   └── gen_c.py   # Generates the firmware's C header (with golden frames) from the definition XML
+│       └── firmware/     # Transmitter/receiver firmware (XIAO ESP32C6, ESP-IDF)
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
@@ -339,6 +341,7 @@ radiosim/
     ├── test_tracer_aggregate.py
     ├── test_tracer_mavlink.py
     ├── test_tracer_recorder.py
+    ├── test_tracer_firmware.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1145,6 +1148,7 @@ entry point that runs them together.
 | `test_tracer_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/tracer`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, spatial-slot boundaries come from the operator log (what was lost just before a move or the stop does not disappear, a slot that received nothing still gets windows, samples received while moving go into no window), windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
 | `test_tracer_recorder.py` | Recording and the command line of the field-measurement helper (`apps/tracer`): a frame split across serial reads is not lost (any split gives the same messages and error counts), no session is created before the RX settings arrive but the raw bytes before that are kept, samples rebuilt from the raw log match what was written live, an unfilled template or another unit's calibration does not start a recording, a settings change ends the session, samples from another pair are not written, a session without a stop record is not exported silently |
 | `test_tracer_mavlink.py` | MAVLink decoding in the field-measurement helper (`apps/tracer`): the wire field order follows type size rather than XML order, CRC_EXTRA is derived from the definition, a truncated payload is zero-filled, a frame that fails its CRC never becomes a sample, an unknown message id is skipped whole so the error count is not inflated, a cut-off tail is distinguished from corruption, the frame link sequence is never used as the measurement sequence number, and frames lost on the UART surface as censoring |
+| `test_tracer_firmware.py` | The boundary between the measurement helper's (`apps/tracer`) firmware and PC side: the generated C header matches the definition XML; the golden frames embedded in the header decode on the PC side to their values (the firmware checks at boot that it can build the same frames); the golden values cannot hide a wrong field order or sign; nothing is sent before the self-test; the config is resent every second and the PC side does not stop recording on a resend, but does stop on a real change; no logs go over USB |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |

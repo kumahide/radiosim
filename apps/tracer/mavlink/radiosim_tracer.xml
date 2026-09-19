@@ -109,7 +109,9 @@
 
     <message id="42102" name="TRACER_CONFIG">
       <description>
-        設定。起動時と変更時にだけ送り、サンプルからは設定番号で引く。
+        設定。起動時・変更時に加えて 1 秒ごとに再送し、サンプルからは設定番号で引く。
+        再送するのは、PC 側が最初に届いた RX の設定でセッションを作るため（「起動時だけ」
+        だと、RX が先に起動していたら記録が始まらない）。同じ設定の再送は PC 側が読み飛ばす。
         ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
       </description>
       <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
@@ -128,7 +130,10 @@
       </field>
       <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（既定 100 ms）。</field>
       <field type="uint8_t" name="detector" enum="TRACER_DETECTOR">検波方式。</field>
-      <field type="uint32_t" name="integration_window_us" units="us">積分窓の長さ。</field>
+      <field type="uint32_t" name="integration_window_us" units="us">
+        積分窓の長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが
+        知らないとき）。数字を作って刻むと、刻印が事実でなくなる。
+      </field>
       <field type="uint16_t" name="integration_samples">
         **時間平均**の件数（量子化・雑音の平均）。空間平均とは役割が違うので、
         同じ名前の欄に混ぜない。

@@ -132,7 +132,10 @@ def _record(args: argparse.Namespace) -> int:
                     break                                 # 設定が変わった
                 if recorder.state == "waiting" and not hinted \
                         and time.monotonic() - started_wait > _WAIT_HINT_S:
-                    print("設定が届きません。RX をリセットしてください（起動時に送ります）。")
+                    # RX は設定を 1 秒ごとに送る（増分5）＝届かないのは配線か
+                    # ポート・ファームの側。
+                    print("設定が届きません。ポートと RX の電源、RX の役割（role rx）を"
+                          "確かめてください。")
                     hinted = True
                 key = keys.poll()
                 if key == "q":
