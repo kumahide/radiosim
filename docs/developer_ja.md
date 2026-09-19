@@ -377,6 +377,7 @@ radiosim/
     ├── test_qa_fixtures.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
+    ├── test_pre_commit_gate.py
     └── test_qa_gate_cache.py
 ```
 
@@ -1202,6 +1203,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_repo_hygiene.py`   | 追跡してはいけないファイルの門（OneDrive の同期競合コピー・公開できないクラス・実行時ログ・巨大ファイルが追跡下に無いこと）。`.git/hooks/pre-commit` と**同じ判定を共有**し、コミット前とCIの二重で守る |
 | `test_claude_hooks.py`   | ローカル開発フック（`.claude/`）の課題台帳パース。状態の註釈・ID 000・アーカイブ節の置き場・済の裏取り（コミット参照）を検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 | `test_codex_review_tool.py` | 独立レビュー駆動スクリプト（`tools/codex_review/run.ps1`）。**独立性の芯**（入力文はファイルから読む・差し込みは差分パスと比較元だけ・`read-only` 固定・返答は原文でファイルへ）と、**書いてはいけない主張**（`-C` と `read-only` は読み取り範囲を狭めないことを canary で実測した事実に反する断定を禁止し、その開示が消えていないことも対で検査）。**対象が git-ignore ではないが実行は Windows 前提** |
+| `test_pre_commit_gate.py` | コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定。変更がすべて 1 つの島（例: Tracer）に収まるときだけ島のテストに絞り、島の外・リネーム元・空の変更ならフルに戻ること、リポジトリ全体を走査するテストが島のテストから漏れていないことを検証。⚠️ **`node` が無い環境では skip** |
 | `test_qa_gate_cache.py`  | QA ゲート（`tools/qa-hook/pytest-cache.mjs`）の再実行抑止キャッシュ。鍵が「作業ツリーの中身」で動くこと、つまり内容が変われば必ず走り、変わらなければ走らないことを検証。⚠️ **`node` が無い環境では skip**（対象そのものは 2026-08-12 以降 git 管理下にある） |
 
 ### 独立レビュー（外部のレビュアーに差分を見せる）

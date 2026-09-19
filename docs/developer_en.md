@@ -378,6 +378,7 @@ radiosim/
     ├── test_qa_fixtures.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
+    ├── test_pre_commit_gate.py
     └── test_qa_gate_cache.py
 ```
 
@@ -1197,6 +1198,7 @@ entry point that runs them together.
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
+| `test_pre_commit_gate.py` | Commit-gate "islands" (`tools/qa-hook/pre-commit-gate.mjs`): a commit is narrowed to an island's tests (e.g. Tracer) only when every change fits inside it, and falls back to the full suite for any outside path, rename source or empty change; every repo-wide scanning test must be listed in each island. ⚠️ **Skipped where `node` is unavailable** |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
 
 ### Independent review (showing the diff to an outside reviewer)
