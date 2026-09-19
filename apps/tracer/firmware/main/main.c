@@ -31,6 +31,7 @@ static const char *TAG = "tracer";
 
 /* XIAO ESP32C6 のアンテナ切替（RF スイッチ）。⚠️ ピンと論理は販売元の資料による
  * （一次資料で未確認）: GPIO3 を Low でスイッチを有効に、GPIO14 を High で外部側。
+ * 実機では確かめた＝外部アンテナを外すと受信レベルが約 45 dB 下がる（README）。
  * 既定はオンボード側なので、ここで明示的に外部側を選ぶ（§7 機材）。 */
 #define RF_SWITCH_ENABLE_GPIO GPIO_NUM_3
 #define RF_SWITCH_SELECT_GPIO GPIO_NUM_14
