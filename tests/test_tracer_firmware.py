@@ -350,9 +350,9 @@ def _template() -> dict:
             measurement_config_id=f"{role}-esp32c6-rod", device_id=mac,
             feeder_loss_db=1.0, antenna_gain_dbi=2.0,
         )
-        end["calibration"].update(
+        end["calibration"] = dict(
             measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=1.0,
-            reference_unit_id="ref-01", reference_measured_on="2026-09-10",
+            reference_unit_id="ref-01", reference_measured_on="2026-09-10", note="",
         )
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=10.0, height_source="survey"

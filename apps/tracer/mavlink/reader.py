@@ -113,12 +113,31 @@ class FrameStream:
         self.stats = stats if stats is not None else ReadStats()
         self._dialect = dialect or load_dialect()
         self._pending = b""
+        self._outside = bytearray()
+        self._lines: list[str] = []
 
     def feed(self, data: bytes) -> list[Message]:
         buffer = self._pending + data
-        messages, consumed = _parse(buffer, self.stats, self._dialect)
+        messages, consumed = _parse(buffer, self.stats, self._dialect, self._outside)
         self._pending = buffer[consumed:]
+        *done, rest = self._outside.split(b"\n")
+        for line in done:
+            text = line.rstrip(b"\r").decode("utf-8", errors="replace").strip()
+            if text:
+                self._lines.append(text)
+        self._outside = bytearray(rest)
         return messages
+
+    def take_lines(self) -> list[str]:
+        """フレームの外に流れた**文字の行**（コマンドへの返答 `OK`/`ERR`・連続送信の報告
+        `CONT`）を、届いた順に取り出す（取り出した分は消える）。
+
+        ファームは文字の行を 1 行ずつ丸ごと書き、行の中に STX（0xFD）は現れない
+        （UTF-8 は 0xF8 以上のバイトを使わない）。⚠️ 化けたフレームの読み飛ばしも
+        ここに混ざり得るので、呼び手は行の頭（`OK`・`ERR`・`CONT`）で選ぶこと。
+        """
+        lines, self._lines = self._lines, []
+        return lines
 
     def close(self) -> None:
         """終わり。持ち越しが残っていれば、それは末尾で切れたフレーム。"""
@@ -126,11 +145,14 @@ class FrameStream:
         self._pending = b""
 
 
-def _parse(data: bytes, stats: ReadStats, dialect: Dialect) -> tuple[list[Message], int]:
+def _parse(
+    data: bytes, stats: ReadStats, dialect: Dialect, outside: bytearray | None = None
+) -> tuple[list[Message], int]:
     """読めるところまで読み、`(メッセージ, 読み終えたバイト数)` を返す。
 
     末尾の不完全なフレームは**読み終えたことにしない**（数えもしない）＝続きが
-    来るかどうかは呼び手にしか分からない。
+    来るかどうかは呼び手にしか分からない。`outside` を渡すと、フレームの外だった
+    バイト（STX 以外で読み飛ばしたもの）をそこへ足す＝文字の行を拾うため。
     """
     messages: list[Message] = []
     index = 0
@@ -138,6 +160,8 @@ def _parse(data: bytes, stats: ReadStats, dialect: Dialect) -> tuple[list[Messag
     while index < size:
         if data[index] != STX_V2:
             stats.skipped_bytes += 1
+            if outside is not None:
+                outside.append(data[index])
             index += 1
             continue
         if index + _HEADER_LEN > size:

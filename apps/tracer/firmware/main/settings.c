@@ -65,6 +65,12 @@ void settings_load(tracer_settings_t *out)
     }
 }
 
+void settings_bump_config_id(tracer_settings_t *current)
+{
+    current->config_id = (uint16_t)(current->config_id + 1);
+    save(current);
+}
+
 static bool parse_long(const char *text, long lo, long hi, long *out)
 {
     char *end;

@@ -32,6 +32,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Callable
 
+from apps.tracer.calib import DeviceCalibration, endpoint_calibration
 from apps.tracer.mavlink.dialect import Dialect, load_dialect
 from apps.tracer.mavlink.reader import (
     FrameStream,
@@ -79,6 +80,10 @@ def header_template() -> dict[str, Any]:
     RX の無線設定は機器が送ってくるので、書くのは受信感度だけ。**TX の無線設定は
     書かせない**＝TX が空中で送り RX が中継してくる（雛形に書けると、実機と食い違った
     送信間隔・電力が黙ってヘッダに入る）。
+
+    **校正値の欄も置かない**＝個体ごとの校正ファイル（`calib.py`・`record --calib`）から
+    個体 ID で読んで写す（2026-09-19 ユーザー決定＝手で書き写す欄を無くす）。
+    ⚠️ 手で `calibration` を書いた雛形も読める（その端点は校正ファイルを使わない）。
     """
 
     def endpoint(role: str) -> dict[str, Any]:
@@ -88,14 +93,6 @@ def header_template() -> dict[str, Any]:
             "device_id": None,
             "feeder_loss_db": None,
             "antenna_gain_dbi": None,
-            "calibration": {
-                "measured_on": None,
-                "offset_db": None,
-                "scale_db_per_count": None,
-                "reference_unit_id": None,
-                "reference_measured_on": None,
-                "note": "",
-            },
             "radio": None,
             "position": {
                 "lat": None,
@@ -111,8 +108,6 @@ def header_template() -> dict[str, Any]:
 
     tx = endpoint("tx")
     del tx["radio"]
-    # SMA 端で実測した出力と、それを測った設定（記録を始めるとき TX の設定と突き合わせる）。
-    tx["calibration"].update(tx_output_dbm=None, tx_output_power_cdbm=None, tx_output_channel=None)
     rx = endpoint("rx")
     rx["radio"] = {"sensitivity_dbm": None}
     return {
@@ -132,8 +127,15 @@ def header_template() -> dict[str, Any]:
     }
 
 
-def check_template(template: dict[str, Any]) -> None:
-    """記録を始める前の検査。**未記入（`null`）と、書いてはいけない項目**を見る。"""
+def check_template(
+    template: dict[str, Any], calibrations: dict[str, DeviceCalibration] | None = None
+) -> None:
+    """記録を始める前の検査。**未記入（`null`）と、書いてはいけない項目**を見る。
+
+    校正値は端点ごとに**ちょうど 1 つの出どころ**＝雛形の `calibration` か、個体 ID で
+    引いた校正ファイル（`calibrations`・キーは小文字の個体 ID）。両方あるとどちらが
+    写ったか後から分からず、どちらも無ければ dBm に直せない。
+    """
     for path in _FILLED_BY_RECORDER:
         node: Any = template
         for key in path[:-1]:
@@ -156,6 +158,19 @@ def check_template(template: dict[str, Any]) -> None:
     missing = sorted(_unfilled(template))
     if missing:
         raise SessionError("雛形に未記入の項目があります: " + ", ".join(missing))
+    for role in ("tx", "rx"):
+        end = template.get(role, {})
+        device = str(end.get("device_id", "")).lower()
+        from_file = calibrations is not None and device in calibrations
+        if "calibration" in end and from_file:
+            raise SessionError(
+                f"{role} の校正値が雛形と校正ファイルの両方にあります（どちらか 1 つにします）"
+            )
+        if "calibration" not in end and not from_file:
+            raise SessionError(
+                f"{role}（{device}）の校正値がありません＝校正ファイルのフォルダ（--calib）を"
+                "指定してください"
+            )
 
 
 def _unfilled(node: Any, prefix: str = "") -> list[str]:
@@ -179,14 +194,18 @@ def build_header(
     started_utc: str,
     software_commit: str,
     dialect: Dialect | None = None,
+    calibrations: dict[str, DeviceCalibration] | None = None,
 ) -> SessionHeader:
     """雛形と、RX の設定・中継された TX の設定からヘッダを組む。
+
+    校正ファイルから写す端点は、**TX の送信出力を動いている設定（電力・チャネル）の
+    行から選ぶ**＝設定は TX が空中で送ってくるまで分からないので、ここで選ぶ。
 
     🔑 **RX の個体 ID は雛形と機器で一致させる。** 校正値は個体ごとの値なので、
     別の個体を挿したまま測ると、その個体に**別の個体の校正**が掛かった dBm が出る。
     TX も同じ（送信電力の校正が個体ごと）。
     """
-    check_template(template)
+    check_template(template, calibrations)
     if not software_commit:
         raise SessionError("ソフトウェアのコミットが空です（刻印の 1 項目）")
     if rx_config.name != "TRACER_CONFIG" or not _is_rx(rx_config, dialect):
@@ -220,6 +239,15 @@ def build_header(
         to_radio_settings(rx_config, template["rx"]["radio"]["sensitivity_dbm"], dialect)
     )
     payload["tx"]["radio"] = asdict(to_radio_settings(tx_config, None, dialect))
+    for role, end_device in (("tx", tx_device), ("rx", device)):
+        if "calibration" in template[role]:
+            continue
+        assert calibrations is not None               # check_template が見ている
+        payload[role]["calibration"] = asdict(endpoint_calibration(
+            calibrations[end_device], role,
+            power_cdbm=tx_config.fields["tx_power_cdbm"],
+            channel=tx_config.fields["channel"],
+        ))
     return header_from_dict(payload)
 
 
@@ -325,10 +353,12 @@ class Recorder:
         *,
         software_commit: str,
         dialect: Dialect | None = None,
+        calibrations: dict[str, DeviceCalibration] | None = None,
     ):
-        check_template(template)
+        check_template(template, calibrations)
         self._root = Path(root)
         self._template = template
+        self._calibrations = calibrations
         self._software_commit = software_commit
         self._dialect = dialect or load_dialect()
         self._processor = _Processor(
@@ -443,6 +473,7 @@ class Recorder:
             started_utc=pc_utc,
             software_commit=self._software_commit,
             dialect=self._dialect,
+            calibrations=self._calibrations,
         )
         self.directory = create_session(self._root, header)
         self._record(Event(pc_utc, "place", 0))

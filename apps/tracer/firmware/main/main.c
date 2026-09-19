@@ -76,6 +76,36 @@ static tracer_config_t make_config(const tracer_settings_t *s, const uint8_t mac
     return c;
 }
 
+/* `cont SECONDS`（1〜600）＝連続送信・`cont 0`＝中止。TX だけ。設定の保存はせず
+ * （電源を入れ直せば普段の送信に戻る＝現場で連送し続ける機器を作らない）、config_id だけ
+ * 先に進める。コマンドだったら true。 */
+static bool handle_continuous(const char *line, tracer_settings_t *settings)
+{
+    unsigned long seconds;
+    char extra;
+    if (strncmp(line, "cont", 4) != 0) return false;
+    if (sscanf(line, "cont %lu %c", &seconds, &extra) != 1 || seconds > 600) {
+        link_send_text("ERR cont は 0〜600 秒です（0 で中止）");
+        return true;
+    }
+    if (settings->role != TRACER_ROLE_TX) {
+        link_send_text("ERR cont は TX だけです（role tx にしてから）");
+        return true;
+    }
+    if (seconds == 0) {
+        radio_continuous(0);
+        link_send_text("OK cont 中止します");
+        return true;
+    }
+    settings_bump_config_id(settings);
+    char reply[96];
+    snprintf(reply, sizeof reply, "OK cont %lu 秒 config_id=%u 終わったら再起動します", seconds,
+             settings->config_id);
+    link_send_text(reply);
+    radio_continuous((uint32_t)seconds);
+    return true;
+}
+
 void app_main(void)
 {
     esp_err_t err = nvs_flash_init();
@@ -144,6 +174,10 @@ void app_main(void)
     char reply[96];
     for (;;) {
         if (link_read_line(line, sizeof line) > 0) {
+            if (handle_continuous(line, &settings)) {
+                last_config = esp_timer_get_time();
+                continue;
+            }
             if (settings_apply_command(line, &settings, reply, sizeof reply)) {
                 link_send_text(reply);
                 vTaskDelay(pdMS_TO_TICKS(100));        /* 返答を送り切ってから */

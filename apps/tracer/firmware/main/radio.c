@@ -18,6 +18,12 @@
  *    esp_wifi_start の後に呼ぶと ESP_OK を返すのに効かず（11 Mbps を指定しても
  *    1 Mbps で出た＝既定値がたまたま 1 Mbps だっただけ）、前に呼ぶと ESP_FAIL。
  *
+ * **連続送信**（段0b・radio_continuous）＝同じ送信経路（esp_wifi_80211_tx・同じ電力の
+ * 設定・1 Mbps）で最長のフレームを連送し、**送信完了の時刻から実際のデューティを測って
+ * 報告する**＝平均電力計の読みを P_burst = P_avg − 10·log10(duty) で直せる。
+ * ⚠️ PHY の試験モード（連続波・最大値からのバックオフ指定）は使わない＝電力の指定の
+ *    経路が測定のときと違い、測った出力が測定に使う出力である保証が無い。
+ *
  * ⚠️ OUI の値（下の TRACER_AIR_OUI）は仮置き。登録された値ではない。
  */
 #include "radio.h"
@@ -42,6 +48,15 @@ static const uint8_t TRACER_AIR_OUI[3] = {0x02, 0x52, 0x53};   /* 仮置き（�
 static const uint8_t TRACER_AIR_TAG[4] = {'R', 'S', 'T', 'R'};
 /* レートの確かめ用。RX は識別子が違うので読まない（セッションを始めさせない）。 */
 static const uint8_t TRACER_AIR_VERIFY_TAG[4] = {'R', 'S', 'T', 'P'};
+/* 連続送信の詰め物。識別子が違うので RX はサンプルにしない。 */
+static const uint8_t TRACER_AIR_CONT_TAG[4] = {'R', 'S', 'T', 'C'};
+/* esp_wifi_80211_tx が受け付ける最長（802.11 ヘッダ込み・FCS は含まない）。 */
+#define CONT_FRAME_LEN 1500
+/* 11b・1 Mbps・ロングプリアンブルの空中の時間＝PLCP 192 µs ＋ 1 バイト 8 µs（FCS 込み）。 */
+#define CONT_AIRTIME_US (192u + (CONT_FRAME_LEN + FCS_LEN) * 8u)
+#define CONT_MAX_S 600u
+#define CONT_REPORT_US 1000000LL
+#define CONT_DONE_WAIT pdMS_TO_TICKS(100)
 #define AIR_PHY_RATE WIFI_PHY_RATE_1M_L          /* RADIO_AIR_RATE_KBPS と揃える */
 #define RATE_VERIFY_WAIT pdMS_TO_TICKS(500)
 #define AIR_PREFIX_LEN (1 + 3 + 4)
@@ -94,7 +109,11 @@ uint32_t radio_rx_overflows(void) { return s_rx_overflows; }
 /* 送信完了の通知で届いた、最後の実際のレート（kbps・0＝不明）。Wi-Fi のタスクが書き、
  * TX のタスクが読む。 */
 static volatile uint16_t s_last_tx_kbps;
+static volatile int64_t s_last_tx_done_us;       /* 送信完了の通知を受けた時刻 */
 static SemaphoreHandle_t s_tx_done;
+/* 連続送信の要求（秒・0＝無し）と中止の要求。main のコマンドが書き、TX のタスクが読む。 */
+static volatile uint32_t s_cont_request_s;
+static volatile bool s_cont_abort;
 
 static uint16_t phy_rate_kbps(wifi_phy_rate_t rate)
 {
@@ -109,8 +128,91 @@ static uint16_t phy_rate_kbps(wifi_phy_rate_t rate)
 
 static void tx_done(const esp_80211_tx_info_t *info)
 {
+    s_last_tx_done_us = esp_timer_get_time();
     s_last_tx_kbps = phy_rate_kbps(info->rate);
     if (s_tx_done != NULL) xSemaphoreGive(s_tx_done);
+}
+
+/* --- 連続送信 ------------------------------------------------------------------ */
+
+void radio_continuous(uint32_t seconds)
+{
+    if (seconds == 0) {
+        s_cont_abort = true;
+        return;
+    }
+    s_cont_abort = false;
+    s_cont_request_s = seconds < CONT_MAX_S ? seconds : CONT_MAX_S;
+}
+
+/* TX のタスクの中で走る（フレームの送り手を 1 つに保つ）。終わったら再起動する。
+ *
+ * デューティ＝(完了の間隔の数 × 空中の時間) ÷ (最初の完了から最後の完了まで)。
+ * 完了の通知の遅れは一定なら間隔では打ち消し合い、揺らぎは件数で平均される。
+ * 1 Mbps 以外で出たフレームは空中の時間が違うので、数えて報告する（0 でなければ
+ * そのデューティは使えない）。 */
+static void run_continuous(uint32_t seconds)
+{
+    static uint8_t frame[CONT_FRAME_LEN];
+    memset(frame, 0, sizeof frame);
+    frame[0] = 0xD0;
+    memset(frame + 4, 0xFF, 6);
+    memcpy(frame + 10, s_mac, 6);
+    memcpy(frame + 16, s_mac, 6);
+    uint8_t *body = frame + WLAN_HEADER_LEN;
+    body[0] = ACTION_CATEGORY_VENDOR;
+    memcpy(body + 1, TRACER_AIR_OUI, 3);
+    memcpy(body + 4, TRACER_AIR_CONT_TAG, 4);
+
+    const int64_t start = esp_timer_get_time();
+    const int64_t until = start + (int64_t)seconds * 1000000LL;
+    int64_t first_done = 0;
+    int64_t last_done = 0;
+    int64_t last_report = start;
+    uint32_t done = 0;
+    uint32_t other_rate = 0;
+    uint32_t failures = 0;
+    uint32_t lost_notices = 0;
+    char line[160];
+    while (!s_cont_abort && esp_timer_get_time() < until) {
+        xSemaphoreTake(s_tx_done, 0);                    /* 前の通知を捨てる */
+        if (esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)sizeof frame, true) != ESP_OK) {
+            failures++;
+            vTaskDelay(1);
+            continue;
+        }
+        if (xSemaphoreTake(s_tx_done, CONT_DONE_WAIT) != pdTRUE) {
+            /* 通知が来ない＝この回の完了時刻が分からない。間隔の数に入れない。 */
+            lost_notices++;
+            first_done = 0;                              /* 間隔の連なりを切る */
+            continue;
+        }
+        if (s_last_tx_kbps != RADIO_AIR_RATE_KBPS) other_rate++;
+        if (first_done == 0) {
+            first_done = s_last_tx_done_us;
+            done = 0;
+        } else {
+            done++;
+        }
+        last_done = s_last_tx_done_us;
+        int64_t now = esp_timer_get_time();
+        if (now - last_report >= CONT_REPORT_US && done > 0) {
+            double span = (double)(last_done - first_done);
+            double duty = (double)done * (double)CONT_AIRTIME_US / span;
+            snprintf(line, sizeof line,
+                     "CONT duty=%.5f intervals=%lu airtime_us=%u span_us=%lld other_rate=%lu "
+                     "failures=%lu lost_notices=%lu remaining_s=%lld",
+                     duty, (unsigned long)done, (unsigned)CONT_AIRTIME_US,
+                     (long long)(last_done - first_done), (unsigned long)other_rate,
+                     (unsigned long)failures, (unsigned long)lost_notices,
+                     (long long)((until - now) / 1000000LL));
+            link_send_text(line);
+            last_report = now;
+        }
+    }
+    link_send_text(s_cont_abort ? "CONT END aborted" : "CONT END");
+    vTaskDelay(pdMS_TO_TICKS(100));                      /* 送り切ってから */
+    esp_restart();
 }
 
 /* --- TX --------------------------------------------------------------------- */
@@ -137,6 +239,7 @@ static void tx_task(void *arg)
     const TickType_t period = pdMS_TO_TICKS(s_settings.tx_interval_ms);
     for (;;) {
         xTaskDelayUntil(&last, period);
+        if (s_cont_request_s != 0) run_continuous(s_cont_request_s);    /* 戻らない */
         int64_t now = esp_timer_get_time();
         uint16_t actual = s_last_tx_kbps;
         if (actual != s_config.rate_kbps) {

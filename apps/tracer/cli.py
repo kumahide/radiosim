@@ -8,6 +8,12 @@ RadioSim Tracer（仮称）の**コマンドライン**（phase 1・増分4）�
                                                       … RX を繋いで測る
     python -m apps.tracer.cli export セッション 出力.csv
                                                       … 本体のバッチ CSV へ書き出す
+    python -m apps.tracer.cli bench run --port-a COM3 --port-b COM4 --root 測定データ
+                                                      … 段0 の机上試験（2 台・両方向）
+    python -m apps.tracer.cli bench analyze 机上試験 --ref ref.json --calib-dir 校正
+                                                      … 判定と、個体ごとの校正ファイル
+    python -m apps.tracer.cli cont --port COM3 --seconds 60 --ref ref.json
+                                                      … 連続送信で TX の出力を測る（段0b）
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信は窓に入れない）
@@ -24,9 +30,12 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
+import re
 import subprocess  # nosec B404 — 固定の git 呼び出しだけ（刻印のコミットを取る）
 import sys
 import time
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +46,18 @@ from apps.tracer.aggregate import (
     link_lost_total,
     write_batch_csv,
 )
+from apps.tracer.bench import STAGES, BenchError, BenchRunner, default_plan
+from apps.tracer.bench_analysis import (
+    analyze,
+    read_ref,
+    ref_template,
+    render_markdown,
+    write_calibrations,
+    write_report,
+)
+from apps.tracer.calib import DeviceCalibration, read_device_calibration
+from apps.tracer.mavlink.dialect import load_dialect
+from apps.tracer.mavlink.reader import FrameStream, mac
 from apps.tracer.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.tracer.session import (
     Event,
@@ -67,6 +88,8 @@ def main(argv: list[str] | None = None) -> int:
     # 測定データが溜まるのを防ぐ。
     p.add_argument("--root", type=Path, required=True,
                    help="セッションのフォルダを作る場所")
+    p.add_argument("--calib", type=Path,
+                   help="個体ごとの校正ファイルのフォルダ（bench analyze --calib-dir で作る）")
 
     p = sub.add_parser("export", help="セッションを本体のバッチ CSV へ書き出す")
     p.add_argument("session", type=Path)
@@ -75,12 +98,44 @@ def main(argv: list[str] | None = None) -> int:
                    help="終了の記録が無いセッション（途中で落ちた）を、最後に読めた時刻で"
                         "終えたものとして扱う")
 
+    p = sub.add_parser("bench", help="段0 の机上試験")
+    bench = p.add_subparsers(dest="bench_command", required=True)
+    q = bench.add_parser("plan", help="計画の雛形（JSON）を書き出す")
+    q.add_argument("path", type=Path)
+    q = bench.add_parser("ref", help="段0b の実測値を書く雛形（JSON）を書き出す")
+    q.add_argument("path", type=Path)
+    q = bench.add_parser("run", help="2 台をつないで測る")
+    q.add_argument("--port-a", required=True)
+    q.add_argument("--port-b", required=True)
+    q.add_argument("--baud", type=int, default=115200)
+    q.add_argument("--root", type=Path, required=True, help="机上試験のフォルダを作る場所")
+    q.add_argument("--plan", type=Path, help="計画（省略すると既定）")
+    q.add_argument("--only", help=f"測る段をカンマで（{','.join(STAGES)}）")
+    q = bench.add_parser("analyze", help="判定する（測り直さずに何度でも）")
+    q.add_argument("directory", type=Path)
+    q.add_argument("--ref", type=Path, help="段0b の実測値")
+    q.add_argument("--calib-dir", type=Path, help="個体ごとの校正ファイルを書くフォルダ")
+
+    p = sub.add_parser("cont", help="連続送信で TX の出力を測る（段0b）")
+    p.add_argument("--port", required=True)
+    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--seconds", type=int, default=60)
+    p.add_argument("--ref", type=Path, required=True, help="結果を足す ref（無ければ作る）")
+    p.add_argument("--reading", choices=("avg", "burst"), default="avg",
+                   help="測定器の読みの種類（avg＝平均電力・burst＝バースト中の電力）")
+    p.add_argument("--pad-db", type=float, default=0.0,
+                   help="SMA 端から測定器までの間に入れた減衰（dB）")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "template":
             return _template(args.path)
         if args.command == "record":
             return _record(args)
+        if args.command == "bench":
+            return _bench(args)
+        if args.command == "cont":
+            return _cont(args)
         return _export(args)
     except SessionError as e:
         print(f"エラー: {e}", file=sys.stderr)
@@ -100,28 +155,41 @@ def _template(path: Path) -> int:
     print(f"雛形を書き出しました: {path}")
     print("null の欄を埋めてください。rx.radio は受信感度だけ（残りは RX から届きます）。"
           "TX の無線設定は書きません（TX が空中で送り、RX が中継します）。")
-    print("tx.calibration.tx_output_* には、U.FL→SMA 中継ケーブルの SMA 端で実測した出力と、"
-          "それを測ったときの設定（0.01 dBm 単位）・チャネルを書きます。")
+    print("校正値は書きません。record --calib で、個体ごとの校正ファイル（bench analyze "
+          "--calib-dir で作ったもの）から個体 ID で読んで写します。")
     return 0
 
 
-def _load_template(path: Path) -> dict[str, Any]:
+def _load_template(
+    path: Path, calib_dir: Path | None = None
+) -> tuple[dict[str, Any], dict[str, DeviceCalibration] | None]:
     try:
         template = json.loads(path.read_text(encoding="utf-8"))
     except FileNotFoundError as e:
         raise SessionError(f"雛形がありません: {path}") from e
     except json.JSONDecodeError as e:
         raise SessionError(f"雛形が JSON として読めません: {path}（{e}）") from e
-    check_template(template)
-    return template
+    calibrations = None
+    if calib_dir is not None:
+        # 雛形で校正値を書いていない端点だけ、個体 ID で校正ファイルを引く。
+        calibrations = {}
+        for role in ("tx", "rx"):
+            end = template.get(role) or {}
+            device = end.get("device_id")
+            if "calibration" not in end and isinstance(device, str):
+                calibrations[device.lower()] = read_device_calibration(calib_dir, device)
+    check_template(template, calibrations)
+    return template, calibrations
 
 
 # --- record ------------------------------------------------------------------
 
 
 def _record(args: argparse.Namespace) -> int:
-    template = _load_template(args.template)     # 現場で気づくと測れないので、繋ぐ前に
-    recorder = Recorder(args.root, template, software_commit=software_commit())
+    # 現場で気づくと測れないので、繋ぐ前に
+    template, calibrations = _load_template(args.template, args.calib)
+    recorder = Recorder(args.root, template, software_commit=software_commit(),
+                        calibrations=calibrations)
     serial = _import_serial()
     keys = _Keyboard()
     try:
@@ -303,6 +371,248 @@ def _print_read_stats(stats: Any, foreign: int) -> None:
         f"（{stats.error_fraction:.2%}）・読み飛ばし {stats.skipped_bytes} バイト"
         f"・末尾の切れ {stats.truncated_tail} バイト・別の組のサンプル {foreign}"
     )
+
+
+# --- bench -------------------------------------------------------------------
+
+
+def _bench(args: argparse.Namespace) -> int:
+    command = args.bench_command
+    if command in ("plan", "ref"):
+        path: Path = args.path
+        if path.exists():
+            print(f"エラー: 既にあります（上書きしません）: {path}", file=sys.stderr)
+            return 2
+        payload = default_plan() if command == "plan" else ref_template()
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
+                        encoding="utf-8")
+        print(f"書き出しました: {path}")
+        return 0
+    if command == "analyze":
+        ref = read_ref(args.ref) if args.ref else None
+        report = analyze(args.directory, ref)
+        j, m = write_report(args.directory, report)
+        print(render_markdown(report))
+        print(f"書き出しました: {m}・{j}")
+        if args.calib_dir:
+            for path in write_calibrations(report, args.calib_dir):
+                print(f"校正ファイル: {path}")
+        return 0
+    plan = default_plan()
+    if args.plan:
+        plan = json.loads(args.plan.read_text(encoding="utf-8"))
+    stages = tuple(s.strip() for s in args.only.split(",")) if args.only else STAGES
+    serial = _import_serial()
+    ports = {
+        "a": _ReopeningPort(serial, args.port_a, args.baud),
+        "b": _ReopeningPort(serial, args.port_b, args.baud),
+    }
+    runner = BenchRunner(
+        args.root, ports, plan, clock=now_utc, prompt=_prompt, say=print,
+        software_commit=software_commit(),
+    )
+    print(f"机上試験: {runner.directory}")
+    try:
+        runner.run(stages)
+    except KeyboardInterrupt:
+        print("\n中断しました（ここまでの記録は残っています）")
+        return 1
+    except BenchError as e:
+        print(f"\n止まりました: {e}（ここまでの記録は残っています）", file=sys.stderr)
+        return 2
+    finally:
+        for port in ports.values():
+            port.close()
+    print(f"終わりました。判定: python -m apps.tracer.cli bench analyze {runner.directory}")
+    return 0
+
+
+def _prompt(message: str) -> str:
+    return input("\n" + message + " ")
+
+
+class _ReopeningPort:
+    """**機器の再起動を跨いで使えるポート。** 設定を変えると機器が再起動する
+    （`role`・`power`・`channel`）。USB が一度切れる環境では読み書きが例外になるので、
+    閉じて開き直す（開き直せるまでは空の読みを返す）。
+
+    ⚠️ ポートを閉じると機器はリセットされる（README）が、切れたポートを閉じても
+    失うものは無い。"""
+
+    REOPEN_EVERY_S = 0.5
+
+    def __init__(self, serial: Any, name: str, baud: int):
+        self._serial = serial
+        self._name = name
+        self._baud = baud
+        self._port: Any = None
+        self._next_try = 0.0
+        self._open(first=True)
+
+    def _open(self, first: bool = False) -> None:
+        try:
+            self._port = self._serial.Serial(self._name, self._baud, timeout=0.1)
+        except self._serial.SerialException as e:
+            if first:
+                raise SessionError(f"ポートを開けません: {self._name}（{e}）") from e
+            self._port = None
+            self._next_try = time.monotonic() + self.REOPEN_EVERY_S
+
+    def _lost(self) -> None:
+        try:
+            self._port.close()
+        except Exception:  # nosec B110 — 切れたポートの後始末（失敗しても失うものが無い）
+            pass
+        self._port = None
+        self._next_try = time.monotonic() + self.REOPEN_EVERY_S
+
+    def _ready(self) -> bool:
+        if self._port is None and time.monotonic() >= self._next_try:
+            self._open()
+        if self._port is None:
+            time.sleep(0.05)
+        return self._port is not None
+
+    @property
+    def in_waiting(self) -> int:
+        if not self._ready():
+            return 0
+        try:
+            return int(self._port.in_waiting)
+        except (self._serial.SerialException, OSError):
+            self._lost()
+            return 0
+
+    def read(self, size: int) -> bytes:
+        if not self._ready():
+            return b""
+        try:
+            return bytes(self._port.read(size))
+        except (self._serial.SerialException, OSError):
+            self._lost()
+            return b""
+
+    def write(self, data: bytes) -> int:
+        deadline = time.monotonic() + 10.0
+        while time.monotonic() < deadline:
+            if self._ready():
+                try:
+                    return int(self._port.write(data))
+                except (self._serial.SerialException, OSError):
+                    self._lost()
+        raise SessionError(f"ポートに書けません: {self._name}")
+
+    def close(self) -> None:
+        if self._port is not None:
+            self._port.close()
+            self._port = None
+
+
+# --- cont --------------------------------------------------------------------
+
+_CONT_LINE = re.compile(r"^CONT duty=(?P<duty>[0-9.]+) intervals=(?P<intervals>\d+) "
+                        r"airtime_us=\d+ span_us=\d+ other_rate=(?P<other>\d+)")
+
+
+def parse_cont_line(line: str) -> dict[str, float] | None:
+    """ファームの連続送信の報告（`radio.c` の run_continuous）を読む。"""
+    found = _CONT_LINE.match(line)
+    if found is None:
+        return None
+    return {"duty": float(found["duty"]), "intervals": int(found["intervals"]),
+            "other_rate": int(found["other"])}
+
+
+def burst_dbm(reading_dbm: float, *, kind: str, duty: float, pad_db: float) -> float:
+    """SMA 端のバースト中の電力。平均電力計の読みはデューティの分だけ低い。"""
+    if not 0.0 < duty <= 1.0:
+        raise SessionError(f"デューティが範囲の外です: {duty}")
+    value = reading_dbm + pad_db
+    if kind == "avg":
+        value -= 10 * math.log10(duty)
+    return value
+
+
+def _cont(args: argparse.Namespace) -> int:
+    if not 1 <= args.seconds <= 600:
+        raise SessionError("--seconds は 1〜600 です")
+    serial = _import_serial()
+    port = _ReopeningPort(serial, args.port, args.baud)
+    dialect = load_dialect()
+    stream = FrameStream(dialect=dialect)
+    configs: list[Any] = []
+    lines: list[str] = []
+
+    def pump(seconds: float) -> None:
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            chunk = port.read(max(1, port.in_waiting))
+            configs.extend(m for m in stream.feed(chunk) if m.name == "TRACER_CONFIG")
+            lines.extend(stream.take_lines())
+
+    def role(m: Any) -> str:
+        return dialect.label("TRACER_ROLE", m.fields["role"])
+
+    try:
+        port.write(b"show\n")
+        pump(2.5)
+        # RX は近くの TX の設定を中継する＝役割が rx の設定があれば、それが自分で、
+        # tx の設定は他の機器のもの（取り違えると他の個体の出力として記録される）。
+        own_rx = [m for m in configs if role(m) == "rx"]
+        if own_rx:
+            own = mac(own_rx[-1].fields["device_id"])
+            print("TX に切り替えます（role tx）")
+            configs.clear()
+            port.write(b"role tx\n")
+            pump(6.0)
+            mine = [m for m in configs if role(m) == "tx" and mac(m.fields["device_id"]) == own]
+        else:
+            mine = [m for m in configs if role(m) == "tx"]
+        if not mine or len({mac(m.fields["device_id"]) for m in mine}) != 1:
+            raise SessionError("TX の設定が届きません（ポート・電源・ファームを確かめてください）")
+        config = mine[-1]
+        device = mac(config.fields["device_id"])
+        power = config.fields["tx_power_cdbm"]
+        channel = config.fields["channel"]
+        print(f"個体 {device}・設定 {power / 100:g} dBm・チャネル {channel}")
+        lines.clear()
+        port.write(f"cont {args.seconds}\n".encode("ascii"))
+        last: dict[str, float] | None = None
+        until = time.monotonic() + args.seconds + 10
+        ended = False
+        while time.monotonic() < until and not ended:
+            pump(0.2)
+            for line in lines:
+                if line.startswith("ERR"):
+                    raise SessionError(f"機器が断りました: {line}")
+                parsed = parse_cont_line(line)
+                if parsed is not None:
+                    last = parsed
+                    print(f"\r連続送信中  デューティ {parsed['duty']:.4f}"
+                          f"（補正 {-10 * math.log10(parsed['duty']):+.3f} dB）"
+                          f"  他のレート {parsed['other_rate']}   ", end="", flush=True)
+                ended = ended or line.startswith("CONT END")
+            lines.clear()
+    finally:
+        port.close()
+    print()
+    if last is None:
+        raise SessionError("連続送信の報告が届きませんでした")
+    if last["other_rate"]:
+        raise SessionError("1 Mbps 以外で出たフレームがありました（デューティを使えません）")
+    reading = float(_prompt(f"測定器の読み（dBm・{args.reading}）:"))
+    instrument = _prompt("測定器の名前（空でも可）:").strip()
+    value = burst_dbm(reading, kind=args.reading, duty=last["duty"], pad_db=args.pad_db)
+    ref = read_ref(args.ref) if args.ref.exists() else ref_template()
+    ref.setdefault("tx_output", []).append({
+        "device_id": device, "power_cdbm": power, "channel": channel,
+        "dbm": round(value, 3), "measured_on": datetime.now(timezone.utc).date().isoformat(),
+        "instrument": instrument, "reading_kind": args.reading, "reading_dbm": reading,
+        "pad_db": args.pad_db, "duty": last["duty"],
+    })
+    args.ref.write_text(json.dumps(ref, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"SMA 端の出力 {value:.3f} dBm を {args.ref} に足しました")
+    return 0
 
 
 if __name__ == "__main__":

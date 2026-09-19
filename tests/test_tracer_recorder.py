@@ -116,9 +116,10 @@ def _filled_template() -> dict:
             measurement_config_id=f"{role}-esp32c6-rod-3m", device_id=mac,
             feeder_loss_db=1.0, antenna_gain_dbi=2.0,
         )
-        end["calibration"].update(
+        # 手で書いた校正値（校正ファイルを使わない経路）。
+        end["calibration"] = dict(
             measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=0.5,
-            reference_unit_id="ref-01", reference_measured_on="2026-09-10",
+            reference_unit_id="ref-01", reference_measured_on="2026-09-10", note="",
         )
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=height, height_source="survey"
@@ -135,7 +136,6 @@ def test_an_unfilled_template_does_not_start_a_recording():
     """未記入（`null`）の欄を**名前で**挙げて止めること（現場で気づくと測れない）。"""
     with pytest.raises(S.SessionError, match="未記入") as info:
         REC.check_template(REC.header_template())
-    assert "tx.calibration.offset_db" in str(info.value)
     assert "rx.radio.sensitivity_dbm" in str(info.value)
     REC.check_template(_filled_template())
 
@@ -528,14 +528,12 @@ def test_export_writes_the_batch_csv(tmp_path, dialect, capsys):
     assert "本体の送信電力を 12.40 dBm にして" in printed
 
 
-def test_the_template_asks_for_the_tx_output_only_on_the_tx_side():
-    """雛形は TX にだけ実測出力の欄を持ち、未記入なら名前で挙げて止めること。"""
+def test_the_template_has_no_calibration_to_copy_by_hand():
+    """🔑 雛形に校正値の欄を置かないこと（2026-09-19 ユーザー決定＝校正ファイルから
+    個体 ID で写す）。欄があると、手で書き写した値と校正ファイルのどちらが効いたか
+    後から分からない。"""
     template = REC.header_template()
-    assert "tx_output_dbm" not in template["rx"]["calibration"]
-    with pytest.raises(S.SessionError, match="未記入") as info:
-        REC.check_template(template)
-    for key in ("tx_output_dbm", "tx_output_power_cdbm", "tx_output_channel"):
-        assert f"tx.calibration.{key}" in str(info.value)
+    assert "calibration" not in template["tx"] and "calibration" not in template["rx"]
 
 
 def test_a_tx_output_measured_at_another_setting_does_not_start_a_session(tmp_path, dialect):

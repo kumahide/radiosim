@@ -21,6 +21,10 @@ typedef struct {
 /* NVS から読む（無ければ既定値で作って保存する）。 */
 void settings_load(tracer_settings_t *out);
 
+/* 設定は変えずに config_id だけ 1 つ進めて保存する（連続送信の前＝再起動後の設定で、
+ * PC がその間を跨いだ記録を閉じられるように）。 */
+void settings_bump_config_id(tracer_settings_t *current);
+
 /* 1 行のコマンドを解釈する。設定が変わったら保存して true を返す（呼び手が再起動する）。
  * 返答（"OK ..." / "ERR ..."）は reply に書く。 */
 bool settings_apply_command(const char *line, tracer_settings_t *current, char *reply,
