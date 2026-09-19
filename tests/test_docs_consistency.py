@@ -50,6 +50,15 @@ CORE_ARCH_MODULES = sorted(
     for p in (ROOT / d).glob("*.py")
     if p.name not in ARCH_EXCLUDED
 )
+# `apps/<名前>/` 配下（本体とは別のアプリ）。**ここも実装から導く**＝同じ理由で
+# 手書きの列挙にしない（次に足す 1 本で穴が開く）。
+# ⚠️ 層構成図（SVG）には出さない＝あの図は本体 1 アプリの層を描いたもので、別アプリを
+# 足すと図の主題が変わる。ここが見ているのは**ファイル構成ツリー**だけ。
+APP_MODULES = sorted(
+    p.name
+    for p in (ROOT / "apps").rglob("*.py")
+    if p.name != "__init__.py"
+)
 
 DEV_DOCS = ["docs/developer_ja.md", "docs/developer_en.md"]
 PIP_DOCS = ["README.md", "docs/developer_ja.md", "docs/developer_en.md"]
@@ -92,7 +101,7 @@ def _deps() -> list[str]:
 @pytest.mark.parametrize("doc", DEV_DOCS)
 def test_file_tree_lists_all_modules(doc):
     tree = _section(_read(doc), ["ファイル構成", "File Structure"])
-    for name in VIEW_MODULES + CORE_ARCH_MODULES + TEST_FILES:
+    for name in VIEW_MODULES + CORE_ARCH_MODULES + APP_MODULES + TEST_FILES:
         assert name in tree, f"{doc}: file-structure tree is missing {name}"
 
 

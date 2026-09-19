@@ -290,6 +290,14 @@ radiosim/
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
+│
+│   # Applications other than the main one live here. `apps/*` may import core/ only
+│   # (never another app). The main application still sits at the repository root.
+│
+├── apps/
+│   └── tracer/           # Field-measurement helper (separate app, in development; not part of the main build)
+│       ├── session.py    # Measurement session (one run = one folder: JSON header + append-only CSV)
+│       └── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
@@ -322,6 +330,7 @@ radiosim/
     ├── test_report.py
     ├── test_scenario.py
     ├── test_multihop.py
+    ├── test_tracer_session.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1123,6 +1132,7 @@ entry point that runs them together.
 | `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
 | `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
+| `test_tracer_session.py` | Measurement sessions of the field-measurement helper (`apps/tracer`): header round-trip, samples are append-only, the header is written atomically, endpoint positions accept both a session constant and a time series, time averaging and spatial averaging live in separate fields, raw values are never overwritten with converted ones, feeder loss is not folded into the conversion, a CLAS height is accepted only with a Fix solution, out-of-vocabulary values and an empty measurement-configuration ID are rejected |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |

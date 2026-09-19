@@ -240,3 +240,84 @@ def test_the_layers_are_not_empty():
     for layer in _LAYERS:
         mods = [p for p in (ROOT / layer).glob("*.py") if p.stem != "__init__"]
         assert mods, f"{layer}/ にモジュールが 1 本も無い（層の検査が空振りする）"
+
+
+# ============================================================
+# ④apps/ は core しか引かない（同一リポの複数アプリ・コアは 1 つ）
+# ============================================================
+# `apps/<名前>/` は本体とは別のアプリ（1 本目は実測補助）。規則は 3 つ:
+#   - `apps/*` → `core/` は可
+#   - `apps/*` → 他の `apps/*` は不可（アプリ同士が結ばれると分けて取り出せない）
+#   - `apps/*` → `report/` `views/` は不可（あれは本体というアプリの中身）
+# ⇒ **将来リポジトリを分けるとき「ディレクトリの移動だけで済む」状態**を保つ。
+# 逆向き（`core/` が apps を知る）は上の ① が既に見ている（core は最下層）。
+_APPS_ALLOWED_LAYERS = {"core"}
+
+
+def _app_modules() -> dict[str, Path]:
+    """`apps.tracer.session` → そのパス（apps 配下の全 .py）。"""
+    apps_dir = ROOT / "apps"
+    if not apps_dir.is_dir():
+        return {}
+    return {
+        ".".join(p.relative_to(ROOT).with_suffix("").parts): p
+        for p in sorted(apps_dir.rglob("*.py"))
+        if p.stem != "__init__"
+    }
+
+
+def _imported_apps(path: Path) -> set[str]:
+    """このファイルが引いている `apps.<名前>` の `<名前>` の集合。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    names: set[str] = set()
+    for node in ast.walk(tree):
+        modules: list[str] = []
+        if isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            modules.append(node.module)
+        elif isinstance(node, ast.Import):
+            modules += [a.name for a in node.names]
+        for mod in modules:
+            parts = mod.split(".")
+            if parts[0] == "apps" and len(parts) > 1:
+                names.add(parts[1])
+    return names
+
+
+@pytest.mark.parametrize("module", sorted(_app_modules()))
+def test_apps_import_core_only(module):
+    """`apps/` 配下が引ける層は `core/` だけ。
+
+    ⚠️ **遅延 import も型注釈用も対象**＝「実行時には引いていない」は層の言い訳に
+    ならない（名前を知っている時点で分けて取り出せない）。
+    """
+    path = _app_modules()[module]
+    own_app = path.relative_to(ROOT).parts[1]                 # apps/<ここ>/…
+    forbidden = sorted(
+        dep for dep in _all_imports(path)
+        if _layer_of(dep) not in _APPS_ALLOWED_LAYERS
+    )
+    other_apps = sorted(
+        name for name in _imported_apps(path)
+        if name != own_app
+    )
+    assert not forbidden, (
+        f"{module} が {forbidden} を引いている。"
+        f"`apps/` から引けるのは `core/` だけ（`report/` `views/` は本体というアプリの"
+        "中身で、共有したいものは `core/` へ下ろす）。"
+    )
+    assert not other_apps, (
+        f"{module} が他のアプリを引いている: {other_apps}。"
+        "アプリ同士は import しない（共有は `core/` 経由）。"
+    )
+
+
+def test_the_apps_guard_is_not_empty():
+    """`apps/` に実体があること（0 件なら上の検査は緑のまま何も見ていない）。
+
+    ⚠️ 壊れ方①への備え＝`apps/` を作った時点でこの検査が意味を持ち、ディレクトリ名を
+    変えれば落ちる。
+    """
+    assert _app_modules(), (
+        "apps/ 配下に .py が 1 本も無い（apps の層の検査が空振りする）。"
+        "ディレクトリ名を変えたなら _app_modules() も直すこと。"
+    )

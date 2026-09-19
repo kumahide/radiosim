@@ -290,6 +290,14 @@ radiosim/
 │   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
 │   └── batch_run.py      # バッチの実行と進捗（Mixin）
+│
+│   # 本体とは別のアプリはここ。`apps/*` が引けるのは core/ だけ（アプリ同士は引かない）。
+│   # 本体（main.py と上の 3 層）はいまのところ直下に置いたまま。
+│
+├── apps/
+│   └── tracer/           # 実測補助（別アプリ・開発中。本体の配布物には入らない）
+│       ├── session.py    # 測定セッション（1 回の測定＝1 フォルダ。ヘッダ JSON ＋追記のみの CSV）
+│       └── mavlink/      # 受信サンプル・設定のメッセージ定義（ファームと PC 側の両方がここから生成する）
 ├── docs/                 # 読み物（開発者向け・利用者向けとも、入口の README.md を除いてここ）
 │   ├── developer_ja.md   # このファイル
 │   ├── developer_en.md   # 英語版の開発者ドキュメント
@@ -321,6 +329,7 @@ radiosim/
     ├── test_report.py
     ├── test_scenario.py
     ├── test_multihop.py
+    ├── test_tracer_session.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1128,6 +1137,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_scenario.py`       | 条件探索（DEM 取得 1 回 + N 条件・相の進捗・上書きの非破壊・A4 シート/CSV 出力）|
 | `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・hops.csv／合成シート）|
 | `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・節の欠損は「持たない」・新しい schema の拒否・破損の扱い）|
+| `test_tracer_session.py` | 実測補助（`apps/tracer`）の測定セッション。ヘッダの往復・サンプルの追記のみ・ヘッダの原子的な書き込み・位置は定数と時系列の両方を許すこと・時間平均と空間平均が別の欄に在ること・生値を換算値で上書きしないこと・給電線損を換算に混ぜないこと・CLAS の高さは Fix 解のときだけ通すこと・語彙の外の値と空の測定構成 ID を保存しないこと |
 | `test_golden_links.py`   | 回帰コーパス。代表回線（`tests/data/golden_links.json`）の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_ground_reflection.py` | 地面反射（2波干渉）の振幅包絡線。反射点が両端から十分離れているかの判定・既存の計算経路を変えないことの回帰（3.4 段4） |
 | `test_sensitivity.py`    | 摂動再計算エンジン。各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・標高を経路全体へ一律に動かしても余裕度が動かないこと・多ホップの argmin 入れ替わり（3.4 段4） |
