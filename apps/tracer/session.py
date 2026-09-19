@@ -47,7 +47,9 @@ from typing import Any, Iterator
 # セッション形式の版。読み手が知らない版を黙って読まないための番号。
 # 2＝TX の無線設定を機器（空中の中継）から取り、サンプルに TX の設定番号と
 #   送信機ごとの通し番号を足した（増分5 の続き）。
-SCHEMA_VERSION = 2
+# 3＝位置の時系列に端点（tx / rx）の列を足した。無いと時系列を持てるのが
+#   記録する PC の側だけになり、両端が動く構成（機体どうし）を後から入れられない。
+SCHEMA_VERSION = 3
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -120,6 +122,7 @@ RAW_INDEX_COLUMNS = (
 
 GNSS_COLUMNS = (
     "utc",               # ISO 8601
+    "endpoint",          # どちらの端点の位置か（ROLES）。1 ファイルに両端が混ざってよい
     "lat",
     "lon",
     "ellipsoid_h_m",     # 楕円体高。標高への変換はセッション処理の 1 か所だけで行う
@@ -281,6 +284,7 @@ class PositionFix:
     """位置の時系列の 1 点（任意）。"""
 
     utc: str
+    endpoint: str                    # "tx" / "rx"
     lat: float
     lon: float
     ellipsoid_h_m: float
@@ -547,6 +551,7 @@ def append_position_fixes(
     if not path.exists():
         _write_csv_header(path, GNSS_COLUMNS)
     for fix in fixes:
+        _require(fix.endpoint, ROLES, "位置の時系列の端点")
         _require(fix.fix_state, FIX_STATES, "位置の時系列の解の状態")
     with path.open("a", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
@@ -642,8 +647,11 @@ def read_position_fixes(directory: str | os.PathLike[str]) -> Iterator[PositionF
                 f"（期待は {list(GNSS_COLUMNS)}）"
             )
         for row in reader:
+            # 読み戻しも書くときと同じ語彙で検める（語彙の外を黙って別の端点にしない）。
+            _require(row["endpoint"], ROLES, "位置の時系列の端点")
             yield PositionFix(
                 utc=row["utc"],
+                endpoint=row["endpoint"],
                 lat=float(row["lat"]),
                 lon=float(row["lon"]),
                 ellipsoid_h_m=float(row["ellipsoid_h_m"]),

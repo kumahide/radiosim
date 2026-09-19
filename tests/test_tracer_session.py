@@ -142,9 +142,44 @@ def test_position_fixes_are_optional(tmp_path):
     directory = S.create_session(tmp_path, _header())
     assert list(S.read_position_fixes(directory)) == []
 
-    fixes = [S.PositionFix("2026-09-19T01:00:00Z", 35.0, 139.0, 155.3, "fix")]
+    fixes = [S.PositionFix("2026-09-19T01:00:00Z", "rx", 35.0, 139.0, 155.3, "fix")]
     S.append_position_fixes(directory, fixes)
     assert list(S.read_position_fixes(directory)) == fixes
+
+
+def test_position_fixes_keep_which_endpoint(tmp_path):
+    """位置の時系列は両端のものを 1 ファイルに持て、読み戻しで端点を取り違えないこと。
+
+    端点の列が無いと、時系列を持てるのは記録する PC の側だけになる＝両端が動く構成
+    （機体どうし）を後から入れるにはセッション形式を作り直すことになる（§5-1）。
+    """
+    directory = S.create_session(tmp_path, _header())
+    fixes = [
+        S.PositionFix("2026-09-19T01:00:00Z", "tx", 35.0, 139.0, 155.3, "fix"),
+        S.PositionFix("2026-09-19T01:00:00Z", "rx", 35.1, 139.1, 90.2, "float"),
+    ]
+    S.append_position_fixes(directory, fixes)
+    read = list(S.read_position_fixes(directory))
+    assert [f.endpoint for f in read] == ["tx", "rx"]
+    assert read == fixes
+
+
+def test_position_fix_endpoint_outside_vocabulary_is_refused(tmp_path):
+    """端点の綴り違いは、書くときも読むときも止まること。"""
+    directory = S.create_session(tmp_path, _header())
+    with pytest.raises(S.SessionError, match="端点"):
+        S.append_position_fixes(
+            directory, [S.PositionFix("2026-09-19T01:00:00Z", "TX", 35.0, 139.0, 1.0, "fix")]
+        )
+    assert list(S.read_position_fixes(directory)) == []
+
+    S.append_position_fixes(
+        directory, [S.PositionFix("2026-09-19T01:00:00Z", "tx", 35.0, 139.0, 1.0, "fix")]
+    )
+    path = Path(directory) / S.GNSS_FILE
+    path.write_text(path.read_text(encoding="utf-8").replace(",tx,", ",both,"), encoding="utf-8")
+    with pytest.raises(S.SessionError, match="端点"):
+        list(S.read_position_fixes(directory))
 
 
 def test_header_is_written_atomically(tmp_path):
