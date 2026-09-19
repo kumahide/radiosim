@@ -152,6 +152,19 @@ def test_the_firmware_version_fits_the_config_field(dialect):
     assert digits + len("-dirty") <= field.count
 
 
+def test_the_esp_idf_version_is_pinned_in_one_place():
+    """ビルドが受け付ける ESP-IDF の版と、README に書いた版が同じ。
+
+    CMake が止めるので版は 1 つに決まる＝ファームのコミットから版を辿れる。README
+    だけが古いと、利用者が別の版を入れてビルドが止まる。"""
+    cmake = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
+    pinned = re.search(r'set\(TRACER_IDF_VERSION "(\d+\.\d+)"\)', cmake)
+    assert pinned, "CMakeLists.txt が ESP-IDF の版を固定していない"
+    assert "FATAL_ERROR" in cmake.split("TRACER_IDF_VERSION", 2)[2]
+    readme = (FIRMWARE / "README.md").read_text(encoding="utf-8")
+    assert f"ESP-IDF **v{pinned.group(1)}**" in readme
+
+
 def test_the_usb_port_carries_only_the_data():
     """ログは USB に出さない＝ログの行がフレームの途中に割り込むと CRC で弾かれ、
     電波で届かなかった分と区別の付かない欠けになる。"""

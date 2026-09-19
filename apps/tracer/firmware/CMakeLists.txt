@@ -26,4 +26,15 @@ endif()
 set(PROJECT_VER "${TRACER_COMMIT}")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
+
+# ESP-IDF の版を固定する。刻印に残るのはファームのコミットだけなので、別の版で
+# ビルドできてしまうと、同じコミットのファームが別の無線スタックで動いていても
+# 記録から見分けられない。版を上げるときは、ここと README を直してコミットする。
+set(TRACER_IDF_VERSION "6.1")
+if(NOT "${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}" STREQUAL TRACER_IDF_VERSION)
+    message(FATAL_ERROR
+        "ESP-IDF v${TRACER_IDF_VERSION} でビルドしてください"
+        "（いまは v${IDF_VERSION_MAJOR}.${IDF_VERSION_MINOR}.${IDF_VERSION_PATCH}）")
+endif()
+
 project(radiosim_tracer)
