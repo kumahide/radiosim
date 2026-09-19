@@ -271,6 +271,67 @@ def test_the_version_script_refuses_to_stamp_without_git(tmp_path):
     assert result.returncode != 0 and not out.exists()
 
 
+def _check_sdkconfig(tmp_path: Path, defaults: str, sdkconfig: str) -> subprocess.CompletedProcess:
+    (tmp_path / "sdkconfig.defaults").write_bytes(defaults.encode("utf-8"))
+    (tmp_path / "sdkconfig").write_bytes(sdkconfig.encode("utf-8"))
+    return subprocess.run(  # nosec B603 — 手元の cmake でスクリプトを走らせるだけ
+        [_cmake(), f"-DDEFAULTS={tmp_path / 'sdkconfig.defaults'}",
+         f"-DSDKCONFIG={tmp_path / 'sdkconfig'}",
+         "-P", str(FIRMWARE / "sdkconfig_check.cmake")],
+        capture_output=True, encoding="utf-8", errors="replace",
+    )
+
+
+_DEFAULTS = (
+    "# 注釈は照合しない\n"
+    'CONFIG_IDF_TARGET="esp32c6"\n'
+    "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\n"
+    "# CONFIG_FOO is not set\n"
+)
+
+
+def test_the_sdkconfig_check_passes_when_every_default_is_in_effect(tmp_path):
+    """既定の各行が sdkconfig にそのまま在れば通る（改行が CRLF でも・既定に無い項目があっても）。"""
+    sdkconfig = (
+        'CONFIG_IDF_TARGET="esp32c6"\n# CONFIG_ESPTOOLPY_FLASHSIZE_2MB is not set\n'
+        "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\n# CONFIG_FOO is not set\nCONFIG_BAR=3\n"
+    )
+    result = _check_sdkconfig(tmp_path, _DEFAULTS.replace("\n", "\r\n"), sdkconfig)
+    assert result.returncode == 0, result.stderr
+
+
+@pytest.mark.parametrize(("sdkconfig", "shown"), [
+    # B-260 の実例＝既定を 4MB に直しても、残っていた sdkconfig は 2MB のまま。
+    ('CONFIG_IDF_TARGET="esp32c6"\nCONFIG_ESPTOOLPY_FLASHSIZE_2MB=y\n'
+     "# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set\n# CONFIG_FOO is not set\n",
+     "# CONFIG_ESPTOOLPY_FLASHSIZE_4MB is not set"),
+    # 「is not set」の既定が有効になっている。
+    ('CONFIG_IDF_TARGET="esp32c6"\nCONFIG_ESPTOOLPY_FLASHSIZE_4MB=y\nCONFIG_FOO=y\n',
+     "CONFIG_FOO=y"),
+    # 依存が満たされず項目ごと消えている＝既定が効いていない。
+    ('CONFIG_IDF_TARGET="esp32c6"\n# CONFIG_FOO is not set\n',
+     "sdkconfig に項目が無い"),
+])
+def test_the_sdkconfig_check_stops_the_build_when_a_default_is_not_in_effect(
+    tmp_path, sdkconfig, shown
+):
+    """既定と食い違う sdkconfig で焼かせない（B-260）＝版はコミットしか表さない。"""
+    result = _check_sdkconfig(tmp_path, _DEFAULTS, sdkconfig)
+    assert result.returncode != 0
+    assert shown in result.stderr
+    assert "消してからビルドし直してください" in result.stderr
+
+
+def test_the_sdkconfig_check_runs_on_every_build_before_the_stamp():
+    """照合は版の刻印と同じ、毎回走るターゲットの中で、刻印より先に走る（B-260）。"""
+    main_cmake = (FIRMWARE / "main" / "CMakeLists.txt").read_text(encoding="utf-8")
+    target = main_cmake.split("add_custom_target(tracer_version ALL", 1)[1]
+    assert "sdkconfig_check.cmake" in target
+    assert target.index("sdkconfig_check.cmake") < target.index("version.cmake")
+    assert re.search(r"-DSDKCONFIG=\$\{TRACER_SDKCONFIG\}\s", target)
+    assert "idf_build_get_property(TRACER_SDKCONFIG SDKCONFIG)" in main_cmake
+
+
 def test_the_esp_idf_version_is_pinned_in_one_place():
     """ビルドが受け付ける ESP-IDF の版と、README に書いた版が同じ。
 
