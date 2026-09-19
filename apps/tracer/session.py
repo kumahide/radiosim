@@ -49,7 +49,8 @@ from typing import Any, Iterator
 #   送信機ごとの通し番号を足した（増分5 の続き）。
 # 3＝位置の時系列に端点（tx / rx）の列を足した。無いと時系列を持てるのが
 #   記録する PC の側だけになり、両端が動く構成（機体どうし）を後から入れられない。
-SCHEMA_VERSION = 3
+# 4＝TX の校正の控えに、SMA 端で実測した出力とそれを測った設定を足した（B-258）。
+SCHEMA_VERSION = 4
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -78,6 +79,10 @@ ROLES = ("tx", "rx")
 # 同じ範囲にしてある＝ここを通った値がそのまま「感度以下（〜未満）」として
 # 本体へ渡る文面になるので、本体が受け付けない値を名乗らせない。
 SENSITIVITY_RANGE_DBM = (-130.0, -20.0)
+
+# TX の実測出力として通す範囲 [dBm]。ファームが設定できるのは 2〜20 dBm。範囲の外は
+# 単位の取り違え（0.01 dBm 単位のまま・mW）とみなして止める。
+TX_OUTPUT_RANGE_DBM = (-10.0, 30.0)
 
 # 検波方式。MAVLink の TRACER_DETECTOR と同じ語彙（XML が正典）。
 DETECTORS = ("unknown", "instant", "mean")
@@ -155,6 +160,14 @@ class Calibration:
     reference_unit_id: str           # 基準器の ID
     reference_measured_on: str       # 基準器を校正済みの測定器で測った日
     note: str = ""
+    # --- TX だけ（RX では None）---------------------------------------------
+    # **U.FL→SMA 中継ケーブルの SMA 端**で実測した出力。中継ケーブル・U.FL の嵌合・
+    # RF スイッチの損失はここに含まれる（中継ケーブルは個体の一部＝替えたら測り直す）。
+    # 本体は画面の送信電力で予測し、バッチ CSV に送信電力の列は無い＝この値を本体の
+    # 送信電力に入れる。設定値を入れると、実出力との差が全窓に同じ向きで乗る（B-258）。
+    tx_output_dbm: float | None = None
+    tx_output_power_cdbm: int | None = None    # その実測を取ったときの設定（0.01 dBm 単位）
+    tx_output_channel: int | None = None       # その実測を取ったときのチャネル
 
 
 @dataclass(frozen=True)
@@ -313,6 +326,31 @@ def _validate_position(position: Position, where: str) -> None:
         )
 
 
+def _validate_tx_output(endpoint: Endpoint, role: str) -> None:
+    cal = endpoint.calibration
+    values = (cal.tx_output_dbm, cal.tx_output_power_cdbm, cal.tx_output_channel)
+    if role == "rx":
+        if any(v is not None for v in values):
+            raise SessionError("RX の校正値に TX の実測出力があります（送信しないので値が無い）")
+        return
+    if cal.tx_output_dbm is None or cal.tx_output_power_cdbm is None \
+            or cal.tx_output_channel is None:
+        raise SessionError("TX の校正値に実測出力（tx_output_*）がありません")
+    low, high = TX_OUTPUT_RANGE_DBM
+    if not low <= cal.tx_output_dbm <= high:
+        raise SessionError(
+            f"TX の実測出力が範囲の外です: {cal.tx_output_dbm}（{low:g}〜{high:g} dBm）"
+        )
+    radio = endpoint.radio
+    if (cal.tx_output_power_cdbm, cal.tx_output_channel) != (radio.tx_power_cdbm, radio.channel):
+        # 別の設定で測った出力を使うと、その差が全窓に同じ向きで乗る。
+        raise SessionError(
+            f"TX の実測出力は 設定 {cal.tx_output_power_cdbm / 100:g} dBm・チャネル "
+            f"{cal.tx_output_channel} で測ったものですが、TX は 設定 "
+            f"{radio.tx_power_cdbm / 100:g} dBm・チャネル {radio.channel} で動いています"
+        )
+
+
 def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
     _require(endpoint.role, ROLES, "端点の役割")
     if endpoint.role != expected_role:
@@ -332,6 +370,7 @@ def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
             f"{expected_role} の受信感度が範囲の外です: "
             f"{sensitivity}（{low:g}〜{high:g} dBm）"
         )
+    _validate_tx_output(endpoint, expected_role)
     if not endpoint.measurement_config_id:
         # 刻印の 1 項目目。これが無いと、後から「どの構成で取ったか」を辿れない。
         raise SessionError(f"{expected_role} の測定構成 ID が空です")

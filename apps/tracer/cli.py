@@ -32,6 +32,7 @@ from typing import Any
 
 from apps.tracer.aggregate import (
     aggregate,
+    body_tx_power_notice,
     censored_fraction,
     link_lost_total,
     write_batch_csv,
@@ -99,6 +100,8 @@ def _template(path: Path) -> int:
     print(f"雛形を書き出しました: {path}")
     print("null の欄を埋めてください。rx.radio は受信感度だけ（残りは RX から届きます）。"
           "TX の無線設定は書きません（TX が空中で送り、RX が中継します）。")
+    print("tx.calibration.tx_output_* には、U.FL→SMA 中継ケーブルの SMA 端で実測した出力と、"
+          "それを測ったときの設定（0.01 dBm 単位）・チャネルを書きます。")
     return 0
 
 
@@ -255,6 +258,7 @@ def _export(args: argparse.Namespace) -> int:
 
     censored = sum(1 for w in windows if w.censored)
     print(f"書き出しました: {args.out}")
+    print(body_tx_power_notice(header))
     print(f"窓 {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）")
     # 電波で届いたのに PC までの間で落ちた分（打ち切りには数えていない）。窓に振れた分が
     # 総数より少なければ、残りは電波の欠けと混ざっていてどの窓の分か分からなかった。

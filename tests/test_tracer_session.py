@@ -16,6 +16,7 @@ tests/test_tracer_session.py
 
 from __future__ import annotations
 
+from dataclasses import replace
 import json
 from pathlib import Path
 
@@ -27,14 +28,18 @@ from apps.tracer import session as S
 # --- 叩き台（各テストが必要なところだけ差し替える） --------------------------
 
 
-def _calibration() -> S.Calibration:
-    return S.Calibration(
+def _calibration(role: str = "rx") -> S.Calibration:
+    cal = S.Calibration(
         measured_on="2026-09-19",
         offset_db=-96.0,
         scale_db_per_count=0.5,
         reference_unit_id="ref-01",
         reference_measured_on="2026-09-10",
     )
+    if role == "rx":
+        return cal
+    # TX は SMA 端の実測出力を持つ（_radio の設定 13 dBm・チャネル 6 で測ったもの）。
+    return replace(cal, tx_output_dbm=12.4, tx_output_power_cdbm=1300, tx_output_channel=6)
 
 
 def _radio(config_id: int = 1, sensitivity_dbm: float | None = -98.0) -> S.RadioSettings:
@@ -72,7 +77,7 @@ def _endpoint(role: str, **kwargs) -> S.Endpoint:
         device_id="aa:bb:cc:dd:ee:0" + ("1" if role == "tx" else "2"),
         feeder_loss_db=1.5,
         antenna_gain_dbi=2.0,
-        calibration=_calibration(),
+        calibration=_calibration(role),
         radio=_radio(sensitivity_dbm=None if role == "tx" else -98.0),   # TX は受けない
         position=_position(),
         orientation=S.Orientation(azimuth_deg=210.0, elevation_deg=-1.0, source="コンパス"),
@@ -145,6 +150,51 @@ def test_position_fixes_are_optional(tmp_path):
     fixes = [S.PositionFix("2026-09-19T01:00:00Z", "rx", 35.0, 139.0, 155.3, "fix")]
     S.append_position_fixes(directory, fixes)
     assert list(S.read_position_fixes(directory)) == fixes
+
+
+def test_tx_must_carry_its_measured_output():
+    """TX の校正値に SMA 端の実測出力が無ければ通さないこと（B-258）。
+
+    無いと本体は画面の送信電力（設定値）で予測し、実出力との差が全窓に同じ向きで乗る。
+    """
+    bare = S.Calibration(
+        measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=0.5,
+        reference_unit_id="ref-01", reference_measured_on="2026-09-10",
+    )
+    with pytest.raises(S.SessionError, match="実測出力"):
+        S.validate_header(_header(tx=_endpoint("tx", calibration=bare)))
+
+
+def test_rx_must_not_carry_a_tx_output():
+    """RX に TX の実測出力があれば止めること（どこかで取り違えて使われ得る）。"""
+    with pytest.raises(S.SessionError, match="RX の校正値に TX の実測出力"):
+        S.validate_header(_header(rx=_endpoint("rx", calibration=_calibration("tx"))))
+
+
+@pytest.mark.parametrize(
+    "power_cdbm, channel", [(1500, 6), (1300, 11)], ids=["別の送信電力", "別のチャネル"]
+)
+def test_tx_output_must_match_the_running_setting(power_cdbm, channel):
+    """実測出力を測った設定と TX の設定が違えば止めること。"""
+    cal = S.Calibration(
+        measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=0.5,
+        reference_unit_id="ref-01", reference_measured_on="2026-09-10",
+        tx_output_dbm=12.4, tx_output_power_cdbm=power_cdbm, tx_output_channel=channel,
+    )
+    with pytest.raises(S.SessionError, match="で測ったものですが"):
+        S.validate_header(_header(tx=_endpoint("tx", calibration=cal)))
+
+
+@pytest.mark.parametrize("value", [1240.0, -40.0], ids=["0.01dBm単位のまま", "範囲の下"])
+def test_tx_output_outside_the_range_is_refused(value):
+    """単位を取り違えた値（0.01 dBm 単位のまま等）を実測出力として通さないこと。"""
+    cal = S.Calibration(
+        measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=0.5,
+        reference_unit_id="ref-01", reference_measured_on="2026-09-10",
+        tx_output_dbm=value, tx_output_power_cdbm=1300, tx_output_channel=6,
+    )
+    with pytest.raises(S.SessionError, match="範囲の外"):
+        S.validate_header(_header(tx=_endpoint("tx", calibration=cal)))
 
 
 def test_position_fixes_keep_which_endpoint(tmp_path):

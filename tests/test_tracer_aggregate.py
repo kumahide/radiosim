@@ -16,6 +16,7 @@ tests/test_tracer_aggregate.py
 
 from __future__ import annotations
 
+from dataclasses import replace
 import csv
 from datetime import datetime, timedelta, timezone
 
@@ -29,14 +30,18 @@ from core.batch_csv_schema import CSV_COLUMNS
 # --- 叩き台 ------------------------------------------------------------------
 
 
-def _calibration() -> S.Calibration:
-    return S.Calibration(
+def _calibration(role: str = "rx") -> S.Calibration:
+    cal = S.Calibration(
         measured_on="2026-09-19",
         offset_db=-96.0,
         scale_db_per_count=0.5,
         reference_unit_id="ref-01",
         reference_measured_on="2026-09-10",
     )
+    if role == "rx":
+        return cal
+    # TX は SMA 端の実測出力を持つ（_radio の設定 13 dBm・チャネル 6 で測ったもの）。
+    return replace(cal, tx_output_dbm=12.4, tx_output_power_cdbm=1300, tx_output_channel=6)
 
 
 def _radio(**kwargs) -> S.RadioSettings:
@@ -64,7 +69,7 @@ def _endpoint(role: str, **kwargs) -> S.Endpoint:
         device_id="aa:bb:cc:dd:ee:0" + ("1" if role == "tx" else "2"),
         feeder_loss_db=1.5 if role == "rx" else 2.0,
         antenna_gain_dbi=2.0,
-        calibration=_calibration(),
+        calibration=_calibration(role),
         radio=_radio(sensitivity_dbm=None if role == "tx" else -98.0),   # TX は受けない
         position=S.Position(
             lat=35.0 if role == "tx" else 35.1,

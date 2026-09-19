@@ -123,6 +123,10 @@ def _filled_template() -> dict:
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=height, height_source="survey"
         )
+    # 中継される TX の設定（13 dBm・チャネル 6）で測った SMA 端の出力。
+    template["tx"]["calibration"].update(
+        tx_output_dbm=12.4, tx_output_power_cdbm=1300, tx_output_channel=6
+    )
     template["rx"]["radio"] = {"sensitivity_dbm": -98.0}
     return template
 
@@ -518,7 +522,33 @@ def test_export_writes_the_batch_csv(tmp_path, dialect, capsys):
     with out.open(encoding="utf-8", newline="") as f:
         rows = list(csv.DictReader(f))
     assert [r["meas_dbm"] == "" for r in rows] == [False, True, True]
-    assert "打ち切り 2 個" in capsys.readouterr().out
+    printed = capsys.readouterr().out
+    assert "打ち切り 2 個" in printed
+    # 本体の送信電力に入れるのは SMA 端の実測（12.4）で、設定値（13）ではない（B-258）。
+    assert "本体の送信電力を 12.40 dBm にして" in printed
+
+
+def test_the_template_asks_for_the_tx_output_only_on_the_tx_side():
+    """雛形は TX にだけ実測出力の欄を持ち、未記入なら名前で挙げて止めること。"""
+    template = REC.header_template()
+    assert "tx_output_dbm" not in template["rx"]["calibration"]
+    with pytest.raises(S.SessionError, match="未記入") as info:
+        REC.check_template(template)
+    for key in ("tx_output_dbm", "tx_output_power_cdbm", "tx_output_channel"):
+        assert f"tx.calibration.{key}" in str(info.value)
+
+
+def test_a_tx_output_measured_at_another_setting_does_not_start_a_session(tmp_path, dialect):
+    """実測出力を測った設定と、中継された TX の設定が違えば記録を始めないこと。"""
+    template = _filled_template()
+    template["tx"]["calibration"]["tx_output_power_cdbm"] = 1500   # TX は 13 dBm で動いている
+    with pytest.raises(S.SessionError, match="実測出力"):
+        REC.build_header(
+            template,
+            _message(dialect, _config_frame(dialect)),
+            _message(dialect, _tx_config_frame(dialect)),
+            started_utc=_t(0), software_commit="abc123", dialect=dialect,
+        )
 
 
 def test_export_of_an_unfinished_session_needs_recover(tmp_path, dialect, capsys):

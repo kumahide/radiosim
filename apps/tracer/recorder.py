@@ -111,6 +111,8 @@ def header_template() -> dict[str, Any]:
 
     tx = endpoint("tx")
     del tx["radio"]
+    # SMA 端で実測した出力と、それを測った設定（記録を始めるとき TX の設定と突き合わせる）。
+    tx["calibration"].update(tx_output_dbm=None, tx_output_power_cdbm=None, tx_output_channel=None)
     rx = endpoint("rx")
     rx["radio"] = {"sensitivity_dbm": None}
     return {

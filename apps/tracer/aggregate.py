@@ -340,6 +340,22 @@ def censoring_note(header: SessionHeader) -> str:
 LINK_LOST_NOTE = "記録の欠落（受信機から PC までの間）"
 
 
+def body_tx_power_notice(header: SessionHeader) -> str:
+    """本体でバッチを回すときに入れる送信電力の案内（B-258）。
+
+    本体のバッチ CSV に送信電力の列は無く、本体は画面の送信電力で予測する。
+    ⇒ SMA 端の実測出力を人が画面に入れる。設定値を入れると、差が全窓に乗る。
+    """
+    cal = header.tx.calibration
+    if cal.tx_output_dbm is None:           # validate_header が TX に必ず持たせる
+        raise SessionError("TX の校正値に実測出力がありません")
+    return (
+        f"本体の送信電力を {cal.tx_output_dbm:.2f} dBm にしてバッチを回してください"
+        f"（TX {header.tx.device_id} の SMA 端での実測・{cal.measured_on}。"
+        f"設定値の {header.tx.radio.tx_power_cdbm / 100:g} dBm ではありません）"
+    )
+
+
 def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[object]]:
     """窓を本体のバッチ CSV の行へ変換する（列の契約は `core/batch_csv_schema`）。
 

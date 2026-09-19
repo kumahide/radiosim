@@ -447,7 +447,9 @@ def _header() -> S.SessionHeader:
         return S.Endpoint(
             role=role, measurement_config_id=f"{role}-esp32c6-rod",
             device_id="aa:bb:cc:dd:ee:01", feeder_loss_db=1.5, antenna_gain_dbi=2.0,
-            calibration=calibration,
+            calibration=calibration if role == "rx" else replace(
+                calibration, tx_output_dbm=12.4, tx_output_power_cdbm=1300, tx_output_channel=6
+            ),
             radio=radio if role == "rx" else replace(radio, config_id=2, sensitivity_dbm=None),
             position=S.Position(
                 lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=height,

@@ -357,6 +357,10 @@ def _template() -> dict:
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=10.0, height_source="survey"
         )
+    # 中継される TX の設定（15 dBm・チャネル 6）で測った SMA 端の出力。
+    template["tx"]["calibration"].update(
+        tx_output_dbm=14.2, tx_output_power_cdbm=1500, tx_output_channel=6
+    )
     template["rx"]["radio"] = {"sensitivity_dbm": -98.0}
     return template
 
