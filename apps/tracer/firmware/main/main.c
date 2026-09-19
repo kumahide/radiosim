@@ -9,6 +9,7 @@
  * PC 側は最初に届いた RX の設定でセッションを作るので、「起動時だけ」だと RX が
  * 先に起動していたら記録が始まらない。同じ設定の再送は PC 側が読み飛ばす。
  */
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -55,7 +56,7 @@ static tracer_config_t make_config(const tracer_settings_t *s, const uint8_t mac
         .config_id = s->config_id,
         .role = s->role,
         .channel = s->channel,
-        .rate_kbps = 1000,
+        .rate_kbps = RADIO_AIR_RATE_KBPS,     /* TX は起動時に実際のレートで確かめ済み */
         .tx_power_cdbm = (int16_t)(actual_power_qdbm * 25),
         .tx_interval_ms = s->tx_interval_ms,
         .detector = TRACER_DETECTOR_INSTANT,
@@ -105,6 +106,35 @@ void app_main(void)
     select_external_antenna();
     int8_t actual_power_qdbm = 0;
     radio_start(&settings, mac, &actual_power_qdbm);
+    if (settings.role == TRACER_ROLE_TX) {
+        uint16_t actual_kbps = 0;
+        if (!radio_verify_rate(&actual_kbps)) {
+            /* 刻印（1 Mbps）と違うレートで測ると、受信感度が違うのに同じ条件として
+             * 記録される。測定を始めないほうがまし（B-257）。 */
+            ESP_LOGE(TAG, "空中のレートが %u kbps です（期待 %u）", actual_kbps,
+                     (unsigned)RADIO_AIR_RATE_KBPS);
+            char msg[128];
+            snprintf(msg, sizeof msg, "ERR 空中のレートが 1 Mbps になりません（実際 %u kbps・0＝不明）",
+                     actual_kbps);
+            /* コマンドは受け付ける＝role rx などで抜けられる（NVS を消さずに済む）。 */
+            char cmd[96];
+            char ans[96];
+            for (;;) {
+                link_send_text(msg);
+                int64_t until = esp_timer_get_time() + 1000000LL;
+                while (esp_timer_get_time() < until) {
+                    if (link_read_line(cmd, sizeof cmd) > 0) {
+                        bool changed = settings_apply_command(cmd, &settings, ans, sizeof ans);
+                        link_send_text(ans);
+                        if (changed) {
+                            vTaskDelay(pdMS_TO_TICKS(100));
+                            esp_restart();
+                        }
+                    }
+                }
+            }
+        }
+    }
     tracer_config_t config = make_config(&settings, mac, actual_power_qdbm);
     radio_run(&config);                 /* TX はこの設定を空中へも 1 秒ごとに送る */
     link_send_config(&config);

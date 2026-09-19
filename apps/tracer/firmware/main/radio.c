@@ -12,10 +12,13 @@
  * （§6.6 の提案②）＝TX の UART は遠くにあるので、TX の実際の設定を PC が知る道は
  * 空中しかない。
  *
- * ⚠️ 試作で確かめる前提の点（Claude の知識による・一次資料で未確認）:
- *   - esp_wifi_80211_tx でアクションフレームを送れること・レートを 1 Mbps に固定できること
- *   - プロミスキャス受信の rx_ctrl.rssi / rx_ctrl.noise_floor が ESP32-C6 で取れること
- *   - OUI の値（下の TRACER_AIR_OUI）は仮置き。登録された値ではない
+ * 空中のレートは 1 Mbps（11b）に固定し、**ドライバが実際に使ったレートを送信完了の
+ * 通知で確かめる**（B-257）。レートの指定は esp_wifi_config_80211_tx で行う。
+ * ⚠️ esp_wifi_config_80211_tx_rate は使わない＝ESP-IDF v6.1・ESP32-C6 の実機で、
+ *    esp_wifi_start の後に呼ぶと ESP_OK を返すのに効かず（11 Mbps を指定しても
+ *    1 Mbps で出た＝既定値がたまたま 1 Mbps だっただけ）、前に呼ぶと ESP_FAIL。
+ *
+ * ⚠️ OUI の値（下の TRACER_AIR_OUI）は仮置き。登録された値ではない。
  */
 #include "radio.h"
 
@@ -27,6 +30,7 @@
 #include "esp_wifi.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/queue.h"
+#include "freertos/semphr.h"
 #include "freertos/task.h"
 #include "link.h"
 #include "tracer_mavlink.h"
@@ -36,6 +40,10 @@
 #define ACTION_CATEGORY_VENDOR 127
 static const uint8_t TRACER_AIR_OUI[3] = {0x02, 0x52, 0x53};   /* 仮置き（未登録） */
 static const uint8_t TRACER_AIR_TAG[4] = {'R', 'S', 'T', 'R'};
+/* レートの確かめ用。RX は識別子が違うので読まない（セッションを始めさせない）。 */
+static const uint8_t TRACER_AIR_VERIFY_TAG[4] = {'R', 'S', 'T', 'P'};
+#define AIR_PHY_RATE WIFI_PHY_RATE_1M_L          /* RADIO_AIR_RATE_KBPS と揃える */
+#define RATE_VERIFY_WAIT pdMS_TO_TICKS(500)
 #define AIR_PREFIX_LEN (1 + 3 + 4)
 #define AIR_SYSID 1
 #define AIR_COMPID 1
@@ -81,6 +89,30 @@ static unsigned s_counter_victim;
 uint32_t radio_tx_failures(void) { return s_tx_failures; }
 uint32_t radio_rx_overflows(void) { return s_rx_overflows; }
 
+/* --- 空中のレート -------------------------------------------------------------- */
+
+/* 送信完了の通知で届いた、最後の実際のレート（kbps・0＝不明）。Wi-Fi のタスクが書き、
+ * TX のタスクが読む。 */
+static volatile uint16_t s_last_tx_kbps;
+static SemaphoreHandle_t s_tx_done;
+
+static uint16_t phy_rate_kbps(wifi_phy_rate_t rate)
+{
+    switch (rate) {
+    case WIFI_PHY_RATE_1M_L: return 1000;
+    case WIFI_PHY_RATE_2M_L: case WIFI_PHY_RATE_2M_S: return 2000;
+    case WIFI_PHY_RATE_5M_L: case WIFI_PHY_RATE_5M_S: return 5500;
+    case WIFI_PHY_RATE_11M_L: case WIFI_PHY_RATE_11M_S: return 11000;
+    default: return 0;     /* 11b 以外。1 Mbps でないことだけ分かればよい */
+    }
+}
+
+static void tx_done(const esp_80211_tx_info_t *info)
+{
+    s_last_tx_kbps = phy_rate_kbps(info->rate);
+    if (s_tx_done != NULL) xSemaphoreGive(s_tx_done);
+}
+
 /* --- TX --------------------------------------------------------------------- */
 
 static void tx_task(void *arg)
@@ -106,6 +138,14 @@ static void tx_task(void *arg)
     for (;;) {
         xTaskDelayUntil(&last, period);
         int64_t now = esp_timer_get_time();
+        uint16_t actual = s_last_tx_kbps;
+        if (actual != s_config.rate_kbps) {
+            /* 測定の途中でレートが変わった。送信は止めない（止めると受信の途絶＝打ち切りに
+             * 見える）。設定の刻印を事実に直して**すぐ**送る＝PC は設定の変化を見て
+             * セッションを閉じる（混ざるのは気づく前に送った 1 パケットだけ）。 */
+            s_config.rate_kbps = actual;
+            last_config = -AIR_CONFIG_EVERY_US;
+        }
         if (now - last_config >= AIR_CONFIG_EVERY_US) {
             /* 送れなかったら次の周期でまた試す（last_config を進めない）。番号付きの
              * パケットとは別の数え方なので、s_tx_failures には入れない。 */
@@ -253,11 +293,39 @@ void radio_start(const tracer_settings_t *s, const uint8_t mac[6], int8_t *actua
     ESP_ERROR_CHECK(esp_wifi_set_ps(WIFI_PS_NONE));
     ESP_ERROR_CHECK(esp_wifi_set_promiscuous(true));
     ESP_ERROR_CHECK(esp_wifi_set_channel(s->channel, WIFI_SECOND_CHAN_NONE));
-    ESP_ERROR_CHECK(esp_wifi_config_80211_tx_rate(WIFI_IF_STA, WIFI_PHY_RATE_1M_L));
+    /* start の後で呼ぶ（前だと ESP_FAIL）。効いたかは radio_verify_rate が確かめる。 */
+    wifi_tx_rate_config_t rate = {.phymode = WIFI_PHY_MODE_11B, .rate = AIR_PHY_RATE};
+    ESP_ERROR_CHECK(esp_wifi_config_80211_tx(WIFI_IF_STA, &rate));
+    s_tx_done = xSemaphoreCreateBinary();
+    ESP_ERROR_CHECK(esp_wifi_register_80211_tx_cb(tx_done));
     /* 送信電力は固定する（自動出力制御が動くと RSSI からパスロスを引けない）。
      * 実際に効いた値を読み戻して設定メッセージに載せる＝要求値ではなく事実を刻む。 */
     ESP_ERROR_CHECK(esp_wifi_set_max_tx_power(s->tx_power_qdbm));
     ESP_ERROR_CHECK(esp_wifi_get_max_tx_power(actual_power_qdbm));
+}
+
+bool radio_verify_rate(uint16_t *actual_kbps)
+{
+    uint8_t frame[WLAN_HEADER_LEN + AIR_PREFIX_LEN];
+    memset(frame, 0, WLAN_HEADER_LEN);
+    frame[0] = 0xD0;
+    memset(frame + 4, 0xFF, 6);
+    memcpy(frame + 10, s_mac, 6);
+    memcpy(frame + 16, s_mac, 6);
+    uint8_t *body = frame + WLAN_HEADER_LEN;
+    body[0] = ACTION_CATEGORY_VENDOR;
+    memcpy(body + 1, TRACER_AIR_OUI, 3);
+    memcpy(body + 4, TRACER_AIR_VERIFY_TAG, 4);
+
+    s_last_tx_kbps = 0;
+    xSemaphoreTake(s_tx_done, 0);                    /* 前の通知を捨てる */
+    if (esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)sizeof frame, true) != ESP_OK
+        || xSemaphoreTake(s_tx_done, RATE_VERIFY_WAIT) != pdTRUE) {
+        *actual_kbps = 0;                            /* 通知が来ない＝確かめられない */
+        return false;
+    }
+    *actual_kbps = s_last_tx_kbps;
+    return s_last_tx_kbps == RADIO_AIR_RATE_KBPS;
 }
 
 void radio_run(const tracer_config_t *config)

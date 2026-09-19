@@ -174,6 +174,44 @@ def test_the_firmware_version_is_taken_at_build_time_not_configure_time():
     assert "TRACER_FIRMWARE_VERSION" in code
 
 
+def _code(name: str) -> str:
+    """コメントを除いたファームのソース（コメントの中の API 名で通らないように）。"""
+    text = (FIRMWARE / "main" / name).read_text(encoding="utf-8")
+    return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
+
+
+def test_the_firmware_fixes_the_air_rate_with_the_api_that_takes_effect():
+    """B-257。`esp_wifi_config_80211_tx_rate` は start の後だと ESP_OK を返して効かず
+    （11 Mbps を指定しても 1 Mbps で出た）、前だと ESP_FAIL（ESP-IDF v6.1・実機）。
+    効くのは `esp_wifi_config_80211_tx`。刻印の値（kbps）と PHY のレートも揃える。"""
+    radio = _code("radio.c")
+    assert "esp_wifi_config_80211_tx_rate" not in radio
+    assert re.search(r"esp_wifi_config_80211_tx\(WIFI_IF_STA,", radio)
+    assert re.search(r"#define AIR_PHY_RATE WIFI_PHY_RATE_1M_L\b", radio)
+    assert re.search(r"#define RADIO_AIR_RATE_KBPS 1000\b", _code("radio.h"))
+    assert "esp_wifi_register_80211_tx_cb(" in radio
+
+
+def test_the_tx_verifies_the_air_rate_before_it_measures():
+    """B-257。TX は実際に出たレートを確かめてから測定を始める（違えば止まる）。
+    設定の刻印は確かめた値の定数から取る（数字を別に書くと食い違える）。"""
+    body = _code("main.c").split("void app_main(void)", 1)[1]
+    verify = body.index("radio_verify_rate(")
+    assert body.index("radio_start(") < verify < body.index("radio_run(")
+    assert verify < body.index("link_send_config(")
+    assert re.search(r"\.rate_kbps = RADIO_AIR_RATE_KBPS,", _code("main.c"))
+
+
+def test_the_tx_restamps_the_rate_when_it_changes_mid_measurement():
+    """B-257。測定中にレートが変わっても**送信は止めない**（止めると受信の途絶＝
+    打ち切りに見える）。刻印を事実に直し、次の周期ですぐ設定を送る。"""
+    tx = _code("radio.c").split("static void tx_task(void *arg)", 1)[1].split("\n}\n", 1)[0]
+    # 関数の先頭にも同じ代入（初期値）があるので、直した直後の行として探す
+    assert re.search(
+        r"s_config\.rate_kbps = actual;\s*last_config = -AIR_CONFIG_EVERY_US;", tx
+    )
+
+
 def _cmake() -> str:
     found = shutil.which("cmake")
     if found is None:
@@ -358,4 +396,16 @@ def test_a_changed_config_from_the_firmware_still_ends_the_session(tmp_path, dia
     rec.feed(_rx_config(dialect) + _tx_config(dialect) + _rx_sample(dialect, 0), _t(0))
     rec.feed(_rx_config(dialect) + _rx_sample(dialect, 1), _t(1))
     rec.feed(_rx_config(dialect, config_id=4, channel=11), _t(2))
+    assert rec.config_changed and rec.state == "stopped"
+
+
+def test_a_changed_air_rate_in_the_relayed_tx_config_ends_the_session(tmp_path, dialect):
+    """B-257。TX は測定中にレートが変わると、設定番号はそのままで `rate_kbps` だけを
+    事実に直して送る。PC がそれを再送として読み飛ばすと、違うレートのサンプルが
+    同じ条件として記録に混ざる。"""
+    rec = REC.Recorder(tmp_path, _template(), software_commit="abc123")
+    rec.feed(_rx_config(dialect) + _tx_config(dialect) + _rx_sample(dialect, 0), _t(0))
+    rec.feed(_tx_config(dialect) + _rx_sample(dialect, 1), _t(1))
+    assert not rec.config_changed
+    rec.feed(_tx_config(dialect, rate_kbps=11000) + _rx_sample(dialect, 2), _t(2))
     assert rec.config_changed and rec.state == "stopped"
