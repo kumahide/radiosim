@@ -637,6 +637,118 @@ def test_the_default_power_sweep_includes_the_metered_power():
     assert plan["power_dbm"] in plan["power"]["dbm"]
 
 
+# --- 動作確認（probe） ------------------------------------------------------------
+
+_HEAD = "afd69ae7db12"          # 模擬のファームの版（afd69ae7db）で始まるコミット
+
+
+def _probe_runner(tmp_path: Path, world: World) -> B.BenchRunner:
+    # 問いかけは CLI と同じもの（呼ばれたら止まる）＝人に頼まないことをここで縛る。
+    return B.BenchRunner(
+        tmp_path, {"a": world.a, "b": world.b}, {"probe": {}},
+        clock=world.clock, prompt=cli._no_prompt, say=lambda _m: None,
+        software_commit=_HEAD, dialect=world.dialect, purpose="probe",
+    )
+
+
+def _run_probe(runner: B.BenchRunner, said: list[str], **over) -> int:
+    kwargs = dict(seconds=3, power_dbm=15, channel=1, software_commit=_HEAD,
+                  same_source=lambda _v: pytest.fail("コミットが一致するなら git を見ない"),
+                  say=said.append)
+    kwargs.update(over)
+    return cli.run_probe(runner, **kwargs)
+
+
+def _probe_record(runner: B.BenchRunner) -> dict:
+    return json.loads((runner.directory / B.PROBE_FILE).read_text(encoding="utf-8"))
+
+
+def test_the_probe_passes_a_working_pair_without_asking_anyone(tmp_path, dialect):
+    """🔑 動作確認は人に何も頼まずに両方向を測る＝対話の無いシェルからも実行できること。"""
+    world = World(dialect)
+    runner = _probe_runner(tmp_path, world)
+    said: list[str] = []
+    assert _run_probe(runner, said) == 0
+    assert runner.directory.name.startswith("probe-")
+    record = _probe_record(runner)
+    assert record["passed"] is True
+    assert [(x["tx_unit"], x["rx_unit"]) for x in record["links"]] == [("a", "b"), ("b", "a")]
+    assert all(x["received"] > 0 and x["usb_lost"] == 0 for x in record["links"])
+    assert record["units"] == {"a": "aa:bb:cc:00:00:0a", "b": "aa:bb:cc:00:00:0b"}
+    assert B.read_bench(runner.directory)["purpose"] == "probe"
+    assert "すべて合格です。" in said
+
+
+def test_the_probe_fails_when_the_signal_does_not_get_through(tmp_path, dialect):
+    world = World(dialect)
+    world.atten = 50                     # 感度より下＝どちらの向きもほぼ受からない
+    runner = _probe_runner(tmp_path, world)
+    said: list[str] = []
+    assert _run_probe(runner, said) == 1
+    assert not any(x["ok"] for x in _probe_record(runner)["links"])
+    assert any("アッテネータを 0 dB に" in line for line in said)
+
+
+def test_the_probe_catches_samples_lost_on_the_usb(tmp_path, dialect):
+    """USB で落ちたサンプル（番号の飛び）は、電波の欠けと分けて数えて不合格にすること。"""
+    world = World(dialect)
+    frame, dropped = world.b.frame, [0]
+
+    def lossy(name: str, values: dict) -> bytes:
+        data = frame(name, values)
+        if name == "TRACER_RX_SAMPLE":
+            dropped[0] += 1
+            if dropped[0] % 5 == 0:
+                return b""               # 番号は振られたが USB に届かない
+        return data
+
+    world.b.frame = lossy                # type: ignore[method-assign]
+    runner = _probe_runner(tmp_path, world)
+    said: list[str] = []
+    assert _run_probe(runner, said) == 1
+    a_to_b, b_to_a = _probe_record(runner)["links"]
+    assert a_to_b["usb_lost"] > 0 and not a_to_b["ok"]
+    # 電波では届いている＝アッテネータや配線を疑わせない。
+    assert a_to_b["air_ok"] and a_to_b["rate"] > 0.95
+    assert any("USB ケーブル" in line for line in said)
+    assert not any("アッテネータ" in line for line in said)
+    assert b_to_a["usb_lost"] == 0 and b_to_a["ok"]
+
+
+def test_usb_losses_are_counted_in_arrival_order():
+    """番号が戻ったところ（RX の再起動）は欠けに数えない＝並べ替えると混ざる。"""
+    seqs = [5, 6, 8, 0, 1, 2]            # 並べ替えると 2→5 の飛びが現れて 3 になる
+    assert B.usb_lost([{"sample_seq": n} for n in seqs]) == 1
+
+
+def test_the_firmware_version_is_judged_against_the_repository():
+    never = lambda _v: pytest.fail("git を見るまでもない")   # noqa: E731
+    assert B.judge_firmware("afd69ae7db", "afd69ae7db12", never)[0] is True
+    assert B.judge_firmware("afd69ae7db-dirty", "afd69ae7db12", never)[0] is False
+    assert B.judge_firmware("afd69ae7db", "0123456789ab-dirty", never)[0] is False
+    ok, note = B.judge_firmware("afd69ae7db", "0123456789ab", lambda _v: True)
+    assert ok and "同じ" in note                 # コミットだけ違う＝焼き直さなくてよい
+    ok, note = B.judge_firmware("afd69ae7db", "0123456789ab", lambda _v: False)
+    assert not ok and "焼き直して" in note
+    ok, note = B.judge_firmware("afd69ae7db", "0123456789ab", lambda _v: None)
+    assert not ok and "push" in note
+
+
+def test_only_a_commit_shaped_version_is_handed_to_git():
+    """ファームの版は機器から届く文字列＝git の引数にするのは 16 進の形だけ。"""
+    assert cli._same_firmware_source("--output=x") is None
+    assert cli._same_firmware_source("afd69ae7db-dirty") is None
+
+
+def test_a_probe_folder_is_not_analyzed_as_a_bench(tmp_path, dialect):
+    """動作確認は減衰量を記録しない＝机上試験の判定に混ぜないこと。"""
+    world = World(dialect)
+    runner = _probe_runner(tmp_path, world)
+    _run_probe(runner, [])
+    with pytest.raises(B.BenchError, match="机上試験のフォルダではありません"):
+        BA.analyze(runner.directory)
+
+
 # --- 連続送信 --------------------------------------------------------------------
 
 

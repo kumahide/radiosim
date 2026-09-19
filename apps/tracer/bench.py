@@ -50,7 +50,10 @@ BENCH_FILE = "bench.json"
 STEPS_FILE = "steps.csv"
 UNITS = ("a", "b")
 
-STEP_KINDS = ("leak", "warmup", "level", "power", "channel")
+# probe＝動作確認（`BenchRunner.probe`）の段。机上試験のフォルダには現れない。
+STEP_KINDS = ("leak", "warmup", "level", "power", "channel", "probe")
+PURPOSES = ("bench", "probe")          # フォルダの名前の頭と bench.json の purpose
+PROBE_FILE = "probe.json"
 STEP_COLUMNS = (
     "step",           # 通し番号
     "kind",           # STEP_KINDS
@@ -180,6 +183,83 @@ class StepCount:
         return 0.0 if self.sent == 0 else self.received / self.sent
 
 
+# 動作確認で「受かっている」とみなす受信率。機器と配線が動いているかを見るだけの
+# 目安で、段0 の打ち切りのしきい値とは別物（そちらは作業者が段0 の結果から決める）。
+PROBE_MIN_RATE = 0.9
+
+
+@dataclass(frozen=True)
+class ProbeLink:
+    """動作確認の 1 方向ぶん。"""
+
+    tx_unit: str
+    rx_unit: str
+    sent: int
+    received: int
+    usb_lost: int                   # USB で落ちたサンプル（sample_seq の飛び）
+    rssi_min: int | None            # 受信レベルの生値
+    rssi_max: int | None
+    noise_floor: int | None         # 雑音フロアの生値の中央値
+
+    @property
+    def rate(self) -> float:
+        """**電波の**受信率＝USB で落ちた分は電波では届いているので足す（USB の不調を
+        電波の不調と取り違えて、アッテネータや配線を疑わせないため）。"""
+        return 0.0 if self.sent == 0 else (self.received + self.usb_lost) / self.sent
+
+    @property
+    def air_ok(self) -> bool:
+        return self.sent > 0 and self.rate >= PROBE_MIN_RATE
+
+    @property
+    def ok(self) -> bool:
+        return self.air_ok and self.usb_lost == 0
+
+
+def usb_lost(samples: list[dict[str, Any]]) -> int:
+    """USB で落ちたサンプルの数＝`sample_seq` の飛びの合計。
+
+    電波で届かなかったパケットには番号が振られないので、ここには数えられない。
+    番号が戻ったところ（RX の再起動・送信機の表の追い出し）は数えない。
+    """
+    # 届いた順のまま＝並べ替えると、戻る前と後の番号が混ざって飛びに見える。
+    seqs = [f["sample_seq"] for f in samples]
+    return sum(b - a - 1 for a, b in zip(seqs, seqs[1:]) if b > a + 1)
+
+
+def judge_firmware(
+    firmware_version: str, software_commit: str,
+    same_source: Callable[[str], bool | None],
+) -> tuple[bool, str]:
+    """ファームの版がこのリポジトリのコミットと合っているか。
+
+    `same_source(版)` は、その版と今のコミットでファームのソースが同じか
+    （同じ＝True・違う＝False・その版がリポジトリに無い＝None）。コミットが違っても
+    ファームのソースが同じなら、焼き直さなくてよい。
+    """
+    if firmware_version.endswith("-dirty"):
+        return False, "ファームが未コミットの変更を含んだままビルドされています。焼き直してください"
+    if software_commit.endswith("-dirty"):
+        return False, "この PC の作業ツリーに変更があります（記録に -dirty が付きます）"
+    if software_commit.startswith(firmware_version):
+        return True, "リポジトリのコミットと一致しています"
+    same = same_source(firmware_version)
+    if same is None:
+        return False, (f"ファームの版 {firmware_version} がこのリポジトリにありません"
+                       "（ファームのコミットが push されていないかもしれません）")
+    if same:
+        return True, (f"コミットは違いますが、ファームのソースは {firmware_version} と"
+                      "同じです")
+    return False, (f"ファームのソースが {firmware_version} から変わっています。"
+                   "今のコミットで焼き直してください")
+
+
+def write_probe(directory: Path, payload: dict[str, Any]) -> Path:
+    path = directory / PROBE_FILE
+    _write_json(path, payload)
+    return path
+
+
 class BenchRunner:
     """2 台を操り、段を記録する。
 
@@ -198,9 +278,12 @@ class BenchRunner:
         say: Callable[[str], None],
         software_commit: str,
         dialect: Dialect | None = None,
+        purpose: str = "bench",
     ):
         if set(ports) != set(UNITS):
             raise BenchError("ポートは a と b の 2 つです")
+        if purpose not in PURPOSES:
+            raise BenchError(f"知らない用途です: {purpose}")
         if not software_commit:
             raise BenchError("ソフトウェアのコミットが空です（刻印の 1 項目）")
         self._clock = clock
@@ -209,8 +292,9 @@ class BenchRunner:
         self.plan = plan
         self._dialect = dialect or load_dialect()
         started = clock()
-        name = "bench-" + parse_utc(started).strftime("%Y%m%dT%H%M%SZ")
+        name = f"{purpose}-" + parse_utc(started).strftime("%Y%m%dT%H%M%SZ")
         self.directory = Path(root) / name
+        self._purpose = purpose
         if self.directory.exists():
             raise BenchError(f"同じ名前のフォルダが既にあります: {self.directory}")
         self.directory.mkdir(parents=True)
@@ -309,6 +393,7 @@ class BenchRunner:
             raise BenchError(f"A と B のファームの版が違います: {versions}")
         payload = {
             "format": BENCH_FORMAT,
+            "purpose": self._purpose,
             "started_utc": self._started,
             "software_commit": self._software_commit,
             "firmware_version": versions["a"],
@@ -416,7 +501,8 @@ class BenchRunner:
         )
         return count
 
-    def _count(self, row: dict[str, Any]) -> StepCount:
+    def _step_samples(self, row: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
+        """段の間に TX が送った数と、そのうち RX が受けたサンプル。"""
         t_unit, r_unit = self.units[row["tx_unit"]], self.units[row["rx_unit"]]
         start, end = parse_utc(row["start_utc"]), parse_utc(row["end_utc"])
         seqs = [
@@ -424,16 +510,51 @@ class BenchRunner:
             if start <= parse_utc(when) <= end and f["config_id"] == row["tx_config_id"]
         ]
         if not seqs:
-            return StepCount(0, 0, None)
+            return 0, []
         low, high = min(seqs), max(seqs)
         got = [
-            f["rssi_raw"] for _when, f in r_unit.rx_samples
+            f for _when, f in r_unit.rx_samples
             if mac(f["tx_id"]) == row["tx_device"]
             and f["tx_config_id"] == row["tx_config_id"]
             and low <= f["seq"] <= high
         ]
-        mean = sum(got) / len(got) if got else None
-        return StepCount(high - low + 1, len(got), mean)
+        return high - low + 1, got
+
+    def _count(self, row: dict[str, Any]) -> StepCount:
+        sent, got = self._step_samples(row)
+        levels = [f["rssi_raw"] for f in got]
+        mean = sum(levels) / len(levels) if levels else None
+        return StepCount(sent, len(levels), mean)
+
+    # 動作確認 ---------------------------------------------------------------------
+
+    def probe(self, *, duration_s: float, power_dbm: float, channel: int) -> list[ProbeLink]:
+        """**動作確認**＝2 台を見分け、両方向を短く測る。人には何も頼まない＝
+        対話の無いところ（別の PC の Claude のシェルなど）からも実行できる。
+
+        アッテネータは今の位置のまま（減衰量は記録しない）。判定は機器と配線が
+        動いているかだけで、段0 のしきい値には使わない。
+        """
+        self.connect()
+        links = []
+        for tx in UNITS:
+            self.measure("probe", tx, duration_s=duration_s, atten_db=None,
+                         power_dbm=power_dbm, channel=channel, label="動作確認")
+            row, _count = self.results["probe"][-1]
+            links.append(self._probe_link(row))
+        return links
+
+    def _probe_link(self, row: dict[str, Any]) -> ProbeLink:
+        sent, got = self._step_samples(row)
+        levels = [f["rssi_raw"] for f in got]
+        noise = sorted(f["noise_floor_raw"] for f in got)
+        return ProbeLink(
+            tx_unit=row["tx_unit"], rx_unit=row["rx_unit"],
+            sent=sent, received=len(got), usb_lost=usb_lost(got),
+            rssi_min=min(levels) if levels else None,
+            rssi_max=max(levels) if levels else None,
+            noise_floor=noise[len(noise) // 2] if noise else None,
+        )
 
     def _ask(self, message: str) -> None:
         answer = self._prompt(message)

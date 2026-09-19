@@ -8,6 +8,8 @@ RadioSim Tracer（仮称）の**コマンドライン**（phase 1・増分4）�
                                                       … RX を繋いで測る
     python -m apps.tracer.cli export セッション 出力.csv
                                                       … 本体のバッチ CSV へ書き出す
+    python -m apps.tracer.cli probe --port-a COM3 --port-b COM4 --root 測定データ
+                                                      … 2 台の動作確認（人の操作なし）
     python -m apps.tracer.cli bench run --port-a COM3 --port-b COM4 --root 測定データ
                                                       … 段0 の机上試験（2 台・両方向）
     python -m apps.tracer.cli bench analyze 机上試験 --ref ref.json --calib-dir 校正
@@ -35,6 +37,7 @@ import re
 import subprocess  # nosec B404 — 固定の git 呼び出しだけ（刻印のコミットを取る）
 import sys
 import time
+from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -46,7 +49,16 @@ from apps.tracer.aggregate import (
     link_lost_total,
     write_batch_csv,
 )
-from apps.tracer.bench import STAGES, BenchError, BenchRunner, default_plan
+from apps.tracer.bench import (
+    PROBE_MIN_RATE,
+    STAGES,
+    BenchError,
+    BenchRunner,
+    ProbeLink,
+    default_plan,
+    judge_firmware,
+    write_probe,
+)
 from apps.tracer.bench_analysis import (
     analyze,
     read_ref,
@@ -98,6 +110,16 @@ def main(argv: list[str] | None = None) -> int:
                    help="終了の記録が無いセッション（途中で落ちた）を、最後に読めた時刻で"
                         "終えたものとして扱う")
 
+    p = sub.add_parser("probe", help="2 台の動作確認（両方向を短く測る・人の操作なし）")
+    p.add_argument("--port-a", required=True)
+    p.add_argument("--port-b", required=True)
+    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--root", type=Path, required=True, help="動作確認のフォルダを作る場所")
+    p.add_argument("--seconds", type=float, default=10.0, help="1 方向を測る秒数")
+    p.add_argument("--power", type=float, default=default_plan()["power_dbm"],
+                   help="送信電力（dBm）")
+    p.add_argument("--channel", type=int, default=default_plan()["channel"])
+
     p = sub.add_parser("bench", help="段0 の机上試験")
     bench = p.add_subparsers(dest="bench_command", required=True)
     q = bench.add_parser("plan", help="計画の雛形（JSON）を書き出す")
@@ -132,6 +154,8 @@ def main(argv: list[str] | None = None) -> int:
             return _template(args.path)
         if args.command == "record":
             return _record(args)
+        if args.command == "probe":
+            return _probe(args)
         if args.command == "bench":
             return _bench(args)
         if args.command == "cont":
@@ -425,6 +449,105 @@ def _bench(args: argparse.Namespace) -> int:
             port.close()
     print(f"終わりました。判定: python -m apps.tracer.cli bench analyze {runner.directory}")
     return 0
+
+
+# --- probe -------------------------------------------------------------------
+
+
+def _probe(args: argparse.Namespace) -> int:
+    serial = _import_serial()
+    commit = software_commit()
+    ports = {
+        "a": _ReopeningPort(serial, args.port_a, args.baud),
+        "b": _ReopeningPort(serial, args.port_b, args.baud),
+    }
+    try:
+        runner = BenchRunner(
+            args.root, ports, {"probe": {"seconds": args.seconds, "power_dbm": args.power,
+                                         "channel": args.channel}},
+            clock=now_utc, prompt=_no_prompt, say=print, software_commit=commit,
+            purpose="probe",
+        )
+        print(f"動作確認: {runner.directory}")
+        return run_probe(runner, seconds=args.seconds, power_dbm=args.power,
+                         channel=args.channel, software_commit=commit,
+                         same_source=_same_firmware_source, say=print)
+    except BenchError as e:
+        print(f"\n止まりました: {e}", file=sys.stderr)
+        return 2
+    finally:
+        for port in ports.values():
+            port.close()
+
+
+def run_probe(
+    runner: BenchRunner, *, seconds: float, power_dbm: float, channel: int,
+    software_commit: str, same_source: Any, say: Any,
+) -> int:
+    """動作確認を回して判定を表示し、`probe.json` に残す。全部合格なら 0、でなければ 1。"""
+    links = runner.probe(duration_s=seconds, power_dbm=power_dbm, channel=channel)
+    firmware = runner.units["a"].config.fields["firmware_version"]   # type: ignore[union-attr]
+    fw_ok, fw_note = judge_firmware(firmware, software_commit, same_source)
+    crc = {u: unit.stream.stats.crc_errors for u, unit in runner.units.items()}
+    crc_ok = not any(crc.values())
+    say("\n判定")
+    say(f"  {_mark(fw_ok)} ファームの版 {firmware}: {fw_note}")
+    for link in links:
+        say(f"  {_mark(link.ok)} {_probe_line(link)}")
+    say(f"  {_mark(crc_ok)} USB の読み取り: "
+        + "・".join(f"{u.upper()} の CRC 不一致 {n}" for u, n in crc.items()))
+    passed = fw_ok and crc_ok and all(link.ok for link in links)
+    if passed:
+        say("すべて合格です。")
+    else:
+        say("合格しなかった項目があります。")
+        if not all(link.air_ok for link in links):
+            say(f"  受信率の目安は {PROBE_MIN_RATE:.0%} 以上です（動作確認のための目安で、"
+                "段0 のしきい値ではありません）。アッテネータを 0 dB にするか、"
+                "配線と U.FL の接続を確かめてください。")
+        if any(link.usb_lost for link in links) or not crc_ok:
+            say("  USB の読み取りで落ちたデータがあります。USB ケーブルを替えるか、"
+                "ハブを通さずに PC へ直接つないでください。")
+    path = write_probe(runner.directory, {
+        "passed": passed,
+        "software_commit": software_commit,
+        "firmware": {"version": firmware, "ok": fw_ok, "note": fw_note},
+        "units": {u: unit.device_id for u, unit in runner.units.items()},
+        "settings": {"seconds": seconds, "power_dbm": power_dbm, "channel": channel},
+        "min_rate": PROBE_MIN_RATE,
+        "links": [dict(asdict(link), rate=link.rate, air_ok=link.air_ok, ok=link.ok)
+                  for link in links],
+        "crc_errors": crc,
+    })
+    say(f"記録: {path}")
+    return 0 if passed else 1
+
+
+def _probe_line(link: ProbeLink) -> str:
+    level = ("受信なし" if link.rssi_min is None
+             else f"受信レベル（生値）{link.rssi_min}〜{link.rssi_max}・雑音フロア {link.noise_floor}")
+    return (f"{link.tx_unit.upper()}→{link.rx_unit.upper()}: 電波で受信 "
+            f"{link.received + link.usb_lost}/{link.sent}（{link.rate:.0%}）・"
+            f"USB の欠け {link.usb_lost}・{level}")
+
+
+def _mark(ok: bool) -> str:
+    return "✓" if ok else "✗"
+
+
+def _no_prompt(message: str) -> str:
+    raise BenchError(f"動作確認では人に頼みません: {message}")
+
+
+def _same_firmware_source(version: str) -> bool | None:
+    """その版と今のコミットで、ファームのソースが同じか（その版が無ければ None）。"""
+    if not re.fullmatch(r"[0-9a-f]{7,40}", version):
+        return None                                   # git に渡すのはコミットの形だけ
+    result = subprocess.run(  # nosec B603,B607 — 固定の git 呼び出し（版は 16 進だけ）
+        ["git", "diff", "--quiet", version, "HEAD", "--", "apps/tracer/firmware"],
+        cwd=_REPO_ROOT, capture_output=True,
+    )
+    return {0: True, 1: False}.get(result.returncode)
 
 
 def _prompt(message: str) -> str:

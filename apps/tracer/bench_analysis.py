@@ -31,7 +31,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.tracer.bench import TAIL_S, read_bench, read_steps, started_on
+from apps.tracer.bench import TAIL_S, BenchError, read_bench, read_steps, started_on
 from apps.tracer.calib import DeviceCalibration, RxCurve, TxOutput, write_device_calibration
 from apps.tracer.mavlink.dialect import Dialect, load_dialect
 from apps.tracer.mavlink.reader import FrameStream, ReadStats, mac
@@ -268,6 +268,9 @@ def analyze(
     directory = Path(directory)
     dialect = dialect or load_dialect()
     bench = read_bench(directory)
+    if bench.get("purpose", "bench") != "bench":
+        # 動作確認は減衰量を記録しない＝判定の材料にならない。
+        raise BenchError(f"机上試験のフォルダではありません（{bench['purpose']}）: {directory}")
     plan = bench["plan"]
     units = {u: v["device_id"] for u, v in bench["units"].items()}
     logs = {u: _load_unit(directory / u, dialect) for u in units}
