@@ -17,6 +17,8 @@ RadioSim Tracer（仮称）の**コマンドライン**（phase 1・増分4）�
     python -m apps.tracer.cli cont --port COM3 --seconds 60 --ref ref.json
                                                       … 連続送信で TX の出力を測る（段0b）
     python -m apps.tracer.cli monitor --port COM4     … 受信を眺めるだけ（何も保存しない）
+    python -m apps.tracer.cli settings --port COM4 --role tx --power 10
+                                                      … 機器の設定を表示する・変える
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信は窓に入れない）
@@ -149,6 +151,15 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pad-db", type=float, default=0.0,
                    help="SMA 端から測定器までの間に入れた減衰（dB）")
 
+    p = sub.add_parser("settings",
+                       help="機器の設定を表示する・変える（変えたら読み戻して確かめる）")
+    p.add_argument("--port", required=True, help="機器の COM ポート（例: COM4）")
+    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--role", choices=("tx", "rx"))
+    p.add_argument("--channel", type=int, help="1〜13")
+    p.add_argument("--interval", type=int, help="送信の間隔（20〜10000 ms）")
+    p.add_argument("--power", type=float, help="送信電力（2〜20 dBm・0.25 刻み）")
+
     p = sub.add_parser("monitor", help="受信を眺めるだけ（何も保存しない・q で終了）")
     p.add_argument("--port", required=True, help="見る機器の COM ポート（例: COM4）")
     p.add_argument("--baud", type=int, default=115200)
@@ -167,6 +178,8 @@ def main(argv: list[str] | None = None) -> int:
             return _cont(args)
         if args.command == "monitor":
             return _monitor(args)
+        if args.command == "settings":
+            return _settings(args)
         return _export(args)
     except SessionError as e:
         print(f"エラー: {e}", file=sys.stderr)
@@ -742,6 +755,134 @@ def _cont(args: argparse.Namespace) -> int:
     })
     args.ref.write_text(json.dumps(ref, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"SMA 端の出力 {value:.3f} dBm を {args.ref} に足しました")
+    return 0
+
+
+# --- settings ----------------------------------------------------------------
+
+_SETTINGS_WAIT_S = 15.0       # 返答・再起動後の設定を待つ上限
+_SETTINGS_IDENTIFY_S = 2.5    # 自分の設定を見分けるまで読む時間（設定は 1 秒ごとに届く）
+# ファームが止まっているときに 1 秒ごとに流す行＝コマンドへの返答ではない。
+_STUCK = ("ERR 空中のレート", "ERR 自己検査")
+
+
+def settings_changes(args: argparse.Namespace) -> list[tuple[str, str, Any]]:
+    """引数を `(コマンド, 欄, 期待する値)` の並びへ。**送る前に**範囲を確かめる
+    （ファームの `settings.c` と同じ範囲）。役割は最後＝TX にしてから他を変えると、
+    変えるたびに測定の送信が途切れる。"""
+    out: list[tuple[str, str, Any]] = []
+    if args.channel is not None:
+        if not 1 <= args.channel <= 13:
+            raise SessionError("--channel は 1〜13 です")
+        out.append((f"channel {args.channel}", "channel", args.channel))
+    if args.interval is not None:
+        if not 20 <= args.interval <= 10000:
+            raise SessionError("--interval は 20〜10000 ms です")
+        out.append((f"interval {args.interval}", "tx_interval_ms", args.interval))
+    if args.power is not None:
+        if not 2.0 <= args.power <= 20.0 or args.power * 4 != int(args.power * 4):
+            raise SessionError("--power は 2〜20 dBm・0.25 刻みです")
+        out.append((f"power {args.power:g}", "tx_power_cdbm", round(args.power * 100)))
+    if args.role is not None:
+        out.append((f"role {args.role}", "role", 0 if args.role == "tx" else 1))
+    return out
+
+
+def describe_settings(fields: dict[str, Any], dialect: Any) -> str:
+    return (f"{dialect.label('TRACER_ROLE', fields['role']).upper()} "
+            f"{mac(fields['device_id'])}  チャネル {fields['channel']}・"
+            f"間隔 {fields['tx_interval_ms']} ms・出力 {fields['tx_power_cdbm'] / 100:g} dBm・"
+            f"ファーム {fields['firmware_version']}・config_id {fields['config_id']}")
+
+
+def apply_settings(
+    port: Any, changes: list[tuple[str, str, Any]], *, say: Any,
+    clock: Any = time.monotonic,
+) -> dict[str, Any]:
+    """機器の今の設定を読み、`changes` を 1 つずつ送り、**再起動後に届いた設定で
+    変わったことを確かめる**。最後の設定（欄の辞書）を返す。
+
+    RX のポートには中継された TX の設定も流れる＝役割 rx の設定があればそれが
+    自分、無ければ自分は TX（`bench.connect` と同じ規則）。以後は個体 ID で選ぶ。
+    """
+    dialect = load_dialect()
+    stream = FrameStream(dialect=dialect)
+    configs: list[Any] = []
+    lines: list[str] = []
+
+    def pump() -> None:
+        configs.extend(m for m in stream.feed(port.read(max(1, port.in_waiting)))
+                       if m.name == "TRACER_CONFIG")
+        for line in stream.take_lines():
+            if line.startswith(_STUCK):
+                raise SessionError(f"機器が止まっています: {line}")
+            lines.append(line)
+
+    def wait(done: Any, what: str, at_least: float = 0.0) -> None:
+        since = clock()
+        while not (done() and clock() - since >= at_least):
+            if clock() - since > _SETTINGS_WAIT_S:
+                raise SessionError(what)
+            pump()
+
+    port.write(b"show\n")
+    wait(lambda: bool(configs),
+         "設定が届きません（ポート・電源・ファームを確かめてください）",
+         at_least=_SETTINGS_IDENTIFY_S)
+    rx = [m for m in configs if dialect.label("TRACER_ROLE", m.fields["role"]) == "rx"]
+    ids = {mac(m.fields["device_id"]) for m in (rx or configs)}
+    if len(ids) != 1:
+        raise SessionError(f"このポートの機器を 1 台に決められません: {sorted(ids)}")
+    own = ids.pop()
+
+    def latest() -> dict[str, Any]:
+        return [m for m in configs if mac(m.fields["device_id"]) == own][-1].fields
+
+    current = latest()
+    say(f"現在: {describe_settings(current, dialect)}")
+    for line, field, value in changes:
+        if current[field] == value:
+            say(f"  {line}: 既にこの値です")
+            continue
+        lines.clear()
+        port.write((line + "\n").encode("ascii"))
+        replies: list[str] = []
+
+        def answered() -> bool:
+            replies[:] = [x for x in lines if x.startswith(("OK", "ERR"))]
+            return bool(replies)
+
+        wait(answered, f"「{line}」に返答がありません")
+        if replies[0].startswith("ERR"):
+            raise SessionError(f"機器が「{line}」を断りました: {replies[0]}")
+        found = re.search(r"config_id=(\d+)", replies[0])
+        if found is None:
+            raise SessionError(f"「{line}」の返答が想定と違います: {replies[0]}")
+        target = int(found.group(1))
+
+        def arrived() -> bool:
+            mine = [m for m in configs if mac(m.fields["device_id"]) == own]
+            return bool(mine) and mine[-1].fields["config_id"] == target
+
+        wait(arrived, f"再起動後の設定（config_id={target}）が届きません")
+        after = latest()
+        if after[field] != value:
+            raise SessionError(f"「{line}」を送りましたが、機器の値は {after[field]} のままです")
+        say(f"  {line}: 変わりました（config_id {target}）")
+        current = after
+    if changes:
+        say(f"変更後: {describe_settings(current, dialect)}")
+    return current
+
+
+def _settings(args: argparse.Namespace) -> int:
+    changes = settings_changes(args)            # 範囲の外なら、ポートを開く前に止める
+    serial = _import_serial()
+    port = _ReopeningPort(serial, args.port, args.baud)
+    try:
+        apply_settings(port, changes, say=print)
+    finally:
+        port.close()
     return 0
 
 
