@@ -63,6 +63,11 @@ FIX_STATES = ("fix", "float", "single", "none")
 
 ROLES = ("tx", "rx")
 
+# 受信感度として通す範囲 [dBm]。本体の入力検査（`core/i18n.py` の `err_sens`）と
+# 同じ範囲にしてある＝ここを通った値がそのまま「感度以下（〜未満）」として
+# 本体へ渡る文面になるので、本体が受け付けない値を名乗らせない。
+SENSITIVITY_RANGE_DBM = (-130.0, -20.0)
+
 # 検波方式。MAVLink の TRACER_DETECTOR と同じ語彙（XML が正典）。
 DETECTORS = ("unknown", "instant", "mean")
 
@@ -145,6 +150,7 @@ class RadioSettings:
     integration_window_us: int
     integration_samples: int         # **時間平均**の件数（空間平均とは別の場所）
     antenna: str
+    sensitivity_dbm: float           # 受信感度。打ち切りの「〜未満」の値になる
 
 
 @dataclass(frozen=True)
@@ -181,6 +187,7 @@ class Endpoint:
     measurement_config_id: str       # 無線機の個体・アンテナ・給電線の組み合わせ
     device_id: str                   # 個体 ID（MAC アドレス）
     feeder_loss_db: float
+    antenna_gain_dbi: float          # アンテナ端子基準の利得（給電線損とは別の量）
     calibration: Calibration
     radio: RadioSettings
     position: Position | None = None
@@ -264,6 +271,12 @@ def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
         )
     _require(endpoint.radio.detector, DETECTORS, f"{expected_role} の検波方式")
     _require(endpoint.radio.antenna, ANTENNAS, f"{expected_role} のアンテナ切替")
+    low, high = SENSITIVITY_RANGE_DBM
+    if not low <= endpoint.radio.sensitivity_dbm <= high:
+        raise SessionError(
+            f"{expected_role} の受信感度が範囲の外です: "
+            f"{endpoint.radio.sensitivity_dbm}（{low:g}〜{high:g} dBm）"
+        )
     if not endpoint.measurement_config_id:
         # 刻印の 1 項目目。これが無いと、後から「どの構成で取ったか」を辿れない。
         raise SessionError(f"{expected_role} の測定構成 ID が空です")

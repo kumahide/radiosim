@@ -297,6 +297,7 @@ radiosim/
 ├── apps/
 │   └── tracer/           # 実測補助（別アプリ・開発中。本体の配布物には入らない）
 │       ├── session.py    # 測定セッション（1 回の測定＝1 フォルダ。ヘッダ JSON ＋追記のみの CSV）
+│       ├── aggregate.py  # 受信サンプルを窓ごとにまとめ、打ち切りを判定してバッチ CSV へ書き出す
 │       └── mavlink/      # 受信サンプル・設定のメッセージ定義（ファームと PC 側の両方がここから生成する）
 ├── docs/                 # 読み物（開発者向け・利用者向けとも、入口の README.md を除いてここ）
 │   ├── developer_ja.md   # このファイル
@@ -330,6 +331,7 @@ radiosim/
     ├── test_scenario.py
     ├── test_multihop.py
     ├── test_tracer_session.py
+    ├── test_tracer_aggregate.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -1138,6 +1140,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・hops.csv／合成シート）|
 | `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・節の欠損は「持たない」・新しい schema の拒否・破損の扱い）|
 | `test_tracer_session.py` | 実測補助（`apps/tracer`）の測定セッション。ヘッダの往復・サンプルの追記のみ・ヘッダの原子的な書き込み・位置は定数と時系列の両方を許すこと・時間平均と空間平均が別の欄に在ること・生値を換算値で上書きしないこと・給電線損を換算に混ぜないこと・CLAS の高さは Fix 解のときだけ通すこと・語彙の外の値と空の測定構成 ID を保存しないこと |
+| `test_tracer_aggregate.py` | 実測補助（`apps/tracer`）の窓の集計と打ち切り。窓の刻みはシーケンス番号・一部だけ届いた窓は値を出さないこと・1 つも届かなかった窓も行として残ること・区間の末尾が窓にならずに消えないこと・設定と置き場所を跨いで平均しないこと・平均は dB 領域であること・TX 側の給電線損が二重に効かないこと・バッチ CSV の原子的な書き込み |
 | `test_golden_links.py`   | 回帰コーパス。代表回線（`tests/data/golden_links.json`）の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_ground_reflection.py` | 地面反射（2波干渉）の振幅包絡線。反射点が両端から十分離れているかの判定・既存の計算経路を変えないことの回帰（3.4 段4） |
 | `test_sensitivity.py`    | 摂動再計算エンジン。各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・標高を経路全体へ一律に動かしても余裕度が動かないこと・多ホップの argmin 入れ替わり（3.4 段4） |

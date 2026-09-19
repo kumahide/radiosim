@@ -49,6 +49,7 @@ def _radio(config_id: int = 1) -> S.RadioSettings:
         integration_window_us=1000,
         integration_samples=10,
         antenna="external",
+        sensitivity_dbm=-98.0,
     )
 
 
@@ -70,6 +71,7 @@ def _endpoint(role: str, **kwargs) -> S.Endpoint:
         measurement_config_id=f"{role}-esp32c6-rod-3m",
         device_id="aa:bb:cc:dd:ee:0" + ("1" if role == "tx" else "2"),
         feeder_loss_db=1.5,
+        antenna_gain_dbi=2.0,
         calibration=_calibration(),
         radio=_radio(),
         position=_position(),
@@ -267,6 +269,31 @@ def test_censoring_threshold_must_be_a_receive_rate(tmp_path, rate):
     )
     with pytest.raises(S.SessionError, match="打ち切りのしきい値"):
         S.create_session(tmp_path, _header(provenance=provenance))
+
+
+@pytest.mark.parametrize("sens", [-131.0, -19.0, 0.0])
+def test_sensitivity_must_be_a_plausible_level(tmp_path, sens):
+    """受信感度は本体が受け付ける範囲（−130〜−20 dBm）でなければ保存しないこと。
+
+    🔑 この値はそのまま打ち切りの「〜未満」として本体へ渡る文面になる＝既定の 0 や
+    符号の取り違えを通すと、**もっともらしい文面のまま嘘の下限**が帳票に載る。
+    """
+    bad = _endpoint("rx", radio=S.RadioSettings(**{
+        **{f: getattr(_radio(), f) for f in S.RadioSettings.__dataclass_fields__},
+        "sensitivity_dbm": sens,
+    }))
+    with pytest.raises(S.SessionError, match="受信感度"):
+        S.create_session(tmp_path, _header(rx=bad))
+
+
+def test_antenna_gain_and_feeder_loss_are_separate_fields():
+    """アンテナ利得と給電線損を同じ欄にまとめないこと。
+
+    ⚠️ 本体の予測は利得をモデルに持ち、給電線損は持たない（残差の式が別に引く）＝
+    1 つに畳むと、どちらの向きで効かせるかを後から決められない。
+    """
+    assert "antenna_gain_dbi" in S.Endpoint.__dataclass_fields__
+    assert "feeder_loss_db" in S.Endpoint.__dataclass_fields__
 
 
 def test_measurement_config_id_is_required(tmp_path):
