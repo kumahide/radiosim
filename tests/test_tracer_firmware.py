@@ -290,6 +290,9 @@ def test_the_usb_port_carries_only_the_data():
     defaults = (FIRMWARE / "sdkconfig.defaults").read_text(encoding="utf-8")
     assert "CONFIG_ESP_CONSOLE_SECONDARY_NONE=y" in defaults
     assert "CONFIG_ESP_CONSOLE_UART_DEFAULT=y" in defaults
+    # 起動の早い段階のログはコンソールの設定を通らず USB にも出る。フラッシュの
+    # 容量が実機（4 MB）と食い違うと、その警告が起動のたびに USB へ流れる。
+    assert "CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y" in defaults
 
 
 # --- ファームの流し方のまま、PC 側が記録できること ------------------------------

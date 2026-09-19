@@ -14,3 +14,9 @@ CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
 # 起動直後の出力も減らす（ROM の起動表示は消せないが、PC 側は読み飛ばす）。
 CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
 CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+
+# XIAO ESP32C6 のフラッシュは 4 MB。既定の 2 MB のままだと、起動のたびに
+# 「実際のフラッシュの方が大きい」という警告が出る。起動の早い段階のログは
+# コンソールの設定に関わらず USB にも出るので（実機で確認・2026-09-19）、
+# 警告そのものを出さないようにする。
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y
