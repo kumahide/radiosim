@@ -16,6 +16,7 @@ RadioSim Tracer（仮称）の**コマンドライン**（phase 1・増分4）�
                                                       … 判定と、個体ごとの校正ファイル
     python -m apps.tracer.cli cont --port COM3 --seconds 60 --ref ref.json
                                                       … 連続送信で TX の出力を測る（段0b）
+    python -m apps.tracer.cli monitor --port COM4     … 受信を眺めるだけ（何も保存しない）
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信は窓に入れない）
@@ -69,7 +70,7 @@ from apps.tracer.bench_analysis import (
 )
 from apps.tracer.calib import DeviceCalibration, read_device_calibration
 from apps.tracer.mavlink.dialect import load_dialect
-from apps.tracer.mavlink.reader import FrameStream, mac
+from apps.tracer.mavlink.reader import FrameStream, ReadStats, mac
 from apps.tracer.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.tracer.session import (
     Event,
@@ -148,6 +149,10 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--pad-db", type=float, default=0.0,
                    help="SMA 端から測定器までの間に入れた減衰（dB）")
 
+    p = sub.add_parser("monitor", help="受信を眺めるだけ（何も保存しない・q で終了）")
+    p.add_argument("--port", required=True, help="見る機器の COM ポート（例: COM4）")
+    p.add_argument("--baud", type=int, default=115200)
+
     args = parser.parse_args(argv)
     try:
         if args.command == "template":
@@ -160,6 +165,8 @@ def main(argv: list[str] | None = None) -> int:
             return _bench(args)
         if args.command == "cont":
             return _cont(args)
+        if args.command == "monitor":
+            return _monitor(args)
         return _export(args)
     except SessionError as e:
         print(f"エラー: {e}", file=sys.stderr)
@@ -735,6 +742,130 @@ def _cont(args: argparse.Namespace) -> int:
     })
     args.ref.write_text(json.dumps(ref, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
     print(f"SMA 端の出力 {value:.3f} dBm を {args.ref} に足しました")
+    return 0
+
+
+# --- monitor -----------------------------------------------------------------
+
+
+class MonitorTally:
+    """受信を**送信機ごと**に区切りの間だけ数える（`monitor` の表示用・何も書かない）。
+
+    欠けは 2 つに分ける＝`seq` の飛びは電波と USB の両方で起き、`sample_seq` の飛びは
+    受信機から PC までの間だけで起きる（`radiosim_tracer.xml`）。差が電波の欠け。
+    番号が戻ったところ（機器の再起動）は欠けに数えない。
+    """
+
+    def __init__(self, dialect: Any) -> None:
+        self._dialect = dialect
+        self._last: dict[str, tuple[int, int]] = {}      # tx → (seq, sample_seq)
+        self._configs: set[tuple[str, int]] = set()
+        self._reset()
+
+    def _reset(self) -> None:
+        self._rssi: dict[str, list[int]] = {}
+        self._noise: dict[str, list[int]] = {}
+        self._air_lost: dict[str, int] = {}
+        self._usb_lost: dict[str, int] = {}
+        self._sent: dict[str, int] = {}
+
+    @property
+    def configs_seen(self) -> bool:
+        return bool(self._configs)
+
+    def add(self, message: Any) -> str | None:
+        """1 メッセージを数える。新しい設定なら、その知らせの行を返す。"""
+        f = message.fields
+        if message.name == "TRACER_CONFIG":
+            device = mac(f["device_id"])
+            if (device, f["config_id"]) in self._configs:
+                return None
+            self._configs.add((device, f["config_id"]))
+            role = self._dialect.label("TRACER_ROLE", f["role"])
+            power = f"出力 {f['tx_power_cdbm'] / 100:g} dBm・" if role == "tx" else ""
+            return (f"設定 {role.upper()} {device}  チャネル {f['channel']}・"
+                    f"{power}ファーム {f['firmware_version']}")
+        if message.name == "TRACER_TX_PACKET":
+            tx = mac(f["tx_id"])
+            self._sent[tx] = self._sent.get(tx, 0) + 1
+            return None
+        if message.name != "TRACER_RX_SAMPLE":
+            return None
+        tx = mac(f["tx_id"])
+        self._rssi.setdefault(tx, []).append(f["rssi_raw"])
+        self._noise.setdefault(tx, []).append(f["noise_floor_raw"])
+        seq, sample_seq = f["seq"], f["sample_seq"]
+        last = self._last.get(tx)
+        if last is not None and seq > last[0] and sample_seq > last[1]:
+            gap = seq - last[0] - 1
+            usb = sample_seq - last[1] - 1
+            self._usb_lost[tx] = self._usb_lost.get(tx, 0) + usb
+            self._air_lost[tx] = self._air_lost.get(tx, 0) + max(0, gap - usb)
+        self._last[tx] = (seq, sample_seq)
+        return None
+
+    def lines(self) -> list[str]:
+        """区切りの間の集計を 1 送信機 1 行で返し、数え直す。"""
+        out = []
+        for tx, levels in sorted(self._rssi.items()):
+            noise = sorted(self._noise[tx])
+            out.append(
+                f"{tx}  受信 {len(levels)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
+                f"USB {self._usb_lost.get(tx, 0)}  受信レベル（生値）平均 "
+                f"{sum(levels) / len(levels):.1f}（{min(levels)}〜{max(levels)}）  "
+                f"雑音フロア {noise[len(noise) // 2]}"
+            )
+        for tx, sent in sorted(self._sent.items()):
+            out.append(f"{tx}  送信 {sent}")
+        self._reset()
+        return out
+
+
+def run_monitor(
+    port: Any, *, say: Any, stop: Any, clock: Any = time.monotonic,
+    stamp: Any = None, every_s: float = _STATUS_EVERY_S,
+) -> ReadStats:
+    """ポートを読み、`every_s` ごとに受信の集計を表示する。`stop()` が真で終える。
+
+    ⛔ 受信レベルは**生値のまま**出す＝校正を当てないので、表示で dBm を名乗らない。
+    """
+    stamp = stamp or (lambda: datetime.now().strftime("%H:%M:%S"))
+    dialect = load_dialect()
+    stream = FrameStream(dialect=dialect)
+    tally = MonitorTally(dialect)
+    started = last = clock()
+    hinted = False
+    while not stop():
+        for message in stream.feed(port.read(max(1, port.in_waiting))):
+            note = tally.add(message)
+            if note is not None:
+                say(note)
+        stream.take_lines()                     # 文字の行（起動表示など）は見せない
+        now = clock()
+        if not hinted and not tally.configs_seen and now - started > _WAIT_HINT_S:
+            say("設定が届きません。ポート・機器の電源・ファームを確かめてください。")
+            hinted = True
+        if now - last >= every_s:
+            rows = tally.lines() or ["受信なし"]
+            crc = f"  CRC 不一致（累計）{stream.stats.crc_errors}"
+            for row in rows:
+                say(f"{stamp()}  {row}{crc}")
+            last = now
+    return stream.stats
+
+
+def _monitor(args: argparse.Namespace) -> int:
+    serial = _import_serial()
+    port = _ReopeningPort(serial, args.port, args.baud)
+    keys = _Keyboard()
+    print(f"{args.port} を見ています（保存しません・q で終了）")
+    try:
+        run_monitor(port, say=print, stop=lambda: keys.poll() == "q")
+    except KeyboardInterrupt:
+        pass
+    finally:
+        port.close()
+    print("終えました")
     return 0
 
 
