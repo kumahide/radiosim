@@ -19,6 +19,8 @@ tests/test_tracer_firmware.py
 from __future__ import annotations
 
 import re
+import shutil
+import subprocess  # nosec B404 — git と cmake を固定の引数で呼ぶだけ
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -145,11 +147,90 @@ def test_the_firmware_version_fits_the_config_field(dialect):
         f for f in dialect.messages_by_name["TRACER_CONFIG"].fields
         if f.name == "firmware_version"
     )
-    cmake = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
+    cmake = (FIRMWARE / "version.cmake").read_text(encoding="utf-8")
     found = re.search(r"--short=(\d+)", cmake)
-    assert found, "CMakeLists.txt が git のコミットを取っていない"
+    assert found, "version.cmake が git のコミットを取っていない"
     digits = int(found.group(1))
     assert digits + len("-dirty") <= field.count
+
+
+def test_the_firmware_version_is_taken_at_build_time_not_configure_time():
+    """B-256。構成時に取ると、既存の build フォルダへ `idf.py build` したときに
+    **中身は新しいコミット・名乗りは古いコミット**のファームが焼ける。
+
+    - 構成時の CMakeLists.txt は git を呼ばない
+    - 版は毎回走るターゲット（出力の無い add_custom_target … ALL）が作り、main が
+      それに依存する
+    - ファームは構成時の値（アプリ記述子の版）を刻印に使わない
+    """
+    top = (FIRMWARE / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert "git" not in re.sub(r"#.*", "", top), "構成時に git を呼んでいる"
+    main_cmake = (FIRMWARE / "main" / "CMakeLists.txt").read_text(encoding="utf-8")
+    assert re.search(r"add_custom_target\(tracer_version ALL\b", main_cmake)
+    assert "version.cmake" in main_cmake
+    assert "add_dependencies(${COMPONENT_LIB} tracer_version)" in main_cmake
+    code = re.sub(r"/\*.*?\*/", "", _main_c(), flags=re.DOTALL)
+    assert "esp_app_get_description" not in code
+    assert "TRACER_FIRMWARE_VERSION" in code
+
+
+def _cmake() -> str:
+    found = shutil.which("cmake")
+    if found is None:
+        pytest.skip("cmake がありません（CI の ubuntu にはある）")
+    return found
+
+
+def _git(repo: Path, *args: str) -> None:
+    subprocess.run(  # nosec B603,B607 — 固定の git 呼び出し（一時リポジトリ）
+        ["git", "-c", "user.name=t", "-c", "user.email=t@example.invalid",
+         "-c", "commit.gpgsign=false", *args],
+        cwd=repo, check=True, capture_output=True,
+    )
+
+
+def _stamp(repo: Path, out: Path) -> str:
+    subprocess.run(  # nosec B603 — 手元の cmake でスクリプトを走らせるだけ
+        [_cmake(), f"-DSRC_DIR={repo}", f"-DOUT={out}",
+         "-P", str(FIRMWARE / "version.cmake")],
+        check=True, capture_output=True,
+    )
+    return re.search(r'TRACER_FIRMWARE_VERSION "([^"]*)"', out.read_text(encoding="utf-8")).group(1)
+
+
+def test_the_version_script_follows_the_commit_on_every_run(tmp_path):
+    """同じ出力先に対して走らせ直すたびに、**その時点の** git の状態を書く（B-256）。"""
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    out = tmp_path / "tracer_version.h"
+    _git(repo, "init", "-q")
+    (repo / "a.c").write_text("1\n")
+    _git(repo, "add", "a.c")
+    _git(repo, "commit", "-q", "-m", "1")
+    first = _stamp(repo, out)
+    assert re.fullmatch(r"[0-9a-f]{10}", first)
+
+    (repo / "a.c").write_text("2\n")               # 追跡中のファイルを汚す
+    assert _stamp(repo, out) == f"{first}-dirty"
+
+    _git(repo, "commit", "-q", "-am", "2")          # コミットを進める
+    second = _stamp(repo, out)
+    assert re.fullmatch(r"[0-9a-f]{10}", second) and second != first
+
+    before = out.stat().st_mtime_ns
+    assert _stamp(repo, out) == second
+    assert out.stat().st_mtime_ns == before, "版が同じなのにヘッダを書き直した（毎回再コンパイルになる）"
+
+
+def test_the_version_script_refuses_to_stamp_without_git(tmp_path):
+    """版の分からないファームは刻印できない＝ビルドを止める。"""
+    out = tmp_path / "tracer_version.h"
+    result = subprocess.run(  # nosec B603 — 手元の cmake でスクリプトを走らせるだけ
+        [_cmake(), f"-DSRC_DIR={tmp_path}", f"-DOUT={out}",
+         "-P", str(FIRMWARE / "version.cmake")],
+        capture_output=True,
+    )
+    assert result.returncode != 0 and not out.exists()
 
 
 def test_the_esp_idf_version_is_pinned_in_one_place():

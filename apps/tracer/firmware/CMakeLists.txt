@@ -2,28 +2,12 @@
 # ビルドの手順は README.md。
 cmake_minimum_required(VERSION 3.16)
 
-# ファームの版＝git のコミット（刻印に入る＝TRACER_CONFIG.firmware_version）。
-# 欄は char[16] なので「10 桁＋-dirty」で 16 文字に収める。作業ツリーが汚れて
-# いたら -dirty を付ける＝コミットの名前だけでは、焼いたコードを後から再現できない。
-execute_process(
-    COMMAND git rev-parse --short=10 HEAD
-    WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-    OUTPUT_VARIABLE TRACER_COMMIT
-    OUTPUT_STRIP_TRAILING_WHITESPACE
-    RESULT_VARIABLE TRACER_GIT_RESULT)
-if(NOT TRACER_GIT_RESULT EQUAL 0 OR TRACER_COMMIT STREQUAL "")
-    # 版の分からないファームは刻印できない＝焼かせない。
-    message(FATAL_ERROR "git のコミットを取れません（ファームの版は刻印の 1 項目です）")
-endif()
-execute_process(
-    COMMAND git status --porcelain --untracked-files=no
-    WORKING_DIRECTORY ${CMAKE_CURRENT_LIST_DIR}
-    OUTPUT_VARIABLE TRACER_DIRTY
-    OUTPUT_STRIP_TRAILING_WHITESPACE)
-if(NOT TRACER_DIRTY STREQUAL "")
-    set(TRACER_COMMIT "${TRACER_COMMIT}-dirty")
-endif()
-set(PROJECT_VER "${TRACER_COMMIT}")
+# ファームの版（git のコミット）は、ここ（構成時）では取らない＝version.cmake が
+# ビルドのたびに取り、main/tracer_version.h に書く（B-256）。
+# PROJECT_VER（アプリ記述子の版）は構成時にしか決まらず古くなり得るので、刻印には
+# 使わない。版と取り違えられないよう、コミットに見えない固定の値にしておく
+# （既定のままだと ESP-IDF が構成時の git describe を入れ、同じ取り違えが起きる）。
+set(PROJECT_VER "see-config")
 
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 

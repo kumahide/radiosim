@@ -12,7 +12,6 @@
 #include <string.h>
 
 #include "driver/gpio.h"
-#include "esp_app_desc.h"
 #include "esp_log.h"
 #include "esp_mac.h"
 #include "esp_system.h"
@@ -24,6 +23,7 @@
 #include "radio.h"
 #include "settings.h"
 #include "tracer_mavlink.h"
+#include "tracer_version.h" /* ビルドのたびに生成（version.cmake）。 */
 
 static const char *TAG = "tracer";
 
@@ -65,9 +65,12 @@ static tracer_config_t make_config(const tracer_settings_t *s, const uint8_t mac
         .antenna = TRACER_ANTENNA_EXTERNAL,
     };
     memcpy(c.device_id, mac, 6);
-    /* char[16] に NUL 終端は要らない（MAVLink の文字列は固定長）。 */
-    strncpy(c.firmware_version, esp_app_get_description()->version,
-            sizeof c.firmware_version);
+    /* char[16] に NUL 終端は要らない（MAVLink の文字列は固定長・残りは上の初期化で 0）。
+     * ⚠️ esp_app_get_description()->version は使わない＝構成時の値で、既存の build
+     * フォルダでは古いコミットのまま残る（B-256）。 */
+    _Static_assert(sizeof TRACER_FIRMWARE_VERSION - 1 <= sizeof c.firmware_version,
+                   "ファームの版が刻印の欄に収まらない");
+    memcpy(c.firmware_version, TRACER_FIRMWARE_VERSION, sizeof TRACER_FIRMWARE_VERSION - 1);
     return c;
 }
 
