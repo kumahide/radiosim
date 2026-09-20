@@ -1,0 +1,158 @@
+<?xml version="1.0"?>
+<!--
+  radiosim_field.xml
+  ===================
+  RadioSim Field（実測補助）の独自 MAVLink ダイアレクト。
+  **ファームと PC 側の両方がここから生成する**＝メッセージの形の単一の出所。
+
+  なぜ NAMED_VALUE_FLOAT で済ませないか（不可逆な設計判断）:
+    1 メッセージに 1 つの float だと、受信レベル・雑音・周波数・TX 電力・積分窓が
+    ばらばらに届いて **1 サンプルの原子性が無い**。ここでは 1 サンプルを 1 メッセージに
+    する。受信機自身のタイムスタンプとシーケンス番号を必ず載せ、欠測（＝打ち切り）を
+    後から数えられるようにする。
+
+  設定は毎サンプル送らず、**設定番号（config_id）で 1 対 1 に結ぶ**。
+  これで原子性を保ちながら 1 メッセージを小さく保てる。
+
+  ⚠️ 打ち切りは受信機からは送れない（「受からなかった」ことは送信できない）。
+  PC 側が RADIOSIM_FIELD_RX_SAMPLE の seq の欠けから数える。
+  ⚠️ 空間平均の置き場所の番号は、作業者の操作に由来するので **PC 側が付ける**。
+  ファームは知らない（時間平均＝integration_samples と混ざらないように、
+  そもそも別の場所に持つ）。
+
+  ⚠️ メッセージ ID の帯は、他のダイアレクトと同時に使う前に MAVLink の一次資料で
+  確かめる（ここでは 42100 から 3 つ取っている）。衝突しても静かに壊れる種類の
+  問題なので、確認するまで「空いている」と書かない。
+-->
+<mavlink>
+  <version>0</version>
+  <dialect>0</dialect>
+
+  <enums>
+    <enum name="RADIOSIM_FIELD_ROLE">
+      <description>1 つのファームを設定で切り替える（送受を対称に保つため）。</description>
+      <entry value="0" name="RADIOSIM_FIELD_ROLE_TX">
+        <description>番号付きパケットを等間隔で送る側。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_ROLE_RX">
+        <description>プロミスキャス受信し、1 受信ごとに UART へ流す側。</description>
+      </entry>
+    </enum>
+
+    <enum name="RADIOSIM_FIELD_DETECTOR">
+      <description>
+        受信レベルの取り方。速いフェージングを拾ったのか局所平均なのかを後から
+        判別するために記録する（空間平均の窓設計に直結する）。
+      </description>
+      <entry value="0" name="RADIOSIM_FIELD_DETECTOR_UNKNOWN">
+        <description>不明（取り込んだログに記録が無い場合のみ）。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_DETECTOR_INSTANT">
+        <description>1 フレームの瞬時値。ファーム側では平均しない。</description>
+      </entry>
+      <entry value="2" name="RADIOSIM_FIELD_DETECTOR_MEAN">
+        <description>integration_samples 件の平均（時間平均）。</description>
+      </entry>
+    </enum>
+
+    <enum name="RADIOSIM_FIELD_ANTENNA">
+      <description>
+        アンテナ切替の状態。切替が記録されていない測定は、利得の基準が分からない＝
+        後から救えない。
+      </description>
+      <entry value="0" name="RADIOSIM_FIELD_ANTENNA_UNKNOWN">
+        <description>不明。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_ANTENNA_INTERNAL">
+        <description>基板上のアンテナ。</description>
+      </entry>
+      <entry value="2" name="RADIOSIM_FIELD_ANTENNA_EXTERNAL">
+        <description>外部アンテナ端子（技適対象のロッドアンテナを付ける側）。</description>
+      </entry>
+    </enum>
+  </enums>
+
+  <messages>
+    <message id="42100" name="RADIOSIM_FIELD_TX_PACKET">
+      <description>
+        送信側が 1 パケット送るたびに UART へ流す控え。受信側のログと突き合わせて
+        「送ったが受からなかった」を確定させるために要る。
+      </description>
+      <field type="uint8_t[6]" name="tx_id">送信機の個体 ID（チップ固有の MAC アドレス）。</field>
+      <field type="uint32_t" name="seq">送信シーケンス番号。欠けが打ち切りの根拠になる。</field>
+      <field type="uint64_t" name="tx_time_us" units="us">送信機の起動からの経過時間。</field>
+      <field type="uint16_t" name="config_id">この送信に効いていた設定番号。</field>
+    </message>
+
+    <message id="42101" name="RADIOSIM_FIELD_RX_SAMPLE">
+      <description>
+        受信 1 回ぶんの生のサンプル。**dBm には換算しない**（換算は校正値を持つ
+        PC 側の仕事で、生値は捨てない）。
+      </description>
+      <field type="uint8_t[6]" name="rx_id">受信機の個体 ID（MAC アドレス）。</field>
+      <field type="uint8_t[6]" name="tx_id">送信機の個体 ID（MAC アドレス）。</field>
+      <field type="uint32_t" name="seq">受け取ったパケットの送信シーケンス番号。</field>
+      <field type="uint64_t" name="rx_time_us" units="us">
+        受信機の起動からの経過時間。phase 1 では PC 側が UTC と対応づける
+        （PPS をファームへ入れるのは phase 2）。
+      </field>
+      <field type="int16_t" name="rssi_raw">
+        受信レベルの生値（整数・**dBm ではない**）。単位を書けるだけの根拠が無い
+        ので単位は付けない。
+      </field>
+      <field type="int16_t" name="noise_floor_raw">
+        雑音フロアの生値（整数・dBm ではない）。「感度以下」と「干渉で埋もれた」の
+        区別に使う。
+      </field>
+      <field type="uint16_t" name="config_id">このサンプルに効いていた **RX の**設定番号。</field>
+      <field type="uint16_t" name="tx_config_id">
+        受けたパケット（RADIOSIM_FIELD_TX_PACKET）に載っていた **TX の**設定番号。TX の設定の
+        中身は、TX が空中で送る RADIOSIM_FIELD_CONFIG を RX が中継して PC へ届ける。
+      </field>
+      <field type="uint32_t" name="sample_seq">
+        この送信機から受けて UART へ出そうとしたサンプルの通し番号（**送信機ごと**・
+        ファームの起動で 0 から）。受信した時点で番号を振るので、**番号の欠けは
+        受信機から PC までの間で落ちた分**（キューの溢れ・USB の取りこぼし・UART の化け）
+        ＝電波で届かなかった分とは別に数えられる。
+      </field>
+    </message>
+
+    <message id="42102" name="RADIOSIM_FIELD_CONFIG">
+      <description>
+        設定。起動時・変更時に加えて 1 秒ごとに再送し、サンプルからは設定番号で引く。
+        再送するのは、PC 側が最初に届いた RX の設定でセッションを作るため（「起動時だけ」
+        だと、RX が先に起動していたら記録が始まらない）。同じ設定の再送は PC 側が読み飛ばす。
+        **TX は同じものを 1 秒ごとに空中へも送り、RX はそれを UART へそのまま中継する**
+        （role が tx のもの）＝TX の UART は遠くにあって PC に届かないので、TX の実際の
+        設定（送信間隔・電力・チャネル）を PC が知る唯一の道。雛形に書いた値と実機が
+        食い違うと、窓の期待パケット数や送信電力が黙って別の値になる。
+        ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
+      </description>
+      <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
+      <field type="uint8_t" name="role" enum="RADIOSIM_FIELD_ROLE">送信側か受信側か。</field>
+      <field type="uint8_t[6]" name="device_id">この機体の個体 ID（MAC アドレス）。</field>
+      <field type="char[16]" name="firmware_version">
+        ファームの版（git のコミット）。刻印に入る＝データを後から救うために要る。
+      </field>
+      <field type="uint8_t" name="channel">2.4 GHz のチャネル（現場で空いているものを選ぶ）。</field>
+      <field type="uint16_t" name="rate_kbps" units="kbit/s">
+        送信レート。打ち切りを減らすため最低レートに固定して使う。
+      </field>
+      <field type="int16_t" name="tx_power_cdbm" units="cdBm">
+        設定した送信電力（0.01 dBm 単位）。自動出力制御が動くと RSSI からパスロスを
+        引けなくなるため、固定した値を記録する。
+      </field>
+      <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（既定 100 ms）。</field>
+      <field type="uint8_t" name="detector" enum="RADIOSIM_FIELD_DETECTOR">検波方式。</field>
+      <field type="uint32_t" name="integration_window_us" units="us">
+        積分窓の長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが
+        知らないとき）。数字を作って刻むと、刻印が事実でなくなる。
+      </field>
+      <field type="uint16_t" name="integration_samples">
+        **時間平均**の件数（量子化・雑音の平均）。空間平均とは役割が違うので、
+        同じ名前の欄に混ぜない。
+      </field>
+      <field type="uint8_t" name="antenna" enum="RADIOSIM_FIELD_ANTENNA">アンテナ切替の状態。</field>
+    </message>
+  </messages>
+</mavlink>

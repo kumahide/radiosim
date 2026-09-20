@@ -4,8 +4,8 @@ tests/test_pre_commit_gate.py
 コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定を守る。
 
 **何を守るか**: 2026-09-19 から、コミットの変更がすべて `gate-scope.json` の
-`commit_islands` の 1 つ（例: Tracer）に収まるときだけ、フルスイートの代わりに
-その島のテストを回す（Tracer のコミットが毎回 9 分のフルを払っていた）。
+`commit_islands` の 1 つ（例: Field）に収まるときだけ、フルスイートの代わりに
+その島のテストを回す（Field のコミットが毎回 9 分のフルを払っていた）。
 ⇒ **このテストが守るのは「速さ」ではなく「絞りすぎないこと」**:
 
 1. 島の外が 1 つでも混じったらフル（`islandFor` が null）。
@@ -54,8 +54,8 @@ def _git(repo, *args):
 _SCOPE_FIXTURE = {
     "always_tests": "tests/test_repo_hygiene.py",
     "commit_islands": [
-        {"name": "tracer", "prefixes": ["apps/tracer/", "tests/test_tracer_"],
-         "tests": ["tests/test_tracer_*", "tests/test_layers.py"]},
+        {"name": "field", "prefixes": ["apps/field/", "tests/test_field_"],
+         "tests": ["tests/test_field_*", "tests/test_layers.py"]},
     ],
 }
 
@@ -68,34 +68,34 @@ def _island(paths, tmp_path) -> str:
 
 class TestIslandFor:
     def test_all_inside_is_island(self, tmp_path):
-        assert _island(["apps/tracer/cli.py", "tests/test_tracer_session.py"], tmp_path) == "tracer"
+        assert _island(["apps/field/cli.py", "tests/test_field_session.py"], tmp_path) == "field"
 
     def test_one_outside_is_full(self, tmp_path):
-        assert _island(["apps/tracer/cli.py", "core/simulation.py"], tmp_path) == "FULL"
+        assert _island(["apps/field/cli.py", "core/simulation.py"], tmp_path) == "FULL"
 
     def test_empty_is_full(self, tmp_path):
         assert _island([], tmp_path) == "FULL"
 
     def test_prefix_is_not_substring(self, tmp_path):
-        assert _island(["apps/tracerx/cli.py"], tmp_path) == "FULL"
+        assert _island(["apps/fieldx/cli.py"], tmp_path) == "FULL"
 
 
 class TestCommitPaths:
     def test_rename_counts_both_sides(self, tmp_path):
         repo = tmp_path / "r"
         (repo / "core").mkdir(parents=True)
-        (repo / "apps" / "tracer").mkdir(parents=True)
+        (repo / "apps" / "field").mkdir(parents=True)
         _git(repo, "init", "-q")
         _git(repo, "config", "user.email", "t@example.com")
         _git(repo, "config", "user.name", "t")
         (repo / "core" / "x.py").write_text("x = 1\n", encoding="utf-8")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-qm", "init")
-        _git(repo, "mv", "core/x.py", "apps/tracer/x.py")
+        _git(repo, "mv", "core/x.py", "apps/field/x.py")
         out = _node("process.stdout.write(JSON.stringify(commitPaths(process.cwd()).sort()));\n",
                     str(repo))
         paths = json.loads(out)
-        assert "core/x.py" in paths and "apps/tracer/x.py" in paths
+        assert "core/x.py" in paths and "apps/field/x.py" in paths
         assert _island(paths, tmp_path) == "FULL"
 
 
@@ -103,16 +103,17 @@ class TestIslandTargets:
     def test_glob_expands_and_always_tests_added(self, tmp_path):
         tests = tmp_path / "tests"
         tests.mkdir()
-        for n in ["test_tracer_a.py", "test_tracer_b.py", "test_layers.py",
-                  "test_repo_hygiene.py", "test_other.py", "test_tracer_c.txt"]:
+        for n in ["test_field_a.py", "test_field_b.py", "test_layers.py",
+                  "test_repo_hygiene.py", "test_other.py", "test_field_c.txt"]:
             (tests / n).write_text("", encoding="utf-8")
         out = _node(
             f"const s = {json.dumps(_SCOPE_FIXTURE)};\n"
             "process.stdout.write(JSON.stringify(islandTargets(process.cwd(), s, s.commit_islands[0])));\n",
             str(tmp_path))
+        # islandTargets は最後に sort() するので、並びは常に辞書順
         assert json.loads(out) == [
+            "tests/test_field_a.py", "tests/test_field_b.py",
             "tests/test_layers.py", "tests/test_repo_hygiene.py",
-            "tests/test_tracer_a.py", "tests/test_tracer_b.py",
         ]
 
 

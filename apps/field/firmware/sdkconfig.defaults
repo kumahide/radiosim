@@ -1,0 +1,22 @@
+# RadioSim Field のファームの既定。`idf.py set-target esp32c6` の後に効く。
+
+CONFIG_IDF_TARGET="esp32c6"
+
+# 送信間隔（既定 100 ms）を ms 単位で刻むため。
+CONFIG_FREERTOS_HZ=1000
+
+# USB（USB Serial/JTAG）は測定データ専用にする。ログは UART0 のピンへ出す＝
+# ログの 1 行がフレームの途中に割り込むと、そのフレームは CRC で弾かれ、
+# PC 側では「電波で届かなかった」と区別の付かない欠けになる。
+CONFIG_ESP_CONSOLE_UART_DEFAULT=y
+CONFIG_ESP_CONSOLE_SECONDARY_NONE=y
+
+# 起動直後の出力も減らす（ROM の起動表示は消せないが、PC 側は読み飛ばす）。
+CONFIG_BOOTLOADER_LOG_LEVEL_WARN=y
+CONFIG_LOG_DEFAULT_LEVEL_WARN=y
+
+# XIAO ESP32C6 のフラッシュは 4 MB。既定の 2 MB のままだと、起動のたびに
+# 「実際のフラッシュの方が大きい」という警告が出る。起動の早い段階のログは
+# コンソールの設定に関わらず USB にも出るので（実機で確認・2026-09-19）、
+# 警告そのものを出さないようにする。
+CONFIG_ESPTOOLPY_FLASHSIZE_4MB=y

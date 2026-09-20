@@ -9,13 +9,13 @@ nuitka_out_onefile/
 nuitka_build_log.txt
 nuitka_build_onefile_log.txt
 
-# Tracer のファーム（ESP-IDF）が作るもの。build/ は上の行で除外済み。
+# Field のファーム（ESP-IDF）が作るもの。build/ は上の行で除外済み。
 # 追跡するのは sdkconfig.defaults だけ＝sdkconfig は menuconfig で書き換わる
 # 手元の状態で、コミットすると焼いた版と既定が混ざる。
-apps/tracer/firmware/sdkconfig
-apps/tracer/firmware/sdkconfig.old
-apps/tracer/firmware/managed_components/
-apps/tracer/firmware/dependencies.lock
+apps/field/firmware/sdkconfig
+apps/field/firmware/sdkconfig.old
+apps/field/firmware/managed_components/
+apps/field/firmware/dependencies.lock
 
 # 生成されるアイコン
 icon.ico

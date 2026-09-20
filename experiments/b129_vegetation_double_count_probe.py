@@ -346,7 +346,7 @@ def main() -> None:
     _report_combination(recs, links)
 
     print("\n注意: この探針は**モデルの中で 2 項が何を見ているか**を測る。"
-          "真値との照合は持っていない（3.4 / Tracer 待ち）。")
+          "真値との照合は持っていない（3.4 / Field 待ち）。")
 
 
 if __name__ == "__main__":

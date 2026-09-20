@@ -255,7 +255,7 @@ _APPS_ALLOWED_LAYERS = {"core"}
 
 
 def _app_modules() -> dict[str, Path]:
-    """`apps.tracer.session` → そのパス（apps 配下の全 .py）。"""
+    """`apps.field.session` → そのパス（apps 配下の全 .py）。"""
     apps_dir = ROOT / "apps"
     if not apps_dir.is_dir():
         return {}

@@ -131,7 +131,7 @@ class PathResult:
 # CSV I/O
 # ============================================================
 # 列の契約（列名・順序・必須/任意）は core/batch_csv_schema.py が単一ソース
-# （I-159＝RadioSim Tracer が apps 越しに report/ を import せず契約だけ読めるように）。
+# （I-159＝RadioSim Field が apps 越しに report/ を import せず契約だけ読めるように）。
 # ドキュメント整合テストもそちらを単一ソースに README の CSV 節を照合する。
 
 def parse_csv(csv_path: str) -> list[PathRow]:

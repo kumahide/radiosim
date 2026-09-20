@@ -8,9 +8,9 @@ core/batch_csv_schema.py
 こちらはアプリ自身が読み戻す**交換フォーマット**で、我々が読む側の約束。
 
 移す前は `report/batch.py` がこの契約と `PathRow` の解析・実行を1ファイルに
-持っていた。RadioSim Tracer（別アプリ・`apps/` 側）はこの列名・順序だけを
+持っていた。RadioSim Field（別アプリ・`apps/` 側）はこの列名・順序だけを
 必要とし、`PathRow` の解析やバッチ実行の都合までは要らない＝
-「apps どうしは import しない」規則の下で Tracer が本体側の `report/` を
+「apps どうしは import しない」規則の下で Field が本体側の `report/` を
 直接 import せずに済むよう、契約だけをここへ切り出す（I-159）。
 
 `report/batch.py` はここから読み、`README` の CSV 節を照合するドキュメント

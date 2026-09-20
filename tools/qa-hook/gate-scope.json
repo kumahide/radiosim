@@ -18,16 +18,16 @@
   "_comment_commit_islands": "pre-commit-gate.mjs（git commit の直前）だけが読む。コミットに入る変更（作業ツリー対 HEAD・未追跡とリネーム元も含む）がすべて 1 つの島の prefixes に収まるなら、フルスイートの代わりにその島の tests（`*` は tests/ 直下のファイル名の前方一致）＋ always_tests を回す。1 つでも島の外に出たら従来どおりフル。git push は常にフル（手元を出る前の最後の砦）。tests には、リポジトリ全体を走査するテスト（apps/ や全 .py・全追跡ファイルを歩くもの）を必ず入れる＝島の中の変更でも落とし得るのはそれらだけ。",
   "commit_islands": [
     {
-      "name": "tracer",
+      "name": "field",
       "prefixes": [
-        "apps/tracer/",
-        "tests/test_tracer_",
-        "requirements-tracer.txt",
+        "apps/field/",
+        "tests/test_field_",
+        "requirements-field.txt",
         "docs/developer_ja.md",
         "docs/developer_en.md"
       ],
       "tests": [
-        "tests/test_tracer_*",
+        "tests/test_field_*",
         "tests/test_layers.py",
         "tests/test_docs_consistency.py",
         "tests/test_smoke.py",

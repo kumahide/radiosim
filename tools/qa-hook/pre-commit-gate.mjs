@@ -20,9 +20,9 @@
 // commit/push, never become the reason nothing can run at all).
 //
 // COMMIT ISLANDS (2026-09-19): a `git commit` whose changes all fall inside one
-// "island" of gate-scope.json (e.g. the Tracer app, which nothing in the main
+// "island" of gate-scope.json (e.g. the Field app, which nothing in the main
 // app imports) runs that island's tests + the repo-wide scanners instead of
-// the whole suite — Tracer commits were paying ~9 min each for tests their
+// the whole suite — Field commits were paying ~9 min each for tests their
 // changes cannot reach. `git push` always stays FULL: it is still the proof
 // that the whole tree is green before anything leaves the machine.
 
