@@ -8,7 +8,7 @@ tests/test_field_session.py
   - 位置・姿勢は「セッション定数」と「サンプルごとの時系列」の両方を許すこと
   - 生値を捨てないこと（換算は書き出すときだけ）
   - 打ち切りのしきい値が刻印に入っていること
-  - 時間平均（窓の件数）と空間平均（置き場所の番号）が別の場所に在ること
+  - 時間平均（ウィンドウの件数）と空間平均（置き場所の番号）が別の場所に在ること
   - CLAS の高さは Fix 解のときだけ通すこと
 
 ⚠️ **実行時の制約はコメントではなくテストで表す**（コメントは守らないので）。
@@ -155,7 +155,7 @@ def test_position_fixes_are_optional(tmp_path):
 def test_tx_must_carry_its_measured_output():
     """TX の校正値に SMA 端の実測出力が無ければ通さないこと（B-258）。
 
-    無いと本体は画面の送信電力（設定値）で予測し、実出力との差が全窓に同じ向きで乗る。
+    無いと本体は画面の送信電力（設定値）で予測し、実出力との差が全ウィンドウに同じ向きで乗る。
     """
     bare = S.Calibration(
         measured_on="2026-09-19", offset_db=-96.0, scale_db_per_count=0.5,
@@ -262,7 +262,7 @@ def test_header_is_written_atomically(tmp_path):
 def test_position_may_be_a_timeseries_instead_of_a_constant(tmp_path):
     """端点の位置は `None`（＝サンプルごとの時系列で決まる構成）も許すこと。
 
-    🔑 固定 2 点だけを前提にすると、機体で測る段でデータモデルごと書き直しになる。
+    🔑 固定 2 点だけを前提にすると、機体で測るステージでデータモデルごと書き直しになる。
     """
     header = _header(tx=_endpoint("tx", position=None))
     directory = S.create_session(tmp_path, header)
@@ -345,7 +345,7 @@ def test_header_vocabulary_is_closed(tmp_path, kwargs, expected):
 def test_censoring_threshold_must_be_a_receive_rate(tmp_path, rate):
     """しきい値は 0 より大きく 1 以下の受信率。
 
-    0 は「全部欠けた窓だけを打ち切りにする」＝一部だけ届いた窓の**強いパケットだけが
+    0 は「全部欠けたウィンドウだけを打ち切りにする」＝一部だけ届いたウィンドウの**強いパケットだけが
     残った平均**が実測として本体に入る（楽観側へ偏る）。
     """
     provenance = S.Provenance(
@@ -483,7 +483,7 @@ def test_a_well_formed_sequence_of_operations_passes():
     ([], "記録がありません"),
 ])
 def test_a_broken_sequence_of_operations_is_refused(events, message):
-    """崩れた並びから窓を作らないこと（区切りを決める材料なので）。
+    """崩れた並びからウィンドウを作らないこと（区切りを決める材料なので）。
 
     とくに**置き場所の番号の使い回し**＝同じ番号が 2 か所を指すと、後からどちらの
     場所の値か分からない。

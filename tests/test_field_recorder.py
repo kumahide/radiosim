@@ -163,8 +163,8 @@ def test_the_rx_radio_in_the_template_is_only_the_sensitivity():
 def test_the_template_cannot_carry_the_tx_radio():
     """🔑 TX の無線設定を雛形に書かせないこと（§6.6 の提案②）。
 
-    書けると、実機と食い違った送信間隔が黙ってヘッダに入り、窓の期待パケット数が
-    別の値になる（送信間隔が実は 200 ms なら、全窓が受信率 50%＝打ち切りに見える）。
+    書けると、実機と食い違った送信間隔が黙ってヘッダに入り、ウィンドウの期待パケット数が
+    別の値になる（送信間隔が実は 200 ms なら、全ウィンドウが受信率 50%＝打ち切りに見える）。
     """
     template = _filled_template()
     template["tx"]["radio"] = {"tx_interval_ms": 100}
@@ -349,7 +349,7 @@ def test_a_clock_that_goes_back_is_refused(tmp_path, dialect):
 
 def test_the_recording_waits_for_the_tx_config_too(tmp_path, dialect):
     """RX の設定だけではセッションを作らないこと＝TX の設定が分からないまま測ると、
-    窓の分母（送信間隔）が雛形頼みに戻る。他の TX から中継された設定では始めない。"""
+    ウィンドウの分母（送信間隔）が雛形頼みに戻る。他の TX から中継された設定では始めない。"""
     rec = _recorder(tmp_path, dialect)
     rec.feed(_config_frame(dialect), _t(0))              # RX の設定だけ
     assert rec.state == "waiting" and rec.waiting_for == ["tx"]
@@ -378,7 +378,7 @@ def test_a_tx_config_change_ends_the_session(tmp_path, dialect):
 def test_a_sample_from_a_changed_tx_ends_the_session(tmp_path, dialect):
     """TX の設定番号が変わったサンプルが、中継された設定より**先に**届いても終えること。
 
-    ⚠️ そのサンプルは書かない＝ヘッダの TX の設定（送信間隔）で窓を刻むと、分母が
+    ⚠️ そのサンプルは書かない＝ヘッダの TX の設定（送信間隔）でウィンドウを刻むと、分母が
     別物になる。
     """
     rec = _recorder(tmp_path, dialect)

@@ -60,7 +60,7 @@ def test_finer_level_never_gives_fewer_points(km):
 def test_the_level_actually_delivers_its_grid(km, level):
     """**その段階の画素 1 つにつき 2 点**が置かれている（＝天井に潰されていない）。
 
-    🔴 **これが I-069 の芯**＝旧上限 2000 では、コーパス 26 本のうち 12 本で「高」が
+    🔴 **これが I-069 のコア**＝旧上限 2000 では、コーパス 26 本のうち 12 本で「高」が
     上限に張り付き、6 本は「高」と「中」が**同じ結果**、48km の 1 本は 3 段階すべてが
     同じ結果だった（2026-08-25 実測）。**利用者が選んだ段階が答えに出ない**なら、
     段階を選ばせる意味そのものが無い。⇒ 実務の距離帯では必ず届くことを固定する。
@@ -187,7 +187,7 @@ def test_no_window_resolves_the_sample_count_by_itself():
 
     🔑 見せる側が自前で解くと、**画面に出た N と実際に使われた N がずれる余地**が
     できる。しかもズレは誰にも見えない（両方それらしい数字に見える）。
-    ⇒ 面を列挙せず `views/` を走査する向きにしてある＝次に足した 1 窓でも効く。
+    ⇒ 面を列挙せず `views/` を走査する向きにしてある＝次に足した 1 ウィンドウでも効く。
     """
     views = os.path.join(ROOT, "views")
     offenders = [
@@ -226,7 +226,7 @@ def test_the_readout_and_the_run_agree(monkeypatch):
 def test_the_sample_count_is_not_an_input_any_more():
     """設定にも値域表にも `samples` が無いこと（入力は段階だけ）。
 
-    ⚠️ 戻すなら**この検査ごと**戻すこと＝「入口は 1 つ」を崩すと、窓によって
+    ⚠️ 戻すなら**この検査ごと**戻すこと＝「入口は 1 つ」を崩すと、ウィンドウによって
     意味の違う入力が同居する（I-069 の起点そのもの）。
     """
     assert "samples" not in config.DEFAULT_CONFIG
@@ -331,11 +331,11 @@ def test_a_fixed_n_run_round_trips_only_for_direct_callers(tmp_path):
 
 
 def test_the_band_does_not_invent_a_level_it_will_not_use():
-    """帯は、段階を持たない基底に**既定を差し込まない**こと（B-140）。
+    """バーは、段階を持たない基底に**既定を差し込まない**こと（B-140）。
 
-    🔴 中継経路は帯を表示したうえで**基底をそのまま実行へ渡す**
+    🔴 中継経路はバーを表示したうえで**基底をそのまま実行へ渡す**
     （`run_multihop(path, self._base_params)`）ので、表示だけ「中」にすると
-    **帯の申告と実行がずれる**。⇒ 名乗れないものは名乗らない（`—`）。
+    **バーの申告と実行がずれる**。⇒ 名乗れないものは名乗らない（`—`）。
     """
     shown = frozen_common.display_value("resolution", "")
     assert shown == frozen_common.NOT_APPLICABLE
@@ -441,7 +441,7 @@ def test_no_pixel_of_the_dem_is_ever_skipped(bearing, level, lat):
 
 @pytest.mark.parametrize("bearing", [12.5, 45.0, 67.5, 200.0])
 def test_each_pixel_is_sampled_at_both_edges_of_its_chord(bearing):
-    """各画素の**弦の両端**に標本が置かれていること（B-150 の芯）。
+    """各画素の**弦の両端**に標本が置かれていること（B-150 のコア）。
 
     🔑 **「1 画素に 1 点」では足りない**＝DEM は画素の中で一定の階段状の場で、
     Bullington の接線を決めるのは**棚の縁**。実測（`hiroshima_short_grazing`）＝

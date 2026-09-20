@@ -10,7 +10,7 @@ sensitivity.py
 （`models.py` は残り行数が少なく、かつこの層は「計算の組み合わせ」であって
 「新しい物理」ではないので models.py には足さない）。
 
-軸（ロードマップ 3.4 段4 で確定）:
+軸（ロードマップ 3.4 ステージ4 で確定）:
   植生高±／環境区分1段／回折 single⇄bullington／
   回折+植生の合成（B-132・和⇄大きいほう）／解像度（B-128・要 DEM 再取得）／
   地面反射の包絡線（`core/ground_reflection.py`）。
@@ -18,7 +18,7 @@ sensitivity.py
   ゼロで、帳票が「変化なし」と誤った開示を出していた）。多ホップの argmin も
   同じ摂動を使うため注記ごと止めている（`report_multihop.py`）。設計し直しは 3.5。
 
-この段（段4）は**計算のみ**。帳票への表示配線は段6。
+ステージ4 は**計算のみ**。帳票への表示配線はステージ6。
 """
 import dataclasses
 from dataclasses import dataclass
@@ -104,7 +104,7 @@ def rebuild_terrain(
 ) -> models.TerrainProfile:
     """`terrain` と同じ緯度経度・曲率・標本位置のまま、標高だけ差し替えて作り直す。
 
-    🔑 **公開関数にした理由（段6）**＝多ホップの argmin（`report_multihop.py`）が
+    🔑 **公開関数にした理由（ステージ6）**＝多ホップの argmin（`report_multihop.py`）が
     「全ホップへ同じ DEM オフセットを一括適用する」ために同じ再構築を要る。
     private のままだと帳票層が同じロジックを書き写すことになる（二重管理）。
     """
@@ -119,7 +119,7 @@ def rebuild_terrain(
 def shift_dem(terrain: models.TerrainProfile, delta_m: float) -> models.TerrainProfile:
     """`terrain` の標高を一律 `delta_m` だけ底上げ/沈める（緯度経度を使わない軽量版）。
 
-    🔑 **多ホップの argmin（段6・`report_multihop.py`）専用**＝`rebuild_terrain` は
+    🔑 **多ホップの argmin（ステージ6・`report_multihop.py`）専用**＝`rebuild_terrain` は
     緯度経度から水平距離・曲率補正を作り直すが、DEM の系統誤差は**曲率と無関係に
     標高だけ動く**ので、既存の曲率補正量（`elevs_with_curve − raw_elevs`、`nan` は
     0 扱い）を保ったまま両方へ同じ量を足すだけでよい。`report.batch.PathResult`

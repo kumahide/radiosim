@@ -422,7 +422,7 @@ class TestTopology:
         `overall_margin` は何事もなかったように min を返してしまう。min は
         鎖（直列）の意味論で、星（独立した N 本）では**経路上の分布**という
         主役の情報が消える＝静かに誤る。制約をコメントに書くだけでは守られない
-        （この布石自体が散文だったせいで 5a では打たれなかった）ので門にする。
+        （この布石自体が散文だったせいで 5a では打たれなかった）のでゲートにする。
         """
         run = mh.MultiHopRun(path=_path(3), hops=[])
         assert run.ok is False                      # 鎖は従来どおり答える
@@ -472,7 +472,7 @@ def test_the_two_declarations_are_not_the_same_thing():
 def test_unsupported_topologies_are_refused_by_every_layer(topology, tmp_path):
     """**読む・書く・実行するの 3 層が、同じ宣言を見て同じ答えを返す。**
 
-    層がばらばらだと 2.6 の壊れ方に戻る＝読めるのに実行できない（窓が値を
+    層がばらばらだと 2.6 の壊れ方に戻る＝読めるのに実行できない（ウィンドウが値を
     落として鎖として計算する）／書けるのに読めない（保存成功の顔でデータが
     失われる）。
     """
@@ -539,7 +539,7 @@ def test_relay_mode_is_regenerative_only():
 # 合成シート（内訳＋全体判定）
 # ============================================================
 class TestRouteSheet:
-    """**min だけを出さない**ことがこの節の主題（②）。"""
+    """**min だけを出さない**ことがこのセクションの主題（②）。"""
 
     def _run_with_report(self, base, tmp_path, monkeypatch):
         monkeypatch.setattr("report.report_path.save_path_visuals", lambda *a, **k: None)
@@ -629,7 +629,7 @@ class TestRouteSheet:
     def test_sheet_shows_dem_fail_rate_per_hop(self, base, tmp_path, monkeypatch):
         """DEM 取得の失敗率が区間の判定セルに ⚠ で出ること（I-143 決定 2）。
 
-        3.2 段7（B-025 ③）で列に出していたものを、22→9 列化（I-143）の際に
+        3.2 ステージ7（B-025 ③）で列に出していたものを、22→9 列化（I-143）の際に
         **判定セルの ⚠ ＋台帳下の 1 行**へ移した。`hops.csv` の `dem_fail_pct`
         （区間ごとに terrain が別）と同じ単一ソース（`pr.terrain.fail_pct`）を
         HTML の台帳側でも読んでいることの配線検査。
@@ -923,7 +923,7 @@ class TestMultiHopWindow:
     def test_renaming_a_point_updates_the_hop_headings(self, default_params_dict):
         """地点名を変えたら、区間表の見出しがその場で追従すること（B-073）。
 
-        ⚠️ **同じ窓の中で 2 つの表が別の名前を名乗る**のが害＝数字は正しいので、
+        ⚠️ **同じウィンドウの中で 2 つの表が別の名前を名乗る**のが害＝数字は正しいので、
         気づかないまま「どの区間の話か」を取り違える。地点を足す/消すと作り直されて
         直るので、**直っているように見える瞬間がある**のが厄介だった。
         """
@@ -1078,7 +1078,7 @@ class TestMultiHopWindow:
     # ランチャーから地図までを通したところをゲートにする。
 
     def test_from_map_button_reaches_the_launcher(self, monkeypatch):
-        """「地図から選択」がランチャー経由で地図へ届き、宛先がこの窓になること。"""
+        """「地図から選択」がランチャー経由で地図へ届き、宛先がこのウィンドウになること。"""
         from conftest import make_themed_root
         from views import dialogs
         from views.launcher import SimLauncher
@@ -1141,9 +1141,9 @@ class TestMultiHopWindow:
             root.destroy()
 
     def test_map_layer_is_a_copy_of_the_waypoint_list(self, default_params_dict):
-        """地図の中継点は**窓の地点列の写し**であること（地図は源泉を持たない）。
+        """地図の中継点は**ウィンドウの地点列の写し**であること（地図は源泉を持たない）。
 
-        以前はクリックのたびにマーカーを足すだけで消し方が無く、**窓で地点を
+        以前はクリックのたびにマーカーを足すだけで消し方が無く、**ウィンドウで地点を
         削除しても地図にピンが残り続けた**（2026-08-01 実機確認）。バッチ →
         地図（`existing_paths`）と同じ「毎回引き直す」形に揃える。
         """
@@ -1178,7 +1178,7 @@ class TestMultiHopWindow:
     # --------------------------------------------------------
     # 地図から**置き直す**（I-098）
     # --------------------------------------------------------
-    # 地図が持っているのは「写しの並びで何番目か」だけ。窓の行番号ではないので、
+    # 地図が持っているのは「写しの並びで何番目か」だけ。ウィンドウの行番号ではないので、
     # 読めない座標の行があると 2 つはずれる。**ずれたまま書き戻すと、黙って別の
     # 地点が動く**（B-068 / B-102 と同じ型）ので、位置の解き方と照合をここで固定する。
 

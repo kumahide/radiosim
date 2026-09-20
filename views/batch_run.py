@@ -1,7 +1,7 @@
 """
 views/batch_run.py
 ==================
-バッチ窓の**実行と進捗**（`BatchBuilderWindow` の Mixin）。
+バッチウィンドウの**実行と進捗**（`BatchBuilderWindow` の Mixin）。
 
 実行そのものは `batch.run_batch()` に委譲し、ここはワーカースレッドからの
 イベントを画面へ流す側だけを持つ（描画は必ずメインスレッド＝`ProgressPump`）。
@@ -71,7 +71,7 @@ class _RunMixin(_HostBase):
     # 実行
     # ----------------------------------------------------------
     def _resolution_key(self) -> str:
-        """凍結帯に出ている解像度の**表示ラベル**を内部キーへ戻す（I-069）。"""
+        """凍結バーに出ている解像度の**表示ラベル**を内部キーへ戻す（I-069）。"""
         return frozen_common.resolution_key(self._common_vars["resolution"].get())
 
     def _read_base_params(self) -> sim.SimParams:
@@ -99,7 +99,7 @@ class _RunMixin(_HostBase):
                 self._dem_source_var.get(), self._dem_source_var.get()),
         }
         # **値域の検証はここが関門**（B-018）。共通設定は readonly だが、値はランチャー
-        # の生の入力（窓を開いたときのスナップショット／↻更新）で、ランチャー自身は
+        # の生の入力（ウィンドウを開いたときのスナップショット／↻更新）で、ランチャー自身は
         # 実行時にしか検証しない＝単一実行を一度も走らせなければ無検証のまま届く。
         # SimParams は float 化しかしないので、freq=0（ZeroDivisionError）や
         # inf/nan が計算まで通ってしまう。⚠️ **点数の暴走はもう検証の対象ではない**
@@ -238,7 +238,7 @@ class _RunMixin(_HostBase):
         # 失敗した経路もここで ERR になる**（以前は計算が通った時点で OK に数え、
         # 描画が全滅しても `⚠ 0 ERR` で完走した＝B-037）。
         status_text = pr.status
-        # **結果はその結果を生んだ行に返す**（I-041）＝帯は合計を持たない（I-078）。
+        # **結果はその結果を生んだ行に返す**（I-041）＝バーは合計を持たない（I-078）。
         self._set_row_verdict(pr.row.path_id, status_text)
         self._prog_label.config(text=f"   {pr.row.path_id}  →  {status_text}")
         self._prog_count_label.config(text=f"{cur} / {tot}  ({pct}%)")
@@ -254,10 +254,10 @@ class _RunMixin(_HostBase):
         self._run_btn.config(state="normal")
         # 完了時はバーを 0 に戻す（シングル側 _on_fetch_complete と挙動を揃える）。
         # 進捗カウントもバーに合わせて消す。**結果は行の判定列に残る**（I-078 で
-        # 帯の OK/NG/ERR 集計を外した＝同じ事実を 2 か所で読ませない）。
+        # バーの OK/NG/ERR 集計を外した＝同じ事実を 2 か所で読ませない）。
         self._prog_bar.config(value=0)
         # ⚠️ ここは**日本語表示でも英語のまま出ていた**（B-066・2.7RC1 実機確認）。
-        # 進捗帯に出る自然言語はこの 1 行だけが i18n を迂回していた＝OK/NG/ERR は
+        # 進捗バーに出る自然言語はこの 1 行だけが i18n を迂回していた＝OK/NG/ERR は
         # 両言語共通の定訳（docs/glossary.md）、`▶ path01` は記号と ID なので対象外。
         self._prog_label.config(
             text=i18n.t("batch_done").format(dir=os.path.basename(batch_dir)))

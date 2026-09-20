@@ -6,7 +6,7 @@
   **ファームと PC 側の両方がここから生成する**＝メッセージの形の単一の出所。
 
   なぜ NAMED_VALUE_FLOAT で済ませないか（不可逆な設計判断）:
-    1 メッセージに 1 つの float だと、受信レベル・雑音・周波数・TX 電力・積分窓が
+    1 メッセージに 1 つの float だと、受信レベル・雑音・周波数・TX 電力・積分ウィンドウが
     ばらばらに届いて **1 サンプルの原子性が無い**。ここでは 1 サンプルを 1 メッセージに
     する。受信機自身のタイムスタンプとシーケンス番号を必ず載せ、欠測（＝打ち切り）を
     後から数えられるようにする。
@@ -42,7 +42,7 @@
     <enum name="RADIOSIM_FIELD_DETECTOR">
       <description>
         受信レベルの取り方。速いフェージングを拾ったのか局所平均なのかを後から
-        判別するために記録する（空間平均の窓設計に直結する）。
+        判別するために記録する（空間平均のウィンドウ設計に直結する）。
       </description>
       <entry value="0" name="RADIOSIM_FIELD_DETECTOR_UNKNOWN">
         <description>不明（取り込んだログに記録が無い場合のみ）。</description>
@@ -125,7 +125,7 @@
         **TX は同じものを 1 秒ごとに空中へも送り、RX はそれを UART へそのまま中継する**
         （role が tx のもの）＝TX の UART は遠くにあって PC に届かないので、TX の実際の
         設定（送信間隔・電力・チャネル）を PC が知る唯一の道。雛形に書いた値と実機が
-        食い違うと、窓の期待パケット数や送信電力が黙って別の値になる。
+        食い違うと、ウィンドウの期待パケット数や送信電力が黙って別の値になる。
         ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
       </description>
       <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
@@ -145,7 +145,7 @@
       <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（既定 100 ms）。</field>
       <field type="uint8_t" name="detector" enum="RADIOSIM_FIELD_DETECTOR">検波方式。</field>
       <field type="uint32_t" name="integration_window_us" units="us">
-        積分窓の長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが
+        積分ウィンドウの長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが
         知らないとき）。数字を作って刻むと、刻印が事実でなくなる。
       </field>
       <field type="uint16_t" name="integration_samples">

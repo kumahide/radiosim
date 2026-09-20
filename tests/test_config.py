@@ -689,7 +689,7 @@ class TestInstallerCodeIsReachable:
         iss = self.ISS.read_text(encoding="utf-8-sig")
         code = iss.split("[Code]", 1)[1] if "[Code]" in iss else ""
         defs = re.findall(r"^\s*(?:procedure|function)\s+(\w+)", code, re.MULTILINE)
-        assert defs, "[Code] にルーチンが 1 つも見つからない（節の切り出しが壊れた？）"
+        assert defs, "[Code] にルーチンが 1 つも見つからない（セクションの切り出しが壊れた？）"
         for name in defs:
             if name in _INNO_EVENT_FUNCTIONS:
                 continue

@@ -1,8 +1,8 @@
 """
 apps/field/bench_analysis.py
 =============================
-**段0 の判定**（Field phase 1・増分6）。`bench.py` が残した生ログと段の記録だけから
-数え直す＝段0b でアッテネータ・ケーブル・TX の出力の実測値（`ref`）が分かったら、
+**ステージ0 の判定**（Field phase 1・増分6）。`bench.py` が残した生ログとステップの記録だけから
+数え直す＝ステージ0b でアッテネータ・ケーブル・TX の出力の実測値（`ref`）が分かったら、
 **測り直さずに**判定と校正をやり直せる。
 
     python -m apps.field.cli bench analyze <机上試験のフォルダ> [--ref ref.json]
@@ -10,7 +10,7 @@ apps/field/bench_analysis.py
 
 **1 対で測って分かること**（2026-09-19 に整理）
   A→B の読み ＝ R_B(P_A − L)、B→A の読み ＝ R_A(P_B − L)
-  - ref が無い（段0a だけ）＝R の**形**（傾き・線形性・ディザ・受信率の落ち方）と
+  - ref が無い（ステージ0a だけ）＝R の**形**（傾き・線形性・ディザ・受信率の落ち方）と
     個体差は分かるが、**絶対値は P と R の和の形でしか出ず、2 つに分けられない**。
     入力は「設定した送信電力 − 公称の損失」で書く（公称と明記する）。
   - ref に P_A・P_B（パワー計）がある＝R_A・R_B の絶対値が決まる → 校正ファイル。
@@ -38,20 +38,20 @@ from apps.field.mavlink.reader import FrameStream, ReadStats, mac
 from apps.field.session import SessionError, parse_utc, read_raw
 
 # 目安（決めるのは作業者）。
-FULL_RATE = 0.99             # 線形性・ディザを見る段＝ほぼ全部届いた段
+FULL_RATE = 0.99             # 線形性・ディザを見るステップ＝ほぼ全部届いたステップ
 LINEAR_TOL_DB = 0.5          # 当てはめの端点をこれ以上外れたら、線形域の外とみなして外す
 LINEAR_OK_DB = 1.0           # 線形域の中の最大の外れの目安（§7 の絶対確度 ±1 dB）
 CLOSURE_OK_DB = 1.0          # 閉合チェックの目安
 RATE_CROSSINGS = (0.9, 0.5)  # 受信率がこれを切る入力を出す（感度・打ち切りの材料）
 MIN_FIT_POINTS = 4
-# 受信サンプルを段に対応づけるときの時刻の余裕（TX の控えと RX のサンプルは別の USB）。
+# 受信サンプルをステップに対応づけるときの時刻の余裕（TX の控えと RX のサンプルは別の USB）。
 _MATCH_SLACK_S = 1.0
 
 REPORT_JSON = "report.json"
 REPORT_MD = "report.md"
 
 
-# --- 生ログから段ごとの数へ ---------------------------------------------------
+# --- 生ログからステップごとの数へ ---------------------------------------------------
 
 
 @dataclass
@@ -116,7 +116,7 @@ class StepStats:
 
 
 def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
-    """段の数え。**送った番号は TX の控えから**（USB で控えが欠けても幅で数える）、
+    """ステップの数え。**送った番号は TX の控えから**（USB で控えが欠けても幅で数える）、
     受けたものは RX から（送信機・両方の設定番号・番号の幅・時刻で絞る）。"""
     start, end = parse_utc(row["start_utc"]), parse_utc(row["end_utc"])
     seqs = [f["seq"] for when, f in tx.echoes
@@ -129,7 +129,7 @@ def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
         low, high = min(seqs), max(seqs)
         sent = high - low + 1
         # 時刻は**番号の取り違えを防ぐ枠**でしかない（対応づけは番号と設定番号）。
-        # ⚠️ 下限を段の頭ちょうどにしない＝TX と RX は別の USB で届くので、段の頭の
+        # ⚠️ 下限をステップの頭ちょうどにしない＝TX と RX は別の USB で届くので、ステップの頭の
         # 番号の受信が控えより先に PC に着き、1 件だけ「届かなかった」ことになる。
         early = start.timestamp() - _MATCH_SLACK_S
         late = end.timestamp() + TAIL_S + _MATCH_SLACK_S
@@ -249,8 +249,8 @@ def fit_linear(points: list[tuple[float, float]]) -> Fit | None:
 
 
 def rate_crossing(points: list[tuple[float, float]], threshold: float) -> float | None:
-    """受信率が threshold を**上から切る**入力 dBm（隣の段どうしの直線補間）。
-    入力の高い側から見て、最初に threshold を下回った段と、その 1 つ上の段の間。"""
+    """受信率が threshold を**上から切る**入力 dBm（隣のステップどうしの直線補間）。
+    入力の高い側から見て、最初に threshold を下回ったステップと、その 1 つ上のステップの間。"""
     pts = sorted(points, key=lambda p: -p[0])       # 入力の高い順
     for (x1, r1), (x2, r2) in zip(pts, pts[1:]):
         if r1 >= threshold > r2:
@@ -478,7 +478,7 @@ def device_calibrations(report: dict[str, Any]) -> list[DeviceCalibration]:
         fit = fits.get(unit)
         rx = None
         if fit is not None and direction is not None and direction["input"] == "absolute":
-            # 入力が absolute＝レベル掃引の全段の TX 設定に実測の行がある。
+            # 入力が absolute＝レベル掃引の全ステップの TX 設定に実測の行がある。
             level_keys = sorted({(units[partner].lower(), s.power_cdbm, s.channel)
                                  for s in steps if s.kind == "level" and s.tx_unit == partner})
             meter = levels.tx_output[level_keys[0]]
@@ -564,7 +564,7 @@ def _mark(ok: bool | None) -> str:
 def render_markdown(report: dict[str, Any]) -> str:
     L: list[str] = []
     u = report["units"]
-    L.append(f"# 段0 の判定（{report['bench']}）\n")
+    L.append(f"# ステージ0 の判定（{report['bench']}）\n")
     L.append(f"- A = `{u['a']}`／B = `{u['b']}`／ファーム `{report['firmware_version']}`"
              f"／判定のコミット `{report['software_commit']}`")
     lv = report["levels"]
@@ -578,7 +578,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     for name, s in report["uart"].items():
         L.append(f"| {name.upper()} | {s['frames']} | {s['crc_errors']} | {s['unknown_msgid']}"
                  f" | {s['noise_bytes']} |")
-    L.append(f"\nPC までの間で落ちたサンプル（全段）: {report['usb_lost_total']}\n")
+    L.append(f"\nPC までの間で落ちたサンプル（全ステップ）: {report['usb_lost_total']}\n")
 
     L.append("## 漏れ（終端器）\n")
     if report["leak"]:
@@ -607,12 +607,12 @@ def render_markdown(report: dict[str, Any]) -> str:
             L.append(f"- 線形性: 最大の外れ {f['max_residual_db']:.3f} dB（{_mark(f['pass'])}"
                      f"・目安 {LINEAR_OK_DB} dB）・線形域の外として外した入力 {f['dropped_dbm']}")
         dth = rep["dither"]
-        L.append(f"- ディザ（2 値以上に散るか）: {dth['checked']} 段中 不合格 {len(dth['failed'])}"
+        L.append(f"- ディザ（2 値以上に散るか）: {dth['checked']} ステップ中 不合格 {len(dth['failed'])}"
                  f"（{_mark(dth['pass'] if dth['checked'] else None)}）{dth['failed'] or ''}")
         cr = rep["rate_crossings_dbm"]
         L.append("- 受信率が切る入力: " + "・".join(
             f"{float(t):.0%} → {'—' if v is None else f'{v} dBm'}" for t, v in cr.items()))
-        L.append("\n| 段 | 減衰 | 入力 dBm | 受信 | 率 | 平均 | σ | 値の数 | 雑音 |")
+        L.append("\n| ステップ | 減衰 | 入力 dBm | 受信 | 率 | 平均 | σ | 値の数 | 雑音 |")
         L.append("|---|---|---|---|---|---|---|---|---|")
         for r in rep["steps"]:
             L.append(
@@ -626,7 +626,7 @@ def render_markdown(report: dict[str, Any]) -> str:
     pdiff = report["pair_difference"]
     L.append("\n## 個体差（同じ減衰量での A→B − B→A・生値）\n")
     if pdiff["mean"] is None:
-        L.append("- 両方向がそろった段がありません")
+        L.append("- 両方向がそろったステップがありません")
     else:
         L.append(f"- 平均 {pdiff['mean']:+.3f}・減衰量による振れ幅 {pdiff['spread']:.3f}"
                  "（振れ幅が大きいと 2 台の特性の形が違う）")
@@ -654,7 +654,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def ref_template() -> dict[str, Any]:
-    """段0b の実測値を書く雛形（`cli cont` は tx_output に自動で足す）。"""
+    """ステージ0b の実測値を書く雛形（`cli cont` は tx_output に自動で足す）。"""
     return {
         "fixed_loss_db": None,
         "step_attenuator": {"tens": {}, "ones": {}},

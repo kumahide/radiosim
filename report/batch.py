@@ -43,7 +43,7 @@ _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 #     幅と**同じ数でなければならない**（打てる長さと読める長さが食い違うと、
 #     `asaminami24` が `asaminami2` に読めて**別の ID として通用してしまう**）。
 #     ⇒ この定数が ID 欄の幅の単一ソースでもある（`views/batch_builder._WIDTHS`）。
-#     🔴 **上げるときは欄幅と画面の両方が要る**＝複数経路の窓は FHD 150% で
+#     🔴 **上げるときは欄幅と画面の両方が要る**＝複数経路のウィンドウは FHD 150% で
 #     余裕 3px しかなく、周波数・利得・距離は見出しが床で 1px も出ない
 #     （実測 2026-08-12）。数字だけ上げると見切れゲートが赤くなる。
 #   - `_MAX_PATH_ID_LEN` ＝ **出力ディレクトリ名として許す**長さ。人は打たない＝
@@ -52,7 +52,7 @@ _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 #     収まることを `tests/test_multihop.py` が固定している。
 #
 # ⛔ **どちらか一方に戻して「1 つにまとめる」ことはできない**＝16 に揃えると
-# B-057 が戻り、11 に揃えると中継の経路 ID が 8 文字まで削られる（無傷の窓を壊す）。
+# B-057 が戻り、11 に揃えると中継の経路 ID が 8 文字まで削られる（無傷のウィンドウを壊す）。
 MAX_TYPED_ID_LEN = 11
 _MAX_PATH_ID_LEN = 16
 _MAX_NOTE_LEN    = 40
@@ -132,7 +132,7 @@ class PathResult:
 # ============================================================
 # 列の契約（列名・順序・必須/任意）は core/batch_csv_schema.py が単一ソース
 # （I-159＝RadioSim Field が apps 越しに report/ を import せず契約だけ読めるように）。
-# ドキュメント整合テストもそちらを単一ソースに README の CSV 節を照合する。
+# ドキュメント整合テストもそちらを単一ソースに README の CSV セクションを照合する。
 
 def parse_csv(csv_path: str) -> list[PathRow]:
     """
@@ -552,7 +552,7 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         "env_type"   : base.env_type,
         "rain_rate"  : str(base.rain_rate),
         "diff_method": base.diff_method,
-        "dem_source" : base.dem_source,   # 3.4 段1（I-147）
+        "dem_source" : base.dem_source,   # 3.4 ステージ1（I-147）
     }
     return sim.SimParams(c)
 

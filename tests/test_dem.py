@@ -170,7 +170,7 @@ class TestGetElevation:
 
 
 # ============================================================
-# tile_acquired_date（3.3 段4e＝出所刻印「取得日」）
+# tile_acquired_date（3.3 ステージ4e＝出所刻印「取得日」）
 # ============================================================
 class TestTileAcquiredDate:
 
@@ -292,7 +292,7 @@ class TestLastSourceTile:
 
 
 # ============================================================
-# 単一ソース強制（3.4 段1・I-147）
+# 単一ソース強制（3.4 ステージ1・I-147）
 # `core/dem.py` の `DEM_LAYERS` 直後の規則＝1 回の `get_elevation` 呼び出しは
 # 単一ソースの `layers` だけを降下し、プロバイダをまたいだ降下フォールバックを
 # しない。
@@ -1825,7 +1825,7 @@ class TestCacheDeletion:
             f.write(b"\x89PNG")
 
         # メモリキャッシュ: bbox 内キーは消え、bbox 外キーは残ること。
-        # 3.4 段1（I-147）＝キーは (source_id, layer_id, x, y) の4要素。
+        # 3.4 ステージ1（I-147）＝キーは (source_id, layer_id, x, y) の4要素。
         layer_id, _, x, y, _, _ = tiles[0]
         dem._tile_cache[("gsi_dem", layer_id, x, y)] = np.zeros(1)
         dem._tile_cache[("gsi_dem", "dem_png", 0, 0)] = np.zeros(1)
@@ -1880,7 +1880,7 @@ class TestCacheDeletion:
 
 
 # ============================================================
-# I-155（3.5 段3）＝キャッシュ管理のソース対応（get_cache_stats(source=)・
+# I-155（3.5 ステージ3）＝キャッシュ管理のソース対応（get_cache_stats(source=)・
 # get_basemap_cache_stats・delete_all_tile_cache(sources=, include_basemap=)）
 # ============================================================
 class TestCacheStatsAndDeletionBySource:

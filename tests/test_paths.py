@@ -15,7 +15,7 @@ tests/test_paths.py
      結果が引き続き読める）
 
 3.1 で OS 標準の場所（%APPDATA% 等）への移設・ポータブル判定・旧配置からの
-移行を実装した（[[project_roadmap]] §3.1 段1）。解決器そのもの
+移行を実装した（[[project_roadmap]] §3.1 ステージ1）。解決器そのもの
 （`is_portable` / `_appdata_dir` 等）と移行の検査は tests/test_write_locations.py。
 """
 
@@ -224,7 +224,7 @@ class TestTestRunIsolation:
 
     これが緑であることが、以降のすべてのテストの緑を「証拠」にする前提。
     読む側を塞いだ理由（B-034 が長期間生き延びた）と書く側を塞いだ理由
-    （8.1MB ログ誤 push の原料）は conftest の該当節に書いてある。
+    （8.1MB ログ誤 push の原料）は conftest の該当セクションに書いてある。
 
     **変異検証済み（2026-08-05）**＝conftest の隔離を 1 手ずつ外すと、対応する
     ゲートだけが落ちる: 既定引数の差し替えをやめる → 下の 2 本／ログハンドラの
@@ -256,7 +256,7 @@ class TestTestRunIsolation:
 
         🔑 定数の差し替えだけでは足りない＝`def load_config(path=CONFIG_FILE)` は
         **def 時に値を焼き込む**ので、`config.CONFIG_FILE` を後から変えても
-        引数なしの呼び出しは古いパスを使い続ける。**窓が直に呼ぶのはこの形**
+        引数なしの呼び出しは古いパスを使い続ける。**ウィンドウが直に呼ぶのはこの形**
         （＝G2 で配線を直すまで、ここが実設定への唯一の入口）。
         """
         import inspect
@@ -626,7 +626,7 @@ class TestTkGarbageDoesNotEscape:
         """GUI テストと同じ形のゴミを作る＝destroy 済みなのに循環で残る一式。"""
         import tkinter as tk
 
-        class _Win:                       # 窓オブジェクトが widget を抱える形
+        class _Win:                       # ウィンドウオブジェクトが widget を抱える形
             frame: "tk.Frame"
             vars: "list[tk.StringVar]"
 
@@ -853,7 +853,7 @@ class TestLanguageDoesNotLeakBetweenTests:
 class TestDeclaredInterpreter:
     """`RADIOSIM_PYTHON` の宣言と食い違う実行系を、**起動時に気づける**こと。
 
-    門は 2 か所にしかなかった＝`build.bat`（未設定なら中止）と `pytest`
+    ゲートは 2 か所にしかなかった＝`build.bat`（未設定なら中止）と `pytest`
     （conftest が停止）。**`python main.py` は何も見ておらず**、この機では素の
     `python` にも依存が入っているので**版だけ違う状態で黙って起動する**
     （実測 2026-08-08＝matplotlib 3.11.1 と 3.10.9）。同じ Python の版なので
@@ -923,7 +923,7 @@ class TestDeclaredInterpreter:
         """**宣言先が存在しない**ときも黙って通さないこと。
 
         🔴 conftest 側で実際に踏んだ形（2026-08-04・独立レビュー Codex）＝
-        存在しないパスで `return` すると、**門が黙って無効になる**。
+        存在しないパスで `return` すると、**ゲートが黙って無効になる**。
         """
         from core import runtime_env
 
@@ -1009,5 +1009,5 @@ class TestDoubleQuietIsCapped:
         called = {n.func.id for n in ast.walk(main_fn)
                   if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
         assert "_warn_if_not_the_declared_interpreter" in called, (
-            "main() が実行系の検査を呼んでいない＝起動の門が空振りする"
+            "main() が実行系の検査を呼んでいない＝起動のゲートが空振りする"
         )

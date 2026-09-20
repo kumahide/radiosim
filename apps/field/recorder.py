@@ -233,7 +233,7 @@ def build_header(
     payload["provenance"]["software_commit"] = software_commit
     payload["rx"]["device_id"] = device
     # 機器から来る個体 ID は小文字。雛形の大文字をそのまま残すと、TX のサンプルが
-    # 全部「別の組」として窓から外れる。
+    # 全部「別の組」としてウィンドウから外れる。
     payload["tx"]["device_id"] = tx_device
     payload["rx"]["radio"] = asdict(
         to_radio_settings(rx_config, template["rx"]["radio"]["sensitivity_dbm"], dialect)
@@ -255,7 +255,7 @@ def _is_rx(config: Message, dialect: Dialect | None) -> bool:
     return (dialect or load_dialect()).label("RADIOSIM_FIELD_ROLE", config.fields["role"]) == "rx"
 
 
-# --- 記録の芯（ライブと読み直しで同じものを通す） ----------------------------
+# --- 記録のコア（ライブと読み直しで同じものを通す） ----------------------------
 
 
 @dataclass
@@ -276,7 +276,7 @@ class _Processor:
     tx_config: Message | None = None
     slot: int | None = None            # None＝まだ据えていない／終えた
     stopped: bool = False
-    foreign: int = 0                   # ヘッダと違う送受信機のサンプル（窓に入れない）
+    foreign: int = 0                   # ヘッダと違う送受信機のサンプル（ウィンドウに入れない）
 
     def __post_init__(self) -> None:
         self.stream = FrameStream(dialect=self.dialect)

@@ -1,4 +1,4 @@
-﻿; RadioSim Pro - Inno Setup インストーラスクリプト（3.1 段6）
+﻿; RadioSim Pro - Inno Setup インストーラスクリプト（3.1 ステージ6）
 ;
 ; コンパイラ: Inno Setup 7（3.1RC2 以降・I-125 の選定検証の結論）。このファイルは
 ;   7 で廃止された機能（EnableFsRedirection / {sysnative} / 32bit からの 64bit
@@ -10,7 +10,7 @@
 ; APP_VERSION から /DAppVersion=... で渡す。単体で ISCC にかける場合は
 ; 下の #ifndef で "0.0.0-dev" が使われる）。
 ;
-; 配置方針（3.1 段1の保存先移設と対）:
+; 配置方針（3.1 ステージ1の保存先移設と対）:
 ;   - このインストーラは既定で Program Files（管理者権限が無ければユーザー配下）
 ;     へインストールする＝インストール先は書込禁止になり得る前提。
 ;   - portable.txt はビルド側（build.bat installer）が最初から作らないので、
@@ -50,12 +50,12 @@ WizardStyle=modern
 SetupIconFile=..\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 ArchitecturesInstallIn64BitMode=x64compatible
-; 署名レディ化（3.1 段6・[[project-code-signing]]）: 証明書を導入したら
+; 署名レディ化（3.1 ステージ6・[[project-code-signing]]）: 証明書を導入したら
 ; SignTool= をここに 1 行足すだけで、ISCC がインストーラ自身にも署名する。
 ; 今は未署名のまま（署名の是非はトリガー駆動で保留＝メモリ project-code-signing）。
 ;SignTool=signtool
 ; 管理者権限が無い環境でも Program Files 以外へインストールできるようにする
-; （3.1 段1で「書込禁止フォルダに置かれる」想定を実機検証済み＝その経路と一致させる）。
+; （3.1 ステージ1で「書込禁止フォルダに置かれる」想定を実機検証済み＝その経路と一致させる）。
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog
 
@@ -235,7 +235,7 @@ end;
      1 行 1 単語になるだけで「少し縦長」に見える。日本語は文字単位で折れるので
      全部が縦一列になる＝**同じ欠陥が言語で違う顔をする**。
   🔑 幅は AutoSize が最長行まで縮める（＝返ってくる Width は指定値以下）。
-     以後この窓に折り返すラベルを足すときは、直に組まずここを通すこと。 }
+     以後このウィンドウに折り返すラベルを足すときは、直に組まずここを通すこと。 }
 procedure SetWrappedCaption(L: TLabel; const Text: string; const W: Integer);
 begin
   L.WordWrap := True;

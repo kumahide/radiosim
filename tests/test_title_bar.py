@@ -1,11 +1,11 @@
 """
 tests/test_title_bar.py
 =======================
-タイトルバー・窓枠（非クライアント領域）の申告のゲート＝[views/title_bar.py](../views/title_bar.py)。
+タイトルバー・ウィンドウ枠（非クライアント領域）の申告のゲート＝[views/title_bar.py](../views/title_bar.py)。
 
 ⚠️ **ヘッドレスでは実際の色は測れない**（I-132 落とし穴⑤）ので、ここで見られるのは
 「**届く状態で申告したか**」まで。⛔ **「呼んだか」だけを見るゲートにしないこと**
-＝それは製品が壊れたまま緑になる（B-179＝実例。装飾側 HWND は窓をマップするまで
+＝それは製品が壊れたまま緑になる（B-179＝実例。装飾側 HWND はウィンドウをマップするまで
 存在せず、生成直後の申告は送り先の無いまま終わっていた）。実際の色は
 `experiments` の画素実測か実機で見る。
 """
@@ -141,12 +141,12 @@ def test_apply_title_bar_theme_without_hwnd_sends_nothing(root):
 
 
 def test_apply_title_bar_theme_forces_a_repaint_of_the_decorated_hwnd(root):
-    """申告後に `SetWindowPos(SWP_FRAMECHANGED)` で表示済みの窓を再描画させること（B-177）。
+    """申告後に `SetWindowPos(SWP_FRAMECHANGED)` で表示済みのウィンドウを再描画させること（B-177）。
 
-    `DwmSetWindowAttribute` は成功（`S_OK`）を返すのに、表示済みの窓は何かが
+    `DwmSetWindowAttribute` は成功（`S_OK`）を返すのに、表示済みのウィンドウは何かが
     再描画を誘発するまで見た目が変わらないことがある。ランチャー（`root`）だけが
     テーマ設定ダイアログを閉じた際のフォーカス復帰でたまたま再描画され、他の
-    開いている窓（マップ・ダイアログ等）は追従しなかった。
+    開いているウィンドウ（マップ・ダイアログ等）は追従しなかった。
     """
     set_theme("dark")
     fake = _FakeDwmDll(parent_hwnd=5555)
@@ -171,11 +171,11 @@ def test_apply_title_bar_theme_without_hwnd_does_not_call_set_window_pos(root):
 
 @pytest.mark.skipif(sys.platform != "win32", reason="装飾側 HWND は Windows のみ")
 def test_a_fresh_toplevel_has_no_decorated_hwnd_until_it_is_mapped(root):
-    """🔴 **この項目の linchpin**（B-179）＝生成直後の窓に装飾側 HWND は**無い**。
+    """🔴 **この項目の linchpin**（B-179）＝生成直後のウィンドウに装飾側 HWND は**無い**。
 
     Tk がラッパー（非クライアント領域を持つ HWND）を作るのは**マップするとき**で、
     それ以前の `GetParent()` は 0 を返す。⇒ `super().__init__()` の直後に
-    `apply_title_bar_theme()` を呼んでも**送り先が無い**（B-178 の直しが全窓で
+    `apply_title_bar_theme()` を呼んでも**送り先が無い**（B-178 の直しが全ウィンドウで
     空振りしていた理由）。ここが変わったら B-179 の対策ごと考え直すこと。
     """
     top = tk.Toplevel(root)
@@ -210,10 +210,10 @@ class _LateWrapperDwmDll(_FakeDwmDll):
 
 
 def test_follow_title_bar_applies_when_the_window_is_actually_mapped(root):
-    """まだマップされていない窓は `<Map>` を待って当て直すこと（B-179）。
+    """まだマップされていないウィンドウは `<Map>` を待って当て直すこと（B-179）。
 
     生成直後の 1 回きりだと**何も送られない**（上の linchpin）。症状＝複数経路・
-    中継経路を開いても白いまま、あとで別の窓が `<<ThemeChanged>>` を撒いた瞬間に
+    中継経路を開いても白いまま、あとで別のウィンドウが `<<ThemeChanged>>` を撒いた瞬間に
     まとめてダークになる（2026-09-06 のユーザー報告）。
     """
     set_theme("dark")
@@ -239,7 +239,7 @@ def test_follow_title_bar_applies_when_the_window_is_actually_mapped(root):
 def test_follow_title_bar_ignores_map_events_from_child_widgets(root):
     """子ウィジェットの `<Map>` では当て直さないこと（bindtags で飛んでくる）。
 
-    ⚠️ 中身が 1 つ現れるたびに申告し直すと、窓を建てるだけで `SetWindowPos` が
+    ⚠️ 中身が 1 つ現れるたびに申告し直すと、ウィンドウを建てるだけで `SetWindowPos` が
     何十回も走る。**自分自身の `<Map>` だけ**を見ていることを固定する。
     """
     set_theme("dark")
@@ -259,7 +259,7 @@ def test_follow_title_bar_ignores_map_events_from_child_widgets(root):
 
 
 def test_new_windows_do_not_call_apply_title_bar_theme_directly():
-    """新規の窓は `follow_title_bar` を通すこと（B-179＝生成直後の直呼びは空振り）。
+    """新規のウィンドウは `follow_title_bar` を通すこと（B-179＝生成直後の直呼びは空振り）。
 
     直呼びは戻り値が False になるだけで**静かに失敗する**ので、画面を見るまで
     分からない。⇒ 書き方の側を固定する（[[feedback-promote-recurring-checks]]）。
@@ -276,7 +276,7 @@ def test_new_windows_do_not_call_apply_title_bar_theme_directly():
             if "apply_title_bar_theme(" in line:
                 offenders.append(f"{path.name}:{num}")
     assert not offenders, (
-        "新規の窓が apply_title_bar_theme を直接呼んでいる（生成直後は空振りする）＝"
+        "新規のウィンドウが apply_title_bar_theme を直接呼んでいる（生成直後は空振りする）＝"
         f"follow_title_bar を使うこと: {offenders}"
     )
 
@@ -285,7 +285,7 @@ def test_apply_title_bars_covers_root_and_open_toplevels(root):
     """`apply_title_bars` が root と配下の全トップレベルへ当てること（実装上の落とし穴②）。
 
     ①`<<ThemeChanged>>` ②新規トップレベルの生成直後、の**両方**から同じ口を通す
-    設計なので、この関数自体は「開いている窓すべて」を漏らさず拾えることだけを見る。
+    設計なので、この関数自体は「開いているウィンドウすべて」を漏らさず拾えることだけを見る。
     """
     seen: list[tk.Misc] = []
     original = title_bar.apply_title_bar_theme

@@ -30,19 +30,19 @@ def _attribution_text() -> str:
 
 
 def _expected_badge(img: Image.Image) -> Image.Image:
-    """その画像に貼られるはずの出典帯（**幅から字の大きさが決まる**＝B-135）。"""
+    """その画像に貼られるはずの出典バー（**幅から字の大きさが決まる**＝B-135）。"""
     return map_graphics.attribution_badge(
         _attribution_text(), font_px=report_common.figure_text_px(img.width))
 
 
 def _missing_fill_count(img: Image.Image) -> int:
-    """`_MISSING_RGB` の画素数を、**出典帯の領域を除いて**数える。
+    """`_MISSING_RGB` の画素数を、**出典バーの領域を除いて**数える。
 
-    帯は白地＋濃グレー文字なので、縁のアンチエイリアスが白→#333 の途中で
+    バーは白地＋濃グレー文字なので、縁のアンチエイリアスが白→#333 の途中で
     (229,229,229) を**通り得る**＝そのままだと「タイルが欠けた」ことを見る検査が
-    帯の 1 画素で落ちる（B-133 の実装中に実際に落ちた）。
-    ⚠️ **帯の色や不透明度をずらして避けない**＝検査の都合で刻印の見た目を
-    決めることになる。除くのは帯が占める矩形だけで、他は従来どおり全数見る。
+    バーの 1 画素で落ちる（B-133 の実装中に実際に落ちた）。
+    ⚠️ **バーの色や不透明度をずらして避けない**＝検査の都合で刻印の見た目を
+    決めることになる。除くのはバーが占める矩形だけで、他は従来どおり全数見る。
     """
     fill = np.all(np.asarray(img) == report_map._MISSING_RGB, axis=2)
     badge = _expected_badge(img)
@@ -384,7 +384,7 @@ class TestAttribution:
     🔴 この欠陥の正体は「UI の地図には出したが、同じ絵を帳票へ焼くもう一方の
     経路が引き継がなかった」こと＝*字が抜けていた*のではなく**配線が無かった**。
     なので検査も字でなく**配線**を見る（[[feedback_promote_recurring_checks]] の
-    実証 50）＝どの地図関数から呼んでも帯が貼られること・文言がタイルのレイヤから
+    実証 50）＝どの地図関数から呼んでもバーが貼られること・文言がタイルのレイヤから
     引かれていること・UI と帳票が同じ表を引いていることの 3 点。
     """
 
@@ -429,7 +429,7 @@ class TestAttribution:
 
     @pytest.mark.parametrize("render", ("path", "paths"))
     def test_rendered_map_carries_the_source_badge(self, monkeypatch, render):
-        # **両方の地図関数**が帯を貼ること（片方だけ直すのを止める）。
+        # **両方の地図関数**がバーを貼ること（片方だけ直すのを止める）。
         seen: list[str] = []
         real = map_graphics.attribution_badge
         monkeypatch.setattr(
@@ -440,7 +440,7 @@ class TestAttribution:
         img = (report_map.render_path_map((34.54, 132.41), (34.53, 132.40))
                if render == "path" else report_map.render_paths_map(_TWO_PATHS))
         assert isinstance(img, Image.Image)
-        assert seen == [_attribution_text()], "出典の帯が貼られていない"
+        assert seen == [_attribution_text()], "出典のバーが貼られていない"
 
     def test_the_badge_is_pasted_at_the_bottom_right(self, monkeypatch):
         # 右下＝地図出典の慣例位置。北矢印（右上）と重ならないことも兼ねる。
@@ -452,7 +452,7 @@ class TestAttribution:
         arr = np.asarray(img)
         region = arr[img.height - badge.height - m:img.height - m,
                      img.width - badge.width - m:img.width - m]
-        # 帯は不透明の白地なので、その矩形にはタイルの地色（200）が残らない。
+        # バーは不透明の白地なので、その矩形にはタイルの地色（200）が残らない。
         assert (region == 200).all(axis=2).mean() < 0.5
         # 逆に**左下**は素のタイルのまま＝隅を取り違えていない。
         opposite = arr[img.height - badge.height - m:img.height - m,
@@ -467,7 +467,7 @@ class TestBurnedTextStaysReadable:
     """🔴 **図の中の px は、そのままの大きさでは読めない**（B-135）。
 
     帳票の図は width:100% で A4 の印字幅へ縮めて載る＝**縮小率のぶん字も縮む**。
-    実測で 5.7〜7.8px まで落ち、帳票の最小字（開示節の 8px）を下回っていた
+    実測で 5.7〜7.8px まで落ち、帳票の最小字（開示セクションの 8px）を下回っていた
     （ユーザー指摘「地図の出典が小さく過ぎて読めません」）。
     ⚠️ **図ごとに解像度が違う**ので、px や pt を直接書くと実寸がバラバラになる。
     """
@@ -483,10 +483,10 @@ class TestBurnedTextStaysReadable:
         assert on_page == pytest.approx(report_common.MIN_FIGURE_TEXT_PX)
 
     def test_the_floor_is_at_least_the_smallest_type_in_the_report(self):
-        """帳票の最小字（開示節の CSS 8px）を下回らないこと。
+        """帳票の最小字（開示セクションの CSS 8px）を下回らないこと。
 
         ⚠️ **縮小フィット（per-path・最大 0.82 倍）は掛けない**＝比べる相手の
-        開示節も同じ `.fit` の中で同率に縮むので、両者の比は変わらない
+        開示セクションも同じ `.fit` の中で同率に縮むので、両者の比は変わらない
         （2026-08-28 に 0.82 を掛けて比べたのは誤りだった）。
         """
         assert report_common.MIN_FIGURE_TEXT_PX >= 8.0
@@ -498,7 +498,7 @@ class TestBurnedTextStaysReadable:
         """**地図の出典は、その画像の幅から大きさが決まる**こと。
 
         🔑 経路の長さで画像の幅が変わる＝固定 px だと**経路ごとに実寸が変わる**。
-        ⇒ 幅の違う 2 枚で帯の大きさが変わり、A4 に載せた後は揃うことを見る。
+        ⇒ 幅の違う 2 枚でバーの大きさが変わり、A4 に載せた後は揃うことを見る。
 
         ⚠️ **測っているのは実際に焼かれた字の高さ**なので、**その字が引ける機械**
         でしか成立しない（I-118＝ubuntu の CI では PIL が既定のビットマップ字に
@@ -510,6 +510,6 @@ class TestBurnedTextStaysReadable:
         assert isinstance(img, Image.Image)
         badge = _expected_badge(img)
         on_page = badge.height * report_common.A4_CONTENT_WIDTH_PX / img.width
-        # 帯の高さ＝字＋余白なので、字そのもの（下限）より大きく、その 2 倍未満。
+        # バーの高さ＝字＋余白なので、字そのもの（下限）より大きく、その 2 倍未満。
         assert report_common.MIN_FIGURE_TEXT_PX < on_page < \
             report_common.MIN_FIGURE_TEXT_PX * 2

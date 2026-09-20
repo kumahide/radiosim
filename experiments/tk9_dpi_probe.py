@@ -14,12 +14,12 @@ Tk 9 移行の再判断トリガーは 3 つあり（[[project-tk9-migration]]�
 ------------------------------------
 ③ **フォントが自分で追従するか**＝表示スケールを変えた前後で `font.actual()` の
    実効サイズが**アプリが何もせずに**変わるか。
-   ⚠️ **窓の寸法が変わるだけでは③は通らない**＝それは `watch_display` の画面サイズ側
+   ⚠️ **ウィンドウの寸法が変わるだけでは③は通らない**＝それは `watch_display` の画面サイズ側
    （B-022）で、Tk 9 でも要る。③が問うているのは *`theme.apply_fonts` の DPI 側
    （約 60 行）を削れるか* だけ。
 
-B-119 **窓の寸法が 6px ずつ変わり続けるか**＝スケール変更後に窓を動かして数える。
-   今日（2026-08-23）の 6 巡目で **`resizable(False, False)` の窓だけが暴走する**と
+B-119 **ウィンドウの寸法が 6px ずつ変わり続けるか**＝スケール変更後にウィンドウを動かして数える。
+   今日（2026-08-23）の 6 巡目で **`resizable(False, False)` のウィンドウだけが暴走する**と
    実測したので、対照は**その 1 変数**で建てる（`BARE-fixed` / `BARE-resizable`）。
    Tk 8.6 の基準値は `issue_evidence/B-119_06_resizable-probe.log`＝**55 回 / 0 回**。
 
@@ -27,10 +27,10 @@ B-119 **窓の寸法が 6px ずつ変わり続けるか**＝スケール変更�
 
     # Tk 9 側（暴走の有無まで測る）
     & "D:/tools/py315rc/python.exe" experiments/tk9_dpi_probe.py
-    # Tk 8.6 側（フォントの基準値だけ・窓は動かさない）
+    # Tk 8.6 側（フォントの基準値だけ・ウィンドウは動かさない）
     & "$env:RADIOSIM_PYTHON" experiments/tk9_dpi_probe.py --no-drag
 
-⚠️ **2 つを同時に起動してよい**（`--no-drag` の側は窓を動かさないので、移動モーダル
+⚠️ **2 つを同時に起動してよい**（`--no-drag` の側はウィンドウを動かさないので、移動モーダル
 ループを取り合わない）＝**人にスケールを変えてもらう回数が 1 回で済む**。
 
 人の操作: **表示スケールを 1 回変えるだけ**（100%↔150%）。あとは触らない。
@@ -53,7 +53,7 @@ T0 = time.perf_counter()
 #: 見る字（製品が実際に使うもの＝ここが動かなければ利用者には何も起きない）。
 _FONTS = ("TkDefaultFont", "TkTextFont", "TkMenuFont", "TkFixedFont")
 
-#: ドラッグ中に数えた 6px 刻み（窓ごと）。
+#: ドラッグ中に数えた 6px 刻み（ウィンドウごと）。
 _DRIFTS: "dict[str, int]" = {}
 
 #: **暴走**と呼ぶ下限（これ未満は「1 度の言い直し」＝正常系にも在る形）。
@@ -85,7 +85,7 @@ def set_dpi_awareness() -> str:
 
 
 def os_dpi(win: "tk.Misc") -> int:
-    """**OS が言う**この窓の DPI（`GetDpiForWindow`）。
+    """**OS が言う**このウィンドウの DPI（`GetDpiForWindow`）。
 
     🔴 **契機の検出に `winfo_fpixels("1i")` を使ってはいけない**（2026-08-23 に踏んだ）＝
     **Tk 8.6 では起動時のスクリーン値で固定**で、スケールを変えても 1 も動かない
@@ -232,7 +232,7 @@ def drag_all(root: tk.Tk, pair: "list[tuple[str, tk.Toplevel]]") -> None:
             if thread.is_alive():
                 root.after(200, wait)
                 return
-            # 締めるのは余韻の後（手を離しても暴走は続く＝B-119 の芯）。
+            # 締めるのは余韻の後（手を離しても暴走は続く＝B-119 のコア）。
             root.after(1000, lambda: (log("DROP", f"{name}  ★6px 刻み="
                                           f"{_DRIFTS.get(name, 0)} 回"), step()))
 
@@ -268,7 +268,7 @@ def verdict() -> None:
           "この探針を 8.6 でも `--no-drag` 無しで 1 度回すこと"
           "（対照が暴走しない巡は無効＝暴走の有無ではなく測り方を疑う）。", flush=True)
     print()
-    print("（窓は開いたままです＝閉じて構いません）", flush=True)
+    print("（ウィンドウは開いたままです＝閉じて構いません）", flush=True)
 
 def main() -> None:
     no_drag = "--no-drag" in sys.argv
@@ -280,7 +280,7 @@ def main() -> None:
                         "（そのあとは触らないでください）").pack(padx=30, pady=40)
     log("INIT", f"python={sys.version.split()[0]}  "
                 f"Tk={root.tk.call('info', 'patchlevel')}  dpi={awareness}  "
-                f"{'（フォントのみ・窓は動かさない）' if no_drag else '（暴走も測る）'}")
+                f"{'（フォントのみ・ウィンドウは動かさない）' if no_drag else '（暴走も測る）'}")
 
     before = snapshot(root)
     log("INIT", f"変更前: {before}")
@@ -304,7 +304,7 @@ def main() -> None:
         log("INIT", f"変更後: {after}")
         report(before, after)
         if no_drag:
-            print("（--no-drag ＝ここまで。窓は閉じて構いません）", flush=True)
+            print("（--no-drag ＝ここまで。ウィンドウは閉じて構いません）", flush=True)
             return
         pair = build_pair(root)
         root.after(2000, lambda: drag_all(root, pair))

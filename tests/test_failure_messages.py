@@ -171,7 +171,7 @@ def test_the_title_set_is_not_empty_and_covers_the_known_failures():
 # ============================================================
 class TestTheType:
     def test_the_next_step_is_required(self):
-        """**次に何をすべきかが空の失敗メッセージは作れない**＝型の芯。"""
+        """**次に何をすべきかが空の失敗メッセージは作れない**＝型のコア。"""
         with pytest.raises(ValueError):
             failure.message(what="壊れました。", hint="")
 

@@ -1,7 +1,7 @@
 """
 views/title_bar.py
 ==================
-**タイトルバー・窓枠（非クライアント領域）の配色**（I-132・B-176〜B-179）。
+**タイトルバー・ウィンドウ枠（非クライアント領域）の配色**（I-132・B-176〜B-179）。
 
 なぜ [theme.py](theme.py) と別モジュールなのか＝**描いている主体が違う**。
 theme.py が扱うのは sv_ttk（Tk が描く中身）の色とフォントだが、タイトルバーと枠は
@@ -10,7 +10,7 @@ theme.py が扱うのは sv_ttk（Tk が描く中身）の色とフォントだ�
 バイト順・マップの時点）が丸ごと付いてくる。⇒ 色の出所（`palette()`）は theme.py
 から引き、**OS へ申告する仕事だけ**をここに置く。
 
-⚠️ **新しい窓を作る側が呼ぶのは `follow_title_bar()` の 1 つだけ**。
+⚠️ **新しいウィンドウを作る側が呼ぶのは `follow_title_bar()` の 1 つだけ**。
 `apply_title_bar_theme()` を生成直後に直呼びしても**空振りする**（B-179＝下の註）。
 """
 
@@ -26,7 +26,7 @@ _DWMWA_BORDER_COLOR = 34                  # Windows 11 のみ
 _DWMWA_CAPTION_COLOR = 35                 # Windows 11 のみ
 _DWMWA_TEXT_COLOR = 36                    # Windows 11 のみ
 
-# `SetWindowPos` の非移動フラグ（B-177＝申告だけでは塗り替わらない窓を明示的に再描画）。
+# `SetWindowPos` の非移動フラグ（B-177＝申告だけでは塗り替わらないウィンドウを明示的に再描画）。
 _SWP_NOSIZE, _SWP_NOMOVE, _SWP_NOZORDER = 0x0001, 0x0002, 0x0004
 _SWP_NOACTIVATE, _SWP_FRAMECHANGED = 0x0010, 0x0020
 
@@ -66,10 +66,10 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
 
     呼び出し元は 2 つに集約する＝`<<ThemeChanged>>`（テーマの切替）と新規トップレベルの
     **マップ**（`follow_title_bar`＝dialogs.py・map_window.py・launcher_menu.py 等）。
-    片方だけだと「あとから開いた窓だけ白い」「切替の瞬間だけ直らない」が残る
-    （[[feedback-promote-recurring-checks]]）。⚠️ **表示済みの窓は即座に塗り替わらない
+    片方だけだと「あとから開いたウィンドウだけ白い」「切替の瞬間だけ直らない」が残る
+    （[[feedback-promote-recurring-checks]]）。⚠️ **表示済みのウィンドウは即座に塗り替わらない
     ことがある**（I-132 落とし穴③）＝下の `SetWindowPos(SWP_FRAMECHANGED)` で促す（B-177）。
-    ⛔ **生成直後に呼んでも効かない**（B-179）＝装飾側 HWND がまだ無い。新規の窓は
+    ⛔ **生成直後に呼んでも効かない**（B-179）＝装飾側 HWND がまだ無い。新規のウィンドウは
     直に呼ばず `follow_title_bar()` を使うこと。
 
     Args:
@@ -103,7 +103,7 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
         cref = ctypes.pointer(ctypes.c_int(_colorref(colors[key])))
         dwm.DwmSetWindowAttribute(
             ctypes.c_void_p(hwnd), attr, cref, ctypes.sizeof(cref.contents))
-    # 表示中の窓へ即座に反映させる（B-177）。移動・大きさ・フォーカスは変えない。
+    # 表示中のウィンドウへ即座に反映させる（B-177）。移動・大きさ・フォーカスは変えない。
     try:
         dll.user32.SetWindowPos(
             ctypes.c_void_p(hwnd), None, 0, 0, 0, 0,
@@ -114,14 +114,14 @@ def apply_title_bar_theme(win: tk.Misc, windll: "Any | None" = None) -> bool:
 
 
 def follow_title_bar(win: tk.Misc, windll: "Any | None" = None) -> bool:
-    """新しく作った窓のタイトルバーを、**表示され次第**テーマへ合わせる（B-179）。
+    """新しく作ったウィンドウのタイトルバーを、**表示され次第**テーマへ合わせる（B-179）。
 
     🔴 **生成直後には当てられない**（2026-09-06 実測・`_decorated_hwnd` の註の続き）＝
-    Tk が装飾側の HWND（ラッパー）を作るのは**窓をマップするとき**で、それ以前に
+    Tk が装飾側の HWND（ラッパー）を作るのは**ウィンドウをマップするとき**で、それ以前に
     `GetParent()` が返すのは **0**。つまり `super().__init__()` の直後に
     `apply_title_bar_theme()` を呼んでも、送り先が無いので**何もせず False を返す**
-    ＝B-178 の「表示前に当てる」は全窓で空振りしていた（症状＝複数経路・中継経路を
-    開いても白いまま、あとで別の窓が `<<ThemeChanged>>` を撒いた瞬間にまとめて
+    ＝B-178 の「表示前に当てる」は全ウィンドウで空振りしていた（症状＝複数経路・中継経路を
+    開いても白いまま、あとで別のウィンドウが `<<ThemeChanged>>` を撒いた瞬間にまとめて
     ダークになる）。⚠️ **`DwmSetWindowAttribute` が S_OK を返すのに変わらない**
     のとは別の失敗で、こちらは**呼びもしていない**＝戻り値を見ていれば分かった。
 
@@ -144,14 +144,14 @@ def follow_title_bar(win: tk.Misc, windll: "Any | None" = None) -> bool:
     try:
         top.bind("<Map>", _on_map, add="+")
     except tk.TclError:
-        pass       # 破棄途中の窓
+        pass       # 破棄途中のウィンドウ
     return apply_title_bar_theme(top, windll)
 
 
 def apply_title_bars(root: tk.Misc) -> None:
     """`root` と配下の全トップレベルへタイトルバーの配色を当て直す。
 
-    `watch_display` と同じ窓の集め方（`window_fit.toplevels`）を使う（割れると穴になる）。
+    `watch_display` と同じウィンドウの集め方（`window_fit.toplevels`）を使う（割れると穴になる）。
     """
     from views import window_fit          # 遅延 import（循環回避）
 

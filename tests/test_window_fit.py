@@ -3,24 +3,24 @@ tests/test_window_fit.py
 ========================
 **全ウィンドウ横断**の見切れゲート。
 
-なぜ窓ごとの手書きテストでは駄目だったか
+なぜウィンドウごとの手書きテストでは駄目だったか
 ----------------------------------------
 見切れはこのプロジェクトで最も繰り返している不具合クラス（B-002 / B-007 /
-I-000 / I-023 / I-024）で、そのつど「その窓だけ」を実測追従に直し、「その窓
+I-000 / I-023 / I-024）で、そのつど「そのウィンドウだけ」を実測追従に直し、「そのウィンドウ
 だけ」のテストを足してきた。結果、
 
-  - **次の窓**（地図ウィンドウは 2.5b2 までゲートが 1 本も無く、`geometry("900x680")`
+  - **次のウィンドウ**（地図ウィンドウは 2.5b2 までゲートが 1 本も無く、`geometry("900x680")`
     のリテラルのままだった）
   - **次の増え方**（起動時しか測らない＝バッチは CSV インポートで列が広がっても
-    窓は広がらないままだった）
+    ウィンドウは広がらないままだった）
 
-で必ず再発した。つまり欠けていたのは個々の修正ではなく、**新しい窓・新しい
+で必ず再発した。つまり欠けていたのは個々の修正ではなく、**新しいウィンドウ・新しい
 増え方が自動的に検査対象になる仕組み**。ここでは 3 つを固定する：
 
-  1. **登録された全窓**が、開いた時点で中身を収めていること。
-  2. **中身が増える操作のあと**も収めていること（窓ごとに「増やし方」を書く）。
+  1. **登録された全ウィンドウ**が、開いた時点で中身を収めていること。
+  2. **中身が増える操作のあと**も収めていること（ウィンドウごとに「増やし方」を書く）。
   3. **登録漏れが起きないこと**＝`views/` で Toplevel を作る場所を静的に洗い出し、
-     登録も除外もされていない窓があればここが落ちる（新しい窓を足した人が
+     登録も除外もされていないウィンドウがあればここが落ちる（新しいウィンドウを足した人が
      テストを書き忘れても気づける＝[[feedback-promote-recurring-checks]] の昇格）。
 
 ⚠️ 測定は必ず `make_themed_root()` で行う（素の Tk 既定フォントは実機より小さく、
@@ -53,7 +53,7 @@ _PARAMS = {
 
 
 # ============================================================
-# 窓のレジストリ（新しい窓はここへ足す）
+# ウィンドウのレジストリ（新しいウィンドウはここへ足す）
 # ============================================================
 def _open_launcher(root):
     from views.launcher import SimLauncher
@@ -74,7 +74,7 @@ def _open_scenario(root):
 
 
 def _open_graph(root):
-    """グラフ窓（B-024 で matplotlib の窓から Toplevel になり、対象窓が 4→5 へ）。
+    """グラフウィンドウ（B-024 で matplotlib のウィンドウから Toplevel になり、対象ウィンドウが 4→5 へ）。
 
     ⚠️ **逃げ道（B-021②）が入るまでこの登録はできなかった**＝入らないときの
     受け皿が無いまま対象を増やすと「ゲートに入れた瞬間に赤」を自分で作る。
@@ -86,7 +86,7 @@ def _open_graph(root):
 
 
 def _open_multihop(root):
-    """中継経路窓（A-3 で 6 つ目の登録窓になった）。"""
+    """中継経路ウィンドウ（A-3 で 6 つ目の登録ウィンドウになった）。"""
     from views.multihop import MultiHopWindow
     win = MultiHopWindow(root, sim.SimParams(_PARAMS))
     return win, win
@@ -127,10 +127,10 @@ def _open_map(root, monkeypatch):
     return win._win, win
 
 
-# name -> (窓を開く関数, 中身を増やす操作 or None)
+# name -> (ウィンドウを開く関数, 中身を増やす操作 or None)
 #
-# 「中身を増やす操作」は **その窓で実際に中身が増える経路**を書く（2 の検査）。
-# None は「開いたあとに中身が増える経路を持たない窓」の明示。
+# 「中身を増やす操作」は **そのウィンドウで実際に中身が増える経路**を書く（2 の検査）。
+# None は「開いたあとに中身が増える経路を持たないウィンドウ」の明示。
 _WINDOWS = {
     "launcher": (_open_launcher, None),
     "batch":    (_open_batch,    lambda win, owner: _grow_batch(owner)),
@@ -152,10 +152,10 @@ def _grow_batch(win) -> None:
     """CSV インポート（**長い備考**で列が広がる）。
 
     ⚠️ ここで `_fit_width_to_content()` を呼んではいけない。**製品の経路**
-    （`replace_rows` ＝ インポート本体）を叩き、その中で窓が追従することを見る。
+    （`replace_rows` ＝ インポート本体）を叩き、その中でウィンドウが追従することを見る。
     テスト側が fit を呼ぶと、製品が呼び忘れていても緑になる。
 
-    2.5b2 まで、起動後に列が広がっても窓は広がらなかった（`_fit_initial_width`
+    2.5b2 まで、起動後に列が広がってもウィンドウは広がらなかった（`_fit_initial_width`
     が `__init__` からしか呼ばれていなかった）。
     """
     win.replace_rows([[
@@ -174,34 +174,34 @@ def _grow_scenario(win) -> None:
 
 
 # ============================================================
-# -1: 全窓がタイトルバーの配色を申告していること（B-178）
+# -1: 全ウィンドウがタイトルバーの配色を申告していること（B-178）
 # ============================================================
-# ⚠️ **窓ごとに手書きで気づく形は既に一度崩れた**＝I-132 実装時に口を呼んだのは
+# ⚠️ **ウィンドウごとに手書きで気づく形は既に一度崩れた**＝I-132 実装時に口を呼んだのは
 # main.py・views/dialogs.py・views/map_window.py・views/launcher_menu.py のみで、
-# ランチャーから開く主要窓のうちバッチ・条件探索・中継経路・地形断面グラフの
+# ランチャーから開く主要ウィンドウのうちバッチ・条件探索・中継経路・地形断面グラフの
 # 4 つは呼び出しが漏れていた（ユーザー報告「ランチャー以外のタイトルバーが
 # ダークにならない」）。**この登録（`_WINDOWS`）は既に window_fit の見切れ
 # ゲートが「登録漏れが起きないこと」を別途保証している**ので、ここへ相乗りすれば
-# 新しい窓を足した人がこの申告を書き忘れても自動的に検査対象になる。
-# ⛔ **`launcher` は対象外**＝ランチャーの窓（root）はアプリの入口（main.py）が
+# 新しいウィンドウを足した人がこの申告を書き忘れても自動的に検査対象になる。
+# ⛔ **`launcher` は対象外**＝ランチャーのウィンドウ（root）はアプリの入口（main.py）が
 # 申告する対象で、`SimLauncher` 自身の責務ではない。
 @pytest.mark.parametrize("name", sorted(n for n in _WINDOWS if n != "launcher"))
 def test_every_child_window_applies_the_title_bar_theme_on_open(name, monkeypatch):
     """開いたあと、**申告が届く状態で** `title_bar.apply_title_bar_theme` を呼ぶこと（B-178・B-179）。
 
     🔴 **「呼んだか」だけでは足りなかった**（2026-09-06・B-179＝ゲートの壊れ方③
-    「間違ったものを要求している」の実例）。B-178 はこの登録の全窓へ
+    「間違ったものを要求している」の実例）。B-178 はこの登録の全ウィンドウへ
     `__init__` の 1 行を足して緑になったが、**製品は直っていなかった**＝Tk が
-    装飾側 HWND（ラッパー）を作るのは窓をマップするときで、生成直後の
+    装飾側 HWND（ラッパー）を作るのはウィンドウをマップするときで、生成直後の
     `GetParent()` は 0。呼び出しは**送り先が無いまま静かに空振り**していた。
-    ⇒ 見るのは「**窓がマップされている状態で申告したか**」。
+    ⇒ 見るのは「**ウィンドウがマップされている状態で申告したか**」。
     """
     from views import title_bar
 
     calls: list[tuple] = []
 
     def spy(win, *a, **k):
-        # ⚠️ 記録するのは窓と**そのときマップされていたか**（＝申告が届く状態か）。
+        # ⚠️ 記録するのはウィンドウと**そのときマップされていたか**（＝申告が届く状態か）。
         try:
             mapped = bool(win.winfo_ismapped())
         except Exception:
@@ -221,7 +221,7 @@ def test_every_child_window_applies_the_title_bar_theme_on_open(name, monkeypatc
         )
         win.update()          # ここで <Map> が処理される（follow_title_bar の予約）
         assert any(w is win and mapped for w, mapped in calls), (
-            f"[{name}] 窓がマップされる前にしか申告していない＝装飾側 HWND がまだ"
+            f"[{name}] ウィンドウがマップされる前にしか申告していない＝装飾側 HWND がまだ"
             "無いので黙って空振りする（B-179）。title_bar.follow_title_bar を使うこと。"
         )
     finally:
@@ -353,10 +353,10 @@ def test_no_test_asks_the_screen_behind_the_pin():
 
 
 # ============================================================
-# 1・2: 全窓が中身を収めていること
+# 1・2: 全ウィンドウが中身を収めていること
 # ============================================================
 def _assert_fits(win, label: str) -> None:
-    """窓が「測った必要量」を実際に確保しているか、**入らないなら手が届く**こと。
+    """ウィンドウが「測った必要量」を実際に確保しているか、**入らないなら手が届く**こと。
 
     ⚠️ **かつてここには免除条項があった（B-021 で一度これに騙された）**＝
     `size >= min(need, lim)` と書いてあり、「画面に入らないのだから仕方ない」で
@@ -366,19 +366,19 @@ def _assert_fits(win, label: str) -> None:
 
     **2.6a1 で撤去した**。入らないときの答えは「免除」ではなく**逃げ道**
     （`window_fit.scrollable_body` のスクロール）で、入らないなら**入らないなりに
-    全部触れること**を要求する。逃げ道が無い窓は、入らなければ赤。
+    全部触れること**を要求する。逃げ道が無いウィンドウは、入らなければ赤。
     """
     need_w, need_h = window_fit.required_size(win)
     size = getattr(win, "_fit_size", None)
     assert size is not None, (
-        f"[{label}] 窓が window_fit.fit_to_content() を通っていない"
+        f"[{label}] ウィンドウが window_fit.fit_to_content() を通っていない"
         "（寸法をリテラルで持つと中身が増えた日に黙って切れる）。"
     )
     _assert_content_is_reachable(win, label, need_w, need_h, size)
 
 
 def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
-    """中身が窓に入っているか、入らないならスクロールで届くこと。"""
+    """中身がウィンドウに入っているか、入らないならスクロールで届くこと。"""
     escape = getattr(win, "_fit_scroll", None)
     # ⚠️ `escape.active` は **(縦, 横)** の順（バーの向き）で、寸法の (幅, 高さ) とは
     # 逆。実装中に取り違えて「溢れているのにバーが出ていない」と誤検出した。
@@ -389,13 +389,13 @@ def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
         if got >= need:
             continue
         assert escape is not None, (
-            f"[{label}] 中身が窓に入らない（必要 {need}px / 窓 {got}px）＝"
+            f"[{label}] 中身がウィンドウに入らない（必要 {need}px / ウィンドウ {got}px）＝"
             f"{edge}のウィジェットが見切れる。画面に入らないこと自体が避けられない"
             "なら、window_fit.scrollable_body の逃げ道を与えること"
             "（「入らないのだから仕方ない」で見逃さない＝B-021）。"
         )
         assert escape.active[bar], (
-            f"[{label}] 溢れている（必要 {need}px / 窓 {got}px）のにスクロール"
+            f"[{label}] 溢れている（必要 {need}px / ウィンドウ {got}px）のにスクロール"
             f"バーが出ていない＝{edge}へ到達できない。"
         )
     if escape is not None:
@@ -407,9 +407,9 @@ def _assert_content_is_reachable(win, label, need_w, need_h, size) -> None:
 
 
 # ============================================================
-# 窓は中身に**追従**する（広すぎない）
+# ウィンドウは中身に**追従**する（広すぎない）
 # ============================================================
-# 下限（`_BASE_W` / `minsize`）が中身を上回っていても許される窓＝**中身が
+# 下限（`_BASE_W` / `minsize`）が中身を上回っていても許されるウィンドウ＝**中身が
 # キャンバスで、要求サイズが「描ける最小」しか語らない**もの。理由ごと残す。
 # ⚠️ ここは `_GROW_EXEMPT` と違い**逆向きの検査を置いていない**（「除外側は余りが
 # 消えていないか見る」をしない）＝余りは言語と DPI で動く量なので「常に余る」とは
@@ -429,18 +429,18 @@ _WIDTH_FLOOR_TOLERANCE = 40
 
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
 def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
-    """**下限が窓幅を決めていない**こと（窓幅 ≒ 中身の必要幅）。
+    """**下限がウィンドウ幅を決めていない**こと（ウィンドウ幅 ≒ 中身の必要幅）。
 
     `_BASE_W` は「これ以上細くしない」ための下限であって、**既定幅を決める場所では
-    ない**。中身より大きい下限を置くと、中身が何であっても同じ幅の窓が開き、右に
+    ない**。中身より大きい下限を置くと、中身が何であっても同じ幅のウィンドウが開き、右に
     死んだ余白が残る＝**中継経路が実際にそうなっていた**（`_BASE_W = 980` に対し
     必要幅は ja 879 / en 847px＝2026-08-08 ユーザー指摘・B-053）。
 
     ⚠️ **下限は 2 か所にある**＝`_BASE_W` と `minsize`。`minsize` が上だと Tk が
-    `geometry()` を上書きするので、`_BASE_W` を下げても窓は細くならない（B-053 の
+    `geometry()` を上書きするので、`_BASE_W` を下げてもウィンドウは細くならない（B-053 の
     実装中に実際に踏んだ）。⚠️ ただし**この形を捕まえるのは下の「余り」の assert**
-    （窓幅が minsize まで押し上げられるので余りとして出る）。`minsize` の assert は
-    **除外窓でも効く二重の網**で、単独ではこの欠陥を検出しない＝**主たる守りと
+    （ウィンドウ幅が minsize まで押し上げられるので余りとして出る）。`minsize` の assert は
+    **除外ウィンドウでも効く二重の網**で、単独ではこの欠陥を検出しない＝**主たる守りと
     補助を取り違えないこと。**
     """
     opener, _grow = _WINDOWS[name]
@@ -452,14 +452,14 @@ def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
         size, need = win._fit_size, win._fit_need
         min_w = int(win.minsize()[0])
         assert min_w <= size[0], (
-            f"[{name}] minsize({min_w}px) が窓幅({size[0]}px)を上回っている＝"
+            f"[{name}] minsize({min_w}px) がウィンドウ幅({size[0]}px)を上回っている＝"
             "Tk が geometry() を上書きするので、下限を下げても細くならない"
         )
         if name in _WIDTH_FLOOR_EXEMPT:
             return
         assert size[0] - need[0] <= _WIDTH_FLOOR_TOLERANCE, (
-            f"[{name}] 窓が必要幅より {size[0] - need[0]}px 広い"
-            f"（窓 {size[0]}px / 必要 {need[0]}px）＝下限が既定幅を決めている。"
+            f"[{name}] ウィンドウが必要幅より {size[0] - need[0]}px 広い"
+            f"（ウィンドウ {size[0]}px / 必要 {need[0]}px）＝下限が既定幅を決めている。"
             f"下限を中身より下げるか、理由を書いて _WIDTH_FLOOR_EXEMPT へ入れること。"
         )
     finally:
@@ -467,14 +467,14 @@ def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
 
 
 def _scenario_band_width(win) -> int:
-    """凍結帯（案件情報・経路）が要求する幅（＝この 2 つの LabelFrame の最大）。"""
+    """凍結バー（案件情報・経路）が要求する幅（＝この 2 つの LabelFrame の最大）。"""
     bands = [c for c in win._fit_scroll.body.winfo_children()
              if c.winfo_class() == "TLabelframe"]
-    assert len(bands) >= 2, "凍結帯が見つからない（案件情報・経路）"
+    assert len(bands) >= 2, "凍結バーが見つからない（案件情報・経路）"
     return max(b.winfo_reqwidth() for b in bands[:2])
 
 
-# 凍結帯の欄を測るときに**わざと当てる書体**（B-154）。
+# 凍結バーの欄を測るときに**わざと当てる書体**（B-154）。
 # 🔴 **開発機の書体では実機の切れ方が再現しない**＝実機（AVD）は `Yu Gothic UI` が
 # 無く `Meiryo UI` へ落ちる。同じ 10pt でも「0」の幅が 7px → 8px、日本語の字は
 # もっと広がるので、**開発機で「収まる」欄が実機で切れる**（実際に切れた絵が
@@ -486,15 +486,15 @@ _BAND_FONT_FAMILIES = ["Yu Gothic UI", "Meiryo UI", "Segoe UI Variable Text"]
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("conditions", [1, 5])
 def test_the_frozen_sampling_field_shows_its_whole_value(lang, conditions, family):
-    """凍結帯の「刻み」の欄が、**いちばん長い値でも切れずに描ける**こと（B-154）。
+    """凍結バーの「刻み」の欄が、**いちばん長い値でも切れずに描ける**こと（B-154）。
 
-    🔴 **宣言した `width` を見ても分からない**＝この欄は幅の予算（帯は窓幅を決めて
+    🔴 **宣言した `width` を見ても分からない**＝この欄は幅の予算（バーはウィンドウ幅を決めて
     はいけない・B-052）に収めるため**短いほうの字だけを要求し、残りを `expand` で
     受ける**。⇒ *実際に描かれた幅*と*字の幅*を突き合わせる以外に確かめようがない。
     ⚠️ **これを宣言幅（文字数）で書いたゲートは、実機で切れている絵をそのまま通す**
     ——`width=15` は「0 の幅 15 個ぶん」であって**日本語 15 文字ではない**。
 
-    ⚠️ **テーマを当てた窓で測る**＝素の Tk は 9pt、製品は sv_ttk の 10pt。
+    ⚠️ **テーマを当てたウィンドウで測る**＝素の Tk は 9pt、製品は sv_ttk の 10pt。
     ⚠️ **書体も当てる**（→ `_BAND_FONT_FAMILIES`）＝開発機と実機で違う。
     ⚠️ **最悪の値で測る**＝点数は天井、刻みは 2 桁（「低」の 20.1m）。
     """
@@ -535,19 +535,19 @@ def test_the_frozen_sampling_field_shows_its_whole_value(lang, conditions, famil
 
 
 def test_the_frozen_header_does_not_decide_the_scenario_window_width():
-    """条件探索の窓幅を**凍結帯が決めていない**こと（帯 ≦ 条件 5 列のグリッド）。
+    """条件探索のウィンドウ幅を**凍結バーが決めていない**こと（バー ≦ 条件 5 列のグリッド）。
 
     実機フィードバック（2026-08-01）＝「横幅が広すぎる。条件 5 列でも右が余る」。
-    直した（帯を詰めて 1070 → 870/940px）が、**2026-08-08 に再来**した＝B-046 で
-    座標欄を 27 文字にしたとき帯が 870 → 1085px に太り、また帯が窓幅を決めた
-    （B-052）。⇒ 窓幅を決めてよいのは**列数で変わる中身**（比較グリッド）だけ。
+    直した（バーを詰めて 1070 → 870/940px）が、**2026-08-08 に再来**した＝B-046 で
+    座標欄を 27 文字にしたときバーが 870 → 1085px に太り、またバーがウィンドウ幅を決めた
+    （B-052）。⇒ ウィンドウ幅を決めてよいのは**列数で変わる中身**（比較グリッド）だけ。
 
-    ⚠️ **1 回目のゲートはこの再来を捕まえられなかった**＝「窓幅 ≦ *一番広い中身*
-    + 60」を見ており、**一番広い中身が帯そのもの**なので、帯が太るとゲートの基準も
+    ⚠️ **1 回目のゲートはこの再来を捕まえられなかった**＝「ウィンドウ幅 ≦ *一番広い中身*
+    + 60」を見ており、**一番広い中身がバーそのもの**なので、バーが太るとゲートの基準も
     一緒に太った（[[feedback-promote-recurring-checks]] 実証30／壊れ方③）。ここでは
-    **帯とグリッドという別々の量**を比べる＝どちらが太っても片方は動かない。
-    ⚠️ **座標欄を細くせよとは要求しない**（B-046 の下限と矛盾させない）。帯が太い
-    なら、**幅を食っている物を帯から出す**（↻ と 🔒 の説明は案件情報の行へ移した）。
+    **バーとグリッドという別々の量**を比べる＝どちらが太っても片方は動かない。
+    ⚠️ **座標欄を細くせよとは要求しない**（B-046 の下限と矛盾させない）。バーが太い
+    なら、**幅を食っている物をバーから出す**（↻ と 🔒 の説明は案件情報の行へ移した）。
     """
     root = make_themed_root()
     root.withdraw()
@@ -558,22 +558,22 @@ def test_the_frozen_header_does_not_decide_the_scenario_window_width():
         band = _scenario_band_width(win)
         grid = win._cmp_grid.winfo_reqwidth()
         assert band <= grid, (
-            f"凍結帯が窓幅を決めている（帯 {band}px > 条件 5 列 {grid}px）"
+            f"凍結バーがウィンドウ幅を決めている（バー {band}px > 条件 5 列 {grid}px）"
         )
     finally:
         root.destroy()
 
 
 def test_the_frozen_header_does_not_decide_the_multihop_window_width():
-    """中継経路の窓幅を**凍結帯が決めていない**こと（帯 ≦ 区間表）。
+    """中継経路のウィンドウ幅を**凍結バーが決めていない**こと（バー ≦ 区間表）。
 
-    B-053 で帯を 859 → 620px 台へ下げ、「窓幅は区間表が決める」状態にしたばかり。
+    B-053 でバーを 859 → 620px 台へ下げ、「ウィンドウ幅は区間表が決める」状態にしたばかり。
     **I-101 で 6 → 11 欄にするのは、その成果を食う方向の変更**なので、ここで固定する
-    （窓新設時にも 6 欄を 1 行に並べて 125%/150% で 2088px を要求し、横断ゲートが
+    （ウィンドウ新設時にも 6 欄を 1 行に並べて 125%/150% で 2088px を要求し、横断ゲートが
     止めている）。⚠️ **欄を減らせとは要求しない**＝入れるなら**折り返して**入れる
     （複数経路のように 1 行へ並べない）。
 
-    ⚠️ **見るのは「共通設定」の帯だけ**＝案件情報の帯は I-101 が触らないうえ、
+    ⚠️ **見るのは「共通設定」のバーだけ**＝案件情報のバーは I-101 が触らないうえ、
     当時は **en 781px / ja 764px と区間表を上回っていた**（↻ ボタン＋説明＋幅 20
     文字の欄 2 つ）。ここへ混ぜると**この変更と無関係な理由で最初から赤**になり、
     ゲートが何を要求しているのか読めなくなる（壊れ方③）。⇒ 案件情報の側は
@@ -587,11 +587,11 @@ def test_the_frozen_header_does_not_decide_the_multihop_window_width():
         bands = [c for c in win._fit_scroll.body.winfo_children()
                  if c.winfo_class() == "TLabelframe"
                  and str(c.cget("text")) == i18n.t("batch_common_cfg")]
-        assert len(bands) == 1, "共通設定の帯が 1 つでない（見出しが変わった？）"
+        assert len(bands) == 1, "共通設定のバーが 1 つでない（見出しが変わった？）"
         band = bands[0].winfo_reqwidth()
         table = win._hop_grid.winfo_reqwidth()
         assert band <= table, (
-            f"共通設定の帯が窓幅を決めている（帯 {band}px > 区間表 {table}px）＝"
+            f"共通設定のバーがウィンドウ幅を決めている（バー {band}px > 区間表 {table}px）＝"
             "B-053 で下げた成果を食っている。欄を折り返して入れること。"
         )
     finally:
@@ -600,27 +600,27 @@ def test_the_frozen_header_does_not_decide_the_multihop_window_width():
 
 @pytest.mark.parametrize("lang", ["ja", "en"])
 def test_the_case_info_band_does_not_decide_the_multihop_window_width(lang):
-    """中継経路の窓幅を**案件情報の帯が決めていない**こと（帯 ≦ 区間表）。
+    """中継経路のウィンドウ幅を**案件情報のバーが決めていない**こと（バー ≦ 区間表）。
 
     **B-053 で潰したはずの形の、もう 1 面**（B-108）。あのとき下げたのは共通設定の
-    帯（859 → 620px 台）で、案件情報の帯は測っていなかった。実測（2026-08-18）＝
-    **帯 ja 764 / en 781px に対し区間表は ja 741 / en 647px** ＝帯が窓幅を決めていた。
-    ⚠️ **↻ と 🔒 の説明をこの帯へ移してきたのが B-053 そのもの**なので、共通設定を
-    軽くした分が素直にこちらへ移っていた＝**帯を 1 つ測るだけでは、凍結領域全体の
+    バー（859 → 620px 台）で、案件情報のバーは測っていなかった。実測（2026-08-18）＝
+    **バー ja 764 / en 781px に対し区間表は ja 741 / en 647px** ＝バーがウィンドウ幅を決めていた。
+    ⚠️ **↻ と 🔒 の説明をこのバーへ移してきたのが B-053 そのもの**なので、共通設定を
+    軽くした分が素直にこちらへ移っていた＝**バーを 1 つ測るだけでは、凍結領域全体の
     要求幅は下がらない。**
 
-    ⚠️ **言語で worst case が入れ替わる**＝日本語は帯も表も長く差は 23px だが、英語
+    ⚠️ **言語で worst case が入れ替わる**＝日本語はバーも表も長く差は 23px だが、英語
     は区間表だけが短くなる（647px）ので超過が 134px に開く。**ja だけ見ると「あと
     少し」に見えて処方の大きさを読み違える**ので両方を回す。
 
     ⚠️ **欄を細くせよとは要求しない**＝案件名・メモは利用者の文字列をそのまま見せる
-    欄で、下限を削ると読めなくなる（B-046 と同じ筋）。**この窓は横が狭く縦に余裕が
+    欄で、下限を削ると読めなくなる（B-046 と同じ筋）。**このウィンドウは横が狭く縦に余裕が
     ある**ので、入れるなら**折り返して**入れる（共通設定を 3 欄で折ったのと同じ）。
 
-    ⚠️ **複数経路（BatchBuilderWindow）は同じ構造だが該当しない**＝帯の作りは同一
-    （2026-08-18 実測で 764/781px と一致）だが、あの窓は共通設定が 1157〜1238px を
-    要求するので**帯が窓幅を決める余地が無い**。⇒ クラスとしては点検済みで、直す
-    のはこの窓だけ＝**帯の項目は正典（`frozen_common`）だが、並べ方は窓ごと。**
+    ⚠️ **複数経路（BatchBuilderWindow）は同じ構造だが該当しない**＝バーの作りは同一
+    （2026-08-18 実測で 764/781px と一致）だが、あのウィンドウは共通設定が 1157〜1238px を
+    要求するので**バーがウィンドウ幅を決める余地が無い**。⇒ クラスとしては点検済みで、直す
+    のはこのウィンドウだけ＝**バーの項目は正典（`frozen_common`）だが、並べ方はウィンドウごと。**
     """
     prev = i18n._lang
     root = make_themed_root()
@@ -632,12 +632,12 @@ def test_the_case_info_band_does_not_decide_the_multihop_window_width(lang):
         bands = [c for c in win._fit_scroll.body.winfo_children()
                  if c.winfo_class() == "TLabelframe"
                  and str(c.cget("text")) == i18n.t("batch_case_info")]
-        assert len(bands) == 1, "案件情報の帯が 1 つでない（見出しが変わった？）"
+        assert len(bands) == 1, "案件情報のバーが 1 つでない（見出しが変わった？）"
         band = bands[0].winfo_reqwidth()
         table = win._hop_grid.winfo_reqwidth()
         assert band <= table, (
-            f"[{lang}] 案件情報の帯が窓幅を決めている"
-            f"（帯 {band}px > 区間表 {table}px）＝B-053 で潰した形がこの面に残って"
+            f"[{lang}] 案件情報のバーがウィンドウ幅を決めている"
+            f"（バー {band}px > 区間表 {table}px）＝B-053 で潰した形がこの面に残って"
             "いる。欄を細くするのではなく、折り返して入れること。"
         )
     finally:
@@ -646,9 +646,9 @@ def test_the_case_info_band_does_not_decide_the_multihop_window_width(lang):
 
 
 def test_scenario_window_width_follows_the_condition_count():
-    """条件を増やしたときだけ窓が広がること（1 列の時点で最大幅になっていない）。
+    """条件を増やしたときだけウィンドウが広がること（1 列の時点で最大幅になっていない）。
 
-    「窓が広すぎる」の**症状そのもの**を見る＝帯や下限が幅を決めていると、条件 1 列
+    「ウィンドウが広すぎる」の**症状そのもの**を見る＝バーや下限が幅を決めていると、条件 1 列
     でも最大幅になり、ここが等しくなる。⚠️ `_BASE_W`（下限）を上げただけでも赤に
     なる＝下限は「これ以上細くしない」ためのもので、既定幅を決める場所ではない。
     """
@@ -662,7 +662,7 @@ def test_scenario_window_width_follows_the_condition_count():
         win.update()
         wide = win._fit_size[0]
         assert narrow < wide, (
-            f"条件を 1 → 5 列にしても窓幅が変わらない（{narrow}px → {wide}px）"
+            f"条件を 1 → 5 列にしてもウィンドウ幅が変わらない（{narrow}px → {wide}px）"
             "＝幅を決めているのは条件列ではない"
         )
     finally:
@@ -675,12 +675,12 @@ def test_scenario_window_width_follows_the_condition_count():
 # 🔴 **これまでの「増え方」は全部“行・列が増える”形だった**（地点を足す・条件列を
 # 足す・CSV を読み込む）。B-100 はそれとは別のクラス＝**行も列も増えないまま、
 # 既にあるセルの中身だけが伸びる**（区間の見出しが `TX → R1` から利用者の入力した
-# 地点名へ変わる）。窓は測り直しを呼ばないので、伸びたぶんが右へ押し出されて
+# 地点名へ変わる）。ウィンドウは測り直しを呼ばないので、伸びたぶんが右へ押し出されて
 # **「判定」列が見切れる**。⚠️ 利用者は判定列があることを知らないので、
 # **見切れていること自体に気づけない。**
 #
 # 🔑 **固定データで試している限り永久に出ない**＝既定の地点名（`TX`/`R1`/`RX`）では
-# 表が窓より狭いままではみ出さない。**環境の差ではなく入力の差**だった
+# 表がウィンドウより狭いままではみ出さない。**環境の差ではなく入力の差**だった
 # （「実機で再現しない」と報告され、一度 [[project-real-world-env-vdi]] クラスと
 # 誤って書いた＝入力を動かして初めて開発機で再現した）。
 #
@@ -691,7 +691,7 @@ _LONG_NAME = "広島県安芸郡海田町役場庁舎"        # 13 字（B-100 �
 
 
 def test_the_multihop_window_follows_a_longer_place_name():
-    """🔴 **地点名を書き換えたら窓も測り直すこと**（B-100）。
+    """🔴 **地点名を書き換えたらウィンドウも測り直すこと**（B-100）。
 
     ⚠️ **開いた後に書き換えるのが肝**＝プロジェクトを開いて最初から長い名前が
     入っている場合は、組み立て後の `_fit_to_content()` が測るので再現しない。
@@ -711,7 +711,7 @@ def test_the_multihop_window_follows_a_longer_place_name():
             "＝はみ出さない条件で試している。名前をもっと長くすること。"
         )
         assert grid <= win._fit_size[0], (
-            f"区間表（{grid}px）が窓（{win._fit_size[0]}px）に入っていない＝右端の"
+            f"区間表（{grid}px）がウィンドウ（{win._fit_size[0]}px）に入っていない＝右端の"
             "「判定」列が見切れる。利用者は判定列があることを知らないので、"
             "**見切れていること自体に気づけない**（B-100）。"
         )
@@ -723,13 +723,13 @@ def test_the_multihop_window_follows_a_longer_place_name():
 def test_required_size_sees_content_that_grew_without_a_refit():
     """🔴 **横断ゲートの目が塞がっていた**（B-100 の systemic な半分）。
 
-    逃げ道（`scrollable_body`）を持つ窓では、窓の `winfo_reqwidth()` が**受け皿の
+    逃げ道（`scrollable_body`）を持つウィンドウでは、ウィンドウの `winfo_reqwidth()` が**受け皿の
     キャンバスの要求幅で頭打ちになる**。それを更新するのは `_ScrollEscape.remeasure()`
-    だけで、呼ぶのは `fit_to_content` だけ＝**測り直しを呼び忘れた窓では、
+    だけで、呼ぶのは `fit_to_content` だけ＝**測り直しを呼び忘れたウィンドウでは、
     `required_size()` も伸びる前の値を返し続ける**（実測＝区間表が 647 → 993px に
     伸びても 801px のまま）。
 
-    ⇒ **窓の測り忘れという欠陥クラスが、ゲートから原理的に見えなかった。**
+    ⇒ **ウィンドウの測り忘れという欠陥クラスが、ゲートから原理的に見えなかった。**
     申告（`_fit_need`）も実測（`winfo_req*`）も同じ嘘をつくので「大きい方を採る」
     では救われない（[[feedback-promote-recurring-checks]] の壊れ方③）。
 
@@ -750,7 +750,7 @@ def test_required_size_sees_content_that_grew_without_a_refit():
         need_w = window_fit.required_size(win)[0]
         assert need_w >= grid, (
             f"必要幅が中身に届いていない（申告 {need_w}px / 区間表 {grid}px）＝"
-            "受け皿のキャンバス幅で頭打ちになっている。この状態では**窓が測り直しを"
+            "受け皿のキャンバス幅で頭打ちになっている。この状態では**ウィンドウが測り直しを"
             "呼び忘れても横断ゲートが緑になる**（B-100 を通した経路そのもの）。"
         )
     finally:
@@ -859,7 +859,7 @@ _SHIP_DPIS = (96, 120, 144)
 # 🔴 **上限は DPI で動く**（2026-08-18・B-084）。`_FHD_LIMIT`（＝定数 90px を引いた
 # 990px）は **100% 表示だけの値**だった：出荷先のタスクバーは 100% で 48px、150% では
 # 72px あり、装飾（タイトルバー＋枠）も 39px → 63px と拡大する。定数はどちらの拡大も
-# 賄えないので、**150% では使える高さを 45px 過大に見積もっていた**（実機では窓の下端
+# 賄えないので、**150% では使える高さを 45px 過大に見積もっていた**（実機ではウィンドウの下端
 # 33px がタスクバーの裏）。⇒ 出荷先の条件は**偽のタスクバーを注入して**作る。
 #
 # ⚠️ **`_FHD_LIMIT` を消さない**＝あちらは「OS に聞けない環境の見積り」として
@@ -877,7 +877,7 @@ def _ship_on_fhd(monkeypatch, dpi):
 
 
 def _ship_limits(win):
-    """出荷先で窓の**中身**に使える `(幅, 高さ)`（装飾のぶんは引いてある）。"""
+    """出荷先でウィンドウの**中身**に使える `(幅, 高さ)`（装飾のぶんは引いてある）。"""
     left, top, right, bottom = window_fit.usable_area(win, (0, 0, *_FHD_SCREEN))
     return (right - left, bottom - top)
 
@@ -889,7 +889,7 @@ def test_every_window_fits_without_scrolling_at_100_percent(name, lang, monkeypa
 
     逃げ道（`scrollable_body`）は「入らない画面でも壊れない」ための保険であって、
     **標準環境で常時スクロールさせてよい**という意味ではない。ここを緩めると、
-    UI を足すたびに数十 px ずつ食って「実機では最初からスクロール」の窓が
+    UI を足すたびに数十 px ずつ食って「実機では最初からスクロール」のウィンドウが
     できあがる（実際 I-029〜I-031 の実装中に、ランチャーが 966→994px、条件探索が
     941→1033px まで膨らんで一度この線を越えた＝このテストが捕まえた）。
 
@@ -930,7 +930,7 @@ def test_every_window_fits_without_scrolling_at_100_percent(name, lang, monkeypa
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
 def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
-    """実機（FHD）で全窓が使えること＝**入るか、入らないなら手が届くか**。
+    """実機（FHD）で全ウィンドウが使えること＝**入るか、入らないなら手が届くか**。
 
     「入らないのだから仕方ない」で見逃さない、が本テストの本体（B-021）。
     高さは逃げ道（スクロール）で許すが、**幅は素で収まることを要求する**
@@ -956,11 +956,11 @@ def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
             "**横スクロールで逃げない**＝列を減らすか、幅の要求そのものを削ること。"
         )
         if need_h > lim_h:
-            # 入らない窓は、入らないなりに最後まで手が届くこと。
+            # 入らないウィンドウは、入らないなりに最後まで手が届くこと。
             assert getattr(win, "_fit_scroll", None) is not None, (
                 f"[{label}] 画面に入らない（必要 {need_h}px / 使える高さ {lim_h}px ＝ "
                 f"{need_h - lim_h}px 超過）のに逃げ道が無い。溢れた分は下端の"
-                "ウィジェットから削られる（B-021 では最下段のボタン列が数 px の帯に"
+                "ウィジェットから削られる（B-021 では最下段のボタン列が数 px のバーに"
                 "潰れ、マップウィンドウ・条件探索へ到達できなくなった）。"
                 "window_fit.scrollable_body の中へ組み立てること。"
             )
@@ -979,8 +979,8 @@ def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
 # 検査する。溢れさせずに「逃げ道がある」ことだけ確かめるテストは、逃げ道が
 # 壊れていても緑になる（＝これまで見切れを 6 回通した形そのもの）。
 #
-# 逃げ道を持つべき窓と、その窓が実機 FHD で溢れる DPI。
-# **溢れない窓（バッチ・地図）を入れていないのは意図的**＝中身が伸縮する窓で、
+# 逃げ道を持つべきウィンドウと、そのウィンドウが実機 FHD で溢れる DPI。
+# **溢れないウィンドウ（バッチ・地図）を入れていないのは意図的**＝中身が伸縮するウィンドウで、
 # 二重のスクロール容器に入れると内側の表が潰れる。溢れた日には
 # `test_every_window_fits_on_fhd_at_96dpi`（と 125/150% への拡張）が赤くなるので、
 # そのとき改めて判断する（黙って見逃す経路にはならない）。
@@ -988,7 +988,7 @@ _ESCAPE_WINDOWS = {"launcher": 120, "scenario": 144}
 
 
 def _open_on_fhd(root, name, dpi, monkeypatch):
-    """FHD の画面・指定 DPI で窓を開く（`_fit_size` はその前提で決まる）。"""
+    """FHD の画面・指定 DPI でウィンドウを開く（`_fit_size` はその前提で決まる）。"""
     from views import theme
 
     _ship_on_fhd(monkeypatch, dpi)
@@ -1000,13 +1000,13 @@ def _open_on_fhd(root, name, dpi, monkeypatch):
 
 @pytest.mark.parametrize("name,dpi", sorted(_ESCAPE_WINDOWS.items()))
 def test_window_that_cannot_fit_can_still_be_scrolled(name, dpi, monkeypatch):
-    """画面に入らない窓が、**スクロールで最後まで届く**こと。
+    """画面に入らないウィンドウが、**スクロールで最後まで届く**こと。
 
     B-021 の実害は「入らない」ことではなく、**入らなかった分が下端のウィジェット
-    から黙って削られる**ことだった（最下段のボタン列が数 px の帯に潰れ、マップ
+    から黙って削られる**ことだった（最下段のボタン列が数 px のバーに潰れ、マップ
     ウィンドウ・条件探索へ到達できなくなった）。ここで見るのは 3 点：
 
-      1. 窓は画面の上限にクランプされている（＝溢れる状況を再現できている）
+      1. ウィンドウは画面の上限にクランプされている（＝溢れる状況を再現できている）
       2. 縦スクロールバーが出ている
       3. **スクロール領域が中身の必要量を丸ごと覆っている**＝一番下まで届く
     """
@@ -1021,7 +1021,7 @@ def test_window_that_cannot_fit_can_still_be_scrolled(name, dpi, monkeypatch):
         assert need_h > lim_h, (
             f"[{name}/{dpi}dpi] 溢れない条件でテストしている"
             f"（必要 {need_h}px ≤ 上限 {lim_h}px）＝逃げ道が壊れていても緑になる。"
-            "DPI を上げるか、この窓を _ESCAPE_WINDOWS から外すこと。"
+            "DPI を上げるか、このウィンドウを _ESCAPE_WINDOWS から外すこと。"
         )
         assert win._fit_size[1] == lim_h
         escape = getattr(win, "_fit_scroll", None)
@@ -1053,7 +1053,7 @@ def test_mouse_wheel_moves_the_escape_only_when_nothing_inside_scrolls(monkeypat
     結果一覧（Treeview）のように自前でスクロールする部品の上でも受け皿が動くと、
     一度のホイールで**二重に流れて**行き先が分からなくなる。
 
-    ⚠️ 窓を実体化（`deiconify`）しないと検証にならない＝未表示のキャンバスは
+    ⚠️ ウィンドウを実体化（`deiconify`）しないと検証にならない＝未表示のキャンバスは
     「中身が全部見えている」状態を返し、スクロール量が常に 0 になる。
     """
     from types import SimpleNamespace
@@ -1096,9 +1096,9 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
     """**手で小さくしたとき**もバーが出ること。
 
     `fit_to_content` が走るのは「開いたとき」と「中身が増えたとき」だけなので、
-    ユーザーがマウスで窓を縮めた場合はそこを通らない。ここが無いと
+    ユーザーがマウスでウィンドウを縮めた場合はそこを通らない。ここが無いと
     「小さくしたら下端が消えて、しかもスクロールもできない」になる
-    （リサイズできる窓＝グラフ窓で露見。他の窓は固定 or 下限が大きく気づけなかった）。
+    （リサイズできるウィンドウ＝グラフウィンドウで露見。他のウィンドウは固定 or 下限が大きく気づけなかった）。
     """
     root = make_themed_root()
     try:
@@ -1107,7 +1107,7 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
         win, _ = _open_scenario(root)
         escape = win._fit_scroll
         # 🔴 **前提は主張ではない**（2026-08-23・I-108）＝「開いた直後はまだ溢れて
-        # いない」は**その機械の画面が窓を持てるとき**にだけ成り立つ。実測＝表示
+        # いない」は**その機械の画面がウィンドウを持てるとき**にだけ成り立つ。実測＝表示
         # スケール 150% では `need=(843, 989)` に対し画面が 1707x960 しかなく、
         # 装飾を引いた 921 で頭打ちする ⇒ 開いた瞬間から逃げ道が出て、この検査の
         # 前提が消える。**製品ではなく実行環境が赤を出していた。**
@@ -1156,7 +1156,7 @@ def test_scroll_escape_stays_hidden_while_the_content_fits():
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
 def test_window_fits_its_content(name, lang, monkeypatch):
-    """開いた時点で全窓が中身を収めていること（言語を変えても）。
+    """開いた時点で全ウィンドウが中身を収めていること（言語を変えても）。
 
     日本語見出しは英語より 1 割ほど広い＝どちらか片方でしか測らないと、もう
     片方で見切れる（B-002 がまさにそれ）。
@@ -1197,16 +1197,16 @@ def test_window_still_fits_after_content_grows(name, monkeypatch):
         root.destroy()
 
 
-# 「増やす操作」が**必要サイズを動かさない**窓＝理由を書いてここへ入れる
+# 「増やす操作」が**必要サイズを動かさない**ウィンドウ＝理由を書いてここへ入れる
 # （2.7 スライス F で新設）。⚠️ 空欄にできない＝**理由ごと残して見直せる**ように
 # するのがこの表の目的（`_LINE_LIMIT_EXEMPT` と同じ扱い）。
 _GROW_EXEMPT = {
     "batch":
-        "入力表は受け皿（キャンバス）の中にあり、行を足しても窓の必要サイズは動かない"
+        "入力表は受け皿（キャンバス）の中にあり、行を足してもウィンドウの必要サイズは動かない"
         "（実測 2026-08-07＝1 行 / 12 行 / 30 行とも 1378x612）。列幅も入力欄の"
         "文字数で決まるので、長い備考を入れても広がらない",
-    # ⚠️ **`scenario` は 2026-08-08 に除外から戻した**（B-052）＝凍結帯から ↻ と
-    # 🔒 の説明を出して帯を 1085 → 829px に細くしたので、**窓幅はまた条件列で
+    # ⚠️ **`scenario` は 2026-08-08 に除外から戻した**（B-052）＝凍結バーから ↻ と
+    # 🔒 の説明を出してバーを 1085 → 829px に細くしたので、**ウィンドウ幅はまた条件列で
     # 決まる**（実測 ja/dd＝1 列 859px → 5 列 947px）。この除外表がその場で赤に
     # なって知らせた＝「除外は免除の永久パスではなく観測の記録」が働いた実例。
 }
@@ -1221,10 +1221,10 @@ def test_the_grow_operation_actually_grows(name):
     何も増やさなくなっても緑のまま**＝「増えても収まる」を主張しているのに、
     増えていないので何も検査していない（[[feedback-promote-recurring-checks]]
     壊れ方②）。実際 2026-08-07 に測ったら **3 本中 2 本が動いていなかった**
-    （batch / scenario）。窓が育つほど、増やす操作は静かに吸収されていく。
+    （batch / scenario）。ウィンドウが育つほど、増やす操作は静かに吸収されていく。
 
     ⇒ **個別のテストではなく登録表（`_WINDOWS`）そのものを検査する**ので、
-    窓を足す人が「増やす操作」を書いた時点で、それが効いているかを機械が言う。
+    ウィンドウを足す人が「増やす操作」を書いた時点で、それが効いているかを機械が言う。
 
     ⚠️ **除外側も検査する**（増えるようになったら除外が古い）＝除外表は
     「今は動かない」という**観測の記録**であって、免除の永久パスではない。
@@ -1252,7 +1252,7 @@ def test_the_grow_operation_actually_grows(name):
             assert after != before, (
                 f"{name} の「増やす操作」が必要サイズを 1px も動かしていない"
                 f"（{before} のまま）＝`test_window_still_fits_after_content_grows` は"
-                "この窓について何も検査していない。増える操作へ直すか、"
+                "このウィンドウについて何も検査していない。増える操作へ直すか、"
                 "理由を書いて _GROW_EXEMPT へ入れること。"
             )
     finally:
@@ -1261,7 +1261,7 @@ def test_the_grow_operation_actually_grows(name):
 
 
 def test_grow_exemptions_still_refer_to_registered_windows():
-    """除外表に、登録されていない窓・増やす操作の無い窓が残っていないこと。"""
+    """除外表に、登録されていないウィンドウ・増やす操作の無いウィンドウが残っていないこと。"""
     stale = [name for name in _GROW_EXEMPT
              if name not in _WINDOWS or _WINDOWS[name][1] is None]
     assert not stale, f"除外表に古い項目がある: {stale}"
@@ -1269,7 +1269,7 @@ def test_grow_exemptions_still_refer_to_registered_windows():
 
 # ⛔ `test_growing_content_does_not_shrink_the_window` は 2.7 スライス F で削除。
 #    条件列を足しても引いても条件探索の必要サイズが動かない（上記の除外理由）ので、
-#    「広げた窓を狭めない」を**恒真**に主張していた。同じ約束は、下の
+#    「広げたウィンドウを狭めない」を**恒真**に主張していた。同じ約束は、下の
 #    `test_refit_all_does_not_shrink_unless_asked` が DPI 経由で非自明に見ている。
 
 
@@ -1277,11 +1277,11 @@ def test_grow_exemptions_still_refer_to_registered_windows():
 # DPI が変わったら測り直すこと
 # ============================================================
 def test_windows_are_refitted_when_dpi_grows(monkeypatch):
-    """DPI が上がってフォントが大きくなったら、窓も広がること。
+    """DPI が上がってフォントが大きくなったら、ウィンドウも広がること。
 
-    2026-07-26 のユーザー報告は「窓は DPI に追従して変わるのに字が変わらない」
+    2026-07-26 のユーザー報告は「ウィンドウは DPI に追従して変わるのに字が変わらない」
     だった。字を追従させると今度は**必要な幅も高さも増える**ので、貼り直しと
-    測り直しは対で要る（片方だけ直すと、字は大きくなったが窓は元のままで
+    測り直しは対で要る（片方だけ直すと、字は大きくなったがウィンドウは元のままで
     見切れる＝これまでと同じクラスの不具合になる）。
     """
     from views import theme
@@ -1299,7 +1299,7 @@ def test_windows_are_refitted_when_dpi_grows(monkeypatch):
         root.update_idletasks()
 
         assert win._fit_size[0] > before[0], (
-            f"DPI が上がってフォントが大きくなったのに窓幅が変わらない"
+            f"DPI が上がってフォントが大きくなったのにウィンドウ幅が変わらない"
             f"（{before[0]}px のまま）。右端が見切れる。"
         )
         _assert_fits(win, "scenario（DPI 144）")
@@ -1309,12 +1309,12 @@ def test_windows_are_refitted_when_dpi_grows(monkeypatch):
 
 
 def test_windows_shrink_back_when_dpi_falls(monkeypatch):
-    """DPI が**下がったら**窓も戻ること（I-053＝150% → 100% の一方通行）。
+    """DPI が**下がったら**ウィンドウも戻ること（I-053＝150% → 100% の一方通行）。
 
     ⚠️ **上の `test_windows_are_refitted_when_dpi_grows` と対で置く**＝あちらは
     増える方向しか見ておらず、`grow_only`（縮めない約束）を DPI 経路でも尊重して
     いた実装が**そのまま緑**だった（片側しか見ていないゲート）。表示スケールを
-    戻したのに窓が大きいままなのは、狭い画面では見切れの原因そのものになる。
+    戻したのにウィンドウが大きいままなのは、狭い画面では見切れの原因そのものになる。
     """
     from views import theme
 
@@ -1335,7 +1335,7 @@ def test_windows_shrink_back_when_dpi_falls(monkeypatch):
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
         assert win._fit_size == at96, (
-            f"表示スケールを戻したのに窓が {win._fit_size} のまま"
+            f"表示スケールを戻したのにウィンドウが {win._fit_size} のまま"
             f"（100% では {at96} で足りる）＝広がる方向の一方通行。"
         )
     finally:
@@ -1344,11 +1344,11 @@ def test_windows_shrink_back_when_dpi_falls(monkeypatch):
 
 
 def test_a_window_with_its_own_refit_shrinks_too(monkeypatch):
-    """**自前の再測を持つ窓**（バッチ）も縮む方向に追従すること。
+    """**自前の再測を持つウィンドウ**（バッチ）も縮む方向に追従すること。
 
-    `refit_all` は `_fit_refit` があればそちらを呼ぶ＝窓が自分の `grow_only` で
+    `refit_all` は `_fit_refit` があればそちらを呼ぶ＝ウィンドウが自分の `grow_only` で
     `fit_to_content` を呼び直すので、**引数では「今回は縮んでよい」が伝わらない**。
-    ⚠️ ここが抜けると「4 窓は戻るのにバッチだけ戻らない」という、直そうとして
+    ⚠️ ここが抜けると「4 ウィンドウは戻るのにバッチだけ戻らない」という、直そうとして
     いる一方通行の一部だけが生き残る（⑧＝同じ表示環境なら同じ規則で追従する）。
     """
     from views import theme
@@ -1371,7 +1371,7 @@ def test_a_window_with_its_own_refit_shrinks_too(monkeypatch):
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
         assert win._fit_size == at96, (
-            f"自前の再測を持つ窓が縮んでいない（{win._fit_size} のまま／100% では "
+            f"自前の再測を持つウィンドウが縮んでいない（{win._fit_size} のまま／100% では "
             f"{at96}）＝`shrink` が `_fit_refit` の先まで届いていない。"
         )
     finally:
@@ -1383,7 +1383,7 @@ def test_refit_all_does_not_shrink_unless_asked(monkeypatch):
     """`shrink` を渡さない経路では**縮めない**こと（既存の約束を壊さない）。
 
     縮めてよいのは DPI が変わった瞬間だけ＝解像度の変化やテーマの貼り直しで
-    「手で広げた窓が勝手に既定サイズへ戻る」と、I-053 で直したい一方通行の
+    「手で広げたウィンドウが勝手に既定サイズへ戻る」と、I-053 で直したい一方通行の
     ちょうど裏返しの嫌がらせになる。
     """
     from views import theme
@@ -1406,7 +1406,7 @@ def test_refit_all_does_not_shrink_unless_asked(monkeypatch):
         window_fit.refit_all(root)                 # 既定＝縮めない
         root.update_idletasks()
         assert win._fit_size == wide, (
-            f"頼まれていないのに窓を狭めた（{win._fit_size} ／ {wide} だった）。"
+            f"頼まれていないのにウィンドウを狭めた（{win._fit_size} ／ {wide} だった）。"
         )
 
         window_fit.refit_all(root, shrink=True)    # 頼まれたら縮む
@@ -1423,10 +1423,10 @@ def test_refit_all_does_not_shrink_unless_asked(monkeypatch):
 def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
     """**画面が変わったら**測り直しで追従すること（B-022 の測り直し側）。
 
-    害は両方向に出る＝狭くなれば窓がデスクトップの外へ出たまま、広くなれば
+    害は両方向に出る＝狭くなればウィンドウがデスクトップの外へ出たまま、広くなれば
     クランプされた小さいまま二度と戻らない（再起動しか回復手段が無い）。
     ⚠️ 「広くなったら戻る」は `grow_only`（縮めない約束）と紛らわしいが別物＝
-    こちらは**画面の上限が動いた**話で、ユーザーが広げた窓を狭める話ではない。
+    こちらは**画面の上限が動いた**話で、ユーザーが広げたウィンドウを狭める話ではない。
 
     契機の側（`<Configure>` で画面サイズの変化に気づくこと）は
     tests/test_theme.py::test_watch_display_notices_a_resolution_change_with_the_same_dpi。
@@ -1445,7 +1445,7 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
         window_fit.refit_all(root)
         assert win._fit_size[1] == 800 - window_fit.SCREEN_MARGIN, (
             f"狭くなった画面に追従していない（{win._fit_size[1]}px のまま）"
-            "＝窓の下端がデスクトップの外に残る。"
+            "＝ウィンドウの下端がデスクトップの外に残る。"
         )
         assert win._fit_scroll.active[0], "入らなくなったのに逃げ道が出ていない"
 
@@ -1464,13 +1464,13 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
 # 位置（B-083）— 大きさが入っていても、置き場所で外へ出る
 # ============================================================
 # 🔑 **ここまでのゲートは全部「大きさ」しか見ていなかった。**
-# `fit_to_content` は `geometry(f"{w}x{h}")` と**大きさだけ**を渡すので、窓が
+# `fit_to_content` は `geometry(f"{w}x{h}")` と**大きさだけ**を渡すので、ウィンドウが
 # どこに置かれるかは Windows 任せ＝**カスケード配置**（実測で `+78+78` → `+156+156`
 # → `+234+234` と 78px ずつ下がる）。ランチャーは高さ 973px あるので、2 番目の
 # スロットに置かれた時点で `156 + 装飾 31 + 973 = 1160px` となり FHD の外へ出る。
 #
 # ⚠️ **逃げ道（B-021②）はこの壊れ方に効かない**＝スクロールバーは
-# `need_h > h`（＝**窓の大きさ**に入らない）ときだけ出る。ここは大きさとしては
+# `need_h > h`（＝**ウィンドウの大きさ**に入らない）ときだけ出る。ここは大きさとしては
 # 足りているので受け皿は「入っている」と判断し、バーは出ないまま下端が画面外へ
 # 出る。**大きさの問題と位置の問題は別物**で、片方のゲートはもう片方を守らない。
 #
@@ -1479,22 +1479,22 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
 #   - `winfo_rootx/rooty` は**クライアント領域の左上**（差＝上 31px / 左 8px）
 #   ⇒ 装飾のぶんは下端の余白（`SCREEN_MARGIN`）で吸収する。
 def _cascade(win, x=156, y=156):
-    """Windows のカスケード配置を再現する（窓を斜め下へ置く）。
+    """Windows のカスケード配置を再現する（ウィンドウを斜め下へ置く）。
 
     ⚠️ **置けたことを必ず確かめる**＝`winfo_x/y` は未表示のあいだ 0 を返すので、
-    それで検査すると窓は原点にあることになり**ゲートが黙って空振りする**
-    （実装中に実際に起きた＝6 窓のうち 5 窓が「はみ出していない」と報告した）。
+    それで検査するとウィンドウは原点にあることになり**ゲートが黙って空振りする**
+    （実装中に実際に起きた＝6 ウィンドウのうち 5 ウィンドウが「はみ出していない」と報告した）。
     """
     win.geometry(f"+{x}+{y}")
     win.update_idletasks()
     assert window_fit.window_position(win) == (x, y), (
-        "前提が崩れている（窓を動かせていない）＝このテストは何も検査していない"
+        "前提が崩れている（ウィンドウを動かせていない）＝このテストは何も検査していない"
     )
 
 
 @pytest.mark.parametrize("name", sorted(_WINDOWS))
 def test_every_window_stays_inside_the_screen(name, monkeypatch):
-    """**どの窓も、置かれた場所ごとデスクトップの中に収まっていること。**
+    """**どのウィンドウも、置かれた場所ごとデスクトップの中に収まっていること。**
 
     大きさのゲート（`test_every_window_is_usable_on_fhd`）が全部緑でも、この
     ゲートは落ちうる＝それが B-083。⚠️ **開発機の画面では絶対に発火しない**
@@ -1511,29 +1511,29 @@ def test_every_window_stays_inside_the_screen(name, monkeypatch):
         opener, _ = _WINDOWS[name]
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
         screen_w, screen_h = _FHD_SCREEN
-        # ⚠️ **窓ごとに「確実に外へ出る位置」を計算して置く**。実機で起きたのは
-        # `+156+156`（カスケードの 2 番目）だが、その値を全窓へ当てると**背の低い窓は
-        # そこでも入ってしまい、その窓のぶんは何も検査しないテストになる**（実装中に
-        # 実際そうなった＝6 窓中 4 窓が素通り）。⇒ 各窓の高さから外へ出る位置を作る。
+        # ⚠️ **ウィンドウごとに「確実に外へ出る位置」を計算して置く**。実機で起きたのは
+        # `+156+156`（カスケードの 2 番目）だが、その値を全ウィンドウへ当てると**背の低いウィンドウは
+        # そこでも入ってしまい、そのウィンドウのぶんは何も検査しないテストになる**（実装中に
+        # 実際そうなった＝6 ウィンドウ中 4 ウィンドウが素通り）。⇒ 各ウィンドウの高さから外へ出る位置を作る。
         _cascade(win,
                  x=max(0, screen_w - win._fit_size[0] + 40),
                  y=screen_h - window_fit.SCREEN_MARGIN - win._fit_size[1] + 40)
-        window_fit.refit_all(root)          # 窓ごとの事情そのままで測り直させる
+        window_fit.refit_all(root)          # ウィンドウごとの事情そのままで測り直させる
 
         x, y = win._fit_pos
         w, h = win._fit_size
         assert x >= 0 and y >= 0, (
-            f"[{name}] 窓の左上が画面の外にある（{x}, {y}）＝タイトルバーを"
+            f"[{name}] ウィンドウの左上が画面の外にある（{x}, {y}）＝タイトルバーを"
             "掴めず、動かすこともできない。"
         )
         assert y + h <= screen_h - window_fit.SCREEN_MARGIN, (
-            f"[{name}] 窓の下端がデスクトップの外へ出ている"
+            f"[{name}] ウィンドウの下端がデスクトップの外へ出ている"
             f"（上端 {y}px + 高さ {h}px = {y + h}px / 使える高さ "
             f"{screen_h - window_fit.SCREEN_MARGIN}px）。**大きさは入っているので"
             "逃げ道（スクロール）は出ない**＝下端のボタン列に手が届かない（B-083）。"
         )
         assert x + w <= screen_w, (
-            f"[{name}] 窓の右端がデスクトップの外へ出ている"
+            f"[{name}] ウィンドウの右端がデスクトップの外へ出ている"
             f"（左端 {x}px + 幅 {w}px = {x + w}px / 画面 {screen_w}px）。"
         )
     finally:
@@ -1542,7 +1542,7 @@ def test_every_window_stays_inside_the_screen(name, monkeypatch):
 
 
 def test_a_window_that_already_fits_is_not_moved(monkeypatch):
-    """**入っている窓は動かさないこと**（ゲートの壊れ方②＝毎回鳴る／勝手に動く）。
+    """**入っているウィンドウは動かさないこと**（ゲートの壊れ方②＝毎回鳴る／勝手に動く）。
 
     位置を毎回書き直す実装にすると、ユーザーが置いた場所が測り直しのたびに
     リセットされる（DPI 変更・画面変更でも `refit_all` が走る）。**触るのは
@@ -1560,7 +1560,7 @@ def test_a_window_that_already_fits_is_not_moved(monkeypatch):
         _cascade(win, x=40, y=30)           # 十分に上＝そのままで入る置き場所
         window_fit.refit_all(root)
         assert win._fit_pos == (40, 30), (
-            f"入っている窓を動かした（{win._fit_pos} ≠ (40, 30)）"
+            f"入っているウィンドウを動かした（{win._fit_pos} ≠ (40, 30)）"
             "＝ユーザーが置いた場所が測り直しのたびに失われる。"
         )
     finally:
@@ -1569,17 +1569,17 @@ def test_a_window_that_already_fits_is_not_moved(monkeypatch):
 
 
 # ------------------------------------------------------------
-# 複数モニタ（B-085）— 収める先は「窓が載っているモニタ」
+# 複数モニタ（B-085）— 収める先は「ウィンドウが載っているモニタ」
 # ------------------------------------------------------------
 # 🔴 **B-083 の修正が作った退行。** `screen_size()` が返すのは**プライマリモニタ
 # 1 枚**（Windows の Tk は `winfo_screenwidth/height` に `SM_CXSCREEN/SM_CYSCREEN`
 # を返す＝2026-08-14 に `ctypes` と突き合わせて実測）。そこへ無条件に `max(0, …)`
-# を当てると、**別モニタに置かれた正当な窓が主画面へ引き戻される**。
+# を当てると、**別モニタに置かれた正当なウィンドウが主画面へ引き戻される**。
 #
 # 🔴 **最初の直しは「主画面の外なら別モニタ」で済ませ、2 巡目の独立レビューで
-# 差し戻された**（2026-08-15）＝**サブモニタを外したあと残った窓**は*どこにも無い
+# 差し戻された**（2026-08-15）＝**サブモニタを外したあと残ったウィンドウ**は*どこにも無い
 # 場所*に居るので、別モニタ扱いで放置すると掴めないまま＝B-083 の救済の取り消し。
-# ⇒ 判定は**実在する矩形と重なるか**で行い、どれとも重ならない窓だけを引き戻す。
+# ⇒ 判定は**実在する矩形と重なるか**で行い、どれとも重ならないウィンドウだけを引き戻す。
 # ⚠️ **そのとき足したゲート（「動かさないこと」）は捨てた**＝あれは*退行を正しい
 # 振る舞いとして固定する*網で、[[feedback-promote-recurring-checks]] の壊れ方③
 # （間違ったものを要求している）そのものだった。**直すときに邪魔をする網は、
@@ -1602,9 +1602,9 @@ def _fake_monitors(monkeypatch, rects):
 ])
 def test_a_window_on_another_monitor_stays_on_that_monitor(where, rects, x, y,
                                                            monkeypatch):
-    """**別モニタの窓は、そのモニタの中に収める**（主画面へ引き戻さない）。
+    """**別モニタのウィンドウは、そのモニタの中に収める**（主画面へ引き戻さない）。
 
-    引き戻すと、利用者がサブモニタへ避けておいた窓が測り直しのたびに主画面へ
+    引き戻すと、利用者がサブモニタへ避けておいたウィンドウが測り直しのたびに主画面へ
     飛んでくる（`refit_all` は DPI 変更・画面変更でも走る）。⚠️ **「動かさない」
     ことを検査しない**＝そのモニタの下端から溢れていれば、そこでは引き上げるのが
     正しい。検査するのは**どのモニタの中に居るか**。
@@ -1622,19 +1622,19 @@ def test_a_window_on_another_monitor_stays_on_that_monitor(where, rects, x, y,
         win.geometry(f"+{x}+{y}")
         win.update_idletasks()
         if window_fit.window_position(win) != (x, y):
-            pytest.skip(f"WM が窓を {where} へ置かせない＝この検査は成立しない")
+            pytest.skip(f"WM がウィンドウを {where} へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
         left, top, right, bottom = rects[1]
         px, py = win._fit_pos
         w, h = win._fit_size
         assert left <= px and px + w <= right, (
-            f"[{where}] 窓が別のモニタへ移された（x={px}, 幅 {w} / このモニタは "
-            f"{left}〜{right}）＝サブモニタへ避けた窓が測り直しのたびに"
+            f"[{where}] ウィンドウが別のモニタへ移された（x={px}, 幅 {w} / このモニタは "
+            f"{left}〜{right}）＝サブモニタへ避けたウィンドウが測り直しのたびに"
             "主画面へ飛んでくる（B-085）。"
         )
         assert top <= py and py + h <= bottom - window_fit.SCREEN_MARGIN, (
-            f"[{where}] 窓がそのモニタの外へ出ている（y={py}, 高さ {h} / "
+            f"[{where}] ウィンドウがそのモニタの外へ出ている（y={py}, 高さ {h} / "
             f"使える下端 {bottom - window_fit.SCREEN_MARGIN}）。"
         )
     finally:
@@ -1643,10 +1643,10 @@ def test_a_window_on_another_monitor_stays_on_that_monitor(where, rects, x, y,
 
 
 def test_a_window_on_a_monitor_that_is_gone_is_pulled_back(monkeypatch):
-    """🔴 **消えたモニタに残った窓は主画面へ引き戻すこと**（B-085・2 巡目）。
+    """🔴 **消えたモニタに残ったウィンドウは主画面へ引き戻すこと**（B-085・2 巡目）。
 
-    サブモニタを外すと、そこに置いてあった窓の座標は*どのモニタにも属さない場所*
-    になる。この窓は画面のどこにも描かれないので、**タイトルバーを掴むことすら
+    サブモニタを外すと、そこに置いてあったウィンドウの座標は*どのモニタにも属さない場所*
+    になる。このウィンドウは画面のどこにも描かれないので、**タイトルバーを掴むことすら
     できない**＝B-083 が救済したのとまったく同じ状態。「主画面の外だから触らない」
     と書くと、この救済が黙って取り消される（**最初の直しがそうだった**）。
     """
@@ -1663,13 +1663,13 @@ def test_a_window_on_a_monitor_that_is_gone_is_pulled_back(monkeypatch):
         win.geometry("+2200+100")                     # 外したモニタに残った座標
         win.update_idletasks()
         if window_fit.window_position(win) != (2200, 100):
-            pytest.skip("WM が窓を画面外へ置かせない＝この検査は成立しない")
+            pytest.skip("WM がウィンドウを画面外へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
         px, py = win._fit_pos
         w, h = win._fit_size
         assert 0 <= px and px + w <= _FHD_SCREEN[0], (
-            f"消えたモニタに残った窓を引き戻していない（x={px}, 幅 {w}）"
+            f"消えたモニタに残ったウィンドウを引き戻していない（x={px}, 幅 {w}）"
             "＝画面のどこにも描かれず、掴むこともできない（B-083 の救済の取り消し）。"
         )
         assert 0 <= py and py + h <= _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN, (
@@ -1687,7 +1687,7 @@ def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
     違うモニタで必ず溢れる**＝主画面 2560×1440 / サブ 1920×1080 の構成では、
     必要高 1023px のランチャーが**主画面基準で 1023px のまま作られ**、サブ画面の
     使える高さ 990px に対して 33px はみ出す。⚠️ **位置の調整では直らない**
-    （窓自体がモニタより高いので、上端を原点へ寄せても下端が出る）＝だから
+    （ウィンドウ自体がモニタより高いので、上端を原点へ寄せても下端が出る）＝だから
     `test_every_window_stays_inside_the_screen` では捕まらない。
 
     ⚠️ **2 枚を同じ解像度にしたテストではこの欠陥は出ない**（独立レビュー 3 巡目の
@@ -1707,21 +1707,21 @@ def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
         # feedback-promote-recurring-checks]] の壊れ方①）。①中継経路は元から
         # 990px に収まるので、上限をどちらから取っても同じ大きさになる
         # ②ランチャーも 96dpi では必要高 916px（実測）で収まってしまう。
-        # ⇒ **いちばん背の高い窓（ランチャー）を 144dpi で**開く＝実測で必要高
+        # ⇒ **いちばん背の高いウィンドウ（ランチャー）を 144dpi で**開く＝実測で必要高
         # 1197px となり、サブ画面の上限 990px を確実に超える。
         theme.apply_fonts(root, dpi=144)
         win, _ = _open_launcher(root)
         win.geometry(f"+{small[0] + 60}+40")     # サブ画面に置く
         win.update_idletasks()
         if window_fit.window_position(win) != (small[0] + 60, 40):
-            pytest.skip("WM が窓をサブ画面へ置かせない＝この検査は成立しない")
+            pytest.skip("WM がウィンドウをサブ画面へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
         _w, h = win._fit_size
         _px, py = win._fit_pos
         limit = small[3] - small[1] - window_fit.SCREEN_MARGIN
         assert h <= limit, (
-            f"サブ画面（高さ {small[3] - small[1]}px）に置いた窓が、主画面基準の"
+            f"サブ画面（高さ {small[3] - small[1]}px）に置いたウィンドウが、主画面基準の"
             f"大きさで作られている（高さ {h}px / このモニタの上限 {limit}px）"
             "＝下端がはみ出し、しかも**大きさとしては足りている**ので"
             "逃げ道（スクロール）も出ない（B-087）。"
@@ -1735,13 +1735,13 @@ def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
 
 
 def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypatch):
-    """🔴 **手で縮めた窓を、別モニタから引き戻さないこと**（B-089）。
+    """🔴 **手で縮めたウィンドウを、別モニタから引き戻さないこと**（B-089）。
 
     `_fit_size` は**最後に自動調整した寸法**で、**利用者が手で縮めても更新されない**。
     矩形をそこから作る（実寸との「大きい方」を採る）と、**右・下へ水増しされた
-    矩形**になる。左のサブモニタの境界付近に置いた窓では、その水増し分だけが
+    矩形**になる。左のサブモニタの境界付近に置いたウィンドウでは、その水増し分だけが
     プライマリと重なるので `host_monitor` がプライマリを選び、**手で縮めただけの
-    窓が主画面へ飛ぶ**。⚠️ **B-088 で監視に契機を足したので、ドラッグしなくても
+    ウィンドウが主画面へ飛ぶ**。⚠️ **B-088 で監視に契機を足したので、ドラッグしなくても
     発火し得る**＝直前の版より起きやすくなっている。
     """
     import tkinter as tk
@@ -1765,7 +1765,7 @@ def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypat
         win.geometry("200x200+-300+100")
         root.update()
         if window_fit.window_position(win) != (-300, 100):
-            pytest.skip("WM が窓を左のモニタへ置かせない＝この検査は成立しない")
+            pytest.skip("WM がウィンドウを左のモニタへ置かせない＝この検査は成立しない")
         assert win.winfo_width() < win._fit_size[0], (
             "前提が崩れている（手で縮められていない）＝水増しが起きないので"
             "このテストは何も検査しない。"
@@ -1774,7 +1774,7 @@ def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypat
 
         px, _py = win._fit_pos
         assert px < 0, (
-            f"手で縮めただけの窓が主画面へ引き戻された（x={px}）＝矩形を "
+            f"手で縮めただけのウィンドウが主画面へ引き戻された（x={px}）＝矩形を "
             "`_fit_size` から水増しして作ったため、`host_monitor` が"
             "プライマリを選んでいる（B-089）。"
         )
@@ -1788,7 +1788,7 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
     """**列挙したプライマリの矩形と Tk の `screen_size()` が一致すること。**
 
     位置は `monitors()`（Win32 の実測ピクセル）で決め、大きさは `screen_size()`
-    （Tk）で決めている＝**2 つの座標系が食い違うと、入っているつもりの窓が出る**。
+    （Tk）で決めている＝**2 つの座標系が食い違うと、入っているつもりのウィンドウが出る**。
     DPI 仮想化の設定が変わるとここが割れうるので、実機で突き合わせておく。
 
     ⚠️ **モニタが 2 枚以上あるときは検査しない**＝プライマリは「原点が (0,0) の
@@ -1804,7 +1804,7 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
         assert rects[0] == (0, 0, *window_fit.screen_size(root)), (
             f"Win32 の矩形 {rects[0]} と Tk の画面 {window_fit.screen_size(root)} が"
             "食い違っている＝位置と大きさが別の座標系で決まっており、"
-            "「入っているつもりの窓」が画面の外へ出る。"
+            "「入っているつもりのウィンドウ」が画面の外へ出る。"
         )
     finally:
         root.destroy()
@@ -1816,7 +1816,7 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
 # 🔴 **`SCREEN_MARGIN = 90` は 100% 表示専用の見積りだった。** 内訳は「タスクバー
 # 約 48px ＋ 装飾 31px」で、**どちらも DPI で拡大する**のに定数のまま。150% では
 # 装飾だけで 51px あり、残り 39px では 72px のタスクバーを賄えない
-# ⇒ 窓の下端 **33px が常にタスクバーの裏**（実測・2026-08-14）。
+# ⇒ ウィンドウの下端 **33px が常にタスクバーの裏**（実測・2026-08-14）。
 #
 # ⚠️ **既存のゲートはこれを一度も見ていない**＝全部 `SCREEN_MARGIN` を期待値の
 # 側にも使っており、**定数が間違っていても定数どおりなら緑**になる（＝
@@ -1866,11 +1866,11 @@ def test_the_usable_height_comes_from_the_work_area(monkeypatch):
         x, y = win._fit_pos
         w, h = win._fit_size
         assert y + dec_h + h <= work[3], (
-            f"窓の下端がタスクバーの裏に入っている（上端 {y}px ＋ 装飾 {dec_h}px ＋ "
+            f"ウィンドウの下端がタスクバーの裏に入っている（上端 {y}px ＋ 装飾 {dec_h}px ＋ "
             f"高さ {h}px = {y + dec_h + h}px / 作業領域の下端 {work[3]}px）＝B-084。"
         )
         assert x + dec_w + w <= work[2], (
-            f"窓の右端が作業領域から出ている（{x + dec_w + w}px / {work[2]}px）。"
+            f"ウィンドウの右端が作業領域から出ている（{x + dec_w + w}px / {work[2]}px）。"
         )
         assert h < _FHD_SCREEN[1] - window_fit.SCREEN_MARGIN, (
             f"上限が古い定数のまま（高さ {h}px ≧ "
@@ -1885,7 +1885,7 @@ def test_a_taskbar_on_the_left_edge_is_avoided_too(monkeypatch):
     """**タスクバーが下以外の辺にあっても避けること**（B-084 のクラス点検）。
 
     定数の余白は「下だけ 90px」なので、左・上・右にタスクバーを置いた構成では
-    **窓がその裏に入る**。作業領域は辺の位置ごと OS が面倒を見るので、乗り換えれば
+    **ウィンドウがその裏に入る**。作業領域は辺の位置ごと OS が面倒を見るので、乗り換えれば
     この面もまとめて解ける＝**解けていることをここで確かめる**（解けていなければ
     「下だけ直した」実装が通ってしまう）。
     """
@@ -1904,12 +1904,12 @@ def test_a_taskbar_on_the_left_edge_is_avoided_too(monkeypatch):
         win.geometry("+0+40")                   # タスクバーの裏へ置いてみる
         win.update_idletasks()
         if window_fit.window_position(win) != (0, 40):
-            pytest.skip("WM が窓を左端へ置かせない＝この検査は成立しない")
+            pytest.skip("WM がウィンドウを左端へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
         x, _y = win._fit_pos
         assert x >= work[0], (
-            f"窓の左端がタスクバーの裏に入っている（x={x} / 作業領域の左端 "
+            f"ウィンドウの左端がタスクバーの裏に入っている（x={x} / 作業領域の左端 "
             f"{work[0]}）＝余白を「下だけ」で考えている（B-084）。"
         )
     finally:
@@ -1918,10 +1918,10 @@ def test_a_taskbar_on_the_left_edge_is_avoided_too(monkeypatch):
 
 
 def test_the_decoration_allowance_grows_with_dpi():
-    """**装飾の見積りが DPI に従うこと**（実測が取れない窓＝保険側の経路）。
+    """**装飾の見積りが DPI に従うこと**（実測が取れないウィンドウ＝保険側の経路）。
 
-    実測（`winfo_rootx/rooty` との差）が取れる窓では本物が返るが、まだ実現して
-    いない窓では定数へ落ちる。⚠️ **そこが 96dpi 固定だと、B-084 の本体（余白が
+    実測（`winfo_rootx/rooty` との差）が取れるウィンドウでは本物が返るが、まだ実現して
+    いないウィンドウでは定数へ落ちる。⚠️ **そこが 96dpi 固定だと、B-084 の本体（余白が
     DPI に依らない）を保険の中に作り直すことになる。**
     """
     import tkinter as tk
@@ -1940,7 +1940,7 @@ def test_the_decoration_allowance_grows_with_dpi():
         assert at96[1] > 0 and at144[1] > at96[1], (
             f"装飾の見積りが DPI で変わらない（96dpi {at96} / 144dpi {at144}）"
             "＝150% ではタイトルバーが 51px あるので、96dpi 基準の 39px では"
-            "足りず、そのぶん窓がタスクバーの裏へ入る（B-084）。"
+            "足りず、そのぶんウィンドウがタスクバーの裏へ入る（B-084）。"
         )
     finally:
         theme.apply_fonts(root, dpi=96)
@@ -1948,16 +1948,16 @@ def test_the_decoration_allowance_grows_with_dpi():
 
 
 def test_two_windows_on_different_monitors_get_different_decorations(monkeypatch):
-    """**装飾は窓ごとに聞くこと**（2026-08-24・B-120）。
+    """**装飾はウィンドウごとに聞くこと**（2026-08-24・B-120）。
 
     🔑 **字と装飾は別物**＝字（Tk の名前付きフォント）はインタプリタに 1 組しか
-    ないので全体値が正しく、**装飾は Windows が窓ごとに描く**ので窓ごとの値が
-    正しい。以前はどちらも `applied_dpi`（＝最後に DPI 変更を検出した窓に合わせた
+    ないので全体値が正しく、**装飾は Windows がウィンドウごとに描く**のでウィンドウごとの値が
+    正しい。以前はどちらも `applied_dpi`（＝最後に DPI 変更を検出したウィンドウに合わせた
     全体値）で計算していたため、**倍率の違う複数モニタ**でだけ B-084 が戻っていた
-    （150% 側の窓の装飾を 39px と見積もるが実際は 56px ＝クライアント領域を 17px
+    （150% 側のウィンドウの装飾を 39px と見積もるが実際は 56px ＝クライアント領域を 17px
     大きく取り、下端がタスクバーの裏へ）。
 
-    ⚠️ **窓を 1 つしか建てないゲートでは、この欠陥は原理的に見えない**
+    ⚠️ **ウィンドウを 1 つしか建てないゲートでは、この欠陥は原理的に見えない**
     （[[feedback-promote-recurring-checks]] の壊れ方①＝一度も落ちない）。⇒ **2 つ
     建てて、片方だけ別倍率のモニタに載せる。**
     """
@@ -1973,18 +1973,18 @@ def test_two_windows_on_different_monitors_get_different_decorations(monkeypatch
         for w in (here, there):
             w.withdraw()
         theme.apply_fonts(root, dpi=96)
-        # モニタが窓ごとに違う DPI を言う状況を作る（実機の「2 枚目だけ 150%」）。
+        # モニタがウィンドウごとに違う DPI を言う状況を作る（実機の「2 枚目だけ 150%」）。
         monkeypatch.setattr(theme, "window_dpi",
                             lambda w: 144 if w is there else 96)
         same = window_fit.decoration_size(here)
         other = window_fit.decoration_size(there)
         assert other[1] > same[1], (
-            f"別倍率のモニタに載せた窓の装飾が同じ（{same} / {other}）＝"
+            f"別倍率のモニタに載せたウィンドウの装飾が同じ（{same} / {other}）＝"
             "アプリ全体の 1 つの DPI で見積もっている（B-120）。150% 側は"
             "タイトルバーだけで 51px あるので、そのぶん下端がタスクバーの裏へ入る。"
         )
         assert same == window_fit._decoration_for(96), (
-            f"ルートと同じモニタの窓まで値が変わった（{same}）＝"
+            f"ルートと同じモニタのウィンドウまで値が変わった（{same}）＝"
             "**字が従っている DPI**（`apply_fonts(dpi=…)` で再現する条件）が"
             "効かなくなり、ゲートが 150% を再現できなくなる。"
         )
@@ -1997,7 +1997,7 @@ def test_the_applied_dpi_still_decides_the_decoration_when_nothing_moved(monkeyp
     """**単一モニタでは従来どおり全体値**（B-120 の直し方の対の検査）。
 
     ゲートは `apply_fonts(dpi=144)` で 150% を再現する（モニタは 96 のまま）。
-    ここで窓の実 DPI へ単純に差し替えると、**装飾だけ 100% で計算され**、
+    ここでウィンドウの実 DPI へ単純に差し替えると、**装飾だけ 100% で計算され**、
     再現したはずの条件が半分しか再現しない＝[views/theme](../views/theme.py) の
     `applied_dpi` の註が書いている壊れ方を、逆向きに踏む。
     """
@@ -2025,7 +2025,7 @@ def test_the_constant_margin_is_kept_when_the_os_cannot_be_asked(monkeypatch):
 
     ⚠️ ここで装飾を*さらに*引くと二重になる＝`SCREEN_MARGIN = 90` は
     「タスクバー 48 ＋ 装飾 31」を**既に含んだ**値。**保険の経路が本番より厳しく
-    なると、聞けない環境でだけ窓が理由なく縮む。**
+    なると、聞けない環境でだけウィンドウが理由なく縮む。**
     """
     from views import theme
 
@@ -2056,7 +2056,7 @@ def test_a_monitor_whose_work_area_is_unknown_is_not_reported_as_known(monkeypat
     「作業領域が取れた」と読み、`SCREEN_MARGIN` の保険を通らない＝**そのモニタ
     でだけ B-084 が黙って戻る**（下端がタスクバーの裏）。
 
-    ⚠️ **モニタの列挙まで巻き添えにしない**（B-085＝別モニタに置かれた窓を主画面へ
+    ⚠️ **モニタの列挙まで巻き添えにしない**（B-085＝別モニタに置かれたウィンドウを主画面へ
     引き戻さない）＝そこが元の代用の理由なので、両方を同じ回で見る。
     """
     import ctypes
@@ -2116,7 +2116,7 @@ def test_dialogs_are_pulled_back_onto_the_screen(monkeypatch):
 def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
     """**出したバーを、次に測るときの必要量へ持ち越さないこと**（B-074(a)）。
 
-    受け皿のバーは窓の中身なので、出したまま `winfo_reqwidth()` を読むと
+    受け皿のバーはウィンドウの中身なので、出したまま `winfo_reqwidth()` を読むと
     **バー 1 本ぶんが必要量に載る**。すると「入らなくなって出したバー」が次の
     測定を太らせ、**入るようになっても幅が戻らない**（実測 12px）。
 
@@ -2124,7 +2124,7 @@ def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
     あちらは高さしか assert しておらず、**溢れるのは縦・残るのは幅**という
     ずれた面に出る（縦バーが横幅を食う）。同じ往復を**幅で**見る。
     ⚠️ DPI 経由の `..._shrink_back_when_dpi_falls` も同じ欠陥で赤くなるが、
-    あちらは「表示スケールを戻したら窓も戻る」という**約束**の検査で、原因を
+    あちらは「表示スケールを戻したらウィンドウも戻る」という**約束**の検査で、原因を
     名指ししていない（フォントの大きさが同時に動くので切り分けられない）。
     """
     screen = {"size": (1920, 1080)}
@@ -2151,16 +2151,16 @@ def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
         assert win._fit_need[0] == need_w, (
             f"必要幅が {win._fit_need[0]}px へ太ったまま（本来 {need_w}px）"
             "＝出したままのバーを測ってしまい、そのぶんが必要量に焼き付いている。"
-            "窓幅は `grow_only` に守られて一度太ると戻らない。"
+            "ウィンドウ幅は `grow_only` に守られて一度太ると戻らない。"
         )
     finally:
         root.destroy()
 
 
 def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
-    """測り直しで窓ごとの下限・加算が失われないこと。
+    """測り直しでウィンドウごとの下限・加算が失われないこと。
 
-    `refit_all` は窓ごとの事情（下限幅・スクロールバー分の加算）を知らないので、
+    `refit_all` はウィンドウごとの事情（下限幅・スクロールバー分の加算）を知らないので、
     `fit_to_content` が残した `_fit_kwargs` をそのまま使う。ここが失われると
     バッチだけスクロールバー分だけ狭くなる、といった形で静かに壊れる。
     """
@@ -2184,11 +2184,11 @@ def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
 # 2': 測り直しを畳む（I-107）・同じ測り直しを 2 度しない（I-106）
 # ============================================================
 # 🔴 **速さの話に見えて、守るのは追従そのもの**＝畳んだせいで「中身が増えたのに
-# 窓が広がらない」が起きたら、それは B-021（見切れ 6 回）の再発を自分で作ったこと
+# ウィンドウが広がらない」が起きたら、それは B-021（見切れ 6 回）の再発を自分で作ったこと
 # になる。⇒ ここで固定するのは 2 つ:
 #   ① 連続した操作では**測り直しが 1 回に畳まれる**（利用者の手が止まらない）
 #   ② それでも**測る口（`required_size`）から見れば必ず最新**である
-#      ＝畳んだ結果を「まだ測っていない窓」として読ませない（B-100 の逆流を作らない）
+#      ＝畳んだ結果を「まだ測っていないウィンドウ」として読ませない（B-100 の逆流を作らない）
 
 
 def test_repeated_changes_are_measured_once(monkeypatch):
@@ -2221,7 +2221,7 @@ def test_repeated_changes_are_measured_once(monkeypatch):
             f"畳んだ測り直しが流れていない／2 回以上走った（{len(calls)} 回）"
         )
         assert (need_w, need_h) == win._fit_need, (
-            "測り直しの結果が窓の申告と食い違う＝畳んだぶんが落ちている。"
+            "測り直しの結果がウィンドウの申告と食い違う＝畳んだぶんが落ちている。"
         )
         _assert_fits(win, "multihop（畳んだ測り直しのあと）")
     finally:
@@ -2232,8 +2232,8 @@ def test_a_folded_measurement_still_reaches_the_window():
     """①の裏＝**畳んだ測り直しは、次のアイドルで必ず走る**こと（I-107）。
 
     `required_size` を呼ぶのはゲートであって製品ではない。**製品の経路**（イベント
-    ループへ戻る）でも窓が追従することを見る＝ここが効かないと、利用者の画面では
-    「地点を足しても窓が広がらない」になる（B-021 の再発を自分で作る形）。
+    ループへ戻る）でもウィンドウが追従することを見る＝ここが効かないと、利用者の画面では
+    「地点を足してもウィンドウが広がらない」になる（B-021 の再発を自分で作る形）。
     """
     root = make_themed_root()
     try:
@@ -2247,7 +2247,7 @@ def test_a_folded_measurement_still_reaches_the_window():
         root.update()                           # ＝イベントループへ戻る（アイドル）
         assert getattr(win, "_fit_soon_id", None) is None, "溜まりが残っている"
         assert win._fit_size[1] > before, (
-            f"地点を 4 つ足しても窓の高さが {before}px のまま＝畳んだ測り直しが"
+            f"地点を 4 つ足してもウィンドウの高さが {before}px のまま＝畳んだ測り直しが"
             "どこにも届いていない（追従そのものを落とした＝B-021 の再発）。"
         )
     finally:
@@ -2287,16 +2287,16 @@ def test_the_same_measurement_is_not_repeated(monkeypatch):
         escape.remeasure()
         assert touched, (
             "中身が伸びたのに測り直しが素通りした＝受け皿が古い要求幅を返し続ける"
-            "（B-100 そのもの＝横断ゲートが窓の測り忘れを見られなくなる）。"
+            "（B-100 そのもの＝横断ゲートがウィンドウの測り忘れを見られなくなる）。"
         )
     finally:
         root.destroy()
 
 
 # ============================================================
-# 3: 登録漏れが起きないこと（新しい窓を自動で対象にする）
+# 3: 登録漏れが起きないこと（新しいウィンドウを自動で対象にする）
 # ============================================================
-# Toplevel を作るが「窓の見切れ」の対象外にするもの。**理由を必ず書く**
+# Toplevel を作るが「ウィンドウの見切れ」の対象外にするもの。**理由を必ず書く**
 # （空の除外リストは運用で必ず膨らむので、理由ごと残して見直せるようにする）。
 _EXEMPT = {
     ("dialogs.py", "_make"):
@@ -2308,13 +2308,13 @@ _EXEMPT = {
         "プロキシ設定ダイアログ＝サイズを指定せず自然サイズで開く（位置のみ）。",
     ("launcher_menu.py", "_on_save_diagnostics"):
         "診断パッケージダイアログ＝サイズを指定せず自然サイズで開く（位置のみ）。"
-        "結果一覧は Listbox 自身が高さ 6 行で頭打ちにする（3.2 段9）。",
+        "結果一覧は Listbox 自身が高さ 6 行で頭打ちにする（3.2 ステージ9）。",
     ("launcher_menu.py", "_show_readme_text"):
-        "README ビューア＝スクロール前提の閲覧窓（resizable・中身は本文テキスト）。",
+        "README ビューア＝スクロール前提の閲覧ウィンドウ（resizable・中身は本文テキスト）。",
     ("launcher_menu.py", "_open_delete_all_cache_dialog"):
         "全キャッシュ削除のソース選択ダイアログ＝サイズを指定せず自然サイズで開く"
         "（位置のみ）。中身はチェックボックス数個とボタンで、_on_save_diagnostics "
-        "と同じ形（I-155・3.5 段3）。",
+        "と同じ形（I-155・3.5 ステージ3）。",
 }
 
 
@@ -2356,7 +2356,7 @@ def _toplevel_sites() -> "list[tuple[str, str]]":
     return sorted(set(sites))
 
 
-# レジストリの窓 → 実装上の Toplevel 生成箇所の対応（登録済みであることの証明）。
+# レジストリのウィンドウ → 実装上の Toplevel 生成箇所の対応（登録済みであることの証明）。
 _REGISTERED_SITES = {
     ("graph.py",         "GraphWindow"):        "graph",
     ("multihop.py",      "MultiHopWindow"):     "multihop",
@@ -2369,25 +2369,25 @@ _REGISTERED_SITES = {
 def test_every_window_is_registered_or_exempt():
     """`views/` の Toplevel 生成箇所が、登録か除外のどちらかであること。
 
-    **これがこのファイルの本体**。個別の窓のテストは書き忘れれば存在しないが、
-    ここは views を静的に走査するので、新しい窓を足した時点で必ず落ちる。
+    **これがこのファイルの本体**。個別のウィンドウのテストは書き忘れれば存在しないが、
+    ここは views を静的に走査するので、新しいウィンドウを足した時点で必ず落ちる。
     落ちたら「レジストリ `_WINDOWS` に足す」か「理由つきで `_EXEMPT` に足す」の
     どちらかを選ぶことになる＝判断が記録に残る。
     """
     unknown = [s for s in _toplevel_sites()
                if s not in _REGISTERED_SITES and s not in _EXEMPT]
     assert not unknown, (
-        f"見切れゲートの対象に入っていない窓がある: {unknown}。"
+        f"見切れゲートの対象に入っていないウィンドウがある: {unknown}。"
         "tests/test_window_fit.py の _WINDOWS へ登録するか、理由を書いて "
         "_EXEMPT へ入れること。"
     )
 
 
 def test_registry_has_no_stale_entries():
-    """レジストリ・除外リストに、実在しない窓が残っていないこと（掃除漏れ検出）。"""
+    """レジストリ・除外リストに、実在しないウィンドウが残っていないこと（掃除漏れ検出）。"""
     sites = set(_toplevel_sites())
     stale = [s for s in list(_REGISTERED_SITES) + list(_EXEMPT) if s not in sites]
-    assert not stale, f"実在しない窓が登録されたまま: {stale}"
+    assert not stale, f"実在しないウィンドウが登録されたまま: {stale}"
 
 
 def test_launcher_is_covered_even_though_it_is_the_root():
@@ -2400,25 +2400,25 @@ def test_launcher_is_covered_even_though_it_is_the_root():
 
 
 # ============================================================
-# 4: 閉じた窓が解放されること（B-050）
+# 4: 閉じたウィンドウが解放されること（B-050）
 # ============================================================
 # 🔴 **`destroy()` は Tk オブジェクトを消さない。** tkinter は親子で相互参照する
-# ので、窓を閉じても Python 側は循環ゴミとして残り、**`gc.collect()` を回すまで
+# ので、ウィンドウを閉じても Python 側は循環ゴミとして残り、**`gc.collect()` を回すまで
 # 生きている**。そこまでは仕様どおりだが、この 2 つは欠陥だった（実測 2026-08-07）:
 #
-#   ①**そもそも解放されない窓が 2 つあった**＝バッチ（`bind_all`）と条件探索
+#   ①**そもそも解放されないウィンドウが 2 つあった**＝バッチ（`bind_all`）と条件探索
 #     （`trace_add`）。どちらも Tcl 側に参照が残り、開閉のたびに 40 / 65 個ずつ
 #     **線形に積み上がる**（10 回で +400 / +650 個）。
 #   ②**残骸を製品のワーカースレッドの GC が拾うと、そこが 20〜30 秒止まる**
 #     （`_tkinter` はメインスレッド外からの Tcl 呼び出しを 1 個あたり約 1 秒待つ）。
 #
-# ⇒ ①はここで（全窓横断で）押さえ、②は `sweep_tk_garbage` の側で押さえる。
-# ⚠️ **①と②は打ち消し合う**＝漏れている窓は「回収され得ない」から止まらない。
+# ⇒ ①はここで（全ウィンドウ横断で）押さえ、②は `sweep_tk_garbage` の側で押さえる。
+# ⚠️ **①と②は打ち消し合う**＝漏れているウィンドウは「回収され得ない」から止まらない。
 #    ①だけ直すと②が新たに出る（実測＝条件探索が 0 秒 → 35.8 秒）。**両方要る。**
 #
-# この検査を `_WINDOWS` の上で回すのが要点＝**新しい窓は自動で対象になる**。
+# この検査を `_WINDOWS` の上で回すのが要点＝**新しいウィンドウは自動で対象になる**。
 
-#: 窓ごとの「製品の閉じる経路」。⚠️ `destroy()` を直接呼ばない＝それは利用者が
+#: ウィンドウごとの「製品の閉じる経路」。⚠️ `destroy()` を直接呼ばない＝それは利用者が
 #: 通る道ではなく、後始末（trace の解除・地図の after ループ停止）を飛ばす。
 _CLOSERS = {
     "batch":    lambda owner: owner._on_close_window(),
@@ -2440,21 +2440,21 @@ def _live_tk_count() -> int:
 
 
 def test_every_window_has_a_close_path_registered():
-    """閉じ方を書き忘れた窓が無いこと（ランチャー＝ルートだけ対象外）。
+    """閉じ方を書き忘れたウィンドウが無いこと（ランチャー＝ルートだけ対象外）。
 
-    これが無いと、窓を足した人が `_CLOSERS` に書き忘れたとき**下の検査が黙って
-    その窓を飛ばす**＝ゲートが痩せたことに誰も気づかない。
+    これが無いと、ウィンドウを足した人が `_CLOSERS` に書き忘れたとき**下の検査が黙って
+    そのウィンドウを飛ばす**＝ゲートが痩せたことに誰も気づかない。
     """
     missing = [n for n in _WINDOWS if n != "launcher" and n not in _CLOSERS]
     assert not missing, (
-        f"閉じ方が登録されていない窓がある: {missing}。"
+        f"閉じ方が登録されていないウィンドウがある: {missing}。"
         "tests/test_window_fit.py の _CLOSERS へ製品の閉じる経路を書くこと"
     )
 
 
 @pytest.mark.parametrize("name", [n for n in _WINDOWS if n != "launcher"])
 def test_closed_window_is_released(name, monkeypatch):
-    """閉じた窓が解放されること（Tcl 側に参照を残さないこと）。
+    """閉じたウィンドウが解放されること（Tcl 側に参照を残さないこと）。
 
     ⚠️ **閉じるのは同期処理ではない**（測定で 3 回誤判定した）＝地図は破棄を
     `after` に載せ、その先でスレッドの終了を待つ。だから固定時間で測らず、
@@ -2483,7 +2483,7 @@ def test_closed_window_is_released(name, monkeypatch):
             time.sleep(0.02)
 
         assert ref() is None, (
-            f"{name} の窓が、閉じても解放されない（{_RELEASE_LIMIT_S:.0f} 秒待った）。"
+            f"{name} のウィンドウが、閉じても解放されない（{_RELEASE_LIMIT_S:.0f} 秒待った）。"
             "Tcl 側に参照が残っている＝`bind_all` / `trace_add` / `after` を"
             "登録したまま閉じていないか。開閉のたびに積み上がる（B-050）"
         )
@@ -2500,7 +2500,7 @@ class TestTkGarbageIsSweptOnTheMainThread:
     """
 
     def test_sweeping_collects_tk_garbage(self):
-        """掃くと、閉じた窓の残骸が実際に消えること。"""
+        """掃くと、閉じたウィンドウの残骸が実際に消えること。"""
         import gc
 
         from views import progress
@@ -2539,7 +2539,7 @@ class TestTkGarbageIsSweptOnTheMainThread:
         from views import progress
         progress.sweep_tk_garbage(_FakeRoot(), interval_ms=1234)
         assert calls == [1234], (
-            "次回を予約していない＝1 回で止まる。閉じた瞬間にはゴミになっていない窓"
+            "次回を予約していない＝1 回で止まる。閉じた瞬間にはゴミになっていないウィンドウ"
             "（地図＝スレッドの終了待ち）を永久に取りこぼす"
         )
 
@@ -2557,8 +2557,8 @@ class TestTkGarbageIsSweptOnTheMainThread:
     def test_the_launcher_starts_the_sweeper(self):
         """配線＝ランチャーが掃除役を起動すること。
 
-        窓ごとに書かず**ルートに 1 つ**置く形なので、ここが外れると
-        「全窓ぶんが一斉に効かなくなる」。
+        ウィンドウごとに書かず**ルートに 1 つ**置く形なので、ここが外れると
+        「全ウィンドウぶんが一斉に効かなくなる」。
         """
         from views import launcher as launcher_mod
         from views import progress
@@ -2575,7 +2575,7 @@ class TestTkGarbageIsSweptOnTheMainThread:
             finally:
                 launcher_mod.progress.sweep_tk_garbage = original
             assert started, (
-                "ランチャーが sweep_tk_garbage を起動していない＝閉じた窓の残骸が"
+                "ランチャーが sweep_tk_garbage を起動していない＝閉じたウィンドウの残骸が"
                 "ワーカースレッドの GC に拾われる（進捗が 20〜30 秒止まる）"
             )
         finally:
@@ -2585,7 +2585,7 @@ class TestTkGarbageIsSweptOnTheMainThread:
         """配線＝ランチャーが**投函の配達役**も起動すること（B-079）。
 
         投函はキューへの put だけになったので、ここが外れると
-        **例外も出ないまま全窓ぶんの通知が誰にも届かない**（完了しても画面が
+        **例外も出ないまま全ウィンドウぶんの通知が誰にも届かない**（完了しても画面が
         変わらない）。掃除役と同じくルートに 1 つ置く形なので、外れ方も一斉。
         """
         from views import launcher as launcher_mod
@@ -2642,7 +2642,7 @@ class TestTkGarbageIsSweptOnTheMainThread:
 
 
 def _swallow(win, dw: int, dh: int) -> None:
-    """WM が要求より `(dw, dh)` 小さい窓を返した状態を作る（B-119 の再現）。"""
+    """WM が要求より `(dw, dh)` 小さいウィンドウを返した状態を作る（B-119 の再現）。"""
     win.update_idletasks()
     win.geometry(f"{win.winfo_width() - dw}x{win.winfo_height() - dh}")
     win.update()
@@ -2652,8 +2652,8 @@ def test_a_frame_that_swallows_pixels_is_said_again_once():
     """🔴 **要求した寸法に着地しなかったら 1 度だけ言い直すこと**（B-119）。
 
     実機（FHD/100% ＋ WQHD/150%）で撮ったログ＝別 DPI のモニタへ移った直後、
-    `geometry("602x1197")` を出しても返ってくる窓は **`596x1197`**。Tk 8.6 が
-    **窓枠の厚みを移る前の DPI のまま**持っているためで、6px は装飾幅が
+    `geometry("602x1197")` を出しても返ってくるウィンドウは **`596x1197`**。Tk 8.6 が
+    **ウィンドウ枠の厚みを移る前の DPI のまま**持っているためで、6px は装飾幅が
     16 → 22 に増えた差そのもの。
 
     ⚠️ **呑まれた 6px を放っておくと止まらない**＝`need_w(602) > 実幅(596)` が
@@ -2696,7 +2696,7 @@ def test_a_frame_that_swallows_pixels_is_said_again_once():
 def test_a_size_the_user_changed_is_not_said_again():
     """↑の裏＝**装飾の寸法より大きなずれには触らないこと**（B-119）。
 
-    それは枠の話ではなく、利用者が窓を掴んで変えた結果か WM が要求を拒んだ結果。
+    それは枠の話ではなく、利用者がウィンドウを掴んで変えた結果か WM が要求を拒んだ結果。
 
     🔴 **物差しは装飾そのもの**（2026-08-23・独立レビュー 40 巡目・P1）＝最初は
     定数の上限（48px）で弾いていたが、**装飾は表示倍率で伸びる**ので高い倍率で
@@ -2730,7 +2730,7 @@ def test_the_landing_check_scales_in_both_directions():
     🔴 **倍率が下がる向きが落ちていた**＝Tk が握っているのは**移動元**の枠の厚みなので、
     250% → 100% では **49px** のずれが正当に起き得るのに、移動先（100%）の装飾は
     **39px** しかない。移動先だけを物差しにすると `49 > 39` で補正が拒否され、
-    **戻る向きでだけ窓が誤った寸法に残る**（40 巡目で入れた「装飾を物差しにする」
+    **戻る向きでだけウィンドウが誤った寸法に残る**（40 巡目で入れた「装飾を物差しにする」
     という直しが、片方向にしか効いていなかった）。
 
     ⚠️ **上がる向きのテストだけでは見えない**＝そちらは移動先の枠のほうが厚いので
@@ -2774,17 +2774,17 @@ def test_the_landing_check_accepts_a_slip_from_the_higher_scale_it_came_from():
         )
         assert window_fit.correct_landing(win, from_dpi=240) is True, (
             "移動元の枠の厚みを渡しても補正されない"
-            "＝倍率が下がる向きでだけ窓が誤った寸法に残る。"
+            "＝倍率が下がる向きでだけウィンドウが誤った寸法に残る。"
         )
     finally:
         root.destroy()
 
 
 # ============================================================
-# 凍結帯の欄が中身を切らないこと（B-149）
+# 凍結バーの欄が中身を切らないこと（B-149）
 # ============================================================
 def _readonly_entries(widget, out=None):
-    """`readonly` の Entry を再帰で集める（凍結帯の欄）。"""
+    """`readonly` の Entry を再帰で集める（凍結バーの欄）。"""
     out = [] if out is None else out
     for child in widget.winfo_children():
         if child.winfo_class() == "TEntry" and "readonly" in str(child.state()):
@@ -2796,7 +2796,7 @@ def _readonly_entries(widget, out=None):
 @pytest.mark.parametrize("lang", ["ja", "en"])
 @pytest.mark.parametrize("opener", ["batch", "multihop"])
 def test_the_frozen_resolution_field_shows_the_whole_label(opener, lang):
-    """凍結帯の「解像度」欄が、段階のラベルを**切らずに**出せること。
+    """凍結バーの「解像度」欄が、段階のラベルを**切らずに**出せること。
 
     🔴 **欄幅を数で書いていたので、ラベルを長くした日に切れた**（B-148 →
     `高（5m メッシュ）`）＝複数経路は閉じ括弧が消え、中継経路は `高（5m` まで

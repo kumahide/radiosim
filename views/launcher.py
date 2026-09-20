@@ -63,9 +63,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
     _WIN_WIDTH  = 450
     _MIN_HEIGHT = 900
 
-    # ロゴの表示上限。**高さ側が本質**＝ランチャーは縦がいちばん苦しい窓で、FHD
+    # ロゴの表示上限。**高さ側が本質**＝ランチャーは縦がいちばん苦しいウィンドウで、FHD
     # 100% の使える高さ 990px に対して必要高が 1023px あり、33px が下端のボタン列
-    # から削られていた。ロゴは窓の中で唯一「機能を持たない帯」なので、足りない分は
+    # から削られていた。ロゴはウィンドウの中で唯一「機能を持たないバー」なので、足りない分は
     # まずここから返す（入力欄・ボタンの余白を削って情報密度を上げる前に）。
     # ⚠️ 高さの上限を外す/緩めるときは必ず tests/test_window_fit.py の FHD ゲートを
     #    回すこと（緩めた分だけ最下段のボタンが削られる＝見切れ 7 回目になる）。
@@ -81,9 +81,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         dem.set_proxy(self.config.get("proxy_url", ""))
         self.entries:  dict[str, tk.Entry] = {}
         self._on_theme = on_theme
-        # プロジェクト（`.rsproj`）の保持者はランチャー。**閉じている窓の節は
-        # ここに持ち越す**＝バッチ窓を閉じただけで行が消えたファイルを上書き保存
-        # する事故を防ぐ（project.py の「節が無い＝空ではない」と対）。
+        # プロジェクト（`.rsproj`）の保持者はランチャー。**閉じているウィンドウのセクションは
+        # ここに持ち越す**＝バッチウィンドウを閉じただけで行が消えたファイルを上書き保存
+        # する事故を防ぐ（project.py の「セクションが無い＝空ではない」と対）。
         # 型は project.ProjectDoc。起動時に project を import しないため遅延生成
         # （project → batch → report 系と import 連鎖が伸び、初回描画が遅くなる）。
         self._project: "project.ProjectDoc | None" = None
@@ -94,13 +94,13 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # （tkintermapview の `invalid command name ...update_canvas_tile_images`
         # 対策。MapWindow._on_close と対）。
         root.protocol("WM_DELETE_WINDOW", self._on_app_close)
-        # 閉じた窓の残骸をメインスレッドで掃き続ける（B-050）。**ワーカースレッドに
+        # 閉じたウィンドウの残骸をメインスレッドで掃き続ける（B-050）。**ワーカースレッドに
         # 拾わせると 20〜30 秒止まる**ので、先にこちらで回収してしまう。ルートに 1 つ
-        # 置く形＝窓を足しても書き足す必要がない。理由と実測値は views/progress.py。
+        # 置く形＝ウィンドウを足しても書き足す必要がない。理由と実測値は views/progress.py。
         progress.sweep_tk_garbage(root)
         # ワーカーからの投函をメインスレッドで配り続ける（B-079）。**投函自体は
         # キューへの put だけ**なので、配る役がここに居ないと誰にも届かない。
-        # 掃除役と同じくルートに 1 つ置く形＝窓を足しても書き足す必要がない。
+        # 掃除役と同じくルートに 1 つ置く形＝ウィンドウを足しても書き足す必要がない。
         progress.drain_ui_mailbox(root)
         # 外部の言語ファイルで採用できなかった訳を**画面で言う**（B-025 と同型＝
         # 黙って壊れさせない）。⚠️ 起動のたびに出す＝「直すまで言い続ける」ことに
@@ -108,10 +108,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         root.after_idle(self._warn_about_rejected_translations)
         root.after_idle(self._warn_about_legacy_data)
         # 利用者が足した DEM ソース宣言のうち使えなかったぶんを画面で言う
-        # （3.4 段1・I-147＝上と同じ理由で毎回出す）。
+        # （3.4 ステージ1・I-147＝上と同じ理由で毎回出す）。
         root.after_idle(self._warn_about_rejected_dem_sources)
         # 利用者が足した背景地図タイルソース宣言のうち使えなかったぶんも
-        # 同じ理由で毎回言う（3.5 段3・I-152）。
+        # 同じ理由で毎回言う（3.5 ステージ3・I-152）。
         root.after_idle(self._warn_about_rejected_tile_sources)
 
     #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
@@ -196,7 +196,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
     def _warn_about_rejected_tile_sources(self) -> None:
         """宣言ファイルの背景地図ソースのうち使えなかったぶんを 1 通で知らせる
-        （3.5 段3・I-152）。`_warn_about_rejected_dem_sources` と同じ形。"""
+        （3.5 ステージ3・I-152）。`_warn_about_rejected_dem_sources` と同じ形。"""
         reports = tile_sources.load_reports()
         if not reports:
             return
@@ -247,14 +247,14 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         必要幅が 464px になり 450px 固定では右端が詰まった（I-023）。
 
         測り方は [views/window_fit](views/window_fit.py) に集約してある
-        （見切れは窓ごとに直しては再発してきたクラスなので、実装を 1 つにする）。
+        （見切れはウィンドウごとに直しては再発してきたクラスなので、実装を 1 つにする）。
         `_WIN_WIDTH` / `_MIN_HEIGHT` は**下限**として残す。
 
         ⚠️ 検証するのは**選んだ寸法**（`window_fit` が `_fit_size` に残す）で
         あって実現後のサイズではない。ウィンドウが未表示のあいだ `geometry()` は
         設定値ではなく自然サイズを返すため、それと比べるテストは壊れた実装でも
         緑になる（最初に書いたガードはこれで壊れた実装のまま通った）。
-        ガード＝tests/test_window_fit.py（全窓横断）。
+        ガード＝tests/test_window_fit.py（全ウィンドウ横断）。
         """
         self._window_width, self._window_height = window_fit.fit_to_content(
             self.root, min_w=self._WIN_WIDTH, min_h=self._MIN_HEIGHT,
@@ -271,8 +271,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                     map_widget = win._map
             except Exception:
                 pass
-        # ⚠️ ここには「pyplot の全 Figure を閉じる」後始末があった。グラフ窓が
-        # pyplot の窓（独自の Tk ルート＋入れ子 mainloop）で、閉じないとプロセスが
+        # ⚠️ ここには「pyplot の全 Figure を閉じる」後始末があった。グラフウィンドウが
+        # pyplot のウィンドウ（独自の Tk ルート＋入れ子 mainloop）で、閉じないとプロセスが
         # 終了しなかったため。**B-024 で Toplevel になり pyplot を使わなくなった**
         # ので不要＝root の破棄で一緒に片付く（残すと matplotlib を遅延 import する
         # 意味も薄れる）。
@@ -406,15 +406,15 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         cb_diff.pack(side="right", expand=True, fill="x")
         Tooltip(cb_diff, i18n.t("tip_diff_method"))
 
-        # DEM ソース Combobox（3.4 段1・I-147）＝env_type/diff_method と同じ
+        # DEM ソース Combobox（3.4 ステージ1・I-147）＝env_type/diff_method と同じ
         # readonly 選択式。組み込み（国土地理院）＋利用者が宣言ファイルで足した
         # ソースの一覧を出す（入力画面は作らない＝一覧を出すだけ）。
         #
-        # I-153（3.5 段3）＝読み込めたソースが国土地理院だけのときは欄ごと
+        # I-153（3.5 ステージ3）＝読み込めたソースが国土地理院だけのときは欄ごと
         # 出さない（宣言ファイルを書いていない大多数の利用者には、選択肢が
         # 1 つしかない欄がランチャーの縦幅を 1 行ぶん食うだけ）。⚠️ **欄を
         # 隠しても `_dem_source_var`／`dem_source` は生かし続ける**＝
-        # `_current_config()` と分岐窓の凍結スナップショットが読む値が消えると
+        # `_current_config()` と分岐ウィンドウの凍結スナップショットが読む値が消えると
         # 既定値への黙った依存になる（issue 論点1）。`f_dem` を pack しない
         # だけで、値の保持・保存・復元の経路は変えない。
         f_dem = ttk.Frame(g)
@@ -498,9 +498,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         }
 
     def _build_status(self, parent: tk.Widget) -> None:
-        # 実行帯は**上段＝ステータス 1 行／下段＝バー（左・伸縮）＋実行（右端）**
-        # の 2 段（I-047・4 窓共通）。ステータスをバーの*横*に置くと、文言の長さで
-        # 実行ボタンの位置が動く（左寄せの 1 行なら文言が伸びても帯の形は変わらない）。
+        # 実行バーは**上段＝ステータス 1 行／下段＝バー（左・伸縮）＋実行（右端）**
+        # の 2 段（I-047・4 ウィンドウ共通）。ステータスをバーの*横*に置くと、文言の長さで
+        # 実行ボタンの位置が動く（左寄せの 1 行なら文言が伸びてもバーの形は変わらない）。
         prog_frame = ttk.Frame(parent)
         prog_frame.pack(fill="x", pady=(10, 5))
 
@@ -509,9 +509,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._prog_label = ttk.Label(row1, text=i18n.t("status_ready"), anchor="w")
         self._prog_label.pack(side="left", fill="x", expand=True)
 
-        # 進捗バーと「実行」を同じ帯に置く（I-029）。**3 つの実行フローで同じ名前・
-        # 同じ位置**＝バッチが既にこの配置なので、一番情報量の多い窓を動かさずに
-        # 単一と条件探索の 2 窓だけを揃える側に回した。
+        # 進捗バーと「実行」を同じバーに置く（I-029）。**3 つの実行フローで同じ名前・
+        # 同じ位置**＝バッチが既にこの配置なので、一番情報量の多いウィンドウを動かさずに
+        # 単一と条件探索の 2 ウィンドウだけを揃える側に回した。
         bar = ttk.Frame(prog_frame)
         bar.pack(fill="x", pady=(2, 0))
         self._prog_bar = ttk.Progressbar(
@@ -519,7 +519,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         )
         self._prog_bar.pack(side="left", fill="x", expand=True)
         # Accent（青）は**「走らせる」ボタンだけ**に使う（I-029/I-030）。以前は
-        # 「一括シミュレーション」（＝窓を開く操作）にも付いており、強調の軸が
+        # 「一括シミュレーション」（＝ウィンドウを開く操作）にも付いており、強調の軸が
         # 意味の軸と直交していた。
         self._run_btn = ttk.Button(bar, text=i18n.t("btn_run"),
                                   command=self._on_run, style="Accent.TButton")
@@ -567,16 +567,16 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._pump.stop()
 
     def _build_buttons(self, parent: tk.Widget) -> None:
-        """**別の窓を開く**ボタンだけを置く（I-030）。
+        """**別のウィンドウを開く**ボタンだけを置く（I-030）。
 
         ランチャーの操作は意味で 3 カテゴリーに分かれる:
 
           1. **走らせる**（1 個）→ 進捗バーの右・`Accent.TButton` はここだけ（I-029）
-          2. **別の窓を開く**（3 個）→ ここ
+          2. **別のウィンドウを開く**（3 個）→ ここ
           3. **ファイル／OS へ出る**（2 個）→ **メニューバーの「ファイル」**
 
         以前は 3×2 の 6 個が同じ見た目の並びに混在し、`Accent` が「走らせる」と
-        「窓を開く」をまたいでいた＝**強調の軸が意味の軸と直交していた**。
+        「ウィンドウを開く」をまたいでいた＝**強調の軸が意味の軸と直交していた**。
         3 の 2 個をメニューへ移した根拠は「結果フォルダが要る瞬間は*実行した直後*に
         時間的に局在している」＝恒久ボタンは場所が間違っており、必要が発生する
         その場所（完了ダイアログの「保存先を開く」）に置く。
@@ -585,7 +585,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         frame.pack(fill="x", pady=(6, 4))
 
         # **2 列 × 2 行**＝行き先が 4 つになった時点で縦積みは背が高すぎる
-        # （この窓は FHD 100% の使える高さ 990px に対して余裕が十数 px しかない
+        # （このウィンドウは FHD 100% の使える高さ 990px に対して余裕が十数 px しかない
         # ＝B-021。4 つ目を縦に足した瞬間に上限を超えた）。2 列なら日本語ラベルも
         # 入る（元の 3×2 レイアウトで実績がある幅）。
         # ⚠️ 5 つ目を足すときは、また高さの予算を測ること
@@ -637,7 +637,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
         ⚠️ **点数は入力ではない**ので `self.entries` には入れない（`_on_run` /
         `_current_config` が段階のキーを足す）。段階は `env_type` / `diff_method` と
-        同じ「表示ラベルで見せ、内部キーで持つ」形＝窓が違っても同じ語に見える。
+        同じ「表示ラベルで見せ、内部キーで持つ」形＝ウィンドウが違っても同じ語に見える。
         """
         f = ttk.Frame(parent)
         f.pack(fill="x", pady=2, padx=10)
@@ -708,8 +708,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # ⚠️ **座標欄だけ幅の下限を `coords` から取る**（B-046 / B-057）。ここは
         # `fill="x"` で伸びるので普段は足りているが、**幅を宣言していなかった**ため
         # Tk 既定の 20 文字が下限になり、**150% 表示で DMS の末尾が切れていた**
-        # （実測 2026-08-12＝欄 240px / DMS 要求はそれ以上）。他の 4 つの窓は
-        # `DISPLAY_WIDTH_CHARS` に揃っていたのに、**座標を実際に打つこの窓だけが
+        # （実測 2026-08-12＝欄 240px / DMS 要求はそれ以上）。他の 4 つのウィンドウは
+        # `DISPLAY_WIDTH_CHARS` に揃っていたのに、**座標を実際に打つこのウィンドウだけが
         # 揃っていなかった**。⇒ 伸びるかどうかと、下限を宣言するかは別の話。
         # ⚠️ `**kw` で渡さない＝pyright が tk.Entry のオーバーロードを解決できず
         #    型エラー 28 件になる（実測）。**後から `configure` で当てる。**
@@ -854,7 +854,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 )
             except Exception as ex:
                 config.logger.warning("Prefetch error (continuing): %s", ex)
-            # ⚠️ 事前取得中に窓を閉じられている可能性がある（B-061）
+            # ⚠️ 事前取得中にウィンドウを閉じられている可能性がある（B-061）
             progress.post_to_ui(self.root, self._notify_map_cache_change)
             progress.post_to_ui(self.root, lambda: self._start_simulation(params))
 
@@ -863,7 +863,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
     def _start_simulation(self, params: sim.SimParams) -> None:
         """Phase 2: 標高取得 → グラフ表示。"""
         # 通常は Phase 1 で開始済みだが、start は冪等なので各フェーズが自前で
-        # 開始してよい（この相だけを呼ぶ経路が増えても進捗が黙って消えない）。
+        # 開始してよい（このフェーズだけを呼ぶ経路が増えても進捗が黙って消えない）。
         self._pump.start()
         self._progress_reset(params.num, i18n.t("status_fetching"))
 
@@ -873,7 +873,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 v, i18n.t("status_fetching_pct").format(pct=pct)
             )
 
-        # 取得日は on_complete の直前に同じスレッドで届く（B-213）＝標高と一緒に窓へ渡す
+        # 取得日は on_complete の直前に同じスレッドで届く（B-213）＝標高と一緒にウィンドウへ渡す
         acquired: list = [None]
 
         def _on_acquired(value) -> None:
@@ -922,7 +922,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         meta = self._current_meta()
         # **唯一インスタンス**＝実行のたびに開き直す（バッチ・地図・条件探索と
         # 同じ流儀）。B-024 で Tk 化してブロックしなくなったので、放っておくと
-        # 実行のたびに窓が増える。**結果を並べて比べるのは条件探索の担当**
+        # 実行のたびにウィンドウが増える。**結果を並べて比べるのは条件探索の担当**
         # （回折トグルを撤去したのと同じ線引き＝比較の器を 2 つ持たない）。
         old = getattr(self, "_graph_win", None)
         if old is not None and old.winfo_exists():
@@ -930,12 +930,12 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         self._graph_win = show_graph(
             self.root, params, raw_elevs, meta["project_name"], meta["memo"],
             on_close = self._on_graph_closed,
-            # app 設定（座標表記）は開く時点で凍結して渡す＝窓が保存のたびに
+            # app 設定（座標表記）は開く時点で凍結して渡す＝ウィンドウが保存のたびに
             # `config.load_config()` を読み直さない（I-055 ②・2.7 スライス G2）。
             coord_format = self._coord_fmt_var.get(),
             dem_acquired = dem_acquired,
         )
-        # 窓が出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
+        # ウィンドウが出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
         # したため、表示直前に呼ばれる `on_ready` フックが要った（戻り値を待つと
         # グラフを閉じるまで「準備中」が残った）。Toplevel になって不要になった。
         config.logger.info(

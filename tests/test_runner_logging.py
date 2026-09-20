@@ -164,7 +164,7 @@ def test_per_path_failure_logs_traceback(tmp_path, default_params_dict,
 
     def _raise(*_a, **_kw):
         raise _Boom("描画で仕組んだ失敗")
-    # 標高取得はフェイクで通し、**描画段だけ**を倒す（そこまでは正常に進む必要がある）。
+    # 標高取得はフェイクで通し、**描画フェーズだけ**を倒す（そこまでは正常に進む必要がある）。
     monkeypatch.setattr(report_path, "save_path_visuals", _raise, raising=True)
 
     ev: dict = {}

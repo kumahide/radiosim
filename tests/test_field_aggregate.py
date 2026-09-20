@@ -1,13 +1,13 @@
 """
 tests/test_field_aggregate.py
 ==============================
-実測補助アプリ（`apps/field`）の**窓の集計と打ち切り**を検証する。
+実測補助アプリ（`apps/field`）の**ウィンドウの集計と打ち切り**を検証する。
 
 🔑 **ここで守っているのは「統計を偏らせない」約束**＝どれも、外しても値は出るが
 出た値が静かに間違う種類のもの。
 
-  - 一部だけ届いた窓の平均を実測として出さないこと（強いパケットだけが残る）
-  - 受信が途絶えた区間が**窓にならずに消えない**こと（打ち切りが数から落ちる）
+  - 一部だけ届いたウィンドウの平均を実測として出さないこと（強いパケットだけが残る）
+  - 受信が途絶えた区間が**ウィンドウにならずに消えない**こと（打ち切りが数から落ちる）
   - 設定・置き場所を跨いで平均しないこと（別の条件が 1 つの値に混ざる）
   - TX 側の給電線損が二重に効かないこと
 
@@ -150,23 +150,23 @@ def _run(seqs, header=None, stop_at: float | None = None, **sample_kwargs) -> li
     return A.aggregate(header, [_sample(q, **sample_kwargs) for q in seqs], events)
 
 
-# --- 窓の刻み ----------------------------------------------------------------
+# --- ウィンドウの刻み ----------------------------------------------------------------
 
 
 def test_window_size_comes_from_the_interval_and_the_window_length():
-    """期待パケット数は `集計窓 ÷ 送信間隔`（送信間隔は TX の設定から取る）。"""
+    """期待パケット数は `集計ウィンドウ ÷ 送信間隔`（送信間隔は TX の設定から取る）。"""
     assert A.window_seq_count(_header(window_s=1.0)) == 10
     assert A.window_seq_count(_header(window_s=2.5)) == 25
 
 
 def test_a_window_shorter_than_one_packet_is_refused():
-    """1 パケットも入らない窓は作らないこと（受信率の分母が 0 になる）。"""
+    """1 パケットも入らないウィンドウは作らないこと（受信率の分母が 0 になる）。"""
     with pytest.raises(S.SessionError, match="1 パケットも入りません"):
         A.window_seq_count(_header(window_s=0.01))
 
 
 def test_a_full_window_reports_the_mean_in_db():
-    """満ちた窓は dB 領域の算術平均を返すこと（2026-09-19 の決定）。"""
+    """満ちたウィンドウは dB 領域の算術平均を返すこと（2026-09-19 の決定）。"""
     windows = _run(range(100, 110))
     assert len(windows) == 1
     assert windows[0].received == 10
@@ -177,11 +177,11 @@ def test_a_full_window_reports_the_mean_in_db():
 def test_the_mean_is_taken_in_the_db_domain_not_in_power():
     """⚠️ dB 平均と電力平均は別物＝取り違えたら落ちること。
 
-    振幅の差が大きい窓では、電力平均のほうが高く出る（強いサンプルに引かれる）。
+    振幅の差が大きいウィンドウでは、電力平均のほうが高く出る（強いサンプルに引かれる）。
     どちらを採ったかが黙って入れ替わらないよう、値そのもので固定する。
     """
     strong, weak = -100, -180                      # 生値 → −146 dBm / −186 dBm
-    header = _header(window_s=0.2)                 # 2 パケットで 1 窓
+    header = _header(window_s=0.2)                 # 2 パケットで 1 ウィンドウ
     samples = [_sample(100, rssi_raw=strong), _sample(101, rssi_raw=weak)]
     events = _events(("place", 99.5, 0), ("stop", 101.5, 0))
     got = A.aggregate(header, samples, events)[0].meas_dbm
@@ -193,7 +193,7 @@ def test_the_mean_is_taken_in_the_db_domain_not_in_power():
 
 
 def test_a_partly_received_window_is_censored_instead_of_averaged():
-    """受信率がしきい値を下回る窓は値を出さないこと。
+    """受信率がしきい値を下回るウィンドウは値を出さないこと。
 
     🔑 **弱いパケットから先に落ちる**ので、届いた分の平均は楽観側へ偏る。
     「少しでも届いたのだから平均すればよい」が、較正の偽陽性を作る。
@@ -204,7 +204,7 @@ def test_a_partly_received_window_is_censored_instead_of_averaged():
 
 
 def test_a_window_that_received_nothing_still_exists():
-    """1 つも届かなかった窓も**行として残る**こと（捨てると打ち切りが数から落ちる）。"""
+    """1 つも届かなかったウィンドウも**行として残る**こと（捨てると打ち切りが数から落ちる）。"""
     windows = _run(list(range(100, 110)) + list(range(120, 130)))
     assert [w.received for w in windows] == [10, 0, 10]
     assert [w.censored for w in windows] == [False, True, False]
@@ -212,15 +212,15 @@ def test_a_window_that_received_nothing_still_exists():
 
 
 def test_the_tail_before_a_move_is_not_lost():
-    """動かす直前に途絶えた分が、窓にならずに消えないこと。
+    """動かす直前に途絶えた分が、ウィンドウにならずに消えないこと。
 
     ⚠️ 区間の終わりを「最後に届いたパケット」で切ると、リンクが落ちた末尾が
-    そもそも窓にならない＝**打ち切りが静かに減る**（§5-4 が避けたい偏り）。
+    そもそもウィンドウにならない＝**打ち切りが静かに減る**（§5-4 が避けたい偏り）。
     区切りは操作の時刻から「TX がそこまでに送った番号」を出して決める。
     """
     samples = (
-        [_sample(q, slot=1) for q in range(100, 110)]     # 満ちた窓
-        + [_sample(q, slot=1) for q in range(110, 112)]   # 次の窓は 2 個で途絶
+        [_sample(q, slot=1) for q in range(100, 110)]     # 満ちたウィンドウ
+        + [_sample(q, slot=1) for q in range(110, 112)]   # 次のウィンドウは 2 個で途絶
         + [_sample(q, slot=2) for q in range(120, 130)]   # 据え直した
     )
     events = _events(
@@ -232,7 +232,7 @@ def test_the_tail_before_a_move_is_not_lost():
 
 
 def test_the_tail_of_the_session_is_closed_by_the_stop():
-    """最後の置き場所の末尾が、終了の記録まで窓になること（増分2 で残した穴）。
+    """最後の置き場所の末尾が、終了の記録までウィンドウになること（増分2 で残した穴）。
 
     受信が途絶えた後も TX は送り続けている。終了の時刻が無いと、その分の打ち切りが
     **セッションの最後でだけ**消える。
@@ -242,10 +242,10 @@ def test_the_tail_of_the_session_is_closed_by_the_stop():
 
 
 def test_a_slot_that_received_nothing_still_has_windows():
-    """1 つも受からなかった置き場所も、打ち切りの窓として残ること。
+    """1 つも受からなかった置き場所も、打ち切りのウィンドウとして残ること。
 
     🔑 サンプルから区切ると、この置き場所は**存在ごと見えない**＝いちばん悪い場所が
-    数から落ちる。操作の記録から区切るので、受信ゼロでも窓ができる。
+    数から落ちる。操作の記録から区切るので、受信ゼロでもウィンドウができる。
     """
     samples = [_sample(q, slot=0) for q in range(100, 110)] + [
         _sample(q, slot=2) for q in range(140, 150)
@@ -262,7 +262,7 @@ def test_a_slot_that_received_nothing_still_has_windows():
 
 
 def test_samples_received_while_moving_are_not_in_any_window():
-    """移動中に受けたものは窓に入れないこと（どちらの場所の値でもない）。"""
+    """移動中に受けたものはウィンドウに入れないこと（どちらの場所の値でもない）。"""
     samples = [_sample(q) for q in range(100, 130)]
     events = _events(
         ("place", 99.5, 0), ("move", 109.5, 0), ("place", 119.5, 1), ("stop", 129.5, 0)
@@ -291,12 +291,12 @@ def test_windows_do_not_cross_a_spatial_slot():
         ("place", 99.5, 1), ("move", 104.5, 0), ("place", 104.6, 2), ("stop", 114.5, 0)
     )
     windows = A.aggregate(_header(), samples, events)
-    # 置き場所 1 は 5 個しか無く**端数の窓**なので出ない。2 は 10 個で 1 窓。
+    # 置き場所 1 は 5 個しか無く**端数のウィンドウ**なので出ない。2 は 10 個で 1 ウィンドウ。
     assert [(w.spatial_slot, w.received) for w in windows] == [(2, 10)]
 
 
 def test_a_partial_window_at_the_end_is_not_emitted():
-    """端数の窓は出さないこと（分母が足りず、受信率が意味を持たない）。"""
+    """端数のウィンドウは出さないこと（分母が足りず、受信率が意味を持たない）。"""
     windows = _run(range(100, 115))
     assert [w.seq_start for w in windows] == [100]
 
@@ -320,7 +320,7 @@ def test_a_sample_from_another_transmitter_is_refused():
 
 
 def test_no_samples_is_an_error_not_an_empty_result():
-    """1 つも受からなかったセッションを「窓 0 個」で済ませないこと。
+    """1 つも受からなかったセッションを「ウィンドウ 0 個」で済ませないこと。
 
     時刻を番号へ直す手がかりが無く、機材の不具合と電波の弱さも見分けられない。
     黙って空を返すと、いちばん悪い測定が何も無かったことになる。
@@ -330,7 +330,7 @@ def test_no_samples_is_an_error_not_an_empty_result():
 
 
 def test_the_session_must_have_been_stopped():
-    """終了の記録が無い並びから窓を作らないこと（末尾がどこまでか分からない）。"""
+    """終了の記録が無い並びからウィンドウを作らないこと（末尾がどこまでか分からない）。"""
     with pytest.raises(S.SessionError, match="stop で終わって"):
         A.aggregate(_header(), [_sample(100)], _events(("place", 99.5, 0)))
 
@@ -343,7 +343,7 @@ def test_a_clock_that_goes_back_is_refused():
 
 
 def test_a_sample_from_another_tx_config_is_refused():
-    """TX の設定が変わった後のサンプルを混ぜないこと（送信間隔が違えば窓の分母が別物）。"""
+    """TX の設定が変わった後のサンプルを混ぜないこと（送信間隔が違えばウィンドウの分母が別物）。"""
     with pytest.raises(S.SessionError, match="TX の設定番号"):
         _run(range(100, 110), tx_config_id=7)
 
@@ -365,7 +365,7 @@ def test_samples_lost_after_reception_are_taken_out_of_the_denominator():
     """🔑 電波では届いたが PC までの間で落ちた分を、打ち切りの根拠にしないこと。
 
     108〜112 はファームが番号（8〜12）を振ったが PC に届かなかった＝番号の欠けが
-    ちょうど seq の欠けと同じ数なので、どの窓の分か番号で分かる（窓を跨いでも）。
+    ちょうど seq の欠けと同じ数なので、どのウィンドウの分か番号で分かる（ウィンドウを跨いでも）。
     落ち方は受信レベルと関係ないので、残りは偏りの無い部分集合。
     """
     kept = [q for q in range(100, 120) if not 108 <= q <= 112]
@@ -377,8 +377,8 @@ def test_samples_lost_after_reception_are_taken_out_of_the_denominator():
 
 
 def test_a_mixed_gap_inside_one_window_is_credited_to_that_window():
-    """電波の欠け（103）と PC までの欠け（104＝番号 3）が混ざっていても、両端が同じ窓に
-    あれば、その窓の分として分母から引くこと。"""
+    """電波の欠け（103）と PC までの欠け（104＝番号 3）が混ざっていても、両端が同じウィンドウに
+    あれば、そのウィンドウの分として分母から引くこと。"""
     pairs = [(100, 0), (101, 1), (102, 2)] + [(q, q - 101) for q in range(105, 110)]
     windows = _windows(pairs, last=109)
     assert windows[0].link_lost == 1
@@ -387,7 +387,7 @@ def test_a_mixed_gap_inside_one_window_is_credited_to_that_window():
 
 
 def test_a_mixed_gap_across_windows_is_not_credited_anywhere():
-    """⚠️ 混ざっていて窓を跨ぐものは、どの窓の分か分からない＝**どの窓にも振らない**。
+    """⚠️ 混ざっていてウィンドウを跨ぐものは、どのウィンドウの分か分からない＝**どのウィンドウにも振らない**。
 
     振ると、本当は電波で欠けた分まで分母から消え、受信率が高く見える（打ち切りが
     減る＝§5-4 が避けたい向き）。数は総数の側にだけ残る。
@@ -409,7 +409,7 @@ def test_a_sample_sequence_that_goes_back_is_not_counted_as_lost():
 
 
 def test_a_window_lost_entirely_after_reception_is_not_censored():
-    """窓の全部が PC までの間で落ちた＝電波については何も分からない。「感度以下」では
+    """ウィンドウの全部が PC までの間で落ちた＝電波については何も分からない。「感度以下」では
     ないので打ち切りに数えず、行の note もそれと分かる文面にする。"""
     pairs = [(q, q - 100) for q in range(100, 110)] + [(q, q - 100) for q in range(120, 130)]
     windows = _windows(pairs, last=129)
@@ -480,7 +480,7 @@ def test_the_channel_becomes_a_frequency():
 
 
 def test_the_row_id_is_unique_per_window():
-    """窓ごとに別の id を振ること（同じ id だと本体側で 1 行に潰れる）。"""
+    """ウィンドウごとに別の id を振ること（同じ id だと本体側で 1 行に潰れる）。"""
     ids = [r["id"] for r in _rows(_run(range(100, 130)))]
     assert ids == [
         "20260919T0100Z-site-a-w0000",

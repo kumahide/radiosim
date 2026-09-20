@@ -1,23 +1,23 @@
 """
 tests/test_ui_consistency.py
 ============================
-**窓をまたいで同じであるべきもの**を縛る横断ゲート。
+**ウィンドウをまたいで同じであるべきもの**を縛る横断ゲート。
 
 なぜ要るか
 ----------
 2.6 の UI/UX パスで「実行ボタンは 3 フローとも同じ表記・同じ位置（進捗バーの
 右）」と決めて記録したのに、**実際に揃っていたのはランチャーだけ**だった
 （条件探索はバーの左、バッチは下段の編集ボタン列の右端）。決めごとを散文でしか
-持っていないと、次の窓を作るときに**型が静かにずれる**——しかも窓ごとに見れば
+持っていないと、次のウィンドウを作るときに**型が静かにずれる**——しかもウィンドウごとに見れば
 どれも「おかしくない」ので、実際に並べて触るまで気づけない。
 
-⇒ 「揃っている」ことを**全窓を実際に起こして機械的に確認**する。窓が増えたら
-`_WINDOWS` に足す（足し忘れは新しい窓が検査されないという形で効くので、
+⇒ 「揃っている」ことを**全ウィンドウを実際に起こして機械的に確認**する。ウィンドウが増えたら
+`_WINDOWS` に足す（足し忘れは新しいウィンドウが検査されないという形で効くので、
 window_fit の登録漏れ検出と同じ理由でここも一覧を 1 つに保つ）。
 
 ここで守る型
 ------------
-1. **実行ボタンは進捗バーと同じ帯にあり、帯の右端**（I-029）。
+1. **実行ボタンは進捗バーと同じバーにあり、バーの右端**（I-029）。
 2. **判定色（OK / NG）の出所は theme**（画面のハードコードを増やさない）。
 3. **画面で bold を使わない**（強調は配置と余白で作る＝2026-08-01 ユーザー決定）。
    レポート HTML の太字は**別の設計言語**（印刷物）なのでここでは見ない。
@@ -50,7 +50,7 @@ def _params():
     return sim.SimParams(config.DEFAULT_CONFIG)
 
 
-# 実行フローを持つ窓＝(名前, 生成関数)。生成関数は (root, launcher) を受けて窓を返す。
+# 実行フローを持つウィンドウ＝(名前, 生成関数)。生成関数は (root, launcher) を受けてウィンドウを返す。
 _WINDOWS = [
     ("launcher", lambda root, app: app.root),
     ("batch",    lambda root, app: app.ensure_batch_window()),
@@ -61,10 +61,10 @@ _WINDOWS = [
 
 @pytest.fixture(scope="module")
 def app_windows():
-    """ランチャーと 3 つの窓を開いた状態。
+    """ランチャーと 3 つのウィンドウを開いた状態。
 
-    ⚠️ **module スコープ**＝ここのテストは「窓を眺めて型を確かめる」だけで中身を
-    書き換えないので、窓は 1 組で足りる。テストごとに Tk のルートを作り直すと、
+    ⚠️ **module スコープ**＝ここのテストは「ウィンドウを眺めて型を確かめる」だけで中身を
+    書き換えないので、ウィンドウは 1 組で足りる。テストごとに Tk のルートを作り直すと、
     ルートの生成が詰まって**表示依存テストが黙って skip される**（conftest の
     リトライで拾いきれない）／ごく稀に Tcl が落ちる（I-019）という形で、この
     ファイルが他のゲートを巻き添えにする。
@@ -90,12 +90,12 @@ def app_windows():
 # ============================================================
 # 0. 選択肢は**訳した語**で出す（内部キーを画面に出さない）
 # ============================================================
-# 🔴 **同じ値が窓によって別の言葉に見える**のを止める（B-156）＝複数経路の
+# 🔴 **同じ値がウィンドウによって別の言葉に見える**のを止める（B-156）＝複数経路の
 # 「回折モデル」だけ `values=["bullington","single"]` と**内部キーを直接**並べており、
 # ランチャー・中継経路が `Bullington` と出しているのにここだけ小文字、しかも
-# 英語環境で訳が当たらなかった。同じ窓の `env_type` は写しを作っていた＝
+# 英語環境で訳が当たらなかった。同じウィンドウの `env_type` は写しを作っていた＝
 # **揃っていなかったのは 1 か所だけ**。
-# ⇒ **面を数えずに窓を走査する**＝次に選択肢を足した窓でも効く。
+# ⇒ **面を数えずにウィンドウを走査する**＝次に選択肢を足したウィンドウでも効く。
 _INTERNAL_VOCAB = {
     **{k: f"env_{k}" for k in models.ENV_KEYS},
     **{k: f"diff_opt_{k}" for k in models.DIFF_METHOD_KEYS},
@@ -137,21 +137,21 @@ def test_no_combobox_offers_an_internal_key(app_windows, name):
 # ============================================================
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_run_button_sits_at_the_right_end_of_the_progress_bar(app_windows, name):
-    """実行ボタンは**進捗バーと同じ帯の右端**にあること。
+    """実行ボタンは**進捗バーと同じバーの右端**にあること。
 
-    「同じ帯」まで縛るのが要点＝バッチは実行ボタンを別フレーム（編集ボタン列）に
+    「同じバー」まで縛るのが要点＝バッチは実行ボタンを別フレーム（編集ボタン列）に
     置いており、window_fit のような寸法ゲートでは検出できなかった。
     """
     app, wins = app_windows
     win = wins[name]
     owner = app if name == "launcher" else win
-    # 属性名も 4 窓で同じ（`_run_btn` / `_prog_bar`）＝ランチャーだけ `run_btn` と
+    # 属性名も 4 ウィンドウで同じ（`_run_btn` / `_prog_bar`）＝ランチャーだけ `run_btn` と
     # 公開名で持っており、横断で検査しようとして初めて食い違いが見えた。
     run_btn  = owner._run_btn
     prog_bar = owner._prog_bar
 
     assert run_btn.winfo_parent() == prog_bar.winfo_parent(), (
-        f"{name}: 実行ボタンが進捗バーと別の帯にある"
+        f"{name}: 実行ボタンが進捗バーと別のバーにある"
     )
     assert run_btn.pack_info()["side"] == "right", f"{name}: 実行ボタンが右端でない"
     assert prog_bar.pack_info()["side"] == "left", f"{name}: 進捗バーが左で伸びていない"
@@ -159,7 +159,7 @@ def test_run_button_sits_at_the_right_end_of_the_progress_bar(app_windows, name)
         f"{name}: 進捗バーが伸びない（ボタン位置が中身の量で動く）"
     )
     # 実測でも右にあること（pack の順序を間違えると side=right でも内側に来る）。
-    # ⚠️ `update_idletasks` では足りない＝スクロール受け皿（Canvas の中に窓を置く
+    # ⚠️ `update_idletasks` では足りない＝スクロール受け皿（Canvas の中にウィンドウを置く
     # 形）の中身は **Configure イベントが回るまで幅が 1 のまま**で、実測が全部 0 に
     # なる。イベントまで回す `update()` を使う。
     win.update()
@@ -168,11 +168,11 @@ def test_run_button_sits_at_the_right_end_of_the_progress_bar(app_windows, name)
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_progress_bar_reaches_the_run_button(app_windows, name):
-    """帯の下段は**バーと実行ボタンだけ**＝バーの右端がボタンに届くこと（I-047）。
+    """バーの下段は**バーと実行ボタンだけ**＝バーの右端がボタンに届くこと（I-047）。
 
     バッチだけ `N / M (P%)` のラベル（空でも `width=15` の箱）を 2 つのあいだに
-    置いており、**その窓のバーだけ 15 文字ぶん短かった**（2026-08-07 実機確認・
-    原文「バッチ窓のプログレスバーが他の窓より短い（実行ボタンのすぐ横まで届いて
+    置いており、**そのウィンドウのバーだけ 15 文字ぶん短かった**（2026-08-07 実機確認・
+    原文「バッチウィンドウのプログレスバーが他のウィンドウより短い（実行ボタンのすぐ横まで届いて
     ない）」）。件数は上段（ステータスの行）へ移した。
 
     ⚠️ **「バーが伸びる」だけでは足りない**＝`expand=True` は既に別のゲートが
@@ -189,20 +189,20 @@ def test_progress_bar_reaches_the_run_button(app_windows, name):
     # 許容はボタン側の左余白（padx=10）ぶんだけ。
     assert gap <= 12, (
         f"{name}: 進捗バーと実行ボタンのあいだに {gap}px の隙間がある"
-        "（帯の下段はバーと実行だけ＝第 3 のウィジェットを置かない）"
+        "（バーの下段はバーと実行だけ＝第 3 のウィジェットを置かない）"
     )
 
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_status_line_sits_above_the_progress_bar(app_windows, name):
-    """ステータスは**進捗バーの上に 1 行**（I-047）＝4 窓とも同じ場所。
+    """ステータスは**進捗バーの上に 1 行**（I-047）＝4 ウィンドウとも同じ場所。
 
-    以前は 4 窓で 3 通りだった（バッチ＝上／条件探索・中継＝バーの横／ランチャー＝
-    上だが中央寄せ）。揃えるのは**場所**であって中身ではない＝帯が何を言うかは
-    窓ごとに違ってよい（中継は全体判定とどの区間が決めているか、複数経路は進捗だけ）。
+    以前は 4 ウィンドウで 3 通りだった（バッチ＝上／条件探索・中継＝バーの横／ランチャー＝
+    上だが中央寄せ）。揃えるのは**場所**であって中身ではない＝バーが何を言うかは
+    ウィンドウごとに違ってよい（中継は全体判定とどの区間が決めているか、複数経路は進捗だけ）。
 
-    ⚠️ **旧註は「OK/NG/ERR カウントは複数本を回す窓にしか意味が無い」と書いていた**
-    が、その集計は I-078（2026-08-13）で外した＝2.7 で行ごとの判定列が入り、帯の
+    ⚠️ **旧註は「OK/NG/ERR カウントは複数本を回すウィンドウにしか意味が無い」と書いていた**
+    が、その集計は I-078（2026-08-13）で外した＝2.7 で行ごとの判定列が入り、バーの
     集計が**同じ事実の数え直し**になったため。⇒ 例として挙げるものが実装から消えた
     ので註を現状へ直した（**中身を揃えないという結論は変わっていない**）。
     """
@@ -212,11 +212,11 @@ def test_status_line_sits_above_the_progress_bar(app_windows, name):
     label, bar = owner._prog_label, owner._prog_bar
 
     assert label.winfo_parent() != bar.winfo_parent(), (
-        f"{name}: ステータスが進捗バーと同じ帯にある（文言の長さでボタンが動く）"
+        f"{name}: ステータスが進捗バーと同じバーにある（文言の長さでボタンが動く）"
     )
     win.update()
     assert label.winfo_rooty() < bar.winfo_rooty(), f"{name}: ステータスがバーの上に無い"
-    # 左寄せ＝バーの左端と同じ位置から始まる（中央寄せだと窓ごとに始点が違う）。
+    # 左寄せ＝バーの左端と同じ位置から始まる（中央寄せだとウィンドウごとに始点が違う）。
     assert abs(label.winfo_rootx() - bar.winfo_rootx()) <= 2, (
         f"{name}: ステータスがバーの左端と揃っていない"
     )
@@ -224,14 +224,14 @@ def test_status_line_sits_above_the_progress_bar(app_windows, name):
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_status_text_never_resizes_the_progress_bar(app_windows, name):
-    """ステータスの**文言が伸びても実行帯の形が変わらない**こと（I-047 の理由）。
+    """ステータスの**文言が伸びても実行バーの形が変わらない**こと（I-047 の理由）。
 
-    ⚠️ 「別の帯にある」という構造だけでは足りない＝上の段に置いても、伸縮しない
-    ラベルを右詰めにすれば帯の形は再び中身の量で動く。**位置ではなく振る舞い**で
+    ⚠️ 「別のバーにある」という構造だけでは足りない＝上の段に置いても、伸縮しない
+    ラベルを右詰めにすればバーの形は再び中身の量で動く。**位置ではなく振る舞い**で
     縛る。
 
     🔑 **当初はここで「実行ボタンが動かないこと」を見ようとしたが、それは一度も
-    落ちないゲートだった**＝ボタンは帯の右端に*先に* pack されているので、同じ帯に
+    落ちないゲートだった**＝ボタンはバーの右端に*先に* pack されているので、同じバーに
     長い文言が入っても動くのは**進捗バーの方**（バーが縮む）。実際に壊れる側を
     測る（[[feedback-promote-recurring-checks]] 壊れ方①）。
     """
@@ -255,7 +255,7 @@ def test_status_text_never_resizes_the_progress_bar(app_windows, name):
 
 @pytest.mark.parametrize("name", [n for n, _ in _WINDOWS])
 def test_run_button_has_no_fixed_width(app_windows, name):
-    """実行ボタンに**固定幅を与えない**こと（I-046）＝4 窓で同じ文字は同じ大きさ。
+    """実行ボタンに**固定幅を与えない**こと（I-046）＝4 ウィンドウで同じ文字は同じ大きさ。
 
     ラベルの統一（I-029）は縛っていたのに大きさは縛っておらず、バッチだけ
     `width=14` で広かった。⚠️ 幅を外すと見切れる逆の実績があるので（`btn_import_csv`
@@ -270,7 +270,7 @@ def test_run_button_has_no_fixed_width(app_windows, name):
 def test_no_button_is_stretched_to_stand_out(app_windows):
     """**大きさで主操作を表さない**＝行をまたいで引き伸ばしたボタンを置かない（I-049）。
 
-    グラフ窓の保存がスライダー 3 行ぶんの高さを占めており、他窓の主操作（1 行）と
+    グラフウィンドウの保存がスライダー 3 行ぶんの高さを占めており、他ウィンドウの主操作（1 行）と
     不揃いだった。🔑 **名指しでなくクラスで縛る**＝「保存ボタンの rowspan」だけを
     禁じても、次に別のボタンを縦長にした瞬間に同じ欠陥が戻る（用語集ゲートで学んだ
     型と同じ）。強調は**位置**と Accent で表す。
@@ -323,8 +323,8 @@ def test_run_button_is_the_only_accent_button(app_windows, name):
 def _accent_buttons(widget) -> list:
     """配下の Accent.TButton を文字列パスで集める。
 
-    ⚠️ 別の Toplevel（他の窓・ダイアログ）へは降りない＝Tk では Toplevel も
-    ルートの子なので、素直に再帰すると全窓を数えてしまう。
+    ⚠️ 別の Toplevel（他のウィンドウ・ダイアログ）へは降りない＝Tk では Toplevel も
+    ルートの子なので、素直に再帰すると全ウィンドウを数えてしまう。
     """
     import tkinter as tk
     found = []
@@ -344,13 +344,13 @@ def _accent_buttons(widget) -> list:
 # 2. 判定色の出所
 # ============================================================
 def test_verdict_colors_come_from_theme_in_every_window(app_windows):
-    """OK / NG の色は `theme.verdict_colors` を出所にし、**全窓で同じ**であること。
+    """OK / NG の色は `theme.verdict_colors` を出所にし、**全ウィンドウで同じ**であること。
 
     ⚠️ 条件探索だけが色分けされ、中継経路は同色だった（レポート側は両方とも
-    色分けしている＝画面だけが落ちていた）。色を窓ごとに足すと出所が増えるので、
+    色分けしている＝画面だけが落ちていた）。色をウィンドウごとに足すと出所が増えるので、
     出所を 1 つにしたうえで「使っていること」をここで縛る。
 
-    **結果の返し先が窓ごとに違っても、色の出所は 1 つ**（2.7 スライス B）＝
+    **結果の返し先がウィンドウごとに違っても、色の出所は 1 つ**（2.7 スライス B）＝
     条件探索は結果一覧（Treeview のタグ）、バッチと中継は**入力表の行**（ラベルの
     前景色）。タグとラベルで機構が違うぶん、片方だけ theme から外れやすい。
     """
@@ -358,7 +358,7 @@ def test_verdict_colors_come_from_theme_in_every_window(app_windows):
     _, wins = app_windows
     expected = theme.verdict_colors(wins["scenario"])
 
-    # ① 結果一覧を持つ窓＝タグの配色
+    # ① 結果一覧を持つウィンドウ＝タグの配色
     tree = wins["scenario"]._tree
     for key in ("ok", "ng"):
         got = str(tree.tag_configure(key, "foreground"))
@@ -366,7 +366,7 @@ def test_verdict_colors_come_from_theme_in_every_window(app_windows):
             f"scenario: 判定色 {key} が theme と違う（{got!r} != {expected[key]!r}）"
         )
 
-    # ② 表へ返す窓＝行に実際の判定を入れて、その前景色を測る（3 値とも）
+    # ② 表へ返すウィンドウ＝行に実際の判定を入れて、その前景色を測る（3 値とも）
     batch_win = wins["batch"]
     for status, key in (("OK", "ok"), ("NG", "ng"), ("ERROR", "err")):
         pid = batch_win._row_entries[0][0].get()
@@ -417,7 +417,7 @@ def _fake_path_result(path_id: str, status: str):
 
 
 def test_result_comes_back_to_the_row_that_produced_it(app_windows):
-    """**1 行 = 1 結果が成り立つ入力表を持つ窓は、その行へ結果を返す**（I-041）。
+    """**1 行 = 1 結果が成り立つ入力表を持つウィンドウは、その行へ結果を返す**（I-041）。
 
     バッチは経路の行へ、中継は**区間**の行へ返る（地点の行ではない＝地点 N に対し
     結果は N−1 で 1:1 が成り立たない）。カウンタや一覧は「合計」や「別の場所」しか
@@ -445,13 +445,13 @@ def test_result_comes_back_to_the_row_that_produced_it(app_windows):
 
 
 def test_only_windows_without_a_one_to_one_table_keep_a_result_list(app_windows):
-    """結果一覧（Treeview）を持ってよいのは**1 行 = 1 結果が成り立たない窓だけ**。
+    """結果一覧（Treeview）を持ってよいのは**1 行 = 1 結果が成り立たないウィンドウだけ**。
 
     規則の裏面まで縛る＝条件探索は 1 条件から結果が N 件出るので一覧を持つ。
-    バッチと中継は入力表がそのまま結果の器なので、一覧を足すと**同じ数字が窓の
+    バッチと中継は入力表がそのまま結果の器なので、一覧を足すと**同じ数字がウィンドウの
     中に 2 か所**できる（中継は 2.7 スライス B まで実際にそうなっていた）。
 
-    ⚠️ 「`_tree` 属性が無いこと」では縛らない＝名前を変えれば通る。窓の配下に
+    ⚠️ 「`_tree` 属性が無いこと」では縛らない＝名前を変えれば通る。ウィンドウの配下に
     Treeview のウィジェットが**実在しないこと**で見る。
     """
     from tkinter import ttk
@@ -462,7 +462,7 @@ def test_only_windows_without_a_one_to_one_table_keep_a_result_list(app_windows)
         found = []
         for child in widget.winfo_children():
             if isinstance(child, tk.Toplevel):
-                continue                      # 別の窓へは降りない
+                continue                      # 別のウィンドウへは降りない
             if isinstance(child, ttk.Treeview):
                 found.append(str(child))
             found.extend(_trees(child))
@@ -474,12 +474,12 @@ def test_only_windows_without_a_one_to_one_table_keep_a_result_list(app_windows)
             "（結果はその結果を生んだ行へ返す＝I-041）"
         )
     assert _trees(wins["scenario"]), (
-        "scenario: 1 条件から結果が N 件出る窓は結果一覧を持つ（規則の裏面）"
+        "scenario: 1 条件から結果が N 件出るウィンドウは結果一覧を持つ（規則の裏面）"
     )
 
 
 # ============================================================
-# 2b. 数値パネルの桁揃え（グラフ窓）
+# 2b. 数値パネルの桁揃え（グラフウィンドウ）
 # ============================================================
 def test_graph_panel_keeps_units_out_of_the_values():
     """リンクバジェットの値に**単位を混ぜない**こと（桁が揃わなくなる）。
@@ -572,7 +572,7 @@ def _labelframes(widget) -> list:
 # 3. 画面では bold を使わない
 # ============================================================
 def test_no_bold_font_on_screen(app_windows):
-    """どの窓のウィジェットにも太字を使わないこと（2026-08-01 ユーザー決定）。
+    """どのウィンドウのウィジェットにも太字を使わないこと（2026-08-01 ユーザー決定）。
 
     理由＝**かえって読みにくい**。強調は配置・余白・区切り線で作る。
     ⚠️ レポート HTML（印刷物）の `font-weight:bold` は別の設計言語なので対象外。
@@ -610,7 +610,7 @@ def _collect_bold(widget, name: str, out: list) -> None:
 
 
 # ============================================================
-# 4-b. 凍結帯の ↻ と 🔒 は 3 窓で同じ場所（B-053）
+# 4-b. 凍結バーの ↻ と 🔒 は 3 ウィンドウで同じ場所（B-053）
 # ============================================================
 _FROZEN_WINDOWS = ("batch", "scenario", "multihop")
 
@@ -619,21 +619,21 @@ _FROZEN_WINDOWS = ("batch", "scenario", "multihop")
 def test_the_refresh_pair_sits_on_the_first_row_of_the_frozen_area(app_windows, name):
     """`↻ ランチャーから更新` と `🔒 ランチャーの値` は**案件情報の枠の中**にあること。
 
-    この 2 つは**帯 1 つではなく凍結領域全体**に効く（↻ はどの窓でも案件情報と共通
-    設定／経路をまとめて取り込む）。にもかかわらず置き場は 3 窓で 3 通りだった
+    この 2 つは**バー 1 つではなく凍結領域全体**に効く（↻ はどのウィンドウでも案件情報と共通
+    設定／経路をまとめて取り込む）。にもかかわらず置き場は 3 ウィンドウで 3 通りだった
     ＝条件探索は経路の行・中継経路は共通設定の 2 行目・複数経路は共通設定の中の
     独立行。**しかも置き場は幅の問題を連れてくる**＝条件探索（B-052）と中継経路
-    （B-053）では、この 2 つが座標や 6 欄と同じ行を分け合って**帯が窓幅を決めていた**。
+    （B-053）では、この 2 つが座標や 6 欄と同じ行を分け合って**バーがウィンドウ幅を決めていた**。
 
-    ⇒ 「案件情報の枠の中」に揃える。⚠️ **並び順や padding までは縛らない**（窓ごとに
+    ⇒ 「案件情報の枠の中」に揃える。⚠️ **並び順や padding までは縛らない**（ウィンドウごとに
     右端の余りが違う）。縛るのは**どの枠に属するか**＝幅の問題が起きる場所そのもの。
 
     ⚠️ **見るのは「子孫か」であって「直接の子か」ではない**（2026-08-18・B-108）＝
     元は `winfo_parent() == case` と直接の子を要求していたが、**縛りたいのは所属する
     枠**なのに*入れ子の深さ*まで要求していた（[[feedback-promote-recurring-checks]] の
-    壊れ方③）。中継経路で帯を 2 行に折る（道具を `Frame` に入れる）と、**枠は 1mm も
+    壊れ方③）。中継経路でバーを 2 行に折る（道具を `Frame` に入れる）と、**枠は 1mm も
     動いていないのにここが赤くなった**。⇒ 祖先で見る。**歴史上の欠陥（共通設定や
-    経路の帯に置く）は祖先が変わるので、これでも捕まる。**
+    経路のバーに置く）は祖先が変わるので、これでも捕まる。**
     """
     _app, wins = app_windows
     win = wins[name]
@@ -660,28 +660,28 @@ def test_the_refresh_pair_sits_on_the_first_row_of_the_frozen_area(app_windows, 
 
 
 # ============================================================
-# 4-c. 凍結帯「共通設定」の**項目集合**が窓間で揃っている（I-101）
+# 4-c. 凍結バー「共通設定」の**項目集合**がウィンドウ間で揃っている（I-101）
 # ============================================================
-# 🔴 **上の 4-b が縛っていたのは器だけだった。** ↻/🔒 がどの枠に属するかは 3 窓で
-# 強制していたのに、**帯に何を出すか**は誰も見ておらず、中継経路は新設（`211a44b`）
+# 🔴 **上の 4-b が縛っていたのは器だけだった。** ↻/🔒 がどの枠に属するかは 3 ウィンドウで
+# 強制していたのに、**バーに何を出すか**は誰も見ておらず、中継経路は新設（`211a44b`）
 # から 6 項目のまま＝複数経路の 11 項目に対して **5 つ欠けていた**。うち
 # **K ファクターと回折モデルは、実行に効くのに画面のどこにも出ていなかった**
 # （`base_params` としてそのまま計算へ入る／回折モデルは per-path レポートには出る
 # ＝**画面と成果物が食い違っていた**）。
 #
-# 🔑 **当時この帯に対して行われたのは幅の修正だけで、「6 欄」自体が所与として
+# 🔑 **当時このバーに対して行われたのは幅の修正だけで、「6 欄」自体が所与として
 # 扱われていた**＝型（見せ方）は I-031 から踏襲したのに、項目の集合は一度も
 # 照合されていない。⇒ **その穴そのものを塞ぐ**（[[feedback-promote-recurring-checks]]）。
 #
 # ⚠️ **`_common_vars` のキーでは数えられない**＝複数経路の env_type / diff_method は
-# 選択式なので別の変数で持っている。窓が「実際に帯へ出した項目」を自分で申告する
+# 選択式なので別の変数で持っている。ウィンドウが「実際にバーへ出した項目」を自分で申告する
 # （`frozen_common_keys()`）＝**組み立てた場所で足す**ので、欄を増やした日に
 # 一覧の更新を忘れて黙ってずれることがない。
 def test_the_frozen_common_settings_hold_the_same_items_in_every_window(app_windows):
-    """🔴 **凍結帯「共通設定」の項目集合が、複数経路と中継経路で一致すること**（I-101）。
+    """🔴 **凍結バー「共通設定」の項目集合が、複数経路と中継経路で一致すること**（I-101）。
 
-    帯の定義は「**ランチャーから凍結した前提**」で、🔒 と ↻ は帯 1 つでなく
-    **凍結領域全体**に効く（3 窓のコメントが揃ってそう書いている）。定義が
+    バーの定義は「**ランチャーから凍結した前提**」で、🔒 と ↻ はバー 1 つでなく
+    **凍結領域全体**に効く（3 ウィンドウのコメントが揃ってそう書いている）。定義が
     「実行に効く凍結入力の一覧」である以上、**実行に効く項目が出ないのは定義違反**。
 
     ⚠️ **逆向き（複数経路から落として揃える）で緑にしないこと**＝壊れている側に
@@ -691,13 +691,13 @@ def test_the_frozen_common_settings_hold_the_same_items_in_every_window(app_wind
     batch = wins["batch"].frozen_common_keys()
     multihop = wins["multihop"].frozen_common_keys()
     assert multihop == batch, (
-        f"凍結帯の項目が窓で違う（複数経路にだけ {sorted(batch - multihop)} / "
+        f"凍結バーの項目がウィンドウで違う（複数経路にだけ {sorted(batch - multihop)} / "
         f"中継経路にだけ {sorted(multihop - batch)}）。**実行に効く前提が画面から"
-        "確認できない**＝帯の定義（ランチャーから凍結した前提の一覧）に反する。"
+        "確認できない**＝バーの定義（ランチャーから凍結した前提の一覧）に反する。"
         "⚠️ 少ない側へ揃えて緑にしないこと。"
     )
     assert len(batch) >= 11, (
-        f"帯の項目が {len(batch)} 個しかない＝どちらの窓からも同時に落ちている"
+        f"バーの項目が {len(batch)} 個しかない＝どちらのウィンドウからも同時に落ちている"
         "（一致しているだけでは「揃っている」と言えない）。"
     )
 
@@ -705,13 +705,13 @@ def test_the_frozen_common_settings_hold_the_same_items_in_every_window(app_wind
 # ============================================================
 # 5. app 設定は「開いた時点」で凍結される（2.7 スライス G2＝I-055 ②）
 # ============================================================
-# 窓は `config.load_config()` を直に読まず、**ランチャーが読んだ値を引数で
+# ウィンドウは `config.load_config()` を直に読まず、**ランチャーが読んだ値を引数で
 # 受け取る**（[[project-radiosim]] の凍結方式を設定へ広げただけ）。
 # ⚠️ 静的ゲート（tests/test_repo_hygiene.py::TestConfigHasOneSource）は「直に
-# 読んでいない」ことしか言えない。**渡した値が実際に効いている**ことは、窓を
+# 読んでいない」ことしか言えない。**渡した値が実際に効いている**ことは、ウィンドウを
 # 起こして確かめないと分からない（＝渡した引数を無視する実装でも静的には緑）。
 def test_batch_window_uses_the_injected_coord_format():
-    """バッチ窓が、渡された座標表記で行を組むこと（DMS を渡せば DMS で入る）。"""
+    """バッチウィンドウが、渡された座標表記で行を組むこと（DMS を渡せば DMS で入る）。"""
     pytest.importorskip("tkinter")
     from views.batch_builder import BatchBuilderWindow
     root = make_themed_root()
@@ -719,7 +719,7 @@ def test_batch_window_uses_the_injected_coord_format():
     try:
         win = BatchBuilderWindow(root, _params(), coord_format="dms")
         win.append_path((35.4258, 139.2131), (35.4175, 139.2137))
-        # 窓は既定で 1 行を持って開くので、見るのは**追加した行**（末尾）。
+        # ウィンドウは既定で 1 行を持って開くので、見るのは**追加した行**（末尾）。
         texts = [e.get() for e in win._row_entries[-1]]
         assert any("°" in t for t in texts), (
             f"渡した coord_format='dms' が行に効いていない: {texts}"
@@ -730,7 +730,7 @@ def test_batch_window_uses_the_injected_coord_format():
 
 def test_graph_window_saves_with_the_coord_format_it_was_opened_with(monkeypatch,
                                                                     tmp_path):
-    """グラフ窓の保存が、**開いた時点**の座標表記を使うこと。
+    """グラフウィンドウの保存が、**開いた時点**の座標表記を使うこと。
 
     ⚠️ 以前はここで毎回 `config.load_config()` を読み直していた＝保存の瞬間の
     設定ファイルの中身に依存し、テストの結果が開発機の設定で変わった（I-055）。
@@ -764,11 +764,11 @@ def test_graph_window_saves_with_the_coord_format_it_was_opened_with(monkeypatch
 
 def test_graph_window_keeps_the_dem_acquired_date_it_was_opened_with(monkeypatch,
                                                                     tmp_path):
-    """単一実行の窓が、**取得のときに届いた** DEM 取得日で report.txt を書くこと。
+    """単一実行のウィンドウが、**取得のときに届いた** DEM 取得日で report.txt を書くこと。
 
     🔴 Codex 99 巡目（B-213 の処方への指摘）＝取得日を地形キャッシュと同じ鍵の
-    別辞書に置いていたので、窓を開いたままプロキシ設定の OK（`clear_terrain_cache`）を
-    押すと、後の保存で `DEM Acquired` の行が消えた。見るのは**ランチャー → 窓 →
+    別辞書に置いていたので、ウィンドウを開いたままプロキシ設定の OK（`clear_terrain_cache`）を
+    押すと、後の保存で `DEM Acquired` の行が消えた。見るのは**ランチャー → ウィンドウ →
     保存**の配線（取得日を運ぶ口は `on_acquired` → `show_graph(dem_acquired=)` →
     `TerrainProfile.dem_acquired` の 3 段で、どこか 1 つ落とすと行が消える）。
     """
@@ -798,15 +798,15 @@ def test_graph_window_keeps_the_dem_acquired_date_it_was_opened_with(monkeypatch
         drain_ui_mailbox(root)                  # 取得完了は投函箱で UI へ渡る
         root.update()
         win = getattr(app, "_graph_win", None)
-        assert win is not None, "取得完了の後にグラフ窓が開いていない"
+        assert win is not None, "取得完了の後にグラフウィンドウが開いていない"
 
         sim.clear_terrain_cache()               # プロキシ設定の OK と同じ
         win._on_save()
         [save_dir] = [d for d in tmp_path.iterdir() if d.is_dir()]
         text = (save_dir / "report.txt").read_text(encoding="utf-8")
         assert "DEM Acquired  : 2026-08-01" in text, (
-            "窓を開いた時点の取得日が保存に届いていない（キャッシュ消去で消えるか、"
-            f"ランチャー → 窓の受け渡しが落ちている）:\n{text}"
+            "ウィンドウを開いた時点の取得日が保存に届いていない（キャッシュ消去で消えるか、"
+            f"ランチャー → ウィンドウの受け渡しが落ちている）:\n{text}"
         )
     finally:
         root.destroy()
@@ -820,7 +820,7 @@ def test_graph_window_keeps_the_dem_acquired_date_it_was_opened_with(monkeypatch
 
 
 def test_launcher_buttons_are_ordered_by_what_they_run(app_windows):
-    """ランチャーの窓ボタン 4 つが「何を回すか」の軸で並んでいること（I-051）。
+    """ランチャーのウィンドウボタン 4 つが「何を回すか」の軸で並んでいること（I-051）。
 
     ①経路を複数回す（複数経路 / 中継経路＝親戚）②1 経路を振る（条件探索）
     ③入力の道具（地図）。**地図は他 3 つの入力元**なので最後に置く——実行フロー
@@ -844,7 +844,7 @@ def test_launcher_buttons_are_ordered_by_what_they_run(app_windows):
                         child.cget("text"))
     actual = [placed.get((r, c)) for _k, r, c in expected]
     assert actual == [i18n.t(k) for k, _r, _c in expected], (
-        f"窓ボタンの並びが意味の軸と合っていない: {actual}"
+        f"ウィンドウボタンの並びが意味の軸と合っていない: {actual}"
     )
 
 
@@ -856,20 +856,20 @@ def _walk(widget):
 
 
 def test_scenario_freezes_the_path_as_two_coordinate_fields(app_windows):
-    """条件探索の凍結帯が、座標を **2 欄**で持つこと（I-048）。
+    """条件探索の凍結バーが、座標を **2 欄**で持つこと（I-048）。
 
-    以前は `34.5, 132.4 → 34.5, 132.4` の 1 欄で、**他窓に無い第 3 の表記**だった。
+    以前は `34.5, 132.4 → 34.5, 132.4` の 1 欄で、**他ウィンドウに無い第 3 の表記**だった。
     ⚠️ `→` そのものを追放したいのではない（中継の区間名 `A → B` は 2 点の*関係*
     を表す記号として情報を持つ）。ここは **2 つの入力値**なので欄で表す。
     """
     _app, wins = app_windows
     win = wins["scenario"]
     assert "→" not in win._tx_var.get() and "→" not in win._rx_var.get(), (
-        "凍結帯の座標がまだ 1 欄に矢印で詰め込まれている"
+        "凍結バーの座標がまだ 1 欄に矢印で詰め込まれている"
     )
     labels = {str(w.cget("text")) for w in _walk(win) if w.winfo_class() == "TLabel"}
     for key in ("scn_tx_coord", "scn_rx_coord"):
-        assert i18n.t(key) in labels, f"凍結帯に「{i18n.t(key)}」の欄が無い"
+        assert i18n.t(key) in labels, f"凍結バーに「{i18n.t(key)}」の欄が無い"
 
 
 @pytest.mark.parametrize("mode,expect", [("dms", "°"), ("dd", ".")])
@@ -880,7 +880,7 @@ def test_committing_a_coordinate_reformats_it_to_the_current_notation(mode, expe
     選んだ状態で DD を貼ったとき「受理された」のか「無視された」のかが画面から
     区別できない（実機で不具合として報告された）。
     ⚠️ 打鍵ごとには整形しない＝確定（Enter / focus 離脱）の 2 契機だけ。
-    ⚠️ **窓を withdraw しない**＝可視でない widget には Tk がキーイベントを配送
+    ⚠️ **ウィンドウを withdraw しない**＝可視でない widget には Tk がキーイベントを配送
     しないので、`_reformat_entry` を直に呼ぶだけの「配線を見ていないゲート」に
     化ける（実際、最初の実装は withdraw していて**何を書いても緑**だった）。
     """
@@ -931,9 +931,9 @@ def test_an_unreadable_coordinate_survives_being_committed():
 def test_committing_a_coordinate_reformats_it_in_the_batch_table_too():
     """同じ整形が**複数経路の表**でも起きること（I-060 のクラス点検）。
 
-    手入力の座標欄はランチャーだけではない。1 か所だけ直すと「窓によって返事が
+    手入力の座標欄はランチャーだけではない。1 か所だけ直すと「ウィンドウによって返事が
     返ったり返らなかったり」になり、⑧の観点では直す前より悪い。
-    ⚠️ 表記はこの窓が**開いた時点で凍結した** `coord_format`（G2）を使う。
+    ⚠️ 表記はこのウィンドウが**開いた時点で凍結した** `coord_format`（G2）を使う。
     """
     pytest.importorskip("tkinter")
     from views.batch_builder import BatchBuilderWindow
@@ -956,24 +956,24 @@ def test_committing_a_coordinate_reformats_it_in_the_batch_table_too():
 
 
 # ============================================================
-# 7. 窓をまたぐ導線（2.7 スライス E）
+# 7. ウィンドウをまたぐ導線（2.7 スライス E）
 # ============================================================
 
 
 def test_the_map_can_be_opened_from_every_window_that_places_points(app_windows):
-    """**地点を置く窓は、どれも地図を開ける**こと（I-043）。
+    """**地点を置くウィンドウは、どれも地図を開ける**こと（I-043）。
 
     中継経路には前から `地図から選択` があり、複数経路だけ無かった＝「バッチから
-    地図を開かない」という古い決めごとが、後から来た窓に破られていた。
+    地図を開かない」という古い決めごとが、後から来たウィンドウに破られていた。
     ⚠️ **条件探索は対象外**＝経路をランチャーから凍結して受け取るので、地点を
-    置く窓ではない（3 窓を機械的に揃えない）。
+    置くウィンドウではない（3 ウィンドウを機械的に揃えない）。
     """
     _app, wins = app_windows
     for name in ("batch", "multihop"):
         labels = [str(w.cget("text")) for w in _walk(wins[name])
                   if w.winfo_class() == "TButton"]
         assert i18n.t("mh_from_map") in labels, (
-            f"{name}: 地図を開く口が無い（地点を置く窓には要る）"
+            f"{name}: 地図を開く口が無い（地点を置くウィンドウには要る）"
         )
 
 
@@ -1076,7 +1076,7 @@ def test_insert_and_delete_at_the_same_place_round_trips():
 def test_the_endpoints_stay_fixed_however_the_insert_is_asked():
     """⛔ **送信点より前・受信点より後ろには挿さらない**こと。
 
-    先頭＝送信点／末尾＝受信点は窓の不変条件で、`＋` の口が増えても変わらない。
+    先頭＝送信点／末尾＝受信点はウィンドウの不変条件で、`＋` の口が増えても変わらない。
     ⚠️ 画面のボタンは受信点の行に出していないが、**範囲は呼び出し側ではなく
     `_add_waypoint` が守る**（口が 3 つある＝行の `＋`・下部のボタン・地図）。
     """
@@ -1157,7 +1157,7 @@ def test_relay_window_reads_both_coordinate_notations():
     """中継が **DMS 入力も受ける**こと（I-070 ②＝R1 の穴）。
 
     🔴 以前は `split(",")` ＋ `float()` の手読みで、**正しい座標を拒否していた**
-    （「入力は DD / DMS のどちらも受ける」がこの窓だけ成り立っていなかった）。
+    （「入力は DD / DMS のどちらも受ける」がこのウィンドウだけ成り立っていなかった）。
     ⚠️ 保存・計算へ渡るのは**常に DD**（内部の正典は変えない）。
     """
     pytest.importorskip("tkinter")
@@ -1346,21 +1346,21 @@ def test_the_map_status_hints_can_be_wrapped():
 
 
 def test_every_coordinate_field_has_the_same_width():
-    """**座標を入れる欄は、どの窓でも同じ幅**であること（B-046 / B-057）。
+    """**座標を入れる欄は、どのウィンドウでも同じ幅**であること（B-046 / B-057）。
 
     ⚠️ **実際のウィジェットを見る**＝定数を参照しているかをソースで確かめるのでは
     なく、**組み上がった欄の `width`** を読む。宣言し忘れ（＝Tk 既定の 20 が
     黙って下限になる）は、定数の参照を見る検査では捕まらない。
 
-    🔴 **ランチャーが実際にそうなっていた**（2026-08-12 発見）。他の 4 窓は
+    🔴 **ランチャーが実際にそうなっていた**（2026-08-12 発見）。他の 4 ウィンドウは
     `DISPLAY_WIDTH_CHARS` に揃っていたのに、**座標を実際に打つランチャーだけが
     幅を宣言しておらず**、Tk 既定の 20 文字が下限になって **150% 表示で DMS の
     末尾が切れていた**。`fill="x"` で伸びるので 100% では足りており、
     **「普段は足りている」が「宣言していない」を隠していた**。
     ⇒ 伸びるかどうかと、下限を宣言するかは別の話。
 
-    ⚠️ **読み取り専用の凍結帯も対象**（条件探索）＝そこが切れると「何を固定した
-    のか分からない」＝帯の意味が消える。
+    ⚠️ **読み取り専用の凍結バーも対象**（条件探索）＝そこが切れると「何を固定した
+    のか分からない」＝バーの意味が消える。
     """
     pytest.importorskip("tkinter")
     from core import coords as _coords
@@ -1394,7 +1394,7 @@ def test_every_coordinate_field_has_the_same_width():
         for name, widths in found.items():
             assert widths, f"{name}: 座標欄が 1 つも見つからない（探し方が古い）"
             assert all(w == want for w in widths), (
-                f"{name} の座標欄が他の窓と違う幅（{widths} ≠ {want}）。"
+                f"{name} の座標欄が他のウィンドウと違う幅（{widths} ≠ {want}）。"
                 "`coords.DISPLAY_WIDTH_CHARS` から取ること＝**幅を宣言しない**と "
                 "Tk 既定の 20 文字が下限になり、150% で DMS の末尾が切れる。"
             )
@@ -1430,7 +1430,7 @@ def test_the_row_menu_is_reused_instead_of_piling_up(monkeypatch):
         menus = [w for w in win.winfo_children() if isinstance(w, tk.Menu)]
         assert len(menus) == 1, (
             f"右クリック 5 回でメニューが {len(menus)} 個残っている（B-121）＝"
-            "窓を閉じるまで解放されず、テーマ・DPI 変更時の走査対象も増え続ける。"
+            "ウィンドウを閉じるまで解放されず、テーマ・DPI 変更時の走査対象も増え続ける。"
         )
         labels = [menus[0].entrycget(i, "label")
                   for i in range(menus[0].index("end") + 1)
@@ -1584,7 +1584,7 @@ def _load_project_into(app, doc):
 
 
 def _notice_take_button(win):
-    """お知らせの帯の「内容を取り込む」ボタン（無ければ None）。"""
+    """お知らせのバーの「内容を取り込む」ボタン（無ければ None）。"""
     bar = getattr(win, "_notice_bar", None)
     if bar is None or not bar.winfo_exists():
         return None
@@ -1596,12 +1596,12 @@ def _notice_take_button(win):
 
 
 def test_loading_a_project_does_not_touch_open_windows_until_asked():
-    """プロジェクトを読み込んでも、**押すまで**窓の中身は変わらないこと（I-061）。
+    """プロジェクトを読み込んでも、**押すまで**ウィンドウの中身は変わらないこと（I-061）。
 
-    🔴 **これがこの項目の芯**＝要望は「閉じずに反映してほしい」だったが、黙って
-    入れ替えると凍結方式（見えている値で実行する）が壊れる。⇒ 帯で知らせ、
+    🔴 **これがこの項目のコア**＝要望は「閉じずに反映してほしい」だったが、黙って
+    入れ替えると凍結方式（見えている値で実行する）が壊れる。⇒ バーで知らせ、
     **押したときだけ**差し替える。
-    ⚠️ 「窓が閉じないこと」だけを見るゲートでは足りない＝黙って書き換える実装でも
+    ⚠️ 「ウィンドウが閉じないこと」だけを見るゲートでは足りない＝黙って書き換える実装でも
     緑になる。**押す前と押した後の両方**を見る。
     """
     pytest.importorskip("tkinter")
@@ -1619,30 +1619,30 @@ def test_loading_a_project_does_not_touch_open_windows_until_asked():
         _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
                                                    batch_rows=rows))
 
-        assert batch.winfo_exists(), "窓が閉じられた（閉じないと決めた）"
+        assert batch.winfo_exists(), "ウィンドウが閉じられた（閉じないと決めた）"
         assert batch._row_entries[0][0].get() == "mine", (
             "押していないのに中身が差し替わった（凍結方式が壊れている）"
         )
         btn = _notice_take_button(batch)
-        assert btn is not None, "取り込みの帯が出ていない"
+        assert btn is not None, "取り込みのバーが出ていない"
 
         btn.invoke()
         root.update()
         assert batch._row_entries[0][0].get() == "fromfile", "押しても取り込まれない"
         assert getattr(batch, "_notice_bar", None) is None, (
-            "取り込んだのに帯が残っている（誘い続ける）"
+            "取り込んだのにバーが残っている（誘い続ける）"
         )
     finally:
         root.destroy()
 
 
 def test_a_stale_notice_never_survives_the_next_project():
-    """**前の読込の帯が、次の読込をまたいで生き残らない**こと（Codex P1）。
+    """**前の読込のバーが、次の読込をまたいで生き残らない**こと（Codex P1）。
 
-    帯のクロージャは*読んだときの*プロジェクトの中身を掴んでいる。A の帯を出した
-    まま、その節を持たない B を読み、あとから押せると **A の行が B へ入る**（次の
-    保存で混在する）。⇒ 消す契機は「新しい帯を出すとき」ではなく「前の話が
-    終わったとき」＝**節の有無にかかわらず先に消す**。
+    バーのクロージャは*読んだときの*プロジェクトの中身を掴んでいる。A のバーを出した
+    まま、そのセクションを持たない B を読み、あとから押せると **A の行が B へ入る**（次の
+    保存で混在する）。⇒ 消す契機は「新しいバーを出すとき」ではなく「前の話が
+    終わったとき」＝**セクションの有無にかかわらず先に消す**。
     """
     pytest.importorskip("tkinter")
     from report import project
@@ -1658,13 +1658,13 @@ def test_a_stale_notice_never_survives_the_next_project():
                             lat_rx=34.6, lon_rx=132.5, h_tx=2.0, h_rx=2.0)]
         _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
                                                    batch_rows=rows_a))
-        assert _notice_take_button(batch) is not None, "前提: A の帯が出ていない"
+        assert _notice_take_button(batch) is not None, "前提: A のバーが出ていない"
 
-        # B＝バッチの節を持たないプロジェクト（帯は出ない側）。
+        # B＝バッチのセクションを持たないプロジェクト（バーは出ない側）。
         _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
                                                    batch_rows=None))
         assert _notice_take_button(batch) is None, (
-            "A の帯が残っている（押すと A の行が B に入る）"
+            "A のバーが残っている（押すと A の行が B に入る）"
         )
         assert batch._row_entries[0][0].get() == "mine", "画面の内容が勝手に変わった"
     finally:
@@ -1672,9 +1672,9 @@ def test_a_stale_notice_never_survives_the_next_project():
 
 
 def test_no_notice_when_the_project_has_no_section_for_that_window():
-    """**節を持たないファイルでは帯を出さない**こと（I-061）。
+    """**セクションを持たないファイルではバーを出さない**こと（I-061）。
 
-    `None`＝「その窓の情報を持たない」であって、空にする指示ではない
+    `None`＝「そのウィンドウの情報を持たない」であって、空にする指示ではない
     （`project.py` の約束）。出してしまうと「取り込む」が**行の全消し**になる。
     """
     pytest.importorskip("tkinter")
@@ -1687,7 +1687,7 @@ def test_no_notice_when_the_project_has_no_section_for_that_window():
         _load_project_into(app, project.ProjectDoc(params=dict(config.DEFAULT_CONFIG),
                                                    batch_rows=None))
         assert _notice_take_button(batch) is None, (
-            "節が無いのに帯を出した（押すと行が全部消える）"
+            "セクションが無いのにバーを出した（押すと行が全部消える）"
         )
     finally:
         root.destroy()
@@ -1806,7 +1806,7 @@ def test_verdict_survives_keys_that_do_not_change_the_row(key, column, changes):
 # 3b. 中継経路も同じ規則で消える（B-059＝B-058 の裏面）
 # ------------------------------------------------------------
 # 🔑 **規則は 1 本＝結果は、それを生んだ入力が変わった時点で結果でなくなる。**
-# 2 つの窓は同じ規則を逆向きに破っていた＝複数経路は**キーを押しただけで消え**
+# 2 つのウィンドウは同じ規則を逆向きに破っていた＝複数経路は**キーを押しただけで消え**
 # （B-058＝消しすぎ）、中継経路は**入力を変えても残った**（B-059＝消さなすぎ。
 # 消す口が実行の開始時にしか呼ばれていなかった）。
 # ⚠️ **中継はバッチと違い、1 つの結果の入力が 2 つの表にまたがる**＝区間 k は
@@ -1909,7 +1909,7 @@ def test_a_moved_point_clears_both_of_its_sections():
     ("hop1_gain", ["", "OK"]),   # 区間 1 の利得＝その区間だけ
 ])
 def test_only_the_affected_sections_clear(change, expected):
-    """**関係ない区間の結果は残る**こと（B-059＝消しすぎない側の芯）。
+    """**関係ない区間の結果は残る**こと（B-059＝消しすぎない側のコア）。
 
     🔑 **この検査が無いと「どれか変わったら全部消す」実装が緑になる**。上の
     `test_a_moved_point_clears_both_of_its_sections` は真ん中の点を動かすので

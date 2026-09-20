@@ -11,22 +11,22 @@ RadioSim Fieldの**コマンドライン**（phase 1・増分4）。リポジト
     python -m apps.field.cli probe --port-a COM3 --port-b COM4 --root 測定データ
                                                       … 2 台の動作確認（人の操作なし）
     python -m apps.field.cli bench run --port-a COM3 --port-b COM4 --root 測定データ
-                                                      … 段0 の机上試験（2 台・両方向）
+                                                      … ステージ0 の机上試験（2 台・両方向）
     python -m apps.field.cli bench analyze 机上試験 --ref ref.json --calib-dir 校正
                                                       … 判定と、個体ごとの校正ファイル
     python -m apps.field.cli cont --port COM3 --seconds 60 --ref ref.json
-                                                      … 連続送信で TX の出力を測る（段0b）
+                                                      … 連続送信で TX の出力を測る（ステージ0b）
     python -m apps.field.cli monitor --port COM4     … 受信を眺めるだけ（何も保存しない）
     python -m apps.field.cli settings --port COM4 --role tx --power 10
                                                       … 機器の設定を表示する・変える
 
 **測っている間のキー**（`record`）
-    m … アンテナを動かし始める（次に据えるまでの受信は窓に入れない）
+    m … アンテナを動かし始める（次に据えるまでの受信はウィンドウに入れない）
     p … 次の置き場所に据えた（置き場所の番号が 1 つ進む）
     q … 終える（Ctrl+C でも同じ。終了の時刻が記録される）
 
-⚠️ **GUI は作らない**（段2 で運用してから判断する＝§6.1-5C）。ここは入口を並べるだけで、
-記録の中身は `recorder.py`、窓の集計は `aggregate.py` が持つ。
+⚠️ **GUI は作らない**（ステージ2 で運用してから判断する＝§6.1-5C）。ここは入口を並べるだけで、
+記録の中身は `recorder.py`、ウィンドウの集計は `aggregate.py` が持つ。
 ⚠️ シリアルポートには pyserial を使う（`requirements-field.txt`）。**本体の依存には
 入れない**＝本体の配布物に要らないものを混ぜない。
 """
@@ -123,11 +123,11 @@ def main(argv: list[str] | None = None) -> int:
                    help="送信電力（dBm）")
     p.add_argument("--channel", type=int, default=default_plan()["channel"])
 
-    p = sub.add_parser("bench", help="段0 の机上試験")
+    p = sub.add_parser("bench", help="ステージ0 の机上試験")
     bench = p.add_subparsers(dest="bench_command", required=True)
     q = bench.add_parser("plan", help="計画の雛形（JSON）を書き出す")
     q.add_argument("path", type=Path)
-    q = bench.add_parser("ref", help="段0b の実測値を書く雛形（JSON）を書き出す")
+    q = bench.add_parser("ref", help="ステージ0b の実測値を書く雛形（JSON）を書き出す")
     q.add_argument("path", type=Path)
     q = bench.add_parser("run", help="2 台をつないで測る")
     q.add_argument("--port-a", required=True)
@@ -135,13 +135,13 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--baud", type=int, default=115200)
     q.add_argument("--root", type=Path, required=True, help="机上試験のフォルダを作る場所")
     q.add_argument("--plan", type=Path, help="計画（省略すると既定）")
-    q.add_argument("--only", help=f"測る段をカンマで（{','.join(STAGES)}）")
+    q.add_argument("--only", help=f"測るステージをカンマで（{','.join(STAGES)}）")
     q = bench.add_parser("analyze", help="判定する（測り直さずに何度でも）")
     q.add_argument("directory", type=Path)
-    q.add_argument("--ref", type=Path, help="段0b の実測値")
+    q.add_argument("--ref", type=Path, help="ステージ0b の実測値")
     q.add_argument("--calib-dir", type=Path, help="個体ごとの校正ファイルを書くフォルダ")
 
-    p = sub.add_parser("cont", help="連続送信で TX の出力を測る（段0b）")
+    p = sub.add_parser("cont", help="連続送信で TX の出力を測る（ステージ0b）")
     p.add_argument("--port", required=True)
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument("--seconds", type=int, default=60)
@@ -371,23 +371,23 @@ def _export(args: argparse.Namespace) -> int:
     censored = sum(1 for w in windows if w.censored)
     print(f"書き出しました: {args.out}")
     print(body_tx_power_notice(header))
-    print(f"窓 {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）")
-    # 電波で届いたのに PC までの間で落ちた分（打ち切りには数えていない）。窓に振れた分が
-    # 総数より少なければ、残りは電波の欠けと混ざっていてどの窓の分か分からなかった。
+    print(f"ウィンドウ {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）")
+    # 電波で届いたのに PC までの間で落ちた分（打ち切りには数えていない）。ウィンドウに振れた分が
+    # 総数より少なければ、残りは電波の欠けと混ざっていてどのウィンドウの分か分からなかった。
     lost_on_link = sum(1 for w in windows if w.lost_on_link)
     print(
         f"受信機から PC までの間で落ちたサンプル {link_lost_total(samples)} 件"
-        f"（窓に振った {sum(w.link_lost for w in windows)} 件・全部落ちた窓 {lost_on_link} 個）"
+        f"（ウィンドウに振った {sum(w.link_lost for w in windows)} 件・全部落ちたウィンドウ {lost_on_link} 個）"
     )
     for slot in sorted({w.spatial_slot for w in windows}):
         members = [w for w in windows if w.spatial_slot == slot]
         cut = sum(1 for w in members if w.censored)
-        print(f"  置き場所 {slot}: 窓 {len(members)} 個・打ち切り {cut} 個")
+        print(f"  置き場所 {slot}: ウィンドウ {len(members)} 個・打ち切り {cut} 個")
 
     again = replay(directory)
     _print_read_stats(again.stats, again.foreign)
     if again.samples != samples:
-        # samples.csv が生ログと食い違う＝どちらかが壊れている。窓はもう書いたが、
+        # samples.csv が生ログと食い違う＝どちらかが壊れている。ウィンドウはもう書いたが、
         # そのまま使ってよい状態ではない。
         print(
             "警告: samples.csv と、生ログからの読み直しが一致しません"
@@ -523,7 +523,7 @@ def run_probe(
         say("合格しなかった項目があります。")
         if not all(link.air_ok for link in links):
             say(f"  受信率の目安は {PROBE_MIN_RATE:.0%} 以上です（動作確認のための目安で、"
-                "段0 のしきい値ではありません）。アッテネータを 0 dB にするか、"
+                "ステージ0 のしきい値ではありません）。アッテネータを 0 dB にするか、"
                 "配線と U.FL の接続を確かめてください。")
         if any(link.usb_lost for link in links) or not crc_ok:
             say("  USB の読み取りで落ちたデータがあります。USB ケーブルを替えるか、"

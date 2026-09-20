@@ -1,7 +1,7 @@
 """
 views/map_adapter.py
 ====================
-tkintermapview への**唯一の依存点**（3.3 段2・防火扉②の対）。
+tkintermapview への**唯一の依存点**（3.3 ステージ2・防火扉②の対）。
 
 `views/` 配下で tkintermapview を import してよいのはこのファイルだけ
 （`tests/test_layers.py` の `test_only_map_adapter_imports_tkintermapview`

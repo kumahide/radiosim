@@ -487,7 +487,7 @@ def test_a_frame_lost_on_the_uart_is_not_counted_as_censoring(dialect):
 
     ファームは受信した時点で通し番号（`sample_seq`）を振る＝UART で化けて落ちた
     サンプルは、その番号の欠けとして見える。落ち方は受信レベルと関係ないので、
-    窓の受信率の分母から引く（打ち切りにしない）。
+    ウィンドウの受信率の分母から引く（打ち切りにしない）。
     """
     frames = [_rx_frame(dialect, seq=n, sample_seq=n, tx_config_id=2) for n in range(1, 21)]
     broken = bytearray(frames[10])                   # seq 11 が UART で化けた
@@ -496,7 +496,7 @@ def test_a_frame_lost_on_the_uart_is_not_counted_as_censoring(dialect):
 
     windows, stats = _windows_of(dialect, b"".join(frames))
     assert stats.crc_errors >= 1                     # 化けは化けとして数えている
-    assert [w.received for w in windows] == [10, 9]  # 期待は 10/窓（1 秒 ÷ 100 ms）
+    assert [w.received for w in windows] == [10, 9]  # 期待は 10/ウィンドウ（1 秒 ÷ 100 ms）
     assert [w.link_lost for w in windows] == [0, 1]
     assert windows[1].receive_rate == 1.0            # 分母は 9
     assert not any(w.censored for w in windows)

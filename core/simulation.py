@@ -96,7 +96,7 @@ def effective_spacing(params: "SimParams") -> float:
 #: （`views.frozen_common.sampling_field_width`）がここを読む＝字を足したらこの表に
 #: 足す。足し忘れると**その字だけ欄からはみ出す**（B-149 と同じ形）。
 SAMPLING_READOUT_KEYS: dict[bool, tuple[str, str]] = {
-    True:  ("res_fixed_value", "res_fixed_value_pixel"),   # 凍結帯（狭い）
+    True:  ("res_fixed_value", "res_fixed_value_pixel"),   # 凍結バー（狭い）
     False: ("res_readout",     "res_readout_pixel"),       # ランチャーの読み取り欄
 }
 
@@ -106,7 +106,7 @@ def sampling_readout(params: "SimParams", compact: bool = True) -> str:
 
     ⚠️ **面ごとに条件を書かない**＝「等間隔で刻んだのか／画素の縁で刻んだのか」で
     名乗る語が変わるので、面ごとに書くと**片方の面だけ古い名乗り**になる
-    （B-137 で実際に起きた形）。`compact` は幅の都合だけ（凍結帯は狭い）。
+    （B-137 で実際に起きた形）。`compact` は幅の都合だけ（凍結バーは狭い）。
     """
     plain, pixel = SAMPLING_READOUT_KEYS[bool(compact)]
     base = pixel if terrain_grid.samples_are_pixel_edges(
@@ -181,7 +181,7 @@ class SimParams:
             c.get("diff_method", models.DIFF_METHOD_MULTI))
         self.env_type:    str   = c.get("env_type", models.ENV_DEFAULT)
         self.rain_rate:   float = float(c.get("rain_rate", "0.0"))
-        # DEM ソース（3.4 段1・I-147）＝`core/dem_sources.py` の `source_id`。
+        # DEM ソース（3.4 ステージ1・I-147）＝`core/dem_sources.py` の `source_id`。
         # 未知の値（利用者が宣言ファイルから削除済み等）は `dem_sources.resolve()`
         # が国土地理院へフォールバックする＝ここでは文字列のまま持ち回るだけ。
         self.dem_source:  str   = c.get("dem_source", dem_sources.GSI_DEM.source_id)
@@ -270,7 +270,7 @@ def fetch_elevations(
             #    `linspace` を作ると、画素の縁で刻んだ位置と食い違う。
             lats, lons = sample_coords(params)
 
-            # 3.4 段1（I-147）＝1 回の計算につき 1 ソースを解決する（ループの
+            # 3.4 ステージ1（I-147）＝1 回の計算につき 1 ソースを解決する（ループの
             # 外で 1 回だけ）。未知の source_id は国土地理院へフォールバック
             # （`dem_sources.resolve` の契約）。
             dem_source = dem_sources.resolve(params.dem_source)
@@ -389,13 +389,13 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
             params.num, params.resolution, resolved_source)
 
 
-# 出所刻印「取得日」（3.3 段4e）＝**標高を取った時点で確定させ、標高と一緒に
+# 出所刻印「取得日」（3.3 ステージ4e）＝**標高を取った時点で確定させ、標高と一緒に
 # 運ぶ**（B-213）。保存時に座標からタイルを引き直すと、標高を返したのとは別の
 # タイルの日付を答え得る（`dem.last_source_tile` の註）。
 # 🔴 **鍵で引ける共有の辞書に置かない**（Codex 99 巡目）＝初版の修正は地形と同じ鍵の
-# 別辞書に置いたため、結果の窓を開いたままプロキシ設定の OK（`clear_terrain_cache`）を
+# 別辞書に置いたため、結果のウィンドウを開いたままプロキシ設定の OK（`clear_terrain_cache`）を
 # 押すと、後で保存した report.txt から行が消えた。**値は結果（`TerrainProfile`）が
-# 持つ**＝取得スレッドから `on_acquired` で呼び出し側へ渡し、窓がそれを抱える。
+# 持つ**＝取得スレッドから `on_acquired` で呼び出し側へ渡し、ウィンドウがそれを抱える。
 _fetch_local = threading.local()
 
 
@@ -521,7 +521,7 @@ def clear_terrain_cache() -> None:
 
 def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray:
     """`params` の座標で、`level`（`terrain_grid.RESOLUTION_KEYS`）の解像度の標高配列を
-    同期取得する（3.4 段4・感度計算の「解像度」軸専用）。
+    同期取得する（3.4 ステージ4・感度計算の「解像度」軸専用）。
 
     `params` 自体は変更しない（別解像度用の複製を作って渡す）。`fetch_elevations_cached`
     を通すので、DEM タイル自体は既にキャッシュ済みなら再取得は起きない
@@ -670,7 +670,7 @@ def _save_settings(
 def _save_terrain_csv(
     terrain: models.TerrainProfile, save_dir: str, dem_source_id: str,
 ) -> None:
-    # 3.4 段1（I-147）＝**実際に使われたソース**を書く。`dem_source_id` は
+    # 3.4 ステージ1（I-147）＝**実際に使われたソース**を書く。`dem_source_id` は
     # 利用者が宣言ファイルから削除済みの値かもしれない（`fetch_elevations` は
     # `dem_sources.resolve()` で国土地理院へフォールバックして取得している）ので、
     # ここでも同じ解決を通し、実際に効いたソースの `source_id` と一致させる。
@@ -706,7 +706,7 @@ def _format_dem_acquired_line(acquired: "tuple[str, str] | None") -> str:
 
 
 def _format_dem_source_line(dem_source_id: str) -> str:
-    """report.txt の「DEM ソース」出所刻印（3.4 段1・I-147）。
+    """report.txt の「DEM ソース」出所刻印（3.4 ステージ1・I-147）。
 
     国土地理院のみだった 3.3 まではソース名を刻む意味が薄かった（唯一なので）。
     利用者が宣言ファイルで足したソースが計算に効き得るようになった以上、
@@ -782,11 +782,11 @@ def _save_report(
         f"({units.format_spacing(spacing)} m "
         f"{'DEM pixel' if terrain_grid.samples_are_pixel_edges(params.resolution, params.num) else 'spacing'})"
         "\n"
-        # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝CSV 出力契約の
+        # DEM 取得の失敗率（3.2 ステージ7・ISSUES.md B-025 ③）＝CSV 出力契約の
         # `dem_fail_pct` と同じ単一ソース（`models.TerrainProfile.fail_pct`）。
         + (f"DEM Fail Rate : {units.format_fail_pct(terrain.fail_pct)}\n"
            if terrain is not None else "")
-        # DEM の取得日（3.3 段4e＝出所刻印の最後の要素）＝実行日（上の Date:）
+        # DEM の取得日（3.3 ステージ4e＝出所刻印の最後の要素）＝実行日（上の Date:）
         # ではなく、地形標本が実際に使ったタイルがいつキャッシュされたか。
         # 値は**標高を取った時点で確定し、地形と一緒に運ばれてきたもの**を読むだけ
         # （B-213）＝ここでタイルもキャッシュも引き直さない。

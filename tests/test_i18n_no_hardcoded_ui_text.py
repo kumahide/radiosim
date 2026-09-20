@@ -5,18 +5,18 @@ tests/test_i18n_no_hardcoded_ui_text.py
 
 なぜ要るか
 ----------
-2026-08-10 の 2.7RC1 実機確認で、バッチ完了時の帯だけが**日本語表示のまま
+2026-08-10 の 2.7RC1 実機確認で、バッチ完了時のバーだけが**日本語表示のまま
 `Done: batch_20260810_164338`** と英語で出ていた（B-066）。原文は「ここだけ英語」。
 `views/batch_run.py` が完了表示だけ `i18n.t()` を通さず f-string で組んでいた。
 
-1 行の直し（`batch_done` キーの新設）で済む欠陥だが、**同じ迂回はどの窓でも
+1 行の直し（`batch_done` キーの新設）で済む欠陥だが、**同じ迂回はどのウィンドウでも
 いつでも書ける**。注意書きを増やしても強制されないので、機械に守らせる
 （[[feedback-promote-recurring-checks]] の昇格）。
 
 見るのは「画面へ字を出す 4 つの口」
 ----------------------------------
 ①`text=`（ウィジェット生成と `.config(text=…)` は `ast.Call` のキーワードとして
-同じ形に見える）②`label=`（`tk.Menu.add_command` 系）③`.title(…)`（窓の題）
+同じ形に見える）②`label=`（`tk.Menu.add_command` 系）③`.title(…)`（ウィンドウの題）
 ④`dialogs.*(…)` の引数（ダイアログの題と本文）。
 
 ⚠️ **①だけを見ていた版があった**（2026-08-10・Codex 独立レビュー P2 で指摘）＝
@@ -38,7 +38,7 @@ f-string は**式の部分を捨ててリテラルの部分だけ**を見る＝`
   スキャナが空を返すようになったらこの試験が落ちる。
 - **毎回鳴る**：例外は下の `ALLOWED_LITERALS` の 2 語（`ERR` と単位の `MHz`）だけ。
   判定の 3 値と単位は `docs/glossary.md` で**両言語共通の定訳**と決めてあるので、
-  訳し分けない。⚠️ かつては窓の題 `README` も例外だったが、I-082 で画面の語を
+  訳し分けない。⚠️ かつてはウィンドウの題 `README` も例外だったが、I-082 で画面の語を
   「ドキュメント」へ改めて i18n を通したので**例外そのものが消えた**（2026-08-13）。
 - **間違ったものを要求している**：「英字が出たら赤」ではなく「**自然言語が出たら
   赤**」。3 文字未満の英字（`OK` `NG` `dB` 等）と数値書式は最初から対象外で、
@@ -65,7 +65,7 @@ NATURAL_LANGUAGE = re.compile(r"[A-Za-z]{3,}|[぀-ヿ一-鿿]")
 #: i18n を通さないことを認めるリテラル。**理由を必ず書く**。
 ALLOWED_LITERALS: dict[str, str] = {
     "ERR": "判定の 3 値（OK / NG / ERR）は両言語共通の定訳＝docs/glossary.md",
-    "MHz": "単位は両言語共通（docs/glossary.md の対象外）＝グラフ窓の題 `2400.0 MHz`",
+    "MHz": "単位は両言語共通（docs/glossary.md の対象外）＝グラフウィンドウの題 `2400.0 MHz`",
 }
 
 
@@ -85,7 +85,7 @@ def _screen_text_args(call: ast.Call) -> list[ast.expr]:
                             if kw.arg in ("text", "label")]
     func = call.func
     if isinstance(func, ast.Attribute):
-        # `win.title("…")`＝窓の題。⚠️ 引数無しの `str.title()` と区別するため
+        # `win.title("…")`＝ウィンドウの題。⚠️ 引数無しの `str.title()` と区別するため
         # 「リテラルを 1 つ渡している」形だけを見る。
         if func.attr == "title" and len(call.args) == 1 and not call.keywords:
             args.append(call.args[0])

@@ -201,7 +201,7 @@ def scenario_sheet_css() -> str:
 def _meta_block(run: scn.ScenarioRun) -> str:
     """経路（固定された前提）を 1 行で示す＝「何を固定して何を振ったか」。"""
     p = run.base_params
-    # 帯は折り返してよいが、**「項目: 値 単位」の 1 組の中では折らない**
+    # バーは折り返してよいが、**「項目: 値 単位」の 1 組の中では折らない**
     # （B-251）＝折れてよいのは組と組の区切り（全角空白）だけ。B-242 は値と
     # 単位のあいだだけを留めたので、項目名と値のあいだ（「DEM取得失敗率:」の
     # 直後）で折れて値だけが次の行に落ちていた。
@@ -212,7 +212,7 @@ def _meta_block(run: scn.ScenarioRun) -> str:
         (i18n.t("html_horiz_dist"),
          keep(units.format_distance(run.terrain.horiz_dist_km))),
         (i18n.t("scn_samples"), str(p.num)),
-        # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝地形は 1 回だけ取得して
+        # DEM 取得の失敗率（3.2 ステージ7・ISSUES.md B-025 ③）＝地形は 1 回だけ取得して
         # 固定するので（`core/scenario.py`）、台帳のような行ごとの列ではなく
         # `scenario.csv` の `dem_fail_pct` と同じ単一の値を 1 回だけ示す。
         (i18n.t("pl_dem_fail"),
@@ -368,7 +368,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         )
     table = _sweep_table(run) if run.kind == "sweep" else _compare_table(run)
 
-    # 感度表（3.4 段6）＝**ベース条件（先頭の点）だけ**を計算する。N 条件・N 点を
+    # 感度表（3.4 ステージ6）＝**ベース条件（先頭の点）だけ**を計算する。N 条件・N 点を
     # 振っている面へさらに感度軸を掛け合わせると計算量・表の両方が膨らむため、
     # 「基準に対してどれだけ動きうるか」の参考値として 1 本だけ示す（下の disclosure
     # とは別に `sens_note=` で「ベースだけ」と明示する＝`report_common.handling_section_html`
@@ -380,7 +380,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         base.diff_method, base.env_type, base.rain_rate,
         base.p_tx, base.gain_tx, base.gain_rx, base.sens,
     )
-    # 「結果の取扱に関する補足」（3.0a1）＋ 感度の変動幅（3.4 段6・B-219 で1節へ統合）。
+    # 「結果の取扱に関する補足」（3.0a1）＋ 感度の変動幅（3.4 ステージ6・B-219 で1セクションへ統合）。
     # ⚠️ **条件探索は 1 枚で N 条件を載せる**＝周波数や植生高そのものを軸に振れる
     # ので、刻印は**点ごとに解いて和集合**を取る（基準の条件だけを見ると、軸で
     # 範囲外へ出た点の注記が消える）。感度表は**ベース条件だけ**の参考値なので
@@ -395,7 +395,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
                 diff_method=p.result.diff_method,
                 rain_rate=float(p.overrides.get("rain_rate", base.rain_rate)),
                 veg_h=float(p.overrides.get("veg_h", base.veg_h)),
-                # ⚠️ 解像度は**凍結帯の値**＝軸にならない（座標と同じく、変えると
+                # ⚠️ 解像度は**凍結バーの値**＝軸にならない（座標と同じく、変えると
                 # DEM 取得が要り「同一経路を掘る」前提から外れる＝`scenario.py`）。
                 resolution=base.resolution,
             )
@@ -460,7 +460,7 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
                 return o.get(name, default)
             r = p.result
             # ラベルは今のところ i18n 由来か数値だが、CSV セルの安全化は
-            # 書き手ごとの判断にしない（→ report_common.csv_cell の節）。
+            # 書き手ごとの判断にしない（→ report_common.csv_cell のセクション）。
             label = report_common.csv_cell(p.label)
             w.writerow([
                 label, o.get(run.axis, "") if run.axis else label, r.status,

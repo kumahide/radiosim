@@ -1,7 +1,7 @@
 """
 views/map_cache.py
 ==================
-地図窓の**キャッシュ管理モード**（`MapWindow` の Mixin）。
+地図ウィンドウの**キャッシュ管理モード**（`MapWindow` の Mixin）。
 
 範囲のドラッグ選択・DEM の一括ダウンロード／強制再取得／削除・取得済み領域の
 オーバーレイ描画。⚠️ 通信は必ずワーカースレッドで、描画はメインスレッドへ戻す。
@@ -127,7 +127,7 @@ class _CacheMixin:
             else:
                 self._clear_selection()
         else:   # delete
-            # 削除は実際にキャッシュ済みのエリアのみが対象。I-155（3.5 段3）＝
+            # 削除は実際にキャッシュ済みのエリアのみが対象。I-155（3.5 ステージ3）＝
             # 選択中の DEM ソースに対して行う（背景地図は対象外＝既存の注記どおり）。
             source = self._current_cache_source()
             n = dem_cache.count_cached_areas(*bbox, source=source)
@@ -204,7 +204,7 @@ class _CacheMixin:
         cells = dem_cache.scan_cache_overlay(
             nw[0], nw[1], se[0], se[1], overlay_zoom, source=source)
         outline = dem_cache.coverage_outline(nw[0], nw[1], se[0], se[1], source=source)
-        # 走査中に地図窓を閉じられている可能性がある（B-061）
+        # 走査中に地図ウィンドウを閉じられている可能性がある（B-061）
         progress.post_to_ui(self._win,
                             lambda: self._draw_overlay_cells(cells, outline))
 

@@ -196,7 +196,7 @@ class TestValidateRows:
         """**生成された** ID は出力用の上限まで通ること（中継の `_h8` 付き）。
 
         逆向きの対＝上の検査だけだと「両方 11 に揃える」でも緑になり、そのとき
-        中継の経路 ID は黙って 8 文字まで縮む（無傷の窓を壊す）。
+        中継の経路 ID は黙って 8 文字まで縮む（無傷のウィンドウを壊す）。
         """
         pid = "p" * batch._MAX_PATH_ID_LEN
         assert batch.validate_rows(
@@ -448,7 +448,7 @@ class TestMakeParams:
         return sim.SimParams(c)
 
     def test_each_row_resolves_its_own_sample_count(self):
-        """**行ごとに点数が解かれる**こと（I-069 の芯）。
+        """**行ごとに点数が解かれる**こと（I-069 のコア）。
 
         🔴 以前は共通設定の 1 つの数（既定 200）が**全行に一律で当たっていた**＝
         500m の行では実効 2.5m、20km の行では実効 100m（尾根を 1 点で跨ぐ）と、
@@ -662,7 +662,7 @@ class TestSavePathHtmlF1:
 class TestSavePathHtmlRainRate:
     """降雨強度はスライダー欄と同じ整数で出すこと（B-241）。
 
-    グラフ窓のスライダーは `ttk.Scale.get()` の生の float を返すので、
+    グラフウィンドウのスライダーは `ttk.Scale.get()` の生の float を返すので、
     書式指定が無いと `41.49659863945578 mm/h` が帳票に載っていた
     （欄の表示は `.0f` の `41`）。計算に入る値は変えない＝丸めるのは帳票の字だけ。
     """
@@ -1160,7 +1160,7 @@ class TestProcessOne:
         配線だけ直してバッチ（`_fetch_sync` → `_process_one`）を落とした＝バッチの
         report.txt から行が必ず消えた。**本物の `fetch_elevations` を通し、タイルの
         読み込みと日付だけを差し替える**（`fetch_elevations` ごと差し替えると、取得日を
-        確定する段そのものを飛ばしてしまい、配線の抜けが見えない）。
+        確定するステップそのものを飛ばしてしまい、配線の抜けが見えない）。
         """
         from core import dem
         i18n.set_lang("en")
@@ -1289,7 +1289,7 @@ class TestRunBatch:
         def _boom(*_a, **_kw):
             raise RuntimeError("仕組んだ描画失敗")
 
-        # **描画段だけ**を倒す（計算・report.txt はここまで正常に通る）。
+        # **描画フェーズだけ**を倒す（計算・report.txt はここまで正常に通る）。
         monkeypatch.setattr(report_path, "save_profile_png", _boom)
 
         ev = self._run([_row(), _row(path_id="path02", lat_tx=35.10, lon_tx=133.10)],
@@ -1365,7 +1365,7 @@ class TestRunBatch:
                 inflight["now"] += 1
                 inflight["max"] = max(inflight["max"], inflight["now"])
             try:
-                # 並列化されていれば重なりが観測できる幅の窓を作る。
+                # 並列化されていれば重なりが観測できる幅のウィンドウを作る。
                 time.sleep(0.05)
                 return real_visuals(pr, coord_format, project_name)
             finally:
@@ -1456,7 +1456,7 @@ class TestParseCsvOptionalColumns:
         assert row.gain_tx is None and row.freq_mhz is None
 
     def test_measurement_columns_round_trip(self, tmp_path):
-        # 実測突合せ用の任意列（3.4 段3・I-147 の隣＝roadmap 3.4）。
+        # 実測突合せ用の任意列（3.4 ステージ3・I-147 の隣＝roadmap 3.4）。
         row = batch._parse_csv_row(self._raw(
             meas_dbm="-78.5", meas_method="spot",
             feeder_loss_db="2.1", env_class="suburban"), line=2)
@@ -1483,7 +1483,7 @@ class TestParseCsvOptionalColumns:
 
 class TestMeasurementColumnsSurviveTheTable:
     """実測突合せ用の任意列は表に列を持たないため、CSV インポート後に**複製・
-    並べ替えをしても失われない**こと（3.4 段3）。
+    並べ替えをしても失われない**こと（3.4 ステージ3）。
 
     表の行は `_row_entries`（Entry の文字列）だけで構成され、`meas_*` は
     行フレームの属性として運ばれる（`_verdict_label` と同じ「並行リストを
@@ -1768,7 +1768,7 @@ class TestBatchCompletionOpensChosenReport:
 class TestCommonSettingsValidation:
     """バッチの Common Settings が値域外のまま実行へ進まないこと。
 
-    共通設定は readonly 表示だが、値はランチャーの生の入力（窓を開いたときの
+    共通設定は readonly 表示だが、値はランチャーの生の入力（ウィンドウを開いたときの
     スナップショット／↻更新）で届く。ランチャーは実行時にしか検証しないので、
     単一実行を一度も走らせなければ無検証のまま計算まで通ってしまっていた
     ＝B-016（条件探索）と同じ欠陥のバッチ版。DEM 取得の前に弾く。
@@ -1779,7 +1779,7 @@ class TestCommonSettingsValidation:
         prev = i18n._lang
         yield
         i18n.set_lang(prev)
-        # ⚠️ 窓を destroy しても tk.StringVar は参照が切れるまで生き残り、後続テストの
+        # ⚠️ ウィンドウを destroy しても tk.StringVar は参照が切れるまで生き残り、後続テストの
         # ワーカースレッド上で GC されると Variable.__del__ が "main thread is not in
         # main loop" を投げる（=無関係なテストが落ちる）。ここで回収しきる。
         gc.collect()
@@ -1823,9 +1823,9 @@ class TestCommonSettingsValidation:
             win.destroy(); root.destroy()
 
     def _armed_win(self, monkeypatch, default_params_dict):
-        """正当な行を 1 つ持ち、run_batch を差し替えた窓を返す。
+        """正当な行を 1 つ持ち、run_batch を差し替えたウィンドウを返す。
 
-        ⚠️ 窓は最初から空行 `path01` を持ち、`_add_row()` も config_provider 無しでは
+        ⚠️ ウィンドウは最初から空行 `path01` を持ち、`_add_row()` も config_provider 無しでは
         **座標欄が空**の行を足す（= 座標 NaN）。行を用意せずに `_on_run()` を呼ぶと
         `validate_rows` で止まり、共通設定の検証まで到達しないまま
         「run_batch が呼ばれない」が成立してしまう（Codex 指摘の false positive）。
@@ -1878,17 +1878,17 @@ class TestCommonSettingsValidation:
 
 
 # ============================================================
-# ホイールスクロールが「この窓の中だけ」に効くこと（B-050）
+# ホイールスクロールが「このウィンドウの中だけ」に効くこと（B-050）
 # ============================================================
 class TestBatchTableWheelIsScopedToItsWindow:
-    """バッチ表のホイールを `bind_all` から**窓に閉じたバインド**へ変えた（B-050）。
+    """バッチ表のホイールを `bind_all` から**ウィンドウに閉じたバインド**へ変えた（B-050）。
 
     `bind_all` は 2 つ壊していた:
-      ①**窓を閉じても解放されない**＝登録先がルートの `_tclCommands` で、しかも
+      ①**ウィンドウを閉じても解放されない**＝登録先がルートの `_tclCommands` で、しかも
         CPython の `unbind_all` は `deletecommand` しない（開閉のたびに +40 個）。
-      ②**他の窓と干渉する**＝[views/window_fit.py](views/window_fit.py) の注記が
-        この行を名指ししていた（他窓のホイールを拾う・上書きされる・閉じるときに
-        他窓のバインドまで消す）。
+      ②**他のウィンドウと干渉する**＝[views/window_fit.py](views/window_fit.py) の注記が
+        この行を名指ししていた（他ウィンドウのホイールを拾う・上書きされる・閉じるときに
+        他ウィンドウのバインドまで消す）。
 
     ⚠️ **機能そのもの（表がホイールで動く）には検査が 1 本も無かった**ので、
     直し方の検査と一緒にここで足す＝**直したことで壊れていないか**を見る側。
@@ -1920,11 +1920,11 @@ class TestBatchTableWheelIsScopedToItsWindow:
         root, win = self._win(default_params_dict)
         try:
             assert not str(root.bind_all("<MouseWheel>")).strip(), (
-                "バッチ表がホイールを bind_all している＝窓を閉じても解放されず、"
-                "他の窓のホイールまで拾う（B-050）"
+                "バッチ表がホイールを bind_all している＝ウィンドウを閉じても解放されず、"
+                "他のウィンドウのホイールまで拾う（B-050）"
             )
             assert str(win.bind("<MouseWheel>")).strip(), (
-                "窓に閉じたバインドが無い＝表がホイールで動かない"
+                "ウィンドウに閉じたバインドが無い＝表がホイールで動かない"
             )
         finally:
             win.destroy(); root.destroy()
@@ -2013,15 +2013,15 @@ class TestBatchTableWheelIsScopedToItsWindow:
     def test_the_wheel_ignores_the_rest_of_the_window(self, default_params_dict):
         """表の外（共通設定欄など）で回しても表は動かないこと。
 
-        見ている場所と動く場所がずれるため。**窓に閉じたバインドになった後も要る**
-        ＝バインドの範囲が「窓の中」なので、表の外もここへ届く。
+        見ている場所と動く場所がずれるため。**ウィンドウに閉じたバインドになった後も要る**
+        ＝バインドの範囲が「ウィンドウの中」なので、表の外もここへ届く。
         """
         from types import SimpleNamespace
 
         root, win = self._win(default_params_dict)
         moved: list[tuple] = []
         try:
-            win.winfo_containing = lambda *_a, **_k: win        # 窓の地の部分
+            win.winfo_containing = lambda *_a, **_k: win        # ウィンドウの地の部分
             win._canvas.yview_scroll = lambda n, what: moved.append((n, what))
             win._on_mousewheel(SimpleNamespace(x_root=0, y_root=0, delta=-120))
             assert moved == [], f"表の外で回したのに動いた: {moved}"

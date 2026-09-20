@@ -1,7 +1,7 @@
 """
 tests/test_residuals.py
 ========================
-`core/residuals.py`（3.4 段5・実測突合せの残差計算）の単体テスト。
+`core/residuals.py`（3.4 ステージ5・実測突合せの残差計算）の単体テスト。
 純粋計算のみなので凍結データは不要。
 """
 import os

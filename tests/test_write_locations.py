@@ -2,7 +2,7 @@
 tests/test_write_locations.py
 =============================
 OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判定・旧配置からの
-移行（3.1・[[project_roadmap]] §3.1 段1）のガード。
+移行（3.1・[[project_roadmap]] §3.1 ステージ1）のガード。
 
 tests/test_paths.py が守るのは「cwd 非依存」と「ポータブル配置は従来どおり」
 の 2 点。ここで守るのは 3.1 で足した分:

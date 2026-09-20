@@ -1,7 +1,7 @@
 """
 tests/test_ground_reflection.py
 ================================
-`core/ground_reflection.py`（3.4 段4・地面反射の振幅包絡線）の回帰テスト。
+`core/ground_reflection.py`（3.4 ステージ4・地面反射の振幅包絡線）の回帰テスト。
 
 ネットワーク不要＝`tests/data/golden_links.json`（実 DEM 由来の凍結標高）から
 再計算するだけ。**このモジュールは既存の計算経路を一切変えない**（受信電力へ

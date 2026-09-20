@@ -1,7 +1,7 @@
 """
 tests/test_sensitivity.py
 ==========================
-`core/sensitivity.py`（3.4 段4・感度計算エンジン）の回帰テスト。
+`core/sensitivity.py`（3.4 ステージ4・感度計算エンジン）の回帰テスト。
 
 ネットワーク不要＝`tests/data/golden_links.json` から再計算するだけ。
 **モデルは1行も変えていない**ことも、既存回帰（test_golden_links.py）が

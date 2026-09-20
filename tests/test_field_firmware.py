@@ -364,7 +364,7 @@ def _t(tenths: float) -> str:
 
 
 def _rx_config(dialect: D.Dialect, **overrides) -> bytes:
-    """ファームの `make_config` と同じ形（瞬時値・窓長 0＝不明・外部アンテナ）。"""
+    """ファームの `make_config` と同じ形（瞬時値・ウィンドウ長 0＝不明・外部アンテナ）。"""
     enums = dialect.enums
     values = dict(
         config_id=3, role=enums["RADIOSIM_FIELD_ROLE"]["RADIOSIM_FIELD_ROLE_RX"], device_id=RX_MAC,

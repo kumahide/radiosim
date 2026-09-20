@@ -22,13 +22,13 @@ RadioSim Fieldの**測定セッション**＝1 回の測定を 1 フォルダに
 
 **後から足せない約束**（ここが崩れると、取り直すしか無くなる）
   1. 位置・姿勢は「セッション定数」と「サンプルごとの時系列」の**両方**を許す
-     （固定 2 点だけを前提に作ると、機体で測る段で全部書き直しになる）。
+     （固定 2 点だけを前提に作ると、機体で測るステージで全部書き直しになる）。
   2. **生値を捨てない。** `rssi_raw` は整数のまま残し、dBm への換算は書き出すときに
      校正値の控えから計算する。⛔ 生 RSSI を dBm に見せかけて保存しない。
   3. **打ち切りを捨てない。** 閉じた測定だけを集めると統計が楽観側へ偏る。欠けた
      シーケンス番号は「感度以下」という情報であって、欠測ではない。
   4. **時間平均と空間平均を同じ欄に入れない。** 時間平均（量子化・雑音）は設定側の
-     窓の件数、空間平均（マルチパス）は作業者が動かした**置き場所の番号**。
+     ウィンドウの件数、空間平均（マルチパス）は作業者が動かした**置き場所の番号**。
   5. **刻印はヘッダと端点に 1 回だけ書く。** 後で「ケーブルが 1 本傷んでいた」と
      分かったとき、その構成のサンプルだけを隔離できるようにするため。
 """
@@ -63,7 +63,7 @@ GNSS_FILE = "gnss.csv"
 
 # 測定対象の種別。phase 1 は「アンテナを設置できる場所」しか測れず、既設回線は
 # 「建てた＝だいたい繋がっている」ので成功例に偏る。**偏りを後から補正できるように
-# フラグを刻む**（構造的に解消できるのは機体で測る段だけ）。
+# フラグを刻む**（構造的に解消できるのは機体で測るステージだけ）。
 TARGET_KINDS = ("existing_link", "candidate_site")
 
 # 高さの出どころ。CLAS は Fix 解のときだけ採用する（Float 以下では、もっともらしい
@@ -97,7 +97,7 @@ SAMPLE_COLUMNS = (
     "tx_id",             # 送信機の個体 ID
     "rssi_raw",          # 受信レベルの生値（整数・dBm ではない）
     "noise_floor_raw",   # 雑音フロアの生値（整数・dBm ではない）
-    "config_id",         # RX の設定番号。積分窓・検波方式はここから引く
+    "config_id",         # RX の設定番号。積分ウィンドウ・検波方式はここから引く
     "tx_config_id",      # TX の設定番号（受けたパケットに載っていたもの）
     "sample_seq",        # ファームが振った通し番号（送信機ごと）。欠けは PC までの間の落ち
     "spatial_slot",      # 空間平均の置き場所の番号（PC 側が付ける）
@@ -107,11 +107,11 @@ SAMPLE_COLUMNS = (
 # 移動中に 1 つも受からなかった置き場所は、サンプルからは存在ごと見えない
 # （見えないまま捨てると、いちばん悪い場所の打ち切りが数から落ちる）。
 #   place … 置き場所に据えた（以後の受信はこの番号の置き場所）
-#   move  … 動かし始めた（次の place までの受信はどの窓にも入れない）
+#   move  … 動かし始めた（次の place までの受信はどのウィンドウにも入れない）
 #   stop  … 測定を終えた（最後の置き場所の末尾はここまで）
 EVENT_KINDS = ("place", "move", "stop")
 
-# 移動中に受けたサンプルの置き場所の番号。**捨てずに残し、窓には入れない。**
+# 移動中に受けたサンプルの置き場所の番号。**捨てずに残し、ウィンドウには入れない。**
 MOVING_SLOT = -1
 
 EVENT_COLUMNS = (
@@ -164,7 +164,7 @@ class Calibration:
     # **U.FL→SMA 中継ケーブルの SMA 端**で実測した出力。中継ケーブル・U.FL の嵌合・
     # RF スイッチの損失はここに含まれる（中継ケーブルは個体の一部＝替えたら測り直す）。
     # 本体は画面の送信電力で予測し、バッチ CSV に送信電力の列は無い＝この値を本体の
-    # 送信電力に入れる。設定値を入れると、実出力との差が全窓に同じ向きで乗る（B-258）。
+    # 送信電力に入れる。設定値を入れると、実出力との差が全ウィンドウに同じ向きで乗る（B-258）。
     tx_output_dbm: float | None = None
     tx_output_power_cdbm: int | None = None    # その実測を取ったときの設定（0.01 dBm 単位）
     tx_output_channel: int | None = None       # その実測を取ったときのチャネル
@@ -177,7 +177,7 @@ class Provenance:
     software_commit: str             # PC 側（このリポジトリ）のコミット
     geoid_model: str                 # 楕円体高→標高の変換に使ったモデル名
     censor_min_receive_rate: float   # 打ち切りのしきい値（受け入れ試験で決める）
-    censor_window_s: float           # 集計窓の長さ
+    censor_window_s: float           # 集計ウィンドウの長さ
     operator: str = ""
     note: str = ""
 
@@ -231,7 +231,7 @@ class Endpoint:
     """TX または RX の端点。
 
     `position` が `None` なのは「定数を持たない」＝サンプルごとの時系列で位置が
-    決まる構成（機体で測る段）。phase 1 は定数を入れるが、**器は両方を許す**。
+    決まる構成（機体で測るステージ）。phase 1 は定数を入れるが、**器は両方を許す**。
     """
 
     role: str
@@ -343,7 +343,7 @@ def _validate_tx_output(endpoint: Endpoint, role: str) -> None:
         )
     radio = endpoint.radio
     if (cal.tx_output_power_cdbm, cal.tx_output_channel) != (radio.tx_power_cdbm, radio.channel):
-        # 別の設定で測った出力を使うと、その差が全窓に同じ向きで乗る。
+        # 別の設定で測った出力を使うと、その差が全ウィンドウに同じ向きで乗る。
         raise SessionError(
             f"TX の実測出力は 設定 {cal.tx_output_power_cdbm / 100:g} dBm・チャネル "
             f"{cal.tx_output_channel} で測ったものですが、TX は 設定 "
@@ -389,14 +389,14 @@ def validate_header(header: SessionHeader) -> None:
         raise SessionError("session_id が空です")
     _require(header.target_kind, TARGET_KINDS, "測定対象の種別")
     if not 0.0 < header.provenance.censor_min_receive_rate <= 1.0:
-        # 0 は「全部欠けた窓だけを打ち切りにする」＝一部だけ届いた窓の偏った平均が
+        # 0 は「全部欠けたウィンドウだけを打ち切りにする」＝一部だけ届いたウィンドウの偏った平均が
         # 実測として本体に入る。1 超は全部が打ち切りになる。
         raise SessionError(
             "打ち切りのしきい値は 0 より大きく 1 以下の受信率で指定します: "
             f"{header.provenance.censor_min_receive_rate}"
         )
     if header.provenance.censor_window_s <= 0:
-        raise SessionError("集計窓の長さは正の秒数です")
+        raise SessionError("集計ウィンドウの長さは正の秒数です")
     _validate_endpoint(header.tx, "tx")
     _validate_endpoint(header.rx, "rx")
 
@@ -419,7 +419,7 @@ def format_utc(moment: datetime) -> str:
 
 
 def validate_events(events: list[Event], *, finished: bool = True) -> None:
-    """操作の並びの約束。**区切りを決める材料なので、崩れた並びから窓を作らない。**
+    """操作の並びの約束。**区切りを決める材料なので、崩れた並びからウィンドウを作らない。**
 
     `place` で始まり、`place → move|stop`・`move → place|stop` と進み、`stop` で
     終わる。置き場所の番号は使い回さない（同じ番号が 2 か所を指すと、後から

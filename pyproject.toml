@@ -2,7 +2,7 @@
 testpaths = ["tests"]
 addopts   = "--tb=short -q"
 # network: 外部ネットワークへの実アクセスを許可する（既定は conftest の
-# _block_network で遮断。理由は conftest.py の同節を参照）。
+# _block_network で遮断。理由は conftest.py の同セクションを参照）。
 markers = [
     "network: 外部ネットワークアクセスを行うテスト（既定の遮断を解除する）",
     "real_dialogs: 実物のモーダルダイアログを出すテスト（人が操作する前提・既定は遮断）",

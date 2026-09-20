@@ -10,15 +10,15 @@ UI 知識ゼロ・ヘッドレス。単一（launcher/graph）・バッチ（bat
   - バッチ ＝ N 本の**独立した回線**の成果物を作る
   - **条件探索（ここ）＝ 1 本の確定した経路を、条件を変えて掘る**
 
-**🔑 成立の根拠＝計算パイプラインが 2 相であること**：`fetch_elevations`
+**🔑 成立の根拠＝計算パイプラインが 2 フェーズであること**：`fetch_elevations`
 （高コスト・ネットワーク・**座標とサンプル数にしか依存しない**）と
 `run_calculation`（低コスト・純関数）。したがって **DEM 取得 1 回 + N 回の純計算**
 で条件探索が成り立つ。この前提（terrain 使い回しの安全性・評価順非依存・入力を
 壊さないこと）は `tests/test_golden_links.py::TestRunCalculationIsPure` が固定
 している＝崩れても値は"それらしく"出るので、構造で守る。
 
-**進捗の「相（phase）」の宣言**（2.4b3 の宿題・B-006/I-008 の構造対策）：
-既存 3 フローは「進捗をコールバックが取れる相に合わせ、重い相が管轄外になる」
+**進捗の「フェーズ」の宣言**（2.4b3 の宿題・B-006/I-008 の構造対策）：
+既存 3 フローは「進捗をコールバックが取れるフェーズに合わせ、重いフェーズが管轄外になる」
 同じ欠陥を別々に持っていた（バッチ＝B-006／単一＝I-008）。トランスポートは
 `views/progress.ProgressPump` へ畳んだが、**配分の意味論は各フローが手書きのまま**。
 4 つ目を作るこの版で、`Phases`（名前＋重み）としてランナー側へ入れる。
@@ -148,30 +148,30 @@ class ScenarioRun:
 
 
 # ============================================================
-# 進捗の「相」の宣言
+# 進捗の「フェーズ」の宣言
 # ============================================================
 @dataclass(frozen=True)
 class Phase:
-    """実行の 1 相。`weight` は所要時間の相対的な重み（合計は任意）。"""
+    """実行の 1 フェーズ。`weight` は所要時間の相対的な重み（合計は任意）。"""
     key:    str
     weight: float
 
 
-# 条件探索の相：DEM 取得（ネットワーク・支配的）→ 純計算（N 回・軽い）。
-# 成果物の生成はレポート層の仕事で、呼び出し側が "render" 相を足せる。
+# 条件探索のフェーズ：DEM 取得（ネットワーク・支配的）→ 純計算（N 回・軽い）。
+# 成果物の生成はレポート層の仕事で、呼び出し側が "render" フェーズを足せる。
 FETCH = Phase("fetch", 8.0)
 CALC  = Phase("calc", 1.0)
 RENDER = Phase("render", 3.0)
 
 
 class Phases:
-    """宣言された相を順に進め、**全体の進捗率**へ換算して通知する。
+    """宣言されたフェーズを順に進め、**全体の進捗率**へ換算して通知する。
 
-    各フローが「相の名前と重み」を宣言し、あとは `start(phase)` と
-    `advance(done, total)` を呼ぶだけにする＝**重い相が進捗の管轄外に置かれる**
+    各フローが「フェーズの名前と重み」を宣言し、あとは `start(phase)` と
+    `advance(done, total)` を呼ぶだけにする＝**重いフェーズが進捗の管轄外に置かれる**
     （B-006／I-008 の欠陥）を、配分をランナー側に持つことで構造的に防ぐ。
 
-    `on_phase` は相の切り替わり（UI のラベル差し替え）、`on_progress` は
+    `on_phase` はフェーズの切り替わり（UI のラベル差し替え）、`on_progress` は
     0〜100 の全体進捗。どちらもワーカースレッドから呼ばれるので、View は
     ProgressPump 経由でメインスレッドへ渡すこと。
     """
@@ -183,7 +183,7 @@ class Phases:
         on_progress: "Callable[[int], None] | None" = None,
     ) -> None:
         if not phases:
-            raise ValueError("相が 1 つも宣言されていない")
+            raise ValueError("フェーズが 1 つも宣言されていない")
         self._phases = list(phases)
         self._total_weight = sum(p.weight for p in self._phases) or 1.0
         self._on_phase = on_phase
@@ -196,11 +196,11 @@ class Phases:
         return self._phases[self._index].key if self._index >= 0 else ""
 
     def start(self, phase: Phase) -> None:
-        """次の相へ進む（宣言した順に呼ぶこと）。"""
+        """次のフェーズへ進む（宣言した順に呼ぶこと）。"""
         idx = self._phases.index(phase)
         if idx <= self._index:
-            raise ValueError(f"相の順序が宣言と違う: {phase.key}")
-        # 飛ばされた相も完了扱いにする（宣言と実行のズレで進捗が巻き戻らない）。
+            raise ValueError(f"フェーズの順序が宣言と違う: {phase.key}")
+        # 飛ばされたフェーズも完了扱いにする（宣言と実行のズレで進捗が巻き戻らない）。
         self._done_weight = sum(p.weight for p in self._phases[:idx])
         self._index = idx
         if self._on_phase:
@@ -208,13 +208,13 @@ class Phases:
         self._emit(0.0)
 
     def advance(self, done: int, total: int) -> None:
-        """現在の相の中の進み具合（done/total）を通知する。"""
+        """現在のフェーズの中の進み具合（done/total）を通知する。"""
         if self._index < 0:
             raise ValueError("start() より前に advance() が呼ばれた")
         self._emit(0.0 if total <= 0 else min(1.0, max(0.0, done / total)))
 
     def finish(self) -> None:
-        """全相の完了（100%）を通知する。"""
+        """全フェーズの完了（100%）を通知する。"""
         self._done_weight = self._total_weight
         self._index = len(self._phases) - 1
         self._emit(0.0)
@@ -328,11 +328,11 @@ def run_scenario(
 ) -> None:
     """条件探索をバックグラウンドスレッドで実行する。
 
-    `artifacts` を渡すと**このワーカースレッドの中で** RENDER 相として呼ぶ
+    `artifacts` を渡すと**このワーカースレッドの中で** RENDER フェーズとして呼ぶ
     （レポート生成＝matplotlib Agg と文字列組み立てのみで tkinter に触れない）。
-    こうする理由が「相の宣言」の本体＝**重い相をランナーの管轄外に置かない**。
+    こうする理由が「フェーズの宣言」の本体＝**重いフェーズをランナーの管轄外に置かない**。
     View 側で完了後に生成すると、①GUI スレッドが固まる ②その時間が進捗率に
-    現れない（B-006／I-008 で 2 度起きた欠陥）。相の宣言はここに一本化する。
+    現れない（B-006／I-008 で 2 度起きた欠陥）。フェーズの宣言はここに一本化する。
     """
     # ⚠️ **DEM 取得の前に**ベースを検証する（条件側は Condition が検査済み）。
     # ここで弾かないと、取得を終えてから計算で落ちる＝待ち時間を捨てさせる。

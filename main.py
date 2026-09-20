@@ -142,8 +142,8 @@ def _set_dpi_awareness(windll: Any) -> str:
     """使える一番強い DPI 認識を設定し、その名前を返す（強い順に試す）。
 
     **v2 を先に試す**理由（I-054）＝v1（`SetProcessDpiAwareness(2)`）が面倒を見るのは
-    窓とクライアント領域だけで、**メニューバーは OS が描いたまま拡大されない**。
-    実測で確認済み＝帯（ファイル / 設定 / ヘルプ）は Tk の管轄外で、`TkMenuFont` を
+    ウィンドウとクライアント領域だけで、**メニューバーは OS が描いたまま拡大されない**。
+    実測で確認済み＝バー（ファイル / 設定 / ヘルプ）は Tk の管轄外で、`TkMenuFont` を
     書き換えても `tk.Menu(font=…)` を直に指定しても 1px も変わらない（変わるのは
     ドロップダウンだけ）。⇒ **アプリ側からは字を大きくできない。**
 
@@ -209,7 +209,7 @@ def _set_window_icon(root: tk.Tk) -> None:
 def _warn_if_not_the_declared_interpreter() -> None:
     """宣言と違う Python で起動していたら**警告する**（止めはしない）。
 
-    起動だけ門が無く、素の `python main.py` が**別の依存版で黙って動いていた**
+    起動だけゲートが無く、素の `python main.py` が**別の依存版で黙って動いていた**
     （B-056）。⛔ **止めない**＝配布 exe は宣言を持たないので `interpreter_mismatch()`
     が `None` を返し、そもそもここへ来ない。それでも例外を投げないのは、開発機で
     exe を試す経路（宣言あり × 走っているのは exe）を利用者と同じ形に保つため。
@@ -231,18 +231,18 @@ def main() -> None:
     _warn_if_not_the_declared_interpreter()
     _setup_windows_platform()
     root = tk.Tk()
-    # 🔴 **表示前に隠す**（I-132 再発）＝`tk.Tk()` は生成と同時に窓を画面へ出す。
+    # 🔴 **表示前に隠す**（I-132 再発）＝`tk.Tk()` は生成と同時にウィンドウを画面へ出す。
     # 出したあとに `apply_title_bar_theme` で DWM へダーク/ライトを申告しても、
     # 非クライアント領域（タイトルバー）はその場では塗り替わらないことがある
     # （実装上の落とし穴③・[views/theme.py](views/theme.py) の docstring）。設定
     # 画面での切替が効くのは、ダイアログを閉じた際のフォーカス復帰が非クライアント
-    # 領域の再描画を誘発するため＝**起動直後はその契機が無く、次に何かが窓を
+    # 領域の再描画を誘発するため＝**起動直後はその契機が無く、次に何かがウィンドウを
     # アクティブ化するまで白いまま**残っていた。⇒ 申告が終わって
-    # `deiconify()` するまで窓を見せない（テストの `root.withdraw()` と同じ形）。
+    # `deiconify()` するまでウィンドウを見せない（テストの `root.withdraw()` と同じ形）。
     root.withdraw()
     # 🔴 **`withdraw()` のままでは DWM 申告が黙って失敗する**（B-176＝上の対策の
     # 取り残し）＝Windows は非クライアント領域を持つ「装飾つき HWND（ラッパー）」
-    # を、窓が一度も map（表示）されないうちは作らない。`winfo_id()` が返すのは
+    # を、ウィンドウが一度も map（表示）されないうちは作らない。`winfo_id()` が返すのは
     # クライアント側の子 HWND のままで、`GetParent()` は 0 を返す＝
     # `DwmSetWindowAttribute` に渡す先が無く、成功も失敗も返らず何も起きない
     # （実機で実測・`hex(GetParent(winfo_id()))` が `withdraw()` のままだと
@@ -252,7 +252,7 @@ def main() -> None:
     root.attributes("-alpha", 0.0)
     root.deiconify()
     root.update_idletasks()
-    # 以降に作る窓・コールバックすべてを覆うので、**何よりも先に**入れる
+    # 以降に作るウィンドウ・コールバックすべてを覆うので、**何よりも先に**入れる
     # （ここより前で落ちたものは stderr へ消える＝I-059）。
     errors.install(root)
     _prof("tk.Tk() created")
@@ -265,12 +265,12 @@ def main() -> None:
     # 非ポータブルでは別の場所）の両方を見る。ポータブル配置では同じ場所を
     # 二重に走査するだけ（同じ結果になる）。
     i18n.load_external(config.LANG_DIR, config.USER_LANG_DIR)
-    # 利用者が足した DEM ソースの宣言ファイルを読む（3.4 段1・I-147）。
+    # 利用者が足した DEM ソースの宣言ファイルを読む（3.4 ステージ1・I-147）。
     # ⚠️ **読めなくても起動は続ける**＝報告はランチャーが画面で伝える
     # （`_warn_about_rejected_dem_sources`）。同じ設計＝`i18n.load_external` の
     # すぐ下に置く。
     dem_sources.load_from(config.USER_DEM_SOURCES_FILE)
-    # 利用者が足した背景地図タイルソースの宣言ファイルを読む（3.5 段3・I-152）。
+    # 利用者が足した背景地図タイルソースの宣言ファイルを読む（3.5 ステージ3・I-152）。
     # 同じ設計＝読めなくても起動は続ける（報告はランチャーが画面で伝える）。
     tile_sources.load_from(config.USER_TILE_SOURCES_FILE)
     # 設定ファイルが在ればその中身、無ければ初回既定の解決（I-127＝インストーラで
@@ -280,26 +280,26 @@ def main() -> None:
     manager.apply(cfg.get("theme", "system"))
     # タイトルバー・枠は Windows が描くので sv_ttk が届かない（I-132）。切替の
     # たびに <<ThemeChanged>> で開いている全トップレベルへ当て直す（新規に開いた
-    # 窓は各々の生成元が `title_bar.follow_title_bar` で予約する＝views/dialogs.py 等）。
+    # ウィンドウは各々の生成元が `title_bar.follow_title_bar` で予約する＝views/dialogs.py 等）。
     # ⚠️ **ここ（root）だけが「生成直後に当てられる」**＝上の `-alpha 0` +
-    # `deiconify()` で**ラッパーを先に作ってある**から。子窓にその契機は無いので、
+    # `deiconify()` で**ラッパーを先に作ってある**から。子ウィンドウにその契機は無いので、
     # 同じ書き方をすると黙って空振りする（B-179＝B-176 の知見の取り残し）。
     title_bar.apply_title_bars(root)
     root.bind("<<ThemeChanged>>", lambda _e: title_bar.apply_title_bars(root), add="+")
-    # 全窓の既定フォントを sv_ttk の本文フォントへ揃える（窓ごとの font= を廃止）。
+    # 全ウィンドウの既定フォントを sv_ttk の本文フォントへ揃える（ウィンドウごとの font= を廃止）。
     # テーマ適用の**後**に呼ぶ（sv.tcl が名前付きフォントを作るのがテーマ読み込み時）。
     theme.apply_fonts(root)
-    # 表示環境（DPI・画面サイズ）が変わったら、フォントを貼り直して窓を測り直す。
+    # 表示環境（DPI・画面サイズ）が変わったら、フォントを貼り直してウィンドウを測り直す。
     # sv_ttk のフォントはピクセル指定＝Tk 任せでは 1px も変わらないので、
-    # 「窓だけ大きくなって字は小さいまま」になる（2026-07-26 のユーザー報告）。
+    # 「ウィンドウだけ大きくなって字は小さいまま」になる（2026-07-26 のユーザー報告）。
     # 画面サイズも寸法の入力（fit_to_content の上限）なので同じ契機で拾う＝B-022。
-    # DPI が変わったときだけ縮む方向にも測り直す（I-053＝150% → 100% で窓が戻る）。
+    # DPI が変わったときだけ縮む方向にも測り直す（I-053＝150% → 100% でウィンドウが戻る）。
     theme.watch_display(
         root, lambda _dpi, dpi_changed: window_fit.refit_all(root, shrink=dpi_changed))
     _prof("sv-ttk theme applied")
     SimLauncher(root, manager.apply)
     _prof("SimLauncher built")
-    # 窓は既に map 済み（上の `-alpha 0` トリック）＝残るは見せるだけなので
+    # ウィンドウは既に map 済み（上の `-alpha 0` トリック）＝残るは見せるだけなので
     # `deiconify()` でなく透明度を戻す（B-176）。
     root.attributes("-alpha", 1.0)
     if _PROF_ON:

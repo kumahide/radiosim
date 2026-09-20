@@ -65,7 +65,7 @@ class TestFindFatalExclusions:
         assert fatal[0][1] == ["fontTools.misc.loggingTools (top-level)"]
 
     def test_conditional_importers_do_not_fire(self):
-        """`(conditional)` は実行時に到達しない＝鳴らせば「毎回鳴る門」になる。"""
+        """`(conditional)` は実行時に到達しない＝鳴らせば「毎回鳴るゲート」になる。"""
         assert check.find_fatal_exclusions(_REAL_CONDITIONAL_LINE) == []
 
     def test_missing_module_lines_do_not_fire(self):

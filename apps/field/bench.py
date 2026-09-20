@@ -1,22 +1,22 @@
 """
 apps/field/bench.py
 ====================
-**段0 の机上試験を回す**（Field phase 1・増分6）。2 台（A・B）を USB で PC に
+**ステージ0 の机上試験を回す**（Field phase 1・増分6）。2 台（A・B）を USB で PC に
 つないだまま、役割をコマンド（`role tx` / `role rx`）で入れ替えながら、両方向
-（A→B・B→A）を同じアッテネータの段で測る。
+（A→B・B→A）を同じアッテネータのステップで測る。
 
     python -m apps.field.cli bench run --port-a COM3 --port-b COM4 --root 測定データ
 
 **人がするのはアッテネータのつまみと Enter だけ**（2026-09-19 ユーザー決定＝手動の
-ステップアッテネータ）。それ以外（役割・チャネル・送信電力の切替、段ごとの記録、
+ステップアッテネータ）。それ以外（役割・チャネル・送信電力の切替、ステップごとの記録、
 細かい掃引の範囲・電力掃引の減衰量の選択）はここが決める。
 
-**残すのは生のバイト列と段の記録だけ**（判定は `bench_analysis.py`）＝段0b で
+**残すのは生のバイト列とステップの記録だけ**（判定は `bench_analysis.py`）＝ステージ0b で
 アッテネータやケーブルの実測値が分かったら、**測り直さずに**判定をやり直せる。
 
     bench-<開始 UTC>/
       bench.json      … 開始時に 1 回書く（2 台の個体 ID・ファームの版・計画・刻印）
-      steps.csv       … 測った段（追記のみ）。どの時刻にどちらが送り、減衰量はいくつか
+      steps.csv       … 測ったステップ（追記のみ）。どの時刻にどちらが送り、減衰量はいくつか
       a/uart.bin …    … A の USB の生のバイト列と、受けた時刻の索引（追記のみ）
       b/uart.bin …    … B の同じもの
 
@@ -50,7 +50,7 @@ BENCH_FILE = "bench.json"
 STEPS_FILE = "steps.csv"
 UNITS = ("a", "b")
 
-# probe＝動作確認（`BenchRunner.probe`）の段。机上試験のフォルダには現れない。
+# probe＝動作確認（`BenchRunner.probe`）のステップ。机上試験のフォルダには現れない。
 STEP_KINDS = ("leak", "warmup", "level", "power", "channel", "probe")
 PURPOSES = ("bench", "probe")          # フォルダの名前の頭と bench.json の purpose
 PROBE_FILE = "probe.json"
@@ -62,18 +62,18 @@ STEP_COLUMNS = (
     "rx_unit",
     "tx_device",
     "rx_device",
-    "tx_config_id",   # この段で TX に効いていた設定番号
+    "tx_config_id",   # このステップで TX に効いていた設定番号
     "rx_config_id",
     "power_cdbm",     # TX の設定（機器が読み戻した値）
     "channel",
-    "atten_db",       # ステップアッテネータの合計（公称）。終端器の段は空
+    "atten_db",       # ステップアッテネータの合計（公称）。終端器のステップは空
     "start_utc",
     "end_utc",
 )
 
-# 段の頭で待つ時間＝役割の入れ替え（再起動）の直後に落ち着くまで。
+# ステップの頭で待つ時間＝役割の入れ替え（再起動）の直後に落ち着くまで。
 SETTLE_S = 2.0
-# 段の終わりの後に読み続ける時間＝終わり際に送った番号の受信が USB を通ってくるまで。
+# ステップの終わりの後に読み続ける時間＝終わり際に送った番号の受信が USB を通ってくるまで。
 TAIL_S = 0.5
 # 設定の変更（再起動）を待つ上限。
 CONFIG_WAIT_S = 15.0
@@ -109,7 +109,7 @@ def default_plan() -> dict[str, Any]:
     return {
         "channel": 1,
         "power_dbm": 15,
-        # 固定アッテネータ（30 dB ×2）とケーブルの**公称**。段0b の実測値は判定の側
+        # 固定アッテネータ（30 dB ×2）とケーブルの**公称**。ステージ0b の実測値は判定の側
         # （`bench analyze --ref`）で差し替える＝ここを直して測り直す必要はない。
         "fixed_loss_db": 60.0,
         "leak": {"duration_s": 30, "power_dbm": 20},
@@ -118,9 +118,9 @@ def default_plan() -> dict[str, Any]:
             "stable_chunks": 5, "stable_db": 0.2,
         },
         "coarse": {"atten_db": list(range(0, 120, 10)), "duration_s": 20},
-        # 粗い掃引で受信率が落ち始めた段 k の前後を 1 dB 刻みで。
+        # 粗い掃引で受信率が落ち始めたステップ k の前後を 1 dB 刻みで。
         "fine": {"below_db": 9, "above_db": 6, "duration_s": 30},
-        # 受信率が落ち始める段 k から margin_db 以上下げた減衰量（10 dB 単位）で。
+        # 受信率が落ち始めるステップ k から margin_db 以上下げた減衰量（10 dB 単位）で。
         # ⚠️ power_dbm（15）を必ず含める＝校正ファイルの他の電力の出力は、パワー計で
         # 測った 15 dBm の点からの相対差で導く（含まないと導けない）。
         "power": {"dbm": [3, 5, 7, 9, 11, 13, 15, 17, 19, 20], "duration_s": 20,
@@ -172,7 +172,7 @@ def create_raw_log(directory: Path) -> None:
 
 @dataclass(frozen=True)
 class StepCount:
-    """段の**その場の**数え（判定は生ログから `bench_analysis` がやり直す）。"""
+    """ステップの**その場の**数え（判定は生ログから `bench_analysis` がやり直す）。"""
 
     sent: int
     received: int
@@ -184,7 +184,7 @@ class StepCount:
 
 
 # 動作確認で「受かっている」とみなす受信率。機器と配線が動いているかを見るだけの
-# 目安で、段0 の打ち切りのしきい値とは別物（そちらは作業者が段0 の結果から決める）。
+# 目安で、ステージ0 の打ち切りのしきい値とは別物（そちらは作業者がステージ0 の結果から決める）。
 PROBE_MIN_RATE = 0.9
 
 
@@ -261,7 +261,7 @@ def write_probe(directory: Path, payload: dict[str, Any]) -> Path:
 
 
 class BenchRunner:
-    """2 台を操り、段を記録する。
+    """2 台を操り、ステップを記録する。
 
     `clock()` は UTC の ISO 8601（`recorder.now_utc` と同じ時計）、`prompt(文)` は
     作業者に頼んで Enter を待つ（`q` で止める）、`say(文)` は表示するだけ。
@@ -460,14 +460,14 @@ class BenchRunner:
         self.configure(rx, role="rx", channel=channel, power_dbm=power_dbm)
         self.configure(tx, role="tx", channel=channel, power_dbm=power_dbm)
 
-    # 段 -------------------------------------------------------------------------
+    # ステップ -------------------------------------------------------------------------
 
     def measure(
         self, kind: str, tx: str, *, duration_s: float, atten_db: int | None,
         power_dbm: float, channel: int, label: str = "",
     ) -> StepCount:
         if kind not in STEP_KINDS:
-            raise BenchError(f"知らない段の種類です: {kind}")
+            raise BenchError(f"知らないステップの種類です: {kind}")
         self.arrange(tx, power_dbm=power_dbm, channel=channel)
         self._read_for(SETTLE_S)
         t_unit, r_unit = self.units[tx], self.units[_other(tx)]
@@ -502,7 +502,7 @@ class BenchRunner:
         return count
 
     def _step_samples(self, row: dict[str, Any]) -> tuple[int, list[dict[str, Any]]]:
-        """段の間に TX が送った数と、そのうち RX が受けたサンプル。"""
+        """ステップの間に TX が送った数と、そのうち RX が受けたサンプル。"""
         t_unit, r_unit = self.units[row["tx_unit"]], self.units[row["rx_unit"]]
         start, end = parse_utc(row["start_utc"]), parse_utc(row["end_utc"])
         seqs = [
@@ -533,7 +533,7 @@ class BenchRunner:
         対話の無いところ（別の PC の Claude のシェルなど）からも実行できる。
 
         アッテネータは今の位置のまま（減衰量は記録しない）。判定は機器と配線が
-        動いているかだけで、段0 のしきい値には使わない。
+        動いているかだけで、ステージ0 のしきい値には使わない。
         """
         self.connect()
         links = []
@@ -571,12 +571,12 @@ class BenchRunner:
             f"（10 dB 刻み {tens}・1 dB 刻み {ones}）して Enter（q で中止）"
         )
 
-    # 段の組み ---------------------------------------------------------------------
+    # ステージの組み ---------------------------------------------------------------------
 
     def run(self, stages: tuple[str, ...] = STAGES) -> None:
         unknown = [s for s in stages if s not in STAGES]
         if unknown:
-            raise BenchError(f"知らない段です: {unknown}（{', '.join(STAGES)}）")
+            raise BenchError(f"知らないステージです: {unknown}（{', '.join(STAGES)}）")
         self.connect()
         for stage in STAGES:
             if stage in stages:
@@ -584,7 +584,7 @@ class BenchRunner:
                 getattr(self, f"_stage_{stage}")()
 
     def _both(self, kind: str, *, first: str, **kwargs: Any) -> None:
-        """両方向を測る。**first から**＝直前の段と同じ向きから始めれば入れ替えが 1 回で済む。"""
+        """両方向を測る。**first から**＝直前のステップと同じ向きから始めれば入れ替えが 1 回で済む。"""
         for tx in (first, _other(first)):
             self.measure(kind, tx, **kwargs)
 
@@ -657,7 +657,7 @@ class BenchRunner:
             first = self._last_tx()
 
     def power_atten(self) -> int:
-        """電力掃引の減衰量＝落ち始める段から margin_db 以上下げた、10 dB 単位の値。"""
+        """電力掃引の減衰量＝落ち始めるステップから margin_db 以上下げた、10 dB 単位の値。"""
         margin = self.plan["power"]["margin_db"]
         return max(0, (self.knee() - margin) // 10 * 10)
 
@@ -724,7 +724,7 @@ def read_steps(directory: str | os.PathLike[str]) -> list[dict[str, Any]]:
     with path.open("r", encoding="utf-8", newline="") as f:
         reader = csv.DictReader(f)
         if tuple(reader.fieldnames or ()) != STEP_COLUMNS:
-            raise BenchError(f"段の記録の列が違います: {path}")
+            raise BenchError(f"ステップの記録の列が違います: {path}")
         rows = []
         for r in reader:
             row: dict[str, Any] = dict(r)
@@ -732,7 +732,7 @@ def read_steps(directory: str | os.PathLike[str]) -> list[dict[str, Any]]:
                 row[key] = int(row[key])
             row["atten_db"] = None if row["atten_db"] == "" else int(row["atten_db"])
             if row["kind"] not in STEP_KINDS:
-                raise BenchError(f"知らない段の種類です: {row['kind']}")
+                raise BenchError(f"知らないステップの種類です: {row['kind']}")
             rows.append(row)
     return rows
 

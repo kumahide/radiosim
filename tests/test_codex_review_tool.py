@@ -36,7 +36,7 @@ def script() -> str:
     return SCRIPT.read_text(encoding="utf-8")
 
 
-# --- 独立性の芯（ここが壊れるとこの工程の値が消える） -------------------------
+# --- 独立性のコア（ここが壊れるとこの工程の値が消える） -------------------------
 
 def test_the_prompt_is_read_from_a_file_not_composed_inline(script):
     """入力文はファイルから読む＝その場で観点を混ぜる余地を作らない。"""

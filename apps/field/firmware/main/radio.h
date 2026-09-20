@@ -25,7 +25,7 @@ bool radio_verify_rate(uint16_t *actual_kbps);
  * （radio_start で読み戻した送信電力を載せたもの）。 */
 void radio_run(const radiosim_field_config_t *config);
 
-/* TX だけ: 連続送信（段0b で送信電力を平均電力計で測るため）を seconds 秒行い、
+/* TX だけ: 連続送信（ステージ0b で送信電力を平均電力計で測るため）を seconds 秒行い、
  * 終わったら再起動する。0 なら実行中の連続送信を止める（止めたときも再起動する）。
  * 番号付きのパケットと設定の空中送信はその間止まる＝呼び手は先に config_id を進めて
  * おくこと（再起動後の設定で、PC がこの間を跨いだ記録を閉じられるように）。 */

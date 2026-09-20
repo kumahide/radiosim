@@ -1,21 +1,21 @@
-"""B-119 は**リサイズできる窓**にも起きるのか（実機採取）。
+"""B-119 は**リサイズできるウィンドウ**にも起きるのか（実機採取）。
 
 なぜ要るか
 ----------
-B-119（表示スケールを変えたあとドラッグすると窓の寸法が 6px ずつ変わり続ける）は
+B-119（表示スケールを変えたあとドラッグするとウィンドウの寸法が 6px ずつ変わり続ける）は
 **ランチャー**でしか実測していない。ランチャーは `resizable(False, False)` なので、
-「リサイズできる窓（バッチ・条件探索・中継経路・グラフ・地図）にも同じ欠陥が
+「リサイズできるウィンドウ（バッチ・条件探索・中継経路・グラフ・地図）にも同じ欠陥が
 あるか」は**未確認のまま**残っている（ISSUES.md の B-119 の対応欄）。
 
 ⚠️ **推理で埋めない**（[[feedback-diff-before-gui-repro]]＝B-119 では推理で 5 回
-外して 3 回出荷した）。分かっているのは次の 2 点だけで、どちらも「リサイズできる窓は
+外して 3 回出荷した）。分かっているのは次の 2 点だけで、どちらも「リサイズできるウィンドウは
 安全」も「同じく壊れる」も**言えない**：
 
-  * 前提は 5 窓とも揃っている＝`fit_to_content` が `geometry("WxH")` で寸法を
+  * 前提は 5 ウィンドウとも揃っている＝`fit_to_content` が `geometry("WxH")` で寸法を
     明示する（`views/window_fit.py:789`）。B-119 の駆動条件（寸法の要求が在ること）は
     ランチャー固有ではない。
-  * `rebuild`（b119_frame_slip_probe）で、**スケール変更後に建てたまっさらな窓**も
-    同じ 6px を刻んだ ⇒ 欠陥は窓の中身によらない。**ただしその窓も
+  * `rebuild`（b119_frame_slip_probe）で、**スケール変更後に建てたまっさらなウィンドウ**も
+    同じ 6px を刻んだ ⇒ 欠陥はウィンドウの中身によらない。**ただしそのウィンドウも
     `resizable(False, False)` だった。**
   * 逆に「リサイズ可否は無関係」とも言えない＝`minmax` の採取では **min/max を
     掛けた向きだけ暴走が止まった**（片方向）。⇒ **Tk の再適用は寸法の制約を
@@ -27,38 +27,38 @@ B-119（表示スケールを変えたあとドラッグすると窓の寸法が
 
 手順（**モニタは 1 枚でよい**・B-119 の RC6 版と同じ）:
   1. ズーム 100% で起動する（このスクリプトが本物のランチャーを建てる）
-  2. ランチャーから見たい窓を開く（バッチ・条件探索・地図。グラフと中継経路は
+  2. ランチャーから見たいウィンドウを開く（バッチ・条件探索・地図。グラフと中継経路は
      計算結果が要るので、先に 1 回実行してから開く）
   3. **起動したまま** Windows の表示スケールを 150% に変える
-  4. 窓を 1 つずつタイトルバーでドラッグし、`DRIFT` 行が出るか見る
+  4. ウィンドウを 1 つずつタイトルバーでドラッグし、`DRIFT` 行が出るか見る
   5. 対照として `Ctrl+Shift+B`（下）で建てた **BARE-fixed / BARE-resizable** も
      同じようにドラッグする
 
 出るもの（1 行 1 事象）:
     OPEN   新しいトップレベルを見つけた（題・resizable・寸法）
-    GRAB   マウスのボタンが落ちた＝**どの窓を掴んだか**（ポインタが入っている矩形／
-           **タイトルバーか窓の中身か**も出る＝中身を押しても窓は動かない）
-    DROP   離した（掴んでいた時間・寸法の変化・**窓が動いた距離**）。
+    GRAB   マウスのボタンが落ちた＝**どのウィンドウを掴んだか**（ポインタが入っている矩形／
+           **タイトルバーかウィンドウの中身か**も出る＝中身を押してもウィンドウは動かない）
+    DROP   離した（掴んでいた時間・寸法の変化・**ウィンドウが動いた距離**）。
            ⛔ **動いていなければ「サンプルとして無効」**＝静かなのは当たり前で、
-           これを証拠に数えると「リサイズできる窓は安全」という誤った結論が出る
-    残り   **まだ動かしていない窓**（`DROP` のたびに出る＝取りこぼし防止）
-    DRIFT  その窓の実サイズが変わった（Δ・**掴んでいる窓**・`asked`＝最後に要求した寸法）
+           これを証拠に数えると「リサイズできるウィンドウは安全」という誤った結論が出る
+    残り   **まだ動かしていないウィンドウ**（`DROP` のたびに出る＝取りこぼし防止）
+    DRIFT  そのウィンドウの実サイズが変わった（Δ・**掴んでいるウィンドウ**・`asked`＝最後に要求した寸法）
     WMGEO  `wm geometry` に**書き込んだ者**（呼び出し元つき）
     REFIT  我々が測り直した（`refit_all`）
 
 `DRIFT` に付く印:
-    ≈OS の再スケール      …… スケール変更で OS が窓を ×1.5／×0.667 しただけ
+    ≈OS の再スケール      …… スケール変更で OS がウィンドウを ×1.5／×0.667 しただけ
                              （`minsize` で止まった縮小も同じ側）＝**B-119 ではない**
     ★6px 刻み（B-119 の形） …… 幅が 6 の倍数だけ動いた＝本命
 
 読み方（B-119 と同じ）:
-  * ある窓で `★6px 刻み` が**同じ向きに並ぶ**のに、その間 `WMGEO` が出ない
-    ⇒ その窓も B-119 と同じ（Tk/WM が動かしている）
-  * ドラッグしても出ない、または 1 回で止まる ⇒ その窓は該当しない
-  * 🔑 **`掴んでいる窓=` と暴れた窓が違う**なら、それ自体が新しい事実
+  * あるウィンドウで `★6px 刻み` が**同じ向きに並ぶ**のに、その間 `WMGEO` が出ない
+    ⇒ そのウィンドウも B-119 と同じ（Tk/WM が動かしている）
+  * ドラッグしても出ない、または 1 回で止まる ⇒ そのウィンドウは該当しない
+  * 🔑 **`掴んでいるウィンドウ=` と暴れたウィンドウが違う**なら、それ自体が新しい事実
     （1 巡目はこの列が無く、そこが確定できなかった）
   * `BARE-fixed` だけが刻み、`BARE-resizable` が刻まないなら
-    ⇒ **リサイズ可否が効いている**（＝5 窓は無傷）。両方刻むなら 5 窓も同じ。
+    ⇒ **リサイズ可否が効いている**（＝5 ウィンドウは無傷）。両方刻むなら 5 ウィンドウも同じ。
 
 ⚠️ **「出なかった」も結果**＝棄却の記録は仮説より価値がある（B-119 の教訓）。
 どちらに転んでも ISSUES.md の B-119 へ**実測として**書き戻すこと。
@@ -91,41 +91,41 @@ from views import theme, window_fit          # noqa: E402
 
 T0 = time.perf_counter()
 
-#: 見つけた窓ごとの前回サイズ（キーは Tk のパス名＝窓より長生きさせないため）。
+#: 見つけたウィンドウごとの前回サイズ（キーは Tk のパス名＝ウィンドウより長生きさせないため）。
 _SEEN: "dict[str, tuple[int, int]]" = {}
 
 #: 🔴 **自動ドラッグ中はポインタ監視を黙らせる**（2026-08-23・5 巡目で踏んだ）。
 #: 監視は「物理ボタンが上がっているのに `_GRABBED` が埋まっている」を*人が手を
 #: 離した*と読むので、**合成ドラッグの掴みを 100ms 以内に横取りして消す**。
-#: その巡では 8 窓すべてが `23〜101ms 掴んでいた／移動=0px` として台帳に載り、
+#: その巡では 8 ウィンドウすべてが `23〜101ms 掴んでいた／移動=0px` として台帳に載り、
 #: **実際には 3.5 秒暴走していたランチャーまで「動かず」**と記録された。
 #: ⇒ 判定表の「移動」列が丸ごと人工物になる＝**静かさの偽証**（この探針が 2 度
 #: 潰してきたのと同じ向きの欠陥・[[feedback-user-examples-are-classes]] の同系統④）。
 _AUTO: "dict[str, bool]" = {"on": False}
 
-#: いま掴んでいる窓（`GRAB` で入り `DROP` で出る）。`DRIFT` 行に載せる。
+#: いま掴んでいるウィンドウ（`GRAB` で入り `DROP` で出る）。`DRIFT` 行に載せる。
 _GRABBED: "dict[str, Any]" = {"key": None, "label": "-", "since": 0.0,
                              "size": None, "pos": None}
 
-#: **もう掴んだ窓**（1 秒以上）。`DROP` のたびに「残り」を出すために持つ。
-#: 🔴 **1 巡目・2 巡目とも取りこぼした**（2026-08-23）＝2 巡目は 5 窓のうち
+#: **もう掴んだウィンドウ**（1 秒以上）。`DROP` のたびに「残り」を出すために持つ。
+#: 🔴 **1 巡目・2 巡目とも取りこぼした**（2026-08-23）＝2 巡目は 5 ウィンドウのうち
 #: 中継経路とグラフ、そして**対照の BARE-resizable** を掴み忘れたまま終わった。
 #: ⇒ **人の記憶に頼らせない**（[[feedback-promote-recurring-checks]]＝思い出す規則にしない）。
 _DRAGGED: "set[str]" = set()
 
-#: 掴んだとみなす最短時間（これ未満は「窓を選んだだけ」）。
+#: 掴んだとみなす最短時間（これ未満は「ウィンドウを選んだだけ」）。
 _DRAG_MIN_MS = 1000
 
-#: 窓ごとの **★6px 刻み** の回数（累計）。
+#: ウィンドウごとの **★6px 刻み** の回数（累計）。
 _DRIFTS: "dict[str, int]" = {}
 
-#: 窓ごとの **★6px 刻み** のうち、**その窓を動かしている最中**に起きた分。
+#: ウィンドウごとの **★6px 刻み** のうち、**そのウィンドウを動かしている最中**に起きた分。
 #: 🔑 **判定表が見るのはこちら**（上の `verdict` の註＝累計にはスケール変更直後の
 #: 言い直し 1 回が必ず混ざる）。
 _DRAG_DRIFTS: "dict[str, int]" = {}
 
-#: 窓ごとの**位置**と、**動いた総量**（前後の差ではなく道のり）。
-#: 🔴 **前後の差では駄目**（2026-08-23・自己検査が捕まえた）＝観測のために窓を
+#: ウィンドウごとの**位置**と、**動いた総量**（前後の差ではなく道のり）。
+#: 🔴 **前後の差では駄目**（2026-08-23・自己検査が捕まえた）＝観測のためにウィンドウを
 #: 往復させるので、**終わってみれば元の位置**になり「動いていない」と誤判定する。
 #: 移動ループに入っていたかを見たいのだから、見るべきは**道のり**。
 _POS: "dict[str, tuple[int, int]]" = {}
@@ -133,7 +133,7 @@ _MOVED: "dict[str, int]" = {}
 
 #: 🔴 **ドラッグとして数える最短の移動量**（2026-08-23・4 巡目で踏んだ）。
 #: 4 巡目は「ランチャーを 8 秒掴んでも暴走しない」という**前 3 巡と反対の結果**が
-#: 出たが、掴んだ座標が `at=(533,169)`＝**窓の中身**だった。中身を押しても窓は
+#: 出たが、掴んだ座標が `at=(533,169)`＝**ウィンドウの中身**だった。中身を押してもウィンドウは
 #: 動かない ⇒ 寸法の再適用が起きない ⇒ 暴走しないのは当たり前で、**サンプルとして
 #: 無効**。⇒ **「掴んだ」ではなく「動かした」を数える**（`GRAB` の時間だけを見て
 #: いると、無効なサンプルが静かな証拠として台帳に載る）。
@@ -149,7 +149,7 @@ def log(kind: str, text: str) -> None:
 
 
 def label(win) -> str:
-    """ログに出す窓の名前（題が無ければクラス名）。"""
+    """ログに出すウィンドウの名前（題が無ければクラス名）。"""
     try:
         title = win.title()
     except tk.TclError:
@@ -181,7 +181,7 @@ def classify(win, was: "tuple[int, int]", now: "tuple[int, int]") -> str:
     """その寸法変化が**何に見えるか**を 1 語で添える。
 
     🔴 **1 巡目の採取で誤読しかけた**（2026-08-23）＝スケールを変えた瞬間に出る
-    `(900,680) -> (1352,1023)` のような大きな変化は **OS が窓を ×1.5 したもの**で、
+    `(900,680) -> (1352,1023)` のような大きな変化は **OS がウィンドウを ×1.5 したもの**で、
     B-119 とは無関係。**印を付けておかないと、ログを読む人が毎回この判定を
     やり直すことになる。**
 
@@ -212,14 +212,14 @@ def window_under_pointer(root: tk.Tk, px: int, py: int):
     """`(px, py)` に**実際に見えている**トップレベル（無ければ None）。
 
     🔴 **矩形の当たり判定では駄目**（2026-08-23・ユーザー報告で判明）＝最初の実装は
-    `(root, *toplevels)` の順に見て**最初に矩形へ入った窓**を採っていた。窓は重なる
-    ので、**ランチャーの上に載っている子窓を掴んでも「ランチャー」と記録される**
-    ＝ログの「掴んでいる窓」が嘘をつく。4 巡目の「ランチャーを 8 秒掴んでも静か」は
-    これで説明が付く（掴んでいたのは別の窓）。⛔ **この探針の結論は、掴んだ窓の
+    `(root, *toplevels)` の順に見て**最初に矩形へ入ったウィンドウ**を採っていた。ウィンドウは重なる
+    ので、**ランチャーの上に載っている子ウィンドウを掴んでも「ランチャー」と記録される**
+    ＝ログの「掴んでいるウィンドウ」が嘘をつく。4 巡目の「ランチャーを 8 秒掴んでも静か」は
+    これで説明が付く（掴んでいたのは別のウィンドウ）。⛔ **この探針の結論は、掴んだウィンドウの
     同定が正しいことに全面的に乗っている**ので、ここが狂うと全部が狂う。
 
     ⇒ **OS に聞く**（`WindowFromPoint`）。Z 順もタイトルバー（Tk のウィジェットでは
-    ない装飾枠）も OS 側が面倒を見る。`GetAncestor(GA_ROOT)` で装飾枠の窓まで
+    ない装飾枠）も OS 側が面倒を見る。`GetAncestor(GA_ROOT)` で装飾枠のウィンドウまで
     遡り、各 Toplevel の `winfo_id()` を同じく遡った値と突き合わせる。
 
     ⚠️ **聞けない環境では stackorder で代用**＝`wm stackorder` は**下から上**の順に
@@ -245,7 +245,7 @@ def window_under_pointer(root: tk.Tk, px: int, py: int):
                         return win
                 except tk.TclError:
                     continue
-            return None                   # 別アプリの窓・デスクトップ
+            return None                   # 別アプリのウィンドウ・デスクトップ
     except (ImportError, AttributeError, OSError, ValueError):
         pass                              # Windows 以外＝下の代用へ
 
@@ -265,12 +265,12 @@ def window_under_pointer(root: tk.Tk, px: int, py: int):
 
 
 def remaining(root: tk.Tk) -> str:
-    """**まだ「1 秒以上・20px 以上」動かしていない窓**の一覧（取りこぼし防止）。"""
+    """**まだ「1 秒以上・20px 以上」動かしていないウィンドウ**の一覧（取りこぼし防止）。"""
     rest = []
     for win in (root, *window_fit.toplevels(root)):
         try:
             if not win.winfo_viewable():
-                continue          # 隠れている窓（ツールチップの残骸など）は数えない
+                continue          # 隠れているウィンドウ（ツールチップの残骸など）は数えない
         except tk.TclError:
             continue
         if str(win) not in _DRAGGED:
@@ -279,16 +279,16 @@ def remaining(root: tk.Tk) -> str:
 
 
 def poll_pointer(root: tk.Tk) -> None:
-    """**どの窓を掴んでいるか**を 100ms ごとに見る（`GRAB` / `DROP`）。
+    """**どのウィンドウを掴んでいるか**を 100ms ごとに見る（`GRAB` / `DROP`）。
 
-    🔑 **1 巡目の採取で足りなかったのはこれ**＝「暴れた窓」は記録できていたのに
-    「掴んだ窓」が記録されておらず、*中継経路を掴んでランチャーが暴走した* のか
+    🔑 **1 巡目の採取で足りなかったのはこれ**＝「暴れたウィンドウ」は記録できていたのに
+    「掴んだウィンドウ」が記録されておらず、*中継経路を掴んでランチャーが暴走した* のか
     *ランチャーを掴んだ* のかが後から区別できなかった。⇒ **同じログの中で
     突き合わせられる**ようにする。
 
     ⚠️ **`winfo_containing` では取れない**＝タイトルバーは Tk のウィジェットでは
     ないので、掴んでいる最中は常に `None` が返る（＝いちばん知りたい瞬間に無言）。
-    ⇒ **ポインタ座標と窓の矩形**で判定する。
+    ⇒ **ポインタ座標とウィンドウの矩形**で判定する。
     ⚠️ ボタンの上下は `theme._pointer_is_down`（左右どちらも見る＝主ボタンを
     入れ替えている利用者でも拾う）。
     """
@@ -301,7 +301,7 @@ def poll_pointer(root: tk.Tk) -> None:
     try:
         down = theme._pointer_is_down()
         px, py = root.winfo_pointerxy()
-    except tk.TclError:                       # 破棄途中の窓
+    except tk.TclError:                       # 破棄途中のウィンドウ
         root.after(100, lambda: poll_pointer(root))
         return
 
@@ -316,18 +316,18 @@ def poll_pointer(root: tk.Tk) -> None:
         except tk.TclError:
             win = None
         if win is None:
-            # 窓の外（デスクトップ・別アプリ）で押した＝掴んでいる窓は無い。
-            _GRABBED.update(key="-", label="(窓の外)", since=time.perf_counter(),
+            # ウィンドウの外（デスクトップ・別アプリ）で押した＝掴んでいるウィンドウは無い。
+            _GRABBED.update(key="-", label="(ウィンドウの外)", since=time.perf_counter(),
                             size=None, pos=None)
         else:
             _GRABBED.update(key=str(win), label=label(win),
                             since=time.perf_counter(), size=size,
                             pos=_MOVED.get(str(win), 0))   # 道のりの基準点
             # **タイトルバーを掴んだか**を出す＝装飾の高さより上にポインタが
-            # あれば窓は動く。中身を押しただけなら動かない（無効なサンプル）。
+            # あればウィンドウは動く。中身を押しただけなら動かない（無効なサンプル）。
             bar = ("タイトルバー"
                    if py - y0 < window_fit.decoration_size(win)[1]
-                   else "⚠️ 窓の中身（動かない可能性）")
+                   else "⚠️ ウィンドウの中身（動かない可能性）")
             log("GRAB", f"{label(win)}  at=({px},{py})  size={size}  "
                         f"pos=({x0},{y0})  {bar}")
     elif not down and _GRABBED["key"] is not None:
@@ -337,12 +337,12 @@ def poll_pointer(root: tk.Tk) -> None:
         moved = _MOVED.get(key, 0) - (_GRABBED["pos"] or 0)   # 道のり（上の註）
         # 🔴 **「掴んだ」ではなく「動かした」で数える**（上の `_DRAG_MIN_PX` の註）。
         valid = held >= _DRAG_MIN_MS and moved >= _DRAG_MIN_PX and key != "-"
-        verdict = "" if valid else "  ⛔ **サンプルとして無効**（窓が動いていない）"
+        verdict = "" if valid else "  ⛔ **サンプルとして無効**（ウィンドウが動いていない）"
         log("DROP", f"{_GRABBED['label']}  {held:.0f}ms 掴んでいた  "
                     f"{_GRABBED['size']} -> {now}  移動={moved}px{verdict}")
         if valid:
             _DRAGGED.add(key)
-            log("残り", remaining(root) or "**なし＝全窓を動かし終えた**")
+            log("残り", remaining(root) or "**なし＝全ウィンドウを動かし終えた**")
         _GRABBED.update(key=None, label="-", size=None, pos=None)
 
     root.after(100, lambda: poll_pointer(root))
@@ -381,19 +381,19 @@ def watch(win) -> None:
         _POS[key] = pos
         was = _SEEN.get(key)
         if was is not None and now != was:
-            # **掴んでいる窓を毎行に載せる**＝暴れた窓と掴んだ窓の対応が、
+            # **掴んでいるウィンドウを毎行に載せる**＝暴れたウィンドウと掴んだウィンドウの対応が、
             # 後から突き合わせ無しで読める（1 巡目に足りなかった 1 列）。
             grabbed = _GRABBED["label"] if _GRABBED["key"] is not None else "-"
             if classify(win, was, now).startswith("★"):
                 _DRIFTS[key] = _DRIFTS.get(key, 0) + 1
-                # **その窓を動かしている最中**の刻みだけ別に数える（判定表はこちら）。
-                # ⚠️ 別の窓を掴んでいる間に暴れた分は入れない＝「掴んだ窓と暴れた窓が
+                # **そのウィンドウを動かしている最中**の刻みだけ別に数える（判定表はこちら）。
+                # ⚠️ 別のウィンドウを掴んでいる間に暴れた分は入れない＝「掴んだウィンドウと暴れたウィンドウが
                 # 違う」こと自体が事実なので、まとめると消える。
                 if _GRABBED["key"] == key:
                     _DRAG_DRIFTS[key] = _DRAG_DRIFTS.get(key, 0) + 1
             log("DRIFT", f"{label(win)}  {was} -> {now}  "
                          f"(Δ{now[0] - was[0]:+d},{now[1] - was[1]:+d}) "
-                         f"{classify(win, was, now)}  掴んでいる窓={grabbed}  "
+                         f"{classify(win, was, now)}  掴んでいるウィンドウ={grabbed}  "
                          f"asked={getattr(win, '_fit_asked', None)} "
                          f"fit={getattr(win, '_fit_size', None)}")
         _SEEN[key] = now
@@ -402,16 +402,16 @@ def watch(win) -> None:
 
 
 def scan(root: tk.Tk) -> None:
-    """開いている窓を拾い直す（新しく開いた窓に配線するため・500ms ごと）。
+    """開いているウィンドウを拾い直す（新しく開いたウィンドウに配線するため・500ms ごと）。
 
-    ⚠️ **窓が開く契機を 1 つずつ捕まえない**＝製品の 5 窓は開き方がばらばら
+    ⚠️ **ウィンドウが開く契機を 1 つずつ捕まえない**＝製品の 5 ウィンドウは開き方がばらばら
     （ランチャーのボタン・結果からの派生・地図からの往復）で、そこへ手を入れると
     「配線を思い出す規則」になる（[[feedback-promote-recurring-checks]]）。
-    走査なら**この probe が知らない窓も自動で入る**。
+    走査なら**この probe が知らないウィンドウも自動で入る**。
     """
     for win in (root, *window_fit.toplevels(root)):
         watch(win)
-    # 閉じた窓の分は落とす（辞書が窓を掴んだままにしない＝B-050 の形）。
+    # 閉じたウィンドウの分は落とす（辞書がウィンドウを掴んだままにしない＝B-050 の形）。
     alive = {str(root), *(str(w) for w in window_fit.toplevels(root))}
     for gone in [k for k in _SEEN if k not in alive]:
         _SEEN.pop(gone, None)
@@ -419,9 +419,9 @@ def scan(root: tk.Tk) -> None:
 
 
 def make_bare_pair(root: tk.Tk) -> None:
-    """対照の 2 窓を**いま**建てる＝中身が同じで、リサイズ可否だけが違う。
+    """対照の 2 ウィンドウを**いま**建てる＝中身が同じで、リサイズ可否だけが違う。
 
-    🔑 **これが本題の切り分け**＝製品の 5 窓は中身も寸法も違うので、そこだけ見ても
+    🔑 **これが本題の切り分け**＝製品の 5 ウィンドウは中身も寸法も違うので、そこだけ見ても
     「リサイズできるから無傷なのか、たまたま条件が違うのか」が分からない。
     **同じ中身・同じ寸法で可否だけ変えた 2 枚**を、スケール変更**後**に建てて
     並べてドラッグすれば、変数はリサイズ可否 1 つになる。
@@ -434,7 +434,7 @@ def make_bare_pair(root: tk.Tk) -> None:
                  + "\nタイトルバーでドラッグ").pack(padx=40, pady=60)
         win.geometry("500x400+%d+%d" % (140 if resizable else 660, 140))
         watch(win)
-    log("INIT", "対照の 2 窓を建てた（BARE-fixed / BARE-resizable）")
+    log("INIT", "対照の 2 ウィンドウを建てた（BARE-fixed / BARE-resizable）")
 
 
 def frame_hwnd(win) -> int:
@@ -451,15 +451,15 @@ def frame_hwnd(win) -> int:
 
 
 def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
-    """窓を**移動モーダルループに入れて動かす**（呼ぶのは別スレッド）。
+    """ウィンドウを**移動モーダルループに入れて動かす**（呼ぶのは別スレッド）。
 
     🔴 **なぜ自動化するか**（2026-08-23・ユーザー指摘）＝探針を直すたびに人が
-    「5 窓を開く → スケールを変える → 1 つずつ掴む」をやり直していた。**検証が
+    「5 ウィンドウを開く → スケールを変える → 1 つずつ掴む」をやり直していた。**検証が
     進まない原因は探針の欠陥ではなく、直すたびに人手の全巡が要る作りのほう**。
     ⇒ 人に残す操作は**スケールの変更 1 回**だけにする。
 
-    🔴 **合成マウスでは子窓が動かない**（2026-08-23・実測）＝`SetCursorPos` ＋
-    `mouse_event` は **`tk.Tk` のルート窓は動かせるのに `Toplevel` は 1px も
+    🔴 **合成マウスでは子ウィンドウが動かない**（2026-08-23・実測）＝`SetCursorPos` ＋
+    `mouse_event` は **`tk.Tk` のルートウィンドウは動かせるのに `Toplevel` は 1px も
     動かない**（当たり判定は `HTCAPTION`・スタイルも同一なのに移動ループに入らない）。
     ⇒ **`WM_SYSCOMMAND`／`SC_MOVE` ＋矢印キー**にする。これは**タイトルバーの
     ドラッグと同じ移動モーダルループ**（`WM_ENTERSIZEMOVE` … `WM_EXITSIZEMOVE`）で、
@@ -484,7 +484,7 @@ def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
         steps = max(int(seconds / 0.04), 1)
         for i in range(steps):
             # 往復させる＝画面外へ出さず、かつ**動き続ける**（止まると WM の
-            # 再適用も止まり、観測の窓が閉じる）。
+            # 再適用も止まり、観測のウィンドウが閉じる）。
             key = _VK_RIGHT if (i // 12) % 2 == 0 else _VK_LEFT
             user32.keybd_event(key, 0, 0, 0)
             user32.keybd_event(key, 0, _KEYUP, 0)
@@ -498,13 +498,13 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
                   seconds: float = 3.0) -> None:
     """`targets`（Tk のパス名）を**順に 1 つずつ自動でドラッグ**する。
 
-    ⚠️ 1 つ終わるたびにメインスレッドへ戻る＝次の窓の座標は**その時点で**測る
-    （前の窓のドラッグで配置が変わり得る）。
+    ⚠️ 1 つ終わるたびにメインスレッドへ戻る＝次のウィンドウの座標は**その時点で**測る
+    （前のウィンドウのドラッグで配置が変わり得る）。
     """
     import threading
     queue = list(targets)
     _AUTO["on"] = True          # ポインタ監視を黙らせる（横取り防止・上の註）
-    drifts0 = {"n": 0}          # その窓のドラッグ**中に増えた**刻みだけ数える
+    drifts0 = {"n": 0}          # そのウィンドウのドラッグ**中に増えた**刻みだけ数える
 
     def step() -> None:
         while queue:
@@ -539,23 +539,23 @@ def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
         if thread.is_alive():
             root.after(200, lambda: wait(thread))
             return
-        # ⚠️ **締めるのは余韻の後**＝手を離しても暴走は続く（B-119 の芯はそこ）。
+        # ⚠️ **締めるのは余韻の後**＝手を離しても暴走は続く（B-119 のコアはそこ）。
         # 先に締めると、いちばん効く 700ms が誰の分でもなくなる。
         root.after(700, lambda: (finish(), step()))
 
     def finish() -> None:
-        """1 窓ぶんの結果を締める（合成の移動には `DROP` が来ないので自前で）。"""
+        """1 ウィンドウぶんの結果を締める（合成の移動には `DROP` が来ないので自前で）。"""
         key = _GRABBED["key"]
         if key is None:
             return
         # **道のり**で見る（往復させるので前後の差では 0 になり得る＝上の註）。
         moved = _MOVED.get(str(key), 0) - (_GRABBED["pos"] or 0)
-        # 刻みも**この巡で増えた分**（累計だと前の窓の暴走が全窓に載る）。
+        # 刻みも**この巡で増えた分**（累計だと前のウィンドウの暴走が全ウィンドウに載る）。
         drifted = _DRIFTS.get(str(key), 0) - drifts0["n"]
         valid = moved >= _DRAG_MIN_PX
         log("DROP", f"{_GRABBED['label']}  移動={moved}px  "
                     f"★6px 刻み={drifted} 回（この巡）"
-                    + ("" if valid else "  ⛔ **サンプルとして無効**（窓が動いていない）"))
+                    + ("" if valid else "  ⛔ **サンプルとして無効**（ウィンドウが動いていない）"))
         if valid:
             _DRAGGED.add(str(key))
         _GRABBED.update(key=None, label="-", size=None, pos=None)
@@ -567,10 +567,10 @@ def verdict(root: tk.Tk) -> None:
     """**判定表**を出して終わる＝ログを読み直さなくても結論が分かる形にする。"""
     print("\n=== 判定 ===", flush=True)
     # 🔴 **数えるのは「ドラッグ中の刻み」**（2026-08-23・6 巡目）＝累計だと
-    # **スケール変更直後の言い直し 1 回**（`correct_landing`＝6 窓すべてに出る正常な
-    # 1 発）が混ざり、リサイズできる窓まで `🔴 1 回` と出る。**そこが本題の分かれ目
+    # **スケール変更直後の言い直し 1 回**（`correct_landing`＝6 ウィンドウすべてに出る正常な
+    # 1 発）が混ざり、リサイズできるウィンドウまで `🔴 1 回` と出る。**そこが本題の分かれ目
     # なので、混ぜたままの表は結論を逆に読ませる。**
-    print(f"{'窓':<34}{'resizable':<11}{'ドラッグ中の刻み':<12}{'（うち変更直後）':<12}"
+    print(f"{'ウィンドウ':<34}{'resizable':<11}{'ドラッグ中の刻み':<12}{'（うち変更直後）':<12}"
           f"{'移動':<8}", flush=True)
     for win in (root, *window_fit.toplevels(root)):
         key = str(win)
@@ -589,13 +589,13 @@ def verdict(root: tk.Tk) -> None:
     print("\n⚠️ `⛔ 動かず` の行は**サンプルとして無効**（静かで当たり前）", flush=True)
     # 🔑 **対照が暴走していない巡は、巡ごと無効**（2026-08-23）。ランチャーと
     # BARE-fixed は本物のドラッグで暴走することが分かっている＝この 2 つが静かなら、
-    # 疑うべきは「リサイズできる窓は安全」ではなく**測り方**（合成の移動が
+    # 疑うべきは「リサイズできるウィンドウは安全」ではなく**測り方**（合成の移動が
     # タイトルバーのドラッグと同じ経路を通っていない・スケール変更が効いていない）。
     controls = [key for key, hits in _DRAG_DRIFTS.items() if hits]
     fixed = [str(w) for w in (root, *window_fit.toplevels(root))
              if _resizable_off(w)]
     if any(key in controls for key in fixed):
-        print("✅ 対照（リサイズ不可の窓）が暴走している＝この巡は有効", flush=True)
+        print("✅ 対照（リサイズ不可のウィンドウ）が暴走している＝この巡は有効", flush=True)
     else:
         print("⛔ **この巡は無効**＝対照（ランチャー・BARE-fixed）まで静かなので、"
               "測り方かスケール変更のほうを疑う", flush=True)
@@ -609,10 +609,10 @@ def _resizable_off(win) -> bool:
 
 
 def open_product_windows(app) -> None:
-    """製品の 5 窓を**探針が開く**（人にボタンを押させない）。
+    """製品の 5 ウィンドウを**探針が開く**（人にボタンを押させない）。
 
     グラフだけは計算結果が要るので、ランチャーの実行をそのまま起こす
-    （`_on_run` は非同期＝窓は後から出る。走査が拾うので待たない）。
+    （`_on_run` は非同期＝ウィンドウは後から出る。走査が拾うので待たない）。
     """
     for name, call in (("複数経路", app._on_batch),
                        ("条件探索", app._on_open_scenario),
@@ -639,7 +639,7 @@ def build() -> "tuple[tk.Tk, Any]":
     sv_ttk.set_theme("light")
     theme.apply_fonts(root)
     app = SimLauncher(root, lambda *_a: None)
-    root.title("B-119 probe（リサイズできる窓）")
+    root.title("B-119 probe（リサイズできるウィンドウ）")
     return root, app
 
 
@@ -647,12 +647,12 @@ def selftest() -> int:
     """**探針そのもの**を数秒で検査する（実機の手順を 1 つも要求しない）。
 
     🔴 **これが無かったことが、検証が進まない原因だった**（2026-08-23・ユーザー
-    指摘）＝探針を直すたびに「5 窓を開く → スケール変更 → 1 つずつ掴む」の全巡を
+    指摘）＝探針を直すたびに「5 ウィンドウを開く → スケール変更 → 1 つずつ掴む」の全巡を
     人にやらせ、そこで初めて探針の欠陥（重なりの誤同定・移動を見ていない）が
     露見していた。**計測の道具は、対象を測る前に単体で検査できる。**
 
-    見るのは 4 つ＝①重なった窓の同定 ②タイトルバーの帰属 ③合成ドラッグが
-    **本当に窓を動かす**か ④印の分類（実データで検算）。
+    見るのは 4 つ＝①重なったウィンドウの同定 ②タイトルバーの帰属 ③合成ドラッグが
+    **本当にウィンドウを動かす**か ④印の分類（実データで検算）。
     """
     ok = True
 
@@ -680,12 +680,12 @@ def selftest() -> int:
     check("TOP のタイトルバー", got.title() if got else None, "TOP")
     got = window_under_pointer(root, 120, 130)
     check("ROOT だけの領域", got.title() if got else None, "ROOT")
-    check("どの窓の外", window_under_pointer(root, 4000, 4000), None)
+    check("どのウィンドウの外", window_under_pointer(root, 4000, 4000), None)
 
-    print("② 合成の移動が窓を動かすか（動かなければ全サンプルが無効になる）",
+    print("② 合成の移動がウィンドウを動かすか（動かなければ全サンプルが無効になる）",
           flush=True)
     print("   ⚠️ 合成マウスは `Toplevel` を動かせなかった（実測）ので "
-          "`SC_MOVE` を使う。**子窓で**検査するのはそれが理由。", flush=True)
+          "`SC_MOVE` を使う。**子ウィンドウで**検査するのはそれが理由。", flush=True)
     import threading
     for name, win in (("Toplevel", top), ("Tk ルート", root)):
         watch(win)                     # 位置の追跡を配線する（道のりを数える側）
@@ -698,7 +698,7 @@ def selftest() -> int:
                 target=move_window_synthetically, args=(frame_hwnd(win), 1.0),
                 daemon=True)
             thread.start()
-            while thread.is_alive():   # Tk を回しながら待つ（窓が固まらない）
+            while thread.is_alive():   # Tk を回しながら待つ（ウィンドウが固まらない）
                 root.update()
                 time.sleep(0.02)
             root.update()
@@ -739,10 +739,10 @@ def selftest() -> int:
     poll_pointer(root)
     check("人のドラッグでは離したら締める", _GRABBED["key"], None)
 
-    print("⑤ 判定表が数える刻みが、掴んでいる窓のものか（6 巡目で誤読しかけた）",
+    print("⑤ 判定表が数える刻みが、掴んでいるウィンドウのものか（6 巡目で誤読しかけた）",
           flush=True)
     #: 累計（`_DRIFTS`）にはスケール変更直後の言い直しが必ず 1 回混ざる。表が
-    #: そちらを出すと、**リサイズできる窓まで `🔴 1 回`** と読める＝結論が逆になる。
+    #: そちらを出すと、**リサイズできるウィンドウまで `🔴 1 回`** と読める＝結論が逆になる。
     _DRIFTS.clear()
     _DRAG_DRIFTS.clear()
     mark = tk.Toplevel(root)
@@ -791,7 +791,7 @@ def main() -> None:
     def begin() -> None:
         targets = [str(w) for w in (root, *window_fit.toplevels(root))
                    if w.winfo_viewable()]
-        log("AUTO", f"{len(targets)} 窓を順に自動ドラッグします"
+        log("AUTO", f"{len(targets)} ウィンドウを順に自動ドラッグします"
                     "（マウスに触らないでください）")
         auto_drag_all(root, targets, lambda: verdict(root))
 
@@ -802,7 +802,7 @@ def main() -> None:
     if not manual:
         root.after(1000, lambda: open_product_windows(app))
     print("\n--- 人の操作は **表示スケールを 1 回変えるだけ** ---", flush=True)
-    print("    窓は探針が開き、ドラッグも探針が行い、最後に判定表を出します。", flush=True)
+    print("    ウィンドウは探針が開き、ドラッグも探針が行い、最後に判定表を出します。", flush=True)
     print("    （手で試したいときは --manual、探針自身の検査は --selftest）\n",
           flush=True)
     root.mainloop()

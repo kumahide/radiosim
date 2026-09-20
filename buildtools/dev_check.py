@@ -29,7 +29,7 @@
 
 使い方::
 
-    # コミット前（本番）＝全件。CI と同じくカバレッジ門も掛かる
+    # コミット前（本番）＝全件。CI と同じくカバレッジゲートも掛かる
     & $env:RADIOSIM_PYTHON buildtools/dev_check.py
 
     # 実装の反復中＝範囲を明示する（test_repo_hygiene.py は常に足される）
@@ -120,10 +120,10 @@ def extra_gates_for(paths: list[str]) -> list[str]:
 def pytest_argv(scope: list[str] | None) -> tuple[list[str], str]:
     """pytest の引数と、その範囲を人に説明する 1 行を返す。"""
     if not scope:
-        # 全件のときだけカバレッジ門を掛ける＝CI と同じ門。
+        # 全件のときだけカバレッジゲートを掛ける＝CI と同じゲート。
         # ⚠️ 部分実行に `--cov` を付けると fail_under=85 は必ず割れる（回して
         #    いない層が 0% で数えられる）＝「毎回鳴るゲート」になる。
-        return ([sys.executable, "-m", "pytest", "--cov"], "全件（+ カバレッジ門）")
+        return ([sys.executable, "-m", "pytest", "--cov"], "全件（+ カバレッジゲート）")
 
     targets = list(dict.fromkeys([*scope, ALWAYS_TESTS, *extra_gates_for(changed_files())]))
     return ([sys.executable, "-m", "pytest", *targets],

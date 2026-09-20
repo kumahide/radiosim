@@ -252,7 +252,7 @@ a = Analysis(
         # → `fontTools.misc.loggingTools` → `import timeit` の連鎖ができた。
         # dviread は textpath ← text ← figure と辿られるので、**図を作った瞬間に
         # `ModuleNotFoundError: No module named 'timeit'`** になる。単一実行は
-        # グラフ窓が開かず、バッチは per-path の PNG/HTML/KML だけが黙って落ちた。
+        # グラフウィンドウが開かず、バッチは per-path の PNG/HTML/KML だけが黙って落ちた。
         #
         # なぜ「1 個戻す」で済ませないか: 我々が使う名前を列挙して守る方式は、
         # **依存の内部が変わるたびに、我々の知らない名前で穴が開く**。今回まさに

@@ -84,7 +84,7 @@ def test_resilient_when_map_widget_has_no_running():
 # 実物の MapWindow は tkintermapview が要るのでここでは起こさない。**描き直しの
 # 規則**（毎回消してから描く／モードを抜けたら消す／宛先が無ければ何も描かない）
 # だけをフェイクで固定する。2026-08-01 の実機確認で出た 2 件
-#   ①窓で地点を削除しても地図のピンが残る（足すだけで消し方が無かった）
+#   ①ウィンドウで地点を削除しても地図のピンが残る（足すだけで消し方が無かった）
 #   ②どのモードでも中継点ピンが出る（モード別の表示制御に入っていなかった）
 # は、どちらもこの規則の不在そのもの。
 
@@ -323,7 +323,7 @@ def test_a_relay_path_labels_every_section_with_its_distance():
 #   ① 選ぶための押下から届く地図クリックを**その場への移動にしない**
 #   ② 2 度目のクリックが**選んだ点だけ**を動かす（素のクリックは今までどおり足す）
 #   ③ 座標入力で TX/RX が両方そろっているとき、素のクリックが**TX を潰さない**
-#   ④ 窓の側が変わっていたら**書き戻さずに断る**
+#   ④ ウィンドウの側が変わっていたら**書き戻さずに断る**
 class _FakeWaypointSink:
     """中継経路ウィンドウの代役（写しを返し、位置と名前で書き戻す）。"""
 
@@ -490,7 +490,7 @@ def test_a_move_finer_than_the_terrain_mesh_says_so():
 
 
 def test_a_stale_selection_is_refused_instead_of_written():
-    """④窓の側が変わっていたら書き戻さず、選び直してもらうこと。
+    """④ウィンドウの側が変わっていたら書き戻さず、選び直してもらうこと。
 
     位置だけで書き戻すと**黙って別の点を動かす**（B-068 / B-102 と同じ型）。
     """
@@ -502,7 +502,7 @@ def test_a_stale_selection_is_refused_instead_of_written():
     win._refresh_waypoints()
     _click_marker(win, 1)                       # R1 を選ぶ
 
-    sink.points.pop(1)                          # 窓の側で R1 が消えた
+    sink.points.pop(1)                          # ウィンドウの側で R1 が消えた
     win._release(win)
     win._on_map_click((34.7, 132.7))
 
@@ -719,7 +719,7 @@ def test_editing_one_launcher_coord_does_not_move_the_view():
 # ============================================================
 # 選ぶと `_pick_next` にその役割が入る（＝交互ピックの一般化）。ところが解く側は
 # `_selection` しか落としておらず、**役割の指名だけが残る**。⇒ Esc で解いた直後の
-# 素のクリックが、解いたはずの点を黙って動かす（I-098 の芯＝「素のクリックでは
+# 素のクリックが、解いたはずの点を黙って動かす（I-098 のコア＝「素のクリックでは
 # 黙って書き換わらない」の裏切り）。
 def test_escape_also_forgets_which_point_was_selected():
     """①Esc で解いたら、素のクリックはまた「何も書かない」に戻ること。"""
@@ -992,7 +992,7 @@ def test_the_selection_is_cleared_only_where_the_pick_target_is_re_derived():
 # 背景タイルの 2 択（I-028）
 # ============================================================
 def _open_map_window(monkeypatch):
-    """地図窓をフェイクのタイル部品で開く（ネットワークへ出ない）。
+    """地図ウィンドウをフェイクのタイル部品で開く（ネットワークへ出ない）。
 
     差し替えるのは `MapWidget` だけ＝レイヤ切り替えの配線（Combobox →
     `set_tile_server` → 出典表記）は本物を通す。
@@ -1097,7 +1097,7 @@ def test_attribution_is_a_widget_over_the_canvas(monkeypatch):
 
 
 # ============================================================
-# キャッシュ管理モードの対象ソース選択（I-155・3.5 段3）
+# キャッシュ管理モードの対象ソース選択（I-155・3.5 ステージ3）
 # ============================================================
 def test_cache_source_bar_hidden_when_only_gsi_is_available(monkeypatch):
     """[[I-153]] と同じ規則＝選べる DEM ソースが国土地理院だけなら欄を出さない。"""
@@ -1169,9 +1169,9 @@ def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(m
 
 
 def test_cache_source_bar_is_not_clipped_when_entering_cache_mode(monkeypatch):
-    """B-252＝窓は既定モード（座標入力）で中身に合わせるので、キャッシュ管理
-    モードでしか出ない「対象 DEM ソース」欄が窓幅に入っておらず、切り替えた
-    瞬間に帯の右端から見切れていた。欄が要求幅どおりに置かれること。"""
+    """B-252＝ウィンドウは既定モード（座標入力）で中身に合わせるので、キャッシュ管理
+    モードでしか出ない「対象 DEM ソース」欄がウィンドウ幅に入っておらず、切り替えた
+    瞬間にバーの右端から見切れていた。欄が要求幅どおりに置かれること。"""
     from core import dem_sources
 
     fake = dem_sources.DemSourceSpec(
@@ -1206,7 +1206,7 @@ def test_the_selection_guard_is_lowered_on_button_release(monkeypatch):
     """
     root, win, _pytest = _open_map_window(monkeypatch)
     try:
-        root.update()                    # 窓を実体化してからでないと届かない
+        root.update()                    # ウィンドウを実体化してからでないと届かない
         win._select_guard = True
         win._map.canvas.event_generate("<ButtonRelease-1>", x=5, y=5)
         root.update()
@@ -1232,7 +1232,7 @@ def test_only_two_basemaps_are_offered():
 
 
 def test_declared_tile_source_is_offered_alongside_the_built_ins(monkeypatch):
-    """I-152（3.5 段3）＝宣言ファイルで足した背景地図が組み込み 2 択に合流すること。
+    """I-152（3.5 ステージ3）＝宣言ファイルで足した背景地図が組み込み 2 択に合流すること。
 
     組み込み（`_TILE_LAYERS`）は `test_only_two_basemaps_are_offered` のとおり
     2 つで固定のまま＝ここで確かめるのは `_all_tile_layers()` が呼び出し側

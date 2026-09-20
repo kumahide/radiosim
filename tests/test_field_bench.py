@@ -1,7 +1,7 @@
 """
 tests/test_field_bench.py
 ==========================
-実測補助アプリ（`apps/field`）の**段0 の机上試験**（増分6）を検証する。
+実測補助アプリ（`apps/field`）の**ステージ0 の机上試験**（増分6）を検証する。
 
 🔑 **2 台の機器と空中の経路を模擬して、真の値を判定が取り戻せるか**を見る。
 模擬の側だけが知っている値＝各個体の送信出力のずれ・受信の生値のずれ・感度・飽和。
@@ -287,7 +287,7 @@ def test_the_units_are_told_apart_even_when_the_rx_relays_the_tx(tmp_path, diale
 
 
 def test_a_step_measures_both_directions_with_one_knob_turn(full_run):
-    """🔑 アッテネータ 1 段につき頼むのは 1 回で、両方向（A→B・B→A）が測られること。"""
+    """🔑 アッテネータ 1 ステップにつき頼むのは 1 回で、両方向（A→B・B→A）が測られること。"""
     world, runner = full_run
     rows = B.read_steps(runner.directory)
     level = [r for r in rows if r["kind"] == "level"]
@@ -296,7 +296,7 @@ def test_a_step_measures_both_directions_with_one_knob_turn(full_run):
         by_atten.setdefault(r["atten_db"], set()).add(r["tx_unit"])
     assert all(v == {"a", "b"} for v in by_atten.values())
     knob = [p for p in world.prompts if "合計" in p]
-    # 粗 12 段＋細 7 段＋温め 1＋電力 1（チャネルは電力と同じ減衰量なので頼まない）。
+    # 粗 12 ステップ＋細 7 ステップ＋温め 1＋電力 1（チャネルは電力と同じ減衰量なので頼まない）。
     assert len(knob) == 12 + 7 + 1 + 1
     # 役割の入れ替えは人に頼まない（コマンドで行う）。
     assert not any("入れ替" in p for p in world.prompts)
@@ -304,7 +304,7 @@ def test_a_step_measures_both_directions_with_one_knob_turn(full_run):
 
 
 def test_consecutive_steps_start_from_the_same_direction_to_save_a_swap(full_run):
-    """直前の段の終わりと同じ向きから始める＝段ごとの入れ替えは 1 回で済むこと。"""
+    """直前のステップの終わりと同じ向きから始める＝ステップごとの入れ替えは 1 回で済むこと。"""
     _world, runner = full_run
     level = [r for r in B.read_steps(runner.directory) if r["kind"] == "level"]
     for prev, nxt in zip(level[1::2], level[2::2]):
@@ -312,7 +312,7 @@ def test_consecutive_steps_start_from_the_same_direction_to_save_a_swap(full_run
 
 
 def test_the_fine_sweep_brackets_the_knee(full_run):
-    """細かい掃引は、粗い掃引で受信率が落ち始めた段の前後であること。"""
+    """細かい掃引は、粗い掃引で受信率が落ち始めたステップの前後であること。"""
     _world, runner = full_run
     k = runner.knee()
     fine = sorted({r["atten_db"] for r in B.read_steps(runner.directory)
@@ -348,7 +348,7 @@ def test_the_operator_can_stop_at_a_prompt(tmp_path, dialect):
 
 
 def test_without_ref_the_levels_are_nominal_and_no_calibration_is_written(full_run, tmp_path):
-    """段0a だけでは P と R を分けられない＝**dBm を名乗る校正ファイルを作らない**こと。"""
+    """ステージ0a だけでは P と R を分けられない＝**dBm を名乗る校正ファイルを作らない**こと。"""
     _world, runner = full_run
     report = BA.analyze(runner.directory)
     for d in report["directions"].values():
@@ -373,11 +373,11 @@ def test_the_nominal_fit_recovers_the_shape_and_the_pair_difference(full_run):
 
 
 def test_saturated_steps_are_left_out_of_the_fit(full_run):
-    """飽和した段（入力 −50 dBm 以上）を線形域から外すこと。"""
+    """飽和したステップ（入力 −50 dBm 以上）を線形域から外すこと。"""
     _world, runner = full_run
     report = BA.analyze(runner.directory)
     for d in report["directions"].values():
-        assert d["fit"]["dropped_dbm"], "飽和した段が当てはめに残っている"
+        assert d["fit"]["dropped_dbm"], "飽和したステップが当てはめに残っている"
         assert all(x > -50 for x in d["fit"]["dropped_dbm"])
 
 
@@ -506,7 +506,7 @@ def test_the_rate_crossing_interpolates_between_steps():
     assert BA.rate_crossing(points, 0.5) == pytest.approx(-93.0)
     assert BA.rate_crossing(points, 0.9) == pytest.approx(-91.0)
     assert BA.rate_crossing([(-80.0, 1.0)], 0.5) is None
-    # ちょうど threshold の段は「そこで切った」とする（最初の段でも見落とさない）。
+    # ちょうど threshold のステップは「そこで切った」とする（最初のステップでも見落とさない）。
     assert BA.rate_crossing([(-92.0, 0.5), (-94.0, 0.0)], 0.5) == pytest.approx(-92.0)
 
 
@@ -559,7 +559,7 @@ def test_record_copies_the_calibration_by_unit_id(full_run, tmp_path):
         cals = {R.mac(tuple(d.mac)): C.read_device_calibration(calib_dir, R.mac(tuple(d.mac)))
                 for d in (tx, rx)}
         tx.role, rx.role = "tx", "rx"
-        tx.channel = rx.channel = 1                        # 全段の後はチャネル掃引の最後のまま
+        tx.channel = rx.channel = 1                        # 全ステップの後はチャネル掃引の最後のまま
         tx.power_qdbm = 48                                 # 12 dBm（電力掃引から導いた行）
         header = REC.build_header(
             _template(world, tx, rx), _config_message(rx), _config_message(tx),
