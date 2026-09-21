@@ -54,6 +54,12 @@ from core import models  # noqa: E402
 
 from b032_variants_probe import make_variant  # noqa: E402
 
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 G1 = make_variant("los", 1, False, shadow_gate="height")
 KL = make_variant("los", 20, False, one_edge="los")      # θ=0.0

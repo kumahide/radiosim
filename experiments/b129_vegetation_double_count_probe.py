@@ -40,6 +40,12 @@ sys.path.insert(0, str(ROOT))
 
 from core import diffraction, models  # noqa: E402
 
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 GOLDEN = ROOT / "tests" / "data" / "golden_links.json"
 
 #: 頭打ち（45 dB）に触らせないための刻み。1 巡目の 0/5/10/20/30 は粗すぎた。
@@ -91,9 +97,13 @@ class Link:
         ))
 
     def veg_loss(self, veg_h: float, mask: np.ndarray | None = None) -> float:
+        # ⚠️ 末尾は **`d_m_axis`（m 刻みの距離軸）1 本**＝製品の呼び出しと同じ形
+        #    （`models.py:597` / `d_m_axis = d_km * 1000`）。以前は
+        #    `(horiz_dist_km, n)` の 2 本を渡していて **TypeError で落ちていた**
+        #    （cp932 のクラッシュが先に出ていたので気づけなかった＝2026-09-21）。
         return float(models._vegetation_loss(
             self._surface(veg_h, mask), veg_h, self.los, self.f1,
-            self.inp["freq_mhz"], self.terrain.horiz_dist_km, self.n,
+            self.inp["freq_mhz"], self.d_m,
         ))
 
     def _surface(self, veg_h: float, mask: np.ndarray | None) -> np.ndarray:

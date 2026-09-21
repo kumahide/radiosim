@@ -58,6 +58,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from core import models              # noqa: E402
 from core import simulation as sim   # noqa: E402
 
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 _CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "tests", "data", "golden_links.json")
 
