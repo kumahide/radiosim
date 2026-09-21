@@ -29,16 +29,30 @@ Field の測定が成り立つ SF/BW を出す。
 ⚠️ 表 7 の感度（-129.53 dBm 等）はデータシートの理論値。実装は数 dB 悪い
 ので、ステージ0a の実測で置き換える（FSK 版と同じ扱い）。
 
-🔴 **表 4 との差は「縮退していて解けない」**（末尾の検算）。**LDRO を有効
-（DE=1）にすると 3 組とも正確に -27.000 シンボル = -110.592 ms** で一定になる
-（DE=0 では -92/-77/-67 シンボルとばらける）。つまり式そのものは合っており、
-固定の項が 1 つ足りないだけ。**ところが表 4 の 3 組はシンボル時間がすべて
-4.096 ms** なので、その項が「一定の時間 110.592 ms」なのか「一定の 27 シンボル」
-なのかを**この表からは分離できない**。短いペイロードでは答えが桁で変わる
-（12 B・BW500/SF7 で 19.8 ms 対 123.5 ms）。
-⇒ **実機で測るのは 1 点でよい＝シンボル時間の違う点（BW500/SF7）の ToA**。
-そこが 19.8 ms 側なら 100 ms 刻みが 20% 枠で成立し、123.5 ms 側なら刻みは
-625 ms 以上になる（`bench`/`probe` がそのまま使える）。
+🔴 **表 4 は式と矛盾している**（末尾の検算・2026-09-21 に表の 18 セル全部で引き直した）。
+
+  1. 残差は **シンボル一定でも時間一定でもない**（DE=1 で +27〜+87 シンボル ＝
+     +5.568〜+110.592 ms）。
+  2. 決定的なのは **表 4 のシンボル数が BW に依存している**こと＝BW を 2 倍に
+     するごとに **ちょうど +10 シンボル**（SF5〜SF10 の全行で同じ）。LoRa の
+     シンボル数は SF・ペイロード長・CR・CRC・ヘッダだけで決まり、**BW には
+     依存しない**。⇒ 表 4 は 8.2 節の式では再現できず、**表から「式に足りない
+     項」を復元する道は閉じている**。
+
+⚠️ **前の版（3 セルだけ見ていた）の結論は誤りだった**＝「DE=1 なら 3 組とも
+-27.000 シンボルで一定なので、式は合っていて固定の項が 1 つ足りないだけ」と
+書いたが、その 3 組（BW125/SF9・BW250/SF10・BW500/SF11）は **たまたま
+シンボル時間がすべて 4.096 ms** で、しかも各 BW 列の最大 SF という端だけを
+拾っていた。**18 セルに広げると一定性は消える。**
+⇒ [[feedback-refine-the-step]] の「範囲まで 1/10 にしない」と同じ形＝
+**標本の取り方が結論を作っていた。**
+
+⇒ **実機で ToA を測る 1 点は消えない**（むしろ表から導く望みが消えたぶん必須）。
+⚠️ **AUX ピンでは測れない見込み**＝5.4 節は「データ送信が完了すると Low→High」と
+書くが、6.14 節は「内部送信バッファのデータを**無線チップに書き込み終わり**
+バッファが空になったタイミングで High」と書く＝**同じ文書の 2 か所が食い違う**。
+後者なら AUX の立ち上がりは空中の送信完了ではない。⇒ 測るのは母艦側で
+送信間隔を見る形（`bench`/`probe` がそのまま使える）。
 """
 
 import math
@@ -54,11 +68,12 @@ DUTY = 0.20       # ARIB CS 要の区分・複数チャネル切替時（720 s/h
 def n_symbol(sf: int, payload_bytes: int, *, preamble: int = 8,
              cr: int = 1, crc: int = 1, implicit_header: int = 0,
              low_data_rate: int | None = None) -> float:
-    """LoRa のシンボル数（SF>=7 の一般式。SF 5/6 は別式なので扱わない）。"""
+    """LoRa のシンボル数（データシート 8.2 節。SF 5/6 は定数が 6.25、他は 4.25）。"""
     de = 1 if (low_data_rate if low_data_rate is not None else 0) else 0
+    const = 6.25 if sf in (5, 6) else 4.25
     num = 8 * payload_bytes - 4 * sf + 28 + 16 * crc - 20 * implicit_header
     den = 4 * (sf - 2 * de)
-    return preamble + 4.25 + 8 + max(math.ceil(num / den) * (cr + 4), 0)
+    return preamble + const + 8 + max(math.ceil(num / den) * (cr + 4), 0)
 
 
 def symbol_ms(sf: int, bw_khz: int) -> float:
@@ -94,23 +109,46 @@ for payload in (12, 24):
                   f"  {floor_ms:9.1f} ms   {ok[0]}    {ok[1]}    {ok[2]}")
     print()
 
-print("=== 参考: データシート表 4（ペイロード 200 バイト）と同じ条件で検算 ===")
-print("※ DE=1 の残差は 3 組とも -110.592 ms = -27.000 シンボルで一定だが、")
-print("   3 組ともシンボル時間が 4.096 ms なので「時間一定」と「シンボル数一定」を分離できない。")
-for bw, sf, ds in ((125, 9, 1381.376), (250, 10, 1238.016), (500, 11, 1115.136)):
-    for de in (0, 1):
-        t = toa_ms(sf, bw, 200, low_data_rate=de)
-        print(f"  BW{bw} SF{sf} Ts={symbol_ms(sf, bw):.3f} ms DE={de}:"
-              f" 計算 {t:8.3f} ms / データシート {ds:8.3f} ms"
-              f"  差 {t - ds:+8.3f} ms = {(t - ds) / symbol_ms(sf, bw):+7.3f} シンボル")
+# データシート表 4（ペイロード 200 B 時の ToA・ms）の全セル。
+# 🔑 3 セルだけ見ると「残差が一定」に見えるので、必ず全部を当てる（docstring 参照）。
+TABLE4 = {
+    (125, 5): 196.928, (125, 6): 299.136, (125, 7): 488.704, (125, 8): 813.568,
+    (125, 9): 1381.376,
+    (250, 5): 99.744, (250, 6): 152.128, (250, 7): 249.472, (250, 8): 417.024,
+    (250, 9): 711.168, (250, 10): 1238.016,
+    (500, 5): 50.512, (500, 6): 77.344, (500, 7): 127.296, (500, 8): 213.632,
+    (500, 9): 365.824, (500, 10): 639.488, (500, 11): 1115.136,
+}
 
-print()
-print("=== 縮退を解く 1 点: シンボル時間の違う BW500/SF7・12 B の ToA ===")
-_sf, _bw, _pl = 7, 500, 12
-_base = toa_ms(_sf, _bw, _pl, low_data_rate=1)
-for name, t in (("いまの表(DE=0)", toa_ms(_sf, _bw, _pl)),
-                ("DE=1", _base),
-                ("DE=1 + 27 シンボル", _base + 27 * symbol_ms(_sf, _bw)),
-                ("DE=1 + 110.592 ms", _base + 110.592)):
-    print(f"  {name:20s} ToA {t:6.1f} ms → 刻みの下限"
-          f" {max(t + PAUSE_MS + CS_MS, t / DUTY):7.1f} ms")
+print("=== 検算: データシート表 4 の全 18 セル（ペイロード 200 バイト）===")
+print("  BW  SF     Ts(ms)    表4(ms)   残差(DE=0)         残差(DE=1)")
+resid = {0: [], 1: []}
+for (bw, sf), ds in sorted(TABLE4.items()):
+    ts = symbol_ms(sf, bw)
+    cells = []
+    for de in (0, 1):
+        diff_ms = ds - toa_ms(sf, bw, 200, low_data_rate=de)
+        resid[de].append((diff_ms / ts, diff_ms))
+        cells.append(f"{diff_ms:+9.3f} ms ={diff_ms / ts:+7.2f} sym")
+    print(f"  {bw:3d} {sf:2d}  {ts:8.4f} {ds:10.3f}   " + "   ".join(cells))
+
+for de in (0, 1):
+    sym = [s for s, _ in resid[de]]
+    ms = [m for _, m in resid[de]]
+    print(f"\n  DE={de}: シンボル一定なら幅 0 → {min(sym):+.2f}〜{max(sym):+.2f} sym"
+          f" (幅 {max(sym) - min(sym):.2f})")
+    print(f"         時間一定なら幅 0   → {min(ms):+.2f}〜{max(ms):+.2f} ms"
+          f" (幅 {max(ms) - min(ms):.2f})")
+
+print("\n=== 決定的な矛盾: 表 4 のシンボル数が BW に依存している ===")
+print("   （LoRa のシンボル数は SF・ペイロード・CR・CRC・ヘッダだけで決まり BW に依らない）")
+for sf in range(5, 12):
+    got = [(bw, TABLE4[(bw, sf)] / symbol_ms(sf, bw))
+           for bw in (125, 250, 500) if (bw, sf) in TABLE4]
+    if len(got) > 1:
+        print(f"   SF{sf:2d}: " + "  ".join(f"BW{bw}={n:7.2f}" for bw, n in got)
+              + f"   → BW 倍ごとに {(got[-1][1] - got[0][1]) / (len(got) - 1):+.2f} シンボル")
+
+print("\n⇒ 表からは式の欠けた項を復元できない。実機で BW500/SF7 の ToA を 1 点測る。")
+print("⚠️ AUX の立ち上がりは「無線チップへ書き終えた時刻」の可能性がある（5.4 節と")
+print("   6.14 節が食い違う）ので、母艦側で送信間隔を測る（bench/probe）。")
