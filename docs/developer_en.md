@@ -376,6 +376,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
+    ├── test_experiments_probes.py
     ├── test_env_facts.py
     ├── test_diagnostics.py
     ├── test_repo_hygiene.py
@@ -1200,6 +1201,7 @@ entry point that runs them together.
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
+| `test_experiments_probes.py` | Static gate keeping the probes under `experiments/` in step with the product. Calls into `core`/`report` collected via AST must `bind` against the current signature, and a probe printing characters the default console cannot encode must rebuild `sys.stdout`. The probes are never executed here (their argument, data, network and hardware prerequisites differ too much for CI) — they are only read. The number of calls actually checked is asserted too, so the gate cannot pass silently |
 | `test_env_facts.py`      | Gate for the environment-facts collection layer (`core/env_facts.py`). TX/RX coordinates embedded in the log or config are redacted (`start`/`end`, the log's `start=(…) end=(…)`, the DEM warning's `lat=… lon=…`); a proxy URL keeps its host but has its credentials masked; `collect()` returns the 5 keys shared by the stamp and the diagnostics ZIP (legacy-layout detection is a separate `config.legacy_leftovers()` path, not part of this layer) |
 | `test_diagnostics.py`    | Gate for the diagnostic package (`core/diagnostics.py`). Usernames in paths are masked; no artifact is included in the zip by default (only the ones explicitly picked land under `results/`); the zip is written atomically (no partial zip or leftover temp file on failure) |
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |

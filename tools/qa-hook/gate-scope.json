@@ -32,7 +32,8 @@
         "tests/test_docs_consistency.py",
         "tests/test_smoke.py",
         "tests/test_i18n_key_duplication.py",
-        "tests/test_env_consistency.py"
+        "tests/test_env_consistency.py",
+        "tests/test_experiments_probes.py"
       ]
     }
   ]

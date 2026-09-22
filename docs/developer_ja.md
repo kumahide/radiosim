@@ -375,6 +375,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
+    ├── test_experiments_probes.py
     ├── test_env_facts.py
     ├── test_diagnostics.py
     ├── test_repo_hygiene.py
@@ -1205,6 +1206,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
+| `test_experiments_probes.py` | 探針（`experiments/`）が製品と一緒に動いているかの静的ゲート。AST で拾った `core`/`report` の呼び出しがいまのシグネチャに `bind` できること・既定のコンソールで出せない字を`print` する探針が `sys.stdout` を作り直していること。⚠️ **探針は実行しない**（引数・データ・ネットワーク・実機の前提がまちまちで CI に載らない）＝**読むだけ**。照合できた呼び出しの数も数え、黙って通る経路を塞ぐ |
 | `test_env_facts.py`      | 環境事実の収集層（`core/env_facts.py`）のゲート。ログ・設定に混じる TX/RX 座標が伏せ字になること（`start`/`end`・ログの `start=(…) end=(…)`・DEM 警告の `lat=… lon=…`）・プロキシ URL の資格情報だけが伏せられホストは残ること・`collect()` が刻印/診断 ZIP が共有する 5 キーを返すこと（旧配置の残骸通知はこの層に相乗りせず `config.legacy_leftovers()` に独立実装） |
 | `test_diagnostics.py`    | 診断パッケージ（`core/diagnostics.py`）のゲート。パス中のユーザー名が伏せ字になること・既定では成果物が 1 件も ZIP に入らないこと（選んだものだけ `results/` 配下に入る）・ZIP 生成が原子的であること（失敗時に壊れた ZIP や一時ファイルを残さない） |
 | `test_repo_hygiene.py`   | 追跡してはいけないファイルのゲート（OneDrive の同期競合コピー・公開できないクラス・実行時ログ・巨大ファイルが追跡下に無いこと）。`.git/hooks/pre-commit` と**同じ判定を共有**し、コミット前とCIの二重で守る |
