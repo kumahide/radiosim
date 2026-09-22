@@ -105,6 +105,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         initial_rows:    "list | None" = None,
         coord_format:    str = "dd",
         map_opener:      "Callable[[], None] | None" = None,
+        cache_notify:    "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
@@ -133,6 +134,9 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._on_paths_changed = on_paths_changed
         # 一括再構築（並べ替え・インポート）中は逐次通知を抑止し、終了後に1回だけ通知する。
         self._suspend_notify   = False
+        # 実行が終わったとき（＝DEM キャッシュが増えているとき）にランチャー→地図へ
+        # 知らせるコールバック（B-265）。単一・条件探索・中継と同じ名前で受ける。
+        self._cache_notify     = cache_notify
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）。

@@ -39,8 +39,16 @@ class _ChildWindowsMixin:
         def _open_window(self, attr: str): ...
 
     def _notify_map_cache_change(self) -> None:
-        """シミュレーションのプリフェッチでキャッシュが増えた後、開いている
-        マップウィンドウの統計・カバレッジ表示を更新する。"""
+        """**キャッシュを増やし得る実行が終わった後**、開いているマップウィンドウの
+        統計・カバレッジ表示を更新する。
+
+        🔑 **紐づけ先は「工程」ではなく「フローの完了」**（B-265）＝以前は単一実行の
+        *事前取得の直後*という 1 か所にしか無く、事前取得を飛ばす経路（外部 DEM
+        ソース＝B-235）とバッチ・条件探索・中継では一度も呼ばれていなかった。
+        呼び出し元は 5 フロー分＝単一（`launcher._on_fetch_complete` /
+        `_on_fetch_error`）とバッチ・条件探索・中継（`cache_notify` として注入）。
+        地図自身の DL／削除は自前で `_refresh_stats` を呼ぶのでここは通らない。
+        """
         if hasattr(self, "_map_win") and self._map_win._win.winfo_exists():
             self._map_win.on_external_cache_change()
 
@@ -102,6 +110,9 @@ class _ChildWindowsMixin:
             # 一度も動かなかった）。バッチ・条件探索と同じく**注入**する。
             map_opener=self.open_map_for_waypoints,
             map_notify=self._notify_map_waypoints_changed,
+            # 実行でキャッシュが増えたことを地図へ知らせる口（B-265）＝
+            # 4 フローで同じ名前・同じ型に揃える。
+            cache_notify=self._notify_map_cache_change,
             # 座標の表記も凍結して渡す（I-070）＝このウィンドウだけ設定に従わず、
             # 常に十進度で出していた。
             coord_format=self._coord_fmt_var.get(),
@@ -166,6 +177,7 @@ class _ChildWindowsMixin:
             on_close=self._on_scenario_closed,
             initial_spec=self._project_doc().scenario,
             coord_format=self._coord_fmt_var.get(),
+            cache_notify=self._notify_map_cache_change,   # B-265
         )
 
     def _on_scenario_closed(self) -> None:
@@ -242,6 +254,7 @@ class _ChildWindowsMixin:
             coord_format=self._coord_fmt_var.get(),
             # 地図を連続追加モードで開く口（I-043）＝このウィンドウにだけ無かった。
             map_opener=self.open_map_for_append,
+            cache_notify=self._notify_map_cache_change,   # B-265
         )
         return self._batch_win
 

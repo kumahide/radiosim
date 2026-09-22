@@ -855,7 +855,10 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             except Exception as ex:
                 config.logger.warning("Prefetch error (continuing): %s", ex)
             # ⚠️ 事前取得中にウィンドウを閉じられている可能性がある（B-061）
-            progress.post_to_ui(self.root, self._notify_map_cache_change)
+            # 🔑 **キャッシュ変更の通知はここに置かない**（B-265）＝この行は
+            # 「事前取得を通った実行」にしか無く、外部ソース選択時は上の早期 return で
+            # 丸ごと飛ぶ。通知は**キャッシュが増え得る処理の完了**（`_on_fetch_complete` /
+            # `_on_fetch_error`）に紐づける＝Phase 2 だけで取る経路も必ず通る。
             progress.post_to_ui(self.root, lambda: self._start_simulation(params))
 
         threading.Thread(target=_run_prefetch, daemon=True).start()
@@ -900,6 +903,12 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                            dem_acquired=None) -> None:
         self._progress_stop()
         self._run_btn.config(state="normal")
+        # 実行でキャッシュが増えている＝開いている地図ウィンドウへ知らせる（B-265）。
+        # **ソースを問わずここを通る**のが肝で、以前は事前取得の直後にしか無かった
+        # ため、外部ソース（事前取得を飛ばす＝B-235）では総量もカバレッジも
+        # 更新されなかった。グラフの構築より前に出す＝この先は 0.6 秒ほど
+        # メインスレッドが塞がる。
+        self._notify_map_cache_change()
         # ここから先（matplotlib の遅延 import＋グラフ構築）が単一実行の体感時間の
         # 大半を占める。実測（キャッシュ暖機済み・200 サンプル）で取得 0.035s に対し
         # import 0.26s＋構築 0.34s ＝ 約 0.6s。従来はこの直前に「準備完了」へ戻して
@@ -950,6 +959,9 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
     def _on_fetch_error(self, ex: Exception) -> None:
         self._progress_stop()
+        # 失敗でも**途中まで取れたタイルはキャッシュに残る**＝成功時と同じく知らせる
+        # （B-265）。ダイアログより前に出す＝利用者が閉じるまで地図が古いままにならない。
+        self._notify_map_cache_change()
         # ⚠️ DEM 取得の失敗（`DemUnreachableError`）は**既に型に乗っている**ので
         # `explain` がそのまま通す＝ここで包むと同じことを 2 回言う。
         self._alert(i18n.t("dlg_error"), failure.explain(
