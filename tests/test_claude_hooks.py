@@ -1727,6 +1727,88 @@ class TestStaleModuleRefs:
         assert memcheck.check_stale_module_refs() == []
 
 
+class TestModulesParkedOnAnotherBranch:
+    """**視野がチェックアウト 1 つぶんしかない**ことで、並行開発中に毎回鳴った回。
+
+    付加アプリ（Field）を feature ブランチに置いたまま本体を `main` で進めると、
+    メモリが名指しする `apps/field/*.py` は作業ツリーのどこにも無い。歩く先が
+    1 チェックアウトなので、**drift ではないものが毎セッション 4 件報告された**
+    （実測＝`main` で `pytest` が 1 本だけ赤）。これは壊れ方②「毎回鳴る」で、
+    読み飛ばす習慣に入ると本物の drift も一緒に見えなくなる。
+
+    ⚠️ ここも 2 つを対で守る:
+      ① **ローカルのブランチ先端に在る名前では鳴らない**（＝直したこと）
+      ② **どの先端にも無い名前ではまだ鳴る**（＝検出力を捨てていないこと）
+    ①だけなら「全部黙らせる」変異（例＝`--all` で履歴まで見る）が緑で通る。
+    消したモジュールは**どの先端にも居ない**ので、先端だけを見るのが境目。
+    """
+
+    def _repo(self, tmp_path):
+        """作業ツリーに `here.py`、別ブランチの先端にだけ `parked.py` を持つ repo。"""
+        repo = tmp_path / "repo"
+        repo.mkdir()
+        run = lambda *a: subprocess.run(  # noqa: E731
+            ["git", *a], cwd=repo, capture_output=True, text=True, check=True
+        )
+        run("init", "-b", "main")
+        run("config", "user.email", "t@example.com")
+        run("config", "user.name", "t")
+        (repo / "here.py").write_text("", encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-m", "base")
+        run("checkout", "-b", "feature/parked")
+        (repo / "parked.py").write_text("", encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-m", "parked")
+        run("checkout", "main")          # parked.py は作業ツリーから消える
+        assert not (repo / "parked.py").exists()
+        return repo
+
+    def _run(self, memcheck, monkeypatch, repo, mem_dir, body: str):
+        mem_dir.mkdir()
+        (mem_dir / "project_x.md").write_text(body, encoding="utf-8")
+        monkeypatch.setattr(memcheck, "PROJ_DIR", repo)
+        monkeypatch.setattr(memcheck, "MEM_DIR", mem_dir)
+        return memcheck.check_stale_module_refs()
+
+    def test_helper_sees_the_other_branch_tip(self, memcheck, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        monkeypatch.setattr(memcheck, "PROJ_DIR", repo)
+        assert "parked.py" in memcheck._other_branch_py_basenames()
+
+    def test_a_module_parked_on_another_branch_is_not_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """①並行開発の本題＝別ブランチに置いたアプリのモジュールで鳴らない。"""
+        found = self._run(
+            memcheck, monkeypatch, self._repo(tmp_path), tmp_path / "mem",
+            "- `parked.py` が測定セッションを持つ\n",
+        )
+        assert found == []
+
+    def test_a_module_on_no_branch_tip_is_still_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """②検出力＝どの先端にも無い名前は従来どおり鳴る。"""
+        found = self._run(
+            memcheck, monkeypatch, self._repo(tmp_path), tmp_path / "mem",
+            "- `infrastructure.py` が設定と DEM を抱えている\n",
+        )
+        assert any("infrastructure.py" in f for f in found)
+
+    def test_git_failure_falls_back_to_the_repo_walk(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """git が使えない環境（新規 clone 前・CI の一部）で例外にしない。
+
+        ⚠️ 黙って *全部実在* にもしない＝空集合を返して従来の挙動へ戻す。
+        """
+        not_a_repo = tmp_path / "bare"
+        not_a_repo.mkdir()
+        monkeypatch.setattr(memcheck, "PROJ_DIR", not_a_repo)
+        assert memcheck._other_branch_py_basenames() == set()
+
+
 # ============================================================
 # check_memory.py check 13 ＝ 台帳の版割り ⇔ ロードマップの在庫（I-085）
 # ============================================================
