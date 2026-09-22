@@ -1,7 +1,7 @@
 """
 tests/test_report_sensitivity.py
 =================================
-ロードマップ 3.4 段6（帳票の面）の回帰テスト。
+ロードマップ 3.4 ステージ6（帳票の面）の回帰テスト。
 
 - `report_common.sensitivity_table_html` / `residuals_table_html`（体裁だけを
   持つ純関数）の単体テスト。
@@ -85,7 +85,7 @@ def _hop_result(link_id: str, path_id: str) -> batch.PathResult:
 
 # ============================================================
 # report_common.handling_section_html（感度の変動幅） / residuals_table_html
-# （純関数）＝ B-219 で「結果の取扱に関する補足」1節へ統合。
+# （純関数）＝ B-219 で「結果の取扱に関する補足」1セクションへ統合。
 # ============================================================
 class TestHandlingSectionSensitivityPart:
     def setup_method(self):
@@ -211,7 +211,7 @@ class TestResidualsTableHtml:
 
 
 # ============================================================
-# report_path.py：地面反射の disclosure ⇔ 感度表の切り替え（段6の核心）
+# report_path.py：地面反射の disclosure ⇔ 感度表の切り替え（ステージ6の核心）
 # ============================================================
 class TestPathSheetGroundReflectionSwap:
     def setup_method(self):

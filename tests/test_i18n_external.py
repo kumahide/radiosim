@@ -90,7 +90,7 @@ def test_a_file_without_a_name_falls_back_to_its_code(lang_dir):
 
 
 # ============================================================
-# 2. 採用しない側（＝この項目の芯）
+# 2. 採用しない側（＝この項目のコア）
 # ============================================================
 
 def test_a_translation_with_different_placeholders_is_rejected(lang_dir):
@@ -605,7 +605,7 @@ def test_the_language_menu_actually_offers_the_added_language(lang_dir):
     """**配線のゲート**＝読み込めても、メニューに出なければ利用者は選べない。
 
     ⚠️ ここまでの検査は全部 `i18n` の中で閉じている＝**「実装したが画面に出ない」を
-    1 つも捕まえられない**。窓を作って実際のメニュー項目を読む 1 本を置く。
+    1 つも捕まえられない**。ウィンドウを作って実際のメニュー項目を読む 1 本を置く。
     """
     pytest.importorskip("tkinter")
     from tests.conftest import make_themed_root                # noqa: PLC0415

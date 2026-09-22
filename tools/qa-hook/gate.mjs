@@ -211,7 +211,7 @@ function pyrightItems(cwd, py, files, keys, changedLines) {
   // --pythonpath は必須（B-165）＝これが無いと venv を activate しないシェルでは
   // import 解決に使う Python を自力で探せず、numpy 等が軒並み未解決になる。
   // 通常は既存の import 行が「変更行」に含まれないため症状が出ないが、新規
-  // ファイルは全行が変更行なので必ず踏む（3.3 段2・views/map_adapter.py で発覚）。
+  // ファイルは全行が変更行なので必ず踏む（3.3 ステージ2・views/map_adapter.py で発覚）。
   const r = runCmd(cwd, py, ["-m", "pyright", "--pythonpath", py, "--outputjson", ...typed]);
   if (r.missing) return [];
   const data = parseJson(r.stdout);

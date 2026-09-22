@@ -2,7 +2,7 @@
 buildtools/architecture_figure.py
 =================================
 層構成図（`docs/images/architecture_ja.svg` / `architecture_en.svg`）を**1 つの表から
-生成する**（B-209・3.3 段8）。
+生成する**（B-209・3.3 ステージ8）。
 
 **なぜ生成物にしたか**: 図は座標を手で書いていて、行を 1 本足すたびに連動する箇所
 （行の座標・カードの高さと幅・帯の高さ・背景・全体の height・下に置いた字・列の
@@ -99,7 +99,7 @@ FOOTER: list[Text] = [
      "dependencies and import-time cycles are stopped by tests/test_layers.py."),
     # ⚠️ 生成スクリプトの名前は書かない＝図は exe に同梱されるが、スクリプトは同梱
     # されない（同梱の読者に届かないファイルを名指ししない）。手順は同梱の開発者
-    # ガイドの節に置き、そちらを指す。
+    # ガイドのセクションに置き、そちらを指す。
     ("この図は 1 つの表から生成している（座標を手で書かない）。作り直し方と検査は"
      "開発者ガイドの「レイヤー構成」にある。",
      "This figure is generated from a single table (no hand-written coordinates); "
@@ -155,7 +155,7 @@ BANDS: list[Band] = [
                         ("dialogs.py", "親中央のモーダル", "modals centered on the parent"),
                         ("errors.py", "未捕捉例外の受け皿", "sink for unhandled exceptions"),
                         ("progress.py", "進捗の伝送（キュー）", "progress transport (queue)"),
-                        ("frozen_common.py", "凍結帯の項目の単一ソース", "Frozen band’s item list"),
+                        ("frozen_common.py", "凍結バーの項目の単一ソース", "Frozen band’s item list"),
                     ],
                     [
                         ("theme.py", "テーマ色・UI 書体", "theme colors, UI fonts"),

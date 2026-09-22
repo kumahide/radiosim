@@ -8,13 +8,13 @@ views/graph.py
 
 なぜ Tk なのか（2.6a1 / B-024）
 --------------------------------
-以前はこの窓が**丸ごと matplotlib の figure** で、スライダー・数値入力・保存
+以前はこのウィンドウが**丸ごと matplotlib の figure** で、スライダー・数値入力・保存
 ボタン・リンクバジェットのパネルまで figure の中に置いていた。レイアウトが
 figure 相対座標（`subplots_adjust` / `add_axes`）なのに**文字は pt 固定**なので、
-窓を小さくすると枠だけが縮んで文字が縮まず、要素が重なった（B-024＝凡例の
+ウィンドウを小さくすると枠だけが縮んで文字が縮まず、要素が重なった（B-024＝凡例の
 はみ出し・保存ボタンとパネルの重なり・軸ラベルとスライダーの食い込み）。
 
-処方は「フォントを窓の大きさに追従させる」ではなく**症状を生む構造を消す**：
+処方は「フォントをウィンドウの大きさに追従させる」ではなく**症状を生む構造を消す**：
 
   - **matplotlib はプロット領域だけ**を担当する（地形・植生・LoS・F1・アンテナ
     バー・軸・曲率注記・凡例）。
@@ -26,7 +26,7 @@ figure 相対座標（`subplots_adjust` / `add_axes`）なのに**文字は pt �
 
   1. **横断ゲートの傘に入った**＝本物の Toplevel になったので
      `window_fit.refit_all`（Toplevel 総なめ）と `theme` が自動で効く。
-     B-015 型の再発（窓は追従するのに文字が追従しない）が構造的に潰れる。
+     B-015 型の再発（ウィンドウは追従するのに文字が追従しない）が構造的に潰れる。
   2. **`plt.show()` の入れ子 mainloop が消えた**＝ブロックしないので、
      呼び出し元の「準備中」表示を戻すための `on_ready` フックが要らなくなった。
   3. リンクバジェットが Tk のラベルになり、**東アジア文字幅を数えて桁を揃える
@@ -95,10 +95,10 @@ def show_graph(
         raw_elevs:    取得済み生標高配列
         project_name: レポートの案件名（ランチャーから踏襲・空可）
         memo:         レポートの自由メモ（ランチャーから踏襲・空可）
-        on_close:     窓が閉じられたときに呼ばれる（呼び出し元の参照を外す用）。
+        on_close:     ウィンドウが閉じられたときに呼ばれる（呼び出し元の参照を外す用）。
         coord_format: 人が読むレポートの座標表記（ランチャーが凍結して渡す）。
-        dem_acquired: `raw_elevs` を取ったタイルの取得日の範囲（B-213）＝窓が抱えて
-                      保存の report.txt に出す。窓を開いた後にキャッシュが消えても残る。
+        dem_acquired: `raw_elevs` を取ったタイルの取得日の範囲（B-213）＝ウィンドウが抱えて
+                      保存の report.txt に出す。ウィンドウを開いた後にキャッシュが消えても残る。
     """
     mpl_fonts.apply_japanese_font()
     terrain = models.calculate_terrain_profile(
@@ -117,10 +117,10 @@ def show_graph(
 
 
 class GraphWindow(tk.Toplevel):
-    """地形断面と what-if 操作の窓（ランチャーが唯一のインスタンスを持つ）。"""
+    """地形断面と what-if 操作のウィンドウ（ランチャーが唯一のインスタンスを持つ）。"""
 
     # 開いたときの下限サイズ。**中身の要求サイズではない**＝図は要求を小さく
-    # 持たせて窓に合わせて伸縮させるので、ここは「気持ちよく見える初期値」。
+    # 持たせてウィンドウに合わせて伸縮させるので、ここは「気持ちよく見える初期値」。
     _BASE_W, _BASE_H = 1040, 660
     # 等価地球曲率注記を出す最小経路長 [km]（これ未満はふくらみが視認できず注記不要）
     _CURVE_NOTE_MIN_KM = 30.0
@@ -149,7 +149,7 @@ class GraphWindow(tk.Toplevel):
         self._report_project = project_name
         self._report_memo    = memo
         # 座標表記は**開いた時点のアプリ設定**（ランチャーが凍結して渡す）。
-        # 窓が自分で `config.load_config()` を読まないのは、設定の出所を 1 つに保ち、
+        # ウィンドウが自分で `config.load_config()` を読まないのは、設定の出所を 1 つに保ち、
         # テストの緑が開発機の設定に左右されないようにするため（I-055 ②・スライス G2）。
         self._coord_format   = coord_format
         self._on_close_cb = on_close
@@ -176,14 +176,14 @@ class GraphWindow(tk.Toplevel):
     def _build_plot(self, parent: tk.Misc) -> None:
         """プロット領域（matplotlib はここだけを担当する）。
 
-        ⚠️ **`pyplot` を使わない**＝pyplot は自前で Tk の窓とグローバルな図の
+        ⚠️ **`pyplot` を使わない**＝pyplot は自前で Tk のウィンドウとグローバルな図の
         レジストリを持つ（それが入れ子 mainloop と `plt.close("all")` の後始末を
         呼んでいた）。`Figure` + `FigureCanvasTkAgg` なら普通の Tk ウィジェット
         として親の寿命に従う。
 
         figsize は**小さめ**に取る＝これが Tk への「要求サイズ」になるので、
-        大きく取ると窓を縮めたときに図が縮まずスクロールへ逃げてしまう
-        （プロットは縮んでほしい側）。実際の表示サイズは窓に追従する。
+        大きく取るとウィンドウを縮めたときに図が縮まずスクロールへ逃げてしまう
+        （プロットは縮んでほしい側）。実際の表示サイズはウィンドウに追従する。
         """
         # 枠と余白で「印刷される成果物のプレビュー」に見せる（図はライト固定）。
         card = ttk.Frame(parent, relief="solid", borderwidth=1, padding=1)
@@ -252,7 +252,7 @@ class GraphWindow(tk.Toplevel):
             # （I-077）。単位が違う（×F1）ので 2 行が同じ量に見えない。
             ("f1_depth",   "pl_f1_depth",   units.F1_DEPTH_UNIT),
             ("slant",      "pl_slant_dist", "m"),
-            # DEM 取得の失敗率（3.2 段7・ISSUES.md B-025 ③）＝画面にも出す
+            # DEM 取得の失敗率（3.2 ステージ7・ISSUES.md B-025 ③）＝画面にも出す
             # （CSV 出力契約の `dem_fail_pct` と同じ単一ソース＝`terrain.fail_pct`）。
             ("dem_fail",   "pl_dem_fail",   "%"),
         ))
@@ -320,19 +320,19 @@ class GraphWindow(tk.Toplevel):
             self._scales[key], self._entries[key], self._values[key] = scale, entry, var
             self._fmt[key] = fmt
 
-        # 保存は**1 行ぶんの高さで操作帯の右下**（I-049）。以前はスライダー 3 行を
-        # またぐ縦長のボタンで、他窓の主操作（1 行）と不揃いだった。⛔ 大きさで
-        # 主操作を表さない＝主操作は**位置**（帯の右端）で表す、と決めてある
-        # （グラフ窓に進捗帯は無いので、操作帯の最下行の右端が対応する場所）。
+        # 保存は**1 行ぶんの高さで操作バーの右下**（I-049）。以前はスライダー 3 行を
+        # またぐ縦長のボタンで、他ウィンドウの主操作（1 行）と不揃いだった。⛔ 大きさで
+        # 主操作を表さない＝主操作は**位置**（バーの右端）で表す、と決めてある
+        # （グラフウィンドウに進捗バーは無いので、操作バーの最下行の右端が対応する場所）。
         self._save_btn = ttk.Button(bar, text=i18n.t("btn_save_pkg"),
                                     command=self._on_save)
         self._save_btn.grid(row=2, column=3, sticky="e", padx=(12, 0), pady=2)
 
     def _fit_to_content(self) -> None:
-        """窓を中身に合わせる（**下限は「見やすい初期値」**）。
+        """ウィンドウを中身に合わせる（**下限は「見やすい初期値」**）。
 
         ⚠️ リサイズ不可にはしない（判断ごと残す）＝①拡大して地形を細かく見る
-        操作を殺す（グラフ窓は拡大の需要がある数少ない窓）②実機 FHD の高さ上限
+        操作を殺す（グラフウィンドウは拡大の需要がある数少ないウィンドウ）②実機 FHD の高さ上限
         990px や高 DPI で入らないときの逃げ道が無くなる。
         """
         window_fit.fit_to_content(self, min_w=self._BASE_W, min_h=self._BASE_H)
@@ -398,7 +398,7 @@ class GraphWindow(tk.Toplevel):
         """matplotlib 標準の legend（figure 内の自作パネルはやめた）。
 
         レポート図が既に標準 legend を使っており、画面だけ自作パネルだった＝⑧。
-        標準 legend は**窓が小さくなると自分で畳む**ので、B-024 の「凡例が枠を
+        標準 legend は**ウィンドウが小さくなると自分で畳む**ので、B-024 の「凡例が枠を
         突き抜ける」は処方の副産物として消える。
 
         **位置は軸の外・上（横 1 列）＝レポート図と同じ**（2026-08-01 実機
@@ -544,7 +544,7 @@ class GraphWindow(tk.Toplevel):
             h_tx = self._scales["h_tx"].get()
             h_rx = self._scales["h_rx"].get()
             # 座標表記は app 設定に従う（人が読む report.txt のみ。データは DD 固定）。
-            # 値は窓を開いた時点で凍結済み（ランチャーから受け取る）。
+            # 値はウィンドウを開いた時点で凍結済み（ランチャーから受け取る）。
             coord_format = self._coord_format
             save_dir = sim.save_package(
                 terrain = self._terrain,

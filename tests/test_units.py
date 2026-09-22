@@ -220,7 +220,7 @@ class TestFormatF1Depth:
         assert units.format_f1_depth(exact) == "1.00 ×F1"
 
     def test_the_unit_is_not_a_percent(self):
-        """⚠️ **率を 2 列並べない**のが処方の芯（単位が違えば取り違えない）。"""
+        """⚠️ **率を 2 列並べない**のが処方のコア（単位が違えば取り違えない）。"""
         assert "%" not in units.format_f1_depth(7109.9)
         assert units.F1_DEPTH_UNIT in units.format_f1_depth(7109.9)
 
@@ -328,7 +328,7 @@ class TestFormatDb:
         assert units.format_db(units.DB_VISIBLE_STEP, signed=True) == "+0.1"
 
     def test_it_does_not_claim_a_precision_the_inputs_do_not_have(self):
-        """🔑 **この回の芯**＝0.01 dB 刻みは持っていない精度の主張だった。
+        """🔑 **この回のコア**＝0.01 dB 刻みは持っていない精度の主張だった。
 
         DEM は水平 5〜10m・標高にも数 m の誤差、植生高は仮定値、環境損失は経験値。
         ⇒ **0.001 dB しか違わない 2 つの結果は、同じ字で出るのが正しい。**

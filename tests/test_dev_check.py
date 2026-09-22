@@ -111,11 +111,11 @@ def test_the_scope_has_no_duplicates_even_if_asked_for_twice():
 
 
 # ============================================================
-# 3. カバレッジ門は全件のときだけ
+# 3. カバレッジゲートは全件のときだけ
 # ============================================================
 def test_coverage_gate_runs_only_on_the_full_suite():
     full_argv, _ = dev_check.pytest_argv(None)
-    assert "--cov" in full_argv, "全件では CI と同じカバレッジ門を掛ける"
+    assert "--cov" in full_argv, "全件では CI と同じカバレッジゲートを掛ける"
 
     partial_argv, _ = dev_check.pytest_argv(["tests/test_models.py"])
     assert "--cov" not in partial_argv, (

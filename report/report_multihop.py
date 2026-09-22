@@ -146,7 +146,7 @@ _HOP_COL_KEYS = (
 
 
 # ============================================================
-# 感度表＋律速区間の argmin（3.4 段6）
+# 感度表＋律速区間の argmin（3.4 ステージ6）
 # ------------------------------------------------------------
 # 🔑 **「min の感度」は「感度の min」ではない**（ロードマップ 3.4）＝全体判定を
 # 決めている区間（`run.worst`）の感度表**に加えて**、全区間へ同じ向きの摂動を
@@ -164,7 +164,7 @@ def _multihop_sensitivity(run: MultiHopRun, worst):
     **全区間が計算できているときだけ**出す＝1 区間でも失敗していれば
     （成果物なし・計算エラー）律速区間の入れ替わりを判定できない
     （`(None, "")` を返す＝`report_common.handling_section_html` は `sens=None`
-    なら感度の節を出さない）。
+    なら感度のセクションを出さない）。
     """
     hops = run.hops
     if worst is None or worst.result is None:
@@ -364,12 +364,12 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         + (f'<p class="note">{i18n.t("mh_worst_mark_note")}</p>'
            if worst is not None else "")
         + f'<p class="note">{i18n.t("mh_regenerative_note")}</p>'
-        # 「結果の取扱に関する補足」（3.0a1）＋ ワースト区間の感度・argmin（3.4 段6・
-        # B-219 で1節へ統合）。⚠️ disclosure の刻印は**区間の和集合**＝区間ごとに
+        # 「結果の取扱に関する補足」（3.0a1）＋ ワースト区間の感度・argmin（3.4 ステージ6・
+        # B-219 で1セクションへ統合）。⚠️ disclosure の刻印は**区間の和集合**＝区間ごとに
         # 周波数も植生も違いうるので、どれか 1 区間にでも当てはまる注記を出す
         # （感度表はワースト区間だけの参考値なので disclosure は外さない＝
         # `_multihop_sensitivity` が全区間成功のときだけ `(SensitivityResult, note)`
-        # を返し、それ以外は `(None, "")` で感度の節を出さない）。
+        # を返し、それ以外は `(None, "")` で感度のセクションを出さない）。
         + report_common.handling_section_html(
             models.scope_notes_union(
                 models.scope_notes(

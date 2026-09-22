@@ -79,7 +79,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         "freq_mhz": "freq",   "p_tx":     "p_tx",   "gain_tx": "gain_tx",
         "gain_rx":  "gain_rx", "sens":    "sens",   "veg_h":   "veg_h",
         "k_factor": "k_factor", "rain_rate": "rain_rate",
-        # 地形の解像度は**段階の語**（I-069）＝帯には表示ラベルを出し、実行には
+        # 地形の解像度は**段階の語**（I-069）＝バーには表示ラベルを出し、実行には
         # 内部キーへ戻す（`frozen_common.resolution_key`）。
         "resolution": "resolution",
     }
@@ -111,7 +111,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self.title(i18n.t("batch_window_title"))
         # 共通設定を RF系／環境系サブグループ化した分（I-003・LabelFrame の見出し2つ分）
         # 高さが増えたため、既定サイズ・最小サイズを拡張して進捗バー行（row2）が
-        # 窓外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
+        # ウィンドウ外へ圧迫されない余裕を確保する（+50px では row2 がほぼ0pxに潰れ再発）。
         # ⚠️ 幅は下限でしかない＝実幅は _fit_width_to_content() が中身から決める。
         self.geometry(f"{self._BASE_W}x{self._BASE_H}")
         self.resizable(True, True)
@@ -124,7 +124,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._meta_provider   = meta_provider
         self._load_params     = load_params
         # 地図を連続追加モードで開く口（I-043）＝**ランチャーが注入する**。
-        # 親ウィジェットから探させない（中継窓の map_opener と同じ流儀）。
+        # 親ウィジェットから探させない（中継ウィンドウの map_opener と同じ流儀）。
         self._map_opener      = map_opener
         # 閉じたときにランチャーへ通知するコールバック（地図の連続追加先を手放させる）。
         self._on_close        = on_close
@@ -136,7 +136,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
 
         self._base_params  = base_params
         # 座標表記は app 設定に従う（人が読む report.txt/HTML のみ。データは DD 固定）。
-        # 値は**開いた時点のスナップショット**をランチャーから受け取る＝窓が
+        # 値は**開いた時点のスナップショット**をランチャーから受け取る＝ウィンドウが
         # `config.load_config()` を直に読まない（I-055 ②・2.7 スライス G2）。
         self._coord_format = coord_format
         self._row_entries: list[list[tk.Entry]] = []
@@ -162,13 +162,13 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._fit_refit = self._run_sync
         # プロジェクト（`.rsproj`）から開いたときは、その行で始める（凍結した
         # ランチャー値の 1 行ではなく）。**空リストも「行が無い」という情報**なので
-        # None と区別する（`None`＝節を持たない＝従来どおり 1 行で始める）。
+        # None と区別する（`None`＝セクションを持たない＝従来どおり 1 行で始める）。
         if initial_rows is None:
             self._add_row()
         else:
             for row in initial_rows:
                 self._add_row(row)
-        self._run_sync()          # 同期 → その中で窓を中身に合わせる
+        self._run_sync()          # 同期 → その中でウィンドウを中身に合わせる
         # 閉じたらランチャーへ通知する（地図が連続追加中なら座標入力へ戻す）。
         self.protocol("WM_DELETE_WINDOW", self._on_close_window)
         # 以後の測り直しは畳んでよい（I-107）＝組み立て中は同期のまま。
@@ -214,11 +214,11 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ttk.Label(f_memo, text="🔒").pack(side="left", padx=(2, 0))
 
         # 🔒 の意味と ↻ は**凍結した領域の 1 行目（この行）の右側**＝条件探索・中継
-        # 経路と同じ置き場（2026-08-08・B-053 のクラス点検で 3 窓を揃えた）。
+        # 経路と同じ置き場（2026-08-08・B-053 のクラス点検で 3 ウィンドウを揃えた）。
         # **以前は共通設定の中の独立行**で、理由は「row1 は日本語ラベルで幅が逼迫し、
-        # 右詰めのボタンが窓外へ押し出される（B-002 系）」だった。⇒ **その理由は
-        # ここへ移すと消える**（この行は 2 欄しか無い）。行が 1 つ減るので窓も低くなる。
-        # ⚠️ この 2 つは帯 1 つでなく**凍結領域全体**に効く（`↻` は共通設定と案件情報を
+        # 右詰めのボタンがウィンドウ外へ押し出される（B-002 系）」だった。⇒ **その理由は
+        # ここへ移すと消える**（この行は 2 欄しか無い）。行が 1 つ減るのでウィンドウも低くなる。
+        # ⚠️ この 2 つはバー 1 つでなく**凍結領域全体**に効く（`↻` は共通設定と案件情報を
         # まとめて取り込む＝`_refresh_common_from_launcher`）ので、1 行目が実態に近い。
         if self._config_provider is not None:
             ttk.Button(
@@ -231,7 +231,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             ).pack(side="right", padx=6)
 
         # 実測突合せの残差表（`core/residuals.py`）から spot 測定を除く選択（B-233）。
-        # ⚠️ **凍結値ではない**（ランチャーに対応する項目が無い＝この窓だけの
+        # ⚠️ **凍結値ではない**（ランチャーに対応する項目が無い＝このウィンドウだけの
         # レポート表示オプション）。上の 🔒 な項目と違い state="readonly" も付けない。
         # `False`（除外しない＝従来どおり全標本を集計）が既定。
         self._exclude_spot_var = tk.BooleanVar(value=False)
@@ -248,7 +248,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         frame.pack(fill="x", padx=8, pady=(8, 0))
 
         self._common_vars: dict[str, tk.StringVar] = {}
-        # 帯に**実際に出した**項目（I-101）。⚠️ `_common_vars` では数えられない
+        # バーに**実際に出した**項目（I-101）。⚠️ `_common_vars` では数えられない
         # ＝env_type / diff_method は選択式なので別の変数（`_env_var`/`_diff_var`）で
         # 持っており、キー集合を突き合わせると 2 つ足りないことになる。**組み立てた
         # 場所で足す**＝一覧を別に書くと、欄を足した日に更新し忘れて黙ってずれる。
@@ -266,7 +266,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         row0.pack(fill="x")
         row1 = ttk.Frame(grp_env)
         row1.pack(fill="x")
-        # DEM ソースは 2 行目（3.4 段1）＝row1 に足すと FHD で窓が入り切らない
+        # DEM ソースは 2 行目（3.4 ステージ1）＝row1 に足すと FHD でウィンドウが入り切らない
         # （`tests/test_window_fit.py::test_every_window_is_usable_on_fhd`）。
         row2 = ttk.Frame(grp_env)
         row2.pack(fill="x")
@@ -276,10 +276,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             f.pack(side="left", padx=6)
             ttk.Label(f, text=label).pack(side="left")
             value = getattr(self._base_params, attr)
-            # ⚠️ **この帯は入力**（実行は `_read_base_params` が帯から組み直す）＝
+            # ⚠️ **このバーは入力**（実行は `_read_base_params` がバーから組み直す）＝
             #    段階を持たない基底から建てたときはここで既定を補う（B-140）。
-            #    中継経路の帯は*基底をそのまま実行へ渡す*ので補わない＝
-            #    **補ってよいのは、補った値が実際に使われる窓だけ。**
+            #    中継経路のバーは*基底をそのまま実行へ渡す*ので補わない＝
+            #    **補ってよいのは、補った値が実際に使われるウィンドウだけ。**
             if attr == "resolution" and not value:
                 value = terrain_grid.RESOLUTION_DEFAULT
             var = tk.StringVar(value=frozen_common.display_value(attr, value))
@@ -299,7 +299,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             ttk.Label(f, text="🔒").pack(side="left", padx=(2, 0))
 
         # ⚠️ **どの項目を出すかはここで決めない**（I-101）＝正典は
-        # [views/frozen_common](frozen_common.py)。窓ごとに並べていたせいで、
+        # [views/frozen_common](frozen_common.py)。ウィンドウごとに並べていたせいで、
         # 中継経路が 6 項目のまま 2 週間気づかれなかった。ここが決めるのは
         # **並べ方**（RF 系を 1 行・環境系を 1 行）と欄の幅だけ。
         for row, fields in ((row0, frozen_common.RADIO_FIELDS),
@@ -336,8 +336,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ttk.Label(f_diff, text=i18n.t("lbl_b_diff_model")).pack(side="left")
         # 🔴 **表示ラベルを出す**（B-156）＝ここは内部キー（`bullington`）をそのまま
         #    並べており、**ランチャー・中継経路が `Bullington` と出しているのに
-        #    この窓だけ小文字**、しかも英語環境で訳が当たらなかった。隣の `env_type`
-        #    は同じ窓で既に写しを作っている＝**揃っていなかったのはここだけ**。
+        #    このウィンドウだけ小文字**、しかも英語環境で訳が当たらなかった。隣の `env_type`
+        #    は同じウィンドウで既に写しを作っている＝**揃っていなかったのはここだけ**。
         #    ⚠️ **保存・実行に渡すのはキーのまま**（下の `_diff_label_to_key`）。
         self._diff_key_to_label = {k: i18n.t(f"diff_opt_{k}")
                                    for k in DIFF_METHOD_KEYS}
@@ -353,10 +353,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ).pack(side="left", padx=(2, 0))
         self._common_keys.append("diff_method")
 
-        # DEM ソース Combobox（3.4 段1・I-147）＝env_type/diff_method と同じ形
+        # DEM ソース Combobox（3.4 ステージ1・I-147）＝env_type/diff_method と同じ形
         # （表示名は `DemSourceSpec.display_name`＝i18n ではなくソース宣言が単一
         # ソース）。組み込み＋利用者が宣言ファイルで足したソースの一覧を出す。
-        # ⚠️ **row1 ではなく row2**＝同じ行に足すと FHD 144dpi で窓幅が超過する。
+        # ⚠️ **row1 ではなく row2**＝同じ行に足すと FHD 144dpi でウィンドウ幅が超過する。
         f_dem = ttk.Frame(row2)
         f_dem.pack(side="left", padx=6)
         ttk.Label(f_dem, text=i18n.t("lbl_dem_source")).pack(side="left")
@@ -380,9 +380,9 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._common_keys.append("dem_source")
 
     def frozen_common_keys(self) -> "set[str]":
-        """凍結帯「共通設定」に**実際に出している**項目のキー集合（I-101）。
+        """凍結バー「共通設定」に**実際に出している**項目のキー集合（I-101）。
 
-        **窓をまたいで突き合わせるための唯一の口**＝`tests/test_ui_consistency.py`
+        **ウィンドウをまたいで突き合わせるための唯一の口**＝`tests/test_ui_consistency.py`
         がここを読み、複数経路と中継経路で集合が一致することを要求する。
         ⚠️ **横断ゲートが縛っていたのは器だけだった**（↻/🔒 がどの枠に属するか）＝
         中身は縛られておらず、中継経路が 6 項目のまま 2 週間気づかれなかった。
@@ -425,8 +425,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
 
 
     # ⚠️ ここに `_on_destroy`（`unbind_all("<MouseWheel>")`）があったが、B-050 で
-    #    削除した。ホイールを窓に閉じたバインドへ変えたので**外す相手がもう無い**
-    #    のに加え、`unbind_all` は**他の窓の分まで消す**（window_fit の注記③）。
+    #    削除した。ホイールをウィンドウに閉じたバインドへ変えたので**外す相手がもう無い**
+    #    のに加え、`unbind_all` は**他のウィンドウの分まで消す**（window_fit の注記③）。
     #    しかも「外した」つもりで参照は残っていた＝リークの本体はこちらだった。
 
     def _build_bottom(self) -> None:
@@ -440,7 +440,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # 見切れる（B-002 系）。幅は付けず内容に合わせて自動サイズさせる。
         ttk.Button(left, text=i18n.t("btn_add_row"),    command=self._add_row     ).pack(side="left", padx=2)
         # 地図から連続追加する口（I-043）＝**行を足す操作**なので `+ 行を追加` の隣。
-        # ⚠️ 中継経路の窓には前からあり、この窓だけ無かった（⑧）。
+        # ⚠️ 中継経路のウィンドウには前からあり、このウィンドウだけ無かった（⑧）。
         if self._map_opener is not None:
             ttk.Button(left, text=i18n.t("mh_from_map"),
                        command=self._map_opener).pack(side="left", padx=2)
@@ -449,10 +449,10 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         ttk.Button(left, text=i18n.t("btn_template"),   command=self._save_template).pack(side="left", padx=2)
         ttk.Button(left, text=i18n.t("btn_clear_all"),  command=self._clear_all   ).pack(side="left", padx=2)
 
-        # ⚠️ 実行ボタンは**ここには置かない**＝進捗帯の右端（下記 row2）が
+        # ⚠️ 実行ボタンは**ここには置かない**＝進捗バーの右端（下記 row2）が
         # アプリ共通の位置（I-029）。この列に置いていたころは、同じ見た目の
         # 「行を追加 / インポート / …」と並んで**走らせる操作が編集操作に紛れて**
-        # いた。位置は tests/test_ui_consistency.py が全窓横断で縛る。
+        # いた。位置は tests/test_ui_consistency.py が全ウィンドウ横断で縛る。
 
         # 進捗エリア（2段構成）
         prog_frame = ttk.Frame(self)
@@ -463,9 +463,9 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         row1.pack(fill="x")
         self._prog_label = ttk.Label(row1, text="", anchor="w")
         self._prog_label.pack(side="left", fill="x", expand=True)
-        # 件数は**ステータスの行**に置く（I-047 の実機確認で発覚）＝ここを帯の下段に
-        # 置いていたころは、空でも 15 文字ぶんの箱を占めるので**バーだけが 1 窓だけ
-        # 短く**、実行ボタンに届いていなかった。下段はどの窓も「バーと実行だけ」。
+        # 件数は**ステータスの行**に置く（I-047 の実機確認で発覚）＝ここをバーの下段に
+        # 置いていたころは、空でも 15 文字ぶんの箱を占めるので**バーだけが 1 ウィンドウだけ
+        # 短く**、実行ボタンに届いていなかった。下段はどのウィンドウも「バーと実行だけ」。
         # ⚠️ `width=15` は残す＝進捗の文言（`0 / 12  (0%)`）が伸び縮みするたびに
         # 左隣の経路名が横へ動くのを止めるため（幅を固定するのは*動かさない*ため
         # であって、大きさで強調するためではない＝I-046 とは目的が違う）。
@@ -474,21 +474,21 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._prog_count_label = ttk.Label(row1, text="", width=15, anchor="e")
         self._prog_count_label.pack(side="right", padx=(6, 0))
         # ⛔ **OK/NG/ERR の集計ラベルはここに置かない**（I-078・2026-08-13 に撤去）。
-        # 2.7 で行ごとの判定列（I-041）が入り、帯の集計は**同じ事実の数え直し**に
-        # なった。⇒ 判定は行が持ち、帯は「どこまで進んだか」だけを言う。
-        # 🔑 先例は中継経路＝あちらの帯は列に無い情報（全体判定＋どの区間が決めて
+        # 2.7 で行ごとの判定列（I-041）が入り、バーの集計は**同じ事実の数え直し**に
+        # なった。⇒ 判定は行が持ち、バーは「どこまで進んだか」だけを言う。
+        # 🔑 先例は中継経路＝あちらのバーは列に無い情報（全体判定＋どの区間が決めて
         # いるか）を出しており、数え直しではない。
 
         # 下段: バー (左・伸縮) + **実行**（右端＝全フロー共通の位置）。
         # ⛔ この行に**第 3 のウィジェットを足さない**＝バーの右端がボタンまで
-        # 届かなくなり、その窓のバーだけ短く見える（実機確認で発覚）。
+        # 届かなくなり、そのウィンドウのバーだけ短く見える（実機確認で発覚）。
         row2 = ttk.Frame(prog_frame)
         row2.pack(fill="x", pady=(2, 0))
         self._prog_bar = ttk.Progressbar(row2, orient="horizontal", mode="determinate")
         self._prog_bar.pack(side="left", fill="x", expand=True)
-        # ⛔ `width=` は付けない（I-046）＝ラベルは 4 窓とも「実行」で揃えてあるのに、
+        # ⛔ `width=` は付けない（I-046）＝ラベルは 4 ウィンドウとも「実行」で揃えてあるのに、
         # ここだけ 14 文字ぶんの箱で**同じ文字が違う大きさ**に見えていた。主操作で
-        # あることは位置（帯の右端）と Accent で表す＝大きさは強調の軸ではない。
+        # あることは位置（バーの右端）と Accent で表す＝大きさは強調の軸ではない。
         self._run_btn = ttk.Button(
             row2, text=i18n.t("btn_run"), command=self._on_run,
             style="Accent.TButton",
@@ -592,7 +592,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
     def close_window(self) -> None:
         """他所（ランチャーのプロジェクト読込）から閉じるための公開口。
 
-        3 つの窓で**名前を揃える**＝内部ハンドラ名で分岐させない（この窓は
+        3 つのウィンドウで**名前を揃える**＝内部ハンドラ名で分岐させない（このウィンドウは
         `_on_close` を*コールバックの保管場所*として使っているので、名前で
         分岐すると「閉じずにコールバックだけ呼ぶ」に化ける）。
         """
@@ -608,8 +608,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         self._pump.stop()
         # ⚠️ **通知は破棄より前**（条件探索・中継経路と同じ順序）。ランチャーは
         # この通知で行を回収して `.rsproj` へ持ち越すので、先に destroy すると
-        # 「バッチ窓を閉じただけで行が消えたファイルを保存する」ことになる
-        # （project.py が「節が無い＝空ではない」で守っている性質と対）。
+        # 「バッチウィンドウを閉じただけで行が消えたファイルを保存する」ことになる
+        # （project.py が「セクションが無い＝空ではない」で守っている性質と対）。
         if cb is not None:
             cb()
         self.destroy()

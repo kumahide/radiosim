@@ -219,7 +219,7 @@ def test_core_knows_nothing_about_screens_or_plots(path):
     ids=lambda p: p.name,
 )
 def test_only_map_adapter_imports_tkintermapview(path):
-    """`tkintermapview` を引けるのは `views/map_adapter.py` だけ（3.3 段2）。
+    """`tkintermapview` を引けるのは `views/map_adapter.py` だけ（3.3 ステージ2）。
 
     地図ライブラリの差し替え可能性（防火扉）は、import の集約点が1つで
     あることでしか保てない。他のファイルが直接 import すると、差し替え時に

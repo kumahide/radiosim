@@ -4,13 +4,13 @@ test_project.py
 `project.py`（`.rsproj` の読み書き）のガード。
 
 **このテストが厚い理由**＝条件探索の条件セットと中継経路の waypoint 列は
-**窓の中身以外に器が無い**（CSV も settings.json も受け皿にならない）ため、
+**ウィンドウの中身以外に器が無い**（CSV も settings.json も受け皿にならない）ため、
 `.rsproj` がその 2 機能の**唯一の永続化手段**になる。後方互換の約束が重い。
 
 守っている性質（変えるときは設計判断が要る）:
   1. 往復で値が変わらない（`None` は `None` のまま＝共通設定の踏襲が崩れない）
   2. **app キー（theme/lang/proxy_url）を絶対に取り込まない**
-  3. 節が無い＝「その窓の情報を持たない」（`None`）であって「空」ではない
+  3. セクションが無い＝「そのウィンドウの情報を持たない」（`None`）であって「空」ではない
   4. 自分より新しい schema は**拒否する**
   5. 我々のファイルでないもの（settings.json 等）は**プロジェクトとして読まない**
 """
@@ -33,7 +33,7 @@ from report import project
 
 
 def _doc() -> project.ProjectDoc:
-    """全節が埋まったプロジェクト（往復テストの母体）。"""
+    """全セクションが埋まったプロジェクト（往復テストの母体）。"""
     return project.ProjectDoc(
         meta   = {"project_name": "○○市 中継検討", "memo": "メモ 1 行目"},
         params = {"start": "34.5429, 132.4118", "end": "34.5389, 132.4050",
@@ -70,7 +70,7 @@ def _doc() -> project.ProjectDoc:
 # 1. 往復
 # ------------------------------------------------------------
 def test_roundtrip_preserves_every_section():
-    """全節が dict 往復で等価（**核心**）。"""
+    """全セクションが dict 往復で等価（**核心**）。"""
     src = _doc()
     got = project.from_dict(project.to_dict(src))
     assert got.meta       == src.meta
@@ -148,12 +148,12 @@ def test_app_keys_are_never_saved():
 
 
 # ------------------------------------------------------------
-# 3. 節の欠損＝「持たない」
+# 3. セクションの欠損＝「持たない」
 # ------------------------------------------------------------
 def test_missing_sections_are_none_not_empty():
-    """節が無いファイルは `None`（＝呼び出し側はその窓に触らない）。
+    """セクションが無いファイルは `None`（＝呼び出し側はそのウィンドウに触らない）。
 
-    ⚠️ ここを空リストにすると、UI 側が「空の窓を復元する」＝**バッチ窓を閉じた
+    ⚠️ ここを空リストにすると、UI 側が「空のウィンドウを復元する」＝**バッチウィンドウを閉じた
     まま保存した人の行を消す**方向へ倒れる。
     """
     doc = project.from_dict({"schema_version": 1, "meta": {}, "params": {}})
@@ -163,7 +163,7 @@ def test_missing_sections_are_none_not_empty():
 
 
 def test_none_sections_are_not_written():
-    """`None` の節はキーごと出さない（空の節を書くと上と区別できなくなる）。"""
+    """`None` のセクションはキーごと出さない（空のセクションを書くと上と区別できなくなる）。"""
     data = project.to_dict(project.ProjectDoc(meta={}, params={}))
     assert "batch" not in data and "scenario" not in data and "multihop" not in data
 
@@ -210,7 +210,7 @@ def test_unknown_keys_are_ignored():
 # バッチの表は入力途中を許すため、読めない欄を NaN のまま持つ（`_read_table_rows`）。
 # それを素の json.dump で書くと `NaN` リテラルが混ざり、**規格外の JSON**（他の
 # ツールが読めないファイル）が黙って出来上がる。⇒ 保存側で弾き、UI は保存前に
-# `unreadable_row` で気づいて**その節だけ保存しない**（警告つき）。
+# `unreadable_row` で気づいて**そのセクションだけ保存しない**（警告つき）。
 
 def test_unreadable_row_finds_non_finite_values():
     rows = [batch.PathRow(path_id="ok", lat_tx=34.5, lon_tx=132.4,
@@ -362,13 +362,13 @@ def test_default_filename(name, expected):
 # ------------------------------------------------------------
 # 背景（2026-08-03/04・独立レビュー Codex を 3 巡）: この層の契約は「**壊れた
 # ファイルは ProjectError 一種類に畳む**」。ところが `data.get(key)` は
-# **キー欠損と明示的な `null` を区別できない**ので、壊れた節が「その節は無い」
+# **キー欠損と明示的な `null` を区別できない**ので、壊れたセクションが「そのセクションは無い」
 # として**読めてしまって**いた。
 #
 # 🔴 **読めてしまうことが危険**＝利用者は気づかず、**そのまま上書き保存すると
-# 壊れていた節の中身が消える**（原子的保存で直したデータ損失と同じクラス）。
+# 壊れていたセクションの中身が消える**（原子的保存で直したデータ損失と同じクラス）。
 #
-# 🔑 **線引きの根拠＝`to_dict` が実際に書く形**。節が None ならキーごと出さず、
+# 🔑 **線引きの根拠＝`to_dict` が実際に書く形**。セクションが None ならキーごと出さず、
 # 内側は必ず list / dict。⇒ **`null` や裸の配列は我々が書かない**＝壊れている。
 # 「欠損は既定値」の緩さは**キーが無いときにだけ**与える。
 #
@@ -376,12 +376,12 @@ def test_default_filename(name, expected):
 # 実装を戻しても誰も気づかない状態を 2 回作ったので、ここで固定する。
 _BASE_DOC = {"schema_version": 1, "meta": {}, "params": {}}
 
-# 「壊れている」と言い切るべき入力（節・入れ子・要素の 3 段すべて）
+# 「壊れている」と言い切るべき入力（セクション・入れ子・要素の 3 段すべて）
 _BROKEN = [
-    ("節が null",             {"multihop": None}),
-    ("節が配列",              {"scenario": []}),
-    ("節が数値",              {"batch": 5}),
-    ("節が文字列",            {"multihop": "x"}),
+    ("セクションが null",             {"multihop": None}),
+    ("セクションが配列",              {"scenario": []}),
+    ("セクションが数値",              {"batch": 5}),
+    ("セクションが文字列",            {"multihop": "x"}),
     ("入れ子が null",         {"batch": {"rows": None}}),
     ("入れ子が null(compare)", {"scenario": {"compare": None}}),
     ("入れ子が数値",          {"scenario": {"compare": 5}}),
@@ -406,7 +406,7 @@ def test_broken_shapes_are_project_errors(tmp_path, label, fragment):
 
 # 「キーが無い」だけは既定値で読めること（後方互換＝古いファイル・部分的なファイル）
 _ABSENT = [
-    ("節が全て無い",     {}),
+    ("セクションが全て無い",     {}),
     ("batch だけ",       {"batch": {"rows": []}}),
     ("rows キーが無い",  {"batch": {}}),
     ("compare キーが無い", {"scenario": {"mode": "compare"}}),
@@ -438,7 +438,7 @@ def test_saved_file_never_contains_null_for_known_keys():
         meta={"project_name": "x"}, params={"freq_mhz": "2400"},
         batch_rows=[], scenario=project.ScenarioSpec(), multihop=None)
     data = project.to_dict(doc)
-    assert "multihop" not in data, "節が無いときはキーごと出さない（null を書かない）"
+    assert "multihop" not in data, "セクションが無いときはキーごと出さない（null を書かない）"
     for key in ("meta", "params", "batch", "scenario"):
         assert data.get(key) is not None, f"{key} に null を書いている"
     assert isinstance(data["batch"]["rows"], list)
@@ -541,7 +541,7 @@ def test_scalar_roundtrip_survives_save_and_load(tmp_path):
 #
 # 🔑 **今回は指摘の 2 件だけでなく `from_dict` の変換を全部洗い出した**（毎巡
 # 1 件ずつ潰す形を終わらせるため）。残っていた緩い経路は**列挙 2 つとマップ 4 つ
-# だけ**で、他（節・入れ子・要素・スカラー・数値）は既に閉じている。
+# だけ**で、他（セクション・入れ子・要素・スカラー・数値）は既に閉じている。
 _BROKEN_ENUMS = [
     ("mode が数値",       {"scenario": {"mode": 1}}),
     ("mode が未知の文字列", {"scenario": {"mode": "xyz"}}),
@@ -583,18 +583,18 @@ def test_star_is_refused_because_this_version_cannot_run_it(tmp_path):
     """🔴 **実行できないものは、読めるようにもしない**（2026-08-04・Codex 7〜8 巡目）。
 
     `star` は `TOPOLOGIES` に**宣言**されているが、この版は実行できない
-    （`require_runnable` が止める）。読めるようにすると中継窓で次々に綻ぶ:
-      ① 窓が値を落とし、**星の地点を鎖として計算**する
+    （`require_runnable` が止める）。読めるようにすると中継ウィンドウで次々に綻ぶ:
+      ① ウィンドウが値を落とし、**星の地点を鎖として計算**する
       ② 保存でファイルの値が**鎖へ書き換わる**
-      ③ 窓に持たせても、ホップ行は `len(地点)-1` と `wp[i]→wp[i+1]` で作られる
+      ③ ウィンドウに持たせても、ホップ行は `len(地点)-1` と `wp[i]→wp[i+1]` で作られる
          ＝**星では区間名が実際とずれ、別の区間の RF を編集してしまう**
 
-    ⚠️ **7 巡目は「窓に持たせる」道を採って ③ を踏んだ**。理由は「`to_dict` は
+    ⚠️ **7 巡目は「ウィンドウに持たせる」道を採って ③ を踏んだ**。理由は「`to_dict` は
     star を書けるので、読みだけ拒否すると自分が書いたファイルを自分で読めない」
-    だったが、**その非対称は API を直接叩いたときにしか起きない**（窓は鎖しか
+    だったが、**その非対称は API を直接叩いたときにしか起きない**（ウィンドウは鎖しか
     作らない）。**理屈上の対称性より、実際に踏む誤りを優先する。**
 
-    🔑 読めるようにするのは、集約規則が決まり、窓がホップ行を `links()` から
+    🔑 読めるようにするのは、集約規則が決まり、ウィンドウがホップ行を `links()` から
     導けるようになってから（3.x）。
     """
     path = str(tmp_path / "p.rsproj")
@@ -644,8 +644,8 @@ def test_reader_never_converts_values_with_bare_str():
     """**読む側の変換は必ずガード付きヘルパーを通る**ことを構造で縛る。
 
     🔴 なぜ個別のケースだけでなくクラスで塞ぐか（2026-08-04・独立レビュー Codex を
-    5 巡）: `null` → 節が消える／`[5]` → 要素が消える／`"None"` → 文字列に化ける／
-    `mode: 1` → 別の相に化ける……と、**毎巡「同じ型の穴が別の場所で」出続けた**。
+    5 巡）: `null` → セクションが消える／`[5]` → 要素が消える／`"None"` → 文字列に化ける／
+    `mode: 1` → 別のフェーズに化ける……と、**毎巡「同じ型の穴が別の場所で」出続けた**。
     どれも正体は 1 つ＝**読む側で素の `str(...)` を使うと、壊れた値が黙って
     正しそうな値に化ける**。⇒ 事例を 1 つずつ潰すのをやめ、**手口ごと禁じる**
     （[[feedback-promote-recurring-checks]] 実証10＝列挙で塞ぐ穴は名前 1 つで開く）。

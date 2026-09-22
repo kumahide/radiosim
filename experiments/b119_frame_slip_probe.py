@@ -1,4 +1,4 @@
-"""B-119 の実機採取＝ドラッグ中に窓の寸法を動かしているのは誰か。
+"""B-119 の実機採取＝ドラッグ中にウィンドウの寸法を動かしているのは誰か。
 
 実行（1 枚のモニタで足りる）::
 
@@ -41,7 +41,7 @@
                **原因の切り分け**（製品からメニューを外すことはしない）。
   menu     …… DPI が変わったあとに**メニューバーを付け直す**（Tk に枠を測り直させる候補）。
   override …… DPI が変わったあとに `overrideredirect` を往復させる（Tk の内部で
-               ラッパー窓を作り直させる候補。装飾が一瞬消える）。
+               ラッパーウィンドウを作り直させる候補。装飾が一瞬消える）。
   refresh  …… withdraw → deiconify（**棄却済み**。対照として残してある）。
   both     …… 大きさと位置を**1 つの要求**で出し直す（`WxH+X+Y`）。製品は大きさだけ
                `fit_to_content` が、位置だけ `place_within_screen` が別々に出しており、
@@ -52,11 +52,11 @@
 
   minmax   …… 決めた寸法で `wm minsize` / `wm maxsize` を**固定**する。⛔ **棄却**（下）。
   toolwindow …… `wm attributes -toolwindow` を往復させる（`overrideredirect` とは別の
-               経路で Tk にラッパー窓を作り直させる候補）。
-  rebuild  …… **DPI が変わったあとに新しい窓を建てる**（切り分け）。⚠️ ここで確かめるのは
-               「**変更後に作った窓はずれるのか**」の 1 点だけ。ずれなければ「窓を作り直す」
+               経路で Tk にラッパーウィンドウを作り直させる候補）。
+  rebuild  …… **DPI が変わったあとに新しいウィンドウを建てる**（切り分け）。⚠️ ここで確かめるのは
+               「**変更後に作ったウィンドウはずれるのか**」の 1 点だけ。ずれなければ「ウィンドウを作り直す」
                方向（＝製品ではランチャーを建て直す）に望みがあり、ずれれば**その道も死ぬ**。
-               ⇒ 出てきた **NEW と書かれた窓をドラッグ**して、`NEWSZ` 行が出るかを見る。
+               ⇒ 出てきた **NEW と書かれたウィンドウをドラッグ**して、`NEWSZ` 行が出るかを見る。
 
 ⛔ **棄却済み**（同じ発想に戻らないための記録）:
   * `nomenu`  …… メニューバーを外しても**幅は 6px ずつ縮み続けた** ⇒ メニューは無関係。
@@ -64,7 +64,7 @@
   * `refresh`  …… withdraw → deiconify では止まらない。
   * `both`     …… 大きさと位置を 1 つの要求で出しても止まらない。
   * `twice`    …… `w+1` → `w` の往復でも止まらない。
-  * `override` …… ラッパー窓を作り直しても止まらない。
+  * `override` …… ラッパーウィンドウを作り直しても止まらない。
   * `noescape` …… **受け皿の `<Configure>` 処理を全部止めても幅は減り続ける**
                    ⇒ 燃料は我々の受け皿ではない。⚠️ ただし**高さのドリフト（27px）は消えた**
                    ＝高さ側だけは受け皿由来。**幅の 6px は Tk/WM の中だけで完結している。**
@@ -165,7 +165,7 @@ def frame_of(win) -> str:
 
 
 def patch_escape() -> None:
-    """受け皿の `<Configure>` 処理に手を入れる（**窓を建てる前に**呼ぶ＝`bind` は
+    """受け皿の `<Configure>` 処理に手を入れる（**ウィンドウを建てる前に**呼ぶ＝`bind` は
     生成時にメソッドを捕まえるので、後から差し替えても既存の配線には効かない）。"""
     esc = window_fit._ScrollEscape
     if FIX == "noescape":
@@ -201,7 +201,7 @@ def build() -> tk.Tk:
     if FIX == "nomenu":
         # 切り分け＝メニューバーを外すと暴走が消えるか。
         try:
-            root.config(menu=tk.Menu(root))     # 空のメニュー＝帯が無くなる
+            root.config(menu=tk.Menu(root))     # 空のメニュー＝バーが無くなる
             log("INIT", "メニューバーを外した（切り分け）")
         except tk.TclError as exc:
             log("INIT", f"メニューを外せない: {exc}")
@@ -220,7 +220,7 @@ def apply_fix(root: tk.Tk) -> None:
             root.update_idletasks()
             root.config(menu=menu)
     elif FIX == "override":
-        # ラッパー窓を作り直させる候補（装飾が一瞬消える）。
+        # ラッパーウィンドウを作り直させる候補（装飾が一瞬消える）。
         root.overrideredirect(True)
         root.update_idletasks()
         root.overrideredirect(False)
@@ -241,11 +241,11 @@ def apply_fix(root: tk.Tk) -> None:
         root.minsize(w, h)
         root.maxsize(w, h)
     elif FIX == "rebuild":
-        # 「DPI 変更後に作った窓はずれるか」を見るための、まっさらな窓。
+        # 「DPI 変更後に作ったウィンドウはずれるか」を見るための、まっさらなウィンドウ。
         fresh = tk.Toplevel(root)
-        fresh.title("NEW（この窓をドラッグしてください）")
+        fresh.title("NEW（このウィンドウをドラッグしてください）")
         fresh.resizable(False, False)
-        tk.Label(fresh, text="DPI 変更後に建てた窓／これをドラッグ").pack(
+        tk.Label(fresh, text="DPI 変更後に建てたウィンドウ／これをドラッグ").pack(
             padx=40, pady=60)
         fresh.geometry("500x400+120+120")
         fresh.update_idletasks()

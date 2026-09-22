@@ -2,11 +2,11 @@
 tests/test_repo_hygiene.py
 ==========================
 「追跡してはいけないファイルが追跡されていないか」を機械的に検証する回帰テスト。
-コミット前の門（.git/hooks/pre-commit）と**同じ判定ロジックの単一の出所**でもある。
+コミット前のゲート（.git/hooks/pre-commit）と**同じ判定ロジックの単一の出所**でもある。
 
 ⚠️ **前提が 1 つ変わった（2026-08-11・I-057）＝リポジトリは OneDrive の外へ移した**
 （`D:` ドライブ）。⇒ **下の同期競合コピーの検査は、いまの置き場では原理的に発火しない。**
-それでも**残す**＝①判定ロジックは pre-commit フックと共有の単一の出所で、削ると門も痩せる
+それでも**残す**＝①判定ロジックは pre-commit フックと共有の単一の出所で、削るとゲートも痩せる
 ②置き場は将来また動き得る（実際 2026-07-27 に「移設しない」と決めたものが 2026-08-11 に
 覆った）③コストがゼロ。**ただし「緑であること」を守りの証拠として数えないこと**——
 いまこの検査が緑なのは、守れているからではなく**その事故が起こり得ない場所に居るから**。
@@ -243,13 +243,13 @@ class TestRepoHygiene:
             "（手順は README「開発環境のセットアップ」）。"
         )
 
-    def test_venv門_壊れ方1_一度も落ちない_ことがない(self, tmp_path):
+    def test_venvゲート_壊れ方1_一度も落ちない_ことがない(self, tmp_path):
         """①venv があれば必ず検出すること（削除後に無検出で緑になっていないか）。"""
         (tmp_path / ".venv").mkdir()
         (tmp_path / ".venv" / VENV_MARKER).write_text("home = C:\\Python", encoding="utf-8")
         assert venv_dirs_in_root(tmp_path) == [".venv"]
 
-    def test_venv門_壊れ方2_毎回鳴る_ことがない(self, tmp_path):
+    def test_venvゲート_壊れ方2_毎回鳴る_ことがない(self, tmp_path):
         """②venv でないディレクトリでは沈黙すること。"""
         for name in ("views", "tests", "terrain_cache"):
             (tmp_path / name).mkdir()
@@ -257,7 +257,7 @@ class TestRepoHygiene:
         assert venv_dirs_in_root(tmp_path) == []
 
     @pytest.mark.parametrize("name", ["venv", "env", ".env311", "検証環境"])
-    def test_venv門_壊れ方3_名前ではなく実体を見ている(self, tmp_path, name):
+    def test_venvゲート_壊れ方3_名前ではなく実体を見ている(self, tmp_path, name):
         """③`.venv` という名前だけを禁じていないこと。
 
         名前で列挙すると、次に作られる venv が別名だった瞬間に穴が開く。
@@ -298,9 +298,9 @@ _LAYERS = ("core", "report", "views")
 # ============================================================
 # 追跡されている呼び出し口が呼ぶ道具は、追跡されていること（I-090）
 # ============================================================
-# 🔴 **門が「この機械にしか無い」状態は、外からは緑に見える。**
+# 🔴 **ゲートが「この機械にしか無い」状態は、外からは緑に見える。**
 # `build.bat` は追跡されているのに、そこから呼ぶ `tools/qa-hook/release-check.mjs`
-# は `tools/` ごと git-ignore されていた＝**clone した環境では門が丸ごと消える**のに、
+# は `tools/` ごと git-ignore されていた＝**clone した環境ではゲートが丸ごと消える**のに、
 # `if exist` のガードで**静かにスキップ**されるので誰も気づかない。実際 B-074(b) の
 # 刻印照合（表示依存テストを回したかの突き合わせ）が、この形で片翼だけローカルに
 # 存在していた（2026-08-12・I-090）。
@@ -321,7 +321,7 @@ def test_qa_tools_called_from_tracked_files_are_tracked():
     """追跡ファイルが呼ぶ QA 道具が、追跡から漏れていないこと。
 
     ⚠️ **`if exist` のガードがあるから安全、ではない**＝ガードは「無いときに壊れ
-    ない」ことしか保証せず、**門が働かないこと自体は報告しない**。B-074 の処方は
+    ない」ことしか保証せず、**ゲートが働かないこと自体は報告しない**。B-074 の処方は
     「報告と刻印の対」で成り立っているので、片翼が消えると静かに元の事故へ戻る。
     """
     callers = [ROOT / "build.bat"]
@@ -336,7 +336,7 @@ def test_qa_tools_called_from_tracked_files_are_tracked():
     assert not missing, (
         "追跡されている呼び出し口が、**非追跡の道具**を呼んでいます:\n  "
         + "\n  ".join(missing)
-        + "\n＝clone した環境ではこの門が丸ごと消えます（しかも静かにスキップ"
+        + "\n＝clone した環境ではこのゲートが丸ごと消えます（しかも静かにスキップ"
         "されるので気づけません）。道具を追跡するか、呼び出し口の側から外すこと。"
     )
 
@@ -505,20 +505,20 @@ def test_pyright_finds_no_type_errors_in_app_modules():
 # ============================================================
 # アプリ設定の出所は 1 つ（2.7 スライス G2＝I-055 ②）
 # ============================================================
-# 🔴 背景: 窓が `config.load_config()` を**直に**呼ぶと、①テストの緑が開発機の
-# 実設定に左右され（B-034 が長期間生き延びた機構そのもの）②同じ設定を窓ごとに
+# 🔴 背景: ウィンドウが `config.load_config()` を**直に**呼ぶと、①テストの緑が開発機の
+# 実設定に左右され（B-034 が長期間生き延びた機構そのもの）②同じ設定をウィンドウごとに
 # 違う時点で読むので、画面と保存物で表記が食い違い得る。
-# ⇒ **app 設定はランチャーが読み、開く時点のスナップショットを窓へ渡す**
+# ⇒ **app 設定はランチャーが読み、開く時点のスナップショットをウィンドウへ渡す**
 #   （[[project-radiosim]] の凍結方式を設定へ広げただけ＝新しい仕掛けではない）。
 #
-# ⚠️ 窓の名前を列挙して禁じない＝次に増える窓が別名だった瞬間に穴が開く
+# ⚠️ ウィンドウの名前を列挙して禁じない＝次に増えるウィンドウが別名だった瞬間に穴が開く
 # （[[feedback-promote-recurring-checks]] 実証10）。**読んでよい側を挙げる。**
 _CONFIG_READ_ALLOWED = {
     "core/config.py":     "定義そのもの",
     "main.py":            "起動時の読み込み（アプリの入口）",
-    "views/launcher.py":  "凍結の出所＝ランチャーが読んで子窓へ渡す",
+    "views/launcher.py":  "凍結の出所＝ランチャーが読んで子ウィンドウへ渡す",
     "core/env_facts.py":  "環境事実の収集層＝いまの設定そのものを事実として読む"
-                          "（画面の凍結一貫性とは別の関心・3.2 段5）",
+                          "（画面の凍結一貫性とは別の関心・3.2 ステージ5）",
 }
 
 # `config.load_config()` と、`from config import load_config`（別名で持ち込んで
@@ -548,13 +548,13 @@ def _app_modules_with_text():
 
 
 class TestConfigHasOneSource:
-    def test_窓が_app_設定を直に読まない(self):
+    def test_ウィンドウが_app_設定を直に読まない(self):
         """本番の不変条件。読んでよいのは入口とランチャーだけ。"""
         found = [v for rel, text in _app_modules_with_text()
                  for v in direct_config_reads(rel, text)]
         assert not found, (
             "app 設定を直に読んでいる箇所があります: " + ", ".join(found) + "\n"
-            "設定はランチャーが読み、窓を開く時点のスナップショットを引数で渡して"
+            "設定はランチャーが読み、ウィンドウを開く時点のスナップショットを引数で渡して"
             "ください（凍結方式・I-055 ②）。直に読むと、テストの結果が開発機の"
             "設定に左右されます。"
         )
@@ -571,7 +571,7 @@ class TestConfigHasOneSource:
         "conf = config.load_config(path)",
     ])
     def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
-        assert direct_config_reads("views/新しい窓.py", code + "\n")
+        assert direct_config_reads("views/新しいウィンドウ.py", code + "\n")
 
     def test_壊れ方2_毎回鳴る_ことがない(self):
         """②正しい書き方では沈黙すること。"""
@@ -580,20 +580,20 @@ class TestConfigHasOneSource:
             "c = self._config_provider()\n"
             "params = sim.SimParams(config.DEFAULT_CONFIG)\n"
             "config.save_app(self.config)\n"
-            "# 窓は config.load_config() を直に読まない（説明のコメント）\n"
+            "# ウィンドウは config.load_config() を直に読まない（説明のコメント）\n"
         )
         assert direct_config_reads("views/graph.py", 正当) == []
 
     def test_壊れ方3_間違ったものを要求していない(self):
-        """③禁じているのは「窓が直に読むこと」であって config の利用ではない。
+        """③禁じているのは「ウィンドウが直に読むこと」であって config の利用ではない。
 
-        許可された側（ランチャー・入口）は同じ行でも通ること、逆に窓の名前を
+        許可された側（ランチャー・入口）は同じ行でも通ること、逆にウィンドウの名前を
         知らなくても検出できることの両方を示す。
         """
         code = "cfg = config.load_config()\n"
         assert direct_config_reads("views/launcher.py", code) == []
         assert direct_config_reads("main.py", code) == []
-        assert direct_config_reads("views/まだ存在しない窓.py", code)
+        assert direct_config_reads("views/まだ存在しないウィンドウ.py", code)
 
     def test_許可リストが実在する(self):
         missing = [n for n in _CONFIG_READ_ALLOWED if not (ROOT / n).exists()]
@@ -661,11 +661,11 @@ class TestAsyncWaitsAreConditional:
 
     @pytest.mark.parametrize("code", [
         "root.after(300, root.quit)",
-        "win.after(_DEBOUNCE + 80, win.quit)",             # 別の窓で待つ形
+        "win.after(_DEBOUNCE + 80, win.quit)",             # 別のウィンドウで待つ形
         "self.root.after(500, self.root.quit)",            # 属性経由
     ])
     def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
-        assert deadline_waits("tests/test_新しい窓.py", code + "\n")
+        assert deadline_waits("tests/test_新しいウィンドウ.py", code + "\n")
 
     def test_壊れ方2_毎回鳴る_ことがない(self):
         """②正しい書き方では沈黙すること。"""
@@ -681,7 +681,7 @@ class TestAsyncWaitsAreConditional:
     def test_壊れ方3_間違ったものを要求していない(self):
         """③禁じているのは**待ち方**であって `after` でも `mainloop` でもない。
 
-        製品コードは対象外（窓を閉じる `after` は正当な実装）。⚠️ **範囲を決めて
+        製品コードは対象外（ウィンドウを閉じる `after` は正当な実装）。⚠️ **範囲を決めて
         いるのは走査面**（`deadline_waits` は渡された字だけを見る）なので、
         「何を渡すか」の側を実在のファイル名で確かめる。
         """
@@ -758,7 +758,7 @@ class TestTkRootsGoThroughConftest:
         "root = tk.Tk(",                        # 開き括弧で改行する形（同上）
     ])
     def test_壊れ方1b_同じクラスの別の書き方も検出する(self, code):
-        assert raw_tk_roots("tests/test_新しい窓.py", code + "\n")
+        assert raw_tk_roots("tests/test_新しいウィンドウ.py", code + "\n")
 
     def test_壊れ方2_毎回鳴る_ことがない(self):
         """②正しい書き方では沈黙すること。"""

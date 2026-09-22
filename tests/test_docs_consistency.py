@@ -99,9 +99,9 @@ def test_file_tree_lists_all_modules(doc):
 # --- 2. アーキテクチャ層構成図: 全 view + コアモジュールを含むか -------------
 #       （今回見落とした図そのものをガードする）
 #
-# 🔑 **図の実体は SVG へ移した**ので、節の散文だけ見ても中身は分からない。⇒ 節が
+# 🔑 **図の実体は SVG へ移した**ので、セクションの散文だけ見ても中身は分からない。⇒ セクションが
 # 参照している SVG を開いて**図の中の字ごと**照合する（SVG はテキストなので読める）。
-# ⚠️ 参照が消える／SVG が無いときは**落とす**＝「節に何も書いていないから緑」という
+# ⚠️ 参照が消える／SVG が無いときは**落とす**＝「セクションに何も書いていないから緑」という
 # 空振りを作らない（ゲートの壊れ方②「一度も落ちない」の予防）。
 #: ⚠️ 画像参照の形（`![…](…)` / `<img src>`）だけを拾う。素の丸括弧で拾うと
 #: 「（英語版は architecture_en.svg）」のような**散文の言及**まで参照とみなして落ちる。
@@ -109,7 +109,7 @@ _SVG_REF_RE = re.compile(r'!\[[^\]]*\]\(([^)]+\.svg)\)|<img[^>]+src="([^"]+\.svg
 
 
 def _architecture_text(doc: str) -> str:
-    """アーキテクチャ節の字＋そこが参照している SVG の字。"""
+    """アーキテクチャセクションの字＋そこが参照している SVG の字。"""
     import posixpath
     arch = _section(_read(doc), ["アーキテクチャ", "Architecture"])
     refs = [m.group(1) or m.group(2) for m in _SVG_REF_RE.finditer(arch)]
@@ -133,7 +133,7 @@ def test_architecture_diagram_lists_all_modules(doc):
 # --- 2b. 層構成図のレイアウト: 行を 1 本足したときに落ちること ---------------
 #
 # 🔑 **上の 2 が見ているのは「字が在るか」だけ**＝役割の字が 1 つ上の行と重なって
-# いても、カードが帯を突き抜けていても、背景が図の下端まで届いていなくても緑になる
+# いても、カードがバーを突き抜けていても、背景が図の下端まで届いていなくても緑になる
 # （実際に 3 つとも同時に起きた＝B-147。**ゲートの壊れ方①「一度も落ちない」**）。
 #
 # 🔴 **クラスは「図の中の座標を手で足したこと」**＝行を 1 本足すと
@@ -145,7 +145,7 @@ def test_architecture_diagram_lists_all_modules(doc):
 # 生成する**。壊れ方を見つけるたびにゲートを 1 本ずつ足してきた（B-147 で 4 本・
 # B-153 で 2 本）が、**横方向は最初から検査の外**で、行を足すたびに黙ってはみ出した
 # （その 6 本は 1 本も落ちなかった）。**数え上げたゲートは数え漏れの分だけ次に壊れる**
-# ⇒ ゲートの芯を「**生成物と一致**」1 本に寄せた（手で直すと赤・表を直して生成し
+# ⇒ ゲートのコアを「**生成物と一致**」1 本に寄せた（手で直すと赤・表を直して生成し
 # 忘れても赤）。下の構造の検査は、生成器の割り付けの誤りを捕まえる網として残す。
 # ⚠️ 旧「ja / en の幾何が一致」は**撤去した**＝手で同期していた頃の安全策で、いまは
 # 言語ごとに字の幅を見積もって割り付ける（幾何は違ってよい）。
@@ -171,7 +171,7 @@ architecture_figure = _load_architecture_figure()
 
 @pytest.mark.parametrize("lang", architecture_figure.LANGS)
 def test_architecture_diagram_is_the_generator_output(lang):
-    """リポジトリの SVG が生成器の出力と一致すること（B-209 の芯）。
+    """リポジトリの SVG が生成器の出力と一致すること（B-209 のコア）。
 
     改行だけは正規化する＝作業ツリーは `core.autocrlf` で CRLF になり得る（索引は LF）。
     """
@@ -209,7 +209,7 @@ def _svg_texts(doc: str):
 
 @pytest.mark.parametrize("doc", ARCH_SVGS)
 def test_architecture_diagram_text_never_runs_into_the_next_or_off_its_box(doc):
-    """字が、同じ行の次の字にも、自分の箱（カード→帯→図）の右端にも届かないこと。
+    """字が、同じ行の次の字にも、自分の箱（カード→バー→図）の右端にも届かないこと。
 
     🔴 **B-209**＝行を足すたびに役割がカードの右端を越え、英語版は図の外まで出た。
     **横方向は B-153 で「推定しない」と決めて検査の外に置いていた**（書体で幅が
@@ -291,7 +291,7 @@ def test_architecture_width_table_is_an_upper_bound_of_the_measured_fonts():
 
 
 def _svg_geometry(doc: str):
-    """SVG から帯・カード・字の座標を拾う（描画はせず座標だけを見る）。"""
+    """SVG からバー・カード・字の座標を拾う（描画はせず座標だけを見る）。"""
     import xml.etree.ElementTree as ET
 
     root = ET.parse(ROOT / doc).getroot()
@@ -333,17 +333,17 @@ def test_architecture_diagram_background_covers_the_whole_figure(doc):
 
 @pytest.mark.parametrize("doc", ARCH_SVGS)
 def test_architecture_diagram_cards_stay_inside_their_band(doc):
-    """カードが親の帯からはみ出さないこと（行を足して帯を広げ忘れると落ちる）。"""
+    """カードが親のバーからはみ出さないこと（行を足してバーを広げ忘れると落ちる）。"""
     _size, bands, cards, _t, _bg = _svg_geometry(doc)
-    assert bands and cards, f"{doc}: 帯またはカードが拾えていない"
+    assert bands and cards, f"{doc}: バーまたはカードが拾えていない"
     for card in cards:
-        # 親＝カードの左上を含む帯（はみ出していても親は決まる）。
+        # 親＝カードの左上を含むバー（はみ出していても親は決まる）。
         parents = [b for b in bands
                    if b[0] <= card[0] < b[0] + b[2] and b[1] <= card[1] < b[1] + b[3]]
-        assert parents, f"{doc}: どの帯にも属さないカード {card}"
+        assert parents, f"{doc}: どのバーにも属さないカード {card}"
         assert _inside(card, parents[0]), (
-            f"{doc}: カード {card} が帯 {parents[0]} を突き抜けている"
-            "（行を足したら帯の高さも足す）"
+            f"{doc}: カード {card} がバー {parents[0]} を突き抜けている"
+            "（行を足したらバーの高さも足す）"
         )
 
 
@@ -573,7 +573,7 @@ ALL_DOCS = ["docs/developer_ja.md", "docs/developer_en.md",
 @pytest.mark.parametrize("doc", ALL_DOCS)
 def test_batch_csv_columns_listed(doc):
     """バッチ CSV の全列（batch_csv_schema.CSV_COLUMNS が単一ソース）が各 README の
-    複数経路の節に載っているか。gain_tx/gain_rx 追加のような
+    複数経路のセクションに載っているか。gain_tx/gain_rx 追加のような
     スキーマ変更をドキュメント全系統へ反映し忘れるのを捕捉する。"""
     section = _section(_read(doc), ["複数経路", "Multiple Paths"])
     for col in batch_csv_schema.CSV_COLUMNS:
@@ -609,14 +609,14 @@ _FORBIDDEN_FROZEN_CLAIM = [
 
 
 def _output_subsection(section: str, filename: str) -> str:
-    """出力列の節のうち、そのファイルの `#### \\`名前\\`` 見出しから次の `#### ` まで。
+    """出力列のセクションのうち、そのファイルの `#### \\`名前\\`` 見出しから次の `#### ` まで。
 
-    🔴 **節ぜんたいを見ると、列の抜けを取りこぼす**（2026-08-25 の変異検証で実際に
+    🔴 **セクション全体を見ると、列の抜けを取りこぼす**（2026-08-25 の変異検証で実際に
     緑のままだった）＝`slant_m` や `status` は 3 つの表に出るので、**1 つの表から
-    落としても節のどこかには残る**。⇒ 表ごとに切って数える。
+    落としてもセクションのどこかには残る**。⇒ 表ごとに切って数える。
     """
     marker = f"#### `{filename}`"
-    assert marker in section, f"出力列の節に {filename} の表が無い"
+    assert marker in section, f"出力列のセクションに {filename} の表が無い"
     body = section.split(marker, 1)[1]
     return body.split("\n#### ", 1)[0]
 
@@ -637,7 +637,7 @@ def test_output_csv_columns_listed(doc):
     section = _section(_read(doc), _OUTPUT_SECTION_HEADERS)
     for contract in output_contract.CSV_CONTRACTS:
         assert f"`{contract.filename}`" in section, (
-            f"{doc}: 出力列の節に {contract.filename} が載っていない"
+            f"{doc}: 出力列のセクションに {contract.filename} が載っていない"
         )
         missing = _missing_columns(section, contract)
         assert not missing, (
@@ -742,20 +742,20 @@ def _menu_i18n_keys() -> list[str]:
 
 @pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_menu_items_are_documented(doc, lang):
-    """メニューバーの**全項目**が、各 README の「メニュー」節に載っているか。
+    """メニューバーの**全項目**が、各 README の「メニュー」セクションに載っているか。
 
-    背景（2026-08-03・ユーザー指摘）: 節名が「UI 設定」だったころ、載っていたのは
+    背景（2026-08-03・ユーザー指摘）: セクション名が「UI 設定」だったころ、載っていたのは
     12 項目中 6 項目だけで、**ファイルメニュー 4 項目が丸ごと欠けていた**——
     2.6 の目玉であるプロジェクト機能の唯一の入口が、メニュー表に 1 行も無い状態。
-    しかも節にはメニューでないもの（マップウィンドウ）が同居していた。
+    しかもセクションにはメニューでないもの（マップウィンドウ）が同居していた。
     「実装にメニューを足したが README を直さなかった」は放置すれば必ず再発する型
-    なので、`test_map_mode_labels_listed` と同じ形の門にして止める。
+    なので、`test_map_mode_labels_listed` と同じ形のゲートにして止める。
     """
     section = _section(_read(doc), _MENU_SECTION_HEADERS)
     for key in _menu_i18n_keys():
         label = i18n._STRINGS[lang][key]
         assert label in section, (
-            f"{doc}: メニュー項目 {label!r} ({key}) が「メニュー」節に載っていない"
+            f"{doc}: メニュー項目 {label!r} ({key}) が「メニュー」セクションに載っていない"
         )
 
 
@@ -906,27 +906,27 @@ def test_the_button_scanner_accepts_labels_whose_key_is_a_variable():
             assert _button_mentions(template.format(label), lang) == []
 
 
-# --- 文書が窓を名指しする「枠」に、実装の窓名が入っているか --------------------
+# --- 文書がウィンドウを名指しする「枠」に、実装のウィンドウ名が入っているか --------------------
 # 🔑 **上のボタン名ゲートより広い穴を、前置詞ではなく“位置”で塞ぐ**（I-079）。
 # `test_documented_button_names_exist_in_the_app` が見るのは「〜ボタン」と名指し
-# した形だけなので、**見出し・目次・機能表で窓を古い名前で呼んでいても緑**になる。
+# した形だけなので、**見出し・目次・機能表でウィンドウを古い名前で呼んでいても緑**になる。
 # 2.7 の正式ビルド後に同梱 README を grep して見つかった `Relay Route`（実装は
 # `Relay Path`）は、まさにその位置に居た（`## Usage — Relay Route` と目次）。
 #
 # ⚠️ **素朴な拡張＝「古そうな語を探す」は毎回鳴る**（2026-08-11 に実測した）。
-# 窓名の頭で全文を走査すると、正当な散文が大量に落ちる——ja は `中継点`（中継
+# ウィンドウ名の頭で全文を走査すると、正当な散文が大量に落ちる——ja は `中継点`（中継
 # *経路*ではない実在の概念）`複数障害` `条件を…` で 18 件、en は `Relay points`
-# `Condition explorer` が鳴った。**語の見た目からは、窓を名指ししているのか
+# `Condition explorer` が鳴った。**語の見た目からは、ウィンドウを名指ししているのか
 # ただ日本語/英語を書いているのかを区別できない。**
 #
-# ⇒ **枠で位置を決める。** 4 文書とも窓の名前が出るのは次の 2 か所だけで、
-#    どちらも「窓名を知らなくても」構文から特定できる:
-#      ① 見出し `## 使い方 — <窓名>` / `## Usage — <Window>`（地図は `## 地図`）
+# ⇒ **枠で位置を決める。** 4 文書ともウィンドウの名前が出るのは次の 2 か所だけで、
+#    どちらも「ウィンドウ名を知らなくても」構文から特定できる:
+#      ① 見出し `## 使い方 — <ウィンドウ名>` / `## Usage — <Window>`（地図は `## 地図`）
 #      ② 目次のリンクの字
 #    枠の中身だけを検査するので、散文には**原理的に触れない**。
 _WINDOW_TITLE_KEYS = sorted(k for k in i18n._STRINGS["en"] if k.endswith("_window_title"))
 
-#: 「使い方 — X」の枠。X は窓名か、ランチャー（`html_single_mode`）。
+#: 「使い方 — X」の枠。X はウィンドウ名か、ランチャー（`html_single_mode`）。
 _USAGE_FRAME = re.compile(r"^(?:使い方|Usage)\s*[—–-]\s*(.+?)\s*$")
 
 
@@ -945,7 +945,7 @@ def _frame_subjects(text: str) -> list[str]:
     """「使い方 — X」の枠に入っている X を、見出しと目次から全部集める。
 
     末尾の括弧書きは落とす（`条件探索（比較 / スイープ）` → `条件探索`）＝括弧の
-    中は窓名ではなく**その節が何を扱うかの補足**なので、実装と照合する対象でない。
+    中はウィンドウ名ではなく**そのセクションが何を扱うかの補足**なので、実装と照合する対象でない。
     """
     subjects = []
     for s in _headings(text) + _toc_labels(text):
@@ -956,9 +956,9 @@ def _frame_subjects(text: str) -> list[str]:
 
 @pytest.mark.parametrize("doc,lang", _MODE_DOCS)
 def test_window_titles_are_named_in_headings_and_toc(doc, lang):
-    """**前向き**＝窓の名前（i18n が単一ソース）が、見出しと目次に実値で在ること。
+    """**前向き**＝ウィンドウの名前（i18n が単一ソース）が、見出しと目次に実値で在ること。
 
-    窓を改名して文書を直し忘れると、枠は古い名前で埋まったまま**新しい名前が
+    ウィンドウを改名して文書を直し忘れると、枠は古い名前で埋まったまま**新しい名前が
     どこにも無い**状態になるので、ここが赤くなる。
     """
     text = _read(doc)
@@ -966,10 +966,10 @@ def test_window_titles_are_named_in_headings_and_toc(doc, lang):
     for key in _WINDOW_TITLE_KEYS:
         title = i18n._STRINGS[lang][key]
         assert any(title in h for h in heads), (
-            f"{doc}: 窓 {key} の名前 {title!r} を名乗る見出しが無い（改名の置き去り）"
+            f"{doc}: ウィンドウ {key} の名前 {title!r} を名乗る見出しが無い（改名の置き去り）"
         )
         assert any(title in t for t in toc), (
-            f"{doc}: 窓 {key} の名前 {title!r} が目次に無い（改名の置き去り）"
+            f"{doc}: ウィンドウ {key} の名前 {title!r} が目次に無い（改名の置き去り）"
         )
 
 
@@ -987,17 +987,17 @@ def test_usage_sections_name_something_that_exists(doc, lang):
     - **毎回鳴る**: 例外表は**持たない**。枠の外（散文・小見出し・表のセル）は
       一切見ないので、`中継点` や `Relay points` では鳴りようがない。
     - **間違ったものを要求している**: 要求は「**その字が画面に在る**」だけで、
-      名前の良し悪しでも、節の並び順でもない。
+      名前の良し悪しでも、セクションの並び順でもない。
     """
     known = set(i18n._STRINGS[lang].values())
     for subject in _frame_subjects(_read(doc)):
         assert subject in known, (
-            f"{doc}: 使い方の節が名乗る {subject!r} は画面に無い字（改名の置き去り）"
+            f"{doc}: 使い方のセクションが名乗る {subject!r} は画面に無い字（改名の置き去り）"
         )
 
 
 def test_the_usage_frame_catches_a_stale_window_name():
-    """改名前の窓名を枠が必ず捕まえること（変異検証）。"""
+    """改名前のウィンドウ名を枠が必ず捕まえること（変異検証）。"""
     for lang, stale in (("en", "Relay Route"), ("ja", "中継ルート")):
         head = "## Usage — " if lang == "en" else "## 使い方 — "
         assert _frame_subjects(head + stale) == [stale]
@@ -1007,7 +1007,7 @@ def test_the_usage_frame_catches_a_stale_window_name():
 def test_the_usage_frame_ignores_prose_that_merely_starts_alike():
     """枠の外は見ないこと（毎回鳴るゲートにしない・実測で鳴った字で確かめる）。
 
-    どれも 2026-08-11 に実文書へ在った正当な散文で、窓名の頭で全文走査すると
+    どれも 2026-08-11 に実文書へ在った正当な散文で、ウィンドウ名の頭で全文走査すると
     落ちていたもの。**枠を見る限り 1 件も拾わない。**
     """
     for prose in ("中継点は最大 7 つで、区間ごとに計算します。",
@@ -1074,7 +1074,7 @@ _LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 # 公開文書の語彙も、画面と同じ 1 語にそろえる（2026-08-14・ユーザー指摘）
 # ============================================================
 # **用語集のゲート（`test_i18n_glossary.py`）は画面の字しか見ない。** そこを直しても
-# 文書は素通りするので、実際に**同じものを「窓」と「ウィンドウ」の 2 語で書いていた**
+# 文書は素通りするので、実際に**同じものを「ウィンドウ」と「ウィンドウ」の 2 語で書いていた**
 # （文書 113 / 93 か所）。⇒ 文書の側にも同じ網を置く。
 #
 # 🔑 **正典は用語集の「文書でも 1 語にそろえる」表**＝ここに語を手書きで並べない。
@@ -1198,14 +1198,14 @@ def test_public_docs_never_use_the_equals_explanation_form(doc):
     )
 
 
-# CHANGELOG は**節ごとに扱いが違う**＝出荷した版の記録は書き換えない（2026-09-13
+# CHANGELOG は**セクションごとに扱いが違う**＝出荷した版の記録は書き換えない（2026-09-13
 # ユーザー承認）ので、ファイル単位では上の検査に入れられない。⇒ **まだ配布して
-# いない節だけ**を見る。配布した時点で節に日付が入り、その節は検査から外れる。
+# いないセクションだけ**を見る。配布した時点でセクションに日付が入り、そのセクションは検査から外れる。
 _UNRELEASED_HEADING_RE = re.compile(r"^## \[[^\]]+\][^\n]*未リリース")
 
 
 def _unreleased_changelog_lines() -> list[tuple[int, str]]:
-    """CHANGELOG の未リリース節の散文（行番号, 行）。節が無ければ空。"""
+    """CHANGELOG の未リリースセクションの散文（行番号, 行）。セクションが無ければ空。"""
     text = _read("CHANGELOG.md")
     start = end = None
     for i, line in enumerate(text.splitlines(), 1):
@@ -1222,10 +1222,10 @@ def _unreleased_changelog_lines() -> list[tuple[int, str]]:
 
 
 def test_the_unreleased_changelog_never_uses_the_equals_explanation_form():
-    """まだ配布していない CHANGELOG の節が「○○＝△△」の説明形を使っていないこと。"""
+    """まだ配布していない CHANGELOG のセクションが「○○＝△△」の説明形を使っていないこと。"""
     lines = _unreleased_changelog_lines()
     if not lines:
-        pytest.skip("CHANGELOG に未リリースの節が無い（直前の版を出した直後）")
+        pytest.skip("CHANGELOG に未リリースのセクションが無い（直前の版を出した直後）")
     hits = [f"CHANGELOG.md:{i} {line.strip()}" for i, line in lines if "＝" in line]
     assert not hits, (
         "未リリースの CHANGELOG に「○○＝△△」の説明形が残っている"
@@ -1302,7 +1302,7 @@ def test_coverage_source_is_the_headless_layers():
 
 
 # --- 11. 公開文書に非公開の課題 ID を書かない（2.6 追加） ---------------------
-#       背景（2026-08-03・ユーザー指摘）: メニュー節を書き直したとき、README に
+#       背景（2026-08-03・ユーザー指摘）: メニューセクションを書き直したとき、README に
 #       `I-030` `B-021` `B-025②` `I-060` の 4 種 6 箇所を書き込んでしまった。
 #       **ISSUES.md は `.gitignore` 対象**（未修正の脆弱性・実機スクショを含むため
 #       公開できない）＝**公開リポジトリの読者には解決不能な参照**になる。

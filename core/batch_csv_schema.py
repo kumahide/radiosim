@@ -13,7 +13,7 @@ core/batch_csv_schema.py
 「apps どうしは import しない」規則の下で Tracer が本体側の `report/` を
 直接 import せずに済むよう、契約だけをここへ切り出す（I-159）。
 
-`report/batch.py` はここから読み、`README` の CSV 節を照合するドキュメント
+`report/batch.py` はここから読み、`README` の CSV セクションを照合するドキュメント
 整合テスト（`tests/test_docs_consistency.py`）もここを単一ソースにする。
 """
 

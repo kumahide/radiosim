@@ -1,9 +1,9 @@
 """
 views/batch_io.py
 =================
-バッチ窓の **CSV 入出力とテンプレート**（`BatchBuilderWindow` の Mixin）。
+バッチウィンドウの **CSV 入出力とテンプレート**（`BatchBuilderWindow` の Mixin）。
 
-⛔ CSV の列と正規化の規則は `batch.py` が単一ソース＝ここは窓とファイル選択の
+⛔ CSV の列と正規化の規則は `batch.py` が単一ソース＝ここはウィンドウとファイル選択の
 つなぎだけを持つ（列名を書き写さない）。
 
 ⚠️ **これは `BatchBuilderWindow` の一部**であって独立した部品ではない。

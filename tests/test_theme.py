@@ -30,7 +30,7 @@ from views import theme
 
 _THEMES = ("light", "dark")
 
-# バッチ窓の生成に要る最小パラメータ（値そのものは配色検証に無関係）。
+# バッチウィンドウの生成に要る最小パラメータ（値そのものは配色検証に無関係）。
 _PARAMS = {
     "start"      : "34.5429, 132.4118",
     "end"        : "34.5389, 132.4050",
@@ -420,7 +420,7 @@ def test_ui_font_comes_from_sv_ttk(root):
 
     2.5b2 / I-023：sv_ttk は Entry/Combobox/Treeview に `SunValleyBodyFont` を
     当てるが Label/Button には当てない。アプリ側が別の書体（`("Arial", 9)`）を
-    ベタ書きすると、**窓ごと・ウィジェットごとに書体もサイズも揃わない**。
+    ベタ書きすると、**ウィンドウごと・ウィジェットごとに書体もサイズも揃わない**。
     """
     set_theme("dark")
     assert theme.ui_font(root)          == "SunValleyBodyFont"
@@ -541,7 +541,7 @@ def test_labels_and_entries_render_in_the_same_font(root):
 
     sv_ttk は Entry/Combobox/Treeview にだけ本文フォントを当て、Label/Button
     には当てない（＝ja 環境では Yu Gothic UI 9pt と Segoe UI Variable Text
-    10pt が同じ窓に混在する）。1 つの窓の中で字面が揃うことを固定する。
+    10pt が同じウィンドウに混在する）。1 つのウィンドウの中で字面が揃うことを固定する。
     """
     set_theme("dark")
     theme.apply_fonts(root)
@@ -562,7 +562,7 @@ def test_dynamically_created_widgets_get_the_same_font(root):
     オプション**として持ち、その既定値 `TkTextFont` がスタイルより優先される。
     結果、条件探索で「条件を追加」して生やした列だけ字が小さいまま出た
     （既存の列は sv_ttk が `<<ThemeChanged>>` 時に個別に当てていた）。
-    **窓を組み立てた直後に測るテストでは落ちない**ので、生成の遅い側を明示的に
+    **ウィンドウを組み立てた直後に測るテストでは落ちない**ので、生成の遅い側を明示的に
     測る。
     """
     set_theme("dark")
@@ -638,7 +638,7 @@ def test_table_padding_survives_a_theme_switch(root):
 
 
 # ============================================================
-# DPI 追従（2026-07-26 のユーザー報告：窓は変わるのに字が変わらない）
+# DPI 追従（2026-07-26 のユーザー報告：ウィンドウは変わるのに字が変わらない）
 # ============================================================
 def _px(widget, kind: str = "body") -> int:
     """名前付きフォントに設定されているピクセル数（負値＝px 指定）。"""
@@ -653,7 +653,7 @@ def test_fonts_scale_with_dpi(root):
 
     sv_ttk のフォントは**ピクセル指定**（`-14`）で、Tk の `tk scaling` の影響を
     受けない＝放っておくと DPI が変わっても 1px も変わらない。一方 Windows は
-    Per-Monitor DPI Aware の窓を拡大するので、「窓は大きくなったのに字は小さい
+    Per-Monitor DPI Aware のウィンドウを拡大するので、「ウィンドウは大きくなったのに字は小さい
     まま」になる（2026-07-26 のユーザー報告）。
     """
     set_theme("dark")
@@ -749,7 +749,7 @@ def test_watch_display_actually_fires_on_a_configure_event(root):
         pump_until(root, lambda: notified)
         assert notified == [(144, True)], (
             f"DPI 変化が通知されていない、または「DPI が変わった」と伝わっていない:"
-            f" {notified}（後者だと窓が縮む方向に測り直されない＝I-053）。"
+            f" {notified}（後者だとウィンドウが縮む方向に測り直されない＝I-053）。"
         )
         assert _px(root) == round(at96 * 1.5), "通知は来たがフォントが貼り直されていない"
     finally:
@@ -762,7 +762,7 @@ def test_pointer_is_down_sees_the_swapped_primary_button(monkeypatch):
 
     🔴 `GetAsyncKeyState` の `VK_LBUTTON` は**物理の左ボタン**で、Windows の
     「主ボタンを入れ替える」設定に従わない（独立レビュー 37 巡目）。⇒ 入れ替えて
-    いる人は**物理右ボタン**で窓を掴むので、左だけ見ているとガードが素通りし、
+    いる人は**物理右ボタン**でウィンドウを掴むので、左だけ見ているとガードが素通りし、
     その人にだけ B-119 が残る。
 
     ⚠️ **どちらが主かは見ない**（`SM_SWAPBUTTON` を読まない）＝欲しいのは
@@ -797,10 +797,10 @@ def test_watch_display_waits_while_the_user_holds_the_window(root):
     """🔴 **掴んでいる最中に測り直さないこと**（B-119）。
 
     実機報告＝FHD/100% と WQHD/100%（→150% に変更）のデュアル環境で、
-    ランチャーを WQHD 側へ**ドラッグし続けると窓が縮んでいく**。
+    ランチャーを WQHD 側へ**ドラッグし続けるとウィンドウが縮んでいく**。
     タイトルバーのドラッグ中は ①手が一瞬止まるたびにデバウンスが明け
     ②境界をまたいでいる間は「載っているモニタ」も DPI も振れる ⇒
-    **握っている窓が何度も測り直される**。
+    **握っているウィンドウが何度も測り直される**。
 
     ⚠️ **待つのであって、捨てるのではない**＝ここで `seen` を更新して変化を
     消費すると、手を離した後に測り直す機会まで消える（下の裏のテスト）。
@@ -827,7 +827,7 @@ def test_watch_display_waits_while_the_user_holds_the_window(root):
 
         assert notified == [], (
             f"掴んでいる最中に測り直しが走った: {notified}"
-            "（引きずるほど窓が測り直される＝実機で縮んでいった形）。"
+            "（引きずるほどウィンドウが測り直される＝実機で縮んでいった形）。"
         )
     finally:
         theme.window_dpi = monkey_dpi                   # type: ignore[assignment]
@@ -839,7 +839,7 @@ def test_watch_display_catches_up_once_the_window_is_released(root):
     """↑の裏＝**手を離したら測り直すこと**（B-119）。
 
     待つ実装が「変化を捨てる」実装になっていると、ドラッグで別 DPI のモニタへ
-    移した窓が**そのまま取り残される**（字も大きさも 100% のまま）＝直したい
+    移したウィンドウが**そのまま取り残される**（字も大きさも 100% のまま）＝直したい
     欠陥より悪い。⇒ 待っている間に変化を消費していないことを、ここで固定する。
     """
     import tkinter as tk
@@ -868,7 +868,7 @@ def test_watch_display_catches_up_once_the_window_is_released(root):
 
         assert notified == [(144, True)], (
             f"手を離しても測り直されない: {notified}"
-            "（待つ実装が変化を捨てている＝別 DPI へ移した窓が取り残される）。"
+            "（待つ実装が変化を捨てている＝別 DPI へ移したウィンドウが取り残される）。"
         )
     finally:
         theme.window_dpi = monkey_dpi                   # type: ignore[assignment]
@@ -882,12 +882,12 @@ def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root
     表示スケールの変更は**デスクトップ全体の作り直し**で、デバウンス（250ms の
     静けさ）の後にも OS 側の測り直しが届く。そこで我々が選んだ大きさが上書き
     されると、**以後 DPI はもう変わらないので `_check` は二度と発火しない**＝
-    字だけ大きくなって窓は元のまま（両方向にスクロールバーが出る）状態が
+    字だけ大きくなってウィンドウは元のまま（両方向にスクロールバーが出る）状態が
     **アプリを再起動するまで直らない**。実機で再現し、再起動すれば正しい大きさに
     なることまで確認した（＝寸法の計算ではなく追従の契機の欠陥）。
 
     ⚠️ **無条件の再実行では駄目**（下の裏のテスト）＝スケールを変えた直後に
-    利用者が窓を動かしただけで元へ戻ってしまう。**上書きされたときだけ**動く。
+    利用者がウィンドウを動かしただけで元へ戻ってしまう。**上書きされたときだけ**動く。
     """
     import tkinter as tk
 
@@ -908,7 +908,7 @@ def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root
         pump_until(root, lambda: notified)
         assert notified == [(144, True)], f"スケール変更が通知されていない: {notified}"
 
-        # ここで OS が後から窓を測り直した（＝我々の geometry が上書きされた）。
+        # ここで OS が後からウィンドウを測り直した（＝我々の geometry が上書きされた）。
         win.geometry("120x60+10+10")
         root.update()
         pump_until(root, lambda: len(notified) >= 2)
@@ -930,8 +930,8 @@ def test_watch_display_restores_a_size_that_was_enlarged_after_the_change(root):
     """↑の逆向き＝**大きくされた**ときも戻すこと（B-118・独立レビュー 35 巡目）。
 
     🔴 **害の出る向きは契機によって逆になる**＝画面が狭くなった（解像度変更・
-    リモート再接続）ときは `fit_to_content` が窓を縮めるので、そこへ OS が元の
-    大きい寸法を戻すと**窓が画面からはみ出す**。最初の実装は「小さくされたとき
+    リモート再接続）ときは `fit_to_content` がウィンドウを縮めるので、そこへ OS が元の
+    大きい寸法を戻すと**ウィンドウが画面からはみ出す**。最初の実装は「小さくされたとき
     だけ」を見ており、この向きが素通りしていた（＝「解像度変更もまとめて塞いだ」
     という当初の主張が誤りだった）。
     """
@@ -953,13 +953,13 @@ def test_watch_display_restores_a_size_that_was_enlarged_after_the_change(root):
         root.update()
         pump_until(root, lambda: notified)
 
-        # 画面が狭くなって縮めた窓に、OS が元の大きい寸法を戻した相当。
+        # 画面が狭くなって縮めたウィンドウに、OS が元の大きい寸法を戻した相当。
         win.geometry("400x300+10+10")
         root.update()
         pump_until(root, lambda: len(notified) >= 2)
 
         assert len(notified) >= 2, (
-            "大きくされた側が素通りしている＝窓が画面からはみ出したまま戻らない。"
+            "大きくされた側が素通りしている＝ウィンドウが画面からはみ出したまま戻らない。"
         )
     finally:
         theme.window_dpi = monkey                  # type: ignore[assignment]
@@ -970,7 +970,7 @@ def test_watch_display_does_not_refit_a_window_the_user_moved(root):
     """↑の裏＝**上書きされていなければ確かめ直しは何もしない**こと（B-118）。
 
     ここが無いと処方が「変更後 800ms は何をしても元へ戻る」になり、
-    *利用者が窓を動かす自由*を奪う（[[feedback-promote-recurring-checks]] の
+    *利用者がウィンドウを動かす自由*を奪う（[[feedback-promote-recurring-checks]] の
     壊れ方②＝毎回鳴るゲートと同じ形を、製品の側で作ってしまう）。
     """
     import tkinter as tk
@@ -991,7 +991,7 @@ def test_watch_display_does_not_refit_a_window_the_user_moved(root):
         root.update()
         pump_until(root, lambda: notified)
 
-        # 大きさはそのままで**位置だけ**動かした（＝利用者が窓を移動した）。
+        # 大きさはそのままで**位置だけ**動かした（＝利用者がウィンドウを移動した）。
         win.geometry("200x100+300+200")
         root.update()
         pump_until(root, lambda: len(notified) >= 2,
@@ -999,7 +999,7 @@ def test_watch_display_does_not_refit_a_window_the_user_moved(root):
 
         assert notified == [(144, True)], (
             f"上書きされていないのに測り直しが走った: {notified}"
-            "（窓を動かすたびに大きさが戻る＝利用者の操作を奪う）。"
+            "（ウィンドウを動かすたびに大きさが戻る＝利用者の操作を奪う）。"
         )
     finally:
         theme.window_dpi = monkey                  # type: ignore[assignment]
@@ -1011,10 +1011,10 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
 
     旧 `watch_dpi` は `<Configure>` を受け取りながら「DPI が同じなら即 return」で
     捨てていた＝解像度変更・VDI の動的解像度・リモート再接続が素通りしていた。
-    害は両方向で、狭くなれば窓がデスクトップの外へ出たまま、広くなればクランプ
+    害は両方向で、狭くなればウィンドウがデスクトップの外へ出たまま、広くなればクランプ
     された小さいまま**二度と戻らない**（アプリの再起動しか回復手段が無かった）。
 
-    ⚠️ **フォントは貼り直さないこと**も同時に見る＝解像度だけの変化で全窓の
+    ⚠️ **フォントは貼り直さないこと**も同時に見る＝解像度だけの変化で全ウィンドウの
     フォントを触るのは無駄で、副作用の面だけが広がる。
     """
     import tkinter as tk
@@ -1039,9 +1039,9 @@ def test_watch_display_notices_a_resolution_change_with_the_same_dpi(root, monke
 
     assert notified == [(96, False)], (
         f"画面サイズの変化が素通りしている、または「DPI が変わった」と誤って"
-        f"伝えている: {notified}（前者は B-022＝窓が新しい画面に対して測り直され"
+        f"伝えている: {notified}（前者は B-022＝ウィンドウが新しい画面に対して測り直され"
         "ないまま残る。後者は I-053＝解像度が変わっただけで、ユーザーが手で広げた"
-        "窓まで既定サイズへ縮む）。"
+        "ウィンドウまで既定サイズへ縮む）。"
     )
     assert _px(root) == before_px, (
         "解像度だけの変化でフォントまで貼り直している（DPI は変わっていない）。"
@@ -1052,15 +1052,15 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
     """🔴 **同じ DPI で解像度だけ違うモニタへ動かしても測り直すこと**（B-088）。
 
     `screen_size()` は**プライマリの値**なので、2560×1440 の主画面から
-    1920×1080 のサブ画面へ窓をドラッグしても **DPI も画面サイズも動かない**
-    ＝監視は何も通知せず、窓は**広いほうの画面向けの大きさのまま**残る。
+    1920×1080 のサブ画面へウィンドウをドラッグしても **DPI も画面サイズも動かない**
+    ＝監視は何も通知せず、ウィンドウは**広いほうの画面向けの大きさのまま**残る。
     B-087（大きさの上限を載っているモニタから取る）は `fit_to_content` が
     呼ばれれば正しく効くが、**呼ばれる契機が無かった**。
 
     ⚠️ **`refit_all()` を直接呼ばない**のがこのテストの本体（独立レビュー 4 巡目の
     指摘）＝直接呼ぶと「上限の計算」しか検査できず、**配線の抜けは素通りする**。
     ここは `main.py` と同じ配線（`watch_display` → `refit_all`）を作り、
-    **窓を動かすだけ**で結果が変わることを見る。
+    **ウィンドウを動かすだけ**で結果が変わることを見る。
     """
     import tkinter as tk
 
@@ -1107,21 +1107,21 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
 
 
 def test_watch_display_follows_a_child_window_moved_to_another_monitor(root, monkeypatch):
-    """**子窓だけ**を別 DPI のモニタへ移しても追従すること（B-065）。
+    """**子ウィンドウだけ**を別 DPI のモニタへ移しても追従すること（B-065）。
 
     旧実装は `<Configure>` を全トップレベルから拾いながら DPI を**常に `root` から**
-    測っていた＝ランチャーを 100% 側に残して子窓を 150% 側へ投げると、契機は来て
+    測っていた＝ランチャーを 100% 側に残して子ウィンドウを 150% 側へ投げると、契機は来て
     いるのに値が動かず、何も起きなかった。
 
-    ⚠️ **モックに窓を見せること**が、このテストの本体（Codex 指摘）。上の 2 本の
-    `lambda _w: …` は引数を捨てるので「どの窓を測ったか」を検査しておらず、
+    ⚠️ **モックにウィンドウを見せること**が、このテストの本体（Codex 指摘）。上の 2 本の
+    `lambda _w: …` は引数を捨てるので「どのウィンドウを測ったか」を検査しておらず、
     **root だけ測る実装でも緑になる**＝直したあとも同じ緑が出て、直った証拠に
     ならない（[[feedback-promote-recurring-checks]] の「間違ったものを要求して
     いるゲート」）。
 
     🔴 **合わせるのはアプリ全体**＝Tk の名前付きフォントはインタプリタに 1 組しか
-    なく、窓ごとに別の大きさは持てない。ここで見るのは「動かした窓の DPI が
-    採用されること」で、「他の窓が 96 のままであること」ではない。
+    なく、ウィンドウごとに別の大きさは持てない。ここで見るのは「動かしたウィンドウの DPI が
+    採用されること」で、「他のウィンドウが 96 のままであること」ではない。
     """
     import tkinter as tk
 
@@ -1143,17 +1143,17 @@ def test_watch_display_follows_a_child_window_moved_to_another_monitor(root, mon
     notified: "list[tuple[int, bool]]" = []
     try:
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
-        dpi_of[str(win)] = 144                      # 子窓だけ 150% 側へドラッグ
+        dpi_of[str(win)] = 144                      # 子ウィンドウだけ 150% 側へドラッグ
         win.geometry("200x100+20+20")               # 移動＝<Configure>
         root.update()
         pump_until(root, lambda: notified)          # 通知が来るまで回す（B-082）
 
         assert notified == [(144, True)], (
-            f"子窓の DPI 変化が拾えていない: {notified}"
+            f"子ウィンドウの DPI 変化が拾えていない: {notified}"
             "（ランチャーが 100% 側に残っている限り root の値は動かない）。"
         )
         assert _px(root) == round(at96 * 1.5), (
-            "通知は来たがフォントが貼り直されていない＝移した窓の字が小さいまま。"
+            "通知は来たがフォントが貼り直されていない＝移したウィンドウの字が小さいまま。"
         )
     finally:
         theme.window_dpi = monkey                   # type: ignore[assignment]
@@ -1323,11 +1323,11 @@ def test_dpi_awareness_falls_back_in_order(v2, v1, system, expected, first):
 # メニューの字が表示スケールに追従する（B-051）
 # ============================================================
 # 🔴 **メニューの字は 2 つの別々の仕組みで決まる**（2026-08-08 実測）:
-#   帯（ファイル / 設定 / ヘルプ）＝Windows が描く HMENU ＝ OS が拡大する（I-054・PMv2）。
+#   バー（ファイル / 設定 / ヘルプ）＝Windows が描く HMENU ＝ OS が拡大する（I-054・PMv2）。
 #   ドロップダウン＝Tk が描くが、**`TkMenuFont` にも `tk scaling` にも従わない**
 #   （scaling を 1.33→2.00 にしても要求高は 97px のまま）。効くのは
 #   **ウィジェットへの直接指定 `font=`** だけ。
-# ⇒ I-054 は帯だけを直したので「帯は大きいのに中身は小さい」が残った
+# ⇒ I-054 はバーだけを直したので「バーは大きいのに中身は小さい」が残った
 #   （ユーザーが 150% のスクショで報告）。ここはその回帰ガード。
 #
 # ⚠️ **見るのは font オプションではなく要求サイズ**＝`font=` を設定しただけの
@@ -1344,12 +1344,12 @@ def _sample_menu(root: tk.Misc) -> tk.Menu:
 
 
 def test_dropdown_grows_with_dpi(root):
-    """既に開いている窓のメニューも、DPI が変わったら大きくなること。
+    """既に開いているウィンドウのメニューも、DPI が変わったら大きくなること。
 
     ⚠️ **これが本命**＝利用者は「アプリを起動したまま表示スケールを変える」。
 
     ⚠️ **入れ子（カスケードの子）まで見る**＝メニューバーの子メニューは*その親の*
-    子ウィジェットなので、木を 1 段しか見ない実装だと「帯を開いた 1 段目は大きいのに
+    子ウィジェットなので、木を 1 段しか見ない実装だと「バーを開いた 1 段目は大きいのに
     サブメニューだけ小さい」が残る。
     """
     theme.apply_fonts(root, dpi=96)
@@ -1381,7 +1381,7 @@ def test_dropdown_created_later_uses_the_same_scale(root):
     """あとから作るメニュー（右クリック）も同じ基準で作られること。
 
     バッチ表の per-row メニューは**その場で生成**されるので、生成時の基準が
-    ずれていると「帯は大きいのに右クリックだけ小さい」が別の形で復活する。
+    ずれていると「バーは大きいのに右クリックだけ小さい」が別の形で復活する。
 
     ⚠️ **測る順序に注意**＝`apply_fonts` は現存するメニューを全部貼り直すので、
     2 枚を並べて持ったまま DPI を変えると**両方が新しい DPI に揃う**（それが正しい
@@ -1421,7 +1421,7 @@ def test_dropdown_font_is_pixel_specified(root):
 
 
 def test_launcher_dropdowns_follow_dpi():
-    """ランチャーの実物のメニュー（帯＋全サブメニュー）が追従すること。"""
+    """ランチャーの実物のメニュー（バー＋全サブメニュー）が追従すること。"""
     root = make_tk_root()
     try:
         root.withdraw()
@@ -1502,19 +1502,19 @@ def test_a_dpi_change_checks_that_the_window_landed(root):
 
 
 def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
-    """🔴 **移動元の DPI は窓ごとに配線されていること**（独立レビュー 42 巡目・P1）。
+    """🔴 **移動元の DPI はウィンドウごとに配線されていること**（独立レビュー 42 巡目・P1）。
 
     `_applied_dpi["value"]` は**アプリ全体の字が従っている値**であって、いま動いた
-    窓の移動元とは限らない。別 DPI のモニタに置いた子窓を戻す構成では、全体が 96 の
-    まま 240 の子窓を 96 へ戻すと移動元も 96 と読めてしまい、**倍率が下がる向きの
+    ウィンドウの移動元とは限らない。別 DPI のモニタに置いた子ウィンドウを戻す構成では、全体が 96 の
+    まま 240 の子ウィンドウを 96 へ戻すと移動元も 96 と読めてしまい、**倍率が下がる向きの
     補正がまた拒否される**（41 巡目で入れた直しが配線で死ぬ）。
 
     ⚠️ **`correct_landing` に DPI を直接渡すテストでは、この配線ミスは捕まらない**
     ＝計算を検査するテストは「呼ばれ方」を検査しない（B-087/B-088 で踏んだ型）。
     ここは**製品と同じ配線**（`watch_display`）を通す。
 
-    ⚠️ **初めて見えた窓には移動元が無い**（`None` が渡る）＝別 DPI のモニタ側で
-    開かれた窓は「どこから来たか」を持たないので、物差しは移動先の装飾だけになる。
+    ⚠️ **初めて見えたウィンドウには移動元が無い**（`None` が渡る）＝別 DPI のモニタ側で
+    開かれたウィンドウは「どこから来たか」を持たないので、物差しは移動先の装飾だけになる。
     **控えめな側に倒してある**（触らない方向の誤りに寄せる）。
     """
     import tkinter as tk
@@ -1525,13 +1525,13 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
     monkey_dpi, monkey_ptr = theme.window_dpi, theme._pointer_is_down
     theme.window_dpi = lambda _w: fake["dpi"]      # type: ignore[assignment]
     theme._pointer_is_down = lambda: False         # type: ignore[assignment]
-    seen_from: list = []                           # [(窓のパス名, 渡された DPI)]
+    seen_from: list = []                           # [(ウィンドウのパス名, 渡された DPI)]
     real_correct = window_fit.correct_landing
     window_fit.correct_landing = (                 # type: ignore[assignment]
         lambda win, *, from_dpi=None: seen_from.append((str(win), from_dpi)) or
         real_correct(win, from_dpi=from_dpi))
     try:
-        # アプリ全体の字は 96 のまま（＝子窓だけが高 DPI 側に居る構成）。
+        # アプリ全体の字は 96 のまま（＝子ウィンドウだけが高 DPI 側に居る構成）。
         theme.apply_fonts(root, dpi=96)
         theme.watch_display(root, lambda _d, _c: None)
         win = tk.Toplevel(root)
@@ -1539,37 +1539,37 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
         win._fit_size = (400, 300)
         win._fit_asked = (400, 300)
         root.update()
-        # ⚠️ **子窓が監視に登録されるまで待つ**（独立レビュー 43 巡目）＝
+        # ⚠️ **子ウィンドウが監視に登録されるまで待つ**（独立レビュー 43 巡目）＝
         # `root.update()` はデバウンス（250ms）の完了を保証しないので、ここを
-        # 待たないと「子窓を知らないまま DPI が変わる」回が混じって不安定になる。
+        # 待たないと「子ウィンドウを知らないまま DPI が変わる」回が混じって不安定になる。
         pump_until(root, lambda: False,
                    timeout_ms=theme._DISPLAY_DEBOUNCE_MS * 2 + 200)
-        # ⚠️ **初めて見えた窓の分は数えない**＝そこには窓ごとの前回 DPI が無いので
+        # ⚠️ **初めて見えたウィンドウの分は数えない**＝そこにはウィンドウごとの前回 DPI が無いので
         # `None` が渡るのが正しい（下の註）。ここで数え直さないと、その 1 回目を
         # 見て「配線されていない」と誤判定する。
         seen_from.clear()
-        # 🔑 **アプリ全体の値と、子窓の前回値を食い違わせる**（これが指摘の条件）。
-        # 子窓が初めて見えた時点で全体は 240 に追従しているので、ここで 96 へ戻す
-        # ＝「全体は 96 のまま、子窓だけ 240 に居る」状態を作る。**これをやらないと
+        # 🔑 **アプリ全体の値と、子ウィンドウの前回値を食い違わせる**（これが指摘の条件）。
+        # 子ウィンドウが初めて見えた時点で全体は 240 に追従しているので、ここで 96 へ戻す
+        # ＝「全体は 96 のまま、子ウィンドウだけ 240 に居る」状態を作る。**これをやらないと
         # 両者がたまたま一致し、アプリ全体の値を渡す実装でもゲートが緑になる**
         # （実際に変異検証が素通りした）。
         theme.apply_fonts(root, dpi=96)
 
-        fake["dpi"] = 96                           # 240 の子窓を 96 側へ戻した
+        fake["dpi"] = 96                           # 240 の子ウィンドウを 96 側へ戻した
         win.geometry("401x300+10+10")
         root.update()
         pump_until(root, lambda: any(p == str(win) for p, _d in seen_from),
                    timeout_ms=theme._DISPLAY_LANDING_MS * 4 + 600)
 
-        # 🔴 **子窓の分だけを見る**（独立レビュー 43 巡目）＝`_land()` はルート窓から
+        # 🔴 **子ウィンドウの分だけを見る**（独立レビュー 43 巡目）＝`_land()` はルートウィンドウから
         # 順に処理するので、先頭を見るとルートの値で緑になり、**この配線ゲートが
         # 検査したいものを検査しない**（壊れ方③）。
         for_child = [d for path, d in seen_from if path == str(win)]
         assert for_child, (
-            f"子窓の着地が確かめられていない（見えたのは {seen_from}）"
+            f"子ウィンドウの着地が確かめられていない（見えたのは {seen_from}）"
         )
         assert for_child[0] == 240, (
-            f"子窓へ渡った移動元の DPI: {for_child[0]}（期待 240）"
+            f"子ウィンドウへ渡った移動元の DPI: {for_child[0]}（期待 240）"
             "＝アプリ全体の値を渡していると、倍率が下がる向きの補正が拒否される。"
         )
     finally:
@@ -1583,7 +1583,7 @@ def test_the_debounce_has_a_deadline_so_a_storm_cannot_starve_it(root):
     """🔴 **静けさが来なくても 1 度は測ること**（2026-08-23・B-119）。
 
     デバウンスは「静けさ」を待つ作りなので、**静けさが二度と来ない状況では永久に
-    明けない**。実機ログでは窓が 120ms ごとに 6px ずつ縮み続け、その 2.5 秒のあいだ
+    明けない**。実機ログではウィンドウが 120ms ごとに 6px ずつ縮み続け、その 2.5 秒のあいだ
     `_check` も `_settle` も 1 度も動けなかった＝**いちばん助けが要る状況でこそ
     追従が止まる**（暴れているときほど `<Configure>` は止まらない）。
 

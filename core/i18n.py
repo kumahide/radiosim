@@ -3,7 +3,7 @@ i18n.py
 =======
 UI 文字列翻訳テーブル。t(key) でロケール対応文字列を取得する。
 
-**利用者が言語を足せる**（I-074 と並ぶ 2.8 の芯）＝`lang/<コード>.json` を置くと
+**利用者が言語を足せる**（I-074 と並ぶ 2.8 のコア）＝`lang/<コード>.json` を置くと
 言語メニューに現れる。仕組みは軽い＝`t()` は前からキー単位で英語へフォールバック
 するので、**外部の表は「上書きできた分だけ」効き、未訳のキーは自動で英語**になる。
 ⛔ **プラグイン機構は作らない**（設計哲学⑤）＝読むのは JSON 1 種類だけ。
@@ -182,7 +182,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # level really picks is the pixel grid the samples are placed on, so the
         # label names that pixel. Numbers: `terrain_grid.pixel_size_m` at
         # `LABEL_LAT_DEG` (they vary 3.3-4.4 m across Japan, hence "~").
-        # ⚠️ **`px` と縮める**＝`pixels` と綴ると凍結帯が窓幅を決める（中継経路で
+        # ⚠️ **`px` と縮める**＝`pixels` と綴ると凍結バーがウィンドウ幅を決める（中継経路で
         # 実測 658px > 区間表 647px・B-053 の成果を食う）。ja の「画素」と同じ意味。
         "res_high":             "High ~4 m px",
         "res_medium":           "Medium ~8 m px",
@@ -192,7 +192,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # samples are NOT evenly spaced. What is shown is the pixel size itself.
         "res_readout_pixel":    "{n} points  /  one per {spacing} m DEM pixel",
         "res_readout_unknown":  "points: enter both coordinates",
-        # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
+        # ⚠️ **凍結バーの欄は狭い**（B-052＝バーがウィンドウ幅を決めてはいけない）ので、
         # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
         "res_fixed_value":      "{n} pts/{spacing} m",
         "res_fixed_value_pixel": "{n} pts/{spacing}m px",
@@ -234,7 +234,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "proj_filetype":        "RadioSim project",
         "proj_saved":           "Project saved:\n{path}",
         "proj_loaded":          "Project loaded.\nWindows that are already open keep what you see — use \"Apply to this window\" in the bar at the top to pull the project in. Closed windows pick it up when you open them.",
-        # 読み込んだあとに各ウィンドウの上へ出す帯（I-061）＝**押したときだけ**差し替える。
+        # 読み込んだあとに各ウィンドウの上へ出すバー（I-061）＝**押したときだけ**差し替える。
         "proj_notice":          "A project was loaded. You can replace what this window holds.",
         "proj_notice_take":     "Apply to this window",
         "proj_warn_multihop":   "\n\n⚠️ The relay path was not saved because it has values that cannot be read: {reason}",
@@ -411,9 +411,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         # **共有**する＝バッチと同じ語で座標を呼ぶことを i18n の側で保証する。
         "scn_fixed_group":      " Path ",
         "scn_fixed_path":       "Fixed path",   # レポート文中の表記＝据え置き
-        # 凍結帯のラベル＝バッチの列と**同じ語**（`col_start` / `col_end`）。
+        # 凍結バーのラベル＝バッチの列と**同じ語**（`col_start` / `col_end`）。
         # 表記の注記「(lat, lon)」は付けない＝編集できない欄に入力の作法を書いても
-        # 使い道が無く、帯の幅だけが伸びる（実測 +270px）。
+        # 使い道が無く、バーの幅だけが伸びる（実測 +270px）。
         "scn_tx_coord":         "TX Coord",
         "scn_rx_coord":         "RX Coord",
         "scn_samples":          "Samples",
@@ -492,7 +492,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Paths with terrain-fetch failures: ",
 
         # ===== Notes on handling this result (3.0a1) =====
-        # 🔑 **成果物が一人歩きした先で効く節**＝レポートを受け取った人は、公開文書も
+        # 🔑 **成果物が一人歩きした先で効くセクション**＝レポートを受け取った人は、公開文書も
         # 画面の但し書きも見ない。⚠️ **数字は差し込みで受ける**（`{lo}` `{hi}`）＝
         # 範囲の値は `core/models.py` の定数が単一ソースで、字と式が別々に動かない。
         # 前置きの行は畳んで見出しに入れた（I-116）＝「机上のスクリーニング推定」は
@@ -550,7 +550,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 載る（B-244）。欠けているのは**実測による補正**のほう。
         "html_calib_none":      "not applied (not corrected with measurements)",
 
-        # ===== 感度表（3.4 段6） =====
+        # ===== 感度表（3.4 ステージ6） =====
         # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
         # の `handling_section_html` docstring）。モデルは変えず、既存パイプラインを
         # 摂動条件で数回まわした余裕度の幅を示すだけ。
@@ -598,7 +598,7 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Row shown for the weakest path: {path}. The other paths in this "
             "report were not evaluated.",
 
-        # ===== 実測残差の層別表（3.4 段6） =====
+        # ===== 実測残差の層別表（3.4 ステージ6） =====
         "html_residuals_title": "Measured-vs-predicted residuals, by layer",
         "html_residuals_lead":
             "Residual = predicted minus measured (feeder loss added back in). "
@@ -865,7 +865,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 読み取り中の失敗・トップレベルが配列、のいずれでもここへ来る。
         # **具体的な文言は例の欄に出る**（そちらが実際の診断）。
         "lang_ext_why_unreadable": "ファイルを読み込めません（内容の形式か、読み取りの失敗）",
-        # ===== 利用者が足した DEM ソース（3.4 段1・I-147） =====
+        # ===== 利用者が足した DEM ソース（3.4 ステージ1・I-147） =====
         "dem_src_title":        "DEM ソースの宣言",
         "dem_src_rejected":     "宣言した DEM ソースの一部を使えませんでした。",
         "dem_src_rejected_line": "  ・{id}: {why}",
@@ -885,7 +885,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dem_src_bad_invalid_rgb": "invalid_rgb は整数 3 つで指定してください",
         "dem_src_file_unreadable": "ファイルを TOML として解釈できませんでした",
         "dem_src_bad_table":    "項目がテーブル形式ではありません",
-        # ===== 利用者が足した背景地図タイルソース（3.5 段3・I-152） =====
+        # ===== 利用者が足した背景地図タイルソース（3.5 ステージ3・I-152） =====
         # 🔑 理由キーの一部は `dem_src_*` を再利用（同じ文言の重複を避ける）。
         # 詳細は core/tile_sources.py:_validate_source のコメント。
         "tile_src_title":        "背景地図ソースの宣言",
@@ -979,7 +979,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 「間隔」ではなく*画素の寸法*を出す（平均を出すと等間隔だと読める）。
         "res_readout_pixel":    "{n} 点  /  DEM 画素 {spacing} m ごと",
         "res_readout_unknown":  "点数：送受信の座標を入れてください",
-        # ⚠️ **凍結帯の欄は狭い**（B-052＝帯が窓幅を決めてはいけない）ので、
+        # ⚠️ **凍結バーの欄は狭い**（B-052＝バーがウィンドウ幅を決めてはいけない）ので、
         # この 2 つだけは区切りを詰める（読み取り欄の長い形は上の `res_readout*`）。
         "res_fixed_value":      "{n} 点/{spacing} m",
         "res_fixed_value_pixel": "{n} 点/画素{spacing}m",
@@ -1019,8 +1019,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "dlg_save_project":     "プロジェクトファイルを保存",
         "proj_filetype":        "RadioSim プロジェクト",
         "proj_saved":           "プロジェクトを保存しました:\n{path}",
-        "proj_loaded":          "プロジェクトを読み込みました。\n開いているウィンドウはそのままです（上の帯の「内容を取り込む」で差し替えられます）。閉じているウィンドウは、開いたときに反映されます。",
-        # 読み込んだあとに各ウィンドウの上へ出す帯（I-061）＝**押したときだけ**差し替える。
+        "proj_loaded":          "プロジェクトを読み込みました。\n開いているウィンドウはそのままです（上のバーの「内容を取り込む」で差し替えられます）。閉じているウィンドウは、開いたときに反映されます。",
+        # 読み込んだあとに各ウィンドウの上へ出すバー（I-061）＝**押したときだけ**差し替える。
         "proj_notice":          "プロジェクトを読み込みました。このウィンドウの内容を差し替えられます。",
         "proj_notice_take":     "内容を取り込む",
         "proj_warn_multihop":   "\n\n⚠️ 中継経路は読めない値があるため保存していません: {reason}",
@@ -1311,7 +1311,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測による補正なし）",
 
-        # ===== 感度表（3.4 段6 / B-219 で表を1列に再構成） =====
+        # ===== 感度表（3.4 ステージ6 / B-219 で表を1列に再構成） =====
         "html_sensitivity_title": "入力の不確かさに対する感度",
         "html_sensitivity_lead":
             "基準条件のマージンは {baseline}。主な入力を 1 つずつ振ったときの"
@@ -1350,7 +1350,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_sens_worst_path":
             "ワースト経路（{path}）についての行。この帳票の他の経路は計算していない。",
 
-        # ===== 実測残差の層別表（3.4 段6） =====
+        # ===== 実測残差の層別表（3.4 ステージ6） =====
         "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",
         "html_residuals_lead":
             "残差 = 予測 − 実測（給電線損失を補正した後の値）。正の値は予測が高め。",
@@ -1648,7 +1648,7 @@ _ARTIFACT_KEYS = frozenset({
     # 単位の括り方（画面と成果物で同じ字にするための単一ソース＝2.8RC1）
     "unit_wrap",
     # 地図タイルの出典表記（B-133＝3.0b1 で帳票の地図にも焼くようになった）。
-    # ⚠️ **画面（地図窓の右下）にも出るが、締め出す側に置く**＝同じ語が帳票の
+    # ⚠️ **画面（地図ウィンドウの右下）にも出るが、締め出す側に置く**＝同じ語が帳票の
     # 地図 PNG に焼き込まれ、**出典の表示義務を果たしているのはその字**だから。
     # 外部訳で書き換えられると、義務を負う刻印が利用者ごとに変わる。
     "tm_attr_pale", "tm_attr_photo",

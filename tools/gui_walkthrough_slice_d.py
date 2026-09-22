@@ -1,12 +1,12 @@
 """tools/gui_walkthrough_slice_d.py — 2.7 スライス D の**筋書き付きスクショ**。
 
-`tools/gui_shots.py` は窓を開いて撮るだけ（静止画）。こちらは**操作してから撮る**＝
+`tools/gui_shots.py` はウィンドウを開いて撮るだけ（静止画）。こちらは**操作してから撮る**＝
 静止画では確かめられない 2 つを見るためのもの:
 
   1. **I-060 R3**：座標を確定すると現在の表記へ整形される（ランチャー／複数経路）
   2. **I-052**：中継の集約は判定で語が変わる（OK＝全体マージン／NG＝最大不足）
 
-⛔ **実機確認ではない**（→ `tools/gui_shots.py` の冒頭・見切れの門は
+⛔ **実機確認ではない**（→ `tools/gui_shots.py` の冒頭・見切れのゲートは
 `tests/test_window_fit.py`）。ここで見るのは**語と振る舞い**まで。
 
 ⚠️ **利用者の設定ファイルへ書かない**＝座標表記はメモリ上の写しだけ差し替える
@@ -159,7 +159,7 @@ def main(outdir: str) -> int:
         batch.update()
         cell.event_generate("<Return>")
         _shot(batch, outdir, "09_paths_reformatted",
-              f"確定後＝{cell.get()!r}〔I-060 のクラス点検＝窓をまたいで同じ返事〕")
+              f"確定後＝{cell.get()!r}〔I-060 のクラス点検＝ウィンドウをまたいで同じ返事〕")
 
         # --- 3. 中継の集約は判定で語が変わる ----------------------------------
         app._on_open_multihop()
@@ -202,7 +202,7 @@ def main(outdir: str) -> int:
                     f"（{_dt.date.today():%Y-%m-%d}）\n\n")
             f.write("⛔ **実機確認ではない**＝開発機（WQHD）の見た目。"
                     "実機（AVD・使える高さ 990px）の見切れは "
-                    "`tests/test_window_fit.py` が門。\n\n")
+                    "`tests/test_window_fit.py` がゲート。\n\n")
             f.write("| ファイル | 何を見るか |\n|---|---|\n")
             for fn, what in STEPS:
                 f.write(f"| `{fn}` | {what} |\n")

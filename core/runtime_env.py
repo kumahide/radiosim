@@ -6,7 +6,7 @@ core/runtime_env.py
 なぜ要るか
 ----------
 この開発環境は「検証にもビルドにも使う唯一の Python」を `RADIOSIM_PYTHON` で
-**宣言する**方式（2.6a1・B-020）。ところが門は 2 か所にしか無く、**起動には無かった**：
+**宣言する**方式（2.6a1・B-020）。ところがゲートは 2 か所にしか無く、**起動には無かった**：
 
   - `build.bat`      → 未設定なら即中止
   - `pytest`         → `tests/conftest.py` が宣言と食い違えば収集前に停止
@@ -63,7 +63,7 @@ def interpreter_mismatch() -> tuple[str, str] | None:
     `None` を返す条件は 3 つ＝①凍結（配布 exe）②宣言が無い（CI・他マシンの
     clone）③宣言と一致。⚠️ **宣言先が存在しないケースは食い違いとして返す**
     （`conftest` 側が「宣言が壊れているなら止める」と決めたのと同じ判断＝黙って
-    無効になる門を作らない）。
+    無効になるゲートを作らない）。
     """
     if getattr(sys, "frozen", False):
         return None

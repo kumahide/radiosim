@@ -8,7 +8,7 @@ DEM タイルキャッシュの**在庫調査・カバレッジ表示・削除**
   - カバレッジの適応的粒度セル化（`scan_cache_overlay`）・外周線（`coverage_outline`）
   - 範囲削除（`delete_tile_cache`）・全削除（`delete_all_tile_cache`）・統計（`get_cache_stats`）
 
-⚠️ **`core/dem.py` から切り出した**（3.3 段4a）＝関心事で割る：*いま要る 1 点の
+⚠️ **`core/dem.py` から切り出した**（3.3 ステージ4a）＝関心事で割る：*いま要る 1 点の
 取得*（dem.py）と*すでに在るキャッシュの棚卸し*（この層）は寿命が違う。前者は
 計算の最中に呼ばれ、後者は利用者がキャッシュ管理パネルを開いたときにだけ動く。
 `dem_prefetch.py`（B-141）と対になる分割で、切り口の基準は同じ。
@@ -39,7 +39,7 @@ def _overlay_layers(
 ) -> list[tuple[str, int, str, int]]:
     """精度レベルの優先順位（大きいほど高精度）: (layer_id, tile_zoom, level, priority)。
 
-    3.4 段1（I-147）＝`source` 引数で層構成を一般化。省略時は国土地理院で、
+    3.4 ステージ1（I-147）＝`source` 引数で層構成を一般化。省略時は国土地理院で、
     レベルラベル・優先度とも従来どおり（"5a"=3 / "5b"=2 / "dem"=1）。それ以外の
     ソースは `layer_id` そのものをレベルラベルにする（3層固定を崩さず、
     ソースごとに層数が違ってもよいようにする）。
@@ -85,7 +85,7 @@ def _scan_cached_positions(
     """
     # ⚠️ **集約単位は常に zoom-14 セル**（GSI の `dem_png` と同じ基準・地図側の
     # 表示ズームともここで揃える）＝`scan_cache_overlay` の統合ループが zoom=14
-    # を起点に決め打ちしているため。3.4 段1 時点では**ズーム 14 未満のレイヤを
+    # を起点に決め打ちしているため。3.4 ステージ1 時点では**ズーム 14 未満のレイヤを
     # 持つ利用者ソースはカバレッジ表示の対象外**（標高取得そのものは影響を
     # 受けない＝この関数は地図のカバレッジ表示専用）。
     src = source if source is not None else dem_sources.GSI_DEM
@@ -171,7 +171,7 @@ def scan_cache_overlay(
     Returns:
         [{"x": int, "y": int, "zoom": int, "level": str}, ...]
         zoom はセルごとに異なる（overlay_zoom 〜 14）。
-        level は国土地理院なら "5a" | "5b" | "dem"、それ以外のソース（3.4 段1）
+        level は国土地理院なら "5a" | "5b" | "dem"、それ以外のソース（3.4 ステージ1）
         では宣言した `layer_id` そのもの。
     """
     # dem_png は zoom-14 が上限のため overlay_zoom は 14 以下に丸める。
@@ -334,7 +334,7 @@ def _clear_terrain_cache() -> None:
     """地形プロファイルのメモリキャッシュも捨てる（B-249・2026-09-19）。
 
     **なぜ下位層から上位層を呼ぶか**（層の向き＝2026-09-19 ユーザー選択）＝削除の
-    入口は 3 か所（地図窓の範囲削除・ランチャーの全削除 2 経路）あり、画面側で
+    入口は 3 か所（地図ウィンドウの範囲削除・ランチャーの全削除 2 経路）あり、画面側で
     2 つ並べて呼ぶ形にすると**入口が増えたときに呼び忘れる**。ここで呼べば構造的に
     起きない。`simulation` は `dem_cache` を import しないので循環にはならないが、
     **import は関数内に置く**（この層はキャッシュ管理パネルからしか動かないので、
@@ -411,7 +411,7 @@ def _walk_stats(root: str) -> dict:
 def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
     """キャッシュの枚数と総バイト数を返す。
 
-    I-155（3.5 段3）＝`source` を指定すると**そのソースの DEM タイルだけ**を
+    I-155（3.5 ステージ3）＝`source` を指定すると**そのソースの DEM タイルだけ**を
     集計する（背景地図・他ソースは含めない）。省略時は従来どおり
     `CACHE_DIR` 全体（全ソース＋背景地図）を合算する＝**後方互換**。
 
@@ -431,8 +431,8 @@ def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
 def get_basemap_cache_stats() -> dict:
     """背景地図（帳票サムネイル用の淡色地図）キャッシュの枚数と総バイト数。
 
-    I-155（3.5 段3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
-    独立した対象として扱うための対。地図窓プレビューの背景タイルは
+    I-155（3.5 ステージ3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
+    独立した対象として扱うための対。地図ウィンドウプレビューの背景タイルは
     `tkintermapview` が持ちこの層には含まれない（`fetch_basemap_tiles` の
     ディスクキャッシュのみが対象）。
     """
@@ -445,7 +445,7 @@ def delete_all_tile_cache(
 ) -> dict:
     """キャッシュファイルを削除し、メモリキャッシュも消去する。
 
-    I-155（3.5 段3）＝`sources`/`include_basemap` でソース単位の削除に対応。
+    I-155（3.5 ステージ3）＝`sources`/`include_basemap` でソース単位の削除に対応。
     **省略時（両方とも既定値）は従来どおり `CACHE_DIR` 配下を無差別に全消し**
     する＝既存呼び出し側（テスト含む）との後方互換。
 

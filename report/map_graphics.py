@@ -247,7 +247,7 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
 
 def attribution_badge(text: str, font_px: float = 11.0,
                       scale: int = 2) -> Image.Image:
-    """出典表記の帯（RGBA）を返す。**地図画像そのものへ焼き込む**ために使う。
+    """出典表記のバー（RGBA）を返す。**地図画像そのものへ焼き込む**ために使う。
 
     ⛔ **帳票側で HTML のキャプションにしない**（B-133 の対応方針）＝帳票の地図は
     画像だけを抜き出して資料へ貼られる使われ方をするので、絵と出典が別の要素だと

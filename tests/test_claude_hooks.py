@@ -97,7 +97,7 @@ class TestOpenItems:
 
     @pytest.mark.parametrize("written", [
         "未着手",
-        "未着手（2.5 前段スライス＝A-1/A-2 の着手門を閉じる前に実施）",  # 欠陥1
+        "未着手（2.5 前段スライス＝A-1/A-2 の着手ゲートを閉じる前に実施）",  # 欠陥1
         "`未着手`",
         "保留（設計判断待ち）",                                          # 欠陥1
         "未着手 （全角スペース前置き）",
@@ -147,7 +147,7 @@ class TestOpenItems:
 
 
 # ============================================================
-# 済のアーカイブ節への移動（規則がコメントだけで守られなかった件のガード）
+# 済のアーカイブセクションへの移動（規則がコメントだけで守られなかった件のガード）
 # ============================================================
 class TestArchivePlacement:
     def test_done_outside_archive_is_flagged(self, hook):
@@ -164,7 +164,7 @@ class TestArchivePlacement:
         assert stale == []
 
     def test_open_items_inside_archive_are_still_listed(self, hook):
-        """アーカイブ節に未対応が紛れていても見落とさない（置き場より状態を優先）。"""
+        """アーカイブセクションに未対応が紛れていても見落とさない（置き場より状態を優先）。"""
         items, stale, _ = hook.parse_issues(_doc(
             _ARCHIVE_HEAD, _item("B-004", "未着手"),
         ))
@@ -173,26 +173,26 @@ class TestArchivePlacement:
     # --- 置き場の規則の**逆向き**（2026-08-12・I-016 で実際に踏んだ）------------
     #
     # 🔴 **規則は双方向なのに、検査は片方しか無かった。** 上の 3 本が見るのは
-    # 「済なのに本文節」だけで、「未対応なのにアーカイブ節」は誰も見ていない。
-    # ⇒ 実際に **I-016 がアーカイブ節の中で「未着手」のまま**置かれていた（2.8 へ
+    # 「済なのに本文セクション」だけで、「未対応なのにアーカイブセクション」は誰も見ていない。
+    # ⇒ 実際に **I-016 がアーカイブセクションの中で「未着手」のまま**置かれていた（2.8 へ
     # 復活させたとき、状態欄だけ直して物理移動が漏れた）。⚠️ **見つけたのは偶然**＝
     # 版割りの突き合わせ（I-085）が台帳側を 1 件少なく数えたので気づいた。
 
     def test_open_item_inside_archive_is_flagged_as_misplaced(self, hook):
-        """未対応がアーカイブ節にあれば鳴ること（I-016 の形）。"""
+        """未対応がアーカイブセクションにあれば鳴ること（I-016 の形）。"""
         assert hook.misplaced_open_items(_doc(
             "## 🐞 バグ", _item("B-013", "未着手"),
             _ARCHIVE_HEAD, _item("I-016", "未着手"),
         )) == ["I-016"]
 
     def test_open_item_in_the_body_is_not_flagged(self, hook):
-        """本文節の未対応は正しい置き場＝鳴らないこと。"""
+        """本文セクションの未対応は正しい置き場＝鳴らないこと。"""
         assert hook.misplaced_open_items(_doc(
             "## 💡 改善案", _item("I-016", "未着手"), _ARCHIVE_HEAD,
         )) == []
 
     def test_done_inside_archive_is_not_misplaced(self, hook):
-        """済がアーカイブ節にあるのは正しい＝鳴らないこと（毎回鳴る網にしない）。"""
+        """済がアーカイブセクションにあるのは正しい＝鳴らないこと（毎回鳴る網にしない）。"""
         assert hook.misplaced_open_items(_doc(
             _ARCHIVE_HEAD, _item("B-004", "済", resp="2.4a1 / `abc1234`"),
         )) == []
@@ -212,7 +212,7 @@ class TestArchivePlacement:
     #
     # 実データの状態欄は強調・註釈・同義語が付く。旧実装はそれを状態語として
     # 認識できず、該当項目が**未対応にも済にも数えられずに消えていた**。実害＝
-    # B-031/B-034/B-035/I-039/I-059 が本文節に滞留し、下の実データテストは緑のまま。
+    # B-031/B-034/B-035/I-039/I-059 が本文セクションに滞留し、下の実データテストは緑のまま。
     # ⇒ ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）を全部通す。
 
     @pytest.mark.parametrize("written", [
@@ -224,7 +224,7 @@ class TestArchivePlacement:
         "済",
     ])
     def test_壊れ方1_強調や同義語で済を見落とさない(self, hook, written):
-        """①実データと同じ書き方の「済」が本文節にあれば必ず鳴ること。"""
+        """①実データと同じ書き方の「済」が本文セクションにあれば必ず鳴ること。"""
         _, stale, _ = hook.parse_issues(_doc(
             "## 🐞 バグ", _item("B-004", written, resp="`abc1234`"), _ARCHIVE_HEAD,
         ))
@@ -246,9 +246,9 @@ class TestArchivePlacement:
         assert len(items) == 1, f"{written!r} が未対応として注入に載っていない"
 
     def test_壊れ方3_置き場ではなく状態を見ている(self, hook):
-        """③「本文節にある」ことではなく「済である」ことを条件にしていること。
+        """③「本文セクションにある」ことではなく「済である」ことを条件にしていること。
 
-        本文節の未対応で鳴り、アーカイブ節の済で鳴らない——この差が付かなければ、
+        本文セクションの未対応で鳴り、アーカイブセクションの済で鳴らない——この差が付かなければ、
         規則は場所だけを見ていることになる。
         """
         _, stale_open, _ = hook.parse_issues(_doc("## 🐞 バグ", _item("B-004", "未着手")))
@@ -267,7 +267,7 @@ class TestArchivePlacement:
 # 畳むようになった。しかし**読めなかったとき何も起きない**ままだった＝`parse_issues`
 # の `flush()` は `cur_state is None` で早期 return するので、**未対応にも済にも
 # 数えられず、件数にすら現れない**。
-# ⇒ 実害＝**I-129** の状態欄が `**未解決（3.2 段2 で調査したが再現せず）**` で始まって
+# ⇒ 実害＝**I-129** の状態欄が `**未解決（3.2 ステージ2 で調査したが再現せず）**` で始まって
 # おり、`STATE_TOKENS` の 7 語のどれとも一致しなかった。**注入は「未対応 11 件」と
 # 言い続けたが台帳には 12 件あり**、差の 1 件は誰も見ていない。`ISSUES.md` は
 # git-ignore＝この注入が唯一の発見経路なので、**守りが語彙の外側で無効になっていた**。
@@ -275,7 +275,7 @@ class TestArchivePlacement:
 # （[[feedback-promote-recurring-checks]]）。
 class TestUnreadableState:
     @pytest.mark.parametrize("written", [
-        "**未解決（`3.2` 段2 で調査したが再現せず）**＝リリース QA を止めていない",  # I-129 の原文
+        "**未解決（`3.2` ステージ2 で調査したが再現せず）**＝リリース QA を止めていない",  # I-129 の原文
         "**再現待ち**",
         "調査中",
         "**要ユーザー確定**",
@@ -303,7 +303,7 @@ class TestUnreadableState:
     @pytest.mark.parametrize("written", [
         "未着手", "対応中", "保留", "済", "却下",
         "**保留（再現待ち）**＝⏳ 行き先＝次に発火した版",          # I-129 の直したあと
-        "**未着手**（✅ **行き先＝`3.2` の相B＝2026-09-09 ユーザー決定**）",  # B-203
+        "**未着手**（✅ **行き先＝`3.2` のフェーズB＝2026-09-09 ユーザー決定**）",  # B-203
         "**対応済み（2.6RC1）**＝独立レビュー（Codex）由来",        # 同義語も読める
     ])
     def test_壊れ方2_正しく書けている項目で鳴らないこと(self, hook, written):
@@ -320,7 +320,7 @@ class TestUnreadableState:
         doc = _doc("## 🐞 バグ", "### ★ B-004: 状態欄を書き忘れた項目\n\n- **重要度**: 中\n")
         assert hook.unreadable_state_items(doc) == ["B-004(欄なし)"]
 
-    def test_アーカイブ節でも見ること(self, hook):
+    def test_アーカイブセクションでも見ること(self, hook):
         """置き場に関係なく「読めない＝見えない」は同じ形で成立する。"""
         doc = _doc(_ARCHIVE_HEAD, _item("B-004", "**未解決**"))
         assert hook.unreadable_state_items(doc) == ["B-004(語なし)"]
@@ -418,14 +418,14 @@ class TestDoneEvidence:
 class TestDuplicateIds:
     """**1 項目 1 ID** が守られていること（2026-08-12 新設）。
 
-    実際に衝突させた＝新しいバグを起票するとき**未対応節の最大値だけを見て
-    `B-072` を採った**が、`B-072` はアーカイブ節に既にあった。台帳は ID 降順で
-    未対応節が上なので、**上から読むと済んだ番号が見えない**＝衝突は「うっかり」
+    実際に衝突させた＝新しいバグを起票するとき**未対応セクションの最大値だけを見て
+    `B-072` を採った**が、`B-072` はアーカイブセクションに既にあった。台帳は ID 降順で
+    未対応セクションが上なので、**上から読むと済んだ番号が見えない**＝衝突は「うっかり」
     ではなく並び方が構造的に誘発する。
 
     ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
     - **一度も落ちない**: 下の `test_a_collision_across_sections_is_flagged` が、
-      実際に起きた形（本文節とアーカイブ節に同じ ID）で赤くなることを確かめる。
+      実際に起きた形（本文セクションとアーカイブセクションに同じ ID）で赤くなることを確かめる。
     - **毎回鳴る**: 本文の相互参照とテンプレでは鳴らないことを 2 件で固定する。
       例外表は持たない（実データで 0 件＝下の実データ検査）。
     - **間違ったものを要求している**: 要求は「同じ ID の**項目**が 2 つ無い」こと
@@ -433,7 +433,7 @@ class TestDuplicateIds:
     """
 
     def test_a_collision_across_sections_is_flagged(self, hook):
-        """実際に起きた形＝本文節の新項目とアーカイブ節の済が同じ ID。"""
+        """実際に起きた形＝本文セクションの新項目とアーカイブセクションの済が同じ ID。"""
         doc = _doc("## 🐞 バグ", _item("B-072", "未着手"),
                    _ARCHIVE_HEAD, _item("B-072", "済", resp="`abc1234`"))
         assert hook.duplicate_ids(doc) == ["B-072"]
@@ -469,7 +469,7 @@ class TestDuplicateIds:
         assert hook.duplicate_ids(doc) == []
 
     def test_next_free_id_looks_at_every_section(self, hook):
-        """空き番号は**全節**の最大値＋1（未対応節だけ見ると衝突する）。
+        """空き番号は**全セクション**の最大値＋1（未対応セクションだけ見ると衝突する）。
 
         🔑 **これが衝突の原因そのものを消す部分**＝検出は事後にしか鳴らない。
         アーカイブ側のほうが大きい番号を持つ状況を作って固定する。
@@ -482,7 +482,7 @@ class TestDuplicateIds:
 class TestUnclosedCommentIsNotSwallowed:
     """閉じていない `<!--` を**黙って飲み込まない**こと（2026-09-19 新設・B-250）。
 
-    実際に起きた形＝アーカイブ節にテンプレの案内文だけを写した `<!--` が 2 本、
+    実際に起きた形＝アーカイブセクションにテンプレの案内文だけを写した `<!--` が 2 本、
     閉じの `-->` 無しで残り、そこから後ろの見出しが**まるごと走査から落ちた**。
     `next_free_ids` は使用済みの `B-236` を「次の空き」と答え、**その番号に従って
     実際に衝突した**（I-160 が I-159 と重複起票）。1 か月近く誰も気づかなかったのは、
@@ -666,7 +666,7 @@ class TestAssignmentAudit:
 
         I-127 の行き先は `3.2` で、状態欄は **`行き先＝3.2`** と*いちばん明示的な形*で
         そう書いていた。ところがその形が宣言形として登録されておらず、二段目
-        （否定されていない節の版を拾う）へ落ちて、**同じ欄に時期として出てくる
+        （否定されていないセクションの版を拾う）へ落ちて、**同じ欄に時期として出てくる
         `3.1`**（「`3.1RC2` の受け入れ中は main を動かさない」「`3.1` 正式の公開後に
         マージする」）まで行き先として読んだ。⇒ `3.1` 正式の Tier-0 が止まった。
 
@@ -747,7 +747,7 @@ def test_real_ledger_has_no_outstanding_warnings(hook):
     with open(ledger, encoding="utf-8") as f:
         items, stale, weak = hook.parse_issues(f.read().splitlines())
     assert items, "未対応項目が 0 件＝パーサが壊れている可能性が高い"
-    assert stale == [], f"済だがアーカイブ節へ未移動: {stale}"
+    assert stale == [], f"済だがアーカイブセクションへ未移動: {stale}"
     assert weak == [], f"済だが裏取りが弱い: {weak}"
     assert hook.unquoted_user_items(
         open(ledger, encoding="utf-8").read().splitlines()
@@ -844,7 +844,7 @@ def memcheck():
 
 
 def test_check_numbers_are_unique():
-    """`check_memory.py` の検査番号（節見出し `# ── check N:`）が重複しない。
+    """`check_memory.py` の検査番号（セクション見出し `# ── check N:`）が重複しない。
 
     2026-09-12・I-148＝check 12 と check 17 がそれぞれ 2 つの別の検査を名乗って
     いた（後から足した側が空き番号を確かめずに振った）。「check 17 が鳴った」と
@@ -855,7 +855,7 @@ def test_check_numbers_are_unique():
         pytest.skip("check_memory.py は git-ignore（CI には存在しない）")
     with open(_CHECK_MEMORY_PATH, encoding="utf-8") as fh:
         nums = re.findall(r"^# ── check (\d+):", fh.read(), flags=re.MULTILINE)
-    assert nums, "節見出しの形が変わった＝この検査が何も見ていない"
+    assert nums, "セクション見出しの形が変わった＝この検査が何も見ていない"
     dup = sorted({n for n in nums if nums.count(n) > 1}, key=int)
     assert not dup, f"同じ番号を 2 つ以上の検査が名乗っている: check {', '.join(dup)}"
 
@@ -897,9 +897,9 @@ class TestRoadmapHeadingMatchesRow:
     """現在地表の状態と、その版の H2 見出しが食い違っていないか。
 
     check 9 が拾うのは「1 行の中の」食い違い。こちらはその 1 段外側＝表は
-    リリース済みと言っているのに、その版の節の見出しが 🚧 のまま、という形。
+    リリース済みと言っているのに、その版のセクションの見出しが 🚧 のまま、という形。
 
-    2026-07-30 の実例＝2.5 の正式リリースで、現在地表と節内の「現在地」行は
+    2026-07-30 の実例＝2.5 の正式リリースで、現在地表とセクション内の「現在地」行は
     更新したのに `## 🚧 2.5（RC 進行中…）` を直し忘れ、ユーザーの指摘で発覚した。
     「同じ事実が 2 か所にあって片方だけ直る」の 4 例目なので、心がけではなく
     ここで測る。
@@ -919,7 +919,7 @@ class TestRoadmapHeadingMatchesRow:
 
     def test_unreleased_version_keeps_its_in_progress_heading(self, memcheck):
         """未リリースの版が 🔜 の見出しを持つのは正常＝誤検知を出さない。"""
-        rows = [(1, "| 2.6 | 🔜 確定・未着手 | 着手門＝中継方式の決定 |")]
+        rows = [(1, "| 2.6 | 🔜 確定・未着手 | 着手ゲート＝中継方式の決定 |")]
         headings = [(9, "## 🔜 2.6（確定 2026-07-11）— テーマ「中継点」")]
         assert memcheck.check_heading_matches_row(rows, headings) == []
 
@@ -937,14 +937,14 @@ class TestRoadmapHeadingMatchesRow:
 
     # -- 状態は「欄の先頭の記号」で読む（I-093）-----------------------------
     #
-    # 🔴 実際に踏んだ誤検知＝2.8 の欄に「（消化した項目も同じ節に ✅ で残す）」と
+    # 🔴 実際に踏んだ誤検知＝2.8 の欄に「（消化した項目も同じセクションに ✅ で残す）」と
     # 注記を書いたら、**その版がリリース済みと読まれて鳴った**。表の欄は状態の
     # ダッシュボードだが、括弧書きの注記が入ることは普通にある。
     # ⛔ 「欄に ✅ を書くな」で直さない＝ゲートに合わせて書き方を狭める形（壊れ方③）。
 
     def test_a_check_mark_inside_a_note_is_not_a_release(self, memcheck):
         """今回の誤検知そのもの＝**文中**の `✅` を状態と読まないこと。"""
-        rows = [(1, "| 2.8 | 🔜 **着手（`2.8a1`）**（消化済みも同節に ✅ で残す） | … |")]
+        rows = [(1, "| 2.8 | 🔜 **着手（`2.8a1`）**（消化済みも同セクションに ✅ で残す） | … |")]
         headings = [(9, "## 🔜 2.8（着手中）— テーマ「利用者の手に開く版」")]
         assert memcheck.check_heading_matches_row(rows, headings) == []
 
@@ -968,10 +968,10 @@ class TestRoadmapHeadingMatchesRow:
 
 
 class TestRoadmapSectionPlacement:
-    """版を切り替えたときに、版の節を並べ替えたか（check 17）。
+    """版を切り替えたときに、版のセクションを並べ替えたか（check 17）。
 
     ロードマップ自身の様式が決めている 2 つの配置＝①リリースしたら §アーカイブ
-    へ落とす ②現役の版の節は表のすぐ下に置く。**2026-08-24 の版の切り替わりで
+    へ落とす ②現役の版のセクションは表のすぐ下に置く。**2026-08-24 の版の切り替わりで
     2 つとも破れた**（2.9 がアーカイブの外に残り、次の版の 3.0 は §3.x の中の
     H3 のままだった＝どちらもユーザー指摘）。版あたり 1 回しか来ない工程なので
     想起では守れない＝位置だけを機械で見る。
@@ -982,7 +982,7 @@ class TestRoadmapSectionPlacement:
     _NEXT_ROW = [(9, "| 3.0 | 🔜 **次の版** | 結果の信頼性と出力契約 |")]
 
     def test_released_section_left_above_the_archive_is_flagged(self, memcheck):
-        """事故その 1＝出し終えた版の節が現役の位置に残っている。"""
+        """事故その 1＝出し終えた版のセクションが現役の位置に残っている。"""
         headings = [(1, "## 現在地"), (44, "## ✅ 2.9（リリース済み）"),
                     (self._ARCHIVE, "## 🗄 アーカイブ")]
         found = memcheck.check_section_placement(
@@ -1014,7 +1014,7 @@ class TestRoadmapSectionPlacement:
     def test_a_version_mentioned_in_a_heading_is_not_that_version_section(
             self, memcheck):
         """⛔ 見出しに版の字が含まれるかで見ない＝§次のマイナーの見出しは
-        「§2.9 を切って器を再設置」を含み、2.9 の節に化ける。"""
+        「§2.9 を切って器を再設置」を含み、2.9 のセクションに化ける。"""
         headings = [(1, "## 現在地"),
                     (44, "## 🧺 次のマイナー（2026-08-14 に §2.9 を切って器を再設置）"),
                     (self._ARCHIVE, "## 🗄 アーカイブ")]
@@ -1022,7 +1022,7 @@ class TestRoadmapSectionPlacement:
             self._RELEASED_ROW, headings, self._ARCHIVE) == []
 
     def test_a_released_version_without_any_section_is_silent(self, memcheck):
-        """古い版は §アーカイブ の中で 1 行に畳まれ H2 節を持たないことがある。"""
+        """古い版は §アーカイブ の中で 1 行に畳まれ H2 セクションを持たないことがある。"""
         headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ")]
         assert memcheck.check_section_placement(
             self._RELEASED_ROW, headings, self._ARCHIVE) == []
@@ -1366,7 +1366,7 @@ class TestUpdatedStampFreshness:
         assert self._run(memcheck, tmp_path, monkeypatch) == []
 
     def test_latest_stamp_wins(self, memcheck, tmp_path, monkeypatch):
-        """節ごとの古い日付だけでは鳴らない（最新の記載と比べる）。"""
+        """セクションごとの古い日付だけでは鳴らない（最新の記載と比べる）。"""
         import datetime
         self._memo(
             tmp_path,
@@ -1420,7 +1420,7 @@ class TestDashboardStageMatchesVersion:
 
     def test_row_that_names_its_stage_passes(self, memcheck):
         rows = self._rows("| 3.2 | ✅ リリース済 | — |",
-                          "| 3.3 | 🚧 ベータ | 段9（開発機確認）→ RC1 |")
+                          "| 3.3 | 🚧 ベータ | ステージ9（開発機確認）→ RC1 |")
         assert memcheck.check_dashboard_stage(rows, "3.3b1") == []
 
     def test_each_stage_needs_its_own_word(self, memcheck):
@@ -1525,10 +1525,10 @@ class TestRoadmapDashboardBlocksStop:
 
     def test_format_finding_blocks(self, memcheck, monkeypatch, capsys):
         """書式の外れ（check 19・I-146）も同じく Stop を止める。"""
-        out = self._run_main(memcheck, monkeypatch, capsys, "段の行の型の外れ",
+        out = self._run_main(memcheck, monkeypatch, capsys, "ステージの行の型の外れ",
                              source="check_roadmap_format_real")
         assert out.get("decision") == "block"
-        assert "段の行の型の外れ" in out["reason"]
+        assert "ステージの行の型の外れ" in out["reason"]
 
     @pytest.mark.parametrize("source", ["check_dashboard_rules_real",
                                         "check_inventory_real",
@@ -1685,14 +1685,14 @@ class TestVersionInventorySync:
         **2.9 の在庫の欠け**として正式リリース工程の Tier-0 を止めた。
         ⇒ そのとき緑にした手は**台帳の日本語を削ること**だった（応急を 2 回）。
 
-        ⚠️ この検査は**在庫節が存在する**状態で書く＝節が無いと
+        ⚠️ この検査は**在庫セクションが存在する**状態で書く＝セクションが無いと
         `inventory_ids_for_version` が `None` を返して**丸ごと黙る**ので、
         通っても何も言っていないことになる（*一度も落ちないゲート*）。
         """
         ledger = [
             "## 💡 改善案",
             "### ★ I-109: 追加言語のキー一覧が配布版の手元に無い",
-            "- ★ **状態**: 未着手（**✅ 3.1 確定＝ユーザー決定**＝配布の芯と一致する。"
+            "- ★ **状態**: 未着手（**✅ 3.1 確定＝ユーザー決定**＝配布のコアと一致する。"
             "⚠️ **`2.9` には入れない**＝新しい約束が 1 つ増えるので `+0.1` の器ではない）",
         ]
         roadmap = ["## 🔜 2.9 — 直せるようにする版", "1. **I-098 地図で直せる**",
@@ -1710,7 +1710,7 @@ class TestVersionInventorySync:
         assert not memcheck._names_version("2.85 の話", "2.8")
 
     def test_missing_inventory_section_is_silent(self, memcheck):
-        """その版の節がまだ無いなら黙ること（版を切る前に鳴らさない）。"""
+        """その版のセクションがまだ無いなら黙ること（版を切る前に鳴らさない）。"""
         assert memcheck.check_ledger_matches_inventory(self._LEDGER, ["## 🔜 3.0"], "2.8") == []
 
     def test_real_data_is_clean(self, memcheck):
@@ -1771,7 +1771,7 @@ class TestStateContradictsResponse:
             self._item("対応中（一部のみ）", "`2.7a2` で①だけ実施")) == []
 
     def test_archived_items_are_not_checked(self, memcheck):
-        """アーカイブ節は「済＋実施記録」が普通の形なので対象外。"""
+        """アーカイブセクションは「済＋実施記録」が普通の形なので対象外。"""
         lines = ["## ✅ 確認済み・対応済み（アーカイブ）", "### ★ I-102: 済んだ改善",
                  "- ★ **状態**: 未着手", "- **対応**: `2.7a2` / `abc1234`"]
         assert memcheck.check_state_contradicts_response(lines) == []
@@ -1782,25 +1782,25 @@ class TestStateContradictsResponse:
 
 
 # ============================================================
-# check_memory.py check 21 ＝ 段の完了マーク ⇔ 台帳の状態（I-143）
+# check_memory.py check 21 ＝ ステージの完了マーク ⇔ 台帳の状態（I-143）
 # ============================================================
 # 2026-09-10・I-143 は ISSUES.md では「済」になったのに、ロードマップの
-# `段1` 行には完了マークが付かないまま残った＝手順は進んだのにロードマップが
+# `ステージ1` 行には完了マークが付かないまま残った＝手順は進んだのにロードマップが
 # 追従しなかった。check 13・16 のどちらも見ていない向き（台帳の状態は正しく
 # 「済」だった＝矛盾はロードマップの側にだけある）。
 
 
 class TestStageMarksSync:
-    """段の行が参照する課題が全部「済」なら、行にも完了マークを要求する。"""
+    """ステージの行が参照する課題が全部「済」なら、行にも完了マークを要求する。"""
 
     _DONE_ISSUE = ["## ✅ 確認済み・対応済み（アーカイブ）",
                    "### ★ I-143: 何かの改善", "- ★ **状態**: **済**（`3.3a1` / `3f8acdf`）"]
     _OPEN_ISSUE = ["## 💡 改善案", "### ★ I-140: 別の改善", "- ★ **状態**: 未着手"]
 
     def test_a_done_issue_without_a_completion_mark_is_flagged(self, memcheck):
-        """I-143 の実際の形（段の行に完了マークが無いまま「済」が確定）。"""
+        """I-143 の実際の形（ステージの行に完了マークが無いまま「済」が確定）。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
-        roadmap = ["## 🔜 3.3 — 版", "- **段1（帳票・a1 の枠）**＝[[I-143]]（台帳 9 列）。"]
+        roadmap = ["## 🔜 3.3 — 版", "- **ステージ1（帳票・a1 の枠）**＝[[I-143]]（台帳 9 列）。"]
         found = memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
         assert found and "I-143" in found[0]
 
@@ -1808,41 +1808,41 @@ class TestStageMarksSync:
         """完了マーク（行の先頭の ✅）が付いていれば鳴らないこと（②毎回鳴るを避ける）。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
         roadmap = ["## 🔜 3.3 — 版",
-                   "- ✅ **段1（帳票・a1 の枠）**（2026-09-10）＝[[I-143]]。"]
+                   "- ✅ **ステージ1（帳票・a1 の枠）**（2026-09-10）＝[[I-143]]。"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
 
     def test_an_in_progress_mark_is_flagged(self, memcheck):
         """先頭が 🚧 のままなら鳴る（I-146＝旧実装は先頭に記号がある行を拾っていなかった）。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
         roadmap = ["## 🔜 3.3 — 版",
-                   "- 🚧 **段1（帳票・a1 の枠）**（2026-09-10〜）＝[[I-143]]。"]
+                   "- 🚧 **ステージ1（帳票・a1 の枠）**（2026-09-10〜）＝[[I-143]]。"]
         found = memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
         assert found and "I-143" in found[0]
 
     def test_the_word_zumi_in_the_body_is_not_a_mark(self, memcheck):
-        """本文の「済」は完了マークではない（I-146＝段の本文は「確認済み」等を普通に含む）。"""
+        """本文の「済」は完了マークではない（I-146＝ステージの本文は「確認済み」等を普通に含む）。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
         roadmap = ["## 🔜 3.3 — 版",
-                   "- 🚧 **段1（帳票）**（2026-09-10〜）＝[[I-143]]。実測は確認済み。"]
+                   "- 🚧 **ステージ1（帳票）**（2026-09-10〜）＝[[I-143]]。実測は確認済み。"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3")
 
     def test_a_still_open_issue_is_not_demanded(self, memcheck):
         """参照する課題がまだ未着手/対応中なら、完了マークは要らない（①一度も鳴らないを避けつつ）。"""
         states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
-        roadmap = ["## 🔜 3.3 — 版", "- **段5（配布摩擦）**＝[[I-140]] の調査。"]
+        roadmap = ["## 🔜 3.3 — 版", "- **ステージ5（配布摩擦）**＝[[I-140]] の調査。"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
 
     def test_a_partially_done_stage_is_not_demanded(self, memcheck):
-        """一部だけ済んだ段は対象外（実データに実例あり＝3.1 段2）。"""
+        """一部だけ済んだステージは対象外（実データに実例あり＝3.1 ステージ2）。"""
         states = memcheck.issue_states_by_id(
             self._DONE_ISSUE + ["### ★ I-140: 別の改善", "- ★ **状態**: 対応中"])
-        roadmap = ["## 🔜 3.3 — 版", "- **段9（混在）**＝I-143 は済、I-140 はコード済。"]
+        roadmap = ["## 🔜 3.3 — 版", "- **ステージ9（混在）**＝I-143 は済、I-140 はコード済。"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
 
     def test_other_versions_are_not_demanded(self, memcheck):
-        """別の版の節にある段は対象外。"""
+        """別の版のセクションにあるステージは対象外。"""
         states = memcheck.issue_states_by_id(self._DONE_ISSUE)
-        roadmap = ["## 🔜 3.0 — 版", "- **段1（帳票）**＝[[I-143]]。", "## 🔜 3.3 — 版"]
+        roadmap = ["## 🔜 3.0 — 版", "- **ステージ1（帳票）**＝[[I-143]]。", "## 🔜 3.3 — 版"]
         assert memcheck.check_roadmap_stage_marks_stale(roadmap, states, "3.3") == []
 
     def test_real_data_is_clean(self, memcheck):
@@ -1862,7 +1862,7 @@ class TestRoadmapFormat:
 
     # ── ✅ の位置 ──
     def test_a_mid_sentence_check_mark_is_flagged(self, memcheck):
-        found = self._fmt(memcheck, "- **段3（評価）**＝規約を読んだ。✅ **ユーザーの目視 OK**。")
+        found = self._fmt(memcheck, "- **ステージ3（評価）**＝規約を読んだ。✅ **ユーザーの目視 OK**。")
         assert any("先頭にだけ" in f for f in found)
 
     def test_a_check_mark_inside_the_bold_is_flagged(self, memcheck):
@@ -1917,20 +1917,20 @@ class TestRoadmapFormat:
                          "## 🚧 3.3 — 経路と依存の耐性",
                          "## 🔜 3.4 — 実測突合せ＋感度") == []
 
-    # ── 段の行 ──
+    # ── ステージの行 ──
     def test_the_old_stage_forms_are_flagged(self, memcheck):
         """統一前に並んでいた 4 通りの書き方（どれも実データにあった）。"""
-        for old in ("- **段0（版の頭）＝✅ 完了（2026-09-10）**＝宣言。",
-                    "- ✅ **段6（a→b の版区切り整合）完了（2026-09-11）**＝1 巡。",
-                    "- **段1（本丸）＝実装・検証済み（2026-09-03）・コミット済み（`d34d755`）**＝移設。",
-                    "- **段4（防火扉②＝DEM ソース）**＝分割→宣言ファイル。"):
-            assert any("段の行" in f for f in self._fmt(memcheck, old)), old
+        for old in ("- **ステージ0（版の頭）＝✅ 完了（2026-09-10）**＝宣言。",
+                    "- ✅ **ステージ6（a→b の版区切り整合）完了（2026-09-11）**＝1 巡。",
+                    "- **ステージ1（本丸）＝実装・検証済み（2026-09-03）・コミット済み（`d34d755`）**＝移設。",
+                    "- **ステージ4（防火扉②＝DEM ソース）**＝分割→宣言ファイル。"):
+            assert any("ステージの行" in f for f in self._fmt(memcheck, old)), old
 
     def test_the_new_stage_form_passes(self, memcheck):
         assert self._fmt(memcheck,
-                         "- ✅ **段1（帳票・a1 の枠）**（2026-09-10・`3f8acdf`）＝[[I-143]]。",
-                         "- 🚧 **段11（RC1）**（2026-09-12〜）＝配布まで済み。",
-                         "- ⬜ **段12（正式）**＝未着手。") == []
+                         "- ✅ **ステージ1（帳票・a1 の枠）**（2026-09-10・`3f8acdf`）＝[[I-143]]。",
+                         "- 🚧 **ステージ11（RC1）**（2026-09-12〜）＝配布まで済み。",
+                         "- ⬜ **ステージ12（正式）**＝未着手。") == []
 
     def test_findings_are_capped(self, memcheck):
         found = self._fmt(memcheck, *["- 🆕 **x**"] * 40)
@@ -1957,14 +1957,14 @@ class TestDashboardRules:
         found = memcheck.check_dashboard_rules(self._section(
             "| 版 | 状態 | 次の一手 |", "|----|------|----|",
             "| 3.3 | ✅ リリース済 | — |", "| 3.4 | ✅ リリース済 | — |",
-            "| 3.5 | 🔜 次の版 | 段0 |"))
+            "| 3.5 | 🔜 次の版 | ステージ0 |"))
         assert any("2 行" in f and "3.3" in f for f in found)
 
     def test_the_current_shape_passes(self, memcheck):
         assert memcheck.check_dashboard_rules(self._section(
-            "> 表の書き方は ⑤。版区切りの記録は版の節へ。",
+            "> 表の書き方は ⑤。版区切りの記録は版のセクションへ。",
             "| 版 | 状態 | 次の一手 |", "|----|------|----|",
-            "| 3.4 | ✅ リリース済 | — |", "| 3.5 | 🔜 次の版 | 段0 |",
+            "| 3.4 | ✅ リリース済 | — |", "| 3.5 | 🔜 次の版 | ステージ0 |",
             "| 較正 | ⬜ **判断点**（番号未定） | 実測が 1 回回ったら |")) == []
 
     def test_a_released_row_keeps_no_next_step(self, memcheck):
@@ -2008,7 +2008,7 @@ class TestInventoryMatchesLedger:
         "### 📋 受け皿の規約（2026-08-01 新設）",
         "- [[I-200]]＝積んだ項目",
         "## 🛰 関連プロダクト",
-        "- [[I-151]]＝節の外は在庫ではない",
+        "- [[I-151]]＝セクションの外は在庫ではない",
     ]
 
     def test_ids_are_read_only_inside_the_inventory(self, memcheck):
@@ -2050,7 +2050,7 @@ class TestInventoryMatchesLedger:
 
 
 class TestRenumberLeftovers:
-    """改番の表が宣言した旧い意味が現役の節に残る（check 24・I-157）。
+    """改番の表が宣言した旧い意味が現役のセクションに残る（check 24・I-157）。
 
     2026-09-16、3.5 を「較正」から「ソースの拡張」へ改番した後も、§4.x などが
     「§3.5 の判断点」を旧い意味で参照していた。
@@ -2082,11 +2082,11 @@ class TestRenumberLeftovers:
 
     def test_the_new_meaning_and_marked_history_pass(self, memcheck):
         assert self._run(memcheck,
-                         "- ⬜ **段0（版の頭）**＝`3.5a1` 宣言",
+                         "- ⬜ **ステージ0（版の頭）**＝`3.5a1` 宣言",
                          "3.5 は判断点の手前ではなく横にある",
                          "＝§較正（当時の 3.5）の判断点が既に",
                          "旧 3.5 側の記述",
-                         "⚠️ 他の節の「§3.5 の判断点」は、この節を指す",
+                         "⚠️ 他のセクションの「§3.5 の判断点」は、このセクションを指す",
                          "🔁 2026-09-16 に改番＝3.5 の判断点を外した",
                          "13.5 の判断点・3.50 側は別の番号") == []
 
@@ -2868,7 +2868,7 @@ class TestWorkKindAndVerification:
 
 
 class TestPrimaryMetricIsCompletionCost:
-    """⚠️ **主指標が並列度へ戻っていないこと**（I-103 の芯）。
+    """⚠️ **主指標が並列度へ戻っていないこと**（I-103 のコア）。
 
     🔑 [[feedback-promote-recurring-checks]] の「開示を書く仕事は『無いことの検査』を
     対で置く」＝*主指標を入れ替えた* と書いた以上、**書いた保証をテストで持つ**。
@@ -2918,19 +2918,19 @@ class TestPrimaryMetricIsCompletionCost:
 
 
 # ============================================================
-# ledger.py ＝ 台帳／ロードマップの「節だけを 1 回で取り出す」CLI
+# ledger.py ＝ 台帳／ロードマップの「セクションだけを 1 回で取り出す」CLI
 # ============================================================
 # **なぜ在るか**（2026-08-31・ユーザー決定）＝実測で台帳へのアクセスは
 # `Read` 236 + `Grep` 162 ＝ 約 400 呼び出しあり、形はほぼ「Grep で行番号を
-# 探す → Read で節を取る」の 2 段だった（`experiments/codegraph_scope/`）。
+# 探す → Read でセクションを取る」の 2 段だった（`experiments/codegraph_scope/`）。
 # ⚠️ **見込みは 1〜2%** と分かった上で採っている（桁は変わらない）。
 #
-# ここで守るのは**切り出しの境界**＝節が隣の項目へ溢れる／途中で切れると、
+# ここで守るのは**切り出しの境界**＝セクションが隣の項目へ溢れる／途中で切れると、
 # 「読んだつもりで別の課題を読む」形になり、**素の Read より危ない**。
 
 
 class TestIssueSection:
-    """`issue_section` は 1 つの項目の節をちょうど切り出す（純関数）。"""
+    """`issue_section` は 1 つの項目のセクションをちょうど切り出す（純関数）。"""
 
     LEDGER = _doc(
         "## 未対応",
@@ -2939,7 +2939,7 @@ class TestIssueSection:
         "- ★ **状態**: **未着手**",
         "本文 A",
         "",
-        "#### 内訳（小見出しは節の一部）",
+        "#### 内訳（小見出しはセクションの一部）",
         "本文 B",
         "",
         "### ★ B-002: 次の項目",
@@ -2961,10 +2961,10 @@ class TestIssueSection:
     def test_a_deeper_heading_stays_inside(self, hook):
         got = hook.issue_section(self.LEDGER, "B-001")
         assert any(ln.startswith("#### ") for ln in got), (
-            "小見出しで節が切れている＝本文の途中で打ち切られる")
+            "小見出しでセクションが切れている＝本文の途中で打ち切られる")
 
     def test_a_shallower_heading_closes_the_section(self, hook):
-        """アーカイブ見出し（H2）で閉じる＝節が台帳の末尾まで伸びない。"""
+        """アーカイブ見出し（H2）で閉じる＝セクションが台帳の末尾まで伸びない。"""
         got = hook.issue_section(self.LEDGER, "B-002")
         assert "本文 C" in got
         assert not any("アーカイブ" in ln for ln in got)
@@ -2974,13 +2974,13 @@ class TestIssueSection:
         assert "本文 D" in hook.issue_section(self.LEDGER, "B-003")
 
     def test_an_unknown_id_is_empty_not_wrong(self, hook):
-        """⚠️ **無い ID に「それらしい節」を返さない**＝取り違えが一番害が大きい。"""
+        """⚠️ **無い ID に「それらしいセクション」を返さない**＝取り違えが一番害が大きい。"""
         assert hook.issue_section(self.LEDGER, "B-999") == []
 
     def test_a_duplicated_id_returns_both(self, hook):
         """同じ ID が 2 か所にある事故（`duplicate_ids` の由来）を握り潰さない。"""
         dup = _doc(
-            "### ★ B-072: 未対応節のほう",
+            "### ★ B-072: 未対応セクションのほう",
             "本文 X",
             "",
             "## ✅ アーカイブ",
@@ -3003,7 +3003,7 @@ class TestIssueSection:
 
 
 class TestRoadmapSection:
-    """`roadmap_section` は版の H2 節をちょうど切り出す（純関数）。"""
+    """`roadmap_section` は版の H2 セクションをちょうど切り出す（純関数）。"""
 
     ROADMAP = _doc(
         "# ロードマップ",
@@ -3033,7 +3033,7 @@ class TestRoadmapSection:
     def test_it_does_not_match_a_version_merely_mentioned(self, memcheck):
         """⛔ **見出しに版の字が含まれるかで見てはいけない**（check 17 で踏んだ穴）。
 
-        「§次のマイナー」の見出しが本文で 2.9 を名指ししていても、2.9 の節ではない。
+        「§次のマイナー」の見出しが本文で 2.9 を名指ししていても、2.9 のセクションではない。
         """
         rm = _doc(
             "## 🆕 次のマイナー（番号未定）＝**2026-08-14 に §2.9 を切って器を再設置**",
@@ -3055,7 +3055,7 @@ class TestRoadmapSection:
                                 for ln in lines if ln.startswith("## ")) if v}
         assert versions, "版を宣言する H2 見出しが 1 つも無い"
         one = sorted(versions)[0]
-        assert memcheck.roadmap_section(lines, one), f"§{one} の節が取れない"
+        assert memcheck.roadmap_section(lines, one), f"§{one} のセクションが取れない"
 
 
 class TestIntakeReviewNudge:
@@ -3092,18 +3092,18 @@ class TestIntakeReviewNudge:
         assert "在庫精査" in hook.intake_review_nudge("3.2", rm)
 
     def test_the_released_version_still_marked_next_is_left_to_check_17(self, hook):
-        """出した版が 🔜 のまま＝節の並べ替えの漏れ。そちらのゲートの管轄なので二重に鳴らさない。"""
+        """出した版が 🔜 のまま＝セクションの並べ替えの漏れ。そちらのゲートの管轄なので二重に鳴らさない。"""
         rm = _doc("## 🔜 3.2 — サポート性（**次の版**）", "本文")
         assert hook.intake_review_nudge("3.2", rm) == ""
 
     def test_an_unnumbered_next_version_still_rings(self, hook):
-        """次の版が番号未定（🔜 の節が無い）でも、精査そのものは要る。"""
+        """次の版が番号未定（🔜 のセクションが無い）でも、精査そのものは要る。"""
         got = hook.intake_review_nudge("3.2", _doc("## ✅ 3.2（リリース済み）"))
         assert "在庫精査" in got
 
 
 # ===========================================================================
-# I-128: 退避（`.claude/mirror_memory.py`）— 「意図しない移行」に耐えるための門
+# I-128: 退避（`.claude/mirror_memory.py`）— 「意図しない移行」に耐えるためのゲート
 # ===========================================================================
 
 _MIRROR_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "mirror_memory.py"))
@@ -3129,7 +3129,7 @@ def mirror():
 class TestBackupTargets:
     """**何を退避するか**は散文でなくここで固定する。
 
-    🔴 **穴の実例（2026-09-05・I-128）**＝[[project_machine_replacement]] の段 1 の
+    🔴 **穴の実例（2026-09-05・I-128）**＝[[project_machine_replacement]] のステージ 1 の
     棚卸し表は `.git/hooks` を「**clone に来ない**」と 🔴 で印していたのに、
     `BACKUP_TARGETS` には入っていなかった。**棚卸し（散文）と実装が食い違っても
     誰も気づかない**＝退避は「動かなかったこと」が見えないので、ここへ落とす。
@@ -3181,7 +3181,7 @@ class TestFreezeGuard:
 
     製品リポ `kumahide/radiosim` は **public**。退避一式（課題台帳・メモリ）は
     git 管理外にする判断のもとで書かれているので、間違って製品リポへ push すると
-    **その判断ごと壊れる**。⇒ 門をコメントでなくここで固定する
+    **その判断ごと壊れる**。⇒ ゲートをコメントでなくここで固定する
     （[[feedback-radiosim]]「実行時制約はコメントでなくテストで表現する」）。
     """
 
@@ -3207,7 +3207,7 @@ class TestFreezeGuard:
     def test_it_refuses_to_push_to_the_product_repo(self, tmp_path, mirror, monkeypatch):
         """⛔ remote が凍結リポでなければ **commit までで止まる**（push しない）。"""
         # ⛔ **到達しないホストを使う。** 本物の `github.com/kumahide/radiosim` を
-        # 書くと、**門が壊れた瞬間にこのテストが public リポへ退避一式を push する**
+        # 書くと、**ゲートが壊れた瞬間にこのテストが public リポへ退避一式を push する**
         # ＝守るはずの事故をテストが起こす。名前だけ製品リポに似せて、宛先は死なせる。
         box = self._tiny_repo(tmp_path, mirror, monkeypatch,
                               "https://example.invalid/kumahide/radiosim.git")
@@ -3236,7 +3236,7 @@ class TestBackupHealthDisclosure:
     未退避）だったのを、人が偶然尋ねるまで誰も知らなかった。退避系は黙って止まる
     ので、**開示を対で置く**（[[feedback-promote-recurring-checks]]）。
 
-    ⚠️ 新しい門は**壊れ方 3 種を全部通す**＝①鳴らない ②毎回鳴る ③違うものを要求する。
+    ⚠️ 新しいゲートは**壊れ方 3 種を全部通す**＝①鳴らない ②毎回鳴る ③違うものを要求する。
     """
 
     def test_it_says_nothing_when_the_backups_are_fresh(self, hook, tmp_path, monkeypatch):
@@ -3251,7 +3251,7 @@ class TestBackupHealthDisclosure:
         assert hook._backup_health() == []
 
     def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
-        """①一度も落ちない門にしない＝わざと古くして鳴らす。"""
+        """①一度も落ちないゲートにしない＝わざと古くして鳴らす。"""
         box = tmp_path / "box"
         box.mkdir()
         stale = box / "ISSUES.md"
@@ -3367,12 +3367,12 @@ def test_real_ledger_has_exactly_the_three_sections():
     🔴 **2026-09-06 に実際に壊れていた**＝過去のセッションが本文を heredoc 経由で
     書いたため `\n` が改行に化け、`"\n## 用語\n"` という**文字列リテラルの中身**が
     行頭の `## 用語` として落ちた。Markdown は見出しと読むので、**そこから下の
-    224 項目が「改善案」節の外**へ出た（[[feedback-heredoc-backslash]]）。
+    224 項目が「改善案」セクションの外**へ出た（[[feedback-heredoc-backslash]]）。
     誰も見ていなかったので、ユーザーが目で気づくまで残った。
 
-    ⚠️ **見出しの「順」まで見る**＝アーカイブが本文節より前に来ると、
+    ⚠️ **見出しの「順」まで見る**＝アーカイブが本文セクションより前に来ると、
     `misplaced_open_items()` が見出し以降を全部アーカイブ扱いにするため、
-    **本文節の未対応まで「誤置」と鳴る**（同日に実際に 3 件が偽で鳴っていた）。
+    **本文セクションの未対応まで「誤置」と鳴る**（同日に実際に 3 件が偽で鳴っていた）。
     """
     ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
     if not os.path.exists(ledger):
@@ -3383,5 +3383,5 @@ def test_real_ledger_has_exactly_the_three_sections():
     assert "バグ" in heads[0], heads
     assert "改善案" in heads[1], heads
     assert "アーカイブ" in heads[2], (
-        "アーカイブ節は末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
+        "アーカイブセクションは末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
     )

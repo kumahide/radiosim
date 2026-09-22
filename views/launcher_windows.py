@@ -1,9 +1,9 @@
 """
 views/launcher_windows.py
 =========================
-ランチャーから開く**子窓の開閉と、窓どうしの通知**（`SimLauncher` の Mixin）。
+ランチャーから開く**子ウィンドウの開閉と、ウィンドウどうしの通知**（`SimLauncher` の Mixin）。
 
-一括／条件探索／中継経路／マップ。⚠️ **ランチャーから分岐する窓は凍結方式**＝
+一括／条件探索／中継経路／マップ。⚠️ **ランチャーから分岐するウィンドウは凍結方式**＝
 開く時にランチャーの値をスナップショットして渡し、以後は `↻` で更新する。
 
 ⚠️ **これは `SimLauncher` の一部**であって独立した部品ではない。切り出しは
@@ -94,7 +94,7 @@ class _ChildWindowsMixin:
             meta_provider=self._current_meta,
             on_close=self._on_multihop_closed,
             # プロジェクトを読み込んでいれば、その経路で開く（凍結方式＝
-            # 「開く＝スナップショット」とちょうど一致するので、開いている窓へ
+            # 「開く＝スナップショット」とちょうど一致するので、開いているウィンドウへ
             # 後から流し込む口を作らずに済む）。
             initial_path=self._project_doc().multihop,
             # ⚠️ 親ウィジェットから探させない（`self.master` は Tk のルートで
@@ -102,7 +102,7 @@ class _ChildWindowsMixin:
             # 一度も動かなかった）。バッチ・条件探索と同じく**注入**する。
             map_opener=self.open_map_for_waypoints,
             map_notify=self._notify_map_waypoints_changed,
-            # 座標の表記も凍結して渡す（I-070）＝この窓だけ設定に従わず、
+            # 座標の表記も凍結して渡す（I-070）＝このウィンドウだけ設定に従わず、
             # 常に十進度で出していた。
             coord_format=self._coord_fmt_var.get(),
         )
@@ -120,11 +120,11 @@ class _ChildWindowsMixin:
         self._multihop_win = None
 
     def open_map_for_append(self) -> None:
-        """地図を**連続追加モード**で開く（複数経路の窓の「地図から取る」・I-043）。
+        """地図を**連続追加モード**で開く（複数経路のウィンドウの「地図から取る」・I-043）。
 
         ⚠️ **「バッチからは地図を開かない」という決めごとを、ここで意図的に外した**
-        ＝後から来た中継経路の窓が既に地図を開けるので、決めごとのほうが破られて
-        いた（⑧＝窓によって出来ることが違うのが最も高い代償）。**揃える向きは
+        ＝後から来た中継経路のウィンドウが既に地図を開けるので、決めごとのほうが破られて
+        いた（⑧＝ウィンドウによって出来ることが違うのが最も高い代償）。**揃える向きは
         「足す」**＝中継から地図を外すのは機能の後退（地点は地図で拾うのが自然）。
         新しい経路は増えない＝地図 → 複数経路の連続追加は既にあり、その逆向きを
         呼ぶだけ。
@@ -136,7 +136,7 @@ class _ChildWindowsMixin:
         """地図を**中継点モード**で開いて宛先をこの sink にする（2.3 D2 の型）。
 
         地図はアプリ唯一のインスタンスで、モードで宛先を切り替える。中継経路の
-        窓から直接 2 つ目の地図を作らない（D2 で一度そうして親子関係と描画系が
+        ウィンドウから直接 2 つ目の地図を作らない（D2 で一度そうして親子関係と描画系が
         歪んだ経緯がある）。
         """
         self._on_open_map()
@@ -169,7 +169,7 @@ class _ChildWindowsMixin:
         )
 
     def _on_scenario_closed(self) -> None:
-        """閉じる前に条件セットを持ち越す（窓を閉じただけで消さない）。"""
+        """閉じる前に条件セットを持ち越す（ウィンドウを閉じただけで消さない）。"""
         win = self._open_window("_scenario_win")
         if win is not None:
             self._project_doc().scenario = win.project_spec()
@@ -237,10 +237,10 @@ class _ChildWindowsMixin:
             on_close=self._on_batch_closed,
             on_paths_changed=self._notify_map_paths_changed,
             initial_rows=self._project_doc().batch_rows,
-            # app 設定（座標表記）も凍結して渡す＝窓に `config.load_config()` を
+            # app 設定（座標表記）も凍結して渡す＝ウィンドウに `config.load_config()` を
             # 読ませない（I-055 ②・2.7 スライス G2）。出所はランチャー 1 つ。
             coord_format=self._coord_fmt_var.get(),
-            # 地図を連続追加モードで開く口（I-043）＝この窓にだけ無かった。
+            # 地図を連続追加モードで開く口（I-043）＝このウィンドウにだけ無かった。
             map_opener=self.open_map_for_append,
         )
         return self._batch_win
@@ -249,7 +249,7 @@ class _ChildWindowsMixin:
         """バッチが閉じたとき: **行を持ち越し**、参照を手放し、地図が連続追加中なら
         座標入力へ戻させる。
 
-        ⚠️ この通知はバッチ窓が**破棄される前**に来る（`_on_close_window`）。行の
+        ⚠️ この通知はバッチウィンドウが**破棄される前**に来る（`_on_close_window`）。行の
         回収がここでできるのはそのためで、順序を戻すと「閉じただけで行が消えた
         プロジェクトを保存する」ことになる。
         """

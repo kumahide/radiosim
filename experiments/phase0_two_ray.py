@@ -157,7 +157,7 @@ def report_real_terrain() -> None:
     """実 DEM（ゴールデンコーパス）の地形うねりを測る。ネットワーク不要。"""
     _rule()
     print("(4) 実 DEM の粗さ（tests/data/golden_links.json・26 本・API 不要）")
-    print("    一次傾斜を除いた残差 RMS を約 100m 窓で評価")
+    print("    一次傾斜を除いた残差 RMS を約 100m ウィンドウで評価")
     _rule()
     corpus = ROOT / "tests" / "data" / "golden_links.json"
     data = json.loads(corpus.read_text(encoding="utf-8"))

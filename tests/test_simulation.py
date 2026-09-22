@@ -796,7 +796,7 @@ def _make_result(diff_method="single", env_type="los"):
 class TestDemAcquiredFollowsTheTileActuallyUsed:
     """刻印「DEM Acquired」は**標高を返したタイル**の取得日であること（B-213）。
 
-    🔴 **保存時に座標からタイルを引き直していた**（3.3 段4e の初版）＝5m タイルが
+    🔴 **保存時に座標からタイルを引き直していた**（3.3 ステージ4e の初版）＝5m タイルが
     一時失敗して 10m の古いタイルで計算した標本も、同じ回の後の標本で 5m が取れて
     いると、保存時には 5m の日付に化けた（一時失敗は負キャッシュしない＝B-010
     なので、後の標本では 5m が取れる）。見るのは「古いタイルで計算した標本の日付が
@@ -880,7 +880,7 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
             "10m の古いタイルで計算した標本の取得日が消えている"
             f"（保存時にタイルを引き直している＝{acquired}）"
         )
-        # 窓は on_complete で開く＝その時点で取得日が手元に無いと抱えられない
+        # ウィンドウは on_complete で開く＝その時点で取得日が手元に無いと抱えられない
         assert box["order"] == ["acquired", "complete"], box["order"]
 
     def test_cache_hit_hands_over_the_date_of_the_fetch_that_filled_it(
@@ -904,7 +904,7 @@ class TestSavePackage:
                   diff_method="single", coord_format="dd", dem_source=None):
         monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
         # 空のキャッシュ（=常に「取得日不明」）に固定＝実機のキャッシュに
-        # たまたま同じ座標が残っていても結果が揺れないようにする（3.3 段4e）。
+        # たまたま同じ座標が残っていても結果が揺れないようにする（3.3 ステージ4e）。
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path / "empty_dem_cache"))
         default_params_dict["diff_method"] = diff_method
         if dem_source is not None:
@@ -969,7 +969,7 @@ class TestSavePackage:
 
     def test_report_contains_dem_fail_rate(self, tmp_path, flat_terrain,
                                            default_params_dict, monkeypatch):
-        """report.txt に DEM Fail Rate 行が含まれること（3.2 段7・B-025 ③）。
+        """report.txt に DEM Fail Rate 行が含まれること（3.2 ステージ7・B-025 ③）。
 
         `flat_terrain` は全点取得済み（nan なし）なので 0.0 %。単一ソースは
         `models.TerrainProfile.fail_pct`（CSV 出力契約の `dem_fail_pct` と同じ）。
@@ -997,7 +997,7 @@ class TestSavePackage:
 
     def test_report_contains_dem_acquired_date(self, tmp_path, flat_terrain,
                                                default_params_dict, monkeypatch):
-        """report.txt に DEM Acquired 行が含まれること（3.3 段4e＝出所刻印の
+        """report.txt に DEM Acquired 行が含まれること（3.3 ステージ4e＝出所刻印の
         最後の要素）。**実行日（Date:）ではなくタイルの取得日**＝値は標高を
         取った時点で確定し地形と一緒に運ばれたもの（`TerrainProfile.dem_acquired`・
         B-213。取得側の検査は TestDemAcquiredFollowsTheTileActuallyUsed）。
@@ -1025,7 +1025,7 @@ class TestSavePackage:
         self, tmp_path, flat_terrain, default_params_dict, monkeypatch
     ):
         """地形キャッシュを消しても、手元の結果の取得日は report.txt に出ること
-        （Codex 99 巡目＝結果の窓を開いたままプロキシ設定の OK を押すと
+        （Codex 99 巡目＝結果のウィンドウを開いたままプロキシ設定の OK を押すと
         `clear_terrain_cache` が走る。初版の修正は取得日を鍵で引く共有の辞書に
         置いていたので、ここで行が消えた）。"""
         terrain = dataclasses.replace(flat_terrain,

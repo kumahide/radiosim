@@ -72,7 +72,7 @@ class _TileLayer(NamedTuple):
 # 出典が抜けたまま出荷されていた（UI だけ B-027 で直していた）。
 #
 # 組み込みの label/attr は **i18n キー越し**（言語追従）＝関数で包んで、利用者が
-# 宣言ファイルで足す背景地図（`core/tile_sources.py`・3.5 段3・I-152）の**翻訳しない
+# 宣言ファイルで足す背景地図（`core/tile_sources.py`・3.5 ステージ3・I-152）の**翻訳しない
 # 固定文字列**と同じ `_TileLayer` 型で扱えるようにする（`_all_tile_layers()` 参照）。
 _TILE_LAYERS: dict[str, _TileLayer] = {
     "pale": _TileLayer(
@@ -359,19 +359,19 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._on_mode_change()
 
     def start_waypoint_mode(self, sink: object) -> None:
-        """宛先を指定して中継点モードへ入る（中継経路窓の「地図から選択」）。
+        """宛先を指定して中継点モードへ入る（中継経路ウィンドウの「地図から選択」）。
 
         **公開口にしてある**＝呼び出し側が `_waypoint_sink` や `_select_mode` を
         直接触らない（内部名に依存した配線は、5b の `getattr(self.master, …)` と
         同じ形で黙って壊れる）。宛先を先に据えるので、モード遷移側の
-        `waypoint_provider`（窓を開いて受け皿を作る経路）は走らない。
+        `waypoint_provider`（ウィンドウを開いて受け皿を作る経路）は走らない。
         """
         self._waypoint_sink = cast("_WaypointSink", sink)
         self._select_mode("waypoints")
         self._win.lift()
 
     def start_append_mode(self) -> None:
-        """連続追加モードへ入る（複数経路の窓の「地図から取る」・I-043）。
+        """連続追加モードへ入る（複数経路のウィンドウの「地図から取る」・I-043）。
 
         `start_waypoint_mode` と同じ理由で**公開口にしてある**＝呼び出し側が
         `_select_mode` のような内部名に依存しない。宛先（受け皿）は
@@ -399,8 +399,8 @@ class MapWindow(_PickMixin, _CacheMixin):
             self._win.lift()                    # 受け皿を開いた後、地図を前面へ戻す
         elif self._mode.get() == "waypoints":
             # 中継点モード＝連続追加と同じ約束（受け皿が無ければ開いて確保する）。
-            # 既に宛先を持っている場合（中継経路窓の「地図から選択」から来た場合）は
-            # それを尊重する＝窓を開き直さない。
+            # 既に宛先を持っている場合（中継経路ウィンドウの「地図から選択」から来た場合）は
+            # それを尊重する＝ウィンドウを開き直さない。
             self._append_sink = None
             if self._waypoint_sink is None:
                 sink = self._waypoint_provider() if self._waypoint_provider else None
@@ -434,7 +434,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         if self._mode.get() == "cache":
             if len(self._cache_sources) > 1 and not self._cache_src_bar.winfo_ismapped():
                 self._cache_src_bar.pack(side="left")
-                # 構築時に幅は確保済みだが、利用者が窓を狭めていたら欄が見切れる
+                # 構築時に幅は確保済みだが、利用者がウィンドウを狭めていたら欄が見切れる
                 # （B-252）＝**広げるだけ**の測り直し（`grow_only` 既定）。
                 window_fit.fit_to_content(
                     self._win, min_w=self._BASE_W, min_h=self._BASE_H)
@@ -472,7 +472,7 @@ class MapWindow(_PickMixin, _CacheMixin):
     # ----------------------------------------------------------
     # **地図は source of truth を持たない**＝中継経路ウィンドウの地点列を毎回
     # 写して描き直すだけ（確定パス表示＝`_refresh_committed_paths` と同じ流儀）。
-    # 以前はクリックのたびに `set_marker` を足すだけだったので、**窓側で地点を
+    # 以前はクリックのたびに `set_marker` を足すだけだったので、**ウィンドウ側で地点を
     # 削除しても地図のピンが残り**、消し方も持っていなかった（2026-08-01 実機確認）。
 
 
@@ -507,7 +507,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         # セグメントボタン、こちらは Combobox。同じ形にすると「4 つ目のモード」に
         # 見えて、選ぶ軸が 2 本あることが読み取れなくなる。
         ttk.Label(modebar, text=i18n.t("map_layer_label")).pack(side="left", padx=(16, 4))
-        # I-152（3.5 段3）＝組み込み 2 択に、宣言ファイルで足した背景地図を合成する。
+        # I-152（3.5 ステージ3）＝組み込み 2 択に、宣言ファイルで足した背景地図を合成する。
         # `_all_tile_layers()` は起動時に読み込んだ `tile_sources` の状態を毎回
         # 参照するだけ（ウィンドウを開くたびの読み直しは不要＝main.py が起動時
         # 1 回で済ませている）。
@@ -522,7 +522,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
-        # 対象 DEM ソース（I-155・3.5 段3）＝キャッシュ管理モードの範囲削除・
+        # 対象 DEM ソース（I-155・3.5 ステージ3）＝キャッシュ管理モードの範囲削除・
         # カバレッジ表示だけに効く（プリフェッチは国土地理院専用のまま＝
         # I-147 残り(b)・別課題）。[[I-153]] と同じ「選択肢が1つなら出さない」
         # 規則＝宣言ファイルでソースを足していない大多数の利用者には出さない。
@@ -620,9 +620,9 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 左: 動的メッセージ（アイドル時=操作ヒント / 操作中・直後=状態・結果）。
         # 複数行になり得るため justify=left。アイドル時はグレー表示。
         self._status_var = tk.StringVar(value="")
-        # 🔴 **状態バーに窓幅を決めさせない**（I-098・B-108 と同型の落ち穂）。
-        # 折り返し幅は下の `<Configure>` が**窓の実幅から**決め直すので、字が長い
-        # ほどラベルの要求幅が育ち、その要求がまた窓幅になる——という往復で、
+        # 🔴 **状態バーにウィンドウ幅を決めさせない**（I-098・B-108 と同型の落ち穂）。
+        # 折り返し幅は下の `<Configure>` が**ウィンドウの実幅から**決め直すので、字が長い
+        # ほどラベルの要求幅が育ち、その要求がまたウィンドウ幅になる——という往復で、
         # ヒントに 1 文足しただけで en/150% が出荷先の幅を越えた（横断ゲートが
         # 赤で教えた）。⇒ **要求幅は `width` で床に固定し、実幅は伸縮で得る**
         # （`fill="x", expand=True`）＝字の長さは折り返しの行数にだけ出る。
@@ -651,14 +651,14 @@ class MapWindow(_PickMixin, _CacheMixin):
 
         self._set_idle()   # 起動時はヒントを表示
 
-        # 窓を中身に合わせる（既定 900x680 は下限）。地図そのものは伸縮するが、
+        # ウィンドウを中身に合わせる（既定 900x680 は下限）。地図そのものは伸縮するが、
         # モードバー・ステータス行・各モードのパネルは言語とフォントで幅が変わる
-        # ＝ここを固定寸法のままにすると他の窓とまったく同じ形で見切れる
+        # ＝ここを固定寸法のままにすると他のウィンドウとまったく同じ形で見切れる
         # （B-002 / I-000 / I-023 / I-024 と同じクラス。2.5b2 の横断ゲート追加で
-        # 「この窓だけ実測追従になっていない」ことが分かった）。
+        # 「このウィンドウだけ実測追従になっていない」ことが分かった）。
         # 🔴 **「対象 DEM ソース」欄はキャッシュ管理モードでしか出ない**ので、
-        # 既定モード（座標入力）のまま測ると窓幅にこの欄が入らず、切り替えた瞬間に
-        # モード帯の右端から見切れた（B-252）。**測るあいだだけ置いて幅を確保する**。
+        # 既定モード（座標入力）のまま測るとウィンドウ幅にこの欄が入らず、切り替えた瞬間に
+        # モードバーの右端から見切れた（B-252）。**測るあいだだけ置いて幅を確保する**。
         reserve = len(self._cache_sources) > 1 and not self._cache_src_bar.winfo_ismapped()
         if reserve:
             self._cache_src_bar.pack(side="left")

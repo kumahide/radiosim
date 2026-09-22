@@ -271,9 +271,9 @@ class _Root:
 
 
 def test_post_to_ui_does_not_touch_tk_at_all():
-    """★ **投函でワーカーが Tk に触れないこと**（B-079 の芯）。
+    """★ **投函でワーカーが Tk に触れないこと**（B-079 のコア）。
 
-    ⚠️ ここが `widget.after()` に戻ると、**破棄済みの窓へ投函したワーカーが
+    ⚠️ ここが `widget.after()` に戻ると、**破棄済みのウィンドウへ投函したワーカーが
     1 件あたり約 1.04 秒止まる**（`_tkinter` が非メインスレッドからの呼び出しを
     100ms×10 回待ってから諦める）。例外を抑えても待ちは消えない＝B-061 の
     修正では届かなかった残りがこれ。
@@ -305,7 +305,7 @@ def test_the_mailbox_is_delivered_on_the_main_thread():
 
 
 def test_the_mailbox_keeps_each_item_addressed_to_its_own_widget():
-    """宛先は要素の側が持つ＝窓が複数あっても取り違えないこと。"""
+    """宛先は要素の側が持つ＝ウィンドウが複数あっても取り違えないこと。"""
     from views.progress import drain_ui_mailbox, post_to_ui
 
     class Widget:
@@ -324,7 +324,7 @@ def test_the_mailbox_keeps_each_item_addressed_to_its_own_widget():
 def test_delivery_is_quiet_when_the_widget_is_already_gone(error):
     """**破棄済みへの配達は静かに諦める**こと（B-061）。
 
-    取得中に窓を閉じるのは利用者が普通にやる操作で、そのとき投函先はもう無い。
+    取得中にウィンドウを閉じるのは利用者が普通にやる操作で、そのとき投函先はもう無い。
     配達役はメインスレッドなので、ここで諦めても**ワーカーは待たされない**。
     """
     from views.progress import drain_ui_mailbox, post_to_ui

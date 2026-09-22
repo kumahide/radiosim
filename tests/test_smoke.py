@@ -52,7 +52,7 @@ _HEADLESS_SAFE = (
 # pyright の静的検査でカバー）。
 _DISPLAY_REQUIRED = ["views.graph"]
 
-# バッチ窓の生成に要る最小パラメータ（値そのものはレイアウト検証に無関係）。
+# バッチウィンドウの生成に要る最小パラメータ（値そのものはレイアウト検証に無関係）。
 _BATCH_PARAMS = {
     "start": "34.5429, 132.4118", "end": "34.5389, 132.4050",
     "h_tx": "30.0", "h_rx": "10.0", "freq": "2400.0", "p_tx": "20.0",
@@ -232,7 +232,7 @@ def _find_widget(parent, predicate):
 def test_delete_all_cache_offers_source_checkboxes_when_multiple_sources(monkeypatch):
     """複数 DEM ソースがあるとき、ソース単位のチェック（既定＝全選択）付き
     ダイアログへ切り替わり、選んだソース＋背景地図だけを削除対象にできること
-    （I-155・3.5 段3）。"""
+    （I-155・3.5 ステージ3）。"""
     pytest.importorskip("tkinter")
     from tkinter import ttk
     from core import dem_cache, dem_sources, i18n
@@ -279,7 +279,7 @@ def test_run_button_passes_the_selected_dem_source(monkeypatch):
     """単一経路の実行ボタンが選んだ DEM ソースを計算へ渡すこと（B-221）。
 
     `_on_run` が `_current_config()` と別に config dict を組み立てており、
-    そちらにだけ `dem_source` が足りていなかった（I-147 段1）＝海外の座標を
+    そちらにだけ `dem_source` が足りていなかった（I-147 ステージ1）＝海外の座標を
     選んでも常に国土地理院で計算される欠陥の回帰ガード。修正は `_on_run` を
     `_current_config()` へ一本化すること。
     """
@@ -396,11 +396,11 @@ def test_batch_read_base_params_passes_the_selected_dem_source(monkeypatch):
 # プロジェクト（`.rsproj`）の UI 配線（5c-2）
 # ============================================================
 # ヘッドレスの読み書きは tests/test_project.py が守る。ここが守るのは
-# **窓 ↔ ランチャーの受け渡し**＝「開いている窓から集める／閉じている窓の節は
-# 持ち越す／読み込んだ節は開いた窓へ入る」の 3 点。
+# **ウィンドウ ↔ ランチャーの受け渡し**＝「開いているウィンドウから集める／閉じているウィンドウのセクションは
+# 持ち越す／読み込んだセクションは開いたウィンドウへ入る」の 3 点。
 
 def _launcher_with_windows(root):
-    """ランチャー＋3 つの窓を開いた状態を作る（プロジェクト系テストの母体）。"""
+    """ランチャー＋3 つのウィンドウを開いた状態を作る（プロジェクト系テストの母体）。"""
     from report import batch
     from views.launcher import SimLauncher
     app = SimLauncher(root, lambda _t: None)
@@ -429,7 +429,7 @@ def _launcher_with_windows(root):
 
 
 def test_project_collects_from_open_windows_and_round_trips(tmp_path):
-    """開いている 3 窓の内容が `.rsproj` へ入り、読み直しても同じであること。"""
+    """開いている 3 ウィンドウの内容が `.rsproj` へ入り、読み直しても同じであること。"""
     pytest.importorskip("tkinter")
     from report import project
     root = make_tk_root()
@@ -457,9 +457,9 @@ def test_project_collects_from_open_windows_and_round_trips(tmp_path):
 
 
 def test_project_keeps_sections_of_closed_windows():
-    """**窓を閉じただけで節が消えないこと**（データ喪失の防止・譲らない性質）。
+    """**ウィンドウを閉じただけでセクションが消えないこと**（データ喪失の防止・譲らない性質）。
 
-    バッチ窓を閉じてから保存すると行が消えたファイルを書く、という壊れ方を
+    バッチウィンドウを閉じてから保存すると行が消えたファイルを書く、という壊れ方を
     止める。バッチは通知が破棄より前に来る順序に依存しているので、順序が
     戻ればこのテストが落ちる。
     """
@@ -481,7 +481,7 @@ def test_project_keeps_sections_of_closed_windows():
 
 
 def test_project_sections_seed_reopened_windows():
-    """読み込んだ節が、その窓を**開いたとき**に入ること（凍結方式と対）。"""
+    """読み込んだセクションが、そのウィンドウを**開いたとき**に入ること（凍結方式と対）。"""
     pytest.importorskip("tkinter")
     root = make_tk_root()
     try:
@@ -507,7 +507,7 @@ def test_project_sections_seed_reopened_windows():
 
 
 def test_project_does_not_save_unreadable_batch_rows(tmp_path):
-    """読めない値のある節は**保存せず警告する**（壊れた JSON を書かない）。"""
+    """読めない値のあるセクションは**保存せず警告する**（壊れた JSON を書かない）。"""
     pytest.importorskip("tkinter")
     root = make_tk_root()
     try:
@@ -517,7 +517,7 @@ def test_project_does_not_save_unreadable_batch_rows(tmp_path):
         app._batch_win._row_entries[0][3].insert(0, "abc")   # h_tx が読めない
         doc, warnings = app._collect_project()
         assert warnings and "P1" in warnings[0]
-        assert doc.batch_rows is None      # 前回値が無いので節ごと出ない
+        assert doc.batch_rows is None      # 前回値が無いのでセクションごと出ない
         from report import project
         project.save(doc, str(tmp_path / "p.rsproj"))   # 例外なく書ける
     finally:
@@ -529,7 +529,7 @@ def test_project_does_not_save_unreadable_batch_rows(tmp_path):
 # ============================================================
 # conftest の _block_network が「効かなくなったこと」に気づけるようにする。
 # ゲートは沈黙して失効しうる（テストは緑のまま外部 API を叩き始める）ため、
-# ゲート自身にもガードを付ける。詳細な経緯は conftest.py の同節を参照。
+# ゲート自身にもガードを付ける。詳細な経緯は conftest.py の同セクションを参照。
 
 def test_network_guard_blocks_external_connections():
     """外部宛の接続が NetworkAccessBlocked で止まる（実通信は発生しない）。"""
@@ -745,12 +745,12 @@ def test_single_and_batch_share_the_progress_transport():
 
 
 # ⚠️ ランチャーの見切れゲートは **tests/test_window_fit.py へ移した**（2.5b2）。
-# 窓ごとの手書きテストは「次の窓・次の増え方」で必ず穴が空くので、views の
-# Toplevel を静的に洗い出して**全窓を横断で**検査する形に一本化した。
+# ウィンドウごとの手書きテストは「次のウィンドウ・次の増え方」で必ず穴が空くので、views の
+# Toplevel を静的に洗い出して**全ウィンドウを横断で**検査する形に一本化した。
 def test_graph_window_is_a_toplevel_that_does_not_block():
-    """グラフ窓は**普通の Toplevel** で、開いても呼び出し元をブロックしないこと。
+    """グラフウィンドウは**普通の Toplevel** で、開いても呼び出し元をブロックしないこと。
 
-    以前は窓が丸ごと matplotlib の figure で、`plt.show()` の入れ子 mainloop が
+    以前はウィンドウが丸ごと matplotlib の figure で、`plt.show()` の入れ子 mainloop が
     **閉じるまで返らなかった**。そのため「準備中」表示を戻すための `on_ready`
     フックが要り（戻り値を待つと閉じるまでラベルが残る）、終了時には pyplot の
     全 Figure を閉じる後始末も要った。B-024 の Tk 化でその 3 つがまとめて消える。
@@ -827,7 +827,7 @@ def test_all_execution_flows_use_the_progress_pump():
     ここへの登録も完了条件に含めること。
 
     なお条件探索は進捗の**トランスポート**に ProgressPump を使い、**配分の意味論**
-    は `scenario.Phases`（相の宣言）が持つ。既存3フローの Phases 移行は未実施。
+    は `scenario.Phases`（フェーズの宣言）が持つ。既存3フローの Phases 移行は未実施。
     """
     import ast
 
@@ -899,15 +899,15 @@ def test_graph_does_not_rewrite_the_diffraction_model():
 
 
 # ============================================================
-# ランチャーから分岐した窓の「凍結方式」
+# ランチャーから分岐したウィンドウの「凍結方式」
 # ============================================================
 # ランチャーの値を読むプロバイダを呼んでよい場所と、その理由。
 #
 # **判定の基準は「読んだ値をその場で画面へ書くか」**。書くなら＝ユーザーが見て
 # いる値になるので凍結方式に反しない。書かずに使う（＝実行の瞬間に読む）と、
-# 窓を開いたあとにランチャー側を変えた場合に画面と成果物が食い違う。
+# ウィンドウを開いたあとにランチャー側を変えた場合に画面と成果物が食い違う。
 _FREEZE_ALLOWED_CALLERS = {
-    "__init__":                      "窓を開く時の初期スナップショット",
+    "__init__":                      "ウィンドウを開く時の初期スナップショット",
     "_snapshot_meta":                "条件探索：取り込みの実体（呼ぶのは __init__ と ↻）",
     "_refresh_from_launcher":        "条件探索：↻ ランチャーから更新",
     "_refresh_common_from_launcher": "バッチ：↻ ランチャーから更新",
@@ -947,14 +947,14 @@ def _provider_call_sites() -> "list[str]":
 def test_launcher_values_are_frozen_not_read_at_run_time():
     """ランチャーの値は**開く時と ↻ の時にだけ**読むこと。
 
-    ランチャーから分岐する窓（バッチ・条件探索・以後に足す窓）は、ランチャーの
+    ランチャーから分岐するウィンドウ（バッチ・条件探索・以後に足すウィンドウ）は、ランチャーの
     現在値を**スナップショットして表示し、実行は表示中の値で行う**という方針で
-    揃えてある（2026-07-26 ユーザー決定）。実行の瞬間に読み直すと、窓を開いた
+    揃えてある（2026-07-26 ユーザー決定）。実行の瞬間に読み直すと、ウィンドウを開いた
     あとにランチャー側を変えた場合に **画面に出ていない値が成果物に載る**。
 
     実際に条件探索の案件情報がその状態で、しかも**画面に出ていなかったので
     誰も気づけなかった**。心がけでは防げないのでゲートにする
-    （[[feedback-promote-recurring-checks]]）。新しい窓を足すときにここが落ちたら、
+    （[[feedback-promote-recurring-checks]]）。新しいウィンドウを足すときにここが落ちたら、
     「開く時に取り込む」「↻ で取り込み直す」のどちらかへ寄せること。
     """
     offenders = [s for s in _provider_call_sites()

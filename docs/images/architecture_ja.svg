@@ -63,7 +63,7 @@
     <text x="485" y="312" class="mod">dialogs.py</text> <text x="653" y="312" class="role">親中央のモーダル</text>
     <text x="485" y="332" class="mod">errors.py</text> <text x="653" y="332" class="role">未捕捉例外の受け皿</text>
     <text x="485" y="352" class="mod">progress.py</text> <text x="653" y="352" class="role">進捗の伝送（キュー）</text>
-    <text x="485" y="372" class="mod">frozen_common.py</text> <text x="653" y="372" class="role">凍結帯の項目の単一ソース</text>
+    <text x="485" y="372" class="mod">frozen_common.py</text> <text x="653" y="372" class="role">凍結バーの項目の単一ソース</text>
     <text x="875" y="312" class="mod">theme.py</text> <text x="1043" y="312" class="role">テーマ色・UI 書体</text>
     <text x="875" y="332" class="mod">window_fit.py</text> <text x="1043" y="332" class="role">ウィンドウの寸法（見切れ防止）</text>
     <text x="875" y="352" class="mod">tooltip.py</text> <text x="1043" y="352" class="role">入力ヒント</text>

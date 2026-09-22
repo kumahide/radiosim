@@ -23,7 +23,7 @@ terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 #    ＝「ソースを選べること」「取得失敗が DEM 取得失敗率に出ること」の確認用で、
 #    標高を取る目的では使わない。display_name をわざと長くしてあるのは、
 #    地図ウィンドウの「対象 DEM ソース」欄の幅が中身に追従することの確認のため
-#    （B-252＝欄が窓の右端で見切れていた）。
+#    （B-252＝欄がウィンドウの右端で見切れていた）。
 [[source]]
 source_id = "qa_offline_probe"
 display_name = "QA 確認用（通信は必ず失敗します）"

@@ -14,7 +14,7 @@ core/disclosure.py
 ⚠️ **なぜ `core/` に置くか**＝`core/simulation.py` の `report.txt` と `report/` の
 HTML 帳票の**両方**がこの字を引くため。層の向きは `views → report → core` の一方向
 なので、共有する字は下の層へ置くほかない（→ `tests/test_layers.py`）。HTML の体裁
-（節タグ・CSS）は出力層＝`report/report_common.py` が持つ。
+（セクションタグ・CSS）は出力層＝`report/report_common.py` が持つ。
 """
 
 from __future__ import annotations
@@ -128,7 +128,7 @@ def data_source_line(dem_source_ids=None) -> str:
 
     🔑 **地図タイルの出典（B-133）とは置き場が違う**＝地図は 3 面にしか出ないので
     画像へ焼けば足りたが、**標高データは全面の土台**（条件探索のように断面図を
-    持たない帳票も、値は標高から出ている）。⇒ **全面が必ず通る開示の節**に置き、
+    持たない帳票も、値は標高から出ている）。⇒ **全面が必ず通る開示のセクション**に置き、
     図だけ抜き出して渡される断面図には*加えて*焼く（`report_path`）。
 
     ⚠️ **「較正の席」と同じ扱いにする**（`calibration_line`）＝刻印の列
@@ -180,9 +180,9 @@ def data_source_line(dem_source_ids=None) -> str:
 
 
 def handling_text(note_keys, dem_source_ids=None) -> str:
-    """「結果の取扱に関する補足」節の**素のテキスト**（`report.txt` 用）。
+    """「結果の取扱に関する補足」セクションの**素のテキスト**（`report.txt` 用）。
 
-    見出しは英字の角括弧＝`report.txt` の他の節（`[LINK BUDGET]` 等）と同じ字面に
+    見出しは英字の角括弧＝`report.txt` の他のセクション（`[LINK BUDGET]` 等）と同じ字面に
     合わせる。中身は表示言語に従う（レポート本文と同じ扱い）。
 
     Args:

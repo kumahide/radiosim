@@ -243,7 +243,7 @@ class TestCorpusCoverage:
         )
 
     def test_level_runs_do_not_sample_evenly(self):
-        """段階で解いた回線の標本が**等間隔ではない**こと（B-150 の芯）。
+        """段階で解いた回線の標本が**等間隔ではない**こと（B-150 のコア）。
 
         ⚠️ これが無いと、標本器が等間隔へ戻っても値だけ合わせれば通ってしまう。
         「低」は等間隔が仕様なので対象外（→ `samples_are_pixel_edges`）。

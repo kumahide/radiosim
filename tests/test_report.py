@@ -68,7 +68,7 @@ def _text_px(text: str, font_px: float) -> float:
     """`font_px` で描いたときの `text` のおよその幅（px・上振れ側の見積り）。"""
     total = 0.0
     for ch in text:
-        if ord(ch) > 0x2E7F:            # CJK 帯（かな・漢字・全角記号）＝1em
+        if ord(ch) > 0x2E7F:            # CJK バー（かな・漢字・全角記号）＝1em
             total += 1.0
         elif ch in " .,()":
             total += _EM_THIN
@@ -277,7 +277,7 @@ class TestSaveProfilePng:
             self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
         """**地形断面図そのものに標高データの出典が焼かれる**こと（B-134）。
 
-        🔑 **開示の節に書いてあるだけでは足りない**＝`profile.png` は単独の
+        🔑 **開示のセクションに書いてあるだけでは足りない**＝`profile.png` は単独の
         ファイルとして配られ、台帳のサムネイルからも直接開かれるので、
         **図と出典が離れる**（地図で同じ判断をした＝[[B-133]]）。
         ⚠️ 画像の画素からは字が読めないので、**配線**（図に置いたか・どこへ）を見る。
@@ -473,7 +473,7 @@ class TestSheetCssIsScoped:
 
     # サムネイルを**置いている**台帳だけを見る。バッチ台帳は 2026-09-06 に置くのを
     # やめた（B-187）＝22 列では列幅が 33px しか回らず、`max-width:100%` に従うと
-    # 24×9px の帯になって読めなかった。**置かないこと自体**は
+    # 24×9px のバーになって読めなかった。**置かないこと自体**は
     # tests/test_batch.py::TestSummaryLedgerKeepsItsWidth::test_no_thumbnail_image_in_the_ledger
     # が見る＝ここへ戻す（縛りだけ足す）と、また潰れた図が出る。
     @pytest.mark.parametrize("css_of", ["multihop"])
@@ -696,7 +696,7 @@ class TestSaveReportAllHtml:
 
     def test_dem_fail_rate_appears_in_per_path_sheet(
             self, tmp_path, flat_terrain, default_params_dict, monkeypatch):
-        """DEM 取得の失敗率が per-path シートに出ること（3.2 段7）。
+        """DEM 取得の失敗率が per-path シートに出ること（3.2 ステージ7）。
 
         🔁 **I-143（2026-09-10）で台帳の列は判定セルの ⚠ ＋台帳下の注記へ移った**
         （`flat_terrain` は `fail_pct` = 0.0 なので台帳側には何も出ない＝
@@ -737,7 +737,7 @@ class TestSaveReportAllHtml:
 
 
 # ============================================================
-# 「結果の取扱に関する補足」節（3.0a1 / ロードマップ §3.0 の 9）
+# 「結果の取扱に関する補足」セクション（3.0a1 / ロードマップ §3.0 の 9）
 # ============================================================
 
 
@@ -754,17 +754,17 @@ def _carries_the_handling_section(text: str) -> bool:
     """そのソースが「結果の取扱に関する補足」を出しているか。
 
     ⚠️ **B-219 で `handling_notes_html` → `handling_section_html` に改名**
-    （感度の変動幅を同じ節へ統合したため）。
+    （感度の変動幅を同じセクションへ統合したため）。
     """
     return ("handling_section_html(" in text) or ("handling_text(" in text)
 
 
 class TestEveryArtifactFaceCarriesTheHandlingSection:
-    """**帳票を組み立てる面は、必ず開示の節も出す**（3.0a1 のクラス点検）。
+    """**帳票を組み立てる面は、必ず開示のセクションも出す**（3.0a1 のクラス点検）。
 
     🔑 開示を書く仕事には「無いことの検査」を対で置く
     （→ [[feedback-promote-recurring-checks]]）＝*ここまでは大丈夫*という主張は、
-    反例 1 つで嘘になる。⇒ **節を持たない帳票が 1 面でもあれば落とす。**
+    反例 1 つで嘘になる。⇒ **セクションを持たない帳票が 1 面でもあれば落とす。**
     """
 
     @staticmethod
@@ -790,7 +790,7 @@ class TestEveryArtifactFaceCarriesTheHandlingSection:
         offenders = [n for n, t in self._sources()
                      if _builds_a_sheet(t) and not _carries_the_handling_section(t)]
         assert not offenders, (
-            "開示の節を持たない帳票がある: " + repr(offenders) + "。"
+            "開示のセクションを持たない帳票がある: " + repr(offenders) + "。"
             "`report_common.handling_section_html(models.scope_notes(...))` を"
             "フッタの前に置くこと（3.0a1）＝成果物は一人歩きするので、"
             "前提と適用範囲は帳票そのものが持つ"
@@ -816,7 +816,7 @@ class TestEveryArtifactFaceCarriesTheHandlingSection:
 
 
 class TestHandlingSectionContent:
-    """節の**中身**＝差し込みが埋まっていること・両言語にあること。"""
+    """セクションの**中身**＝差し込みが埋まっていること・両言語にあること。"""
 
     def teardown_method(self):
         # 言語は他のテストと共有の状態なので、触ったら必ず戻す（I-108）。
@@ -886,7 +886,7 @@ class TestHandlingSectionContent:
         値だけ出す＝*刻印を書いたのに出ていない*という、いちばん気づけない壊れ方に
         なる（→ [[feedback-promote-recurring-checks]] の「開示を書く仕事は
         『無いことの検査』を対で置く」）。⚠️ 見ているのは**呼び出しの形**で、
-        「節を持つか」は `TestHandlingSectionIsOnEverySheet` の側。
+        「セクションを持つか」は `TestHandlingSectionIsOnEverySheet` の側。
         """
         root = os.path.join(os.path.dirname(__file__), "..")
         offenders = []
@@ -907,7 +907,7 @@ class TestHandlingSectionContent:
 
         ⚠️ **「その数が行のどこかに在る」では緩すぎる**＝同じ行が*別の間隔*も
         名乗るので、目標間隔を直書きに変えても素通りした（変異検証で実際に踏んだ）。
-        ⇒ **名乗っている場所ごと**見る（この節は英語で確かめる）。
+        ⇒ **名乗っている場所ごと**見る（このセクションは英語で確かめる）。
         🔴 **見る数字が変わった**（B-150）＝「高」「中」は等間隔で刻まないので、
         名乗るのは目標間隔ではなく **1px の寸法（日本の幅）**。
         """
@@ -998,7 +998,7 @@ class TestHandlingSectionContent:
         assert html.count("<li>") == len(keys)
         assert 'class="handling"' in html
         assert i18n.t("html_handling_title") in html
-        # 出典（B-134）は**全帳票が通る 1 か所**＝この節に入れることで 5 面へ届く。
+        # 出典（B-134）は**全帳票が通る 1 か所**＝このセクションに入れることで 5 面へ届く。
         assert disclosure.data_source_line() in html
 
 
@@ -1192,7 +1192,7 @@ class TestKeepUnitWithValue:
         assert report_common.keep_unit_with_value(text) == text
 
     def test_the_handling_section_keeps_units_with_values(self):
-        """4 シート共通の補足節（2 段組み・8px）＝割れやすい面に効いていること。"""
+        """4 シート共通の補足セクション（2 段組み・8px）＝割れやすい面に効いていること。"""
         i18n.set_lang("ja")
         keys = models.scope_notes(430.0, diff_method="bullington",
                                   rain_rate=10.0, veg_h=5.0)

@@ -13,8 +13,8 @@ GCS/アンテナ高が数十cm動くだけで総取っ替えになり、10mメ�
   - Ament の粗面低減 rho_s = exp(-2*(2*pi*sigma*sin(psi)/lambda)**2)
   - レイリーの粗度基準 sigma < lambda/(8*sin(psi))
 
-`core/diffraction.py`（B-130 分割）と同じ位置づけの独立モジュール。この段（3.4 段4）
-では `models.py` から呼ばない・再輸出もしない＝配線は帳票の面（段6）で行う。
+`core/diffraction.py`（B-130 分割）と同じ位置づけの独立モジュール。3.4 ステージ4
+では `models.py` から呼ばない・再輸出もしない＝配線は帳票の面（ステージ6）で行う。
 """
 import math
 from dataclasses import dataclass
@@ -30,12 +30,12 @@ GAMMA0: float = 0.95
 #: 反射点から両端までの距離がこれ未満なら「幅」を出さない [m]。
 #: 🔑 **判断根拠**＝ロードマップの「ドローンのように反射点が端に寄る幾何
 #: （GCS前方3〜80m）は10mメッシュDEMで分解できない」に対応する下限。
-#: 200m は該当帯（〜80m）から十分離れており、後述の ~100m デトレンド窓が
+#: 200m は該当帯（〜80m）から十分離れており、後述の ~100m デトレンドウィンドウが
 #: 経路の外にはみ出さない余裕も持つ（判断は経験則・数値ではなく文献値ではない）。
 MIN_ARM_M: float = 200.0
 
-#: sigma_h を推定するデトレンド窓の半幅 [m]（`experiments/phase0_two_ray.py` の
-#: 実 DEM 粗さ測定と同じ ~100m 窓）。
+#: sigma_h を推定するデトレンドウィンドウの半幅 [m]（`experiments/phase0_two_ray.py` の
+#: 実 DEM 粗さ測定と同じ ~100m ウィンドウ）。
 SIGMA_WINDOW_HALF_M: float = 50.0
 
 #: 破壊的側（ヌル）の頭打ち [dB]。無限大は「参考値」として意味を持たない
@@ -140,7 +140,7 @@ def compute_two_ray_envelope(
     lam = C_LIGHT / (float(freq_mhz) * 1e6)
 
     # 反射点周辺 ±SIGMA_WINDOW_HALF_M の標本から sigma_h を自動推定する。
-    # ⚠️ 標本は等間隔とは限らない（B-150）ので、距離窓で選ぶ（インデックス窓は使わない）。
+    # ⚠️ 標本は等間隔とは限らない（B-150）ので、距離ウィンドウで選ぶ（インデックスウィンドウは使わない）。
     d_m_axis = np.asarray(terrain.d_km_axis, dtype=float) * 1000.0
     in_window = np.abs(d_m_axis - d1) <= SIGMA_WINDOW_HALF_M
     window_x = d_m_axis[in_window]

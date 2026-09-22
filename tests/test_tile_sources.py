@@ -1,7 +1,7 @@
 """
 tests/test_tile_sources.py
 ===========================
-tile_sources.py（背景地図タイルソースの宣言ファイル・3.5 段3・I-152）の
+tile_sources.py（背景地図タイルソースの宣言ファイル・3.5 ステージ3・I-152）の
 ユニットテスト。`tests/test_dem_sources.py` と同じ形。
 """
 

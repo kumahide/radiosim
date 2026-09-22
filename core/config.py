@@ -180,13 +180,13 @@ LANG_DIR    = app_path("lang")
 #: 書ける場所も対象に足す。
 USER_LANG_DIR = _user_lang_dir()
 
-#: 利用者が DEM ソースを足す宣言ファイル（I-147・3.4 段1）の置き場。**読むだけ**
+#: 利用者が DEM ソースを足す宣言ファイル（I-147・3.4 ステージ1）の置き場。**読むだけ**
 #: ＝アプリはここへ書き込まない。`USER_LANG_DIR` と同じ基準（設定フォルダ）だが
 #: `lang/*.json` のようなディレクトリ列挙ではなく単一ファイル（TOML の
 #: `[[source]]` 配列テーブルに複数ソースを書く）。
 USER_DEM_SOURCES_FILE = os.path.join(_config_base_dir(), "dem_sources.toml")
 
-#: 利用者が背景地図タイルソースを足す宣言ファイル（I-152・3.5 段3）の置き場。
+#: 利用者が背景地図タイルソースを足す宣言ファイル（I-152・3.5 ステージ3）の置き場。
 #: `USER_DEM_SOURCES_FILE` と同じ基準（設定フォルダ・読むだけ）。DEM ソースと
 #: 背景地図ソースは別軸（計算条件か表示かの違い）なのでファイルも分ける。
 USER_TILE_SOURCES_FILE = os.path.join(_config_base_dir(), "tile_sources.toml")

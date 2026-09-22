@@ -3,14 +3,14 @@ tests/test_scenario.py
 ======================
 条件探索（2.5 / A-1 比較・A-2 スイープ）のヘッドレス検証。
 
-対象は [scenario.py](scenario.py)（共有ランナー・相の宣言）と
+対象は [scenario.py](scenario.py)（共有ランナー・フェーズの宣言）と
 [report_scenario.py](report_scenario.py)（A4 シート・CSV）。DEM 取得は
 monkeypatch で塞ぎ、ネットワーク無しで実行する。
 
 **ここで守っているもの**:
   - 「DEM 取得 1 回 + run_calculation を N 回」＝2.5 の成立条件そのもの。
     取得が条件数ぶん走ったら、それは条件探索ではなくバッチの再実装になっている。
-  - 相（phase）の宣言＝**重い相が進捗の管轄外に置かれない**（B-006／I-008 の
+  - フェーズの宣言＝**重いフェーズが進捗の管轄外に置かれない**（B-006／I-008 の
     構造対策）。レポート生成まで含めて 100% に到達すること。
   - 上書きがベース params を汚さないこと（A-1/A-2 は同じ params を N 回使う）。
 """
@@ -302,7 +302,7 @@ class TestSweepConditions:
 
 
 # ============================================================
-# 相（phase）の宣言
+# フェーズの宣言
 # ============================================================
 class TestPhases:
 
@@ -394,7 +394,7 @@ class TestRunScenario:
         assert len(calcs) == 4, f"純計算が {len(calcs)} 回（条件数と一致すべき）"
 
     def test_progress_reaches_100_including_artifacts(self, base, monkeypatch, tmp_path):
-        """レポート生成まで進捗率に乗ること（重い相を管轄外にしない）。"""
+        """レポート生成まで進捗率に乗ること（重いフェーズを管轄外にしない）。"""
         pcts: list[int] = []
         phases: list[str] = []
         i18n.set_lang("en")
@@ -563,7 +563,7 @@ class TestScenarioReport:
         assert "tr.diff" not in report_scenario.scenario_sheet_css()
 
     def test_meta_block_shows_dem_fail_rate(self, terrain, base):
-        """固定した地形の DEM 取得失敗率が経路情報に出ること（3.2 段7・B-025 ③）。
+        """固定した地形の DEM 取得失敗率が経路情報に出ること（3.2 ステージ7・B-025 ③）。
 
         条件探索は地形を 1 回だけ取得して固定する（`run.terrain`）ので、
         `scenario.csv` の `dem_fail_pct` と同じ単一の値を 1 回だけ示す。
@@ -594,9 +594,9 @@ class TestScenarioReport:
         assert ".meta .kv{white-space:nowrap}" in report_scenario.scenario_sheet_css()
 
     def test_meta_block_keeps_each_value_with_its_unit(self, terrain, base):
-        """帯は折り返してよいが、値と単位のあいだでは折らないこと（B-242）。
+        """バーは折り返してよいが、値と単位のあいだでは折らないこと（B-242）。
 
-        3.4RC1 で帯が印字幅を 1px 超え、末尾の `0.0 %` の `%` だけが次の行へ
+        3.4RC1 でバーが印字幅を 1px 超え、末尾の `0.0 %` の `%` だけが次の行へ
         落ちた。半角空白は HTML の折り返し可能点なので、値と単位の間は U+00A0。
         """
         i18n.set_lang("ja")
@@ -717,7 +717,7 @@ class TestScenarioReport:
 # GUI スモーク（表示があるときだけ・条件探索ウィンドウ）
 # ============================================================
 class TestScenarioWindowSmoke:
-    """窓が組み上がること＝i18n キー欠落・レイアウト例外の即検出。
+    """ウィンドウが組み上がること＝i18n キー欠落・レイアウト例外の即検出。
 
     実行はしない（DEM 取得と GUI ループを回さない）。ヘッドレス CI では
     make_tk_root が skip する。
@@ -731,7 +731,7 @@ class TestScenarioWindowSmoke:
         i18n.set_lang(prev)
 
     def _win(self, default_params_dict):
-        """**テーマとフォントを適用してから**窓を作る。
+        """**テーマとフォントを適用してから**ウィンドウを作る。
 
         ⚠️ 素の Tk 既定フォントのまま測ると、実機（sv_ttk の本文フォント）より
         文字が小さく、寸法のゲートが**実物より狭い前提で緑になる**。実際、条件 5
@@ -762,11 +762,11 @@ class TestScenarioWindowSmoke:
         finally:
             win.destroy(); root.destroy()
 
-    # ⚠️ 窓の見切れ（条件列を足すと右端が出る＝I-024）のゲートは
-    # tests/test_window_fit.py へ移した（全窓横断の登録制ゲート）。
+    # ⚠️ ウィンドウの見切れ（条件列を足すと右端が出る＝I-024）のゲートは
+    # tests/test_window_fit.py へ移した（全ウィンドウ横断の登録制ゲート）。
 
     def _win_with_meta(self, default_params_dict, meta: dict):
-        """案件情報プロバイダ付きの窓（プロバイダの中身は後から差し替えられる）。"""
+        """案件情報プロバイダ付きのウィンドウ（プロバイダの中身は後から差し替えられる）。"""
         from conftest import make_themed_root
         root = make_themed_root()
         root.withdraw()
@@ -787,7 +787,7 @@ class TestScenarioWindowSmoke:
         root, win = self._win_with_meta(default_params_dict, meta)
         try:
             assert win._meta == meta
-            # I-031 で帯を「バッチと同じ readonly 欄＋🔒」へ揃えたので、
+            # I-031 でバーを「バッチと同じ readonly 欄＋🔒」へ揃えたので、
             # 表示の実体は 1 行テキストではなく欄の値。
             assert win._project_var.get() == "〇〇高校 無線化検討"
             assert win._memo_var.get() == "2 系統比較"
@@ -797,7 +797,7 @@ class TestScenarioWindowSmoke:
     def test_case_info_does_not_follow_the_launcher_silently(self, default_params_dict):
         """ランチャー側を変えても、↻ を押すまで写しは変わらないこと。
 
-        経路（座標）と**同じ凍結方式**に揃える。実行の瞬間に読み直すと、窓を
+        経路（座標）と**同じ凍結方式**に揃える。実行の瞬間に読み直すと、ウィンドウを
         開いたあとに案件名を変えた場合「画面と成果物が食い違う」。
         """
         i18n.set_lang("ja")
@@ -1034,11 +1034,11 @@ class TestScenarioWindowSmoke:
 # 結果表示と完了後の導線（2026-07-25 実機フィードバック）
 # ============================================================
 class TestScenarioResultsAndDialog:
-    """窓の高さを点数から切り離し、完了時の挙動を単一/バッチと揃える。
+    """ウィンドウの高さを点数から切り離し、完了時の挙動を単一/バッチと揃える。
 
     実機フィードバックの内容:
       - スイープ点数が多いと縦長にしないと表示できない（FHD に収まらない）
-      - 保存ボタンが窓から見切れる
+      - 保存ボタンがウィンドウから見切れる
       - 保存後にダイアログが出ない＝単一/バッチと挙動が違う
     """
 
@@ -1064,7 +1064,7 @@ class TestScenarioResultsAndDialog:
 
     def test_window_height_is_independent_of_point_count(
             self, default_params_dict, terrain, base, monkeypatch):
-        """41 点でも窓の要求高は変わらない（一覧はスクロールする）。"""
+        """41 点でもウィンドウの要求高は変わらない（一覧はスクロールする）。"""
         root, win = self._win(default_params_dict)
         try:
             import views.scenario as vs
@@ -1078,7 +1078,7 @@ class TestScenarioResultsAndDialog:
             root.update_idletasks()
             large = win.winfo_reqheight()
             assert large == small, (
-                f"点数で窓の高さが変わる（{small}px → {large}px）＝"
+                f"点数でウィンドウの高さが変わる（{small}px → {large}px）＝"
                 "一覧がスクロールせず伸びている"
             )
             # 全点は一覧に載る（スクロールで届く）
@@ -1087,7 +1087,7 @@ class TestScenarioResultsAndDialog:
             win.destroy(); root.destroy()
 
     def test_run_button_is_outside_the_scrolling_area(self, default_params_dict):
-        """実行ボタンは常に見える帯に置く（一覧が伸びても見切れない）。"""
+        """実行ボタンは常に見えるバーに置く（一覧が伸びても見切れない）。"""
         root, win = self._win(default_params_dict)
         try:
             root.update_idletasks()
@@ -1266,7 +1266,7 @@ class TestLauncherSnapshot:
     以前は実行時に config_provider を黙って読み直しており、ランチャーで座標を
     変えると「画面に出ている経路」と「実際に計算した経路」が食い違い得た
     （表示 ≠ 計算＝気づけない種類の欠陥）。バッチの Common Settings と同じく
-    開窓時スナップショット＋↻ ボタンに揃える。
+    開ウィンドウ時スナップショット＋↻ ボタンに揃える。
     """
 
     @pytest.fixture(autouse=True)

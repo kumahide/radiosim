@@ -1,7 +1,7 @@
 """
 views/batch_table.py
 ====================
-バッチ窓の**入力表**（`BatchBuilderWindow` の Mixin）。
+バッチウィンドウの**入力表**（`BatchBuilderWindow` の Mixin）。
 
 行の生成・複製・削除・並べ替え（ドラッグ＆ドロップ）・凍結列の表示・水平距離の
 再計算・表からの読み取り。
@@ -95,7 +95,7 @@ class _TableMixin(_HostBase):
         vsb = ttk.Scrollbar(canvas_frame, orient="vertical", command=self._canvas.yview)
         self._canvas.configure(yscrollcommand=vsb.set)
         vsb.pack(side="right", fill="y")
-        # 初期幅の判定で「表の可視幅は窓幅より狭い」ぶんを実測するために保持する
+        # 初期幅の判定で「表の可視幅はウィンドウ幅より狭い」ぶんを実測するために保持する
         # （スクロールバー幅は DPI スケーリングで変わるので定数にしない）。
         self._vsb = vsb
         self._canvas.pack(side="left", fill="both", expand=True)
@@ -107,15 +107,15 @@ class _TableMixin(_HostBase):
         self._table_frame.bind("<Configure>", self._on_frame_configure)
         self._canvas.bind("<Configure>",      self._on_canvas_configure)
         # ⚠️ **`bind_all` を使わない**（B-050）。理由は 2 つあり、どちらも実測済み。
-        #   ①**窓を閉じても解放されない**＝`bind_all` の登録先は**ルートの**
+        #   ①**ウィンドウを閉じても解放されない**＝`bind_all` の登録先は**ルートの**
         #     `_tclCommands` で、しかも CPython の `Misc.unbind_all` は
         #     `bind all <seq> ''` を呼ぶだけで **`deletecommand` しない**（3.14 の
-        #     ソースで確認）。⇒ コールバック（＝この窓への強参照）がアプリの寿命ぶん
+        #     ソースで確認）。⇒ コールバック（＝このウィンドウへの強参照）がアプリの寿命ぶん
         #     残り、開閉のたびに **40 個ずつ線形に積み上がる**（10 回で +400 個）。
-        #   ②**他の窓と干渉する**＝[views/window_fit.py](window_fit.py) が同じ理由で
+        #   ②**他のウィンドウと干渉する**＝[views/window_fit.py](window_fit.py) が同じ理由で
         #     既に `bind_all` を避けており、その注記が**この行を名指ししていた**。
         # バインドタグは「ウィジェット → クラス → トップレベル → all」なので、
-        # **トップレベルに束ねればこの窓の中だけに効く**（＝従来と同じ効き方）。
+        # **トップレベルに束ねればこのウィンドウの中だけに効く**（＝従来と同じ効き方）。
         self.bind("<MouseWheel>", self._on_mousewheel, add="+")
         self.bind("<<ThemeChanged>>",
                   lambda _e: self._refresh_verdict_colors(), add="+")
@@ -127,8 +127,8 @@ class _TableMixin(_HostBase):
         self._canvas.itemconfig(self._table_win, width=event.width)
 
     def _on_mousewheel(self, event) -> None:
-        # ポインタがテーブル（_canvas 配下）にある時だけスクロールする。窓に閉じた
-        # バインドになった今も要る＝この窓の**他の領域**（共通設定欄など）でホイール
+        # ポインタがテーブル（_canvas 配下）にある時だけスクロールする。ウィンドウに閉じた
+        # バインドになった今も要る＝このウィンドウの**他の領域**（共通設定欄など）でホイール
         # を回したときに表が動くと、見ている場所と動く場所がずれる。
         widget = self.winfo_containing(event.x_root, event.y_root)
         if widget is None:
@@ -171,7 +171,7 @@ class _TableMixin(_HostBase):
                  meas: "dict | None" = None) -> None:
         """行を1つ追加する。
 
-        `meas` は実測突合せ用の任意フィールド（`meas_dbm` など・3.4 段3）で、
+        `meas` は実測突合せ用の任意フィールド（`meas_dbm` など・3.4 ステージ3）で、
         表には列を持たない。**並行リストではなく行フレームの属性として運ぶ**
         （`_verdict_label` と同じ理由＝行が消えれば一緒に消える）。`row_data` が
         `PathRow` ならそこから取り、`list`（複製・並べ替えの内部呼び出し）なら
@@ -256,9 +256,9 @@ class _TableMixin(_HostBase):
         # 座標セル（col 1=start / 2=end）の編集確定で地図の確定パス表示と水平距離を
         # 追従させる。地図ラインは TX/RX 座標だけで決まるので、対象は start/end のみ。
         # FocusOut は他セル・他ウィンドウへ移った時、Return は明示確定時に発火する。
-        # あわせて**確定した座標をこの窓の表記へ整形する**（I-060 R3）＝整形される
+        # あわせて**確定した座標をこのウィンドウの表記へ整形する**（I-060 R3）＝整形される
         # こと自体が「読めた」という返事になり、読めなければ原文が残るので parse の
-        # 成否が目で分かる。表記は窓を開いた時点で凍結した `_coord_format`（G2）。
+        # 成否が目で分かる。表記はウィンドウを開いた時点で凍結した `_coord_format`（G2）。
         def _coords_committed(_e=None, f=row_frame, es=entries):
             self._commit_row_coords(f, es)
 
@@ -326,7 +326,7 @@ class _TableMixin(_HostBase):
         水平距離列で 1080px の既定値が足りなくなったのを機に、定数合わせをやめた。
 
         ⚠️ **起動時だけでは足りない**（2.5b2・I-024 のクラス点検で判明）：CSV
-        インポートで長い備考が入ると `_sync_header_columns` が列を広げるのに、窓は
+        インポートで長い備考が入ると `_sync_header_columns` が列を広げるのに、ウィンドウは
         そのままだった＝あとから見切れる。**中身を入れ替える操作のあとにも呼ぶ**。
 
         測り方は [views/window_fit](views/window_fit.py) に集約（縮めない・画面幅で
@@ -402,9 +402,9 @@ class _TableMixin(_HostBase):
     def _run_sync(self) -> None:
         self._sync_after_id = None
         self._sync_header_columns()
-        # 列が広がった直後は窓の必要幅も変わっている。ここで測り直さないと
+        # 列が広がった直後はウィンドウの必要幅も変わっている。ここで測り直さないと
         # 「起動時は正しいが、あとから見切れる」状態になる（I-024 のクラス）。
-        # 列幅は窓幅から独立に決まる（行セルと見出しの実測）ので、ここで窓を
+        # 列幅はウィンドウ幅から独立に決まる（行セルと見出しの実測）ので、ここでウィンドウを
         # 広げても列幅は動かない＝再入して発散しない。
         self._fit_width_to_content()
 
@@ -418,7 +418,7 @@ class _TableMixin(_HostBase):
         ⚠️ **セルは `grid_bbox`（実測）ではなく `winfo_reqwidth`（必要量）で測る**。
         bbox は前回この関数が掛けた `minsize` を含んだ「今の幅」なので、測って
         掛け直すたびに前回以上の値しか出ない＝**列幅が一方通行になる**。表示スケール
-        を 150% → 100% へ戻しても表は 150% の幅を要求し続け、窓も戻らなかった
+        を 150% → 100% へ戻しても表は 150% の幅を要求し続け、ウィンドウも戻らなかった
         （I-053）。見出し側が最初から必要量で測っているのと揃える。
         """
         if not self._row_frames:
@@ -460,7 +460,7 @@ class _TableMixin(_HostBase):
         """テーマ切替で判定色を貼り直す（`<<ThemeChanged>>` から）。
 
         ⚠️ ラベルの前景色は生成時ではなく**判定を入れたときに**決まるので、
-        Treeview のタグと違い自動では追従しない（結果一覧を持つ窓は
+        Treeview のタグと違い自動では追従しない（結果一覧を持つウィンドウは
         `apply_verdict_tags` を貼り直している＝同じ手当てをここにも置く）。
         表示中の字（OK / NG / ERR）から色のキーを引ける形にしてあるので、
         行ごとの状態を別に持たなくてよい。
@@ -510,7 +510,7 @@ class _TableMixin(_HostBase):
         **成果物（レポート・CSV）は元から正しい**＝直しているのは画面だけ。
 
         色は `theme.verdict_colors` が出所（画面ごとに色を書かない・I-005/B-008）。
-        表記は進捗帯のカウンタ（`✓ n OK` / `⚠ n ERR`）と揃える。
+        表記は進捗バーのカウンタ（`✓ n OK` / `⚠ n ERR`）と揃える。
         """
         key = path_id.strip().casefold()
         sent = getattr(self, "_run_inputs", {}).get(key)
@@ -553,7 +553,7 @@ class _TableMixin(_HostBase):
     def _show_row_menu(self, event, frame: ttk.Frame, entries: list[tk.Entry]) -> None:
         """行の右クリックメニューを表示する。
 
-        🔴 **メニューの実体は窓に 1 つ**（2026-08-24・B-121 のクラス点検）＝毎回
+        🔴 **メニューの実体はウィンドウに 1 つ**（2026-08-24・B-121 のクラス点検）＝毎回
         `tk.Menu` を作ると**親の子として残り続ける**（`finally` は `grab_release()`
         だけ）。行ごとに右クリックできるここは、**地図より速く積み上がる**。
         ⚠️ 中身（ラベルと、その行に束ねたコマンド）は**毎回組み直す**＝使い回すのは
@@ -758,9 +758,9 @@ class _TableMixin(_HostBase):
     def replace_rows(self, rows: list) -> None:
         """表の全行を差し替える（CSV インポートの本体）。
 
-        ファイル選択ダイアログから切り離してあるのは、**インポート後に窓が中身へ
+        ファイル選択ダイアログから切り離してあるのは、**インポート後にウィンドウが中身へ
         追従すること**をテストから叩けるようにするため（長い備考が入ると列幅同期が
-        列を広げる＝窓の必要幅が変わる）。逐次通知を抑止して再構築し、終了後に
+        列を広げる＝ウィンドウの必要幅が変わる）。逐次通知を抑止して再構築し、終了後に
         1 回だけ地図へ通知する。
         """
         self._suspend_notify = True
@@ -773,5 +773,5 @@ class _TableMixin(_HostBase):
                 self._add_row(row)
         finally:
             self._suspend_notify = False
-        self._run_sync()             # 列幅同期 → 窓を中身へ追従（見切れ防止）
+        self._run_sync()             # 列幅同期 → ウィンドウを中身へ追従（見切れ防止）
         self._notify_paths_changed()

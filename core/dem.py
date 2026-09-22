@@ -13,7 +13,7 @@ dem.py
 （[core/terrain_grid.py](terrain_grid.py)）へ独立させた（I-069）。
 ⚠️ **面での事前取得はここに無い**＝[core/dem_prefetch.py](dem_prefetch.py)
 （B-141）。**キャッシュの棚卸し・カバレッジ表示・削除もここに無い**＝
-[core/dem_cache.py](dem_cache.py)（3.3 段4a）。切り口はどちらも*関心事*＝
+[core/dem_cache.py](dem_cache.py)（3.3 ステージ4a）。切り口はどちらも*関心事*＝
 「いま要る 1 点」（ここ）と「すでに在るものの管理／これから要る面」は寿命が
 違う。
 
@@ -64,15 +64,15 @@ CACHE_DIR = os.path.join(cache_log_base_dir(), "terrain_cache")
 # ※ dem1a_png（1m）はカバレッジが限定的で取得失敗が頻発するため除外
 #
 # 🔑 **単一ソースの正典は [core/dem_sources.py](dem_sources.py) の
-# `GSI_DEM`**（3.3 段4c＝DEM ソースの宣言ファイル）＝ここはその写し。
+# `GSI_DEM`**（3.3 ステージ4c＝DEM ソースの宣言ファイル）＝ここはその写し。
 DEM_LAYERS: list[tuple[str, int]] = list(dem_sources.GSI_DEM.layers)
 # ⚠️ **この層構成から導かれる「1px が何 m か」と「何点で刻むか」は
 # [core/terrain_grid.py](terrain_grid.py)** ＝純粋な層として独立させてある
 # （設定層がネットワーク依存なしに引けるようにするため・I-069）。
 #
 # ==============================================================================
-# 📜 **標高ソースを増やす前に固定する規則**（3.3 段4b・国土地理院以外の
-# ソースを [core/dem_sources.py](dem_sources.py)（段4c）へ足す前の設計拘束）
+# 📜 **標高ソースを増やす前に固定する規則**（3.3 ステージ4b・国土地理院以外の
+# ソースを [core/dem_sources.py](dem_sources.py)（ステージ4c）へ足す前の設計拘束）
 # ==============================================================================
 # 🔑 **「1 回の計算で標高ソースを混ぜない」**＝1 本の経路の標高取得（`get_elevation`
 # の 1 回の呼び出し列＝`DEM_LAYERS` の降下）の中で、**基準面（datum・ジオイド）の
@@ -236,7 +236,7 @@ def network_failed() -> bool:
 # `get_elevation` → `last_source_tile()` と続けて読む。
 # ⚠️ **保存時に座標からタイルを引き直さない**＝一時失敗は負キャッシュしない
 # （B-010）ので、先の標本が 10m で計算されても、後の標本で 5m が取れていると
-# 引き直しは 5m を答える（3.3 段4e の初版で実際に起きた）。
+# 引き直しは 5m を答える（3.3 ステージ4e の初版で実際に起きた）。
 _source_tile = threading.local()
 
 
@@ -267,7 +267,7 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
 
 
 def source_layer_dir(src: "dem_sources.DemSourceSpec", layer_id: str) -> str:
-    """レイヤ 1 つぶんのディスクキャッシュの根（3.4 段1＝ソースごとに分離）。
+    """レイヤ 1 つぶんのディスクキャッシュの根（3.4 ステージ1＝ソースごとに分離）。
 
     🔑 **国土地理院は現状の場所のまま**（`CACHE_DIR/<layer_id>/`）＝既存の
     キャッシュを移さない（I-147 完了条件①）。それ以外のソースは
@@ -298,7 +298,7 @@ def get_elevation(
     DEM PNG タイルから標高 [m] を取得する。
 
     Args:
-        source: 標高ソース（3.4 段1・I-147）。省略時は国土地理院（`GSI_DEM`）＝
+        source: 標高ソース（3.4 ステージ1・I-147）。省略時は国土地理院（`GSI_DEM`）＝
             **単一の計算経路の中で降下するのは常にこの 1 ソースの `layers` だけ**
             （`core/dem.py` の `DEM_LAYERS` 直後の規則＝プロバイダをまたいだ
             降下フォールバックをしない）。
@@ -401,8 +401,8 @@ def get_elevation(
 
 def tile_acquired_date(tile_key: tuple) -> "str | None":
     """タイル `(source_id, layer_id, xtile, ytile)`（＝`last_source_tile()` の答え・
-    3.4 段1でソース識別子が先頭に加わった）の**取得日**（ISO 8601 の日付・
-    ローカルタイムゾーン）。3.3 段4e＝出所刻印「取得日」の値。
+    3.4 ステージ1でソース識別子が先頭に加わった）の**取得日**（ISO 8601 の日付・
+    ローカルタイムゾーン）。3.3 ステージ4e＝出所刻印「取得日」の値。
 
     🔑 **「実行日」ではなく「タイルを取った日」**＝DEM はディスクキャッシュ経由
     なので、キャッシュヒットでは過去の日付になり得る。それこそが「このレポートの
@@ -528,7 +528,7 @@ def _fetch_tile(
         続け、標高が誤る（= B-010）。
 
     Args:
-        source: URL テンプレートの出所（3.4 段1）。省略時は国土地理院
+        source: URL テンプレートの出所（3.4 ステージ1）。省略時は国土地理院
             （淡色地図＝`BASEMAP_LAYER` の取得もここを通るので既定にしてある）。
     """
     src = source if source is not None else dem_sources.GSI_DEM
@@ -593,7 +593,7 @@ def _decode_elevation(
 ) -> float:
     """RGB ピクセル値から標高 [m] をデコードする。省略時は国土地理院
     （`dem_sources.GSI_DEM`）。デコード式そのものは [core/dem_sources.py](dem_sources.py)
-    の宣言（3.3 段4c／3.4 段1）が単一ソース。"""
+    の宣言（3.3 ステージ4c／3.4 ステージ1）が単一ソース。"""
     src = source if source is not None else dem_sources.GSI_DEM
     r, g, b = int(rgb[0]), int(rgb[1]), int(rgb[2])
     # B-229＝宣言された無効値ピクセルは、GSI の自前処理（_decode_gsi_dem）と

@@ -348,11 +348,11 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             f"{graph_cell}</tr>\n"
         )
 
-    # 感度表（3.4 段6 で漏れていた面＝B-226）＝**ワースト経路（actual_margin 最小）**
+    # 感度表（3.4 ステージ6 で漏れていた面＝B-226）＝**ワースト経路（actual_margin 最小）**
     # だけを計算する。バッチは N 本の独立経路の集合で条件探索の base_params のような
     # 単一の基準が無いため、中継の「ワースト区間」と同じ考え方で 1 本を選ぶ
     # （最も余裕が無い経路を見せるのが実務上いちばん有用）。計算できた経路が
-    # 1 本も無ければ感度は出さない（`handling_section_html` は sens=None で節を省く）。
+    # 1 本も無ければ感度は出さない（`handling_section_html` は sens=None でセクションを省く）。
     def _margin(pr: PathResult) -> float:
         assert pr.result is not None
         return pr.result.actual_margin
@@ -395,7 +395,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
         ),
     )
 
-    # 実測残差の層別表（3.4 段6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ
+    # 実測残差の層別表（3.4 ステージ6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ
     # だけに出る（0 件なら空表を出さない＝`residuals_table_html` が空文字を返す）。
     # ⚠️ **`report.residuals` はここで遅延 import**＝`report.residuals` は
     # `report.batch` を読み込むが、`report.batch` は module レベルで

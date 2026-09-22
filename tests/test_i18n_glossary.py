@@ -68,13 +68,13 @@ class Term:
 
 
 def _parse_glossary() -> list[Term]:
-    """`## 用語` 節の表を読む。
+    """`## 用語` セクションの表を読む。
 
-    見出しで節を切るのは、**表の読み方**の表など他の表を拾わないため。
+    見出しでセクションを切るのは、**表の読み方**の表など他の表を拾わないため。
     """
     text = GLOSSARY.read_text(encoding="utf-8")
     section = text.split("\n## 用語\n", 1)
-    assert len(section) == 2, "docs/glossary.md に「## 用語」節が無い"
+    assert len(section) == 2, "docs/glossary.md に「## 用語」セクションが無い"
     body = section[1].split("\n## ", 1)[0]
 
     terms: list[Term] = []

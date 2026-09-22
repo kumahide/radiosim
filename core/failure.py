@@ -70,7 +70,7 @@ def message(*, what: str, hint: str, why: str = "", detail: str = "") -> str:
     if not what.strip():
         raise ValueError("failure.message: 何が起きたかが空")
     if not hint.strip():
-        # ⚠️ ここが型の芯＝**次の一手が無い失敗メッセージを作れないようにする**。
+        # ⚠️ ここが型のコア＝**次の一手が無い失敗メッセージを作れないようにする**。
         raise ValueError("failure.message: 次に何をすべきかが空")
     head = what.strip()
     if why.strip():
