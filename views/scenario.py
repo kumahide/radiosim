@@ -122,6 +122,7 @@ class ScenarioWindow(tk.Toplevel):
         on_close:        "Callable[[], None] | None" = None,
         initial_spec:    "project.ScenarioSpec | None" = None,
         coord_format:    str = "dd",
+        cache_notify:    "Callable[[], None] | None" = None,
     ) -> None:
         super().__init__(parent)
         title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
@@ -138,6 +139,9 @@ class ScenarioWindow(tk.Toplevel):
         # ここで凍結し、↻ で明示的に取り込み直す（実行時に読み直さない＝下記）。
         self._meta: dict[str, str] = self._snapshot_meta()
         self._on_close_cb     = on_close
+        # 実行が終わったとき（＝DEM キャッシュが増えているとき）にランチャー→地図へ
+        # 知らせるコールバック（B-265）。単一・バッチ・中継と同じ名前で受ける。
+        self._cache_notify    = cache_notify
         self._running = False
         self._last_run: "scn.ScenarioRun | None" = None
         self._last_dir = ""
@@ -846,6 +850,16 @@ class ScenarioWindow(tk.Toplevel):
         elif event == "error":
             self._on_error(*args)
 
+    def _notify_cache_change(self) -> None:
+        """実行で DEM キャッシュが増えたことをランチャー経由で地図へ知らせる（B-265）。
+
+        ⚠️ **ダイアログより前に呼ぶ**＝完了ダイアログは利用者が閉じるまで返らないので、
+        後ろに置くと「閉じるまで地図が古いまま」になる。成功・失敗の両方から呼ぶ＝
+        途中で失敗しても、そこまでに取れたタイルはキャッシュに残っている。
+        """
+        if self._cache_notify is not None:
+            self._cache_notify()
+
     def _on_complete(self, run: scn.ScenarioRun) -> None:
         self._running = False
         self._pump.stop()
@@ -856,6 +870,7 @@ class ScenarioWindow(tk.Toplevel):
         self._prog_label.config(text="")
         self._last_run = run
         self._fill_results(run)
+        self._notify_cache_change()   # B-265（この下のダイアログは閉じるまで返らない）
 
         # 単一・バッチと同じ流儀＝保存先を告げ、レポートかフォルダかを選ばせる
         # （実機フィードバック：ここだけダイアログが出ないのは挙動が揃っていない）。
@@ -896,6 +911,7 @@ class ScenarioWindow(tk.Toplevel):
         self._run_btn.config(state="normal")
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
+        self._notify_cache_change()   # B-265
         dialogs.alert(self, i18n.t("dlg_error"), failure.explain(
             ex, what=i18n.t("fail_run_scenario"), hint=i18n.t("fix_retry_or_log")))
 

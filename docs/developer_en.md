@@ -325,6 +325,7 @@ radiosim/
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
+    ├── test_cache_notify.py
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
@@ -1138,6 +1139,7 @@ entry point that runs them together.
 | `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke, combined report (sheet CSS scoping, in-document anchors) |
 | `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
 | `test_map_window.py`     | Map window safe teardown (after-loop stop invariants) + static guard that all teardown paths go through close_map_safely |
+| `test_cache_notify.py`   | Cache-change notification after a run (single/batch/scenario/multi-hop complete & error handlers) + static guard on the launcher wiring |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_terrain_grid.py`   | Terrain resolution (level -> sample positions, level ordering, **no DEM pixel skipped in real tile coordinates and both chord edges sampled**, where the ceiling bites, a single place that resolves it, no numeric sample-count input) |
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|

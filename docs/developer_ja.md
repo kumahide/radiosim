@@ -324,6 +324,7 @@ radiosim/
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
+    ├── test_cache_notify.py
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
@@ -1143,6 +1144,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
 | `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | 地図の安全破棄（after ループ停止の不変条件）＋破棄経路が close_map_safely に集約されていることの静的ガード |
+| `test_cache_notify.py`   | 実行が終わったときのキャッシュ変更通知（単一・複数経路・条件探索・中継の完了/失敗ハンドラ）＋ランチャー側の配線の静的ガード |
 | `test_coords.py`         | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
 | `test_terrain_grid.py`   | 地形の解像度（段階→標本位置の解決・段階の順序・**実タイル座標で画素を飛ばさないこと／画素の縁の両方に標本が入ること**・天井の効く距離・解き方の口が 1 つであること・数で入れる口が復活しないこと） |
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |

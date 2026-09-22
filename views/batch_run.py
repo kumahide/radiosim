@@ -13,7 +13,7 @@ views/batch_run.py
 import os
 import tkinter as tk
 from tkinter import ttk
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Callable
 
 from core import config
 from core import failure
@@ -62,6 +62,7 @@ class _RunMixin(_HostBase):
         _prog_label: ttk.Label
         _prog_count_label: ttk.Label
         _run_cur: int
+        _cache_notify: "Callable[[], None] | None"
 
         def _read_table_rows(self) -> list[batch.PathRow]: ...
         def _clear_verdicts(self) -> None: ...
@@ -243,6 +244,16 @@ class _RunMixin(_HostBase):
         self._prog_label.config(text=f"   {pr.row.path_id}  →  {status_text}")
         self._prog_count_label.config(text=f"{cur} / {tot}  ({pct}%)")
 
+    def _notify_cache_change(self) -> None:
+        """実行で DEM キャッシュが増えたことをランチャー経由で地図へ知らせる（B-265）。
+
+        ⚠️ **ダイアログより前に呼ぶ**＝完了ダイアログは利用者が閉じるまで返らないので、
+        後ろに置くと「閉じるまで地図が古いまま」になる。成功・失敗の両方から呼ぶ＝
+        途中で失敗しても、そこまでに取れたタイルはキャッシュに残っている。
+        """
+        if self._cache_notify is not None:
+            self._cache_notify()
+
     def _on_batch_complete(self, batch_dir: str, results: list) -> None:
         # 成果物（per-path PNG/HTML/KML・サマリ地図/HTML/KML）は batch 側の
         # ワーカースレッドで生成済み。ここは UI 更新のみ＝メインスレッドを
@@ -262,6 +273,7 @@ class _RunMixin(_HostBase):
         self._prog_label.config(
             text=i18n.t("batch_done").format(dir=os.path.basename(batch_dir)))
         self._prog_count_label.config(text="")
+        self._notify_cache_change()   # B-265（この下のダイアログは閉じるまで返らない）
         # 成果物は 2 種類ある＝**閲覧用のサマリ**（台帳・サムネイル・各経路への
         # リンク）と**印刷用の連結レポート**（report_all.html＝Ctrl+P で全ページ分の
         # PDF）。どちらを開きたいかは場面で変わるので、完了時にその場で選ばせる
@@ -293,5 +305,6 @@ class _RunMixin(_HostBase):
         self._prog_bar.config(value=0)
         self._prog_count_label.config(text="")
         self._prog_label.config(text=i18n.t("batch_error_msg"))
+        self._notify_cache_change()   # B-265
         dialogs.alert(self, i18n.t("dlg_batch_error"), failure.explain(
             ex, what=i18n.t("fail_run_batch"), hint=i18n.t("fix_retry_or_log")))

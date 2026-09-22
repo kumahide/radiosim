@@ -77,6 +77,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         initial_path:    "mh.MultiHopPath | None" = None,
         map_opener:      "Callable[[object], None] | None" = None,
         map_notify:      "Callable[[], None] | None" = None,
+        cache_notify:    "Callable[[], None] | None" = None,
         coord_format:    str = "dd",
     ) -> None:
         super().__init__(parent)
@@ -95,6 +96,9 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         # （どちらもランチャーが注入する＝親ウィジェットから探さない）。
         self._map_opener      = map_opener
         self._map_notify      = map_notify
+        # 実行が終わったとき（＝DEM キャッシュが増えているとき）にランチャー→地図へ
+        # 知らせるコールバック（B-265）。単一・バッチ・条件探索と同じ名前で受ける。
+        self._cache_notify    = cache_notify
         # 座標の表記＝**開いた時点で凍結**（G2 と同じ形・I-070）。このウィンドウは長らく
         # 受け取っておらず、設定を DMS にしてもここだけ十進度で出ていた。
         # ⚠️ **表記は表示だけの話**＝読む側は `coords.parse_pair` が両表記を受け、
@@ -945,6 +949,16 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
             if text:
                 cells["status"].config(foreground=colors[theme.verdict_key(text)])
 
+    def _notify_cache_change(self) -> None:
+        """実行で DEM キャッシュが増えたことをランチャー経由で地図へ知らせる（B-265）。
+
+        ⚠️ **ダイアログより前に呼ぶ**＝完了ダイアログは利用者が閉じるまで返らないので、
+        後ろに置くと「閉じるまで地図が古いまま」になる。成功・失敗の両方から呼ぶ＝
+        途中で失敗しても、そこまでに取れたタイルはキャッシュに残っている。
+        """
+        if self._cache_notify is not None:
+            self._cache_notify()
+
     def _on_complete(self, run: mh.MultiHopRun) -> None:
         self._running = False
         self._pump.stop()
@@ -952,6 +966,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
         self._last_run = run
+        self._notify_cache_change()   # B-265（この下のダイアログは閉じるまで返らない）
 
         # **全体判定＋どの区間が決めているか**を必ず併記する（min だけ出さない）。
         # 集約の語と符号は `mh.overall_display` が単一ソース（I-052）＝レポートの
@@ -992,6 +1007,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         self._run_btn.config(state="normal")
         self._prog_bar.config(value=0)
         self._prog_label.config(text="")
+        self._notify_cache_change()   # B-265
         dialogs.alert(self, i18n.t("dlg_error"), failure.explain(
             ex, what=i18n.t("fail_run_multihop"), hint=i18n.t("fix_retry_or_log")))
 
