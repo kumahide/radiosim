@@ -707,6 +707,109 @@ class TestAssignmentAudit:
         assert hook.assignment_audit(doc)["undeclared"] == []
 
 
+class TestTheVersionVocabularyComesFromTheRoadmap:
+    """🔴 **どの世代が実在するかをコードに焼き込まない**（2026-09-22・B-263）。
+
+    旧実装は版番号を `[23]\\.\\d` と書いていた＝**2.x と 3.x しか版と認めない**。
+    [[project-roadmap]] に §4.x を起こした**翌日**から、`行き先＝4.0 に確定` と
+    正しく記入した項目が **毎セッション「行き先未記入」として名指しされ**、
+    `ledger.py version 4.0` は該当なしを返していた（実データ＝B-262）。
+
+    🔑 **これは「4 を足し忘れた」ではなく、*語彙をどこが持つか*の誤り**＝版を増やす
+    作業はロードマップに見出しを起こすことなので、**道具の側に世代を書けば必ず遅れる。**
+    ⇒ 語彙は `known_versions()` がロードマップから読む。下の 3 つは、その構造が
+    崩れたら（＝誰かがまた世代をコードへ書いたら）落ちる形で固定してある。
+    """
+
+    def test_a_generation_the_code_has_never_seen_needs_no_code_change(self, hook):
+        """**コードが一度も見たことのない世代**が、ロードマップだけで通ること。
+
+        ここが本体＝`[234]` のように*足して回る*直し方に戻ると、このテストが落ちる。
+        """
+        roadmap = ["## ⬜ 9.x — 架空の世代", "", "### ⬜ 9.3 — 架空の版", "本文の 9.4 は拾わない"]
+        vocab = hook.known_versions(roadmap)
+        assert vocab == frozenset({"9.3"}), vocab
+        assert hook.declared_versions("未着手（**9.3＝出力契約の回**）", vocab) == ["9.3"]
+
+    def test_the_real_roadmap_supplies_the_generation_in_flight(self, hook):
+        """実データ＝いま在る版がそのまま語彙になること（4.x を含む）。"""
+        path = hook.MEM_DIR / "project_roadmap.md"
+        if not path.exists():
+            pytest.skip(structural_skip("メモリは git 管理外（CI には存在しない）"))
+        vocab = hook.known_versions(path.read_text(encoding="utf-8").splitlines())
+        assert {"3.5", "4.0"} <= vocab, sorted(vocab)
+
+    def test_the_first_4x_destination_is_read(self, hook):
+        """B-263 の実データの形をそのまま固定する（状態欄は 1 行・版は 2 つ出る）。"""
+        doc = _doc("### ★ B-262: 植生減衰の係数が 1 GHz と 6 GHz で不連続", "",
+                   "- ★ **状態**: 対応中（✅ **行き先＝4.0 に確定＝2026-09-22 ユーザー選択**"
+                   "＝処方は対応案 5。**3.5 には入らない**＝3.5 のテーマゲートが"
+                   "「⛔ 計算の数字は動かさない」）")
+        audit = hook.assignment_audit(doc, frozenset({"3.5", "4.0"}))
+        assert audit["assigned"] == {"4.0": ["B-262"]}, audit
+        assert audit["undeclared"] == [] and audit["ambiguous"] == []
+
+
+class TestStrongAndWeakEvidenceAskForDifferentThings:
+    """**宣言形は語彙を要求しない／素の言及は語彙で裏を取る**（2026-09-22・B-263）。
+
+    語彙を*両方*に要求すると、**ロードマップにセクションを起こす前に行き先を決める**
+    という正規の順序（版割りが先・セクションは着手時）が「未記入」で鳴る＝
+    [[feedback-promote-recurring-checks]] の**壊れ方③（間違ったものを要求している）**。
+    逆に*どちらにも*要求しないと、同じ欄に出てくる数が行き先に化ける（旧実装の弱点）。
+    """
+
+    def test_a_declaration_does_not_wait_for_its_roadmap_section(self, hook):
+        """①宣言形＝人が名指しした強い証拠。ロードマップに §4.2 が無くても通す。"""
+        doc = _doc("### ★ B-001: t", "",
+                   "- ★ **状態**: 未着手（✅ **行き先＝4.2**＝セクションは着手時に起こす）")
+        audit = hook.assignment_audit(doc, frozenset({"3.5", "4.0"}))
+        assert audit["assigned"] == {"4.2": ["B-001"]}, audit
+
+    def test_a_bare_number_that_is_not_a_version_is_not_a_destination(self, hook):
+        """②素の言及＝弱い証拠。実在する版でなければ採らない。
+
+        実データ＝B-262 の裏取りに出る `誤差 0.3〜9.9%`。旧実装は `[23]` に当たらず
+        たまたま助かっていたが、世代を開くと**そのまま行き先になる**数だった。
+        """
+        doc = _doc("### ★ B-001: t", "",
+                   "- ★ **状態**: 未着手（当てはめの誤差 0.3〜9.9%）")
+        audit = hook.assignment_audit(doc, frozenset({"3.5", "4.0"}))
+        assert audit["assigned"] == {} and audit["undeclared"] == ["B-001"], audit
+
+    def test_the_placeholder_plus_zero_one_is_not_version_0_1(self, hook):
+        """`+0.1` は**番号を後で決める器**であって版番号ではない（実データに 10 件）。
+
+        ⚠️ 語彙は `0.1` を**わざと入れてある**＝落としているのが語彙ではなく
+        `+` の判定であることを示すため（語彙で隠れると、器を版と読む欠陥が残る）。
+        """
+        vocab = frozenset({"0.1", "3.5"})
+        assert hook.declared_versions("未着手（`+0.1` の受け皿へ入れる）", vocab) == []
+
+    def test_a_quantity_that_looks_like_a_version_is_not_one(self, hook):
+        """`2.4 GHz` は版 2.4 ではない。
+
+        🔑 **語彙では落とせない**＝2.4 も 3.5 も*実在する版*なので、量の側を見る層が
+        要る。⚠️ **今日の台帳では 1 件も落としていない**（実在しない数は語彙が先に
+        落とす）＝これから効く保険であって、いま何かを止めている層ではない。
+        """
+        vocab = frozenset({"2.4", "3.5"})
+        assert hook.declared_versions("未着手（**2.4 GHz の実測で決める**）", vocab) == []
+        assert hook.declared_versions("未着手（**3.5 dB の差**）", vocab) == []
+
+    def test_an_unreadable_vocabulary_is_not_a_silent_pass(self, hook, monkeypatch):
+        """⛔ 語彙が読めないときに「未記入 0 件」で黙らない（I-166 と同じ面）。
+
+        ここで空集合のまま進むと、**行き先が書いてある項目まで未記入として鳴る**か、
+        呼び方次第では*検査したつもりの緑*になる。⇒ 呼び出し側に言わせる。
+        """
+        monkeypatch.setattr(hook, "_roadmap_lines", lambda: [])
+        monkeypatch.setattr(hook, "_KNOWN_VERSIONS", None)
+        doc = _doc("### ★ B-001: t", "", "- ★ **状態**: 未着手（✅ **3.5＝出力契約の回**）")
+        with pytest.raises(RuntimeError):
+            hook.assignment_audit(doc)
+
+
 def test_real_ledger_has_every_open_item_assigned(hook):
     """実データ＝行き先の無い未対応が 0 件であること（2026-08-12 に 2 件あり解消）。"""
     ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
