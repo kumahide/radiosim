@@ -1976,3 +1976,97 @@ class TestCacheStatsAndDeletionBySource:
         assert dem_cache.get_basemap_cache_stats() == {"count": 0, "size_bytes": 0}
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
+
+
+# ============================================================
+# カバレッジ走査を「粗いレイヤを持つソース」で通す（B-264）
+# ============================================================
+
+class TestCoverageScanWithCoarseSourceZoom:
+    """宣言したレイヤの zoom が 14 未満のソースでもカバレッジ走査が通ること。
+
+    B-264＝集約単位が zoom-14 決め打ちで `shift = tile_zoom - 14` が負になり、
+    `x >> shift` が `ValueError: negative shift count` を投げていた。地図側では
+    ワーカースレッドなので**画面に何も出ず、キャッシュが無いように見えた**。
+
+    ⚠️ **ここは実物の走査を通す**＝既存の `tests/test_map_window.py` の
+    ソース選択テストは `scan_cache_overlay` を丸ごと差し替えており、「ソースが
+    渡ること」しか見ていない（それが B-264 を通した理由）。
+    """
+
+    # マニュアルの記載例と同じ zoom（`docs/manual_ja.md` の Terrarium）。
+    COARSE = dem_sources.DemSourceSpec(
+        source_id="coarse_src",
+        display_name="Coarse Source",
+        layers=(("terrarium", 12),),
+        url_template="https://example.invalid/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.invalid/terms",
+    )
+
+    LAT, LON = 34.54, 132.41
+    WIDE = (46.0, 128.0, 30.0, 146.0)
+
+    def _touch(self, src, layer_id, x, y):
+        from PIL import Image
+        d = os.path.join(dem.source_layer_dir(src, layer_id), str(x))
+        os.makedirs(d, exist_ok=True)
+        Image.new("RGB", (2, 2)).save(os.path.join(d, f"{y}.png"))
+
+    def test_scan_returns_the_cached_cell_at_the_declared_zoom(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x12, y12, _, _ = dem._tile_coords(self.LAT, self.LON, 12)
+        self._touch(self.COARSE, "terrarium", x12, y12)
+
+        cells = dem_cache.scan_cache_overlay(*self.WIDE, 10, source=self.COARSE)
+
+        assert cells == [
+            {"x": x12, "y": y12, "zoom": 12, "level": "terrarium"}]
+
+    def test_overlay_zoom_is_clamped_to_the_base_cell(self, tmp_path, monkeypatch):
+        """基準セルより細かい粒度は要求されても返さない（14 を頼んでも 12 のまま）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x12, y12, _, _ = dem._tile_coords(self.LAT, self.LON, 12)
+        self._touch(self.COARSE, "terrarium", x12, y12)
+
+        cells = dem_cache.scan_cache_overlay(*self.WIDE, 14, source=self.COARSE)
+
+        assert [c["zoom"] for c in cells] == [12]
+
+    def test_outline_encloses_the_cached_tile(self, tmp_path, monkeypatch):
+        """外周線は基準セル（zoom-12）の角で閉じる＝タイルを実際に囲む。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x12, y12, _, _ = dem._tile_coords(self.LAT, self.LON, 12)
+        self._touch(self.COARSE, "terrarium", x12, y12)
+
+        loops = dem_cache.coverage_outline(*self.WIDE, source=self.COARSE)
+
+        assert len(loops) == 1
+        lats = [lat for lat, _lon in loops[0]]
+        lons = [lon for _lat, lon in loops[0]]
+        # タイルの NW 角と SE 角（= 隣のタイルの NW 角）で囲まれている。
+        nw_lat, nw_lon = dem_cache.tile_to_latlng(x12, y12, 12)
+        se_lat, se_lon = dem_cache.tile_to_latlng(x12 + 1, y12 + 1, 12)
+        assert min(lats) == pytest.approx(se_lat)
+        assert max(lats) == pytest.approx(nw_lat)
+        assert min(lons) == pytest.approx(nw_lon)
+        assert max(lons) == pytest.approx(se_lon)
+        # 代表点（そのタイルを取った座標）が確かに内側にある。
+        assert se_lat < self.LAT < nw_lat
+        assert nw_lon < self.LON < se_lon
+
+    def test_count_cached_areas_does_not_raise(self, tmp_path, monkeypatch):
+        """範囲削除の件数表示（メインスレッドで呼ばれる）も落ちない。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        x12, y12, _, _ = dem._tile_coords(self.LAT, self.LON, 12)
+        self._touch(self.COARSE, "terrarium", x12, y12)
+
+        assert dem_cache.count_cached_areas(*self.WIDE, source=self.COARSE) == 1
+
+    def test_gsi_base_cell_is_unchanged(self):
+        """国土地理院の基準セルは従来どおり zoom-14（この直しで 1 ビットも動かさない）。"""
+        assert dem_cache._base_zoom(dem_sources.GSI_DEM) == 14
+        assert dem_cache._base_zoom(None) == 14
+        assert dem_cache._base_zoom(self.COARSE) == 12

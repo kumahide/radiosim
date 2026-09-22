@@ -57,6 +57,30 @@ def _priority_to_level(source: "dem_sources.DemSourceSpec | None" = None) -> dic
     return {priority: level for _layer_id, _zoom, level, priority in _overlay_layers(source)}
 
 
+#: カバレッジ集約の基準ズームの上限＝国土地理院 `dem_png` の上限。ここより細かい
+#: セルにしても、全国カバーの層が持っていない精度を描くことになる。
+_MAX_BASE_ZOOM = 14
+
+
+def _base_zoom(source: "dem_sources.DemSourceSpec | None" = None) -> int:
+    """カバレッジ集約の基準ズーム（1 セルの大きさ）を返す。
+
+    B-264（`3.5`）＝以前は **14 決め打ち**だったので、宣言したレイヤの zoom が
+    14 未満の利用者ソース（マニュアルの記載例の Terrarium が `12`）では
+    `shift = tile_zoom - 14` が負になり、`x >> shift` が
+    `ValueError: negative shift count` で落ちていた。カバレッジ走査は
+    ワーカースレッドなので画面には何も出ず、**キャッシュが在るのに無いように見えた**。
+
+    🔑 **基準は「一番粗いレイヤ」に合わせる**＝1 枚のタイルが基準セルの整数個に
+    収まる必要がある（シフトで潰す集約なので `tile_zoom >= base_zoom` が前提）。
+    国土地理院は `min(14, 14) = 14` で**従来と何も変わらない**。
+    """
+    src = source if source is not None else dem_sources.GSI_DEM
+    if not src.layers:
+        return _MAX_BASE_ZOOM
+    return min(_MAX_BASE_ZOOM, min(zoom for _layer_id, zoom in src.layers))
+
+
 def tile_to_latlng(x: int, y: int, zoom: int) -> tuple[float, float]:
     """タイル座標 (x, y, zoom) の NW コーナーの緯度経度を返す。"""
     n = 2 ** zoom
@@ -70,7 +94,7 @@ def _scan_cached_positions(
     lon_w: float, lon_e: float,
     source: "dem_sources.DemSourceSpec | None" = None,
 ) -> dict[tuple[int, int], int]:
-    """表示範囲内の**読める**キャッシュ済みタイルを zoom-14 セル単位で集約する。
+    """表示範囲内の**読める**キャッシュ済みタイルを基準ズームのセル単位で集約する。
 
     実在するキャッシュファイルだけを走査するため計算量はキャッシュ量に比例し、
     地理的範囲には比例しない。各レイヤーの x ディレクトリ一覧を起点に走査し、
@@ -81,14 +105,14 @@ def _scan_cached_positions(
     (mtime, size) を `dem._is_tile_readable_memoized` の鍵にすることで、初回以外は
     Image.open による復号なしに existence-only 相当の速さで判定できる。
 
-    Returns: {(x14, y14): 最高 priority}
+    Returns: {(x_base, y_base): 最高 priority}（セルのズームは `_base_zoom(source)`）
     """
-    # ⚠️ **集約単位は常に zoom-14 セル**（GSI の `dem_png` と同じ基準・地図側の
-    # 表示ズームともここで揃える）＝`scan_cache_overlay` の統合ループが zoom=14
-    # を起点に決め打ちしているため。3.4 ステージ1 時点では**ズーム 14 未満のレイヤを
-    # 持つ利用者ソースはカバレッジ表示の対象外**（標高取得そのものは影響を
-    # 受けない＝この関数は地図のカバレッジ表示専用）。
+    # ⚠️ **集約単位はソースごとの基準セル**＝`_base_zoom()`（国土地理院は zoom-14＝
+    # `dem_png` と同じ基準で従来どおり）。`scan_cache_overlay` の統合ループ・
+    # `coverage_outline` の格子も同じ基準を起点にする。以前はここが 14 決め打ちで、
+    # **zoom 14 未満のレイヤを持つ利用者ソースで負シフトになり例外**だった（B-264）。
     src = source if source is not None else dem_sources.GSI_DEM
+    base_zoom = _base_zoom(src)
     base: dict[tuple[int, int], int] = {}
     for layer_id, tile_zoom, _level, priority in _overlay_layers(src):
         layer_dir = dem.source_layer_dir(src, layer_id)
@@ -96,7 +120,9 @@ def _scan_cached_positions(
             continue
         x_min, y_min, _, _ = dem._tile_coords(lat_n, lon_w, tile_zoom)
         x_max, y_max, _, _ = dem._tile_coords(lat_s, lon_e, tile_zoom)
-        shift = tile_zoom - 14    # zoom-15(5a/5b)→1, zoom-14(dem)→0
+        # `_base_zoom` の取り方から `tile_zoom >= base_zoom` が保証される
+        # （GSI: zoom-15(5a/5b)→1, zoom-14(dem)→0）。
+        shift = tile_zoom - base_zoom
         try:
             x_entries = os.scandir(layer_dir)
         except OSError:
@@ -140,10 +166,11 @@ def count_cached_areas(
     lat2: float, lon2: float,
     source: "dem_sources.DemSourceSpec | None" = None,
 ) -> int:
-    """bbox 内で実際にキャッシュ済みの zoom-14 エリア数を返す（削除対象の件数表示用）。
+    """bbox 内で実際にキャッシュ済みの基準セル数を返す（削除対象の件数表示用）。
 
     count_bbox_tiles が範囲内の全エリア（未取得含む）を数えるのに対し、本関数は
-    実在キャッシュのみを数える。
+    実在キャッシュのみを数える。セルの大きさは `_base_zoom(source)`＝国土地理院は
+    従来どおり zoom-14 エリア、宣言 zoom がそれより粗いソースはその zoom（B-264）。
     """
     lat_n = max(lat1, lat2)
     lat_s = min(lat1, lat2)
@@ -160,7 +187,7 @@ def scan_cache_overlay(
 ) -> list[dict]:
     """表示範囲内のキャッシュを「適応的粒度」のセルに集約して返す（自動表示用）。
 
-    クアッドツリー方式: zoom-14 を最小単位とし、2×2 の子がすべて存在し
+    クアッドツリー方式: 基準セル（`_base_zoom`）を最小単位とし、2×2 の子がすべて存在し
     かつ同一精度レベルのときだけ親セルに統合する。これを overlay_zoom まで
     繰り返す。完全に埋まった領域の内部は大きなセル（ポリゴン少）になり、
     部分的にしか埋まっていない領域（＝カバレッジのエッジ）は細かいセルの
@@ -170,25 +197,27 @@ def scan_cache_overlay(
 
     Returns:
         [{"x": int, "y": int, "zoom": int, "level": str}, ...]
-        zoom はセルごとに異なる（overlay_zoom 〜 14）。
+        zoom はセルごとに異なる（overlay_zoom 〜 基準ズーム）。
         level は国土地理院なら "5a" | "5b" | "dem"、それ以外のソース（3.4 ステージ1）
         では宣言した `layer_id` そのもの。
     """
-    # dem_png は zoom-14 が上限のため overlay_zoom は 14 以下に丸める。
-    overlay_zoom = max(2, min(14, overlay_zoom))
     lat_n = max(lat1, lat2)
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
 
     src = source if source is not None else dem_sources.GSI_DEM
-    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e, src)   # zoom-14 base
+    # 基準セルより細かい粒度では描けない（国土地理院は dem_png の上限＝zoom-14）
+    # ので overlay_zoom はそこで丸める。
+    base_zoom = _base_zoom(src)
+    overlay_zoom = max(2, min(base_zoom, overlay_zoom))
+    current = _scan_cached_positions(lat_n, lat_s, lon_w, lon_e, src)   # 基準セル
     result: list[dict] = []
     priority_to_level = _priority_to_level(src)
 
-    # 14 → overlay_zoom へ向けてボトムアップに統合する。
+    # 基準ズーム → overlay_zoom へ向けてボトムアップに統合する。
     # 親に統合できない（=部分的な）セルはその時点の zoom で確定出力する。
-    zoom = 14
+    zoom = base_zoom
     while zoom > overlay_zoom and current:
         groups: dict[tuple[int, int], list[tuple[int, int]]] = {}
         for (x, y) in current:
@@ -243,7 +272,7 @@ def coverage_outline(
 ) -> list[list[tuple[float, float]]]:
     """キャッシュ済み領域の和集合の外周（と穴の境界）を緯度経度ループで返す。
 
-    zoom-14 単位セルの境界辺を「有向辺の相殺」で求める。隣接する 2 セルが
+    基準セル（`_base_zoom`）の境界辺を「有向辺の相殺」で求める。隣接する 2 セルが
     共有する辺は逆向きの有向辺として打ち消し合い、残った辺が領域の外周
     （および内側の穴の境界）になる。これにより内部のグリッド線は出ず、
     外周線だけが得られる。
@@ -299,8 +328,9 @@ def coverage_outline(
         if len(simplified) >= 3:
             loops.append(simplified)
 
-    # 格子点 (col, row) はその zoom-14 タイルの NW 角に対応する。
-    return [[tile_to_latlng(c, r, 14) for (c, r) in loop] for loop in loops]
+    # 格子点 (col, row) はその基準セルの NW 角に対応する（ズームは走査と同じ基準）。
+    base_zoom = _base_zoom(source)
+    return [[tile_to_latlng(c, r, base_zoom) for (c, r) in loop] for loop in loops]
 
 
 def _enumerate_bbox(
