@@ -285,6 +285,25 @@ def source_layer_dir(src: "dem_sources.DemSourceSpec", layer_id: str) -> str:
     )
 
 
+def source_delete_roots(src: "dem_sources.DemSourceSpec") -> list[str]:
+    """そのソースのタイルを**消す**ときに掃くディレクトリ（B-268）。
+
+    ⚠️ **`source_layer_dir` の列挙では足りない**＝外部ソースの置き場は
+    `CACHE_DIR/<source_id>/<定義のハッシュ>/<layer_id>/` で、ハッシュは宣言を
+    書き換えるたびに変わる。**読むときは今のハッシュだけが正しい**（B-236 の
+    自動無効化）が、**消すときに今のハッシュだけを見ると、書き換える前の
+    タイルが永久に残る**（画面からは選べないので利用者は消せない）。
+    ⇒ **外部ソースは `source_id` 直下を丸ごと**返す。
+
+    国土地理院は `CACHE_DIR/<layer_id>/` に直に置く（既存キャッシュを移さない
+    という I-147 の完了条件）ので、**レイヤのディレクトリを列挙**して返す
+    ＝`CACHE_DIR` 自体を返すと他のソースと背景地図まで巻き込む。
+    """
+    if src.source_id == dem_sources.GSI_DEM.source_id:
+        return [source_layer_dir(src, layer_id) for layer_id, _z in src.layers]
+    return [os.path.join(CACHE_DIR, src.source_id)]
+
+
 def _cache_subdir_for(src: "dem_sources.DemSourceSpec", layer_id: str, xtile: int) -> str:
     """タイル 1 枚ぶんのディスクキャッシュ置き場（`source_layer_dir` の下の x 桁）。"""
     return os.path.join(source_layer_dir(src, layer_id), str(xtile))

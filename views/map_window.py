@@ -284,6 +284,7 @@ class MapWindow(_PickMixin, _CacheMixin):
 
         self._busy = False              # DL 実行中フラグ（多重操作防止）
         self._overlay_after_id = None   # 自動カバレッジ表示のデバウンス用
+        self._overlay_generation = 0    # 走査を投げた順の世代（B-270＝古い結果を捨てる）
         self._status_clear_id = None    # 結果文の自動クリア用 after ID
 
         self._closing = False
@@ -465,6 +466,9 @@ class MapWindow(_PickMixin, _CacheMixin):
         return dem_sources.resolve(source_id) if source_id else None
 
     def _on_cache_source_changed(self, _event=None) -> None:
+        # B-270＝走査が返るまで前のソースの塗りを残さない。**消してから投げる**
+        # ＝残したままだと「いま見えているもの」と「いま消せるもの」が食い違う。
+        self._clear_tile_overlays()
         self._refresh_overlay()
 
     # ----------------------------------------------------------
@@ -512,13 +516,21 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 参照するだけ（ウィンドウを開くたびの読み直しは不要＝main.py が起動時
         # 1 回で済ませている）。
         self._layers = _all_tile_layers()
+        # B-271＝**選択肢の同一性は並び順で持つ**（表示名で持たない）。宣言ファイルの
+        # `display_name` が組み込みの表示名と同じだと、名前を鍵にした辞書では
+        # 後から入るほうが組み込みを潰し、**組み込みの地図が選べなくなる**。
+        # 表示名は翻訳で変わる＝読み込み時に重複を禁じても言語を替えれば衝突し得る
+        # ので、鍵にしないほうを直す。
+        self._layer_keys = list(self._layers)
         self._layer_labels = {
             spec.label(): key
             for key, spec in self._layers.items()
-        }
+        }   # 表示名からの逆引き（衝突し得る＝index が取れないときの保険のみ）
         self._layer_box = ttk.Combobox(
-            modebar, values=list(self._layer_labels), state="readonly", width=14)
-        self._layer_box.set(self._layers[_DEFAULT_LAYER].label())
+            modebar,
+            values=[self._layers[k].label() for k in self._layer_keys],
+            state="readonly", width=14)
+        self._layer_box.current(self._layer_keys.index(_DEFAULT_LAYER))
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
@@ -671,7 +683,11 @@ class MapWindow(_PickMixin, _CacheMixin):
     # 背景タイル（淡色地図 / 航空写真）
     # ----------------------------------------------------------
     def _on_layer_changed(self, _event=None) -> None:
-        self._apply_layer(self._layer_labels[self._layer_box.get()])
+        idx = self._layer_box.current()
+        if 0 <= idx < len(self._layer_keys):
+            self._apply_layer(self._layer_keys[idx])   # B-271＝並び順で引く
+        else:   # 欄に直接文字を入れた場合（テストの経路）だけ表示名で引く
+            self._apply_layer(self._layer_labels[self._layer_box.get()])
 
     def _apply_layer(self, key: str) -> None:
         """背景タイルを切り替え、**出典表記も一緒に変える**（I-028）。

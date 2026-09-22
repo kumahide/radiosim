@@ -46,6 +46,7 @@ class _CacheMixin:
         _bbox_polygon: "CanvasPolygon | None"
         _tile_polygons: list
         _overlay_after_id: "str | None"
+        _overlay_generation: int
         _lat1_var: tk.StringVar
         _lon1_var: tk.StringVar
         _lat2_var: tk.StringVar
@@ -196,21 +197,30 @@ class _CacheMixin:
         except Exception:
             return
         source = self._current_cache_source()
+        # B-270＝走査を投げた時点の世代を刻む。⚠️ **モードだけ見ていたのでは
+        # 足りない**＝ソースを切り替えても、範囲を動かしても、走査は同じモードの
+        # まま複数走り、**先に投げたものが後で返ると新しい結果を上書きする**。
+        self._overlay_generation += 1
+        generation = self._overlay_generation
         threading.Thread(
-            target=self._overlay_worker, args=(nw, se, overlay_zoom, source), daemon=True
+            target=self._overlay_worker,
+            args=(nw, se, overlay_zoom, source, generation), daemon=True
         ).start()
 
-    def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int, source=None) -> None:
+    def _overlay_worker(self, nw: tuple, se: tuple, overlay_zoom: int, source=None,
+                        generation: int = 0) -> None:
         cells = dem_cache.scan_cache_overlay(
             nw[0], nw[1], se[0], se[1], overlay_zoom, source=source)
         outline = dem_cache.coverage_outline(nw[0], nw[1], se[0], se[1], source=source)
         # 走査中に地図ウィンドウを閉じられている可能性がある（B-061）
         progress.post_to_ui(self._win,
-                            lambda: self._draw_overlay_cells(cells, outline))
+                            lambda: self._draw_overlay_cells(cells, outline, generation))
 
-    def _draw_overlay_cells(self, cells: list, outline: list) -> None:
+    def _draw_overlay_cells(self, cells: list, outline: list, generation: int = 0) -> None:
         if self._mode.get() != "cache":
             return   # モード切替後に届いた旧ワーカー結果は捨てる（描画しない）
+        if generation != self._overlay_generation:
+            return   # B-270＝後から届いた古い世代の結果（別ソース・別範囲）は捨てる
         self._clear_tile_overlays()
         # 半透明塗り（stipple はライブラリ既定）。セル境界線は描かず、
         # 隣接セルの塗りを繋げて内部グリッド線を出さない。

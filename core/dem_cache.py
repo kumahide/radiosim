@@ -496,16 +496,25 @@ def delete_all_tile_cache(
     else:
         targets: list[str] = []
         for src in (sources or []):
-            targets.extend(dem.source_layer_dir(src, layer_id) for layer_id, _z in src.layers)
+            # B-268＝消すときは宣言を書き換える前のタイルも掃く（読む側とは
+            # 対象が違う＝`source_layer_dir` を列挙しない）。
+            targets.extend(dem.source_delete_roots(src))
         if include_basemap:
             targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
         for root in targets:
-            stats = _walk_stats(root)
-            deleted += stats["count"]
+            # B-269＝消す前の在庫ではなく、**消えた枚数**を数える。
+            # `shutil.rmtree(ignore_errors=True)` は残っても黙るので、
+            # 掃いたあとにもう一度数えて差を取る（`rmtree` の戻り値は無い）。
+            before = _walk_stats(root)["count"]
             try:
                 shutil.rmtree(root, ignore_errors=True)
-            except OSError as e:
+            except OSError as e:   # pragma: no cover - ignore_errors なので届かない
                 logger.warning("delete_all_tile_cache: %s", e)
+            after = _walk_stats(root)["count"]
+            deleted += before - after
+            if after:
+                logger.warning(
+                    "delete_all_tile_cache: %d 枚が消えずに残った: %s", after, root)
     with dem._cache_lock:
         dem._tile_cache.clear()
         dem._failed_tiles.clear()

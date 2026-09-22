@@ -1206,7 +1206,7 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 
 ### Data Coverage
 
-- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. Users can add an external DEM source (a remote XYZ PNG tile service) via the `dem_sources.toml` declaration file in the settings folder (`core/dem_sources.py`), which does provide elevation outside Japan. **The background map (`core/dem.py:fetch_basemap_tiles`) is not covered by this extension and stays fixed to GSI tiles**, so map-click coordinate picking, aerial-photo confirmation, and the path map embedded in reports (`report/report_map.py`) remain Japan-only
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. Users can add an external DEM source (a remote XYZ PNG tile service) via the `dem_sources.toml` declaration file in the settings folder (`core/dem_sources.py`), which does provide elevation outside Japan. The map window's background can also be extended via `tile_sources.toml` (`core/tile_sources.py`, 3.5 onwards); with one added, map-click coordinate picking works outside Japan too. **The built-in background maps (pale map, aerial photo) and the path map embedded in reports (`report/report_map.py` via `core/dem.py:fetch_basemap_tiles`) stay fixed to GSI tiles**, so aerial-photo confirmation and the report map image remain Japan-only
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 

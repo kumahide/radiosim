@@ -365,7 +365,7 @@ An input form is displayed on startup.
 
 Clicking the button runs data retrieval in two phases.
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly.
+1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This area-wide prefetch runs only with the built-in GSI source.** For DEM sources added via a declaration file the step is skipped, and only the points needed by the next elevation fetch are retrieved (so it cannot be used to fill the cache up front).
 2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
 
 > **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC**, not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). To recompute with fresh tiles, force re-download that area in Cache Management mode.
@@ -753,7 +753,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 ### Caching Strategy
 
-- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing)
+- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). ⚠️ **GSI only** — the step is skipped for DEM sources added via a declaration file
 - **Disk cache**: Tiles saved to `terrain_cache/`, persists across sessions
 - **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart)
 
@@ -1035,7 +1035,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Data Coverage
 
-- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)" (the background map is not covered by this and stays Japan-only)
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map for the map window as described in "Adding a Background Map Source (User Extension)", but **the map embedded in reports is fixed to the GSI pale map** (added background map sources are not used there)
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 

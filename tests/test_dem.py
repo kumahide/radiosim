@@ -1977,6 +1977,60 @@ class TestCacheStatsAndDeletionBySource:
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
 
+    def test_delete_by_source_also_wipes_tiles_of_an_older_definition(
+            self, tmp_path, monkeypatch):
+        """B-268＝宣言を書き換える前のタイル（古いハッシュ）も消す。
+
+        外部ソースの置き場は `<source_id>/<定義のハッシュ>/<layer>/` で、
+        ハッシュは宣言を書き換えるたびに変わる。**読む側は今のハッシュだけが
+        正しい**（B-236 の自動無効化）が、**消す側が今のハッシュしか見ないと、
+        画面から選べないタイルが永久に残る**（容量が減らない）。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        # 宣言を書き換える前のハッシュのタイル（今のコードは二度と読まない）。
+        self._seed(str(tmp_path), "ext_src/0123456789ab/terrarium/1", 2)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert res == {"deleted": 5}
+        assert dem_cache.get_cache_stats() == {"count": 0, "size_bytes": 0}
+
+    def test_delete_by_source_does_not_touch_other_sources_sharing_the_root(
+            self, tmp_path, monkeypatch):
+        """B-268 の直しが「消しすぎ」ていないこと（別ソースの根は巻き込まない）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), "ext_src_other/abcdef012345/terrarium/1", 4)
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert dem_cache.get_cache_stats() == {"count": 6, "size_bytes": 24}
+
+    def test_delete_by_source_counts_what_actually_disappeared(
+            self, tmp_path, monkeypatch):
+        """B-269＝消えなかったぶんを「削除した」と数えない。
+
+        `shutil.rmtree(ignore_errors=True)` はロックや権限で残っても黙るので、
+        **消す前の在庫を足すと、1 枚も消えなくても「N 件削除」と出る**。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        monkeypatch.setattr(dem_cache.shutil, "rmtree",
+                            lambda *a, **k: None)   # 消えなかった状況を作る
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[dem_sources.GSI_DEM], include_basemap=False)
+
+        assert res == {"deleted": 0}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+
 
 # ============================================================
 # カバレッジ走査を「粗いレイヤを持つソース」で通す（B-264）

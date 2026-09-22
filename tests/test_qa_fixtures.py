@@ -82,3 +82,59 @@ class TestDeployerAndFixturesAgree:
             if n.endswith(".toml")
         }
         assert present == set(deploy_qa_fixtures.FIXTURE_FILES)
+
+
+class TestDeployerDoesNotDestroyRealSettings:
+    """B-267＝配置先に先客（手で書いた本物の宣言）が居たら触らないこと。
+
+    ⚠️ **`--appdata` は実プロファイルを指す**＝ここで消えるのは開発機の本物の
+    設定。配布物には入らない道具だが、壊すのは本物のファイル。
+    """
+
+    FIRST = deploy_qa_fixtures.FIXTURE_FILES[0]
+
+    def _mine(self, tmp_path) -> str:
+        """配置先に「手で書いた別内容のファイル」を置く。"""
+        dst = tmp_path / self.FIRST
+        dst.write_text("# 手で書いた宣言\n", encoding="utf-8")
+        return str(dst)
+
+    def test_refuses_to_overwrite_a_file_it_did_not_deploy(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path)])
+
+        assert rc == 1
+        with open(dst, encoding="utf-8") as f:
+            assert f.read() == "# 手で書いた宣言\n"
+
+    def test_force_overwrites_but_keeps_a_backup(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path), "--force"])
+
+        assert rc == 0
+        with open(dst + ".bak", encoding="utf-8") as f:
+            assert f.read() == "# 手で書いた宣言\n"
+
+    def test_remove_keeps_a_file_it_did_not_deploy(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path), "--remove"])
+
+        assert rc == 0
+        assert os.path.isfile(dst), "配ったものではないのに消した"
+
+    def test_remove_deletes_what_it_deployed(self, tmp_path):
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+        deployed = str(tmp_path / self.FIRST)
+        assert os.path.isfile(deployed)
+
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path), "--remove"]) == 0
+
+        assert not os.path.exists(deployed)
+
+    def test_deploying_twice_is_not_refused(self, tmp_path):
+        """同じ内容なら配り直せる（何度実行しても同じ結果になること）。"""
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
