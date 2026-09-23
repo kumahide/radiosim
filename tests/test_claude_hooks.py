@@ -1656,6 +1656,15 @@ class TestLedgerIdsForVersion:
                  "- ★ **状態**: 対応中（保留＝較正の判断点〔番号未定・実測待ち〕）"]
         assert memcheck.ledger_ids_for_version(lines, "3.5") == []
 
+    def test_pending_item_is_not_pulled_in_by_a_version_in_its_history(self, memcheck):
+        """🔴 実際に起きた形（2026-09-24）＝一覧は「判断待ち」と読むのに、経緯の `3.4 で測る` で
+        `version 3.4` に出ていた（B-128・B-132・I-114 等）。分類は一覧と同じ `destination_of`。"""
+        lines = ["### ★ B-004: t", "",
+                 "- ★ **状態**: 対応中（✅ 3.0 の刻印は済／**3.4 で測る**／"
+                 "較正の判断点〔番号未定・実測待ち〕で採否）"]
+        assert memcheck.ledger_ids_for_version(lines, "3.4") == []
+        assert memcheck.ledger_ids_for_version(lines, "3.0") == []
+
 
 class TestRoadmapDashboardBlocksStop:
     """日付と表の食い違いは advisory でなく Stop を止めること（I-145）。
