@@ -136,7 +136,7 @@ def _cap_double_quiet(config) -> None:
     人が慣習でもう一度 `-q` を打つと verbosity が `-2` になり、pytest はそこで
     「N passed in Ys」の締めの1行そのものを出さなくなる（`-qq` 相当）。これは
     exit code だけでは合格件数を確認できない状態を作る＝
-    [[feedback_promote_recurring_checks]] の壊れ方「一度も当たらない」と同型。
+    [[feedback-promote-recurring-checks]] の壊れ方「一度も当たらない」と同型。
     ⇒ **`-q` を二重に打っても実害が出ない側へ倒す**（打った側を直させない）。
     """
     if config.option.verbose < -1:

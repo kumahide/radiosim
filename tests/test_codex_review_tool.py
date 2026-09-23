@@ -239,7 +239,7 @@ def test_an_empty_raw_from_a_failed_run_does_not_block_the_retry(stub_codex, tmp
     #    GitHub の Linux ランナーには pwsh が入っているので skip が効かず、
     #    Windows 前提のスクリプト（`$env:USERPROFILE`・`\` 区切り）をそのまま
     #    実行して落ちた。**「道具が在るか」ではなく「その道具が意味を持つ OS か」**
-    #    を見る（[[feedback-no-wsl-push]]＝この製品は Windows ネイティブ前提）。
+    #    を見る（[[feedback-shell-and-scripts]]＝この製品は Windows ネイティブ前提）。
     if sys.platform != "win32":
         pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
     if not shutil.which("pwsh"):

@@ -5,7 +5,7 @@ tests/test_diagnostics.py
 
 ★ コアは 3 つ＝①パス中のユーザー名が伏せ字になること ②既定では成果物が 1 件も
 入らないこと（判断点②＝成果物は明示的に選んだ分だけ） ③ZIP 生成が原子的であること
-（失敗時に壊れた ZIP や一時ファイルを残さない・[[feedback-atomic-writes]]）。
+（失敗時に壊れた ZIP や一時ファイルを残さない・[[feedback-shell-and-scripts]]）。
 """
 
 from __future__ import annotations

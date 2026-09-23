@@ -175,6 +175,12 @@ if ($Mode -eq 'code') {
     $safeBase = ($Base -replace '[^\w.\-]', '_')
     $diffPath = Join-Path $outDir ("round{0}_diff_{1}_to_HEAD.diff" -f $Round, $safeBase)
 
+    # 前の巡の差分は消す（2026-09-23）＝比較元はファイル名に残っているので git から
+    # 作り直せる。消さずにいたら 100 巡超で 14MB 溜まっていた。
+    # ⚠️ 残すのは原文（`*_codex_raw.md`）＝こちらは再生成できない記録。
+    Get-ChildItem $outDir -Filter 'round*_diff_*.diff' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
+
     # ⛔ **PowerShell に差分を通さない**（2026-08-24・B-122）。`git diff | Out-String`
     #    は ①git の標準出力を**コンソールのコードページで復号**するので日本語が全滅し
     #    ②`Out-String` が**行を幅で畳み直す**ので次の `diff --git` が直前行に連結される

@@ -3,7 +3,7 @@
 ⚠️ 製品コードではない。`tests/data/golden_links.json` は標高配列を凍結しているので、
 **ネットワークに触らず**実経路 26 本で再計算できる（`b125_diffraction_residual_probe.py`
 と同じ土俵）。⛔ **合成地形は使わない**＝植生は「一律 `veg_h` を経路全体へ」という
-仮定なので、合成条件は自分の仮説をそのまま映す（→ [[feedback_synthetic_cases_lie]]）。
+仮定なので、合成条件は自分の仮説をそのまま映す（→ [[feedback-verification]]）。
 
 🔁 **これは測定 2 巡目**。1 巡目（2026-08-26）は [[B-130]] の不連続に掃引が汚染されて
 いて判定できなかった（`veg_h` を足したのに回折損が 84.6 dB *減る* 回線があった）。
@@ -61,7 +61,7 @@ class Link:
 
     ⚠️ **製品の呼び出しと引数を突き合わせてある**＝`calculate_propagation` が
     `elevs_with_curve` / `los_vals` / `f1` をどう作るかをそのまま写した
-    （→ [[feedback_synthetic_cases_lie]] の「探針は製品の呼び出しを突き合わせる」）。
+    （→ [[feedback-verification]] の「探針は製品の呼び出しを突き合わせる」）。
     """
 
     def __init__(self, rec: dict) -> None:

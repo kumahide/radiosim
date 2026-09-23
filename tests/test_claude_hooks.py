@@ -290,7 +290,7 @@ class TestUnreadableState:
         """①-b **鳴るだけでなく、実際に注入から消えていること**を同じ回で測る。
 
         ⚠️ 「ゲートが鳴った」は*仕掛けが働いた*ことしか言っていない
-        （[[feedback-measure-the-symptom]]）。ここで測るのは**症状**＝語彙の外の語を
+        （[[feedback-verification]]）。ここで測るのは**症状**＝語彙の外の語を
         書いた項目が `parse_issues` の未対応リストから落ちること。これが成立して
         いなければ、そもそもこのゲートは要らない。
         """
@@ -732,12 +732,17 @@ class TestTheVersionVocabularyComesFromTheRoadmap:
         assert hook.declared_versions("未着手（**9.3＝出力契約の回**）", vocab) == ["9.3"]
 
     def test_the_real_roadmap_supplies_the_generation_in_flight(self, hook):
-        """実データ＝いま在る版がそのまま語彙になること（4.x を含む）。"""
+        """実データ＝いま在る版がそのまま語彙になること（4.x を含む）。
+
+        ⚠️ 済んだ版のセクションは 2026-09-23 から `archive/project_roadmap.md` に居る
+        ＝製品（`_known_versions`）と同じく本体＋アーカイブを読む。本体だけだと
+        台帳が名指しする 3.0〜3.5 が語彙から消え、行き先の監査が誤る（実際に落ちた）。
+        """
         path = hook.MEM_DIR / "project_roadmap.md"
         if not path.exists():
             pytest.skip(structural_skip("メモリは git 管理外（CI には存在しない）"))
-        vocab = hook.known_versions(path.read_text(encoding="utf-8").splitlines())
-        assert {"3.5", "4.0"} <= vocab, sorted(vocab)
+        vocab = hook.known_versions(hook._roadmap_lines() + hook._archived_roadmap_lines())
+        assert {"3.0", "3.5", "4.0"} <= vocab, sorted(vocab)
 
     def test_the_first_4x_destination_is_read(self, hook):
         """B-263 の実データの形をそのまま固定する（状態欄は 1 行・版は 2 つ出る）。"""
@@ -2949,6 +2954,45 @@ class TestPowerShellHereStringInBash:
         assert "PowerShell" in reason     # 方言が要るなら道具を変える
 
 
+class TestNoLogsInTheRepoRoot:
+    """**リポジトリ直下へシェルでログを書かない**（2026-09-23）。
+
+    🔴 実例＝メモリのビルド手順が `*>&1 | Out-File build_rc2.log` を指示しており、
+    直下に `build_*.log` が 3 本溜まっていた。`*.log` は git-ignore なので
+    `git status` にも出ず、**人が直下を眺めたときにしか見つからない**。
+    """
+
+    @pytest.mark.parametrize("command", [
+        '& ".\\build.bat" *>&1 | Out-File build_rc2.log -Encoding utf8',
+        "build.bat > build_3.4b1.log 2>&1",
+        "./build.bat >> build.log",
+        "x | Tee-Object -FilePath 'build_zipmode.log'",
+        'Set-Content -Path "run.log" -Value $x',
+    ])
+    def test_bare_log_names_are_denied(self, detours, command):
+        assert _verdict(detours, command) == "deny", command
+
+    @pytest.mark.parametrize("command", [
+        '& ".\\build.bat" *>&1 | Out-File build\\build.log -Encoding utf8',
+        '"$PY" -m pytest -q > "$T/full.log" 2>&1; tail -20 "$T/full.log"',
+        "pip freeze > requirements.txt",          # .txt は正当な形がある
+        "git status 2>/dev/null",
+        "python main.py 2>&1",
+    ])
+    def test_logs_with_a_directory_pass(self, detours, command):
+        assert _verdict(detours, command) != "deny", command
+
+    def test_the_same_rule_holds_for_the_powershell_tool(self, detours):
+        """方言の判定ではない＝どちらのシェルでも直下に落ちる。"""
+        assert detours.check("x *>&1 | Out-File b.log", "PowerShell")[0] == "deny"
+
+    def test_the_deny_message_names_where_to_write(self, detours):
+        """⚠️ 置き場を言わない deny は**壊れ方③**（間違ったものを要求する）。"""
+        _, reason = detours.check("build.bat > b.log")
+        assert "build\\build.log" in reason
+        assert "scratchpad" in reason
+
+
 class TestPipeTailParsing:
     """`|` の読み取り（実データ 331 件のうち 121 件を誤分類した箇所）。"""
 
@@ -3452,7 +3496,7 @@ def mirror():
 class TestBackupTargets:
     """**何を退避するか**は散文でなくここで固定する。
 
-    🔴 **穴の実例（2026-09-05・I-128）**＝[[project_machine_replacement]] のステージ 1 の
+    🔴 **穴の実例（2026-09-05・I-128）**＝[[project-dev-env-roadmap]] のステージ 1 の
     棚卸し表は `.git/hooks` を「**clone に来ない**」と 🔴 で印していたのに、
     `BACKUP_TARGETS` には入っていなかった。**棚卸し（散文）と実装が食い違っても
     誰も気づかない**＝退避は「動かなかったこと」が見えないので、ここへ落とす。
@@ -3505,7 +3549,7 @@ class TestFreezeGuard:
     製品リポ `kumahide/radiosim` は **public**。退避一式（課題台帳・メモリ）は
     git 管理外にする判断のもとで書かれているので、間違って製品リポへ push すると
     **その判断ごと壊れる**。⇒ ゲートをコメントでなくここで固定する
-    （[[feedback-radiosim]]「実行時制約はコメントでなくテストで表現する」）。
+    （[[feedback-radiosim-rules]]「実行時制約はコメントでなくテストで表現する」）。
     """
 
     def test_the_target_is_not_the_public_product_repo(self, mirror):
@@ -3516,7 +3560,7 @@ class TestFreezeGuard:
         """小さな git リポを建て、そこを凍結先に差し替える。
 
         ⚠️ **答えだけ固定して副作用は残す**＝退避対象は `ISSUES.md` 1 点に絞るが、
-        コピーそのものは本物を走らせる（[[feedback-radiosim]]）。
+        コピーそのものは本物を走らせる（[[feedback-radiosim-rules]]）。
         """
         subprocess.run(["git", "init", "-b", "main", "-q", str(tmp_path)], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
@@ -3690,7 +3734,7 @@ def test_real_ledger_has_exactly_the_three_sections():
     🔴 **2026-09-06 に実際に壊れていた**＝過去のセッションが本文を heredoc 経由で
     書いたため `\n` が改行に化け、`"\n## 用語\n"` という**文字列リテラルの中身**が
     行頭の `## 用語` として落ちた。Markdown は見出しと読むので、**そこから下の
-    224 項目が「改善案」セクションの外**へ出た（[[feedback-heredoc-backslash]]）。
+    224 項目が「改善案」セクションの外**へ出た（[[feedback-shell-and-scripts]]）。
     誰も見ていなかったので、ユーザーが目で気づくまで残った。
 
     ⚠️ **見出しの「順」まで見る**＝アーカイブが本文セクションより前に来ると、

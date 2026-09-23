@@ -878,7 +878,7 @@ class TestInstallerCodeIsReachable:
              `[` が行頭に来た（B-188 の実装）。
         ⚠️ **2 度ともフルテストは全緑のままで、実際のビルドでしか出なかった**＝
         pytest には ISCC が無く、`.iss` は「文字列として」しか見ていない。
-        ⇒ [[feedback_promote_recurring_checks]] に従い、注意書きではなくここで縛る。
+        ⇒ [[feedback-promote-recurring-checks]] に従い、注意書きではなくここで縛る。
         """
         for n, line in enumerate(self.ISS.read_text(encoding="utf-8-sig").splitlines(), 1):
             if line.lstrip().startswith("["):

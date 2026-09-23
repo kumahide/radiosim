@@ -340,7 +340,7 @@ class TestSaveProfilePng:
         とき、**英語では 148px 食い込んでいた**（文言が長かった）。⇒ 文言を地図の
         出典と同じ書式へ短くして解いたので、**また伸ばした日にここで落ちる**。
         ⚠️ **製品が作った図そのものを測る**＝同じ構成を組み直すと、組み方の違いが
-        そのまま嘘になる（[[feedback_synthetic_cases_lie]]）。
+        そのまま嘘になる（[[feedback-verification]]）。
         """
         from matplotlib.figure import Figure
         i18n.set_lang(lang)

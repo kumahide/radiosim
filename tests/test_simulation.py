@@ -416,7 +416,7 @@ class TestFetchElevationsCached:
             self, delete, default_params_dict, tmp_path, monkeypatch):
         """キャッシュを削除したら、次の計算で DEM を取り直すこと（B-249）。
 
-        **症状そのものを測る**（[[feedback-measure-the-symptom]]）＝見るのは
+        **症状そのものを測る**（[[feedback-verification]]）＝見るのは
         `_terrain_cache` が空かどうかではなく、削除の**後**に実際に取りに行くか。
         実機で起きた形＝全キャッシュ削除（`deleted=193`）の 2 分後に同じ経路が
         `Terrain cache hit` になり、タイルがディスクへ戻らなかった。

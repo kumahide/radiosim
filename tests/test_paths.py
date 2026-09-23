@@ -15,7 +15,7 @@ tests/test_paths.py
      結果が引き続き読める）
 
 3.1 で OS 標準の場所（%APPDATA% 等）への移設・ポータブル判定・旧配置からの
-移行を実装した（[[project_roadmap]] §3.1 ステージ1）。解決器そのもの
+移行を実装した（[[project-roadmap]] §3.1 ステージ1）。解決器そのもの
 （`is_portable` / `_appdata_dir` 等）と移行の検査は tests/test_write_locations.py。
 """
 
@@ -902,7 +902,7 @@ class TestDeclaredInterpreter:
         **大小を区別する**ので、大文字のパスは*実在しない別のパス*＝
         `interpreter_mismatch()` が食い違いを返すのが**正しい振る舞い**だった。
         ⇒ 落ちていたのは製品ではなく、**Windows 前提を書いた試験の側**。
-        [[feedback-no-wsl-push]] のとおり開発と QA は Windows 完結だが、**CI だけは
+        [[feedback-shell-and-scripts]] のとおり開発と QA は Windows 完結だが、**CI だけは
         ubuntu** なので、FS の性質に依存する試験はここで OS を宣言する。
         """
         from core import runtime_env

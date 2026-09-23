@@ -22,7 +22,7 @@ buildtools/deploy_qa_fixtures.py
 配置先は**アプリが実際に読む場所を製品のコードに聞く**（`core.config` の
 `USER_DEM_SOURCES_FILE` と同じ解決）＝ここで置き場を書き写すと、製品側が動いた日に
 黙ってずれる。⚠️ `--appdata` は `SHGetKnownFolderPath` が返す実フォルダ
-（環境変数の書き換えでは動かない＝[[feedback_known_folder_ignores_env_spoof]]）。
+（環境変数の書き換えでは動かない＝[[feedback-shell-and-scripts]]）。
 """
 
 from __future__ import annotations

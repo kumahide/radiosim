@@ -50,9 +50,9 @@ WizardStyle=modern
 SetupIconFile=..\icon.ico
 UninstallDisplayIcon={app}\{#AppExeName}
 ArchitecturesInstallIn64BitMode=x64compatible
-; 署名レディ化（3.1 ステージ6・[[project-code-signing]]）: 証明書を導入したら
+; 署名レディ化（3.1 ステージ6・[[project-dormant-decisions]]）: 証明書を導入したら
 ; SignTool= をここに 1 行足すだけで、ISCC がインストーラ自身にも署名する。
-; 今は未署名のまま（署名の是非はトリガー駆動で保留＝メモリ project-code-signing）。
+; 今は未署名のまま（2026-09-11 に「署名しない」と決定・再評価のきっかけはメモリ project-dormant-decisions）。
 ;SignTool=signtool
 ; 管理者権限が無い環境でも Program Files 以外へインストールできるようにする
 ; （3.1 ステージ1で「書込禁止フォルダに置かれる」想定を実機検証済み＝その経路と一致させる）。

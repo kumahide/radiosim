@@ -81,7 +81,7 @@ def test_decorated_hwnd_asks_get_parent_not_winfo_id(root):
 
     間違えて `winfo_id()` を渡しても `DwmSetWindowAttribute` は成功を返すので、
     「呼んだ HWND」まで見ないとこの取り違えは検出できない
-    （[[feedback-diff-before-gui-repro]]）。
+    （[[feedback-verification]]）。
     """
     fake = _FakeDwmDll(parent_hwnd=9999)
     hwnd = title_bar._decorated_hwnd(root, fake)

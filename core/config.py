@@ -75,7 +75,7 @@ def is_portable() -> bool:
 # OS 標準フォルダ（3.1・非ポータブル配置の基準）
 #   Windows の Known Folder API（SHGetKnownFolderPath）を使う＝環境変数や
 #   `expanduser("~")` は OneDrive の Known Folder Move で実フォルダが移設され
-#   ていても追従しない（企業環境で実際に起きる＝[[project_real_world_env_vdi]]
+#   ていても追従しない（企業環境で実際に起きる＝[[project-real-world-env-vdi]]
 #   と同種の「実機は開発機と違う」罠）。取得できないとき（非 Windows／失敗）は
 #   環境変数 → 最後は app_base_dir() へ段階的に落ちる。
 # ------------------------------------------------------------
