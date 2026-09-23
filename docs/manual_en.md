@@ -177,7 +177,7 @@ Operations that reach out to files or to the OS.
 | Open Project...     | Loads a saved `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
 | Save Project As...  | Writes the current input set to a `.rsproj` → [Project Files (.rsproj)](#project-files-rsproj)   |
 | Load Parameters...  | Imports **simulation parameters only** from a settings file into the input form                 |
-| Open Results Folder | Opens the `results/` folder in Explorer                                                         |
+| Open Results Folder | Opens the `results/` folder in Explorer (⚠️ the folder is created by your first run; until then this menu item does nothing) |
 
 ### Settings
 
@@ -192,7 +192,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
-> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ Once you pick a language under **Settings > Language**, your choice always wins from then on (a reinstall over the top does not change it).
+> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you reinstall on a PC you have already used and pick a different language in the installer, the app still starts in the saved language — change it under **Settings > Language**.
 
 ### Help
 
@@ -776,7 +776,7 @@ attribution = "AWS Open Data Terrain Tiles"
 terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 ```
 
-- `source_id`: letters, digits, `_` and `-` only. Cannot be `gsi_dem` or `unavailable` (reserved values of the `elev_source` output CSV column).
+- `source_id`: letters, digits, `_` and `-` only. Cannot be `gsi_dem` or `unavailable` (reserved values of the `elev_source` output CSV column). ⚠️ **Also avoid the names the built-in sources use internally (`dem5a_png`, `dem5b_png`, `dem_png`, `basemap_pale`).** This release still accepts them, but the cache would share a folder with the built-in sources, so deleting the cache for such a source also deletes the tiles already downloaded for the GSI elevation data or the basemap (only re-downloadable tiles are lost; results do not change).
 - `decode`: either `"terrarium"` or `"mapbox_terrain_rgb"` (this is a fixed choice, not a place to write an expression).
 - `url_template`: must start with `https://` and contain `{z}`, `{x}` and `{y}` (also `{layer}` if you declare more than one layer).
 - `layers`: an array of `[layer_id, zoom]` pairs, listed from highest to lowest priority.
