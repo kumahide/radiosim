@@ -1,8 +1,19 @@
 {
-  "_comment": "gate.mjs（Stop フックの毎ターン pytest）と buildtools/dev_check.py が共に読む、変更ファイル→追加テストの対応表（I-154）。片方だけ書き換えて対応が腐るのを防ぐため、単一の出所をここに置く。左＝変更パスの前方一致（リポジトリ相対・`/` 区切り・git diff --name-only の形式）、右＝足すテスト。減らすことはしない。",
+  "_comment": "gate.mjs（Stop フックの毎ターン pytest）と buildtools/dev_check.py が共に読む、変更ファイル→追加テストの対応表（I-154）。片方だけ書き換えて対応が腐るのを防ぐため、単一の出所をここに置く。左＝変更パスの前方一致（リポジトリ相対・`/` 区切り・git diff --name-only の形式）、右＝足すテスト。減らすことはしない。⚠️ **docs/ の行は『docs/ のパスを名指ししているテストは全部走らせる』という機械的な規則で決めている**（判断を入れない＝表が薄くなるのを防ぐ）ので、`test_dev_check.py` / `test_commit_gate_scope.py` のように*表そのものを検査していて docs の中身は読まない*ものも入る。見張りは tests/test_commit_gate_scope.py の `TestDocsIslandCoversEveryTestThatReadsDocs`。",
   "always_tests": "tests/test_repo_hygiene.py",
   "extra_gates": [
-    [["docs/", "README", "CHANGELOG.md"], ["tests/test_docs_consistency.py"]],
+    [["docs/", "README", "CHANGELOG.md"], [
+      "tests/test_docs_consistency.py",
+      "tests/test_report.py",
+      "tests/test_dev_check.py",
+      "tests/test_commit_gate_scope.py"
+    ]],
+    [["docs/glossary.md"], [
+      "tests/test_i18n_glossary.py",
+      "tests/test_i18n_external.py",
+      "tests/test_i18n_key_duplication.py",
+      "tests/test_i18n_no_hardcoded_ui_text.py"
+    ]],
     [["lang/", "core/i18n.py"], [
       "tests/test_i18n_external.py",
       "tests/test_i18n_glossary.py",
@@ -13,6 +24,60 @@
     [["radiosim.spec"], ["tests/test_bundle_imports.py"]],
     [["buildtools/"], ["tests/test_bundle_imports.py", "tests/test_dev_check.py"]],
     [[".claude/"], ["tests/test_claude_hooks.py"]],
+    [["tools/qa-hook/"], [
+      "tests/test_claude_hooks.py",
+      "tests/test_qa_gate_cache.py",
+      "tests/test_pre_commit_gate.py",
+      "tests/test_commit_gate_scope.py",
+      "tests/test_dev_check.py"
+    ]],
     [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
+  ],
+
+  "_comment_commit_islands": "pre-commit-gate.mjs（git commit の直前）だけが読む。コミットに入る変更（作業ツリー対 HEAD・未追跡とリネーム元も含む）がすべて 1 つの島の prefixes に収まるなら、フルスイートの代わりにその島の tests（`*` は tests/ 直下のファイル名の前方一致）＋ always_tests を回す。1 つでも島の外に出たら従来どおりフル。git push は常にフル（手元を出る前の最後の砦）。tests には、リポジトリ全体を走査するテスト（apps/ や全 .py・全追跡ファイルを歩くもの）を必ず入れる＝島の中の変更でも落とし得るのはそれらだけ。⚠️ **`extra_gates` とは意味が違う**＝あちらは「この面を触ったら *足す* テスト」で完全性を主張していない（`views/` を触ったときに要るのは列挙した 2 本だけではない）。ここは「この面に収まるコミットは、列挙した tests で影響を言い尽くせる」という**明示の宣言**なので、迷ったら島を作らない（fail-closed＝島に収まらなければフル）。⛔ **製品コード（core/ views/ report/ …）の島は作らない**＝そこが「全体が緑」を証明する必要のある面そのもの。⛔ **lang/ も島にしない**＝文言の長さがウィンドウの必要寸法に効くので、影響は i18n のテストでは言い尽くせない（test_window_fit.py の面）。",
+  "commit_islands": [
+    {
+      "name": "docs",
+      "prefixes": [
+        "docs/",
+        "README.md",
+        "CHANGELOG.md"
+      ],
+      "tests": [
+        "tests/test_docs_consistency.py",
+        "tests/test_report.py",
+        "tests/test_i18n_glossary.py",
+        "tests/test_i18n_external.py",
+        "tests/test_i18n_key_duplication.py",
+        "tests/test_i18n_no_hardcoded_ui_text.py",
+        "tests/test_dev_check.py",
+        "tests/test_commit_gate_scope.py",
+        "tests/test_layers.py",
+        "tests/test_smoke.py",
+        "tests/test_bundle_imports.py"
+      ]
+    },
+    {
+      "name": "qa-gate",
+      "prefixes": [
+        "tools/qa-hook/",
+        "tests/test_claude_hooks.py",
+        "tests/test_qa_gate_cache.py",
+        "tests/test_pre_commit_gate.py",
+        "tests/test_commit_gate_scope.py",
+        "tests/test_dev_check.py"
+      ],
+      "tests": [
+        "tests/test_claude_hooks.py",
+        "tests/test_qa_gate_cache.py",
+        "tests/test_pre_commit_gate.py",
+        "tests/test_commit_gate_scope.py",
+        "tests/test_dev_check.py",
+        "tests/test_docs_consistency.py",
+        "tests/test_layers.py",
+        "tests/test_smoke.py",
+        "tests/test_i18n_key_duplication.py"
+      ]
+    }
   ]
 }

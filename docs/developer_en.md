@@ -359,7 +359,9 @@ radiosim/
     ├── test_qa_fixtures.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
-    └── test_qa_gate_cache.py
+    ├── test_qa_gate_cache.py
+    ├── test_pre_commit_gate.py
+    └── test_commit_gate_scope.py
 ```
 
 ---
@@ -1174,6 +1176,8 @@ entry point that runs them together.
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
+| `test_pre_commit_gate.py` | The commit-island decision in the pre-commit gate (`tools/qa-hook/pre-commit-gate.mjs`): one path outside the island falls back to the full suite, a rename counts its source path too, an empty change set is full, and no repo-wide scanner is missing from an island's test list. ⚠️ **Skipped where `node` is unavailable** |
+| `test_commit_gate_scope.py` | What those islands actually declare. The `docs` and `qa-gate` islands must scope (a manual-only change lands in an island) without over-reaching (product code, the version string, language files and `conftest.py` all fall back to the full suite). It also re-derives, from the tests' own source (AST), that no test reading a `docs/` file is missing from the island. ⚠️ **Skipped where `node` is unavailable** |
 
 ### Independent review (showing the diff to an outside reviewer)
 
