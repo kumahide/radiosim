@@ -2881,6 +2881,74 @@ class TestShellDetourVerdicts:
             assert expected in reason, expected
 
 
+class TestPowerShellHereStringInBash:
+    """**Bash に PowerShell のヒアストリングを渡さない**（2026-09-23）。
+
+    🔑 **止める理由は「間違いだから」ではなく「黙って通るから」**＝Bash に
+    `@'…'@` という構文は無く、`@` はただの文字として本文の先頭に残る。
+    エラーも警告も出ないので、**コミットの件名が `@` で始まったまま焼き付く**
+    （実際に起きた）。⚠️ **正当な例は 0 件**＝`cd` と同じく全面 deny にできる。
+    """
+
+    @pytest.mark.parametrize("command", [
+        "git commit -m @'\nsubject\n\nbody\n'@",
+        'git commit -m @"\nsubject\n"@',
+        "git commit --amend -m @'\nsubject\n'@",
+        # 前に別のコマンドが居ても、ヒアストリングが在れば止める
+        "git add -A && git commit -m @'\nsubject\n'@",
+        # 閉じの `'@` が無くても、開いた時点で壊れている
+        "echo @'\nbody",
+    ])
+    def test_powershell_here_strings_are_denied_in_bash(self, detours, command):
+        assert _verdict(detours, command) == "deny", command
+
+    @pytest.mark.parametrize("command", [
+        "git commit -m @'\nsubject\n'@",
+        'Write-Output @"\nbody\n"@',
+    ])
+    def test_the_same_command_passes_for_the_powershell_tool(self, detours, command):
+        """⚠️ **方言の判定なので PowerShell 側では通す**＝あちらでは正しい構文。"""
+        assert detours.check(command, "PowerShell") is None, command
+
+    @pytest.mark.parametrize("command", [
+        # ヒアドキュメント＝Bash の正しい書き方（これを止めたら逃げ道が消える）
+        "git commit --file=- <<'EOF'\nsubject\n\nbody\nEOF",
+        "python - <<'PY'\nprint(1)\nPY",
+        # `@` と引用符が隣り合うだけ（改行が続かない）＝ヒアストリングではない
+        'git log --format=%an" "%ae',
+        "gh api -f query='user@example.com'",
+        'echo "a@b" && echo c',
+    ])
+    def test_bash_here_documents_and_bare_at_signs_still_pass(self, detours, command):
+        assert _verdict(detours, command) == "pass", command
+
+    def test_a_here_string_inside_a_here_document_body_is_data(self, detours):
+        """🔴 **配線した当日に自分で踏んだ誤検知**（2026-09-23）。
+
+        この判定を検証するスクリプトが、ヒアドキュメントの本文に `@'…'@` を
+        *データとして*書いていた。本文はシェルにとって文字列であって構文では
+        ないので、ここで止めると**間違ったものを要求するゲート**になる。
+        """
+        probe = ("\"$PY\" - <<'PY'\n"
+                 "bad = \"git commit -m @'\\nsubject\\n'@\"\n"
+                 "print(bad)\n"
+                 "PY")
+        assert _verdict(detours, probe) == "pass"
+
+    def test_the_command_side_of_a_here_document_is_still_read(self, detours):
+        """⚠️ **落とすのは本文だけ**＝本文を落としすぎて判定が死なないこと。"""
+        assert _verdict(detours, "git commit -m @'\nx\n'@ <<'EOF'\nbody\nEOF") == "deny"
+        # 閉じの後に書いたヒアストリングも生きている
+        assert _verdict(detours, "cat <<'EOF'\nbody\nEOF\ngit commit -m @'\nx\n'@") == "deny"
+
+    def test_the_deny_message_names_the_way_out(self, detours):
+        """⚠️ 逃げ道を書いていない deny は**壊れ方③**（間違ったものを要求する）。"""
+        _, reason = detours.check("git commit -m @'\nsubject\n'@")
+        assert "EOF" in reason            # ヒアドキュメント
+        assert "--file=-" in reason       # コミットメッセージの渡し方
+        assert "PowerShell" in reason     # 方言が要るなら道具を変える
+
+
 class TestPipeTailParsing:
     """`|` の読み取り（実データ 331 件のうち 121 件を誤分類した箇所）。"""
 
