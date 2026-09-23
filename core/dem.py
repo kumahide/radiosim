@@ -29,6 +29,8 @@ import queue
 import threading
 import time
 import urllib.request
+from typing import NamedTuple
+from typing import Protocol
 from datetime import date
 
 import numpy as np
@@ -37,6 +39,7 @@ from PIL import Image
 
 from core import dem_sources
 from core import terrain_grid
+from core import tile_sources
 from core import version
 from core.config import cache_log_base_dir, logger
 
@@ -105,11 +108,71 @@ _MAX_PREFETCH_WORKERS: int = 8
 _TILE_READ_ATTEMPTS: int = 3
 _TILE_READ_RETRY_S: float = 0.01
 
-# 淡色地図（レポート添付の経路オーバーレイ地図 = report_map.py が使用）。
+# 背景地図（レポート添付の経路オーバーレイ地図 = report_map.py が使用）。
 # DEM レイヤーと違いズームが可変なので、キャッシュパスにズームを含めて
 # 異なるズームの同一 (x, y) が衝突しないようにする（DEM は層ごとズーム固定）。
 BASEMAP_LAYER:  str = "pale"
 BASEMAP_SUBDIR: str = "basemap_pale"
+
+#: `"pale"` 以外の背景地図ソース（B-248）のキャッシュ置き場＝
+#: `CACHE_DIR/BASEMAP_EXTRA_SUBDIR/<source_id>/`。既存の `BASEMAP_SUBDIR`
+#: （`"pale"` 専用）とは別の名前空間なので、両方を合わせて数える／消す側
+#: （`dem_cache.get_basemap_cache_stats`／`delete_all_tile_cache`）はこの
+#: 定数を読むこと。
+BASEMAP_EXTRA_SUBDIR: str = "basemap"
+
+# 組み込み背景地図の URL テンプレート（B-248・`views/map_window.py:_TILE_LAYERS`
+# と同じ値をここにも持つ）。⚠️ **表示名・出典表記は views 側が i18n 越しに持つ**
+# （言語追従が要る）ので、ここは URL 解決専用＝重複はこの非対称のため意図的
+# （`core/tile_sources.py` の docstring と同じ理由）。
+_BASEMAP_BUILTIN_URLS: dict[str, str] = {
+    "pale":  "https://cyberjapandata.gsi.go.jp/xyz/pale/{z}/{x}/{y}.png",
+    "photo": "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
+}
+
+#: `source_id` は "pale" 予約（既存キャッシュ `basemap_pale/` を動かさない）。
+_RESERVED_BASEMAP_CACHE_SOURCE_ID = "pale"
+
+
+class _UrlSource(Protocol):
+    """`_fetch_tile` が読む面（`url_template`/`source_id`）だけの構造的型。
+
+    `dem_sources.DemSourceSpec` はこの 2 属性を持つのでそのまま適合する。
+    `_BasemapSourceRef` はフル spec を組み立てずに済ませるための軽量実装
+    （B-248 実装方針 ③）。⚠️ **読み取り専用の `@property` で宣言する**＝
+    フィールドのまま書くと pyright が「書き込み可能なプロトコル」と見なし、
+    frozen dataclass（`DemSourceSpec`）も NamedTuple（`_BasemapSourceRef`）も
+    互換と判定しない（値を書き換えられない点は両者とも同じなのに）。
+    """
+    @property
+    def url_template(self) -> str: ...
+    @property
+    def source_id(self) -> str: ...
+
+
+class _BasemapSourceRef(NamedTuple):
+    """`_UrlSource` の軽量実装（`dem_sources.DemSourceSpec` 互換の使い捨て）。"""
+    url_template: str
+    source_id: str
+
+
+def _resolve_basemap_source(source_id: str) -> "_BasemapSourceRef":
+    """背景地図の `source_id` → `(url_template, cache_key)`。
+
+    組み込み（`pale`/`photo`）→ 利用者の宣言ソース（`tile_sources.all_sources()`）
+    の順に探し、未知の `source_id`（宣言を消した後など）は `"pale"` へ
+    フォールバックする。
+    """
+    builtin_url = _BASEMAP_BUILTIN_URLS.get(source_id)
+    if builtin_url is not None:
+        return _BasemapSourceRef(builtin_url, source_id)
+    for spec in tile_sources.all_sources():
+        if spec.source_id == source_id:
+            return _BasemapSourceRef(spec.url, spec.source_id)
+    return _BasemapSourceRef(
+        _BASEMAP_BUILTIN_URLS[_RESERVED_BASEMAP_CACHE_SOURCE_ID],
+        _RESERVED_BASEMAP_CACHE_SOURCE_ID,
+    )
 
 # ============================================================
 # HTTP セッション管理
@@ -535,7 +598,7 @@ def _fetch_tile(
     ytile: int,
     cache_subdir: str,
     cache_path: str,
-    source: "dem_sources.DemSourceSpec | None" = None,
+    source: "_UrlSource | None" = None,
 ) -> "np.ndarray | None":
     """タイル画像を取得して numpy 配列で返す。失敗時は None。
 
@@ -627,25 +690,41 @@ def _decode_elevation(
 # 淡色地図（basemap）タイル取得 — レポート添付の経路地図用
 # ============================================================
 
-def _basemap_tile_path(zoom: int, x: int, y: int) -> tuple[str, str]:
-    """淡色地図タイルのキャッシュ (subdir, path) を返す（ズーム別ディレクトリ）。"""
-    subdir = os.path.join(CACHE_DIR, BASEMAP_SUBDIR, str(zoom), str(x))
+def _basemap_tile_path(cache_source_id: str, zoom: int, x: int, y: int) -> tuple[str, str]:
+    """背景地図タイルのキャッシュ (subdir, path) を返す（ズーム別ディレクトリ）。
+
+    `"pale"` は既存キャッシュ `basemap_pale/` をそのまま使う（後方互換・
+    既存キャッシュを動かさない）。それ以外は `basemap/<source_id>/`（DEM
+    ソース・タイルソースの `_RESERVED_SOURCE_IDS` に `pale`/`photo` が
+    予約済みなので新設の名前空間と衝突しない）。
+    """
+    if cache_source_id == _RESERVED_BASEMAP_CACHE_SOURCE_ID:
+        base = os.path.join(CACHE_DIR, BASEMAP_SUBDIR)
+    else:
+        base = os.path.join(CACHE_DIR, BASEMAP_EXTRA_SUBDIR, cache_source_id)
+    subdir = os.path.join(base, str(zoom), str(x))
     return subdir, os.path.join(subdir, f"{y}.png")
 
 
 def fetch_basemap_tiles(
-    tiles: list[tuple[int, int]], zoom: int,
+    tiles: list[tuple[int, int]], zoom: int, source_id: str = "pale",
 ) -> dict[tuple[int, int], np.ndarray]:
-    """淡色地図タイル群 (x, y) を **並列** 取得し {(x, y): RGB配列} を返す。
+    """背景地図タイル群 (x, y) を **並列** 取得し {(x, y): RGB配列} を返す。
 
     レポート保存（メインスレッド）から呼ばれるため、逐次取得で GUI を固めない
     よう prefetch_tiles と同じワーカープール方式で並列化する。取得・キャッシュ
     の所在（layer/subdir/path）はこの層が所有する（呼び出し側は座標だけ渡す）。
     取得できなかったタイルは結果に含めない（呼び出し側が欠損として扱う）。
+
+    Args:
+        source_id: 地図ウィンドウの選択に追従する背景地図ソース（B-248）。
+            組み込み `"pale"`/`"photo"` または宣言した外部ソースの
+            `source_id`。既定は `"pale"`（旧来の固定挙動と同じ）。
     """
     results: dict[tuple[int, int], np.ndarray] = {}
     if not tiles:
         return results
+    src = _resolve_basemap_source(source_id)
     lock   = threading.Lock()
     work_q: queue.Queue = queue.Queue()
     for t in tiles:
@@ -658,8 +737,8 @@ def fetch_basemap_tiles(
             except queue.Empty:
                 return
             try:
-                subdir, path = _basemap_tile_path(zoom, x, y)
-                arr = _fetch_tile(BASEMAP_LAYER, zoom, x, y, subdir, path)
+                subdir, path = _basemap_tile_path(src.source_id, zoom, x, y)
+                arr = _fetch_tile(src.source_id, zoom, x, y, subdir, path, src)
                 if arr is not None:
                     with lock:
                         results[(x, y)] = arr

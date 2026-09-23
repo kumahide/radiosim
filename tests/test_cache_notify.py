@@ -70,6 +70,7 @@ def _launcher_host():
         _graph_win=None,
         _coord_fmt_var=SimpleNamespace(get=lambda: "dd"),
         _current_meta=lambda: {"project_name": "", "memo": ""},
+        _current_basemap_layer=lambda: "pale",
         _on_graph_closed=lambda: None,
         _alert=lambda *a, **k: None,
         root=SimpleNamespace(update_idletasks=lambda: None),

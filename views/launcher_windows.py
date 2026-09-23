@@ -35,6 +35,7 @@ class _ChildWindowsMixin:
         def _current_config(self) -> dict[str, str]: ...
         def _update_resolution_readout(self) -> None: ...
         def _current_meta(self) -> dict[str, str]: ...
+        def _current_basemap_layer(self) -> str: ...
         def _project_doc(self) -> "project.ProjectDoc": ...
         def _open_window(self, attr: str): ...
 
@@ -116,6 +117,8 @@ class _ChildWindowsMixin:
             # 座標の表記も凍結して渡す（I-070）＝このウィンドウだけ設定に従わず、
             # 常に十進度で出していた。
             coord_format=self._coord_fmt_var.get(),
+            # 背景地図ソースも凍結して渡す（B-248）。
+            basemap_source_id=self._current_basemap_layer(),
         )
 
     def _on_multihop_closed(self) -> None:
@@ -255,6 +258,8 @@ class _ChildWindowsMixin:
             # 地図を連続追加モードで開く口（I-043）＝このウィンドウにだけ無かった。
             map_opener=self.open_map_for_append,
             cache_notify=self._notify_map_cache_change,   # B-265
+            # 背景地図ソースも凍結して渡す（B-248）。
+            basemap_source_id=self._current_basemap_layer(),
         )
         return self._batch_win
 

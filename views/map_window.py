@@ -33,6 +33,7 @@ from typing import Callable, NamedTuple, Protocol, cast
 
 from PIL import ImageTk
 
+from core import config
 from core import dem_cache
 from core import dem_sources
 from core import i18n
@@ -530,7 +531,14 @@ class MapWindow(_PickMixin, _CacheMixin):
             modebar,
             values=[self._layers[k].label() for k in self._layer_keys],
             state="readonly", width=14)
-        self._layer_box.current(self._layer_keys.index(_DEFAULT_LAYER))
+        # B-248＝前回選んだ背景地図（レポート添付地図もこの選択に追従する）。
+        # 未知の値（宣言を消した後など）は組み込みの既定へフォールバック。
+        # ⚠️ **`self._config`（ランチャーが開いた時点で渡したスナップショット）
+        # から読む**＝ウィンドウは `config.load_config()` を直に読まない
+        # （I-055 ②・tests/test_repo_hygiene.py::TestConfigHasOneSource）。
+        saved_layer = self._config.get("basemap_layer", _DEFAULT_LAYER)
+        self._initial_layer = saved_layer if saved_layer in self._layers else _DEFAULT_LAYER
+        self._layer_box.current(self._layer_keys.index(self._initial_layer))
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
@@ -558,7 +566,7 @@ class MapWindow(_PickMixin, _CacheMixin):
             cb_cache_src.pack(side="left")
 
         self._map = MapWidget(self._win, corner_radius=0)
-        self._layer = _DEFAULT_LAYER
+        self._layer = self._initial_layer
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)
         self._map.set_zoom(8)
@@ -610,12 +618,12 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 子ウィジェットは canvas の中身より常に上に描かれるので、`place` すれば
         # z 順の争いが構造的に消える（背景色もウィジェットが持てる＝下敷き不要）。
         self._attribution = tk.Label(
-            self._map, text=self._layers[_DEFAULT_LAYER].attr(),
+            self._map, text=self._layers[self._initial_layer].attr(),
             fg=_ATTR_FG, bg=_ATTR_BG, font=theme.ui_font(self._win, "small"),
             padx=4, pady=1,
         )
         self._attribution.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
-        self._apply_layer(_DEFAULT_LAYER)
+        self._apply_layer(self._initial_layer)
 
         # ---- 下部ステータスバー（1 本に集約）----------------------------
         # 出没でレイアウトが動かないよう、各要素の高さを予約して配置する。
@@ -685,9 +693,13 @@ class MapWindow(_PickMixin, _CacheMixin):
     def _on_layer_changed(self, _event=None) -> None:
         idx = self._layer_box.current()
         if 0 <= idx < len(self._layer_keys):
-            self._apply_layer(self._layer_keys[idx])   # B-271＝並び順で引く
+            key = self._layer_keys[idx]                # B-271＝並び順で引く
         else:   # 欄に直接文字を入れた場合（テストの経路）だけ表示名で引く
-            self._apply_layer(self._layer_labels[self._layer_box.get()])
+            key = self._layer_labels[self._layer_box.get()]
+        self._apply_layer(key)
+        # B-248＝レポート添付地図（バッチ実行含む）が追従できるよう永続化する
+        # （利用者が選び直したときだけ書く＝ウィンドウを開くたび毎回は書かない）。
+        config.save_app({"basemap_layer": key})
 
     def _apply_layer(self, key: str) -> None:
         """背景タイルを切り替え、**出典表記も一緒に変える**（I-028）。

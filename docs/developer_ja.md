@@ -1215,7 +1215,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 
 ### データカバレッジ
 
-- **組み込みの DEM（国土地理院）は日本国内限定です。** 国土地理院タイルは日本国外をカバーしないため、DEM ソースを国土地理院のまま日本国外の座標を入力すると標高 0m が返ります。利用者は設定フォルダの `dem_sources.toml` 宣言ファイルで外部 DEM ソース（リモート XYZ PNG タイル）を追加でき、その場合は日本国外の標高も取得できます（`core/dem_sources.py`）。地図ウィンドウの背景地図も `tile_sources.toml` で追加でき（`core/tile_sources.py`・3.5〜）、足せば地図クリックでの座標指定は日本国外でも使えます。**組み込みの背景地図（淡色地図・航空写真）と、帳票に貼る経路地図（`report/report_map.py` → `core/dem.py:fetch_basemap_tiles`）は国土地理院タイル固定のまま**なので、航空写真での確認と帳票の地図画像は国内限定です
+- **組み込みの DEM（国土地理院）は日本国内限定です。** 国土地理院タイルは日本国外をカバーしないため、DEM ソースを国土地理院のまま日本国外の座標を入力すると標高 0m が返ります。利用者は設定フォルダの `dem_sources.toml` 宣言ファイルで外部 DEM ソース（リモート XYZ PNG タイル）を追加でき、その場合は日本国外の標高も取得できます（`core/dem_sources.py`）。地図ウィンドウの背景地図も `tile_sources.toml` で追加でき（`core/tile_sources.py`・3.5〜）、足せば地図クリックでの座標指定は日本国外でも使えます。**組み込みの背景地図（淡色地図・航空写真）自体は国土地理院タイル固定のまま**なので、航空写真での確認は国内限定です。**帳票に貼る経路地図（`report/report_map.py` → `core/dem.py:fetch_basemap_tiles`）は 3.6〜、地図ウィンドウで最後に選んだ背景地図ソース（組み込み `pale`/`photo` または宣言した外部ソースの `source_id`。`core/config.py` の `basemap_layer` へ永続化）に追従する**ため、外部ソースを選べば日本国外でも描かれます（キャッシュは `pale` は従来どおり `terrain_cache/basemap_pale/`、それ以外は `terrain_cache/basemap/<source_id>/` に分離）
 - `dem5a_png` / `dem5b_png`（5m）は全国カバーではありません。未整備地域は自動的に `dem_png`（10m）にフォールバックします
 - 海上・湖沼・データ欠損箇所は標高 0m として扱います
 

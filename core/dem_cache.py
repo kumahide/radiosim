@@ -459,14 +459,22 @@ def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
 
 
 def get_basemap_cache_stats() -> dict:
-    """背景地図（帳票サムネイル用の淡色地図）キャッシュの枚数と総バイト数。
+    """背景地図（帳票サムネイル用の背景地図）キャッシュの枚数と総バイト数。
 
     I-155（3.5 ステージ3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
     独立した対象として扱うための対。地図ウィンドウプレビューの背景タイルは
     `tkintermapview` が持ちこの層には含まれない（`fetch_basemap_tiles` の
     ディスクキャッシュのみが対象）。
+
+    B-248＝地図ウィンドウの選択に追従して `"pale"` 以外（`photo`／宣言した外部
+    ソース）も帳票の背景地図として取得され得るようになったので、
+    `BASEMAP_SUBDIR`（`"pale"` 専用）と `BASEMAP_EXTRA_SUBDIR`（それ以外）の
+    両方を合算する。
     """
-    return _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+    pale  = _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+    other = _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_EXTRA_SUBDIR))
+    return {"count": pale["count"] + other["count"],
+            "size_bytes": pale["size_bytes"] + other["size_bytes"]}
 
 
 def delete_all_tile_cache(
@@ -501,6 +509,7 @@ def delete_all_tile_cache(
             targets.extend(dem.source_delete_roots(src))
         if include_basemap:
             targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+            targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_EXTRA_SUBDIR))
         for root in targets:
             # B-269＝消す前の在庫ではなく、**消えた枚数**を数える。
             # `shutil.rmtree(ignore_errors=True)` は残っても黙るので、

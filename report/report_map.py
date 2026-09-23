@@ -37,6 +37,7 @@ from PIL import Image, ImageDraw
 from core import dem
 from core import i18n
 from core import models
+from core import tile_sources
 from core import units
 from report import map_graphics
 from report import report_common
@@ -67,16 +68,38 @@ _OUTPUT_ASPECT  = report_common.PROFILE_FIGSIZE[0] / report_common.PROFILE_FIGSI
 # 出典表記を置く隅の余白（px）。北矢印は右上に貼るので**右下**に置く
 # （地図出典の慣例位置でもある）。
 _ATTR_MARGIN_PX = 4
-# 焼き込む出典表記の i18n キー。⚠️ **リテラルで書く**＝`t()` の引数は静的に読める
-# 形（リテラルかモジュール定数）でなければならない（B-101 の外部翻訳ゲート）。
-# 🔑 **`dem.BASEMAP_LAYER` と対であることはテストが縛る**（`map_graphics.ATTR_KEYS`
-# と突き合わせる）＝帳票のタイルを替えた日に、ここを直さないと赤くなる。
-_ATTR_KEY = "tm_attr_pale"
+#: 背景地図の既定 source_id（地図ウィンドウの選択が未保存のとき）。
+_DEFAULT_BASEMAP_SOURCE_ID = "pale"
+
+# 組み込み背景地図の出典表記キー。⚠️ **リテラルのモジュール定数で持つ**＝
+# `t()` の引数は静的に読める形（リテラルかモジュール定数）でなければ
+# ならない（B-101 の外部翻訳ゲート）。`map_graphics.ATTR_KEYS` と同じ値である
+# ことは `tests/test_report_map.py` が突き合わせる。
+_ATTR_KEY_PALE = "tm_attr_pale"
+_ATTR_KEY_PHOTO = "tm_attr_photo"
 
 _LatLon = tuple[float, float]
 
 
-def _paste_attribution(img: "Image.Image") -> None:
+def _resolve_attribution(source_id: str) -> str:
+    """`source_id` → 出典表記の文言（B-248）。
+
+    組み込み（`pale`/`photo`）は i18n キー越し。宣言した外部ソースは
+    `spec.attribution`（生文字列・翻訳しない＝地図ウィンドウの
+    `_all_tile_layers()` と同じ扱い）。未知の `source_id` は `"pale"` へ
+    フォールバック。
+    """
+    if source_id == "pale":
+        return i18n.t(_ATTR_KEY_PALE)
+    if source_id == "photo":
+        return i18n.t(_ATTR_KEY_PHOTO)
+    for spec in tile_sources.all_sources():
+        if spec.source_id == source_id:
+            return spec.attribution
+    return i18n.t(_ATTR_KEY_PALE)
+
+
+def _paste_attribution(img: "Image.Image", text: str) -> None:
     """出典表記を画像の右下へ焼き込む（B-133）。
 
     🔑 **地図を描く 2 つの関数が必ずここを通る**のが対応のコア＝出典が抜けたのは
@@ -85,11 +108,10 @@ def _paste_attribution(img: "Image.Image") -> None:
     **4 つ目の地図を足した人がまた落とす**。3 面はいずれも `render_path_map` /
     `render_paths_map` の戻り値を使うので、ここ 1 か所で全面が満たされる。
 
-    ⚠️ **文言はタイルのレイヤと対で保つ**＝帳票は淡色固定だが、対を崩すと
-    **レイヤを替えた日に嘘の出典が焼かれる**（UI 側は I-028 で同じ轍を踏んでいる）。
-    対の維持は `_ATTR_KEY` のコメントのとおりテストが受け持つ。
+    ⚠️ **文言はタイルのレイヤと対で保つ**＝地図ウィンドウの選択に追従する
+    （B-248）ので、呼び出し側が `_resolve_attribution(source_id)` で解決した
+    ものをそのまま渡す（レイヤを替えた日に嘘の出典が焼かれないようにする）。
     """
-    text  = i18n.t(_ATTR_KEY)
     # 字の大きさは**この画像の幅**から決める（B-135）＝帳票では A4 幅へ縮めて
     # 載るので、固定 px だと経路の長さ（＝画像の幅）で実寸が変わってしまう。
     badge = map_graphics.attribution_badge(
@@ -186,12 +208,19 @@ def render_path_map(
     max_tiles: int = 32, margin_frac: float = 0.15,
     min_zoom: int = 5, max_zoom: int = 18,
     min_fetch_frac: float = 0.6, aspect: float = _OUTPUT_ASPECT,
+    basemap_source_id: str = _DEFAULT_BASEMAP_SOURCE_ID,
 ) -> "Image.Image | None":
     """経路オーバーレイ地図を生成して PIL Image で返す。失敗時は None。
 
     取得できたタイルの割合が min_fetch_frac 未満なら「地図取得不可」として
     None を返す（灰色の欠けが目立つ中途半端な地図を黙って埋め込まない）。
     出力アスペクト（幅/高さ）は aspect で固定（既定＝レポート断面図と同じ比）。
+
+    Args:
+        basemap_source_id: 地図ウィンドウの選択に追従する背景地図ソース
+            （B-248）。呼び出し元（ランチャー→report_path.py）が凍結して
+            渡した値をそのまま受ける（I-055 ②＝ここでは app 設定を読まない）。
+            既定は `"pale"`（旧来の固定挙動）。
     """
     try:
         zoom = choose_zoom(tx, rx, max_tiles, min_zoom, max_zoom, margin_frac, aspect)
@@ -203,7 +232,7 @@ def render_path_map(
         # 逐次待ちで GUI を固めない）。座標だけ渡し、戻りの {(x,y):配列} を貼る。
         # バンドより広く取るので、回転後に切り出してもグレーの欠けが出ない。
         tiles = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
-        fetched = dem.fetch_basemap_tiles(tiles, zoom)
+        fetched = dem.fetch_basemap_tiles(tiles, zoom, basemap_source_id)
 
         if len(fetched) < max(1, round(len(tiles) * min_fetch_frac)):
             # 取得率が閾値未満（全滅含む）→ 地図なし（呼び出し側が注記を出す）
@@ -294,7 +323,7 @@ def render_path_map(
         arrow = map_graphics.north_arrow(-sin_a, -cos_a)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
-        _paste_attribution(cropped)
+        _paste_attribution(cropped, _resolve_attribution(basemap_source_id))
         return cropped
     except Exception:
         logger.warning("report_map: failed to render path map", exc_info=True)
@@ -397,11 +426,15 @@ def render_paths_map(
     max_tiles: int = 32, margin_frac: float = 0.15,
     min_zoom: int = 5, max_zoom: int = 18,
     min_fetch_frac: float = 0.6, aspect: float = _PATHS_OUTPUT_ASPECT,
+    basemap_source_id: str = _DEFAULT_BASEMAP_SOURCE_ID,
 ) -> "Image.Image | None":
     """全パスを1枚に俯瞰する north-up 地図を生成して PIL Image で返す。
 
     失敗時（paths が空・タイル取得率が min_fetch_frac 未満）は None を返し、
     呼び出し側が「地図取得不可」の注記を出す（単一パス地図と同じ方針）。
+
+    Args:
+        basemap_source_id: `render_path_map` と同じ（B-248）。
     """
     if not paths:
         return None
@@ -412,7 +445,7 @@ def render_paths_map(
         x0, x1, y0, y1 = _bbox_tiles(box)
 
         tiles = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
-        fetched = dem.fetch_basemap_tiles(tiles, zoom)
+        fetched = dem.fetch_basemap_tiles(tiles, zoom, basemap_source_id)
         if len(fetched) < max(1, round(len(tiles) * min_fetch_frac)):
             logger.warning(
                 "report_map: only %d/%d basemap tiles fetched; skipping paths map",
@@ -476,7 +509,7 @@ def render_paths_map(
         arrow = map_graphics.north_arrow(0.0, -1.0)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
-        _paste_attribution(cropped)
+        _paste_attribution(cropped, _resolve_attribution(basemap_source_id))
         return cropped
     except Exception:
         logger.warning("report_map: failed to render paths map", exc_info=True)

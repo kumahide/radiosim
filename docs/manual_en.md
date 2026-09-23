@@ -828,7 +828,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 >
 > **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (the summary ledger first, then one A4 page per path). Clicking the **profile thumbnail** in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
-> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
+> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on a background map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). The background map follows **whichever background source you last selected in the map window** (the pale map, the aerial photo, or an external source you added — see "Adding a Background Map Source"; from 3.6. Batch runs that never opened the map window still use the saved selection). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
 > **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI). AZ is a **true** azimuth — to aim with a magnetic compass, correct for local declination (in Japan magnetic north is ~7-9° west of true north, varies by region).
 
@@ -1035,7 +1035,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Data Coverage
 
-- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map for the map window as described in "Adding a Background Map Source (User Extension)", but **the map embedded in reports is fixed to the GSI pale map** (added background map sources are not used there)
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map for the map window as described in "Adding a Background Map Source (User Extension)". **The map embedded in reports follows whichever background source you last selected in the map window** (from 3.6), so selecting an added background map source makes it appear outside Japan too
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 

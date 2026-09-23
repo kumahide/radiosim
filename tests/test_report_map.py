@@ -24,9 +24,9 @@ from report import report_common
 from report import report_map
 
 
-def _attribution_text() -> str:
-    """いま焼かれる出典表記（製品と同じキーから引く）。"""
-    return i18n.t(report_map._ATTR_KEY)
+def _attribution_text(source_id: str = "pale") -> str:
+    """いま焼かれる出典表記（製品と同じ解決器から引く＝B-248）。"""
+    return report_map._resolve_attribution(source_id)
 
 
 def _expected_badge(img: Image.Image) -> Image.Image:
@@ -405,14 +405,19 @@ class TestAttribution:
         assert dem.BASEMAP_LAYER in map_graphics.ATTR_KEYS
 
     def test_report_source_text_matches_the_tile_it_actually_draws(self):
-        """帳票が焼く文言が、**実際に取ってくるタイル**の出典であること。
+        """帳票が焼く文言が、**実際に選ばれた背景地図ソース**の出典であること。
 
-        🔑 ここが `report_map._ATTR_KEY` をリテラルで書ける根拠＝キーを直に
-        書くのは外部翻訳ゲート（B-101）が `t()` の引数を静的に読むためで、
-        **レイヤとの対はこの 1 本が受け持つ**。帳票のタイルを淡色から替えたら
-        （`dem.BASEMAP_LAYER`）、キーを直さない限りここで落ちる。
+        🔑 B-248＝帳票の背景地図は地図ウィンドウの選択（`basemap_source_id`）に
+        追従する。`_resolve_attribution()` が組み込み 2 種を正しく解決できて
+        いることを、`map_graphics.ATTR_KEYS`（単一ソース）と突き合わせて見る。
         """
-        assert report_map._ATTR_KEY == map_graphics.ATTR_KEYS[dem.BASEMAP_LAYER]
+        for source_id, attr_key in map_graphics.ATTR_KEYS.items():
+            assert report_map._resolve_attribution(source_id) == i18n.t(attr_key)
+
+    def test_report_source_text_falls_back_to_pale_for_unknown_source(self):
+        # 宣言を消した後など、未知の source_id は "pale" の出典へ落ちる。
+        assert (report_map._resolve_attribution("no-such-source")
+                == i18n.t(map_graphics.ATTR_KEYS["pale"]))
 
     def test_source_text_is_readable_not_tofu(self):
         # 日本語の出典が**豆腐（□）にならない**フォントで焼けること。

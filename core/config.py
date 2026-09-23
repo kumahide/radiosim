@@ -445,6 +445,10 @@ DEFAULT_CONFIG: dict[str, str] = {
     "lang"       : "en",
     "proxy_url"  : "",
     "coord_format": "dd",
+    # 背景地図レイヤ（B-248）＝地図ウィンドウで最後に選んだ背景地図ソース
+    # （組み込み "pale"/"photo" または宣言した外部ソースの source_id）。
+    # レポート生成時（バッチ実行含む）もこの値を使う。既定は現状と同じ "pale"。
+    "basemap_layer": "pale",
 }
 
 
@@ -607,7 +611,8 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
 # 将来マップウィンドウ設定を足すときは APP_KEYS に追加し DEFAULT_CONFIG にも
 # 既定値を1行加える（段階移行で app/sim ネスト構造へ昇格する余地は残す）。
 # ------------------------------------------------------------
-APP_KEYS: frozenset[str] = frozenset({"theme", "lang", "proxy_url", "coord_format"})
+APP_KEYS: frozenset[str] = frozenset(
+    {"theme", "lang", "proxy_url", "coord_format", "basemap_layer"})
 SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
 
 

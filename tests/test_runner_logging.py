@@ -94,7 +94,7 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))          # 実在必須
     # サマリ地図は淡色タイルを取りに行く唯一の経路（塞がないと実ネットワーク）。
     monkeypatch.setattr(report_summary, "render_summary_map_b64",
-                        lambda results: None)
+                        lambda *a, **k: None)
 
 
 def _run_batch(tmp_path, params, monkeypatch):

@@ -497,6 +497,15 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             "memo":         self._memo_var.get().strip(),
         }
 
+    def _current_basemap_layer(self) -> str:
+        """帳票添付地図が追従する背景地図ソース（B-248）の現在値。
+
+        ⚠️ **都度ディスクを読む**＝地図ウィンドウが `save_app()` で変える値
+        なのでライブの StringVar を持たない（`coord_format` と違う点）。
+        """
+        return config.load_config().get(
+            "basemap_layer", config.DEFAULT_CONFIG["basemap_layer"])
+
     def _build_status(self, parent: tk.Widget) -> None:
         # 実行バーは**上段＝ステータス 1 行／下段＝バー（左・伸縮）＋実行（右端）**
         # の 2 段（I-047・4 ウィンドウ共通）。ステータスをバーの*横*に置くと、文言の長さで
@@ -943,6 +952,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             # `config.load_config()` を読み直さない（I-055 ②・2.7 スライス G2）。
             coord_format = self._coord_fmt_var.get(),
             dem_acquired = dem_acquired,
+            basemap_source_id = self._current_basemap_layer(),
         )
         # ウィンドウが出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック
         # したため、表示直前に呼ばれる `on_ready` フックが要った（戻り値を待つと

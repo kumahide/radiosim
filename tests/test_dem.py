@@ -1864,16 +1864,23 @@ class TestBasemapTiles:
 
     def test_tile_path_includes_zoom(self):
         """キャッシュパスにズームが入る（異なるズームの同一(x,y)が衝突しない）。"""
-        subdir, path = dem._basemap_tile_path(14, 100, 200)
+        subdir, path = dem._basemap_tile_path("pale", 14, 100, 200)
         assert os.path.join(dem.BASEMAP_SUBDIR, "14", "100") in subdir
         assert path.endswith(os.path.join("100", "200.png"))
         # ズーム違いはパスが異なる。
-        _, path15 = dem._basemap_tile_path(15, 100, 200)
+        _, path15 = dem._basemap_tile_path("pale", 15, 100, 200)
         assert path != path15
+
+    def test_tile_path_isolates_non_pale_sources(self):
+        """`"pale"` 以外は `basemap/<source_id>/` へ分離される（B-248）。"""
+        _, pale_path = dem._basemap_tile_path("pale", 14, 100, 200)
+        _, photo_path = dem._basemap_tile_path("photo", 14, 100, 200)
+        assert pale_path != photo_path
+        assert os.path.join(dem.BASEMAP_EXTRA_SUBDIR, "photo") in photo_path
 
     def test_fetch_basemap_tiles_parallel_returns_dict(self, monkeypatch):
         """並列取得が成功タイルだけを {(x,y):配列} で返す。"""
-        def fake(layer_id, zoom, x, y, subdir, path):
+        def fake(layer_id, zoom, x, y, subdir, path, source=None):
             return np.full((256, 256, 3), 100, dtype=np.uint8)
         monkeypatch.setattr(dem, "_fetch_tile", fake)
         tiles = [(1, 2), (3, 4), (5, 6)]
@@ -1897,7 +1904,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path(z, x, y)
+        subdir, path = dem._basemap_tile_path("pale", z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
@@ -1910,7 +1917,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path(z, x, y)
+        subdir, path = dem._basemap_tile_path("pale", z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")

@@ -86,6 +86,7 @@ def show_graph(
     on_close: "Callable[[], None] | None" = None,
     coord_format: str = "dd",
     dem_acquired: "tuple[str, str] | None" = None,
+    basemap_source_id: str = "pale",
 ) -> "GraphWindow":
     """地形断面ウィンドウを開く（**ブロックしない**）。
 
@@ -99,6 +100,8 @@ def show_graph(
         coord_format: 人が読むレポートの座標表記（ランチャーが凍結して渡す）。
         dem_acquired: `raw_elevs` を取ったタイルの取得日の範囲（B-213）＝ウィンドウが抱えて
                       保存の report.txt に出す。ウィンドウを開いた後にキャッシュが消えても残る。
+        basemap_source_id: レポート添付地図が追従する背景地図ソース（B-248）。
+                      ランチャーが地図ウィンドウの選択を凍結して渡す。
     """
     mpl_fonts.apply_japanese_font()
     terrain = models.calculate_terrain_profile(
@@ -113,7 +116,7 @@ def show_graph(
     )
     terrain.dem_acquired = dem_acquired
     return GraphWindow(parent, params, terrain, project_name, memo, on_close,
-                       coord_format)
+                       coord_format, basemap_source_id)
 
 
 class GraphWindow(tk.Toplevel):
@@ -137,6 +140,7 @@ class GraphWindow(tk.Toplevel):
         memo: str = "",
         on_close: "Callable[[], None] | None" = None,
         coord_format: str = "dd",
+        basemap_source_id: str = "pale",
     ) -> None:
         super().__init__(parent)
         title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
@@ -152,6 +156,8 @@ class GraphWindow(tk.Toplevel):
         # ウィンドウが自分で `config.load_config()` を読まないのは、設定の出所を 1 つに保ち、
         # テストの緑が開発機の設定に左右されないようにするため（I-055 ②・スライス G2）。
         self._coord_format   = coord_format
+        # 背景地図ソースも**開いた時点のアプリ設定**（B-248・上と同じ理由）。
+        self._basemap_source_id = basemap_source_id
         self._on_close_cb = on_close
         self._last_result: "models.LinkBudgetResult | None" = None
         self._pending: "str | None" = None
@@ -561,6 +567,7 @@ class GraphWindow(tk.Toplevel):
                 self._terrain, self._last_result, self._params,
                 h_tx, h_rx, save_dir, coord_format,
                 self._report_project, self._report_memo,
+                basemap_source_id=self._basemap_source_id,
             )
             report_path.save_path_kml(
                 self._terrain, self._last_result, self._params,

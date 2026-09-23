@@ -75,7 +75,7 @@ def _run(path, base_params, tmp_path, monkeypatch, stub_visuals=True, **kwargs):
     monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))
     if stub_visuals:
         monkeypatch.setattr("report.report_path.save_path_visuals", lambda *a, **k: None)
-    monkeypatch.setattr(report_summary, "render_summary_map_b64", lambda r: None)
+    monkeypatch.setattr(report_summary, "render_summary_map_b64", lambda *a, **k: None)
 
     out: list = []
     err: list = []

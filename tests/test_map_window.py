@@ -1027,6 +1027,12 @@ def _open_map_window(monkeypatch):
         def get_zoom(self): return 8
 
     monkeypatch.setattr(mw, "MapWidget", _FakeMap)
+    # B-248＝背景切替は `config.save_app` を呼ぶ。永続化そのものは
+    # `test_layer_change_persists_as_the_report_basemap_source` が別途見るので、
+    # ここでは無効化してセッション全体で共有する隔離設定ファイルを汚さない
+    # （汚すと `tests/test_paths.py` の「開発機の設定に依存しない」検査が
+    # テストの実行順に化ける）。
+    monkeypatch.setattr(mw.config, "save_app", lambda *a, **k: None)
     root = make_themed_root()
     root.withdraw()
     win = mw.MapWindow(root, {"proxy_url": ""})
@@ -1064,6 +1070,35 @@ def test_layer_switch_changes_tiles_and_attribution(monkeypatch):
         win._on_layer_changed()
         assert "pale" in win._map.tile_calls[-1][0]
         assert "淡色" in win._attribution.cget("text")
+    finally:
+        i18n.set_lang(prev)
+        root.destroy()
+
+
+def test_layer_change_persists_as_the_report_basemap_source(monkeypatch):
+    """背景を切り替えたら `config.save_app({"basemap_layer": ...})` が呼ばれること（B-248）。
+
+    レポート添付地図（`report_map.py`）はバッチ実行時にもこの永続値を読むので、
+    地図ウィンドウの切替がディスクへ届くことをここで見る（`_open_map_window` は
+    セッション全体で共有する隔離設定ファイルを汚さないよう `save_app` を無効化
+    しているため、この 1 本だけ差し替えて呼び出しを捕まえる）。
+    """
+    from core import i18n
+    import views.map_window as mw
+
+    prev = i18n.current_lang()
+    i18n.set_lang("ja")
+    root, win, _pytest = _open_map_window(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mw.config, "save_app", lambda values: calls.append(values))
+    try:
+        win._layer_box.set(i18n.t("map_layer_photo"))
+        win._on_layer_changed()
+        assert calls == [{"basemap_layer": "photo"}]
+
+        win._layer_box.set(i18n.t("map_layer_pale"))
+        win._on_layer_changed()
+        assert calls[-1] == {"basemap_layer": "pale"}
     finally:
         i18n.set_lang(prev)
         root.destroy()

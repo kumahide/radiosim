@@ -154,11 +154,18 @@ def _summary_header_cells() -> str:
     return report_common.ledger_header_cells(labels, _SUMMARY_FLEX_KEYS)
 
 
-def render_summary_map_b64(results: list[PathResult]) -> "str | None":
+def render_summary_map_b64(
+    results: list[PathResult], basemap_source_id: str = "pale",
+) -> "str | None":
     """全パスを1枚に俯瞰する地図（summary 用）を生成し base64 で返す。失敗時 None。
 
     座標は PathRow（実行前に凍結済み）から取るため、計算に失敗した ERROR 行も
     地図には描ける。ステータスは summary 台帳の行色と同じ配色で塗り分ける。
+
+    Args:
+        basemap_source_id: 地図ウィンドウの選択に追従する背景地図ソース
+            （B-248）。呼び出し元（batch.py／multihop.py）が開いた時点の
+            スナップショットを渡す＝ここでは app 設定を読まない（I-055 ②）。
     """
     specs = [
         report_map.PathSpec(
@@ -169,7 +176,7 @@ def render_summary_map_b64(results: list[PathResult]) -> "str | None":
         )
         for pr in results
     ]
-    return report_map.render_paths_map_b64(specs)
+    return report_map.render_paths_map_b64(specs, basemap_source_id=basemap_source_id)
 
 
 def summary_sheet_css() -> str:
