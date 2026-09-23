@@ -34,7 +34,7 @@
     [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
   ],
 
-  "_comment_commit_islands": "pre-commit-gate.mjs（git commit の直前）だけが読む。コミットに入る変更（作業ツリー対 HEAD・未追跡とリネーム元も含む）がすべて 1 つの島の prefixes に収まるなら、フルスイートの代わりにその島の tests（`*` は tests/ 直下のファイル名の前方一致）＋ always_tests を回す。1 つでも島の外に出たら従来どおりフル。git push は常にフル（手元を出る前の最後の砦）。tests には、リポジトリ全体を走査するテスト（apps/ や全 .py・全追跡ファイルを歩くもの）を必ず入れる＝島の中の変更でも落とし得るのはそれらだけ。⚠️ **`extra_gates` とは意味が違う**＝あちらは「この面を触ったら *足す* テスト」で完全性を主張していない（`views/` を触ったときに要るのは列挙した 2 本だけではない）。ここは「この面に収まるコミットは、列挙した tests で影響を言い尽くせる」という**明示の宣言**なので、迷ったら島を作らない（fail-closed＝島に収まらなければフル）。⛔ **製品コード（core/ views/ report/ …）の島は作らない**＝そこが「全体が緑」を証明する必要のある面そのもの。⛔ **lang/ も島にしない**＝文言の長さがウィンドウの必要寸法に効くので、影響は i18n のテストでは言い尽くせない（test_window_fit.py の面）。",
+  "_comment_commit_islands": "pre-commit-gate.mjs（git commit の直前）だけが読む。コミットに入る変更（作業ツリー対 HEAD・未追跡とリネーム元も含む）のうち島の prefixes に当たるパスは、その島の tests（`*` は tests/ 直下のファイル名の前方一致）を足す。フルになる条件は下の _comment_full。git push は常にフル（手元を出る前の最後の砦）。tests には、リポジトリ全体を走査するテスト（apps/ や全 .py・全追跡ファイルを歩くもの）を必ず入れる＝島の中の変更でも落とし得るのはそれらだけ。⚠️ **`extra_gates` とは意味が違う**＝あちらは「この面を触ったら *足す* テスト」で完全性を主張していない（`views/` を触ったときに要るのは列挙した 2 本だけではない）。ここは「この面に収まるコミットは、列挙した tests で影響を言い尽くせる」という**明示の宣言**なので、迷ったら島を作らない（fail-closed＝島に収まらなければフル）。⛔ **製品コード（core/ views/ report/ …）の島は作らない**＝そこが「全体が緑」を証明する必要のある面そのもの。⛔ **lang/ も島にしない**＝文言の長さがウィンドウの必要寸法に効くので、影響は i18n のテストでは言い尽くせない（test_window_fit.py の面）。",
   "commit_islands": [
     {
       "name": "docs",
@@ -79,5 +79,28 @@
         "tests/test_i18n_key_duplication.py"
       ]
     }
+  ],
+
+  "_comment_full": "2026-09-23 に「フルが要る面を厳選する」形へ改めた（島 1 つに収まらなければフル、をやめた）。判定は pre-commit-gate.mjs の islandFor＝①変更が空／full_prefixes に 1 つでも当たる／どの規則にも当たらないパスがある → フル。②それ以外は和集合＝当たった島の tests ＋ 変えた tests/test_*.py そのもの（＋ tests_walkers）＋ scoped_faces の読み手（その面の名前を本文に含むテスト）＋ scanners ＋ always_tests。⛔ full_prefixes は『全テストの前提を変える面』だけ＝製品コードと同梱資産・テストの共通部品・依存と pytest の設定。scoped_faces へ製品の面を足さない（見張り＝tests/test_commit_gate_scope.py）。",
+  "full_prefixes": [
+    "core/", "views/", "report/", "lang/", "apps/", "main.py", "icon.png", "logo.png",
+    "tests/conftest.py", "tests/data/", "tests/golden_corpus_gen.py", "tests/table_fit.py",
+    "requirements", "pyproject.toml"
+  ],
+  "scoped_faces": [
+    ".gitignore", "LICENSE", ".github/", "experiments/", "buildtools/", "radiosim.spec",
+    "build.bat", "installer/", "pyrightconfig.json", "qa_fixtures/", "tools/"
+  ],
+  "scanners": [
+    "tests/test_docs_consistency.py",
+    "tests/test_i18n_key_duplication.py",
+    "tests/test_layers.py",
+    "tests/test_smoke.py"
+  ],
+  "tests_walkers": [
+    "tests/test_commit_gate_scope.py",
+    "tests/test_pre_commit_gate.py",
+    "tests/test_window_fit.py::test_only_declared_tests_see_the_real_machine",
+    "tests/test_window_fit.py::test_no_test_asks_the_screen_behind_the_pin"
   ]
 }

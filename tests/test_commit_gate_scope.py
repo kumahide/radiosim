@@ -28,6 +28,11 @@ Field 用に 1 つあるだけで、**ドキュメントだけのコミットに
 3. **間違ったものを要求している**（＝島の tests が実態より薄い）
    → `TestDocsIslandCoversEveryTestThatReadsDocs`（「無いことの検査」の対）
 
+**2026-09-23 追記**: 「島 1 つに収まらなければフル」をやめ、フルは `full_prefixes`
+（製品コード・テストの共通部品・依存と pytest の設定）と未知のパスだけにした。
+それ以外は島・変えたテスト・`scoped_faces` の読み手の和集合（`TestTheNewIslandsActuallyCatch`
+の後半 3 本と `test_tests_walkers_cover_every_test_that_walks_tests_dir`）。
+
 `node` が無い環境ではまとめて skip（判定は .mjs 側にあり、Python からは再実装しない）。
 """
 
@@ -69,6 +74,12 @@ def _island(name: str) -> dict:
 
 def _island_for(paths: list[str]):
     """実物の対応表に対して `islandFor()` を評価し、当たった島の名前か `None`。"""
+    hit = _plan(paths)
+    return hit["name"] if hit else None
+
+
+def _plan(paths: list[str]):
+    """実物の対応表に対して `islandFor()` を評価し、`{name, tests}` か `None`（フル）。"""
     src = _GATE.replace("\\", "/")
     probe = os.path.join(_REPO, "_island_probe.mjs")
     with open(probe, "w", encoding="utf-8") as f:
@@ -76,7 +87,7 @@ def _island_for(paths: list[str]):
         f.write("import { readFileSync } from \"node:fs\";\n")
         f.write(f"const scope = JSON.parse(readFileSync({json.dumps(_SCOPE)}, 'utf-8'));\n")
         f.write(f"const hit = islandFor(scope, {json.dumps(paths)});\n")
-        f.write("process.stdout.write(JSON.stringify(hit ? hit.name : null));\n")
+        f.write("process.stdout.write(JSON.stringify(hit));\n")
     try:
         r = subprocess.run(["node", probe], cwd=_REPO, capture_output=True,
                            text=True, timeout=60)
@@ -102,6 +113,26 @@ class TestTheNewIslandsActuallyCatch:
         assert _island_for(["tools/qa-hook/release-checklist.txt",
                             "tests/test_claude_hooks.py"]) == "qa-gate"
 
+    def test_a_test_only_commit_runs_just_that_test(self):
+        """🔴 **実際に払ったコスト**（2026-09-23）＝`.gitignore` 1 行とテスト 2 本の
+        コミットでフルスイートが走った。⇒ 変えたテストそのもの＋走査系だけ。"""
+        hit = _plan(["tests/test_models.py"])
+        assert hit["name"] == "tests"
+        assert "tests/test_models.py" in hit["tests"]
+        assert "tests/test_report.py" not in hit["tests"]
+
+    def test_gitignore_runs_its_readers(self):
+        hit = _plan([".gitignore", "tests/test_docs_consistency.py",
+                     "tests/test_claude_hooks.py"])
+        assert hit is not None, "2026-09-23 のコミットがまだフルへ倒れる"
+        assert "tests/test_qa_gate_cache.py" in hit["tests"], ".gitignore の読み手を拾っていない"
+
+    def test_islands_mix_by_union(self):
+        """島をまたぐコミット（マニュアル＋ゲートの道具）も、両方の tests の和で済む。"""
+        hit = _plan(["docs/manual_ja.md", "tools/qa-hook/gate.mjs"])
+        assert set(hit["name"].split("+")) == {"docs", "qa-gate"}
+        assert {"tests/test_report.py", "tests/test_qa_gate_cache.py"} <= set(hit["tests"])
+
     def test_every_island_prefix_that_names_a_test_file_runs_that_file(self):
         """⛔ 島の prefixes に挙げたテストは、その島の tests に入っていること。
 
@@ -126,8 +157,11 @@ class TestTheNewIslandsDoNotOverreach:
         pytest.param(["views/launcher.py"], id="画面"),
         pytest.param(["tests/conftest.py"], id="conftest＝全テストの入力"),
         pytest.param(["lang/ja.json"], id="文言＝長さがウィンドウ寸法に効く"),
-        pytest.param(["tests/test_models.py"], id="島の道具ではないテスト"),
-        pytest.param(["radiosim.spec"], id="同梱の宣言"),
+        pytest.param(["tests/table_fit.py"], id="テストの共有ヘルパ"),
+        pytest.param(["pyproject.toml"], id="pytest の設定"),
+        pytest.param(["requirements.txt"], id="依存"),
+        pytest.param(["icon.png"], id="同梱資産"),
+        pytest.param(["somewhere_new/x.py"], id="どの規則にも無い面"),
     ])
     def test_unlisted_faces_fall_back_to_full(self, paths):
         assert _island_for(paths) is None, f"{paths} が島に収まっている＝フルの保証が消える"
@@ -139,15 +173,17 @@ class TestTheNewIslandsDoNotOverreach:
         assert _island_for(["docs/manual_ja.md", "core/version.py"]) is None
 
     def test_no_island_covers_product_code(self):
-        """島の宣言そのものの見張り＝製品コードの面を島にさせない。"""
-        for island in _scope()["commit_islands"]:
-            for prefix in island["prefixes"]:
-                for forbidden in ("core/", "views/", "report/", "lang/",
-                                  "tests/conftest"):
-                    assert not (prefix.startswith(forbidden)
-                                or forbidden.startswith(prefix)), (
-                        f"島「{island['name']}」が {prefix} を名乗っている＝"
-                        "『全体が緑』を証明すべき面を、島のテスト数本で済ませている")
+        """島と範囲で済む面の宣言そのものの見張り＝製品コードの面を絞らせない。"""
+        prefixes = [(i["name"], p) for i in _scope()["commit_islands"] for p in i["prefixes"]]
+        prefixes += [("scoped_faces", p) for p in _scope()["scoped_faces"]]
+        for name, prefix in prefixes:
+            for forbidden in ("core/", "views/", "report/", "lang/", "apps/",
+                              "main.py", "tests/conftest", "requirements",
+                              "pyproject.toml"):
+                assert not (prefix.startswith(forbidden)
+                            or forbidden.startswith(prefix)), (
+                    f"「{name}」が {prefix} を名乗っている＝"
+                    "『全体が緑』を証明すべき面を、数本のテストで済ませている")
 
 
 # --- 島の tests が実態より薄くなっていないか（「無いことの検査」の対） -----------
@@ -186,6 +222,24 @@ def _tests_that_read_docs() -> set[str]:
                     if isinstance(side, ast.Constant) and side.value == "docs":
                         found.add(f"tests/{name}")
     return found
+
+
+def test_tests_walkers_cover_every_test_that_walks_tests_dir():
+    """変えたテストだけを走らせるとき、`tests/` を歩いて全テストを検査するものが
+    漏れていないこと（漏れると、テストを 1 本足したコミットでその検査が素通りする）。"""
+    scope = _scope()
+    listed = {t.split("::")[0] for t in scope["tests_walkers"]}
+    listed |= set(scope["scanners"]) | {scope["always_tests"]}
+    walkers = set()
+    tests_dir = os.path.join(_REPO, "tests")
+    for name in os.listdir(tests_dir):
+        if name.startswith("test_") and name.endswith(".py"):
+            with open(os.path.join(tests_dir, name), encoding="utf-8") as f:
+                if re.search(r"listdir\((tests_dir|os\.path\.join\(_REPO, \"tests\"\))", f.read()):
+                    walkers.add(f"tests/{name}")
+    assert walkers, "検出器が空振りしている"
+    missing = sorted(walkers - listed)
+    assert not missing, f"tests/ を歩くのに tests_walkers に無い: {missing}"
 
 
 class TestDocsIslandCoversEveryTestThatReadsDocs:

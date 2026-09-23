@@ -25,6 +25,12 @@
 // the whole suite — Field commits were paying ~9 min each for tests their
 // changes cannot reach. `git push` always stays FULL: it is still the proof
 // that the whole tree is green before anything leaves the machine.
+//
+// FULL ONLY WHERE IT IS NEEDED (2026-09-23): "fits one island or else full"
+// sent test-only and .gitignore commits to the 8-minute suite. Now a commit is
+// full only if it touches a `full_prefixes` face (product code, shared test
+// inputs, deps/pytest config) or a path no rule knows; otherwise it runs the
+// union of what each path needs (see islandFor and gate-scope.json).
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -54,14 +60,63 @@ export function commitPaths(cwd) {
   return [...paths];
 }
 
-/** The island every path fits in, or null (→ full suite). An empty change set
- *  is null too: there is nothing to scope by, so the honest answer is "full". */
-export function islandFor(scope, paths) {
-  if (!paths.length) return null;
-  for (const island of scope.commit_islands || []) {
-    if (paths.every((p) => island.prefixes.some((pre) => p.startsWith(pre)))) return island;
+const TEST_FILE = /^tests\/test_[^/]+\.py$/;
+
+/** Tests whose source names `needle` (a scoped face's prefix, e.g. ".gitignore"). */
+function readersOf(cwd, needle) {
+  const found = [];
+  let names = [];
+  try {
+    names = readdirSync(join(cwd, "tests"));
+  } catch {
+    return found;
   }
-  return null;
+  for (const n of names) {
+    if (!(n.startsWith("test_") && n.endsWith(".py"))) continue;
+    try {
+      if (readFileSync(join(cwd, "tests", n), "utf-8").includes(needle)) found.push(`tests/${n}`);
+    } catch {
+      /* unreadable: skip */
+    }
+  }
+  return found;
+}
+
+/** The tests a commit of `paths` needs, as a synthetic island {name, tests},
+ *  or null (→ full suite). Full when: nothing changed, any path is on a
+ *  `full_prefixes` face, or any path matches no rule at all (fail-closed).
+ *  Otherwise the UNION of: every island a path falls in, a changed
+ *  `tests/test_*.py` itself (+ `tests_walkers`), and the readers of a
+ *  `scoped_faces` path — plus `scanners` whenever anything was scoped. */
+export function islandFor(scope, paths, cwd = process.cwd()) {
+  if (!paths.length) return null;
+  const full = scope.full_prefixes || [];
+  const names = new Set();
+  const tests = new Set();
+  for (const p of paths) {
+    if (full.some((pre) => p.startsWith(pre))) return null;
+    let hit = false;
+    for (const island of scope.commit_islands || []) {
+      if (island.prefixes.some((pre) => p.startsWith(pre))) {
+        names.add(island.name);
+        island.tests.forEach((t) => tests.add(t));
+        hit = true;
+      }
+    }
+    if (hit) continue;
+    if (TEST_FILE.test(p)) {
+      names.add("tests");
+      tests.add(p);
+      (scope.tests_walkers || []).forEach((t) => tests.add(t));
+      continue;
+    }
+    const face = (scope.scoped_faces || []).find((pre) => p.startsWith(pre));
+    if (face === undefined) return null;
+    names.add(face);
+    readersOf(cwd, face.replace(/\/$/, "")).forEach((t) => tests.add(t));
+  }
+  (scope.scanners || []).forEach((t) => tests.add(t));
+  return { name: [...names].join("+"), tests: [...tests] };
 }
 
 /** An island's pytest targets, `tests/foo_*` expanded against tests/ (pytest
@@ -82,7 +137,8 @@ export function islandTargets(cwd, scope, island) {
     const stem = t.slice("tests/".length, -1);
     for (const n of names) if (n.startsWith(stem) && n.endsWith(".py")) targets.add(`tests/${n}`);
   }
-  return [...targets].filter((t) => existsSync(join(cwd, t))).sort();
+  // `file.py::test_name` picks single tests out of a slow file (tests_walkers).
+  return [...targets].filter((t) => existsSync(join(cwd, t.split("::")[0]))).sort();
 }
 
 function loadScope(cwd) {
@@ -158,7 +214,7 @@ function main() {
   let label = "フルスイート";
   if (!PUSH.test(command)) {
     const scope = loadScope(cwd);
-    const island = islandFor(scope, commitPaths(cwd));
+    const island = islandFor(scope, commitPaths(cwd), cwd);
     if (island) {
       targets = islandTargets(cwd, scope, island);
       key = pytestCacheKey(cwd, `island:${island.name}\n${targets.join("\n")}`);
