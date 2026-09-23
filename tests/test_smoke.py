@@ -275,6 +275,64 @@ def test_delete_all_cache_offers_source_checkboxes_when_multiple_sources(monkeyp
         root.destroy()
 
 
+def test_delete_all_cache_checkboxes_show_capacity_per_source(monkeypatch):
+    """I-169（3.6 ステージ1）＝各チェック行に「どれを消すと何 MB 空くか」が出ること。
+
+    処方④＝全削除ダイアログに容量を出す（③の表の使い回し）。ソース別・背景地図の
+    内訳は `get_cache_breakdown()`（⑤）の 1 回だけの呼び出しから作る。
+    """
+    pytest.importorskip("tkinter")
+    from tkinter import ttk
+    from core import dem_cache, dem_sources
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [
+                {"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                 "count": 2, "size_bytes": 2 * 1024 * 1024},
+                {"source_id": "fake_src", "display_name": "Fake Source",
+                 "count": 1, "size_bytes": 3 * 1024 * 1024},
+            ],
+            "basemap": {"count": 4, "size_bytes": 1024 * 1024},
+            "total": {"count": 7, "size_bytes": 6 * 1024 * 1024},
+        },
+    )
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+
+        def _texts(parent):
+            out = []
+            for w in parent.winfo_children():
+                if isinstance(w, ttk.Checkbutton):
+                    out.append(w.cget("text"))
+                out.extend(_texts(w))
+            return out
+
+        before = set(app.root.winfo_children())
+        app._on_delete_all_cache()
+        opened = [w for w in app.root.winfo_children() if w not in before]
+        dlg = opened[-1]
+
+        texts = _texts(dlg)
+        assert any("国土地理院 DEM" in t and "2.0" in t for t in texts), texts
+        assert any("Fake Source" in t and "3.0" in t for t in texts), texts
+        assert any("1.0" in t for t in texts), texts   # 背景地図の行
+    finally:
+        root.destroy()
+
+
 def test_run_button_passes_the_selected_dem_source(monkeypatch):
     """単一経路の実行ボタンが選んだ DEM ソースを計算へ渡すこと（B-221）。
 

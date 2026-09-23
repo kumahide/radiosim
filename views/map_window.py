@@ -292,6 +292,11 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._init_after_id = None      # 初回レイヤ描画の after ID（早期クローズ対策）
         self._build_ui()
         self._refresh_stats()
+        # I-169＝`_build_ui` 内の測り直しは統計欄が空文字のまま行われる（複数
+        # ソースがあると二段になり得る＝中身が伸びる）ので、実際の文字を入れた
+        # 直後にもう一度測る。**広げるだけ**（`grow_only` 既定）なので、ここで
+        # 呼んでも `_build_ui` が既に確保した幅を縮めることはない。
+        window_fit.fit_to_content(self._win, min_w=self._BASE_W, min_h=self._BASE_H)
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_single_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
@@ -471,6 +476,7 @@ class MapWindow(_PickMixin, _CacheMixin):
         # ＝残したままだと「いま見えているもの」と「いま消せるもの」が食い違う。
         self._clear_tile_overlays()
         self._refresh_overlay()
+        self._refresh_stats()   # I-169＝統計の選択中ソース行も切り替えに追従させる
 
     # ----------------------------------------------------------
     # 中継経路レイヤ（中継点モード）
@@ -633,9 +639,13 @@ class MapWindow(_PickMixin, _CacheMixin):
         statusbar = ttk.Frame(bottom)
         statusbar.pack(fill="x")
 
-        # 右: キャッシュ統計（常時表示のアンカー）
+        # 右: キャッシュ統計（常時表示のアンカー）。I-169（3.6 ステージ1）＝
+        # 複数 DEM ソースがあるときは「選択中ソース」の行を上に足して二段にする
+        # （`justify="right"` で両行とも右詰め）。
         self._stats_var = tk.StringVar(value="")
-        ttk.Label(statusbar, textvariable=self._stats_var, anchor="e").pack(side="right")
+        self._stats_label = ttk.Label(
+            statusbar, textvariable=self._stats_var, anchor="e", justify="right")
+        self._stats_label.pack(side="right")
 
         # 左: 動的メッセージ（アイドル時=操作ヒント / 操作中・直後=状態・結果）。
         # 複数行になり得るため justify=left。アイドル時はグレー表示。
@@ -652,9 +662,13 @@ class MapWindow(_PickMixin, _CacheMixin):
         )
         self._status_label.pack(side="left", fill="x", expand=True)
         # 幅に追従して折り返し幅を更新（統計表示分を右に確保する）。
+        # I-169＝統計が二段になり得るので、右側の予約幅は固定の目安値ではなく
+        # 統計ラベルの実測要求幅から取る（実測は `winfo_reqwidth`＝常にラベルが
+        # 直前に測った内容に基づく。中身が伸びればここも自動で伸びる）。
         statusbar.bind(
             "<Configure>",
-            lambda e: self._status_label.config(wraplength=max(200, e.width - 200)),
+            lambda e: self._status_label.config(
+                wraplength=max(200, e.width - self._stats_label.winfo_reqwidth() - 16)),
         )
 
         # プログレスバー: 細線。アイドル時も高さを予約して畳み、DL 中のみ表示する。
@@ -869,9 +883,26 @@ class MapWindow(_PickMixin, _CacheMixin):
     # キャッシュ統計
     # ----------------------------------------------------------
     def _refresh_stats(self) -> None:
-        stats = dem_cache.get_cache_stats()
-        mb = stats["size_bytes"] / (1024 * 1024)
-        self._stats_var.set(i18n.t("tm_stats").format(count=stats["count"], mb=f"{mb:.1f}"))
+        breakdown = dem_cache.get_cache_breakdown()
+        total = breakdown["total"]
+        total_mb = total["size_bytes"] / (1024 * 1024)
+        total_line = i18n.t("tm_stats").format(count=total["count"], mb=f"{total_mb:.1f}")
+        # I-169（3.6 ステージ1）＝選べる DEM ソースが複数あるときだけ、選択中
+        # ソースの内訳を上段に足して二段にする（1 つしかないなら総量＝選択中
+        # ソースの容量なので、二段にしても情報が増えない）。
+        source = self._current_cache_source()
+        if len(self._cache_sources) > 1:
+            source = source or self._cache_sources[0]
+            src_stats = next(
+                (s for s in breakdown["sources"] if s["source_id"] == source.source_id),
+                {"count": 0, "size_bytes": 0},
+            )
+            src_mb = src_stats["size_bytes"] / (1024 * 1024)
+            src_line = i18n.t("tm_stats_source").format(
+                name=source.display_name, count=src_stats["count"], mb=f"{src_mb:.1f}")
+            self._stats_var.set(f"{src_line}\n{total_line}")
+        else:
+            self._stats_var.set(total_line)
 
     # ----------------------------------------------------------
     # ビジー状態制御（DL 実行中は新たなジェスチャ操作を受け付けない）

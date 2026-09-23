@@ -2173,6 +2173,55 @@ class TestCacheStatsAndDeletionBySource:
 
 
 # ============================================================
+# I-169（3.6 ステージ1）＝キャッシュ内訳の単一の出所（get_cache_breakdown）
+# ============================================================
+class TestGetCacheBreakdown:
+    """地図の統計表示・全削除ダイアログが読む単一の集計関数の不変条件。"""
+
+    EXTERNAL = TestCacheStatsAndDeletionBySource.EXTERNAL
+
+    def _seed(self, root, layer_dir: str, n: int, nbytes: int = 4) -> None:
+        d = os.path.join(root, *layer_dir.split("/"))
+        os.makedirs(d, exist_ok=True)
+        for i in range(n):
+            with open(os.path.join(d, f"{i}.png"), "wb") as f:
+                f.write(b"x" * nbytes)
+
+    def test_breakdown_lists_each_source_and_basemap_and_sums_to_total(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [self.EXTERNAL])
+        self._seed(str(tmp_path), "dem5a_png/1", 2)                      # GSI
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)        # 外部ソース
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)       # 背景地図
+
+        result = dem_cache.get_cache_breakdown()
+
+        by_id = {s["source_id"]: s for s in result["sources"]}
+        assert by_id["gsi_dem"]["count"] == 2
+        assert by_id["gsi_dem"]["size_bytes"] == 8
+        assert by_id["ext_src"]["count"] == 3
+        assert by_id["ext_src"]["size_bytes"] == 12
+        assert by_id["ext_src"]["display_name"] == "External"
+        assert result["basemap"] == {"count": 1, "size_bytes": 4}
+        # 合計は内訳の足し算そのもの（CACHE_DIR を別途もう一度歩いた値と一致するはず）。
+        assert result["total"] == {"count": 6, "size_bytes": 24}
+        assert result["total"] == dem_cache.get_cache_stats()
+
+    def test_breakdown_with_only_gsi_has_one_source_entry(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [])
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        result = dem_cache.get_cache_breakdown()
+
+        assert [s["source_id"] for s in result["sources"]] == ["gsi_dem"]
+        assert result["basemap"] == {"count": 0, "size_bytes": 0}
+        assert result["total"] == {"count": 2, "size_bytes": 8}
+
+
+# ============================================================
 # カバレッジ走査を「粗いレイヤを持つソース」で通す（B-264）
 # ============================================================
 

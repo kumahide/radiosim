@@ -1204,6 +1204,81 @@ def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(m
         root.destroy()
 
 
+def test_stats_show_selected_source_breakdown_when_multiple_sources(monkeypatch):
+    """I-169（3.6 ステージ1）＝複数 DEM ソースがあるとき、統計欄が選択中ソースの
+    内訳（上段）と総量（下段）の二段になり、ソース切り替えに追従すること。
+    1 ソースしかないときは従来どおり一段（総量のみ）のまま。
+    """
+    from core import dem_cache, dem_sources, i18n
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [
+                {"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                 "count": 2, "size_bytes": 2 * 1024 * 1024},
+                {"source_id": "fake_src", "display_name": "Fake Source",
+                 "count": 1, "size_bytes": 1 * 1024 * 1024},
+            ],
+            "basemap": {"count": 1, "size_bytes": 1024 * 1024},
+            "total": {"count": 4, "size_bytes": 4 * 1024 * 1024},
+        },
+    )
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._refresh_stats()
+        text = win._stats_var.get()
+        lines = text.split("\n")
+        assert len(lines) == 2, f"複数ソースなのに二段になっていない: {text!r}"
+        assert lines[0] == i18n.t("tm_stats_source").format(
+            name="国土地理院 DEM", count=2, mb="2.0")
+        assert lines[1] == i18n.t("tm_stats").format(count=4, mb="4.0")
+
+        # ソースを切り替えると上段だけ追従する。
+        win._cache_src_var.set("Fake Source")
+        win._on_cache_source_changed()
+        lines2 = win._stats_var.get().split("\n")
+        assert lines2[0] == i18n.t("tm_stats_source").format(
+            name="Fake Source", count=1, mb="1.0")
+        assert lines2[1] == lines[1]   # 総量は変わらない
+    finally:
+        root.destroy()
+
+
+def test_stats_stay_single_line_with_only_gsi(monkeypatch):
+    """宣言ソースが無い大多数の利用者には、従来どおり一段のままにする。"""
+    from core import dem_cache, dem_sources, i18n
+
+    monkeypatch.setattr(dem_sources, "_user_sources", [])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [{"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                        "count": 2, "size_bytes": 2 * 1024 * 1024}],
+            "basemap": {"count": 0, "size_bytes": 0},
+            "total": {"count": 2, "size_bytes": 2 * 1024 * 1024},
+        },
+    )
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._refresh_stats()
+        assert win._stats_var.get() == i18n.t("tm_stats").format(count=2, mb="2.0")
+        assert "\n" not in win._stats_var.get()
+    finally:
+        root.destroy()
+
+
 def test_download_follows_the_selected_cache_source(monkeypatch):
     """B-253（3.6 ステージ1）＝DL・強制再取得も「対象 DEM ソース」欄に従うこと。
 

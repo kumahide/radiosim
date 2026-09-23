@@ -477,6 +477,45 @@ def get_basemap_cache_stats() -> dict:
             "size_bytes": pale["size_bytes"] + other["size_bytes"]}
 
 
+def get_cache_breakdown() -> dict:
+    """キャッシュ内訳（ソース別＋背景地図＋合計）を単一の出所として返す。
+
+    I-169（3.6 ステージ1）＝地図ウィンドウの統計表示・全削除ダイアログが、
+    それぞれ別々に `get_cache_stats()` を呼んで合計だけ見せていたのを、
+    この関数 1 つに集約する。合計は各内訳の**足し算**で作る（`CACHE_DIR`
+    全体を別途もう一度走査しない）＝出所が 2 つに割れて数字が食い違う経路を
+    構造的に無くす。
+
+    Returns:
+        {
+            "sources": [{"source_id", "display_name", "count", "size_bytes"}, ...],
+            "basemap": {"count", "size_bytes"},
+            "total": {"count", "size_bytes"},
+        }
+    """
+    sources: list[dict] = []
+    total_count = 0
+    total_size = 0
+    for src in dem_sources.all_sources():
+        stats = get_cache_stats(src)
+        sources.append({
+            "source_id": src.source_id,
+            "display_name": src.display_name,
+            "count": stats["count"],
+            "size_bytes": stats["size_bytes"],
+        })
+        total_count += stats["count"]
+        total_size += stats["size_bytes"]
+    basemap = get_basemap_cache_stats()
+    total_count += basemap["count"]
+    total_size += basemap["size_bytes"]
+    return {
+        "sources": sources,
+        "basemap": basemap,
+        "total": {"count": total_count, "size_bytes": total_size},
+    }
+
+
 def delete_all_tile_cache(
     sources: "list[dem_sources.DemSourceSpec] | None" = None,
     include_basemap: bool = True,

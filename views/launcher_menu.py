@@ -516,17 +516,27 @@ class _MenuMixin:
         ttk.Label(dlg, text=i18n.t("tm_delete_all_confirm"), wraplength=420,
                  justify="left").grid(row=0, column=0, sticky="w", padx=16, pady=(16, 10))
 
+        # I-169（3.6 ステージ1）＝「どれを消すと何 MB 空くか」が今まで分からなかった。
+        # `get_cache_breakdown()` を 1 回だけ呼び、各チェック行にソース別・背景地図の
+        # 容量を添える（ダイアログを開いた時点の値＝開いている間の増減までは追わない）。
+        breakdown = dem_cache.get_cache_breakdown()
+        src_size = {s["source_id"]: s["size_bytes"] for s in breakdown["sources"]}
+
+        def _size_suffix(size_bytes: int) -> str:
+            return i18n.t("tm_cache_size_suffix").format(mb=f"{size_bytes / (1024 * 1024):.1f}")
+
         src_vars: dict[str, tk.BooleanVar] = {}
         frame = ttk.Frame(dlg)
         frame.grid(row=1, column=0, sticky="w", padx=28, pady=(0, 4))
         for i, src in enumerate(sources):
             var = tk.BooleanVar(value=True)
             src_vars[src.source_id] = var
-            ttk.Checkbutton(frame, text=src.display_name, variable=var).grid(
+            text = src.display_name + _size_suffix(src_size.get(src.source_id, 0))
+            ttk.Checkbutton(frame, text=text, variable=var).grid(
                 row=i, column=0, sticky="w")
         basemap_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text=i18n.t("tm_delete_all_basemap"),
-                       variable=basemap_var).grid(
+        basemap_text = i18n.t("tm_delete_all_basemap") + _size_suffix(breakdown["basemap"]["size_bytes"])
+        ttk.Checkbutton(frame, text=basemap_text, variable=basemap_var).grid(
             row=len(sources), column=0, sticky="w")
 
         def _on_ok() -> None:
