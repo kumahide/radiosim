@@ -372,3 +372,40 @@ def test_cache_path_is_the_documented_one(repo):
     assert json.loads(
         _run_node("process.stdout.write(JSON.stringify(CACHE_PATH));\n", repo)
     ).replace("\\", "/") == ".git/radiosim-qa-pytest.json"
+
+
+# ============================================================
+# I-172：子プロセスの Python の日本語が文字化けしないこと
+# ============================================================
+class TestPythonOutputIsUtf8:
+    """ゲートが起動した Python（pytest 等）の日本語を正しく読めるか。
+
+    ⚠️ 2026-09-23 に実測＝既定では Windows のパイプへの出力が cp932 になり、ゲートは
+    utf-8 で読むので、テストの assert の日本語が「��ʂɏo��」の形で Claude と画面へ出ていた。
+    """
+
+    def test_japanese_from_python_survives(self, repo):
+        gate = os.path.join(_REPO, "tools", "qa-hook", "gate.mjs").replace("\\", "/")
+        py = json.dumps(os.environ.get("RADIOSIM_PYTHON") or shutil.which("python") or "python")
+        # 比較は node 側で済ませ、ASCII の結果だけを返す（こちらの読み方に左右されない）。
+        out = _run_node_src(
+            'import { execFileSync } from "node:child_process";\n'
+            f'import {{ pythonEnv }} from "file:///{gate}";\n'
+            f"const s = execFileSync({py}, ['-c', 'print(\"画面に出る\")'],"
+            " { env: pythonEnv(), encoding: 'utf-8' });\n"
+            "process.stdout.write(s.trim() === '画面に出る' ? 'ok' : 'garbled');\n",
+            repo,
+        )
+        assert out == "ok"
+
+    @pytest.mark.parametrize("name", ["gate.mjs", "pre-commit-gate.mjs"])
+    def test_every_python_launch_passes_the_env(self, name):
+        """Python を起動する `execFileSync` は全部 `pythonEnv()` を渡す（git の起動は対象外）。"""
+        with open(os.path.join(_REPO, "tools", "qa-hook", name), encoding="utf-8") as f:
+            src = f.read()
+        calls = [src[i:i + 300] for i in range(len(src))
+                 if src.startswith("execFileSync(", i)
+                 and not src.startswith('execFileSync("git"', i)]
+        assert calls, f"{name} に Python の起動が見当たらない（数え方が古い）"
+        missing = [c.splitlines()[0] for c in calls if "env: pythonEnv()" not in c]
+        assert not missing, f"{name} で pythonEnv() を渡していない起動: {missing}"

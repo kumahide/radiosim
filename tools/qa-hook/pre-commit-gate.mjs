@@ -29,7 +29,7 @@
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { resolvePython } from "./gate.mjs";
+import { pythonEnv, resolvePython } from "./gate.mjs";
 import { git } from "./git-changes.mjs";
 import { pytestCacheKey, isCachedPass, recordPass, recordFinish, markStart } from "./pytest-cache.mjs";
 
@@ -173,6 +173,7 @@ function main() {
   try {
     const stdout = execFileSync(resolved.python, ["-m", "pytest", ...targets], {
       cwd,
+      env: pythonEnv(),   // 日本語の文字化けを防ぐ（I-172）
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 10 * 1024 * 1024,

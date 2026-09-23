@@ -3752,3 +3752,143 @@ def test_real_ledger_has_exactly_the_three_sections():
     assert "アーカイブ" in heads[2], (
         "アーカイブセクションは末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
     )
+
+
+# ============================================================
+# 本文と description の言語（I-172）
+# ============================================================
+_LANG_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "language_gate.py"))
+
+
+@pytest.fixture(scope="module")
+def langgate():
+    """`.claude/language_gate.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_LANG_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_language_gate", _LANG_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_language_gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestLanguageGate:
+    """**英文だけを拾い、日本語の技術文は拾わない**こと（線は 2026-09-23 の実測 5,067 件で引いた）。
+
+    ⚠️ ここが緩むと、英単語の多い日本語の報告まで書き直させるゲートになり、確実に
+    無視される（[[feedback-promote-recurring-checks]] の「毎回鳴る」壊れ方）。
+    """
+
+    # ---- 英文＝拾う（会話の記録にあった実例）--------------------------------
+    @pytest.mark.parametrize("text", [
+        "Clean. Let's also confirm the ledger tests pass against the updated ISSUES.md/roadmap:",
+        "I'll continue with docs/roadmap updates while the background test run finishes.",
+        "Hook tests pass (421) and the memory checks come back clean. Recording the result in I-171.",
+        "Now let's commit.",                          # 短い一言（②で拾う）
+        "Now update `_refresh_common_from_launcher`:",
+        "The Help menu now shows the new item. Let's click it to confirm the dialog opens.",
+        "Both fixes are committed. Full test suite passed.\n\n**残っている作業**＝段9",
+    ])
+    def test_english_is_caught(self, langgate, text):
+        assert langgate.english_evidence(text), text
+
+    # ---- 日本語＝拾わない ---------------------------------------------------
+    @pytest.mark.parametrize("text", [
+        "BEFORE、症状が**きれいに出ています** — 見出しが「RadioSim Pro □□□」。AFTER も確認します。",
+        "表示機フルスイートは HEAD (`38b40ec`) で緑（2525 collected / 1 skip）。Codex docs レビューの完了を待ちます。",
+        "Galileo High Accuracy Service と AWS Open Data Terrain Tiles を比べます。",  # 固有名詞
+        "画面の文言は \"Open the results folder for this run\" のままです。",            # 引用
+        "エラーは「An Application Control policy has blocked this file」でした。",
+        "次のコードです。\n```python\n# Now let's do the thing for all of them\nx = 1\n```\n以上です。",
+        "[feedback_writing.md](C:/Users/kuma/.claude/memory/feedback_writing.md) を直しました。",
+        "OK",
+    ])
+    def test_japanese_is_not_caught(self, langgate, text):
+        assert not langgate.english_evidence(text), langgate.english_evidence(text)
+
+    # ---- ターンの切り出しと判定 ----------------------------------------------
+    @staticmethod
+    def _log(*entries):
+        return [json.dumps(e, ensure_ascii=False) for e in entries]
+
+    @staticmethod
+    def _user(text):
+        return {"type": "user", "message": {"content": text}}
+
+    @staticmethod
+    def _said(text):
+        return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+    def test_only_the_current_turn_is_judged(self, langgate):
+        lines = self._log(
+            self._said("Earlier turn was all in English, sorry about that."),
+            self._user("次をお願いします"),
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x"}]}},
+            self._said("確認しました。"),
+        )
+        assert langgate.turn_texts(lines) == ["確認しました。"]
+
+    def test_english_final_asks_for_a_rewrite(self, langgate):
+        reason = langgate.verdict(["確認します。", "All done. The tests pass and the file is updated."])
+        assert reason and "締めの報告が英語" in reason
+
+    def test_english_midway_is_reported_even_if_final_is_japanese(self, langgate):
+        reason = langgate.verdict(["Now let's run the tests.", "テストは通りました。"])
+        assert reason and "途中経過に英語の文が 1 件" in reason
+
+    def test_japanese_turn_passes(self, langgate):
+        assert langgate.verdict(["まず読みます。", "`pytest` は 421 件通りました。"]) is None
+
+    def test_final_from_payload_is_not_counted_twice(self, langgate):
+        assert langgate.verdict(["完了しました。"], final="完了しました。") is None
+
+    def _run(self, payload):
+        proc = subprocess.run([sys.executable, _LANG_PATH], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+        return proc.stdout
+
+    def test_blocks_through_the_hook(self, langgate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._log(self._user("お願いします"),
+                                           self._said("Everything is done and the tests pass."))),
+                       encoding="utf-8")
+        out = json.loads(self._run({"transcript_path": str(log)}))
+        assert out["decision"] == "block"
+
+    def test_second_stop_never_blocks(self, langgate, tmp_path):
+        """書き直しがまた英語でも、無限に回さない。"""
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._log(self._user("お願いします"),
+                                           self._said("Everything is done and the tests pass."))),
+                       encoding="utf-8")
+        assert self._run({"transcript_path": str(log), "stop_hook_active": True}) == ""
+
+    def test_broken_input_never_blocks(self, langgate):
+        assert self._run({"transcript_path": "Z:/no/such/file.jsonl"}) == ""
+
+
+class TestDescriptionIsJapanese:
+    """description はユーザーの画面に出る＝日本語のみ通す（正当な英語の例は 0 件）。"""
+
+    @pytest.mark.parametrize("desc", ["Run memory checks", "git status", ""])
+    def test_english_or_empty_is_denied(self, detours, desc):
+        assert detours.check_description(desc)[0] == "deny"
+
+    @pytest.mark.parametrize("desc", ["作業ツリーの状態を見る", "git の状態を見る", "Grep で探す"])
+    def test_japanese_passes(self, detours, desc):
+        assert detours.check_description(desc) is None
+
+
+def test_language_gate_is_wired_into_stop():
+    """配線されていないゲートは無いのと同じ（`settings.local.json` の Stop に載っていること）。"""
+    path = os.path.abspath(os.path.join(_HOOK_DIR, "settings.local.json"))
+    if not os.path.exists(path):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    with open(path, encoding="utf-8") as f:
+        hooks = json.load(f).get("hooks", {})
+    commands = [h.get("command", "") for g in hooks.get("Stop", []) for h in g.get("hooks", [])]
+    assert any("language_gate.py" in c for c in commands), commands
+    shown = [h.get("statusMessage", "") for ev in hooks.values() for g in ev for h in g.get("hooks", [])]
+    english = [s for s in shown if s and not re.search(r"[\u3040-\u30ff\u3400-\u9fff]", s)]
+    assert not english, f"画面に出る statusMessage が英語: {english}"
