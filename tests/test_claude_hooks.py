@@ -1107,6 +1107,26 @@ class TestRoadmapSectionPlacement:
             self._NEXT_ROW, headings, self._ARCHIVE)
         assert any("戻す" in f for f in found)
 
+    def test_unpublished_official_version_in_the_archive_is_flagged(self, memcheck):
+        """🔴 **実際に起きた形**（2026-09-23・ユーザー指摘）＝`3.5` はまだ公開して
+        いないのにセクションが §アーカイブ の中に落ちていた。⚠️ **この枝は
+        `🔜 次の版` の行にしか効いておらず**、`🚧 正式（未公開）` も `🚧 RC` も
+        素通りしていた（ゲートの壊れ方①＝一度も落ちない）。
+        """
+        rows = [(9, "| 3.5 | 🚧 正式（未公開） | ④公開（gh release create） |")]
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (120, "## ✅ 3.5 — ソースの拡張と画面の整理")]
+        found = memcheck.check_section_placement(rows, headings, self._ARCHIVE)
+        assert any("戻す" in f for f in found), (
+            "未公開の版がアーカイブに落ちていても鳴らない")
+
+    def test_rc_stage_version_in_the_archive_is_flagged(self, memcheck):
+        """同じクラス＝RC の版も、出し終えていないのでアーカイブの外に居る。"""
+        rows = [(9, "| 3.5 | 🚧 RC | 実機確認 |")]
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (120, "## 🚧 3.5 — ソースの拡張と画面の整理")]
+        assert memcheck.check_section_placement(rows, headings, self._ARCHIVE) != []
+
     def test_correct_placement_is_silent(self, memcheck):
         headings = [(1, "## 現在地"), (44, "## 🔜 3.0 — 結果の信頼性と出力契約"),
                     (self._ARCHIVE, "## 🗄 アーカイブ"),
@@ -1540,6 +1560,27 @@ class TestDashboardStageMatchesVersion:
         assert memcheck.check_dashboard_stage(
             self._rows("| 3.3 | ✅ リリース済 | — |"), "3.3") == []
 
+    def test_official_stage_before_publishing_must_not_say_released(self, memcheck):
+        """🔴 **実際に起きた形**（2026-09-23・ユーザー指摘）＝`3.5` の工程①で
+        `version.py` を正式へ上げた時点で、このゲートが現在地表へ「✅ リリース済」を
+        要求し、**公開の何時間も前にロードマップが「リリース済み」になった**。
+        さらにそれを読んだ check 17 が §アーカイブ への移動まで要求し、
+        **工程が終わっていない版のセクションがアーカイブへ落ちた**。
+        ⇒ 正式段階では**タグの有無**で「作り終えた」と「公開した」を分ける。
+        """
+        released = self._rows("| 3.5 | ✅ リリース済 | — |")
+        assert memcheck.check_dashboard_stage(released, "3.5", published=False) != []
+        assert memcheck.check_dashboard_stage(released, "3.5", published=True) == []
+
+    def test_official_stage_before_publishing_wants_the_unpublished_word(self, memcheck):
+        """未公開なら状態欄に「未公開」と書かせる（表だけ見た人が誤読しないため）。"""
+        vague = self._rows("| 3.5 | 🚧 正式 | 公開の準備 |")
+        assert memcheck.check_dashboard_stage(vague, "3.5", published=False) != []
+        ok = self._rows("| 3.5 | 🚧 正式（未公開） | ④公開（gh release create） |")
+        assert memcheck.check_dashboard_stage(ok, "3.5", published=False) == []
+        # 公開したのに「未公開」のままなら、今度は逆向きに鳴る。
+        assert memcheck.check_dashboard_stage(ok, "3.5", published=True) != []
+
     def test_earlier_tag_of_same_version_is_flagged(self, memcheck):
         """前の段階のタグが次の一手に残っていたら鳴る。今の段階・次の段階は鳴らない。"""
         stale = self._rows("| 3.3 | 🚧 RC | `3.3RC1` の試用結果待ち |")
@@ -1552,6 +1593,35 @@ class TestDashboardStageMatchesVersion:
         """別の版（13.3・3.30 等）のタグを現行版と取り違えない。"""
         rows = self._rows("| 3.3 | 🚧 ベータ | `13.3a1` と `3.30a1` は無関係 |")
         assert memcheck.check_dashboard_stage(rows, "3.3b1") == []
+
+    def test_published_is_read_from_tags_not_from_version_py(self, memcheck):
+        """公開の証跡は**正式版のタグ**（`v` 無し）。プレリリースのタグは数えない。"""
+        assert memcheck.release_is_published("3.5", ["3.4", "v3.5RC1"]) is False
+        assert memcheck.release_is_published("3.5", ["3.4", "v3.5RC1", "3.5"]) is True
+        # タグを引けなかった（`_git` が空を返した）ときは「未公開」へ倒す。
+        assert memcheck.release_is_published("3.5", []) is False
+
+    def test_the_real_entry_point_asks_git_for_tags(self, memcheck, monkeypatch):
+        """⛔ **入口が既定の `published=True` に落ちていないこと**。
+
+        ここが落ちると「版を上げた瞬間にリリース済みを要求する」古い挙動へ
+        黙って戻る＝このゲートの直しが丸ごと無効になる（変異検証のための 1 本）。
+        """
+        asked: list[list[str]] = []
+
+        def fake_git(args):
+            asked.append(args)
+            return []                      # タグ無し＝未公開
+
+        monkeypatch.setattr(memcheck, "_current_version", lambda: "3.5")
+        monkeypatch.setattr(memcheck, "_git", fake_git)
+        monkeypatch.setattr(
+            memcheck, "_dashboard_rows",
+            lambda: [(22, "| 3.5 | ✅ リリース済 | — |")])
+        found = memcheck.check_roadmap_stage()
+        assert ["tag", "--list"] in asked, "入口が git にタグを聞いていない"
+        assert any("未公開" in f for f in found), (
+            "タグが無いのに「リリース済」が素通りした＝入口が published を渡していない")
 
     def test_missing_row_is_flagged(self, memcheck):
         rows = self._rows("| 3.2 | ✅ リリース済 | — |")
