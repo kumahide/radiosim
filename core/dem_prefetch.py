@@ -25,6 +25,8 @@ import numpy as np
 from PIL import Image
 
 from core import dem
+from core import dem_cache
+from core import dem_sources
 from core.config import logger
 
 
@@ -190,15 +192,25 @@ def _process_position(
 def count_bbox_tiles(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> int:
-    """bbox 内の zoom-14 位置数を返す（プログレスバーの maximum 設定等に使う）。"""
+    """bbox 内の位置数を返す（プログレスバーの maximum・DL 確認ダイアログの件数表示に使う）。
+
+    3.6 ステージ1（I-147 残り(b)・B-253）＝`source` で単位セルの大きさを合わせる。
+    位置の単位は `dem_cache._base_zoom(source)`（`dem_cache.count_cached_areas` と
+    同じ基準セル）＝国土地理院は従来どおり zoom-14 のまま（省略時・引数無しの
+    既存呼び出しは 1 桁も動かない）。**キャッシュ済みとの差分（DL 確認ダイアログの
+    新規分）を取るとき、両辺が同じ単位でないと数が合わない**（従来はここが
+    暗黙に国土地理院固定だった＝B-253 の一面）。
+    """
     lat_n = max(lat1, lat2)
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
-    x14_nw, y14_nw, _, _ = dem._tile_coords(lat_n, lon_w, 14)
-    x14_se, y14_se, _, _ = dem._tile_coords(lat_s, lon_e, 14)
-    return (x14_se - x14_nw + 1) * (y14_se - y14_nw + 1)
+    base_zoom = dem_cache._base_zoom(source)
+    x0, y0, _, _ = dem._tile_coords(lat_n, lon_w, base_zoom)
+    x1, y1, _, _ = dem._tile_coords(lat_s, lon_e, base_zoom)
+    return (x1 - x0 + 1) * (y1 - y0 + 1)
 
 
 def prefetch_tiles(
@@ -206,8 +218,113 @@ def prefetch_tiles(
     lat2: float, lon2: float,
     progress_cb=None,   # callback(done: int, total: int) | None
     force: bool = False,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> dict:
-    """bbox 内の DEM タイルを優先順位付きでダウンロードしてキャッシュに保存する。
+    """bbox 内の DEM タイルをダウンロードしてキャッシュに保存する（B-253・I-147 残り(b)）。
+
+    `source` を省略する（または国土地理院を指定する）と従来どおりの優先順位付き
+    降下（`_prefetch_gsi`）。**それ以外のソースを指定したときも、実際にそのソースの
+    タイルを取りに行くようになった**（従来はどのソースを選んでいても国土地理院
+    決め打ちで取っていた＝B-253）。外部ソースは降下ロジックも欠損マスクも
+    持たない前提（`dem_sources` の宣言に優先順位はあっても、国土地理院のような
+    ピクセル単位の欠損フォールバックの意味論を宣言する項目が無い）ので、
+    宣言した各レイヤのタイルをそのまま取得する `_prefetch_generic` を使う。
+
+    Returns:
+        国土地理院: {"area_total", "downloaded_5a", "downloaded_5b",
+                     "downloaded_dem", "skipped", "failed"}（従来どおり）
+        それ以外  : {"area_total", "downloaded", "skipped", "failed"}
+    """
+    src = source if source is not None else dem_sources.GSI_DEM
+    if src.source_id == dem_sources.GSI_DEM.source_id:
+        return _prefetch_gsi(lat1, lon1, lat2, lon2, progress_cb, force)
+    return _prefetch_generic(src, lat1, lon1, lat2, lon2, progress_cb, force)
+
+
+def _prefetch_generic(
+    src: "dem_sources.DemSourceSpec",
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    progress_cb,
+    force: bool,
+) -> dict:
+    """国土地理院以外のソース向けの単純な取得経路（3.6 ステージ1）。
+
+    宣言した各レイヤの bbox 内タイルを（`dem_cache._enumerate_bbox` と同じ列挙で）
+    そのまま取りに行く＝GSI の優先順位降下・欠損マスクは持たない。**単層宣言**
+    （マニュアルの記入例＝Terrarium 等）ならレイヤは 1 つだけなので、これは
+    そのまま「1 タイル＝1 位置」の素直な取得になる。複数レイヤを宣言した場合は
+    レイヤごとに独立して全タイルを取りに行く（層間のスキップはしない）。
+    """
+    tasks = dem_cache._enumerate_bbox(lat1, lon1, lat2, lon2, src)
+    total = len(tasks)
+    if total == 0:
+        return {"area_total": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+
+    counts = {"done": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+    lock = threading.Lock()
+    work_q: queue.Queue = queue.Queue()
+    for task in tasks:
+        work_q.put(task)
+
+    def _worker() -> None:
+        while True:
+            try:
+                layer_id, zoom, x, y, subdir, cache_path = work_q.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if not force and _is_cached(cache_path):
+                    with lock:
+                        counts["skipped"] += 1
+                else:
+                    arr = dem._fetch_tile(layer_id, zoom, x, y, subdir, cache_path, source=src)
+                    with lock:
+                        if arr is not None:
+                            counts["downloaded"] += 1
+                        else:
+                            counts["failed"] += 1
+            except Exception as e:
+                logger.warning("prefetch worker error (generic): %s", e)
+                with lock:
+                    counts["failed"] += 1
+            finally:
+                with lock:
+                    counts["done"] += 1
+                    done_snap = counts["done"]
+                if progress_cb:
+                    progress_cb(done_snap, total)
+                work_q.task_done()
+
+    num_workers = min(dem._MAX_PREFETCH_WORKERS, total)
+    threads = [threading.Thread(target=_worker, daemon=True) for _ in range(num_workers)]
+    for th in threads:
+        th.start()
+    work_q.join()
+
+    logger.info(
+        "prefetch complete (generic source=%s): total=%d downloaded=%d skipped=%d failed=%d",
+        src.source_id, total, counts["downloaded"], counts["skipped"], counts["failed"],
+    )
+    return {
+        "area_total": total,
+        "downloaded": counts["downloaded"],
+        "skipped":    counts["skipped"],
+        "failed":     counts["failed"],
+    }
+
+
+def _prefetch_gsi(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    progress_cb=None,   # callback(done: int, total: int) | None
+    force: bool = False,
+) -> dict:
+    """国土地理院専用＝優先順位付き降下（dem5a→dem5b→dem_png）と欠損マスク。
+
+    ⚠️ **本体は 3.5 以前と1文字も変えていない**（3.6 ステージ1で `prefetch_tiles`
+    から切り出しただけ）＝降下ロジックそのものは国土地理院専用のまま残す判断
+    （B-253 対応案②）。
 
     優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
     force=False のとき、既にキャッシュ済みの位置はスキップする。

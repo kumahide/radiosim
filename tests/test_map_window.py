@@ -1114,7 +1114,8 @@ def test_cache_source_bar_hidden_when_only_gsi_is_available(monkeypatch):
 def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(monkeypatch):
     """宣言ファイルでソースを足した利用者には欄を出し、選んだソースが
     範囲削除・カバレッジ表示（`scan_cache_overlay`/`coverage_outline`）へ
-    そのまま渡ること。プリフェッチ（ダウンロード）は対象外（I-147 残り(b)）。
+    そのまま渡ること。DL・強制再取得が同じ欄に従うことは
+    `test_download_follows_the_selected_cache_source`（B-253・3.6 ステージ1）で見る。
     """
     from core import dem_cache, dem_sources
 
@@ -1164,6 +1165,74 @@ def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(m
         win._win.update_idletasks()
         assert not win._cache_src_bar.winfo_ismapped()
         assert win._cache_src_var.get() == "Fake Source"
+    finally:
+        root.destroy()
+
+
+def test_download_follows_the_selected_cache_source(monkeypatch):
+    """B-253（3.6 ステージ1）＝DL・強制再取得も「対象 DEM ソース」欄に従うこと。
+
+    以前は `dem_prefetch.prefetch_tiles` が `source` を受け取らず常に国土地理院を
+    取っていた＝欄で外部ソースを選んでいても黙って無視されていた。
+    `_download_worker` が `source` をそのまま `prefetch_tiles` へ渡すことだけを見る
+    （進捗ポンプ・スレッド起動は他のフローで既に検査済みの配線）。
+    """
+    from core import dem_prefetch, dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        seen: dict = {}
+
+        def _fake_prefetch(lat1, lon1, lat2, lon2, progress_cb=None, force=False, source=None):
+            seen["source"] = source
+            seen["force"] = force
+            return {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+        monkeypatch.setattr(dem_prefetch, "prefetch_tiles", _fake_prefetch)
+        monkeypatch.setattr(win, "_on_download_done", lambda dl_result: seen.setdefault("done", dl_result))
+        # ワーカースレッドを介さず本体を直接呼ぶ（他フローと同じ検査方針）。
+        win._download_worker((35.0, 139.0, 34.9, 139.1), True, fake)
+
+        assert seen["source"] is fake, "選んだソースが prefetch_tiles まで届いていない"
+        assert seen["force"] is True
+    finally:
+        root.destroy()
+
+
+def test_download_done_message_branches_on_result_shape(monkeypatch):
+    """`_on_download_done`＝国土地理院（内訳つき）と外部ソース（`downloaded` のみ）
+    の両方の戻り値で、対応する文言キーが使われること（tm_dl_done / tm_dl_done_generic）。
+    """
+    from core import i18n
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._set_busy(True)
+        win._show_progress()
+        win._pump.start()
+        win._on_download_done(
+            {"area_total": 3, "downloaded_5a": 1, "downloaded_5b": 1,
+             "downloaded_dem": 1, "skipped": 0, "failed": 0})
+        assert "5" in win._status_var.get()   # tm_dl_done の内訳表記（5m 等）を含む
+
+        win._set_busy(True)
+        win._show_progress()
+        win._pump.start()
+        win._on_download_done(
+            {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0})
+        assert win._status_var.get() == i18n.t("tm_dl_done_generic").format(
+            downloaded=1, skipped=0, failed=0), \
+            "外部ソースの戻り値なのに国土地理院向けの内訳文言のまま（またはキー欠落で例外）"
     finally:
         root.destroy()
 

@@ -1536,6 +1536,139 @@ class TestPrefetchTiles:
 
 
 # ============================================================
+# prefetch_tiles(source=) — 国土地理院以外のソース（3.6 ステージ1・B-253）
+#
+# 従来は source を渡しても無視され、常に国土地理院（_prefetch_gsi）を黙って
+# 取りに行っていた（利用者は選んだソースのキャッシュが増えたと誤解する）。
+# ============================================================
+class TestPrefetchTilesGenericSource:
+    """`source=` に国土地理院以外を渡すと `_prefetch_generic` へ分岐し、
+    実際にそのソースのタイルを（`_fetch_tile(..., source=src)` 経由で）取りに行くこと。"""
+
+    LAT, LON = 35.0, 139.0
+
+    EXTERNAL = dem_sources.DemSourceSpec(
+        source_id="ext_src",
+        display_name="External",
+        layers=(("terrarium", 12),),
+        url_template="https://example.com/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.com/terms",
+    )
+
+    def test_downloads_the_selected_source_not_gsi(self, tmp_path, monkeypatch):
+        """B-253＝外部ソースを選ぶと国土地理院ではなく選んだソースのレイヤを取る。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        seen_sources = []
+
+        def fetch(layer_id, zoom, x, y, subdir, cache_path, source=None):
+            seen_sources.append(source)
+            return np.zeros((256, 256, 3), dtype=np.uint8)
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+
+        assert seen_sources, "外部ソースを選んでも _fetch_tile が一度も呼ばれていない"
+        assert all(s is self.EXTERNAL for s in seen_sources), \
+            "国土地理院決め打ちのまま取得している（B-253 の再発）"
+        assert res == {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+    def test_skips_cached_tile_without_force(self, tmp_path, monkeypatch):
+        """既にキャッシュ済み・force=False なら _fetch_tile を呼ばずスキップする。"""
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        _layer_id, _zoom, _x, _y, subdir, cache_path = tasks[0]
+        os.makedirs(subdir, exist_ok=True)
+        Image.new("RGB", (256, 256)).save(cache_path)
+
+        calls = []
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: calls.append(a) or None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=False)
+
+        assert calls == []
+        assert res == {"area_total": 1, "downloaded": 0, "skipped": 1, "failed": 0}
+
+    def test_force_refetches_cached_tile(self, tmp_path, monkeypatch):
+        """force=True なら既存キャッシュがあっても取り直す。"""
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        _layer_id, _zoom, _x, _y, subdir, cache_path = tasks[0]
+        os.makedirs(subdir, exist_ok=True)
+        Image.new("RGB", (256, 256)).save(cache_path)
+
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda *a, **kw: np.zeros((256, 256, 3), dtype=np.uint8))
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=True)
+        assert res == {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+    def test_failed_fetch_is_counted(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+        assert res == {"area_total": 1, "downloaded": 0, "skipped": 0, "failed": 1}
+
+    def test_gsi_source_still_uses_the_layered_descent_path(self, tmp_path, monkeypatch):
+        """`source=GSI_DEM` を明示しても、`source` 省略時と同じ国土地理院の
+        降下ロジック（内訳つきの戻り値）のままであること。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda layer_id, *a, **kw:
+                                np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=dem_sources.GSI_DEM)
+        assert "downloaded_5a" in res
+        assert res["downloaded_5a"] == 1
+
+
+class TestCountBboxTilesSource:
+    """`count_bbox_tiles(source=)`＝確認ダイアログの件数表示が単位を揃えること。"""
+
+    EXTERNAL_COARSE = dem_sources.DemSourceSpec(
+        source_id="ext_coarse",
+        display_name="External Coarse",
+        layers=(("terrarium", 8),),   # zoom-8 = 国土地理院の zoom-14 よりずっと粗い
+        url_template="https://example.com/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.com/terms",
+    )
+
+    def test_default_matches_gsi_zoom14(self):
+        """`source` 省略時は従来どおり zoom-14 の位置数（後方互換・1 桁も動かない）。"""
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        assert dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2) == \
+               dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2, source=dem_sources.GSI_DEM)
+
+    def test_coarser_source_uses_its_own_declared_zoom(self):
+        """粗いズームを宣言した外部ソースは、その分位置数が少なくなる
+        （zoom-14 決め打ちのままだと B-253 と同じ「対象に従わない」不整合になる）。"""
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        n_gsi = dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2)
+        n_coarse = dem_prefetch.count_bbox_tiles(
+            lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        assert n_coarse < n_gsi
+
+    def test_matches_count_cached_areas_unit(self, tmp_path, monkeypatch):
+        """DL 確認ダイアログは `count_bbox_tiles - count_cached_areas` を新規分として
+        引き算する（map_cache.py:_sel_release）＝両辺の単位が同じでないと数が合わない。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        total = dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        cached = dem_cache.count_cached_areas(lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        assert cached == 0   # 空キャッシュ
+        assert total - cached == total
+
+
+# ============================================================
 # scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）
 # ============================================================
 

@@ -113,24 +113,26 @@ class _CacheMixin:
         # 選択エリア数はこの直後の確認ダイアログが必ず提示するため、別途の表示はしない。
 
         bbox = (lat_n, lon_w, lat_s, lon_e)
+        # B-253（3.6 ステージ1）＝ DL・強制再取得も「対象 DEM ソース」欄に従う
+        # （範囲削除・カバレッジ表示は 3.5 の I-155 で既に対応済み）。
+        source = self._current_cache_source()
         if action in ("download", "download_force"):
             force = action == "download_force"
             # 表示する対象数は force の有無で変わる:
             #   force ON  → 全エリア再取得（総数）
             #   force OFF → キャッシュ済みはスキップされるので新規分のみ
-            total = dem_prefetch.count_bbox_tiles(*bbox)
-            n = total if force else total - dem_cache.count_cached_areas(*bbox)
+            total = dem_prefetch.count_bbox_tiles(*bbox, source=source)
+            n = total if force else total - dem_cache.count_cached_areas(*bbox, source=source)
             title = i18n.t("tm_dl_force_title") if force else i18n.t("tm_dl_title")
             msg = (i18n.t("tm_dl_force_confirm") if force else i18n.t("tm_dl_confirm")).format(n=n)
             msg += "\n" + i18n.t("tm_dl_size_hint").format(mb=self._estimate_mb(n))
             if dialogs.confirm(self._win, title, msg):
-                self._start_download(bbox, force)
+                self._start_download(bbox, force, source)
             else:
                 self._clear_selection()
         else:   # delete
             # 削除は実際にキャッシュ済みのエリアのみが対象。I-155（3.5 ステージ3）＝
             # 選択中の DEM ソースに対して行う（背景地図は対象外＝既存の注記どおり）。
-            source = self._current_cache_source()
             n = dem_cache.count_cached_areas(*bbox, source=source)
             if dialogs.confirm(
                 self._win, i18n.t("tm_delete_title"),
@@ -253,15 +255,17 @@ class _CacheMixin:
         mb = n_areas * self._TILES_PER_AREA * avg / (1024 * 1024)
         return f"{mb:.1f}"
 
-    def _start_download(self, bbox: tuple, force: bool) -> None:
+    def _start_download(self, bbox: tuple, force: bool, source=None) -> None:
         self._set_busy(True)
         self._progress_var.set(0)
         self._show_progress()
         self._set_status(i18n.t("tm_downloading"))
         self._pump.start()
-        threading.Thread(target=self._download_worker, args=(bbox, force), daemon=True).start()
+        threading.Thread(
+            target=self._download_worker, args=(bbox, force, source), daemon=True,
+        ).start()
 
-    def _download_worker(self, bbox: tuple, force: bool) -> None:
+    def _download_worker(self, bbox: tuple, force: bool, source=None) -> None:
         # 進捗はポンプ経由で渡す。従来はタイルごとに `after(0, ...)` を2回呼んで
         # おり、ワーカースレッドから Tcl を叩く点でも他フローで廃した書き方だった
         # （単一実行では同じ形が取得時間そのものを支配していた＝B-006）。ここは
@@ -273,7 +277,8 @@ class _CacheMixin:
                 done=done, total=total, pct=pct)))
 
         t0 = time.perf_counter()
-        dl_result = dem_prefetch.prefetch_tiles(*bbox, progress_cb=progress_cb, force=force)
+        dl_result = dem_prefetch.prefetch_tiles(
+            *bbox, progress_cb=progress_cb, force=force, source=source)
         logger.info("Tile download complete in %.2fs: %s",
                     time.perf_counter() - t0, dl_result)
         progress.post_to_ui(self._win, lambda: self._on_download_done(dl_result))

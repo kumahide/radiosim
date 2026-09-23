@@ -789,13 +789,25 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._pump.stop()
         self._set_busy(False)
         self._hide_progress()
-        self._set_status(i18n.t("tm_dl_done").format(
-            dl5a=dl_result["downloaded_5a"],
-            dl5b=dl_result["downloaded_5b"],
-            dl_dem=dl_result["downloaded_dem"],
-            skipped=dl_result["skipped"],
-            failed=dl_result["failed"],
-        ), auto_clear=True)
+        # 3.6 ステージ1（B-253）＝国土地理院以外のソースを選んでいると
+        # dem_prefetch.prefetch_tiles は層別の内訳（5a/5b/dem）を持たない
+        # {"downloaded", ...} を返す（`_prefetch_generic`）。国土地理院は
+        # 従来どおりの内訳つきメッセージのまま。
+        if "downloaded_5a" in dl_result:
+            msg = i18n.t("tm_dl_done").format(
+                dl5a=dl_result["downloaded_5a"],
+                dl5b=dl_result["downloaded_5b"],
+                dl_dem=dl_result["downloaded_dem"],
+                skipped=dl_result["skipped"],
+                failed=dl_result["failed"],
+            )
+        else:
+            msg = i18n.t("tm_dl_done_generic").format(
+                downloaded=dl_result["downloaded"],
+                skipped=dl_result["skipped"],
+                failed=dl_result["failed"],
+            )
+        self._set_status(msg, auto_clear=True)
         # ⚠️ ここから先は進捗表示を消した後にメインスレッドで走る区間。
         # _refresh_stats はキャッシュ全体を走査するのでファイル数に比例して伸びる
         # （B-006／I-008 と同型の「進捗を消してから重い処理」）。所要をログに残し、
