@@ -1066,7 +1066,7 @@ _REFDEF_RE = re.compile(r"^\[([^\]]+)\]:\s*(\S+)")          # 参照定義
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 # 非追跡ゆえ CI には存在しないが、ローカルでは検査したいドキュメント。
-_LOCAL_ONLY_DOCS = ["ISSUES.md", "issue_evidence/README.md"]
+_LOCAL_ONLY_DOCS = ["ISSUES.md", "ISSUES_archive.md", "issue_evidence/README.md"]
 _LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 
 

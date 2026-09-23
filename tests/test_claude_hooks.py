@@ -341,11 +341,9 @@ class TestUnreadableState:
         （git-ignore）。**このゲートがローカルでしか回らないことを承知で置いている**＝
         守りが注入 1 本しかない台帳なので、その 1 本の健全性はローカルで測るしかない。
         """
-        ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-        if not os.path.exists(ledger):
+        lines = hook.ledger_lines()
+        if not lines:
             pytest.skip(structural_skip("ISSUES.md も git-ignore（CI には存在しない）"))
-        with open(ledger, encoding="utf-8") as f:
-            lines = f.read().splitlines()
         assert hook.parse_issues(lines)[0], "未対応が 0 件＝パーサが壊れている可能性が高い"
         found = hook.unreadable_state_items(lines)
         assert found == [], f"状態語が読めず注入から消えている項目がある: {found}"
@@ -817,11 +815,10 @@ class TestStrongAndWeakEvidenceAskForDifferentThings:
 
 def test_real_ledger_has_every_open_item_assigned(hook):
     """実データ＝行き先の無い未対応が 0 件であること（2026-08-12 に 2 件あり解消）。"""
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip(structural_skip("ISSUES.md も git-ignore（CI には存在しない）"))
-    with open(ledger, encoding="utf-8") as f:
-        audit = hook.assignment_audit(f.read().splitlines())
+    audit = hook.assignment_audit(lines)
     total = (sum(len(v) for v in audit["assigned"].values())
              + len(audit["pending"]) + len(audit["ambiguous"]) + len(audit["undeclared"]))
     assert total, "未対応が 0 件＝パーサが壊れている可能性が高い"
@@ -832,11 +829,9 @@ def test_real_ledger_has_every_open_item_assigned(hook):
 
 def test_real_ledger_has_no_duplicate_ids(hook):
     """実際の台帳に ID の衝突が無いこと（2026-08-12 に 1 件あり、振り直した）。"""
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        lines = f.read().splitlines()
     assert hook.issue_id_headings(lines), "ID が 1 つも採れていない＝パーサが壊れている"
     assert hook.duplicate_ids(lines) == [], (
         f"同じ ID の項目が 2 つ以上ある: {hook.duplicate_ids(lines)}"
@@ -849,17 +844,15 @@ def test_real_ledger_has_no_outstanding_warnings(hook):
     2026-07-25 に済 18 件を移動しコミット参照を backfill した状態を固定する。
     ここが落ちたら**掃除をサボった**という意味なので、警告どおり直す。
     """
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        items, stale, weak = hook.parse_issues(f.read().splitlines())
+    items, stale, weak = hook.parse_issues(lines)
     assert items, "未対応項目が 0 件＝パーサが壊れている可能性が高い"
-    assert stale == [], f"済だがアーカイブセクションへ未移動: {stale}"
+    assert stale == [], f"閉じた（済・却下）のに本体に残っている: {stale}"
     assert weak == [], f"済だが裏取りが弱い: {weak}"
-    assert hook.unquoted_user_items(
-        open(ledger, encoding="utf-8").read().splitlines()
-    ) == [], "人由来なのに原文の引用が無い項目がある"
+    assert hook.unquoted_user_items(lines) == [], "人由来なのに原文の引用が無い項目がある"
+    assert not hook.ledger_archive_missing(), "本体はあるのにアーカイブが無い"
 
 
 # ============================================================
@@ -3611,11 +3604,24 @@ class TestBackupHealthDisclosure:
         box = tmp_path / "box"
         box.mkdir()
         (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        (box / "ISSUES_archive.md").write_text("x", encoding="utf-8")   # I-174 で 2 本
         monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
         monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
         # 凍結が未配線なら 1 行出るので、そこは配線済みに見せる。
         (tmp_path / "freeze" / ".git").mkdir(parents=True)
         assert hook._backup_health() == []
+
+    def test_it_fires_when_the_archive_is_missing_from_the_box(self, hook, tmp_path, monkeypatch):
+        """①アーカイブ（I-174 で分けた 2 本目）が箱に無ければ名指しで鳴る。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
+        (tmp_path / "freeze" / ".git").mkdir(parents=True)
+        if not (pathlib.Path(hook.ROOT) / "ISSUES_archive.md").exists():
+            pytest.skip("ISSUES_archive.md も git-ignore（CI には存在しない）")
+        assert any("ISSUES_archive.md が無い" in m for m in hook._backup_health())
 
     def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
         """①一度も落ちないゲートにしない＝わざと古くして鳴らす。"""
@@ -3728,8 +3734,8 @@ class TestBackupWiring:
         assert mirror.FREEZE_SLUG in url, url
 
 
-def test_real_ledger_has_exactly_the_three_sections():
-    """台帳の H2 が「バグ／改善案／アーカイブ」の 3 つ**だけ**・この順であること。
+def test_real_ledger_has_exactly_the_expected_sections():
+    """台帳の H2 が決まった節**だけ**・この順であること（本体とアーカイブの 2 本・I-174）。
 
     🔴 **2026-09-06 に実際に壊れていた**＝過去のセッションが本文を heredoc 経由で
     書いたため `\n` が改行に化け、`"\n## 用語\n"` という**文字列リテラルの中身**が
@@ -3737,21 +3743,25 @@ def test_real_ledger_has_exactly_the_three_sections():
     224 項目が「改善案」セクションの外**へ出た（[[feedback-shell-and-scripts]]）。
     誰も見ていなかったので、ユーザーが目で気づくまで残った。
 
-    ⚠️ **見出しの「順」まで見る**＝アーカイブが本文セクションより前に来ると、
-    `misplaced_open_items()` が見出し以降を全部アーカイブ扱いにするため、
-    **本文セクションの未対応まで「誤置」と鳴る**（同日に実際に 3 件が偽で鳴っていた）。
+    ⚠️ **本体の H2 に「アーカイブ」の字を入れない**＝`misplaced_open_items()` はその見出し
+    以降を全部アーカイブ扱いにするので、**本体の未対応まで「誤置」と鳴る**（2026-09-06 に
+    同じ形で 3 件が偽で鳴っていた）。アーカイブの置き場は `ledger_lines()` が本体の後ろへ
+    連結するアーカイブ側の先頭の H2 だけ。
     """
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    root = pathlib.Path(_HOOK_DIR).resolve().parent
+    main, arch = root / "ISSUES.md", root / "ISSUES_archive.md"
+    if not main.exists():
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        heads = [ln for ln in f.read().splitlines() if ln.startswith("## ")]
-    assert len(heads) == 3, f"H2 が 3 つでない（本文の字が見出しに化けていないか）: {heads}"
-    assert "バグ" in heads[0], heads
-    assert "改善案" in heads[1], heads
-    assert "アーカイブ" in heads[2], (
-        "アーカイブセクションは末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
-    )
+    assert arch.exists(), "本体はあるのにアーカイブが無い"
+    heads = [ln for ln in main.read_text(encoding="utf-8").splitlines() if ln.startswith("## ")]
+    assert len(heads) == 4, f"本体の H2 が 4 つでない（本文の字が見出しに化けていないか）: {heads}"
+    assert "一覧" in heads[0] and "バグ" in heads[1], heads
+    assert "改善案" in heads[2] and "ひな形" in heads[3], heads
+    assert not any("アーカイブ" in h for h in heads), heads
+    aheads = [ln for ln in arch.read_text(encoding="utf-8").splitlines() if ln.startswith("## ")]
+    assert len(aheads) == 3, f"アーカイブの H2 が 3 つでない: {aheads}"
+    assert "アーカイブ" in aheads[0] and "バグ" in aheads[0], aheads
+    assert "アーカイブ" in aheads[1] and "改善案" in aheads[1], aheads
 
 
 # ============================================================
@@ -3892,3 +3902,143 @@ def test_language_gate_is_wired_into_stop():
     shown = [h.get("statusMessage", "") for ev in hooks.values() for g in ev for h in g.get("hooks", [])]
     english = [s for s in shown if s and not re.search(r"[\u3040-\u30ff\u3400-\u9fff]", s)]
     assert not english, f"画面に出る statusMessage が英語: {english}"
+
+
+# ============================================================
+# 台帳の 2 本構成・降順・冒頭の一覧（2026-09-23・I-174）
+# ============================================================
+class TestLedgerSplit:
+    def test_本体とアーカイブを連結して読む(self, hook, tmp_path):
+        (tmp_path / "ISSUES.md").write_text(_item("B-002", "未着手"), encoding="utf-8")
+        (tmp_path / "ISSUES_archive.md").write_text(
+            _ARCHIVE_HEAD + "\n\n" + _item("B-001", "済", resp="`abc1234`"), encoding="utf-8")
+        lines = hook.ledger_lines(tmp_path)
+        assert hook.issue_id_headings(lines) == ["B-002", "B-001"]
+        assert hook.next_free_ids(lines) == {"B": "B-003"}
+        items, stale, _ = hook.parse_issues(lines)
+        assert [i.split("(")[0] for i in items] == ["B-002"] and stale == []
+        assert not hook.ledger_archive_missing(tmp_path)
+
+    def test_アーカイブが無いことを鳴らせる(self, hook, tmp_path):
+        """本体だけで空き ID を出すと、済んだ番号と衝突する＝欠けたこと自体を検出できること。"""
+        (tmp_path / "ISSUES.md").write_text(_item("B-002", "未着手"), encoding="utf-8")
+        assert hook.ledger_lines(tmp_path)
+        assert hook.ledger_archive_missing(tmp_path)
+
+    def test_本体が無ければ空(self, hook, tmp_path):
+        assert hook.ledger_lines(tmp_path) == []
+        assert not hook.ledger_archive_missing(tmp_path)
+
+    def test_却下も本体に居残れば未移動として鳴る(self, hook):
+        """B-222・I-140 が却下のまま未対応の節に居残っていた（検査が済だけを見ていた）。"""
+        _, stale, weak = hook.parse_issues(_doc(_item("B-001", "却下")))
+        assert stale == ["B-001"] and weak == []
+        _, stale, _ = hook.parse_issues(_doc(_ARCHIVE_HEAD, _item("B-001", "却下")))
+        assert stale == []
+
+
+class TestOrderViolations:
+    def test_降順なら黙る(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-003", "未着手"), _item("B-001", "未着手"))
+        assert hook.order_violations(doc) == []
+
+    def test_昇順に並んだ側を名指しする(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-001", "未着手"), _item("B-003", "未着手"),
+                   _item("B-002", "未着手"))
+        assert hook.order_violations(doc) == ["B-003"]
+
+    def test_節と分類ごとに数え直す(self, hook):
+        """節が替われば番号は振り出し・B と I は別の列（アーカイブは B→I の順）。"""
+        doc = _doc("## 🐞 バグ", _item("B-001", "未着手"),
+                   "## 💡 改善案", _item("I-009", "未着手"),
+                   _ARCHIVE_HEAD, _item("B-005", "済"), _item("I-008", "済"),
+                   _item("B-004", "済"), _item("I-007", "済"))
+        assert hook.order_violations(doc) == []
+
+    def test_同じ番号の並びも崩れとして数える(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-002", "未着手"), _item("B-002", "未着手"))
+        assert hook.order_violations(doc) == ["B-002"]
+
+
+class TestLedgerIndex:
+    _KNOWN = frozenset({"3.4", "3.6", "4.0"})
+
+    def _rows(self, block):
+        return [ln for ln in block if ln.startswith("| ") and not ln.startswith("| 行き先")]
+
+    def test_行き先_状態_ID_の順に並ぶ(self, hook):
+        doc = _doc(
+            "## 🐞 バグ",
+            _item("B-010", "保留（再現待ち）"),
+            _item("B-009", "未着手（✅ 3.6 確定）"),
+            _item("B-008", "対応中（✅ 3.6 確定）"),
+            _item("B-007", "未着手（✅ 4.0 確定）"),
+            "## 💡 改善案",
+            _item("I-005", "未着手（✅ 3.6 確定）"),
+            _ARCHIVE_HEAD, _item("B-001", "済", resp="`abc1234`"), _item("I-001", "却下"),
+        )
+        block = hook.ledger_index(doc, known=self._KNOWN)
+        ids = [r.split(" | ")[1] for r in self._rows(block)]
+        assert ids == ["B-008", "B-009", "I-005", "B-007", "B-010"]
+        assert "閉じた項目（済・却下）2 件" in "\n".join(block)
+        assert "（未対応 5 件）" in block[1]
+
+    def test_判定は監査と同じ答えを出す(self, hook):
+        """一覧と `assignment_audit` が別の行き先を言い出さないこと（判定は `destination_of` 1 か所）。"""
+        doc = _doc(_item("B-003", "未着手（✅ 3.6 確定）"), _item("B-002", "未着手（版割り未決）"),
+                   _item("B-001", "未着手"))
+        audit = hook.assignment_audit(doc, known=self._KNOWN)
+        assert audit["assigned"] == {"3.6": ["B-003"]}
+        assert audit["pending"] == ["B-002"] and audit["undeclared"] == ["B-001"]
+        dest = {r.split(" | ")[1]: r.split(" | ")[0][2:] for r in
+                self._rows(hook.ledger_index(doc, known=self._KNOWN))}
+        assert dest == {"B-003": "3.6", "B-002": "判断待ち", "B-001": "⚠️ 未記入"}
+
+    def test_済んだ版への宣言に印を付ける(self, hook):
+        """初回の生成で B-175 が `3.4`（出荷済み）のまま見つかった形。"""
+        doc = _doc(_item("B-002", "対応中（行き先＝`3.4`）"), _item("B-001", "未着手（✅ 3.6 確定）"))
+        rows = self._rows(hook.ledger_index(doc, known=self._KNOWN, current="3.6a1"))
+        assert rows[0].startswith("| ⚠️ 3.4（済んだ版） | B-002")
+        assert rows[1].startswith("| 3.6 | B-001")
+
+    def test_件名の縦棒で表を壊さない(self, hook):
+        doc = _doc(_item("B-001", "未着手（✅ 3.6 確定）", title="a | b"))
+        row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
+        assert row.count(" | ") == 4 and "a ｜ b" in row
+
+    def test_重要度を拾う(self, hook):
+        doc = _doc("### ★ B-001: t", "", "- ★ **重要度**: **高**（主要機能）",
+                   "- ★ **状態**: 未着手（✅ 3.6 確定）")
+        row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
+        assert row.split(" | ")[3] == "高"
+
+    def test_差し替えは印の間だけで無ければ最初の節の前へ(self, hook):
+        main = ["# 台帳", "", "前書き", "", "## 🐞 バグ", "", "### ★ B-001: t"]
+        block = [hook.INDEX_BEGIN, "## 📋 一覧（未対応 1 件）", hook.INDEX_END]
+        once = hook.replace_index_block(main, block)
+        assert once[:4] == main[:4] and once[4:7] == block and "## 🐞 バグ" in once
+        assert hook.current_index_block(once) == block
+        newer = [hook.INDEX_BEGIN, "## 📋 一覧（未対応 2 件）", "x", hook.INDEX_END]
+        twice = hook.replace_index_block(once, newer)
+        assert hook.current_index_block(twice) == newer
+        assert len(twice) == len(once) + 1, "印の外を書き換えている"
+
+    def test_一覧の印は項目の読み手に飲まれない(self, hook):
+        """1 行で開いて閉じるコメントなので、閉じ忘れの検査も原文の検査も素通りする。"""
+        doc = [hook.INDEX_BEGIN, "| 3.6 | B-009 | x | 中 | t |", hook.INDEX_END,
+               *_doc(_item("B-001", "未着手"))]
+        assert hook.issue_id_headings(doc) == ["B-001"]
+        assert hook.unquoted_user_items(doc) == []
+
+
+def test_real_ledger_index_is_fresh_and_ordered(hook):
+    """実データ＝冒頭の一覧が項目と一致し、ID の降順が崩れていないこと（I-174）。
+
+    ⚠️ 落ちたら `python .claude/ledger.py index --write`（一覧）／項目を番号どおりの位置へ（降順）。
+    """
+    lines = hook.ledger_lines()
+    if not lines:
+        pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
+    assert hook.order_violations(lines) == []
+    fresh = hook.ledger_index(lines, current=hook._app_version())
+    assert hook.current_index_block(lines) == fresh, "冒頭の一覧が古い"
