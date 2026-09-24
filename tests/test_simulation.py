@@ -13,6 +13,7 @@ DEM 取得は monkeypatch でモックし、ネットワーク不要。
 """
 
 import dataclasses
+import io
 import os
 import json
 import threading
@@ -25,6 +26,7 @@ import pytest
 from core import config
 from core import dem
 from core import dem_cache
+from core import dem_prefetch
 from core import dem_sources
 from core import models
 from core import simulation as sim
@@ -447,6 +449,108 @@ class TestFetchElevationsCached:
         assert call_count["n"] == first * 2, (
             "キャッシュ削除後も地形キャッシュが残り、DEM を取り直していない"
         )
+
+    @staticmethod
+    def _serve(monkeypatch, served: dict) -> None:
+        """`_get_session` を偽物にする＝`served["value"]` を青に持つタイルを返す。"""
+        from PIL import Image
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self):
+                buf = io.BytesIO()
+                Image.new("RGB", (256, 256), (0, 0, served["value"])).save(buf, format="PNG")
+                self.content = buf.getvalue()
+
+        class _Session:
+            def get(self, url, timeout=None):
+                return _Res()
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+    def _fetch_elevs(self, params) -> np.ndarray:
+        out: dict = {}
+        done = threading.Event()
+
+        def on_complete(e):
+            out["elevs"] = e
+            done.set()
+        sim.fetch_elevations_cached(
+            params=params, on_progress=lambda v: None,
+            on_complete=on_complete, on_error=lambda ex: done.set(),
+        )
+        assert done.wait(timeout=10)
+        return out["elevs"]
+
+    def test_force_refetch_reaches_the_next_calculation(
+            self, default_params_dict, tmp_path, monkeypatch):
+        """強制再取得のあと、同じ条件で計算し直すと**取り直した標高**を使う（B-288）。
+
+        CHANGELOG `[3.6]` の B-280 の項が約束している形＝画面の順序（計算 → 地図の
+        強制再取得 → 同じ条件で再計算）をそのまま通す。B-283 の検査は `get_elevation`
+        の層までしか見ておらず、その上の `_terrain_cache` に当たる経路を見ていなかった。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+        params = sim.SimParams(default_params_dict)
+
+        before = self._fetch_elevs(params)
+        served["value"] = 20
+        dem_prefetch.prefetch_tiles(
+            params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, force=True)
+        after = self._fetch_elevs(params)
+
+        assert not np.array_equal(before, after), \
+            "強制再取得したのに、地形キャッシュの取り直す前の標高で計算している"
+
+    @pytest.mark.parametrize("how", ("force", "range", "all"))
+    def test_invalidation_during_a_calculation_is_not_cached(
+            self, how, default_params_dict, tmp_path, monkeypatch):
+        """計算の途中でタイルが無効化されたら、その計算の地形は登録しない（B-288）。
+
+        無効化より前の標高を読んだかもしれない結果が地形キャッシュに残ると、無効化の
+        あとの同じ条件の計算がそれに当たる（[[B-286]] と同じ形の 1 段上）。地図の DL・
+        削除は計算と別スレッドなので、この順序は実際に起こり得る。ここでは最初の標本の
+        取得に無効化を割り込ませて、その順序を決定的に作る。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        self._serve(monkeypatch, {"value": 10})
+        params = sim.SimParams(default_params_dict)
+        call_count = {"n": 0}
+        state = {"armed": True}
+        lock = threading.Lock()
+
+        def get_then_invalidate(la, lo, *_a):
+            with lock:
+                call_count["n"] += 1
+                fire, state["armed"] = state["armed"], False
+            if fire:
+                if how == "force":
+                    dem_prefetch.prefetch_tiles(
+                        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+                        force=True)
+                elif how == "range":
+                    dem_cache.delete_tile_cache(
+                        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx)
+                else:
+                    dem_cache.delete_all_tile_cache()
+            return 100.0
+
+        monkeypatch.setattr(dem, "get_elevation", get_then_invalidate)
+
+        self._fetch_elevs(params)
+        assert not state["armed"]
+        first = call_count["n"]
+        assert first == params.num
+        self._fetch_elevs(params)
+
+        assert call_count["n"] == first * 2, \
+            "無効化と並んだ計算の地形が登録され、次の計算がそれに当たっている"
 
     def test_cache_hit_returns_same_array(self, default_params_dict, monkeypatch):
         """キャッシュヒット時に返る配列が1回目と同じ値であること。"""

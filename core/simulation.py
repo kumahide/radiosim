@@ -370,11 +370,27 @@ def fetch_elevations(
 # ⚠️ **DEM ソースも鍵に入れる**（B-225）＝ソースを切り替えても前回ソースの
 # 地形を使い回してしまい、選んだソースと違う地形で計算結果が出る。
 _TerrainCacheKey = tuple[float, float, float, float, int, str, str]
-# 値は (raw_elevs, 取得日の範囲)＝**取得日は標高と同じ項目に持つ**（B-213）。
-# 別の辞書に分けると寿命が別になり、片方だけ消える・上書きされる。
+# 値は (raw_elevs, 取得日の範囲, 取得を始めたときの `dem._cache_epoch`)＝**取得日は
+# 標高と同じ項目に持つ**（B-213）。別の辞書に分けると寿命が別になり、片方だけ消える・
+# 上書きされる。
+# 世代（B-288）＝タイルの無効化（強制再取得の置き換え・範囲削除・全削除）は
+# `dem._cache_epoch` を進める。引くときに今の世代と違う項目は使わない＝無効化より
+# 前に取った地形も、無効化と並んで取った地形も、無効化のあとの計算に出てこない。
+# ⚠️ 無効化の口ごとにこの辞書を消す形にしない＝強制再取得の口が抜けていた（B-288）し、
+# 消しても並んで走っていた計算が完了後に登録し直す。
 _terrain_cache: dict[_TerrainCacheKey,
-                     "tuple[np.ndarray, tuple[str, str] | None]"] = {}
+                     "tuple[np.ndarray, tuple[str, str] | None, int]"] = {}
 _terrain_cache_lock = threading.Lock()
+
+
+def _dem_epoch() -> int:
+    """タイルの無効化の世代（`dem._cache_epoch`）を読む。
+
+    ⚠️ `_terrain_cache_lock` と重ねて取らない＝無効化の側は `dem._cache_lock` を
+    持ったまま `clear_terrain_cache` へは来ないが、順序を作らないのが安全。
+    """
+    with dem._cache_lock:
+        return dem._cache_epoch
 
 
 def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
@@ -464,9 +480,14 @@ def fetch_elevations_cached(
                      （B-213＝取得日は標高と一緒に結果へ運ぶ。保存時に引き直さない）。
     """
     key = _terrain_cache_key(params)
+    epoch = _dem_epoch()
 
     with _terrain_cache_lock:
         cached = _terrain_cache.get(key)
+        if cached is not None and cached[2] != epoch:
+            # タイルが無効化された後＝古い地形（B-288）。
+            del _terrain_cache[key]
+            cached = None
 
     if cached is not None:
         logger.info(
@@ -475,7 +496,7 @@ def fetch_elevations_cached(
             params.lat_rx, params.lon_rx,
             params.num,
         )
-        elevs, acquired = cached
+        elevs, acquired, _ = cached
         # プログレスバーを満杯にしてから完了通知（UI の一貫性のため）
         on_progress(params.num)
         # 命中した地形を取った回の値＝同じタイルで計算しているので正しい
@@ -499,9 +520,13 @@ def fetch_elevations_cached(
                 params.lat_rx, params.lon_rx,
                 params.num,
             )
+        elif _dem_epoch() != epoch:
+            # 取っている間にタイルが無効化された＝この結果は今回だけ使う（B-288）。
+            # 登録すると、無効化の後に始まった計算の新しい登録を上書きし得る。
+            logger.info("Terrain NOT cached: DEM tiles were invalidated during the fetch")
         else:
             with _terrain_cache_lock:
-                _terrain_cache[key] = (raw_elevs.copy(), acquired)
+                _terrain_cache[key] = (raw_elevs.copy(), acquired, epoch)
         if on_acquired is not None:
             on_acquired(acquired)
         on_complete(raw_elevs)

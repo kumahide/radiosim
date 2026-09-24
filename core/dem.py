@@ -240,8 +240,11 @@ _cache_lock = threading.Lock()
 #   ロックの中でこれを 1 つ進める。`get_elevation` はキャッシュを見たときの値を
 #   覚えておき、載せる時点で変わっていたら**載せない**＝無効化より前に読んだ
 #   古い配列が、無効化より後にメモリへ戻って居座らない。
+#   上の層の写し（`simulation._terrain_cache`）も同じ値で古さを判定する（B-288）。
 # ガード: tests/test_dem.py::TestPrefetchTilesGenericSource
 #         ::test_stale_read_racing_a_force_refetch_does_not_win
+#         tests/test_simulation.py::TestFetchElevationsCached
+#         ::test_force_refetch_reaches_the_next_calculation
 _cache_epoch = 0
 
 # 恒久的に存在しないタイル（HTTP 404）のセット。再リクエスト防止のための
