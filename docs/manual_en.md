@@ -365,7 +365,7 @@ An input form is displayed on startup.
 
 Clicking the button runs data retrieval in two phases.
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This area-wide prefetch runs only with the built-in GSI source.** For DEM sources added via a declaration file the step is skipped, and only the points needed by the next elevation fetch are retrieved (so it cannot be used to fill the cache up front).
+1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This area-wide prefetch runs only with the built-in GSI source.** For DEM sources added via a declaration file the step is skipped, and only the points needed by the next elevation fetch are retrieved (to fill the cache up front, use range download in the map window's cache management mode, which works for added DEM sources from 3.6 onward).
 2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
 
 > **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC**, not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). To recompute with fresh tiles, force re-download that area in Cache Management mode.
@@ -755,7 +755,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 - **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). ⚠️ **GSI only** — the step is skipped for DEM sources added via a declaration file
 - **Disk cache**: Tiles saved to `terrain_cache/`, persists across sessions
-- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart)
+- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart, and also whenever you delete or force-refetch cached tiles, so the next calculation uses the refetched tiles)
 
 ### Adding a DEM Source (User Extension)
 

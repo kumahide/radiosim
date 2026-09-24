@@ -805,8 +805,8 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 - **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing)
 - **Memory cache**: Tiles stored in process memory (key: `(layer_id, xtile, ytile)`)
-- **Disk cache**: Tiles saved to `terrain_cache/{layer_id}/{xtile}/{ytile}.png`, persists across sessions
-- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely
+- **Disk cache**: Tiles saved to `terrain_cache/{layer_id}/{xtile}/{ytile}.png`, persists across sessions. From 3.6, DEM sources added via a declaration file are kept separately under `terrain_cache/external/{source_id}/{definition hash}/{layer_id}/…` (`DEM_EXTERNAL_SUBDIR` in `core/dem.py`, so they cannot collide with built-in names)
+- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely. Deleting or force-refetching cached tiles advances an invalidation epoch (`_cache_epoch` in `core/dem.py`); entries from an older epoch are not used, and a result whose fetch overlapped an epoch change is not stored
 
 ---
 
