@@ -672,7 +672,7 @@ def _fetch_tile(
         force: 読めるキャッシュがあっても取り直して上書きする（B-280＝地図の
             強制再取得）。⚠️ **`force` を受けた層は必ずここまで渡す**＝渡さないと
             読めるキャッシュを返して「取得した」と数える。取れなかったとき
-            （通信失敗）は従来どおりキャッシュへ戻る。
+            （通信失敗）は None＝キャッシュへは戻らない（B-284）。
     """
     src = source if source is not None else dem_sources.GSI_DEM
     url = src.url_template.format(layer=layer_id, z=zoom, x=xtile, y=ytile)
@@ -699,6 +699,15 @@ def _fetch_tile(
             arr = np.array(Image.open(io.BytesIO(img_data)).convert("RGB"))
             os.makedirs(cache_subdir, exist_ok=True)
             _write_tile_atomic(cache_path, img_data, replace_broken=replace_existing)
+            # B-283＝ディスクを差し替えたら、メモリ側の古い写しも落とす
+            #   （範囲削除 `dem_cache.delete_tile_cache` と同じ無効化）。落とさないと
+            #   `get_elevation` は `_tile_cache` を先に見るので、強制再取得のあとも
+            #   同じ起動のうちは古い標高を返す。取れた以上 404 の印も外す。
+            tile_key = (src.source_id, layer_id, xtile, ytile)
+            with _cache_lock:
+                _failed_tiles.discard(tile_key)
+                if replace_existing:
+                    _tile_cache.pop(tile_key, None)
             return arr
 
         if res.status_code == 404:
@@ -726,7 +735,10 @@ def _fetch_tile(
             "tile download failed: layer=%s tile=(%d,%d) error=%s",
             layer_id, xtile, ytile, e,
         )
-        if os.path.exists(cache_path):
+        # ⚠️ `force` では古いキャッシュを返さない（B-284）＝呼び出し側は
+        #   非 None を「取り直せた」と数えるので、更新できなかったタイルまで
+        #   成功に入る。キャッシュ自体は消さずに残る。
+        if not force and os.path.exists(cache_path):
             cached = _read_cached_tile(cache_path)
             if cached is not None:
                 return cached

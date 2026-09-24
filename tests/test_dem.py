@@ -1654,6 +1654,98 @@ class TestPrefetchTilesGenericSource:
             np.asarray(Image.open(p))[0, 0, 2] == 20 for p in written), \
             "取り直した内容でキャッシュが上書きされていない"
 
+    @staticmethod
+    def _serve(monkeypatch, served: dict, fail: dict | None = None) -> None:
+        """`_get_session` を偽物にする＝`served["value"]` を青に持つタイルを返す。
+        `fail["on"]` が真の間は接続エラーを投げる。"""
+        import requests
+        from PIL import Image
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self):
+                buf = io.BytesIO()
+                Image.new("RGB", (256, 256), (0, 0, served["value"])).save(buf, format="PNG")
+                self.content = buf.getvalue()
+
+        class _Session:
+            def get(self, url, timeout=None):
+                if fail is not None and fail["on"]:
+                    raise requests.ConnectionError("offline")
+                return _Res()
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_reaches_the_next_calculation(self, tmp_path, monkeypatch, which):
+        """強制再取得のあと、同じ起動のまま計算し直すと**新しい標高**を使う（B-283）。
+
+        B-280 でディスクは上書きされるようになったが、`get_elevation` は
+        メモリ上の `_tile_cache` を先に見るので、読み込み済みの古いタイルを返し続けた。
+        範囲削除（`dem_cache.delete_tile_cache`）はメモリ側も落としていたのに、
+        取得の側だけ抜けていた。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+
+        before = dem.get_elevation(self.LAT, self.LON, source)
+        served["value"] = 20
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+        after = dem.get_elevation(self.LAT, self.LON, source)
+
+        assert after != before, "強制再取得したのに、読み込み済みの古い標高を使い続けている"
+
+    def test_successful_fetch_clears_the_404_mark(self, tmp_path, monkeypatch):
+        """過去に 404 だったタイルが取れたら、負キャッシュから外す（B-283）。
+
+        外さないと `get_elevation` はそのタイルを「恒久的に無い」と読み飛ばし続け、
+        取り直したタイルが計算に使われない。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        layer_id, _zoom, x, y, _subdir, _path = tasks[0]
+        dem._failed_tiles.add((self.EXTERNAL.source_id, layer_id, x, y))
+        self._serve(monkeypatch, {"value": 10})
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=True)
+
+        assert (self.EXTERNAL.source_id, layer_id, x, y) not in dem._failed_tiles
+        assert dem.get_elevation(self.LAT, self.LON, self.EXTERNAL) != 0.0
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_offline_is_not_counted_as_downloaded(
+            self, tmp_path, monkeypatch, which):
+        """強制再取得で通信に失敗したタイルは「取得した」と数えない（B-284）。
+
+        `_fetch_tile` は通信例外のとき古いキャッシュを返していた＝`force` では
+        その戻り値が「取り直せた」の意味になり、更新できなかったタイルまで
+        成功件数に入った。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        fail = {"on": False}
+        self._serve(monkeypatch, {"value": 10}, fail)
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        cached = sorted(tmp_path.glob("**/*.png"))
+        assert cached
+
+        fail["on"] = True
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == 0, \
+            "通信できなかったのに「取り直した」と数えている"
+        assert res["failed"] > 0
+        assert sorted(tmp_path.glob("**/*.png")) == cached, "取れなかったのに古いキャッシュが消えた"
+
     def test_failed_fetch_is_counted(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: None)
