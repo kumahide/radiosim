@@ -566,11 +566,17 @@ class _MenuMixin:
             )
 
     def _on_load_settings(self) -> None:
+        # B-273 隣接: 一度も実行していない（＝結果フォルダがまだ無い）新規
+        # インストール直後は存在しないパスを initialdir に渡すことになり、
+        # ダイアログが期待と違う場所（OS 既定）で開いていた。実在するときだけ渡す。
+        kwargs: dict = {}
+        if os.path.exists(config.RESULTS_DIR):
+            kwargs["initialdir"] = config.RESULTS_DIR
         file_path = filedialog.askopenfilename(
-            initialdir = config.RESULTS_DIR,
             title      = i18n.t("dlg_select_settings"),
             filetypes  = [("JSON files", "*.json")],
             parent     = self.root,
+            **kwargs,
         )
         if not file_path:
             return

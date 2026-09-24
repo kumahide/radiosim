@@ -219,6 +219,72 @@ def test_delete_all_cache_keeps_single_confirm_when_only_gsi(monkeypatch):
         root.destroy()
 
 
+def test_open_results_creates_missing_folder_then_opens_it(tmp_path, monkeypatch):
+    """B-273＝一度も実行していない新規インストール直後は結果フォルダが無い。
+    「結果フォルダを開く」は黙らず、作ってから開くこと（対応案 3）。"""
+    pytest.importorskip("tkinter")
+    from core import config
+    from views.launcher import SimLauncher
+    missing = tmp_path / "results"
+    monkeypatch.setattr(config, "RESULTS_DIR", str(missing))
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        app._on_open_results()
+        assert missing.is_dir()
+    finally:
+        root.destroy()
+
+
+def test_open_results_reports_failure_instead_of_staying_silent(monkeypatch):
+    """作成に失敗する場所（書込禁止等・I-130 と同じ形）は断りを出す。"""
+    pytest.importorskip("tkinter")
+    from views import launcher_windows
+    from views.launcher import SimLauncher
+
+    def _boom(*a, **k):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(launcher_windows.os, "makedirs", _boom)
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        calls: list[tuple] = []
+        app._alert = lambda title, message: calls.append((title, message))
+        app._on_open_results()
+        assert len(calls) == 1
+    finally:
+        root.destroy()
+
+
+def test_load_settings_omits_initialdir_when_results_dir_is_missing(tmp_path, monkeypatch):
+    """B-273 隣接＝結果フォルダがまだ無いのに存在しないパスを initialdir へ
+    渡していた（ダイアログが期待と違う場所で開く）。実在するときだけ渡す。"""
+    pytest.importorskip("tkinter")
+    from tkinter import filedialog
+    from core import config
+    from views.launcher import SimLauncher
+    missing = tmp_path / "results"
+    monkeypatch.setattr(config, "RESULTS_DIR", str(missing))
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        seen: dict = {}
+
+        def _fake_askopenfilename(**kwargs):
+            seen.update(kwargs)
+            return ""
+
+        monkeypatch.setattr(filedialog, "askopenfilename", _fake_askopenfilename)
+        app._on_load_settings()
+        assert "initialdir" not in seen
+    finally:
+        root.destroy()
+
+
 def _find_widget(parent, predicate):
     for w in parent.winfo_children():
         if predicate(w):
