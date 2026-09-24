@@ -2790,6 +2790,99 @@ def test_the_stop_hook_no_longer_judges_parallelism(budget):
 
 
 # ============================================================
+# 自律ターンの途中でも鳴らす（I-173・2026-09-24）
+# ============================================================
+# 🔴 **旧来の Stop 判定は、文脈が最も速く伸びる時間帯（人が口を挟まない長い
+# 自律ターン）を丸ごと素通りしていた**（実測＝4倍到達から最初の Stop まで
+# 20往復以上空いたセッションが107本・総入力の54%）。⇒ `PostToolUse` でも
+# 同じ梯子を判定し、`additionalContext` で Claude へ届ける（ツールは既に
+# 実行済みなので `decision: block` は無関係＝差し戻せない）。
+
+
+class TestPostToolUseMidTurnAdvice:
+    def _run(self, budget, monkeypatch, capsys, tmp_path, n, ctx=200_000,
+              hook_event="PostToolUse", session="s1", state_path=None):
+        path = TestSessionSplitAdvice()._transcript(tmp_path, n, ctx)
+        monkeypatch.setattr(budget, "_STATE", state_path or tmp_path / "state.json")
+        payload = {"transcript_path": str(path), "session_id": session}
+        if hook_event is not None:
+            payload["hook_event_name"] = hook_event
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+        try:
+            budget.main()
+        except SystemExit:
+            pass
+        out = capsys.readouterr().out.strip()
+        return json.loads(out) if out else {}
+
+    def test_reaches_the_model_via_additional_context(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**`decision: block` ではなく `additionalContext` で届くこと**＝
+        ツールは既に実行済みなので、差し戻す形は無関係（届け先を間違えると
+        Claude Code 側がエラーにするか、意図しない差し戻しを試みかねない）。
+        """
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS))
+        assert got.get("decision") != "block", (
+            "PostToolUse なのに decision:block を返している"
+            "（ツール実行後は差し戻せない）"
+        )
+        ctx_out = got.get("hookSpecificOutput", {})
+        assert ctx_out.get("hookEventName") == "PostToolUse"
+        assert "トークン予算" in ctx_out.get("additionalContext", ""), got
+
+    def test_does_not_fire_silently(self, budget, monkeypatch, capsys, tmp_path):
+        """閾値未満では PostToolUse でも黙っていること（毎ツール呼び出しで
+        鳴る網にしない＝壊れ方②の同族）。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS) - 1, ctx=50_000)
+        assert got == {}, f"閾値未満で鳴っている: {got}"
+
+    def test_mentions_it_is_mid_turn(self, budget, monkeypatch, capsys, tmp_path):
+        """**途中で鳴っていることが文言から分かること**＝Stop の助言そのままだと
+        「ユーザーに聞け」が今は聞けない（返す番がまだ来ていない）。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS))
+        text = got["hookSpecificOutput"]["additionalContext"]
+        assert "途中" in text and "PostToolUse" in text
+
+    def test_stop_still_uses_block_when_event_name_is_absent(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**既定（`hook_event_name` 無し）は Stop 扱い**＝I-173 より前からの
+        呼び出し・既存テストが送っていない前提を壊さない。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS), hook_event=None)
+        assert got.get("decision") == "block"
+
+    def test_stop_after_post_tool_use_does_not_repeat(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**同じ状態ファイルを共有して二重に言わない**（設計候補(b)）＝
+        PostToolUse で先に言った水準は、同じターンの Stop でもう一度言わない。
+        """
+        state_path = tmp_path / "shared_state.json"
+        first = min(budget._THRESHOLDS)
+        got_mid = self._run(budget, monkeypatch, capsys, tmp_path, first,
+                            hook_event="PostToolUse", state_path=state_path)
+        assert got_mid.get("hookSpecificOutput"), "PostToolUse 側が鳴っていない"
+
+        got_stop = self._run(budget, monkeypatch, capsys, tmp_path, first,
+                             hook_event="Stop", state_path=state_path)
+        assert got_stop == {}, (
+            f"PostToolUse で言った水準を Stop がもう一度言っている: {got_stop}"
+        )
+
+    def test_scan_matches_the_old_two_pass_reads(self, budget, tmp_path):
+        """**単一パス化（`_scan`）が旧・二重読みと同じ値を出すこと**＝
+        I-173 で「読みを1回にまとめる」性能対策を入れたが、値までは変えない。
+        """
+        path = TestSessionSplitAdvice()._transcript(tmp_path, 7, ctx=88_000)
+        trips_a, total_a = budget.count_roundtrips(path)
+        ctx_a = budget.latest_context(path)
+        trips_b, total_b, ctx_b = budget._scan(path)
+        assert (trips_a, total_a, ctx_a) == (trips_b, total_b, ctx_b)
+
+
+# ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
 # ============================================================
 _DETOUR_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "no_shell_detours.py"))
