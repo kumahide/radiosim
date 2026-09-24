@@ -776,7 +776,7 @@ attribution = "AWS Open Data Terrain Tiles"
 terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 ```
 
-- `source_id`: letters, digits, `_` and `-` only. Cannot be `gsi_dem` or `unavailable` (reserved values of the `elev_source` output CSV column). ⚠️ **Also avoid the names the built-in sources use internally (`dem5a_png`, `dem5b_png`, `dem_png`, `basemap_pale`).** This release still accepts them, but the cache would share a folder with the built-in sources, so deleting the cache for such a source also deletes the tiles already downloaded for the GSI elevation data or the basemap (only re-downloadable tiles are lost; results do not change).
+- `source_id`: letters, digits, `_` and `-` only. Cannot be `gsi_dem` or `unavailable` (reserved values of the `elev_source` output CSV column).
 - `decode`: either `"terrarium"` or `"mapbox_terrain_rgb"` (this is a fixed choice, not a place to write an expression).
 - `url_template`: must start with `https://` and contain `{z}`, `{x}` and `{y}` (also `{layer}` if you declare more than one layer).
 - `layers`: an array of `[layer_id, zoom]` pairs, listed from highest to lowest priority.

@@ -775,7 +775,7 @@ attribution = "AWS Open Data Terrain Tiles"
 terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 ```
 
-- `source_id`: 英数字と `_` `-` のみ。`gsi_dem` / `unavailable` とは重複させられません（出力 CSV の `elev_source` 列の予約値のため）。⚠️ **組み込みが内部で使う名前（`dem5a_png` / `dem5b_png` / `dem_png` / `basemap_pale`）も避けてください。** この版ではこれらを書いても宣言は通りますが、キャッシュの置き場が組み込みと重なるため、このソースを選んでキャッシュを削除すると国土地理院や背景地図の取得済みタイルまで消えます（消えるのは取り直せるタイルだけで、計算結果は変わりません）。
+- `source_id`: 英数字と `_` `-` のみ。`gsi_dem` / `unavailable` とは重複させられません（出力 CSV の `elev_source` 列の予約値のため）。
 - `decode`: `"terrarium"` または `"mapbox_terrain_rgb"` のいずれか（式を書き込む欄ではありません）。
 - `url_template`: `https://` 始まりで `{z}` `{x}` `{y}` を含む必要があります（レイヤを複数書くときは `{layer}` も必須）。
 - `layers`: `[レイヤID, ズーム]` の配列。優先順位の高い順に並べます。

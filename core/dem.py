@@ -329,22 +329,36 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
     return xtile, ytile, px, py
 
 
+#: 外部 DEM ソース（3.4 ステージ1・I-147）のキャッシュ置き場＝
+#: `CACHE_DIR/DEM_EXTERNAL_SUBDIR/<source_id>/<定義のハッシュ>/<layer_id>/`。
+#: **B-274**＝以前は `source_id` を `CACHE_DIR` 直下にそのまま使っており、
+#: 利用者が組み込みの置き場と同じ名前（`dem5a_png`／`dem5b_png`／`dem_png`）を
+#: `source_id` に選ぶと、その削除が国土地理院のキャッシュまで巻き込んでいた。
+#: 専用の名前空間の下へ分離すれば衝突は原理的に起きない（`BASEMAP_EXTRA_SUBDIR`
+#: ＝B-248 で背景地図の外部ソースに使った形と同じ設計）。⚠️ **既存の外部ソースの
+#: キャッシュは置き場が変わる**＝移行しないので取り直しになる（3.6 未リリース時点
+#: の変更＝配布物として外部ソースを使っていた利用者はまだいない）。
+DEM_EXTERNAL_SUBDIR: str = "external"
+
+
 def source_layer_dir(src: "dem_sources.DemSourceSpec", layer_id: str) -> str:
     """レイヤ 1 つぶんのディスクキャッシュの根（3.4 ステージ1＝ソースごとに分離）。
 
     🔑 **国土地理院は現状の場所のまま**（`CACHE_DIR/<layer_id>/`）＝既存の
     キャッシュを移さない（I-147 完了条件①）。それ以外のソースは
-    `CACHE_DIR/<source_id>/<定義のハッシュ>/<layer_id>/` へ分ける＝利用者の
-    宣言した `layer_id` が国土地理院のレイヤ名（`dem5a_png` 等）や他ソースと
-    衝突してもファイルが混ざらない。**定義のハッシュ**（B-236）＝`source_id` は
-    同じまま `dem_sources.toml` の URL・デコード方式・無効値だけ書き換えても、
-    旧タイルを新しい解釈で読み直さないための自動無効化（旧ディレクトリは
-    残るが二度と読まれない）。`core/dem_cache.py` のカバレッジ走査もここを通る。
+    `CACHE_DIR/DEM_EXTERNAL_SUBDIR/<source_id>/<定義のハッシュ>/<layer_id>/`
+    へ分ける（B-274）＝利用者の宣言した `source_id`／`layer_id` が国土地理院の
+    置き場（`dem5a_png` 等）や他ソースと衝突してもファイルが混ざらない。
+    **定義のハッシュ**（B-236）＝`source_id` は同じまま `dem_sources.toml` の
+    URL・デコード方式・無効値だけ書き換えても、旧タイルを新しい解釈で読み直さ
+    ないための自動無効化（旧ディレクトリは残るが二度と読まれない）。
+    `core/dem_cache.py` のカバレッジ走査もここを通る。
     """
     if src.source_id == dem_sources.GSI_DEM.source_id:
         return os.path.join(CACHE_DIR, layer_id)
     return os.path.join(
-        CACHE_DIR, src.source_id, dem_sources.definition_fingerprint(src), layer_id,
+        CACHE_DIR, DEM_EXTERNAL_SUBDIR, src.source_id,
+        dem_sources.definition_fingerprint(src), layer_id,
     )
 
 
@@ -352,11 +366,13 @@ def source_delete_roots(src: "dem_sources.DemSourceSpec") -> list[str]:
     """そのソースのタイルを**消す**ときに掃くディレクトリ（B-268）。
 
     ⚠️ **`source_layer_dir` の列挙では足りない**＝外部ソースの置き場は
-    `CACHE_DIR/<source_id>/<定義のハッシュ>/<layer_id>/` で、ハッシュは宣言を
-    書き換えるたびに変わる。**読むときは今のハッシュだけが正しい**（B-236 の
-    自動無効化）が、**消すときに今のハッシュだけを見ると、書き換える前の
-    タイルが永久に残る**（画面からは選べないので利用者は消せない）。
-    ⇒ **外部ソースは `source_id` 直下を丸ごと**返す。
+    `CACHE_DIR/DEM_EXTERNAL_SUBDIR/<source_id>/<定義のハッシュ>/<layer_id>/`
+    で、ハッシュは宣言を書き換えるたびに変わる。**読むときは今のハッシュだけが
+    正しい**（B-236 の自動無効化）が、**消すときに今のハッシュだけを見ると、
+    書き換える前のタイルが永久に残る**（画面からは選べないので利用者は消せない）。
+    ⇒ **外部ソースは `DEM_EXTERNAL_SUBDIR/<source_id>` 直下を丸ごと**返す
+    （B-274＝この名前空間の下は国土地理院・他ソースと衝突しないので、丸ごと
+    消しても巻き込みが起きない）。
 
     国土地理院は `CACHE_DIR/<layer_id>/` に直に置く（既存キャッシュを移さない
     という I-147 の完了条件）ので、**レイヤのディレクトリを列挙**して返す
@@ -364,7 +380,7 @@ def source_delete_roots(src: "dem_sources.DemSourceSpec") -> list[str]:
     """
     if src.source_id == dem_sources.GSI_DEM.source_id:
         return [source_layer_dir(src, layer_id) for layer_id, _z in src.layers]
-    return [os.path.join(CACHE_DIR, src.source_id)]
+    return [os.path.join(CACHE_DIR, DEM_EXTERNAL_SUBDIR, src.source_id)]
 
 
 def _cache_subdir_for(src: "dem_sources.DemSourceSpec", layer_id: str, xtile: int) -> str:

@@ -365,11 +365,13 @@ class TestSingleSourcePerCalculation:
         assert not any(key[0] == "gsi_dem" for key in dem._tile_cache)
 
     def test_disk_cache_path_is_namespaced_by_source(self):
-        """別ソースのディスクキャッシュは `CACHE_DIR/<source_id>/<定義ハッシュ>/...` へ分離される。"""
+        """別ソースのディスクキャッシュは `CACHE_DIR/external/<source_id>/<定義ハッシュ>/...`
+        へ分離される（B-274＝専用の名前空間の下なので組み込みの置き場と衝突しない）。"""
         fp = dem_sources.definition_fingerprint(self._OTHER_SOURCE)
         path = dem._cache_subdir_for(self._OTHER_SOURCE, "layer_a", 123)
         assert os.path.normpath(path) == os.path.normpath(
-            os.path.join(dem.CACHE_DIR, "other_source", fp, "layer_a", "123"))
+            os.path.join(dem.CACHE_DIR, dem.DEM_EXTERNAL_SUBDIR,
+                         "other_source", fp, "layer_a", "123"))
 
     def test_gsi_disk_cache_path_is_unchanged(self):
         """国土地理院はソース分離の対象外＝既存キャッシュを移さない（完了条件①）。"""
@@ -2054,9 +2056,9 @@ class TestCacheStatsAndDeletionBySource:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         # 国土地理院（`CACHE_DIR/<layer_id>/...`）に 2 枚。
         self._seed(str(tmp_path), "dem5a_png/1", 2)
-        # 外部ソース（`CACHE_DIR/<source_id>/<fingerprint>/<layer_id>/...`）に 3 枚。
+        # 外部ソース（`CACHE_DIR/external/<source_id>/<fingerprint>/<layer_id>/...`）に 3 枚。
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
 
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
@@ -2093,7 +2095,7 @@ class TestCacheStatsAndDeletionBySource:
         self._fresh_memory_cache(monkeypatch)
         self._seed(str(tmp_path), "dem5a_png/1", 2)
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
         self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
 
         res = dem_cache.delete_all_tile_cache(
@@ -2128,9 +2130,9 @@ class TestCacheStatsAndDeletionBySource:
         """
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
         # 宣言を書き換える前のハッシュのタイル（今のコードは二度と読まない）。
-        self._seed(str(tmp_path), "ext_src/0123456789ab/terrarium/1", 2)
+        self._seed(str(tmp_path), "external/ext_src/0123456789ab/terrarium/1", 2)
 
         res = dem_cache.delete_all_tile_cache(
             sources=[self.EXTERNAL], include_basemap=False)
@@ -2143,14 +2145,34 @@ class TestCacheStatsAndDeletionBySource:
         """B-268 の直しが「消しすぎ」ていないこと（別ソースの根は巻き込まない）。"""
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
-        self._seed(str(tmp_path), "ext_src_other/abcdef012345/terrarium/1", 4)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), "external/ext_src_other/abcdef012345/terrarium/1", 4)
         self._seed(str(tmp_path), "dem5a_png/1", 2)
 
         dem_cache.delete_all_tile_cache(
             sources=[self.EXTERNAL], include_basemap=False)
 
         assert dem_cache.get_cache_stats() == {"count": 6, "size_bytes": 24}
+
+    def test_delete_by_source_named_like_a_builtin_does_not_touch_gsi(
+            self, tmp_path, monkeypatch):
+        """B-274＝宣言の `source_id` に組み込みの内部名（`dem5a_png` 等）を
+        付けても、専用の名前空間（`external/`）の下にある限り組み込みの置き場
+        （`CACHE_DIR/dem5a_png/`）とは重ならず、削除が巻き込まないこと。"""
+        import dataclasses
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        colliding = dataclasses.replace(self.EXTERNAL, source_id="dem5a_png")
+        fp = dem_sources.definition_fingerprint(colliding)
+        self._seed(str(tmp_path), f"external/dem5a_png/{fp}/terrarium/1", 3)
+        # 組み込みの国土地理院キャッシュ（本物の置き場）。
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[colliding], include_basemap=False)
+
+        assert res == {"deleted": 3}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
 
     def test_delete_by_source_counts_what_actually_disappeared(
             self, tmp_path, monkeypatch):
@@ -2193,7 +2215,7 @@ class TestGetCacheBreakdown:
         monkeypatch.setattr(dem_sources, "_user_sources", [self.EXTERNAL])
         self._seed(str(tmp_path), "dem5a_png/1", 2)                      # GSI
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)        # 外部ソース
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)  # 外部ソース
         self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)       # 背景地図
 
         result = dem_cache.get_cache_breakdown()
