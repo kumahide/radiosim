@@ -123,10 +123,18 @@ the documents called one thing by two names — are enforced in prose as well.*
 | 使う | 使わない | 経緯 |
 |---|---|---|
 | ウィンドウ | 窓 | 2026-08-14 のユーザー指摘。文書 113 か所・画面 6 か所が短いほうの語で、同じ 1 つのものを 2 語で呼んでいた |
+| ゲート | 門 | 2026-09-20 のカタカナ統一。実測（2026-09-24）で対象文書の散文に 0 件。この字は他の語の部分としてほぼ出ない |
+| コア | 芯 | 同上。実測（2026-09-24）で 0 件 |
 
 **この表は `tests/test_docs_consistency.py` が公開文書に対して機械で守る**（画面側は
 上の表と `tests/test_i18n_glossary.py`）。⚠️ コードフェンスの中と表そのものは対象外
 ——ログや出力の実物を引用した行まで書き換えさせないため。
+
+⚠️ **残る「段→ステージ」「節→セクション」「相→フェーズ」「帯（UI の bar）→バー」の
+4 組はこの表に載せない**（2026-09-24 ユーザー判断）。単純な部分一致では、同じ字を
+含む**意味の違う語**（段階・二段・季節・相手・相対・帯域・時間帯 など）まで引っかかり、
+間違ったものを要求する検査になってしまう。字ごとの意味の訳し分けは機械化できないので、
+引き続き執筆時の心がけ（規約）にとどめる。
 
 *`tests/test_docs_consistency.py` enforces this table across the public documents (the
 screen side is covered by the table above and `tests/test_i18n_glossary.py`). ⚠️ Code fences
