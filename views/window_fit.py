@@ -67,7 +67,7 @@ from __future__ import annotations
 import re
 import tkinter as tk
 from tkinter import ttk
-from typing import Any
+from typing import Any, Protocol
 
 # 逃げ道の実装（`scrollable_body` はここから公開し直す＝ウィンドウの側の呼び口は変えない）。
 # ⚠️ `_ScrollEscape` も**同じクラス実体**を指す＝`window_fit._ScrollEscape.sync` を
@@ -97,6 +97,31 @@ _SM_CYCAPTION, _SM_CYSIZEFRAME, _SM_CXPADDEDBORDER = 4, 33, 92
 
 
 _GEOMETRY = re.compile(r"^\d+x\d+\+(-?\d+)\+(-?\d+)$")
+
+
+class FitAttrs(Protocol):
+    """`fit_to_content` 系がウィンドウへ動的に生やす属性の型（I-163）。
+
+    書く側（このファイル）はここへ生える*前*の代入も書くので、引き続き
+    `# type: ignore[attr-defined]` のまま（Protocol は「無い属性への代入」は
+    表せない）。**読む側**（`tests/test_window_fit.py` が横断ゲートとして読む）
+    は `fit_attrs()` でここへキャストする＝`getattr(win, "_fit_size", 既定値)`
+    だと「本当に無い」のか「たまたま既定値と一致した」のかアサーションから
+    区別できなくなる。
+    """
+    _fit_size: tuple[int, int]
+    _fit_pos: tuple[int, int]
+    _fit_need: tuple[int, int]
+    _fit_asked: tuple[int, int]
+    _fit_kwargs: "dict[str, Any]"
+    _fit_scroll: "_ScrollEscape | None"
+
+
+def fit_attrs(win: Any) -> FitAttrs:
+    """`win` を `FitAttrs` として型付けする（I-163）。実行時は素通し（同じ
+    オブジェクトを返すだけ）＝テストが動的属性へ型付きでアクセスするための
+    cast 相当。"""
+    return win  # type: ignore[return-value]
 
 
 def window_position(win: "tk.Tk | tk.Toplevel") -> tuple[int, int]:

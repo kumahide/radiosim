@@ -27,6 +27,7 @@ import time
 from core import i18n
 from conftest import PoisonedInterpreter, make_tk_root, pump_until, set_theme
 from views import theme
+from views.window_fit import fit_attrs
 
 _THEMES = ("light", "dark")
 
@@ -816,7 +817,7 @@ def test_watch_display_waits_while_the_user_holds_the_window(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        fit_attrs(win)._fit_size = (200, 100)
         root.update()
 
         fake["dpi"] = 144                               # 別 DPI のモニタへ入った
@@ -853,7 +854,7 @@ def test_watch_display_catches_up_once_the_window_is_released(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        fit_attrs(win)._fit_size = (200, 100)
         root.update()
 
         fake["dpi"] = 144
@@ -899,7 +900,7 @@ def test_watch_display_restores_a_size_that_was_overridden_after_the_change(root
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)                 # `fit_to_content` が選んだ大きさ
+        fit_attrs(win)._fit_size = (200, 100)                 # `fit_to_content` が選んだ大きさ
         root.update()
 
         fake["dpi"] = 144                          # 表示スケールを 150% にした
@@ -945,7 +946,7 @@ def test_watch_display_restores_a_size_that_was_enlarged_after_the_change(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        fit_attrs(win)._fit_size = (200, 100)
         root.update()
 
         fake["dpi"] = 144
@@ -983,7 +984,7 @@ def test_watch_display_does_not_refit_a_window_the_user_moved(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        fit_attrs(win)._fit_size = (200, 100)
         root.update()
 
         fake["dpi"] = 144
@@ -1085,8 +1086,8 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
     win.geometry("+100+40")                                     # まず主画面に置く
     window_fit.fit_to_content(win)
     root.update()
-    assert win._fit_size[1] > limit, (
-        f"前提が崩れている（主画面でも {win._fit_size[1]}px ≤ {limit}px）"
+    assert fit_attrs(win)._fit_size[1] > limit, (
+        f"前提が崩れている（主画面でも {fit_attrs(win)._fit_size[1]}px ≤ {limit}px）"
         "＝サブ画面へ移しても値が変わらず、このテストは何も検査しない。"
     )
 
@@ -1096,10 +1097,10 @@ def test_watch_display_refits_when_a_window_moves_to_a_smaller_monitor(root, mon
     root.update()
     # 測り直されるまで回す（B-082）。⚠️ **待つ条件は下の assert と同じもの**＝
     # 「回し終えた」ではなく「結果が出た」で待つので、待ちの長さが結果を変えない。
-    pump_until(root, lambda: win._fit_size[1] <= limit)
+    pump_until(root, lambda: fit_attrs(win)._fit_size[1] <= limit)
 
-    assert win._fit_size[1] <= limit, (
-        f"サブ画面へ動かしても測り直されていない（高さ {win._fit_size[1]}px / "
+    assert fit_attrs(win)._fit_size[1] <= limit, (
+        f"サブ画面へ動かしても測り直されていない（高さ {fit_attrs(win)._fit_size[1]}px / "
         f"このモニタの上限 {limit}px）＝監視が見ているのは DPI と*プライマリの*"
         "画面サイズだけで、**載っているモニタの変化を見ていない**（B-088）。"
         "上限の計算（B-087）は正しくても、呼ばれなければ画面には出ない。"
@@ -1469,8 +1470,8 @@ def test_a_dpi_change_checks_that_the_window_landed(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)                 # 決めた寸法
-        win._fit_asked = (200, 100)                # それをそのまま要求した
+        fit_attrs(win)._fit_size = (200, 100)                 # 決めた寸法
+        fit_attrs(win)._fit_asked = (200, 100)                # それをそのまま要求した
         root.update()
 
         fake["dpi"] = 144                          # 別 DPI のモニタへ入った
@@ -1488,11 +1489,11 @@ def test_a_dpi_change_checks_that_the_window_landed(root):
         pump_until(root, lambda: getattr(win, "_fit_asked", None) != (200, 100),
                    timeout_ms=theme._DISPLAY_LANDING_MS * 2)
 
-        assert win._fit_asked == (206, 100), (
-            f"呑まれた 6px を足して言い直していない: {win._fit_asked}"
+        assert fit_attrs(win)._fit_asked == (206, 100), (
+            f"呑まれた 6px を足して言い直していない: {fit_attrs(win)._fit_asked}"
             "（同じ寸法を要求し直すだけでは Tk がまた同じだけ呑む＝縮み続ける）。"
         )
-        assert win._fit_size == (200, 100), (
+        assert fit_attrs(win)._fit_size == (200, 100), (
             "決めた寸法まで動かしている（確かめ直しが見る基準がずれる）"
         )
     finally:
@@ -1536,8 +1537,8 @@ def test_the_landing_check_is_wired_with_each_window_own_previous_dpi(root):
         theme.watch_display(root, lambda _d, _c: None)
         win = tk.Toplevel(root)
         win.geometry("400x300+10+10")
-        win._fit_size = (400, 300)
-        win._fit_asked = (400, 300)
+        fit_attrs(win)._fit_size = (400, 300)
+        fit_attrs(win)._fit_asked = (400, 300)
         root.update()
         # ⚠️ **子ウィンドウが監視に登録されるまで待つ**（独立レビュー 43 巡目）＝
         # `root.update()` はデバウンス（250ms）の完了を保証しないので、ここを
@@ -1602,7 +1603,7 @@ def test_the_debounce_has_a_deadline_so_a_storm_cannot_starve_it(root):
         theme.watch_display(root, lambda d, c: notified.append((d, c)))
         win = tk.Toplevel(root)
         win.geometry("200x100+10+10")
-        win._fit_size = (200, 100)
+        fit_attrs(win)._fit_size = (200, 100)
         root.update()
 
         fake["dpi"] = 144                               # 別 DPI のモニタへ入った

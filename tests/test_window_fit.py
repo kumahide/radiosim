@@ -40,6 +40,15 @@ from core import simulation as sim
 import conftest
 from conftest import make_themed_root
 from views import window_fit
+from views.window_fit import fit_attrs
+
+
+def _scroll_active(win) -> bool:
+    """逃げ道（受け皿のスクロールバー）が出ているか（I-163＝`_fit_scroll` は
+    `_ScrollEscape | None` なので、無い場合は検査の前提そのものが崩れている）。"""
+    escape = fit_attrs(win)._fit_scroll
+    assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
+    return escape.active[0]
 
 _VIEWS_DIR = os.path.join(os.path.dirname(__file__), "..", "views")
 
@@ -449,7 +458,7 @@ def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
     try:
         win, _owner = (opener(root, monkeypatch) if name == "map" else opener(root))
         win.update()
-        size, need = win._fit_size, win._fit_need
+        size, need = fit_attrs(win)._fit_size, fit_attrs(win)._fit_need
         min_w = int(win.minsize()[0])
         assert min_w <= size[0], (
             f"[{name}] minsize({min_w}px) がウィンドウ幅({size[0]}px)を上回っている＝"
@@ -468,7 +477,9 @@ def test_the_width_floor_does_not_decide_the_window_width(name, monkeypatch):
 
 def _scenario_band_width(win) -> int:
     """凍結バー（案件情報・経路）が要求する幅（＝この 2 つの LabelFrame の最大）。"""
-    bands = [c for c in win._fit_scroll.body.winfo_children()
+    escape = fit_attrs(win)._fit_scroll
+    assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
+    bands = [c for c in escape.body.winfo_children()
              if c.winfo_class() == "TLabelframe"]
     assert len(bands) >= 2, "凍結バーが見つからない（案件情報・経路）"
     return max(b.winfo_reqwidth() for b in bands[:2])
@@ -584,7 +595,9 @@ def test_the_frozen_header_does_not_decide_the_multihop_window_width():
     try:
         win, _ = _open_multihop(root)
         win.update()
-        bands = [c for c in win._fit_scroll.body.winfo_children()
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
+        bands = [c for c in escape.body.winfo_children()
                  if c.winfo_class() == "TLabelframe"
                  and str(c.cget("text")) == i18n.t("batch_common_cfg")]
         assert len(bands) == 1, "共通設定のバーが 1 つでない（見出しが変わった？）"
@@ -629,7 +642,9 @@ def test_the_case_info_band_does_not_decide_the_multihop_window_width(lang):
         i18n.set_lang(lang)
         win, _ = _open_multihop(root)
         win.update()
-        bands = [c for c in win._fit_scroll.body.winfo_children()
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
+        bands = [c for c in escape.body.winfo_children()
                  if c.winfo_class() == "TLabelframe"
                  and str(c.cget("text")) == i18n.t("batch_case_info")]
         assert len(bands) == 1, "案件情報のバーが 1 つでない（見出しが変わった？）"
@@ -657,10 +672,10 @@ def test_scenario_window_width_follows_the_condition_count():
     try:
         win, owner = _open_scenario(root)
         win.update()
-        narrow = win._fit_size[0]
+        narrow = fit_attrs(win)._fit_size[0]
         _grow_scenario(owner)
         win.update()
-        wide = win._fit_size[0]
+        wide = fit_attrs(win)._fit_size[0]
         assert narrow < wide, (
             f"条件を 1 → 5 列にしてもウィンドウ幅が変わらない（{narrow}px → {wide}px）"
             "＝幅を決めているのは条件列ではない"
@@ -710,8 +725,8 @@ def test_the_multihop_window_follows_a_longer_place_name():
             f"前提が崩れている（区間表が {before}px から伸びていない）"
             "＝はみ出さない条件で試している。名前をもっと長くすること。"
         )
-        assert grid <= win._fit_size[0], (
-            f"区間表（{grid}px）がウィンドウ（{win._fit_size[0]}px）に入っていない＝右端の"
+        assert grid <= fit_attrs(win)._fit_size[0], (
+            f"区間表（{grid}px）がウィンドウ（{fit_attrs(win)._fit_size[0]}px）に入っていない＝右端の"
             "「判定」列が見切れる。利用者は判定列があることを知らないので、"
             "**見切れていること自体に気づけない**（B-100）。"
         )
@@ -964,7 +979,7 @@ def test_every_window_is_usable_on_fhd(name, lang, dpi, monkeypatch):
                 "潰れ、マップウィンドウ・条件探索へ到達できなくなった）。"
                 "window_fit.scrollable_body の中へ組み立てること。"
             )
-        _assert_content_is_reachable(win, label, need_w, need_h, win._fit_size)
+        _assert_content_is_reachable(win, label, need_w, need_h, fit_attrs(win)._fit_size)
     finally:
         i18n.set_lang(prev)
         theme.apply_fonts(root, dpi=96)   # 名前付きフォントは他テストと共有
@@ -1023,7 +1038,7 @@ def test_window_that_cannot_fit_can_still_be_scrolled(name, dpi, monkeypatch):
             f"（必要 {need_h}px ≤ 上限 {lim_h}px）＝逃げ道が壊れていても緑になる。"
             "DPI を上げるか、このウィンドウを _ESCAPE_WINDOWS から外すこと。"
         )
-        assert win._fit_size[1] == lim_h
+        assert fit_attrs(win)._fit_size[1] == lim_h
         escape = getattr(win, "_fit_scroll", None)
         assert escape is not None, (
             f"[{name}] 画面に入らないのに逃げ道が無い"
@@ -1065,7 +1080,8 @@ def test_mouse_wheel_moves_the_escape_only_when_nothing_inside_scrolls(monkeypat
         win, _owner = _open_on_fhd(root, "launcher", 120, monkeypatch)
         root.deiconify()
         root.update()
-        escape = win._fit_scroll
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
         assert escape.active[0], "前提が崩れている（溢れていない）"
 
         top_before = escape.canvas.yview()[0]
@@ -1105,7 +1121,8 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
         root.withdraw()
         i18n.set_lang("ja")
         win, _ = _open_scenario(root)
-        escape = win._fit_scroll
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
         # 🔴 **前提は主張ではない**（2026-08-23・I-108）＝「開いた直後はまだ溢れて
         # いない」は**その機械の画面がウィンドウを持てるとき**にだけ成り立つ。実測＝表示
         # スケール 150% では `need=(843, 989)` に対し画面が 1707x960 しかなく、
@@ -1117,13 +1134,13 @@ def test_shrinking_a_window_by_hand_shows_the_escape():
         # `_the_machine_is_never_the_dev_machines` が基準機へ固定するので、この
         # 前提はどの機械でも同じように成り立つ。**assert に戻してよい。**
         assert not escape.active[0], (
-            f"前提が崩れている（開いた直後から溢れている・need={win._fit_need}）"
+            f"前提が崩れている（開いた直後から溢れている・need={fit_attrs(win)._fit_need}）"
             "＝手で縮める前に逃げ道が出ているので、この検査は何も見ていない。"
         )
 
-        need_h = win._fit_need[1]
+        need_h = fit_attrs(win)._fit_need[1]
         root.deiconify()
-        win.geometry(f"{win._fit_size[0]}x{need_h - 200}")   # 手で縮めた相当
+        win.geometry(f"{fit_attrs(win)._fit_size[0]}x{need_h - 200}")   # 手で縮めた相当
         root.update()
         assert escape.active[0], (
             "手で縮めてもスクロールバーが出ない＝下端に手が届かない。"
@@ -1143,10 +1160,11 @@ def test_scroll_escape_stays_hidden_while_the_content_fits():
         root.withdraw()
         i18n.set_lang("ja")
         win, _ = _open_scenario(root)          # 基準機（WQHD・100%）＝余裕がある
-        escape = win._fit_scroll
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
         need_h = window_fit.required_size(win)[1]
         # ⚠️ この前提も**機械に依らない**（I-108・conftest が画面と DPI を固定する）。
-        assert need_h <= win._fit_size[1], "前提が崩れている（この画面で既に溢れている）"
+        assert need_h <= fit_attrs(win)._fit_size[1], "前提が崩れている（この画面で既に溢れている）"
         assert escape.active == (False, False)
         assert not escape.vsb.grid_info() and not escape.hsb.grid_info()
     finally:
@@ -1292,13 +1310,13 @@ def test_windows_are_refitted_when_dpi_grows(monkeypatch):
         i18n.set_lang("ja")
         theme.apply_fonts(root, dpi=96)
         win, owner = _open_scenario(root)
-        before = win._fit_size
+        before = fit_attrs(win)._fit_size
 
         theme.apply_fonts(root, dpi=144)     # 150% のモニタへ移した相当
         window_fit.refit_all(root)
         root.update_idletasks()
 
-        assert win._fit_size[0] > before[0], (
+        assert fit_attrs(win)._fit_size[0] > before[0], (
             f"DPI が上がってフォントが大きくなったのにウィンドウ幅が変わらない"
             f"（{before[0]}px のまま）。右端が見切れる。"
         )
@@ -1324,18 +1342,18 @@ def test_windows_shrink_back_when_dpi_falls(monkeypatch):
         i18n.set_lang("ja")
         theme.apply_fonts(root, dpi=96)
         win, _ = _open_scenario(root)
-        at96 = win._fit_size
+        at96 = fit_attrs(win)._fit_size
 
         theme.apply_fonts(root, dpi=144)          # 150% のモニタへ移した
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
-        assert win._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
+        assert fit_attrs(win)._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
 
         theme.apply_fonts(root, dpi=96)           # 100% へ戻した
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
-        assert win._fit_size == at96, (
-            f"表示スケールを戻したのにウィンドウが {win._fit_size} のまま"
+        assert fit_attrs(win)._fit_size == at96, (
+            f"表示スケールを戻したのにウィンドウが {fit_attrs(win)._fit_size} のまま"
             f"（100% では {at96} で足りる）＝広がる方向の一方通行。"
         )
     finally:
@@ -1360,18 +1378,18 @@ def test_a_window_with_its_own_refit_shrinks_too(monkeypatch):
         theme.apply_fonts(root, dpi=96)
         win, _ = _open_batch(root)
         assert getattr(win, "_fit_refit", None) is not None, "前提（自前の再測）が無い"
-        at96 = win._fit_size
+        at96 = fit_attrs(win)._fit_size
 
         theme.apply_fonts(root, dpi=144)
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
-        assert win._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
+        assert fit_attrs(win)._fit_size[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
 
         theme.apply_fonts(root, dpi=96)
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
-        assert win._fit_size == at96, (
-            f"自前の再測を持つウィンドウが縮んでいない（{win._fit_size} のまま／100% では "
+        assert fit_attrs(win)._fit_size == at96, (
+            f"自前の再測を持つウィンドウが縮んでいない（{fit_attrs(win)._fit_size} のまま／100% では "
             f"{at96}）＝`shrink` が `_fit_refit` の先まで届いていない。"
         )
     finally:
@@ -1394,25 +1412,25 @@ def test_refit_all_does_not_shrink_unless_asked(monkeypatch):
         i18n.set_lang("ja")
         theme.apply_fonts(root, dpi=96)
         win, _ = _open_scenario(root)
-        at96 = win._fit_size
+        at96 = fit_attrs(win)._fit_size
 
         theme.apply_fonts(root, dpi=144)
         window_fit.refit_all(root, shrink=True)
         root.update_idletasks()
-        wide = win._fit_size
+        wide = fit_attrs(win)._fit_size
         assert wide[0] > at96[0], "前提が崩れている（DPI を上げても広がらない）"
 
         theme.apply_fonts(root, dpi=96)
         window_fit.refit_all(root)                 # 既定＝縮めない
         root.update_idletasks()
-        assert win._fit_size == wide, (
-            f"頼まれていないのにウィンドウを狭めた（{win._fit_size} ／ {wide} だった）。"
+        assert fit_attrs(win)._fit_size == wide, (
+            f"頼まれていないのにウィンドウを狭めた（{fit_attrs(win)._fit_size} ／ {wide} だった）。"
         )
 
         window_fit.refit_all(root, shrink=True)    # 頼まれたら縮む
         root.update_idletasks()
-        assert win._fit_size == at96, (
-            f"`shrink=True` でも戻らない（{win._fit_size} のまま）＝上の主張が"
+        assert fit_attrs(win)._fit_size == at96, (
+            f"`shrink=True` でも戻らない（{fit_attrs(win)._fit_size} のまま）＝上の主張が"
             "「一度も落ちないゲート」になっていないかを見る対の検査。"
         )
     finally:
@@ -1439,23 +1457,23 @@ def test_windows_follow_a_screen_that_shrinks_and_grows_back(monkeypatch):
         i18n.set_lang("ja")
         win, _ = _open_scenario(root)
         need_h = window_fit.required_size(win)[1]
-        assert win._fit_size[1] == need_h, "前提が崩れている（最初から入っていない）"
+        assert fit_attrs(win)._fit_size[1] == need_h, "前提が崩れている（最初から入っていない）"
 
         screen["size"] = (1920, 800)               # 解像度が下がった
         window_fit.refit_all(root)
-        assert win._fit_size[1] == 800 - window_fit.SCREEN_MARGIN, (
-            f"狭くなった画面に追従していない（{win._fit_size[1]}px のまま）"
+        assert fit_attrs(win)._fit_size[1] == 800 - window_fit.SCREEN_MARGIN, (
+            f"狭くなった画面に追従していない（{fit_attrs(win)._fit_size[1]}px のまま）"
             "＝ウィンドウの下端がデスクトップの外に残る。"
         )
-        assert win._fit_scroll.active[0], "入らなくなったのに逃げ道が出ていない"
+        assert _scroll_active(win), "入らなくなったのに逃げ道が出ていない"
 
         screen["size"] = (1920, 1080)              # 元に戻った（再接続など）
         window_fit.refit_all(root)
-        assert win._fit_size[1] == need_h, (
-            f"広くなった画面に戻っていない（{win._fit_size[1]}px のまま）"
+        assert fit_attrs(win)._fit_size[1] == need_h, (
+            f"広くなった画面に戻っていない（{fit_attrs(win)._fit_size[1]}px のまま）"
             "＝クランプされた小さいままアプリの再起動しか回復手段が無くなる。"
         )
-        assert not win._fit_scroll.active[0], "入るようになったのにバーが残っている"
+        assert not _scroll_active(win), "入るようになったのにバーが残っている"
     finally:
         root.destroy()
 
@@ -1516,12 +1534,12 @@ def test_every_window_stays_inside_the_screen(name, monkeypatch):
         # そこでも入ってしまい、そのウィンドウのぶんは何も検査しないテストになる**（実装中に
         # 実際そうなった＝6 ウィンドウ中 4 ウィンドウが素通り）。⇒ 各ウィンドウの高さから外へ出る位置を作る。
         _cascade(win,
-                 x=max(0, screen_w - win._fit_size[0] + 40),
-                 y=screen_h - window_fit.SCREEN_MARGIN - win._fit_size[1] + 40)
+                 x=max(0, screen_w - fit_attrs(win)._fit_size[0] + 40),
+                 y=screen_h - window_fit.SCREEN_MARGIN - fit_attrs(win)._fit_size[1] + 40)
         window_fit.refit_all(root)          # ウィンドウごとの事情そのままで測り直させる
 
-        x, y = win._fit_pos
-        w, h = win._fit_size
+        x, y = fit_attrs(win)._fit_pos
+        w, h = fit_attrs(win)._fit_size
         assert x >= 0 and y >= 0, (
             f"[{name}] ウィンドウの左上が画面の外にある（{x}, {y}）＝タイトルバーを"
             "掴めず、動かすこともできない。"
@@ -1559,8 +1577,8 @@ def test_a_window_that_already_fits_is_not_moved(monkeypatch):
         win, _ = _open_multihop(root)
         _cascade(win, x=40, y=30)           # 十分に上＝そのままで入る置き場所
         window_fit.refit_all(root)
-        assert win._fit_pos == (40, 30), (
-            f"入っているウィンドウを動かした（{win._fit_pos} ≠ (40, 30)）"
+        assert fit_attrs(win)._fit_pos == (40, 30), (
+            f"入っているウィンドウを動かした（{fit_attrs(win)._fit_pos} ≠ (40, 30)）"
             "＝ユーザーが置いた場所が測り直しのたびに失われる。"
         )
     finally:
@@ -1626,8 +1644,8 @@ def test_a_window_on_another_monitor_stays_on_that_monitor(where, rects, x, y,
         window_fit.refit_all(root)
 
         left, top, right, bottom = rects[1]
-        px, py = win._fit_pos
-        w, h = win._fit_size
+        px, py = fit_attrs(win)._fit_pos
+        w, h = fit_attrs(win)._fit_size
         assert left <= px and px + w <= right, (
             f"[{where}] ウィンドウが別のモニタへ移された（x={px}, 幅 {w} / このモニタは "
             f"{left}〜{right}）＝サブモニタへ避けたウィンドウが測り直しのたびに"
@@ -1666,8 +1684,8 @@ def test_a_window_on_a_monitor_that_is_gone_is_pulled_back(monkeypatch):
             pytest.skip("WM がウィンドウを画面外へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
-        px, py = win._fit_pos
-        w, h = win._fit_size
+        px, py = fit_attrs(win)._fit_pos
+        w, h = fit_attrs(win)._fit_size
         assert 0 <= px and px + w <= _FHD_SCREEN[0], (
             f"消えたモニタに残ったウィンドウを引き戻していない（x={px}, 幅 {w}）"
             "＝画面のどこにも描かれず、掴むこともできない（B-083 の救済の取り消し）。"
@@ -1717,8 +1735,8 @@ def test_a_window_is_sized_for_the_monitor_it_sits_on(monkeypatch):
             pytest.skip("WM がウィンドウをサブ画面へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
-        _w, h = win._fit_size
-        _px, py = win._fit_pos
+        _w, h = fit_attrs(win)._fit_size
+        _px, py = fit_attrs(win)._fit_pos
         limit = small[3] - small[1] - window_fit.SCREEN_MARGIN
         assert h <= limit, (
             f"サブ画面（高さ {small[3] - small[1]}px）に置いたウィンドウが、主画面基準の"
@@ -1766,13 +1784,13 @@ def test_a_manually_shrunk_window_on_a_left_monitor_is_not_pulled_back(monkeypat
         root.update()
         if window_fit.window_position(win) != (-300, 100):
             pytest.skip("WM がウィンドウを左のモニタへ置かせない＝この検査は成立しない")
-        assert win.winfo_width() < win._fit_size[0], (
+        assert win.winfo_width() < fit_attrs(win)._fit_size[0], (
             "前提が崩れている（手で縮められていない）＝水増しが起きないので"
             "このテストは何も検査しない。"
         )
         window_fit.refit_all(root)
 
-        px, _py = win._fit_pos
+        px, _py = fit_attrs(win)._fit_pos
         assert px < 0, (
             f"手で縮めただけのウィンドウが主画面へ引き戻された（x={px}）＝矩形を "
             "`_fit_size` から水増しして作ったため、`host_monitor` が"
@@ -1863,8 +1881,8 @@ def test_the_usable_height_comes_from_the_work_area(monkeypatch):
             f"溢れない条件でテストしている（必要 {need_h}px ≤ 作業領域 {work[3]}px）"
             "＝上限の計算が壊れていても緑になる。"
         )
-        x, y = win._fit_pos
-        w, h = win._fit_size
+        x, y = fit_attrs(win)._fit_pos
+        w, h = fit_attrs(win)._fit_size
         assert y + dec_h + h <= work[3], (
             f"ウィンドウの下端がタスクバーの裏に入っている（上端 {y}px ＋ 装飾 {dec_h}px ＋ "
             f"高さ {h}px = {y + dec_h + h}px / 作業領域の下端 {work[3]}px）＝B-084。"
@@ -1907,7 +1925,7 @@ def test_a_taskbar_on_the_left_edge_is_avoided_too(monkeypatch):
             pytest.skip("WM がウィンドウを左端へ置かせない＝この検査は成立しない")
         window_fit.refit_all(root)
 
-        x, _y = win._fit_pos
+        x, _y = fit_attrs(win)._fit_pos
         assert x >= work[0], (
             f"ウィンドウの左端がタスクバーの裏に入っている（x={x} / 作業領域の左端 "
             f"{work[0]}）＝余白を「下だけ」で考えている（B-084）。"
@@ -2134,22 +2152,22 @@ def test_the_escape_bar_does_not_widen_the_next_measurement(monkeypatch):
         root.withdraw()
         i18n.set_lang("ja")
         win, _ = _open_scenario(root)
-        need_w = win._fit_need[0]
-        assert not win._fit_scroll.active[0], "前提が崩れている（最初からバーが出ている）"
+        need_w = fit_attrs(win)._fit_need[0]
+        assert not _scroll_active(win), "前提が崩れている（最初からバーが出ている）"
 
         screen["size"] = (1920, 800)               # 縦に入らなくなる＝縦バーが出る
         window_fit.refit_all(root)
-        assert win._fit_scroll.active[0], "前提が崩れている（溢れたのにバーが出ない）"
-        assert win._fit_need[0] == need_w, (
+        assert _scroll_active(win), "前提が崩れている（溢れたのにバーが出ない）"
+        assert fit_attrs(win)._fit_need[0] == need_w, (
             "バーを出したこと自体が必要量を変えている"
-            f"（{need_w} → {win._fit_need[0]}）＝必要量は中身の話で、"
+            f"（{need_w} → {fit_attrs(win)._fit_need[0]}）＝必要量は中身の話で、"
             "バーはその結果でしかない。"
         )
 
         screen["size"] = (1920, 1080)              # また入るようになった
         window_fit.refit_all(root)
-        assert win._fit_need[0] == need_w, (
-            f"必要幅が {win._fit_need[0]}px へ太ったまま（本来 {need_w}px）"
+        assert fit_attrs(win)._fit_need[0] == need_w, (
+            f"必要幅が {fit_attrs(win)._fit_need[0]}px へ太ったまま（本来 {need_w}px）"
             "＝出したままのバーを測ってしまい、そのぶんが必要量に焼き付いている。"
             "ウィンドウ幅は `grow_only` に守られて一度太ると戻らない。"
         )
@@ -2169,9 +2187,9 @@ def test_refit_all_keeps_each_window_s_own_conditions(monkeypatch):
         root.withdraw()
         i18n.set_lang("ja")
         win, _ = _open_batch(root)
-        kwargs = dict(win._fit_kwargs)
+        kwargs = dict(fit_attrs(win)._fit_kwargs)
         window_fit.refit_all(root)
-        assert win._fit_kwargs == kwargs
+        assert fit_attrs(win)._fit_kwargs == kwargs
         assert kwargs["extra_w"] > 0, "バッチの加算（スクロールバー＋外周）が消えている"
         # バッチは「列幅同期からやり直す」再測を自前で持つ＝DPI が変わって
         # スクロールバー自体が太っても正しく測れる（保存済みの加算値は古くなる）。
@@ -2220,7 +2238,7 @@ def test_repeated_changes_are_measured_once(monkeypatch):
         assert len(calls) == 1, (
             f"畳んだ測り直しが流れていない／2 回以上走った（{len(calls)} 回）"
         )
-        assert (need_w, need_h) == win._fit_need, (
+        assert (need_w, need_h) == fit_attrs(win)._fit_need, (
             "測り直しの結果がウィンドウの申告と食い違う＝畳んだぶんが落ちている。"
         )
         _assert_fits(win, "multihop（畳んだ測り直しのあと）")
@@ -2241,12 +2259,12 @@ def test_a_folded_measurement_still_reaches_the_window():
         i18n.set_lang("ja")
         win, _ = _open_multihop(root)
         win.update()
-        before = win._fit_size[1]
+        before = fit_attrs(win)._fit_size[1]
         for _ in range(4):
             win._add_waypoint()
         root.update()                           # ＝イベントループへ戻る（アイドル）
         assert getattr(win, "_fit_soon_id", None) is None, "溜まりが残っている"
-        assert win._fit_size[1] > before, (
+        assert fit_attrs(win)._fit_size[1] > before, (
             f"地点を 4 つ足してもウィンドウの高さが {before}px のまま＝畳んだ測り直しが"
             "どこにも届いていない（追従そのものを落とした＝B-021 の再発）。"
         )
@@ -2269,7 +2287,8 @@ def test_the_same_measurement_is_not_repeated(monkeypatch):
         win, _ = _open_multihop(root)
         win.update()
         window_fit.required_size(win)           # ここでそろう
-        escape = win._fit_scroll
+        escape = fit_attrs(win)._fit_scroll
+        assert escape is not None, "逃げ道（_ScrollEscape）が付いていない"
         touched = []
         real = escape.canvas.configure
         monkeypatch.setattr(escape.canvas, "configure",
@@ -2676,8 +2695,13 @@ def test_a_frame_that_swallows_pixels_is_said_again_once():
 
         asked: list = []
         real = tk.Toplevel.geometry
-        win.geometry = (                          # 何を要求したかだけ記録する
-            lambda spec=None: (asked.append(spec) if spec else None) or real(win, spec))
+        # I-163: `Toplevel.geometry`（`wm_geometry`）は「問い合わせ→str」
+        # 「設定→None」の 2 通りのオーバーロードを持ち、1 つの関数を代入する形
+        # では型で表せない（クエリ側の戻り値が str になるので）。パラメーター名
+        # だけは `newGeometry` に合わせておく（違う名前だと別の理由でも弾かれる）。
+        win.geometry = (                          # 何を要求したかだけ記録する  # type: ignore[assignment]
+            lambda newGeometry=None: (
+                asked.append(newGeometry) if newGeometry else None) or real(win, newGeometry))
         assert window_fit.correct_landing(win) is True, (
             "要求した寸法に着地していないのに、言い直していない"
         )
@@ -2686,7 +2710,7 @@ def test_a_frame_that_swallows_pixels_is_said_again_once():
             f"言い直した寸法が違う: {sizes}（期待 {w + 6}x{h}）"
             "＝呑まれた分を足さずに同じ寸法を要求すると、Tk がまた同じだけ呑む。"
         )
-        assert win._fit_size == (w, h), (
+        assert fit_attrs(win)._fit_size == (w, h), (
             "決めた寸法まで動かしている（確かめ直し〔B-118〕が見る基準がずれる）"
         )
     finally:
