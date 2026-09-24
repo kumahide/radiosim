@@ -166,7 +166,13 @@ Type: files; Name: "{app}\install_lang.txt"
 procedure CurStepChanged(CurStep: TSetupStep);
 begin
   if CurStep = ssPostInstall then
-    SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False);
+  begin
+    { B-272: 戻り値を捨てない。Inno の API は例外でなく戻り値で失敗を返すので
+      （B-189 と同型）、見ないと「書けなかった」が痕跡も残さず消える。書けな
+      くてもインストール自体は続ける（アプリ側は OS 言語へ段階的に落ちる）。 }
+    if not SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False) then
+      Log('install_lang.txt の書き込みに失敗した。初回起動の言語は OS の表示言語へ落ちる。');
+  end;
 end;
 
 { I-137 → I-139: アンインストールで設定/キャッシュ/結果/追加言語を消せるようにする。
@@ -373,6 +379,12 @@ begin
         DeleteFile(Path);
       if DirExists(Path) or FileExists(Path) then
         Failed := Failed + '  ' + Path + #13#10;
+      { B-272: lang_seed_consumed.txt は radiosim_conf.json と同じ親フォルダの
+        利用者データ（種を消費した記録）＝「設定」を消す選択に相乗りさせる。
+        単独の項目にすると 5 つめのチェックボックスが増えて画面が重くなる
+        わりに、これ単体を残すか消すかを利用者が気にする理由が無い。 }
+      if DataNames[I] = 'UninstDataSettings' then
+        DeleteFile(ExpandConstant('{userappdata}\RadioSim\lang_seed_consumed.txt'));
     end;
   end;
   { 設定と追加言語を両方消すと %APPDATA%\RadioSim が空殻で残る。RemoveDir は

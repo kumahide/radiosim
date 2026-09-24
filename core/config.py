@@ -493,6 +493,52 @@ def _installer_lang() -> "str | None":
     return _INSTALLER_LANG_CODES.get(name)
 
 
+def _installer_seed_mtime() -> "str | None":
+    """種ファイルの更新時刻（種の「版」代わり）。無ければ None。
+
+    インストーラは上書きインストールのたびに `install_lang.txt` を書き直す
+    （`CurStepChanged` は選ばれた言語が前回と同じでも毎回書く）ので、値が
+    変わらなくても mtime は必ず動く＝「入れ直した」ことそのものの印になる。
+    """
+    try:
+        return repr(os.stat(INSTALL_LANG_FILE).st_mtime)
+    except OSError:
+        return None
+
+
+def _lang_seed_consumed_file(config_path: str) -> str:
+    """種を「一度だけ消費した」印の置き場（B-272）＝**設定ファイルとは別の小さな
+    ファイル**に、設定ファイルと同じフォルダで置く。
+
+    `DEFAULT_CONFIG` へ足して設定ファイル側に持たせると、この版より前に作られた
+    設定ファイルは `load_config` の欠損補完で自動的に空の印を持つことになり、
+    「一度も消費していない（新規）」と「既に消費済みだが値が偶然空」を区別
+    できなくなる。別ファイルなら**存在しない＝この版より前の設定**がそのまま
+    読み取れる。⚠️ 固定パス（`CONFIG_FILE` 基準）にしないのは、`startup_lang` が
+    テストや将来の配置替えで別の `path` を受け取れるようにするため——印の置き場も
+    その `path` へ追随させないと、テスト間で印が漏れて誤判定する。
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "lang_seed_consumed.txt")
+
+
+def _consumed_lang_seed_mtime(config_path: str) -> "str | None":
+    """前回 `startup_lang` が消費した種の mtime。まだ一度も消費していなければ None。"""
+    try:
+        with open(_lang_seed_consumed_file(config_path), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _mark_lang_seed_consumed(config_path: str, mtime: str) -> None:
+    """この mtime の種を消費済みにする。書けなくても起動は止めない（設定保存と同じ契約）。"""
+    try:
+        with open(_lang_seed_consumed_file(config_path), "w", encoding="utf-8") as f:
+            f.write(mtime)
+    except OSError as e:
+        logger.warning("Lang seed marker save error: %s", e)
+
+
 def _os_ui_lang() -> "str | None":
     """OS の表示言語（ユーザー既定 UI 言語）を同梱言語へ丸める。
 
@@ -524,7 +570,7 @@ def initial_lang() -> str:
 def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     """起動時に `i18n.set_lang` へ渡す言語コードを決める。
 
-    設定ファイルが在れば**その中身が常に優先**（利用者の選択）。無いときだけ
+    設定ファイルが在れば**その中身が基本は優先**（利用者の選択）。無いときだけ
     `initial_lang()` で解く——その場でファイルへ書き戻す（B-184）。
 
     ⚠️ **書き戻さないと、初回起動中の最初の `save_config`（メニュー操作でなく
@@ -534,14 +580,38 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     インストール→初回起動→シングル実行→再起動で英語に戻る）。ここで確定した
     時点のファイルを作っておけば、以後のどの `_save_subset` も正しい `lang`
     を土台に合流する。
+
+    🔑 **種を「一度だけ消費する」（B-272）**＝設定ファイルが既に在っても、
+    まだ消費していない新しい種（＝インストーラへ入れ直して選び直した）が
+    あればそちらを適用する。ただし**この版より前に作られた設定ファイル**
+    （消費の記録が無い）は、既存の種を黙って適用せず印だけ揃える——さもないと
+    利用者が言語メニューで選び直した後の版アップグレード（＝インストーラの
+    再実行＝種の書き直し）のたびに、初回インストール時の言語へ黙って巻き戻る。
     """
-    if os.path.exists(path):
+    seed_mtime = _installer_seed_mtime()
+    if not os.path.exists(path):
+        lang = initial_lang()
+        resolved = DEFAULT_CONFIG.copy()
+        resolved["lang"] = lang
+        save_config(resolved, path)
+        if seed_mtime is not None:
+            _mark_lang_seed_consumed(path, seed_mtime)
+        return lang
+
+    consumed_mtime = _consumed_lang_seed_mtime(path)
+    if consumed_mtime is None:
+        if seed_mtime is not None:
+            _mark_lang_seed_consumed(path, seed_mtime)
         return cfg.get("lang", DEFAULT_CONFIG["lang"])
-    lang = initial_lang()
-    resolved = DEFAULT_CONFIG.copy()
-    resolved["lang"] = lang
-    save_config(resolved, path)
-    return lang
+
+    seed_lang = _installer_lang()
+    if seed_lang is not None and seed_mtime is not None and seed_mtime != consumed_mtime:
+        _mark_lang_seed_consumed(path, seed_mtime)
+        merged = dict(cfg)
+        merged["lang"] = seed_lang
+        save_config(merged, path)
+        return seed_lang
+    return cfg.get("lang", DEFAULT_CONFIG["lang"])
 
 
 # ============================================================

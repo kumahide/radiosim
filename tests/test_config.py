@@ -456,6 +456,67 @@ class TestStartupLang:
         monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
         assert config.startup_lang({"lang": "en"}, str(tmp_path / "none.json")) == "ja"
 
+    # --- 種を一度だけ消費する（B-272） ----------------------------------
+    def _seed_file(self, tmp_path, monkeypatch, name: str = "japanese") -> Path:
+        seed = tmp_path / "install_lang.txt"
+        seed.write_text(name, encoding="utf-8")
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(seed))
+        return seed
+
+    def test_fresh_install_marks_seed_consumed(self, tmp_path, monkeypatch):
+        """設定ファイルが無い初回起動＝種を適用し、その場で消費済みにする。"""
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        assert config.startup_lang({}, str(path)) == "ja"
+        marker = tmp_path / "lang_seed_consumed.txt"
+        assert marker.exists()
+
+    def test_existing_config_with_matching_marker_keeps_cfg_lang(self, tmp_path, monkeypatch):
+        """既に消費済みの種と mtime が変わっていなければ、入れ直していない＝cfg が勝つ。"""
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text("{}", encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        marker.write_text(repr(os.stat(seed).st_mtime), encoding="utf-8")
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+
+    def test_reinstall_with_new_seed_overrides_saved_lang(self, tmp_path, monkeypatch):
+        """入れ直して種の mtime が変わっていれば、選び直しを反映する。"""
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        marker.write_text("0.0", encoding="utf-8")   # 過去に消費した別の mtime
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+
+    def test_pre_existing_config_without_marker_does_not_reapply_seed(self, tmp_path, monkeypatch):
+        """この版より前に作られた設定＝印が無い。種を黙って適用せず、印だけ揃える。
+
+        さもないと、利用者が言語メニューで選び直した後の版アップグレード
+        （＝インストーラの再実行＝種の書き直し）のたびに、初回インストール時の
+        言語へ黙って巻き戻る。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        assert not marker.exists()
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+        assert marker.exists()
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        # 印を揃えただけで、この回は種を適用していない（次回以降の判定基準になる）。
+        assert json.loads(path.read_text(encoding="utf-8")) == {"lang": "en"}
+
+    def test_no_seed_file_never_touches_marker(self, tmp_path, monkeypatch):
+        """ポータブル配置（種が無い）では、印の作成も判定も一切走らない。"""
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+
     # --- 解決の順序 ---------------------------------------------------
     def test_installer_seed_beats_os(self, monkeypatch):
         """利用者が明示的に選んだ種のほうが、OS の言語より強い証拠。"""
