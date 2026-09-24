@@ -130,6 +130,38 @@ def _repo_wide_scanners() -> set[str]:
     return found
 
 
+class TestStdinDiagnostics:
+    """I-166＝「素で叩いた（stdin が空／JSON として読めない）」と「フックとして
+    呼ばれ、検査対象ではなかった」を手元から区別できること。前者だけ非ゼロで
+    断る（後者は毎回のフック呼び出しなので無言のまま＝壊れ方②を避ける）。
+    """
+
+    def _run(self, stdin: str, tmp_path) -> subprocess.CompletedProcess:
+        # I-172＝日本語の文字化けを防ぐため encoding を明示（既定は Windows の
+        # ロケール cp932 で、node が UTF-8 で書くメッセージを読めずに落ちる）。
+        return subprocess.run(["node", _GATE], input=stdin, cwd=str(tmp_path),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+
+    def test_empty_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_unparseable_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("not json {", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_valid_input_for_an_unrelated_tool_stays_silent(self, tmp_path):
+        """フックとして呼ばれた通常の Read/Edit 等＝この分岐には来ない（無言のまま 0）。"""
+        r = self._run(json.dumps({"tool_name": "Read", "tool_input": {}}), tmp_path)
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""
+
+
 def test_real_islands_include_every_repo_wide_scanner():
     """全体を走査するテストが増えたら島のテストにも足す（漏れると島のコミットで赤を素通しする）。"""
     with open(_SCOPE, encoding="utf-8") as f:

@@ -185,13 +185,33 @@ function tail(s, n) {
   return s.length > n ? "…\n" + s.slice(-n) : s;
 }
 
-function main() {
-  let input = {};
-  try {
-    input = JSON.parse(readStdin() || "{}");
-  } catch {
-    /* ignore */
+// I-166: stdin が空／JSON として読めないのは、Claude Code が PreToolUse
+// フックとして呼んだときには起こらない（常に tool_input の JSON が渡る）＝
+// 起きるのは人がこのスクリプトを素で叩いたときだけ。以前はそれも他の
+// 早期 return と同じ「無言で exit 0」に落ちており、「素叩き」「変更なし」
+// 「合格」の 3 状態が手元からは区別できなかった（I-166 の実測）。ここだけは
+// 非ゼロで断る＝フックとしての正常動作は変わらない（この分岐に来ないため）。
+function requireStdinInput() {
+  const raw = readStdin();
+  if (!raw.trim()) {
+    process.stderr.write(
+      "[pre-commit-gate] stdin が空です＝素で叩いたか配線がずれています。" +
+      "何も検査していません（PreToolUse フックの呼び出しでは常に tool_input の " +
+      "JSON が渡ります）。\n");
+    process.exit(2);
   }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    process.stderr.write(
+      "[pre-commit-gate] stdin を JSON として読めません＝素で叩いたか配線が" +
+      "ずれています。何も検査していません。\n");
+    process.exit(2);
+  }
+}
+
+function main() {
+  const input = requireStdinInput();
   if (!["Bash", "PowerShell"].includes(input.tool_name)) return;
   const command = (input.tool_input || {}).command || "";
   if (!COMMIT_OR_PUSH.test(command)) return;

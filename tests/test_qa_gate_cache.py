@@ -409,3 +409,40 @@ class TestPythonOutputIsUtf8:
         assert calls, f"{name} に Python の起動が見当たらない（数え方が古い）"
         missing = [c.splitlines()[0] for c in calls if "env: pythonEnv()" not in c]
         assert not missing, f"{name} で pythonEnv() を渡していない起動: {missing}"
+
+
+class TestStdinDiagnostics:
+    """I-166＝「素で叩いた（stdin が空／JSON として読めない）」と「フックとして
+    呼ばれ、今回は検査対象が無かった」を手元から区別できること。前者だけ非ゼロ
+    で断る（後者は毎ターン普通に起きる合法な無言終了なので変えない＝壊れ方②）。
+    `pre-commit-gate.mjs` 側の同型は `tests/test_pre_commit_gate.py` が持つ。
+    """
+
+    def _run(self, script: str, stdin: str, tmp_path) -> subprocess.CompletedProcess:
+        path = os.path.join(_REPO, "tools", "qa-hook", script)
+        # I-172＝日本語の文字化けを防ぐため encoding を明示。
+        return subprocess.run(["node", path], input=stdin, cwd=str(tmp_path),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+
+    def test_gate_empty_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("gate.mjs", "", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_gate_unparseable_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("gate.mjs", "not json {", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_gate_valid_input_with_nothing_to_check_stays_silent(self, tmp_path):
+        """フックとして呼ばれたが変更が無いターン＝この分岐には来ない（無言のまま 0）。
+
+        `cwd` を git リポジトリではない場所にして、素早く「検査対象なし」の
+        経路（`changedPyEntries` が例外→`process.exit(0)`）を通す。
+        """
+        r = self._run("gate.mjs", json.dumps({"cwd": str(tmp_path)}), tmp_path)
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""

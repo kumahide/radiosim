@@ -80,6 +80,30 @@ function readStdin() {
   }
 }
 
+// I-166: stdin が空／JSON として読めないのは、Claude Code が Stop フックとして
+// 呼んだときには起こらない（常に cwd 等の JSON が渡る）＝起きるのは人がこの
+// スクリプトを素で叩いたときだけ。以前は他の早期 return（entries.length===0 等・
+// これは毎ターン普通に起きる合法な無言終了なので変えない）と同じ「無言で exit 0」
+// に落ちており、「素叩き」と「今回は検査対象が無かった」が手元から区別できな
+// かった（I-166 の実測。`tools/qa-hook/pre-commit-gate.mjs` と同じ形）。
+function requireStdinInput() {
+  const raw = readStdin();
+  if (!raw.trim()) {
+    process.stderr.write(
+      "[gate] stdin が空です＝素で叩いたか配線がずれています。何も検査していません" +
+      "（Stop フックの呼び出しでは常に cwd 等の JSON が渡ります）。\n");
+    process.exit(2);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    process.stderr.write(
+      "[gate] stdin を JSON として読めません＝素で叩いたか配線がずれています。" +
+      "何も検査していません。\n");
+    process.exit(2);
+  }
+}
+
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
   process.exit(0);
@@ -358,12 +382,7 @@ function runDeterministic(cwd, py, entries, allPaths) {
 }
 
 async function main() {
-  let input = {};
-  try {
-    input = JSON.parse(readStdin() || "{}");
-  } catch {
-    /* ignore */
-  }
+  const input = requireStdinInput();
   const cwd = input.cwd || process.cwd();
   const stopActive = Boolean(input.stop_hook_active);
 
