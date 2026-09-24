@@ -336,9 +336,27 @@ def _tile_coords(lat: float, lon: float, zoom: int) -> tuple[int, int, int, int]
 #: `source_id` に選ぶと、その削除が国土地理院のキャッシュまで巻き込んでいた。
 #: 専用の名前空間の下へ分離すれば衝突は原理的に起きない（`BASEMAP_EXTRA_SUBDIR`
 #: ＝B-248 で背景地図の外部ソースに使った形と同じ設計）。⚠️ **既存の外部ソースの
-#: キャッシュは置き場が変わる**＝移行しないので取り直しになる（3.6 未リリース時点
-#: の変更＝配布物として外部ソースを使っていた利用者はまだいない）。
+#: キャッシュは置き場が変わる**＝移行しないので取り直しになる。宣言 DEM ソースは
+#: 3.4 から配布しているので、3.5 以前の旧置き場を持つ利用者はいる＝旧置き場は
+#: 読まないが、**消す側の対象には含める**（B-278＝`_legacy_source_root`）。
 DEM_EXTERNAL_SUBDIR: str = "external"
+
+
+def _legacy_source_root(src: "dem_sources.DemSourceSpec") -> str | None:
+    """3.5 以前の外部ソースの置き場（`CACHE_DIR/<source_id>/`）。無ければ None。
+
+    B-278＝B-274 で置き場を `DEM_EXTERNAL_SUBDIR` の下へ移したあと、旧置き場は
+    読まれないまま残り、ソース単位の削除からも外れて容量だけを占めていた。
+    ⚠️ **`source_id` が組み込みの置き場の名前と同じなら None**＝旧置き場は
+    組み込みのタイルと混ざっており、消すと B-274 そのものを再発させる。
+    """
+    if src.source_id == dem_sources.GSI_DEM.source_id:
+        return None
+    builtin_dirs = {layer_id for layer_id, _z in dem_sources.GSI_DEM.layers}
+    builtin_dirs |= {BASEMAP_SUBDIR, BASEMAP_EXTRA_SUBDIR, DEM_EXTERNAL_SUBDIR}
+    if src.source_id in builtin_dirs:
+        return None
+    return os.path.join(CACHE_DIR, src.source_id)
 
 
 def source_layer_dir(src: "dem_sources.DemSourceSpec", layer_id: str) -> str:
@@ -372,7 +390,7 @@ def source_delete_roots(src: "dem_sources.DemSourceSpec") -> list[str]:
     書き換える前のタイルが永久に残る**（画面からは選べないので利用者は消せない）。
     ⇒ **外部ソースは `DEM_EXTERNAL_SUBDIR/<source_id>` 直下を丸ごと**返す
     （B-274＝この名前空間の下は国土地理院・他ソースと衝突しないので、丸ごと
-    消しても巻き込みが起きない）。
+    消しても巻き込みが起きない）。3.5 以前の旧置き場も同じ理由で足す（B-278）。
 
     国土地理院は `CACHE_DIR/<layer_id>/` に直に置く（既存キャッシュを移さない
     という I-147 の完了条件）ので、**レイヤのディレクトリを列挙**して返す
@@ -380,7 +398,11 @@ def source_delete_roots(src: "dem_sources.DemSourceSpec") -> list[str]:
     """
     if src.source_id == dem_sources.GSI_DEM.source_id:
         return [source_layer_dir(src, layer_id) for layer_id, _z in src.layers]
-    return [os.path.join(CACHE_DIR, DEM_EXTERNAL_SUBDIR, src.source_id)]
+    roots = [os.path.join(CACHE_DIR, DEM_EXTERNAL_SUBDIR, src.source_id)]
+    legacy = _legacy_source_root(src)
+    if legacy is not None:
+        roots.append(legacy)
+    return roots
 
 
 def _cache_subdir_for(src: "dem_sources.DemSourceSpec", layer_id: str, xtile: int) -> str:

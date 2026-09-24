@@ -2174,6 +2174,43 @@ class TestCacheStatsAndDeletionBySource:
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
 
+    def test_delete_by_source_also_wipes_the_pre_3_6_location(
+            self, tmp_path, monkeypatch):
+        """B-278＝3.5 以前の置き場（`CACHE_DIR/<source_id>/`）も消す。
+
+        B-274 で置き場を `external/` の下へ移したので旧置き場は二度と読まれず、
+        ソース単位の削除からも外れると画面から容量を取り戻せない。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 2)   # 3.5 以前の置き場
+        self._seed(str(tmp_path), "dem5a_png/1", 4)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert res == {"deleted": 5}
+        assert not os.path.exists(os.path.join(str(tmp_path), "ext_src"))
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 4, "size_bytes": 16}
+
+    def test_pre_3_6_location_named_like_a_builtin_is_not_swept(
+            self, tmp_path, monkeypatch):
+        """B-278 の直しが B-274 を再発させないこと＝旧置き場の名前が組み込みの
+        置き場（`dem5a_png`・`basemap` 等）と同じなら、旧置き場は消さない。"""
+        import dataclasses
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_EXTRA_SUBDIR}/photo/14/1", 1)
+        for name in ("dem5a_png", dem.BASEMAP_EXTRA_SUBDIR, dem.DEM_EXTERNAL_SUBDIR):
+            colliding = dataclasses.replace(self.EXTERNAL, source_id=name)
+            dem_cache.delete_all_tile_cache(sources=[colliding], include_basemap=False)
+
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+        assert dem_cache.get_basemap_cache_stats() == {"count": 1, "size_bytes": 4}
+
     def test_delete_by_source_counts_what_actually_disappeared(
             self, tmp_path, monkeypatch):
         """B-269＝消えなかったぶんを「削除した」と数えない。
