@@ -510,7 +510,7 @@ An input form is displayed on startup.
 
 Clicking the button runs data retrieval in two phases.
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly.
+1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This phase runs only while the built-in GSI source is selected** — for any other source the run path in `views/launcher.py` skips it and goes straight to the calculation. With a DEM source added through a declaration file, only the points the elevation fetch needs are downloaded. To load an area into the cache ahead of time, use a range download in the map's Cache Management mode, which works for added DEM sources too from 3.6 (`_prefetch_generic` behind `dem_prefetch.prefetch_tiles`).
 2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
 
 > **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC** (the cache file's modification time, `dem.tile_acquired_date`), not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). Computing this value never touches the network. To recompute with fresh tiles, force re-download that area in Cache Management mode.
@@ -803,7 +803,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 ### Caching Strategy
 
-- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing)
+- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). **Only while the built-in GSI source is selected**; a declared DEM source skips it (range download and force re-download in Cache Management cover every source from 3.6)
 - **Memory cache**: Tiles stored in process memory (key: `(layer_id, xtile, ytile)`)
 - **Disk cache**: Tiles saved to `terrain_cache/{layer_id}/{xtile}/{ytile}.png`, persists across sessions. From 3.6, DEM sources added via a declaration file are kept separately under `terrain_cache/external/{source_id}/{definition hash}/{layer_id}/…` (`DEM_EXTERNAL_SUBDIR` in `core/dem.py`, so they cannot collide with built-in names)
 - **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely. Deleting or force-refetching cached tiles advances an invalidation epoch (`_cache_epoch` in `core/dem.py`); entries from an older epoch are not used, and a result whose fetch overlapped an epoch change is not stored
@@ -870,7 +870,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
 
 > 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6)**:
-> - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` is a 3-value field: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an artifact failed, so no verdict could be given; written by `report/batch.py` and `report/multihop.py`). In 4.0, the sensitivity calculation introduced in 3.4 (`core/sensitivity.py` — a recalculation across pessimistic/optimistic assumptions for vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given; **not renamed**). This replaces `core/models.py`'s `status = "OK" if actual_margin >= 0 else "NG"`. The column name, position, and the OK/NG thresholds themselves do not change. The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
+> - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` is a 3-value field: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an artifact failed, so no verdict could be given; written by `report/batch.py` and `report/multihop.py`). In 4.0, the sensitivity calculation introduced in 3.4 (`core/sensitivity.py` — a recalculation across pessimistic/optimistic assumptions for vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given; **not renamed**). This replaces `core/models.py`'s `status = "OK" if actual_margin >= 0 else "NG"`. The column name, its position, and the 0 dB margin line between OK and NG do not change. What changes is which margin is held against that line (today a single margin under the default assumptions; in 4.0 both the pessimistic and the optimistic one — OK if the link holds under both, NG if it fails under both, REVIEW if they disagree). The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
 > - **The on-screen/report "Rice K factor" (`current_k` = `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
 > - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12 in 4.0.** This has no effect if you use the packaged exe. `numpy` will also move to the 2.5.x line at the same time (3.4/3.5/3.6 keep it pinned at 2.4.4).
@@ -1097,13 +1097,18 @@ Launching with a different interpreter logs a warning (to the log file and stder
 entry point that runs them together.
 
 ```powershell
-# Before committing (the real thing) — everything, with the same coverage gate as CI
+# Everything, with the same coverage gate as CI (to confirm the whole tree by hand)
 & "$env:RADIOSIM_PYTHON" buildtools/dev_check.py
 
 # While iterating — state the scope explicitly
 & "$env:RADIOSIM_PYTHON" buildtools/dev_check.py --tests tests/test_multihop.py
 ```
 
+- **This is not the pre-commit gate.** The Claude Code hook
+  (`tools/qa-hook/pre-commit-gate.mjs`) picks, on every `git commit`, either an
+  island's tests or the full suite depending on what the change touches, and
+  always runs the full suite before `git push`. `dev_check.py` is the entry point
+  you run by hand without that hook; its scope is decided by its arguments alone.
 - **`ruff` and `pyright` are not run here.** `pytest` already runs both from inside
   `tests/test_repo_hygiene.py`, so invoking them again would run the same checks
   twice and split the target list across two places.
@@ -1117,6 +1122,36 @@ entry point that runs them together.
   did not exercise count as 0%, so it would fail every time.
 - Output is **one line per check plus an excerpt of whatever failed**. Use
   `--full-output` for the raw text.
+
+### Configuration files for manual verification (`qa_fixtures/`)
+
+In the portable layout, the user declaration files (`dem_sources.toml` /
+`tile_sources.toml`) and user-added display languages (under `lang\`) are read
+from next to the exe, i.e. `dist\RadioSimPro\`. That folder is rebuilt on every
+build, so anything placed there by hand disappears each time. The **master copies
+therefore live in `qa_fixtures/` and are deployed after the build**.
+
+```powershell
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py            # into dist\RadioSimPro\
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --repo     # when checking from source
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --appdata  # when checking the installed build
+& "$env:RADIOSIM_PYTHON" buildtools/deploy_qa_fixtures.py --remove   # remove what was deployed
+```
+
+- ⛔ **Never called from `build.bat`.** Deploying mid-build would put the
+  verification settings into the distributed zip and installer. Deploy only
+  **after** the build has finished.
+- The destination is **asked of the product code** (`core.config.USER_DEM_SOURCES_FILE`).
+  Copying the path here would drift silently the day the product moves it. The
+  language file (`qa_fixtures/lang/qa_fr.json`) goes under `lang\` rather than
+  directly into the destination (the same place as `core.config.USER_LANG_DIR`).
+- What each file is there to verify is in `qa_fixtures/README.md`. The masters hold
+  **only valid declarations**; to check that errors are rejected, break a copy
+  (broken masters would raise an error notice during every other check).
+- `tests/test_qa_fixtures.py` **loads them through the product's own readers**. The
+  declaration format moves with the versions; a stale master means *looking at a
+  configuration mistake instead of the feature you meant to check*, and it
+  **looks the same** — the selector simply does not appear.
 
 ### Test Suite
 
