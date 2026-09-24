@@ -115,19 +115,27 @@ def main(argv: "list[str] | None" = None) -> int:
             return 1
         # B-267＝**先客が居たら上書きしない**（戻せないため）。同じ内容なら黙って
         # 配り直す＝配置は何度実行しても同じ結果になる。
-        if os.path.isfile(dst) and not _same_content(src, dst):
-            if not args.force:
-                print(f"[ERROR] 配置先に別の内容のファイルがあります: {dst}\n"
-                      f"        退避してから配り直すか、上書きしてよいなら --force。",
-                      file=sys.stderr)
-                return 1
-            backup = dst + ".bak"
-            shutil.copyfile(dst, backup)
-            print(f"[NOTE] 退避しました: {backup}")
-        shutil.copyfile(src, dst)
-        print(f"[OK] {name} -> {dst}")
+        if os.path.isfile(dst) and not _same_content(src, dst) and not args.force:
+            print(f"[ERROR] 配置先に別の内容のファイルがあります: {dst}\n"
+                  f"        退避してから配り直すか、上書きしてよいなら --force。",
+                  file=sys.stderr)
+            return 1
 
     if not args.remove:
+        # B-275＝上の検査を**全対象ぶん先に済ませてから**ここでまとめてコピーする
+        # （2 パス）。1 本ずつ「検査 → コピー」を交互に行うと、後発のファイルで
+        # 弾かれたときに先発のファイルだけ配置先に残る（先客なしを装って半端に
+        # 混ざる）。検査を全部通した後のコピーは正本を読むだけなので、ここで
+        # 失敗する余地はほぼ無い（正本は上のループで存在確認済み）。
+        for name in FIXTURE_FILES:
+            src = os.path.join(FIXTURES_DIR, name)
+            dst = os.path.join(target, name)
+            if os.path.isfile(dst) and not _same_content(src, dst):
+                backup = dst + ".bak"
+                shutil.copyfile(dst, backup)
+                print(f"[NOTE] 退避しました: {backup}")
+            shutil.copyfile(src, dst)
+            print(f"[OK] {name} -> {dst}")
         # ⚠️ 配布物と取り違えないための一言（zip を作り直すと混入する）。
         print("[NOTE] 確認用の設定です。この配置先を固め直して配布しないこと。")
     return 0

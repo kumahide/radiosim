@@ -138,3 +138,16 @@ class TestDeployerDoesNotDestroyRealSettings:
         """同じ内容なら配り直せる（何度実行しても同じ結果になること）。"""
         assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
         assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+
+    def test_a_later_file_being_refused_deploys_nothing(self, tmp_path):
+        """B-275＝先発のファイルに先客が無くても、後発のファイルで弾かれたら
+        何も配置しない（1 本ずつ検査→コピーを交互にすると先発だけ残っていた）。"""
+        second = deploy_qa_fixtures.FIXTURE_FILES[1]
+        dst = tmp_path / second
+        dst.write_text("# 手で書いた宣言\n", encoding="utf-8")
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path)])
+
+        assert rc == 1
+        assert not os.path.isfile(tmp_path / self.FIRST), \
+            "後発で弾かれたのに先発だけ配置先に残った"
