@@ -480,14 +480,20 @@ def fetch_elevations_cached(
                      （B-213＝取得日は標高と一緒に結果へ運ぶ。保存時に引き直さない）。
     """
     key = _terrain_cache_key(params)
-    epoch = _dem_epoch()
 
     with _terrain_cache_lock:
         cached = _terrain_cache.get(key)
-        if cached is not None and cached[2] != epoch:
-            # タイルが無効化された後＝古い地形（B-288）。
-            del _terrain_cache[key]
-            cached = None
+    # ⚠️ 世代は**引いた後に**読む（B-289）＝先に読むと、引くまでの間に終わった
+    # 無効化を見ずに古い項目へ命中する。引いた後なら、ここでまだ世代が進んでいない
+    # 命中は無効化より前に答えたのと同じ。取得に使う世代も同じ値（取得より前）。
+    epoch = _dem_epoch()
+    if cached is not None and cached[2] != epoch:
+        # タイルが無効化された後＝古い地形（B-288）。引いてからここまでに別の計算が
+        # 登録し直した項目は消さない。
+        with _terrain_cache_lock:
+            if _terrain_cache.get(key) is cached:
+                del _terrain_cache[key]
+        cached = None
 
     if cached is not None:
         logger.info(

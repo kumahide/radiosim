@@ -506,6 +506,42 @@ class TestFetchElevationsCached:
         assert not np.array_equal(before, after), \
             "強制再取得したのに、地形キャッシュの取り直す前の標高で計算している"
 
+    def test_force_refetch_racing_a_cache_hit_does_not_return_stale_terrain(
+            self, default_params_dict, tmp_path, monkeypatch):
+        """地形キャッシュを引く最中に強制再取得が終わっても、取り直す前の地形を
+        返さない（B-289＝B-288 の直しの命中側）。
+
+        世代を読んでから辞書を引くまでの間に無効化が入ると、項目の世代が先に読んだ
+        値と一致して古い地形に命中する。ここでは辞書の `get` に強制再取得を割り込ませて、
+        その順序を決定的に作る。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+        params = sim.SimParams(default_params_dict)
+        before = self._fetch_elevs(params)
+
+        state = {"armed": True}
+
+        class _RacingDict(dict):
+            def get(self, key, default=None):
+                if state["armed"]:
+                    state["armed"] = False
+                    served["value"] = 20
+                    dem_prefetch.prefetch_tiles(
+                        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+                        force=True)
+                return super().get(key, default)
+        monkeypatch.setattr(sim, "_terrain_cache", _RacingDict(sim._terrain_cache))
+
+        after = self._fetch_elevs(params)
+
+        assert not state["armed"]
+        assert not np.array_equal(before, after), \
+            "引く最中に強制再取得が終わったのに、取り直す前の地形に命中している"
+
     @pytest.mark.parametrize("how", ("force", "range", "all"))
     def test_invalidation_during_a_calculation_is_not_cached(
             self, how, default_params_dict, tmp_path, monkeypatch):
