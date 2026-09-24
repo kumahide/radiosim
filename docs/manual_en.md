@@ -192,7 +192,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
-> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (this takes effect once per reinstall). A plain restart does not change it — change it under **Settings > Language**.
+> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (this takes effect once per reinstall; from 3.6 — the first install over 3.5 or earlier keeps the language you were already using). A plain restart does not change it — change it under **Settings > Language**.
 
 ### Help
 
@@ -300,7 +300,7 @@ Review the DEM tile cache and prefetch or delete tiles for any area — intended
 
 Unshaded areas are not yet cached.
 
-If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display and range deletion apply to whichever source you pick there (prefetch always targets GSI). The dropdown is hidden when GSI is the only available source.
+If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display, range download, force re-download and range deletion all apply to whichever source you pick there (from 3.6; before that, range download and force re-download always targeted GSI). In that case the window's cache statistics show two lines: the tile count and size for the selected source, and the total cache (all sources plus the basemap). The dropdown is hidden when GSI is the only available source, and the statistics then show the total on a single line.
 
 **Controls (mouse gestures)**
 
@@ -311,9 +311,9 @@ If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM 
 | Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
 | Shift + Ctrl + drag           | Delete the cache for an area            |
 
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap) so you can choose what to delete.
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap), each with its approximate size, so you can choose what to delete.
 
-> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers. Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
+> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers (or from the provider of the source selected under "Target DEM source"). Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 
 ---
 

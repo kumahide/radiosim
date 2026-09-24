@@ -403,7 +403,7 @@ Home for operations that **reach out of the app** (moved here from the launcher 
 | Open Project...     | Loads a `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
 | Save Project As...  | Writes the current input set to a `.rsproj` → same                        |
 | Load Parameters...  | Imports **simulation parameters only** from a settings file              |
-| Open Results Folder | Opens `results/` in Explorer                                             |
+| Open Results Folder | Opens `results/` in Explorer (creates it first if missing)               |
 
 ### Settings
 
