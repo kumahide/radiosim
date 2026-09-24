@@ -3124,6 +3124,32 @@ class TestPowerShellHereStringInBash:
         assert detours.check(command, "PowerShell") is None, command
 
     @pytest.mark.parametrize("command", [
+        # 2026-09-24 に実際に踏んだ形＝ヒアストリングが引数になり標準入力へ届かない
+        "git add a.py; git commit -q -F - @'\nsubject\n\nbody\n'@ 2>&1",
+        "git commit --file=- @'\nsubject\n'@",
+        "git commit --file - \"subject\"",
+        "git commit -F -",
+    ])
+    def test_commit_from_stdin_without_a_pipe_is_denied_in_powershell(
+            self, detours, command):
+        verdict = detours.check(command, "PowerShell")
+        assert verdict is not None and verdict[0] == "deny", command
+        assert "-F <" in verdict[1]           # 書き直し先を言う
+
+    @pytest.mark.parametrize("command", [
+        "$msg | git commit -F -",
+        "@'\nsubject\n'@ | git commit --file=-",
+        "git commit -F C:\\tmp\\msg.txt",
+        "git commit -m \"subject -F - in text\"",
+    ])
+    def test_commit_from_a_pipe_or_a_file_passes_in_powershell(self, detours, command):
+        assert detours.check(command, "PowerShell") is None, command
+
+    def test_commit_from_stdin_is_left_to_bash_heredoc_rules(self, detours):
+        """Bash では `--file=- <<'EOF'` が正しい書き方＝この判定は PowerShell だけ。"""
+        assert detours.check("git commit --file=- <<'EOF'\ns\nEOF", "Bash") is None
+
+    @pytest.mark.parametrize("command", [
         # ヒアドキュメント＝Bash の正しい書き方（これを止めたら逃げ道が消える）
         "git commit --file=- <<'EOF'\nsubject\n\nbody\nEOF",
         "python - <<'PY'\nprint(1)\nPY",

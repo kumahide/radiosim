@@ -117,17 +117,37 @@ class TestIslandTargets:
         ]
 
 
+#: リポジトリを歩く字面。⚠️ **pytest の一時フォルダ（`tmp_path`）を歩く形は除く**
+#: ＝リポジトリには触れないので島に足す理由が無い（2026-09-24＝B-280 のテストが
+#: `os.walk(tmp_path)` で誤検知され、フルスイート 8 分を 1 回無駄にした）。
+_REPO_WALK = re.compile(
+    r"os\.walk\((?!\s*(?:str\(\s*)?tmp_path\b)"
+    r"|(?<!tmp_path)\.rglob\("
+    r"|ls-files")
+
+
 def _repo_wide_scanners() -> set[str]:
     """リポジトリ全体（apps/・全 .py・全追跡ファイル）を歩くテスト。"""
-    pat = re.compile(r'rglob\(|os\.walk\(|ls-files')
     found = set()
     for name in os.listdir(os.path.join(_REPO, "tests")):
         if not (name.startswith("test_") and name.endswith(".py")):
             continue
         with open(os.path.join(_REPO, "tests", name), encoding="utf-8") as f:
-            if pat.search(f.read()):
+            if _REPO_WALK.search(f.read()):
                 found.add(f"tests/{name}")
     return found
+
+
+@pytest.mark.parametrize("src, expected", [
+    ("for d, _, fs in os.walk(ROOT):", True),
+    ("for p in ROOT.rglob('*.py'):", True),
+    ("git ls-files", True),
+    ("for d, _, fs in os.walk(tmp_path):", False),
+    ("for d, _, fs in os.walk(str(tmp_path)):", False),
+    ("for p in tmp_path.rglob('*.png'):", False),
+])
+def test_repo_walk_pattern_ignores_pytest_tmp_dirs(src, expected):
+    assert bool(_REPO_WALK.search(src)) is expected
 
 
 class TestStdinDiagnostics:
