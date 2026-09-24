@@ -1,4 +1,4 @@
-# RadioSim Pro 3.5
+# RadioSim Pro 3.6
 
 > **Intended reader**: developers who run it from source or work on the code.
 > If you only want to know how to use the app, see [manual_en.md](manual_en.md).

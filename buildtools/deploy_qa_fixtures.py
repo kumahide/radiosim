@@ -37,7 +37,9 @@ FIXTURES_DIR = os.path.join(_REPO, "qa_fixtures")
 
 #: 配る対象（`qa_fixtures/` の中で**製品が読む名前のものだけ**）。README や
 #: 壊した実験用のコピーを一緒に配らないよう、名前で白紙から並べる。
-FIXTURE_FILES = ("dem_sources.toml", "tile_sources.toml")
+#: ⚠️ `lang/qa_fr.json` は `core.config.USER_LANG_DIR` 基準のサブフォルダ＝配置先の
+#: 直下ではなく `lang/` の下に置く（下のコピー処理が親フォルダを作る）。
+FIXTURE_FILES = ("dem_sources.toml", "tile_sources.toml", "lang/qa_fr.json")
 
 
 def _same_content(a: str, b: str) -> bool:
@@ -134,6 +136,7 @@ def main(argv: "list[str] | None" = None) -> int:
                 backup = dst + ".bak"
                 shutil.copyfile(dst, backup)
                 print(f"[NOTE] 退避しました: {backup}")
+            os.makedirs(os.path.dirname(dst), exist_ok=True)
             shutil.copyfile(src, dst)
             print(f"[OK] {name} -> {dst}")
         # ⚠️ 配布物と取り違えないための一言（zip を作り直すと混入する）。

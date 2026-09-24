@@ -35,6 +35,11 @@ dem_sources.toml
 # 利用者が置く言語ファイル（lang/<コード>.json）。⚠️ 非公式訳という位置づけなので
 # リポジトリでは預からない＝本体へ取り込むなら PR で受けて i18n.py へ入れる。
 lang/
+# ⚠️ 例外＝動作確認用の正本（qa_fixtures/lang/）は上と同じ理由で追跡する
+# （dem_sources.toml と同型・3.6b1）。ディレクトリ自体も明示しないと git が
+# 中を見に行かない。
+!qa_fixtures/lang/
+!qa_fixtures/lang/qa_fr.json
 # ランタイムログはクラスごと除外する（radiosim.log / プロファイル / ローテーション
 # 分 / OneDrive の競合コピーを個別に列挙していたのをやめた＝列挙は必ず漏れる）。
 *.log

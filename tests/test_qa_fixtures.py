@@ -19,7 +19,7 @@ import sys
 
 import pytest
 
-from core import dem_sources, tile_sources
+from core import dem_sources, i18n, tile_sources
 
 _ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -68,6 +68,19 @@ class TestFixturesAreReadableByTheProduct:
         assert reports == []
         assert [s.source_id for s in specs] == ["osm"]
 
+    def test_lang_fixture_loads_without_any_rejection(self):
+        """I-130＝利用者が足す表示言語。全キーが採用される（正本はわざと部分訳）。"""
+        import json
+        with open(_fixture("lang/qa_fr.json"), encoding="utf-8") as f:
+            table = json.load(f)
+        accepted, rejected = i18n.validate_external(table)
+        assert rejected == []
+        assert accepted == {
+            "menu_help": "Aide",
+            "btn_run": "Exécuter",
+            "proj_saved": "Projet enregistré :\n{path}",
+        }
+
 
 class TestDeployerAndFixturesAgree:
 
@@ -76,10 +89,20 @@ class TestDeployerAndFixturesAgree:
         assert os.path.isfile(_fixture(name))
 
     def test_every_product_config_in_the_directory_is_deployed(self):
-        """`qa_fixtures/` に置いた製品の設定ファイルが配る対象から漏れないこと。"""
+        """`qa_fixtures/` に置いた製品の設定ファイルが配る対象から漏れないこと。
+
+        README・壊した実験用のコピーは対象外。トップレベルの `.toml` と、
+        `lang/` の下の `.json` の両方を見る（`lang/` は `USER_LANG_DIR` 基準の
+        サブフォルダなので置き場が違う＝FIXTURE_FILES 側は `lang/<name>.json`
+        と書く）。
+        """
         present = {
             n for n in os.listdir(_FIXTURES)
-            if n.endswith(".toml")
+            if n != "README.md" and n.endswith(".toml")
+        }
+        lang_dir = os.path.join(_FIXTURES, "lang")
+        present |= {
+            f"lang/{n}" for n in os.listdir(lang_dir) if n.endswith(".json")
         }
         assert present == set(deploy_qa_fixtures.FIXTURE_FILES)
 

@@ -1,4 +1,4 @@
-# RadioSim Pro 3.5
+# RadioSim Pro 3.6
 
 ![RadioSim Pro](../logo.png)
 
