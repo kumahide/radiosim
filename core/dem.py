@@ -235,6 +235,15 @@ def _get_session() -> "requests.Session":
 _tile_cache: dict[tuple, np.ndarray] = {}
 _cache_lock = threading.Lock()
 
+# メモリの写しを無効化した回数（B-286）。_cache_lock で保護する。
+#   無効化の口（`_fetch_tile` の置き換え・`dem_cache` の範囲削除／全削除）は
+#   ロックの中でこれを 1 つ進める。`get_elevation` はキャッシュを見たときの値を
+#   覚えておき、載せる時点で変わっていたら**載せない**＝無効化より前に読んだ
+#   古い配列が、無効化より後にメモリへ戻って居座らない。
+# ガード: tests/test_dem.py::TestPrefetchTilesGenericSource
+#         ::test_stale_read_racing_a_force_refetch_does_not_win
+_cache_epoch = 0
+
 # 恒久的に存在しないタイル（HTTP 404）のセット。再リクエスト防止のための
 # 負キャッシュ。_cache_lock で保護する。
 #   ★ここに入れてよいのは「取得しても永久に無い」タイルだけ（日本域外・海上で
@@ -474,6 +483,7 @@ def get_elevation(
                 if tile_key in _failed_tiles:
                     continue
                 cached = _tile_cache.get(tile_key)
+                epoch = _cache_epoch
 
             if cached is not None:
                 elev = _decode_elevation(cached[py, px], src)
@@ -500,7 +510,9 @@ def get_elevation(
                         layer_id, xtile, ytile,
                     )
                     continue
-                _tile_cache.setdefault(tile_key, arr)  # 競合時は先着優先
+                # 読んでいる間に無効化があったら載せない（B-286）＝この 1 回だけ使う。
+                if _cache_epoch == epoch:
+                    _tile_cache.setdefault(tile_key, arr)  # 競合時は先着優先
 
             elev = _decode_elevation(arr[py, px], src)
             if elev != 0.0:
@@ -595,8 +607,12 @@ def _read_cached_tile(cache_path: str) -> "np.ndarray | None":
 
 
 def _write_tile_atomic(cache_path: str, img_data: bytes, *,
-                       replace_broken: bool = False) -> None:
+                       replace_broken: bool = False) -> bool:
     """タイル画像を**原子的に**ディスクキャッシュへ書く（B-123）。
+
+    戻り値＝`cache_path` がこの内容になったか（既に在って書かなかった場合も真＝
+    同じ URL のタイル）。偽は書き込みか置き換えに失敗したとき（B-287＝強制再取得は
+    これを見て、置き換えられなかったタイルを「取得した」と数えない）。
 
     同一ディレクトリの一時ファイルへ書いてから `os.replace` する。⇒ 他のスレッド
     から見える `cache_path` は**常に「無いか、完全か」のどちらか**になる。
@@ -625,13 +641,14 @@ def _write_tile_atomic(cache_path: str, img_data: bytes, *,
     """
     if os.path.exists(cache_path) and not replace_broken:
         # 同じ URL のタイル＝同じ内容。上書きしても得るものが無く、競合だけ増える。
-        return
+        return True
 
     tmp_path = f"{cache_path}.{os.getpid()}.{threading.get_ident()}.tmp"
     try:
         with open(tmp_path, "wb") as f:
             f.write(img_data)
         os.replace(tmp_path, cache_path)
+        return True
     except OSError as e:
         # ⚠️ **握り潰してよいのは中身が読める時だけ**（B-136・置換の回は必ず在る）。
         if os.path.exists(cache_path) and _read_cached_tile(cache_path) is not None:
@@ -645,6 +662,7 @@ def _write_tile_atomic(cache_path: str, img_data: bytes, *,
             os.remove(tmp_path)
         except OSError:
             pass
+        return False
 
 
 def _fetch_tile(
@@ -672,8 +690,10 @@ def _fetch_tile(
         force: 読めるキャッシュがあっても取り直して上書きする（B-280＝地図の
             強制再取得）。⚠️ **`force` を受けた層は必ずここまで渡す**＝渡さないと
             読めるキャッシュを返して「取得した」と数える。取れなかったとき
-            （通信失敗）は None＝キャッシュへは戻らない（B-284）。
+            （通信失敗）は None＝キャッシュへは戻らない（B-284）。取れても
+            ディスクを置き換えられなかったときも None（B-287）。
     """
+    global _cache_epoch
     src = source if source is not None else dem_sources.GSI_DEM
     url = src.url_template.format(layer=layer_id, z=zoom, x=xtile, y=ytile)
     if force:
@@ -698,16 +718,26 @@ def _fetch_tile(
             img_data = res.content
             arr = np.array(Image.open(io.BytesIO(img_data)).convert("RGB"))
             os.makedirs(cache_subdir, exist_ok=True)
-            _write_tile_atomic(cache_path, img_data, replace_broken=replace_existing)
+            written = _write_tile_atomic(cache_path, img_data, replace_broken=replace_existing)
             # B-283＝ディスクを差し替えたら、メモリ側の古い写しも落とす
             #   （範囲削除 `dem_cache.delete_tile_cache` と同じ無効化）。落とさないと
             #   `get_elevation` は `_tile_cache` を先に見るので、強制再取得のあとも
             #   同じ起動のうちは古い標高を返す。取れた以上 404 の印も外す。
+            #   世代も進める（B-286）＝並んで古いディスクを読んだ計算が戻せないように。
             tile_key = (src.source_id, layer_id, xtile, ytile)
             with _cache_lock:
                 _failed_tiles.discard(tile_key)
-                if replace_existing:
+                if replace_existing and written:
                     _tile_cache.pop(tile_key, None)
+                    _cache_epoch += 1
+            if force and not written:
+                # B-287＝置き換えられなかった＝ディスクは古いまま。取り直したとは
+                # 数えない（B-284 の通信失敗と同じ扱い・古いキャッシュは残す）。
+                logger.warning(
+                    "tile: force refetch could not replace the cached file: path=%s",
+                    cache_path,
+                )
+                return None
             return arr
 
         if res.status_code == 404:

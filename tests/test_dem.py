@@ -1746,6 +1746,104 @@ class TestPrefetchTilesGenericSource:
         assert res["failed"] > 0
         assert sorted(tmp_path.glob("**/*.png")) == cached, "取れなかったのに古いキャッシュが消えた"
 
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_stale_read_racing_a_force_refetch_does_not_win(
+            self, tmp_path, monkeypatch, which):
+        """計算が古いディスクを読んだ直後・メモリへ載せる前に強制再取得が終わっても、
+        古い配列がメモリへ戻って居座らない（B-286）。
+
+        地図の DL は別スレッドで動くので、この順序は実際に起こり得る。ここでは
+        計算側の `_read_cached_tile` の戻り際に強制再取得を割り込ませて、その順序を
+        決定的に作る。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        before = dem.get_elevation(self.LAT, self.LON, source)
+        monkeypatch.setattr(dem, "_tile_cache", {})     # 次の起動＝メモリは空・ディスクは古い
+
+        real_read = dem._read_cached_tile
+        state = {"armed": True}
+
+        def read_then_race(path):
+            arr = real_read(path)
+            if state["armed"] and arr is not None:
+                state["armed"] = False
+                served["value"] = 20
+                dem_prefetch.prefetch_tiles(
+                    self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+            return arr
+        monkeypatch.setattr(dem, "_read_cached_tile", read_then_race)
+
+        dem.get_elevation(self.LAT, self.LON, source)   # 古い配列を読んだ側
+        monkeypatch.setattr(dem, "_read_cached_tile", real_read)
+        after = dem.get_elevation(self.LAT, self.LON, source)
+
+        assert not state["armed"]
+        assert after != before, "強制再取得より後の計算が、競合で戻った古い標高を使っている"
+
+    @pytest.mark.parametrize("how", ("range", "all"))
+    def test_stale_read_racing_a_cache_delete_does_not_win(self, tmp_path, monkeypatch, how):
+        """B-286 のクラス点検＝範囲削除・全削除も同じ無効化の口。削除と並んで
+        古いディスクを読んだ計算が、消したタイルをメモリへ戻さない。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        self._serve(monkeypatch, {"value": 10})
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+
+        real_read = dem._read_cached_tile
+        state = {"armed": True}
+
+        def read_then_delete(path):
+            arr = real_read(path)
+            if state["armed"] and arr is not None:
+                state["armed"] = False
+                if how == "range":
+                    dem_cache.delete_tile_cache(
+                        self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+                else:
+                    dem_cache.delete_all_tile_cache()
+            return arr
+        monkeypatch.setattr(dem, "_read_cached_tile", read_then_delete)
+
+        dem.get_elevation(self.LAT, self.LON, self.EXTERNAL)
+
+        assert not state["armed"]
+        assert dem._tile_cache == {}, "削除したタイルが、競合でメモリへ戻っている"
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_whose_write_failed_is_not_counted(
+            self, tmp_path, monkeypatch, which):
+        """強制再取得でディスクの置き換えに失敗したタイルは「取得した」と数えず、
+        メモリにも古い写しの無効化だけが起きたことにしない（B-287）。
+
+        Windows では読まれている最中のファイルへの `os.replace` が拒まれる
+        （`_write_tile_atomic` の註）。書けなかったのに成功と数えると、ディスクには
+        古いタイルが残り、次の起動の計算は古い標高を読み直す。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        self._serve(monkeypatch, {"value": 10})
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+
+        def deny(src, dst):
+            raise PermissionError(5, "Access is denied")
+        monkeypatch.setattr(dem.os, "replace", deny)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == 0, \
+            "ディスクを置き換えられなかったのに「取り直した」と数えている"
+        assert res["failed"] > 0
+
     def test_failed_fetch_is_counted(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: None)

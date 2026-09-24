@@ -405,6 +405,9 @@ def delete_tile_cache(
                 logger.warning("delete_tile_cache: %s", e)
                 errors += 1
     with dem._cache_lock:
+        # 世代を進める（B-286）＝並んで古いディスクを読んだ計算が、消したタイルを
+        # メモリへ戻せないように（`dem._cache_epoch` の註）。
+        dem._cache_epoch += 1
         for key in keys_to_clear:
             dem._tile_cache.pop(key, None)
             dem._failed_tiles.discard(key)
@@ -566,6 +569,7 @@ def delete_all_tile_cache(
                 logger.warning(
                     "delete_all_tile_cache: %d 枚が消えずに残った: %s", after, root)
     with dem._cache_lock:
+        dem._cache_epoch += 1   # B-286（`delete_tile_cache` と同じ）
         dem._tile_cache.clear()
         dem._failed_tiles.clear()
         dem._tile_validity_memo.clear()
