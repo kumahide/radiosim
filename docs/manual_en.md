@@ -300,7 +300,7 @@ Review the DEM tile cache and prefetch or delete tiles for any area — intended
 
 Unshaded areas are not yet cached.
 
-If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display, range download, force re-download and range deletion all apply to whichever source you pick there (from 3.6; before that, range download and force re-download always targeted GSI). In that case the window's cache statistics show two lines: the tile count and size for the selected source, and the total cache (all sources plus the basemap). The dropdown is hidden when GSI is the only available source, and the statistics then show the total on a single line.
+If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display, range download, force re-download and range deletion all apply to whichever source you pick there (from 3.6; before that, range download and force re-download always targeted GSI). In that case the window's cache statistics show two lines: the tile count and size for the selected source, and the total cache (the whole cache folder). The size for a source covers everything deleting that source's cache would remove, including tiles fetched before the declaration was edited. The dropdown is hidden when GSI is the only available source, and the statistics then show the total on a single line.
 
 **Controls (mouse gestures)**
 

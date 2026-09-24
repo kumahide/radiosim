@@ -99,6 +99,19 @@ def _resolve_attribution(source_id: str) -> str:
     return i18n.t(_ATTR_KEY_PALE)
 
 
+def _clamp_zoom_range(
+    source_id: str, min_zoom: int, max_zoom: int,
+) -> tuple[int, int]:
+    """ズームの範囲を背景地図ソースの最大ズームへ絞る（B-279）。
+
+    宣言した `max_zoom` を超えるタイルは取れず、欠損扱いで地図ごと省かれる。
+    `min_zoom` も上限以下へ抑える（範囲が空になって `choose_zoom` が
+    上限を超えた `min_zoom` を返さないように）。
+    """
+    max_zoom = min(max_zoom, dem.basemap_max_zoom(source_id))
+    return min(min_zoom, max_zoom), max_zoom
+
+
 def _paste_attribution(img: "Image.Image", text: str) -> None:
     """出典表記を画像の右下へ焼き込む（B-133）。
 
@@ -223,6 +236,7 @@ def render_path_map(
             既定は `"pale"`（旧来の固定挙動）。
     """
     try:
+        min_zoom, max_zoom = _clamp_zoom_range(basemap_source_id, min_zoom, max_zoom)
         zoom = choose_zoom(tx, rx, max_tiles, min_zoom, max_zoom, margin_frac, aspect)
         band = _band_px(tx, rx, zoom, margin_frac, aspect)
         x0, x1, y0, y1 = _coverage_tiles(band)
@@ -439,6 +453,7 @@ def render_paths_map(
     if not paths:
         return None
     try:
+        min_zoom, max_zoom = _clamp_zoom_range(basemap_source_id, min_zoom, max_zoom)
         zoom = choose_zoom_paths(paths, max_tiles, min_zoom, max_zoom,
                                  margin_frac, aspect)
         box = _bbox_px(paths, zoom, margin_frac, aspect)

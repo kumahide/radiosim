@@ -158,7 +158,8 @@ def _process_position(
         if not force and (_is_cached(path5a) or _is_cached(path5b)):
             continue
 
-        arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a)
+        arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a,
+                                force=force)
         if arr5a is not None:
             with lock:
                 counts["downloaded_5a"] += 1
@@ -169,7 +170,8 @@ def _process_position(
             remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
 
         # 5a に欠損が残る（または 5a 不在）→ 5b で埋まる分を解消
-        arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b)
+        arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b,
+                                force=force)
         if arr5b is not None:
             with lock:
                 counts["downloaded_5b"] += 1
@@ -181,7 +183,8 @@ def _process_position(
         need_dem = True
 
     if need_dem:
-        arr = dem._fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path)
+        arr = dem._fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path,
+                              force=force)
         with lock:
             if arr is not None:
                 counts["downloaded_dem"] += 1
@@ -278,7 +281,8 @@ def _prefetch_generic(
                     with lock:
                         counts["skipped"] += 1
                 else:
-                    arr = dem._fetch_tile(layer_id, zoom, x, y, subdir, cache_path, source=src)
+                    arr = dem._fetch_tile(layer_id, zoom, x, y, subdir, cache_path,
+                                          source=src, force=force)
                     with lock:
                         if arr is not None:
                             counts["downloaded"] += 1

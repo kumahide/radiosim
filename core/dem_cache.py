@@ -445,14 +445,19 @@ def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
     集計する（背景地図・他ソースは含めない）。省略時は従来どおり
     `CACHE_DIR` 全体（全ソース＋背景地図）を合算する＝**後方互換**。
 
+    🔑 **数える範囲は消す範囲と同じ**（B-282）＝`dem.source_delete_roots`。
+    読む側の置き場（`source_layer_dir`＝今の定義のハッシュの下だけ）で数えると、
+    宣言を書き換える前のタイルと 3.5 以前の旧置き場が漏れ、「0 MB と出ているのに
+    削除で大量に消える」表示になる。
+
     Returns:
         {"count": int, "size_bytes": int}
     """
     if source is None:
         return _walk_stats(dem.CACHE_DIR)
     total = {"count": 0, "size_bytes": 0}
-    for layer_id, _zoom in source.layers:
-        layer_stats = _walk_stats(dem.source_layer_dir(source, layer_id))
+    for root in dem.source_delete_roots(source):
+        layer_stats = _walk_stats(root)
         total["count"] += layer_stats["count"]
         total["size_bytes"] += layer_stats["size_bytes"]
     return total
@@ -482,9 +487,13 @@ def get_cache_breakdown() -> dict:
 
     I-169（3.6 ステージ1）＝地図ウィンドウの統計表示・全削除ダイアログが、
     それぞれ別々に `get_cache_stats()` を呼んで合計だけ見せていたのを、
-    この関数 1 つに集約する。合計は各内訳の**足し算**で作る（`CACHE_DIR`
-    全体を別途もう一度走査しない）＝出所が 2 つに割れて数字が食い違う経路を
-    構造的に無くす。
+    この関数 1 つに集約する。
+
+    ⚠️ **合計は `CACHE_DIR` 全体の走査**（B-282 で I-169 の「内訳の足し算」を
+    撤回）＝足し算だと、どの内訳にも属さないタイル（宣言を消したソースの残り
+    など）が総量から消え、実際のディスク使用量より小さく出る。総量が答える
+    べきは「ディスクをどれだけ使っているか」なので、内訳の和とは一致しない
+    ことがある（差は、どのソースにも属さない残り）。
 
     Returns:
         {
@@ -494,8 +503,6 @@ def get_cache_breakdown() -> dict:
         }
     """
     sources: list[dict] = []
-    total_count = 0
-    total_size = 0
     for src in dem_sources.all_sources():
         stats = get_cache_stats(src)
         sources.append({
@@ -504,15 +511,10 @@ def get_cache_breakdown() -> dict:
             "count": stats["count"],
             "size_bytes": stats["size_bytes"],
         })
-        total_count += stats["count"]
-        total_size += stats["size_bytes"]
-    basemap = get_basemap_cache_stats()
-    total_count += basemap["count"]
-    total_size += basemap["size_bytes"]
     return {
         "sources": sources,
-        "basemap": basemap,
-        "total": {"count": total_count, "size_bytes": total_size},
+        "basemap": get_basemap_cache_stats(),
+        "total": get_cache_stats(),
     }
 
 

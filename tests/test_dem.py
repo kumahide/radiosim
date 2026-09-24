@@ -5,6 +5,7 @@ dem.py のユニットテスト（DEM/淡色地図タイル取得・標高デコ
 HTTP 通信は monkeypatch で差し替え、ネットワーク接続不要。
 """
 
+import io
 import json
 import math
 import os
@@ -13,6 +14,7 @@ import unittest.mock as mock
 import numpy as np
 import pytest
 import requests
+from PIL import Image
 
 from core import config
 from core import dem
@@ -1565,7 +1567,7 @@ class TestPrefetchTilesGenericSource:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         seen_sources = []
 
-        def fetch(layer_id, zoom, x, y, subdir, cache_path, source=None):
+        def fetch(layer_id, zoom, x, y, subdir, cache_path, source=None, force=False):
             seen_sources.append(source)
             return np.zeros((256, 256, 3), dtype=np.uint8)
 
@@ -1609,6 +1611,48 @@ class TestPrefetchTilesGenericSource:
         res = dem_prefetch.prefetch_tiles(
             self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=True)
         assert res == {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_really_goes_to_the_server(self, tmp_path, monkeypatch, which):
+        """強制再取得は、読めるキャッシュがあっても**通信して上書きする**（B-280）。
+
+        上の検査は `_fetch_tile` を差し替えているので、`prefetch_tiles` →
+        `_fetch_tile` の継ぎ目（`force` が下の層まで届くか）を見ていなかった。
+        ここは `_fetch_tile` を製品のまま通し、通信だけを偽物にする。
+        """
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        urls: list[str] = []
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self):
+                buf = io.BytesIO()
+                Image.new("RGB", (256, 256), (0, 0, served["value"])).save(buf, format="PNG")
+                self.content = buf.getvalue()
+
+        class _Session:
+            def get(self, url, timeout=None):
+                urls.append(url)
+                return _Res()
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        first = len(urls)
+        assert first > 0
+        served["value"] = 20
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert len(urls) - first == first, "強制再取得なのに通信していない"
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == first
+        written = list(tmp_path.glob("**/*.png"))
+        assert written and all(
+            np.asarray(Image.open(p))[0, 0, 2] == 20 for p in written), \
+            "取り直した内容でキャッシュが上書きされていない"
 
     def test_failed_fetch_is_counted(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
@@ -1866,19 +1910,63 @@ class TestBasemapTiles:
 
     def test_tile_path_includes_zoom(self):
         """キャッシュパスにズームが入る（異なるズームの同一(x,y)が衝突しない）。"""
-        subdir, path = dem._basemap_tile_path("pale", 14, 100, 200)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 14, 100, 200)
         assert os.path.join(dem.BASEMAP_SUBDIR, "14", "100") in subdir
         assert path.endswith(os.path.join("100", "200.png"))
         # ズーム違いはパスが異なる。
-        _, path15 = dem._basemap_tile_path("pale", 15, 100, 200)
+        _, path15 = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 15, 100, 200)
         assert path != path15
 
     def test_tile_path_isolates_non_pale_sources(self):
         """`"pale"` 以外は `basemap/<source_id>/` へ分離される（B-248）。"""
-        _, pale_path = dem._basemap_tile_path("pale", 14, 100, 200)
-        _, photo_path = dem._basemap_tile_path("photo", 14, 100, 200)
+        _, pale_path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 14, 100, 200)
+        _, photo_path = dem._basemap_tile_path(dem._resolve_basemap_source("photo"), 14, 100, 200)
         assert pale_path != photo_path
         assert os.path.join(dem.BASEMAP_EXTRA_SUBDIR, "photo") in photo_path
+
+    def test_rewritten_url_does_not_reuse_old_provider_tiles(
+            self, tmp_path, monkeypatch):
+        """同じ `source_id` で URL を書き換えたら、旧プロバイダのタイルを読まない（B-281）。
+
+        製品の取得経路（`fetch_basemap_tiles`→`_fetch_tile`）を差し替えずに通し、
+        通信だけを偽物にする＝置き場の決め方そのものを見る。
+        """
+        from core import tile_sources
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+
+        def declare(url: str) -> None:
+            monkeypatch.setattr(tile_sources, "_user_sources", [
+                tile_sources.TileSourceSpec(
+                    source_id="osm", display_name="OSM", url=url, max_zoom=18,
+                    attribution="(c)", terms_url="https://example.invalid")])
+
+        def png(value: int) -> bytes:
+            buf = io.BytesIO()
+            Image.new("RGB", (256, 256), (value,) * 3).save(buf, format="PNG")
+            return buf.getvalue()
+
+        urls: list[str] = []
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self, url: str):
+                self.content = png(10 if "old.invalid" in url else 90)
+
+        class _Session:
+            def get(self, url, timeout=None):
+                urls.append(url)
+                return _Res(url)
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+        declare("https://old.invalid/{z}/{x}/{y}.png")
+        old = dem.fetch_basemap_tiles([(1, 2)], 14, "osm")
+        declare("https://new.invalid/{z}/{x}/{y}.png")
+        new = dem.fetch_basemap_tiles([(1, 2)], 14, "osm")
+
+        assert int(old[(1, 2)][0, 0, 0]) == 10
+        assert int(new[(1, 2)][0, 0, 0]) == 90, "旧プロバイダのキャッシュを読んだ"
+        assert [u.split("/")[2] for u in urls] == ["old.invalid", "new.invalid"]
 
     def test_fetch_basemap_tiles_parallel_returns_dict(self, monkeypatch):
         """並列取得が成功タイルだけを {(x,y):配列} で返す。"""
@@ -1906,7 +1994,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path("pale", z, x, y)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
@@ -1919,7 +2007,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path("pale", z, x, y)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
@@ -2264,9 +2352,32 @@ class TestGetCacheBreakdown:
         assert by_id["ext_src"]["size_bytes"] == 12
         assert by_id["ext_src"]["display_name"] == "External"
         assert result["basemap"] == {"count": 1, "size_bytes": 4}
-        # 合計は内訳の足し算そのもの（CACHE_DIR を別途もう一度歩いた値と一致するはず）。
+        # どの内訳にも属さない残りが無いときは、合計＝内訳の和＝CACHE_DIR 全体。
         assert result["total"] == {"count": 6, "size_bytes": 24}
         assert result["total"] == dem_cache.get_cache_stats()
+
+    def test_counts_the_same_range_that_deletion_sweeps(self, tmp_path, monkeypatch):
+        """ソース別の容量は削除で消える範囲、総量は CACHE_DIR 全体（B-282）。
+
+        宣言を書き換える前のハッシュの下・3.5 以前の旧置き場・宣言を消した
+        ソースの残りは、読む側の置き場には無いが、ディスクは使っている。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [self.EXTERNAL])
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 1)          # 今の定義
+        self._seed(str(tmp_path), "external/ext_src/0123456789ab/terrarium/1", 2)  # 書き換え前
+        self._seed(str(tmp_path), "ext_src/terrarium/1", 3)                        # 3.5 以前
+        self._seed(str(tmp_path), "external/gone_src/abcdef012345/t/1", 4)         # 宣言を消した
+
+        result = dem_cache.get_cache_breakdown()
+        by_id = {s["source_id"]: s for s in result["sources"]}
+        assert by_id["ext_src"]["count"] == 6
+        assert result["total"]["count"] == 10
+
+        deleted = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)["deleted"]
+        assert deleted == by_id["ext_src"]["count"], "表示と削除で数える範囲が違う"
 
     def test_breakdown_with_only_gsi_has_one_source_entry(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))

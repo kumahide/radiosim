@@ -22,6 +22,7 @@ dem.py
 infrastructure.py を config.py ＋ dem.py（本体）へ分割した際に切り出した DEM 層。
 """
 
+import hashlib
 import io
 import math
 import os
@@ -130,6 +131,10 @@ _BASEMAP_BUILTIN_URLS: dict[str, str] = {
     "photo": "https://cyberjapandata.gsi.go.jp/xyz/seamlessphoto/{z}/{x}/{y}.jpg",
 }
 
+#: 組み込み背景地図（`pale`/`photo`）の最大ズーム（B-279）。地図ウィンドウの
+#: 組み込みレイヤと同じ値。
+_BASEMAP_BUILTIN_MAX_ZOOM: int = 18
+
 #: `source_id` は "pale" 予約（既存キャッシュ `basemap_pale/` を動かさない）。
 _RESERVED_BASEMAP_CACHE_SOURCE_ID = "pale"
 
@@ -151,13 +156,18 @@ class _UrlSource(Protocol):
 
 
 class _BasemapSourceRef(NamedTuple):
-    """`_UrlSource` の軽量実装（`dem_sources.DemSourceSpec` 互換の使い捨て）。"""
+    """`_UrlSource` の軽量実装（`dem_sources.DemSourceSpec` 互換の使い捨て）。
+
+    ⚠️ **使う側が要る項目は宣言から落とさない**（B-279＝`max_zoom` を持たせず、
+    帳票が宣言の上限を超えるズームを要求して地図が消えた）。
+    """
     url_template: str
     source_id: str
+    max_zoom: int = _BASEMAP_BUILTIN_MAX_ZOOM
 
 
 def _resolve_basemap_source(source_id: str) -> "_BasemapSourceRef":
-    """背景地図の `source_id` → `(url_template, cache_key)`。
+    """背景地図の `source_id` → `(url_template, cache_key, max_zoom)`。
 
     組み込み（`pale`/`photo`）→ 利用者の宣言ソース（`tile_sources.all_sources()`）
     の順に探し、未知の `source_id`（宣言を消した後など）は `"pale"` へ
@@ -168,11 +178,19 @@ def _resolve_basemap_source(source_id: str) -> "_BasemapSourceRef":
         return _BasemapSourceRef(builtin_url, source_id)
     for spec in tile_sources.all_sources():
         if spec.source_id == source_id:
-            return _BasemapSourceRef(spec.url, spec.source_id)
+            return _BasemapSourceRef(spec.url, spec.source_id, spec.max_zoom)
     return _BasemapSourceRef(
         _BASEMAP_BUILTIN_URLS[_RESERVED_BASEMAP_CACHE_SOURCE_ID],
         _RESERVED_BASEMAP_CACHE_SOURCE_ID,
     )
+
+
+def basemap_max_zoom(source_id: str) -> int:
+    """背景地図ソースが提供する最大ズーム（B-279＝帳票のズーム上限に使う）。
+
+    解決の順とフォールバックは `_resolve_basemap_source` と同じ。
+    """
+    return _resolve_basemap_source(source_id).max_zoom
 
 # ============================================================
 # HTTP セッション管理
@@ -637,6 +655,7 @@ def _fetch_tile(
     cache_subdir: str,
     cache_path: str,
     source: "_UrlSource | None" = None,
+    force: bool = False,
 ) -> "np.ndarray | None":
     """タイル画像を取得して numpy 配列で返す。失敗時は None。
 
@@ -650,15 +669,23 @@ def _fetch_tile(
     Args:
         source: URL テンプレートの出所（3.4 ステージ1）。省略時は国土地理院
             （淡色地図＝`BASEMAP_LAYER` の取得もここを通るので既定にしてある）。
+        force: 読めるキャッシュがあっても取り直して上書きする（B-280＝地図の
+            強制再取得）。⚠️ **`force` を受けた層は必ずここまで渡す**＝渡さないと
+            読めるキャッシュを返して「取得した」と数える。取れなかったとき
+            （通信失敗）は従来どおりキャッシュへ戻る。
     """
     src = source if source is not None else dem_sources.GSI_DEM
     url = src.url_template.format(layer=layer_id, z=zoom, x=xtile, y=ytile)
-    # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
-    # **読めなかったことは書き側へ持ち越す**＝壊れた相手だけ置換してよい（B-136）。
-    cached = _read_cached_tile(cache_path) if os.path.exists(cache_path) else None
-    if cached is not None:
-        return cached
-    cache_is_broken = os.path.exists(cache_path)
+    if force:
+        # 取れた内容で上書きする＝書き側の「既に在るなら書かない」を外す。
+        replace_existing = True
+    else:
+        # 読めなければ None＝ここでは return せず、そのまま取得へ落ちる（B-123）。
+        # **読めなかったことは書き側へ持ち越す**＝壊れた相手だけ置換してよい（B-136）。
+        cached = _read_cached_tile(cache_path) if os.path.exists(cache_path) else None
+        if cached is not None:
+            return cached
+        replace_existing = os.path.exists(cache_path)   # 在るのに読めない＝壊れている
 
     try:
         logger.debug(
@@ -671,7 +698,7 @@ def _fetch_tile(
             img_data = res.content
             arr = np.array(Image.open(io.BytesIO(img_data)).convert("RGB"))
             os.makedirs(cache_subdir, exist_ok=True)
-            _write_tile_atomic(cache_path, img_data, replace_broken=cache_is_broken)
+            _write_tile_atomic(cache_path, img_data, replace_broken=replace_existing)
             return arr
 
         if res.status_code == 404:
@@ -728,18 +755,33 @@ def _decode_elevation(
 # 淡色地図（basemap）タイル取得 — レポート添付の経路地図用
 # ============================================================
 
-def _basemap_tile_path(cache_source_id: str, zoom: int, x: int, y: int) -> tuple[str, str]:
+def _basemap_url_fingerprint(url_template: str) -> str:
+    """背景地図の URL テンプレートから短いハッシュを作る（B-281）。
+
+    DEM 側の `dem_sources.definition_fingerprint`（B-236）と同じ考え方＝
+    `source_id` は同じまま `tile_sources.toml` の URL だけ書き換えても、
+    旧プロバイダのタイルを読まない（旧ディレクトリは残るが二度と読まれず、
+    `BASEMAP_EXTRA_SUBDIR` ごと消す全削除と総量の走査には含まれる）。
+    """
+    return hashlib.sha256(url_template.encode("utf-8")).hexdigest()[:12]
+
+
+def _basemap_tile_path(
+    src: "_BasemapSourceRef", zoom: int, x: int, y: int,
+) -> tuple[str, str]:
     """背景地図タイルのキャッシュ (subdir, path) を返す（ズーム別ディレクトリ）。
 
     `"pale"` は既存キャッシュ `basemap_pale/` をそのまま使う（後方互換・
-    既存キャッシュを動かさない）。それ以外は `basemap/<source_id>/`（DEM
-    ソース・タイルソースの `_RESERVED_SOURCE_IDS` に `pale`/`photo` が
-    予約済みなので新設の名前空間と衝突しない）。
+    既存キャッシュを動かさない）。それ以外は `basemap/<source_id>/<URL の
+    ハッシュ>/`（DEM ソース・タイルソースの `_RESERVED_SOURCE_IDS` に
+    `pale`/`photo` が予約済みなので新設の名前空間と衝突しない。ハッシュは
+    B-281＝利用者が書き換えられる定義を名前だけで鍵にしない）。
     """
-    if cache_source_id == _RESERVED_BASEMAP_CACHE_SOURCE_ID:
+    if src.source_id == _RESERVED_BASEMAP_CACHE_SOURCE_ID:
         base = os.path.join(CACHE_DIR, BASEMAP_SUBDIR)
     else:
-        base = os.path.join(CACHE_DIR, BASEMAP_EXTRA_SUBDIR, cache_source_id)
+        base = os.path.join(CACHE_DIR, BASEMAP_EXTRA_SUBDIR, src.source_id,
+                            _basemap_url_fingerprint(src.url_template))
     subdir = os.path.join(base, str(zoom), str(x))
     return subdir, os.path.join(subdir, f"{y}.png")
 
@@ -775,7 +817,7 @@ def fetch_basemap_tiles(
             except queue.Empty:
                 return
             try:
-                subdir, path = _basemap_tile_path(src.source_id, zoom, x, y)
+                subdir, path = _basemap_tile_path(src, zoom, x, y)
                 arr = _fetch_tile(src.source_id, zoom, x, y, subdir, path, src)
                 if arr is not None:
                     with lock:

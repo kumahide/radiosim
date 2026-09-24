@@ -466,6 +466,66 @@ class TestAttribution:
 
 
 # ============================================================
+# 宣言した背景地図の最大ズーム（B-279）
+# ============================================================
+class TestDeclaredBasemapMaxZoom:
+    """宣言の `max_zoom` を超えるタイルを要求しないこと（B-279）。
+
+    上限を超えたタイルはサーバに無い＝欠損扱いで地図ごと省かれる。
+    偽のタイル取得は**上限以下だけ返す**＝製品の壊れ方をそのまま再現する。
+    """
+
+    _MAX_ZOOM = 15
+
+    def _declare(self, monkeypatch, max_zoom: int) -> None:
+        from core import tile_sources
+        fake = tile_sources.TileSourceSpec(
+            source_id="lowzoom", display_name="LowZoom",
+            url="https://tile.example.invalid/{z}/{x}/{y}.png",
+            max_zoom=max_zoom, attribution="(c) lowzoom",
+            terms_url="https://example.invalid",
+        )
+        monkeypatch.setattr(tile_sources, "_user_sources", [fake])
+
+    def _serve_up_to(self, monkeypatch, max_zoom: int) -> list[int]:
+        asked: list[int] = []
+
+        def fake(layer_id, zoom, *args, **kwargs):
+            asked.append(zoom)
+            if zoom > max_zoom:
+                return None
+            return np.full((256, 256, 3), 200, dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        return asked
+
+    @pytest.mark.parametrize("render", ("path", "paths"))
+    def test_short_path_map_stays_within_declared_max_zoom(self, monkeypatch, render):
+        self._declare(monkeypatch, self._MAX_ZOOM)
+        asked = self._serve_up_to(monkeypatch, self._MAX_ZOOM)
+        # 数百 m の経路＝上限 18 のままなら z=18 が選ばれる長さ。
+        tx, rx = (34.5400, 132.4100), (34.5380, 132.4080)
+        img = (report_map.render_path_map(tx, rx, basemap_source_id="lowzoom")
+               if render == "path"
+               else report_map.render_paths_map(
+                   _specs((tx, rx, "OK", "P1")), basemap_source_id="lowzoom"))
+        assert isinstance(img, Image.Image), "上限を超えたズームで地図が消えた"
+        assert asked and max(asked) == self._MAX_ZOOM
+
+    def test_min_zoom_is_pulled_below_a_very_low_max_zoom(self, monkeypatch):
+        # 上限が既定の min_zoom（5）より低くても、範囲が空にならず上限以下を選ぶ。
+        self._declare(monkeypatch, 3)
+        asked = self._serve_up_to(monkeypatch, 3)
+        img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40),
+                                         basemap_source_id="lowzoom")
+        assert isinstance(img, Image.Image)
+        assert asked and max(asked) <= 3
+
+    def test_builtin_and_unknown_sources_keep_zoom_18(self):
+        for source_id in ("pale", "photo", "no-such-source"):
+            assert dem.basemap_max_zoom(source_id) == 18
+
+
+# ============================================================
 # 図に焼く字の大きさ（B-135）＝A4 に載せた後で読めるか
 # ============================================================
 class TestBurnedTextStaysReadable:
