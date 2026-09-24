@@ -177,7 +177,7 @@ Operations that reach out to files or to the OS.
 | Open Project...     | Loads a saved `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
 | Save Project As...  | Writes the current input set to a `.rsproj` → [Project Files (.rsproj)](#project-files-rsproj)   |
 | Load Parameters...  | Imports **simulation parameters only** from a settings file into the input form                 |
-| Open Results Folder | Opens the `results/` folder in Explorer (⚠️ the folder is created by your first run; until then this menu item does nothing) |
+| Open Results Folder | Opens the `results/` folder in Explorer (creates it first if it does not exist yet) |
 
 ### Settings
 
