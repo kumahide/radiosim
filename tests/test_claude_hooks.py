@@ -2112,6 +2112,119 @@ class TestStageMarksSync:
         assert memcheck.check_stage_sync() == []
 
 
+# ============================================================
+# check_memory.py check 26 ＝ ステージの完了マーク ⇔ 台帳の状態（逆方向・I-176）
+# ============================================================
+# check 21（TestStageMarksSync）は「台帳が済なのにロードマップの ✅ が付いて
+# いない」片方向だけを見る。2026-09-24・3.6 のステージ1〜5 で逆方向が実際に
+# 起きた＝ロードマップは ✅（済）と書いているのに、参照する B-248・I-171・
+# I-172・I-174 の ISSUES.md 状態欄が「対応中」のまま据え置かれていた。
+
+
+class TestStageMarksAheadOfLedger:
+    """ステージの行が ✅ なのに、参照する課題の状態欄がまだ閉じていない形を検出する。"""
+
+    _OPEN_ISSUE = ["### ★ B-248: 何かの不具合", "- ★ **状態**: 対応中（行き先＝3.6）"]
+    _CLOSED_ISSUE_WITH_MARKS = [
+        "### ★ B-248: 何かの不具合",
+        "- ★ **状態**: ✅ **対応済み**（`3.6a1` / `d1a423f`）",
+    ]
+
+    def test_a_done_stage_referencing_an_open_issue_is_flagged(self, memcheck):
+        """I-176 の実際の形（ステージ行は ✅ だが、参照先の状態欄が対応中のまま）。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24・`d1a423f`）＝[[B-248]]。"]
+        found = memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6")
+        assert found and "B-248" in found[0]
+
+    def test_a_closed_issue_silences_it(self, memcheck):
+        """状態欄が「✅ **対応済み**」（記号・強調付き）なら鳴らない（①誤検知を避ける）。"""
+        states = memcheck.issue_states_by_id(self._CLOSED_ISSUE_WITH_MARKS)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24・`d1a423f`）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_a_not_yet_done_stage_is_not_checked(self, memcheck):
+        """ステージ行の先頭が ✅ でなければ、そもそも突き合わせの対象外。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- 🚧 **ステージ1（帳票）**（2026-09-24〜）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_an_unknown_issue_id_is_skipped(self, memcheck):
+        """台帳に見当たらない ID（アーカイブ側で読めなかった等）は突き合わせようがないので無視。"""
+        states: dict[str, str] = {}
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_other_versions_are_not_checked(self, memcheck):
+        """別の版のセクションにあるステージは対象外。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.0 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24）＝[[B-248]]。",
+                   "## 🔜 3.6 — 版"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
+        assert memcheck.check_stage_ahead_real() == []
+
+
+# ============================================================
+# check_memory.py check 27 ＝ 台帳の未対応状態 ⇔ 実際のコミット履歴（I-176）
+# ============================================================
+# check 26 はロードマップの ✅ ステージ行が挙げる ID だけを見るので、ステージの
+# 番号付き手順に載らない相乗りの小物（I-171・I-172・I-174 のように、そもそも
+# ロードマップの ✅ ステージ行に ID が出てこない課題）は素通りする。こちらは
+# コミットの件名（`fix: …（B-248）` の慣習）に ID が載っているのに、ISSUES.md
+# の状態欄がまだ閉じていない形を、ロードマップの構造に頼らずに見る。
+
+
+class TestLedgerLagsCommits:
+    """コミットの件名に載った ID の状態欄が、まだ閉じていない形を検出する。"""
+
+    def test_a_commit_citing_an_open_issue_is_flagged(self, memcheck):
+        """I-176 の実際の形（コミットは入ったが、台帳の状態欄を書き換え忘れる）。"""
+        states = {"B-248": "対応中（行き先＝3.6）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "B-248" in found[0] and "d1a423f" in found[0]
+
+    def test_a_closed_issue_is_not_flagged(self, memcheck):
+        """状態欄が既に閉じていれば、同じコミットがあっても鳴らない。"""
+        states = {"B-248": "✅ **対応済み**（`3.6a1` / `d1a423f`）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_multiple_ids_in_one_commit_subject_are_all_checked(self, memcheck):
+        """1 コミットの件名に複数 ID（`・`区切り）が載る形（I-171・I-172 の相乗り）。"""
+        states = {"I-171": "対応中", "I-172": "対応中"}
+        commits = [("75fd2f7", "chore: 直下の捨てログを掃除する（I-171・I-172）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert len(found) == 2
+        ids_mentioned = {"I-171" if "I-171" in f else "I-172" for f in found}
+        assert ids_mentioned == {"I-171", "I-172"}
+
+    def test_no_matching_commit_is_not_flagged(self, memcheck):
+        """コミットの件名がその ID を名指ししていなければ、未対応のままでも鳴らない。"""
+        states = {"B-248": "対応中"}
+        commits = [("abc1234", "fix: 関係ない不具合を直す（B-999）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_an_unrelated_state_word_is_not_mistaken_for_closed(self, memcheck):
+        """「保留」「未着手」は _is_closed_state の対象外＝閉じていない扱いのまま鳴る。"""
+        states = {"B-248": "保留（再現待ち）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "B-248" in found[0]
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
+        assert memcheck.check_ledger_lags_commits_real() == []
+
+
 class TestRoadmapFormat:
     """ロードマップの書式（§📐 書き方の規約）の外形を止める（check 19・I-146）。
 
