@@ -592,24 +592,28 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     選んだ言語**＝その分岐は選んだ言語を捨てていた。印が書けない環境では
     起動のたびに種を適用する（言語メニューの選択が毎回戻る）が、印と設定
     ファイルは同じフォルダなので、そこでは設定の保存もたぶん効いていない。
+
+    ⚠️ **印を書くのは、選んだ言語が設定ファイルに届いたときだけ**（B-298）。
+    保存に失敗しても印を書くと、その起動は選んだ言語で出るのに、次の起動で
+    保存済みの古い言語へ戻り、種はもう効かない。書けなかった起動では印を
+    書かず、次の起動でもう一度種を適用する。
     """
     seed_mtime = _installer_seed_mtime()
     if not os.path.exists(path):
         lang = initial_lang()
         resolved = DEFAULT_CONFIG.copy()
         resolved["lang"] = lang
-        save_config(resolved, path)
-        if seed_mtime is not None:
+        if save_config(resolved, path) and seed_mtime is not None:
             _mark_lang_seed_consumed(path, seed_mtime)
         return lang
 
     consumed_mtime = _consumed_lang_seed_mtime(path)   # None＝印が無い（まだ一度も消費していない）
     seed_lang = _installer_lang()
     if seed_lang is not None and seed_mtime is not None and seed_mtime != consumed_mtime:
-        _mark_lang_seed_consumed(path, seed_mtime)
         merged = dict(cfg)
         merged["lang"] = seed_lang
-        save_config(merged, path)
+        if save_config(merged, path):
+            _mark_lang_seed_consumed(path, seed_mtime)
         return seed_lang
     return cfg.get("lang", DEFAULT_CONFIG["lang"])
 
@@ -637,7 +641,7 @@ def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
     return config
 
 
-def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
+def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> bool:
     """現在の設定を JSON で**原子的に**保存する（B-124）。
 
     同じディレクトリの一時ファイルへ書き切ってから `os.replace` する。⇒ **途中で
@@ -655,6 +659,9 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
     と出す前に失敗を知る必要がある（`.rsproj` は唯一の永続化手段）が、設定の保存は
     **画面の操作の副作用**として起きるので、書けなかったからといってアプリを止めない
     （前の設定のまま動き続けられる）。従来の契約をそのまま保つ。
+
+    戻り値＝書けたか。画面の操作から呼ぶ側は捨ててよい。書けたときだけ次の手を
+    打つ呼び出し（`startup_lang` が言語の種を消費済みにする＝B-298）のためにある。
     """
     directory = os.path.dirname(os.path.abspath(path))
     tmp = None
@@ -672,6 +679,8 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
                 os.unlink(tmp)
             except OSError:
                 pass
+        return False
+    return True
 
 
 # ------------------------------------------------------------

@@ -267,8 +267,12 @@ class TestAtomicConfigSave:
             config.json, "dump",
             mock.Mock(side_effect=OSError("read-only file system")),
         )
-        config.save_config(config.DEFAULT_CONFIG, path)   # 例外が出なければ合格
+        assert config.save_config(config.DEFAULT_CONFIG, path) is False   # 例外は出さず、失敗を返す
         assert not os.path.exists(path)
+
+    def test_save_reports_success(self, tmp_path):
+        """書けたら True を返す（書けたときだけ次の手を打つ呼び出しのため＝B-298）。"""
+        assert config.save_config(config.DEFAULT_CONFIG, str(tmp_path / "conf.json")) is True
 
 
 # ============================================================
@@ -528,6 +532,48 @@ class TestStartupLang:
         assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
         assert not (tmp_path / "lang_seed_consumed.txt").exists()
         assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+
+    @staticmethod
+    def _deny_config_replace(monkeypatch, path):
+        """設定ファイルへの置き換えだけを失敗させる（別のプロセスが掴んでいる形）。"""
+        real_replace = os.replace
+
+        def _replace(src, dst):
+            if os.path.abspath(dst) == os.path.abspath(path):
+                raise PermissionError("in use")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(config.os, "replace", _replace)
+
+    def test_save_failure_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """設定を保存できなかった起動では印を書かない＝次の起動でもう一度種を適用する（B-298）。
+
+        印を先に書くと、その起動は選んだ言語で出るのに、次の起動で保存済みの
+        古い言語へ戻り、種はもう効かない。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not marker.exists()
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "en"
+        # 次の起動（保存できる）：種をもう一度適用し、今度は印を書く。
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "ja"
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+
+    def test_fresh_install_save_failure_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """初回起動でも同じ＝設定ファイルを作れなかったら印を書かない（B-298）。"""
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({}, str(path)) == "ja"
+        assert not path.exists()
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
 
     def test_no_seed_file_never_touches_marker(self, tmp_path, monkeypatch):
         """ポータブル配置（種が無い）では、印の作成も判定も一切走らない。"""
