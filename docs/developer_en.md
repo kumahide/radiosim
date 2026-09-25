@@ -1260,6 +1260,7 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 - The terrain cache is cleared on restart; the disk cache persists across sessions
 - **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk 8.6 and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0 is free of it (measured), but moving there waits on the Python runtime we build on. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
 - **Moving a window between monitors with different display scales leaves the menu bar strip at the old scale** (Windows draws the HMENU). Appearance only
+- **After a display scale change, until the next sign-in, the drop-down check mark (✓) is drawn thick and large over the label and the cascade arrow (▸) disappears** (signing in again fixes it). Tk's `win/tkWinMenu.c` draws both from OEM bitmaps (`OBM_CHECK` / `OBM_MNARROW`) loaded with `LoadBitmapW`, whose size follows the display scale at sign-in (the system DPI), while the text follows the current monitor's DPI. **Tk 8.6 and 9.0 draw them the same way**, so moving to Tk 9 does not fix it. On a development machine you can reproduce it by changing the display scale without signing in again
 
 ---
 
