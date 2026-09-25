@@ -397,7 +397,10 @@ class _MenuMixin:
 
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
-        config.save_app(self.config)
+        # 保存が通ったら種を消費済みにする（B-299）＝起動時の保存に失敗して印が
+        # 無いままでも、この選択を次の起動で種が巻き戻さない。
+        if config.save_app(self.config):
+            config.consume_lang_seed()
         self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
 
     def _on_export_lang_template(self) -> None:
@@ -636,7 +639,10 @@ class _MenuMixin:
                 self._alert(i18n.t("dlg_app_settings_none_title"),
                             i18n.t("dlg_app_settings_none"))
                 return
-            config.save_app(self.config)
+            # 言語を取り込んだときだけ種を消費済みにする（B-299・言語メニューと同じ）。
+            # テーマやプロキシだけの取り込みは言語を選んでいないので印を書かない。
+            if config.save_app(self.config) and app.get("lang") in langs:
+                config.consume_lang_seed()
             if lang_changed:
                 self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
             else:

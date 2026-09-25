@@ -14,6 +14,7 @@ import sys
 import types
 import unittest.mock as mock
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -318,6 +319,64 @@ class TestPartialConfigSave:
         assert loaded["theme"] == "dark"           # app キーは更新
         assert loaded["freq"] == "900.0"           # sim キーは保持
 
+    def test_partial_saves_report_result(self, tmp_path, monkeypatch):
+        """部分保存も書けたかを返す（言語を選んだ操作が種を消費済みにするため＝B-299）。"""
+        path = str(tmp_path / "conf.json")
+        assert config.save_app({"lang": "en"}, path) is True
+        assert config.save_sim({"freq": "900.0"}, path) is True
+        monkeypatch.setattr(config.json, "dump", mock.Mock(side_effect=OSError("read-only")))
+        assert config.save_app({"lang": "en"}, path) is False
+        assert config.save_sim({"freq": "900.0"}, path) is False
+
+
+# ============================================================
+# 言語を選んだ操作は、保存が通ったときだけ種を消費済みにする（B-299）
+# ============================================================
+class TestLangChoiceConsumesSeed:
+    """画面の 2 つの口（言語メニュー・アプリ設定の読込）を、偽の `self` で直に呼ぶ。"""
+
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        pytest.importorskip("tkinter")
+        from views import launcher_menu                        # noqa: PLC0415
+        log: list[str] = []
+        monkeypatch.setattr(launcher_menu.config, "consume_lang_seed",
+                            lambda *a, **kw: log.append("consume"))
+        return log
+
+    @staticmethod
+    def _fake(**extra) -> Any:   # 画面の Mixin が見る属性だけを持つ偽物＝型は合わせない
+        alerts: list[str] = []
+        return types.SimpleNamespace(config={"lang": "ja", "theme": "system"},
+                                     alerts=alerts,
+                                     _alert=lambda title, _msg: alerts.append(title), **extra)
+
+    @pytest.mark.parametrize("saved, expected", [(True, ["consume"]), (False, [])])
+    def test_lang_menu(self, calls, monkeypatch, saved, expected):
+        from views import launcher_menu                        # noqa: PLC0415
+        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: saved)
+        launcher_menu._MenuMixin._on_lang_select(self._fake(), "en")
+        assert calls == expected
+
+    @pytest.mark.parametrize("payload, expected", [
+        ({"lang": "en"}, ["consume"]),
+        ({"theme": "dark"}, []),        # 言語を取り込んでいない＝印を書かない
+    ])
+    def test_load_app_settings(self, calls, monkeypatch, tmp_path, payload, expected):
+        from views import launcher_menu                        # noqa: PLC0415
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setattr(launcher_menu.filedialog, "askopenfilename",
+                            lambda **_kw: str(settings))
+        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: True)
+        fake = self._fake(root=None, _theme_var=types.SimpleNamespace(set=lambda _v: None),
+                          _lang_var=types.SimpleNamespace(set=lambda _v: None),
+                          _on_theme=lambda _m: None)
+        launcher_menu._MenuMixin._on_load_app_settings(fake)
+        # 例外を握って警告に変える関数なので、偽の self の不備で素通りしていないことを先に見る。
+        assert launcher_menu.i18n.t("dlg_error") not in fake.alerts
+        assert calls == expected
+
 
 # ============================================================
 # select_sim（「パラメータ読込」は sim 限定）
@@ -573,6 +632,48 @@ class TestStartupLang:
             self._deny_config_replace(m, path)
             assert config.startup_lang({}, str(path)) == "ja"
         assert not path.exists()
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+
+    def test_menu_choice_after_startup_save_failure_sticks(self, tmp_path, monkeypatch):
+        """起動時の保存に失敗したあと、言語を選び直して保存が通ったら種を消費済みにする（B-299）。
+
+        印を書く口が `startup_lang` だけだと、印が無いまま次の起動で種がもう一度
+        効き、利用者がメニューで選んだ言語が巻き戻る。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not marker.exists()
+        # 同じ起動のうちに「設定 > 言語」で English を選ぶ（`_on_lang_select` と同じ手順）。
+        assert config.save_app({"lang": "en"}, str(path)) is True
+        config.consume_lang_seed(str(path))
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "en"
+
+    def test_save_without_lang_choice_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """言語を選んでいない保存は印を書かない（B-299 の境界＝B-298 の逆を起こさない）。
+
+        `save_sim` は `load_config` の土台の古い `lang` を書き戻すだけなので、ここで
+        印を書くと、保存に失敗した起動で適用した種の言語が消える。
+        """
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert config.save_sim({"freq": "5800.0"}, str(path)) is True
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "ja"
+
+    def test_consume_without_seed_does_nothing(self, tmp_path, monkeypatch):
+        """ポータブル配置（種が無い）では印を作らない。"""
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
+        config.consume_lang_seed(str(tmp_path / "radiosim_conf.json"))
         assert not (tmp_path / "lang_seed_consumed.txt").exists()
 
     def test_no_seed_file_never_touches_marker(self, tmp_path, monkeypatch):

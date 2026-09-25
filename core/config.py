@@ -539,6 +539,20 @@ def _mark_lang_seed_consumed(config_path: str, mtime: str) -> None:
         logger.warning("Lang seed marker save error: %s", e)
 
 
+def consume_lang_seed(path: str = CONFIG_FILE) -> None:
+    """いまの種を消費済みにする（B-299）。種が無ければ何もしない。
+
+    呼ぶのは**利用者が選んだ言語を設定ファイルへ保存できた直後だけ**（言語メニュー・
+    アプリ設定の読込）。起動時の保存に失敗して印が無いまま（B-298）でも、その後の
+    明示的な選択が届いたなら、次の起動で種がもう一度効いて巻き戻してはいけない。
+    ⛔ 言語を選んでいない保存（`save_sim`・テーマなど）からは呼ばない＝`load_config`
+    の土台の古い `lang` を書き戻すだけなので、ここで印を書くと種の言語が消える。
+    """
+    seed_mtime = _installer_seed_mtime()
+    if seed_mtime is not None:
+        _mark_lang_seed_consumed(path, seed_mtime)
+
+
 def _os_ui_lang() -> "str | None":
     """OS の表示言語（ユーザー既定 UI 言語）を同梱言語へ丸める。
 
@@ -596,7 +610,8 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     ⚠️ **印を書くのは、選んだ言語が設定ファイルに届いたときだけ**（B-298）。
     保存に失敗しても印を書くと、その起動は選んだ言語で出るのに、次の起動で
     保存済みの古い言語へ戻り、種はもう効かない。書けなかった起動では印を
-    書かず、次の起動でもう一度種を適用する。
+    書かず、次の起動でもう一度種を適用する。同じ起動のうちに利用者が言語を
+    選び直して保存が通ったら、その操作の側が印を書く（`consume_lang_seed`＝B-299）。
     """
     seed_mtime = _installer_seed_mtime()
     if not os.path.exists(path):
@@ -661,7 +676,8 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> bool:
     （前の設定のまま動き続けられる）。従来の契約をそのまま保つ。
 
     戻り値＝書けたか。画面の操作から呼ぶ側は捨ててよい。書けたときだけ次の手を
-    打つ呼び出し（`startup_lang` が言語の種を消費済みにする＝B-298）のためにある。
+    打つ呼び出し（`startup_lang` と言語を選んだ操作が言語の種を消費済みにする＝
+    B-298・B-299）のためにある。
     """
     directory = os.path.dirname(os.path.abspath(path))
     tmp = None
@@ -696,27 +712,31 @@ SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
 
 
 def _save_subset(values: dict[str, str], keys: frozenset[str],
-                 path: str = CONFIG_FILE) -> None:
+                 path: str = CONFIG_FILE) -> bool:
     """指定キー群だけを更新して保存する。他のキーは既存ファイルの値を保持する。
 
     これにより「フォームから sim キーを保存しても app キーは消えない」「メニューで
     app キーを変えても sim キーは保持される」を、呼び出し側の手動再合流なしで実現する。
+    戻り値は `save_config` と同じ（書けたか）。
     """
     merged = load_config(path)
     for k in keys:
         if k in values:
             merged[k] = values[k]
-    save_config(merged, path)
+    return save_config(merged, path)
 
 
-def save_sim(values: dict[str, str], path: str = CONFIG_FILE) -> None:
+def save_sim(values: dict[str, str], path: str = CONFIG_FILE) -> bool:
     """シミュレーションパラメータのみ保存（app 設定は保持）。"""
-    _save_subset(values, SIM_KEYS, path)
+    return _save_subset(values, SIM_KEYS, path)
 
 
-def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> None:
-    """アプリ環境設定のみ保存（直近の sim パラメータは保持）。"""
-    _save_subset(values, APP_KEYS, path)
+def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> bool:
+    """アプリ環境設定のみ保存（直近の sim パラメータは保持）。
+
+    戻り値＝書けたか。言語を選んだ操作は、書けたときだけ `consume_lang_seed` を呼ぶ（B-299）。
+    """
+    return _save_subset(values, APP_KEYS, path)
 
 
 def select_sim(values: dict) -> dict:
