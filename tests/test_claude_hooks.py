@@ -2220,6 +2220,48 @@ class TestLedgerLagsCommits:
         found = memcheck.check_ledger_lags_commits(states, commits)
         assert found and "B-248" in found[0]
 
+    def test_a_commit_older_than_the_issue_is_not_flagged(self, memcheck):
+        """起票より前のコミットは番号の衝突（B-297＝`72ca0f7` の I-176 と、翌日起票の I-176）。"""
+        states = {"I-176": "未着手"}
+        commits = [("72ca0f7", "test: check 26・27 にテストを足す（I-176）", "2026-09-24")]
+        found_dates = {"I-176": "2026-09-25"}
+        assert memcheck.check_ledger_lags_commits(states, commits, found_dates) == []
+
+    def test_a_commit_on_or_after_the_found_date_is_still_flagged(self, memcheck):
+        """発見日の当日以降のコミットは、これまでどおり鳴る（日付の判定は取りこぼしの側へ倒さない）。"""
+        states = {"B-248": "対応中"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）", "2026-09-20")]
+        found_dates = {"B-248": "2026-09-20"}
+        found = memcheck.check_ledger_lags_commits(states, commits, found_dates)
+        assert found and "B-248" in found[0]
+
+    def test_found_dates_are_read_from_the_ledger(self, memcheck):
+        lines = [
+            "### ★ B-296: 件名",
+            "- ★ **状態**: 未着手",
+            "- **発見日・出所**: 2026-09-25（ユーザーの RC1 動作確認）",
+            "### ★ I-176: 件名",
+            "- **提案日・出所**: 2026-09-25（ユーザーの修正案 3 件の 1 件目）",
+        ]
+        assert memcheck.issue_found_dates_by_id(lines) == {
+            "B-296": "2026-09-25", "I-176": "2026-09-25"}
+
+    def test_git_log_is_decoded_as_utf8(self, memcheck, monkeypatch):
+        """B-297＝既定のロケール（cp932）で読むと件名の日本語で落ち、コミット 0 件＝黙って素通りした。"""
+        seen: dict = {}
+
+        def fake_run(args, **kwargs):
+            seen.update(kwargs)
+            return subprocess.CompletedProcess(args, 0, "abc1234\t2026-09-25\tfix: 直す（B-296）\n", "")
+
+        monkeypatch.setattr(memcheck.subprocess, "run", fake_run)
+        assert memcheck._commit_subjects() == [("abc1234", "fix: 直す（B-296）", "2026-09-25")]
+        assert seen.get("encoding") == "utf-8"
+
+    def test_real_commits_are_actually_read(self, memcheck):
+        """実データの検査が空の履歴で素通りしていないこと（B-297 の再発止め）。"""
+        assert len(memcheck._commit_subjects()) > 0
+
     def test_real_data_is_clean(self, memcheck):
         """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
         assert memcheck.check_ledger_lags_commits_real() == []
