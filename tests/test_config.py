@@ -434,16 +434,16 @@ class TestNewRunDir:
 class TestStartupLang:
     """設定ファイルが**まだ無いとき**だけ、既に手元にある環境情報から解く。
 
-    ⚠️ 逆側（設定ファイルが在るときは何があっても中身が勝つ）のほうが重い＝
-    利用者が言語メニューで選んだ結果を、インストーラの種や OS の言語で
-    上書きしてはいけない。
+    ⚠️ 逆側（設定ファイルが在れば中身が勝つ）のほうが重い＝利用者が言語
+    メニューで選んだ結果を OS の言語で上書きしてはいけない。例外はまだ消費
+    していない種（＝入れ直してウィザードで選んだ）だけ（B-272・B-296）。
     """
 
-    def test_existing_config_file_wins_over_seeds(self, tmp_path, monkeypatch):
-        """設定ファイルが在れば、種があっても cfg の値をそのまま返す。"""
+    def test_existing_config_file_wins_over_os_lang(self, tmp_path, monkeypatch):
+        """設定ファイルが在り、消費していない種が無ければ、OS の言語より cfg の値。"""
         path = tmp_path / "radiosim_conf.json"
         path.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
         monkeypatch.setattr(config, "_os_ui_lang", lambda: "ja")
         assert config.startup_lang({"lang": "en"}, str(path)) == "en"
 
@@ -491,23 +491,43 @@ class TestStartupLang:
         assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
         assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
 
-    def test_pre_existing_config_without_marker_does_not_reapply_seed(self, tmp_path, monkeypatch):
-        """この版より前に作られた設定＝印が無い。種を黙って適用せず、印だけ揃える。
+    def test_pre_existing_config_without_marker_applies_seed_once(self, tmp_path, monkeypatch):
+        """3.5 以前から上書きした設定＝印が無い。いまのウィザードで選んだ種を適用する（B-296）。
 
-        さもないと、利用者が言語メニューで選び直した後の版アップグレード
-        （＝インストーラの再実行＝種の書き直し）のたびに、初回インストール時の
-        言語へ黙って巻き戻る。
+        インストーラは上書きのたびに種を書き直すので、印が無い時点で在る種は
+        必ずいま選んだ言語。2 回目の起動は印が揃っている＝cfg が勝つ。
         """
         seed = self._seed_file(tmp_path, monkeypatch, "japanese")
         path = tmp_path / "radiosim_conf.json"
         path.write_text('{"lang": "en"}', encoding="utf-8")
         marker = tmp_path / "lang_seed_consumed.txt"
         assert not marker.exists()
-        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
-        assert marker.exists()
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
         assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
-        # 印を揃えただけで、この回は種を適用していない（次回以降の判定基準になる）。
-        assert json.loads(path.read_text(encoding="utf-8")) == {"lang": "en"}
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+        # 2 回目：その後に言語メニューで英語へ選び直しても、種は再び効かない。
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+
+    def test_unwritable_marker_reapplies_seed_every_start(self, tmp_path, monkeypatch):
+        """印が書けない環境では起動のたびに種を適用する（B-296 の代償を固定する）。
+
+        印と設定ファイルは同じフォルダ＝そこでは言語メニューの選択の保存も
+        たぶん効いていないので、実害は小さい。起動を止めないことが主な契約。
+        """
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        real_open = open
+
+        def _deny_marker(file, mode="r", *args, **kwargs):
+            if os.path.basename(str(file)) == "lang_seed_consumed.txt" and "w" in mode:
+                raise OSError("read-only")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _deny_marker)
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
 
     def test_no_seed_file_never_touches_marker(self, tmp_path, monkeypatch):
         """ポータブル配置（種が無い）では、印の作成も判定も一切走らない。"""

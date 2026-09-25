@@ -513,8 +513,8 @@ def _lang_seed_consumed_file(config_path: str) -> str:
     `DEFAULT_CONFIG` へ足して設定ファイル側に持たせると、この版より前に作られた
     設定ファイルは `load_config` の欠損補完で自動的に空の印を持つことになり、
     「一度も消費していない（新規）」と「既に消費済みだが値が偶然空」を区別
-    できなくなる。別ファイルなら**存在しない＝この版より前の設定**がそのまま
-    読み取れる。⚠️ 固定パス（`CONFIG_FILE` 基準）にしないのは、`startup_lang` が
+    できなくなる。別ファイルなら**存在しない＝まだ一度も消費していない**が
+    そのまま読み取れる。⚠️ 固定パス（`CONFIG_FILE` 基準）にしないのは、`startup_lang` が
     テストや将来の配置替えで別の `path` を受け取れるようにするため——印の置き場も
     その `path` へ追随させないと、テスト間で印が漏れて誤判定する。
     """
@@ -583,10 +583,15 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
 
     🔑 **種を「一度だけ消費する」（B-272）**＝設定ファイルが既に在っても、
     まだ消費していない新しい種（＝インストーラへ入れ直して選び直した）が
-    あればそちらを適用する。ただし**この版より前に作られた設定ファイル**
-    （消費の記録が無い）は、既存の種を黙って適用せず印だけ揃える——さもないと
-    利用者が言語メニューで選び直した後の版アップグレード（＝インストーラの
-    再実行＝種の書き直し）のたびに、初回インストール時の言語へ黙って巻き戻る。
+    あればそちらを適用する。代償＝言語メニューで選び直した人がウィザードの
+    既定の言語のまま上書きすると、その言語へ戻る（B-272 で受け入れたもの）。
+
+    ⚠️ **印が無い設定（3.5 以前から上書きした）も同じ扱い**（B-296）。かつては
+    「前からあった種」を黙って適用しないよう印だけ揃えていたが、インストーラは
+    上書きのたびに種を書き直すので、この時点で在る種は**必ずいまのウィザードで
+    選んだ言語**＝その分岐は選んだ言語を捨てていた。印が書けない環境では
+    起動のたびに種を適用する（言語メニューの選択が毎回戻る）が、印と設定
+    ファイルは同じフォルダなので、そこでは設定の保存もたぶん効いていない。
     """
     seed_mtime = _installer_seed_mtime()
     if not os.path.exists(path):
@@ -598,12 +603,7 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
             _mark_lang_seed_consumed(path, seed_mtime)
         return lang
 
-    consumed_mtime = _consumed_lang_seed_mtime(path)
-    if consumed_mtime is None:
-        if seed_mtime is not None:
-            _mark_lang_seed_consumed(path, seed_mtime)
-        return cfg.get("lang", DEFAULT_CONFIG["lang"])
-
+    consumed_mtime = _consumed_lang_seed_mtime(path)   # None＝印が無い（まだ一度も消費していない）
     seed_lang = _installer_lang()
     if seed_lang is not None and seed_mtime is not None and seed_mtime != consumed_mtime:
         _mark_lang_seed_consumed(path, seed_mtime)
