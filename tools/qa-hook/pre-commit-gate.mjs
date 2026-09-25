@@ -41,7 +41,19 @@ import { pytestCacheKey, isCachedPass, recordPass, recordFinish, markStart } fro
 
 const FULL_SCOPE = "full-suite";
 const MAX_OUT = 3000;
-const PUSH = /(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?\s+push\b/;
+// B-302: git's global options may sit between `git` and the subcommand
+// (`git -C <path> commit`, `git -c k=v push`, `git --no-pager commit`). The
+// old patterns wanted the subcommand right after `git`, so the `-C` form — the
+// one no_shell_detours.py steers towards by forbidding `cd` — skipped the gate
+// for both commit AND push. Keep in step with `_GIT_OPTS` in that hook.
+const OPT_VALUE = String.raw`(?:"[^"]*"|'[^']*'|[^\s;&|]+)`;
+const GIT_OPTS =
+  String.raw`(?:\s+(?:-[Cc]\s+${OPT_VALUE}` +
+  String.raw`|--(?:git-dir|work-tree|namespace|config-env)\s+${OPT_VALUE}` +
+  String.raw`|--?[A-Za-z][\w-]*(?:=${OPT_VALUE})?))*`;
+const gitSubcommand = (sub) =>
+  new RegExp(String.raw`(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?${GIT_OPTS}\s+(?:${sub})(?=$|[\s;&|)])`);
+const PUSH = gitSubcommand("push");
 
 /** Every path a commit made now could carry: working tree vs HEAD, untracked
  *  included, and BOTH sides of a rename (moving a file out of core/ into an
@@ -152,10 +164,20 @@ function loadScope(cwd) {
 // Matches `git commit` / `git push` as a command position (not inside a
 // string, not as a substring of a longer word) — segments split on the usual
 // shell separators, same idea as .claude/no_shell_detours.py but only for
-// these two subcommands, so no PATH-token quoting subtlety matters here: a
-// false negative just means the full suite is checked one command later (at
-// the next commit/push in the turn), never a false block.
-const COMMIT_OR_PUSH = /(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?\s+(?:commit|push)\b/;
+// these two subcommands. ⚠️ A false negative is NOT harmless: if the push is
+// written the same way it is missed too, and nothing else runs the full suite
+// before `main` leaves the machine (B-302).
+const COMMIT_OR_PUSH = gitSubcommand("commit|push");
+
+/** Whether `command` runs `git commit` or `git push` (exported for tests). */
+export function isCommitOrPush(command) {
+  return COMMIT_OR_PUSH.test(command);
+}
+
+/** Whether `command` runs `git push` (→ always the full suite). */
+export function isPush(command) {
+  return PUSH.test(command);
+}
 
 function readStdin() {
   try {
@@ -214,7 +236,7 @@ function main() {
   const input = requireStdinInput();
   if (!["Bash", "PowerShell"].includes(input.tool_name)) return;
   const command = (input.tool_input || {}).command || "";
-  if (!COMMIT_OR_PUSH.test(command)) return;
+  if (!isCommitOrPush(command)) return;
 
   const cwd = input.cwd || process.cwd();
   if (!existsSync(join(cwd, "tests"))) return; // not this repo's working tree
@@ -232,7 +254,7 @@ function main() {
   let key = fullKey;
   let targets = [];
   let label = "フルスイート";
-  if (!PUSH.test(command)) {
+  if (!isPush(command)) {
     const scope = loadScope(cwd);
     const island = islandFor(scope, commitPaths(cwd), cwd);
     if (island) {

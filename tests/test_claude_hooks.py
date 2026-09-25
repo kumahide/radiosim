@@ -3171,6 +3171,9 @@ class TestPowerShellHereStringInBash:
         "git commit --file=- @'\nsubject\n'@",
         "git commit --file - \"subject\"",
         "git commit -F -",
+        # B-302＝全体オプションを挟んだ形（`cd` を止めるので多数派になる）
+        "git -C D:\\dev\\radiosim-repo commit -F - @'\nsubject\n'@",
+        "git -C \"D:\\a b\" -c core.quotepath=false commit --file=- \"s\"",
     ])
     def test_commit_from_stdin_without_a_pipe_is_denied_in_powershell(
             self, detours, command):
@@ -3180,6 +3183,7 @@ class TestPowerShellHereStringInBash:
 
     @pytest.mark.parametrize("command", [
         "$msg | git commit -F -",
+        "@'\nsubject\n'@ | git -C D:\\dev\\radiosim-repo commit -F -",
         "@'\nsubject\n'@ | git commit --file=-",
         "git commit -F C:\\tmp\\msg.txt",
         "git commit -m \"subject -F - in text\"",

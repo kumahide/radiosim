@@ -37,7 +37,8 @@ def _node(script: str, cwd: str) -> str:
     src = _GATE.replace("\\", "/")
     path = os.path.join(cwd, "_probe_gate.mjs")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f'import {{ commitPaths, islandFor, islandTargets }} from "file:///{src}";\n')
+        f.write(f'import {{ commitPaths, islandFor, islandTargets, isCommitOrPush, isPush }} '
+                f'from "file:///{src}";\n')
         f.write(script)
     try:
         out = subprocess.run(["node", path], cwd=cwd, capture_output=True, text=True,
@@ -148,6 +149,43 @@ def _repo_wide_scanners() -> set[str]:
 ])
 def test_repo_walk_pattern_ignores_pytest_tmp_dirs(src, expected):
     assert bool(_REPO_WALK.search(src)) is expected
+
+
+class TestCommandDetection:
+    """B-302＝git の全体オプション（`-C <パス>` など）を挟んだ commit/push も拾うこと。
+
+    🔴 旧い判定は `git` の直後の副コマンドしか見ず、`git -C <パス> commit` と
+    `git -C <パス> push` を両方素通りさせた＝push の前のフルスイートまで外れた
+    （`cd` を止めるフックが絶対パスへ誘導するので、この形が多数派になる）。
+    """
+
+    def _probe(self, commands, tmp_path) -> list:
+        return json.loads(_node(
+            f"process.stdout.write(JSON.stringify({json.dumps(commands)}"
+            ".map((c) => [isCommitOrPush(c), isPush(c)])));\n", str(tmp_path)))
+
+    def test_commit_and_push_forms(self, tmp_path):
+        cases = {
+            # command: (commit か push か, push か)
+            "git commit -m x": (True, False),
+            "git push": (True, True),
+            "git -C D:\\dev\\radiosim-repo commit -F -": (True, False),
+            "$m | git -C D:\\dev\\radiosim-repo commit -F -": (True, False),
+            'git -C "D:\\a b\\repo" push origin main': (True, True),
+            "git -c core.quotepath=false commit -m x": (True, False),
+            "git --no-pager -C d:/r push": (True, True),
+            "git --git-dir=d:/r/.git --work-tree d:/r commit -m x": (True, False),
+            "git.exe -C d:/r commit -m x": (True, False),
+            "git -C d:/r add -A; git -C d:/r commit -q -m x": (True, False),
+            # 副コマンドが別のもの・文字列の中＝拾わない
+            "git -C d:/r log --grep commit": (False, False),
+            "git -C d:/r status": (False, False),
+            "echo git commit": (False, False),
+            "git -C d:/r push-foo": (False, False),
+        }
+        got = self._probe(list(cases), tmp_path)
+        for (cmd, want), actual in zip(cases.items(), got):
+            assert tuple(actual) == want, cmd
 
 
 class TestStdinDiagnostics:
