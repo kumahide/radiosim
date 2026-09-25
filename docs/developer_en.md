@@ -412,7 +412,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Item                 | Options                     | Description                                                     |
 | -------------------- | --------------------------- | ----------------------------------------------------------------- |
 | Theme                | System / Light / Dark       | Window color theme                                                |
-| Language             | English / 日本語            | UI language (requires restart)                                    |
+| Language             | English / 日本語 (plus your own) | UI language (requires restart)                               |
 | Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
 | Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
@@ -467,7 +467,7 @@ The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary 
 
 What the map hands back to a window is a **position in the copy** (the index within `existing_paths()` / `waypoint_markers()`), never the window's row number — rows with unreadable coordinates never make it into the copy. The window resolves that position by the same rule and **checks the name (path ID / waypoint name) before writing**, refusing the move when they disagree (the same "is this really that input?" check used when results are written back into a row). ⚠️ **When the move is smaller than the terrain mesh (5 m) the status bar says so**, because a finer nudge samples the same grid cell: the marker moves but the result does not.
 
-- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `dem_prefetch.prefetch_tiles` and related public APIs (moved out of `dem` in 3.0); tiles are never re-downloaded once present and readable. Clear everything via **Settings > Delete All Cache**.
+- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `dem_prefetch.prefetch_tiles` and related public APIs (moved out of `dem` in 3.0); a normal range download never re-downloads tiles that are already present and readable (unreadable ones are fetched again; since 3.0), while force re-download fetches existing tiles too. Clear everything via **Settings > Delete All Cache**.
 
 ---
 
