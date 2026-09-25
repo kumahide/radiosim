@@ -360,7 +360,8 @@ radiosim/
     ├── test_codex_review_tool.py
     ├── test_qa_gate_cache.py
     ├── test_pre_commit_gate.py
-    └── test_commit_gate_scope.py
+    ├── test_commit_gate_scope.py
+    └── test_release_check.py
 ```
 
 ---
@@ -1184,6 +1185,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_qa_gate_cache.py`  | QA ゲート（`tools/qa-hook/pytest-cache.mjs`）の再実行抑止キャッシュ。鍵が「作業ツリーの中身」で動くこと、つまり内容が変われば必ず走り、変わらなければ走らないことを検証。⚠️ **`node` が無い環境では skip**（対象そのものは 2026-08-12 以降 git 管理下にある） |
 | `test_pre_commit_gate.py` | コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定。島の外が 1 つでも混じればフルスイートへ倒れること・リネームは元のパスも数えること・変更が空ならフルであること・リポジトリ全体を走査するテストが島の一覧から漏れていないこと。⚠️ **`node` が無い環境では skip** |
 | `test_commit_gate_scope.py` | 同じゲートの**島の中身**。`docs` 島と `qa-gate` 島が、絞れていること（マニュアルだけの変更が島に収まる）と絞りすぎていないこと（製品コード・版文字列・文言ファイル・`conftest.py` はフルへ倒れる）を検証。加えて、**`docs/` のファイルを読んでいるテストが島の一覧から漏れていないこと**をテスト側のソース（AST）から数え直す。⚠️ **`node` が無い環境では skip** |
+| `test_release_check.py` | 版の節目の助言（`tools/qa-hook/release-check.mjs`）が、赤・未検査と確かめられたときだけ 🔴🔴 を出すこと。表示依存の刻印は検査した `views/`・`tests/` の中身を名札にし、コミット前に回した実行がそのコミットを検査済みと認められ、回したあとで変更を戻すと未検査に戻ること（刻む側の `tests/conftest.py` と読む側の `.mjs` を一時リポジトリで突き合わせる）。CI が実行中なら赤ではなく「実行中」と出し、いまのブランチの実行を引くこと。⚠️ **`node` が無い環境では skip** |
 
 ### 独立レビュー（外部のレビュアーに差分を見せる）
 

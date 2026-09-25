@@ -381,9 +381,9 @@ def _unexpected_skips(reporter) -> int:
 # 対で 2 つ置く:
 #   ①**報告**（どの環境でも）＝構造的 skip をファイル単位で数えて出す。CI では
 #     さらに GITHUB_STEP_SUMMARY へ書き、**実行ページを開けば読める**ようにする。
-#   ②**刻印**（表示のある機械だけ）＝フルスイートが緑で終わったとき、その commit を
-#     `.qa/display_run.json` へ残す。release-check がこれを読み、HEAD と違えば
-#     「表示依存の面は回っていない」と声に出す。⚠️ **チェックリストの一行では
+#   ②**刻印**（表示のある機械だけ）＝フルスイートが緑で終わったとき、検査した
+#     `views/`・`tests/` の中身を `.qa/display_run.json` へ残す。release-check が
+#     これを読み、HEAD の中身と違えば「表示依存の面は回っていない」と声に出す（B-294）。⚠️ **チェックリストの一行では
 #     足りない**＝読み飛ばしても何も残らない（それが 2026-08-11 の形）。
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -464,6 +464,36 @@ def _is_whole_suite(config) -> bool:
     )
 
 
+#: 表示依存の面として中身を刻む範囲（release-check.mjs の `DISPLAY_SCOPE` と同じ）。
+DISPLAY_SCOPE = ("views", "tests")
+
+
+def _display_files(root: pathlib.Path) -> dict[str, str]:
+    """作業ツリーの `DISPLAY_SCOPE` の中身を「パス → blob ハッシュ」で返す（B-294）。
+
+    🔴 **以前は `git rev-parse HEAD` を名札にしていた**＝コミット前ゲートは作業ツリーの
+    まま pytest を回すので、その時点の HEAD はまだ親＝刻印は必ず 1 つ前を指し、
+    release-check が自分のコミットの差分を見つけて 🔴🔴 で鳴った。逆向きに、未コミットの
+    変更で回してから戻すと HEAD と一致して嘘の ✅ になった。⇒ **名札は検査した中身**。
+    読む側は `git ls-tree -r HEAD` の blob と比べる＝同じ作り方になるよう、ハッシュは
+    `git hash-object`（改行の変換を `git add` と同じにかける）で取る。
+    追跡中のファイルに加え、未追跡（git-ignore 以外）も数える＝pytest はそれも読むため。
+    """
+    def git(*args: str, stdin: str | None = None) -> str:
+        out = subprocess.run(["git", *args], cwd=root, input=stdin, capture_output=True,
+                             text=True, encoding="utf-8", timeout=30, check=True)
+        return out.stdout
+
+    listed = git("ls-files", "-z", "--cached", "--others", "--exclude-standard",
+                 "--", *DISPLAY_SCOPE)
+    # 索引にあって作業ツリーで消したファイルは、検査した中身に無い＝数えない。
+    paths = sorted({p for p in listed.split("\0") if p and (root / p).is_file()})
+    if not paths:
+        return {}
+    blobs = git("hash-object", "--stdin-paths", stdin="\n".join(paths) + "\n").split()
+    return dict(zip(paths, blobs, strict=True))
+
+
 def _stamp_display_run(total: int, faces: dict[str, int]) -> None:
     """表示のある機械でフルスイートが通ったことを刻む（→ `DISPLAY_RUN_STAMP`）。"""
     try:
@@ -471,7 +501,9 @@ def _stamp_display_run(total: int, faces: dict[str, int]) -> None:
             ["git", "rev-parse", "HEAD"],
             cwd=_REPO_ROOT, capture_output=True, text=True, timeout=10, check=False,
         )
+        # commit は**参考**（いつの木で回したかを人が読む用）。照合は display_files で行う。
         commit = head.stdout.strip() if head.returncode == 0 else ""
+        files = _display_files(_REPO_ROOT)
         DISPLAY_RUN_STAMP.parent.mkdir(parents=True, exist_ok=True)
         DISPLAY_RUN_STAMP.write_text(json.dumps({
             "commit"    : commit,
@@ -481,8 +513,9 @@ def _stamp_display_run(total: int, faces: dict[str, int]) -> None:
             # 表示のある機械でも git-ignore の道具（.claude/ tools/）は無い場合がある
             # ＝**0 を要求しない**。何が残ったかを書いて、読む側に判断させる。
             "structural": faces,
+            "display_files": files,
         }, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-    except (OSError, subprocess.SubprocessError):
+    except (OSError, subprocess.SubprocessError, ValueError):
         pass        # 刻めなくてもテストの結果は変えない（release-check が「無い」と言う）
 
 

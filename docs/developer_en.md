@@ -361,7 +361,8 @@ radiosim/
     ├── test_codex_review_tool.py
     ├── test_qa_gate_cache.py
     ├── test_pre_commit_gate.py
-    └── test_commit_gate_scope.py
+    ├── test_commit_gate_scope.py
+    └── test_release_check.py
 ```
 
 ---
@@ -1213,6 +1214,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
 | `test_pre_commit_gate.py` | The commit-island decision in the pre-commit gate (`tools/qa-hook/pre-commit-gate.mjs`): one path outside the island falls back to the full suite, a rename counts its source path too, an empty change set is full, and no repo-wide scanner is missing from an island's test list. ⚠️ **Skipped where `node` is unavailable** |
 | `test_commit_gate_scope.py` | What those islands actually declare. The `docs` and `qa-gate` islands must scope (a manual-only change lands in an island) without over-reaching (product code, the version string, language files and `conftest.py` all fall back to the full suite). It also re-derives, from the tests' own source (AST), that no test reading a `docs/` file is missing from the island. ⚠️ **Skipped where `node` is unavailable** |
+| `test_release_check.py` | The release-boundary advisory (`tools/qa-hook/release-check.mjs`) raises 🔴🔴 only when something is confirmed red or untested. The display-run stamp is keyed to the `views/` and `tests/` content that was actually tested, so a run made just before a commit counts for that commit, and reverting a change after the run marks it untested again (the writer in `tests/conftest.py` and the reader in the `.mjs` are checked against each other in a scratch repository). A CI run still in progress is reported as running, not red, and the run is looked up on the current branch. ⚠️ **Skipped where `node` is unavailable** |
 
 ### Independent review (showing the diff to an outside reviewer)
 

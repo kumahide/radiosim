@@ -29,7 +29,8 @@
       "tests/test_qa_gate_cache.py",
       "tests/test_pre_commit_gate.py",
       "tests/test_commit_gate_scope.py",
-      "tests/test_dev_check.py"
+      "tests/test_dev_check.py",
+      "tests/test_release_check.py"
     ]],
     [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
   ],
@@ -65,7 +66,8 @@
         "tests/test_qa_gate_cache.py",
         "tests/test_pre_commit_gate.py",
         "tests/test_commit_gate_scope.py",
-        "tests/test_dev_check.py"
+        "tests/test_dev_check.py",
+        "tests/test_release_check.py"
       ],
       "tests": [
         "tests/test_claude_hooks.py",
@@ -73,6 +75,7 @@
         "tests/test_pre_commit_gate.py",
         "tests/test_commit_gate_scope.py",
         "tests/test_dev_check.py",
+        "tests/test_release_check.py",
         "tests/test_docs_consistency.py",
         "tests/test_layers.py",
         "tests/test_smoke.py",

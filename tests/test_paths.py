@@ -505,7 +505,9 @@ class TestUncoveredFacesAreReported:
         assert stamp.exists(), "回ったのに刻印が残らない＝release-check が毎回鳴る"
         data = json.loads(stamp.read_text(encoding="utf-8"))
         assert data["ran"] == 1537
-        assert len(data["commit"]) == 40, "commit を刻んでいない＝HEAD と照合できない"
+        assert len(data["commit"]) == 40, "commit を刻んでいない＝いつの木で回したか読めない"
+        # B-294＝照合の名札は中身（検査した views/ tests/ の blob）。
+        assert "tests/conftest.py" in data["display_files"], "中身を刻んでいない＝HEAD と照合できない"
 
     def test_a_narrowed_run_is_never_stamped(self, monkeypatch, tmp_path):
         """⛔ **部分実行は刻まない**こと（刻印が嘘をつく形）。
