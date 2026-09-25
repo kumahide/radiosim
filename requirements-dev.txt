@@ -21,7 +21,7 @@ pytest-cov==7.1.0
 
 # --- Static analysis (same set the CI gates run) ---
 pyright==1.1.414
-ruff==0.16.8
+ruff==0.16.9
 bandit==1.9.4
 
 # --- Packaging (produces the distributed binary) ---
