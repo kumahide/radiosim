@@ -2,7 +2,8 @@
 
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 
 export function git(cwd, args) {
   return execFileSync("git", args, {
@@ -10,6 +11,50 @@ export function git(cwd, args) {
     encoding: "utf-8",
     stdio: ["ignore", "pipe", "ignore"],
   });
+}
+
+// B-312 (2026-09-27): WHICH REPOSITORY a hook is looking at. Claude Code hands
+// every hook the session's working directory (`input.cwd`), and that follows a
+// Bash `cd` — out of this repo into the memory folder, say. Both gates used to
+// take it as "the repo": from outside, the Stop gate found no git repo and
+// exited silently every turn, and the commit gate found no tests/ and let
+// `git -C <this repo> commit` through without a single test. The repository a
+// hook guards is the one it lives in (tools/qa-hook/ → two levels up); a linked
+// worktree of it is the same repository (same common git dir).
+export const HOOK_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), "..", "..");
+
+/** Two filesystem paths for the same place? (Windows: case and `\` vs `/`.) */
+export function samePath(a, b) {
+  const norm = (p) => {
+    const r = resolve(p).replace(/\\/g, "/").replace(/\/+$/, "");
+    return process.platform === "win32" ? r.toLowerCase() : r;
+  };
+  return norm(a) === norm(b);
+}
+
+/** `{top, common}` of the repository git resolves from `cwd` plus the
+ *  location options it would be given (`-C <p>`, `--git-dir=<p>`,
+ *  `--work-tree=<p>`), or null (not a working tree / not there). */
+export function repoAt(cwd, locationOpts = []) {
+  try {
+    const out = execFileSync("git", [
+      ...locationOpts, "rev-parse", "--path-format=absolute", "--show-toplevel", "--git-common-dir",
+    ], { cwd, encoding: "utf-8", stdio: ["ignore", "pipe", "ignore"] });
+    const [top, common] = out.trim().split(/\r?\n/);
+    return top && common ? { top, common } : null;
+  } catch {
+    return null;
+  }
+}
+
+/** The working tree a per-turn hook should look at: `cwd`'s own tree when it is
+ *  this repository (a linked worktree included), otherwise this hook's own —
+ *  never "no repo here, nothing to check". */
+export function hookTreeFor(cwd) {
+  const own = repoAt(HOOK_ROOT);
+  if (!own) return HOOK_ROOT; // a copy outside any repo: the caller finds no git and stops
+  const here = cwd ? repoAt(cwd) : null;
+  return here && samePath(here.common, own.common) ? here.top : own.top;
 }
 
 /** Changed *.py entries from `git status --porcelain` (excluding .venv). */

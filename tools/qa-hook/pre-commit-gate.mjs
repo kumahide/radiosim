@@ -42,7 +42,7 @@ import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pythonEnv, resolvePython } from "./gate.mjs";
-import { git } from "./git-changes.mjs";
+import { HOOK_ROOT, git, repoAt, samePath } from "./git-changes.mjs";
 import {
   cacheInputs, keyFor, isCachedPass, recordPass, recordFinish, markStart,
   recordFullPass, lastFullPass, sameExtras,
@@ -328,6 +328,179 @@ export function isPush(command) {
   return PUSH.test(command);
 }
 
+// ── B-312 (2026-09-27): WHAT THE COMMAND ACTUALLY COMMITS ─────────────────
+// This hook runs ONCE, before the whole command, and proves the working tree it
+// sees then. Measured 2026-09-26 on the 3.8a1 bump, twice, the tree it proved
+// was not the one that got committed:
+//  ① the session's cwd was outside this repo (a Bash `cd` moves it) and the
+//     command reached in with `git -C <this repo> commit` — "no tests/ in cwd"
+//     read as "not this repo" and the commit went through untested;
+//  ② an earlier step of the same command rewrote a file (`python bump.py &&
+//     git add … && git commit`) — the hook proved the tree BEFORE the rewrite.
+// And the same broken rule on the push: ③ `git push` sends HEAD while this hook
+// proves the working tree — with uncommitted changes, what passed is not what
+// leaves the machine.
+// So: git itself resolves each commit/push step's -C/--git-dir/--work-tree
+// against cwd (repoAt), and the step is ours when its common git dir is this
+// hook's. Fail-closed where that cannot be read: a directory change inside the
+// command, a location the shell would expand (`$x`, `~`, GIT_DIR=…), or any
+// step before the commit/push that is not on the short list below is refused
+// with the form to use instead; a push needs a clean tree.
+const LITERAL = /@'[\s\S]*?\n'@|@"[\s\S]*?\n"@|"(?:[^"\\`]|\\[\s\S]|`[\s\S])*"|'[^']*'/g;
+const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/;
+const CHDIR = /^(?:cd|pushd|popd|chdir|set-location|sl|push-location|pop-location)$/i;
+// Steps that leave the working tree's content as it was (a commit/push before
+// the last one moves HEAD, not the content; the key is the content — I-184).
+const SAFE_GIT = new Set(["add", "status", "diff", "log", "show", "rev-parse", "fetch", "tag", "commit", "push"]);
+
+/** Heredoc bodies are data, not steps (same rule as no_shell_detours.py). */
+function stripHeredocs(command) {
+  const out = [];
+  let delimiter = null;
+  for (const line of command.split(/(?<=\n)/)) {
+    if (delimiter !== null) {
+      if (line.trim() === delimiter) delimiter = null;
+      continue;
+    }
+    out.push(line);
+    const m = HEREDOC_OPEN.exec(line);
+    if (m) delimiter = m[2];
+  }
+  return out.join("");
+}
+
+/** The command cut into steps (`;` `&&` `||` `|` newline), string literals
+ *  kept whole: [{masked, words, literals}] — `masked` has each literal as
+ *  \u0001N\u0001, `words` are whitespace-split with the literals put back. */
+export function commandSteps(command) {
+  const table = [];
+  const masked = stripHeredocs(command).replace(LITERAL, (m) => `\u0001${table.push(m) - 1}\u0001`);
+  const unmask = (s) => s.replace(/\u0001(\d+)\u0001/g, (_, i) => table[Number(i)]);
+  return masked
+    .split(/&&|\|\||[;|\n]/)
+    .map((s) => s.trim().replace(/^[({]+\s*/, "").replace(/\s*[)}]+$/, "").trim())
+    .filter(Boolean)
+    .map((s) => ({
+      masked: s,
+      words: s.split(/\s+/).map(unmask),
+      literals: [...s.matchAll(/\u0001(\d+)\u0001/g)].map((m) => table[Number(m[1])]),
+    }));
+}
+
+/** An option value as the shell hands it to git, or null when the shell would
+ *  expand it first (this hook cannot follow `$x`, `~`, `%X%`). */
+function shellValue(raw, tool) {
+  if (raw === undefined) return null;
+  let v = raw;
+  const quote = v[0];
+  if ((quote === '"' || quote === "'") && v.endsWith(quote) && v.length >= 2) v = v.slice(1, -1);
+  else if (tool === "Bash") v = v.replace(/\\(.)/g, "$1"); // unquoted `\` escapes in bash
+  if (quote !== "'" && /[$`%]/.test(v)) return null;
+  if (v.startsWith("~")) return null;
+  return v;
+}
+
+/** A git step: `{sub, loc, opaque}` (`loc` = the location options to hand
+ *  repoAt; `opaque` = a location this hook cannot resolve), or null. */
+export function gitStep(words, tool = "Bash") {
+  let i = 0;
+  let opaque = false;
+  for (; i < words.length && /^[A-Za-z_]\w*=/.test(words[i]); i++) {
+    if (/^GIT_/i.test(words[i])) opaque = true; // GIT_DIR=… git commit
+  }
+  if (!/^git(?:\.exe)?$/i.test(words[i] || "")) return null;
+  const loc = [];
+  for (i++; i < words.length; i++) {
+    const w = words[i];
+    if (!w.startsWith("-")) return { sub: w.toLowerCase(), loc, opaque };
+    const joined = /^--(git-dir|work-tree)=(.*)$/.exec(w);
+    if (w === "-C" || w === "--git-dir" || w === "--work-tree" || joined) {
+      const name = joined ? `--${joined[1]}` : w;
+      const v = shellValue(joined ? joined[2] : words[++i], tool);
+      if (v === null) opaque = true;
+      else loc.push(...(name === "-C" ? ["-C", v] : [`${name}=${v}`]));
+    } else if (w === "-c" || w === "--namespace" || w === "--config-env") {
+      i++;
+    }
+  }
+  return { sub: null, loc, opaque };
+}
+
+/** Would this step, run before the commit/push, leave the content as it was? */
+function leavesTreeAlone(step, g) {
+  const noFileRedirect = !/>/.test(step.masked
+    .replace(/\d*>&\d+/g, "")
+    .replace(/\d*>\s*(?:\$null|\/dev\/null|nul)\b/gi, ""));
+  // A double-quoted literal can run a command (`"$(…)"`); single-quoted cannot.
+  const inert = step.literals.every((l) => /^@?'/.test(l) || !/\$\(|`\(/.test(l));
+  if (g) return !g.opaque && SAFE_GIT.has(g.sub) && noFileRedirect && inert;
+  const m = step.masked;
+  if (/^\$[A-Za-z_]\w*$/.test(m)) return true;                               // `$msg | git commit -F -`
+  if (/^\$[A-Za-z_]\w*\s*=\s*\u0001\d+\u0001$/.test(m)) return inert;       // `$msg = @'…'@`（$env: は外）
+  if (/^(?:echo|printf|write-output)\b/i.test(m)) return noFileRedirect && inert && !/[$`(]/.test(m);
+  return /^out-null$/i.test(m);
+}
+
+export const REFUSE_UNREAD =
+  "⛔ このコマンドの `git commit`／`git push` を、ゲートが段に切って読めませんでした（B-312）。" +
+  "`git …` を段の先頭に置いた形（`git add … ; git commit …`）で出し直してください。";
+export const REFUSE_CHDIR =
+  "⛔ `git commit`／`git push` と同じコマンドの中で作業ディレクトリを動かしています（B-312）。" +
+  "ゲートはコマンドを走らせる前に 1 回だけ見るので、どのリポジトリへコミットするかを読めません。" +
+  "`cd` を外し、`git -C <リポジトリの絶対パス> …` で出し直してください。";
+export const REFUSE_OPAQUE =
+  "⛔ コミット先の場所を、ゲートが解けない形で渡しています（`$変数`・`~`・`%X%`・`GIT_DIR=` など＝B-312）。" +
+  "パスを字のまま書くか、作業ディレクトリをリポジトリに置いて素の `git commit` にしてください。";
+export const REFUSE_REWRITE =
+  "⛔ `git commit`／`git push` の前に、作業ツリーを書き換え得る段があります（B-312）。" +
+  "ゲートはコマンドの**前に** 1 回だけ走るので、検査するのは書き換える前の中身＝コミットされる中身と別物です。" +
+  "書き換える段とコミットを**別のコマンド**に分けてください（前に置けるのは `git add`・読むだけの git・" +
+  "本文の変数 `$msg = @'…'@`／`echo` だけ）。";
+export const REFUSE_DIRTY_PUSH =
+  "⛔ コミットしていない変更がある作業ツリーから push しようとしています（B-312）。" +
+  "ゲートが検査するのは作業ツリーの中身、push が送るのは HEAD＝検査したものと送るものが別物です。" +
+  "変更をコミットするか片づけてから、push を**単独のコマンド**で出してください。";
+
+/** B-312: where the command's commit/push lands in THIS repository.
+ *  → null (no commit/push reaches this repository — another repo, or none),
+ *    {refuse: <reason>}, or {root, push} (`root` = the top of the working tree
+ *    the commit lands in: this repo, or a linked worktree of it). */
+export function commitTarget(command, cwd, tool = "Bash") {
+  const own = repoAt(HOOK_ROOT);
+  if (!own) return null;
+  const steps = commandSteps(command);
+  const gits = steps.map((s) => gitStep(s.words, tool));
+  const writes = gits.flatMap((g, i) => (g && (g.sub === "commit" || g.sub === "push") ? [i] : []));
+  if (!writes.length) {
+    // Only data said "git commit" (a heredoc body, a quoted string) → nothing
+    // to gate; still there once those are set aside → a form this parser
+    // misses (`& git commit`, `xargs git push`) → refuse, never wave through.
+    return isCommitOrPush(steps.map((s) => s.masked).join("\n")) ? { refuse: REFUSE_UNREAD } : null;
+  }
+  const lastWrite = writes[writes.length - 1];
+  if (steps.slice(0, lastWrite).some((s) => CHDIR.test(s.words[0]))) return { refuse: REFUSE_CHDIR };
+
+  const roots = [];
+  let lastOurs = -1;
+  let push = false;
+  for (const i of writes) {
+    if (gits[i].opaque) return { refuse: REFUSE_OPAQUE };
+    const r = repoAt(cwd, gits[i].loc);
+    if (!r || !samePath(r.common, own.common)) continue; // not a repo / another repo
+    if (!roots.some((t) => samePath(t, r.top))) roots.push(r.top);
+    lastOurs = i;
+    if (gits[i].sub === "push") push = true;
+  }
+  if (lastOurs < 0) return null;
+  if (roots.length > 1) return { refuse: REFUSE_CHDIR };
+  for (let i = 0; i < lastOurs; i++) {
+    if (!leavesTreeAlone(steps[i], gits[i])) {
+      return { refuse: `${REFUSE_REWRITE}\n該当の段: \`${steps[i].words.join(" ").slice(0, 200)}\`` };
+    }
+  }
+  return { root: roots[0], push };
+}
+
 function readStdin() {
   try {
     return readFileSync(0, "utf-8");
@@ -387,8 +560,22 @@ function main() {
   const command = (input.tool_input || {}).command || "";
   if (!isCommitOrPush(command)) return;
 
-  const cwd = input.cwd || process.cwd();
-  if (!existsSync(join(cwd, "tests"))) return; // not this repo's working tree
+  // B-312: the tree the command commits into, not the session's cwd as such.
+  const target = commitTarget(command, input.cwd || process.cwd(), input.tool_name);
+  if (!target) return; // no commit/push reaches this repository
+  if (target.refuse) {
+    deny(`${target.refuse}\n${NOTHING_RAN}`);
+    return;
+  }
+  const cwd = target.root;
+  if (target.push) {
+    const dirty = commitPaths(cwd);
+    if (dirty.length) {
+      deny(`${REFUSE_DIRTY_PUSH}\n${NOTHING_RAN}\n\n` +
+        dirty.slice(0, 10).map((p) => `- ${p}`).join("\n") + (dirty.length > 10 ? "\n- …" : ""));
+      return;
+    }
+  }
 
   const resolved = resolvePython();
   if (resolved.error) {

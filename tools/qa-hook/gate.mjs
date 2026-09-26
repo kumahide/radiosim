@@ -35,7 +35,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { changedPyEntries, changedAllPaths, isDeleted, changedLinesForFile } from "./git-changes.mjs";
+import {
+  changedPyEntries, changedAllPaths, isDeleted, changedLinesForFile, hookTreeFor,
+} from "./git-changes.mjs";
 import {
   pytestCacheKey, isCachedPass, recordPass, recordFinish,
   markStart, lastRunWasCut, lastDurationMs,
@@ -383,7 +385,9 @@ function runDeterministic(cwd, py, entries, allPaths) {
 
 async function main() {
   const input = requireStdinInput();
-  const cwd = input.cwd || process.cwd();
+  // B-312: not `input.cwd` itself — it follows a Bash `cd` out of the repo, and
+  // from there this gate used to find "no git repo" and stay silent every turn.
+  const cwd = hookTreeFor(input.cwd || process.cwd());
   const stopActive = Boolean(input.stop_hook_active);
 
   let entries, allPaths;

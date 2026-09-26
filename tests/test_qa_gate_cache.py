@@ -564,10 +564,20 @@ class TestStdinDiagnostics:
     def test_gate_valid_input_with_nothing_to_check_stays_silent(self, tmp_path):
         """フックとして呼ばれたが変更が無いターン＝この分岐には来ない（無言のまま 0）。
 
-        `cwd` を git リポジトリではない場所にして、素早く「検査対象なし」の
+        ⚠️ B-312 からゲートは `cwd` ではなく**自分の置かれたリポジトリ**を見る
+        （外へ `cd` しても黙らない）。なので本物を叩くと本物のリポジトリを検査する＝
+        写しを git リポジトリではない一時フォルダに置いて、素早く「検査対象なし」の
         経路（`changedPyEntries` が例外→`process.exit(0)`）を通す。
         """
-        r = self._run("gate.mjs", json.dumps({"cwd": str(tmp_path)}), tmp_path)
+        hook = tmp_path / "tools" / "qa-hook"
+        hook.mkdir(parents=True)
+        src = os.path.join(_REPO, "tools", "qa-hook")
+        for name in os.listdir(src):
+            if name.endswith((".mjs", ".json")):
+                shutil.copy(os.path.join(src, name), hook / name)
+        r = subprocess.run(["node", str(hook / "gate.mjs")], input=json.dumps({"cwd": str(tmp_path)}),
+                           cwd=str(tmp_path), capture_output=True, text=True, encoding="utf-8",
+                           timeout=30, env={**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path.parent)})
         assert r.returncode == 0
         assert r.stdout == ""
         assert r.stderr == ""

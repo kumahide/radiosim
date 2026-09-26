@@ -505,3 +505,193 @@ def test_tests_that_hard_code_the_version_are_readers():
     assert not hits, (
         f"版の字（{current}）を直書きしているのに、読み手の規則に入っていない: {hits}\n"
         "＝版の字だけのコミットでは走らない。`APP_VERSION` 等の名前で比べる形に直すこと。")
+
+
+# ============================================================
+# B-312：ゲートが検査するのは、コマンドが実際にコミット（push）する中身
+# ============================================================
+# 🔴 2026-09-26（`3.8a1` の宣言）に 2 回素通りした＝①作業ディレクトリがリポジトリの
+# 外にあり `git -C <リポジトリ> commit` で入った（「cwd に tests/ が無い」を「別の
+# リポジトリ」と読んだ）②同じコマンドの中で書き換えてからコミットした（フックは
+# コマンドの前に 1 回だけ走る）。同じ不変条件の口として、汚れた作業ツリーからの
+# push（検査するのは作業ツリー・送るのは HEAD）も止める。
+# 🔑 フックが守るリポジトリは「フックの置かれたリポジトリ」（HOOK_ROOT）なので、
+# 写しを一時リポジトリに置いて、その写しを叩く。
+_HOOK_DIR = os.path.join(_REPO, "tools", "qa-hook")
+
+
+def _hooked_repo(tmp_path):
+    """フックの写しを持つリポジトリ `r`・別のリポジトリ `other`・リポジトリでない `outside`。"""
+    repo = tmp_path / "r"
+    hook = repo / "tools" / "qa-hook"
+    hook.mkdir(parents=True)
+    for name in os.listdir(_HOOK_DIR):
+        if name.endswith((".mjs", ".json")):
+            shutil.copy(os.path.join(_HOOK_DIR, name), hook / name)
+    (repo / "tests").mkdir()
+    (repo / "tests" / "test_x.py").write_text("def test_x():\n    pass\n", encoding="utf-8")
+    other = tmp_path / "other"
+    other.mkdir()
+    for r in (repo, other):
+        _git(r, "init", "-q")
+        _git(r, "config", "user.email", "t@example.com")
+        _git(r, "config", "user.name", "t")
+        (r / "a.txt").write_text("a\n", encoding="utf-8")
+        _git(r, "add", "-A")
+        _git(r, "commit", "-qm", "init")
+    outside = tmp_path / "outside"
+    outside.mkdir()
+    return repo, other, outside
+
+
+def _ceiling_env(tmp_path) -> dict:
+    """一時フォルダの上にあるリポジトリを見に行かせない（`outside` を本当に外にする）。"""
+    return {**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path)}
+
+
+_KINDS = ["REFUSE_UNREAD", "REFUSE_CHDIR", "REFUSE_OPAQUE", "REFUSE_REWRITE"]
+
+
+def _targets(tmp_path, repo, cases) -> list:
+    """写しの commitTarget を cases=[(command, cwd, tool)] で叩き、要約を返す。"""
+    gate = str(repo / "tools" / "qa-hook" / "pre-commit-gate.mjs").replace("\\", "/")
+    helpers = str(repo / "tools" / "qa-hook" / "git-changes.mjs").replace("\\", "/")
+    probe = tmp_path / "_probe_target.mjs"
+    probe.write_text(
+        f'import * as g from "file:///{gate}";\n'
+        f'import {{ samePath }} from "file:///{helpers}";\n'
+        f"const R = {json.dumps(str(repo))};\n"
+        f"const kinds = {json.dumps(_KINDS)};\n"
+        f"const cases = {json.dumps(cases)};\n"
+        "process.stdout.write(JSON.stringify(cases.map(([c, cwd, tool]) => {\n"
+        "  const t = g.commitTarget(c, cwd, tool);\n"
+        "  if (!t) return 'null';\n"
+        "  if (t.refuse) return kinds.find((k) => t.refuse.startsWith(g[k])) || t.refuse;\n"
+        "  return (samePath(t.root, R) ? 'r' : t.root.split('/').pop()) + (t.push ? '|push' : '');\n"
+        "})));\n", encoding="utf-8")
+    out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                         check=True, timeout=60, env=_ceiling_env(tmp_path))
+    return json.loads(out.stdout)
+
+
+class TestCommitTarget:
+    def test_the_repository_the_command_writes_into(self, tmp_path):
+        repo, other, outside = _hooked_repo(tmp_path)
+        r, o, x = str(repo), str(other), str(outside)
+        cases = {
+            # ①の口＝外から -C で入る（旧：素通り）
+            (f'git -C "{r}" commit -m x', x, "Bash"): "r",
+            (f"git -C {r} commit -m x", x, "PowerShell"): "r",
+            (f'git --git-dir="{r}/.git" --work-tree="{r}" commit -m x', x, "Bash"): "r",
+            # サブフォルダから（旧：cwd に tests/ が無いので素通り）
+            ("git commit -m x", str(repo / "tests"), "Bash"): "r",
+            ("git commit -m x", r, "Bash"): "r",
+            # 別のリポジトリ・リポジトリの外＝このゲートの対象外
+            (f'git -C "{o}" add -A && git -C "{o}" commit -m x', x, "Bash"): "null",
+            (f'git -C "{o}" commit -m x', r, "Bash"): "null",
+            ("git commit -m x", x, "Bash"): "null",
+            # push
+            ("git add -A && git commit -m x && git push", r, "Bash"): "r|push",
+            # 解けない場所・作業ディレクトリを動かす
+            ("git -C $HOME/r commit -m x", r, "Bash"): "REFUSE_OPAQUE",
+            ("git -C ~/r commit -m x", r, "Bash"): "REFUSE_OPAQUE",
+            ("GIT_DIR=/x/.git git commit -m x", r, "Bash"): "REFUSE_OPAQUE",
+            (f'cd "{r}" && git commit -m x', x, "Bash"): "REFUSE_CHDIR",
+            (f'(cd "{r}" && git commit -m x)', x, "Bash"): "REFUSE_CHDIR",
+            (f'Set-Location "{r}"; git commit -m x', x, "PowerShell"): "REFUSE_CHDIR",
+            # ②の口＝コミットの前に書き換え得る段
+            ("python bump.py && git add core/version.py && git commit -m x", r, "Bash"): "REFUSE_REWRITE",
+            ("sed -i s/a/b/ a.txt; git commit -am x", r, "Bash"): "REFUSE_REWRITE",
+            ("git stash pop && git commit -m x", r, "Bash"): "REFUSE_REWRITE",
+            ("git add -A > log.txt && git commit -m x", r, "Bash"): "REFUSE_REWRITE",
+            ('echo "$(python bump.py)" | git commit -F -', r, "Bash"): "REFUSE_REWRITE",
+            ("git commit -m x && python bump.py && git push", r, "Bash"): "REFUSE_REWRITE",
+            # 前に置いてよい段・後ろの段は問わない
+            ("git add -A 2>&1 && git status --short && git commit -m x; python after.py", r, "Bash"): "r",
+            ("$m = @'\nsubject; python x\n'@\n$m | git commit -F -", r, "PowerShell"): "r",
+            ("git commit -m \"$(cat <<'EOF'\nsubject; python x\nEOF\n)\"", r, "Bash"): "r",
+            # 字として `git commit` を含むだけ＝対象外／読めない形＝止める
+            ("cat > f.sh <<'EOF'\ngit commit -m x\nEOF", r, "Bash"): "null",
+            ('echo "git commit"', r, "Bash"): "null",
+            ("& git commit -m x", r, "PowerShell"): "REFUSE_UNREAD",
+        }
+        got = _targets(tmp_path, repo, [list(k) for k in cases])
+        for (case, want), actual in zip(cases.items(), got):
+            assert actual == want, case
+
+    def test_bash_drops_unquoted_backslashes_like_git_would_see(self, tmp_path):
+        """bash は引用符なしの `\\` を落とす＝git に届くのは別のパス（git も同じく失敗する）。
+        PowerShell では `\\` はそのまま届く。"""
+        repo, _, outside = _hooked_repo(tmp_path)
+        back = str(repo).replace("/", "\\")
+        got = _targets(tmp_path, repo, [[f"git -C {back} commit -m x", str(outside), "Bash"],
+                                        [f"git -C {back} commit -m x", str(outside), "PowerShell"]])
+        assert got == ["null", "r"]
+
+    def test_a_linked_worktree_is_this_repository(self, tmp_path):
+        repo, _, outside = _hooked_repo(tmp_path)
+        _git(repo, "worktree", "add", "-q", str(tmp_path / "wt"))
+        got = _targets(tmp_path, repo, [[f'git -C "{tmp_path / "wt"}" commit -m x', str(outside), "Bash"]])
+        assert got == ["wt"]
+
+
+def _run_hook(tmp_path, repo, command, cwd, tool="Bash") -> subprocess.CompletedProcess:
+    gate = str(repo / "tools" / "qa-hook" / "pre-commit-gate.mjs")
+    payload = {"tool_name": tool, "tool_input": {"command": command}, "cwd": str(cwd)}
+    return subprocess.run(["node", gate], input=json.dumps(payload), cwd=str(cwd),
+                          capture_output=True, text=True, encoding="utf-8", timeout=120,
+                          env=_ceiling_env(tmp_path))
+
+
+def _denied(r: subprocess.CompletedProcess) -> str:
+    if not r.stdout.strip():
+        return ""
+    return json.loads(r.stdout)["hookSpecificOutput"]["permissionDecisionReason"]
+
+
+class TestCommitGateMain:
+    """フックとして呼んだときの通し（写しを叩く）。"""
+
+    def test_reaching_in_from_outside_is_checked_not_waved_through(self, tmp_path):
+        """①の実測の形＝旧は無言の exit 0。いまは検査に入る（この写しの台帳の先行検査は
+        テストファイルが無いので赤になる＝それが「検査した」証拠）。"""
+        repo, _, outside = _hooked_repo(tmp_path)
+        reason = _denied(_run_hook(tmp_path, repo, f'git -C "{repo}" commit -m x', outside))
+        assert reason
+        assert "B-312" not in reason
+
+    def test_rewrite_then_commit_is_refused_before_anything_runs(self, tmp_path):
+        repo, _, _ = _hooked_repo(tmp_path)
+        reason = _denied(_run_hook(tmp_path, repo, "python bump.py && git commit -am x", repo))
+        assert "B-312" in reason and "別のコマンド" in reason
+        assert "git status" in reason   # NOTHING_RAN
+
+    def test_push_from_a_dirty_tree_is_refused(self, tmp_path):
+        repo, _, _ = _hooked_repo(tmp_path)
+        (repo / "a.txt").write_text("changed\n", encoding="utf-8")
+        reason = _denied(_run_hook(tmp_path, repo, "git push", repo))
+        assert "HEAD" in reason and "a.txt" in reason
+
+    def test_another_repository_stays_silent(self, tmp_path):
+        repo, other, outside = _hooked_repo(tmp_path)
+        r = _run_hook(tmp_path, repo, f'git -C "{other}" commit -m x', outside)
+        assert r.returncode == 0 and r.stdout == ""
+
+
+class TestHookTreeFor:
+    """毎ターンのゲート（gate.mjs）も、作業ディレクトリが外にあるとき黙らない（B-312）。"""
+
+    def test_outside_and_subdir_and_worktree(self, tmp_path):
+        repo, other, outside = _hooked_repo(tmp_path)
+        _git(repo, "worktree", "add", "-q", str(tmp_path / "wt"))
+        helpers = str(repo / "tools" / "qa-hook" / "git-changes.mjs").replace("\\", "/")
+        probe = tmp_path / "_probe_tree.mjs"
+        cwds = [str(outside), str(repo / "tests"), str(other), str(tmp_path / "wt")]
+        probe.write_text(
+            f'import {{ hookTreeFor }} from "file:///{helpers}";\n'
+            f"process.stdout.write(JSON.stringify({json.dumps(cwds)}"
+            ".map((c) => hookTreeFor(c).replace(/\\\\/g, '/').split('/').pop())));\n",
+            encoding="utf-8")
+        out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                             check=True, timeout=60, env=_ceiling_env(tmp_path))
+        assert json.loads(out.stdout) == ["r", "r", "r", "wt"]
