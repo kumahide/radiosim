@@ -1539,6 +1539,116 @@ class TestPrefetchTiles:
                        "downloaded_dem": 0, "skipped": 0, "failed": 0}
 
 
+class TestForceRefetchDropsUnreadLowerLayers:
+    """強制再取得で降下が要らなくなった下位レイヤを消すこと（B-285）。
+
+    以前は 5a の欠損が無くなった位置で、古い 5b・dem_png がディスクに残った
+    ＝「キャッシュ済みタイルを取り直す」の言葉どおりにならなかった。⚠️ **dem_png は
+    4 枚の zoom-15 を全部見た位置でだけ消す**（端の位置の検査が対）。
+    """
+
+    LAT, LON = 35.0, 139.0
+
+    def _full_position_bbox(self):
+        """zoom-14 の 1 枚をちょうど覆う範囲＝子の zoom-15 が 4 枚そろう。"""
+        x, y, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        n, w = dem_cache.tile_to_latlng(x, y, 14)
+        s, e = dem_cache.tile_to_latlng(x + 1, y + 1, 14)
+        eps = 1e-6
+        return n - eps, w + eps, s + eps, e - eps
+
+    def _tile(self, void=False):
+        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        if void:
+            arr[0, 0] = (128, 0, 0)
+        return arr
+
+    def _seed(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.new("RGB", (256, 256)).save(path)
+
+    def _seed_all(self, bbox):
+        """以前 5a に欠損があった位置の形＝5a・5b・dem_png がそろって在る。"""
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*bbox)
+        for _x, _y, _s5a, path5a, _s5b, path5b in zoom15:
+            self._seed(path5a)
+            self._seed(path5b)
+        self._seed(dem14_path)
+        return dem14_path, zoom15
+
+    def test_lower_layers_are_removed_when_5a_has_no_voids(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        gsi = dem_sources.GSI_DEM.source_id
+        stale_key = (gsi, "dem_png", x14, y14)
+        monkeypatch.setitem(dem._tile_cache, stale_key, self._tile())
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert not any(os.path.exists(t[5]) for t in zoom15), "読まれない 5b が残っている"
+        assert not os.path.exists(dem14_path), "読まれない dem_png が残っている"
+        assert all(os.path.exists(t[3]) for t in zoom15)
+        assert stale_key not in dem._tile_cache
+
+    def test_5b_that_fills_the_5a_voids_is_kept(self, tmp_path, monkeypatch):
+        """5a に欠損が残り 5b が埋める位置＝5b は読まれるので消さない（dem_png は消す）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: {"dem5a_png": self._tile(void=True),
+                                        "dem5b_png": self._tile()}.get(layer_id))
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert all(os.path.exists(t[5]) for t in zoom15)
+        assert not os.path.exists(dem14_path)
+
+    def test_dem_png_is_kept_when_one_subtile_still_needs_it(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        void_x15 = zoom15[0][0]
+
+        def fetch(layer_id, zoom, x, *a, **kw):
+            if layer_id == "dem5a_png":
+                return self._tile(void=(x == void_x15))
+            return None           # 5b 不在・dem_png は通信失敗＝ディスクは古いまま
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert os.path.exists(dem14_path), "まだ要る dem_png を消した"
+
+    def test_dem_png_at_the_edge_of_the_range_is_kept(self, tmp_path, monkeypatch):
+        """範囲の端＝zoom-15 を 1 枚しか見ていない位置では dem_png を消さない。
+
+        🔴 範囲外の 1 枚が 10m を要るかもしれない＝消すと次の通常の事前取得は
+        読める 5a を見て飛ばし、**10m を二度と取りに行かない**。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        full = self._full_position_bbox()
+        self._seed_all(full)
+        point = (self.LAT, self.LON, self.LAT, self.LON)
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*point)
+        assert len(zoom15) == 1
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
+
+        dem_prefetch.prefetch_tiles(*point, force=True)
+
+        assert not os.path.exists(zoom15[0][5]), "この 1 枚の 5b は読まれない"
+        assert os.path.exists(dem14_path), "範囲外の 3 枚が要るかもしれない dem_png を消した"
+
+
 # ============================================================
 # prefetch_tiles(source=) — 国土地理院以外のソース（3.6 ステージ1・B-253）
 #

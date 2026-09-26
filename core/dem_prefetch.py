@@ -111,6 +111,26 @@ def _is_cached(path: str) -> bool:
         return False
 
 
+def _drop_unread_tile(layer_id: str, x: int, y: int, path: str) -> None:
+    """降下が要らなくなった下位レイヤのタイルを消す（B-285）。
+
+    計算は上位レイヤで止まるので**標高の値は動かない**＝メモリの写しも外すが、
+    世代（`dem._cache_epoch`）は進めない。消せなくても致命ではない（読まれない
+    ファイルが残るだけ）ので、記録に留めて続ける。
+    """
+    if not os.path.exists(path):
+        return
+    try:
+        os.remove(path)
+    except OSError as e:
+        logger.warning("prefetch: could not remove an unread lower-layer tile: %s", e)
+        return
+    with dem._cache_lock:
+        dem._tile_cache.pop((dem_sources.GSI_DEM.source_id, layer_id, x, y), None)
+        dem._tile_validity_memo.pop(path, None)
+    logger.debug("prefetch: removed unread lower-layer tile: %s", path)
+
+
 def _process_position(
     x14: int, y14: int,
     dem14_subdir: str, dem14_path: str,
@@ -134,6 +154,13 @@ def _process_position(
     欠損のある位置は必ず dem_png までキャッシュされるため、この早期リターンが
     再プリフェッチ時の「解決済みは無視」を成立させる。⚠️ **見るのは存在ではなく
     可読性**（B-141）＝壊れたタイルを終端マーカーと読むと、そこだけ永久に埋まらない。
+
+    降下が要らないと分かった下位レイヤは消す（B-285）＝強制再取得で上位の欠損が
+    無くなった位置に、読まれない古い 5b・dem_png を残さない。⚠️ **dem_png を消すのは
+    4 枚の zoom-15 を全部この回で取って、どれも降りなかったときだけ**＝範囲の端で
+    一部しか見ていない位置は、範囲外の 1 枚が 10m を要るかもしれない。そこで消すと
+    上の不変条件「欠損あり⟹dem_png 取得」が崩れ、次の通常の事前取得は読める 5a を
+    見て `continue` するので**10m を二度と取りに行かない**（オフラインで欠損が残る）。
     """
     dem14_ok = _is_cached(dem14_path)
     if not force and dem14_ok:
@@ -151,6 +178,7 @@ def _process_position(
     #    その名前に反する。**見るのは「在るのに読めない」だけ**で、`force` は
     #    「読めても取り直す」を足すだけの独立した軸。
     need_dem = os.path.exists(dem14_path) and not dem14_ok
+    resolved_above = 0   # この回に取って、dem_png まで降りずに済んだ zoom-15 の枚数
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
         # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
         # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
@@ -165,7 +193,10 @@ def _process_position(
                 counts["downloaded_5a"] += 1
             remaining = _void_mask(arr5a)
             if not remaining.any():
-                continue   # 欠損なし: この位置は 5a で完結
+                # 欠損なし: この位置は 5a で完結＝5b は読まれない（B-285）
+                _drop_unread_tile("dem5b_png", x15, y15, path5b)
+                resolved_above += 1
+                continue
         else:
             remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
 
@@ -178,9 +209,14 @@ def _process_position(
             void5b = _void_mask(arr5b)
             still_void = void5b if remaining is None else (remaining & void5b)
             if not still_void.any():
+                resolved_above += 1
                 continue   # 5a の欠損を 5b が完全に補完
         # 5b 不在、または 5a∩5b に欠損が残る → dem_png へ降りる
         need_dem = True
+
+    if not need_dem and resolved_above == 4:
+        # 4 枚とも上位で埋まった＝dem_png は読まれない（B-285・端の位置は docstring）
+        _drop_unread_tile("dem_png", x14, y14, dem14_path)
 
     if need_dem:
         arr = dem._fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path,
