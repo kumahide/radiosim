@@ -346,6 +346,8 @@ Downloads and deletions show a confirmation dialog with the estimated number of 
 
 > **Be considerate of the tile server**: Tiles are fetched from GSI's public servers (or from the provider of the source selected under "Target DEM source"). Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 
+> ⚠️ **If you range-downloaded an area with a version before 3.7 and will use it offline, force re-download it.** Earlier versions did not fetch the 5 m (photogrammetry) and 10 m tiles beneath pixels that read exactly 0 m in the 5 m (airborne LiDAR) tile. The calculation reads the lower tile at such a pixel, so offline it cannot get an elevation there. Running a normal range download again does not fix it, because tiles already cached are skipped.
+
 ---
 
 ## Usage — Single Mode
@@ -780,7 +782,7 @@ Status     = OK (≥ 0 dB) / NG (< 0 dB)
 | `dem5b_png` | 5 m (photogrammetry) | 15   | Wider coverage than dem5a     |
 | `dem_png`   | 10 m (base map)      | 14   | Nationwide                    |
 
-Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404 or a missing-data pixel, the next layer is used.
+Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404, or its pixel is missing data or exactly 0 m, the next layer is used.
 
 ### Caching Strategy
 
