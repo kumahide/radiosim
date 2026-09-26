@@ -3,7 +3,8 @@ core/update_check.py
 ====================
 **新しい版があるかを GitHub Releases に尋ねる**（I-178 段階 1＝ヘルプ > 更新の確認）。
 
-利用者が押したときだけ 1 回問い合わせる。ダウンロードと入れ替えはしない
+利用者が押したときだけ 1 回問い合わせる。**起動時の確認**（I-179 段階 2）は
+既定オフで、オンにした人だけ 1 日 1 回まで（`auto_due()`）。ダウンロードと入れ替えはしない
 （署名しない決定と当たる＝未署名のファイルをネットから取って実行すると、
 Smart App Control に止められたとき理由を説明できない）。リリースのページを
 開くところまでがこのアプリの仕事で、その先はブラウザと利用者に任せる。
@@ -16,6 +17,7 @@ Smart App Control に止められたとき理由を説明できない）。リ�
 
 from __future__ import annotations
 
+import datetime
 from dataclasses import dataclass
 
 from core import version
@@ -79,6 +81,21 @@ def pick_newer(releases: list, current: str = version.APP_VERSION) -> Release | 
         if vt > now and (best is None or vt > best[0]):
             best = (vt, Release(version=name, tag=tag, url=url))
     return best[1] if best else None
+
+
+def auto_due(conf: dict, today: datetime.date) -> bool:
+    """起動時の確認を今日打つか（I-179）。設定の 2 キーだけを見る純関数。
+
+    - `update_check_auto` が `"on"` のときだけ（既定 `"off"`＝会社 PC やオフラインの
+      現場で、起動のたびに外へ通信しない）。`"on"` 以外の字はすべてオフとして読む。
+    - `update_check_last`（最後に**試みた**日・ISO）が今日でなければ打つ。成否を問わず
+      試みた日を記録する＝失敗しても同じ日に 2 度目は打たない（認証なしの API は
+      IP あたり 1 時間 60 回＝会社の NAT の内側では手動の分と同じ枠を分け合う）。
+      時計が戻って記録が「未来」でも、今日と違えば打つ（止まったままにしない）。
+    """
+    if conf.get("update_check_auto") != "on":
+        return False
+    return conf.get("update_check_last") != today.isoformat()
 
 
 def fetch_releases() -> list:

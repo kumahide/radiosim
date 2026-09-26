@@ -1,9 +1,12 @@
-"""更新の確認（I-178 段階 1）と、その回に取り出した次の一手 `fix_network` の検査。"""
+"""更新の確認（I-178 段階 1・I-179 起動時の確認）と、その回に取り出した次の一手 `fix_network` の検査。"""
+
+import datetime
+from typing import Any, cast
 
 import pytest
 import requests
 
-from core import i18n, simulation as sim, update_check, version
+from core import config, i18n, simulation as sim, update_check, version
 from core.update_check import Release, UpdateCheckError, pick_newer
 from views import launcher_menu
 
@@ -173,3 +176,158 @@ class TestMessages:
         i18n.set_lang("ja")
         msg = launcher_menu.update_failure_message(KeyError("x"))
         assert i18n.t("fix_retry_or_log") in msg and "KeyError" in msg
+
+
+class TestAutoDue:
+    """起動時の確認（I-179）を今日打つか＝既定オフ・1 日 1 回まで。"""
+    _TODAY = datetime.date(2026, 9, 26)
+
+    def test_default_config_is_off(self):
+        assert config.DEFAULT_CONFIG["update_check_auto"] == "off"
+        assert not update_check.auto_due(dict(config.DEFAULT_CONFIG), self._TODAY)
+
+    def test_keys_are_app_settings(self):
+        # 設定ファイルの app 側＝プロジェクトやパラメータ読込に混ざらない。
+        for key in ("update_check_auto", "update_check_last"):
+            assert key in config.APP_KEYS and key not in config.SIM_KEYS
+
+    def test_on_and_not_yet_today(self):
+        assert update_check.auto_due(
+            {"update_check_auto": "on", "update_check_last": ""}, self._TODAY)
+        assert update_check.auto_due(
+            {"update_check_auto": "on", "update_check_last": "2026-09-25"}, self._TODAY)
+
+    def test_once_a_day(self):
+        assert not update_check.auto_due(
+            {"update_check_auto": "on", "update_check_last": "2026-09-26"}, self._TODAY)
+
+    def test_clock_turned_back_still_checks(self):
+        assert update_check.auto_due(
+            {"update_check_auto": "on", "update_check_last": "2026-12-31"}, self._TODAY)
+
+    @pytest.mark.parametrize("value", [True, "true", "On", "1", None])
+    def test_anything_but_on_is_off(self, value):
+        assert not update_check.auto_due(
+            {"update_check_auto": value, "update_check_last": ""}, self._TODAY)
+
+
+class _Root:
+    def __init__(self):
+        self.cursor = ""
+
+    def configure(self, cursor=""):
+        self.cursor = cursor
+
+
+class _Host(launcher_menu._MenuMixin):
+    """`SimLauncher` のうち更新の確認が使う面だけ。"""
+    saved: list
+
+    def __init__(self, conf=None):
+        self.root = cast(Any, _Root())
+        self.config = dict(config.DEFAULT_CONFIG, **(conf or {}))
+        self.alerts, self.confirms = [], []
+
+    def _alert(self, title, message):
+        self.alerts.append(message)
+
+    def _confirm(self, title, message):
+        self.confirms.append(message)
+        return False
+
+
+class _Thread:
+    """`start()` で走らせず、`run_all()` で答えを返させる（問い合わせ中を作る）。"""
+    started: list = []
+
+    def __init__(self, target, **_kw):
+        self.target = target
+
+    def start(self):
+        _Thread.started.append(self.target)
+
+    @classmethod
+    def run_all(cls):
+        while cls.started:
+            cls.started.pop(0)()
+
+
+@pytest.fixture
+def host(monkeypatch):
+    _Thread.started = []
+    monkeypatch.setattr(launcher_menu.threading, "Thread", _Thread)
+    monkeypatch.setattr(launcher_menu.progress, "post_to_ui",
+                        lambda _root, fn: fn())
+    saved = []
+    monkeypatch.setattr(launcher_menu.config, "save_app",
+                        lambda values: saved.append(dict(values)) or True)
+    i18n.set_lang("ja")
+
+    def _make(answer, **conf):
+        def _check():
+            if isinstance(answer, BaseException):
+                raise answer
+            return answer
+        monkeypatch.setattr(update_check, "check", _check)
+        h = _Host(conf)
+        h.saved = saved
+        return h
+    return _make
+
+
+_NEW = Release("9.0", "9.0", f"{_PAGE}tag/9.0")
+
+
+class TestStartupCheck:
+    def test_off_by_default_never_asks(self, host):
+        h = host(_NEW)
+        h._auto_check_updates()
+        assert _Thread.started == [] and h.saved == []
+
+    def test_records_the_day_before_asking_and_only_once(self, host):
+        h = host(None, update_check_auto="on")
+        h._auto_check_updates()
+        assert h.saved[-1]["update_check_last"] == datetime.date.today().isoformat()
+        assert len(_Thread.started) == 1
+        _Thread.run_all()
+        h._auto_check_updates()                   # 同じ日の 2 度目の起動
+        assert _Thread.started == [] and len(h.saved) == 1
+
+    @pytest.mark.parametrize("answer", [
+        None, UpdateCheckError("network", "boom"), UpdateCheckError("rate_limited"),
+        KeyError("x")])
+    def test_latest_and_failures_stay_silent(self, host, answer):
+        h = host(answer, update_check_auto="on")
+        h._auto_check_updates()
+        _Thread.run_all()
+        assert h.alerts == [] and h.confirms == [] and h.root.cursor == ""
+
+    def test_newer_version_asks_and_says_how_to_stop(self, host):
+        h = host(_NEW, update_check_auto="on")
+        h._auto_check_updates()
+        assert h.root.cursor == ""                # 起動時はカーソルを変えない
+        _Thread.run_all()
+        (msg,) = h.confirms
+        assert i18n.t("update_auto_note") in msg
+        assert msg.endswith(i18n.t("dlg_update_available").rsplit("\n\n", 1)[1])
+
+    def test_manual_press_while_startup_check_runs_shows_the_answer(self, host):
+        h = host(None, update_check_auto="on")
+        h._auto_check_updates()
+        h._on_check_updates()                     # 答えが来る前に利用者が押す
+        assert len(_Thread.started) == 1 and h.root.cursor == "watch"
+        _Thread.run_all()
+        assert len(h.alerts) == 1 and h.root.cursor == ""
+
+    def test_manual_check_has_no_startup_note(self, host):
+        h = host(_NEW)
+        h._on_check_updates()
+        _Thread.run_all()
+        (msg,) = h.confirms
+        assert i18n.t("update_auto_note") not in msg
+
+    def test_toggle_saves_the_choice(self, host):
+        h = host(None)
+        h._update_auto_var = type("V", (), {"get": lambda self: "on"})()
+        h._on_update_auto_toggle()
+        assert h.saved[-1]["update_check_auto"] == "on"

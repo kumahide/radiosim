@@ -121,6 +121,10 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "the current version side by side; settings and "
                                 "results stay in each folder.",
         "update_how_source":    "Check out the tag {tag} from the repository.",
+        "menu_check_updates_auto": "Check for Updates at Startup",
+        "update_auto_note":     "This notice comes from the startup check (at most "
+                                "once a day). To stop it, uncheck Help > Check for "
+                                "Updates at Startup.",
         "menu_diagnostics":     "Save Diagnostic Package...",
         "dlg_diagnostics_title": "Diagnostic Package",
         "dlg_diagnostics_intro": "Pick what to include, then choose where to save "
@@ -937,6 +941,12 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "展開してください。 いまの版と並べて使えます（設定と"
                                 "結果はフォルダごとに分かれます）。",
         "update_how_source":    "リポジトリからタグ {tag} を取得してください。",
+        "menu_check_updates_auto": "起動時に更新を確認",
+        # ⚠️ Tk は空白でしか折らない＝1 文ずつ 1 行に収まる長さにし、文の間にだけ空白を
+        # 置く（長いと「。」が行頭へ落ちた＝2026-09-26 の画面確認）。数字と単位の間にも
+        # 空白を入れない（I-178 の画面の直し）。
+        "update_auto_note":     "起動時の確認（一日一回まで）による知らせです。 "
+                                "ヘルプの「起動時に更新を確認」を外すと止まります。",
         "menu_diagnostics":     "診断パッケージを保存...",
         "dlg_diagnostics_title": "診断パッケージ",
         "dlg_diagnostics_intro": "含める項目を選んでから、ZIP の保存先を指定して"

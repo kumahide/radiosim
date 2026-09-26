@@ -3,7 +3,7 @@ views/launcher_menu.py
 ======================
 ランチャーの**メニューバーと、そこからしか呼ばれない操作**（`SimLauncher` の Mixin）。
 
-テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・バージョン情報・ドキュメント表示。
+テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・更新の確認・バージョン情報・ドキュメント表示。
 
 ⚠️ **これは `SimLauncher` の一部**であって独立した部品ではない（`self.root` /
 `self.config` / `self.entries` を共有する）。分けたのは*読む単位*を小さくするため
@@ -11,6 +11,7 @@ views/launcher_menu.py
 変えていない＝「移動だけ」）。
 """
 
+import datetime
 import json
 import os
 import re
@@ -238,11 +239,14 @@ def render_doc_site(entry_path: str, base_dir: str, out_dir: str,
 
 def update_available_message(rel: "update_check.Release", *,
                              frozen: "bool | None" = None,
-                             portable: "bool | None" = None) -> str:
+                             portable: "bool | None" = None,
+                             auto: bool = False) -> str:
     """新しい版があるときの本文（I-178）。配布形ごとに入れ方の 1 文を替える。
 
     言い方はマニュアルの節「別の版を上から入れるとき」「複数の版を並べて使う
     とき」と同じ（インストーラ版は置き換わる・ポータブル版は並べられる）。
+    `auto`＝起動時の確認（I-179）から出たとき、止め方を入れ方の後ろへ足す
+    （問い「開きますか」は最後に残す）。
     """
     import sys
     if frozen is None:
@@ -255,6 +259,8 @@ def update_available_message(rel: "update_check.Release", *,
         how = i18n.t("update_how_portable")
     else:
         how = i18n.t("update_how_installer")
+    if auto:
+        how += "\n\n" + i18n.t("update_auto_note")
     return i18n.t("dlg_update_available").format(
         cur=version.APP_VERSION, new=rel.version, how=how)
 
@@ -409,6 +415,17 @@ class _MenuMixin:
         help_menu.add_command(
             label   = i18n.t("menu_check_updates"),
             command = self._on_check_updates,
+        )
+        # 起動時の確認（I-179）＝手動の口の真下に置く（何を自動にするのかが隣で読める）。
+        # `"on"` 以外の字はオフとして読む（`update_check.auto_due` と同じ）。
+        self._update_auto_var = tk.StringVar(
+            value="on" if self.config.get("update_check_auto") == "on" else "off")
+        help_menu.add_checkbutton(
+            label    = i18n.t("menu_check_updates_auto"),
+            variable = self._update_auto_var,
+            onvalue  = "on",
+            offvalue = "off",
+            command  = self._on_update_auto_toggle,
         )
         help_menu.add_separator()
         help_menu.add_command(
@@ -785,17 +802,26 @@ class _MenuMixin:
 
         dialogs.center_on(self.root, dlg)
 
-    def _on_check_updates(self) -> None:
+    def _on_check_updates(self, quiet: bool = False) -> None:
         """GitHub Releases に新しい版を尋ねる（I-178 段階 1＝押したときだけ）。
 
         問い合わせは daemon スレッド 1 本、結果は `post_to_ui` で画面へ戻す
         （実行フローではないので `ProgressPump` の一覧には入れない）。
         待つ間はカーソルで示し、二度押しは無視する。
+
+        `quiet=True` は起動時の確認（I-179）＝カーソルを変えず、新しい版があるとき
+        だけ画面に出す（最新・失敗はログだけ）。起動時の確認を待つ間に利用者が
+        押したら、その問い合わせの答えを手動と同じに出す（2 本目は打たない）。
         """
         if getattr(self, "_update_check_busy", False):
+            if not quiet and self._update_check_quiet:
+                self._update_check_quiet = False
+                self.root.configure(cursor="watch")
             return
         self._update_check_busy = True
-        self.root.configure(cursor="watch")
+        self._update_check_quiet = quiet
+        if not quiet:
+            self.root.configure(cursor="watch")
 
         def _work() -> None:
             outcome: "update_check.Release | BaseException | None"
@@ -815,6 +841,18 @@ class _MenuMixin:
         self._update_check_busy = False
         self.root.configure(cursor="")
         title = i18n.t("dlg_update_title")
+        if self._update_check_quiet:
+            # 起動時の確認＝失敗も「最新」も黙る（頼んでいない通信の失敗で
+            # 起動のたびにダイアログを出さない）。ログにだけ残す。
+            if isinstance(outcome, BaseException):
+                config.logger.info("Startup update check skipped: %s", outcome)
+                return
+            if outcome is None:
+                return
+            if self._confirm(title, update_available_message(outcome, auto=True)):
+                import webbrowser
+                webbrowser.open(outcome.url)
+            return
         if isinstance(outcome, BaseException):
             self._alert(title, update_failure_message(outcome))
             return
@@ -825,6 +863,24 @@ class _MenuMixin:
         if self._confirm(title, update_available_message(outcome)):
             import webbrowser
             webbrowser.open(outcome.url)
+
+    def _on_update_auto_toggle(self) -> None:
+        """起動時の確認のオン／オフを保存する（I-179）。切り替えただけでは問い合わせない。"""
+        self.config["update_check_auto"] = self._update_auto_var.get()
+        config.save_app(self.config)
+
+    def _auto_check_updates(self) -> None:
+        """起動時に 1 日 1 回まで新しい版を確かめる（I-179 段階 2・既定オフ）。
+
+        試みた日は**打つ前に**記録する＝失敗しても、同じ日にもう 1 度起動しても
+        2 度目は打たない（`update_check.auto_due`）。
+        """
+        today = datetime.date.today()
+        if not update_check.auto_due(self.config, today):
+            return
+        self.config["update_check_last"] = today.isoformat()
+        config.save_app(self.config)
+        self._on_check_updates(quiet=True)
 
     def _on_about(self) -> None:
         self._alert(

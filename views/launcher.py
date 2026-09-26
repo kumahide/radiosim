@@ -113,6 +113,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 利用者が足した背景地図タイルソース宣言のうち使えなかったぶんも
         # 同じ理由で毎回言う（3.5 ステージ3・I-152）。
         root.after_idle(self._warn_about_rejected_tile_sources)
+        # 起動時の更新の確認（I-179＝既定オフ・1 日 1 回まで）。上の警告の後ろに並べる。
+        root.after_idle(self._auto_check_updates)
 
     #: 却下の理由 → 画面に出す説明の i18n キー。⚠️ **`validate_external` が返す
     #: 理由と 1 対 1**（理由を足したらここも足す＝`tests/test_i18n_external.py`

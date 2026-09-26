@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1285 1286" width="1285" height="1286"
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1296 1286" width="1296" height="1286"
      role="img" aria-labelledby="ttl desc" font-family="'BIZ UDPGothic','Meiryo','Yu Gothic','Hiragino Sans',sans-serif">
   <!-- 生成物（B-209）: 手で直さない。表を直して作り直す（開発者ガイド「レイヤー構成」）。 -->
   <title id="ttl">RadioSim Pro レイヤー構成</title>
@@ -21,15 +21,15 @@
     </style>
   </defs>
 
-  <rect width="1285" height="1286" fill="#ffffff"/>
+  <rect width="1296" height="1286" fill="#ffffff"/>
 
   <text x="20" y="34" font-size="21" font-weight="700" fill="#1f2430">RadioSim Pro — レイヤー構成</text>
   <text x="20" y="57" class="note">層はディレクトリで表す。依存は views → report → core の一方向で、2 つの層から使うものは「下」へ置く（shared/ のような箱は作らない）。</text>
 
   <!-- views -->
-  <rect class="band" x="20" y="76" width="1245" height="348" rx="10" fill="#eef2fb" stroke="#c3d0ec"/>
+  <rect class="band" x="20" y="76" width="1256" height="348" rx="10" fill="#eef2fb" stroke="#c3d0ec"/>
   <text x="34" y="100" class="lname" fill="#24406e">views/ — 画面（tkinter）</text>
-  <text x="1251" y="100" class="lrule" text-anchor="end">副作用あり。計算と I/O は下の層へ委譲する。</text>
+  <text x="1262" y="100" class="lrule" text-anchor="end">副作用あり。計算と I/O は下の層へ委譲する。</text>
   <g>
     <rect class="card" x="34" y="124" width="425" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="46" y="141" class="ctitle" fill="#24406e">ランチャー（本体＋ Mixin）</text>
@@ -44,7 +44,7 @@
     <text x="485" y="202" class="mod">map_cache.py</text> <text x="653" y="202" class="role">DEM キャッシュの操作</text>
     <text x="485" y="222" class="mod">map_adapter.py</text> <text x="653" y="222" class="role">tkintermapview の唯一の依存点</text>
     <text x="485" y="242" class="mod">map_style.py</text> <text x="653" y="242" class="role">描画定数の単一ソース</text>
-    <rect class="card" x="863" y="124" width="388" height="116" rx="6" stroke="#c3d0ec"/>
+    <rect class="card" x="863" y="124" width="399" height="116" rx="6" stroke="#c3d0ec"/>
     <text x="875" y="141" class="ctitle" fill="#24406e">複数経路（本体＋ Mixin）</text>
     <text x="875" y="162" class="mod">batch_builder.py</text> <text x="1043" y="162" class="role">本体（共通設定・案件）</text>
     <text x="875" y="182" class="mod">batch_table.py</text> <text x="1043" y="182" class="role">入力表（行の操作）</text>
@@ -58,7 +58,7 @@
     <text x="46" y="332" class="mod">scenario.py</text> <text x="214" y="332" class="role">条件探索（比較 / スイープ）</text>
     <text x="46" y="352" class="mod">multihop.py</text> <text x="214" y="352" class="role">中継経路（地点が入力面）</text>
     <text x="46" y="372" class="mod">multihop_map.py</text> <text x="214" y="372" class="role">中継経路と地図の受け渡し</text>
-    <rect class="card" x="473" y="274" width="778" height="136" rx="6" stroke="#c3d0ec"/>
+    <rect class="card" x="473" y="274" width="789" height="136" rx="6" stroke="#c3d0ec"/>
     <text x="485" y="291" class="ctitle" fill="#24406e">全ウィンドウで共有する部品</text>
     <text x="485" y="312" class="mod">dialogs.py</text> <text x="653" y="312" class="role">親中央のモーダル</text>
     <text x="485" y="332" class="mod">errors.py</text> <text x="653" y="332" class="role">未捕捉例外の受け皿</text>
@@ -71,12 +71,12 @@
     <text x="875" y="392" class="mod">title_bar.py</text> <text x="1043" y="392" class="role">タイトルバー（OS 描画）</text>
   </g>
 
-  <line class="arrow" x1="642" y1="428" x2="642" y2="452"/>
+  <line class="arrow" x1="648" y1="428" x2="648" y2="452"/>
 
   <!-- report -->
-  <rect class="band" x="20" y="456" width="1245" height="268" rx="10" fill="#eefaf3" stroke="#bfe3d1"/>
+  <rect class="band" x="20" y="456" width="1256" height="268" rx="10" fill="#eefaf3" stroke="#bfe3d1"/>
   <text x="34" y="480" class="lname" fill="#1c5c3f">report/ — 出力を作る層</text>
-  <text x="1251" y="480" class="lrule" text-anchor="end">画面が無くても動くヘッドレス（テスト・CI もここを直接まわす）。</text>
+  <text x="1262" y="480" class="lrule" text-anchor="end">画面が無くても動くヘッドレス（テスト・CI もここを直接まわす）。</text>
   <g>
     <rect class="card" x="34" y="504" width="425" height="116" rx="6" stroke="#bfe3d1"/>
     <text x="46" y="521" class="ctitle" fill="#1c5c3f">実行エンジン</text>
@@ -84,7 +84,7 @@
     <text x="46" y="562" class="mod">multihop.py</text> <text x="214" y="562" class="role">中継経路（区間を導出・min）</text>
     <text x="46" y="582" class="mod">project.py</text> <text x="214" y="582" class="role">.rsproj の読み書き</text>
     <text x="46" y="602" class="mod">residuals.py</text> <text x="214" y="602" class="role">PathResult → 残差標本の抽出</text>
-    <rect class="card" x="473" y="504" width="778" height="96" rx="6" stroke="#bfe3d1"/>
+    <rect class="card" x="473" y="504" width="789" height="96" rx="6" stroke="#bfe3d1"/>
     <text x="485" y="521" class="ctitle" fill="#1c5c3f">成果物の生成</text>
     <text x="485" y="542" class="mod">report_common.py</text> <text x="653" y="542" class="role">A4 骨格・ヘッダ / フッタ</text>
     <text x="485" y="562" class="mod">report_path.py</text> <text x="653" y="562" class="role">経路ごと（PNG/HTML/KML）</text>
@@ -102,12 +102,12 @@
     <text x="485" y="680" class="note">つまり 2 つの層から使うものは、共有の箱ではなく下の層の住人にする。</text>
   </g>
 
-  <line class="arrow" x1="642" y1="728" x2="642" y2="752"/>
+  <line class="arrow" x1="648" y1="728" x2="648" y2="752"/>
 
   <!-- core -->
-  <rect class="band" x="20" y="756" width="1245" height="468" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
+  <rect class="band" x="20" y="756" width="1256" height="468" rx="10" fill="#fff6e9" stroke="#f0dcbe"/>
   <text x="34" y="780" class="lname" fill="#7a4f16">core/ — 土台（計算・データ・設定）</text>
-  <text x="1251" y="780" class="lrule" text-anchor="end">tkinter も matplotlib も引かない。</text>
+  <text x="1262" y="780" class="lrule" text-anchor="end">tkinter も matplotlib も引かない。</text>
   <g>
     <rect class="card" x="34" y="804" width="425" height="76" rx="6" stroke="#f0dcbe"/>
     <text x="46" y="821" class="ctitle" fill="#7a4f16">オーケストレーション</text>
@@ -126,7 +126,7 @@
     <text x="485" y="1002" class="mod">sensitivity.py</text> <text x="653" y="1002" class="role">摂動再計算で余裕度の幅を出す</text>
     <text x="485" y="1022" class="mod">residuals.py</text> <text x="653" y="1022" class="role">実測との残差を層別に集計</text>
     <text x="485" y="1042" class="mod">disclosure.py</text> <text x="653" y="1042" class="role">帳票の開示の字（前提・適用範囲）</text>
-    <rect class="card" x="863" y="804" width="388" height="196" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="863" y="804" width="399" height="196" rx="6" stroke="#f0dcbe"/>
     <text x="875" y="821" class="ctitle" fill="#7a4f16">設定・環境・文字列</text>
     <text x="875" y="842" class="mod">config.py</text> <text x="1043" y="842" class="role">設定 I/O・検証・ログ</text>
     <text x="875" y="862" class="mod">runtime_env.py</text> <text x="1043" y="862" class="role">宣言された実行系の判定</text>
@@ -135,7 +135,7 @@
     <text x="875" y="922" class="mod">version.py</text> <text x="1043" y="922" class="role">バージョン情報</text>
     <text x="875" y="942" class="mod">failure.py</text> <text x="1043" y="942" class="role">失敗メッセージの型</text>
     <text x="875" y="962" class="mod">diagnostics.py</text> <text x="1043" y="962" class="role">診断パッケージ（成果物は既定除外）</text>
-    <text x="875" y="982" class="mod">update_check.py</text> <text x="1043" y="982" class="role">更新の確認（押したときだけ）</text>
+    <text x="875" y="982" class="mod">update_check.py</text> <text x="1043" y="982" class="role">更新の確認（手動＋起動時は既定オフ）</text>
   </g>
   <g>
     <rect class="card" x="34" y="1074" width="425" height="136" rx="6" stroke="#f0dcbe"/>

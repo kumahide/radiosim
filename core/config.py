@@ -449,6 +449,11 @@ DEFAULT_CONFIG: dict[str, str] = {
     # （組み込み "pale"/"photo" または宣言した外部ソースの source_id）。
     # レポート生成時（バッチ実行含む）もこの値を使う。既定は現状と同じ "pale"。
     "basemap_layer": "pale",
+    # 起動時の更新の確認（I-179）＝`"on"` のときだけ 1 日 1 回まで。既定はオフ
+    # （外へ通信するのは利用者が選んだときだけ＝哲学④）。`update_check_last` は
+    # 最後に試みた日（ISO）。読み方は `core/update_check.py` の `auto_due`。
+    "update_check_auto": "off",
+    "update_check_last": "",
 }
 
 
@@ -707,7 +712,8 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> bool:
 # 既定値を1行加える（段階移行で app/sim ネスト構造へ昇格する余地は残す）。
 # ------------------------------------------------------------
 APP_KEYS: frozenset[str] = frozenset(
-    {"theme", "lang", "proxy_url", "coord_format", "basemap_layer"})
+    {"theme", "lang", "proxy_url", "coord_format", "basemap_layer",
+     "update_check_auto", "update_check_last"})
 SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
 
 
