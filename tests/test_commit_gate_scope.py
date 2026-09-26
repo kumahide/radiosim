@@ -18,6 +18,8 @@ Field 用に 1 つあるだけで、**ドキュメントだけのコミットに
 ⛔ **版文字列（`core/version.py`）は島に入れていない**＝製品コードで、どのテストが
 影響を受けるかを言い尽くせない。⇒ リリースのコミットは今までどおりフル。**速くなるのは
 「マニュアルだけを直す回」「ゲートの道具だけを直す回」**で、リリース本体ではない。
+⚠️ 例外は `APP_VERSION` の 1 行だけの差（I-185＝版の字の読み手だけ）。その判定は
+`tests/test_pre_commit_gate.py` の担当＝ここの探り針は `versionOnly: false` で固定する。
 
 **ゲートの壊れ方 3 種**（[[feedback-promote-recurring-checks]]・新ゲートの必須検証）:
 
@@ -86,7 +88,10 @@ def _plan(paths: list[str]):
         f.write(f'import {{ islandFor }} from "file:///{src}";\n')
         f.write("import { readFileSync } from \"node:fs\";\n")
         f.write(f"const scope = JSON.parse(readFileSync({json.dumps(_SCOPE)}, 'utf-8'));\n")
-        f.write(f"const hit = islandFor(scope, {json.dumps(paths)});\n")
+        # versionOnly を固定する＝省くと作業ツリーの差から決まり、版の字だけを上げた
+        # 作業ツリー（＝`X.Ya1` の宣言のコミット）でだけ結論が変わる（2026-09-26・`3.8a1`）
+        f.write(f"const hit = islandFor(scope, {json.dumps(paths)}, process.cwd(),"
+                " { versionOnly: false });\n")
         f.write("process.stdout.write(JSON.stringify(hit));\n")
     try:
         r = subprocess.run(["node", probe], cwd=_REPO, capture_output=True,
