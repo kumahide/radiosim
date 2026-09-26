@@ -124,6 +124,10 @@ MIT ライセンスの無料ソフトです。商用利用も可能です（[LIC
 | English — user manual | [docs/manual_en.md](docs/manual_en.md) |
 | English — for developers | [docs/developer_en.md](docs/developer_en.md) |
 
+> ℹ️ 上のリンク先は開発中の最新（main）の文書で、まだ公開していない版の説明を含むことがあります。お使いの版の説明は、配布物に同梱の文書（アプリのヘルプ →「ドキュメントを開く」）か、[その版のタグ](https://github.com/kumahide/radiosim/tags)（例: `3.7`）の文書をご覧ください。
+>
+> *The links above point to the latest documents on main, which may describe a version not yet released. For the version you use, read the documents bundled with it (Help → Open Documentation in the app) or the documents at [that version's tag](https://github.com/kumahide/radiosim/tags) (e.g. `3.7`).*
+
 ---
 
 © 2026 BearValley AI Craftworks. All rights reserved.
