@@ -100,7 +100,7 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 
 ### Prerequisites
 
-- Python 3.11 or later (developed and CI-tested on 3.14)
+- Python 3.11 or later (developed and CI-tested on 3.14). ⚠️ **A release build needs a Python that ships Tk 8.6**: an exe built from one that ships Tk 9 (such as 3.14.7) fails at startup, so `build.bat` checks the Tk version and stops (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
 - **`RADIOSIM_PYTHON`** must point at the `python.exe` of the same virtual environment the tests run in (**required**). → [Development Environment](#development-environment)
 - PyInstaller and all dependencies are installed at their pinned versions by `build.bat`
 
@@ -881,7 +881,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
 > - **The on-screen/report "Rice K factor" (`current_k` = `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
 > - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12 in 4.0.** This has no effect if you use the packaged exe. `numpy` will also move to the 2.5.x line at the same time (3.4/3.5/3.6/3.7 keep it pinned at 2.4.4).
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6 shipped with no such change, and it still isn't decided whether 3.7 is "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
+> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 
