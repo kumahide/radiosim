@@ -3119,6 +3119,24 @@ class TestAutorunAdvice:
         assert "ユーザーに区切りを提案" in got["reason"]
         assert "無人モード" not in got["reason"]
 
+    def test_stop_is_silent_once_result_is_written(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """結果ファイルを書き終えた後の Stop は止めない＝終わった作業員を
+        一番高い時点でもう 1 往復回さない。状態も書かない（同じセッションは続かない）。"""
+        (tmp_path / "r.json").write_text('{"status": "done"}', encoding="utf-8")
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop")
+        assert got == {}, f"結果ファイルを書いた後なのに Stop で鳴っている: {got}"
+        assert not (tmp_path / "state.json").exists(), (
+            "黙る枝なのに状態ファイルを更新している")
+
+    def test_post_tool_use_still_fires_after_result(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """黙るのは Stop だけ＝結果を書いた後もツールを呼ぶなら助言は届く。"""
+        (tmp_path / "r.json").write_text('{"status": "done"}', encoding="utf-8")
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "PostToolUse")
+        assert "無人モード" in got.get("hookSpecificOutput", {}).get(
+            "additionalContext", ""), got
+
 
 # ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
