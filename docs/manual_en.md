@@ -228,6 +228,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | ------------ | -------------------------------------- |
 | Open Documentation | Opens this document in a browser       |
 | Save Diagnostic Package... | Bundles version, settings, recent log, cache statistics, environment info, and storage paths into a zip. Coordinates, credentials, and usernames are masked; result files are unchecked by default (they may hold project data, so you choose what to include). Attach this to a bug report |
+| Check for Updates... | Asks GitHub's public release page only when you click it. If a newer version exists, shows its number and how to install it, and asks whether to open the release page (downloading and installing are left to your browser and you). Final-release users hear only of final releases; RC users also of RCs. Follows the Proxy Settings |
 | About        | Shows the installed version            |
 
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy, coordinate format). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.

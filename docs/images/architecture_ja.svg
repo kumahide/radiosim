@@ -126,7 +126,7 @@
     <text x="485" y="1002" class="mod">sensitivity.py</text> <text x="653" y="1002" class="role">摂動再計算で余裕度の幅を出す</text>
     <text x="485" y="1022" class="mod">residuals.py</text> <text x="653" y="1022" class="role">実測との残差を層別に集計</text>
     <text x="485" y="1042" class="mod">disclosure.py</text> <text x="653" y="1042" class="role">帳票の開示の字（前提・適用範囲）</text>
-    <rect class="card" x="863" y="804" width="388" height="176" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="863" y="804" width="388" height="196" rx="6" stroke="#f0dcbe"/>
     <text x="875" y="821" class="ctitle" fill="#7a4f16">設定・環境・文字列</text>
     <text x="875" y="842" class="mod">config.py</text> <text x="1043" y="842" class="role">設定 I/O・検証・ログ</text>
     <text x="875" y="862" class="mod">runtime_env.py</text> <text x="1043" y="862" class="role">宣言された実行系の判定</text>
@@ -135,6 +135,7 @@
     <text x="875" y="922" class="mod">version.py</text> <text x="1043" y="922" class="role">バージョン情報</text>
     <text x="875" y="942" class="mod">failure.py</text> <text x="1043" y="942" class="role">失敗メッセージの型</text>
     <text x="875" y="962" class="mod">diagnostics.py</text> <text x="1043" y="962" class="role">診断パッケージ（成果物は既定除外）</text>
+    <text x="875" y="982" class="mod">update_check.py</text> <text x="1043" y="982" class="role">更新の確認（押したときだけ）</text>
   </g>
   <g>
     <rect class="card" x="34" y="1074" width="425" height="136" rx="6" stroke="#f0dcbe"/>

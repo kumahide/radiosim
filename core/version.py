@@ -47,3 +47,8 @@ def version_tuple(v: str = APP_VERSION) -> tuple[int, int, int, int]:
     else:
         rank = _FINAL_RANK               # 正式
     return (int(m.group(1)), int(m.group(2)), int(m.group(3) or 0), rank)
+
+
+def is_final(v: str = APP_VERSION) -> bool:
+    """正式版か（RC・alpha・beta・読めない字は偽）。更新の確認が「RC も知らせるか」に使う。"""
+    return version_tuple(v)[3] == _FINAL_RANK

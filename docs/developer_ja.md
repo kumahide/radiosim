@@ -249,6 +249,7 @@ radiosim/
 │   ├── diagnostics.py    # 診断パッケージの ZIP 生成（パス中のユーザー名を伏字化・成果物は既定除外）
 │   ├── i18n.py           # 多言語文字列テーブル＋外部言語（lang/*.json）の検証と読み込み
 │   ├── failure.py        # 失敗メッセージの型（何が起きた／次に何をすべきか／詳細）
+│   ├── update_check.py   # 更新の確認（GitHub Releases へ問い合わせ・知らせる版の選択は純関数）
 │   └── version.py        # バージョン情報
 ├── report/               # 出力を作る層。実行エンジンと成果物の生成（ヘッドレス）
 │   ├── batch.py          # 複数経路の実行エンジン（CSV I/O・バリデーション・実行）
@@ -329,6 +330,7 @@ radiosim/
     ├── test_terrain_grid.py
     ├── test_units.py
     ├── test_version.py
+    ├── test_update_check.py
     ├── test_output_contract.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
@@ -424,6 +426,7 @@ python main.py
 | -------------- | -------------------------------------- |
 | ドキュメントを開く | このドキュメントをブラウザで表示       |
 | 診断パッケージを保存... | `core/diagnostics.py` が ZIP を組み立てる（環境事実は既定選択・`results/` の成果物は既定除外）→ [ユーザーマニュアルのヘルプセクション](../docs/manual_ja.md#ヘルプ) |
+| 更新の確認... | `core/update_check.py` が押したときだけ GitHub Releases へ問い合わせる（プロキシ設定に従う・daemon スレッド 1 本＋`post_to_ui`）。新しい版があればリリースのページを開くかを聞く。ダウンロードと入れ替えはしない |
 | バージョン情報 | `version.py` の版数を表示              |
 
 > **「パラメータ読込」と「アプリ設定を読込む」は領分が排他**。前者はシミュレーション条件、後者はテーマ・言語・プロキシ・座標表示形式。**互いに相手を書き換えません**（他人のファイルを開いた瞬間に表示言語やネットワーク設定が変わらないための設計）。
@@ -1153,6 +1156,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_terrain_grid.py`   | 地形の解像度（段階→標本位置の解決・段階の順序・**実タイル座標で画素を飛ばさないこと／画素の縁の両方に標本が入ること**・天井の効く距離・解き方の口が 1 つであること・数で入れる口が復活しないこと） |
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |
 | `test_version.py`        | 版の字 → Windows の 4 数字バージョン（`core.version.version_tuple`）。**a → b → RC → 正式が単調増加すること**を順序で検査し、正式版が同じ版の RC より数値で古くならないことを確かめる（変換は spec の中に在り、テストから触れなかった） |
+| `test_update_check.py`   | 更新の確認（`core/update_check.py`）。正式版の利用者には正式だけ・RC/a/b の利用者には RC も知らせること・下書きと読めないタグとリポジトリ外の URL を捨てること・回数の上限／届かない／読めないの見分け・配布形ごとの入れ方の文。DEM 取得失敗の文を 3 キーに割っても字が変わらないこと |
 | `test_output_contract.py`| 成果物 CSV の列仕様（台帳が全書き手を数えているか・見出しが契約由来か・値の数が列数と合うか・条件探索の可変列） |
 | `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
 | `test_progress.py`       | 進捗トランスポート（開始/停止のライフサイクル・停止後の残存ポーリング・最新値のみ描画・スレッド安全性） |

@@ -246,6 +246,8 @@ BANDS: list[Band] = [
                     ("failure.py", "失敗メッセージの型", "failure message shape"),
                     ("diagnostics.py", "診断パッケージ（成果物は既定除外）",
                      "diagnostic package (artifacts opt-in)"),
+                    ("update_check.py", "更新の確認（押したときだけ）",
+                     "check for updates (on click only)"),
                 ]]),
             ],
             [

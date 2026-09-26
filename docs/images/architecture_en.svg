@@ -126,7 +126,7 @@
     <text x="541" y="1002" class="mod">sensitivity.py</text> <text x="709" y="1002" class="role">perturbation re-run, margin range</text>
     <text x="541" y="1022" class="mod">residuals.py</text> <text x="709" y="1022" class="role">measured residual, layered stats</text>
     <text x="541" y="1042" class="mod">disclosure.py</text> <text x="709" y="1042" class="role">report disclosure wording</text>
-    <rect class="card" x="926" y="804" width="382" height="176" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="926" y="804" width="382" height="196" rx="6" stroke="#f0dcbe"/>
     <text x="938" y="821" class="ctitle" fill="#7a4f16">Config, environment, strings</text>
     <text x="938" y="842" class="mod">config.py</text> <text x="1106" y="842" class="role">config I/O, validation, log</text>
     <text x="938" y="862" class="mod">runtime_env.py</text> <text x="1106" y="862" class="role">the declared interpreter</text>
@@ -135,6 +135,7 @@
     <text x="938" y="922" class="mod">version.py</text> <text x="1106" y="922" class="role">version information</text>
     <text x="938" y="942" class="mod">failure.py</text> <text x="1106" y="942" class="role">failure message shape</text>
     <text x="938" y="962" class="mod">diagnostics.py</text> <text x="1106" y="962" class="role">diagnostic package (artifacts opt-in)</text>
+    <text x="938" y="982" class="mod">update_check.py</text> <text x="1106" y="982" class="role">check for updates (on click only)</text>
   </g>
   <g>
     <rect class="card" x="34" y="1074" width="481" height="136" rx="6" stroke="#f0dcbe"/>

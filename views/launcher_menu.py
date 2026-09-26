@@ -14,6 +14,7 @@ views/launcher_menu.py
 import json
 import os
 import re
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -28,8 +29,10 @@ from core import diagnostics
 from core import failure
 from core import i18n
 from core import simulation as sim
+from core import update_check
 from core import version
 from views import dialogs
+from views import progress
 from views import theme, title_bar
 
 if TYPE_CHECKING:
@@ -233,6 +236,42 @@ def render_doc_site(entry_path: str, base_dir: str, out_dir: str,
     return os.path.join(out_dir, names[os.path.abspath(entry_path)])
 
 
+def update_available_message(rel: "update_check.Release", *,
+                             frozen: "bool | None" = None,
+                             portable: "bool | None" = None) -> str:
+    """新しい版があるときの本文（I-178）。配布形ごとに入れ方の 1 文を替える。
+
+    言い方はマニュアルの節「別の版を上から入れるとき」「複数の版を並べて使う
+    とき」と同じ（インストーラ版は置き換わる・ポータブル版は並べられる）。
+    """
+    import sys
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if portable is None:
+        portable = config.is_portable()
+    if not frozen:
+        how = i18n.t("update_how_source").format(tag=rel.tag)
+    elif portable:
+        how = i18n.t("update_how_portable")
+    else:
+        how = i18n.t("update_how_installer")
+    return i18n.t("dlg_update_available").format(
+        cur=version.APP_VERSION, new=rel.version, how=how)
+
+
+def update_failure_message(exc: BaseException) -> str:
+    """更新の確認が答えを得られなかったときの本文（型＝`core/failure.py`）。"""
+    kind = getattr(exc, "kind", "")
+    if kind == "rate_limited":
+        return failure.message(what=i18n.t("fail_update_check"),
+                               why=i18n.t("fail_why_rate_limited"),
+                               hint=i18n.t("fix_retry_later"))
+    detail = getattr(exc, "detail", "") or f"{type(exc).__name__}: {exc}"
+    hint = i18n.t("fix_network") if kind == "network" else i18n.t("fix_retry_or_log")
+    return failure.message(what=i18n.t("fail_update_check"), hint=hint,
+                           detail=detail)
+
+
 class _MenuMixin:
     # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
     # （実行時は 1 文字も定義しない）。理由は
@@ -366,6 +405,10 @@ class _MenuMixin:
         help_menu.add_command(
             label   = i18n.t("menu_diagnostics"),
             command = self._on_save_diagnostics,
+        )
+        help_menu.add_command(
+            label   = i18n.t("menu_check_updates"),
+            command = self._on_check_updates,
         )
         help_menu.add_separator()
         help_menu.add_command(
@@ -741,6 +784,47 @@ class _MenuMixin:
                   style="Accent.TButton", command=_on_save).pack(side="left")
 
         dialogs.center_on(self.root, dlg)
+
+    def _on_check_updates(self) -> None:
+        """GitHub Releases に新しい版を尋ねる（I-178 段階 1＝押したときだけ）。
+
+        問い合わせは daemon スレッド 1 本、結果は `post_to_ui` で画面へ戻す
+        （実行フローではないので `ProgressPump` の一覧には入れない）。
+        待つ間はカーソルで示し、二度押しは無視する。
+        """
+        if getattr(self, "_update_check_busy", False):
+            return
+        self._update_check_busy = True
+        self.root.configure(cursor="watch")
+
+        def _work() -> None:
+            outcome: "update_check.Release | BaseException | None"
+            try:
+                outcome = update_check.check()
+            except update_check.UpdateCheckError as e:
+                outcome = e
+            except Exception as e:                 # 想定外＝ログに残して画面へ
+                config.logger.exception("Update check failed")
+                outcome = e
+            progress.post_to_ui(self.root, lambda: self._show_update_result(outcome))
+
+        threading.Thread(target=_work, name="update-check", daemon=True).start()
+
+    def _show_update_result(
+            self, outcome: "update_check.Release | BaseException | None") -> None:
+        self._update_check_busy = False
+        self.root.configure(cursor="")
+        title = i18n.t("dlg_update_title")
+        if isinstance(outcome, BaseException):
+            self._alert(title, update_failure_message(outcome))
+            return
+        if outcome is None:
+            self._alert(title, i18n.t("dlg_update_latest").format(
+                ver=version.APP_VERSION))
+            return
+        if self._confirm(title, update_available_message(outcome)):
+            import webbrowser
+            webbrowser.open(outcome.url)
 
     def _on_about(self) -> None:
         self._alert(

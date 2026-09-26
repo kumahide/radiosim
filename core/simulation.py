@@ -216,10 +216,21 @@ class DemUnreachableError(failure.UserFacingError, RuntimeError):
     どのフローでもユーザーに届く。
 
     ⚠️ **`UserFacingError` を継承しているのは「文が既に型に乗っている」印**
-    （I-100）＝`err_dem_unreachable` は何が起きた／なぜ止めた／次の一手を全部
-    持つ。これが無いと、受け側が「実行を完了できませんでした」でもう 1 枚
+    （I-100）＝`dem_unreachable_message()` は何が起きた／なぜ止めた／次の一手を
+    全部持つ。これが無いと、受け側が「実行を完了できませんでした」でもう 1 枚
     包み、**同じことを 2 回言う**。
     """
+
+
+def dem_unreachable_message() -> str:
+    """DEM を取れずに打ち切ったときの文（型の出所＝I-100）。
+
+    以前は 1 キー（`err_dem_unreachable`）に 3 段落を焼き込んでいた。次の一手
+    `fix_network` を更新の確認（I-178）と分け合うため、`failure.message` で組む。
+    """
+    return failure.message(what=i18n.t("fail_dem_unreachable"),
+                           why=i18n.t("fail_why_flat_terrain"),
+                           hint=i18n.t("fix_network"))
 
 
 def sample_coords(params: SimParams) -> tuple[np.ndarray, np.ndarray]:
@@ -347,7 +358,7 @@ def fetch_elevations(
                     failures, params.lat_tx, params.lon_tx,
                     params.lat_rx, params.lon_rx,
                 )
-                raise DemUnreachableError(i18n.t("err_dem_unreachable"))
+                raise DemUnreachableError(dem_unreachable_message())
 
             logger.info("Terrain fetch complete: %d samples", params.num)
             # 同じスレッドで直後に呼ぶ on_complete へだけ渡す（`last_dem_acquired`）

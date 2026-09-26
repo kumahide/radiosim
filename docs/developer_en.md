@@ -249,6 +249,7 @@ radiosim/
 │   ├── diagnostics.py    # Builds the diagnostic-package zip (usernames masked in paths; artifacts opt-in)
 │   ├── i18n.py           # Multilingual string table + validation/loading of lang/*.json
 │   ├── failure.py        # The shape of failure messages (what happened / what to do next / details)
+│   ├── update_check.py   # Check for Updates (asks GitHub Releases; picking what to announce is a pure function)
 │   └── version.py        # Version information
 ├── report/               # The layer that produces output: engines and artifacts (headless)
 │   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
@@ -330,6 +331,7 @@ radiosim/
     ├── test_terrain_grid.py
     ├── test_units.py
     ├── test_version.py
+    ├── test_update_check.py
     ├── test_output_contract.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
@@ -426,6 +428,7 @@ Selections are persisted to `radiosim_conf.json`.
 | ----------- | -------------------------------------- |
 | Open Documentation | Opens this document in a browser       |
 | Save Diagnostic Package... | `core/diagnostics.py` builds the zip (environment facts selected by default; `results/` artifacts opt-in) → [Help section of the user manual](../docs/manual_en.md#help) |
+| Check for Updates... | `core/update_check.py` asks GitHub Releases only when clicked (follows the proxy setting; one daemon thread + `post_to_ui`). If a newer version exists, asks whether to open the release page. Never downloads or replaces anything |
 | About       | Shows the version from `version.py`    |
 
 > **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language, proxy and coordinate format. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
@@ -1182,6 +1185,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_terrain_grid.py`   | Terrain resolution (level -> sample positions, level ordering, **no DEM pixel skipped in real tile coordinates and both chord edges sampled**, where the ceiling bites, a single place that resolves it, no numeric sample-count input) |
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_version.py`        | Version string -> the Windows 4-number version (`core.version.version_tuple`). Checks the **ordering** a -> b -> RC -> final, so a final release never looks numerically older than its own RCs (the conversion used to live inside the spec, out of reach of any test) |
+| `test_update_check.py`   | Check for Updates (`core/update_check.py`). Final-release users hear only of final releases, RC/a/b users also of RCs; drafts, unreadable tags and URLs outside the repository are dropped; rate limit / unreachable / unreadable are told apart; the how-to-install sentence follows the distribution. Splitting the DEM-unreachable message into 3 keys leaves its text unchanged |
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |

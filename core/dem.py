@@ -227,6 +227,16 @@ def _get_session() -> "requests.Session":
         return _http_session
 
 
+def http_session() -> "requests.Session":
+    """アプリの**プロキシ設定と `USER_AGENT` に従う**共有セッション（公開の入口）。
+
+    DEM 以外の問い合わせ（更新の確認＝I-178）もここを通す＝設定 > プロキシ設定 が
+    効く通信を 1 本にする（別に `requests.get` を書くと、プロキシが要る職場でだけ
+    黙って届かない）。
+    """
+    return _get_session()
+
+
 # キャッシュキーは (layer_id, xtile, ytile) の 3 要素
 # _cache_lock は _tile_cache と _failed_tiles の両方を保護する。
 # ロック保持中にネットワーク取得を行ってはいけない（並列化が無効になる）。
