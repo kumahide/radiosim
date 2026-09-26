@@ -231,3 +231,39 @@ def test_real_islands_include_every_repo_wide_scanner():
                          if s not in listed
                          and not any(t.endswith("*") and s.startswith(t[:-1]) for t in island["tests"]))
         assert not missing, f"島「{island['name']}」の tests に足りない全体走査テスト: {missing}"
+
+
+def _gate_const(name: str) -> object:
+    src = _GATE.replace("\\", "/")
+    out = subprocess.run(
+        ["node", "--input-type=module", "-e",
+         f'import * as g from "file:///{src}"; console.log(JSON.stringify(g.{name}));'],
+        capture_output=True, text=True, encoding="utf-8", check=True, timeout=60)
+    return json.loads(out.stdout)
+
+
+def test_ledger_preflight_selects_every_real_data_test():
+    """台帳・版計画・メモリの実データの検査は、全テストの前に数秒で走る（2026-09-26）。
+
+    選び方は名前の頭（`test_real_`）＝実データの検査を足しても並べ直さずに乗る。
+    ここでは「選ばれたものが、ファイルにある `test_real_` の全部」であることを見る。
+    """
+    args = _gate_const("LEDGER_PREFLIGHT")
+    assert isinstance(args, list)
+    py = os.environ.get("RADIOSIM_PYTHON") or shutil.which("python")
+    assert py
+    out = subprocess.run([py, "-m", "pytest", "--collect-only", "-q", "-p", "no:cacheprovider",
+                          *args], cwd=_REPO, capture_output=True, text=True,
+                         encoding="utf-8", timeout=120)
+    ids = [ln for ln in out.stdout.splitlines() if "::" in ln]
+    with open(os.path.join(_REPO, args[0]), encoding="utf-8") as f:
+        defined = set(re.findall(r"def (test_real_\w+)", f.read()))
+    assert ids and all("test_real_" in i for i in ids)
+    assert {re.search(r"(test_real_\w+)", i).group(1) for i in ids} == defined  # type: ignore[union-attr]
+
+
+def test_deny_messages_say_the_order_and_that_nothing_ran():
+    order = _gate_const("LEDGER_ORDER")
+    nothing = _gate_const("NOTHING_RAN")
+    assert isinstance(order, str) and "コミットの後" in order and "ステージ行" in order
+    assert isinstance(nothing, str) and "git add" in nothing and "git status" in nothing

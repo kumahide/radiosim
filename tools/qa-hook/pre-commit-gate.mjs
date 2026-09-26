@@ -41,6 +41,27 @@ import { pytestCacheKey, isCachedPass, recordPass, recordFinish, markStart } fro
 
 const FULL_SCOPE = "full-suite";
 const MAX_OUT = 3000;
+
+// LEDGER FIRST (2026-09-26・I-179 の回): the real-data checks of the ledger
+// (ISSUES.md) and the roadmap/memory used to fail only at the END of the
+// 10-minute suite — twice in one commit ("済 without a real hash", then "✅
+// stage line pointing at an open issue"), each answered by bending the ledger
+// back. They take ~2 s, so run them first and say the rule that fixes them:
+// an issue and its stage line are closed AFTER the commit, with its hash.
+// Selected by the name prefix (a class, not a hand-kept list): every real-data
+// test in test_claude_hooks.py is `test_real_*`. The ledger is git-ignored, so
+// it is not in the cache key below — this runs on every commit/push.
+export const LEDGER_PREFLIGHT = ["tests/test_claude_hooks.py", "-k", "test_real_", "-q"];
+// A denied command never ran AT ALL — a `git add` in front of the commit
+// included (2026-09-26: the retry then committed 1 file of 14).
+export const NOTHING_RAN =
+  "⚠️ このコマンドは丸ごと走っていません＝同じコマンドの `git add` なども未実行です。" +
+  "やり直す前に `git status` で何がステージされているかを確かめてください。";
+export const LEDGER_ORDER =
+  "⛔ 台帳（ISSUES.md）・版計画・メモリの実データの検査が赤です（全テストの前に先に走らせています）。\n" +
+  "🔑 課題を「済」にしてアーカイブへ移すことと、版計画のステージ行を ✅ にすることは、" +
+  "**コミットの後**（ハッシュが決まってから）に行います。コミットまでは課題を「対応中」、" +
+  "ステージ行を ⬜ のままにしてください。仮の字（`COMMIT` など）をハッシュの代わりに書かない。";
 // B-302: git's global options may sit between `git` and the subcommand
 // (`git -C <path> commit`, `git -c k=v push`, `git --no-pager commit`). The
 // old patterns wanted the subcommand right after `git`, so the `-C` form — the
@@ -247,6 +268,12 @@ function main() {
     return;
   }
 
+  const pre = runPytest(resolved.python, cwd, LEDGER_PREFLIGHT);
+  if (pre.code !== 0) {
+    deny(`${LEDGER_ORDER}\n${NOTHING_RAN}\n\n\`\`\`\n${tail(pre.stdout + pre.stderr, MAX_OUT)}\n\`\`\``);
+    return;
+  }
+
   // A full pass also covers any island run on the same content — check it first.
   const fullKey = pytestCacheKey(cwd, FULL_SCOPE);
   if (isCachedPass(cwd, fullKey)) return; // already proven green for this exact content
@@ -267,23 +294,7 @@ function main() {
 
   markStart(cwd, key);
   const started = Date.now();
-  let r;
-  try {
-    const stdout = execFileSync(resolved.python, ["-m", "pytest", ...targets], {
-      cwd,
-      env: pythonEnv(),   // 日本語の文字化けを防ぐ（I-172）
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    r = { code: 0, stdout, stderr: "" };
-  } catch (err) {
-    r = {
-      code: typeof err.status === "number" ? err.status : 1,
-      stdout: err.stdout || "",
-      stderr: err.stderr || "",
-    };
-  }
+  const r = runPytest(resolved.python, cwd, targets);
   const ms = Date.now() - started;
 
   if (r.code !== 0) {
@@ -291,11 +302,30 @@ function main() {
     deny(
       `⛔ コミット前提の${label}が赤です（I-154＝毎ターンは影響範囲だけ・` +
       "フルはコミット直前に 1 回／島に収まるコミットは島のテストだけ）。" +
-      "直してから commit/push をやり直してください。\n\n" +
+      `直してから commit/push をやり直してください。\n${NOTHING_RAN}\n\n` +
       `\`\`\`\n${tail(r.stdout + r.stderr, MAX_OUT)}\n\`\`\``);
     return;
   }
   recordPass(cwd, key, ms);
+}
+
+function runPytest(python, cwd, args) {
+  try {
+    const stdout = execFileSync(python, ["-m", "pytest", ...args], {
+      cwd,
+      env: pythonEnv(),   // 日本語の文字化けを防ぐ（I-172）
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { code: 0, stdout, stderr: "" };
+  } catch (err) {
+    return {
+      code: typeof err.status === "number" ? err.status : 1,
+      stdout: err.stdout || "",
+      stderr: err.stderr || "",
+    };
+  }
 }
 
 const invokedDirectly =

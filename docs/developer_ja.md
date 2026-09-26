@@ -1106,7 +1106,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 & "$env:RADIOSIM_PYTHON" buildtools/dev_check.py --tests tests/test_multihop.py
 ```
 
-- **コミット前ゲートとは別の入口です。** Claude Code のフック（`tools/qa-hook/pre-commit-gate.mjs`）は `git commit` のたびに、変更した面に応じて島のテストかフルスイートを自動で選び、`git push` の前は必ずフルスイートを回します。`dev_check.py` はフックに頼らず手で回す入口で、範囲は引数だけで決まります。
+- **コミット前ゲートとは別の入口です。** Claude Code のフック（`tools/qa-hook/pre-commit-gate.mjs`）は `git commit` のたびに、変更した面に応じて島のテストかフルスイートを自動で選び、`git push` の前は必ずフルスイートを回します。どちらの前にも、台帳・版計画・メモリの実データの検査（`test_claude_hooks.py -k test_real_`・約 2 秒）を先に走らせます。コミットより先に課題を「済」にしてしまった場合は、全テストの最後ではなく、その場で止まります。`dev_check.py` はフックに頼らず手で回す入口で、範囲は引数だけで決まります。
 - **`ruff` と `pyright` はここでは回しません**。どちらも既に `tests/test_repo_hygiene.py` の中から `pytest` が回しているので、別に呼ぶと同じ検査が 2 回走り、対象の指定も 2 か所に割れます。
 - **範囲を絞っても `tests/test_repo_hygiene.py` は必ず足されます**。上のとおり静的検査がそこに同居しているためで、外れると *静的検査を 1 つも回さないまま緑* になります。
 - **変更ファイルは「足す」ためだけに見ます。「減らす」判断には使いません**（例: `docs/` を触っていれば `test_docs_consistency.py` が足される）。関連テストを推定して減らすと、黙って外れる経路ができるためです。
@@ -1188,7 +1188,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_claude_hooks.py`   | ローカル開発フック（`.claude/`）の課題台帳パース。状態の註釈・ID 000・アーカイブセクションの置き場・済の裏取り（コミット参照）を検証。**対象が git-ignore のため CI では skip**（ローカル pytest のみ） |
 | `test_codex_review_tool.py` | 独立レビュー駆動スクリプト（`tools/codex_review/run.ps1`）。**独立性のコア**（入力文はファイルから読む・差し込みは差分パスと比較元だけ・`read-only` 固定・返答は原文でファイルへ）と、**書いてはいけない主張**（`-C` と `read-only` は読み取り範囲を狭めないことを canary で実測した事実に反する断定を禁止し、その開示が消えていないことも対で検査）。**対象が git-ignore ではないが実行は Windows 前提** |
 | `test_qa_gate_cache.py`  | QA ゲート（`tools/qa-hook/pytest-cache.mjs`）の再実行抑止キャッシュ。鍵が「作業ツリーの中身」で動くこと、つまり内容が変われば必ず走り、変わらなければ走らないことを検証。⚠️ **`node` が無い環境では skip**（対象そのものは 2026-08-12 以降 git 管理下にある） |
-| `test_pre_commit_gate.py` | コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定。島の外が 1 つでも混じればフルスイートへ倒れること・リネームは元のパスも数えること・変更が空ならフルであること・リポジトリ全体を走査するテストが島の一覧から漏れていないこと。⚠️ **`node` が無い環境では skip** |
+| `test_pre_commit_gate.py` | コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定。島の外が 1 つでも混じればフルスイートへ倒れること・リネームは元のパスも数えること・変更が空ならフルであること・リポジトリ全体を走査するテストが島の一覧から漏れていないこと。先に走らせる実データの検査が `test_real_` の全部を選ぶこと・止めたときの文が「閉じるのはコミットの後」「同じコマンドの `git add` も走っていない」を言うこと。⚠️ **`node` が無い環境では skip** |
 | `test_commit_gate_scope.py` | 同じゲートの**島の中身**。`docs` 島と `qa-gate` 島が、絞れていること（マニュアルだけの変更が島に収まる）と絞りすぎていないこと（製品コード・版文字列・文言ファイル・`conftest.py` はフルへ倒れる）を検証。加えて、**`docs/` のファイルを読んでいるテストが島の一覧から漏れていないこと**をテスト側のソース（AST）から数え直す。⚠️ **`node` が無い環境では skip** |
 | `test_release_check.py` | 版の節目の助言（`tools/qa-hook/release-check.mjs`）が、赤・未検査と確かめられたときだけ 🔴🔴 を出すこと。表示依存の刻印は検査した `views/`・`tests/` の中身を名札にし、コミット前に回した実行がそのコミットを検査済みと認められ、回したあとで変更を戻すと未検査に戻ること（刻む側の `tests/conftest.py` と読む側の `.mjs` を一時リポジトリで突き合わせる）。CI が実行中なら赤ではなく「実行中」と出し、いまのブランチの実行を引くこと。⚠️ **`node` が無い環境では skip** |
 
