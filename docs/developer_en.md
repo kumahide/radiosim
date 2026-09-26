@@ -361,6 +361,7 @@ radiosim/
     ├── test_qa_fixtures.py
     ├── test_claude_hooks.py
     ├── test_codex_review_tool.py
+    ├── test_autorun_tool.py
     ├── test_qa_gate_cache.py
     ├── test_pre_commit_gate.py
     ├── test_commit_gate_scope.py
@@ -1220,6 +1221,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |
 | `test_claude_hooks.py`   | Local dev hook (`.claude/`) issue-ledger parsing: state annotations, ID 000, archive placement, and done-item evidence (commit refs). **Skipped in CI** because the target is git-ignored (local pytest only) |
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
+| `test_autorun_tool.py` | Unattended driver (`tools/autorun/run.ps1`), which starts one `claude -p` session per work ticket. Pins what we claim about it: the prompt is read from a file with only four slots, pushing is blocked by rewriting the child process's push URL, the worker never asks for permission and never skips hooks, and an incomplete ticket stops the run before anything starts. Only the `-DryRun` plan is inspected (neither git nor claude is touched). ⚠️ **Skipped where `pwsh` is missing** |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
 | `test_pre_commit_gate.py` | The commit-island decision in the pre-commit gate (`tools/qa-hook/pre-commit-gate.mjs`): one path outside the island falls back to the full suite, a rename counts its source path too, an empty change set is full, and no repo-wide scanner is missing from an island's test list. The real-data preflight selects every `test_real_` test, and its refusal says "close issues after the commit" and "the `git add` in the same command did not run either". ⚠️ **Skipped where `node` is unavailable** |
 | `test_commit_gate_scope.py` | What those islands actually declare. The `docs` and `qa-gate` islands must scope (a manual-only change lands in an island) without over-reaching (product code, the version string, language files and `conftest.py` all fall back to the full suite). It also re-derives, from the tests' own source (AST), that no test reading a `docs/` file is missing from the island. ⚠️ **Skipped where `node` is unavailable** |

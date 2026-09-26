@@ -32,6 +32,7 @@
       "tests/test_dev_check.py",
       "tests/test_release_check.py"
     ]],
+    [["tools/autorun/"], ["tests/test_autorun_tool.py"]],
     [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
   ],
 

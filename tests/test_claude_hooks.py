@@ -1208,6 +1208,14 @@ def budget():
     return mod
 
 
+@pytest.fixture(autouse=True)
+def _not_autorun(monkeypatch):
+    """無人モードの環境（I-181）を既定で外す＝**作業員が回す pytest は
+    `RADIOSIM_AUTORUN=1` を継ぐ**ので、外さないと対話前提のテストが落ちる。"""
+    monkeypatch.delenv("RADIOSIM_AUTORUN", raising=False)
+    monkeypatch.delenv("RADIOSIM_AUTORUN_RESULT", raising=False)
+
+
 class TestRoundtripCounting:
     """1 回の API 応答を 1 回として数えられているかを固定する。
 
@@ -3076,6 +3084,40 @@ class TestPostToolUseMidTurnAdvice:
         ctx_a = budget.latest_context(path)
         trips_b, total_b, ctx_b = budget._scan(path)
         assert (trips_a, total_a, ctx_a) == (trips_b, total_b, ctx_b)
+
+
+class TestAutorunAdvice:
+    """I-181＝無人（`tools/autorun/run.ps1` が起こした `claude -p`）では
+    **区切りを提案する相手がいない**＝「ユーザーに聞け」は空回りする。
+    代わりに「閉じてコミットし、結果ファイルに引き継ぎを書いて終われ」を返す。
+    """
+
+    def _run(self, budget, monkeypatch, capsys, tmp_path, hook_event):
+        monkeypatch.setenv("RADIOSIM_AUTORUN", "1")
+        monkeypatch.setenv("RADIOSIM_AUTORUN_RESULT", str(tmp_path / "r.json"))
+        return TestPostToolUseMidTurnAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS),
+            hook_event=hook_event)
+
+    @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
+    def test_tells_it_to_hand_off_instead_of_asking(
+            self, budget, monkeypatch, capsys, tmp_path, hook_event):
+        got = self._run(budget, monkeypatch, capsys, tmp_path, hook_event)
+        text = (got.get("reason")
+                or got.get("hookSpecificOutput", {}).get("additionalContext", ""))
+        assert "無人モード" in text, got
+        assert '"continue"' in text and str(tmp_path / "r.json") in text, (
+            "結果ファイルの場所と書く status が出ていない＝作業員が引き継げない")
+        assert "ユーザーに区切りを提案" not in text, (
+            "無人なのに人へ提案させている（聞く相手がいない＝空回り）")
+
+    def test_interactive_wording_is_unchanged(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """環境変数が無ければいつもの助言のまま（無人の文言が漏れない）。"""
+        got = TestSessionSplitAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS))
+        assert "ユーザーに区切りを提案" in got["reason"]
+        assert "無人モード" not in got["reason"]
 
 
 # ============================================================
