@@ -97,8 +97,16 @@ def _git(*args: str) -> str:
 
 
 def tracked_paths() -> list[str]:
-    """追跡下の全ファイル（リポジトリ相対・POSIX 区切り）。"""
-    return [p for p in _git("ls-files").splitlines() if p]
+    """次の `git add -A` で履歴に入り得る全ファイル（リポジトリ相対・POSIX 区切り）。
+
+    追跡中＋未追跡（git-ignore 以外）で、作業ツリーに在るものだけ。
+    ⚠️ **追跡中だけでは足りない（I-184・2026-09-26）**＝コミット前ゲートは
+    `git add … && git commit` の追加より前に走るので、新しいファイルは未追跡のまま
+    検査される。以前は push 前のフルがもう一度拾っていたが、合格の鍵を中身の木に
+    したので push では走り直さない＝ここで拾う（`conftest._display_files` と同じ作り）。
+    """
+    listed = _git("ls-files", "-z", "--cached", "--others", "--exclude-standard")
+    return sorted({p for p in listed.split("\0") if p and (ROOT / p).is_file()})
 
 
 def staged_paths() -> list[str]:

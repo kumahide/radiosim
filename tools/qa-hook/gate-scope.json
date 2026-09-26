@@ -85,7 +85,7 @@
     }
   ],
 
-  "_comment_full": "2026-09-23 に「フルが要る面を厳選する」形へ改めた（島 1 つに収まらなければフル、をやめた）。判定は pre-commit-gate.mjs の islandFor＝①変更が空／full_prefixes に 1 つでも当たる／どの規則にも当たらないパスがある → フル。②それ以外は和集合＝当たった島の tests ＋ 変えた tests/test_*.py そのもの（＋ tests_walkers）＋ scoped_faces の読み手（その面の名前を本文に含むテスト）＋ scanners ＋ always_tests。⛔ full_prefixes は『全テストの前提を変える面』だけ＝製品コードと同梱資産・テストの共通部品・依存と pytest の設定。scoped_faces へ製品の面を足さない（見張り＝tests/test_commit_gate_scope.py）。",
+  "_comment_full": "2026-09-23 に「フルが要る面を厳選する」形へ改めた（島 1 つに収まらなければフル、をやめた）。判定は pre-commit-gate.mjs の islandFor＝①変更が空／full_prefixes に 1 つでも当たる／どの規則にも当たらないパスがある → フル。②それ以外は和集合＝当たった島の tests ＋ 変えた tests/test_*.py そのもの（＋ tests_walkers）＋ scoped_faces の読み手（その面の名前を本文に含むテスト）＋ scanners ＋ always_tests。⛔ full_prefixes は『全テストの前提を変える面』だけ＝製品コードと同梱資産・テストの共通部品・依存と pytest の設定。scoped_faces へ製品の面を足さない（見張り＝tests/test_commit_gate_scope.py）。例外は 1 つ＝core/version.py の差が `APP_VERSION = \"…\"` の 1 行だけのときは、版の字の読み手（pre-commit-gate.mjs の versionReaders＝規則で決める・見張り＝tests/test_pre_commit_gate.py）を足す面になる（I-185）。直前の本物のフル合格からの差がその 1 行だけなら、push でも読み手の合格をフルの証明として扱う。",
   "full_prefixes": [
     "core/", "views/", "report/", "lang/", "apps/", "main.py", "icon.png", "logo.png",
     "tests/conftest.py", "tests/data/", "tests/golden_corpus_gen.py", "tests/table_fit.py",

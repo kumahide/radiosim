@@ -9,20 +9,37 @@
 // The fix must not cost detection power: the cache key is the *content* of
 // everything the suite could read, so any real change misses the cache and the
 // suite runs. Specifically the key covers
-//   1. HEAD (a commit / checkout / rebase invalidates everything),
-//   2. every dirty path in `git status --porcelain` — ANY extension, not just
-//      .py, because tests/test_docs_consistency.py reads README/docs — hashed
-//      by content, so touching a file without changing it does not invalidate,
-//   3. the size+mtime of the locally-tested but git-ignored trees (`.claude/`
-//      Python hooks and `tools/qa-hook/*.mjs`), which `git status` cannot see
+//   1. the TREE the working tree would commit as (`git add -A` + `write-tree`
+//      on a throwaway copy of the index — see workingTree()): every tracked and
+//      untracked-but-not-ignored file, ANY extension (tests/test_docs_consistency
+//      reads README/docs), by content — touching a file without changing it,
+//      staging it, or committing it leaves the key where it is,
+//   2. the size+mtime of the locally-tested but git-ignored trees (`.claude/`
+//      Python hooks and `tools/qa-hook/*.mjs`), which the tree cannot see
 //      yet tests/test_claude_hooks.py verifies — and which include this file.
+//
+// I-184 (2026-09-26): the key used to be HEAD + the dirty files. A commit moves
+// HEAD and cleans the tree without changing one byte of content, so the push
+// right after a commit re-ran the identical full suite (8-10 min for nothing).
+// Dropping HEAD is only safe because nothing in the suite reads git STATE: the
+// two readers of `git ls-files` (test_repo_hygiene / test_docs_consistency)
+// were widened in the same change to "tracked + untracked, not ignored" — the
+// same set the tree holds — so a new file is checked whether it is committed
+// yet or not.
+// ⚠️ Blind spot, unchanged from before: `core.autocrlf=true` makes `git add`
+// normalise line endings, so a CRLF<->LF-only edit does not move the key. The
+// old key went through `git status`, which is blind to the same edit.
 //
 // Anything unexpected (not a git repo, an oversized file, a corrupt cache)
 // answers "run it": the cache may only ever remove a *redundant* run.
 
+import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { existsSync, readFileSync, readdirSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import {
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+} from "node:fs";
+import { tmpdir } from "node:os";
+import { isAbsolute, join } from "node:path";
 import { git } from "./git-changes.mjs";
 
 // A dirty file bigger than this is not worth hashing every turn -> just run.
@@ -101,6 +118,116 @@ function listingLines(cwd, dir) {
   return out;
 }
 
+function gitWith(cwd, args, env) {
+  return execFileSync("git", args, {
+    cwd,
+    env: { ...process.env, ...env },
+    encoding: "utf-8",
+    stdio: ["ignore", "pipe", "ignore"],
+    maxBuffer: 64 * 1024 * 1024,
+  });
+}
+
+/** The tree the working tree would commit as, or null (→ run the suite).
+ *
+ * Built on a COPY of the index with a throwaway object store that reads the
+ * real one as an alternate: the real `.git/index` and `.git/objects` are never
+ * written (no stray blobs, no staging side effects — pinned by a test). The
+ * copied index keeps git's stat cache, so only changed files are re-hashed.
+ * `experiments/` is dropped from the tree (content-blind — its listing goes
+ * into the key instead, see cacheInputs()).
+ *
+ * `without` (a path) also returns `rest`: the same tree minus that one path —
+ * so "everything else is identical" can be checked later by comparing two ids,
+ * with no need for the old tree's objects (they lived in a store that is gone;
+ * and with experiments/ dropped, the tree is never one git has on file). */
+export function workingTree(cwd, { without } = {}) {
+  let top, gitDir, objects;
+  try {
+    top = git(cwd, ["rev-parse", "--show-toplevel"]).trim();
+    gitDir = git(top, ["rev-parse", "--absolute-git-dir"]).trim();
+    objects = git(top, ["rev-parse", "--git-path", "objects"]).trim();
+  } catch {
+    return null; // not a git repo
+  }
+  if (!isAbsolute(objects)) objects = join(top, objects);
+
+  // A huge untracked/modified file is not worth hashing every turn -> just run.
+  let dirty;
+  try {
+    dirty = git(top, ["ls-files", "-z", "--modified", "--others", "--exclude-standard"]);
+  } catch {
+    return null;
+  }
+  for (const p of dirty.split("\0")) {
+    if (!p || isContentBlind(p)) continue;
+    let st;
+    try {
+      st = statSync(join(top, p));
+    } catch {
+      continue; // deleted: nothing to hash
+    }
+    if (st.isFile() && st.size > MAX_HASH_BYTES) return null;
+  }
+
+  let tmp;
+  try {
+    tmp = mkdtempSync(join(tmpdir(), "radiosim-qa-tree-"));
+    const index = join(tmp, "index");
+    if (existsSync(join(gitDir, "index"))) copyFileSync(join(gitDir, "index"), index);
+    const store = join(tmp, "objects");
+    mkdirSync(store);
+    const env = {
+      GIT_INDEX_FILE: index,
+      GIT_OBJECT_DIRECTORY: store,
+      GIT_ALTERNATE_OBJECT_DIRECTORIES: objects,
+    };
+    const run = (args) => gitWith(top, args, env);
+    run(["add", "-A", "--", ".", ":(exclude)experiments"]);
+    run(["rm", "-r", "--cached", "--ignore-unmatch", "-q", "--", "experiments"]);
+    const tree = run(["write-tree"]).trim();
+    let rest = null;
+    if (without) {
+      run(["rm", "--cached", "--ignore-unmatch", "-q", "--", without]);
+      rest = run(["write-tree"]).trim();
+    }
+    return { tree, rest };
+  } catch {
+    return null;
+  } finally {
+    if (tmp) {
+      try {
+        rmSync(tmp, { recursive: true, force: true });
+      } catch {
+        /* a leftover temp dir costs disk, not correctness */
+      }
+    }
+  }
+}
+
+/** Everything the key is made of: `{tree, extras, rest}`, or null (→ run).
+ *  `extras` is what the tree cannot see (git-ignored but tested sources, the
+ *  experiments/ listing); `rest` only with `opts.without` (see workingTree). */
+export function cacheInputs(cwd, opts = {}) {
+  const wt = workingTree(cwd, opts);
+  if (!wt) return null;
+  const extras = [];
+  for (const dep of UNTRACKED_DEPS) extras.push(...statLines(cwd, dep));
+  // Content-blind trees: what still matters is which files exist, so the listing
+  // is the whole input. Editing anything under experiments/ leaves it unchanged;
+  // adding or deleting a file moves it (documented .py references must resolve).
+  extras.push(...listingLines(cwd, "experiments"));
+  return { tree: wt.tree, extras: extras.join("\n"), rest: wt.rest };
+}
+
+/** The key for `inputs` (from cacheInputs) under `scopeSignature`. */
+export function keyFor(inputs, scopeSignature = "") {
+  if (!inputs) return null;
+  return createHash("sha256")
+    .update(`tree\t${inputs.tree}\n${inputs.extras}\nscope\t${scopeSignature}`)
+    .digest("hex");
+}
+
 /** Cache key for the current working tree, or null if it cannot be computed
  *  (caller must then run pytest).
  *
@@ -111,64 +238,7 @@ function listingLines(cwd, dir) {
  * the full-suite caller passes a fixed literal instead. Omitting it keeps the
  * pre-I-154 key shape (a constant scope line for every caller). */
 export function pytestCacheKey(cwd, scopeSignature = "") {
-  let head;
-  try {
-    head = git(cwd, ["rev-parse", "HEAD"]).trim();
-  } catch {
-    head = "no-head";
-  }
-
-  let status;
-  try {
-    status = git(cwd, ["status", "--porcelain"]);
-  } catch {
-    return null; // not a git repo
-  }
-
-  const parts = [`head\t${head}`];
-  for (const raw of status.split("\n")) {
-    if (!raw.trim()) continue;
-    const state = raw.slice(0, 2);
-    let path = raw.slice(3);
-    if (path.includes(" -> ")) path = path.split(" -> ").pop(); // rename
-    path = path.replace(/^"|"$/g, "").replace(/\\/g, "/");
-    if (path.includes(".venv/") || path.startsWith(".venv")) continue;
-    const abs = join(cwd, path);
-    if (!existsSync(abs)) {
-      parts.push(`${state}\t${path}\tgone`); // deleted: no content to hash
-      continue;
-    }
-    // Content-blind trees are represented once, by their file listing (below).
-    // Skipping the status entry too is deliberate: a dirty marker is itself a
-    // change of state, so leaving it in would move the key on the first edit.
-    if (isContentBlind(path)) continue;
-    let st;
-    try {
-      st = statSync(abs);
-    } catch {
-      return null;
-    }
-    if (st.isDirectory()) {
-      // An untracked directory is reported as one entry; hashing it would mean
-      // walking it. Rare enough that "just run" is the honest answer.
-      return null;
-    }
-    if (st.size > MAX_HASH_BYTES) return null;
-    try {
-      parts.push(`${state}\t${path}\t${createHash("sha256").update(readFileSync(abs)).digest("hex")}`);
-    } catch {
-      return null;
-    }
-  }
-
-  for (const dep of UNTRACKED_DEPS) parts.push(...statLines(cwd, dep));
-  // Content-blind trees: what still matters is which files exist, so the listing
-  // is the whole input. Editing anything under experiments/ leaves it unchanged;
-  // adding or deleting a file moves it (documented .py references must resolve).
-  parts.push(...listingLines(cwd, "experiments"));
-  parts.push(`scope\t${scopeSignature}`);
-
-  return createHash("sha256").update(parts.join("\n")).digest("hex");
+  return keyFor(cacheInputs(cwd), scopeSignature);
 }
 
 function readCache(cwd) {
@@ -200,6 +270,12 @@ export function markStart(cwd, key) {
   writeCache(cwd, { ...readCache(cwd), startedAt: new Date().toISOString(), startedKey: key });
 }
 
+// How many passes are remembered (I-184). One slot was not enough: a scoped
+// Stop-hook pass between a commit and its push overwrote the commit's full
+// pass, and the push paid the full suite again. Each key is a content hash +
+// scope, so an older entry can only hit on exactly the content it passed on.
+const MAX_PASSED_KEYS = 8;
+
 /** Note that a run ENDED (pass or fail) — always clears the start marker. */
 export function recordFinish(cwd, key, ok, durationMs) {
   const data = { ...readCache(cwd) };
@@ -208,10 +284,41 @@ export function recordFinish(cwd, key, ok, durationMs) {
   data.finishedAt = new Date().toISOString();
   data.durationMs = durationMs;
   if (ok && key) {
-    data.passedKey = key;
+    const older = Array.isArray(data.passedKeys) ? data.passedKeys : [];
+    data.passedKeys = [key, ...older.filter((k) => k !== key)].slice(0, MAX_PASSED_KEYS);
+    data.passedKey = key; // the latest, for a human reading the file
     data.at = data.finishedAt;
   }
   writeCache(cwd, data);
+}
+
+/** Remember a REAL full-suite pass (not one proven by a chain) — the starting
+ *  point I-185's version-line chain is measured from. `note` rides along
+ *  (the caller's own facts, e.g. the version file's text). */
+export function recordFullPass(cwd, inputs, note = {}) {
+  if (!inputs) return;
+  writeCache(cwd, {
+    ...readCache(cwd),
+    lastFull: {
+      ...note,
+      tree: inputs.tree,
+      rest: inputs.rest,
+      extras: createHash("sha256").update(inputs.extras).digest("hex"),
+      at: new Date().toISOString(),
+    },
+  });
+}
+
+/** The last real full pass `{tree, rest, extras, …note}` (extras hashed), or null. */
+export function lastFullPass(cwd) {
+  const f = readCache(cwd).lastFull;
+  return f && typeof f.tree === "string" && typeof f.extras === "string" ? f : null;
+}
+
+/** Do `inputs` see the same untracked sources as the recorded full pass? */
+export function sameExtras(inputs, full) {
+  return Boolean(inputs && full) &&
+    createHash("sha256").update(inputs.extras).digest("hex") === full.extras;
 }
 
 /** Did the previous pytest run fail to come back (killed / crashed)? */
@@ -230,7 +337,9 @@ export function isCachedPass(cwd, key) {
   if (!key) return false;
   try {
     const data = JSON.parse(readFileSync(join(cwd, CACHE_PATH), "utf-8"));
-    return data && data.passedKey === key;
+    if (!data) return false;
+    if (Array.isArray(data.passedKeys)) return data.passedKeys.includes(key);
+    return data.passedKey === key; // a cache file written before I-184
   } catch {
     return false;
   }

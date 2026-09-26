@@ -26,6 +26,7 @@ import pytest
 _REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _GATE = os.path.join(_REPO, "tools", "qa-hook", "pre-commit-gate.mjs")
 _SCOPE = os.path.join(_REPO, "tools", "qa-hook", "gate-scope.json")
+_CACHE = os.path.join(_REPO, "tools", "qa-hook", "pytest-cache.mjs")
 
 pytestmark = [
     pytest.mark.skipif(not os.path.exists(_GATE), reason="QA ゲート本体が無い環境"),
@@ -37,8 +38,10 @@ def _node(script: str, cwd: str) -> str:
     src = _GATE.replace("\\", "/")
     path = os.path.join(cwd, "_probe_gate.mjs")
     with open(path, "w", encoding="utf-8") as f:
-        f.write(f'import {{ commitPaths, islandFor, islandTargets, isCommitOrPush, isPush }} '
-                f'from "file:///{src}";\n')
+        f.write(f'import {{ commitPaths, islandFor, islandTargets, isCommitOrPush, isPush, '
+                f'versionLineOnly, versionReaders, versionChain }} from "file:///{src}";\n')
+        cache = _CACHE.replace("\\", "/")
+        f.write(f'import {{ cacheInputs, recordFullPass, lastFullPass }} from "file:///{cache}";\n')
         f.write(script)
     try:
         out = subprocess.run(["node", path], cwd=cwd, capture_output=True, text=True,
@@ -267,3 +270,238 @@ def test_deny_messages_say_the_order_and_that_nothing_ran():
     nothing = _gate_const("NOTHING_RAN")
     assert isinstance(order, str) and "コミットの後" in order and "ステージ行" in order
     assert isinstance(nothing, str) and "git add" in nothing and "git status" in nothing
+
+
+# ============================================================
+# I-185：版の字の 1 行だけの変更は、版の字の読み手のテストで足りる
+# ============================================================
+# 🔑 **守るのは「絞りすぎないこと」**＝版の字の 1 行だけ、を字面で判定し、少しでも
+# 外れたらフルへ落とす（fail-closed）。読み手は手書きの一覧にせず規則で決め、
+# 規則の穴（テストに版の字を直書きする形）は下の見張りが止める。
+_VERSION_SRC = (
+    'import re\n\n'
+    'APP_NAME    = "RadioSim Pro"\n'
+    'APP_VERSION = "3.7"\n'
+    'APP_FULL    = f"{APP_NAME} {APP_VERSION}"\n'
+    'COPYRIGHT   = "c"\n\n\n'
+    'def is_final(v: str = APP_VERSION) -> bool:\n'
+    '    return True\n'
+)
+
+
+def _bump(src: str, new: str = '"3.8a1"') -> str:
+    return src.replace('APP_VERSION = "3.7"', f"APP_VERSION = {new}")
+
+
+class TestVersionLineOnly:
+    @pytest.mark.parametrize("new, expected", [
+        (_bump(_VERSION_SRC), True),
+        (_bump(_VERSION_SRC).replace("\n", "\r\n"), True),          # 改行の形だけは差にしない
+        (_bump(_VERSION_SRC).replace('"c"', '"d"'), False),         # 2 行
+        (_bump(_VERSION_SRC) + "X = 1\n", False),                   # 行を足した
+        (_VERSION_SRC.replace('APP_NAME    = "RadioSim Pro"', 'APP_NAME    = "X"'), False),
+        (_VERSION_SRC, False),                                      # 同じ
+        (_bump(_VERSION_SRC, '"3.8a1"  # x'), False),               # 字面の外
+        (_bump(_VERSION_SRC, 'f"{APP_NAME}"'), False),
+        (_bump(_VERSION_SRC, '"3.8 a1"'), False),
+        (None, False),                                              # ファイルが無い
+    ])
+    def test_only_the_literal_version_line(self, new, expected, tmp_path):
+        out = _node(f"process.stdout.write(String(versionLineOnly("
+                    f"{json.dumps(_VERSION_SRC)}, {json.dumps(new)})));\n", str(tmp_path))
+        assert out == str(expected).lower()
+
+
+def _version_fixture(root) -> None:
+    """版の字の読み手の規則を試す小さなリポジトリの中身。"""
+    (root / "core").mkdir(parents=True)
+    (root / "tests").mkdir()
+    (root / "core" / "version.py").write_text(_VERSION_SRC, encoding="utf-8")
+    (root / "core" / "update_check.py").write_text(
+        "from core import version\n\n"
+        "def check(current: str = version.APP_VERSION):\n    return current\n", encoding="utf-8")
+    (root / "core" / "stagey.py").write_text(
+        "from core import version\n\ndef f():\n    return version.is_final()\n", encoding="utf-8")
+    (root / "core" / "printer.py").write_text(
+        "from core import version\n\nTITLE = version.APP_FULL\n"
+        "def show():\n    return print_it(ver=version.APP_VERSION)\n", encoding="utf-8")
+    for name, body in {
+        "test_a.py": "assert APP_FULL",                 # 版の字を運ぶ定数
+        "test_b.py": "from core import update_check",   # 引数の既定が版の字
+        "test_c.py": "from core import printer",        # 字を出すだけ（名前も呼ばない）
+        "test_d.py": "COPYRIGHT",                       # 版の字を運ばない定数
+        "test_e.py": "from core import stagey",         # 段階（a/b/RC/正式）で振る舞いが変わる
+        "test_f.py": "version.is_final('3.7')",
+    }.items():
+        (root / "tests" / name).write_text(body + "\n", encoding="utf-8")
+
+
+class TestVersionReaders:
+    def test_the_rule(self, tmp_path):
+        _version_fixture(tmp_path)
+        got = json.loads(_node("process.stdout.write(JSON.stringify(versionReaders(process.cwd())));\n",
+                               str(tmp_path)))
+        assert got == ["tests/test_a.py", "tests/test_b.py", "tests/test_e.py", "tests/test_f.py"]
+
+    def test_no_version_file_means_full(self, tmp_path):
+        (tmp_path / "tests").mkdir()
+        out = _node("process.stdout.write(String(versionReaders(process.cwd())));\n", str(tmp_path))
+        assert out == "null"
+
+    @pytest.mark.parametrize("only, expected", [(True, "version"), (False, "FULL")])
+    def test_island_for_the_version_file(self, only, expected, tmp_path):
+        _version_fixture(tmp_path)
+        scope = {**_SCOPE_FIXTURE, "full_prefixes": ["core/"]}
+        out = _node(
+            f"const i = islandFor({json.dumps(scope)}, ['core/version.py'], process.cwd(),"
+            f" {{ versionOnly: {json.dumps(only)} }});\n"
+            "process.stdout.write(i ? i.name + '|' + i.tests.join(',') : 'FULL');\n", str(tmp_path))
+        assert out.split("|")[0] == expected
+        if only:
+            assert "tests/test_a.py" in out and "tests/test_c.py" not in out
+
+    def test_another_core_file_alongside_is_full(self, tmp_path):
+        _version_fixture(tmp_path)
+        scope = {**_SCOPE_FIXTURE, "full_prefixes": ["core/"]}
+        out = _node(
+            f"const i = islandFor({json.dumps(scope)}, ['core/version.py', 'core/printer.py'],"
+            " process.cwd(), { versionOnly: true });\n"
+            "process.stdout.write(i ? i.name : 'FULL');\n", str(tmp_path))
+        assert out == "FULL"
+
+
+class TestVersionChain:
+    """直前の**本物の**フル合格から、版の字の 1 行だけ動いた木か（push でも使う）。"""
+
+    def _repo(self, tmp_path):
+        repo = tmp_path / "r"
+        repo.mkdir()
+        _version_fixture(repo)
+        _git(repo, "init", "-q")
+        _git(repo, "config", "user.email", "t@example.com")
+        _git(repo, "config", "user.name", "t")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "init")
+        return repo
+
+    def _node_in(self, repo, tmp_path, script: str) -> str:
+        """探針をリポジトリの**外**に置く（中に置くと未追跡のファイルとして木に入る）。"""
+        path = tmp_path / "_probe_chain.mjs"
+        gate = _GATE.replace("\\", "/")
+        cache = _CACHE.replace("\\", "/")
+        path.write_text(
+            f'import {{ versionChain }} from "file:///{gate}";\n'
+            f'import {{ cacheInputs, recordFullPass, lastFullPass }} from "file:///{cache}";\n'
+            "import { readFileSync } from 'node:fs';\n"
+            f"const R = {json.dumps(str(repo))};\n"
+            "const V = () => readFileSync(R + '/core/version.py', 'utf-8');\n" + script,
+            encoding="utf-8")
+        return subprocess.run(["node", str(path)], capture_output=True, text=True,
+                              check=True, timeout=60).stdout.strip()
+
+    def _record_full(self, repo, tmp_path):
+        self._node_in(repo, tmp_path,
+                      "recordFullPass(R, cacheInputs(R, { without: 'core/version.py' }),"
+                      " { versionText: V() });\n")
+
+    def _chain(self, repo, tmp_path) -> str:
+        return self._node_in(repo, tmp_path,
+                             "process.stdout.write(String(versionChain("
+                             "cacheInputs(R, { without: 'core/version.py' }), lastFullPass(R), V())));\n")
+
+    def test_a_bump_after_a_full_pass_chains(self, tmp_path):
+        repo = self._repo(tmp_path)
+        self._record_full(repo, tmp_path)
+        (repo / "core" / "version.py").write_text(_bump(_VERSION_SRC), encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "true"
+        _git(repo, "commit", "-qam", "bump")          # コミットの後（＝push の前）も同じ
+        assert self._chain(repo, tmp_path) == "true"
+
+    def test_no_full_pass_no_chain(self, tmp_path):
+        repo = self._repo(tmp_path)
+        (repo / "core" / "version.py").write_text(_bump(_VERSION_SRC), encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "false"
+
+    def test_another_file_changed_too_breaks_the_chain(self, tmp_path):
+        repo = self._repo(tmp_path)
+        self._record_full(repo, tmp_path)
+        (repo / "core" / "version.py").write_text(_bump(_VERSION_SRC), encoding="utf-8")
+        (repo / "tests" / "test_c.py").write_text("changed\n", encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "false"
+
+    def test_a_new_untracked_file_breaks_the_chain(self, tmp_path):
+        repo = self._repo(tmp_path)
+        self._record_full(repo, tmp_path)
+        (repo / "core" / "version.py").write_text(_bump(_VERSION_SRC), encoding="utf-8")
+        (repo / "new.md").write_text("x\n", encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "false"
+
+    def test_a_second_line_in_the_version_file_breaks_the_chain(self, tmp_path):
+        repo = self._repo(tmp_path)
+        self._record_full(repo, tmp_path)
+        (repo / "core" / "version.py").write_text(
+            _bump(_VERSION_SRC).replace('"c"', '"d"'), encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "false"
+
+    def test_an_ignored_but_tested_hook_changed_breaks_the_chain(self, tmp_path):
+        """木に見えない入力（`.claude/*.py`）が動いたら、連鎖は認めない。"""
+        repo = self._repo(tmp_path)
+        (repo / ".claude").mkdir()
+        (repo / ".claude" / "h.py").write_text("a = 1\n", encoding="utf-8")
+        (repo / ".gitignore").write_text(".claude/\n", encoding="utf-8")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-qm", "hooks")
+        self._record_full(repo, tmp_path)
+        (repo / "core" / "version.py").write_text(_bump(_VERSION_SRC), encoding="utf-8")
+        (repo / ".claude" / "h.py").write_text("a = 222222\n", encoding="utf-8")
+        assert self._chain(repo, tmp_path) == "false"
+
+
+def _version_literal(v: str) -> re.Pattern:
+    """版の字を直書きする形（引用符の中・製品名の後・`v` の後・User-Agent の `/` の後）。"""
+    return re.compile(r"(?:[\"'`]|Pro |RadioSim[ /]|\bv)" + re.escape(v) + r"(?![\w.])")
+
+
+@pytest.mark.parametrize("text, hit", [
+    ('assert s == "3.7"', True),
+    ("RadioSim Pro 3.7 の帳票", True),
+    ("Mozilla/5.0 RadioSim/3.7", True),
+    ("v3.7", True),
+    ("x = 3.7  # dB", False),
+    ('"3.75"', False),
+    ('"3.7.1"', False),
+])
+def test_version_literal_pattern(text, hit):
+    assert bool(_version_literal("3.7").search(text)) is hit
+
+
+def test_tests_that_hard_code_the_version_are_readers():
+    """見張り（I-185）＝版の字を直書きしたテスト・データは、読み手の規則に入っていること。
+
+    読み手の規則は「名前を呼ぶテスト」しか拾わない＝版の字を直書きした比較（ゴールデン
+    など）は規則の外で、版の字の 1 行だけのコミットで赤を素通しし得る。ここで止める。
+    """
+    readers = set(json.loads(_node(
+        "process.stdout.write(JSON.stringify(versionReaders(process.cwd())));\n", _REPO)))
+    assert "tests/test_version.py" in readers  # 規則が空回りしていないこと
+    with open(os.path.join(_REPO, "core", "version.py"), encoding="utf-8") as f:
+        current = re.search(r'^APP_VERSION = "([^"]+)"$', f.read(), re.M).group(1)  # type: ignore[union-attr]
+    pattern = _version_literal(current)
+    hits = []
+    for d, dirs, files in os.walk(os.path.join(_REPO, "tests")):
+        dirs[:] = [x for x in dirs if x != "__pycache__"]
+        for name in files:
+            path = os.path.join(d, name)
+            rel = os.path.relpath(path, _REPO).replace("\\", "/")
+            if rel in readers:
+                continue
+            try:
+                with open(path, encoding="utf-8") as f:
+                    text = f.read()
+            except (UnicodeDecodeError, OSError):
+                continue  # 画像などの二進
+            if pattern.search(text):
+                hits.append(rel)
+    assert not hits, (
+        f"版の字（{current}）を直書きしているのに、読み手の規則に入っていない: {hits}\n"
+        "＝版の字だけのコミットでは走らない。`APP_VERSION` 等の名前で比べる形に直すこと。")

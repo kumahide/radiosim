@@ -1382,14 +1382,20 @@ _ISSUE_ID_RE = re.compile(r"(?<![A-Za-z0-9_])[BI]-\d{3}(?![A-Za-z0-9_])")
 
 
 def _tracked_markdown() -> list[str]:
-    """追跡下（＝公開される）の Markdown。git が無い環境では skip。"""
+    """公開される（＝次の `git add -A` で履歴に入り得る）Markdown。git が無い環境では skip。
+
+    追跡中＋未追跡（git-ignore 以外）で、作業ツリーに在るものだけ。未追跡も数える
+    理由は `test_repo_hygiene.tracked_paths` と同じ（I-184＝新しいファイルはコミット前
+    ゲートの時点ではまだ未追跡で、push 前のフルはもう走り直さない）。
+    """
     import subprocess
     try:
-        out = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
+        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others",
+                              "--exclude-standard", "*.md"], cwd=ROOT,
                              capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):  # pragma: no cover
         pytest.skip("git が使えない環境")
-    return [p for p in out.splitlines() if p]
+    return sorted({p for p in out.split("\0") if p and (ROOT / p).is_file()})
 
 
 def test_public_docs_do_not_cite_issue_ids():

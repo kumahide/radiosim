@@ -31,13 +31,22 @@
 // full only if it touches a `full_prefixes` face (product code, shared test
 // inputs, deps/pytest config) or a path no rule knows; otherwise it runs the
 // union of what each path needs (see islandFor and gate-scope.json).
+//
+// NO SECOND FULL RUN (2026-09-26・I-184/I-185): the cache key is the content
+// tree, so the push right after a green commit hits the cache instead of
+// re-running the same suite; and a version-line-only step from the last real
+// full pass is proven by the version string's readers (versionChain) — on the
+// push as well, or the saving would only move from the commit to the push.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { pythonEnv, resolvePython } from "./gate.mjs";
 import { git } from "./git-changes.mjs";
-import { pytestCacheKey, isCachedPass, recordPass, recordFinish, markStart } from "./pytest-cache.mjs";
+import {
+  cacheInputs, keyFor, isCachedPass, recordPass, recordFinish, markStart,
+  recordFullPass, lastFullPass, sameExtras,
+} from "./pytest-cache.mjs";
 
 const FULL_SCOPE = "full-suite";
 const MAX_OUT = 3000;
@@ -115,18 +124,137 @@ function readersOf(cwd, needle) {
   return found;
 }
 
+// VERSION LINE (I-185・2026-09-26): `core/version.py` is product code (full),
+// but the version string moves ~5 times per release (a1, b1, RC1..n, final)
+// and each bump paid 8-10 min. When the ONLY change to that file is the one
+// `APP_VERSION = "…"` line (matched literally — anything else in the diff, a
+// mode change, a second line, is full: fail-closed), the tests that can see
+// the version string stand in for it (versionReaders).
+export const VERSION_FILE = "core/version.py";
+const VERSION_LINE = /^APP_VERSION = "[0-9A-Za-z.]+"$/;
+const PRODUCT_DIRS = ["core", "views", "report", "apps"];
+
+/** Do two texts of core/version.py differ in exactly one line, and is that
+ *  line `APP_VERSION = "…"` on both sides? (Line count must match — an added
+ *  or removed line is not a version bump. CRLF/LF is not a difference, the
+ *  same blind spot as the cache key's.) Anything missing → false. */
+export function versionLineOnly(oldText, newText) {
+  if (typeof oldText !== "string" || typeof newText !== "string") return false;
+  const a = oldText.replace(/\r\n/g, "\n").split("\n");
+  const b = newText.replace(/\r\n/g, "\n").split("\n");
+  if (a.length !== b.length) return false;
+  const changed = a.map((line, i) => [line, b[i]]).filter(([x, y]) => x !== y);
+  return changed.length === 1 && VERSION_LINE.test(changed[0][0]) && VERSION_LINE.test(changed[0][1]);
+}
+
+function readVersionFile(cwd) {
+  try {
+    return readFileSync(join(cwd, VERSION_FILE), "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** Working tree vs HEAD: does core/version.py differ only in its version line? */
+function versionLineOnlyVsHead(cwd) {
+  let head;
+  try {
+    head = git(cwd, ["show", `HEAD:${VERSION_FILE}`]);
+  } catch {
+    return false;
+  }
+  return versionLineOnly(head, readVersionFile(cwd));
+}
+
+function productSources(cwd) {
+  const out = [];
+  const walk = (rel) => {
+    let entries = [];
+    try {
+      entries = readdirSync(join(cwd, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === "__pycache__") continue;
+      const child = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(child);
+      else if (e.name.endsWith(".py")) out.push(child);
+    }
+  };
+  PRODUCT_DIRS.forEach(walk);
+  return out;
+}
+
+/** The tests that can see the version string, by a mechanical rule (no hand
+ *  list — the watcher is test_pre_commit_gate.py::TestVersionReaders):
+ *   1. tests naming core.version, APP_VERSION, a constant of core/version.py
+ *      whose value carries it (APP_FULL, USER_AGENT…), or a function of it
+ *      that defaults to it (is_final, version_tuple…);
+ *   2. tests naming a product module whose BEHAVIOUR follows the version's
+ *      stage (a/b/RC/final): it calls one of those functions, or a `def` of
+ *      it defaults a parameter to the version (update_check).
+ *  Modules that only print the string (report headers, the window title, the
+ *  User-Agent) are caught by 1 when a test compares against the name, and by
+ *  the watcher's literal scan when a test hard-codes the text.
+ *  null when core/version.py cannot be read (→ full). */
+export function versionReaders(cwd) {
+  let src;
+  try {
+    src = readFileSync(join(cwd, VERSION_FILE), "utf-8");
+  } catch {
+    return null;
+  }
+  const names = new Set(["APP_VERSION"]);
+  for (const m of src.matchAll(/^([A-Za-z_]\w*)\s*=([^\n]*)$/gm)) {
+    if (m[2].includes("APP_VERSION")) names.add(m[1]);
+  }
+  const funcs = [];
+  for (const m of src.matchAll(/^def\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)/gm)) {
+    if (m[2].includes("APP_VERSION")) funcs.push(m[1]);
+  }
+  funcs.forEach((f) => names.add(f));
+  const needles = new Set(["core.version", "core import version", ...names]);
+  const calls = new RegExp(String.raw`\bversion\.(?:${funcs.join("|") || "(?!)"})\s*\(`);
+  const defaults = /\bdef\s+\w+\s*\(((?:[^()]|\([^()]*\))*)\)/g;
+  for (const rel of productSources(cwd)) {
+    let body;
+    try {
+      body = readFileSync(join(cwd, rel), "utf-8");
+    } catch {
+      continue;
+    }
+    const followsStage = calls.test(body) ||
+      [...body.matchAll(defaults)].some((m) => /=\s*(?:version\.)?APP_VERSION\b/.test(m[1]));
+    if (followsStage) needles.add(rel.split("/").pop().replace(/\.py$/, ""));
+  }
+  const found = new Set();
+  for (const needle of needles) readersOf(cwd, needle).forEach((t) => found.add(t));
+  return [...found].sort();
+}
+
 /** The tests a commit of `paths` needs, as a synthetic island {name, tests},
  *  or null (→ full suite). Full when: nothing changed, any path is on a
  *  `full_prefixes` face, or any path matches no rule at all (fail-closed).
  *  Otherwise the UNION of: every island a path falls in, a changed
  *  `tests/test_*.py` itself (+ `tests_walkers`), and the readers of a
- *  `scoped_faces` path — plus `scanners` whenever anything was scoped. */
-export function islandFor(scope, paths, cwd = process.cwd()) {
+ *  `scoped_faces` path — plus `scanners` whenever anything was scoped.
+ *  core/version.py counts as scoped (its readers) only while its sole change
+ *  is the version line (`versionOnly`; computed from the working tree when
+ *  not given). */
+export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {}) {
   if (!paths.length) return null;
   const full = scope.full_prefixes || [];
   const names = new Set();
   const tests = new Set();
   for (const p of paths) {
+    if (p === VERSION_FILE) {
+      const readers = (versionOnly ?? versionLineOnlyVsHead(cwd)) ? versionReaders(cwd) : null;
+      if (!readers) return null;
+      names.add("version");
+      readers.forEach((t) => tests.add(t));
+      continue;
+    }
     if (full.some((pre) => p.startsWith(pre))) return null;
     let hit = false;
     for (const island of scope.commit_islands || []) {
@@ -275,19 +403,36 @@ function main() {
   }
 
   // A full pass also covers any island run on the same content — check it first.
-  const fullKey = pytestCacheKey(cwd, FULL_SCOPE);
+  // The key is the content tree (I-184), so a commit does not move it: the push
+  // right after a green commit hits here.
+  const lastFull = lastFullPass(cwd);
+  const inputs = cacheInputs(cwd, { without: VERSION_FILE });
+  const versionText = readVersionFile(cwd);
+  const fullKey = keyFor(inputs, FULL_SCOPE);
   if (isCachedPass(cwd, fullKey)) return; // already proven green for this exact content
 
   let key = fullKey;
   let targets = [];
   let label = "フルスイート";
-  if (!isPush(command)) {
-    const scope = loadScope(cwd);
+  let realFull = true;
+  const scope = loadScope(cwd);
+  if (versionChain(inputs, lastFull, versionText)) {
+    // I-185: the last real full pass + a version-line-only step + its readers
+    // green = the full proof for this tree, for commit AND push (a commit-only
+    // shortcut would just move the 8 minutes to the push). CI stays the backstop.
+    const island = islandFor(scope, [VERSION_FILE], cwd, { versionOnly: true });
+    if (island) {
+      targets = islandTargets(cwd, scope, island);
+      label = `版の字の読み手のテスト（${targets.length} 本・直前のフル合格から版の字の 1 行だけ）`;
+      realFull = false;
+    }
+  } else if (!isPush(command)) {
     const island = islandFor(scope, commitPaths(cwd), cwd);
     if (island) {
       targets = islandTargets(cwd, scope, island);
-      key = pytestCacheKey(cwd, `island:${island.name}\n${targets.join("\n")}`);
+      key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
       label = `島「${island.name}」のテスト（${targets.length} 本）`;
+      realFull = false;
       if (isCachedPass(cwd, key)) return;
     }
   }
@@ -307,6 +452,16 @@ function main() {
     return;
   }
   recordPass(cwd, key, ms);
+  if (realFull) recordFullPass(cwd, inputs, { versionText });
+}
+
+/** I-185: does the working tree differ from the last REAL full pass only by
+ *  the version line? = the same tree once core/version.py is set aside, the
+ *  same untracked sources, and that file's text off by exactly that line. */
+export function versionChain(inputs, lastFull, versionText) {
+  if (!inputs || !lastFull || !inputs.rest || inputs.rest !== lastFull.rest) return false;
+  if (!sameExtras(inputs, lastFull)) return false;
+  return versionLineOnly(lastFull.versionText, versionText);
 }
 
 function runPytest(python, cwd, args) {
