@@ -806,7 +806,7 @@ Status     = OK (≥ 0 dB) / NG (< 0 dB)
 | `dem5b_png` | 5 m (photogrammetry) | 15   | Wider coverage than dem5a     |
 | `dem_png`   | 10 m (base map)      | 14   | Nationwide                    |
 
-Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404, a missing-data pixel `(128, 0, 0)`, or a pixel of exactly 0 m `(0, 0, 0)`, the next layer is used. The area prefetch uses the same rule to decide which lower layers to download or keep. However, a normal prefetch does not re-examine tiles already in the cache: an area prefetched before 3.7 may still lack the lower layers under exactly-0 m pixels, and a force re-download from Cache Management fixes it.
+Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404, a missing-data pixel `(128, 0, 0)`, or a pixel of exactly 0 m `(0, 0, 0)`, the next layer is used. The area prefetch uses the same rule to decide which lower layers to download or keep. A normal prefetch also reads the cached 5 m tiles at positions without a 10 m tile and re-examines them under the same rule (from 3.8). This fills in the lower layers that an area prefetched before 3.7 may lack under exactly-0 m pixels.
 
 ### Caching Strategy
 

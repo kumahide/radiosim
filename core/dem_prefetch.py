@@ -161,12 +161,21 @@ def _process_position(
     再プリフェッチ時の「解決済みは無視」を成立させる。⚠️ **見るのは存在ではなく
     可読性**（B-141）＝壊れたタイルを終端マーカーと読むと、そこだけ永久に埋まらない。
 
+    dem_png が無い位置では、**キャッシュ済みの 5a・5b も中身を読んで同じ
+    `_void_mask` で判定し直し**、足りない層だけを取る（B-306・3.8）。以前は読める
+    5a/5b があれば中身を見ずに飛ばしていた＝欠損の定義を広げた B-304 より前に
+    作られたキャッシュ（0 m の画素を欠損と見ずに 5a だけで止めた位置）が、通常の
+    事前取得では直らなかった。⚠️ 読み直した層は `downloaded_*` に数えない
+    （取っていない）。5b だけが在って 5a が無い位置は、5a がサーバに無かった形
+    （以前の回で 404）＝5a は取り直しに行かない。
+
     降下が要らないと分かった下位レイヤは消す（B-285）＝強制再取得で上位の欠損が
-    無くなった位置に、読まれない古い 5b・dem_png を残さない。⚠️ **dem_png を消すのは
-    4 枚の zoom-15 を全部この回で取って、どれも降りなかったときだけ**＝範囲の端で
-    一部しか見ていない位置は、範囲外の 1 枚が 10m を要るかもしれない。そこで消すと
-    上の不変条件「欠損あり⟹dem_png 取得」が崩れ、次の通常の事前取得は読める 5a を
-    見て `continue` するので**10m を二度と取りに行かない**（オフラインで欠損が残る）。
+    無くなった位置に、読まれない古い 5b・dem_png を残さない。⚠️ **消すのはこの回に
+    取り直した層で判定したときだけ**＝読み直した結果からは消さない。⚠️ **dem_png を
+    消すのは 4 枚の zoom-15 を全部この回で取って、どれも降りなかったときだけ**＝
+    範囲の端で一部しか見ていない位置は、範囲外の 1 枚が 10m を要るかもしれない。
+    そこで消すと上の不変条件「欠損あり⟹dem_png 取得」が崩れ、その 1 枚を覆う
+    事前取得をもう一度回すまで**オフラインで 10m が欠ける**。
     """
     dem14_ok = _is_cached(dem14_path)
     if not force and dem14_ok:
@@ -176,7 +185,7 @@ def _process_position(
 
     # 🔴 **壊れて残っている dem_png は、5m が読めても必ず取り直す**（B-142）＝
     #    上の早期 return を通り抜けた理由は 2 通りある（**不在** か **壊れている**）。
-    #    下の降下は *不在* のほうだけを想定しており、5a/5b が読めれば `continue` して
+    #    下の降下は *不在* のほうだけを想定しており、5a/5b で埋まれば `continue` して
     #    `need_dem` が立たない ⇒ **壊れた 10m タイルが取り直されないまま残る**
     #    （5m に欠損があって 10m まで降りた位置＝ごく普通のキャッシュ状態で起きる）。
     # ⚠️ **`force` かどうかで条件を分けない**（B-144＝B-142 の直しが `force` を
@@ -186,36 +195,45 @@ def _process_position(
     need_dem = os.path.exists(dem14_path) and not dem14_ok
     resolved_above = 0   # この回に取って、dem_png まで降りずに済んだ zoom-15 の枚数
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
-        # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
-        # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
-        # スキップしてよい（DL build 前の旧キャッシュは force 再取得で healing）。
-        if not force and (_is_cached(path5a) or _is_cached(path5b)):
-            continue
-
-        arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a,
-                                force=force)
+        # 🔴 **キャッシュ済みの 5a/5b は「欠損なし」とは限らない**（B-306）＝B-304 より
+        #    前のキャッシュは 0 m の画素を欠損と見ずに 5a だけで止めている。中身を
+        #    読み直して同じ条件で判定する（読み直しは取得に数えない・消す根拠にしない）。
+        cached5b = not force and _is_cached(path5b)
+        arr5a = dem._read_cached_tile(path5a) if not force and _is_cached(path5a) else None
+        reread5a = arr5a is not None
+        if not reread5a and not cached5b:
+            arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a,
+                                    force=force)
+            if arr5a is not None:
+                with lock:
+                    counts["downloaded_5a"] += 1
+        # （5b だけが在る＝5a はサーバに無かった形なので、5a は取り直しに行かない）
         if arr5a is not None:
-            with lock:
-                counts["downloaded_5a"] += 1
             remaining = _void_mask(arr5a)
             if not remaining.any():
                 # 欠損なし: この位置は 5a で完結＝5b は読まれない（B-285）
-                _drop_unread_tile("dem5b_png", x15, y15, path5b)
-                resolved_above += 1
+                if not reread5a:
+                    _drop_unread_tile("dem5b_png", x15, y15, path5b)
+                    resolved_above += 1
                 continue
         else:
             remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
 
         # 5a に欠損が残る（または 5a 不在）→ 5b で埋まる分を解消
-        arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b,
-                                force=force)
+        arr5b = dem._read_cached_tile(path5b) if cached5b else None
+        reread5b = arr5b is not None
+        if not reread5b:
+            arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b,
+                                    force=force)
+            if arr5b is not None:
+                with lock:
+                    counts["downloaded_5b"] += 1
         if arr5b is not None:
-            with lock:
-                counts["downloaded_5b"] += 1
             void5b = _void_mask(arr5b)
             still_void = void5b if remaining is None else (remaining & void5b)
             if not still_void.any():
-                resolved_above += 1
+                if not (reread5a or reread5b):
+                    resolved_above += 1
                 continue   # 5a の欠損を 5b が完全に補完
         # 5b 不在、または 5a∩5b に欠損が残る → dem_png へ降りる
         need_dem = True

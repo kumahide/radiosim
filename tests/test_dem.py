@@ -1669,8 +1669,8 @@ class TestForceRefetchDropsUnreadLowerLayers:
     def test_dem_png_at_the_edge_of_the_range_is_kept(self, tmp_path, monkeypatch):
         """範囲の端＝zoom-15 を 1 枚しか見ていない位置では dem_png を消さない。
 
-        🔴 範囲外の 1 枚が 10m を要るかもしれない＝消すと次の通常の事前取得は
-        読める 5a を見て飛ばし、**10m を二度と取りに行かない**。
+        🔴 範囲外の 1 枚が 10m を要るかもしれない＝消すと、その 1 枚を覆う事前取得を
+        もう一度回すまで**オフラインで 10m が欠ける**。
         """
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         full = self._full_position_bbox()
@@ -1686,6 +1686,148 @@ class TestForceRefetchDropsUnreadLowerLayers:
 
         assert not os.path.exists(zoom15[0][5]), "この 1 枚の 5b は読まれない"
         assert os.path.exists(dem14_path), "範囲外の 3 枚が要るかもしれない dem_png を消した"
+
+
+class TestNormalPrefetchRepairsOldCache:
+    """通常の事前取得でも、キャッシュ済みの 5a/5b を読み直して足りない層を取ること（B-306）。
+
+    🔴 以前は `dem_png` が無い位置で読める 5a/5b があれば中身を見ずに飛ばしていた
+    ＝B-304 より前（3.7 より前）の事前取得が 0 m の画素を欠損と見ずに 5a だけで
+    止めた位置が、強制再取得をしないかぎり直らなかった（オフラインでその画素が欠ける）。
+    """
+
+    LAT, LON = 35.0, 139.0
+    ZERO_PX = (5, 5)
+
+    def _full_position_bbox(self):
+        """zoom-14 の 1 枚をちょうど覆う範囲＝子の zoom-15 が 4 枚そろう。"""
+        x, y, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        n, w = dem_cache.tile_to_latlng(x, y, 14)
+        s, e = dem_cache.tile_to_latlng(x + 1, y + 1, 14)
+        eps = 1e-6
+        return n - eps, w + eps, s + eps, e - eps
+
+    def _tile(self, zero=False):
+        """欠損の無いタイル（zero＝1 画素だけちょうど 0 m の (0,0,0)）。"""
+        arr = _land_tile()
+        if zero:
+            arr[self.ZERO_PX] = (0, 0, 0)
+        return arr
+
+    def _seed(self, path, arr):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.fromarray(arr).save(path)
+
+    def _run(self, tmp_path, monkeypatch, seed, fetch_result):
+        """`seed(zoom15)` でキャッシュを置き、通常の事前取得を 1 回回す。
+
+        Returns: (結果の件数, 呼ばれた (layer_id, x, y) の列, dem14_path, zoom15)
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*bbox)
+        assert len(zoom15) == 4
+        seed(zoom15)
+        calls = []
+
+        def fetch(layer_id, zoom, x, y, *a, **kw):
+            calls.append((layer_id, x, y))
+            return fetch_result.get(layer_id)
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+        res = dem_prefetch.prefetch_tiles(*bbox, force=False)
+        return res, calls, dem14_path, zoom15
+
+    def _seed_old_5a(self, zoom15):
+        """3.7 より前の事前取得が残す形＝5a だけ・先頭の 1 枚に 0 m の画素。"""
+        for i, (_x, _y, _s5a, path5a, _s5b, _p5b) in enumerate(zoom15):
+            self._seed(path5a, self._tile(zero=(i == 0)))
+
+    def test_old_5a_with_a_zero_metre_pixel_fetches_5b(self, tmp_path, monkeypatch):
+        """① 旧キャッシュの 5a に 0 m の画素＝その 1 枚だけ 5b を取りに行く。"""
+        res, calls, dem14_path, zoom15 = self._run(
+            tmp_path, monkeypatch, self._seed_old_5a,
+            {"dem5b_png": self._tile()})
+
+        x15, y15 = zoom15[0][0], zoom15[0][1]
+        assert calls == [("dem5b_png", x15, y15)], (
+            "0 m の画素を持つキャッシュ済み 5a を読み直さずに飛ばした")
+        assert res["downloaded_5b"] == 1
+        assert res["downloaded_5a"] == res["downloaded_dem"] == 0
+        assert all(os.path.exists(t[3]) for t in zoom15), "読み直した 5a を消した"
+
+    def test_old_5a_descends_to_dem_png_when_5b_lacks_the_same_pixel(
+        self, tmp_path, monkeypatch
+    ):
+        """① 5b もその画素で欠けていれば dem_png まで取りに行く。"""
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, self._seed_old_5a,
+            {"dem5b_png": self._tile(zero=True), "dem_png": self._tile()})
+
+        layers = [c[0] for c in calls]
+        assert layers.count("dem5b_png") == 1
+        assert "dem_png" in layers, "5a∩5b に欠損が残るのに 10m を取りに行かない"
+        assert "dem5a_png" not in layers
+        assert res["downloaded_dem"] == 1
+
+    def test_healthy_cache_fetches_nothing(self, tmp_path, monkeypatch):
+        """② 正常なキャッシュ（5a に欠損が無い）では、どの層も取りに行かない。"""
+        def seed(zoom15):
+            for t in zoom15:
+                self._seed(t[3], self._tile())
+
+        res, calls, _dem14, _z = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem5b_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == [], "欠損の無いキャッシュなのに取りに行った"
+        assert res["downloaded_5a"] == res["downloaded_5b"] == res["downloaded_dem"] == 0
+        assert res["failed"] == 0
+
+    def test_5b_only_position_does_not_refetch_5a(self, tmp_path, monkeypatch):
+        """③ 5a が無く 5b だけが在る位置（5a はサーバに無い形）＝5a を取り直さない。"""
+        def seed(zoom15):
+            for t in zoom15:
+                self._seed(t[5], self._tile())
+
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == [], "5b で埋まっている位置なのに 5a を取り直した"
+        assert not any(os.path.exists(t[3]) for t in zoom15)
+        assert all(os.path.exists(t[5]) for t in zoom15)
+
+    def test_5b_only_position_with_a_void_goes_to_dem_png_not_5a(
+        self, tmp_path, monkeypatch
+    ):
+        """③ の対＝5b に欠損が残れば 10m へ降りる（5a は取りに行かない）。"""
+        def seed(zoom15):
+            for i, t in enumerate(zoom15):
+                self._seed(t[5], self._tile(zero=(i == 0)))
+
+        res, calls, _dem14, _z = self._run(
+            tmp_path, monkeypatch, seed, {"dem_png": self._tile()})
+
+        assert [c[0] for c in calls] == ["dem_png"]
+        assert res["downloaded_dem"] == 1
+
+    def test_reread_without_voids_is_not_counted_as_downloaded(self, tmp_path, monkeypatch):
+        """④ 読み直して欠損なしと分かった層は `downloaded_*` に数えない・消さない。"""
+        def seed(zoom15):
+            for i, t in enumerate(zoom15):
+                self._seed(t[3], self._tile(zero=(i == 0)))
+                if i == 0:
+                    self._seed(t[5], self._tile())      # 5a の 0 m を 5b が埋める
+
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem5b_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == []
+        assert res["downloaded_5a"] == res["downloaded_5b"] == res["downloaded_dem"] == 0
+        assert res["failed"] == 0
+        assert os.path.exists(zoom15[0][5]), "読み直した 5b を消した"
 
 
 # ============================================================
