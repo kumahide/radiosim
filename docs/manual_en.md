@@ -315,7 +315,7 @@ In all three input modes you can adjust a point on the map: **click its marker t
 - In Pick Coordinates and Append modes you can also **right-click the map** ("Place TX here" / "Place RX here") — the way in when the marker is off-screen.
 - Dragging is still the map pan, on purpose: if dragging moved points, grabbing the map to scroll would silently rewrite your input.
 - The window remains the source of truth. If the point you selected has been deleted or reordered in the window meanwhile, the map refuses the move and asks you to select again — it never moves a different point instead.
-- ⚠️ **Terrain is sampled on a 5–10 m mesh (with the built-in GSI DEM; a DEM source you add may be coarser).** If you move a point less than that, the status bar says so (the threshold is 5 m): the marker moves but the calculation can sample exactly the same ground and return the same result.
+- ⚠️ **Elevation data is a grid (5–10 m for the built-in GSI DEM; a DEM source you add may be coarser). Where the calculation places its samples on that grid is set separately, by "Terrain Resolution" under Environment ("Low" samples every 20 m).** If you move a point less than the finest mesh (5 m), the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result (on "Low" this can happen with larger moves too).
 
 ### Cache Management mode
 
