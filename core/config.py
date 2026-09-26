@@ -454,6 +454,10 @@ DEFAULT_CONFIG: dict[str, str] = {
     # 最後に試みた日（ISO）。読み方は `core/update_check.py` の `auto_due`。
     "update_check_auto": "off",
     "update_check_last": "",
+    # プレリリース（RC）も知らせるか（I-180）＝手動と起動時の両方に効く。`"on"`／`"off"`
+    # は利用者が選んだ値、既定の `""` は「いまの版で決まる」（正式なら正式だけ）。
+    # 読み方は `core/update_check.py` の `want_prerelease`。
+    "update_check_prerelease": "",
 }
 
 
@@ -713,7 +717,7 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> bool:
 # ------------------------------------------------------------
 APP_KEYS: frozenset[str] = frozenset(
     {"theme", "lang", "proxy_url", "coord_format", "basemap_layer",
-     "update_check_auto", "update_check_last"})
+     "update_check_auto", "update_check_last", "update_check_prerelease"})
 SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
 
 

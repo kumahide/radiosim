@@ -11,7 +11,8 @@ Smart App Control に止められたとき理由を説明できない）。リ�
 
 - 通信は `dem.http_session()`＝設定 > プロキシ設定 に従う。
 - 版の大小は `version.version_tuple()`（B-162 以降、a/b → RC → 正式の順で正しい）。
-- **いまの版が正式なら正式だけ**を、RC（a/b も）なら RC も数える。
+- **いまの版が正式なら正式だけ**を、RC（a/b も）なら RC も数える。ヘルプの
+  「プレリリースも知らせる」（I-180）で利用者が選んだら、そちらに従う（`want_prerelease()`）。
 - 候補の選び方は `pick_newer()`＝純関数（通信と分けて試せる形）。
 """
 
@@ -54,15 +55,33 @@ class UpdateCheckError(Exception):
         self.detail = detail
 
 
-def pick_newer(releases: list, current: str = version.APP_VERSION) -> Release | None:
+def want_prerelease(conf: dict, current: str = version.APP_VERSION) -> bool:
+    """プレリリースも知らせるか（I-180）。設定の 1 キーだけを見る純関数。
+
+    - `update_check_prerelease` が `"on"` なら数える・`"off"` なら数えない。
+    - それ以外（既定の `""`＝まだ触っていない）は**いまの版で決まる**＝正式なら
+      数えない・RC（a/b も）なら数える（I-178 のときからの振る舞い）。触るまでは
+      版に追従する＝RC から正式へ上げた人は、何もしなくても正式だけに戻る。
+    """
+    choice = conf.get("update_check_prerelease")
+    if choice == "on":
+        return True
+    if choice == "off":
+        return False
+    return not version.is_final(current)
+
+
+def pick_newer(releases: list, current: str = version.APP_VERSION,
+               include_pre: bool | None = None) -> Release | None:
     """応答の一覧から、`current` より新しい版のうち最大のものを返す（無ければ `None`）。
 
     - `draft` と、読めないタグ（`version_tuple` が `(0,0,0,0)`）は捨てる。
-    - `current` が正式なら、プレリリース（`prerelease` が真、またはタグが RC/a/b）は数えない。
+    - `include_pre` が偽なら、プレリリース（`prerelease` が真、またはタグが RC/a/b）は
+      数えない。`None` は `current` で決める（正式なら偽・RC/a/b なら真）。
     - `html_url` が `RELEASE_PAGE_PREFIX` で始まらないものは捨てる。
     """
     now = version.version_tuple(current)
-    want_pre = not version.is_final(current)
+    want_pre = (not version.is_final(current)) if include_pre is None else include_pre
     best: tuple[tuple[int, int, int, int], Release] | None = None
     for rel in releases:
         if not isinstance(rel, dict) or rel.get("draft"):
@@ -125,6 +144,7 @@ def fetch_releases() -> list:
     return data
 
 
-def check(current: str = version.APP_VERSION) -> Release | None:
+def check(current: str = version.APP_VERSION,
+          include_pre: bool | None = None) -> Release | None:
     """問い合わせて、知らせる版を返す（無ければ `None`・失敗は `UpdateCheckError`）。"""
-    return pick_newer(fetch_releases(), current)
+    return pick_newer(fetch_releases(), current, include_pre)

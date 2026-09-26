@@ -2466,6 +2466,47 @@ class TestInventoryMatchesLedger:
         assert memcheck.check_inventory_real() == []
 
 
+class TestInventoryH2IsPermanent:
+    """受け皿の H2 は常設（check 28）。
+
+    2026-09-26、受け皿を 3.7 として切るときに H2 ごと改名し、
+    `## 🧺 次のマイナー` が消えた（ユーザー指摘）。同じ手順を 5 回踏んでいた。
+    """
+
+    def test_the_renamed_shape_is_flagged(self, memcheck):
+        """実際に起きた形＝受け皿の規約が版セクションの H3 に居て、H2 が無い。"""
+        found = memcheck.check_inventory_h2([
+            "## 🚧 3.7 — 版をまたぐ案内",
+            "### 📋 受け皿の規約",
+            "## 🗄 アーカイブ",
+        ])
+        assert len(found) == 1 and "無い" in found[0]
+
+    def test_one_h2_above_the_archive_is_clean(self, memcheck):
+        assert memcheck.check_inventory_h2([
+            "## 🚧 3.7 — 版をまたぐ案内",
+            "## 🧺 次のマイナー（番号未定）",
+            "## 🗄 アーカイブ",
+        ]) == []
+
+    def test_an_h2_only_below_the_archive_does_not_count(self, memcheck):
+        found = memcheck.check_inventory_h2([
+            "## 🗄 アーカイブ",
+            "## 🧺 次のマイナー（番号未定）",
+        ])
+        assert len(found) == 1 and "無い" in found[0]
+
+    def test_two_h2s_are_flagged(self, memcheck):
+        found = memcheck.check_inventory_h2([
+            "## 🧺 次のマイナー（番号未定）",
+            "## 🧺 次のマイナー（番号未定）",
+        ])
+        assert len(found) == 1 and "2 つ" in found[0]
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        assert memcheck.check_inventory_h2_real() == []
+
+
 class TestRenumberLeftovers:
     """改番の表が宣言した旧い意味が現役のセクションに残る（check 24・I-157）。
 

@@ -122,6 +122,7 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "results stay in each folder.",
         "update_how_source":    "Check out the tag {tag} from the repository.",
         "menu_check_updates_auto": "Check for Updates at Startup",
+        "menu_check_updates_pre": "Include Pre-releases",
         "update_auto_note":     "This notice comes from the startup check (at most "
                                 "once a day). To stop it, uncheck Help > Check for "
                                 "Updates at Startup.",
@@ -942,6 +943,7 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "結果はフォルダごとに分かれます）。",
         "update_how_source":    "リポジトリからタグ {tag} を取得してください。",
         "menu_check_updates_auto": "起動時に更新を確認",
+        "menu_check_updates_pre": "プレリリースも知らせる",
         # ⚠️ Tk は空白でしか折らない＝1 文ずつ 1 行に収まる長さにし、文の間にだけ空白を
         # 置く（長いと「。」が行頭へ落ちた＝2026-09-26 の画面確認）。数字と単位の間にも
         # 空白を入れない（I-178 の画面の直し）。

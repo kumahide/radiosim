@@ -23,8 +23,8 @@ _LIST = [_rel("3.6"), _rel("v3.6RC2", pre=True), _rel("v3.6RC1", pre=True),
          _rel("3.5"), _rel("v3.5RC1", pre=True)]
 
 
-def _newer(rels, current) -> Release:
-    got = pick_newer(rels, current)
+def _newer(rels, current, include_pre=None) -> Release:
+    got = pick_newer(rels, current, include_pre)
     assert got is not None
     return got
 
@@ -59,6 +59,48 @@ class TestPickNewer:
         rels = [_rel("9.0", draft=True), _rel("nightly"),
                 _rel("9.1", url="https://example.com/evil"), "junk", {}]
         assert pick_newer(rels, "3.6") is None
+
+    # I-180＝利用者が選んだら、いまの版より選択が勝つ。
+    def test_final_user_who_opts_in_is_told_of_a_release_candidate(self):
+        rels = [_rel("v3.7RC1", pre=True), *_LIST]
+        assert _newer(rels, "3.6", include_pre=True).version == "3.7RC1"
+
+    def test_rc_user_who_opts_out_hears_only_of_finals(self):
+        rels = [_rel("v3.7RC2", pre=True), *_LIST]
+        assert pick_newer(rels, "3.7RC1", include_pre=False) is None
+        assert _newer([_rel("3.7"), *rels], "3.7RC1", include_pre=False).version == "3.7"
+
+    def test_opting_out_also_drops_an_rc_tag_without_the_flag(self):
+        assert _newer([_rel("v3.7RC1"), *_LIST], "3.6RC1",
+                      include_pre=False).version == "3.6"
+
+
+class TestWantPrerelease:
+    """プレリリースも知らせるか（I-180）＝触るまではいまの版で決まる。"""
+
+    def test_default_is_untouched_and_a_setting_of_the_app(self):
+        assert config.DEFAULT_CONFIG["update_check_prerelease"] == ""
+        assert "update_check_prerelease" in config.APP_KEYS
+        assert "update_check_prerelease" not in config.SIM_KEYS
+
+    @pytest.mark.parametrize("current,expected", [
+        ("3.6", False), ("3.7RC1", True), ("3.7a1", True), ("3.7b1", True)])
+    def test_untouched_follows_the_current_version(self, current, expected):
+        assert update_check.want_prerelease(
+            dict(config.DEFAULT_CONFIG), current) is expected
+
+    @pytest.mark.parametrize("current", ["3.6", "3.7RC1"])
+    def test_a_choice_wins_over_the_current_version(self, current):
+        assert update_check.want_prerelease(
+            {"update_check_prerelease": "on"}, current) is True
+        assert update_check.want_prerelease(
+            {"update_check_prerelease": "off"}, current) is False
+
+    @pytest.mark.parametrize("value", [None, True, "On", "yes", "1"])
+    def test_anything_but_on_or_off_follows_the_version(self, value):
+        conf = {"update_check_prerelease": value}
+        assert update_check.want_prerelease(conf, "3.6") is False
+        assert update_check.want_prerelease(conf, "3.7RC1") is True
 
 
 class _Res:
@@ -222,6 +264,7 @@ class _Root:
 class _Host(launcher_menu._MenuMixin):
     """`SimLauncher` のうち更新の確認が使う面だけ。"""
     saved: list
+    asked: list        # `check` に渡った `include_pre`（1 回の問い合わせに 1 つ）
 
     def __init__(self, conf=None):
         self.root = cast(Any, _Root())
@@ -264,13 +307,15 @@ def host(monkeypatch):
     i18n.set_lang("ja")
 
     def _make(answer, **conf):
-        def _check():
+        def _check(current=version.APP_VERSION, include_pre=None):
+            h.asked.append(include_pre)
             if isinstance(answer, BaseException):
                 raise answer
             return answer
         monkeypatch.setattr(update_check, "check", _check)
         h = _Host(conf)
         h.saved = saved
+        h.asked = []
         return h
     return _make
 
@@ -331,3 +376,30 @@ class TestStartupCheck:
         h._update_auto_var = type("V", (), {"get": lambda self: "on"})()
         h._on_update_auto_toggle()
         assert h.saved[-1]["update_check_auto"] == "on"
+
+
+class TestPrereleaseChoice:
+    """プレリリースも知らせるか（I-180）が、手動と起動時の両方の問い合わせへ届くこと。"""
+
+    @pytest.mark.parametrize("choice,expected", [
+        ("on", True), ("off", False),
+        ("", not version.is_final(version.APP_VERSION))])
+    def test_manual_check_passes_the_choice(self, host, choice, expected):
+        h = host(None, update_check_prerelease=choice)
+        h._on_check_updates()
+        _Thread.run_all()
+        assert h.asked == [expected]
+
+    @pytest.mark.parametrize("choice,expected", [("on", True), ("off", False)])
+    def test_startup_check_passes_the_choice(self, host, choice, expected):
+        h = host(None, update_check_auto="on", update_check_prerelease=choice)
+        h._auto_check_updates()
+        _Thread.run_all()
+        assert h.asked == [expected]
+
+    @pytest.mark.parametrize("value", ["on", "off"])
+    def test_toggle_fixes_the_choice(self, host, value):
+        h = host(None)
+        h._update_pre_var = type("V", (), {"get": lambda self: value})()
+        h._on_update_pre_toggle()
+        assert h.saved[-1]["update_check_prerelease"] == value

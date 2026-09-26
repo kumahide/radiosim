@@ -427,6 +427,17 @@ class _MenuMixin:
             offvalue = "off",
             command  = self._on_update_auto_toggle,
         )
+        # プレリリースも知らせるか（I-180）＝手動と起動時の両方に効くので 2 つの下に置く。
+        # まだ触っていない（`""`）あいだの印は、いまの版で決まる値を映す。
+        self._update_pre_var = tk.StringVar(
+            value="on" if update_check.want_prerelease(self.config) else "off")
+        help_menu.add_checkbutton(
+            label    = i18n.t("menu_check_updates_pre"),
+            variable = self._update_pre_var,
+            onvalue  = "on",
+            offvalue = "off",
+            command  = self._on_update_pre_toggle,
+        )
         help_menu.add_separator()
         help_menu.add_command(
             label   = i18n.t("menu_about"),
@@ -822,11 +833,13 @@ class _MenuMixin:
         self._update_check_quiet = quiet
         if not quiet:
             self.root.configure(cursor="watch")
+        # 設定は画面のスレッドで読んでから渡す（I-180）。
+        include_pre = update_check.want_prerelease(self.config)
 
         def _work() -> None:
             outcome: "update_check.Release | BaseException | None"
             try:
-                outcome = update_check.check()
+                outcome = update_check.check(include_pre=include_pre)
             except update_check.UpdateCheckError as e:
                 outcome = e
             except Exception as e:                 # 想定外＝ログに残して画面へ
@@ -867,6 +880,15 @@ class _MenuMixin:
     def _on_update_auto_toggle(self) -> None:
         """起動時の確認のオン／オフを保存する（I-179）。切り替えただけでは問い合わせない。"""
         self.config["update_check_auto"] = self._update_auto_var.get()
+        config.save_app(self.config)
+
+    def _on_update_pre_toggle(self) -> None:
+        """プレリリースも知らせるかを保存する（I-180）。
+
+        触った時点で `"on"`／`"off"` を固定する＝以後は版が変わっても追従しない。
+        切り替えただけでは問い合わせない。
+        """
+        self.config["update_check_prerelease"] = self._update_pre_var.get()
         config.save_app(self.config)
 
     def _auto_check_updates(self) -> None:
