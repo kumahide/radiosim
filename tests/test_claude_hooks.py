@@ -2314,6 +2314,42 @@ class TestRoadmapFormat:
                          "1. ✅ **番号付き**（2026-09-10）＝本文。",
                          "> - ✅ **引用の中の箇条**＝本文。") == []
 
+    # ── ✅ 以外の状態記号・継ぎ足しで育った行（2026-09-26 に踏んだ穴）──
+    @pytest.mark.parametrize("mark", ["🚧", "🔜", "⬜", "🔁"])
+    def test_every_state_mark_mid_sentence_is_flagged(self, memcheck, mark):
+        """実例＝工程4c の行へ「。🚧 **round134**＝…」と書き足されて通っていた。"""
+        found = self._fmt(memcheck, f"  - ✅ **工程4c**＝直した。{mark} **round134**＝3 件。")
+        assert any(mark in f and "先頭にだけ" in f for f in found)
+
+    @pytest.mark.parametrize("mark", ["🚧", "🔜", "⬜", "🔁"])
+    def test_every_state_mark_mid_heading_is_flagged(self, memcheck, mark):
+        assert any(mark in f for f in self._fmt(memcheck, f"### 📋 記録（{mark} 途中）"))
+
+    def test_every_leading_state_mark_passes(self, memcheck):
+        assert self._fmt(memcheck, *[f"  - {m} **項目**＝本文。"
+                                     for m in ("✅", "🚧", "🔜", "⬜", "🔁")]) == []
+
+    def test_the_stray_mark_finding_tells_how_to_split(self, memcheck):
+        """止めた文言が「語で書く」だけだと、記号を「（済）」へ置き換えて通す（実際にやった）。"""
+        found = self._fmt(memcheck, "- ✅ **a**＝本文。🚧 **b**＝本文。")
+        assert any("子の箇条" in f for f in found)
+
+    def test_an_item_grown_past_the_limit_is_flagged(self, memcheck):
+        """記号を語へ置き換えた書き足しは①をすり抜ける＝行の長さで止める。"""
+        grown = "  - ✅ **工程4c**＝" + "直した。**工程5・6（済）**＝公開した。" * 60
+        assert len(grown) > memcheck._FMT_MAX_ITEM_LEN
+        found = self._fmt(memcheck, grown)
+        assert any("上限" in f and "子の箇条" in f for f in found)
+
+    def test_an_item_at_the_limit_passes(self, memcheck):
+        item = "- ✅ **項目**＝"
+        item += "あ" * (memcheck._FMT_MAX_ITEM_LEN - len(item))
+        assert self._fmt(memcheck, item) == []
+
+    def test_a_long_non_item_paragraph_is_not_measured(self, memcheck):
+        """⑥が見るのは箇条だけ（段落・引用の地の文は型の外）。"""
+        assert self._fmt(memcheck, "地の文。" * 400) == []
+
     def test_tables_inline_code_and_fences_are_not_prose(self, memcheck):
         assert self._fmt(memcheck,
                          "| 3.2 | ✅ リリース済 | — |",
