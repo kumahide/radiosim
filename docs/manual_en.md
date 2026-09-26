@@ -792,7 +792,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 ### Adding a DEM Source (User Extension)
 
-The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it only lets you get elevation outside Japan, where GSI has no data; it does not give you a finer mesh than 10 m; depending on the zoom it can be coarser — at zoom 12, as in the example below, one pixel is several tens of metres).
+The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it is there so you can get elevation outside Japan, where GSI has no data — it is not a way to gain accuracy. The pixel size depends on the source's data and the zoom you declare, and the app does not check how fine the data really is; at zoom 12, as in the example below, one pixel is several tens of metres).
 
 ⚠️ **The background map (pale map / aerial photo) is extended through a separate declaration file from the DEM source** (see "Adding a Background Map Source" below). Adding a DEM source alone does not change that picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only.
 
