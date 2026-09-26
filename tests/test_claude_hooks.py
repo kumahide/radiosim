@@ -3187,6 +3187,63 @@ class TestAutorunAdvice:
             "additionalContext", ""), got
 
 
+class TestRelayAdvice:
+    """I-186＝リレー（`tools/autorun/relay.ps1` が裏で起こした対話型）では、
+    区切るのはリレー＝「ユーザーに区切りを提案せよ」の代わりに「引き継ぎ書を書いて
+    応答を終えよ」を返す。判断はダイアログで人に聞く（人はいる）。
+    """
+
+    def _run(self, budget, monkeypatch, capsys, tmp_path, hook_event,
+             n=None, ctx=200_000, trips_env=None):
+        monkeypatch.setenv("RADIOSIM_RELAY", "1")
+        monkeypatch.setenv("RADIOSIM_RELAY_HANDOFF", str(tmp_path / "handoff.md"))
+        if trips_env is not None:
+            monkeypatch.setenv("RADIOSIM_RELAY_TRIPS", trips_env)
+        return TestPostToolUseMidTurnAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path,
+            min(budget._THRESHOLDS) if n is None else n, ctx=ctx,
+            hook_event=hook_event)
+
+    @staticmethod
+    def _text(got):
+        return (got.get("reason")
+                or got.get("hookSpecificOutput", {}).get("additionalContext", ""))
+
+    @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
+    def test_tells_it_to_write_the_handoff_and_end(
+            self, budget, monkeypatch, capsys, tmp_path, hook_event):
+        text = self._text(self._run(budget, monkeypatch, capsys, tmp_path, hook_event))
+        assert "リレー" in text and str(tmp_path / "handoff.md") in text, (
+            "引き継ぎ書の場所が出ていない＝次のセッションへ渡せない")
+        assert "status: continue" in text and "AskUserQuestion" in text
+        assert "ユーザーに区切りを提案" not in text, (
+            "区切るのはリレーなのに人へ提案させている")
+
+    def test_stop_is_silent_once_handoff_is_written(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """引き継ぎ書を書き終えた後の Stop は止めない＝リレーが止めるのを待つだけ。"""
+        (tmp_path / "handoff.md").write_text("---\nstatus: continue\n---\n",
+                                             encoding="utf-8")
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop")
+        assert got == {}, f"引き継ぎ書を書いた後なのに Stop で鳴っている: {got}"
+
+    def test_trips_env_brings_the_warning_forward(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """試しの間だけ警告を早める口＝30 往復・文脈が小さくても鳴る。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop",
+                        n=30, ctx=10_000, trips_env="30")
+        assert "API往復が 30 回に達した" in self._text(got), got
+
+    def test_trips_env_is_ignored_outside_the_relay(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """早める口はリレーのときだけ＝ふだんのセッションに漏れない。"""
+        monkeypatch.setenv("RADIOSIM_RELAY_TRIPS", "30")
+        got = TestPostToolUseMidTurnAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, 30, ctx=10_000,
+            hook_event="Stop")
+        assert got == {}, got
+
+
 # ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
 # ============================================================
