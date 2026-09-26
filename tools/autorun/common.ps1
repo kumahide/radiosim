@@ -1,6 +1,6 @@
 <#
 .SYNOPSIS
-  run.ps1（作業票・I-181）と relay.ps1（リレー・I-186）が共有する部品。ドットで読み込む。
+  relay.ps1（リレー・I-186）が使う部品。ドットで読み込む。
 #>
 
 function Find-Claude {

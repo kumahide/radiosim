@@ -1214,6 +1214,9 @@ def _not_autorun(monkeypatch):
     `RADIOSIM_AUTORUN=1` を継ぐ**ので、外さないと対話前提のテストが落ちる。"""
     monkeypatch.delenv("RADIOSIM_AUTORUN", raising=False)
     monkeypatch.delenv("RADIOSIM_AUTORUN_RESULT", raising=False)
+    # I-186＝リレーのセッションが回す pytest も `RADIOSIM_RELAY=1` を継ぐ（2026-09-27 に踏んだ）
+    for name in ("RADIOSIM_RELAY", "RADIOSIM_RELAY_HANDOFF", "RADIOSIM_RELAY_TRIPS"):
+        monkeypatch.delenv(name, raising=False)
 
 
 class TestRoundtripCounting:
