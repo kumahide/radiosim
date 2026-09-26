@@ -188,7 +188,9 @@ def test_the_relay_env_reaches_the_budget_hook_both_ways(relay_plan):
         assert env["RADIOSIM_RELAY"] == "1"
         assert env["RADIOSIM_RELAY_TRIPS"] == "30"
         assert env["RADIOSIM_RELAY_HANDOFF"].endswith("handoff.md")
+        assert env["CLAUDE_BG_ISOLATION"] == "none", "worktree に閉じ込められると台帳と引き継ぎ書を書けない"
     assert relay_plan["settings"]["autoContinueAtUsageLimit"] is True
+    assert relay_plan["settings"]["worktree"]["bgIsolation"] == "none"
 
 
 @needs_pwsh

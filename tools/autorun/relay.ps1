@@ -97,17 +97,22 @@ function Get-Prompt([int]$No, [string]$Prev) {
         Replace('{HANDOFF_PATH}', $handoffPath)
 }
 
+# ⚠️ `CLAUDE_BG_ISOLATION=none`＝本体は `--bg` のセッションを既定で worktree に閉じ込め、
+#    `EnterWorktree` を呼ぶまで元の作業場所への Edit/Write を拒む（2026-09-27 のリレーの
+#    初回の試しで、追跡外の台帳と引き継ぎ書を道具で書けなかった）。本体 2.1.282 の判定は
+#    この環境変数 → 裏の起動の記録 → 設定の `worktree.bgIsolation` の順に見る＝ここで渡せば
+#    リレーのセッションにだけ効き、リポジトリの設定を触らない。
 function Get-RelayEnv {
-    $e = [ordered]@{ RADIOSIM_RELAY = '1'; RADIOSIM_RELAY_HANDOFF = $handoffPath }
+    $e = [ordered]@{ RADIOSIM_RELAY = '1'; RADIOSIM_RELAY_HANDOFF = $handoffPath; CLAUDE_BG_ISOLATION = 'none' }
     if ($Trips) { $e.RADIOSIM_RELAY_TRIPS = "$Trips" }
     return $e
 }
 
-# 環境変数は起動側のプロセスと `--settings` の `env` の両方で渡す（`--bg` のセッションに
-# どちらが届くかは -Probe で確かめる）。`autoContinueAtUsageLimit` はリレーのセッション
-# にだけ効かせる＝利用者設定を触らない。
+# 環境変数は起動側のプロセスと `--settings` の `env` の両方で渡す（どちらも届くことを
+# 2026-09-27 の -Probe で確かめた）。`autoContinueAtUsageLimit` と隔離の方式はリレーの
+# セッションにだけ効かせる＝利用者設定もリポジトリの設定も触らない。
 function Get-Settings([System.Collections.IDictionary]$Env) {
-    return [ordered]@{ env = $Env; autoContinueAtUsageLimit = $true }
+    return [ordered]@{ env = $Env; autoContinueAtUsageLimit = $true; worktree = [ordered]@{ bgIsolation = 'none' } }
 }
 
 # ⚠️ 入力文を最初に置く＝`--allowedTools` などの可変長のオプションの後ろに置くと、
@@ -218,16 +223,21 @@ function Write-Log([string]$Text) {
 # --- Probe ---------------------------------------------------------------------------
 
 if ($Probe) {
-    $procEnv = [ordered]@{ RADIOSIM_RELAY_PROBE_ENV = 'from-env' }
+    $procEnv = [ordered]@{ RADIOSIM_RELAY_PROBE_ENV = 'from-env'; CLAUDE_BG_ISOLATION = 'none' }
     $settingsPath = Join-Path $runDir 'probe.settings.json'
-    $settings = [ordered]@{ env = [ordered]@{ RADIOSIM_RELAY_PROBE_SETTINGS = 'from-settings' }; autoContinueAtUsageLimit = $true }
+    $settings = [ordered]@{ env = [ordered]@{ RADIOSIM_RELAY_PROBE_SETTINGS = 'from-settings'; CLAUDE_BG_ISOLATION = 'none' }
+                            autoContinueAtUsageLimit = $true; worktree = [ordered]@{ bgIsolation = 'none' } }
     [IO.File]::WriteAllText($settingsPath, ($settings | ConvertTo-Json -Depth 5), $utf8)
+    # 閉じ込められていないか＝元の作業場所の追跡外のファイルを Write ツールで書かせる
+    $probeWrite = Join-Path $relayDir 'probe_write.txt'
+    Remove-Item -LiteralPath $probeWrite -ErrorAction SilentlyContinue
     $prompt = @'
 これは確かめの 1 往復です。ほかのことはしないでください。
 1. PowerShell で次の 1 行だけを走らせ、出力をそのまま書く:
    Write-Output "env=$env:RADIOSIM_RELAY_PROBE_ENV settings=$env:RADIOSIM_RELAY_PROBE_SETTINGS"
-2. AskUserQuestion で「確かめの質問です。どちらでも構いません」と 2 択（はい・いいえ）を出して待つ。
-'@
+2. Write ツールで {PROBE_WRITE} に「ok」の 1 行を書く（EnterWorktree は呼ばない・シェルで書かない）。拒まれたら拒まれた文面をそのまま書く。
+3. AskUserQuestion で「確かめの質問です。どちらでも構いません」と 2 択（はい・いいえ）を出して待つ。
+'@.Replace('{PROBE_WRITE}', $probeWrite)
     $argv = @(Get-SessionArgs $prompt 'relay-probe' $settingsPath 'haiku')
     Write-Log '▶ 確かめ: claude --bg（haiku）'
     $launch = Invoke-Claude $argv $procEnv
@@ -272,11 +282,12 @@ if ($Probe) {
         env_reached = $trText.Contains('env=from-env')
         settings_env_reached = $trText.Contains('settings=from-settings')
         asked_user = $trText.Contains('AskUserQuestion')
+        wrote_main_checkout = (Test-Path $probeWrite)
     }
     $outPath = Join-Path $runDir 'probe.json'
     [IO.File]::WriteAllText($outPath, ($result | ConvertTo-Json -Depth 8), $utf8)
-    Write-Log ("■ 確かめの結果: 起動側の環境変数={0}・--settings の env={1}・ダイアログ={2}・見えた status={3}・止めた後={4}" -f
-        $result.env_reached, $result.settings_env_reached, $result.asked_user,
+    Write-Log ("■ 確かめの結果: 起動側の環境変数={0}・--settings の env={1}・元の作業場所へ書けた={2}・ダイアログ={3}・見えた status={4}・止めた後={5}" -f
+        $result.env_reached, $result.settings_env_reached, $result.wrote_main_checkout, $result.asked_user,
         (($seen | ForEach-Object { $_.status }) -join ' → '), (Get-AgentStatus $after))
     Write-Log "  詳細: $outPath"
     return
