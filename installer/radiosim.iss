@@ -29,6 +29,15 @@
 #define AppPublisher "BearValley AI Craftworks"
 #define AppURL "https://github.com/kumahide/radiosim"
 
+; I-176: 今から入れる版の 4 数字。**同梱する exe そのもの**から読む＝インストール済みの側
+; （[Code] の DetectPreviousVersion が前回のフォルダの exe から読む）と同じ出どころで比べる。
+; 4 数字は radiosim.spec が core/version.py の version_tuple() で焼く（正式版が最大＝B-162）。
+; ⚠️ AppVersion の文字列（"3.6RC2" など）は比べない＝Pascal で version_tuple() を書き直すことになる。
+#define NewVerNums GetVersionNumbersString(AddBackslash(SourcePath) + "..\dist\RadioSimPro\" + AppExeName)
+#if NewVerNums == ""
+  #error dist\RadioSimPro\RadioSimPro.exe から版の 4 数字を読めない（先に build.bat でアプリを作る）
+#endif
+
 [Setup]
 ; 固定 GUID（版が変わっても同じ値のまま＝アップグレードインストールの同一性判定に使う）
 AppId={{8C9E9E0B-7C6E-4B7A-9C7B-6D5E8F0A1C2D}
@@ -123,6 +132,21 @@ english.UninstDataCache=DEM tile disk cache and logs
 english.UninstDataResults=Saved result packages
 english.UninstDataLang=Display language files you added
 english.UninstDataHint=Anything left unticked stays on this PC and is picked up again by the next install.
+; I-176: 上書きインストールで版を比べた結果。%1＝インストール済みの版、%2＝今から入れる版。
+; 上げる・同じは「インストール準備完了」の一覧の先頭に出し（ボタンは増やさない）、
+; 一覧は折り返さない＝%n で 2 行に分ける（1 行だと英語で横スクロールが出る）。
+; 下げるだけは起動時に確認する（既定は「いいえ」＝中止）。
+; 🔑 下げたときに何が起きるかは 2026-09-26 に 3.1〜3.6 のコードで確かめた＝設定は古い版でも
+; 読める（知らないキーは無視・値の範囲は 3.1 から不変）が、古い版が保存すると新しい版で増えた
+; キーが落ちる。地形キャッシュの置き方は 3.1 から同じ。プロジェクトファイルは新しい版のものを開かない。
+japanese.VerUpgrade=インストール済みの %1 を %2 に置き換えます。%n設定・地形キャッシュ・保存結果は引き継ぎます。
+japanese.VerSame=インストール済みの %1 を入れ直します（修復）。%n設定・地形キャッシュ・保存結果はそのまま残ります。
+japanese.VerDowngrade=インストール済みの %1 を、古い %2 で置き換えます。%n（起動時の確認で続けることを選びました）
+japanese.VerDowngradeAsk=インストール済みの %1 より古い版（%2）を入れようとしています。%n%n・新しい版で保存したプロジェクトファイルは、この版では開けません。%n・新しい版で増えた設定項目は、この版で設定を保存すると既定値に戻ります。%n・地形キャッシュと保存結果はそのまま使えます。%n%n複数の版を並べて使いたい場合は、インストーラではなくポータブル版（ZIP）を版ごとのフォルダに展開してください。%n%n古い版で置き換えますか？（「いいえ」でインストールを中止します）
+english.VerUpgrade=The installed %1 will be replaced with %2.%nSettings, the terrain cache and saved results are kept.
+english.VerSame=The installed %1 will be reinstalled (repair).%nSettings, the terrain cache and saved results stay as they are.
+english.VerDowngrade=The installed %1 will be replaced with the older %2.%n(You chose to continue when Setup started.)
+english.VerDowngradeAsk=You are about to install a version (%2) that is older than the installed %1.%n%n- Project files saved with the newer version cannot be opened in this version.%n- Settings added in the newer version go back to their defaults once this version saves its settings.%n- The terrain cache and saved results can be used as they are.%n%nTo use several versions side by side, extract the portable ZIP into a separate folder for each version instead of using the installer.%n%nReplace it with the older version? (No cancels the installation.)
 
 [Files]
 ; dist\RadioSimPro\ の一式をそのまま同梱する。ただし:
@@ -173,6 +197,136 @@ begin
     if not SaveStringToFile(ExpandConstant('{app}\install_lang.txt'), ActiveLanguage(), False) then
       Log('install_lang.txt の書き込みに失敗した。初回起動の言語は OS の表示言語へ落ちる。');
   end;
+end;
+
+{ I-176: 上書きインストールで、インストール済みの版と今から入れる版を比べる。
+  AppId が固定なので、Inno は前回と同じフォルダへフォルダ選択も出さずに上書きする＝
+  これが無いと 3.6 の上に 3.4 を入れても黙って置き換わる。
+
+  比べるのは exe のファイルバージョン（4 数字）どうし。今から入れる側は NewVerNums
+  （コンパイル時に同梱の exe から読んだ値）、インストール済みの側は前回のフォルダの exe。
+  インストーラは 3.1 からなので、インストール済みの exe はすべて B-162 の後の
+  正しい並び（正式版が最大）で焼かれている。
+
+  前回のフォルダはアンインストール情報から引く。HKA＝いまのインストールモードの側
+  （全ユーザー向けなら HKLM、ユーザー向けなら HKCU）＝Inno が上書き先に選ぶのと同じ側。
+  ⚠️ 読めないとき（前回なし・exe が消えている）は比べない＝何も出さずに進める。 }
+const
+  VerKindNone = 0;
+  VerKindUp   = 1;
+  VerKindSame = 2;
+  VerKindDown = 3;
+
+var
+  PrevVerKind: Integer;
+  PrevVerLabel: string;
+
+function UninstallRegKey: string;
+begin
+  { AppId の二重の開き括弧（Inno の字の逃がし）は ExpandConstant が 1 つに戻す。 }
+  Result := ExpandConstant('Software\Microsoft\Windows\CurrentVersion\Uninstall\{#SetupSetting("AppId")}_is1');
+end;
+
+procedure DetectPreviousVersion;
+var
+  PrevDir: string;
+  PrevPacked, NewPacked: Int64;
+  Cmp: Integer;
+begin
+  PrevVerKind := VerKindNone;
+  PrevVerLabel := '';
+  if not RegQueryStringValue(HKA, UninstallRegKey, 'Inno Setup: App Path', PrevDir) then
+    Exit;
+  if not GetPackedVersion(AddBackslash(PrevDir) + '{#AppExeName}', PrevPacked) then
+  begin
+    Log('前回のフォルダの exe から版を読めない＝版を比べずに進める: ' + PrevDir);
+    Exit;
+  end;
+  if not StrToVersion('{#NewVerNums}', NewPacked) then
+    Exit;
+  { 画面に出す名前は AppVersion の文字列（3.6RC2 など）。前回のものはアンインストール情報の
+    DisplayVersion＝前回の AppVersion。読めなければ 4 数字で代える。 }
+  if not RegQueryStringValue(HKA, UninstallRegKey, 'DisplayVersion', PrevVerLabel) then
+    PrevVerLabel := VersionToStr(PrevPacked);
+  Cmp := ComparePackedVersion(NewPacked, PrevPacked);
+  if Cmp > 0 then
+    PrevVerKind := VerKindUp
+  else if Cmp = 0 then
+    PrevVerKind := VerKindSame
+  else
+    PrevVerKind := VerKindDown;
+  Log('版の比較: インストール済み ' + PrevVerLabel + ' (' + VersionToStr(PrevPacked)
+      + ') / 今回 {#AppVersion} ({#NewVerNums}) / 種別 ' + IntToStr(PrevVerKind));
+end;
+
+function HasCommandLineSwitch(const Name: string): Boolean;
+var
+  I: Integer;
+begin
+  Result := False;
+  for I := 1 to ParamCount do
+    if CompareText(ParamStr(I), Name) = 0 then
+    begin
+      Result := True;
+      Exit;
+    end;
+end;
+
+{ 下げるときだけ、ウィザードより前に確かめる（既定のボタンは「いいえ」＝中止）。
+  ⛔ サイレント実行では確認を出さない＝モーダルを出すと無人実行が固まる。代わりに
+     /ALLOWDOWNGRADE が無ければ止める（InitializeSetup が False＝終了コード 1）。
+     /SUPPRESSMSGBOXES だけの場合も、SuppressibleMsgBox が既定の「いいえ」を返して止まる。 }
+function InitializeSetup: Boolean;
+begin
+  Result := True;
+  DetectPreviousVersion;
+  if PrevVerKind <> VerKindDown then
+    Exit;
+  if WizardSilent then
+  begin
+    if HasCommandLineSwitch('/ALLOWDOWNGRADE') then
+      Log('古い版への置き換え: /ALLOWDOWNGRADE があるので続ける。')
+    else
+    begin
+      Log('古い版への置き換え: サイレント実行で /ALLOWDOWNGRADE が無いので中止する。');
+      Result := False;
+    end;
+    Exit;
+  end;
+  Result := SuppressibleMsgBox(
+    FmtMessage(CustomMessage('VerDowngradeAsk'), [PrevVerLabel, '{#AppVersion}']),
+    mbError, MB_YESNO or MB_DEFBUTTON2, IDNO) = IDYES;
+end;
+
+{ 上げる・同じ・下げる（確認で続けた）を「インストール準備完了」の一覧の先頭に出す。
+  それ以外の行は Inno の既定と同じ順に組み直す（この関数を置くと既定の組み立ては使われない）。 }
+function UpdateReadyMemo(Space, NewLine, MemoUserInfoInfo, MemoDirInfo, MemoTypeInfo,
+  MemoComponentsInfo, MemoGroupInfo, MemoTasksInfo: String): String;
+var
+  Line: string;
+begin
+  case PrevVerKind of
+    VerKindUp:   Line := FmtMessage(CustomMessage('VerUpgrade'),   [PrevVerLabel, '{#AppVersion}']);
+    VerKindSame: Line := FmtMessage(CustomMessage('VerSame'),      [PrevVerLabel]);
+    VerKindDown: Line := FmtMessage(CustomMessage('VerDowngrade'), [PrevVerLabel, '{#AppVersion}']);
+  else
+    Line := '';
+  end;
+  Result := '';
+  if Line <> '' then
+    Result := Line + NewLine + NewLine;
+  if MemoUserInfoInfo <> '' then
+    Result := Result + MemoUserInfoInfo + NewLine + NewLine;
+  if MemoDirInfo <> '' then
+    Result := Result + MemoDirInfo + NewLine + NewLine;
+  if MemoTypeInfo <> '' then
+    Result := Result + MemoTypeInfo + NewLine + NewLine;
+  if MemoComponentsInfo <> '' then
+    Result := Result + MemoComponentsInfo + NewLine + NewLine;
+  if MemoGroupInfo <> '' then
+    Result := Result + MemoGroupInfo + NewLine + NewLine;
+  if MemoTasksInfo <> '' then
+    Result := Result + MemoTasksInfo;
 end;
 
 { I-137 → I-139: アンインストールで設定/キャッシュ/結果/追加言語を消せるようにする。

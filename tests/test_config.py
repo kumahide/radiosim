@@ -1126,3 +1126,109 @@ class TestInstallerCodeIsReachable:
         body = code.split("function ManualCleanupPaths", 1)[1].split("\nprocedure ", 1)[0]
         assert "ExpandConstant" not in body, "昇格時の案内が実体のパスへ展開されている"
         assert "%APPDATA%" in body and "%LOCALAPPDATA%" in body
+
+
+class TestInstallerVersionCompare:
+    """上書きインストールで版を比べ、上げる・同じ・下げるを知らせること（I-176）。
+
+    `AppId` が固定なので、Inno は前回のフォルダへ黙って上書きする＝比べなければ
+    3.6 の上に 3.4 を入れても何も言わずに置き換わる。
+
+    ⚠️ ここは配線だけを縛る。上げる・同じ・下げる（止まる／`/ALLOWDOWNGRADE` で
+    進む）の動きそのものは、pytest に ISCC が無いので実機で確かめた（2026-09-26・
+    3.5／3.6RC2／3.6 の本物の exe で組んだ試験用インストーラ 3 本・7 通り）。
+    """
+
+    ISS = ROOT / "installer" / "radiosim.iss"
+
+    #: [CustomMessages] のキーと、[Code] が FmtMessage へ渡す引数の数。
+    _MESSAGES = {
+        "VerUpgrade": 2,
+        "VerSame": 1,
+        "VerDowngrade": 2,
+        "VerDowngradeAsk": 2,
+    }
+
+    def _iss(self) -> str:
+        return self.ISS.read_text(encoding="utf-8-sig")
+
+    def _code(self) -> str:
+        return self._iss().split("[Code]", 1)[1]
+
+    def _routine(self, head: str) -> str:
+        body = self._code().split(head, 1)[1]
+        return re.split(r"\n(?:procedure|function) ", body, maxsplit=1)[0]
+
+    @pytest.mark.parametrize("key", sorted(_MESSAGES))
+    def test_message_is_translated_with_the_same_placeholders(self, key):
+        """日英がそろい、差し込み番号（%1・%2）が日英と [Code] の引数で一致すること。
+
+        片方の言語だけ %2 を落としても ISCC は通り、画面に版の名前が出ない。
+        """
+        iss = self._iss()
+        found = {}
+        for lang in ("japanese", "english"):
+            m = re.search(rf"^{lang}\.{key}=(.*)$", iss, re.MULTILINE)
+            assert m, f"{lang}.{key} が無い"
+            found[lang] = sorted(set(re.findall(r"%[1-9]", m.group(1))))
+        want = [f"%{i}" for i in range(1, self._MESSAGES[key] + 1)]
+        assert found["japanese"] == found["english"] == want, (key, found)
+        m = re.search(rf"FmtMessage\(CustomMessage\('{key}'\),\s*\[([^\]]*)\]\)",
+                      self._code())
+        assert m, f"{key} が [Code] の FmtMessage から使われていない"
+        assert len(m.group(1).split(",")) == self._MESSAGES[key], (key, m.group(1))
+
+    def test_downgrade_asks_before_the_wizard_and_defaults_to_cancel(self):
+        """下げるときは InitializeSetup で確かめ、既定のボタンを「いいえ」（中止）にする。
+
+        既定を「はい」にすると、Enter の連打で古い版に置き換わる。
+        """
+        body = self._routine("function InitializeSetup")
+        assert "DetectPreviousVersion" in body
+        assert "VerDowngradeAsk" in body
+        assert "MB_DEFBUTTON2" in body, "既定のボタンが 2 つ目（いいえ）になっていない"
+        assert re.search(r"MB_YESNO\s+or\s+MB_DEFBUTTON2,\s*IDNO\)\s*=\s*IDYES", body), (
+            "/SUPPRESSMSGBOXES の既定の答えが IDNO でない、または IDYES だけで続けていない")
+
+    def test_silent_downgrade_needs_the_explicit_switch(self):
+        """サイレント実行では確認を出さず、/ALLOWDOWNGRADE が無ければ止める。
+
+        モーダルを出すと無人実行が固まる。分岐は確認ダイアログより前に置く。
+        """
+        body = self._routine("function InitializeSetup")
+        silent = body.find("WizardSilent")
+        assert silent >= 0, "サイレント実行の分岐が無い"
+        assert silent < body.find("SuppressibleMsgBox")
+        assert "'/ALLOWDOWNGRADE'" in body
+        assert "Result := False" in body
+
+    def test_both_versions_come_from_the_exe_file_version(self):
+        """新旧とも exe のファイルバージョン（4 数字）で比べる＝同じ出どころ。
+
+        今から入れる側は [Files] が同梱する exe から、前回の側はアンインストール
+        情報の App Path の exe から読む。AppVersion の文字列（3.6RC2 など）を
+        比べると、Pascal で version_tuple() を書き直すことになる。
+        """
+        iss = self._iss()
+        m = re.search(r'^#define NewVerNums GetVersionNumbersString\(AddBackslash\(SourcePath\)'
+                      r' \+ "([^"]+)" \+ AppExeName\)', iss, re.MULTILINE)
+        assert m, "NewVerNums が同梱の exe から読まれていない"
+        src = re.search(r'^Source:\s*"([^"]+)\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
+        assert src and src.group(1) == m.group(1), (
+            "NewVerNums を読む exe と [Files] が同梱するフォルダが違う")
+        code = self._code()
+        assert "StrToVersion('{#NewVerNums}'" in code
+        detect = self._routine("procedure DetectPreviousVersion")
+        assert "'Inno Setup: App Path'" in detect
+        assert "GetPackedVersion" in detect
+        assert "ComparePackedVersion(NewPacked, PrevPacked)" in detect
+
+    def test_previous_install_is_looked_up_by_the_same_app_id(self):
+        """前回の場所は、上書き先を決めるのと同じ AppId・同じ側（HKA）で引く。
+
+        GUID を [Code] に書き写すと、AppId を変えたときに片方だけ古くなる。
+        """
+        body = self._routine("function UninstallRegKey")
+        assert '{#SetupSetting("AppId")}_is1' in body
+        detect = self._routine("procedure DetectPreviousVersion")
+        assert detect.count("RegQueryStringValue(HKA, UninstallRegKey") == 2

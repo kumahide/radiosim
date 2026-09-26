@@ -122,6 +122,30 @@ The installer build stores **settings, cache, logs, and results in OS-standard l
 
 > If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated). As long as the old copies remain, a dialog naming their location appears on every launch. Once you've confirmed the new location has everything you need, delete the old ones manually (the dialog stops once they're gone).
 
+### Installing a different version over an existing one
+
+The installer build is **one per PC**. Running another version's installer on a PC that already has RadioSim **replaces** the contents of the same folder as before (no folder-selection page is shown). Settings, the terrain cache and saved results live in the locations in the table above, so they carry over as they are.
+
+From 3.7 on, the installer compares against the installed version and tells you:
+
+| Case | What you see |
+| --- | --- |
+| Installing a newer version | The top of the "Ready to Install" page says, e.g., "The installed 3.6 will be replaced with 3.7." |
+| Installing the same version | The same page says the version will be reinstalled (repair) |
+| Installing an older version | A confirmation appears before the wizard. **The default button is "No"** (cancel the installation) |
+
+Going back to an older version means:
+
+- Project files saved with the newer version cannot be opened in the older one.
+- Settings added in the newer version go back to their defaults once the older version saves its settings (installing the newer version again does not bring the old values back).
+- The terrain cache and saved results can be used as they are.
+
+> ⚠️ The confirmation comes from **the installer you are about to run**. Installers from 3.6 and earlier do not compare versions, so running one of them on a PC with 3.7 or later replaces it without asking.
+>
+> For an unattended install (run with `/VERYSILENT` or similar), replacing with an older version is cancelled without a prompt (exit code 1). To go ahead anyway, add `/ALLOWDOWNGRADE`.
+
+To use several versions side by side, use the [Portable build (ZIP)](#portable-build-zip) instead of the installer.
+
 ### When Windows blocks the installer
 
 The distributed executables are not code-signed, so Windows may step in before running them. **Below are the ways we have actually run into** (there may well be others). **Some let you continue and some do not, and they need different responses.**
@@ -157,6 +181,10 @@ This is **not SmartScreen — it is Windows refusing to run the file at all**. U
 > **Note**: Do not modify the folder structure. `RadioSimPro.exe` cannot run as a standalone file.
 
 The portable build ships with a `portable.txt` marker next to the exe, so settings, cache, logs, and results are all created **inside that same folder** (`terrain_cache/`, `results/`, `radiosim_conf.json`). This suits carrying the app on a USB drive.
+
+**To use several versions side by side** (to compare results between versions, or to try a new version while your work stays on the current one), **extract each version's ZIP into its own folder**. Settings, cache, logs and results are then separate per folder, so the versions do not interfere with each other. The same holds when you run a portable copy alongside the installer build.
+
+> The installer build cannot hold several versions at once. Even with separate install folders, every version would share the same locations for settings, cache and saved results (the table above): an older version would read settings written by a newer one, and uninstalling would remove data they all share.
 
 ### Launch
 

@@ -73,9 +73,9 @@
 
 ### Windows バイナリ版（Python 不要）
 
-**インストーラ版（推奨）**: [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-Setup-<版>.exe` をダウンロードして実行（管理者権限不要）。設定・キャッシュ・結果は OS 標準の場所（`%APPDATA%`／`%LOCALAPPDATA%`／ドキュメント）へ保存されます。
+**インストーラ版（推奨）**: [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-Setup-<版>.exe` をダウンロードして実行（管理者権限不要）。設定・キャッシュ・結果は OS 標準の場所（`%APPDATA%`／`%LOCALAPPDATA%`／ドキュメント）へ保存されます。インストーラ版は 1 台に 1 つで、別の版を入れると置き換わります（3.7 以降は版を比べ、古い版へ戻すときは確認します。詳細は [docs/manual_ja.md](docs/manual_ja.md#別の版を上から入れるとき)）。
 
-**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip` をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。
+**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip` をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。**複数の版を並べて使うときはこちら**（版ごとに別のフォルダへ展開すれば、データごと分かれます）。
 
 > 署名なし EXE のため SmartScreen 警告が出る場合があります。「詳細情報」→「実行」をクリックしてください。
 >
