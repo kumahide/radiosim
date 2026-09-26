@@ -112,8 +112,10 @@ function Get-Settings([System.Collections.IDictionary]$Env) {
 
 # ⚠️ 入力文を最初に置く＝`--allowedTools` などの可変長のオプションの後ろに置くと、
 #    入力文まで道具の名前として食われる。
-function Get-SessionArgs([string]$Prompt, [string]$SessionId, [string]$Name, [string]$SettingsPath, [string]$UseModel) {
-    $a = @($Prompt, '--bg', '--session-id', $SessionId, '-n', $Name,
+# ⚠️ `--session-id` は渡さない＝`--bg` は「--bg manages the session id」と言って無視する
+#    （2026-09-27 の -Probe）。id は起動の出力から取る。
+function Get-SessionArgs([string]$Prompt, [string]$Name, [string]$SettingsPath, [string]$UseModel) {
+    $a = @($Prompt, '--bg', '-n', $Name,
            '--remote-control', $Name, '--settings', $SettingsPath,
            '--permission-mode', $PermissionMode)
     if ($UseModel) { $a += '--model', $UseModel }
@@ -141,19 +143,31 @@ function Invoke-Claude([string[]]$ArgList, [System.Collections.IDictionary]$Env 
     }
 }
 
-function Get-Agent([string]$SessionId) {
+# 一覧の項目（2026-09-27 の -Probe で見た形）＝裏のセッションは `id`（短い 8 桁＝attach・
+# logs・stop が取る）・`sessionId`（会話の記録の名前）・`status` と `state` の組:
+#   busy/working＝作業中・waiting/blocked＝人の入力待ち（質問のダイアログか許可）・
+#   idle/blocked＝手が空いて次の入力を待つ・/stopped＝止めた後（status の欄が消える）。
+function Get-Agent([string]$Id) {
     $r = Invoke-Claude @('agents', '--json', '--all')
     try { $list = $r.out | ConvertFrom-Json } catch { return $null }
-    return @($list) | Where-Object { $_.sessionId -eq $SessionId } | Select-Object -First 1
+    return @($list) | Where-Object { $_.PSObject.Properties['id'] -and $_.id -eq $Id } | Select-Object -First 1
 }
 
-# `claude stop` が取る id＝`--bg` が出力に書く id。読めなければ一覧の id、最後に会話の id。
-function Get-StopId($Launch, $Agent, [string]$SessionId) {
-    if ($Agent -and $Agent.PSObject.Properties['id']) { return $Agent.id }
-    # ⚠️ 出力の id の形は -Probe で確かめるまで分からない＝いまは UUID の形だけを拾う
-    $m = [regex]::Match("$($Launch.out)", '[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12}')
-    if ($m.Success) { return $m.Value }
-    return $SessionId
+function Get-AgentStatus($Agent) {
+    if (-not $Agent) { return '<一覧に無い>' }
+    return "$($Agent.status)/$($Agent.state)"
+}
+
+# `--bg` の出力＝「backgrounded · 250e095d · relay-probe」と、その id を使う
+# `claude attach|logs|stop <id>` の案内。案内の行から取る（区切りの字に頼らない）。
+function Get-LaunchId($Launch) {
+    $m = [regex]::Match("$($Launch.out)", 'claude stop (?<id>[0-9A-Za-z]+)')
+    if (-not $m.Success) { throw "起動の出力から id を読めません: $($Launch.out.Trim())" }
+    return $m.Groups['id'].Value
+}
+
+function Test-Gone($Agent) {
+    return (-not $Agent) -or ("$($Agent.state)" -match 'stop|complet|exit|fail|error|dead')
 }
 
 $transcriptDir = Join-Path $env:USERPROFILE '.claude\projects'
@@ -168,7 +182,7 @@ if ($DryRun) {
         handoff  = $h
         env      = $env0
         settings = Get-Settings $env0
-        claude_args = @(Get-SessionArgs '<PROMPT>' '<SESSION_ID>' 'relay-1' '<SETTINGS>' $Model)
+        claude_args = @(Get-SessionArgs '<PROMPT>' 'relay-1' '<SETTINGS>' $Model)
         first_prompt = Get-Prompt 1 '<PREV_HANDOFF>'
         max_sessions = $MaxSessions
     } | ConvertTo-Json -Depth 5
@@ -204,7 +218,6 @@ function Write-Log([string]$Text) {
 # --- Probe ---------------------------------------------------------------------------
 
 if ($Probe) {
-    $sid = [guid]::NewGuid().ToString()
     $procEnv = [ordered]@{ RADIOSIM_RELAY_PROBE_ENV = 'from-env' }
     $settingsPath = Join-Path $runDir 'probe.settings.json'
     $settings = [ordered]@{ env = [ordered]@{ RADIOSIM_RELAY_PROBE_SETTINGS = 'from-settings' }; autoContinueAtUsageLimit = $true }
@@ -215,42 +228,43 @@ if ($Probe) {
    Write-Output "env=$env:RADIOSIM_RELAY_PROBE_ENV settings=$env:RADIOSIM_RELAY_PROBE_SETTINGS"
 2. AskUserQuestion で「確かめの質問です。どちらでも構いません」と 2 択（はい・いいえ）を出して待つ。
 '@
-    $argv = @(Get-SessionArgs $prompt $sid 'relay-probe' $settingsPath 'haiku')
-    Write-Log "▶ 確かめ: claude --bg（haiku・会話 $sid）"
+    $argv = @(Get-SessionArgs $prompt 'relay-probe' $settingsPath 'haiku')
+    Write-Log '▶ 確かめ: claude --bg（haiku）'
     $launch = Invoke-Claude $argv $procEnv
     Write-Log "  起動の終わり方 exit=$($launch.exit)・出力: $($launch.out.Trim())・エラー: $($launch.err.Trim())"
     # 起こせなかったら見張らない（2026-09-27 の 1 回目＝信頼の未承認で即 exit 1 のまま 5 分待った）
     if ($launch.exit) { throw "確かめのセッションを起こせません（exit=$($launch.exit)）: $($launch.err.Trim())" }
+    $id = Get-LaunchId $launch
 
     $seen = [Collections.Generic.List[object]]::new()
     $last = $null; $sinceChange = 0; $agent = $null; $wasBusy = $false
     $deadline = (Get-Date).AddSeconds(300)
     while ((Get-Date) -lt $deadline) {
-        $agent = Get-Agent $sid
-        $st = if ($agent) { "$($agent.status)" } else { '<一覧に無い>' }
+        $agent = Get-Agent $id
+        $st = Get-AgentStatus $agent
         if ($st -ne $last) {
             $seen.Add([ordered]@{ t = (Get-Date -Format 'HH:mm:ss'); status = $st; entry = $agent })
             Write-Log "  status: $st"
             $last = $st; $sinceChange = 0
         } else { $sinceChange += 3 }
-        if ($st -eq 'busy') { $wasBusy = $true }
-        # 働いた後に busy でない状態が 15 秒続いたら＝ダイアログで待っているはず
-        if ($wasBusy -and $st -ne 'busy' -and $sinceChange -ge 15) { break }
-        if (-not $wasBusy -and $st -eq '<一覧に無い>' -and $seen.Count -gt 3) { break }
+        if ($st -like 'busy*') { $wasBusy = $true }
+        # 働いた後に busy でない状態が 30 秒続いたら＝ダイアログで待っているはず
+        if ($wasBusy -and $st -notlike 'busy*' -and $sinceChange -ge 30) { break }
+        if ((Test-Gone $agent) -and $seen.Count -gt 3) { break }
         Start-Sleep -Seconds 3
     }
-    $stopId = Get-StopId $launch $agent $sid
-    $logs = Invoke-Claude @('logs', $stopId)
-    $stop = Invoke-Claude @('stop', $stopId)
+    $logs = Invoke-Claude @('logs', $id)
+    $stop = Invoke-Claude @('stop', $id)
     Start-Sleep -Seconds 3
-    $after = Get-Agent $sid
-    $tr = Get-ChildItem $transcriptDir -Recurse -Filter "$sid.jsonl" -File -ErrorAction SilentlyContinue | Select-Object -First 1
+    $after = Get-Agent $id
+    $sid = if ($agent) { "$($agent.sessionId)" } else { '' }
+    $tr = if ($sid) { Get-ChildItem $transcriptDir -Recurse -Filter "$sid.jsonl" -File -ErrorAction SilentlyContinue | Select-Object -First 1 }
     $trText = if ($tr) { [IO.File]::ReadAllText($tr.FullName, $utf8) } else { '' }
     $result = [ordered]@{
+        id = $id
         session_id = $sid
         launch = $launch
         statuses = $seen
-        stop_id = $stopId
         stop = $stop
         after_stop = $after
         logs_tail = (($logs.out -split "`n") | Select-Object -Last 30) -join "`n"
@@ -261,8 +275,9 @@ if ($Probe) {
     }
     $outPath = Join-Path $runDir 'probe.json'
     [IO.File]::WriteAllText($outPath, ($result | ConvertTo-Json -Depth 8), $utf8)
-    Write-Log ("■ 確かめの結果: 起動側の環境変数={0}・--settings の env={1}・ダイアログ={2}・見えた status={3}" -f
-        $result.env_reached, $result.settings_env_reached, $result.asked_user, (($seen | ForEach-Object { $_.status }) -join ' → '))
+    Write-Log ("■ 確かめの結果: 起動側の環境変数={0}・--settings の env={1}・ダイアログ={2}・見えた status={3}・止めた後={4}" -f
+        $result.env_reached, $result.settings_env_reached, $result.asked_user,
+        (($seen | ForEach-Object { $_.status }) -join ' → '), (Get-AgentStatus $after))
     Write-Log "  詳細: $outPath"
     return
 }
@@ -285,32 +300,34 @@ try {
         # 前の引き継ぎ書を記録へ移す＝新しい handoff.md が現れたら「このセッションが書いた」
         $prev = Join-Path $runDir ('handoff.{0:D2}.md' -f ($n - 1))
         Move-Item -LiteralPath $handoffPath -Destination $prev
-        $sid = [guid]::NewGuid().ToString()
         $name = "relay-$n"
         $settingsPath = Join-Path $runDir "$name.settings.json"
         [IO.File]::WriteAllText($settingsPath, ((Get-Settings $relayEnv) | ConvertTo-Json -Depth 5), $utf8)
-        $launch = Invoke-Claude @(Get-SessionArgs (Get-Prompt $n $prev) $sid $name $settingsPath $Model) $relayEnv
+        $launch = Invoke-Claude @(Get-SessionArgs (Get-Prompt $n $prev) $name $settingsPath $Model) $relayEnv
         if ($launch.exit) { throw "セッションを起こせません（exit=$($launch.exit)）: $($launch.err.Trim())" }
-        $agent = Get-Agent $sid
-        $stopId = Get-StopId $launch $agent $sid
-        Write-Log "▶ $n 本目（会話 $sid）＝見る・答える: claude attach $stopId ／ Remote Control の「$name」"
+        $id = Get-LaunchId $launch
+        Write-Log "▶ $n 本目（id $id）＝見る・答える: claude attach $id ／ Remote Control の「$name」"
 
         $idle = 0; $lastSt = ''
         while ($true) {
             Start-Sleep -Seconds $PollSeconds
-            $agent = Get-Agent $sid
-            $st = if ($agent) { "$($agent.status)" } else { '' }
-            if ($st -ne $lastSt) { Write-Log "  status: $(if ($st) { $st } else { '<一覧に無い>' })"; $lastSt = $st }
+            $agent = Get-Agent $id
+            $st = Get-AgentStatus $agent
+            if ($st -ne $lastSt) {
+                Write-Log ("  status: $st" + $(if ($st -like 'waiting*') { "＝人の入力待ち（claude attach $id か Remote Control で答える）" } else { '' }))
+                $lastSt = $st
+            }
             if (Test-Path $handoffPath) {
                 # 書いた後に手が空いたら止める。2 回続けて見る＝Stop のフックが差し戻して
                 # もう 1 往復するあいだに止めない。
-                $idle = if ($st -ne 'busy') { $idle + 1 } else { 0 }
+                # ⚠️ `waiting` は人の入力待ち（質問か許可）＝手が空いたのではない
+                $idle = if ($st -like 'idle*') { $idle + 1 } else { 0 }
                 if ($idle -ge 2) { break }
-            } elseif (-not $agent -or $st -match 'complet|stop|exit|fail|error|dead') {
-                throw "$n 本目が引き継ぎ書を書かずに終わりました（status: $st）＝会話 $sid を見てください。前の引き継ぎ書は $prev"
+            } elseif (Test-Gone $agent) {
+                throw "$n 本目が引き継ぎ書を書かずに終わりました（status: $st）＝claude logs $id で見てください。前の引き継ぎ書は $prev"
             }
         }
-        $null = Invoke-Claude @('stop', $stopId)
+        $null = Invoke-Claude @('stop', $id)
         $h = Read-Handoff $handoffPath
         Copy-Item -LiteralPath $handoffPath -Destination (Join-Path $runDir ('handoff.{0:D2}.md' -f $n))
         Write-Log "■ $n 本目が引き継ぎ書を書いて止まりました（status: $($h.status)）"

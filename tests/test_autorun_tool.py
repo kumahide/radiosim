@@ -174,8 +174,9 @@ def test_the_relay_session_is_interactive_and_watchable(relay_plan):
     """裏の対話型・Remote Control つき・フックも許可の確認も飛ばさない。"""
     args = [str(a) for a in relay_plan["claude_args"]]
     assert args[0] == "<PROMPT>", "入力文が先頭に無い＝可変長のオプションに食われる"
-    for need in ("--bg", "--session-id", "--remote-control", "--settings"):
+    for need in ("--bg", "--remote-control", "--settings"):
         assert need in args, need
+    assert "--session-id" not in args, "`--bg` は --session-id を無視する＝id は起動の出力から取る"
     for banned in ("-p", "--print", "--bare", "--dangerously-skip-permissions",
                    "--allow-dangerously-skip-permissions"):
         assert banned not in args, banned
