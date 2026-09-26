@@ -2206,6 +2206,19 @@ class TestLedgerLagsCommits:
         commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
         assert memcheck.check_ledger_lags_commits(states, commits) == []
 
+    def test_an_open_issue_whose_state_cites_the_commit_is_not_flagged(self, memcheck):
+        """一部の作業だけのコミット（B-306 の案内だけの `99a0a47`）を状態欄が挙げていれば鳴らない。"""
+        states = {"B-306": "未着手（行き先＝`3.8`。`3.7` は案内だけ＝`99a0a47`）"}
+        commits = [("99a0a47", "docs: … CHANGELOG に案内する（B-306）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_an_open_issue_citing_a_different_commit_is_still_flagged(self, memcheck):
+        """状態欄が別のコミットを挙げているだけなら、新しいコミットは鳴る。"""
+        states = {"B-306": "未着手（`3.7` は案内だけ＝`1234567`）"}
+        commits = [("99a0a47", "docs: … CHANGELOG に案内する（B-306）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "99a0a47" in found[0]
+
     def test_multiple_ids_in_one_commit_subject_are_all_checked(self, memcheck):
         """1 コミットの件名に複数 ID（`・`区切り）が載る形（I-171・I-172 の相乗り）。"""
         states = {"I-171": "対応中", "I-172": "対応中"}
