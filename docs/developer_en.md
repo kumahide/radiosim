@@ -806,7 +806,7 @@ Status     = OK (≥ 0 dB) / NG (< 0 dB)
 | `dem5b_png` | 5 m (photogrammetry) | 15   | Wider coverage than dem5a     |
 | `dem_png`   | 10 m (base map)      | 14   | Nationwide                    |
 
-Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404 or a missing-data pixel `(128, 0, 0)`, the next layer is used.
+Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404, a missing-data pixel `(128, 0, 0)`, or a pixel of exactly 0 m `(0, 0, 0)`, the next layer is used. The area prefetch uses the same rule to decide which lower layers to download or keep.
 
 ### Caching Strategy
 

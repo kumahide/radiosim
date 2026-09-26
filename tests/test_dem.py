@@ -1083,6 +1083,18 @@ class TestIterDemPositions:
 # ============================================================
 # _process_position
 # ============================================================
+def _land_tile():
+    """全画素が標高 0.01 m の、欠損の無いタイル。
+
+    ⚠️ `np.zeros` は使わない（B-304）＝(0, 0, 0) はちょうど 0 m で、計算は下の
+    レイヤへ降りる＝事前取得の判定でも「欠損」に数える画素。
+    """
+    arr = np.zeros((256, 256, 3), dtype=np.uint8)
+    arr[:, :, 2] = 1
+    return arr
+
+
+
 class TestProcessPosition:
 
     def _make_counts(self):
@@ -1105,7 +1117,7 @@ class TestProcessPosition:
     def test_downloads_5a_when_available(self, tmp_path, monkeypatch):
         """5a DL 成功 → downloaded_5a 増加・5b/dem は試みない。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
         fetch_calls = []
 
         def mock_fetch(layer_id, *a, **kw):
@@ -1127,7 +1139,7 @@ class TestProcessPosition:
     def test_falls_back_to_5b_when_5a_fails(self, tmp_path, monkeypatch):
         """5a 失敗 → 5b 試みる → downloaded_5b 増加。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem5b_png" else None
@@ -1145,7 +1157,7 @@ class TestProcessPosition:
     def test_falls_back_to_dem_when_both_5m_fail(self, tmp_path, monkeypatch):
         """5a・5b 両方失敗 → dem_png DL。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem_png" else None
@@ -1166,7 +1178,7 @@ class TestProcessPosition:
         from PIL import Image
         dem_path = tmp_path / "dem.png"
         Image.new("RGB", (256, 256)).save(str(dem_path))
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem5a_png" else None
@@ -1183,16 +1195,16 @@ class TestProcessPosition:
 
     @staticmethod
     def _void_tile(void=True):
-        """全画素 (128,0,0) の欠損タイル、または全画素有効(0,0,0)のタイル。"""
-        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        """全画素 (128,0,0) の欠損タイル、または全画素有効（0.01 m）のタイル。"""
+        arr = _land_tile()
         if void:
-            arr[:, :, 0] = 128
+            arr[:] = (128, 0, 0)
         return arr
 
     def test_descends_to_5b_when_5a_has_void(self, tmp_path, monkeypatch):
         """5a 取得成功だが欠損あり・5b が補完 → 5b も取得し dem は不要。"""
         import threading
-        valid = np.zeros((256, 256, 3), dtype=np.uint8)
+        valid = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             if layer_id == "dem5a_png":
@@ -1220,7 +1232,7 @@ class TestProcessPosition:
             if layer_id in ("dem5a_png", "dem5b_png"):
                 return self._void_tile(void=True)    # 両方とも全欠損
             if layer_id == "dem_png":
-                return np.zeros((256, 256, 3), dtype=np.uint8)
+                return _land_tile()
             return None
 
         monkeypatch.setattr(dem, "_fetch_tile", mock_fetch)
@@ -1241,7 +1253,7 @@ class TestProcessPosition:
 
         def mock_fetch(layer_id, *a, **kw):
             fetch_calls.append(layer_id)
-            return np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None
+            return _land_tile() if layer_id == "dem5a_png" else None
 
         monkeypatch.setattr(dem, "_fetch_tile", mock_fetch)
         zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
@@ -1254,13 +1266,20 @@ class TestProcessPosition:
         assert counts["downloaded_dem"] == 0
 
     def test_void_mask_matches_decode_semantics(self):
-        """_void_mask が (128,0,0) のみを True とすること。"""
-        arr = np.zeros((2, 2, 3), dtype=np.uint8)
-        arr[0, 0] = (128, 0, 0)   # 無効値
-        arr[0, 1] = (0, 0, 1)     # 標高 0.01m（有効）
-        arr[1, 0] = (128, 0, 1)   # 有効（b!=0）
-        mask = dem_prefetch._void_mask(arr)
-        assert mask[0, 0] and not mask[0, 1] and not mask[1, 0] and not mask[1, 1]
+        """_void_mask が、計算が下のレイヤへ降りる画素（復号して 0.0）と一致すること。
+
+        🔴 B-304＝以前は (128,0,0) だけを見ており、ちょうど 0 m の (0,0,0) を
+        「欠損なし」と読んでいた（計算はその画素で 5b へ降りる）。
+        """
+        pixels = [(128, 0, 0),   # 無効値
+                  (0, 0, 0),     # ちょうど 0 m
+                  (0, 0, 1),     # 0.01 m
+                  (128, 0, 1),   # 負の標高（b!=0）
+                  (255, 255, 255), (0, 39, 16), (127, 255, 255), (129, 0, 0)]
+        arr = np.array([pixels], dtype=np.uint8)
+        mask = dem_prefetch._void_mask(arr)[0]
+        for px, m in zip(pixels, mask):
+            assert bool(m) == (dem._decode_elevation(np.array(px)) == 0.0), px
 
 
 # ============================================================
@@ -1277,7 +1296,7 @@ class TestPrefetchTiles:
 
     def _tile(self):
         """欠損(128,0,0)を含まない有効タイル。"""
-        return np.zeros((256, 256, 3), dtype=np.uint8)
+        return _land_tile()
 
     def _run(self, tmp_path, monkeypatch, fetch, **kw):
         # CACHE_DIR を空の一時ディレクトリにしてスキップ条件（既存キャッシュ）を外す。
@@ -1558,7 +1577,7 @@ class TestForceRefetchDropsUnreadLowerLayers:
         return n - eps, w + eps, s + eps, e - eps
 
     def _tile(self, void=False):
-        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        arr = _land_tile()
         if void:
             arr[0, 0] = (128, 0, 0)
         return arr
@@ -1609,6 +1628,26 @@ class TestForceRefetchDropsUnreadLowerLayers:
 
         assert all(os.path.exists(t[5]) for t in zoom15)
         assert not os.path.exists(dem14_path)
+
+    def test_5b_is_kept_when_5a_has_a_zero_metre_pixel(self, tmp_path, monkeypatch):
+        """5a にちょうど 0 m の画素がある位置＝計算は 5b へ降りるので消さない（B-304）。
+
+        🔴 以前は (0,0,0) を欠損と見ず、この位置を「5a で完結」として 5b と dem_png を
+        消していた＝オフラインでその画素の標高が変わる。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        zero = self._tile()
+        zero[5, 5] = (0, 0, 0)
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: {"dem5a_png": zero,
+                                        "dem5b_png": self._tile()}.get(layer_id))
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert all(os.path.exists(t[5]) for t in zoom15), "計算が読む 5b を消した"
 
     def test_dem_png_is_kept_when_one_subtile_still_needs_it(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
