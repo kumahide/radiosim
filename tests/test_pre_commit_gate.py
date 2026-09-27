@@ -632,6 +632,7 @@ class TestCommitTarget:
         for (case, want), actual in zip(cases.items(), got):
             assert actual == want, case
 
+    @pytest.mark.skipif(os.name != "nt", reason="`\\` 区切りのパスは Windows でだけパスとして読める")
     def test_bash_drops_unquoted_backslashes_like_git_would_see(self, tmp_path):
         """bash は引用符なしの `\\` を落とす＝git に届くのは別のパス（git も同じく失敗する）。
         PowerShell では `\\` はそのまま届く。"""
