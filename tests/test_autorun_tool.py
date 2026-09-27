@@ -138,6 +138,75 @@ def test_a_bad_handoff_stops_before_anything_runs(tmp_path, head, word):
     assert r.returncode != 0 and word in (r.stderr + r.stdout)
 
 
+def test_the_watch_loop_speaks_while_the_state_stays(relay_plan):
+    """同じ状態が続く間も一定の間隔で 1 行書き足す（I-188）。
+
+    2026-09-27 のステージ6のリレーで、push のゲートのフル（677 秒）の間 `relay.log` が
+    21 分間 1 行も増えず、見ている人は「止まった」と「走っている」を区別できなかった。
+    """
+    assert relay_plan["beat_seconds"] == 300
+    src = RELAY.read_text(encoding="utf-8")
+    start = re.search(r"\$fwd = @\((?P<args>[^)]*)\)", src)
+    assert start and "'-BeatSeconds', $BeatSeconds" in start["args"], "-Start で別の窓へ間隔が渡らない"
+    beat = re.search(r"elseif \(\(\$now - \$lastBeat\)\.TotalSeconds -ge \$BeatSeconds\) \{(?P<body>.*?)\n            \}",
+                     src, re.S)
+    assert beat, "状態が変わらない間の書き足しの枝が無い"
+    assert "Write-Log (Format-Beat" in beat["body"] and "$lastBeat = $now" in beat["body"]
+    change = re.search(r"if \(\$st -ne \$lastSt\) \{(?P<body>.*?)\}\s*elseif", src, re.S)
+    assert change and "$stSince = $now" in change["body"], "状態が変わったら経過時間を数え直す"
+
+
+def _common(tmp_path: Path, script: str) -> str:
+    """common.ps1 を読み込んで 1 行の式を試し、出力を返す。"""
+    r = subprocess.run(
+        [_PWSH, "-NoProfile", "-Command",
+         f". '{TOOL / 'common.ps1'}'; $ErrorActionPreference = 'Stop'; {script}"],
+        capture_output=True, text=True, encoding="utf-8", timeout=60, check=False, cwd=tmp_path)
+    assert r.returncode == 0, r.stderr
+    return r.stdout.strip()
+
+
+@needs_pwsh
+def test_the_beat_without_a_transcript_says_only_the_elapsed_time(tmp_path):
+    """記録が無い・読めないときは落ちずに経過時間だけ書く（I-188）。"""
+    out = _common(tmp_path,
+                  "$m = Get-LastMove (Join-Path $PWD 'none.jsonl'); "
+                  "Write-Output ($null -eq $m); "
+                  "Write-Output ($null -eq (Find-Transcript (Join-Path $PWD 'nodir') 'abc')); "
+                  "Format-Beat 'busy/working' ([TimeSpan]::FromSeconds(401)) $m")
+    assert out.splitlines() == ["True", "True", "  … busy/working のまま 6 分"], out
+
+
+@needs_pwsh
+def test_the_beat_reads_the_last_tool_call_from_the_transcript(tmp_path):
+    """末尾の切り口の壊れた行・道具の結果の行を飛ばし、最後の呼び出しの説明を書く。"""
+    proj = tmp_path / "projects" / "D--dev-x"
+    proj.mkdir(parents=True)
+    rows = [
+        {"type": "assistant", "timestamp": "2026-09-27T02:40:00.000Z",
+         "message": {"content": [{"type": "tool_use", "name": "Bash",
+                                  "input": {"command": "git commit", "description": "古い手"}}]}},
+        {"type": "assistant", "timestamp": "2026-09-27T02:48:56.000Z",
+         "message": {"content": [{"type": "text", "text": "送ります"},
+                                 {"type": "tool_use", "name": "Bash",
+                                  "input": {"command": "git push", "description": "ステージ6のコミットを main へ送る"}}]}},
+        # 道具の結果の行（tool_use_id・中身に tool_use の字）は、呼び出しとは数えない
+        {"type": "user", "timestamp": "2026-09-27T02:50:00.000Z",
+         "message": {"content": [{"type": "tool_result", "tool_use_id": "x",
+                                  "content": "grep '\"tool_use\"' の出力"}]}},
+    ]
+    body = "\n".join(json.dumps(r, ensure_ascii=False) for r in rows) + "\n"
+    (proj / "sid-1.jsonl").write_text('{"broken": "line cut by the tail rea\n' + body, encoding="utf-8")
+    out = _common(tmp_path,
+                  "$p = Find-Transcript (Join-Path $PWD 'projects') 'sid-1'; "
+                  "$m = Get-LastMove $p; "
+                  "$exp = [DateTimeOffset]::Parse('2026-09-27T02:48:56Z').LocalDateTime.ToString('HH:mm:ss'); "
+                  "Write-Output $exp; "
+                  "Format-Beat 'busy/working' ([TimeSpan]::FromMinutes(11)) $m")
+    exp, line = out.splitlines()
+    assert line == f"  … busy/working のまま 11 分・最後の手＝ステージ6のコミットを main へ送る（{exp} から）", out
+
+
 @needs_pwsh
 def test_the_handoff_template_is_a_valid_handoff(tmp_path):
     p = tmp_path / "handoff.md"

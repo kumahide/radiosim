@@ -14,6 +14,7 @@
        携帯から見て、選択肢のダイアログに答える。
     3. `claude agents --json` を見張る。セッションが新しい引き継ぎ書を書き、手が空いたら
        `claude stop` で止める（会話は残る）。`continue` なら 2 へ・`done` なら窓を閉じて終わる。
+       同じ状態が続く間も -BeatSeconds ごとに経過時間と最後の手を relay.log に書く（I-188）。
 
   🔑 区切りの合図はトークン予算のフック（session_budget.py のリレー用の言い方＝
   RADIOSIM_RELAY=1）。push はセッションに任せる（2026-09-27 ユーザー決定）＝ただし
@@ -50,6 +51,7 @@ param(
     [string]$Model,
     [string]$PermissionMode = 'auto',
     [int]$PollSeconds = 10,
+    [int]$BeatSeconds = 300,    # 同じ状態が続く間も、この間隔で経過時間と最後の手を書く（I-188）
     [string]$Handoff
 )
 
@@ -195,6 +197,7 @@ if ($DryRun) {
         claude_args = @(Get-SessionArgs '<PROMPT>' 'relay-1' '<SETTINGS>' $Model)
         first_prompt = Get-Prompt 1 '<PREV_HANDOFF>'
         max_sessions = $MaxSessions
+        beat_seconds = $BeatSeconds
     } | ConvertTo-Json -Depth 5
     return
 }
@@ -205,7 +208,8 @@ if ($Start) {
     $null = Read-Handoff $handoffPath   # 走り出す前に落とす
     # -NoExit を付けない＝`done` で窓が閉じる。閉じない終わり方は -Foreground の側で待つ
     $fwd = @('-NoProfile', '-File', $PSCommandPath, '-Foreground',
-             '-MaxSessions', $MaxSessions, '-PermissionMode', $PermissionMode, '-PollSeconds', $PollSeconds)
+             '-MaxSessions', $MaxSessions, '-PermissionMode', $PermissionMode, '-PollSeconds', $PollSeconds,
+             '-BeatSeconds', $BeatSeconds)
     if ($Trips) { $fwd += '-Trips', $Trips }
     if ($Model) { $fwd += '-Model', $Model }
     if ($Handoff) { $fwd += '-Handoff', $Handoff }
@@ -274,8 +278,8 @@ if ($Probe) {
     Start-Sleep -Seconds 3
     $after = Get-Agent $id
     $sid = if ($agent) { "$($agent.sessionId)" } else { '' }
-    $tr = if ($sid) { Get-ChildItem $transcriptDir -Recurse -Filter "$sid.jsonl" -File -ErrorAction SilentlyContinue | Select-Object -First 1 }
-    $trText = if ($tr) { [IO.File]::ReadAllText($tr.FullName, $utf8) } else { '' }
+    $tr = Find-Transcript $transcriptDir $sid
+    $trText = if ($tr) { [IO.File]::ReadAllText($tr, $utf8) } else { '' }
     $result = [ordered]@{
         id = $id
         session_id = $sid
@@ -284,7 +288,7 @@ if ($Probe) {
         stop = $stop
         after_stop = $after
         logs_tail = (($logs.out -split "`n") | Select-Object -Last 30) -join "`n"
-        transcript = $(if ($tr) { $tr.FullName } else { $null })
+        transcript = $tr
         env_reached = $trText.Contains('env=from-env')
         settings_env_reached = $trText.Contains('settings=from-settings')
         asked_user = $trText.Contains('AskUserQuestion')
@@ -345,14 +349,20 @@ try {
         $id = Get-LaunchId $launch
         Write-Log "▶ $n 本目（id $id）＝見る・答える: claude attach $id ／ Remote Control の「$name」"
 
-        $idle = 0; $lastSt = ''
+        $idle = 0; $lastSt = ''; $stSince = Get-Date; $lastBeat = $stSince; $trPath = $null
         while ($true) {
             Start-Sleep -Seconds $PollSeconds
             $agent = Get-Agent $id
             $st = Get-AgentStatus $agent
+            $now = Get-Date
             if ($st -ne $lastSt) {
                 Write-Log ("  status: $st" + $(if ($st -like 'waiting*') { "＝人の入力待ち（claude attach $id か Remote Control で答える）" } else { '' }))
-                $lastSt = $st
+                $lastSt = $st; $stSince = $now; $lastBeat = $now
+            } elseif (($now - $lastBeat).TotalSeconds -ge $BeatSeconds) {
+                # 同じ状態のまま黙らない（I-188＝push のゲートのフルの 677 秒、1 行も出なかった）
+                if (-not $trPath -and $agent) { $trPath = Find-Transcript $transcriptDir "$($agent.sessionId)" }
+                Write-Log (Format-Beat $st ($now - $stSince) (Get-LastMove $trPath))
+                $lastBeat = $now
             }
             if (Test-Path $handoffPath) {
                 # 書いた後に手が空いたら止める。2 回続けて見る＝Stop のフックが差し戻して
