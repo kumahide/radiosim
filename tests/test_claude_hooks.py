@@ -1209,12 +1209,9 @@ def budget():
 
 
 @pytest.fixture(autouse=True)
-def _not_autorun(monkeypatch):
-    """無人モードの環境（I-181）を既定で外す＝**作業員が回す pytest は
-    `RADIOSIM_AUTORUN=1` を継ぐ**ので、外さないと対話前提のテストが落ちる。"""
-    monkeypatch.delenv("RADIOSIM_AUTORUN", raising=False)
-    monkeypatch.delenv("RADIOSIM_AUTORUN_RESULT", raising=False)
-    # I-186＝リレーのセッションが回す pytest も `RADIOSIM_RELAY=1` を継ぐ（2026-09-27 に踏んだ）
+def _not_relay(monkeypatch):
+    """リレーの環境（I-186）を既定で外す＝**リレーのセッションが回す pytest は
+    `RADIOSIM_RELAY=1` を継ぐ**ので、外さないと対話前提のテストが落ちる（2026-09-27 に踏んだ）。"""
     for name in ("RADIOSIM_RELAY", "RADIOSIM_RELAY_HANDOFF", "RADIOSIM_RELAY_TRIPS"):
         monkeypatch.delenv(name, raising=False)
 
@@ -3138,58 +3135,6 @@ class TestPostToolUseMidTurnAdvice:
         assert (trips_a, total_a, ctx_a) == (trips_b, total_b, ctx_b)
 
 
-class TestAutorunAdvice:
-    """I-181＝無人（`tools/autorun/run.ps1` が起こした `claude -p`）では
-    **区切りを提案する相手がいない**＝「ユーザーに聞け」は空回りする。
-    代わりに「閉じてコミットし、結果ファイルに引き継ぎを書いて終われ」を返す。
-    """
-
-    def _run(self, budget, monkeypatch, capsys, tmp_path, hook_event):
-        monkeypatch.setenv("RADIOSIM_AUTORUN", "1")
-        monkeypatch.setenv("RADIOSIM_AUTORUN_RESULT", str(tmp_path / "r.json"))
-        return TestPostToolUseMidTurnAdvice()._run(
-            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS),
-            hook_event=hook_event)
-
-    @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
-    def test_tells_it_to_hand_off_instead_of_asking(
-            self, budget, monkeypatch, capsys, tmp_path, hook_event):
-        got = self._run(budget, monkeypatch, capsys, tmp_path, hook_event)
-        text = (got.get("reason")
-                or got.get("hookSpecificOutput", {}).get("additionalContext", ""))
-        assert "無人モード" in text, got
-        assert '"continue"' in text and str(tmp_path / "r.json") in text, (
-            "結果ファイルの場所と書く status が出ていない＝作業員が引き継げない")
-        assert "ユーザーに区切りを提案" not in text, (
-            "無人なのに人へ提案させている（聞く相手がいない＝空回り）")
-
-    def test_interactive_wording_is_unchanged(
-            self, budget, monkeypatch, capsys, tmp_path):
-        """環境変数が無ければいつもの助言のまま（無人の文言が漏れない）。"""
-        got = TestSessionSplitAdvice()._run(
-            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS))
-        assert "ユーザーに区切りを提案" in got["reason"]
-        assert "無人モード" not in got["reason"]
-
-    def test_stop_is_silent_once_result_is_written(
-            self, budget, monkeypatch, capsys, tmp_path):
-        """結果ファイルを書き終えた後の Stop は止めない＝終わった作業員を
-        一番高い時点でもう 1 往復回さない。状態も書かない（同じセッションは続かない）。"""
-        (tmp_path / "r.json").write_text('{"status": "done"}', encoding="utf-8")
-        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop")
-        assert got == {}, f"結果ファイルを書いた後なのに Stop で鳴っている: {got}"
-        assert not (tmp_path / "state.json").exists(), (
-            "黙る枝なのに状態ファイルを更新している")
-
-    def test_post_tool_use_still_fires_after_result(
-            self, budget, monkeypatch, capsys, tmp_path):
-        """黙るのは Stop だけ＝結果を書いた後もツールを呼ぶなら助言は届く。"""
-        (tmp_path / "r.json").write_text('{"status": "done"}', encoding="utf-8")
-        got = self._run(budget, monkeypatch, capsys, tmp_path, "PostToolUse")
-        assert "無人モード" in got.get("hookSpecificOutput", {}).get(
-            "additionalContext", ""), got
-
-
 class TestRelayAdvice:
     """I-186＝リレー（`tools/autorun/relay.ps1` が裏で起こした対話型）では、
     区切るのはリレー＝「ユーザーに区切りを提案せよ」の代わりに「引き継ぎ書を書いて
@@ -3211,6 +3156,14 @@ class TestRelayAdvice:
     def _text(got):
         return (got.get("reason")
                 or got.get("hookSpecificOutput", {}).get("additionalContext", ""))
+
+    def test_interactive_wording_is_unchanged(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """環境変数が無ければいつもの助言のまま（リレーの文言が漏れない）。"""
+        got = TestSessionSplitAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS))
+        assert "ユーザーに区切りを提案" in got["reason"]
+        assert "リレー（RADIOSIM_RELAY=1）" not in got["reason"]
 
     @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
     def test_tells_it_to_write_the_handoff_and_end(
