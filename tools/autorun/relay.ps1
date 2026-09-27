@@ -178,7 +178,9 @@ function Test-Gone($Agent) {
     return (-not $Agent) -or ("$($Agent.state)" -match 'stop|complet|exit|fail|error|dead')
 }
 
-$transcriptDir = Join-Path $env:USERPROFILE '.claude\projects'
+# 環境変数に頼らない＝CI（Linux）には USERPROFILE が無く、ここで落ちると -DryRun も通らない
+# （Windows の $HOME も USERPROFILE から作られる）
+$transcriptDir = Join-Path ([Environment]::GetFolderPath('UserProfile')) '.claude\projects'
 
 # --- DryRun --------------------------------------------------------------------------
 

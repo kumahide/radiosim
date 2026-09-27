@@ -9,7 +9,7 @@ function Find-Claude {
     if ($cmd) { return $cmd.Source }
     # PATH に無ければ VS Code 拡張の同梱の実体（codex_review/run.ps1 と同じ探し方＝
     # 版は意味的バージョンで比べる。文字列順だと 2.1.99 が 2.1.282 より新しくなる）。
-    $best = Get-ChildItem (Join-Path $env:USERPROFILE '.vscode\extensions') -Directory -ErrorAction SilentlyContinue |
+    $best = Get-ChildItem (Join-Path ([Environment]::GetFolderPath('UserProfile')) '.vscode\extensions') -Directory -ErrorAction SilentlyContinue |
         Where-Object Name -like 'anthropic.claude-code-*' |
         ForEach-Object {
             $v = [version]'0.0'

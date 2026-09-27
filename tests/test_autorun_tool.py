@@ -52,6 +52,17 @@ def relay_plan(tmp_path):
     return json.loads(r.stdout)
 
 
+@needs_pwsh
+def test_the_dry_run_does_not_need_userprofile(tmp_path, monkeypatch):
+    """CI（Linux）には USERPROFILE が無い＝`$env:USERPROFILE` に頼るとどの検査も最初に落ちる。
+
+    2026-09-27 の main の CI が赤になった形（Windows の手元では通るので、ここで塞ぐ）。
+    """
+    monkeypatch.delenv("USERPROFILE", raising=False)
+    r = _relay_dry_run(_handoff(tmp_path, "status: continue\ngoal: 3.9 のステージ2まで"))
+    assert r.returncode == 0, r.stderr
+
+
 def test_find_claude_is_shared_not_copied():
     """`claude` の探し方は 1 か所＝版の比べ方を直したとき片方だけ古く残さない。"""
     src = RELAY.read_text(encoding="utf-8")
