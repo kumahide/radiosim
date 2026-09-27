@@ -1202,10 +1202,12 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 ```powershell
 & tools\codex_review\run.ps1 -Mode code -Base <前のタグ>   # コード面
 & tools\codex_review\run.ps1 -Mode docs                    # 文書面
+& tools\codex_review\run.ps1 -Mode direction               # 方向性（新しい版の着手前・非ブロッキング）
 ```
 
 - 入力文は `tools/codex_review/prompt_*.txt` に固定してあり、**実行のたびに書き起こしません**。差し込むのは差分のパスと比較元だけで、観点（「ここを見て」）を混ぜる口がありません。
 - 渡すのは `git diff` の生出力です（要約・抜粋しない）。
+- 方向性の面は、文書面と同じもの（memory と公開文書）を渡し、入力文（`prompt_direction.txt`）だけが違います。見る軸は、本体と関連プロダクトの計画の整合性・後戻りの懸念・方向性の発散の 3 つです。
 - 返答は**読む前に** `.qa/codex_review/round<N>_<mode>_codex_raw.md` へ原文で落ちます。後から要約と原文を突き合わせられます。
 - レビュアーには書き込みを許しません（`-s read-only`）。**発見はレビュアー、処方はこちら**——プロジェクトの設計意図を持たないので、処方はしばしば外れます。
 - ⚠️ **`read-only` は「書けない」であって「ここしか読めない」ではありません**（canary で実測）。文書面の staging は渡す範囲を*明示*する仕掛けであって、**それ以外を秘匿する保証ではありません**。

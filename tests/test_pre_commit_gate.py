@@ -128,6 +128,15 @@ _REPO_WALK = re.compile(
     r"os\.walk\((?!\s*(?:str\(\s*)?tmp_path\b)"
     r"|(?<!tmp_path)\.rglob\("
     r"|ls-files")
+#: `tmp_path` 以外の、リポジトリの外の置き場を歩く行に付ける印（2026-09-27・I-187＝
+#: Codex の道具のテストが `%TEMP%` の staging を `rglob` で読み、誤検知された）。
+#: ⚠️ 変数名では見分けられないので、行に明示させる＝レビューで見える形にする。
+_OUTSIDE_REPO = "# 歩く先はリポジトリの外"
+
+
+def _walks_repo(src: str) -> bool:
+    return bool(_REPO_WALK.search(
+        "\n".join(ln for ln in src.splitlines() if _OUTSIDE_REPO not in ln)))
 
 
 def _repo_wide_scanners() -> set[str]:
@@ -137,7 +146,7 @@ def _repo_wide_scanners() -> set[str]:
         if not (name.startswith("test_") and name.endswith(".py")):
             continue
         with open(os.path.join(_REPO, "tests", name), encoding="utf-8") as f:
-            if _REPO_WALK.search(f.read()):
+            if _walks_repo(f.read()):
                 found.add(f"tests/{name}")
     return found
 
@@ -149,9 +158,13 @@ def _repo_wide_scanners() -> set[str]:
     ("for d, _, fs in os.walk(tmp_path):", False),
     ("for d, _, fs in os.walk(str(tmp_path)):", False),
     ("for p in tmp_path.rglob('*.png'):", False),
+    ("for p in stage.rglob('*'):", True),
+    (f"for p in stage.rglob('*'):  {_OUTSIDE_REPO}", False),
+    # 印は付けた行だけに効く（ファイルの別の行の走査は拾う）
+    (f"x = 1  {_OUTSIDE_REPO}\nfor p in ROOT.rglob('*.py'):", True),
 ])
 def test_repo_walk_pattern_ignores_pytest_tmp_dirs(src, expected):
-    assert bool(_REPO_WALK.search(src)) is expected
+    assert _walks_repo(src) is expected
 
 
 class TestCommandDetection:

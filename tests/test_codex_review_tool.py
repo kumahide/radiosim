@@ -17,6 +17,7 @@ import re
 import shutil
 import subprocess
 import sys
+import tempfile
 from pathlib import Path
 
 import pytest
@@ -26,7 +27,10 @@ SCRIPT = ROOT / "tools" / "codex_review" / "run.ps1"
 PROMPTS = {
     "code": ROOT / "tools" / "codex_review" / "prompt_code.txt",
     "docs": ROOT / "tools" / "codex_review" / "prompt_docs.txt",
+    "direction": ROOT / "tools" / "codex_review" / "prompt_direction.txt",
 }
+# 入力文に置いてはいけない「具体的な指差し」の語（どの文書のどこが怪しいかを言う形）
+_POINTING = ("を重点的", "に注意して", "が怪しい", "を中心に")
 
 
 @pytest.fixture(scope="module")
@@ -59,7 +63,33 @@ def test_the_docs_prompt_names_only_the_scope(script):
     text = PROMPTS["docs"].read_text(encoding="utf-8")
     assert "正典間の食い違い" in text and "陳腐化" in text
     # どの文書のどこが怪しいかを言っていないこと（具体的な指差しの語）
-    for banned in ("を重点的", "に注意して", "が怪しい", "を中心に"):
+    for banned in _POINTING:
+        assert banned not in text, f"観点の注入: {banned}"
+
+
+def test_every_mode_has_its_own_fixed_prompt(script):
+    """面の一覧（`ValidateSet`）と入力文の正典が 1 対 1 であること（I-187）。
+
+    ⛔ 面を足すときに入力文を足し忘れると、既存の入力文に観点を足して回す
+    ＝独立性の規則（観点をその場で足さない）を破る道しか残らない。
+    """
+    m = re.search(r"\[ValidateSet\(([^)]*)\)\]\[string\]\$Mode", script)
+    assert m, "-Mode の ValidateSet が見つからない"
+    modes = set(re.findall(r"'([a-z]+)'", m.group(1)))
+    assert modes == set(PROMPTS), f"面と入力文が 1 対 1 でない: {modes ^ set(PROMPTS)}"
+
+
+def test_the_direction_prompt_names_only_its_three_axes(script):
+    """③方向性の入力文は、軸 3 つ（整合性・後戻りの懸念・発散）だけを言う（I-187）。
+
+    軸は [[feedback-version-boundary-review]] の「方向性の独立レビュー」で決めたもの。
+    差し込み口は持たない（渡す範囲は docs と同じで、差分のパスも比較元も無い）。
+    """
+    text = PROMPTS["direction"].read_text(encoding="utf-8")
+    for axis in ("整合性", "後戻り", "発散"):
+        assert axis in text, f"軸が抜けている: {axis}"
+    assert not re.findall(r"\{[A-Z_]+\}", text), "差し込み口がある"
+    for banned in _POINTING:
         assert banned not in text, f"観点の注入: {banned}"
 
 
@@ -418,3 +448,65 @@ def test_the_written_diff_is_byte_identical_to_git(stub_codex, tmp_path):
     assert applied.returncode == 0, (
         f"差分がパッチとして壊れている: {applied.stderr.decode('utf-8', 'replace')}"
     )
+
+
+def _stage_with_stub(stub_codex, tmp_path, mode, round_no, mem_dir):
+    """stub の codex で `mode` を 1 巡走らせ、`(入力文, staging の中身)` を返す。
+
+    staging の中身は `{相対パス: バイト列}`。⚠️ **走らせた直後に読んで消す**＝次の実行が
+    「PID が生きていない staging」として先発のものを掃除するので、後でまとめて読めない。
+    """
+    prompt_out = tmp_path / f"prompt_{mode}.txt"
+    out_dir = tmp_path / f"out_{mode}"
+    out_dir.mkdir()
+    env = {**os.environ, "CODEX_EXE": str(stub_codex),
+           "STUB_PROMPT_OUT": str(prompt_out), "RADIOSIM_MEMORY_DIR": str(mem_dir)}
+    proc = subprocess.Popen(
+        ["pwsh", "-NoProfile", "-File", str(SCRIPT),
+         "-Mode", mode, "-Round", str(round_no), "-OutDir", str(out_dir)],
+        cwd=str(ROOT), env=env, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+    proc.communicate(timeout=180)
+    assert proc.returncode != 0, "異常終了が失敗として扱われていない"
+    stages = list(Path(tempfile.gettempdir()).glob(f"radiosim_codex_doc_review_*_{proc.pid}"))
+    try:
+        assert len(stages) == 1, f"staging が 1 つに定まらない: {stages}"
+        files = {p.relative_to(stages[0]).as_posix(): p.read_bytes()
+                 for p in stages[0].rglob("*") if p.is_file()}  # 歩く先はリポジトリの外
+    finally:
+        for s in stages:
+            shutil.rmtree(s, ignore_errors=True)
+    return prompt_out.read_text(encoding="utf-8").strip(), files
+
+
+def test_the_direction_mode_hands_over_exactly_what_the_docs_mode_does(stub_codex, tmp_path):
+    """③方向性は②と**同じもの**を渡し、入力文だけが違うこと（I-187）。
+
+    ⛔ `ISSUES.md` は渡さない（未修正の脆弱性・実機スクショを持つ）＝面が増えても同じ。
+    memory は偽物の置き場を宣言して写させる（直下の `*.md` だけが写ること）。
+    """
+    if sys.platform != "win32":
+        pytest.skip("run.ps1 は Windows 前提（pwsh の有無では判定しない）")
+    if not shutil.which("pwsh"):
+        pytest.skip("pwsh が無い環境")
+    if not SCRIPT.exists():
+        pytest.skip("run.ps1 が無い環境")
+
+    mem = tmp_path / "memory"
+    (mem / "archive").mkdir(parents=True)
+    (mem / "project_roadmap.md").write_text("# 版計画\n", encoding="utf-8")
+    (mem / "feedback_design_philosophy.md").write_text("# 設計哲学\n", encoding="utf-8")
+    (mem / "notes.txt").write_text("写さない\n", encoding="utf-8")
+    (mem / "archive" / "old.md").write_text("写さない\n", encoding="utf-8")
+
+    docs_prompt, docs_files = _stage_with_stub(stub_codex, tmp_path, "docs", 904, mem)
+    dir_prompt, dir_files = _stage_with_stub(stub_codex, tmp_path, "direction", 905, mem)
+
+    assert dir_files == docs_files, (
+        f"渡す範囲が docs と違う: {set(dir_files) ^ set(docs_files)}")
+    assert "memory/project_roadmap.md" in dir_files
+    assert "memory/notes.txt" not in dir_files and "memory/archive/old.md" not in dir_files
+    assert not any(k.endswith("ISSUES.md") for k in dir_files), "ISSUES.md を渡している"
+
+    assert dir_prompt == PROMPTS["direction"].read_text(encoding="utf-8").strip(), \
+        "direction の入力文が正典のファイルと違う"
+    assert docs_prompt == PROMPTS["docs"].read_text(encoding="utf-8").strip()

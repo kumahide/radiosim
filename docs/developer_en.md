@@ -1234,10 +1234,12 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 ```powershell
 & tools\codex_review\run.ps1 -Mode code -Base <previous tag>   # code
 & tools\codex_review\run.ps1 -Mode docs                        # documents
+& tools\codex_review\run.ps1 -Mode direction                   # direction (before starting a new version; non-blocking)
 ```
 
 - The prompt lives in `tools/codex_review/prompt_*.txt` and is **never retyped per run**. Only the diff path and the base are substituted, so there is no opening through which to inject a viewpoint ("look at X").
 - What goes over is the raw `git diff` output — never summarised or excerpted.
+- The direction pass hands over the same material as the document pass (memory and the public documents); only the prompt (`prompt_direction.txt`) differs. It looks along three axes: whether the plans for the main product and its sibling products agree, whether current decisions risk backtracking later, and whether the project's direction is drifting.
 - The answer lands verbatim in `.qa/codex_review/round<N>_<mode>_codex_raw.md` **before we read it**, so a summary can always be checked against the original.
 - The reviewer cannot write (`-s read-only`). **Findings come from the reviewer, prescriptions from us** — it does not carry the project's design intent, so its prescriptions are often off.
 - ⚠️ **`read-only` means "cannot write", not "can only read here"** (measured with a canary). The staging directory for the document pass makes the intended scope *explicit*; it does **not** guarantee that anything outside it stays hidden.
