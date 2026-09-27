@@ -309,8 +309,10 @@ try {
     $finished = $false
     for ($n = 1; $n -le $MaxSessions; $n++) {
         # 前の引き継ぎ書を記録へ移す＝新しい handoff.md が現れたら「このセッションが書いた」
+        # ⚠️ -Force＝前のセッションの終わりに同じ名前へ写しを置いている（2026-09-27 の 2 回目の
+        #    試しで、2 本目の前のここが「既にある」で止まった）
         $prev = Join-Path $runDir ('handoff.{0:D2}.md' -f ($n - 1))
-        Move-Item -LiteralPath $handoffPath -Destination $prev
+        Move-Item -LiteralPath $handoffPath -Destination $prev -Force
         $name = "relay-$n"
         $settingsPath = Join-Path $runDir "$name.settings.json"
         [IO.File]::WriteAllText($settingsPath, ((Get-Settings $relayEnv) | ConvertTo-Json -Depth 5), $utf8)
@@ -346,6 +348,10 @@ try {
     }
     if ($finished) { Write-Log "✅ 目標まで済みました（$($h.goal)）。記録: $runDir" }
     else { Write-Log "⛔ 上限 $MaxSessions 本に達しました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）" }
+} catch {
+    # 止まった理由を記録にも残す＝窓にだけ出ると、記録を見張る側は終わりに気づけない
+    Write-Log "⛔ リレーが止まりました: $($_.Exception.Message)（引き継ぎ書: $handoffPath）"
+    throw
 } finally {
     Remove-Item -LiteralPath $lock -ErrorAction SilentlyContinue
 }

@@ -64,6 +64,18 @@ def test_the_relay_prompt_is_read_from_a_file_with_fixed_slots():
     assert slots == {"SESSION_NO", "PREV_HANDOFF", "HANDOFF_PATH"}, slots
 
 
+def test_the_second_session_can_take_over_the_record_name():
+    """n 本目の終わりに写しを置く名前へ、n+1 本目の前に引き継ぎ書を移す＝上書きで移す。
+
+    2026-09-27 の 2 回目の試しで、2 本目の前の移動が「既にある」で止まった（1 本で
+    `done` になった 1 回目では通らない道）。止まった理由は窓だけでなく記録にも残す。
+    """
+    src = RELAY.read_text(encoding="utf-8")
+    move = re.search(r"Move-Item -LiteralPath \$handoffPath -Destination \$prev(?P<rest>[^\r\n]*)", src)
+    assert move and "-Force" in move["rest"], "写しと同じ名前へ移すので -Force が要る"
+    assert re.search(r"\}\s*catch\s*\{\s*(#[^\n]*\n\s*)*Write-Log", src), "止まった理由を relay.log に書く"
+
+
 def test_the_relay_session_is_interactive_and_watchable(relay_plan):
     """裏の対話型・Remote Control つき・フックも許可の確認も飛ばさない。"""
     args = [str(a) for a in relay_plan["claude_args"]]
