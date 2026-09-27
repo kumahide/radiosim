@@ -76,6 +76,23 @@ def test_the_second_session_can_take_over_the_record_name():
     assert re.search(r"\}\s*catch\s*\{\s*(#[^\n]*\n\s*)*Write-Log", src), "止まった理由を relay.log に書く"
 
 
+def test_push_waits_for_the_goal_and_done_closes_the_window():
+    """途中の引き継ぎはコミットだけ・目標まで済んだら push して窓を閉じる
+    （2026-09-27 ユーザー指示）。窓を閉じるのは `done` で push まで済んだときだけ。"""
+    prompt = RELAY_PROMPT.read_text(encoding="utf-8")
+    handoff_step = next(ln for ln in prompt.splitlines() if ln.startswith("4. "))
+    done_step = next(ln for ln in prompt.splitlines() if ln.startswith("5. "))
+    assert "コミットだけ" in handoff_step and "push しない" in handoff_step, handoff_step
+    assert "push" in done_step and "status: done" in done_step, done_step
+
+    src = RELAY.read_text(encoding="utf-8")
+    start = re.search(r"\$fwd = @\((?P<args>[^)]*)\)", src)
+    assert start and "-NoExit" not in start["args"], "-NoExit だと done でも窓が残る"
+    closes = re.search(r"if \(\$finished -and \$unpushed -eq 0\) \{(?P<body>[^}]*)\}", src)
+    assert closes and "$keepOpen = $false" in closes["body"], "push まで済んだ done だけが窓を閉じる"
+    assert "if ($keepOpen) { Wait-BeforeClose }" in src, "ほかの終わり方は理由を読めるよう待つ"
+
+
 def test_the_relay_session_is_interactive_and_watchable(relay_plan):
     """裏の対話型・Remote Control つき・フックも許可の確認も飛ばさない。"""
     args = [str(a) for a in relay_plan["claude_args"]]

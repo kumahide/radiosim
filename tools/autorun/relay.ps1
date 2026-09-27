@@ -13,10 +13,13 @@
        （`claude --bg`）。Remote Control を付ける＝人は VS Code（`claude attach <id>`）か
        携帯から見て、選択肢のダイアログに答える。
     3. `claude agents --json` を見張る。セッションが新しい引き継ぎ書を書き、手が空いたら
-       `claude stop` で止める（会話は残る）。`continue` なら 2 へ・`done` なら終わる。
+       `claude stop` で止める（会話は残る）。`continue` なら 2 へ・`done` なら窓を閉じて終わる。
 
   🔑 区切りの合図はトークン予算のフック（session_budget.py のリレー用の言い方＝
-  RADIOSIM_RELAY=1）。push はセッションに任せる（2026-09-27 ユーザー決定）。
+  RADIOSIM_RELAY=1）。push はセッションに任せる（2026-09-27 ユーザー決定）＝ただし
+  予算の助言で引き継ぐときはコミットだけ・目標まで済んだセッションがまとめて push する
+  （同日ユーザー指示）。窓は `done` で閉じ、それ以外の終わり方（上限・止まった・push の
+  漏れ）では理由を読めるよう開けたまま待つ。
 
 .PARAMETER Start
   別の窓にリレーを起こして、すぐ戻る（パネルの Claude が使う入口）。
@@ -198,7 +201,8 @@ if ($DryRun) {
 
 if ($Start) {
     $null = Read-Handoff $handoffPath   # 走り出す前に落とす
-    $fwd = @('-NoProfile', '-NoExit', '-File', $PSCommandPath, '-Foreground',
+    # -NoExit を付けない＝`done` で窓が閉じる。閉じない終わり方は -Foreground の側で待つ
+    $fwd = @('-NoProfile', '-File', $PSCommandPath, '-Foreground',
              '-MaxSessions', $MaxSessions, '-PermissionMode', $PermissionMode, '-PollSeconds', $PollSeconds)
     if ($Trips) { $fwd += '-Trips', $Trips }
     if ($Model) { $fwd += '-Model', $Model }
@@ -295,15 +299,33 @@ if ($Probe) {
 
 # --- リレー本体（-Foreground）---------------------------------------------------------
 
+# 途中のセッションはコミットだけ＝push していないコミットが手元に溜まる。数えられなければ -1
+function Get-UnpushedCount {
+    $c = & git -C $repoRoot rev-list --count '@{u}..HEAD' 2>$null
+    if ($LASTEXITCODE -ne 0) { return -1 }
+    return [int]$c
+}
+
+# `done` で push まで済んだときだけ窓を閉じる。ほかの終わり方は理由を読めるよう待つ
+function Wait-BeforeClose {
+    if ($Foreground) { [void](Read-Host 'Enter で窓を閉じます') }
+}
+
 $lock = Join-Path $relayDir 'relay.lock'
 if (Test-Path $lock) {
     $other = [int]((Get-Content $lock -Raw) -as [int])
-    if ($other -and (Get-Process -Id $other -ErrorAction SilentlyContinue)) { throw "リレーはもう走っています（pid $other）" }
+    if ($other -and (Get-Process -Id $other -ErrorAction SilentlyContinue)) {
+        Write-Log "⛔ リレーはもう走っています（pid $other）"
+        Wait-BeforeClose
+        exit 1
+    }
 }
 Set-Content -Path $lock -Value $PID
+$keepOpen = $true
+$failed = $false
 try {
     $h = Read-Handoff $handoffPath
-    if ($h.status -eq 'done') { Write-Log "引き継ぎ書が既に done です（目標: $($h.goal)）＝起こすものがありません"; return }
+    if ($h.status -eq 'done') { Write-Log "引き継ぎ書が既に done です（目標: $($h.goal)）＝起こすものがありません"; $keepOpen = $false; return }
     Write-Log "■ リレー開始（目標: $($h.goal)・上限 $MaxSessions 本・記録 $runDir）"
     $relayEnv = Get-RelayEnv
     $finished = $false
@@ -346,12 +368,21 @@ try {
         Write-Log "■ $n 本目が引き継ぎ書を書いて止まりました（status: $($h.status)）"
         if ($h.status -eq 'done') { $finished = $true; break }
     }
-    if ($finished) { Write-Log "✅ 目標まで済みました（$($h.goal)）。記録: $runDir" }
-    else { Write-Log "⛔ 上限 $MaxSessions 本に達しました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）" }
+    $unpushed = Get-UnpushedCount
+    if ($finished -and $unpushed -eq 0) {
+        Write-Log "✅ 目標まで済みました（$($h.goal)）。push 済み＝窓を閉じます。記録: $runDir"
+        $keepOpen = $false
+    } elseif ($finished) {
+        Write-Log "⚠️ 目標まで済みましたが、push していないコミットが残っています（$unpushed 件・-1＝数えられない）＝手で push してください。記録: $runDir"
+    } else {
+        Write-Log "⛔ 上限 $MaxSessions 本に達しました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）。push していないコミット $unpushed 件"
+    }
 } catch {
     # 止まった理由を記録にも残す＝窓にだけ出ると、記録を見張る側は終わりに気づけない
-    Write-Log "⛔ リレーが止まりました: $($_.Exception.Message)（引き継ぎ書: $handoffPath）"
-    throw
+    Write-Log "⛔ リレーが止まりました: $($_.Exception.Message)（引き継ぎ書: $handoffPath・push していないコミット $(Get-UnpushedCount) 件）"
+    $failed = $true
 } finally {
     Remove-Item -LiteralPath $lock -ErrorAction SilentlyContinue
 }
+if ($keepOpen) { Wait-BeforeClose }
+if ($failed) { exit 1 }

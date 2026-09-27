@@ -3175,6 +3175,13 @@ class TestRelayAdvice:
         assert "ユーザーに区切りを提案" not in text, (
             "区切るのはリレーなのに人へ提案させている")
 
+    def test_hands_off_with_a_commit_but_no_push(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """引き継ぐときはコミットだけ＝push は目標まで済んだセッションがまとめて
+        （2026-09-27 ユーザー指示）。"""
+        text = self._text(self._run(budget, monkeypatch, capsys, tmp_path, "PostToolUse"))
+        assert "コミット" in text and "push はしない" in text, text
+
     def test_stop_is_silent_once_handoff_is_written(
             self, budget, monkeypatch, capsys, tmp_path):
         """引き継ぎ書を書き終えた後の Stop は止めない＝リレーが止めるのを待つだけ。"""
