@@ -450,6 +450,33 @@ def frame_hwnd(win) -> int:
         return 0
 
 
+def bring_to_front(hwnd: int) -> bool:
+    """`hwnd` を前面にし、**本当に前面になったか**を返す。
+
+    🔴 **`SetForegroundWindow` だけでは取れない**（2026-09-27・リレーから起こした
+    セッションで実測）＝前面にいるのが別のプロセスだと、Windows の前面ロックで戻り値 0 の
+    まま何も起きない。そのまま `SC_MOVE` とキーを送ると、移動ループに入らず
+    （自己検査の②で `Toplevel` が 0px）、**矢印と Enter は前面の別のアプリへ入る**。
+    ⇒ 前面のウィンドウのスレッドと入力をつないでから呼ぶ（`AttachThreadInput`＝同じ
+    実測で取れた）。つないだ入力は必ず外す。
+    """
+    import ctypes
+    from ctypes import wintypes
+    user32 = ctypes.windll.user32
+    user32.GetForegroundWindow.restype = wintypes.HWND
+    me = ctypes.windll.kernel32.GetCurrentThreadId()
+    fg = user32.GetForegroundWindow()
+    other = user32.GetWindowThreadProcessId(fg, None) if fg else 0
+    attached = bool(other and other != me and user32.AttachThreadInput(me, other, True))
+    try:
+        user32.SetForegroundWindow(hwnd)
+        user32.BringWindowToTop(hwnd)
+    finally:
+        if attached:
+            user32.AttachThreadInput(me, other, False)
+    return int(user32.GetForegroundWindow() or 0) == int(hwnd)
+
+
 def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
     """ウィンドウを**移動モーダルループに入れて動かす**（呼ぶのは別スレッド）。
 
@@ -471,12 +498,15 @@ def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
     ⚠️ **Tk のスレッドから呼ばない**＝移動ループの間 Tk の `after` は動けない。
     Tk の API はここから 1 つも触らない（ハンドルは呼ぶ前に測って渡す）。
     ⚠️ 走っている間は**キーボードに触らない**（矢印と Enter を送っている）。
+    ⛔ **前面を取れなければキーを送らない**（`bring_to_front` の註）＝送ると矢印と Enter が
+    **前面にいる別のアプリへ入る**。
     """
     import ctypes
     user32 = ctypes.windll.user32
     _WM_SYSCOMMAND, _SC_MOVE = 0x0112, 0xF010
     _VK_LEFT, _VK_RIGHT, _VK_RETURN, _KEYUP = 0x25, 0x27, 0x0D, 0x0002
-    user32.SetForegroundWindow(hwnd)
+    if not bring_to_front(hwnd):
+        return
     time.sleep(0.15)
     user32.PostMessageW(hwnd, _WM_SYSCOMMAND, _SC_MOVE, 0)
     time.sleep(0.25)
