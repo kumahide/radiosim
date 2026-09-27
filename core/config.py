@@ -75,7 +75,7 @@ def is_portable() -> bool:
 # OS 標準フォルダ（3.1・非ポータブル配置の基準）
 #   Windows の Known Folder API（SHGetKnownFolderPath）を使う＝環境変数や
 #   `expanduser("~")` は OneDrive の Known Folder Move で実フォルダが移設され
-#   ていても追従しない（企業環境で実際に起きる＝[[project_real_world_env_vdi]]
+#   ていても追従しない（企業環境で実際に起きる＝[[project-real-world-env-vdi]]
 #   と同種の「実機は開発機と違う」罠）。取得できないとき（非 Windows／失敗）は
 #   環境変数 → 最後は app_base_dir() へ段階的に落ちる。
 # ------------------------------------------------------------
@@ -445,6 +445,19 @@ DEFAULT_CONFIG: dict[str, str] = {
     "lang"       : "en",
     "proxy_url"  : "",
     "coord_format": "dd",
+    # 背景地図レイヤ（B-248）＝地図ウィンドウで最後に選んだ背景地図ソース
+    # （組み込み "pale"/"photo" または宣言した外部ソースの source_id）。
+    # レポート生成時（バッチ実行含む）もこの値を使う。既定は現状と同じ "pale"。
+    "basemap_layer": "pale",
+    # 起動時の更新の確認（I-179）＝`"on"` のときだけ 1 日 1 回まで。既定はオフ
+    # （外へ通信するのは利用者が選んだときだけ＝哲学④）。`update_check_last` は
+    # 最後に試みた日（ISO）。読み方は `core/update_check.py` の `auto_due`。
+    "update_check_auto": "off",
+    "update_check_last": "",
+    # プレリリース（RC）も知らせるか（I-180）＝手動と起動時の両方に効く。`"on"`／`"off"`
+    # は利用者が選んだ値、既定の `""` は「いまの版で決まる」（正式なら正式だけ）。
+    # 読み方は `core/update_check.py` の `want_prerelease`。
+    "update_check_prerelease": "",
 }
 
 
@@ -489,6 +502,66 @@ def _installer_lang() -> "str | None":
     return _INSTALLER_LANG_CODES.get(name)
 
 
+def _installer_seed_mtime() -> "str | None":
+    """種ファイルの更新時刻（種の「版」代わり）。無ければ None。
+
+    インストーラは上書きインストールのたびに `install_lang.txt` を書き直す
+    （`CurStepChanged` は選ばれた言語が前回と同じでも毎回書く）ので、値が
+    変わらなくても mtime は必ず動く＝「入れ直した」ことそのものの印になる。
+    """
+    try:
+        return repr(os.stat(INSTALL_LANG_FILE).st_mtime)
+    except OSError:
+        return None
+
+
+def _lang_seed_consumed_file(config_path: str) -> str:
+    """種を「一度だけ消費した」印の置き場（B-272）＝**設定ファイルとは別の小さな
+    ファイル**に、設定ファイルと同じフォルダで置く。
+
+    `DEFAULT_CONFIG` へ足して設定ファイル側に持たせると、この版より前に作られた
+    設定ファイルは `load_config` の欠損補完で自動的に空の印を持つことになり、
+    「一度も消費していない（新規）」と「既に消費済みだが値が偶然空」を区別
+    できなくなる。別ファイルなら**存在しない＝まだ一度も消費していない**が
+    そのまま読み取れる。⚠️ 固定パス（`CONFIG_FILE` 基準）にしないのは、`startup_lang` が
+    テストや将来の配置替えで別の `path` を受け取れるようにするため——印の置き場も
+    その `path` へ追随させないと、テスト間で印が漏れて誤判定する。
+    """
+    return os.path.join(os.path.dirname(os.path.abspath(config_path)), "lang_seed_consumed.txt")
+
+
+def _consumed_lang_seed_mtime(config_path: str) -> "str | None":
+    """前回 `startup_lang` が消費した種の mtime。まだ一度も消費していなければ None。"""
+    try:
+        with open(_lang_seed_consumed_file(config_path), "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def _mark_lang_seed_consumed(config_path: str, mtime: str) -> None:
+    """この mtime の種を消費済みにする。書けなくても起動は止めない（設定保存と同じ契約）。"""
+    try:
+        with open(_lang_seed_consumed_file(config_path), "w", encoding="utf-8") as f:
+            f.write(mtime)
+    except OSError as e:
+        logger.warning("Lang seed marker save error: %s", e)
+
+
+def consume_lang_seed(path: str = CONFIG_FILE) -> None:
+    """いまの種を消費済みにする（B-299）。種が無ければ何もしない。
+
+    呼ぶのは**利用者が選んだ言語を設定ファイルへ保存できた直後だけ**（言語メニュー・
+    アプリ設定の読込）。起動時の保存に失敗して印が無いまま（B-298）でも、その後の
+    明示的な選択が届いたなら、次の起動で種がもう一度効いて巻き戻してはいけない。
+    ⛔ 言語を選んでいない保存（`save_sim`・テーマなど）からは呼ばない＝`load_config`
+    の土台の古い `lang` を書き戻すだけなので、ここで印を書くと種の言語が消える。
+    """
+    seed_mtime = _installer_seed_mtime()
+    if seed_mtime is not None:
+        _mark_lang_seed_consumed(path, seed_mtime)
+
+
 def _os_ui_lang() -> "str | None":
     """OS の表示言語（ユーザー既定 UI 言語）を同梱言語へ丸める。
 
@@ -520,7 +593,7 @@ def initial_lang() -> str:
 def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     """起動時に `i18n.set_lang` へ渡す言語コードを決める。
 
-    設定ファイルが在れば**その中身が常に優先**（利用者の選択）。無いときだけ
+    設定ファイルが在れば**その中身が基本は優先**（利用者の選択）。無いときだけ
     `initial_lang()` で解く——その場でファイルへ書き戻す（B-184）。
 
     ⚠️ **書き戻さないと、初回起動中の最初の `save_config`（メニュー操作でなく
@@ -530,14 +603,43 @@ def startup_lang(cfg: dict[str, str], path: str = CONFIG_FILE) -> str:
     インストール→初回起動→シングル実行→再起動で英語に戻る）。ここで確定した
     時点のファイルを作っておけば、以後のどの `_save_subset` も正しい `lang`
     を土台に合流する。
+
+    🔑 **種を「一度だけ消費する」（B-272）**＝設定ファイルが既に在っても、
+    まだ消費していない新しい種（＝インストーラへ入れ直して選び直した）が
+    あればそちらを適用する。代償＝言語メニューで選び直した人がウィザードの
+    既定の言語のまま上書きすると、その言語へ戻る（B-272 で受け入れたもの）。
+
+    ⚠️ **印が無い設定（3.5 以前から上書きした）も同じ扱い**（B-296）。かつては
+    「前からあった種」を黙って適用しないよう印だけ揃えていたが、インストーラは
+    上書きのたびに種を書き直すので、この時点で在る種は**必ずいまのウィザードで
+    選んだ言語**＝その分岐は選んだ言語を捨てていた。印が書けない環境では
+    起動のたびに種を適用する（言語メニューの選択が毎回戻る）が、印と設定
+    ファイルは同じフォルダなので、そこでは設定の保存もたぶん効いていない。
+
+    ⚠️ **印を書くのは、選んだ言語が設定ファイルに届いたときだけ**（B-298）。
+    保存に失敗しても印を書くと、その起動は選んだ言語で出るのに、次の起動で
+    保存済みの古い言語へ戻り、種はもう効かない。書けなかった起動では印を
+    書かず、次の起動でもう一度種を適用する。同じ起動のうちに利用者が言語を
+    選び直して保存が通ったら、その操作の側が印を書く（`consume_lang_seed`＝B-299）。
     """
-    if os.path.exists(path):
-        return cfg.get("lang", DEFAULT_CONFIG["lang"])
-    lang = initial_lang()
-    resolved = DEFAULT_CONFIG.copy()
-    resolved["lang"] = lang
-    save_config(resolved, path)
-    return lang
+    seed_mtime = _installer_seed_mtime()
+    if not os.path.exists(path):
+        lang = initial_lang()
+        resolved = DEFAULT_CONFIG.copy()
+        resolved["lang"] = lang
+        if save_config(resolved, path) and seed_mtime is not None:
+            _mark_lang_seed_consumed(path, seed_mtime)
+        return lang
+
+    consumed_mtime = _consumed_lang_seed_mtime(path)   # None＝印が無い（まだ一度も消費していない）
+    seed_lang = _installer_lang()
+    if seed_lang is not None and seed_mtime is not None and seed_mtime != consumed_mtime:
+        merged = dict(cfg)
+        merged["lang"] = seed_lang
+        if save_config(merged, path):
+            _mark_lang_seed_consumed(path, seed_mtime)
+        return seed_lang
+    return cfg.get("lang", DEFAULT_CONFIG["lang"])
 
 
 # ============================================================
@@ -563,7 +665,7 @@ def load_config(path: str = CONFIG_FILE) -> dict[str, str]:
     return config
 
 
-def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
+def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> bool:
     """現在の設定を JSON で**原子的に**保存する（B-124）。
 
     同じディレクトリの一時ファイルへ書き切ってから `os.replace` する。⇒ **途中で
@@ -581,6 +683,10 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
     と出す前に失敗を知る必要がある（`.rsproj` は唯一の永続化手段）が、設定の保存は
     **画面の操作の副作用**として起きるので、書けなかったからといってアプリを止めない
     （前の設定のまま動き続けられる）。従来の契約をそのまま保つ。
+
+    戻り値＝書けたか。画面の操作から呼ぶ側は捨ててよい。書けたときだけ次の手を
+    打つ呼び出し（`startup_lang` と言語を選んだ操作が言語の種を消費済みにする＝
+    B-298・B-299）のためにある。
     """
     directory = os.path.dirname(os.path.abspath(path))
     tmp = None
@@ -598,6 +704,8 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
                 os.unlink(tmp)
             except OSError:
                 pass
+        return False
+    return True
 
 
 # ------------------------------------------------------------
@@ -607,32 +715,38 @@ def save_config(config: dict[str, str], path: str = CONFIG_FILE) -> None:
 # 将来マップウィンドウ設定を足すときは APP_KEYS に追加し DEFAULT_CONFIG にも
 # 既定値を1行加える（段階移行で app/sim ネスト構造へ昇格する余地は残す）。
 # ------------------------------------------------------------
-APP_KEYS: frozenset[str] = frozenset({"theme", "lang", "proxy_url", "coord_format"})
+APP_KEYS: frozenset[str] = frozenset(
+    {"theme", "lang", "proxy_url", "coord_format", "basemap_layer",
+     "update_check_auto", "update_check_last", "update_check_prerelease"})
 SIM_KEYS: frozenset[str] = frozenset(DEFAULT_CONFIG) - APP_KEYS
 
 
 def _save_subset(values: dict[str, str], keys: frozenset[str],
-                 path: str = CONFIG_FILE) -> None:
+                 path: str = CONFIG_FILE) -> bool:
     """指定キー群だけを更新して保存する。他のキーは既存ファイルの値を保持する。
 
     これにより「フォームから sim キーを保存しても app キーは消えない」「メニューで
     app キーを変えても sim キーは保持される」を、呼び出し側の手動再合流なしで実現する。
+    戻り値は `save_config` と同じ（書けたか）。
     """
     merged = load_config(path)
     for k in keys:
         if k in values:
             merged[k] = values[k]
-    save_config(merged, path)
+    return save_config(merged, path)
 
 
-def save_sim(values: dict[str, str], path: str = CONFIG_FILE) -> None:
+def save_sim(values: dict[str, str], path: str = CONFIG_FILE) -> bool:
     """シミュレーションパラメータのみ保存（app 設定は保持）。"""
-    _save_subset(values, SIM_KEYS, path)
+    return _save_subset(values, SIM_KEYS, path)
 
 
-def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> None:
-    """アプリ環境設定のみ保存（直近の sim パラメータは保持）。"""
-    _save_subset(values, APP_KEYS, path)
+def save_app(values: dict[str, str], path: str = CONFIG_FILE) -> bool:
+    """アプリ環境設定のみ保存（直近の sim パラメータは保持）。
+
+    戻り値＝書けたか。言語を選んだ操作は、書けたときだけ `consume_lang_seed` を呼ぶ（B-299）。
+    """
+    return _save_subset(values, APP_KEYS, path)
 
 
 def select_sim(values: dict) -> dict:

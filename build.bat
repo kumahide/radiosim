@@ -70,9 +70,13 @@ if /i "%~1"=="clean" (
     if exist __pycache__       rmdir /s /q __pycache__
     if exist views\__pycache__ rmdir /s /q views\__pycache__
     if exist tests\__pycache__ rmdir /s /q tests\__pycache__
+    for %%D in (core report buildtools) do if exist %%D\__pycache__ rmdir /s /q %%D\__pycache__
     del /q RadioSimPro-*.zip 2>nul
     del /q build_log.txt 2>nul
+    rem build_*.log: stray captures from before the log moved to build\build.log
+    del /q build_*.log 2>nul
     del /q radiosim.log 2>nul
+    del /q radiosim_profile.log 2>nul
     del /q .coverage 2>nul
     echo [OK] Clean complete.
     echo      kept    : venv / repo-root terrain_cache, results, basemap_pale / tools
@@ -225,8 +229,8 @@ if /i "%MODE%"=="zip" (
     echo. > "%APP_DIR%\portable.txt"
 )
 
-rem ---- Optional code-signing hook (3.1 stage 6 / project-code-signing memory).
-rem      Signing itself is on hold (tracked separately) - this is only the
+rem ---- Optional code-signing hook (3.1 stage 6 / project-dormant-decisions memory).
+rem      Decided not to sign (2026-09-11, I-140) - this is only the
 rem      switch, so turning it on later needs one env var, not a script
 rem      rewrite. RADIOSIM_SIGNTOOL, if set, is called as:
 rem        "%RADIOSIM_SIGNTOOL%" <path-to-file-to-sign>

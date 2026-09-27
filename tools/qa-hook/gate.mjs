@@ -35,7 +35,9 @@ import { execFileSync } from "node:child_process";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { readFileSync } from "node:fs";
-import { changedPyEntries, changedAllPaths, isDeleted, changedLinesForFile } from "./git-changes.mjs";
+import {
+  changedPyEntries, changedAllPaths, isDeleted, changedLinesForFile, hookTreeFor,
+} from "./git-changes.mjs";
 import {
   pytestCacheKey, isCachedPass, recordPass, recordFinish,
   markStart, lastRunWasCut, lastDurationMs,
@@ -80,6 +82,30 @@ function readStdin() {
   }
 }
 
+// I-166: stdin が空／JSON として読めないのは、Claude Code が Stop フックとして
+// 呼んだときには起こらない（常に cwd 等の JSON が渡る）＝起きるのは人がこの
+// スクリプトを素で叩いたときだけ。以前は他の早期 return（entries.length===0 等・
+// これは毎ターン普通に起きる合法な無言終了なので変えない）と同じ「無言で exit 0」
+// に落ちており、「素叩き」と「今回は検査対象が無かった」が手元から区別できな
+// かった（I-166 の実測。`tools/qa-hook/pre-commit-gate.mjs` と同じ形）。
+function requireStdinInput() {
+  const raw = readStdin();
+  if (!raw.trim()) {
+    process.stderr.write(
+      "[gate] stdin が空です＝素で叩いたか配線がずれています。何も検査していません" +
+      "（Stop フックの呼び出しでは常に cwd 等の JSON が渡ります）。\n");
+    process.exit(2);
+  }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    process.stderr.write(
+      "[gate] stdin を JSON として読めません＝素で叩いたか配線がずれています。" +
+      "何も検査していません。\n");
+    process.exit(2);
+  }
+}
+
 function emit(obj) {
   process.stdout.write(JSON.stringify(obj) + "\n");
   process.exit(0);
@@ -96,15 +122,23 @@ export function resolvePython() {
   if (!p) {
     return {
       error:
-        "RADIOSIM_PYTHON is not set, so the QA gate cannot tell which interpreter " +
-        "to verify against. Set it to the project venv's python.exe, e.g.\n" +
+        "環境変数 RADIOSIM_PYTHON が未設定なので、QA ゲートはどの Python で検査するか決められません。" +
+        "プロジェクトの venv の python.exe を指定してください。例:\n" +
         "  setx RADIOSIM_PYTHON D:\\dev\\radiosim\\venv\\Scripts\\python.exe",
     };
   }
   if (!existsSync(p)) {
-    return { error: `RADIOSIM_PYTHON points at a file that does not exist:\n  ${p}` };
+    return { error: `RADIOSIM_PYTHON が指すファイルがありません:\n  ${p}` };
   }
   return { python: p };
+}
+
+// 子プロセスの Python の出力を UTF-8 にそろえる（I-172）。
+// ⚠️ 既定では Windows のパイプへの出力が cp932 になり、こちらは utf-8 で読むので
+// テストの日本語（assert のメッセージ等）が文字化けしたまま Claude と画面へ出ていた。
+// pre-commit-gate.mjs も同じ env で pytest を起動する（読み方を 1 か所にそろえる）。
+export function pythonEnv() {
+  return { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" };
 }
 
 // Run a command, capturing stdout/stderr and exit code even on failure.
@@ -112,6 +146,7 @@ function runCmd(cwd, file, args) {
   try {
     const stdout = execFileSync(file, args, {
       cwd,
+      env: pythonEnv(),
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 10 * 1024 * 1024,
@@ -268,7 +303,7 @@ function banditItems(cwd, py, files, keys, changedLines) {
 function lintSection(title, items) {
   if (!items.length) return null;
   const shown = items.slice(0, MAX_ITEMS);
-  const more = items.length > MAX_ITEMS ? `\n…(+${items.length - MAX_ITEMS} more)` : "";
+  const more = items.length > MAX_ITEMS ? `\n…（ほか ${items.length - MAX_ITEMS} 件）` : "";
   return `### ${title}\n${shown.map((i) => "- " + i).join("\n")}${more}`;
 }
 
@@ -349,13 +384,10 @@ function runDeterministic(cwd, py, entries, allPaths) {
 }
 
 async function main() {
-  let input = {};
-  try {
-    input = JSON.parse(readStdin() || "{}");
-  } catch {
-    /* ignore */
-  }
-  const cwd = input.cwd || process.cwd();
+  const input = requireStdinInput();
+  // B-312: not `input.cwd` itself — it follows a Bash `cd` out of the repo, and
+  // from there this gate used to find "no git repo" and stay silent every turn.
+  const cwd = hookTreeFor(input.cwd || process.cwd());
   const stopActive = Boolean(input.stop_hook_active);
 
   let entries, allPaths;
@@ -372,23 +404,23 @@ async function main() {
   // ran" must never be reported as "gate is green" (B-020's failure mode).
   const resolved = resolvePython();
   if (resolved.error) {
-    const reason = `Deterministic QA gate could not run.\n\n${resolved.error}`;
-    if (stopActive) emit({ systemMessage: `[QA gate] cannot run\n\n${resolved.error}` });
+    const reason = `QA ゲートが走れません。\n\n${resolved.error}`;
+    if (stopActive) emit({ systemMessage: `[QA ゲート] 走れません\n\n${resolved.error}` });
     emit({ decision: "block", reason });
   }
   const det = runDeterministic(cwd, resolved.python, entries, allPaths);
   const notes = (det.notes || []).join("\n");
   if (!det.ok) {
     const reason =
-      "Deterministic QA gate FAILED on the changed Python. Fix these before " +
-      `finishing:\n\n${det.report}${notes ? `\n\n${notes}` : ""}`;
-    if (stopActive) emit({ systemMessage: `[QA gate] failures remain\n\n${det.report}` });
+      "変更した Python で QA ゲートが赤です。ターンを終える前に直してください:" +
+      `\n\n${det.report}${notes ? `\n\n${notes}` : ""}`;
+    if (stopActive) emit({ systemMessage: `[QA ゲート] 赤のまま残っています\n\n${det.report}` });
     emit({ decision: "block", reason });
   }
   // ⚠️ **合格しても黙らない**＝ゲート自身の不調（前回の run が帰ってこない／
   // スイートが上限に近づいている）は、合格の裏でこそ起きる。2026-08-23 の 15 日間の
   // 空白は「誰も何も言わなかった」ことで続いた。
-  if (notes) emit({ systemMessage: `[QA gate] ${notes}` });
+  if (notes) emit({ systemMessage: `[QA ゲート] ${notes}` });
 
   process.exit(0);
 }

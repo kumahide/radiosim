@@ -29,6 +29,7 @@ scopeSignature)`）。毎ターンのスコープ実行とコミット前のフ�
 `tools/` は git-ignore なので **CI では skip**（対象が存在しない）。
 """
 
+import glob
 import json
 import os
 import shutil
@@ -62,7 +63,8 @@ def _run_node(script: str, cwd: str) -> str:
     with open(path, "w", encoding="utf-8") as f:
         f.write(
             "import { pytestCacheKey, isCachedPass, recordPass, recordFinish, "
-            f'markStart, lastRunWasCut, lastDurationMs, CACHE_PATH }} from "file:///{src}";\n')
+            "markStart, lastRunWasCut, lastDurationMs, CACHE_PATH, "
+            f'cacheInputs, recordFullPass, lastFullPass }} from "file:///{src}";\n')
         f.write(script)
     try:
         out = subprocess.run(
@@ -154,12 +156,22 @@ class TestKeyChangesWhenInputChanges:
         os.remove(os.path.join(repo, "app.py"))
         assert _key(repo) != before
 
-    def test_new_commit_moves_the_key(self, repo):
-        """コミットで作業ツリーは綺麗になるが、HEAD が動いた以上は走り直す。"""
+    def test_a_commit_that_changes_content_moves_the_key(self, repo):
+        """中身の変わるコミット＝鍵は動く（動くのは編集の時点で、コミットのせいではない）。"""
         before = _key(repo)
         (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 3\n")
         _git(repo, "add", "-A")
         _git(repo, "commit", "-q", "-m", "second")
+        assert _key(repo) != before
+
+    def test_checking_out_other_content_moves_the_key(self, repo):
+        """⚠️ 裏のテスト＝HEAD を鍵から外しても、別の中身へ移れば走り直す。"""
+        before = _key(repo)
+        (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 4\n")
+        _git(repo, "commit", "-qam", "second")
+        _git(repo, "checkout", "-q", "HEAD~1")
+        assert _key(repo) == before
+        _git(repo, "checkout", "-q", "-")
         assert _key(repo) != before
 
     def test_ignored_but_tested_hook_moves_the_key(self, repo):
@@ -185,6 +197,89 @@ class TestKeyChangesWhenInputChanges:
         before = _key(repo)
         (open(os.path.join(d, "x.mjs"), "w", encoding="utf-8")).write("// bbbbbbbb\n")
         assert _key(repo) != before
+
+
+# ============================================================
+# I-184：鍵は**中身の木**＝コミットしただけでは動かない
+# ============================================================
+# 🔴 以前の鍵は HEAD＋汚れたファイルの中身だった＝コミットで中身は 1 バイトも変わらない
+# のに HEAD が進み、push の前に同じ木のフルがもう一度走った（1 回 8〜10 分）。
+# ⛔ 外してよいのは**重複した実行だけ**＝上の `TestKeyChangesWhenInputChanges` が
+# 「入力が変われば動く」側を、ここが「中身が同じなら動かない」側を固定する。
+class TestKeyFollowsContentNotHistory:
+    def _read_state(self, repo):
+        """本物の索引の中身と、オブジェクトの一覧（鍵の計算が書き込まないことの確認用）。"""
+        with open(os.path.join(repo, ".git", "index"), "rb") as f:
+            index = f.read()
+        objects = sorted(glob.glob(os.path.join(repo, ".git", "objects", "**", "*"), recursive=True))
+        return index, objects
+
+    def test_committing_an_edit_does_not_move_the_key(self, repo):
+        (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 5\n")
+        edited = _key(repo)
+        _git(repo, "commit", "-qam", "edit")
+        assert _key(repo) == edited
+
+    def test_committing_a_new_file_with_add_all_does_not_move_the_key(self, repo):
+        """`git add -A && git commit` の 1 コマンド＝ゲートは追加より前（未追跡の状態）で走る。"""
+        (open(os.path.join(repo, "new.py"), "w", encoding="utf-8")).write("y = 1\n")
+        untracked = _key(repo)
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "new")
+        assert _key(repo) == untracked
+
+    def test_staging_alone_does_not_move_the_key(self, repo):
+        (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 6\n")
+        edited = _key(repo)
+        _git(repo, "add", "app.py")
+        assert _key(repo) == edited
+
+    def test_an_untracked_directory_gets_a_key_and_moves_it(self, repo):
+        """以前は「鍵を作れない＝必ず走る」だった。木なら中身で鍵になる。"""
+        d = os.path.join(repo, "pkg")
+        os.makedirs(d)
+        (open(os.path.join(d, "m.py"), "w", encoding="utf-8")).write("z = 1\n")
+        first = _key(repo)
+        assert first not in ("", "null")
+        assert _key(repo) == first
+        (open(os.path.join(d, "m.py"), "w", encoding="utf-8")).write("z = 2\n")
+        assert _key(repo) != first
+
+    def test_an_ignored_file_does_not_move_the_key(self, repo):
+        """git-ignore のものは木に入らない（`.claude/` 等の例外は別の行で見る）。"""
+        (open(os.path.join(repo, ".gitignore"), "w", encoding="utf-8")).write("*.log\n")
+        _git(repo, "add", "-A")
+        _git(repo, "commit", "-q", "-m", "ignore logs")
+        before = _key(repo)
+        (open(os.path.join(repo, "run.log"), "w", encoding="utf-8")).write("noise\n")
+        assert _key(repo) == before
+
+    def test_computing_the_key_writes_nothing_into_the_real_repo(self, repo):
+        """本物の索引と `.git/objects` を変えない（未到達の blob を撒かない・ステージしない）。"""
+        (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 7\n")
+        (open(os.path.join(repo, "new.py"), "w", encoding="utf-8")).write("y = 2\n")
+        before = self._read_state(repo)
+        _key(repo)
+        assert self._read_state(repo) == before
+        status = subprocess.run(["git", "status", "--porcelain"], cwd=repo,
+                                capture_output=True, text=True).stdout
+        assert " M app.py" in status and "?? new.py" in status
+
+    def _rest(self, repo):
+        return json.loads(_run_node(
+            "const i = cacheInputs(process.cwd(), { without: 'app.py' });\n"
+            "process.stdout.write(JSON.stringify([i.tree, i.rest]));\n", repo))
+
+    def test_the_rest_tree_sets_one_path_aside(self, repo):
+        """I-185 の「ほかは同じ」＝指定の 1 本を除いた木。その 1 本の編集では動かず、
+        ほかの編集では動く（古い木のオブジェクトが無くても 2 つの ID で比べられる）。"""
+        tree0, rest0 = self._rest(repo)
+        assert tree0 != rest0
+        (open(os.path.join(repo, "app.py"), "w", encoding="utf-8")).write("x = 8\n")
+        tree1, rest1 = self._rest(repo)
+        assert tree1 != tree0 and rest1 == rest0
+        (open(os.path.join(repo, "README.md"), "w", encoding="utf-8")).write("# changed\n")
+        assert self._rest(repo)[1] != rest0
 
 
 # ============================================================
@@ -350,6 +445,36 @@ class TestCacheHit:
         )
         assert out == "false"
 
+    def test_a_later_pass_does_not_evict_an_earlier_one(self, repo):
+        """I-184 の⚠️5＝合格の置き場が 1 枠だと、コミットと push のあいだの
+        Stop フックの範囲つき合格がコミットのフル合格を上書きし、push で外れた。"""
+        assert _run_node(
+            "recordPass(process.cwd(), 'full-A');\n"
+            "recordPass(process.cwd(), 'scoped-B');\n"
+            "process.stdout.write(String(isCachedPass(process.cwd(), 'full-A')));\n",
+            repo,
+        ) == "true"
+
+    def test_only_a_bounded_number_of_passes_is_kept(self, repo):
+        """覚える数に上限がある（古い合格がいつまでも効き続けない）。"""
+        assert _run_node(
+            "for (let i = 0; i < 20; i++) recordPass(process.cwd(), 'k' + i);\n"
+            "process.stdout.write([isCachedPass(process.cwd(), 'k0'),"
+            " isCachedPass(process.cwd(), 'k19')].join(','));\n",
+            repo,
+        ) == "false,true"
+
+    def test_the_last_real_full_pass_is_remembered(self, repo):
+        """I-185 の連鎖の起点＝本物のフル合格の木（と、木に見えない入力の指紋）。"""
+        out = json.loads(_run_node(
+            "const i = cacheInputs(process.cwd());\n"
+            "recordFullPass(process.cwd(), i);\n"
+            "process.stdout.write(JSON.stringify([i.tree, lastFullPass(process.cwd())]));\n",
+            repo,
+        ))
+        tree, full = out
+        assert full["tree"] == tree and len(full["extras"]) == 64
+
     def test_cache_lives_inside_dot_git(self, repo):
         """作業ツリーを汚さない（`.git/` 配下＝追跡されず同期もされない）。"""
         _run_node("recordPass(process.cwd(), pytestCacheKey(process.cwd()));\n", repo)
@@ -372,3 +497,87 @@ def test_cache_path_is_the_documented_one(repo):
     assert json.loads(
         _run_node("process.stdout.write(JSON.stringify(CACHE_PATH));\n", repo)
     ).replace("\\", "/") == ".git/radiosim-qa-pytest.json"
+
+
+# ============================================================
+# I-172：子プロセスの Python の日本語が文字化けしないこと
+# ============================================================
+class TestPythonOutputIsUtf8:
+    """ゲートが起動した Python（pytest 等）の日本語を正しく読めるか。
+
+    ⚠️ 2026-09-23 に実測＝既定では Windows のパイプへの出力が cp932 になり、ゲートは
+    utf-8 で読むので、テストの assert の日本語が「��ʂɏo��」の形で Claude と画面へ出ていた。
+    """
+
+    def test_japanese_from_python_survives(self, repo):
+        gate = os.path.join(_REPO, "tools", "qa-hook", "gate.mjs").replace("\\", "/")
+        py = json.dumps(os.environ.get("RADIOSIM_PYTHON") or shutil.which("python") or "python")
+        # 比較は node 側で済ませ、ASCII の結果だけを返す（こちらの読み方に左右されない）。
+        out = _run_node_src(
+            'import { execFileSync } from "node:child_process";\n'
+            f'import {{ pythonEnv }} from "file:///{gate}";\n'
+            f"const s = execFileSync({py}, ['-c', 'print(\"画面に出る\")'],"
+            " { env: pythonEnv(), encoding: 'utf-8' });\n"
+            "process.stdout.write(s.trim() === '画面に出る' ? 'ok' : 'garbled');\n",
+            repo,
+        )
+        assert out == "ok"
+
+    @pytest.mark.parametrize("name", ["gate.mjs", "pre-commit-gate.mjs"])
+    def test_every_python_launch_passes_the_env(self, name):
+        """Python を起動する `execFileSync` は全部 `pythonEnv()` を渡す（git の起動は対象外）。"""
+        with open(os.path.join(_REPO, "tools", "qa-hook", name), encoding="utf-8") as f:
+            src = f.read()
+        calls = [src[i:i + 300] for i in range(len(src))
+                 if src.startswith("execFileSync(", i)
+                 and not src.startswith('execFileSync("git"', i)]
+        assert calls, f"{name} に Python の起動が見当たらない（数え方が古い）"
+        missing = [c.splitlines()[0] for c in calls if "env: pythonEnv()" not in c]
+        assert not missing, f"{name} で pythonEnv() を渡していない起動: {missing}"
+
+
+class TestStdinDiagnostics:
+    """I-166＝「素で叩いた（stdin が空／JSON として読めない）」と「フックとして
+    呼ばれ、今回は検査対象が無かった」を手元から区別できること。前者だけ非ゼロ
+    で断る（後者は毎ターン普通に起きる合法な無言終了なので変えない＝壊れ方②）。
+    `pre-commit-gate.mjs` 側の同型は `tests/test_pre_commit_gate.py` が持つ。
+    """
+
+    def _run(self, script: str, stdin: str, tmp_path) -> subprocess.CompletedProcess:
+        path = os.path.join(_REPO, "tools", "qa-hook", script)
+        # I-172＝日本語の文字化けを防ぐため encoding を明示。
+        return subprocess.run(["node", path], input=stdin, cwd=str(tmp_path),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+
+    def test_gate_empty_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("gate.mjs", "", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_gate_unparseable_stdin_is_refused_not_silently_allowed(self, tmp_path):
+        r = self._run("gate.mjs", "not json {", tmp_path)
+        assert r.returncode != 0
+        assert r.stdout == ""
+        assert "stdin" in r.stderr
+
+    def test_gate_valid_input_with_nothing_to_check_stays_silent(self, tmp_path):
+        """フックとして呼ばれたが変更が無いターン＝この分岐には来ない（無言のまま 0）。
+
+        ⚠️ B-312 からゲートは `cwd` ではなく**自分の置かれたリポジトリ**を見る
+        （外へ `cd` しても黙らない）。なので本物を叩くと本物のリポジトリを検査する＝
+        写しを git リポジトリではない一時フォルダに置いて、素早く「検査対象なし」の
+        経路（`changedPyEntries` が例外→`process.exit(0)`）を通す。
+        """
+        hook = tmp_path / "tools" / "qa-hook"
+        hook.mkdir(parents=True)
+        src = os.path.join(_REPO, "tools", "qa-hook")
+        for name in os.listdir(src):
+            if name.endswith((".mjs", ".json")):
+                shutil.copy(os.path.join(src, name), hook / name)
+        r = subprocess.run(["node", str(hook / "gate.mjs")], input=json.dumps({"cwd": str(tmp_path)}),
+                           cwd=str(tmp_path), capture_output=True, text=True, encoding="utf-8",
+                           timeout=30, env={**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path.parent)})
+        assert r.returncode == 0
+        assert r.stdout == ""
+        assert r.stderr == ""

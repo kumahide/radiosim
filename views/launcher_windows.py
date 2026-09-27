@@ -16,6 +16,8 @@ from typing import TYPE_CHECKING
 
 from core import config
 from core import coords
+from core import failure
+from core import i18n
 from core import simulation as sim
 
 if TYPE_CHECKING:
@@ -35,8 +37,10 @@ class _ChildWindowsMixin:
         def _current_config(self) -> dict[str, str]: ...
         def _update_resolution_readout(self) -> None: ...
         def _current_meta(self) -> dict[str, str]: ...
+        def _current_basemap_layer(self) -> str: ...
         def _project_doc(self) -> "project.ProjectDoc": ...
         def _open_window(self, attr: str): ...
+        def _alert(self, title: str, message: str) -> None: ...
 
     def _notify_map_cache_change(self) -> None:
         """**キャッシュを増やし得る実行が終わった後**、開いているマップウィンドウの
@@ -53,8 +57,20 @@ class _ChildWindowsMixin:
             self._map_win.on_external_cache_change()
 
     def _on_open_results(self) -> None:
-        if os.path.exists(config.RESULTS_DIR):
-            os.startfile(config.RESULTS_DIR)
+        """結果フォルダを開く（B-273）。
+
+        一度も実行していない新規インストール直後は `config.RESULTS_DIR` が
+        まだ無い＝**作ってから開く**（押した人の期待どおり。空フォルダである
+        ことは開けば分かるので断りは出さない＝対応案 3）。作成に失敗し得る
+        場所（書込禁止＝I-130 と同じ形）は黙らずに断る。
+        """
+        try:
+            os.makedirs(config.RESULTS_DIR, exist_ok=True)
+        except OSError as e:
+            self._alert(i18n.t("dlg_error"), failure.explain(
+                e, what=i18n.t("fail_open_results"), hint=i18n.t("fix_file_write")))
+            return
+        os.startfile(config.RESULTS_DIR)
 
     def _on_open_map(self) -> None:
         from views.map_window import MapWindow
@@ -116,6 +132,8 @@ class _ChildWindowsMixin:
             # 座標の表記も凍結して渡す（I-070）＝このウィンドウだけ設定に従わず、
             # 常に十進度で出していた。
             coord_format=self._coord_fmt_var.get(),
+            # 背景地図ソースも凍結して渡す（B-248）。
+            basemap_source_id=self._current_basemap_layer(),
         )
 
     def _on_multihop_closed(self) -> None:
@@ -255,6 +273,8 @@ class _ChildWindowsMixin:
             # 地図を連続追加モードで開く口（I-043）＝このウィンドウにだけ無かった。
             map_opener=self.open_map_for_append,
             cache_notify=self._notify_map_cache_change,   # B-265
+            # 背景地図ソースも凍結して渡す（B-248）。
+            basemap_source_id=self._current_basemap_layer(),
         )
         return self._batch_win
 

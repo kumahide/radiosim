@@ -363,7 +363,7 @@ def fit_to_page_script() -> str:
     （固定高＋overflow:hidden＝分割不可の1ブロック）がヘッダ直後の残り余白に
     収まらず**丸ごと次ページへ送られ、1枚目がヘッダだけの白紙になっていた**
     （空 `img_b64=""` の合成条件だけで検証していたときは画像の高さぶんが
-    無く縮小が発生しなかったため未検出＝[[feedback_synthetic_cases_lie]]）。
+    無く縮小が発生しなかったため未検出＝[[feedback-verification]]）。
     Edge `--print-to-pdf` で実像入りの複数リンクを掃引し、8mm 刻みでは 12mm から
     1頁に収まったが、環境差を吸収する余地を見て 15mm/4mm を採用した。
 
@@ -484,7 +484,7 @@ def verdict_css(sheet: str) -> str:
     """判定の色（行の地・判定の字・件数カードの数字）を `.sheet.<sheet>` へ配る。
 
     🔑 **3 つの帳票（バッチ・中継・条件探索）が同じ 1 本を引く**＝同じ色は同じ
-    意味（[[feedback_design_philosophy]] ⑧）。字の色は地図の線と同じ
+    意味（[[feedback-design-philosophy]] ⑧）。字の色は地図の線と同じ
     `map_graphics.STATUS_HEX`（ERROR が 2 色あった＝B-207）。
     """
     from report import map_graphics      # PIL を読むのは使うときだけ

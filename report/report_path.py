@@ -47,7 +47,8 @@ _PROFILE_DPI = 150
 
 
 def save_path_visuals(pr: PathResult, coord_format: str = "dd",
-                      project_name: str = "") -> "Exception | None":
+                      project_name: str = "",
+                      basemap_source_id: str = "pale") -> "Exception | None":
     """
     PNG と HTML を保存する（バックグラウンドスレッドから呼んでよい）。
 
@@ -84,6 +85,7 @@ def save_path_visuals(pr: PathResult, coord_format: str = "dd",
             pr.terrain, pr.result, pr.params,
             pr.params.h_tx, pr.params.h_rx, pr.save_dir, coord_format,
             project_name, memo=pr.row.note, report_id=pr.row.path_id,
+            basemap_source_id=basemap_source_id,
         )
         save_path_kml(
             pr.terrain, pr.result, pr.params,
@@ -109,6 +111,7 @@ def save_profile_png(
     project_name: str = "",
     memo: str = "",
     report_id: str = "",
+    basemap_source_id: str = "pale",
 ) -> str:
     """
     地形断面 PNG をバックグラウンドスレッドから保存する。
@@ -223,8 +226,12 @@ def save_profile_png(
 
     # 経路オーバーレイ地図（ヘッドレス・ベストエフォート）。タイル取得に失敗
     # したら None を返し、レポートは地図なし＋注記で生成される。
+    # 背景地図は地図ウィンドウの選択に追従する（B-248）。呼び出し元
+    # （ランチャー／バッチ）が開いた時点のスナップショットを渡す＝ここで
+    # `config.load_config()` を読まない（I-055 ②）。
     map_b64 = report_map.render_path_map_b64(
-        (params.lat_tx, params.lon_tx), (params.lat_rx, params.lon_rx)
+        (params.lat_tx, params.lon_tx), (params.lat_rx, params.lon_rx),
+        basemap_source_id=basemap_source_id,
     )
 
     return save_path_html(terrain, result, params, h_tx, h_rx, save_dir,

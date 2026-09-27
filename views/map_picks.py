@@ -540,7 +540,7 @@ class _PickMixin:
 
         ⚠️ **ライブラリの右クリックメニューを置き換えている**（`add="+"` ではなく
         張り直し）＝tkintermapview の既定メニューは英語の「座標をクリップボードへ」
-        1 本で、押すと英語のダイアログが出る（[[feedback-japanese-everywhere]]）。
+        1 本で、押すと英語のダイアログが出る（[[feedback-writing]]）。
         2 つのメニューが同時に出る形にはしない。
         """
         if self._busy or self._mode.get() not in ("coords", "append"):

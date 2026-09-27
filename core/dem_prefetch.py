@@ -25,16 +25,23 @@ import numpy as np
 from PIL import Image
 
 from core import dem
+from core import dem_cache
+from core import dem_sources
 from core.config import logger
 
 
 def _void_mask(arr: np.ndarray) -> np.ndarray:
-    """無効値ピクセル (128, 0, 0) = 海・データ欠損 の真偽マスクを返す。
+    """計算が下のレイヤへ降りる画素の真偽マスクを返す（プリフェッチの降下判定に使う）。
 
-    arr は (H, W, 3) の RGB 配列。get_elevation の実行時フォールバックと
-    同一のセマンティクスで「無効」を定義し、プリフェッチの降下判定に使う。
+    arr は (H, W, 3) の RGB 配列。`dem.get_elevation` は**復号して 0.0 になる画素**で
+    次のレイヤへ進む＝無効値 (128, 0, 0)（海・データ欠損）と、ちょうど 0 m の
+    (0, 0, 0) の 2 つ（国土地理院の式で 0.0 になる RGB はこの 2 つだけ）。
+    🔴 **(0, 0, 0) を落とさない**（B-304）＝以前は (128, 0, 0) だけを見ていたので、
+    5a に 0 m の画素がある位置を「5a で完結」と読み、強制再取得で**計算がまだ読む
+    5b・dem_png を消していた**（通常の事前取得でも 5b を取らずオフラインで欠けた）。
     """
-    return (arr[:, :, 0] == 128) & (arr[:, :, 1] == 0) & (arr[:, :, 2] == 0)
+    r, g, b = arr[:, :, 0], arr[:, :, 1], arr[:, :, 2]
+    return ((r == 128) | (r == 0)) & (g == 0) & (b == 0)
 
 
 # ============================================================
@@ -109,6 +116,26 @@ def _is_cached(path: str) -> bool:
         return False
 
 
+def _drop_unread_tile(layer_id: str, x: int, y: int, path: str) -> None:
+    """降下が要らなくなった下位レイヤのタイルを消す（B-285）。
+
+    計算は上位レイヤで止まるので**標高の値は動かない**＝メモリの写しも外すが、
+    世代（`dem._cache_epoch`）は進めない。消せなくても致命ではない（読まれない
+    ファイルが残るだけ）ので、記録に留めて続ける。
+    """
+    if not os.path.exists(path):
+        return
+    try:
+        os.remove(path)
+    except OSError as e:
+        logger.warning("prefetch: could not remove an unread lower-layer tile: %s", e)
+        return
+    with dem._cache_lock:
+        dem._tile_cache.pop((dem_sources.GSI_DEM.source_id, layer_id, x, y), None)
+        dem._tile_validity_memo.pop(path, None)
+    logger.debug("prefetch: removed unread lower-layer tile: %s", path)
+
+
 def _process_position(
     x14: int, y14: int,
     dem14_subdir: str, dem14_path: str,
@@ -121,7 +148,8 @@ def _process_position(
 
     優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
 
-    実行時 get_elevation はピクセル単位で無効値 (128,0,0) を下位レイヤーへ
+    実行時 get_elevation はピクセル単位で、復号して 0.0 になる画素（無効値
+    (128,0,0) とちょうど 0 m の (0,0,0)＝`_void_mask`）を下位レイヤーへ
     フォールバックする。これと整合させるため、上位レイヤーのタイルが取得でき
     ても内部に欠損ピクセルが残る限り下位レイヤーを取得する（欠損が解消した分
     だけ降りるので DL は最小）。dem_png（最下層）まで降りればそれ以上の手段は
@@ -132,6 +160,22 @@ def _process_position(
     欠損のある位置は必ず dem_png までキャッシュされるため、この早期リターンが
     再プリフェッチ時の「解決済みは無視」を成立させる。⚠️ **見るのは存在ではなく
     可読性**（B-141）＝壊れたタイルを終端マーカーと読むと、そこだけ永久に埋まらない。
+
+    dem_png が無い位置では、**キャッシュ済みの 5a・5b も中身を読んで同じ
+    `_void_mask` で判定し直し**、足りない層だけを取る（B-306・3.8）。以前は読める
+    5a/5b があれば中身を見ずに飛ばしていた＝欠損の定義を広げた B-304 より前に
+    作られたキャッシュ（0 m の画素を欠損と見ずに 5a だけで止めた位置）が、通常の
+    事前取得では直らなかった。⚠️ 読み直した層は `downloaded_*` に数えない
+    （取っていない）。5b だけが在って 5a が無い位置は、5a がサーバに無かった形
+    （以前の回で 404）＝5a は取り直しに行かない。
+
+    降下が要らないと分かった下位レイヤは消す（B-285）＝強制再取得で上位の欠損が
+    無くなった位置に、読まれない古い 5b・dem_png を残さない。⚠️ **消すのはこの回に
+    取り直した層で判定したときだけ**＝読み直した結果からは消さない。⚠️ **dem_png を
+    消すのは 4 枚の zoom-15 を全部この回で取って、どれも降りなかったときだけ**＝
+    範囲の端で一部しか見ていない位置は、範囲外の 1 枚が 10m を要るかもしれない。
+    そこで消すと上の不変条件「欠損あり⟹dem_png 取得」が崩れ、その 1 枚を覆う
+    事前取得をもう一度回すまで**オフラインで 10m が欠ける**。
     """
     dem14_ok = _is_cached(dem14_path)
     if not force and dem14_ok:
@@ -141,7 +185,7 @@ def _process_position(
 
     # 🔴 **壊れて残っている dem_png は、5m が読めても必ず取り直す**（B-142）＝
     #    上の早期 return を通り抜けた理由は 2 通りある（**不在** か **壊れている**）。
-    #    下の降下は *不在* のほうだけを想定しており、5a/5b が読めれば `continue` して
+    #    下の降下は *不在* のほうだけを想定しており、5a/5b で埋まれば `continue` して
     #    `need_dem` が立たない ⇒ **壊れた 10m タイルが取り直されないまま残る**
     #    （5m に欠損があって 10m まで降りた位置＝ごく普通のキャッシュ状態で起きる）。
     # ⚠️ **`force` かどうかで条件を分けない**（B-144＝B-142 の直しが `force` を
@@ -149,37 +193,58 @@ def _process_position(
     #    その名前に反する。**見るのは「在るのに読めない」だけ**で、`force` は
     #    「読めても取り直す」を足すだけの独立した軸。
     need_dem = os.path.exists(dem14_path) and not dem14_ok
+    resolved_above = 0   # この回に取って、dem_png まで降りずに済んだ zoom-15 の枚数
     for x15, y15, subdir5a, path5a, subdir5b, path5b in zoom15_tiles:
-        # dem_png 不在でここに到達した位置は、不変条件「欠損あり⟹dem_png取得」
-        # より、キャッシュ済み 5a/5b は欠損なしと判断できる。再読込せず安全に
-        # スキップしてよい（DL build 前の旧キャッシュは force 再取得で healing）。
-        if not force and (_is_cached(path5a) or _is_cached(path5b)):
-            continue
-
-        arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a)
+        # 🔴 **キャッシュ済みの 5a/5b は「欠損なし」とは限らない**（B-306）＝B-304 より
+        #    前のキャッシュは 0 m の画素を欠損と見ずに 5a だけで止めている。中身を
+        #    読み直して同じ条件で判定する（読み直しは取得に数えない・消す根拠にしない）。
+        cached5b = not force and _is_cached(path5b)
+        arr5a = dem._read_cached_tile(path5a) if not force and _is_cached(path5a) else None
+        reread5a = arr5a is not None
+        if not reread5a and not cached5b:
+            arr5a = dem._fetch_tile("dem5a_png", 15, x15, y15, subdir5a, path5a,
+                                    force=force)
+            if arr5a is not None:
+                with lock:
+                    counts["downloaded_5a"] += 1
+        # （5b だけが在る＝5a はサーバに無かった形なので、5a は取り直しに行かない）
         if arr5a is not None:
-            with lock:
-                counts["downloaded_5a"] += 1
             remaining = _void_mask(arr5a)
             if not remaining.any():
-                continue   # 欠損なし: この位置は 5a で完結
+                # 欠損なし: この位置は 5a で完結＝5b は読まれない（B-285）
+                if not reread5a:
+                    _drop_unread_tile("dem5b_png", x15, y15, path5b)
+                    resolved_above += 1
+                continue
         else:
             remaining = None   # 5a 自体が取得不可: 全画素を未解決として扱う
 
         # 5a に欠損が残る（または 5a 不在）→ 5b で埋まる分を解消
-        arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b)
+        arr5b = dem._read_cached_tile(path5b) if cached5b else None
+        reread5b = arr5b is not None
+        if not reread5b:
+            arr5b = dem._fetch_tile("dem5b_png", 15, x15, y15, subdir5b, path5b,
+                                    force=force)
+            if arr5b is not None:
+                with lock:
+                    counts["downloaded_5b"] += 1
         if arr5b is not None:
-            with lock:
-                counts["downloaded_5b"] += 1
             void5b = _void_mask(arr5b)
             still_void = void5b if remaining is None else (remaining & void5b)
             if not still_void.any():
+                if not (reread5a or reread5b):
+                    resolved_above += 1
                 continue   # 5a の欠損を 5b が完全に補完
         # 5b 不在、または 5a∩5b に欠損が残る → dem_png へ降りる
         need_dem = True
 
+    if not need_dem and resolved_above == 4:
+        # 4 枚とも上位で埋まった＝dem_png は読まれない（B-285・端の位置は docstring）
+        _drop_unread_tile("dem_png", x14, y14, dem14_path)
+
     if need_dem:
-        arr = dem._fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path)
+        arr = dem._fetch_tile("dem_png", 14, x14, y14, dem14_subdir, dem14_path,
+                              force=force)
         with lock:
             if arr is not None:
                 counts["downloaded_dem"] += 1
@@ -190,15 +255,25 @@ def _process_position(
 def count_bbox_tiles(
     lat1: float, lon1: float,
     lat2: float, lon2: float,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> int:
-    """bbox 内の zoom-14 位置数を返す（プログレスバーの maximum 設定等に使う）。"""
+    """bbox 内の位置数を返す（プログレスバーの maximum・DL 確認ダイアログの件数表示に使う）。
+
+    3.6 ステージ1（I-147 残り(b)・B-253）＝`source` で単位セルの大きさを合わせる。
+    位置の単位は `dem_cache._base_zoom(source)`（`dem_cache.count_cached_areas` と
+    同じ基準セル）＝国土地理院は従来どおり zoom-14 のまま（省略時・引数無しの
+    既存呼び出しは 1 桁も動かない）。**キャッシュ済みとの差分（DL 確認ダイアログの
+    新規分）を取るとき、両辺が同じ単位でないと数が合わない**（従来はここが
+    暗黙に国土地理院固定だった＝B-253 の一面）。
+    """
     lat_n = max(lat1, lat2)
     lat_s = min(lat1, lat2)
     lon_w = min(lon1, lon2)
     lon_e = max(lon1, lon2)
-    x14_nw, y14_nw, _, _ = dem._tile_coords(lat_n, lon_w, 14)
-    x14_se, y14_se, _, _ = dem._tile_coords(lat_s, lon_e, 14)
-    return (x14_se - x14_nw + 1) * (y14_se - y14_nw + 1)
+    base_zoom = dem_cache._base_zoom(source)
+    x0, y0, _, _ = dem._tile_coords(lat_n, lon_w, base_zoom)
+    x1, y1, _, _ = dem._tile_coords(lat_s, lon_e, base_zoom)
+    return (x1 - x0 + 1) * (y1 - y0 + 1)
 
 
 def prefetch_tiles(
@@ -206,8 +281,114 @@ def prefetch_tiles(
     lat2: float, lon2: float,
     progress_cb=None,   # callback(done: int, total: int) | None
     force: bool = False,
+    source: "dem_sources.DemSourceSpec | None" = None,
 ) -> dict:
-    """bbox 内の DEM タイルを優先順位付きでダウンロードしてキャッシュに保存する。
+    """bbox 内の DEM タイルをダウンロードしてキャッシュに保存する（B-253・I-147 残り(b)）。
+
+    `source` を省略する（または国土地理院を指定する）と従来どおりの優先順位付き
+    降下（`_prefetch_gsi`）。**それ以外のソースを指定したときも、実際にそのソースの
+    タイルを取りに行くようになった**（従来はどのソースを選んでいても国土地理院
+    決め打ちで取っていた＝B-253）。外部ソースは降下ロジックも欠損マスクも
+    持たない前提（`dem_sources` の宣言に優先順位はあっても、国土地理院のような
+    ピクセル単位の欠損フォールバックの意味論を宣言する項目が無い）ので、
+    宣言した各レイヤのタイルをそのまま取得する `_prefetch_generic` を使う。
+
+    Returns:
+        国土地理院: {"area_total", "downloaded_5a", "downloaded_5b",
+                     "downloaded_dem", "skipped", "failed"}（従来どおり）
+        それ以外  : {"area_total", "downloaded", "skipped", "failed"}
+    """
+    src = source if source is not None else dem_sources.GSI_DEM
+    if src.source_id == dem_sources.GSI_DEM.source_id:
+        return _prefetch_gsi(lat1, lon1, lat2, lon2, progress_cb, force)
+    return _prefetch_generic(src, lat1, lon1, lat2, lon2, progress_cb, force)
+
+
+def _prefetch_generic(
+    src: "dem_sources.DemSourceSpec",
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    progress_cb,
+    force: bool,
+) -> dict:
+    """国土地理院以外のソース向けの単純な取得経路（3.6 ステージ1）。
+
+    宣言した各レイヤの bbox 内タイルを（`dem_cache._enumerate_bbox` と同じ列挙で）
+    そのまま取りに行く＝GSI の優先順位降下・欠損マスクは持たない。**単層宣言**
+    （マニュアルの記入例＝Terrarium 等）ならレイヤは 1 つだけなので、これは
+    そのまま「1 タイル＝1 位置」の素直な取得になる。複数レイヤを宣言した場合は
+    レイヤごとに独立して全タイルを取りに行く（層間のスキップはしない）。
+    """
+    tasks = dem_cache._enumerate_bbox(lat1, lon1, lat2, lon2, src)
+    total = len(tasks)
+    if total == 0:
+        return {"area_total": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+
+    counts = {"done": 0, "downloaded": 0, "skipped": 0, "failed": 0}
+    lock = threading.Lock()
+    work_q: queue.Queue = queue.Queue()
+    for task in tasks:
+        work_q.put(task)
+
+    def _worker() -> None:
+        while True:
+            try:
+                layer_id, zoom, x, y, subdir, cache_path = work_q.get_nowait()
+            except queue.Empty:
+                return
+            try:
+                if not force and _is_cached(cache_path):
+                    with lock:
+                        counts["skipped"] += 1
+                else:
+                    arr = dem._fetch_tile(layer_id, zoom, x, y, subdir, cache_path,
+                                          source=src, force=force)
+                    with lock:
+                        if arr is not None:
+                            counts["downloaded"] += 1
+                        else:
+                            counts["failed"] += 1
+            except Exception as e:
+                logger.warning("prefetch worker error (generic): %s", e)
+                with lock:
+                    counts["failed"] += 1
+            finally:
+                with lock:
+                    counts["done"] += 1
+                    done_snap = counts["done"]
+                if progress_cb:
+                    progress_cb(done_snap, total)
+                work_q.task_done()
+
+    num_workers = min(dem._MAX_PREFETCH_WORKERS, total)
+    threads = [threading.Thread(target=_worker, daemon=True) for _ in range(num_workers)]
+    for th in threads:
+        th.start()
+    work_q.join()
+
+    logger.info(
+        "prefetch complete (generic source=%s): total=%d downloaded=%d skipped=%d failed=%d",
+        src.source_id, total, counts["downloaded"], counts["skipped"], counts["failed"],
+    )
+    return {
+        "area_total": total,
+        "downloaded": counts["downloaded"],
+        "skipped":    counts["skipped"],
+        "failed":     counts["failed"],
+    }
+
+
+def _prefetch_gsi(
+    lat1: float, lon1: float,
+    lat2: float, lon2: float,
+    progress_cb=None,   # callback(done: int, total: int) | None
+    force: bool = False,
+) -> dict:
+    """国土地理院専用＝優先順位付き降下（dem5a→dem5b→dem_png）と欠損マスク。
+
+    ⚠️ **本体は 3.5 以前と1文字も変えていない**（3.6 ステージ1で `prefetch_tiles`
+    から切り出しただけ）＝降下ロジックそのものは国土地理院専用のまま残す判断
+    （B-253 対応案②）。
 
     優先順位: dem5a（5m航空）→ dem5b（5m写真）→ dem_png（10m）
     force=False のとき、既にキャッシュ済みの位置はスキップする。

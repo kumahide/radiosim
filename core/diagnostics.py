@@ -73,7 +73,7 @@ def build_package(zip_path: str, selected_facts: "set[str] | None" = None,
     を省く（または空）と成果物は 1 件も入らない＝**既定で除外**を関数の既定値
     でも保つ。
 
-    **原子的に書く**（[[feedback-atomic-writes]]）＝`zip_path` と同じディレクトリに
+    **原子的に書く**（[[feedback-shell-and-scripts]]）＝`zip_path` と同じディレクトリに
     一時ファイルを作り切ってから `os.replace`。ZIP 生成の途中で失敗しても、
     そこに壊れた ZIP が残らない。
     """

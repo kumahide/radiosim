@@ -107,6 +107,25 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tile_src_bad_max_zoom": "max_zoom must be an integer from 1 to 22",
         "menu_about":           "About",
         "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
+        "menu_check_updates":   "Check for Updates...",
+        "dlg_update_title":     "Check for Updates",
+        "dlg_update_latest":    "You are using the latest version ({ver}).",
+        "dlg_update_available": "A new version is available.\n\n"
+                                "Current: {cur}\nNew: {new}\n\n{how}\n\n"
+                                "Open the release page?",
+        "update_how_installer": "Download the new installer from the release page "
+                                "and run it. It replaces the current version; "
+                                "settings, cache and saved results are kept.",
+        "update_how_portable":  "Download the new ZIP from the release page and "
+                                "extract it into a new folder. You can keep using "
+                                "the current version side by side; settings and "
+                                "results stay in each folder.",
+        "update_how_source":    "Check out the tag {tag} from the repository.",
+        "menu_check_updates_auto": "Check for Updates at Startup",
+        "menu_check_updates_pre": "Include Pre-releases",
+        "update_auto_note":     "This notice comes from the startup check (at most "
+                                "once a day). To stop it, uncheck Help > Check for "
+                                "Updates at Startup.",
         "menu_diagnostics":     "Save Diagnostic Package...",
         "dlg_diagnostics_title": "Diagnostic Package",
         "dlg_diagnostics_intro": "Pick what to include, then choose where to save "
@@ -658,6 +677,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_downloading":       "Downloading…",
         "tm_dl_progress":       "Downloading… {done}/{total} ({pct}%)",
         "tm_dl_done":           "Done: 5m-aerial {dl5a}, 5m-photo {dl5b}, 10m {dl_dem} downloaded  /  skipped {skipped}, failed {failed}",
+        "tm_dl_done_generic":   "Done: {downloaded} tiles downloaded  /  skipped {skipped}, failed {failed}",
         "tm_delete_title":      "Delete Range",
         "tm_delete_confirm":    "Delete cached tiles for {n} areas? This cannot be undone.",
         "tm_delete_done":       "{deleted} tiles deleted.",
@@ -666,6 +686,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_done":   "All cache deleted: {deleted} tiles.",
         "tm_delete_all_basemap":"Report map tiles (basemap)",
         "tm_stats":             "Total cache: {count} tiles / {mb} MB",
+        "tm_stats_source":      "{name}: {count} tiles / {mb} MB",
+        "tm_cache_size_suffix": " ({mb} MB)",
         "tm_attr_pale":         "Source: GSI Tiles (Pale map)",
         "tm_attr_photo":        "Source: GSI Tiles (Aerial photo)",
         "map_layer_label":      "Basemap",
@@ -675,7 +697,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ===== Failure messages: the shared shape (I-100) =====
         # 段落 1 = what (+ why) / 段落 2 = what to do next / 段落 3 = details.
         # The wording is assembled in `core/failure.py`; nothing here is a full
-        # message on its own except `err_dem_unreachable` (the original model).
+        # message on its own.
         "fail_detail_label":    "Details:",
         # 次の一手＝閉じた語彙（`core.failure.FIX_KEYS`）。
         "fix_check_input":      "Correct the highlighted values and run again.",
@@ -688,6 +710,9 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "failing, report it together with the log file.",
         "fix_edit_lang_file":   "Fix those keys in the language file so they match "
                                 "the English table, then restart the app.",
+        "fix_network":          "Check your network connection, and set a proxy if "
+                                "your site requires one (Settings > Proxy Settings).",
+        "fix_retry_later":      "Wait a while (up to about an hour) and try again.",
         # 何が起きた（操作ごとに 1 つ）
         "fail_unexpected":      "An unexpected error occurred.",
         "fail_why_aborted":     "The operation was stopped.",
@@ -700,20 +725,24 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fail_load_project":    "The project file could not be opened.",
         "fail_save_settings":   "The settings could not be saved.",
         "fail_load_settings":   "The app settings could not be loaded.",
+        "fail_open_results":    "The Results folder could not be created.",
         "fail_refresh_common":  "The launcher values could not be taken in.",
         "fail_run_single":      "The run did not finish.",
         "fail_run_batch":       "The Multiple Paths run did not finish.",
         "fail_run_multihop":    "The relay path run did not finish.",
         "fail_run_scenario":    "The condition sweep did not finish.",
         "fail_why_stopped":     "Nothing was written.",
+        "fail_update_check":    "Could not check for updates.",
+        "fail_why_rate_limited": "GitHub has reached its limit on how often it can "
+                                "be asked from this network.",
 
         # ===== Terrain fetch =====
-        "err_dem_unreachable":  (
-            "Could not download terrain data (DEM). The run was stopped so that "
-            "a flat 0 m terrain is not reported as a real result.\n\n"
-            "Check your network connection, and set a proxy if your site requires "
-            "one (Settings > Proxy Settings)."
-        ),
+        # 3 つに割って `failure.message` で組む（I-178＝次の一手 `fix_network` を
+        # 更新の確認と分け合うため）。組んだ字は割る前の 1 キーと 1 字も違わない
+        # （`tests/test_failure_messages.py` が固定）。
+        "fail_dem_unreachable": "Could not download terrain data (DEM).",
+        "fail_why_flat_terrain": "The run was stopped so that a flat 0 m terrain "
+                                "is not reported as a real result.",
 
         # ===== Multi-hop (relay) =====
         "mh_window_title":      "Relay Path",
@@ -900,6 +929,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tile_src_bad_max_zoom": "max_zoom は 1〜22 の整数で指定してください",
         "menu_about":           "バージョン情報",
         "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
+        "menu_check_updates":   "更新の確認...",
+        "dlg_update_title":     "更新の確認",
+        "dlg_update_latest":    "お使いの版（{ver}）が最新です。",
+        "dlg_update_available": "新しい版があります。\n\n"
+                                "お使いの版: {cur}\n新しい版: {new}\n\n{how}\n\n"
+                                "リリースのページを開きますか？",
+        "update_how_installer": "リリースのページから新しいインストーラを取得して"
+                                "実行してください。 いまの版と置き換わり、設定・"
+                                "キャッシュ・保存結果は引き継がれます。",
+        "update_how_portable":  "リリースのページから新しいポータブル版（ZIP）を取得し、別のフォルダへ"
+                                "展開してください。 いまの版と並べて使えます（設定と"
+                                "結果はフォルダごとに分かれます）。",
+        "update_how_source":    "リポジトリからタグ {tag} を取得してください。",
+        "menu_check_updates_auto": "起動時に更新を確認",
+        "menu_check_updates_pre": "プレリリースも知らせる",
+        # ⚠️ Tk は空白でしか折らない＝1 文ずつ 1 行に収まる長さにし、文の間にだけ空白を
+        # 置く（長いと「。」が行頭へ落ちた＝2026-09-26 の画面確認）。数字と単位の間にも
+        # 空白を入れない（I-178 の画面の直し）。
+        "update_auto_note":     "起動時の確認（一日一回まで）による知らせです。 "
+                                "ヘルプの「起動時に更新を確認」を外すと止まります。",
         "menu_diagnostics":     "診断パッケージを保存...",
         "dlg_diagnostics_title": "診断パッケージ",
         "dlg_diagnostics_intro": "含める項目を選んでから、ZIP の保存先を指定して"
@@ -1405,6 +1454,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_downloading":       "ダウンロード中…",
         "tm_dl_progress":       "ダウンロード中… {done}/{total} ({pct}%)",
         "tm_dl_done":           "完了: 5m航空 {dl5a}, 5m写真 {dl5b}, 10m {dl_dem} DL  /  スキップ {skipped}, 失敗 {failed}",
+        "tm_dl_done_generic":   "完了: {downloaded} 枚 DL  /  スキップ {skipped}, 失敗 {failed}",
         "tm_delete_title":      "範囲削除",
         "tm_delete_confirm":    "対象 {n} エリアのキャッシュを削除しますか？この操作は元に戻せません。",
         "tm_delete_done":       "{deleted}枚削除しました。",
@@ -1413,6 +1463,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "tm_delete_all_done":   "全キャッシュを削除しました: {deleted}枚",
         "tm_delete_all_basemap":"レポート地図タイル（背景地図）",
         "tm_stats":             "キャッシュ総量: {count}枚 / {mb} MB",
+        "tm_stats_source":      "{name}: {count}枚 / {mb} MB",
+        "tm_cache_size_suffix": "（{mb} MB）",
         "tm_attr_pale":         "出典: 地理院タイル（淡色地図）",
         "tm_attr_photo":        "出典: 地理院タイル（航空写真）",
         "map_layer_label":      "背景",
@@ -1421,8 +1473,7 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # ===== 失敗メッセージの型（I-100） =====
         # 段落 1 = 何が起きた（＋なぜ止めた）／段落 2 = 次に何をすべきか／
-        # 段落 3 = 詳細。組み立ては `core/failure.py`。ここに 1 文で完結する
-        # メッセージがあるのは `err_dem_unreachable`（型の出所）だけ。
+        # 段落 3 = 詳細。組み立ては `core/failure.py`。
         "fail_detail_label":    "詳細:",
         # 次の一手＝閉じた語彙（`core.failure.FIX_KEYS`）。
         "fix_check_input":      "指摘された値を直して、もう一度実行してください。",
@@ -1435,6 +1486,9 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "ログファイルを添えて報告してください。",
         "fix_edit_lang_file":   "言語ファイルの該当キーを英語の表に合わせて直し、"
                                 "アプリを開き直してください。",
+        "fix_network":          "ネットワーク接続を確認してください。社内ネットワークなどで"
+                                "プロキシが必要な場合は、設定 > プロキシ設定 で指定してください。",
+        "fix_retry_later":      "しばらく（長くて一時間ほど）待ってから、もう一度試してください。",
         # 何が起きた（操作ごとに 1 つ）
         "fail_unexpected":      "予期しないエラーが起きました。",
         "fail_why_aborted":     "処理は中断しました。",
@@ -1447,20 +1501,22 @@ _STRINGS: dict[str, dict[str, str]] = {
         "fail_load_project":    "プロジェクトファイルを開けませんでした。",
         "fail_save_settings":   "設定を保存できませんでした。",
         "fail_load_settings":   "アプリ設定を読み込めませんでした。",
+        "fail_open_results":    "結果フォルダを作れませんでした。",
         "fail_refresh_common":  "ランチャーの値を取り込めませんでした。",
         "fail_run_single":      "実行を最後まで完了できませんでした。",
         "fail_run_batch":       "複数経路の実行を最後まで完了できませんでした。",
         "fail_run_multihop":    "中継経路の実行を最後まで完了できませんでした。",
         "fail_run_scenario":    "条件探索の実行を最後まで完了できませんでした。",
         "fail_why_stopped":     "ファイルには何も書かれていません。",
+        "fail_update_check":    "更新を確認できませんでした。",
+        "fail_why_rate_limited": "このネットワークから GitHub へ問い合わせられる"
+                                "回数の上限に達しています。",
 
         # ===== Terrain fetch =====
-        "err_dem_unreachable":  (
-            "地形データ（DEM）を取得できませんでした。標高 0m の平坦な地形を"
-            "結果として出さないよう、実行を中止しました。\n\n"
-            "ネットワーク接続を確認してください。社内ネットワークなどで"
-            "プロキシが必要な場合は、設定 > プロキシ設定 で指定してください。"
-        ),
+        # 3 つに割って `failure.message` で組む（英語側の注記を参照）。
+        "fail_dem_unreachable": "地形データ（DEM）を取得できませんでした。",
+        "fail_why_flat_terrain": "標高 0m の平坦な地形を結果として出さないよう、"
+                                "実行を中止しました。",
 
         # ===== Multi-hop (relay) =====
         "mh_window_title":      "中継経路",

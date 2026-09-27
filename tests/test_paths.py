@@ -15,7 +15,7 @@ tests/test_paths.py
      結果が引き続き読める）
 
 3.1 で OS 標準の場所（%APPDATA% 等）への移設・ポータブル判定・旧配置からの
-移行を実装した（[[project_roadmap]] §3.1 ステージ1）。解決器そのもの
+移行を実装した（[[project-roadmap]] §3.1 ステージ1）。解決器そのもの
 （`is_portable` / `_appdata_dir` 等）と移行の検査は tests/test_write_locations.py。
 """
 
@@ -505,7 +505,9 @@ class TestUncoveredFacesAreReported:
         assert stamp.exists(), "回ったのに刻印が残らない＝release-check が毎回鳴る"
         data = json.loads(stamp.read_text(encoding="utf-8"))
         assert data["ran"] == 1537
-        assert len(data["commit"]) == 40, "commit を刻んでいない＝HEAD と照合できない"
+        assert len(data["commit"]) == 40, "commit を刻んでいない＝いつの木で回したか読めない"
+        # B-294＝照合の名札は中身（検査した views/ tests/ の blob）。
+        assert "tests/conftest.py" in data["display_files"], "中身を刻んでいない＝HEAD と照合できない"
 
     def test_a_narrowed_run_is_never_stamped(self, monkeypatch, tmp_path):
         """⛔ **部分実行は刻まない**こと（刻印が嘘をつく形）。
@@ -902,7 +904,7 @@ class TestDeclaredInterpreter:
         **大小を区別する**ので、大文字のパスは*実在しない別のパス*＝
         `interpreter_mismatch()` が食い違いを返すのが**正しい振る舞い**だった。
         ⇒ 落ちていたのは製品ではなく、**Windows 前提を書いた試験の側**。
-        [[feedback-no-wsl-push]] のとおり開発と QA は Windows 完結だが、**CI だけは
+        [[feedback-shell-and-scripts]] のとおり開発と QA は Windows 完結だが、**CI だけは
         ubuntu** なので、FS の性質に依存する試験はここで OS を宣言する。
         """
         from core import runtime_env

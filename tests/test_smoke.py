@@ -219,6 +219,72 @@ def test_delete_all_cache_keeps_single_confirm_when_only_gsi(monkeypatch):
         root.destroy()
 
 
+def test_open_results_creates_missing_folder_then_opens_it(tmp_path, monkeypatch):
+    """B-273＝一度も実行していない新規インストール直後は結果フォルダが無い。
+    「結果フォルダを開く」は黙らず、作ってから開くこと（対応案 3）。"""
+    pytest.importorskip("tkinter")
+    from core import config
+    from views.launcher import SimLauncher
+    missing = tmp_path / "results"
+    monkeypatch.setattr(config, "RESULTS_DIR", str(missing))
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        app._on_open_results()
+        assert missing.is_dir()
+    finally:
+        root.destroy()
+
+
+def test_open_results_reports_failure_instead_of_staying_silent(monkeypatch):
+    """作成に失敗する場所（書込禁止等・I-130 と同じ形）は断りを出す。"""
+    pytest.importorskip("tkinter")
+    from views import launcher_windows
+    from views.launcher import SimLauncher
+
+    def _boom(*a, **k):
+        raise OSError("permission denied")
+
+    monkeypatch.setattr(launcher_windows.os, "makedirs", _boom)
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        calls: list[tuple] = []
+        app._alert = lambda title, message: calls.append((title, message))
+        app._on_open_results()
+        assert len(calls) == 1
+    finally:
+        root.destroy()
+
+
+def test_load_settings_omits_initialdir_when_results_dir_is_missing(tmp_path, monkeypatch):
+    """B-273 隣接＝結果フォルダがまだ無いのに存在しないパスを initialdir へ
+    渡していた（ダイアログが期待と違う場所で開く）。実在するときだけ渡す。"""
+    pytest.importorskip("tkinter")
+    from tkinter import filedialog
+    from core import config
+    from views.launcher import SimLauncher
+    missing = tmp_path / "results"
+    monkeypatch.setattr(config, "RESULTS_DIR", str(missing))
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        app = SimLauncher(root, lambda _t: None)
+        seen: dict = {}
+
+        def _fake_askopenfilename(**kwargs):
+            seen.update(kwargs)
+            return ""
+
+        monkeypatch.setattr(filedialog, "askopenfilename", _fake_askopenfilename)
+        app._on_load_settings()
+        assert "initialdir" not in seen
+    finally:
+        root.destroy()
+
+
 def _find_widget(parent, predicate):
     for w in parent.winfo_children():
         if predicate(w):
@@ -271,6 +337,64 @@ def test_delete_all_cache_offers_source_checkboxes_when_multiple_sources(monkeyp
         got_ids = {s.source_id for s in calls[0]["sources"]}
         assert got_ids == {"gsi_dem", "fake_src"}
         assert calls[0]["include_basemap"] is True
+    finally:
+        root.destroy()
+
+
+def test_delete_all_cache_checkboxes_show_capacity_per_source(monkeypatch):
+    """I-169（3.6 ステージ1）＝各チェック行に「どれを消すと何 MB 空くか」が出ること。
+
+    処方④＝全削除ダイアログに容量を出す（③の表の使い回し）。ソース別・背景地図の
+    内訳は `get_cache_breakdown()`（⑤）の 1 回だけの呼び出しから作る。
+    """
+    pytest.importorskip("tkinter")
+    from tkinter import ttk
+    from core import dem_cache, dem_sources
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM, invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [
+                {"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                 "count": 2, "size_bytes": 2 * 1024 * 1024},
+                {"source_id": "fake_src", "display_name": "Fake Source",
+                 "count": 1, "size_bytes": 3 * 1024 * 1024},
+            ],
+            "basemap": {"count": 4, "size_bytes": 1024 * 1024},
+            "total": {"count": 7, "size_bytes": 6 * 1024 * 1024},
+        },
+    )
+
+    root = make_tk_root()
+    try:
+        root.withdraw()
+        from views.launcher import SimLauncher
+        app = SimLauncher(root, lambda _t: None)
+
+        def _texts(parent):
+            out = []
+            for w in parent.winfo_children():
+                if isinstance(w, ttk.Checkbutton):
+                    out.append(w.cget("text"))
+                out.extend(_texts(w))
+            return out
+
+        before = set(app.root.winfo_children())
+        app._on_delete_all_cache()
+        opened = [w for w in app.root.winfo_children() if w not in before]
+        dlg = opened[-1]
+
+        texts = _texts(dlg)
+        assert any("国土地理院 DEM" in t and "2.0" in t for t in texts), texts
+        assert any("Fake Source" in t and "3.0" in t for t in texts), texts
+        assert any("1.0" in t for t in texts), texts   # 背景地図の行
     finally:
         root.destroy()
 

@@ -37,7 +37,7 @@ def _decorated_hwnd(win: tk.Misc, windll: "Any | None" = None) -> "int | None":
     🔴 **`winfo_id()` はそのまま渡せない**（I-132 落とし穴①）＝Tk はトップレベルを
     もう1段 HWND で包んでおり、`winfo_id()` が返すのはクライアント領域側の子 HWND。
     それを渡しても `DwmSetWindowAttribute` は **`S_OK`（成功）を返すのに見た目は
-    変わらない**（[[feedback-diff-before-gui-repro]]）。装飾を持つのは `GetParent()` の側。
+    変わらない**（[[feedback-verification]]）。装飾を持つのは `GetParent()` の側。
 
     Args:
         windll: 差し替え用の `ctypes.windll` 代役（テスト用・省略時は実物）。

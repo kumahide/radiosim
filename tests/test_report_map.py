@@ -24,9 +24,9 @@ from report import report_common
 from report import report_map
 
 
-def _attribution_text() -> str:
-    """いま焼かれる出典表記（製品と同じキーから引く）。"""
-    return i18n.t(report_map._ATTR_KEY)
+def _attribution_text(source_id: str = "pale") -> str:
+    """いま焼かれる出典表記（製品と同じ解決器から引く＝B-248）。"""
+    return report_map._resolve_attribution(source_id)
 
 
 def _expected_badge(img: Image.Image) -> Image.Image:
@@ -383,7 +383,7 @@ class TestAttribution:
 
     🔴 この欠陥の正体は「UI の地図には出したが、同じ絵を帳票へ焼くもう一方の
     経路が引き継がなかった」こと＝*字が抜けていた*のではなく**配線が無かった**。
-    なので検査も字でなく**配線**を見る（[[feedback_promote_recurring_checks]] の
+    なので検査も字でなく**配線**を見る（[[feedback-promote-recurring-checks]] の
     実証 50）＝どの地図関数から呼んでもバーが貼られること・文言がタイルのレイヤから
     引かれていること・UI と帳票が同じ表を引いていることの 3 点。
     """
@@ -405,14 +405,19 @@ class TestAttribution:
         assert dem.BASEMAP_LAYER in map_graphics.ATTR_KEYS
 
     def test_report_source_text_matches_the_tile_it_actually_draws(self):
-        """帳票が焼く文言が、**実際に取ってくるタイル**の出典であること。
+        """帳票が焼く文言が、**実際に選ばれた背景地図ソース**の出典であること。
 
-        🔑 ここが `report_map._ATTR_KEY` をリテラルで書ける根拠＝キーを直に
-        書くのは外部翻訳ゲート（B-101）が `t()` の引数を静的に読むためで、
-        **レイヤとの対はこの 1 本が受け持つ**。帳票のタイルを淡色から替えたら
-        （`dem.BASEMAP_LAYER`）、キーを直さない限りここで落ちる。
+        🔑 B-248＝帳票の背景地図は地図ウィンドウの選択（`basemap_source_id`）に
+        追従する。`_resolve_attribution()` が組み込み 2 種を正しく解決できて
+        いることを、`map_graphics.ATTR_KEYS`（単一ソース）と突き合わせて見る。
         """
-        assert report_map._ATTR_KEY == map_graphics.ATTR_KEYS[dem.BASEMAP_LAYER]
+        for source_id, attr_key in map_graphics.ATTR_KEYS.items():
+            assert report_map._resolve_attribution(source_id) == i18n.t(attr_key)
+
+    def test_report_source_text_falls_back_to_pale_for_unknown_source(self):
+        # 宣言を消した後など、未知の source_id は "pale" の出典へ落ちる。
+        assert (report_map._resolve_attribution("no-such-source")
+                == i18n.t(map_graphics.ATTR_KEYS["pale"]))
 
     def test_source_text_is_readable_not_tofu(self):
         # 日本語の出典が**豆腐（□）にならない**フォントで焼けること。
@@ -458,6 +463,66 @@ class TestAttribution:
         opposite = arr[img.height - badge.height - m:img.height - m,
                        m:m + badge.width]
         assert (opposite == 200).all(axis=2).mean() > 0.9
+
+
+# ============================================================
+# 宣言した背景地図の最大ズーム（B-279）
+# ============================================================
+class TestDeclaredBasemapMaxZoom:
+    """宣言の `max_zoom` を超えるタイルを要求しないこと（B-279）。
+
+    上限を超えたタイルはサーバに無い＝欠損扱いで地図ごと省かれる。
+    偽のタイル取得は**上限以下だけ返す**＝製品の壊れ方をそのまま再現する。
+    """
+
+    _MAX_ZOOM = 15
+
+    def _declare(self, monkeypatch, max_zoom: int) -> None:
+        from core import tile_sources
+        fake = tile_sources.TileSourceSpec(
+            source_id="lowzoom", display_name="LowZoom",
+            url="https://tile.example.invalid/{z}/{x}/{y}.png",
+            max_zoom=max_zoom, attribution="(c) lowzoom",
+            terms_url="https://example.invalid",
+        )
+        monkeypatch.setattr(tile_sources, "_user_sources", [fake])
+
+    def _serve_up_to(self, monkeypatch, max_zoom: int) -> list[int]:
+        asked: list[int] = []
+
+        def fake(layer_id, zoom, *args, **kwargs):
+            asked.append(zoom)
+            if zoom > max_zoom:
+                return None
+            return np.full((256, 256, 3), 200, dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        return asked
+
+    @pytest.mark.parametrize("render", ("path", "paths"))
+    def test_short_path_map_stays_within_declared_max_zoom(self, monkeypatch, render):
+        self._declare(monkeypatch, self._MAX_ZOOM)
+        asked = self._serve_up_to(monkeypatch, self._MAX_ZOOM)
+        # 数百 m の経路＝上限 18 のままなら z=18 が選ばれる長さ。
+        tx, rx = (34.5400, 132.4100), (34.5380, 132.4080)
+        img = (report_map.render_path_map(tx, rx, basemap_source_id="lowzoom")
+               if render == "path"
+               else report_map.render_paths_map(
+                   _specs((tx, rx, "OK", "P1")), basemap_source_id="lowzoom"))
+        assert isinstance(img, Image.Image), "上限を超えたズームで地図が消えた"
+        assert asked and max(asked) == self._MAX_ZOOM
+
+    def test_min_zoom_is_pulled_below_a_very_low_max_zoom(self, monkeypatch):
+        # 上限が既定の min_zoom（5）より低くても、範囲が空にならず上限以下を選ぶ。
+        self._declare(monkeypatch, 3)
+        asked = self._serve_up_to(monkeypatch, 3)
+        img = report_map.render_path_map((34.54, 132.41), (34.53, 132.40),
+                                         basemap_source_id="lowzoom")
+        assert isinstance(img, Image.Image)
+        assert asked and max(asked) <= 3
+
+    def test_builtin_and_unknown_sources_keep_zoom_18(self):
+        for source_id in ("pale", "photo", "no-such-source"):
+            assert dem.basemap_max_zoom(source_id) == 18
 
 
 # ============================================================

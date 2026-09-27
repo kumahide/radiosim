@@ -354,6 +354,7 @@ def run_batch(
     project_name:      str = "",
     memo:              str = "",
     exclude_spot:      bool = False,
+    basemap_source_id: str = "pale",
 ) -> None:
     """バッチ実行をバックグラウンドスレッドで開始する。
 
@@ -372,12 +373,16 @@ def run_batch(
     ⚠️ **`on_path_progress` は `(取得済み, その行の点数)` の 2 つを渡す**（I-069）＝
     地形の標本数は**行ごとに解かれる**ようになったので、呼び出し側が共通設定から
     分母を持つことはできない（持たせると、長い行ほどバーが途中で止まって見える）。
+
+    basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
+    呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
     """
     threading.Thread(
         target = _run_thread,
         args   = (rows, base_params, on_path_start, on_path_progress,
                   on_path_complete, on_batch_complete, on_error, coord_format,
-                  on_path_stage, project_name, memo, exclude_spot),
+                  on_path_stage, project_name, memo, exclude_spot,
+                  basemap_source_id),
         daemon = True,
     ).start()
 
@@ -395,6 +400,7 @@ def _run_thread(
     project_name:      str = "",
     memo:              str = "",
     exclude_spot:      bool = False,
+    basemap_source_id: str = "pale",
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
@@ -408,18 +414,19 @@ def _run_thread(
         for i, row in enumerate(rows):
             on_path_start(i + 1, total, row.path_id)
             pr = _process_one(row, base_params, batch_dir, on_path_progress,
-                              coord_format, on_path_stage, project_name)
+                              coord_format, on_path_stage, project_name,
+                              basemap_source_id)
             path_results.append(pr)
             on_path_complete(i + 1, total, pr)
 
         # サマリ生成もここ（ワーカースレッド）で行う。render_summary_map_b64 は
-        # 淡色地図タイルをネットワーク取得するため、GUI スレッドで呼ぶと数秒
+        # 背景地図タイルをネットワーク取得するため、GUI スレッドで呼ぶと数秒
         # 固まる（basemap は DEM と別キャッシュなので DEM が暖まっていても
         # コールドになりうる）。
         if on_path_stage:
             on_path_stage("summary")
         t_sum = time.perf_counter()
-        map_b64 = report_summary.render_summary_map_b64(path_results)
+        map_b64 = report_summary.render_summary_map_b64(path_results, basemap_source_id)
         logger.info("Summary map complete in %.2fs", time.perf_counter() - t_sum)
         report_summary.save_summary_html(path_results, batch_dir, project_name,
                                          memo, map_b64, exclude_spot=exclude_spot)
@@ -448,6 +455,7 @@ def _process_one(
     coord_format: str = "dd",
     on_stage:     "Callable[[str], None] | None" = None,
     project_name: str = "",
+    basemap_source_id: str = "pale",
 ) -> PathResult:
     try:
         params    = _make_params(row, base)
@@ -501,7 +509,7 @@ def _process_one(
         # 戻り値は `pr.artifact_error` と同じもの（save_path_visuals が pr へ
         # 記録する）＝**呼び出し側が受け取り忘れても失敗が消えない**形にしてある
         # （I-010・受け取り忘れは「静かに成功」に戻る唯一の道だった）。
-        report_path.save_path_visuals(pr, coord_format, project_name)
+        report_path.save_path_visuals(pr, coord_format, project_name, basemap_source_id)
         logger.info("Path '%s' render complete in %.2fs (%s)",
                     row.path_id, time.perf_counter() - t0,
                     "ok" if pr.artifact_error is None else "artifacts failed")

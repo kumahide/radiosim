@@ -3,7 +3,7 @@ views/launcher_menu.py
 ======================
 ランチャーの**メニューバーと、そこからしか呼ばれない操作**（`SimLauncher` の Mixin）。
 
-テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・バージョン情報・ドキュメント表示。
+テーマ・言語・プロキシ・設定の読み込み・キャッシュ削除・更新の確認・バージョン情報・ドキュメント表示。
 
 ⚠️ **これは `SimLauncher` の一部**であって独立した部品ではない（`self.root` /
 `self.config` / `self.entries` を共有する）。分けたのは*読む単位*を小さくするため
@@ -11,9 +11,11 @@ views/launcher_menu.py
 変えていない＝「移動だけ」）。
 """
 
+import datetime
 import json
 import os
 import re
+import threading
 import time
 import tkinter as tk
 from pathlib import Path
@@ -28,8 +30,10 @@ from core import diagnostics
 from core import failure
 from core import i18n
 from core import simulation as sim
+from core import update_check
 from core import version
 from views import dialogs
+from views import progress
 from views import theme, title_bar
 
 if TYPE_CHECKING:
@@ -233,6 +237,47 @@ def render_doc_site(entry_path: str, base_dir: str, out_dir: str,
     return os.path.join(out_dir, names[os.path.abspath(entry_path)])
 
 
+def update_available_message(rel: "update_check.Release", *,
+                             frozen: "bool | None" = None,
+                             portable: "bool | None" = None,
+                             auto: bool = False) -> str:
+    """新しい版があるときの本文（I-178）。配布形ごとに入れ方の 1 文を替える。
+
+    言い方はマニュアルの節「別の版を上から入れるとき」「複数の版を並べて使う
+    とき」と同じ（インストーラ版は置き換わる・ポータブル版は並べられる）。
+    `auto`＝起動時の確認（I-179）から出たとき、止め方を入れ方の後ろへ足す
+    （問い「開きますか」は最後に残す）。
+    """
+    import sys
+    if frozen is None:
+        frozen = bool(getattr(sys, "frozen", False))
+    if portable is None:
+        portable = config.is_portable()
+    if not frozen:
+        how = i18n.t("update_how_source").format(tag=rel.tag)
+    elif portable:
+        how = i18n.t("update_how_portable")
+    else:
+        how = i18n.t("update_how_installer")
+    if auto:
+        how += "\n\n" + i18n.t("update_auto_note")
+    return i18n.t("dlg_update_available").format(
+        cur=version.APP_VERSION, new=rel.version, how=how)
+
+
+def update_failure_message(exc: BaseException) -> str:
+    """更新の確認が答えを得られなかったときの本文（型＝`core/failure.py`）。"""
+    kind = getattr(exc, "kind", "")
+    if kind == "rate_limited":
+        return failure.message(what=i18n.t("fail_update_check"),
+                               why=i18n.t("fail_why_rate_limited"),
+                               hint=i18n.t("fix_retry_later"))
+    detail = getattr(exc, "detail", "") or f"{type(exc).__name__}: {exc}"
+    hint = i18n.t("fix_network") if kind == "network" else i18n.t("fix_retry_or_log")
+    return failure.message(what=i18n.t("fail_update_check"), hint=hint,
+                           detail=detail)
+
+
 class _MenuMixin:
     # 宿主（`SimLauncher`）から借りている面の宣言。**型検査のときだけ**存在する
     # （実行時は 1 文字も定義しない）。理由は
@@ -367,6 +412,32 @@ class _MenuMixin:
             label   = i18n.t("menu_diagnostics"),
             command = self._on_save_diagnostics,
         )
+        help_menu.add_command(
+            label   = i18n.t("menu_check_updates"),
+            command = self._on_check_updates,
+        )
+        # 起動時の確認（I-179）＝手動の口の真下に置く（何を自動にするのかが隣で読める）。
+        # `"on"` 以外の字はオフとして読む（`update_check.auto_due` と同じ）。
+        self._update_auto_var = tk.StringVar(
+            value="on" if self.config.get("update_check_auto") == "on" else "off")
+        help_menu.add_checkbutton(
+            label    = i18n.t("menu_check_updates_auto"),
+            variable = self._update_auto_var,
+            onvalue  = "on",
+            offvalue = "off",
+            command  = self._on_update_auto_toggle,
+        )
+        # プレリリースも知らせるか（I-180）＝手動と起動時の両方に効くので 2 つの下に置く。
+        # まだ触っていない（`""`）あいだの印は、いまの版で決まる値を映す。
+        self._update_pre_var = tk.StringVar(
+            value="on" if update_check.want_prerelease(self.config) else "off")
+        help_menu.add_checkbutton(
+            label    = i18n.t("menu_check_updates_pre"),
+            variable = self._update_pre_var,
+            onvalue  = "on",
+            offvalue = "off",
+            command  = self._on_update_pre_toggle,
+        )
         help_menu.add_separator()
         help_menu.add_command(
             label   = i18n.t("menu_about"),
@@ -397,7 +468,10 @@ class _MenuMixin:
 
     def _on_lang_select(self, lang: str) -> None:
         self.config["lang"] = lang
-        config.save_app(self.config)
+        # 保存が通ったら種を消費済みにする（B-299）＝起動時の保存に失敗して印が
+        # 無いままでも、この選択を次の起動で種が巻き戻さない。
+        if config.save_app(self.config):
+            config.consume_lang_seed()
         self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
 
     def _on_export_lang_template(self) -> None:
@@ -516,17 +590,27 @@ class _MenuMixin:
         ttk.Label(dlg, text=i18n.t("tm_delete_all_confirm"), wraplength=420,
                  justify="left").grid(row=0, column=0, sticky="w", padx=16, pady=(16, 10))
 
+        # I-169（3.6 ステージ1）＝「どれを消すと何 MB 空くか」が今まで分からなかった。
+        # `get_cache_breakdown()` を 1 回だけ呼び、各チェック行にソース別・背景地図の
+        # 容量を添える（ダイアログを開いた時点の値＝開いている間の増減までは追わない）。
+        breakdown = dem_cache.get_cache_breakdown()
+        src_size = {s["source_id"]: s["size_bytes"] for s in breakdown["sources"]}
+
+        def _size_suffix(size_bytes: int) -> str:
+            return i18n.t("tm_cache_size_suffix").format(mb=f"{size_bytes / (1024 * 1024):.1f}")
+
         src_vars: dict[str, tk.BooleanVar] = {}
         frame = ttk.Frame(dlg)
         frame.grid(row=1, column=0, sticky="w", padx=28, pady=(0, 4))
         for i, src in enumerate(sources):
             var = tk.BooleanVar(value=True)
             src_vars[src.source_id] = var
-            ttk.Checkbutton(frame, text=src.display_name, variable=var).grid(
+            text = src.display_name + _size_suffix(src_size.get(src.source_id, 0))
+            ttk.Checkbutton(frame, text=text, variable=var).grid(
                 row=i, column=0, sticky="w")
         basemap_var = tk.BooleanVar(value=True)
-        ttk.Checkbutton(frame, text=i18n.t("tm_delete_all_basemap"),
-                       variable=basemap_var).grid(
+        basemap_text = i18n.t("tm_delete_all_basemap") + _size_suffix(breakdown["basemap"]["size_bytes"])
+        ttk.Checkbutton(frame, text=basemap_text, variable=basemap_var).grid(
             row=len(sources), column=0, sticky="w")
 
         def _on_ok() -> None:
@@ -556,11 +640,17 @@ class _MenuMixin:
             )
 
     def _on_load_settings(self) -> None:
+        # B-273 隣接: 一度も実行していない（＝結果フォルダがまだ無い）新規
+        # インストール直後は存在しないパスを initialdir に渡すことになり、
+        # ダイアログが期待と違う場所（OS 既定）で開いていた。実在するときだけ渡す。
+        kwargs: dict = {}
+        if os.path.exists(config.RESULTS_DIR):
+            kwargs["initialdir"] = config.RESULTS_DIR
         file_path = filedialog.askopenfilename(
-            initialdir = config.RESULTS_DIR,
             title      = i18n.t("dlg_select_settings"),
             filetypes  = [("JSON files", "*.json")],
             parent     = self.root,
+            **kwargs,
         )
         if not file_path:
             return
@@ -620,7 +710,10 @@ class _MenuMixin:
                 self._alert(i18n.t("dlg_app_settings_none_title"),
                             i18n.t("dlg_app_settings_none"))
                 return
-            config.save_app(self.config)
+            # 言語を取り込んだときだけ種を消費済みにする（B-299・言語メニューと同じ）。
+            # テーマやプロキシだけの取り込みは言語を選んでいないので印を書かない。
+            if config.save_app(self.config) and app.get("lang") in langs:
+                config.consume_lang_seed()
             if lang_changed:
                 self._alert(i18n.t("menu_language"), i18n.t("lang_changed_msg"))
             else:
@@ -719,6 +812,97 @@ class _MenuMixin:
                   style="Accent.TButton", command=_on_save).pack(side="left")
 
         dialogs.center_on(self.root, dlg)
+
+    def _on_check_updates(self, quiet: bool = False) -> None:
+        """GitHub Releases に新しい版を尋ねる（I-178 段階 1＝押したときだけ）。
+
+        問い合わせは daemon スレッド 1 本、結果は `post_to_ui` で画面へ戻す
+        （実行フローではないので `ProgressPump` の一覧には入れない）。
+        待つ間はカーソルで示し、二度押しは無視する。
+
+        `quiet=True` は起動時の確認（I-179）＝カーソルを変えず、新しい版があるとき
+        だけ画面に出す（最新・失敗はログだけ）。起動時の確認を待つ間に利用者が
+        押したら、その問い合わせの答えを手動と同じに出す（2 本目は打たない）。
+        """
+        if getattr(self, "_update_check_busy", False):
+            if not quiet and self._update_check_quiet:
+                self._update_check_quiet = False
+                self.root.configure(cursor="watch")
+            return
+        self._update_check_busy = True
+        self._update_check_quiet = quiet
+        if not quiet:
+            self.root.configure(cursor="watch")
+        # 設定は画面のスレッドで読んでから渡す（I-180）。
+        include_pre = update_check.want_prerelease(self.config)
+
+        def _work() -> None:
+            outcome: "update_check.Release | BaseException | None"
+            try:
+                outcome = update_check.check(include_pre=include_pre)
+            except update_check.UpdateCheckError as e:
+                outcome = e
+            except Exception as e:                 # 想定外＝ログに残して画面へ
+                config.logger.exception("Update check failed")
+                outcome = e
+            progress.post_to_ui(self.root, lambda: self._show_update_result(outcome))
+
+        threading.Thread(target=_work, name="update-check", daemon=True).start()
+
+    def _show_update_result(
+            self, outcome: "update_check.Release | BaseException | None") -> None:
+        self._update_check_busy = False
+        self.root.configure(cursor="")
+        title = i18n.t("dlg_update_title")
+        if self._update_check_quiet:
+            # 起動時の確認＝失敗も「最新」も黙る（頼んでいない通信の失敗で
+            # 起動のたびにダイアログを出さない）。ログにだけ残す。
+            if isinstance(outcome, BaseException):
+                config.logger.info("Startup update check skipped: %s", outcome)
+                return
+            if outcome is None:
+                return
+            if self._confirm(title, update_available_message(outcome, auto=True)):
+                import webbrowser
+                webbrowser.open(outcome.url)
+            return
+        if isinstance(outcome, BaseException):
+            self._alert(title, update_failure_message(outcome))
+            return
+        if outcome is None:
+            self._alert(title, i18n.t("dlg_update_latest").format(
+                ver=version.APP_VERSION))
+            return
+        if self._confirm(title, update_available_message(outcome)):
+            import webbrowser
+            webbrowser.open(outcome.url)
+
+    def _on_update_auto_toggle(self) -> None:
+        """起動時の確認のオン／オフを保存する（I-179）。切り替えただけでは問い合わせない。"""
+        self.config["update_check_auto"] = self._update_auto_var.get()
+        config.save_app(self.config)
+
+    def _on_update_pre_toggle(self) -> None:
+        """プレリリースも知らせるかを保存する（I-180）。
+
+        触った時点で `"on"`／`"off"` を固定する＝以後は版が変わっても追従しない。
+        切り替えただけでは問い合わせない。
+        """
+        self.config["update_check_prerelease"] = self._update_pre_var.get()
+        config.save_app(self.config)
+
+    def _auto_check_updates(self) -> None:
+        """起動時に 1 日 1 回まで新しい版を確かめる（I-179 段階 2・既定オフ）。
+
+        試みた日は**打つ前に**記録する＝失敗しても、同じ日にもう 1 度起動しても
+        2 度目は打たない（`update_check.auto_due`）。
+        """
+        today = datetime.date.today()
+        if not update_check.auto_due(self.config, today):
+            return
+        self.config["update_check_last"] = today.isoformat()
+        config.save_app(self.config)
+        self._on_check_updates(quiet=True)
 
     def _on_about(self) -> None:
         self._alert(

@@ -33,6 +33,7 @@ from typing import Callable, NamedTuple, Protocol, cast
 
 from PIL import ImageTk
 
+from core import config
 from core import dem_cache
 from core import dem_sources
 from core import i18n
@@ -284,12 +285,18 @@ class MapWindow(_PickMixin, _CacheMixin):
 
         self._busy = False              # DL 実行中フラグ（多重操作防止）
         self._overlay_after_id = None   # 自動カバレッジ表示のデバウンス用
+        self._overlay_generation = 0    # 走査を投げた順の世代（B-270＝古い結果を捨てる）
         self._status_clear_id = None    # 結果文の自動クリア用 after ID
 
         self._closing = False
         self._init_after_id = None      # 初回レイヤ描画の after ID（早期クローズ対策）
         self._build_ui()
         self._refresh_stats()
+        # I-169＝`_build_ui` 内の測り直しは統計欄が空文字のまま行われる（複数
+        # ソースがあると二段になり得る＝中身が伸びる）ので、実際の文字を入れた
+        # 直後にもう一度測る。**広げるだけ**（`grow_only` 既定）なので、ここで
+        # 呼んでも `_build_ui` が既に確保した幅を縮めることはない。
+        window_fit.fit_to_content(self._win, min_w=self._BASE_W, min_h=self._BASE_H)
         # 既存の TX/RX 座標（数値欄）を取り込み、地図中心を合わせる。
         self._load_single_coords()
         # 地図レイアウト確定後に現在モードのレイヤを描画する
@@ -465,7 +472,11 @@ class MapWindow(_PickMixin, _CacheMixin):
         return dem_sources.resolve(source_id) if source_id else None
 
     def _on_cache_source_changed(self, _event=None) -> None:
+        # B-270＝走査が返るまで前のソースの塗りを残さない。**消してから投げる**
+        # ＝残したままだと「いま見えているもの」と「いま消せるもの」が食い違う。
+        self._clear_tile_overlays()
         self._refresh_overlay()
+        self._refresh_stats()   # I-169＝統計の選択中ソース行も切り替えに追従させる
 
     # ----------------------------------------------------------
     # 中継経路レイヤ（中継点モード）
@@ -512,13 +523,28 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 参照するだけ（ウィンドウを開くたびの読み直しは不要＝main.py が起動時
         # 1 回で済ませている）。
         self._layers = _all_tile_layers()
+        # B-271＝**選択肢の同一性は並び順で持つ**（表示名で持たない）。宣言ファイルの
+        # `display_name` が組み込みの表示名と同じだと、名前を鍵にした辞書では
+        # 後から入るほうが組み込みを潰し、**組み込みの地図が選べなくなる**。
+        # 表示名は翻訳で変わる＝読み込み時に重複を禁じても言語を替えれば衝突し得る
+        # ので、鍵にしないほうを直す。
+        self._layer_keys = list(self._layers)
         self._layer_labels = {
             spec.label(): key
             for key, spec in self._layers.items()
-        }
+        }   # 表示名からの逆引き（衝突し得る＝index が取れないときの保険のみ）
         self._layer_box = ttk.Combobox(
-            modebar, values=list(self._layer_labels), state="readonly", width=14)
-        self._layer_box.set(self._layers[_DEFAULT_LAYER].label())
+            modebar,
+            values=[self._layers[k].label() for k in self._layer_keys],
+            state="readonly", width=14)
+        # B-248＝前回選んだ背景地図（レポート添付地図もこの選択に追従する）。
+        # 未知の値（宣言を消した後など）は組み込みの既定へフォールバック。
+        # ⚠️ **`self._config`（ランチャーが開いた時点で渡したスナップショット）
+        # から読む**＝ウィンドウは `config.load_config()` を直に読まない
+        # （I-055 ②・tests/test_repo_hygiene.py::TestConfigHasOneSource）。
+        saved_layer = self._config.get("basemap_layer", _DEFAULT_LAYER)
+        self._initial_layer = saved_layer if saved_layer in self._layers else _DEFAULT_LAYER
+        self._layer_box.current(self._layer_keys.index(self._initial_layer))
         self._layer_box.bind("<<ComboboxSelected>>", self._on_layer_changed)
         self._layer_box.pack(side="left")
 
@@ -546,7 +572,7 @@ class MapWindow(_PickMixin, _CacheMixin):
             cb_cache_src.pack(side="left")
 
         self._map = MapWidget(self._win, corner_radius=0)
-        self._layer = _DEFAULT_LAYER
+        self._layer = self._initial_layer
         self._map.pack(fill="both", expand=True, padx=4, pady=(4, 0))
         self._map.set_position(35.68, 139.77)
         self._map.set_zoom(8)
@@ -598,12 +624,12 @@ class MapWindow(_PickMixin, _CacheMixin):
         # 子ウィジェットは canvas の中身より常に上に描かれるので、`place` すれば
         # z 順の争いが構造的に消える（背景色もウィジェットが持てる＝下敷き不要）。
         self._attribution = tk.Label(
-            self._map, text=self._layers[_DEFAULT_LAYER].attr(),
+            self._map, text=self._layers[self._initial_layer].attr(),
             fg=_ATTR_FG, bg=_ATTR_BG, font=theme.ui_font(self._win, "small"),
             padx=4, pady=1,
         )
         self._attribution.place(relx=1.0, rely=1.0, anchor="se", x=-4, y=-4)
-        self._apply_layer(_DEFAULT_LAYER)
+        self._apply_layer(self._initial_layer)
 
         # ---- 下部ステータスバー（1 本に集約）----------------------------
         # 出没でレイアウトが動かないよう、各要素の高さを予約して配置する。
@@ -613,9 +639,13 @@ class MapWindow(_PickMixin, _CacheMixin):
         statusbar = ttk.Frame(bottom)
         statusbar.pack(fill="x")
 
-        # 右: キャッシュ統計（常時表示のアンカー）
+        # 右: キャッシュ統計（常時表示のアンカー）。I-169（3.6 ステージ1）＝
+        # 複数 DEM ソースがあるときは「選択中ソース」の行を上に足して二段にする
+        # （`justify="right"` で両行とも右詰め）。
         self._stats_var = tk.StringVar(value="")
-        ttk.Label(statusbar, textvariable=self._stats_var, anchor="e").pack(side="right")
+        self._stats_label = ttk.Label(
+            statusbar, textvariable=self._stats_var, anchor="e", justify="right")
+        self._stats_label.pack(side="right")
 
         # 左: 動的メッセージ（アイドル時=操作ヒント / 操作中・直後=状態・結果）。
         # 複数行になり得るため justify=left。アイドル時はグレー表示。
@@ -632,9 +662,13 @@ class MapWindow(_PickMixin, _CacheMixin):
         )
         self._status_label.pack(side="left", fill="x", expand=True)
         # 幅に追従して折り返し幅を更新（統計表示分を右に確保する）。
+        # I-169＝統計が二段になり得るので、右側の予約幅は固定の目安値ではなく
+        # 統計ラベルの実測要求幅から取る（実測は `winfo_reqwidth`＝常にラベルが
+        # 直前に測った内容に基づく。中身が伸びればここも自動で伸びる）。
         statusbar.bind(
             "<Configure>",
-            lambda e: self._status_label.config(wraplength=max(200, e.width - 200)),
+            lambda e: self._status_label.config(
+                wraplength=max(200, e.width - self._stats_label.winfo_reqwidth() - 16)),
         )
 
         # プログレスバー: 細線。アイドル時も高さを予約して畳み、DL 中のみ表示する。
@@ -671,7 +705,15 @@ class MapWindow(_PickMixin, _CacheMixin):
     # 背景タイル（淡色地図 / 航空写真）
     # ----------------------------------------------------------
     def _on_layer_changed(self, _event=None) -> None:
-        self._apply_layer(self._layer_labels[self._layer_box.get()])
+        idx = self._layer_box.current()
+        if 0 <= idx < len(self._layer_keys):
+            key = self._layer_keys[idx]                # B-271＝並び順で引く
+        else:   # 欄に直接文字を入れた場合（テストの経路）だけ表示名で引く
+            key = self._layer_labels[self._layer_box.get()]
+        self._apply_layer(key)
+        # B-248＝レポート添付地図（バッチ実行含む）が追従できるよう永続化する
+        # （利用者が選び直したときだけ書く＝ウィンドウを開くたび毎回は書かない）。
+        config.save_app({"basemap_layer": key})
 
     def _apply_layer(self, key: str) -> None:
         """背景タイルを切り替え、**出典表記も一緒に変える**（I-028）。
@@ -773,13 +815,25 @@ class MapWindow(_PickMixin, _CacheMixin):
         self._pump.stop()
         self._set_busy(False)
         self._hide_progress()
-        self._set_status(i18n.t("tm_dl_done").format(
-            dl5a=dl_result["downloaded_5a"],
-            dl5b=dl_result["downloaded_5b"],
-            dl_dem=dl_result["downloaded_dem"],
-            skipped=dl_result["skipped"],
-            failed=dl_result["failed"],
-        ), auto_clear=True)
+        # 3.6 ステージ1（B-253）＝国土地理院以外のソースを選んでいると
+        # dem_prefetch.prefetch_tiles は層別の内訳（5a/5b/dem）を持たない
+        # {"downloaded", ...} を返す（`_prefetch_generic`）。国土地理院は
+        # 従来どおりの内訳つきメッセージのまま。
+        if "downloaded_5a" in dl_result:
+            msg = i18n.t("tm_dl_done").format(
+                dl5a=dl_result["downloaded_5a"],
+                dl5b=dl_result["downloaded_5b"],
+                dl_dem=dl_result["downloaded_dem"],
+                skipped=dl_result["skipped"],
+                failed=dl_result["failed"],
+            )
+        else:
+            msg = i18n.t("tm_dl_done_generic").format(
+                downloaded=dl_result["downloaded"],
+                skipped=dl_result["skipped"],
+                failed=dl_result["failed"],
+            )
+        self._set_status(msg, auto_clear=True)
         # ⚠️ ここから先は進捗表示を消した後にメインスレッドで走る区間。
         # _refresh_stats はキャッシュ全体を走査するのでファイル数に比例して伸びる
         # （B-006／I-008 と同型の「進捗を消してから重い処理」）。所要をログに残し、
@@ -829,9 +883,26 @@ class MapWindow(_PickMixin, _CacheMixin):
     # キャッシュ統計
     # ----------------------------------------------------------
     def _refresh_stats(self) -> None:
-        stats = dem_cache.get_cache_stats()
-        mb = stats["size_bytes"] / (1024 * 1024)
-        self._stats_var.set(i18n.t("tm_stats").format(count=stats["count"], mb=f"{mb:.1f}"))
+        breakdown = dem_cache.get_cache_breakdown()
+        total = breakdown["total"]
+        total_mb = total["size_bytes"] / (1024 * 1024)
+        total_line = i18n.t("tm_stats").format(count=total["count"], mb=f"{total_mb:.1f}")
+        # I-169（3.6 ステージ1）＝選べる DEM ソースが複数あるときだけ、選択中
+        # ソースの内訳を上段に足して二段にする（1 つしかないなら総量＝選択中
+        # ソースの容量なので、二段にしても情報が増えない）。
+        source = self._current_cache_source()
+        if len(self._cache_sources) > 1:
+            source = source or self._cache_sources[0]
+            src_stats = next(
+                (s for s in breakdown["sources"] if s["source_id"] == source.source_id),
+                {"count": 0, "size_bytes": 0},
+            )
+            src_mb = src_stats["size_bytes"] / (1024 * 1024)
+            src_line = i18n.t("tm_stats_source").format(
+                name=source.display_name, count=src_stats["count"], mb=f"{src_mb:.1f}")
+            self._stats_var.set(f"{src_line}\n{total_line}")
+        else:
+            self._stats_var.set(total_line)
 
     # ----------------------------------------------------------
     # ビジー状態制御（DL 実行中は新たなジェスチャ操作を受け付けない）

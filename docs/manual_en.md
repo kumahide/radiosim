@@ -1,4 +1,4 @@
-# RadioSim Pro 3.5
+# RadioSim Pro 3.8
 
 ![RadioSim Pro](../logo.png)
 
@@ -85,7 +85,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 ### Accuracy Statement
 
-The horizontal resolution of the DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss. ⚠️ **That range does not cover paths where several obstacles overlap** — the combined loss has not been checked against measurements or a reference implementation (described below).
+The horizontal resolution of the built-in GSI DEM is 5–10 m, giving a practical accuracy of **±5–15 dB** for diffraction loss. ⚠️ **That range does not cover paths where several obstacles overlap** — the combined loss has not been checked against measurements or a reference implementation (described below).
 This tool is intended solely for screening purposes — determining whether a field survey is necessary — and must not be used as the basis for final link design decisions.
 
 ---
@@ -121,6 +121,30 @@ The installer build stores **settings, cache, logs, and results in OS-standard l
 | Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\lang\` |
 
 > If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated). As long as the old copies remain, a dialog naming their location appears on every launch. Once you've confirmed the new location has everything you need, delete the old ones manually (the dialog stops once they're gone).
+
+### Installing a different version over an existing one
+
+The installer build is **one per PC**. Running another version's installer on a PC that already has RadioSim **replaces** the contents of the same folder as before (no folder-selection page is shown). Settings, the terrain cache and saved results live in the locations in the table above, so they carry over as they are.
+
+From 3.7 on, the installer compares against the installed version and tells you:
+
+| Case | What you see |
+| --- | --- |
+| Installing a newer version | The top of the "Ready to Install" page says, e.g., "The installed 3.6 will be replaced with 3.7." |
+| Installing the same version | The same page says the version will be reinstalled (repair) |
+| Installing an older version | A confirmation appears before the wizard. **The default button is "No"** (cancel the installation) |
+
+Going back to an older version means:
+
+- Project files saved with the newer version cannot be opened in the older one.
+- Settings added in the newer version go back to their defaults once the older version saves its settings (installing the newer version again does not bring the old values back).
+- The terrain cache and saved results can be used as they are.
+
+> ⚠️ The confirmation comes from **the installer you are about to run**. Installers from 3.6 and earlier do not compare versions, so running one of them on a PC with 3.7 or later replaces it without asking.
+>
+> For an unattended install (run with `/VERYSILENT` or similar), replacing with an older version is cancelled without a prompt (exit code 1). To go ahead anyway, add `/ALLOWDOWNGRADE`.
+
+To use several versions side by side, use the [Portable build (ZIP)](#portable-build-zip) instead of the installer.
 
 ### When Windows blocks the installer
 
@@ -158,6 +182,10 @@ This is **not SmartScreen — it is Windows refusing to run the file at all**. U
 
 The portable build ships with a `portable.txt` marker next to the exe, so settings, cache, logs, and results are all created **inside that same folder** (`terrain_cache/`, `results/`, `radiosim_conf.json`). This suits carrying the app on a USB drive.
 
+**To use several versions side by side** (to compare results between versions, or to try a new version while your work stays on the current one), **extract each version's ZIP into its own folder**. Settings, cache, logs and results are then separate per folder, so the versions do not interfere with each other. The same holds when you run a portable copy alongside the installer build.
+
+> The installer build cannot hold several versions at once. Even with separate install folders, every version would share the same locations for settings, cache and saved results (the table above): an older version would read settings written by a newer one, and uninstalling would remove data they all share.
+
 ### Launch
 
 Launch the installer build from the Start menu, or double-click `RadioSimPro.exe` for the portable build.
@@ -177,7 +205,7 @@ Operations that reach out to files or to the OS.
 | Open Project...     | Loads a saved `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
 | Save Project As...  | Writes the current input set to a `.rsproj` → [Project Files (.rsproj)](#project-files-rsproj)   |
 | Load Parameters...  | Imports **simulation parameters only** from a settings file into the input form                 |
-| Open Results Folder | Opens the `results/` folder in Explorer                                                         |
+| Open Results Folder | Opens the `results/` folder in Explorer (creates it first if it does not exist yet) |
 
 ### Settings
 
@@ -192,7 +220,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
-> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ Once you pick a language under **Settings > Language**, your choice always wins from then on (a reinstall over the top does not change it).
+> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (from 3.6, this takes effect once each time you reinstall, including when you install over 3.5 or earlier). A plain restart does not change it — change it under **Settings > Language**.
 
 ### Help
 
@@ -200,6 +228,9 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | ------------ | -------------------------------------- |
 | Open Documentation | Opens this document in a browser       |
 | Save Diagnostic Package... | Bundles version, settings, recent log, cache statistics, environment info, and storage paths into a zip. Coordinates, credentials, and usernames are masked; result files are unchecked by default (they may hold project data, so you choose what to include). Attach this to a bug report |
+| Check for Updates... | Asks GitHub's public release page only when you click it. If a newer version exists, shows its number and how to install it, and asks whether to open the release page (downloading and installing are left to your browser and you). Final-release users hear only of final releases; RC users also of RCs (you can change this with Include Pre-releases). Follows the Proxy Settings |
+| Check for Updates at Startup | When checked, the app makes the same query as Check for Updates... at startup, at most once a day. **Off by default** (so that the app does not reach out to the internet at every start on company networks or offline field sites). It tells you only when a newer version exists; when you are up to date or the query fails, it shows nothing |
+| Include Pre-releases | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
 | About        | Shows the installed version            |
 
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy, coordinate format). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
@@ -284,7 +315,7 @@ In all three input modes you can adjust a point on the map: **click its marker t
 - In Pick Coordinates and Append modes you can also **right-click the map** ("Place TX here" / "Place RX here") — the way in when the marker is off-screen.
 - Dragging is still the map pan, on purpose: if dragging moved points, grabbing the map to scroll would silently rewrite your input.
 - The window remains the source of truth. If the point you selected has been deleted or reordered in the window meanwhile, the map refuses the move and asks you to select again — it never moves a different point instead.
-- ⚠️ **Terrain is sampled on a 5–10 m mesh.** If you move a point less than that, the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result.
+- ⚠️ **Elevation data is a grid (5–10 m for the built-in GSI DEM; a DEM source you add may be coarser). Where the calculation places its samples on that grid is set separately, by "Terrain Resolution" under Environment ("Low" samples every 20 m).** If you move a point less than the finest mesh (5 m), the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result (on "Low" this can happen with larger moves too).
 
 ### Cache Management mode
 
@@ -300,7 +331,7 @@ Review the DEM tile cache and prefetch or delete tiles for any area — intended
 
 Unshaded areas are not yet cached.
 
-If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display and range deletion apply to whichever source you pick there (prefetch always targets GSI). The dropdown is hidden when GSI is the only available source.
+If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display, range download, force re-download and range deletion all apply to whichever source you pick there (from 3.6; before that, range download and force re-download always targeted GSI). In that case the window's cache statistics show two lines: the tile count and size for the selected source, and the total cache (the whole cache folder). The size for a source covers everything deleting that source's cache would remove, including tiles fetched before the declaration was edited. The dropdown is hidden when GSI is the only available source, and the statistics then show the total on a single line.
 
 **Controls (mouse gestures)**
 
@@ -311,9 +342,11 @@ If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM 
 | Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
 | Shift + Ctrl + drag           | Delete the cache for an area            |
 
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap) so you can choose what to delete.
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap), each with its approximate size, so you can choose what to delete.
 
-> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers. Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
+> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers (or from the provider of the source selected under "Target DEM source"). Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
+
+> ⚠️ **If you range-downloaded an area with a version before 3.7 and will use it offline, run the range download again.** Earlier versions did not fetch the 5 m (photogrammetry) and 10 m tiles beneath pixels that read exactly 0 m in the 5 m (airborne LiDAR) tile. The calculation reads the lower tile at such a pixel, so offline it cannot get an elevation there. From 3.8, the range download also checks the contents of the 5 m tiles already cached and fetches only the missing lower tiles (no force re-download needed).
 
 ---
 
@@ -365,7 +398,7 @@ An input form is displayed on startup.
 
 Clicking the button runs data retrieval in two phases.
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly.
+1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This area-wide prefetch runs only with the built-in GSI source.** For DEM sources added via a declaration file the step is skipped, and only the points needed by the next elevation fetch are retrieved (to fill the cache up front, use range download in the map window's cache management mode, which works for added DEM sources from 3.6 onward).
 2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
 
 > **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC**, not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). To recompute with fresh tiles, force re-download that area in Cache Management mode.
@@ -749,17 +782,17 @@ Status     = OK (≥ 0 dB) / NG (< 0 dB)
 | `dem5b_png` | 5 m (photogrammetry) | 15   | Wider coverage than dem5a     |
 | `dem_png`   | 10 m (base map)      | 14   | Nationwide                    |
 
-Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404 or a missing-data pixel, the next layer is used.
+Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a higher-priority layer returns 404, or its pixel is missing data or exactly 0 m, the next layer is used.
 
 ### Caching Strategy
 
-- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing)
+- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). ⚠️ **GSI only** — the step is skipped for DEM sources added via a declaration file
 - **Disk cache**: Tiles saved to `terrain_cache/`, persists across sessions
-- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart)
+- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely (cleared on app restart, and also whenever you delete or force-refetch cached tiles, so the next calculation uses the refetched tiles)
 
 ### Adding a DEM Source (User Extension)
 
-The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it only lets you get elevation outside Japan, where GSI has no data; it does not give you a finer mesh than 10 m).
+The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it is there so you can get elevation outside Japan, where GSI has no data — it is not a way to gain accuracy. The pixel size depends on the source's data and the zoom you declare, and the app does not check how fine the data really is; at zoom 12, as in the example below, one pixel is several tens of metres).
 
 ⚠️ **The background map (pale map / aerial photo) is extended through a separate declaration file from the DEM source** (see "Adding a Background Map Source" below). Adding a DEM source alone does not change that picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only.
 
@@ -828,7 +861,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 >
 > **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (the summary ledger first, then one A4 page per path). Clicking the **profile thumbnail** in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
 >
-> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on the GSI pale map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
+> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on a background map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). The background map follows **whichever background source you last selected in the map window** (the pale map, the aerial photo, or an external source you added — see "Adding a Background Map Source"; from 3.6. Batch runs that never opened the map window still use the saved selection). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
 >
 > **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI). AZ is a **true** azimuth — to aim with a magnetic compass, correct for local declination (in Japan magnetic north is ~7-9° west of true north, varies by region).
 
@@ -879,14 +912,14 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
 
-> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5)**:
-> - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` has 3 values: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an output file failed, so no verdict could be given). In 4.0, the sensitivity calculation introduced in 3.4 (a recalculation across pessimistic/optimistic assumptions — vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given). **`ERROR` is not renamed.** The column name, position, and the OK/NG thresholds themselves do not change. **If your code branches on `status == "OK"`, we recommend treating anything other than `OK` as "needs review" from 4.0 onward** — collapsing `REVIEW` into NG would drop links that a site visit would actually confirm. The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
+> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8)**:
+> - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` has 3 values: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an output file failed, so no verdict could be given). In 4.0, the sensitivity calculation introduced in 3.4 (a recalculation across pessimistic/optimistic assumptions — vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given). **`ERROR` is not renamed.** The column name, its position, and the 0 dB margin line between OK and NG do not change. What changes is which margin is held against that line: today a single margin, computed under the default assumptions, decides OK/NG; in 4.0 the line is applied under both the pessimistic and the optimistic assumptions — OK if the link holds under both, NG if it fails under both, REVIEW if the answer depends on the assumptions. **If your code branches on `status == "OK"`, we recommend handling `REVIEW` separately as "needs review" from 4.0 onward** — treating everything other than `OK` as NG would drop links that a site visit would actually confirm. The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
-> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
-> - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12 in 4.0.** This has no effect if you use the packaged exe (installer or ZIP). `numpy` will also move to the 2.5.x line at the same time (3.4/3.5 keep it pinned at 2.4.4).
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4 shipped with no such change, and it still isn't decided whether 3.5 is "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
+> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
+> - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12 in 4.0.** This has no effect if you use the packaged exe (installer or ZIP). `numpy` will also move to the 2.5.x line at the same time (3.4/3.5/3.6/3.7/3.8 keep it pinned at 2.4.4).
+> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
 
-> 🔴 **Format change in 3.0 (policy 3 applied to itself)**: **dB values now carry one decimal instead of two** (`-93.20` → `-93.2`). This covers `rx_dbm`, `margin_db`, `fspl_db`, `diff_db`, `veg_db`, `env_db`, `rain_db`, `gas_db`, `total_loss_db` and the two gain columns, in **all three CSVs** (`summary.csv` / `hops.csv` / `scenario.csv`). **No column or file name changes** — `-93.2` is the same number as `-93.20`, so **anything reading the value as a number keeps working**. ⚠️ **Fix anything that relies on the digit count of the text.** The reason: 0.01 dB was a precision this calculation does not have (the elevation grid is 5–10 m wide and carries metres of error of its own, vegetation height is a single assumed value, environment loss is an empirical figure per area class). **The maths is unchanged — only what is shown was coarsened.**
+> 🔴 **Format change in 3.0 (policy 3 applied to itself)**: **dB values now carry one decimal instead of two** (`-93.20` → `-93.2`). This covers `rx_dbm`, `margin_db`, `fspl_db`, `diff_db`, `veg_db`, `env_db`, `rain_db`, `gas_db`, `total_loss_db` and the two gain columns, in **all three CSVs** (`summary.csv` / `hops.csv` / `scenario.csv`). **No column or file name changes** — `-93.2` is the same number as `-93.20`, so **anything reading the value as a number keeps working**. ⚠️ **Fix anything that relies on the digit count of the text.** The reason: 0.01 dB was a precision this calculation does not have (the GSI elevation grid is 5–10 m wide and carries metres of error of its own, vegetation height is a single assumed value, environment loss is an empirical figure per area class). **The maths is unchanged — only what is shown was coarsened.**
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 
@@ -942,10 +975,10 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_pct` | % | F1 obstruction (**clamped at 100%**) |
 | `error` | — | Why it failed; empty for a section that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
-| `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section length, so it differs between sections of one route |
+| `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section (its length, bearing and latitude), so it differs between sections of one route |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). Each section fetches its own terrain, so this differs between sections |
 
-⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **ERR whenever any section could not be judged (ERR)**.
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
 
 #### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
 
@@ -1026,7 +1059,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Accuracy
 
-- DEM horizontal resolution (5–10 m) is the hard ceiling for accuracy; individual building obstructions are not modeled
+- DEM horizontal resolution (5–10 m for the built-in GSI DEM; a DEM source you add may be coarser) is the hard ceiling for accuracy; individual building obstructions are not modeled
 - The Bullington method is an approximation; **on single-obstacle paths**, errors of ±5–15 dB relative to measurements are expected (**the range says nothing about the combined loss of several overlapping obstacles**)
 - 🔴 **Diffraction loss can come out too high or too low, and there is no way to tell in advance which paths are trustworthy.** Version 3.0 replaced the diffraction model with the **Bullington equivalent knife edge (ITU-R P.526 4.5.1)**, removing two defects: the divergence that drove mountain paths to hundreds or thousands of dB, and a **discontinuity that moved the result by 84 dB when vegetation height or antenna height changed by 1 m** (raising an antenna by 1 m made the diffraction loss 84 dB worse). **The possibility of being wrong has not gone away**: (1) the combined loss has only been placed alongside two structurally different methods (Epstein-Peterson and the previous custom implementation) to check its order of magnitude — it has **not been checked against measurements or a reference implementation**; (2) **where two or more ridges are well separated the result reads low** (a known property of this method, accepted by the standard that defines it); (3) on a single hill it now reads **higher** than before, by the standard correction term; (4) **a finer terrain resolution raises the diffraction loss** (up to +407% from the 20 m "low" step to the pixel-edge "high" step); note that sampling *within* "high" no longer has a step size to tune - DEM elevations are constant inside a pixel, so placing the samples on the pixel edges removes that degree of freedom entirely (measured: 27.02 dB at 210 pixel-edge samples against a converged 27.014 dB at 250 000 samples); (5) the **spherical-earth term is not included**, so a **long, flat path with low antennas beyond the radio horizon** (over sea or tidal flats) can read low — none of the 26 representative paths of the 3.0-era corpus met that condition (the links added since have not been checked for it), but **the product does not check for it**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you which paths are affected** — relief is not a predictor. ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
 - 🛡 **What you can do about it**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Bullington) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only) and does not apply the standard correction term, so it **comes out lower than Bullington**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
@@ -1035,7 +1068,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Data Coverage
 
-- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)" (the background map is not covered by this and stays Japan-only)
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map for the map window as described in "Adding a Background Map Source (User Extension)". **The map embedded in reports follows whichever background source you last selected in the map window** (from 3.6), so selecting an added background map source makes it appear outside Japan too
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 
@@ -1050,6 +1083,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 - The terrain cache is cleared on restart; the disk cache persists across sessions
 - 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk 8.6), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ **We verified by measurement that the newer Tk (9.0) does not have this problem**, but moving to it depends on other conditions (support in the Python runtime we build on), so there is no date yet
 - When monitors with different display scales are in use, moving a window to another monitor resizes the text of the whole application to match that scale. Only the menu bar strip (File / Settings / Help) is drawn by Windows, so it keeps the scale of the monitor its own window sits on and may look smaller (or larger) than the rest. This affects appearance only, not operation
+- After you change the Windows display scale, **until you sign in again**, the check mark (✓) in drop-down menus may be drawn thick and large so that it overlaps the text next to it, and the arrow (▸) that marks a submenu may disappear (for example Theme, Language and Coordinate Display in the Settings menu). **Signing out of Windows and signing back in fixes it** (restarting RadioSim does not). Both marks are drawn by the underlying GUI toolkit (Tk) with legacy Windows bitmaps, whose size is fixed by the display scale in effect when you signed in. This affects appearance only, not operation
 
 ---
 

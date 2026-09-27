@@ -14,6 +14,7 @@ import sys
 import types
 import unittest.mock as mock
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -267,8 +268,12 @@ class TestAtomicConfigSave:
             config.json, "dump",
             mock.Mock(side_effect=OSError("read-only file system")),
         )
-        config.save_config(config.DEFAULT_CONFIG, path)   # 例外が出なければ合格
+        assert config.save_config(config.DEFAULT_CONFIG, path) is False   # 例外は出さず、失敗を返す
         assert not os.path.exists(path)
+
+    def test_save_reports_success(self, tmp_path):
+        """書けたら True を返す（書けたときだけ次の手を打つ呼び出しのため＝B-298）。"""
+        assert config.save_config(config.DEFAULT_CONFIG, str(tmp_path / "conf.json")) is True
 
 
 # ============================================================
@@ -313,6 +318,64 @@ class TestPartialConfigSave:
         loaded = config.load_config(path)
         assert loaded["theme"] == "dark"           # app キーは更新
         assert loaded["freq"] == "900.0"           # sim キーは保持
+
+    def test_partial_saves_report_result(self, tmp_path, monkeypatch):
+        """部分保存も書けたかを返す（言語を選んだ操作が種を消費済みにするため＝B-299）。"""
+        path = str(tmp_path / "conf.json")
+        assert config.save_app({"lang": "en"}, path) is True
+        assert config.save_sim({"freq": "900.0"}, path) is True
+        monkeypatch.setattr(config.json, "dump", mock.Mock(side_effect=OSError("read-only")))
+        assert config.save_app({"lang": "en"}, path) is False
+        assert config.save_sim({"freq": "900.0"}, path) is False
+
+
+# ============================================================
+# 言語を選んだ操作は、保存が通ったときだけ種を消費済みにする（B-299）
+# ============================================================
+class TestLangChoiceConsumesSeed:
+    """画面の 2 つの口（言語メニュー・アプリ設定の読込）を、偽の `self` で直に呼ぶ。"""
+
+    @pytest.fixture
+    def calls(self, monkeypatch):
+        pytest.importorskip("tkinter")
+        from views import launcher_menu                        # noqa: PLC0415
+        log: list[str] = []
+        monkeypatch.setattr(launcher_menu.config, "consume_lang_seed",
+                            lambda *a, **kw: log.append("consume"))
+        return log
+
+    @staticmethod
+    def _fake(**extra) -> Any:   # 画面の Mixin が見る属性だけを持つ偽物＝型は合わせない
+        alerts: list[str] = []
+        return types.SimpleNamespace(config={"lang": "ja", "theme": "system"},
+                                     alerts=alerts,
+                                     _alert=lambda title, _msg: alerts.append(title), **extra)
+
+    @pytest.mark.parametrize("saved, expected", [(True, ["consume"]), (False, [])])
+    def test_lang_menu(self, calls, monkeypatch, saved, expected):
+        from views import launcher_menu                        # noqa: PLC0415
+        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: saved)
+        launcher_menu._MenuMixin._on_lang_select(self._fake(), "en")
+        assert calls == expected
+
+    @pytest.mark.parametrize("payload, expected", [
+        ({"lang": "en"}, ["consume"]),
+        ({"theme": "dark"}, []),        # 言語を取り込んでいない＝印を書かない
+    ])
+    def test_load_app_settings(self, calls, monkeypatch, tmp_path, payload, expected):
+        from views import launcher_menu                        # noqa: PLC0415
+        settings = tmp_path / "settings.json"
+        settings.write_text(json.dumps(payload), encoding="utf-8")
+        monkeypatch.setattr(launcher_menu.filedialog, "askopenfilename",
+                            lambda **_kw: str(settings))
+        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: True)
+        fake = self._fake(root=None, _theme_var=types.SimpleNamespace(set=lambda _v: None),
+                          _lang_var=types.SimpleNamespace(set=lambda _v: None),
+                          _on_theme=lambda _m: None)
+        launcher_menu._MenuMixin._on_load_app_settings(fake)
+        # 例外を握って警告に変える関数なので、偽の self の不備で素通りしていないことを先に見る。
+        assert launcher_menu.i18n.t("dlg_error") not in fake.alerts
+        assert calls == expected
 
 
 # ============================================================
@@ -434,16 +497,16 @@ class TestNewRunDir:
 class TestStartupLang:
     """設定ファイルが**まだ無いとき**だけ、既に手元にある環境情報から解く。
 
-    ⚠️ 逆側（設定ファイルが在るときは何があっても中身が勝つ）のほうが重い＝
-    利用者が言語メニューで選んだ結果を、インストーラの種や OS の言語で
-    上書きしてはいけない。
+    ⚠️ 逆側（設定ファイルが在れば中身が勝つ）のほうが重い＝利用者が言語
+    メニューで選んだ結果を OS の言語で上書きしてはいけない。例外はまだ消費
+    していない種（＝入れ直してウィザードで選んだ）だけ（B-272・B-296）。
     """
 
-    def test_existing_config_file_wins_over_seeds(self, tmp_path, monkeypatch):
-        """設定ファイルが在れば、種があっても cfg の値をそのまま返す。"""
+    def test_existing_config_file_wins_over_os_lang(self, tmp_path, monkeypatch):
+        """設定ファイルが在り、消費していない種が無ければ、OS の言語より cfg の値。"""
         path = tmp_path / "radiosim_conf.json"
         path.write_text("{}", encoding="utf-8")
-        monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
         monkeypatch.setattr(config, "_os_ui_lang", lambda: "ja")
         assert config.startup_lang({"lang": "en"}, str(path)) == "en"
 
@@ -455,6 +518,171 @@ class TestStartupLang:
     def test_missing_config_file_resolves_initial(self, tmp_path, monkeypatch):
         monkeypatch.setattr(config, "_installer_lang", lambda: "ja")
         assert config.startup_lang({"lang": "en"}, str(tmp_path / "none.json")) == "ja"
+
+    # --- 種を一度だけ消費する（B-272） ----------------------------------
+    def _seed_file(self, tmp_path, monkeypatch, name: str = "japanese") -> Path:
+        seed = tmp_path / "install_lang.txt"
+        seed.write_text(name, encoding="utf-8")
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(seed))
+        return seed
+
+    def test_fresh_install_marks_seed_consumed(self, tmp_path, monkeypatch):
+        """設定ファイルが無い初回起動＝種を適用し、その場で消費済みにする。"""
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        assert config.startup_lang({}, str(path)) == "ja"
+        marker = tmp_path / "lang_seed_consumed.txt"
+        assert marker.exists()
+
+    def test_existing_config_with_matching_marker_keeps_cfg_lang(self, tmp_path, monkeypatch):
+        """既に消費済みの種と mtime が変わっていなければ、入れ直していない＝cfg が勝つ。"""
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text("{}", encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        marker.write_text(repr(os.stat(seed).st_mtime), encoding="utf-8")
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+
+    def test_reinstall_with_new_seed_overrides_saved_lang(self, tmp_path, monkeypatch):
+        """入れ直して種の mtime が変わっていれば、選び直しを反映する。"""
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        marker.write_text("0.0", encoding="utf-8")   # 過去に消費した別の mtime
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+
+    def test_pre_existing_config_without_marker_applies_seed_once(self, tmp_path, monkeypatch):
+        """3.5 以前から上書きした設定＝印が無い。いまのウィザードで選んだ種を適用する（B-296）。
+
+        インストーラは上書きのたびに種を書き直すので、印が無い時点で在る種は
+        必ずいま選んだ言語。2 回目の起動は印が揃っている＝cfg が勝つ。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        assert not marker.exists()
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+        # 2 回目：その後に言語メニューで英語へ選び直しても、種は再び効かない。
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+
+    def test_unwritable_marker_reapplies_seed_every_start(self, tmp_path, monkeypatch):
+        """印が書けない環境では起動のたびに種を適用する（B-296 の代償を固定する）。
+
+        印と設定ファイルは同じフォルダ＝そこでは言語メニューの選択の保存も
+        たぶん効いていないので、実害は小さい。起動を止めないことが主な契約。
+        """
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        real_open = open
+
+        def _deny_marker(file, mode="r", *args, **kwargs):
+            if os.path.basename(str(file)) == "lang_seed_consumed.txt" and "w" in mode:
+                raise OSError("read-only")
+            return real_open(file, mode, *args, **kwargs)
+
+        monkeypatch.setattr("builtins.open", _deny_marker)
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+        assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+
+    @staticmethod
+    def _deny_config_replace(monkeypatch, path):
+        """設定ファイルへの置き換えだけを失敗させる（別のプロセスが掴んでいる形）。"""
+        real_replace = os.replace
+
+        def _replace(src, dst):
+            if os.path.abspath(dst) == os.path.abspath(path):
+                raise PermissionError("in use")
+            return real_replace(src, dst)
+
+        monkeypatch.setattr(config.os, "replace", _replace)
+
+    def test_save_failure_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """設定を保存できなかった起動では印を書かない＝次の起動でもう一度種を適用する（B-298）。
+
+        印を先に書くと、その起動は選んだ言語で出るのに、次の起動で保存済みの
+        古い言語へ戻り、種はもう効かない。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not marker.exists()
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "en"
+        # 次の起動（保存できる）：種をもう一度適用し、今度は印を書く。
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "ja"
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert json.loads(path.read_text(encoding="utf-8"))["lang"] == "ja"
+
+    def test_fresh_install_save_failure_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """初回起動でも同じ＝設定ファイルを作れなかったら印を書かない（B-298）。"""
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({}, str(path)) == "ja"
+        assert not path.exists()
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+
+    def test_menu_choice_after_startup_save_failure_sticks(self, tmp_path, monkeypatch):
+        """起動時の保存に失敗したあと、言語を選び直して保存が通ったら種を消費済みにする（B-299）。
+
+        印を書く口が `startup_lang` だけだと、印が無いまま次の起動で種がもう一度
+        効き、利用者がメニューで選んだ言語が巻き戻る。
+        """
+        seed = self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        marker = tmp_path / "lang_seed_consumed.txt"
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert not marker.exists()
+        # 同じ起動のうちに「設定 > 言語」で English を選ぶ（`_on_lang_select` と同じ手順）。
+        assert config.save_app({"lang": "en"}, str(path)) is True
+        config.consume_lang_seed(str(path))
+        assert marker.read_text(encoding="utf-8") == repr(os.stat(seed).st_mtime)
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "en"
+
+    def test_save_without_lang_choice_leaves_seed_unconsumed(self, tmp_path, monkeypatch):
+        """言語を選んでいない保存は印を書かない（B-299 の境界＝B-298 の逆を起こさない）。
+
+        `save_sim` は `load_config` の土台の古い `lang` を書き戻すだけなので、ここで
+        印を書くと、保存に失敗した起動で適用した種の言語が消える。
+        """
+        self._seed_file(tmp_path, monkeypatch, "japanese")
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        with monkeypatch.context() as m:
+            self._deny_config_replace(m, path)
+            assert config.startup_lang({"lang": "en"}, str(path)) == "ja"
+        assert config.save_sim({"freq": "5800.0"}, str(path)) is True
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+        assert config.startup_lang(config.load_config(str(path)), str(path)) == "ja"
+
+    def test_consume_without_seed_does_nothing(self, tmp_path, monkeypatch):
+        """ポータブル配置（種が無い）では印を作らない。"""
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
+        config.consume_lang_seed(str(tmp_path / "radiosim_conf.json"))
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
+
+    def test_no_seed_file_never_touches_marker(self, tmp_path, monkeypatch):
+        """ポータブル配置（種が無い）では、印の作成も判定も一切走らない。"""
+        monkeypatch.setattr(config, "INSTALL_LANG_FILE", str(tmp_path / "nope.txt"))
+        path = tmp_path / "radiosim_conf.json"
+        path.write_text('{"lang": "en"}', encoding="utf-8")
+        assert config.startup_lang({"lang": "en"}, str(path)) == "en"
+        assert not (tmp_path / "lang_seed_consumed.txt").exists()
 
     # --- 解決の順序 ---------------------------------------------------
     def test_installer_seed_beats_os(self, monkeypatch):
@@ -878,7 +1106,7 @@ class TestInstallerCodeIsReachable:
              `[` が行頭に来た（B-188 の実装）。
         ⚠️ **2 度ともフルテストは全緑のままで、実際のビルドでしか出なかった**＝
         pytest には ISCC が無く、`.iss` は「文字列として」しか見ていない。
-        ⇒ [[feedback_promote_recurring_checks]] に従い、注意書きではなくここで縛る。
+        ⇒ [[feedback-promote-recurring-checks]] に従い、注意書きではなくここで縛る。
         """
         for n, line in enumerate(self.ISS.read_text(encoding="utf-8-sig").splitlines(), 1):
             if line.lstrip().startswith("["):
@@ -898,3 +1126,109 @@ class TestInstallerCodeIsReachable:
         body = code.split("function ManualCleanupPaths", 1)[1].split("\nprocedure ", 1)[0]
         assert "ExpandConstant" not in body, "昇格時の案内が実体のパスへ展開されている"
         assert "%APPDATA%" in body and "%LOCALAPPDATA%" in body
+
+
+class TestInstallerVersionCompare:
+    """上書きインストールで版を比べ、上げる・同じ・下げるを知らせること（I-176）。
+
+    `AppId` が固定なので、Inno は前回のフォルダへ黙って上書きする＝比べなければ
+    3.6 の上に 3.4 を入れても何も言わずに置き換わる。
+
+    ⚠️ ここは配線だけを縛る。上げる・同じ・下げる（止まる／`/ALLOWDOWNGRADE` で
+    進む）の動きそのものは、pytest に ISCC が無いので実機で確かめた（2026-09-26・
+    3.5／3.6RC2／3.6 の本物の exe で組んだ試験用インストーラ 3 本・7 通り）。
+    """
+
+    ISS = ROOT / "installer" / "radiosim.iss"
+
+    #: [CustomMessages] のキーと、[Code] が FmtMessage へ渡す引数の数。
+    _MESSAGES = {
+        "VerUpgrade": 2,
+        "VerSame": 1,
+        "VerDowngrade": 2,
+        "VerDowngradeAsk": 2,
+    }
+
+    def _iss(self) -> str:
+        return self.ISS.read_text(encoding="utf-8-sig")
+
+    def _code(self) -> str:
+        return self._iss().split("[Code]", 1)[1]
+
+    def _routine(self, head: str) -> str:
+        body = self._code().split(head, 1)[1]
+        return re.split(r"\n(?:procedure|function) ", body, maxsplit=1)[0]
+
+    @pytest.mark.parametrize("key", sorted(_MESSAGES))
+    def test_message_is_translated_with_the_same_placeholders(self, key):
+        """日英がそろい、差し込み番号（%1・%2）が日英と [Code] の引数で一致すること。
+
+        片方の言語だけ %2 を落としても ISCC は通り、画面に版の名前が出ない。
+        """
+        iss = self._iss()
+        found = {}
+        for lang in ("japanese", "english"):
+            m = re.search(rf"^{lang}\.{key}=(.*)$", iss, re.MULTILINE)
+            assert m, f"{lang}.{key} が無い"
+            found[lang] = sorted(set(re.findall(r"%[1-9]", m.group(1))))
+        want = [f"%{i}" for i in range(1, self._MESSAGES[key] + 1)]
+        assert found["japanese"] == found["english"] == want, (key, found)
+        m = re.search(rf"FmtMessage\(CustomMessage\('{key}'\),\s*\[([^\]]*)\]\)",
+                      self._code())
+        assert m, f"{key} が [Code] の FmtMessage から使われていない"
+        assert len(m.group(1).split(",")) == self._MESSAGES[key], (key, m.group(1))
+
+    def test_downgrade_asks_before_the_wizard_and_defaults_to_cancel(self):
+        """下げるときは InitializeSetup で確かめ、既定のボタンを「いいえ」（中止）にする。
+
+        既定を「はい」にすると、Enter の連打で古い版に置き換わる。
+        """
+        body = self._routine("function InitializeSetup")
+        assert "DetectPreviousVersion" in body
+        assert "VerDowngradeAsk" in body
+        assert "MB_DEFBUTTON2" in body, "既定のボタンが 2 つ目（いいえ）になっていない"
+        assert re.search(r"MB_YESNO\s+or\s+MB_DEFBUTTON2,\s*IDNO\)\s*=\s*IDYES", body), (
+            "/SUPPRESSMSGBOXES の既定の答えが IDNO でない、または IDYES だけで続けていない")
+
+    def test_silent_downgrade_needs_the_explicit_switch(self):
+        """サイレント実行では確認を出さず、/ALLOWDOWNGRADE が無ければ止める。
+
+        モーダルを出すと無人実行が固まる。分岐は確認ダイアログより前に置く。
+        """
+        body = self._routine("function InitializeSetup")
+        silent = body.find("WizardSilent")
+        assert silent >= 0, "サイレント実行の分岐が無い"
+        assert silent < body.find("SuppressibleMsgBox")
+        assert "'/ALLOWDOWNGRADE'" in body
+        assert "Result := False" in body
+
+    def test_both_versions_come_from_the_exe_file_version(self):
+        """新旧とも exe のファイルバージョン（4 数字）で比べる＝同じ出どころ。
+
+        今から入れる側は [Files] が同梱する exe から、前回の側はアンインストール
+        情報の App Path の exe から読む。AppVersion の文字列（3.6RC2 など）を
+        比べると、Pascal で version_tuple() を書き直すことになる。
+        """
+        iss = self._iss()
+        m = re.search(r'^#define NewVerNums GetVersionNumbersString\(AddBackslash\(SourcePath\)'
+                      r' \+ "([^"]+)" \+ AppExeName\)', iss, re.MULTILINE)
+        assert m, "NewVerNums が同梱の exe から読まれていない"
+        src = re.search(r'^Source:\s*"([^"]+)\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
+        assert src and src.group(1) == m.group(1), (
+            "NewVerNums を読む exe と [Files] が同梱するフォルダが違う")
+        code = self._code()
+        assert "StrToVersion('{#NewVerNums}'" in code
+        detect = self._routine("procedure DetectPreviousVersion")
+        assert "'Inno Setup: App Path'" in detect
+        assert "GetPackedVersion" in detect
+        assert "ComparePackedVersion(NewPacked, PrevPacked)" in detect
+
+    def test_previous_install_is_looked_up_by_the_same_app_id(self):
+        """前回の場所は、上書き先を決めるのと同じ AppId・同じ側（HKA）で引く。
+
+        GUID を [Code] に書き写すと、AppId を変えたときに片方だけ古くなる。
+        """
+        body = self._routine("function UninstallRegKey")
+        assert '{#SetupSetting("AppId")}_is1' in body
+        detect = self._routine("procedure DetectPreviousVersion")
+        assert detect.count("RegQueryStringValue(HKA, UninstallRegKey") == 2

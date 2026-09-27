@@ -1075,7 +1075,7 @@ _REFDEF_RE = re.compile(r"^\[([^\]]+)\]:\s*(\S+)")          # 参照定義
 _FENCE_RE = re.compile(r"^\s*(```|~~~)")
 
 # 非追跡ゆえ CI には存在しないが、ローカルでは検査したいドキュメント。
-_LOCAL_ONLY_DOCS = ["ISSUES.md", "issue_evidence/README.md"]
+_LOCAL_ONLY_DOCS = ["ISSUES.md", "ISSUES_archive.md", "issue_evidence/README.md"]
 _LINK_DOCS = ["README.md", *ALL_DOCS, "CHANGELOG.md", *_LOCAL_ONLY_DOCS]
 
 
@@ -1130,13 +1130,70 @@ def _prose_lines(text: str):
         yield i, line
 
 
+# CHANGELOG.md の版セクション見出し（例＝`## [3.6] — 未リリース`）。
+_CHANGELOG_SECTION_RE = re.compile(r"^## \[", re.MULTILINE)
+
+
+def _changelog_head_section_lines():
+    """(行番号, 行) — CHANGELOG.md の**先頭の版セクションだけ**（I-164・候補(b)）。
+
+    CHANGELOG は歴史的記録として書き換えない決定（2026-09-20・ユーザー）が
+    あるので、用語統一のゲートを全文へ掛けると旧版の記述が初回から鳴り続ける
+    （[[feedback-promote-recurring-checks]] の壊れ方②）。**新しく足した版
+    （先頭の `## [x.y]` セクション）だけ**を見れば、これから書く散文には効き、
+    過去の記録は書き換えを強制しない。行番号はファイル全体を基準のまま返す
+    （失敗メッセージがそのままエディタの行ジャンプに使える）。
+    """
+    text = _read("CHANGELOG.md")
+    matches = list(_CHANGELOG_SECTION_RE.finditer(text))
+    assert matches, "CHANGELOG.md に版セクション（## [x.y]）が見当たらない"
+    start = matches[0].start()
+    end = matches[1].start() if len(matches) > 1 else len(text)
+    offset = text.count("\n", 0, start)
+    for i, line in _prose_lines(text[start:end]):
+        yield i + offset, line
+
+
+def test_changelog_head_section_excludes_older_versions(monkeypatch):
+    """CHANGELOG.md のスコープ絞り（I-164）が、先頭の版セクションだけを返すこと。
+
+    実ファイルの現在の中身は禁止語を含まないので、それだけでは境界が正しく
+    引けているかを証明できない（境界がどこにあっても通ってしまう）。合成した
+    CHANGELOG で「先頭セクションにある語は拾う・古い版だけにある語は拾わない」
+    の両方を確かめる。
+    """
+    fake = (
+        "# CHANGELOG\n"
+        "\n"
+        "## [3.6] — 未リリース\n"
+        "\n"
+        "- 新しい窓を足しました。\n"
+        "\n"
+        "## [3.5] — 2026-09-23\n"
+        "\n"
+        "- 昔の窓の話。\n"
+    )
+    monkeypatch.setattr(f"{__name__}._read", lambda name: fake)
+    lines = list(_changelog_head_section_lines())
+    texts = [line for _, line in lines]
+    assert any("新しい窓" in t for t in texts), "先頭セクションの行が読めていない"
+    assert not any("昔の窓" in t for t in texts), "先頭セクションの範囲が古い版まで漏れている"
+    # 行番号はファイル全体を基準のまま（新しい窓の行は fake の 5 行目）。
+    assert (5, "- 新しい窓を足しました。") in lines
+
+
 @pytest.mark.parametrize("doc", _WORDING_DOCS)
 def test_public_docs_use_the_glossary_wording(doc):
-    """公開文書が、用語集で「使わない」と決めた語を書いていないこと。"""
+    """公開文書が、用語集で「使わない」と決めた語を書いていないこと。
+
+    ⚠️ **`CHANGELOG.md` だけは先頭の版セクションに絞る**（I-164）＝過去版の
+    記述は書き換えない決定と両立させるため。
+    """
     banned = _banned_ja_wording()
     assert banned, "用語集から禁止語を 1 つも読めていない（この検査が空振りしている）"
+    lines = _changelog_head_section_lines() if doc == "CHANGELOG.md" else _visible_lines(doc)
     hits = [f"{doc}:{i} {w}"
-            for i, line in _visible_lines(doc)
+            for i, line in lines
             for w in banned if w in line]
     assert not hits, (
         "公開文書に、用語集で「使わない言い換え」と決めた語がある"
@@ -1334,14 +1391,20 @@ _ISSUE_ID_RE = re.compile(r"(?<![A-Za-z0-9_])[BI]-\d{3}(?![A-Za-z0-9_])")
 
 
 def _tracked_markdown() -> list[str]:
-    """追跡下（＝公開される）の Markdown。git が無い環境では skip。"""
+    """公開される（＝次の `git add -A` で履歴に入り得る）Markdown。git が無い環境では skip。
+
+    追跡中＋未追跡（git-ignore 以外）で、作業ツリーに在るものだけ。未追跡も数える
+    理由は `test_repo_hygiene.tracked_paths` と同じ（I-184＝新しいファイルはコミット前
+    ゲートの時点ではまだ未追跡で、push 前のフルはもう走り直さない）。
+    """
     import subprocess
     try:
-        out = subprocess.run(["git", "ls-files", "*.md"], cwd=ROOT,
+        out = subprocess.run(["git", "ls-files", "-z", "--cached", "--others",
+                              "--exclude-standard", "*.md"], cwd=ROOT,
                              capture_output=True, text=True, check=True).stdout
     except (OSError, subprocess.CalledProcessError):  # pragma: no cover
         pytest.skip("git が使えない環境")
-    return [p for p in out.splitlines() if p]
+    return sorted({p for p in out.split("\0") if p and (ROOT / p).is_file()})
 
 
 def test_public_docs_do_not_cite_issue_ids():

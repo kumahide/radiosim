@@ -34,8 +34,9 @@
 // このスクリプトは Ollama にもローカル LLM の足場にも依存しない（2026-08-31 以降）。
 
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const CHECKLIST_FILE = join(HERE, "release-checklist.txt");
@@ -67,7 +68,7 @@ async function main() {
   );
 
   // (1) CI status — asked, not remembered.
-  process.stderr.write("\n" + await ciStatusLine() + "\n");
+  process.stderr.write("\n" + ciStatusLine(root) + "\n");
 
   // (2) 表示依存の面が、この commit で回っているか（B-074(b)）。
   process.stderr.write("\n" + (await displayRunLine(root)) + "\n");
@@ -83,28 +84,64 @@ async function main() {
 // （[[feedback-promote-recurring-checks]] の昇格）。
 // ⚠️ 助言専用のまま＝gh が無い/未認証/オフラインでも黙って通す（このスクリプト
 // 自体は常に exit 0）。ここで止めると、ネットワークの都合でリリースが止まる。
-async function ciStatusLine() {
+function ciStatusLine(root) {
   try {
-    const { execFileSync } = await import("node:child_process");
-    const out = execFileSync(
-      "gh",
-      ["run", "list", "--limit", "1", "--json", "conclusion,headBranch,createdAt"],
-      { encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "ignore"] },
-    );
-    const [run] = JSON.parse(out);
-    if (!run) return "[CI] 実行履歴なし（判断は手動で）";
-    const when = String(run.createdAt).slice(0, 16).replace("T", " ");
-    if (run.conclusion === "success") {
-      return `[CI] ✅ 緑（${run.headBranch} / ${when}）`;
-    }
-    return (
-      `\n🔴🔴 [CI] 直近の実行が ${run.conclusion}（${run.headBranch} / ${when}）\n` +
-      `        赤いまま配布すると、緑を前提にした工程が全部意味を失う。\n` +
-      `        gh run view --log-failed で中身を見てから進むこと。\n`
-    );
+    const out = execFileSync("gh", ciRunListArgs(ciBranch(root)), {
+      encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "ignore"],
+    });
+    return ciRunLine(JSON.parse(out)[0]);
   } catch (e) {
     return `[CI] 状態を取得できなかった（${e && e.message}）＝手動で確認せよ`;
   }
+}
+
+// 🔴 **B-303**＝以前は `--branch` を付けずに `--limit 1` で引いていた＝別のブランチ
+// （`feature/field-phase1` など）の実行を、いま見たいブランチの色として出しえた。
+// ⇒ 見るのはいまのブランチ（切り離された HEAD＝タグの push などは main）。
+export function ciBranch(root) {
+  try {
+    const b = git(root, ["rev-parse", "--abbrev-ref", "HEAD"]);
+    return b && b !== "HEAD" ? b : "main";
+  } catch {
+    return "main";
+  }
+}
+
+export function ciRunListArgs(branch) {
+  return ["run", "list", "--branch", branch, "--limit", "1",
+          "--json", "status,conclusion,headBranch,createdAt"];
+}
+
+// 🔒 **🔴🔴 は、赤と確かめられたときだけ出す**（B-303）。
+// 🔴 以前は `conclusion === "success"` かどうかだけで分けていた＝実行中（`status` が
+// `in_progress`・`conclusion` が空）を失敗の枝へ落とし、「直近の実行が （…）」と
+// 結論の欄が空のまま赤の文面で出た。`/release` は push → ビルドの順なので、
+// ビルド（約 1 分）は必ず CI（約 8 分）の実行中に終わる＝RC・正式のたびに鳴っていた。
+// 毎回鳴る網は、本当に赤いときの 🔴🔴 まで読み飛ばされる（[[feedback-promote-recurring-checks]]）。
+export function ciRunLine(run) {
+  if (!run) return "[CI] 実行履歴なし（判断は手動で）";
+  const when = String(run.createdAt).slice(0, 16).replace("T", " ");
+  const where = `${run.headBranch} / ${when}`;
+  if (run.status !== "completed" || !run.conclusion) {
+    return (
+      `[CI] ⏳ 実行中（${run.status || "状態不明"}・${where}）＝まだ色が無い。\n` +
+      "        終わってから確かめる（gh run watch）。"
+    );
+  }
+  if (run.conclusion === "success") {
+    return `[CI] ✅ 緑（${where}）`;
+  }
+  return (
+    `\n🔴🔴 [CI] 直近の実行が ${run.conclusion}（${where}）\n` +
+    `        赤いまま配布すると、緑を前提にした工程が全部意味を失う。\n` +
+    `        gh run view --log-failed で中身を見てから進むこと。\n`
+  );
+}
+
+function git(root, args) {
+  return execFileSync("git", args, {
+    cwd: root, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "ignore"],
+  }).trim();
 }
 
 // 表示依存のテストは **CI で 1 本も走らない**（ランナーに表示が無く、xvfb を足しても
@@ -115,13 +152,34 @@ async function ciStatusLine() {
 // ⇒ tests/conftest.py が .qa/display_run.json へ**回った事実**を刻むので、ここで
 // HEAD と突き合わせる（チェックリストの一行と違い、読み飛ばしても記録が残る）。
 // ⚠️ 助言専用のまま＝刻印が無くても止めない（このスクリプトは常に exit 0）。
-async function displayRunLine(root) {
-  const { execFileSync } = await import("node:child_process");
-  const git = (args) =>
-    execFileSync("git", args, {
-      cwd: root, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "ignore"],
-    }).trim();
+//
+// 🔒 **照らすのは commit ではなく中身**（B-294）＝刻印の `display_files`（検査した
+// 作業ツリーの views/ tests/ の「パス → blob」）と、HEAD の同じ範囲の blob を比べる。
+// 🔴 以前は刻印の commit と HEAD を比べていた＝コミット前ゲートは作業ツリーのまま
+// 回すので刻印は必ず親を指し、自分のコミットの views/ tests/ を見つけて 🔴🔴 で鳴った。
+// 逆向きに、未コミットの変更で回してから戻すと commit が一致して嘘の ✅ になった。
+// 作り方は tests/conftest.py の `_display_files` と対（範囲は `DISPLAY_SCOPE`）。
+export const DISPLAY_SCOPE = ["views", "tests"];
 
+export function headDisplayFiles(root) {
+  const out = execFileSync("git", ["ls-tree", "-r", "-z", "HEAD", "--", ...DISPLAY_SCOPE], {
+    cwd: root, encoding: "utf8", timeout: 20000, stdio: ["ignore", "pipe", "ignore"],
+  });
+  const files = {};
+  for (const rec of out.split("\0")) {
+    const m = /^\d+ blob ([0-9a-f]+)\t(.+)$/s.exec(rec);
+    if (m) files[m[2]] = m[1];
+  }
+  return files;
+}
+
+// 中身が違うパス（片方にしか無いものも含む）を返す。
+export function differingDisplayFiles(stamped, head) {
+  const paths = new Set([...Object.keys(stamped), ...Object.keys(head)]);
+  return [...paths].filter((p) => stamped[p] !== head[p]).sort();
+}
+
+export function displayRunLine(root) {
   let stamp;
   try {
     stamp = JSON.parse(readFileSync(join(root, ".qa", "display_run.json"), "utf-8"));
@@ -133,41 +191,42 @@ async function displayRunLine(root) {
     );
   }
 
-  let head = "";
-  try { head = git(["rev-parse", "HEAD"]); } catch { /* git が無くても止めない */ }
   const when = String(stamp.when || "").slice(0, 16).replace("T", " ");
-  if (head && stamp.commit === head) {
-    return `[表示依存] ✅ この commit で回っている（${when} / 実行 ${stamp.ran} 本）`;
+  const rerun = "        → 表示のある機械でフルスイートを回し直すこと。";
+  if (!stamp.display_files || typeof stamp.display_files !== "object") {
+    // B-294 より前の刻印＝commit しか持たず、中身で照らせない。✅ とは言わない。
+    return `⚠⚠ [表示依存] 刻印が旧形式（${when}）で、中身を照合できません。\n` + rerun;
+  }
+  let head;
+  try {
+    head = headDisplayFiles(root);
+  } catch {
+    return `⚠⚠ [表示依存] 刻印（${when}）を HEAD と照合できません（git が使えない）。\n` + rerun;
   }
 
-  // 🔑 **commit が違うだけでは鳴らさない**＝毎コミット鳴る網は読まれなくなる
-  // （[[feedback-promote-recurring-checks]] の「毎回鳴る」壊れ方）。刻印以降に
-  // **表示に効く層が動いたか**を見て、動いていなければ字を弱める。
-  let touched = [];
-  try {
-    touched = git(["diff", "--name-only", `${stamp.commit}..HEAD`, "--", "views", "tests"])
-      .split(/\r?\n/).filter(Boolean);
-  } catch {
+  const differ = differingDisplayFiles(stamp.display_files, head);
+  if (differ.length === 0) {
     return (
-      `⚠⚠ [表示依存] 刻印は ${String(stamp.commit).slice(0, 7)}（${when}）で、HEAD と照合できません。\n` +
-      "        → 表示のある機械でフルスイートを回し直すこと。"
+      `[表示依存] ✅ HEAD の views/ tests/ はこの中身で回っている` +
+      `（${when} / 実行 ${stamp.ran} 本）`
     );
   }
-  if (touched.length === 0) {
-    return (
-      `[表示依存] ⚪ 刻印は ${String(stamp.commit).slice(0, 7)}（${when}）＝HEAD とは違うが、\n` +
-      "           以降 views/ と tests/ は動いていない（回し直しの必要は薄い）。"
-    );
-  }
+  const shown = differ.slice(0, 3).join(" ") + (differ.length > 3 ? " …" : "");
   return (
-    `\n🔴🔴 [表示依存] 刻印は ${String(stamp.commit).slice(0, 7)}（${when}）で、以降\n` +
-    `        views/ tests/ が ${touched.length} ファイル動いている＝**表示依存の面は\n` +
+    `\n🔴🔴 [表示依存] 刻印（${when}）は、HEAD と views/ tests/ の中身が\n` +
+    `        ${differ.length} ファイル違う（${shown}）＝**表示依存の面は\n` +
     "        この状態で 1 度も検査されていない**（CI では構造的に走らない）。\n" +
     '        → & "$env:RADIOSIM_PYTHON" -m pytest を最後まで回してから配ること。\n'
   );
 }
 
-main().catch((e) => {
-  process.stderr.write(`[QA RELEASE] error: ${e && e.message}\n`);
-  process.exit(0);
-});
+// 読み込んだだけでは走らせない（tests/test_release_check.py が判定の関数を import する）。
+// ⚠️ Windows はドライブ文字の大小が呼び方で変わる（`d:\` と `D:\`）＝大小を無視して比べる。
+// 食い違うと main() が黙って走らず、助言が「指摘なし」と区別できなくなる。
+const norm = (p) => (process.platform === "win32" ? p.toLowerCase() : p);
+if (process.argv[1] && norm(resolve(process.argv[1])) === norm(fileURLToPath(import.meta.url))) {
+  main().catch((e) => {
+    process.stderr.write(`[QA RELEASE] error: ${e && e.message}\n`);
+    process.exit(0);
+  });
+}

@@ -405,6 +405,9 @@ def delete_tile_cache(
                 logger.warning("delete_tile_cache: %s", e)
                 errors += 1
     with dem._cache_lock:
+        # 世代を進める（B-286）＝並んで古いディスクを読んだ計算が、消したタイルを
+        # メモリへ戻せないように（`dem._cache_epoch` の註）。
+        dem._cache_epoch += 1
         for key in keys_to_clear:
             dem._tile_cache.pop(key, None)
             dem._failed_tiles.discard(key)
@@ -445,28 +448,77 @@ def get_cache_stats(source: "dem_sources.DemSourceSpec | None" = None) -> dict:
     集計する（背景地図・他ソースは含めない）。省略時は従来どおり
     `CACHE_DIR` 全体（全ソース＋背景地図）を合算する＝**後方互換**。
 
+    🔑 **数える範囲は消す範囲と同じ**（B-282）＝`dem.source_delete_roots`。
+    読む側の置き場（`source_layer_dir`＝今の定義のハッシュの下だけ）で数えると、
+    宣言を書き換える前のタイルと 3.5 以前の旧置き場が漏れ、「0 MB と出ているのに
+    削除で大量に消える」表示になる。
+
     Returns:
         {"count": int, "size_bytes": int}
     """
     if source is None:
         return _walk_stats(dem.CACHE_DIR)
     total = {"count": 0, "size_bytes": 0}
-    for layer_id, _zoom in source.layers:
-        layer_stats = _walk_stats(dem.source_layer_dir(source, layer_id))
+    for root in dem.source_delete_roots(source):
+        layer_stats = _walk_stats(root)
         total["count"] += layer_stats["count"]
         total["size_bytes"] += layer_stats["size_bytes"]
     return total
 
 
 def get_basemap_cache_stats() -> dict:
-    """背景地図（帳票サムネイル用の淡色地図）キャッシュの枚数と総バイト数。
+    """背景地図（帳票サムネイル用の背景地図）キャッシュの枚数と総バイト数。
 
     I-155（3.5 ステージ3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
     独立した対象として扱うための対。地図ウィンドウプレビューの背景タイルは
     `tkintermapview` が持ちこの層には含まれない（`fetch_basemap_tiles` の
     ディスクキャッシュのみが対象）。
+
+    B-248＝地図ウィンドウの選択に追従して `"pale"` 以外（`photo`／宣言した外部
+    ソース）も帳票の背景地図として取得され得るようになったので、
+    `BASEMAP_SUBDIR`（`"pale"` 専用）と `BASEMAP_EXTRA_SUBDIR`（それ以外）の
+    両方を合算する。
     """
-    return _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+    pale  = _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+    other = _walk_stats(os.path.join(dem.CACHE_DIR, dem.BASEMAP_EXTRA_SUBDIR))
+    return {"count": pale["count"] + other["count"],
+            "size_bytes": pale["size_bytes"] + other["size_bytes"]}
+
+
+def get_cache_breakdown() -> dict:
+    """キャッシュ内訳（ソース別＋背景地図＋合計）を単一の出所として返す。
+
+    I-169（3.6 ステージ1）＝地図ウィンドウの統計表示・全削除ダイアログが、
+    それぞれ別々に `get_cache_stats()` を呼んで合計だけ見せていたのを、
+    この関数 1 つに集約する。
+
+    ⚠️ **合計は `CACHE_DIR` 全体の走査**（B-282 で I-169 の「内訳の足し算」を
+    撤回）＝足し算だと、どの内訳にも属さないタイル（宣言を消したソースの残り
+    など）が総量から消え、実際のディスク使用量より小さく出る。総量が答える
+    べきは「ディスクをどれだけ使っているか」なので、内訳の和とは一致しない
+    ことがある（差は、どのソースにも属さない残り）。
+
+    Returns:
+        {
+            "sources": [{"source_id", "display_name", "count", "size_bytes"}, ...],
+            "basemap": {"count", "size_bytes"},
+            "total": {"count", "size_bytes"},
+        }
+    """
+    sources: list[dict] = []
+    for src in dem_sources.all_sources():
+        stats = get_cache_stats(src)
+        sources.append({
+            "source_id": src.source_id,
+            "display_name": src.display_name,
+            "count": stats["count"],
+            "size_bytes": stats["size_bytes"],
+        })
+    return {
+        "sources": sources,
+        "basemap": get_basemap_cache_stats(),
+        "total": get_cache_stats(),
+    }
 
 
 def delete_all_tile_cache(
@@ -496,17 +548,28 @@ def delete_all_tile_cache(
     else:
         targets: list[str] = []
         for src in (sources or []):
-            targets.extend(dem.source_layer_dir(src, layer_id) for layer_id, _z in src.layers)
+            # B-268＝消すときは宣言を書き換える前のタイルも掃く（読む側とは
+            # 対象が違う＝`source_layer_dir` を列挙しない）。
+            targets.extend(dem.source_delete_roots(src))
         if include_basemap:
             targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_SUBDIR))
+            targets.append(os.path.join(dem.CACHE_DIR, dem.BASEMAP_EXTRA_SUBDIR))
         for root in targets:
-            stats = _walk_stats(root)
-            deleted += stats["count"]
+            # B-269＝消す前の在庫ではなく、**消えた枚数**を数える。
+            # `shutil.rmtree(ignore_errors=True)` は残っても黙るので、
+            # 掃いたあとにもう一度数えて差を取る（`rmtree` の戻り値は無い）。
+            before = _walk_stats(root)["count"]
             try:
                 shutil.rmtree(root, ignore_errors=True)
-            except OSError as e:
+            except OSError as e:   # pragma: no cover - ignore_errors なので届かない
                 logger.warning("delete_all_tile_cache: %s", e)
+            after = _walk_stats(root)["count"]
+            deleted += before - after
+            if after:
+                logger.warning(
+                    "delete_all_tile_cache: %d 枚が消えずに残った: %s", after, root)
     with dem._cache_lock:
+        dem._cache_epoch += 1   # B-286（`delete_tile_cache` と同じ）
         dem._tile_cache.clear()
         dem._failed_tiles.clear()
         dem._tile_validity_memo.clear()

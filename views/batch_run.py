@@ -46,6 +46,7 @@ class _RunMixin(_HostBase):
         _base_params: sim.SimParams
         _common_vars: dict[str, tk.StringVar]
         _coord_format: str
+        _basemap_source_id: str
         _project_name_var: tk.StringVar
         _memo_var: tk.StringVar
         _env_var: tk.StringVar
@@ -167,6 +168,7 @@ class _RunMixin(_HostBase):
             project_name      = self._project_name_var.get().strip(),
             memo              = self._memo_var.get().strip(),
             exclude_spot      = self._exclude_spot_var.get(),
+            basemap_source_id = self._basemap_source_id,
         )
 
     # ----------------------------------------------------------

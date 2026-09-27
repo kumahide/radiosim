@@ -12,6 +12,7 @@ core/failure.py
 型は既にあった 2 つの先例から抽出した:
 
 - `err_dem_unreachable` … **起きたこと＋止めた理由＋次の一手**を全部持つ。最良の先例。
+  （I-178 で 3 キーに割り、この型で組むようにした＝`simulation.dem_unreachable_message`）
 - `dlg_unexpected_error_msg` … 起きたこと＋**詳細の在り処**を持つ（次の一手が無い）。
   ⚠️ このキーは I-100 で退けた＝1 枚の型板に戻すと、また次の一手を書き忘れられる。
 
@@ -43,10 +44,11 @@ FIX_KEYS = (
     "fix_edit_lang_file",  # 言語ファイルの該当キーを直す
     "fix_edit_dem_sources_file",  # DEM ソース宣言ファイルの該当項目を直す
     "fix_edit_tile_sources_file",  # 背景地図タイル宣言ファイルの該当項目を直す
+    "fix_network",         # 接続とプロキシ設定を確かめる（DEM 取得・更新の確認）
+    "fix_retry_later",     # 時間をおいて試す（問い合わせ回数の上限＝更新の確認）
 )
-# ⚠️ **ネットワーク／プロキシの一手は語彙に置いていない**＝その文は
-# `err_dem_unreachable` の中に既にあり（型の出所そのもの）、取り出して別キーに
-# すると同じ字が 2 か所に増える。取り出すのは 2 件目の使い道が出たとき。
+# ⚠️ `fix_network` は元は `err_dem_unreachable` の 3 段落目に焼き込まれていた＝
+# 2 件目の使い道（更新の確認＝I-178）が出たので取り出した（組んだ字は不変）。
 
 
 class UserFacingError(Exception):

@@ -26,7 +26,7 @@ views/scenario.py
 置かれない**（B-006／I-008 の構造対策）。
 
 ⚠️ 素の tk ウィジェットは sv_ttk のテーマに追従しないので、**新規はすべて ttk**
-で作る（[[feedback_radiosim_rules]]）。
+で作る（[[feedback-radiosim-rules]]）。
 """
 
 from __future__ import annotations
@@ -78,7 +78,7 @@ def _number(text: str, label: str) -> float:
     """入力欄の文字列を数値へ。読めない値は**その欄の名前つき**で弾く。
 
     素の `float()` に任せると Python 生の英語（`could not convert string to
-    float: 'abc'`）がダイアログに出る＝言語設定にも [[feedback_japanese_everywhere]]
+    float: 'abc'`）がダイアログに出る＝言語設定にも [[feedback-writing]]
     にも従わない（B-016）。`nan` / `inf` は `float()` を通ってしまうので、
     値域と一緒に config.validate_value 側で弾く。
     """

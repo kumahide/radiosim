@@ -216,10 +216,21 @@ class DemUnreachableError(failure.UserFacingError, RuntimeError):
     どのフローでもユーザーに届く。
 
     ⚠️ **`UserFacingError` を継承しているのは「文が既に型に乗っている」印**
-    （I-100）＝`err_dem_unreachable` は何が起きた／なぜ止めた／次の一手を全部
-    持つ。これが無いと、受け側が「実行を完了できませんでした」でもう 1 枚
+    （I-100）＝`dem_unreachable_message()` は何が起きた／なぜ止めた／次の一手を
+    全部持つ。これが無いと、受け側が「実行を完了できませんでした」でもう 1 枚
     包み、**同じことを 2 回言う**。
     """
+
+
+def dem_unreachable_message() -> str:
+    """DEM を取れずに打ち切ったときの文（型の出所＝I-100）。
+
+    以前は 1 キー（`err_dem_unreachable`）に 3 段落を焼き込んでいた。次の一手
+    `fix_network` を更新の確認（I-178）と分け合うため、`failure.message` で組む。
+    """
+    return failure.message(what=i18n.t("fail_dem_unreachable"),
+                           why=i18n.t("fail_why_flat_terrain"),
+                           hint=i18n.t("fix_network"))
 
 
 def sample_coords(params: SimParams) -> tuple[np.ndarray, np.ndarray]:
@@ -347,7 +358,7 @@ def fetch_elevations(
                     failures, params.lat_tx, params.lon_tx,
                     params.lat_rx, params.lon_rx,
                 )
-                raise DemUnreachableError(i18n.t("err_dem_unreachable"))
+                raise DemUnreachableError(dem_unreachable_message())
 
             logger.info("Terrain fetch complete: %d samples", params.num)
             # 同じスレッドで直後に呼ぶ on_complete へだけ渡す（`last_dem_acquired`）
@@ -370,11 +381,27 @@ def fetch_elevations(
 # ⚠️ **DEM ソースも鍵に入れる**（B-225）＝ソースを切り替えても前回ソースの
 # 地形を使い回してしまい、選んだソースと違う地形で計算結果が出る。
 _TerrainCacheKey = tuple[float, float, float, float, int, str, str]
-# 値は (raw_elevs, 取得日の範囲)＝**取得日は標高と同じ項目に持つ**（B-213）。
-# 別の辞書に分けると寿命が別になり、片方だけ消える・上書きされる。
+# 値は (raw_elevs, 取得日の範囲, 取得を始めたときの `dem._cache_epoch`)＝**取得日は
+# 標高と同じ項目に持つ**（B-213）。別の辞書に分けると寿命が別になり、片方だけ消える・
+# 上書きされる。
+# 世代（B-288）＝タイルの無効化（強制再取得の置き換え・範囲削除・全削除）は
+# `dem._cache_epoch` を進める。引くときに今の世代と違う項目は使わない＝無効化より
+# 前に取った地形も、無効化と並んで取った地形も、無効化のあとの計算に出てこない。
+# ⚠️ 無効化の口ごとにこの辞書を消す形にしない＝強制再取得の口が抜けていた（B-288）し、
+# 消しても並んで走っていた計算が完了後に登録し直す。
 _terrain_cache: dict[_TerrainCacheKey,
-                     "tuple[np.ndarray, tuple[str, str] | None]"] = {}
+                     "tuple[np.ndarray, tuple[str, str] | None, int]"] = {}
 _terrain_cache_lock = threading.Lock()
+
+
+def _dem_epoch() -> int:
+    """タイルの無効化の世代（`dem._cache_epoch`）を読む。
+
+    ⚠️ `_terrain_cache_lock` と重ねて取らない＝無効化の側は `dem._cache_lock` を
+    持ったまま `clear_terrain_cache` へは来ないが、順序を作らないのが安全。
+    """
+    with dem._cache_lock:
+        return dem._cache_epoch
 
 
 def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
@@ -467,6 +494,17 @@ def fetch_elevations_cached(
 
     with _terrain_cache_lock:
         cached = _terrain_cache.get(key)
+    # ⚠️ 世代は**引いた後に**読む（B-289）＝先に読むと、引くまでの間に終わった
+    # 無効化を見ずに古い項目へ命中する。引いた後なら、ここでまだ世代が進んでいない
+    # 命中は無効化より前に答えたのと同じ。取得に使う世代も同じ値（取得より前）。
+    epoch = _dem_epoch()
+    if cached is not None and cached[2] != epoch:
+        # タイルが無効化された後＝古い地形（B-288）。引いてからここまでに別の計算が
+        # 登録し直した項目は消さない。
+        with _terrain_cache_lock:
+            if _terrain_cache.get(key) is cached:
+                del _terrain_cache[key]
+        cached = None
 
     if cached is not None:
         logger.info(
@@ -475,7 +513,7 @@ def fetch_elevations_cached(
             params.lat_rx, params.lon_rx,
             params.num,
         )
-        elevs, acquired = cached
+        elevs, acquired, _ = cached
         # プログレスバーを満杯にしてから完了通知（UI の一貫性のため）
         on_progress(params.num)
         # 命中した地形を取った回の値＝同じタイルで計算しているので正しい
@@ -499,9 +537,13 @@ def fetch_elevations_cached(
                 params.lat_rx, params.lon_rx,
                 params.num,
             )
+        elif _dem_epoch() != epoch:
+            # 取っている間にタイルが無効化された＝この結果は今回だけ使う（B-288）。
+            # 登録すると、無効化の後に始まった計算の新しい登録を上書きし得る。
+            logger.info("Terrain NOT cached: DEM tiles were invalidated during the fetch")
         else:
             with _terrain_cache_lock:
-                _terrain_cache[key] = (raw_elevs.copy(), acquired)
+                _terrain_cache[key] = (raw_elevs.copy(), acquired, epoch)
         if on_acquired is not None:
             on_acquired(acquired)
         on_complete(raw_elevs)

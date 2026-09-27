@@ -5,6 +5,7 @@ dem.py のユニットテスト（DEM/淡色地図タイル取得・標高デコ
 HTTP 通信は monkeypatch で差し替え、ネットワーク接続不要。
 """
 
+import io
 import json
 import math
 import os
@@ -13,6 +14,7 @@ import unittest.mock as mock
 import numpy as np
 import pytest
 import requests
+from PIL import Image
 
 from core import config
 from core import dem
@@ -365,11 +367,13 @@ class TestSingleSourcePerCalculation:
         assert not any(key[0] == "gsi_dem" for key in dem._tile_cache)
 
     def test_disk_cache_path_is_namespaced_by_source(self):
-        """別ソースのディスクキャッシュは `CACHE_DIR/<source_id>/<定義ハッシュ>/...` へ分離される。"""
+        """別ソースのディスクキャッシュは `CACHE_DIR/external/<source_id>/<定義ハッシュ>/...`
+        へ分離される（B-274＝専用の名前空間の下なので組み込みの置き場と衝突しない）。"""
         fp = dem_sources.definition_fingerprint(self._OTHER_SOURCE)
         path = dem._cache_subdir_for(self._OTHER_SOURCE, "layer_a", 123)
         assert os.path.normpath(path) == os.path.normpath(
-            os.path.join(dem.CACHE_DIR, "other_source", fp, "layer_a", "123"))
+            os.path.join(dem.CACHE_DIR, dem.DEM_EXTERNAL_SUBDIR,
+                         "other_source", fp, "layer_a", "123"))
 
     def test_gsi_disk_cache_path_is_unchanged(self):
         """国土地理院はソース分離の対象外＝既存キャッシュを移さない（完了条件①）。"""
@@ -1079,6 +1083,18 @@ class TestIterDemPositions:
 # ============================================================
 # _process_position
 # ============================================================
+def _land_tile():
+    """全画素が標高 0.01 m の、欠損の無いタイル。
+
+    ⚠️ `np.zeros` は使わない（B-304）＝(0, 0, 0) はちょうど 0 m で、計算は下の
+    レイヤへ降りる＝事前取得の判定でも「欠損」に数える画素。
+    """
+    arr = np.zeros((256, 256, 3), dtype=np.uint8)
+    arr[:, :, 2] = 1
+    return arr
+
+
+
 class TestProcessPosition:
 
     def _make_counts(self):
@@ -1101,7 +1117,7 @@ class TestProcessPosition:
     def test_downloads_5a_when_available(self, tmp_path, monkeypatch):
         """5a DL 成功 → downloaded_5a 増加・5b/dem は試みない。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
         fetch_calls = []
 
         def mock_fetch(layer_id, *a, **kw):
@@ -1123,7 +1139,7 @@ class TestProcessPosition:
     def test_falls_back_to_5b_when_5a_fails(self, tmp_path, monkeypatch):
         """5a 失敗 → 5b 試みる → downloaded_5b 増加。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem5b_png" else None
@@ -1141,7 +1157,7 @@ class TestProcessPosition:
     def test_falls_back_to_dem_when_both_5m_fail(self, tmp_path, monkeypatch):
         """5a・5b 両方失敗 → dem_png DL。"""
         import threading
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem_png" else None
@@ -1162,7 +1178,7 @@ class TestProcessPosition:
         from PIL import Image
         dem_path = tmp_path / "dem.png"
         Image.new("RGB", (256, 256)).save(str(dem_path))
-        tile_arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        tile_arr = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             return tile_arr if layer_id == "dem5a_png" else None
@@ -1179,16 +1195,16 @@ class TestProcessPosition:
 
     @staticmethod
     def _void_tile(void=True):
-        """全画素 (128,0,0) の欠損タイル、または全画素有効(0,0,0)のタイル。"""
-        arr = np.zeros((256, 256, 3), dtype=np.uint8)
+        """全画素 (128,0,0) の欠損タイル、または全画素有効（0.01 m）のタイル。"""
+        arr = _land_tile()
         if void:
-            arr[:, :, 0] = 128
+            arr[:] = (128, 0, 0)
         return arr
 
     def test_descends_to_5b_when_5a_has_void(self, tmp_path, monkeypatch):
         """5a 取得成功だが欠損あり・5b が補完 → 5b も取得し dem は不要。"""
         import threading
-        valid = np.zeros((256, 256, 3), dtype=np.uint8)
+        valid = _land_tile()
 
         def mock_fetch(layer_id, *a, **kw):
             if layer_id == "dem5a_png":
@@ -1216,7 +1232,7 @@ class TestProcessPosition:
             if layer_id in ("dem5a_png", "dem5b_png"):
                 return self._void_tile(void=True)    # 両方とも全欠損
             if layer_id == "dem_png":
-                return np.zeros((256, 256, 3), dtype=np.uint8)
+                return _land_tile()
             return None
 
         monkeypatch.setattr(dem, "_fetch_tile", mock_fetch)
@@ -1237,7 +1253,7 @@ class TestProcessPosition:
 
         def mock_fetch(layer_id, *a, **kw):
             fetch_calls.append(layer_id)
-            return np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None
+            return _land_tile() if layer_id == "dem5a_png" else None
 
         monkeypatch.setattr(dem, "_fetch_tile", mock_fetch)
         zoom15 = [(0, 0, str(tmp_path), str(tmp_path / "5a.png"),
@@ -1250,13 +1266,20 @@ class TestProcessPosition:
         assert counts["downloaded_dem"] == 0
 
     def test_void_mask_matches_decode_semantics(self):
-        """_void_mask が (128,0,0) のみを True とすること。"""
-        arr = np.zeros((2, 2, 3), dtype=np.uint8)
-        arr[0, 0] = (128, 0, 0)   # 無効値
-        arr[0, 1] = (0, 0, 1)     # 標高 0.01m（有効）
-        arr[1, 0] = (128, 0, 1)   # 有効（b!=0）
-        mask = dem_prefetch._void_mask(arr)
-        assert mask[0, 0] and not mask[0, 1] and not mask[1, 0] and not mask[1, 1]
+        """_void_mask が、計算が下のレイヤへ降りる画素（復号して 0.0）と一致すること。
+
+        🔴 B-304＝以前は (128,0,0) だけを見ており、ちょうど 0 m の (0,0,0) を
+        「欠損なし」と読んでいた（計算はその画素で 5b へ降りる）。
+        """
+        pixels = [(128, 0, 0),   # 無効値
+                  (0, 0, 0),     # ちょうど 0 m
+                  (0, 0, 1),     # 0.01 m
+                  (128, 0, 1),   # 負の標高（b!=0）
+                  (255, 255, 255), (0, 39, 16), (127, 255, 255), (129, 0, 0)]
+        arr = np.array([pixels], dtype=np.uint8)
+        mask = dem_prefetch._void_mask(arr)[0]
+        for px, m in zip(pixels, mask):
+            assert bool(m) == (dem._decode_elevation(np.array(px)) == 0.0), px
 
 
 # ============================================================
@@ -1273,7 +1296,7 @@ class TestPrefetchTiles:
 
     def _tile(self):
         """欠損(128,0,0)を含まない有効タイル。"""
-        return np.zeros((256, 256, 3), dtype=np.uint8)
+        return _land_tile()
 
     def _run(self, tmp_path, monkeypatch, fetch, **kw):
         # CACHE_DIR を空の一時ディレクトリにしてスキップ条件（既存キャッシュ）を外す。
@@ -1535,6 +1558,643 @@ class TestPrefetchTiles:
                        "downloaded_dem": 0, "skipped": 0, "failed": 0}
 
 
+class TestForceRefetchDropsUnreadLowerLayers:
+    """強制再取得で降下が要らなくなった下位レイヤを消すこと（B-285）。
+
+    以前は 5a の欠損が無くなった位置で、古い 5b・dem_png がディスクに残った
+    ＝「キャッシュ済みタイルを取り直す」の言葉どおりにならなかった。⚠️ **dem_png は
+    4 枚の zoom-15 を全部見た位置でだけ消す**（端の位置の検査が対）。
+    """
+
+    LAT, LON = 35.0, 139.0
+
+    def _full_position_bbox(self):
+        """zoom-14 の 1 枚をちょうど覆う範囲＝子の zoom-15 が 4 枚そろう。"""
+        x, y, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        n, w = dem_cache.tile_to_latlng(x, y, 14)
+        s, e = dem_cache.tile_to_latlng(x + 1, y + 1, 14)
+        eps = 1e-6
+        return n - eps, w + eps, s + eps, e - eps
+
+    def _tile(self, void=False):
+        arr = _land_tile()
+        if void:
+            arr[0, 0] = (128, 0, 0)
+        return arr
+
+    def _seed(self, path):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.new("RGB", (256, 256)).save(path)
+
+    def _seed_all(self, bbox):
+        """以前 5a に欠損があった位置の形＝5a・5b・dem_png がそろって在る。"""
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*bbox)
+        for _x, _y, _s5a, path5a, _s5b, path5b in zoom15:
+            self._seed(path5a)
+            self._seed(path5b)
+        self._seed(dem14_path)
+        return dem14_path, zoom15
+
+    def test_lower_layers_are_removed_when_5a_has_no_voids(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        x14, y14, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        gsi = dem_sources.GSI_DEM.source_id
+        stale_key = (gsi, "dem_png", x14, y14)
+        monkeypatch.setitem(dem._tile_cache, stale_key, self._tile())
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert not any(os.path.exists(t[5]) for t in zoom15), "読まれない 5b が残っている"
+        assert not os.path.exists(dem14_path), "読まれない dem_png が残っている"
+        assert all(os.path.exists(t[3]) for t in zoom15)
+        assert stale_key not in dem._tile_cache
+
+    def test_5b_that_fills_the_5a_voids_is_kept(self, tmp_path, monkeypatch):
+        """5a に欠損が残り 5b が埋める位置＝5b は読まれるので消さない（dem_png は消す）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: {"dem5a_png": self._tile(void=True),
+                                        "dem5b_png": self._tile()}.get(layer_id))
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert all(os.path.exists(t[5]) for t in zoom15)
+        assert not os.path.exists(dem14_path)
+
+    def test_5b_is_kept_when_5a_has_a_zero_metre_pixel(self, tmp_path, monkeypatch):
+        """5a にちょうど 0 m の画素がある位置＝計算は 5b へ降りるので消さない（B-304）。
+
+        🔴 以前は (0,0,0) を欠損と見ず、この位置を「5a で完結」として 5b と dem_png を
+        消していた＝オフラインでその画素の標高が変わる。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        zero = self._tile()
+        zero[5, 5] = (0, 0, 0)
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: {"dem5a_png": zero,
+                                        "dem5b_png": self._tile()}.get(layer_id))
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert all(os.path.exists(t[5]) for t in zoom15), "計算が読む 5b を消した"
+
+    def test_dem_png_is_kept_when_one_subtile_still_needs_it(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        dem14_path, zoom15 = self._seed_all(bbox)
+        void_x15 = zoom15[0][0]
+
+        def fetch(layer_id, zoom, x, *a, **kw):
+            if layer_id == "dem5a_png":
+                return self._tile(void=(x == void_x15))
+            return None           # 5b 不在・dem_png は通信失敗＝ディスクは古いまま
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+
+        dem_prefetch.prefetch_tiles(*bbox, force=True)
+
+        assert os.path.exists(dem14_path), "まだ要る dem_png を消した"
+
+    def test_dem_png_at_the_edge_of_the_range_is_kept(self, tmp_path, monkeypatch):
+        """範囲の端＝zoom-15 を 1 枚しか見ていない位置では dem_png を消さない。
+
+        🔴 範囲外の 1 枚が 10m を要るかもしれない＝消すと、その 1 枚を覆う事前取得を
+        もう一度回すまで**オフラインで 10m が欠ける**。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        full = self._full_position_bbox()
+        self._seed_all(full)
+        point = (self.LAT, self.LON, self.LAT, self.LON)
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*point)
+        assert len(zoom15) == 1
+        monkeypatch.setattr(
+            dem, "_fetch_tile",
+            lambda layer_id, *a, **kw: self._tile() if layer_id == "dem5a_png" else None)
+
+        dem_prefetch.prefetch_tiles(*point, force=True)
+
+        assert not os.path.exists(zoom15[0][5]), "この 1 枚の 5b は読まれない"
+        assert os.path.exists(dem14_path), "範囲外の 3 枚が要るかもしれない dem_png を消した"
+
+
+class TestNormalPrefetchRepairsOldCache:
+    """通常の事前取得でも、キャッシュ済みの 5a/5b を読み直して足りない層を取ること（B-306）。
+
+    🔴 以前は `dem_png` が無い位置で読める 5a/5b があれば中身を見ずに飛ばしていた
+    ＝B-304 より前（3.7 より前）の事前取得が 0 m の画素を欠損と見ずに 5a だけで
+    止めた位置が、強制再取得をしないかぎり直らなかった（オフラインでその画素が欠ける）。
+    """
+
+    LAT, LON = 35.0, 139.0
+    ZERO_PX = (5, 5)
+
+    def _full_position_bbox(self):
+        """zoom-14 の 1 枚をちょうど覆う範囲＝子の zoom-15 が 4 枚そろう。"""
+        x, y, _, _ = dem._tile_coords(self.LAT, self.LON, 14)
+        n, w = dem_cache.tile_to_latlng(x, y, 14)
+        s, e = dem_cache.tile_to_latlng(x + 1, y + 1, 14)
+        eps = 1e-6
+        return n - eps, w + eps, s + eps, e - eps
+
+    def _tile(self, zero=False):
+        """欠損の無いタイル（zero＝1 画素だけちょうど 0 m の (0,0,0)）。"""
+        arr = _land_tile()
+        if zero:
+            arr[self.ZERO_PX] = (0, 0, 0)
+        return arr
+
+    def _seed(self, path, arr):
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        Image.fromarray(arr).save(path)
+
+    def _run(self, tmp_path, monkeypatch, seed, fetch_result):
+        """`seed(zoom15)` でキャッシュを置き、通常の事前取得を 1 回回す。
+
+        Returns: (結果の件数, 呼ばれた (layer_id, x, y) の列, dem14_path, zoom15)
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        bbox = self._full_position_bbox()
+        (_, _, _, dem14_path, zoom15), = dem_prefetch._iter_dem_positions(*bbox)
+        assert len(zoom15) == 4
+        seed(zoom15)
+        calls = []
+
+        def fetch(layer_id, zoom, x, y, *a, **kw):
+            calls.append((layer_id, x, y))
+            return fetch_result.get(layer_id)
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+        res = dem_prefetch.prefetch_tiles(*bbox, force=False)
+        return res, calls, dem14_path, zoom15
+
+    def _seed_old_5a(self, zoom15):
+        """3.7 より前の事前取得が残す形＝5a だけ・先頭の 1 枚に 0 m の画素。"""
+        for i, (_x, _y, _s5a, path5a, _s5b, _p5b) in enumerate(zoom15):
+            self._seed(path5a, self._tile(zero=(i == 0)))
+
+    def test_old_5a_with_a_zero_metre_pixel_fetches_5b(self, tmp_path, monkeypatch):
+        """① 旧キャッシュの 5a に 0 m の画素＝その 1 枚だけ 5b を取りに行く。"""
+        res, calls, dem14_path, zoom15 = self._run(
+            tmp_path, monkeypatch, self._seed_old_5a,
+            {"dem5b_png": self._tile()})
+
+        x15, y15 = zoom15[0][0], zoom15[0][1]
+        assert calls == [("dem5b_png", x15, y15)], (
+            "0 m の画素を持つキャッシュ済み 5a を読み直さずに飛ばした")
+        assert res["downloaded_5b"] == 1
+        assert res["downloaded_5a"] == res["downloaded_dem"] == 0
+        assert all(os.path.exists(t[3]) for t in zoom15), "読み直した 5a を消した"
+
+    def test_old_5a_descends_to_dem_png_when_5b_lacks_the_same_pixel(
+        self, tmp_path, monkeypatch
+    ):
+        """① 5b もその画素で欠けていれば dem_png まで取りに行く。"""
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, self._seed_old_5a,
+            {"dem5b_png": self._tile(zero=True), "dem_png": self._tile()})
+
+        layers = [c[0] for c in calls]
+        assert layers.count("dem5b_png") == 1
+        assert "dem_png" in layers, "5a∩5b に欠損が残るのに 10m を取りに行かない"
+        assert "dem5a_png" not in layers
+        assert res["downloaded_dem"] == 1
+
+    def test_healthy_cache_fetches_nothing(self, tmp_path, monkeypatch):
+        """② 正常なキャッシュ（5a に欠損が無い）では、どの層も取りに行かない。"""
+        def seed(zoom15):
+            for t in zoom15:
+                self._seed(t[3], self._tile())
+
+        res, calls, _dem14, _z = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem5b_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == [], "欠損の無いキャッシュなのに取りに行った"
+        assert res["downloaded_5a"] == res["downloaded_5b"] == res["downloaded_dem"] == 0
+        assert res["failed"] == 0
+
+    def test_5b_only_position_does_not_refetch_5a(self, tmp_path, monkeypatch):
+        """③ 5a が無く 5b だけが在る位置（5a はサーバに無い形）＝5a を取り直さない。"""
+        def seed(zoom15):
+            for t in zoom15:
+                self._seed(t[5], self._tile())
+
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == [], "5b で埋まっている位置なのに 5a を取り直した"
+        assert not any(os.path.exists(t[3]) for t in zoom15)
+        assert all(os.path.exists(t[5]) for t in zoom15)
+
+    def test_5b_only_position_with_a_void_goes_to_dem_png_not_5a(
+        self, tmp_path, monkeypatch
+    ):
+        """③ の対＝5b に欠損が残れば 10m へ降りる（5a は取りに行かない）。"""
+        def seed(zoom15):
+            for i, t in enumerate(zoom15):
+                self._seed(t[5], self._tile(zero=(i == 0)))
+
+        res, calls, _dem14, _z = self._run(
+            tmp_path, monkeypatch, seed, {"dem_png": self._tile()})
+
+        assert [c[0] for c in calls] == ["dem_png"]
+        assert res["downloaded_dem"] == 1
+
+    def test_reread_without_voids_is_not_counted_as_downloaded(self, tmp_path, monkeypatch):
+        """④ 読み直して欠損なしと分かった層は `downloaded_*` に数えない・消さない。"""
+        def seed(zoom15):
+            for i, t in enumerate(zoom15):
+                self._seed(t[3], self._tile(zero=(i == 0)))
+                if i == 0:
+                    self._seed(t[5], self._tile())      # 5a の 0 m を 5b が埋める
+
+        res, calls, _dem14, zoom15 = self._run(
+            tmp_path, monkeypatch, seed,
+            {"dem5a_png": self._tile(), "dem5b_png": self._tile(), "dem_png": self._tile()})
+
+        assert calls == []
+        assert res["downloaded_5a"] == res["downloaded_5b"] == res["downloaded_dem"] == 0
+        assert res["failed"] == 0
+        assert os.path.exists(zoom15[0][5]), "読み直した 5b を消した"
+
+
+# ============================================================
+# prefetch_tiles(source=) — 国土地理院以外のソース（3.6 ステージ1・B-253）
+#
+# 従来は source を渡しても無視され、常に国土地理院（_prefetch_gsi）を黙って
+# 取りに行っていた（利用者は選んだソースのキャッシュが増えたと誤解する）。
+# ============================================================
+class TestPrefetchTilesGenericSource:
+    """`source=` に国土地理院以外を渡すと `_prefetch_generic` へ分岐し、
+    実際にそのソースのタイルを（`_fetch_tile(..., source=src)` 経由で）取りに行くこと。"""
+
+    LAT, LON = 35.0, 139.0
+
+    EXTERNAL = dem_sources.DemSourceSpec(
+        source_id="ext_src",
+        display_name="External",
+        layers=(("terrarium", 12),),
+        url_template="https://example.com/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.com/terms",
+    )
+
+    def test_downloads_the_selected_source_not_gsi(self, tmp_path, monkeypatch):
+        """B-253＝外部ソースを選ぶと国土地理院ではなく選んだソースのレイヤを取る。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        seen_sources = []
+
+        def fetch(layer_id, zoom, x, y, subdir, cache_path, source=None, force=False):
+            seen_sources.append(source)
+            return np.zeros((256, 256, 3), dtype=np.uint8)
+
+        monkeypatch.setattr(dem, "_fetch_tile", fetch)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+
+        assert seen_sources, "外部ソースを選んでも _fetch_tile が一度も呼ばれていない"
+        assert all(s is self.EXTERNAL for s in seen_sources), \
+            "国土地理院決め打ちのまま取得している（B-253 の再発）"
+        assert res == {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+    def test_skips_cached_tile_without_force(self, tmp_path, monkeypatch):
+        """既にキャッシュ済み・force=False なら _fetch_tile を呼ばずスキップする。"""
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        _layer_id, _zoom, _x, _y, subdir, cache_path = tasks[0]
+        os.makedirs(subdir, exist_ok=True)
+        Image.new("RGB", (256, 256)).save(cache_path)
+
+        calls = []
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: calls.append(a) or None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=False)
+
+        assert calls == []
+        assert res == {"area_total": 1, "downloaded": 0, "skipped": 1, "failed": 0}
+
+    def test_force_refetches_cached_tile(self, tmp_path, monkeypatch):
+        """force=True なら既存キャッシュがあっても取り直す。"""
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        _layer_id, _zoom, _x, _y, subdir, cache_path = tasks[0]
+        os.makedirs(subdir, exist_ok=True)
+        Image.new("RGB", (256, 256)).save(cache_path)
+
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda *a, **kw: np.zeros((256, 256, 3), dtype=np.uint8))
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=True)
+        assert res == {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_really_goes_to_the_server(self, tmp_path, monkeypatch, which):
+        """強制再取得は、読めるキャッシュがあっても**通信して上書きする**（B-280）。
+
+        上の検査は `_fetch_tile` を差し替えているので、`prefetch_tiles` →
+        `_fetch_tile` の継ぎ目（`force` が下の層まで届くか）を見ていなかった。
+        ここは `_fetch_tile` を製品のまま通し、通信だけを偽物にする。
+        """
+        from PIL import Image
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        urls: list[str] = []
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self):
+                buf = io.BytesIO()
+                Image.new("RGB", (256, 256), (0, 0, served["value"])).save(buf, format="PNG")
+                self.content = buf.getvalue()
+
+        class _Session:
+            def get(self, url, timeout=None):
+                urls.append(url)
+                return _Res()
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        first = len(urls)
+        assert first > 0
+        served["value"] = 20
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert len(urls) - first == first, "強制再取得なのに通信していない"
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == first
+        written = list(tmp_path.glob("**/*.png"))
+        assert written and all(
+            np.asarray(Image.open(p))[0, 0, 2] == 20 for p in written), \
+            "取り直した内容でキャッシュが上書きされていない"
+
+    @staticmethod
+    def _serve(monkeypatch, served: dict, fail: dict | None = None) -> None:
+        """`_get_session` を偽物にする＝`served["value"]` を青に持つタイルを返す。
+        `fail["on"]` が真の間は接続エラーを投げる。"""
+        import requests
+        from PIL import Image
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self):
+                buf = io.BytesIO()
+                Image.new("RGB", (256, 256), (0, 0, served["value"])).save(buf, format="PNG")
+                self.content = buf.getvalue()
+
+        class _Session:
+            def get(self, url, timeout=None):
+                if fail is not None and fail["on"]:
+                    raise requests.ConnectionError("offline")
+                return _Res()
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_reaches_the_next_calculation(self, tmp_path, monkeypatch, which):
+        """強制再取得のあと、同じ起動のまま計算し直すと**新しい標高**を使う（B-283）。
+
+        B-280 でディスクは上書きされるようになったが、`get_elevation` は
+        メモリ上の `_tile_cache` を先に見るので、読み込み済みの古いタイルを返し続けた。
+        範囲削除（`dem_cache.delete_tile_cache`）はメモリ側も落としていたのに、
+        取得の側だけ抜けていた。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+
+        before = dem.get_elevation(self.LAT, self.LON, source)
+        served["value"] = 20
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+        after = dem.get_elevation(self.LAT, self.LON, source)
+
+        assert after != before, "強制再取得したのに、読み込み済みの古い標高を使い続けている"
+
+    def test_successful_fetch_clears_the_404_mark(self, tmp_path, monkeypatch):
+        """過去に 404 だったタイルが取れたら、負キャッシュから外す（B-283）。
+
+        外さないと `get_elevation` はそのタイルを「恒久的に無い」と読み飛ばし続け、
+        取り直したタイルが計算に使われない。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        tasks = dem_cache._enumerate_bbox(self.LAT, self.LON, self.LAT, self.LON, self.EXTERNAL)
+        layer_id, _zoom, x, y, _subdir, _path = tasks[0]
+        dem._failed_tiles.add((self.EXTERNAL.source_id, layer_id, x, y))
+        self._serve(monkeypatch, {"value": 10})
+
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL, force=True)
+
+        assert (self.EXTERNAL.source_id, layer_id, x, y) not in dem._failed_tiles
+        assert dem.get_elevation(self.LAT, self.LON, self.EXTERNAL) != 0.0
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_offline_is_not_counted_as_downloaded(
+            self, tmp_path, monkeypatch, which):
+        """強制再取得で通信に失敗したタイルは「取得した」と数えない（B-284）。
+
+        `_fetch_tile` は通信例外のとき古いキャッシュを返していた＝`force` では
+        その戻り値が「取り直せた」の意味になり、更新できなかったタイルまで
+        成功件数に入った。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        fail = {"on": False}
+        self._serve(monkeypatch, {"value": 10}, fail)
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        cached = sorted(tmp_path.glob("**/*.png"))
+        assert cached
+
+        fail["on"] = True
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == 0, \
+            "通信できなかったのに「取り直した」と数えている"
+        assert res["failed"] > 0
+        assert sorted(tmp_path.glob("**/*.png")) == cached, "取れなかったのに古いキャッシュが消えた"
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_stale_read_racing_a_force_refetch_does_not_win(
+            self, tmp_path, monkeypatch, which):
+        """計算が古いディスクを読んだ直後・メモリへ載せる前に強制再取得が終わっても、
+        古い配列がメモリへ戻って居座らない（B-286）。
+
+        地図の DL は別スレッドで動くので、この順序は実際に起こり得る。ここでは
+        計算側の `_read_cached_tile` の戻り際に強制再取得を割り込ませて、その順序を
+        決定的に作る。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        served = {"value": 10}
+        self._serve(monkeypatch, served)
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+        before = dem.get_elevation(self.LAT, self.LON, source)
+        monkeypatch.setattr(dem, "_tile_cache", {})     # 次の起動＝メモリは空・ディスクは古い
+
+        real_read = dem._read_cached_tile
+        state = {"armed": True}
+
+        def read_then_race(path):
+            arr = real_read(path)
+            if state["armed"] and arr is not None:
+                state["armed"] = False
+                served["value"] = 20
+                dem_prefetch.prefetch_tiles(
+                    self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+            return arr
+        monkeypatch.setattr(dem, "_read_cached_tile", read_then_race)
+
+        dem.get_elevation(self.LAT, self.LON, source)   # 古い配列を読んだ側
+        monkeypatch.setattr(dem, "_read_cached_tile", real_read)
+        after = dem.get_elevation(self.LAT, self.LON, source)
+
+        assert not state["armed"]
+        assert after != before, "強制再取得より後の計算が、競合で戻った古い標高を使っている"
+
+    @pytest.mark.parametrize("how", ("range", "all"))
+    def test_stale_read_racing_a_cache_delete_does_not_win(self, tmp_path, monkeypatch, how):
+        """B-286 のクラス点検＝範囲削除・全削除も同じ無効化の口。削除と並んで
+        古いディスクを読んだ計算が、消したタイルをメモリへ戻さない。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        self._serve(monkeypatch, {"value": 10})
+        dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+
+        real_read = dem._read_cached_tile
+        state = {"armed": True}
+
+        def read_then_delete(path):
+            arr = real_read(path)
+            if state["armed"] and arr is not None:
+                state["armed"] = False
+                if how == "range":
+                    dem_cache.delete_tile_cache(
+                        self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+                else:
+                    dem_cache.delete_all_tile_cache()
+            return arr
+        monkeypatch.setattr(dem, "_read_cached_tile", read_then_delete)
+
+        dem.get_elevation(self.LAT, self.LON, self.EXTERNAL)
+
+        assert not state["armed"]
+        assert dem._tile_cache == {}, "削除したタイルが、競合でメモリへ戻っている"
+
+    @pytest.mark.parametrize("which", ("gsi", "external"))
+    def test_force_refetch_whose_write_failed_is_not_counted(
+            self, tmp_path, monkeypatch, which):
+        """強制再取得でディスクの置き換えに失敗したタイルは「取得した」と数えず、
+        メモリにも古い写しの無効化だけが起きたことにしない（B-287）。
+
+        Windows では読まれている最中のファイルへの `os.replace` が拒まれる
+        （`_write_tile_atomic` の註）。書けなかったのに成功と数えると、ディスクには
+        古いタイルが残り、次の起動の計算は古い標高を読み直す。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_tile_cache", {})
+        monkeypatch.setattr(dem, "_failed_tiles", set())
+        source = dem_sources.GSI_DEM if which == "gsi" else self.EXTERNAL
+        self._serve(monkeypatch, {"value": 10})
+        dem_prefetch.prefetch_tiles(self.LAT, self.LON, self.LAT, self.LON, source=source)
+
+        def deny(src, dst):
+            raise PermissionError(5, "Access is denied")
+        monkeypatch.setattr(dem.os, "replace", deny)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=source, force=True)
+
+        assert sum(v for k, v in res.items() if k.startswith("downloaded")) == 0, \
+            "ディスクを置き換えられなかったのに「取り直した」と数えている"
+        assert res["failed"] > 0
+
+    def test_failed_fetch_is_counted(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **kw: None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=self.EXTERNAL)
+        assert res == {"area_total": 1, "downloaded": 0, "skipped": 0, "failed": 1}
+
+    def test_gsi_source_still_uses_the_layered_descent_path(self, tmp_path, monkeypatch):
+        """`source=GSI_DEM` を明示しても、`source` 省略時と同じ国土地理院の
+        降下ロジック（内訳つきの戻り値）のままであること。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem, "_fetch_tile",
+                            lambda layer_id, *a, **kw:
+                                np.zeros((256, 256, 3), dtype=np.uint8) if layer_id == "dem5a_png" else None)
+        res = dem_prefetch.prefetch_tiles(
+            self.LAT, self.LON, self.LAT, self.LON, source=dem_sources.GSI_DEM)
+        assert "downloaded_5a" in res
+        assert res["downloaded_5a"] == 1
+
+
+class TestCountBboxTilesSource:
+    """`count_bbox_tiles(source=)`＝確認ダイアログの件数表示が単位を揃えること。"""
+
+    EXTERNAL_COARSE = dem_sources.DemSourceSpec(
+        source_id="ext_coarse",
+        display_name="External Coarse",
+        layers=(("terrarium", 8),),   # zoom-8 = 国土地理院の zoom-14 よりずっと粗い
+        url_template="https://example.com/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Example",
+        terms_url="https://example.com/terms",
+    )
+
+    def test_default_matches_gsi_zoom14(self):
+        """`source` 省略時は従来どおり zoom-14 の位置数（後方互換・1 桁も動かない）。"""
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        assert dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2) == \
+               dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2, source=dem_sources.GSI_DEM)
+
+    def test_coarser_source_uses_its_own_declared_zoom(self):
+        """粗いズームを宣言した外部ソースは、その分位置数が少なくなる
+        （zoom-14 決め打ちのままだと B-253 と同じ「対象に従わない」不整合になる）。"""
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        n_gsi = dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2)
+        n_coarse = dem_prefetch.count_bbox_tiles(
+            lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        assert n_coarse < n_gsi
+
+    def test_matches_count_cached_areas_unit(self, tmp_path, monkeypatch):
+        """DL 確認ダイアログは `count_bbox_tiles - count_cached_areas` を新規分として
+        引き算する（map_cache.py:_sel_release）＝両辺の単位が同じでないと数が合わない。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        lat1, lon1, lat2, lon2 = 35.68, 139.69, 35.60, 139.80
+        total = dem_prefetch.count_bbox_tiles(lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        cached = dem_cache.count_cached_areas(lat1, lon1, lat2, lon2, source=self.EXTERNAL_COARSE)
+        assert cached == 0   # 空キャッシュ
+        assert total - cached == total
+
+
 # ============================================================
 # scan_cache_overlay（実キャッシュ走査・自動カバレッジ表示用）
 # ============================================================
@@ -1731,16 +2391,67 @@ class TestBasemapTiles:
 
     def test_tile_path_includes_zoom(self):
         """キャッシュパスにズームが入る（異なるズームの同一(x,y)が衝突しない）。"""
-        subdir, path = dem._basemap_tile_path(14, 100, 200)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 14, 100, 200)
         assert os.path.join(dem.BASEMAP_SUBDIR, "14", "100") in subdir
         assert path.endswith(os.path.join("100", "200.png"))
         # ズーム違いはパスが異なる。
-        _, path15 = dem._basemap_tile_path(15, 100, 200)
+        _, path15 = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 15, 100, 200)
         assert path != path15
+
+    def test_tile_path_isolates_non_pale_sources(self):
+        """`"pale"` 以外は `basemap/<source_id>/` へ分離される（B-248）。"""
+        _, pale_path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 14, 100, 200)
+        _, photo_path = dem._basemap_tile_path(dem._resolve_basemap_source("photo"), 14, 100, 200)
+        assert pale_path != photo_path
+        assert os.path.join(dem.BASEMAP_EXTRA_SUBDIR, "photo") in photo_path
+
+    def test_rewritten_url_does_not_reuse_old_provider_tiles(
+            self, tmp_path, monkeypatch):
+        """同じ `source_id` で URL を書き換えたら、旧プロバイダのタイルを読まない（B-281）。
+
+        製品の取得経路（`fetch_basemap_tiles`→`_fetch_tile`）を差し替えずに通し、
+        通信だけを偽物にする＝置き場の決め方そのものを見る。
+        """
+        from core import tile_sources
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+
+        def declare(url: str) -> None:
+            monkeypatch.setattr(tile_sources, "_user_sources", [
+                tile_sources.TileSourceSpec(
+                    source_id="osm", display_name="OSM", url=url, max_zoom=18,
+                    attribution="(c)", terms_url="https://example.invalid")])
+
+        def png(value: int) -> bytes:
+            buf = io.BytesIO()
+            Image.new("RGB", (256, 256), (value,) * 3).save(buf, format="PNG")
+            return buf.getvalue()
+
+        urls: list[str] = []
+
+        class _Res:
+            status_code = 200
+
+            def __init__(self, url: str):
+                self.content = png(10 if "old.invalid" in url else 90)
+
+        class _Session:
+            def get(self, url, timeout=None):
+                urls.append(url)
+                return _Res(url)
+        monkeypatch.setattr(dem, "_get_session", lambda: _Session())
+
+        declare("https://old.invalid/{z}/{x}/{y}.png")
+        old = dem.fetch_basemap_tiles([(1, 2)], 14, "osm")
+        declare("https://new.invalid/{z}/{x}/{y}.png")
+        new = dem.fetch_basemap_tiles([(1, 2)], 14, "osm")
+
+        assert int(old[(1, 2)][0, 0, 0]) == 10
+        assert int(new[(1, 2)][0, 0, 0]) == 90, "旧プロバイダのキャッシュを読んだ"
+        assert [u.split("/")[2] for u in urls] == ["old.invalid", "new.invalid"]
 
     def test_fetch_basemap_tiles_parallel_returns_dict(self, monkeypatch):
         """並列取得が成功タイルだけを {(x,y):配列} で返す。"""
-        def fake(layer_id, zoom, x, y, subdir, path):
+        def fake(layer_id, zoom, x, y, subdir, path, source=None):
             return np.full((256, 256, 3), 100, dtype=np.uint8)
         monkeypatch.setattr(dem, "_fetch_tile", fake)
         tiles = [(1, 2), (3, 4), (5, 6)]
@@ -1764,7 +2475,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path(z, x, y)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
@@ -1777,7 +2488,7 @@ class TestBasemapTiles:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         z = 14
         x, y, _, _ = dem._tile_coords(self.LAT, self.LON, z)
-        subdir, path = dem._basemap_tile_path(z, x, y)
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), z, x, y)
         os.makedirs(subdir, exist_ok=True)
         with open(path, "wb") as f:
             f.write(b"\x89PNG")
@@ -1914,9 +2625,9 @@ class TestCacheStatsAndDeletionBySource:
         monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
         # 国土地理院（`CACHE_DIR/<layer_id>/...`）に 2 枚。
         self._seed(str(tmp_path), "dem5a_png/1", 2)
-        # 外部ソース（`CACHE_DIR/<source_id>/<fingerprint>/<layer_id>/...`）に 3 枚。
+        # 外部ソース（`CACHE_DIR/external/<source_id>/<fingerprint>/<layer_id>/...`）に 3 枚。
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
 
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
@@ -1953,7 +2664,7 @@ class TestCacheStatsAndDeletionBySource:
         self._fresh_memory_cache(monkeypatch)
         self._seed(str(tmp_path), "dem5a_png/1", 2)
         fp = dem_sources.definition_fingerprint(self.EXTERNAL)
-        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
         self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)
 
         res = dem_cache.delete_all_tile_cache(
@@ -1976,6 +2687,189 @@ class TestCacheStatsAndDeletionBySource:
         assert dem_cache.get_basemap_cache_stats() == {"count": 0, "size_bytes": 0}
         assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
             {"count": 2, "size_bytes": 8}
+
+    def test_delete_by_source_also_wipes_tiles_of_an_older_definition(
+            self, tmp_path, monkeypatch):
+        """B-268＝宣言を書き換える前のタイル（古いハッシュ）も消す。
+
+        外部ソースの置き場は `<source_id>/<定義のハッシュ>/<layer>/` で、
+        ハッシュは宣言を書き換えるたびに変わる。**読む側は今のハッシュだけが
+        正しい**（B-236 の自動無効化）が、**消す側が今のハッシュしか見ないと、
+        画面から選べないタイルが永久に残る**（容量が減らない）。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
+        # 宣言を書き換える前のハッシュのタイル（今のコードは二度と読まない）。
+        self._seed(str(tmp_path), "external/ext_src/0123456789ab/terrarium/1", 2)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert res == {"deleted": 5}
+        assert dem_cache.get_cache_stats() == {"count": 0, "size_bytes": 0}
+
+    def test_delete_by_source_does_not_touch_other_sources_sharing_the_root(
+            self, tmp_path, monkeypatch):
+        """B-268 の直しが「消しすぎ」ていないこと（別ソースの根は巻き込まない）。"""
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), "external/ext_src_other/abcdef012345/terrarium/1", 4)
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert dem_cache.get_cache_stats() == {"count": 6, "size_bytes": 24}
+
+    def test_delete_by_source_named_like_a_builtin_does_not_touch_gsi(
+            self, tmp_path, monkeypatch):
+        """B-274＝宣言の `source_id` に組み込みの内部名（`dem5a_png` 等）を
+        付けても、専用の名前空間（`external/`）の下にある限り組み込みの置き場
+        （`CACHE_DIR/dem5a_png/`）とは重ならず、削除が巻き込まないこと。"""
+        import dataclasses
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        colliding = dataclasses.replace(self.EXTERNAL, source_id="dem5a_png")
+        fp = dem_sources.definition_fingerprint(colliding)
+        self._seed(str(tmp_path), f"external/dem5a_png/{fp}/terrarium/1", 3)
+        # 組み込みの国土地理院キャッシュ（本物の置き場）。
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[colliding], include_basemap=False)
+
+        assert res == {"deleted": 3}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+
+    def test_delete_by_source_also_wipes_the_pre_3_6_location(
+            self, tmp_path, monkeypatch):
+        """B-278＝3.5 以前の置き場（`CACHE_DIR/<source_id>/`）も消す。
+
+        B-274 で置き場を `external/` の下へ移したので旧置き場は二度と読まれず、
+        ソース単位の削除からも外れると画面から容量を取り戻せない。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)
+        self._seed(str(tmp_path), f"ext_src/{fp}/terrarium/1", 2)   # 3.5 以前の置き場
+        self._seed(str(tmp_path), "dem5a_png/1", 4)
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)
+
+        assert res == {"deleted": 5}
+        assert not os.path.exists(os.path.join(str(tmp_path), "ext_src"))
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 4, "size_bytes": 16}
+
+    def test_pre_3_6_location_named_like_a_builtin_is_not_swept(
+            self, tmp_path, monkeypatch):
+        """B-278 の直しが B-274 を再発させないこと＝旧置き場の名前が組み込みの
+        置き場（`dem5a_png`・`basemap` 等）と同じなら、旧置き場は消さない。"""
+        import dataclasses
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        self._seed(str(tmp_path), f"{dem.BASEMAP_EXTRA_SUBDIR}/photo/14/1", 1)
+        for name in ("dem5a_png", dem.BASEMAP_EXTRA_SUBDIR, dem.DEM_EXTERNAL_SUBDIR):
+            colliding = dataclasses.replace(self.EXTERNAL, source_id=name)
+            dem_cache.delete_all_tile_cache(sources=[colliding], include_basemap=False)
+
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+        assert dem_cache.get_basemap_cache_stats() == {"count": 1, "size_bytes": 4}
+
+    def test_delete_by_source_counts_what_actually_disappeared(
+            self, tmp_path, monkeypatch):
+        """B-269＝消えなかったぶんを「削除した」と数えない。
+
+        `shutil.rmtree(ignore_errors=True)` はロックや権限で残っても黙るので、
+        **消す前の在庫を足すと、1 枚も消えなくても「N 件削除」と出る**。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+        monkeypatch.setattr(dem_cache.shutil, "rmtree",
+                            lambda *a, **k: None)   # 消えなかった状況を作る
+
+        res = dem_cache.delete_all_tile_cache(
+            sources=[dem_sources.GSI_DEM], include_basemap=False)
+
+        assert res == {"deleted": 0}
+        assert dem_cache.get_cache_stats(dem_sources.GSI_DEM) == \
+            {"count": 2, "size_bytes": 8}
+
+
+# ============================================================
+# I-169（3.6 ステージ1）＝キャッシュ内訳の単一の出所（get_cache_breakdown）
+# ============================================================
+class TestGetCacheBreakdown:
+    """地図の統計表示・全削除ダイアログが読む単一の集計関数の不変条件。"""
+
+    EXTERNAL = TestCacheStatsAndDeletionBySource.EXTERNAL
+
+    def _seed(self, root, layer_dir: str, n: int, nbytes: int = 4) -> None:
+        d = os.path.join(root, *layer_dir.split("/"))
+        os.makedirs(d, exist_ok=True)
+        for i in range(n):
+            with open(os.path.join(d, f"{i}.png"), "wb") as f:
+                f.write(b"x" * nbytes)
+
+    def test_breakdown_lists_each_source_and_basemap_and_sums_to_total(
+            self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [self.EXTERNAL])
+        self._seed(str(tmp_path), "dem5a_png/1", 2)                      # GSI
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 3)  # 外部ソース
+        self._seed(str(tmp_path), f"{dem.BASEMAP_SUBDIR}/14/1", 1)       # 背景地図
+
+        result = dem_cache.get_cache_breakdown()
+
+        by_id = {s["source_id"]: s for s in result["sources"]}
+        assert by_id["gsi_dem"]["count"] == 2
+        assert by_id["gsi_dem"]["size_bytes"] == 8
+        assert by_id["ext_src"]["count"] == 3
+        assert by_id["ext_src"]["size_bytes"] == 12
+        assert by_id["ext_src"]["display_name"] == "External"
+        assert result["basemap"] == {"count": 1, "size_bytes": 4}
+        # どの内訳にも属さない残りが無いときは、合計＝内訳の和＝CACHE_DIR 全体。
+        assert result["total"] == {"count": 6, "size_bytes": 24}
+        assert result["total"] == dem_cache.get_cache_stats()
+
+    def test_counts_the_same_range_that_deletion_sweeps(self, tmp_path, monkeypatch):
+        """ソース別の容量は削除で消える範囲、総量は CACHE_DIR 全体（B-282）。
+
+        宣言を書き換える前のハッシュの下・3.5 以前の旧置き場・宣言を消した
+        ソースの残りは、読む側の置き場には無いが、ディスクは使っている。
+        """
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [self.EXTERNAL])
+        fp = dem_sources.definition_fingerprint(self.EXTERNAL)
+        self._seed(str(tmp_path), f"external/ext_src/{fp}/terrarium/1", 1)          # 今の定義
+        self._seed(str(tmp_path), "external/ext_src/0123456789ab/terrarium/1", 2)  # 書き換え前
+        self._seed(str(tmp_path), "ext_src/terrarium/1", 3)                        # 3.5 以前
+        self._seed(str(tmp_path), "external/gone_src/abcdef012345/t/1", 4)         # 宣言を消した
+
+        result = dem_cache.get_cache_breakdown()
+        by_id = {s["source_id"]: s for s in result["sources"]}
+        assert by_id["ext_src"]["count"] == 6
+        assert result["total"]["count"] == 10
+
+        deleted = dem_cache.delete_all_tile_cache(
+            sources=[self.EXTERNAL], include_basemap=False)["deleted"]
+        assert deleted == by_id["ext_src"]["count"], "表示と削除で数える範囲が違う"
+
+    def test_breakdown_with_only_gsi_has_one_source_entry(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        monkeypatch.setattr(dem_sources, "_user_sources", [])
+        self._seed(str(tmp_path), "dem5a_png/1", 2)
+
+        result = dem_cache.get_cache_breakdown()
+
+        assert [s["source_id"] for s in result["sources"]] == ["gsi_dem"]
+        assert result["basemap"] == {"count": 0, "size_bytes": 0}
+        assert result["total"] == {"count": 2, "size_bytes": 8}
 
 
 # ============================================================

@@ -410,6 +410,7 @@ def run_multihop(
     on_hop_stage:     "Callable[[str], None] | None" = None,
     project_name:     str = "",
     memo:             str = "",
+    basemap_source_id: str = "pale",
 ) -> None:
     """中継経路の実行をバックグラウンドスレッドで開始する。
 
@@ -418,12 +419,15 @@ def run_multihop(
 
     ⚠️ **1 ホップ = 1 区間の DEM 取得**なので、取得量はホップ数に比例する（④）。
     追い風＝隣接ホップは端点を共有し、タイルが重なるのでキャッシュが効きやすい。
+
+    basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
+    呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
     """
     threading.Thread(
         target = _run_thread,
         args   = (path, base_params, on_hop_start, on_hop_progress,
                   on_hop_complete, on_complete, on_error, coord_format,
-                  on_hop_stage, project_name, memo),
+                  on_hop_stage, project_name, memo, basemap_source_id),
         daemon = True,
     ).start()
 
@@ -431,6 +435,7 @@ def run_multihop(
 def _run_thread(
     path, base_params, on_hop_start, on_hop_progress, on_hop_complete,
     on_complete, on_error, coord_format, on_hop_stage, project_name, memo,
+    basemap_source_id="pale",
 ) -> None:
     try:
         # ⛔ **実行できるかを最初に問う**（2026-08-04・独立レビュー Codex 7 巡目）。
@@ -457,7 +462,8 @@ def _run_thread(
             on_hop_start(i + 1, total, row.path_id)
             # **ホップ 1 本＝バッチの 1 行**（実行層はここで完全に流用する）。
             pr = batch._process_one(row, base_params, run_dir, on_hop_progress,
-                                    coord_format, on_hop_stage, project_name)
+                                    coord_format, on_hop_stage, project_name,
+                                    basemap_source_id)
             results.append(pr)
             on_hop_complete(i + 1, total, pr)
 
@@ -469,7 +475,7 @@ def _run_thread(
         # ＝端点が一致する N 本なので、そのまま折れ線に見える。
         from report import report_multihop
         from report import report_summary
-        map_b64 = report_summary.render_summary_map_b64(results)
+        map_b64 = report_summary.render_summary_map_b64(results, basemap_source_id)
         report_multihop.save_route_html(run, project_name, memo, map_b64)
         report_multihop.save_report_all_html(run, project_name, memo, map_b64)
         logger.info("Multihop complete: %s in %.2fs (overall %s)",

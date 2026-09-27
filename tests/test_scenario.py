@@ -472,7 +472,7 @@ class TestScenarioBaseMatchesSingleRun:
     def test_sample_positions_are_actually_uneven(self, default_params_dict):
         """前提の確認＝この経路の標本が**本当に非等間隔**であること。
 
-        ここが等間隔だと下の一致検査は何も測らない（[[feedback-synthetic-cases-lie]]
+        ここが等間隔だと下の一致検査は何も測らない（[[feedback-verification]]
         ＝対照のラベルが嘘をつく）。刻みの最大 / 最小で見る。
         """
         base = self._staged_base(default_params_dict)

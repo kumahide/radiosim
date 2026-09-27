@@ -19,7 +19,7 @@ import sys
 
 import pytest
 
-from core import dem_sources, tile_sources
+from core import dem_sources, i18n, tile_sources
 
 _ROOT = os.path.join(os.path.dirname(__file__), "..")
 
@@ -68,6 +68,19 @@ class TestFixturesAreReadableByTheProduct:
         assert reports == []
         assert [s.source_id for s in specs] == ["osm"]
 
+    def test_lang_fixture_loads_without_any_rejection(self):
+        """I-130＝利用者が足す表示言語。全キーが採用される（正本はわざと部分訳）。"""
+        import json
+        with open(_fixture("lang/qa_fr.json"), encoding="utf-8") as f:
+            table = json.load(f)
+        accepted, rejected = i18n.validate_external(table)
+        assert rejected == []
+        assert accepted == {
+            "menu_help": "Aide",
+            "btn_run": "Exécuter",
+            "proj_saved": "Projet enregistré :\n{path}",
+        }
+
 
 class TestDeployerAndFixturesAgree:
 
@@ -76,9 +89,88 @@ class TestDeployerAndFixturesAgree:
         assert os.path.isfile(_fixture(name))
 
     def test_every_product_config_in_the_directory_is_deployed(self):
-        """`qa_fixtures/` に置いた製品の設定ファイルが配る対象から漏れないこと。"""
+        """`qa_fixtures/` に置いた製品の設定ファイルが配る対象から漏れないこと。
+
+        README・壊した実験用のコピーは対象外。トップレベルの `.toml` と、
+        `lang/` の下の `.json` の両方を見る（`lang/` は `USER_LANG_DIR` 基準の
+        サブフォルダなので置き場が違う＝FIXTURE_FILES 側は `lang/<name>.json`
+        と書く）。
+        """
         present = {
             n for n in os.listdir(_FIXTURES)
-            if n.endswith(".toml")
+            if n != "README.md" and n.endswith(".toml")
+        }
+        lang_dir = os.path.join(_FIXTURES, "lang")
+        present |= {
+            f"lang/{n}" for n in os.listdir(lang_dir) if n.endswith(".json")
         }
         assert present == set(deploy_qa_fixtures.FIXTURE_FILES)
+
+
+class TestDeployerDoesNotDestroyRealSettings:
+    """B-267＝配置先に先客（手で書いた本物の宣言）が居たら触らないこと。
+
+    ⚠️ **`--appdata` は実プロファイルを指す**＝ここで消えるのは開発機の本物の
+    設定。配布物には入らない道具だが、壊すのは本物のファイル。
+    """
+
+    FIRST = deploy_qa_fixtures.FIXTURE_FILES[0]
+
+    def _mine(self, tmp_path) -> str:
+        """配置先に「手で書いた別内容のファイル」を置く。"""
+        dst = tmp_path / self.FIRST
+        dst.write_text("# 手で書いた宣言\n", encoding="utf-8")
+        return str(dst)
+
+    def test_refuses_to_overwrite_a_file_it_did_not_deploy(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path)])
+
+        assert rc == 1
+        with open(dst, encoding="utf-8") as f:
+            assert f.read() == "# 手で書いた宣言\n"
+
+    def test_force_overwrites_but_keeps_a_backup(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path), "--force"])
+
+        assert rc == 0
+        with open(dst + ".bak", encoding="utf-8") as f:
+            assert f.read() == "# 手で書いた宣言\n"
+
+    def test_remove_keeps_a_file_it_did_not_deploy(self, tmp_path):
+        dst = self._mine(tmp_path)
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path), "--remove"])
+
+        assert rc == 0
+        assert os.path.isfile(dst), "配ったものではないのに消した"
+
+    def test_remove_deletes_what_it_deployed(self, tmp_path):
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+        deployed = str(tmp_path / self.FIRST)
+        assert os.path.isfile(deployed)
+
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path), "--remove"]) == 0
+
+        assert not os.path.exists(deployed)
+
+    def test_deploying_twice_is_not_refused(self, tmp_path):
+        """同じ内容なら配り直せる（何度実行しても同じ結果になること）。"""
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+        assert deploy_qa_fixtures.main(["--target", str(tmp_path)]) == 0
+
+    def test_a_later_file_being_refused_deploys_nothing(self, tmp_path):
+        """B-275＝先発のファイルに先客が無くても、後発のファイルで弾かれたら
+        何も配置しない（1 本ずつ検査→コピーを交互にすると先発だけ残っていた）。"""
+        second = deploy_qa_fixtures.FIXTURE_FILES[1]
+        dst = tmp_path / second
+        dst.write_text("# 手で書いた宣言\n", encoding="utf-8")
+
+        rc = deploy_qa_fixtures.main(["--target", str(tmp_path)])
+
+        assert rc == 1
+        assert not os.path.isfile(tmp_path / self.FIRST), \
+            "後発で弾かれたのに先発だけ配置先に残った"

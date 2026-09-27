@@ -75,7 +75,7 @@ def load_font(px: int, text: str = "") -> "ImageFont.FreeTypeFont | ImageFont.Im
 
     **描く文字列を見て候補を選ぶ**のがこの関数の要点＝呼ぶ側が「これは日本語が
     来る欄だ」と覚えておく必要をなくす。訳を足した言語が非 ASCII でも同じ経路で
-    拾える（[[feedback_japanese_everywhere]] の欄が増えても壊れない）。
+    拾える（[[feedback-writing]] の欄が増えても壊れない）。
     """
     names = (_CJK_FONTS + _ASCII_FONTS if not text.isascii()
              else _ASCII_FONTS)

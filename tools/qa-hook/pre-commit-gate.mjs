@@ -25,17 +25,65 @@
 // the whole suite — Field commits were paying ~9 min each for tests their
 // changes cannot reach. `git push` always stays FULL: it is still the proof
 // that the whole tree is green before anything leaves the machine.
+//
+// FULL ONLY WHERE IT IS NEEDED (2026-09-23): "fits one island or else full"
+// sent test-only and .gitignore commits to the 8-minute suite. Now a commit is
+// full only if it touches a `full_prefixes` face (product code, shared test
+// inputs, deps/pytest config) or a path no rule knows; otherwise it runs the
+// union of what each path needs (see islandFor and gate-scope.json).
+//
+// NO SECOND FULL RUN (2026-09-26・I-184/I-185): the cache key is the content
+// tree, so the push right after a green commit hits the cache instead of
+// re-running the same suite; and a version-line-only step from the last real
+// full pass is proven by the version string's readers (versionChain) — on the
+// push as well, or the saving would only move from the commit to the push.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
-import { resolvePython } from "./gate.mjs";
-import { git } from "./git-changes.mjs";
-import { pytestCacheKey, isCachedPass, recordPass, recordFinish, markStart } from "./pytest-cache.mjs";
+import { pythonEnv, resolvePython } from "./gate.mjs";
+import { HOOK_ROOT, git, repoAt, samePath } from "./git-changes.mjs";
+import {
+  cacheInputs, keyFor, isCachedPass, recordPass, recordFinish, markStart,
+  recordFullPass, lastFullPass, sameExtras,
+} from "./pytest-cache.mjs";
 
 const FULL_SCOPE = "full-suite";
 const MAX_OUT = 3000;
-const PUSH = /(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?\s+push\b/;
+
+// LEDGER FIRST (2026-09-26・I-179 の回): the real-data checks of the ledger
+// (ISSUES.md) and the roadmap/memory used to fail only at the END of the
+// 10-minute suite — twice in one commit ("済 without a real hash", then "✅
+// stage line pointing at an open issue"), each answered by bending the ledger
+// back. They take ~2 s, so run them first and say the rule that fixes them:
+// an issue and its stage line are closed AFTER the commit, with its hash.
+// Selected by the name prefix (a class, not a hand-kept list): every real-data
+// test in test_claude_hooks.py is `test_real_*`. The ledger is git-ignored, so
+// it is not in the cache key below — this runs on every commit/push.
+export const LEDGER_PREFLIGHT = ["tests/test_claude_hooks.py", "-k", "test_real_", "-q"];
+// A denied command never ran AT ALL — a `git add` in front of the commit
+// included (2026-09-26: the retry then committed 1 file of 14).
+export const NOTHING_RAN =
+  "⚠️ このコマンドは丸ごと走っていません＝同じコマンドの `git add` なども未実行です。" +
+  "やり直す前に `git status` で何がステージされているかを確かめてください。";
+export const LEDGER_ORDER =
+  "⛔ 台帳（ISSUES.md）・版計画・メモリの実データの検査が赤です（全テストの前に先に走らせています）。\n" +
+  "🔑 課題を「済」にしてアーカイブへ移すことと、版計画のステージ行を ✅ にすることは、" +
+  "**コミットの後**（ハッシュが決まってから）に行います。コミットまでは課題を「対応中」、" +
+  "ステージ行を ⬜ のままにしてください。仮の字（`COMMIT` など）をハッシュの代わりに書かない。";
+// B-302: git's global options may sit between `git` and the subcommand
+// (`git -C <path> commit`, `git -c k=v push`, `git --no-pager commit`). The
+// old patterns wanted the subcommand right after `git`, so the `-C` form — the
+// one no_shell_detours.py steers towards by forbidding `cd` — skipped the gate
+// for both commit AND push. Keep in step with `_GIT_OPTS` in that hook.
+const OPT_VALUE = String.raw`(?:"[^"]*"|'[^']*'|[^\s;&|]+)`;
+const GIT_OPTS =
+  String.raw`(?:\s+(?:-[Cc]\s+${OPT_VALUE}` +
+  String.raw`|--(?:git-dir|work-tree|namespace|config-env)\s+${OPT_VALUE}` +
+  String.raw`|--?[A-Za-z][\w-]*(?:=${OPT_VALUE})?))*`;
+const gitSubcommand = (sub) =>
+  new RegExp(String.raw`(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?${GIT_OPTS}\s+(?:${sub})(?=$|[\s;&|)])`);
+const PUSH = gitSubcommand("push");
 
 /** Every path a commit made now could carry: working tree vs HEAD, untracked
  *  included, and BOTH sides of a rename (moving a file out of core/ into an
@@ -54,14 +102,182 @@ export function commitPaths(cwd) {
   return [...paths];
 }
 
-/** The island every path fits in, or null (→ full suite). An empty change set
- *  is null too: there is nothing to scope by, so the honest answer is "full". */
-export function islandFor(scope, paths) {
-  if (!paths.length) return null;
-  for (const island of scope.commit_islands || []) {
-    if (paths.every((p) => island.prefixes.some((pre) => p.startsWith(pre)))) return island;
+const TEST_FILE = /^tests\/test_[^/]+\.py$/;
+
+/** Tests whose source names `needle` (a scoped face's prefix, e.g. ".gitignore"). */
+function readersOf(cwd, needle) {
+  const found = [];
+  let names = [];
+  try {
+    names = readdirSync(join(cwd, "tests"));
+  } catch {
+    return found;
   }
-  return null;
+  for (const n of names) {
+    if (!(n.startsWith("test_") && n.endsWith(".py"))) continue;
+    try {
+      if (readFileSync(join(cwd, "tests", n), "utf-8").includes(needle)) found.push(`tests/${n}`);
+    } catch {
+      /* unreadable: skip */
+    }
+  }
+  return found;
+}
+
+// VERSION LINE (I-185・2026-09-26): `core/version.py` is product code (full),
+// but the version string moves ~5 times per release (a1, b1, RC1..n, final)
+// and each bump paid 8-10 min. When the ONLY change to that file is the one
+// `APP_VERSION = "…"` line (matched literally — anything else in the diff, a
+// mode change, a second line, is full: fail-closed), the tests that can see
+// the version string stand in for it (versionReaders).
+export const VERSION_FILE = "core/version.py";
+const VERSION_LINE = /^APP_VERSION = "[0-9A-Za-z.]+"$/;
+const PRODUCT_DIRS = ["core", "views", "report", "apps"];
+
+/** Do two texts of core/version.py differ in exactly one line, and is that
+ *  line `APP_VERSION = "…"` on both sides? (Line count must match — an added
+ *  or removed line is not a version bump. CRLF/LF is not a difference, the
+ *  same blind spot as the cache key's.) Anything missing → false. */
+export function versionLineOnly(oldText, newText) {
+  if (typeof oldText !== "string" || typeof newText !== "string") return false;
+  const a = oldText.replace(/\r\n/g, "\n").split("\n");
+  const b = newText.replace(/\r\n/g, "\n").split("\n");
+  if (a.length !== b.length) return false;
+  const changed = a.map((line, i) => [line, b[i]]).filter(([x, y]) => x !== y);
+  return changed.length === 1 && VERSION_LINE.test(changed[0][0]) && VERSION_LINE.test(changed[0][1]);
+}
+
+function readVersionFile(cwd) {
+  try {
+    return readFileSync(join(cwd, VERSION_FILE), "utf-8");
+  } catch {
+    return null;
+  }
+}
+
+/** Working tree vs HEAD: does core/version.py differ only in its version line? */
+function versionLineOnlyVsHead(cwd) {
+  let head;
+  try {
+    head = git(cwd, ["show", `HEAD:${VERSION_FILE}`]);
+  } catch {
+    return false;
+  }
+  return versionLineOnly(head, readVersionFile(cwd));
+}
+
+function productSources(cwd) {
+  const out = [];
+  const walk = (rel) => {
+    let entries = [];
+    try {
+      entries = readdirSync(join(cwd, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === "__pycache__") continue;
+      const child = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(child);
+      else if (e.name.endsWith(".py")) out.push(child);
+    }
+  };
+  PRODUCT_DIRS.forEach(walk);
+  return out;
+}
+
+/** The tests that can see the version string, by a mechanical rule (no hand
+ *  list — the watcher is test_pre_commit_gate.py::TestVersionReaders):
+ *   1. tests naming core.version, APP_VERSION, a constant of core/version.py
+ *      whose value carries it (APP_FULL, USER_AGENT…), or a function of it
+ *      that defaults to it (is_final, version_tuple…);
+ *   2. tests naming a product module whose BEHAVIOUR follows the version's
+ *      stage (a/b/RC/final): it calls one of those functions, or a `def` of
+ *      it defaults a parameter to the version (update_check).
+ *  Modules that only print the string (report headers, the window title, the
+ *  User-Agent) are caught by 1 when a test compares against the name, and by
+ *  the watcher's literal scan when a test hard-codes the text.
+ *  null when core/version.py cannot be read (→ full). */
+export function versionReaders(cwd) {
+  let src;
+  try {
+    src = readFileSync(join(cwd, VERSION_FILE), "utf-8");
+  } catch {
+    return null;
+  }
+  const names = new Set(["APP_VERSION"]);
+  for (const m of src.matchAll(/^([A-Za-z_]\w*)\s*=([^\n]*)$/gm)) {
+    if (m[2].includes("APP_VERSION")) names.add(m[1]);
+  }
+  const funcs = [];
+  for (const m of src.matchAll(/^def\s+(\w+)\s*\(((?:[^()]|\([^()]*\))*)\)/gm)) {
+    if (m[2].includes("APP_VERSION")) funcs.push(m[1]);
+  }
+  funcs.forEach((f) => names.add(f));
+  const needles = new Set(["core.version", "core import version", ...names]);
+  const calls = new RegExp(String.raw`\bversion\.(?:${funcs.join("|") || "(?!)"})\s*\(`);
+  const defaults = /\bdef\s+\w+\s*\(((?:[^()]|\([^()]*\))*)\)/g;
+  for (const rel of productSources(cwd)) {
+    let body;
+    try {
+      body = readFileSync(join(cwd, rel), "utf-8");
+    } catch {
+      continue;
+    }
+    const followsStage = calls.test(body) ||
+      [...body.matchAll(defaults)].some((m) => /=\s*(?:version\.)?APP_VERSION\b/.test(m[1]));
+    if (followsStage) needles.add(rel.split("/").pop().replace(/\.py$/, ""));
+  }
+  const found = new Set();
+  for (const needle of needles) readersOf(cwd, needle).forEach((t) => found.add(t));
+  return [...found].sort();
+}
+
+/** The tests a commit of `paths` needs, as a synthetic island {name, tests},
+ *  or null (→ full suite). Full when: nothing changed, any path is on a
+ *  `full_prefixes` face, or any path matches no rule at all (fail-closed).
+ *  Otherwise the UNION of: every island a path falls in, a changed
+ *  `tests/test_*.py` itself (+ `tests_walkers`), and the readers of a
+ *  `scoped_faces` path — plus `scanners` whenever anything was scoped.
+ *  core/version.py counts as scoped (its readers) only while its sole change
+ *  is the version line (`versionOnly`; computed from the working tree when
+ *  not given). */
+export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {}) {
+  if (!paths.length) return null;
+  const full = scope.full_prefixes || [];
+  const names = new Set();
+  const tests = new Set();
+  for (const p of paths) {
+    if (p === VERSION_FILE) {
+      const readers = (versionOnly ?? versionLineOnlyVsHead(cwd)) ? versionReaders(cwd) : null;
+      if (!readers) return null;
+      names.add("version");
+      readers.forEach((t) => tests.add(t));
+      continue;
+    }
+    if (full.some((pre) => p.startsWith(pre))) return null;
+    let hit = false;
+    for (const island of scope.commit_islands || []) {
+      if (island.prefixes.some((pre) => p.startsWith(pre))) {
+        names.add(island.name);
+        island.tests.forEach((t) => tests.add(t));
+        hit = true;
+      }
+    }
+    if (hit) continue;
+    if (TEST_FILE.test(p)) {
+      names.add("tests");
+      tests.add(p);
+      (scope.tests_walkers || []).forEach((t) => tests.add(t));
+      continue;
+    }
+    const face = (scope.scoped_faces || []).find((pre) => p.startsWith(pre));
+    if (face === undefined) return null;
+    names.add(face);
+    readersOf(cwd, face.replace(/\/$/, "")).forEach((t) => tests.add(t));
+  }
+  (scope.scanners || []).forEach((t) => tests.add(t));
+  return { name: [...names].join("+"), tests: [...tests] };
 }
 
 /** An island's pytest targets, `tests/foo_*` expanded against tests/ (pytest
@@ -82,7 +298,8 @@ export function islandTargets(cwd, scope, island) {
     const stem = t.slice("tests/".length, -1);
     for (const n of names) if (n.startsWith(stem) && n.endsWith(".py")) targets.add(`tests/${n}`);
   }
-  return [...targets].filter((t) => existsSync(join(cwd, t))).sort();
+  // `file.py::test_name` picks single tests out of a slow file (tests_walkers).
+  return [...targets].filter((t) => existsSync(join(cwd, t.split("::")[0]))).sort();
 }
 
 function loadScope(cwd) {
@@ -96,10 +313,193 @@ function loadScope(cwd) {
 // Matches `git commit` / `git push` as a command position (not inside a
 // string, not as a substring of a longer word) — segments split on the usual
 // shell separators, same idea as .claude/no_shell_detours.py but only for
-// these two subcommands, so no PATH-token quoting subtlety matters here: a
-// false negative just means the full suite is checked one command later (at
-// the next commit/push in the turn), never a false block.
-const COMMIT_OR_PUSH = /(?:^|[;&|\n]|\)\s*)\s*git(?:\.exe)?\s+(?:commit|push)\b/;
+// these two subcommands. ⚠️ A false negative is NOT harmless: if the push is
+// written the same way it is missed too, and nothing else runs the full suite
+// before `main` leaves the machine (B-302).
+const COMMIT_OR_PUSH = gitSubcommand("commit|push");
+
+/** Whether `command` runs `git commit` or `git push` (exported for tests). */
+export function isCommitOrPush(command) {
+  return COMMIT_OR_PUSH.test(command);
+}
+
+/** Whether `command` runs `git push` (→ always the full suite). */
+export function isPush(command) {
+  return PUSH.test(command);
+}
+
+// ── B-312 (2026-09-27): WHAT THE COMMAND ACTUALLY COMMITS ─────────────────
+// This hook runs ONCE, before the whole command, and proves the working tree it
+// sees then. Measured 2026-09-26 on the 3.8a1 bump, twice, the tree it proved
+// was not the one that got committed:
+//  ① the session's cwd was outside this repo (a Bash `cd` moves it) and the
+//     command reached in with `git -C <this repo> commit` — "no tests/ in cwd"
+//     read as "not this repo" and the commit went through untested;
+//  ② an earlier step of the same command rewrote a file (`python bump.py &&
+//     git add … && git commit`) — the hook proved the tree BEFORE the rewrite.
+// And the same broken rule on the push: ③ `git push` sends HEAD while this hook
+// proves the working tree — with uncommitted changes, what passed is not what
+// leaves the machine.
+// So: git itself resolves each commit/push step's -C/--git-dir/--work-tree
+// against cwd (repoAt), and the step is ours when its common git dir is this
+// hook's. Fail-closed where that cannot be read: a directory change inside the
+// command, a location the shell would expand (`$x`, `~`, GIT_DIR=…), or any
+// step before the commit/push that is not on the short list below is refused
+// with the form to use instead; a push needs a clean tree.
+const LITERAL = /@'[\s\S]*?\n'@|@"[\s\S]*?\n"@|"(?:[^"\\`]|\\[\s\S]|`[\s\S])*"|'[^']*'/g;
+const HEREDOC_OPEN = /<<-?\s*(['"]?)(\w+)\1/;
+const CHDIR = /^(?:cd|pushd|popd|chdir|set-location|sl|push-location|pop-location)$/i;
+// Steps that leave the working tree's content as it was (a commit/push before
+// the last one moves HEAD, not the content; the key is the content — I-184).
+const SAFE_GIT = new Set(["add", "status", "diff", "log", "show", "rev-parse", "fetch", "tag", "commit", "push"]);
+
+/** Heredoc bodies are data, not steps (same rule as no_shell_detours.py). */
+function stripHeredocs(command) {
+  const out = [];
+  let delimiter = null;
+  for (const line of command.split(/(?<=\n)/)) {
+    if (delimiter !== null) {
+      if (line.trim() === delimiter) delimiter = null;
+      continue;
+    }
+    out.push(line);
+    const m = HEREDOC_OPEN.exec(line);
+    if (m) delimiter = m[2];
+  }
+  return out.join("");
+}
+
+/** The command cut into steps (`;` `&&` `||` `|` newline), string literals
+ *  kept whole: [{masked, words, literals}] — `masked` has each literal as
+ *  \u0001N\u0001, `words` are whitespace-split with the literals put back. */
+export function commandSteps(command) {
+  const table = [];
+  const masked = stripHeredocs(command).replace(LITERAL, (m) => `\u0001${table.push(m) - 1}\u0001`);
+  const unmask = (s) => s.replace(/\u0001(\d+)\u0001/g, (_, i) => table[Number(i)]);
+  return masked
+    .split(/&&|\|\||[;|\n]/)
+    .map((s) => s.trim().replace(/^[({]+\s*/, "").replace(/\s*[)}]+$/, "").trim())
+    .filter(Boolean)
+    .map((s) => ({
+      masked: s,
+      words: s.split(/\s+/).map(unmask),
+      literals: [...s.matchAll(/\u0001(\d+)\u0001/g)].map((m) => table[Number(m[1])]),
+    }));
+}
+
+/** An option value as the shell hands it to git, or null when the shell would
+ *  expand it first (this hook cannot follow `$x`, `~`, `%X%`). */
+function shellValue(raw, tool) {
+  if (raw === undefined) return null;
+  let v = raw;
+  const quote = v[0];
+  if ((quote === '"' || quote === "'") && v.endsWith(quote) && v.length >= 2) v = v.slice(1, -1);
+  else if (tool === "Bash") v = v.replace(/\\(.)/g, "$1"); // unquoted `\` escapes in bash
+  if (quote !== "'" && /[$`%]/.test(v)) return null;
+  if (v.startsWith("~")) return null;
+  return v;
+}
+
+/** A git step: `{sub, loc, opaque}` (`loc` = the location options to hand
+ *  repoAt; `opaque` = a location this hook cannot resolve), or null. */
+export function gitStep(words, tool = "Bash") {
+  let i = 0;
+  let opaque = false;
+  for (; i < words.length && /^[A-Za-z_]\w*=/.test(words[i]); i++) {
+    if (/^GIT_/i.test(words[i])) opaque = true; // GIT_DIR=… git commit
+  }
+  if (!/^git(?:\.exe)?$/i.test(words[i] || "")) return null;
+  const loc = [];
+  for (i++; i < words.length; i++) {
+    const w = words[i];
+    if (!w.startsWith("-")) return { sub: w.toLowerCase(), loc, opaque };
+    const joined = /^--(git-dir|work-tree)=(.*)$/.exec(w);
+    if (w === "-C" || w === "--git-dir" || w === "--work-tree" || joined) {
+      const name = joined ? `--${joined[1]}` : w;
+      const v = shellValue(joined ? joined[2] : words[++i], tool);
+      if (v === null) opaque = true;
+      else loc.push(...(name === "-C" ? ["-C", v] : [`${name}=${v}`]));
+    } else if (w === "-c" || w === "--namespace" || w === "--config-env") {
+      i++;
+    }
+  }
+  return { sub: null, loc, opaque };
+}
+
+/** Would this step, run before the commit/push, leave the content as it was? */
+function leavesTreeAlone(step, g) {
+  const noFileRedirect = !/>/.test(step.masked
+    .replace(/\d*>&\d+/g, "")
+    .replace(/\d*>\s*(?:\$null|\/dev\/null|nul)\b/gi, ""));
+  // A double-quoted literal can run a command (`"$(…)"`); single-quoted cannot.
+  const inert = step.literals.every((l) => /^@?'/.test(l) || !/\$\(|`\(/.test(l));
+  if (g) return !g.opaque && SAFE_GIT.has(g.sub) && noFileRedirect && inert;
+  const m = step.masked;
+  if (/^\$[A-Za-z_]\w*$/.test(m)) return true;                               // `$msg | git commit -F -`
+  if (/^\$[A-Za-z_]\w*\s*=\s*\u0001\d+\u0001$/.test(m)) return inert;       // `$msg = @'…'@`（$env: は外）
+  if (/^(?:echo|printf|write-output)\b/i.test(m)) return noFileRedirect && inert && !/[$`(]/.test(m);
+  return /^out-null$/i.test(m);
+}
+
+export const REFUSE_UNREAD =
+  "⛔ このコマンドの `git commit`／`git push` を、ゲートが段に切って読めませんでした（B-312）。" +
+  "`git …` を段の先頭に置いた形（`git add … ; git commit …`）で出し直してください。";
+export const REFUSE_CHDIR =
+  "⛔ `git commit`／`git push` と同じコマンドの中で作業ディレクトリを動かしています（B-312）。" +
+  "ゲートはコマンドを走らせる前に 1 回だけ見るので、どのリポジトリへコミットするかを読めません。" +
+  "`cd` を外し、`git -C <リポジトリの絶対パス> …` で出し直してください。";
+export const REFUSE_OPAQUE =
+  "⛔ コミット先の場所を、ゲートが解けない形で渡しています（`$変数`・`~`・`%X%`・`GIT_DIR=` など＝B-312）。" +
+  "パスを字のまま書くか、作業ディレクトリをリポジトリに置いて素の `git commit` にしてください。";
+export const REFUSE_REWRITE =
+  "⛔ `git commit`／`git push` の前に、作業ツリーを書き換え得る段があります（B-312）。" +
+  "ゲートはコマンドの**前に** 1 回だけ走るので、検査するのは書き換える前の中身＝コミットされる中身と別物です。" +
+  "書き換える段とコミットを**別のコマンド**に分けてください（前に置けるのは `git add`・読むだけの git・" +
+  "本文の変数 `$msg = @'…'@`／`echo` だけ）。";
+export const REFUSE_DIRTY_PUSH =
+  "⛔ コミットしていない変更がある作業ツリーから push しようとしています（B-312）。" +
+  "ゲートが検査するのは作業ツリーの中身、push が送るのは HEAD＝検査したものと送るものが別物です。" +
+  "変更をコミットするか片づけてから、push を**単独のコマンド**で出してください。";
+
+/** B-312: where the command's commit/push lands in THIS repository.
+ *  → null (no commit/push reaches this repository — another repo, or none),
+ *    {refuse: <reason>}, or {root, push} (`root` = the top of the working tree
+ *    the commit lands in: this repo, or a linked worktree of it). */
+export function commitTarget(command, cwd, tool = "Bash") {
+  const own = repoAt(HOOK_ROOT);
+  if (!own) return null;
+  const steps = commandSteps(command);
+  const gits = steps.map((s) => gitStep(s.words, tool));
+  const writes = gits.flatMap((g, i) => (g && (g.sub === "commit" || g.sub === "push") ? [i] : []));
+  if (!writes.length) {
+    // Only data said "git commit" (a heredoc body, a quoted string) → nothing
+    // to gate; still there once those are set aside → a form this parser
+    // misses (`& git commit`, `xargs git push`) → refuse, never wave through.
+    return isCommitOrPush(steps.map((s) => s.masked).join("\n")) ? { refuse: REFUSE_UNREAD } : null;
+  }
+  const lastWrite = writes[writes.length - 1];
+  if (steps.slice(0, lastWrite).some((s) => CHDIR.test(s.words[0]))) return { refuse: REFUSE_CHDIR };
+
+  const roots = [];
+  let lastOurs = -1;
+  let push = false;
+  for (const i of writes) {
+    if (gits[i].opaque) return { refuse: REFUSE_OPAQUE };
+    const r = repoAt(cwd, gits[i].loc);
+    if (!r || !samePath(r.common, own.common)) continue; // not a repo / another repo
+    if (!roots.some((t) => samePath(t, r.top))) roots.push(r.top);
+    lastOurs = i;
+    if (gits[i].sub === "push") push = true;
+  }
+  if (lastOurs < 0) return null;
+  if (roots.length > 1) return { refuse: REFUSE_CHDIR };
+  for (let i = 0; i < lastOurs; i++) {
+    if (!leavesTreeAlone(steps[i], gits[i])) {
+      return { refuse: `${REFUSE_REWRITE}\n該当の段: \`${steps[i].words.join(" ").slice(0, 200)}\`` };
+    }
+  }
+  return { root: roots[0], push };
+}
 
 function readStdin() {
   try {
@@ -129,19 +529,53 @@ function tail(s, n) {
   return s.length > n ? "…\n" + s.slice(-n) : s;
 }
 
-function main() {
-  let input = {};
-  try {
-    input = JSON.parse(readStdin() || "{}");
-  } catch {
-    /* ignore */
+// I-166: stdin が空／JSON として読めないのは、Claude Code が PreToolUse
+// フックとして呼んだときには起こらない（常に tool_input の JSON が渡る）＝
+// 起きるのは人がこのスクリプトを素で叩いたときだけ。以前はそれも他の
+// 早期 return と同じ「無言で exit 0」に落ちており、「素叩き」「変更なし」
+// 「合格」の 3 状態が手元からは区別できなかった（I-166 の実測）。ここだけは
+// 非ゼロで断る＝フックとしての正常動作は変わらない（この分岐に来ないため）。
+function requireStdinInput() {
+  const raw = readStdin();
+  if (!raw.trim()) {
+    process.stderr.write(
+      "[pre-commit-gate] stdin が空です＝素で叩いたか配線がずれています。" +
+      "何も検査していません（PreToolUse フックの呼び出しでは常に tool_input の " +
+      "JSON が渡ります）。\n");
+    process.exit(2);
   }
+  try {
+    return JSON.parse(raw);
+  } catch {
+    process.stderr.write(
+      "[pre-commit-gate] stdin を JSON として読めません＝素で叩いたか配線が" +
+      "ずれています。何も検査していません。\n");
+    process.exit(2);
+  }
+}
+
+function main() {
+  const input = requireStdinInput();
   if (!["Bash", "PowerShell"].includes(input.tool_name)) return;
   const command = (input.tool_input || {}).command || "";
-  if (!COMMIT_OR_PUSH.test(command)) return;
+  if (!isCommitOrPush(command)) return;
 
-  const cwd = input.cwd || process.cwd();
-  if (!existsSync(join(cwd, "tests"))) return; // not this repo's working tree
+  // B-312: the tree the command commits into, not the session's cwd as such.
+  const target = commitTarget(command, input.cwd || process.cwd(), input.tool_name);
+  if (!target) return; // no commit/push reaches this repository
+  if (target.refuse) {
+    deny(`${target.refuse}\n${NOTHING_RAN}`);
+    return;
+  }
+  const cwd = target.root;
+  if (target.push) {
+    const dirty = commitPaths(cwd);
+    if (dirty.length) {
+      deny(`${REFUSE_DIRTY_PUSH}\n${NOTHING_RAN}\n\n` +
+        dirty.slice(0, 10).map((p) => `- ${p}`).join("\n") + (dirty.length > 10 ? "\n- …" : ""));
+      return;
+    }
+  }
 
   const resolved = resolvePython();
   if (resolved.error) {
@@ -149,42 +583,50 @@ function main() {
     return;
   }
 
+  const pre = runPytest(resolved.python, cwd, LEDGER_PREFLIGHT);
+  if (pre.code !== 0) {
+    deny(`${LEDGER_ORDER}\n${NOTHING_RAN}\n\n\`\`\`\n${tail(pre.stdout + pre.stderr, MAX_OUT)}\n\`\`\``);
+    return;
+  }
+
   // A full pass also covers any island run on the same content — check it first.
-  const fullKey = pytestCacheKey(cwd, FULL_SCOPE);
+  // The key is the content tree (I-184), so a commit does not move it: the push
+  // right after a green commit hits here.
+  const lastFull = lastFullPass(cwd);
+  const inputs = cacheInputs(cwd, { without: VERSION_FILE });
+  const versionText = readVersionFile(cwd);
+  const fullKey = keyFor(inputs, FULL_SCOPE);
   if (isCachedPass(cwd, fullKey)) return; // already proven green for this exact content
 
   let key = fullKey;
   let targets = [];
   let label = "フルスイート";
-  if (!PUSH.test(command)) {
-    const scope = loadScope(cwd);
-    const island = islandFor(scope, commitPaths(cwd));
+  let realFull = true;
+  const scope = loadScope(cwd);
+  if (versionChain(inputs, lastFull, versionText)) {
+    // I-185: the last real full pass + a version-line-only step + its readers
+    // green = the full proof for this tree, for commit AND push (a commit-only
+    // shortcut would just move the 8 minutes to the push). CI stays the backstop.
+    const island = islandFor(scope, [VERSION_FILE], cwd, { versionOnly: true });
     if (island) {
       targets = islandTargets(cwd, scope, island);
-      key = pytestCacheKey(cwd, `island:${island.name}\n${targets.join("\n")}`);
+      label = `版の字の読み手のテスト（${targets.length} 本・直前のフル合格から版の字の 1 行だけ）`;
+      realFull = false;
+    }
+  } else if (!isPush(command)) {
+    const island = islandFor(scope, commitPaths(cwd), cwd);
+    if (island) {
+      targets = islandTargets(cwd, scope, island);
+      key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
       label = `島「${island.name}」のテスト（${targets.length} 本）`;
+      realFull = false;
       if (isCachedPass(cwd, key)) return;
     }
   }
 
   markStart(cwd, key);
   const started = Date.now();
-  let r;
-  try {
-    const stdout = execFileSync(resolved.python, ["-m", "pytest", ...targets], {
-      cwd,
-      encoding: "utf-8",
-      stdio: ["ignore", "pipe", "pipe"],
-      maxBuffer: 10 * 1024 * 1024,
-    });
-    r = { code: 0, stdout, stderr: "" };
-  } catch (err) {
-    r = {
-      code: typeof err.status === "number" ? err.status : 1,
-      stdout: err.stdout || "",
-      stderr: err.stderr || "",
-    };
-  }
+  const r = runPytest(resolved.python, cwd, targets);
   const ms = Date.now() - started;
 
   if (r.code !== 0) {
@@ -192,11 +634,40 @@ function main() {
     deny(
       `⛔ コミット前提の${label}が赤です（I-154＝毎ターンは影響範囲だけ・` +
       "フルはコミット直前に 1 回／島に収まるコミットは島のテストだけ）。" +
-      "直してから commit/push をやり直してください。\n\n" +
+      `直してから commit/push をやり直してください。\n${NOTHING_RAN}\n\n` +
       `\`\`\`\n${tail(r.stdout + r.stderr, MAX_OUT)}\n\`\`\``);
     return;
   }
   recordPass(cwd, key, ms);
+  if (realFull) recordFullPass(cwd, inputs, { versionText });
+}
+
+/** I-185: does the working tree differ from the last REAL full pass only by
+ *  the version line? = the same tree once core/version.py is set aside, the
+ *  same untracked sources, and that file's text off by exactly that line. */
+export function versionChain(inputs, lastFull, versionText) {
+  if (!inputs || !lastFull || !inputs.rest || inputs.rest !== lastFull.rest) return false;
+  if (!sameExtras(inputs, lastFull)) return false;
+  return versionLineOnly(lastFull.versionText, versionText);
+}
+
+function runPytest(python, cwd, args) {
+  try {
+    const stdout = execFileSync(python, ["-m", "pytest", ...args], {
+      cwd,
+      env: pythonEnv(),   // 日本語の文字化けを防ぐ（I-172）
+      encoding: "utf-8",
+      stdio: ["ignore", "pipe", "pipe"],
+      maxBuffer: 10 * 1024 * 1024,
+    });
+    return { code: 0, stdout, stderr: "" };
+  } catch (err) {
+    return {
+      code: typeof err.status === "number" ? err.status : 1,
+      stdout: err.stdout || "",
+      stderr: err.stderr || "",
+    };
+  }
 }
 
 const invokedDirectly =

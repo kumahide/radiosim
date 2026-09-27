@@ -15,7 +15,7 @@ Tk の `report_callback_exception` には届かない。3 つのランナーは�
 
 これは `2.6RC1` の診断を困難にしたのと同じクラスの欠陥（症状と原因の距離が最大化
 される）。**コメントで「exception を使うこと」と書いても次の except で戻る**ので、
-[[feedback-radiosim]]「実行時制約はコメントでなくテストで表現する」に従って
+[[feedback-radiosim-rules]]「実行時制約はコメントでなくテストで表現する」に従って
 ここで縛る。
 
 何を見るか
@@ -94,7 +94,7 @@ def _isolate(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "RESULTS_DIR", str(tmp_path))          # 実在必須
     # サマリ地図は淡色タイルを取りに行く唯一の経路（塞がないと実ネットワーク）。
     monkeypatch.setattr(report_summary, "render_summary_map_b64",
-                        lambda results: None)
+                        lambda *a, **k: None)
 
 
 def _run_batch(tmp_path, params, monkeypatch):

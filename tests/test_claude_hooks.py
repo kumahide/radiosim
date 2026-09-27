@@ -290,7 +290,7 @@ class TestUnreadableState:
         """①-b **鳴るだけでなく、実際に注入から消えていること**を同じ回で測る。
 
         ⚠️ 「ゲートが鳴った」は*仕掛けが働いた*ことしか言っていない
-        （[[feedback-measure-the-symptom]]）。ここで測るのは**症状**＝語彙の外の語を
+        （[[feedback-verification]]）。ここで測るのは**症状**＝語彙の外の語を
         書いた項目が `parse_issues` の未対応リストから落ちること。これが成立して
         いなければ、そもそもこのゲートは要らない。
         """
@@ -341,11 +341,9 @@ class TestUnreadableState:
         （git-ignore）。**このゲートがローカルでしか回らないことを承知で置いている**＝
         守りが注入 1 本しかない台帳なので、その 1 本の健全性はローカルで測るしかない。
         """
-        ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-        if not os.path.exists(ledger):
+        lines = hook.ledger_lines()
+        if not lines:
             pytest.skip(structural_skip("ISSUES.md も git-ignore（CI には存在しない）"))
-        with open(ledger, encoding="utf-8") as f:
-            lines = f.read().splitlines()
         assert hook.parse_issues(lines)[0], "未対応が 0 件＝パーサが壊れている可能性が高い"
         found = hook.unreadable_state_items(lines)
         assert found == [], f"状態語が読めず注入から消えている項目がある: {found}"
@@ -732,12 +730,17 @@ class TestTheVersionVocabularyComesFromTheRoadmap:
         assert hook.declared_versions("未着手（**9.3＝出力契約の回**）", vocab) == ["9.3"]
 
     def test_the_real_roadmap_supplies_the_generation_in_flight(self, hook):
-        """実データ＝いま在る版がそのまま語彙になること（4.x を含む）。"""
+        """実データ＝いま在る版がそのまま語彙になること（4.x を含む）。
+
+        ⚠️ 済んだ版のセクションは 2026-09-23 から `archive/project_roadmap.md` に居る
+        ＝製品（`_known_versions`）と同じく本体＋アーカイブを読む。本体だけだと
+        台帳が名指しする 3.0〜3.5 が語彙から消え、行き先の監査が誤る（実際に落ちた）。
+        """
         path = hook.MEM_DIR / "project_roadmap.md"
         if not path.exists():
             pytest.skip(structural_skip("メモリは git 管理外（CI には存在しない）"))
-        vocab = hook.known_versions(path.read_text(encoding="utf-8").splitlines())
-        assert {"3.5", "4.0"} <= vocab, sorted(vocab)
+        vocab = hook.known_versions(hook._roadmap_lines() + hook._archived_roadmap_lines())
+        assert {"3.0", "3.5", "4.0"} <= vocab, sorted(vocab)
 
     def test_the_first_4x_destination_is_read(self, hook):
         """B-263 の実データの形をそのまま固定する（状態欄は 1 行・版は 2 つ出る）。"""
@@ -812,11 +815,10 @@ class TestStrongAndWeakEvidenceAskForDifferentThings:
 
 def test_real_ledger_has_every_open_item_assigned(hook):
     """実データ＝行き先の無い未対応が 0 件であること（2026-08-12 に 2 件あり解消）。"""
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip(structural_skip("ISSUES.md も git-ignore（CI には存在しない）"))
-    with open(ledger, encoding="utf-8") as f:
-        audit = hook.assignment_audit(f.read().splitlines())
+    audit = hook.assignment_audit(lines)
     total = (sum(len(v) for v in audit["assigned"].values())
              + len(audit["pending"]) + len(audit["ambiguous"]) + len(audit["undeclared"]))
     assert total, "未対応が 0 件＝パーサが壊れている可能性が高い"
@@ -827,11 +829,9 @@ def test_real_ledger_has_every_open_item_assigned(hook):
 
 def test_real_ledger_has_no_duplicate_ids(hook):
     """実際の台帳に ID の衝突が無いこと（2026-08-12 に 1 件あり、振り直した）。"""
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        lines = f.read().splitlines()
     assert hook.issue_id_headings(lines), "ID が 1 つも採れていない＝パーサが壊れている"
     assert hook.duplicate_ids(lines) == [], (
         f"同じ ID の項目が 2 つ以上ある: {hook.duplicate_ids(lines)}"
@@ -844,17 +844,15 @@ def test_real_ledger_has_no_outstanding_warnings(hook):
     2026-07-25 に済 18 件を移動しコミット参照を backfill した状態を固定する。
     ここが落ちたら**掃除をサボった**という意味なので、警告どおり直す。
     """
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    lines = hook.ledger_lines()
+    if not lines:
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        items, stale, weak = hook.parse_issues(f.read().splitlines())
+    items, stale, weak = hook.parse_issues(lines)
     assert items, "未対応項目が 0 件＝パーサが壊れている可能性が高い"
-    assert stale == [], f"済だがアーカイブセクションへ未移動: {stale}"
+    assert stale == [], f"閉じた（済・却下）のに本体に残っている: {stale}"
     assert weak == [], f"済だが裏取りが弱い: {weak}"
-    assert hook.unquoted_user_items(
-        open(ledger, encoding="utf-8").read().splitlines()
-    ) == [], "人由来なのに原文の引用が無い項目がある"
+    assert hook.unquoted_user_items(lines) == [], "人由来なのに原文の引用が無い項目がある"
+    assert not hook.ledger_archive_missing(), "本体はあるのにアーカイブが無い"
 
 
 # ============================================================
@@ -1107,6 +1105,26 @@ class TestRoadmapSectionPlacement:
             self._NEXT_ROW, headings, self._ARCHIVE)
         assert any("戻す" in f for f in found)
 
+    def test_unpublished_official_version_in_the_archive_is_flagged(self, memcheck):
+        """🔴 **実際に起きた形**（2026-09-23・ユーザー指摘）＝`3.5` はまだ公開して
+        いないのにセクションが §アーカイブ の中に落ちていた。⚠️ **この枝は
+        `🔜 次の版` の行にしか効いておらず**、`🚧 正式（未公開）` も `🚧 RC` も
+        素通りしていた（ゲートの壊れ方①＝一度も落ちない）。
+        """
+        rows = [(9, "| 3.5 | 🚧 正式（未公開） | ④公開（gh release create） |")]
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (120, "## ✅ 3.5 — ソースの拡張と画面の整理")]
+        found = memcheck.check_section_placement(rows, headings, self._ARCHIVE)
+        assert any("戻す" in f for f in found), (
+            "未公開の版がアーカイブに落ちていても鳴らない")
+
+    def test_rc_stage_version_in_the_archive_is_flagged(self, memcheck):
+        """同じクラス＝RC の版も、出し終えていないのでアーカイブの外に居る。"""
+        rows = [(9, "| 3.5 | 🚧 RC | 実機確認 |")]
+        headings = [(1, "## 現在地"), (self._ARCHIVE, "## 🗄 アーカイブ"),
+                    (120, "## 🚧 3.5 — ソースの拡張と画面の整理")]
+        assert memcheck.check_section_placement(rows, headings, self._ARCHIVE) != []
+
     def test_correct_placement_is_silent(self, memcheck):
         headings = [(1, "## 現在地"), (44, "## 🔜 3.0 — 結果の信頼性と出力契約"),
                     (self._ARCHIVE, "## 🗄 アーカイブ"),
@@ -1188,6 +1206,14 @@ def budget():
     sys.modules["_session_budget"] = mod
     spec.loader.exec_module(mod)
     return mod
+
+
+@pytest.fixture(autouse=True)
+def _not_relay(monkeypatch):
+    """リレーの環境（I-186）を既定で外す＝**リレーのセッションが回す pytest は
+    `RADIOSIM_RELAY=1` を継ぐ**ので、外さないと対話前提のテストが落ちる（2026-09-27 に踏んだ）。"""
+    for name in ("RADIOSIM_RELAY", "RADIOSIM_RELAY_HANDOFF", "RADIOSIM_RELAY_TRIPS"):
+        monkeypatch.delenv(name, raising=False)
 
 
 class TestRoundtripCounting:
@@ -1540,6 +1566,27 @@ class TestDashboardStageMatchesVersion:
         assert memcheck.check_dashboard_stage(
             self._rows("| 3.3 | ✅ リリース済 | — |"), "3.3") == []
 
+    def test_official_stage_before_publishing_must_not_say_released(self, memcheck):
+        """🔴 **実際に起きた形**（2026-09-23・ユーザー指摘）＝`3.5` の工程①で
+        `version.py` を正式へ上げた時点で、このゲートが現在地表へ「✅ リリース済」を
+        要求し、**公開の何時間も前にロードマップが「リリース済み」になった**。
+        さらにそれを読んだ check 17 が §アーカイブ への移動まで要求し、
+        **工程が終わっていない版のセクションがアーカイブへ落ちた**。
+        ⇒ 正式段階では**タグの有無**で「作り終えた」と「公開した」を分ける。
+        """
+        released = self._rows("| 3.5 | ✅ リリース済 | — |")
+        assert memcheck.check_dashboard_stage(released, "3.5", published=False) != []
+        assert memcheck.check_dashboard_stage(released, "3.5", published=True) == []
+
+    def test_official_stage_before_publishing_wants_the_unpublished_word(self, memcheck):
+        """未公開なら状態欄に「未公開」と書かせる（表だけ見た人が誤読しないため）。"""
+        vague = self._rows("| 3.5 | 🚧 正式 | 公開の準備 |")
+        assert memcheck.check_dashboard_stage(vague, "3.5", published=False) != []
+        ok = self._rows("| 3.5 | 🚧 正式（未公開） | ④公開（gh release create） |")
+        assert memcheck.check_dashboard_stage(ok, "3.5", published=False) == []
+        # 公開したのに「未公開」のままなら、今度は逆向きに鳴る。
+        assert memcheck.check_dashboard_stage(ok, "3.5", published=True) != []
+
     def test_earlier_tag_of_same_version_is_flagged(self, memcheck):
         """前の段階のタグが次の一手に残っていたら鳴る。今の段階・次の段階は鳴らない。"""
         stale = self._rows("| 3.3 | 🚧 RC | `3.3RC1` の試用結果待ち |")
@@ -1552,6 +1599,35 @@ class TestDashboardStageMatchesVersion:
         """別の版（13.3・3.30 等）のタグを現行版と取り違えない。"""
         rows = self._rows("| 3.3 | 🚧 ベータ | `13.3a1` と `3.30a1` は無関係 |")
         assert memcheck.check_dashboard_stage(rows, "3.3b1") == []
+
+    def test_published_is_read_from_tags_not_from_version_py(self, memcheck):
+        """公開の証跡は**正式版のタグ**（`v` 無し）。プレリリースのタグは数えない。"""
+        assert memcheck.release_is_published("3.5", ["3.4", "v3.5RC1"]) is False
+        assert memcheck.release_is_published("3.5", ["3.4", "v3.5RC1", "3.5"]) is True
+        # タグを引けなかった（`_git` が空を返した）ときは「未公開」へ倒す。
+        assert memcheck.release_is_published("3.5", []) is False
+
+    def test_the_real_entry_point_asks_git_for_tags(self, memcheck, monkeypatch):
+        """⛔ **入口が既定の `published=True` に落ちていないこと**。
+
+        ここが落ちると「版を上げた瞬間にリリース済みを要求する」古い挙動へ
+        黙って戻る＝このゲートの直しが丸ごと無効になる（変異検証のための 1 本）。
+        """
+        asked: list[list[str]] = []
+
+        def fake_git(args):
+            asked.append(args)
+            return []                      # タグ無し＝未公開
+
+        monkeypatch.setattr(memcheck, "_current_version", lambda: "3.5")
+        monkeypatch.setattr(memcheck, "_git", fake_git)
+        monkeypatch.setattr(
+            memcheck, "_dashboard_rows",
+            lambda: [(22, "| 3.5 | ✅ リリース済 | — |")])
+        found = memcheck.check_roadmap_stage()
+        assert ["tag", "--list"] in asked, "入口が git にタグを聞いていない"
+        assert any("未公開" in f for f in found), (
+            "タグが無いのに「リリース済」が素通りした＝入口が published を渡していない")
 
     def test_missing_row_is_flagged(self, memcheck):
         rows = self._rows("| 3.2 | ✅ リリース済 | — |")
@@ -1566,7 +1642,7 @@ class TestLedgerIdsForVersion:
     """`ledger.py version` が読む未対応台帳の行き先抽出（`ledger_ids_for_version`）。
 
     2026-09-16、`3.5` の在庫精査で B-233 が取りこぼされていた。原因は状態欄が
-    `**一部対応**` と書かれていたこと＝台帳の凡例（L20）が定める 5 語
+    `**一部対応**` と書かれていたこと＝台帳の凡例が定める 5 語
     （未着手／対応中／済／保留／却下）の外で、`_OPEN_STATE_RE` が拾えない
     （I-129 と同型＝語彙の外を書くと未対応の数から黙って消える）。
     """
@@ -1587,6 +1663,15 @@ class TestLedgerIdsForVersion:
         lines = ["### ★ B-003: t", "",
                  "- ★ **状態**: 対応中（保留＝較正の判断点〔番号未定・実測待ち〕）"]
         assert memcheck.ledger_ids_for_version(lines, "3.5") == []
+
+    def test_pending_item_is_not_pulled_in_by_a_version_in_its_history(self, memcheck):
+        """🔴 実際に起きた形（2026-09-24）＝一覧は「判断待ち」と読むのに、経緯の `3.4 で測る` で
+        `version 3.4` に出ていた（B-128・B-132・I-114 等）。分類は一覧と同じ `destination_of`。"""
+        lines = ["### ★ B-004: t", "",
+                 "- ★ **状態**: 対応中（✅ 3.0 の刻印は済／**3.4 で測る**／"
+                 "較正の判断点〔番号未定・実測待ち〕で採否）"]
+        assert memcheck.ledger_ids_for_version(lines, "3.4") == []
+        assert memcheck.ledger_ids_for_version(lines, "3.0") == []
 
 
 class TestRoadmapDashboardBlocksStop:
@@ -2035,6 +2120,174 @@ class TestStageMarksSync:
         assert memcheck.check_stage_sync() == []
 
 
+# ============================================================
+# check_memory.py check 26 ＝ ステージの完了マーク ⇔ 台帳の状態（逆方向・I-176）
+# ============================================================
+# check 21（TestStageMarksSync）は「台帳が済なのにロードマップの ✅ が付いて
+# いない」片方向だけを見る。2026-09-24・3.6 のステージ1〜5 で逆方向が実際に
+# 起きた＝ロードマップは ✅（済）と書いているのに、参照する B-248・I-171・
+# I-172・I-174 の ISSUES.md 状態欄が「対応中」のまま据え置かれていた。
+
+
+class TestStageMarksAheadOfLedger:
+    """ステージの行が ✅ なのに、参照する課題の状態欄がまだ閉じていない形を検出する。"""
+
+    _OPEN_ISSUE = ["### ★ B-248: 何かの不具合", "- ★ **状態**: 対応中（行き先＝3.6）"]
+    _CLOSED_ISSUE_WITH_MARKS = [
+        "### ★ B-248: 何かの不具合",
+        "- ★ **状態**: ✅ **対応済み**（`3.6a1` / `d1a423f`）",
+    ]
+
+    def test_a_done_stage_referencing_an_open_issue_is_flagged(self, memcheck):
+        """I-176 の実際の形（ステージ行は ✅ だが、参照先の状態欄が対応中のまま）。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24・`d1a423f`）＝[[B-248]]。"]
+        found = memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6")
+        assert found and "B-248" in found[0]
+
+    def test_a_closed_issue_silences_it(self, memcheck):
+        """状態欄が「✅ **対応済み**」（記号・強調付き）なら鳴らない（①誤検知を避ける）。"""
+        states = memcheck.issue_states_by_id(self._CLOSED_ISSUE_WITH_MARKS)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24・`d1a423f`）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_a_not_yet_done_stage_is_not_checked(self, memcheck):
+        """ステージ行の先頭が ✅ でなければ、そもそも突き合わせの対象外。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- 🚧 **ステージ1（帳票）**（2026-09-24〜）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_an_unknown_issue_id_is_skipped(self, memcheck):
+        """台帳に見当たらない ID（アーカイブ側で読めなかった等）は突き合わせようがないので無視。"""
+        states: dict[str, str] = {}
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24）＝[[B-248]]。"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_other_versions_are_not_checked(self, memcheck):
+        """別の版のセクションにあるステージは対象外。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.0 — 版",
+                   "- ✅ **ステージ1（帳票）**（2026-09-24）＝[[B-248]]。",
+                   "## 🔜 3.6 — 版"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
+        assert memcheck.check_stage_ahead_real() == []
+
+
+# ============================================================
+# check_memory.py check 27 ＝ 台帳の未対応状態 ⇔ 実際のコミット履歴（I-176）
+# ============================================================
+# check 26 はロードマップの ✅ ステージ行が挙げる ID だけを見るので、ステージの
+# 番号付き手順に載らない相乗りの小物（I-171・I-172・I-174 のように、そもそも
+# ロードマップの ✅ ステージ行に ID が出てこない課題）は素通りする。こちらは
+# コミットの件名（`fix: …（B-248）` の慣習）に ID が載っているのに、ISSUES.md
+# の状態欄がまだ閉じていない形を、ロードマップの構造に頼らずに見る。
+
+
+class TestLedgerLagsCommits:
+    """コミットの件名に載った ID の状態欄が、まだ閉じていない形を検出する。"""
+
+    def test_a_commit_citing_an_open_issue_is_flagged(self, memcheck):
+        """I-176 の実際の形（コミットは入ったが、台帳の状態欄を書き換え忘れる）。"""
+        states = {"B-248": "対応中（行き先＝3.6）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "B-248" in found[0] and "d1a423f" in found[0]
+
+    def test_a_closed_issue_is_not_flagged(self, memcheck):
+        """状態欄が既に閉じていれば、同じコミットがあっても鳴らない。"""
+        states = {"B-248": "✅ **対応済み**（`3.6a1` / `d1a423f`）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_an_open_issue_whose_state_cites_the_commit_is_not_flagged(self, memcheck):
+        """一部の作業だけのコミット（B-306 の案内だけの `99a0a47`）を状態欄が挙げていれば鳴らない。"""
+        states = {"B-306": "未着手（行き先＝`3.8`。`3.7` は案内だけ＝`99a0a47`）"}
+        commits = [("99a0a47", "docs: … CHANGELOG に案内する（B-306）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_an_open_issue_citing_a_different_commit_is_still_flagged(self, memcheck):
+        """状態欄が別のコミットを挙げているだけなら、新しいコミットは鳴る。"""
+        states = {"B-306": "未着手（`3.7` は案内だけ＝`1234567`）"}
+        commits = [("99a0a47", "docs: … CHANGELOG に案内する（B-306）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "99a0a47" in found[0]
+
+    def test_multiple_ids_in_one_commit_subject_are_all_checked(self, memcheck):
+        """1 コミットの件名に複数 ID（`・`区切り）が載る形（I-171・I-172 の相乗り）。"""
+        states = {"I-171": "対応中", "I-172": "対応中"}
+        commits = [("75fd2f7", "chore: 直下の捨てログを掃除する（I-171・I-172）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert len(found) == 2
+        ids_mentioned = {"I-171" if "I-171" in f else "I-172" for f in found}
+        assert ids_mentioned == {"I-171", "I-172"}
+
+    def test_no_matching_commit_is_not_flagged(self, memcheck):
+        """コミットの件名がその ID を名指ししていなければ、未対応のままでも鳴らない。"""
+        states = {"B-248": "対応中"}
+        commits = [("abc1234", "fix: 関係ない不具合を直す（B-999）")]
+        assert memcheck.check_ledger_lags_commits(states, commits) == []
+
+    def test_an_unrelated_state_word_is_not_mistaken_for_closed(self, memcheck):
+        """「保留」「未着手」は _is_closed_state の対象外＝閉じていない扱いのまま鳴る。"""
+        states = {"B-248": "保留（再現待ち）"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）")]
+        found = memcheck.check_ledger_lags_commits(states, commits)
+        assert found and "B-248" in found[0]
+
+    def test_a_commit_older_than_the_issue_is_not_flagged(self, memcheck):
+        """起票より前のコミットは番号の衝突（B-297＝`72ca0f7` の I-176 と、翌日起票の I-176）。"""
+        states = {"I-176": "未着手"}
+        commits = [("72ca0f7", "test: check 26・27 にテストを足す（I-176）", "2026-09-24")]
+        found_dates = {"I-176": "2026-09-25"}
+        assert memcheck.check_ledger_lags_commits(states, commits, found_dates) == []
+
+    def test_a_commit_on_or_after_the_found_date_is_still_flagged(self, memcheck):
+        """発見日の当日以降のコミットは、これまでどおり鳴る（日付の判定は取りこぼしの側へ倒さない）。"""
+        states = {"B-248": "対応中"}
+        commits = [("d1a423f", "fix: 帳票の経路地図を…に従わせる（B-248）", "2026-09-20")]
+        found_dates = {"B-248": "2026-09-20"}
+        found = memcheck.check_ledger_lags_commits(states, commits, found_dates)
+        assert found and "B-248" in found[0]
+
+    def test_found_dates_are_read_from_the_ledger(self, memcheck):
+        lines = [
+            "### ★ B-296: 件名",
+            "- ★ **状態**: 未着手",
+            "- **発見日・出所**: 2026-09-25（ユーザーの RC1 動作確認）",
+            "### ★ I-176: 件名",
+            "- **提案日・出所**: 2026-09-25（ユーザーの修正案 3 件の 1 件目）",
+        ]
+        assert memcheck.issue_found_dates_by_id(lines) == {
+            "B-296": "2026-09-25", "I-176": "2026-09-25"}
+
+    def test_git_log_is_decoded_as_utf8(self, memcheck, monkeypatch):
+        """B-297＝既定のロケール（cp932）で読むと件名の日本語で落ち、コミット 0 件＝黙って素通りした。"""
+        seen: dict = {}
+
+        def fake_run(args, **kwargs):
+            seen.update(kwargs)
+            return subprocess.CompletedProcess(args, 0, "abc1234\t2026-09-25\tfix: 直す（B-296）\n", "")
+
+        monkeypatch.setattr(memcheck.subprocess, "run", fake_run)
+        assert memcheck._commit_subjects() == [("abc1234", "fix: 直す（B-296）", "2026-09-25")]
+        assert seen.get("encoding") == "utf-8"
+
+    def test_real_commits_are_actually_read(self, memcheck):
+        """実データの検査が空の履歴で素通りしていないこと（B-297 の再発止め）。"""
+        assert len(memcheck._commit_subjects()) > 0
+
+    def test_real_data_is_clean(self, memcheck):
+        """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
+        assert memcheck.check_ledger_lags_commits_real() == []
+
+
 class TestRoadmapFormat:
     """ロードマップの書式（§📐 書き方の規約）の外形を止める（check 19・I-146）。
 
@@ -2060,6 +2313,42 @@ class TestRoadmapFormat:
                          "  - ✅ **子の出来事**（2026-09-12）＝済んだ。",
                          "1. ✅ **番号付き**（2026-09-10）＝本文。",
                          "> - ✅ **引用の中の箇条**＝本文。") == []
+
+    # ── ✅ 以外の状態記号・継ぎ足しで育った行（2026-09-26 に踏んだ穴）──
+    @pytest.mark.parametrize("mark", ["🚧", "🔜", "⬜", "🔁"])
+    def test_every_state_mark_mid_sentence_is_flagged(self, memcheck, mark):
+        """実例＝工程4c の行へ「。🚧 **round134**＝…」と書き足されて通っていた。"""
+        found = self._fmt(memcheck, f"  - ✅ **工程4c**＝直した。{mark} **round134**＝3 件。")
+        assert any(mark in f and "先頭にだけ" in f for f in found)
+
+    @pytest.mark.parametrize("mark", ["🚧", "🔜", "⬜", "🔁"])
+    def test_every_state_mark_mid_heading_is_flagged(self, memcheck, mark):
+        assert any(mark in f for f in self._fmt(memcheck, f"### 📋 記録（{mark} 途中）"))
+
+    def test_every_leading_state_mark_passes(self, memcheck):
+        assert self._fmt(memcheck, *[f"  - {m} **項目**＝本文。"
+                                     for m in ("✅", "🚧", "🔜", "⬜", "🔁")]) == []
+
+    def test_the_stray_mark_finding_tells_how_to_split(self, memcheck):
+        """止めた文言が「語で書く」だけだと、記号を「（済）」へ置き換えて通す（実際にやった）。"""
+        found = self._fmt(memcheck, "- ✅ **a**＝本文。🚧 **b**＝本文。")
+        assert any("子の箇条" in f for f in found)
+
+    def test_an_item_grown_past_the_limit_is_flagged(self, memcheck):
+        """記号を語へ置き換えた書き足しは①をすり抜ける＝行の長さで止める。"""
+        grown = "  - ✅ **工程4c**＝" + "直した。**工程5・6（済）**＝公開した。" * 60
+        assert len(grown) > memcheck._FMT_MAX_ITEM_LEN
+        found = self._fmt(memcheck, grown)
+        assert any("上限" in f and "子の箇条" in f for f in found)
+
+    def test_an_item_at_the_limit_passes(self, memcheck):
+        item = "- ✅ **項目**＝"
+        item += "あ" * (memcheck._FMT_MAX_ITEM_LEN - len(item))
+        assert self._fmt(memcheck, item) == []
+
+    def test_a_long_non_item_paragraph_is_not_measured(self, memcheck):
+        """⑥が見るのは箇条だけ（段落・引用の地の文は型の外）。"""
+        assert self._fmt(memcheck, "地の文。" * 400) == []
 
     def test_tables_inline_code_and_fences_are_not_prose(self, memcheck):
         assert self._fmt(memcheck,
@@ -2232,6 +2521,47 @@ class TestInventoryMatchesLedger:
 
     def test_real_data_is_clean(self, memcheck):
         assert memcheck.check_inventory_real() == []
+
+
+class TestInventoryH2IsPermanent:
+    """受け皿の H2 は常設（check 28）。
+
+    2026-09-26、受け皿を 3.7 として切るときに H2 ごと改名し、
+    `## 🧺 次のマイナー` が消えた（ユーザー指摘）。同じ手順を 5 回踏んでいた。
+    """
+
+    def test_the_renamed_shape_is_flagged(self, memcheck):
+        """実際に起きた形＝受け皿の規約が版セクションの H3 に居て、H2 が無い。"""
+        found = memcheck.check_inventory_h2([
+            "## 🚧 3.7 — 版をまたぐ案内",
+            "### 📋 受け皿の規約",
+            "## 🗄 アーカイブ",
+        ])
+        assert len(found) == 1 and "無い" in found[0]
+
+    def test_one_h2_above_the_archive_is_clean(self, memcheck):
+        assert memcheck.check_inventory_h2([
+            "## 🚧 3.7 — 版をまたぐ案内",
+            "## 🧺 次のマイナー（番号未定）",
+            "## 🗄 アーカイブ",
+        ]) == []
+
+    def test_an_h2_only_below_the_archive_does_not_count(self, memcheck):
+        found = memcheck.check_inventory_h2([
+            "## 🗄 アーカイブ",
+            "## 🧺 次のマイナー（番号未定）",
+        ])
+        assert len(found) == 1 and "無い" in found[0]
+
+    def test_two_h2s_are_flagged(self, memcheck):
+        found = memcheck.check_inventory_h2([
+            "## 🧺 次のマイナー（番号未定）",
+            "## 🧺 次のマイナー（番号未定）",
+        ])
+        assert len(found) == 1 and "2 つ" in found[0]
+
+    def test_real_roadmap_is_clean(self, memcheck):
+        assert memcheck.check_inventory_h2_real() == []
 
 
 class TestRenumberLeftovers:
@@ -2713,6 +3043,171 @@ def test_the_stop_hook_no_longer_judges_parallelism(budget):
 
 
 # ============================================================
+# 自律ターンの途中でも鳴らす（I-173・2026-09-24）
+# ============================================================
+# 🔴 **旧来の Stop 判定は、文脈が最も速く伸びる時間帯（人が口を挟まない長い
+# 自律ターン）を丸ごと素通りしていた**（実測＝4倍到達から最初の Stop まで
+# 20往復以上空いたセッションが107本・総入力の54%）。⇒ `PostToolUse` でも
+# 同じ梯子を判定し、`additionalContext` で Claude へ届ける（ツールは既に
+# 実行済みなので `decision: block` は無関係＝差し戻せない）。
+
+
+class TestPostToolUseMidTurnAdvice:
+    def _run(self, budget, monkeypatch, capsys, tmp_path, n, ctx=200_000,
+              hook_event="PostToolUse", session="s1", state_path=None):
+        path = TestSessionSplitAdvice()._transcript(tmp_path, n, ctx)
+        monkeypatch.setattr(budget, "_STATE", state_path or tmp_path / "state.json")
+        payload = {"transcript_path": str(path), "session_id": session}
+        if hook_event is not None:
+            payload["hook_event_name"] = hook_event
+        monkeypatch.setattr("sys.stdin", io.StringIO(json.dumps(payload)))
+        try:
+            budget.main()
+        except SystemExit:
+            pass
+        out = capsys.readouterr().out.strip()
+        return json.loads(out) if out else {}
+
+    def test_reaches_the_model_via_additional_context(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**`decision: block` ではなく `additionalContext` で届くこと**＝
+        ツールは既に実行済みなので、差し戻す形は無関係（届け先を間違えると
+        Claude Code 側がエラーにするか、意図しない差し戻しを試みかねない）。
+        """
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS))
+        assert got.get("decision") != "block", (
+            "PostToolUse なのに decision:block を返している"
+            "（ツール実行後は差し戻せない）"
+        )
+        ctx_out = got.get("hookSpecificOutput", {})
+        assert ctx_out.get("hookEventName") == "PostToolUse"
+        assert "トークン予算" in ctx_out.get("additionalContext", ""), got
+
+    def test_does_not_fire_silently(self, budget, monkeypatch, capsys, tmp_path):
+        """閾値未満では PostToolUse でも黙っていること（毎ツール呼び出しで
+        鳴る網にしない＝壊れ方②の同族）。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS) - 1, ctx=50_000)
+        assert got == {}, f"閾値未満で鳴っている: {got}"
+
+    def test_mentions_it_is_mid_turn(self, budget, monkeypatch, capsys, tmp_path):
+        """**途中で鳴っていることが文言から分かること**＝Stop の助言そのままだと
+        「ユーザーに聞け」が今は聞けない（返す番がまだ来ていない）。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS))
+        text = got["hookSpecificOutput"]["additionalContext"]
+        assert "途中" in text and "PostToolUse" in text
+
+    def test_stop_still_uses_block_when_event_name_is_absent(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**既定（`hook_event_name` 無し）は Stop 扱い**＝I-173 より前からの
+        呼び出し・既存テストが送っていない前提を壊さない。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path,
+                        min(budget._THRESHOLDS), hook_event=None)
+        assert got.get("decision") == "block"
+
+    def test_stop_after_post_tool_use_does_not_repeat(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """**同じ状態ファイルを共有して二重に言わない**（設計候補(b)）＝
+        PostToolUse で先に言った水準は、同じターンの Stop でもう一度言わない。
+        """
+        state_path = tmp_path / "shared_state.json"
+        first = min(budget._THRESHOLDS)
+        got_mid = self._run(budget, monkeypatch, capsys, tmp_path, first,
+                            hook_event="PostToolUse", state_path=state_path)
+        assert got_mid.get("hookSpecificOutput"), "PostToolUse 側が鳴っていない"
+
+        got_stop = self._run(budget, monkeypatch, capsys, tmp_path, first,
+                             hook_event="Stop", state_path=state_path)
+        assert got_stop == {}, (
+            f"PostToolUse で言った水準を Stop がもう一度言っている: {got_stop}"
+        )
+
+    def test_scan_matches_the_old_two_pass_reads(self, budget, tmp_path):
+        """**単一パス化（`_scan`）が旧・二重読みと同じ値を出すこと**＝
+        I-173 で「読みを1回にまとめる」性能対策を入れたが、値までは変えない。
+        """
+        path = TestSessionSplitAdvice()._transcript(tmp_path, 7, ctx=88_000)
+        trips_a, total_a = budget.count_roundtrips(path)
+        ctx_a = budget.latest_context(path)
+        trips_b, total_b, ctx_b = budget._scan(path)
+        assert (trips_a, total_a, ctx_a) == (trips_b, total_b, ctx_b)
+
+
+class TestRelayAdvice:
+    """I-186＝リレー（`tools/autorun/relay.ps1` が裏で起こした対話型）では、
+    区切るのはリレー＝「ユーザーに区切りを提案せよ」の代わりに「引き継ぎ書を書いて
+    応答を終えよ」を返す。判断はダイアログで人に聞く（人はいる）。
+    """
+
+    def _run(self, budget, monkeypatch, capsys, tmp_path, hook_event,
+             n=None, ctx=200_000, trips_env=None):
+        monkeypatch.setenv("RADIOSIM_RELAY", "1")
+        monkeypatch.setenv("RADIOSIM_RELAY_HANDOFF", str(tmp_path / "handoff.md"))
+        if trips_env is not None:
+            monkeypatch.setenv("RADIOSIM_RELAY_TRIPS", trips_env)
+        return TestPostToolUseMidTurnAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path,
+            min(budget._THRESHOLDS) if n is None else n, ctx=ctx,
+            hook_event=hook_event)
+
+    @staticmethod
+    def _text(got):
+        return (got.get("reason")
+                or got.get("hookSpecificOutput", {}).get("additionalContext", ""))
+
+    def test_interactive_wording_is_unchanged(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """環境変数が無ければいつもの助言のまま（リレーの文言が漏れない）。"""
+        got = TestSessionSplitAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS))
+        assert "ユーザーに区切りを提案" in got["reason"]
+        assert "リレー（RADIOSIM_RELAY=1）" not in got["reason"]
+
+    @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
+    def test_tells_it_to_write_the_handoff_and_end(
+            self, budget, monkeypatch, capsys, tmp_path, hook_event):
+        text = self._text(self._run(budget, monkeypatch, capsys, tmp_path, hook_event))
+        assert "リレー" in text and str(tmp_path / "handoff.md") in text, (
+            "引き継ぎ書の場所が出ていない＝次のセッションへ渡せない")
+        assert "status: continue" in text and "AskUserQuestion" in text
+        assert "ユーザーに区切りを提案" not in text, (
+            "区切るのはリレーなのに人へ提案させている")
+
+    def test_hands_off_with_a_commit_but_no_push(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """引き継ぐときはコミットだけ＝push は目標まで済んだセッションがまとめて
+        （2026-09-27 ユーザー指示）。"""
+        text = self._text(self._run(budget, monkeypatch, capsys, tmp_path, "PostToolUse"))
+        assert "コミット" in text and "push はしない" in text, text
+
+    def test_stop_is_silent_once_handoff_is_written(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """引き継ぎ書を書き終えた後の Stop は止めない＝リレーが止めるのを待つだけ。"""
+        (tmp_path / "handoff.md").write_text("---\nstatus: continue\n---\n",
+                                             encoding="utf-8")
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop")
+        assert got == {}, f"引き継ぎ書を書いた後なのに Stop で鳴っている: {got}"
+
+    def test_trips_env_brings_the_warning_forward(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """試しの間だけ警告を早める口＝30 往復・文脈が小さくても鳴る。"""
+        got = self._run(budget, monkeypatch, capsys, tmp_path, "Stop",
+                        n=30, ctx=10_000, trips_env="30")
+        assert "API往復が 30 回に達した" in self._text(got), got
+
+    def test_trips_env_is_ignored_outside_the_relay(
+            self, budget, monkeypatch, capsys, tmp_path):
+        """早める口はリレーのときだけ＝ふだんのセッションに漏れない。"""
+        monkeypatch.setenv("RADIOSIM_RELAY_TRIPS", "30")
+        got = TestPostToolUseMidTurnAdvice()._run(
+            budget, monkeypatch, capsys, tmp_path, 30, ctx=10_000,
+            hook_event="Stop")
+        assert got == {}, got
+
+
+# ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
 # ============================================================
 _DETOUR_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "no_shell_detours.py"))
@@ -2809,6 +3304,143 @@ class TestShellDetourVerdicts:
         _, reason = detours.check('grep -n "foo" ISSUES.md')
         for expected in ("sort", "wc -l", "tail", "後段"):
             assert expected in reason, expected
+
+
+class TestPowerShellHereStringInBash:
+    """**Bash に PowerShell のヒアストリングを渡さない**（2026-09-23）。
+
+    🔑 **止める理由は「間違いだから」ではなく「黙って通るから」**＝Bash に
+    `@'…'@` という構文は無く、`@` はただの文字として本文の先頭に残る。
+    エラーも警告も出ないので、**コミットの件名が `@` で始まったまま焼き付く**
+    （実際に起きた）。⚠️ **正当な例は 0 件**＝`cd` と同じく全面 deny にできる。
+    """
+
+    @pytest.mark.parametrize("command", [
+        "git commit -m @'\nsubject\n\nbody\n'@",
+        'git commit -m @"\nsubject\n"@',
+        "git commit --amend -m @'\nsubject\n'@",
+        # 前に別のコマンドが居ても、ヒアストリングが在れば止める
+        "git add -A && git commit -m @'\nsubject\n'@",
+        # 閉じの `'@` が無くても、開いた時点で壊れている
+        "echo @'\nbody",
+    ])
+    def test_powershell_here_strings_are_denied_in_bash(self, detours, command):
+        assert _verdict(detours, command) == "deny", command
+
+    @pytest.mark.parametrize("command", [
+        "git commit -m @'\nsubject\n'@",
+        'Write-Output @"\nbody\n"@',
+    ])
+    def test_the_same_command_passes_for_the_powershell_tool(self, detours, command):
+        """⚠️ **方言の判定なので PowerShell 側では通す**＝あちらでは正しい構文。"""
+        assert detours.check(command, "PowerShell") is None, command
+
+    @pytest.mark.parametrize("command", [
+        # 2026-09-24 に実際に踏んだ形＝ヒアストリングが引数になり標準入力へ届かない
+        "git add a.py; git commit -q -F - @'\nsubject\n\nbody\n'@ 2>&1",
+        "git commit --file=- @'\nsubject\n'@",
+        "git commit --file - \"subject\"",
+        "git commit -F -",
+        # B-302＝全体オプションを挟んだ形（`cd` を止めるので多数派になる）
+        "git -C D:\\dev\\radiosim-repo commit -F - @'\nsubject\n'@",
+        "git -C \"D:\\a b\" -c core.quotepath=false commit --file=- \"s\"",
+    ])
+    def test_commit_from_stdin_without_a_pipe_is_denied_in_powershell(
+            self, detours, command):
+        verdict = detours.check(command, "PowerShell")
+        assert verdict is not None and verdict[0] == "deny", command
+        assert "-F <" in verdict[1]           # 書き直し先を言う
+
+    @pytest.mark.parametrize("command", [
+        "$msg | git commit -F -",
+        "@'\nsubject\n'@ | git -C D:\\dev\\radiosim-repo commit -F -",
+        "@'\nsubject\n'@ | git commit --file=-",
+        "git commit -F C:\\tmp\\msg.txt",
+        "git commit -m \"subject -F - in text\"",
+    ])
+    def test_commit_from_a_pipe_or_a_file_passes_in_powershell(self, detours, command):
+        assert detours.check(command, "PowerShell") is None, command
+
+    def test_commit_from_stdin_is_left_to_bash_heredoc_rules(self, detours):
+        """Bash では `--file=- <<'EOF'` が正しい書き方＝この判定は PowerShell だけ。"""
+        assert detours.check("git commit --file=- <<'EOF'\ns\nEOF", "Bash") is None
+
+    @pytest.mark.parametrize("command", [
+        # ヒアドキュメント＝Bash の正しい書き方（これを止めたら逃げ道が消える）
+        "git commit --file=- <<'EOF'\nsubject\n\nbody\nEOF",
+        "python - <<'PY'\nprint(1)\nPY",
+        # `@` と引用符が隣り合うだけ（改行が続かない）＝ヒアストリングではない
+        'git log --format=%an" "%ae',
+        "gh api -f query='user@example.com'",
+        'echo "a@b" && echo c',
+    ])
+    def test_bash_here_documents_and_bare_at_signs_still_pass(self, detours, command):
+        assert _verdict(detours, command) == "pass", command
+
+    def test_a_here_string_inside_a_here_document_body_is_data(self, detours):
+        """🔴 **配線した当日に自分で踏んだ誤検知**（2026-09-23）。
+
+        この判定を検証するスクリプトが、ヒアドキュメントの本文に `@'…'@` を
+        *データとして*書いていた。本文はシェルにとって文字列であって構文では
+        ないので、ここで止めると**間違ったものを要求するゲート**になる。
+        """
+        probe = ("\"$PY\" - <<'PY'\n"
+                 "bad = \"git commit -m @'\\nsubject\\n'@\"\n"
+                 "print(bad)\n"
+                 "PY")
+        assert _verdict(detours, probe) == "pass"
+
+    def test_the_command_side_of_a_here_document_is_still_read(self, detours):
+        """⚠️ **落とすのは本文だけ**＝本文を落としすぎて判定が死なないこと。"""
+        assert _verdict(detours, "git commit -m @'\nx\n'@ <<'EOF'\nbody\nEOF") == "deny"
+        # 閉じの後に書いたヒアストリングも生きている
+        assert _verdict(detours, "cat <<'EOF'\nbody\nEOF\ngit commit -m @'\nx\n'@") == "deny"
+
+    def test_the_deny_message_names_the_way_out(self, detours):
+        """⚠️ 逃げ道を書いていない deny は**壊れ方③**（間違ったものを要求する）。"""
+        _, reason = detours.check("git commit -m @'\nsubject\n'@")
+        assert "EOF" in reason            # ヒアドキュメント
+        assert "--file=-" in reason       # コミットメッセージの渡し方
+        assert "PowerShell" in reason     # 方言が要るなら道具を変える
+
+
+class TestNoLogsInTheRepoRoot:
+    """**リポジトリ直下へシェルでログを書かない**（2026-09-23）。
+
+    🔴 実例＝メモリのビルド手順が `*>&1 | Out-File build_rc2.log` を指示しており、
+    直下に `build_*.log` が 3 本溜まっていた。`*.log` は git-ignore なので
+    `git status` にも出ず、**人が直下を眺めたときにしか見つからない**。
+    """
+
+    @pytest.mark.parametrize("command", [
+        '& ".\\build.bat" *>&1 | Out-File build_rc2.log -Encoding utf8',
+        "build.bat > build_3.4b1.log 2>&1",
+        "./build.bat >> build.log",
+        "x | Tee-Object -FilePath 'build_zipmode.log'",
+        'Set-Content -Path "run.log" -Value $x',
+    ])
+    def test_bare_log_names_are_denied(self, detours, command):
+        assert _verdict(detours, command) == "deny", command
+
+    @pytest.mark.parametrize("command", [
+        '& ".\\build.bat" *>&1 | Out-File build\\build.log -Encoding utf8',
+        '"$PY" -m pytest -q > "$T/full.log" 2>&1; tail -20 "$T/full.log"',
+        "pip freeze > requirements.txt",          # .txt は正当な形がある
+        "git status 2>/dev/null",
+        "python main.py 2>&1",
+    ])
+    def test_logs_with_a_directory_pass(self, detours, command):
+        assert _verdict(detours, command) != "deny", command
+
+    def test_the_same_rule_holds_for_the_powershell_tool(self, detours):
+        """方言の判定ではない＝どちらのシェルでも直下に落ちる。"""
+        assert detours.check("x *>&1 | Out-File b.log", "PowerShell")[0] == "deny"
+
+    def test_the_deny_message_names_where_to_write(self, detours):
+        """⚠️ 置き場を言わない deny は**壊れ方③**（間違ったものを要求する）。"""
+        _, reason = detours.check("build.bat > b.log")
+        assert "build\\build.log" in reason
+        assert "scratchpad" in reason
 
 
 class TestPipeTailParsing:
@@ -3314,7 +3946,7 @@ def mirror():
 class TestBackupTargets:
     """**何を退避するか**は散文でなくここで固定する。
 
-    🔴 **穴の実例（2026-09-05・I-128）**＝[[project_machine_replacement]] のステージ 1 の
+    🔴 **穴の実例（2026-09-05・I-128）**＝[[project-dev-env-roadmap]] のステージ 1 の
     棚卸し表は `.git/hooks` を「**clone に来ない**」と 🔴 で印していたのに、
     `BACKUP_TARGETS` には入っていなかった。**棚卸し（散文）と実装が食い違っても
     誰も気づかない**＝退避は「動かなかったこと」が見えないので、ここへ落とす。
@@ -3367,7 +3999,7 @@ class TestFreezeGuard:
     製品リポ `kumahide/radiosim` は **public**。退避一式（課題台帳・メモリ）は
     git 管理外にする判断のもとで書かれているので、間違って製品リポへ push すると
     **その判断ごと壊れる**。⇒ ゲートをコメントでなくここで固定する
-    （[[feedback-radiosim]]「実行時制約はコメントでなくテストで表現する」）。
+    （[[feedback-radiosim-rules]]「実行時制約はコメントでなくテストで表現する」）。
     """
 
     def test_the_target_is_not_the_public_product_repo(self, mirror):
@@ -3378,7 +4010,7 @@ class TestFreezeGuard:
         """小さな git リポを建て、そこを凍結先に差し替える。
 
         ⚠️ **答えだけ固定して副作用は残す**＝退避対象は `ISSUES.md` 1 点に絞るが、
-        コピーそのものは本物を走らせる（[[feedback-radiosim]]）。
+        コピーそのものは本物を走らせる（[[feedback-radiosim-rules]]）。
         """
         subprocess.run(["git", "init", "-b", "main", "-q", str(tmp_path)], check=True)
         subprocess.run(["git", "-C", str(tmp_path), "config", "user.name", "t"], check=True)
@@ -3429,11 +4061,24 @@ class TestBackupHealthDisclosure:
         box = tmp_path / "box"
         box.mkdir()
         (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        (box / "ISSUES_archive.md").write_text("x", encoding="utf-8")   # I-174 で 2 本
         monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
         monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
         # 凍結が未配線なら 1 行出るので、そこは配線済みに見せる。
         (tmp_path / "freeze" / ".git").mkdir(parents=True)
         assert hook._backup_health() == []
+
+    def test_it_fires_when_the_archive_is_missing_from_the_box(self, hook, tmp_path, monkeypatch):
+        """①アーカイブ（I-174 で分けた 2 本目）が箱に無ければ名指しで鳴る。"""
+        box = tmp_path / "box"
+        box.mkdir()
+        (box / "ISSUES.md").write_text("x", encoding="utf-8")
+        monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
+        monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
+        (tmp_path / "freeze" / ".git").mkdir(parents=True)
+        if not (pathlib.Path(hook.ROOT) / "ISSUES_archive.md").exists():
+            pytest.skip("ISSUES_archive.md も git-ignore（CI には存在しない）")
+        assert any("ISSUES_archive.md が無い" in m for m in hook._backup_health())
 
     def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
         """①一度も落ちないゲートにしない＝わざと古くして鳴らす。"""
@@ -3546,27 +4191,311 @@ class TestBackupWiring:
         assert mirror.FREEZE_SLUG in url, url
 
 
-def test_real_ledger_has_exactly_the_three_sections():
-    """台帳の H2 が「バグ／改善案／アーカイブ」の 3 つ**だけ**・この順であること。
+def test_real_ledger_has_exactly_the_expected_sections():
+    """台帳の H2 が決まった節**だけ**・この順であること（本体とアーカイブの 2 本・I-174）。
 
     🔴 **2026-09-06 に実際に壊れていた**＝過去のセッションが本文を heredoc 経由で
     書いたため `\n` が改行に化け、`"\n## 用語\n"` という**文字列リテラルの中身**が
     行頭の `## 用語` として落ちた。Markdown は見出しと読むので、**そこから下の
-    224 項目が「改善案」セクションの外**へ出た（[[feedback-heredoc-backslash]]）。
+    224 項目が「改善案」セクションの外**へ出た（[[feedback-shell-and-scripts]]）。
     誰も見ていなかったので、ユーザーが目で気づくまで残った。
 
-    ⚠️ **見出しの「順」まで見る**＝アーカイブが本文セクションより前に来ると、
-    `misplaced_open_items()` が見出し以降を全部アーカイブ扱いにするため、
-    **本文セクションの未対応まで「誤置」と鳴る**（同日に実際に 3 件が偽で鳴っていた）。
+    ⚠️ **本体の H2 に「アーカイブ」の字を入れない**＝`misplaced_open_items()` はその見出し
+    以降を全部アーカイブ扱いにするので、**本体の未対応まで「誤置」と鳴る**（2026-09-06 に
+    同じ形で 3 件が偽で鳴っていた）。アーカイブの置き場は `ledger_lines()` が本体の後ろへ
+    連結するアーカイブ側の先頭の H2 だけ。
     """
-    ledger = os.path.abspath(os.path.join(_HOOK_DIR, "..", "ISSUES.md"))
-    if not os.path.exists(ledger):
+    root = pathlib.Path(_HOOK_DIR).resolve().parent
+    main, arch = root / "ISSUES.md", root / "ISSUES_archive.md"
+    if not main.exists():
         pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
-    with open(ledger, encoding="utf-8") as f:
-        heads = [ln for ln in f.read().splitlines() if ln.startswith("## ")]
-    assert len(heads) == 3, f"H2 が 3 つでない（本文の字が見出しに化けていないか）: {heads}"
-    assert "バグ" in heads[0], heads
-    assert "改善案" in heads[1], heads
-    assert "アーカイブ" in heads[2], (
-        "アーカイブセクションは末尾に置く（前に来ると未対応が誤置として鳴る）: " + str(heads)
-    )
+    assert arch.exists(), "本体はあるのにアーカイブが無い"
+    heads = [ln for ln in main.read_text(encoding="utf-8").splitlines() if ln.startswith("## ")]
+    assert len(heads) == 4, f"本体の H2 が 4 つでない（本文の字が見出しに化けていないか）: {heads}"
+    assert "一覧" in heads[0] and "バグ" in heads[1], heads
+    assert "改善案" in heads[2] and "ひな形" in heads[3], heads
+    assert not any("アーカイブ" in h for h in heads), heads
+    aheads = [ln for ln in arch.read_text(encoding="utf-8").splitlines() if ln.startswith("## ")]
+    assert len(aheads) == 3, f"アーカイブの H2 が 3 つでない: {aheads}"
+    assert "アーカイブ" in aheads[0] and "バグ" in aheads[0], aheads
+    assert "アーカイブ" in aheads[1] and "改善案" in aheads[1], aheads
+
+
+# ============================================================
+# 本文と description の言語（I-172）
+# ============================================================
+_LANG_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "language_gate.py"))
+
+
+@pytest.fixture(scope="module")
+def langgate():
+    """`.claude/language_gate.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_LANG_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_language_gate", _LANG_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_language_gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestLanguageGate:
+    """**英文だけを拾い、日本語の技術文は拾わない**こと（線は 2026-09-23 の実測 5,067 件で引いた）。
+
+    ⚠️ ここが緩むと、英単語の多い日本語の報告まで書き直させるゲートになり、確実に
+    無視される（[[feedback-promote-recurring-checks]] の「毎回鳴る」壊れ方）。
+    """
+
+    # ---- 英文＝拾う（会話の記録にあった実例）--------------------------------
+    @pytest.mark.parametrize("text", [
+        "Clean. Let's also confirm the ledger tests pass against the updated ISSUES.md/roadmap:",
+        "I'll continue with docs/roadmap updates while the background test run finishes.",
+        "Hook tests pass (421) and the memory checks come back clean. Recording the result in I-171.",
+        "Now let's commit.",                          # 短い一言（②で拾う）
+        "Now update `_refresh_common_from_launcher`:",
+        "The Help menu now shows the new item. Let's click it to confirm the dialog opens.",
+        "Both fixes are committed. Full test suite passed.\n\n**残っている作業**＝段9",
+    ])
+    def test_english_is_caught(self, langgate, text):
+        assert langgate.english_evidence(text), text
+
+    # ---- 日本語＝拾わない ---------------------------------------------------
+    @pytest.mark.parametrize("text", [
+        "BEFORE、症状が**きれいに出ています** — 見出しが「RadioSim Pro □□□」。AFTER も確認します。",
+        "表示機フルスイートは HEAD (`38b40ec`) で緑（2525 collected / 1 skip）。Codex docs レビューの完了を待ちます。",
+        "Galileo High Accuracy Service と AWS Open Data Terrain Tiles を比べます。",  # 固有名詞
+        "画面の文言は \"Open the results folder for this run\" のままです。",            # 引用
+        "エラーは「An Application Control policy has blocked this file」でした。",
+        "次のコードです。\n```python\n# Now let's do the thing for all of them\nx = 1\n```\n以上です。",
+        "[feedback_writing.md](C:/Users/kuma/.claude/memory/feedback_writing.md) を直しました。",
+        "OK",
+    ])
+    def test_japanese_is_not_caught(self, langgate, text):
+        assert not langgate.english_evidence(text), langgate.english_evidence(text)
+
+    # ---- ターンの切り出しと判定 ----------------------------------------------
+    @staticmethod
+    def _log(*entries):
+        return [json.dumps(e, ensure_ascii=False) for e in entries]
+
+    @staticmethod
+    def _user(text):
+        return {"type": "user", "message": {"content": text}}
+
+    @staticmethod
+    def _said(text):
+        return {"type": "assistant", "message": {"content": [{"type": "text", "text": text}]}}
+
+    def test_only_the_current_turn_is_judged(self, langgate):
+        lines = self._log(
+            self._said("Earlier turn was all in English, sorry about that."),
+            self._user("次をお願いします"),
+            {"type": "user", "message": {"content": [{"type": "tool_result", "content": "x"}]}},
+            self._said("確認しました。"),
+        )
+        assert langgate.turn_texts(lines) == ["確認しました。"]
+
+    def test_english_final_asks_for_a_rewrite(self, langgate):
+        reason = langgate.verdict(["確認します。", "All done. The tests pass and the file is updated."])
+        assert reason and "締めの報告が英語" in reason
+
+    def test_english_midway_is_reported_even_if_final_is_japanese(self, langgate):
+        reason = langgate.verdict(["Now let's run the tests.", "テストは通りました。"])
+        assert reason and "途中経過に英語の文が 1 件" in reason
+
+    def test_japanese_turn_passes(self, langgate):
+        assert langgate.verdict(["まず読みます。", "`pytest` は 421 件通りました。"]) is None
+
+    def test_final_from_payload_is_not_counted_twice(self, langgate):
+        assert langgate.verdict(["完了しました。"], final="完了しました。") is None
+
+    def _run(self, payload):
+        proc = subprocess.run([sys.executable, _LANG_PATH], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+        return proc.stdout
+
+    def test_blocks_through_the_hook(self, langgate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._log(self._user("お願いします"),
+                                           self._said("Everything is done and the tests pass."))),
+                       encoding="utf-8")
+        out = json.loads(self._run({"transcript_path": str(log)}))
+        assert out["decision"] == "block"
+
+    def test_second_stop_never_blocks(self, langgate, tmp_path):
+        """書き直しがまた英語でも、無限に回さない。"""
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._log(self._user("お願いします"),
+                                           self._said("Everything is done and the tests pass."))),
+                       encoding="utf-8")
+        assert self._run({"transcript_path": str(log), "stop_hook_active": True}) == ""
+
+    def test_broken_input_never_blocks(self, langgate):
+        assert self._run({"transcript_path": "Z:/no/such/file.jsonl"}) == ""
+
+
+class TestDescriptionIsJapanese:
+    """description はユーザーの画面に出る＝日本語のみ通す（正当な英語の例は 0 件）。"""
+
+    @pytest.mark.parametrize("desc", ["Run memory checks", "git status", ""])
+    def test_english_or_empty_is_denied(self, detours, desc):
+        assert detours.check_description(desc)[0] == "deny"
+
+    @pytest.mark.parametrize("desc", ["作業ツリーの状態を見る", "git の状態を見る", "Grep で探す"])
+    def test_japanese_passes(self, detours, desc):
+        assert detours.check_description(desc) is None
+
+
+def test_language_gate_is_wired_into_stop():
+    """配線されていないゲートは無いのと同じ（`settings.local.json` の Stop に載っていること）。"""
+    path = os.path.abspath(os.path.join(_HOOK_DIR, "settings.local.json"))
+    if not os.path.exists(path):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    with open(path, encoding="utf-8") as f:
+        hooks = json.load(f).get("hooks", {})
+    commands = [h.get("command", "") for g in hooks.get("Stop", []) for h in g.get("hooks", [])]
+    assert any("language_gate.py" in c for c in commands), commands
+    shown = [h.get("statusMessage", "") for ev in hooks.values() for g in ev for h in g.get("hooks", [])]
+    english = [s for s in shown if s and not re.search(r"[\u3040-\u30ff\u3400-\u9fff]", s)]
+    assert not english, f"画面に出る statusMessage が英語: {english}"
+
+
+# ============================================================
+# 台帳の 2 本構成・降順・冒頭の一覧（2026-09-23・I-174）
+# ============================================================
+class TestLedgerSplit:
+    def test_本体とアーカイブを連結して読む(self, hook, tmp_path):
+        (tmp_path / "ISSUES.md").write_text(_item("B-002", "未着手"), encoding="utf-8")
+        (tmp_path / "ISSUES_archive.md").write_text(
+            _ARCHIVE_HEAD + "\n\n" + _item("B-001", "済", resp="`abc1234`"), encoding="utf-8")
+        lines = hook.ledger_lines(tmp_path)
+        assert hook.issue_id_headings(lines) == ["B-002", "B-001"]
+        assert hook.next_free_ids(lines) == {"B": "B-003"}
+        items, stale, _ = hook.parse_issues(lines)
+        assert [i.split("(")[0] for i in items] == ["B-002"] and stale == []
+        assert not hook.ledger_archive_missing(tmp_path)
+
+    def test_アーカイブが無いことを鳴らせる(self, hook, tmp_path):
+        """本体だけで空き ID を出すと、済んだ番号と衝突する＝欠けたこと自体を検出できること。"""
+        (tmp_path / "ISSUES.md").write_text(_item("B-002", "未着手"), encoding="utf-8")
+        assert hook.ledger_lines(tmp_path)
+        assert hook.ledger_archive_missing(tmp_path)
+
+    def test_本体が無ければ空(self, hook, tmp_path):
+        assert hook.ledger_lines(tmp_path) == []
+        assert not hook.ledger_archive_missing(tmp_path)
+
+    def test_却下も本体に居残れば未移動として鳴る(self, hook):
+        """B-222・I-140 が却下のまま未対応の節に居残っていた（検査が済だけを見ていた）。"""
+        _, stale, weak = hook.parse_issues(_doc(_item("B-001", "却下")))
+        assert stale == ["B-001"] and weak == []
+        _, stale, _ = hook.parse_issues(_doc(_ARCHIVE_HEAD, _item("B-001", "却下")))
+        assert stale == []
+
+
+class TestOrderViolations:
+    def test_降順なら黙る(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-003", "未着手"), _item("B-001", "未着手"))
+        assert hook.order_violations(doc) == []
+
+    def test_昇順に並んだ側を名指しする(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-001", "未着手"), _item("B-003", "未着手"),
+                   _item("B-002", "未着手"))
+        assert hook.order_violations(doc) == ["B-003"]
+
+    def test_節と分類ごとに数え直す(self, hook):
+        """節が替われば番号は振り出し・B と I は別の列（アーカイブは B→I の順）。"""
+        doc = _doc("## 🐞 バグ", _item("B-001", "未着手"),
+                   "## 💡 改善案", _item("I-009", "未着手"),
+                   _ARCHIVE_HEAD, _item("B-005", "済"), _item("I-008", "済"),
+                   _item("B-004", "済"), _item("I-007", "済"))
+        assert hook.order_violations(doc) == []
+
+    def test_同じ番号の並びも崩れとして数える(self, hook):
+        doc = _doc("## 🐞 バグ", _item("B-002", "未着手"), _item("B-002", "未着手"))
+        assert hook.order_violations(doc) == ["B-002"]
+
+
+class TestLedgerIndex:
+    _KNOWN = frozenset({"3.4", "3.6", "4.0"})
+
+    def _rows(self, block):
+        return [ln for ln in block if ln.startswith("| ") and not ln.startswith("| 行き先")]
+
+    def test_行き先_状態_ID_の順に並ぶ(self, hook):
+        doc = _doc(
+            "## 🐞 バグ",
+            _item("B-010", "保留（再現待ち）"),
+            _item("B-009", "未着手（✅ 3.6 確定）"),
+            _item("B-008", "対応中（✅ 3.6 確定）"),
+            _item("B-007", "未着手（✅ 4.0 確定）"),
+            "## 💡 改善案",
+            _item("I-005", "未着手（✅ 3.6 確定）"),
+            _ARCHIVE_HEAD, _item("B-001", "済", resp="`abc1234`"), _item("I-001", "却下"),
+        )
+        block = hook.ledger_index(doc, known=self._KNOWN)
+        ids = [r.split(" | ")[1] for r in self._rows(block)]
+        assert ids == ["B-008", "B-009", "I-005", "B-007", "B-010"]
+        assert "閉じた項目（済・却下）2 件" in "\n".join(block)
+        assert "（未対応 5 件）" in block[1]
+
+    def test_判定は監査と同じ答えを出す(self, hook):
+        """一覧と `assignment_audit` が別の行き先を言い出さないこと（判定は `destination_of` 1 か所）。"""
+        doc = _doc(_item("B-003", "未着手（✅ 3.6 確定）"), _item("B-002", "未着手（版割り未決）"),
+                   _item("B-001", "未着手"))
+        audit = hook.assignment_audit(doc, known=self._KNOWN)
+        assert audit["assigned"] == {"3.6": ["B-003"]}
+        assert audit["pending"] == ["B-002"] and audit["undeclared"] == ["B-001"]
+        dest = {r.split(" | ")[1]: r.split(" | ")[0][2:] for r in
+                self._rows(hook.ledger_index(doc, known=self._KNOWN))}
+        assert dest == {"B-003": "3.6", "B-002": "判断待ち", "B-001": "⚠️ 未記入"}
+
+    def test_済んだ版への宣言に印を付ける(self, hook):
+        """初回の生成で B-175 が `3.4`（出荷済み）のまま見つかった形。"""
+        doc = _doc(_item("B-002", "対応中（行き先＝`3.4`）"), _item("B-001", "未着手（✅ 3.6 確定）"))
+        rows = self._rows(hook.ledger_index(doc, known=self._KNOWN, current="3.6a1"))
+        assert rows[0].startswith("| ⚠️ 3.4（済んだ版） | B-002")
+        assert rows[1].startswith("| 3.6 | B-001")
+
+    def test_件名の縦棒で表を壊さない(self, hook):
+        doc = _doc(_item("B-001", "未着手（✅ 3.6 確定）", title="a | b"))
+        row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
+        assert row.count(" | ") == 4 and "a ｜ b" in row
+
+    def test_重要度を拾う(self, hook):
+        doc = _doc("### ★ B-001: t", "", "- ★ **重要度**: **高**（主要機能）",
+                   "- ★ **状態**: 未着手（✅ 3.6 確定）")
+        row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
+        assert row.split(" | ")[3] == "高"
+
+    def test_差し替えは印の間だけで無ければ最初の節の前へ(self, hook):
+        main = ["# 台帳", "", "前書き", "", "## 🐞 バグ", "", "### ★ B-001: t"]
+        block = [hook.INDEX_BEGIN, "## 📋 一覧（未対応 1 件）", hook.INDEX_END]
+        once = hook.replace_index_block(main, block)
+        assert once[:4] == main[:4] and once[4:7] == block and "## 🐞 バグ" in once
+        assert hook.current_index_block(once) == block
+        newer = [hook.INDEX_BEGIN, "## 📋 一覧（未対応 2 件）", "x", hook.INDEX_END]
+        twice = hook.replace_index_block(once, newer)
+        assert hook.current_index_block(twice) == newer
+        assert len(twice) == len(once) + 1, "印の外を書き換えている"
+
+    def test_一覧の印は項目の読み手に飲まれない(self, hook):
+        """1 行で開いて閉じるコメントなので、閉じ忘れの検査も原文の検査も素通りする。"""
+        doc = [hook.INDEX_BEGIN, "| 3.6 | B-009 | x | 中 | t |", hook.INDEX_END,
+               *_doc(_item("B-001", "未着手"))]
+        assert hook.issue_id_headings(doc) == ["B-001"]
+        assert hook.unquoted_user_items(doc) == []
+
+
+def test_real_ledger_index_is_fresh_and_ordered(hook):
+    """実データ＝冒頭の一覧が項目と一致し、ID の降順が崩れていないこと（I-174）。
+
+    ⚠️ 落ちたら `python .claude/ledger.py index --write`（一覧）／項目を番号どおりの位置へ（降順）。
+    """
+    lines = hook.ledger_lines()
+    if not lines:
+        pytest.skip("ISSUES.md も git-ignore（CI には存在しない）")
+    assert hook.order_violations(lines) == []
+    fresh = hook.ledger_index(lines, current=hook._app_version())
+    assert hook.current_index_block(lines) == fresh, "冒頭の一覧が古い"

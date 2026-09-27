@@ -16,7 +16,7 @@ tests/golden_corpus_gen.py
 一覧そのもの＝影響範囲の把握手段）。意図しない差分が出たらそれが回帰。
 
 ⚠️ 実行すると GSI の DEM タイルを取得する（キャッシュ済みなら再取得しない）。
-代表回線は 28 本・サンプル数は 120〜245 に抑えてある（[[feedback_design_philosophy]]
+代表回線は 28 本・サンプル数は 120〜245 に抑えてある（[[feedback-design-philosophy]]
 ④ 外部 API 配慮＝無差別な広域取得をしない）。
 """
 

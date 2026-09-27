@@ -1216,7 +1216,7 @@ class TestRunBatch:
         # ユニットテストが実ネットワークを叩く。地図なし（None）は
         # save_summary_html のベストエフォート分岐で正規にサポートされる。
         monkeypatch.setattr(report_summary, "render_summary_map_b64",
-                            lambda results: None)
+                            lambda *a, **k: None)
         base = sim.SimParams(default_params_dict)
         ev: dict[str, list] = {"start": [], "complete": [], "batch": [], "error": []}
         done = threading.Event()
@@ -1335,9 +1335,9 @@ class TestRunBatch:
         seen: list[str] = []
         real_visuals = report_path.save_path_visuals
 
-        def _spy(pr, coord_format="dd", project_name=""):
+        def _spy(pr, coord_format="dd", project_name="", basemap_source_id="pale"):
             seen.append(threading.current_thread().name)
-            return real_visuals(pr, coord_format, project_name)
+            return real_visuals(pr, coord_format, project_name, basemap_source_id)
 
         monkeypatch.setattr(report_path, "save_path_visuals", _spy)
         ev = self._run([_row(), _row(path_id="path02")], tmp_path,
@@ -1360,14 +1360,14 @@ class TestRunBatch:
         inflight = {"now": 0, "max": 0}
         real_visuals = report_path.save_path_visuals
 
-        def _spy(pr, coord_format="dd", project_name=""):
+        def _spy(pr, coord_format="dd", project_name="", basemap_source_id="pale"):
             with gate:
                 inflight["now"] += 1
                 inflight["max"] = max(inflight["max"], inflight["now"])
             try:
                 # 並列化されていれば重なりが観測できる幅のウィンドウを作る。
                 time.sleep(0.05)
-                return real_visuals(pr, coord_format, project_name)
+                return real_visuals(pr, coord_format, project_name, basemap_source_id)
             finally:
                 with gate:
                     inflight["now"] -= 1

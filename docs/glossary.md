@@ -77,10 +77,10 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | ワースト区間 | 中継経路で、全体判定を決めている区間（**最もマージンの小さい区間**）。画面・帳票とも同じ 1 語で呼ぶ。 *The section of a relay path that decides the overall verdict — the one with the smallest margin.* | Weakest section | 最も苦しい区間 / 律速区間 |
 | 地点 | 中継経路が通る点すべて（送信点・中継点・受信点）。利用者が入力する面はこちらで、区間はここから導かれる。 *Every point a relay path runs through (TX, relay and RX points). This is what the user enters; sections are derived from it.* | Waypoint | ノード / node |
 | 中継点 | 地点のうち、送信点でも受信点でもないもの。 *A waypoint that is neither the TX nor the RX point.* | Relay | リレー |
-| マージン | 受信レベル − 受信感度（dB）。正なら OK。 *RX level minus RX threshold, in dB; OK when positive.* | Margin | 余裕度 |
+| マージン | 受信レベル − 受信感度（dB）。0 以上なら OK。 *RX level minus RX threshold, in dB; OK when zero or above.* | Margin | 余裕度 |
 | 受信レベル | 受信アンテナ利得まで含めた、受信端に届く電力（dBm）。 *The power arriving at the receiver, RX antenna gain included (dBm).* | RX Level | 受信強度 / 電界強度 / RSSI |
 | 受信感度 | 判定の基準にする受信レベルの下限（dBm）。機器のカタログ値を利用者が入れる。 *The lowest RX level used as the pass/fail basis (dBm), taken from the radio's datasheet and entered by the user.* | Threshold | 閾値 / しきい値 |
-| 判定 | OK / NG / ERR の 3 値。OK・NG は**マージンの符号**で決まり、ERR は**計算か成果物の生成に失敗して判定できなかった**ことを表す（レポートでは `ERROR`）。 *One of OK / NG / ERR. OK and NG follow the sign of the margin; ERR means no judgement was possible because the calculation or the report failed (`ERROR` in the reports).* | Status | ステータス |
+| 判定 | OK / NG / ERR の 3 値。OK・NG は**マージンが 0 以上か未満か**で決まり、ERR は**計算か成果物の生成に失敗して判定できなかった**ことを表す（レポートでは `ERROR`）。 *One of OK / NG / ERR. OK and NG follow whether the margin is at least 0 or below it; ERR means no judgement was possible because the calculation or the report failed (`ERROR` in the reports).* | Status | ステータス |
 | 全体判定 | 中継経路ぜんたいの判定。**区間と同じ 3 値**（OK / NG / ERR）。**最もマージンの小さい区間の判定**がそのまま全体になる（区間をまたいで損失は足さない）。判定できなかった区間（ERR）が 1 つでもあれば**全体も ERR**とし、「計算できたが回線が成立しない（NG）」とは区別する。 *The status of a whole relay path — the same three values as a section. The status of the section with the smallest margin becomes the overall one; losses are never summed across sections. A single ERR section makes the whole path ERR, which stays distinct from “computed, but the link does not close” (NG).* | Overall | 総合判定 |
 | 斜距離 | 送受アンテナ間の距離（**高低差を含む**）。 *Distance between the two antennas, height difference included.* | Slant Dist | 直線距離 |
 | 水平距離 | 送受地点を地表へ投影した距離（**高低差を含まない**）。 *Distance between the two sites projected onto the ground, height difference excluded.* | Horiz Dist | 地表距離 |
@@ -123,10 +123,18 @@ the documents called one thing by two names — are enforced in prose as well.*
 | 使う | 使わない | 経緯 |
 |---|---|---|
 | ウィンドウ | 窓 | 2026-08-14 のユーザー指摘。文書 113 か所・画面 6 か所が短いほうの語で、同じ 1 つのものを 2 語で呼んでいた |
+| ゲート | 門 | 2026-09-20 のカタカナ統一。実測（2026-09-24）で対象文書の散文に 0 件。この字は他の語の部分としてほぼ出ない |
+| コア | 芯 | 同上。実測（2026-09-24）で 0 件 |
 
 **この表は `tests/test_docs_consistency.py` が公開文書に対して機械で守る**（画面側は
 上の表と `tests/test_i18n_glossary.py`）。⚠️ コードフェンスの中と表そのものは対象外
 ——ログや出力の実物を引用した行まで書き換えさせないため。
+
+⚠️ **残る「段→ステージ」「節→セクション」「相→フェーズ」「帯（UI の bar）→バー」の
+4 組はこの表に載せない**（2026-09-24 ユーザー判断）。単純な部分一致では、同じ字を
+含む**意味の違う語**（段階・二段・季節・相手・相対・帯域・時間帯 など）まで引っかかり、
+間違ったものを要求する検査になってしまう。字ごとの意味の訳し分けは機械化できないので、
+引き続き執筆時の心がけ（規約）にとどめる。
 
 *`tests/test_docs_consistency.py` enforces this table across the public documents (the
 screen side is covered by the table above and `tests/test_i18n_glossary.py`). ⚠️ Code fences

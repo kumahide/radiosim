@@ -106,6 +106,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         coord_format:    str = "dd",
         map_opener:      "Callable[[], None] | None" = None,
         cache_notify:    "Callable[[], None] | None" = None,
+        basemap_source_id: str = "pale",
     ) -> None:
         super().__init__(parent)
         title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
@@ -143,6 +144,8 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
         # 値は**開いた時点のスナップショット**をランチャーから受け取る＝ウィンドウが
         # `config.load_config()` を直に読まない（I-055 ②・2.7 スライス G2）。
         self._coord_format = coord_format
+        # 背景地図ソースも同じ流儀（B-248）＝開いた時点のスナップショット。
+        self._basemap_source_id = basemap_source_id
         self._row_entries: list[list[tk.Entry]] = []
         self._row_frames:  list[ttk.Frame]      = []
         self._running      = False

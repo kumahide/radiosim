@@ -1027,6 +1027,12 @@ def _open_map_window(monkeypatch):
         def get_zoom(self): return 8
 
     monkeypatch.setattr(mw, "MapWidget", _FakeMap)
+    # B-248＝背景切替は `config.save_app` を呼ぶ。永続化そのものは
+    # `test_layer_change_persists_as_the_report_basemap_source` が別途見るので、
+    # ここでは無効化してセッション全体で共有する隔離設定ファイルを汚さない
+    # （汚すと `tests/test_paths.py` の「開発機の設定に依存しない」検査が
+    # テストの実行順に化ける）。
+    monkeypatch.setattr(mw.config, "save_app", lambda *a, **k: None)
     root = make_themed_root()
     root.withdraw()
     win = mw.MapWindow(root, {"proxy_url": ""})
@@ -1064,6 +1070,35 @@ def test_layer_switch_changes_tiles_and_attribution(monkeypatch):
         win._on_layer_changed()
         assert "pale" in win._map.tile_calls[-1][0]
         assert "淡色" in win._attribution.cget("text")
+    finally:
+        i18n.set_lang(prev)
+        root.destroy()
+
+
+def test_layer_change_persists_as_the_report_basemap_source(monkeypatch):
+    """背景を切り替えたら `config.save_app({"basemap_layer": ...})` が呼ばれること（B-248）。
+
+    レポート添付地図（`report_map.py`）はバッチ実行時にもこの永続値を読むので、
+    地図ウィンドウの切替がディスクへ届くことをここで見る（`_open_map_window` は
+    セッション全体で共有する隔離設定ファイルを汚さないよう `save_app` を無効化
+    しているため、この 1 本だけ差し替えて呼び出しを捕まえる）。
+    """
+    from core import i18n
+    import views.map_window as mw
+
+    prev = i18n.current_lang()
+    i18n.set_lang("ja")
+    root, win, _pytest = _open_map_window(monkeypatch)
+    calls = []
+    monkeypatch.setattr(mw.config, "save_app", lambda values: calls.append(values))
+    try:
+        win._layer_box.set(i18n.t("map_layer_photo"))
+        win._on_layer_changed()
+        assert calls == [{"basemap_layer": "photo"}]
+
+        win._layer_box.set(i18n.t("map_layer_pale"))
+        win._on_layer_changed()
+        assert calls[-1] == {"basemap_layer": "pale"}
     finally:
         i18n.set_lang(prev)
         root.destroy()
@@ -1114,7 +1149,8 @@ def test_cache_source_bar_hidden_when_only_gsi_is_available(monkeypatch):
 def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(monkeypatch):
     """宣言ファイルでソースを足した利用者には欄を出し、選んだソースが
     範囲削除・カバレッジ表示（`scan_cache_overlay`/`coverage_outline`）へ
-    そのまま渡ること。プリフェッチ（ダウンロード）は対象外（I-147 残り(b)）。
+    そのまま渡ること。DL・強制再取得が同じ欄に従うことは
+    `test_download_follows_the_selected_cache_source`（B-253・3.6 ステージ1）で見る。
     """
     from core import dem_cache, dem_sources
 
@@ -1164,6 +1200,220 @@ def test_cache_source_bar_shown_and_scopes_overlay_when_declared_source_exists(m
         win._win.update_idletasks()
         assert not win._cache_src_bar.winfo_ismapped()
         assert win._cache_src_var.get() == "Fake Source"
+    finally:
+        root.destroy()
+
+
+def test_stats_show_selected_source_breakdown_when_multiple_sources(monkeypatch):
+    """I-169（3.6 ステージ1）＝複数 DEM ソースがあるとき、統計欄が選択中ソースの
+    内訳（上段）と総量（下段）の二段になり、ソース切り替えに追従すること。
+    1 ソースしかないときは従来どおり一段（総量のみ）のまま。
+    """
+    from core import dem_cache, dem_sources, i18n
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [
+                {"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                 "count": 2, "size_bytes": 2 * 1024 * 1024},
+                {"source_id": "fake_src", "display_name": "Fake Source",
+                 "count": 1, "size_bytes": 1 * 1024 * 1024},
+            ],
+            "basemap": {"count": 1, "size_bytes": 1024 * 1024},
+            "total": {"count": 4, "size_bytes": 4 * 1024 * 1024},
+        },
+    )
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._refresh_stats()
+        text = win._stats_var.get()
+        lines = text.split("\n")
+        assert len(lines) == 2, f"複数ソースなのに二段になっていない: {text!r}"
+        assert lines[0] == i18n.t("tm_stats_source").format(
+            name="国土地理院 DEM", count=2, mb="2.0")
+        assert lines[1] == i18n.t("tm_stats").format(count=4, mb="4.0")
+
+        # ソースを切り替えると上段だけ追従する。
+        win._cache_src_var.set("Fake Source")
+        win._on_cache_source_changed()
+        lines2 = win._stats_var.get().split("\n")
+        assert lines2[0] == i18n.t("tm_stats_source").format(
+            name="Fake Source", count=1, mb="1.0")
+        assert lines2[1] == lines[1]   # 総量は変わらない
+    finally:
+        root.destroy()
+
+
+def test_stats_stay_single_line_with_only_gsi(monkeypatch):
+    """宣言ソースが無い大多数の利用者には、従来どおり一段のままにする。"""
+    from core import dem_cache, dem_sources, i18n
+
+    monkeypatch.setattr(dem_sources, "_user_sources", [])
+    monkeypatch.setattr(
+        dem_cache, "get_cache_breakdown",
+        lambda: {
+            "sources": [{"source_id": "gsi_dem", "display_name": "国土地理院 DEM",
+                        "count": 2, "size_bytes": 2 * 1024 * 1024}],
+            "basemap": {"count": 0, "size_bytes": 0},
+            "total": {"count": 2, "size_bytes": 2 * 1024 * 1024},
+        },
+    )
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._refresh_stats()
+        assert win._stats_var.get() == i18n.t("tm_stats").format(count=2, mb="2.0")
+        assert "\n" not in win._stats_var.get()
+    finally:
+        root.destroy()
+
+
+def test_download_follows_the_selected_cache_source(monkeypatch):
+    """B-253（3.6 ステージ1）＝DL・強制再取得も「対象 DEM ソース」欄に従うこと。
+
+    以前は `dem_prefetch.prefetch_tiles` が `source` を受け取らず常に国土地理院を
+    取っていた＝欄で外部ソースを選んでいても黙って無視されていた。
+    `_download_worker` が `source` をそのまま `prefetch_tiles` へ渡すことだけを見る
+    （進捗ポンプ・スレッド起動は他のフローで既に検査済みの配線）。
+    """
+    from core import dem_prefetch, dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        seen: dict = {}
+
+        def _fake_prefetch(lat1, lon1, lat2, lon2, progress_cb=None, force=False, source=None):
+            seen["source"] = source
+            seen["force"] = force
+            return {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0}
+
+        monkeypatch.setattr(dem_prefetch, "prefetch_tiles", _fake_prefetch)
+        monkeypatch.setattr(win, "_on_download_done", lambda dl_result: seen.setdefault("done", dl_result))
+        # ワーカースレッドを介さず本体を直接呼ぶ（他フローと同じ検査方針）。
+        win._download_worker((35.0, 139.0, 34.9, 139.1), True, fake)
+
+        assert seen["source"] is fake, "選んだソースが prefetch_tiles まで届いていない"
+        assert seen["force"] is True
+    finally:
+        root.destroy()
+
+
+def test_download_done_message_branches_on_result_shape(monkeypatch):
+    """`_on_download_done`＝国土地理院（内訳つき）と外部ソース（`downloaded` のみ）
+    の両方の戻り値で、対応する文言キーが使われること（tm_dl_done / tm_dl_done_generic）。
+    """
+    from core import i18n
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._set_busy(True)
+        win._show_progress()
+        win._pump.start()
+        win._on_download_done(
+            {"area_total": 3, "downloaded_5a": 1, "downloaded_5b": 1,
+             "downloaded_dem": 1, "skipped": 0, "failed": 0})
+        assert "5" in win._status_var.get()   # tm_dl_done の内訳表記（5m 等）を含む
+
+        win._set_busy(True)
+        win._show_progress()
+        win._pump.start()
+        win._on_download_done(
+            {"area_total": 1, "downloaded": 1, "skipped": 0, "failed": 0})
+        assert win._status_var.get() == i18n.t("tm_dl_done_generic").format(
+            downloaded=1, skipped=0, failed=0), \
+            "外部ソースの戻り値なのに国土地理院向けの内訳文言のまま（またはキー欠落で例外）"
+    finally:
+        root.destroy()
+
+
+def test_stale_overlay_result_does_not_overwrite_the_current_source(monkeypatch):
+    """B-270＝後から届いた古い走査結果でカバレッジを描き直さないこと。
+
+    走査は非同期なので、ソースを切り替えると**先に投げたほうが後で返る**こと
+    がある。以前は結果に「どのソース・どの世代か」が付いておらず、
+    `_draw_overlay_cells` はモードしか見ていなかったので、**別ソースの塗りで
+    上書き**された（そのまま範囲削除すると、見えているものと消えるものが違う）。
+    """
+    from core import dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._select_mode("cache")
+        cell = {"x": 1, "y": 1, "zoom": 10, "level": "fake_layer"}
+
+        # 世代 1 の走査を投げた（ことにする）→ 世代 2 の走査が先に返って描かれた。
+        win._overlay_generation = 1
+        stale = win._overlay_generation
+        win._overlay_generation = 2
+        win._draw_overlay_cells([cell], [], win._overlay_generation)
+        drawn_now = len(win._tile_polygons)
+        assert drawn_now == 1
+
+        # ここへ世代 1（古いソースぶん）が遅れて届いても、描き直さない。
+        win._draw_overlay_cells([cell, cell], [], stale)
+        assert len(win._tile_polygons) == drawn_now, (
+            "古い世代の結果が現在の表示を上書きした")
+    finally:
+        root.destroy()
+
+
+def test_changing_the_cache_source_clears_the_previous_coverage(monkeypatch):
+    """B-270＝切り替えた瞬間に前のソースの塗りを消すこと（走査の完了を待たない）。"""
+    from core import dem_sources
+
+    fake = dem_sources.DemSourceSpec(
+        source_id="fake_src", display_name="Fake Source",
+        layers=(("fake_layer", 10),),
+        url_template="https://example.invalid/{layer}/{z}/{x}/{y}.png",
+        decode=dem_sources.DecodeMethod.TERRARIUM,
+        invalid_rgb=None,
+        attribution="Fake", terms_url="https://example.invalid/terms",
+    )
+    monkeypatch.setattr(dem_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        win._select_mode("cache")
+        win._draw_overlay_cells(
+            [{"x": 1, "y": 1, "zoom": 10, "level": "5a"}], [], win._overlay_generation)
+        assert win._tile_polygons
+
+        monkeypatch.setattr(win, "_refresh_overlay", lambda: None)  # 走査は投げない
+        win._cache_src_var.set("Fake Source")
+        win._on_cache_source_changed()
+
+        assert win._tile_polygons == [], "切り替えても前のソースの塗りが残っている"
     finally:
         root.destroy()
 
@@ -1254,6 +1504,42 @@ def test_declared_tile_source_is_offered_alongside_the_built_ins(monkeypatch):
             "https://tile.example.invalid/{z}/{x}/{y}.png", 19)
         assert win._attribution.cget("text") == "(c) OSM"
     finally:
+        root.destroy()
+
+
+def test_user_tile_source_named_like_a_builtin_does_not_hide_it(monkeypatch):
+    """B-271＝宣言した背景地図の表示名が組み込みと同じでも、組み込みを選べること。
+
+    表示名を辞書の鍵にしていたため、**後から入る利用者ソースが組み込みを潰し**、
+    欄から組み込みの淡色地図が消えていた（利用者には原因が見えない＝誤りの
+    通知も出ない）。⚠️ **表示名は翻訳で変わる**ので、読み込み時に重複を
+    禁じても言語を替えれば衝突し得る＝**鍵にしないほう**を直した。
+    """
+    from core import i18n, tile_sources
+
+    prev = i18n.current_lang()
+    i18n.set_lang("ja")
+    collide = i18n.t("map_layer_pale")      # 組み込みの淡色地図と同じ表示名
+    fake = tile_sources.TileSourceSpec(
+        source_id="impostor", display_name=collide,
+        url="https://tile.example.invalid/{z}/{x}/{y}.png",
+        max_zoom=19, attribution="(c) impostor", terms_url="https://example.invalid",
+    )
+    monkeypatch.setattr(tile_sources, "_user_sources", [fake])
+
+    root, win, _pytest = _open_map_window(monkeypatch)
+    try:
+        values = list(win._layer_box.cget("values"))
+        assert len(values) == len(win._layer_keys) == 3, (
+            f"同じ表示名の選択肢が消えている: {values}")
+        # 欄の並び順で選べば、組み込みの淡色地図にも利用者ソースにも届く。
+        for idx, key in enumerate(win._layer_keys):
+            win._layer_box.current(idx)
+            win._on_layer_changed()
+            assert win._layer == key, f"{idx} 番目を選んだのに {win._layer} が効いた"
+        assert "impostor" in win._layer_keys
+    finally:
+        i18n.set_lang(prev)
         root.destroy()
 
 

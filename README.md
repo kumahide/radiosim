@@ -6,9 +6,9 @@
 
 **国土地理院 DEM（数値標高モデル）を自動で取得し、地形断面・回折損・フレネル第1ゾーン遮蔽率・リンクバジェットを計算する Windows デスクトップアプリです。** 送信点と受信点の座標・アンテナ高・周波数を入れるだけで、その回線が通りそうかを数秒で判定します。**現地調査に出る前のスクリーニング**に用途を絞ったツールで、無料・MIT ライセンス・インストール不要の Windows バイナリも配布しています。
 
-> **組み込みの標高データは国土地理院タイルのみです。日本国外の標高は利用者が宣言ファイルで外部 DEM ソースを追加すれば取得できますが、背景地図は国土地理院タイル固定のため、地図から座標を拾う・航空写真で確認する・帳票に地図を載せるといった機能は日本国内でしか使えません。**（詳細は下記 FAQ「日本国外の回線には使えますか？」）
+> **組み込みの標高データと背景地図は国土地理院タイルのみです。日本国外で使うには、利用者が宣言ファイルで外部の DEM ソースと背景地図ソースを追加してください。組み込みの航空写真での確認は国土地理院タイル固定のため日本国内でしか使えませんが、帳票に貼る経路地図は地図ウィンドウで選んだ背景地図ソースに従うため、宣言した外部ソースを選べば日本国外でも使えます（3.6〜）。**（詳細は下記 FAQ「日本国外の回線には使えますか？」）
 
-*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. The only built-in elevation source is GSI, but you can add an external DEM source for elevations outside Japan via a declaration file; the background map stays fixed to GSI tiles, so picking coordinates on the map, aerial-photo confirmation, and the map embedded in reports remain Japan-only. English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
+*A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. The only built-in elevation source and background map are GSI, but you can add external DEM and background map sources via declaration files to work outside Japan; the built-in aerial-photo confirmation stays fixed to GSI tiles and remains Japan-only, but the map embedded in reports follows whichever background source is selected in the map window, so it works outside Japan too once you add an external source (from 3.6). English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
 
 <img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
 
@@ -22,7 +22,7 @@
 - **アンテナ高・周波数の当たり付け** — 1 本の経路で条件を振り、成立ラインを探す
 - **複数経路の一括計算（バッチ計算）** — CSV に並べた N 本をまとめて回し、レポートを自動生成
 
-**使わないほうがよい用途**: 回線設計の最終判断。DEM の水平解像度は 5〜10m で、回折損の実質精度は **±5〜15 dB** 程度です。⚠️ **この範囲は、複数の障害物が重なる経路には当てはまりません**——合成損失は実測とも基準実装とも突き合わせていません（下記）。
+**使わないほうがよい用途**: 回線設計の最終判断。組み込みの国土地理院 DEM の水平解像度は 5〜10m で、回折損の実質精度は **±5〜15 dB** 程度です。⚠️ **この範囲は、複数の障害物が重なる経路には当てはまりません**——合成損失は実測とも基準実装とも突き合わせていません（下記）。
 
 > 🔴 **回折損は過大にも過小にも出ることがあり、どの経路で信頼できるかを事前に見分ける方法がありません。** 3.0 で回折モデルを **Bullington 等価ナイフエッジ（ITU-R P.526 §4.5.1）** に替え、①山越えで数百〜数千 dB になる**発散**と、②**植生高やアンテナ高を 1m 動かすだけで 84 dB 跳ぶ不連続**を解消しました。ただし**外れる可能性そのものが消えたわけではありません**。①合成損失は**実測とも基準実装とも突き合わせていません**。②**離れた 2 つ以上の尾根がある経路では小さめに出ます**（この手法の既知の性質です）。③**地形の解像度を上げると回折損が増えます**（「低」の 20m 間隔 →「高」の画素の縁ごとで最大 +407%）。④**平滑地球の球面回折の項を持たないため**、低いアンテナで見通し距離を超える長い平坦路（海上など）では過小になりえます。⚠️ **起伏の大きさでも F1 遮蔽率でも、どの経路が外れるかは判定できません。**⚠️ F1 遮蔽率は表示上 **100% で頭打ち**なので、率の側からは異常に気づけません。
 >
@@ -37,7 +37,7 @@
 - **リンクバジェット** — 送信電力・利得・各種損失から受信レベルとマージンを算出
 - **4 つの実行フロー** — 個別シミュレーション / 複数経路（CSV バッチ）/ 条件探索（比較・スイープ）/ 中継経路
 - **地図から座標を拾う** — 淡色地図をクリックして送受信点を指定、DEM キャッシュの可視化・事前取得も
-- **帳票が前提と適用範囲を自分で名乗る**（3.0 から） — レポートの下部に「結果の取扱に関する補足」のセクションが入り、標高データが地表面モデルであること・植生高が一律の仮定値であること・地面反射を考慮していないこと・その周波数では範囲外につき 0 dB として扱った項目などを、**成果物そのものが持ち歩きます**
+- **帳票が前提と適用範囲を自分で名乗る**（3.0 から） — レポートの下部に「結果の取扱に関する補足」のセクションが入り、標高データが地表面モデルであること・植生高が一律の仮定値であること・地面反射を考慮していないこと（単一経路で幅を推定できたときは、その変動幅）・その周波数では範囲外につき 0 dB として扱った項目などを、**成果物そのものが持ち歩きます**
 - **プロジェクトファイル（`.rsproj`）** — 座標・パラメータ・案件情報をまとめて保存し、続きから再開
 - **日本語 / 英語 UI**・ダークモード対応
 - **表示言語を自分で足せる**（2.8 から） — `<言語コード>.json` を置くと言語メニューに現れます（置き場はインストール形態で異なり、**インストーラ版**は `%APPDATA%\RadioSim\lang`、**ポータブル版**はアプリと同じフォルダの `lang`）。訳が無いキーは英語のまま出るので、全部を訳さなくても壊れません（**非公式な訳**という位置づけで、追加した言語では画面の見切れを保証しません）
@@ -73,9 +73,9 @@
 
 ### Windows バイナリ版（Python 不要）
 
-**インストーラ版（推奨）**: [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-Setup-<版>.exe` をダウンロードして実行（管理者権限不要）。設定・キャッシュ・結果は OS 標準の場所（`%APPDATA%`／`%LOCALAPPDATA%`／ドキュメント）へ保存されます。
+**インストーラ版（推奨）**: [Releases](https://github.com/kumahide/radiosim/releases) から `RadioSimPro-Setup-<版>.exe` をダウンロードして実行（管理者権限不要）。設定・キャッシュ・結果は OS 標準の場所（`%APPDATA%`／`%LOCALAPPDATA%`／ドキュメント）へ保存されます。インストーラ版は 1 台に 1 つで、別の版を入れると置き換わります（3.7 以降は版を比べ、古い版へ戻すときは確認します。詳細は [docs/manual_ja.md](docs/manual_ja.md#別の版を上から入れるとき)）。
 
-**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip` をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。
+**ポータブル版**: 同じく Releases から `RadioSimPro-<版>.zip` をダウンロードし、ZIP を展開して `RadioSimPro.exe` をダブルクリック。設定・キャッシュ・結果は展開したフォルダの中に作られ、USB メモリ等で持ち運べます。**複数の版を並べて使うときはこちら**（版ごとに別のフォルダへ展開すれば、データごと分かれます）。
 
 > 署名なし EXE のため SmartScreen 警告が出る場合があります。「詳細情報」→「実行」をクリックしてください。
 >
@@ -102,7 +102,7 @@ python main.py
 
 限定的に使えます。組み込みで登録されている標高データは国土地理院のタイルだけですが、利用者が設定フォルダに宣言ファイルを置くと、外部の標高タイル（XYZ PNG）を DEM ソースとして追加できます（3.4〜）。改善するのはカバー範囲であって精度ではありません。
 
-ただし**背景地図（淡色地図・航空写真）は国土地理院タイル固定のまま**です。日本国外では、地図をクリックして座標を指定する機能・航空写真での現地確認・帳票に載る経路地図の画像は使えません（座標は数値で直接入力してください）。背景地図を利用者が追加する仕組みは今後の検討課題です。
+地図ウィンドウの背景地図も、同じように宣言ファイルで追加できます（3.5〜）。足さない場合の背景地図（淡色地図・航空写真）は国土地理院タイルなので、日本国外では何も描かれません。**帳票に載る経路地図の画像は、地図ウィンドウで最後に選んだ背景地図ソースに従います**（3.6〜）ので、宣言した外部ソースを選べば日本国外でも描かれます。組み込みの航空写真だけは国土地理院タイル固定のままで、日本国外の現地確認には使えません。
 
 ### 有料ですか？ 商用利用できますか？
 
@@ -123,6 +123,10 @@ MIT ライセンスの無料ソフトです。商用利用も可能です（[LIC
 | 変更履歴 | [CHANGELOG.md](CHANGELOG.md) |
 | English — user manual | [docs/manual_en.md](docs/manual_en.md) |
 | English — for developers | [docs/developer_en.md](docs/developer_en.md) |
+
+> ℹ️ 上のリンク先は開発中の最新（main）の文書で、まだ公開していない版の説明を含むことがあります。お使いの版の説明は、配布物に同梱の文書（アプリのヘルプ →「ドキュメントを開く」）か、[その版のタグ](https://github.com/kumahide/radiosim/tags)（例: `3.7`）の文書をご覧ください。
+>
+> *The links above point to the latest documents on main, which may describe a version not yet released. For the version you use, read the documents bundled with it (Help → Open Documentation in the app) or the documents at [that version's tag](https://github.com/kumahide/radiosim/tags) (e.g. `3.7`).*
 
 ---
 

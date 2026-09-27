@@ -27,7 +27,8 @@
   秘匿の保証ではない（詳細は下の docs 分岐のコメント）。
 
 .PARAMETER Mode
-  code = ①コード面（差分）／ docs = ②ドキュメント/メモリ面
+  code = ①コード面（差分）／ docs = ②ドキュメント/メモリ面／
+  direction = ③方向性（新しい版の着手前・渡す範囲は docs と同じで入力文だけが違う）
 
 .PARAMETER Base
   code のみ。比較元の ref（既定 HEAD~1）。RC/正式の工程 4b は前の正式タグを渡す。
@@ -55,10 +56,14 @@
 .EXAMPLE
   # ②ドキュメント面（memory を写してから渡す）
   & tools\codex_review\run.ps1 -Mode docs
+
+.EXAMPLE
+  # ③方向性（新しい版の作業順を確定する前・非ブロッキング）
+  & tools\codex_review\run.ps1 -Mode direction
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('code', 'docs')][string]$Mode = 'code',
+    [ValidateSet('code', 'docs', 'direction')][string]$Mode = 'code',
     [string]$Base = 'HEAD~1',
     [int]$Round = 0,
     [switch]$DryRun,
@@ -174,6 +179,12 @@ if ($Mode -eq 'code') {
 
     $safeBase = ($Base -replace '[^\w.\-]', '_')
     $diffPath = Join-Path $outDir ("round{0}_diff_{1}_to_HEAD.diff" -f $Round, $safeBase)
+
+    # 前の巡の差分は消す（2026-09-23）＝比較元はファイル名に残っているので git から
+    # 作り直せる。消さずにいたら 100 巡超で 14MB 溜まっていた。
+    # ⚠️ 残すのは原文（`*_codex_raw.md`）＝こちらは再生成できない記録。
+    Get-ChildItem $outDir -Filter 'round*_diff_*.diff' -ErrorAction SilentlyContinue |
+        Remove-Item -Force -ErrorAction SilentlyContinue
 
     # ⛔ **PowerShell に差分を通さない**（2026-08-24・B-122）。`git diff | Out-String`
     #    は ①git の標準出力を**コンソールのコードページで復号**するので日本語が全滅し
@@ -291,7 +302,11 @@ else {
     Write-Host ("staging: {0}（リポジトリの外）" -f $workRoot)
     Write-Host "⚠️ ISSUES.md は渡していません（ただし read-only は任意のパスを読めるので、これは運用規則であって保証ではありません）"
 
-    $prompt = Get-Content (Join-Path $toolDir 'prompt_docs.txt') -Raw -Encoding UTF8
+    # ③方向性は②と同じものを渡し、入力文だけを替える（2026-09-27・I-187）。
+    # 作業順の案はロードマップの版セクション（memory）に入っているので、足して渡すものは無い。
+    # ⛔ 観点を「docs の入力文に一言足す」形で持ち込まない＝面ごとに固定のファイルを持つ。
+    $promptFile = if ($Mode -eq 'direction') { 'prompt_direction.txt' } else { 'prompt_docs.txt' }
+    $prompt = Get-Content (Join-Path $toolDir $promptFile) -Raw -Encoding UTF8
 }
 
 Write-Host ''
@@ -308,7 +323,7 @@ $codexArgs = @(
     '-C', $workRoot,
     '-o', $rawPath
 )
-if ($Mode -eq 'docs') { $codexArgs += '--skip-git-repo-check' }
+if ($Mode -ne 'code') { $codexArgs += '--skip-git-repo-check' }   # staging は git の外
 $codexArgs += $prompt
 
 Write-Host ("Codex 実行中（{0} 巡目 / {1}）… 返答は原文のまま {2} へ落ちます" -f $Round, $Mode, $rawPath)

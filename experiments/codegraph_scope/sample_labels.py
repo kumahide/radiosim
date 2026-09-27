@@ -1,5 +1,5 @@
 """上の分類の「不明」「混在」に何が入っているかを標本で確かめる。
-⚠️ ラベル自体が思い込みのことがある（[[feedback-synthetic-cases-lie]]）。
+⚠️ ラベル自体が思い込みのことがある（[[feedback-verification]]）。
 """
 import pathlib
 import random

@@ -79,6 +79,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         map_notify:      "Callable[[], None] | None" = None,
         cache_notify:    "Callable[[], None] | None" = None,
         coord_format:    str = "dd",
+        basemap_source_id: str = "pale",
     ) -> None:
         super().__init__(parent)
         title_bar.follow_title_bar(self)   # マップされ次第当てる（I-132・B-179）
@@ -104,6 +105,8 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         # ⚠️ **表記は表示だけの話**＝読む側は `coords.parse_pair` が両表記を受け、
         # 保存・計算へは常に DD で渡る（内部の正典は DD）。
         self._coord_format    = coord_format
+        # 背景地図ソースも同じ流儀（B-248）＝開いた時点のスナップショット。
+        self._basemap_source_id = basemap_source_id
         self._running  = False
         self._last_run: "mh.MultiHopRun | None" = None
         # 実行に出したときの各区間の入力（`_clear_hop_results` が控える）＝結果を
@@ -867,6 +870,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
             on_error        = lambda ex,  p=push: p(("error", (ex,))),
             project_name    = self._meta["project_name"],
             memo            = self._meta["memo"],
+            basemap_source_id = self._basemap_source_id,
         )
 
     # ----------------------------------------------------------
