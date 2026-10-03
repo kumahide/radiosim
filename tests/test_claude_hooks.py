@@ -4081,13 +4081,21 @@ class TestBackupHealthDisclosure:
         assert any("ISSUES_archive.md が無い" in m for m in hook._backup_health())
 
     def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
-        """①一度も落ちないゲートにしない＝わざと古くして鳴らす。"""
+        """①一度も落ちないゲートにしない＝わざと古くして鳴らす。
+
+        🔴 元の側も一時フォルダに置く（B-322）＝実物の `ISSUES.md` と比べると、
+        実物を 5 日より前に最後に書いた日には差が負になり、黙って赤になっていた。
+        """
+        src = tmp_path / "root"
+        src.mkdir()
+        (src / "ISSUES.md").write_text("x", encoding="utf-8")       # 今の時刻＝新しい側
         box = tmp_path / "box"
         box.mkdir()
         stale = box / "ISSUES.md"
         stale.write_text("x", encoding="utf-8")
         old = time.time() - 5 * 24 * 60 * 60
         os.utime(stale, (old, old))
+        monkeypatch.setattr(hook, "ROOT", src)
         monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
         monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
         (tmp_path / "freeze" / ".git").mkdir(parents=True)
