@@ -1040,17 +1040,37 @@ def make_themed_root(theme_name: str = "dark"):
     """
     from views import theme as views_theme
 
+    root = make_sv_ttk_root()
+    set_theme(theme_name)
+    views_theme.apply_fonts(root)
+    return root
+
+
+def make_sv_ttk_root():
+    """sv_ttk のテーマ tcl を**読み込み済み**の Tk ルートを返す（テーマはまだ切り替えない）。
+
+    **`set_theme` を自分で呼ぶテストは `make_tk_root` ではなくこちらで建てる**（B-323）。
+    🔴 汚れたインタプリタ（B-082②）を捨てて作り直せるのは**ルートを建てる口だけ**＝
+    ルートを受け取ったテストが `set_theme` の中で汚れに気づいても、そのルートは
+    もう捨てられない（2026-10-03 に `test_tooltip_colors_are_legible` が赤になった）。
+    ⇒ 汚れうる唯一の段＝**sv.tcl の最初の source** を、作り直せるこの口で済ませる。
+    読み込み済みなら、以後の `set_theme` は `theme use` だけで source を通らない。
+
+    ⚠️ 読み込みの副作用は名前つきフォントの作成と `<<ThemeChanged>>` への結び付け
+    だけで、**テーマは切り替えない**（sv.tcl は `theme use` を読むだけ）。
+    """
+    import sv_ttk
+
     last = None
     for _ in range(_TK_INIT_ATTEMPTS):
         root = make_tk_root()
         try:
-            set_theme(theme_name)
+            _retry_theme_tcl(lambda: sv_ttk.get_theme(root))
         except PoisonedInterpreter as e:
             last = e
             root.destroy()                          # ⚠️ インタプリタごと捨てる
             time.sleep(0.05)
             continue
-        views_theme.apply_fonts(root)
         return root
     _no_display(f"sv_ttk テーマを読み込めない（作り直し {_TK_INIT_ATTEMPTS} 回）: {last}")
 
@@ -1088,15 +1108,23 @@ def set_theme(name: str) -> None:
     の註のとおり、待っても消えない。**5 回空回りしてから読み込み失敗として
     落ちる**と、原因が「読めなかった」に見えて調査が丸ごと逸れるので、
     ここで**別の失敗として**打ち切る。
-    """
-    import tkinter as tk
 
+    ⚠️ 汚れを受けて作り直せるのはルートを建てる口だけ＝ルートは
+    `make_sv_ttk_root`（または `make_themed_root`）で建てておくこと（B-323）。
+    """
     import sv_ttk
+
+    _retry_theme_tcl(lambda: sv_ttk.set_theme(name))
+
+
+def _retry_theme_tcl(call) -> None:
+    """テーマ tcl に触る `call` を、一過性の read 失敗だけ再試行して呼ぶ（B-082②）。"""
+    import tkinter as tk
 
     last = None
     for _ in range(_TK_INIT_ATTEMPTS):
         try:
-            sv_ttk.set_theme(name)
+            call()
             return
         except tk.TclError as e:
             last = e
