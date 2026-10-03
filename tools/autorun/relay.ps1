@@ -213,7 +213,8 @@ if ($Start) {
     if ($Trips) { $fwd += '-Trips', $Trips }
     if ($Model) { $fwd += '-Model', $Model }
     if ($Handoff) { $fwd += '-Handoff', $Handoff }
-    $p = Start-Process pwsh -ArgumentList $fwd -WorkingDirectory $workDir -PassThru
+    # 配列のまま渡すと空白でつなぐだけ＝空白を含むパスが割れる（B-314）
+    $p = Start-Process pwsh -ArgumentList (Join-ProcessArgs $fwd) -WorkingDirectory $workDir -PassThru
     Write-Host "リレーを別の窓で起こしました（pid $($p.Id)）。記録: $(Join-Path $relayDir 'relay.log')"
     return
 }

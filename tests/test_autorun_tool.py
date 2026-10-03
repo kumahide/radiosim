@@ -11,6 +11,7 @@ import json
 import re
 import shutil
 import subprocess
+import sys
 from pathlib import Path
 
 import pytest
@@ -205,6 +206,43 @@ def test_the_beat_reads_the_last_tool_call_from_the_transcript(tmp_path):
                   "Format-Beat 'busy/working' ([TimeSpan]::FromMinutes(11)) $m")
     exp, line = out.splitlines()
     assert line == f"  … busy/working のまま 11 分・最後の手＝ステージ6のコミットを main へ送る（{exp} から）", out
+
+
+@needs_pwsh
+@pytest.mark.skipif(sys.platform != "win32", reason="PATH の区切りと .exe は Windows の形")
+def test_find_claude_skips_a_script_on_path(tmp_path):
+    """PATH の `claude.cmd` は直に起動できない＝先に在っても採らず、後ろの `.exe` を採る（B-313）。"""
+    scripts, exes = tmp_path / "npm", tmp_path / "bin"
+    scripts.mkdir()
+    exes.mkdir()
+    (scripts / "claude.cmd").write_text("@echo off\n", encoding="utf-8")
+    (exes / "claude.exe").write_bytes(b"")
+    out = _common(tmp_path,
+                  "$env:CLAUDE_EXE = $null; "
+                  f"$env:PATH = '{scripts};{exes}'; "
+                  "Write-Output (Find-Claude); "
+                  f"$env:PATH = '{scripts}'; "
+                  "Write-Output $(try { Find-Claude } catch { 'THROW' })")
+    first, only_script = out.splitlines()
+    assert first == str(exes / "claude.exe"), out
+    assert not only_script.lower().endswith((".cmd", ".ps1")), out   # 拡張の実体か、止まるか
+
+
+@needs_pwsh
+def test_start_quotes_the_arguments_for_the_new_window(tmp_path):
+    """空白・引用符・末尾の \\ を含む値が、子のプロセスで元の 1 引数に戻る（B-314）。"""
+    src = RELAY.read_text(encoding="utf-8")
+    assert "Start-Process pwsh -ArgumentList (Join-ProcessArgs $fwd)" in src, "配列のまま渡すと空白で割れる"
+    echo = tmp_path / "argv.py"
+    echo.write_text("import json, sys\nprint(json.dumps(sys.argv[1:]))\n", encoding="utf-8")
+    vals = [r"C:\a b\relay.ps1", "plain", "", 'x"y', "trail\\", "C:\\dir with space\\", '\\"q']
+    lit = ", ".join("'" + v.replace("'", "''") + "'" for v in vals)
+    out = _common(tmp_path,
+                  f"$psi = [Diagnostics.ProcessStartInfo]::new('{sys.executable}', "
+                  f"('\"{echo}\" ' + (Join-ProcessArgs @({lit})))); "
+                  "$psi.UseShellExecute = $false; $psi.RedirectStandardOutput = $true; "
+                  "$p = [Diagnostics.Process]::Start($psi); $p.StandardOutput.ReadToEnd()")
+    assert json.loads(out) == vals, out
 
 
 @needs_pwsh

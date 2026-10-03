@@ -5,7 +5,10 @@
 
 function Find-Claude {
     if ($env:CLAUDE_EXE) { return $env:CLAUDE_EXE }
-    $cmd = Get-Command claude -ErrorAction SilentlyContinue
+    # PATH の当たりは実行ファイル（.exe）だけを採る（B-313）＝npm の claude.cmd・claude.ps1 は
+    # relay.ps1 の Invoke-Claude（UseShellExecute = $false）では直に起動できない。
+    $cmd = Get-Command claude -CommandType Application -All -ErrorAction SilentlyContinue |
+        Where-Object { [IO.Path]::GetExtension($_.Source) -eq '.exe' } | Select-Object -First 1
     if ($cmd) { return $cmd.Source }
     # PATH に無ければ VS Code 拡張の同梱の実体（codex_review/run.ps1 と同じ探し方＝
     # 版は意味的バージョンで比べる。文字列順だと 2.1.99 が 2.1.282 より新しくなる）。
@@ -18,7 +21,18 @@ function Find-Claude {
         } |
         Where-Object { Test-Path $_.Exe } | Sort-Object Version -Descending | Select-Object -First 1
     if ($best) { return $best.Exe }
-    throw 'claude が見つかりません ⇒ $env:CLAUDE_EXE で実体のパスを指定してください。'
+    throw 'claude の実行ファイル（.exe）が見つかりません（PATH のスクリプトは直に起動できない） ⇒ $env:CLAUDE_EXE で実体のパスを指定してください。'
+}
+
+# 引数の配列を、Windows の規則（CommandLineToArgvW）で 1 本の文字列にする（B-314）。
+# ⚠️ Start-Process -ArgumentList に配列を渡すと空白でつなぐだけ＝空白を含むパスが割れる。
+#    空白・引用符を含む値と空の値だけを引用し、引用符の前の \ と末尾の \ を倍にする。
+function Join-ProcessArgs([object[]]$ArgList) {
+    ($ArgList | ForEach-Object {
+        $s = [string]$_
+        if ($s -ne '' -and $s -notmatch '[\s"]') { $s }
+        else { '"' + ($s -replace '(\\*)"', '$1$1\"' -replace '(\\+)$', '$1$1') + '"' }
+    }) -join ' '
 }
 
 # --- 見張りの輪の書き足し（I-188）------------------------------------------------------
