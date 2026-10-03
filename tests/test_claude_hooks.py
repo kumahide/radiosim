@@ -4046,6 +4046,50 @@ class TestFreezeGuard:
         assert ".diff" in mirror.FREEZE_SKIP_SUFFIX
 
 
+class TestAppVersionFollowsMain:
+    """「いまの版」は main の先端（B-319）＝関連アプリのブランチの古い `version.py` を読まない。
+
+    🔴 実例＝`feature/field-phase1`（3.5b1）にいるだけで、メモリのゲートが「現在地表に
+    現行版 3.5 の行が無い」と止め、従えば正典が壊れる偽の行を足させていた。
+    """
+
+    @staticmethod
+    def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "repo"
+        (repo / "core").mkdir(parents=True)
+        run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
+        run("init", "-q", "-b", "main")
+        run("config", "user.email", "t@example.com")
+        run("config", "user.name", "t")
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.9a1"\n', encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-q", "-m", "main")
+        run("checkout", "-q", "-b", "feature/field-phase1")
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.5b1"\n', encoding="utf-8")
+        run("commit", "-q", "-am", "old")
+        return repo
+
+    def test_a_side_branch_reads_the_version_from_main(self, hook, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        monkeypatch.setattr(hook, "ROOT", repo)
+        assert hook._app_version() == "3.9a1"
+
+    def test_main_reads_the_working_tree_even_before_the_commit(self, hook, tmp_path, monkeypatch):
+        """版を上げた直後（未コミット）でも表を同じ回に直させる＝main では作業ツリー。"""
+        repo = self._repo(tmp_path)
+        subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.9b1"\n', encoding="utf-8")
+        monkeypatch.setattr(hook, "ROOT", repo)
+        assert hook._app_version() == "3.9b1"
+
+    def test_the_memory_gate_uses_the_same_answer(self, memcheck, monkeypatch):
+        sc = memcheck._session_context()
+        monkeypatch.setattr(sc, "_app_version", lambda: "3.9a1")
+        assert memcheck._current_version() == "3.9a1"
+        monkeypatch.setattr(sc, "_app_version", lambda: "?")
+        assert memcheck._current_version() is None
+
+
 class TestBackupHealthDisclosure:
     """**退避が止まっていることを鳴らす**（I-128 の「無いことの検査」）。
 
