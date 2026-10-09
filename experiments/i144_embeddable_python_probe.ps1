@@ -11,8 +11,8 @@
     だった（意見1で書いていなかった落とし穴）。このスクリプトは:
       1. 開発機にインストール済みの RADIOSIM_PYTHON と同じバージョンの
          embeddable zip を python.org から取得・展開
-      2. そのフル install（sys.base_prefix）から tkinter/_tkinter.pyd/
-         tcl86t.dll/tk86t.dll/tcl8.6/tk8.6 一式をコピー
+      2. そのフル install（sys.base_prefix）から tkinter/_tkinter.pyd と
+         Tcl/Tk の DLL（Tk 8.6 なら tcl8.6/tk8.6 のスクリプト一式も）をコピー
       3. venv の site-packages を丸ごと vendor/ へコピー（pip/setuptools/
          wheel は除く）＝numpy 等の .pyd は同じインタプリタ ABI からの
          コピーなので pip 実行やビルドツールチェーンが不要
@@ -65,16 +65,27 @@ Invoke-WebRequest -Uri $Url -OutFile $Zip
 Expand-Archive -Path $Zip -DestinationPath $EmbedDir -Force
 
 # ---- 3. tkinter 一式をフル install から移植（embeddable には同梱されない）--
+# DLL の名前は Tk の版で変わる（8.6＝tcl86t.dll/tk86t.dll・9.0＝tcl90.dll/tcl9tk90.dll）
+# ので決め打ちせず拾う。zlib1.dll（8.6 の tcl の依存）と libtommath.dll（9.0 の tcl
+# の依存）はどちらも embeddable 配布に無い＝在る方を持ち込む。
 Write-Host "-- tkinter/tcl を移植"
-Copy-Item (Join-Path $BasePrefix "DLLs\_tkinter.pyd") $EmbedDir
-Copy-Item (Join-Path $BasePrefix "DLLs\tcl86t.dll") $EmbedDir
-Copy-Item (Join-Path $BasePrefix "DLLs\tk86t.dll") $EmbedDir
-Copy-Item (Join-Path $BasePrefix "DLLs\zlib1.dll") $EmbedDir  # tcl86t.dll の依存（embeddable 配布には無い）
+$DllDir = Join-Path $BasePrefix "DLLs"
+Copy-Item (Join-Path $DllDir "_tkinter.pyd") $EmbedDir
+$TclDlls = @(Get-ChildItem $DllDir -File | Where-Object { $_.Name -match '^(tcl|tk).*\.dll$|^(zlib1|libtommath)\.dll$' })
+if (-not ($TclDlls | Where-Object { $_.Name -match '^tcl' })) { throw "tcl の DLL が $DllDir に見つかりません" }
+$TclDlls | ForEach-Object { Copy-Item $_.FullName $EmbedDir; Write-Host "   $($_.Name)" }
 # ._pth の "." で $EmbedDir 自体が sys.path に乗る（Lib\ 経由ではない）ので、
 # tkinter パッケージは $EmbedDir 直下に置く。
 Copy-Item -Recurse (Join-Path $BasePrefix "Lib\tkinter") (Join-Path $EmbedDir "tkinter")
-Copy-Item -Recurse (Join-Path $BasePrefix "tcl\tcl8.6") (Join-Path $EmbedDir "tcl8.6")
-Copy-Item -Recurse (Join-Path $BasePrefix "tcl\tk8.6") (Join-Path $EmbedDir "tk8.6")
+# Tcl/Tk のスクリプト一式＝8.6 は <base>\tcl\tcl8.6・tk8.6 に在り、TCL_LIBRARY/TK_LIBRARY
+# で指す。9.0 は DLL の中（zipfs の //zipfs:/lib/tcl）に抱えていて <base>\tcl が無い＝
+# 写すものも環境変数も要らない（指すと DLL の中ではなくそちらを探しに行く）。
+$TclLibRoot = Join-Path $BasePrefix "tcl"
+$TclLibDirs = @()
+if (Test-Path $TclLibRoot) {
+    $TclLibDirs = @(Get-ChildItem $TclLibRoot -Directory | Where-Object { $_.Name -match '^(tcl|tk)\d' })
+    $TclLibDirs | ForEach-Object { Copy-Item -Recurse $_.FullName (Join-Path $EmbedDir $_.Name) }
+}
 
 # ---- 4. サードパーティ一式を venv からそのまま持ち込む（vendor）----------
 Write-Host "-- site-packages を移植（pip/setuptools/wheel は除く）"
@@ -95,7 +106,7 @@ $content += $RepoRoot
 Set-Content -Path $PthFile.FullName -Value $content -Encoding ASCII
 
 # Python 3.8+ は DLL の暗黙探索（同ディレクトリ含む）をしない＝
-# tcl86t.dll/tk86t.dll が _tkinter.pyd と同じフォルダに在っても見つからない。
+# Tcl/Tk の DLL が _tkinter.pyd と同じフォルダに在っても見つからない。
 # site 初期化の一環として最初に実行される sitecustomize.py で
 # os.add_dll_directory を呼び、tkinter の import より前に検索パスへ登録する。
 @"
@@ -104,8 +115,10 @@ os.add_dll_directory(os.path.dirname(os.path.abspath(__file__)))
 "@ | Set-Content -Path (Join-Path $EmbedDir "sitecustomize.py") -Encoding ASCII
 
 # ---- 6. 起動して "first paint" まで進むかログで確認 -----------------------
-$env:TCL_LIBRARY = Join-Path $EmbedDir "tcl8.6"
-$env:TK_LIBRARY = Join-Path $EmbedDir "tk8.6"
+foreach ($d in $TclLibDirs) {
+    if ($d.Name -match '^tcl\d') { $env:TCL_LIBRARY = Join-Path $EmbedDir $d.Name }
+    if ($d.Name -match '^tk\d') { $env:TK_LIBRARY = Join-Path $EmbedDir $d.Name }
+}
 $env:RADIOSIM_PROFILE = "1"
 $env:PYTHONUNBUFFERED = "1"  # リダイレクト先はパイプなので既定は全バッファ＝殺すと出力が消える
 
