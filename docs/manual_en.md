@@ -1,4 +1,4 @@
-# RadioSim Pro 3.8
+# RadioSim Pro 3.9
 
 ![RadioSim Pro](../logo.png)
 
@@ -912,11 +912,11 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
 
-> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8)**:
+> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8/3.9)**:
 > - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` has 3 values: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an output file failed, so no verdict could be given). In 4.0, the sensitivity calculation introduced in 3.4 (a recalculation across pessimistic/optimistic assumptions — vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given). **`ERROR` is not renamed.** The column name, its position, and the 0 dB margin line between OK and NG do not change. What changes is which margin is held against that line: today a single margin, computed under the default assumptions, decides OK/NG; in 4.0 the line is applied under both the pessimistic and the optimistic assumptions — OK if the link holds under both, NG if it fails under both, REVIEW if the answer depends on the assumptions. **If your code branches on `status == "OK"`, we recommend handling `REVIEW` separately as "needs review" from 4.0 onward** — treating everything other than `OK` as NG would drop links that a site visit would actually confirm. The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
-> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
+> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8/3.9, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
+> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7/3.8 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
 
 > 🔴 **Changed in 3.9 (announced in 3.8)**: **The minimum supported Python version, for running from source, rose from 3.11 to 3.12.** This has no effect if you use the packaged exe (installer or ZIP). `numpy` moved from 2.4.4 to 2.5.3 at the same time. We compared the calculation results and the output CSVs before and after the update and confirmed that not a single value changed.
 
