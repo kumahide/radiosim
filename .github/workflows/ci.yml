@@ -24,9 +24,14 @@ jobs:
     steps:
       - uses: actions/checkout@v5
 
+      # allow-prereleases＝正式（GA）が一覧に無いときだけプレリリースを拾う。3.15.0 は
+      # 2026-10-09 に出たが actions/python-versions の一覧はまだ rc3 止まりで、無いと
+      # 「見つからない」で落ちる（2026-10-10）。正式が載れば自動でそちらへ移るので、
+      # 載ったのを確かめてから消してよい。
       - uses: actions/setup-python@v6
         with:
           python-version: "3.15"
+          allow-prereleases: true
           cache: pip
 
       # 開発依存は requirements-dev.txt が唯一の宣言場所（I-037）。ここへインラインで
