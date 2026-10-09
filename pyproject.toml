@@ -15,8 +15,8 @@ markers = [
 # E9=構文エラー / F=pyflakes（未使用 import・未定義名）。GUI も静的検査するため
 # 除外なし。CI は `ruff check .` で本設定を単一ソースとして使う。
 [tool.ruff]
-# 下限はピン留め numpy 2.4 の Requires-Python(>=3.11) に合わせる（README と同期）。
-target-version = "py311"
+# 下限はピン留め numpy 2.5 の Requires-Python(>=3.12) に合わせる（README と同期）。
+target-version = "py312"
 
 [tool.ruff.lint]
 select = ["E9", "F"]

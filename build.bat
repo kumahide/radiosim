@@ -144,20 +144,19 @@ echo [OK] Python ^(RADIOSIM_PYTHON^):
 "%PY%" --version
 echo      %PY%
 
-rem Guard against ISSUES.md B-163: a Windows Python 3.14.x patch update can
-rem silently swap the bundled Tcl/Tk from 8.6 to 9.0 (observed: 3.14.4 has
-rem 8.6.15, 3.14.7 has 9.0.4 - same minor version, different Tcl/Tk). This
-rem repo's PyInstaller packaging (radiosim.spec) assumes the Tk 8.6 data
-rem layout; on Tk 9 the built exe fails at startup with a Tcl data directory
-rem FileNotFoundError, while this script still reports [SUCCESS]. Catch it
-rem here instead of after a silent-looking green build.
-"%PY%" -c "import tkinter; import sys; sys.exit(0 if tkinter.TkVersion < 9 else 1)"
+rem Tcl/Tk version gate (ISSUES.md B-163, inverted in 3.9). Since 3.9 the
+rem release is built and verified on CPython 3.15 + Tk 9.0, whose Tcl library
+rem lives inside tcl90.dll (zipfs), so no separate Tcl data directory has to
+rem be bundled. A Python that still ships Tk 8.6 (e.g. 3.14.4) would produce a
+rem different bundle layout that the 3.9 release was never verified with, and
+rem the Python version alone does not tell which Tk it ships (3.14.4 has 8.6,
+rem 3.14.7 has 9.0). Stop here instead of after a silent-looking green build.
+"%PY%" -c "import tkinter; import sys; sys.exit(0 if tkinter.TkVersion >= 9 else 1)"
 if errorlevel 1 (
-    echo [ERROR] RADIOSIM_PYTHON's Tcl/Tk is version 9.x, not the 8.6.x this
-    echo         build expects ^(see ISSUES.md B-163^). The built exe would
-    echo         fail at startup with a missing Tcl data directory.
-    echo         Recreate the venv with a Python 3.14.x patch that still
-    echo         ships Tk 8.6 ^(verify with:
+    echo [ERROR] RADIOSIM_PYTHON's Tcl/Tk is older than 9.0 ^(see ISSUES.md
+    echo         B-163^). Since 3.9 the release is built and verified with
+    echo         Tk 9.0 ^(CPython 3.15^). Recreate the venv from a Python that
+    echo         ships Tk 9 ^(verify with:
     echo           python -c "import tkinter; print(tkinter.TkVersion)"^).
     pause
     exit /b 1

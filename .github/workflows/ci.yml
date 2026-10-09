@@ -26,12 +26,16 @@ jobs:
 
       - uses: actions/setup-python@v6
         with:
-          python-version: "3.14"
+          python-version: "3.15"
           cache: pip
 
       # 開発依存は requirements-dev.txt が唯一の宣言場所（I-037）。ここへインラインで
       # 書き足すと、CI とローカルとで別の版を使いながら両方緑になり得る。
+      # PYYAML_FORCE_LIBYAML=0＝bandit が使う PyYAML 6.0.3 には 3.15 向けの wheel が無く
+      # ソースから組むので、C 拡張を使わない純 Python の形に固定する（開発機と同じ）。
       - name: Install dependencies
+        env:
+          PYYAML_FORCE_LIBYAML: "0"
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt -r requirements-dev.txt

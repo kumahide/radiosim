@@ -83,7 +83,7 @@
 
 ### Python スクリプト版
 
-Python 3.11 以降が必要です。
+Python 3.12 以降が必要です。
 
 ```bash
 git clone https://github.com/kumahide/radiosim.git

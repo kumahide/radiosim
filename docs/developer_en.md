@@ -100,7 +100,7 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 
 ### Prerequisites
 
-- Python 3.11 or later (developed and CI-tested on 3.14). ⚠️ **A release build needs a Python that ships Tk 8.6**: an exe built from one that ships Tk 9 (such as 3.14.7) fails at startup, so `build.bat` checks the Tk version and stops (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
+- Python 3.12 or later (developed and CI-tested on 3.15). ⚠️ **A release build needs a Python that ships Tk 9** (since 3.9; the Windows build of Python 3.15 ships Tk 9.0). The release is built and verified with Tk 9, and Tk 8.6 changes how the bundle is laid out, so `build.bat` checks the Tk version and stops. Patch releases of the same 3.14 line ship different Tk versions (3.14.4 has 8.6, 3.14.7 has 9.0), so the Python version number alone does not tell you (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
 - **`RADIOSIM_PYTHON`** must point at the `python.exe` of the same virtual environment the tests run in (**required**). → [Development Environment](#development-environment)
 - PyInstaller and all dependencies are installed at their pinned versions by `build.bat`
 
@@ -190,7 +190,7 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
 | Item     | Requirement                                                   |
 | -------- | ------------------------------------------------------------- |
 | OS       | Windows 10/11 (macOS / Linux may work but are untested)       |
-| Python   | 3.11 or later — required by pinned numpy 2.4 (tested on 3.14) |
+| Python   | 3.12 or later — required by pinned numpy 2.5 (tested on 3.15) |
 | Internet | Required for DEM retrieval (fetched tiles are cached locally) |
 
 ### Dependencies
@@ -882,9 +882,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 > - **The on-screen/report "Rice K factor" (`current_k` = `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
 > - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
 
-> 📣 **Advance notice (coming in 3.9 — nothing changes in 3.8)**:
-> - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12.** This has no effect if you use the packaged exe. `numpy` will also move to the 2.5.x line at the same time (it stays pinned at 2.4.4 through 3.8). Since 3.4 this was announced for 4.0; it moves one version earlier because supporting newer Python versions requires `numpy` 2.5.x. In 3.8 we compared calculation results against `numpy` 2.5.3 and confirmed that the values in the output CSVs do not change.
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual).
+> 🔴 **Changed in 3.9 (announced in 3.8)**: **The minimum supported Python version, for running from source, rose from 3.11 to 3.12.** This has no effect if you use the packaged exe. `numpy` moved from 2.4.4 to 2.5.3 at the same time. We compared the calculation results and the output CSVs before and after the update and confirmed that not a single value changed (the comparison is `experiments/numeric_parity_probe.py`).
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 
@@ -1276,7 +1274,7 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
-- **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk 8.6 and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0 is free of it (measured), but moving there waits on the Python runtime we build on. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
+- **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0, which 3.9 moved to, shows it exactly as often as 8.6 did (measured), so a newer Tk does not fix it. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
 - **Moving a window between monitors with different display scales leaves the menu bar strip at the old scale** (Windows draws the HMENU). Appearance only
 - **After a display scale change, until the next sign-in, the drop-down check mark (✓) is drawn thick and large over the label and the cascade arrow (▸) disappears** (signing in again fixes it). Tk's `win/tkWinMenu.c` draws both from OEM bitmaps (`OBM_CHECK` / `OBM_MNARROW`) loaded with `LoadBitmapW`, whose size follows the display scale at sign-in (the system DPI), while the text follows the current monitor's DPI. **Tk 8.6 and 9.0 draw them the same way**, so moving to Tk 9 does not fix it. On a development machine you can reproduce it by changing the display scale without signing in again
 
