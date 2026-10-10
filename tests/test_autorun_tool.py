@@ -13,6 +13,7 @@ import re
 import shutil
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -351,6 +352,8 @@ def test_watch_gives_up_when_no_relay_runs(tmp_path):
 def test_watch_notices_a_relay_that_vanished_without_a_mark(tmp_path):
     """窓を閉じた・落ちた＝合図を書かずに錠のプロセスが消えた。"""
     p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(4)"])
+    # Linux は親が wait するまで終わった子がゾンビとして残り、Get-Process が見つけ続ける＝終わりしだい回収する
+    threading.Thread(target=p.wait, daemon=True).start()
     try:
         (tmp_path / "relay.lock").write_text(str(p.pid), encoding="utf-8")
         r = _relay(tmp_path, "-Watch", "-GraceSeconds", "30", "-PollSeconds", "1")
