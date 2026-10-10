@@ -375,8 +375,9 @@ radiosim/
 # 依存ライブラリのインストール（版は requirements.txt が単一ソース。固定して配布物と揃える）
 python -m pip install -r requirements.txt
 
-# テスト・ビルドもする場合は開発用も
-python -m pip install -r requirements-dev.txt
+# テスト・ビルドもする場合は開発用も（PYYAML_FORCE_LIBYAML=0＝bandit が使う PyYAML には
+# Python 3.15 向けの wheel が無くソースから組むので、C 拡張を作らせない。下の「開発環境のセットアップ」と同じ）
+PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
 # 起動
 cd radiosim
@@ -839,6 +840,7 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 | `summary.csv`  | 全経路の数値結果                     |
 | `summary.kml`  | 全経路の Google Earth 用 KML         |
 | `report_all.html` | サマリ＋全経路の連結レポート（一括印刷用）|
+| `{id}/`        | 経路ごとのパッケージ（個別と同構成） |
 
 ### 条件探索（比較 / スイープ）
 
@@ -848,7 +850,6 @@ Status    = OK（≥ 0 dB）/ NG（< 0 dB）
 | ----------------- | ---------------------------------------------------------- |
 | `scenario.html` | A4 縦 1 枚（比較は差分表・Δ をセル内併記 / スイープは折れ線＋表）|
 | `scenario.csv`  | 全条件・全点の数値（機械可読・桁区切りなし）                 |
-| `{id}/`        | 経路ごとのパッケージ（個別と同構成） |
 
 ### 中継経路
 

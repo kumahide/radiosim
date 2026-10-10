@@ -377,8 +377,10 @@ radiosim/
 # pinned so that a source run matches what ships in the binary)
 python -m pip install -r requirements.txt
 
-# For running the tests or building, add the development set
-python -m pip install -r requirements-dev.txt
+# For running the tests or building, add the development set (PYYAML_FORCE_LIBYAML=0:
+# the PyYAML that bandit uses has no wheel for Python 3.15 and builds from source,
+# so skip its C extension — same as "Development Environment" below)
+PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
 # Launch
 cd radiosim
@@ -842,6 +844,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
 | `report_all.html` | Summary + every path in one printable document |
+| `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ### Condition Explorer (compare / sweep)
 
@@ -851,7 +854,6 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 | ----------------- | ------------------------------------------------------------ |
 | `scenario.html` | Single-page A4 (compare = difference table with in-cell deltas / sweep = chart + table) |
 | `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
-| `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ### Relay Path
 

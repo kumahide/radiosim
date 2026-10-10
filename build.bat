@@ -167,6 +167,10 @@ echo [INFO] Checking dependencies (pinned via requirements.txt / requirements-de
 rem Install both sets at their pins. PyInstaller is pinned in
 rem requirements-dev.txt because its bootloader ends up inside the shipped exe:
 rem an unpinned bundler means the release was built by whatever was newest.
+rem PYYAML_FORCE_LIBYAML=0: the PyYAML that bandit uses has no wheel for
+rem Python 3.15 and builds from source; skip its C extension so a machine
+rem without a C compiler does not stop here when the pin moves (CI does the same).
+set PYYAML_FORCE_LIBYAML=0
 "%PY%" -m pip install -r requirements.txt -r requirements-dev.txt --quiet
 if errorlevel 1 (
     echo [ERROR] Failed to install pinned dependencies.
