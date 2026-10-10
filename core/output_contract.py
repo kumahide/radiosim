@@ -99,7 +99,7 @@ class CsvContract:
 # 告知済み）＝取得失敗（`dem.get_elevation` が `nan` を返した標本）は
 # 「0.0」ではなく**空欄**（CSV の空フィールド）を書く。空欄は pandas なら NaN・
 # Excel なら空セルとして読める（`core/simulation.py:_save_terrain_csv` が単一の
-# 書き手）。⚠️ `nan` は通信の失敗のときだけ（`dem.get_elevation` の不変条件）＝
+# 書き手）。⚠️ `nan` は通信の失敗か想定外の例外のときだけ（`dem.get_elevation` の不変条件）＝
 # 404（海上・日本域外）とデータ欠損の画素は今も `0.0`＋取れた側の `elev_source`
 # なので、0.0 は「海抜0m」とは限らない（B-334）。
 TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m", "elev_source")
@@ -129,7 +129,7 @@ TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m", "elev_sourc
 # かどうかは読む側の判断に戻せる。規約 1＝末尾に追加。
 #
 # 🆕 `dem_fail_pct`（3.2 / ISSUES.md B-025 ③）＝**その回線で DEM 取得が通信の
-# 失敗で終わった標本の割合 [%]**（`models.TerrainProfile.fail_pct` が単一
+# 失敗か想定外の例外（復号の失敗など）で終わった標本の割合 [%]**（`models.TerrainProfile.fail_pct` が単一
 # ソース）。海抜0mの正当な値や、国土地理院に元々データが無い（404・海上・
 # 日本域外）標本は含まない＝それらは通信が成功しているので数えない
 # （`core/dem.py` の不変条件）。この列が 0 より大きい経路は、地形の一部が
