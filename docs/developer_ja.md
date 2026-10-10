@@ -372,6 +372,9 @@ radiosim/
 ## インストール・起動（ソースから実行）
 
 ```bash
+# リポジトリの中へ移る（requirements.txt と main.py はここにある）
+cd radiosim
+
 # 依存ライブラリのインストール（版は requirements.txt が単一ソース。固定して配布物と揃える）
 python -m pip install -r requirements.txt
 
@@ -380,7 +383,6 @@ python -m pip install -r requirements.txt
 PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
 # 起動
-cd radiosim
 python main.py
 ```
 
@@ -597,7 +599,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 - `freq` / `gain_tx` / `gain_rx` を省略した場合は共通設定の値が使われます（**リンク識別属性**として経路ごとに変えられる）。環境区分・降雨強度・回折モデルは共通設定で一括指定します
 - `gain_tx` / `gain_rx` 列のない旧 CSV もそのまま読めます（後方互換・利得は共通設定を継承）
 - 列名は**大小文字と前後の空白を区別しません**（`ID,Start,…` でも読めます）。`id` は**大小文字を区別せず**一意である必要があります（`p01` と `P01` は同じ出力フォルダになるため重複として弾かれます）
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（単一ソースは `batch.PathRow`）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、複数経路のサマリレポートへ表として載る（`report/residuals.py` が `PathResult` から標本を抽出）。`meas_method` は `spot` / `mean` の想定値。複数経路画面の「スポット測定を統計から除外」チェックボックスで `spot` の行を集計から外せる（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)`）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（列の単一ソースは `core/batch_csv_schema.py` の `CSV_COLUMNS`。読み込んだ値は `batch.PathRow` の属性に入る）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、複数経路のサマリレポートへ表として載る（`report/residuals.py` が `PathResult` から標本を抽出）。`meas_method` は `spot` / `mean` の想定値。複数経路画面の「スポット測定を統計から除外」チェックボックスで `spot` の行を集計から外せる（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)`）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
 
 ### 共通設定（ランチャーのスナップショット）
 

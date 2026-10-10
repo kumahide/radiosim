@@ -155,18 +155,19 @@ do not fit the two tables above (screen words, document words).*
 |---|---|---|
 | ワースト区間 | 最も苦しい区間 | 画面・帳票では既に「ワースト区間」（上の用語表・row「ワースト区間」参照）。コード内のコメントとテストの失敗メッセージにだけ古い言い回しが残っていたため、2026-09-17 に揃えた |
 
-**「サンプル数」と「標本」は今回は統一しなかった。** 画面の `scn_samples`（条件探索の
-掃引点数）と、文書が繰り返す「標本」（地形の標高を取った点）は**別の概念**で、
-たまたま似た言葉を使っているだけと確認した（前者は利用者が入力する掃引の本数、
-後者はアプリが解像度の段階から自動で決める点数）。無理に 1 語へそろえると、
-かえって別概念が同じ語で呼ばれる新しい欠陥になるため、現状維持とする。
+**「サンプル数」と「標本」は 1 語にそろえない。** 「標本」は地形の標高を取った 1 つ 1 つの点、
+「サンプル数」はその点の数（上の用語表の「サンプル数」）で、**同じものの点と数**を言い分けて
+いる。条件探索の帳票に出る「サンプル数」（`scn_samples`）も、固定した経路で地形を取った
+点の数で、上の用語表と同じ量である。⚠️ この段落は当初、`scn_samples` を「利用者が入力する
+掃引の本数」と書いていたが誤りで、2026-10-10 に改めた（掃引の本数を「サンプル数」と呼ぶ
+画面は無い）。
 
-*"サンプル数" and "標本" were **not** merged this round. The screen's `scn_samples`
-(the number of points in a scenario sweep) and the "標本" that recurs in the documents
-(terrain elevation sample points) turned out to be different concepts that merely share
-similar wording — the former is a sweep count the user enters, the latter a point count
-the app derives from the resolution step. Forcing them into one word would create a new
-defect where two different concepts share a name, so both wordings stay as they are.*
+*"サンプル数" and "標本" stay as two words. "標本" is each point along the path where an
+elevation was taken; "サンプル数" is how many of them there are (the "サンプル数" row in
+the table above) — the points and their count. The "サンプル数" (`scn_samples`) printed in
+the scenario report is that same quantity: the number of terrain points taken on the fixed
+path. ⚠️ This paragraph first described `scn_samples` as "a sweep count the user enters",
+which was wrong; it was corrected on 2026-10-10 (no screen calls a sweep count "サンプル数").*
 
 ## この表ができた経緯
 

@@ -373,6 +373,9 @@ radiosim/
 ## Installation & Launch (from source)
 
 ```bash
+# Move into the repository (requirements.txt and main.py live here)
+cd radiosim
+
 # Install dependencies (requirements.txt is the single source of versions —
 # pinned so that a source run matches what ships in the binary)
 python -m pip install -r requirements.txt
@@ -383,7 +386,6 @@ python -m pip install -r requirements.txt
 PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
 # Launch
-cd radiosim
 python main.py
 ```
 
@@ -600,7 +602,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; single source is `batch.PathRow`. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`, and the values read land on `batch.PathRow` attributes. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 
