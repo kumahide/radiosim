@@ -424,7 +424,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
 | Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
-| Load App Settings... | —                           | Imports **only** theme, language, proxy and coordinate format from a settings file   |
+| Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file                     |
 | Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
 
 ### Help
@@ -438,7 +438,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Include Pre-releases | `update_check_prerelease`: `"on"` / `"off"` is the user's choice; the default `""` means "decided by the current version" (`update_check.want_prerelease()`: off on a final release, on on RC/a/b). The check mark shows that resolved value. Toggling it fixes `"on"`/`"off"` from then on. Read on the UI thread and passed to `check(include_pre=...)` for both the manual and the startup check |
 | About       | Shows the version from `version.py`    |
 
-> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language, proxy and coordinate format. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
+> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language and proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
 
 > **The Map is not in the menus** — it opens from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
@@ -987,7 +987,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell** (announced in 3.2, applied in 3.3 — rule 2; `dem.get_elevation` returns `nan` only when `network_failed()` is true). ⚠️ **`0.0` is not always sea level** — a sample where every layer ran out on 404 (sea, outside Japan) and a pixel with missing data also return `0.0`, and `elev_source` still carries that source's `source_id`. The empty cell and `elev_source` distinguish only those failed fetches |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell** (announced in 3.2, applied in 3.3 — rule 2; `dem.get_elevation` returns `nan` only when `network_failed()` is true; the flag is raised on an unexpected exception too). ⚠️ **`0.0` is not always sea level** — a sample where every layer ran out on 404 (sea, outside Japan) and a pixel with missing data also return `0.0`, and `elev_source` still carries that source's `source_id`. The empty cell and `elev_source` distinguish only those failed fetches |
 | `elev_source` | — | Where this sample's elevation came from: the `source_id` returned by `dem_sources.resolve()`. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (network problem or unexpected error) — and samples from a user-declared external source carry that source's `source_id` (the value set is open) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).

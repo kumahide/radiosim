@@ -217,7 +217,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Language           | English / 日本語 (plus your own) | UI language (requires restart) → [Adding your own UI language](#adding-your-own-ui-language) |
 | Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
 | Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
-| Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
+| Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file                        |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
 > **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (from 3.6, this takes effect once each time you reinstall, including when you install over 3.5 or earlier). A plain restart does not change it — change it under **Settings > Language**.
@@ -233,7 +233,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Include Pre-releases | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
 | About        | Shows the installed version            |
 
-> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy, coordinate format). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
+> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
 > **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
