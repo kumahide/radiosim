@@ -8,6 +8,7 @@ git と claude には触らない＝`-DryRun` が出す計画（JSON）だけを
 from __future__ import annotations
 
 import json
+import os
 import re
 import shutil
 import subprocess
@@ -73,7 +74,37 @@ def test_find_claude_is_shared_not_copied():
 def test_the_relay_prompt_is_read_from_a_file_with_fixed_slots():
     assert RELAY_PROMPT.name in RELAY.read_text(encoding="utf-8")
     slots = set(re.findall(r"\{([A-Z_]+)\}", RELAY_PROMPT.read_text(encoding="utf-8")))
-    assert slots == {"SESSION_NO", "PREV_HANDOFF", "HANDOFF_PATH"}, slots
+    assert slots == {"SESSION_NO", "MAX_SESSIONS", "LAST_NOTE", "PREV_HANDOFF", "HANDOFF_PATH"}, slots
+
+
+def test_the_last_session_is_told_it_is_the_last(relay_plan):
+    """最後の 1 本は自分が最後だと知り、人への報告を残して終える（I-227）。
+
+    3.9 ステージ4 のリレーの 8 本目は上限を知らずに `continue` で終わった。
+    """
+    first, last = relay_plan["first_prompt"], relay_plan["last_prompt"]
+    assert "{" not in first and "{" not in last, "埋め残した枠がある"
+    assert "上限 20 本" in first and "最後の 1 本です" not in first
+    assert "これが最後の 1 本です（上限 20 本）" in last
+    step6 = next(ln for ln in RELAY_PROMPT.read_text(encoding="utf-8").splitlines() if ln.startswith("6. "))
+    for need in ("最後の 1 本", "push しない", "人への報告", "PushNotification"):
+        assert need in step6, need
+    assert "## 人への報告" in HANDOFF_TEMPLATE.read_text(encoding="utf-8")
+
+
+def test_the_relay_stops_on_no_progress_not_on_a_small_cap(relay_plan):
+    """止める基準は進み具合（続けて 2 本、コミットも台帳の変化も無い）・上限 20 本は暴走止め（I-229）。
+
+    3.9 ステージ4 のリレーは 8 本とも進んでいたのに、上限 8 本で止まった。
+    """
+    assert relay_plan["max_sessions"] == 20 and relay_plan["stall_sessions"] == 2
+    src = RELAY.read_text(encoding="utf-8")
+    assert "$markBefore = Get-ProgressMark $repoRoot" in src
+    assert "if ((Get-ProgressMark $repoRoot) -eq $markBefore) { $stall++ } else { $stall = 0 }" in src
+    assert "Get-Prompt $n $prev $stall" in src, "進まなかった本数を入力文の一言へ渡す"
+    start = re.search(r"\$fwd = @\((?P<args>[^)]*)\)", src)
+    for need in ("'-StallSessions', $StallSessions", "'-WaitNoticeMinutes', $WaitNoticeMinutes"):
+        assert start and need in start["args"], f"-Start で別の窓へ渡らない: {need}"
 
 
 def test_the_second_session_can_take_over_the_record_name():
@@ -85,7 +116,9 @@ def test_the_second_session_can_take_over_the_record_name():
     src = RELAY.read_text(encoding="utf-8")
     move = re.search(r"Move-Item -LiteralPath \$handoffPath -Destination \$prev(?P<rest>[^\r\n]*)", src)
     assert move and "-Force" in move["rest"], "写しと同じ名前へ移すので -Force が要る"
-    assert re.search(r"\}\s*catch\s*\{\s*(#[^\n]*\n\s*)*Write-Log", src), "止まった理由を relay.log に書く"
+    catch = re.search(r"\}\s*catch\s*\{\s*(#[^\n]*\n\s*)*(?P<body>Write-Log.*?)\n\} finally", src, re.S)
+    assert catch, "止まった理由を relay.log に書く"
+    assert "$endKind = 'failed'" in catch["body"], "止まった理由を終わりの合図にも書く（I-230）"
 
 
 def test_push_waits_for_the_goal_and_done_closes_the_window():
@@ -251,3 +284,159 @@ def test_the_handoff_template_is_a_valid_handoff(tmp_path):
     p.write_text(HANDOFF_TEMPLATE.read_text(encoding="utf-8"), encoding="utf-8")
     r = _relay_dry_run(p)
     assert r.returncode == 0, r.stderr
+
+
+# ============================================================
+# 目標に届かないときの終わり方（3.9 ステージ5・I-227〜I-231）
+# ============================================================
+def _relay(tmp_path: Path, *args: str, env: dict | None = None, stdin: str = "",
+           timeout: int = 60) -> subprocess.CompletedProcess:
+    """relay.ps1 を一時の置き場（-RelayDir）で走らせる。通知は記録へ書く（画面に出さない）。"""
+    e = dict(os.environ, RADIOSIM_RELAY_NOTICE_LOG=str(tmp_path / "notice.log"), **(env or {}))
+    return subprocess.run([_PWSH, "-NoProfile", "-File", str(RELAY), *args, "-RelayDir", str(tmp_path)],
+                          input=stdin, capture_output=True, text=True, encoding="utf-8",
+                          timeout=timeout, check=False, env=e)
+
+
+@needs_pwsh
+def test_a_relay_that_cannot_launch_leaves_an_end_mark_and_a_notice(tmp_path):
+    """起こせない終わり方でも、終わりの合図（I-230）と通知（I-228）が残り、錠は消える。
+
+    `claude` の代わりに Python を起こす＝入力文をファイル名と取って exit 2 で落ちる。
+    """
+    handoff = _handoff(tmp_path, "status: continue\ngoal: 3.9 のステージ5まで")
+    r = _relay(tmp_path, "-Foreground", "-Handoff", str(handoff), "-PollSeconds", "1",
+               env={"CLAUDE_EXE": sys.executable}, stdin="\n")
+    assert r.returncode == 1, r.stdout + r.stderr
+    end = (tmp_path / "relay.end").read_text(encoding="utf-8")
+    assert end.startswith("kind=failed\n") and "セッションを起こせません" in end, end
+    notice = (tmp_path / "notice.log").read_text(encoding="utf-8")
+    assert notice.startswith("RadioSim のリレー：失敗で止まった\t"), notice
+    assert not (tmp_path / "relay.lock").exists()
+
+
+@needs_pwsh
+def test_the_end_mark_is_written_before_the_lock_is_removed():
+    """見張りは「錠が消えたのに合図が無い」を異常と読む＝合図を先に書く（I-230）。
+    通知は done（push 済み）と nothing（既に done）のほかすべて（I-228）。"""
+    src = RELAY.read_text(encoding="utf-8")
+    fin = re.search(r"\} finally \{(?P<body>.*?)\n\}\nif \(\$keepOpen\)", src, re.S)
+    assert fin, "本体の finally が見つからない"
+    body = fin["body"]
+    assert body.index("$endPath") < body.index("Remove-Item -LiteralPath $lock")
+    assert "if ($endKind -notin 'done', 'nothing')" in body and "Send-DesktopNotice" in body
+    kinds = set(re.findall(r"\$endKind = '([a-z_]+)'", src))
+    assert kinds == {"done", "done_unpushed", "stall", "max", "failed", "nothing", "interrupted"}, kinds
+
+
+@needs_pwsh
+def test_watch_reports_the_end_mark(tmp_path):
+    (tmp_path / "relay.end").write_text("kind=done\nat=x\nrun=y\n✅ 目標まで済みました\n", encoding="utf-8")
+    (tmp_path / "relay.log").write_text("12:00:00 ✅ 目標まで済みました\n", encoding="utf-8")
+    r = _relay(tmp_path, "-Watch", "-GraceSeconds", "1", "-PollSeconds", "1")
+    assert r.returncode == 0 and "■ リレーが終わりました" in r.stdout and "12:00:00" in r.stdout, r.stdout
+    (tmp_path / "relay.end").write_text("kind=max\n⛔ 上限\n", encoding="utf-8")
+    assert _relay(tmp_path, "-Watch", "-GraceSeconds", "1", "-PollSeconds", "1").returncode == 1
+
+
+@needs_pwsh
+def test_watch_gives_up_when_no_relay_runs(tmp_path):
+    """錠が現れない（死んだ pid の古い錠も）＝走っていない。黙って待ち続けない。"""
+    (tmp_path / "relay.lock").write_text("999999", encoding="utf-8")
+    r = _relay(tmp_path, "-Watch", "-GraceSeconds", "1", "-PollSeconds", "1")
+    assert r.returncode == 1 and "走っていません" in r.stdout, r.stdout
+
+
+@needs_pwsh
+def test_watch_notices_a_relay_that_vanished_without_a_mark(tmp_path):
+    """窓を閉じた・落ちた＝合図を書かずに錠のプロセスが消えた。"""
+    p = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(4)"])
+    try:
+        (tmp_path / "relay.lock").write_text(str(p.pid), encoding="utf-8")
+        r = _relay(tmp_path, "-Watch", "-GraceSeconds", "30", "-PollSeconds", "1")
+    finally:
+        p.kill()
+    assert r.returncode == 1 and "書かずに消えました" in r.stdout, r.stdout
+
+
+@needs_pwsh
+def test_start_refuses_a_running_relay_and_says_how_to_watch(tmp_path):
+    """二重に起こさない・起こしたら見張りの呼び出しを出す（I-230）。"""
+    (tmp_path / "relay.lock").write_text(str(os.getpid()), encoding="utf-8")
+    handoff = _handoff(tmp_path, "status: continue\ngoal: 3.9 のステージ5まで")
+    r = _relay(tmp_path, "-Start", "-Handoff", str(handoff))
+    assert r.returncode == 1 and "もう走っています" in r.stdout, r.stdout
+    assert re.search(r"relay\.ps1\" -Watch -RelayDir", r.stdout), r.stdout
+    src = RELAY.read_text(encoding="utf-8")
+    start = src[src.index("if ($Start) {"):]
+    start = start[:start.index("\n}\n")]
+    assert "Remove-Item -LiteralPath $endPath" in start, "前の回の合図を消さないと見張りが取り違える"
+    assert "run_in_background" in start and "Get-WatchCommand" in start
+
+
+def test_waiting_for_a_person_sends_a_notice():
+    """人の答え待ち（`waiting`）に入ったら通知し、続く間は出し直す（I-231）。"""
+    src = RELAY.read_text(encoding="utf-8")
+    branch = re.search(r"if \(\$st -like 'waiting\*'\) \{(?P<body>.*?)\} else \{ \$waitSince = \$null", src, re.S)
+    assert branch, "待ちの通知の枝が無い"
+    assert "Send-DesktopNotice" in branch["body"] and "Format-WaitNotice" in branch["body"]
+    assert "$WaitNoticeMinutes -gt 0" in branch["body"]
+
+
+@needs_pwsh
+def test_notice_parts(tmp_path):
+    """通知の部品＝最後の 1 本の一言・終わりの題・待ちの本文・記録へ書く試しの口（I-227・I-228・I-231）。"""
+    log = tmp_path / "n.log"
+    out = _common(tmp_path,
+                  "Write-Output ((Get-LastNote 3 20 0 2) -eq ''); "
+                  "Write-Output ((Get-LastNote 20 20 0 2).Trim()); "
+                  "Write-Output ((Get-LastNote 3 20 1 2) -match 'この 1 本も進まなければ'); "
+                  "Write-Output ((Get-LastNote 3 20 5 0) -eq ''); "
+                  "Write-Output (Get-EndTitle 'stall'); "
+                  "$m = [pscustomobject]@{ what = '質問＝どれを直しますか'; at = $null }; "
+                  "Write-Output ((Format-WaitNotice 2 'ab12' 'relay-2' ([TimeSpan]::FromMinutes(16)) $m) -replace \"`n\", ' / '); "
+                  f"$env:RADIOSIM_RELAY_NOTICE_LOG = '{log}'; "
+                  "Write-Output (Send-DesktopNotice '題' \"1 行目`n2 行目\")")
+    assert out.splitlines() == [
+        "True",
+        "⚠️ これが最後の 1 本です（上限 20 本）＝下の手順 6「最後の 1 本」に従って終える。",
+        "True",
+        "True",
+        "進まないので止まった",
+        "2 本目が人の答えを待っています（16 分）。claude attach ab12 ／ Remote Control の「relay-2」 / 質問＝どれを直しますか",
+        "通知＝記録へ書いた（試し）",
+    ], out
+    assert log.read_text(encoding="utf-8-sig").strip() == "題\t1 行目 / 2 行目"
+
+
+@needs_pwsh
+def test_the_last_move_of_a_question_is_its_first_question(tmp_path):
+    """`AskUserQuestion` には description が無い＝最初の問いの文を出す（I-231）。"""
+    proj = tmp_path / "projects" / "D--dev-x"
+    proj.mkdir(parents=True)
+    row = {"type": "assistant", "timestamp": "2026-10-10T03:19:00.000Z",
+           "message": {"content": [{"type": "tool_use", "name": "AskUserQuestion",
+                                    "input": {"questions": [{"question": "指摘 3 をどうしますか？"},
+                                                            {"question": "2 つ目"}]}}]}}
+    (proj / "sid-2.jsonl").write_text(json.dumps(row, ensure_ascii=False) + "\n", encoding="utf-8")
+    out = _common(tmp_path, "(Get-LastMove (Find-Transcript (Join-Path $PWD 'projects') 'sid-2')).what")
+    assert out == "質問＝指摘 3 をどうしますか？", out
+
+
+@needs_pwsh
+@pytest.mark.skipif(shutil.which("git") is None, reason="git が無い環境")
+def test_the_progress_mark_moves_with_a_commit_or_the_ledger(tmp_path):
+    """進み具合の物差し＝HEAD と台帳 2 本の中身（I-229）。ほかのファイルでは動かない。"""
+    def git(*a):
+        subprocess.run(["git", "-C", str(tmp_path), *a], check=True, capture_output=True)
+    git("init", "-q")
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "a")
+    mark = lambda: _common(tmp_path, f"Get-ProgressMark '{tmp_path}'")  # noqa: E731
+    m0 = mark()
+    (tmp_path / "other.txt").write_text("x", encoding="utf-8")
+    assert mark() == m0, "台帳でないファイルは進み具合に数えない"
+    (tmp_path / "ISSUES_archive.md").write_text("x", encoding="utf-8")
+    m1 = mark()
+    assert m1 != m0
+    git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "b")
+    assert mark() != m1
