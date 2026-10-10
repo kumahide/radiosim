@@ -97,9 +97,11 @@ class CsvContract:
 #
 # 🔴 **`Elevation_m` の意味を 3.3 で変えた**（規約2の予告どおり実施・3.2 で
 # 告知済み）＝取得失敗（`dem.get_elevation` が `nan` を返した標本）は
-# 「0.0」ではなく**空欄**（CSV の空フィールド）を書く。0.0 は「海抜0mの正当な
-# 値」の意味に一本化された。空欄は pandas なら NaN・Excel なら空セルとして
-# 読める（`core/simulation.py:_save_terrain_csv` が単一の書き手）。
+# 「0.0」ではなく**空欄**（CSV の空フィールド）を書く。空欄は pandas なら NaN・
+# Excel なら空セルとして読める（`core/simulation.py:_save_terrain_csv` が単一の
+# 書き手）。⚠️ `nan` は通信の失敗のときだけ（`dem.get_elevation` の不変条件）＝
+# 404（海上・日本域外）とデータ欠損の画素は今も `0.0`＋取れた側の `elev_source`
+# なので、0.0 は「海抜0m」とは限らない（B-334）。
 TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m", "elev_source")
 
 # --- 複数経路（バッチ）------------------------------------------------------

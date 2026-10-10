@@ -987,7 +987,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched is an empty cell** (announced in 3.2, applied in 3.3 — rule 2) — `0.0` now means only a genuine sea-level elevation. Check `elev_source` to see whether the fetch actually succeeded |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network failure is an empty cell** (announced in 3.2, applied in 3.3 — rule 2; `dem.get_elevation` returns `nan` only when `network_failed()` is true). ⚠️ **`0.0` is not always sea level** — a sample where every layer ran out on 404 (sea, outside Japan) and a pixel with missing data also return `0.0`, and `elev_source` still carries that source's `source_id`. The empty cell and `elev_source` distinguish only network failures |
 | `elev_source` | — | Where this sample's elevation came from: the `source_id` returned by `dem_sources.resolve()`. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (network failure) — and samples from a user-declared external source carry that source's `source_id` (the value set is open) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
