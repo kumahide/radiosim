@@ -4414,6 +4414,174 @@ def test_language_gate_is_wired_into_stop():
 
 
 # ============================================================
+# リレーを起こしたら終わりを見張る（I-230 の③）
+# ============================================================
+_RELAY_GATE_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "relay_watch_gate.py"))
+
+
+@pytest.fixture(scope="module")
+def relaygate():
+    """`.claude/relay_watch_gate.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_RELAY_GATE_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_relay_watch_gate", _RELAY_GATE_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_relay_watch_gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestRelayWatchGate:
+    """**`-Start` の後に見張りが無ければ止め、見張っていれば・起こしていなければ黙る**こと。
+
+    ⚠️ 起こしていないのに鳴るゲートは確実に無視される（[[feedback-promote-recurring-checks]]
+    の「毎回鳴る」壊れ方）＝コミットの本文・`-DryRun`・ヒアドキュメントの中は数えない。
+    """
+
+    _START = r"& tools\autorun\relay.ps1 -Start -Trips 30"
+    _WATCH = r'pwsh -NoProfile -File "D:\dev\radiosim-repo\tools\autorun\relay.ps1" -Watch'
+
+    # ---- 起こした・起こしていないの見分け --------------------------------------
+    @pytest.mark.parametrize("command", [
+        r"& tools\autorun\relay.ps1 -Start",
+        r"& tools\autorun\relay.ps1 -Trips 30 -Start",
+        r'pwsh -NoProfile -File "D:\my dev\tools\autorun\relay.ps1" -Start',   # 空白を含むパス（B-314）
+        r"git status --short; & tools\autorun\relay.ps1 -Start",              # git の後の別の文
+        "cd /d/dev/radiosim-repo && pwsh -File tools/autorun/relay.ps1 -Start",
+    ])
+    def test_starts_are_recognised(self, relaygate, command):
+        assert relaygate.is_start(command), command
+
+    @pytest.mark.parametrize("command", [
+        r"& tools\autorun\relay.ps1 -Start -DryRun",
+        r"& tools\autorun\relay.ps1 -DryRun",
+        r"& tools\autorun\relay.ps1 -Watch",
+        r"& tools\autorun\relay.ps1 -Probe",
+        'git commit -m "fix: relay.ps1 -Start の出力を直す"',                # コミットの本文
+        'git commit -m "a; relay.ps1 -Start も直す"',                        # 引用の中の区切り
+        "git commit -F - <<'EOF'\nrelay.ps1 -Start を直す\nEOF",
+        "git commit -m @'\nrelay.ps1 -Start を直す\n'@",
+        "cd /d/dev && git commit -m \"$(cat <<'EOF'\nrelay.ps1 -Start\nEOF\n)\"",
+        r"Get-Content tools\autorun\relay.ps1 | Select-String Start",
+    ])
+    def test_non_starts_are_ignored(self, relaygate, command):
+        assert not relaygate.is_start(command), command
+
+    # ---- 記録からの判定 ------------------------------------------------------
+    @staticmethod
+    def _call(cid, command, name="PowerShell", background=False):
+        inp = {"command": command, "description": "試し"}
+        if background:
+            inp["run_in_background"] = True
+        return {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": cid, "name": name, "input": inp}]}}
+
+    @staticmethod
+    def _result(cid, error=False):
+        return {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": cid, "content": "x", "is_error": error}]}}
+
+    @staticmethod
+    def _lines(*entries):
+        return [json.dumps(e, ensure_ascii=False) for e in entries]
+
+    def test_start_without_watch_blocks(self, relaygate):
+        reason = relaygate.verdict(self._lines(self._call("a", self._START), self._result("a")))
+        assert reason and "見張っていません" in reason
+        assert "run_in_background" in reason and "-Watch" in reason, (
+            "打つべき呼び出しを出していない＝止めても次の手が分からない")
+
+    def test_background_watch_after_start_passes(self, relaygate):
+        lines = self._lines(self._call("a", self._START), self._result("a"),
+                            self._call("b", self._WATCH, background=True), self._result("b"))
+        assert relaygate.verdict(lines) is None
+
+    def test_watch_through_bash_also_counts(self, relaygate):
+        lines = self._lines(self._call("a", self._START),
+                            self._call("b", "pwsh -NoProfile -File tools/autorun/relay.ps1 -Watch",
+                                       name="Bash", background=True))
+        assert relaygate.verdict(lines) is None
+
+    def test_watch_before_the_last_start_does_not_count(self, relaygate):
+        """2 回目の `-Start` の後は見張っていない＝3.9 ステージ4 の形。"""
+        lines = self._lines(self._call("a", self._START),
+                            self._call("b", self._WATCH, background=True),
+                            self._call("c", self._START))
+        assert relaygate.verdict(lines)
+
+    def test_foreground_watch_counts_only_when_it_returned(self, relaygate):
+        """前面の `-Watch` は 2 分で切れる＝切れた呼び出しは見張りにならない。"""
+        timed_out = self._lines(self._call("a", self._START),
+                                self._call("b", self._WATCH), self._result("b", error=True))
+        returned = self._lines(self._call("a", self._START),
+                               self._call("b", self._WATCH), self._result("b"))
+        assert relaygate.verdict(timed_out)
+        assert relaygate.verdict(returned) is None
+
+    def test_monitor_on_the_relay_log_counts(self, relaygate):
+        lines = self._lines(self._call("a", self._START),
+                            {"type": "assistant", "message": {"content": [
+                                {"type": "tool_use", "id": "m", "name": "Monitor",
+                                 "input": {"command": r"Get-Content .claude\relay\relay.log -Wait"}}]}})
+        assert relaygate.verdict(lines) is None
+
+    def test_no_start_is_silent(self, relaygate):
+        lines = self._lines(self._call("a", 'git commit -m "relay.ps1 -Start を直す"'),
+                            self._call("b", r"& tools\autorun\relay.ps1 -DryRun"))
+        assert relaygate.verdict(lines) is None
+
+    def test_relay_dir_is_carried_into_the_watch_command(self, relaygate):
+        lines = self._lines(self._call(
+            "a", r'& tools\autorun\relay.ps1 -Start -RelayDir "C:\tmp\my relay"'))
+        assert r'-RelayDir "C:\tmp\my relay"' in relaygate.verdict(lines)
+
+    def test_sidechain_starts_are_not_counted(self, relaygate):
+        entry = self._call("a", self._START)
+        entry["isSidechain"] = True
+        assert relaygate.verdict(self._lines(entry)) is None
+
+    # ---- フックとしての出入り -------------------------------------------------
+    def _run(self, payload):
+        proc = subprocess.run([sys.executable, _RELAY_GATE_PATH], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+        return proc.stdout
+
+    def test_blocks_through_the_hook(self, relaygate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._lines(self._call("a", self._START))), encoding="utf-8")
+        assert json.loads(self._run({"transcript_path": str(log)}))["decision"] == "block"
+
+    def test_second_stop_never_blocks(self, relaygate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._lines(self._call("a", self._START))), encoding="utf-8")
+        assert self._run({"transcript_path": str(log), "stop_hook_active": True}) == ""
+
+    def test_broken_input_never_blocks(self, relaygate):
+        assert self._run({"transcript_path": "Z:/no/such/file.jsonl"}) == ""
+
+    def test_the_watch_command_matches_relay_ps1(self, relaygate):
+        """止めたときに出す呼び出しと、`-Start` が出す呼び出し（`Get-WatchCommand`）が同じ形。"""
+        src = pathlib.Path(_HOOK_DIR).parent / "tools" / "autorun" / "relay.ps1"
+        body = src.read_text(encoding="utf-8")
+        assert '"pwsh -NoProfile -File `"$PSCommandPath`" -Watch"' in body, (
+            "relay.ps1 の Get-WatchCommand の形が変わった＝フックの watch_command もそろえる")
+        assert relaygate.watch_command().startswith('pwsh -NoProfile -File "')
+        assert relaygate.watch_command().endswith('relay.ps1" -Watch')
+
+
+def test_relay_watch_gate_is_wired_into_stop():
+    """配線されていないゲートは無いのと同じ（`settings.local.json` の Stop に載っていること）。"""
+    path = os.path.abspath(os.path.join(_HOOK_DIR, "settings.local.json"))
+    if not os.path.exists(path):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    with open(path, encoding="utf-8") as f:
+        hooks = json.load(f).get("hooks", {})
+    commands = [h.get("command", "") for g in hooks.get("Stop", []) for h in g.get("hooks", [])]
+    assert any("relay_watch_gate.py" in c for c in commands), commands
+
+
+# ============================================================
 # 台帳の 2 本構成・降順・冒頭の一覧（2026-09-23・I-174）
 # ============================================================
 class TestLedgerSplit:
