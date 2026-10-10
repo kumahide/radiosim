@@ -136,7 +136,7 @@ From 3.7 on, the installer compares against the installed version and tells you:
 
 Going back to an older version means:
 
-- Project files saved with the newer version cannot be opened in the older one.
+- Project files saved with the newer version may not open in the older one, or may lose the items the newer version added.
 - Settings added in the newer version go back to their defaults once the older version saves its settings (installing the newer version again does not bring the old values back).
 - The terrain cache and saved results can be used as they are.
 
@@ -301,7 +301,7 @@ A mode for stacking paths into Multiple Paths straight from the map. Selecting t
 
 ### Waypoints mode
 
-A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click appends **one point to the end** of the list (this is not the alternating TX → RX pick of Pick Coordinates mode).
+A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click places **one point** (this is not the alternating TX → RX pick of Pick Coordinates mode). Points whose coordinates are blank are filled first, top to bottom; once none is blank, the click inserts a relay **before the receiver** (the same place as "Add point" in the waypoint table).
 
 - The map draws the polyline through the points and a **horizontal-distance badge for every hop**.
 - ⚠️ **That horizontal distance appears on the map only.** The hop table has no distance column, and the report carries the **slant distance** (a different quantity).
@@ -629,7 +629,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 - The launcher fields and project info are replaced immediately.
 - **Contents for closed windows appear when you open them** — this app freezes a window's inputs when it opens, and loading follows the same rule.
 - If you close a window without applying, **what you saw on screen wins** (that is what gets written on the next save).
-- A file saved by a newer version of RadioSim will not be opened (you are told, rather than having it silently mangled).
+- A file is refused only when **its format is newer than this version understands** (saved by a newer RadioSim after the format changed). You are told, rather than having it silently mangled. A file saved by a newer version still opens as long as the format has not changed.
 
 ---
 
