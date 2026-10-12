@@ -67,10 +67,11 @@ if /i "%~1"=="clean" (
     if exist "%DIST_DIR%"      rmdir /s /q "%DIST_DIR%"
     if exist .pytest_cache     rmdir /s /q .pytest_cache
     if exist .ruff_cache       rmdir /s /q .ruff_cache
-    if exist __pycache__       rmdir /s /q __pycache__
-    if exist views\__pycache__ rmdir /s /q views\__pycache__
-    if exist tests\__pycache__ rmdir /s /q tests\__pycache__
-    for %%D in (core report buildtools) do if exist %%D\__pycache__ rmdir /s /q %%D\__pycache__
+    rem __pycache__: every one under the repo, found recursively (B-344 - a list of
+    rem named folders went stale whenever a folder was added). Virtualenvs,
+    rem node_modules and .git are not ours to clean. The wildcard is required:
+    rem without it, dir lists the CONTENTS of .\__pycache__ instead of searching.
+    for /f "delims=" %%D in ('dir /s /b /ad *__pycache__ 2^>nul ^| findstr /v /i /c:"\.venv" /c:"\node_modules\\" /c:"\.git\\"') do rmdir /s /q "%%D"
     del /q RadioSimPro-*.zip 2>nul
     del /q build_log.txt 2>nul
     rem build_*.log: stray captures from before the log moved to build\build.log
