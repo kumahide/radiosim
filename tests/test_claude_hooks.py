@@ -4757,3 +4757,113 @@ def test_real_ledger_index_is_fresh_and_ordered(hook):
     assert hook.order_violations(lines) == []
     fresh = hook.ledger_index(lines, current=hook._app_version())
     assert hook.current_index_block(lines) == fresh, "冒頭の一覧が古い"
+
+
+# ── I-240＝続いている 🔴 を Stop で 1 回止める ─────────────────────────────
+# 凍結の `🔴凍結 add 失敗` が 11 日・72 回出ても誰も動かなかった（B-340）。
+# 記録（`red_streak.py`）と門（`red_streak_gate.py`）が約束を守ることを固める。
+
+
+def _load_red(name):
+    path = os.path.abspath(os.path.join(_HOOK_DIR, f"{name}.py"))
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def red():
+    return _load_red("red_streak")
+
+
+@pytest.fixture(scope="module")
+def red_gate(red):
+    return _load_red("red_streak_gate")
+
+
+_DAY = 86400.0
+
+
+def _run_days(red, state, ledger, line, days, per_day, source="s"):
+    """`days` 日にわたり、1 日 `per_day` 回ずつ同じ 🔴 を記録する。"""
+    for d in range(days + 1):
+        for _ in range(per_day):
+            red.record(source, [line], now=d * _DAY, state_dir=state)
+    return red.persisting(now=days * _DAY, state_dir=state, ledger=ledger)
+
+
+class TestRedStreak:
+    """種類の正規化・閾値・起票で黙る・直れば数え直し（I-240）。"""
+
+    def test_key_ignores_counts_dates_and_urls(self, red):
+        a = red.key_of(r"🔴 凍結（D:\x）: 最後のコミットから **3 日**")
+        b = red.key_of(r"🔴 凍結（D:\x）: 最後のコミットから **12 日**")
+        assert a == b and a
+        c = red.key_of("CI(main): 🔴 赤（failure） / 2026-10-10 / https://github.com/a/runs/1")
+        d = red.key_of("CI(main): 🔴 赤（failure） / 2026-10-12 / https://github.com/a/runs/9")
+        assert c == d and "http" not in c
+
+    def test_rises_only_when_both_days_and_count_reach(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        for sub in "bcd":
+            (tmp_path / sub).mkdir()
+        # 回数だけ（2 日・1 日 3 回＝9 回）では上がらない
+        assert _run_days(red, tmp_path / "b", ledger, line, 2, 3) == []
+        # 両方そろう（4 日・1 日 1 回＝0〜4 日目で 5 回）
+        got = _run_days(red, tmp_path / "c", ledger, line, 4, 1)
+        assert [(k, d, c) for k, d, c in got] == [(red.key_of(line), 4, 5)]
+        # 日数だけ（3 日・1 日 1 回＝4 回）では上がらない
+        assert _run_days(red, tmp_path / "d", ledger, line, 3, 1) == []
+
+    def test_vanished_red_starts_over(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        for d in range(4):
+            red.record("s", [line], now=d * _DAY, state_dir=tmp_path)
+        red.record("s", [], now=4 * _DAY, state_dir=tmp_path)       # 直った
+        for d in range(5, 8):
+            red.record("s", [line], now=d * _DAY, state_dir=tmp_path)
+        assert red.persisting(now=7 * _DAY, state_dir=tmp_path, ledger=ledger) == []
+
+    def test_ledger_tag_silences(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        assert _run_days(red, tmp_path, ledger, line, 4, 2)
+        ledger.write_text(f"- 内容: {red.TAG}{red.key_of(line)}\n", encoding="utf-8")
+        assert red.persisting(now=4 * _DAY, state_dir=tmp_path, ledger=ledger) == []
+
+
+class TestRedStreakGate:
+    """門は 1 セッションに 1 回だけ止め、再入の Stop は通す（I-240）。"""
+
+    def _setup(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        assert _run_days(red, tmp_path, ledger, "🔴凍結 add 失敗", 4, 2)
+        return {"now": 4 * _DAY, "state_dir": tmp_path, "ledger": ledger}
+
+    def test_blocks_once_per_session(self, red, red_gate, tmp_path):
+        kw = self._setup(red, tmp_path)
+        seen = tmp_path / "seen.json"
+        first = red_gate.verdict({"session_id": "A"}, seen_path=seen, **kw)
+        assert first and "凍結 add 失敗" in first
+        assert red_gate.verdict({"session_id": "A"}, seen_path=seen, **kw) is None
+        assert red_gate.verdict({"session_id": "B"}, seen_path=seen, **kw)
+
+    def test_reentrant_stop_passes(self, red, red_gate, tmp_path):
+        kw = self._setup(red, tmp_path)
+        payload = {"session_id": "A", "stop_hook_active": True}
+        assert red_gate.verdict(payload, seen_path=tmp_path / "seen.json", **kw) is None
+
+    def test_nothing_persisting_passes(self, red, red_gate, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        assert red_gate.verdict({"session_id": "A"}, seen_path=tmp_path / "seen.json",
+                                now=0.0, state_dir=tmp_path, ledger=ledger) is None
