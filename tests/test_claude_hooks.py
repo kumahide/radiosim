@@ -3207,6 +3207,22 @@ class TestRelayAdvice:
         assert got == {}, got
 
 
+def test_budget_hook_swallows_its_own_crash(budget, tmp_path):
+    """読みが落ちても exit 0（B-342）＝ほかのフックと同じ規約。握らないと exit 1 の
+    非致命のエラーになり、予算の助言が黙って消える。落とし方＝配列の行（`entry.get`
+    が無い）＝途中で書き換わったトランスクリプトで起こりうる形。"""
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("[1]\n", encoding="utf-8")
+    payload = json.dumps({"transcript_path": str(transcript), "session_id": "s"})
+    with pytest.raises(AttributeError):     # 前提＝本当に落ちる形であること
+        budget._scan(transcript)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("RADIOSIM_RELAY")}
+    r = subprocess.run([sys.executable, _BUDGET_PATH], input=payload, env=env,
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert r.returncode == 0, f"例外が握られていない（exit {r.returncode}）: {r.stderr[-400:]}"
+    assert r.stdout == "", r.stdout
+
+
 # ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
 # ============================================================
