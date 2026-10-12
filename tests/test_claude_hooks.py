@@ -3992,6 +3992,28 @@ class TestBackupTargets:
         assert ".pyc" in mirror.SKIP_SUFFIX
         assert ".sample" in mirror.SKIP_SUFFIX, "git が作る雛形まで運んでいる"
 
+    def test_nested_worktrees_are_not_carried(self, tmp_path, mirror, monkeypatch):
+        """⛔ `.git` を持つフォルダ（リンクされたワークツリー）は運ばない（B-340）。
+
+        🔴 **実例（2026-09-27〜10-12）**＝`.claude/worktrees/relay-3.8-stage5` を運んだ
+        まま元のワークツリーが消え、凍結リポに残った `.git`（`gitdir:` が消えた先を
+        指す）のせいで `git add -A` が 15 日失敗し続けた。
+        """
+        src = tmp_path / "repo"
+        wt = src / ".claude" / "worktrees" / "relay"
+        wt.mkdir(parents=True)
+        (wt / ".git").write_text("gitdir: D:/nowhere/.git/worktrees/relay\n", encoding="utf-8")
+        (wt / "main.py").write_text("x\n", encoding="utf-8")
+        (src / ".claude" / "keep.py").write_text("y\n", encoding="utf-8")
+        monkeypatch.setattr(mirror, "REPO_DIR", str(src))
+        monkeypatch.setattr(mirror, "BACKUP_TARGETS", ((".claude", ".claude"),))
+
+        dest = tmp_path / "box"
+        mirror._copy_into(str(dest))
+
+        assert (dest / ".claude" / "keep.py").is_file(), "ふつうのファイルまで落とした"
+        assert not (dest / ".claude" / "worktrees" / "relay").exists(), "ワークツリーを運んだ"
+
 
 class TestFreezeGuard:
     """🔴 **凍結リポへの push は取り違えると公開事故になる。**
