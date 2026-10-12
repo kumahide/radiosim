@@ -309,6 +309,7 @@ radiosim/
     ├── test_golden_links.py   # 回帰コーパス（代表回線のゴールデン値＋純関数の不変条件）
     ├── golden_corpus_gen.py  # 同コーパスの生成器（手動実行・実 DEM を取得）
     ├── test_ground_reflection.py  # 地面反射の振幅包絡線（3.4 ステージ4）
+    ├── test_model_preconditions.py  # 式の前提をコーパスの全回線に当てる
     ├── test_sensitivity.py    # 摂動再計算エンジン（3.4 ステージ4）
     ├── test_residuals.py      # 実測との残差計算（3.4 ステージ5）
     ├── test_report_residuals.py  # PathResult → 残差標本の抽出（3.4 ステージ5）
@@ -1152,6 +1153,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・セクションの欠損は「持たない」・新しい schema の拒否・破損の扱い）|
 | `test_golden_links.py`   | 回帰コーパス。代表回線（`tests/data/golden_links.json`）の `LinkBudgetResult` 全項目を凍結（実 DEM 由来の標高配列から再計算・ネットワーク非依存）＋ terrain 固定で `run_calculation` を N 回まわす前提（決定性・非破壊・順序非依存）|
 | `test_ground_reflection.py` | 地面反射（2波干渉）の振幅包絡線。反射点が両端から十分離れているかの判定・既存の計算経路を変えないことの回帰（3.4 ステージ4） |
+| `test_model_preconditions.py` | 式の前提（適用範囲）を回帰コーパスの全回線に当てる。いまの述語は「回折損が乗る（地形で遮られた）回線では地面反射の包絡線を出さない」。既知の反例は回線ごとに課題 ID つきの strict な xfail で置き、直すと xpass で赤になる。述語が空振りしないよう、コーパスに両方の形があることも確かめる |
 | `test_sensitivity.py`    | 摂動再計算エンジン。各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・標高を経路全体へ一律に動かしても余裕度が動かないこと・多ホップの argmin 入れ替わり（3.4 ステージ4） |
 | `test_residuals.py`      | 実測との残差計算。帯域/距離帯の境目・給電線損失の補正方向・層（環境区分×帯域×距離帯）ごとの中央値/IQR/件数・スポット測定の除外（3.4 ステージ5） |
 | `test_report_residuals.py` | `PathResult` → 残差標本の抽出。実測値の無い行／計算失敗行を除外すること（3.4 ステージ5） |

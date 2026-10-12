@@ -310,6 +310,7 @@ radiosim/
     ├── test_golden_links.py   # Regression corpus (golden link-budget values + purity invariants)
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
+    ├── test_model_preconditions.py  # Checks model preconditions against every corpus link
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
     ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
@@ -1190,6 +1191,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
+| `test_model_preconditions.py` | Checks each model's preconditions (its domain of validity) against every link in the regression corpus. The current predicate: no ground-reflection envelope on a link with diffraction loss (a terrain-obstructed path). Known counterexamples are marked per link with a strict xfail carrying the issue ID, so fixing them turns into a red xpass. It also checks that the corpus contains both shapes, so the predicate is never vacuous |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
 | `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
