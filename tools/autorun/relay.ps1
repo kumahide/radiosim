@@ -16,7 +16,7 @@
        `claude stop` で止める（会話は残る）。`continue` なら 2 へ・`done` なら窓を閉じて終わる。
        同じ状態が続く間も -BeatSeconds ごとに経過時間と最後の手を relay.log に書く（I-188）。
        人の答えを待つ（`waiting`）間は Windows の通知を出し、-WaitNoticeMinutes ごとに出し直す（I-231）。
-    4. 止め方（I-229）＝続けて -StallSessions 本、コミットも台帳の変化も無ければ止める。
+    4. 止め方（I-229）＝続けて -StallSessions 本、コミットも台帳・版計画の変化も無ければ止める。
        -MaxSessions は暴走を防ぐ絶対の上限。最後になりうる 1 本には入力文で知らせる（I-227）。
     5. どの終わり方でも終わりの合図 `relay.end` を書く。`done`＋push 済み以外は Windows の
        通知も出す（I-228）。パネルの Claude は `-Watch` を裏で走らせて、この合図を待つ（I-230）。
@@ -64,7 +64,7 @@ param(
     [switch]$TestNotice,
     [switch]$Foreground,        # -Start が別の窓で自分を呼ぶときの印（人は使わない）
     [int]$MaxSessions = 20,     # 暴走を防ぐ絶対の上限（I-229＝止める基準は -StallSessions）
-    [int]$StallSessions = 2,    # 続けてこの本数、コミットも台帳の変化も無ければ止める（I-229）
+    [int]$StallSessions = 2,    # 続けてこの本数、コミットも台帳・版計画の変化も無ければ止める（I-229）
     [int]$WaitNoticeMinutes = 15, # 人の答え待ちが続く間、この間隔で通知を出し直す（0＝出し直さない・I-231）
     [int]$Trips,
     [string]$Model,
@@ -498,10 +498,10 @@ try {
         Copy-Item -LiteralPath $handoffPath -Destination (Join-Path $runDir ('handoff.{0:D2}.md' -f $n))
         Write-Log "■ $n 本目が引き継ぎ書を書いて止まりました（status: $($h.status)）"
         if ($h.status -eq 'done') { $finished = $true; break }
-        # 進み具合（I-229）＝コミットも台帳の変化も無い回が続いたら止める
+        # 進み具合（I-229）＝コミットも台帳・版計画の変化も無い回が続いたら止める
         if ((Get-ProgressMark $repoRoot) -eq $markBefore) { $stall++ } else { $stall = 0 }
         if ($StallSessions -gt 0 -and $stall -ge $StallSessions) { break }
-        if ($stall) { Write-Log "  ⚠️ この 1 本はコミットも台帳の変化も無かった（続けて $stall 本・$StallSessions 本で止める）" }
+        if ($stall) { Write-Log "  ⚠️ この 1 本はコミットも台帳・版計画の変化も無かった（続けて $stall 本・$StallSessions 本で止める）" }
     }
     $unpushed = Get-UnpushedCount
     if ($finished -and $unpushed -eq 0) {
@@ -510,7 +510,7 @@ try {
     } elseif ($finished) {
         $endKind = 'done_unpushed'; $endText = "⚠️ 目標まで済みましたが、push していないコミットが残っています（$unpushed 件・-1＝数えられない）＝手で push してください。記録: $runDir"
     } elseif ($StallSessions -gt 0 -and $stall -ge $StallSessions) {
-        $endKind = 'stall'; $endText = "⛔ 続けて $stall 本、コミットも台帳の変化も無かったので止めました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）。push していないコミット $unpushed 件"
+        $endKind = 'stall'; $endText = "⛔ 続けて $stall 本、コミットも台帳・版計画の変化も無かったので止めました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）。push していないコミット $unpushed 件"
     } else {
         $endKind = 'max'; $endText = "⛔ 上限 $MaxSessions 本に達しました＝引き継ぎ書は $handoffPath に残っています（-Start で続きから）。push していないコミット $unpushed 件"
     }

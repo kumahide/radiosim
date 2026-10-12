@@ -94,7 +94,7 @@ def test_the_last_session_is_told_it_is_the_last(relay_plan):
 
 
 def test_the_relay_stops_on_no_progress_not_on_a_small_cap(relay_plan):
-    """止める基準は進み具合（続けて 2 本、コミットも台帳の変化も無い）・上限 20 本は暴走止め（I-229）。
+    """止める基準は進み具合（続けて 2 本、コミットも台帳・版計画の変化も無い）・上限 20 本は暴走止め（I-229）。
 
     3.9 ステージ4 のリレーは 8 本とも進んでいたのに、上限 8 本で止まった。
     """
@@ -443,3 +443,33 @@ def test_the_progress_mark_moves_with_a_commit_or_the_ledger(tmp_path):
     assert m1 != m0
     git("-c", "user.name=t", "-c", "user.email=t@t", "commit", "-q", "--allow-empty", "-m", "b")
     assert mark() != m1
+
+
+@needs_pwsh
+@pytest.mark.skipif(shutil.which("git") is None, reason="git が無い環境")
+def test_the_progress_mark_moves_with_the_roadmap(tmp_path):
+    """版計画（メモリの project_roadmap.md）の中身でも動く（B-345）＝監査の回は結果を
+    版計画の途中行にだけ書くことがあり、それを「進まない回」に数えていた。"""
+    subprocess.run(["git", "-C", str(tmp_path), "init", "-q"], check=True, capture_output=True)
+    roadmap = tmp_path / "memory" / "project_roadmap.md"
+    mark = lambda: _common(tmp_path, f"Get-ProgressMark '{tmp_path}' '{roadmap}'")  # noqa: E731
+    m0 = mark()                      # 無いときは空として数える（落ちない）
+    roadmap.parent.mkdir()
+    roadmap.write_text("- 面0〜5 済\n", encoding="utf-8")
+    m1 = mark()
+    assert m1 != m0, "版計画ができたのに進んだと数えない"
+    assert mark() == m1, "同じ中身で動いた"
+    roadmap.write_text("- 面0〜13 済\n", encoding="utf-8")
+    m2 = mark()
+    assert m2 != m1, "版計画の途中行が変わったのに進んだと数えない"
+    (roadmap.parent / "MEMORY.md").write_text("x", encoding="utf-8")
+    assert mark() == m2, "メモリのほかのファイルで動いてはいけない"
+
+
+@needs_pwsh
+def test_the_roadmap_path_is_the_memory_claude_code_assigns_to_the_repo(tmp_path):
+    """既定の版計画のパス＝`~/.claude/projects/<ドライブとパスの区切りを - にした名>/memory/`
+    （Claude Code の割り当て。このリポジトリなら `D--dev-radiosim-repo`）。"""
+    out = _common(tmp_path, r"Get-RoadmapPath 'D:\dev\radiosim-repo\'")
+    assert out.replace("/", "\\").endswith(
+        r"\.claude\projects\D--dev-radiosim-repo\memory\project_roadmap.md"), out

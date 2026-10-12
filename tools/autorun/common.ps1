@@ -94,15 +94,26 @@ function Get-LastMove([string]$TranscriptPath, [int]$TailBytes = 524288) {
 }
 
 # --- 進み具合で止める（I-229）・最後の 1 本に知らせる（I-227）-----------------------------
-# 進み具合の物差し＝HEAD と台帳 2 本の中身。版計画の途中行は台帳と同じ回に書く
-# （prompt_relay.txt の 4）ので、この 2 つで足りる。読めないものは空として数える。
-function Get-ProgressMark([string]$Root) {
+# 進み具合の物差し＝HEAD と台帳 2 本と版計画（メモリの project_roadmap.md）の中身。
+# 版計画を数えるのは B-345＝監査や調査の回は結果を版計画の途中行にだけ書くことがあり、
+# それを「進まない回」に数えていた。メモリ全体（更新時刻）は見ない＝索引の整えや
+# 凍結の写しだけで「進んだ」にしない。読めないものは空として数える。
+# $Roadmap＝版計画のパス（既定は Claude Code がこのリポジトリに割り当てるメモリの置き場）
+function Get-RoadmapPath([string]$Root) {
+    $slug = $Root.TrimEnd('\', '/') -replace '[:\\/]', '-'
+    return Join-Path ([Environment]::GetFolderPath('UserProfile')) ".claude\projects\$slug\memory\project_roadmap.md"
+}
+
+function Get-ProgressMark([string]$Root, [string]$Roadmap = (Get-RoadmapPath $Root)) {
     $head = & git -C $Root rev-parse HEAD 2>$null
     if ($LASTEXITCODE -ne 0) { $head = '' }
     $parts = @("head=$head")
-    foreach ($name in 'ISSUES.md', 'ISSUES_archive.md') {
-        $p = Join-Path $Root $name
-        $hash = if (Test-Path -LiteralPath $p) { (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash } else { '' }
+    $files = [ordered]@{ 'ISSUES.md' = (Join-Path $Root 'ISSUES.md')
+                         'ISSUES_archive.md' = (Join-Path $Root 'ISSUES_archive.md')
+                         'roadmap' = $Roadmap }
+    foreach ($name in $files.Keys) {
+        $p = $files[$name]
+        $hash = if ($p -and (Test-Path -LiteralPath $p)) { (Get-FileHash -LiteralPath $p -Algorithm SHA256).Hash } else { '' }
         $parts += "$name=$hash"
     }
     return $parts -join ' '
@@ -115,7 +126,7 @@ function Get-LastNote([int]$No, [int]$Max, [int]$Stall, [int]$StallMax) {
         return "`n⚠️ これが最後の 1 本です（上限 $Max 本）＝下の手順 6「最後の 1 本」に従って終える。"
     }
     if ($StallMax -gt 0 -and $Stall -ge $StallMax - 1) {
-        return "`n⚠️ 前の $Stall 本はコミットも台帳の変化も無かった＝この 1 本も進まなければリレーは止まる。進めないと分かったら下の手順 6「最後の 1 本」に従って終える。"
+        return "`n⚠️ 前の $Stall 本はコミットも台帳・版計画の変化も無かった＝この 1 本も進まなければリレーは止まる。進めないと分かったら下の手順 6「最後の 1 本」に従って終える。"
     }
     return ''
 }
