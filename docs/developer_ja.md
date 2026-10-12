@@ -365,7 +365,8 @@ radiosim/
     ├── test_qa_gate_cache.py
     ├── test_pre_commit_gate.py
     ├── test_commit_gate_scope.py
-    └── test_release_check.py
+    ├── test_release_check.py
+    └── test_hook_shim.py
 ```
 
 ---
@@ -1207,6 +1208,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_pre_commit_gate.py` | コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定。島の外が 1 つでも混じればフルスイートへ倒れること・リネームは元のパスも数えること・変更が空ならフルであること・リポジトリ全体を走査するテストが島の一覧から漏れていないこと。直前のフル合格から `APP_VERSION` の 1 行だけを変えたときは、版の字を読むテストで足りるとすること（コミットも push も）。先に走らせる実データの検査が `test_real_` の全部を選ぶこと・止めたときの文が「閉じるのはコミットの後」「同じコマンドの `git add` も走っていない」を言うこと。⚠️ **`node` が無い環境では skip** |
 | `test_commit_gate_scope.py` | 同じゲートの**島の中身**。`docs` 島と `qa-gate` 島が、絞れていること（マニュアルだけの変更が島に収まる）と絞りすぎていないこと（製品コード・版文字列・文言ファイル・`conftest.py` はフルへ倒れる。例外の「直前のフル合格から `APP_VERSION` の 1 行だけ」は `test_pre_commit_gate.py` の担当）を検証。加えて、**`docs/` のファイルを読んでいるテストが島の一覧から漏れていないこと**をテスト側のソース（AST）から数え直す。⚠️ **`node` が無い環境では skip** |
 | `test_release_check.py` | 版の節目の助言（`tools/qa-hook/release-check.mjs`）が、赤・未検査と確かめられたときだけ 🔴🔴 を出すこと。表示依存の刻印は検査した `views/`・`tests/` の中身を名札にし、コミット前に回した実行がそのコミットを検査済みと認められ、回したあとで変更を戻すと未検査に戻ること（刻む側の `tests/conftest.py` と読む側の `.mjs` を一時リポジトリで突き合わせる）。CI が実行中なら赤ではなく「実行中」と出し、いまのブランチの実行を引くこと。⚠️ **`node` が無い環境では skip** |
+| `test_hook_shim.py` | 門のフックの殻（`tools/qa-hook/hook-shim.mjs`）が、中身の exit 0・2 をそのまま返し、それ以外（競合の印・構文エラー・import の失敗・起動できない）を exit 2「門が壊れています」に写すこと。再入した Stop だけは止めずに知らせること。`tools/qa-hook/` の `.mjs` が `node --check` を通ること。手元では、止める力を持つ配線が全部殻を経由していること。⚠️ **`node` が無い環境では skip** |
 
 ### 独立レビュー（外部のレビュアーに差分を見せる）
 
