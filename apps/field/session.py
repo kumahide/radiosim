@@ -525,28 +525,35 @@ def append_event(directory: str | os.PathLike[str], event: Event) -> None:
     _append_rows(Path(directory) / EVENTS_FILE, [[getattr(event, c) for c in EVENT_COLUMNS]])
 
 
-def append_raw(directory: str | os.PathLike[str], chunk: bytes, pc_utc: str) -> None:
+def append_raw(
+    directory: str | os.PathLike[str], chunk: bytes, pc_utc: str, *,
+    raw_file: str = RAW_FILE, index_file: str = RAW_INDEX_FILE,
+) -> None:
     """UART の生のバイト列を**追記**し、受けた時刻を索引に 1 行足す。
 
     ⚠️ 本体（バイト列）を先に書く。索引が先だと、間で落ちたときに**無いバイトを
     指す索引**が残る（逆なら、索引の無い末尾が残るだけで読み直せる）。
+    ファイル名を変えられるのは GNSS の生ログ（`gnss.py`）が同じ形で書くため。
     """
     parse_utc(pc_utc)
-    raw = Path(directory) / RAW_FILE
+    raw = Path(directory) / raw_file
     with raw.open("ab") as f:
         f.write(chunk)
         f.flush()
         os.fsync(f.fileno())
         end = f.tell()
-    _append_rows(Path(directory) / RAW_INDEX_FILE, [[pc_utc, end]])
+    _append_rows(Path(directory) / index_file, [[pc_utc, end]])
 
 
-def read_raw(directory: str | os.PathLike[str]) -> Iterator[tuple[str, bytes]]:
+def read_raw(
+    directory: str | os.PathLike[str], *,
+    raw_file: str = RAW_FILE, index_file: str = RAW_INDEX_FILE,
+) -> Iterator[tuple[str, bytes]]:
     """生のバイト列を、**読み出したときの区切りと時刻のまま**返す。"""
     directory = Path(directory)
-    data = (directory / RAW_FILE).read_bytes()
+    data = (directory / raw_file).read_bytes()
     start = 0
-    for row in _read_rows(directory / RAW_INDEX_FILE, RAW_INDEX_COLUMNS, "生ログの索引"):
+    for row in _read_rows(directory / index_file, RAW_INDEX_COLUMNS, "生ログの索引"):
         end = int(row["end_offset"])
         if not start <= end <= len(data):
             raise SessionError(

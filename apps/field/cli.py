@@ -19,6 +19,8 @@ RadioSim Fieldの**コマンドライン**（phase 1・増分4）。リポジト
     python -m apps.field.cli monitor --port COM4     … 受信を眺めるだけ（何も保存しない）
     python -m apps.field.cli settings --port COM4 --role tx --power 10
                                                       … 機器の設定を表示する・変える
+    python -m apps.field.cli gnss log --port COM5 --root 測定データ
+                                                      … GNSS の生データを記録する（静止観測）
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信はウィンドウに入れない）
@@ -71,6 +73,7 @@ from apps.field.bench_analysis import (
     write_report,
 )
 from apps.field.calib import DeviceCalibration, read_device_calibration
+from apps.field.gnss import GnssLogger
 from apps.field.mavlink.dialect import load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
@@ -164,6 +167,13 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", required=True, help="見る機器の COM ポート（例: COM4）")
     p.add_argument("--baud", type=int, default=115200)
 
+    p = sub.add_parser("gnss", help="GNSS 受信機（静止観測）")
+    gnss = p.add_subparsers(dest="gnss_command", required=True)
+    q = gnss.add_parser("log", help="生データ（RAWX・SFRBX）を記録する（q で終了）")
+    q.add_argument("--port", required=True, help="受信機の COM ポート（例: COM5）")
+    q.add_argument("--baud", type=int, default=38400)
+    q.add_argument("--root", type=Path, required=True, help="記録のフォルダを作る場所")
+
     args = parser.parse_args(argv)
     try:
         if args.command == "template":
@@ -180,6 +190,8 @@ def main(argv: list[str] | None = None) -> int:
             return _monitor(args)
         if args.command == "settings":
             return _settings(args)
+        if args.command == "gnss":
+            return _gnss_log(args)
         return _export(args)
     except SessionError as e:
         print(f"エラー: {e}", file=sys.stderr)
@@ -1007,6 +1019,46 @@ def _monitor(args: argparse.Namespace) -> int:
     finally:
         port.close()
     print("終えました")
+    return 0
+
+
+# --- gnss --------------------------------------------------------------------
+
+
+def _gnss_log(args: argparse.Namespace) -> int:
+    commit = software_commit()
+    serial = _import_serial()
+    keys = _Keyboard()
+    try:
+        opened = serial.Serial(args.port, args.baud, timeout=0.1)
+    except serial.SerialException as e:
+        raise SessionError(f"ポートを開けません: {args.port}（{e}）") from e
+    with opened as port:
+        logger = GnssLogger(args.root, port, software_commit=commit, port_name=args.port,
+                            baud=args.baud, clock=now_utc)
+        print("受信機に問い合わせています…")
+        try:
+            logger.start()
+        except KeyboardInterrupt:
+            print("中止しました（記録は作っていません）")
+            return 1
+        assert logger.version is not None
+        print(f"受信機 {logger.version.firmware or logger.version.software}"
+              f"（{logger.version.hardware}）・出力を RAM 層に設定しました")
+        print(f"記録: {logger.directory}（q で終了）")
+        started = time.monotonic()
+        last_status = 0.0
+        try:
+            while keys.poll() != "q":
+                logger.poll()
+                if time.monotonic() - last_status >= _STATUS_EVERY_S:
+                    print(f"\r{logger.status_line(time.monotonic() - started)}   ",
+                          end="", flush=True)
+                    last_status = time.monotonic()
+        except KeyboardInterrupt:
+            pass
+    print()
+    print(logger.summary())
     return 0
 
 
