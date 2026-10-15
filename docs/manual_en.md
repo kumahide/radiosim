@@ -1,4 +1,4 @@
-# RadioSim Pro 3.8
+# RadioSim Pro 3.9
 
 ![RadioSim Pro](../logo.png)
 
@@ -136,7 +136,7 @@ From 3.7 on, the installer compares against the installed version and tells you:
 
 Going back to an older version means:
 
-- Project files saved with the newer version cannot be opened in the older one.
+- Project files saved with the newer version may not open in the older one, or may lose the items the newer version added.
 - Settings added in the newer version go back to their defaults once the older version saves its settings (installing the newer version again does not bring the old values back).
 - The terrain cache and saved results can be used as they are.
 
@@ -217,7 +217,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Language           | English / 日本語 (plus your own) | UI language (requires restart) → [Adding your own UI language](#adding-your-own-ui-language) |
 | Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
 | Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
-| Load App Settings... | —                              | Imports **only** theme, language, proxy and coordinate format from a settings file      |
+| Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file                        |
 | Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
 
 > **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (from 3.6, this takes effect once each time you reinstall, including when you install over 3.5 or earlier). A plain restart does not change it — change it under **Settings > Language**.
@@ -233,7 +233,7 @@ Your choices are saved to `radiosim_conf.json` and persist across restarts.
 | Include Pre-releases | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
 | About        | Shows the installed version            |
 
-> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy, coordinate format). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
+> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
 > **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
@@ -301,7 +301,7 @@ A mode for stacking paths into Multiple Paths straight from the map. Selecting t
 
 ### Waypoints mode
 
-A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click appends **one point to the end** of the list (this is not the alternating TX → RX pick of Pick Coordinates mode).
+A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click places **one point** (this is not the alternating TX → RX pick of Pick Coordinates mode). Points whose coordinates are blank are filled first, top to bottom; once none is blank, the click inserts a relay **before the receiver** (the same place as "Add point" in the waypoint table).
 
 - The map draws the polyline through the points and a **horizontal-distance badge for every hop**.
 - ⚠️ **That horizontal distance appears on the map only.** The hop table has no distance column, and the report carries the **slant distance** (a different quantity).
@@ -629,7 +629,7 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 - The launcher fields and project info are replaced immediately.
 - **Contents for closed windows appear when you open them** — this app freezes a window's inputs when it opens, and loading follows the same rule.
 - If you close a window without applying, **what you saw on screen wins** (that is what gets written on the next save).
-- A file saved by a newer version of RadioSim will not be opened (you are told, rather than having it silently mangled).
+- A file is refused only when **its format is newer than this version understands** (saved by a newer RadioSim after the format changed). You are told, rather than having it silently mangled. A file saved by a newer version still opens as long as the format has not changed.
 
 ---
 
@@ -912,15 +912,13 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
 
-> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8)**:
+> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8/3.9)**:
 > - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` has 3 values: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an output file failed, so no verdict could be given). In 4.0, the sensitivity calculation introduced in 3.4 (a recalculation across pessimistic/optimistic assumptions — vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given). **`ERROR` is not renamed.** The column name, its position, and the 0 dB margin line between OK and NG do not change. What changes is which margin is held against that line: today a single margin, computed under the default assumptions, decides OK/NG; in 4.0 the line is applied under both the pessimistic and the optimistic assumptions — OK if the link holds under both, NG if it fails under both, REVIEW if the answer depends on the assumptions. **If your code branches on `status == "OK"`, we recommend handling `REVIEW` separately as "needs review" from 4.0 onward** — treating everything other than `OK` as NG would drop links that a site visit would actually confirm. The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
-> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
+> - **The on-screen/report "Rice K factor" (the current-value estimate, computed as `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8/3.9, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
+> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7/3.8 shipped with no such change. 4.0 is now set to come right after 3.9, so 3.9 is "the version before" 4.0** (this is the last notice before the change).
 
-> 📣 **Advance notice (coming in 3.9 — nothing changes in 3.8)**:
-> - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12.** This has no effect if you use the packaged exe (installer or ZIP). `numpy` will also move to the 2.5.x line at the same time (it stays pinned at 2.4.4 through 3.8). Since 3.4 this was announced for 4.0; it moves one version earlier because supporting newer Python versions requires `numpy` 2.5.x. In 3.8 we compared calculation results against `numpy` 2.5.3 and confirmed that the values in the output CSVs do not change.
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual).
+> 🔴 **Changed in 3.9 (announced in 3.8)**: **The minimum supported Python version, for running from source, rose from 3.11 to 3.12.** This has no effect if you use the packaged exe (installer or ZIP). `numpy` moved from 2.4.4 to 2.5.3 at the same time. We compared the calculation results and the output CSVs before and after the update and confirmed that not a single value changed.
 
 > 🔴 **Format change in 3.0 (policy 3 applied to itself)**: **dB values now carry one decimal instead of two** (`-93.20` → `-93.2`). This covers `rx_dbm`, `margin_db`, `fspl_db`, `diff_db`, `veg_db`, `env_db`, `rain_db`, `gas_db`, `total_loss_db` and the two gain columns, in **all three CSVs** (`summary.csv` / `hops.csv` / `scenario.csv`). **No column or file name changes** — `-93.2` is the same number as `-93.20`, so **anything reading the value as a number keeps working**. ⚠️ **Fix anything that relies on the digit count of the text.** The reason: 0.01 dB was a precision this calculation does not have (the GSI elevation grid is 5–10 m wide and carries metres of error of its own, vegetation height is a single assumed value, environment loss is an empirical figure per area class). **The maths is unchanged — only what is shown was coarsened.**
 
@@ -953,7 +951,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this column — not `slant_m` — when you want the effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -979,7 +977,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `error` | — | Why it failed; empty for a section that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section (its length, bearing and latitude), so it differs between sections of one route |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). Each section fetches its own terrain, so this differs between sections |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Each section fetches its own terrain, so this differs between sections |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
 
@@ -1014,7 +1012,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `diff_method` | — | Diffraction model |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `axis` | — | Name of the sweep axis (e.g. `freq_mhz`); empty in compare mode |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
 
 ⚠️ Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` still puts a same-named fixed column (e.g. `freq_mhz`) alongside `axis_value` — they mean different things: `axis_value` is the value being swept, while the fixed column is **the actual value used for every parameter in that row**.
 
@@ -1023,8 +1021,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched is an empty cell (NaN)** (announced in 3.2, applied in 3.3) — `0.0` now means only a genuine sea-level elevation. Check `elev_source` to see whether the fetch actually succeeded |
-| `elev_source` | — | Where this sample's elevation came from: the `source_id` of the DEM source actually used. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (could not be fetched; network failure) — and samples taken from an external source you declared carry that source's own `source_id` |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell (NaN)** (announced in 3.2, applied in 3.3). ⚠️ **`0.0` is not always sea level** — points where GSI simply has no data (404 — sea, outside Japan) and pixels with missing data also come out as `0.0`, and their `elev_source` still names the source (`gsi_dem` and so on). The empty cell and `elev_source` mark only those failed fetches |
+| `elev_source` | — | Where this sample's elevation came from: the `source_id` of the DEM source actually used. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (could not be fetched; network problem or unexpected error) — and samples taken from an external source you declared carry that source's own `source_id` |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
 
@@ -1084,7 +1082,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
-- 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk 8.6), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ **We verified by measurement that the newer Tk (9.0) does not have this problem**, but moving to it depends on other conditions (support in the Python runtime we build on), so there is no date yet
+- 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ 3.9 moved Tk from 8.6 to 9.0, and **we verified by measurement that 9.0 shows the same problem**
 - When monitors with different display scales are in use, moving a window to another monitor resizes the text of the whole application to match that scale. Only the menu bar strip (File / Settings / Help) is drawn by Windows, so it keeps the scale of the monitor its own window sits on and may look smaller (or larger) than the rest. This affects appearance only, not operation
 - After you change the Windows display scale, **until you sign in again**, the check mark (✓) in drop-down menus may be drawn thick and large so that it overlaps the text next to it, and the arrow (▸) that marks a submenu may disappear (for example Theme, Language and Coordinate Display in the Settings menu). **Signing out of Windows and signing back in fixes it** (restarting RadioSim does not). Both marks are drawn by the underlying GUI toolkit (Tk) with legacy Windows bitmaps, whose size is fixed by the display scale in effect when you signed in. This affects appearance only, not operation
 

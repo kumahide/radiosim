@@ -42,6 +42,8 @@ import time
 import tkinter as tk
 from tkinter import font as tkfont
 
+import _synthetic_move  # 同じフォルダ（スクリプトとして走らせると sys.path[0]）
+
 for _stream in (sys.stdout, sys.stderr):
     try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
         _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
@@ -180,22 +182,11 @@ def move_window(hwnd: int, seconds: float = 3.0) -> None:
 
     ⚠️ 合成マウスでは `Toplevel` が動かない（B-119 の探針で実測）ので
     `WM_SYSCOMMAND`／`SC_MOVE` ＋矢印キー。**Tk のスレッドから呼ばない。**
+    中身は `_synthetic_move.move_window`（B-119 の探針と共有）。🔴 もとは前面を**一度も**
+    確かめずにキーを送っていた（B-320 のクラス点検で見つけた）＝前面を取れなければ送らず、
+    途中で外れたらそこでやめる。
     """
-    import ctypes
-    user32 = ctypes.windll.user32
-    user32.SetForegroundWindow(hwnd)
-    time.sleep(0.15)
-    user32.PostMessageW(hwnd, 0x0112, 0xF010, 0)               # WM_SYSCOMMAND/SC_MOVE
-    time.sleep(0.25)
-    try:
-        for i in range(max(int(seconds / 0.04), 1)):
-            key = 0x27 if (i // 12) % 2 == 0 else 0x25          # →／←
-            user32.keybd_event(key, 0, 0, 0)
-            user32.keybd_event(key, 0, 0x0002, 0)
-            time.sleep(0.04)
-    finally:
-        user32.keybd_event(0x0D, 0, 0, 0)                       # Enter で確定
-        user32.keybd_event(0x0D, 0, 0x0002, 0)
+    _synthetic_move.move_window(hwnd, seconds, log=lambda msg: log("AUTO", msg))
 
 
 def build_pair(root: tk.Tk) -> "list[tuple[str, tk.Toplevel]]":

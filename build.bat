@@ -67,10 +67,11 @@ if /i "%~1"=="clean" (
     if exist "%DIST_DIR%"      rmdir /s /q "%DIST_DIR%"
     if exist .pytest_cache     rmdir /s /q .pytest_cache
     if exist .ruff_cache       rmdir /s /q .ruff_cache
-    if exist __pycache__       rmdir /s /q __pycache__
-    if exist views\__pycache__ rmdir /s /q views\__pycache__
-    if exist tests\__pycache__ rmdir /s /q tests\__pycache__
-    for %%D in (core report buildtools) do if exist %%D\__pycache__ rmdir /s /q %%D\__pycache__
+    rem __pycache__: every one under the repo, found recursively (B-344 - a list of
+    rem named folders went stale whenever a folder was added). Virtualenvs,
+    rem node_modules and .git are not ours to clean. The wildcard is required:
+    rem without it, dir lists the CONTENTS of .\__pycache__ instead of searching.
+    for /f "delims=" %%D in ('dir /s /b /ad *__pycache__ 2^>nul ^| findstr /v /i /c:"\.venv" /c:"\node_modules\\" /c:"\.git\\"') do rmdir /s /q "%%D"
     del /q RadioSimPro-*.zip 2>nul
     del /q build_log.txt 2>nul
     rem build_*.log: stray captures from before the log moved to build\build.log
@@ -144,20 +145,19 @@ echo [OK] Python ^(RADIOSIM_PYTHON^):
 "%PY%" --version
 echo      %PY%
 
-rem Guard against ISSUES.md B-163: a Windows Python 3.14.x patch update can
-rem silently swap the bundled Tcl/Tk from 8.6 to 9.0 (observed: 3.14.4 has
-rem 8.6.15, 3.14.7 has 9.0.4 - same minor version, different Tcl/Tk). This
-rem repo's PyInstaller packaging (radiosim.spec) assumes the Tk 8.6 data
-rem layout; on Tk 9 the built exe fails at startup with a Tcl data directory
-rem FileNotFoundError, while this script still reports [SUCCESS]. Catch it
-rem here instead of after a silent-looking green build.
-"%PY%" -c "import tkinter; import sys; sys.exit(0 if tkinter.TkVersion < 9 else 1)"
+rem Tcl/Tk version gate (ISSUES.md B-163, inverted in 3.9). Since 3.9 the
+rem release is built and verified on CPython 3.15 + Tk 9.0, whose Tcl library
+rem lives inside tcl90.dll (zipfs), so no separate Tcl data directory has to
+rem be bundled. A Python that still ships Tk 8.6 (e.g. 3.14.4) would produce a
+rem different bundle layout that the 3.9 release was never verified with, and
+rem the Python version alone does not tell which Tk it ships (3.14.4 has 8.6,
+rem 3.14.7 has 9.0). Stop here instead of after a silent-looking green build.
+"%PY%" -c "import tkinter; import sys; sys.exit(0 if tkinter.TkVersion >= 9 else 1)"
 if errorlevel 1 (
-    echo [ERROR] RADIOSIM_PYTHON's Tcl/Tk is version 9.x, not the 8.6.x this
-    echo         build expects ^(see ISSUES.md B-163^). The built exe would
-    echo         fail at startup with a missing Tcl data directory.
-    echo         Recreate the venv with a Python 3.14.x patch that still
-    echo         ships Tk 8.6 ^(verify with:
+    echo [ERROR] RADIOSIM_PYTHON's Tcl/Tk is older than 9.0 ^(see ISSUES.md
+    echo         B-163^). Since 3.9 the release is built and verified with
+    echo         Tk 9.0 ^(CPython 3.15^). Recreate the venv from a Python that
+    echo         ships Tk 9 ^(verify with:
     echo           python -c "import tkinter; print(tkinter.TkVersion)"^).
     pause
     exit /b 1
@@ -168,6 +168,10 @@ echo [INFO] Checking dependencies (pinned via requirements.txt / requirements-de
 rem Install both sets at their pins. PyInstaller is pinned in
 rem requirements-dev.txt because its bootloader ends up inside the shipped exe:
 rem an unpinned bundler means the release was built by whatever was newest.
+rem PYYAML_FORCE_LIBYAML=0: the PyYAML that bandit uses has no wheel for
+rem Python 3.15 and builds from source; skip its C extension so a machine
+rem without a C compiler does not stop here when the pin moves (CI does the same).
+set PYYAML_FORCE_LIBYAML=0
 "%PY%" -m pip install -r requirements.txt -r requirements-dev.txt --quiet
 if errorlevel 1 (
     echo [ERROR] Failed to install pinned dependencies.

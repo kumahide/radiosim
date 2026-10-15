@@ -3207,6 +3207,22 @@ class TestRelayAdvice:
         assert got == {}, got
 
 
+def test_budget_hook_swallows_its_own_crash(budget, tmp_path):
+    """読みが落ちても exit 0（B-342）＝ほかのフックと同じ規約。握らないと exit 1 の
+    非致命のエラーになり、予算の助言が黙って消える。落とし方＝配列の行（`entry.get`
+    が無い）＝途中で書き換わったトランスクリプトで起こりうる形。"""
+    transcript = tmp_path / "t.jsonl"
+    transcript.write_text("[1]\n", encoding="utf-8")
+    payload = json.dumps({"transcript_path": str(transcript), "session_id": "s"})
+    with pytest.raises(AttributeError):     # 前提＝本当に落ちる形であること
+        budget._scan(transcript)
+    env = {k: v for k, v in os.environ.items() if not k.startswith("RADIOSIM_RELAY")}
+    r = subprocess.run([sys.executable, _BUDGET_PATH], input=payload, env=env,
+                       capture_output=True, text=True, encoding="utf-8", timeout=60)
+    assert r.returncode == 0, f"例外が握られていない（exit {r.returncode}）: {r.stderr[-400:]}"
+    assert r.stdout == "", r.stdout
+
+
 # ============================================================
 # シェルの遠回りを止めるフック（I-084 の②③ → I-092 で③を強制へ）
 # ============================================================
@@ -3992,6 +4008,28 @@ class TestBackupTargets:
         assert ".pyc" in mirror.SKIP_SUFFIX
         assert ".sample" in mirror.SKIP_SUFFIX, "git が作る雛形まで運んでいる"
 
+    def test_nested_worktrees_are_not_carried(self, tmp_path, mirror, monkeypatch):
+        """⛔ `.git` を持つフォルダ（リンクされたワークツリー）は運ばない（B-340）。
+
+        🔴 **実例（2026-09-27〜10-12）**＝`.claude/worktrees/relay-3.8-stage5` を運んだ
+        まま元のワークツリーが消え、凍結リポに残った `.git`（`gitdir:` が消えた先を
+        指す）のせいで `git add -A` が 15 日失敗し続けた。
+        """
+        src = tmp_path / "repo"
+        wt = src / ".claude" / "worktrees" / "relay"
+        wt.mkdir(parents=True)
+        (wt / ".git").write_text("gitdir: D:/nowhere/.git/worktrees/relay\n", encoding="utf-8")
+        (wt / "main.py").write_text("x\n", encoding="utf-8")
+        (src / ".claude" / "keep.py").write_text("y\n", encoding="utf-8")
+        monkeypatch.setattr(mirror, "REPO_DIR", str(src))
+        monkeypatch.setattr(mirror, "BACKUP_TARGETS", ((".claude", ".claude"),))
+
+        dest = tmp_path / "box"
+        mirror._copy_into(str(dest))
+
+        assert (dest / ".claude" / "keep.py").is_file(), "ふつうのファイルまで落とした"
+        assert not (dest / ".claude" / "worktrees" / "relay").exists(), "ワークツリーを運んだ"
+
 
 class TestFreezeGuard:
     """🔴 **凍結リポへの push は取り違えると公開事故になる。**
@@ -4046,6 +4084,50 @@ class TestFreezeGuard:
         assert ".diff" in mirror.FREEZE_SKIP_SUFFIX
 
 
+class TestAppVersionFollowsMain:
+    """「いまの版」は main の先端（B-319）＝関連アプリのブランチの古い `version.py` を読まない。
+
+    🔴 実例＝`feature/field-phase1`（3.5b1）にいるだけで、メモリのゲートが「現在地表に
+    現行版 3.5 の行が無い」と止め、従えば正典が壊れる偽の行を足させていた。
+    """
+
+    @staticmethod
+    def _repo(tmp_path: pathlib.Path) -> pathlib.Path:
+        repo = tmp_path / "repo"
+        (repo / "core").mkdir(parents=True)
+        run = lambda *a: subprocess.run(["git", *a], cwd=repo, check=True, capture_output=True)  # noqa: E731
+        run("init", "-q", "-b", "main")
+        run("config", "user.email", "t@example.com")
+        run("config", "user.name", "t")
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.9a1"\n', encoding="utf-8")
+        run("add", "-A")
+        run("commit", "-q", "-m", "main")
+        run("checkout", "-q", "-b", "feature/field-phase1")
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.5b1"\n', encoding="utf-8")
+        run("commit", "-q", "-am", "old")
+        return repo
+
+    def test_a_side_branch_reads_the_version_from_main(self, hook, tmp_path, monkeypatch):
+        repo = self._repo(tmp_path)
+        monkeypatch.setattr(hook, "ROOT", repo)
+        assert hook._app_version() == "3.9a1"
+
+    def test_main_reads_the_working_tree_even_before_the_commit(self, hook, tmp_path, monkeypatch):
+        """版を上げた直後（未コミット）でも表を同じ回に直させる＝main では作業ツリー。"""
+        repo = self._repo(tmp_path)
+        subprocess.run(["git", "checkout", "-q", "main"], cwd=repo, check=True)
+        (repo / "core" / "version.py").write_text('APP_VERSION = "3.9b1"\n', encoding="utf-8")
+        monkeypatch.setattr(hook, "ROOT", repo)
+        assert hook._app_version() == "3.9b1"
+
+    def test_the_memory_gate_uses_the_same_answer(self, memcheck, monkeypatch):
+        sc = memcheck._session_context()
+        monkeypatch.setattr(sc, "_app_version", lambda: "3.9a1")
+        assert memcheck._current_version() == "3.9a1"
+        monkeypatch.setattr(sc, "_app_version", lambda: "?")
+        assert memcheck._current_version() is None
+
+
 class TestBackupHealthDisclosure:
     """**退避が止まっていることを鳴らす**（I-128 の「無いことの検査」）。
 
@@ -4081,13 +4163,21 @@ class TestBackupHealthDisclosure:
         assert any("ISSUES_archive.md が無い" in m for m in hook._backup_health())
 
     def test_it_fires_when_the_box_is_stale(self, hook, tmp_path, monkeypatch):
-        """①一度も落ちないゲートにしない＝わざと古くして鳴らす。"""
+        """①一度も落ちないゲートにしない＝わざと古くして鳴らす。
+
+        🔴 元の側も一時フォルダに置く（B-322）＝実物の `ISSUES.md` と比べると、
+        実物を 5 日より前に最後に書いた日には差が負になり、黙って赤になっていた。
+        """
+        src = tmp_path / "root"
+        src.mkdir()
+        (src / "ISSUES.md").write_text("x", encoding="utf-8")       # 今の時刻＝新しい側
         box = tmp_path / "box"
         box.mkdir()
         stale = box / "ISSUES.md"
         stale.write_text("x", encoding="utf-8")
         old = time.time() - 5 * 24 * 60 * 60
         os.utime(stale, (old, old))
+        monkeypatch.setattr(hook, "ROOT", src)
         monkeypatch.setattr(hook, "_ONEDRIVE_BOX", box)
         monkeypatch.setattr(hook, "_FREEZE_BOX", tmp_path / "freeze")
         (tmp_path / "freeze" / ".git").mkdir(parents=True)
@@ -4362,6 +4452,174 @@ def test_language_gate_is_wired_into_stop():
 
 
 # ============================================================
+# リレーを起こしたら終わりを見張る（I-230 の③）
+# ============================================================
+_RELAY_GATE_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "relay_watch_gate.py"))
+
+
+@pytest.fixture(scope="module")
+def relaygate():
+    """`.claude/relay_watch_gate.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_RELAY_GATE_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_relay_watch_gate", _RELAY_GATE_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_relay_watch_gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestRelayWatchGate:
+    """**`-Start` の後に見張りが無ければ止め、見張っていれば・起こしていなければ黙る**こと。
+
+    ⚠️ 起こしていないのに鳴るゲートは確実に無視される（[[feedback-promote-recurring-checks]]
+    の「毎回鳴る」壊れ方）＝コミットの本文・`-DryRun`・ヒアドキュメントの中は数えない。
+    """
+
+    _START = r"& tools\autorun\relay.ps1 -Start -Trips 30"
+    _WATCH = r'pwsh -NoProfile -File "D:\dev\radiosim-repo\tools\autorun\relay.ps1" -Watch'
+
+    # ---- 起こした・起こしていないの見分け --------------------------------------
+    @pytest.mark.parametrize("command", [
+        r"& tools\autorun\relay.ps1 -Start",
+        r"& tools\autorun\relay.ps1 -Trips 30 -Start",
+        r'pwsh -NoProfile -File "D:\my dev\tools\autorun\relay.ps1" -Start',   # 空白を含むパス（B-314）
+        r"git status --short; & tools\autorun\relay.ps1 -Start",              # git の後の別の文
+        "cd /d/dev/radiosim-repo && pwsh -File tools/autorun/relay.ps1 -Start",
+    ])
+    def test_starts_are_recognised(self, relaygate, command):
+        assert relaygate.is_start(command), command
+
+    @pytest.mark.parametrize("command", [
+        r"& tools\autorun\relay.ps1 -Start -DryRun",
+        r"& tools\autorun\relay.ps1 -DryRun",
+        r"& tools\autorun\relay.ps1 -Watch",
+        r"& tools\autorun\relay.ps1 -Probe",
+        'git commit -m "fix: relay.ps1 -Start の出力を直す"',                # コミットの本文
+        'git commit -m "a; relay.ps1 -Start も直す"',                        # 引用の中の区切り
+        "git commit -F - <<'EOF'\nrelay.ps1 -Start を直す\nEOF",
+        "git commit -m @'\nrelay.ps1 -Start を直す\n'@",
+        "cd /d/dev && git commit -m \"$(cat <<'EOF'\nrelay.ps1 -Start\nEOF\n)\"",
+        r"Get-Content tools\autorun\relay.ps1 | Select-String Start",
+    ])
+    def test_non_starts_are_ignored(self, relaygate, command):
+        assert not relaygate.is_start(command), command
+
+    # ---- 記録からの判定 ------------------------------------------------------
+    @staticmethod
+    def _call(cid, command, name="PowerShell", background=False):
+        inp = {"command": command, "description": "試し"}
+        if background:
+            inp["run_in_background"] = True
+        return {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "id": cid, "name": name, "input": inp}]}}
+
+    @staticmethod
+    def _result(cid, error=False):
+        return {"type": "user", "message": {"content": [
+            {"type": "tool_result", "tool_use_id": cid, "content": "x", "is_error": error}]}}
+
+    @staticmethod
+    def _lines(*entries):
+        return [json.dumps(e, ensure_ascii=False) for e in entries]
+
+    def test_start_without_watch_blocks(self, relaygate):
+        reason = relaygate.verdict(self._lines(self._call("a", self._START), self._result("a")))
+        assert reason and "見張っていません" in reason
+        assert "run_in_background" in reason and "-Watch" in reason, (
+            "打つべき呼び出しを出していない＝止めても次の手が分からない")
+
+    def test_background_watch_after_start_passes(self, relaygate):
+        lines = self._lines(self._call("a", self._START), self._result("a"),
+                            self._call("b", self._WATCH, background=True), self._result("b"))
+        assert relaygate.verdict(lines) is None
+
+    def test_watch_through_bash_also_counts(self, relaygate):
+        lines = self._lines(self._call("a", self._START),
+                            self._call("b", "pwsh -NoProfile -File tools/autorun/relay.ps1 -Watch",
+                                       name="Bash", background=True))
+        assert relaygate.verdict(lines) is None
+
+    def test_watch_before_the_last_start_does_not_count(self, relaygate):
+        """2 回目の `-Start` の後は見張っていない＝3.9 ステージ4 の形。"""
+        lines = self._lines(self._call("a", self._START),
+                            self._call("b", self._WATCH, background=True),
+                            self._call("c", self._START))
+        assert relaygate.verdict(lines)
+
+    def test_foreground_watch_counts_only_when_it_returned(self, relaygate):
+        """前面の `-Watch` は 2 分で切れる＝切れた呼び出しは見張りにならない。"""
+        timed_out = self._lines(self._call("a", self._START),
+                                self._call("b", self._WATCH), self._result("b", error=True))
+        returned = self._lines(self._call("a", self._START),
+                               self._call("b", self._WATCH), self._result("b"))
+        assert relaygate.verdict(timed_out)
+        assert relaygate.verdict(returned) is None
+
+    def test_monitor_on_the_relay_log_counts(self, relaygate):
+        lines = self._lines(self._call("a", self._START),
+                            {"type": "assistant", "message": {"content": [
+                                {"type": "tool_use", "id": "m", "name": "Monitor",
+                                 "input": {"command": r"Get-Content .claude\relay\relay.log -Wait"}}]}})
+        assert relaygate.verdict(lines) is None
+
+    def test_no_start_is_silent(self, relaygate):
+        lines = self._lines(self._call("a", 'git commit -m "relay.ps1 -Start を直す"'),
+                            self._call("b", r"& tools\autorun\relay.ps1 -DryRun"))
+        assert relaygate.verdict(lines) is None
+
+    def test_relay_dir_is_carried_into_the_watch_command(self, relaygate):
+        lines = self._lines(self._call(
+            "a", r'& tools\autorun\relay.ps1 -Start -RelayDir "C:\tmp\my relay"'))
+        assert r'-RelayDir "C:\tmp\my relay"' in relaygate.verdict(lines)
+
+    def test_sidechain_starts_are_not_counted(self, relaygate):
+        entry = self._call("a", self._START)
+        entry["isSidechain"] = True
+        assert relaygate.verdict(self._lines(entry)) is None
+
+    # ---- フックとしての出入り -------------------------------------------------
+    def _run(self, payload):
+        proc = subprocess.run([sys.executable, _RELAY_GATE_PATH], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+        return proc.stdout
+
+    def test_blocks_through_the_hook(self, relaygate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._lines(self._call("a", self._START))), encoding="utf-8")
+        assert json.loads(self._run({"transcript_path": str(log)}))["decision"] == "block"
+
+    def test_second_stop_never_blocks(self, relaygate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._lines(self._call("a", self._START))), encoding="utf-8")
+        assert self._run({"transcript_path": str(log), "stop_hook_active": True}) == ""
+
+    def test_broken_input_never_blocks(self, relaygate):
+        assert self._run({"transcript_path": "Z:/no/such/file.jsonl"}) == ""
+
+    def test_the_watch_command_matches_relay_ps1(self, relaygate):
+        """止めたときに出す呼び出しと、`-Start` が出す呼び出し（`Get-WatchCommand`）が同じ形。"""
+        src = pathlib.Path(_HOOK_DIR).parent / "tools" / "autorun" / "relay.ps1"
+        body = src.read_text(encoding="utf-8")
+        assert '"pwsh -NoProfile -File `"$PSCommandPath`" -Watch"' in body, (
+            "relay.ps1 の Get-WatchCommand の形が変わった＝フックの watch_command もそろえる")
+        assert relaygate.watch_command().startswith('pwsh -NoProfile -File "')
+        assert relaygate.watch_command().endswith('relay.ps1" -Watch')
+
+
+def test_relay_watch_gate_is_wired_into_stop():
+    """配線されていないゲートは無いのと同じ（`settings.local.json` の Stop に載っていること）。"""
+    path = os.path.abspath(os.path.join(_HOOK_DIR, "settings.local.json"))
+    if not os.path.exists(path):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    with open(path, encoding="utf-8") as f:
+        hooks = json.load(f).get("hooks", {})
+    commands = [h.get("command", "") for g in hooks.get("Stop", []) for h in g.get("hooks", [])]
+    assert any("relay_watch_gate.py" in c for c in commands), commands
+
+
+# ============================================================
 # 台帳の 2 本構成・降順・冒頭の一覧（2026-09-23・I-174）
 # ============================================================
 class TestLedgerSplit:
@@ -4499,3 +4757,113 @@ def test_real_ledger_index_is_fresh_and_ordered(hook):
     assert hook.order_violations(lines) == []
     fresh = hook.ledger_index(lines, current=hook._app_version())
     assert hook.current_index_block(lines) == fresh, "冒頭の一覧が古い"
+
+
+# ── I-240＝続いている 🔴 を Stop で 1 回止める ─────────────────────────────
+# 凍結の `🔴凍結 add 失敗` が 11 日・72 回出ても誰も動かなかった（B-340）。
+# 記録（`red_streak.py`）と門（`red_streak_gate.py`）が約束を守ることを固める。
+
+
+def _load_red(name):
+    path = os.path.abspath(os.path.join(_HOOK_DIR, f"{name}.py"))
+    spec = importlib.util.spec_from_file_location(name, path)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+@pytest.fixture(scope="module")
+def red():
+    return _load_red("red_streak")
+
+
+@pytest.fixture(scope="module")
+def red_gate(red):
+    return _load_red("red_streak_gate")
+
+
+_DAY = 86400.0
+
+
+def _run_days(red, state, ledger, line, days, per_day, source="s"):
+    """`days` 日にわたり、1 日 `per_day` 回ずつ同じ 🔴 を記録する。"""
+    for d in range(days + 1):
+        for _ in range(per_day):
+            red.record(source, [line], now=d * _DAY, state_dir=state)
+    return red.persisting(now=days * _DAY, state_dir=state, ledger=ledger)
+
+
+class TestRedStreak:
+    """種類の正規化・閾値・起票で黙る・直れば数え直し（I-240）。"""
+
+    def test_key_ignores_counts_dates_and_urls(self, red):
+        a = red.key_of(r"🔴 凍結（D:\x）: 最後のコミットから **3 日**")
+        b = red.key_of(r"🔴 凍結（D:\x）: 最後のコミットから **12 日**")
+        assert a == b and a
+        c = red.key_of("CI(main): 🔴 赤（failure） / 2026-10-10 / https://github.com/a/runs/1")
+        d = red.key_of("CI(main): 🔴 赤（failure） / 2026-10-12 / https://github.com/a/runs/9")
+        assert c == d and "http" not in c
+
+    def test_rises_only_when_both_days_and_count_reach(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        for sub in "bcd":
+            (tmp_path / sub).mkdir()
+        # 回数だけ（2 日・1 日 3 回＝9 回）では上がらない
+        assert _run_days(red, tmp_path / "b", ledger, line, 2, 3) == []
+        # 両方そろう（4 日・1 日 1 回＝0〜4 日目で 5 回）
+        got = _run_days(red, tmp_path / "c", ledger, line, 4, 1)
+        assert [(k, d, c) for k, d, c in got] == [(red.key_of(line), 4, 5)]
+        # 日数だけ（3 日・1 日 1 回＝4 回）では上がらない
+        assert _run_days(red, tmp_path / "d", ledger, line, 3, 1) == []
+
+    def test_vanished_red_starts_over(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        for d in range(4):
+            red.record("s", [line], now=d * _DAY, state_dir=tmp_path)
+        red.record("s", [], now=4 * _DAY, state_dir=tmp_path)       # 直った
+        for d in range(5, 8):
+            red.record("s", [line], now=d * _DAY, state_dir=tmp_path)
+        assert red.persisting(now=7 * _DAY, state_dir=tmp_path, ledger=ledger) == []
+
+    def test_ledger_tag_silences(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        line = "🔴凍結 add 失敗"
+        assert _run_days(red, tmp_path, ledger, line, 4, 2)
+        ledger.write_text(f"- 内容: {red.TAG}{red.key_of(line)}\n", encoding="utf-8")
+        assert red.persisting(now=4 * _DAY, state_dir=tmp_path, ledger=ledger) == []
+
+
+class TestRedStreakGate:
+    """門は 1 セッションに 1 回だけ止め、再入の Stop は通す（I-240）。"""
+
+    def _setup(self, red, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        assert _run_days(red, tmp_path, ledger, "🔴凍結 add 失敗", 4, 2)
+        return {"now": 4 * _DAY, "state_dir": tmp_path, "ledger": ledger}
+
+    def test_blocks_once_per_session(self, red, red_gate, tmp_path):
+        kw = self._setup(red, tmp_path)
+        seen = tmp_path / "seen.json"
+        first = red_gate.verdict({"session_id": "A"}, seen_path=seen, **kw)
+        assert first and "凍結 add 失敗" in first
+        assert red_gate.verdict({"session_id": "A"}, seen_path=seen, **kw) is None
+        assert red_gate.verdict({"session_id": "B"}, seen_path=seen, **kw)
+
+    def test_reentrant_stop_passes(self, red, red_gate, tmp_path):
+        kw = self._setup(red, tmp_path)
+        payload = {"session_id": "A", "stop_hook_active": True}
+        assert red_gate.verdict(payload, seen_path=tmp_path / "seen.json", **kw) is None
+
+    def test_nothing_persisting_passes(self, red, red_gate, tmp_path):
+        ledger = tmp_path / "ISSUES.md"
+        ledger.write_text("", encoding="utf-8")
+        assert red_gate.verdict({"session_id": "A"}, seen_path=tmp_path / "seen.json",
+                                now=0.0, state_dir=tmp_path, ledger=ledger) is None

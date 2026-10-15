@@ -142,11 +142,11 @@ english.UninstDataHint=Anything left unticked stays on this PC and is picked up 
 japanese.VerUpgrade=インストール済みの %1 を %2 に置き換えます。%n設定・地形キャッシュ・保存結果は引き継ぎます。
 japanese.VerSame=インストール済みの %1 を入れ直します（修復）。%n設定・地形キャッシュ・保存結果はそのまま残ります。
 japanese.VerDowngrade=インストール済みの %1 を、古い %2 で置き換えます。%n（起動時の確認で続けることを選びました）
-japanese.VerDowngradeAsk=インストール済みの %1 より古い版（%2）を入れようとしています。%n%n・新しい版で保存したプロジェクトファイルは、この版では開けません。%n・新しい版で増えた設定項目は、この版で設定を保存すると既定値に戻ります。%n・地形キャッシュと保存結果はそのまま使えます。%n%n複数の版を並べて使いたい場合は、インストーラではなくポータブル版（ZIP）を版ごとのフォルダに展開してください。%n%n古い版で置き換えますか？（「いいえ」でインストールを中止します）
+japanese.VerDowngradeAsk=インストール済みの %1 より古い版（%2）を入れようとしています。%n%n・新しい版で保存したプロジェクトファイルは、この版では開けないか、新しい版で増えた項目が抜け落ちることがあります。%n・新しい版で増えた設定項目は、この版で設定を保存すると既定値に戻ります。%n・地形キャッシュと保存結果はそのまま使えます。%n%n複数の版を並べて使いたい場合は、インストーラではなくポータブル版（ZIP）を版ごとのフォルダに展開してください。%n%n古い版で置き換えますか？（「いいえ」でインストールを中止します）
 english.VerUpgrade=The installed %1 will be replaced with %2.%nSettings, the terrain cache and saved results are kept.
 english.VerSame=The installed %1 will be reinstalled (repair).%nSettings, the terrain cache and saved results stay as they are.
 english.VerDowngrade=The installed %1 will be replaced with the older %2.%n(You chose to continue when Setup started.)
-english.VerDowngradeAsk=You are about to install a version (%2) that is older than the installed %1.%n%n- Project files saved with the newer version cannot be opened in this version.%n- Settings added in the newer version go back to their defaults once this version saves its settings.%n- The terrain cache and saved results can be used as they are.%n%nTo use several versions side by side, extract the portable ZIP into a separate folder for each version instead of using the installer.%n%nReplace it with the older version? (No cancels the installation.)
+english.VerDowngradeAsk=You are about to install a version (%2) that is older than the installed %1.%n%n- Project files saved with the newer version may not open in this version, or may lose the items the newer version added.%n- Settings added in the newer version go back to their defaults once this version saves its settings.%n- The terrain cache and saved results can be used as they are.%n%nTo use several versions side by side, extract the portable ZIP into a separate folder for each version instead of using the installer.%n%nReplace it with the older version? (No cancels the installation.)
 
 [Files]
 ; dist\RadioSimPro\ の一式をそのまま同梱する。ただし:

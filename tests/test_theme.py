@@ -25,7 +25,7 @@ sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 import time
 
 from core import i18n
-from conftest import PoisonedInterpreter, make_tk_root, pump_until, set_theme
+from conftest import PoisonedInterpreter, make_sv_ttk_root, pump_until, set_theme
 from views import theme
 from views.window_fit import fit_attrs
 
@@ -53,7 +53,7 @@ _PARAMS = {
 
 @pytest.fixture
 def root():
-    r = make_tk_root()
+    r = make_sv_ttk_root()                  # set_theme を呼ぶので汚れを作り直せる口で建てる（B-323）
     r.withdraw()
     try:
         yield r
@@ -196,7 +196,7 @@ def test_tooltip_takes_both_colors_from_theme():
     ツールチップを生成し、システム色（SystemButtonFace 等）が残っていないこと、
     および実効色のコントラストを検証する。
     """
-    root = make_tk_root()
+    root = make_sv_ttk_root()
     try:
         root.withdraw()
         set_theme("dark")
@@ -284,7 +284,7 @@ def test_launcher_menus_all_get_themed():
     素の色になる（ダークで文字が読めない）。そのため検証対象は Tk から辿った
     実物のメニュー群にする。
     """
-    root = make_tk_root()
+    root = make_sv_ttk_root()
     try:
         root.withdraw()
         set_theme("dark")
@@ -319,7 +319,7 @@ def test_launcher_menus_all_get_themed():
 
 def test_batch_canvas_uses_theme_background():
     """バッチ表のキャンバス背景がテーマ色になること（I-005 の実効性）。"""
-    root = make_tk_root()
+    root = make_sv_ttk_root()
     try:
         root.withdraw()
         set_theme("dark")
@@ -1245,6 +1245,53 @@ class TestThemeLoadFailuresAreTold:
             sv_ttk.set_theme = 原本
         assert len(calls) == 3
 
+    def test_最初の読み込みが汚れたらルートごと作り直す(self, monkeypatch):
+        """B-323＝汚れに気づいた口でルートを捨てられること（受け取った後では捨てられない）。"""
+        import sv_ttk
+
+        seen = []
+
+        def 一度だけ汚れる(root=None):
+            seen.append(root)
+            if len(seen) == 1:
+                raise tk.TclError("Theme sun-valley-light already exists")
+            return "light"
+
+        monkeypatch.setattr(sv_ttk, "get_theme", 一度だけ汚れる)
+        root = make_sv_ttk_root()
+        try:
+            assert len(seen) == 2, f"作り直していない: {len(seen)} 回"
+            assert seen[1] is root and seen[0] is not root
+            with pytest.raises(tk.TclError):
+                seen[0].winfo_exists()           # 汚れたルートは捨ててある
+        finally:
+            root.destroy()
+
+    def test_set_theme_を呼ぶテストは汚れを作り直せる口でルートを建てる(self):
+        """B-323 のクラス＝`make_tk_root` で建てたルートに `set_theme` を当てると、
+        汚れたときに捨てられず赤になる。`tests/` 全体の関数（フィクスチャを含む）を数える。
+
+        ⚠️ `root` フィクスチャは、同じファイルのどこかが `set_theme` を呼べば対象にする
+        （フィクスチャ自身は呼ばないので、関数の中だけ見ると漏れる）。
+        """
+        import ast
+        import pathlib
+
+        def calls(node, name):
+            return any(isinstance(n, ast.Call) and getattr(n.func, "id", None) == name
+                       for n in ast.walk(node))
+
+        bad = []
+        for path in sorted(pathlib.Path(__file__).parent.glob("test_*.py")):
+            tree = ast.parse(path.read_text(encoding="utf-8"))
+            file_sets_theme = calls(tree, "set_theme")
+            for fn in ast.walk(tree):
+                if not isinstance(fn, ast.FunctionDef) or not calls(fn, "make_tk_root"):
+                    continue
+                if calls(fn, "set_theme") or (fn.name == "root" and file_sets_theme):
+                    bad.append(f"{path.name}:{fn.lineno} {fn.name}")
+        assert not bad, f"make_tk_root で建てたルートに set_theme を当てている: {bad}"
+
 
 # ============================================================
 # DPI 認識のレベル（I-054＝メニューバーを OS に追従させる唯一の口）
@@ -1423,7 +1470,7 @@ def test_dropdown_font_is_pixel_specified(root):
 
 def test_launcher_dropdowns_follow_dpi():
     """ランチャーの実物のメニュー（バー＋全サブメニュー）が追従すること。"""
-    root = make_tk_root()
+    root = make_sv_ttk_root()
     try:
         root.withdraw()
         set_theme("light")

@@ -17,13 +17,13 @@ from typing import Any
 
 import pytest
 
-from conftest import make_tk_root, set_theme
+from conftest import make_sv_ttk_root, set_theme
 from views import title_bar
 
 
 @pytest.fixture
 def root():
-    r = make_tk_root()
+    r = make_sv_ttk_root()                  # set_theme を呼ぶので汚れを作り直せる口で建てる（B-323）
     r.withdraw()
     try:
         yield r

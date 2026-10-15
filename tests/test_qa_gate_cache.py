@@ -483,6 +483,24 @@ class TestCacheHit:
             ["git", "status", "--porcelain"], cwd=repo, capture_output=True, text=True
         ).stdout.strip() == ""
 
+    def test_a_linked_worktree_remembers_its_pass(self, repo, tmp_path):
+        """linked worktree の `.git` はファイル＝git が答える置き場へ書く（B-315）。
+
+        以前は `<作業ツリー>/.git/…` を組み立てて読み書きに失敗し（例外は握る）、
+        合格が一度も記録されず、push でフルがまた走っていた。
+        """
+        wt = tmp_path / "wt"
+        _git(repo, "worktree", "add", "-q", str(wt))
+        assert os.path.isfile(wt / ".git")
+        out = _run_node(
+            "const k = pytestCacheKey(process.cwd());\n"
+            "recordPass(process.cwd(), k);\n"
+            "process.stdout.write(String(isCachedPass(process.cwd(), k)));\n",
+            str(wt),
+        )
+        assert out == "true"
+        assert glob.glob(os.path.join(repo, ".git", "worktrees", "*", "radiosim-qa-pytest.json"))
+
     def test_corrupt_cache_is_a_miss_not_a_crash(self, repo):
         path = os.path.join(repo, ".git", "radiosim-qa-pytest.json")
         with open(path, "w", encoding="utf-8") as f:

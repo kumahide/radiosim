@@ -28,7 +28,9 @@ I-000 / I-023 / I-024）で、そのつど「そのウィンドウだけ」を�
 """
 
 import ast
+import json
 import os
+import subprocess
 import sys
 
 import pytest
@@ -1812,6 +1814,9 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
     ⚠️ **モニタが 2 枚以上あるときは検査しない**＝プライマリは「原点が (0,0) の
     矩形」だが、それを名指しで選ぶより*1 枚のときに厳密に見る*ほうが確実で、
     食い違いが起きるとしたら DPI の話なので枚数には依らない。
+
+    ⚠️ **割れたら別プロセスの新しい Tk にも聞く**（B-276）＝このプロセスの Tk が
+    古いだけなら skip、新しい Tk でも割れれば赤のまま。判定は `_stale_tk_reason`。
     """
     root = make_themed_root()
     try:
@@ -1819,13 +1824,112 @@ def test_the_primary_monitor_agrees_with_what_tk_reports():
         rects = window_fit._enumerate_monitor_rects()
         if len(rects) != 1:
             pytest.skip(f"モニタが {len(rects)} 枚＝この検査は 1 枚のときだけ成立する")
-        assert rects[0] == (0, 0, *window_fit.screen_size(root)), (
-            f"Win32 の矩形 {rects[0]} と Tk の画面 {window_fit.screen_size(root)} が"
-            "食い違っている＝位置と大きさが別の座標系で決まっており、"
-            "「入っているつもりのウィンドウ」が画面の外へ出る。"
+        here = window_fit.screen_size(root)
+        if rects[0] == (0, 0, *here):
+            return
+        fresh = _ask_a_fresh_tk(_process_dpi_awareness())
+        reason = _stale_tk_reason(rects[0], here, fresh)
+        if reason:
+            pytest.skip(reason)
+        pytest.fail(
+            f"Win32 の矩形 {rects[0]} と Tk の画面 {here} が食い違っている"
+            f"（別プロセスの新しい Tk＝{fresh}）＝位置と大きさが別の座標系で"
+            "決まっており、「入っているつもりのウィンドウ」が画面の外へ出る。"
         )
     finally:
         root.destroy()
+
+
+# 🔑 **Tk は画面の寸法をプロセスで 1 つ持ち、変更の瞬間に Tk の窓が在るときだけ
+# 更新する**（B-276・2026-10-03 に実測＝`issue_evidence/B-276_03_mode-*.log`）。
+# 全数実行にはテストとテストの間に窓が 1 つも無い瞬間があり、そこで画面が
+# 変わると、このプロセスの Tk は以後ずっと古い値を返す（`update()` を回しても
+# 直らない）＝製品の欠陥ではなく、全数実行という測り方の割れ。
+# ⇒ 新しいプロセスの Tk に聞き直し、**そちらが Win32 と一致するときだけ**
+# 「このプロセスの Tk が古い」として skip する。新しい Tk でも割れるなら、
+# それは座標系そのものの食い違い＝この検査が捕まえたいもの。
+#
+# ⚠️ 素の `winfo_screen*` を書かない＝`test_no_test_asks_the_screen_behind_the_pin`
+# の対象。別プロセスには conftest の固定が無いので、本物の `screen_size` を通す。
+_FRESH_TK_SCRIPT = """\
+import ctypes, json, sys, tkinter as tk
+shcore = ctypes.windll.shcore
+shcore.SetProcessDpiAwareness(int(sys.argv[1]))   # 既定と同じなら失敗してよい＝下で読み直す
+got = ctypes.c_int(-1)
+shcore.GetProcessDpiAwareness(None, ctypes.byref(got))
+from views import window_fit
+root = tk.Tk()
+root.withdraw()
+print(json.dumps({"awareness": got.value, "size": list(window_fit.screen_size(root))}))
+root.destroy()
+"""
+
+
+def _process_dpi_awareness() -> int:
+    """このプロセスの DPI 認識（`PROCESS_DPI_AWARENESS`＝0/1/2・聞けなければ -1）。
+
+    ⚠️ per-monitor の v1 と v2 はどちらも 2 で区別できないが、画面の寸法は
+    どちらも物理ピクセルなので、ここでの比較には効かない。
+    """
+    try:
+        import ctypes
+        got = ctypes.c_int(-1)
+        ctypes.windll.shcore.GetProcessDpiAwareness(None, ctypes.byref(got))
+        return got.value
+    except (ImportError, AttributeError, OSError):
+        return -1
+
+
+def _ask_a_fresh_tk(awareness: int) -> "tuple[int, int] | None":
+    """別プロセスで建てた新しい Tk が見る画面の大きさ（聞けなければ `None`）。
+
+    **DPI 認識をこのプロセスにそろえる**＝非認識と認識では同じ画面でも寸法が
+    違うので、そろわなければ比べられない（`None`＝赤のまま）。
+    """
+    if awareness < 0:
+        return None
+    repo = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+    try:
+        r = subprocess.run([sys.executable, "-c", _FRESH_TK_SCRIPT, str(awareness)],
+                           cwd=repo, capture_output=True, text=True, timeout=60,
+                           check=False)
+        data = json.loads(r.stdout.strip().splitlines()[-1])
+        size = tuple(data["size"])
+    except (OSError, subprocess.SubprocessError, ValueError, IndexError,
+            KeyError, TypeError):
+        return None
+    if data.get("awareness") != awareness or len(size) != 2:
+        return None
+    return size
+
+
+def _stale_tk_reason(win32_rect, here, fresh) -> "str | None":
+    """突き合わせが割れたとき、skip してよい理由（無ければ `None`＝赤のまま）。
+
+    skip してよいのは**新しい Tk が Win32 と一致する**ときだけ＝割れはこの
+    プロセスの Tk が古い値を持っているせい（B-276）。新しい Tk でも割れる・
+    聞けなかったときは、座標系の食い違いを見逃さないよう赤のまま。
+    """
+    if fresh is None or (0, 0, *fresh) != tuple(win32_rect):
+        return None
+    return (f"このプロセスの Tk の画面 {here} が古い（別プロセスの新しい Tk は "
+            f"{fresh} で Win32 の {tuple(win32_rect)} と一致）＝実行中に画面が"
+            "変わった（B-276）。座標系の食い違いではない")
+
+
+@pytest.mark.parametrize("fresh, skipped", [
+    ((1920, 1080), True),     # 新しい Tk は一致＝このプロセスの Tk が古いだけ
+    ((2560, 1440), False),    # 新しい Tk でも割れる＝座標系の食い違い
+    (None, False),            # 聞けなかった＝見逃さない側へ
+], ids=["fresh-agrees", "fresh-splits", "fresh-unknown"])
+def test_a_split_is_skipped_only_when_a_fresh_tk_agrees(fresh, skipped):
+    """B-276 の判定＝**新しい Tk が Win32 と一致するときだけ** skip すること。
+
+    ⚠️ 逆向き（新しい Tk でも割れるのに skip）に化けると、突き合わせは二度と
+    落ちない＝[[feedback-promote-recurring-checks]] の壊れ方①。
+    """
+    reason = _stale_tk_reason((0, 0, 1920, 1080), (2560, 1440), fresh)
+    assert (reason is not None) == skipped, reason
 
 
 # ------------------------------------------------------------

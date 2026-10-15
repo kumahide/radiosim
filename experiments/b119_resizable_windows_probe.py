@@ -88,6 +88,7 @@ for _stream in (sys.stdout, sys.stderr):
 
 import main as app_main                      # noqa: E402
 from views import theme, window_fit          # noqa: E402
+from _synthetic_move import move_window      # noqa: E402
 
 T0 = time.perf_counter()
 
@@ -450,33 +451,6 @@ def frame_hwnd(win) -> int:
         return 0
 
 
-def bring_to_front(hwnd: int) -> bool:
-    """`hwnd` を前面にし、**本当に前面になったか**を返す。
-
-    🔴 **`SetForegroundWindow` だけでは取れない**（2026-09-27・リレーから起こした
-    セッションで実測）＝前面にいるのが別のプロセスだと、Windows の前面ロックで戻り値 0 の
-    まま何も起きない。そのまま `SC_MOVE` とキーを送ると、移動ループに入らず
-    （自己検査の②で `Toplevel` が 0px）、**矢印と Enter は前面の別のアプリへ入る**。
-    ⇒ 前面のウィンドウのスレッドと入力をつないでから呼ぶ（`AttachThreadInput`＝同じ
-    実測で取れた）。つないだ入力は必ず外す。
-    """
-    import ctypes
-    from ctypes import wintypes
-    user32 = ctypes.windll.user32
-    user32.GetForegroundWindow.restype = wintypes.HWND
-    me = ctypes.windll.kernel32.GetCurrentThreadId()
-    fg = user32.GetForegroundWindow()
-    other = user32.GetWindowThreadProcessId(fg, None) if fg else 0
-    attached = bool(other and other != me and user32.AttachThreadInput(me, other, True))
-    try:
-        user32.SetForegroundWindow(hwnd)
-        user32.BringWindowToTop(hwnd)
-    finally:
-        if attached:
-            user32.AttachThreadInput(me, other, False)
-    return int(user32.GetForegroundWindow() or 0) == int(hwnd)
-
-
 def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
     """ウィンドウを**移動モーダルループに入れて動かす**（呼ぶのは別スレッド）。
 
@@ -495,33 +469,11 @@ def move_window_synthetically(hwnd: int, seconds: float = 3.0) -> None:
     ドラッグで暴走することが分かっているので、**この方式でそれが再現しなければ
     その巡は無効**（判定表にそう出す）。
 
-    ⚠️ **Tk のスレッドから呼ばない**＝移動ループの間 Tk の `after` は動けない。
-    Tk の API はここから 1 つも触らない（ハンドルは呼ぶ前に測って渡す）。
+    中身は `_synthetic_move.move_window`（`tk9_dpi_probe.py` と共有＝B-320）。
+    ⛔ **前面を取れなければキーを送らず、途中で外れたらそこでやめる**（同モジュールの註）。
     ⚠️ 走っている間は**キーボードに触らない**（矢印と Enter を送っている）。
-    ⛔ **前面を取れなければキーを送らない**（`bring_to_front` の註）＝送ると矢印と Enter が
-    **前面にいる別のアプリへ入る**。
     """
-    import ctypes
-    user32 = ctypes.windll.user32
-    _WM_SYSCOMMAND, _SC_MOVE = 0x0112, 0xF010
-    _VK_LEFT, _VK_RIGHT, _VK_RETURN, _KEYUP = 0x25, 0x27, 0x0D, 0x0002
-    if not bring_to_front(hwnd):
-        return
-    time.sleep(0.15)
-    user32.PostMessageW(hwnd, _WM_SYSCOMMAND, _SC_MOVE, 0)
-    time.sleep(0.25)
-    try:
-        steps = max(int(seconds / 0.04), 1)
-        for i in range(steps):
-            # 往復させる＝画面外へ出さず、かつ**動き続ける**（止まると WM の
-            # 再適用も止まり、観測のウィンドウが閉じる）。
-            key = _VK_RIGHT if (i // 12) % 2 == 0 else _VK_LEFT
-            user32.keybd_event(key, 0, 0, 0)
-            user32.keybd_event(key, 0, _KEYUP, 0)
-            time.sleep(0.04)
-    finally:
-        user32.keybd_event(_VK_RETURN, 0, 0, 0)      # 移動を確定して抜ける
-        user32.keybd_event(_VK_RETURN, 0, _KEYUP, 0)
+    move_window(hwnd, seconds, log=lambda msg: log("AUTO", msg))
 
 
 def auto_drag_all(root: tk.Tk, targets: "list[str]", done: "Callable[[], None]",
@@ -682,7 +634,8 @@ def selftest() -> int:
     露見していた。**計測の道具は、対象を測る前に単体で検査できる。**
 
     見るのは 4 つ＝①重なったウィンドウの同定 ②タイトルバーの帰属 ③合成ドラッグが
-    **本当にウィンドウを動かす**か ④印の分類（実データで検算）。
+    **本当にウィンドウを動かす**か ④印の分類（実データで検算）。⑤⑥は後から足した
+    （⑥＝前面が外れたら送るのをやめるか＝B-320）。
     """
     ok = True
 
@@ -790,6 +743,24 @@ def selftest() -> int:
     check("ドラッグ中は 1 回だけ", _DRAG_DRIFTS.get(key, 0), 1)
     _GRABBED.update(key=None, label="-", size=None, pos=None)
     mark.destroy()
+
+    print("⑥ 前面が外れたらキーを送るのをやめるか（B-320＝最初の 1 回しか見ていなかった）",
+          flush=True)
+    #: 本物のキーは 1 つも送らない＝前面の判定と送り口を差し替えて数える。
+    for name, front_for, want_enter in (("途中で外れる", 5, False),
+                                        ("裏＝最後まで前面", 10 ** 6, True)):
+        sent: "list[int]" = []
+        asked = {"n": 0}
+
+        def is_front(limit: int = front_for) -> bool:
+            asked["n"] += 1
+            return asked["n"] <= limit
+
+        n = move_window(0, 1.0, is_front=is_front, send_key=sent.append,
+                        post_move=lambda: None)
+        check(f"{name}: Enter を送ったか", 0x0D in sent, want_enter)
+        if not want_enter:
+            check(f"{name}: 外れた後に送った数", n, front_for)
 
     root.destroy()
     print(f"\n=== selftest: {'PASS' if ok else 'FAIL'} ===", flush=True)

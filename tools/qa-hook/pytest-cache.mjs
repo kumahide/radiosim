@@ -39,7 +39,7 @@ import {
   copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { isAbsolute, join } from "node:path";
+import { basename, isAbsolute, join } from "node:path";
 import { git } from "./git-changes.mjs";
 
 // A dirty file bigger than this is not worth hashing every turn -> just run.
@@ -75,6 +75,27 @@ const UNTRACKED_DEPS = [
 ];
 
 export const CACHE_PATH = join(".git", "radiosim-qa-pytest.json");
+
+const cacheFiles = new Map();
+
+/** Where the record actually lives: inside the git dir git reports (B-315).
+ *
+ * In a linked worktree `.git` is a FILE, so `<cwd>/.git/…` could be neither read
+ * nor written (both swallowed) — no pass was ever remembered there and the push
+ * paid the full suite again. Ask git (`--absolute-git-dir` = the worktree's own
+ * dir, as workingTree() does); fall back to CACHE_PATH outside a repo. */
+export function cacheFile(cwd) {
+  if (!cacheFiles.has(cwd)) {
+    let dir = null;
+    try {
+      dir = git(cwd, ["rev-parse", "--absolute-git-dir"]).trim() || null;
+    } catch {
+      /* not a git repo */
+    }
+    cacheFiles.set(cwd, dir ? join(dir, basename(CACHE_PATH)) : join(cwd, CACHE_PATH));
+  }
+  return cacheFiles.get(cwd);
+}
 
 function statLines(cwd, { dir, suffix }) {
   const abs = join(cwd, dir);
@@ -243,7 +264,7 @@ export function pytestCacheKey(cwd, scopeSignature = "") {
 
 function readCache(cwd) {
   try {
-    return JSON.parse(readFileSync(join(cwd, CACHE_PATH), "utf-8")) || {};
+    return JSON.parse(readFileSync(cacheFile(cwd), "utf-8")) || {};
   } catch {
     return {};
   }
@@ -251,7 +272,7 @@ function readCache(cwd) {
 
 function writeCache(cwd, data) {
   try {
-    writeFileSync(join(cwd, CACHE_PATH), JSON.stringify(data) + "\n", "utf-8");
+    writeFileSync(cacheFile(cwd), JSON.stringify(data) + "\n", "utf-8");
   } catch {
     /* the cache is an optimisation; failing to write it only costs a rerun */
   }
@@ -336,7 +357,7 @@ export function lastDurationMs(cwd) {
 export function isCachedPass(cwd, key) {
   if (!key) return false;
   try {
-    const data = JSON.parse(readFileSync(join(cwd, CACHE_PATH), "utf-8"));
+    const data = JSON.parse(readFileSync(cacheFile(cwd), "utf-8"));
     if (!data) return false;
     if (Array.isArray(data.passedKeys)) return data.passedKeys.includes(key);
     return data.passedKey === key; // a cache file written before I-184

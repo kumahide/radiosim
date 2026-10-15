@@ -1,4 +1,4 @@
-# RadioSim Pro 3.8
+# RadioSim Pro 3.9
 
 > **Intended reader**: developers who run it from source or work on the code.
 > If you only want to know how to use the app, see [manual_en.md](manual_en.md).
@@ -100,7 +100,7 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 
 ### Prerequisites
 
-- Python 3.11 or later (developed and CI-tested on 3.14). ⚠️ **A release build needs a Python that ships Tk 8.6**: an exe built from one that ships Tk 9 (such as 3.14.7) fails at startup, so `build.bat` checks the Tk version and stops (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
+- Python 3.12 or later (developed and CI-tested on 3.15). ⚠️ **A release build needs a Python that ships Tk 9** (since 3.9; the Windows build of Python 3.15 ships Tk 9.0). The release is built and verified with Tk 9, and Tk 8.6 changes how the bundle is laid out, so `build.bat` checks the Tk version and stops. Patch releases of the same 3.14 line ship different Tk versions (3.14.4 has 8.6, 3.14.7 has 9.0), so the Python version number alone does not tell you (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
 - **`RADIOSIM_PYTHON`** must point at the `python.exe` of the same virtual environment the tests run in (**required**). → [Development Environment](#development-environment)
 - PyInstaller and all dependencies are installed at their pinned versions by `build.bat`
 
@@ -190,7 +190,7 @@ Runs the same build as `build.bat`, then wraps it with [installer/radiosim.iss](
 | Item     | Requirement                                                   |
 | -------- | ------------------------------------------------------------- |
 | OS       | Windows 10/11 (macOS / Linux may work but are untested)       |
-| Python   | 3.11 or later — required by pinned numpy 2.4 (tested on 3.14) |
+| Python   | 3.12 or later — required by pinned numpy 2.5 (tested on 3.15) |
 | Internet | Required for DEM retrieval (fetched tiles are cached locally) |
 
 ### Dependencies
@@ -328,6 +328,7 @@ radiosim/
     ├── test_golden_links.py   # Regression corpus (golden link-budget values + purity invariants)
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
+    ├── test_model_preconditions.py  # Checks model preconditions against every corpus link
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
     ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
@@ -391,7 +392,8 @@ radiosim/
     ├── test_qa_gate_cache.py
     ├── test_pre_commit_gate.py
     ├── test_commit_gate_scope.py
-    └── test_release_check.py
+    ├── test_release_check.py
+    └── test_hook_shim.py
 ```
 
 ---
@@ -399,15 +401,19 @@ radiosim/
 ## Installation & Launch (from source)
 
 ```bash
+# Move into the repository (requirements.txt and main.py live here)
+cd radiosim
+
 # Install dependencies (requirements.txt is the single source of versions —
 # pinned so that a source run matches what ships in the binary)
 python -m pip install -r requirements.txt
 
-# For running the tests or building, add the development set
-python -m pip install -r requirements-dev.txt
+# For running the tests or building, add the development set (PYYAML_FORCE_LIBYAML=0:
+# the PyYAML that bandit uses has no wheel for Python 3.15 and builds from source,
+# so skip its C extension — same as "Development Environment" below)
+PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
 # Launch
-cd radiosim
 python main.py
 ```
 
@@ -446,7 +452,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
 | Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
 | Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
-| Load App Settings... | —                           | Imports **only** theme, language, proxy and coordinate format from a settings file   |
+| Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file                     |
 | Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
 
 ### Help
@@ -460,7 +466,7 @@ Selections are persisted to `radiosim_conf.json`.
 | Include Pre-releases | `update_check_prerelease`: `"on"` / `"off"` is the user's choice; the default `""` means "decided by the current version" (`update_check.want_prerelease()`: off on a final release, on on RC/a/b). The check mark shows that resolved value. Toggling it fixes `"on"`/`"off"` from then on. Read on the UI thread and passed to `check(include_pre=...)` for both the manual and the startup check |
 | About       | Shows the version from `version.py`    |
 
-> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language, proxy and coordinate format. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
+> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language and proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
 
 > **The Map is not in the menus** — it opens from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
 
@@ -495,7 +501,7 @@ The **"Map" button** in the launcher (`views/map_window.py`) opens an auxiliary 
 
 - **Pick Coordinates mode (default)**: click the map to fill **whichever site is still empty** (TX, then RX) and write it back to the launcher's TX / RX coordinate fields (the numeric fields are the source of truth). **Once both are set a plain click writes nothing** — from there you select a point and move it (below). Wired via `apply_map_pick` / `current_path_coords`, and edits to the fields (clearing, typing, loading a project) reach the map through `on_single_coords_changed` — the pick layer is a mirror of the numeric fields, like the other two layers. Without that notification, clearing a field left the marker on the map and the map kept believing both sites were set, so plain clicks stopped writing.
 - **Append to Multiple Paths mode**: selecting it opens (or raises) the Multiple Paths window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. The distance badge of a committed path **carries its path ID**, so a path on the map can be traced back to its row in the batch. Path row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths` (plus `update_path_point` for moving an endpoint).
-- **Add waypoints mode**: opened from the Relay Path window; every click appends one waypoint to the end of the list (this is not the alternating TX/RX pick). Draws a polyline through the waypoints plus a **horizontal-distance badge per section**. ⚠️ **That distance appears nowhere else on screen** — the section table holds frequency, gains and results but no distance, and the report carries the *slant* distance (a separate term in the glossary). The map is a copy and not the source of truth, so it is redrawn from the window's waypoint list every time. Wired via `append_waypoint` / `waypoint_markers` (plus `update_waypoint` for moving a point); implemented in `views/multihop_map.py`.
+- **Add waypoints mode**: opened from the Relay Path window; every click places one waypoint (this is not the alternating TX/RX pick). Blank points are filled first, top to bottom; once none is blank, the click inserts a relay before the receiver (the same `_add_waypoint` contract as "Add point" in the waypoint table). Draws a polyline through the waypoints plus a **horizontal-distance badge per section**. ⚠️ **That distance appears nowhere else on screen** — the section table holds frequency, gains and results but no distance, and the report carries the *slant* distance (a separate term in the glossary). The map is a copy and not the source of truth, so it is redrawn from the window's waypoint list every time. Wired via `append_waypoint` / `waypoint_markers` (plus `update_waypoint` for moving a point); implemented in `views/multihop_map.py`.
 **Moving a point goes through a selection**: clicking a marker selects it (an amber ring, plus its name in the status bar), and **the next click on the map moves it there** (Esc cancels; a selection is spent by one move). ⛔ **Dragging is deliberately not used** — a plain drag is already the pan gesture, and taking it over would create the "I grabbed the map and a point moved" failure, i.e. input rewritten silently. One rule: **a plain click adds, a click after a selection edits**. ⚠️ **The marker must not be the only way in**: pan far enough and that single entry point sits off-screen, killing the whole re-placement flow. In Pick Coordinates and Append modes, **right-clicking the map** ("Place TX here" / "Place RX here") is an entry point that does not depend on where the marker is — you name the site, so nothing is rewritten silently. ⚠️ tkintermapview's own right-click menu (English, copy-coordinates) is **replaced**, not extended.
 
 What the map hands back to a window is a **position in the copy** (the index within `existing_paths()` / `waypoint_markers()`), never the window's row number — rows with unreadable coordinates never make it into the copy. The window resolves that position by the same rule and **checks the name (path ID / waypoint name) before writing**, refusing the move when they disagree (the same "is this really that input?" check used when results are written back into a row). ⚠️ **When the move is smaller than the terrain mesh (5 m) the status bar says so**, because a finer nudge can sample the same grid cell: the marker moves but the result may not change (where samples are placed is set by the terrain resolution level).
@@ -624,7 +630,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; single source is `batch.PathRow`. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`, and the values read land on `batch.PathRow` attributes. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 
@@ -662,7 +668,7 @@ Open it with the **Condition Explorer** button in the launcher (`views/scenario.
 - **Compare and sweep share one computation path.** A sweep is turned into conditions first: `linspace_values()` → `sweep_conditions(axis, values)` → `evaluate()`. Axes are `SWEEP_AXES`, point count is capped by `MAX_SWEEP_POINTS`. **Only the input construction branches**; evaluation and the result types (`ScenarioRun` / `ScenarioPoint`) are single.
 - **Progress is declared as phases.** `Phase` / `Phases` (`FETCH`, `CALC`, `RENDER`) carry relative weights, and report generation runs inside the worker thread as the RENDER phase via `artifacts`. **Do not generate reports in the View after completion** — it freezes the GUI and that time never shows up in the progress bar (a defect this project has shipped twice).
 - **Validation precedes the fetch.** `validate_base()` rejects bad base values before any download (failing after the fetch throws away the user's wait). Conditions validate themselves in `Condition`.
-- **The window's own values are canonical.** Launcher values are frozen when the window opens and are **only pulled in when ↻ is pressed** — every window computes with the values you can see.
+- **The window's own values are canonical.** Launcher values are frozen when the window opens and are **only pulled in when ↻ is pressed** — every window that takes its conditions from the launcher and computes them uses the values you can see. The map is an input tool and follows the launcher's coordinate fields as they change.
 
 ---
 
@@ -868,6 +874,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
 | `summary.csv`  | Numerical results for all paths                  |
 | `summary.kml`  | Google Earth KML for all paths                   |
 | `report_all.html` | Summary + every path in one printable document |
+| `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ### Condition Explorer (compare / sweep)
 
@@ -877,7 +884,6 @@ Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
 | ----------------- | ------------------------------------------------------------ |
 | `scenario.html` | Single-page A4 (compare = difference table with in-cell deltas / sweep = chart + table) |
 | `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
-| `{id}/`        | Per-path package (same structure as Single Mode) |
 
 ### Relay Path
 
@@ -902,15 +908,13 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **This policy is not a promise never to change anything** — it is the road a change has to travel.
 
-> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8)**:
+> 📣 **Advance notice (coming in 4.0 — nothing changes in 3.4/3.5/3.6/3.7/3.8/3.9)**:
 > - **The `status` column becomes multi-valued.** Today, `status` in `summary.csv` / `hops.csv` / `scenario.csv` is a 3-value field: **OK** (margin ≥ 0 dB) / **NG** (< 0 dB) / **ERROR** (the calculation or an artifact failed, so no verdict could be given; written by `report/batch.py` and `report/multihop.py`). In 4.0, the sensitivity calculation introduced in 3.4 (`core/sensitivity.py` — a recalculation across pessimistic/optimistic assumptions for vegetation height, environment class, diffraction model, and so on) will feed into the verdict, giving four values: **OK** (holds even under pessimistic assumptions) / **NG** (fails even under optimistic assumptions) / **REVIEW** (flips depending on assumptions — a site visit is recommended) / **ERROR** (unchanged — no verdict could be given; **not renamed**). This replaces `core/models.py`'s `status = "OK" if actual_margin >= 0 else "NG"`. The column name, its position, and the 0 dB margin line between OK and NG do not change. What changes is which margin is held against that line (today a single margin under the default assumptions; in 4.0 both the pessimistic and the optimistic one — OK if the link holds under both, NG if it fails under both, REVIEW if they disagree). The new values and the conditions for each will be spelled out in the 4.0 CHANGELOG.
 > - **Two columns will be appended (end of file only).** A calculation profile ID (distinguishing the current calculation method from a compatibility mode that reproduces the method used when an older project file was created) and a hash of the input settings. Existing columns are unaffected.
-> - **The on-screen/report "Rice K factor" (`current_k` = `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7 shipped with no such change, and it still isn't decided which version will be "the version before" 4.0**, so this notice continues rather than waiting for that to be settled.
+> - **The on-screen/report "Rice K factor" (`current_k` = `initial_k − diff_loss / 3`, display-only) will be reconsidered.** The "3" in that formula has no cited basis. After measuring how much it actually matters in 3.4/3.5/3.6/3.7/3.8/3.9, 4.0 will decide whether to leave it as is, change how it's computed, or drop the field. **Nothing changes about it right now.**
+> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual). **3.4/3.5/3.6/3.7/3.8 shipped with no such change. 4.0 is now set to come right after 3.9, so 3.9 is "the version before" 4.0** (this is the last notice before the change).
 
-> 📣 **Advance notice (coming in 3.9 — nothing changes in 3.8)**:
-> - **The minimum supported Python version, for running from source, rises from 3.11 to 3.12.** This has no effect if you use the packaged exe. `numpy` will also move to the 2.5.x line at the same time (it stays pinned at 2.4.4 through 3.8). Since 3.4 this was announced for 4.0; it moves one version earlier because supporting newer Python versions requires `numpy` 2.5.x. In 3.8 we compared calculation results against `numpy` 2.5.3 and confirmed that the values in the output CSVs do not change.
-> - ⚠️ **This notice follows change policy 2** (published in both the CHANGELOG and this manual).
+> 🔴 **Changed in 3.9 (announced in 3.8)**: **The minimum supported Python version, for running from source, rose from 3.11 to 3.12.** This has no effect if you use the packaged exe. `numpy` moved from 2.4.4 to 2.5.3 at the same time. We compared the calculation results and the output CSVs before and after the update and confirmed that not a single value changed (the comparison is `experiments/numeric_parity_probe.py`).
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 
@@ -941,7 +945,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that the samples are **not evenly spaced** ("high" and "medium" place them on DEM pixel edges), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this — not `slant_m` — for effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -967,7 +971,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `error` | — | Why it failed; empty for a section that succeeded |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section (its length, bearing and latitude), so it differs between sections of one route |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). Each section fetches its own terrain, so this differs between sections |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Each section fetches its own terrain, so this differs between sections |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
 
@@ -1002,7 +1006,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `diff_method` | — | Diffraction model |
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `axis` | — | Name of the sweep axis (e.g. `freq_mhz`); empty in compare mode |
-| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed due to a network problem (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
+| `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
 
 ⚠️ Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` still puts a same-named fixed column (e.g. `freq_mhz`) alongside `axis_value` — they mean different things: `axis_value` is the value being swept, while the fixed column is **the actual value used for every parameter in that row**.
 
@@ -1011,8 +1015,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
-| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched is an empty cell** (announced in 3.2, applied in 3.3 — rule 2) — `0.0` now means only a genuine sea-level elevation. Check `elev_source` to see whether the fetch actually succeeded |
-| `elev_source` | — | Where this sample's elevation came from: the `source_id` returned by `dem_sources.resolve()`. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (network failure) — and samples from a user-declared external source carry that source's `source_id` (the value set is open) |
+| `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell** (announced in 3.2, applied in 3.3 — rule 2; `dem.get_elevation` returns `nan` only when `network_failed()` is true; the flag is raised on an unexpected exception too). ⚠️ **`0.0` is not always sea level** — a sample where every layer ran out on 404 (sea, outside Japan) and a pixel with missing data also return `0.0`, and `elev_source` still carries that source's `source_id`. The empty cell and `elev_source` distinguish only those failed fetches |
+| `elev_source` | — | Where this sample's elevation came from: the `source_id` returned by `dem_sources.resolve()`. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (network problem or unexpected error) — and samples from a user-declared external source carry that source's `source_id` (the value set is open) |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
 
@@ -1084,10 +1088,18 @@ They are separate because mixing development tooling into the runtime dependency
 
 ```bat
 rem 1. Create the virtual environment (preferably outside any cloud-synced folder:
-rem    a venv bakes in absolute paths, so syncing it is useless on another machine)
-python -m venv D:\dev\radiosim\venv
+rem    a venv bakes in absolute paths, so syncing it is useless on another machine).
+rem    ⚠️ Create it from a Python that bundles Tk 9 (see the build Prerequisites). If the
+rem    first python on PATH has Tk 8.6, build.bat stops in that venv. Name the Python
+rem    version through the py launcher, and first confirm that Tk reports 9.0
+py -3.15 -c "import tkinter; print(tkinter.TkVersion)"
+py -3.15 -m venv D:\dev\radiosim\venv
 
-rem 2. Install both dependency sets at their pinned versions
+rem 2. Install both dependency sets at their pinned versions.
+rem    PYYAML_FORCE_LIBYAML=0: the PyYAML that bandit uses has no wheel for Python 3.15
+rem    and is built from source, so keep it from building the C extension (no C
+rem    compiler needed; CI does the same)
+set PYYAML_FORCE_LIBYAML=0
 D:\dev\radiosim\venv\Scripts\python.exe -m pip install -r requirements.txt -r requirements-dev.txt
 
 rem 3. Declare that interpreter as the single environment used for both
@@ -1144,7 +1156,11 @@ entry point that runs them together.
 - **This is not the pre-commit gate.** The Claude Code hook
   (`tools/qa-hook/pre-commit-gate.mjs`) picks, on every `git commit`, either an
   island's tests or the full suite depending on what the change touches, and
-  always runs the full suite before `git push`. Before either, it first runs the
+  before `git push` always proves the whole tree green. Passes are recorded
+  against the content that was tested, so a full pass on the same content is not
+  run again; and when the only change since the last full pass is the version
+  line (`APP_VERSION` in `core/version.py`), both the commit and the push run just
+  the tests that read the version string. Before either, it first runs the
   real-data checks of the ledger, roadmap and memory (`test_claude_hooks.py -k
   test_real_`, about 2 s), so an issue marked done before its commit exists is
   caught at once instead of at the end of the suite. `dev_check.py` is the entry point
@@ -1210,6 +1226,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_field_monitor.py` | The `monitor` command of the field-measurement helper (`apps/field`), which only shows reception and writes nothing: losses are split into radio and USB (the gap in `seq` minus the gap in `sample_seq`); a sequence reset after a restart is not counted as a loss; a config is announced once and again when it changes, and only a TX config shows the output power; a quiet second says so and CRC errors are shown. Also the `settings` command that shows and changes a unit's settings: out-of-range values are stopped before sending; the role is sent last; the unit's own config is read, not a relayed TX config; a unit that acknowledges a change but keeps the old value is caught; a refusal from the unit is reported as is |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
+| `test_model_preconditions.py` | Checks each model's preconditions (its domain of validity) against every link in the regression corpus. The current predicate: no ground-reflection envelope on a link with diffraction loss (a terrain-obstructed path). Known counterexamples are marked per link with a strict xfail carrying the issue ID, so fixing them turns into a red xpass. It also checks that the corpus contains both shapes, so the predicate is never vacuous |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
 | `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
@@ -1261,9 +1278,10 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_codex_review_tool.py` | Independent-review driver (`tools/codex_review/run.ps1`). Pins the **core of reviewer independence** (prompt read from a file, only the diff path and base substituted, `read-only` fixed, the raw answer written to a file before we read it) and the **claims the script must not make**: `-C` plus `read-only` do not narrow what Codex can read (measured with a canary), so an assertion to the contrary is banned — paired with a check that the honest disclosure has not been deleted |
 | `test_autorun_tool.py` | Session relay (`tools/autorun/relay.ps1`), which reads the handoff note the previous session wrote and starts the next interactive session. Pins what we claim about it: the prompt is read from a file with only three slots, the session runs as a background interactive session that never skips hooks or permission prompts, the environment for the budget hook is passed both at launch and through the settings, and a handoff note with an incomplete header stops the relay before anything starts. Only the `-DryRun` plan is inspected (neither git nor claude is touched). ⚠️ **Skipped where `pwsh` is missing** |
 | `test_qa_gate_cache.py`  | QA gate rerun-suppression cache (`tools/qa-hook/pytest-cache.mjs`): the key must track working-tree *content*, so any real change re-runs the suite and an unchanged tree does not. ⚠️ **Skipped where `node` is unavailable** (the target itself has been tracked since 2026-08-12) |
-| `test_pre_commit_gate.py` | The commit-island decision in the pre-commit gate (`tools/qa-hook/pre-commit-gate.mjs`): one path outside the island falls back to the full suite, a rename counts its source path too, an empty change set is full, and no repo-wide scanner is missing from an island's test list. The real-data preflight selects every `test_real_` test, and its refusal says "close issues after the commit" and "the `git add` in the same command did not run either". ⚠️ **Skipped where `node` is unavailable** |
-| `test_commit_gate_scope.py` | What those islands actually declare. The `docs` and `qa-gate` islands must scope (a manual-only change lands in an island) without over-reaching (product code, the version string, language files and `conftest.py` all fall back to the full suite). The `field` island claims only `apps/field/`; any other app under `apps/` falls back to the full suite. It also re-derives, from the tests' own source (AST), that no test reading a `docs/` file is missing from the island. ⚠️ **Skipped where `node` is unavailable** |
+| `test_pre_commit_gate.py` | The commit-island decision in the pre-commit gate (`tools/qa-hook/pre-commit-gate.mjs`): one path outside the island falls back to the full suite, a rename counts its source path too, an empty change set is full, and no repo-wide scanner is missing from an island's test list. A change of the `APP_VERSION` line alone, on top of the last full pass, is proven by the tests that read the version string (for the commit and the push alike). The real-data preflight selects every `test_real_` test, and its refusal says "close issues after the commit" and "the `git add` in the same command did not run either". ⚠️ **Skipped where `node` is unavailable** |
+| `test_commit_gate_scope.py` | What those islands actually declare. The `docs` and `qa-gate` islands must scope (a manual-only change lands in an island) without over-reaching (product code, the version string, language files and `conftest.py` all fall back to the full suite; the one exception, a change of the `APP_VERSION` line alone since the last full pass, belongs to `test_pre_commit_gate.py`). The `field` island claims only `apps/field/`; any other app under `apps/` falls back to the full suite. It also re-derives, from the tests' own source (AST), that no test reading a `docs/` file is missing from the island. ⚠️ **Skipped where `node` is unavailable** |
 | `test_release_check.py` | The release-boundary advisory (`tools/qa-hook/release-check.mjs`) raises 🔴🔴 only when something is confirmed red or untested. The display-run stamp is keyed to the `views/` and `tests/` content that was actually tested, so a run made just before a commit counts for that commit, and reverting a change after the run marks it untested again (the writer in `tests/conftest.py` and the reader in the `.mjs` are checked against each other in a scratch repository). A CI run still in progress is reported as running, not red, and the run is looked up on the current branch. ⚠️ **Skipped where `node` is unavailable** |
+| `test_hook_shim.py` | The gate-hook shim (`tools/qa-hook/hook-shim.mjs`) passes the gate's exit 0 / 2 through unchanged and turns anything else (a conflict marker, a syntax error, a failed import, an interpreter that will not start) into exit 2 "the gate is broken". Only a re-entered Stop is reported instead of blocked. Every `.mjs` under `tools/qa-hook/` passes `node --check`. Locally, every blocking hook is wired through the shim. ⚠️ **Skipped where `node` is unavailable** |
 
 ### Independent review (showing the diff to an outside reviewer)
 
@@ -1311,8 +1329,8 @@ Green gates are a necessary condition, not a sufficient one. **Whoever wrote the
 
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
-- **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk 8.6 and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0 is free of it (measured), but moving there waits on the Python runtime we build on. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
-- **Moving a window between monitors with different display scales leaves the menu bar strip at the old scale** (Windows draws the HMENU). Appearance only
+- **Changing the Windows display scale while the app is running makes the launcher drift in size while you drag it** (a restart fixes it). ⚠️ **The cause is in Tk and we verified by measurement that it cannot be worked around from our side** (over ten candidates tried, none worked). **It happens when running from source too**, so seeing it does not mean your change caused it. Tk 9.0, which 3.9 moved to, shows it exactly as often as 8.6 did (measured), so a newer Tk does not fix it. See "Operation" in [manual_en.md](manual_en.md) for the full symptom
+- **With monitors at different display scales, the menu bar strip alone can end up a different size from the rest of the text.** The bar is an HMENU drawn by Windows, which scales it to the monitor that window sits on. The app's text (Tk's named fonts), however, can only have one size for the whole app, and follows whichever window's display last changed. So once one window has moved to another monitor and another has not, the bar and the contents disagree in one of them. Appearance only
 - **After a display scale change, until the next sign-in, the drop-down check mark (✓) is drawn thick and large over the label and the cascade arrow (▸) disappears** (signing in again fixes it). Tk's `win/tkWinMenu.c` draws both from OEM bitmaps (`OBM_CHECK` / `OBM_MNARROW`) loaded with `LoadBitmapW`, whose size follows the display scale at sign-in (the system DPI), while the text follows the current monitor's DPI. **Tk 8.6 and 9.0 draw them the same way**, so moving to Tk 9 does not fix it. On a development machine you can reproduce it by changing the display scale without signing in again
 
 ---

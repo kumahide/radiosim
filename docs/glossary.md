@@ -104,7 +104,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 個別 | 1 本の回線を 1 回だけ計算する実行（ランチャーの実行ボタン）。成果物のフッタは `個別シミュレーション`。 *A run that computes one link once, started from the launcher's Run button; the report footer says “Single Mode”.* | Single Mode | シングル |
 | 複数経路 | N 本の**独立した**回線をまとめて回すウィンドウ。1 行 = 1 経路（→ 中継経路は 1 本の内訳）。**レポートの表題・フッタもこの語**。 *The window that runs N independent links in one go; one row = one path (a relay path is the breakdown of a single link). The report title and footer use this word too.* | Multiple Paths | バッチ / 一括 / Batch |
 | 地図 | 座標を拾い、DEM キャッシュを見るための補助のウィンドウ。**入力の道具**であって実行フローではない。 *A helper window for picking coordinates and inspecting the DEM cache — an input tool, not a step of the run.* | Map | マップウィンドウ |
-| ウィンドウ | アプリが開く画面の単位（ランチャー・地図・複数経路・条件探索・中継経路・グラフ）。**開いた時点の値で凍結し、見えている値で実行する**のがこのアプリの流儀。 *One screen the app opens (launcher, map, multiple paths, scenario, relay path, graph). It freezes its values when opened and runs with what is on screen — the house style of this app.* | Window | 窓 |
+| ウィンドウ | アプリが開く画面の単位（ランチャー・地図・複数経路・条件探索・中継経路・グラフ）。ランチャーから条件を受け取って実行するウィンドウ（複数経路・条件探索・中継経路）は、**開いた時点の値で凍結し、見えている値で実行する**のがこのアプリの流儀。グラフは実行した結果を表示する。地図は入力の道具で、ランチャーの座標欄にその場で追従する（数値欄が正）。 *One screen the app opens (launcher, map, multiple paths, scenario, relay path, graph). A window that takes its conditions from the launcher and runs them (multiple paths, scenario, relay path) freezes its values when opened and runs with what is on screen — the house style of this app. The graph shows the result of a run. The map is an input tool and follows the launcher's coordinate fields as they change (the numeric fields are the source of truth).* | Window | 窓 |
 | ドキュメント | ヘルプから開く同梱の文書。**実行形態で中身が変わる**（バイナリ版は利用者向け・ソース実行は開発者向け）ので、画面では**どちらも指す上位語**で呼ぶ。 *The bundled documents opened from Help. What they contain depends on how the app runs (user manual for the binary, developer docs from source), so the screen uses the term that covers both.* | Documentation | README / マニュアル |
 
 ## 文書でも 1 語にそろえる
@@ -155,18 +155,19 @@ do not fit the two tables above (screen words, document words).*
 |---|---|---|
 | ワースト区間 | 最も苦しい区間 | 画面・帳票では既に「ワースト区間」（上の用語表・row「ワースト区間」参照）。コード内のコメントとテストの失敗メッセージにだけ古い言い回しが残っていたため、2026-09-17 に揃えた |
 
-**「サンプル数」と「標本」は今回は統一しなかった。** 画面の `scn_samples`（条件探索の
-掃引点数）と、文書が繰り返す「標本」（地形の標高を取った点）は**別の概念**で、
-たまたま似た言葉を使っているだけと確認した（前者は利用者が入力する掃引の本数、
-後者はアプリが解像度の段階から自動で決める点数）。無理に 1 語へそろえると、
-かえって別概念が同じ語で呼ばれる新しい欠陥になるため、現状維持とする。
+**「サンプル数」と「標本」は 1 語にそろえない。** 「標本」は地形の標高を取った 1 つ 1 つの点、
+「サンプル数」はその点の数（上の用語表の「サンプル数」）で、**同じものの点と数**を言い分けて
+いる。条件探索の帳票に出る「サンプル数」（`scn_samples`）も、固定した経路で地形を取った
+点の数で、上の用語表と同じ量である。⚠️ この段落は当初、`scn_samples` を「利用者が入力する
+掃引の本数」と書いていたが誤りで、2026-10-10 に改めた（掃引の本数を「サンプル数」と呼ぶ
+画面は無い）。
 
-*"サンプル数" and "標本" were **not** merged this round. The screen's `scn_samples`
-(the number of points in a scenario sweep) and the "標本" that recurs in the documents
-(terrain elevation sample points) turned out to be different concepts that merely share
-similar wording — the former is a sweep count the user enters, the latter a point count
-the app derives from the resolution step. Forcing them into one word would create a new
-defect where two different concepts share a name, so both wordings stay as they are.*
+*"サンプル数" and "標本" stay as two words. "標本" is each point along the path where an
+elevation was taken; "サンプル数" is how many of them there are (the "サンプル数" row in
+the table above) — the points and their count. The "サンプル数" (`scn_samples`) printed in
+the scenario report is that same quantity: the number of terrain points taken on the fixed
+path. ⚠️ This paragraph first described `scn_samples` as "a sweep count the user enters",
+which was wrong; it was corrected on 2026-10-10 (no screen calls a sweep count "サンプル数").*
 
 ## この表ができた経緯
 

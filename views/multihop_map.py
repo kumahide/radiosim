@@ -118,8 +118,8 @@ class _MapSinkMixin(_HostBase):
     def append_waypoint(self, lat: float, lon: float) -> str:
         """地図からの 1 点追加（`_WaypointSink` の実装）。
 
-        空欄の地点があればそこを埋め、無ければ末尾に足す＝「TX と RX の枠だけ
-        ある状態」から地図で順に埋めていける。
+        空欄の地点があれば上から順に埋め、無ければ受信点の手前に中継点として挿す
+        （末尾は受信点で固定）＝「TX と RX の枠だけある状態」から地図で順に埋めていける。
         """
         for vars_ in self._wp_vars:
             if not vars_["coord"].get().strip():
