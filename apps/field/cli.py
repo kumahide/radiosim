@@ -361,6 +361,39 @@ class _Keyboard:
         return self._msvcrt.getwch().lower()
 
 
+class _KeepAwake:
+    """包んだあいだ Windows をスリープさせず、画面も消さない（抜けると元に戻す）。
+
+    バッテリー駆動の X13 は無操作 5 分でスリープし、記録が止まる（2026-10-16 に設定を確認）。
+    画面も起こしておく＝Modern Standby の機種は画面が消えると待機に入ることがあり、現場で
+    状態の行を見る用にも合う。⚠️ 蓋を閉じたときのスリープは防げない。Windows 以外では何もしない。
+    """
+
+    ES_CONTINUOUS = 0x80000000
+    ES_SYSTEM_REQUIRED = 0x00000001
+    ES_DISPLAY_REQUIRED = 0x00000002
+
+    def __init__(self, kernel32: Any = None) -> None:
+        if kernel32 is None and sys.platform == "win32":
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+        self._kernel32 = kernel32
+        self.held = False
+
+    def __enter__(self) -> _KeepAwake:
+        if self._kernel32 is not None:
+            # 前の状態が返る＝0 は失敗
+            self.held = self._kernel32.SetThreadExecutionState(
+                self.ES_CONTINUOUS | self.ES_SYSTEM_REQUIRED | self.ES_DISPLAY_REQUIRED
+            ) != 0
+        return self
+
+    def __exit__(self, *exc: object) -> None:
+        if self._kernel32 is not None:
+            self._kernel32.SetThreadExecutionState(self.ES_CONTINUOUS)
+        self.held = False
+
+
 # --- export ------------------------------------------------------------------
 
 
@@ -1050,15 +1083,20 @@ def _gnss_log(args: argparse.Namespace) -> int:
         print(f"記録: {logger.directory}（q で終了）")
         started = time.monotonic()
         last_status = 0.0
-        try:
-            while keys.poll() != "q":
-                logger.poll()
-                if time.monotonic() - last_status >= _STATUS_EVERY_S:
-                    print(f"\r{logger.status_line(time.monotonic() - started)}   ",
-                          end="", flush=True)
-                    last_status = time.monotonic()
-        except KeyboardInterrupt:
-            pass
+        with _KeepAwake() as awake:
+            if awake.held:
+                print("記録中はスリープせず画面も消しません（蓋は開けたままに）")
+            else:
+                print("⚠️ スリープを止められませんでした＝電源の設定でスリープを切ってください")
+            try:
+                while keys.poll() != "q":
+                    logger.poll()
+                    if time.monotonic() - last_status >= _STATUS_EVERY_S:
+                        print(f"\r{logger.status_line(time.monotonic() - started)}   ",
+                              end="", flush=True)
+                        last_status = time.monotonic()
+            except KeyboardInterrupt:
+                pass
         print()
         try:
             logger.stop()

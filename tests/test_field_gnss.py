@@ -15,8 +15,11 @@ tests/test_field_gnss.py
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import struct
+from datetime import datetime, timezone
+from pathlib import Path
 
 import pytest
 
@@ -347,3 +350,64 @@ def test_the_gnss_log_command_is_on_the_cli():
     with pytest.raises(SystemExit) as e:
         cli.main(["gnss", "log", "--help"])
     assert e.value.code == 0
+
+
+class _FakeKernel32:
+    def __init__(self, previous: int) -> None:
+        self.previous = previous
+        self.calls: list[int] = []
+
+    def SetThreadExecutionState(self, flags: int) -> int:  # noqa: N802 — Win32 の名前
+        self.calls.append(flags)
+        return self.previous
+
+
+def test_recording_keeps_windows_and_the_screen_awake_and_lets_go_even_on_error():
+    k = _FakeKernel32(previous=0x80000000)
+    with pytest.raises(RuntimeError):
+        with cli._KeepAwake(k) as awake:
+            assert awake.held
+            assert k.calls == [0x80000003]  # 続けて・システム・画面
+            raise RuntimeError("記録の途中で落ちた")
+    assert k.calls == [0x80000003, 0x80000000]  # 元へ戻した
+    assert not awake.held
+
+
+def test_a_refused_keep_awake_is_reported_as_not_held():
+    k = _FakeKernel32(previous=0)
+    with cli._KeepAwake(k) as awake:
+        assert not awake.held
+
+
+# --- 野外で SSH 越しに読む道具（tools/field_remote/gnss_peek.py） ----------------------
+
+
+def _gnss_peek():
+    path = Path(__file__).resolve().parents[1] / "tools" / "field_remote" / "gnss_peek.py"
+    spec = importlib.util.spec_from_file_location("gnss_peek", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_remote_peek_counts_a_recorded_log_as_the_logger_did(tmp_path):
+    receiver = _Receiver(after=[_rawx(100.0), _pvt(), _rawx(101.0), _rawx(103.0)])
+    logger = _logger(tmp_path, receiver)
+    logger.start()
+    _drain(logger, receiver)
+    assert logger.rawx_gaps == 1
+    now = datetime(2026, 10, 16, 6, 0, tzinfo=timezone.utc)
+
+    lines = _gnss_peek().peek(logger.directory, now)
+
+    assert lines[0] == logger.directory.name
+    assert lines[1].startswith("最後の受信から ")
+    # 経過時間（先頭の欄）だけは数え方が違う＝そこから後ろが記録器の画面と同じ
+    assert lines[2].split("  ", 1)[1] == logger.status_line(0).split("  ", 1)[1]
+    assert lines[3] == logger.summary()
+
+    # 書きかけの索引の末尾の行があっても、そこまでの分で出す
+    with (logger.directory / G.INDEX_FILE).open("a", encoding="utf-8") as f:
+        f.write("2026-10-16T05:0")
+    assert _gnss_peek().peek(logger.directory, now)[3] == logger.summary()
