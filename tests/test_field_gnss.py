@@ -37,8 +37,9 @@ def _mon_ver() -> bytes:
     return sw + hw + b"".join(e.ljust(30, b"\0") for e in ext)
 
 
-def _rawx(tow: float, week: int = 2440, tracking: tuple[int, ...] = (0x03, 0x01, 0x00)) -> bytes:
-    head = struct.pack("<dHbBBBxx", tow, week, 18, len(tracking), 0x01, 1)
+def _rawx(tow: float, week: int = 2440, tracking: tuple[int, ...] = (0x03, 0x01, 0x00),
+          rec_stat: int = 0x01) -> bytes:
+    head = struct.pack("<dHbBBBxx", tow, week, 18, len(tracking), rec_stat, 1)
     meas = b"".join(bytes(30) + bytes((t, 0)) for t in tracking)
     return G.frame(G.RXM_RAWX, head + meas)
 
@@ -322,6 +323,29 @@ def test_rawx_gaps_follow_the_week_rollover(tmp_path):
     logger.start()
     _drain(logger, receiver)
     assert (logger.counts["rawx"], logger.rawx_gaps) == (2, 0)
+
+
+@pytest.mark.parametrize("rec_stat_at_fix", [0x03, 0x01])
+def test_the_moment_the_receiver_time_is_fixed_is_not_a_gap(tmp_path, rec_stat_at_fix):
+    """B-346: 電源投入後は week=0・rcvTow＝起動からの秒。確定した回に週 0→2440 へ飛ぶ
+    （X13 の実機では recStat の clkReset が立った。立たなくても週 0 から抜けたら数えない）。
+    確定の後の欠けは今まで通り数える。"""
+    receiver = _Receiver(after=[_rawx(79.0, week=0, rec_stat=0x00), _rawx(80.0, week=0, rec_stat=0x00),
+                                _rawx(421888.99, rec_stat=rec_stat_at_fix), _rawx(421889.99),
+                                _rawx(421891.99)])
+    logger = _logger(tmp_path, receiver)
+    logger.start()
+    _drain(logger, receiver)
+    assert (logger.counts["rawx"], logger.rawx_gaps) == (5, 1)    # 421890.99 だけ
+
+
+def test_a_clock_reset_is_not_a_gap(tmp_path):
+    """時刻の確定後でも、受信機が時計を合わせ直した回の飛びは欠けにしない。"""
+    receiver = _Receiver(after=[_rawx(10.0), _rawx(11.0), _rawx(25.0, rec_stat=0x03), _rawx(26.0)])
+    logger = _logger(tmp_path, receiver)
+    logger.start()
+    _drain(logger, receiver)
+    assert (logger.counts["rawx"], logger.rawx_gaps) == (4, 0)
 
 
 def test_an_unreadable_message_is_counted_and_logging_goes_on(tmp_path):

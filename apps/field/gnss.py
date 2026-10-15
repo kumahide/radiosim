@@ -242,6 +242,12 @@ class RawxEpoch:
     signals: int
     pr_valid: int                 # 擬似距離が有効な信号
     cp_valid: int                 # 搬送波位相が有効な信号
+    clock_reset: bool = False     # recStat の clkReset＝受信機が時計を合わせ直した回
+
+    @property
+    def time_known(self) -> bool:
+        """週が確定しているか。確定前は week=0・rcvTow＝起動からの秒で出る（B-346）。"""
+        return self.week != 0
 
     @property
     def gps_seconds(self) -> float:
@@ -251,12 +257,13 @@ class RawxEpoch:
 def parse_rawx(payload: bytes) -> RawxEpoch:
     if len(payload) < 16:
         raise GnssError(f"RXM-RAWX が短すぎます: {len(payload)} バイト")
-    rcv_tow, week, _leap_s, count = struct.unpack_from("<dHbB", payload, 0)
+    rcv_tow, week, _leap_s, count, rec_stat = struct.unpack_from("<dHbBB", payload, 0)
     if len(payload) != 16 + 32 * count:
         raise GnssError(f"RXM-RAWX の長さが信号数 {count} と合いません: {len(payload)} バイト")
     tracking = [payload[16 + 32 * i + 30] for i in range(count)]
     return RawxEpoch(week, rcv_tow, count,
-                     sum(1 for t in tracking if t & 0x01), sum(1 for t in tracking if t & 0x02))
+                     sum(1 for t in tracking if t & 0x01), sum(1 for t in tracking if t & 0x02),
+                     bool(rec_stat & 0x02))
 
 
 _FIX_TYPES = {0: "解なし", 1: "推測航法のみ", 2: "2D", 3: "3D", 4: "3D＋推測航法", 5: "時刻のみ"}
@@ -473,6 +480,8 @@ class GnssLogger:
         self.last_rawx = epoch
         if last is None:
             return
+        if epoch.clock_reset or epoch.time_known != last.time_known:
+            return                              # 時刻の基準が替わった（確定した瞬間に週 0→今の週）
         delta = epoch.gps_seconds - last.gps_seconds
         if delta <= 0:
             return                              # 時刻が戻った（受信機の再起動）
