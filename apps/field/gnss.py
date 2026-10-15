@@ -18,7 +18,14 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
   2. `CFG-VALSET` を **RAM 層だけ**に書く＝電源を切れば元の設定に戻り、受信機に
      恒久の変更を残さない。
   3. ACK を確かめる。NAK・無返答なら止める（フォルダは作らない）。
-  4. ヘッダを書き、**ここまでに受けたバイトを生ログの先頭に書く**（捨てない）。
+  4. UART1 の速度を記録の速度（115200）へ上げ、NMEA を止める（同じく RAM 層）。
+     新しい速度で `MON-VER` が返ることを確かめる。応えなければ止める。
+  5. ヘッダを書き、**ここまでに受けたバイトを生ログの先頭に書く**（捨てない）。
+  終えるときは `stop()` で始めの速度・NMEA ありへ書き戻す。
+
+**速度を上げる理由**（2026-10-16 の実機）＝出荷時の 38400 bps（約 3.8 kB/s）は、屋外で信号が
+100 を超えると RAWX だけで埋まる（16＋32×信号数 バイト/秒）。出荷時の NMEA は後処理に要らず、
+屋内でも帯域の 6 割を食っていた。
 
 ⚠️ 画面の表示（RAWX の信号数・NAV-PVT の解）は現場で様子を見るためのもの。読めない
 メッセージがあっても記録は止めない＝生ログが正で、表示は数えるだけ。
@@ -81,12 +88,29 @@ OUTPUTS: tuple[tuple[str, int, int], ...] = (
     ("CFG-MSGOUT-UBX_NAV_PVT_USB", 0x20910009, 1),
 )
 
+# 記録中の UART1 の速度。屋外の見込み（約 6 kB/s）の 2 倍ほどの余裕（約 11.5 kB/s）。
+LOG_BAUD = 115200
+BAUD_KEY = ("CFG-UART1-BAUDRATE", 0x40520001)
+NMEA_KEY = ("CFG-UART1OUTPROT-NMEA", 0x10740002)
+
+# 速度を替える VALSET を送ってから PC 側を替えるまでの間。送り終わる前に PC 側を替えると
+# VALSET そのものが化ける。⚠️ この VALSET の ACK は読めない（受信機が返事の途中で速度を
+# 替える＝2026-10-16 の実機）＝新しい速度で MON-VER が返ることで確かめる。
+SETTLE_S = 0.3
+
+
+def port_items(baud: int, nmea: int) -> tuple[tuple[str, int, int], ...]:
+    """UART1 の速度と NMEA の出力の設定。PC とはボードの USB シリアル変換＝UART1 でつながる。"""
+    return ((BAUD_KEY[0], BAUD_KEY[1], baud), (NMEA_KEY[0], NMEA_KEY[1], nmea))
+
 
 class GnssError(SessionError):
     """受信機が応えない・設定を断った・ログの約束が破れたとき。"""
 
 
 class Port(Protocol):
+    baudrate: int
+
     @property
     def in_waiting(self) -> int: ...
 
@@ -109,13 +133,20 @@ def frame(kind: tuple[int, int], payload: bytes = b"") -> bytes:
     return SYNC + body + checksum(body)
 
 
+# キーの 28〜30 ビット → 値の書式（1＝真偽・2＝1 バイト・3＝2 バイト・4＝4 バイト）。
+_VALUE_FORMATS = {1: "B", 2: "B", 3: "H", 4: "I"}
+
+
 def valset(items: tuple[tuple[str, int, int], ...], layers: int = LAYER_RAM) -> bytes:
-    """`CFG-VALSET` のフレーム。値が 1 バイトのキーだけを受け付ける（キーの 28〜30 ビット＝2）。"""
+    """`CFG-VALSET` のフレーム。値が 4 バイトまでのキーを受け付ける（8 バイトは使わない）。"""
     payload = struct.pack("<BBxx", 0, layers)
     for name, key, value in items:
-        if (key >> 28) & 0x7 != 2 or not 0 <= value <= 0xFF:
-            raise GnssError(f"1 バイトの値のキーだけを書けます: {name}（{key:#010x}＝{value}）")
-        payload += struct.pack("<IB", key, value)
+        size = (key >> 28) & 0x7
+        fmt = _VALUE_FORMATS.get(size)
+        top = 1 if size == 1 else (1 << 8 * struct.calcsize(fmt)) - 1 if fmt else -1
+        if fmt is None or not 0 <= value <= top:
+            raise GnssError(f"書けないキーか値です: {name}（{key:#010x}＝{value}）")
+        payload += struct.pack("<I" + fmt, key, value)
     return frame(CFG_VALSET, payload)
 
 
@@ -274,7 +305,7 @@ class GnssLogger:
     def __init__(
         self, root: str | Path, port: Port, *, software_commit: str, port_name: str,
         baud: int, clock: Callable[[], str], ticks: Callable[[], float] = time.monotonic,
-        outputs: tuple[tuple[str, int, int], ...] = OUTPUTS,
+        outputs: tuple[tuple[str, int, int], ...] = OUTPUTS, log_baud: int = LOG_BAUD,
     ):
         if not software_commit:
             raise GnssError("ソフトウェアのコミットが空です（刻印の 1 項目）")
@@ -283,6 +314,8 @@ class GnssLogger:
         self._software_commit = software_commit
         self._port_name = port_name
         self._baud = baud
+        self._log_baud = log_baud
+        self.baud_at_start: int | None = None          # 受信機が応えた速度
         self._clock = clock
         self._ticks = ticks
         self._outputs = outputs
@@ -302,13 +335,10 @@ class GnssLogger:
     # 始め方 -------------------------------------------------------------------
 
     def start(self) -> Path:
-        """問い合わせ → 設定 → ACK を確かめ、フォルダを作ってヘッダを書く。"""
+        """問い合わせ → 設定 → ACK を確かめ → 速度を上げ、フォルダを作ってヘッダを書く。"""
         started = self._clock()
         parse_utc(started)
-        self._port.write(frame(MON_VER))
-        ver = self._wait(lambda m: m.kind == MON_VER,
-                         "受信機が MON-VER に応えません（ポート・ボーレート・電源を確かめてください）")
-        self.version = parse_mon_ver(ver.payload)
+        self.version = parse_mon_ver(self._find_receiver().payload)
         self._port.write(valset(self._outputs))
         ack = self._wait(lambda m: m.kind in (ACK_ACK, ACK_NAK)
                          and m.payload[:2] == bytes(CFG_VALSET),
@@ -316,6 +346,11 @@ class GnssLogger:
         if ack.kind == ACK_NAK:
             raise GnssError("受信機が設定（CFG-VALSET）を断りました（NAK）。キーがこの版の"
                             f"受信機に無いかもしれません: {[n for n, _k, _v in self._outputs]}")
+        self._switch(self._log_baud, nmea=0)
+        self._port.write(frame(MON_VER))
+        self._wait(lambda m: m.kind == MON_VER,
+                   f"{self._log_baud} bps に切り替えた後、受信機が応えません"
+                   f"（電源を入れ直すと元の速度に戻ります）")
         name = "gnss-" + parse_utc(started).strftime("%Y%m%dT%H%M%SZ")
         directory = self._root / name
         if directory.exists():
@@ -340,7 +375,8 @@ class GnssLogger:
             "started_utc": started,
             "software_commit": self._software_commit,
             "port": self._port_name,
-            "baud": self._baud,
+            "baud": self._log_baud,
+            "baud_at_start": self.baud_at_start,
             "receiver": {
                 "software": self.version.software,
                 "hardware": self.version.hardware,
@@ -350,9 +386,40 @@ class GnssLogger:
             "config": {
                 "layers": "RAM",
                 "items": [{"name": n, "key": f"{k:#010x}", "value": v}
-                          for n, k, v in self._outputs],
+                          for n, k, v in self._outputs + port_items(self._log_baud, 0)],
             },
         }
+
+    def _find_receiver(self) -> UbxMessage:
+        """始めの速度で MON-VER を問い、応えなければ記録の速度でも問う（前回の記録が
+        書き戻せずに終わると、受信機は電源を切るまで記録の速度のまま）。"""
+        bauds = [self._baud] + ([self._log_baud] if self._log_baud != self._baud else [])
+        for baud in bauds:
+            self._port.baudrate = baud
+            self._port.write(frame(MON_VER))
+            try:
+                reply = self._wait(lambda m: m.kind == MON_VER, "")
+            except GnssError:
+                continue
+            self.baud_at_start = baud
+            return reply
+        raise GnssError(f"受信機が MON-VER に応えません（{'・'.join(map(str, bauds))} bps で"
+                        "問い合わせました。ポート・電源を確かめてください）")
+
+    def _switch(self, baud: int, nmea: int) -> None:
+        """UART1 の速度と NMEA を RAM 層に書き、送り終わるのを待ってから PC 側も替える。
+        待つ間に届いた分も読む（ヘッダの前なら溜め、後なら生ログへ）。"""
+        self._port.write(valset(port_items(baud, nmea)))
+        since = self._ticks()
+        while self._ticks() - since < SETTLE_S:
+            self.poll()
+        self._port.baudrate = baud
+
+    def stop(self) -> None:
+        """始めの速度・NMEA ありへ書き戻す（RAM 層）。記録を始める前なら何もしない。"""
+        if self.directory is None:
+            return
+        self._switch(self._baud, nmea=1)
 
     def _wait(self, wanted: Callable[[UbxMessage], bool], what: str) -> UbxMessage:
         since = self._ticks()

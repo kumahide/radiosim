@@ -6,6 +6,7 @@ tests/test_field_gnss.py
   - UBX の枠（検査和・読み出しの区切りをまたぐ・NMEA が混ざる・壊れた枠）
   - 始め方＝MON-VER → CFG-VALSET（RAM 層だけ）→ ACK を確かめてからフォルダを作る
   - NAK・無返答ならフォルダを作らずに止まる
+  - 記録中は UART1 を 115200 に上げて NMEA を止め、終えたら戻す（前回の取り残しも見つける）
   - ヘッダを書くまでに受けたバイトも捨てず、生ログは受けたバイト列と一致する
   - 表示の数え（RAWX の欠け・解の状態）と、読めない中身で記録が止まらないこと
 
@@ -47,16 +48,40 @@ def _pvt(fix_type: int = 3, flags: int = 0x01, satellites: int = 12,
     return G.frame(G.NAV_PVT, bytes(payload))
 
 
+def _valset_items(data: bytes) -> dict[int, int]:
+    """CFG-VALSET のフレームからキーと値を読む（偽の受信機と検査で使う）。"""
+    payload, items, i = data[6:-2], {}, 4
+    while i < len(payload):
+        key = struct.unpack_from("<I", payload, i)[0]
+        size = {1: 1, 2: 1, 3: 2, 4: 4}[(key >> 28) & 0x7]
+        items[key] = int.from_bytes(payload[i + 4:i + 4 + size], "little")
+        i += 4 + size
+    return items
+
+
+BAUD = G.BAUD_KEY[1]
+NMEA_OUT = G.NMEA_KEY[1]
+GARBLED = b"\xfe"                       # 速度が合わないときに PC が受ける化けたバイト
+
+
 class _Receiver:
     """受信機の振る舞いの写し。NMEA を流し続け、MON-VER と CFG-VALSET に応える。
-    `answer` は VALSET への返事（"ack"・"nak"・None＝黙る）。1 回の読み出しで時計が 0.1 秒進む。"""
+    `answer` は出力の VALSET への返事（"ack"・"nak"・None＝黙る）。速度の VALSET には
+    返事が読めない（実機と同じ）＝黙って速度を替える（`follows_speed=False` なら替えない）。
+    PC 側の速度（`baudrate`）が受信機の速度（`rate`）と違うと、書かれた枠は届かず、
+    読み出しは化けたバイトになる。1 回の読み出しで時計が 0.1 秒進む。"""
 
-    def __init__(self, *, answer: str | None = "ack", after: list[bytes] | None = None):
+    def __init__(self, *, answer: str | None = "ack", after: list[bytes] | None = None,
+                 rate: int = 38400, follows_speed: bool = True):
         self.answer = answer
         self.after = list(after or [])      # ACK の後、読み出し 1 回に 1 つずつ流す
+        self.rate = rate
+        self.follows_speed = follows_speed
+        self.nmea = True
+        self.baudrate = 38400               # PC 側（pyserial の Serial と同じ名前）
         self.t = 0.0
         self.buffer = bytearray(NMEA)
-        self.sent = bytearray()             # 受信機が出したバイトの全部（生ログと比べる）
+        self.sent = bytearray()             # PC が受けたバイトの全部（生ログと比べる）
         self.written: list[bytes] = []
         self.configured = False
 
@@ -65,23 +90,37 @@ class _Receiver:
 
     @property
     def in_waiting(self) -> int:
-        return len(self.buffer)
+        return len(self.buffer) if self.baudrate == self.rate else 1
 
     def read(self, size: int) -> bytes:
         self.t += 0.1
+        if self.baudrate != self.rate:
+            self.sent += GARBLED
+            return GARBLED
         if not self.buffer:
-            self.buffer += self.after.pop(0) if self.configured and self.after else NMEA
+            if self.configured and self.after:
+                self.buffer += self.after.pop(0)
+            elif self.nmea:
+                self.buffer += NMEA
         # わざと半端な長さで切る＝枠が読み出しの区切りをまたぐ
-        out = bytes(self.buffer[:max(1, min(size, 37))])
+        out = bytes(self.buffer[:min(size, 37)])
         del self.buffer[:len(out)]
         self.sent += out
         return out
 
     def write(self, data: bytes) -> int:
         self.written.append(data)
+        if self.baudrate != self.rate:
+            return len(data)
         kind = (data[2], data[3])
         if kind == G.MON_VER:
             self.buffer += G.frame(G.MON_VER, _mon_ver())
+        elif kind == G.CFG_VALSET and BAUD in _valset_items(data):
+            items = _valset_items(data)
+            if self.follows_speed:
+                self.rate = items[BAUD]
+            self.nmea = bool(items[NMEA_OUT])
+            self.buffer.clear()             # 速度の切り替えで途中の枠は化ける
         elif kind == G.CFG_VALSET and self.answer is not None:
             reply = G.ACK_ACK if self.answer == "ack" else G.ACK_NAK
             self.buffer += G.frame(reply, bytes(G.CFG_VALSET))
@@ -114,13 +153,20 @@ def test_the_poll_frame_matches_the_known_bytes():
     assert G.frame(G.MON_VER) == bytes.fromhex("b5620a0400000e34")
 
 
-def test_valset_writes_the_ram_layer_only_and_refuses_wide_keys():
+def test_valset_writes_the_ram_layer_only_and_refuses_what_does_not_fit():
     data = G.valset((("CFG-MSGOUT-UBX_RXM_RAWX_USB", 0x209102A7, 1),))
     assert data[2:4] == bytes(G.CFG_VALSET)
     assert data[6:10] == bytes((0, G.LAYER_RAM, 0, 0))
     assert data[10:15] == struct.pack("<IB", 0x209102A7, 1)
-    with pytest.raises(G.GnssError, match="1 バイトの値"):
-        G.valset((("CFG-RATE-MEAS", 0x30210001, 1000),))     # 2 バイトの値のキー
+    # 値の幅はキーが決める（真偽 1・1 バイト・2 バイト・4 バイト）
+    data = G.valset(G.port_items(115200, 0) + (("CFG-RATE-MEAS", 0x30210001, 1000),))
+    assert data[10:-2] == (struct.pack("<II", BAUD, 115200) + struct.pack("<IB", NMEA_OUT, 0)
+                               + struct.pack("<IH", 0x30210001, 1000))
+    for name, key, value in (("CFG-RATE-MEAS", 0x30210001, 70000),     # 2 バイトに入らない
+                             ("CFG-UART1OUTPROT-NMEA", NMEA_OUT, 2),    # 真偽でない
+                             ("CFG-NAVSPG-USRDAT_MAJA", 0x50110063, 1)):  # 8 バイトの値
+        with pytest.raises(G.GnssError, match="書けないキーか値"):
+            G.valset(((name, key, value),))
 
 
 def test_the_stream_finds_frames_among_nmea_and_across_reads():
@@ -159,21 +205,60 @@ def test_contents_are_read():
 # --- 始め方 ---------------------------------------------------------------------
 
 
-def test_start_asks_configures_and_then_writes_the_header(tmp_path):
+def test_start_asks_configures_speeds_up_and_then_writes_the_header(tmp_path):
     receiver = _Receiver(after=[_rawx(1.0), _pvt()])
     logger = _logger(tmp_path, receiver)
     directory = logger.start()
-    # 問い合わせてから設定する。設定は RAM 層だけ
-    assert [(w[2], w[3]) for w in receiver.written] == [G.MON_VER, G.CFG_VALSET]
-    assert receiver.written[1][7] == G.LAYER_RAM
+    # 問い合わせ → 出力の設定 → 速度と NMEA の設定 → 新しい速度で問い合わせ。設定は RAM 層だけ
+    assert [(w[2], w[3]) for w in receiver.written] == [G.MON_VER, G.CFG_VALSET, G.CFG_VALSET,
+                                                         G.MON_VER]
+    assert receiver.written[1][7] == receiver.written[2][7] == G.LAYER_RAM
+    assert _valset_items(receiver.written[2]) == {BAUD: 115200, NMEA_OUT: 0}
+    assert receiver.baudrate == receiver.rate == 115200 and not receiver.nmea
     header = json.loads((directory / G.HEADER_FILE).read_text(encoding="utf-8"))
     assert directory.name == header["log_id"] == "gnss-20261016T050000Z"
     assert header["software_commit"] == "abc123"
-    assert (header["port"], header["baud"]) == ("COM5", 38400)
+    assert (header["port"], header["baud"], header["baud_at_start"]) == ("COM5", 115200, 38400)
     assert header["receiver"]["firmware"] == "HPG 2.11"
     assert "MOD=ZED-X20P" in header["receiver"]["extensions"]
     assert header["config"]["layers"] == "RAM"
-    assert [i["key"] for i in header["config"]["items"]] == [f"{k:#010x}" for _n, k, _v in G.OUTPUTS]
+    assert [(i["key"], i["value"]) for i in header["config"]["items"]] == \
+        [(f"{k:#010x}", v) for _n, k, v in G.OUTPUTS + G.port_items(115200, 0)]
+
+
+def test_a_receiver_left_at_the_logging_speed_is_still_found(tmp_path):
+    # 前回の記録が書き戻せずに終わった＝受信機は 115200 のまま
+    receiver = _Receiver(after=[_rawx(1.0)], rate=115200)
+    logger = _logger(tmp_path, receiver)
+    directory = logger.start()
+    assert logger.baud_at_start == 115200
+    header = json.loads((directory / G.HEADER_FILE).read_text(encoding="utf-8"))
+    assert (header["baud"], header["baud_at_start"]) == (115200, 115200)
+    _drain(logger, receiver)
+    assert logger.counts["rawx"] == 1
+
+
+def test_no_folder_is_made_when_the_receiver_does_not_follow_the_speed(tmp_path):
+    receiver = _Receiver(follows_speed=False)
+    with pytest.raises(G.GnssError, match="115200 bps に切り替えた後、受信機が応えません"):
+        _logger(tmp_path, receiver).start()
+    assert list(tmp_path.iterdir()) == []
+
+
+def test_stop_puts_the_speed_and_nmea_back_and_logs_until_then(tmp_path):
+    receiver = _Receiver(after=[_rawx(1.0), _rawx(2.0)])
+    logger = _logger(tmp_path, receiver)
+    _logger(tmp_path / "unstarted", _Receiver()).stop()        # 始める前なら何もしない
+    directory = logger.start()
+    _drain(logger, receiver)
+    logger.stop()
+    assert _valset_items(receiver.written[-1]) == {BAUD: 38400, NMEA_OUT: 1}
+    assert receiver.baudrate == receiver.rate == 38400 and receiver.nmea
+    chunks = list(read_raw(directory, raw_file=G.RAW_FILE, index_file=G.INDEX_FILE))
+    # 戻す設定を送った後の待ちで受けた分（化けたバイト）まで生ログに残る
+    assert b"".join(c for _t, c in chunks) == bytes(receiver.sent)
+    assert bytes(receiver.sent).endswith(GARBLED)
+    assert logger.counts["rawx"] == 2
 
 
 def test_the_raw_log_keeps_every_byte_including_those_before_the_header(tmp_path):
@@ -203,9 +288,10 @@ def test_no_folder_is_made_when_the_receiver_refuses_or_is_silent(tmp_path, answ
 def test_a_receiver_that_does_not_answer_mon_ver_stops_before_configuring(tmp_path):
     receiver = _Receiver()
     receiver.write = lambda data: receiver.written.append(data) or len(data)   # 何も返さない
-    with pytest.raises(G.GnssError, match="MON-VER に応えません"):
+    with pytest.raises(G.GnssError, match="MON-VER に応えません（38400・115200 bps"):
         _logger(tmp_path, receiver).start()
-    assert len(receiver.written) == 1
+    # 始めの速度と記録の速度で 1 回ずつ問い、設定は書かない
+    assert [(w[2], w[3]) for w in receiver.written] == [G.MON_VER, G.MON_VER]
     assert list(tmp_path.iterdir()) == []
 
 

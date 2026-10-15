@@ -73,7 +73,7 @@ from apps.field.bench_analysis import (
     write_report,
 )
 from apps.field.calib import DeviceCalibration, read_device_calibration
-from apps.field.gnss import GnssLogger
+from apps.field.gnss import LOG_BAUD, GnssLogger
 from apps.field.mavlink.dialect import load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
@@ -171,7 +171,8 @@ def main(argv: list[str] | None = None) -> int:
     gnss = p.add_subparsers(dest="gnss_command", required=True)
     q = gnss.add_parser("log", help="生データ（RAWX・SFRBX）を記録する（q で終了）")
     q.add_argument("--port", required=True, help="受信機の COM ポート（例: COM5）")
-    q.add_argument("--baud", type=int, default=38400)
+    q.add_argument("--baud", type=int, default=38400,
+                   help=f"受信機の始めの速度（記録中は {LOG_BAUD} に上げ、終えたら戻す）")
     q.add_argument("--root", type=Path, required=True, help="記録のフォルダを作る場所")
 
     args = parser.parse_args(argv)
@@ -1044,7 +1045,8 @@ def _gnss_log(args: argparse.Namespace) -> int:
             return 1
         assert logger.version is not None
         print(f"受信機 {logger.version.firmware or logger.version.software}"
-              f"（{logger.version.hardware}）・出力を RAM 層に設定しました")
+              f"（{logger.version.hardware}）・出力を RAM 層に設定し、"
+              f"{logger.baud_at_start} → {LOG_BAUD} bps に切り替えました（NMEA は止めた）")
         print(f"記録: {logger.directory}（q で終了）")
         started = time.monotonic()
         last_status = 0.0
@@ -1057,7 +1059,12 @@ def _gnss_log(args: argparse.Namespace) -> int:
                     last_status = time.monotonic()
         except KeyboardInterrupt:
             pass
-    print()
+        print()
+        try:
+            logger.stop()
+            print(f"受信機を {args.baud} bps・NMEA ありへ戻す設定を送りました（RAM 層）")
+        except (serial.SerialException, OSError) as e:
+            print(f"受信機を戻せませんでした（{e}）＝電源を入れ直すと元に戻ります")
     print(logger.summary())
     return 0
 
