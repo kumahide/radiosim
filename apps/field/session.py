@@ -15,7 +15,7 @@ RadioSim Fieldの**測定セッション**＝1 回の測定を 1 フォルダに
       events.csv     … 作業者の操作（設置・移動・終了）。**追記のみ**
       uart.bin       … UART の生のバイト列。**追記のみ**
       uart_index.csv … 生のバイト列を PC が受けた時刻（読み出し 1 回 1 行）。**追記のみ**
-      gnss.csv       … 位置の時系列（任意）。**追記のみ**
+      gnss.csv       … 位置の時系列（任意）。**追記のみ**＝`gnss attach` が GNSS の生ログから足す
 
 ヘッダを JSON、サンプルを追記 CSV に割ったのは、**電源が落ちる測定**を前提にする
 ため。1 つの JSON に全部入れると、書きかけで落ちたときにその回の測定が丸ごと読めない。
@@ -50,7 +50,9 @@ from typing import Any, Iterator
 # 3＝位置の時系列に端点（tx / rx）の列を足した。無いと時系列を持てるのが
 #   記録する PC の側だけになり、両端が動く構成（機体どうし）を後から入れられない。
 # 4＝TX の校正の控えに、SMA 端で実測した出力とそれを測った設定を足した（B-258）。
-SCHEMA_VERSION = 4
+# 5＝位置の時系列に PC の時刻・受信機の精度の見積もり・衛星数・補正の印・元の生ログを足した
+#   （受信機から書く実装＝`gnss.attach_to_session`）。
+SCHEMA_VERSION = 5
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -126,12 +128,19 @@ RAW_INDEX_COLUMNS = (
 )
 
 GNSS_COLUMNS = (
-    "utc",               # ISO 8601
+    "utc",               # 受信機の時刻（UTC・ISO 8601）＝GPS 由来。端点・機体の間を揃える時計
+    "pc_utc",            # その解を PC が受けた時刻＝samples.csv の pc_utc と同じ時計
     "endpoint",          # どちらの端点の位置か（ROLES）。1 ファイルに両端が混ざってよい
     "lat",
     "lon",
     "ellipsoid_h_m",     # 楕円体高。標高への変換はセッション処理の 1 か所だけで行う
     "fix_state",
+    "h_acc_m",           # 受信機の精度の見積もり（水平）。Float では楽観に出る
+    "v_acc_m",           # 同じく垂直。もっともらしい高さを後から外す材料
+    "num_sv",            # 解に使った衛星の数
+    "diff_soln",         # 補正を使った解か（0/1）。SBAS・HAS・RTCM を見分けない
+    "corr_age_code",     # 補正の齢の符号（NAV-PVT の lastCorrectionAge・0＝無し）。RTCM のときだけ入る
+    "log_id",            # 元の GNSS の生ログ（gnss-…）。補正の出どころはそのフォルダの ntrip.json
 )
 
 
@@ -294,14 +303,21 @@ class Event:
 
 @dataclass(frozen=True)
 class PositionFix:
-    """位置の時系列の 1 点（任意）。"""
+    """位置の時系列の 1 点（任意）。列の意味は `GNSS_COLUMNS`。"""
 
     utc: str
+    pc_utc: str
     endpoint: str                    # "tx" / "rx"
     lat: float
     lon: float
     ellipsoid_h_m: float
     fix_state: str
+    h_acc_m: float
+    v_acc_m: float
+    num_sv: int
+    diff_soln: int
+    corr_age_code: int
+    log_id: str
 
 
 # --- 検証 --------------------------------------------------------------------
@@ -597,8 +613,14 @@ def append_position_fixes(
     if not path.exists():
         _write_csv_header(path, GNSS_COLUMNS)
     for fix in fixes:
+        parse_utc(fix.utc)
+        parse_utc(fix.pc_utc)
         _require(fix.endpoint, ROLES, "位置の時系列の端点")
         _require(fix.fix_state, FIX_STATES, "位置の時系列の解の状態")
+        if fix.diff_soln not in (0, 1) or not 0 <= fix.corr_age_code <= 15:
+            raise SessionError(f"位置の時系列の補正の印が範囲の外です: {fix}")
+        if not fix.log_id:
+            raise SessionError("位置の時系列に元の生ログの名前がありません")
     with path.open("a", encoding="utf-8", newline="") as f:
         writer = csv.writer(f)
         for fix in fixes:
@@ -697,11 +719,18 @@ def read_position_fixes(directory: str | os.PathLike[str]) -> Iterator[PositionF
             _require(row["endpoint"], ROLES, "位置の時系列の端点")
             yield PositionFix(
                 utc=row["utc"],
+                pc_utc=row["pc_utc"],
                 endpoint=row["endpoint"],
                 lat=float(row["lat"]),
                 lon=float(row["lon"]),
                 ellipsoid_h_m=float(row["ellipsoid_h_m"]),
                 fix_state=row["fix_state"],
+                h_acc_m=float(row["h_acc_m"]),
+                v_acc_m=float(row["v_acc_m"]),
+                num_sv=int(row["num_sv"]),
+                diff_soln=int(row["diff_soln"]),
+                corr_age_code=int(row["corr_age_code"]),
+                log_id=row["log_id"],
             )
 
 

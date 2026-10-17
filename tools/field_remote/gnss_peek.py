@@ -8,7 +8,8 @@ tools/field_remote/gnss_peek.py
 
 出すもの
   - 最後の受信から何秒たったか（＝記録が止まっていないか）・直近 60 秒の 1 秒あたりのバイト数
-  - 記録器と**同じ数え方**の状態の行（RAWX の信号数・解・RAWX の欠け・検査和の不一致）
+  - 記録器と**同じ数え方**の状態の行（RAWX の信号数・解・RAWX の欠け・検査和の不一致）と、
+    解の状態の数（Fix・Float・単独・なし／RTCM を使い始めてから最初の Fix までの秒）
   - NTRIP の補正を流していれば（`--ntrip`）、最後に届いてから何秒か・RTCM の数・最後に切れた理由
 数え方は `GnssLogger.poll()` に生ログを読み出しの区切りのまま流して得る＝記録器の画面と
 食い違わない（数え方を写さない）。
@@ -76,6 +77,7 @@ def peek(directory: Path, now: datetime) -> list[str]:
         f"・直近 {span:.0f} 秒は 1 秒あたり {sum(recent) / span:.0f} バイト",
         logger.status_line((last - first).total_seconds()),
         logger.summary(),
+        logger.solutions(),
     ]
     if (directory / ntrip.RAW_FILE).exists():
         lines.append(_corrections(directory, now))

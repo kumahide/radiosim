@@ -9,8 +9,13 @@ tests/test_field_gnss.py
   - 記録中は UART1 を 115200 に上げて NMEA を止め、終えたら戻す（前回の取り残しも見つける）
   - ヘッダを書くまでに受けたバイトも捨てず、生ログは受けたバイト列と一致する
   - 表示の数え（RAWX の欠け・解の状態）と、読めない中身で記録が止まらないこと
+  - 受信機の解の時系列＝生ログの NAV-PVT を読み直し、セッションの期間の分だけ `gnss.csv` へ
+    足す（`gnss attach`）。解の状態の決め方・時刻の確定しない回・2 度足さないこと
+  - 止めたときのまとめ＝解の状態の数と、RTCM を使い始めてから最初の Fix までの秒
 
 ⚠️ シリアルポートは触らない（偽の受信機は `read`/`in_waiting`/`write` だけを持つ）。
+⚠️ RTK Fix の実データはまだ無い（2026-10-17 の室内は Float まで）＝Fix の道は合成の NAV-PVT だけで
+   確かめている。屋外で Fix を取ったら、その生ログで `attach` を 1 回通す。
 """
 
 from __future__ import annotations
@@ -18,6 +23,7 @@ from __future__ import annotations
 import importlib.util
 import json
 import struct
+from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -25,6 +31,7 @@ import pytest
 
 from apps.field import cli
 from apps.field import gnss as G
+from apps.field import session as S
 from apps.field.session import read_raw
 
 NMEA = b"$GNGGA,000000.00,,,,,0,00,99.99,,,,,,*56\r\n"
@@ -49,6 +56,21 @@ def _pvt(fix_type: int = 3, flags: int = 0x01, satellites: int = 12,
     payload = bytearray(92)
     struct.pack_into("<BBBB", payload, 20, fix_type, flags, 0, satellites)
     struct.pack_into("<II", payload, 40, h_acc_mm, v_acc_mm)
+    return G.frame(G.NAV_PVT, bytes(payload))
+
+
+def _timed_pvt(second: int, *, carrier: int = 0, diff: bool = True, age: int = 0,
+               fix_type: int = 3, ok: bool = True, valid: int = 0x37, nano: int = 0,
+               llh_invalid: bool = False, satellites: int = 31) -> bytes:
+    """時刻の確定した NAV-PVT（2026-10-16 05:00:<second> UTC）。valid の 0x37 は実機の値
+    （2026-10-17 の 2 本の記録の全回）。位置は三角点「中野」の上（後処理の解に近い値）。"""
+    payload = bytearray(92)
+    struct.pack_into("<HBBBBBB", payload, 4, 2026, 10, 16, 5, 0, second, valid)
+    struct.pack_into("<i", payload, 16, nano)
+    flags = (0x01 if ok else 0) | (0x02 if diff else 0) | (carrier << 6)
+    struct.pack_into("<BBBB", payload, 20, fix_type, flags, 0, satellites)
+    struct.pack_into("<iiiiII", payload, 24, 1399447071, 354312407, 36793, 1902, 14, 20)
+    struct.pack_into("<HH", payload, 76, 120, (age << 1) | int(llh_invalid))
     return G.frame(G.NAV_PVT, bytes(payload))
 
 
@@ -436,6 +458,162 @@ def test_the_status_line_shows_signals_solution_and_accuracy(tmp_path):
     assert "RAWX の欠け 0" in line
 
 
+def test_the_solution_tally_times_the_first_fix_from_when_rtcm_was_used(tmp_path):
+    receiver = _Receiver(after=[
+        _pvt(),                                             # 時刻の確定前（数えるが、秒は測らない）
+        _timed_pvt(10),                                     # SBAS などの補正で単独
+        _timed_pvt(11, carrier=1, age=2),                   # RTCM を使い始めた
+        _timed_pvt(12, diff=False),                         # 補正が抜けた
+        _timed_pvt(16, carrier=2, age=1),
+        _timed_pvt(17, carrier=2, age=1),
+        _timed_pvt(18, fix_type=2),                         # 2D＝高さが仮定の値
+    ])
+    logger = _logger(tmp_path, receiver)
+    logger.start()
+    _drain(logger, receiver)
+    assert logger.states == {"fix": 2, "float": 1, "single": 3, "none": 1}
+    assert logger.solutions() == ("解 Fix 2・Float 1・単独 3（うち補正あり 1）・なし 1"
+                                  "・RTCM を使い始めてから最初の Fix まで 5 秒")
+
+
+def test_the_solution_tally_says_when_rtcm_never_reached_a_fix(tmp_path):
+    receiver = _Receiver(after=[_timed_pvt(10, carrier=1, age=3), _timed_pvt(11)])
+    logger = _logger(tmp_path, receiver)
+    logger.start()
+    _drain(logger, receiver)
+    assert logger.solutions().endswith("・RTCM を使い始めてから Fix に届いていません")
+    plain = _logger(tmp_path / "plain", _Receiver(after=[_timed_pvt(10)]))
+    assert "RTCM" not in plain.solutions()                  # RTCM を使っていなければ秒は出さない
+
+
+# --- 受信機の解の時系列（gnss attach） ---------------------------------------------
+
+
+def test_nav_pvt_time_and_correction_marks_are_read():
+    pvt = G.parse_nav_pvt(_timed_pvt(13, carrier=2, age=2, nano=-500_000)[6:-2])
+    assert pvt.utc == datetime(2026, 10, 16, 5, 0, 12, 999500, tzinfo=timezone.utc)
+    assert (pvt.diff_soln, pvt.corr_age_code, pvt.invalid_llh) == (True, 2, False)
+    assert (round(pvt.lat_deg, 7), round(pvt.lon_deg, 7), pvt.height_m) == \
+        (35.4312407, 139.9447071, 36.793)
+    # 日付・時刻・その確定のどれかが欠ける回と、閏秒の回は時刻なし
+    for valid in (0x03, 0x05, 0x06):
+        assert G.parse_nav_pvt(_timed_pvt(13, valid=valid)[6:-2]).utc is None
+    assert G.parse_nav_pvt(_timed_pvt(60)[6:-2]).utc is None
+    assert G.parse_nav_pvt(_timed_pvt(13, llh_invalid=True)[6:-2]).invalid_llh
+
+
+@pytest.mark.parametrize("kwargs, state", [
+    (dict(carrier=2), "fix"),
+    (dict(carrier=1), "float"),
+    (dict(), "single"),
+    (dict(diff=False), "single"),
+    (dict(carrier=2, ok=False), "none"),
+    (dict(carrier=2, llh_invalid=True), "none"),
+    (dict(fix_type=2), "none"),
+    (dict(fix_type=5), "none"),
+    (dict(fix_type=4, carrier=1), "float"),
+], ids=["RTK Fix", "RTK Float", "単独・補正あり", "単独・補正なし", "受信機が無効とした",
+        "緯度経度が無効", "2D", "時刻だけ", "3D＋推測航法"])
+def test_the_solution_state_follows_the_receiver_flags(kwargs, state):
+    assert G.solution_state(G.parse_nav_pvt(_timed_pvt(13, **kwargs)[6:-2])) == state
+    assert state in S.FIX_STATES
+
+
+def _session(root: Path, started: str, stop: str | None) -> Path:
+    calibration = S.Calibration(
+        measured_on="2026-10-01", offset_db=-96.0, scale_db_per_count=0.5,
+        reference_unit_id="ref-01", reference_measured_on="2026-09-10")
+    radio = S.RadioSettings(
+        config_id=1, firmware_version="5aab362", channel=6, rate_kbps=1000, tx_power_cdbm=1300,
+        tx_interval_ms=250, detector="mean", integration_window_us=1000, integration_samples=10,
+        antenna="external", sensitivity_dbm=-98.0)
+
+    def endpoint(role: str) -> S.Endpoint:
+        return S.Endpoint(
+            role=role, measurement_config_id=f"{role}-e220", device_id="aa:bb:cc:dd:ee:01",
+            feeder_loss_db=1.5, antenna_gain_dbi=2.0,
+            calibration=calibration if role == "rx" else replace(
+                calibration, tx_output_dbm=12.4, tx_output_power_cdbm=1300, tx_output_channel=6),
+            radio=radio if role == "rx" else replace(radio, config_id=2, sensitivity_dbm=None),
+            position=S.Position(lat=35.43, lon=139.94, elevation_m=1.9, height_agl_m=1.0,
+                                height_source="survey"))
+
+    directory = S.create_session(root, S.SessionHeader(
+        session_id="20261016T0500Z-gnss", started_utc=started, target_kind="existing_link",
+        env_class="rural", meas_method="e220-920",
+        provenance=S.Provenance(software_commit="c896ced", geoid_model="GSIGEO2024",
+                                censor_min_receive_rate=0.9, censor_window_s=10.0),
+        tx=endpoint("tx"), rx=endpoint("rx")))
+    S.append_event(directory, S.Event(started, "place", 0))
+    if stop is not None:
+        S.append_event(directory, S.Event(stop, "stop"))
+    return directory
+
+
+def _gnss_log(tmp_path: Path) -> tuple[Path, list[tuple[str, G.PvtStatus]]]:
+    receiver = _Receiver(after=[_pvt(), _timed_pvt(10), _timed_pvt(11, carrier=1, age=2),
+                                _timed_pvt(12, carrier=2, age=1), _timed_pvt(13, carrier=2, age=1)])
+    logger = _logger(tmp_path / "gnss", receiver)
+    directory = logger.start()
+    _drain(logger, receiver)
+    received = list(G.read_pvt(directory))
+    assert len(received) == 5                       # 生ログを読み直すと、受けた NAV-PVT が全部ある
+    return directory, received
+
+
+def test_attach_adds_the_solutions_within_the_session_to_its_gnss_csv(tmp_path):
+    log, received = _gnss_log(tmp_path)
+    # セッションは時刻の確定前の回に始まり、4 回目の解を受けた時に終わった（5 回目は期間の外）
+    session = _session(tmp_path / "sessions", received[0][0], received[3][0])
+
+    added = G.attach_to_session(log, session, "rx")
+
+    assert added.states == {"fix": 1, "float": 1, "single": 1, "none": 0}
+    assert (added.rows, added.untimed) == (3, 1)
+    fixes = list(S.read_position_fixes(session))
+    assert [f.fix_state for f in fixes] == ["single", "float", "fix"]
+    assert [f.pc_utc for f in fixes] == [t for t, _p in received[1:4]]
+    assert fixes[2] == S.PositionFix(
+        utc="2026-10-16T05:00:12.000000Z", pc_utc=received[3][0], endpoint="rx",
+        lat=35.4312407, lon=139.9447071, ellipsoid_h_m=36.793, fix_state="fix", h_acc_m=0.014,
+        v_acc_m=0.02, num_sv=31, diff_soln=1, corr_age_code=1, log_id=log.name)
+    assert S.read_header(session).schema_version == 5
+
+    with pytest.raises(G.GnssError, match="既に rx の時系列として足してあります"):
+        G.attach_to_session(log, session, "rx")
+    assert len(list(S.read_position_fixes(session))) == 3      # 何も重ねていない
+
+
+def test_attach_needs_the_end_of_the_session_and_an_overlap(tmp_path):
+    log, received = _gnss_log(tmp_path)
+    crashed = _session(tmp_path / "crashed", received[0][0], None)
+    with pytest.raises(G.GnssError, match="--recover"):
+        G.attach_to_session(log, crashed, "tx")
+    assert G.attach_to_session(log, crashed, "tx", until=received[-1][0]).rows == 4
+
+    later = _session(tmp_path / "later", "2026-10-16T06:00:00Z", "2026-10-16T06:10:00Z")
+    with pytest.raises(G.GnssError, match="時刻の確定した解がありません"):
+        G.attach_to_session(log, later, "rx")
+    with pytest.raises(G.GnssError, match="端点が語彙の外"):
+        G.attach_to_session(log, later, "RX")
+    assert list(S.read_position_fixes(later)) == []
+
+
+def test_the_gnss_attach_command_reports_what_it_added(tmp_path, capsys):
+    log, received = _gnss_log(tmp_path)
+    session = _session(tmp_path / "sessions", received[0][0], None)
+    assert cli.main(["gnss", "attach", str(log), str(session), "--endpoint", "rx"]) == 2
+    assert "--recover" in capsys.readouterr().err
+
+    # 無線のセッションの生ログ（uart.bin）を最後に読めた時刻で終える
+    S.append_raw(session, b"\x00", received[2][0])
+    assert cli.main(["gnss", "attach", str(log), str(session), "--endpoint", "rx",
+                     "--recover"]) == 0
+    out = capsys.readouterr().out
+    assert "rx の解を 2 行足しました（Fix 0・Float 1・単独 1・なし 0）" in out
+    assert "時刻が確定していなかった 1 回" in out
+
+
 def test_the_gnss_log_command_is_on_the_cli():
     with pytest.raises(SystemExit) as e:
         cli.main(["gnss", "log", "--help"])
@@ -496,6 +674,7 @@ def test_the_remote_peek_counts_a_recorded_log_as_the_logger_did(tmp_path):
     # 経過時間（先頭の欄）だけは数え方が違う＝そこから後ろが記録器の画面と同じ
     assert lines[2].split("  ", 1)[1] == logger.status_line(0).split("  ", 1)[1]
     assert lines[3] == logger.summary()
+    assert lines[4] == logger.solutions()
 
     # 書きかけの索引の末尾の行があっても、そこまでの分で出す
     with (logger.directory / G.INDEX_FILE).open("a", encoding="utf-8") as f:

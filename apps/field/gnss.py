@@ -11,7 +11,12 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
 無線のセッション（`session.py`）とは別のフォルダ＝静止観測は TX/RX の雛形なしに回す
 （サイトごとに一度・受け入れ試験の三角点と水準点）。**位置の解はここでは作らない**＝
 本番の解は生ログ（RAWX・SFRBX）から後処理で作る（Field の正典 §5 の経路①）。
-`gnss.csv`（`session.GNSS_COLUMNS`）はこの生ログの上に後で載せる。
+
+**受信機の解の時系列**（`gnss.csv`＝`session.GNSS_COLUMNS`）は記録の途中では書かない＝
+`gnss attach` が生ログの NAV-PVT を読み直し、無線のセッションの期間に PC が受けた回を
+そのセッションへ足す（`attach_to_session`）。後から作る理由＝①生ログが正で、NAV-PVT は
+そこに全部ある（書く道を 1 本にする）②記録の時点では受信機がどちらの端点にあるか
+決まらない ③記録のループに 1 秒ごとの書き込みを足さない。
 
 **始め方**（崩れると、何の設定で取ったログか後から言えない）
   1. `MON-VER` を問い合わせて受信機の版を得る（刻印の「GNSS のファーム版」）。
@@ -37,18 +42,29 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
 from __future__ import annotations
 
 import csv
+import json
 import struct
 import time
 from dataclasses import dataclass
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Callable, Protocol
+from typing import Any, Callable, Iterator, Protocol
 
 from apps.field.session import (
+    FIX_STATES,
     RAW_INDEX_COLUMNS,
+    ROLES,
+    PositionFix,
     SessionError,
     _write_json_atomic,
+    append_position_fixes,
     append_raw,
+    format_utc,
     parse_utc,
+    read_events,
+    read_header,
+    read_position_fixes,
+    read_raw,
 )
 
 GNSS_LOG_FORMAT = 1
@@ -289,8 +305,8 @@ _CARRIER = {1: "RTK Float", 2: "RTK Fix"}
 
 @dataclass(frozen=True)
 class PvtStatus:
-    """NAV-PVT のうち、画面に出す分と、NTRIP の caster へ上げる GGA の材料（`ntrip.gga`）。
-    **ここの解は記録しない**（本番は後処理）。"""
+    """NAV-PVT のうち、画面に出す分・NTRIP の caster へ上げる GGA の材料（`ntrip.gga`）・
+    `gnss.csv` の 1 行の材料。**記録中はここの解を書かない**（生ログが正＝後から読み直す）。"""
 
     fix_type: int
     fix_ok: bool                  # gnssFixOK（受信機が解を有効とみなしたか）
@@ -304,6 +320,10 @@ class PvtStatus:
     h_msl_m: float = 0.0          # 受信機の内蔵のジオイドでの標高（⚠️ 国土地理院のものと約 4.9 m 違う）
     utc_hms: tuple[int, int, int] = (0, 0, 0)
     pdop: float = 0.0
+    utc: datetime | None = None   # 受信機の時刻。日付・時刻・その確定がそろったときだけ
+    diff_soln: bool = False       # 補正を使った解（SBAS・HAS・RTCM を見分けない）
+    corr_age_code: int = 0        # 補正の齢の符号（flags3 の lastCorrectionAge・0＝無し）
+    invalid_llh: bool = False     # flags3 の invalidLlh（緯度経度・高さが無効）
 
     def describe(self) -> str:
         label = _FIX_TYPES.get(self.fix_type, f"種別 {self.fix_type}")
@@ -314,16 +334,113 @@ class PvtStatus:
         return label
 
 
+# NAV-PVT の valid のうち、時刻を使うのに要る 3 つ（validDate・validTime・fullyResolved）。
+_TIME_VALID = 0x07
+
+
 def parse_nav_pvt(payload: bytes) -> PvtStatus:
     if len(payload) < 92:
         raise GnssError(f"NAV-PVT が短すぎます: {len(payload)} バイト")
-    hour, minute, second = struct.unpack_from("<BBB", payload, 8)
+    year, month, day, hour, minute, second, valid = struct.unpack_from("<HBBBBBB", payload, 4)
+    (nano,) = struct.unpack_from("<i", payload, 16)
     fix_type, flags, _flags2, satellites = struct.unpack_from("<BBBB", payload, 20)
     lon, lat, height, h_msl, h_acc, v_acc = struct.unpack_from("<iiiiII", payload, 24)
-    (pdop,) = struct.unpack_from("<H", payload, 76)
+    pdop, flags3 = struct.unpack_from("<HH", payload, 76)
+    utc = None
+    if valid & _TIME_VALID == _TIME_VALID:
+        try:
+            utc = (datetime(year, month, day, hour, minute, second, tzinfo=timezone.utc)
+                   + timedelta(microseconds=round(nano / 1000)))
+        except ValueError:
+            pass                                # 閏秒（second＝60）は時刻の無い回と同じに扱う
     return PvtStatus(fix_type, bool(flags & 0x01), (flags >> 6) & 0x03, satellites,
                      h_acc / 1000, v_acc / 1000, lat * 1e-7, lon * 1e-7, height / 1000,
-                     h_msl / 1000, (hour, minute, second), pdop / 100)
+                     h_msl / 1000, (hour, minute, second), pdop / 100,
+                     utc, bool(flags & 0x02), (flags3 >> 1) & 0x0F, bool(flags3 & 0x01))
+
+
+def solution_state(pvt: PvtStatus) -> str:
+    """`session.FIX_STATES` のどれか。受信機が無効とした解・2D（高さが仮定の値）・時刻だけの
+    解は `none`。`single` には補正（SBAS・HAS）を使った解も入る＝見分けは `diff_soln`。"""
+    if not pvt.fix_ok or pvt.invalid_llh or pvt.fix_type not in (3, 4):
+        return "none"
+    return {2: "fix", 1: "float"}.get(pvt.carrier, "single")
+
+
+def read_pvt(directory: str | Path) -> Iterator[tuple[str, PvtStatus]]:
+    """生ログの NAV-PVT を、PC が受けた時刻（その枠の終わりを含む読み出しの時刻）と一緒に
+    返す。読めない中身は飛ばす（記録の時点でも数えただけで、記録は止めていない）。"""
+    stream = UbxStream()
+    for pc_utc, chunk in read_raw(directory, raw_file=RAW_FILE, index_file=INDEX_FILE):
+        for message in stream.feed(chunk):
+            if message.kind != NAV_PVT:
+                continue
+            try:
+                yield pc_utc, parse_nav_pvt(message.payload)
+            except GnssError:
+                continue
+
+
+@dataclass(frozen=True)
+class Attached:
+    """`attach_to_session` が足した分。"""
+
+    states: dict[str, int]        # 足した行の解の状態ごとの数
+    untimed: int                  # 期間の中で受信機の時刻が確定していなかった回（行にしない）
+
+    @property
+    def rows(self) -> int:
+        return sum(self.states.values())
+
+
+def attach_to_session(log_dir: str | Path, session_dir: str | Path, endpoint: str, *,
+                      until: str | None = None) -> Attached:
+    """GNSS の生ログの解のうち、無線のセッションの期間（`started_utc`〜終了の操作）に PC が
+    受けた回を、そのセッションの `gnss.csv` へ `endpoint` の時系列として足す。
+
+    期間は PC の時計で切る＝**生ログとセッションは同じ PC で取ったものに限る**（別の PC だと
+    時計の差の分だけ端がずれる）。`until` は終了の記録が無いセッション（途中で落ちた）の終わり。
+    同じ生ログを同じ端点へ 2 度足すことはしない（追記のみのファイルに同じ行が重なる）。
+    """
+    if endpoint not in ROLES:
+        raise GnssError(f"端点が語彙の外です: {endpoint!r}（使えるのは {'・'.join(ROLES)}）")
+    header = read_header(session_dir)
+    if until is None:
+        events = list(read_events(session_dir))
+        if not events or events[-1].kind != "stop":
+            raise GnssError("セッションに終了の記録がありません（測定が途中で落ちた）。最後に"
+                            "読めた時刻で終えたものとして扱うなら --recover を付けてください")
+        until = events[-1].pc_utc
+    path = Path(log_dir) / HEADER_FILE
+    try:
+        log_id = json.loads(path.read_text(encoding="utf-8"))["log_id"]
+    except (OSError, ValueError, KeyError) as e:
+        raise GnssError(f"GNSS の生ログのヘッダが読めません: {path}（{e}）") from e
+    if any(f.log_id == log_id and f.endpoint == endpoint for f in read_position_fixes(session_dir)):
+        raise GnssError(f"{log_id} は既に {endpoint} の時系列として足してあります")
+    start, end = parse_utc(header.started_utc), parse_utc(until)
+    fixes: list[PositionFix] = []
+    untimed = 0
+    for pc_utc, pvt in read_pvt(log_dir):
+        if not start <= parse_utc(pc_utc) <= end:
+            continue
+        if pvt.utc is None:
+            untimed += 1
+            continue
+        fixes.append(PositionFix(
+            utc=format_utc(pvt.utc), pc_utc=pc_utc, endpoint=endpoint,
+            lat=round(pvt.lat_deg, 7), lon=round(pvt.lon_deg, 7),
+            ellipsoid_h_m=round(pvt.height_m, 3), fix_state=solution_state(pvt),
+            h_acc_m=round(pvt.h_acc_m, 3), v_acc_m=round(pvt.v_acc_m, 3), num_sv=pvt.satellites,
+            diff_soln=int(pvt.diff_soln), corr_age_code=pvt.corr_age_code, log_id=log_id))
+    if not fixes:
+        raise GnssError(f"{log_id} に、セッションの期間（{header.started_utc}〜{until}）に受けた"
+                        "時刻の確定した解がありません（期間が重ならないか、別の PC の記録）")
+    append_position_fixes(session_dir, fixes)
+    states = {s: 0 for s in FIX_STATES}
+    for fix in fixes:
+        states[fix.fix_state] += 1
+    return Attached(states, untimed)
 
 
 # --- 記録器 --------------------------------------------------------------------
@@ -367,6 +484,10 @@ class GnssLogger:
         self.last_rawx: RawxEpoch | None = None
         self.last_pvt: PvtStatus | None = None
         self._rawx_period: float | None = None
+        self.states: dict[str, int] = {s: 0 for s in FIX_STATES}
+        self.single_with_diff = 0                     # 単独のうち補正（SBAS・HAS）を使った回
+        self.first_rtcm_utc: datetime | None = None   # 受信機が RTCM を使い始めた回の時刻
+        self.first_fix_after_s: float | None = None   # そこから最初の RTK Fix まで
 
     # 始め方 -------------------------------------------------------------------
 
@@ -505,6 +626,7 @@ class GnssLogger:
             elif message.kind == NAV_PVT:
                 self.last_pvt = parse_nav_pvt(message.payload)
                 self.counts["pvt"] += 1
+                self._take_pvt(self.last_pvt)
             elif message.kind == RXM_SFRBX:
                 self.counts["sfrbx"] += 1
         except GnssError:
@@ -526,6 +648,20 @@ class GnssLogger:
         if self._rawx_period is None or delta < self._rawx_period:
             self._rawx_period = delta
         self.rawx_gaps += max(0, round(delta / self._rawx_period) - 1)
+
+    def _take_pvt(self, pvt: PvtStatus) -> None:
+        """解の状態を数え、RTCM を使い始めてから最初の Fix までの秒を受信機の時刻で測る
+        （補正の齢が入った最初の回から＝RTCM が届いても受信機が使わなければ数え始めない）。"""
+        state = solution_state(pvt)
+        self.states[state] += 1
+        if state == "single" and pvt.diff_soln:
+            self.single_with_diff += 1
+        if pvt.utc is None:
+            return
+        if self.first_rtcm_utc is None and pvt.corr_age_code:
+            self.first_rtcm_utc = pvt.utc
+        if state == "fix" and self.first_rtcm_utc is not None and self.first_fix_after_s is None:
+            self.first_fix_after_s = (pvt.utc - self.first_rtcm_utc).total_seconds()
 
     # 表示 ---------------------------------------------------------------------
 
@@ -549,3 +685,13 @@ class GnssLogger:
                 f"（欠け {self.rawx_gaps}）・SFRBX {self.counts['sfrbx']}・NAV-PVT {self.counts['pvt']}"
                 f"・検査和の不一致 {stats.checksum_errors}・UBX の外 {stats.other_bytes} バイト"
                 f"・読めなかった中身 {self.undecoded}")
+
+    def solutions(self) -> str:
+        """解の状態の数（NAV-PVT の回ごと）。RTCM を使っていれば、最初の Fix までの秒。"""
+        s = self.states
+        line = (f"解 Fix {s['fix']}・Float {s['float']}・単独 {s['single']}"
+                f"（うち補正あり {self.single_with_diff}）・なし {s['none']}")
+        if self.first_rtcm_utc is not None:
+            line += ("・RTCM を使い始めてから Fix に届いていません" if self.first_fix_after_s is None
+                     else f"・RTCM を使い始めてから最初の Fix まで {self.first_fix_after_s:.0f} 秒")
+        return line

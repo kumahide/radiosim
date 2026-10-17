@@ -22,6 +22,8 @@ RadioSim Fieldの**コマンドライン**（phase 1・増分4）。リポジト
     python -m apps.field.cli gnss log --port COM5 --root 測定データ
                                                       … GNSS の生データを記録する（静止観測）
                              [--ntrip geortk.jp:2101/tamtam]  … NTRIP の補正も流す（ntrip.py）
+    python -m apps.field.cli gnss attach gnss-… セッション --endpoint rx
+                                                      … 受信機の解をセッションの gnss.csv へ足す
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信はウィンドウに入れない）
@@ -75,12 +77,13 @@ from apps.field.bench_analysis import (
     write_report,
 )
 from apps.field.calib import DeviceCalibration, read_device_calibration
-from apps.field.gnss import LOG_BAUD, GnssLogger
+from apps.field.gnss import LOG_BAUD, GnssLogger, attach_to_session
 from apps.field.mavlink.dialect import load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
 from apps.field.ntrip import PASSWORD_ENV, Caster, NtripClient, NtripRelay
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.field.session import (
+    GNSS_FILE,
     Event,
     SessionError,
     read_events,
@@ -181,6 +184,15 @@ def main(argv: list[str] | None = None) -> int:
                    help="NTRIP の補正を受けて受信機へ流す（例: geortk.jp:2101/tamtam）。"
                         "無指定なら流さない")
     q.add_argument("--ntrip-user", help=f"caster の利用者名（パスワードは環境変数 {PASSWORD_ENV}）")
+    q = gnss.add_parser("attach", help="生ログの受信機の解（NAV-PVT）を、無線のセッションの"
+                                       "期間の分だけそのセッションの gnss.csv へ足す")
+    q.add_argument("log", type=Path, help="GNSS の生ログのフォルダ（gnss-…）")
+    q.add_argument("session", type=Path, help="無線のセッションのフォルダ（同じ PC で取ったもの）")
+    q.add_argument("--endpoint", choices=("tx", "rx"), required=True,
+                   help="受信機を置いた端点")
+    q.add_argument("--recover", action="store_true",
+                   help="終了の記録が無いセッション（途中で落ちた）を、最後に読めた時刻で"
+                        "終えたものとして扱う")
 
     args = parser.parse_args(argv)
     try:
@@ -199,7 +211,7 @@ def main(argv: list[str] | None = None) -> int:
         if args.command == "settings":
             return _settings(args)
         if args.command == "gnss":
-            return _gnss_log(args)
+            return _gnss_log(args) if args.gnss_command == "log" else _gnss_attach(args)
         return _export(args)
     except SessionError as e:
         print(f"エラー: {e}", file=sys.stderr)
@@ -1144,8 +1156,24 @@ def _gnss_log(args: argparse.Namespace) -> int:
         except (serial.SerialException, OSError) as e:
             print(f"受信機を戻せませんでした（{e}）＝電源を入れ直すと元に戻ります")
     print(logger.summary())
+    print(logger.solutions())
     if relay is not None:
         print(relay.summary())
+    return 0
+
+
+def _gnss_attach(args: argparse.Namespace) -> int:
+    until = None
+    events = list(read_events(args.session))
+    if args.recover and not (events and events[-1].kind == "stop"):
+        until = _last_read_time(args.session)
+        print(f"注意: 終了の記録が無いので、最後に読めた時刻 {until} で終えたものとして扱います")
+    added = attach_to_session(args.log, args.session, args.endpoint, until=until)
+    s = added.states
+    print(f"{args.session / GNSS_FILE} へ {args.endpoint} の解を {added.rows} 行足しました"
+          f"（Fix {s['fix']}・Float {s['float']}・単独 {s['single']}・なし {s['none']}）")
+    if added.untimed:
+        print(f"受信機の時刻が確定していなかった {added.untimed} 回は行にしていません")
     return 0
 
 

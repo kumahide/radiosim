@@ -124,6 +124,15 @@ def _samples(count: int = 3) -> list[S.RxSample]:
     ]
 
 
+def _fix(endpoint: str = "rx", fix_state: str = "fix", **kwargs) -> S.PositionFix:
+    fix = S.PositionFix(
+        utc="2026-09-19T01:00:00.000000Z", pc_utc="2026-09-19T01:00:00.4Z", endpoint=endpoint,
+        lat=35.0, lon=139.0, ellipsoid_h_m=155.3, fix_state=fix_state, h_acc_m=0.014,
+        v_acc_m=0.02, num_sv=31, diff_soln=1, corr_age_code=2, log_id="gnss-20260919T005900Z",
+    )
+    return replace(fix, **kwargs)
+
+
 # --- 往復 --------------------------------------------------------------------
 
 
@@ -147,7 +156,7 @@ def test_position_fixes_are_optional(tmp_path):
     directory = S.create_session(tmp_path, _header())
     assert list(S.read_position_fixes(directory)) == []
 
-    fixes = [S.PositionFix("2026-09-19T01:00:00Z", "rx", 35.0, 139.0, 155.3, "fix")]
+    fixes = [_fix()]
     S.append_position_fixes(directory, fixes)
     assert list(S.read_position_fixes(directory)) == fixes
 
@@ -205,8 +214,8 @@ def test_position_fixes_keep_which_endpoint(tmp_path):
     """
     directory = S.create_session(tmp_path, _header())
     fixes = [
-        S.PositionFix("2026-09-19T01:00:00Z", "tx", 35.0, 139.0, 155.3, "fix"),
-        S.PositionFix("2026-09-19T01:00:00Z", "rx", 35.1, 139.1, 90.2, "float"),
+        _fix("tx"),
+        _fix("rx", "float", lat=35.1, lon=139.1, ellipsoid_h_m=90.2, h_acc_m=0.6, corr_age_code=0),
     ]
     S.append_position_fixes(directory, fixes)
     read = list(S.read_position_fixes(directory))
@@ -219,17 +228,31 @@ def test_position_fix_endpoint_outside_vocabulary_is_refused(tmp_path):
     directory = S.create_session(tmp_path, _header())
     with pytest.raises(S.SessionError, match="端点"):
         S.append_position_fixes(
-            directory, [S.PositionFix("2026-09-19T01:00:00Z", "TX", 35.0, 139.0, 1.0, "fix")]
+            directory, [_fix("TX")]
         )
     assert list(S.read_position_fixes(directory)) == []
 
-    S.append_position_fixes(
-        directory, [S.PositionFix("2026-09-19T01:00:00Z", "tx", 35.0, 139.0, 1.0, "fix")]
-    )
+    S.append_position_fixes(directory, [_fix("tx")])
     path = Path(directory) / S.GNSS_FILE
     path.write_text(path.read_text(encoding="utf-8").replace(",tx,", ",both,"), encoding="utf-8")
     with pytest.raises(S.SessionError, match="端点"):
         list(S.read_position_fixes(directory))
+
+
+@pytest.mark.parametrize("kwargs, message", [
+    (dict(utc="2026-09-19T01:00:00"), "UTC ではありません"),   # 現地時刻が混ざる
+    (dict(pc_utc="昨日"), "ISO 8601"),
+    (dict(diff_soln=2), "補正の印"),
+    (dict(corr_age_code=16), "補正の印"),
+    (dict(log_id=""), "元の生ログ"),
+], ids=["受信機の時刻に時差なし", "PCの時刻が読めない", "補正の印が0か1でない",
+        "齢の符号が4ビットに入らない", "元の生ログが空"])
+def test_a_position_fix_that_breaks_the_columns_is_refused(tmp_path, kwargs, message):
+    """位置の時系列の行は、書く前に時刻・補正の印・元の生ログを確かめること（何も書かずに止まる）。"""
+    directory = S.create_session(tmp_path, _header())
+    with pytest.raises(S.SessionError, match=message):
+        S.append_position_fixes(directory, [_fix(), _fix(**kwargs)])
+    assert list(S.read_position_fixes(directory)) == []
 
 
 def test_header_is_written_atomically(tmp_path):
