@@ -15,14 +15,14 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
 
 **始め方**（崩れると、何の設定で取ったログか後から言えない）
   1. `MON-VER` を問い合わせて受信機の版を得る（刻印の「GNSS のファーム版」）。
-  2. `CFG-VALSET` を **RAM 層だけ**に書く＝電源を切れば元の設定に戻り、受信機に
-     恒久の変更を残さない。
+  2. `CFG-VALSET` を **RAM 層だけ**に書く（生データの出力と、出荷時に切れている QZSS）＝
+     電源を切れば元の設定に戻り、受信機に恒久の変更を残さない。
   3. ACK を確かめる。NAK・無返答なら止める（フォルダは作らない）。
   1・3・4 の問いは、返事が来るまで送り直す（1 回の返事が落ちることがある＝B-350）。
   4. UART1 の速度を記録の速度（115200）へ上げ、NMEA を止める（同じく RAM 層）。
      新しい速度で `MON-VER` が返ることを確かめる。応えなければ止める。
   5. ヘッダを書き、**ここまでに受けたバイトを生ログの先頭に書く**（捨てない）。
-  終えるときは `stop()` で始めの速度・NMEA ありへ書き戻し、2. の出力も止める（出荷時の 0）。
+  終えるときは `stop()` で始めの速度・NMEA ありへ書き戻し、2. の設定も出荷時の 0 へ戻す。
   出力を残すと、屋外では始めの速度（38400）が RAWX で埋まり、次の記録の MON-VER が
   返らない（2026-10-17 の三角点・B-349）。
 
@@ -95,6 +95,14 @@ OUTPUTS: tuple[tuple[str, int, int], ...] = (
     ("CFG-MSGOUT-UBX_RXM_SFRBX_USB", 0x20910234, 1),
     ("CFG-MSGOUT-UBX_NAV_PVT_UART1", 0x20910007, 1),
     ("CFG-MSGOUT-UBX_NAV_PVT_USB", 0x20910009, 1),
+)
+
+# 入れる衛星系（出力と同じ VALSET で書く）。X20P（HPG 2.11）は出荷時に QZSS の系全体が切れて
+# いる＝RAM 層も既定の層も `QZSS_ENA`＝0、各信号（L1C/A・L1S・L2C・L5）は 1（2026-10-17 の
+# VALGET・B-351）。日本では常に高仰角にいて、電子基準点の RINEX にも在る＝後処理の共通衛星。
+# 出荷時の値は 0＝`stop()` で 0 へ戻す。⚠️ `CFG-SIGNAL` を変えると受信機は追尾をやり直す。
+SIGNALS: tuple[tuple[str, int, int], ...] = (
+    ("CFG-SIGNAL-QZSS_ENA", 0x10310024, 1),
 )
 
 # 記録中の UART1 の速度。屋外の見込み（約 6 kB/s）の 2 倍ほどの余裕（約 11.5 kB/s）。
@@ -322,6 +330,7 @@ class GnssLogger:
         self, root: str | Path, port: Port, *, software_commit: str, port_name: str,
         baud: int, clock: Callable[[], str], ticks: Callable[[], float] = time.monotonic,
         outputs: tuple[tuple[str, int, int], ...] = OUTPUTS, log_baud: int = LOG_BAUD,
+        signals: tuple[tuple[str, int, int], ...] = SIGNALS,
     ):
         if not software_commit:
             raise GnssError("ソフトウェアのコミットが空です（刻印の 1 項目）")
@@ -335,6 +344,7 @@ class GnssLogger:
         self._clock = clock
         self._ticks = ticks
         self._outputs = outputs
+        self._signals = signals
         self.stream = UbxStream()
         self.directory: Path | None = None
         self.version: ReceiverVersion | None = None
@@ -355,12 +365,13 @@ class GnssLogger:
         started = self._clock()
         parse_utc(started)
         self.version = parse_mon_ver(self._find_receiver().payload)
-        ack = self._ask(valset(self._outputs),
+        settings = self._outputs + self._signals
+        ack = self._ask(valset(settings),
                         lambda m: m.kind in (ACK_ACK, ACK_NAK) and m.payload[:2] == bytes(CFG_VALSET),
                         "受信機が CFG-VALSET に応えません")
         if ack.kind == ACK_NAK:
             raise GnssError("受信機が設定（CFG-VALSET）を断りました（NAK）。キーがこの版の"
-                            f"受信機に無いかもしれません: {[n for n, _k, _v in self._outputs]}")
+                            f"受信機に無いかもしれません: {[n for n, _k, _v in settings]}")
         self._switch(self._log_baud, nmea=0)
         self._ask(frame(MON_VER), lambda m: m.kind == MON_VER,
                   f"{self._log_baud} bps に切り替えた後、受信機が応えません"
@@ -400,7 +411,8 @@ class GnssLogger:
             "config": {
                 "layers": "RAM",
                 "items": [{"name": n, "key": f"{k:#010x}", "value": v}
-                          for n, k, v in self._outputs + port_items(self._log_baud, 0)],
+                          for n, k, v in self._outputs + self._signals
+                          + port_items(self._log_baud, 0)],
             },
         }
 
@@ -430,11 +442,12 @@ class GnssLogger:
         self._port.baudrate = baud
 
     def stop(self) -> None:
-        """始めの速度・NMEA ありへ書き戻し、出力を止める（RAM 層・1 回の VALSET）。
-        記録を始める前なら何もしない。"""
+        """始めの速度・NMEA ありへ書き戻し、出力と衛星系を出荷時の 0 へ戻す（RAM 層・1 回の
+        VALSET）。記録を始める前なら何もしない。"""
         if self.directory is None:
             return
-        self._switch(self._baud, nmea=1, also=tuple((n, k, 0) for n, k, _v in self._outputs))
+        self._switch(self._baud, nmea=1,
+                     also=tuple((n, k, 0) for n, k, _v in self._outputs + self._signals))
 
     def _ask(self, request: bytes, wanted: Callable[[UbxMessage], bool], what: str) -> UbxMessage:
         """`request` を送り、`wanted` の返事が来るまで `RESEND_S` ごとに送り直す（B-350）。

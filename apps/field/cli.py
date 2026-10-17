@@ -1078,7 +1078,7 @@ def _gnss_log(args: argparse.Namespace) -> int:
             return 1
         assert logger.version is not None
         print(f"受信機 {logger.version.firmware or logger.version.software}"
-              f"（{logger.version.hardware}）・出力を RAM 層に設定し、"
+              f"（{logger.version.hardware}）・出力と QZSS を RAM 層に設定し、"
               f"{logger.baud_at_start} → {LOG_BAUD} bps に切り替えました（NMEA は止めた）")
         print(f"記録: {logger.directory}（q で終了）")
         started = time.monotonic()
@@ -1100,8 +1100,8 @@ def _gnss_log(args: argparse.Namespace) -> int:
         print()
         try:
             logger.stop()
-            print(f"受信機を {args.baud} bps・NMEA ありへ戻し、生データの出力を止める設定を"
-                  "送りました（RAM 層）")
+            print(f"受信機を {args.baud} bps・NMEA ありへ戻し、生データの出力と QZSS を出荷時へ"
+                  "戻す設定を送りました（RAM 層）")
         except (serial.SerialException, OSError) as e:
             print(f"受信機を戻せませんでした（{e}）＝電源を入れ直すと元に戻ります")
     print(logger.summary())

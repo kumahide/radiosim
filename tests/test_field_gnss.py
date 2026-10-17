@@ -65,6 +65,7 @@ def _valset_items(data: bytes) -> dict[int, int]:
 
 BAUD = G.BAUD_KEY[1]
 NMEA_OUT = G.NMEA_KEY[1]
+QZSS_ENA = 0x10310024                   # CFG-SIGNAL-QZSS_ENA（u-blox の鍵＝写しでなく直に書く）
 GARBLED = b"\xfe"                       # 速度が合わないときに PC が受ける化けたバイト
 
 
@@ -237,6 +238,9 @@ def test_start_asks_configures_speeds_up_and_then_writes_the_header(tmp_path):
     assert [(w[2], w[3]) for w in receiver.written] == [G.MON_VER, G.CFG_VALSET, G.CFG_VALSET,
                                                          G.MON_VER]
     assert receiver.written[1][7] == receiver.written[2][7] == G.LAYER_RAM
+    # 出荷時に切れている QZSS を出力と同じ VALSET で入れる（B-351）
+    assert _valset_items(receiver.written[1]) == {
+        **{k: v for _n, k, v in G.OUTPUTS}, QZSS_ENA: 1}
     assert _valset_items(receiver.written[2]) == {BAUD: 115200, NMEA_OUT: 0}
     assert receiver.baudrate == receiver.rate == 115200 and not receiver.nmea
     header = json.loads((directory / G.HEADER_FILE).read_text(encoding="utf-8"))
@@ -247,7 +251,7 @@ def test_start_asks_configures_speeds_up_and_then_writes_the_header(tmp_path):
     assert "MOD=ZED-X20P" in header["receiver"]["extensions"]
     assert header["config"]["layers"] == "RAM"
     assert [(i["key"], i["value"]) for i in header["config"]["items"]] == \
-        [(f"{k:#010x}", v) for _n, k, v in G.OUTPUTS + G.port_items(115200, 0)]
+        [(f"{k:#010x}", v) for _n, k, v in G.OUTPUTS + G.SIGNALS + G.port_items(115200, 0)]
 
 
 def test_a_receiver_left_at_the_logging_speed_is_still_found(tmp_path):
@@ -277,7 +281,7 @@ def test_stop_puts_the_speed_and_nmea_back_and_logs_until_then(tmp_path):
     _drain(logger, receiver)
     logger.stop()
     assert _valset_items(receiver.written[-1]) == {
-        **{k: 0 for _n, k, _v in G.OUTPUTS}, BAUD: 38400, NMEA_OUT: 1}
+        **{k: 0 for _n, k, _v in G.OUTPUTS}, QZSS_ENA: 0, BAUD: 38400, NMEA_OUT: 1}
     assert receiver.written[-1][7] == G.LAYER_RAM
     assert receiver.baudrate == receiver.rate == 38400 and receiver.nmea
     assert not receiver.outputs
