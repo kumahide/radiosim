@@ -73,7 +73,9 @@ class _Receiver:
     `answer` は出力の VALSET への返事（"ack"・"nak"・None＝黙る）。速度の VALSET には
     返事が読めない（実機と同じ）＝黙って速度を替える（`follows_speed=False` なら替えない）。
     PC 側の速度（`baudrate`）が受信機の速度（`rate`）と違うと、書かれた枠は届かず、
-    読み出しは化けたバイトになる。1 回の読み出しで時計が 0.1 秒進む。"""
+    読み出しは化けたバイトになる。1 回の読み出しで時計が 0.1 秒進む。
+    生データを出したまま 38400 bps 以下にいると線が埋まり、MON-VER の返事を落とす
+    （2026-10-17 の屋外＝RAWX 1 回が 38400 bps の 1 秒分とほぼ同じ・B-349）。"""
 
     def __init__(self, *, answer: str | None = "ack", after: list[bytes] | None = None,
                  rate: int = 38400, follows_speed: bool = True):
@@ -88,6 +90,7 @@ class _Receiver:
         self.sent = bytearray()             # PC が受けたバイトの全部（生ログと比べる）
         self.written: list[bytes] = []
         self.configured = False
+        self.outputs = False                # RAWX などの生データを出しているか
 
     def ticks(self) -> float:
         return self.t
@@ -117,8 +120,14 @@ class _Receiver:
         if self.baudrate != self.rate:
             return len(data)
         kind = (data[2], data[3])
+        if kind == G.CFG_VALSET:
+            items = _valset_items(data)
+            outputs = [items[k] for _n, k, _v in G.OUTPUTS if k in items]
+            if outputs:
+                self.outputs = any(outputs)
         if kind == G.MON_VER:
-            self.buffer += G.frame(G.MON_VER, _mon_ver())
+            if not (self.outputs and self.rate <= 38400):
+                self.buffer += G.frame(G.MON_VER, _mon_ver())
         elif kind == G.CFG_VALSET and BAUD in _valset_items(data):
             items = _valset_items(data)
             if self.follows_speed:
@@ -256,13 +265,31 @@ def test_stop_puts_the_speed_and_nmea_back_and_logs_until_then(tmp_path):
     directory = logger.start()
     _drain(logger, receiver)
     logger.stop()
-    assert _valset_items(receiver.written[-1]) == {BAUD: 38400, NMEA_OUT: 1}
+    assert _valset_items(receiver.written[-1]) == {
+        **{k: 0 for _n, k, _v in G.OUTPUTS}, BAUD: 38400, NMEA_OUT: 1}
+    assert receiver.written[-1][7] == G.LAYER_RAM
     assert receiver.baudrate == receiver.rate == 38400 and receiver.nmea
+    assert not receiver.outputs
     chunks = list(read_raw(directory, raw_file=G.RAW_FILE, index_file=G.INDEX_FILE))
     # 戻す設定を送った後の待ちで受けた分（化けたバイト）まで生ログに残る
     assert b"".join(c for _t, c in chunks) == bytes(receiver.sent)
     assert bytes(receiver.sent).endswith(GARBLED)
     assert logger.counts["rawx"] == 2
+
+
+def test_a_second_log_starts_after_stop_without_power_cycling(tmp_path):
+    # B-349＝止めても生データを出し続けると、38400 bps が埋まって次の問い合わせが落ちた
+    receiver = _Receiver(after=[_rawx(1.0)])
+    first = _logger(tmp_path / "first", receiver)
+    first.start()
+    _drain(first, receiver)
+    first.stop()
+    receiver.after = [_rawx(2.0)]
+    second = _logger(tmp_path / "second", receiver)
+    second.start()
+    assert second.baud_at_start == 38400
+    _drain(second, receiver)
+    assert second.counts["rawx"] == 1
 
 
 def test_the_raw_log_keeps_every_byte_including_those_before_the_header(tmp_path):

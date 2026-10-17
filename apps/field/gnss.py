@@ -21,7 +21,9 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
   4. UART1 の速度を記録の速度（115200）へ上げ、NMEA を止める（同じく RAM 層）。
      新しい速度で `MON-VER` が返ることを確かめる。応えなければ止める。
   5. ヘッダを書き、**ここまでに受けたバイトを生ログの先頭に書く**（捨てない）。
-  終えるときは `stop()` で始めの速度・NMEA ありへ書き戻す。
+  終えるときは `stop()` で始めの速度・NMEA ありへ書き戻し、2. の出力も止める（出荷時の 0）。
+  出力を残すと、屋外では始めの速度（38400）が RAWX で埋まり、次の記録の MON-VER が
+  返らない（2026-10-17 の三角点・B-349）。
 
 **速度を上げる理由**（2026-10-16 の実機）＝出荷時の 38400 bps（約 3.8 kB/s）は、屋外で信号が
 100 を超えると RAWX だけで埋まる（16＋32×信号数 バイト/秒）。出荷時の NMEA は後処理に要らず、
@@ -413,20 +415,22 @@ class GnssLogger:
         raise GnssError(f"受信機が MON-VER に応えません（{'・'.join(map(str, bauds))} bps で"
                         "問い合わせました。ポート・電源を確かめてください）")
 
-    def _switch(self, baud: int, nmea: int) -> None:
-        """UART1 の速度と NMEA を RAM 層に書き、送り終わるのを待ってから PC 側も替える。
-        待つ間に届いた分も読む（ヘッダの前なら溜め、後なら生ログへ）。"""
-        self._port.write(valset(port_items(baud, nmea)))
+    def _switch(self, baud: int, nmea: int,
+                also: tuple[tuple[str, int, int], ...] = ()) -> None:
+        """UART1 の速度と NMEA（と `also`）を RAM 層に書き、送り終わるのを待ってから PC 側も
+        替える。待つ間に届いた分も読む（ヘッダの前なら溜め、後なら生ログへ）。"""
+        self._port.write(valset(also + port_items(baud, nmea)))
         since = self._ticks()
         while self._ticks() - since < SETTLE_S:
             self.poll()
         self._port.baudrate = baud
 
     def stop(self) -> None:
-        """始めの速度・NMEA ありへ書き戻す（RAM 層）。記録を始める前なら何もしない。"""
+        """始めの速度・NMEA ありへ書き戻し、出力を止める（RAM 層・1 回の VALSET）。
+        記録を始める前なら何もしない。"""
         if self.directory is None:
             return
-        self._switch(self._baud, nmea=1)
+        self._switch(self._baud, nmea=1, also=tuple((n, k, 0) for n, k, _v in self._outputs))
 
     def _wait(self, wanted: Callable[[UbxMessage], bool], what: str) -> UbxMessage:
         since = self._ticks()

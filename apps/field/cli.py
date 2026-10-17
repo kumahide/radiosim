@@ -1100,7 +1100,8 @@ def _gnss_log(args: argparse.Namespace) -> int:
         print()
         try:
             logger.stop()
-            print(f"受信機を {args.baud} bps・NMEA ありへ戻す設定を送りました（RAM 層）")
+            print(f"受信機を {args.baud} bps・NMEA ありへ戻し、生データの出力を止める設定を"
+                  "送りました（RAM 層）")
         except (serial.SerialException, OSError) as e:
             print(f"受信機を戻せませんでした（{e}）＝電源を入れ直すと元に戻ります")
     print(logger.summary())
