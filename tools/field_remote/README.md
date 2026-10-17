@@ -51,8 +51,12 @@
    .venv\Scripts\python.exe -m apps.field.cli gnss log --port COM? --root C:\dev\field-data\gnss
    ```
    「記録中はスリープせず画面も消しません」と出ることを確かめる。
+   NTRIP の補正も流すときは `--ntrip host:port/接続先の名前` を足す（例 `--ntrip geortk.jp:2101/tamtam`）。
+   利用者名の要る caster は `--ntrip-user 名前` も足し、パスワードは先に
+   `$env:RADIOSIM_NTRIP_PASSWORD = '…'` で入れる（引数・ファイルには書かない）。
+   補正が切れても記録は続き、つなぎ直す。届いた補正はフォルダの `ntrip.rtcm` に残る。
 4. Claude が `x13_watch.ps1` で様子を見る。最後の受信からの秒数・RAWX の欠け・
-   検査和の不一致・解の状態を報告する。
+   検査和の不一致・解の状態（補正を流していれば RTK Float／Fix と補正の最後の受信）を報告する。
 5. 終えるときは X13 で `q`。受信機は始めの速度と NMEA ありへ戻る（RAM 層）。
 
 ## 回線が切れたら

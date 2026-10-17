@@ -21,6 +21,7 @@ RadioSim Fieldの**コマンドライン**（phase 1・増分4）。リポジト
                                                       … 機器の設定を表示する・変える
     python -m apps.field.cli gnss log --port COM5 --root 測定データ
                                                       … GNSS の生データを記録する（静止観測）
+                             [--ntrip geortk.jp:2101/tamtam]  … NTRIP の補正も流す（ntrip.py）
 
 **測っている間のキー**（`record`）
     m … アンテナを動かし始める（次に据えるまでの受信はウィンドウに入れない）
@@ -38,6 +39,7 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import os
 import re
 import subprocess  # nosec B404 — 固定の git 呼び出しだけ（刻印のコミットを取る）
 import sys
@@ -45,7 +47,7 @@ import time
 from dataclasses import asdict
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from apps.field.aggregate import (
     aggregate,
@@ -76,6 +78,7 @@ from apps.field.calib import DeviceCalibration, read_device_calibration
 from apps.field.gnss import LOG_BAUD, GnssLogger
 from apps.field.mavlink.dialect import load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
+from apps.field.ntrip import PASSWORD_ENV, Caster, NtripClient, NtripRelay
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.field.session import (
     Event,
@@ -174,6 +177,10 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--baud", type=int, default=38400,
                    help=f"受信機の始めの速度（記録中は {LOG_BAUD} に上げ、終えたら戻す）")
     q.add_argument("--root", type=Path, required=True, help="記録のフォルダを作る場所")
+    q.add_argument("--ntrip", metavar="HOST:PORT/MOUNT",
+                   help="NTRIP の補正を受けて受信機へ流す（例: geortk.jp:2101/tamtam）。"
+                        "無指定なら流さない")
+    q.add_argument("--ntrip-user", help=f"caster の利用者名（パスワードは環境変数 {PASSWORD_ENV}）")
 
     args = parser.parse_args(argv)
     try:
@@ -1059,8 +1066,26 @@ def _monitor(args: argparse.Namespace) -> int:
 # --- gnss --------------------------------------------------------------------
 
 
+def _ntrip_settings(args: argparse.Namespace,
+                    environ: Mapping[str, str]) -> tuple[Caster, str | None, str | None] | None:
+    """`--ntrip` の指定を読む（ポートを開く前に＝指定の誤りで受信機の設定を変えない）。"""
+    if args.ntrip is None:
+        if args.ntrip_user is not None:
+            raise SessionError("--ntrip-user は --ntrip と一緒に指定してください")
+        return None
+    caster = Caster.parse(args.ntrip)
+    password = None
+    if args.ntrip_user is not None:
+        password = environ.get(PASSWORD_ENV)
+        if password is None:
+            raise SessionError(f"caster のパスワードを環境変数 {PASSWORD_ENV} に入れてください"
+                               "（引数には書かない）")
+    return caster, args.ntrip_user, password
+
+
 def _gnss_log(args: argparse.Namespace) -> int:
     commit = software_commit()
+    ntrip = _ntrip_settings(args, os.environ)
     serial = _import_serial()
     keys = _Keyboard()
     try:
@@ -1081,6 +1106,14 @@ def _gnss_log(args: argparse.Namespace) -> int:
               f"（{logger.version.hardware}）・出力と QZSS を RAM 層に設定し、"
               f"{logger.baud_at_start} → {LOG_BAUD} bps に切り替えました（NMEA は止めた）")
         print(f"記録: {logger.directory}（q で終了）")
+        relay = None
+        if ntrip is not None:
+            assert logger.directory is not None
+            caster, user, password = ntrip
+            client = NtripClient(caster, user, password, clock=now_utc)
+            relay = NtripRelay(logger.directory, client, user=user, clock=now_utc)
+            client.start()
+            print(f"補正: {caster} から受けて受信機へ流します（切れても記録は続け、つなぎ直します）")
         started = time.monotonic()
         last_status = 0.0
         with _KeepAwake() as awake:
@@ -1091,20 +1124,28 @@ def _gnss_log(args: argparse.Namespace) -> int:
             try:
                 while keys.poll() != "q":
                     logger.poll()
+                    if relay is not None:
+                        relay.pump(port, logger.last_pvt)
                     if time.monotonic() - last_status >= _STATUS_EVERY_S:
-                        print(f"\r{logger.status_line(time.monotonic() - started)}   ",
-                              end="", flush=True)
+                        line = logger.status_line(time.monotonic() - started)
+                        if relay is not None:
+                            line += f"  {relay.status()}"
+                        print(f"\r{line}   ", end="", flush=True)
                         last_status = time.monotonic()
             except KeyboardInterrupt:
                 pass
         print()
         try:
+            if relay is not None:
+                relay.close(port)
             logger.stop()
             print(f"受信機を {args.baud} bps・NMEA ありへ戻し、生データの出力と QZSS を出荷時へ"
                   "戻す設定を送りました（RAM 層）")
         except (serial.SerialException, OSError) as e:
             print(f"受信機を戻せませんでした（{e}）＝電源を入れ直すと元に戻ります")
     print(logger.summary())
+    if relay is not None:
+        print(relay.summary())
     return 0
 
 

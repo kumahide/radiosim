@@ -9,6 +9,7 @@ tools/field_remote/gnss_peek.py
 出すもの
   - 最後の受信から何秒たったか（＝記録が止まっていないか）・直近 60 秒の 1 秒あたりのバイト数
   - 記録器と**同じ数え方**の状態の行（RAWX の信号数・解・RAWX の欠け・検査和の不一致）
+  - NTRIP の補正を流していれば（`--ntrip`）、最後に届いてから何秒か・RTCM の数・最後に切れた理由
 数え方は `GnssLogger.poll()` に生ログを読み出しの区切りのまま流して得る＝記録器の画面と
 食い違わない（数え方を写さない）。
 
@@ -18,16 +19,19 @@ tools/field_remote/gnss_peek.py
 
 from __future__ import annotations
 
+import json
 import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 
+from apps.field import ntrip  # noqa: E402
 from apps.field.gnss import INDEX_FILE, RAW_FILE, GnssLogger  # noqa: E402
 from apps.field.session import SessionError, parse_utc, read_raw  # noqa: E402
 
 _RECENT_S = 60.0
+_UNFINISHED = (SessionError, ValueError, TypeError, KeyError)   # 書きかけの末尾の行
 
 
 class _Replay:
@@ -58,7 +62,7 @@ def peek(directory: Path, now: datetime) -> list[str]:
             reads.append((parse_utc(pc_utc), len(chunk)))
             port.chunk = chunk
             logger.poll()
-    except (SessionError, ValueError, TypeError, KeyError):
+    except _UNFINISHED:
         pass                                    # 書きかけの末尾の行＝そこまでで出す
     if not reads:
         return [f"{directory.name}: まだ 1 回も受けていません"]
@@ -66,13 +70,39 @@ def peek(directory: Path, now: datetime) -> list[str]:
     recent = [n for t, n in reads if (last - t).total_seconds() <= _RECENT_S]
     span = min(_RECENT_S, max(1.0, (last - first).total_seconds()))
     logger.bytes_written = sum(n for _, n in reads)
-    return [
+    lines = [
         f"{directory.name}",
         f"最後の受信から {(now - last).total_seconds():.0f} 秒"
         f"・直近 {span:.0f} 秒は 1 秒あたり {sum(recent) / span:.0f} バイト",
         logger.status_line((last - first).total_seconds()),
         logger.summary(),
     ]
+    if (directory / ntrip.RAW_FILE).exists():
+        lines.append(_corrections(directory, now))
+    return lines
+
+
+def _corrections(directory: Path, now: datetime) -> str:
+    stream = ntrip.RtcmStream()
+    last, total = None, 0
+    try:
+        for pc_utc, chunk in read_raw(directory, raw_file=ntrip.RAW_FILE,
+                                      index_file=ntrip.INDEX_FILE):
+            last, total = parse_utc(pc_utc), total + len(chunk)
+            stream.feed(chunk)
+    except _UNFINISHED:
+        pass
+    age = ("まだ届いていません" if last is None else
+           f"最後に届いてから {(now - last).total_seconds():.0f} 秒")
+    line = (f"補正 {age}・{total} バイト・RTCM {stream.stats.frames} 個"
+            f"・CRC の不一致 {stream.stats.crc_errors}")
+    try:
+        events = json.loads((directory / ntrip.HEADER_FILE).read_text(encoding="utf-8"))["events"]
+    except (OSError, ValueError, KeyError):
+        return line
+    if events and events[-1]["event"] == "lost":
+        line += f"・最後に切れた {events[-1]['pc_utc']}（{events[-1]['detail']}）"
+    return line
 
 
 def main(argv: list[str]) -> int:

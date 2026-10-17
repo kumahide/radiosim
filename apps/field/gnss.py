@@ -289,7 +289,8 @@ _CARRIER = {1: "RTK Float", 2: "RTK Fix"}
 
 @dataclass(frozen=True)
 class PvtStatus:
-    """NAV-PVT のうち、画面に出す分。**ここの解は記録しない**（本番は後処理）。"""
+    """NAV-PVT のうち、画面に出す分と、NTRIP の caster へ上げる GGA の材料（`ntrip.gga`）。
+    **ここの解は記録しない**（本番は後処理）。"""
 
     fix_type: int
     fix_ok: bool                  # gnssFixOK（受信機が解を有効とみなしたか）
@@ -297,6 +298,12 @@ class PvtStatus:
     satellites: int
     h_acc_m: float
     v_acc_m: float
+    lat_deg: float = 0.0
+    lon_deg: float = 0.0
+    height_m: float = 0.0         # 楕円体高
+    h_msl_m: float = 0.0          # 受信機の内蔵のジオイドでの標高（⚠️ 国土地理院のものと約 4.9 m 違う）
+    utc_hms: tuple[int, int, int] = (0, 0, 0)
+    pdop: float = 0.0
 
     def describe(self) -> str:
         label = _FIX_TYPES.get(self.fix_type, f"種別 {self.fix_type}")
@@ -310,10 +317,13 @@ class PvtStatus:
 def parse_nav_pvt(payload: bytes) -> PvtStatus:
     if len(payload) < 92:
         raise GnssError(f"NAV-PVT が短すぎます: {len(payload)} バイト")
+    hour, minute, second = struct.unpack_from("<BBB", payload, 8)
     fix_type, flags, _flags2, satellites = struct.unpack_from("<BBBB", payload, 20)
-    h_acc, v_acc = struct.unpack_from("<II", payload, 40)
+    lon, lat, height, h_msl, h_acc, v_acc = struct.unpack_from("<iiiiII", payload, 24)
+    (pdop,) = struct.unpack_from("<H", payload, 76)
     return PvtStatus(fix_type, bool(flags & 0x01), (flags >> 6) & 0x03, satellites,
-                     h_acc / 1000, v_acc / 1000)
+                     h_acc / 1000, v_acc / 1000, lat * 1e-7, lon * 1e-7, height / 1000,
+                     h_msl / 1000, (hour, minute, second), pdop / 100)
 
 
 # --- 記録器 --------------------------------------------------------------------
