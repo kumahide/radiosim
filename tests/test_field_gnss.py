@@ -75,11 +75,15 @@ class _Receiver:
     PC 側の速度（`baudrate`）が受信機の速度（`rate`）と違うと、書かれた枠は届かず、
     読み出しは化けたバイトになる。1 回の読み出しで時計が 0.1 秒進む。
     生データを出したまま 38400 bps 以下にいると線が埋まり、MON-VER の返事を落とす
-    （2026-10-17 の屋外＝RAWX 1 回が 38400 bps の 1 秒分とほぼ同じ・B-349）。"""
+    （2026-10-17 の屋外＝RAWX 1 回が 38400 bps の 1 秒分とほぼ同じ・B-349）。
+    `loses_first_reply` なら、返事のある問い（MON-VER・出力の VALSET）の返事を、同じ問い・
+    同じ速度の初回だけ落とす（2026-10-17 の X13＝NMEA ありの線で 15 回に 2 回・B-350）。"""
 
     def __init__(self, *, answer: str | None = "ack", after: list[bytes] | None = None,
-                 rate: int = 38400, follows_speed: bool = True):
+                 rate: int = 38400, follows_speed: bool = True, loses_first_reply: bool = False):
         self.answer = answer
+        self.loses_first_reply = loses_first_reply
+        self.heard: set[tuple[bytes, int]] = set()
         self.after = list(after or [])      # ACK の後、読み出し 1 回に 1 つずつ流す
         self.rate = rate
         self.follows_speed = follows_speed
@@ -120,6 +124,11 @@ class _Receiver:
         if self.baudrate != self.rate:
             return len(data)
         kind = (data[2], data[3])
+        asked = (bytes(data), self.rate)
+        lose = (self.loses_first_reply and asked not in self.heard
+                and not (kind == G.CFG_VALSET and BAUD in _valset_items(data)))
+        self.heard.add(asked)
+        before = len(self.buffer)
         if kind == G.CFG_VALSET:
             items = _valset_items(data)
             outputs = [items[k] for _n, k, _v in G.OUTPUTS if k in items]
@@ -138,6 +147,8 @@ class _Receiver:
             reply = G.ACK_ACK if self.answer == "ack" else G.ACK_NAK
             self.buffer += G.frame(reply, bytes(G.CFG_VALSET))
             self.configured = self.answer == "ack"
+        if lose:
+            del self.buffer[before:]            # 受信機は処理したが、返事が PC に届かない
         return len(data)
 
 
@@ -292,6 +303,22 @@ def test_a_second_log_starts_after_stop_without_power_cycling(tmp_path):
     assert second.counts["rawx"] == 1
 
 
+def test_a_lost_reply_is_asked_again_at_every_step(tmp_path):
+    # B-350＝1 回の問いの返事が落ちると、受信機は正常なのに「MON-VER に応えません」で止まった
+    receiver = _Receiver(after=[_rawx(1.0)], loses_first_reply=True)
+    logger = _logger(tmp_path, receiver)
+    directory = logger.start()
+    # 始めの MON-VER・出力の VALSET・速度を上げた後の MON-VER を、どれも 2 回目で通す
+    assert [(w[2], w[3]) for w in receiver.written] == [
+        G.MON_VER, G.MON_VER, G.CFG_VALSET, G.CFG_VALSET, G.CFG_VALSET, G.MON_VER, G.MON_VER]
+    assert receiver.written[0] == receiver.written[1] and receiver.written[2] == receiver.written[3]
+    assert logger.baud_at_start == 38400                # 記録の速度へ探しに行っていない
+    _drain(logger, receiver)
+    chunks = list(read_raw(directory, raw_file=G.RAW_FILE, index_file=G.INDEX_FILE))
+    assert b"".join(c for _t, c in chunks) == bytes(receiver.sent)
+    assert logger.counts["rawx"] == 1
+
+
 def test_the_raw_log_keeps_every_byte_including_those_before_the_header(tmp_path):
     receiver = _Receiver(after=[_rawx(1.0), _pvt(), _rawx(2.0)])
     logger = _logger(tmp_path, receiver)
@@ -318,11 +345,19 @@ def test_no_folder_is_made_when_the_receiver_refuses_or_is_silent(tmp_path, answ
 
 def test_a_receiver_that_does_not_answer_mon_ver_stops_before_configuring(tmp_path):
     receiver = _Receiver()
-    receiver.write = lambda data: receiver.written.append(data) or len(data)   # 何も返さない
+    asked: list[tuple[tuple[int, int], int, float]] = []
+    receiver.write = lambda data: asked.append(((data[2], data[3]), receiver.baudrate,
+                                                receiver.t)) or len(data)   # 何も返さない
     with pytest.raises(G.GnssError, match="MON-VER に応えません（38400・115200 bps"):
         _logger(tmp_path, receiver).start()
-    # 始めの速度と記録の速度で 1 回ずつ問い、設定は書かない
-    assert [(w[2], w[3]) for w in receiver.written] == [G.MON_VER, G.MON_VER]
+    # 始めの速度と記録の速度で、待ちの上限まで送り直して問い、設定は書かない
+    assert {kind for kind, _b, _t in asked} == {G.MON_VER}
+    bauds = [b for _k, b, _t in asked]
+    assert bauds == sorted(bauds)                       # 始めの速度で問い終えてから次へ
+    assert min(bauds.count(38400), bauds.count(115200)) >= int(G.REPLY_WAIT_S / G.RESEND_S)
+    # 送り直しの間隔は 1 秒の倍数にしない（毎秒の NMEA の塊と同じ位相に当て続けない）
+    gaps = {round(b[2] - a[2], 1) for a, b in zip(asked, asked[1:]) if a[1] == b[1]}
+    assert gaps and all(g % 1.0 for g in gaps)
     assert list(tmp_path.iterdir()) == []
 
 

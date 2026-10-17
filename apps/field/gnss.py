@@ -18,6 +18,7 @@ GNSS 受信機（u-blox ZED-X20P）の**生データの記録器**＝静止観�
   2. `CFG-VALSET` を **RAM 層だけ**に書く＝電源を切れば元の設定に戻り、受信機に
      恒久の変更を残さない。
   3. ACK を確かめる。NAK・無返答なら止める（フォルダは作らない）。
+  1・3・4 の問いは、返事が来るまで送り直す（1 回の返事が落ちることがある＝B-350）。
   4. UART1 の速度を記録の速度（115200）へ上げ、NMEA を止める（同じく RAM 層）。
      新しい速度で `MON-VER` が返ることを確かめる。応えなければ止める。
   5. ヘッダを書き、**ここまでに受けたバイトを生ログの先頭に書く**（捨てない）。
@@ -58,6 +59,12 @@ INDEX_FILE = "gnss_index.csv"
 
 # 問い合わせ・設定への返事を待つ上限。MON-VER も ACK も、届くなら 1 秒かからない。
 REPLY_WAIT_S = 3.0
+
+# 返事が無いときに同じ問いを送り直す間隔（B-350）。38400 bps・NMEA ありの線で、1 回の問いの
+# 返事が 15 回に 2 回落ちた（2026-10-17 の X13・受信機は正常）。MON-VER の問いも RAM 層の
+# VALSET も、何度送っても同じ結果。1 秒の倍数にしない＝落ちる原因が毎秒の NMEA の塊との
+# 重なり（仮説・未確認）なら、1 秒ごとの送り直しは毎回同じ位相に当たる。
+RESEND_S = 0.7
 
 # --- UBX の枠 ------------------------------------------------------------------
 
@@ -348,18 +355,16 @@ class GnssLogger:
         started = self._clock()
         parse_utc(started)
         self.version = parse_mon_ver(self._find_receiver().payload)
-        self._port.write(valset(self._outputs))
-        ack = self._wait(lambda m: m.kind in (ACK_ACK, ACK_NAK)
-                         and m.payload[:2] == bytes(CFG_VALSET),
-                         "受信機が CFG-VALSET に応えません")
+        ack = self._ask(valset(self._outputs),
+                        lambda m: m.kind in (ACK_ACK, ACK_NAK) and m.payload[:2] == bytes(CFG_VALSET),
+                        "受信機が CFG-VALSET に応えません")
         if ack.kind == ACK_NAK:
             raise GnssError("受信機が設定（CFG-VALSET）を断りました（NAK）。キーがこの版の"
                             f"受信機に無いかもしれません: {[n for n, _k, _v in self._outputs]}")
         self._switch(self._log_baud, nmea=0)
-        self._port.write(frame(MON_VER))
-        self._wait(lambda m: m.kind == MON_VER,
-                   f"{self._log_baud} bps に切り替えた後、受信機が応えません"
-                   f"（電源を入れ直すと元の速度に戻ります）")
+        self._ask(frame(MON_VER), lambda m: m.kind == MON_VER,
+                  f"{self._log_baud} bps に切り替えた後、受信機が応えません"
+                  f"（電源を入れ直すと元の速度に戻ります）")
         name = "gnss-" + parse_utc(started).strftime("%Y%m%dT%H%M%SZ")
         directory = self._root / name
         if directory.exists():
@@ -405,9 +410,8 @@ class GnssLogger:
         bauds = [self._baud] + ([self._log_baud] if self._log_baud != self._baud else [])
         for baud in bauds:
             self._port.baudrate = baud
-            self._port.write(frame(MON_VER))
             try:
-                reply = self._wait(lambda m: m.kind == MON_VER, "")
+                reply = self._ask(frame(MON_VER), lambda m: m.kind == MON_VER, "")
             except GnssError:
                 continue
             self.baud_at_start = baud
@@ -432,9 +436,16 @@ class GnssLogger:
             return
         self._switch(self._baud, nmea=1, also=tuple((n, k, 0) for n, k, _v in self._outputs))
 
-    def _wait(self, wanted: Callable[[UbxMessage], bool], what: str) -> UbxMessage:
-        since = self._ticks()
-        while self._ticks() - since <= REPLY_WAIT_S:
+    def _ask(self, request: bytes, wanted: Callable[[UbxMessage], bool], what: str) -> UbxMessage:
+        """`request` を送り、`wanted` の返事が来るまで `RESEND_S` ごとに送り直す（B-350）。
+        前の問いの返事の残り（送り直しで 2 つ返った分）は捨ててから問う。"""
+        self._replies.clear()
+        self._port.write(request)
+        since = sent = self._ticks()
+        while (now := self._ticks()) - since <= REPLY_WAIT_S:
+            if now - sent >= RESEND_S:
+                self._port.write(request)
+                sent = now
             self.poll()
             for i, message in enumerate(self._replies):
                 if wanted(message):
