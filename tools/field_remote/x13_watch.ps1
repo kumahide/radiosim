@@ -12,6 +12,8 @@ tools/field_remote/x13_watch.ps1
 ⚠️ 遠隔のスクリプトは -EncodedCommand で渡す＝SSH と Windows PowerShell 5.1 の二重の
    引用符の解釈を通さない（素で渡すと `"` と `$` が途中で剥がれる）。
 ⚠️ 遠隔は 5.1＝`??`・三項演算子を使わない。
+⚠️ 「記録の処理」は python の起動行で見分ける＝別の名前の起動用スクリプトから回すと
+   「見当たらない」と出る（記録が進んでいるかは gnss_peek の「最後の受信から」が正）。
 #>
 param(
     [string]$HostName = 'x13',
@@ -31,7 +33,8 @@ if ($Folder) { $d = Get-Item (Join-Path $Root $Folder) -ErrorAction SilentlyCont
 else { $d = Get-ChildItem $Root -Directory -Filter 'gnss-*' -ErrorAction SilentlyContinue | Sort-Object Name | Select-Object -Last 1 }
 if (-not $d) { "記録のフォルダがありません: $Root" }
 else { & (Join-Path $Repo '.venv\Scripts\python.exe') (Join-Path $Repo 'tools\field_remote\gnss_peek.py') $d.FullName }
-$p = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -match 'gnss\s+log' })
+# 人が打つ `gnss log` と、SSH から切り離して起動する `timed_log*.py`（起動行に gnss log が入らない）
+$p = @(Get-CimInstance Win32_Process -Filter "Name='python.exe'" | Where-Object { $_.CommandLine -match 'gnss\s+log|timed_log\w*\.py' })
 if ($p.Count) { "記録の処理: 走っている（PID $($p.ProcessId -join ',')）" } else { "記録の処理: 見当たらない" }
 $b = Get-CimInstance Win32_Battery | Select-Object -First 1
 $ac = (Get-CimInstance -Namespace root\wmi -ClassName BatteryStatus -ErrorAction SilentlyContinue | Select-Object -First 1).PowerOnline
