@@ -1720,11 +1720,18 @@ class TestRoadmapDashboardBlocksStop:
 
     @pytest.mark.parametrize("source", ["check_dashboard_rules_real",
                                         "check_inventory_real",
-                                        "check_renumber_real"])
+                                        "check_renumber_real",
+                                        "check_decided_capabilities_real"])
     def test_roadmap_self_contradictions_block(self, memcheck, monkeypatch, capsys, source):
-        """check 22〜24（I-157）も Stop を止める。"""
+        """check 22〜24（I-157）と check 29（I-244）も Stop を止める。"""
         out = self._run_main(memcheck, monkeypatch, capsys, "自己矛盾", source=source)
         assert out.get("decision") == "block"
+
+    def test_unfinished_capability_is_only_advisory(self, memcheck, monkeypatch, capsys):
+        """check 29 の「未実装なのに錨が見つかる」は作っている途中なので止めない。"""
+        out = self._run_main(memcheck, monkeypatch, capsys, "作っている途中",
+                             source="check_decided_capabilities_advice_real")
+        assert "decision" not in out and "作っている途中" in out["systemMessage"]
 
     def test_stale_trigger_is_only_advisory(self, memcheck, monkeypatch, capsys):
         """check 25 は言い回しの揺れで取りこぼすので止めない。"""
@@ -2562,6 +2569,98 @@ class TestInventoryH2IsPermanent:
 
     def test_real_roadmap_is_clean(self, memcheck):
         assert memcheck.check_inventory_h2_real() == []
+
+
+class TestDecidedCapabilities:
+    """正典が「決定済み」とした機能がコードから消えたら止める（check 29・I-244）。
+
+    2026-10-18、`18d3515` で Field の 2.4 GHz の経路を丸ごと消した。正典 §4 は
+    「2.4 GHz も積む・後から対照として足す」と決めていたが、ファームにはテストが
+    無く、消えても何も落ちなかった（ユーザーの質問で気づいた）。
+    """
+
+    HEADER = ["| 決定済みの機能 | 状態 | 錨 |", "|---|---|---|"]
+    OPEN = {"I-243": "未着手（版割り未決）"}
+    SOURCES = {"I-243": "「2.4 GHz を足すのは決定事項です、時期は未定でOKです。」"}
+
+    @pytest.fixture
+    def root(self, tmp_path):
+        (tmp_path / "fw").mkdir()
+        (tmp_path / "fw" / "radio.c").write_text("e220_send(frame, n);\n", encoding="utf-8")
+        return tmp_path
+
+    def _run(self, memcheck, root, *rows, states=None, sources=None):
+        return memcheck.check_decided_capabilities(
+            self.HEADER + list(rows),
+            self.OPEN if states is None else states,
+            self.SOURCES if sources is None else sources,
+            root)
+
+    def test_an_implemented_capability_deleted_from_the_code_is_flagged(self, memcheck, root):
+        """① 実際に起きた形＝`実装済み` の錨がコードから消えた。"""
+        block, _ = self._run(memcheck, root,
+                             "| 2.4 GHz | 実装済み | `fw/*.c` に `esp_wifi_80211_tx(` |")
+        assert len(block) == 1 and "esp_wifi_80211_tx(" in block[0]
+
+    def test_a_glob_matching_no_file_is_flagged(self, memcheck, root):
+        block, _ = self._run(memcheck, root, "| 920 MHz | 実装済み | `gone/*.c` に `e220_send(` |")
+        assert len(block) == 1
+
+    def test_an_implemented_capability_in_the_code_passes(self, memcheck, root):
+        assert self._run(memcheck, root,
+                         "| 920 MHz | 実装済み | `fw/*.c` に `e220_send(` |") == ([], [])
+
+    @pytest.mark.parametrize("states, sources, word", [
+        ({}, {}, "台帳に無い"),
+        ({"I-243": "**済**（`abc1234`）"}, SOURCES, "閉じている"),
+        (OPEN, {"I-243": "**原文なし**（Claude が設計で発見）"}, "原文なし"),
+    ])
+    def test_an_undecided_or_closed_id_is_flagged(self, memcheck, root, states, sources, word):
+        """② 未実装の行は、開いていてユーザーの言葉を持つ台帳の項目に結ぶ。"""
+        block, _ = self._run(memcheck, root, "| 2.4 GHz | 未実装 [[I-243]] | — |",
+                             states=states, sources=sources)
+        assert len(block) == 1 and word in block[0]
+
+    def test_an_unimplemented_capability_found_in_the_code_is_advice_only(self, memcheck, root):
+        """作っている途中で止めると、出来上がる前に `実装済み` へ書き換えさせる（壊れ方③）。"""
+        block, advice = self._run(memcheck, root,
+                                  "| 920 MHz | 未実装 [[I-243]] | `fw/*.c` に `e220_send(` |")
+        assert block == [] and len(advice) == 1
+
+    def test_a_missing_or_empty_table_is_flagged(self, memcheck, root):
+        """③ 表ごと消すと緑になる形を塞ぐ（実証31）。"""
+        assert len(memcheck.check_decided_capabilities(["# 正典"], {}, {}, root)[0]) == 1
+        assert len(memcheck.check_decided_capabilities(self.HEADER, {}, {}, root)[0]) == 1
+
+    @pytest.mark.parametrize("row", [
+        "| 2.4 GHz | 予定 | — |",
+        "| 2.4 GHz | 未実装 | — |",
+        "| 920 MHz | 実装済み | — |",
+        "| 920 MHz | 実装済み | fw/radio.c の e220_send |",
+        "| 920 MHz | 実装済み |",
+    ])
+    def test_an_unreadable_row_is_flagged(self, memcheck, root, row):
+        assert len(self._run(memcheck, root, row)[0]) == 1
+
+    def test_the_source_column_is_read_per_item(self, memcheck):
+        sources = memcheck.issue_sources_by_id([
+            "### ★ I-243: 2.4 GHz を戻す",
+            "- ★ **原文（出所の言葉のまま・言い換えない）**: 「決定事項です」",
+            "### B-352: 机上試験",
+            "- ★ **原文（出所の言葉のまま・言い換えない）**: **原文なし**（Claude）",
+        ])
+        assert sources == {"I-243": "「決定事項です」", "B-352": "**原文なし**（Claude）"}
+
+    def test_real_decided_capabilities_table_is_read(self, memcheck):
+        """実データの表を読めている（読めずに緑、を塞ぐ）。"""
+        path = memcheck.MEM_DIR / memcheck._CAPABILITY_CANON
+        rows = memcheck.capability_rows(path.read_text(encoding="utf-8").splitlines())
+        assert rows and any(cells[1] == "実装済み" for _, cells in rows)
+
+    def test_real_decided_capabilities_are_clean(self, memcheck):
+        """実データで誤検知 0（止めるものも助言も）。"""
+        assert memcheck.check_decided_capabilities_real() == []
+        assert memcheck.check_decided_capabilities_advice_real() == []
 
 
 class TestRenumberLeftovers:
