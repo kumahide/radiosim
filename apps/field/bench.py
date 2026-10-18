@@ -37,6 +37,7 @@ from typing import Any, Callable, Mapping, Protocol
 from apps.field.mavlink.dialect import Dialect, load_dialect
 from apps.field.mavlink.reader import FrameStream, Message, mac
 from apps.field.session import (
+    BANDS,
     RAW_FILE,
     RAW_INDEX_COLUMNS,
     RAW_INDEX_FILE,
@@ -110,18 +111,24 @@ def unsent_between(echoes: list[dict[str, Any]]) -> int:
 # --- 計画 --------------------------------------------------------------------
 
 
-def default_plan() -> dict[str, Any]:
-    """既定の計画（`bench plan` で書き出して直せる）。
+def default_plan(band: str = "920") -> dict[str, Any]:
+    """既定の計画（`bench plan` で書き出して直せる）。**1 回の机上試験は 1 帯域**
+    （2 帯域は同時に動かさない＝正典 §4）。帯域ごとに電力とチャネルの値域が違う
+    （920＝E220 の 0〜13 dBm の整数・ch 0〜6／2400＝C6 内蔵の 2〜20 dBm・ch 1〜13）。
 
     所要時間の目安は 1 時間強（人が触るのはつまみ 30 回ほど）。
     """
+    if band not in BANDS:
+        raise BenchError(f"知らない帯域です: {band}（{', '.join(BANDS)}）")
+    is2400 = band == "2400"
     return {
-        "channel": 0,
-        "power_dbm": 13,
+        "band": band,
+        "channel": 1 if is2400 else 0,
+        "power_dbm": 15 if is2400 else 13,
         # 固定アッテネータ（30 dB ×2）とケーブルの**公称**。ステージ0b の実測値は判定の側
         # （`bench analyze --ref`）で差し替える＝ここを直して測り直す必要はない。
         "fixed_loss_db": 60.0,
-        "leak": {"duration_s": 30, "power_dbm": 13},
+        "leak": {"duration_s": 30, "power_dbm": 20 if is2400 else 13},
         "warmup": {
             "atten_db": 40, "chunk_s": 60, "max_chunks": 30,
             "stable_chunks": 5, "stable_db": 0.2,
@@ -130,12 +137,21 @@ def default_plan() -> dict[str, Any]:
         # 粗い掃引で受信率が落ち始めたステップ k の前後を 1 dB 刻みで。
         "fine": {"below_db": 9, "above_db": 6, "duration_s": 30},
         # 受信率が落ち始めるステップ k から margin_db 以上下げた減衰量（10 dB 単位）で。
-        # ⚠️ power_dbm（13）を必ず含める＝校正ファイルの他の電力の出力は、パワー計で
-        # 測った 13 dBm の点からの相対差で導く（含まないと導けない）。
-        "power": {"dbm": [0, 1, 3, 5, 7, 9, 11, 13], "duration_s": 20,
-                  "margin_db": 25},
-        "channels": {"list": [0, 3, 6], "duration_s": 20},
+        # ⚠️ power_dbm を必ず含める＝校正ファイルの他の電力の出力は、パワー計で
+        # 測った power_dbm の点からの相対差で導く（含まないと導けない）。
+        "power": {"dbm": ([2, 5, 8, 11, 14, 15, 17, 20] if is2400
+                          else [0, 1, 3, 5, 7, 9, 11, 13]),
+                  "duration_s": 20, "margin_db": 25},
+        "channels": {"list": [1, 6, 11] if is2400 else [0, 3, 6], "duration_s": 20},
     }
+
+
+def plan_band(plan: dict[str, Any]) -> str:
+    """計画の帯域。帯域の欄が無い計画（2.4 GHz を戻す前の机上試験）は 920。"""
+    band = str(plan.get("band", "920"))
+    if band not in BANDS:
+        raise BenchError(f"計画の帯域が知らない値です: {band}（{', '.join(BANDS)}）")
+    return band
 
 
 STAGES = ("leak", "warmup", "coarse", "fine", "power", "channels")
@@ -363,8 +379,9 @@ class BenchRunner:
     def _check_errors(self) -> None:
         for unit in self.units.values():
             for line in unit.lines:
-                # E220 の設定に落ちたとき（main.c）と自己検査に落ちたとき。
-                if line.startswith("ERR E220") or line.startswith("ERR 自己検査"):
+                # E220 の設定に落ちたとき・2.4 GHz の TX の空中のレートが 1 Mbps に
+                # ならないとき（main.c）と、自己検査に落ちたとき。
+                if line.startswith(("ERR E220", "ERR 空中のレート", "ERR 自己検査")):
                     raise BenchError(f"{unit.name.upper()} が止まっています: {line}")
 
     # 見分け ---------------------------------------------------------------------
@@ -447,17 +464,27 @@ class BenchRunner:
         self._wait(arrived, CONFIG_WAIT_S,
                    f"{unit.name.upper()} の新しい設定（config_id={target}）が届きません")
 
+    def _band(self, fields: dict[str, Any]) -> str:
+        return self._dialect.label("RADIOSIM_FIELD_BAND", fields["band"])
+
     def configure(self, unit_name: str, *, role: str, channel: int, power_dbm: float) -> None:
+        """計画の帯域（無ければ機器の今の帯域）で、チャネル・電力・役割をそろえる。
+        **帯域が最初**＝チャネルと電力は帯域ごとに別に持つので、切り替えてから変える。"""
         unit = self.units[unit_name]
         assert unit.config is not None
-        f = unit.config.fields
+        band = self.plan.get("band")
+        if band is not None and self._band(unit.config.fields) != band:
+            self._set(unit, f"band {band}", lambda g: self._band(g) == band)
+        band = self._band(unit.config.fields)
         cdbm = round(power_dbm * 100)
-        if f["channel"] != channel:
+        if unit.config.fields["channel"] != channel:
             self._set(unit, f"channel {channel}", lambda g: g["channel"] == channel)
-        if abs(unit.config.fields["tx_power_cdbm"] - cdbm) >= 50:
-            # 機器（E220）の電力は 1 dB 刻み。刻みの半分より小さい差は「同じ」とみなす。
+        # 機器が読み戻す電力の刻み（920＝E220 の 1 dB・2400＝0.25 dB）の半分より
+        # 小さい差は「同じ」とみなす。
+        same = 25 if band == "2400" else 50
+        if abs(unit.config.fields["tx_power_cdbm"] - cdbm) >= same:
             self._set(unit, f"power {power_dbm:g}",
-                      lambda g: abs(g["tx_power_cdbm"] - cdbm) < 50)
+                      lambda g: abs(g["tx_power_cdbm"] - cdbm) < same)
         if unit.role != role:
             code = 0 if role == "tx" else 1
             self._set(unit, f"role {role}", lambda g: g["role"] == code)
