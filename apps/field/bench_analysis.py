@@ -19,6 +19,10 @@ apps/field/bench_analysis.py
 
 ⚠️ **ここに並ぶしきい値は「目安」**＝打ち切りのしきい値・感度・最小件数を**決める**のは
 作業者（§6.1-2A・§6.6）。判定は数を並べて、目安との比較を添えるだけ。
+
+🔑 **ref は最上位を帯域で分ける**（I-243）＝`{"920": {…}, "2400": {…}}`。固定損失・
+アッテネータ・TX の出力・信号発生器の点はどれも周波数で違う。机上試験は 1 回 1 帯域
+（計画の `band`）なので、判定はその帯域の節だけを見る。
 """
 
 from __future__ import annotations
@@ -32,12 +36,12 @@ from pathlib import Path
 from typing import Any
 
 from apps.field.bench import (
-    TAIL_S, BenchError, read_bench, read_steps, started_on, unsent_between,
+    TAIL_S, BenchError, plan_band, read_bench, read_steps, started_on, unsent_between,
 )
 from apps.field.calib import DeviceCalibration, RxCurve, TxOutput, write_device_calibration
 from apps.field.mavlink.dialect import Dialect, load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
-from apps.field.session import SessionError, parse_utc, read_raw
+from apps.field.session import BANDS, SessionError, parse_utc, read_raw
 
 # 目安（決めるのは作業者）。
 FULL_RATE = 0.99             # 線形性・ディザを見るステップ＝ほぼ全部届いたステップ
@@ -188,8 +192,26 @@ class Levels:
         return p - self.fixed_loss_db - self.atten(s.atten_db), absolute
 
 
+def check_ref(ref: dict[str, Any]) -> None:
+    """最上位が帯域でない ref（2.4 GHz を戻す前の平らな形）を断る＝黙って読むと、
+    実測値が全部無いものとして公称で判定してしまう。"""
+    if not isinstance(ref, dict) or set(ref) - set(BANDS):
+        raise SessionError(
+            "ref の最上位は帯域（" + "・".join(f'"{b}"' for b in BANDS) + "）で分けます"
+            "＝古い形なら、中身を \"920\" の下へ移してください"
+        )
+
+
+def ref_section(ref: dict[str, Any] | None, band: str) -> dict[str, Any]:
+    """その帯域の実測値（無ければ空＝公称で判定する）。"""
+    if ref is None:
+        return {}
+    check_ref(ref)
+    return ref.get(band) or {}
+
+
 def levels_from(plan: dict[str, Any], ref: dict[str, Any] | None) -> Levels:
-    ref = ref or {}
+    ref = ref_section(ref, plan_band(plan))
     fixed = ref.get("fixed_loss_db")
     step = ref.get("step_attenuator") or {}
     outputs: dict[tuple[str, int, int], dict[str, Any]] = {}
@@ -279,9 +301,11 @@ def analyze(
     units = {u: v["device_id"] for u, v in bench["units"].items()}
     logs = {u: _load_unit(directory / u, dialect) for u in units}
     steps = [step_stats(r, logs[r["tx_unit"]], logs[r["rx_unit"]]) for r in read_steps(directory)]
+    band = plan_band(plan)
     levels = levels_from(plan, ref)
     report: dict[str, Any] = {
         "bench": directory.name,
+        "band": band,
         "firmware_version": bench["firmware_version"],
         "software_commit": bench["software_commit"],
         "units": units,
@@ -316,7 +340,7 @@ def analyze(
     report["pair_difference"] = _pair_difference(steps, outside)
     report["power"] = _power(steps, fits)
     report["channels"] = _channels(steps)
-    report["closure"] = _closure(ref, units, fits, levels)
+    report["closure"] = _closure(ref_section(ref, band), units, fits)
     report["usb_lost_total"] = sum(s.usb_lost for s in steps)
     report["_fits"] = fits
     report["_steps"] = steps
@@ -454,12 +478,12 @@ def _channels(steps: list[StepStats]) -> dict[str, Any]:
 
 
 def _closure(
-    ref: dict[str, Any] | None, units: dict[str, str], fits: dict[str, Fit], levels: Levels
+    section: dict[str, Any], units: dict[str, str], fits: dict[str, Fit]
 ) -> list[dict[str, Any]]:
-    """信号発生器で直接入れた点（`rx_direct`）と、TX 経由で求めた R を突き合わせる。"""
+    """信号発生器で直接入れた点（その帯域の `rx_direct`）と、TX 経由で求めた R を突き合わせる。"""
     rows = []
     by_device = {v.lower(): u for u, v in units.items()}
-    for point in (ref or {}).get("rx_direct", []):
+    for point in section.get("rx_direct", []):
         unit = by_device.get(point["device_id"].lower())
         fit = fits.get(unit) if unit else None
         if fit is None:
@@ -483,43 +507,47 @@ def device_calibrations(report: dict[str, Any]) -> list[DeviceCalibration]:
     fits: dict[str, Fit] = report["_fits"]
     steps: list[StepStats] = report["_steps"]
     units: dict[str, str] = report["units"]
+    band: str = report["band"]
     measured_on = started_on(bench)
     out = []
     for unit, device in units.items():
         partner = _other(unit)
         direction = report["directions"].get(f"{partner}->{unit}")
         fit = fits.get(unit)
-        rx = None
+        rx: dict[str, RxCurve] = {}
         if fit is not None and direction is not None and direction["input"] == "absolute":
             # 入力が absolute＝レベル掃引の全ステップの TX 設定に実測の行がある。
             level_keys = sorted({(units[partner].lower(), s.power_cdbm, s.channel)
                                  for s in steps if s.kind == "level" and s.tx_unit == partner})
             meter = levels.tx_output[level_keys[0]]
-            rx = RxCurve(
+            rx[band] = RxCurve(
                 offset_db=round(fit.offset_db, 4),
                 scale_db_per_count=round(fit.scale_db_per_count, 5),
                 reference_unit_id=units[partner],
                 reference_measured_on=str(meter["measured_on"]),
                 linear_range_dbm=(round(fit.points[0][1], 2), round(fit.points[-1][1], 2)),
                 fit_max_residual_db=round(fit.max_residual_db, 3),
+                measured_on=measured_on, source_bench=report["bench"],
+                software_commit=bench["software_commit"],
                 note=("固定損失は実測" if levels.fixed_loss_measured else "固定損失は公称")
                      + "・ステップアッテネータは"
                      + ("実測" if levels.tens or levels.ones else "公称"),
             )
         out.append(DeviceCalibration(
-            device_id=device, measured_on=measured_on, source_bench=report["bench"],
-            software_commit=bench["software_commit"], rx=rx,
-            tx_outputs=_tx_outputs(device, unit, levels, steps, fits),
+            device_id=device, rx=rx,
+            tx_outputs=_tx_outputs(band, device, unit, levels, steps, fits),
         ))
     return out
 
 
 def _tx_outputs(
-    device: str, unit: str, levels: Levels, steps: list[StepStats], fits: dict[str, Fit]
+    band: str, device: str, unit: str, levels: Levels, steps: list[StepStats],
+    fits: dict[str, Fit],
 ) -> tuple[TxOutput, ...]:
     rows = [
-        TxOutput(power_cdbm=p, channel=ch, dbm=round(float(t["dbm"]), 3), source="meter",
-                 measured_on=str(t["measured_on"]), note=str(t.get("instrument", "")))
+        TxOutput(band=band, power_cdbm=p, channel=ch, dbm=round(float(t["dbm"]), 3),
+                 source="meter", measured_on=str(t["measured_on"]),
+                 note=str(t.get("instrument", "")))
         for (dev, p, ch), t in sorted(levels.tx_output.items()) if dev == device.lower()
     ]
     rx_fit = fits.get(_other(unit))
@@ -540,7 +568,7 @@ def _tx_outputs(
             assert s.mean is not None
             delta = (s.mean - base_mean) * rx_fit.scale_db_per_count
             rows.append(TxOutput(
-                power_cdbm=s.power_cdbm, channel=s.channel,
+                band=band, power_cdbm=s.power_cdbm, channel=s.channel,
                 dbm=round(anchor.dbm + delta, 3), source="bench_power_sweep",
                 measured_on=anchor.measured_on,
                 note=f"{anchor.power_cdbm / 100:g} dBm の実測から相対",
@@ -550,7 +578,9 @@ def _tx_outputs(
 
 
 def write_calibrations(report: dict[str, Any], calib_dir: str | os.PathLike[str]) -> list[Path]:
-    return [write_device_calibration(calib_dir, c) for c in device_calibrations(report)]
+    """その帯域の分だけを書き換える（もう片方の帯域の校正は残る）。"""
+    return [write_device_calibration(calib_dir, c, report["band"])
+            for c in device_calibrations(report)]
 
 
 # --- 書き出し --------------------------------------------------------------------
@@ -577,7 +607,7 @@ def _mark(ok: bool | None) -> str:
 def render_markdown(report: dict[str, Any]) -> str:
     L: list[str] = []
     u = report["units"]
-    L.append(f"# ステージ0 の判定（{report['bench']}）\n")
+    L.append(f"# ステージ0 の判定（{report['bench']}・{report['band']} MHz 帯）\n")
     L.append(f"- A = `{u['a']}`／B = `{u['b']}`／ファーム `{report['firmware_version']}`"
              f"／判定のコミット `{report['software_commit']}`")
     lv = report["levels"]
@@ -667,17 +697,25 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def ref_template() -> dict[str, Any]:
-    """ステージ0b の実測値を書く雛形（920 MHz では tx_output の測り方が未定＝I-242）。"""
+    """ステージ0b の実測値を書く雛形＝帯域ごとに同じ形の節（2.4 GHz の tx_output は
+    `cont` が足す・920 MHz の tx_output の測り方は I-242）。"""
     return {
-        "fixed_loss_db": None,
-        "step_attenuator": {"tens": {}, "ones": {}},
-        "tx_output": [],
-        "rx_direct": [],
+        band: {
+            "fixed_loss_db": None,
+            "step_attenuator": {"tens": {}, "ones": {}},
+            "tx_output": [],
+            "rx_direct": [],
+        }
+        for band in BANDS
     }
 
 
 def read_ref(path: str | os.PathLike[str]) -> dict[str, Any]:
     try:
-        return json.loads(Path(path).read_text(encoding="utf-8"))
+        ref = json.loads(Path(path).read_text(encoding="utf-8"))
     except FileNotFoundError as e:
         raise SessionError(f"ref がありません: {path}") from e
+    except json.JSONDecodeError as e:
+        raise SessionError(f"ref が JSON として読めません: {path}（{e}）") from e
+    check_ref(ref)
+    return ref

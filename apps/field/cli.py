@@ -66,6 +66,7 @@ from apps.field.bench import (
     ProbeLink,
     default_plan,
     judge_firmware,
+    plan_band,
     write_probe,
 )
 from apps.field.bench_analysis import (
@@ -130,14 +131,18 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument("--root", type=Path, required=True, help="動作確認のフォルダを作る場所")
     p.add_argument("--seconds", type=float, default=10.0, help="1 方向を測る秒数")
-    p.add_argument("--power", type=float, default=default_plan()["power_dbm"],
-                   help="送信電力（dBm）")
-    p.add_argument("--channel", type=int, default=default_plan()["channel"])
+    p.add_argument("--band", choices=BANDS, default="920", help="帯域（2 台ともこれに切り替える）")
+    p.add_argument("--power", type=float,
+                   help="送信電力（dBm・省略すると帯域の既定＝920 は 13・2400 は 15）")
+    p.add_argument("--channel", type=int,
+                   help="チャネル（省略すると帯域の既定＝920 は 0・2400 は 1）")
 
     p = sub.add_parser("bench", help="ステージ0 の机上試験")
     bench = p.add_subparsers(dest="bench_command", required=True)
     q = bench.add_parser("plan", help="計画の雛形（JSON）を書き出す")
     q.add_argument("path", type=Path)
+    q.add_argument("--band", choices=BANDS, default="920",
+                   help="帯域（1 回の机上試験は 1 帯域）")
     q = bench.add_parser("ref", help="ステージ0b の実測値を書く雛形（JSON）を書き出す")
     q.add_argument("path", type=Path)
     q = bench.add_parser("run", help="2 台をつないで測る")
@@ -145,7 +150,9 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--port-b", required=True)
     q.add_argument("--baud", type=int, default=115200)
     q.add_argument("--root", type=Path, required=True, help="机上試験のフォルダを作る場所")
-    q.add_argument("--plan", type=Path, help="計画（省略すると既定）")
+    q.add_argument("--plan", type=Path, help="計画（省略すると --band の既定）")
+    q.add_argument("--band", choices=BANDS,
+                   help="帯域（省略すると計画の帯域・計画も省略すると 920）")
     q.add_argument("--only", help=f"測るステージをカンマで（{','.join(STAGES)}）")
     q = bench.add_parser("analyze", help="判定する（測り直さずに何度でも）")
     q.add_argument("directory", type=Path)
@@ -498,7 +505,7 @@ def _bench(args: argparse.Namespace) -> int:
         if path.exists():
             print(f"エラー: 既にあります（上書きしません）: {path}", file=sys.stderr)
             return 2
-        payload = default_plan() if command == "plan" else ref_template()
+        payload = default_plan(args.band) if command == "plan" else ref_template()
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
                         encoding="utf-8")
         print(f"書き出しました: {path}")
@@ -513,9 +520,14 @@ def _bench(args: argparse.Namespace) -> int:
             for path in write_calibrations(report, args.calib_dir):
                 print(f"校正ファイル: {path}")
         return 0
-    plan = default_plan()
+    plan = default_plan(args.band or "920")
     if args.plan:
         plan = json.loads(args.plan.read_text(encoding="utf-8"))
+        # 計画に帯域の欄が無ければ --band（省略なら 920）を足す＝判定が帯域を引けるように。
+        plan.setdefault("band", args.band or "920")
+        if args.band is not None and plan_band(plan) != args.band:
+            raise SessionError(
+                f"計画の帯域（{plan_band(plan)}）と --band（{args.band}）が違います")
     stages = tuple(s.strip() for s in args.only.split(",")) if args.only else STAGES
     serial = _import_serial()
     ports = {
@@ -546,6 +558,9 @@ def _bench(args: argparse.Namespace) -> int:
 
 
 def _probe(args: argparse.Namespace) -> int:
+    defaults = default_plan(args.band)
+    power = defaults["power_dbm"] if args.power is None else args.power
+    channel = defaults["channel"] if args.channel is None else args.channel
     serial = _import_serial()
     commit = software_commit()
     ports = {
@@ -554,14 +569,15 @@ def _probe(args: argparse.Namespace) -> int:
     }
     try:
         runner = BenchRunner(
-            args.root, ports, {"probe": {"seconds": args.seconds, "power_dbm": args.power,
-                                         "channel": args.channel}},
+            args.root, ports, {"band": args.band,
+                               "probe": {"seconds": args.seconds, "power_dbm": power,
+                                         "channel": channel}},
             clock=now_utc, prompt=_no_prompt, say=print, software_commit=commit,
             purpose="probe",
         )
-        print(f"動作確認: {runner.directory}")
-        return run_probe(runner, seconds=args.seconds, power_dbm=args.power,
-                         channel=args.channel, software_commit=commit,
+        print(f"動作確認: {runner.directory}（{args.band} MHz 帯）")
+        return run_probe(runner, seconds=args.seconds, power_dbm=power,
+                         channel=channel, software_commit=commit,
                          same_source=_same_firmware_source, say=print)
     except BenchError as e:
         print(f"\n止まりました: {e}", file=sys.stderr)
@@ -604,7 +620,8 @@ def run_probe(
         "software_commit": software_commit,
         "firmware": {"version": firmware, "ok": fw_ok, "note": fw_note},
         "units": {u: unit.device_id for u, unit in runner.units.items()},
-        "settings": {"seconds": seconds, "power_dbm": power_dbm, "channel": channel},
+        "settings": {"band": runner.plan.get("band"), "seconds": seconds,
+                     "power_dbm": power_dbm, "channel": channel},
         "min_rate": PROBE_MIN_RATE,
         "links": [dict(asdict(link), rate=link.rate, air_ok=link.air_ok, ok=link.ok)
                   for link in links],
@@ -829,8 +846,8 @@ def _cont(args: argparse.Namespace) -> int:
     instrument = _prompt("測定器の名前（空でも可）:").strip()
     value = burst_dbm(reading, kind=args.reading, duty=last["duty"], pad_db=args.pad_db)
     ref = read_ref(args.ref) if args.ref.exists() else ref_template()
-    ref.setdefault("tx_output", []).append({
-        "device_id": device, "band": "2400", "power_cdbm": power, "channel": channel,
+    ref.setdefault("2400", {}).setdefault("tx_output", []).append({
+        "device_id": device, "power_cdbm": power, "channel": channel,
         "dbm": round(value, 3), "measured_on": datetime.now(timezone.utc).date().isoformat(),
         "instrument": instrument, "reading_kind": args.reading, "reading_dbm": reading,
         "pad_db": args.pad_db, "duty": last["duty"],

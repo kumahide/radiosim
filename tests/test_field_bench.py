@@ -58,8 +58,11 @@ class Device:
         self.rx_offset = rx_offset            # 生値 − 入力 dBm
         self.sensitivity_dbm = sensitivity_dbm
         self.role = role
+        self.band = "920"
         self.channel = 0
         self.power_dbm = 13
+        # チャネルと電力は帯域ごとに別に持つ（ファームの NVS と同じ）。
+        self.stored = {"2400": (1, 15)}
         self.config_id = 1
         self.seq = 0
         self.sample_seq: dict[bytes, int] = {}
@@ -98,7 +101,9 @@ class Device:
         return dict(
             config_id=self.config_id, role=0 if self.role == "tx" else 1,
             device_id=tuple(self.mac), firmware_version="afd69ae7db", channel=self.channel,
-            band=920, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=self.power_dbm * 100, tx_interval_ms=100,
+            band=int(self.band), rate_kbps=1000 if self.band == "2400" else 0,
+            air_sf=0 if self.band == "2400" else 7, air_bw_khz=0 if self.band == "2400" else 500,
+            tx_power_cdbm=round(self.power_dbm * 100), tx_interval_ms=100,
             detector=1, integration_window_us=0, integration_samples=1, antenna=2,
         )
 
@@ -113,14 +118,18 @@ class Device:
             self.buffer += self.frame("RADIOSIM_FIELD_CONFIG", self.config_values())
             return
         key, value = parts
-        before = (self.role, self.channel, self.power_dbm)
+        before = (self.role, self.band, self.channel, self.power_dbm)
         if key == "role":
             self.role = value
+        elif key == "band" and value != self.band:
+            self.stored[self.band] = (self.channel, self.power_dbm)
+            self.band = value
+            self.channel, self.power_dbm = self.stored.get(value, (0, 13))
         elif key == "channel":
             self.channel = int(value)
         elif key == "power":
-            self.power_dbm = int(value)
-        if (self.role, self.channel, self.power_dbm) == before:
+            self.power_dbm = float(value)
+        if (self.role, self.band, self.channel, self.power_dbm) == before:
             self.text("OK 変わっていません")
             return
         self.config_id += 1
@@ -159,13 +168,15 @@ class Device:
             self.seq += 1
             self.next_packet += 0.1
 
+    def tuned_to(self, tx: "Device") -> bool:
+        return (self.role == "rx" and (self.band, self.channel) == (tx.band, tx.channel)
+                and self.world.t >= self.paused_until)
+
     def hears(self, tx: "Device") -> bool:
-        if self.role != "rx" or self.channel != tx.channel or self.world.t < self.paused_until:
-            return False
-        return self.world.input_dbm(tx) > self.sensitivity_dbm
+        return self.tuned_to(tx) and self.world.input_dbm(tx) > self.sensitivity_dbm
 
     def receive(self, tx: "Device") -> None:
-        if self.role != "rx" or self.channel != tx.channel or self.world.t < self.paused_until:
+        if not self.tuned_to(tx):
             return
         level = self.world.input_dbm(tx)
         rate = min(1.0, max(0.0, (level - (self.sensitivity_dbm - 2)) / 4))
@@ -336,9 +347,9 @@ def test_without_ref_the_levels_are_nominal_and_no_calibration_is_written(full_r
     for d in report["directions"].values():
         assert d["input"] == "nominal"
     cals = BA.device_calibrations(report)
-    assert all(c.rx is None and c.tx_outputs == () for c in cals)
-    with pytest.raises(S.SessionError, match="RX の校正がありません"):
-        C.endpoint_calibration(cals[0], "rx")
+    assert all(c.rx == {} and c.tx_outputs == () for c in cals)
+    with pytest.raises(S.SessionError, match="920 MHz 帯の RX の校正がありません"):
+        C.endpoint_calibration(cals[0], "rx", band="920")
 
 
 def test_the_nominal_fit_recovers_the_shape_and_the_pair_difference(full_run):
@@ -375,13 +386,14 @@ def test_the_receive_rate_crossing_lands_near_the_true_sensitivity(full_run):
     assert half == pytest.approx(world.b.sensitivity_dbm - world.a.tx_offset_db, abs=1.5)
 
 
-def _ref(world: World) -> dict:
+def _ref(world: World, band: str = "920", power_dbm: int = 13, channel: int = 0) -> dict:
     ref = BA.ref_template()
-    ref["fixed_loss_db"] = FIXED_LOSS
+    ref[band]["fixed_loss_db"] = FIXED_LOSS
     for dev in (world.a, world.b):
-        ref["tx_output"].append({
-            "device_id": R.mac(tuple(dev.mac)), "power_cdbm": 1300, "channel": 0,
-            "dbm": 13 + dev.tx_offset_db, "measured_on": "2026-09-25", "instrument": "PM",
+        ref[band]["tx_output"].append({
+            "device_id": R.mac(tuple(dev.mac)), "power_cdbm": power_dbm * 100,
+            "channel": channel, "dbm": power_dbm + dev.tx_offset_db,
+            "measured_on": "2026-09-25", "instrument": "PM",
         })
     return ref
 
@@ -395,11 +407,13 @@ def test_with_the_meter_readings_the_rx_offsets_come_out_absolute(full_run, tmp_
     cals = {c.device_id: c for c in BA.device_calibrations(report)}
     for dev in (world.a, world.b):
         cal = cals[R.mac(tuple(dev.mac))]
-        assert cal.rx is not None
+        assert set(cal.rx) == {"920"}
+        rx = cal.rx["920"]
         # dBm = 生値 − rx_offset
-        assert cal.rx.offset_db == pytest.approx(-dev.rx_offset, abs=0.3)
-        assert cal.rx.reference_unit_id != cal.device_id        # 相手の TX が基準
-        assert cal.rx.reference_measured_on == "2026-09-25"
+        assert rx.offset_db == pytest.approx(-dev.rx_offset, abs=0.3)
+        assert rx.reference_unit_id != cal.device_id        # 相手の TX が基準
+        assert rx.reference_measured_on == "2026-09-25"
+        assert rx.source_bench == runner.directory.name
 
 
 def test_the_tx_output_table_is_derived_from_the_power_sweep(full_run):
@@ -420,7 +434,7 @@ def test_the_tx_output_table_is_derived_from_the_power_sweep(full_run):
 def test_the_closure_check_compares_a_signal_generator_point(full_run):
     world, runner = full_run
     ref = _ref(world)
-    ref["rx_direct"] = [
+    ref["920"]["rx_direct"] = [
         {"device_id": R.mac(tuple(world.b.mac)), "input_dbm": -70.0,
          "rssi_mean": -70.0 + world.b.rx_offset},
         {"device_id": R.mac(tuple(world.a.mac)), "input_dbm": -70.0,
@@ -534,7 +548,7 @@ def test_the_calibration_file_round_trips(full_run, tmp_path):
     world, calib_dir = _calibrated(full_run, tmp_path)
     device = R.mac(tuple(world.a.mac))
     cal = C.read_device_calibration(calib_dir, device)
-    assert cal.device_id == device and cal.rx is not None and cal.tx_outputs
+    assert cal.device_id == device and "920" in cal.rx and cal.tx_outputs
     assert C.calib_path(calib_dir, device).name == "aa-bb-cc-00-00-0a.json"
 
 
@@ -613,15 +627,101 @@ def test_the_plan_and_ref_templates_are_written_once(tmp_path):
     assert cli.main(["bench", "plan", str(plan)]) == 0
     assert json.loads(plan.read_text(encoding="utf-8")) == B.default_plan()
     assert cli.main(["bench", "plan", str(plan)]) == 2
+    plan24 = tmp_path / "plan24.json"
+    assert cli.main(["bench", "plan", str(plan24), "--band", "2400"]) == 0
+    assert json.loads(plan24.read_text(encoding="utf-8")) == B.default_plan("2400")
     ref = tmp_path / "ref.json"
     assert cli.main(["bench", "ref", str(ref)]) == 0
+    assert set(BA.read_ref(ref)) == set(S.BANDS)
 
 
-def test_the_default_power_sweep_includes_the_metered_power():
+def test_bench_run_refuses_a_plan_of_another_band(tmp_path, capsys):
+    """計画の帯域と --band が食い違えば、ポートを開く前に止まること。"""
+    plan = tmp_path / "plan.json"
+    plan.write_text(json.dumps(B.default_plan("2400")), encoding="utf-8")
+    assert cli.main(["bench", "run", "--port-a", "X", "--port-b", "Y", "--root", str(tmp_path),
+                     "--plan", str(plan), "--band", "920"]) == 2
+    assert "--band" in capsys.readouterr().err
+
+
+def test_an_old_flat_ref_is_refused(tmp_path):
+    """帯域で分けていない ref（2.4 GHz を戻す前の形）を黙って公称で読まないこと。"""
+    path = tmp_path / "ref.json"
+    path.write_text(json.dumps({"fixed_loss_db": 58.0, "tx_output": []}), encoding="utf-8")
+    with pytest.raises(S.SessionError, match="帯域"):
+        BA.read_ref(path)
+
+
+@pytest.mark.parametrize("band", S.BANDS)
+def test_the_default_power_sweep_includes_the_metered_power(band):
     """他の電力の出力は、パワー計で測った電力（計画の power_dbm）からの相対で導く＝
     掃引に含まれていないと 1 行も導けない。"""
-    plan = B.default_plan()
+    plan = B.default_plan(band)
     assert plan["power_dbm"] in plan["power"]["dbm"]
+
+
+# --- 帯域（I-243） ----------------------------------------------------------------
+
+
+def test_a_2400_bench_writes_its_band_and_keeps_the_920_calibration(full_run, tmp_path, dialect):
+    """🔑 2.4 GHz の机上試験は、機器を帯域へ切り替えてから測り、その帯域の ref だけで判定し、
+    校正ファイルの **2.4 GHz の分だけ**を書く（920 MHz の分は残る）。record は動いている
+    帯域の分を引く。"""
+    world, calib_dir = _calibrated(full_run, tmp_path)
+    world24 = World(dialect)
+    plan = _plan(band="2400", channel=1, power_dbm=15)
+    plan["power"]["dbm"] = [5, 9, 13, 15]
+    runner = _runner(tmp_path / "b24", world24, plan)
+    runner.run(("coarse", "fine", "power"))
+    assert ("band 2400" in [line for _m, line in world24.commands])
+    assert world24.a.band == world24.b.band == "2400"
+    ref = _ref(world24, "2400", power_dbm=15, channel=1)
+    ref["920"]["fixed_loss_db"] = 99.0          # 別の帯域の値は判定に効かない
+    report = BA.analyze(runner.directory, ref)
+    assert report["band"] == "2400" and report["levels"]["fixed_loss_db"] == FIXED_LOSS
+    assert all(d["input"] == "absolute" for d in report["directions"].values())
+    assert "2400 MHz 帯" in BA.render_markdown(report)
+    BA.write_calibrations(report, calib_dir)
+    for dev in (world24.a, world24.b):
+        cal = C.read_device_calibration(calib_dir, R.mac(tuple(dev.mac)))
+        assert set(cal.rx) == {"920", "2400"}
+        assert {t.band for t in cal.tx_outputs} == {"920", "2400"}
+        assert cal.rx["2400"].source_bench == runner.directory.name
+    tx, rx = world24.a, world24.b
+    tx.role, rx.role = "tx", "rx"
+    cals = {R.mac(tuple(d.mac)): C.read_device_calibration(calib_dir, R.mac(tuple(d.mac)))
+            for d in (tx, rx)}
+    tx.channel = rx.channel = 1
+    tx.power_dbm = 15
+    header = REC.build_header(
+        _template(world24, tx, rx), _config_message(rx), _config_message(tx),
+        started_utc=S.format_utc(_BASE), software_commit="abc", dialect=world24.dialect,
+        calibrations=cals,
+    )
+    assert header.tx.calibration.tx_output_dbm == pytest.approx(15 + tx.tx_offset_db, abs=0.01)
+    assert "2400 MHz 帯" in header.rx.calibration.note
+    assert header.rx.calibration.offset_db == pytest.approx(-rx.rx_offset, abs=0.3)
+
+
+def test_a_format_1_calibration_is_read_as_920(tmp_path):
+    """帯域の欄が無い形式 1 の校正ファイルは 920 MHz として読むこと。"""
+    device = "aa:bb:cc:00:00:0a"
+    C.calib_path(tmp_path, device).write_text(json.dumps({
+        "format": 1, "device_id": device, "measured_on": "2026-09-25",
+        "source_bench": "bench-1", "software_commit": "abc",
+        "rx": {"offset_db": -3.0, "scale_db_per_count": 1.0, "reference_unit_id": "x",
+               "reference_measured_on": "2026-09-25", "linear_range_dbm": [-90, -50],
+               "fit_max_residual_db": 0.2, "note": ""},
+        "tx_outputs": [{"power_cdbm": 1300, "channel": 0, "dbm": 12.2, "source": "meter",
+                        "measured_on": "2026-09-25", "note": ""}],
+    }), encoding="utf-8")
+    cal = C.read_device_calibration(tmp_path, device)
+    assert set(cal.rx) == {"920"} and cal.rx["920"].source_bench == "bench-1"
+    assert [t.band for t in cal.tx_outputs] == ["920"]
+    out = C.endpoint_calibration(cal, "tx", band="920", power_cdbm=1300, channel=0)
+    assert out.tx_output_dbm == 12.2
+    with pytest.raises(S.SessionError, match="2400 MHz 帯の RX の校正がありません"):
+        C.endpoint_calibration(cal, "rx", band="2400")
 
 
 # --- 動作確認（probe） ------------------------------------------------------------

@@ -198,8 +198,9 @@ def build_header(
 ) -> SessionHeader:
     """雛形と、RX の設定・中継された TX の設定からヘッダを組む。
 
-    校正ファイルから写す端点は、**TX の送信出力を動いている設定（電力・チャネル）の
-    行から選ぶ**＝設定は TX が空中で送ってくるまで分からないので、ここで選ぶ。
+    校正ファイルから写す端点は、**動いている帯域の受信の校正と、TX の送信出力を動いて
+    いる設定（帯域・電力・チャネル）の行から選ぶ**＝設定は TX が空中で送ってくるまで
+    分からないので、ここで選ぶ。
 
     🔑 **RX の個体 ID は雛形と機器で一致させる。** 校正値は個体ごとの値なので、
     別の個体を挿したまま測ると、その個体に**別の個体の校正**が掛かった dBm が出る。
@@ -245,6 +246,7 @@ def build_header(
         assert calibrations is not None               # check_template が見ている
         payload[role]["calibration"] = asdict(endpoint_calibration(
             calibrations[end_device], role,
+            band=(dialect or load_dialect()).label("RADIOSIM_FIELD_BAND", tx_config.fields["band"]),
             power_cdbm=tx_config.fields["tx_power_cdbm"],
             channel=tx_config.fields["channel"],
         ))
