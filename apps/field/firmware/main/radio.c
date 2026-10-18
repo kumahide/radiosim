@@ -5,7 +5,7 @@
  * そのまま入れる（入れ物の頭は付けない）⇒ 空中の形も XML が単一の出所で、受け側は CRC で
  * 化けと他の機器の電波を弾ける。
  *
- * TX は同じ形で **RADIOSIM_FIELD_CONFIG を 10 秒ごと・送信の半周期後に**送り、RX はそれを
+ * TX は同じ形で **RADIOSIM_FIELD_CONFIG を 10 秒ごと・TX_PACKET の周期を 1 つ借りて**送り、RX はそれを
  * UART へ中継する（§6.6 の提案②）＝TX の UART は遠くにあるので、TX の実際の設定を PC が
  * 知る道は空中しかない。1 秒ごとだと 32 B の TX_PACKET と合わせてデューティが 10% を超える。
  *
@@ -132,7 +132,14 @@ static void tx_task(void *arg)
     const TickType_t period = pdMS_TO_TICKS(s_settings.tx_interval_ms);
     for (;;) {
         xTaskDelayUntil(&last, period);
-        bool sent = ready_to_send();
+        bool ready = ready_to_send();
+        int64_t now = esp_timer_get_time();
+        /* 設定は 10 秒ごとに周期を 1 つ借りる（その周期の TX_PACKET は送らない＝sent_mask に出る）。
+         * 1 周期に 2 枠は入らない＝問い合わせ 2 つで約 60 ms・32 B の UART 入力で約 34 ms・
+         * 送信の後 AUX が約 130 ms Low（実機・2026-10-18）で、250 ms の周期の約 220 ms を使う。
+         * 設定（52 B）は長いので次の周期も AUX が Low のまま＝実機では 10 秒ごとに 2 周期送らない。 */
+        bool config_turn = ready && now - last_config >= AIR_CONFIG_EVERY_US;
+        bool sent = ready && !config_turn;
         radiosim_field_tx_packet_t p = {
             .seq = s_seq,
             .sent_mask = (uint32_t)s_sent_bits,
@@ -147,20 +154,16 @@ static void tx_task(void *arg)
             s_pending_seq = s_seq;
         } else {
             s_unsent++;
+            if (config_turn) {
+                size_t n = radiosim_field_config_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &s_config);
+                e220_send(frame, n);
+                s_pending = PEND_OTHER;
+                last_config = now;
+            }
         }
         link_send_tx_packet(&p);                     /* USB の控えは送らなかった周期も出す */
         s_sent_bits = (s_sent_bits << 1) | (sent ? 1u : 0u);
         s_seq++;
-
-        int64_t now = esp_timer_get_time();
-        if (now - last_config < AIR_CONFIG_EVERY_US) continue;
-        /* 半周期後＝TX_PACKET の空中の時間と重ならない所。前がまだなら次の周期でまた試す。 */
-        vTaskDelay(period / 2);
-        if (!ready_to_send()) continue;
-        size_t n = radiosim_field_config_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &s_config);
-        e220_send(frame, n);
-        s_pending = PEND_OTHER;
-        last_config = now;
     }
 }
 

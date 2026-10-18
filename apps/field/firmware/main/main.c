@@ -100,10 +100,14 @@ void app_main(void)
     e220_err_t e = e220_configure(settings.channel, settings.tx_power_dbm, got);
     if (e != E220_OK) {
         ESP_LOGE(TAG, "%s", e220_err_text(e));
-        char msg[160];
+        char msg[320];
+        char diag[128];
         int k = snprintf(msg, sizeof msg, "ERR %s（読めた値", e220_err_text(e));
         for (int i = 0; i < E220_REG_COUNT && k < (int)sizeof msg - 8; i++) {
             k += snprintf(msg + k, sizeof msg - (size_t)k, " %02X", got[i]);
+        }
+        if (e220_diag_text(diag, sizeof diag) > 0) {
+            k += snprintf(msg + k, sizeof msg - (size_t)k, "・%s", diag);
         }
         snprintf(msg + k, sizeof msg - (size_t)k, "）");
         /* コマンドは受け付ける＝channel などで抜けられる（NVS を消さずに済む）。 */

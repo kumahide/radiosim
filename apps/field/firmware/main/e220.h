@@ -64,6 +64,10 @@ void e220_build_regs(uint8_t channel, int8_t power_dbm, uint8_t out[E220_REG_COU
 e220_err_t e220_configure(uint8_t channel, int8_t power_dbm, uint8_t got[E220_REG_COUNT]);
 const char *e220_err_text(e220_err_t err);
 
+/* 最後に断られた書き込みの往復を「送 C0 02 01 6A・受 4 B C1 02 01 6A」の形で書く
+ * （無ければ空）。書いた文字数を返す。 */
+size_t e220_diag_text(char *out, size_t cap);
+
 /* mode 0（送受信）にする。e220_configure が E220_OK のときだけ呼ぶ
  * （Strict でないまま mode 0 で命令を送ると、透過送信として電波に乗る）。 */
 void e220_enter_normal(void);

@@ -9,18 +9,23 @@
  *   - 読み出しの長さに上限＝0x00 からは 9 バイトまで＝0x00〜0x08 と 0x09〜0x0A に分けて読む
  *   - mode 0 の状態の読み出し FF FF C1 A0 05 64 → 0B FF FF C1 A0 05 d0..d4 cs・
  *     フラグ消去 FF FF F0 A1 51 → 06 FF FF F0 A1 00 57。どちらも AUX は 13〜14 ms Low（送信ではない）
+ *   - 0x0A は Strict でない間は書けない（C0 0A 01 60 → FF FF FF）＝0x09 を書いてから書く
  *
- * データシート（ver2.0 の 6.13・9.2）で確かめ、実機では未確認（作業順 2 の 3＝2 台を机上で通すときに確かめる）:
+ * 2 台を机上で通して確かめた（2026-10-18・作業順 2 の 3・0 dBm・数十 cm）:
  *   - Strict の mode 0 の**受信の出力**＝長さ・中身・RSSI・検査和。長さは自分より後ろ全部、
  *     検査和は長さから RSSI までの XOR（例 07 68 65 6C 6C 6F A6 C3＝下の parse の形）
  *   - Strict の mode 0 の**送信の入力**＝透過送信では中身だけの XOR を末尾に付ける
  *     （固定送信なら宛先と ch も含める＝この版は使わない）
+ *   - 32 B を送ると、UART の入力を終えてから AUX が約 130 ms Low（SF7/BW500・ch 0）
+ *
+ * データシート（ver2.0 の 9.2）の控え:
  *   - 状態レジスタ＝0xA0 bit0 受信あふれ／0xA1 bit0 検査和の誤り・bit1 送信あふれ・
  *     bit2 キャリアセンスの時間切れ（どれも「その送信は電波に乗っていない」）／
  *     0xA2 キャリアセンスで延期した回数・0xA3 環境ノイズ・0xA4 直前の受信の RSSI
  */
 #include "e220.h"
 
+#include <stdio.h>
 #include <string.h>
 
 #include "driver/gpio.h"
@@ -42,8 +47,8 @@
 #define AUX_WAIT_MS 2000
 #define BYTE_GAP_US 60000      /* 応答のバイトが 60 ms 途切れたら終わり（mode 3 の往復） */
 
-/* 0x02＝UART 9600（bit7:5＝011）｜SF7/BW500（bit4:0＝10010）。 */
-#define REG02 0x72
+/* 0x02＝UART 9600（bit7:5＝011）｜SF7（bit4:2＝010）｜BW500（bit1:0＝10）。 */
+#define REG02 0x6A
 /* 0x03＝環境ノイズの読み出しを有効（bit5）｜出力（bit3:0）。bit7:6（ペイロード長）は 00 のまま。 */
 #define REG03_NOISE 0x20
 /* 0x05＝透過送信・受信に RSSI バイトを付ける。 */
@@ -63,6 +68,12 @@ static volatile unsigned s_fall_next;
 static uint8_t s_buf[2 * E220_FRAME_MAX];
 static int64_t s_buf_t[2 * E220_FRAME_MAX];
 static size_t s_buf_len;
+
+/* 最後に断られた書き込みの往復（送ったバイト・受けたバイト数と中身）。 */
+static uint8_t s_diag_req[5];
+static size_t s_diag_n;
+static int s_diag_got;
+static uint8_t s_diag_rsp[16];
 
 static void IRAM_ATTR aux_isr(void *arg)
 {
@@ -214,12 +225,37 @@ static bool write_reg(bool strict, uint8_t addr, uint8_t val)
         n = 5;
     }
     int got = xfer(req, n, b, sizeof b);
-    if (got == 4) return b[0] == 0xC1 && b[1] == addr && b[2] == 0x01 && b[3] == val;
+    bool ok = false;
+    if (got == 4) ok = b[0] == 0xC1 && b[1] == addr && b[2] == 0x01 && b[3] == val;
     if (got == 6) {
-        return b[0] == 0x05 && b[1] == 0xC1 && b[2] == addr && b[3] == 0x01 && b[4] == val
+        ok = b[0] == 0x05 && b[1] == 0xC1 && b[2] == addr && b[3] == 0x01 && b[4] == val
             && xor_cs(b, 5) == b[5];
     }
-    return false;
+    if (!ok) {
+        /* 断られた往復を控える（e220_diag_text で ERR の行に載せる）。 */
+        s_diag_n = n;
+        memcpy(s_diag_req, req, n);
+        s_diag_got = got;
+        memcpy(s_diag_rsp, b, got < (int)sizeof b ? (size_t)got : sizeof b);
+    }
+    return ok;
+}
+
+size_t e220_diag_text(char *out, size_t cap)
+{
+    if (cap == 0) return 0;
+    out[0] = '\0';
+    if (s_diag_n == 0) return 0;
+    int k = snprintf(out, cap, "送");
+    for (size_t i = 0; i < s_diag_n && k > 0 && (size_t)k < cap; i++) {
+        k += snprintf(out + k, cap - (size_t)k, " %02X", s_diag_req[i]);
+    }
+    if (k > 0 && (size_t)k < cap) k += snprintf(out + k, cap - (size_t)k, "・受 %d B", s_diag_got);
+    int shown = s_diag_got < (int)sizeof s_diag_rsp ? s_diag_got : (int)sizeof s_diag_rsp;
+    for (int i = 0; i < shown && k > 0 && (size_t)k < cap; i++) {
+        k += snprintf(out + k, cap - (size_t)k, " %02X", s_diag_rsp[i]);
+    }
+    return k > 0 && (size_t)k < cap ? (size_t)k : strlen(out);
 }
 
 e220_err_t e220_configure(uint8_t channel, int8_t power_dbm, uint8_t got[E220_REG_COUNT])
@@ -241,15 +277,17 @@ e220_err_t e220_configure(uint8_t channel, int8_t power_dbm, uint8_t got[E220_RE
     if (got[8] != E220_VERSION) return E220_ERR_VERSION;
     if (memcmp(got, want, E220_REG_COUNT) == 0) return E220_OK;
 
-    /* 0x09（読み書きの形を変える）は最後。0x08（版）は読むだけ。 */
-    for (uint8_t addr = 0; addr < E220_REG_COUNT; addr++) {
-        if (addr == 0x08 || addr == 0x09 || got[addr] == want[addr]) continue;
+    /* 0x09（読み書きの形を変える）は 0x0A の前。0x08（版）は読むだけ。 */
+    for (uint8_t addr = 0; addr < 0x08; addr++) {
+        if (got[addr] == want[addr]) continue;
         if (!write_reg(strict, addr, want[addr])) return E220_ERR_WRITE;
     }
     if (got[9] != want[9]) {
         write_reg(strict, 0x09, want[9]);      /* 応答の形は当てにしない */
         strict = (want[9] & REG09_STRICT) != 0;
     }
+    /* 0x0A は Strict でない間は FF FF FF（命令の誤り）で断られる（冒頭の控え）。 */
+    if (got[10] != want[10] && !write_reg(strict, 0x0A, want[10])) return E220_ERR_WRITE;
     if (!read_regs(strict, got)) {
         memset(got, 0, E220_REG_COUNT);
         return E220_ERR_VERIFY;
@@ -339,7 +377,12 @@ e220_frame_kind_t e220_read_frame(e220_frame_t *f, int timeout_ms)
         }
         uint8_t tmp[64];
         TickType_t wait = pdMS_TO_TICKS(left / 1000) > 0 ? pdMS_TO_TICKS(left / 1000) : 1;
-        int k = uart_read_bytes(U, tmp, sizeof tmp, wait < pdMS_TO_TICKS(20) ? wait : pdMS_TO_TICKS(20));
+        /* 溜まっている分だけ読む（無ければ 1 バイト待つ）。sizeof tmp を頼むと、揃うか待ちが
+         * 切れるまで戻らない＝mode 0 の応答 1 つに約 50 ms かかり、送信の周期を食った。 */
+        size_t avail = 0;
+        uart_get_buffered_data_len(U, &avail);
+        size_t ask = avail == 0 ? 1 : (avail < sizeof tmp ? avail : sizeof tmp);
+        int k = uart_read_bytes(U, tmp, ask, wait < pdMS_TO_TICKS(20) ? wait : pdMS_TO_TICKS(20));
         if (k <= 0) continue;
         int64_t now = esp_timer_get_time();
         for (int i = 0; i < k; i++) {
