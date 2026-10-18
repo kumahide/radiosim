@@ -351,9 +351,11 @@ def test_the_nominal_fit_recovers_the_shape_and_the_pair_difference(full_run):
         assert d["dither"]["pass"]
     # A→B − B→A ＝ (P_A − P_B) ＋ (R_B − R_A)
     expected = (world.a.tx_offset_db - world.b.tx_offset_db) + (world.b.rx_offset - world.a.rx_offset)
-    # 0 dB の段は飽和して差が縮む＝平均には入る（B-352）ので、飽和していない段で見る。
-    unsaturated = [v for a, v in report["pair_difference"]["per_atten"].items() if int(a) > 0]
-    assert sum(unsaturated) / len(unsaturated) == pytest.approx(expected, abs=0.2)
+    # 0 dB の段は飽和して差が縮む＝当てはめが外した段は差にも入れない（B-352）。
+    pdiff = report["pair_difference"]
+    assert "0" not in pdiff["per_atten"]
+    assert pdiff["mean"] == pytest.approx(expected, abs=0.1)
+    assert pdiff["spread"] < 1.0
 
 
 def test_saturated_steps_are_left_out_of_the_fit(full_run):

@@ -305,13 +305,15 @@ def analyze(
     report["warmup"] = _warmup(steps)
     report["directions"] = {}
     fits: dict[str, Fit] = {}
+    outside: set[int] = set()
     for tx in units:
         rx = _other(tx)
         d = _direction(steps, tx, rx, units[tx], levels)
         report["directions"][f"{tx}->{rx}"] = d["report"]
+        outside |= d["dropped_atten"]
         if d["fit"] is not None:
             fits[rx] = d["fit"]
-    report["pair_difference"] = _pair_difference(steps)
+    report["pair_difference"] = _pair_difference(steps, outside)
     report["power"] = _power(steps, fits)
     report["channels"] = _channels(steps)
     report["closure"] = _closure(ref, units, fits, levels)
@@ -345,6 +347,7 @@ def _direction(
     level_steps = [s for s in steps if s.kind == "level" and s.tx_unit == tx]
     rows = []
     fit_points: list[tuple[float, float]] = []
+    fit_atten: list[int] = []
     rate_points: list[tuple[float, float]] = []
     absolute_all = True
     dither_fail = []
@@ -365,6 +368,7 @@ def _direction(
         })
         if s.rate >= FULL_RATE and s.mean is not None:
             fit_points.append((s.mean, x))
+            fit_atten.append(s.atten_db)
             if s.distinct < 2:
                 dither_fail.append(s.label)
     fit = fit_linear(fit_points) if len(fit_points) >= MIN_FIT_POINTS else None
@@ -387,16 +391,21 @@ def _direction(
             for t in RATE_CROSSINGS
         },
     }
-    return {"report": report, "fit": fit}
+    # 線形域の外として外した段の減衰量（2 台の差からも外す＝B-352）。
+    dropped_atten = set() if fit is None else {
+        a for p, a in zip(fit_points, fit_atten) if p in fit.dropped}
+    return {"report": report, "fit": fit, "dropped_atten": dropped_atten}
 
 
-def _pair_difference(steps: list[StepStats]) -> dict[str, Any]:
+def _pair_difference(steps: list[StepStats], outside: set[int]) -> dict[str, Any]:
     """同じ減衰量での A→B と B→A の平均の差（生値）＝(P_A − P_B) ＋ (R_B − R_A) の和。
-    減衰量によって差が動けば、2 台の R の**形**が違う（線形性の個体差）。"""
+    減衰量によって差が動けば、2 台の R の**形**が違う（線形性の個体差）。
+    どちらかの向きの当てはめが線形域の外として外した段（`outside`＝飽和など）は入れない
+    （B-352）＝飽和した段の差は縮むので、入れると平均が寄り、振れ幅が広がる。"""
     by: dict[int, dict[str, float]] = {}
     for s in steps:
         if s.kind == "level" and s.rate >= FULL_RATE and s.mean is not None \
-                and s.atten_db is not None:
+                and s.atten_db is not None and s.atten_db not in outside:
             by.setdefault(s.atten_db, {})[_dir(s)] = s.mean
     diffs = {a: v["a->b"] - v["b->a"] for a, v in sorted(by.items())
              if "a->b" in v and "b->a" in v}
