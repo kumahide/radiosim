@@ -14,8 +14,10 @@ RadioSim Fieldの**コマンドライン**（phase 1・増分4）。リポジト
                                                       … ステージ0 の机上試験（2 台・両方向）
     python -m apps.field.cli bench analyze 机上試験 --ref ref.json --calib-dir 校正
                                                       … 判定と、個体ごとの校正ファイル
+    python -m apps.field.cli cont --port COM3 --seconds 60 --ref ref.json
+                                                      … 連続送信で TX の出力を測る（2.4 GHz だけ）
     python -m apps.field.cli monitor --port COM4     … 受信を眺めるだけ（何も保存しない）
-    python -m apps.field.cli settings --port COM4 --role tx --power 10
+    python -m apps.field.cli settings --port COM4 --band 2400 --role tx --power 10
                                                       … 機器の設定を表示する・変える
     python -m apps.field.cli gnss log --port COM5 --root 測定データ
                                                       … GNSS の生データを記録する（静止観測）
@@ -38,13 +40,14 @@ from __future__ import annotations
 
 import argparse
 import json
+import math
 import os
 import re
 import subprocess  # nosec B404 — 固定の git 呼び出しだけ（刻印のコミットを取る）
 import sys
 import time
 from dataclasses import asdict
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Mapping
 
@@ -80,6 +83,8 @@ from apps.field.mavlink.reader import FrameStream, ReadStats, mac
 from apps.field.ntrip import PASSWORD_ENV, Caster, NtripClient, NtripRelay
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.field.session import (
+    BANDS,
+    CHANNELS_BY_BAND,
     GNSS_FILE,
     Event,
     SessionError,
@@ -147,14 +152,28 @@ def main(argv: list[str] | None = None) -> int:
     q.add_argument("--ref", type=Path, help="ステージ0b の実測値")
     q.add_argument("--calib-dir", type=Path, help="個体ごとの校正ファイルを書くフォルダ")
 
+    p = sub.add_parser("cont", help="連続送信で TX の出力を測る（2.4 GHz だけ・ステージ0b）")
+    p.add_argument("--port", required=True)
+    p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--seconds", type=int, default=60)
+    p.add_argument("--ref", type=Path, required=True, help="結果を足す ref（無ければ作る）")
+    p.add_argument("--reading", choices=("avg", "burst"), default="avg",
+                   help="測定器の読みの種類（avg＝平均電力・burst＝バースト中の電力）")
+    p.add_argument("--pad-db", type=float, default=0.0,
+                   help="SMA 端から測定器までの間に入れた減衰（dB）")
+
     p = sub.add_parser("settings",
                        help="機器の設定を表示する・変える（変えたら読み戻して確かめる）")
     p.add_argument("--port", required=True, help="機器の COM ポート（例: COM4）")
     p.add_argument("--baud", type=int, default=115200)
+    p.add_argument("--band", choices=BANDS,
+                   help="帯域（チャネル・間隔・電力は帯域ごとに別に持つ。省略すると機器の今の帯域）")
     p.add_argument("--role", choices=("tx", "rx"))
-    p.add_argument("--channel", type=int, help="0〜6（920.8 MHz＋0.2 MHz×番号）")
-    p.add_argument("--interval", type=int, help="送信の間隔（250〜10000 ms）")
-    p.add_argument("--power", type=int, help="送信電力（0〜13 dBm・整数）")
+    p.add_argument("--channel", type=int,
+                   help="920＝0〜6（920.8 MHz＋0.2 MHz×番号）・2400＝1〜13")
+    p.add_argument("--interval", type=int, help="送信の間隔（920＝250〜10000・2400＝20〜10000 ms）")
+    p.add_argument("--power", type=float,
+                   help="送信電力（920＝0〜13 dBm の整数・2400＝2〜20 dBm の 0.25 刻み）")
 
     p = sub.add_parser("monitor", help="受信を眺めるだけ（何も保存しない・q で終了）")
     p.add_argument("--port", required=True, help="見る機器の COM ポート（例: COM4）")
@@ -191,6 +210,8 @@ def main(argv: list[str] | None = None) -> int:
             return _probe(args)
         if args.command == "bench":
             return _bench(args)
+        if args.command == "cont":
+            return _cont(args)
         if args.command == "monitor":
             return _monitor(args)
         if args.command == "settings":
@@ -701,32 +722,163 @@ class _ReopeningPort:
             self._port = None
 
 
+# --- cont --------------------------------------------------------------------
+
+_CONT_LINE = re.compile(r"^CONT duty=(?P<duty>[0-9.]+) intervals=(?P<intervals>\d+) "
+                        r"airtime_us=\d+ span_us=\d+ other_rate=(?P<other>\d+)")
+
+
+def parse_cont_line(line: str) -> dict[str, float] | None:
+    """ファームの連続送信の報告（`radio_wifi.c` の連続送信）を読む。"""
+    found = _CONT_LINE.match(line)
+    if found is None:
+        return None
+    return {"duty": float(found["duty"]), "intervals": int(found["intervals"]),
+            "other_rate": int(found["other"])}
+
+
+def burst_dbm(reading_dbm: float, *, kind: str, duty: float, pad_db: float) -> float:
+    """SMA 端のバースト中の電力。平均電力計の読みはデューティの分だけ低い。"""
+    if not 0.0 < duty <= 1.0:
+        raise SessionError(f"デューティが範囲の外です: {duty}")
+    value = reading_dbm + pad_db
+    if kind == "avg":
+        value -= 10 * math.log10(duty)
+    return value
+
+
+_CONT_ONLY_2400 = "cont は 2.4 GHz だけです（settings --band 2400 にしてから）"
+
+
+def _cont(args: argparse.Namespace) -> int:
+    if not 1 <= args.seconds <= 600:
+        raise SessionError("--seconds は 1〜600 です")
+    serial = _import_serial()
+    port = _ReopeningPort(serial, args.port, args.baud)
+    dialect = load_dialect()
+    stream = FrameStream(dialect=dialect)
+    configs: list[Any] = []
+    lines: list[str] = []
+
+    def pump(seconds: float) -> None:
+        until = time.monotonic() + seconds
+        while time.monotonic() < until:
+            chunk = port.read(max(1, port.in_waiting))
+            configs.extend(m for m in stream.feed(chunk) if m.name == "RADIOSIM_FIELD_CONFIG")
+            lines.extend(stream.take_lines())
+
+    def role(m: Any) -> str:
+        return dialect.label("RADIOSIM_FIELD_ROLE", m.fields["role"])
+
+    def band(m: Any) -> str:
+        return dialect.label("RADIOSIM_FIELD_BAND", m.fields["band"])
+
+    try:
+        port.write(b"show\n")
+        pump(2.5)
+        # RX は近くの TX の設定を中継する＝役割が rx の設定があれば、それが自分で、
+        # tx の設定は他の機器のもの（取り違えると他の個体の出力として記録される）。
+        own_rx = [m for m in configs if role(m) == "rx"]
+        if own_rx:
+            if band(own_rx[-1]) != "2400":
+                raise SessionError(_CONT_ONLY_2400)
+            own = mac(own_rx[-1].fields["device_id"])
+            print("TX に切り替えます（role tx）")
+            configs.clear()
+            port.write(b"role tx\n")
+            pump(6.0)
+            mine = [m for m in configs if role(m) == "tx" and mac(m.fields["device_id"]) == own]
+        else:
+            mine = [m for m in configs if role(m) == "tx"]
+        if not mine or len({mac(m.fields["device_id"]) for m in mine}) != 1:
+            raise SessionError("TX の設定が届きません（ポート・電源・ファームを確かめてください）")
+        config = mine[-1]
+        if band(config) != "2400":
+            # 920 MHz は AUX の Low が空中の時間と同じでなく、デューティを測れない（I-242）。
+            raise SessionError(_CONT_ONLY_2400)
+        device = mac(config.fields["device_id"])
+        power = config.fields["tx_power_cdbm"]
+        channel = config.fields["channel"]
+        print(f"個体 {device}・設定 {power / 100:g} dBm・チャネル {channel}")
+        lines.clear()
+        port.write(f"cont {args.seconds}\n".encode("ascii"))
+        last: dict[str, float] | None = None
+        until = time.monotonic() + args.seconds + 10
+        ended = False
+        while time.monotonic() < until and not ended:
+            pump(0.2)
+            for line in lines:
+                if line.startswith("ERR"):
+                    raise SessionError(f"機器が断りました: {line}")
+                parsed = parse_cont_line(line)
+                if parsed is not None:
+                    last = parsed
+                    print(f"\r連続送信中  デューティ {parsed['duty']:.4f}"
+                          f"（補正 {-10 * math.log10(parsed['duty']):+.3f} dB）"
+                          f"  他のレート {parsed['other_rate']}   ", end="", flush=True)
+                ended = ended or line.startswith("CONT END")
+            lines.clear()
+    finally:
+        port.close()
+    print()
+    if last is None:
+        raise SessionError("連続送信の報告が届きませんでした")
+    if last["other_rate"]:
+        raise SessionError("1 Mbps 以外で出たフレームがありました（デューティを使えません）")
+    reading = float(_prompt(f"測定器の読み（dBm・{args.reading}）:"))
+    instrument = _prompt("測定器の名前（空でも可）:").strip()
+    value = burst_dbm(reading, kind=args.reading, duty=last["duty"], pad_db=args.pad_db)
+    ref = read_ref(args.ref) if args.ref.exists() else ref_template()
+    ref.setdefault("tx_output", []).append({
+        "device_id": device, "band": "2400", "power_cdbm": power, "channel": channel,
+        "dbm": round(value, 3), "measured_on": datetime.now(timezone.utc).date().isoformat(),
+        "instrument": instrument, "reading_kind": args.reading, "reading_dbm": reading,
+        "pad_db": args.pad_db, "duty": last["duty"],
+    })
+    args.ref.write_text(json.dumps(ref, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    print(f"SMA 端の出力 {value:.3f} dBm を {args.ref} に足しました")
+    return 0
+
+
 # --- settings ----------------------------------------------------------------
 
 _SETTINGS_WAIT_S = 15.0       # 返答・再起動後の設定を待つ上限
 _SETTINGS_IDENTIFY_S = 2.5    # 自分の設定を見分けるまで読む時間（設定は 1 秒ごとに届く）
 # ファームが止まっているときに 1 秒ごとに流す行＝コマンドへの返答ではない。
-# E220 の設定に落ちたとき（main.c）と自己検査に落ちたとき。
-_STUCK = ("ERR E220", "ERR 自己検査")
+# E220 の設定に落ちたとき・2.4 GHz の TX の空中のレートが 1 Mbps にならないとき（main.c）と
+# 自己検査に落ちたとき。
+_STUCK = ("ERR E220", "ERR 空中のレート", "ERR 自己検査")
 
 
-def settings_changes(args: argparse.Namespace) -> list[tuple[str, str, Any]]:
+def settings_changes(args: argparse.Namespace, band: str) -> list[tuple[str, str, Any]]:
     """引数を `(コマンド, 欄, 期待する値)` の並びへ。**送る前に**範囲を確かめる
-    （ファームの `settings.c` と同じ範囲）。役割は最後＝TX にしてから他を変えると、
-    変えるたびに測定の送信が途切れる。"""
+    （ファームの `settings.c` と同じ範囲・`band` はチャネルなどを効かせる帯域）。帯域は
+    最初＝チャネル・間隔・電力は帯域ごとに別に持つので、先に切り替えてから変える。
+    役割は最後＝TX にしてから他を変えると、変えるたびに測定の送信が途切れる。"""
+    if band not in BANDS:
+        raise SessionError(f"知らない帯域です: {band}")
+    is2400 = band == "2400"
     out: list[tuple[str, str, Any]] = []
+    if args.band is not None:
+        out.append((f"band {args.band}", "band", int(args.band)))
     if args.channel is not None:
-        if not 0 <= args.channel <= 6:
-            raise SessionError("--channel は 0〜6 です")
+        allowed = CHANNELS_BY_BAND[band]
+        if args.channel not in allowed:
+            raise SessionError(
+                f"--channel は {allowed.start}〜{allowed.stop - 1} です（{band} MHz 帯）")
         out.append((f"channel {args.channel}", "channel", args.channel))
     if args.interval is not None:
-        if not 250 <= args.interval <= 10000:
-            raise SessionError("--interval は 250〜10000 ms です")
+        low = 20 if is2400 else 250
+        if not low <= args.interval <= 10000:
+            raise SessionError(f"--interval は {low}〜10000 ms です（{band} MHz 帯）")
         out.append((f"interval {args.interval}", "tx_interval_ms", args.interval))
     if args.power is not None:
-        if not 0 <= args.power <= 13:
-            raise SessionError("--power は 0〜13 dBm の整数です")
-        out.append((f"power {args.power}", "tx_power_cdbm", args.power * 100))
+        if is2400:
+            if not 2.0 <= args.power <= 20.0 or args.power * 4 != int(args.power * 4):
+                raise SessionError("--power は 2〜20 dBm・0.25 刻みです（2400 MHz 帯）")
+        elif not 0 <= args.power <= 13 or args.power != int(args.power):
+            raise SessionError("--power は 0〜13 dBm の整数です（920 MHz 帯）")
+        out.append((f"power {args.power:g}", "tx_power_cdbm", round(args.power * 100)))
     if args.role is not None:
         out.append((f"role {args.role}", "role", 0 if args.role == "tx" else 1))
     return out
@@ -734,17 +886,20 @@ def settings_changes(args: argparse.Namespace) -> list[tuple[str, str, Any]]:
 
 def describe_settings(fields: dict[str, Any], dialect: Any) -> str:
     return (f"{dialect.label('RADIOSIM_FIELD_ROLE', fields['role']).upper()} "
-            f"{mac(fields['device_id'])}  チャネル {fields['channel']}・"
+            f"{mac(fields['device_id'])}  {fields['band']} MHz 帯・チャネル {fields['channel']}・"
             f"間隔 {fields['tx_interval_ms']} ms・出力 {fields['tx_power_cdbm'] / 100:g} dBm・"
             f"ファーム {fields['firmware_version']}・config_id {fields['config_id']}")
 
 
 def apply_settings(
-    port: Any, changes: list[tuple[str, str, Any]], *, say: Any,
+    port: Any, changes: Any, *, say: Any,
     clock: Any = time.monotonic,
 ) -> dict[str, Any]:
     """機器の今の設定を読み、`changes` を 1 つずつ送り、**再起動後に届いた設定で
     変わったことを確かめる**。最後の設定（欄の辞書）を返す。
+
+    `changes` は並びか、「機器の今の帯域 → 並び」の関数（帯域を指定しないときは、範囲を
+    確かめるのに機器の帯域が要る＝読んでから組む）。
 
     RX のポートには中継された TX の設定も流れる＝役割 rx の設定があればそれが
     自分、無ければ自分は TX（`bench.connect` と同じ規則）。以後は個体 ID で選ぶ。
@@ -784,6 +939,8 @@ def apply_settings(
 
     current = latest()
     say(f"現在: {describe_settings(current, dialect)}")
+    if callable(changes):
+        changes = changes(dialect.label("RADIOSIM_FIELD_BAND", current["band"]))
     for line, field, value in changes:
         if current[field] == value:
             say(f"  {line}: 既にこの値です")
@@ -820,7 +977,9 @@ def apply_settings(
 
 
 def _settings(args: argparse.Namespace) -> int:
-    changes = settings_changes(args)            # 範囲の外なら、ポートを開く前に止める
+    # 帯域を指定したら、範囲の外はポートを開く前に止める。無指定なら機器の帯域を読んでから。
+    changes: Any = (settings_changes(args, args.band) if args.band is not None
+                    else (lambda band: settings_changes(args, band)))
     serial = _import_serial()
     port = _ReopeningPort(serial, args.port, args.baud)
     try:

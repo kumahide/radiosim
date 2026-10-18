@@ -188,12 +188,12 @@ class _Unit:
         return len(data)
 
 
-def _changes(**over) -> list:
+def _changes(on: str = "920", **over) -> list:
     import argparse
-    args = argparse.Namespace(role=None, channel=None, interval=None, power=None)
+    args = argparse.Namespace(band=None, role=None, channel=None, interval=None, power=None)
     for k, v in over.items():
         setattr(args, k, v)
-    return cli.settings_changes(args)
+    return cli.settings_changes(args, on)
 
 
 def test_settings_changes_and_reads_back(dialect):
@@ -208,7 +208,17 @@ def test_settings_changes_and_reads_back(dialect):
     # 中継された他の TX（config_id 3）ではなく、自分の設定を表示している
     assert said[0].startswith("現在: RX 98:a3:16:8e:92:ac")
     assert "config_id 7" in said[0]
-    assert said[-1].startswith("変更後: TX 98:a3:16:8e:92:ac  チャネル 6・間隔 250 ms・出力 10 dBm")
+    assert said[-1].startswith(
+        "変更後: TX 98:a3:16:8e:92:ac  920 MHz 帯・チャネル 6・間隔 250 ms・出力 10 dBm")
+
+
+def test_settings_checks_the_range_against_the_band_read_from_the_device(dialect):
+    """帯域を指定しないときは、機器の今の帯域（ここでは 920）で範囲を確かめること。"""
+    unit = _Unit(dialect)
+    with pytest.raises(cli.SessionError, match="0〜6 です（920 MHz 帯）"):
+        cli.apply_settings(unit, lambda band: _changes(band, channel=11),
+                           say=lambda _m: None, clock=unit.clock)
+    assert unit.sent == ["show"]                  # 範囲の外は送らない
 
 
 def test_settings_without_changes_only_shows(dialect):
@@ -246,6 +256,34 @@ def test_settings_reports_a_refusal(dialect, monkeypatch):
 def test_settings_refuses_out_of_range_values_before_sending(over):
     with pytest.raises(cli.SessionError):
         _changes(**over)
+
+
+@pytest.mark.parametrize("over", [dict(channel=0), dict(channel=14), dict(interval=19),
+                                  dict(power=1.75), dict(power=20.25), dict(power=10.1)])
+def test_settings_refuses_out_of_range_values_on_2400(over):
+    with pytest.raises(cli.SessionError, match="2400 MHz 帯"):
+        _changes("2400", **over)
+
+
+def test_settings_on_2400_accepts_its_own_range_and_switches_the_band_first():
+    """2.4 GHz の範囲（チャネル 1〜13・間隔 20 ms〜・電力 0.25 刻み）を通し、帯域を最初に送ること
+    （チャネルなどは帯域ごとに別に持つ＝先に切り替えないと別の帯域の値を変える）。"""
+    changes = _changes("2400", band="2400", role="tx", channel=13, interval=20, power=17.25)
+    assert [c[0] for c in changes] == [
+        "band 2400", "channel 13", "interval 20", "power 17.25", "role tx"]
+    assert changes[0][1:] == ("band", 2400) and changes[3][2] == 1725
+
+
+def test_cont_line_and_burst_power():
+    """連続送信の報告を読み、平均電力計の読みをデューティでバースト中の電力へ直すこと。"""
+    line = ("CONT duty=0.50000 intervals=1200 airtime_us=1200 span_us=2880000 other_rate=0 "
+            "failures=0 lost_notices=0 remaining_s=30")
+    assert cli.parse_cont_line(line) == {"duty": 0.5, "intervals": 1200, "other_rate": 0}
+    assert cli.parse_cont_line("CONT END") is None
+    assert cli.burst_dbm(10.0, kind="avg", duty=0.5, pad_db=1.0) == pytest.approx(14.0103, abs=1e-4)
+    assert cli.burst_dbm(10.0, kind="burst", duty=0.5, pad_db=1.0) == 11.0
+    with pytest.raises(cli.SessionError, match="デューティ"):
+        cli.burst_dbm(10.0, kind="avg", duty=0.0, pad_db=0.0)
 
 
 def test_the_monitor_command_is_on_the_cli():
