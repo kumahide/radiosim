@@ -55,6 +55,7 @@ from typing import Iterable
 from core.batch_csv_schema import CSV_COLUMNS
 
 from apps.field.session import (
+    CHANNELS_BY_BAND,
     Event,
     RxSample,
     SessionError,
@@ -64,9 +65,12 @@ from apps.field.session import (
     validate_events,
 )
 
-# 920 MHz 帯（E220・BW500）のチャネル → 中心周波数 [MHz]。ファームが受け付けるのは 0〜6。
-# 設定メッセージのチャネル番号から本体の `freq` 列を作るのに使う。
-CHANNEL_MHZ = {ch: round(920.8 + 0.2 * ch, 1) for ch in range(7)}
+# 帯域ごとのチャネル → 中心周波数 [MHz]。設定メッセージのチャネル番号から本体の `freq` 列を
+# 作るのに使う。920＝E220・BW500 の 0〜6、2400＝C6 内蔵の 1〜13（範囲は `CHANNELS_BY_BAND`）。
+CHANNEL_MHZ = {
+    "920": {ch: round(920.8 + 0.2 * ch, 1) for ch in CHANNELS_BY_BAND["920"]},
+    "2400": {ch: 2412 + 5 * (ch - 1) for ch in CHANNELS_BY_BAND["2400"]},
+}
 
 # `sent_mask` が覆う周期の数（XML の uint32）。
 SENT_MASK_BITS = 32
@@ -430,9 +434,9 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
             "端点の位置がセッション定数になっていないので、経路 1 行の CSV に"
             "書き出せません（位置の時系列を持つ構成は phase 2 の扱い）"
         )
-    channel = header.rx.radio.channel
-    if channel not in CHANNEL_MHZ:
-        raise SessionError(f"920 MHz 帯のチャネル（0〜6）ではありません: {channel}")
+    band, channel = header.rx.radio.band, header.rx.radio.channel
+    if channel not in CHANNEL_MHZ.get(band, {}):
+        raise SessionError(f"{band} MHz 帯のチャネルではありません: {channel}")
 
     tx, rx = header.tx.position, header.rx.position
     rows: list[list[object]] = []
@@ -443,7 +447,7 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
             f"{rx.lat}, {rx.lon}",
             tx.height_agl_m,
             rx.height_agl_m,
-            CHANNEL_MHZ[channel],
+            CHANNEL_MHZ[band][channel],
             header.tx.antenna_gain_dbi - header.tx.feeder_loss_db,
             header.rx.antenna_gain_dbi,
             censoring_note(header) if w.censored else _no_radio_note(w),

@@ -46,9 +46,11 @@ def _radio(config_id: int = 1, sensitivity_dbm: float | None = -98.0) -> S.Radio
     return S.RadioSettings(
         config_id=config_id,
         firmware_version="0123456789ab",
+        band="920",
         channel=6,
         air_sf=7,
         air_bw_khz=500,
+        rate_kbps=0,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
         detector="mean",
@@ -450,6 +452,54 @@ def test_unknown_schema_version_is_refused(tmp_path):
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     with pytest.raises(S.SessionError, match="セッション形式の版"):
         S.read_header(directory)
+
+
+def test_schema_6_is_read_as_920(tmp_path):
+    """形式 6（920 MHz だけだった）は帯域 920・レート 0 を補って 7 として読むこと。"""
+    directory = S.create_session(tmp_path, _header())
+    path = directory / S.HEADER_FILE
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema_version"] = 6
+    for key in ("tx", "rx"):
+        del payload[key]["radio"]["band"], payload[key]["radio"]["rate_kbps"]
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    header = S.read_header(directory)
+    assert header.schema_version == S.SCHEMA_VERSION
+    assert (header.rx.radio.band, header.rx.radio.rate_kbps) == ("920", 0)
+
+
+def _radio_2400(sensitivity_dbm: float | None) -> S.RadioSettings:
+    return replace(_radio(sensitivity_dbm=sensitivity_dbm),
+                   band="2400", air_sf=0, air_bw_khz=0, rate_kbps=1000)
+
+
+def test_tx_and_rx_must_share_the_band(tmp_path):
+    """TX と RX の帯域が違うセッションは作れないこと（2 帯域は同時に動かさない）。"""
+    with pytest.raises(S.SessionError, match="帯域が違います"):
+        S.create_session(tmp_path, _header(rx=_endpoint("rx", radio=_radio_2400(-98.0))))
+
+
+def test_2400_session_is_accepted(tmp_path):
+    """2.4 GHz（チャネル 1〜13・レートあり・920 の欄は 0）のセッションを作れること。"""
+    tx = _endpoint("tx", radio=_radio_2400(None))
+    rx = _endpoint("rx", radio=_radio_2400(-98.0))
+    directory = S.create_session(tmp_path, _header(tx=tx, rx=rx))
+    assert S.read_header(directory).tx.radio.band == "2400"
+
+
+@pytest.mark.parametrize("band,changes,match", [
+    ("920", dict(channel=7), "チャネル"),
+    ("2400", dict(channel=0), "チャネル"),
+    ("2400", dict(channel=14), "チャネル"),
+    ("920", dict(rate_kbps=1000), "rate_kbps"),
+    ("2400", dict(air_sf=7), "air_sf"),
+    ("920", dict(band="5800"), "帯域"),
+])
+def test_band_specific_fields_are_checked(tmp_path, band, changes, match):
+    """帯域ごとのチャネルの範囲と、その帯域に無い欄が 0 であることを確かめること。"""
+    base = _radio(sensitivity_dbm=-98.0) if band == "920" else _radio_2400(-98.0)
+    with pytest.raises(S.SessionError, match=match):
+        S.create_session(tmp_path, _header(rx=_endpoint("rx", radio=replace(base, **changes))))
 
 
 def test_unknown_fields_are_not_silently_dropped(tmp_path):

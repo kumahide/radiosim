@@ -265,9 +265,11 @@ def to_radio_settings(
     return RadioSettings(
         config_id=f["config_id"],
         firmware_version=f["firmware_version"],
+        band=dialect.label("RADIOSIM_FIELD_BAND", f["band"]),
         channel=f["channel"],
         air_sf=f["air_sf"],
         air_bw_khz=f["air_bw_khz"],
+        rate_kbps=f["rate_kbps"],
         tx_power_cdbm=f["tx_power_cdbm"],
         tx_interval_ms=f["tx_interval_ms"],
         detector=dialect.label("RADIOSIM_FIELD_DETECTOR", f["detector"]),

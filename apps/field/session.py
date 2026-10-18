@@ -54,7 +54,10 @@ from typing import Any, Iterator
 #   （受信機から書く実装＝`gnss.attach_to_session`）。
 # 6＝920 MHz（E220）へ作り直した。無線設定の `rate_kbps` を `air_sf`・`air_bw_khz` に替え、
 #   サンプルに TX が送らなかった周期の記録（`sent_mask`・`unsent_total`）を足した（I-165）。
-SCHEMA_VERSION = 6
+# 7＝2.4 GHz（C6 内蔵）を戻した（I-243）。無線設定に帯域 `band` と空中のレート `rate_kbps` を
+#   足した（その帯域に無い欄は 0）。6 は 920 MHz だけだった＝読むときに `band="920"`・
+#   `rate_kbps=0` を補って 7 として読む。
+SCHEMA_VERSION = 7
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -79,12 +82,21 @@ FIX_STATES = ("fix", "float", "single", "none")
 
 ROLES = ("tx", "rx")
 
+# 帯域。MAVLink の RADIOSIM_FIELD_BAND と同じ語彙（XML が正典）。**2 帯域は同時に動かさない**
+# ＝1 台が持つのはいつも 1 つ。
+BANDS = ("920", "2400")
+
+# 帯域ごとに通すチャネル。920＝0〜6（920.8＋0.2·ch MHz・ARIB の総和の上限が掛からない側）、
+# 2400＝1〜13（2412＋5·(ch−1) MHz）。
+CHANNELS_BY_BAND = {"920": range(0, 7), "2400": range(1, 14)}
+
 # 受信感度として通す範囲 [dBm]。本体の入力検査（`core/i18n.py` の `err_sens`）と
 # 同じ範囲にしてある＝ここを通った値がそのまま「感度以下（〜未満）」として
 # 本体へ渡る文面になるので、本体が受け付けない値を名乗らせない。
 SENSITIVITY_RANGE_DBM = (-130.0, -20.0)
 
-# TX の実測出力として通す範囲 [dBm]。ファームが設定できるのは 0〜13 dBm。範囲の外は
+# TX の実測出力として通す範囲 [dBm]。ファームが設定できるのは 920 が 0〜13 dBm・2400 が
+# 2〜20 dBm。範囲の外は
 # 単位の取り違え（0.01 dBm 単位のまま・mW）とみなして止める。
 TX_OUTPUT_RANGE_DBM = (-10.0, 30.0)
 
@@ -204,9 +216,11 @@ class RadioSettings:
 
     config_id: int
     firmware_version: str            # ファームの版（git のコミット）＝刻印に入る
-    channel: int                     # 0〜6（920.8＋0.2·ch MHz）
-    air_sf: int                      # 空中の拡散率（ファームの定数）
-    air_bw_khz: int                  # 空中の帯域幅（ファームの定数）
+    band: str                        # BANDS のどれか
+    channel: int                     # 920＝0〜6・2400＝1〜13（CHANNELS_BY_BAND）
+    air_sf: int                      # 空中の拡散率（920 のファームの定数・2400 では 0）
+    air_bw_khz: int                  # 空中の帯域幅（920 のファームの定数・2400 では 0）
+    rate_kbps: int                   # 空中のレート（2400 だけ・920 では 0）
     tx_power_cdbm: int             # 設定した送信電力（0.01 dBm 単位）
     tx_interval_ms: int
     detector: str
@@ -376,6 +390,25 @@ def _validate_tx_output(endpoint: Endpoint, role: str) -> None:
         )
 
 
+def _validate_band(radio: RadioSettings, role: str) -> None:
+    _require(radio.band, BANDS, f"{role} の帯域")
+    if radio.channel not in CHANNELS_BY_BAND[radio.band]:
+        allowed = CHANNELS_BY_BAND[radio.band]
+        raise SessionError(
+            f"{role} のチャネルが {radio.band} MHz 帯の範囲の外です: {radio.channel}"
+            f"（{allowed.start}〜{allowed.stop - 1}）"
+        )
+    # その帯域に無い欄に値があると、別の帯域の設定を取り違えて読んだ形になっている。
+    absent = ({"rate_kbps": radio.rate_kbps} if radio.band == "920"
+              else {"air_sf": radio.air_sf, "air_bw_khz": radio.air_bw_khz})
+    stray = [k for k, v in absent.items() if v != 0]
+    if stray:
+        raise SessionError(
+            f"{role} は {radio.band} MHz 帯なのに、その帯域に無い欄に値があります: "
+            f"{', '.join(stray)}"
+        )
+
+
 def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
     _require(endpoint.role, ROLES, "端点の役割")
     if endpoint.role != expected_role:
@@ -384,6 +417,7 @@ def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
         )
     _require(endpoint.radio.detector, DETECTORS, f"{expected_role} の検波方式")
     _require(endpoint.radio.antenna, ANTENNAS, f"{expected_role} のアンテナ切替")
+    _validate_band(endpoint.radio, expected_role)
     low, high = SENSITIVITY_RANGE_DBM
     sensitivity = endpoint.radio.sensitivity_dbm
     if expected_role == "tx":
@@ -424,6 +458,10 @@ def validate_header(header: SessionHeader) -> None:
         raise SessionError("集計ウィンドウの長さは正の秒数です")
     _validate_endpoint(header.tx, "tx")
     _validate_endpoint(header.rx, "rx")
+    if header.tx.radio.band != header.rx.radio.band:
+        raise SessionError(
+            f"TX と RX の帯域が違います: {header.tx.radio.band} と {header.rx.radio.band}"
+        )
 
 
 def parse_utc(value: str) -> datetime:
@@ -668,9 +706,16 @@ def read_header(directory: str | os.PathLike[str]) -> SessionHeader:
 def header_from_dict(payload: dict[str, Any]) -> SessionHeader:
     """dict からヘッダを組み、約束を通す（読み戻しと雛形からの組み立ての共通の口）。"""
     nested = dict(payload)
+    upgrade = payload.get("schema_version") == 6
+    if upgrade:
+        # 6 は 920 MHz だけだった＝帯域とレートを補えば 7 と同じ意味になる。
+        nested["schema_version"] = SCHEMA_VERSION
     nested["provenance"] = _build(Provenance, payload.get("provenance", {}), "刻印")
     for key in ("tx", "rx"):
-        nested[key] = _build_endpoint(payload.get(key, {}), key)
+        endpoint = dict(payload.get(key, {}))
+        if upgrade:
+            endpoint["radio"] = {**endpoint.get("radio", {}), "band": "920", "rate_kbps": 0}
+        nested[key] = _build_endpoint(endpoint, key)
     header = _build(SessionHeader, nested, "ヘッダ")
     validate_header(header)
     return header

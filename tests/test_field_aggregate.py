@@ -48,9 +48,11 @@ def _radio(**kwargs) -> S.RadioSettings:
     values = dict(
         config_id=1,
         firmware_version="0123456789ab",
+        band="920",
         channel=6,
         air_sf=7,
         air_bw_khz=500,
+        rate_kbps=0,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
         detector="mean",
@@ -551,8 +553,10 @@ def test_the_tx_feeder_loss_is_not_counted_twice():
 def test_the_channel_becomes_a_frequency():
     """チャネル番号を本体の `freq`（MHz）へ直すこと。"""
     assert _rows(_run(range(100, 110)))[0]["freq"] == "922.0"     # ch6
-    assert A.CHANNEL_MHZ[0] == 920.8 and A.CHANNEL_MHZ[6] == 922.0
-    assert 7 not in A.CHANNEL_MHZ                                  # ファームは 0〜6
+    assert A.CHANNEL_MHZ["920"][0] == 920.8 and A.CHANNEL_MHZ["920"][6] == 922.0
+    assert 7 not in A.CHANNEL_MHZ["920"]                           # ファームは 0〜6
+    assert A.CHANNEL_MHZ["2400"][1] == 2412 and A.CHANNEL_MHZ["2400"][13] == 2472
+    assert 0 not in A.CHANNEL_MHZ["2400"] and 14 not in A.CHANNEL_MHZ["2400"]
 
     bad = _header(rx=_endpoint("rx", radio=_radio(channel=7)))
     with pytest.raises(S.SessionError, match="チャネル"):

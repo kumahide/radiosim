@@ -181,11 +181,11 @@ def _message(dialect, frame: bytes) -> R.Message:
 def test_the_header_takes_both_radios_from_the_devices(dialect):
     header = REC.build_header(
         _filled_template(),
-        _message(dialect, _config_frame(dialect, channel=11)),
+        _message(dialect, _config_frame(dialect, channel=3)),
         _message(dialect, _tx_config_frame(dialect, interval_ms=200)),
         started_utc=_t(0), software_commit="abc123", dialect=dialect,
     )
-    assert header.rx.radio.channel == 11                # 機器の値
+    assert header.rx.radio.channel == 3                 # 機器の値
     assert header.rx.radio.sensitivity_dbm == -98.0     # 雛形の値
     assert header.tx.radio.tx_interval_ms == 200        # 中継された TX の値
     assert header.tx.radio.config_id == 2

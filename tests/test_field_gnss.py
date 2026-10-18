@@ -525,7 +525,7 @@ def _session(root: Path, started: str, stop: str | None) -> Path:
         measured_on="2026-10-01", offset_db=-96.0, scale_db_per_count=0.5,
         reference_unit_id="ref-01", reference_measured_on="2026-09-10")
     radio = S.RadioSettings(
-        config_id=1, firmware_version="5aab362", channel=6, air_sf=7, air_bw_khz=500,
+        config_id=1, firmware_version="5aab362", band="920", channel=6, air_sf=7, air_bw_khz=500, rate_kbps=0,
         tx_power_cdbm=1300, tx_interval_ms=250, detector="mean", integration_window_us=1000, integration_samples=10,
         antenna="external", sensitivity_dbm=-98.0)
 
