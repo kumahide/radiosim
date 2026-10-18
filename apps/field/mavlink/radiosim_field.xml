@@ -35,7 +35,7 @@
         <description>番号付きパケットを等間隔で送る側。</description>
       </entry>
       <entry value="1" name="RADIOSIM_FIELD_ROLE_RX">
-        <description>プロミスキャス受信し、1 受信ごとに UART へ流す側。</description>
+        <description>受けたパケットを 1 受信ごとに UART へ流す側。</description>
       </entry>
     </enum>
 
@@ -79,8 +79,19 @@
         「送ったが受からなかった」を確定させるために要る。
       </description>
       <field type="uint8_t[6]" name="tx_id">送信機の個体 ID（チップ固有の MAC アドレス）。</field>
-      <field type="uint32_t" name="seq">送信シーケンス番号。欠けが打ち切りの根拠になる。</field>
-      <field type="uint64_t" name="tx_time_us" units="us">送信機の起動からの経過時間。</field>
+      <field type="uint32_t" name="seq">
+        送信の**周期の番号**（起動で 0 から・送れなかった周期も進む）。PC 側はこれを時間の軸にし、
+        欠けを打ち切りの根拠にする。
+      </field>
+      <field type="uint32_t" name="sent_mask">
+        直前 32 周期を実際に送ったか（第 k ビット＝周期 seq−1−k を送った）。キャリアセンスに
+        阻まれた周期・前の送信が終わらず飛ばした周期は 0。**「送らなかった」を「受からなかった」と
+        数えないため**に要る（I-165）。結果は次の周期の頭で読むので、この周期自身は含まない。
+      </field>
+      <field type="uint32_t" name="unsent_total">
+        起動から送らなかった周期の累計。32 周期を超えて受からなかった間の内訳を、前後の
+        受信の差で決めるために要る。
+      </field>
       <field type="uint16_t" name="config_id">この送信に効いていた設定番号。</field>
     </message>
 
@@ -115,17 +126,20 @@
         受信機から PC までの間で落ちた分**（キューの溢れ・USB の取りこぼし・UART の化け）
         ＝電波で届かなかった分とは別に数えられる。
       </field>
+      <field type="uint32_t" name="sent_mask">受けたパケットの sent_mask の写し（TX の USB は現場で PC に繋がらない）。</field>
+      <field type="uint32_t" name="unsent_total">受けたパケットの unsent_total の写し。</field>
     </message>
 
     <message id="42102" name="RADIOSIM_FIELD_CONFIG">
       <description>
-        設定。起動時・変更時に加えて 1 秒ごとに再送し、サンプルからは設定番号で引く。
+        設定。起動時・変更時に加えて UART へ 1 秒ごとに再送し、サンプルからは設定番号で引く。
         再送するのは、PC 側が最初に届いた RX の設定でセッションを作るため（「起動時だけ」
         だと、RX が先に起動していたら記録が始まらない）。同じ設定の再送は PC 側が読み飛ばす。
-        **TX は同じものを 1 秒ごとに空中へも送り、RX はそれを UART へそのまま中継する**
+        **TX は同じものを 10 秒ごと（送信の半周期後）に空中へも送り、RX はそれを UART へそのまま中継する**
         （role が tx のもの）＝TX の UART は遠くにあって PC に届かないので、TX の実際の
         設定（送信間隔・電力・チャネル）を PC が知る唯一の道。雛形に書いた値と実機が
         食い違うと、ウィンドウの期待パケット数や送信電力が黙って別の値になる。
+        空中は 10 秒ごと＝1 秒ごとだとデューティが 10% を超える。PC の記録の開始は最長 10 秒待つ。
         ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
       </description>
       <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
@@ -134,15 +148,16 @@
       <field type="char[16]" name="firmware_version">
         ファームの版（git のコミット）。刻印に入る＝データを後から救うために要る。
       </field>
-      <field type="uint8_t" name="channel">2.4 GHz のチャネル（現場で空いているものを選ぶ）。</field>
-      <field type="uint16_t" name="rate_kbps" units="kbit/s">
-        送信レート。打ち切りを減らすため最低レートに固定して使う。
+      <field type="uint8_t" name="channel">
+        920 MHz 帯のチャネル（0〜12＝920.8＋0.2·CH MHz・BW500 の番号）。現場で空いているものを選ぶ。
       </field>
+      <field type="uint8_t" name="air_sf">空中の拡散率（SF）。ファームの定数。</field>
+      <field type="uint16_t" name="air_bw_khz" units="kHz">空中の帯域幅。ファームの定数。</field>
       <field type="int16_t" name="tx_power_cdbm" units="cdBm">
         設定した送信電力（0.01 dBm 単位）。自動出力制御が動くと RSSI からパスロスを
         引けなくなるため、固定した値を記録する。
       </field>
-      <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（既定 100 ms）。</field>
+      <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（250〜10000 ms・既定 250 ms）。</field>
       <field type="uint8_t" name="detector" enum="RADIOSIM_FIELD_DETECTOR">検波方式。</field>
       <field type="uint32_t" name="integration_window_us" units="us">
         積分ウィンドウの長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが

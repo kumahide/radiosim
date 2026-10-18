@@ -38,13 +38,14 @@ def _frame(dialect: D.Dialect, name: str, **values) -> bytes:
 def _sample(dialect: D.Dialect, seq: int, sample_seq: int, rssi: int = -27) -> bytes:
     return _frame(dialect, "RADIOSIM_FIELD_RX_SAMPLE", rx_id=tuple(RX), tx_id=tuple(TX), seq=seq,
                   rx_time_us=seq * 100_000, rssi_raw=rssi, noise_floor_raw=-93,
-                  config_id=1, tx_config_id=1, sample_seq=sample_seq)
+                  config_id=1, tx_config_id=1, sample_seq=sample_seq,
+                  sent_mask=0xFFFFFFFF, unsent_total=0)
 
 
 def _config(dialect: D.Dialect, config_id: int = 1, role: int = 1) -> bytes:
     return _frame(dialect, "RADIOSIM_FIELD_CONFIG", config_id=config_id, role=role,
                   device_id=tuple(RX), firmware_version="c08507ff00", channel=1,
-                  rate_kbps=1000, tx_power_cdbm=1500, tx_interval_ms=100, detector=1,
+                  air_sf=7, air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
                   integration_window_us=0, integration_samples=1, antenna=2)
 
 
@@ -105,7 +106,7 @@ def test_a_config_is_announced_once_and_again_when_it_changes(dialect):
     assert notes[0].startswith("設定 RX 98:a3:16:8e:92:ac")
     assert "出力" not in notes[0]              # RX は送らないので出力を名乗らない
     said, _ = _run([_config(dialect, role=0)])
-    assert "出力 15 dBm" in said[0]
+    assert "出力 13 dBm" in said[0]
 
 
 def test_a_quiet_second_says_so_and_crc_errors_are_shown(dialect):
@@ -128,8 +129,8 @@ class _Unit:
         self.dialect = dialect
         self.t = 0.0
         self.values: dict[str, Any] = dict(config_id=7, role=role, device_id=tuple(RX),
-                           firmware_version="c08507ff00", channel=1, rate_kbps=1000,
-                           tx_power_cdbm=1500, tx_interval_ms=100, detector=1,
+                           firmware_version="c08507ff00", channel=1, air_sf=7,
+                           air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
                            integration_window_us=0, integration_samples=1, antenna=2)
         self.relay = relay
         self.ignore = ignore            # この欄だけ、変えたと言いながら変えない（故障の模擬）
@@ -169,11 +170,11 @@ class _Unit:
             "role": ("role", lambda a: 0 if a == "tx" else 1),
             "channel": ("channel", int),
             "interval": ("tx_interval_ms", int),
-            "power": ("tx_power_cdbm", lambda a: round(float(a) * 100)),
+            "power": ("tx_power_cdbm", lambda a: int(a) * 100),
         }[cmd]
         value = parse(arg[0])
-        if field == "channel" and not 1 <= value <= 13:
-            self.buffer += "ERR channel は 1〜13 です\r\n".encode()
+        if field == "channel" and not 0 <= value <= 12:
+            self.buffer += "ERR channel は 0〜12 です\r\n".encode()
             return len(data)
         if self.values[field] == value:
             self.buffer += "OK 変わっていません\r\n".encode()
@@ -198,16 +199,16 @@ def _changes(**over) -> list:
 def test_settings_changes_and_reads_back(dialect):
     unit = _Unit(dialect, relay=TX)
     said: list[str] = []
-    final = cli.apply_settings(unit, _changes(role="tx", channel=6, power=10.25),
+    final = cli.apply_settings(unit, _changes(role="tx", channel=6, power=10),
                                say=said.append, clock=unit.clock)
     # 役割は最後に送る（TX にしてから他を変えると、変えるたびに送信が途切れる）
-    assert unit.sent == ["show", "channel 6", "power 10.25", "role tx"]
-    assert (final["role"], final["channel"], final["tx_power_cdbm"]) == (0, 6, 1025)
+    assert unit.sent == ["show", "channel 6", "power 10", "role tx"]
+    assert (final["role"], final["channel"], final["tx_power_cdbm"]) == (0, 6, 1000)
     assert final["config_id"] == 10
     # 中継された他の TX（config_id 3）ではなく、自分の設定を表示している
     assert said[0].startswith("現在: RX 98:a3:16:8e:92:ac")
     assert "config_id 7" in said[0]
-    assert said[-1].startswith("変更後: TX 98:a3:16:8e:92:ac  チャネル 6・間隔 100 ms・出力 10.25 dBm")
+    assert said[-1].startswith("変更後: TX 98:a3:16:8e:92:ac  チャネル 6・間隔 250 ms・出力 10 dBm")
 
 
 def test_settings_without_changes_only_shows(dialect):
@@ -235,14 +236,13 @@ def test_settings_catches_a_change_that_did_not_take(dialect):
 def test_settings_reports_a_refusal(dialect, monkeypatch):
     # PC 側の範囲の確かめを抜けたと仮定して、機器の断りがそのまま出ることを見る
     unit = _Unit(dialect)
-    with pytest.raises(cli.SessionError, match="断りました: ERR channel は 1〜13 です"):
-        cli.apply_settings(unit, [("channel 14", "channel", 14)],
+    with pytest.raises(cli.SessionError, match="断りました: ERR channel は 0〜12 です"):
+        cli.apply_settings(unit, [("channel 13", "channel", 13)],
                            say=lambda _m: None, clock=unit.clock)
 
 
-@pytest.mark.parametrize("over", [dict(channel=0), dict(channel=14), dict(interval=19),
-                                  dict(interval=10001), dict(power=1.75), dict(power=20.25),
-                                  dict(power=10.1)])
+@pytest.mark.parametrize("over", [dict(channel=-1), dict(channel=13), dict(interval=249),
+                                  dict(interval=10001), dict(power=-1), dict(power=14)])
 def test_settings_refuses_out_of_range_values_before_sending(over):
     with pytest.raises(cli.SessionError):
         _changes(**over)

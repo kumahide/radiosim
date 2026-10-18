@@ -129,7 +129,7 @@ def test_the_firmware_checks_itself_before_it_sends_anything():
     """自己検査より前に無線や設定の送信を始めない（食い違ったフレームを 1 つも出さない）。"""
     body = _main_c().split("void app_main(void)", 1)[1]
     selftest = body.index("radiosim_field_selftest()")
-    for later in ("radio_start(", "link_send_config("):
+    for later in ("e220_configure(", "link_send_config("):
         assert selftest < body.index(later), f"{later} が自己検査より前にある"
 
 
@@ -180,36 +180,30 @@ def _code(name: str) -> str:
     return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
 
-def test_the_firmware_fixes_the_air_rate_with_the_api_that_takes_effect():
-    """B-257。`esp_wifi_config_80211_tx_rate` は start の後だと ESP_OK を返して効かず
-    （11 Mbps を指定しても 1 Mbps で出た）、前だと ESP_FAIL（ESP-IDF v6.1・実機）。
-    効くのは `esp_wifi_config_80211_tx`。刻印の値（kbps）と PHY のレートも揃える。"""
-    radio = _code("radio.c")
-    assert "esp_wifi_config_80211_tx_rate" not in radio
-    assert re.search(r"esp_wifi_config_80211_tx\(WIFI_IF_STA,", radio)
-    assert re.search(r"#define AIR_PHY_RATE WIFI_PHY_RATE_1M_L\b", radio)
-    assert re.search(r"#define RADIO_AIR_RATE_KBPS 1000\b", _code("radio.h"))
-    assert "esp_wifi_register_80211_tx_cb(" in radio
-
-
-def test_the_tx_verifies_the_air_rate_before_it_measures():
-    """B-257。TX は実際に出たレートを確かめてから測定を始める（違えば止まる）。
-    設定の刻印は確かめた値の定数から取る（数字を別に書くと食い違える）。"""
+def test_the_firmware_verifies_the_e220_before_it_measures():
+    """B-257 と同じ形。E220 の設定（SF・BW・チャネル・電力）を書いて読み返し、照らし
+    合わせてから測定を始める（食い違えば止まる）。刻印の SF・BW は確かめた値の定数から
+    取る（数字を別に書くと食い違える）。"""
     body = _code("main.c").split("void app_main(void)", 1)[1]
-    verify = body.index("radio_verify_rate(")
-    assert body.index("radio_start(") < verify < body.index("radio_run(")
-    assert verify < body.index("link_send_config(")
-    assert re.search(r"\.rate_kbps = RADIO_AIR_RATE_KBPS,", _code("main.c"))
+    configure = body.index("e220_configure(")
+    assert body.index("radiosim_field_selftest()") < configure < body.index("radio_run(")
+    assert configure < body.index("link_send_config(")
+    main = _code("main.c")
+    assert re.search(r"\.air_sf = E220_AIR_SF,", main)
+    assert re.search(r"\.air_bw_khz = E220_AIR_BW_KHZ,", main)
 
 
-def test_the_tx_restamps_the_rate_when_it_changes_mid_measurement():
-    """B-257。測定中にレートが変わっても**送信は止めない**（止めると受信の途絶＝
-    打ち切りに見える）。刻印を事実に直し、次の周期ですぐ設定を送る。"""
-    tx = _code("radio.c").split("static void tx_task(void *arg)", 1)[1].split("\n}\n", 1)[0]
-    # 関数の先頭にも同じ代入（初期値）があるので、直した直後の行として探す
-    assert re.search(
-        r"s_config\.rate_kbps = actual;\s*last_config = -AIR_CONFIG_EVERY_US;", tx
-    )
+def test_the_tx_reads_the_result_of_the_previous_send_before_it_sends():
+    """送らなかった周期を TX が知る口＝送る前に前の送信の結果（0xA1 の bit0〜2）を読み、
+    送れなかった seq を `sent_mask` から落とす。前の送信がまだなら、その周期は送らずに
+    数える（控えは送らなかった周期も出す）。"""
+    radio = _code("radio.c")
+    assert re.search(r"#define A1_NOT_SENT 0x07\b", radio)
+    ready = radio.split("static bool ready_to_send(void)", 1)[1].split("\n}\n", 1)[0]
+    assert "A1_NOT_SENT" in ready and "mark_unsent(" in ready
+    tx = radio.split("static void tx_task(void *arg)", 1)[1].split("\n}\n", 1)[0]
+    assert tx.index("ready_to_send()") < tx.index("e220_send(")
+    assert "s_unsent++" in tx and "link_send_tx_packet(&p)" in tx
 
 
 def _cmake() -> str:
@@ -368,8 +362,8 @@ def _rx_config(dialect: D.Dialect, **overrides) -> bytes:
     enums = dialect.enums
     values = dict(
         config_id=3, role=enums["RADIOSIM_FIELD_ROLE"]["RADIOSIM_FIELD_ROLE_RX"], device_id=RX_MAC,
-        firmware_version="0123456789-dirty", channel=6, rate_kbps=1000,
-        tx_power_cdbm=1500, tx_interval_ms=100,
+        firmware_version="0123456789-dirty", channel=6, air_sf=7, air_bw_khz=500,
+        tx_power_cdbm=1300, tx_interval_ms=100,
         detector=enums["RADIOSIM_FIELD_DETECTOR"]["RADIOSIM_FIELD_DETECTOR_INSTANT"],
         integration_window_us=0, integration_samples=1,
         antenna=enums["RADIOSIM_FIELD_ANTENNA"]["RADIOSIM_FIELD_ANTENNA_EXTERNAL"],
@@ -383,8 +377,8 @@ def _tx_config(dialect: D.Dialect, **overrides) -> bytes:
     enums = dialect.enums
     values = dict(
         config_id=2, role=enums["RADIOSIM_FIELD_ROLE"]["RADIOSIM_FIELD_ROLE_TX"], device_id=TX_MAC,
-        firmware_version="0123456789", channel=6, rate_kbps=1000,
-        tx_power_cdbm=1500, tx_interval_ms=100,
+        firmware_version="0123456789", channel=6, air_sf=7, air_bw_khz=500,
+        tx_power_cdbm=1300, tx_interval_ms=100,
         detector=enums["RADIOSIM_FIELD_DETECTOR"]["RADIOSIM_FIELD_DETECTOR_INSTANT"],
         integration_window_us=0, integration_samples=1,
         antenna=enums["RADIOSIM_FIELD_ANTENNA"]["RADIOSIM_FIELD_ANTENNA_EXTERNAL"],
@@ -397,7 +391,7 @@ def _rx_sample(dialect: D.Dialect, seq: int) -> bytes:
     values = dict(
         rx_id=RX_MAC, tx_id=TX_MAC, seq=seq, rx_time_us=5_000_000 + seq * 100_000,
         rssi_raw=-60 - seq % 7, noise_floor_raw=-95, config_id=3,
-        tx_config_id=2, sample_seq=seq,
+        tx_config_id=2, sample_seq=seq, sent_mask=0xFFFFFFFF, unsent_total=0,
     )
     return G.encode_frame(dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"], values, link_seq=seq)
 
@@ -421,9 +415,9 @@ def _template() -> dict:
         end["position"].update(
             lat=35.0, lon=139.0, elevation_m=120.0, height_agl_m=10.0, height_source="survey"
         )
-    # 中継される TX の設定（15 dBm・チャネル 6）で測った SMA 端の出力。
+    # 中継される TX の設定（13 dBm・チャネル 6）で測った SMA 端の出力。
     template["tx"]["calibration"].update(
-        tx_output_dbm=14.2, tx_output_power_cdbm=1500, tx_output_channel=6
+        tx_output_dbm=12.2, tx_output_power_cdbm=1300, tx_output_channel=6
     )
     template["rx"]["radio"] = {"sensitivity_dbm": -98.0}
     return template
@@ -468,12 +462,12 @@ def test_a_changed_config_from_the_firmware_still_ends_the_session(tmp_path, dia
 
 
 def test_a_changed_air_rate_in_the_relayed_tx_config_ends_the_session(tmp_path, dialect):
-    """B-257。TX は測定中にレートが変わると、設定番号はそのままで `rate_kbps` だけを
-    事実に直して送る。PC がそれを再送として読み飛ばすと、違うレートのサンプルが
-    同じ条件として記録に混ざる。"""
+    """B-257 の名残。設定番号が同じでも、中継された TX の設定の空中の条件（`air_sf`）が
+    変われば閉じる。PC がそれを再送として読み飛ばすと、違う条件のサンプルが同じ条件と
+    して記録に混ざる。"""
     rec = REC.Recorder(tmp_path, _template(), software_commit="abc123")
     rec.feed(_rx_config(dialect) + _tx_config(dialect) + _rx_sample(dialect, 0), _t(0))
     rec.feed(_tx_config(dialect) + _rx_sample(dialect, 1), _t(1))
     assert not rec.config_changed
-    rec.feed(_tx_config(dialect, rate_kbps=11000) + _rx_sample(dialect, 2), _t(2))
+    rec.feed(_tx_config(dialect, air_sf=9) + _rx_sample(dialect, 2), _t(2))
     assert rec.config_changed and rec.state == "stopped"

@@ -47,7 +47,8 @@ def _radio(config_id: int = 1, sensitivity_dbm: float | None = -98.0) -> S.Radio
         config_id=config_id,
         firmware_version="0123456789ab",
         channel=6,
-        rate_kbps=1000,
+        air_sf=7,
+        air_bw_khz=500,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
         detector="mean",
@@ -118,6 +119,8 @@ def _samples(count: int = 3) -> list[S.RxSample]:
             config_id=1,
             tx_config_id=4,
             sample_seq=7 + i,
+            sent_mask=0xFFFFFFFF,
+            unsent_total=0,
             spatial_slot=2,
         )
         for i in range(count)

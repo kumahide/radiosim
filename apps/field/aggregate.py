@@ -29,6 +29,13 @@ apps/field/aggregate.py
 部分集合）。⚠️ 電波の欠けと混ざっていて、しかもウィンドウを跨ぐものは、どのウィンドウの分か分からない
 ＝**どのウィンドウにも振らない**（受信率を高く見せる向きには動かさない）。
 
+**TX が送らなかった周期も、電波の欠けに数えない**（I-165）。`seq` は周期の番号で、
+キャリアセンスに阻まれた周期・前の送信が終わらず飛ばした周期も進む。TX はパケットに
+直前 32 周期を送ったか（`sent_mask`）と起動からの累計（`unsent_total`）を載せ、RX が
+写して流すので、**次に受かったパケット**で分かる（→ `unsent_cycles`）。分かった分は分母から
+引く。⚠️ 決まらない周期（最後の受信より後・累計の差だけでは場所が決まらない空白）は
+**送った扱い**（2026-10-18 ユーザー決定）＝打ち切りを「不明」へ逃がさない。
+
 ⚠️ **この層は打ち切りの「しきい値そのもの」を決めない**＝しきい値は受け入れ試験で
 決めてセッションの刻印に入れる値で、コードの定数ではない。
 """
@@ -57,9 +64,12 @@ from apps.field.session import (
     validate_events,
 )
 
-# 2.4 GHz 帯のチャネル → 中心周波数 [MHz]。**表で持つ**（式で書くと 14 番だけ外れる）。
+# 920 MHz 帯（E220・BW500）のチャネル → 中心周波数 [MHz]。ファームが受け付けるのは 0〜12。
 # 設定メッセージのチャネル番号から本体の `freq` 列を作るのに使う。
-CHANNEL_MHZ = {ch: 2412 + (ch - 1) * 5 for ch in range(1, 14)} | {14: 2484}
+CHANNEL_MHZ = {ch: round(920.8 + 0.2 * ch, 1) for ch in range(13)}
+
+# `sent_mask` が覆う周期の数（XML の uint32）。
+SENT_MASK_BITS = 32
 
 
 @dataclass(frozen=True)
@@ -73,6 +83,7 @@ class Window:
     seq_count: int              # 期待パケット数
     received: int               # 実際に届いた数（分子）
     link_lost: int              # 電波では届いたが PC までの間で落ちたと分かっている数
+    unsent: int                 # TX が送らなかったと分かっている数
     meas_dbm: float | None      # 打ち切り・記録の欠落なら None
     noise_floor_raw_mean: float | None
     first_pc_utc: str           # 届いた最初/最後の PC 時刻（空＝1 つも届かなかった）
@@ -80,8 +91,8 @@ class Window:
 
     @property
     def radio_expected(self) -> int:
-        """受信率の分母＝期待数から、PC までの間で落ちた分を除いたもの。"""
-        return self.seq_count - self.link_lost
+        """受信率の分母＝期待数から、PC までの間で落ちた分と TX が送らなかった分を除いたもの。"""
+        return self.seq_count - self.link_lost - self.unsent
 
     @property
     def receive_rate(self) -> float:
@@ -90,8 +101,8 @@ class Window:
 
     @property
     def lost_on_link(self) -> bool:
-        """ウィンドウの全部が PC までの間で落ちた＝電波については何も分からないウィンドウ。
-        「感度以下」ではないので、打ち切りに数えない。"""
+        """ウィンドウの全部が PC までの間で落ちたか、TX が送らなかった＝電波については
+        何も分からないウィンドウ。「感度以下」ではないので、打ち切りに数えない。"""
         return self.radio_expected == 0
 
     @property
@@ -145,6 +156,7 @@ def aggregate(
     clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms / 1000.0)
     by_seq = {s.seq: s for s in ordered}
     gaps = link_gaps(ordered)
+    unsent = unsent_cycles(ordered)
     key_config = header.rx.radio.config_id
 
     windows: list[Window] = []
@@ -153,11 +165,14 @@ def aggregate(
         last = clock.last_sent(left_at)
         # 端数のウィンドウは出さない。**分母が足りない**ので受信率が意味を持たない。
         while start + per_window - 1 <= last:
-            got = [by_seq[q] for q in range(start, start + per_window) if q in by_seq]
+            span = range(start, start + per_window)
+            got = [by_seq[q] for q in span if q in by_seq]
             lost = _link_lost_in(gaps, start, per_window)
+            skipped = sum(1 for q in span if q in unsent)
             windows.append(
                 _make_window(
-                    header, len(windows), (key_config, slot), start, per_window, got, lost
+                    header, len(windows), (key_config, slot), start, per_window, got, lost,
+                    skipped,
                 )
             )
             start += per_window
@@ -176,6 +191,38 @@ def link_gaps(samples: list[RxSample]) -> list[tuple[int, int, int]]:
         if lost > 0:
             gaps.append((a.seq, b.seq, lost))
     return gaps
+
+
+def unsent_cycles(samples: list[RxSample]) -> set[int]:
+    """TX が送らなかったと**分かっている**周期（seq の集合・seq の昇順のサンプル）。
+
+    - 受けた seq は送った
+    - 後で受けた seq `s` の `sent_mask` の第 k ビット＝周期 `s−1−k` を送ったか
+    - 32 周期を超える空白は、前後の受信の `unsent_total` の差（＝空白の中で送らなかった数）
+      から、mask で分かった分を引いた残りで決める＝0 なら全部送った・覆われない周期の数と
+      等しければ全部送らなかった。先頭は「起動の手前（seq −1・累計 0）」の仮の点から測る
+    - それ以外（残りが中途半端・数が合わない・最後の受信より後）は決まらない＝**送った扱い**
+      （受信率を高く見せる向きには動かさない）
+    """
+    unsent: set[int] = set()
+    for s in samples:
+        for k in range(SENT_MASK_BITS):
+            q = s.seq - 1 - k
+            if q < 0:
+                break
+            if not (s.sent_mask >> k) & 1:
+                unsent.add(q)
+    prev_seq, prev_total = -1, 0
+    for s in samples:
+        covered_from = s.seq - SENT_MASK_BITS
+        if covered_from > prev_seq + 1:
+            uncovered = range(prev_seq + 1, covered_from)
+            in_mask = sum(1 for q in range(covered_from, s.seq) if q in unsent)
+            rest = s.unsent_total - prev_total - in_mask
+            if rest == len(uncovered):
+                unsent.update(uncovered)
+        prev_seq, prev_total = s.seq, s.unsent_total
+    return unsent
 
 
 def link_lost_total(samples: list[RxSample]) -> int:
@@ -286,9 +333,10 @@ def _make_window(
     seq_count: int,
     got: list[RxSample],
     link_lost: int,
+    unsent: int,
 ) -> Window:
     config_id, spatial_slot = key
-    radio_expected = seq_count - link_lost
+    radio_expected = seq_count - link_lost - unsent
     rate = len(got) / radio_expected if radio_expected else 0.0
     censored = rate < header.provenance.censor_min_receive_rate
     if censored or not got:
@@ -306,6 +354,7 @@ def _make_window(
         seq_count=seq_count,
         received=len(got),
         link_lost=link_lost,
+        unsent=unsent,
         meas_dbm=meas_dbm,
         noise_floor_raw_mean=noise,
         first_pc_utc=got[0].pc_utc if got else "",
@@ -339,6 +388,9 @@ def censoring_note(header: SessionHeader) -> str:
 # ウィンドウの全部が PC までの間で落ちた行の `note`。値が空なので本体は残差から外す。
 LINK_LOST_NOTE = "記録の欠落（受信機から PC までの間）"
 
+# ウィンドウの全部を TX が送らなかった行の `note`（PC までの落ちが混ざらないとき）。
+UNSENT_NOTE = "送信なし（TX がキャリアセンスなどで送らなかった）"
+
 
 def body_tx_power_notice(header: SessionHeader) -> str:
     """本体でバッチを回すときに入れる送信電力の案内（B-258）。
@@ -354,6 +406,12 @@ def body_tx_power_notice(header: SessionHeader) -> str:
         f"（TX {header.tx.device_id} の SMA 端での実測・{cal.measured_on}。"
         f"設定値の {header.tx.radio.tx_power_cdbm / 100:g} dBm ではありません）"
     )
+
+
+def _no_radio_note(w: Window) -> str:
+    if not w.lost_on_link:
+        return ""
+    return LINK_LOST_NOTE if w.link_lost else UNSENT_NOTE
 
 
 def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[object]]:
@@ -374,7 +432,7 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
         )
     channel = header.rx.radio.channel
     if channel not in CHANNEL_MHZ:
-        raise SessionError(f"2.4 GHz 帯のチャネルではありません: {channel}")
+        raise SessionError(f"920 MHz 帯のチャネル（0〜12）ではありません: {channel}")
 
     tx, rx = header.tx.position, header.rx.position
     rows: list[list[object]] = []
@@ -388,7 +446,7 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
             CHANNEL_MHZ[channel],
             header.tx.antenna_gain_dbi - header.tx.feeder_loss_db,
             header.rx.antenna_gain_dbi,
-            censoring_note(header) if w.censored else (LINK_LOST_NOTE if w.lost_on_link else ""),
+            censoring_note(header) if w.censored else _no_radio_note(w),
             "" if w.meas_dbm is None else round(w.meas_dbm, 2),
             header.meas_method,
             header.rx.feeder_loss_db,

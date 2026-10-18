@@ -98,6 +98,15 @@ class Port(Protocol):
     def write(self, data: bytes) -> int | None: ...
 
 
+def unsent_between(echoes: list[dict[str, Any]]) -> int:
+    """控え（TX_PACKET の USB の写し・送らなかった周期にも出る）の番号の幅の中で、TX が
+    送らなかった周期の数＝最後と最初の `unsent_total` の差。⚠️ 最初の周期そのものを
+    送らなかった分は差に入らないので、端で ±1 ずれる（数百周期のステップでは効かない）。"""
+    first = min(echoes, key=lambda f: f["seq"])
+    last = max(echoes, key=lambda f: f["seq"])
+    return max(0, last["unsent_total"] - first["unsent_total"])
+
+
 # --- 計画 --------------------------------------------------------------------
 
 
@@ -107,12 +116,12 @@ def default_plan() -> dict[str, Any]:
     所要時間の目安は 1 時間強（人が触るのはつまみ 30 回ほど）。
     """
     return {
-        "channel": 1,
-        "power_dbm": 15,
+        "channel": 0,
+        "power_dbm": 13,
         # 固定アッテネータ（30 dB ×2）とケーブルの**公称**。ステージ0b の実測値は判定の側
         # （`bench analyze --ref`）で差し替える＝ここを直して測り直す必要はない。
         "fixed_loss_db": 60.0,
-        "leak": {"duration_s": 30, "power_dbm": 20},
+        "leak": {"duration_s": 30, "power_dbm": 13},
         "warmup": {
             "atten_db": 40, "chunk_s": 60, "max_chunks": 30,
             "stable_chunks": 5, "stable_db": 0.2,
@@ -121,11 +130,11 @@ def default_plan() -> dict[str, Any]:
         # 粗い掃引で受信率が落ち始めたステップ k の前後を 1 dB 刻みで。
         "fine": {"below_db": 9, "above_db": 6, "duration_s": 30},
         # 受信率が落ち始めるステップ k から margin_db 以上下げた減衰量（10 dB 単位）で。
-        # ⚠️ power_dbm（15）を必ず含める＝校正ファイルの他の電力の出力は、パワー計で
-        # 測った 15 dBm の点からの相対差で導く（含まないと導けない）。
-        "power": {"dbm": [3, 5, 7, 9, 11, 13, 15, 17, 19, 20], "duration_s": 20,
+        # ⚠️ power_dbm（13）を必ず含める＝校正ファイルの他の電力の出力は、パワー計で
+        # 測った 13 dBm の点からの相対差で導く（含まないと導けない）。
+        "power": {"dbm": [0, 1, 3, 5, 7, 9, 11, 13], "duration_s": 20,
                   "margin_db": 25},
-        "channels": {"list": [1, 7, 13], "duration_s": 20},
+        "channels": {"list": [0, 6, 12], "duration_s": 20},
     }
 
 
@@ -354,7 +363,8 @@ class BenchRunner:
     def _check_errors(self) -> None:
         for unit in self.units.values():
             for line in unit.lines:
-                if line.startswith("ERR 空中のレート") or line.startswith("ERR 自己検査"):
+                # E220 の設定に落ちたとき（main.c）と自己検査に落ちたとき。
+                if line.startswith("ERR E220") or line.startswith("ERR 自己検査"):
                     raise BenchError(f"{unit.name.upper()} が止まっています: {line}")
 
     # 見分け ---------------------------------------------------------------------
@@ -444,10 +454,10 @@ class BenchRunner:
         cdbm = round(power_dbm * 100)
         if f["channel"] != channel:
             self._set(unit, f"channel {channel}", lambda g: g["channel"] == channel)
-        if abs(unit.config.fields["tx_power_cdbm"] - cdbm) >= 25:
-            # 機器が読み戻す値は 0.25 dB 刻み。刻みより小さい差は「同じ」とみなす。
+        if abs(unit.config.fields["tx_power_cdbm"] - cdbm) >= 50:
+            # 機器（E220）の電力は 1 dB 刻み。刻みの半分より小さい差は「同じ」とみなす。
             self._set(unit, f"power {power_dbm:g}",
-                      lambda g: abs(g["tx_power_cdbm"] - cdbm) < 25)
+                      lambda g: abs(g["tx_power_cdbm"] - cdbm) < 50)
         if unit.role != role:
             code = 0 if role == "tx" else 1
             self._set(unit, f"role {role}", lambda g: g["role"] == code)
@@ -505,20 +515,20 @@ class BenchRunner:
         """ステップの間に TX が送った数と、そのうち RX が受けたサンプル。"""
         t_unit, r_unit = self.units[row["tx_unit"]], self.units[row["rx_unit"]]
         start, end = parse_utc(row["start_utc"]), parse_utc(row["end_utc"])
-        seqs = [
-            f["seq"] for when, f in t_unit.tx_echoes
+        echoes = [
+            f for when, f in t_unit.tx_echoes
             if start <= parse_utc(when) <= end and f["config_id"] == row["tx_config_id"]
         ]
-        if not seqs:
+        if not echoes:
             return 0, []
-        low, high = min(seqs), max(seqs)
+        low, high = min(f["seq"] for f in echoes), max(f["seq"] for f in echoes)
         got = [
             f for _when, f in r_unit.rx_samples
             if mac(f["tx_id"]) == row["tx_device"]
             and f["tx_config_id"] == row["tx_config_id"]
             and low <= f["seq"] <= high
         ]
-        return high - low + 1, got
+        return high - low + 1 - unsent_between(echoes), got
 
     def _count(self, row: dict[str, Any]) -> StepCount:
         sent, got = self._step_samples(row)

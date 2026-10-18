@@ -12,18 +12,14 @@
 
 typedef struct {
     uint8_t role;             /* RADIOSIM_FIELD_ROLE_TX / RADIOSIM_FIELD_ROLE_RX */
-    uint8_t channel;          /* 1〜13 */
-    uint16_t tx_interval_ms;  /* 送信間隔 */
-    int8_t tx_power_qdbm;     /* 送信電力の要求値（0.25 dBm 単位＝esp_wifi の単位） */
+    uint8_t channel;          /* 0〜E220_CHANNEL_MAX（920.8＋0.2·CH MHz） */
+    uint16_t tx_interval_ms;  /* 送信間隔（250〜10000） */
+    int8_t tx_power_dbm;      /* 送信電力（0〜E220_POWER_MAX_DBM の整数） */
     uint16_t config_id;
 } radiosim_field_settings_t;
 
 /* NVS から読む（無ければ既定値で作って保存する）。 */
 void settings_load(radiosim_field_settings_t *out);
-
-/* 設定は変えずに config_id だけ 1 つ進めて保存する（連続送信の前＝再起動後の設定で、
- * PC がその間を跨いだ記録を閉じられるように）。 */
-void settings_bump_config_id(radiosim_field_settings_t *current);
 
 /* 1 行のコマンドを解釈する。設定が変わったら保存して true を返す（呼び手が再起動する）。
  * 返答（"OK ..." / "ERR ..."）は reply に書く。 */

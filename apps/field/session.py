@@ -52,7 +52,9 @@ from typing import Any, Iterator
 # 4＝TX の校正の控えに、SMA 端で実測した出力とそれを測った設定を足した（B-258）。
 # 5＝位置の時系列に PC の時刻・受信機の精度の見積もり・衛星数・補正の印・元の生ログを足した
 #   （受信機から書く実装＝`gnss.attach_to_session`）。
-SCHEMA_VERSION = 5
+# 6＝920 MHz（E220）へ作り直した。無線設定の `rate_kbps` を `air_sf`・`air_bw_khz` に替え、
+#   サンプルに TX が送らなかった周期の記録（`sent_mask`・`unsent_total`）を足した（I-165）。
+SCHEMA_VERSION = 6
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -82,7 +84,7 @@ ROLES = ("tx", "rx")
 # 本体へ渡る文面になるので、本体が受け付けない値を名乗らせない。
 SENSITIVITY_RANGE_DBM = (-130.0, -20.0)
 
-# TX の実測出力として通す範囲 [dBm]。ファームが設定できるのは 2〜20 dBm。範囲の外は
+# TX の実測出力として通す範囲 [dBm]。ファームが設定できるのは 0〜13 dBm。範囲の外は
 # 単位の取り違え（0.01 dBm 単位のまま・mW）とみなして止める。
 TX_OUTPUT_RANGE_DBM = (-10.0, 30.0)
 
@@ -102,7 +104,9 @@ SAMPLE_COLUMNS = (
     "config_id",         # RX の設定番号。積分ウィンドウ・検波方式はここから引く
     "tx_config_id",      # TX の設定番号（受けたパケットに載っていたもの）
     "sample_seq",        # ファームが振った通し番号（送信機ごと）。欠けは PC までの間の落ち
-    "spatial_slot",      # 空間平均の置き場所の番号（PC 側が付ける）
+    "sent_mask",         # TX が直前 32 周期を送ったか（第 k ビット＝周期 seq−1−k）
+    "unsent_total",      # TX が起動から送らなかった周期の累計
+    "spatial_slot",     # 空間平均の置き場所の番号（PC 側が付ける）
 )
 
 # 作業者の操作。空間平均の置き場所の区切りは**サンプルではなくここから**決める＝
@@ -200,9 +204,10 @@ class RadioSettings:
 
     config_id: int
     firmware_version: str            # ファームの版（git のコミット）＝刻印に入る
-    channel: int
-    rate_kbps: int
-    tx_power_cdbm: int               # 設定した送信電力（0.01 dBm 単位）
+    channel: int                     # 0〜12（920.8＋0.2·ch MHz）
+    air_sf: int                      # 空中の拡散率（ファームの定数）
+    air_bw_khz: int                  # 空中の帯域幅（ファームの定数）
+    tx_power_cdbm: int             # 設定した送信電力（0.01 dBm 単位）
     tx_interval_ms: int
     detector: str
     integration_window_us: int
@@ -289,6 +294,10 @@ class RxSample:
     config_id: int
     tx_config_id: int
     sample_seq: int
+    # TX が送らなかった周期の記録（受けたパケットの写し）。「送らなかった」を
+    # 「受からなかった」と数えないために要る（I-165・集計は aggregate.py）。
+    sent_mask: int
+    unsent_total: int
     spatial_slot: int = 0
 
 
@@ -698,6 +707,8 @@ def read_rx_samples(directory: str | os.PathLike[str]) -> Iterator[RxSample]:
                 config_id=int(row["config_id"]),
                 tx_config_id=int(row["tx_config_id"]),
                 sample_seq=int(row["sample_seq"]),
+                sent_mask=int(row["sent_mask"]),
+                unsent_total=int(row["unsent_total"]),
                 spatial_slot=int(row["spatial_slot"]),
             )
 

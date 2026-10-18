@@ -31,7 +31,9 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from apps.field.bench import TAIL_S, BenchError, read_bench, read_steps, started_on
+from apps.field.bench import (
+    TAIL_S, BenchError, read_bench, read_steps, started_on, unsent_between,
+)
 from apps.field.calib import DeviceCalibration, RxCurve, TxOutput, write_device_calibration
 from apps.field.mavlink.dialect import Dialect, load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
@@ -116,18 +118,20 @@ class StepStats:
 
 
 def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
-    """ステップの数え。**送った番号は TX の控えから**（USB で控えが欠けても幅で数える）、
+    """ステップの数え。**送った番号は TX の控えから**（USB で控えが欠けても幅で数え、
+    送らなかった周期を引く）、
     受けたものは RX から（送信機・両方の設定番号・番号の幅・時刻で絞る）。"""
     start, end = parse_utc(row["start_utc"]), parse_utc(row["end_utc"])
-    seqs = [f["seq"] for when, f in tx.echoes
-            if start <= when <= end and f["config_id"] == row["tx_config_id"]]
+    echoes = [f for when, f in tx.echoes
+              if start <= when <= end and f["config_id"] == row["tx_config_id"]]
     rssi: list[int] = []
     noise: list[int] = []
     sample_seqs: list[int] = []
     sent = 0
-    if seqs:
-        low, high = min(seqs), max(seqs)
-        sent = high - low + 1
+    if echoes:
+        low, high = min(f["seq"] for f in echoes), max(f["seq"] for f in echoes)
+        # 送らなかった周期（E220 が受け付けなかった）は送った数に入れない（I-165）。
+        sent = high - low + 1 - unsent_between(echoes)
         # 時刻は**番号の取り違えを防ぐ枠**でしかない（対応づけは番号と設定番号）。
         # ⚠️ 下限をステップの頭ちょうどにしない＝TX と RX は別の USB で届くので、ステップの頭の
         # 番号の受信が控えより先に PC に着き、1 件だけ「届かなかった」ことになる。
@@ -654,7 +658,7 @@ def render_markdown(report: dict[str, Any]) -> str:
 
 
 def ref_template() -> dict[str, Any]:
-    """ステージ0b の実測値を書く雛形（`cli cont` は tx_output に自動で足す）。"""
+    """ステージ0b の実測値を書く雛形（920 MHz では tx_output の測り方が未定＝I-242）。"""
     return {
         "fixed_loss_db": None,
         "step_attenuator": {"tens": {}, "ones": {}},

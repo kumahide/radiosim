@@ -58,12 +58,14 @@ def _frame(dialect: D.Dialect, name: str, payload: bytes, link_seq: int = 0) -> 
 
 def _sample_frame(
     dialect: D.Dialect, seq: int, rssi_raw: int = -140, tx: bytes = TX_MAC, config_id: int = 1,
-    tx_config_id: int = 2, sample_seq: int | None = None,
+    tx_config_id: int = 2, sample_seq: int | None = None, sent_mask: int = 0xFFFFFFFF,
+    unsent_total: int = 0,
 ) -> bytes:
     payload = (
         struct.pack(
-            "<QIIhhHH", 1_000_000 + seq * 100_000, seq,
-            seq if sample_seq is None else sample_seq, rssi_raw, -190, config_id, tx_config_id,
+            "<QIIIIhhHH", 1_000_000 + seq * 100_000, seq,
+            seq if sample_seq is None else sample_seq, sent_mask, unsent_total,
+            rssi_raw, -190, config_id, tx_config_id,
         )
         + RX_MAC
         + tx
@@ -76,11 +78,11 @@ def _config_frame(
     device: bytes = RX_MAC, interval_ms: int = 100,
 ) -> bytes:
     payload = (
-        struct.pack("<IHHhHH", 1000, config_id, 1000, 1300, interval_ms, 10)
+        struct.pack("<IHHhHH", 1000, config_id, 500, 1300, interval_ms, 10)
         + bytes([role])
         + device
         + b"5aab362".ljust(16, b"\x00")
-        + bytes([channel, 2, 2])
+        + bytes([channel, 7, 2, 2])
     )
     return _frame(dialect, "RADIOSIM_FIELD_CONFIG", payload)
 

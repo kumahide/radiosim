@@ -17,7 +17,6 @@ tests/test_field_bench.py
 from __future__ import annotations
 
 import json
-import math
 import random
 import re
 from datetime import datetime, timedelta, timezone
@@ -36,7 +35,7 @@ from apps.field.mavlink import gen_c as G
 from apps.field.mavlink import reader as R
 
 _BASE = datetime(2026, 9, 20, 1, 0, 0, tzinfo=timezone.utc)
-FIXED_LOSS = 60.0
+FIXED_LOSS = 58.0          # 13 dBm − 58 dB＝旧ファームの 15 dBm − 60 dB と同じ水準
 TICK = 0.01                 # 1 回の読み出しで進む模擬の時間 [s]
 
 
@@ -59,8 +58,8 @@ class Device:
         self.rx_offset = rx_offset            # 生値 − 入力 dBm
         self.sensitivity_dbm = sensitivity_dbm
         self.role = role
-        self.channel = 1
-        self.power_qdbm = 60
+        self.channel = 0
+        self.power_dbm = 13
         self.config_id = 1
         self.seq = 0
         self.sample_seq: dict[bytes, int] = {}
@@ -70,7 +69,6 @@ class Device:
         self.next_config = 0.0
         self.next_packet = 0.0
         self.next_air_config = 0.0
-        self.cont_until: float | None = None
 
     # ポート --------------------------------------------------------------------
 
@@ -100,7 +98,7 @@ class Device:
         return dict(
             config_id=self.config_id, role=0 if self.role == "tx" else 1,
             device_id=tuple(self.mac), firmware_version="afd69ae7db", channel=self.channel,
-            rate_kbps=1000, tx_power_cdbm=self.power_qdbm * 25, tx_interval_ms=100,
+            air_sf=7, air_bw_khz=500, tx_power_cdbm=self.power_dbm * 100, tx_interval_ms=100,
             detector=1, integration_window_us=0, integration_samples=1, antenna=2,
         )
 
@@ -114,21 +112,15 @@ class Device:
             self.text("OK")
             self.buffer += self.frame("RADIOSIM_FIELD_CONFIG", self.config_values())
             return
-        if parts[0] == "cont":
-            seconds = int(parts[1])
-            self.config_id += 1
-            self.text(f"OK cont {seconds} 秒 config_id={self.config_id} 終わったら再起動します")
-            self.cont_until = self.world.t + seconds
-            return
         key, value = parts
-        before = (self.role, self.channel, self.power_qdbm)
+        before = (self.role, self.channel, self.power_dbm)
         if key == "role":
             self.role = value
         elif key == "channel":
             self.channel = int(value)
         elif key == "power":
-            self.power_qdbm = round(float(value) * 4)
-        if (self.role, self.channel, self.power_qdbm) == before:
+            self.power_dbm = int(value)
+        if (self.role, self.channel, self.power_dbm) == before:
             self.text("OK 変わっていません")
             return
         self.config_id += 1
@@ -144,23 +136,11 @@ class Device:
         self.next_air_config = self.paused_until
 
     def output_dbm(self) -> float:
-        return self.power_qdbm / 4 + self.tx_offset_db
+        return self.power_dbm + self.tx_offset_db
 
     def tick(self, other: "Device") -> None:
         t = self.world.t
         if t < self.paused_until:
-            return
-        if self.cont_until is not None:
-            if t < self.cont_until:
-                if t >= self.next_config:
-                    self.text(f"CONT duty=0.97000 intervals={int(t * 80)} airtime_us=12224 "
-                              "span_us=1000000 other_rate=0 failures=0 lost_notices=0 "
-                              "remaining_s=1")
-                    self.next_config = t + 1.0
-                return
-            self.text("CONT END")
-            self.cont_until = None
-            self.restart()
             return
         if t >= self.next_config:
             self.buffer += self.frame("RADIOSIM_FIELD_CONFIG", self.config_values())
@@ -173,7 +153,7 @@ class Device:
             self.next_air_config = t + 1.0
         if t >= self.next_packet:
             self.buffer += self.frame("RADIOSIM_FIELD_TX_PACKET", dict(
-                tx_id=tuple(self.mac), seq=self.seq, tx_time_us=int(t * 1e6),
+                tx_id=tuple(self.mac), seq=self.seq, sent_mask=0xFFFFFFFF, unsent_total=0,
                 config_id=self.config_id))
             other.receive(self)
             self.seq += 1
@@ -198,7 +178,8 @@ class Device:
         self.buffer += self.frame("RADIOSIM_FIELD_RX_SAMPLE", dict(
             rx_id=tuple(self.mac), tx_id=tuple(tx.mac), seq=tx.seq,
             rx_time_us=int(self.world.t * 1e6), rssi_raw=raw, noise_floor_raw=-95,
-            config_id=self.config_id, tx_config_id=tx.config_id, sample_seq=n))
+            config_id=self.config_id, tx_config_id=tx.config_id, sample_seq=n,
+            sent_mask=0xFFFFFFFF, unsent_total=0))
 
 
 class World:
@@ -246,11 +227,12 @@ class World:
 
 def _plan(**over) -> dict:
     plan = B.default_plan()
+    plan["fixed_loss_db"] = FIXED_LOSS
     plan["leak"]["duration_s"] = 2
     plan["warmup"].update(chunk_s=2, stable_chunks=2, max_chunks=6, stable_db=0.5)
     plan["coarse"]["duration_s"] = 4
     plan["fine"].update(duration_s=3, below_db=3, above_db=3)
-    plan["power"].update(duration_s=4, dbm=[9, 12, 15, 18])
+    plan["power"].update(duration_s=4, dbm=[1, 5, 9, 13])
     plan["channels"]["duration_s"] = 3
     plan.update(over)
     return plan
@@ -333,7 +315,7 @@ def test_a_refused_command_stops_the_bench(tmp_path, dialect):
     runner.connect()
     world.a.command = lambda line: world.a.text("ERR 知らないコマンドです")   # type: ignore[method-assign]
     with pytest.raises(B.BenchError, match="断りました"):
-        runner.configure("a", role="rx", channel=1, power_dbm=15)
+        runner.configure("a", role="rx", channel=0, power_dbm=13)
 
 
 def test_the_operator_can_stop_at_a_prompt(tmp_path, dialect):
@@ -369,7 +351,9 @@ def test_the_nominal_fit_recovers_the_shape_and_the_pair_difference(full_run):
         assert d["dither"]["pass"]
     # A→B − B→A ＝ (P_A − P_B) ＋ (R_B − R_A)
     expected = (world.a.tx_offset_db - world.b.tx_offset_db) + (world.b.rx_offset - world.a.rx_offset)
-    assert report["pair_difference"]["mean"] == pytest.approx(expected, abs=0.2)
+    # 0 dB の段は飽和して差が縮む＝平均には入る（B-352）ので、飽和していない段で見る。
+    unsaturated = [v for a, v in report["pair_difference"]["per_atten"].items() if int(a) > 0]
+    assert sum(unsaturated) / len(unsaturated) == pytest.approx(expected, abs=0.2)
 
 
 def test_saturated_steps_are_left_out_of_the_fit(full_run):
@@ -394,8 +378,8 @@ def _ref(world: World) -> dict:
     ref["fixed_loss_db"] = FIXED_LOSS
     for dev in (world.a, world.b):
         ref["tx_output"].append({
-            "device_id": R.mac(tuple(dev.mac)), "power_cdbm": 1500, "channel": 1,
-            "dbm": 15 + dev.tx_offset_db, "measured_on": "2026-09-25", "instrument": "PM",
+            "device_id": R.mac(tuple(dev.mac)), "power_cdbm": 1300, "channel": 0,
+            "dbm": 13 + dev.tx_offset_db, "measured_on": "2026-09-25", "instrument": "PM",
         })
     return ref
 
@@ -423,12 +407,12 @@ def test_the_tx_output_table_is_derived_from_the_power_sweep(full_run):
     cals = {c.device_id: c for c in BA.device_calibrations(report)}
     for dev in (world.a, world.b):
         rows = {(t.power_cdbm, t.channel): t for t in cals[R.mac(tuple(dev.mac))].tx_outputs}
-        assert rows[(1500, 1)].source == "meter"
-        for p in (900, 1200, 1800):
-            assert rows[(p, 1)].source == "bench_power_sweep"
-            assert rows[(p, 1)].dbm == pytest.approx(p / 100 + dev.tx_offset_db, abs=0.3)
-        # チャネル 7・13 はパワー計で測っていない＝導かない（TX と RX のどちらの差か分けられない）。
-        assert not any(ch != 1 for _p, ch in rows)
+        assert rows[(1300, 0)].source == "meter"
+        for p in (100, 500, 900):
+            assert rows[(p, 0)].source == "bench_power_sweep"
+            assert rows[(p, 0)].dbm == pytest.approx(p / 100 + dev.tx_offset_db, abs=0.3)
+        # チャネル 6・12 はパワー計で測っていない＝導かない（TX と RX のどちらの差か分けられない）。
+        assert not any(ch != 0 for _p, ch in rows)
 
 
 def test_the_closure_check_compares_a_signal_generator_point(full_run):
@@ -485,7 +469,8 @@ def test_a_step_with_usb_losses_is_kept_out_of_the_rate_curve():
     tx = BA._UnitLog()
     t0 = S.parse_utc(S.format_utc(_BASE))
     for seq in range(10):
-        tx.echoes.append((t0 + timedelta(seconds=0.1 * seq), {"seq": seq, "config_id": 3}))
+        tx.echoes.append((t0 + timedelta(seconds=0.1 * seq), {
+            "seq": seq, "config_id": 3, "sent_mask": 0xFFFFFFFF, "unsent_total": 0}))
     for seq in range(10):
         if seq in (4, 5):
             continue                                        # USB で落ちた（番号は振られていた）
@@ -494,7 +479,7 @@ def test_a_step_with_usb_losses_is_kept_out_of_the_rate_curve():
             "rssi_raw": -60, "noise_floor_raw": -95, "sample_seq": seq}))
     row = {"step": 1, "kind": "level", "label": "x", "tx_unit": "a", "rx_unit": "b",
            "tx_device": "01:02:03:04:05:06", "rx_device": "x", "tx_config_id": 3,
-           "rx_config_id": 7, "power_cdbm": 1500, "channel": 1, "atten_db": 10,
+           "rx_config_id": 7, "power_cdbm": 1300, "channel": 0, "atten_db": 10,
            "start_utc": S.format_utc(_BASE), "end_utc": S.format_utc(_BASE + timedelta(seconds=1))}
     s = BA.step_stats(row, tx, rx)
     assert (s.sent, s.received, s.usb_lost) == (10, 8, 2)
@@ -559,14 +544,14 @@ def test_record_copies_the_calibration_by_unit_id(full_run, tmp_path):
         cals = {R.mac(tuple(d.mac)): C.read_device_calibration(calib_dir, R.mac(tuple(d.mac)))
                 for d in (tx, rx)}
         tx.role, rx.role = "tx", "rx"
-        tx.channel = rx.channel = 1                        # 全ステップの後はチャネル掃引の最後のまま
-        tx.power_qdbm = 48                                 # 12 dBm（電力掃引から導いた行）
+        tx.channel = rx.channel = 0                        # 計画のチャネル（掃引の後は 12 のまま）
+        tx.power_dbm = 9                                   # 9 dBm（電力掃引から導いた行）
         header = REC.build_header(
             _template(world, tx, rx), _config_message(rx), _config_message(tx),
             started_utc=S.format_utc(_BASE), software_commit="abc", dialect=world.dialect,
             calibrations=cals,
         )
-        assert header.tx.calibration.tx_output_dbm == pytest.approx(12 + tx.tx_offset_db, abs=0.3)
+        assert header.tx.calibration.tx_output_dbm == pytest.approx(9 + tx.tx_offset_db, abs=0.3)
         assert "bench_power_sweep" in header.tx.calibration.note
         assert header.rx.calibration.offset_db == pytest.approx(-rx.rx_offset, abs=0.3)
         assert header.rx.calibration.tx_output_dbm is None
@@ -577,10 +562,10 @@ def test_record_refuses_a_setting_that_the_file_does_not_cover(full_run, tmp_pat
     cals = {R.mac(tuple(d.mac)): C.read_device_calibration(calib_dir, R.mac(tuple(d.mac)))
             for d in (world.a, world.b)}
     world.a.role, world.b.role = "tx", "rx"
-    with pytest.raises(S.SessionError, match="チャネル 7 の出力がありません"):
+    with pytest.raises(S.SessionError, match="チャネル 6 の出力がありません"):
         REC.build_header(
-            _template(world, world.a, world.b), _config_message(world.b, channel=7),
-            _config_message(world.a, channel=7, tx_power_cdbm=1500),
+            _template(world, world.a, world.b), _config_message(world.b, channel=6),
+            _config_message(world.a, channel=6, tx_power_cdbm=1300),
             started_utc=S.format_utc(_BASE), software_commit="abc", dialect=world.dialect,
             calibrations=cals,
         )
@@ -652,7 +637,7 @@ def _probe_runner(tmp_path: Path, world: World) -> B.BenchRunner:
 
 
 def _run_probe(runner: B.BenchRunner, said: list[str], **over) -> int:
-    kwargs = dict(seconds=3, power_dbm=15, channel=1, software_commit=_HEAD,
+    kwargs = dict(seconds=3, power_dbm=13, channel=0, software_commit=_HEAD,
                   same_source=lambda _v: pytest.fail("コミットが一致するなら git を見ない"),
                   say=said.append)
     kwargs.update(over)
@@ -749,52 +734,6 @@ def test_a_probe_folder_is_not_analyzed_as_a_bench(tmp_path, dialect):
         BA.analyze(runner.directory)
 
 
-# --- 連続送信 --------------------------------------------------------------------
-
-
-def test_the_continuous_report_is_read_as_the_firmware_writes_it():
-    """ファームの書式（`radio.c` の snprintf）と PC 側の読み方が食い違わないこと。"""
-    radio = (Path(__file__).resolve().parents[1] / "apps" / "field" / "firmware" / "main"
-             / "radio.c").read_text(encoding="utf-8")
-    fmt = re.search(r'"(CONT duty=%\.5f intervals=%lu[^"]*)"\s*"([^"]*)"', radio)
-    assert fmt, "連続送信の報告の書式が見つからない"
-    line = (fmt.group(1) + fmt.group(2)).replace("%.5f", "0.96123").replace("%lld", "5") \
-        .replace("%lu", "7").replace("%u", "12224")
-    parsed = cli.parse_cont_line(line)
-    assert parsed == {"duty": 0.96123, "intervals": 7, "other_rate": 7}
-
-
-def test_the_burst_power_corrects_the_average_reading_by_the_duty():
-    assert cli.burst_dbm(10.0, kind="avg", duty=0.5, pad_db=0.0) == pytest.approx(10 + 3.0103, abs=1e-3)
-    assert cli.burst_dbm(10.0, kind="burst", duty=0.5, pad_db=20.0) == pytest.approx(30.0)
-    with pytest.raises(S.SessionError):
-        cli.burst_dbm(10.0, kind="avg", duty=0.0, pad_db=0.0)
-
-
-def test_the_continuous_mode_uses_the_measurement_transmit_path():
-    """🔑 連続送信は**測定と同じ送信経路**（esp_wifi_80211_tx・同じ電力の設定）で送り、
-    PHY の試験モードを使わないこと（電力の指定の経路が違うと、測った値が測定の出力でない）。
-    RX がサンプルにしない識別子で送り、始める前に設定番号を進めること。"""
-    main_dir = Path(__file__).resolve().parents[1] / "apps" / "field" / "firmware" / "main"
-    radio = re.sub(r"/\*.*?\*/", "", (main_dir / "radio.c").read_text(encoding="utf-8"),
-                   flags=re.DOTALL)
-    body = radio.split("static void run_continuous(uint32_t seconds)", 1)[1].split("\n}\n", 1)[0]
-    assert "esp_wifi_80211_tx(" in body
-    assert "esp_phy" not in radio and "set_max_tx_power" not in body
-    assert "RADIOSIM_FIELD_AIR_CONT_TAG" in body and "RADIOSIM_FIELD_AIR_TAG" not in body
-    assert re.search(r"#define CONT_AIRTIME_US \(192u \+ \(CONT_FRAME_LEN \+ FCS_LEN\) \* 8u\)", radio)
-    main = re.sub(r"/\*.*?\*/", "", (main_dir / "main.c").read_text(encoding="utf-8"),
-                  flags=re.DOTALL)
-    handler = main.split("static bool handle_continuous(", 1)[1].split("\n}\n", 1)[0]
-    assert handler.index("settings_bump_config_id(") < handler.index("radio_continuous((uint32_t)")
-    assert "RADIOSIM_FIELD_ROLE_TX" in handler
-
-
-def test_the_airtime_matches_11b_long_preamble():
-    """1500 バイト＋FCS 4 バイトを 1 Mbps・ロングプリアンブル（192 µs）で送る時間。"""
-    assert 192 + (1500 + 4) * 8 == 12224
-    assert -10 * math.log10(12224 / 12600) == pytest.approx(0.13, abs=0.01)
-
 
 # --- 文字の行 --------------------------------------------------------------------
 
@@ -804,7 +743,7 @@ def test_text_lines_are_picked_out_between_frames_in_any_split(dialect):
     dev = World(dialect).a
     data = (b"OK config_id=3 \xe5\x86\x8d\xe8\xb5\xb7\xe5\x8b\x95\r\n"
             + dev.frame("RADIOSIM_FIELD_CONFIG", dev.config_values())
-            + b"CONT duty=0.97000 intervals=5 airtime_us=12224 span_us=1 other_rate=0\r\n"
+            + "ERR E220 の設定に失敗しました\r\n".encode("utf-8")
             + dev.frame("RADIOSIM_FIELD_CONFIG", dev.config_values()))
     rng = random.Random(3)
     for _ in range(20):
@@ -815,5 +754,5 @@ def test_text_lines_are_picked_out_between_frames_in_any_split(dialect):
             messages += stream.feed(data[a:b])
             lines += stream.take_lines()
         assert len(messages) == 2
-        assert lines[0].startswith("OK config_id=3") and lines[1].startswith("CONT duty=")
+        assert lines[0].startswith("OK config_id=3") and lines[1].startswith("ERR E220")
         assert stream.stats.crc_errors == 0

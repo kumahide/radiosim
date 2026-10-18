@@ -49,7 +49,8 @@ def _radio(**kwargs) -> S.RadioSettings:
         config_id=1,
         firmware_version="0123456789ab",
         channel=6,
-        rate_kbps=1000,
+        air_sf=7,
+        air_bw_khz=500,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
         detector="mean",
@@ -114,6 +115,7 @@ def _t(seq_time: float) -> str:
 def _sample(
     seq: int, rssi_raw: int = -140, slot: int = 0, config_id: int = 1,
     tx_id: str = "aa:bb:cc:dd:ee:01", sample_seq: int = 0, tx_config_id: int = 1,
+    sent_mask: int = 0xFFFFFFFF, unsent_total: int = 0,
 ) -> S.RxSample:
     """`sample_seq` の既定は全部 0＝番号が進まないので、**PC までの間の欠けは数えない**
     （`link_gaps` は番号が進んだところだけを見る）。欠けを試すテストは明示して渡す。"""
@@ -127,6 +129,8 @@ def _sample(
         config_id=config_id,
         tx_config_id=tx_config_id,
         sample_seq=sample_seq,
+        sent_mask=sent_mask,
+        unsent_total=unsent_total,
         spatial_slot=slot,
     )
 
@@ -420,6 +424,81 @@ def test_a_window_lost_entirely_after_reception_is_not_censored():
     assert row["meas_dbm"] == "" and row["note"] == A.LINK_LOST_NOTE
 
 
+# --- TX が送らなかった周期（sent_mask・unsent_total） ---------------------------
+
+
+def _told(seqs, unsent: set[int], total_shift: int = 0) -> list[S.RxSample]:
+    """TX が `unsent` の周期を送らなかった世界で、`seqs` を受けたときのサンプル。
+
+    `sent_mask` と `unsent_total` は TX が本当に載せる値（受けた seq の直前 32 周期・
+    起動からの累計）にする。`total_shift` は最後のサンプルの累計を嘘にするとき（数が合わない
+    場合）だけ。
+    """
+    out = []
+    for i, q in enumerate(seqs):
+        mask = 0
+        for k in range(A.SENT_MASK_BITS):
+            if q - 1 - k < 0 or (q - 1 - k) not in unsent:
+                mask |= 1 << k
+        total = sum(1 for u in unsent if u < q) + (total_shift if i == len(seqs) - 1 else 0)
+        out.append(_sample(q, sent_mask=mask, unsent_total=total))
+    return out
+
+
+def test_the_mask_tells_which_recent_cycles_were_not_sent():
+    """受けた seq の `sent_mask` の 0 のビットが、その手前の送らなかった周期になること。"""
+    assert A.unsent_cycles(_told([100, 103, 104], {101, 102})) == {101, 102}
+
+
+def test_a_long_gap_with_no_unsent_count_is_all_sent():
+    """32 周期を超える空白で累計が動かなければ、空白は全部送った（＝電波で欠けた）。"""
+    assert A.unsent_cycles(_told([100, 200], set())) == set()
+
+
+def test_a_long_gap_whose_count_matches_the_uncovered_cycles_is_all_unsent():
+    """累計の差から mask で分かった分を引いた残りが、mask の覆わない周期の数と等しければ、
+    覆わない周期は全部送らなかった。"""
+    unsent = set(range(101, 168)) | {170, 171}         # 101〜167 は mask の外・170/171 は内
+    assert A.unsent_cycles(_told([100, 200], unsent)) == unsent
+
+
+def test_a_long_gap_with_a_partial_count_is_treated_as_sent():
+    """⚠️ 残りが中途半端なら、どの周期を送らなかったか分からない＝**送った扱い**（分母から
+    消さない＝受信率を高く見せる向きには動かさない）。"""
+    unsent = set(range(101, 131)) | {170}
+    assert A.unsent_cycles(_told([100, 200], unsent)) == {170}
+
+
+def test_a_count_that_does_not_add_up_is_treated_as_sent():
+    """累計の差が覆わない周期の数を超える（数が合わない）ときも決めない。"""
+    assert A.unsent_cycles(_told([100, 200], set(range(101, 168)), total_shift=5)) == set()
+
+
+def test_the_first_sample_is_measured_from_before_boot():
+    """先頭の受信の手前は「起動の手前（seq −1・累計 0）」から測ること。"""
+    assert A.unsent_cycles(_told([50], set(range(0, 18)))) == set(range(0, 18))
+
+
+def test_cycles_after_the_last_reception_are_treated_as_sent():
+    """最後の受信より後は誰も教えてくれない＝送った扱い（集合に入れない）。"""
+    got = A.unsent_cycles(_told([100, 101], {102, 103}))
+    assert got == set()
+
+
+def test_unsent_cycles_leave_the_denominator_so_the_window_is_not_censored():
+    """🔑 103 が「101・102 を送らなかった」と言えば、ウィンドウの分母は 10 − 2 = 8 になり、
+    8/8 受けたので打ち切りにならないこと（送らなかった分を電波の欠けに数えない）。"""
+    seqs = [100] + list(range(103, 110))
+    samples = _told(seqs, {101, 102})
+    assert samples[1].sent_mask == 0xFFFFFFFC
+    events = _events(("place", 99.5, 0), ("stop", 109.5, 0))
+    windows = A.aggregate(_header(), samples, events)
+    assert len(windows) == 1
+    assert windows[0].unsent == 2 and windows[0].received == 8
+    assert windows[0].receive_rate == pytest.approx(1.0)
+    assert not windows[0].censored
+
+
 # --- 本体のバッチ CSV への受け渡し -------------------------------------------
 
 
@@ -471,10 +550,11 @@ def test_the_tx_feeder_loss_is_not_counted_twice():
 
 def test_the_channel_becomes_a_frequency():
     """チャネル番号を本体の `freq`（MHz）へ直すこと。"""
-    assert _rows(_run(range(100, 110)))[0]["freq"] == "2437"      # ch6
-    assert A.CHANNEL_MHZ[1] == 2412 and A.CHANNEL_MHZ[14] == 2484
+    assert _rows(_run(range(100, 110)))[0]["freq"] == "922.0"     # ch6
+    assert A.CHANNEL_MHZ[0] == 920.8 and A.CHANNEL_MHZ[12] == 923.2
+    assert 13 not in A.CHANNEL_MHZ                                 # ファームは 0〜12
 
-    bad = _header(rx=_endpoint("rx", radio=_radio(channel=36)))
+    bad = _header(rx=_endpoint("rx", radio=_radio(channel=13)))
     with pytest.raises(S.SessionError, match="チャネル"):
         A.to_csv_rows(bad, [])
 

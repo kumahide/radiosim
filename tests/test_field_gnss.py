@@ -525,8 +525,8 @@ def _session(root: Path, started: str, stop: str | None) -> Path:
         measured_on="2026-10-01", offset_db=-96.0, scale_db_per_count=0.5,
         reference_unit_id="ref-01", reference_measured_on="2026-09-10")
     radio = S.RadioSettings(
-        config_id=1, firmware_version="5aab362", channel=6, rate_kbps=1000, tx_power_cdbm=1300,
-        tx_interval_ms=250, detector="mean", integration_window_us=1000, integration_samples=10,
+        config_id=1, firmware_version="5aab362", channel=6, air_sf=7, air_bw_khz=500,
+        tx_power_cdbm=1300, tx_interval_ms=250, detector="mean", integration_window_us=1000, integration_samples=10,
         antenna="external", sensitivity_dbm=-98.0)
 
     def endpoint(role: str) -> S.Endpoint:
@@ -578,7 +578,7 @@ def test_attach_adds_the_solutions_within_the_session_to_its_gnss_csv(tmp_path):
         utc="2026-10-16T05:00:12.000000Z", pc_utc=received[3][0], endpoint="rx",
         lat=35.4312407, lon=139.9447071, ellipsoid_h_m=36.793, fix_state="fix", h_acc_m=0.014,
         v_acc_m=0.02, num_sv=31, diff_soln=1, corr_age_code=1, log_id=log.name)
-    assert S.read_header(session).schema_version == 5
+    assert S.read_header(session).schema_version == S.SCHEMA_VERSION
 
     with pytest.raises(G.GnssError, match="既に rx の時系列として足してあります"):
         G.attach_to_session(log, session, "rx")

@@ -40,15 +40,15 @@ def dialect() -> D.Dialect:
 # ワイヤ上の並び＝**基本型のサイズの降順、同サイズは XML の順**。XML の並びを
 # 写したものではないことに注意（RX_SAMPLE は XML では rx_id が先頭）。
 _WIRE_ORDER = {
-    "RADIOSIM_FIELD_TX_PACKET": ("tx_time_us", "seq", "config_id", "tx_id"),
+    "RADIOSIM_FIELD_TX_PACKET": ("seq", "sent_mask", "unsent_total", "config_id", "tx_id"),
     "RADIOSIM_FIELD_RX_SAMPLE": (
-        "rx_time_us", "seq", "sample_seq", "rssi_raw", "noise_floor_raw", "config_id",
-        "tx_config_id", "rx_id", "tx_id",
+        "rx_time_us", "seq", "sample_seq", "sent_mask", "unsent_total", "rssi_raw",
+        "noise_floor_raw", "config_id", "tx_config_id", "rx_id", "tx_id",
     ),
     "RADIOSIM_FIELD_CONFIG": (
-        "integration_window_us", "config_id", "rate_kbps", "tx_power_cdbm",
+        "integration_window_us", "config_id", "air_bw_khz", "tx_power_cdbm",
         "tx_interval_ms", "integration_samples", "role", "device_id",
-        "firmware_version", "channel", "detector", "antenna",
+        "firmware_version", "channel", "air_sf", "detector", "antenna",
     ),
 }
 
@@ -56,23 +56,25 @@ _WIRE_ORDER = {
 # 要素数の 1 バイト。**ここも手で書き下す**（製品側の並べ替えを借りない）。
 _CRC_SPEC = {
     "RADIOSIM_FIELD_TX_PACKET": [
-        ("uint64_t", "tx_time_us", 0), ("uint32_t", "seq", 0),
+        ("uint32_t", "seq", 0), ("uint32_t", "sent_mask", 0),
+        ("uint32_t", "unsent_total", 0),
         ("uint16_t", "config_id", 0), ("uint8_t", "tx_id", 6),
     ],
     "RADIOSIM_FIELD_RX_SAMPLE": [
         ("uint64_t", "rx_time_us", 0), ("uint32_t", "seq", 0),
-        ("uint32_t", "sample_seq", 0),
+        ("uint32_t", "sample_seq", 0), ("uint32_t", "sent_mask", 0),
+        ("uint32_t", "unsent_total", 0),
         ("int16_t", "rssi_raw", 0), ("int16_t", "noise_floor_raw", 0),
         ("uint16_t", "config_id", 0), ("uint16_t", "tx_config_id", 0),
         ("uint8_t", "rx_id", 6), ("uint8_t", "tx_id", 6),
     ],
     "RADIOSIM_FIELD_CONFIG": [
         ("uint32_t", "integration_window_us", 0), ("uint16_t", "config_id", 0),
-        ("uint16_t", "rate_kbps", 0), ("int16_t", "tx_power_cdbm", 0),
+        ("uint16_t", "air_bw_khz", 0), ("int16_t", "tx_power_cdbm", 0),
         ("uint16_t", "tx_interval_ms", 0), ("uint16_t", "integration_samples", 0),
         ("uint8_t", "role", 0), ("uint8_t", "device_id", 6),
         ("char", "firmware_version", 16), ("uint8_t", "channel", 0),
-        ("uint8_t", "detector", 0), ("uint8_t", "antenna", 0),
+        ("uint8_t", "air_sf", 0), ("uint8_t", "detector", 0), ("uint8_t", "antenna", 0),
     ],
 }
 
@@ -120,13 +122,15 @@ def _rx_payload(
     config_id: int = 1,
     tx_config_id: int = 2,
     sample_seq: int = 9,
+    sent_mask: int = 0xFFFFFFFF,
+    unsent_total: int = 0,
     rx_id: bytes = b"\xaa\xbb\xcc\xdd\xee\x02",
     tx_id: bytes = b"\xaa\xbb\xcc\xdd\xee\x01",
 ) -> bytes:
     return (
         struct.pack(
-            "<QIIhhHH", rx_time_us, seq, sample_seq, rssi_raw, noise_floor_raw,
-            config_id, tx_config_id,
+            "<QIIIIhhHH", rx_time_us, seq, sample_seq, sent_mask, unsent_total,
+            rssi_raw, noise_floor_raw, config_id, tx_config_id,
         )
         + rx_id
         + tx_id
@@ -137,7 +141,7 @@ def _config_payload(
     *,
     integration_window_us: int = 1000,
     config_id: int = 1,
-    rate_kbps: int = 1000,
+    air_bw_khz: int = 500,
     tx_power_cdbm: int = 1300,
     tx_interval_ms: int = 100,
     integration_samples: int = 10,
@@ -145,19 +149,20 @@ def _config_payload(
     device_id: bytes = b"\xaa\xbb\xcc\xdd\xee\x02",
     firmware_version: bytes = b"5aab362",
     channel: int = 6,
+    air_sf: int = 7,
     detector: int = 2,
     antenna: int = 2,
 ) -> bytes:
     return (
         struct.pack(
             "<IHHhHH",
-            integration_window_us, config_id, rate_kbps, tx_power_cdbm,
+            integration_window_us, config_id, air_bw_khz, tx_power_cdbm,
             tx_interval_ms, integration_samples,
         )
         + bytes([role])
         + device_id
         + firmware_version.ljust(16, b"\x00")
-        + bytes([channel, detector, antenna])
+        + bytes([channel, air_sf, detector, antenna])
     )
 
 
@@ -194,7 +199,8 @@ def test_the_wire_order_really_differs_from_the_xml_order(dialect):
     並べ替えを丸ごと消しても緑のままになる。
     """
     xml_order = ("rx_id", "tx_id", "seq", "rx_time_us", "rssi_raw",
-                 "noise_floor_raw", "config_id", "tx_config_id", "sample_seq")
+                 "noise_floor_raw", "config_id", "tx_config_id", "sample_seq",
+                 "sent_mask", "unsent_total")
     assert _WIRE_ORDER["RADIOSIM_FIELD_RX_SAMPLE"] != xml_order
 
 
@@ -205,9 +211,9 @@ def test_the_crc_extra_is_built_from_the_definition(dialect, name):
 
 
 def test_the_payload_size_matches_the_fields(dialect):
-    assert dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"].payload_size == 36
+    assert dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"].payload_size == 44
     assert dialect.messages_by_name["RADIOSIM_FIELD_TX_PACKET"].payload_size == 20
-    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 40
+    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 41
 
 
 # ============================================================
@@ -327,13 +333,15 @@ def test_the_frame_sequence_is_not_the_payload_sequence(dialect):
 
 def test_the_pc_adds_only_the_time_and_the_spatial_slot(dialect):
     """生値には触らない／置き場所は PC 側が付ける（ファームは知らない）。"""
-    message = R.read_log(_rx_frame(dialect))[0][0]
+    message = R.read_log(_rx_frame(dialect, sent_mask=0xFFFFFFFE, unsent_total=3))[0][0]
     sample = R.to_rx_sample(message, pc_utc="2026-09-19T01:00:00Z", spatial_slot=3)
     assert sample.rssi_raw == -71                    # 換算しない
     assert sample.noise_floor_raw == -95
     assert sample.spatial_slot == 3
     assert sample.tx_config_id == 2                  # TX の設定番号（RX のものではない）
     assert sample.sample_seq == 9                    # ファームが振った通し番号
+    assert sample.sent_mask == 0xFFFFFFFE            # TX の送った記録の写し（I-165）
+    assert sample.unsent_total == 3
     assert sample.tx_id == "aa:bb:cc:dd:ee:01"
     assert sample.pc_utc == "2026-09-19T01:00:00Z"
 
@@ -356,6 +364,7 @@ def test_the_config_message_becomes_radio_settings(dialect):
     assert radio.config_id == 1
     assert radio.firmware_version == "5aab362"       # 詰め物の NUL を落とす
     assert radio.channel == 6
+    assert (radio.air_sf, radio.air_bw_khz) == (7, 500)
     assert radio.tx_power_cdbm == 1300
     assert radio.integration_samples == 10           # 時間平均（空間平均とは別）
     assert radio.detector == "mean"                  # enum の語彙は XML から
@@ -437,7 +446,7 @@ def _header() -> S.SessionHeader:
         reference_unit_id="ref-01", reference_measured_on="2026-09-10",
     )
     radio = S.RadioSettings(
-        config_id=1, firmware_version="5aab362", channel=6, rate_kbps=1000,
+        config_id=1, firmware_version="5aab362", channel=6, air_sf=7, air_bw_khz=500,
         tx_power_cdbm=1300, tx_interval_ms=100, detector="mean",
         integration_window_us=1000, integration_samples=10, antenna="external",
         sensitivity_dbm=-98.0,

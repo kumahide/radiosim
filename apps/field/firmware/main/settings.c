@@ -4,9 +4,9 @@
  * コマンド（USB へ 1 行ずつ・改行で終わる）:
  *   show              … 設定をすぐ送る（RADIOSIM_FIELD_CONFIG）
  *   role tx|rx        … 役割
- *   channel N         … 2.4 GHz のチャネル（1〜13）
- *   interval MS       … 送信間隔（20〜10000 ms）
- *   power DBM         … 送信電力（2〜20 dBm・0.25 dB 刻み）
+ *   channel N         … 920 MHz 帯のチャネル（0〜12＝920.8＋0.2·N MHz）
+ *   interval MS       … 送信間隔（250〜10000 ms）
+ *   power DBM         … 送信電力（0〜13 dBm の整数）
  * 変えたら保存して再起動する（途中で条件を変えたまま送り続けない）。
  */
 #include "settings.h"
@@ -16,15 +16,17 @@
 #include <string.h>
 
 #include "nvs.h"
+#include "e220.h"
 #include "radiosim_field_mavlink.h"
 
-#define NS "field"
+/* 2.4 GHz の頃の値（"field"）は読まない＝チャネル・電力の意味が違う。 */
+#define NS "field920"
 
 static const radiosim_field_settings_t DEFAULTS = {
     .role = RADIOSIM_FIELD_ROLE_RX,
-    .channel = 1,
-    .tx_interval_ms = 100,      /* §6.1-7D：量子化平均 N≥10 が約 1 秒で集まる */
-    .tx_power_qdbm = 60,        /* 15 dBm */
+    .channel = 0,
+    .tx_interval_ms = 250,      /* SF7/BW500 の 32 B（約 23 ms）でデューティ約 9% */
+    .tx_power_dbm = E220_POWER_MAX_DBM,
     .config_id = 1,
 };
 
@@ -35,7 +37,7 @@ static void save(const radiosim_field_settings_t *s)
     ESP_ERROR_CHECK(nvs_set_u8(h, "role", s->role));
     ESP_ERROR_CHECK(nvs_set_u8(h, "channel", s->channel));
     ESP_ERROR_CHECK(nvs_set_u16(h, "interval", s->tx_interval_ms));
-    ESP_ERROR_CHECK(nvs_set_i8(h, "power", s->tx_power_qdbm));
+    ESP_ERROR_CHECK(nvs_set_i8(h, "power", s->tx_power_dbm));
     ESP_ERROR_CHECK(nvs_set_u16(h, "config_id", s->config_id));
     ESP_ERROR_CHECK(nvs_commit(h));
     nvs_close(h);
@@ -52,7 +54,7 @@ void settings_load(radiosim_field_settings_t *out)
     bool ok = nvs_get_u8(h, "role", &out->role) == ESP_OK
            && nvs_get_u8(h, "channel", &out->channel) == ESP_OK
            && nvs_get_u16(h, "interval", &out->tx_interval_ms) == ESP_OK
-           && nvs_get_i8(h, "power", &out->tx_power_qdbm) == ESP_OK
+           && nvs_get_i8(h, "power", &out->tx_power_dbm) == ESP_OK
            && nvs_get_u16(h, "config_id", &out->config_id) == ESP_OK;
     nvs_close(h);
     if (!ok) {
@@ -63,12 +65,6 @@ void settings_load(radiosim_field_settings_t *out)
         out->config_id = (uint16_t)(seen + 1);
         save(out);
     }
-}
-
-void settings_bump_config_id(radiosim_field_settings_t *current)
-{
-    current->config_id = (uint16_t)(current->config_id + 1);
-    save(current);
 }
 
 static bool parse_long(const char *text, long lo, long hi, long *out)
@@ -103,33 +99,30 @@ bool settings_apply_command(const char *line, radiosim_field_settings_t *current
             return false;
         }
     } else if (strcmp(cmd, "channel") == 0 && n == 2) {
-        if (!parse_long(arg, 1, 13, &v)) {
-            snprintf(reply, (size_t)reply_len, "ERR channel は 1〜13 です");
+        if (!parse_long(arg, 0, E220_CHANNEL_MAX, &v)) {
+            snprintf(reply, (size_t)reply_len, "ERR channel は 0〜12 です");
             return false;
         }
         next.channel = (uint8_t)v;
     } else if (strcmp(cmd, "interval") == 0 && n == 2) {
-        if (!parse_long(arg, 20, 10000, &v)) {
-            snprintf(reply, (size_t)reply_len, "ERR interval は 20〜10000 ms です");
+        if (!parse_long(arg, 250, 10000, &v)) {
+            snprintf(reply, (size_t)reply_len, "ERR interval は 250〜10000 ms です");
             return false;
         }
         next.tx_interval_ms = (uint16_t)v;
     } else if (strcmp(cmd, "power") == 0 && n == 2) {
-        char *end;
-        double dbm = strtod(arg, &end);
-        double q = dbm * 4.0;
-        if (end == arg || *end != '\0' || dbm < 2.0 || dbm > 20.0 || q != (double)(long)q) {
-            snprintf(reply, (size_t)reply_len, "ERR power は 2〜20 dBm・0.25 刻みです");
+        if (!parse_long(arg, 0, E220_POWER_MAX_DBM, &v)) {
+            snprintf(reply, (size_t)reply_len, "ERR power は 0〜13 dBm の整数です");
             return false;
         }
-        next.tx_power_qdbm = (int8_t)(long)q;
+        next.tx_power_dbm = (int8_t)v;
     } else {
         snprintf(reply, (size_t)reply_len, "ERR 知らないコマンドです: %s", cmd);
         return false;
     }
     if (next.role == current->role && next.channel == current->channel
         && next.tx_interval_ms == current->tx_interval_ms
-        && next.tx_power_qdbm == current->tx_power_qdbm) {
+        && next.tx_power_dbm == current->tx_power_dbm) {
         snprintf(reply, (size_t)reply_len, "OK 変わっていません");
         return false;
     }
