@@ -9,6 +9,8 @@
     setup … RTKLIB-EX 2.5.1（`convbin`・`rnx2rtkp`）・セミ・ダイナミック補正のパラメータ・
             NGS の ANTEX を置き場へ落とす（既にあれば何もしない）。
     rinex … `gnss log` の生ログ（`gnss.ubx`）を RINEX 3.04 の観測と航法へ変える。
+            `--rtcm` なら同じ記録の `ntrip.rtcm`（NTRIP の局の MSM）を局の観測へ変える
+            ＝局の申告座標（`ntrip.json` の 1005）を電子基準点で当て直す材料（航法は生ログ側を使う）。
     solve … 観測地の設定（`site.json`）に従い、基準局の成果で基線解析して成果と比べる。
     semidyna … 1 点の元期→今期の補正量を出す（確かめ用）。
 
@@ -43,6 +45,8 @@
     経路は site.json からの相対でよい。緯度経度は 10 進か「度 分 秒」（記号 ° ′ ″ も可）。
     基準局の `h` は楕円体高（元期）。比べる点は楕円体高 `h` か、標高 `H` とジオイド高 `geoid` の組。
     `rover.arp_height`＝標石の上面からアンテナの ARP（台座の底）まで（m）。
+    `rover.antenna` が null＝型が分からない（NTRIP の局）＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）。
+    `ref.epoch`＝比べる座標の元期／今期（既定 "元期"＝成果）。"不明"（局の申告など）なら両方で比べる。
 
 実行（製品の venv で）:
     python experiments/field_ppk.py setup
@@ -226,6 +230,8 @@ def antenna_of(header):
 
 
 def cmd_rinex(args):
+    if args.rtcm:
+        return rinex_from_rtcm(args)
     src = Path(args.gnss_dir).resolve() / "gnss.ubx"
     if not src.exists():
         sys.exit(f"{src} がありません")
@@ -243,6 +249,33 @@ def cmd_rinex(args):
     if anttype != args.antenna.rstrip():
         sys.exit(f"ヘッダのアンテナの型名が {anttype!r}（ANT # は {serial!r}）＝`-ha` の渡し方を確かめる")
     print(f"→ {obs}\n→ {nav}\n  ANT TYPE {anttype!r}・DELTA H {dh}")
+
+
+def rinex_from_rtcm(args):
+    """`ntrip.rtcm` → 局の観測。MSM は週の中の時刻しか持たない＝`ntrip.json` の始まりを `-tr` に渡す。
+    局のアンテナの型（1033）は geoRTK の局が送らない＝ヘッダは空のまま（solve で null にする）。"""
+    gdir = Path(args.gnss_dir).resolve()
+    src, meta_path = gdir / "ntrip.rtcm", gdir / "ntrip.json"
+    for p in (src, meta_path):
+        if not p.exists():
+            sys.exit(f"{p} がありません")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    t0 = meta["started_utc"][:19].replace("-", "/").replace("T", " ")
+    out = Path(args.out).resolve()
+    out.mkdir(parents=True, exist_ok=True)
+    name = args.name if args.name != "rover" else meta["mountpoint"]
+    obs = out / f"{name}.obs"
+    run(tool(args.home, "convbin.exe"), [
+        "-r", "rtcm3", "-tr", t0, "-v", "3.04", "-f", "6", "-od", "-os",
+        "-hm", meta["mountpoint"], "-o", obs, src,
+    ])
+    h = rinex_header(obs)
+    first = h.get("TIME OF FIRST OBS", ["?"])[0].split()[:6]
+    last = h.get("TIME OF LAST OBS", ["?"])[0].split()[:6]
+    print(f"→ {obs}（{' '.join(first)} 〜 {' '.join(last)} GPS 時刻）")
+    for st in meta.get("stations", []):
+        print(f"  局の申告（{st['message']}・ITRF {st['itrf_year']}）{st['lat']:.9f}, {st['lon']:.9f}, "
+              f"楕円体高 {st['ellipsoid_h_m']:.4f}・アンテナ高 {st['antenna_height_m']}")
 
 
 # ---------------------------------------------------------------- 角度と座標
@@ -400,7 +433,11 @@ def cmd_solve(args):
     rover_obs = local_file(sdir, rover["obs"], out)
     nav = local_file(sdir, rover["nav"], out)
     base_obs = local_file(sdir, base["obs"], out)
-    rover_ant = pick_antenna(rover["antenna"], known, "移動局")
+    if rover.get("antenna"):
+        rover_ant = pick_antenna(rover["antenna"], known, "移動局")
+    else:
+        rover_ant = ""
+        print("  ⚠️ 移動局のアンテナの型が分からない＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）")
     _, base_type, base_dh, base_de, base_dn = antenna_of(rinex_header(base_obs))
     base_ant = pick_antenna(base_type, known, "基準局")
 
@@ -410,7 +447,7 @@ def cmd_solve(args):
     conf.write_text(CONF + "\n".join([
         "# ② 型名を書くとヘッダの DELTA H は使われない＝高さも直に書く",
         f"ant1-anttype       ={rover_ant}",
-        f"ant1-antdelu       ={float(rover['arp_height'])}",
+        f"ant1-antdelu       ={float(rover.get('arp_height') or 0.0)}",
         f"ant2-anttype       ={base_ant}",
         f"ant2-antdele       ={base_de}",
         f"ant2-antdeln       ={base_dn}",
@@ -432,12 +469,13 @@ def cmd_solve(args):
     nfix = sum(r["q"] == 1 for r in rows)
     last = rows[-1]
     print(f"基線解析: {len(rows)} 回・Fix {nfix}・最後の回 {last['t']} Q={last['q']} ratio {last['ratio']}")
-    sol = (last["lat"], last["lon"], last["h"])
-    dist = math.hypot(*neu(sol, base_pos)[:2]) / 1000
+    konki = (last["lat"], last["lon"], last["h"])
+    dist = math.hypot(*neu(konki, base_pos)[:2]) / 1000
     print(f"  基線 {dist:.3f} km・解（{'元期' if table is None else '今期'}）"
-          f"{sol[0]:.9f}, {sol[1]:.9f}, 楕円体高 {sol[2]:.4f}")
+          f"{konki[0]:.9f}, {konki[1]:.9f}, 楕円体高 {konki[2]:.4f}")
+    sol = konki
     if table is not None:
-        sol = to_genki(table, sol)
+        sol = to_genki(table, konki)
         print(f"  元期へ戻した解 {sol[0]:.9f}, {sol[1]:.9f}, 楕円体高 {sol[2]:.4f}")
     if ref:
         if "h" in ref:
@@ -445,11 +483,20 @@ def cmd_solve(args):
         else:
             ref_h = float(ref["H"]) + float(ref["geoid"])
         ref_llh = (parse_angle(ref["lat"]), parse_angle(ref["lon"]), ref_h)
-        dn, de, du = neu(sol, ref_llh)
-        msg = f"成果「{ref.get('name', '')}」との差: 北 {dn:+.3f}・東 {de:+.3f}・上 {du:+.3f} m（水平 {math.hypot(dn, de):.3f} m）"
-        if "geoid" in ref:
-            msg += f"・標高 {sol[2] - float(ref['geoid']):.3f}（成果 {float(ref['H']):.3f}）"
-        print(msg)
+        epoch = ref.get("epoch", "元期")
+        if epoch not in ("元期", "今期", "不明"):
+            sys.exit(f"ref.epoch は 元期・今期・不明 のどれか: {epoch!r}")
+        sides = [("元期", sol)] if epoch == "元期" else [("今期", konki)] if epoch == "今期" \
+            else [("元期と見なすと", sol), ("今期と見なすと", konki)]
+        if table is None and epoch != "元期":
+            sides = [("補正なしの解と", sol)]
+        for label, s in sides:
+            dn, de, du = neu(s, ref_llh)
+            msg = (f"「{ref.get('name', '')}」（{label}）との差: 北 {dn:+.3f}・東 {de:+.3f}・上 {du:+.3f} m"
+                   f"（水平 {math.hypot(dn, de):.3f} m）")
+            if "geoid" in ref:
+                msg += f"・標高 {s[2] - float(ref['geoid']):.3f}（成果 {float(ref['H']):.3f}）"
+            print(msg)
 
 
 # ---------------------------------------------------------------- 入口
@@ -468,6 +515,7 @@ def main():
     p.add_argument("--marker", default="FIELD")
     p.add_argument("--antenna", default="JCA228F0001     NONE")
     p.add_argument("--arp-height", type=float, default=0.0, help="ヘッダの DELTA H（solve は site.json の値を使う）")
+    p.add_argument("--rtcm", action="store_true", help="ntrip.rtcm（NTRIP の局の観測）を RINEX にする")
 
     p = sub.add_parser("solve")
     p.add_argument("site")
