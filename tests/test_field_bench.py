@@ -98,7 +98,7 @@ class Device:
         return dict(
             config_id=self.config_id, role=0 if self.role == "tx" else 1,
             device_id=tuple(self.mac), firmware_version="afd69ae7db", channel=self.channel,
-            air_sf=7, air_bw_khz=500, tx_power_cdbm=self.power_dbm * 100, tx_interval_ms=100,
+            band=920, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=self.power_dbm * 100, tx_interval_ms=100,
             detector=1, integration_window_us=0, integration_samples=1, antenna=2,
         )
 

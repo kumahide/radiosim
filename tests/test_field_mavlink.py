@@ -46,8 +46,8 @@ _WIRE_ORDER = {
         "noise_floor_raw", "config_id", "tx_config_id", "rx_id", "tx_id",
     ),
     "RADIOSIM_FIELD_CONFIG": (
-        "integration_window_us", "config_id", "air_bw_khz", "tx_power_cdbm",
-        "tx_interval_ms", "integration_samples", "role", "device_id",
+        "integration_window_us", "config_id", "band", "air_bw_khz", "rate_kbps",
+        "tx_power_cdbm", "tx_interval_ms", "integration_samples", "role", "device_id",
         "firmware_version", "channel", "air_sf", "detector", "antenna",
     ),
 }
@@ -70,7 +70,8 @@ _CRC_SPEC = {
     ],
     "RADIOSIM_FIELD_CONFIG": [
         ("uint32_t", "integration_window_us", 0), ("uint16_t", "config_id", 0),
-        ("uint16_t", "air_bw_khz", 0), ("int16_t", "tx_power_cdbm", 0),
+        ("uint16_t", "band", 0), ("uint16_t", "air_bw_khz", 0),
+        ("uint16_t", "rate_kbps", 0), ("int16_t", "tx_power_cdbm", 0),
         ("uint16_t", "tx_interval_ms", 0), ("uint16_t", "integration_samples", 0),
         ("uint8_t", "role", 0), ("uint8_t", "device_id", 6),
         ("char", "firmware_version", 16), ("uint8_t", "channel", 0),
@@ -141,7 +142,9 @@ def _config_payload(
     *,
     integration_window_us: int = 1000,
     config_id: int = 1,
+    band: int = 920,
     air_bw_khz: int = 500,
+    rate_kbps: int = 0,
     tx_power_cdbm: int = 1300,
     tx_interval_ms: int = 100,
     integration_samples: int = 10,
@@ -155,8 +158,8 @@ def _config_payload(
 ) -> bytes:
     return (
         struct.pack(
-            "<IHHhHH",
-            integration_window_us, config_id, air_bw_khz, tx_power_cdbm,
+            "<IHHHHhHH",
+            integration_window_us, config_id, band, air_bw_khz, rate_kbps, tx_power_cdbm,
             tx_interval_ms, integration_samples,
         )
         + bytes([role])
@@ -213,7 +216,7 @@ def test_the_crc_extra_is_built_from_the_definition(dialect, name):
 def test_the_payload_size_matches_the_fields(dialect):
     assert dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"].payload_size == 44
     assert dialect.messages_by_name["RADIOSIM_FIELD_TX_PACKET"].payload_size == 20
-    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 41
+    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 45
 
 
 # ============================================================

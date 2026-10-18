@@ -1,5 +1,6 @@
 /*
- * radio.c — 空中のパケット（§6.1-7C・§6.6-③）＝E220-900T22S(JP)・920 MHz（下回りは e220.c）。
+ * radio_e220.c — 空中のパケット（§6.1-7C・§6.6-③）＝E220-900T22S(JP)・920 MHz（下回りは e220.c・
+ * 2.4 GHz は radio_wifi.c）。
  *
  * 空中の形＝E220 の透過送信の中身に、RADIOSIM_FIELD_TX_PACKET の MAVLink v2 フレームを
  * そのまま入れる（入れ物の頭は付けない）⇒ 空中の形も XML が単一の出所で、受け側は CRC で
@@ -20,8 +21,8 @@
  * RX は空中の枠ごとに 0xA0 から 5 バイト（0xA0〜0xA4）を読み、0xA3（環境ノイズ）を
  * noise_floor_raw にする（読めない回は最後に読めた値）。受信の時刻は AUX の立ち下がり。
  *
- * 連続送信（cont）は無い＝AUX の Low は空中の時間と同じでないので、デューティを測れない
- * （測り方は I-242）。
+ * 連続送信（cont）は 920 MHz には無い（2.4 GHz だけ＝radio_wifi.c）＝AUX の Low は空中の
+ * 時間と同じでないので、デューティを測れない（測り方は I-242）。
  */
 #include "radio.h"
 
@@ -129,7 +130,7 @@ static void tx_task(void *arg)
     uint8_t air_link_seq = 0;
     int64_t last_config = -AIR_CONFIG_EVERY_US;
     TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(s_settings.tx_interval_ms);
+    const TickType_t period = pdMS_TO_TICKS(s_settings.b920.tx_interval_ms);
     for (;;) {
         xTaskDelayUntil(&last, period);
         bool ready = ready_to_send();
@@ -265,7 +266,8 @@ static void rx_task(void *arg)
 
 /* --- 起動 ------------------------------------------------------------------- */
 
-void radio_run(const radiosim_field_settings_t *s, const uint8_t mac[6], const radiosim_field_config_t *config)
+void radio_e220_run(const radiosim_field_settings_t *s, const uint8_t mac[6],
+                    const radiosim_field_config_t *config)
 {
     s_settings = *s;
     memcpy(s_mac, mac, 6);

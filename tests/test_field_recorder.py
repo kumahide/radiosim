@@ -78,7 +78,7 @@ def _config_frame(
     device: bytes = RX_MAC, interval_ms: int = 100,
 ) -> bytes:
     payload = (
-        struct.pack("<IHHhHH", 1000, config_id, 500, 1300, interval_ms, 10)
+        struct.pack("<IHHHHhHH", 1000, config_id, 920, 500, 0, 1300, interval_ms, 10)
         + bytes([role])
         + device
         + b"5aab362".ljust(16, b"\x00")

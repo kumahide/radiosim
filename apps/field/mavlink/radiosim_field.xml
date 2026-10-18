@@ -39,6 +39,19 @@
       </entry>
     </enum>
 
+    <enum name="RADIOSIM_FIELD_BAND">
+      <description>
+        測る帯域。ファームは起動時に片方だけ起こす（2 帯域は同時に動かさない＝正典 §4）。
+        値は帯域の MHz の目安＝読んで分かる番号にした。
+      </description>
+      <entry value="920" name="RADIOSIM_FIELD_BAND_920">
+        <description>E220-900T22S(JP)・920 MHz 帯（LoRa）。</description>
+      </entry>
+      <entry value="2400" name="RADIOSIM_FIELD_BAND_2400">
+        <description>ESP32-C6 内蔵の Wi-Fi・2.4 GHz 帯（11b・1 Mbps の生フレーム）。</description>
+      </entry>
+    </enum>
+
     <enum name="RADIOSIM_FIELD_DETECTOR">
       <description>
         受信レベルの取り方。速いフェージングを拾ったのか局所平均なのかを後から
@@ -85,7 +98,8 @@
       </field>
       <field type="uint32_t" name="sent_mask">
         直前 32 周期を実際に送ったか（第 k ビット＝周期 seq−1−k を送った）。キャリアセンスに
-        阻まれた周期・前の送信が終わらず飛ばした周期は 0。**「送らなかった」を「受からなかった」と
+        阻まれた周期・前の送信が終わらず飛ばした周期（920 MHz 帯）・送信関数が失敗した周期
+        （2.4 GHz 帯）は 0。**「送らなかった」を「受からなかった」と
         数えないため**に要る（I-165）。結果は次の周期の頭で読むので、この周期自身は含まない。
       </field>
       <field type="uint32_t" name="unsent_total">
@@ -135,11 +149,13 @@
         設定。起動時・変更時に加えて UART へ 1 秒ごとに再送し、サンプルからは設定番号で引く。
         再送するのは、PC 側が最初に届いた RX の設定でセッションを作るため（「起動時だけ」
         だと、RX が先に起動していたら記録が始まらない）。同じ設定の再送は PC 側が読み飛ばす。
-        **TX は同じものを 10 秒ごと（TX_PACKET の周期を借りる＝250 ms 間隔なら 2 周期が送らなかった周期として sent_mask に出る）に空中へも送り、RX はそれを UART へそのまま中継する**
+        **TX は同じものを空中へも送り、RX はそれを UART へそのまま中継する**＝920 MHz 帯は 10 秒ごと
+        （TX_PACKET の周期を借りる＝250 ms 間隔なら 2 周期が送らなかった周期として sent_mask に出る）・
+        2.4 GHz 帯は 1 秒ごと（周期を借りない別の枠）
         （role が tx のもの）＝TX の UART は遠くにあって PC に届かないので、TX の実際の
         設定（送信間隔・電力・チャネル）を PC が知る唯一の道。雛形に書いた値と実機が
         食い違うと、ウィンドウの期待パケット数や送信電力が黙って別の値になる。
-        空中は 10 秒ごと＝1 秒ごとだとデューティが 10% を超える。PC の記録の開始は最長 10 秒待つ。
+        920 MHz 帯の空中は 10 秒ごと＝1 秒ごとだとデューティが 10% を超える。PC の記録の開始は最長 10 秒待つ。
         ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
       </description>
       <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
@@ -148,16 +164,27 @@
       <field type="char[16]" name="firmware_version">
         ファームの版（git のコミット）。刻印に入る＝データを後から救うために要る。
       </field>
-      <field type="uint8_t" name="channel">
-        920 MHz 帯のチャネル（0〜6＝920.8＋0.2·CH MHz・BW500 の番号）。現場で空いているものを選ぶ。
+      <field type="uint16_t" name="band" enum="RADIOSIM_FIELD_BAND">
+        測った帯域。チャネル・電力・間隔の意味と値域は帯域で違う（下の欄）。
       </field>
-      <field type="uint8_t" name="air_sf">空中の拡散率（SF）。ファームの定数。</field>
-      <field type="uint16_t" name="air_bw_khz" units="kHz">空中の帯域幅。ファームの定数。</field>
+      <field type="uint8_t" name="channel">
+        チャネル。920 MHz 帯は 0〜6（920.8＋0.2·CH MHz・BW500 の番号）・2.4 GHz 帯は 1〜13
+        （2412＋5·(CH−1) MHz）。現場で空いているものを選ぶ。
+      </field>
+      <field type="uint8_t" name="air_sf">空中の拡散率（SF）。ファームの定数。920 MHz 帯だけ（2.4 GHz 帯は 0）。</field>
+      <field type="uint16_t" name="air_bw_khz" units="kHz">空中の帯域幅。ファームの定数。920 MHz 帯だけ（2.4 GHz 帯は 0）。</field>
+      <field type="uint16_t" name="rate_kbps" units="kbit/s">
+        空中のレート。2.4 GHz 帯だけ（920 MHz 帯は 0）。1 Mbps に固定し、ドライバが実際に使った
+        レートを送信完了の通知で確かめた値を載せる（B-257）＝途中で変わったら TX がこの欄を直してすぐ送る。
+      </field>
       <field type="int16_t" name="tx_power_cdbm" units="cdBm">
         設定した送信電力（0.01 dBm 単位）。自動出力制御が動くと RSSI からパスロスを
-        引けなくなるため、固定した値を記録する。
+        引けなくなるため、固定した値を記録する。920 MHz 帯は 0〜13 dBm の整数（E220 で読み直した値）・
+        2.4 GHz 帯は 2〜20 dBm（ドライバが 0.25 dB 刻みに丸めて読み戻した値）。
       </field>
-      <field type="uint16_t" name="tx_interval_ms" units="ms">送信間隔（250〜10000 ms・既定 250 ms）。</field>
+      <field type="uint16_t" name="tx_interval_ms" units="ms">
+        送信間隔。920 MHz 帯は 250〜10000 ms（既定 250 ms）・2.4 GHz 帯は 20〜10000 ms（既定 100 ms）。
+      </field>
       <field type="uint8_t" name="detector" enum="RADIOSIM_FIELD_DETECTOR">検波方式。</field>
       <field type="uint32_t" name="integration_window_us" units="us">
         積分ウィンドウの長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが

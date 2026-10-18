@@ -129,7 +129,7 @@ def test_the_firmware_checks_itself_before_it_sends_anything():
     """自己検査より前に無線や設定の送信を始めない（食い違ったフレームを 1 つも出さない）。"""
     body = _main_c().split("void app_main(void)", 1)[1]
     selftest = body.index("radiosim_field_selftest()")
-    for later in ("e220_configure(", "link_send_config("):
+    for later in ("e220_init(", "prepare_920(", "prepare_2400(", "link_send_config("):
         assert selftest < body.index(later), f"{later} が自己検査より前にある"
 
 
@@ -180,24 +180,70 @@ def _code(name: str) -> str:
     return re.sub(r"/\*.*?\*/", "", text, flags=re.DOTALL)
 
 
+def _function(code: str, signature: str) -> str:
+    """signature から最初の行頭の `}` までの本体。"""
+    return code.split(signature, 1)[1].split("\n}\n", 1)[0]
+
+
 def test_the_firmware_verifies_the_e220_before_it_measures():
     """B-257 と同じ形。E220 の設定（SF・BW・チャネル・電力）を書いて読み返し、照らし
     合わせてから測定を始める（食い違えば止まる）。刻印の SF・BW は確かめた値の定数から
     取る（数字を別に書くと食い違える）。"""
-    body = _code("main.c").split("void app_main(void)", 1)[1]
-    configure = body.index("e220_configure(")
-    assert body.index("radiosim_field_selftest()") < configure < body.index("radio_run(")
-    assert configure < body.index("link_send_config(")
     main = _code("main.c")
-    assert re.search(r"\.air_sf = E220_AIR_SF,", main)
-    assert re.search(r"\.air_bw_khz = E220_AIR_BW_KHZ,", main)
+    prepare = _function(main, "static int16_t prepare_920(")
+    assert prepare.index("e220_configure(") < prepare.index("refuse_to_measure(")
+    body = main.split("void app_main(void)", 1)[1]
+    configure = body.index("prepare_920(")
+    assert body.index("radiosim_field_selftest()") < configure < body.index("radio_e220_run(")
+    assert configure < body.index("link_send_config(")
+    assert re.search(r"\.air_sf = is2400 \? 0 : E220_AIR_SF,", main)
+    assert re.search(r"\.air_bw_khz = is2400 \? 0 : E220_AIR_BW_KHZ,", main)
+
+
+def test_the_2400_band_fixes_the_antenna_and_verifies_the_rate_before_it_measures():
+    """I-243（B-257 を戻した）。2.4 GHz はアンテナを外部側へ固定してから Wi-Fi を起こし、
+    TX は空中のレートを確かめてから測定を始める（食い違えば止まる）。"""
+    main = _code("main.c")
+    prepare = _function(main, "static int16_t prepare_2400(")
+    order = [prepare.index(s) for s in ("select_external_antenna()", "radio_wifi_start(",
+                                         "radio_verify_rate(", "refuse_to_measure(")]
+    assert order == sorted(order)
+    assert re.search(r"#define RF_SWITCH_SELECT_GPIO GPIO_NUM_14\b", main)
+    body = main.split("void app_main(void)", 1)[1]
+    assert body.index("prepare_2400(") < body.index("radio_wifi_run(")
+    assert re.search(r"\.rate_kbps = is2400 \? RADIO_AIR_RATE_KBPS : 0,", main)
+
+
+def test_only_one_band_is_started():
+    """正典 §4＝2 帯域は同時に動かさない。app_main は band で片方だけ起こす（E220 は
+    mode 3 まで＝e220_init だけで、e220_configure は 920 の枝の中）。"""
+    body = _code("main.c").split("void app_main(void)", 1)[1].split("int64_t last_config", 1)[0]
+    branch = body.split("if (settings.band == RADIOSIM_FIELD_BAND_2400) {", 1)[1]
+    wifi, e220 = branch.split("} else {", 1)
+    assert "radio_wifi_run(" in wifi and "radio_e220_run(" not in wifi and "prepare_920(" not in wifi
+    assert "radio_e220_run(" in e220 and "radio_wifi_run(" not in e220 and "prepare_2400(" not in e220
+
+
+def test_cont_is_refused_outside_the_2400_band():
+    """920 MHz は AUX の Low が空中の時間と同じでない＝デューティを測れない（I-242）。"""
+    cont = _function(_code("main.c"), "static bool handle_continuous(")
+    assert cont.index("RADIOSIM_FIELD_BAND_2400") < cont.index("radio_continuous(")
+
+
+def test_the_2400_tx_counts_failed_sends_instead_of_skipping_the_seq():
+    """I-165 を 2.4 GHz にも＝送信関数が失敗した周期も seq を進め、sent_mask／unsent_total に
+    「送らなかった」と出す（旧版は seq を進めず控えも出さなかった）。"""
+    tx = _function(_code("radio_wifi.c"), "static void tx_task(void *arg)")
+    assert "continue;" not in tx.split("bool sent = esp_wifi_80211_tx(", 1)[1]
+    assert "unsent++" in tx and "sent_bits = (sent_bits << 1)" in tx and "seq++" in tx
+    assert ".sent_mask = (uint32_t)sent_bits" in tx
 
 
 def test_the_tx_reads_the_result_of_the_previous_send_before_it_sends():
     """送らなかった周期を TX が知る口＝送る前に前の送信の結果（0xA1 の bit0〜2）を読み、
     送れなかった seq を `sent_mask` から落とす。前の送信がまだなら、その周期は送らずに
     数える（控えは送らなかった周期も出す）。"""
-    radio = _code("radio.c")
+    radio = _code("radio_e220.c")
     assert re.search(r"#define A1_NOT_SENT 0x07\b", radio)
     ready = radio.split("static bool ready_to_send(void)", 1)[1].split("\n}\n", 1)[0]
     assert "A1_NOT_SENT" in ready and "mark_unsent(" in ready
@@ -362,7 +408,7 @@ def _rx_config(dialect: D.Dialect, **overrides) -> bytes:
     enums = dialect.enums
     values = dict(
         config_id=3, role=enums["RADIOSIM_FIELD_ROLE"]["RADIOSIM_FIELD_ROLE_RX"], device_id=RX_MAC,
-        firmware_version="0123456789-dirty", channel=6, air_sf=7, air_bw_khz=500,
+        firmware_version="0123456789-dirty", band=920, channel=6, air_sf=7, air_bw_khz=500, rate_kbps=0,
         tx_power_cdbm=1300, tx_interval_ms=100,
         detector=enums["RADIOSIM_FIELD_DETECTOR"]["RADIOSIM_FIELD_DETECTOR_INSTANT"],
         integration_window_us=0, integration_samples=1,
@@ -373,11 +419,11 @@ def _rx_config(dialect: D.Dialect, **overrides) -> bytes:
 
 
 def _tx_config(dialect: D.Dialect, **overrides) -> bytes:
-    """TX が空中で送り、RX が**そのまま**中継した設定（`radio.c` の中継）。"""
+    """TX が空中で送り、RX が**そのまま**中継した設定（`radio_e220.c`・`radio_wifi.c` の中継）。"""
     enums = dialect.enums
     values = dict(
         config_id=2, role=enums["RADIOSIM_FIELD_ROLE"]["RADIOSIM_FIELD_ROLE_TX"], device_id=TX_MAC,
-        firmware_version="0123456789", channel=6, air_sf=7, air_bw_khz=500,
+        firmware_version="0123456789", band=920, channel=6, air_sf=7, air_bw_khz=500, rate_kbps=0,
         tx_power_cdbm=1300, tx_interval_ms=100,
         detector=enums["RADIOSIM_FIELD_DETECTOR"]["RADIOSIM_FIELD_DETECTOR_INSTANT"],
         integration_window_us=0, integration_samples=1,

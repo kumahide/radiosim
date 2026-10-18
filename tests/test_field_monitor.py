@@ -45,7 +45,7 @@ def _sample(dialect: D.Dialect, seq: int, sample_seq: int, rssi: int = -27) -> b
 def _config(dialect: D.Dialect, config_id: int = 1, role: int = 1) -> bytes:
     return _frame(dialect, "RADIOSIM_FIELD_CONFIG", config_id=config_id, role=role,
                   device_id=tuple(RX), firmware_version="c08507ff00", channel=1,
-                  air_sf=7, air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
+                  band=920, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
                   integration_window_us=0, integration_samples=1, antenna=2)
 
 
@@ -129,7 +129,7 @@ class _Unit:
         self.dialect = dialect
         self.t = 0.0
         self.values: dict[str, Any] = dict(config_id=7, role=role, device_id=tuple(RX),
-                           firmware_version="c08507ff00", channel=1, air_sf=7,
+                           firmware_version="c08507ff00", channel=1, band=920, rate_kbps=0, air_sf=7,
                            air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
                            integration_window_us=0, integration_samples=1, antenna=2)
         self.relay = relay

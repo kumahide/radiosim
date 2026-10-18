@@ -1,7 +1,7 @@
 idf_component_register(
-    SRCS "e220.c" "main.c" "settings.c" "link.c" "radio.c"
+    SRCS "radio_wifi.c" "radio_e220.c" "e220.c" "main.c" "settings.c" "link.c"
     INCLUDE_DIRS "."
-    PRIV_REQUIRES esp_timer nvs_flash esp_driver_gpio esp_driver_uart esp_driver_usb_serial_jtag)
+    PRIV_REQUIRES esp_wifi esp_event esp_timer nvs_flash esp_driver_gpio esp_driver_uart esp_driver_usb_serial_jtag)
 
 # ファームの版を**ビルドのたびに** git から取り直す（B-256）。出力の無いカスタム
 # ターゲットは常に古い扱い＝毎回走る。ヘッダは中身が変わったときだけ書き換わる。
