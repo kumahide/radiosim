@@ -152,7 +152,7 @@ def main(argv: list[str] | None = None) -> int:
     p.add_argument("--port", required=True, help="機器の COM ポート（例: COM4）")
     p.add_argument("--baud", type=int, default=115200)
     p.add_argument("--role", choices=("tx", "rx"))
-    p.add_argument("--channel", type=int, help="0〜12（920.8 MHz＋0.2 MHz×番号）")
+    p.add_argument("--channel", type=int, help="0〜6（920.8 MHz＋0.2 MHz×番号）")
     p.add_argument("--interval", type=int, help="送信の間隔（250〜10000 ms）")
     p.add_argument("--power", type=int, help="送信電力（0〜13 dBm・整数）")
 
@@ -716,8 +716,8 @@ def settings_changes(args: argparse.Namespace) -> list[tuple[str, str, Any]]:
     変えるたびに測定の送信が途切れる。"""
     out: list[tuple[str, str, Any]] = []
     if args.channel is not None:
-        if not 0 <= args.channel <= 12:
-            raise SessionError("--channel は 0〜12 です")
+        if not 0 <= args.channel <= 6:
+            raise SessionError("--channel は 0〜6 です")
         out.append((f"channel {args.channel}", "channel", args.channel))
     if args.interval is not None:
         if not 250 <= args.interval <= 10000:

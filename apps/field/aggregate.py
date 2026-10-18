@@ -64,9 +64,9 @@ from apps.field.session import (
     validate_events,
 )
 
-# 920 MHz 帯（E220・BW500）のチャネル → 中心周波数 [MHz]。ファームが受け付けるのは 0〜12。
+# 920 MHz 帯（E220・BW500）のチャネル → 中心周波数 [MHz]。ファームが受け付けるのは 0〜6。
 # 設定メッセージのチャネル番号から本体の `freq` 列を作るのに使う。
-CHANNEL_MHZ = {ch: round(920.8 + 0.2 * ch, 1) for ch in range(13)}
+CHANNEL_MHZ = {ch: round(920.8 + 0.2 * ch, 1) for ch in range(7)}
 
 # `sent_mask` が覆う周期の数（XML の uint32）。
 SENT_MASK_BITS = 32
@@ -432,7 +432,7 @@ def to_csv_rows(header: SessionHeader, windows: list[Window]) -> list[list[objec
         )
     channel = header.rx.radio.channel
     if channel not in CHANNEL_MHZ:
-        raise SessionError(f"920 MHz 帯のチャネル（0〜12）ではありません: {channel}")
+        raise SessionError(f"920 MHz 帯のチャネル（0〜6）ではありません: {channel}")
 
     tx, rx = header.tx.position, header.rx.position
     rows: list[list[object]] = []

@@ -134,7 +134,7 @@ def default_plan() -> dict[str, Any]:
         # 測った 13 dBm の点からの相対差で導く（含まないと導けない）。
         "power": {"dbm": [0, 1, 3, 5, 7, 9, 11, 13], "duration_s": 20,
                   "margin_db": 25},
-        "channels": {"list": [0, 6, 12], "duration_s": 20},
+        "channels": {"list": [0, 3, 6], "duration_s": 20},
     }
 
 

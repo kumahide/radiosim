@@ -204,7 +204,7 @@ class RadioSettings:
 
     config_id: int
     firmware_version: str            # ファームの版（git のコミット）＝刻印に入る
-    channel: int                     # 0〜12（920.8＋0.2·ch MHz）
+    channel: int                     # 0〜6（920.8＋0.2·ch MHz）
     air_sf: int                      # 空中の拡散率（ファームの定数）
     air_bw_khz: int                  # 空中の帯域幅（ファームの定数）
     tx_power_cdbm: int             # 設定した送信電力（0.01 dBm 単位）

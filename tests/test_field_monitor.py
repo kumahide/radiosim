@@ -173,8 +173,8 @@ class _Unit:
             "power": ("tx_power_cdbm", lambda a: int(a) * 100),
         }[cmd]
         value = parse(arg[0])
-        if field == "channel" and not 0 <= value <= 12:
-            self.buffer += "ERR channel は 0〜12 です\r\n".encode()
+        if field == "channel" and not 0 <= value <= 6:
+            self.buffer += "ERR channel は 0〜6 です\r\n".encode()
             return len(data)
         if self.values[field] == value:
             self.buffer += "OK 変わっていません\r\n".encode()
@@ -236,7 +236,7 @@ def test_settings_catches_a_change_that_did_not_take(dialect):
 def test_settings_reports_a_refusal(dialect, monkeypatch):
     # PC 側の範囲の確かめを抜けたと仮定して、機器の断りがそのまま出ることを見る
     unit = _Unit(dialect)
-    with pytest.raises(cli.SessionError, match="断りました: ERR channel は 0〜12 です"):
+    with pytest.raises(cli.SessionError, match="断りました: ERR channel は 0〜6 です"):
         cli.apply_settings(unit, [("channel 13", "channel", 13)],
                            say=lambda _m: None, clock=unit.clock)
 

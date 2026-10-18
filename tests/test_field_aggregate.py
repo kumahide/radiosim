@@ -551,10 +551,10 @@ def test_the_tx_feeder_loss_is_not_counted_twice():
 def test_the_channel_becomes_a_frequency():
     """チャネル番号を本体の `freq`（MHz）へ直すこと。"""
     assert _rows(_run(range(100, 110)))[0]["freq"] == "922.0"     # ch6
-    assert A.CHANNEL_MHZ[0] == 920.8 and A.CHANNEL_MHZ[12] == 923.2
-    assert 13 not in A.CHANNEL_MHZ                                 # ファームは 0〜12
+    assert A.CHANNEL_MHZ[0] == 920.8 and A.CHANNEL_MHZ[6] == 922.0
+    assert 7 not in A.CHANNEL_MHZ                                  # ファームは 0〜6
 
-    bad = _header(rx=_endpoint("rx", radio=_radio(channel=13)))
+    bad = _header(rx=_endpoint("rx", radio=_radio(channel=7)))
     with pytest.raises(S.SessionError, match="チャネル"):
         A.to_csv_rows(bad, [])
 

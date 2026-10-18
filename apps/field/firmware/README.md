@@ -65,7 +65,7 @@ python -m apps.field.cli settings --port COM4 --role tx --channel 6 --power 10
 |---|---|
 | `show` | 今の設定をすぐに送る |
 | `role tx` / `role rx` | 送信か受信か（既定は受信） |
-| `channel N` | チャネル（0〜12・既定 0）。周波数は 920.8＋0.2·N MHz |
+| `channel N` | チャネル（0〜6・既定 0）。周波数は 920.8＋0.2·N MHz |
 | `interval MS` | 送信の間隔（250〜10000 ms・既定 250） |
 | `power DBM` | 送信電力（0〜13 dBm・1 dB 刻み・既定 13） |
 

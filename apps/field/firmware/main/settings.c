@@ -4,7 +4,7 @@
  * コマンド（USB へ 1 行ずつ・改行で終わる）:
  *   show              … 設定をすぐ送る（RADIOSIM_FIELD_CONFIG）
  *   role tx|rx        … 役割
- *   channel N         … 920 MHz 帯のチャネル（0〜12＝920.8＋0.2·N MHz）
+ *   channel N         … 920 MHz 帯のチャネル（0〜6＝920.8＋0.2·N MHz）
  *   interval MS       … 送信間隔（250〜10000 ms）
  *   power DBM         … 送信電力（0〜13 dBm の整数）
  * 変えたら保存して再起動する（途中で条件を変えたまま送り続けない）。
@@ -100,7 +100,7 @@ bool settings_apply_command(const char *line, radiosim_field_settings_t *current
         }
     } else if (strcmp(cmd, "channel") == 0 && n == 2) {
         if (!parse_long(arg, 0, E220_CHANNEL_MAX, &v)) {
-            snprintf(reply, (size_t)reply_len, "ERR channel は 0〜12 です");
+            snprintf(reply, (size_t)reply_len, "ERR channel は 0〜6 です");
             return false;
         }
         next.channel = (uint8_t)v;

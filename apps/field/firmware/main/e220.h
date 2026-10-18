@@ -25,7 +25,7 @@
 /* 空中の SF/BW はファームの定数（作業順 3 で実測するまで設定にしない）。 */
 #define E220_AIR_SF 7
 #define E220_AIR_BW_KHZ 500
-#define E220_CHANNEL_MAX 12        /* BW500 は CH0〜30＝920.8＋0.2·CH MHz。使うのは 0〜12 */
+#define E220_CHANNEL_MAX 6         /* BW500 は CH0〜30＝920.8＋0.2·CH MHz。使うのは 0〜6（ARIB STD-T108 第 2 編の CH24–32＝総和の上限なし） */
 #define E220_POWER_MAX_DBM 13      /* 0〜13 dBm の整数 */
 
 /* mode 0 の受信の出力の最長（中身 200 B＋長さ・RSSI・検査和）。 */

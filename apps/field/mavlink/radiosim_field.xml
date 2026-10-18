@@ -149,7 +149,7 @@
         ファームの版（git のコミット）。刻印に入る＝データを後から救うために要る。
       </field>
       <field type="uint8_t" name="channel">
-        920 MHz 帯のチャネル（0〜12＝920.8＋0.2·CH MHz・BW500 の番号）。現場で空いているものを選ぶ。
+        920 MHz 帯のチャネル（0〜6＝920.8＋0.2·CH MHz・BW500 の番号）。現場で空いているものを選ぶ。
       </field>
       <field type="uint8_t" name="air_sf">空中の拡散率（SF）。ファームの定数。</field>
       <field type="uint16_t" name="air_bw_khz" units="kHz">空中の帯域幅。ファームの定数。</field>

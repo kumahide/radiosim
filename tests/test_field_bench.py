@@ -411,7 +411,7 @@ def test_the_tx_output_table_is_derived_from_the_power_sweep(full_run):
         for p in (100, 500, 900):
             assert rows[(p, 0)].source == "bench_power_sweep"
             assert rows[(p, 0)].dbm == pytest.approx(p / 100 + dev.tx_offset_db, abs=0.3)
-        # チャネル 6・12 はパワー計で測っていない＝導かない（TX と RX のどちらの差か分けられない）。
+        # チャネル 3・6 はパワー計で測っていない＝導かない（TX と RX のどちらの差か分けられない）。
         assert not any(ch != 0 for _p, ch in rows)
 
 
@@ -544,7 +544,7 @@ def test_record_copies_the_calibration_by_unit_id(full_run, tmp_path):
         cals = {R.mac(tuple(d.mac)): C.read_device_calibration(calib_dir, R.mac(tuple(d.mac)))
                 for d in (tx, rx)}
         tx.role, rx.role = "tx", "rx"
-        tx.channel = rx.channel = 0                        # 計画のチャネル（掃引の後は 12 のまま）
+        tx.channel = rx.channel = 0                        # 計画のチャネル（掃引の後は 6 のまま）
         tx.power_dbm = 9                                   # 9 dBm（電力掃引から導いた行）
         header = REC.build_header(
             _template(world, tx, rx), _config_message(rx), _config_message(tx),
