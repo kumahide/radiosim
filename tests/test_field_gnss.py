@@ -20,6 +20,7 @@ tests/test_field_gnss.py
 
 from __future__ import annotations
 
+import contextlib
 import importlib.util
 import json
 import struct
@@ -680,3 +681,61 @@ def test_the_remote_peek_counts_a_recorded_log_as_the_logger_did(tmp_path):
     with (logger.directory / G.INDEX_FILE).open("a", encoding="utf-8") as f:
         f.write("2026-10-16T05:0")
     assert _gnss_peek().peek(logger.directory, now)[3] == logger.summary()
+
+
+# --- 切り離した起動（tools/field_remote/timed_log.py） ----------------------------------
+
+
+def _timed_log():
+    path = Path(__file__).resolve().parents[1] / "tools" / "field_remote" / "timed_log.py"
+    spec = importlib.util.spec_from_file_location("timed_log", path)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+class _SignalledReceiver(_Receiver):
+    """記録が始まって `reads` 回読まれたら、止めの合図のファイルを置く（人が SSH から置く代わり）。"""
+
+    def __init__(self, stop_file: Path, reads: int) -> None:
+        super().__init__(after=[_rawx(100.0 + i) for i in range(5)])
+        self.stop_file = stop_file
+        self.reads = reads
+
+    def read(self, size: int) -> bytes:
+        if self.outputs:
+            self.reads -= 1
+            if self.reads == 0:
+                self.stop_file.touch()
+        return super().read(size)
+
+
+def test_the_stop_file_ends_a_detached_recording_the_same_way_as_q(tmp_path, monkeypatch, capsys):
+    stop_file = tmp_path / "timed_log.stop"
+    stop_file.touch()                       # 前の回の合図の残り＝消してから始める
+    receiver = _SignalledReceiver(stop_file, reads=30)
+
+    class _Serial:                          # pyserial の代わり＝偽の受信機を開く
+        SerialException = OSError
+
+        @staticmethod
+        def Serial(port: str, baud: int, timeout: float):  # noqa: N802 — pyserial の名前
+            return contextlib.nullcontext(receiver)
+
+    monkeypatch.setattr(cli, "_import_serial", lambda: _Serial)
+    monkeypatch.setattr(cli, "_Keyboard", cli._Keyboard)   # timed_log が差し替える＝後で戻す
+    keep_awake = cli._KeepAwake
+    monkeypatch.setattr(cli, "_KeepAwake", lambda: keep_awake(_FakeKernel32(previous=0)))
+    monkeypatch.setattr(G, "SETTLE_S", 0.0)
+
+    assert _timed_log().main(["3600", "--port", "COM6", "--root", str(tmp_path / "gnss")],
+                             stop_file=stop_file) == 0
+
+    out = capsys.readouterr().out
+    assert "前の回の止めの合図が残っていたので消しました" in out
+    assert "止めの合図" in out and "を受けました" in out
+    assert not stop_file.exists()           # 合図は読んだら消す＝次の回を止めない
+    # q と同じ道で終わった＝受信機は始めの速度・NMEA あり・生データなしへ戻った（B-349 の形でない）
+    assert (receiver.rate, receiver.nmea, receiver.outputs) == (38400, True, False)
+    assert "RAWX" in out
