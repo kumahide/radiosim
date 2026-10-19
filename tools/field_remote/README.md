@@ -109,6 +109,108 @@ Fix しなくても本番に響かない。
    （三脚が沈んだか、読み違い）。2 回の値と写真をそのまま持ち帰る。
 7. 持ち帰り＝「記録の持ち帰り」。鹿野山の観測データ（10/24＝通日 297）は後で落とす。
 
+### シールドルームでのステージ0・0b（無線機 2 台）の当日の手順
+
+決めたこと（2026-10-19）＝ステージ0a（`bench run`）と 0b（基準器の絶対値）を同じ回で行う・
+920 MHz と 2.4 GHz の両方・測る PC は X13・**人が一人で最後まで回せる形**（SSH が届けば
+Claude が様子を見る。シールドルームの中や会社の網で届くかは分からない）。`bench analyze` と
+校正ファイル作りは、帰ってから Claude が行う。各段の中身は `apps/field/BENCH.md`、
+ここに書くのは当日の順番と、この回だけの決めごと。
+
+2 台の呼び名（X13 の COM 番号・着いたら `.venv\Scripts\python.exe -m serial.tools.list_ports -v` の
+`SER=` で確かめる）＝**A＝COM7＝`…92:AC`・B＝COM8＝`…F6:60`**。
+
+**前もって職場で確かめる器**（借りられないものがあれば、出発前に Claude へ伝える）
+
+| 器 | 使う所 |
+|---|---|
+| バーストを読める器（スペアナのゼロスパン・RBW 1 MHz 以上、またはピーク電力計） | 920 の送信出力。無ければ連続波の使い捨てのファームが要る（`BENCH.md` の「送信出力（920 MHz）」）＝家で準備するので早めに知らせる |
+| 平均電力計（2.4 GHz を測れるもの） | 2.4 の送信出力（`cont`） |
+| 損失を測る器（信号発生器と電力計、または VNA） | 921.4 MHz と 2437 MHz の 2 点 |
+| 機械式のステップアッテネータ（10 dB 刻み 0〜110・1 dB 刻み 0〜11） | `bench run` の物差し |
+| 固定アッテネータ 30 dB ×2・測定器の前に入れるパッド・シールドボックス ×2・50 Ω 終端器 ×2・SMA ケーブル | 配線 |
+| （任意）LoRa か 11b を出せる信号発生器 | `rx_direct`（閉合チェック） |
+
+**家から持って行くもの**＝X13 と AC アダプタ・2 台・USB ケーブル ×2・2.4 GHz 用の U.FL→SMA
+ピッグテール ×2（付けたら外さない）・アンテナ（920 と 2.4 を 2 本ずつ）・ラベルを書くテープ。
+
+**前の晩（家で）**
+1. Claude が SSH で X13 を最新にし（`git pull --ff-only`）、2 台で `probe` を 920 と 2400 の両方で通す。
+   飽和の上の端を測る計画 `C:\dev\field-data\plan920_top.json`（下の 6）も X13 に置く。
+2. X13 を満充電にする（当日は AC につなぐ。AC ではスリープも画面の消灯も「なし」に設定済み）。
+
+**当日の順番**（コマンドはすべて X13 の PowerShell で `cd C:\dev\radiosim-repo` してから打つ。
+途中で止めても記録は残る＝足りない段は次の回へ回せる）
+
+1. **着いたら**＝X13 を AC につなぐ。テザリングと Remote Control で Claude に「着いた」と伝えてみる
+   （届かなければ一人で進める）。メモ用のファイル `C:\dev\field-data\bench\メモ.md` を作り、
+   日時・室温・使う器の名前と型番と校正の期限を書く。固定アッテネータ・ケーブル・パッドには
+   ラベルを貼る（損失を測った物と `bench run` で使う物を同じにするため）。
+2. **損失を測る**（921.4 MHz と 2437 MHz の両方で・値はメモに書く）
+   - 鎖全体＝A の SMA 端から B の SMA 端まで（固定 30 dB ×2・ケーブル・ステップアッテネータ）を
+     **ステップを 0／0 にして**測る＝`fixed_loss_db`（ステップアッテネータの挿入損を含む）。
+   - ステップアッテネータ単体＝**0 からの増分**を、10 dB 刻みのつまみ（10〜110）と 1 dB 刻みの
+     つまみ（1〜11）で 1 段ずつ（もう一方のつまみは 0）。
+   - 測定器の前に入れるパッド・（6 をするなら）固定アッテネータを抜いた鎖。
+3. **920 MHz**
+   1. 配線＝E220 の SMA 端どうしを `BENCH.md` の「構成」のとおりにつなぎ、2 台を箱に入れる。
+      2.4 GHz のアンテナは外しておく。
+   2. 動作確認（ステップは 0／0）
+      ```
+      .venv\Scripts\python.exe -m apps.field.cli probe --port-a COM7 --port-b COM8 --root C:\dev\field-data\probe-bench --band 920 --new-baseline
+      ```
+      `--root` を家の記録（`C:\dev\field-data\probe`）と分けるのは、配線した置き方を家の基準にしないため。
+   3. 机上試験（1 時間強・画面の指示どおりにつまみを回して Enter）
+      ```
+      .venv\Scripts\python.exe -m apps.field.cli bench run --port-a COM7 --port-b COM8 --root C:\dev\field-data\bench --band 920
+      ```
+      SSH が届いていれば、Claude が `bench-<日時>\steps.csv` の進み具合を読む。
+   4. 送信出力（バースト）＝1 台ずつ、SMA 端→パッド→測定器につなぐ。もう 1 台は RX にしておく。
+      ```
+      .venv\Scripts\python.exe -m apps.field.cli settings --port COM8 --band 920 --role rx
+      .venv\Scripts\python.exe -m apps.field.cli settings --port COM7 --band 920 --role tx --power 13 --channel 0
+      ```
+      数分送らせてから、バースト（250 ms ごと・1 回 25〜46 ms）の高さを読む。`--channel` を 3・6 に
+      変えて読み、役割を入れ替えて B でも同じく読む＝**6 つの読み**。メモには
+      「個体・チャネル・読み（dBm）・パッド（dB）・器」を 1 行ずつ書く（`ref.json` へは帰ってから
+      Claude が写す）。
+4. **2.4 GHz**
+   1. 配線＝ピッグテールの SMA 端どうしに付け替える（E220 の SMA 端は何もつながない）。
+   2. 動作確認＝3-2 の `--band 920` を `--band 2400` に替えて。
+   3. 机上試験＝3-3 の `--band 920` を `--band 2400` に替えて。
+   4. 送信出力（`cont`）＝1 台ずつ、SMA 端→パッド→平均電力計につなぐ。もう 1 台は RX にする。
+      ```
+      .venv\Scripts\python.exe -m apps.field.cli settings --port COM8 --band 2400 --role rx
+      .venv\Scripts\python.exe -m apps.field.cli settings --port COM7 --band 2400 --role tx --power 15 --channel 1
+      .venv\Scripts\python.exe -m apps.field.cli cont --port COM7 --ref C:\dev\field-data\ref.json --pad-db <パッドの実測>
+      ```
+      60 秒たったら読みと器の名前を入力する（`ref.json` に自動で足される）。チャネル 6・11 と、
+      役割を入れ替えた B でも同じく＝**6 回**。「1 Mbps 以外で出たフレーム」で止まったら、
+      その回は測り直す。
+5. **（任意）`rx_direct`**＝信号発生器を受信側の SMA 端へ直に入れ、受けた読みをメモに書く。
+6. **（任意）920 の飽和の上の端**＝既定の計画では受信機への入力が最大 −47 dBm で、
+   生値が −256 に回り込む強さに届かない。固定アッテネータを 2 本とも抜き、**送信 0 dBm** で入力を
+   0 dBm（E220 のブロッキング電力の定格 10 dBm より 10 dB 下）から下げていく。
+   - 先に 2 台を 0 dBm にし、ステップを 30 dB 以上にしてから固定アッテネータを抜く
+     （13 dBm のまま抜くと、定格を超える入力が受信機に入る）。
+     ```
+     .venv\Scripts\python.exe -m apps.field.cli settings --port COM7 --band 920 --power 0
+     .venv\Scripts\python.exe -m apps.field.cli settings --port COM8 --band 920 --power 0
+     .venv\Scripts\python.exe -m apps.field.cli bench run --port-a COM7 --port-b COM8 --root C:\dev\field-data\bench --plan C:\dev\field-data\plan920_top.json --only coarse
+     ```
+   - 計画は 30 dB から 0 dB へ下げていく順（`coarse` の `atten_db`）。終わったら固定アッテネータを
+     付け直してから、7 で電力を戻す。
+7. **片付け**＝2 台を普段の形へ戻す（A＝TX・B＝RX・920・13 dBm・CH0）。
+   ```
+   .venv\Scripts\python.exe -m apps.field.cli settings --port COM7 --band 920 --role tx --power 13 --channel 0
+   .venv\Scripts\python.exe -m apps.field.cli settings --port COM8 --band 920 --role rx --power 13 --channel 0
+   ```
+   記録は X13 の `C:\dev\field-data\`（`bench`・`probe-bench`・`ref.json`・`メモ.md`）に残る＝
+   帰ってから Claude が `scp -r` でデスクトップへ写す。
+
+メモに書くこと＝上の読みと損失のほかに、止まった・測り直した段（`--only` の指定も）・
+エラーの全文（画面の写真でよい）・気づいたことや判断（自分の言葉のまま）。
+
 ## 回線が切れたら
 
 記録はそのまま続く（2026-10-17 にテザリングを切って確かめた＝止まらず・欠けなし）。
