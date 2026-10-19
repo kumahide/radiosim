@@ -696,11 +696,15 @@ def _no_prompt(message: str) -> str:
 
 
 def _same_firmware_source(version: str) -> bool | None:
-    """その版と今のコミットで、ファームのソースが同じか（その版が無ければ None）。"""
+    """その版と今のコミットで、ファームのソースが同じか（その版が無ければ None）。
+
+    文書（`*.md`）はビルドに入らない＝変わっても焼き直しを求めない（B-360）。
+    """
     if not re.fullmatch(r"[0-9a-f]{7,40}", version):
         return None                                   # git に渡すのはコミットの形だけ
     result = subprocess.run(  # nosec B603,B607 — 固定の git 呼び出し（版は 16 進だけ）
-        ["git", "diff", "--quiet", version, "HEAD", "--", "apps/field/firmware"],
+        ["git", "diff", "--quiet", version, "HEAD", "--", "apps/field/firmware",
+         ":(exclude)apps/field/firmware/*.md"],
         cwd=_REPO_ROOT, capture_output=True,
     )
     return {0: True, 1: False}.get(result.returncode)

@@ -20,6 +20,7 @@ import dataclasses
 import json
 import random
 import re
+import subprocess
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
@@ -1038,6 +1039,30 @@ def test_only_a_commit_shaped_version_is_handed_to_git():
     """ファームの版は機器から届く文字列＝git の引数にするのは 16 進の形だけ。"""
     assert cli._same_firmware_source("--output=x") is None
     assert cli._same_firmware_source("afd69ae7db-dirty") is None
+
+
+def test_a_firmware_readme_change_does_not_ask_for_reflashing(tmp_path, monkeypatch):
+    """ファームのフォルダの文書だけが変わっても、ソースは同じとみなすこと（B-360）。"""
+    def git(*args: str) -> str:
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t", *args],
+                              cwd=tmp_path, check=True, capture_output=True,
+                              text=True).stdout.strip()
+
+    firmware = tmp_path / "apps" / "field" / "firmware"
+    (firmware / "main").mkdir(parents=True)
+    (firmware / "main" / "main.c").write_text("int x;\n", encoding="utf-8")
+    (firmware / "README.md").write_text("a\n", encoding="utf-8")
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-qm", "1")
+    flashed = git("rev-parse", "--short=10", "HEAD")
+    (firmware / "README.md").write_text("b\n", encoding="utf-8")
+    git("commit", "-qam", "2")
+    monkeypatch.setattr(cli, "_REPO_ROOT", tmp_path)
+    assert cli._same_firmware_source(flashed) is True
+    (firmware / "main" / "main.c").write_text("int y;\n", encoding="utf-8")
+    git("commit", "-qam", "3")
+    assert cli._same_firmware_source(flashed) is False
 
 
 def test_a_probe_folder_is_not_analyzed_as_a_bench(tmp_path, dialect):
