@@ -865,15 +865,15 @@ def _cont(args: argparse.Namespace) -> int:
 
 def _add_to_ref(path: Path, row: dict[str, Any]) -> None:
     """書く直前に読み直して 1 行足す＝測っている間に手で直した値・ほかの帯域を消さない（B-357）。
-    読み直せなければ、測った値をエラーに載せる（手で足せるように）。"""
+    読み直せない・書けないときは、測った値をエラーに載せる（手で足せるように・B-358）。"""
     try:
         ref = read_ref(path) if path.exists() else ref_template()
-    except SessionError as e:
+        add_tx_output(ref, "2400", row)
+        write_ref(path, ref)
+    except (SessionError, OSError) as e:
         raise SessionError(
             f"{e}\n測った値（ref へ手で足してください）: {json.dumps(row, ensure_ascii=False)}"
         ) from e
-    add_tx_output(ref, "2400", row)
-    write_ref(path, ref)
 
 
 # --- settings ----------------------------------------------------------------

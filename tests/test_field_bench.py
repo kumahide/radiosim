@@ -741,6 +741,39 @@ def test_a_ref_broken_while_measuring_keeps_the_measured_value(tmp_path):
     assert path.read_text(encoding="utf-8") == "{"
 
 
+def _utf16_ref(path):
+    path.write_text(json.dumps(BA.ref_template()), encoding="utf-16")
+
+
+def _folder_ref(path):
+    path.mkdir()
+
+
+@pytest.mark.parametrize("make", [_utf16_ref, _folder_ref], ids=["utf-16", "folder"])
+def test_an_unreadable_ref_is_a_session_error(tmp_path, make):
+    """文字コード・I/O で読めない ref も SessionError にする＝測る前の検査は素のトレースバックで
+    落ちず、書く直前の読み直しでは測った値をエラーに載せられる（B-358）。"""
+    path = tmp_path / "ref.json"
+    make(path)
+    with pytest.raises(S.SessionError, match="ref を読めません"):
+        BA.read_ref(path)
+    with pytest.raises(S.SessionError, match='"dbm": 13.0'):
+        cli._add_to_ref(path, {"device_id": "bb", "dbm": 13.0})
+
+
+def test_a_failed_ref_write_keeps_the_measured_value(tmp_path, monkeypatch):
+    """書き込みに落ちても、測った値をエラーに載せること（B-358）。"""
+    path = tmp_path / "ref.json"
+    BA.write_ref(path, BA.ref_template())
+
+    def denied(*_a):
+        raise PermissionError("書けない")
+
+    monkeypatch.setattr(cli, "write_ref", denied)
+    with pytest.raises(S.SessionError, match='"dbm": 13.0'):
+        cli._add_to_ref(path, {"device_id": "bb", "dbm": 13.0})
+
+
 def test_a_failed_ref_write_leaves_the_old_file(tmp_path, monkeypatch):
     """書き切ってから置き換える＝途中で落ちても前の ref が残り、一時ファイルも残らない（B-356）。"""
     path = tmp_path / "ref.json"

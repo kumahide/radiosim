@@ -745,6 +745,9 @@ def read_ref(path: str | os.PathLike[str]) -> dict[str, Any]:
         raise SessionError(f"ref がありません: {path}") from e
     except json.JSONDecodeError as e:
         raise SessionError(f"ref が JSON として読めません: {path}（{e}）") from e
+    except (UnicodeDecodeError, OSError) as e:
+        # UTF-8 でない・フォルダ・権限など＝読み手（`cont` の書き戻し）が測った値を載せて止まれるように（B-358）
+        raise SessionError(f"ref を読めません: {path}（{e}）") from e
     check_ref(ref)
     return ref
 
