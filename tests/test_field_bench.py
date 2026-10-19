@@ -16,6 +16,7 @@ tests/test_field_bench.py
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import random
 import re
@@ -550,6 +551,32 @@ def test_the_calibration_file_round_trips(full_run, tmp_path):
     cal = C.read_device_calibration(calib_dir, device)
     assert cal.device_id == device and "920" in cal.rx and cal.tx_outputs
     assert C.calib_path(calib_dir, device).name == "aa-bb-cc-00-00-0a.json"
+
+
+def test_an_analysis_that_makes_no_calibration_does_not_erase_the_files(full_run, tmp_path):
+    """B-353。ref なし（公称）の判定で `--calib-dir` を渡しても、既存の校正を空で上書き
+    しない＝何も書かずに止まる。"""
+    _world, calib_dir = _calibrated(full_run, tmp_path)
+    _world, runner = full_run
+    before = {p.name: p.read_bytes() for p in calib_dir.glob("*.json")}
+    with pytest.raises(S.SessionError, match="1 台も作れませんでした"):
+        BA.write_calibrations(BA.analyze(runner.directory), calib_dir)
+    assert {p.name: p.read_bytes() for p in calib_dir.glob("*.json")} == before
+
+
+def test_a_part_that_was_not_made_keeps_the_previous_values(full_run, tmp_path):
+    """B-353。片方の向きだけ実測なら、相手の機器は RX の曲線が作れない＝その帯域の前の
+    曲線を残し、作れた TX の出力表だけを差し替える。空の校正は書かない。"""
+    world, calib_dir = _calibrated(full_run, tmp_path)
+    device = R.mac(tuple(world.a.mac))
+    old = C.read_device_calibration(calib_dir, device)
+    tx_only = dataclasses.replace(old, rx={}, tx_outputs=old.tx_outputs[:1])
+    C.write_device_calibration(calib_dir, tx_only, "920")
+    new = C.read_device_calibration(calib_dir, device)
+    assert new.rx == old.rx and new.tx_outputs == old.tx_outputs[:1]
+    with pytest.raises(S.SessionError, match="空です"):
+        C.write_device_calibration(calib_dir, dataclasses.replace(old, rx={}, tx_outputs=()), "920")
+    assert C.read_device_calibration(calib_dir, device) == new
 
 
 def test_record_copies_the_calibration_by_unit_id(full_run, tmp_path):

@@ -517,8 +517,8 @@ def _bench(args: argparse.Namespace) -> int:
         print(render_markdown(report))
         print(f"書き出しました: {m}・{j}")
         if args.calib_dir:
-            for path in write_calibrations(report, args.calib_dir):
-                print(f"校正ファイル: {path}")
+            for line in write_calibrations(report, args.calib_dir):
+                print(line)
         return 0
     plan = default_plan(args.band or "920")
     if args.plan:
@@ -1019,7 +1019,7 @@ class MonitorTally:
 
     def __init__(self, dialect: Any) -> None:
         self._dialect = dialect
-        self._last: dict[str, tuple[int, int]] = {}      # tx → (seq, sample_seq)
+        self._last: dict[str, tuple[int, int, int]] = {}  # tx → (seq, sample_seq, unsent_total)
         self._configs: set[tuple[str, int]] = set()
         self._reset()
 
@@ -1028,6 +1028,7 @@ class MonitorTally:
         self._noise: dict[str, list[int]] = {}
         self._air_lost: dict[str, int] = {}
         self._usb_lost: dict[str, int] = {}
+        self._unsent: dict[str, int] = {}
         self._sent: dict[str, int] = {}
 
     @property
@@ -1055,14 +1056,18 @@ class MonitorTally:
         tx = mac(f["tx_id"])
         self._rssi.setdefault(tx, []).append(f["rssi_raw"])
         self._noise.setdefault(tx, []).append(f["noise_floor_raw"])
-        seq, sample_seq = f["seq"], f["sample_seq"]
+        seq, sample_seq, unsent_total = f["seq"], f["sample_seq"], f["unsent_total"]
         last = self._last.get(tx)
         if last is not None and seq > last[0] and sample_seq > last[1]:
             gap = seq - last[0] - 1
             usb = sample_seq - last[1] - 1
+            # TX が送らなかった周期（E220 が受け付けなかった）は電波の欠けに数えない（B-355）。
+            # 間の数は前後の累計の差（`bench.py` の `unsent_between` と同じ）。
+            unsent = min(gap, max(0, unsent_total - last[2]))
             self._usb_lost[tx] = self._usb_lost.get(tx, 0) + usb
-            self._air_lost[tx] = self._air_lost.get(tx, 0) + max(0, gap - usb)
-        self._last[tx] = (seq, sample_seq)
+            self._unsent[tx] = self._unsent.get(tx, 0) + unsent
+            self._air_lost[tx] = self._air_lost.get(tx, 0) + max(0, gap - usb - unsent)
+        self._last[tx] = (seq, sample_seq, unsent_total)
         return None
 
     def lines(self) -> list[str]:
@@ -1072,7 +1077,7 @@ class MonitorTally:
             noise = sorted(self._noise[tx])
             out.append(
                 f"{tx}  受信 {len(levels)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
-                f"USB {self._usb_lost.get(tx, 0)}  受信レベル（生値）平均 "
+                f"USB {self._usb_lost.get(tx, 0)}・送らず {self._unsent.get(tx, 0)}  受信レベル（生値）平均 "
                 f"{sum(levels) / len(levels):.1f}（{min(levels)}〜{max(levels)}）  "
                 f"雑音フロア {noise[len(noise) // 2]}"
             )

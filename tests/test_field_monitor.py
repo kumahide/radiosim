@@ -4,6 +4,7 @@ tests/test_field_monitor.py
 実測補助アプリ（`apps/field`）の `monitor`（受信を眺めるだけ・I-161）を検証する。
 
   - 欠けを電波と USB に分けて数えること（`seq` と `sample_seq` の飛びの差）
+  - TX が送らなかった周期（`unsent_total` の差）を電波の欠けに数えないこと（B-355）
   - 機器の再起動（番号が戻る）を欠けに数えないこと
   - 設定は変わったときだけ知らせること
   - 受信の無い区切りと CRC 不一致を表示すること
@@ -92,6 +93,22 @@ def test_losses_are_split_into_air_and_usb(dialect):
     assert "平均 -27.7（-29〜-27）" in line
     assert "雑音フロア -93" in line
     assert tally.lines() == []                 # 表示したら数え直す
+
+
+def test_cycles_the_tx_did_not_send_are_not_air_losses(dialect):
+    """B-355。TX が送らなかった周期（`unsent_total` の差）は電波の欠けに数えない。
+    seq 0→3 の間の 2 周期を送らず、3→5 の間の 1 周期は送ったが届かなかった。"""
+    tally = cli.MonitorTally(dialect)
+    frames = b"".join(
+        _frame(dialect, "RADIOSIM_FIELD_RX_SAMPLE", rx_id=tuple(RX), tx_id=tuple(TX), seq=seq,
+               rx_time_us=seq * 100_000, rssi_raw=-27, noise_floor_raw=-93, config_id=1,
+               tx_config_id=1, sample_seq=sample_seq, sent_mask=0xFFFFFFFF, unsent_total=total)
+        for seq, sample_seq, total in ((0, 0, 0), (3, 1, 2), (5, 2, 2)))
+    messages, _ = read_log(frames)
+    for m in messages:
+        tally.add(m)
+    [line] = tally.lines()
+    assert "欠け 電波 1・USB 0・送らず 2" in line
 
 
 def test_a_restart_is_not_counted_as_a_loss(dialect):

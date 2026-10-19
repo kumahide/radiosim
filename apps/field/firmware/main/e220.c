@@ -334,7 +334,10 @@ static bool parse_front(e220_frame_t *f)
 {
     while (s_buf_len >= 1) {
         size_t l = s_buf[0];
-        if (l < 3 || l + 1 > sizeof s_buf) {
+        /* 切り出す長さは l − 1（REPLY）か l − 2（DATA）＝コピー先の f->data（E220_FRAME_MAX）で
+           確かめる。⚠️ 溜め（s_buf＝2 枠分）の大きさで比べない＝l は 1 バイトなので常に通り、
+           検査和を偶然通る壊れた枠が f->data を溢れさせていた（B-354）。 */
+        if (l < 3 || l - 1 > E220_FRAME_MAX) {
             drop_front(1);
             continue;
         }

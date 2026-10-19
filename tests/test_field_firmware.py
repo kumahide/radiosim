@@ -239,6 +239,19 @@ def test_the_2400_tx_counts_failed_sends_instead_of_skipping_the_seq():
     assert ".sent_mask = (uint32_t)sent_bits" in tx
 
 
+def test_the_e220_frame_length_is_checked_against_the_copy_target():
+    """B-354。枠の長さはコピー先（`f->data`＝E220_FRAME_MAX）で確かめる＝溜め（2 枠分）で
+    比べると 1 バイトの長さは常に通り、検査和を偶然通る壊れた枠が `f->data` を溢れさせる。
+    コピーする長さ（REPLY は l − 1・DATA は l − 2）が判定の長さを超えないこと。"""
+    header = (FIRMWARE / "main" / "e220.h").read_text(encoding="utf-8")
+    assert re.search(r"uint8_t data\[E220_FRAME_MAX\];", header)
+    parse = _function(_code("e220.c"), "static bool parse_front(e220_frame_t *f)")
+    guard = parse.split("if (", 1)[1].split(")", 1)[0]
+    assert "l - 1 > E220_FRAME_MAX" in guard and "sizeof s_buf" not in guard
+    assert parse.index("l - 1 > E220_FRAME_MAX") < parse.index("memcpy(")
+    assert re.findall(r"f->len = \(uint8_t\)\(l - (\d)\);", parse) == ["1", "2"]
+
+
 def test_the_tx_reads_the_result_of_the_previous_send_before_it_sends():
     """送らなかった周期を TX が知る口＝送る前に前の送信の結果（0xA1 の bit0〜2）を読み、
     送れなかった seq を `sent_mask` から落とす。前の送信がまだなら、その周期は送らずに

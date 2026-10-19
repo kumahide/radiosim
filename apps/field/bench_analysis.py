@@ -577,10 +577,26 @@ def _tx_outputs(
     return tuple(sorted(rows, key=lambda r: (r.channel, r.power_cdbm)))
 
 
-def write_calibrations(report: dict[str, Any], calib_dir: str | os.PathLike[str]) -> list[Path]:
-    """その帯域の分だけを書き換える（もう片方の帯域の校正は残る）。"""
-    return [write_device_calibration(calib_dir, c, report["band"])
-            for c in device_calibrations(report)]
+def write_calibrations(report: dict[str, Any], calib_dir: str | os.PathLike[str]) -> list[str]:
+    """その帯域の、作れた分だけを書き換え、機器ごとに何を書いたかの行を返す（もう片方の
+    帯域の校正と、作れなかった部分の前の値は残る）。1 台も作れなければ何も書かずに止める
+    （B-353＝空の校正で既存のファイルを消していた）。"""
+    band = report["band"]
+    cals = device_calibrations(report)
+    if not any(c.rx or c.tx_outputs for c in cals):
+        raise SessionError(
+            f"{band} MHz 帯の校正を 1 台も作れませんでした（パワー計で測った ref が要ります）"
+            "＝校正ファイルは書いていません")
+    lines = []
+    for c in cals:
+        if not (c.rx or c.tx_outputs):
+            lines.append(f"校正を作れませんでした: {c.device_id}（書いていません＝前の値のまま）")
+            continue
+        path = write_device_calibration(calib_dir, c, band)
+        made = "・".join(name for name, ok in (("RX の曲線", c.rx), ("TX の出力表", c.tx_outputs)) if ok)
+        kept = "" if c.rx and c.tx_outputs else "・作れなかった分は前の値のまま"
+        lines.append(f"校正ファイル: {path}（{band} MHz 帯の{made}{kept}）")
+    return lines
 
 
 # --- 書き出し --------------------------------------------------------------------

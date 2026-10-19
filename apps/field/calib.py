@@ -80,12 +80,15 @@ def calib_path(directory: str | os.PathLike[str], device_id: str) -> Path:
 def write_device_calibration(
     directory: str | os.PathLike[str], cal: DeviceCalibration, band: str
 ) -> Path:
-    """`band` の分だけを差し替えて書く（ほかの帯域は今のファイルのまま残す）。
+    """`band` の分の、**作れた部分だけ**を差し替えて書く（ほかの帯域と、作れなかった部分
+    〔RX の曲線・TX の出力表〕は今のファイルのまま残す＝空で上書きして消さない・B-353）。
     書き切ってから置き換える（書きかけの校正ファイルを record に読ませない）。"""
     if band not in BANDS:
         raise SessionError(f"知らない帯域です: {band}（{', '.join(BANDS)}）")
     if set(cal.rx) - {band} or any(t.band != band for t in cal.tx_outputs):
         raise SessionError(f"{band} MHz 帯の校正に別の帯域の値が混ざっています")
+    if not cal.rx and not cal.tx_outputs:
+        raise SessionError(f"{cal.device_id} の {band} MHz 帯の校正が空です（書きません）")
     for t in cal.tx_outputs:
         if t.source not in TX_OUTPUT_SOURCES:
             raise SessionError(f"TX の出力の出どころが不明です: {t.source}")
@@ -94,8 +97,9 @@ def write_device_calibration(
         kept = read_device_calibration(directory, cal.device_id)
         cal = DeviceCalibration(
             device_id=cal.device_id,
-            rx={**{b: r for b, r in kept.rx.items() if b != band}, **cal.rx},
-            tx_outputs=tuple(t for t in kept.tx_outputs if t.band != band) + cal.tx_outputs,
+            rx={**kept.rx, **cal.rx},
+            tx_outputs=(tuple(t for t in kept.tx_outputs if t.band != band) + cal.tx_outputs
+                        if cal.tx_outputs else kept.tx_outputs),
         )
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {"format": CALIB_FORMAT, **asdict(cal)}
