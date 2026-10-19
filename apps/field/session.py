@@ -790,6 +790,18 @@ def read_position_fixes(directory: str | os.PathLike[str]) -> Iterator[PositionF
             )
 
 
+# 受信が強すぎて測れない（飽和）ことを表す生値（B-361）。E220 は入力が強すぎると RSSI の
+# バイトに 0 を返し、ファームの `byte − 256` で −1 の次が −256 へ回り込む。C6 の生値は int8 なので
+# −256 は出ない＝帯域で分けなくてよい。⚠️ 回り込む手前の上の端（飽和域）も入力の大きさを
+# 単調には表さないが、その範囲はまだ読んでいない＝ここで外すのは −256 だけ。
+RSSI_RAW_SATURATED = -256
+
+
+def rssi_saturated(rssi_raw: int) -> bool:
+    """受信レベルの生値が「飽和で無効」か。換算・平均・比べの前にこれで外す（生値は残す）。"""
+    return rssi_raw == RSSI_RAW_SATURATED
+
+
 def to_dbm(rssi_raw: int, calibration: Calibration) -> float:
     """生値を**無線機の端での** dBm へ換算する（書き出すときだけ行う）。
 

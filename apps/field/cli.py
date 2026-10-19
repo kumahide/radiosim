@@ -456,9 +456,11 @@ def _export(args: argparse.Namespace) -> int:
     write_batch_csv(args.out, header, windows)
 
     censored = sum(1 for w in windows if w.censored)
+    saturated = sum(1 for w in windows if w.saturated)
     print(f"書き出しました: {args.out}")
     print(body_tx_power_notice(header))
-    print(f"ウィンドウ {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）")
+    print(f"ウィンドウ {len(windows)} 個・打ち切り {censored} 個（{censored_fraction(windows):.0%}）"
+          f"・受信が強すぎて測れない（飽和）{saturated} 個")
     # 電波で届いたのに PC までの間で落ちた分（打ち切りには数えていない）。ウィンドウに振れた分が
     # 総数より少なければ、残りは電波の欠けと混ざっていてどのウィンドウの分か分からなかった。
     lost_on_link = sum(1 for w in windows if w.lost_on_link)
@@ -469,7 +471,8 @@ def _export(args: argparse.Namespace) -> int:
     for slot in sorted({w.spatial_slot for w in windows}):
         members = [w for w in windows if w.spatial_slot == slot]
         cut = sum(1 for w in members if w.censored)
-        print(f"  置き場所 {slot}: ウィンドウ {len(members)} 個・打ち切り {cut} 個")
+        hot = sum(1 for w in members if w.saturated)
+        print(f"  置き場所 {slot}: ウィンドウ {len(members)} 個・打ち切り {cut} 個・飽和 {hot} 個")
 
     again = replay(directory)
     _print_read_stats(again.stats, again.foreign)

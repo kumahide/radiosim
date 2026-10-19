@@ -61,6 +61,7 @@ from apps.field.session import (
     SessionError,
     SessionHeader,
     parse_utc,
+    rssi_saturated,
     to_dbm,
     validate_events,
 )
@@ -92,6 +93,8 @@ class Window:
     noise_floor_raw_mean: float | None
     first_pc_utc: str           # 届いた最初/最後の PC 時刻（空＝1 つも届かなかった）
     last_pc_utc: str
+    # 受信が強すぎて生値が飽和した標本の数（B-361）。1 つでもあれば meas_dbm は None。
+    saturated: int = 0
 
     @property
     def radio_expected(self) -> int:
@@ -111,7 +114,8 @@ class Window:
 
     @property
     def censored(self) -> bool:
-        return self.meas_dbm is None and not self.lost_on_link
+        # 飽和は感度以下の逆＝打ち切りに数えない。
+        return self.meas_dbm is None and not self.lost_on_link and not self.saturated
 
 
 def window_seq_count(header: SessionHeader) -> int:
@@ -343,7 +347,10 @@ def _make_window(
     radio_expected = seq_count - link_lost - unsent
     rate = len(got) / radio_expected if radio_expected else 0.0
     censored = rate < header.provenance.censor_min_receive_rate
-    if censored or not got:
+    # 飽和した標本が 1 つでもあれば値を出さない（B-361）。外して残りを平均しない＝残りも
+    # 飽和の近くの、入力の大きさを単調に表さない値になっている。
+    saturated = sum(1 for s in got if rssi_saturated(s.rssi_raw))
+    if censored or saturated or not got:
         meas_dbm = None
         noise = None
     else:
@@ -363,6 +370,7 @@ def _make_window(
         noise_floor_raw_mean=noise,
         first_pc_utc=got[0].pc_utc if got else "",
         last_pc_utc=got[-1].pc_utc if got else "",
+        saturated=saturated,
     )
 
 
@@ -412,7 +420,13 @@ def body_tx_power_notice(header: SessionHeader) -> str:
     )
 
 
+# 飽和した標本のあるウィンドウの `note`（B-361）。値が空なので本体は残差から外す。
+SATURATED_NOTE = "受信が強すぎて測れない（飽和）"
+
+
 def _no_radio_note(w: Window) -> str:
+    if w.saturated and not w.lost_on_link:
+        return SATURATED_NOTE
     if not w.lost_on_link:
         return ""
     return LINK_LOST_NOTE if w.link_lost else UNSENT_NOTE

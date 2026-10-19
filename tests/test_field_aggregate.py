@@ -531,6 +531,32 @@ def test_a_censored_row_carries_the_sensitivity_and_no_value():
     assert row["note"] == "感度以下（-98 dBm 未満）"
 
 
+def test_a_saturated_sample_takes_the_value_out_of_its_window():
+    """受信が強すぎて生値が −256 へ回り込んだ標本（E220・B-361）があるウィンドウは値を出さないこと。
+
+    🔑 −256 を換算すると極端に低い dBm になり、送信機の近くの標本が「深い遮蔽」として本体へ渡る。
+    残りの標本も飽和の近くの単調でない値なので、外して平均もしない。感度以下ではないので
+    打ち切りにも数えない。
+    """
+    samples = ([_sample(q) for q in range(100, 110)]
+               + [_sample(q, rssi_raw=S.RSSI_RAW_SATURATED if q == 113 else -2)
+                  for q in range(110, 120)])
+    events = _events(("place", 99.5, 0), ("stop", 119.5, 0))
+    windows = A.aggregate(_header(), samples, events)
+    assert [w.saturated for w in windows] == [0, 1]
+    assert windows[1].meas_dbm is None and windows[1].received == 10
+    assert not windows[1].censored
+    assert A.censored_fraction(windows) == 0.0
+    row = _rows(windows)[1]
+    assert row["meas_dbm"] == "" and row["note"] == A.SATURATED_NOTE
+
+
+def test_only_the_wrapped_value_counts_as_saturated():
+    """飽和の印は −256 だけ（C6 の生値は int8 なので −256 は出ない）。上の端の飽和域は読まない（B-361 の A）。"""
+    assert S.rssi_saturated(S.RSSI_RAW_SATURATED)
+    assert not any(S.rssi_saturated(v) for v in (-1, -128, -255, 0))
+
+
 def test_a_measured_row_has_no_note():
     row = _rows(_run(range(100, 110)))[0]
     assert row["note"] == ""
