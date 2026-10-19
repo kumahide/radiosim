@@ -46,6 +46,8 @@
     基準局の `h` は楕円体高（元期）。比べる点は楕円体高 `h` か、標高 `H` とジオイド高 `geoid` の組。
     `rover.arp_height`＝標石の上面からアンテナの ARP（台座の底）まで（m）。
     `rover.antenna` が null＝型が分からない（NTRIP の局）＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）。
+    基準局の型はヘッダから読む＝`rinex --rtcm` の局（型が空）を基準局に据えても同じく補正をかけない
+    （現地の見当づけ＝NTRIP の局を基準局にして、電子基準点の 1 時間ごとのファイルを待たずに解く）。
     `ref.epoch`＝比べる座標の元期／今期（既定 "元期"＝成果）。"不明"（局の申告など）なら両方で比べる。
 
 実行（製品の venv で）:
@@ -439,7 +441,11 @@ def cmd_solve(args):
         rover_ant = ""
         print("  ⚠️ 移動局のアンテナの型が分からない＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）")
     _, base_type, base_dh, base_de, base_dn = antenna_of(rinex_header(base_obs))
-    base_ant = pick_antenna(base_type, known, "基準局")
+    if base_type:
+        base_ant = pick_antenna(base_type, known, "基準局")
+    else:                                   # `rinex --rtcm` の局（1033 が来ない）を基準局に据えたとき
+        base_ant = ""
+        print("  ⚠️ 基準局のアンテナの型が分からない＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）")
 
     base_genki = (parse_angle(base["lat"]), parse_angle(base["lon"]), float(base["h"]))
     base_pos = base_genki if table is None else to_konki(table, base_genki)
