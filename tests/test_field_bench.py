@@ -718,6 +718,29 @@ def test_adding_a_tx_output_keeps_the_rows_already_there(tmp_path):
     assert got["920"] == {"tx_output": [{"device_id": "cc", "dbm": 11.0}]}
 
 
+def test_cont_rereads_the_ref_just_before_adding_its_row(tmp_path):
+    """測っている間に手で直した値・別の行は、`cont` の 1 行を足しても残ること（B-357）。"""
+    path = tmp_path / "ref.json"
+    BA.write_ref(path, BA.ref_template())
+    edited = BA.read_ref(path)                      # 測っている間に手で直した
+    edited["920"]["fixed_loss_db"] = 77.0
+    BA.add_tx_output(edited, "2400", {"device_id": "aa", "dbm": 12.0})
+    BA.write_ref(path, edited)
+    cli._add_to_ref(path, {"device_id": "bb", "dbm": 13.0})
+    got = BA.read_ref(path)
+    assert got["920"]["fixed_loss_db"] == 77.0
+    assert [t["device_id"] for t in got["2400"]["tx_output"]] == ["aa", "bb"]
+
+
+def test_a_ref_broken_while_measuring_keeps_the_measured_value(tmp_path):
+    """測っている間に ref が壊れたら、書かずに止まり、測った値をエラーに載せること（B-357）。"""
+    path = tmp_path / "ref.json"
+    path.write_text("{", encoding="utf-8")
+    with pytest.raises(S.SessionError, match='"dbm": 13.0'):
+        cli._add_to_ref(path, {"device_id": "bb", "dbm": 13.0})
+    assert path.read_text(encoding="utf-8") == "{"
+
+
 def test_a_failed_ref_write_leaves_the_old_file(tmp_path, monkeypatch):
     """書き切ってから置き換える＝途中で落ちても前の ref が残り、一時ファイルも残らない（B-356）。"""
     path = tmp_path / "ref.json"
