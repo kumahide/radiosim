@@ -30,6 +30,7 @@ from __future__ import annotations
 import json
 import math
 import os
+import tempfile
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -200,6 +201,17 @@ def check_ref(ref: dict[str, Any]) -> None:
             "ref の最上位は帯域（" + "・".join(f'"{b}"' for b in BANDS) + "）で分けます"
             "＝古い形なら、中身を \"920\" の下へ移してください"
         )
+    # 節と表の形も見る＝読み手（判定・`cont`）が型の違いで途中で落ちないように（B-356）。
+    # null は「無い」と同じに読む。
+    for band, section in ref.items():
+        if section is None:
+            continue
+        if not isinstance(section, dict) or any(
+            not isinstance(section.get(k), (list, type(None))) for k in ("tx_output", "rx_direct")
+        ):
+            raise SessionError(
+                f'ref の "{band}" の形が違います（節は {{…}}・tx_output と rx_direct は […]）'
+            )
 
 
 def ref_section(ref: dict[str, Any] | None, band: str) -> dict[str, Any]:
@@ -215,7 +227,7 @@ def levels_from(plan: dict[str, Any], ref: dict[str, Any] | None) -> Levels:
     fixed = ref.get("fixed_loss_db")
     step = ref.get("step_attenuator") or {}
     outputs: dict[tuple[str, int, int], dict[str, Any]] = {}
-    for t in ref.get("tx_output", []):
+    for t in ref.get("tx_output") or []:
         key = (t["device_id"].lower(), int(t["power_cdbm"]), int(t["channel"]))
         outputs[key] = t          # 同じ条件を 2 度測ったら後の行（測り直し）を使う
     return Levels(
@@ -483,7 +495,7 @@ def _closure(
     """信号発生器で直接入れた点（その帯域の `rx_direct`）と、TX 経由で求めた R を突き合わせる。"""
     rows = []
     by_device = {v.lower(): u for u, v in units.items()}
-    for point in section.get("rx_direct", []):
+    for point in section.get("rx_direct") or []:
         unit = by_device.get(point["device_id"].lower())
         fit = fits.get(unit) if unit else None
         if fit is None:
@@ -735,3 +747,29 @@ def read_ref(path: str | os.PathLike[str]) -> dict[str, Any]:
         raise SessionError(f"ref が JSON として読めません: {path}（{e}）") from e
     check_ref(ref)
     return ref
+
+
+def add_tx_output(ref: dict[str, Any], band: str, row: dict[str, Any]) -> None:
+    """その帯域の `tx_output` の末尾に 1 行足す（既存の行はそのまま・null の節や表は空として扱う）。"""
+    section = ref.get(band) or {}
+    section["tx_output"] = [*(section.get("tx_output") or []), row]
+    ref[band] = section
+
+
+def write_ref(path: str | os.PathLike[str], ref: dict[str, Any]) -> None:
+    """書き切ってから置き換える＝ref は手で測った値の積み重ねで作り直せない
+    （直に開くと開いた時点で中身が消え、途中で落ちると切れた ref が残る・B-356）。"""
+    path = Path(path)
+    fd, tmp = tempfile.mkstemp(dir=str(path.parent), prefix=".ref-", suffix=".tmp")
+    try:
+        with os.fdopen(fd, "w", encoding="utf-8") as f:
+            f.write(json.dumps(ref, indent=2, ensure_ascii=False) + "\n")
+            f.flush()
+            os.fsync(f.fileno())
+        os.replace(tmp, path)
+    except BaseException:
+        try:
+            os.unlink(tmp)
+        except OSError:
+            pass
+        raise

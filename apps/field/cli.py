@@ -70,11 +70,13 @@ from apps.field.bench import (
     write_probe,
 )
 from apps.field.bench_analysis import (
+    add_tx_output,
     analyze,
     read_ref,
     ref_template,
     render_markdown,
     write_calibrations,
+    write_ref,
     write_report,
 )
 from apps.field.calib import DeviceCalibration, read_device_calibration
@@ -770,6 +772,13 @@ _CONT_ONLY_2400 = "cont は 2.4 GHz だけです（settings --band 2400 にし�
 def _cont(args: argparse.Namespace) -> int:
     if not 1 <= args.seconds <= 600:
         raise SessionError("--seconds は 1〜600 です")
+    # ref は測る前に読む＝使えない ref で止まるのが測定と手入力の後だと、測った値が失われる（B-356）。
+    if args.ref.exists():
+        ref = read_ref(args.ref)
+    elif args.ref.parent.is_dir():
+        ref = ref_template()
+    else:
+        raise SessionError(f"ref を置くフォルダがありません: {args.ref.parent}")
     serial = _import_serial()
     port = _ReopeningPort(serial, args.port, args.baud)
     dialect = load_dialect()
@@ -845,14 +854,13 @@ def _cont(args: argparse.Namespace) -> int:
     reading = float(_prompt(f"測定器の読み（dBm・{args.reading}）:"))
     instrument = _prompt("測定器の名前（空でも可）:").strip()
     value = burst_dbm(reading, kind=args.reading, duty=last["duty"], pad_db=args.pad_db)
-    ref = read_ref(args.ref) if args.ref.exists() else ref_template()
-    ref.setdefault("2400", {}).setdefault("tx_output", []).append({
+    add_tx_output(ref, "2400", {
         "device_id": device, "power_cdbm": power, "channel": channel,
         "dbm": round(value, 3), "measured_on": datetime.now(timezone.utc).date().isoformat(),
         "instrument": instrument, "reading_kind": args.reading, "reading_dbm": reading,
         "pad_db": args.pad_db, "duty": last["duty"],
     })
-    args.ref.write_text(json.dumps(ref, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    write_ref(args.ref, ref)
     print(f"SMA 端の出力 {value:.3f} dBm を {args.ref} に足しました")
     return 0
 

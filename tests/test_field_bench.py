@@ -679,6 +679,63 @@ def test_an_old_flat_ref_is_refused(tmp_path):
         BA.read_ref(path)
 
 
+@pytest.mark.parametrize("text, message", [
+    ("{", "JSON"),
+    ('{"2400": []}', "形"),
+    ('{"2400": {"tx_output": {}}}', "形"),
+    ('{"920": {"rx_direct": 5}}', "形"),
+])
+def test_cont_refuses_an_unusable_ref_before_measuring(tmp_path, monkeypatch, capsys, text, message):
+    """使えない ref は、ポートを開く（＝連続送信で測り、読みを打ち込む）前に止めること（B-356）。"""
+    path = tmp_path / "ref.json"
+    path.write_text(text, encoding="utf-8")
+    monkeypatch.setattr(cli, "_import_serial", lambda: pytest.fail("測る前に止まるはず"))
+    assert cli.main(["cont", "--port", "COM9", "--ref", str(path)]) == 2
+    assert message in capsys.readouterr().err
+    assert path.read_text(encoding="utf-8") == text
+
+
+def test_cont_refuses_a_ref_in_a_missing_folder_before_measuring(tmp_path, monkeypatch, capsys):
+    monkeypatch.setattr(cli, "_import_serial", lambda: pytest.fail("測る前に止まるはず"))
+    assert cli.main(["cont", "--port", "COM9", "--ref", str(tmp_path / "無い" / "ref.json")]) == 2
+    assert "フォルダ" in capsys.readouterr().err
+
+
+def test_adding_a_tx_output_keeps_the_rows_already_there(tmp_path):
+    """`cont` の 1 行は末尾に足すだけ＝既存の行・ほかの帯域は残る。null の節は空として読む。"""
+    ref = BA.ref_template()
+    ref["2400"]["tx_output"].append({"device_id": "aa", "dbm": 12.0})
+    ref["920"] = None
+    path = tmp_path / "ref.json"
+    BA.write_ref(path, ref)
+    ref = BA.read_ref(path)
+    BA.add_tx_output(ref, "2400", {"device_id": "bb", "dbm": 13.0})
+    BA.add_tx_output(ref, "920", {"device_id": "cc", "dbm": 11.0})
+    BA.write_ref(path, ref)
+    got = BA.read_ref(path)
+    assert [t["device_id"] for t in got["2400"]["tx_output"]] == ["aa", "bb"]
+    assert got["2400"]["fixed_loss_db"] is None
+    assert got["920"] == {"tx_output": [{"device_id": "cc", "dbm": 11.0}]}
+
+
+def test_a_failed_ref_write_leaves_the_old_file(tmp_path, monkeypatch):
+    """書き切ってから置き換える＝途中で落ちても前の ref が残り、一時ファイルも残らない（B-356）。"""
+    path = tmp_path / "ref.json"
+    BA.write_ref(path, BA.ref_template())
+    old = path.read_text(encoding="utf-8")
+
+    def boom(*_a):
+        raise OSError("置き換えの前に落ちた")
+
+    monkeypatch.setattr(BA.os, "replace", boom)
+    ref = BA.read_ref(path)
+    BA.add_tx_output(ref, "2400", {"device_id": "aa", "dbm": 12.0})
+    with pytest.raises(OSError):
+        BA.write_ref(path, ref)
+    assert path.read_text(encoding="utf-8") == old
+    assert [p.name for p in tmp_path.iterdir()] == ["ref.json"]
+
+
 @pytest.mark.parametrize("band", S.BANDS)
 def test_the_default_power_sweep_includes_the_metered_power(band):
     """他の電力の出力は、パワー計で測った電力（計画の power_dbm）からの相対で導く＝
