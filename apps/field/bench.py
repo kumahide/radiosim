@@ -42,9 +42,11 @@ from apps.field.session import (
     RAW_FILE,
     RAW_INDEX_COLUMNS,
     RAW_INDEX_FILE,
+    RSSI_RAW_SATURATED,
     SessionError,
     append_raw,
     parse_utc,
+    rssi_saturated,
 )
 
 BENCH_FORMAT = 1
@@ -202,7 +204,8 @@ class StepCount:
 
     sent: int
     received: int
-    rssi_mean: float | None
+    rssi_mean: float | None         # 飽和（生値 −256）が 1 つでもあれば None
+    saturated: int = 0
 
     @property
     def rate(self) -> float:
@@ -223,10 +226,11 @@ class ProbeLink:
     sent: int
     received: int
     usb_lost: int                   # USB で落ちたサンプル（sample_seq の飛び）
-    rssi_min: int | None            # 受信レベルの生値
+    rssi_min: int | None            # 受信レベルの生値（飽和の −256 を除く）
     rssi_max: int | None
     noise_floor: int | None         # 雑音フロアの生値の中央値
     rssi_median: float | None = None   # 受信レベルの生値の中央値（前回との比べに使う）
+    saturated: int = 0              # 生値 −256（E220 の飽和の回り込み・B-361）の数
 
     @property
     def rate(self) -> float:
@@ -327,6 +331,12 @@ def find_probe_baseline(
             continue
         were = record.get("settings") or {}
         if any(were.get(k) != settings.get(k) for k in keys):
+            continue
+        # 飽和した回は受信レベルが測れていない（B-361）。飽和の欄の無い古い記録は、
+        # −256 が最小に載っている（2026-10-19 にそのまま合格した回）。
+        if any(isinstance(link, dict)
+               and (link.get("saturated", 0) > 0 or link.get("rssi_min") == RSSI_RAW_SATURATED)
+               for link in record.get("links") or []):
             continue
         found = (path.parent.name, record)
     return found
@@ -614,6 +624,8 @@ class BenchRunner:
         count = self._count(row)
         self.results.setdefault(kind, []).append((row, count))
         level = "" if count.rssi_mean is None else f"  RSSI 平均 {count.rssi_mean:.2f}"
+        if count.saturated:
+            level += f"  ⚠️ 飽和 {count.saturated} 件（生値 −256＝受信が強すぎる）"
         self._say(
             f"  {tx.upper()}→{_other(tx).upper()} {label}: "
             f"{count.received}/{count.sent}（{count.rate:.0%}）{level}"
@@ -641,9 +653,11 @@ class BenchRunner:
 
     def _count(self, row: dict[str, Any]) -> StepCount:
         sent, got = self._step_samples(row)
-        levels = [f["rssi_raw"] for f in got]
-        mean = sum(levels) / len(levels) if levels else None
-        return StepCount(sent, len(levels), mean)
+        levels = [f["rssi_raw"] for f in got if not rssi_saturated(f["rssi_raw"])]
+        saturated = len(got) - len(levels)
+        # 飽和があれば平均を名乗らない（温めの落ち着きの判定にも入れない）。
+        mean = sum(levels) / len(levels) if levels and not saturated else None
+        return StepCount(sent, len(got), mean, saturated)
 
     # 動作確認 ---------------------------------------------------------------------
 
@@ -665,7 +679,7 @@ class BenchRunner:
 
     def _probe_link(self, row: dict[str, Any]) -> ProbeLink:
         sent, got = self._step_samples(row)
-        levels = [f["rssi_raw"] for f in got]
+        levels = [f["rssi_raw"] for f in got if not rssi_saturated(f["rssi_raw"])]
         noise = sorted(f["noise_floor_raw"] for f in got)
         return ProbeLink(
             tx_unit=row["tx_unit"], rx_unit=row["rx_unit"],
@@ -674,6 +688,7 @@ class BenchRunner:
             rssi_max=max(levels) if levels else None,
             noise_floor=noise[len(noise) // 2] if noise else None,
             rssi_median=statistics.median(levels) if levels else None,
+            saturated=len(got) - len(levels),
         )
 
     def _ask(self, message: str) -> None:

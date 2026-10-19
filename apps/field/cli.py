@@ -615,14 +615,20 @@ def run_probe(
     crc_ok = not any(crc.values())
     units = {u: unit.device_id for u, unit in runner.units.items()}
     settings = {"band": runner.plan.get("band"), "power_dbm": power_dbm, "channel": channel}
-    baseline = (None if new_baseline
+    # 飽和（生値 −256・B-361）した回は受信レベルが測れていない＝比べない（合否は変えない）。
+    saturated = sum(link.saturated for link in links)
+    baseline = (None if new_baseline or saturated
                 else find_probe_baseline(runner.directory.parent, units=units, settings=settings))
     levels = [] if baseline is None else compare_probe_levels(links, units, baseline[1])
     say("\n判定")
     say(f"  {_mark(fw_ok)} ファームの版 {firmware}: {fw_note}")
     for link in links:
         say(f"  {_mark(link.ok)} {_probe_line(link)}")
-    if baseline is None:
+    if saturated:
+        say(f"  ⚠️ 受信が強すぎます（生値 −256＝飽和 {saturated} 件）。2 台を離すか"
+            "アッテネータを入れてください。今回は受信レベルを前回と比べず、"
+            "次からの基準にもしません")
+    elif baseline is None:
         why = ("前回と比べません（--new-baseline）" if new_baseline
                else "同じ 2 台・帯域・電力・チャネルで合格した前回の記録がありません")
         say(f"  ・ 受信レベル: {why}＝今回が合格なら次からの基準です"
@@ -664,6 +670,7 @@ def run_probe(
         "level_check": {
             "baseline": None if baseline is None else baseline[0],
             "new_baseline": new_baseline,
+            "saturated": saturated > 0,
             "max_drop_db": PROBE_MAX_DROP_DB,
             "links": [dict(tx_unit=x.tx_unit, rx_unit=x.rx_unit, now=x.now, before=x.before,
                            change_db=x.change_db, ok=x.ok) for x in levels],
@@ -674,8 +681,14 @@ def run_probe(
 
 
 def _probe_line(link: ProbeLink) -> str:
-    level = ("受信なし" if link.rssi_min is None
-             else f"受信レベル（生値）{link.rssi_min}〜{link.rssi_max}・雑音フロア {link.noise_floor}")
+    if link.rssi_min is not None:
+        level = f"受信レベル（生値）{link.rssi_min}〜{link.rssi_max}・雑音フロア {link.noise_floor}"
+    elif link.saturated:
+        level = "受信レベル（生値）は測れない"
+    else:
+        level = "受信なし"
+    if link.saturated:
+        level += f"・飽和 {link.saturated} 件"
     return (f"{link.tx_unit.upper()}→{link.rx_unit.upper()}: 電波で受信 "
             f"{link.received + link.usb_lost}/{link.sent}（{link.rate:.0%}）・"
             f"USB の欠け {link.usb_lost}・{level}")

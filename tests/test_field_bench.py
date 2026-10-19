@@ -1004,7 +1004,7 @@ def test_a_new_baseline_skips_the_comparison_and_becomes_the_next_one(tmp_path, 
     _probe_again(tmp_path, world, 10)
     code, record, said = _probe_again(tmp_path, world, 20, new_baseline=True)
     assert code == 0
-    assert record["level_check"] == dict(baseline=None, new_baseline=True,
+    assert record["level_check"] == dict(baseline=None, new_baseline=True, saturated=False,
                                          max_drop_db=B.PROBE_MAX_DROP_DB, links=[])
     assert any("--new-baseline" in line for line in said)
     code, record, _ = _probe_again(tmp_path, world, 20)
@@ -1042,6 +1042,64 @@ def test_a_failed_probe_is_not_a_baseline(tmp_path, dialect):
     assert _probe_again(tmp_path, world, 50)[0] == 1
     code, record, _ = _probe_again(tmp_path, world, 10)
     assert code == 0 and record["level_check"]["baseline"] is None
+
+
+def _saturating(world: World, every: int = 4):
+    """B の受けるサンプルの `every` 件に 1 件を生値 −256（E220 の飽和の回り込み）にする
+    `frame` の差し替え。"""
+    frame, n = world.b.frame, [0]
+
+    def wrapped(name: str, values: dict) -> bytes:
+        if name == "RADIOSIM_FIELD_RX_SAMPLE":
+            n[0] += 1
+            if n[0] % every == 0:
+                values = dict(values, rssi_raw=S.RSSI_RAW_SATURATED)
+        return frame(name, values)
+
+    return wrapped
+
+
+def test_a_saturated_probe_neither_compares_nor_becomes_a_baseline(tmp_path, dialect):
+    """B-361。生値 −256 は「受信が強すぎて測れない」＝最小・中央値に入れず、前回とも比べず、
+    次からの基準にもしない。合否は変えない（⚠️ の行で知らせる）。"""
+    world = World(dialect)
+    first = _probe_runner(tmp_path, world)
+    world.atten = 10
+    assert _run_probe(first, []) == 0
+    clean = world.b.frame
+    world.b.frame = _saturating(world)   # type: ignore[method-assign]
+    runner = _probe_runner(tmp_path, world)
+    said: list[str] = []
+    assert _run_probe(runner, said) == 0
+    record = _probe_record(runner)
+    a_to_b = record["links"][0]
+    assert a_to_b["saturated"] > 0 and a_to_b["ok"]
+    assert a_to_b["rssi_min"] != S.RSSI_RAW_SATURATED
+    assert a_to_b["rssi_median"] > -100
+    assert record["level_check"]["saturated"] is True and record["level_check"]["links"] == []
+    assert any("受信が強すぎます" in line for line in said)
+    assert any("A→B" in line and "飽和" in line for line in said)
+    # その場の数え（measure）も平均を名乗らない。
+    _row, count = runner.results["probe"][0]
+    assert count.saturated > 0 and count.rssi_mean is None
+    world.b.frame = clean                # type: ignore[method-assign]
+    again = _probe_runner(tmp_path, world)
+    assert _run_probe(again, []) == 0
+    assert _probe_record(again)["level_check"]["baseline"] == first.directory.name
+
+
+def test_an_old_probe_record_that_passed_on_the_wrapped_value_is_not_a_baseline(tmp_path):
+    """2026-10-19 の回は −256 を最小に載せたまま合格していた＝飽和の欄が無い古い記録でも外す。"""
+    units = {"a": "aa:bb:cc:00:00:0a", "b": "aa:bb:cc:00:00:0b"}
+    settings = {"band": "920", "power_dbm": 13, "channel": 0}
+    folder = tmp_path / "probe-20261019T000000Z"
+    folder.mkdir()
+    (folder / B.PROBE_FILE).write_text(json.dumps({
+        "passed": True, "units": units, "settings": settings,
+        "links": [{"tx_unit": "a", "rx_unit": "b", "rssi_min": S.RSSI_RAW_SATURATED,
+                   "rssi_max": -20, "rssi_median": -21}],
+    }), encoding="utf-8")
+    assert B.find_probe_baseline(tmp_path, units=units, settings=settings) is None
 
 
 def test_usb_losses_are_counted_in_arrival_order():
