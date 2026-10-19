@@ -42,7 +42,7 @@ from apps.field.bench import (
 from apps.field.calib import DeviceCalibration, RxCurve, TxOutput, write_device_calibration
 from apps.field.mavlink.dialect import Dialect, load_dialect
 from apps.field.mavlink.reader import FrameStream, ReadStats, mac
-from apps.field.session import BANDS, SessionError, parse_utc, read_raw
+from apps.field.session import BANDS, SessionError, parse_utc, read_raw, rssi_saturated
 
 # 目安（決めるのは作業者）。
 FULL_RATE = 0.99             # 線形性・ディザを見るステップ＝ほぼ全部届いたステップ
@@ -98,8 +98,10 @@ class StepStats:
     sent: int                 # TX の控えの番号の幅
     received: int
     usb_lost: int             # RX の sample_seq の欠け（電波ではなく PC までの間）
-    rssi: tuple[int, ...]
+    rssi: tuple[int, ...]     # 飽和（生値 −256）を除いた生値
     noise_mean: float | None
+    # 生値 −256（E220 の飽和の回り込み・B-361）＝届いた数には入れるが、レベルには使わない。
+    saturated: int = 0
 
     @property
     def rate(self) -> float:
@@ -108,11 +110,15 @@ class StepStats:
 
     @property
     def mean(self) -> float | None:
-        return sum(self.rssi) / len(self.rssi) if self.rssi else None
+        # 飽和が 1 つでもあれば平均は名乗らない（残りの値も頭打ちの近く＝当てはめ・個体差・
+        # 電力・チャネルの点から外れる。どれも `mean is not None` で絞っている）。
+        if self.saturated or not self.rssi:
+            return None
+        return sum(self.rssi) / len(self.rssi)
 
     @property
     def std(self) -> float | None:
-        if len(self.rssi) < 2:
+        if self.saturated or len(self.rssi) < 2:
             return None
         m = sum(self.rssi) / len(self.rssi)
         return math.sqrt(sum((x - m) ** 2 for x in self.rssi) / (len(self.rssi) - 1))
@@ -130,6 +136,7 @@ def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
     echoes = [f for when, f in tx.echoes
               if start <= when <= end and f["config_id"] == row["tx_config_id"]]
     rssi: list[int] = []
+    saturated = 0
     noise: list[int] = []
     sample_seqs: list[int] = []
     sent = 0
@@ -148,7 +155,10 @@ def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
                     and f["config_id"] == row["rx_config_id"]
                     and low <= f["seq"] <= high
                     and early <= when.timestamp() <= late):
-                rssi.append(f["rssi_raw"])
+                if rssi_saturated(f["rssi_raw"]):
+                    saturated += 1
+                else:
+                    rssi.append(f["rssi_raw"])
                 noise.append(f["noise_floor_raw"])
                 sample_seqs.append(f["sample_seq"])
     sample_seqs.sort()
@@ -157,8 +167,8 @@ def step_stats(row: dict[str, Any], tx: _UnitLog, rx: _UnitLog) -> StepStats:
         step=row["step"], kind=row["kind"], label=row["label"],
         tx_unit=row["tx_unit"], rx_unit=row["rx_unit"],
         power_cdbm=row["power_cdbm"], channel=row["channel"], atten_db=row["atten_db"],
-        sent=sent, received=len(rssi), usb_lost=usb_lost, rssi=tuple(rssi),
-        noise_mean=sum(noise) / len(noise) if noise else None,
+        sent=sent, received=len(rssi) + saturated, usb_lost=usb_lost, rssi=tuple(rssi),
+        noise_mean=sum(noise) / len(noise) if noise else None, saturated=saturated,
     )
 
 
@@ -335,7 +345,8 @@ def analyze(
     }
     report["leak"] = [
         {"direction": _dir(s), "sent": s.sent, "received": s.received,
-         "max_rssi": max(s.rssi) if s.rssi else None, "pass": s.received == 0}
+         "max_rssi": max(s.rssi) if s.rssi else None, "saturated": s.saturated,
+         "pass": s.received == 0}
         for s in steps if s.kind == "leak"
     ]
     report["warmup"] = _warmup(steps)
@@ -395,7 +406,7 @@ def _direction(
         rows.append({
             "step": s.step, "label": s.label, "atten_db": s.atten_db, "input_dbm": round(x, 2),
             "sent": s.sent, "received": s.received, "usb_lost": s.usb_lost,
-            "rate": round(s.rate, 4),
+            "saturated": s.saturated, "rate": round(s.rate, 4),
             "rssi_mean": None if s.mean is None else round(s.mean, 3),
             "rssi_std": None if s.std is None else round(s.std, 3),
             "distinct": s.distinct,
@@ -689,6 +700,7 @@ def render_markdown(report: dict[str, Any]) -> str:
             L.append(
                 f"| {r['label']} | {r['atten_db']} | {r['input_dbm']} | {r['received']}/{r['sent']}"
                 f"{'（USB 欠け ' + str(r['usb_lost']) + '）' if r['usb_lost'] else ''}"
+                f"{'（飽和 ' + str(r['saturated']) + '）' if r.get('saturated') else ''}"
                 f" | {r['rate']:.1%} | {'' if r['rssi_mean'] is None else r['rssi_mean']}"
                 f" | {'' if r['rssi_std'] is None else r['rssi_std']} | {r['distinct']}"
                 f" | {'' if r['noise_mean'] is None else r['noise_mean']} |"

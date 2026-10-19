@@ -504,6 +504,34 @@ def test_a_step_with_usb_losses_is_kept_out_of_the_rate_curve():
     assert s.rate == 1.0
 
 
+def _step_with_raw(raws: list[int]) -> BA.StepStats:
+    rx = BA._UnitLog()
+    tx = BA._UnitLog()
+    t0 = S.parse_utc(S.format_utc(_BASE))
+    for seq, raw in enumerate(raws):
+        when = t0 + timedelta(seconds=0.1 * seq)
+        tx.echoes.append((when, {
+            "seq": seq, "config_id": 3, "sent_mask": 0xFFFFFFFF, "unsent_total": 0}))
+        rx.samples.append((when, {
+            "tx_id": (1, 2, 3, 4, 5, 6), "tx_config_id": 3, "config_id": 7, "seq": seq,
+            "rssi_raw": raw, "noise_floor_raw": -95, "sample_seq": seq}))
+    row = {"step": 1, "kind": "level", "label": "x", "tx_unit": "a", "rx_unit": "b",
+           "tx_device": "01:02:03:04:05:06", "rx_device": "x", "tx_config_id": 3,
+           "rx_config_id": 7, "power_cdbm": 1300, "channel": 0, "atten_db": 0,
+           "start_utc": S.format_utc(_BASE), "end_utc": S.format_utc(_BASE + timedelta(seconds=1))}
+    return BA.step_stats(row, tx, rx)
+
+
+def test_a_saturated_sample_is_counted_as_received_but_gives_no_level():
+    """B-361。E220 は強すぎる受信で生値が −256 に回り込む＝**届いた**（受信率は落とさない）が、
+    そのステップの平均・σ は名乗らない（当てはめ・個体差・電力・チャネルの点から外れる）。"""
+    s = _step_with_raw([-20, -21, S.RSSI_RAW_SATURATED, -20])
+    assert (s.received, s.saturated) == (4, 1)
+    assert s.rate == 1.0
+    assert s.rssi == (-20, -21, -20)
+    assert s.mean is None and s.std is None
+
+
 def test_the_rate_crossing_interpolates_between_steps():
     points = [(-80.0, 1.0), (-90.0, 1.0), (-92.0, 0.8), (-94.0, 0.2), (-96.0, 0.0)]
     assert BA.rate_crossing(points, 0.5) == pytest.approx(-93.0)
