@@ -942,6 +942,79 @@ def test_the_probe_catches_samples_lost_on_the_usb(tmp_path, dialect):
     assert b_to_a["usb_lost"] == 0 and b_to_a["ok"]
 
 
+def _probe_again(tmp_path: Path, world: World, atten: int, **over) -> tuple[int, dict, list]:
+    world.atten = atten
+    runner = _probe_runner(tmp_path, world)
+    said: list[str] = []
+    code = _run_probe(runner, said, **over)
+    return code, _probe_record(runner), said
+
+
+def test_the_probe_fails_when_the_level_drops_from_the_last_pass(tmp_path, dialect):
+    """🔑 受信レベルが同じ 2 台・同じ設定の前回の合格より 6 dB を超えて下がったら不合格にする
+    （I-245＝浮いた接続は両方向とも同じだけ下げるので、2 方向を比べても見つからない）。"""
+    world = World(dialect)                # atten 0 は模擬の受信が飽和する＝10 dB から始める
+    code, first, said = _probe_again(tmp_path, world, 10)
+    assert code == 0 and first["level_check"]["baseline"] is None
+    assert any("前回の記録がありません" in line for line in said)
+    code, record, said = _probe_again(tmp_path, world, 12)         # 置き直しの揺れ＝通す
+    assert code == 0
+    assert record["level_check"]["baseline"].startswith("probe-")
+    assert all(-4 <= x["change_db"] <= 0 and x["ok"] for x in record["level_check"]["links"])
+    # 比べる相手はいちばん新しい合格（12 dB の回）＝そこから 10 dB 下げる。
+    code, record, said = _probe_again(tmp_path, world, 22)         # 浮いた接続＝落とす
+    assert code == 1 and record["passed"] is False
+    assert not any(x["ok"] for x in record["level_check"]["links"])
+    assert all(x["ok"] for x in record["links"])                    # 受信率は落ちていない
+    assert any("--new-baseline" in line for line in said)
+    assert not any("アッテネータを 0 dB に" in line for line in said)
+
+
+def test_a_new_baseline_skips_the_comparison_and_becomes_the_next_one(tmp_path, dialect):
+    world = World(dialect)
+    _probe_again(tmp_path, world, 10)
+    code, record, said = _probe_again(tmp_path, world, 20, new_baseline=True)
+    assert code == 0
+    assert record["level_check"] == dict(baseline=None, new_baseline=True,
+                                         max_drop_db=B.PROBE_MAX_DROP_DB, links=[])
+    assert any("--new-baseline" in line for line in said)
+    code, record, _ = _probe_again(tmp_path, world, 20)
+    assert code == 0                      # 比べる相手は 10 dB の回ではなく今の基準
+    assert all(abs(x["change_db"]) < 2 for x in record["level_check"]["links"])
+
+
+def test_the_level_is_compared_by_unit_even_when_the_ports_are_swapped(tmp_path, dialect):
+    """A と B のポートを入れ替えても同じ組＝個体 ID で向きを揃えて比べること。"""
+    world = World(dialect)
+    world.b.rx_offset -= 8                # 向きで 10 dB ほど違う＝取り違えると片方が落ちる
+    _probe_again(tmp_path, world, 10)
+    world.atten = 10
+    runner = B.BenchRunner(
+        tmp_path, {"a": world.b, "b": world.a}, {"probe": {}},
+        clock=world.clock, prompt=cli._no_prompt, say=lambda _m: None,
+        software_commit=_HEAD, dialect=world.dialect, purpose="probe",
+    )
+    assert _run_probe(runner, []) == 0
+    record = _probe_record(runner)
+    assert record["level_check"]["baseline"].startswith("probe-")
+    assert all(abs(x["change_db"]) < 2 for x in record["level_check"]["links"])
+
+
+@pytest.mark.parametrize("over", [dict(power_dbm=10), dict(channel=1)])
+def test_a_pass_with_other_settings_is_not_a_baseline(tmp_path, dialect, over):
+    world = World(dialect)
+    _probe_again(tmp_path, world, 10)
+    code, record, _ = _probe_again(tmp_path, world, 20, **over)
+    assert code == 0 and record["level_check"]["baseline"] is None
+
+
+def test_a_failed_probe_is_not_a_baseline(tmp_path, dialect):
+    world = World(dialect)
+    assert _probe_again(tmp_path, world, 50)[0] == 1
+    code, record, _ = _probe_again(tmp_path, world, 10)
+    assert code == 0 and record["level_check"]["baseline"] is None
+
+
 def test_usb_losses_are_counted_in_arrival_order():
     """番号が戻ったところ（RX の再起動）は欠けに数えない＝並べ替えると混ざる。"""
     seqs = [5, 6, 8, 0, 1, 2]            # 並べ替えると 2→5 の飛びが現れて 3 になる

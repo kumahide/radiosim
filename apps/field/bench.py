@@ -30,6 +30,7 @@ import csv
 import json
 import os
 import re
+import statistics
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Callable, Mapping, Protocol
@@ -225,6 +226,7 @@ class ProbeLink:
     rssi_min: int | None            # 受信レベルの生値
     rssi_max: int | None
     noise_floor: int | None         # 雑音フロアの生値の中央値
+    rssi_median: float | None = None   # 受信レベルの生値の中央値（前回との比べに使う）
 
     @property
     def rate(self) -> float:
@@ -283,6 +285,86 @@ def write_probe(directory: Path, payload: dict[str, Any]) -> Path:
     path = directory / PROBE_FILE
     _write_json(path, payload)
     return path
+
+
+# 動作確認の受信レベルが、同じ 2 台・同じ設定で前に合格したときより何 dB 下がったら
+# 不合格にするか（I-245）。2 方向を比べても見つからない＝電波は両方向とも同じ 2 本の
+# アンテナを通るので、片側の接続が浮いていても A→B と B→A は同じだけ下がる。
+# 2026-10-19 に U.FL かアンテナの根元が浮いていたときは 12〜20 dB 下がった。机の上の
+# 置き直しの揺れ（数 dB）より大きく、浮いた接続より小さい値にした。
+PROBE_MAX_DROP_DB = 6.0
+
+
+def probe_level(link: Mapping[str, Any]) -> float | None:
+    """`probe.json` の 1 方向の受信レベル＝生値の中央値。中央値の無い古い記録は、
+    最小と最大の中ほど。"""
+    if link.get("rssi_median") is not None:
+        return float(link["rssi_median"])
+    if link.get("rssi_min") is None or link.get("rssi_max") is None:
+        return None
+    return (link["rssi_min"] + link["rssi_max"]) / 2
+
+
+def find_probe_baseline(
+    root: Path, *, units: Mapping[str, str], settings: Mapping[str, Any],
+) -> tuple[str, dict[str, Any]] | None:
+    """`root` の下で、同じ 2 台（個体 ID の組）・同じ帯域・電力・チャネルで**合格した**
+    いちばん新しい動作確認＝（フォルダ名, `probe.json` の中身）。無ければ None。
+
+    ポートの A と B を入れ替えても同じ組とみなす（比べるときは個体 ID で向きを揃える）。
+    読めない `probe.json`（途中で止まった回など）は飛ばす。
+    """
+    keys = ("band", "power_dbm", "channel")
+    found = None
+    for path in sorted(root.glob(f"probe-*/{PROBE_FILE}")):
+        try:
+            record = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, UnicodeDecodeError, json.JSONDecodeError):
+            continue
+        if not isinstance(record, dict) or record.get("passed") is not True:
+            continue
+        if sorted((record.get("units") or {}).values()) != sorted(units.values()):
+            continue
+        were = record.get("settings") or {}
+        if any(were.get(k) != settings.get(k) for k in keys):
+            continue
+        found = (path.parent.name, record)
+    return found
+
+
+@dataclass(frozen=True)
+class LevelChange:
+    """動作確認の 1 方向の受信レベルを、前の合格と比べたもの。"""
+
+    tx_unit: str
+    rx_unit: str
+    now: float | None               # 今回の生値の中央値
+    before: float | None            # 前の合格の同じ向き（個体 ID で揃える）
+
+    @property
+    def change_db(self) -> float | None:
+        return None if self.now is None or self.before is None else self.now - self.before
+
+    @property
+    def ok(self) -> bool:
+        # 受からなかった向きは受信率の項目が落とす＝ここでは二重に数えない。
+        return self.change_db is None or self.change_db >= -PROBE_MAX_DROP_DB
+
+
+def compare_probe_levels(
+    links: list[ProbeLink], units: Mapping[str, str], baseline: Mapping[str, Any],
+) -> list[LevelChange]:
+    """今回の各方向を、前の合格（`find_probe_baseline` の中身）の同じ向きと比べる。"""
+    were_units = baseline.get("units") or {}
+    before = {}
+    for link in baseline.get("links") or []:
+        tx, rx = were_units.get(link.get("tx_unit")), were_units.get(link.get("rx_unit"))
+        before[(tx, rx)] = probe_level(link)
+    return [
+        LevelChange(link.tx_unit, link.rx_unit, link.rssi_median,
+                    before.get((units[link.tx_unit], units[link.rx_unit])))
+        for link in links
+    ]
 
 
 class BenchRunner:
@@ -591,6 +673,7 @@ class BenchRunner:
             rssi_min=min(levels) if levels else None,
             rssi_max=max(levels) if levels else None,
             noise_floor=noise[len(noise) // 2] if noise else None,
+            rssi_median=statistics.median(levels) if levels else None,
         )
 
     def _ask(self, message: str) -> None:

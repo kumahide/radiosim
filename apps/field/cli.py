@@ -59,12 +59,16 @@ from apps.field.aggregate import (
     write_batch_csv,
 )
 from apps.field.bench import (
+    PROBE_MAX_DROP_DB,
     PROBE_MIN_RATE,
     STAGES,
     BenchError,
     BenchRunner,
+    LevelChange,
     ProbeLink,
+    compare_probe_levels,
     default_plan,
+    find_probe_baseline,
     judge_firmware,
     plan_band,
     write_probe,
@@ -138,6 +142,9 @@ def main(argv: list[str] | None = None) -> int:
                    help="送信電力（dBm・省略すると帯域の既定＝920 は 13・2400 は 15）")
     p.add_argument("--channel", type=int,
                    help="チャネル（省略すると帯域の既定＝920 は 0・2400 は 1）")
+    p.add_argument("--new-baseline", action="store_true",
+                   help="受信レベルを前回の合格と比べず、今回を次からの基準にする"
+                        "（2 台の置き方を変えたとき）")
 
     p = sub.add_parser("bench", help="ステージ0 の机上試験")
     bench = p.add_subparsers(dest="bench_command", required=True)
@@ -580,7 +587,8 @@ def _probe(args: argparse.Namespace) -> int:
         print(f"動作確認: {runner.directory}（{args.band} MHz 帯）")
         return run_probe(runner, seconds=args.seconds, power_dbm=power,
                          channel=channel, software_commit=commit,
-                         same_source=_same_firmware_source, say=print)
+                         same_source=_same_firmware_source, say=print,
+                         new_baseline=args.new_baseline)
     except BenchError as e:
         print(f"\n止まりました: {e}", file=sys.stderr)
         return 2
@@ -591,21 +599,38 @@ def _probe(args: argparse.Namespace) -> int:
 
 def run_probe(
     runner: BenchRunner, *, seconds: float, power_dbm: float, channel: int,
-    software_commit: str, same_source: Any, say: Any,
+    software_commit: str, same_source: Any, say: Any, new_baseline: bool = False,
 ) -> int:
-    """動作確認を回して判定を表示し、`probe.json` に残す。全部合格なら 0、でなければ 1。"""
+    """動作確認を回して判定を表示し、`probe.json` に残す。全部合格なら 0、でなければ 1。
+
+    受信レベルは、同じ `root` で同じ 2 台・同じ設定が前に合格したときと比べる（I-245）。
+    """
     links = runner.probe(duration_s=seconds, power_dbm=power_dbm, channel=channel)
     firmware = runner.units["a"].config.fields["firmware_version"]   # type: ignore[union-attr]
     fw_ok, fw_note = judge_firmware(firmware, software_commit, same_source)
     crc = {u: unit.stream.stats.crc_errors for u, unit in runner.units.items()}
     crc_ok = not any(crc.values())
+    units = {u: unit.device_id for u, unit in runner.units.items()}
+    settings = {"band": runner.plan.get("band"), "power_dbm": power_dbm, "channel": channel}
+    baseline = (None if new_baseline
+                else find_probe_baseline(runner.directory.parent, units=units, settings=settings))
+    levels = [] if baseline is None else compare_probe_levels(links, units, baseline[1])
     say("\n判定")
     say(f"  {_mark(fw_ok)} ファームの版 {firmware}: {fw_note}")
     for link in links:
         say(f"  {_mark(link.ok)} {_probe_line(link)}")
+    if baseline is None:
+        why = ("前回と比べません（--new-baseline）" if new_baseline
+               else "同じ 2 台・帯域・電力・チャネルで合格した前回の記録がありません")
+        say(f"  ・ 受信レベル: {why}＝今回が合格なら次からの基準です"
+            "（基準にする前に BENCH.md の「アンテナの点検」）")
+    else:
+        for level in levels:
+            say(f"  {_mark(level.ok)} {_level_line(level, baseline[0])}")
+    levels_ok = all(level.ok for level in levels)
     say(f"  {_mark(crc_ok)} USB の読み取り: "
         + "・".join(f"{u.upper()} の CRC 不一致 {n}" for u, n in crc.items()))
-    passed = fw_ok and crc_ok and all(link.ok for link in links)
+    passed = fw_ok and crc_ok and levels_ok and all(link.ok for link in links)
     if passed:
         say("すべて合格です。")
     else:
@@ -617,17 +642,29 @@ def run_probe(
         if any(link.usb_lost for link in links) or not crc_ok:
             say("  USB の読み取りで落ちたデータがあります。USB ケーブルを替えるか、"
                 "ハブを通さずに PC へ直接つないでください。")
+        if not levels_ok:
+            say(f"  受信レベルが前回の合格より {PROBE_MAX_DROP_DB:.0f} dB を超えて下がりました。"
+                "置き方を変えていなければ、コネクタ（U.FL・SMA）とアンテナの根元を押して"
+                "値が戻るか確かめてください（BENCH.md の「アンテナの点検」）。"
+                "置き方を変えたなら --new-baseline を付けて測り直してください。")
     path = write_probe(runner.directory, {
         "passed": passed,
         "software_commit": software_commit,
         "firmware": {"version": firmware, "ok": fw_ok, "note": fw_note},
-        "units": {u: unit.device_id for u, unit in runner.units.items()},
+        "units": units,
         "settings": {"band": runner.plan.get("band"), "seconds": seconds,
                      "power_dbm": power_dbm, "channel": channel},
         "min_rate": PROBE_MIN_RATE,
         "links": [dict(asdict(link), rate=link.rate, air_ok=link.air_ok, ok=link.ok)
                   for link in links],
         "crc_errors": crc,
+        "level_check": {
+            "baseline": None if baseline is None else baseline[0],
+            "new_baseline": new_baseline,
+            "max_drop_db": PROBE_MAX_DROP_DB,
+            "links": [dict(tx_unit=x.tx_unit, rx_unit=x.rx_unit, now=x.now, before=x.before,
+                           change_db=x.change_db, ok=x.ok) for x in levels],
+        },
     })
     say(f"記録: {path}")
     return 0 if passed else 1
@@ -639,6 +676,15 @@ def _probe_line(link: ProbeLink) -> str:
     return (f"{link.tx_unit.upper()}→{link.rx_unit.upper()}: 電波で受信 "
             f"{link.received + link.usb_lost}/{link.sent}（{link.rate:.0%}）・"
             f"USB の欠け {link.usb_lost}・{level}")
+
+
+def _level_line(level: LevelChange, baseline: str) -> str:
+    head = f"{level.tx_unit.upper()}→{level.rx_unit.upper()} の受信レベル（生値の中央値）"
+    if level.change_db is None:
+        now = "受信なし" if level.now is None else f"{level.now:g}"
+        return f"{head} {now}: 前回（{baseline}）と比べられません"
+    return (f"{head} {level.now:g}: 前回 {level.before:g}（{baseline}）から "
+            f"{level.change_db:+.1f} dB")
 
 
 def _mark(ok: bool) -> str:
