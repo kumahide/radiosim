@@ -99,6 +99,7 @@ from apps.field.session import (
     read_header,
     read_raw,
     read_rx_samples,
+    rssi_saturated,
 )
 
 _REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -1109,8 +1110,9 @@ class MonitorTally:
         self._reset()
 
     def _reset(self) -> None:
-        self._rssi: dict[str, list[int]] = {}
-        self._noise: dict[str, list[int]] = {}
+        self._rssi: dict[str, list[int]] = {}     # 飽和（生値 −256・B-361）を除く
+        self._saturated: dict[str, int] = {}
+        self._noise: dict[str, list[int]] = {}    # 受けたサンプルすべて（受信の数もここから）
         self._air_lost: dict[str, int] = {}
         self._usb_lost: dict[str, int] = {}
         self._unsent: dict[str, int] = {}
@@ -1139,7 +1141,10 @@ class MonitorTally:
         if message.name != "RADIOSIM_FIELD_RX_SAMPLE":
             return None
         tx = mac(f["tx_id"])
-        self._rssi.setdefault(tx, []).append(f["rssi_raw"])
+        if rssi_saturated(f["rssi_raw"]):
+            self._saturated[tx] = self._saturated.get(tx, 0) + 1
+        else:
+            self._rssi.setdefault(tx, []).append(f["rssi_raw"])
         self._noise.setdefault(tx, []).append(f["noise_floor_raw"])
         seq, sample_seq, unsent_total = f["seq"], f["sample_seq"], f["unsent_total"]
         last = self._last.get(tx)
@@ -1158,12 +1163,20 @@ class MonitorTally:
     def lines(self) -> list[str]:
         """区切りの間の集計を 1 送信機 1 行で返し、数え直す。"""
         out = []
-        for tx, levels in sorted(self._rssi.items()):
-            noise = sorted(self._noise[tx])
+        for tx, noise in sorted(self._noise.items()):
+            levels = self._rssi.get(tx, [])
+            saturated = self._saturated.get(tx, 0)
+            if not levels:
+                level = f"受信レベル（生値）飽和 {saturated} 件＝測れない"
+            else:
+                level = (f"受信レベル（生値）平均 {sum(levels) / len(levels):.1f}"
+                         f"（{min(levels)}〜{max(levels)}）")
+                if saturated:
+                    level += f"・飽和 {saturated} 件"
+            noise.sort()
             out.append(
-                f"{tx}  受信 {len(levels)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
-                f"USB {self._usb_lost.get(tx, 0)}・送らず {self._unsent.get(tx, 0)}  受信レベル（生値）平均 "
-                f"{sum(levels) / len(levels):.1f}（{min(levels)}〜{max(levels)}）  "
+                f"{tx}  受信 {len(noise)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
+                f"USB {self._usb_lost.get(tx, 0)}・送らず {self._unsent.get(tx, 0)}  {level}  "
                 f"雑音フロア {noise[len(noise) // 2]}"
             )
         for tx, sent in sorted(self._sent.items()):

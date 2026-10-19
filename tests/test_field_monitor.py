@@ -95,6 +95,28 @@ def test_losses_are_split_into_air_and_usb(dialect):
     assert tally.lines() == []                 # 表示したら数え直す
 
 
+def test_a_saturated_sample_is_received_but_kept_out_of_the_level(dialect):
+    """B-361。生値 −256（E220 の飽和の回り込み）は受信に数えるが、平均・範囲には入れない。"""
+    tally = cli.MonitorTally(dialect)
+    messages, _ = read_log(_sample(dialect, 0, 0, rssi=-20) + _sample(dialect, 1, 1, rssi=-256)
+                           + _sample(dialect, 2, 2, rssi=-22))
+    for m in messages:
+        tally.add(m)
+    [line] = tally.lines()
+    assert "受信 3" in line
+    assert "平均 -21.0（-22〜-20）" in line and "飽和 1 件" in line
+
+
+def test_all_saturated_says_the_level_cannot_be_measured(dialect):
+    tally = cli.MonitorTally(dialect)
+    messages, _ = read_log(_sample(dialect, 0, 0, rssi=-256) + _sample(dialect, 1, 1, rssi=-256))
+    for m in messages:
+        tally.add(m)
+    [line] = tally.lines()
+    assert "受信 2" in line and "飽和 2 件＝測れない" in line and "平均" not in line
+    assert "雑音フロア -93" in line
+
+
 def test_cycles_the_tx_did_not_send_are_not_air_losses(dialect):
     """B-355。TX が送らなかった周期（`unsent_total` の差）は電波の欠けに数えない。
     seq 0→3 の間の 2 周期を送らず、3→5 の間の 1 周期は送ったが届かなかった。"""
