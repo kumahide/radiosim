@@ -730,6 +730,40 @@ def test_cont_refuses_a_ref_in_a_missing_folder_before_measuring(tmp_path, monke
     assert "フォルダ" in capsys.readouterr().err
 
 
+class _FakeKernel32:
+    def __init__(self) -> None:
+        self.calls: list[int] = []
+
+    def SetThreadExecutionState(self, flags: int) -> int:  # noqa: N802 — Win32 の名前
+        self.calls.append(flags)
+        return 0x80000000
+
+
+@pytest.mark.parametrize("argv", [
+    ["bench", "run", "--port-a", "COM3", "--port-b", "COM4"],
+    ["probe", "--port-a", "COM3", "--port-b", "COM4"],
+    ["cont", "--port", "COM4"],
+])
+def test_measuring_keeps_windows_awake_from_opening_the_ports_and_lets_go_on_error(
+        tmp_path, monkeypatch, capsys, argv):
+    """bench・probe・cont も gnss log と同じく、機器とやり取りするあいだスリープさせない
+    （X13 は電池だと休止に入り、測定が途中で止まる）。落ちても元へ戻すこと。"""
+    k = _FakeKernel32()
+    keep_awake = cli._KeepAwake
+    monkeypatch.setattr(cli, "_KeepAwake", lambda: keep_awake(k))
+
+    def open_ports():
+        assert k.calls == [0x80000003]      # ポートを開く時点で既に起こしてある
+        raise S.SessionError("ポートを開けません")
+
+    monkeypatch.setattr(cli, "_import_serial", open_ports)
+    extra = (["--ref", str(tmp_path / "ref.json")] if argv[0] == "cont"
+             else ["--root", str(tmp_path)])
+    assert cli.main(argv + extra) == 2
+    assert k.calls == [0x80000003, 0x80000000]   # 元へ戻した
+    assert "スリープせず画面も消しません" in capsys.readouterr().out
+
+
 def test_adding_a_tx_output_keeps_the_rows_already_there(tmp_path):
     """`cont` の 1 行は末尾に足すだけ＝既存の行・ほかの帯域は残る。null の節は空として読む。"""
     ref = BA.ref_template()

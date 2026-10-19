@@ -436,6 +436,13 @@ class _KeepAwake:
         self.held = False
 
 
+def _say_awake(awake: _KeepAwake, during: str) -> None:
+    if awake.held:
+        print(f"{during}はスリープせず画面も消しません（蓋は開けたままに）")
+    else:
+        print("⚠️ スリープを止められませんでした＝電源の設定でスリープを切ってください")
+
+
 # --- export ------------------------------------------------------------------
 
 
@@ -542,27 +549,29 @@ def _bench(args: argparse.Namespace) -> int:
             raise SessionError(
                 f"計画の帯域（{plan_band(plan)}）と --band（{args.band}）が違います")
     stages = tuple(s.strip() for s in args.only.split(",")) if args.only else STAGES
-    serial = _import_serial()
-    ports = {
-        "a": _ReopeningPort(serial, args.port_a, args.baud),
-        "b": _ReopeningPort(serial, args.port_b, args.baud),
-    }
-    runner = BenchRunner(
-        args.root, ports, plan, clock=now_utc, prompt=_prompt, say=print,
-        software_commit=software_commit(),
-    )
-    print(f"机上試験: {runner.directory}")
-    try:
-        runner.run(stages)
-    except KeyboardInterrupt:
-        print("\n中断しました（ここまでの記録は残っています）")
-        return 1
-    except BenchError as e:
-        print(f"\n止まりました: {e}（ここまでの記録は残っています）", file=sys.stderr)
-        return 2
-    finally:
-        for port in ports.values():
-            port.close()
+    with _KeepAwake() as awake:
+        _say_awake(awake, "試験中")
+        serial = _import_serial()
+        ports = {
+            "a": _ReopeningPort(serial, args.port_a, args.baud),
+            "b": _ReopeningPort(serial, args.port_b, args.baud),
+        }
+        runner = BenchRunner(
+            args.root, ports, plan, clock=now_utc, prompt=_prompt, say=print,
+            software_commit=software_commit(),
+        )
+        print(f"机上試験: {runner.directory}")
+        try:
+            runner.run(stages)
+        except KeyboardInterrupt:
+            print("\n中断しました（ここまでの記録は残っています）")
+            return 1
+        except BenchError as e:
+            print(f"\n止まりました: {e}（ここまでの記録は残っています）", file=sys.stderr)
+            return 2
+        finally:
+            for port in ports.values():
+                port.close()
     print(f"終わりました。判定: python -m apps.field.cli bench analyze {runner.directory}")
     return 0
 
@@ -574,31 +583,33 @@ def _probe(args: argparse.Namespace) -> int:
     defaults = default_plan(args.band)
     power = defaults["power_dbm"] if args.power is None else args.power
     channel = defaults["channel"] if args.channel is None else args.channel
-    serial = _import_serial()
-    commit = software_commit()
-    ports = {
-        "a": _ReopeningPort(serial, args.port_a, args.baud),
-        "b": _ReopeningPort(serial, args.port_b, args.baud),
-    }
-    try:
-        runner = BenchRunner(
-            args.root, ports, {"band": args.band,
-                               "probe": {"seconds": args.seconds, "power_dbm": power,
-                                         "channel": channel}},
-            clock=now_utc, prompt=_no_prompt, say=print, software_commit=commit,
-            purpose="probe",
-        )
-        print(f"動作確認: {runner.directory}（{args.band} MHz 帯）")
-        return run_probe(runner, seconds=args.seconds, power_dbm=power,
-                         channel=channel, software_commit=commit,
-                         same_source=_same_firmware_source, say=print,
-                         new_baseline=args.new_baseline)
-    except BenchError as e:
-        print(f"\n止まりました: {e}", file=sys.stderr)
-        return 2
-    finally:
-        for port in ports.values():
-            port.close()
+    with _KeepAwake() as awake:
+        _say_awake(awake, "動作確認中")
+        serial = _import_serial()
+        commit = software_commit()
+        ports = {
+            "a": _ReopeningPort(serial, args.port_a, args.baud),
+            "b": _ReopeningPort(serial, args.port_b, args.baud),
+        }
+        try:
+            runner = BenchRunner(
+                args.root, ports, {"band": args.band,
+                                   "probe": {"seconds": args.seconds, "power_dbm": power,
+                                             "channel": channel}},
+                clock=now_utc, prompt=_no_prompt, say=print, software_commit=commit,
+                purpose="probe",
+            )
+            print(f"動作確認: {runner.directory}（{args.band} MHz 帯）")
+            return run_probe(runner, seconds=args.seconds, power_dbm=power,
+                             channel=channel, software_commit=commit,
+                             same_source=_same_firmware_source, say=print,
+                             new_baseline=args.new_baseline)
+        except BenchError as e:
+            print(f"\n止まりました: {e}", file=sys.stderr)
+            return 2
+        finally:
+            for port in ports.values():
+                port.close()
 
 
 def run_probe(
@@ -845,73 +856,78 @@ def _cont(args: argparse.Namespace) -> int:
         read_ref(args.ref)
     elif not args.ref.parent.is_dir():
         raise SessionError(f"ref を置くフォルダがありません: {args.ref.parent}")
-    serial = _import_serial()
-    port = _ReopeningPort(serial, args.port, args.baud)
-    dialect = load_dialect()
-    stream = FrameStream(dialect=dialect)
-    configs: list[Any] = []
-    lines: list[str] = []
+    # 包むのは機器とやり取りするあいだだけ＝測定器の読みを打ち込むのを待つあいだは要らない。
+    with _KeepAwake() as awake:
+        _say_awake(awake, "測定中")
+        serial = _import_serial()
+        port = _ReopeningPort(serial, args.port, args.baud)
+        dialect = load_dialect()
+        stream = FrameStream(dialect=dialect)
+        configs: list[Any] = []
+        lines: list[str] = []
 
-    def pump(seconds: float) -> None:
-        until = time.monotonic() + seconds
-        while time.monotonic() < until:
-            chunk = port.read(max(1, port.in_waiting))
-            configs.extend(m for m in stream.feed(chunk) if m.name == "RADIOSIM_FIELD_CONFIG")
-            lines.extend(stream.take_lines())
+        def pump(seconds: float) -> None:
+            until = time.monotonic() + seconds
+            while time.monotonic() < until:
+                chunk = port.read(max(1, port.in_waiting))
+                configs.extend(m for m in stream.feed(chunk)
+                               if m.name == "RADIOSIM_FIELD_CONFIG")
+                lines.extend(stream.take_lines())
 
-    def role(m: Any) -> str:
-        return dialect.label("RADIOSIM_FIELD_ROLE", m.fields["role"])
+        def role(m: Any) -> str:
+            return dialect.label("RADIOSIM_FIELD_ROLE", m.fields["role"])
 
-    def band(m: Any) -> str:
-        return dialect.label("RADIOSIM_FIELD_BAND", m.fields["band"])
+        def band(m: Any) -> str:
+            return dialect.label("RADIOSIM_FIELD_BAND", m.fields["band"])
 
-    try:
-        port.write(b"show\n")
-        pump(2.5)
-        # RX は近くの TX の設定を中継する＝役割が rx の設定があれば、それが自分で、
-        # tx の設定は他の機器のもの（取り違えると他の個体の出力として記録される）。
-        own_rx = [m for m in configs if role(m) == "rx"]
-        if own_rx:
-            if band(own_rx[-1]) != "2400":
+        try:
+            port.write(b"show\n")
+            pump(2.5)
+            # RX は近くの TX の設定を中継する＝役割が rx の設定があれば、それが自分で、
+            # tx の設定は他の機器のもの（取り違えると他の個体の出力として記録される）。
+            own_rx = [m for m in configs if role(m) == "rx"]
+            if own_rx:
+                if band(own_rx[-1]) != "2400":
+                    raise SessionError(_CONT_ONLY_2400)
+                own = mac(own_rx[-1].fields["device_id"])
+                print("TX に切り替えます（role tx）")
+                configs.clear()
+                port.write(b"role tx\n")
+                pump(6.0)
+                mine = [m for m in configs
+                        if role(m) == "tx" and mac(m.fields["device_id"]) == own]
+            else:
+                mine = [m for m in configs if role(m) == "tx"]
+            if not mine or len({mac(m.fields["device_id"]) for m in mine}) != 1:
+                raise SessionError("TX の設定が届きません（ポート・電源・ファームを確かめてください）")
+            config = mine[-1]
+            if band(config) != "2400":
+                # 920 MHz は AUX の Low が空中の時間と同じでなく、デューティを測れない（I-242）。
                 raise SessionError(_CONT_ONLY_2400)
-            own = mac(own_rx[-1].fields["device_id"])
-            print("TX に切り替えます（role tx）")
-            configs.clear()
-            port.write(b"role tx\n")
-            pump(6.0)
-            mine = [m for m in configs if role(m) == "tx" and mac(m.fields["device_id"]) == own]
-        else:
-            mine = [m for m in configs if role(m) == "tx"]
-        if not mine or len({mac(m.fields["device_id"]) for m in mine}) != 1:
-            raise SessionError("TX の設定が届きません（ポート・電源・ファームを確かめてください）")
-        config = mine[-1]
-        if band(config) != "2400":
-            # 920 MHz は AUX の Low が空中の時間と同じでなく、デューティを測れない（I-242）。
-            raise SessionError(_CONT_ONLY_2400)
-        device = mac(config.fields["device_id"])
-        power = config.fields["tx_power_cdbm"]
-        channel = config.fields["channel"]
-        print(f"個体 {device}・設定 {power / 100:g} dBm・チャネル {channel}")
-        lines.clear()
-        port.write(f"cont {args.seconds}\n".encode("ascii"))
-        last: dict[str, float] | None = None
-        until = time.monotonic() + args.seconds + 10
-        ended = False
-        while time.monotonic() < until and not ended:
-            pump(0.2)
-            for line in lines:
-                if line.startswith("ERR"):
-                    raise SessionError(f"機器が断りました: {line}")
-                parsed = parse_cont_line(line)
-                if parsed is not None:
-                    last = parsed
-                    print(f"\r連続送信中  デューティ {parsed['duty']:.4f}"
-                          f"（補正 {-10 * math.log10(parsed['duty']):+.3f} dB）"
-                          f"  他のレート {parsed['other_rate']}   ", end="", flush=True)
-                ended = ended or line.startswith("CONT END")
+            device = mac(config.fields["device_id"])
+            power = config.fields["tx_power_cdbm"]
+            channel = config.fields["channel"]
+            print(f"個体 {device}・設定 {power / 100:g} dBm・チャネル {channel}")
             lines.clear()
-    finally:
-        port.close()
+            port.write(f"cont {args.seconds}\n".encode("ascii"))
+            last: dict[str, float] | None = None
+            until = time.monotonic() + args.seconds + 10
+            ended = False
+            while time.monotonic() < until and not ended:
+                pump(0.2)
+                for line in lines:
+                    if line.startswith("ERR"):
+                        raise SessionError(f"機器が断りました: {line}")
+                    parsed = parse_cont_line(line)
+                    if parsed is not None:
+                        last = parsed
+                        print(f"\r連続送信中  デューティ {parsed['duty']:.4f}"
+                              f"（補正 {-10 * math.log10(parsed['duty']):+.3f} dB）"
+                              f"  他のレート {parsed['other_rate']}   ", end="", flush=True)
+                    ended = ended or line.startswith("CONT END")
+                lines.clear()
+        finally:
+            port.close()
     print()
     if last is None:
         raise SessionError("連続送信の報告が届きませんでした")
@@ -1287,10 +1303,7 @@ def _gnss_log(args: argparse.Namespace) -> int:
         started = time.monotonic()
         last_status = 0.0
         with _KeepAwake() as awake:
-            if awake.held:
-                print("記録中はスリープせず画面も消しません（蓋は開けたままに）")
-            else:
-                print("⚠️ スリープを止められませんでした＝電源の設定でスリープを切ってください")
+            _say_awake(awake, "記録中")
             try:
                 while keys.poll() != "q":
                     logger.poll()
