@@ -17,6 +17,13 @@ apps/field/firmware/sdkconfig.old
 apps/field/firmware/managed_components/
 apps/field/firmware/dependencies.lock
 
+# Field の基板（KiCad）が手元に作るもの。追跡するのは .kicad_pro・.kicad_sch・.kicad_pcb と
+# 専用部品（.kicad_sym・.pretty/・fp-lib-table・sym-lib-table）
+# ＝.kicad_prl は開いた人の画面の状態、-backups/ は自動の控え、fp-info-cache は索引。
+*.kicad_prl
+*-backups/
+fp-info-cache
+
 # 生成されるアイコン
 icon.ico
 

@@ -1,0 +1,2656 @@
+(kicad_sch
+	(version 20250610)
+	(generator "eeschema")
+	(generator_version "10.0")
+	(uuid "03c08461-6a3a-575b-8397-56beda7ff5c4")
+	(paper "A4")
+	(title_block
+		(title "RadioSim Field の台（XIAO ESP32C6 ＋ E220 EV2）")
+		(date "2026-10-20")
+		(rev "0.1")
+		(comment 1 "HARDWARE.md §3 の結線表から書き起こした")
+	)
+	(lib_symbols
+		(symbol "field_carrier:XIAO_ESP32C6"
+			(pin_names (offset 1.016))
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J" (at 0 10.16 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "XIAO_ESP32C6" (at 0 -10.16 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "field_carrier:XIAO_ESP32C6_FaceDown" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Description" "XIAO ESP32C6 を表面を下へ向けて差す 1×7 ソケット 2 列（ユニット A＝1〜7 番 D0〜D6・B＝14〜8 番 5V・GND・3V3・D10〜D7）" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(symbol "XIAO_ESP32C6_1_1"
+				(rectangle (start -1.27 8.89) (end 5.08 -8.89) (stroke (width 0.254) (type default)) (fill (type background)))
+				(pin passive line (at -5.08 7.62 0) (length 3.81) (name "D0" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 5.08 0) (length 3.81) (name "D1" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 2.54 0) (length 3.81) (name "D2" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 0.0 0) (length 3.81) (name "D3" (effects (font (size 1.27 1.27)))) (number "4" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -2.54 0) (length 3.81) (name "D4" (effects (font (size 1.27 1.27)))) (number "5" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -5.08 0) (length 3.81) (name "D5" (effects (font (size 1.27 1.27)))) (number "6" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -7.62 0) (length 3.81) (name "D6" (effects (font (size 1.27 1.27)))) (number "7" (effects (font (size 1.27 1.27)))))
+			)
+			(symbol "XIAO_ESP32C6_2_1"
+				(rectangle (start -1.27 8.89) (end 5.08 -8.89) (stroke (width 0.254) (type default)) (fill (type background)))
+				(pin passive line (at -5.08 7.62 0) (length 3.81) (name "5V" (effects (font (size 1.27 1.27)))) (number "14" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 5.08 0) (length 3.81) (name "GND" (effects (font (size 1.27 1.27)))) (number "13" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 2.54 0) (length 3.81) (name "3V3" (effects (font (size 1.27 1.27)))) (number "12" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 0.0 0) (length 3.81) (name "D10" (effects (font (size 1.27 1.27)))) (number "11" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -2.54 0) (length 3.81) (name "D9" (effects (font (size 1.27 1.27)))) (number "10" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -5.08 0) (length 3.81) (name "D8" (effects (font (size 1.27 1.27)))) (number "9" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -7.62 0) (length 3.81) (name "D7" (effects (font (size 1.27 1.27)))) (number "8" (effects (font (size 1.27 1.27)))))
+			)
+			(embedded_fonts no)
+		)
+		(symbol "field_carrier:E220_EV2"
+			(pin_names (offset 1.016))
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "J" (at 0 10.16 0) (effects (font (size 1.27 1.27))))
+			(property "Value" "E220_EV2" (at 0 -10.16 0) (effects (font (size 1.27 1.27))))
+			(property "Footprint" "field_carrier:E220_EV2" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Datasheet" "" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(property "Description" "E220-900T22S(JP)-EV2 を差すソケット（ユニット A＝7 ピン・B＝SMA 寄りの GND スルーホール 3 つ＝支えのため）" (at 0 0 0) (effects (font (size 1.27 1.27)) (hide yes)))
+			(symbol "E220_EV2_1_1"
+				(rectangle (start -1.27 8.89) (end 5.08 -8.89) (stroke (width 0.254) (type default)) (fill (type background)))
+				(pin passive line (at -5.08 7.62 0) (length 3.81) (name "M0" (effects (font (size 1.27 1.27)))) (number "1" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 5.08 0) (length 3.81) (name "M1" (effects (font (size 1.27 1.27)))) (number "2" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 2.54 0) (length 3.81) (name "RXD" (effects (font (size 1.27 1.27)))) (number "3" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 0.0 0) (length 3.81) (name "TXD" (effects (font (size 1.27 1.27)))) (number "4" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -2.54 0) (length 3.81) (name "AUX" (effects (font (size 1.27 1.27)))) (number "5" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -5.08 0) (length 3.81) (name "VCC" (effects (font (size 1.27 1.27)))) (number "6" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -7.62 0) (length 3.81) (name "GND" (effects (font (size 1.27 1.27)))) (number "7" (effects (font (size 1.27 1.27)))))
+			)
+			(symbol "E220_EV2_2_1"
+				(rectangle (start -1.27 3.81) (end 5.08 -3.81) (stroke (width 0.254) (type default)) (fill (type background)))
+				(pin passive line (at -5.08 2.54 0) (length 3.81) (name "GND" (effects (font (size 1.27 1.27)))) (number "8" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 0 0) (length 3.81) (name "GND" (effects (font (size 1.27 1.27)))) (number "9" (effects (font (size 1.27 1.27)))))
+				(pin passive line (at -5.08 -2.54 0) (length 3.81) (name "GND" (effects (font (size 1.27 1.27)))) (number "10" (effects (font (size 1.27 1.27)))))
+			)
+			(embedded_fonts no)
+		)
+		(symbol "power:+5V"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "+5V"
+				(at 0 3.556 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"+5V\""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "+5V_0_1"
+				(polyline
+					(pts
+						(xy -0.762 1.27)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 2.54)
+						(xy 0.762 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "+5V_1_1"
+				(pin power_in line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "power:GND"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#PWR"
+				(at 0 -6.35 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "GND"
+				(at 0 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "global power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "GND_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 -1.27)
+						(xy 1.27 -1.27)
+						(xy 0 -2.54)
+						(xy -1.27 -1.27)
+						(xy 0 -1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "GND_1_1"
+				(pin power_in line
+					(at 0 0 270)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Connector_Generic:Conn_01x03"
+			(pin_names
+				(offset 1.016)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "J"
+				(at 0 5.08 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "Conn_01x03"
+				(at 0 -5.08 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Generic connector, single row, 01x03, script generated (kicad-library-utils/schlib/autogen/connector/)"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "connector"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "Connector*:*_1x??_*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "Conn_01x03_1_1"
+				(rectangle
+					(start -1.27 3.81)
+					(end 1.27 -3.81)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+				(rectangle
+					(start -1.27 2.667)
+					(end 0 2.413)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(rectangle
+					(start -1.27 0.127)
+					(end 0 -0.127)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(rectangle
+					(start -1.27 -2.413)
+					(end 0 -2.667)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(pin passive line
+					(at -5.08 2.54 0)
+					(length 3.81)
+					(name "Pin_1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -5.08 0 0)
+					(length 3.81)
+					(name "Pin_2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -5.08 -2.54 0)
+					(length 3.81)
+					(name "Pin_3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Device:C"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0.254)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "C"
+				(at 0.635 2.54 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+				)
+			)
+			(property "Value" "C"
+				(at 0.635 -2.54 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left)
+				)
+			)
+			(property "Footprint" ""
+				(at 0.9652 -3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Unpolarized capacitor"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "cap capacitor"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "C_*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "C_0_1"
+				(polyline
+					(pts
+						(xy -2.032 0.762)
+						(xy 2.032 0.762)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -2.032 -0.762)
+						(xy 2.032 -0.762)
+					)
+					(stroke
+						(width 0.508)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "C_1_1"
+				(pin passive line
+					(at 0 3.81 270)
+					(length 2.794)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -3.81 90)
+					(length 2.794)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "power:PWR_FLAG"
+			(power global)
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "#FLG"
+				(at 0 1.905 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "PWR_FLAG"
+				(at 0 3.81 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Special symbol for telling ERC where power comes from"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "flag power"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "PWR_FLAG_0_0"
+				(pin power_out line
+					(at 0 0 90)
+					(length 0)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(symbol "PWR_FLAG_0_1"
+				(polyline
+					(pts
+						(xy 0 0)
+						(xy 0 1.27)
+						(xy -1.016 1.905)
+						(xy 0 2.54)
+						(xy 1.016 1.905)
+						(xy 0 1.27)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+	)
+	(symbol
+		(lib_id "field_carrier:XIAO_ESP32C6")
+		(at 50.8 60.96 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "3af3bd1d-ae0e-568b-b786-04754f272225")
+		(property "Reference" "J1"
+			(at 50.8 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "XIAO_ESP32C6"
+			(at 50.8 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:XIAO_ESP32C6_FaceDown"
+			(at 50.8 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 50.8 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "XIAO ESP32C6 を表面を下へ向けて差す 1×7 ソケット 2 列（ユニット A＝1〜7 番 D0〜D6・B＝14〜8 番 5V・GND・3V3・D10〜D7）"
+			(at 50.8 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "1477d633-930f-5ebd-a606-ff0159171ce3")
+		)
+		(pin "2"
+			(uuid "14bd976d-9a9d-5227-98e4-399c12b802eb")
+		)
+		(pin "3"
+			(uuid "5c325893-4c03-5d58-8ccf-d31a260e7c94")
+		)
+		(pin "4"
+			(uuid "ecae9e95-030d-57d5-881c-f7772db201c1")
+		)
+		(pin "5"
+			(uuid "c688befb-032b-5099-981c-a7373173a661")
+		)
+		(pin "6"
+			(uuid "5902a7ef-55cb-5fee-a319-e6e7e0898360")
+		)
+		(pin "7"
+			(uuid "d64c26cc-dc6a-55ea-b946-e656f8cf7b80")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "J1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 45.72 53.34)
+			(xy 40.64 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "051bf631-a2de-5b93-89f9-87c17275a0f8")
+	)
+	(label "EV2_RXD"
+		(at 40.64 53.34 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "6485fce2-c1cc-5302-92a7-dbab09467dd3")
+	)
+	(wire
+		(pts
+			(xy 45.72 55.88)
+			(xy 40.64 55.88)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a243f422-dc40-54de-ba72-a6fcbd38e371")
+	)
+	(label "EV2_TXD"
+		(at 40.64 55.88 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4de48217-1c5a-5f9e-878e-560e3d12e10e")
+	)
+	(wire
+		(pts
+			(xy 45.72 58.42)
+			(xy 40.64 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4a71c00c-50df-5696-bb6e-a895652bc7c6")
+	)
+	(label "EV2_M0"
+		(at 40.64 58.42 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "2ee15b67-e834-5a25-9114-9987a09d23de")
+	)
+	(wire
+		(pts
+			(xy 45.72 60.96)
+			(xy 40.64 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "34ff7c75-2734-5395-93d2-1a57d3f67078")
+	)
+	(label "EV2_M1"
+		(at 40.64 60.96 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4e112e6f-0c86-5347-9ae8-1c9270177207")
+	)
+	(no_connect
+		(at 45.72 63.5)
+		(uuid "f15e70e5-b6fe-54ab-a156-dd8f871f446a")
+	)
+	(no_connect
+		(at 45.72 66.04)
+		(uuid "217b2aea-7f7d-5825-94b6-e44581edf085")
+	)
+	(wire
+		(pts
+			(xy 45.72 68.58)
+			(xy 40.64 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "06088d02-3a76-558f-bcca-61ee9aa92e50")
+	)
+	(label "LOG_TX"
+		(at 40.64 68.58 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "8af30d53-168c-5d7d-a6aa-6b98b6953ec9")
+	)
+	(symbol
+		(lib_id "field_carrier:XIAO_ESP32C6")
+		(at 50.8 99.06 0)
+		(unit 2)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "174f5d29-20fe-5ebb-af25-39c1eca36320")
+		(property "Reference" "J1"
+			(at 50.8 88.9 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "XIAO_ESP32C6"
+			(at 50.8 109.22 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:XIAO_ESP32C6_FaceDown"
+			(at 50.8 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 50.8 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "XIAO ESP32C6 を表面を下へ向けて差す 1×7 ソケット 2 列（ユニット A＝1〜7 番 D0〜D6・B＝14〜8 番 5V・GND・3V3・D10〜D7）"
+			(at 50.8 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "14"
+			(uuid "827f7c8b-a6b4-5774-a766-f4b50ca6b18b")
+		)
+		(pin "13"
+			(uuid "854dad3d-2946-5edc-809a-a4a2d0edafdb")
+		)
+		(pin "12"
+			(uuid "c1872401-18e0-5426-8da9-5692c2b73b57")
+		)
+		(pin "11"
+			(uuid "ca70529b-dfb0-5f90-82fb-a65330c4f92d")
+		)
+		(pin "10"
+			(uuid "394cd226-7001-5aea-9ec8-91ce4d623a75")
+		)
+		(pin "9"
+			(uuid "21a1ce97-a9be-5d94-a753-04429a083564")
+		)
+		(pin "8"
+			(uuid "b24364c2-22a4-5392-a8dd-96f01ccd524c")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "J1")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 45.72 91.44)
+			(xy 22.86 91.44)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a871f057-c38f-540b-bf33-bd61e54dc857")
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 22.86 91.44 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "b59ecf69-5cdb-5a9c-8a5f-07977281a5ce")
+		(property "Reference" "#PWR01"
+			(at 22.86 95.25 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 22.86 87.884 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 22.86 91.44 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 22.86 91.44 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"+5V\\\""
+			(at 22.86 91.44 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "29a60ce9-078b-50ef-ab9f-0bba8eeca077")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR01")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 45.72 93.98)
+			(xy 22.86 93.98)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cecc5fbb-4e1e-549c-be98-78c88f726b42")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 22.86 93.98 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "a8fc0b2f-cc4f-5b1c-a6f3-c5a45e950884")
+		(property "Reference" "#PWR02"
+			(at 22.86 100.33 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 22.86 97.79 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 22.86 93.98 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 22.86 93.98 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 22.86 93.98 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "afc9b05d-3949-52de-b977-4f6b81fd697f")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR02")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(no_connect
+		(at 45.72 96.52)
+		(uuid "2b65ad2f-fffe-5273-a61c-5b93e52968d0")
+	)
+	(wire
+		(pts
+			(xy 45.72 99.06)
+			(xy 40.64 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "00d059ca-6055-56cb-bcb7-b3b62f1d7297")
+	)
+	(label "EV2_AUX"
+		(at 40.64 99.06 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "fa003822-4095-5d96-be6a-d34370d027ed")
+	)
+	(no_connect
+		(at 45.72 101.6)
+		(uuid "7eb2105f-9972-564c-85b1-bcb9c6b2037e")
+	)
+	(no_connect
+		(at 45.72 104.14)
+		(uuid "4f555145-c0d2-5b34-9fa5-67e0f0d9b3c6")
+	)
+	(wire
+		(pts
+			(xy 45.72 106.68)
+			(xy 40.64 106.68)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "564f9f1d-f788-5a9b-86c3-3d5b9e9a5ea4")
+	)
+	(label "LOG_RX"
+		(at 40.64 106.68 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "0ef7cc58-2955-506f-98e5-f1eb9acdabe1")
+	)
+	(symbol
+		(lib_id "field_carrier:E220_EV2")
+		(at 132.08 60.96 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "d2a8658e-2180-5801-952e-c5cfde26f27e")
+		(property "Reference" "J3"
+			(at 132.08 50.8 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "E220_EV2"
+			(at 132.08 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:E220_EV2"
+			(at 132.08 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 132.08 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "E220-900T22S(JP)-EV2 を差すソケット（ユニット A＝7 ピン・B＝SMA 寄りの GND スルーホール 3 つ＝支えのため）"
+			(at 132.08 60.96 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "0f82764f-a47c-5878-86d6-0646861e2067")
+		)
+		(pin "2"
+			(uuid "8322f5b4-fcc4-5580-b449-77e0e23c76e9")
+		)
+		(pin "3"
+			(uuid "3cb57d06-e5b2-5fc7-9664-9eaee5d6fd55")
+		)
+		(pin "4"
+			(uuid "71d9b22a-c4c6-531b-aedb-d3a953973100")
+		)
+		(pin "5"
+			(uuid "b763bc65-8c1d-5053-bc8b-531a97b8466e")
+		)
+		(pin "6"
+			(uuid "8068c122-9b93-5953-8844-0f32819fc589")
+		)
+		(pin "7"
+			(uuid "d8788280-75c5-5bd6-88cb-7880c03a055e")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "J3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 127 53.34)
+			(xy 121.92 53.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "986434e3-8b82-5d50-b136-3d6817ac55b8")
+	)
+	(label "EV2_M0"
+		(at 121.92 53.34 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "2177de1d-b5a2-5e62-8365-07f17d4efa30")
+	)
+	(wire
+		(pts
+			(xy 127 55.88)
+			(xy 121.92 55.88)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5c23f7cc-a6fe-50e0-af3c-bbcb19da96ef")
+	)
+	(label "EV2_M1"
+		(at 121.92 55.88 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "bd79b44f-3470-51a9-a569-b92edbb73ff6")
+	)
+	(wire
+		(pts
+			(xy 127 58.42)
+			(xy 121.92 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "9340b961-65bb-59b0-a4ee-4766f0063580")
+	)
+	(label "EV2_RXD"
+		(at 121.92 58.42 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "f43509b0-7683-5358-bd42-435401df082e")
+	)
+	(wire
+		(pts
+			(xy 127 60.96)
+			(xy 121.92 60.96)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b0d60aa1-159e-5b47-a75a-4a3fead10798")
+	)
+	(label "EV2_TXD"
+		(at 121.92 60.96 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "dc417733-3687-5ea8-b60a-ea4ea7beee23")
+	)
+	(wire
+		(pts
+			(xy 127 63.5)
+			(xy 121.92 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "34422384-3e59-59f2-9389-52099fa8d228")
+	)
+	(label "EV2_AUX"
+		(at 121.92 63.5 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4752459e-76de-51ec-b715-109f239be240")
+	)
+	(wire
+		(pts
+			(xy 127 66.04)
+			(xy 104.14 66.04)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "73917f4e-5fba-5d17-a26c-e264a8cf2d90")
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 104.14 66.04 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "dd82df98-2998-5419-aaa5-6574920ad46f")
+		(property "Reference" "#PWR03"
+			(at 104.14 69.85 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 104.14 62.484 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 104.14 66.04 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 104.14 66.04 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"+5V\\\""
+			(at 104.14 66.04 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "5e734596-bbe3-5221-905d-292c11c68e58")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR03")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 127 68.58)
+			(xy 104.14 68.58)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3aca5ae6-0188-53fb-9de6-2c99b5ae3f9a")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 104.14 68.58 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "befe6546-a890-523d-8c1d-55d9641a6855")
+		(property "Reference" "#PWR04"
+			(at 104.14 74.93 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 104.14 72.39 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 104.14 68.58 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 104.14 68.58 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 104.14 68.58 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "8965ecf4-8144-5a25-9d84-1bf4c704d0d2")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR04")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "field_carrier:E220_EV2")
+		(at 132.08 81.28 0)
+		(unit 2)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "673a4acc-d1c0-568a-82a1-d876ed310bbd")
+		(property "Reference" "J3"
+			(at 132.08 76.2 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "E220_EV2"
+			(at 132.08 86.36 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:E220_EV2"
+			(at 132.08 81.28 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 132.08 81.28 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "E220-900T22S(JP)-EV2 を差すソケット（ユニット A＝7 ピン・B＝SMA 寄りの GND スルーホール 3 つ＝支えのため）"
+			(at 132.08 81.28 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "8"
+			(uuid "3d2ecc8c-6b72-590c-ac29-7cab66a10cc2")
+		)
+		(pin "9"
+			(uuid "9d49e87e-345a-5d52-a648-b3d98ddc8e1d")
+		)
+		(pin "10"
+			(uuid "cad78435-0fc1-5d1a-b9ba-54aa2f9c65aa")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "J3")
+					(unit 2)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 127 78.74)
+			(xy 121.92 78.74)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ec55cb0d-777e-5ec8-a8da-9c48c54c7148")
+	)
+	(wire
+		(pts
+			(xy 127 81.28)
+			(xy 121.92 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "976a0ad1-b6c6-52cd-86dc-4bc1ad756877")
+	)
+	(wire
+		(pts
+			(xy 127 83.82)
+			(xy 121.92 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0d817b7f-b363-5b65-8734-99eac1a15ca7")
+	)
+	(wire
+		(pts
+			(xy 121.92 78.74)
+			(xy 121.92 81.28)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8ae5001d-b590-5009-a5e8-f2db02ff07ea")
+	)
+	(wire
+		(pts
+			(xy 121.92 81.28)
+			(xy 121.92 83.82)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3f9b34af-8d14-5ff4-b30c-f27cbda53591")
+	)
+	(junction
+		(at 121.92 81.28)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "75fd6146-0b8e-58b5-be8d-d66395e4504c")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 121.92 83.82 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "91971e21-aab3-57b6-ad71-bd3ca610534d")
+		(property "Reference" "#PWR05"
+			(at 121.92 90.17 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 121.92 87.63 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 121.92 83.82 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 121.92 83.82 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 121.92 83.82 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "920be70e-1315-5d2b-92c3-92c8ed4a5193")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR05")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Connector_Generic:Conn_01x03")
+		(at 132.08 99.06 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "709dbe63-a489-538a-a9e8-68a35577ab1e")
+		(property "Reference" "J4"
+			(at 132.08 93.98 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "ログ_UART0"
+			(at 132.08 104.14 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Connector_PinHeader_2.54mm:PinHeader_1x03_P2.54mm_Vertical"
+			(at 132.08 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 132.08 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "ESP-IDF のログ（115200 bps）。1=GND 2=D6（XIAO の送信）3=D7（XIAO の受信）"
+			(at 132.08 99.06 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "f0b7b731-b551-5ab6-8b6e-4aa1f9ef8b88")
+		)
+		(pin "2"
+			(uuid "398557be-7eaf-5709-811a-f0dbd17dc9c5")
+		)
+		(pin "3"
+			(uuid "39ec9c71-1536-57c0-87d5-9cce3cd24630")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "J4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 127 96.52)
+			(xy 104.14 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6a3c36e4-b8c7-513f-ab29-336b52f7d895")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 104.14 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "336eca12-7dfc-5cb2-aebb-44e62462fc39")
+		(property "Reference" "#PWR06"
+			(at 104.14 102.87 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 104.14 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 104.14 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 104.14 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 104.14 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "e3417c03-1eb9-51fa-bbb8-66420d981a69")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR06")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 127 99.06)
+			(xy 121.92 99.06)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5322d7d1-f942-53a1-b474-00eb686ce68a")
+	)
+	(label "LOG_TX"
+		(at 121.92 99.06 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "dca4df74-770b-5b95-ad21-58efee0f652e")
+	)
+	(wire
+		(pts
+			(xy 127 101.6)
+			(xy 121.92 101.6)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b2f82f0b-7a11-5f31-a8fc-3cdd73cb1622")
+	)
+	(label "LOG_RX"
+		(at 121.92 101.6 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "b32b67d0-2cdb-53fc-be10-217457669780")
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 175.26 63.5 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "4c0eaa0d-a05b-5184-b4e1-71aa4a013a9e")
+		(property "Reference" "C1"
+			(at 175.895 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "100nF"
+			(at 175.895 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm"
+			(at 176.2252 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 175.26 63.5 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "EV2 の 6 番 VCC と 7 番 GND の間。必ず付ける（EV2 に載っていても並列になるだけ）"
+			(at 175.26 63.5 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "4770fdae-5f74-5dd9-a337-9c3b7eb3074e")
+		)
+		(pin "2"
+			(uuid "1edf5193-5fa4-5073-9fc4-284ad5469e81")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "C1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 175.26 59.69 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "cd668762-da9d-56f5-aef1-a46f4cd40bca")
+		(property "Reference" "#PWR07"
+			(at 175.26 63.5 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 175.26 56.134 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 175.26 59.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 175.26 59.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"+5V\\\""
+			(at 175.26 59.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "588262da-5777-5f02-8e4d-cf56092abd9f")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR07")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 175.26 67.31 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "953b992b-b2f9-516d-aeea-f70cd05f7246")
+		(property "Reference" "#PWR08"
+			(at 175.26 73.66 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 175.26 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 175.26 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 175.26 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 175.26 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "009e888b-32f0-5bb5-87a4-e2aa1be1ba06")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR08")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:C")
+		(at 195.58 63.5 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "0d1f7f62-fa0b-53d6-b188-0c8a0aa48987")
+		(property "Reference" "C2"
+			(at 196.215 60.96 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "100nF"
+			(at 196.215 66.04 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "Capacitor_THT:C_Disc_D3.0mm_W1.6mm_P2.50mm"
+			(at 196.5452 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 195.58 63.5 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "EV2 の 5 番 AUX と GND の間（HARDWARE.md §3）"
+			(at 195.58 63.5 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "965419be-13ec-5164-ad3b-7005e35deb03")
+		)
+		(pin "2"
+			(uuid "d8d8f788-00e0-55db-b85b-fcc95a5eaa92")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "C2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 195.58 59.69)
+			(xy 195.58 54.61)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "ccd1e91d-63ec-5085-bba8-f9ce7dd1b401")
+	)
+	(label "EV2_AUX"
+		(at 195.58 54.61 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "bb79338f-ba8c-5bb1-870f-8d4336b99600")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 195.58 67.31 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "f4a1f84b-4f7d-51ab-94ce-1fdbe5700dbe")
+		(property "Reference" "#PWR09"
+			(at 195.58 73.66 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 195.58 71.12 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 195.58 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 195.58 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 195.58 67.31 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "08c3fba3-f3dc-53da-b9f1-df83c702c085")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR09")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 175.26 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "ec02a033-90f6-545b-9bac-06c33f9dd1d9")
+		(property "Reference" "#FLG01"
+			(at 175.26 94.615 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 175.26 92.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 175.26 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 175.26 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 175.26 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "9bd0d590-4d62-5256-bd31-66f95a4f493f")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#FLG01")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 175.26 96.52)
+			(xy 185.42 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "31bb2789-7051-5d1e-a29d-afb3198f61e3")
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 185.42 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "da694464-32e0-5cc2-8987-c38a6b5ef3a7")
+		(property "Reference" "#PWR10"
+			(at 185.42 100.33 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 185.42 92.964 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 185.42 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 185.42 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"+5V\\\""
+			(at 185.42 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "0160910e-a45d-5bef-8ba3-4107080b3695")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR10")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:PWR_FLAG")
+		(at 200.66 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "e8319443-4d92-517b-a896-75e8b89e2331")
+		(property "Reference" "#FLG02"
+			(at 200.66 94.615 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "PWR_FLAG"
+			(at 200.66 92.71 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 200.66 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 200.66 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Special symbol for telling ERC where power comes from"
+			(at 200.66 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "6496942d-708c-5309-96e2-50c0d8f05762")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#FLG02")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 200.66 96.52)
+			(xy 210.82 96.52)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b1c86651-0e2c-54b6-8e59-91f70006c46e")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 210.82 96.52 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "d20713d0-0ca3-539d-939f-1f1467c62b2b")
+		(property "Reference" "#PWR11"
+			(at 210.82 102.87 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 210.82 100.33 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 210.82 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 210.82 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \\\"GND\\\" , ground"
+			(at 210.82 96.52 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "09ec0ce6-e65c-5737-87db-c577b61a88df")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR11")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(text "Field の台（2 台同じ基板）＝XIAO と EV2 をピンソケットで差すだけ。高周波の線は引かない\n（2.4 GHz は XIAO の U.FL からピグテール・920 MHz は EV2 の SMA＝基準面は今のまま）。\n結線の正典は apps/field/HARDWARE.md §3 と wiring.svg（直すときは同じコミットで）。\nJ1＝XIAO（表面を台へ向けて差す＝フットプリントは公式の鏡像・2 列は 15.24 mm）。\nJ3＝EV2（ユニット B＝SMA 寄りの GND スルーホール 3 つ＝支えのため・7 ピン列から 31.50 mm）。寸法は field_carrier.pretty の中で固定。\nXIAO の 3V3・D4・D5・D8・D9 は使わない。"
+		(exclude_from_sim no)
+		(at 25.4 127 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left top)
+		)
+		(uuid "c7646488-c412-5cc2-bbb8-83fcbe7c1d04")
+	)
+	(sheet_instances
+		(path "/"
+			(page "1")
+		)
+	)
+	(embedded_fonts no)
+)
