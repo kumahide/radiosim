@@ -42,6 +42,7 @@
 #include "freertos/queue.h"
 #include "freertos/semphr.h"
 #include "freertos/task.h"
+#include "led.h"
 #include "link.h"
 #include "radiosim_field_mavlink.h"
 
@@ -176,6 +177,7 @@ static void run_continuous(uint32_t seconds)
     uint32_t failures = 0;
     uint32_t lost_notices = 0;
     char line[160];
+    led_hold(LED_2400_TX);                               /* 終わりの再起動で消える */
     while (!s_cont_abort && esp_timer_get_time() < until) {
         xSemaphoreTake(s_tx_done, 0);                    /* 前の通知を捨てる */
         if (esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)sizeof frame, true) != ESP_OK) {
@@ -260,6 +262,7 @@ static void tx_task(void *arg)
                                           AIR_COMPID, &s_config);
             if (esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)(WLAN_HEADER_LEN + AIR_PREFIX_LEN + n),
                                   true) == ESP_OK) {
+                led_flash(LED_2400_TX);
                 last_config = now;
             }
         }
@@ -274,7 +277,9 @@ static void tx_task(void *arg)
                                          AIR_COMPID, &p);
         bool sent = esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)(WLAN_HEADER_LEN + AIR_PREFIX_LEN + n),
                                       true) == ESP_OK;
-        if (!sent) {
+        if (sent) {
+            led_flash(LED_2400_TX);
+        } else {
             /* 送れなかった周期も番号は進める（PC は seq を時間の軸に使う）。「送らなかった」と
              * 数えて、受け側が「届かなかった」＝打ち切りに数えないようにする（I-165）。 */
             unsent++;
@@ -368,6 +373,7 @@ static void rx_writer_task(void *arg)
     rx_event_t ev;
     for (;;) {
         if (xQueueReceive(s_rx_queue, &ev, portMAX_DELAY) != pdTRUE) continue;
+        led_flash(LED_2400_RX);                  /* rx_callback は Wi-Fi のタスク＝そこでは点けない */
         if (ev.kind == RX_EV_CONFIG) {
             link_send_config(&ev.config);
             continue;

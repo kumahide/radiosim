@@ -24,6 +24,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "led.h"
 #include "link.h"
 #include "nvs_flash.h"
 #include "radio.h"
@@ -220,6 +221,7 @@ void app_main(void)
     /* E220 はどちらの帯域でも mode 3 まで起こす＝2.4 のときはそのまま止めておく
      * （M0/M1 が浮いたまま mode 0 に落ちて受信・送信の状態にならないように）。 */
     e220_init();
+    led_init();
     radiosim_field_config_t config;
     if (settings.band == RADIOSIM_FIELD_BAND_2400) {
         config = make_config(&settings, mac, prepare_2400(&settings, mac));

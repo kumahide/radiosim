@@ -33,6 +33,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "led.h"
 #include "link.h"
 #include "radiosim_field_mavlink.h"
 
@@ -151,6 +152,7 @@ static void tx_task(void *arg)
         if (sent) {
             size_t n = radiosim_field_tx_packet_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &p);
             e220_send(frame, n);
+            led_flash(LED_920_TX);
             s_pending = PEND_PACKET;
             s_pending_seq = s_seq;
         } else {
@@ -158,6 +160,7 @@ static void tx_task(void *arg)
             if (config_turn) {
                 size_t n = radiosim_field_config_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &s_config);
                 e220_send(frame, n);
+                led_flash(LED_920_TX);
                 s_pending = PEND_OTHER;
                 last_config = now;
             }
@@ -211,6 +214,7 @@ static void on_data(const e220_frame_t *f)
     const uint8_t *payload;
     uint8_t payload_len;
     if (radiosim_field_frame_parse(f->data, f->len, &msgid, &payload, &payload_len) == 0) return;
+    led_flash(LED_920_RX);                       /* CRC の通った枠だけ（他の機器の電波では点けない） */
     if (msgid == MSGID_RADIOSIM_FIELD_CONFIG) {
         radiosim_field_config_t c;
         radiosim_field_config_decode_payload(payload, payload_len, &c);

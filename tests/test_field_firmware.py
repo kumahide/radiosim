@@ -239,6 +239,47 @@ def test_the_2400_tx_counts_failed_sends_instead_of_skipping_the_seq():
     assert ".sent_mask = (uint32_t)sent_bits" in tx
 
 
+def test_the_led_pins_match_the_carrier_and_do_not_collide():
+    """台の表示の LED（HARDWARE.md §3）。ファームのピンが §3 の表（＝回路図の結線）と同じ
+    帯域・色を指し、E220・RF スイッチ・ログの口（GPIO16・17）のピンと重ならないこと。"""
+    led = _code("led.c")
+    pins = {name: int(gpio) for name, gpio in
+            re.findall(r"\[LED_(\w+)\] = GPIO_NUM_(\d+),", led)}
+    assert set(pins) == {"920_TX", "920_RX", "2400_TX", "2400_RX"}
+    used = {int(g) for g in re.findall(r"#define PIN_\w+ GPIO_NUM_(\d+)", _code("e220.c"))}
+    used |= {int(g) for g in re.findall(r"#define RF_SWITCH_\w+ GPIO_NUM_(\d+)", _code("main.c"))}
+    assert used == {0, 1, 2, 18, 21, 3, 14}
+    assert not set(pins.values()) & (used | {16, 17})
+    hardware = (ROOT / "apps" / "field" / "HARDWARE.md").read_text(encoding="utf-8")
+    table = hardware.split("### 表示の LED", 1)[1].split("LED のカソード", 1)[0]
+    for name, gpio in pins.items():
+        band, role = name.split("_")
+        row = re.search(rf"^\| D\d+ \| {gpio} \| 出力 ▶ \| (.+)$", table, flags=re.M)
+        assert row, f"GPIO{gpio} が HARDWARE.md §3 の表に無い"
+        assert ("920 の" if band == "920" else "2.4 の") in row[1]
+        assert ("**赤**" if role == "TX" else "**緑**") in row[1]
+    assert '"led.c"' in (FIRMWARE / "main" / "CMakeLists.txt").read_text(encoding="utf-8")
+
+
+def test_the_leds_are_lit_where_the_radios_send_and_receive():
+    """送信は送れた所（920＝e220_send の 2 か所・2.4＝ESP_OK の 2 か所）・受信は Field の枠と
+    分かった所で点ける。2.4 の受信は rx_callback（Wi-Fi のタスク）でなく書き出しのタスクで。
+    連続送信は点けたまま。led_init は帯域の枝より前。"""
+    e220 = _code("radio_e220.c")
+    tx = _function(e220, "static void tx_task(void *arg)")
+    assert tx.count("e220_send(") == tx.count("led_flash(LED_920_TX)") == 2
+    on_data = _function(e220, "static void on_data(const e220_frame_t *f)")
+    assert on_data.index("radiosim_field_frame_parse(") < on_data.index("led_flash(LED_920_RX)")
+    wifi = _code("radio_wifi.c")
+    assert _function(wifi, "static void tx_task(void *arg)").count("led_flash(LED_2400_TX)") == 2
+    assert "led_" not in _function(wifi, "static void rx_callback(")
+    assert "led_flash(LED_2400_RX)" in _function(wifi, "static void rx_writer_task(void *arg)")
+    cont = _function(wifi, "static void run_continuous(uint32_t seconds)")
+    assert cont.index("led_hold(LED_2400_TX)") < cont.index("while (")
+    body = _code("main.c").split("void app_main(void)", 1)[1]
+    assert body.index("led_init()") < body.index("if (settings.band == RADIOSIM_FIELD_BAND_2400)")
+
+
 def test_the_e220_frame_length_is_checked_against_the_copy_target():
     """B-354。枠の長さはコピー先（`f->data`＝E220_FRAME_MAX）で確かめる＝溜め（2 枠分）で
     比べると 1 バイトの長さは常に通り、検査和を偶然通る壊れた枠が `f->data` を溢れさせる。
