@@ -797,6 +797,433 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "Device:R"
+			(pin_numbers
+				(hide yes)
+			)
+			(pin_names
+				(offset 0)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "R"
+				(at 2.032 0 90)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "R"
+				(at 0 0 90)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at -1.778 0 90)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Resistor"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "R res resistor"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "R_*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "R_0_1"
+				(rectangle
+					(start -1.016 -2.54)
+					(end 1.016 2.54)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "R_1_1"
+				(pin passive line
+					(at 0 3.81 270)
+					(length 1.27)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 0 -3.81 90)
+					(length 1.27)
+					(name ""
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
+		(symbol "Device:LED_Dual_AKA"
+			(pin_names
+				(offset 0)
+				(hide yes)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(in_pos_files yes)
+			(duplicate_pin_numbers_are_jumpers no)
+			(property "Reference" "D"
+				(at 0 5.715 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Value" "LED_Dual_AKA"
+				(at 0 -6.35 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Footprint" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "Description" "Dual LED, common cathode on pin 2"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_keywords" "LED diode bicolor dual"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(property "ki_fp_filters" "LED* LED_SMD:* LED_THT:*"
+				(at 0 0 0)
+				(show_name no)
+				(do_not_autoplace no)
+				(hide yes)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+				)
+			)
+			(symbol "LED_Dual_AKA_0_1"
+				(polyline
+					(pts
+						(xy -4.572 0) (xy -2.54 0)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center -2.54 0)
+					(radius 0.2794)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type outline)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 1.27) (xy -1.27 3.81)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy -1.27 -1.27) (xy -1.27 -3.81)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(circle
+					(center 0 0)
+					(radius 4.572)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type background)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 1.27) (xy 1.27 3.81) (xy -1.27 2.54) (xy 1.27 1.27)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 1.27 -3.81) (xy 1.27 -1.27) (xy -1.27 -2.54) (xy 1.27 -3.81)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.032 5.08) (xy 3.556 6.604) (xy 2.794 6.604) (xy 3.556 6.604) (xy 3.556 5.842)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.032 2.54) (xy -2.54 2.54) (xy -2.54 -2.54) (xy 2.032 -2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.302 4.064) (xy 4.826 5.588) (xy 4.064 5.588) (xy 4.826 5.588) (xy 4.826 4.826)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 2.54) (xy 1.905 2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 3.81 -2.54) (xy 1.905 -2.54)
+					)
+					(stroke
+						(width 0)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+			)
+			(symbol "LED_Dual_AKA_1_1"
+				(pin input line
+					(at 7.62 2.54 180)
+					(length 3.81)
+					(name "A1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at -7.62 0 0)
+					(length 3.048)
+					(name "K"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+				(pin input line
+					(at 7.62 -2.54 180)
+					(length 3.81)
+					(name "A2"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.27 1.27)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 	)
 	(symbol
 		(lib_id "field_carrier:XIAO_ESP32C6")
@@ -963,14 +1390,6 @@
 			(justify right bottom)
 		)
 		(uuid "4e112e6f-0c86-5347-9ae8-1c9270177207")
-	)
-	(no_connect
-		(at 45.72 63.5)
-		(uuid "f15e70e5-b6fe-54ab-a156-dd8f871f446a")
-	)
-	(no_connect
-		(at 45.72 66.04)
-		(uuid "217b2aea-7f7d-5825-94b6-e44581edf085")
 	)
 	(wire
 		(pts
@@ -1251,14 +1670,6 @@
 			(justify right bottom)
 		)
 		(uuid "fa003822-4095-5d96-be6a-d34370d027ed")
-	)
-	(no_connect
-		(at 45.72 101.6)
-		(uuid "7eb2105f-9972-564c-85b1-bcb9c6b2037e")
-	)
-	(no_connect
-		(at 45.72 104.14)
-		(uuid "4f555145-c0d2-5b34-9fa5-67e0f0d9b3c6")
 	)
 	(wire
 		(pts
@@ -2636,7 +3047,7 @@
 			)
 		)
 	)
-	(text "Field の台（2 台同じ基板）＝XIAO と EV2 をピンソケットで差すだけ。高周波の線は引かない\n（2.4 GHz は XIAO の U.FL からピグテール・920 MHz は EV2 の SMA＝基準面は今のまま）。\n結線の正典は apps/field/HARDWARE.md §3 と wiring.svg（直すときは同じコミットで）。\nJ1＝XIAO（表面を台へ向けて差す＝フットプリントは公式の鏡像・2 列は 15.24 mm）。\nJ3＝EV2（ユニット B＝SMA 寄りの GND スルーホール 3 つ＝支えのため・7 ピン列から 31.50 mm）。寸法は field_carrier.pretty の中で固定。\nXIAO の 3V3・D4・D5・D8・D9 は使わない。"
+	(text "Field の台（2 台同じ基板）＝XIAO と EV2 をピンソケットで差すだけ。高周波の線は引かない\n（2.4 GHz は XIAO の U.FL からピグテール・920 MHz は EV2 の SMA＝基準面は今のまま）。\n結線の正典は apps/field/HARDWARE.md §3 と wiring.svg（直すときは同じコミットで）。\nJ1＝XIAO（表面を台へ向けて差す＝フットプリントは公式の鏡像・2 列は 15.24 mm）。\nJ3＝EV2（ユニット B＝SMA 寄りの GND スルーホール 3 つ＝支えのため・7 ピン列から 31.50 mm）。寸法は field_carrier.pretty の中で固定。\nXIAO の 3V3 は使わない。D4・D5＝920 の送信・受信、D8・D9＝2.4 の送信・受信を表示の LED（D2・D3）へ。\nD1〜D3＝OSRGHC3132A を台の背面の端に寝かせ、背面パネルの穴から見せる。抵抗は EV2 の下（EV2 は台から約 11 mm 浮く）。"
 		(exclude_from_sim no)
 		(at 25.4 127 0)
 		(effects
@@ -2646,6 +3057,1348 @@
 			(justify left top)
 		)
 		(uuid "c7646488-c412-5cc2-bbb8-83fcbe7c1d04")
+	)
+	(wire
+		(pts
+			(xy 45.72 63.5) (xy 40.64 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2dd4276b-394a-498e-b545-9d05a133be68")
+	)
+	(label "LED920_TX"
+		(at 40.64 63.5 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "3da738b6-41a9-4b31-bc5f-461c61248bde")
+	)
+	(wire
+		(pts
+			(xy 45.72 66.04) (xy 40.64 66.04)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3dcb1f08-60be-49b8-b869-fc2df59d4a3b")
+	)
+	(label "LED920_RX"
+		(at 40.64 66.04 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "bb1d557c-1f01-4ce1-8aee-a31c9eb65b98")
+	)
+	(wire
+		(pts
+			(xy 45.72 101.6) (xy 40.64 101.6)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2b14685f-72d1-40e6-b763-013e394af881")
+	)
+	(label "LED24_RX"
+		(at 40.64 101.6 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "4e70a7f9-4356-407e-9a36-42e259dc7aab")
+	)
+	(wire
+		(pts
+			(xy 45.72 104.14) (xy 40.64 104.14)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "513e5461-15bb-4a8f-ab6d-18552e3983e8")
+	)
+	(label "LED24_TX"
+		(at 40.64 104.14 180)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify right bottom)
+		)
+		(uuid "def7b94c-1dc0-4497-ae1d-182cf0ca4157")
+	)
+	(symbol
+		(lib_id "Device:LED_Dual_AKA")
+		(at 38.1 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "4d9de2c0-6987-4507-8419-f2bf4b0a31ef")
+		(property "Reference" "D1"
+			(at 38.1 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "OSRGHC3132A"
+			(at 38.1 182.88 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+			(at 38.1 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 38.1 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "3 mm 2 色 LED（カソード共通）を寝かせて背面パネルの穴から見せる。1＝赤のアノード・2＝共通カソード・3＝黄緑のアノード"
+			(at 38.1 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ab332d13-120d-4c6b-9343-fe9e781468bb")
+		)
+		(pin "2"
+			(uuid "14f03aa7-fee6-493e-a0d2-19da7f5a94a1")
+		)
+		(pin "3"
+			(uuid "a46a2bf8-6daf-4dc4-a317-098d76c4d043")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "D1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 53.34 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "d9694679-27d6-4dea-95b8-97bf7d8d0355")
+		(property "Reference" "R5"
+			(at 55.88 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1k"
+			(at 55.88 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 53.34 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 53.34 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 53.34 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "403ef09c-3eed-4e59-8260-f304f3c34339")
+		)
+		(pin "2"
+			(uuid "63730e23-d677-407e-b6a4-06e60998d198")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R5")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 53.34 168.91) (xy 53.34 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a8c862ee-d290-4d2c-9a8f-e1581ed70da2")
+	)
+	(wire
+		(pts
+			(xy 53.34 172.72) (xy 45.72 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "e64658ef-8863-487b-952c-81d1201f0fe8")
+	)
+	(wire
+		(pts
+			(xy 53.34 161.29) (xy 53.34 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "15228e83-9d60-47c2-9a6c-04b87fbf7042")
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 53.34 158.75 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "2a5abc47-73da-438a-ad0d-ada49f1d8df7")
+		(property "Reference" "#PWR12"
+			(at 53.34 162.56 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 53.34 155.19 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 53.34 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 53.34 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+5V\""
+			(at 53.34 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "53c98b7a-2f42-4525-8354-cfbbf4e3d3be")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR12")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 63.5 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "df1de1b7-89d5-4198-9683-60a5994077f9")
+		(property "Reference" "R6"
+			(at 66.04 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "1k"
+			(at 66.04 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 63.5 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 63.5 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 63.5 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "ac8290ff-ce38-40b8-98d1-0263c693c4b2")
+		)
+		(pin "2"
+			(uuid "39e66e34-21eb-4473-85d7-263a9f6169af")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R6")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 63.5 168.91) (xy 63.5 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "85bbb1e1-a3d3-4844-9309-80d4a3882953")
+	)
+	(wire
+		(pts
+			(xy 63.5 177.8) (xy 45.72 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "2a5980ae-c45b-48c0-be6c-f876e7c18c65")
+	)
+	(wire
+		(pts
+			(xy 63.5 161.29) (xy 63.5 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1b717648-0a5b-418b-8c97-1c49b71ed3f2")
+	)
+	(symbol
+		(lib_id "power:+5V")
+		(at 63.5 158.75 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "cd62d020-74f4-4f9f-b2af-09a2086dcc69")
+		(property "Reference" "#PWR13"
+			(at 63.5 162.56 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "+5V"
+			(at 63.5 155.19 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 63.5 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 63.5 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+5V\""
+			(at 63.5 158.75 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "99207b88-0c33-4cab-8a14-1143ebf17ccf")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR13")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 30.48 175.26) (xy 27.94 175.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b86ff0de-a391-4636-86e7-25c12514e1fa")
+	)
+	(wire
+		(pts
+			(xy 27.94 175.26) (xy 27.94 180.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a28df48c-f35d-4999-8e23-9a9112cc8c44")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 27.94 180.34 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "683329aa-8d22-4bda-88f7-4baedf311178")
+		(property "Reference" "#PWR14"
+			(at 27.94 186.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 27.94 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 27.94 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 27.94 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 27.94 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "13e6c871-e86c-4a36-99c4-47a4fa9f6fb8")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR14")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(text "D1＝電源（5V から常時・赤と黄緑を両方点ける＝黄）"
+		(exclude_from_sim no)
+		(at 25.4 190.5 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "d88014e6-37af-49ae-bbc2-2f91d3ea2dc2")
+	)
+	(symbol
+		(lib_id "Device:LED_Dual_AKA")
+		(at 88.9 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "de0eccfc-d5e0-48f2-81ad-e90e335de300")
+		(property "Reference" "D2"
+			(at 88.9 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "OSRGHC3132A"
+			(at 88.9 182.88 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+			(at 88.9 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 88.9 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "3 mm 2 色 LED（カソード共通）を寝かせて背面パネルの穴から見せる。1＝赤のアノード・2＝共通カソード・3＝黄緑のアノード"
+			(at 88.9 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "b9813848-55d1-41bd-9723-634ed8dee7a6")
+		)
+		(pin "2"
+			(uuid "83a3d055-4733-4b69-8d5a-f72a274b619a")
+		)
+		(pin "3"
+			(uuid "fe40821d-7cca-41e8-990e-8f13a0b70e78")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "D2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 104.14 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "7b6cc989-bba7-4b88-8840-8af40943748c")
+		(property "Reference" "R1"
+			(at 106.68 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "330"
+			(at 106.68 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 104.14 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 104.14 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 104.14 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "7c3666fe-060f-4647-8774-f547def7557a")
+		)
+		(pin "2"
+			(uuid "eae20abc-be1d-4103-9b1d-546cbe72508a")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R1")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 104.14 168.91) (xy 104.14 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "f9c8b6a8-883f-43fb-8875-c5e756f61ed8")
+	)
+	(wire
+		(pts
+			(xy 104.14 172.72) (xy 96.52 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b6e91c2f-ae7e-43c0-ab0c-7b4732d4f5a8")
+	)
+	(wire
+		(pts
+			(xy 104.14 161.29) (xy 104.14 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a769b5fc-2afa-4f06-a465-003bbc91993c")
+	)
+	(label "LED920_TX"
+		(at 104.14 158.75 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "2f5141a3-dadd-42c7-a3d8-deac54060e06")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 114.3 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "b9b2d068-6ca4-466c-8a96-968b832a336e")
+		(property "Reference" "R2"
+			(at 116.84 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "330"
+			(at 116.84 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 114.3 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 114.3 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 114.3 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c7ace49c-d8f5-424d-82dc-6e08ac84db5f")
+		)
+		(pin "2"
+			(uuid "a46cff2b-ab0b-4f76-8b79-868e193baad0")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R2")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 114.3 168.91) (xy 114.3 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "28770222-9acd-4a35-8fd6-7a55a8fa8306")
+	)
+	(wire
+		(pts
+			(xy 114.3 177.8) (xy 96.52 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4fc940ab-fba0-46c3-b0ef-c1599868045f")
+	)
+	(wire
+		(pts
+			(xy 114.3 161.29) (xy 114.3 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "a7c8b1e5-7b7a-4666-a63f-4142e379b35b")
+	)
+	(label "LED920_RX"
+		(at 114.3 158.75 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "8fc12526-dc21-4322-9a50-6ecc6c55b648")
+	)
+	(wire
+		(pts
+			(xy 81.28 175.26) (xy 78.74 175.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "520b5e0d-2d41-4261-ab24-f24b6023e0b8")
+	)
+	(wire
+		(pts
+			(xy 78.74 175.26) (xy 78.74 180.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "b7608281-563f-4e8c-8bfb-db4155ee5049")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 78.74 180.34 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "946c3ca8-270c-4832-8453-9795c36d8c57")
+		(property "Reference" "#PWR15"
+			(at 78.74 186.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 78.74 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 78.74 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 78.74 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 78.74 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "d82549f9-aad3-4683-9da7-04ce41b97fcb")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR15")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(text "D2＝920 MHz（送信＝赤・受信＝緑）"
+		(exclude_from_sim no)
+		(at 76.2 190.5 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "e22ba853-cc17-476b-aa9d-458d7575538f")
+	)
+	(symbol
+		(lib_id "Device:LED_Dual_AKA")
+		(at 139.7 175.26 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "528d6207-42ff-4614-9709-408dcc1bbc4a")
+		(property "Reference" "D3"
+			(at 139.7 167.64 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "OSRGHC3132A"
+			(at 139.7 182.88 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+			(at 139.7 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 139.7 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "3 mm 2 色 LED（カソード共通）を寝かせて背面パネルの穴から見せる。1＝赤のアノード・2＝共通カソード・3＝黄緑のアノード"
+			(at 139.7 175.26 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "21dd9f88-f050-463f-9598-ae8b4df85df2")
+		)
+		(pin "2"
+			(uuid "8052169e-0d32-4c40-8998-ede521c85297")
+		)
+		(pin "3"
+			(uuid "dab333c7-7ee1-4695-b44e-fa212bd7f37b")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "D3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 154.94 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "ca507415-c022-4efc-9b60-1486359a7b7e")
+		(property "Reference" "R3"
+			(at 157.48 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "330"
+			(at 157.48 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 154.94 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 154.94 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 154.94 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "f8700039-9822-43cd-b692-0bf3818d0813")
+		)
+		(pin "2"
+			(uuid "39d1e7c4-d20e-46f9-a6e9-8ea0c9359291")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 154.94 168.91) (xy 154.94 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "dee7f020-f15b-4923-84b9-2e24646eeab3")
+	)
+	(wire
+		(pts
+			(xy 154.94 172.72) (xy 147.32 172.72)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "64197f5d-3efe-4b0d-af9a-ad87c4aa34c6")
+	)
+	(wire
+		(pts
+			(xy 154.94 161.29) (xy 154.94 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "57639e01-0f94-4c54-8821-4a0aaf824207")
+	)
+	(label "LED24_TX"
+		(at 154.94 158.75 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "f7671288-78d3-4935-8ef1-1589047b603c")
+	)
+	(symbol
+		(lib_id "Device:R")
+		(at 165.1 165.1 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "07805d11-a36f-4781-b3b2-9fa378034bbd")
+		(property "Reference" "R4"
+			(at 167.64 163.83 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Value" "330"
+			(at 167.64 166.37 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify left)
+			)
+		)
+		(property "Footprint" "Resistor_THT:R_Axial_DIN0204_L3.6mm_D1.6mm_P5.08mm_Horizontal"
+			(at 165.1 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 165.1 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "1/6 W（DIN0204）を寝かせる"
+			(at 165.1 165.1 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "13433b5b-d9a4-4f37-98ea-82d62364d8ed")
+		)
+		(pin "2"
+			(uuid "06e0495d-5994-496a-9519-100db10edc20")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "R4")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(wire
+		(pts
+			(xy 165.1 168.91) (xy 165.1 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7ef6d581-ddf1-4886-8532-d36d21e3fa39")
+	)
+	(wire
+		(pts
+			(xy 165.1 177.8) (xy 147.32 177.8)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "25f71fc1-6f6d-4f42-8207-79cc1ca3b575")
+	)
+	(wire
+		(pts
+			(xy 165.1 161.29) (xy 165.1 158.75)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "32737891-a249-498c-baf5-8fd0c0c03d1a")
+	)
+	(label "LED24_RX"
+		(at 165.1 158.75 90)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left bottom)
+		)
+		(uuid "ad30ef96-5fd2-4916-a5a8-e13ef82cbde5")
+	)
+	(wire
+		(pts
+			(xy 132.08 175.26) (xy 129.54 175.26)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "23765ec5-017e-4ddb-ae43-16324b388c3b")
+	)
+	(wire
+		(pts
+			(xy 129.54 175.26) (xy 129.54 180.34)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "171b9eb1-c8ee-4698-bb6b-12c7f5467f2f")
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 129.54 180.34 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom no)
+		(on_board no)
+		(dnp no)
+		(uuid "316ec11d-e6bf-45d3-a52b-52d663b2dc2d")
+		(property "Reference" "#PWR16"
+			(at 129.54 186.69 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "GND"
+			(at 129.54 184.15 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 129.54 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Datasheet" ""
+			(at 129.54 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 129.54 180.34 0)
+			(hide yes)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(pin "1"
+			(uuid "c46b2a1b-a058-4e38-b00d-a025c53dd985")
+		)
+		(instances
+			(project "field_carrier"
+				(path "/03c08461-6a3a-575b-8397-56beda7ff5c4"
+					(reference "#PWR16")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(text "D3＝2.4 GHz（送信＝赤・受信＝緑）"
+		(exclude_from_sim no)
+		(at 127 190.5 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+			(justify left)
+		)
+		(uuid "5eec9351-71a6-4d12-a9e2-82c252933768")
 	)
 	(sheet_instances
 		(path "/"
