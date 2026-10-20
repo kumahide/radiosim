@@ -37,6 +37,7 @@
 	(fp_text user "D0" (at 7.62 5.9 0) (layer "F.SilkS") (uuid "8c0e63ee-4af4-4f8b-9e7e-ef243fc4e81f") (effects (font (size 0.8 0.8) (thickness 0.12))))
 	(fp_text user "5V" (at 7.62 -5.9 0) (layer "F.SilkS") (uuid "a8c55c77-bc2e-4606-a49e-6a06e7df6941") (effects (font (size 0.8 0.8) (thickness 0.12))))
 	(fp_text user "USB>" (at 8.2 0 0) (layer "F.SilkS") (uuid "8515a091-9c2c-4c11-aba9-3d8ba8c02681") (effects (font (size 0.8 0.8) (thickness 0.12))))
-	(fp_rect (start -10.68 -9.15) (end 12.8 9.15) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd") (uuid "b2f02707-7bb9-4d3b-8af0-493535cc4aa9"))
+	(fp_rect (start -9.09 6.15) (end 9.09 9.09) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd") (uuid "b2f02707-7bb9-4d3b-8af0-493535cc4aa9"))
+	(fp_rect (start -9.09 -9.09) (end 9.09 -6.15) (stroke (width 0.05) (type solid)) (fill no) (layer "F.CrtYd") (uuid "b2f02707-7bb9-4d3b-8af0-493535cc4aa8"))
 	(embedded_fonts no)
 )

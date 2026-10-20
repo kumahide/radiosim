@@ -3163,7 +3163,7 @@
 				)
 			)
 		)
-		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_O2.54mm_Z2.0mm"
 			(at 38.1 175.26 0)
 			(hide yes)
 			(effects
@@ -3657,7 +3657,7 @@
 				)
 			)
 		)
-		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_O2.54mm_Z2.0mm"
 			(at 88.9 175.26 0)
 			(hide yes)
 			(effects
@@ -4041,7 +4041,7 @@
 				)
 			)
 		)
-		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_Staggered"
+		(property "Footprint" "field_carrier:LED_D3.0mm-3_Horizontal_O2.54mm_Z2.0mm"
 			(at 139.7 175.26 0)
 			(hide yes)
 			(effects
