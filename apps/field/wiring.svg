@@ -116,7 +116,7 @@
     <text x="576" y="495">D3（GPIO21）</text>
     <text x="576" y="545">D0（GPIO0）</text>
     <text x="576" y="595">D1（GPIO1）</text>
-    <text x="576" y="645" fill="#777">D10（GPIO18）</text>
+    <text x="576" y="645">D10（GPIO18）</text>
     <text x="576" y="705" fill="#d12a2a" font-weight="bold">5V</text>
     <text x="576" y="755" font-weight="bold">GND</text>
   </g>
@@ -136,7 +136,7 @@
     <text x="876" y="495"><tspan font-weight="bold">2</tspan>　M1</text>
     <text x="876" y="545"><tspan font-weight="bold">3</tspan>　RXD</text>
     <text x="876" y="595"><tspan font-weight="bold">4</tspan>　TXD</text>
-    <text x="876" y="645" fill="#777"><tspan font-weight="bold">5</tspan>　AUX（任意）</text>
+    <text x="876" y="645"><tspan font-weight="bold">5</tspan>　AUX</text>
     <text x="876" y="705" fill="#d12a2a"><tspan font-weight="bold">6</tspan>　VCC</text>
     <text x="876" y="755"><tspan font-weight="bold">7</tspan>　GND</text>
   </g>
@@ -173,8 +173,8 @@
   <text x="724" y="532" text-anchor="middle" fill="#1f6fd1">UART1 TX → EV2 の RXD</text>
   <line x1="854" y1="590" x2="596" y2="590" stroke="#1a9a4a" stroke-width="3" marker-end="url(#a-green)"/>
   <text x="724" y="582" text-anchor="middle" fill="#1a9a4a">EV2 の TXD → UART1 RX</text>
-  <line x1="854" y1="640" x2="596" y2="640" stroke="#888" stroke-width="2" stroke-dasharray="7 5" marker-end="url(#a-gray)"/>
-  <text x="724" y="632" text-anchor="middle" fill="#888">AUX（任意・未使用なら開放）</text>
+  <line x1="854" y1="640" x2="596" y2="640" stroke="#555" stroke-width="3" marker-end="url(#a-gray)"/>
+  <text x="724" y="632" text-anchor="middle" fill="#555">AUX（入力・C2 で GND へ 100nF）</text>
   <line x1="594" y1="700" x2="854" y2="700" stroke="#d12a2a" stroke-width="3.5" marker-end="url(#a-red)"/>
   <text x="690" y="692" text-anchor="middle" fill="#d12a2a">電源 5V（USB 由来）</text>
   <line x1="594" y1="750" x2="856" y2="750" stroke="#222" stroke-width="3.5"/>
@@ -302,7 +302,7 @@
       <text x="10" y="85">D3</text><text x="140" y="85">21</text><text x="210" y="85">出力 ▶</text><text x="300" y="85">EV2 <tspan font-weight="bold">2</tspan> 番 M1</text><text x="580" y="85">同上。M0 と独立に動かす</text>
       <text x="10" y="117">D0</text><text x="140" y="117">0</text><text x="210" y="117">出力 ▶</text><text x="300" y="117">EV2 <tspan font-weight="bold">3</tspan> 番 RXD</text><text x="580" y="117">UART1 TX。送信と受信を交差させる</text>
       <text x="10" y="149">D1</text><text x="140" y="149">1</text><text x="210" y="149">◀ 入力</text><text x="300" y="149">EV2 <tspan font-weight="bold">4</tspan> 番 TXD</text><text x="580" y="149">UART1 RX。送信と受信を交差させる</text>
-      <g fill="#777"><text x="10" y="181">D10</text><text x="140" y="181">18</text><text x="210" y="181">◀ 入力</text><text x="300" y="181">EV2 <tspan font-weight="bold">5</tspan> 番 AUX（任意）</text><text x="580" y="181">使うなら 5 番↔7 番に 100nF。未使用なら開放</text></g>
+      <text x="10" y="181">D10</text><text x="140" y="181">18</text><text x="210" y="181">◀ 入力</text><text x="300" y="181">EV2 <tspan font-weight="bold">5</tspan> 番 AUX</text><text x="580" y="181">送れるかの判定・受信の時刻。5 番↔7 番に 100nF（C2）</text>
       <text x="10" y="213" fill="#d12a2a" font-weight="bold">5V</text><text x="140" y="213">—</text><text x="210" y="213">電源 ▶</text><text x="300" y="213">EV2 <tspan font-weight="bold">6</tspan> 番 VCC</text><text x="580" y="213">3.1〜5.5V。6 番↔7 番に 100nF</text>
       <text x="10" y="245" font-weight="bold">GND</text><text x="140" y="245">—</text><text x="210" y="245">—</text><text x="300" y="245">EV2 <tspan font-weight="bold">7</tspan> 番 GND</text><text x="580" y="245">スルーホール 3 つも GND。帰り線をもう 1 本</text>
       <g fill="#555"><text x="10" y="277">D6</text><text x="140" y="277">16</text><text x="210" y="277">出力 ▶</text><text x="300" y="277">USB-UART 変換器の RX（任意）</text><text x="580" y="277">UART0 TX＝ログの出口。E220 には使わない</text></g>
@@ -337,7 +337,7 @@
   <g transform="translate(0,675)">
   <text x="30" y="1420" font-size="18" font-weight="bold" fill="#222">④ 注意</text>
   <g fill="#222">
-    <text x="30" y="1450">・必須は E220 まわりの 6 本（UART 2 本・M0・M1・VCC・GND）と 2.4 GHz のアンテナ。AUX と UART0（ログ）は任意。</text>
+    <text x="30" y="1450">・E220 まわりの 7 本（UART 2 本・M0・M1・AUX・VCC・GND）は台で全部配線する。UART0（ログ）は台の J4 に出し、読むときだけ変換器をつなぐ。</text>
     <text x="30" y="1474">・2.4 GHz と 920 MHz のアンテナは離して立てる。2 帯域は同時に動かさない（920 の送信が至近で 2.4 の受信段を飽和させうる・電波法の扱いが帯域ごとに別）。</text>
     <text x="30" y="1498">・100nF はリード付きで可。EV2 と XIAO をつなぐ線が 20〜30 cm を超えるなら、EV2 側に 10µF も足す。</text>
     <text x="30" y="1522">・I/O は VCC が 5V でも 3.3V のまま＝レベル変換なしで直結できる。ログ用の変換器も 3.3V のものを使う。</text>
