@@ -158,7 +158,7 @@
 			(start -1.38 -1.38)
 			(end 0 -1.38)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -168,7 +168,7 @@
 			(start -1.38 0)
 			(end -1.38 -1.38)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -178,7 +178,7 @@
 			(start -1.38 1.27)
 			(end -1.38 6.46)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -188,7 +188,7 @@
 			(start -1.38 1.27)
 			(end 1.38 1.27)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -198,7 +198,7 @@
 			(start -1.38 6.46)
 			(end 1.38 6.46)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -208,7 +208,7 @@
 			(start 1.38 1.27)
 			(end 1.38 6.46)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -397,7 +397,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -407,7 +407,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -568,7 +568,7 @@
 			(start 0.485 -0.92)
 			(end 2.015 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -578,7 +578,7 @@
 			(start 2.015 0.92)
 			(end 0.485 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -655,13 +655,13 @@
 		(descr "3 mm LED with 3 leads (OSRGHC3132A: 1 = red anode, 2 = common cathode, 3 = yellow-green anode), laid horizontal with the axis 2.0 mm above the board. Leads in one row at the datasheet pitch of 2.54 mm, bent 90 deg 2.54 mm from the flange (body toward +y) = clear of the 1.5 mm resin meniscus and of the outer leads' spread, which ends about 1.1 mm below the flange. Pads 1.5 mm so three LEDs fit at 6.8 mm pitch.")
 		(tags "LED 3mm horizontal bicolor common cathode")
 		(property "Reference" "D1"
-			(at 0 -1.3 0)
+			(at 0.9 -1.6 0)
 			(layer "F.SilkS")
 			(uuid "de19ce54-88ae-4754-86d2-d35ec6100d57")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -917,7 +917,7 @@
 			(start 0.485 -0.92)
 			(end 2.015 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -927,7 +927,7 @@
 			(start 2.015 0.92)
 			(end 0.485 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1004,13 +1004,13 @@
 		(descr "3 mm LED with 3 leads (OSRGHC3132A: 1 = red anode, 2 = common cathode, 3 = yellow-green anode), laid horizontal with the axis 2.0 mm above the board. Leads in one row at the datasheet pitch of 2.54 mm, bent 90 deg 2.54 mm from the flange (body toward +y) = clear of the 1.5 mm resin meniscus and of the outer leads' spread, which ends about 1.1 mm below the flange. Pads 1.5 mm so three LEDs fit at 6.8 mm pitch.")
 		(tags "LED 3mm horizontal bicolor common cathode")
 		(property "Reference" "D3"
-			(at 0 -1.3 0)
+			(at 0 -1.6 0)
 			(layer "F.SilkS")
 			(uuid "158d904f-d8d5-4e9e-940d-5121cddf00d1")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -1202,13 +1202,13 @@
 		(descr "3 mm LED with 3 leads (OSRGHC3132A: 1 = red anode, 2 = common cathode, 3 = yellow-green anode), laid horizontal with the axis 2.0 mm above the board. Leads in one row at the datasheet pitch of 2.54 mm, bent 90 deg 2.54 mm from the flange (body toward +y) = clear of the 1.5 mm resin meniscus and of the outer leads' spread, which ends about 1.1 mm below the flange. Pads 1.5 mm so three LEDs fit at 6.8 mm pitch.")
 		(tags "LED 3mm horizontal bicolor common cathode")
 		(property "Reference" "D2"
-			(at 0 -1.3 0)
+			(at 0 -1.6 0)
 			(layer "F.SilkS")
 			(uuid "81bd363b-87de-48d8-af97-3bb742ab42eb")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -1464,7 +1464,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1474,7 +1474,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1635,7 +1635,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1645,7 +1645,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1806,7 +1806,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1816,7 +1816,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1977,7 +1977,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -1987,7 +1987,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -2135,17 +2135,17 @@
 			(start 9.9 9.6)
 			(end 8.9 9.6)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
 			(uuid "c598cc9d-cedf-47ac-9166-5190b5d7966b")
 		)
 		(fp_rect
-			(start -10.6 -9.05)
-			(end 9.9 9.05)
+			(start -10.6 -8.93)
+			(end 9.9 8.93)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(fill no)
@@ -2246,19 +2246,19 @@
 			(uuid "95594b03-ccb8-429a-bd3d-d31e8073ee12")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
 		(fp_text user "USB>"
-			(at 8.2 0 270)
+			(at 7.8 0 270)
 			(layer "F.SilkS")
 			(uuid "647188bd-236d-49ea-a8ed-6e96ceac1a59")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2268,8 +2268,8 @@
 			(uuid "d0ae410e-591b-46f1-b558-b0e419fba048")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2514,7 +2514,7 @@
 			(start -2.2 -1)
 			(end -2.2 1)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -2524,7 +2524,7 @@
 			(start -1.61 -2.96)
 			(end 34.61 18.16)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(fill no)
@@ -2581,8 +2581,8 @@
 			(uuid "b6d309b4-0c73-4aef-8431-7313b268ed0c")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2592,8 +2592,8 @@
 			(uuid "97b35eb6-834c-42b7-8cae-7e7dccda83c7")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2603,8 +2603,8 @@
 			(uuid "030bb95e-0c72-4e10-a95c-c0343e2b5139")
 			(effects
 				(font
-					(size 0.8 0.8)
-					(thickness 0.12)
+					(size 1 1)
+					(thickness 0.15)
 				)
 			)
 		)
@@ -2793,7 +2793,7 @@
 			(start 0.62 0.92)
 			(end 4.46 0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -2803,7 +2803,7 @@
 			(start 0.62 -0.92)
 			(end 4.46 -0.92)
 			(stroke
-				(width 0.12)
+				(width 0.15)
 				(type solid)
 			)
 			(layer "F.SilkS")
@@ -2894,7 +2894,7 @@
 		)
 	)
 	(gr_rect
-		(start 50.5 30.5)
+		(start 50.5 30.7)
 		(end 52.5 75.5)
 		(stroke
 			(width 0)
@@ -2905,7 +2905,7 @@
 		(uuid "96e423b1-ec0a-4afe-99da-a3d1d19e6f5c")
 	)
 	(gr_rect
-		(start 102.5 30.5)
+		(start 102.5 30.7)
 		(end 104.5 75.5)
 		(stroke
 			(width 0)
@@ -2916,7 +2916,7 @@
 		(uuid "a42ebb5f-2994-45f1-96c5-7167d2dd29f2")
 	)
 	(gr_rect
-		(start 50.5 30.5)
+		(start 50.5 30.7)
 		(end 52.5 75.5)
 		(stroke
 			(width 0)
@@ -2927,7 +2927,7 @@
 		(uuid "dfc184b3-1389-4d57-a3e8-c132d079a337")
 	)
 	(gr_rect
-		(start 102.5 30.5)
+		(start 102.5 30.7)
 		(end 104.5 75.5)
 		(stroke
 			(width 0)
@@ -2938,8 +2938,8 @@
 		(uuid "14da839c-61a2-4749-adb4-deafda76215e")
 	)
 	(gr_line
-		(start 50 30)
-		(end 105 30)
+		(start 50 30.2)
+		(end 105 30.2)
 		(stroke
 			(width 0.05)
 			(type default)
@@ -2949,7 +2949,7 @@
 	)
 	(gr_line
 		(start 50 76)
-		(end 50 30)
+		(end 50 30.2)
 		(stroke
 			(width 0.05)
 			(type default)
@@ -2958,7 +2958,7 @@
 		(uuid "83eaa549-53a1-4072-8fdd-4aa4923aa9ef")
 	)
 	(gr_line
-		(start 105 30)
+		(start 105 30.2)
 		(end 105 76)
 		(stroke
 			(width 0.05)
@@ -2977,36 +2977,36 @@
 		(layer "Edge.Cuts")
 		(uuid "5e3e4fcc-bb83-4768-b6be-1f8d5e71d7f3")
 	)
-	(gr_text "RadioSim Field carrier rev 0.1"
-		(at 84 35.6 0)
-		(layer "F.SilkS")
-		(uuid "e81f1e05-59f4-45ee-b996-0226188e929a")
-		(effects
-			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
-			)
-		)
-	)
 	(gr_text "FRONT (ANT)"
 		(at 84.5 32.2 0)
 		(layer "F.SilkS")
 		(uuid "c2324d83-6934-4bb4-a103-df22fabf4585")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
 	(gr_text "BACK (USB)"
-		(at 84.5 71 0)
+		(at 84.5 69.5 0)
 		(layer "F.SilkS")
 		(uuid "df21cc8b-aebc-4ddd-958d-7bf33ac4af33")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
+			)
+		)
+	)
+	(gr_text "RadioSim Field\ncarrier rev 0.1"
+		(at 85.5 37 0)
+		(layer "F.SilkS")
+		(uuid "e81f1e05-59f4-45ee-b996-0226188e929a")
+		(effects
+			(font
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -3016,8 +3016,8 @@
 		(uuid "f27cb97c-7035-480a-97e2-6962ca41516e")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -3027,8 +3027,8 @@
 		(uuid "daaaa77a-397b-495b-8d19-01af1aa496a0")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -3038,8 +3038,8 @@
 		(uuid "6413e5d8-724d-46f5-bfd3-b77559611a55")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
 			)
 		)
 	)
@@ -3049,8 +3049,8 @@
 		(uuid "5b6cfdb1-47e7-4cfa-9d9d-3569330b1773")
 		(effects
 			(font
-				(size 0.8 0.8)
-				(thickness 0.12)
+				(size 1 1)
+				(thickness 0.15)
 			)
 			(justify mirror)
 		)
