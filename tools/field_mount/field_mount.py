@@ -23,13 +23,13 @@ from manifold3d import CrossSection, JoinType, Manifold
 SEG = 96
 
 # ---- 相手の部品（出典つき・⚠️ は実物で当てる値）---------------------------------------------
-GNSS_FOOT_R = 18.0        # ⚠️ JCA228F の底の脚 約 Φ36（図の画素から）
+GNSS_FOOT_R = 18.0        # JCA228F の底の脚 Φ36（実測）
 GNSS_RIM_R = 75.75        # JCA228F Φ151.5
 GNSS_RIM_Z = 37.0         # ⚠️ 縁の下面の高さ（ARP から・図の画素から）
 GNSS_TOP_Z = 66.5         # JCA228F 高さ
-TNC_X = -35.0             # ⚠️ TNC の中心（脚の外・中心から約 35・下向き）
-TNC_TIP_Z = 8.5           # ⚠️ TNC の先端は ARP の面の約 8.5 上
-TNC_PLUG_R = 7.5          # ⚠️ ケーブル側の TNC プラグの太さ Φ15 以下と置く
+TNC_X = -35.35            # TNC の中心（脚の外・下向き）＝実測 E 62.6 − 脚 36/2 − 受け口の胴 18.5/2
+TNC_TIP_Z = 8.5           # ⚠️ TNC の先端は ARP の面の約 8.5 上（受け口の胴 Φ18.5 は溝 17 より太い＝z 0 より上が前提）
+TNC_PLUG_R = 7.25         # ケーブル側の TNC プラグ（真っすぐ）のいちばん太い所 Φ14.5（実測）
 ROD_R = 15.875 / 2        # 5/8-11UNC
 ROD_IN_ANT = 14.0         # アンテナの穴は深さ 16±0.5・底に空気抜き＝14 で止める
 JAM_AC = 27.5             # 5/8-11 薄型（ジャム）ナット 二面幅 23.8（15/16"）の対角
@@ -454,7 +454,7 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
     lines = [
         ("h2", "番号の中身"),
         ("n", f"① 5/8-11 の棒の穴 Φ{ROD_HOLE_D:g} 貫通。上から薄ナットの座ぐり Φ{JAM_POCKET_D:g}・深さ {JAM_POCKET_H:g}"),
-        ("n", f"② TNC の逃げ 幅 {2 * TNC_SLOT_HW:g}（プラグ Φ15 以下・中心 r 32〜41.5 で入る）"),
+        ("n", f"② TNC の逃げ 幅 {2 * TNC_SLOT_HW:g}（プラグ Φ{2 * TNC_PLUG_R:g}・中心 r 32〜41.5 で入る・実測 r {-TNC_X:g}）"),
         ("n", "③ GNSS ケーブルの結束穴 2×4.5（2 個）"),
         ("n", f"④ 三脚の 1/4-20：穴 Φ{TRIPOD_HOLE_D:g}・上から六角ナット（二面幅 {NUT14_POCKET_AF:g}）"),
         ("n", f"⑤ レバーの切り欠き x {NOTCH_X[0]:g}〜{NOTCH_X[1]:g}・y {NOTCH_Y:g} まで（-y の側）"),
@@ -470,8 +470,8 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
         ("n", "5/8 の座金（外径 32 前後）＋蝶ナット＝下から締めて引き付ける"),
         ("n", "1/4-20 六角ナット 1・M3 ローレットつまみねじ×10 と M3 ナット 各 2"),
         ("h2", "実物で当てる値（外れたら直して出し直す）"),
-        ("n", "JCA228F の脚 Φ36・TNC の位置 r 35・縁の下面 37（図の画素）"),
-        ("n", "TNC プラグの太さ・枠の窓 30×45"),
+        ("n", "JCA228F の縁の下面 37・TNC の先端 z 8.5（図の画素）"),
+        ("n", "枠の窓 30×45"),
         ("h2", "はめ合いの自動検査（モデルとの重なり）"),
     ] + wrap_checks(checks)
     for cls, s in lines:
