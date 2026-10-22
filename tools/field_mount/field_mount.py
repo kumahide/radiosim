@@ -34,8 +34,8 @@ ROD_R = 15.875 / 2        # 5/8-11UNC
 ROD_IN_ANT = 14.0         # アンテナの穴は深さ 16±0.5・底に空気抜き＝14 で止める
 JAM_AC = 27.5             # 5/8-11 薄型（ジャム）ナット 二面幅 23.8（15/16"）の対角
 JAM_H = 9.53              # 同 厚さ 3/8"
-QR_X = (29.0, 81.0)       # ⚠️ クイックシューの板 200PL-14＝52×42×10（販売店の表記）・中心 x 55
-QR_HW = 21.0
+QR_X = (28.35, 81.65)     # クイックシューの板 200PL-14＝53.3（x）×37.5（y）（実測）×厚 10（販売店の表記）・中心 x 55
+QR_HW = 18.75
 QR_SCREW_UP = 4.7         # 板の 1/4 ねじの突き出し（実測）
 NUT14_AF = 11.11          # 1/4-20 六角ナット 二面幅 7/16"
 NUT14_H = 5.56            # 同 厚さ 7/32"
@@ -58,7 +58,7 @@ TNC_SLOT_HW, TNC_SLOT_END = 8.5, -32.0   # TNC の逃げ＝幅 17・丸い端の
 QR_CX = 55.0
 TRIPOD_HOLE_D = 6.8
 NUT14_POCKET_AF, NUT14_FLOOR = 11.4, 1.2
-NOTCH_X, NOTCH_Y = (33.0, 77.0), -23.0   # レバーの側の切り欠き
+NOTCH_X, NOTCH_Y = (33.0, 77.0), -20.75  # レバーの側の切り欠き（板の縁の 2 外まで）
 VIAL_C, VIAL_D, VIAL_H = (50.0, 22.0), 15.4, 4.0
 C = 0.3                   # 箱とのすきま
 WALL = 4.0
@@ -340,7 +340,7 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
     for u0, u1, v0, v1 in [(*QR_X, -QR_HW, QR_HW)]:
         sh.rect(top, u0, u1, v0, v1, "ghost")
     x, y = top.p(QR_X[1] - 1, -QR_HW + 1.5)
-    sh.text(x, y, "クイックシューの板（下・52×42）", "gtxt", anchor="end")
+    sh.text(x, y, f"クイックシューの板（下・{QR_X[1] - QR_X[0]:g}×{2 * QR_HW:g}）", "gtxt", anchor="end")
     for side in (1, -1):    # GNSS の縁は台座の幅の中だけ描く
         ys = np.linspace(-W2 - 2, W2 + 2, 60)
         sh.polyline(top, [(side * math.sqrt(GNSS_RIM_R ** 2 - v * v), v) for v in ys], "ghost")
@@ -471,7 +471,7 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
         ("n", "1/4-20 六角ナット 1・M3 ローレットつまみねじ×10 と M3 ナット 各 2"),
         ("h2", "実物で当てる値（外れたら直して出し直す）"),
         ("n", "JCA228F の脚 Φ36・TNC の位置 r 35・縁の下面 37（図の画素）"),
-        ("n", "TNC プラグの太さ・200PL-14 の 52×42・枠の窓 30×45"),
+        ("n", "TNC プラグの太さ・枠の窓 30×45"),
         ("h2", "はめ合いの自動検査（モデルとの重なり）"),
     ] + wrap_checks(checks)
     for cls, s in lines:
