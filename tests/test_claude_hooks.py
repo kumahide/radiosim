@@ -4129,6 +4129,32 @@ class TestBackupTargets:
         assert (dest / ".claude" / "keep.py").is_file(), "ふつうのファイルまで落とした"
         assert not (dest / ".claude" / "worktrees" / "relay").exists(), "ワークツリーを運んだ"
 
+    def test_it_carries_the_field_data_outside_the_tree(self, mirror):
+        """🔴 実測の記録は作業ツリーの外にあり、取り直せない（2026-10-22 に退避の網から外れていた）。"""
+        names = [name for _src, name in mirror.OUTSIDE_TARGETS]
+        assert "field-data" in names
+        assert "radiosim-refs" in names
+        for src, _name in mirror.OUTSIDE_TARGETS:
+            assert os.path.dirname(src) == os.path.dirname(mirror.REPO_DIR), "作業ツリーの隣から導いていない"
+
+    def test_outside_targets_go_to_the_box_but_not_the_freeze(self, tmp_path, mirror, monkeypatch):
+        """⛔ 外のフォルダは OneDrive の箱にだけ運ぶ＝凍結リポ（git の履歴）には入れない。"""
+        outside = tmp_path / "field-data"
+        outside.mkdir()
+        (outside / "obs.ubx").write_bytes(b"\xb5b")
+        box, freeze = tmp_path / "OneDrive" / "box", tmp_path / "freeze"
+        monkeypatch.setattr(mirror, "REPO_DIR", str(tmp_path / "repo"))
+        monkeypatch.setattr(mirror, "BACKUP_TARGETS", ())
+        monkeypatch.setattr(mirror, "OUTSIDE_TARGETS", ((str(outside), "field-data"),))
+        monkeypatch.setattr(mirror, "BACKUP_DIR", str(box))
+        (tmp_path / "OneDrive").mkdir()
+
+        mirror._backup()
+        mirror._copy_into(str(freeze), mirror.FREEZE_SKIP_SUFFIX)
+
+        assert (box / "field-data" / "obs.ubx").is_file(), "箱へ運んでいない"
+        assert not (freeze / "field-data").exists(), "凍結へ運んだ"
+
 
 class TestFreezeGuard:
     """🔴 **凍結リポへの push は取り違えると公開事故になる。**
