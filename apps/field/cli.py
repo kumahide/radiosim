@@ -533,6 +533,7 @@ def _bench(args: argparse.Namespace) -> int:
     if command == "analyze":
         ref = read_ref(args.ref) if args.ref else None
         report = analyze(args.directory, ref)
+        report["firmware_label"] = describe_firmware(report["firmware_version"])
         j, m = write_report(args.directory, report)
         print(render_markdown(report))
         print(f"書き出しました: {m}・{j}")
@@ -633,7 +634,7 @@ def run_probe(
                 else find_probe_baseline(runner.directory.parent, units=units, settings=settings))
     levels = [] if baseline is None else compare_probe_levels(links, units, baseline[1])
     say("\n判定")
-    say(f"  {_mark(fw_ok)} ファームの版 {firmware}: {fw_note}")
+    say(f"  {_mark(fw_ok)} ファーム {describe_firmware(firmware)}: {fw_note}")
     for link in links:
         say(f"  {_mark(link.ok)} {_probe_line(link)}")
     if saturated:
@@ -723,6 +724,11 @@ def _no_prompt(message: str) -> str:
     raise BenchError(f"動作確認では人に頼みません: {message}")
 
 
+# ファームのソース＝ビルドに入るもの。文書（`*.md`）は入らない（B-360）。
+_FIRMWARE_SOURCE = ("apps/field/firmware", ":(exclude)apps/field/firmware/*.md")
+_SUBJECT_MAX = 30          # 件名を 1 行の表示に収める長さ（超えたら … で切る）
+
+
 def _same_firmware_source(version: str) -> bool | None:
     """その版と今のコミットで、ファームのソースが同じか（その版が無ければ None）。
 
@@ -731,11 +737,36 @@ def _same_firmware_source(version: str) -> bool | None:
     if not re.fullmatch(r"[0-9a-f]{7,40}", version):
         return None                                   # git に渡すのはコミットの形だけ
     result = subprocess.run(  # nosec B603,B607 — 固定の git 呼び出し（版は 16 進だけ）
-        ["git", "diff", "--quiet", version, "HEAD", "--", "apps/field/firmware",
-         ":(exclude)apps/field/firmware/*.md"],
+        ["git", "diff", "--quiet", version, "HEAD", "--", *_FIRMWARE_SOURCE],
         cwd=_REPO_ROOT, capture_output=True,
     )
     return {0: True, 1: False}.get(result.returncode)
+
+
+def describe_firmware(version: str) -> str:
+    """ファームの版（コミット）を人が読める形にする＝`2026-10-20 版「件名」（版）`。
+
+    日付と件名は、その版までで**最後にファームのソースを変えたコミット**から取る。
+    版そのものはビルドした時の HEAD で、その件名はファームと関係ないことが多い
+    （台座や文書のコミット）。引けなければ（push されていない・git が無い）版をそのまま返す。
+    """
+    commit = version.removesuffix("-dirty")
+    if not re.fullmatch(r"[0-9a-f]{7,40}", commit):
+        return version                                # git に渡すのはコミットの形だけ
+    try:
+        out = subprocess.run(  # nosec B603,B607 — 固定の git 呼び出し（版は 16 進だけ）
+            ["git", "log", "-1", "--format=%cs%x09%s", commit, "--", *_FIRMWARE_SOURCE],
+            cwd=_REPO_ROOT, capture_output=True, text=True, encoding="utf-8", check=True,
+        ).stdout.strip()
+    except (OSError, subprocess.CalledProcessError):
+        return version
+    if not out:
+        return version
+    date, subject = out.split("\t", 1)
+    subject = re.sub(r"^\w+(\([^)]*\))?!?: ", "", subject)      # feat(field): などを落とす
+    if len(subject) > _SUBJECT_MAX:
+        subject = subject[:_SUBJECT_MAX - 1] + "…"
+    return f"{date} 版「{subject}」（{version}）"
 
 
 def _prompt(message: str) -> str:
@@ -1007,7 +1038,8 @@ def describe_settings(fields: dict[str, Any], dialect: Any) -> str:
     return (f"{dialect.label('RADIOSIM_FIELD_ROLE', fields['role']).upper()} "
             f"{mac(fields['device_id'])}  {fields['band']} MHz 帯・チャネル {fields['channel']}・"
             f"間隔 {fields['tx_interval_ms']} ms・出力 {fields['tx_power_cdbm'] / 100:g} dBm・"
-            f"ファーム {fields['firmware_version']}・config_id {fields['config_id']}")
+            f"ファーム {describe_firmware(fields['firmware_version'])}・"
+            f"config_id {fields['config_id']}")
 
 
 def apply_settings(
@@ -1149,7 +1181,7 @@ class MonitorTally:
             role = self._dialect.label("RADIOSIM_FIELD_ROLE", f["role"])
             power = f"出力 {f['tx_power_cdbm'] / 100:g} dBm・" if role == "tx" else ""
             return (f"設定 {role.upper()} {device}  チャネル {f['channel']}・"
-                    f"{power}ファーム {f['firmware_version']}")
+                    f"{power}ファーム {describe_firmware(f['firmware_version'])}")
         if message.name == "RADIOSIM_FIELD_TX_PACKET":
             tx = mac(f["tx_id"])
             self._sent[tx] = self._sent.get(tx, 0) + 1

@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import dataclasses
 import json
+import os
 import random
 import re
 import subprocess
@@ -1183,6 +1184,46 @@ def test_a_firmware_readme_change_does_not_ask_for_reflashing(tmp_path, monkeypa
     (firmware / "main" / "main.c").write_text("int y;\n", encoding="utf-8")
     git("commit", "-qam", "3")
     assert cli._same_firmware_source(flashed) is False
+
+
+def test_the_firmware_version_is_shown_by_the_last_firmware_change(tmp_path, monkeypatch):
+    """人に見せる版は、ファームのソースを最後に変えたコミットの日付と件名＝ビルドした時の
+    HEAD（台座や文書のコミット）の件名を名乗らないこと。"""
+    def git(*args: str, date: str = "2026-10-01T12:00:00+09:00") -> str:
+        env = dict(os.environ, GIT_COMMITTER_DATE=date, GIT_AUTHOR_DATE=date)
+        return subprocess.run(["git", "-c", "user.name=t", "-c", "user.email=t@t",
+                               "-c", "commit.gpgsign=false", *args],
+                              cwd=tmp_path, check=True, capture_output=True,
+                              text=True, encoding="utf-8", env=env).stdout.strip()
+
+    firmware = tmp_path / "apps" / "field" / "firmware"
+    (firmware / "main").mkdir(parents=True)
+    (firmware / "main" / "main.c").write_text("int x;\n", encoding="utf-8")
+    git("init", "-q")
+    git("add", ".")
+    git("commit", "-qm", "feat(field): 表示の LED をファームで点け消しする（送受の 1 回ごとに 30 ms）",
+        date="2026-10-20T12:00:00+09:00")
+    (firmware / "README.md").write_text("a\n", encoding="utf-8")
+    (tmp_path / "mount.py").write_text("x = 1\n", encoding="utf-8")
+    git("add", ".")
+    git("commit", "-qm", "fix(field): 台座の板を直す", date="2026-10-22T12:00:00+09:00")
+    flashed = git("rev-parse", "--short=10", "HEAD")
+    monkeypatch.setattr(cli, "_REPO_ROOT", tmp_path)
+    assert cli.describe_firmware(flashed) == (
+        f"2026-10-20 版「表示の LED をファームで点け消しする（送受の 1 回ご…」（{flashed}）")
+    assert cli.describe_firmware(flashed + "-dirty").endswith(f"（{flashed}-dirty）")
+    # 引けない版はそのまま＝push されていない・機器から届いた妙な文字列。
+    assert cli.describe_firmware("0123456789") == "0123456789"
+    assert cli.describe_firmware("--output=x") == "--output=x"
+
+
+def test_the_bench_report_shows_the_readable_firmware_version_when_given(full_run):
+    """報告は CLI が足した人の読める版を出し、無ければコミットのまま出すこと。"""
+    _world, runner = full_run
+    report = BA.analyze(runner.directory)
+    assert "ファーム `afd69ae7db`" in BA.render_markdown(report)
+    report["firmware_label"] = "2026-10-20 版「表示の LED」（afd69ae7db）"
+    assert "ファーム 2026-10-20 版「表示の LED」（afd69ae7db）" in BA.render_markdown(report)
 
 
 def test_a_probe_folder_is_not_analyzed_as_a_bench(tmp_path, dialect):

@@ -647,7 +647,9 @@ def render_markdown(report: dict[str, Any]) -> str:
     L: list[str] = []
     u = report["units"]
     L.append(f"# ステージ0 の判定（{report['bench']}・{report['band']} MHz 帯）\n")
-    L.append(f"- A = `{u['a']}`／B = `{u['b']}`／ファーム `{report['firmware_version']}`"
+    # 人が読める版（日付と件名）は git を引く CLI が足す＝無ければコミットのまま。
+    firmware = report.get("firmware_label") or f"`{report['firmware_version']}`"
+    L.append(f"- A = `{u['a']}`／B = `{u['b']}`／ファーム {firmware}"
              f"／判定のコミット `{report['software_commit']}`")
     lv = report["levels"]
     L.append(f"- 固定損失 {lv['fixed_loss_db']:g} dB（{'実測' if lv['fixed_loss_measured'] else '公称'}）"
