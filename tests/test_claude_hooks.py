@@ -2413,6 +2413,71 @@ class TestRoadmapFormat:
                          "- 🚧 **ステージ11（RC1）**（2026-09-12〜）＝配布まで済み。",
                          "- ⬜ **ステージ12（正式）**＝未着手。") == []
 
+    # ── 子孫込みの大きさ・入れ子・全体（⑦〜⑨・2026-10-23 に踏んだ穴）──
+    def test_an_item_grown_through_its_children_is_flagged(self, memcheck):
+        """実例＝Field の作業順 2 は子の箇条 1 本ずつは 1000 字未満のまま、子孫込みで 3 万字に育った。"""
+        kids = [f"   - ✅ **出来事 {i}**（2026-10-18）＝" + "あ" * 40 for i in range(80)]
+        assert all(len(k) < memcheck._FMT_MAX_ITEM_LEN for k in kids)
+        found = self._fmt(memcheck, "2. ✅ **920 MHz への作り直し**＝本文。", *kids)
+        assert any("子孫込み" in f and "ledger.py fold" in f for f in found)
+
+    def test_an_item_tree_at_the_limit_passes(self, memcheck):
+        head = "- ✅ **項目**＝本文。"
+        kids = ["  - 子＝" + "あ" * 900] * 3
+        last = "  - 子＝" + "あ" * (memcheck._FMT_MAX_TREE_LEN - len(head)
+                                    - sum(map(len, kids)) - len("  - 子＝"))
+        assert len(head) + sum(map(len, kids)) + len(last) == memcheck._FMT_MAX_TREE_LEN
+        assert self._fmt(memcheck, head, *kids, last) == []
+        assert self._fmt(memcheck, head, *kids, last + "あ")
+
+    def test_a_blank_line_or_continuation_does_not_hide_children(self, memcheck):
+        found = self._fmt(memcheck, "- ✅ **項目**＝本文。", "",
+                          "  - 子＝" + "あ" * 900, "    続きの行" + "い" * 900, "",
+                          "  - 子＝" + "う" * 900, "  - 子＝" + "え" * 900)
+        assert any("子孫込み" in f for f in found)
+
+    def test_a_paragraph_ends_the_tree(self, memcheck):
+        """字下げの無い地の文は項目の外＝項目の字数に数えない（⑥も段落は見ない）。"""
+        assert self._fmt(memcheck, "- ✅ **項目**＝本文。", "地の文。" * 900,
+                         "- ⬜ **次の項目**＝本文。") == []
+
+    def test_great_grandchildren_are_flagged(self, memcheck):
+        found = self._fmt(memcheck, "- a", "  - b", "    - c", "      - d")
+        assert any("入れ子が 3 段" in f for f in found)
+
+    def test_depth_counts_levels_not_indent_width(self, memcheck):
+        """`10. ` の子は 4 字下げ＝字下げの幅を割ると 1 段多く数えてしまう。"""
+        assert self._fmt(memcheck, "10. 🚧 **基板とケース**＝本文。",
+                         "    - 🚧 設計項目④＝本文。", "      - ⬜ 未決＝本文。",
+                         "    - 子に戻る", "- 次の項目") == []
+
+    def test_the_whole_file_is_capped(self, memcheck):
+        """項目を分けて⑦を逃れても、全体で止まる。"""
+        items = [f"- ⬜ **項目 {i}**＝" + "あ" * 900 for i in range(70)]
+        found = self._fmt(memcheck, *items)
+        assert not any("子孫込み" in f for f in found)
+        assert any("全体が" in f for f in found)
+
+    def test_fold_copies_the_tree_verbatim_into_the_archive(self, memcheck):
+        main = ["### 🧭 Field の作業順（2026-09-27 確定）", "", "1. ✅ **組み立て**＝本文。",
+                "   - 子＝出来事。", "", "     - 孫＝出来事。", "2. ⬜ **次**＝本文。"]
+        archive = ["# 履歴", "", "## 🗄 済んだ版", "", "本文。", ""]
+        out = memcheck.fold_roadmap_item(main, archive, 3, "2026-10-23")
+        assert out[:5] == archive[:5]
+        h2 = out.index(memcheck.FOLD_H2)
+        h3 = out.index("### 📋 🧭 Field の作業順（2026-09-27 確定） ／ 組み立て（2026-10-23 に畳んだ）")
+        assert h2 < h3 and out[h3 + 2:h3 + 6] == main[2:6]
+        assert "次" not in "".join(out[h3:])
+        # 2 回目は同じ H2 の末尾（次の H2 の前）へ足す
+        out2 = memcheck.fold_roadmap_item(main, out + ["## 📋 その後の節", "本文。"], 7, "2026-10-24")
+        assert out2.count(memcheck.FOLD_H2) == 1
+        assert out2.index("### 📋 🧭 Field の作業順（2026-09-27 確定） ／ 次（2026-10-24 に畳んだ）") \
+            < out2.index("## 📋 その後の節")
+
+    def test_fold_rejects_a_line_that_is_not_an_item_head(self, memcheck):
+        with pytest.raises(ValueError):
+            memcheck.fold_roadmap_item(["### 見出し", "- a", "  - b"], [], 3, "2026-10-23")
+
     def test_findings_are_capped(self, memcheck):
         found = self._fmt(memcheck, *["- 🆕 **x**"] * 40)
         assert len(found) == memcheck._FMT_MAX_FINDINGS + 2     # 見出し行＋「ほか N 件」
