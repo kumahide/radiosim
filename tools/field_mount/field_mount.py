@@ -3,7 +3,8 @@
 
 製品の外の venv で回す（manifold3d と numpy だけ・B-rep 系の OCP はこの PC のアプリ制御で DLL が止められる）:
     D:\\tools\\cadvenv\\Scripts\\python.exe tools\\field_mount\\field_mount.py [出力先]
-出力＝field_mount.stl（JLC3DP へ出す）と field_mount_drawing.svg（寸法の入った図・断面はモデルを切って描く）。
+出力＝field_mount.stl と field_mount_knob.stl（どちらも JLC3DP へ出す・2 組）と
+field_mount_drawing.svg（寸法の入った図・断面はモデルを切って描く）。
 はめ合いの検査＝相手の部品を箱で包んだ形とモデルの重なりの体積を数え、0 でなければ止める。
 
 座標＝原点は 5/8 の棒の軸と台座の上面の交点。台座の上面＝ARP の面＝箱の背面が載る面。
@@ -12,6 +13,7 @@ x＝GNSS→箱（素子）の向き・z＝上・y＝右手系（-y の側にク�
 
 from __future__ import annotations
 
+import io
 import math
 import struct
 import sys
@@ -25,18 +27,21 @@ SEG = 96
 # ---- 相手の部品（出典つき・⚠️ は実物で当てる値）---------------------------------------------
 GNSS_FOOT_R = 18.0        # JCA228F の底の脚 Φ36（実測）
 GNSS_RIM_R = 75.75        # JCA228F Φ151.5
-GNSS_RIM_Z = 37.0         # ⚠️ 縁の下面の高さ（ARP から・図の画素から）
+GNSS_RIM_Z = 37.0         # 縁の下面の高さ（ARP から・図の画素から・箱は縁 r 75.75 の外＝はめ合いに効かない）
 GNSS_TOP_Z = 66.5         # JCA228F 高さ
 TNC_X = -35.35            # TNC の中心（脚の外・下向き）＝実測 E 62.6 − 脚 36/2 − 受け口の胴 18.5/2
 TNC_TIP_Z = 8.5           # TNC の先端は ARP の面の約 8.5 上（高さは図の画素・z 0 より上は実物で確認＝受け口の胴 Φ18.5 は溝 17 に入らない）
 TNC_PLUG_R = 7.25         # ケーブル側の TNC プラグ（真っすぐ）のいちばん太い所 Φ14.5（実測）
 ROD_R = 15.875 / 2        # 5/8-11UNC
 ROD_IN_ANT = 14.0         # アンテナの穴は深さ 16±0.5・底に空気抜き＝14 で止める
-JAM_AC = 27.5             # 5/8-11 薄型（ジャム）ナット 二面幅 23.8（15/16"）の対角
+ROD_L = 50.0              # 5/8-11 全ねじの長さ
+JAM_AF = 23.8             # 5/8-11 薄型（ジャム）ナット 二面幅 15/16"（上の留めとノブの中に 1 個ずつ）
+JAM_AC = 27.5             # 同 対角
 JAM_H = 9.53              # 同 厚さ 3/8"
 QR_X = (28.35, 81.65)     # クイックシューの板 200PL-14＝53.3（x）×37.5（y）（実測）×厚 10（販売店の表記）・中心 x 55
 QR_HW = 18.75
 QR_SCREW_UP = 4.7         # 板の 1/4 ねじの突き出し（実測）
+CLAMP_DOWN = 40.0         # 雲台の受け台＝板の縁より GNSS の側へは出ない（実測 0）・板の下面から 40 下までを包む
 NUT14_AF = 11.11          # 1/4-20 六角ナット 二面幅 7/16"
 NUT14_H = 5.56            # 同 厚さ 7/32"
 BOX_X = (82.0, 126.0)     # 箱 EXPE7-4-6 の枠 44（x）×69（y）・背面を下に
@@ -44,36 +49,44 @@ BOX_HW = 34.5
 BODY_SHOULDER = 4.5       # 胴 60×35＝枠の肩が各辺 4.5
 FRAME_H = 12.0            # 枠（コーナーガード）の高さ
 BOX_H = 60.0              # 縦置きの全高（パネル間 46＋枠）
-WIN_HX, WIN_HY = 15.0, 22.5   # ⚠️ 背面の枠の窓 約 30（x）×45（y）
+WIN_HX, WIN_HY = 15.0, 22.5   # 背面の枠の窓 約 30（x）×45（y）＝床の窓の大きさ（USB が通れば足りる＝はめ合いに効かない）
 USB_PLUG = (12.0, 6.8)    # UGREEN の USB-C の胴（実測）
 
 # ---- 台座 -----------------------------------------------------------------------------------
 T = 8.0                   # 板の厚さ（上面 z=0）
 X0, X1 = -50.0, 139.0     # 長さ
-W2 = 38.8                 # 半幅（＝受けの壁の外面）
 BOSS_R, BOSS_H = 22.0, 8.0          # 棒のまわりの下への膨らみ（板の下面から）
-ROD_HOLE_D = 16.4
+ROD_HOLE_D = 16.6        # すきま片側 0.36（MJF の誤差 ±0.3 を越える）
 JAM_POCKET_D, JAM_POCKET_H = 29.0, 11.0
 TNC_SLOT_HW, TNC_SLOT_END = 8.5, -32.0   # TNC の逃げ＝幅 17・丸い端の中心 x
 QR_CX = 55.0
 TRIPOD_HOLE_D = 6.8
-NUT14_POCKET_AF, NUT14_FLOOR = 11.4, 1.2
+NUT14_POCKET_AF, NUT14_FLOOR = 11.7, 1.2   # 六角の穴はすきま片側 0.3
 NOTCH_X, NOTCH_Y = (33.0, 77.0), -20.75  # レバーの側の切り欠き（板の縁の 2 外まで）
 VIAL_C, VIAL_D, VIAL_H = (50.0, 22.0), 15.4, 4.0
-C = 0.3                   # 箱とのすきま
+C = 0.5                   # 箱とのすきま（滑り込ませる＝動かして合わせる部品・MJF の誤差 ±0.3）
 WALL = 4.0
 LIP_Z0 = FRAME_H + 0.6    # 返しの下面（枠の上面から 0.6 上）
 WALL_H = LIP_Z0 + 4.0
 LIP_IN = BODY_SHOULDER - 0.5        # 返しの出（胴とのすきま 0.5）
 SLOT_HW = 15.0            # USB の溝（+x の端へ抜ける・箱の向きがどちらでも入る幅）
 STOP_C = (131.5, 27.0)    # 止めのつまみねじ M3（頭 Φ10 が箱の面に当たる位置）
-M3_HOLE_D, M3_NUT_AF, M3_NUT_H = 3.4, 5.8, 2.6
+M3_HOLE_D, M3_NUT_AF, M3_NUT_H = 3.4, 6.1, 2.6   # ナットの穴は二面幅 5.5＋片側 0.3
 TIE = (4.5, 2.0)          # 結束バンドの穴（x × y）
 TIE_USB = (134.5, 17.5)
 TIE_GNSS = (-44.0, 12.5)
 
+# ---- ノブ（下から締めて台座に引き付ける・蝶ナットは羽が受け台に当たるのでやめた）------------
+KNOB_D = 44.0             # ＝膨らみの径（面がそのまま座金になる）
+KNOB_FLOOR = 4.0          # ナットと膨らみの間の肉
+KNOB_H = KNOB_FLOOR + JAM_H
+KNOB_NUT_AF = JAM_AF + 0.6          # 六角の穴（下から・ナットは接着）
+KNOB_GRIPS, KNOB_GRIP_R, KNOB_GRIP_RC = 12, 3.0, KNOB_D / 2 + 1.5   # 指のくぼみ（深さ 1.5）
+FINGER_MIN = 5.0          # ノブと受け台の間に要る指の幅
+
 RX0 = BOX_X[0] - C - WALL           # 受けの -x の壁の外面
 RIN = BOX_HW + C                    # 受けの内面（y）
+W2 = RIN + WALL                     # 半幅（＝受けの壁の外面）
 
 
 def block(x0, x1, y0, y1, z0, z1) -> Manifold:
@@ -143,6 +156,18 @@ def build() -> Manifold:
     return m
 
 
+def build_knob() -> Manifold:
+    """膨らみの下に据えた位置で作る（上面＝膨らみの下面）。"""
+    z1 = -T - BOSS_H
+    z0 = z1 - KNOB_H
+    k = cyl(0, 0, KNOB_D / 2, z0, z1)
+    for i in range(KNOB_GRIPS):
+        a = 2 * math.pi * i / KNOB_GRIPS
+        k = k - cyl(KNOB_GRIP_RC * math.cos(a), KNOB_GRIP_RC * math.sin(a), KNOB_GRIP_R, z0 - 1, z1 + 1, 32)
+    k = k - cyl(0, 0, ROD_HOLE_D / 2, z0 - 1, z1 + 1)
+    return k - hexagon(0, 0, KNOB_NUT_AF, z0 - 1, z0 + JAM_H)
+
+
 # ---- はめ合いの検査 -------------------------------------------------------------------------
 def envelopes() -> list[tuple[str, Manifold]]:
     """相手の部品を包む形。台座と重なれば当たる。"""
@@ -166,15 +191,16 @@ def envelopes() -> list[tuple[str, Manifold]]:
         ("板の 1/4 ねじ", cyl(QR_CX, 0, 3.2, -T, -T + QR_SCREW_UP)),
         ("1/4-20 ナット", hexagon(QR_CX, 0, NUT14_AF, -T + NUT14_FLOOR, -T + NUT14_FLOOR + NUT14_H)),
         ("レバーへ伸ばす指", block(NOTCH_X[0] + 2, NOTCH_X[1] - 2, -W2 - 5, NOTCH_Y - 0.5, -T - 20, 0)),
+        ("雲台の受け台", block(QR_X[0], QR_X[1], -QR_HW - 20, QR_HW + 20, -T - 10 - CLAMP_DOWN, -T - 10)),
     ]
     return env
 
 
-def check(m: Manifold) -> list[str]:
+def check(m: Manifold, knob: Manifold) -> list[str]:
     out = []
     bad = []
     for name, e in envelopes():
-        v = (m ^ e).volume()
+        v = (m ^ e).volume() + (knob ^ e).volume()
         out.append(f"  {'OK' if v < 1e-6 else '当たる'}  {name}（重なり {v:.3f} mm³）")
         if v >= 1e-6:
             bad.append(name)
@@ -196,6 +222,18 @@ def check(m: Manifold) -> list[str]:
     out.append(f"  {'OK' if grip >= 3.0 else '足りない'}  1/4 ねじがナットに掛かる長さ {grip:.1f}（3.0 以上）")
     if grip < 3.0:
         bad.append("1/4 ねじの掛かり")
+    v = (m ^ knob).volume()
+    out.append(f"  {'OK' if v < 1e-6 else '当たる'}  ノブと台座（重なり {v:.3f} mm³）")
+    if v >= 1e-6:
+        bad.append("ノブと台座")
+    finger = QR_X[0] - KNOB_D / 2
+    out.append(f"  {'OK' if finger >= FINGER_MIN else '足りない'}  ノブと受け台の間 {finger:.1f}（{FINGER_MIN:g} 以上）")
+    if finger < FINGER_MIN:
+        bad.append("ノブと受け台の間")
+    stick = ROD_L - ROD_IN_ANT - (T + BOSS_H) - KNOB_H
+    out.append(f"  {'OK' if stick >= 1.0 else '足りない'}  棒がノブのナットを抜ける長さ {stick:.1f}（1.0 以上）")
+    if stick < 1.0:
+        bad.append("棒の長さ")
     if bad:
         raise SystemExit("はめ合いの検査で止めた: " + "・".join(bad) + "\n" + "\n".join(out))
     return out
@@ -323,7 +361,7 @@ def side_silhouette(m: Manifold):   # -y から見た外形 → (x, z)
     return polys(m.rotate((-90, 0, 0)).project())
 
 
-def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
+def drawing(m: Manifold, mass_g: float, knob_g: float, checks: list[str]) -> str:
     sh = Sheet()
     sh.el.append('<rect class="frame" x="5" y="5" width="410" height="287"/>')
     sh.text(12, 14, "RadioSim Field 台座（GNSS JCA228F＋箱 EXPE7-4-6 縦置き・クイックシュー 200PL-14）", "h")
@@ -415,7 +453,7 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
     sh.rect(bb, -BOX_HW, BOX_HW, 0, FRAME_H, "ghost")
     sh.rect(bb, -BOX_HW + BODY_SHOULDER, BOX_HW - BODY_SHOULDER, FRAME_H, 18, "ghost")
     sh.line(*bb.p(-W2 - 3, 0), *bb.p(W2 + 3, 0), "cl")
-    sh.dim_h(bb, -RIN, RIN, WALL_H, 12, f"内のり {2 * RIN:g}（枠 69＋0.6）")
+    sh.dim_h(bb, -RIN, RIN, WALL_H, 12, f"内のり {2 * RIN:g}（枠 69＋{2 * C:g}）")
     sh.dim_h(bb, -(RIN - LIP_IN - 0.3), RIN - LIP_IN - 0.3, WALL_H, 6, f"返しの間 {2 * (RIN - LIP_IN - 0.3):g}（胴 60）")
     sh.dim_h(bb, -W2, W2, -T, -6, f"{2 * W2:g}")
     sh.dim_h(bb, -SLOT_HW, SLOT_HW, -T, -11, f"USB の溝 {2 * SLOT_HW:g}")
@@ -431,10 +469,10 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
          (55, GNSS_TOP_Z), (-55, GNSS_TOP_Z), (-GNSS_RIM_R, 52), (-GNSS_RIM_R, GNSS_RIM_Z), (-GNSS_FOOT_R, 25)]
     sh.path(el, [np.array(g)], "ghost")
     sh.rect(el, TNC_X - TNC_PLUG_R, TNC_X + TNC_PLUG_R, -30, TNC_TIP_Z, "ghost")
-    sh.rect(el, -ROD_R, ROD_R, -T - BOSS_H - 22, ROD_IN_ANT, "ghost")
-    sh.rect(el, -16, 16, -T - BOSS_H - 3, -T - BOSS_H, "ghost")
-    sh.rect(el, -14, 14, -T - BOSS_H - 14, -T - BOSS_H - 3, "ghost")
+    sh.rect(el, -ROD_R, ROD_R, ROD_IN_ANT - ROD_L, ROD_IN_ANT, "ghost")
+    sh.rect(el, -KNOB_D / 2, KNOB_D / 2, -T - BOSS_H - KNOB_H, -T - BOSS_H, "ghost")
     sh.rect(el, *QR_X, -T - 10, -T, "ghost")
+    sh.rect(el, QR_X[0], QR_X[1], -T - 10 - CLAMP_DOWN, -T - 10, "ghost")
     sh.rect(el, *BOX_X, 0, FRAME_H, "ghost")
     sh.rect(el, BOX_X[0] + BODY_SHOULDER, BOX_X[1] - BODY_SHOULDER, FRAME_H, BOX_H - FRAME_H, "ghost")
     sh.rect(el, *BOX_X, BOX_H - FRAME_H, BOX_H, "ghost")
@@ -442,7 +480,7 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
     sh.line(*el.p(X0 - 4, 0), *el.p(X1 + 6, 0), "cl")
     sh.text(el.p(X1 + 7, 0)[0], el.p(0, 0)[1] + 0.8, "z=0", "d")
     for (u, v, s, a) in [(0, GNSS_TOP_Z + 3, "JCA228F（略形）", "middle"), (xb, BOX_H + 24, "素子（真上・z は机で 1 回測る）", "middle"),
-                         (TNC_X - 10, -27, "TNC", "end"), (0, -T - BOSS_H - 27, "5/8-11 の棒 50・座金・蝶ナット", "middle"),
+                         (TNC_X - 10, -27, "TNC", "end"), (0, -T - BOSS_H - 27, f"5/8-11 の棒 {ROD_L:g}・ノブ", "middle"),
                          (QR_X[1] + 3, -T - 8, "200PL-14", "start"), (xb, 30, "箱", "middle")]:
         x, y = el.p(u, v)
         sh.text(x, y, s, "gtxt", anchor=a)
@@ -465,13 +503,12 @@ def drawing(m: Manifold, mass_g: float, checks: list[str]) -> str:
         ("n", "⑩ USB ケーブルの結束穴 2×4.5（2 個）"),
         ("n", "⑪ 向きの矢印（両側面の刻み 0.8）＝GNSS→箱"),
         ("h2", "作り方と部品"),
-        ("n", f"JLC3DP・MJF PA12（素地）・この STL のまま・約 {mass_g:.0f} g"),
-        ("n", "5/8-11 全ねじ 50（14 をアンテナへ・薄ナットで締めて留める）"),
-        ("n", "5/8 の座金（外径 32 前後）＋蝶ナット＝下から締めて引き付ける"),
+        ("n", f"JLC3DP・MJF PA12（素地）・台座 約 {mass_g:.0f} g＋ノブ 約 {knob_g:.0f} g を 2 組"),
+        ("n", f"5/8-11 全ねじ {ROD_L:g}（14 をアンテナへ・薄ナットで締めて留める）"),
+        ("n", f"ノブ Φ{KNOB_D:g}・厚 {KNOB_H:g}＝下から締めて引き付ける（座金は要らない）"),
+        ("n", f"  下から六角の穴 二面幅 {KNOB_NUT_AF:g}・深さ {JAM_H:g} に薄ナットを接着"),
+        ("n", "5/8-11 薄ナットは 1 組に 2 個（留めとノブ）"),
         ("n", "1/4-20 六角ナット 1・M3 ローレットつまみねじ×10 と M3 ナット 各 2"),
-        ("h2", "実物で当てる値（外れたら直して出し直す）"),
-        ("n", "JCA228F の縁の下面 37・TNC の先端 z 8.5（図の画素）"),
-        ("n", "枠の窓 30×45"),
         ("h2", "はめ合いの自動検査（モデルとの重なり）"),
     ] + wrap_checks(checks)
     for cls, s in lines:
@@ -493,19 +530,27 @@ def wrap_checks(checks: list[str], width: int = 52) -> list[tuple[str, str]]:
 
 
 def main() -> None:
-    out = Path(sys.argv[1]) if len(sys.argv) > 1 else Path(r"D:\dev\field-data\mount")
+    if isinstance(sys.stdout, io.TextIOWrapper):
+        sys.stdout.reconfigure(errors="replace")   # cp932 の端末で ³ を出せずに落ちない
+    out =Path(sys.argv[1]) if len(sys.argv) > 1 else Path(r"D:\dev\field-data\mount")
     out.mkdir(parents=True, exist_ok=True)
     m = build()
     if m.status().name != "NoError":
         raise SystemExit(f"モデルが閉じていない: {m.status()}")
-    checks = check(m)
+    knob = build_knob()
+    if knob.status().name != "NoError":
+        raise SystemExit(f"ノブのモデルが閉じていない: {knob.status()}")
+    checks = check(m, knob)
     vol_cm3 = m.volume() / 1000
     mass = vol_cm3 * 1.01
+    knob_g = knob.volume() / 1000 * 1.01
     bb = m.bounding_box()
     ntri = write_stl(m, out / "field_mount.stl")
-    (out / "field_mount_drawing.svg").write_text(drawing(m, mass, checks), encoding="utf-8")
+    write_stl(knob, out / "field_mount_knob.stl")
+    (out / "field_mount_drawing.svg").write_text(drawing(m, mass, knob_g, checks), encoding="utf-8")
     print(f"外形 x {bb[0]:.2f}〜{bb[3]:.2f}  y {bb[1]:.2f}〜{bb[4]:.2f}  z {bb[2]:.2f}〜{bb[5]:.2f}")
     print(f"体積 {vol_cm3:.1f} cm³（PA12 で約 {mass:.0f} g）・三角形 {ntri}・穴の数（genus）{m.genus()}")
+    print(f"ノブ 約 {knob_g:.0f} g・穴の数（genus）{knob.genus()}")
     print("\n".join(checks))
     print(f"出力 → {out}")
 
