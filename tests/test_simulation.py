@@ -16,6 +16,7 @@ import dataclasses
 import io
 import os
 import json
+import logging
 import threading
 import types
 from unittest import mock
@@ -340,6 +341,47 @@ class TestDemCircuitBreaker:
         out = self._run(params, elevation=0.0, failed=lambda: False)
         assert "error" not in out, "海上の 0m を通信失敗と取り違えている"
         assert list(out["elevs"]) == [0.0] * params.num
+
+
+# ============================================================
+# ログの量（B-343）
+# ============================================================
+class TestDemLogVolume:
+    """海上の標本ごとに警告を 1 行ずつ書かないこと（1 分で 9406 行の実例）。"""
+
+    def _warnings(self, caplog) -> list[str]:
+        return [r.getMessage() for r in caplog.records
+                if r.levelno >= logging.WARNING]
+
+    def test_sea_samples_fold_into_one_warning_per_run(
+            self, default_params_dict, caplog):
+        """値の無い標本は 1 回の計算につき 1 行＝件数を添える。"""
+        default_params_dict["samples"] = "50"
+        params = sim.SimParams(default_params_dict)
+        half = {"n": 0}
+        lock = threading.Lock()
+
+        def _elev(la, lo):
+            with lock:                  # 取得は常駐ワーカーが並行して呼ぶ
+                half["n"] += 1
+                return 0.0 if half["n"] % 2 else 80.0
+
+        with caplog.at_level(logging.DEBUG, logger="radiosim"):
+            TestDemCircuitBreaker()._run(params, elevation=_elev, failed=lambda: False)
+
+        warns = self._warnings(caplog)
+        assert len(warns) == 1, f"畳まれていない: {warns[:3]}"
+        assert f"25 of {params.num} samples" in warns[0]
+
+    def test_get_elevation_does_not_warn_per_sample(self, monkeypatch, caplog):
+        """製品の `get_elevation` は、全レイヤが空でも warning を書かない（debug だけ）。"""
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
+        with caplog.at_level(logging.DEBUG, logger="radiosim"):
+            assert dem.get_elevation(30.123, 150.456) == 0.0
+        assert self._warnings(caplog) == []
+        assert any("exhausted" in r.getMessage() for r in caplog.records), (
+            "debug にも残っていない＝開発時に追えない"
+        )
 
 
 # ============================================================

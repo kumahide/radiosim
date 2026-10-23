@@ -334,12 +334,45 @@ def new_run_dir(prefix: str, timestamp: str) -> str:
 #   INFO    : タイル取得・シミュレーション開始/完了
 #   WARNING : タイル取得失敗（キャッシュ代替）
 #   ERROR   : 致命的エラー（保存失敗・計算例外）
+#
+# 🔑 **大きさの上限は起動のときに確かめる**（B-343）＝`LOG_MAX_BYTES` を超えて
+# いたら `<名前>.old.log` へ 1 世代だけ移し、新しいファイルで始める。
+# ⚠️ **実行中に回す `RotatingFileHandler` は使わない**＝Windows では別の処理
+# （2 つ目の起動）がログを開いていると改名に失敗し、`doRollover` が流れを
+# 閉じた後なので、上限を超えた後の記録を毎回失う。起動のときなら失敗しても
+# そのまま追記するだけで済む（次の起動でまた試す）。
+# ⚠️ 世代の名前は `.log` で終える＝`.gitignore` の `*.log` に当たる
+# （`radiosim.log.1` はソース実行でリポジトリ直下に出て素通りする）。
 # ============================================================
+LOG_MAX_BYTES = 2 * 1024 * 1024
+
+
+def rotated_log_path(path: str) -> str:
+    """1 世代前のログの置き場（`radiosim.log` → `radiosim.old.log`）。"""
+    stem, ext = os.path.splitext(path)
+    return f"{stem}.old{ext}"
+
+
+def rotate_log_if_large(path: str, max_bytes: int = LOG_MAX_BYTES) -> bool:
+    """`path` が `max_bytes` 以上なら 1 世代前へ移す（古い世代は捨てる）。移したら真。
+
+    無い・開かれていて動かせない（`OSError`）ときは何もしない＝追記を続ける。
+    """
+    try:
+        if os.path.getsize(path) < max_bytes:
+            return False
+        os.replace(path, rotated_log_path(path))
+    except OSError:
+        return False
+    return True
+
+
 def setup_logging() -> logging.Logger:
     # 新配置（%LOCALAPPDATA%\RadioSim 等）は初回起動でまだ存在しない＝
     # FileHandler は作成しないので先に掘る（B-014 の続き＝書き込み先の存在も
     # 解決器の責任にする）。
     os.makedirs(os.path.dirname(LOG_FILE), exist_ok=True)
+    rotate_log_if_large(LOG_FILE)
     logging.basicConfig(
         level=logging.INFO,
         format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",

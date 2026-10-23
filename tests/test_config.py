@@ -24,6 +24,44 @@ ROOT = Path(__file__).resolve().parent.parent
 
 
 # ============================================================
+# ログの大きさの上限（B-343）
+# ============================================================
+class TestLogRotation:
+
+    def test_large_log_moves_to_one_older_generation(self, tmp_path):
+        log = tmp_path / "radiosim.log"
+        old = tmp_path / "radiosim.old.log"
+        old.write_text("older generation", encoding="utf-8")
+        log.write_bytes(b"x" * 100)
+
+        assert config.rotate_log_if_large(str(log), max_bytes=100)
+        assert not log.exists()
+        assert old.read_bytes() == b"x" * 100, "古い世代を捨てていない"
+
+    def test_small_or_missing_log_stays(self, tmp_path):
+        log = tmp_path / "radiosim.log"
+        assert not config.rotate_log_if_large(str(log), max_bytes=100)
+        log.write_bytes(b"x" * 99)
+        assert not config.rotate_log_if_large(str(log), max_bytes=100)
+        assert log.stat().st_size == 99
+
+    def test_rotation_failure_keeps_appending(self, tmp_path, monkeypatch):
+        """動かせない（別の処理が開いている）ときは何もしない＝起動を止めない。"""
+        log = tmp_path / "radiosim.log"
+        log.write_bytes(b"x" * 100)
+
+        def _busy(*_a):
+            raise PermissionError("in use")
+        monkeypatch.setattr(config.os, "replace", _busy)
+        assert not config.rotate_log_if_large(str(log), max_bytes=100)
+        assert log.stat().st_size == 100
+
+    def test_rotated_name_is_ignored_by_git(self):
+        """世代の名前が `.gitignore` の `*.log` に当たること（ソース実行は直下に出る）。"""
+        assert config.rotated_log_path("radiosim.log").endswith(".log")
+
+
+# ============================================================
 # validate_config
 # ============================================================
 class TestValidateConfig:
