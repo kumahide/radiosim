@@ -1314,9 +1314,49 @@ def _iter_links(text: str):
             yield lineno, m.group(1), m.group(2)
 
 
+_BRANCH_TIP_PATHS: "set[str] | None" = None
+
+
+def _paths_on_branch_tips() -> set[str]:
+    """ローカルのブランチの先端に在るパス（リポジトリ根からの `/` 区切り）。
+
+    🔴 2026-10-24、3.9.1 の作業で `main` を開いたら、git-ignore の台帳
+    （ISSUES.md・ISSUES_archive.md＝ブランチをまたいで 1 つ）から Field の
+    ブランチにしか無い `apps/field/` へのリンク 13 件を「切れ」と止めた＝視野が
+    チェックアウト 1 つぶん（`.claude/check_memory.py` の check 6・29 と同じ形）。
+    先端だけを見る＝どの先端からも消したファイルへのリンクは切れのまま残る。
+    git が使えなければ空（＝従来どおり作業ツリーだけで判定する）。
+    """
+    global _BRANCH_TIP_PATHS
+    if _BRANCH_TIP_PATHS is None:
+        import subprocess
+        paths: set[str] = set()
+        try:
+            refs = subprocess.run(
+                ["git", "for-each-ref", "--format=%(refname)", "refs/heads"],
+                cwd=ROOT, capture_output=True, text=True, timeout=10)
+            for ref in refs.stdout.split() if refs.returncode == 0 else []:
+                tree = subprocess.run(["git", "ls-tree", "-r", "--name-only", ref],
+                                      cwd=ROOT, capture_output=True, text=True, timeout=20)
+                if tree.returncode == 0:
+                    paths.update(tree.stdout.splitlines())
+        except Exception:
+            paths = set()
+        _BRANCH_TIP_PATHS = paths
+    return _BRANCH_TIP_PATHS
+
+
+def _on_a_branch_tip(target: Path) -> bool:
+    try:
+        rel = target.resolve().relative_to(ROOT.resolve()).as_posix()
+    except ValueError:
+        return False
+    return rel in _paths_on_branch_tips()
+
+
 @pytest.mark.parametrize("doc", _LINK_DOCS)
 def test_doc_links_point_to_existing_files(doc):
-    """ドキュメントの相対リンク・参照定義の指し先が実在すること。"""
+    """ドキュメントの相対リンク・参照定義の指し先が実在すること（ほかのブランチの先端も含む）。"""
     path = ROOT / doc
     if not path.exists():
         pytest.skip(f"{doc} は git-ignore（CI には存在しない）")
@@ -1327,7 +1367,7 @@ def test_doc_links_point_to_existing_files(doc):
         rel = target.split("#", 1)[0]          # 行アンカー（#L42）は落として実体を見る
         if not rel:
             continue
-        if not (path.parent / rel).exists():
+        if not (path.parent / rel).exists() and not _on_a_branch_tip(path.parent / rel):
             broken.append(f"L{lineno} [{label}] -> {target}")
     assert not broken, f"{doc}: リンク切れ {len(broken)} 件\n  " + "\n  ".join(broken)
 

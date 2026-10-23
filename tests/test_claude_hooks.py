@@ -1893,6 +1893,42 @@ class TestModulesParkedOnAnotherBranch:
         monkeypatch.setattr(memcheck, "PROJ_DIR", not_a_repo)
         assert memcheck._other_branch_py_basenames() == set()
 
+    # ── check 29（決定済みの機能の錨）も同じ視野（2026-10-24 の再発）──────
+    _CANON = [
+        "| 決定済みの機能 | 状態 | 錨 |",
+        "|---|---|---|",
+        "| 測る | 実装済み | `{glob}` に `{token}` |",
+    ]
+
+    def _capabilities(self, memcheck, monkeypatch, repo, glob, token):
+        monkeypatch.setattr(memcheck, "PROJ_DIR", repo)
+        lines = [ln.format(glob=glob, token=token) for ln in self._CANON]
+        return memcheck.check_decided_capabilities(
+            lines, {}, {}, repo, elsewhere=memcheck._anchor_on_branch_tip)[0]
+
+    def test_an_anchor_parked_on_another_branch_is_not_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """①`main` を開いていても、Field のブランチの先端に在る錨では止めない。"""
+        repo = self._repo(tmp_path)
+        # 字句は中身で探す＝先端の parked.py に書いた字句で確かめる
+        run = lambda *a: subprocess.run(  # noqa: E731
+            ["git", *a], cwd=repo, capture_output=True, text=True, check=True
+        )
+        run("checkout", "feature/parked")
+        (repo / "parked.py").write_text("def measure(): pass\n", encoding="utf-8")
+        run("commit", "-am", "anchor")
+        run("checkout", "main")
+        assert self._capabilities(memcheck, monkeypatch, repo, "*.py", "def measure(") == []
+
+    def test_an_anchor_on_no_branch_tip_is_still_flagged(
+        self, memcheck, tmp_path, monkeypatch
+    ):
+        """②検出力＝どの先端にも無い錨は従来どおり止める。"""
+        found = self._capabilities(
+            memcheck, monkeypatch, self._repo(tmp_path), "*.py", "def vanished(")
+        assert len(found) == 1 and "def vanished(" in found[0]
+
 
 # ============================================================
 # check_memory.py check 13 ＝ 台帳の版割り ⇔ ロードマップの在庫（I-085）
