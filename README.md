@@ -4,6 +4,10 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](LICENSE)
 
+> 📣 **RadioSim Pro の開発は 3.9.1 で終わります。後継は別のアプリ「RadioSim Link」です。** 3.x の次に予定していた変更（判定の `REVIEW`・成果物 CSV の末尾 2 列・ライス K の見直し）は、4.0 ではなく Link 1.0 で入ります。3.9.x では、Link 1.0 を正式に公開するまで、致命的な不具合だけを直します。Link 1.0 の公開の時期はまだ決まっていません。Link は別のアプリなので、RadioSim Pro の「更新の確認」は Link を知らせません。3.x で保存したプロジェクトファイル（`.rsproj`）は Link 1.0 で開けます（3.x と同じ計算方式で計算します）。
+>
+> *Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link". The changes planned after 3.x (the `REVIEW` verdict, two appended CSV columns, and the Rice K review) arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only. No release date for Link 1.0 has been set yet. Because Link is a separate app, RadioSim Pro's "Check for Updates" will not tell you about it. Project files (`.rsproj`) saved by 3.x open in Link 1.0, calculated with the same method as 3.x.*
+
 **国土地理院 DEM（数値標高モデル）を自動で取得し、地形断面・回折損・フレネル第1ゾーン遮蔽率・リンクバジェットを計算する Windows デスクトップアプリです。** 送信点と受信点の座標・アンテナ高・周波数を入れるだけで、その回線が通りそうかを数秒で判定します。**現地調査に出る前のスクリーニング**に用途を絞ったツールで、無料・MIT ライセンス・インストール不要の Windows バイナリも配布しています。
 
 > **組み込みの標高データと背景地図は国土地理院タイルのみです。日本国外で使うには、利用者が宣言ファイルで外部の DEM ソースと背景地図ソースを追加してください。組み込みの航空写真での確認は国土地理院タイル固定のため日本国内でしか使えませんが、帳票に貼る経路地図は地図ウィンドウで選んだ背景地図ソースに従うため、宣言した外部ソースを選べば日本国外でも使えます（3.6〜）。**（詳細は下記 FAQ「日本国外の回線には使えますか？」）
