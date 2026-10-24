@@ -4,7 +4,11 @@
 #>
 
 function Find-Claude {
-    if ($env:CLAUDE_EXE) { return $env:CLAUDE_EXE }
+    if ($env:CLAUDE_EXE) {
+        # 無い実体を返すと、起こす所まで進んでから分かりにくい理由で落ちる（B-347）
+        if (Test-Path -LiteralPath $env:CLAUDE_EXE -PathType Leaf) { return $env:CLAUDE_EXE }
+        throw "`$env:CLAUDE_EXE の指す実体がありません: $($env:CLAUDE_EXE)"
+    }
     # PATH の当たりは実行ファイル（.exe）だけを採る（B-313）＝npm の claude.cmd・claude.ps1 は
     # relay.ps1 の Invoke-Claude（UseShellExecute = $false）では直に起動できない。
     $cmd = Get-Command claude -CommandType Application -All -ErrorAction SilentlyContinue |

@@ -292,13 +292,14 @@ def fetch_elevations(
             completed  = 0
             failures   = 0
             successes  = 0
+            no_data    = 0         # 通信は通ったが値が無い（海上・域外・欠損画素）
             lock       = threading.Lock()
             abort      = threading.Event()
 
             worker_error: list[Exception] = []
 
             def _fetch_one(idx: int, la: float, lo: float) -> None:
-                nonlocal completed, failures, successes
+                nonlocal completed, failures, successes, no_data
                 failed = True          # 何が起きても finally で参照できる初期値
                 try:
                     raw_elevs[idx] = dem.get_elevation(la, lo, dem_source)
@@ -317,6 +318,10 @@ def fetch_elevations(
                             failures  += 1
                         else:
                             successes += 1
+                            # 0.0 は `get_elevation` が値を見つけられなかった印
+                            # （有効な値は 0.0 以外しか返さない）
+                            if raw_elevs[idx] == 0.0:
+                                no_data += 1
                         on_progress(completed)
                         if successes == 0 and failures >= _DEM_FAILURE_LIMIT:
                             abort.set()
@@ -360,6 +365,17 @@ def fetch_elevations(
                 )
                 raise DemUnreachableError(dem_unreachable_message())
 
+            # 標本ごとの行の代わりに、理由ごとに 1 行（B-343）
+            if no_data:
+                logger.warning(
+                    "DEM had no data for %d of %d samples (sea, outside coverage "
+                    "or missing pixels), used 0.0 m", no_data, params.num,
+                )
+            if failures:
+                logger.warning(
+                    "DEM fetch failed for %d of %d samples after network trouble",
+                    failures, params.num,
+                )
             logger.info("Terrain fetch complete: %d samples", params.num)
             # 同じスレッドで直後に呼ぶ on_complete へだけ渡す（`last_dem_acquired`）
             _fetch_local.dem_acquired = _acquired_range(source_tiles)

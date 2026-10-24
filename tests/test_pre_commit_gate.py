@@ -1,18 +1,18 @@
 """
 tests/test_pre_commit_gate.py
 =============================
-コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「島」の判定を守る。
+コミット前ゲート（`tools/qa-hook/pre-commit-gate.mjs`）の「部分テスト」の判定を守る。
 
 **何を守るか**: 2026-09-19 から、コミットの変更がすべて `gate-scope.json` の
 `commit_islands` の 1 つ（例: Field）に収まるときだけ、フルスイートの代わりに
-その島のテストを回す（Field のコミットが毎回 9 分のフルを払っていた）。
+その部分テストを回す（Field のコミットが毎回 9 分のフルを払っていた）。
 ⇒ **このテストが守るのは「速さ」ではなく「絞りすぎないこと」**:
 
-1. 島の外が 1 つでも混じったらフル（`islandFor` が null）。
-2. リネームは元のパスも数える（core/ から島へ移すのは島だけの変更ではない）。
+1. 部分テストの範囲外が 1 つでも混じったらフル（`islandFor` が null）。
+2. リネームは元のパスも数える（core/ から部分テストの範囲へ移すのは、範囲内だけの変更ではない）。
 3. 変更が空ならフル（絞る根拠が無い）。
-4. リポジトリ全体を走査するテストは島のテストに必ず入っている
-   （島の中の変更でも落とし得るのはそれらだけ＝漏れたら赤を素通しする）。
+4. リポジトリ全体を走査するテストは部分テストに必ず入っている
+   （部分テストの範囲内の変更でも落とし得るのはそれらだけ＝漏れたら赤を素通しする）。
 """
 
 import json
@@ -122,7 +122,7 @@ class TestIslandTargets:
 
 
 #: リポジトリを歩く字面。⚠️ **pytest の一時フォルダ（`tmp_path`）を歩く形は除く**
-#: ＝リポジトリには触れないので島に足す理由が無い（2026-09-24＝B-280 のテストが
+#: ＝リポジトリには触れないので部分テストに足す理由が無い（2026-09-24＝B-280 のテストが
 #: `os.walk(tmp_path)` で誤検知され、フルスイート 8 分を 1 回無駄にした）。
 _REPO_WALK = re.compile(
     r"os\.walk\((?!\s*(?:str\(\s*)?tmp_path\b)"
@@ -237,7 +237,7 @@ class TestStdinDiagnostics:
 
 
 def test_real_islands_include_every_repo_wide_scanner():
-    """全体を走査するテストが増えたら島のテストにも足す（漏れると島のコミットで赤を素通しする）。"""
+    """全体を走査するテストが増えたら部分テストにも足す（漏れると部分テストで済むコミットで赤を素通しする）。"""
     with open(_SCOPE, encoding="utf-8") as f:
         scope = json.load(f)
     scanners = _repo_wide_scanners() - {scope["always_tests"], "tests/test_pre_commit_gate.py"}
@@ -246,7 +246,7 @@ def test_real_islands_include_every_repo_wide_scanner():
         missing = sorted(s for s in scanners
                          if s not in listed
                          and not any(t.endswith("*") and s.startswith(t[:-1]) for t in island["tests"]))
-        assert not missing, f"島「{island['name']}」の tests に足りない全体走査テスト: {missing}"
+        assert not missing, f"部分テスト「{island['name']}」の tests に足りない全体走査テスト: {missing}"
 
 
 def _gate_const(name: str) -> object:

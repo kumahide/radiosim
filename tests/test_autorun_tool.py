@@ -317,6 +317,48 @@ def test_a_relay_that_cannot_launch_leaves_an_end_mark_and_a_notice(tmp_path):
 
 
 @needs_pwsh
+def test_a_relay_that_cannot_find_claude_leaves_an_end_mark_and_a_notice(tmp_path):
+    """`claude` の探索で落ちても、終わりの合図と通知が残り、錠は消える（B-347）。
+
+    探索が本体の try の前にあると、例外で窓が閉じて合図も通知も書かれなかった。
+    """
+    handoff = _handoff(tmp_path, "status: continue\ngoal: 3.9 のステージ5まで")
+    missing = tmp_path / "no_such_claude.exe"
+    r = _relay(tmp_path, "-Foreground", "-Handoff", str(handoff), "-PollSeconds", "1",
+               env={"CLAUDE_EXE": str(missing)}, stdin="\n")
+    assert r.returncode == 1, r.stdout + r.stderr
+    end = (tmp_path / "relay.end").read_text(encoding="utf-8")
+    assert end.startswith("kind=failed\n") and "CLAUDE_EXE" in end and str(missing) in end, end
+    notice = (tmp_path / "notice.log").read_text(encoding="utf-8")
+    assert notice.startswith("RadioSim のリレー：失敗で止まった\t"), notice
+    assert not (tmp_path / "relay.lock").exists()
+    assert handoff.exists(), "起こす前に落ちた＝引き継ぎ書は記録へ移していない"
+
+
+@needs_pwsh
+def test_relative_relay_paths_resolve_where_they_were_given(tmp_path):
+    """相対の -RelayDir・-Handoff は呼んだ場所で絶対パスへ解決する（B-348）。
+
+    -Start の子は作業場所がリポジトリ直下＝相対のまま転送すると別の場所を指す。
+    """
+    sub = tmp_path / "sub"
+    sub.mkdir()
+    _handoff(sub, "status: continue\ngoal: 3.9 のステージ5まで")
+    r = subprocess.run(
+        [_PWSH, "-NoProfile", "-File", str(RELAY), "-DryRun",
+         "-Handoff", os.path.join("sub", "handoff.md"), "-RelayDir", "sub"],
+        cwd=tmp_path, capture_output=True, text=True, encoding="utf-8", timeout=60, check=False)
+    assert r.returncode == 0, r.stderr
+    plan = json.loads(r.stdout)
+    assert plan["env"]["RADIOSIM_RELAY_HANDOFF"] == str(sub / "handoff.md"), plan["env"]
+    assert f'-RelayDir "{sub}"' in plan["watch_command"], plan["watch_command"]
+    src = RELAY.read_text(encoding="utf-8")
+    start = src[src.index("if ($Start) {"):]
+    start = start[:start.index("\n}\n")]
+    assert "'-Handoff', $handoffPath" in start, "子へは解決した引き継ぎ書のパスを渡す"
+
+
+@needs_pwsh
 def test_the_end_mark_is_written_before_the_lock_is_removed():
     """見張りは「錠が消えたのに合図が無い」を異常と読む＝合図を先に書く（I-230）。
     通知は done（push 済み）と nothing（既に done）のほかすべて（I-228）。"""

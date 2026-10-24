@@ -106,7 +106,9 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "{z}, {x} and {y}",
         "tile_src_bad_max_zoom": "max_zoom must be an integer from 1 to 22",
         "menu_about":           "About",
-        "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}",
+        "dlg_about_msg":        "{app}\n\nVersion: {ver}\n{copy}\n\n"
+                                "Development of RadioSim Pro ended with 3.9.1. "
+                                "Its successor is RadioSim Link.",
         "menu_check_updates":   "Check for Updates...",
         "dlg_update_title":     "Check for Updates",
         "dlg_update_latest":    "You are using the latest version ({ver}).",
@@ -928,7 +930,9 @@ _STRINGS: dict[str, dict[str, str]] = {
                                 "{z}・{x}・{y} を含む必要があります",
         "tile_src_bad_max_zoom": "max_zoom は 1〜22 の整数で指定してください",
         "menu_about":           "バージョン情報",
-        "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}",
+        "dlg_about_msg":        "{app}\n\nバージョン: {ver}\n{copy}\n\n"
+                                "RadioSim Pro の開発は 3.9.1 で終わりました。"
+                                "後継は RadioSim Link です。",
         "menu_check_updates":   "更新の確認...",
         "dlg_update_title":     "更新の確認",
         "dlg_update_latest":    "お使いの版（{ver}）が最新です。",

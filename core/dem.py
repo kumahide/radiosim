@@ -538,13 +538,16 @@ def get_elevation(
                 layer_id, lat, lon,
             )
 
+        # ⚠️ **標本ごとの行は debug**（B-343）＝海をまたぐ回線では標本の数だけ
+        # 出る（1 分で 9406 行の実例）。件数は呼ぶ側（`simulation.fetch_elevations`）
+        # が 1 回の計算につき理由ごと 1 行に畳んで warning で書く。
         if _network_trouble.flag:
-            logger.warning(
+            logger.debug(
                 "All DEM layers exhausted for lat=%.6f lon=%.6f after network "
                 "trouble, returning nan", lat, lon,
             )
             return math.nan
-        logger.warning(
+        logger.debug(
             "All DEM layers exhausted for lat=%.6f lon=%.6f (no network trouble, "
             "likely no coverage), returning 0.0", lat, lon,
         )

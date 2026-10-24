@@ -36,7 +36,8 @@
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync,
+  copyFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, statSync, utimesSync,
+  writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { basename, isAbsolute, join } from "node:path";
@@ -195,7 +196,16 @@ export function workingTree(cwd, { without } = {}) {
   try {
     tmp = mkdtempSync(join(tmpdir(), "radiosim-qa-tree-"));
     const index = join(tmp, "index");
-    if (existsSync(join(gitDir, "index"))) copyFileSync(join(gitDir, "index"), index);
+    if (existsSync(join(gitDir, "index"))) {
+      copyFileSync(join(gitDir, "index"), index);
+      // B-363: keep the original's mtime. git trusts an entry's stat (mtime+size)
+      // unless the entry is as new as the INDEX FILE ("racy git"), so a copy
+      // stamped "now" (Linux; Windows' CopyFileW keeps it) let a same-second,
+      // same-size edit read as unchanged -> the key stayed on content that never
+      // passed, and the suite could be skipped. CI caught it 1 run in many.
+      const orig = statSync(join(gitDir, "index"));
+      utimesSync(index, orig.atime, orig.mtime);
+    }
     const store = join(tmp, "objects");
     mkdirSync(store);
     const env = {

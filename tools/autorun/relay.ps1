@@ -90,8 +90,12 @@ $repoRoot = Split-Path -Parent (Split-Path -Parent $toolDir)
 #    承認する（2026-09-27 の -Probe で実測。小文字の `d:` で渡しても本体は `D:` に直して
 #    判定した＝綴りでは避けられない）。
 $workDir = $repoRoot
-$relayDir = if ($RelayDir) { $RelayDir } else { Join-Path $repoRoot '.claude\relay' }
-$handoffPath = if ($Handoff) { $Handoff } else { Join-Path $relayDir 'handoff.md' }
+# 相対パスは呼んだ場所で絶対パスへ解決する＝-Start の子は作業場所が $workDir なので、
+# 相対のまま転送すると別の場所を指す（B-348）。
+# ⚠️ PowerShell の変数は大文字小文字を区別しない＝$relayDir は引数の $RelayDir と同じ変数
+function Resolve-ArgPath([string]$Path) { $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($Path) }
+$relayDir = if ($RelayDir) { Resolve-ArgPath $RelayDir } else { Join-Path $repoRoot '.claude\relay' }
+$handoffPath = if ($Handoff) { Resolve-ArgPath $Handoff } else { Join-Path $relayDir 'handoff.md' }
 $lock = Join-Path $relayDir 'relay.lock'
 $endPath = Join-Path $relayDir 'relay.end'    # 終わりの合図（I-230）
 $logPath = Join-Path $relayDir 'relay.log'
@@ -307,7 +311,7 @@ if ($Start) {
              '-PermissionMode', $PermissionMode, '-PollSeconds', $PollSeconds, '-BeatSeconds', $BeatSeconds)
     if ($Trips) { $fwd += '-Trips', $Trips }
     if ($Model) { $fwd += '-Model', $Model }
-    if ($Handoff) { $fwd += '-Handoff', $Handoff }
+    if ($Handoff) { $fwd += '-Handoff', $handoffPath }
     if ($RelayDir) { $fwd += '-RelayDir', $RelayDir }
     # 配列のまま渡すと空白でつなぐだけ＝空白を含むパスが割れる（B-314）
     $p = Start-Process pwsh -ArgumentList (Join-ProcessArgs $fwd) -WorkingDirectory $workDir -PassThru
@@ -317,10 +321,25 @@ if ($Start) {
     return
 }
 
-$claude = Find-Claude
-New-Item -ItemType Directory -Path $relayDir -Force | Out-Null
-$runDir = Join-Path $relayDir ('runs\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
-New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+# `done` で push まで済んだときだけ窓を閉じる。ほかの終わり方は理由を読めるよう待つ
+function Wait-BeforeClose {
+    if ($Foreground) { [void](Read-Host 'Enter で窓を閉じます') }
+}
+
+# ⚠️ `claude` の探索（Find-Claude）はここに置かない＝本体の try の中と -Probe の枝で探す。
+#    try の前で落ちると終わりの合図も通知も残らない（B-347）。
+# 置き場が作れなければ合図も記録も書けない＝通知だけ出して止める
+try {
+    New-Item -ItemType Directory -Path $relayDir -Force | Out-Null
+    $runDir = Join-Path $relayDir ('runs\' + (Get-Date -Format 'yyyyMMdd-HHmmss'))
+    New-Item -ItemType Directory -Path $runDir -Force | Out-Null
+} catch {
+    $msg = "⛔ リレーの置き場を作れません（$relayDir）: $($_.Exception.Message)"
+    Write-Host $msg
+    Write-Host (Send-DesktopNotice "RadioSim のリレー：$(Get-EndTitle 'failed')" $msg)
+    Wait-BeforeClose
+    exit 1
+}
 
 function Write-Log([string]$Text) {
     $line = '{0} {1}' -f (Get-Date -Format 'HH:mm:ss'), $Text
@@ -331,6 +350,7 @@ function Write-Log([string]$Text) {
 # --- Probe ---------------------------------------------------------------------------
 
 if ($Probe) {
+    $claude = Find-Claude
     $procEnv = [ordered]@{ RADIOSIM_RELAY_PROBE_ENV = 'from-env'; CLAUDE_BG_ISOLATION = 'none' }
     $settingsPath = Join-Path $runDir 'probe.settings.json'
     $settings = [ordered]@{ env = [ordered]@{ RADIOSIM_RELAY_PROBE_SETTINGS = 'from-settings'; CLAUDE_BG_ISOLATION = 'none' }
@@ -410,11 +430,6 @@ function Get-UnpushedCount {
     return [int]$c
 }
 
-# `done` で push まで済んだときだけ窓を閉じる。ほかの終わり方は理由を読めるよう待つ
-function Wait-BeforeClose {
-    if ($Foreground) { [void](Read-Host 'Enter で窓を閉じます') }
-}
-
 $other = Get-RunningRelayPid
 if ($other) {
     # ⚠️ 終わりの合図は書かない＝それは走っている方の合図（見張りが取り違える）
@@ -423,14 +438,16 @@ if ($other) {
     Wait-BeforeClose
     exit 1
 }
-Set-Content -Path $lock -Value $PID
-Remove-Item -LiteralPath $endPath -ErrorAction SilentlyContinue
 $keepOpen = $true
 $failed = $false
 # 終わり方（I-228）＝done・done_unpushed・max・stall・failed・nothing（既に done）。finally で
 # relay.end に書き、done と nothing のほかは通知を出す。書かれないまま finally に来たら中断。
 $endKind = $null; $endText = ''
 try {
+    # 錠と探索も try の中＝ここで落ちても合図と通知が残る（B-347）
+    Set-Content -Path $lock -Value $PID
+    Remove-Item -LiteralPath $endPath -ErrorAction SilentlyContinue
+    $claude = Find-Claude
     $h = Read-Handoff $handoffPath
     if ($h.status -eq 'done') {
         $endKind = 'nothing'; $endText = "引き継ぎ書が既に done です（目標: $($h.goal)）＝起こすものがありません"

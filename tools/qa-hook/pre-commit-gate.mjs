@@ -618,7 +618,7 @@ function main() {
     if (island) {
       targets = islandTargets(cwd, scope, island);
       key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
-      label = `島「${island.name}」のテスト（${targets.length} 本）`;
+      label = `部分テスト「${island.name}」（${targets.length} 本）`;
       realFull = false;
       if (isCachedPass(cwd, key)) return;
     }
@@ -633,7 +633,7 @@ function main() {
     recordFinish(cwd, key, false, ms);
     deny(
       `⛔ コミット前提の${label}が赤です（I-154＝毎ターンは影響範囲だけ・` +
-      "フルはコミット直前に 1 回／島に収まるコミットは島のテストだけ）。" +
+      "フルはコミット直前に 1 回／部分テストに収まるコミットはその部分テストだけ）。" +
       `直してから commit/push をやり直してください。\n${NOTHING_RAN}\n\n` +
       `\`\`\`\n${tail(r.stdout + r.stderr, MAX_OUT)}\n\`\`\``);
     return;
