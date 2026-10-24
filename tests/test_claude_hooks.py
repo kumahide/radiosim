@@ -5347,10 +5347,16 @@ class TestOrgOrderInjection:
 
     def test_real_record_reaches_the_injection(self, hook, org):
         # 本番はスクリプトとして走る＝`.claude/` が import の道にある。ここでは `org` が読み込み済み。
+        # ⛔ どの O が未完了かは記録とともに動く＝特定の O-ID を当てにしない（O-009 を締めて赤になった）。
         items, errors, _ = hook._org_order_read()
-        assert errors == []
+        assert errors == [] and {"O-008", "O-009"} <= {i.oid for i in items}
         _, body = hook.org_order_lines(items, errors, {})
-        assert body and "O-009(" in body[0]
+        open_ids = [i.oid for i in items if not i.closed]
+        if not open_ids:
+            assert body == []
+        else:
+            assert body[0].startswith(f"組織の未完了の仕事 {len(open_ids)}件: ")
+            assert all(f"{oid}(" in body[0] for oid in open_ids)
 
 
 class TestOrgRecordsCheck:
