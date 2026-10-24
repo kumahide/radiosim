@@ -5121,3 +5121,262 @@ class TestRedStreakGate:
         ledger.write_text("", encoding="utf-8")
         assert red_gate.verdict({"session_id": "A"}, seen_path=tmp_path / "seen.json",
                                 now=0.0, state_dir=tmp_path, ledger=ledger) is None
+
+
+# ── O-009＝本人が承認した作業の順番（先行の行）を見せ、逆らうコミットを止める ──────
+# O-008 の締めより先に I-239 を実装・コミットした（`2198c43`）。順番が実績記録の
+# 1 行にしかなく、セッション開始の注入にもコミットの口にも出ていなかった。
+# 読み手 `org_order.py`・門 `org_order_gate.py`（`.git/hooks/commit-msg`）・
+# 注入（`session_context.py`）・書式の検査（check 30）が約束を守ることを固める。
+
+_SUBJECT_2198C43 = ("feat(assumptions): 式の前提を式の隣に宣言し、core の全モジュールに宣言か"
+                    "「式を持たない」かを求めるゲートを置く（I-239 の 2・3・4.0 ステージ1）")
+_ACCEPT = "- 本人受け入れ：2026-10-25「尚、O-008 を受け入れます。」"
+
+
+def _org_log(state="実装済み（5 回目）", precede: "str | None" = "O-008 → I-239", extra=(), more=()):
+    """O-008 の節 1 つ＋規則の前の節＋雛形の実績記録。"""
+    return [
+        "# 実績記録", "", *more,
+        "## O-008 製品側の最初の試行", f"- 状態：{state}", *extra,
+        *([f"- 先行：{precede}"] if precede is not None else []), "",
+        "## O-005 規則の前の節（先行の行は要らない）", "- 状態：済（承認の範囲）", "",
+        "## 雛形", "## 〈ID〉 〈題〉", "- 状態：", "- 先行：",
+    ]
+
+
+@pytest.fixture(scope="module")
+def org():
+    return _load_red("org_order")
+
+
+@pytest.fixture(scope="module")
+def org_gate(org):
+    return _load_red("org_order_gate")
+
+
+class TestOrgOrderReader:
+    """先行の行と状態の語の解釈・壊れた記録は通さない（O-009 の案 1〜3）。"""
+
+    def test_in_force_until_closed(self, org):
+        items, errors = org.parse(_org_log())
+        assert errors == [] and list(org.deferred_by(items)) == ["I-239"]
+        for state, line in (("済（受け入れ）", _ACCEPT),
+                            ("中止", "- 本人中止：2026-10-25「やめます」")):
+            items, errors = org.parse(_org_log(state=state, extra=[line]))
+            assert errors == [] and org.deferred_by(items) == {}, state
+        items, errors = org.parse(_org_log(state="進行中"))
+        assert errors == [] and "I-239" in org.deferred_by(items)
+
+    def test_none_and_rule_predating_sections(self, org):
+        items, errors = org.parse(_org_log(precede="なし"))
+        assert errors == [] and [i.oid for i in items] == ["O-008"]
+        assert org.deferred_by(items) == {}
+
+    def test_ids_in_the_note_are_not_deferred(self, org):
+        items, errors = org.parse(_org_log(
+            precede="O-008 → I-239, O-009（I-239＝本人「順番OK」・B-338 は別件）"))
+        assert errors == [] and items[0].deferred == ("I-239", "O-009")
+
+    @pytest.mark.parametrize("kw, fragment", [
+        ({"precede": None}, "`- 先行：` の行が 0 行"),
+        ({"extra": ["- 先行：なし"]}, "`- 先行：` の行が 2 行"),
+        ({"precede": "O-007 → I-239"}, "左が自分でない"),
+        ({"precede": "O-008 → 、"}, "読めない"),
+        ({"precede": "I-239"}, "読めない"),
+        ({"precede": "O-008 → O-008"}, "右に自分がいる"),
+        ({"state": "評価済み"}, "`- 状態：` は 1 行"),
+        ({"extra": ["- 状態：済"]}, "`- 状態：` は 1 行"),
+        ({"state": "済"}, "本人受け入れ"),
+        ({"state": "中止"}, "本人中止"),
+        ({"state": "済", "extra": ["- 本人受け入れ：未"]}, "本人受け入れ"),
+        ({"more": ["## O-008 前の写し", "- 状態：進行中", "- 先行：なし", ""]}, "節が 2 つ"),
+    ])
+    def test_broken_records_fail_closed(self, org, kw, fragment):
+        items, errors = org.parse(_org_log(**kw))
+        assert any(fragment in e for e in errors), errors
+
+    def test_missing_state_line(self, org):
+        lines = [x for x in _org_log() if not x.startswith("- 状態：実装済み")]
+        assert any("`- 状態：` の行が無い" in e for e in org.parse(lines)[1])
+
+    def test_missing_file_is_broken(self, org, tmp_path):
+        assert org.read(tmp_path / "none.md")[1]
+
+    def test_real_work_log_is_readable(self, org):
+        items, errors = org.read()
+        assert errors == [], errors
+        assert {"O-008", "O-009"} <= {i.oid for i in items}
+
+
+class TestOrgOrderGate:
+    """件名の末尾の主 ID で止め、本文の言及は警告・記録が壊れていれば止める（案 5・検証 ①〜④）。"""
+
+    def _items(self, org, **kw):
+        items, errors = org.parse(_org_log(**kw))
+        assert errors == []
+        return items
+
+    def test_replays_the_2198c43_deviation(self, org, org_gate):
+        """① 先行の行が効いていれば止まり、O-008 を受け入れて `済` にすれば通る。"""
+        msg = _SUBJECT_2198C43 + "\n\n本文。\n"
+        stops, _ = org_gate.judge(msg, self._items(org))
+        assert [(i, item.oid) for i, item in stops] == [("I-239", "O-008")]
+        assert org_gate.judge(msg, self._items(org, state="済", extra=[_ACCEPT])) == ([], [])
+
+    def test_other_ids_and_none_pass(self, org, org_gate):
+        """② 別の ID・先行なし・中止は通る。"""
+        assert org_gate.judge("fix: x（B-338）", self._items(org)) == ([], [])
+        assert org_gate.judge(_SUBJECT_2198C43, self._items(org, precede="なし")) == ([], [])
+        closed = self._items(org, state="中止", extra=["- 本人中止：2026-10-25「やめる」"])
+        assert org_gate.judge(_SUBJECT_2198C43, closed) == ([], [])
+
+    def test_body_or_mid_subject_mention_only_warns(self, org, org_gate):
+        """③ 本文・件名の中ほどの言及は警告して通す。"""
+        for msg in ("fix: x（B-338）\n\nI-239 の述語に触れる。", "fix: I-239 に触れる x（B-338）"):
+            stops, warns = org_gate.judge(msg, self._items(org))
+            assert stops == [] and [i for i, _ in warns] == ["I-239"], msg
+
+    def test_any_tail_id_stops_and_comments_are_ignored(self, org, org_gate):
+        """④ 末尾の（）の ID が複数なら 1 つでも当たれば止める・git の注釈の行は見ない。"""
+        items = self._items(org, precede="O-008 → I-239, B-301")
+        stops, _ = org_gate.judge("fix: x（B-338・B-301）", items)
+        assert [i for i, _ in stops] == ["B-301"]
+        assert org_gate.judge("fix: x（B-338）\n# 件名（I-239）", items) == ([], [])
+
+    def test_run_exit_codes_and_stop_log(self, org_gate, tmp_path, monkeypatch, capfd):
+        monkeypatch.setattr(org_gate, "STOP_LOG", tmp_path / "stops.log")
+        log = tmp_path / "work_log.md"
+        msg = tmp_path / "MSG"
+        log.write_text("\n".join(_org_log()), encoding="utf-8")
+        msg.write_text(_SUBJECT_2198C43, encoding="utf-8")
+        assert org_gate.run(str(msg), log) == 1
+        assert "I-239" in (tmp_path / "stops.log").read_text(encoding="utf-8")
+        msg.write_text("fix: x（B-338）", encoding="utf-8")
+        assert org_gate.run(str(msg), log) == 0
+        # fail-closed＝記録が壊れている・無い・本文が読めない
+        log.write_text("\n".join(_org_log(precede=None)), encoding="utf-8")
+        assert org_gate.run(str(msg), log) == 1
+        assert org_gate.run(str(msg), tmp_path / "none.md") == 1
+        assert org_gate.run(str(tmp_path / "none"), tmp_path / "work_log.md") == 1
+        assert "commit-msg（O-009）" in capfd.readouterr().err
+
+
+def _git(cwd, *args, check=True):
+    return subprocess.run(["git", *args], cwd=cwd, capture_output=True, text=True,
+                          encoding="utf-8", errors="replace", check=check, timeout=60)
+
+
+class TestCommitMsgHookInRepo:
+    """本物の `commit-msg` の殻を使い捨てのリポジトリで回す（④ `--amend --no-edit`・マージ）。
+
+    `.claude/` の門と読み手を写し、実績記録だけ差し替える（本体の記録・ログには触れない）。
+    """
+
+    @pytest.fixture
+    def repo(self, tmp_path, monkeypatch):
+        hook = pathlib.Path(_HOOK_DIR).resolve().parent / ".git" / "hooks" / "commit-msg"
+        if not hook.is_file():
+            pytest.fail(".git/hooks/commit-msg が無い（O-009 の門が外れている）")
+        repo = tmp_path / "r"
+        (repo / ".claude" / "org").mkdir(parents=True)
+        for name in ("org_order.py", "org_order_gate.py"):
+            (repo / ".claude" / name).write_bytes(pathlib.Path(_HOOK_DIR, name).read_bytes())
+        _git(tmp_path, "init", "-q", "-b", "main", str(repo))
+        for k, v in (("user.name", "t"), ("user.email", "t@example.invalid"),
+                     ("core.autocrlf", "false")):
+            _git(repo, "config", k, v)
+        (repo / ".git" / "hooks" / "commit-msg").write_bytes(hook.read_bytes())
+        (repo / ".gitignore").write_text(".claude/\n", encoding="utf-8")
+        monkeypatch.setenv("RADIOSIM_PYTHON", sys.executable.replace("\\", "/"))
+        return repo
+
+    def _log(self, repo, **kw):
+        (repo / ".claude" / "org" / "work_log.md").write_text("\n".join(_org_log(**kw)),
+                                                              encoding="utf-8")
+
+    def _commit(self, repo, *args):
+        return _git(repo, "commit", *args, check=False)
+
+    def test_commit_amend_and_merge(self, repo):
+        self._log(repo, state="済", extra=[_ACCEPT])
+        _git(repo, "add", ".gitignore")
+        assert self._commit(repo, "-m", _SUBJECT_2198C43).returncode == 0   # 効力なし＝通る
+        self._log(repo)                                                      # 効力あり
+        r = self._commit(repo, "--amend", "--no-edit")
+        assert r.returncode != 0 and "I-239" in r.stderr
+        assert self._commit(repo, "--allow-empty", "-m", "fix: x（B-338）").returncode == 0
+        _git(repo, "checkout", "-q", "-b", "topic")
+        assert self._commit(repo, "--allow-empty", "-m", "fix: y（B-338）").returncode == 0
+        _git(repo, "checkout", "-q", "main")
+        _git(repo, "commit", "--allow-empty", "-q", "-m", "fix: z（B-339）")
+        r = _git(repo, "merge", "--no-ff", "-m", "merge（I-239）", "topic", check=False)
+        assert r.returncode != 0 and "I-239" in r.stderr
+        _git(repo, "merge", "--abort", check=False)
+        r = _git(repo, "merge", "--no-ff", "-m", "merge（B-338）", "topic", check=False)
+        assert r.returncode == 0, r.stderr
+
+    def test_broken_record_and_missing_gate_stop(self, repo):
+        self._log(repo, precede=None)
+        r = self._commit(repo, "--allow-empty", "-m", "fix: x（B-338）")
+        assert r.returncode != 0 and "読めない" in r.stderr
+        self._log(repo, precede="なし")
+        (repo / ".claude" / "org_order_gate.py").unlink()
+        r = self._commit(repo, "--allow-empty", "-m", "fix: x（B-338）")
+        assert r.returncode != 0 and "ありません" in r.stderr
+
+
+class TestOrgOrderInjection:
+    """セッション開始の注入が先行と未完了の O を出し、台帳の一覧に ⛔（案 4・検証 ⑤）。"""
+
+    def test_lines(self, hook, org):
+        items, _ = org.parse(_org_log(state="進行中"))
+        deferred = org.deferred_by(items)
+        head, body = hook.org_order_lines(items, [], deferred)
+        assert len(head) == 1 and head[0].startswith("⛔ I-239：O-008 の締め待ち")
+        assert body == [f"組織の未完了の仕事 1件: O-008(進行中) {items[0].title}［先行：O-008 → I-239］"]
+        head, body = hook.org_order_lines([], ["O-008: 壊れた"], {})
+        assert head[0].startswith("🔴") and "O-008: 壊れた" in head[0] and body == []
+        closed, _ = org.parse(_org_log(state="済", extra=[_ACCEPT]))
+        assert hook.org_order_lines(closed, [], {}) == ([], [])
+
+    def test_mark_deferred(self, hook):
+        issues = ["I-239(未着手) 題", "I-2390(未着手) 題", "B-338(未着手) I-239 に触れる"]
+        got = hook.mark_deferred(issues, {"I-239": object()})
+        assert got == ["⛔I-239(未着手) 題", *issues[1:]]
+
+    def test_real_record_reaches_the_injection(self, hook, org):
+        # 本番はスクリプトとして走る＝`.claude/` が import の道にある。ここでは `org` が読み込み済み。
+        items, errors, _ = hook._org_order_read()
+        assert errors == []
+        _, body = hook.org_order_lines(items, errors, {})
+        assert body and "O-009(" in body[0]
+
+
+class TestOrgRecordsCheck:
+    """check 30＝記録を書いた回のうちに停止の束で止める（案 7）。"""
+
+    def test_formats_and_is_blocking(self, memcheck):
+        assert memcheck.check_org_records(["O-010: x"]) == [
+            ".claude/org/work_log.md: O-010: x（組織運用 §4・O-009・check 30）"]
+        assert memcheck.check_org_records_real() == []
+        import inspect
+        src = inspect.getsource(memcheck.main)
+        assert src.index("check_org_records_real()") < src.index("blocking += dashboard")
+
+
+class TestGitHooksWired:
+    """⑧ 配線の見張り＝`.git/hooks` は clone に来ない（CI では対象ごと飛ぶ）。外れたら赤。"""
+
+    @pytest.mark.parametrize("name, callee", [
+        ("commit-msg", ".claude/org_order_gate.py"),
+        ("pre-commit", "tests/test_repo_hygiene.py"),
+    ])
+    def test_hook_calls_its_gate(self, name, callee):
+        git_dir = pathlib.Path(_HOOK_DIR).resolve().parent / ".git"
+        if not git_dir.is_dir():
+            pytest.skip(structural_skip("リンクした作業ツリー＝フックは本体の .git にある"))
+        hook = git_dir / "hooks" / name
+        assert hook.is_file(), f".git/hooks/{name} が無い"
+        text = hook.read_text(encoding="utf-8")
+        assert callee.rsplit("/", 1)[-1] in text and "exit 1" in text
