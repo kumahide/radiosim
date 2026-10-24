@@ -333,6 +333,7 @@ radiosim/
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
     ├── test_model_preconditions.py  # Checks model preconditions against every corpus link
+    ├── test_p526_reference.py  # Reference-case corpus (diffraction formulas vs. P.526 exact values and hand calculations)
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
     ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
@@ -1235,6 +1236,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_model_preconditions.py` | Checks each model's preconditions (its domain of validity) against every link in the regression corpus. The current predicate: no ground-reflection envelope on a link with diffraction loss (a terrain-obstructed path). Known counterexamples are marked per link with a strict xfail carrying the issue ID, so fixing them turns into a red xpass. It also checks that the corpus contains both shapes, so the predicate is never vacuous |
+| `test_p526_reference.py` | Reference-case corpus (a check that is not self-regression). Compares only the diffraction formulas the product uses against values fixed outside the product: the J(ν) approximation against exact Fresnel-integral values at 11 points (tolerance 0.15 dB), and three single knife-edge hand calculations plus four synthetic Bullington (P.526 §4.5.1) profiles (tolerance 0.01 dB). It also checks that typical slips (a constant, the earth bulge, a sign) turn red (4.0 step 1) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
 | `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
