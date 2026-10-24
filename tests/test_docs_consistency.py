@@ -1326,6 +1326,8 @@ def _paths_on_branch_tips() -> set[str]:
     チェックアウト 1 つぶん（`.claude/check_memory.py` の check 6・29 と同じ形）。
     先端だけを見る＝どの先端からも消したファイルへのリンクは切れのまま残る。
     git が使えなければ空（＝従来どおり作業ツリーだけで判定する）。
+    ⚠️ 救済は `_LOCAL_ONLY_DOCS` だけ（Codex 165 巡目）＝README・マニュアル・CHANGELOG は
+    このブランチの中身と一緒に公開されるので、ほかのブランチにだけ在るファイルへのリンクは切れ。
     """
     global _BRANCH_TIP_PATHS
     if _BRANCH_TIP_PATHS is None:
@@ -1356,10 +1358,11 @@ def _on_a_branch_tip(target: Path) -> bool:
 
 @pytest.mark.parametrize("doc", _LINK_DOCS)
 def test_doc_links_point_to_existing_files(doc):
-    """ドキュメントの相対リンク・参照定義の指し先が実在すること（ほかのブランチの先端も含む）。"""
+    """ドキュメントの相対リンク・参照定義の指し先が実在すること（台帳だけ、ほかのブランチの先端も含む）。"""
     path = ROOT / doc
     if not path.exists():
         pytest.skip(f"{doc} は git-ignore（CI には存在しない）")
+    spans_branches = doc in _LOCAL_ONLY_DOCS
     broken = []
     for lineno, label, target in _iter_links(path.read_text(encoding="utf-8")):
         if target.startswith(("http://", "https://", "mailto:", "data:", "#")):
@@ -1367,9 +1370,25 @@ def test_doc_links_point_to_existing_files(doc):
         rel = target.split("#", 1)[0]          # 行アンカー（#L42）は落として実体を見る
         if not rel:
             continue
-        if not (path.parent / rel).exists() and not _on_a_branch_tip(path.parent / rel):
-            broken.append(f"L{lineno} [{label}] -> {target}")
+        if (path.parent / rel).exists():
+            continue
+        if spans_branches and _on_a_branch_tip(path.parent / rel):
+            continue
+        broken.append(f"L{lineno} [{label}] -> {target}")
     assert not broken, f"{doc}: リンク切れ {len(broken)} 件\n  " + "\n  ".join(broken)
+
+
+def test_a_public_doc_link_to_another_branch_only_is_still_broken(monkeypatch):
+    """公開する文書は、ほかのブランチの先端に在るだけのファイルへのリンクを切れとして止めること。"""
+    import sys
+    me = sys.modules[__name__]
+    target = "apps/__only_on_another_branch__.md"
+    assert not (ROOT / target).exists()
+    monkeypatch.setattr(me, "_paths_on_branch_tips", lambda: {target})
+    monkeypatch.setattr(me, "_iter_links", lambda text: [(1, "probe", target)])
+    assert _on_a_branch_tip(ROOT / target), "救済の側が効いていない（この検査が空振りしている）"
+    with pytest.raises(AssertionError, match="リンク切れ 1 件"):
+        test_doc_links_point_to_existing_files("README.md")
 
 
 # --- 10. カバレッジ対象の網羅（2.5a3 追加・2.7 スライス H で作り直し） --------
