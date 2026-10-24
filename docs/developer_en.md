@@ -232,6 +232,7 @@ radiosim/
 │   ├── ground_reflection.py # Ground-reflection (two-ray) amplitude envelope, never mixed into received power (pure)
 │   ├── sensitivity.py    # Perturbation re-run, produces margin[dB] ranges (model unchanged; pure)
 │   ├── residuals.py      # Residual vs. measurement: layered median/spread by env class × band × distance band (pure)
+│   ├── assumptions.py    # Container for declaring each formula's preconditions next to it (ASSUMPTIONS), plus the list of formula-free modules
 │   ├── simulation.py     # ViewModel / orchestrator
 │   ├── config.py         # App config I/O, input validation, logging (minimal external deps)
 │   ├── dem.py            # DEM/pale tile single-point fetch, elevation decode, tile cache I/O, proxy (external deps confined)
@@ -333,6 +334,7 @@ radiosim/
     ├── golden_corpus_gen.py  # Corpus generator (run manually; fetches real DEM)
     ├── test_ground_reflection.py  # Ground-reflection amplitude envelope (3.4 step 4)
     ├── test_model_preconditions.py  # Checks model preconditions against every corpus link
+    ├── test_assumptions.py  # Closed-world gate for the formula-precondition declarations
     ├── test_p526_reference.py  # Reference-case corpus (diffraction formulas vs. P.526 exact values and hand calculations)
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
@@ -1236,6 +1238,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_model_preconditions.py` | Checks each model's preconditions (its domain of validity) against every link in the regression corpus. The current predicate: no ground-reflection envelope on a link with diffraction loss (a terrain-obstructed path). Known counterexamples are marked per link with a strict xfail carrying the issue ID, so fixing them turns into a red xpass. It also checks that the corpus contains both shapes, so the predicate is never vacuous |
+| `test_assumptions.py` | Closed-world gate for the formula-precondition declarations. Every `core/` module has exactly one of `ASSUMPTIONS` (each precondition marked as checked at the entry, disclosed in the stamp, or open) or an entry in the formula-free list, and every function, constant, stamp key, test and issue ID a declaration names must exist. It also runs mutations (delete a declaration, change one character of a name, add a module) every time to prove the gate fires |
 | `test_p526_reference.py` | Reference-case corpus (a check that is not self-regression). Compares only the diffraction formulas the product uses against values fixed outside the product: the J(ν) approximation against exact Fresnel-integral values at 11 points (tolerance 0.15 dB), and three single knife-edge hand calculations plus four synthetic Bullington (P.526 §4.5.1) profiles (tolerance 0.01 dB). It also checks that typical slips (a constant, the earth bulge, a sign) turn red (4.0 step 1) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |

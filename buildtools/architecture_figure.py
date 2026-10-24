@@ -235,6 +235,7 @@ BANDS: list[Band] = [
                     ("sensitivity.py", "摂動再計算で余裕度の幅を出す", "perturbation re-run, margin range"),
                     ("residuals.py", "実測との残差を層別に集計", "measured residual, layered stats"),
                     ("disclosure.py", "帳票の開示の字（前提・適用範囲）", "report disclosure wording"),
+                    ("assumptions.py", "式の前提の宣言の器", "formula precondition declarations"),
                 ]]),
                 Card(("設定・環境・文字列", "Config, environment, strings"), [[
                     ("config.py", "設定 I/O・検証・ログ", "config I/O, validation, log"),

@@ -21,6 +21,16 @@ import math
 
 import numpy as np
 
+from core.assumptions import DISCLOSED, Assumption
+
+#: 式の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("bullington_without_spherical_term",
+               "Bullington は離れた尾根で小さめに出て、球面回折の項（`_spherical_earth_loss`）は席だけで 0 dB",
+               DISCLOSED, ("scope:diff_bullington",),
+               "tests/test_models.py::TestScopeNotes::test_the_spherical_earth_seat_is_empty_but_wired"),
+)
+
 
 # NOTE（回折モデルの履歴＝**同じ道に戻らないための記録**。2026-08-26 に全面改訂）:
 #

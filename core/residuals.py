@@ -22,6 +22,13 @@ from dataclasses import dataclass
 import numpy as np
 
 from core import models
+from core.assumptions import OPEN, Assumption
+
+#: 式（残差）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("measured_is_a_value", "実測は受信できた値として受ける＝感度以下（打ち切り）を値と区別しない",
+               OPEN, issue="I-158"),
+)
 
 #: 距離帯の境目 [km]（昇順）。固定回線の実務レンジを想定した運用値＝
 #: 実測データが溜まったら見直す（3.5 の材料）。

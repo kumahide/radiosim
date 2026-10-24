@@ -21,6 +21,8 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from core.assumptions import GUARD, OPEN, Assumption
+
 C_LIGHT: float = 299_792_458.0
 
 #: 乾いた地面・水平偏波の擦過入射における反射係数の代表値（|Gamma|）。
@@ -47,6 +49,16 @@ NULL_DEPTH_CAP_DB: float = 40.0
 #: 「予測してはいけないヌルの位置」と同じ問題なので、粗さで割り引かない
 #: 絶対上限をそのまま出す（destructive 側は逆に粗さで見積もる＝非対称は意図的）。
 CONSTRUCTIVE_GAIN_DB: float = 6.0
+
+#: 式の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("arms_resolvable", "反射点から両端まで `MIN_ARM_M` 以上（端へ寄る反射点は 10m の DEM で分解できない）",
+               GUARD, ("MIN_ARM_M",), "tests/test_ground_reflection.py::test_reflection_near_end_returns_none"),
+    Assumption("both_rays_unobstructed", "直接波と反射波がどちらも地形に遮られない（2 波の干渉は両方が届く経路の話）",
+               OPEN, test="tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions"
+                          "::test_no_envelope_on_a_blocked_path",
+               issue="B-338", origin="`experiments/phase0_two_ray.py`＝ドローン（機体は上空で直接波は常に届く）"),
+)
 
 
 @dataclass
