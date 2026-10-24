@@ -16,7 +16,7 @@ tests/golden_corpus_gen.py
 一覧そのもの＝影響範囲の把握手段）。意図しない差分が出たらそれが回帰。
 
 ⚠️ 実行すると GSI の DEM タイルを取得する（キャッシュ済みなら再取得しない）。
-代表回線は 28 本・サンプル数は 120〜245 に抑えてある（[[feedback-design-philosophy]]
+代表回線は 31 本・サンプル数は 120〜245 に抑えてある（[[feedback-design-philosophy]]
 ④ 外部 API 配慮＝無差別な広域取得をしない）。
 """
 
@@ -43,7 +43,7 @@ _ELEV_DECIMALS = 2
 
 
 # ============================================================
-# 代表回線（28 本）
+# 代表回線（31 本）
 # ------------------------------------------------------------
 # 選定方針＝「実務で通る道を薄く広く」：
 #   - 地形の性格：平地/河川沿い・尾根越え・山岳・市街地・島嶼/海越え
@@ -95,9 +95,9 @@ LINKS: list[dict] = [
     dict(id="fuji_kawaguchi", start=(35.5045, 138.7688), end=(35.4870, 138.6870),
          h_tx=110, h_rx=110, freq=2400, p_tx=20, gain_tx=18, gain_rx=18,
          sens=-85, veg_h=20, k=1.33, samples=200, env="rural", diff="bullington", rain=0),
-    dict(id="fuji_ricek_low", start=(35.5045, 138.7688), end=(35.4870, 138.6870),
-         h_tx=110, h_rx=110, freq=2400, p_tx=20, gain_tx=18, gain_rx=18,
-         sens=-85, veg_h=20, k=1.00, samples=200, env="rural", diff="bullington", rain=0),
+    # ⚠️ 旧 `fuji_ricek_low`（ライス K だけ 1.00 に変えた対）は落とした（B-175）＝
+    #    回折損 118.5 dB で current_k が 0 に張り付き、上の回線と全項目が一致していた。
+    #    ライス K の欄は 4.0 で廃止（I-114）＝動かす回線を作り直す意味も無い。
     dict(id="nagano_utsukushi", start=(36.6513, 138.1810), end=(36.2200, 138.1100),
          h_tx=260, h_rx=260, freq=400, p_tx=30, gain_tx=10, gain_rx=10,
          sens=-100, veg_h=25, k=1.33, samples=240, env="rural", diff="bullington", rain=0),
