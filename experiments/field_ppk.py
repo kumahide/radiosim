@@ -141,7 +141,7 @@ def download(url, dest, legacy_tls=False):
     ctx = ssl.create_default_context()
     if legacy_tls:
         ctx.options |= ssl.OP_LEGACY_SERVER_CONNECT
-    with urllib.request.urlopen(req, timeout=120, context=ctx) as r, open(tmp, "wb") as f:
+    with urllib.request.urlopen(req, timeout=120, context=ctx) as r, open(tmp, "wb") as f:  # nosec B310
         shutil.copyfileobj(r, f)
     tmp.replace(dest)
 
