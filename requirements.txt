@@ -8,12 +8,12 @@
 # （3.8 で予告・2.4.4 と計算結果がビット単位で一致することを 3.8 と 3.9 の頭で確かめた）。
 # 下限を動かすときは次の 4 ファイル 6 か所を同時に直すこと＝pyproject.toml（コメントと
 # target-version）・README.md・docs/developer_ja.md と docs/developer_en.md（それぞれ 2 か所）。
-numpy==2.5.3
+numpy==2.5.4
 matplotlib==3.11.2
 requests==2.34.2
-Pillow==12.3.0
+Pillow==13.0.0
 sv-ttk==2.6.1
 darkdetect==0.8.0
-markdown==3.11
-truststore==0.10.4
+markdown==3.11.2
+truststore==0.10.5
 tkintermapview==1.30
