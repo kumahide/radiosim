@@ -11,6 +11,12 @@ import sys
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "token-usage"))
 import analyze_usage as A  # noqa: E402
 
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 
 def total_input(u):
     return ((u.get("input_tokens") or 0)

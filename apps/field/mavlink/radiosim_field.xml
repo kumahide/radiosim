@@ -1,0 +1,200 @@
+<?xml version="1.0"?>
+<!--
+  radiosim_field.xml
+  ===================
+  RadioSim Field（実測補助）の独自 MAVLink ダイアレクト。
+  **ファームと PC 側の両方がここから生成する**＝メッセージの形の単一の出所。
+
+  なぜ NAMED_VALUE_FLOAT で済ませないか（不可逆な設計判断）:
+    1 メッセージに 1 つの float だと、受信レベル・雑音・周波数・TX 電力・積分ウィンドウが
+    ばらばらに届いて **1 サンプルの原子性が無い**。ここでは 1 サンプルを 1 メッセージに
+    する。受信機自身のタイムスタンプとシーケンス番号を必ず載せ、欠測（＝打ち切り）を
+    後から数えられるようにする。
+
+  設定は毎サンプル送らず、**設定番号（config_id）で 1 対 1 に結ぶ**。
+  これで原子性を保ちながら 1 メッセージを小さく保てる。
+
+  ⚠️ 打ち切りは受信機からは送れない（「受からなかった」ことは送信できない）。
+  PC 側が RADIOSIM_FIELD_RX_SAMPLE の seq の欠けから数える。
+  ⚠️ 空間平均の置き場所の番号は、作業者の操作に由来するので **PC 側が付ける**。
+  ファームは知らない（時間平均＝integration_samples と混ざらないように、
+  そもそも別の場所に持つ）。
+
+  ⚠️ メッセージ ID の帯は、他のダイアレクトと同時に使う前に MAVLink の一次資料で
+  確かめる（ここでは 42100 から 3 つ取っている）。衝突しても静かに壊れる種類の
+  問題なので、確認するまで「空いている」と書かない。
+-->
+<mavlink>
+  <version>0</version>
+  <dialect>0</dialect>
+
+  <enums>
+    <enum name="RADIOSIM_FIELD_ROLE">
+      <description>1 つのファームを設定で切り替える（送受を対称に保つため）。</description>
+      <entry value="0" name="RADIOSIM_FIELD_ROLE_TX">
+        <description>番号付きパケットを等間隔で送る側。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_ROLE_RX">
+        <description>受けたパケットを 1 受信ごとに UART へ流す側。</description>
+      </entry>
+    </enum>
+
+    <enum name="RADIOSIM_FIELD_BAND">
+      <description>
+        測る帯域。ファームは起動時に片方だけ起こす（2 帯域は同時に動かさない＝正典 §4）。
+        値は帯域の MHz の目安＝読んで分かる番号にした。
+      </description>
+      <entry value="920" name="RADIOSIM_FIELD_BAND_920">
+        <description>E220-900T22S(JP)・920 MHz 帯（LoRa）。</description>
+      </entry>
+      <entry value="2400" name="RADIOSIM_FIELD_BAND_2400">
+        <description>ESP32-C6 内蔵の Wi-Fi・2.4 GHz 帯（11b・1 Mbps の生フレーム）。</description>
+      </entry>
+    </enum>
+
+    <enum name="RADIOSIM_FIELD_DETECTOR">
+      <description>
+        受信レベルの取り方。速いフェージングを拾ったのか局所平均なのかを後から
+        判別するために記録する（空間平均のウィンドウ設計に直結する）。
+      </description>
+      <entry value="0" name="RADIOSIM_FIELD_DETECTOR_UNKNOWN">
+        <description>不明（取り込んだログに記録が無い場合のみ）。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_DETECTOR_INSTANT">
+        <description>1 フレームの瞬時値。ファーム側では平均しない。</description>
+      </entry>
+      <entry value="2" name="RADIOSIM_FIELD_DETECTOR_MEAN">
+        <description>integration_samples 件の平均（時間平均）。</description>
+      </entry>
+    </enum>
+
+    <enum name="RADIOSIM_FIELD_ANTENNA">
+      <description>
+        アンテナ切替の状態。切替が記録されていない測定は、利得の基準が分からない＝
+        後から救えない。
+      </description>
+      <entry value="0" name="RADIOSIM_FIELD_ANTENNA_UNKNOWN">
+        <description>不明。</description>
+      </entry>
+      <entry value="1" name="RADIOSIM_FIELD_ANTENNA_INTERNAL">
+        <description>基板上のアンテナ。</description>
+      </entry>
+      <entry value="2" name="RADIOSIM_FIELD_ANTENNA_EXTERNAL">
+        <description>外部アンテナ端子（技適対象のロッドアンテナを付ける側）。</description>
+      </entry>
+    </enum>
+  </enums>
+
+  <messages>
+    <message id="42100" name="RADIOSIM_FIELD_TX_PACKET">
+      <description>
+        送信側が 1 パケット送るたびに UART へ流す控え。受信側のログと突き合わせて
+        「送ったが受からなかった」を確定させるために要る。
+      </description>
+      <field type="uint8_t[6]" name="tx_id">送信機の個体 ID（チップ固有の MAC アドレス）。</field>
+      <field type="uint32_t" name="seq">
+        送信の**周期の番号**（起動で 0 から・送れなかった周期も進む）。PC 側はこれを時間の軸にし、
+        欠けを打ち切りの根拠にする。
+      </field>
+      <field type="uint32_t" name="sent_mask">
+        直前 32 周期を実際に送ったか（第 k ビット＝周期 seq−1−k を送った）。キャリアセンスに
+        阻まれた周期・前の送信が終わらず飛ばした周期（920 MHz 帯）・送信関数が失敗した周期
+        （2.4 GHz 帯）は 0。**「送らなかった」を「受からなかった」と
+        数えないため**に要る（I-165）。結果は次の周期の頭で読むので、この周期自身は含まない。
+      </field>
+      <field type="uint32_t" name="unsent_total">
+        起動から送らなかった周期の累計。32 周期を超えて受からなかった間の内訳を、前後の
+        受信の差で決めるために要る。
+      </field>
+      <field type="uint16_t" name="config_id">この送信に効いていた設定番号。</field>
+    </message>
+
+    <message id="42101" name="RADIOSIM_FIELD_RX_SAMPLE">
+      <description>
+        受信 1 回ぶんの生のサンプル。**dBm には換算しない**（換算は校正値を持つ
+        PC 側の仕事で、生値は捨てない）。
+      </description>
+      <field type="uint8_t[6]" name="rx_id">受信機の個体 ID（MAC アドレス）。</field>
+      <field type="uint8_t[6]" name="tx_id">送信機の個体 ID（MAC アドレス）。</field>
+      <field type="uint32_t" name="seq">受け取ったパケットの送信シーケンス番号。</field>
+      <field type="uint64_t" name="rx_time_us" units="us">
+        受信機の起動からの経過時間。phase 1 では PC 側が UTC と対応づける
+        （PPS をファームへ入れるのは phase 2）。
+      </field>
+      <field type="int16_t" name="rssi_raw">
+        受信レベルの生値（整数・**dBm ではない**）。単位を書けるだけの根拠が無い
+        ので単位は付けない。
+      </field>
+      <field type="int16_t" name="noise_floor_raw">
+        雑音フロアの生値（整数・dBm ではない）。「感度以下」と「干渉で埋もれた」の
+        区別に使う。
+      </field>
+      <field type="uint16_t" name="config_id">このサンプルに効いていた **RX の**設定番号。</field>
+      <field type="uint16_t" name="tx_config_id">
+        受けたパケット（RADIOSIM_FIELD_TX_PACKET）に載っていた **TX の**設定番号。TX の設定の
+        中身は、TX が空中で送る RADIOSIM_FIELD_CONFIG を RX が中継して PC へ届ける。
+      </field>
+      <field type="uint32_t" name="sample_seq">
+        この送信機から受けて UART へ出そうとしたサンプルの通し番号（**送信機ごと**・
+        ファームの起動で 0 から）。受信した時点で番号を振るので、**番号の欠けは
+        受信機から PC までの間で落ちた分**（キューの溢れ・USB の取りこぼし・UART の化け）
+        ＝電波で届かなかった分とは別に数えられる。
+      </field>
+      <field type="uint32_t" name="sent_mask">受けたパケットの sent_mask の写し（TX の USB は現場で PC に繋がらない）。</field>
+      <field type="uint32_t" name="unsent_total">受けたパケットの unsent_total の写し。</field>
+    </message>
+
+    <message id="42102" name="RADIOSIM_FIELD_CONFIG">
+      <description>
+        設定。起動時・変更時に加えて UART へ 1 秒ごとに再送し、サンプルからは設定番号で引く。
+        再送するのは、PC 側が最初に届いた RX の設定でセッションを作るため（「起動時だけ」
+        だと、RX が先に起動していたら記録が始まらない）。同じ設定の再送は PC 側が読み飛ばす。
+        **TX は同じものを空中へも送り、RX はそれを UART へそのまま中継する**＝920 MHz 帯は 10 秒ごと
+        （TX_PACKET の周期を借りる＝250 ms 間隔なら 2 周期が送らなかった周期として sent_mask に出る）・
+        2.4 GHz 帯は 1 秒ごと（周期を借りない別の枠）
+        （role が tx のもの）＝TX の UART は遠くにあって PC に届かないので、TX の実際の
+        設定（送信間隔・電力・チャネル）を PC が知る唯一の道。雛形に書いた値と実機が
+        食い違うと、ウィンドウの期待パケット数や送信電力が黙って別の値になる。
+        920 MHz 帯の空中は 10 秒ごと＝1 秒ごとだとデューティが 10% を超える。PC の記録の開始は最長 10 秒待つ。
+        ⚠️ ここに**空間平均**の項目は無い（PC 側が持つ）。
+      </description>
+      <field type="uint16_t" name="config_id">この設定の番号。以後のサンプルが参照する。</field>
+      <field type="uint8_t" name="role" enum="RADIOSIM_FIELD_ROLE">送信側か受信側か。</field>
+      <field type="uint8_t[6]" name="device_id">この機体の個体 ID（MAC アドレス）。</field>
+      <field type="char[16]" name="firmware_version">
+        ファームの版（git のコミット）。刻印に入る＝データを後から救うために要る。
+      </field>
+      <field type="uint16_t" name="band" enum="RADIOSIM_FIELD_BAND">
+        測った帯域。チャネル・電力・間隔の意味と値域は帯域で違う（下の欄）。
+      </field>
+      <field type="uint8_t" name="channel">
+        チャネル。920 MHz 帯は 0〜6（920.8＋0.2·CH MHz・BW500 の番号）・2.4 GHz 帯は 1〜13
+        （2412＋5·(CH−1) MHz）。現場で空いているものを選ぶ。
+      </field>
+      <field type="uint8_t" name="air_sf">空中の拡散率（SF）。ファームの定数。920 MHz 帯だけ（2.4 GHz 帯は 0）。</field>
+      <field type="uint16_t" name="air_bw_khz" units="kHz">空中の帯域幅。ファームの定数。920 MHz 帯だけ（2.4 GHz 帯は 0）。</field>
+      <field type="uint16_t" name="rate_kbps" units="kbit/s">
+        空中のレート。2.4 GHz 帯だけ（920 MHz 帯は 0）。1 Mbps に固定し、ドライバが実際に使った
+        レートを送信完了の通知で確かめた値を載せる（B-257）＝途中で変わったら TX がこの欄を直してすぐ送る。
+      </field>
+      <field type="int16_t" name="tx_power_cdbm" units="cdBm">
+        設定した送信電力（0.01 dBm 単位）。自動出力制御が動くと RSSI からパスロスを
+        引けなくなるため、固定した値を記録する。920 MHz 帯は 0〜13 dBm の整数（E220 で読み直した値）・
+        2.4 GHz 帯は 2〜20 dBm（ドライバが 0.25 dB 刻みに丸めて読み戻した値）。
+      </field>
+      <field type="uint16_t" name="tx_interval_ms" units="ms">
+        送信間隔。920 MHz 帯は 250〜10000 ms（既定 250 ms）・2.4 GHz 帯は 20〜10000 ms（既定 100 ms）。
+      </field>
+      <field type="uint8_t" name="detector" enum="RADIOSIM_FIELD_DETECTOR">検波方式。</field>
+      <field type="uint32_t" name="integration_window_us" units="us">
+        積分ウィンドウの長さ。0 は「不明」（瞬時値を測る時間がチップの内部仕様で、ファームが
+        知らないとき）。数字を作って刻むと、刻印が事実でなくなる。
+      </field>
+      <field type="uint16_t" name="integration_samples">
+        **時間平均**の件数（量子化・雑音の平均）。空間平均とは役割が違うので、
+        同じ名前の欄に混ぜない。
+      </field>
+      <field type="uint8_t" name="antenna" enum="RADIOSIM_FIELD_ANTENNA">アンテナ切替の状態。</field>
+    </message>
+  </messages>
+</mavlink>

@@ -293,6 +293,26 @@ radiosim/
 │   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
+│
+│   # Applications other than the main one live here. `apps/*` may import core/ only
+│   # (never another app). The main application still sits at the repository root.
+│
+├── apps/
+│   └── field/           # Field-measurement helper (separate app, in development; not part of the main build)
+│       ├── session.py    # Measurement session (one run = one folder: JSON header + append-only CSV)
+│       ├── aggregate.py  # Groups received samples into windows, marks censored ones, writes the batch CSV
+│       ├── recorder.py   # Records while measuring (appends UART bytes and operator actions to the session; rebuilds samples from the raw log)
+│       ├── calib.py      # Per-unit calibration files (written by the bench test, copied into a session by unit ID)
+│       ├── bench.py      # Stage-0 bench test (swaps the two units' roles by command, measures both directions, keeps raw logs and steps) and a probe that needs no operator
+│       ├── bench_analysis.py # Bench-test evaluation (recounts from the raw logs: linearity, dither, receive rate, calibration files)
+│       ├── gnss.py       # GNSS receiver raw-data logger (static observation: queries the version, enables outputs in the RAM layer only, keeps the UBX stream as is)
+│       ├── ntrip.py      # Receives NTRIP corrections (RTCM 3) from a caster, forwards them to the receiver on the logger's port and keeps them (`gnss log --ntrip`)
+│       ├── cli.py        # Command line (header template, record, export to the batch CSV, probe, bench test, continuous transmit, GNSS logging)
+│       ├── mavlink/      # Message definitions for samples and settings (both the firmware and the PC side generate from here)
+│       │   ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
+│       │   ├── reader.py  # Splits a UART log into frames and turns them into received samples
+│       │   └── gen_c.py   # Generates the firmware's C header (with golden frames) from the definition XML
+│       └── firmware/     # Transmitter/receiver firmware (XIAO ESP32C6, ESP-IDF)
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
@@ -326,6 +346,15 @@ radiosim/
     ├── test_report.py
     ├── test_scenario.py
     ├── test_multihop.py
+    ├── test_field_session.py
+    ├── test_field_aggregate.py
+    ├── test_field_mavlink.py
+    ├── test_field_recorder.py
+    ├── test_field_firmware.py
+    ├── test_field_bench.py
+    ├── test_field_monitor.py
+    ├── test_field_gnss.py
+    ├── test_field_ntrip.py
     ├── test_project.py
     ├── test_report_map.py
     ├── test_map_window.py
@@ -357,6 +386,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
+    ├── test_experiments_probes.py
     ├── test_env_facts.py
     ├── test_diagnostics.py
     ├── test_repo_hygiene.py
@@ -1052,12 +1082,13 @@ When you add a module, add a row to the table and regenerate:
 
 ## Development Environment
 
-Dependencies are declared in **two files**:
+Dependencies are declared in **two files** (the third row below belongs to the separate field-measurement helper):
 
 | File | Contents | Ships in the binary? |
 | --- | --- | --- |
 | `requirements.txt` | Runtime dependencies (numpy / matplotlib / requests …) | **Yes** |
 | `requirements-dev.txt` | Testing, static analysis, packaging (pytest / pytest-cov / pyright / ruff / bandit / PyInstaller) | **No** |
+| `requirements-field.txt` | pyserial, used by the field-measurement helper (`apps/field`) to open the serial port. Not needed by the tests (CI does not install it) | **No** (separate app) |
 
 They are separate because mixing development tooling into the runtime dependency list risks bundling it into the EXE. **Both are pinned** — the PyInstaller pin matters most, since it decides the bootloader inside the shipped binary; leaving it unpinned means the release was built by whatever version was newest that day.
 
@@ -1192,6 +1223,15 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
 | `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
+| `test_field_session.py` | Measurement sessions of the field-measurement helper (`apps/field`): header round-trip, samples are append-only, the header is written atomically, endpoint positions accept both a session constant and a time series, time averaging and spatial averaging live in separate fields, raw values are never overwritten with converted ones, feeder loss is not folded into the conversion, a CLAS height is accepted only with a Fix solution, out-of-vocabulary values and an empty measurement-configuration ID are rejected |
+| `test_field_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/field`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, spatial-slot boundaries come from the operator log (what was lost just before a move or the stop does not disappear, a slot that received nothing still gets windows, samples received while moving go into no window), windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
+| `test_field_recorder.py` | Recording and the command line of the field-measurement helper (`apps/field`): a frame split across serial reads is not lost (any split gives the same messages and error counts), no session is created before the RX settings arrive but the raw bytes before that are kept, samples rebuilt from the raw log match what was written live, an unfilled template or another unit's calibration does not start a recording, a settings change ends the session, samples from another pair are not written, a session without a stop record is not exported silently |
+| `test_field_mavlink.py` | MAVLink decoding in the field-measurement helper (`apps/field`): the wire field order follows type size rather than XML order, CRC_EXTRA is derived from the definition, a truncated payload is zero-filled, a frame that fails its CRC never becomes a sample, an unknown message id is skipped whole so the error count is not inflated, a cut-off tail is distinguished from corruption, the frame link sequence is never used as the measurement sequence number, and frames lost on the UART surface as censoring |
+| `test_field_firmware.py` | The boundary between the measurement helper's (`apps/field`) firmware and PC side: the generated C header matches the definition XML; the golden frames embedded in the header decode on the PC side to their values (the firmware checks at boot that it can build the same frames); the golden values cannot hide a wrong field order or sign; nothing is sent before the self-test; the config is resent every second and the PC side does not stop recording on a resend, but does stop on a real change; no logs go over USB |
+| `test_field_bench.py` | Stage-0 bench test and calibration files of the field-measurement helper (`apps/field`). Simulates two units and the RF path: roles are swapped by command so each attenuator step needs one knob turn for both directions; the relayed partner config is not mistaken for the unit's own; nominal inputs never produce a dBm calibration file; with power-meter readings the RX offsets and the TX output table (with its source) come out without re-measuring; leaks, missing dither and saturation are caught; losses on the way to the PC are not mixed with radio losses; the calibration file is copied by unit ID for the running setting; continuous transmit uses the measurement transmit path and its report format is read the same way on the PC; the probe measures both directions without asking the operator anything and fails samples lost on the USB separately from radio losses (a sequence reset is not counted); the firmware version is checked against the repository commit, and a version reported by the device is passed to git only when it is hex; a probe folder is never evaluated as a bench test |
+| `test_field_monitor.py` | The `monitor` command of the field-measurement helper (`apps/field`), which only shows reception and writes nothing: losses are split into radio and USB (the gap in `seq` minus the gap in `sample_seq`); a sequence reset after a restart is not counted as a loss; a config is announced once and again when it changes, and only a TX config shows the output power; a quiet second says so and CRC errors are shown. Also the `settings` command that shows and changes a unit's settings: out-of-range values are stopped before sending; the role is sent last; the unit's own config is read, not a relayed TX config; a unit that acknowledges a change but keeps the old value is caught; a refusal from the unit is reported as is |
+| `test_field_gnss.py` | The GNSS raw-data logger of the field-measurement helper (`apps/field`, `gnss log`): UBX frames are found in a byte stream mixed with NMEA and split across reads, and broken frames are counted; the version is queried before the outputs are set in the RAM layer only, and the folder is made only after an ACK (no folder on a NAK or silence); while logging, UART1 is raised to 115200 with NMEA off, no folder is made if the receiver does not answer at the new speed, and the speed is put back at the end (a receiver left at the logging speed by an earlier run is still found); bytes received before the header are kept, and the raw log equals the bytes received; missing RAWX epochs are counted, but a receiver restart is not; an unreadable message does not stop the logging |
+| `test_field_ntrip.py` | NTRIP correction forwarding of the field-measurement helper (`apps/field`, `gnss log --ntrip`): the caster spec is read, and credentials are sent only with a user name; GGA is made from NAV-PVT and is not sent without a solution; RTCM 3 framing is checked against the published 1005 sample down to the CRC and the station position, and broken frames and false headers are counted without losing the next frame; the reply head (ICY, HTTP, source table, 401) is told apart, a refusal is reported with its reason and the client reconnects (the wait doubles, and resets after corrections arrived); silence drops the connection and a stop ends quietly; data reach the receiver in the order received, the same bytes are kept in the folder, and the password is written nowhere |
 | `test_golden_links.py`   | Regression corpus: freezes every `LinkBudgetResult` field for the representative links in `tests/data/golden_links.json` (recomputed from stored real-DEM elevations, no network) plus the purity invariants A-1/A-2 rely on |
 | `test_ground_reflection.py` | Ground-reflection (two-ray) amplitude envelope: applicability guard when the specular point sits too close to either end, and a regression that this module never changes the existing calculation path (3.4 step 4) |
 | `test_model_preconditions.py` | Checks each model's preconditions (its domain of validity) against every link in the regression corpus. The current predicate: no ground-reflection envelope on a link with diffraction loss (a terrain-obstructed path). Known counterexamples are marked per link with a strict xfail carrying the issue ID, so fixing them turns into a red xpass. It also checks that the corpus contains both shapes, so the predicate is never vacuous |
@@ -1238,6 +1278,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
+| `test_experiments_probes.py` | Static gate keeping the probes under `experiments/` in step with the product. Calls into `core`/`report` collected via AST must `bind` against the current signature, and a probe printing characters the default console cannot encode must rebuild `sys.stdout`. The probes are never executed here (their argument, data, network and hardware prerequisites differ too much for CI) — they are only read. The number of calls actually checked is asserted too, so the gate cannot pass silently |
 | `test_env_facts.py`      | Gate for the environment-facts collection layer (`core/env_facts.py`). TX/RX coordinates embedded in the log or config are redacted (`start`/`end`, the log's `start=(…) end=(…)`, the DEM warning's `lat=… lon=…`); a proxy URL keeps its host but has its credentials masked; `collect()` returns the 5 keys shared by the stamp and the diagnostics ZIP (legacy-layout detection is a separate `config.legacy_leftovers()` path, not part of this layer) |
 | `test_diagnostics.py`    | Gate for the diagnostic package (`core/diagnostics.py`). Usernames in paths are masked; no artifact is included in the zip by default (only the ones explicitly picked land under `results/`); the zip is written atomically (no partial zip or leftover temp file on failure) |
 | `test_repo_hygiene.py`   | Guard against files that must never be tracked (OneDrive sync-conflict copies, non-publishable classes, runtime logs, oversized files). Shares one decision path with `.git/hooks/pre-commit`, so commit time and CI enforce the same rule |

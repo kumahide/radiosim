@@ -35,6 +35,12 @@ import time
 import urllib.error
 import urllib.request
 
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
+
 ROOT = pathlib.Path(__file__).resolve().parents[2]
 HERE = pathlib.Path(__file__).resolve().parent
 OLLAMA = "http://localhost:11434"

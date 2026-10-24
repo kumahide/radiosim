@@ -167,6 +167,8 @@ class TestTheNewIslandsDoNotOverreach:
         pytest.param(["requirements.txt"], id="依存"),
         pytest.param(["icon.png"], id="同梱資産"),
         pytest.param(["somewhere_new/x.py"], id="どの規則にも無い面"),
+        pytest.param(["apps/other/x.py"], id="Field 以外のアプリ"),
+        pytest.param(["requirements-field.txt"], id="Field の依存も依存"),
     ])
     def test_unlisted_faces_fall_back_to_full(self, paths):
         assert _island_for(paths) is None, f"{paths} が部分テストに収まっている＝フルの保証が消える"

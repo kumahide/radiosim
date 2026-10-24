@@ -1720,11 +1720,18 @@ class TestRoadmapDashboardBlocksStop:
 
     @pytest.mark.parametrize("source", ["check_dashboard_rules_real",
                                         "check_inventory_real",
-                                        "check_renumber_real"])
+                                        "check_renumber_real",
+                                        "check_decided_capabilities_real"])
     def test_roadmap_self_contradictions_block(self, memcheck, monkeypatch, capsys, source):
-        """check 22〜24（I-157）も Stop を止める。"""
+        """check 22〜24（I-157）と check 29（I-244）も Stop を止める。"""
         out = self._run_main(memcheck, monkeypatch, capsys, "自己矛盾", source=source)
         assert out.get("decision") == "block"
+
+    def test_unfinished_capability_is_only_advisory(self, memcheck, monkeypatch, capsys):
+        """check 29 の「未実装なのに錨が見つかる」は作っている途中なので止めない。"""
+        out = self._run_main(memcheck, monkeypatch, capsys, "作っている途中",
+                             source="check_decided_capabilities_advice_real")
+        assert "decision" not in out and "作っている途中" in out["systemMessage"]
 
     def test_stale_trigger_is_only_advisory(self, memcheck, monkeypatch, capsys):
         """check 25 は言い回しの揺れで取りこぼすので止めない。"""
@@ -2442,6 +2449,71 @@ class TestRoadmapFormat:
                          "- 🚧 **ステージ11（RC1）**（2026-09-12〜）＝配布まで済み。",
                          "- ⬜ **ステージ12（正式）**＝未着手。") == []
 
+    # ── 子孫込みの大きさ・入れ子・全体（⑦〜⑨・2026-10-23 に踏んだ穴）──
+    def test_an_item_grown_through_its_children_is_flagged(self, memcheck):
+        """実例＝Field の作業順 2 は子の箇条 1 本ずつは 1000 字未満のまま、子孫込みで 3 万字に育った。"""
+        kids = [f"   - ✅ **出来事 {i}**（2026-10-18）＝" + "あ" * 40 for i in range(80)]
+        assert all(len(k) < memcheck._FMT_MAX_ITEM_LEN for k in kids)
+        found = self._fmt(memcheck, "2. ✅ **920 MHz への作り直し**＝本文。", *kids)
+        assert any("子孫込み" in f and "ledger.py fold" in f for f in found)
+
+    def test_an_item_tree_at_the_limit_passes(self, memcheck):
+        head = "- ✅ **項目**＝本文。"
+        kids = ["  - 子＝" + "あ" * 900] * 3
+        last = "  - 子＝" + "あ" * (memcheck._FMT_MAX_TREE_LEN - len(head)
+                                    - sum(map(len, kids)) - len("  - 子＝"))
+        assert len(head) + sum(map(len, kids)) + len(last) == memcheck._FMT_MAX_TREE_LEN
+        assert self._fmt(memcheck, head, *kids, last) == []
+        assert self._fmt(memcheck, head, *kids, last + "あ")
+
+    def test_a_blank_line_or_continuation_does_not_hide_children(self, memcheck):
+        found = self._fmt(memcheck, "- ✅ **項目**＝本文。", "",
+                          "  - 子＝" + "あ" * 900, "    続きの行" + "い" * 900, "",
+                          "  - 子＝" + "う" * 900, "  - 子＝" + "え" * 900)
+        assert any("子孫込み" in f for f in found)
+
+    def test_a_paragraph_ends_the_tree(self, memcheck):
+        """字下げの無い地の文は項目の外＝項目の字数に数えない（⑥も段落は見ない）。"""
+        assert self._fmt(memcheck, "- ✅ **項目**＝本文。", "地の文。" * 900,
+                         "- ⬜ **次の項目**＝本文。") == []
+
+    def test_great_grandchildren_are_flagged(self, memcheck):
+        found = self._fmt(memcheck, "- a", "  - b", "    - c", "      - d")
+        assert any("入れ子が 3 段" in f for f in found)
+
+    def test_depth_counts_levels_not_indent_width(self, memcheck):
+        """`10. ` の子は 4 字下げ＝字下げの幅を割ると 1 段多く数えてしまう。"""
+        assert self._fmt(memcheck, "10. 🚧 **基板とケース**＝本文。",
+                         "    - 🚧 設計項目④＝本文。", "      - ⬜ 未決＝本文。",
+                         "    - 子に戻る", "- 次の項目") == []
+
+    def test_the_whole_file_is_capped(self, memcheck):
+        """項目を分けて⑦を逃れても、全体で止まる。"""
+        items = [f"- ⬜ **項目 {i}**＝" + "あ" * 900 for i in range(70)]
+        found = self._fmt(memcheck, *items)
+        assert not any("子孫込み" in f for f in found)
+        assert any("全体が" in f for f in found)
+
+    def test_fold_copies_the_tree_verbatim_into_the_archive(self, memcheck):
+        main = ["### 🧭 Field の作業順（2026-09-27 確定）", "", "1. ✅ **組み立て**＝本文。",
+                "   - 子＝出来事。", "", "     - 孫＝出来事。", "2. ⬜ **次**＝本文。"]
+        archive = ["# 履歴", "", "## 🗄 済んだ版", "", "本文。", ""]
+        out = memcheck.fold_roadmap_item(main, archive, 3, "2026-10-23")
+        assert out[:5] == archive[:5]
+        h2 = out.index(memcheck.FOLD_H2)
+        h3 = out.index("### 📋 🧭 Field の作業順（2026-09-27 確定） ／ 組み立て（2026-10-23 に畳んだ）")
+        assert h2 < h3 and out[h3 + 2:h3 + 6] == main[2:6]
+        assert "次" not in "".join(out[h3:])
+        # 2 回目は同じ H2 の末尾（次の H2 の前）へ足す
+        out2 = memcheck.fold_roadmap_item(main, out + ["## 📋 その後の節", "本文。"], 7, "2026-10-24")
+        assert out2.count(memcheck.FOLD_H2) == 1
+        assert out2.index("### 📋 🧭 Field の作業順（2026-09-27 確定） ／ 次（2026-10-24 に畳んだ）") \
+            < out2.index("## 📋 その後の節")
+
+    def test_fold_rejects_a_line_that_is_not_an_item_head(self, memcheck):
+        with pytest.raises(ValueError):
+            memcheck.fold_roadmap_item(["### 見出し", "- a", "  - b"], [], 3, "2026-10-23")
+
     def test_findings_are_capped(self, memcheck):
         found = self._fmt(memcheck, *["- 🆕 **x**"] * 40)
         assert len(found) == memcheck._FMT_MAX_FINDINGS + 2     # 見出し行＋「ほか N 件」
@@ -2598,6 +2670,98 @@ class TestInventoryH2IsPermanent:
 
     def test_real_roadmap_is_clean(self, memcheck):
         assert memcheck.check_inventory_h2_real() == []
+
+
+class TestDecidedCapabilities:
+    """正典が「決定済み」とした機能がコードから消えたら止める（check 29・I-244）。
+
+    2026-10-18、`18d3515` で Field の 2.4 GHz の経路を丸ごと消した。正典 §4 は
+    「2.4 GHz も積む・後から対照として足す」と決めていたが、ファームにはテストが
+    無く、消えても何も落ちなかった（ユーザーの質問で気づいた）。
+    """
+
+    HEADER = ["| 決定済みの機能 | 状態 | 錨 |", "|---|---|---|"]
+    OPEN = {"I-243": "未着手（版割り未決）"}
+    SOURCES = {"I-243": "「2.4 GHz を足すのは決定事項です、時期は未定でOKです。」"}
+
+    @pytest.fixture
+    def root(self, tmp_path):
+        (tmp_path / "fw").mkdir()
+        (tmp_path / "fw" / "radio.c").write_text("e220_send(frame, n);\n", encoding="utf-8")
+        return tmp_path
+
+    def _run(self, memcheck, root, *rows, states=None, sources=None):
+        return memcheck.check_decided_capabilities(
+            self.HEADER + list(rows),
+            self.OPEN if states is None else states,
+            self.SOURCES if sources is None else sources,
+            root)
+
+    def test_an_implemented_capability_deleted_from_the_code_is_flagged(self, memcheck, root):
+        """① 実際に起きた形＝`実装済み` の錨がコードから消えた。"""
+        block, _ = self._run(memcheck, root,
+                             "| 2.4 GHz | 実装済み | `fw/*.c` に `esp_wifi_80211_tx(` |")
+        assert len(block) == 1 and "esp_wifi_80211_tx(" in block[0]
+
+    def test_a_glob_matching_no_file_is_flagged(self, memcheck, root):
+        block, _ = self._run(memcheck, root, "| 920 MHz | 実装済み | `gone/*.c` に `e220_send(` |")
+        assert len(block) == 1
+
+    def test_an_implemented_capability_in_the_code_passes(self, memcheck, root):
+        assert self._run(memcheck, root,
+                         "| 920 MHz | 実装済み | `fw/*.c` に `e220_send(` |") == ([], [])
+
+    @pytest.mark.parametrize("states, sources, word", [
+        ({}, {}, "台帳に無い"),
+        ({"I-243": "**済**（`abc1234`）"}, SOURCES, "閉じている"),
+        (OPEN, {"I-243": "**原文なし**（Claude が設計で発見）"}, "原文なし"),
+    ])
+    def test_an_undecided_or_closed_id_is_flagged(self, memcheck, root, states, sources, word):
+        """② 未実装の行は、開いていてユーザーの言葉を持つ台帳の項目に結ぶ。"""
+        block, _ = self._run(memcheck, root, "| 2.4 GHz | 未実装 [[I-243]] | — |",
+                             states=states, sources=sources)
+        assert len(block) == 1 and word in block[0]
+
+    def test_an_unimplemented_capability_found_in_the_code_is_advice_only(self, memcheck, root):
+        """作っている途中で止めると、出来上がる前に `実装済み` へ書き換えさせる（壊れ方③）。"""
+        block, advice = self._run(memcheck, root,
+                                  "| 920 MHz | 未実装 [[I-243]] | `fw/*.c` に `e220_send(` |")
+        assert block == [] and len(advice) == 1
+
+    def test_a_missing_or_empty_table_is_flagged(self, memcheck, root):
+        """③ 表ごと消すと緑になる形を塞ぐ（実証31）。"""
+        assert len(memcheck.check_decided_capabilities(["# 正典"], {}, {}, root)[0]) == 1
+        assert len(memcheck.check_decided_capabilities(self.HEADER, {}, {}, root)[0]) == 1
+
+    @pytest.mark.parametrize("row", [
+        "| 2.4 GHz | 予定 | — |",
+        "| 2.4 GHz | 未実装 | — |",
+        "| 920 MHz | 実装済み | — |",
+        "| 920 MHz | 実装済み | fw/radio.c の e220_send |",
+        "| 920 MHz | 実装済み |",
+    ])
+    def test_an_unreadable_row_is_flagged(self, memcheck, root, row):
+        assert len(self._run(memcheck, root, row)[0]) == 1
+
+    def test_the_source_column_is_read_per_item(self, memcheck):
+        sources = memcheck.issue_sources_by_id([
+            "### ★ I-243: 2.4 GHz を戻す",
+            "- ★ **原文（出所の言葉のまま・言い換えない）**: 「決定事項です」",
+            "### B-352: 机上試験",
+            "- ★ **原文（出所の言葉のまま・言い換えない）**: **原文なし**（Claude）",
+        ])
+        assert sources == {"I-243": "「決定事項です」", "B-352": "**原文なし**（Claude）"}
+
+    def test_real_decided_capabilities_table_is_read(self, memcheck):
+        """実データの表を読めている（読めずに緑、を塞ぐ）。"""
+        path = memcheck.MEM_DIR / memcheck._CAPABILITY_CANON
+        rows = memcheck.capability_rows(path.read_text(encoding="utf-8").splitlines())
+        assert rows and any(cells[1] == "実装済み" for _, cells in rows)
+
+    def test_real_decided_capabilities_are_clean(self, memcheck):
+        """実データで誤検知 0（止めるものも助言も）。"""
+        assert memcheck.check_decided_capabilities_real() == []
+        assert memcheck.check_decided_capabilities_advice_real() == []
 
 
 class TestRenumberLeftovers:
@@ -4065,6 +4229,32 @@ class TestBackupTargets:
 
         assert (dest / ".claude" / "keep.py").is_file(), "ふつうのファイルまで落とした"
         assert not (dest / ".claude" / "worktrees" / "relay").exists(), "ワークツリーを運んだ"
+
+    def test_it_carries_the_field_data_outside_the_tree(self, mirror):
+        """🔴 実測の記録は作業ツリーの外にあり、取り直せない（2026-10-22 に退避の網から外れていた）。"""
+        names = [name for _src, name in mirror.OUTSIDE_TARGETS]
+        assert "field-data" in names
+        assert "radiosim-refs" in names
+        for src, _name in mirror.OUTSIDE_TARGETS:
+            assert os.path.dirname(src) == os.path.dirname(mirror.REPO_DIR), "作業ツリーの隣から導いていない"
+
+    def test_outside_targets_go_to_the_box_but_not_the_freeze(self, tmp_path, mirror, monkeypatch):
+        """⛔ 外のフォルダは OneDrive の箱にだけ運ぶ＝凍結リポ（git の履歴）には入れない。"""
+        outside = tmp_path / "field-data"
+        outside.mkdir()
+        (outside / "obs.ubx").write_bytes(b"\xb5b")
+        box, freeze = tmp_path / "OneDrive" / "box", tmp_path / "freeze"
+        monkeypatch.setattr(mirror, "REPO_DIR", str(tmp_path / "repo"))
+        monkeypatch.setattr(mirror, "BACKUP_TARGETS", ())
+        monkeypatch.setattr(mirror, "OUTSIDE_TARGETS", ((str(outside), "field-data"),))
+        monkeypatch.setattr(mirror, "BACKUP_DIR", str(box))
+        (tmp_path / "OneDrive").mkdir()
+
+        mirror._backup()
+        mirror._copy_into(str(freeze), mirror.FREEZE_SKIP_SUFFIX)
+
+        assert (box / "field-data" / "obs.ubx").is_file(), "箱へ運んでいない"
+        assert not (freeze / "field-data").exists(), "凍結へ運んだ"
 
 
 class TestFreezeGuard:

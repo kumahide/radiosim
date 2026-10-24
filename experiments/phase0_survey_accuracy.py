@@ -2,7 +2,7 @@
 experiments/phase0_survey_accuracy.py
 =====================================
 **離陸点の測量精度 ±N m が余裕度[dB]を何 dB 動かすか**の感度逆算＝段階 0。
-RadioSim Tracer の精度目標（RTK が要るか）を勘でなく感度で決めるための材料。
+RadioSim Field の精度目標（RTK が要るか）を勘でなく感度で決めるための材料。
 
 **これは製品コードではない。** どのモジュールからも import されず、CI のゲート対象でも
 ない（`experiments/` は「判断の根拠を再実行できる形で残す」ための置き場）。
@@ -10,7 +10,7 @@ RadioSim Tracer の精度目標（RTK が要るか）を勘でなく感度で決
 再計算するだけ（回帰コーパスと同じ入力・同じ計算経路）。
 
 ## なぜ h（アンテナ高）を振ると「測量精度」の話になるのか
-memory: project-radiosim-tracer §9 の方式＝**標高（ジオイド基準）を作業座標にし、
+memory: project-radiosim-field §9 の方式＝**標高（ジオイド基準）を作業座標にし、
 垂直は「離陸点の標高 ＋ 気圧相対高度」**。この方式の効果は「誤差の場所が移る」こと＝
 機体の垂直位置の絶対精度を支配するのは気圧計ではなく**離陸点の標高の絶対精度**で、
 その誤差はフライト全体に**一定オフセット**として乗る。
@@ -57,6 +57,12 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 
 from core import models              # noqa: E402
 from core import simulation as sim   # noqa: E402
+
+for _stream in (sys.stdout, sys.stderr):
+    try:                                    # 既定のコンソールは cp932（B-119 で踏んだ）
+        _stream.reconfigure(encoding="utf-8", errors="backslashreplace")  # type: ignore[union-attr]
+    except Exception:
+        pass
 
 _CORPUS = os.path.join(os.path.dirname(os.path.abspath(__file__)),
                        "..", "tests", "data", "golden_links.json")

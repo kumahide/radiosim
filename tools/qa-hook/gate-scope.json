@@ -57,7 +57,8 @@
         "tests/test_commit_gate_scope.py",
         "tests/test_layers.py",
         "tests/test_smoke.py",
-        "tests/test_bundle_imports.py"
+        "tests/test_bundle_imports.py",
+        "tests/test_experiments_probes.py"
       ]
     },
     {
@@ -83,7 +84,8 @@
         "tests/test_docs_consistency.py",
         "tests/test_layers.py",
         "tests/test_smoke.py",
-        "tests/test_i18n_key_duplication.py"
+        "tests/test_i18n_key_duplication.py",
+        "tests/test_experiments_probes.py"
       ]
     }
   ],
