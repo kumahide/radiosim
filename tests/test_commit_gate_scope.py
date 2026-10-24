@@ -118,6 +118,10 @@ class TestTheNewIslandsActuallyCatch:
         assert _island_for(["tools/qa-hook/release-checklist.txt",
                             "tests/test_claude_hooks.py"]) == "qa-gate"
 
+    def test_a_field_only_commit_lands_in_the_field_island(self):
+        """Field のコミットに 9 分のフルを払わせない（2026-09-19 に部分テストを作った理由）。"""
+        assert _island_for(["apps/field/cli.py", "tests/test_field_session.py"]) == "field"
+
     def test_a_test_only_commit_runs_just_that_test(self):
         """🔴 **実際に払ったコスト**（2026-09-23）＝`.gitignore` 1 行とテスト 2 本の
         コミットでフルスイートが走った。⇒ 変えたテストそのもの＋走査系だけ。"""
@@ -180,10 +184,18 @@ class TestTheNewIslandsDoNotOverreach:
         assert _island_for(["docs/manual_ja.md", "core/version.py"]) is None
 
     def test_no_island_covers_product_code(self):
-        """部分テストと範囲で済む面の宣言そのものの見張り＝製品コードの面を絞らせない。"""
+        """部分テストと範囲で済む面の宣言そのものの見張り＝製品コードの面を絞らせない。
+
+        例外は 1 つ＝部分テスト `field` の `apps/field/`（2026-09-27）。本体が import しない
+        別アプリで、`apps/` の下のほかのアプリは部分テストに当たらずフルへ倒れる
+        （`test_unlisted_faces_fall_back_to_full` の「Field 以外のアプリ」）。
+        """
+        allowed = {("field", "apps/field/")}
         prefixes = [(i["name"], p) for i in _scope()["commit_islands"] for p in i["prefixes"]]
         prefixes += [("scoped_faces", p) for p in _scope()["scoped_faces"]]
         for name, prefix in prefixes:
+            if (name, prefix) in allowed:
+                continue
             for forbidden in ("core/", "views/", "report/", "lang/", "apps/",
                               "main.py", "tests/conftest", "requirements",
                               "pyproject.toml"):
