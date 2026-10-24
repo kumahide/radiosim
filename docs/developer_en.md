@@ -526,7 +526,7 @@ An input form is displayed on startup.
 Clicking the button runs data retrieval in two phases.
 
 1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This phase runs only while the built-in GSI source is selected** — for any other source the run path in `views/launcher.py` skips it and goes straight to the calculation. With a DEM source added through a declaration file, only the points the elevation fetch needs are downloaded. To load an area into the cache ahead of time, use a range download in the map's Cache Management mode, which works for added DEM sources too from 3.6 (`_prefetch_generic` behind `dem_prefetch.prefetch_tiles`).
-2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates and sample count were used previously, cached data is loaded instantly.
+2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates, sample count, resolution level and DEM source were used previously, cached data is loaded instantly.
 
 > **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC** (the cache file's modification time, `dem.tile_acquired_date`), not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). Computing this value never touches the network. To recompute with fresh tiles, force re-download that area in Cache Management mode.
 
@@ -821,7 +821,7 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 - **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). **Only while the built-in GSI source is selected**; a declared DEM source skips it (range download and force re-download in Cache Management cover every source from 3.6)
 - **Memory cache**: Tiles stored in process memory (key: `(layer_id, xtile, ytile)`)
 - **Disk cache**: Tiles saved to `terrain_cache/{layer_id}/{xtile}/{ytile}.png`, persists across sessions. From 3.6, DEM sources added via a declaration file are kept separately under `terrain_cache/external/{source_id}/{definition hash}/{layer_id}/…` (`DEM_EXTERNAL_SUBDIR` in `core/dem.py`, so they cannot collide with built-in names)
-- **Terrain cache**: If TX/RX coordinates and sample count match a previous run, DEM retrieval is skipped entirely. Deleting or force-refetching cached tiles advances an invalidation epoch (`_cache_epoch` in `core/dem.py`); entries from an older epoch are not used, and a result whose fetch overlapped an epoch change is not stored
+- **Terrain cache**: If TX/RX coordinates, sample count, resolution level and DEM source match a previous run, DEM retrieval is skipped entirely. Deleting or force-refetching cached tiles advances an invalidation epoch (`_cache_epoch` in `core/dem.py`); entries from an older epoch are not used, and a result whose fetch overlapped an epoch change is not stored
 
 ---
 
