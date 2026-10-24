@@ -249,6 +249,23 @@ def test_tests_walkers_cover_every_test_that_walks_tests_dir():
     assert not missing, f"tests/ を歩くのに tests_walkers に無い: {missing}"
 
 
+def test_a_test_file_in_an_island_still_runs_tests_walkers():
+    """🔴 B-368（2026-10-24・Codex 174 巡目）＝部分テストの prefixes に当たる試験ファイルは、
+    `islandFor()` が部分テストの枝で次へ進み、`tests_walkers` を足していなかった
+    （`qa-gate` の 7 本で `test_window_fit.py` の 2 本が抜けた）。部分テストに当たっても
+    当たらなくても、試験ファイルを変えたコミットは走査系を全部走らせること。"""
+    scope = _scope()
+    samples = [(i["name"], p if p.endswith(".py") else f"{p}probe.py")
+               for i in scope["commit_islands"] for p in i["prefixes"]
+               if p.startswith("tests/test_")]
+    assert samples, "tests/ の prefixes を持つ部分テストが無い＝見張りが空振りしている"
+    for name, path in samples:
+        hit = _plan([path])
+        assert hit is not None, f"{path} がフルへ倒れた＝見張りの前提が崩れた"
+        missing = [t for t in scope["tests_walkers"] if t not in hit["tests"]]
+        assert not missing, f"部分テスト「{name}」の {path} で tests_walkers が抜ける: {missing}"
+
+
 class TestDocsIslandCoversEveryTestThatReadsDocs:
     """壊れ方③＝間違ったものを要求している（部分テストの tests が実態より薄い）。
 

@@ -237,7 +237,7 @@ export function versionReaders(cwd) {
  *  or null (→ full suite). Full when: nothing changed, any path is on a
  *  `full_prefixes` face, or any path matches no rule at all (fail-closed).
  *  Otherwise the UNION of: every island a path falls in, a changed
- *  `tests/test_*.py` itself (+ `tests_walkers`), and the readers of a
+ *  `tests/test_*.py` itself (+ `tests_walkers`, island or not), and the readers of a
  *  `scoped_faces` path — plus `scanners` whenever anything was scoped.
  *  core/version.py counts as scoped (its readers) only while its sole change
  *  is the version line (`versionOnly`; computed from the working tree when
@@ -264,11 +264,13 @@ export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {
         hit = true;
       }
     }
+    // A changed test runs `tests_walkers` even when an island claims it (B-368).
+    const isTest = TEST_FILE.test(p);
+    if (isTest) (scope.tests_walkers || []).forEach((t) => tests.add(t));
     if (hit) continue;
-    if (TEST_FILE.test(p)) {
+    if (isTest) {
       names.add("tests");
       tests.add(p);
-      (scope.tests_walkers || []).forEach((t) => tests.add(t));
       continue;
     }
     const face = (scope.scoped_faces || []).find((pre) => p.startsWith(pre));
