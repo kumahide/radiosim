@@ -234,6 +234,24 @@ class TestKeyFollowsContentNotHistory:
         _git(repo, "add", "app.py")
         assert _key(repo) == edited
 
+    def test_a_same_instant_same_size_edit_moves_the_key(self, repo):
+        """B-363：日時も大きさも索引の記録と同じ編集を、git は racy-git の保護でしか見抜けない。
+
+        保護の基準は**索引のファイル日時**＝鍵の計算が索引を写したときに日時が「今」へ
+        動くと（Linux の `copyFileSync`）、写しの中では保護が効かずに中身の違いを見落とした。
+        CI で「同じ秒に収まった回」だけ落ちていた（上の staging の試験）のを、条件を
+        毎回作って確実に落とす形にした。ctime は動かせないので比較から外す。
+        """
+        _git(repo, "config", "core.trustctime", "false")
+        target = os.path.join(repo, "app.py")
+        stamp = os.stat(target).st_mtime_ns
+        before = _key(repo)
+        with open(target, "w", encoding="utf-8") as f:
+            f.write("x = 7\n")  # 元の "x = 1\n" と同じ大きさ
+        os.utime(target, ns=(stamp, stamp))
+        os.utime(os.path.join(repo, ".git", "index"), ns=(stamp, stamp))
+        assert _key(repo) != before
+
     def test_an_untracked_directory_gets_a_key_and_moves_it(self, repo):
         """以前は「鍵を作れない＝必ず走る」だった。木なら中身で鍵になる。"""
         d = os.path.join(repo, "pkg")
