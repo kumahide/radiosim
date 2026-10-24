@@ -2218,6 +2218,22 @@ class TestStageMarksAheadOfLedger:
                    "## 🔜 3.6 — 版"]
         assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
 
+    def test_a_decision_mark_naming_an_open_issue_is_not_checked(self, memcheck):
+        """O-005＝判断点・宿題の `- ✅` は「決めた」の印＝開いた課題を挙げても鳴らない
+        （4.0 の判断点 14 件を誤検知して a1 の宣言が止まった実例）。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ✅ ① REVIEW の範囲＝全組み合わせで動かす（[[B-248]]）",
+                   "- ✅ **REVIEW の範囲**＝材料＝[[B-248]]"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
+    def test_a_pending_stage_line_is_not_checked(self, memcheck):
+        """O-005＝ステージの行でも ⬜ なら突き合わせない（`_is_stage_line()` と完了の印の両方が要る）。"""
+        states = memcheck.issue_states_by_id(self._OPEN_ISSUE)
+        roadmap = ["## 🔜 3.6 — 版",
+                   "- ⬜ **ステージ1（x）**＝[[B-248]]"]
+        assert memcheck.check_stage_marks_ahead_of_ledger(roadmap, states, "3.6") == []
+
     def test_real_data_is_clean(self, memcheck):
         """実データで鳴らないこと（B-248・I-171・I-172・I-174 を対応済みへ書き換えたので 0 件）。"""
         assert memcheck.check_stage_ahead_real() == []
@@ -2442,6 +2458,18 @@ class TestRoadmapFormat:
                     "- **ステージ1（本丸）＝実装・検証済み（2026-09-03）・コミット済み（`d34d755`）**＝移設。",
                     "- **ステージ4（防火扉②＝DEM ソース）**＝分割→宣言ファイル。"):
             assert any("ステージの行" in f for f in self._fmt(memcheck, old)), old
+
+    def test_the_broken_stage_forms_are_flagged(self, memcheck):
+        """O-005＝check 21・26 が見ない崩れた 3 形（太字なし・数字の前の空白・`*` の箇条）は 19 が赤にする。"""
+        for broken in ("- ✅ ステージ1（x）＝[[I-235]]",
+                       "- ✅ **ステージ 3（x）**（2026-10-24）＝本文。",
+                       "* ✅ **ステージ1（x）**（2026-10-24）＝本文。"):
+            assert any("ステージの行" in f for f in self._fmt(memcheck, broken)), broken
+
+    def test_a_decision_mentioning_a_stage_is_not_a_stage_line(self, memcheck):
+        """判断点の文中の「ステージ0」は当たらない（O-005 で広げた判定の誤検知の見張り）。"""
+        assert not any("ステージの行" in f for f in self._fmt(
+            memcheck, "- ✅ ⑫ オープンコアの分割をステージ0 からステージ8 へ＝本文。"))
 
     def test_the_new_stage_form_passes(self, memcheck):
         assert self._fmt(memcheck,
