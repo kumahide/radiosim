@@ -5,8 +5,7 @@
 > **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Help → Open Documentation shows inside the app.
 > To run it from source or work on the code, see [developer_en.md](developer_en.md).
 
-> 📣 **Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link".** The changes planned after 3.x (the `REVIEW` verdict and the rest of this manual's "Advance notice") arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only. No release date for Link 1.0 has been set yet.
-> - **Link is a separate app.** RadioSim Pro's "Check for Updates" will not tell you about it.
+> 📣 **Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link".** The changes planned after 3.x (the `REVIEW` verdict and the rest of this manual's "Advance notice") arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only.
 > - **Project files (`.rsproj`) saved by 3.x open in Link 1.0** (→ [Project Files (.rsproj)](#project-files-rsproj)).
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
