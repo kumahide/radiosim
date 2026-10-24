@@ -996,7 +996,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
 
-⚠️ **"High" and "medium" produce a staircase.** Elevation is constant inside one DEM pixel, so each pixel the path crosses contributes **two rows — where the path enters it and where it leaves**. Distances are written at 0.1 m resolution, so **two neighbouring rows can show the same distance** (a different elevation on the second one is the pixel boundary). "Low" stays evenly spaced.
+⚠️ **"High" and "medium" produce a staircase** (unless the count hits the upper limit on an extremely long path, where they fall back to even spacing). Elevation is constant inside one DEM pixel, so each pixel the path crosses contributes **two rows — where the path enters it and where it leaves**. Distances are written at 0.1 m resolution, so **two neighbouring rows can show the same distance** (a different elevation on the second one is the pixel boundary). "Low" stays evenly spaced.
 
 ---
 
