@@ -11,7 +11,8 @@
     rinex … `gnss log` の生ログ（`gnss.ubx`）を RINEX 3.04 の観測と航法へ変える。
             `--rtcm` なら同じ記録の `ntrip.rtcm`（NTRIP の局の MSM）を局の観測へ変える
             ＝局の申告座標（`ntrip.json` の 1005）を電子基準点で当て直す材料（航法は生ログ側を使う）。
-    solve … 観測地の設定（`site.json`）に従い、基準局の成果で基線解析して成果と比べる。
+    solve … 観測地の設定（`site.json`）に従い、基準局の成果で基線解析して成果と比べる（標準）。
+    solve-multi … 実験機能 Multi-base PPK（⑩）＝`site.json` の `bases` から局を選び、局ごとに独立に解いて統合する。
     semidyna … 1 点の元期→今期の補正量を出す（確かめ用）。
 
 置き場（RTKLIB-EX の取り寄せ方の決定・2026-10-18）:
@@ -49,6 +50,19 @@
        「GSI の相対値 − AOAD/M_T の定義 ＋ AOAD/M_T の絶対値」で 0.1〜0.6 mm（RMS）で再現＝符号の取り決めは同じ。
        効きは 3857 で 2〜3 mm（−5 cm の原因ではない）。置き場に無ければ従来どおり ③ の NONE で代える。
 
+🧪 実験機能 Multi-base PPK（⑩・2026-10-25）＝標準は単一基準局の `solve` のまま:
+    ⑩ 10〜35 km では基線長より**局ごとの差**（±5 cm・アンテナとレドームの型で並び、日をまたいで繰り返す）が
+       効く。房総の電子基準点 10 局×3 日の 588 本で、1 局（高低差 100 m 未満の中で最短）の |差| の 68% 約 5 cm・
+       95% 約 10 cm、近い 3 局の平均で 3.9・7.1 cm。⇒ `solve-multi` は局ごとに `<out>/<局番号>/` で
+       `rnx2rtkp` を独立に回し、平均（既定）と中央値を並べる。
+       事前選択＝解けない局（付属標・観測が無い・窓と重ならない・アンテナが ANTEX に無い）と外す局
+       （高低差 `TROPO_DH_WARN_M` 以上・窓の覆いが `MULTI_MIN_COVERAGE` 未満・アンテナの型が空）を除き、
+       近い順に既定 3 局。`--bases 3036,3030` で上書き（外す理由は警告だけ）。
+       統合＝最後の回が Fix の局だけ（`solve` は Q に関係なく最後の回を採る＝その落とし穴を繰り返さない）。
+       局間の高さの最大差が `--spread-warn`（既定 0.10 m）を超える・Fix の局が 2 局未満なら ⚠️ を出し、
+       精度を保証しない。結果は `<out>/multi.json` にも書く。
+       3857 の 1 本目を富津・市原1・鹿野山で解くと −0.052・+0.039・+0.12 m（最大差 0.17 m で ⚠️）。
+
 `site.json`（観測 1 回ぶん・置き場はリポジトリの外＝`D:\\dev\\field-data\\gnss\\` の下）:
     {
       "rover": {"obs": "rover.obs", "nav": "rover.nav",
@@ -65,11 +79,14 @@
     基準局の型はヘッダから読む＝`rinex --rtcm` の局（型が空）を基準局に据えても同じく補正をかけない
     （現地の見当づけ＝NTRIP の局を基準局にして、電子基準点の 1 時間ごとのファイルを待たずに解く）。
     `ref.epoch`＝比べる座標の元期／今期（既定 "元期"＝成果）。"不明"（局の申告など）なら両方で比べる。
+    `solve-multi` は `base` の代わりに `bases`（`base` と同じ形の配列・`code` は局ごとに別）を読む。
 
 実行（製品の venv で）:
     python experiments/field_ppk.py setup
     python experiments/field_ppk.py rinex <gnss-dir> --out DIR [--marker NAME]
     python experiments/field_ppk.py solve <site.json> [--out DIR] [--no-semidyna] [--tropo est]
+    python experiments/field_ppk.py solve-multi <site.json> [--out DIR] [--n 3] [--bases 3036,3030]
+                                    [--combine mean|median] [--spread-warn 0.10]
     python experiments/field_ppk.py semidyna <緯度> <経度>
 
 中野の再現（2026-10-18・この道具での合格の基準）:
@@ -84,10 +101,12 @@ import math
 import re
 import shutil
 import ssl
+import statistics
 import subprocess
 import sys
 import urllib.request
 import zipfile
+from datetime import datetime, timedelta
 from pathlib import Path
 
 for _stream in (sys.stdout, sys.stderr):
@@ -563,16 +582,13 @@ def local_file(base_dir, rel, out):
     return p
 
 
-def cmd_solve(args):
-    site_path = Path(args.site).resolve()
-    site = json.loads(site_path.read_text(encoding="utf-8"))
-    sdir = site_path.parent
-    out = Path(args.out).resolve() if args.out else sdir / "ppk"
-    out.mkdir(parents=True, exist_ok=True)
-    rover, base, ref = site["rover"], site["base"], site.get("ref")
+def is_auxiliary(base):
+    """⑤ 成果が付属標（等級種別「電子基準点(付)」）か。"""
+    return "(付)" in base.get("grade", "") or "（付）" in base.get("grade", "")
 
-    if "(付)" in base.get("grade", "") or "（付）" in base.get("grade", ""):
-        sys.exit(f"基準局の成果が付属標（{base['grade']}）＝本点の成果を使う（⑤）")
+
+def load_models(args):
+    """ANTEX（の型の一覧）・補正パラメータ・GSI_PCV を読む＝(atx, known, table, gsi)。"""
     atx = Path(args.atx or Path(args.home) / ANTEX["name"]).resolve()
     known = antex_types(atx)
     table = None if args.no_semidyna else load_semidyna(Path(args.par or Path(args.home) / SEMIDYNA["name"]))
@@ -584,10 +600,69 @@ def cmd_solve(args):
             print(f"  GSI_PCV: {gsi_path}（{gsi[0]}・{len(gsi[1])} 項目）")
         elif args.gsi_pcv:
             sys.exit(f"{gsi_path} がありません")
+    return atx, known, table, gsi
+
+
+def ref_point(ref):
+    """比べる点の (緯度, 経度, 楕円体高) と元期の扱い。"""
+    if "h" in ref:
+        ref_h = float(ref["h"])
+    else:
+        ref_h = float(ref["H"]) + float(ref["geoid"])
+    epoch = ref.get("epoch", "元期")
+    if epoch not in ("元期", "今期", "不明"):
+        sys.exit(f"ref.epoch は 元期・今期・不明 のどれか: {epoch!r}")
+    return (parse_angle(ref["lat"]), parse_angle(ref["lon"]), ref_h), epoch
+
+
+def ref_sides(ref, sol, konki, table):
+    """比べる点の元期の扱いに従い、比べる解を [(見出し, 解), ...] で返す。"""
+    _, epoch = ref_point(ref)
+    sides = [("元期", sol)] if epoch == "元期" else [("今期", konki)] if epoch == "今期" \
+        else [("元期と見なすと", sol), ("今期と見なすと", konki)]
+    if table is None and epoch != "元期":
+        sides = [("補正なしの解と", sol)]
+    return sides
+
+
+def compare_ref(ref, sol, konki, table):
+    """比べる点との差を出し、[{"side", "n", "e", "u"}, ...] で返す。"""
+    ref_llh, _ = ref_point(ref)
+    out = []
+    for label, s in ref_sides(ref, sol, konki, table):
+        dn, de, du = neu(s, ref_llh)
+        msg = (f"「{ref.get('name', '')}」（{label}）との差: 北 {dn:+.3f}・東 {de:+.3f}・上 {du:+.3f} m"
+               f"（水平 {math.hypot(dn, de):.3f} m）")
+        if "geoid" in ref:
+            msg += f"・標高 {s[2] - float(ref['geoid']):.3f}（成果 {float(ref['H']):.3f}）"
+        print(msg)
+        out.append({"side": label, "n": dn, "e": de, "u": du})
+    return out
+
+
+def cmd_solve(args):
+    site_path = Path(args.site).resolve()
+    site = json.loads(site_path.read_text(encoding="utf-8"))
+    sdir = site_path.parent
+    out = Path(args.out).resolve() if args.out else sdir / "ppk"
+    out.mkdir(parents=True, exist_ok=True)
+    rover, base, ref = site["rover"], site["base"], site.get("ref")
+
+    if is_auxiliary(base):
+        sys.exit(f"基準局の成果が付属標（{base['grade']}）＝本点の成果を使う（⑤）")
+    atx, known, table, gsi = load_models(args)
 
     rover_obs = local_file(sdir, rover["obs"], out)
     nav = local_file(sdir, rover["nav"], out)
     base_obs = local_file(sdir, base["obs"], out)
+    r = solve_base(args, rover, rover_obs, nav, base, base_obs, out, atx, known, table, gsi)
+    if ref:
+        compare_ref(ref, r["sol"], r["konki"], table)
+
+
+def solve_base(args, rover, rover_obs, nav, base, base_obs, out, atx, known, table, gsi):
+    """基準局 1 局で基線解析し、最後の回を採る。`solve` と `solve-multi` の両方が使う。
+    返り値＝{"rows", "nfix", "last", "konki"（今期）, "sol"（元期へ戻した解）, "base_pos", "dist_km", "dh"}。"""
     used = []
     if rover.get("antenna"):
         rover_ant, how = pick_antenna(rover["antenna"], known, "移動局", gsi)
@@ -650,26 +725,285 @@ def cmd_solve(args):
     if table is not None:
         sol = to_genki(table, konki)
         print(f"  元期へ戻した解 {sol[0]:.9f}, {sol[1]:.9f}, 楕円体高 {sol[2]:.4f}")
+    return {"rows": rows, "nfix": nfix, "last": last, "konki": konki, "sol": sol,
+            "base_pos": base_pos, "dist_km": dist, "dh": dh}
+
+
+# ---------------------------------------------------------------- Multi-base PPK（実験機能）
+
+# ⑩ 局間の高さの最大差がこれを超えたら警告し、精度を保証しない。房総の 10 局×3 日で、1 局の解の
+# |差| の 95% が約 10 cm（2026-10-25）
+MULTI_SPREAD_WARN_M = 0.10
+MULTI_DEFAULT_N = 3
+# 移動局の窓（最初〜最後の回）のうち、基準局の観測が覆う割合がこれ未満なら事前選択で外す
+MULTI_MIN_COVERAGE = 0.8
+
+
+def ecef_to_llh(x, y, z):
+    """地心直交座標（m）→ GRS80 の (緯度, 経度, 楕円体高)。"""
+    lon = math.atan2(y, x)
+    p = math.hypot(x, y)
+    lat = math.atan2(z, p * (1 - E2))
+    h = 0.0
+    for _ in range(6):
+        n = radii(math.degrees(lat))[1]
+        h = p / math.cos(lat) - n
+        lat = math.atan2(z, p * (1 - E2 * n / (n + h)))
+    return math.degrees(lat), math.degrees(lon), h
+
+
+def obs_epochs(path):
+    """観測の回の時刻（datetime）の並び。RINEX 3 以降の `>` の行を読む（RINEX 2 は空になる）。
+    フラグ 2〜6（ヘッダの差し込みなど）の行は回に数えない。"""
+    out, in_header = [], True
+    with open(path, encoding="ascii", errors="replace") as f:
+        for line in f:
+            if in_header:
+                in_header = not line[60:].startswith("END OF HEADER")
+                continue
+            if line.startswith(">"):
+                p = line[1:].split()
+                if len(p) >= 7 and int(p[6]) <= 1:
+                    y, mo, d, hh, mi = (int(x) for x in p[:5])
+                    out.append(datetime(y, mo, d, hh, mi) + timedelta(seconds=float(p[5])))
+    return out
+
+
+def coverage(rover_epochs, base_epochs):
+    """基準局の観測が移動局の窓（最初〜最後の回）を覆う割合（0〜1）と、窓の中の基準局の回の数。
+    基準局の刻みは回の間隔の中央値で見る。"""
+    if not rover_epochs or len(base_epochs) < 2:
+        return 0.0, 0
+    r0, r1 = rover_epochs[0], rover_epochs[-1]
+    inside = sum(r0 <= t <= r1 for t in base_epochs)
+    step = statistics.median((b - a).total_seconds() for a, b in zip(base_epochs, base_epochs[1:]))
+    if step <= 0:
+        return 0.0, inside
+    expected = int((r1 - r0).total_seconds() // step) + 1
+    return min(inside / expected, 1.0), inside
+
+
+def antenna_status(anttype, known, gsi=None):
+    """`pick_antenna` と同じ判定を、止めず出さずに返す＝"atx"・"gsi"（⑨）・"none"（レドームを NONE で代える）・
+    "unknown"（型が空＝位相中心を補正しない）・"missing"（NONE も ANTEX に無い＝解けない）。"""
+    if not anttype:
+        return "unknown"
+    if anttype in known:
+        return "atx"
+    alt = f"{anttype[:16]:<16}NONE"
+    if alt not in known:
+        return "missing"
+    return "gsi" if gsi and anttype in gsi[1] and alt in gsi[1] else "none"
+
+
+def base_code(base):
+    return str(base.get("code") or base.get("name") or "")
+
+
+def base_label(c):
+    return f"{c['name']}（{c['code']}）" if c.get("name") and c["name"] != c["code"] else c["code"]
+
+
+def assess_base(sdir, base, rover_llh, rover_epochs, out, known, gsi):
+    """候補の局 1 つを解く前に見る＝(見立て, 観測の経路)。見立ての `fatal` は解けない理由（手動でも止める）、
+    `soft` は自動の事前選択で外す理由（手動なら警告だけ）。"""
+    code = base_code(base)
+    c = {"code": code, "name": base.get("name", ""), "base": base, "dist_km": None, "dh": None,
+         "coverage": 0.0, "overlap": 0, "antenna": None, "fatal": [], "soft": []}
+    if is_auxiliary(base):
+        c["fatal"].append(f"成果が付属標（{base['grade']}）＝本点の成果を使う（⑤）")
+    llh = (parse_angle(base["lat"]), parse_angle(base["lon"]), float(base["h"]))
+    dn, de, _ = neu(llh, rover_llh)
+    c["dist_km"] = math.hypot(dn, de) / 1000
+    c["dh"] = llh[2] - rover_llh[2]
+    if abs(c["dh"]) >= TROPO_DH_WARN_M:
+        c["soft"].append(f"高低差 {c['dh']:+.0f} m＝{TROPO_DH_WARN_M:.0f} m 以上（⑧）")
+    obs = (sdir / base.get("obs", "")).resolve()
+    if not base.get("obs") or not obs.is_file():
+        c["fatal"].append(f"観測が無い（{obs}）")
+        return c, None
+    sub = out / code
+    sub.mkdir(parents=True, exist_ok=True)
+    obs = local_file(sdir, base["obs"], sub)
+    c["coverage"], c["overlap"] = coverage(rover_epochs, obs_epochs(obs))
+    if c["overlap"] == 0:
+        c["fatal"].append("移動局の窓と重なる回が無い（RINEX 2 なら回を数えられない）")
+    elif c["coverage"] < MULTI_MIN_COVERAGE:
+        c["soft"].append(f"移動局の窓の {c['coverage']:.0%} しか覆わない（{MULTI_MIN_COVERAGE:.0%} 未満）")
+    c["antenna"] = antenna_status(antenna_of(rinex_header(obs))[1], known, gsi)
+    if c["antenna"] == "missing":
+        c["fatal"].append("アンテナの型が ANTEX に無い")
+    elif c["antenna"] == "unknown":
+        c["soft"].append("アンテナの型が分からない（位相中心を補正しない）")
+    return c, obs
+
+
+def select_bases(cands, n=MULTI_DEFAULT_N, manual=None):
+    """事前選択＝(使う局, 順位を付けた候補)。順位＝解ける（fatal 無し）→ 外す理由（soft）無し → 距離の近い順。
+    自動＝上から soft も fatal も無い局を n 局。manual（局番号か名前の並び）＝その局をその順で使う
+    （soft は警告だけ・fatal と見つからない局は ValueError）。"""
+    ranked = sorted(cands, key=lambda c: (bool(c["fatal"]), bool(c["soft"]),
+                                          math.inf if c["dist_km"] is None else c["dist_km"]))
+    if not manual:
+        return [c for c in ranked if not c["fatal"] and not c["soft"]][:n], ranked
+    picked = []
+    for key in manual:
+        hit = next((c for c in cands if key in (c["code"], c["name"])), None)
+        if hit is None:
+            raise ValueError(f"--bases の {key!r} が site.json の bases にありません")
+        if hit["fatal"]:
+            raise ValueError(f"--bases の {base_label(hit)} は解けません: {'・'.join(hit['fatal'])}")
+        if hit not in picked:
+            picked.append(hit)
+    return picked, ranked
+
+
+def combine_results(results, method="mean", spread_warn=MULTI_SPREAD_WARN_M):
+    """局ごとの解を統合する。results の各項目＝{"code", "name", "q"（最後の回の Q）, "sol"（元期）, "konki"（今期）}。
+    最後の回が Fix（Q=1）でない局は外す（`solve` は Q に関係なく最後の回を採る＝その落とし穴を繰り返さない）。
+    返り値＝{"used", "dropped", "mean", "median", "adopted", "spread", "warnings"}。mean・median は
+    {"sol": (緯度, 経度, 楕円体高), "konki": …}（Fix の局が無ければ None）。spread＝局間の高さの最大差（2 局以上）。"""
+    if method not in ("mean", "median"):
+        raise ValueError(f"統合の方式は mean か median: {method!r}")
+    used = [r for r in results if r["q"] == 1]
+    dropped = [r for r in results if r["q"] != 1]
+    warnings = [f"{base_label(r)} は最後の回が Fix でない（Q={r['q']}）＝統合から外した" for r in dropped]
+
+    def agg(f):
+        if not used:
+            return None
+        return {k: tuple(f([r[k][i] for r in used]) for i in range(3)) for k in ("sol", "konki")}
+
+    spread = None
+    if len(used) >= 2:
+        hs = [r["sol"][2] for r in used]
+        spread = max(hs) - min(hs)
+    if len(used) < 2:
+        warnings.append(f"Fix の局が {len(used)} 局＝局ごとの差（±5 cm）を平均で薄められない＝精度を保証しない")
+    if spread is not None and spread > spread_warn:
+        warnings.append(f"局間の高さの最大差 {spread:.3f} m が {spread_warn:.3f} m を超える＝精度を保証しない"
+                        "（局ごとの差が大きいか、どれかの局の解が誤っている）")
+    mean, median = agg(statistics.fmean), agg(statistics.median)
+    return {"used": [r["code"] for r in used], "dropped": [r["code"] for r in dropped],
+            "mean": mean, "median": median, "adopted": mean if method == "mean" else median,
+            "spread": spread, "warnings": warnings}
+
+
+def rover_position(rover_obs, ref):
+    """事前選択に使う移動局の概略位置＝観測のヘッダの APPROX POSITION XYZ（単独測位・数 m）。
+    無ければ比べる点の成果で代える。"""
+    xyz = header_xyz(rinex_header(rover_obs))
+    if xyz and any(abs(v) > 1 for v in xyz):
+        return ecef_to_llh(*xyz)
     if ref:
-        if "h" in ref:
-            ref_h = float(ref["h"])
-        else:
-            ref_h = float(ref["H"]) + float(ref["geoid"])
-        ref_llh = (parse_angle(ref["lat"]), parse_angle(ref["lon"]), ref_h)
-        epoch = ref.get("epoch", "元期")
-        if epoch not in ("元期", "今期", "不明"):
-            sys.exit(f"ref.epoch は 元期・今期・不明 のどれか: {epoch!r}")
-        sides = [("元期", sol)] if epoch == "元期" else [("今期", konki)] if epoch == "今期" \
-            else [("元期と見なすと", sol), ("今期と見なすと", konki)]
-        if table is None and epoch != "元期":
-            sides = [("補正なしの解と", sol)]
-        for label, s in sides:
-            dn, de, du = neu(s, ref_llh)
-            msg = (f"「{ref.get('name', '')}」（{label}）との差: 北 {dn:+.3f}・東 {de:+.3f}・上 {du:+.3f} m"
-                   f"（水平 {math.hypot(dn, de):.3f} m）")
-            if "geoid" in ref:
-                msg += f"・標高 {s[2] - float(ref['geoid']):.3f}（成果 {float(ref['H']):.3f}）"
-            print(msg)
+        return ref_point(ref)[0]
+    sys.exit("移動局の概略位置が分からない（ヘッダに APPROX POSITION XYZ も site.json に ref も無い）")
+
+
+def header_xyz(header):
+    line = header.get("APPROX POSITION XYZ", [""])[0].split()
+    try:
+        return tuple(float(v) for v in line[:3]) if len(line) >= 3 else None
+    except ValueError:
+        return None
+
+
+def cmd_solve_multi(args):
+    site_path = Path(args.site).resolve()
+    site = json.loads(site_path.read_text(encoding="utf-8"))
+    sdir = site_path.parent
+    out = Path(args.out).resolve() if args.out else sdir / "ppk_multi"
+    out.mkdir(parents=True, exist_ok=True)
+    rover, ref, bases = site["rover"], site.get("ref"), site.get("bases")
+    if not bases:
+        sys.exit("site.json に bases（基準局の候補の配列・各項目は base と同じ形）がありません")
+    codes = [base_code(b) for b in bases]
+    if "" in codes or len(set(codes)) != len(codes):
+        sys.exit(f"bases の局番号（code）が空か重なっている: {codes}")
+    print("Multi-base PPK（実験機能）＝基準局ごとに独立に解いて統合する。標準は単一基準局の solve")
+    atx, known, table, gsi = load_models(args)
+
+    rover_obs = local_file(sdir, rover["obs"], out)
+    nav = local_file(sdir, rover["nav"], out)
+    rover_epochs = obs_epochs(rover_obs)
+    if not rover_epochs:
+        sys.exit(f"移動局の観測の回が読めない（RINEX 3 以降か確かめる）: {rover_obs}")
+    rover_llh = rover_position(rover_obs, ref)
+
+    cands, obs_paths = [], {}
+    for b in bases:
+        c, obs = assess_base(sdir, b, rover_llh, rover_epochs, out, known, gsi)
+        cands.append(c)
+        obs_paths[c["code"]] = obs
+    manual = [s.strip() for s in args.bases.split(",") if s.strip()] if args.bases else None
+    try:
+        picked, ranked = select_bases(cands, args.n, manual)
+    except ValueError as e:
+        sys.exit(str(e))
+    print(f"基準局の候補（事前選択＝{'--bases の指定' if manual else f'外す理由の無い局を近い順に {args.n} 局'}）:")
+    for c in ranked:
+        mark = "◎" if c in picked else "  "
+        why = "・".join(c["fatal"] + c["soft"])
+        print(f"  {mark} {base_label(c)}  {c['dist_km']:.1f} km・高低差 {c['dh']:+.0f} m・"
+              f"窓の {c['coverage']:.0%}（{c['overlap']} 回）・アンテナ {c['antenna'] or '-'}"
+              + (f"  ⚠️ {why}" if why else ""))
+    if not picked:
+        sys.exit("使える基準局がありません（--bases で選ぶか、bases に候補を足す）")
+    if not manual and len(picked) < args.n:
+        print(f"  ⚠️ 外す理由の無い候補が {len(picked)} 局しかない（既定 {args.n} 局）")
+
+    results = []
+    for c in picked:
+        print(f"── {base_label(c)}")
+        r = solve_base(args, rover, rover_obs, nav, c["base"], obs_paths[c["code"]], out / c["code"],
+                       atx, known, table, gsi)
+        results.append({"code": c["code"], "name": c["name"], "q": r["last"]["q"], "sol": r["sol"],
+                         "konki": r["konki"], "dist_km": r["dist_km"], "dh_m": r["dh"],
+                         "epochs": len(r["rows"]), "nfix": r["nfix"], "ratio": r["last"]["ratio"],
+                         "warned": list(c["soft"])})
+    comb = combine_results(results, args.combine, args.spread_warn)
+
+    ref_llh = ref_point(ref)[0] if ref else None
+    print(f"Multi-base の結果（{'元期' if table is not None else '補正なし'}の楕円体高・最後の回）:")
+    for r in results:
+        line = (f"  {base_label(r)}  基線 {r['dist_km']:.2f} km・Q={r['q']}・Fix {r['nfix']}/{r['epochs']}・"
+                f"ratio {r['ratio']}・楕円体高 {r['sol'][2]:.4f}")
+        if ref_llh:
+            s = ref_sides(ref, r["sol"], r["konki"], table)[0][1]
+            r["du_ref"] = neu(s, ref_llh)[2]
+            line += f"・「{ref.get('name', '')}」との差 上 {r['du_ref']:+.3f} m"
+        if r["code"] in comb["dropped"]:
+            line += "  ← 統合から外した"
+        print(line)
+    n_used = len(comb["used"])
+    for key, label in (("mean", "平均"), ("median", "中央値")):
+        if comb[key]:
+            mark = "  ← 採る値" if args.combine == key else ""
+            print(f"  {label}（{n_used} 局）  楕円体高 {comb[key]['sol'][2]:.4f}{mark}")
+    if comb["spread"] is not None:
+        print(f"  局間の高さの最大差 {comb['spread']:.3f} m（{n_used} 局・閾値 {args.spread_warn:.3f} m）")
+    for w in comb["warnings"]:
+        print(f"  ⚠️ {w}")
+    ref_diff = None
+    if comb["adopted"]:
+        s = comb["adopted"]["sol"]
+        print(f"統合した解（{'平均' if args.combine == 'mean' else '中央値'}・元期）"
+              f"{s[0]:.9f}, {s[1]:.9f}, 楕円体高 {s[2]:.4f}")
+        if ref:
+            ref_diff = compare_ref(ref, comb["adopted"]["sol"], comb["adopted"]["konki"], table)
+    doc = {"experimental": "Multi-base PPK（実験機能）", "site": str(site_path),
+           "options": {"combine": args.combine, "spread_warn_m": args.spread_warn, "n": args.n,
+                       "bases": manual, "tropo": args.tropo, "semidyna": table is not None},
+           "candidates": [{k: c[k] for k in ("code", "name", "dist_km", "dh", "coverage", "overlap",
+                                             "antenna", "fatal", "soft")} | {"picked": c in picked}
+                          for c in ranked],
+           "stations": results,
+           "combined": {k: comb[k] for k in ("used", "dropped", "mean", "median", "spread", "warnings")}
+           | {"adopted": args.combine, "ref_diff": ref_diff},
+           "no_guarantee": bool(comb["warnings"])}
+    dest = out / "multi.json"
+    dest.write_text(json.dumps(doc, ensure_ascii=False, indent=2), encoding="utf-8")
+    print(f"→ {dest}")
 
 
 # ---------------------------------------------------------------- 入口
@@ -690,16 +1024,23 @@ def main():
     p.add_argument("--arp-height", type=float, default=0.0, help="ヘッダの DELTA H（solve は site.json の値を使う）")
     p.add_argument("--rtcm", action="store_true", help="ntrip.rtcm（NTRIP の局の観測）を RINEX にする")
 
-    p = sub.add_parser("solve")
-    p.add_argument("site")
-    p.add_argument("--out")
-    p.add_argument("--atx")
-    p.add_argument("--par")
-    p.add_argument("--no-semidyna", action="store_true", help="基準局を元期のまま与え、解も元期と見なす")
-    p.add_argument("--gsi-pcv", help="GSI_PCV.TXT の経路（既定は置き場の GSI_PCV.TXT・無ければ NONE で代える）。"
-                                     "none＝使わない（⑨）")
-    p.add_argument("--tropo", choices=("saas", "est"), default="saas",
-                   help="対流圏＝saas（既定）か est（推定・高さの近い基準局が選べないときの補助＝⑧）")
+    for name in ("solve", "solve-multi"):
+        p = sub.add_parser(name)
+        p.add_argument("site")
+        p.add_argument("--out")
+        p.add_argument("--atx")
+        p.add_argument("--par")
+        p.add_argument("--no-semidyna", action="store_true", help="基準局を元期のまま与え、解も元期と見なす")
+        p.add_argument("--gsi-pcv", help="GSI_PCV.TXT の経路（既定は置き場の GSI_PCV.TXT・無ければ NONE で代える）。"
+                                         "none＝使わない（⑨）")
+        p.add_argument("--tropo", choices=("saas", "est"), default="saas",
+                       help="対流圏＝saas（既定）か est（推定・高さの近い基準局が選べないときの補助＝⑧）")
+    p.add_argument("--n", type=int, default=MULTI_DEFAULT_N, help=f"自動で選ぶ局の数（既定 {MULTI_DEFAULT_N}）")
+    p.add_argument("--bases", help="使う局を局番号（か名前）のカンマ区切りで指定する＝事前選択を上書きする")
+    p.add_argument("--combine", choices=("mean", "median"), default="mean",
+                   help="採る値＝mean（単純平均・既定）か median（中央値）。両方とも出す")
+    p.add_argument("--spread-warn", type=float, default=MULTI_SPREAD_WARN_M,
+                   help=f"局間の高さの最大差がこれを超えたら警告する（m・既定 {MULTI_SPREAD_WARN_M}）")
 
     p = sub.add_parser("semidyna")
     p.add_argument("lat")
@@ -707,7 +1048,8 @@ def main():
     p.add_argument("--par")
 
     args = ap.parse_args()
-    {"setup": cmd_setup, "rinex": cmd_rinex, "solve": cmd_solve, "semidyna": cmd_semidyna}[args.cmd](args)
+    {"setup": cmd_setup, "rinex": cmd_rinex, "solve": cmd_solve, "solve-multi": cmd_solve_multi,
+     "semidyna": cmd_semidyna}[args.cmd](args)
 
 
 if __name__ == "__main__":
