@@ -33,6 +33,15 @@
     ⑥ RTKLIB の exe は Git Bash の `/` の経路だと「no obs data」になる＝Windows の経路で渡す。
     ⑦ BeiDou B1C は RTKLIB-EX が読めない・`-f 3` だと Galileo E6 と BeiDou B3I が落ちる＝`-f 6`。
 
+🔑 水準点 3857（2026-10-25）で分かったこと＝基準局は**高さの近い局**を選ぶ:
+    ⑧ 基準局が移動局より大きく高いと、低い側の高さが高く出る（湿潤遅延の差と見られる）。
+       鹿野山（楕円体高 382 m）で解くと 3857（49 m）は +0.125・+0.101 m、電子基準点どうしの
+       鹿野山→富津（高低差 335 m）でも富津が +0.146 m 高く出た＝こちらの機材の誤りではない。
+       富津（47 m）で解くと −0.050・−0.056 m・繰り返しの差 6 mm。`saas` と `off` は 3 通りとも
+       同じ解＝相対測位では湿潤分の差を消さない。⇒ `solve` は高低差が `TROPO_DH_WARN_M` 以上なら
+       警告する。高さの近い局が選べない（遠すぎる）ときだけ `--tropo est`（対流圏を推定）を補助に
+       使う＝1 時間未満の静止では推定が揺れる（3857 の富津で 1 本目 +0.062・2 本目 −0.017）。
+
 `site.json`（観測 1 回ぶん・置き場はリポジトリの外＝`D:\\dev\\field-data\\gnss\\` の下）:
     {
       "rover": {"obs": "rover.obs", "nav": "rover.nav",
@@ -53,7 +62,7 @@
 実行（製品の venv で）:
     python experiments/field_ppk.py setup
     python experiments/field_ppk.py rinex <gnss-dir> --out DIR [--marker NAME]
-    python experiments/field_ppk.py solve <site.json> [--out DIR] [--no-semidyna]
+    python experiments/field_ppk.py solve <site.json> [--out DIR] [--no-semidyna] [--tropo est]
     python experiments/field_ppk.py semidyna <緯度> <経度>
 
 中野の再現（2026-10-18・この道具での合格の基準）:
@@ -123,6 +132,11 @@ out-outopt         =on
 out-height         =ellipsoidal
 out-solstatic      =all
 """
+TROPO_LINE = "pos1-tropopt       =saas"
+
+# ⑧ 基準局と移動局の楕円体高の差がこれ以上なら警告する。鹿野山→富津の 335 m で +0.12〜0.15 m
+# ＝比例で見て 100 m で約 4 cm（1 例からの見当）
+TROPO_DH_WARN_M = 100.0
 
 
 def default_home():
@@ -450,7 +464,7 @@ def cmd_solve(args):
     base_genki = (parse_angle(base["lat"]), parse_angle(base["lon"]), float(base["h"]))
     base_pos = base_genki if table is None else to_konki(table, base_genki)
     conf = out / "solve.conf"
-    conf.write_text(CONF + "\n".join([
+    conf.write_text(CONF.replace(TROPO_LINE, f"pos1-tropopt       ={args.tropo}") + "\n".join([
         "# ② 型名を書くとヘッダの DELTA H は使われない＝高さも直に書く",
         f"ant1-anttype       ={rover_ant}",
         f"ant1-antdelu       ={float(rover.get('arp_height') or 0.0)}",
@@ -479,6 +493,14 @@ def cmd_solve(args):
     dist = math.hypot(*neu(konki, base_pos)[:2]) / 1000
     print(f"  基線 {dist:.3f} km・解（{'元期' if table is None else '今期'}）"
           f"{konki[0]:.9f}, {konki[1]:.9f}, 楕円体高 {konki[2]:.4f}")
+    dh = base_pos[2] - konki[2]
+    if args.tropo == "est":
+        print("  ⚠️ 対流圏を推定した＝補助の解（1 時間未満の静止では推定が揺れる・3857 で 8 cm）。"
+              "高さの近い基準局で解けるなら、そちらを本番の値にする（⑧）")
+    elif abs(dh) >= TROPO_DH_WARN_M:
+        print(f"  ⚠️ 基準局が移動局より {abs(dh):.0f} m {'高い' if dh > 0 else '低い'}"
+              f"＝移動局の高さが{'高く' if dh > 0 else '低く'}出る（鹿野山→富津の 335 m で 0.12〜0.15 m）。"
+              "高さの近い基準局で解く。選べなければ --tropo est を補助に（⑧）")
     sol = konki
     if table is not None:
         sol = to_genki(table, konki)
@@ -529,6 +551,8 @@ def main():
     p.add_argument("--atx")
     p.add_argument("--par")
     p.add_argument("--no-semidyna", action="store_true", help="基準局を元期のまま与え、解も元期と見なす")
+    p.add_argument("--tropo", choices=("saas", "est"), default="saas",
+                   help="対流圏＝saas（既定）か est（推定・高さの近い基準局が選べないときの補助＝⑧）")
 
     p = sub.add_parser("semidyna")
     p.add_argument("lat")
