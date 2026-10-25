@@ -41,6 +41,13 @@
        同じ解＝相対測位では湿潤分の差を消さない。⇒ `solve` は高低差が `TROPO_DH_WARN_M` 以上なら
        警告する。高さの近い局が選べない（遠すぎる）ときだけ `--tropo est`（対流圏を推定）を補助に
        使う＝1 時間未満の静止では推定が揺れる（3857 の富津で 1 本目 +0.062・2 本目 −0.017）。
+    ⑨ 電子基準点のレドーム（`GSI6` など）は国土地理院の `GSI_PCV.TXT` に載っているが、中身は
+       **相対較正**（NGS の旧書式・`AOAD/M_T` を L1 上 110・L2 上 128 mm・PCV 0 と置く）＝ANTEX（絶対）へ
+       そのまま入れられない。⇒ 同じファイルの中の「`<型> GSI6` − `<型> NONE`」（レドームの効きだけ）を
+       ANTEX の `<型> NONE` に足した項目を作り、使う型だけの ANTEX（`solve.atx`）を書いて渡す。L1 帯
+       （1.56〜1.61 GHz）は L1 の差・ほか（L2・L5・E5・E6・B3）は L2 の差を当てる。確かめ＝ANTEX の絶対値が
+       「GSI の相対値 − AOAD/M_T の定義 ＋ AOAD/M_T の絶対値」で 0.1〜0.6 mm（RMS）で再現＝符号の取り決めは同じ。
+       効きは 3857 で 2〜3 mm（−5 cm の原因ではない）。置き場に無ければ従来どおり ③ の NONE で代える。
 
 `site.json`（観測 1 回ぶん・置き場はリポジトリの外＝`D:\\dev\\field-data\\gnss\\` の下）:
     {
@@ -101,6 +108,8 @@ SEMIDYNA = {
     "name": "SemiDyna2026.par",
 }
 ANTEX = {"url": "https://geodesy.noaa.gov/ANTCAL/LoadFile?file=ngs20.atx", "name": "ngs20.atx"}
+# ⑨ 国土地理院の電子基準点のアンテナ位相特性（相対較正）。落とさない＝人が置き場へ置く
+GSI_PCV = "GSI_PCV.TXT"
 
 A_GRS80 = 6378137.0
 F_GRS80 = 1 / 298.257222101
@@ -205,6 +214,12 @@ def cmd_setup(args):
         print(f"ANTEX: 落とす {ANTEX['url']}（約 70 MB）")
         download(ANTEX["url"], atx)
         print(f"  → {atx}（SHA-256 {sha256(atx)}＝NGS が随時更新するので固定しない）")
+    gsi = home / GSI_PCV
+    if gsi.exists():
+        print(f"GSI_PCV: 既にある {gsi}（{read_gsi_pcv(gsi)[0]}）")
+    else:
+        print(f"GSI_PCV: 無い＝電子基準点のレドーム（GSI6 など）は NONE で代える。"
+              f"国土地理院の {GSI_PCV} を {home} へ置けば入る（⑨・効きは 2〜3 mm）")
 
 
 def tool(home, name):
@@ -397,15 +412,130 @@ def antex_types(path):
     return types
 
 
-def pick_antenna(anttype, known, who):
-    """③ ANTEX に無ければレドームを NONE に代える。それも無ければ止める。"""
+def read_gsi_pcv(path):
+    """⑨ GSI_PCV.TXT（NGS の旧書式）を (1 行目, {型名 20 字: {"L1"/"L2": (PCO 北東上, PCV 仰角 90..0)}}) で返す。
+    1 項目＝型名の行＋数の行 6 本（PCO 3・PCV 10＋9 を L1・L2 の順）。値は mm・**相対較正**。"""
+    lines = Path(path).read_text(encoding="ascii", errors="replace").splitlines()
+    shape = (3, 10, 9, 3, 10, 9)
+    out = {}
+    for i, ln in enumerate(lines[:-6]):
+        if not ln[:1].strip():
+            continue
+        try:
+            rows = [[float(x) for x in lines[i + 1 + k].split()] for k in range(6)]
+        except ValueError:
+            continue
+        if tuple(len(r) for r in rows) != shape:
+            continue
+        out.setdefault(ln[:20].rstrip(), {"L1": (rows[0], rows[1] + rows[2]), "L2": (rows[3], rows[4] + rows[5])})
+    if not out:
+        sys.exit(f"{path} から項目が読めません（GSI_PCV.TXT の書式か確かめる）")
+    return (lines[0].strip() if lines else ""), out
+
+
+def read_atx(path, names):
+    """ANTEX のヘッダの行と、names の型の項目（START OF ANTENNA〜END OF ANTENNA の行）を返す。"""
+    header, blocks, block, name, in_header = [], {}, None, None, True
+    with open(path, encoding="ascii", errors="replace") as f:
+        for line in f:
+            lab = line[60:].rstrip()
+            if in_header:
+                header.append(line)
+                in_header = not lab.startswith("END OF HEADER")
+                continue
+            if lab.startswith("START OF ANTENNA"):
+                block, name = [line], None
+                continue
+            if block is None:
+                continue
+            block.append(line)
+            if lab.startswith("TYPE / SERIAL NO"):
+                name = line[:20].rstrip()
+            if lab.startswith("END OF ANTENNA"):
+                if name in names and name not in blocks:
+                    blocks[name] = block
+                block = None
+    return header, blocks
+
+
+def _gsi_band(code):
+    """ANTEX の周波数（`G01` など）を GSI の L1・L2 のどちらで近づけるか（1.56〜1.61 GHz＝L1・ほかは L2）。"""
+    return "L1" if code[1:] in ("01", "04") or code == "C02" else "L2"
+
+
+def _at_elev(values, elev):
+    """仰角 90, 85, …, 0 の 19 値を、仰角 elev（度）で線形に引く（0 度より下は 0 度の値）。"""
+    x = min(max((90.0 - elev) / 5.0, 0.0), 18.0)
+    i = min(int(x), 17)
+    return values[i] + (values[i + 1] - values[i]) * (x - i)
+
+
+def gsi_radome_entry(none_block, gsi, anttype):
+    """⑨ ANTEX（絶対）の `<型> NONE` の項目に、GSI_PCV の中の「`<型> <レドーム>` − `<型> NONE`」（相対どうしの差＝
+    レドームの効きだけ）を足して、型名を `<型> <レドーム>` にした項目を作る。L5 帯などは L2 の差を当てる。"""
+    rel, rel0 = gsi[anttype], gsi[f"{anttype[:16]:<16}NONE"]
+    diff = {b: ([a - c for a, c in zip(rel[b][0], rel0[b][0])], [a - c for a, c in zip(rel[b][1], rel0[b][1])])
+            for b in ("L1", "L2")}
+    zen = None
+    out, band = [], None
+    for line in none_block:
+        lab = line[60:].rstrip()
+        if lab.startswith("TYPE / SERIAL NO"):
+            line = f"{anttype:<20}" + line[20:]
+        elif lab.startswith("ZEN1 / ZEN2 / DZEN"):
+            z1, z2, dz = (float(x) for x in line[:60].split())
+            zen = [z1 + dz * k for k in range(int(round((z2 - z1) / dz)) + 1)]
+        elif lab.startswith("START OF FREQUENCY"):
+            band = _gsi_band(line[3:6])
+        elif lab.startswith("END OF FREQUENCY"):
+            band = None
+        elif band and lab.startswith("NORTH / EAST / UP"):
+            p = [float(x) + d for x, d in zip(line[:30].split(), diff[band][0])]
+            line = f"{p[0]:10.2f}{p[1]:10.2f}{p[2]:10.2f}{'':30}NORTH / EAST / UP\n"
+        elif band and (line[:8].strip() == "NOAZI" or re.match(r"\s*\d", line[:8])):
+            # PCV の行＝先頭が `NOAZI` か方位（度）、続けて天頂角ごとの値（F8.2）。方位つきの行にも同じ差を足す
+            # （行が 60 字を超えるのでラベルの欄では見分けられない）
+            head, vals = line[:8], [float(x) for x in line[8:].split()]
+            if zen is None or len(vals) != len(zen):
+                sys.exit(f"ANTEX の {anttype[:16]} NONE の PCV の行が ZEN1 / ZEN2 / DZEN と合いません")
+            line = head + "".join(f"{v + _at_elev(diff[band][1], 90.0 - z):8.2f}" for v, z in zip(vals, zen)) + "\n"
+        out.append(line)
+    return out, diff
+
+
+def pick_antenna(anttype, known, who, gsi=None):
+    """③ ANTEX に無ければ、GSI_PCV（⑨）に型とレドームが載っていればレドームの差を足した項目を作る（"gsi"）。
+    それも無ければレドームを NONE に代える。NONE も無ければ止める。返り値＝(型名, "atx" か "gsi")。"""
     if anttype in known:
-        return anttype
+        return anttype, "atx"
     alt = f"{anttype[:16]:<16}NONE"
     if alt in known:
-        print(f"  ⚠️ {who}のアンテナ {anttype!r} は ANTEX に無い＝{alt!r} で代える（レドームの効きは入らない）")
-        return alt
+        if gsi and anttype in gsi[1] and alt in gsi[1]:
+            print(f"  {who}のアンテナ {anttype!r} は ANTEX に無い＝{alt!r} に GSI_PCV のレドームの差を足して使う（⑨）")
+            return anttype, "gsi"
+        hint = "GSI_PCV に載っていない" if gsi else "GSI_PCV.TXT を置けば入る＝⑨"
+        print(f"  ⚠️ {who}のアンテナ {anttype!r} は ANTEX に無い＝{alt!r} で代える（レドームの効きは入らない・{hint}）")
+        return alt, "atx"
     sys.exit(f"{who}のアンテナ {anttype!r} も {alt!r} も ANTEX にありません")
+
+
+def write_solve_atx(atx, gsi, used, dest):
+    """⑨ 使う型だけを持つ ANTEX を dest へ書く。"gsi" の型は NONE の項目からレドームの差で作る。"""
+    names = {name if how == "atx" else f"{name[:16]:<16}NONE" for name, how in used}
+    header, blocks = read_atx(atx, names)
+    body = []
+    for name, how in used:
+        if how == "atx":
+            body += blocks[name]
+            continue
+        block, diff = gsi_radome_entry(blocks[f"{name[:16]:<16}NONE"], gsi[1], name)
+        body += block
+        for b in ("L1", "L2"):
+            dp, dv = diff[b]
+            print(f"    {b}: PCO の差 北 {dp[0]:+.1f}・東 {dp[1]:+.1f}・上 {dp[2]:+.1f} mm・"
+                  f"PCV の差 {min(dv):+.1f}〜{max(dv):+.1f} mm")
+    dest.write_text("".join(header + body), encoding="ascii")
+    return dest
 
 
 def read_pos(path):
@@ -443,23 +573,38 @@ def cmd_solve(args):
 
     if "(付)" in base.get("grade", "") or "（付）" in base.get("grade", ""):
         sys.exit(f"基準局の成果が付属標（{base['grade']}）＝本点の成果を使う（⑤）")
-    known = antex_types(Path(args.atx or Path(args.home) / ANTEX["name"]))
+    atx = Path(args.atx or Path(args.home) / ANTEX["name"]).resolve()
+    known = antex_types(atx)
     table = None if args.no_semidyna else load_semidyna(Path(args.par or Path(args.home) / SEMIDYNA["name"]))
+    gsi = None
+    if args.gsi_pcv != "none":
+        gsi_path = Path(args.gsi_pcv or Path(args.home) / GSI_PCV)
+        if gsi_path.exists():
+            gsi = read_gsi_pcv(gsi_path)
+            print(f"  GSI_PCV: {gsi_path}（{gsi[0]}・{len(gsi[1])} 項目）")
+        elif args.gsi_pcv:
+            sys.exit(f"{gsi_path} がありません")
 
     rover_obs = local_file(sdir, rover["obs"], out)
     nav = local_file(sdir, rover["nav"], out)
     base_obs = local_file(sdir, base["obs"], out)
+    used = []
     if rover.get("antenna"):
-        rover_ant = pick_antenna(rover["antenna"], known, "移動局")
+        rover_ant, how = pick_antenna(rover["antenna"], known, "移動局", gsi)
+        used.append((rover_ant, how))
     else:
         rover_ant = ""
         print("  ⚠️ 移動局のアンテナの型が分からない＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）")
     _, base_type, base_dh, base_de, base_dn = antenna_of(rinex_header(base_obs))
     if base_type:
-        base_ant = pick_antenna(base_type, known, "基準局")
+        base_ant, how = pick_antenna(base_type, known, "基準局", gsi)
+        used.append((base_ant, how))
     else:                                   # `rinex --rtcm` の局（1033 が来ない）を基準局に据えたとき
         base_ant = ""
         print("  ⚠️ 基準局のアンテナの型が分からない＝位相中心の補正をかけない（高さに数 cm〜1 dm 残る）")
+    if any(how == "gsi" for _, how in used):
+        # RTKLIB が読む受信機アンテナの ANTEX は 1 本＝使う型だけを持つ ANTEX を書いて渡す
+        atx = write_solve_atx(atx, gsi, list(dict.fromkeys(used)), out / "solve.atx")
 
     base_genki = (parse_angle(base["lat"]), parse_angle(base["lon"]), float(base["h"]))
     base_pos = base_genki if table is None else to_konki(table, base_genki)
@@ -478,7 +623,7 @@ def cmd_solve(args):
         f"ant2-pos1          ={base_pos[0]:.11f}",
         f"ant2-pos2          ={base_pos[1]:.11f}",
         f"ant2-pos3          ={base_pos[2]:.4f}",
-        f"file-rcvantfile    ={Path(args.atx or Path(args.home) / ANTEX['name']).resolve()}",
+        f"file-rcvantfile    ={atx}",
     ]) + "\n", encoding="utf-8")
     pos = out / "solve.pos"
     run(tool(args.home, "rnx2rtkp.exe"), ["-k", conf, "-o", pos, rover_obs, base_obs, nav])
@@ -551,6 +696,8 @@ def main():
     p.add_argument("--atx")
     p.add_argument("--par")
     p.add_argument("--no-semidyna", action="store_true", help="基準局を元期のまま与え、解も元期と見なす")
+    p.add_argument("--gsi-pcv", help="GSI_PCV.TXT の経路（既定は置き場の GSI_PCV.TXT・無ければ NONE で代える）。"
+                                     "none＝使わない（⑨）")
     p.add_argument("--tropo", choices=("saas", "est"), default="saas",
                    help="対流圏＝saas（既定）か est（推定・高さの近い基準局が選べないときの補助＝⑧）")
 
