@@ -23,6 +23,20 @@ from __future__ import annotations
 
 import math
 
+from core.assumptions import DISCLOSED, Assumption
+
+#: 式の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("low_skips_pixels", "解像度「低」は DEM の画素を飛ばして刻む（地形の細部を見落としうる）",
+               DISCLOSED, ("scope:resolution_low",),
+               "tests/test_models.py::TestScopeNotes::test_the_resolution_step_is_declared"),
+    Assumption("ceiling_falls_back_to_uniform",
+               "標本が `SAMPLES_CEILING` を超える経路は等間隔へ落ち、画素の縁で刻んだとは名乗れない",
+               DISCLOSED, ("samples_are_pixel_edges",),
+               "tests/test_simulation.py::TestResolveSamples"
+               "::test_ceiling_fallback_reports_the_effective_spacing_not_the_pixel_size"),
+)
+
 # ============================================================
 # DEM の格子の事実
 # ============================================================

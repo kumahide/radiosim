@@ -42,7 +42,18 @@ from core import dem_sources
 from core import terrain_grid
 from core import tile_sources
 from core import version
+from core.assumptions import GUARD, OPEN, Assumption
 from core.config import cache_log_base_dir, logger
+
+#: 式（標高の復号）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("network_failure_yields_no_value", "通信の失敗で取れなかった標本は値を出さない（`nan`＝海抜 0 m と混ぜない）",
+               GUARD, ("get_elevation", "network_failed"),
+               "tests/test_dem.py::TestFailedTileNegativeCache"
+               "::test_unexpected_exception_returns_nan_and_sets_network_failed"),
+    Assumption("zero_is_sea_level", "`0.0` は海抜 0 m・404（海上・日本域外）・無効画素を区別しない",
+               OPEN, issue="I-247"),
+)
 
 # ============================================================
 # DEM タイルキャッシュのルートディレクトリ

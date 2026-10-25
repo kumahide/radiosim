@@ -118,6 +118,10 @@ class TestTheNewIslandsActuallyCatch:
         assert _island_for(["tools/qa-hook/release-checklist.txt",
                             "tests/test_claude_hooks.py"]) == "qa-gate"
 
+    def test_a_field_only_commit_lands_in_the_field_island(self):
+        """Field のコミットに 9 分のフルを払わせない（2026-09-19 に部分テストを作った理由）。"""
+        assert _island_for(["apps/field/cli.py", "tests/test_field_session.py"]) == "field"
+
     def test_a_test_only_commit_runs_just_that_test(self):
         """🔴 **実際に払ったコスト**（2026-09-23）＝`.gitignore` 1 行とテスト 2 本の
         コミットでフルスイートが走った。⇒ 変えたテストそのもの＋走査系だけ。"""
@@ -180,10 +184,18 @@ class TestTheNewIslandsDoNotOverreach:
         assert _island_for(["docs/manual_ja.md", "core/version.py"]) is None
 
     def test_no_island_covers_product_code(self):
-        """部分テストと範囲で済む面の宣言そのものの見張り＝製品コードの面を絞らせない。"""
+        """部分テストと範囲で済む面の宣言そのものの見張り＝製品コードの面を絞らせない。
+
+        例外は 1 つ＝部分テスト `field` の `apps/field/`（2026-09-27）。本体が import しない
+        別アプリで、`apps/` の下のほかのアプリは部分テストに当たらずフルへ倒れる
+        （`test_unlisted_faces_fall_back_to_full` の「Field 以外のアプリ」）。
+        """
+        allowed = {("field", "apps/field/")}
         prefixes = [(i["name"], p) for i in _scope()["commit_islands"] for p in i["prefixes"]]
         prefixes += [("scoped_faces", p) for p in _scope()["scoped_faces"]]
         for name, prefix in prefixes:
+            if (name, prefix) in allowed:
+                continue
             for forbidden in ("core/", "views/", "report/", "lang/", "apps/",
                               "main.py", "tests/conftest", "requirements",
                               "pyproject.toml"):
@@ -247,6 +259,23 @@ def test_tests_walkers_cover_every_test_that_walks_tests_dir():
     assert walkers, "検出器が空振りしている"
     missing = sorted(walkers - listed)
     assert not missing, f"tests/ を歩くのに tests_walkers に無い: {missing}"
+
+
+def test_a_test_file_in_an_island_still_runs_tests_walkers():
+    """🔴 B-368（2026-10-24・Codex 174 巡目）＝部分テストの prefixes に当たる試験ファイルは、
+    `islandFor()` が部分テストの枝で次へ進み、`tests_walkers` を足していなかった
+    （`qa-gate` の 7 本で `test_window_fit.py` の 2 本が抜けた）。部分テストに当たっても
+    当たらなくても、試験ファイルを変えたコミットは走査系を全部走らせること。"""
+    scope = _scope()
+    samples = [(i["name"], p if p.endswith(".py") else f"{p}probe.py")
+               for i in scope["commit_islands"] for p in i["prefixes"]
+               if p.startswith("tests/test_")]
+    assert samples, "tests/ の prefixes を持つ部分テストが無い＝見張りが空振りしている"
+    for name, path in samples:
+        hit = _plan([path])
+        assert hit is not None, f"{path} がフルへ倒れた＝見張りの前提が崩れた"
+        missing = [t for t in scope["tests_walkers"] if t not in hit["tests"]]
+        assert not missing, f"部分テスト「{name}」の {path} で tests_walkers が抜ける: {missing}"
 
 
 class TestDocsIslandCoversEveryTestThatReadsDocs:

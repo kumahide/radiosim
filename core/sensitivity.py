@@ -29,6 +29,17 @@ import numpy as np
 from core import ground_reflection
 from core import models
 from core import terrain_grid
+from core.assumptions import OPEN, Assumption
+
+#: 式（幅の出し方）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("one_axis_at_a_time", "軸は 1 つずつ動かす＝複数の前提が同時に不利な場合の幅は保証しない",
+               OPEN, issue="I-235"),
+    Assumption("resolution_axis_reaches_no_report", "解像度の軸は計算できても、どの帳票にも出ない",
+               OPEN, issue="B-231"),
+    Assumption("no_dem_elevation_axis", "DEM 標高 ±3 m の軸は一律シフトでは幅が常に 0 なので出さず、伏せたまま",
+               OPEN, test="tests/test_sensitivity.py::test_dem_elev_axis_is_not_emitted", issue="B-232"),
+)
 
 #: DEM 標高の摂動量 [m]。根拠: `experiments/phase0_survey_accuracy.py` の
 #: 「10m メッシュ DEM 読み取り誤差 ±3.00m」（ユーザー確認済み・2026-09-13）。

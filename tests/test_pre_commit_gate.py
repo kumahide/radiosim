@@ -692,6 +692,67 @@ class TestCommitGateMain:
         assert r.returncode == 0 and r.stdout == ""
 
 
+class TestSkipsGitHooks:
+    """O-009＝git のフック（衛生の `pre-commit`・順番の `commit-msg`）を飛ばす形を断る。
+
+    🔴 `--no-verify` は両方の門を素通りさせる（衛生の門の既存の穴でもあった）。
+    組織運用は緊急時の例外を置かない＝シェルの形の抜け道をここで塞ぐ。
+    """
+
+    def _probe(self, commands, tmp_path) -> list:
+        src = _GATE.replace("\\", "/")
+        probe = tmp_path / "_probe_skip.mjs"
+        probe.write_text(
+            f'import {{ skipsGitHooks }} from "file:///{src}";\n'
+            f"process.stdout.write(JSON.stringify({json.dumps(commands)}.map(skipsGitHooks)));\n",
+            encoding="utf-8")
+        out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                             check=True, timeout=60)
+        return json.loads(out.stdout)
+
+    def test_forms(self, tmp_path):
+        cases = {
+            # 断る
+            "git commit --no-verify -m x": True,
+            "git commit -m x --no-verify": True,
+            "git commit --no-veri -m x": True,              # git は一意な略形を受ける
+            "git commit -n -m x": True,
+            "git commit -anm x": True,                       # 短い束の中の n
+            "git -C d:/r commit -qn -F -": True,
+            "git add -A && git commit --no-verify -F -": True,
+            "git merge --no-verify --no-ff -m x topic": True,
+            "git -c core.hooksPath=/dev/null commit -m x": True,
+            'git -c "core.hooksPath=nul" commit -m x': True,
+            "git -c core.hookspath= merge topic": True,
+            "& git commit --no-verify -m x": True,           # PowerShell の呼び出し演算子
+            "xargs git commit --no-verify -m": True,         # 段の読み手が拾えない形
+            # 通す
+            "git commit -m x": False,
+            "git commit -m -n": False,                       # -m の値
+            "git commit -mn": False,                         # -m の値（束の残り）
+            "git commit -F msg.txt": False,
+            "git commit --message --no-verify": False,       # --message の値
+            "git merge -n topic": False,                     # merge の -n は --no-stat
+            "git merge --no-verify-signatures topic": False,
+            "git commit -m x -- --no-verify": False,         # -- の後はパス
+            "git push --no-verify": False,                   # pre-push はこの門ではない
+            "git -c core.quotepath=false commit -m x": False,
+            "git -c core.hooksPath=x status": False,
+            "git commit -m \"$(cat <<'EOF'\nfix --no-verify\nEOF\n)\"": False,
+            'echo "git commit --no-verify"': False,
+        }
+        got = self._probe(list(cases), tmp_path)
+        for (cmd, want), actual in zip(cases.items(), got):
+            assert actual is want, cmd
+
+    def test_hook_denies_before_the_commit_test(self, tmp_path):
+        """`git merge` は commit／push に当たらない＝判定の前に断る。何も走らせない。"""
+        repo, _, _ = _hooked_repo(tmp_path)
+        for cmd in ("git commit --no-verify -m x", "git merge --no-verify topic"):
+            reason = _denied(_run_hook(tmp_path, repo, cmd, repo))
+            assert "O-009" in reason and "git status" in reason, cmd
+
+
 class TestHookTreeFor:
     """毎ターンのゲート（gate.mjs）も、作業ディレクトリが外にあるとき黙らない（B-312）。"""
 

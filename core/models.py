@@ -35,6 +35,7 @@ import numpy as np
 #    ここで再輸出するのは**呼び出し側を 1 行も変えないため**＝
 #    `models._diffraction_loss_fk` / `models.DIFF_METHOD_MULTI` は今までどおり動く。
 from core import terrain_grid
+from core.assumptions import DISCLOSED, Assumption
 from core.diffraction import (  # noqa: F401  （再輸出）
     DIFF_METHOD_ALIASES,
     DIFF_METHOD_KEYS,
@@ -167,6 +168,34 @@ SCOPE_NOTE_ORDER: tuple[str, ...] = (
     "gas_extrapolated",   # 大気: 有効範囲の上を超えている
     "veg_extrapolated",   # 植生: 係数の定義域の外側
     "diff_veg_serial",    # 遮蔽区間で回折損と植生減衰を重ねている（B-132）
+)
+
+#: 式の前提（I-239・器と 3 値の意味は `core/assumptions.py`）＝ここの式は値を出して刻印で名乗る。
+_SCOPE_TEST = "tests/test_models.py::TestScopeNotes::"
+ASSUMPTIONS: tuple[Assumption, ...] = tuple(
+    Assumption(name, description, DISCLOSED, tuple(f"scope:{k}" for k in keys), _SCOPE_TEST + test, issue)
+    for name, description, keys, test, issue in (
+        ("rain_frequency_range", "降雨（P.838-3）は 1 GHz 未満を 0 dB、係数表の上（40 GHz 超）を端値で扱う",
+         ("rain_zeroed", "rain_extrapolated"), "test_the_rain_note_tracks_the_formula_exactly", ""),
+        ("gas_frequency_range", "大気（P.676-13 Annex 2）は有効範囲（1〜350 GHz）の外を 0 dB か範囲外として扱う",
+         ("gas_zeroed", "gas_extrapolated"), "test_the_gas_note_tracks_the_formula_exactly", ""),
+        ("vegetation_coefficient_range", "植生の係数は 1〜6 GHz の定義を外側へ伸ばして使う",
+         ("veg_extrapolated",), "test_the_vegetation_coefficient_branch_is_declared", "B-262"),
+        ("uniform_vegetation_height", "植生高は入力した一律値を経路全体に当てる",
+         ("veg_uniform",), "test_the_uniform_height_assumption_is_declared_only_with_vegetation", ""),
+        ("diffraction_and_vegetation_add", "遮蔽区間では回折損と植生減衰を直列に足す",
+         ("diff_veg_serial",), "test_the_serial_sum_is_declared_only_when_there_is_vegetation", "B-132"),
+        ("bare_earth_surface", "DEM は地表面＝建物・樹木を含まない",
+         ("dem_surface",), "test_the_always_notes_are_always_there", ""),
+        ("empirical_environment_loss", "環境損失は区分ごとの経験値（勧告の式ではない）",
+         ("env_empirical",), "test_the_always_notes_are_always_there", ""),
+        ("no_ground_reflection_in_budget", "受信電力に地面反射（2 波干渉）を含めない",
+         ("ground_reflection",), "test_ground_reflection_is_declared", ""),
+        ("standard_earth_k", "等価地球半径係数は標準大気の 4/3 に固定（K が下がる時間帯を見ない）",
+         ("earth_k_fixed",), "test_the_earth_k_note_is_declared", ""),
+        ("rice_k_from_diffraction", "表示のライス K は回折損から `diff_loss / 3` で推定した経験値",
+         ("rice_k_empirical",), "test_the_rice_k_estimate_is_always_declared", "I-114"),
+    )
 )
 
 

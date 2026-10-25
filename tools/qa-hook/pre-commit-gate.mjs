@@ -237,7 +237,7 @@ export function versionReaders(cwd) {
  *  or null (→ full suite). Full when: nothing changed, any path is on a
  *  `full_prefixes` face, or any path matches no rule at all (fail-closed).
  *  Otherwise the UNION of: every island a path falls in, a changed
- *  `tests/test_*.py` itself (+ `tests_walkers`), and the readers of a
+ *  `tests/test_*.py` itself (+ `tests_walkers`, island or not), and the readers of a
  *  `scoped_faces` path — plus `scanners` whenever anything was scoped.
  *  core/version.py counts as scoped (its readers) only while its sole change
  *  is the version line (`versionOnly`; computed from the working tree when
@@ -264,11 +264,13 @@ export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {
         hit = true;
       }
     }
+    // A changed test runs `tests_walkers` even when an island claims it (B-368).
+    const isTest = TEST_FILE.test(p);
+    if (isTest) (scope.tests_walkers || []).forEach((t) => tests.add(t));
     if (hit) continue;
-    if (TEST_FILE.test(p)) {
+    if (isTest) {
       names.add("tests");
       tests.add(p);
-      (scope.tests_walkers || []).forEach((t) => tests.add(t));
       continue;
     }
     const face = (scope.scoped_faces || []).find((pre) => p.startsWith(pre));
@@ -501,6 +503,63 @@ export function commitTarget(command, cwd, tool = "Bash") {
   return { root: roots[0], push };
 }
 
+// ── O-009 (2026-10-25): NO WAY ROUND THE GIT HOOKS ────────────────────────
+// `.git/hooks/pre-commit` (hygiene) and `.git/hooks/commit-msg` (the order the
+// user approved — .claude/org_order_gate.py) are skipped by `--no-verify` /
+// `commit -n`, and by pointing `core.hooksPath` elsewhere for one command. The
+// org rules allow no emergency exception, so the shell form is refused here.
+// Out of scope (said in the O-009 report, not caught): `git push --no-verify`
+// (pre-push is not these gates), `git config core.hooksPath …` as its own
+// command, the merge inside `git pull`, GIT_CONFIG_* (REFUSE_OPAQUE already
+// refuses `GIT_…=` in front of a commit).
+export const REFUSE_NO_VERIFY =
+  "⛔ git のフック（`.git/hooks/pre-commit` の衛生の門・`commit-msg` の順番の門）を飛ばす形です" +
+  "（`--no-verify`・`commit -n`・`-c core.hooksPath=…`＝O-009）。抜け道は置いていません。" +
+  "その指定を外して出し直してください。門に止められたなら、止めた理由（記録の直し・本人の判断）を先に片づけます。";
+const NO_VERIFY = /^--no-veri(?:fy?)?$/;               // git takes unambiguous prefixes
+const COMMIT_SHORT_VALUE = new Set(["m", "F", "c", "C", "t"]);
+const COMMIT_OR_MERGE = /(?:^|\s)git(?:\.exe)?\s(?:.*\s)?(?:commit|merge)(?=$|\s)/;
+const LONG_VALUE = /^--(?:message|file|author|date|template|reuse-message|reedit-message|fixup|squash|trailer|cleanup|pathspec-from-file|strategy|strategy-option|into-name)$/;
+
+/** Does the command run `git commit`/`git merge` with the git hooks skipped? */
+export function skipsGitHooks(command) {
+  for (const step of commandSteps(command)) {
+    let i = 0;
+    const w = step.words;
+    if (w[i] === "&") i++;                                   // PowerShell `& git …`
+    for (; i < w.length && /^[A-Za-z_]\w*=/.test(w[i]); i++);
+    if (!/^git(?:\.exe)?$/i.test(w[i] || "")) {
+      // A form this parser misses (`xargs git commit --no-verify`) → refuse.
+      if (COMMIT_OR_MERGE.test(step.masked) && /(?:^|\s)--no-veri(?:fy?)?(?=$|\s)/.test(step.masked)) return true;
+      continue;
+    }
+    let hooksPath = false;
+    let sub = null;
+    for (i++; i < w.length; i++) {
+      const o = w[i];
+      if (!o.startsWith("-")) { sub = o.toLowerCase(); break; }
+      const cfg = o === "-c" || o === "--config-env" ? w[++i] : /^--config-env=(.*)$/.exec(o)?.[1];
+      if (cfg !== undefined && /^["']?core\.hookspath\s*=/i.test(cfg || "")) hooksPath = true;
+      else if (["-C", "--git-dir", "--work-tree", "--namespace"].includes(o)) i++;
+    }
+    if (sub !== "commit" && sub !== "merge") continue;
+    if (hooksPath) return true;
+    for (i++; i < w.length; i++) {
+      const o = w[i];
+      if (o === "--") break;
+      if (NO_VERIFY.test(o)) return true;
+      if (LONG_VALUE.test(o)) { i++; continue; }
+      if (sub === "commit" && /^-[A-Za-z]/.test(o)) {
+        for (let k = 1; k < o.length; k++) {
+          if (o[k] === "n") return true;
+          if (COMMIT_SHORT_VALUE.has(o[k])) { if (k === o.length - 1) i++; break; }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 function readStdin() {
   try {
     return readFileSync(0, "utf-8");
@@ -558,6 +617,8 @@ function main() {
   const input = requireStdinInput();
   if (!["Bash", "PowerShell"].includes(input.tool_name)) return;
   const command = (input.tool_input || {}).command || "";
+  // O-009: before the commit/push test — `git merge` is neither.
+  if (skipsGitHooks(command)) deny(`${REFUSE_NO_VERIFY}\n${NOTHING_RAN}`);
   if (!isCommitOrPush(command)) return;
 
   // B-312: the tree the command commits into, not the session's cwd as such.
