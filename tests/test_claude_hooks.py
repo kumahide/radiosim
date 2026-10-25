@@ -882,6 +882,12 @@ class TestQuoteTheSource:
             _doc(_sourced("I-100", "2026-08-01（2.6b1 試用のユーザー要望）"))
         ) == ["I-100"]
 
+    def test_manager_sourced_item_without_quote_is_flagged(self, hook):
+        """O-012＝記録で人を「経営者」と書くようになった＝出所の語が呼称に追いつかないと黙って鳴らない。"""
+        assert hook.unquoted_user_items(
+            _doc(_sourced("I-100", "2026-10-25（経営者の指摘）"))
+        ) == ["I-100"]
+
     def test_quote_satisfies_the_rule(self, hook):
         assert hook.unquoted_user_items(
             _doc(_sourced("I-100", "2026-08-01（2.6b1 試用のユーザー要望）",
@@ -3365,7 +3371,7 @@ class TestPostToolUseMidTurnAdvice:
 
 class TestRelayAdvice:
     """I-186＝リレー（`tools/autorun/relay.ps1` が裏で起こした対話型）では、
-    区切るのはリレー＝「ユーザーに区切りを提案せよ」の代わりに「引き継ぎ書を書いて
+    区切るのはリレー＝「経営者に区切りを提案せよ」の代わりに「引き継ぎ書を書いて
     応答を終えよ」を返す。判断はダイアログで人に聞く（人はいる）。
     """
 
@@ -3390,7 +3396,7 @@ class TestRelayAdvice:
         """環境変数が無ければいつもの助言のまま（リレーの文言が漏れない）。"""
         got = TestSessionSplitAdvice()._run(
             budget, monkeypatch, capsys, tmp_path, min(budget._THRESHOLDS))
-        assert "ユーザーに区切りを提案" in got["reason"]
+        assert "経営者に区切りを提案" in got["reason"]
         assert "リレー（RADIOSIM_RELAY=1）" not in got["reason"]
 
     @pytest.mark.parametrize("hook_event", ["PostToolUse", "Stop"])
@@ -3400,7 +3406,7 @@ class TestRelayAdvice:
         assert "リレー" in text and str(tmp_path / "handoff.md") in text, (
             "引き継ぎ書の場所が出ていない＝次のセッションへ渡せない")
         assert "status: continue" in text and "AskUserQuestion" in text
-        assert "ユーザーに区切りを提案" not in text, (
+        assert "経営者に区切りを提案" not in text, (
             "区切るのはリレーなのに人へ提案させている")
 
     def test_hands_off_with_a_commit_but_no_push(
@@ -5123,7 +5129,7 @@ class TestRedStreakGate:
                                 now=0.0, state_dir=tmp_path, ledger=ledger) is None
 
 
-# ── O-009＝本人が承認した作業の順番（先行の行）を見せ、逆らうコミットを止める ──────
+# ── O-009＝経営者が承認した作業の順番（先行の行）を見せ、逆らうコミットを止める ──────
 # O-008 の締めより先に I-239 を実装・コミットした（`2198c43`）。順番が実績記録の
 # 1 行にしかなく、セッション開始の注入にもコミットの口にも出ていなかった。
 # 読み手 `org_order.py`・門 `org_order_gate.py`（`.git/hooks/commit-msg`）・
@@ -5131,7 +5137,7 @@ class TestRedStreakGate:
 
 _SUBJECT_2198C43 = ("feat(assumptions): 式の前提を式の隣に宣言し、core の全モジュールに宣言か"
                     "「式を持たない」かを求めるゲートを置く（I-239 の 2・3・4.0 ステージ1）")
-_ACCEPT = "- 本人受け入れ：2026-10-25「尚、O-008 を受け入れます。」"
+_ACCEPT = "- 経営者受け入れ：2026-10-25「尚、O-008 を受け入れます。」"
 
 
 def _org_log(state="実装済み（5 回目）", precede: "str | None" = "O-008 → I-239", extra=(), more=()):
@@ -5162,7 +5168,7 @@ class TestOrgOrderReader:
         items, errors = org.parse(_org_log())
         assert errors == [] and list(org.deferred_by(items)) == ["I-239"]
         for state, line in (("済（受け入れ）", _ACCEPT),
-                            ("中止", "- 本人中止：2026-10-25「やめます」")):
+                            ("中止", "- 経営者中止：2026-10-25「やめます」")):
             items, errors = org.parse(_org_log(state=state, extra=[line]))
             assert errors == [] and org.deferred_by(items) == {}, state
         items, errors = org.parse(_org_log(state="進行中"))
@@ -5175,7 +5181,7 @@ class TestOrgOrderReader:
 
     def test_ids_in_the_note_are_not_deferred(self, org):
         items, errors = org.parse(_org_log(
-            precede="O-008 → I-239, O-009（I-239＝本人「順番OK」・B-338 は別件）"))
+            precede="O-008 → I-239, O-009（I-239＝経営者「順番OK」・B-338 は別件）"))
         assert errors == [] and items[0].deferred == ("I-239", "O-009")
 
     @pytest.mark.parametrize("kw, fragment", [
@@ -5187,9 +5193,13 @@ class TestOrgOrderReader:
         ({"precede": "O-008 → O-008"}, "右に自分がいる"),
         ({"state": "評価済み"}, "`- 状態：` は 1 行"),
         ({"extra": ["- 状態：済"]}, "`- 状態：` は 1 行"),
-        ({"state": "済"}, "本人受け入れ"),
-        ({"state": "中止"}, "本人中止"),
-        ({"state": "済", "extra": ["- 本人受け入れ：未"]}, "本人受け入れ"),
+        ({"state": "済"}, "経営者受け入れ"),
+        ({"state": "中止"}, "経営者中止"),
+        ({"state": "済", "extra": ["- 経営者受け入れ：未"]}, "経営者受け入れ"),
+        # v0.3 の語の行は受け付けない（O-012）＝旧い語を黙って通す変異をここで落とす
+        ({"state": "済", "extra": ["- 本人受け入れ：2026-10-25「尚、O-008 を受け入れます。」"]},
+         "規則 v0.4（O-012）で"),
+        ({"state": "中止", "extra": ["- 本人中止：2026-10-25「やめます」"]}, "規則 v0.4（O-012）で"),
         ({"more": ["## O-008 前の写し", "- 状態：進行中", "- 先行：なし", ""]}, "節が 2 つ"),
     ])
     def test_broken_records_fail_closed(self, org, kw, fragment):
@@ -5228,7 +5238,7 @@ class TestOrgOrderGate:
         """② 別の ID・先行なし・中止は通る。"""
         assert org_gate.judge("fix: x（B-338）", self._items(org)) == ([], [])
         assert org_gate.judge(_SUBJECT_2198C43, self._items(org, precede="なし")) == ([], [])
-        closed = self._items(org, state="中止", extra=["- 本人中止：2026-10-25「やめる」"])
+        closed = self._items(org, state="中止", extra=["- 経営者中止：2026-10-25「やめる」"])
         assert org_gate.judge(_SUBJECT_2198C43, closed) == ([], [])
 
     def test_body_or_mid_subject_mention_only_warns(self, org, org_gate):
