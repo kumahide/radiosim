@@ -28,7 +28,7 @@
   <text x="680" y="170" text-anchor="middle" font-size="12">XIAO ESP32C6 ＋ E220 EV2</text>
   <text x="680" y="188" text-anchor="middle" font-size="12" fill="#555">中身は ② と同じ（同じファーム）</text>
 
-  <path d="M284,165 l30,-12 l30,24 l30,-24 l30,24 l30,-24 l30,24 l30,-24 l30,24 l12,-6" fill="none" stroke="#7a3fb0" stroke-width="2.5" marker-end="url(#a-purple)"/>
+  <path d="M284,165 c11.9,-16 16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 L556,165" fill="none" stroke="#7a3fb0" stroke-width="2.5" marker-end="url(#a-purple)"/>
   <text x="420" y="138" text-anchor="middle" font-size="12" fill="#7a3fb0" font-weight="bold">920 MHz（校正の主役）</text>
   <text x="420" y="200" text-anchor="middle" font-size="12" fill="#7a3fb0">2.4 GHz（同じ幾何の対照）</text>
   <text x="420" y="216" text-anchor="middle" font-size="12" fill="#b00">2 帯域は同時に動かさない（時分割）</text>
