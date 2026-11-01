@@ -24,6 +24,7 @@ from core import models
 from core import output_contract
 from core import residuals as core_residuals
 from core import sensitivity
+from core import simulation as sim
 from core import units
 from core import version
 from report import map_graphics
@@ -85,6 +86,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     # `models.TerrainProfile.fail_pct`。
                     units.csv_fail_pct(pr.terrain.fail_pct)
                     if pr.terrain is not None else "",
+                    report_common.csv_calc_profile(pr.params),
+                    report_common.csv_input_hash(pr.params),
                 ])
             else:
                 writer.writerow([
@@ -99,6 +102,8 @@ def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
                     if pr.terrain is not None else "",
                     units.csv_fail_pct(pr.terrain.fail_pct)
                     if pr.terrain is not None else "",
+                    report_common.csv_calc_profile(pr.params),
+                    report_common.csv_input_hash(pr.params),
                 ])
 
 
@@ -400,6 +405,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             pr.params.dem_source for pr in results
             if pr.result is not None and pr.params is not None
         ),
+        provenance=sim.provenance_line((pr.params, pr.terrain) for pr in results),
     )
 
     # 実測残差の層別表（3.4 ステージ6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ

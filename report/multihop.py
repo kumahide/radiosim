@@ -549,4 +549,6 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
                 # 別なので、区間ごとに違う値になる（`summary.csv` と同じ形）。
                 units.csv_fail_pct(pr.terrain.fail_pct)
                 if pr.terrain is not None else "",
+                report_common.csv_calc_profile(p),
+                report_common.csv_input_hash(p),
             ])

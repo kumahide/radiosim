@@ -21,6 +21,7 @@ from __future__ import annotations
 
 from fractions import Fraction
 
+from core import calc_profile
 from core import dem_sources
 from core import i18n
 from core import models
@@ -179,7 +180,41 @@ def data_source_line(dem_source_ids=None) -> str:
     return f'{i18n.t("html_elev_source_prefix")}: {value}'
 
 
-def handling_text(note_keys, dem_source_ids=None) -> str:
+def _hash_text(hashes: list[str]) -> str:
+    """ハッシュの欄の値（1 件はそのまま・複数は畳んだ値と件数）。"""
+    if len(hashes) == 1:
+        return hashes[0]
+    return i18n.t("html_hash_combined").format(
+        value=calc_profile.combined_hash(hashes), n=len(hashes))
+
+
+def provenance_line(calc_profiles, input_hashes, terrain_hashes) -> str:
+    """計算プロファイルと 2 つのハッシュの 1 行（4.0 ステージ3）。
+
+    `data_source_line` と同じ扱い＝条件に依らず常に出る事実なので、刻印の列
+    （`html_scope_*`）に混ぜない。⚠️ **1 行に収める**＝帳票は A4 1 枚。
+
+    🔑 **帳票の刻印は N 本を 1 つの値へ畳む**＝行ごとの値は CSV の `input_hash` が持つ。
+    地形は CSV に列が無いので帳票のこの値だけが手がかり（判断点 ③）。
+
+    Args:
+        calc_profiles:  帳票に載る計算のプロファイル。**異なるものが混じれば並べて書く**
+            （1 つを代表に選んで嘘をつかない）。
+        input_hashes:   `calc_profile.input_hash` の値（CSV の行の順）。
+        terrain_hashes: `calc_profile.terrain_hash` の値。空なら地形の欄を出さない
+            （地形を取れなかった実行）。
+    """
+    fields = [
+        f'{i18n.t("html_calc_profile")}: {", ".join(sorted(set(calc_profiles)))}',
+        f'{i18n.t("html_input_hash")}: {_hash_text(list(input_hashes))}',
+    ]
+    terrains = list(terrain_hashes)
+    if terrains:
+        fields.append(f'{i18n.t("html_terrain_hash")}: {_hash_text(terrains)}')
+    return " / ".join(fields)
+
+
+def handling_text(note_keys, dem_source_ids=None, provenance="") -> str:
     """「結果の取扱に関する補足」セクションの**素のテキスト**（`report.txt` 用）。
 
     見出しは英字の角括弧＝`report.txt` の他のセクション（`[LINK BUDGET]` 等）と同じ字面に
@@ -188,6 +223,7 @@ def handling_text(note_keys, dem_source_ids=None) -> str:
     Args:
         dem_source_ids: `data_source_line()` へそのまま渡す（B-216）。渡さないと
             国土地理院と表示される。
+        provenance: `provenance_line()` の 1 行。空なら出さない。
     """
     body = "\n".join(f"- {line}" for line in handling_lines(note_keys))
     return (
@@ -196,4 +232,5 @@ def handling_text(note_keys, dem_source_ids=None) -> str:
         f"{body}\n"
         f"- {calibration_line()}\n"
         f"- {data_source_line(dem_source_ids)}\n"
+        + (f"- {provenance}\n" if provenance else "")
     )

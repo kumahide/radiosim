@@ -24,11 +24,14 @@ import html as _html
 import io
 import os
 
+from core import calc_profile
+from core import disclosure
 from core import i18n
 from core import models
 from core import output_contract
 from core import scenario as scn
 from core import sensitivity
+from core import simulation as sim
 from core import units
 from report import mpl_fonts
 from report import report_common
@@ -403,6 +406,12 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         ),
         sens_result, sens_note=i18n.t("html_sens_base_only"),
         dem_source_ids=base.dem_source,
+        # 条件探索は地形を 1 回取って固定する＝地形のハッシュは 1 つ、入力は条件の数だけ。
+        provenance=disclosure.provenance_line(
+            [base.calc_profile],
+            [_point_input_hash(base, p) for p in run.points],
+            [sim.terrain_hash(base, run.terrain)],
+        ),
     )
 
     return f"""<section class="sheet scenario">
@@ -490,4 +499,11 @@ def save_scenario_csv(run: scn.ScenarioRun, save_dir: str) -> None:
                 # 1 回だけ取得して固定し条件を振る（`core/scenario.py`）ので
                 # **全行が同じ値**になる。
                 units.csv_fail_pct(run.terrain.fail_pct),
+                base.calc_profile, _point_input_hash(base, p),
             ])
+
+
+def _point_input_hash(base, point) -> str:
+    """条件 1 つの入力ハッシュ（ベース＋上書き＋その行の高さ）。"""
+    return calc_profile.input_hash(
+        base, {**point.overrides, "h_tx": point.h_tx, "h_rx": point.h_rx})

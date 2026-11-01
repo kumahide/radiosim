@@ -23,6 +23,7 @@ import html as _html
 import re
 from datetime import datetime
 
+from core import calc_profile
 from core import disclosure
 from core import i18n
 from core import models
@@ -735,12 +736,23 @@ def _sensitivity_inner_html(
     )
 
 
+def csv_calc_profile(params) -> str:
+    """成果物 CSV の `calc_profile` 列（`params` が `None`＝入力が解けなかった行は空欄）。"""
+    return params.calc_profile if params is not None else ""
+
+
+def csv_input_hash(params) -> str:
+    """成果物 CSV の `input_hash` 列（`params` が `None`＝入力が解けなかった行は空欄）。"""
+    return calc_profile.input_hash(params) if params is not None else ""
+
+
 def handling_section_html(
     note_keys,
     sens: "core_sensitivity.SensitivityResult | None" = None,
     *,
     sens_note: str = "",
     dem_source_ids=None,
+    provenance: str = "",
 ) -> str:
     """「結果の取扱に関する補足」セクションの HTML 断片を返す（**4 種のシート共通**）。
 
@@ -757,6 +769,8 @@ def handling_section_html(
         dem_source_ids: この面が実際に使った DEM ソースの `source_id`（単一文字列
             または反復可能）。**渡さないと国土地理院と表示される**（B-216 で
             固定文言だった名残の既定値）＝呼び出し側は必ず渡す。
+        provenance: `disclosure.provenance_line()` の 1 行（計算プロファイルと 2 つの
+            ハッシュ）。空なら出さない＝**帳票の面は必ず渡す**（`tests/test_calc_profile.py`）。
     """
     items = "".join(
         f"<li>{_html.escape(keep_unit_with_value(line))}</li>"
@@ -770,6 +784,7 @@ def handling_section_html(
         f'{_html.escape(keep_unit_with_value(disclosure.calibration_line()))}</p>'
         f'<p class="hd-source">'
         f'{_html.escape(disclosure.data_source_line(dem_source_ids))}</p>'
+        + (f'<p class="hd-source">{_html.escape(provenance)}</p>' if provenance else "")
         + _sensitivity_inner_html(sens, sens_note) +
         '</section>'
     )

@@ -26,6 +26,7 @@ import os
 from core import i18n
 from core import models
 from core import sensitivity
+from core import simulation as sim
 from core import units
 from report import map_graphics
 from report import multihop as mh
@@ -386,6 +387,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 pr.params.dem_source for pr in run.hops
                 if pr.result is not None and pr.params is not None
             ),
+            provenance=sim.provenance_line((pr.params, pr.terrain) for pr in run.hops),
         )
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'

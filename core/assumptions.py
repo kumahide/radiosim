@@ -51,6 +51,7 @@ class Assumption:
 FORMULA_FREE: dict[str, str] = {
     "assumptions":      "この器そのもの（純データ）",
     "batch_csv_schema": "入力 CSV の列の契約（純データ）",
+    "calc_profile":     "計算の方式の識別子と、入力・地形のハッシュ（物理の式を持たない）",
     "config":           "設定の読み書きと入力の検証・ロガー",
     "coords":           "座標の表記の変換だけ（DD⇔DMS）",
     "dem_cache":        "タイルのキャッシュの棚卸し・削除（I/O）",

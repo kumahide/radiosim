@@ -1026,13 +1026,6 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         # 座標が変われば点数も変わる（読み込みは座標を丸ごと差し替える）。
         self._update_resolution_readout()
 
-
-
-
-
-
-
-
     def _current_config(self) -> dict[str, str]:
         """現在のエントリ値を config dict として返す（バリデーションなし）。"""
         c = {k: self.entries[k].get() for k in self.entries}
@@ -1041,5 +1034,6 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
         c["dem_source"]  = self._dem_source_label_to_key.get(
             self._dem_source_var.get(), dem_sources.GSI_DEM.source_id)
         c["resolution"]  = self._resolution_key()
+        c["calc_profile"] = self._current_calc_profile()
         self._coords_to_dd(c)
         return c

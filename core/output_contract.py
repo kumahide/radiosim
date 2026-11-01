@@ -102,7 +102,18 @@ class CsvContract:
 # 書き手）。⚠️ `nan` は通信の失敗か想定外の例外のときだけ（`dem.get_elevation` の不変条件）＝
 # 404（海上・日本域外）とデータ欠損の画素は今も `0.0`＋取れた側の `elev_source`
 # なので、0.0 は「海抜0m」とは限らない（B-334）。
-TERRAIN_CSV_COLUMNS: tuple[str, ...] = ("Distance_m", "Elevation_m", "elev_source")
+#
+# 🆕 `calc_profile`・`input_hash`（4.0 ステージ3・3.x で予告）＝**全 4 本の末尾に同じ 2 列**
+# （`PROVENANCE_CSV_COLUMNS`）。単一ソースは `core/calc_profile.py`。`input_hash` は
+# 行の入力（条件探索はベース＋上書き）のハッシュで、計算プロファイルを含まない＝
+# 同じ入力を別の方式で計算した行を突き合わせられる。入力が解けなかった行は 2 列とも空欄。
+# ⚠️ 地形のハッシュは列にしない＝帳票の刻印だけ（判断点 ③）。
+PROVENANCE_CSV_COLUMNS: tuple[str, ...] = ("calc_profile", "input_hash")
+
+TERRAIN_CSV_COLUMNS: tuple[str, ...] = (
+    "Distance_m", "Elevation_m", "elev_source",
+    *PROVENANCE_CSV_COLUMNS,
+)
 
 # --- 複数経路（バッチ）------------------------------------------------------
 # 🆕 `samples`（3.0a1 / I-069）＝**その回線で実際に地形を刻んだ点数**。利用者は
@@ -146,6 +157,7 @@ SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "samples",
     "horiz_m",
     "dem_fail_pct",
+    *PROVENANCE_CSV_COLUMNS,
 )
 
 # --- 中継経路 ---------------------------------------------------------------
@@ -159,6 +171,7 @@ HOPS_CSV_COLUMNS: tuple[str, ...] = (
     "f1_depth_x",
     "samples",
     "dem_fail_pct",
+    *PROVENANCE_CSV_COLUMNS,
 )
 
 # --- 条件探索 ---------------------------------------------------------------
@@ -180,6 +193,7 @@ SCENARIO_CSV_COLUMNS: tuple[str, ...] = (
     "f1_depth_x",
     "axis",
     "dem_fail_pct",
+    *PROVENANCE_CSV_COLUMNS,
 )
 
 

@@ -79,6 +79,7 @@ class _RunMixin(_HostBase):
     def _read_base_params(self) -> sim.SimParams:
         """Common Settings の現在値から SimParams を生成する。"""
         c: dict[str, str] = {
+            "calc_profile": self._base_params.calc_profile,
             "start"      : f"{self._base_params.lat_tx}, {self._base_params.lon_tx}",
             "end"        : f"{self._base_params.lat_rx}, {self._base_params.lon_rx}",
             "h_tx"       : str(self._base_params.h_tx),

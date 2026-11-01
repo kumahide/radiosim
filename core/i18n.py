@@ -639,6 +639,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 🔑 地図タイルの出典（`tm_attr_*`）と**同じ書式**に揃えてある＝「地理院タイル」
         # は固有名なので、機関名を重ねなくても出所は特定できる。
         "html_elev_source_prefix": "Elevation data source",
+        "html_calc_profile":    "Calculation profile",
+        "html_input_hash":      "Input settings hash",
+        "html_terrain_hash":    "Terrain hash",
+        "html_hash_combined":   "{value} ({n} combined)",
         "html_elev_source_mixed":  "Multiple (varies by path)",
         "html_elev_source_gsi_dem": "GSI DEM",
 
@@ -1418,6 +1422,10 @@ _STRINGS: dict[str, dict[str, str]] = {
 
         # 標高データの出典（B-134／B-216）
         "html_elev_source_prefix": "標高データの出典",
+        "html_calc_profile":    "計算プロファイル",
+        "html_input_hash":      "入力設定のハッシュ",
+        "html_terrain_hash":    "地形のハッシュ",
+        "html_hash_combined":   "{value}（{n} 件をまとめた値）",
         "html_elev_source_mixed":  "複数（経路ごとに異なる）",
         "html_elev_source_gsi_dem": "国土地理院 DEM",
 

@@ -247,6 +247,7 @@ radiosim/
 │   ├── output_contract.py # Column spec of the artifact CSVs = single source of the output contract (pure data)
 │   ├── batch_csv_schema.py # Column spec of the batch input CSV (names/order/required-optional) = single source (pure data)
 │   ├── disclosure.py     # Wording of the "Notes on handling this result" section in the reports (assumptions, scope notes, pure functions)
+│   ├── calc_profile.py   # Calculation profile ID and the input-settings and terrain hashes (pure functions)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── env_facts.py      # Environment-facts collection layer (version, config, recent log, cache stats, env info; coordinates redacted)
 │   ├── diagnostics.py    # Builds the diagnostic-package zip (usernames masked in paths; artifacts opt-in)
@@ -368,6 +369,7 @@ radiosim/
     ├── test_version.py
     ├── test_update_check.py
     ├── test_output_contract.py
+    ├── test_calc_profile.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_runner_logging.py
@@ -955,6 +957,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that on "high" and "medium" the samples are **not evenly spaced** (they sit on DEM pixel edges, except when the count hits the upper limit; "low" keeps a 20 m even spacing), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this — not `slant_m` — for effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
+| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
 
@@ -981,6 +985,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section (its length, bearing and latitude), so it differs between sections of one route |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Each section fetches its own terrain, so this differs between sections |
+| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
 
@@ -1016,6 +1022,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `axis` | — | Name of the sweep axis (e.g. `freq_mhz`); empty in compare mode |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
+| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` still puts a same-named fixed column (e.g. `freq_mhz`) alongside `axis_value` — they mean different things: `axis_value` is the value being swept, while the fixed column is **the actual value used for every parameter in that row**.
 
@@ -1026,6 +1034,8 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
 | `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell** (announced in 3.2, applied in 3.3 — rule 2; `dem.get_elevation` returns `nan` only when `network_failed()` is true; the flag is raised on an unexpected exception too). ⚠️ **`0.0` is not always sea level** — a sample where every layer ran out on 404 (sea, outside Japan) and a pixel with missing data also return `0.0`, and `elev_source` still carries that source's `source_id`. The empty cell and `elev_source` distinguish only those failed fetches |
 | `elev_source` | — | Where this sample's elevation came from: the `source_id` returned by `dem_sources.resolve()`. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (network problem or unexpected error) — and samples from a user-declared external source carry that source's `source_id` (the value set is open) |
+| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
 
@@ -1259,6 +1269,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
 | `test_version.py`        | Version string -> the Windows 4-number version (`core.version.version_tuple`). Checks the **ordering** a -> b -> RC -> final, so a final release never looks numerically older than its own RCs (the conversion used to live inside the spec, out of reach of any test) |
 | `test_update_check.py`   | Check for Updates (`core/update_check.py`). Final-release users hear only of final releases, RC/a/b users also of RCs; drafts, unreadable tags and URLs outside the repository are dropped; rate limit / unreachable / unreadable are told apart; the how-to-install sentence follows the distribution. The startup check is off by default, runs at most once a day (the attempt date is saved before the query), stays silent when up to date or on failure, and a manual click while it is pending shows its answer. Include Pre-releases: untouched follows the current version, a choice wins over it, and it reaches both the manual and the startup query. Splitting the DEM-unreachable message into 3 keys leaves its text unchanged |
+| `test_calc_profile.py`   | Calculation profile and the two hashes (every input accounted for, which inputs move the value and which do not, `.rsproj` read/write and old files, the last two CSV columns, the stamp on the reports) |
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
 | `test_progress.py`       | Progress transport (start/stop lifecycle, stale poll after stop, latest-only delivery, thread safety) |

@@ -1343,7 +1343,8 @@ class TestSavePackage:
         with open(os.path.join(save_dir, "terrain_profile.csv"),
                   newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        assert rows[0] == ["Distance_m", "Elevation_m", "elev_source"]
+        assert rows[0] == ["Distance_m", "Elevation_m", "elev_source",
+                           "calc_profile", "input_hash"]
         assert len(rows) - 1 == flat_terrain.num_samples
 
     def test_terrain_csv_marks_failed_samples_as_unavailable(
@@ -1366,6 +1367,6 @@ class TestSavePackage:
         with open(os.path.join(save_dir, "terrain_profile.csv"),
                   newline="", encoding="utf-8") as f:
             rows = list(csv.reader(f))
-        assert rows[1][1:] == ["10.0", "gsi_dem"]
-        assert rows[2][1:] == ["", "unavailable"]
-        assert rows[3][1:] == ["20.0", "gsi_dem"]
+        assert rows[1][1:3] == ["10.0", "gsi_dem"]
+        assert rows[2][1:3] == ["", "unavailable"]
+        assert rows[3][1:3] == ["20.0", "gsi_dem"]

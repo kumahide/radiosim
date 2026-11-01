@@ -14,6 +14,7 @@ import tkinter as tk
 from tkinter import filedialog
 from typing import TYPE_CHECKING
 
+from core import calc_profile
 from core import config
 from core import failure
 from core import i18n
@@ -53,6 +54,16 @@ class _ProjectMixin:
         if self._project is None:
             self._project = project.ProjectDoc()
         return self._project
+
+    def _current_calc_profile(self) -> str:
+        """いま持っているプロジェクトの計算プロファイル（無ければ今の既定）。
+
+        ⚠️ **画面の入力ではなくプロジェクトの属性**＝`SIM_KEYS` に入れない。入れると
+        開いたファイルの方式が設定へ残り、次の起動の既定に化ける。
+        """
+        if self._project is None:
+            return calc_profile.DEFAULT_PROFILE
+        return self._project.calc_profile
 
     def _open_window(self, attr: str):
         """開いているウィンドウを返す（閉じていれば None）。"""

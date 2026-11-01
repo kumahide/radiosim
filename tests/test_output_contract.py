@@ -220,15 +220,15 @@ def test_summary_has_horizontal_distance_column():
 # --- DEM 取得の失敗率（ISSUES.md B-025 ③・3.2 で列追加）----------------------
 def test_summary_has_dem_fail_pct_column_at_the_tail():
     """`dem_fail_pct`＝通信の失敗が絡んだ標本の割合。規約1＝末尾に追加。"""
-    assert oc.SUMMARY_CSV_COLUMNS[-1] == "dem_fail_pct"
+    assert oc.SUMMARY_CSV_COLUMNS[-3] == "dem_fail_pct"
 
 
 def test_hops_has_dem_fail_pct_column_at_the_tail():
-    assert oc.HOPS_CSV_COLUMNS[-1] == "dem_fail_pct"
+    assert oc.HOPS_CSV_COLUMNS[-3] == "dem_fail_pct"
 
 
 def test_scenario_has_dem_fail_pct_column_at_the_tail():
-    assert oc.SCENARIO_CSV_COLUMNS[-1] == "dem_fail_pct"
+    assert oc.SCENARIO_CSV_COLUMNS[-3] == "dem_fail_pct"
 
 
 def test_terrain_has_elev_source_column_at_the_tail():
@@ -237,4 +237,4 @@ def test_terrain_has_elev_source_column_at_the_tail():
     `elev_ok`（真偽）ではなく文字列にしたのは、3.3 で DEM ソースが増える
     拡張のときに列の意味を変えずに値の種類だけ増やせるようにするため。
     """
-    assert oc.TERRAIN_CSV_COLUMNS[-1] == "elev_source"
+    assert oc.TERRAIN_CSV_COLUMNS[-3] == "elev_source"

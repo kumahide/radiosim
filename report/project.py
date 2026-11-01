@@ -46,6 +46,7 @@ import tempfile
 from dataclasses import dataclass, field
 from datetime import datetime
 
+from core import calc_profile
 from core import config
 from core import i18n
 from core import version
@@ -62,8 +63,12 @@ from report import multihop as mh
 #   - 自分より**新しい**版 → 拒否する（新しいファイルを古いアプリで黙って壊さない）
 #   - 未知キー → 無視
 #   - 欠損キー → 既定値 / None
+#
+# 版 2（4.0 ステージ3）＝`calc_profile` を足した。🔴 **足すだけでも版を上げる**＝版 1 の
+# 読み手（3.9.x）は未知キーを無視するので、開いて保存すると `calc_profile` が消え、
+# 次に開いたときプロファイルの無いファイルとして v1 に落ちる＝方式が黙って変わる。
 # ============================================================
-SCHEMA_VERSION = 1
+SCHEMA_VERSION = 2
 FILE_EXT = ".rsproj"
 
 # 条件探索のフェーズ（**閉じた集合**）。`ScenarioSpec.mode` の許可値の単一ソース。
@@ -102,6 +107,10 @@ class ProjectDoc:
     # 刻印（**読込の判定には使わない**＝どの版が書いたかの記録だけ）。
     app_version: str = ""
     saved_at:    str = ""
+    # 計算の方式（判断点 ⑨）。⚠️ **入力でも刻印でもない**＝`params` に入れない（設定へ残ると
+    # 次の起動の既定に化ける）・保存で上書きしない（保存し直しても v1 のまま）。
+    # 新しいプロジェクトは今の既定、ファイルに無ければ `LEGACY_PROFILE`（`_DOC_FIELDS`）。
+    calc_profile: str = field(default_factory=lambda: calc_profile.DEFAULT_PROFILE)
 
 
 # ============================================================
@@ -356,6 +365,7 @@ _DOC_FIELDS = (
     Field("params",      STR_MAP),
     Field("app_version", TEXT),
     Field("saved_at",    TEXT),
+    Field("calc_profile", ENUM, calc_profile.LEGACY_PROFILE, calc_profile.PROFILES),
 )
 
 # バッチ行＝`batch.PathRow` の写し（キー名は属性名と一致させる＝`PathRow(**…)`）
@@ -439,6 +449,7 @@ def to_dict(doc: ProjectDoc) -> dict:
         "schema_version": SCHEMA_VERSION,
         "app_version":    doc.app_version or version.APP_VERSION,
         "saved_at":       doc.saved_at or datetime.now().isoformat(timespec="seconds"),
+        "calc_profile":   doc.calc_profile,
         "meta":           _str_map(doc.meta),
         # ⚠️ 書く側でも sim キーだけに絞る＝app キーが混ざったファイルを作らない。
         "params":         config.select_sim(_str_map(doc.params)),
@@ -519,6 +530,7 @@ def from_dict(data: dict) -> ProjectDoc:
         params      = config.select_sim(head["params"]),
         app_version = head["app_version"],
         saved_at    = head["saved_at"],
+        calc_profile = head["calc_profile"],
     )
 
     b = _section(data, "batch")

@@ -28,6 +28,7 @@ from core import disclosure
 from core import i18n
 from core import models
 from core import sensitivity
+from core import simulation as sim
 from core import terrain_grid
 from core import units
 from report import mpl_fonts
@@ -35,7 +36,6 @@ from report import report_common
 from report import report_map
 
 if TYPE_CHECKING:
-    from core import simulation as sim
     from report.batch import PathResult
 
 logger = logging.getLogger("radiosim")
@@ -390,7 +390,8 @@ def path_sheet_html(
     if "diff_veg_compose" in sens_result.axes:
         scope_keys = tuple(k for k in scope_keys if k != "diff_veg_serial")
     handling = report_common.handling_section_html(
-        scope_keys, sens_result, dem_source_ids=params.dem_source)
+        scope_keys, sens_result, dem_source_ids=params.dem_source,
+        provenance=sim.provenance_line([(params, terrain)]))
 
     # 環境の表に **F1 遮蔽率と F1 侵入深さを対で**置く（I-099）。図には F1 ゾーンが
     # 描かれるのに数値が無く、印刷して人に渡すと画面で見えていた値が消えていた。

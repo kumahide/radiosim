@@ -145,7 +145,7 @@ def dump(out: str) -> None:
 
         link_dir = os.path.join(out, "links", lid)
         os.makedirs(link_dir, exist_ok=True)
-        sim._save_terrain_csv(terrain, link_dir, params.dem_source)
+        sim._save_terrain_csv(terrain, link_dir, params)
         sim._save_report(result, params, params.h_tx, params.h_rx, link_dir,
                          "dd", terrain)
 

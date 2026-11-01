@@ -24,6 +24,7 @@ from typing import Callable
 
 import numpy as np
 
+from core import calc_profile
 from core import config
 from core import coords
 from core import dem
@@ -185,6 +186,10 @@ class SimParams:
         # 未知の値（利用者が宣言ファイルから削除済み等）は `dem_sources.resolve()`
         # が国土地理院へフォールバックする＝ここでは文字列のまま持ち回るだけ。
         self.dem_source:  str   = c.get("dem_source", dem_sources.GSI_DEM.source_id)
+        # 計算プロファイル（4.0 ステージ3）＝画面の入力ではなくプロジェクトの属性
+        # （`report/project.py` の `ProjectDoc.calc_profile`）。来なければ今の既定。
+        self.calc_profile: str  = calc_profile.require(
+            c.get("calc_profile", calc_profile.DEFAULT_PROFILE))
 
 
 # ============================================================
@@ -243,6 +248,28 @@ def sample_coords(params: SimParams) -> tuple[np.ndarray, np.ndarray]:
     t = np.asarray(params.sample_fracs, dtype=float)
     return (params.lat_tx + (params.lat_rx - params.lat_tx) * t,
             params.lon_tx + (params.lon_rx - params.lon_tx) * t)
+
+
+def terrain_hash(params: SimParams, terrain: models.TerrainProfile) -> str:
+    """その実行が使った地形のハッシュ（経路の定義は `sample_coords` の 1 か所）。"""
+    lats, lons = sample_coords(params)
+    return calc_profile.terrain_hash(lats, lons, terrain.raw_elevs)
+
+
+def provenance_line(runs) -> str:
+    """帳票 1 枚ぶんの出所の 1 行（`disclosure.provenance_line` へ渡す値を揃える口）。
+
+    Args:
+        runs: `(params, terrain)` の並び。`params` が `None` の行（入力が解けなかった行）は
+            CSV の `input_hash` も空なので数えない。`terrain` が `None` の行（地形を
+            取れなかった行）は地形のハッシュにだけ入らない。
+    """
+    known = [(p, t) for p, t in runs if p is not None]
+    return disclosure.provenance_line(
+        [p.calc_profile for p, _ in known],
+        [calc_profile.input_hash(p) for p, _ in known],
+        [terrain_hash(p, t) for p, t in known if t is not None],
+    )
 
 
 def fetch_elevations(
@@ -678,7 +705,7 @@ def save_package(
     os.makedirs(save_dir, exist_ok=True)
 
     _save_settings(params, h_tx, h_rx, save_dir)
-    _save_terrain_csv(terrain, save_dir, params.dem_source)
+    _save_terrain_csv(terrain, save_dir, params)
     _save_report(result, params, h_tx, h_rx, save_dir, coord_format, terrain)
 
     logger.info("Package saved: %s", save_dir)
@@ -719,6 +746,8 @@ def _save_settings(
         "env_type"    : params.env_type,
         "rain_rate"   : params.rain_rate,
         "dem_source"  : params.dem_source,
+        # どの方式で計算したかの記録（`config.select_sim` は拾わない＝読み戻さない）。
+        "calc_profile": params.calc_profile,
     }
     path = os.path.join(save_dir, "settings.json")
     with open(path, "w", encoding="utf-8") as f:
@@ -726,13 +755,14 @@ def _save_settings(
 
 
 def _save_terrain_csv(
-    terrain: models.TerrainProfile, save_dir: str, dem_source_id: str,
+    terrain: models.TerrainProfile, save_dir: str, params: SimParams,
 ) -> None:
-    # 3.4 ステージ1（I-147）＝**実際に使われたソース**を書く。`dem_source_id` は
+    # 3.4 ステージ1（I-147）＝**実際に使われたソース**を書く。`params.dem_source` は
     # 利用者が宣言ファイルから削除済みの値かもしれない（`fetch_elevations` は
     # `dem_sources.resolve()` で国土地理院へフォールバックして取得している）ので、
     # ここでも同じ解決を通し、実際に効いたソースの `source_id` と一致させる。
-    source_id = dem_sources.resolve(dem_source_id).source_id
+    source_id = dem_sources.resolve(params.dem_source).source_id
+    digest = calc_profile.input_hash(params)
     path = os.path.join(save_dir, "terrain_profile.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
         writer = csv.writer(f)
@@ -747,6 +777,7 @@ def _save_terrain_csv(
                 round(units.km_to_m(float(d)), 1),
                 "" if unavailable else round(float(h), 2),
                 "unavailable" if unavailable else source_id,
+                params.calc_profile, digest,
             ])
 
 
@@ -863,6 +894,7 @@ def _save_report(
                 resolution=params.resolution,
             ),
             dem_source_ids=params.dem_source,
+            provenance=provenance_line([(params, terrain)]),
         )
     )
     path = os.path.join(save_dir, "report.txt")
