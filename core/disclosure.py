@@ -71,6 +71,7 @@ def _scope_args(key: str) -> dict:
         "gas_zeroed":        {"lo": _ghz(gas_lo)},
         "gas_extrapolated":  {"lo": _ghz(gas_lo), "hi": _ghz(gas_hi)},
         "veg_extrapolated":  {"lo": _ghz(veg_lo), "hi": _ghz(veg_hi)},
+        "veg_discontinuous": {"hi": _ghz(veg_hi)},
         **{
             f"resolution_{level}": _resolution_args(level, coarse)
             for level in spacing

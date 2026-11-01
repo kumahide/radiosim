@@ -544,6 +544,9 @@ _STRINGS: dict[str, dict[str, str]] = {
             "Gas attenuation: outside its valid range ({lo}-{hi} GHz).",
         "html_scope_veg_extrapolated":
             "Vegetation coefficient: defined for {lo}-{hi} GHz, extrapolated outside it.",
+        "html_scope_veg_discontinuous":
+            "Vegetation coefficient: changes to a different formula at {hi} GHz and above, "
+            "and the value jumps at that boundary (unverified).",
         "html_scope_diff_veg_serial":
             "Shadowed stretches are charged both diffraction loss and vegetation "
             "attenuation — the total reads high (safe side), and is unverified.",
@@ -1349,6 +1352,8 @@ _STRINGS: dict[str, dict[str, str]] = {
             "大気減衰：有効範囲（{lo}〜{hi} GHz）の外",
         "html_scope_veg_extrapolated":
             "植生減衰の係数：{lo}〜{hi} GHz の定義域外を外挿",
+        "html_scope_veg_discontinuous":
+            "植生減衰の係数：{hi} GHz 以上は別の式に切り替わり、境目で値が跳ぶ（未検証）",
         "html_scope_diff_veg_serial":
             "遮蔽区間：回折損と植生減衰を重ねて計上するため、"
             "合計は大きめ（安全側）に出る。合成方法自体は未検証",

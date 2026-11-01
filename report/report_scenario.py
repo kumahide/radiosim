@@ -382,6 +382,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
         base.h_tx, base.h_rx, base.freq_mhz, base.veg_h, base.k_factor,
         base.diff_method, base.env_type, base.rain_rate,
         base.p_tx, base.gain_tx, base.gain_rx, base.sens,
+        profile=base.calc_profile,
     )
     # 「結果の取扱に関する補足」（3.0a1）＋ 感度の変動幅（3.4 ステージ6・B-219 で1セクションへ統合）。
     # ⚠️ **条件探索は 1 枚で N 条件を載せる**＝周波数や植生高そのものを軸に振れる
@@ -401,6 +402,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
                 # ⚠️ 解像度は**凍結バーの値**＝軸にならない（座標と同じく、変えると
                 # DEM 取得が要り「同一経路を掘る」前提から外れる＝`scenario.py`）。
                 resolution=base.resolution,
+                profile=base.calc_profile,
             )
             for p in run.points if p.result is not None
         ),

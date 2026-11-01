@@ -34,7 +34,7 @@ import numpy as np
 # 🔑 **回折は `core/diffraction.py` が持つ**（2026-08-26 に分割・B-130）。
 #    ここで再輸出するのは**呼び出し側を 1 行も変えないため**＝
 #    `models._diffraction_loss_fk` / `models.DIFF_METHOD_MULTI` は今までどおり動く。
-from core import terrain_grid
+from core import calc_profile, terrain_grid
 from core.assumptions import DISCLOSED, Assumption
 from core.diffraction import (  # noqa: F401  （再輸出）
     DIFF_METHOD_ALIASES,
@@ -119,6 +119,8 @@ GAS_RANGE_GHZ: tuple[float, float] = (1.0, 350.0)
 
 #: 植生減衰の係数分岐の境目 [GHz]（`_vegetation_loss`）。**この内側が本来の定義**で、
 #: 外側（1 GHz 未満 / 6 GHz 以上）は同じ形の式を伸ばして使っている。
+#: 🔑 **v2 は下側の枝を使わない**（B-262）＝1 GHz の崖を実測が支持しなかった。ただし下限は
+#: 残す＝v1 の再現と、3.4 の帯域の分類（`core/residuals.py`）がこの数字を指している。
 VEG_COEFF_RANGE_GHZ: tuple[float, float] = (1.0, 6.0)
 
 #: 等価地球半径係数 K の標準大気値（**製品はこの 1 値だけを使う**＝利用者は選べない）。
@@ -166,7 +168,8 @@ SCOPE_NOTE_ORDER: tuple[str, ...] = (
     "rain_extrapolated",  # 降雨: 係数表の端値で外挿した
     "gas_zeroed",         # 大気: 範囲外につき 0 として扱った
     "gas_extrapolated",   # 大気: 有効範囲の上を超えている
-    "veg_extrapolated",   # 植生: 係数の定義域の外側
+    "veg_extrapolated",   # 植生: 係数の定義域の外側（v1）
+    "veg_discontinuous",  # 植生: 6 GHz の境目で値が跳ぶ・未判定（v2＝B-262）
     "diff_veg_serial",    # 遮蔽区間で回折損と植生減衰を重ねている（B-132）
 )
 
@@ -179,8 +182,10 @@ ASSUMPTIONS: tuple[Assumption, ...] = tuple(
          ("rain_zeroed", "rain_extrapolated"), "test_the_rain_note_tracks_the_formula_exactly", ""),
         ("gas_frequency_range", "大気（P.676-13 Annex 2）は有効範囲（1〜350 GHz）の外を 0 dB か範囲外として扱う",
          ("gas_zeroed", "gas_extrapolated"), "test_the_gas_note_tracks_the_formula_exactly", ""),
-        ("vegetation_coefficient_range", "植生の係数は 1〜6 GHz の定義を外側へ伸ばして使う",
-         ("veg_extrapolated",), "test_the_vegetation_coefficient_branch_is_declared", "B-262"),
+        ("vegetation_coefficient_range",
+         "植生の係数は 1〜6 GHz の定義を外側へ伸ばして使う（v1）。v2 は 6 GHz の境目の不連続を名乗る",
+         ("veg_extrapolated", "veg_discontinuous"),
+         "test_the_vegetation_coefficient_branch_is_declared", "B-262"),
         ("uniform_vegetation_height", "植生高は入力した一律値を経路全体に当てる",
          ("veg_uniform",), "test_the_uniform_height_assumption_is_declared_only_with_vegetation", ""),
         ("diffraction_and_vegetation_add", "遮蔽区間では回折損と植生減衰を直列に足す",
@@ -206,6 +211,7 @@ def scope_notes(
     rain_rate: float = 0.0,
     veg_h: float = 0.0,
     resolution: str = "",
+    profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> tuple[str, ...]:
     """この条件の結果に付く**適用範囲の刻印**を、帳票の並びで返す（純述語）。
 
@@ -217,6 +223,8 @@ def scope_notes(
         resolution:  地形の解像度の段階（`terrain_grid.RESOLUTION_KEYS`）。
                      **知らない語・空なら刻印を出さない**＝どの段階で出した値かを
                      言えないなら、名乗らないほうが正直（B-128）
+        profile:     計算のプロファイル（`core/calc_profile.py`）。**使った式を名乗る
+                     刻印なので、製品の経路は必ず渡す**（`tests/test_calc_profile.py`）
 
     ⚠️ **計算していない項目の刻印は付けない**＝降雨率 0 の回線に「降雨は範囲外」と
     書くと、読み手は*降雨を見込んだのに落とされた*と読む。**出したのは「使った式の
@@ -244,8 +252,13 @@ def scope_notes(
         # 植生を入れた回線だけが「一律値を経路全体に適用した」の当事者（I-116）。
         hits.add("veg_uniform")
         veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
-        if freq_ghz < veg_lo or freq_ghz >= veg_hi:
-            hits.add("veg_extrapolated")
+        if profile == calc_profile.V1:
+            if freq_ghz < veg_lo or freq_ghz >= veg_hi:
+                hits.add("veg_extrapolated")
+        elif freq_ghz >= veg_hi:
+            # 🔑 **畳まずに名乗る**（B-262）＝縁の向こう側の実測点が無い。下側は畳んだので
+            # 刻印は要らない（実測点は 106 MHz まで 1 本のべき乗則に載った）。
+            hits.add("veg_discontinuous")
         # 🔑 **植生を入れた回線だけ**（B-132）＝`veg_h=0` なら植生減衰は必ず 0 dB
         # （B-131 で頭打ちにした）ので、重ねようがない。**直してから名乗る**
         # ＝先に B-131 を直したので、この刻印は*実際に 2 項が並ぶ回線*にだけ付く。
@@ -541,6 +554,7 @@ def calculate_propagation(
     diff_method: str = DIFF_METHOD_MULTI,
     env_type: str = ENV_DEFAULT,
     rain_rate: float = 0.0,
+    profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> PropagationResult:
     """
     Fresnel 第1ゾーン・回折損・植生減衰・Env Loss・降雨減衰・大気減衰を計算する。
@@ -551,6 +565,8 @@ def calculate_propagation(
                      ⚠️ 旧名 "deygout" も受ける（`normalize_diff_method`）
         env_type   : "urban" | "suburban" | "rural" | "los"
         rain_rate  : 降雨率 [mm/h]（0 = 降雨なし）
+        profile    : 計算のプロファイル（`core/calc_profile.py`）。**製品の経路は必ず渡す**
+                     （既定へ落ちると、開いたプロジェクトと違う方式で黙って計算する）
     """
     elevs = terrain.elevs_with_curve
     d_km  = terrain.d_km_axis
@@ -624,7 +640,7 @@ def calculate_propagation(
     #    （地表そのものが LoS を超えた分は回折損が表している＝B-131）。
     veg_top  = elevs + veg_h
     veg_loss = _vegetation_loss(
-        veg_top, veg_h, los_vals, f1, freq_mhz, d_m_axis
+        veg_top, veg_h, los_vals, f1, freq_mhz, d_m_axis, profile
     )
 
     slant_dist_km = math.sqrt(
@@ -661,6 +677,25 @@ def calculate_propagation(
     )
 
 
+def _veg_coeff(freq_ghz: float, profile: str) -> float:
+    """植生減衰の係数（`_vegetation_loss`）。
+
+    🔑 **v2 は 1 GHz の崖を畳む**（B-262）＝ITU-R P.833-10 の実測 5 点（106 MHz〜2.1 GHz）が
+    1 本のべき乗則 0.194 f^0.70 に載り、内側の枝 0.20 f^0.7 と実質同じだった＝内側の枝を
+    1 GHz で切る根拠が無い。下側の枝は 922 MHz で実測の 0.68 倍（危険側）。
+    ⚠️ **6 GHz は畳まない**＝縁の向こう側の実測点が無い（`veg_discontinuous` で名乗る）。
+    再判定の条件は「6 GHz の両側にまたがる実測点」が取れたとき。
+    """
+    # 境目は `VEG_COEFF_RANGE_GHZ` が単一ソース＝**刻印（scope_notes）と同じ数字**を
+    # 見る（開示だけ別に書くと、片方を動かした日に嘘になる）。
+    veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
+    if freq_ghz >= veg_hi:
+        return 0.35 * (freq_ghz ** 0.9)
+    if profile == calc_profile.V1 and freq_ghz < veg_lo:
+        return 0.12 * (freq_ghz ** 0.5)
+    return 0.20 * (freq_ghz ** 0.7)
+
+
 def _vegetation_loss(
     veg_top: np.ndarray,
     veg_h: float,
@@ -668,6 +703,7 @@ def _vegetation_loss(
     f1: np.ndarray,
     freq_mhz: float,
     d_m_axis: np.ndarray,
+    profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> float:
     """
     植生頂点が LoS 線に侵入した深さから減衰量 [dB] を推定する。
@@ -707,17 +743,9 @@ def _vegetation_loss(
         f1:       Fresnel 第1ゾーン半径配列 [m]
         d_m_axis: **各標本の水平距離** [m]（B-150）＝ここは*長さ*を数える項なので、
                   標本が等間隔でなくなった以上「点数 × 一定間隔」では出せない。
+        profile:  計算のプロファイル（係数の枝が変わる＝`_veg_coeff`）。
     """
-    # 境目は `VEG_COEFF_RANGE_GHZ` が単一ソース＝**刻印（scope_notes）と同じ数字**を
-    # 見る（開示だけ別に書くと、片方を動かした日に嘘になる）。
-    veg_lo, veg_hi = VEG_COEFF_RANGE_GHZ
-    freq_ghz = freq_mhz / 1000.0
-    if freq_ghz < veg_lo:
-        coeff = 0.12 * (freq_ghz ** 0.5)
-    elif freq_ghz < veg_hi:
-        coeff = 0.20 * (freq_ghz ** 0.7)
-    else:
-        coeff = 0.35 * (freq_ghz ** 0.9)
+    coeff = _veg_coeff(freq_mhz / 1000.0, profile)
 
     # 植生頂点が LoS 線を超えた量（正値 = LoS に侵入している）
     penetration   = veg_top - los_vals

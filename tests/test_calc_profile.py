@@ -4,11 +4,13 @@ tests/test_calc_profile.py
 計算プロファイル ID と 2 つのハッシュ（4.0 ステージ3）のガード。
 
 守ること＝①入力を足したのにハッシュへ足し忘れない ②旧プロジェクトは既定が変わっても v1 で
-開き、保存し直しても v1 のまま ③成果物 CSV の全 4 本の末尾に同じ 2 列 ④帳票の全部の面に刻印。
+開き、保存し直しても v1 のまま ③成果物 CSV の全 4 本の末尾に同じ 2 列 ④帳票の全部の面に刻印
+⑤v2 の枝が式・刻印・感度へ届き、製品の呼び出しが既定へ落ちない（ステージ4）。
 """
 
 from __future__ import annotations
 
+import ast
 import csv
 import json
 import os
@@ -23,6 +25,7 @@ from core import i18n
 from core import models
 from core import output_contract
 from core import scenario as scn
+from core import sensitivity
 from core import simulation as sim
 from report import batch
 from report import project
@@ -318,3 +321,94 @@ def test_every_report_face_passes_the_stamp():
         assert "provenance=" in text, name
         callers += calls
     assert callers == 4
+
+
+# ------------------------------------------------------------
+# v2 の枝（B-262・ステージ4）
+# ------------------------------------------------------------
+def test_v2_folds_the_1ghz_cliff_and_v1_keeps_it():
+    """🔒 v2 は 2 MHz 動かして跳ばない。v1 の崖は旧プロジェクトの再現のために残す。"""
+    assert models._veg_coeff(1.001, "v2") / models._veg_coeff(0.999, "v2") == pytest.approx(1.0, abs=0.01)
+    assert models._veg_coeff(1.001, "v1") / models._veg_coeff(0.999, "v1") == pytest.approx(1.669, abs=0.01)
+
+
+def test_the_922mhz_coefficient_moves_to_the_inner_branch():
+    """台帳の数字＝v1 0.11522・v2 0.18895（1.64 倍）。"""
+    assert models._veg_coeff(0.922, "v1") == pytest.approx(0.11522, abs=1e-5)
+    assert models._veg_coeff(0.922, "v2") == pytest.approx(0.18895, abs=1e-5)
+
+
+@pytest.mark.parametrize("profile", ["v1", "v2"])
+def test_the_6ghz_jump_is_not_folded(profile):
+    """🔒 上側は畳まない＝縁の向こう側の実測点が無い（B-262 の処方）。"""
+    assert models._veg_coeff(6.001, profile) / models._veg_coeff(5.999, profile) == pytest.approx(2.505, abs=0.01)
+
+
+@pytest.mark.parametrize("freq_mhz, profile, extrapolated, discontinuous", [
+    (430.0,  "v1", True,  False),
+    (2400.0, "v1", False, False),
+    (6000.0, "v1", True,  False),
+    (430.0,  "v2", False, False),
+    (2400.0, "v2", False, False),
+    (5999.0, "v2", False, False),
+    (6000.0, "v2", False, True),
+])
+def test_the_vegetation_note_follows_the_profile(freq_mhz, profile, extrapolated, discontinuous):
+    keys = models.scope_notes(freq_mhz, veg_h=5.0, profile=profile)
+    assert ("veg_extrapolated" in keys) is extrapolated
+    assert ("veg_discontinuous" in keys) is discontinuous
+
+
+def test_no_v2_note_without_vegetation():
+    assert "veg_discontinuous" not in models.scope_notes(6000.0, veg_h=0.0, profile="v2")
+
+
+def _vegetated(profile: str) -> sim.SimParams:
+    """植生が LoS に入り、上限 45 dB に張り付かない短い回線（922 MHz）。"""
+    return _params(calc_profile=profile, start="35.0, 139.0", end="35.002, 139.0",
+                   freq="922", veg_h="20", h_tx="5", h_rx="5")
+
+
+def test_the_profile_reaches_the_calculation_and_the_sensitivity():
+    """🔒 方式が計算と感度の両方へ届く＝帳票の余裕度と感度の基準が同じ方式になる。"""
+    margins = {}
+    for profile in calc_profile.PROFILES:
+        params = _vegetated(profile)
+        terrain = _terrain(params)
+        margin = sim.run_calculation(terrain, params.h_tx, params.h_rx, params).actual_margin
+        sens = sensitivity.compute_link_sensitivity(
+            terrain, params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+            params.h_tx, params.h_rx, params.freq_mhz, params.veg_h, params.k_factor,
+            params.diff_method, params.env_type, params.rain_rate,
+            params.p_tx, params.gain_tx, params.gain_rx, params.sens,
+            profile=profile,
+        )
+        assert sens.axes["veg_h"].baseline == pytest.approx(margin)
+        margins[profile] = margin
+    assert margins["v2"] < margins["v1"] - 1.0
+
+
+def test_every_product_call_passes_the_profile():
+    """🔒 既定へ落ちると、開いたプロジェクトと違う方式で黙って計算する（既定は試験と探針のため）。"""
+    root = os.path.join(os.path.dirname(__file__), "..")
+    names = {"calculate_propagation", "scope_notes", "compute_link_sensitivity"}
+    found, missing = 0, []
+    for folder in ("core", "report", "views"):
+        for base, _dirs, files in os.walk(os.path.join(root, folder)):
+            for name in files:
+                if not name.endswith(".py"):
+                    continue
+                path = os.path.join(base, name)
+                with open(path, encoding="utf-8") as f:
+                    tree = ast.parse(f.read())
+                for node in ast.walk(tree):
+                    if not isinstance(node, ast.Call):
+                        continue
+                    func = node.func
+                    called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
+                    if called in names:
+                        found += 1
+                        if not any(k.arg == "profile" for k in node.keywords):
+                            missing.append(f"{name}:{node.lineno}")
+    assert found >= 9
+    assert missing == []

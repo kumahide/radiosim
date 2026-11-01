@@ -35,8 +35,11 @@ from core import dem_sources
 #: 計算の方式の版＝3.9.x の方式。
 V1: str = "v1"
 
+#: 計算の方式の版＝4.0 の方式。🔑 数字が動く直しは**こちらの側にだけ**入れる（ステージ4）。
+V2: str = "v2"
+
 #: この版が知っているプロファイル（**閉じた集合**・`.rsproj` の読みの許可値）。
-PROFILES: tuple[str, ...] = (V1,)
+PROFILES: tuple[str, ...] = (V1, V2)
 
 #: 新しい計算の既定。
 DEFAULT_PROFILE: str = V1

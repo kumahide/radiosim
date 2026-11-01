@@ -369,6 +369,7 @@ def path_sheet_html(
         h_tx, h_rx, params.freq_mhz, params.veg_h, params.k_factor,
         result.diff_method, result.env_type, params.rain_rate,
         params.p_tx, params.gain_tx, params.gain_rx, params.sens,
+        profile=params.calc_profile,
     )
     # 「結果の取扱に関する補足」（3.0a1）＝**前提と適用範囲を帳票そのものに焼き込む**。
     # 刻印は `models.scope_notes` が純述語で決める（この面は並べるだけ＝物理を持たない）。
@@ -382,6 +383,7 @@ def path_sheet_html(
         rain_rate=params.rain_rate,
         veg_h=params.veg_h,
         resolution=params.resolution,
+        profile=params.calc_profile,
     )
     if sens_result.ground_reflection is not None:
         scope_keys = tuple(k for k in scope_keys if k != "ground_reflection")

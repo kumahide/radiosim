@@ -184,6 +184,7 @@ def _multihop_sensitivity(run: MultiHopRun, worst):
         worst.params.k_factor, worst.result.diff_method, worst.result.env_type,
         worst.params.rain_rate, worst.params.p_tx, worst.params.gain_tx,
         worst.params.gain_rx, worst.params.sens,
+        profile=worst.params.calc_profile,
     )
 
     # ⛔ **律速区間の入れ替わり注記は 3.4RC1 から出さない**（B-232）＝唯一の摂動軸
@@ -379,6 +380,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                     rain_rate=pr.params.rain_rate,
                     veg_h=pr.params.veg_h,
                     resolution=pr.params.resolution,
+                    profile=pr.params.calc_profile,
                 )
                 for pr in run.hops if pr.result is not None and pr.params is not None
             ),

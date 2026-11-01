@@ -383,6 +383,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             worst.params.k_factor, worst.result.diff_method, worst.result.env_type,
             worst.params.rain_rate, worst.params.p_tx, worst.params.gain_tx,
             worst.params.gain_rx, worst.params.sens,
+            profile=worst.params.calc_profile,
         )
         sens_note = i18n.t("html_sens_worst_path").format(path=worst.row.path_id)
 
@@ -397,6 +398,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
                 rain_rate=pr.params.rain_rate,
                 veg_h=pr.params.veg_h,
                 resolution=pr.params.resolution,
+                profile=pr.params.calc_profile,
             )
             for pr in results if pr.result is not None and pr.params is not None
         ),

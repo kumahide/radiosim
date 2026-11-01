@@ -26,6 +26,7 @@ from typing import Callable
 
 import numpy as np
 
+from core import calc_profile
 from core import ground_reflection
 from core import models
 from core import terrain_grid
@@ -84,6 +85,7 @@ class HopInputs:
     gain_tx:     float
     gain_rx:     float
     sens:        float
+    profile:     str = calc_profile.DEFAULT_PROFILE
 
 
 def _margin_for(
@@ -91,10 +93,12 @@ def _margin_for(
     h_tx: float, h_rx: float, freq_mhz: float, veg_h: float, initial_k: float,
     diff_method: str, env_type: str, rain_rate: float,
     p_tx: float, gain_tx: float, gain_rx: float, sens: float,
+    profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> float:
     """既存パイプラインを1回まわして余裕度[dB]だけを返す（新しい式は無い）。"""
     prop = models.calculate_propagation(
         terrain, h_tx, h_rx, freq_mhz, veg_h, initial_k, diff_method, env_type, rain_rate,
+        profile=profile,
     )
     result = models.calculate_link_budget(prop, freq_mhz, p_tx, gain_tx, gain_rx, sens)
     return result.actual_margin
@@ -104,7 +108,7 @@ def _margin_for_hop(hop: HopInputs) -> float:
     return _margin_for(
         hop.terrain, hop.h_tx, hop.h_rx, hop.freq_mhz, hop.veg_h, hop.initial_k,
         hop.diff_method, hop.env_type, hop.rain_rate,
-        hop.p_tx, hop.gain_tx, hop.gain_rx, hop.sens,
+        hop.p_tx, hop.gain_tx, hop.gain_rx, hop.sens, hop.profile,
     )
 
 
@@ -159,6 +163,7 @@ def compute_link_sensitivity(
     p_tx: float, gain_tx: float, gain_rx: float, sens: float,
     *,
     fetch_alt_resolution: "Callable[[str], np.ndarray] | None" = None,
+    profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> SensitivityResult:
     """1本の回線について、摂動軸ごとの余裕度[dB]の幅を計算する。
 
@@ -168,10 +173,11 @@ def compute_link_sensitivity(
         fetch_alt_resolution: 解像度軸を計算する場合のみ渡す。`level` を受け取り
             その解像度の標高配列を返す callable（DEM 再取得＝I/O はこの層に持ち込まず
             呼び出し側が担当する）。`None` なら解像度軸は省く。
+        profile: 計算のプロファイル。**製品の経路は必ず渡す**（帳票の余裕度と同じ方式で振る）。
     """
     baseline_margin = _margin_for(
         terrain, h_tx, h_rx, freq_mhz, veg_h, initial_k, diff_method, env_type, rain_rate,
-        p_tx, gain_tx, gain_rx, sens,
+        p_tx, gain_tx, gain_rx, sens, profile,
     )
 
     def margin_with(*, raw_elevs=None, veg_h_v=None, env_type_v=None, diff_method_v=None) -> float:
@@ -184,7 +190,7 @@ def compute_link_sensitivity(
             initial_k,
             diff_method if diff_method_v is None else diff_method_v,
             env_type if env_type_v is None else env_type_v,
-            rain_rate, p_tx, gain_tx, gain_rx, sens,
+            rain_rate, p_tx, gain_tx, gain_rx, sens, profile,
         )
 
     axes: "dict[str, AxisRange]" = {}
@@ -231,6 +237,7 @@ def compute_link_sensitivity(
     # 🔑 再計算不要＝baseline の PropagationResult から後処理するだけ。
     prop = models.calculate_propagation(
         terrain, h_tx, h_rx, freq_mhz, veg_h, initial_k, diff_method, env_type, rain_rate,
+        profile=profile,
     )
     baseline_result = models.calculate_link_budget(prop, freq_mhz, p_tx, gain_tx, gain_rx, sens)
     total_loss_max_compose = (
@@ -254,7 +261,7 @@ def compute_link_sensitivity(
             alt_terrain = rebuild_terrain(terrain, lat_tx, lon_tx, lat_rx, lon_rx, alt_raw)
             margins.append(_margin_for(
                 alt_terrain, h_tx, h_rx, freq_mhz, veg_h, initial_k,
-                diff_method, env_type, rain_rate, p_tx, gain_tx, gain_rx, sens,
+                diff_method, env_type, rain_rate, p_tx, gain_tx, gain_rx, sens, profile,
             ))
         resolution_axis = AxisRange("resolution", baseline_margin, min(margins), max(margins))
 

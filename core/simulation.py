@@ -669,6 +669,7 @@ def run_calculation(
         diff_method = params.diff_method,
         env_type    = params.env_type,
         rain_rate   = _rain,
+        profile     = params.calc_profile,
     )
     result = models.calculate_link_budget(
         prop     = prop,
@@ -892,6 +893,7 @@ def _save_report(
                 rain_rate=params.rain_rate,
                 veg_h=params.veg_h,
                 resolution=params.resolution,
+                profile=params.calc_profile,
             ),
             dem_source_ids=params.dem_source,
             provenance=provenance_line([(params, terrain)]),
