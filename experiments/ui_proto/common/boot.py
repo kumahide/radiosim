@@ -27,7 +27,17 @@ def web_root() -> str:
 
 
 def fatal(message: str) -> None:
-    """窓が出ないときの最後の口＝`--noconsole` では print が届かない。"""
+    """窓が出ないときの最後の口＝`--noconsole` では print が届かない。
+
+    同じ文を `%LOCALAPPDATA%\\RadioSimUiProto\\last_error.txt` にも残す＝測定の自動化と、
+    メッセージ箱を閉じてしまった後の確認のため。
+    """
+    try:
+        os.makedirs(_APP_DIR, exist_ok=True)
+        with open(app_dir("last_error.txt"), "w", encoding="utf-8") as f:
+            f.write(message)
+    except OSError:
+        pass
     ctypes.windll.user32.MessageBoxW(None, message, "RadioSim 画面の試作", 0x10)
     raise SystemExit(1)
 

@@ -67,14 +67,19 @@ def _row(key: str, runs: list[dict]) -> dict:
     first, rest = runs[0], runs[1:] or runs
     latency = [r["input_ms"]["p50"] for r in rest if "input_ms" in r]
     latency95 = [r["input_ms"]["p95"] for r in rest if "input_ms" in r]
+    applied = [r["input_ms"]["apply_p50"] for r in rest if "apply_p50" in r.get("input_ms", {})]
     fps = [r["pan_fps"] for r in rest if r.get("pan_fps")]
+    step = [r["pan_step_ms"] for r in rest if r.get("pan_step_ms")]
     return {
         "candidate": key,
         "first_start_ms": _startup_ms(first),
         "second_start_ms": statistics.median(_startup_ms(r) for r in rest),
         "input_p50_ms": round(statistics.median(latency), 1) if latency else None,
         "input_p95_ms": round(statistics.median(latency95), 1) if latency95 else None,
+        "input_apply_p50_ms": round(statistics.median(applied), 1) if applied else None,
         "pan_fps": statistics.median(fps) if fps else None,
+        "pan_step_ms": statistics.median(step) if step else None,
+        "refresh_hz": first.get("refresh_hz"),
         "overflow": first.get("overflow"),
         "client": first.get("client"),
         "tiles": runs[-1].get("tiles"),

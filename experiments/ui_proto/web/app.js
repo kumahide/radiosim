@@ -88,7 +88,8 @@ function apply(res) {
     ["回折損", `${res.diff_loss_db.toFixed(1)} dB`],
     ["植生減衰", `${res.veg_loss_db.toFixed(1)} dB`],
     ["総損失", `${res.total_loss_db.toFixed(1)} dB`],
-    ["Fresnel 遮蔽", `${res.blocked_pct.toFixed(1)} %`],
+    ["Fresnel 遮蔽", res.blocked_text],
+    ["F1 侵入深さ", res.f1_depth_text],
     ["標本数", `${res.samples} 点`],
   ]);
   profile = res.profile;
@@ -317,6 +318,7 @@ async function inputLatency(count) {
   const el = fields.find((f) => f.dataset.field === "p_tx");
   const original = el.value;
   const samples = [];
+  const applied = [];
   for (let i = 0; i < count; i++) {
     const before = seq + 1;
     const t0 = performance.now();
@@ -325,13 +327,17 @@ async function inputLatency(count) {
     while ($("verdict").dataset.state === "pending" || seq !== before) {
       await new Promise((ok) => setTimeout(ok, 1));
     }
+    // 判定と断面図を書き終えた時点＝C（Tk の update が返る時点）と同じ量。
+    applied.push(performance.now() - t0);
     await paintDone();
     samples.push(performance.now() - t0);
   }
   el.value = original;
   el.dispatchEvent(new Event("input"));
   samples.sort((a, b) => a - b);
-  return { p50: samples[Math.floor(count / 2)], p95: samples[Math.floor(count * 0.95)], max: samples[count - 1] };
+  applied.sort((a, b) => a - b);
+  return { p50: samples[Math.floor(count / 2)], p95: samples[Math.floor(count * 0.95)], max: samples[count - 1],
+           apply_p50: applied[Math.floor(count / 2)] };
 }
 
 function nav() {
@@ -384,7 +390,8 @@ function showDiag(env, m) {
     ["画面→判定", m.first_verdict_ms ? `${(m.first_verdict_ms / 1000).toFixed(2)} 秒` : "—"],
     ["入力→判定 中央", m.input_ms ? `${m.input_ms.p50.toFixed(0)} ms` : "測定中"],
     ["入力→判定 95%", m.input_ms ? `${m.input_ms.p95.toFixed(0)} ms` : "測定中"],
-    ["地図の移動", m.pan_fps ? `${m.pan_fps} fps` : "測定中"],
+    ["入力→書き終え 中央", m.input_ms ? `${m.input_ms.apply_p50.toFixed(0)} ms` : "測定中"],
+    ["地図の移動", m.pan_fps ? `${m.pan_fps} fps（画面 ${env.refresh_hz} Hz）` : "測定中"],
     ["描画", bad(/SwiftShader|WebGL なし|Basic Render/.test(m.renderer), m.renderer)],
     ["WebView2", bad(!env.webview2, env.webview2 ?? "無し")],
     ["Edge", bad(!env.edge_found, m.user_agent || (env.edge_found ? "あり" : "無し"))],

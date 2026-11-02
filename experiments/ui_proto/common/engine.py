@@ -11,7 +11,7 @@ import time
 
 import numpy as np
 
-from core import config, models, simulation
+from core import config, models, simulation, units
 
 #: 試作の入力＝製品の既定値のうち、画面に出す欄だけ。
 DEFAULT_INPUTS: dict[str, str] = {
@@ -92,7 +92,9 @@ def calculate(inputs: dict[str, str]) -> dict:
         "diff_loss_db": round(result.diff_loss, 2),
         "veg_loss_db": round(result.veg_loss, 2),
         "total_loss_db": round(result.total_loss, 2),
-        "blocked_pct": round(result.blocked_ratio, 1),
+        # 生値は侵入深さ（上限なし）＝表記は製品の整形に任せる（100 % で頭打ち・深さは ×F1）。
+        "blocked_text": units.format_blocked_ratio(result.blocked_ratio),
+        "f1_depth_text": units.format_f1_depth(result.blocked_ratio),
         "distance_km": round(terrain.horiz_dist_km, 3),
         "samples": terrain.num_samples,
         "fail_pct": round(terrain.fail_pct, 1),

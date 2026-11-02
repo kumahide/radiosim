@@ -201,7 +201,8 @@ class App:
         self.breakdown.configure(text=(
             f"自由空間損失 {res['fspl_db']:.1f} dB\n回折損 {res['diff_loss_db']:.1f} dB\n"
             f"植生減衰 {res['veg_loss_db']:.1f} dB\n総損失 {res['total_loss_db']:.1f} dB\n"
-            f"Fresnel 遮蔽 {res['blocked_pct']:.1f} %\n標本数 {res['samples']} 点"))
+            f"Fresnel 遮蔽 {res['blocked_text']}\nF1 侵入深さ {res['f1_depth_text']}\n"
+            f"標本数 {res['samples']} 点"))
         self._draw(res["profile"])
         self.verdict_serial += 1
         if self.first_verdict is None:
@@ -232,7 +233,7 @@ class App:
         self.root.update()
         start_ms = self.ctx.app.facts["process_start_epoch_ms"]
         self.metrics["startup_ms"] = round(self.first_verdict * 1000 - start_ms)
-        self.metrics["pan_fps"] = self._pan_fps()
+        self.metrics["pan_step_ms"] = self._pan_step_ms()
         self.metrics["input_ms"] = self._input_latency(30)
         self.metrics["client"] = f"{self.root.winfo_width()}×{self.root.winfo_height()}"
         self.metrics["screen"] = f"{self.root.winfo_screenwidth()}×{self.root.winfo_screenheight()}"
@@ -245,16 +246,16 @@ class App:
             boot.finish(self.ctx)
             self.root.after(100, self.root.destroy)
 
-    def _pan_fps(self) -> int:
+    def _pan_step_ms(self) -> float:
+        """地図を 1 回動かして描き終えるまで＝Tk は画面の更新を待たないので fps とは比べない。"""
         lat, lon = self.map.get_position()
         t0 = time.perf_counter()
-        frames = 0
-        for i in range(24):
+        steps = 24
+        for i in range(steps):
             self.map.set_position(lat, lon + (0.0008 if i % 2 else -0.0008))
             self.root.update()
-            frames += 1
         self.map.set_position(lat, lon)
-        return round(frames / (time.perf_counter() - t0))
+        return round((time.perf_counter() - t0) * 1000 / steps, 1)
 
     def _input_latency(self, count: int) -> dict:
         var = self.vars["p_tx"]
@@ -270,7 +271,9 @@ class App:
             samples.append((time.perf_counter() - t0) * 1000)
         var.set(original)
         samples.sort()
-        return {"p50": samples[count // 2], "p95": samples[int(count * 0.95)], "max": samples[-1]}
+        # Tk は書き終え＝画面へ出した時点（画面の更新を待つ口がない）。
+        return {"p50": samples[count // 2], "p95": samples[int(count * 0.95)], "max": samples[-1],
+                "apply_p50": samples[count // 2]}
 
     def _show_diag(self) -> None:
         f, m, t = self.ctx.app.facts, self.metrics, self.tiles.stats()
@@ -280,7 +283,7 @@ class App:
             f"起動→判定: {m['startup_ms'] / 1000:.2f} 秒",
             f"入力→判定 中央: {m['input_ms']['p50']:.0f} ms",
             f"入力→判定 95%: {m['input_ms']['p95']:.0f} ms",
-            f"地図の移動: {m['pan_fps']} fps",
+            f"地図の移動: 1 回 {m['pan_step_ms']} ms（画面 {f['refresh_hz']} Hz）",
             f"描画: GDI（Tk {m['tk']}）",
             f"WebView2: {f['webview2'] or '無し'}",
             f"画面: {m['screen']}",

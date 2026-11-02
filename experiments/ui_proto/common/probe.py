@@ -93,6 +93,16 @@ def work_area() -> tuple[int, int]:
     return rect.right - rect.left, rect.bottom - rect.top
 
 
+def refresh_hz() -> int:
+    """主画面の更新の間隔（Hz）。リモートデスクトップでは 30 前後＝Web の描画の上限になる。"""
+    user32, gdi32 = ctypes.windll.user32, ctypes.windll.gdi32
+    hdc = user32.GetDC(None)
+    try:
+        return int(gdi32.GetDeviceCaps(hdc, 116))  # VREFRESH
+    finally:
+        user32.ReleaseDC(None, hdc)
+
+
 def launch_count(candidate: str) -> int:
     """この候補を今の機械で起動した回数＝初回と 2 回目を画面で区別する。"""
     base = os.environ.get("LOCALAPPDATA") or os.path.expanduser("~")
@@ -128,4 +138,5 @@ def facts(candidate: str, launch: int) -> dict:
         "edge_found": bool(edge),
         "proxy": proxy_kind(),
         "work_area": f"{area_w}×{area_h}",
+        "refresh_hz": refresh_hz(),
     }
