@@ -52,7 +52,7 @@ def webview2_version() -> str | None:
     ]
     for root, path in keys:
         value = _read_reg(root, path, "pv")
-        if value and value != "0.0.0.0":
+        if value and value != "0.0.0.0":  # nosec B104 ─ 未導入の印の版の字と比べるだけ（待ち受けではない）
             return str(value)
     return None
 
