@@ -248,10 +248,12 @@ class TestTheGateItself:
         """①＝2026-09-21 の欠陥そのものを合成して、**落ちること**を確かめる。
 
         `_vegetation_loss` へ末尾 2 本（旧 `(horiz_dist_km, n)`）を渡す形。
+        ⚠️ 実引数は**今の上限より 1 本多く**置く＝B-262 で `profile` が増え、当時の
+        7 本は通るようになった（2026-11-02・合成の欠陥が欠陥でなくなっていた）。
         """
         path = self._write(tmp_path, (
             "from core import models\n"
-            "models._vegetation_loss(a, b, c, d, e, f, g)\n"
+            "models._vegetation_loss(a, b, c, d, e, f, g, h)\n"
         ))
         problems = _binding_problems(path)
         assert problems, "旧シグネチャの呼び出しを見逃した＝ゲートが落ちない"
