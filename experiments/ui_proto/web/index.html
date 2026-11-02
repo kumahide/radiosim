@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>RadioSim 画面の試作</title>
+<link rel="stylesheet" href="vendor/leaflet/leaflet.css">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="app">
+  <header id="verdict" data-state="pending">
+    <div id="verdict-word">計算中</div>
+    <div id="verdict-detail">地形を取得しています</div>
+  </header>
+
+  <aside id="inputs">
+    <h2>回線</h2>
+    <label>送信点（緯度, 経度）<input data-field="start" data-endpoint></label>
+    <label>受信点（緯度, 経度）<input data-field="end" data-endpoint></label>
+    <div class="row">
+      <label>送信アンテナ高 [m]<input data-field="h_tx" inputmode="decimal"></label>
+      <label>受信アンテナ高 [m]<input data-field="h_rx" inputmode="decimal"></label>
+    </div>
+    <h2>無線機</h2>
+    <div class="row">
+      <label>周波数 [MHz]<input data-field="freq" inputmode="decimal"></label>
+      <label>送信電力 [dBm]<input data-field="p_tx" inputmode="decimal"></label>
+    </div>
+    <div class="row">
+      <label>送信利得 [dBi]<input data-field="gain_tx" inputmode="decimal"></label>
+      <label>受信利得 [dBi]<input data-field="gain_rx" inputmode="decimal"></label>
+    </div>
+    <label>受信感度 [dBm]<input data-field="sens" inputmode="decimal"></label>
+    <h2>環境</h2>
+    <div class="row">
+      <label>植生の高さ [m]<input data-field="veg_h" inputmode="decimal"></label>
+      <label>降雨 [mm/h]<input data-field="rain_rate" inputmode="decimal"></label>
+    </div>
+    <h2>内訳</h2>
+    <dl id="breakdown"></dl>
+  </aside>
+
+  <main id="views">
+    <div id="map"></div>
+    <div id="profile-wrap"><canvas id="profile"></canvas></div>
+  </main>
+
+  <aside id="diag">
+    <h2>測定（この欄をスクショに入れる）</h2>
+    <dl id="diag-list"></dl>
+    <label>プロキシ URL（要るときだけ）
+      <span class="proxy"><input id="proxy" autocomplete="off"><button id="proxy-apply">適用</button></span>
+    </label>
+  </aside>
+</div>
+<script src="vendor/leaflet/leaflet.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
