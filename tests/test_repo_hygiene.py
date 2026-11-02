@@ -808,6 +808,63 @@ class TestTkRootsGoThroughConftest:
         assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
 
 
+# ============================================================
+# Bandit と公開文書の課題 ID（2026-11-03・O-021 で新設）
+# ============================================================
+# 🔴 **ruff・pyright と同じ穴が、Bandit と文書の検査に残っていた。** 4.0 ステージ2 の
+# 試作（`experiments/` だけを触るコミット）で 2 回踏んだ＝①公開文書に非公開の課題 ID を
+# 書いたのを、コミット前の部分テストが拾わず push の前のフルで初めて赤 ②レジストリの
+# `"0.0.0.0"` との比較を Bandit が B104 と読み、**CI で初めて赤**（`c3d7be3`）。
+# ⇒ **このファイルは毎回のコミットで走る**（`gate-scope.json` の `always_tests`）ので、
+#    ここから同じ検査を呼ぶ。設定は pyproject の [tool.bandit] と文書の試験の本体の
+#    1 か所のまま（写さない）。
+def _bandit_targets() -> list[str]:
+    """CI の `bandit -r .` が見る .py＝次のコミットに入り得るもの（`tracked_paths`）から
+    pyproject の `exclude_dirs` を除いたもの。
+
+    ⚠️ **`-r .` を手元で回さない**＝git の外の `.claude/` などを読み、CI に無い指摘で
+    毎回鳴る（壊れ方②）。
+    """
+    import tomllib
+    conf = tomllib.loads((ROOT / "pyproject.toml").read_text(encoding="utf-8"))
+    excluded = set(conf["tool"]["bandit"]["exclude_dirs"])
+    return [p for p in tracked_paths()
+            if p.endswith(".py") and not excluded & set(p.split("/")[:-1])]
+
+
+def test_bandit_finds_nothing_at_medium_or_above():
+    """`bandit -ll` が通ること（CI の Bandit ステップと同じ設定・同じ重さの線）。
+
+    ⚠️ **`sys.executable -m bandit` で呼ぶ**（ruff の試験と同じ理由＝PATH に頼ると
+    一度も鳴らないゲートになる）。
+    """
+    proc = subprocess.run(
+        [sys.executable, "-m", "bandit", "-c", "pyproject.toml", "-ll", "-q",
+         *_bandit_targets()],
+        cwd=ROOT, capture_output=True, text=True, errors="replace",
+    )
+    if "No module named bandit" in proc.stderr:
+        pytest.skip("bandit が入っていない（requirements-dev.txt）")
+    assert proc.returncode == 0, (
+        "Bandit の指摘がある（CI の Bandit ステップが同じ内容で落ちる）:\n"
+        + proc.stdout + proc.stderr
+    )
+
+
+def test_bandit_targets_follow_the_ci_scope():
+    """③ 見る範囲が CI と同じであること＝製品と実験は見る・除外と git の外は見ない。"""
+    targets = _bandit_targets()
+    assert "main.py" in targets
+    assert any(p.startswith("experiments/") for p in targets)
+    assert not [p for p in targets if p.startswith(("tests/", ".claude/"))]
+
+
+def test_public_docs_do_not_cite_issue_ids_on_every_commit():
+    """公開文書の課題 ID の検査を、毎回のコミットでも走らせる（本体は文書の試験の側）。"""
+    from tests import test_docs_consistency as docs
+    docs.test_public_docs_do_not_cite_issue_ids()
+
+
 # --- pre-commit フックからの呼び出し口 ---------------------------------------
 
 if __name__ == "__main__":
