@@ -62,15 +62,18 @@ def start(candidate: str) -> Boot:
     os.environ["NO_PROXY"] = ",".join(filter(None, [os.environ.get("NO_PROXY"), "127.0.0.1"]))
 
     from common import server
-    from core import config, dem
+    from core import config, dem, i18n
 
+    cfg = config.load_config()
+    # 製品の main.py と同じ言語の決め方＝「地形なし」などコアの文を同じ言語で出す。
+    i18n.set_lang(config.startup_lang(cfg))
     app = server.App(web_root(), probe.facts(candidate, probe.launch_count(candidate)),
                      measure=bool(args.measure))
     app.facts["process_start_epoch_ms"] = round(probe.process_start_epoch() * 1000)
     if args.offline:
         dem.set_proxy("http://127.0.0.1:9")
     else:
-        dem.set_proxy(config.load_config().get("proxy_url", ""))
+        dem.set_proxy(cfg.get("proxy_url", ""))
     server.start(app)
     size = tuple(int(v) for v in args.size.split("x")) if args.size else None
     return Boot(app, size, args.measure, args.offline)

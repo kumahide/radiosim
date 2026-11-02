@@ -35,7 +35,7 @@ _TARGETS = {
 }
 
 
-def _build(key: str, out: str) -> dict:
+def _build(key: str, out: str) -> None:
     t = _TARGETS[key]
     dist, work = os.path.join(out, "dist"), os.path.join(out, "build")
     args = [sys.executable, "-m", "PyInstaller", "--noconfirm", "--clean", "--onedir",
@@ -54,13 +54,21 @@ def _build(key: str, out: str) -> dict:
     zip_path = os.path.join(out, f"{t['name']}.zip")
     if os.path.exists(zip_path):
         os.remove(zip_path)
-    files = 0
     with zipfile.ZipFile(zip_path, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as zf:
         for root, _dirs, names in os.walk(folder):
             for n in names:
                 full = os.path.join(root, n)
                 zf.write(full, os.path.relpath(full, dist))
-                files += 1
+
+
+def _summary(key: str, out: str) -> dict | None:
+    """在る一式を数える＝`--only` で 1 つだけ固めても、ほかの候補の行を消さない。"""
+    t = _TARGETS[key]
+    folder = os.path.join(out, "dist", t["name"])
+    zip_path = os.path.join(out, f"{t['name']}.zip")
+    if not os.path.isfile(zip_path):
+        return None
+    files = sum(len(ns) for _r, _d, ns in os.walk(folder))
     folder_bytes = sum(os.path.getsize(os.path.join(r, n))
                        for r, _d, ns in os.walk(folder) for n in ns)
     return {"candidate": key, "exe": os.path.join(folder, t["name"] + ".exe"),
@@ -74,10 +82,10 @@ def main() -> None:
     parser.add_argument("--only", default="abc")
     args = parser.parse_args()
     os.makedirs(args.out, exist_ok=True)
-    rows = []
     for key in args.only:
         shutil.rmtree(os.path.join(args.out, "dist", _TARGETS[key]["name"]), ignore_errors=True)
-        rows.append(_build(key, args.out))
+        _build(key, args.out)
+    rows = [r for r in (_summary(k, args.out) for k in _TARGETS) if r]
     with open(os.path.join(args.out, "build_summary.json"), "w", encoding="utf-8") as f:
         json.dump(rows, f, ensure_ascii=False, indent=1)
     print(json.dumps(rows, ensure_ascii=False, indent=1))
