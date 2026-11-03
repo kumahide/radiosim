@@ -30,8 +30,8 @@
 
   <path d="M284,165 c11.9,-16 16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 s16.1,16 28,0 s16.1,-16 28,0 L556,165" fill="none" stroke="#7a3fb0" stroke-width="2.5" marker-end="url(#a-purple)"/>
   <text x="420" y="138" text-anchor="middle" font-size="12" fill="#7a3fb0" font-weight="bold">920 MHz（校正の主役）</text>
-  <text x="420" y="200" text-anchor="middle" font-size="12" fill="#7a3fb0">2.4 GHz（同じ幾何の対照）</text>
-  <text x="420" y="216" text-anchor="middle" font-size="12" fill="#b00">2 帯域は同時に動かさない（時分割）</text>
+  <text x="420" y="200" text-anchor="middle" font-size="12" fill="#7a3fb0">2.4 GHz（同じ置き場所で毎回）</text>
+  <text x="420" y="216" text-anchor="middle" font-size="12" fill="#b00">送信は同時にしない（ブロックで交互）</text>
 
   <line x1="160" y1="210" x2="160" y2="248" stroke="#335" stroke-width="2.5" marker-end="url(#a-dark)"/>
   <text x="160" y="266" text-anchor="middle" font-size="12" fill="#335">USB：給電・設定（PC かモバイルバッテリ）</text>
@@ -388,14 +388,14 @@
   <text x="30" y="1420" font-size="18" font-weight="bold" fill="#222">④ 注意</text>
   <g fill="#222">
     <text x="30" y="1450">・E220 まわりの 7 本（UART 2 本・M0・M1・AUX・VCC・GND）は台で全部配線する。UART0（ログ）は台の J4 に出し、読むときだけ変換器をつなぐ。</text>
-    <text x="30" y="1474">・2.4 GHz と 920 MHz のアンテナは離して立てる。2 帯域は同時に動かさない（920 の送信が至近で 2.4 の受信段を飽和させうる・電波法の扱いが帯域ごとに別）。</text>
+    <text x="30" y="1474">・2.4 GHz と 920 MHz のアンテナは離して立てる。2 帯域の送信は同時にしない（920 の送信が至近で 2.4 の受信段を飽和させうる・電波法の扱いが帯域ごとに別）。</text>
     <text x="30" y="1498">・100nF はリード付きで可。EV2 と XIAO をつなぐ線が 20〜30 cm を超えるなら、EV2 側に 10µF も足す。</text>
     <text x="30" y="1522">・I/O は VCC が 5V でも 3.3V のまま＝レベル変換なしで直結できる。ログ用の変換器も 3.3V のものを使う。</text>
     <text x="30" y="1546">・BAT パッドからの給電では 5V パッドに電圧が出ない。持ち出すときはモバイルバッテリを USB へ挿す。EV2 に VDD は出ていない＝電源は 5V→VCC だけ。</text>
     <text x="30" y="1570" fill="#b00">・通電前に：7 番と GND スルーホールの導通（ヘッダの向き）／XIAO の 5V パッドが 4.6〜5.0V か／</text>
     <text x="30" y="1592" fill="#b00">　EV2 の 6 番がモジュールへ素通しか。6 番↔7 番の 100nF（C1）は容量を測らずに付ける。</text>
     <text x="30" y="1616" fill="#b00">・パッドと GPIO の対応は第三者のまとめから取った値。ファームを焼いたら 1 本ずつ実物で確かめる。</text>
-    <text x="30" y="1640" fill="#b00">・測る帯域はファームの設定で 1 つに固定（band 920／2400）。2.4 GHz のときはファームが起動時に U.FL の外付け側へ切り替える。</text>
+    <text x="30" y="1640" fill="#b00">・帯域はファームの設定（band 920／2400／both＝TX は交互に送り RX は両方を聞く）。2.4 GHz を使うときは起動時に U.FL の外付け側へ切り替える。</text>
   </g>
   </g>
 </svg>
