@@ -116,10 +116,12 @@ def _scalar(field: FieldDef, seed: int) -> Any:
 
 
 def encode_payload(definition: MessageDef, values: dict[str, Any]) -> bytes:
-    """**ワイヤ上の並び**（`definition.fields`）で詰める。切り詰めはしない。"""
+    """**ワイヤ上の並び**（`definition.fields`）で詰める。切り詰めはしない。
+    拡張欄（`<extensions/>` より後）は省けば 0＝その欄を持たない古い送り手と同じ形
+    （受け手の読み方と同じ）。拡張でない欄の省略は KeyError のまま＝書き忘れを隠さない。"""
     out = b""
     for field in definition.fields:
-        value = values[field.name]
+        value = values[field.name] if field.name in values or not field.extension else _zero(field)
         if field.type_name == "char":
             out += struct.pack("<" + field.fmt, value.encode("ascii"))
         elif field.count:

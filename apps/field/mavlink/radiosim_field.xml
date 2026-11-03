@@ -41,8 +41,10 @@
 
     <enum name="RADIOSIM_FIELD_BAND">
       <description>
-        測る帯域。ファームは起動時に片方だけ起こす（2 帯域は同時に動かさない＝正典 §4）。
-        値は帯域の MHz の目安＝読んで分かる番号にした。
+        測る帯域。値は帯域の MHz の目安＝読んで分かる番号にした。ファームの設定 `band both`
+        （I-252＝TX は 2 帯域をブロックごとに交互に送り・RX は両方を同時に聞く）はここに足さない＝
+        メッセージの band は常にどちらか 1 つ（両帯域の機体は帯域ごとに 1 通ずつ設定を出す）。
+        **送信は同時にしない**（正典 §4）。
       </description>
       <entry value="920" name="RADIOSIM_FIELD_BAND_920">
         <description>E220-900T22S(JP)・920 MHz 帯（LoRa）。</description>
@@ -142,6 +144,11 @@
       </field>
       <field type="uint32_t" name="sent_mask">受けたパケットの sent_mask の写し（TX の USB は現場で PC に繋がらない）。</field>
       <field type="uint32_t" name="unsent_total">受けたパケットの unsent_total の写し。</field>
+      <extensions/>
+      <field type="uint16_t" name="band" enum="RADIOSIM_FIELD_BAND">
+        受けた無線の帯域（I-252＝両帯域を同時に聞く RX は、どちらの無線で受けたかをここで分ける）。
+        0＝この欄を持たない古いファーム（1 帯域だけを起こす版＝その RX の設定の帯域）。
+      </field>
     </message>
 
     <message id="42102" name="RADIOSIM_FIELD_CONFIG">
@@ -195,6 +202,14 @@
         同じ名前の欄に混ぜない。
       </field>
       <field type="uint8_t" name="antenna" enum="RADIOSIM_FIELD_ANTENNA">アンテナ切替の状態。</field>
+      <extensions/>
+      <field type="uint16_t" name="block_ms" units="ms">
+        TX が 2 帯域を交互に送るときの 1 ブロックの長さ（I-252・0＝1 帯域だけ＝古いファームもこの値）。
+        予定は 920 のブロック → 2.4 のブロックの繰り返し（周期 P＝2·block_ms）で、各ブロックの頭から
+        送信間隔ごとに n＝floor(block_ms ÷ tx_interval_ms) 周期送る。seq はその帯域のブロックの中で
+        だけ進む＝番号 s の帯域内の時刻は (s ÷ n の商)·P ＋ (s mod n)·tx_interval_ms。PC はこれで
+        PC の時刻と seq を結ぶ（相手の帯域のブロックの間に番号が進んだと数えない）。RX は 0。
+      </field>
     </message>
   </messages>
 </mavlink>

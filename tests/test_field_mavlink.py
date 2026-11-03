@@ -44,11 +44,13 @@ _WIRE_ORDER = {
     "RADIOSIM_FIELD_RX_SAMPLE": (
         "rx_time_us", "seq", "sample_seq", "sent_mask", "unsent_total", "rssi_raw",
         "noise_floor_raw", "config_id", "tx_config_id", "rx_id", "tx_id",
+        "band",                                   # 拡張欄（I-252）＝並べ替えず末尾
     ),
     "RADIOSIM_FIELD_CONFIG": (
         "integration_window_us", "config_id", "band", "air_bw_khz", "rate_kbps",
         "tx_power_cdbm", "tx_interval_ms", "integration_samples", "role", "device_id",
         "firmware_version", "channel", "air_sf", "detector", "antenna",
+        "block_ms",                               # 拡張欄（I-252）＝並べ替えず末尾
     ),
 }
 
@@ -214,9 +216,9 @@ def test_the_crc_extra_is_built_from_the_definition(dialect, name):
 
 
 def test_the_payload_size_matches_the_fields(dialect):
-    assert dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"].payload_size == 44
+    assert dialect.messages_by_name["RADIOSIM_FIELD_RX_SAMPLE"].payload_size == 46   # 拡張の band 込み
     assert dialect.messages_by_name["RADIOSIM_FIELD_TX_PACKET"].payload_size == 20
-    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 45
+    assert dialect.messages_by_name["RADIOSIM_FIELD_CONFIG"].payload_size == 47      # 拡張の block_ms 込み
 
 
 # ============================================================

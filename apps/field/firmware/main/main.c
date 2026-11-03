@@ -2,9 +2,10 @@
  * main.c — RadioSim Fieldのファーム（XIAO ESP32C6＋E220-900T22S(JP)・920 MHz／C6 内蔵・2.4 GHz）。
  *
  * 送信と受信は同じファームで、役割は設定で切り替える（§6.1-7E）。
- * 測る帯域も設定で 1 つに固定し、起動時にその帯域だけを起こす（2 帯域は同時に動かさない＝
- * 正典 §4）。もう片方は止めておく＝920 のときは Wi-Fi を起こさない・2.4 のときは E220 を
- * mode 3（スリープ）に置いたまま。
+ * 測る帯域は設定の 920・2400・both。1 帯域のときはもう片方を止めておく＝920 のときは Wi-Fi を
+ * 起こさない・2.4 のときは E220 を mode 3（スリープ）に置いたまま。both（I-252）は両方を起こし、
+ * TX は 2 帯域をブロックごとに交互に送り（**送信は同時にしない**＝正典 §4・radio_sched.c）、
+ * RX は両方を同時に聞く。設定（RADIOSIM_FIELD_CONFIG）は帯域ごとに 1 通ずつ出す。
  * 流れ: NVS → 設定 → 自己検査 → 帯域の前段（920＝E220 の設定を照らし合わせる／2.4＝
  *       アンテナを外部側へ・Wi-Fi を起こす・TX は空中のレートを確かめる）→ 送受信を始める →
  *       以後、設定を 1 秒ごとに送りながら、USB からのコマンドを待つ。
@@ -56,17 +57,18 @@ static void select_external_antenna(void)
     ESP_ERROR_CHECK(gpio_set_level(RF_SWITCH_SELECT_GPIO, 1));
 }
 
-/* 刻印する設定。電力は帯域の前段で確かめた値（920＝E220 の 0x03・2.4＝ドライバの読み戻し）。
- * その帯域に無い欄は 0（920 は rate_kbps・2.4 は air_sf と air_bw_khz）。 */
-static radiosim_field_config_t make_config(const radiosim_field_settings_t *s, const uint8_t mac[6],
+/* 刻印する band の設定。電力は帯域の前段で確かめた値（920＝E220 の 0x03・2.4＝ドライバの読み戻し）。
+ * その帯域に無い欄は 0（920 は rate_kbps・2.4 は air_sf と air_bw_khz）。block_ms は both の TX だけ
+ * （PC が番号と時刻を結ぶ式に使う・1 帯域と RX は 0）。 */
+static radiosim_field_config_t make_config(const radiosim_field_settings_t *s, uint16_t band, const uint8_t mac[6],
                                            int16_t tx_power_cdbm)
 {
-    const radiosim_field_band_settings_t *b = settings_band(s);
-    const bool is2400 = s->band == RADIOSIM_FIELD_BAND_2400;
+    const radiosim_field_band_settings_t *b = settings_band(s, band);
+    const bool is2400 = band == RADIOSIM_FIELD_BAND_2400;
     radiosim_field_config_t c = {
         .config_id = s->config_id,
         .role = s->role,
-        .band = s->band,
+        .band = band,
         .channel = b->channel,
         .air_sf = is2400 ? 0 : E220_AIR_SF,          /* 起動時に E220 の 0x02 で確かめ済み */
         .air_bw_khz = is2400 ? 0 : E220_AIR_BW_KHZ,
@@ -79,6 +81,7 @@ static radiosim_field_config_t make_config(const radiosim_field_settings_t *s, c
         .integration_window_us = 0,
         .integration_samples = 1,
         .antenna = RADIOSIM_FIELD_ANTENNA_EXTERNAL,
+        .block_ms = (s->band == SETTINGS_BAND_BOTH && s->role == RADIOSIM_FIELD_ROLE_TX) ? s->block_ms : 0,
     };
     memcpy(c.device_id, mac, 6);
     /* char[16] に NUL 終端は要らない（MAVLink の文字列は固定長・残りは上の初期化で 0）。
@@ -218,19 +221,30 @@ void app_main(void)
     uint8_t mac[6];
     ESP_ERROR_CHECK(esp_read_mac(mac, ESP_MAC_WIFI_STA));
 
-    /* E220 はどちらの帯域でも mode 3 まで起こす＝2.4 のときはそのまま止めておく
+    /* E220 はどちらの帯域でも mode 3 まで起こす＝2.4 だけのときはそのまま止めておく
      * （M0/M1 が浮いたまま mode 0 に落ちて受信・送信の状態にならないように）。 */
     e220_init();
     led_init();
-    radiosim_field_config_t config;
-    if (settings.band == RADIOSIM_FIELD_BAND_2400) {
-        config = make_config(&settings, mac, prepare_2400(&settings, mac));
-        radio_wifi_run(&config);             /* TX はこの設定を空中へも 1 秒ごとに送る */
-    } else {
-        config = make_config(&settings, mac, prepare_920(&settings));
-        radio_e220_run(&settings, mac, &config);  /* TX はこの設定を空中へも 10 秒ごとに送る */
+    radiosim_field_config_t configs[2];          /* 起こした帯域ごとに 1 通（920 → 2.4 の順） */
+    int n_configs = 0;
+    if (settings_uses(&settings, RADIOSIM_FIELD_BAND_920)) {
+        configs[n_configs] = make_config(&settings, RADIOSIM_FIELD_BAND_920, mac, prepare_920(&settings));
+        n_configs++;
     }
-    link_send_config(&config);
+    if (settings_uses(&settings, RADIOSIM_FIELD_BAND_2400)) {
+        configs[n_configs] = make_config(&settings, RADIOSIM_FIELD_BAND_2400, mac, prepare_2400(&settings, mac));
+        n_configs++;
+    }
+    /* 前段を全部通ってから送受信を始める（片方が止まったら、もう片方だけで測り始めない）。 */
+    for (int i = 0; i < n_configs; i++) {
+        if (configs[i].band == RADIOSIM_FIELD_BAND_920) {
+            radio_e220_run(&settings, mac, &configs[i]);   /* TX はこの設定を空中へも 10 秒ごとに送る */
+        } else {
+            radio_wifi_run(&configs[i]);                   /* TX はこの設定を空中へも 1 秒ごとに送る */
+        }
+    }
+    if (settings.role == RADIOSIM_FIELD_ROLE_TX) radio_tx_run(&settings);
+    for (int i = 0; i < n_configs; i++) link_send_config(&configs[i]);
 
     int64_t last_config = esp_timer_get_time();
     char line[96];
@@ -247,11 +261,11 @@ void app_main(void)
                 esp_restart();
             }
             link_send_text(reply);
-            link_send_config(&config);
+            for (int i = 0; i < n_configs; i++) link_send_config(&configs[i]);
             last_config = esp_timer_get_time();
         }
         if (esp_timer_get_time() - last_config >= CONFIG_RESEND_MS * 1000LL) {
-            link_send_config(&config);
+            for (int i = 0; i < n_configs; i++) link_send_config(&configs[i]);
             last_config = esp_timer_get_time();
         }
     }

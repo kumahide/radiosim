@@ -9,6 +9,9 @@
  *
  * ⇒ 空中の形も XML が単一の出所で、受け側は CRC で化けを弾ける。
  *
+ * 送信の時刻は radio_sched.c が決める（ここは「1 周期」だけ・both では seq は 2.4 のブロックの
+ * 中でだけ進む＝I-252）。
+ *
  * **seq は周期の番号**（I-165・920 MHz と同じ）＝送信関数が失敗した周期も進め、
  * sent_mask（直前 32 周期）と unsent_total（起動からの累計）で「送らなかった」と数える。
  *
@@ -221,30 +224,32 @@ static void run_continuous(uint32_t seconds)
 
 /* --- TX --------------------------------------------------------------------- */
 
-static void tx_task(void *arg)
+static uint8_t s_frame[WLAN_HEADER_LEN + AIR_PREFIX_LEN + RADIOSIM_FIELD_MAX_FRAME_LEN];
+static uint32_t seq;                 /* 今の周期 */
+static uint64_t sent_bits;           /* 第 k ビット＝周期 seq−1−k を送った */
+static uint32_t unsent;              /* 起動から送らなかった周期の累計 */
+static uint8_t air_link_seq;
+static int64_t last_config = -AIR_CONFIG_EVERY_US;
+
+static void tx_frame_init(void)
 {
-    (void)arg;
-    uint8_t frame[WLAN_HEADER_LEN + AIR_PREFIX_LEN + RADIOSIM_FIELD_MAX_FRAME_LEN];
     static const uint8_t broadcast[6] = {0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF};
-    memset(frame, 0, WLAN_HEADER_LEN);
-    frame[0] = 0xD0;                                 /* 管理フレーム・アクション */
-    memcpy(frame + 4, broadcast, 6);                 /* addr1 */
-    memcpy(frame + 10, s_mac, 6);                    /* addr2＝送信機 */
-    memcpy(frame + 16, s_mac, 6);                    /* addr3 */
-    uint8_t *body = frame + WLAN_HEADER_LEN;
+    memset(s_frame, 0, WLAN_HEADER_LEN);
+    s_frame[0] = 0xD0;                               /* 管理フレーム・アクション */
+    memcpy(s_frame + 4, broadcast, 6);               /* addr1 */
+    memcpy(s_frame + 10, s_mac, 6);                  /* addr2＝送信機 */
+    memcpy(s_frame + 16, s_mac, 6);                  /* addr3 */
+    uint8_t *body = s_frame + WLAN_HEADER_LEN;
     body[0] = ACTION_CATEGORY_VENDOR;
     memcpy(body + 1, RADIOSIM_FIELD_AIR_OUI, 3);
     memcpy(body + 4, RADIOSIM_FIELD_AIR_TAG, 4);
+}
 
-    uint32_t seq = 0;                /* 今の周期 */
-    uint64_t sent_bits = 0;          /* 第 k ビット＝周期 seq−1−k を送った */
-    uint32_t unsent = 0;             /* 起動から送らなかった周期の累計 */
-    uint8_t air_link_seq = 0;
-    int64_t last_config = -AIR_CONFIG_EVERY_US;
-    TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(s_settings.b2400.tx_interval_ms);
-    for (;;) {
-        xTaskDelayUntil(&last, period);
+void radio_wifi_tx_cycle(bool hold)
+{
+    uint8_t *frame = s_frame;
+    uint8_t *body = frame + WLAN_HEADER_LEN;
+    {
         if (s_cont_request_s != 0) run_continuous(s_cont_request_s);    /* 戻らない */
         int64_t now = esp_timer_get_time();
         uint16_t actual = s_last_tx_kbps;
@@ -255,7 +260,7 @@ static void tx_task(void *arg)
             s_config.rate_kbps = actual;
             last_config = -AIR_CONFIG_EVERY_US;
         }
-        if (now - last_config >= AIR_CONFIG_EVERY_US) {
+        if (!hold && now - last_config >= AIR_CONFIG_EVERY_US) {
             /* 送れなかったら次の周期でまた試す（last_config を進めない）。番号付きの
              * パケットとは別の数え方なので、s_tx_failures には入れない。 */
             size_t n = radiosim_field_config_pack(body + AIR_PREFIX_LEN, air_link_seq++, AIR_SYSID,
@@ -275,8 +280,10 @@ static void tx_task(void *arg)
         memcpy(p.tx_id, s_mac, 6);
         size_t n = radiosim_field_tx_packet_pack(body + AIR_PREFIX_LEN, air_link_seq++, AIR_SYSID,
                                          AIR_COMPID, &p);
-        bool sent = esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)(WLAN_HEADER_LEN + AIR_PREFIX_LEN + n),
-                                      true) == ESP_OK;
+        /* hold＝both で 920 の送信がまだ終わっていない＝重ねない（送らなかった周期に数える）。 */
+        bool sent = !hold
+                    && esp_wifi_80211_tx(WIFI_IF_STA, frame, (int)(WLAN_HEADER_LEN + AIR_PREFIX_LEN + n),
+                                         true) == ESP_OK;
         if (sent) {
             led_flash(LED_2400_TX);
         } else {
@@ -388,6 +395,7 @@ static void rx_writer_task(void *arg)
             .sample_seq = ev.sample.sample_seq,
             .sent_mask = ev.sample.sent_mask,
             .unsent_total = ev.sample.unsent_total,
+            .band = RADIOSIM_FIELD_BAND_2400,      /* 両帯域を聞く RX で、PC が帯域ごとに分ける */
         };
         memcpy(m.rx_id, s_mac, 6);
         memcpy(m.tx_id, ev.sample.tx_id, 6);
@@ -453,12 +461,12 @@ void radio_wifi_run(const radiosim_field_config_t *config)
 {
     s_config = *config;
     if (s_settings.role == RADIOSIM_FIELD_ROLE_TX) {
-        xTaskCreate(tx_task, "radiosim_field_tx", 4096, NULL, 5, NULL);
+        tx_frame_init();             /* 送信は radio_sched.c のタスクが radio_wifi_tx_cycle を呼ぶ */
     } else {
         s_rx_queue = xQueueCreate(64, sizeof(rx_event_t));
         wifi_promiscuous_filter_t filter = {.filter_mask = WIFI_PROMIS_FILTER_MASK_MGMT};
         ESP_ERROR_CHECK(esp_wifi_set_promiscuous_filter(&filter));
         ESP_ERROR_CHECK(esp_wifi_set_promiscuous_rx_cb(rx_callback));
-        xTaskCreate(rx_writer_task, "radiosim_field_rx", 4096, NULL, 5, NULL);
+        xTaskCreate(rx_writer_task, "radiosim_field_rx2400", 4096, NULL, 5, NULL);
     }
 }

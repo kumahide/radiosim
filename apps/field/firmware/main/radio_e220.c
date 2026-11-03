@@ -18,6 +18,9 @@
  *   - 応答が読めない回は「送った」とみなす（悲観側＝受からなかった方へ数える）
  * 結果は sent_mask（直前 32 周期）と unsent_total（起動からの累計）で PC へ届く。
  *
+ * 送信の時刻は radio_sched.c が決める（1 帯域でも both でも、ここは「1 周期」だけ）。both では
+ * seq は 920 のブロックの中でだけ進む（I-252）。
+ *
  * RX は空中の枠ごとに 0xA0 から 5 バイト（0xA0〜0xA4）を読み、0xA3（環境ノイズ）を
  * noise_floor_raw にする（読めない回は最後に読めた値）。受信の時刻は AUX の立ち下がり。
  *
@@ -124,23 +127,20 @@ static bool ready_to_send(void)
     return true;
 }
 
-static void tx_task(void *arg)
+static uint8_t s_air_link_seq;
+static int64_t s_last_config = -AIR_CONFIG_EVERY_US;
+
+void radio_e220_tx_cycle(void)
 {
-    (void)arg;
     uint8_t frame[RADIOSIM_FIELD_MAX_FRAME_LEN];
-    uint8_t air_link_seq = 0;
-    int64_t last_config = -AIR_CONFIG_EVERY_US;
-    TickType_t last = xTaskGetTickCount();
-    const TickType_t period = pdMS_TO_TICKS(s_settings.b920.tx_interval_ms);
-    for (;;) {
-        xTaskDelayUntil(&last, period);
+    {
         bool ready = ready_to_send();
         int64_t now = esp_timer_get_time();
         /* 設定は 10 秒ごとに周期を 1 つ借りる（その周期の TX_PACKET は送らない＝sent_mask に出る）。
          * 1 周期に 2 枠は入らない＝問い合わせ 2 つで約 60 ms・32 B の UART 入力で約 34 ms・
          * 送信の後 AUX が約 130 ms Low（実機・2026-10-18）で、250 ms の周期の約 220 ms を使う。
          * 設定（52 B）は長いので次の周期も AUX が Low のまま＝実機では 10 秒ごとに 2 周期送らない。 */
-        bool config_turn = ready && now - last_config >= AIR_CONFIG_EVERY_US;
+        bool config_turn = ready && now - s_last_config >= AIR_CONFIG_EVERY_US;
         bool sent = ready && !config_turn;
         radiosim_field_tx_packet_t p = {
             .seq = s_seq,
@@ -150,7 +150,7 @@ static void tx_task(void *arg)
         };
         memcpy(p.tx_id, s_mac, 6);
         if (sent) {
-            size_t n = radiosim_field_tx_packet_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &p);
+            size_t n = radiosim_field_tx_packet_pack(frame, s_air_link_seq++, AIR_SYSID, AIR_COMPID, &p);
             e220_send(frame, n);
             led_flash(LED_920_TX);
             s_pending = PEND_PACKET;
@@ -158,11 +158,11 @@ static void tx_task(void *arg)
         } else {
             s_unsent++;
             if (config_turn) {
-                size_t n = radiosim_field_config_pack(frame, air_link_seq++, AIR_SYSID, AIR_COMPID, &s_config);
+                size_t n = radiosim_field_config_pack(frame, s_air_link_seq++, AIR_SYSID, AIR_COMPID, &s_config);
                 e220_send(frame, n);
                 led_flash(LED_920_TX);
                 s_pending = PEND_OTHER;
-                last_config = now;
+                s_last_config = now;
             }
         }
         link_send_tx_packet(&p);                     /* USB の控えは送らなかった周期も出す */
@@ -235,6 +235,7 @@ static void on_data(const e220_frame_t *f)
     s_sample.tx_config_id = p.config_id;
     s_sample.sent_mask = p.sent_mask;
     s_sample.unsent_total = p.unsent_total;
+    s_sample.band = RADIOSIM_FIELD_BAND_920;     /* 両帯域を聞く RX で、PC が帯域ごとに分ける */
     memcpy(s_sample.rx_id, s_mac, 6);
     memcpy(s_sample.tx_id, p.tx_id, 6);
     s_sample.sample_seq = next_sample_seq(p.tx_id);
@@ -277,9 +278,8 @@ void radio_e220_run(const radiosim_field_settings_t *s, const uint8_t mac[6],
     memcpy(s_mac, mac, 6);
     s_config = *config;
     e220_enter_normal();
-    if (s_settings.role == RADIOSIM_FIELD_ROLE_TX) {
-        xTaskCreate(tx_task, "radiosim_field_tx", 4096, NULL, 5, NULL);
-    } else {
-        xTaskCreate(rx_task, "radiosim_field_rx", 4096, NULL, 5, NULL);
+    /* TX の送信は radio_sched.c のタスクが radio_e220_tx_cycle を呼ぶ。 */
+    if (s_settings.role == RADIOSIM_FIELD_ROLE_RX) {
+        xTaskCreate(rx_task, "radiosim_field_rx920", 4096, NULL, 5, NULL);
     }
 }

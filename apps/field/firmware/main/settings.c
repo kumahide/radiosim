@@ -4,13 +4,16 @@
  * コマンド（USB へ 1 行ずつ・改行で終わる）:
  *   show              … 設定をすぐ送る（RADIOSIM_FIELD_CONFIG）
  *   role tx|rx        … 役割
- *   band 920|2400     … 測る帯域（起動時にこの帯域だけを起こす）
+ *   band 920|2400|both … 測る帯域（both＝TX は 2 帯域をブロックごとに交互に送り・RX は両方を聞く＝I-252）
+ *   block MS          … both の 1 ブロックの長さ（1000〜60000 ms・既定 10000）
  *   channel N         … 今の帯域のチャネル（920＝0〜6＝920.8＋0.2·N MHz／2.4＝1〜13）
  *   interval MS       … 今の帯域の送信間隔（920＝250〜10000 ms／2.4＝20〜10000 ms）
  *   power DBM         … 今の帯域の送信電力（920＝0〜13 dBm の整数／2.4＝2〜20 dBm・0.25 dB 刻み）
  * 変えたら保存して再起動する（途中で条件を変えたまま送り続けない）。
+ * both のときチャネル・間隔・電力は断る（どちらの帯域か決まらない）＝帯域ごとに 1 帯域で決めてから
+ * 最後に band both。both にするときは両帯域で block ≥ 間隔（1 ブロックに 1 周期は入る）を確かめる。
  *
- * NVS＝共通（役割・帯域・設定番号）と帯域ごと（チャネル・間隔・電力）の 3 つの名前空間。
+ * NVS＝共通（役割・帯域・ブロック長・設定番号）と帯域ごと（チャネル・間隔・電力）の 3 つの名前空間。
  * 名前空間ごとに「全部読めたら使う・欠けたら既定値」で、どれかが欠けたら番号を進める。
  */
 #include "settings.h"
@@ -32,6 +35,7 @@
 static const radiosim_field_settings_t DEFAULTS = {
     .role = RADIOSIM_FIELD_ROLE_RX,
     .band = RADIOSIM_FIELD_BAND_920,
+    .block_ms = 10000,
     .b920 = {
         .channel = 0,
         .tx_interval_ms = 250,  /* SF7/BW500 の 32 B（約 23 ms）でデューティ約 9% */
@@ -45,10 +49,17 @@ static const radiosim_field_settings_t DEFAULTS = {
     .config_id = 1,
 };
 
-const radiosim_field_band_settings_t *settings_band(const radiosim_field_settings_t *s)
+const radiosim_field_band_settings_t *settings_band(const radiosim_field_settings_t *s, uint16_t band)
 {
-    return s->band == RADIOSIM_FIELD_BAND_2400 ? &s->b2400 : &s->b920;
+    return band == RADIOSIM_FIELD_BAND_2400 ? &s->b2400 : &s->b920;
 }
+
+bool settings_uses(const radiosim_field_settings_t *s, uint16_t band)
+{
+    return s->band == band || s->band == SETTINGS_BAND_BOTH;
+}
+
+static bool blocks_fit(const radiosim_field_settings_t *s);
 
 static void save_band(const char *ns, const radiosim_field_band_settings_t *b)
 {
@@ -67,6 +78,7 @@ static void save(const radiosim_field_settings_t *s)
     ESP_ERROR_CHECK(nvs_open(NS_COMMON, NVS_READWRITE, &h));
     ESP_ERROR_CHECK(nvs_set_u8(h, "role", s->role));
     ESP_ERROR_CHECK(nvs_set_u16(h, "band", s->band));
+    ESP_ERROR_CHECK(nvs_set_u16(h, "block", s->block_ms));
     ESP_ERROR_CHECK(nvs_set_u16(h, "config_id", s->config_id));
     ESP_ERROR_CHECK(nvs_commit(h));
     nvs_close(h);
@@ -97,6 +109,7 @@ void settings_load(radiosim_field_settings_t *out)
     if (nvs_open(NS_COMMON, NVS_READONLY, &h) == ESP_OK) {
         ok = nvs_get_u8(h, "role", &out->role) == ESP_OK
           && nvs_get_u16(h, "band", &out->band) == ESP_OK
+          && nvs_get_u16(h, "block", &out->block_ms) == ESP_OK
           && nvs_get_u16(h, "config_id", &out->config_id) == ESP_OK;
         nvs_close(h);
     } else if (nvs_open(NS_920, NVS_READONLY, &h) == ESP_OK) {
@@ -104,8 +117,13 @@ void settings_load(radiosim_field_settings_t *out)
         nvs_get_u16(h, "config_id", &out->config_id);
         nvs_close(h);
     }
-    if (out->band != RADIOSIM_FIELD_BAND_920 && out->band != RADIOSIM_FIELD_BAND_2400) {
+    if (out->band != RADIOSIM_FIELD_BAND_920 && out->band != RADIOSIM_FIELD_BAND_2400
+        && out->band != SETTINGS_BAND_BOTH) {
         out->band = DEFAULTS.band;
+        ok = false;
+    }
+    if (out->block_ms < SETTINGS_BLOCK_MIN_MS || out->block_ms > SETTINGS_BLOCK_MAX_MS) {
+        out->block_ms = DEFAULTS.block_ms;
         ok = false;
     }
     if (out->role != RADIOSIM_FIELD_ROLE_TX && out->role != RADIOSIM_FIELD_ROLE_RX) {
@@ -114,6 +132,12 @@ void settings_load(radiosim_field_settings_t *out)
     }
     ok = load_band(NS_920, &DEFAULTS.b920, &out->b920) && ok;
     ok = load_band(NS_2400, &DEFAULTS.b2400, &out->b2400) && ok;
+    if (out->band == SETTINGS_BAND_BOTH && !blocks_fit(out)) {
+        /* 1 ブロックに 1 周期も入らない both は測れない（保存のときに断っているので、ここに来るのは
+         * 値が壊れたときだけ）＝920 に戻す。 */
+        out->band = DEFAULTS.band;
+        ok = false;
+    }
     if (!ok) {
         /* 欠けた所は既定値になった＝以前の設定と同じ番号を名乗らない（読めた番号より先へ）。 */
         out->config_id = (uint16_t)(out->config_id + 1);
@@ -136,6 +160,12 @@ static bool parse_long(const char *text, long lo, long hi, long *out)
     return true;
 }
 
+/* both の 1 ブロックに、両帯域とも 1 周期以上入るか。 */
+static bool blocks_fit(const radiosim_field_settings_t *s)
+{
+    return s->block_ms >= s->b920.tx_interval_ms && s->block_ms >= s->b2400.tx_interval_ms;
+}
+
 static bool same_band(const radiosim_field_band_settings_t *a, const radiosim_field_band_settings_t *b)
 {
     return a->channel == b->channel && a->tx_interval_ms == b->tx_interval_ms && a->tx_power == b->tx_power;
@@ -155,6 +185,12 @@ bool settings_apply_command(const char *line, radiosim_field_settings_t *current
     const bool is2400 = current->band == RADIOSIM_FIELD_BAND_2400;
     radiosim_field_band_settings_t *b = is2400 ? &next.b2400 : &next.b920;
     long v;
+    if (current->band == SETTINGS_BAND_BOTH
+        && (strcmp(cmd, "channel") == 0 || strcmp(cmd, "interval") == 0 || strcmp(cmd, "power") == 0)) {
+        snprintf(reply, (size_t)reply_len, "ERR both のときは %s を変えられません（band 920 か 2400 にしてから）",
+                 cmd);
+        return false;
+    }
     if (strcmp(cmd, "show") == 0) {
         snprintf(reply, (size_t)reply_len, "OK");
         return false;
@@ -168,10 +204,18 @@ bool settings_apply_command(const char *line, radiosim_field_settings_t *current
     } else if (strcmp(cmd, "band") == 0 && n == 2) {
         if (strcmp(arg, "920") == 0) next.band = RADIOSIM_FIELD_BAND_920;
         else if (strcmp(arg, "2400") == 0) next.band = RADIOSIM_FIELD_BAND_2400;
+        else if (strcmp(arg, "both") == 0) next.band = SETTINGS_BAND_BOTH;
         else {
-            snprintf(reply, (size_t)reply_len, "ERR band は 920 か 2400 です");
+            snprintf(reply, (size_t)reply_len, "ERR band は 920・2400・both のどれかです");
             return false;
         }
+    } else if (strcmp(cmd, "block") == 0 && n == 2) {
+        if (!parse_long(arg, SETTINGS_BLOCK_MIN_MS, SETTINGS_BLOCK_MAX_MS, &v)) {
+            snprintf(reply, (size_t)reply_len, "ERR block は %u〜%u ms です", SETTINGS_BLOCK_MIN_MS,
+                     SETTINGS_BLOCK_MAX_MS);
+            return false;
+        }
+        next.block_ms = (uint16_t)v;
     } else if (strcmp(cmd, "channel") == 0 && n == 2) {
         if (is2400 ? !parse_long(arg, 1, 13, &v) : !parse_long(arg, 0, E220_CHANNEL_MAX, &v)) {
             snprintf(reply, (size_t)reply_len,
@@ -208,8 +252,13 @@ bool settings_apply_command(const char *line, radiosim_field_settings_t *current
         snprintf(reply, (size_t)reply_len, "ERR 知らないコマンドです: %s", cmd);
         return false;
     }
-    if (next.role == current->role && next.band == current->band && same_band(&next.b920, &current->b920)
-        && same_band(&next.b2400, &current->b2400)) {
+    if (next.band == SETTINGS_BAND_BOTH && !blocks_fit(&next)) {
+        snprintf(reply, (size_t)reply_len, "ERR block %u ms が送信間隔（920＝%u ms・2.4＝%u ms）より短いです",
+                 next.block_ms, next.b920.tx_interval_ms, next.b2400.tx_interval_ms);
+        return false;
+    }
+    if (next.role == current->role && next.band == current->band && next.block_ms == current->block_ms
+        && same_band(&next.b920, &current->b920) && same_band(&next.b2400, &current->b2400)) {
         snprintf(reply, (size_t)reply_len, "OK 変わっていません");
         return false;
     }

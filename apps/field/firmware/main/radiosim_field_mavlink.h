@@ -107,12 +107,12 @@ typedef enum {
 #define LEN_RADIOSIM_FIELD_TX_PACKET 20
 #define CRC_EXTRA_RADIOSIM_FIELD_TX_PACKET 185
 #define MSGID_RADIOSIM_FIELD_RX_SAMPLE 42101
-#define LEN_RADIOSIM_FIELD_RX_SAMPLE 44
+#define LEN_RADIOSIM_FIELD_RX_SAMPLE 46
 #define CRC_EXTRA_RADIOSIM_FIELD_RX_SAMPLE 36
 #define MSGID_RADIOSIM_FIELD_CONFIG 42102
-#define LEN_RADIOSIM_FIELD_CONFIG 45
+#define LEN_RADIOSIM_FIELD_CONFIG 47
 #define CRC_EXTRA_RADIOSIM_FIELD_CONFIG 33
-#define RADIOSIM_FIELD_MAX_PAYLOAD_LEN 45
+#define RADIOSIM_FIELD_MAX_PAYLOAD_LEN 47
 #define RADIOSIM_FIELD_MAX_FRAME_LEN (RADIOSIM_FIELD_HEADER_LEN + RADIOSIM_FIELD_MAX_PAYLOAD_LEN + RADIOSIM_FIELD_CHECKSUM_LEN)
 
 /* このダイアレクトの ID なら CRC_EXTRA、知らない ID なら -1。 */
@@ -214,7 +214,7 @@ static inline size_t radiosim_field_tx_packet_pack(uint8_t *frame, uint8_t link_
                                LEN_RADIOSIM_FIELD_TX_PACKET, CRC_EXTRA_RADIOSIM_FIELD_TX_PACKET);
 }
 
-/* --- RADIOSIM_FIELD_RX_SAMPLE（ワイヤ上の並び: rx_time_us, seq, sample_seq, sent_mask, unsent_total, rssi_raw, noise_floor_raw, config_id, tx_config_id, rx_id, tx_id） --- */
+/* --- RADIOSIM_FIELD_RX_SAMPLE（ワイヤ上の並び: rx_time_us, seq, sample_seq, sent_mask, unsent_total, rssi_raw, noise_floor_raw, config_id, tx_config_id, rx_id, tx_id, band） --- */
 typedef struct {
     uint8_t rx_id[6];
     uint8_t tx_id[6];
@@ -227,6 +227,7 @@ typedef struct {
     uint32_t sample_seq;
     uint32_t sent_mask;
     uint32_t unsent_total;
+    uint16_t band;
 } radiosim_field_rx_sample_t;
 
 static inline void radiosim_field_rx_sample_encode_payload(uint8_t *p, const radiosim_field_rx_sample_t *m)
@@ -242,13 +243,14 @@ static inline void radiosim_field_rx_sample_encode_payload(uint8_t *p, const rad
     radiosim_field_put_u16(p + 30, (uint16_t)m->tx_config_id);
     for (int i = 0; i < 6; i++) radiosim_field_put_u8(p + 32 + i * 1, (uint8_t)m->rx_id[i]);
     for (int i = 0; i < 6; i++) radiosim_field_put_u8(p + 38 + i * 1, (uint8_t)m->tx_id[i]);
+    radiosim_field_put_u16(p + 44, (uint16_t)m->band);
 }
 
 /* 短い payload（v2 の末尾切り詰め）はゼロで埋め戻し、長い分（拡張）は捨てる。 */
 static inline void radiosim_field_rx_sample_decode_payload(const uint8_t *src, uint8_t len, radiosim_field_rx_sample_t *m)
 {
-    uint8_t p[44] = {0};
-    memcpy(p, src, len < 44 ? len : 44);
+    uint8_t p[46] = {0};
+    memcpy(p, src, len < 46 ? len : 46);
     m->rx_time_us = (uint64_t)radiosim_field_get_u64(p + 0);
     m->seq = (uint32_t)radiosim_field_get_u32(p + 8);
     m->sample_seq = (uint32_t)radiosim_field_get_u32(p + 12);
@@ -260,6 +262,7 @@ static inline void radiosim_field_rx_sample_decode_payload(const uint8_t *src, u
     m->tx_config_id = (uint16_t)radiosim_field_get_u16(p + 30);
     for (int i = 0; i < 6; i++) m->rx_id[i] = (uint8_t)radiosim_field_get_u8(p + 32 + i * 1);
     for (int i = 0; i < 6; i++) m->tx_id[i] = (uint8_t)radiosim_field_get_u8(p + 38 + i * 1);
+    m->band = (uint16_t)radiosim_field_get_u16(p + 44);
 }
 
 /* フレームを frame に組み、長さを返す（frame は RADIOSIM_FIELD_MAX_FRAME_LEN バイト以上）。 */
@@ -271,7 +274,7 @@ static inline size_t radiosim_field_rx_sample_pack(uint8_t *frame, uint8_t link_
                                LEN_RADIOSIM_FIELD_RX_SAMPLE, CRC_EXTRA_RADIOSIM_FIELD_RX_SAMPLE);
 }
 
-/* --- RADIOSIM_FIELD_CONFIG（ワイヤ上の並び: integration_window_us, config_id, band, air_bw_khz, rate_kbps, tx_power_cdbm, tx_interval_ms, integration_samples, role, device_id, firmware_version, channel, air_sf, detector, antenna） --- */
+/* --- RADIOSIM_FIELD_CONFIG（ワイヤ上の並び: integration_window_us, config_id, band, air_bw_khz, rate_kbps, tx_power_cdbm, tx_interval_ms, integration_samples, role, device_id, firmware_version, channel, air_sf, detector, antenna, block_ms） --- */
 typedef struct {
     uint16_t config_id;
     uint8_t role;
@@ -288,6 +291,7 @@ typedef struct {
     uint32_t integration_window_us;
     uint16_t integration_samples;
     uint8_t antenna;
+    uint16_t block_ms;
 } radiosim_field_config_t;
 
 static inline void radiosim_field_config_encode_payload(uint8_t *p, const radiosim_field_config_t *m)
@@ -307,13 +311,14 @@ static inline void radiosim_field_config_encode_payload(uint8_t *p, const radios
     radiosim_field_put_u8(p + 42, (uint8_t)m->air_sf);
     radiosim_field_put_u8(p + 43, (uint8_t)m->detector);
     radiosim_field_put_u8(p + 44, (uint8_t)m->antenna);
+    radiosim_field_put_u16(p + 45, (uint16_t)m->block_ms);
 }
 
 /* 短い payload（v2 の末尾切り詰め）はゼロで埋め戻し、長い分（拡張）は捨てる。 */
 static inline void radiosim_field_config_decode_payload(const uint8_t *src, uint8_t len, radiosim_field_config_t *m)
 {
-    uint8_t p[45] = {0};
-    memcpy(p, src, len < 45 ? len : 45);
+    uint8_t p[47] = {0};
+    memcpy(p, src, len < 47 ? len : 47);
     m->integration_window_us = (uint32_t)radiosim_field_get_u32(p + 0);
     m->config_id = (uint16_t)radiosim_field_get_u16(p + 4);
     m->band = (uint16_t)radiosim_field_get_u16(p + 6);
@@ -329,6 +334,7 @@ static inline void radiosim_field_config_decode_payload(const uint8_t *src, uint
     m->air_sf = (uint8_t)radiosim_field_get_u8(p + 42);
     m->detector = (uint8_t)radiosim_field_get_u8(p + 43);
     m->antenna = (uint8_t)radiosim_field_get_u8(p + 44);
+    m->block_ms = (uint16_t)radiosim_field_get_u16(p + 45);
 }
 
 /* フレームを frame に組み、長さを返す（frame は RADIOSIM_FIELD_MAX_FRAME_LEN バイト以上）。 */
@@ -343,10 +349,10 @@ static inline size_t radiosim_field_config_pack(uint8_t *frame, uint8_t link_seq
 /* --- 見本（Python 側で組んだフレーム・gen_c.py の golden_values） --- */
 static const radiosim_field_tx_packet_t RADIOSIM_FIELD_GOLDEN_MSG_RADIOSIM_FIELD_TX_PACKET = { .seq = 1749757457u, .sent_mask = 2036088610u, .unsent_total = 2322419763u, .config_id = 24900u, .tx_id = {0u, 0u, 0u, 0u, 0u, 0u} };
 static const uint8_t RADIOSIM_FIELD_GOLDEN_FRAME_RADIOSIM_FIELD_TX_PACKET[26] = { 0xFD, 0x0E, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x74, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x22, 0x3F, 0x5C, 0x79, 0x33, 0x50, 0x6D, 0x8A, 0x44, 0x61, 0x1C, 0x64 };
-static const radiosim_field_rx_sample_t RADIOSIM_FIELD_GOLDEN_MSG_RADIOSIM_FIELD_RX_SAMPLE = { .rx_time_us = 15906611102759988753ULL, .seq = 2036088610u, .sample_seq = 2322419763u, .sent_mask = 2608750916u, .unsent_total = 2895082069u, .rssi_raw = -102, .noise_floor_raw = -119, .config_id = 42376u, .tx_config_id = 46745u, .rx_id = {171u, 178u, 185u, 192u, 199u, 206u}, .tx_id = {0u, 0u, 0u, 0u, 0u, 0u} };
-static const uint8_t RADIOSIM_FIELD_GOLDEN_FRAME_RADIOSIM_FIELD_RX_SAMPLE[50] = { 0xFD, 0x26, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x75, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x85, 0xA2, 0xBF, 0xDC, 0x22, 0x3F, 0x5C, 0x79, 0x33, 0x50, 0x6D, 0x8A, 0x44, 0x61, 0x7E, 0x9B, 0x55, 0x72, 0x8F, 0xAC, 0x9A, 0xFF, 0x89, 0xFF, 0x88, 0xA5, 0x99, 0xB6, 0xAB, 0xB2, 0xB9, 0xC0, 0xC7, 0xCE, 0xE9, 0x4C };
-static const radiosim_field_config_t RADIOSIM_FIELD_GOLDEN_MSG_RADIOSIM_FIELD_CONFIG = { .integration_window_us = 1749757457u, .config_id = 16162u, .band = 20531u, .air_bw_khz = 24900u, .rate_kbps = 29269u, .tx_power_cdbm = -102, .tx_interval_ms = 38007u, .integration_samples = 42376u, .role = 153u, .device_id = {171u, 178u, 185u, 192u, 199u, 206u}, .firmware_version = "g102firmware_ve", .channel = 204u, .air_sf = 221u, .detector = 238u, .antenna = 0u };
-static const uint8_t RADIOSIM_FIELD_GOLDEN_FRAME_RADIOSIM_FIELD_CONFIG[56] = { 0xFD, 0x2C, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x76, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x22, 0x3F, 0x33, 0x50, 0x44, 0x61, 0x55, 0x72, 0x9A, 0xFF, 0x77, 0x94, 0x88, 0xA5, 0x99, 0xAB, 0xB2, 0xB9, 0xC0, 0xC7, 0xCE, 0x67, 0x31, 0x30, 0x32, 0x66, 0x69, 0x72, 0x6D, 0x77, 0x61, 0x72, 0x65, 0x5F, 0x76, 0x65, 0x00, 0xCC, 0xDD, 0xEE, 0x52, 0x80 };
+static const radiosim_field_rx_sample_t RADIOSIM_FIELD_GOLDEN_MSG_RADIOSIM_FIELD_RX_SAMPLE = { .rx_time_us = 15906611102759988753ULL, .seq = 2036088610u, .sample_seq = 2322419763u, .sent_mask = 2608750916u, .unsent_total = 2895082069u, .rssi_raw = -102, .noise_floor_raw = -119, .config_id = 42376u, .tx_config_id = 46745u, .rx_id = {171u, 178u, 185u, 192u, 199u, 206u}, .tx_id = {188u, 195u, 202u, 209u, 216u, 223u}, .band = 0u };
+static const uint8_t RADIOSIM_FIELD_GOLDEN_FRAME_RADIOSIM_FIELD_RX_SAMPLE[56] = { 0xFD, 0x2C, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x75, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x85, 0xA2, 0xBF, 0xDC, 0x22, 0x3F, 0x5C, 0x79, 0x33, 0x50, 0x6D, 0x8A, 0x44, 0x61, 0x7E, 0x9B, 0x55, 0x72, 0x8F, 0xAC, 0x9A, 0xFF, 0x89, 0xFF, 0x88, 0xA5, 0x99, 0xB6, 0xAB, 0xB2, 0xB9, 0xC0, 0xC7, 0xCE, 0xBC, 0xC3, 0xCA, 0xD1, 0xD8, 0xDF, 0x18, 0xDE };
+static const radiosim_field_config_t RADIOSIM_FIELD_GOLDEN_MSG_RADIOSIM_FIELD_CONFIG = { .integration_window_us = 1749757457u, .config_id = 16162u, .band = 20531u, .air_bw_khz = 24900u, .rate_kbps = 29269u, .tx_power_cdbm = -102, .tx_interval_ms = 38007u, .integration_samples = 42376u, .role = 153u, .device_id = {171u, 178u, 185u, 192u, 199u, 206u}, .firmware_version = "g102firmware_ve", .channel = 204u, .air_sf = 221u, .detector = 238u, .antenna = 255u, .block_ms = 0u };
+static const uint8_t RADIOSIM_FIELD_GOLDEN_FRAME_RADIOSIM_FIELD_CONFIG[57] = { 0xFD, 0x2D, 0x00, 0x00, 0x5A, 0x01, 0x01, 0x76, 0xA4, 0x00, 0x11, 0x2E, 0x4B, 0x68, 0x22, 0x3F, 0x33, 0x50, 0x44, 0x61, 0x55, 0x72, 0x9A, 0xFF, 0x77, 0x94, 0x88, 0xA5, 0x99, 0xAB, 0xB2, 0xB9, 0xC0, 0xC7, 0xCE, 0x67, 0x31, 0x30, 0x32, 0x66, 0x69, 0x72, 0x6D, 0x77, 0x61, 0x72, 0x65, 0x5F, 0x76, 0x65, 0x00, 0xCC, 0xDD, 0xEE, 0xFF, 0xA2, 0x4B };
 
 /* 起動時の自己検査。見本の値を自分のエンコーダで組み、Python 側で組んだ見本と
  * 1 バイトも違わないか、さらに見本を解いて組み直すと同じになるかを見る。

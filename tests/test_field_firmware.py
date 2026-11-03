@@ -138,7 +138,9 @@ def test_the_firmware_resends_its_config_every_second():
     text = _main_c()
     assert re.search(r"#define CONFIG_RESEND_MS 1000\b", text)
     loop = text.split("for (;;) {")[-1]
-    assert "CONFIG_RESEND_MS" in loop and "link_send_config(&config)" in loop
+    assert "CONFIG_RESEND_MS" in loop
+    # both（I-252）は帯域ごとに 1 通ずつ＝起こした帯域の設定を全部送る。
+    assert loop.count("for (int i = 0; i < n_configs; i++) link_send_config(&configs[i]);") == 2
 
 
 def test_the_firmware_version_fits_the_config_field(dialect):
@@ -214,14 +216,61 @@ def test_the_2400_band_fixes_the_antenna_and_verifies_the_rate_before_it_measure
     assert re.search(r"\.rate_kbps = is2400 \? RADIO_AIR_RATE_KBPS : 0,", main)
 
 
-def test_only_one_band_is_started():
-    """正典 §4＝2 帯域は同時に動かさない。app_main は band で片方だけ起こす（E220 は
-    mode 3 まで＝e220_init だけで、e220_configure は 920 の枝の中）。"""
+def test_each_band_is_started_only_when_the_setting_uses_it():
+    """1 帯域のときはもう片方を起こさない（E220 は mode 3 まで＝e220_init だけ・Wi-Fi は起こさない）。
+    both（I-252）は両方の前段を**全部通してから**送受信を始める（片方が止まったら、もう片方だけで
+    測り始めない）。TX の送信は予定のタスク 1 本だけ（radio_tx_run）。"""
     body = _code("main.c").split("void app_main(void)", 1)[1].split("int64_t last_config", 1)[0]
-    branch = body.split("if (settings.band == RADIOSIM_FIELD_BAND_2400) {", 1)[1]
-    wifi, e220 = branch.split("} else {", 1)
-    assert "radio_wifi_run(" in wifi and "radio_e220_run(" not in wifi and "prepare_920(" not in wifi
-    assert "radio_e220_run(" in e220 and "radio_wifi_run(" not in e220 and "prepare_2400(" not in e220
+    b920 = body.split("if (settings_uses(&settings, RADIOSIM_FIELD_BAND_920)) {", 1)[1].split("}", 1)[0]
+    b2400 = body.split("if (settings_uses(&settings, RADIOSIM_FIELD_BAND_2400)) {", 1)[1].split("}", 1)[0]
+    assert "prepare_920(" in b920 and "prepare_2400(" not in b920
+    assert "prepare_2400(" in b2400 and "prepare_920(" not in b2400
+    last_prepare = max(body.index("prepare_920("), body.index("prepare_2400("))
+    assert last_prepare < body.index("radio_e220_run(") and last_prepare < body.index("radio_wifi_run(")
+    assert body.index("radio_e220_run(") < body.index("radio_tx_run(")
+    assert body.index("radio_wifi_run(") < body.index("radio_tx_run(")
+    assert "return s->band == band || s->band == SETTINGS_BAND_BOTH;" in _code("settings.c")
+
+
+def test_the_tx_task_is_the_only_sender_and_never_overlaps_the_bands():
+    """I-252。送信のタスクは radio_sched.c の 1 本だけ（帯域ごとの tx_task は無い）。both は 920 の
+    ブロック → 2.4 のブロックを µs の絶対時刻で刻み（tick の丸めが積もると PC の番号と時刻の式から
+    ずれる）、2.4 の各周期の直前に E220 の AUX を見る（Low なら送らない＝正典 §4 の送信は同時にしない）。"""
+    for name in ("radio_e220.c", "radio_wifi.c"):
+        assert "tx_task" not in _code(name), f"{name} に送信のタスクが残っている"
+    sched = _code("radio_sched.c")
+    assert sched.count("xTaskCreate(") == 1
+    both = _function(sched, "static void both_bands_task(void *arg)")
+    first, second = both.split("start += block_us;", 1)
+    assert "radio_e220_tx_cycle()" in first and "radio_wifi_tx_cycle(" not in first
+    assert "radio_wifi_tx_cycle(!e220_aux_high())" in second
+    assert "wait_until_us(start + (int64_t)k * i920_us)" in first
+    assert "wait_until_us(start + (int64_t)k * i2400_us)" in second
+    assert "s_settings.block_ms / s_settings.b920.tx_interval_ms" in both
+    assert "s_settings.block_ms / s_settings.b2400.tx_interval_ms" in both
+    hold = _function(_code("radio_wifi.c"), "void radio_wifi_tx_cycle(bool hold)")
+    assert "bool sent = !hold" in hold and "if (!hold && now - last_config" in hold
+    assert '"radio_sched.c"' in (FIRMWARE / "main" / "CMakeLists.txt").read_text(encoding="utf-8")
+
+
+def test_both_refuses_per_band_values_and_blocks_shorter_than_an_interval():
+    """both のときチャネル・間隔・電力は断る（どちらの帯域か決まらない）。both にするときは両帯域で
+    block ≥ 間隔（1 ブロックに 1 周期は入る＝予定の n が 0 にならない）。"""
+    settings = _code("settings.c")
+    apply = _function(settings, "bool settings_apply_command(")
+    refuse = apply.index("current->band == SETTINGS_BAND_BOTH")
+    assert refuse < apply.index('strcmp(cmd, "channel") == 0 && n == 2')
+    assert apply.index("!blocks_fit(&next)") < apply.index("save(&next)")
+    assert ("return s->block_ms >= s->b920.tx_interval_ms && s->block_ms >= s->b2400.tx_interval_ms;"
+            in settings)
+
+
+def test_the_rx_stamps_the_band_of_the_radio_that_received():
+    """両帯域を聞く RX の RX_SAMPLE.band＝受けた無線（PC が帯域ごとのセッションへ分ける）。"""
+    assert "s_sample.band = RADIOSIM_FIELD_BAND_920;" in _function(
+        _code("radio_e220.c"), "static void on_data(const e220_frame_t *f)")
+    assert ".band = RADIOSIM_FIELD_BAND_2400," in _function(
+        _code("radio_wifi.c"), "static void rx_writer_task(void *arg)")
 
 
 def test_cont_is_refused_outside_the_2400_band():
@@ -233,8 +282,8 @@ def test_cont_is_refused_outside_the_2400_band():
 def test_the_2400_tx_counts_failed_sends_instead_of_skipping_the_seq():
     """I-165 を 2.4 GHz にも＝送信関数が失敗した周期も seq を進め、sent_mask／unsent_total に
     「送らなかった」と出す（旧版は seq を進めず控えも出さなかった）。"""
-    tx = _function(_code("radio_wifi.c"), "static void tx_task(void *arg)")
-    assert "continue;" not in tx.split("bool sent = esp_wifi_80211_tx(", 1)[1]
+    tx = _function(_code("radio_wifi.c"), "void radio_wifi_tx_cycle(bool hold)")
+    assert "continue;" not in tx.split("bool sent = !hold", 1)[1]
     assert "unsent++" in tx and "sent_bits = (sent_bits << 1)" in tx and "seq++" in tx
     assert ".sent_mask = (uint32_t)sent_bits" in tx
 
@@ -266,18 +315,18 @@ def test_the_leds_are_lit_where_the_radios_send_and_receive():
     分かった所で点ける。2.4 の受信は rx_callback（Wi-Fi のタスク）でなく書き出しのタスクで。
     連続送信は点けたまま。led_init は帯域の枝より前。"""
     e220 = _code("radio_e220.c")
-    tx = _function(e220, "static void tx_task(void *arg)")
+    tx = _function(e220, "void radio_e220_tx_cycle(void)")
     assert tx.count("e220_send(") == tx.count("led_flash(LED_920_TX)") == 2
     on_data = _function(e220, "static void on_data(const e220_frame_t *f)")
     assert on_data.index("radiosim_field_frame_parse(") < on_data.index("led_flash(LED_920_RX)")
     wifi = _code("radio_wifi.c")
-    assert _function(wifi, "static void tx_task(void *arg)").count("led_flash(LED_2400_TX)") == 2
+    assert _function(wifi, "void radio_wifi_tx_cycle(bool hold)").count("led_flash(LED_2400_TX)") == 2
     assert "led_" not in _function(wifi, "static void rx_callback(")
     assert "led_flash(LED_2400_RX)" in _function(wifi, "static void rx_writer_task(void *arg)")
     cont = _function(wifi, "static void run_continuous(uint32_t seconds)")
     assert cont.index("led_hold(LED_2400_TX)") < cont.index("while (")
     body = _code("main.c").split("void app_main(void)", 1)[1]
-    assert body.index("led_init()") < body.index("if (settings.band == RADIOSIM_FIELD_BAND_2400)")
+    assert body.index("led_init()") < body.index("if (settings_uses(&settings, RADIOSIM_FIELD_BAND_920))")
 
 
 def test_the_e220_frame_length_is_checked_against_the_copy_target():
@@ -301,7 +350,7 @@ def test_the_tx_reads_the_result_of_the_previous_send_before_it_sends():
     assert re.search(r"#define A1_NOT_SENT 0x07\b", radio)
     ready = radio.split("static bool ready_to_send(void)", 1)[1].split("\n}\n", 1)[0]
     assert "A1_NOT_SENT" in ready and "mark_unsent(" in ready
-    tx = radio.split("static void tx_task(void *arg)", 1)[1].split("\n}\n", 1)[0]
+    tx = radio.split("void radio_e220_tx_cycle(void)", 1)[1].split("\n}\n", 1)[0]
     assert tx.index("ready_to_send()") < tx.index("e220_send(")
     assert "s_unsent++" in tx and "link_send_tx_packet(&p)" in tx
 
