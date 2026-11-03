@@ -55,6 +55,7 @@ def _radio(**kwargs) -> S.RadioSettings:
         rate_kbps=0,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
+        block_ms=0,
         detector="mean",
         integration_window_us=1000,
         integration_samples=10,
@@ -193,6 +194,78 @@ def test_the_mean_is_taken_in_the_db_domain_not_in_power():
     got = A.aggregate(header, samples, events)[0].meas_dbm
     assert got == pytest.approx((-146.0 + -186.0) / 2)      # dB 平均 = −166 dBm
     assert got != pytest.approx(-149.0, abs=1.0)            # 電力平均なら約 −149 dBm
+
+
+# --- 2 帯域を交互に送る TX（I-252） --------------------------------------------------
+
+
+def _block_header(block_ms: int = 1000) -> S.SessionHeader:
+    """送信間隔 100 ms・1 ブロック `block_ms`（既定＝10 周期・周期 P＝2 秒）。"""
+    tx = _endpoint("tx", radio=_radio(sensitivity_dbm=None, block_ms=block_ms))
+    return _header(tx=tx)
+
+
+def _block_at(seconds: float) -> str:
+    return S.format_utc(_BASE + timedelta(seconds=seconds))
+
+
+def _block_sample(seq: int) -> S.RxSample:
+    """番号 seq を、交互の予定どおりの時刻（(s ÷ 10)·2 秒 ＋ (s mod 10)·0.1 秒）に受けたサンプル。"""
+    return replace(_sample(seq), pc_utc=_block_at((seq // 10) * 2.0 + (seq % 10) * 0.1))
+
+
+@pytest.mark.parametrize("seconds, expected", [
+    (0.95, 9),     # 自分のブロックの最後の周期の後
+    (1.5, 9),      # 相手の帯域のブロックの中＝直前のブロックの最後の番号（今の式なら 15）
+    (1.999, 9),
+    (2.0, 10),     # 次のブロックの頭
+    (2.3, 13),     # ちょうど k·間隔（浮動小数の割り算だと 12 に落ちる所）
+    (3.99, 19),
+    (5.5, 29),     # 届いたサンプルより後へ外挿しても、相手のブロックを数えない
+])
+def test_the_clock_skips_the_other_band_block(seconds, expected):
+    """交互に送る TX の番号は自分のブロックの中でしか進まない＝時刻 → 番号は相手のブロックを
+    飛ばすこと。今の式（経過 ÷ 間隔）のままだと、相手のブロックの間も番号が進んだと数える。"""
+    samples = [_block_sample(q) for q in range(0, 20)]
+    clock = A._SeqClock(samples, 100, 1000)
+    assert clock.last_sent(_BASE + timedelta(seconds=seconds)) == expected
+
+
+def test_the_clock_without_block_is_unchanged():
+    """ブロック 0（1 帯域を続けて送る）は今の式のまま（経過 ÷ 間隔）。"""
+    samples = [_sample(q) for q in range(0, 10)]
+    clock = A._SeqClock(samples, 100, 0)
+    assert clock.last_sent(_BASE + timedelta(seconds=1.55)) == 15
+
+
+def test_windows_do_not_count_cycles_of_the_other_band():
+    """区切りが相手の帯域のブロックの中に来ても、**まだ送っていない番号**を「受からなかった」に
+    数えず、**移動中に受けた番号**をウィンドウに入れないこと。
+
+    4 ブロック（番号 0〜39・各ブロック 2 秒ごと）を全部受け、置き場所 0 を 1.5 秒（相手の
+    ブロックの中）で離れ、置き場所 1 に 3.5 秒（同じく相手の中）で据えて 7.5 秒で終える。
+    ⇒ 置き場所 0 は 0〜9・置き場所 1 は 20〜29 と 30〜39。番号 10〜19 は移動中に受けた。
+    """
+    samples = [_block_sample(q) for q in range(0, 40)]
+    events = [
+        S.Event(_block_at(-0.05), "place", 0),
+        S.Event(_block_at(1.5), "move"),
+        S.Event(_block_at(3.5), "place", 1),
+        S.Event(_block_at(7.5), "stop"),
+    ]
+    windows = A.aggregate(_block_header(), samples, events)
+    assert [(w.spatial_slot, w.seq_start) for w in windows] == [(0, 0), (1, 20), (1, 30)]
+    assert all(w.received == 10 and not w.censored for w in windows)
+
+
+def test_a_block_not_a_multiple_of_the_interval():
+    """ブロック長が間隔の倍数でないとき（1050 ms・間隔 100 ms＝10 周期）、ブロックの末尾の
+    端数の時間も直前の番号に寄ること（11 個目の番号を作らない）。"""
+    samples = [replace(_sample(q), pc_utc=_block_at((q // 10) * 2.1 + (q % 10) * 0.1))
+               for q in range(0, 20)]
+    clock = A._SeqClock(samples, 100, 1050)
+    assert clock.last_sent(_BASE + timedelta(seconds=1.02)) == 9
+    assert clock.last_sent(_BASE + timedelta(seconds=2.1)) == 10
 
 
 # --- 打ち切り ----------------------------------------------------------------

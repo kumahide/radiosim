@@ -161,7 +161,7 @@ def aggregate(
         raise SessionError(
             "受信サンプルが 1 つもないのでウィンドウを作れません（機材の設定を確かめてください）"
         )
-    clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms / 1000.0)
+    clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms, header.tx.radio.block_ms)
     by_seq = {s.seq: s for s in ordered}
     gaps = link_gaps(ordered)
     unsent = unsent_cycles(ordered)
@@ -276,10 +276,23 @@ class _SeqClock:
 
     ⚠️ 受信の遅れ（UART・USB）ぶん番号が 1 つ前後するが、ウィンドウは数十パケットで、
     区切りの端数のウィンドウは出さないので、ウィンドウの中身には効かない。
+
+    🔑 **TX が 2 帯域を交互に送るとき（`block_ms > 0`・I-252）は、番号が自分の帯域の
+    ブロックの中でしか進まない。** 予定は周期 `P = 2·block_ms`・1 ブロック `n = block_ms ÷ 間隔`
+    （切り捨て）周期＝番号 s の帯域内の時刻は `T(s) = (s ÷ n の商)·P + (s mod n)·間隔`。
+    基準のサンプルで PC の時刻と T を結び、時刻 → T → 番号と戻す。**相手の帯域のブロックの
+    中の時刻は、直前のブロックの最後の番号**に寄せる＝今の式のまま外挿すると、区切りが
+    相手のブロックの中に来たとき、まだ送っていない番号を「受からなかった」に数え、次の
+    ブロックの番号（移動中に受けたもの）までウィンドウに入る。
+    ⚠️ 整数の µs で計算する＝浮動小数の割り算だと、ちょうど k·間隔の所で 1 つ落ちる。
     """
 
-    def __init__(self, samples: list[RxSample], interval_s: float):
-        self._interval_s = interval_s
+    def __init__(self, samples: list[RxSample], interval_ms: int, block_ms: int = 0):
+        self._interval_s = interval_ms / 1000.0
+        self._interval_us = interval_ms * 1000
+        self._block_us = block_ms * 1000
+        # 1 ブロックの周期数（block_ms ≥ 間隔はヘッダの検査が見ている）。
+        self._per_block = block_ms // interval_ms if block_ms else 0
         self._times: list[float] = []
         self._seqs: list[int] = []
         for s in samples:
@@ -296,8 +309,16 @@ class _SeqClock:
         t = moment.timestamp()
         index = bisect.bisect_right(self._times, t) - 1
         index = max(index, 0)
-        offset = (t - self._times[index]) / self._interval_s
-        return self._seqs[index] + math.floor(offset)
+        if not self._block_us:
+            offset = (t - self._times[index]) / self._interval_s
+            return self._seqs[index] + math.floor(offset)
+        n = self._per_block
+        period_us = 2 * self._block_us
+        ref = self._seqs[index]
+        ref_us = (ref // n) * period_us + (ref % n) * self._interval_us
+        tau = round((t - self._times[index]) * 1e6) + ref_us
+        cycle, rest = divmod(tau, period_us)
+        return cycle * n + min(rest // self._interval_us, n - 1)
 
 
 def _check_samples(header: SessionHeader, samples: list[RxSample]) -> None:

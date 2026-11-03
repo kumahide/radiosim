@@ -57,7 +57,13 @@ from typing import Any, Iterator
 # 7＝2.4 GHz（C6 内蔵）を戻した（I-243）。無線設定に帯域 `band` と空中のレート `rate_kbps` を
 #   足した（その帯域に無い欄は 0）。6 は 920 MHz だけだった＝読むときに `band="920"`・
 #   `rate_kbps=0` を補って 7 として読む。
-SCHEMA_VERSION = 7
+# 8＝TX が 2 帯域を交互に送る（I-252）。無線設定に 1 ブロックの長さ `block_ms` を足した（0＝1 帯域を
+#   続けて送る）。集計が「PC の時刻 → TX が送った最後の番号」を出すのに要る（番号は自分の帯域の
+#   ブロックの中でしか進まない）。6・7 は 1 帯域だけだった＝`block_ms=0` を補って 8 として読む。
+SCHEMA_VERSION = 8
+
+# 交互に送るときの 1 ブロックの長さ [ms]。ファームの `SETTINGS_BLOCK_MIN_MS`〜`MAX_MS` と同じ。
+BLOCK_MS_RANGE = (1000, 60000)
 
 HEADER_FILE = "session.json"
 SAMPLES_FILE = "samples.csv"
@@ -82,8 +88,9 @@ FIX_STATES = ("fix", "float", "single", "none")
 
 ROLES = ("tx", "rx")
 
-# 帯域。MAVLink の RADIOSIM_FIELD_BAND と同じ語彙（XML が正典）。**2 帯域は同時に動かさない**
-# ＝1 台が持つのはいつも 1 つ。
+# 帯域。MAVLink の RADIOSIM_FIELD_BAND と同じ語彙（XML が正典）。**1 つのセッションが持つのは
+# 1 帯域**＝TX が 2 帯域を交互に送り RX が両方を聞くとき（I-252）は、PC が帯域ごとに 1 つずつ
+# セッションを書く。
 BANDS = ("920", "2400")
 
 # 帯域ごとに通すチャネル。920＝0〜6（920.8＋0.2·ch MHz・ARIB の総和の上限が掛からない側）、
@@ -223,6 +230,10 @@ class RadioSettings:
     rate_kbps: int                   # 空中のレート（2400 だけ・920 では 0）
     tx_power_cdbm: int             # 設定した送信電力（0.01 dBm 単位）
     tx_interval_ms: int
+    # 交互に送るときの 1 ブロックの長さ（TX だけ・0＝1 帯域を続けて送る）。番号はこの帯域の
+    # ブロックの中でしか進まない＝集計が時刻から番号を出すのに要る（aggregate.py の `_SeqClock`）。
+    # ⚠️ 既定値を置かない＝欠けた鍵を黙って 0（1 帯域）と読まない。
+    block_ms: int
     detector: str
     integration_window_us: int
     integration_samples: int         # **時間平均**の件数（空間平均とは別の場所）
@@ -409,6 +420,24 @@ def _validate_band(radio: RadioSettings, role: str) -> None:
         )
 
 
+def _validate_block(radio: RadioSettings, role: str) -> None:
+    if radio.block_ms == 0:
+        return
+    if role == "rx":
+        # RX は送らない＝ブロックを持たない。値があると TX の設定を取り違えて読んだ形。
+        raise SessionError(f"RX の無線設定に送信のブロック長があります: {radio.block_ms} ms")
+    low, high = BLOCK_MS_RANGE
+    if not low <= radio.block_ms <= high:
+        raise SessionError(
+            f"TX のブロック長が範囲の外です: {radio.block_ms} ms（0 か {low}〜{high} ms）"
+        )
+    if radio.tx_interval_ms <= 0 or radio.block_ms < radio.tx_interval_ms:
+        # 1 ブロックに 1 周期も入らない＝番号が進まない（ファームもこの組を断る）。
+        raise SessionError(
+            f"TX のブロック長 {radio.block_ms} ms が送信間隔 {radio.tx_interval_ms} ms より短いです"
+        )
+
+
 def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
     _require(endpoint.role, ROLES, "端点の役割")
     if endpoint.role != expected_role:
@@ -418,6 +447,7 @@ def _validate_endpoint(endpoint: Endpoint, expected_role: str) -> None:
     _require(endpoint.radio.detector, DETECTORS, f"{expected_role} の検波方式")
     _require(endpoint.radio.antenna, ANTENNAS, f"{expected_role} のアンテナ切替")
     _validate_band(endpoint.radio, expected_role)
+    _validate_block(endpoint.radio, expected_role)
     low, high = SENSITIVITY_RANGE_DBM
     sensitivity = endpoint.radio.sensitivity_dbm
     if expected_role == "tx":
@@ -706,15 +736,19 @@ def read_header(directory: str | os.PathLike[str]) -> SessionHeader:
 def header_from_dict(payload: dict[str, Any]) -> SessionHeader:
     """dict からヘッダを組み、約束を通す（読み戻しと雛形からの組み立ての共通の口）。"""
     nested = dict(payload)
-    upgrade = payload.get("schema_version") == 6
+    old = payload.get("schema_version")
+    upgrade = old in (6, 7)
     if upgrade:
-        # 6 は 920 MHz だけだった＝帯域とレートを補えば 7 と同じ意味になる。
+        # 6 は 920 MHz だけ・7 は 1 帯域だけだった＝欠けた欄を補えば 8 と同じ意味になる。
         nested["schema_version"] = SCHEMA_VERSION
     nested["provenance"] = _build(Provenance, payload.get("provenance", {}), "刻印")
     for key in ("tx", "rx"):
         endpoint = dict(payload.get(key, {}))
         if upgrade:
-            endpoint["radio"] = {**endpoint.get("radio", {}), "band": "920", "rate_kbps": 0}
+            added = {"block_ms": 0}
+            if old == 6:
+                added.update(band="920", rate_kbps=0)
+            endpoint["radio"] = {**endpoint.get("radio", {}), **added}
         nested[key] = _build_endpoint(endpoint, key)
     header = _build(SessionHeader, nested, "ヘッダ")
     validate_header(header)

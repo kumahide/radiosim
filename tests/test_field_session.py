@@ -53,6 +53,7 @@ def _radio(config_id: int = 1, sensitivity_dbm: float | None = -98.0) -> S.Radio
         rate_kbps=0,
         tx_power_cdbm=1300,
         tx_interval_ms=100,
+        block_ms=0,
         detector="mean",
         integration_window_us=1000,
         integration_samples=10,
@@ -455,17 +456,80 @@ def test_unknown_schema_version_is_refused(tmp_path):
 
 
 def test_schema_6_is_read_as_920(tmp_path):
-    """形式 6（920 MHz だけだった）は帯域 920・レート 0 を補って 7 として読むこと。"""
+    """形式 6（920 MHz だけだった）は帯域 920・レート 0・ブロック 0 を補って今の版として読むこと。"""
     directory = S.create_session(tmp_path, _header())
     path = directory / S.HEADER_FILE
     payload = json.loads(path.read_text(encoding="utf-8"))
     payload["schema_version"] = 6
     for key in ("tx", "rx"):
-        del payload[key]["radio"]["band"], payload[key]["radio"]["rate_kbps"]
+        radio = payload[key]["radio"]
+        del radio["band"], radio["rate_kbps"], radio["block_ms"]
     path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
     header = S.read_header(directory)
     assert header.schema_version == S.SCHEMA_VERSION
     assert (header.rx.radio.band, header.rx.radio.rate_kbps) == ("920", 0)
+    assert header.tx.radio.block_ms == 0
+
+
+def test_schema_7_is_read_as_one_band(tmp_path):
+    """形式 7（1 帯域だけだった）はブロック 0（交互に送らない）を補って今の版として読むこと。
+    帯域は書いてあるものを使う（920 に書き換えない）。"""
+    tx = _endpoint("tx", radio=_radio_2400(None))
+    rx = _endpoint("rx", radio=_radio_2400(-98.0))
+    directory = S.create_session(tmp_path, _header(tx=tx, rx=rx))
+    path = directory / S.HEADER_FILE
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["schema_version"] = 7
+    for key in ("tx", "rx"):
+        del payload[key]["radio"]["block_ms"]
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    header = S.read_header(directory)
+    assert header.schema_version == S.SCHEMA_VERSION
+    assert (header.tx.radio.band, header.tx.radio.block_ms) == ("2400", 0)
+
+
+def test_schema_8_without_block_is_refused(tmp_path):
+    """今の版でブロック長が欠けたヘッダは読まないこと（黙って 0＝1 帯域と読むと、交互に送った
+    セッションの時刻と番号の対応が狂ったまま集計される）。"""
+    directory = S.create_session(tmp_path, _header())
+    path = directory / S.HEADER_FILE
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    del payload["tx"]["radio"]["block_ms"]
+    path.write_text(json.dumps(payload, ensure_ascii=False), encoding="utf-8")
+    with pytest.raises(S.SessionError, match="項目が足りません"):
+        S.read_header(directory)
+
+
+def test_block_is_accepted_on_the_tx(tmp_path):
+    """TX が交互に送る（ブロック 10 秒）セッションを作れること。"""
+    tx = _endpoint("tx", radio=replace(_radio(sensitivity_dbm=None), block_ms=10000))
+    directory = S.create_session(tmp_path, _header(tx=tx))
+    assert S.read_header(directory).tx.radio.block_ms == 10000
+
+
+@pytest.mark.parametrize("block_ms, message", [
+    (999, "ブロック長が範囲の外"),
+    (60001, "ブロック長が範囲の外"),
+])
+def test_block_must_be_in_the_firmware_range(tmp_path, block_ms, message):
+    """ブロック長はファームが受ける範囲（1000〜60000 ms）か 0 であること。"""
+    tx = _endpoint("tx", radio=replace(_radio(sensitivity_dbm=None), block_ms=block_ms))
+    with pytest.raises(S.SessionError, match=message):
+        S.create_session(tmp_path, _header(tx=tx))
+
+
+def test_block_must_hold_one_cycle(tmp_path):
+    """ブロック長が送信間隔より短い組は作れないこと（1 ブロックに 1 周期も入らず番号が進まない）。"""
+    tx = _endpoint("tx", radio=replace(_radio(sensitivity_dbm=None), tx_interval_ms=5000, block_ms=4000))
+    with pytest.raises(S.SessionError, match="送信間隔"):
+        S.create_session(tmp_path, _header(tx=tx))
+
+
+def test_the_rx_has_no_block(tmp_path):
+    """RX は送らないのでブロック長を持たせないこと（値があると TX の設定を取り違えて読んだ形）。"""
+    rx = _endpoint("rx", radio=replace(_radio(sensitivity_dbm=-98.0), block_ms=10000))
+    with pytest.raises(S.SessionError, match="RX の無線設定に送信のブロック長"):
+        S.create_session(tmp_path, _header(rx=rx))
 
 
 def _radio_2400(sensitivity_dbm: float | None) -> S.RadioSettings:
@@ -474,7 +538,7 @@ def _radio_2400(sensitivity_dbm: float | None) -> S.RadioSettings:
 
 
 def test_tx_and_rx_must_share_the_band(tmp_path):
-    """TX と RX の帯域が違うセッションは作れないこと（2 帯域は同時に動かさない）。"""
+    """TX と RX の帯域が違うセッションは作れないこと（1 つのセッションは 1 帯域）。"""
     with pytest.raises(S.SessionError, match="帯域が違います"):
         S.create_session(tmp_path, _header(rx=_endpoint("rx", radio=_radio_2400(-98.0))))
 

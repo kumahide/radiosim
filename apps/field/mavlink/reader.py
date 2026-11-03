@@ -272,12 +272,27 @@ def to_radio_settings(
         rate_kbps=f["rate_kbps"],
         tx_power_cdbm=f["tx_power_cdbm"],
         tx_interval_ms=f["tx_interval_ms"],
+        block_ms=f["block_ms"],
         detector=dialect.label("RADIOSIM_FIELD_DETECTOR", f["detector"]),
         integration_window_us=f["integration_window_us"],
         integration_samples=f["integration_samples"],
         antenna=dialect.label("RADIOSIM_FIELD_ANTENNA", f["antenna"]),
         sensitivity_dbm=sensitivity_dbm,
     )
+
+
+def sample_band(message: Message, dialect: Dialect | None = None) -> str | None:
+    """`RADIOSIM_FIELD_RX_SAMPLE` を受けた無線の帯域（`"920"`／`"2400"`）。
+
+    `None`＝帯域の欄を持たない古いファーム（拡張欄が 0）＝1 帯域だけを起こす版なので、
+    その RX の設定の帯域のサンプルとして扱ってよい（判断は呼び手）。
+    """
+    if message.name != "RADIOSIM_FIELD_RX_SAMPLE":
+        raise SessionError(f"受信サンプルではないメッセージです: {message.name}")
+    value = message.fields["band"]
+    if value == 0:
+        return None
+    return (dialect or load_dialect()).label("RADIOSIM_FIELD_BAND", value)
 
 
 def rx_samples(
