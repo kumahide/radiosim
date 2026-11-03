@@ -86,11 +86,12 @@ from apps.field.bench_analysis import (
 from apps.field.calib import DeviceCalibration, read_device_calibration
 from apps.field.gnss import LOG_BAUD, GnssLogger, attach_to_session
 from apps.field.mavlink.dialect import load_dialect
-from apps.field.mavlink.reader import FrameStream, ReadStats, mac
+from apps.field.mavlink.reader import FrameStream, ReadStats, mac, sample_band
 from apps.field.ntrip import PASSWORD_ENV, Caster, NtripClient, NtripRelay
 from apps.field.recorder import Recorder, check_template, header_template, now_utc, replay
 from apps.field.session import (
     BANDS,
+    BLOCK_MS_RANGE,
     CHANNELS_BY_BAND,
     GNSS_FILE,
     Event,
@@ -183,8 +184,13 @@ def main(argv: list[str] | None = None) -> int:
                        help="機器の設定を表示する・変える（変えたら読み戻して確かめる）")
     p.add_argument("--port", required=True, help="機器の COM ポート（例: COM4）")
     p.add_argument("--baud", type=int, default=115200)
-    p.add_argument("--band", choices=BANDS,
-                   help="帯域（チャネル・間隔・電力は帯域ごとに別に持つ。省略すると機器の今の帯域）")
+    p.add_argument("--band", choices=(*BANDS, "both"),
+                   help="帯域（チャネル・間隔・電力は帯域ごとに別に持つ。省略すると機器の今の帯域）。"
+                        "both＝TX は 2 帯域をブロックごとに交互に送り・RX は両方を聞く"
+                        "（帯域ごとの値を 1 帯域ずつ決めてから最後に both）")
+    p.add_argument("--block", type=int,
+                   help=f"both の 1 ブロックの長さ（{BLOCK_MS_RANGE[0]}〜{BLOCK_MS_RANGE[1]} ms・"
+                        "既定 10000＝機器が持つ）")
     p.add_argument("--role", choices=("tx", "rx"))
     p.add_argument("--channel", type=int,
                    help="920＝0〜6（920.8 MHz＋0.2 MHz×番号）・2400＝1〜13")
@@ -298,6 +304,9 @@ def _record(args: argparse.Namespace) -> int:
     print("RX と TX の設定を待っています…（q で中止）")
     started_wait = time.monotonic()
     hinted = False
+    started_at: float | None = None       # 最初の帯域が始まった時
+    hinted_bands: set[str] = set()
+    reported_errors: set[str] = set()
     last_status = 0.0
     with opened as port:
         try:
@@ -317,6 +326,10 @@ def _record(args: argparse.Namespace) -> int:
                         print("TX の設定が届きません（RX は動いています）。TX の電源・"
                               "チャネル・個体 ID（雛形の tx.device_id）を確かめてください。")
                     hinted = True
+                if recorder.state in ("placed", "moving"):
+                    if started_at is None:
+                        started_at = time.monotonic()
+                    _hint_late_bands(recorder, started_at, hinted_bands, reported_errors)
                 key = keys.poll()
                 if key == "q":
                     break
@@ -340,9 +353,48 @@ def _record(args: argparse.Namespace) -> int:
     if recorder.config_changed:
         print("RX か TX の設定が途中で変わったので終えました。続けるなら新しいセッションで"
               "測ってください。")
-    print(f"セッション: {recorder.directory}（受信 {recorder.samples_written} 件）")
+    directories = recorder.directories
+    counts = recorder.samples_by_band
+    if len(directories) == 1 and not recorder.band_errors:
+        print(f"セッション: {recorder.directory}（受信 {recorder.samples_written} 件）")
+    else:
+        for band, directory in directories.items():
+            print(f"セッション（{_band_label(band)}）: {directory}（受信 {counts[band]} 件）")
+    for band, reason in recorder.band_errors.items():
+        print(f"{_band_label(band)} は記録できませんでした: {reason}")
+    for band in _late_bands(recorder):
+        print(f"{_band_label(band)} の設定が届かないまま終えました（{_band_label(band)} の"
+              "セッションは作っていません）。")
     _print_read_stats(recorder.stats, recorder.foreign)
     return 0
+
+
+def _band_label(band: str) -> str:
+    return {"920": "920 MHz", "2400": "2.4 GHz"}.get(band, band)
+
+
+def _late_bands(recorder: Recorder) -> list[str]:
+    """記録が始まった後も設定を待っている帯域（2 帯域を交互に送る TX の片方）。"""
+    if not recorder.directories:
+        return []
+    return sorted({band for band, _ in recorder.waiting_for if band is not None})
+
+
+def _hint_late_bands(
+    recorder: Recorder, started_at: float, hinted: set[str], reported: set[str]
+) -> None:
+    """記録が始まった後に、片方の帯域が始まらない・始められないことを 1 回ずつ知らせる。"""
+    for band, reason in recorder.band_errors.items():
+        if band not in reported:
+            print(f"\n{_band_label(band)} は記録できません（もう片方は続けます）: {reason}")
+            reported.add(band)
+    if time.monotonic() - started_at <= _WAIT_HINT_S:
+        return
+    for band in _late_bands(recorder):
+        if band not in hinted:
+            print(f"\n{_band_label(band)} の設定が届きません＝{_band_label(band)} の記録は"
+                  "まだ始まっていません（届けば、据えている間ならその置き場所から始めます）。")
+            hinted.add(band)
 
 
 def _print_status(recorder: Recorder) -> None:
@@ -350,8 +402,14 @@ def _print_status(recorder: Recorder) -> None:
         recorder.state, recorder.state
     )
     slot = "" if recorder.slot is None or recorder.slot < 0 else f" 置き場所 {recorder.slot}"
+    counts = recorder.samples_by_band
+    if len(counts) > 1 or (counts and _late_bands(recorder)):
+        received = "  ".join(f"{_band_label(b)} {n} 件" for b, n in counts.items())
+        received = f"受信 {received}"
+    else:
+        received = f"受信 {recorder.samples_written} 件"
     print(
-        f"\r{state}{slot}  受信 {recorder.samples_written} 件"
+        f"\r{state}{slot}  {received}"
         f"  CRC 不一致 {recorder.stats.crc_errors}  別の組 {recorder.foreign}   ",
         end="",
         flush=True,
@@ -1004,13 +1062,30 @@ def settings_changes(args: argparse.Namespace, band: str) -> list[tuple[str, str
     """引数を `(コマンド, 欄, 期待する値)` の並びへ。**送る前に**範囲を確かめる
     （ファームの `settings.c` と同じ範囲・`band` はチャネルなどを効かせる帯域）。帯域は
     最初＝チャネル・間隔・電力は帯域ごとに別に持つので、先に切り替えてから変える。
-    役割は最後＝TX にしてから他を変えると、変えるたびに測定の送信が途切れる。"""
-    if band not in BANDS:
+    役割は最後＝TX にしてから他を変えると、変えるたびに測定の送信が途切れる。
+
+    `both`（I-252）はチャネル・間隔・電力を持たない＝どちらの帯域か決まらない（ファームも
+    断る）。帯域ごとに 1 帯域で決めてから、最後に `--band both` で切り替える。ブロック長は
+    帯域より先（both にするときにファームが両帯域の間隔と比べる）。"""
+    if band not in (*BANDS, "both"):
         raise SessionError(f"知らない帯域です: {band}")
+    if band == "both":
+        given = [name for name in ("channel", "interval", "power")
+                 if getattr(args, name) is not None]
+        if given:
+            raise SessionError(
+                f"both のときは --{'・--'.join(given)} を変えられません（どちらの帯域か決まらない）。"
+                "帯域ごとに --band 920／--band 2400 で決めてから、最後に --band both にしてください")
     is2400 = band == "2400"
     out: list[tuple[str, str, Any]] = []
+    block = getattr(args, "block", None)
+    if block is not None:
+        low, high = BLOCK_MS_RANGE
+        if not low <= block <= high:
+            raise SessionError(f"--block は {low}〜{high} ms です")
+        out.append((f"block {block}", "block_ms", block))
     if args.band is not None:
-        out.append((f"band {args.band}", "band", int(args.band)))
+        out.append((f"band {args.band}", "band", args.band))
     if args.channel is not None:
         allowed = CHANNELS_BY_BAND[band]
         if args.channel not in allowed:
@@ -1034,12 +1109,49 @@ def settings_changes(args: argparse.Namespace, band: str) -> list[tuple[str, str
     return out
 
 
-def describe_settings(fields: dict[str, Any], dialect: Any) -> str:
-    return (f"{dialect.label('RADIOSIM_FIELD_ROLE', fields['role']).upper()} "
-            f"{mac(fields['device_id'])}  {fields['band']} MHz 帯・チャネル {fields['channel']}・"
-            f"間隔 {fields['tx_interval_ms']} ms・出力 {fields['tx_power_cdbm'] / 100:g} dBm・"
-            f"ファーム {describe_firmware(fields['firmware_version'])}・"
-            f"config_id {fields['config_id']}")
+def describe_settings(now: dict[str, dict[str, Any]], dialect: Any) -> str:
+    """機器の今の設定（帯域 → 欄の辞書＝同じ config_id の CONFIG）を 1 行に。
+
+    both（I-252）なら帯域ごとの値を並べる＝TX は交互に送るブロックの長さ・RX は両方を聞く。
+    """
+    first = next(iter(now.values()))
+
+    def band_part(fields: dict[str, Any]) -> str:
+        return (f"{fields['band']} MHz 帯・チャネル {fields['channel']}・"
+                f"間隔 {fields['tx_interval_ms']} ms・出力 {fields['tx_power_cdbm'] / 100:g} dBm")
+
+    role = dialect.label("RADIOSIM_FIELD_ROLE", first["role"])
+    if len(now) > 1:
+        mode = (f"2 帯域を交互に送る（ブロック {first['block_ms']} ms）" if role == "tx"
+                else "2 帯域を両方聞く")
+        bands = f"{mode}＝" + "／".join(band_part(f) for f in now.values())
+    else:
+        bands = band_part(first)
+    return (f"{role.upper()} {mac(first['device_id'])}  {bands}・"
+            f"ファーム {describe_firmware(first['firmware_version'])}・"
+            f"config_id {first['config_id']}")
+
+
+def _band_state(now: dict[str, dict[str, Any]]) -> str:
+    """`920`／`2400`／`both`（同じ config_id の CONFIG が 2 帯域ぶんある）。"""
+    return "both" if len(now) > 1 else next(iter(now))
+
+
+def _read_back(now: dict[str, dict[str, Any]], field: str, dialect: Any) -> Any:
+    """機器の今の値（`settings_changes` の欄で）。読み戻せない値は `None`。
+
+    ブロック長が CONFIG に載るのは both の TX だけ（1 帯域と RX は 0＝`main.c`）。
+    """
+    if field == "band":
+        return _band_state(now)
+    first = next(iter(now.values()))
+    if field == "block_ms":
+        both_tx = (len(now) > 1
+                   and dialect.label("RADIOSIM_FIELD_ROLE", first["role"]) == "tx")
+        return first["block_ms"] if both_tx else None
+    if field == "role" or len(now) == 1:
+        return first[field]
+    return None                       # both のチャネルなど（送る前に断っている）
 
 
 def apply_settings(
@@ -1047,13 +1159,17 @@ def apply_settings(
     clock: Any = time.monotonic,
 ) -> dict[str, Any]:
     """機器の今の設定を読み、`changes` を 1 つずつ送り、**再起動後に届いた設定で
-    変わったことを確かめる**。最後の設定（欄の辞書）を返す。
+    変わったことを確かめる**。最後の設定（最後に届いた CONFIG の欄の辞書）を返す。
 
-    `changes` は並びか、「機器の今の帯域 → 並び」の関数（帯域を指定しないときは、範囲を
-    確かめるのに機器の帯域が要る＝読んでから組む）。
+    `changes` は並びか、「機器の今の帯域（`920`／`2400`／`both`）→ 並び」の関数（帯域を
+    指定しないときは、範囲を確かめるのに機器の帯域が要る＝読んでから組む）。
 
     RX のポートには中継された TX の設定も流れる＝役割 rx の設定があればそれが
     自分、無ければ自分は TX（`bench.connect` と同じ規則）。以後は個体 ID で選ぶ。
+
+    🔑 機器の「今」＝自分の**最新の config_id の CONFIG を帯域ごとに**（I-252）。both の機器は
+    帯域ごとに 1 通ずつ流す＝2 帯域ぶんあれば both。both へ変えたら、同じ config_id で
+    両帯域が揃うまで待って確かめる。
     """
     dialect = load_dialect()
     stream = FrameStream(dialect=dialect)
@@ -1085,15 +1201,22 @@ def apply_settings(
         raise SessionError(f"このポートの機器を 1 台に決められません: {sorted(ids)}")
     own = ids.pop()
 
-    def latest() -> dict[str, Any]:
-        return [m for m in configs if mac(m.fields["device_id"]) == own][-1].fields
+    def mine() -> list[Any]:
+        return [m for m in configs if mac(m.fields["device_id"]) == own]
 
-    current = latest()
+    def now() -> dict[str, dict[str, Any]]:
+        own_configs = mine()
+        latest_id = own_configs[-1].fields["config_id"]
+        by_band = {dialect.label("RADIOSIM_FIELD_BAND", m.fields["band"]): m.fields
+                   for m in own_configs if m.fields["config_id"] == latest_id}
+        return {band: by_band[band] for band in BANDS if band in by_band}
+
+    current = now()
     say(f"現在: {describe_settings(current, dialect)}")
     if callable(changes):
-        changes = changes(dialect.label("RADIOSIM_FIELD_BAND", current["band"]))
+        changes = changes(_band_state(current))
     for line, field, value in changes:
-        if current[field] == value:
+        if _read_back(current, field, dialect) == value:
             say(f"  {line}: 既にこの値です")
             continue
         lines.clear()
@@ -1107,24 +1230,36 @@ def apply_settings(
         wait(answered, f"「{line}」に返答がありません")
         if replies[0].startswith("ERR"):
             raise SessionError(f"機器が「{line}」を断りました: {replies[0]}")
+        if replies[0].startswith("OK 変わっていません"):
+            # 読み戻せない値（ブロック長）が既にこの値だった＝機器は再起動しない。
+            say(f"  {line}: 既にこの値です")
+            continue
         found = re.search(r"config_id=(\d+)", replies[0])
         if found is None:
             raise SessionError(f"「{line}」の返答が想定と違います: {replies[0]}")
         target = int(found.group(1))
+        bands_after = value if field == "band" else _band_state(current)
+        need = len(BANDS) if bands_after == "both" else 1
 
         def arrived() -> bool:
-            mine = [m for m in configs if mac(m.fields["device_id"]) == own]
-            return bool(mine) and mine[-1].fields["config_id"] == target
+            own_configs = mine()
+            return (bool(own_configs) and own_configs[-1].fields["config_id"] == target
+                    and len(now()) >= need)
 
-        wait(arrived, f"再起動後の設定（config_id={target}）が届きません")
-        after = latest()
-        if after[field] != value:
-            raise SessionError(f"「{line}」を送りましたが、機器の値は {after[field]} のままです")
-        say(f"  {line}: 変わりました（config_id {target}）")
+        wait(arrived, f"再起動後の設定（config_id={target}）が届きません"
+             + ("（both は 2 帯域ぶん）" if need > 1 else ""))
+        after = now()
+        got = _read_back(after, field, dialect)
+        if got is None:
+            say(f"  {line}: 送りました（config_id {target}・読み戻せない値です）")
+        elif got != value:
+            raise SessionError(f"「{line}」を送りましたが、機器の値は {got} のままです")
+        else:
+            say(f"  {line}: 変わりました（config_id {target}）")
         current = after
     if changes:
         say(f"変更後: {describe_settings(current, dialect)}")
-    return current
+    return mine()[-1].fields
 
 
 def _settings(args: argparse.Namespace) -> int:
@@ -1143,28 +1278,35 @@ def _settings(args: argparse.Namespace) -> int:
 # --- monitor -----------------------------------------------------------------
 
 
+_Key = tuple[str, str | None]     # (送信機, 受けた無線の帯域＝None は帯域の欄の無い古いファーム)
+
+
 class MonitorTally:
-    """受信を**送信機ごと**に区切りの間だけ数える（`monitor` の表示用・何も書かない）。
+    """受信を**送信機と帯域ごと**に区切りの間だけ数える（`monitor` の表示用・何も書かない）。
 
     欠けは 2 つに分ける＝`seq` の飛びは電波と USB の両方で起き、`sample_seq` の飛びは
     受信機から PC までの間だけで起きる（`radiosim_field.xml`）。差が電波の欠け。
     番号が戻ったところ（機器の再起動）は欠けに数えない。
+
+    🔑 帯域で分ける（I-252）＝2 帯域を交互に送る TX の `seq` と、両方を聞く RX の
+    `sample_seq` は帯域ごとに別の系列（`radio_e220.c`・`radio_wifi.c` が別々に数える）＝
+    混ぜると、帯域が替わるたびに番号が飛んだ・戻ったと読む。
     """
 
     def __init__(self, dialect: Any) -> None:
         self._dialect = dialect
-        self._last: dict[str, tuple[int, int, int]] = {}  # tx → (seq, sample_seq, unsent_total)
-        self._configs: set[tuple[str, int]] = set()
+        self._last: dict[_Key, tuple[int, int, int]] = {}  # → (seq, sample_seq, unsent_total)
+        self._configs: set[tuple[str, int, int]] = set()   # (機器, config_id, 帯域)
         self._reset()
 
     def _reset(self) -> None:
-        self._rssi: dict[str, list[int]] = {}     # 飽和（生値 −256・B-361）を除く
-        self._saturated: dict[str, int] = {}
-        self._noise: dict[str, list[int]] = {}    # 受けたサンプルすべて（受信の数もここから）
-        self._air_lost: dict[str, int] = {}
-        self._usb_lost: dict[str, int] = {}
-        self._unsent: dict[str, int] = {}
-        self._sent: dict[str, int] = {}
+        self._rssi: dict[_Key, list[int]] = {}     # 飽和（生値 −256・B-361）を除く
+        self._saturated: dict[_Key, int] = {}
+        self._noise: dict[_Key, list[int]] = {}    # 受けたサンプルすべて（受信の数もここから）
+        self._air_lost: dict[_Key, int] = {}
+        self._usb_lost: dict[_Key, int] = {}
+        self._unsent: dict[_Key, int] = {}
+        self._sent: dict[str, int] = {}            # TX の控えは帯域を持たない＝送信機ごと
 
     @property
     def configs_seen(self) -> bool:
@@ -1175,12 +1317,15 @@ class MonitorTally:
         f = message.fields
         if message.name == "RADIOSIM_FIELD_CONFIG":
             device = mac(f["device_id"])
-            if (device, f["config_id"]) in self._configs:
+            key = (device, f["config_id"], f["band"])
+            if key in self._configs:
                 return None
-            self._configs.add((device, f["config_id"]))
+            self._configs.add(key)
             role = self._dialect.label("RADIOSIM_FIELD_ROLE", f["role"])
+            band = _band_label(self._dialect.label("RADIOSIM_FIELD_BAND", f["band"]))
             power = f"出力 {f['tx_power_cdbm'] / 100:g} dBm・" if role == "tx" else ""
-            return (f"設定 {role.upper()} {device}  チャネル {f['channel']}・"
+            block = f"交互・ブロック {f['block_ms']} ms・" if role == "tx" and f["block_ms"] else ""
+            return (f"設定 {role.upper()} {device}  {band}・{block}チャネル {f['channel']}・"
                     f"{power}ファーム {describe_firmware(f['firmware_version'])}")
         if message.name == "RADIOSIM_FIELD_TX_PACKET":
             tx = mac(f["tx_id"])
@@ -1188,7 +1333,7 @@ class MonitorTally:
             return None
         if message.name != "RADIOSIM_FIELD_RX_SAMPLE":
             return None
-        tx = mac(f["tx_id"])
+        tx = (mac(f["tx_id"]), sample_band(message, self._dialect))
         if rssi_saturated(f["rssi_raw"]):
             self._saturated[tx] = self._saturated.get(tx, 0) + 1
         else:
@@ -1209,9 +1354,9 @@ class MonitorTally:
         return None
 
     def lines(self) -> list[str]:
-        """区切りの間の集計を 1 送信機 1 行で返し、数え直す。"""
+        """区切りの間の集計を 1 送信機・1 帯域で 1 行にして返し、数え直す。"""
         out = []
-        for tx, noise in sorted(self._noise.items()):
+        for tx, noise in sorted(self._noise.items(), key=lambda kv: (kv[0][0], kv[0][1] or "")):
             levels = self._rssi.get(tx, [])
             saturated = self._saturated.get(tx, 0)
             if not levels:
@@ -1222,8 +1367,9 @@ class MonitorTally:
                 if saturated:
                     level += f"・飽和 {saturated} 件"
             noise.sort()
+            name = tx[0] if tx[1] is None else f"{tx[0]} {_band_label(tx[1])}"
             out.append(
-                f"{tx}  受信 {len(noise)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
+                f"{name}  受信 {len(noise)}  欠け 電波 {self._air_lost.get(tx, 0)}・"
                 f"USB {self._usb_lost.get(tx, 0)}・送らず {self._unsent.get(tx, 0)}  {level}  "
                 f"雑音フロア {noise[len(noise) // 2]}"
             )

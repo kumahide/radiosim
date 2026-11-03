@@ -36,18 +36,21 @@ def _frame(dialect: D.Dialect, name: str, **values) -> bytes:
     return G.encode_frame(dialect.messages_by_name[name], values)
 
 
-def _sample(dialect: D.Dialect, seq: int, sample_seq: int, rssi: int = -27) -> bytes:
+def _sample(dialect: D.Dialect, seq: int, sample_seq: int, rssi: int = -27,
+            band: int = 0) -> bytes:
     return _frame(dialect, "RADIOSIM_FIELD_RX_SAMPLE", rx_id=tuple(RX), tx_id=tuple(TX), seq=seq,
                   rx_time_us=seq * 100_000, rssi_raw=rssi, noise_floor_raw=-93,
                   config_id=1, tx_config_id=1, sample_seq=sample_seq,
-                  sent_mask=0xFFFFFFFF, unsent_total=0)
+                  sent_mask=0xFFFFFFFF, unsent_total=0, band=band)
 
 
-def _config(dialect: D.Dialect, config_id: int = 1, role: int = 1) -> bytes:
+def _config(dialect: D.Dialect, config_id: int = 1, role: int = 1, band: int = 920,
+            block_ms: int = 0) -> bytes:
     return _frame(dialect, "RADIOSIM_FIELD_CONFIG", config_id=config_id, role=role,
                   device_id=tuple(RX), firmware_version="c08507ff00", channel=1,
-                  band=920, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
-                  integration_window_us=0, integration_samples=1, antenna=2)
+                  band=band, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=1300,
+                  tx_interval_ms=250, detector=1, integration_window_us=0, integration_samples=1,
+                  antenna=2, block_ms=block_ms)
 
 
 class _Port:
@@ -148,6 +151,46 @@ def test_a_config_is_announced_once_and_again_when_it_changes(dialect):
     assert "出力 13 dBm" in said[0]
 
 
+def test_two_bands_from_one_tx_are_counted_apart(dialect):
+    """I-252。両方を聞く RX は、2 帯域を交互に送る TX の帯域ごとの系列（seq・sample_seq）を
+    混ぜずに数え、行に帯域を出す＝帯域が替わるたびに欠けたと読まない。"""
+    tally = cli.MonitorTally(dialect)
+    frames = (_sample(dialect, 0, 0, band=920) + _sample(dialect, 1, 1, band=920)
+              + _sample(dialect, 0, 0, rssi=-60, band=2400) + _sample(dialect, 2, 1, rssi=-62,
+                                                                     band=2400)
+              + _sample(dialect, 2, 2, band=920))
+    messages, _ = read_log(frames)
+    for m in messages:
+        tally.add(m)
+    first, second = tally.lines()
+    assert first.startswith("98:a3:16:8d:f6:60 2.4 GHz  受信 2  欠け 電波 1・USB 0")
+    assert "平均 -61.0" in first
+    assert second.startswith("98:a3:16:8d:f6:60 920 MHz  受信 3  欠け 電波 0・USB 0")
+
+
+def test_a_sample_without_a_band_keeps_the_old_line(dialect):
+    """帯域の欄の無い古いファーム（0）は、今までどおり送信機だけの行。"""
+    tally = cli.MonitorTally(dialect)
+    messages, _ = read_log(_sample(dialect, 0, 0))
+    tally.add(messages[0])
+    [line] = tally.lines()
+    assert line.startswith("98:a3:16:8d:f6:60  受信 1")
+
+
+def test_configs_are_announced_once_per_band_and_say_the_block(dialect):
+    said, _ = _run([_config(dialect, role=0, band=920, block_ms=5000)
+                    + _config(dialect, role=0, band=2400, block_ms=5000),
+                    _config(dialect, role=0, band=920, block_ms=5000)
+                    + _config(dialect, role=0, band=2400, block_ms=5000)])
+    notes = [s for s in said if s.startswith("設定")]
+    assert notes == [
+        "設定 TX 98:a3:16:8e:92:ac  920 MHz・交互・ブロック 5000 ms・チャネル 1・出力 13 dBm・"
+        + notes[0].split("出力 13 dBm・")[1],
+        "設定 TX 98:a3:16:8e:92:ac  2.4 GHz・交互・ブロック 5000 ms・チャネル 1・出力 13 dBm・"
+        + notes[1].split("出力 13 dBm・")[1],
+    ]
+
+
 def test_a_quiet_second_says_so_and_crc_errors_are_shown(dialect):
     broken = bytearray(_sample(dialect, 0, 0))
     broken[12] ^= 0xFF
@@ -161,16 +204,28 @@ def test_a_quiet_second_says_so_and_crc_errors_are_shown(dialect):
 
 class _Unit:
     """ファームの設定の振る舞いの写し（`settings.c`・変えると再起動・1 秒ごとの設定）。
-    `relay` を渡すと、RX が中継する他の TX の設定も流す。"""
+    `relay` を渡すと、RX が中継する他の TX の設定も流す。
+
+    帯域ごとの値（チャネル・間隔・電力）は帯域ごとに持つ。`both`（I-252）は CONFIG を帯域ごとに
+    1 通ずつ流し、TX ならブロック長を載せる（`main.c` の `make_config`）。both のときチャネル・
+    間隔・電力は断り、both にするときはブロック長を両帯域の間隔と比べる。"""
 
     def __init__(self, dialect: D.Dialect, *, role: int = 1, relay: bytes | None = None,
-                 ignore: str | None = None):
+                 ignore: str | None = None, band: str = "920", block: int = 10000):
         self.dialect = dialect
         self.t = 0.0
         self.values: dict[str, Any] = dict(config_id=7, role=role, device_id=tuple(RX),
-                           firmware_version="c08507ff00", channel=1, band=920, rate_kbps=0, air_sf=7,
-                           air_bw_khz=500, tx_power_cdbm=1300, tx_interval_ms=250, detector=1,
-                           integration_window_us=0, integration_samples=1, antenna=2)
+                                           firmware_version="c08507ff00", detector=1,
+                                           integration_window_us=0, integration_samples=1,
+                                           antenna=2)
+        self.bands: dict[str, dict[str, Any]] = {
+            "920": dict(channel=1, rate_kbps=0, air_sf=7, air_bw_khz=500, tx_power_cdbm=1300,
+                        tx_interval_ms=250),
+            "2400": dict(channel=6, rate_kbps=1000, air_sf=0, air_bw_khz=0, tx_power_cdbm=1700,
+                         tx_interval_ms=100),
+        }
+        self.band = band
+        self.block = block
         self.relay = relay
         self.ignore = ignore            # この欄だけ、変えたと言いながら変えない（故障の模擬）
         self.buffer = bytearray()
@@ -181,6 +236,11 @@ class _Unit:
     def clock(self) -> float:
         return self.t
 
+    def configs(self) -> list[dict[str, Any]]:
+        active = ["920", "2400"] if self.band == "both" else [self.band]
+        block = self.block if self.band == "both" and self.values["role"] == 0 else 0
+        return [dict(self.values, band=int(b), block_ms=block, **self.bands[b]) for b in active]
+
     @property
     def in_waiting(self) -> int:
         return len(self.buffer)
@@ -188,40 +248,72 @@ class _Unit:
     def read(self, size: int) -> bytes:
         self.t += 0.05
         if self.t >= self.paused_until and self.t >= self.next_config:
-            self.buffer += _frame(self.dialect, "RADIOSIM_FIELD_CONFIG", **self.values)
+            for config in self.configs():
+                self.buffer += _frame(self.dialect, "RADIOSIM_FIELD_CONFIG", **config)
             if self.relay is not None:
-                other = dict(self.values, role=0, device_id=tuple(self.relay), config_id=3)
+                other = dict(self.configs()[0], role=0, device_id=tuple(self.relay), config_id=3)
                 self.buffer += _frame(self.dialect, "RADIOSIM_FIELD_CONFIG", **other)
             self.next_config = self.t + 1.0
         out = bytes(self.buffer[:size])
         del self.buffer[:size]
         return out
 
+    def _reply(self, text: str) -> None:
+        self.buffer += (text + "\r\n").encode()
+
+    def _current(self, field: str) -> Any:
+        if field == "band":
+            return self.band
+        if field == "block":
+            return self.block
+        if field == "role":
+            return self.values["role"]
+        return self.bands[self.band][field]
+
+    def _set(self, field: str, value: Any) -> None:
+        if field == "band":
+            self.band = value
+        elif field == "block":
+            self.block = value
+        elif field == "role":
+            self.values["role"] = value
+        else:
+            self.bands[self.band][field] = value
+
     def write(self, data: bytes) -> int:
         line = data.decode("ascii").strip()
         self.sent.append(line)
         cmd, *arg = line.split()
         if cmd == "show":
-            self.buffer += b"OK\r\n"
+            self._reply("OK")
             self.next_config = self.t
+            return len(data)
+        if cmd in ("channel", "interval", "power") and self.band == "both":
+            self._reply(f"ERR both のときは {cmd} を変えられません（band 920 か 2400 にしてから）")
             return len(data)
         field, parse = {
             "role": ("role", lambda a: 0 if a == "tx" else 1),
+            "band": ("band", str),
+            "block": ("block", int),
             "channel": ("channel", int),
             "interval": ("tx_interval_ms", int),
-            "power": ("tx_power_cdbm", lambda a: int(a) * 100),
+            "power": ("tx_power_cdbm", lambda a: round(float(a) * 100)),
         }[cmd]
         value = parse(arg[0])
         if field == "channel" and not 0 <= value <= 6:
-            self.buffer += "ERR channel は 0〜6 です\r\n".encode()
+            self._reply("ERR channel は 0〜6 です")
             return len(data)
-        if self.values[field] == value:
-            self.buffer += "OK 変わっていません\r\n".encode()
+        if field == "band" and value == "both" and any(
+                self.block < b["tx_interval_ms"] for b in self.bands.values()):
+            self._reply(f"ERR block {self.block} ms が送信間隔より短いです")
+            return len(data)
+        if self._current(field) == value:
+            self._reply("OK 変わっていません")
             return len(data)
         self.values["config_id"] += 1
         if field != self.ignore:
-            self.values[field] = value
-        self.buffer += f"OK config_id={self.values['config_id']} 再起動します\r\n".encode()
+            self._set(field, value)
+        self._reply(f"OK config_id={self.values['config_id']} 再起動します")
         self.paused_until = self.t + 0.5
         self.next_config = self.paused_until
         return len(data)
@@ -229,7 +321,8 @@ class _Unit:
 
 def _changes(on: str = "920", **over) -> list:
     import argparse
-    args = argparse.Namespace(band=None, role=None, channel=None, interval=None, power=None)
+    args = argparse.Namespace(band=None, role=None, channel=None, interval=None, power=None,
+                              block=None)
     for k, v in over.items():
         setattr(args, k, v)
     return cli.settings_changes(args, on)
@@ -310,7 +403,80 @@ def test_settings_on_2400_accepts_its_own_range_and_switches_the_band_first():
     changes = _changes("2400", band="2400", role="tx", channel=13, interval=20, power=17.25)
     assert [c[0] for c in changes] == [
         "band 2400", "channel 13", "interval 20", "power 17.25", "role tx"]
-    assert changes[0][1:] == ("band", 2400) and changes[3][2] == 1725
+    assert changes[0][1:] == ("band", "2400") and changes[3][2] == 1725
+
+
+def test_settings_to_both_waits_for_both_bands_and_describes_them(dialect):
+    """I-252。RX を both にしたら、同じ config_id の CONFIG が 2 帯域ぶん揃ってから確かめ、
+    帯域ごとの値を並べて表示すること。"""
+    unit = _Unit(dialect)
+    said: list[str] = []
+    cli.apply_settings(unit, _changes(band="both"), say=said.append, clock=unit.clock)
+    assert unit.sent == ["show", "band both"]
+    assert "band both: 変わりました（config_id 8）" in said[1]
+    assert said[-1].startswith("変更後: RX 98:a3:16:8e:92:ac  2 帯域を両方聞く＝920 MHz 帯・"
+                               "チャネル 1・間隔 250 ms・出力 13 dBm／2400 MHz 帯・チャネル 6")
+
+
+def test_settings_to_both_on_a_tx_sends_the_block_first_and_reads_it_back_once_both(dialect):
+    """ブロック長は帯域より先に送る（both にするときにファームが間隔と比べる）。1 帯域の間は
+    CONFIG に載らない＝読み戻せないと言い、both の TX になれば読み戻して確かめること。"""
+    unit = _Unit(dialect, role=0)
+    said: list[str] = []
+    cli.apply_settings(unit, _changes(band="both", block=5000), say=said.append, clock=unit.clock)
+    assert unit.sent == ["show", "block 5000", "band both"]
+    assert "block 5000: 送りました（config_id 8・読み戻せない値です）" in said[1]
+    assert "変更後: TX 98:a3:16:8e:92:ac  2 帯域を交互に送る（ブロック 5000 ms）＝" in said[-1]
+    said.clear()
+    unit.sent.clear()
+    cli.apply_settings(unit, _changes("both", block=5000), say=said.append, clock=unit.clock)
+    assert unit.sent == ["show"] and "既にこの値です" in said[1]
+    cli.apply_settings(unit, _changes("both", block=8000), say=said.append, clock=unit.clock)
+    assert unit.sent == ["show", "show", "block 8000"]
+    assert any("block 8000: 変わりました" in s for s in said)
+
+
+def test_settings_a_block_that_cannot_be_read_back_and_is_unchanged_is_already_set(dialect):
+    """1 帯域の機器のブロック長は読み戻せない＝いつも送る。ファームの「OK 変わっていません」
+    （config_id なし・再起動しない）は既にこの値として続けること。"""
+    unit = _Unit(dialect)
+    said: list[str] = []
+    cli.apply_settings(unit, _changes(block=10000, channel=2), say=said.append, clock=unit.clock)
+    assert unit.sent == ["show", "block 10000", "channel 2"]
+    assert "block 10000: 既にこの値です" in said[1]
+    assert "channel 2: 変わりました" in said[2]
+
+
+def test_settings_on_both_refuses_band_values_before_sending(dialect):
+    """both の機器でチャネル・間隔・電力を（帯域を指定せずに）変えようとしたら、送る前に断る。"""
+    unit = _Unit(dialect, band="both")
+    with pytest.raises(cli.SessionError, match="both のときは --channel・--power を変えられません"):
+        cli.apply_settings(unit, lambda band: _changes(band, channel=3, power=10),
+                           say=lambda _m: None, clock=unit.clock)
+    assert unit.sent == ["show"]
+    with pytest.raises(cli.SessionError, match="--band 920／--band 2400 で決めてから"):
+        _changes("both", band="both", interval=500)
+
+
+def test_settings_leaves_both_for_one_band_and_then_changes_its_values(dialect):
+    unit = _Unit(dialect, band="both")
+    final = cli.apply_settings(unit, _changes("920", band="920", channel=3),
+                               say=lambda _m: None, clock=unit.clock)
+    assert unit.sent == ["show", "band 920", "channel 3"]
+    assert (final["band"], final["channel"]) == (920, 3)
+
+
+def test_settings_reports_the_firmware_refusing_both_when_a_block_is_shorter(dialect):
+    unit = _Unit(dialect, block=1000)
+    unit.bands["920"]["tx_interval_ms"] = 2000
+    with pytest.raises(cli.SessionError, match="断りました: ERR block 1000 ms"):
+        cli.apply_settings(unit, _changes(band="both"), say=lambda _m: None, clock=unit.clock)
+
+
+@pytest.mark.parametrize("block", [999, 60001])
+def test_settings_refuses_a_block_out_of_range_before_sending(block):
+    with pytest.raises(cli.SessionError, match="--block は 1000〜60000 ms です"):
+        _changes(block=block)
 
 
 def test_cont_line_and_burst_power():
