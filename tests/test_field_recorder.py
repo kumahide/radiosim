@@ -25,6 +25,7 @@ from datetime import datetime, timedelta, timezone
 
 import pytest
 
+from apps.field import calib as C
 from apps.field import cli
 from apps.field import recorder as REC
 from apps.field import session as S
@@ -59,8 +60,9 @@ def _frame(dialect: D.Dialect, name: str, payload: bytes, link_seq: int = 0) -> 
 def _sample_frame(
     dialect: D.Dialect, seq: int, rssi_raw: int = -140, tx: bytes = TX_MAC, config_id: int = 1,
     tx_config_id: int = 2, sample_seq: int | None = None, sent_mask: int = 0xFFFFFFFF,
-    unsent_total: int = 0,
+    unsent_total: int = 0, band: int | None = None,
 ) -> bytes:
+    """`band` を渡すと拡張欄（受けた無線の帯域・I-252）を載せる。省くと古いファームの形。"""
     payload = (
         struct.pack(
             "<QIIIIhhHH", 1_000_000 + seq * 100_000, seq,
@@ -70,20 +72,27 @@ def _sample_frame(
         + RX_MAC
         + tx
     )
+    if band is not None:
+        payload += struct.pack("<H", band)
     return _frame(dialect, "RADIOSIM_FIELD_RX_SAMPLE", payload, seq)
 
 
 def _config_frame(
     dialect: D.Dialect, *, role: int = 1, config_id: int = 1, channel: int = 6,
-    device: bytes = RX_MAC, interval_ms: int = 100,
+    device: bytes = RX_MAC, interval_ms: int = 100, band: int = 920, block_ms: int | None = None,
 ) -> bytes:
+    """`block_ms` を渡すと拡張欄（TX のブロック長・I-252）を載せる。省くと古いファームの形。
+    2.4 GHz 帯は空中の帯域幅と SF が 0・レートが正（XML の欄の説明）。"""
+    air_bw, rate, sf = (500, 0, 7) if band == 920 else (0, 1000, 0)
     payload = (
-        struct.pack("<IHHHHhHH", 1000, config_id, 920, 500, 0, 1300, interval_ms, 10)
+        struct.pack("<IHHHHhHH", 1000, config_id, band, air_bw, rate, 1300, interval_ms, 10)
         + bytes([role])
         + device
         + b"5aab362".ljust(16, b"\x00")
-        + bytes([channel, 7, 2, 2])
+        + bytes([channel, sf, 2, 2])
     )
+    if block_ms is not None:
+        payload += struct.pack("<H", block_ms)
     return _frame(dialect, "RADIOSIM_FIELD_CONFIG", payload)
 
 
@@ -502,6 +511,196 @@ def test_the_raw_index_must_point_into_the_raw_bytes(tmp_path, dialect):
         csv.writer(f).writerow([_t(1), 10_000])
     with pytest.raises(S.SessionError, match="本体を指していません"):
         list(S.read_raw(rec.directory))
+
+
+# --- 2 帯域（I-252＝TX が交互に送り、RX が両方を聞く） ---------------------------
+
+_BLOCK_MS = 1000
+
+
+def _band_configs(dialect: D.Dialect, band: int, *, rx_channel: int = 6) -> bytes:
+    """1 つの帯域の 2 つの設定（RX 自身と、2 帯域を交互に送る TX）。"""
+    return (
+        _config_frame(dialect, band=band, channel=rx_channel, block_ms=0)
+        + _tx_config_frame(dialect, band=band, block_ms=_BLOCK_MS)
+    )
+
+
+def _feed_bands(rec: REC.Recorder, dialect: D.Dialect, seqs, bands=(920, 2400)) -> None:
+    """帯域ごとの番号（どちらも 0 から）を、1 読み出しに両帯域ぶん入れて渡す。"""
+    for q in seqs:
+        rec.feed(b"".join(_sample_frame(dialect, q, band=b) for b in bands), _t(q))
+
+
+def _written(rec: REC.Recorder, band: str) -> list[S.RxSample]:
+    return list(S.read_rx_samples(rec.directories[band]))
+
+
+def _assert_replays(rec: REC.Recorder, dialect: D.Dialect) -> None:
+    for band, directory in rec.directories.items():
+        assert REC.replay(directory, dialect).samples == _written(rec, band), band
+
+
+def test_a_two_band_tx_writes_one_session_per_band(tmp_path, dialect):
+    """🔑 TX が 2 帯域を交互に送るなら、1 回の記録で帯域ごとにセッションを 1 つずつ書くこと。
+
+    サンプルは受けた無線の帯域で分かれ、置き場所の番号は両方で同じ（920 と 2.4 を同じ場所で
+    並べるため）。読み直しも帯域ごとにライブと一致する。
+    """
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_band_configs(dialect, 920) + _band_configs(dialect, 2400), _t(-1))
+    assert set(rec.directories) == {"920", "2400"} and rec.waiting_for == []
+    assert rec.directories["920"].name.endswith("-920")
+    assert rec.directories["2400"].name.endswith("-2400")
+    _feed_bands(rec, dialect, range(0, 5))
+    rec.move(_t(5.5))
+    _feed_bands(rec, dialect, range(6, 8))
+    assert rec.place(_t(8.5)) == 1
+    _feed_bands(rec, dialect, range(9, 12), bands=(920,))      # 2.4 は届かなくなった
+    rec.stop(_t(12.5))
+
+    for band in ("920", "2400"):
+        header = S.read_header(rec.directories[band])
+        assert header.tx.radio.band == header.rx.radio.band == band
+        assert header.tx.radio.block_ms == _BLOCK_MS and header.rx.radio.block_ms == 0
+        assert [e.kind for e in S.read_events(rec.directories[band])] == [
+            "place", "move", "place", "stop"]
+    assert [s.spatial_slot for s in _written(rec, "920")] == (
+        [0] * 5 + [S.MOVING_SLOT] * 2 + [1] * 3)
+    assert [s.spatial_slot for s in _written(rec, "2400")] == [0] * 5 + [S.MOVING_SLOT] * 2
+    assert rec.samples_by_band == {"920": 10, "2400": 7}
+    assert rec.foreign == 0                       # 相手の帯域のサンプルを「別の組」に数えない
+    _assert_replays(rec, dialect)
+
+
+def test_a_band_that_arrives_later_starts_at_the_current_place_with_the_whole_raw_log(
+    tmp_path, dialect,
+):
+    """後から設定が揃った帯域は、据えていればいまの番号で始め、生ログは**最初から**持つこと
+    （読み直しで同じ結果を作るのに、始まる前のバイト列も要る）。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(b"boot noise", _t(-2))
+    rec.feed(_band_configs(dialect, 920), _t(-1))
+    assert set(rec.directories) == {"920"}
+    assert rec.waiting_for == [("2400", "rx"), ("2400", "tx")]
+    _feed_bands(rec, dialect, range(0, 3), bands=(920,))
+    rec.feed(_band_configs(dialect, 2400), _t(3))
+    assert set(rec.directories) == {"920", "2400"} and rec.waiting_for == []
+    _feed_bands(rec, dialect, range(4, 7))
+    rec.stop(_t(7.5))
+
+    assert [s.seq for s in _written(rec, "920")] == [0, 1, 2, 4, 5, 6]
+    assert [s.seq for s in _written(rec, "2400")] == [4, 5, 6]
+    assert {s.spatial_slot for s in _written(rec, "2400")} == {0}
+    raw = b"".join(chunk for _, chunk in S.read_raw(rec.directories["2400"]))
+    assert raw == b"".join(chunk for _, chunk in S.read_raw(rec.directories["920"]))
+    assert raw.startswith(b"boot noise")
+    _assert_replays(rec, dialect)
+
+
+def test_a_band_that_arrives_while_moving_waits_for_the_next_place(tmp_path, dialect):
+    """移動中に揃った帯域は、次の `place` の番号から始めること（移動中の番号で始めると、
+    その帯域だけ置き場所 0 の無い記録になり、読み直しでも始まる時刻が決まらない）。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_band_configs(dialect, 920), _t(-1))
+    _feed_bands(rec, dialect, range(0, 3), bands=(920,))
+    rec.move(_t(3.5))
+    rec.feed(_band_configs(dialect, 2400), _t(4))
+    _feed_bands(rec, dialect, range(5, 7))
+    assert set(rec.directories) == {"920"}                  # まだ始めない
+    assert rec.place(_t(7.5)) == 1
+    assert set(rec.directories) == {"920", "2400"}
+    _feed_bands(rec, dialect, range(8, 11))
+    rec.stop(_t(11.5))
+
+    assert [(s.seq, s.spatial_slot) for s in _written(rec, "2400")] == [(8, 1), (9, 1), (10, 1)]
+    events = list(S.read_events(rec.directories["2400"]))
+    assert [e.kind for e in events] == ["place", "stop"] and events[0].spatial_slot == 1
+    _assert_replays(rec, dialect)
+
+
+def test_a_config_change_in_one_band_ends_both_sessions(tmp_path, dialect):
+    """どちらかの帯域の設定が変わったら両方を終え、その読み出しのサンプルはどちらにも書かないこと。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_band_configs(dialect, 920) + _band_configs(dialect, 2400), _t(-1))
+    _feed_bands(rec, dialect, range(0, 3))
+    rec.feed(_band_configs(dialect, 920) + _band_configs(dialect, 2400), _t(3))   # 再送
+    assert rec.state == "placed"
+    rec.feed(_sample_frame(dialect, 4, band=920)
+             + _config_frame(dialect, band=2400, channel=11, block_ms=0), _t(4))
+    assert rec.state == "stopped" and rec.config_changed
+    for band in ("920", "2400"):
+        assert [s.seq for s in _written(rec, band)] == [0, 1, 2]
+        assert list(S.read_events(rec.directories[band]))[-1].kind == "stop"
+    _assert_replays(rec, dialect)
+
+
+def test_a_single_band_tx_does_not_wait_for_the_other_band(tmp_path, dialect):
+    """TX が 1 帯域（`block_ms = 0`・古いファームも）なら、RX が両方の帯域の設定を出していても
+    2.4 を待たないこと。帯域の欄が 0 のサンプル（古いファーム）はその 1 帯域の記録へ入る。"""
+    rec = _recorder(tmp_path, dialect)
+    rec.feed(_config_frame(dialect, band=920, block_ms=0)
+             + _config_frame(dialect, band=2400, block_ms=0), _t(-2))
+    assert rec.waiting_for == [("920", "tx"), ("2400", "tx")]
+    rec.feed(_tx_config_frame(dialect), _t(-1))                # 拡張欄の無い TX の設定
+    assert set(rec.directories) == {"920"} and rec.waiting_for == []
+    rec.feed(_sample_frame(dialect, 0) + _sample_frame(dialect, 1, band=0)
+             + _sample_frame(dialect, 2, band=920) + _sample_frame(dialect, 3, band=2400), _t(0))
+    rec.stop(_t(1))
+    assert [s.seq for s in _written(rec, "920")] == [0, 1, 2]
+    assert S.read_header(rec.directory).session_id == "20260919T005959Z"   # 帯域を付けない
+    _assert_replays(rec, dialect)
+
+
+def _file_calibrations(bands=("920",)) -> dict[str, C.DeviceCalibration]:
+    curve = C.RxCurve(
+        offset_db=-96.0, scale_db_per_count=0.5, reference_unit_id="ref-01",
+        reference_measured_on="2026-09-10", linear_range_dbm=(-90.0, -40.0),
+        fit_max_residual_db=0.5, measured_on="2026-09-19", source_bench="bench-x",
+        software_commit="abc",
+    )
+    return {
+        device: C.DeviceCalibration(
+            device_id=device, rx={band: curve for band in bands},
+            tx_outputs=tuple(C.TxOutput(band=band, power_cdbm=1300, channel=6, dbm=12.4,
+                                        source="meter", measured_on="2026-09-10")
+                             for band in bands),
+        )
+        for device in ("aa:bb:cc:dd:ee:01", "aa:bb:cc:dd:ee:02")
+    }
+
+
+def _template_for_files() -> dict:
+    template = _filled_template()
+    for role in ("tx", "rx"):
+        del template[role]["calibration"]
+    return template
+
+
+def test_a_band_without_calibration_is_skipped_and_the_other_band_records(tmp_path, dialect):
+    """⚠️ 校正ファイルに 2.4 の行が無い（2.4 の校正をまだしていない）とき、2.4 の記録だけを
+    諦めて理由を残し、920 は測ること。2.4 の設定が**先に**揃っても 920 を待つ。"""
+    rec = REC.Recorder(tmp_path, _template_for_files(), software_commit="abc123",
+                       dialect=dialect, calibrations=_file_calibrations(("920",)))
+    rec.feed(_band_configs(dialect, 2400), _t(-2))
+    assert rec.directories == {} and "2400 MHz 帯の RX の校正がありません" in rec.band_errors["2400"]
+    assert rec.waiting_for == [("920", "rx"), ("920", "tx")]
+    rec.feed(_band_configs(dialect, 920), _t(-1))
+    _feed_bands(rec, dialect, range(0, 3))
+    rec.stop(_t(3.5))
+    assert set(rec.directories) == {"920"}
+    assert [s.seq for s in _written(rec, "920")] == [0, 1, 2]
+    _assert_replays(rec, dialect)
+
+
+def test_a_single_band_without_calibration_still_refuses_to_start(tmp_path, dialect):
+    """1 帯域の記録（`block_ms = 0`）で校正が無ければ、今までどおり止めること（諦めて測れる
+    帯域が無い）。"""
+    rec = REC.Recorder(tmp_path, _template_for_files(), software_commit="abc123",
+                       dialect=dialect, calibrations=_file_calibrations(("920",)))
+    with pytest.raises(S.SessionError, match="2400 MHz 帯の RX の校正がありません"):
+        rec.feed(_config_frame(dialect, band=2400)
+                 + _tx_config_frame(dialect, band=2400, block_ms=0), _t(0))
 
 
 # --- CLI ---------------------------------------------------------------------
