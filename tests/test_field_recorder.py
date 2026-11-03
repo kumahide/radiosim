@@ -354,7 +354,7 @@ def test_the_recording_waits_for_the_tx_config_too(tmp_path, dialect):
     ウィンドウの分母（送信間隔）が雛形頼みに戻る。他の TX から中継された設定では始めない。"""
     rec = _recorder(tmp_path, dialect)
     rec.feed(_config_frame(dialect), _t(0))              # RX の設定だけ
-    assert rec.state == "waiting" and rec.waiting_for == ["tx"]
+    assert rec.state == "waiting" and rec.waiting_for == [("920", "tx")]
     rec.feed(_tx_config_frame(dialect, device=b"\x09" * 6), _t(1))    # 近くの別の TX
     assert rec.state == "waiting"
     _feed_seq(rec, dialect, [2])

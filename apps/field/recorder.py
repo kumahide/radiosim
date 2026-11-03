@@ -39,10 +39,12 @@ from apps.field.mavlink.reader import (
     Message,
     ReadStats,
     mac,
+    sample_band,
     to_radio_settings,
     to_rx_sample,
 )
 from apps.field.session import (
+    BANDS,
     MOVING_SLOT,
     SCHEMA_VERSION,
     Event,
@@ -229,6 +231,11 @@ def build_header(
     payload = copy.deepcopy(template)
     started = parse_utc(started_utc)
     payload["session_id"] = started.strftime("%Y%m%dT%H%M%SZ")
+    if tx_config.fields["block_ms"]:
+        # 2 帯域を交互に送る TX（I-252）＝1 回の記録で帯域ごとにセッションが 2 つでき、
+        # 同じ読み出しで始まると同じ名前になる。名前で帯域が分かるようにもしておく。
+        band = (dialect or load_dialect()).label("RADIOSIM_FIELD_BAND", tx_config.fields["band"])
+        payload["session_id"] += f"-{band}"
     payload["started_utc"] = started_utc
     payload["schema_version"] = SCHEMA_VERSION
     payload["provenance"]["software_commit"] = software_commit
@@ -262,16 +269,23 @@ def _is_rx(config: Message, dialect: Dialect | None) -> bool:
 
 @dataclass
 class _Processor:
-    """バイト列 → 受信サンプル。**ライブも読み直しも、これ 1 つを通る。**
+    """バイト列 → 受信サンプル（**1 つの帯域**）。**ライブも読み直しも、これ 1 つを通る。**
 
-    `on_start` は、RX の設定と（`tx_device` の）TX の設定が揃ったときにヘッダを返す
-    関数（ライブ＝組んでセッションを作る／読み直し＝既存のヘッダを返す）。揃う前は
-    それぞれ**最後に届いたもの**を持っておく。
+    `on_start` は、その帯域の RX の設定と（`tx_device` の）TX の設定が揃ったときにヘッダを
+    返す関数（ライブ＝組んでセッションを作る／読み直し＝既存のヘッダを返す）。`None` を
+    返したら、この帯域は始めない（ライブで組めなかった＝`Recorder.band_errors`）。揃う前は
+    それぞれ**最後に届いたもの**を持っておく。`can_start(時刻)` が偽の間は、揃っても始めない
+    （ライブ＝移動中は次の `place` まで待つ／読み直し＝ヘッダの開始時刻まで待つ）。
+
+    🔑 **帯域で絞る**（I-252）＝2 帯域を同時に聞く RX は、両方の帯域の設定とサンプルを同じ
+    ポートへ流す。帯域の欄が 0 のサンプル（古いファーム＝1 帯域だけを起こす版）は受ける。
     """
 
-    on_start: Callable[[Message, Message, str], SessionHeader]
+    on_start: Callable[[Message, Message, str], SessionHeader | None]
     dialect: Dialect
     tx_device: str                     # 待つ TX の個体 ID（小文字）。他の TX の設定は見ない
+    band: str                          # BANDS のどれか
+    can_start: Callable[[str], bool] = lambda _pc_utc: True
     stream: FrameStream = field(init=False)
     header: SessionHeader | None = None
     rx_config: Message | None = None   # セッションを作る前に届いた最後の設定
@@ -282,6 +296,20 @@ class _Processor:
 
     def __post_init__(self) -> None:
         self.stream = FrameStream(dialect=self.dialect)
+
+    @property
+    def ready(self) -> bool:
+        """設定が揃い、まだ始めていない。"""
+        return (self.header is None and not self.stopped
+                and self.rx_config is not None and self.tx_config is not None)
+
+    def try_start(self, pc_utc: str) -> None:
+        if not self.ready or not self.can_start(pc_utc):
+            return
+        assert self.rx_config is not None and self.tx_config is not None
+        self.header = self.on_start(self.rx_config, self.tx_config, pc_utc)
+        if self.header is None:
+            self.stopped = True
 
     def apply(self, event: Event) -> None:
         if event.kind == "place":
@@ -301,10 +329,13 @@ class _Processor:
         設定が切り替わる境目の値。
         """
         samples: list[RxSample] = []
+        self.try_start(pc_utc)
         for message in self.stream.feed(chunk):
             if message.name == "RADIOSIM_FIELD_CONFIG":
                 if self.stopped:
                     continue
+                if self.dialect.label("RADIOSIM_FIELD_BAND", message.fields["band"]) != self.band:
+                    continue                  # もう片方の帯域の設定（その帯域の記録が見る）
                 is_rx = _is_rx(message, self.dialect)
                 if not is_rx and mac(message.fields["device_id"]) != self.tx_device:
                     continue                  # 近くの別の TX（中継されてきた）
@@ -313,8 +344,7 @@ class _Processor:
                         self.rx_config = message
                     else:
                         self.tx_config = message
-                    if self.rx_config is not None and self.tx_config is not None:
-                        self.header = self.on_start(self.rx_config, self.tx_config, pc_utc)
+                    self.try_start(pc_utc)
                 elif self._differs(message, is_rx):
                     return [], True
                 continue
@@ -322,6 +352,8 @@ class _Processor:
                 continue
             if self.slot is None:
                 continue
+            if sample_band(message, self.dialect) not in (None, self.band):
+                continue                      # もう片方の無線で受けた（別の組ではない）
             if (mac(message.fields["tx_id"]) != self.header.tx.device_id
                     or mac(message.fields["rx_id"]) != self.header.rx.device_id):
                 # 近くで別の組が動いている。番号の系列が別物なので混ぜない
@@ -345,8 +377,24 @@ class _Processor:
 # --- ライブ ------------------------------------------------------------------
 
 
+@dataclass
+class _Band:
+    """1 つの帯域の記録（I-252＝2 帯域を交互に送る TX なら、1 回の記録で帯域ごとに 1 つ）。"""
+
+    processor: _Processor
+    directory: Path | None = None
+    samples_written: int = 0
+
+
 class Recorder:
-    """測りながら書く。呼び手（CLI）は時刻を**同じ時計で、進む向きに**渡すこと。"""
+    """測りながら書く。呼び手（CLI）は時刻を**同じ時計で、進む向きに**渡すこと。
+
+    🔑 **帯域ごとにセッションを 1 つ**（I-252）。各帯域は、その帯域の RX と TX の設定が
+    揃った所で始める。置き場所の番号は Recorder で 1 本＝両方のセッションで同じ番号が
+    同じ場所（920 と 2.4 を後で並べるため）。後から始まる帯域は、据えていればいまの番号で
+    始め、移動中なら次の `place` まで待つ。生のバイト列は各セッションへ全部（始まる前の
+    分も）残し、操作は始まっている全部へ書く。どちらかの設定が変わったら両方を終える。
+    """
 
     def __init__(
         self,
@@ -363,50 +411,102 @@ class Recorder:
         self._calibrations = calibrations
         self._software_commit = software_commit
         self._dialect = dialect or load_dialect()
-        self._processor = _Processor(
-            on_start=self._start,
-            dialect=self._dialect,
-            tx_device=template["tx"]["device_id"].lower(),
-        )
+        tx_device = template["tx"]["device_id"].lower()
+        self._bands: dict[str, _Band] = {
+            band: _Band(_Processor(
+                on_start=lambda rx, tx, t, band=band: self._start(band, rx, tx, t),
+                dialect=self._dialect, tx_device=tx_device, band=band,
+                can_start=lambda _t: not self._stopped and self._slot != MOVING_SLOT,
+            ))
+            for band in BANDS
+        }
         self._pending_raw: list[tuple[str, bytes]] = []
         self._last_time: datetime | None = None
-        self.directory: Path | None = None
-        self.samples_written = 0
+        self._slot: int | None = None       # None＝どの帯域もまだ始めていない
+        self._next_slot = 0
+        self._stopped = False
         self.config_changed = False
+        self.band_errors: dict[str, str] = {}   # 始められなかった帯域 → 理由
 
     # 状態 --------------------------------------------------------------------
 
+    def _started(self) -> list[_Band]:
+        return [b for b in self._bands.values() if b.directory is not None]
+
+    @property
+    def directories(self) -> dict[str, Path]:
+        """始まった帯域 → セッションのフォルダ。"""
+        return {band: b.directory for band, b in self._bands.items() if b.directory is not None}
+
+    @property
+    def samples_by_band(self) -> dict[str, int]:
+        return {band: b.samples_written for band, b in self._bands.items()
+                if b.directory is not None}
+
+    @property
+    def directory(self) -> Path | None:
+        """最初に始まったセッション（1 帯域の記録ならそれだけ）。"""
+        started = self._started()
+        return started[0].directory if started else None
+
     @property
     def header(self) -> SessionHeader | None:
-        return self._processor.header
+        started = self._started()
+        return started[0].processor.header if started else None
+
+    @property
+    def samples_written(self) -> int:
+        return sum(b.samples_written for b in self._bands.values())
 
     @property
     def state(self) -> str:
         """`waiting`（設定待ち）／`placed`／`moving`／`stopped`。"""
-        p = self._processor
-        if p.stopped:
+        if self._stopped:
             return "stopped"
-        if p.header is None:
+        if self._slot is None:
             return "waiting"
-        return "moving" if p.slot == MOVING_SLOT else "placed"
+        return "moving" if self._slot == MOVING_SLOT else "placed"
 
     @property
     def slot(self) -> int | None:
-        return self._processor.slot
+        return self._slot
 
     @property
-    def waiting_for(self) -> list[str]:
-        """まだ届いていない設定（`rx`／`tx`）。セッションを作る前だけ意味がある。"""
-        p = self._processor
-        return [name for name, got in (("rx", p.rx_config), ("tx", p.tx_config)) if got is None]
+    def waiting_for(self) -> list[tuple[str | None, str]]:
+        """まだ届いていない設定＝`(帯域, 役割)`（役割は `rx`／`tx`）。
+
+        待つ帯域＝TX の設定が 2 帯域を交互に送る形（`block_ms > 0`）なら両方・1 帯域の形なら
+        その帯域だけ。TX の設定がまだ無ければ、RX の設定が来た帯域（それも無ければ帯域は
+        `None`＝分からない）。始まった帯域・始められなかった帯域は挙げない。
+        """
+        procs = {band: b.processor for band, b in self._bands.items()}
+        tx_seen = {band for band, p in procs.items() if p.tx_config is not None}
+        if any(p.tx_config is not None and p.tx_config.fields["block_ms"]
+               for p in procs.values()):
+            expected = set(BANDS)
+        elif tx_seen:
+            expected = tx_seen
+        else:
+            expected = {band for band, p in procs.items() if p.rx_config is not None}
+        if not expected:
+            return [(None, "rx"), (None, "tx")]
+        out: list[tuple[str | None, str]] = []
+        for band in BANDS:
+            p = procs[band]
+            if band not in expected or p.header is not None or p.stopped:
+                continue
+            out += [(band, role) for role, got in (("rx", p.rx_config), ("tx", p.tx_config))
+                    if got is None]
+        return out
 
     @property
     def stats(self) -> ReadStats:
-        return self._processor.stream.stats
+        # どの帯域の読み手も同じバイト列を全部読む＝数えた値は同じ。
+        return self._bands[BANDS[0]].processor.stream.stats
 
     @property
     def foreign(self) -> int:
-        return self._processor.foreign
+        return sum(b.processor.foreign for b in self._bands.values())
 
     # 入力 --------------------------------------------------------------------
 
@@ -417,41 +517,45 @@ class Recorder:
             raise SessionError("終えたセッションには書けません")
         if not chunk:
             return
-        if self.directory is None:
+        started = self._started()
+        if not started:
             self._pending_raw.append((pc_utc, chunk))
-        else:
-            append_raw(self.directory, chunk, pc_utc)
-        samples, changed = self._processor.process(chunk, pc_utc)
-        if self.directory is not None and self._pending_raw:
-            # このセッションはこの読み出しで始まった＝それまでの分もまとめて残す。
-            for when, data in self._pending_raw:
-                append_raw(self.directory, data, when)
-            self._pending_raw = []
-        if samples:
-            assert self.directory is not None
-            append_rx_samples(self.directory, samples)
-            self.samples_written += len(samples)
-        if changed:
+        for b in started:
+            assert b.directory is not None
+            append_raw(b.directory, chunk, pc_utc)
+        results = {band: b.processor.process(chunk, pc_utc) for band, b in self._bands.items()}
+        if any(changed for _, changed in results.values()):
+            # どちらかの設定が変わった＝両方を終える。この読み出しのサンプルはどちらにも
+            # 書かない（読み直しは終了の記録をこの読み出しの前に当てる）。
             self.config_changed = True
-            self._record(Event(pc_utc, "stop"))
-            self._processor.stream.close()
+            self._stop_all(pc_utc)
+            return
+        for band, (samples, _) in results.items():
+            if samples:
+                b = self._bands[band]
+                assert b.directory is not None
+                append_rx_samples(b.directory, samples)
+                b.samples_written += len(samples)
 
     def move(self, pc_utc: str) -> None:
         """アンテナを動かし始めた。"""
         self._advance(pc_utc)
         if self.state != "placed":
             raise SessionError(f"据えていない状態（{self.state}）からは動かせません")
+        self._slot = MOVING_SLOT
         self._record(Event(pc_utc, "move"))
 
     def place(self, pc_utc: str) -> int:
-        """次の置き場所に据えた。番号は 1 つずつ進む（使い回さない）。"""
+        """次の置き場所に据えた。番号は 1 つずつ進む（使い回さない・帯域で共通）。"""
         self._advance(pc_utc)
         if self.state != "moving":
             raise SessionError(f"移動中でない状態（{self.state}）では据え直せません")
-        assert self.directory is not None
-        used = [e.spatial_slot for e in read_events(self.directory) if e.kind == "place"]
-        slot = max(used) + 1
+        slot = self._next_slot
+        self._next_slot += 1
+        self._slot = slot
         self._record(Event(pc_utc, "place", slot))
+        for b in self._bands.values():
+            b.processor.try_start(pc_utc)     # 移動中に設定が揃った帯域はここから
         return slot
 
     def stop(self, pc_utc: str) -> None:
@@ -459,32 +563,59 @@ class Recorder:
         self._advance(pc_utc)
         if self.state == "stopped":
             return
-        if self.directory is None:
-            self._processor.stopped = True
-            return
-        self._record(Event(pc_utc, "stop"))
-        self._processor.stream.close()
+        self._stop_all(pc_utc)
 
     # 内部 --------------------------------------------------------------------
 
-    def _start(self, rx_config: Message, tx_config: Message, pc_utc: str) -> SessionHeader:
-        header = build_header(
-            self._template,
-            rx_config,
-            tx_config,
-            started_utc=pc_utc,
-            software_commit=self._software_commit,
-            dialect=self._dialect,
-            calibrations=self._calibrations,
-        )
-        self.directory = create_session(self._root, header)
-        self._record(Event(pc_utc, "place", 0))
+    def _start(
+        self, band: str, rx_config: Message, tx_config: Message, pc_utc: str
+    ) -> SessionHeader | None:
+        try:
+            header = build_header(
+                self._template,
+                rx_config,
+                tx_config,
+                started_utc=pc_utc,
+                software_commit=self._software_commit,
+                dialect=self._dialect,
+                calibrations=self._calibrations,
+            )
+            directory = create_session(self._root, header)
+        except SessionError as e:
+            others = [b for k, b in self._bands.items()
+                      if k != band and not b.processor.stopped]
+            if not self._started() and not (tx_config.fields["block_ms"] and others):
+                raise                     # 1 帯域の記録＝今までどおり止める
+            # もう片方の帯域は測れている（測れ得る）＝その記録を落とさずに、この帯域だけ諦める。
+            self.band_errors[band] = str(e)
+            return None
+        started = self._started()
+        source = self._pending_raw if not started else list(read_raw(started[0].directory))
+        for when, data in source:
+            append_raw(directory, data, when)
+        self._pending_raw = []
+        b = self._bands[band]
+        b.directory = directory
+        if self._slot is None:
+            self._slot = self._next_slot
+            self._next_slot += 1
+        event = Event(pc_utc, "place", self._slot)
+        append_event(directory, event)
+        b.processor.apply(event)
         return header
 
     def _record(self, event: Event) -> None:
-        assert self.directory is not None
-        append_event(self.directory, event)
-        self._processor.apply(event)
+        for b in self._started():
+            assert b.directory is not None
+            append_event(b.directory, event)
+            b.processor.apply(event)
+
+    def _stop_all(self, pc_utc: str) -> None:
+        self._record(Event(pc_utc, "stop"))
+        for b in self._bands.values():
+            b.processor.stopped = True
+            b.processor.stream.close()
+        self._stopped = True
 
     def _advance(self, pc_utc: str) -> None:
         moment = parse_utc(pc_utc)
@@ -526,7 +657,13 @@ def replay(directory: str | Path, dialect: Dialect | None = None) -> Replay:
                 raise SessionError(f"生ログの最初の {end.role} の設定がヘッダと一致しません")
         return header
 
-    processor = _Processor(on_start=on_start, dialect=dialect, tx_device=header.tx.device_id)
+    started = parse_utc(header.started_utc)
+    processor = _Processor(
+        on_start=on_start, dialect=dialect, tx_device=header.tx.device_id,
+        band=header.rx.radio.band,
+        # ライブは移動中に揃った帯域を次の place で始める＝その時刻より前には始めない。
+        can_start=lambda pc_utc: parse_utc(pc_utc) >= started,
+    )
     samples: list[RxSample] = []
     pending = list(events)
     for pc_utc, chunk in read_raw(directory):

@@ -310,7 +310,7 @@ def _record(args: argparse.Namespace) -> int:
                         and time.monotonic() - started_wait > _WAIT_HINT_S:
                     # RX も TX も設定を 1 秒ごとに送る（増分5）＝届かないのは配線か
                     # ポート・ファームの側（TX なら電波の側）。
-                    if "rx" in recorder.waiting_for:
+                    if any(role == "rx" for _, role in recorder.waiting_for):
                         print("RX の設定が届きません。ポートと RX の電源、RX の役割"
                               "（role rx）を確かめてください。")
                     else:
