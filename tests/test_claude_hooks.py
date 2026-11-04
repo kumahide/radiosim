@@ -5003,6 +5003,26 @@ class TestLedgerIndex:
     def test_製品は件名の先頭から推す(self, hook, title, want):
         assert hook.product_of(title) == want
 
+    @pytest.mark.parametrize("state, want", [
+        ("未着手（行き先＝Field phase 1＝Field は本体の版を持たない）", ("assigned", ["Field phase 1"])),
+        ("対応中（…。**行き先＝Field phase 2**（機体））", ("assigned", ["Field phase 2"])),
+        ("対応中（行き先＝Field のフェーズ 1）", ("assigned", ["Field phase 1"])),
+        ("未着手（版割り未決＝Field は本体の版を持たない）", ("pending", [])),
+        ("保留（行き先＝Field phase 1・再現待ち）", ("pending", [])),  # 保留は語だけで判断待ち
+    ])
+    def test_Field_は_phase_を行先として読む(self, hook, state, want):
+        """2026-11-05 経営者の指摘＝「Field で対応中なのに行先が判断待ちはおかしい」。"""
+        assert hook.destination_of(state, self._KNOWN) == want
+
+    def test_phase_の行先は製品の中で版より先_済んだ版の印は付けない(self, hook):
+        doc = _doc(_item("B-002", "未着手（✅ 4.0 確定）", title="Field の t"),
+                   _item("B-001", "対応中（行き先＝Field phase 1）", title="Field の t"))
+        rows = [self._cells(r) for r in
+                self._rows(hook.ledger_index(doc, known=self._KNOWN, current="4.0a1"))]
+        assert [r[2:4] for r in rows] == [["Field", "phase 1"], ["Field", "4.0"]]
+        audit = hook.assignment_audit(doc, known=self._KNOWN)
+        assert audit["undeclared"] == [] and audit["assigned"]["Field phase 1"] == ["B-001"]
+
     def test_製品の行が推定に勝ち_語彙の外は不明と出す(self, hook):
         assert hook.product_of("Field の…", "開発環境（道具）") == "開発環境"
         assert hook.product_of("x", "Pro") == "⚠️ 不明"
