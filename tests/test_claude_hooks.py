@@ -4939,7 +4939,12 @@ class TestLedgerIndex:
     _KNOWN = frozenset({"3.4", "3.6", "4.0"})
 
     def _rows(self, block):
-        return [ln for ln in block if ln.startswith("| ") and not ln.startswith("| 行き先")]
+        return [ln for ln in block if ln.startswith("| ") and not ln.startswith("| ID |")]
+
+    @staticmethod
+    def _cells(row):
+        """表の 1 行を列に分ける＝ID・重要度・製品・行先・状態・件名（経営者の指定の順）。"""
+        return [c.strip() for c in row.strip().strip("|").split(" | ")]
 
     def test_行き先_状態_ID_の順に並ぶ(self, hook):
         doc = _doc(
@@ -4953,7 +4958,7 @@ class TestLedgerIndex:
             _ARCHIVE_HEAD, _item("B-001", "済", resp="`abc1234`"), _item("I-001", "却下"),
         )
         block = hook.ledger_index(doc, known=self._KNOWN)
-        ids = [r.split(" | ")[1] for r in self._rows(block)]
+        ids = [self._cells(r)[0] for r in self._rows(block)]
         assert ids == ["B-008", "B-009", "I-005", "B-007", "B-010"]
         assert "閉じた項目（済・却下）2 件" in "\n".join(block)
         assert "（未対応 5 件）" in block[1]
@@ -4965,7 +4970,7 @@ class TestLedgerIndex:
         audit = hook.assignment_audit(doc, known=self._KNOWN)
         assert audit["assigned"] == {"3.6": ["B-003"]}
         assert audit["pending"] == ["B-002"] and audit["undeclared"] == ["B-001"]
-        dest = {r.split(" | ")[1]: r.split(" | ")[0][2:] for r in
+        dest = {self._cells(r)[0]: self._cells(r)[3] for r in
                 self._rows(hook.ledger_index(doc, known=self._KNOWN))}
         assert dest == {"B-003": "3.6", "B-002": "判断待ち", "B-001": "⚠️ 未記入"}
 
@@ -4973,19 +4978,49 @@ class TestLedgerIndex:
         """初回の生成で B-175 が `3.4`（出荷済み）のまま見つかった形。"""
         doc = _doc(_item("B-002", "対応中（行き先＝`3.4`）"), _item("B-001", "未着手（✅ 3.6 確定）"))
         rows = self._rows(hook.ledger_index(doc, known=self._KNOWN, current="3.6a1"))
-        assert rows[0].startswith("| ⚠️ 3.4（済んだ版） | B-002")
-        assert rows[1].startswith("| 3.6 | B-001")
+        assert self._cells(rows[0])[:4] == ["B-002", "—", "Link", "⚠️ 3.4（済んだ版）"]
+        assert self._cells(rows[1])[:4] == ["B-001", "—", "Link", "3.6"]
 
     def test_件名の縦棒で表を壊さない(self, hook):
         doc = _doc(_item("B-001", "未着手（✅ 3.6 確定）", title="a | b"))
         row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
-        assert row.count(" | ") == 4 and "a ｜ b" in row
+        assert row.count(" | ") == 5 and "a ｜ b" in row
 
     def test_重要度を拾う(self, hook):
         doc = _doc("### ★ B-001: t", "", "- ★ **重要度**: **高**（主要機能）",
                    "- ★ **状態**: 未着手（✅ 3.6 確定）")
         row = self._rows(hook.ledger_index(doc, known=self._KNOWN))[0]
-        assert row.split(" | ")[3] == "高"
+        assert self._cells(row)[1] == "高"
+
+    @pytest.mark.parametrize("title, want", [
+        ("Field の集計で…", "Field"),
+        ("Field で 2.4 GHz も…", "Field"),
+        ("ドローン版の経路…", "Drone"),
+        ("本体のバッチ CSV に…Field が実測した…", "Link"),
+        ("植生減衰の係数が…＝Field の 1 回目の実測は…", "Link"),  # B-262＝途中の語は主語でない
+        ("`test_window_fit.py` のホイール", "Link"),
+    ])
+    def test_製品は件名の先頭から推す(self, hook, title, want):
+        assert hook.product_of(title) == want
+
+    def test_製品の行が推定に勝ち_語彙の外は不明と出す(self, hook):
+        assert hook.product_of("Field の…", "開発環境（道具）") == "開発環境"
+        assert hook.product_of("x", "Pro") == "⚠️ 不明"
+
+    def test_列の順と_製品ごとに寄せてから行先の順(self, hook):
+        doc = _doc("## 🐞 バグ",
+                   _item("B-004", "未着手（✅ 3.6 確定）", title="Field の t"),
+                   _item("B-003", "未着手（版割り未決）", title="Field の t"),
+                   _item("B-002", "未着手（版割り未決）", title="t"),
+                   _item("B-001", "未着手（✅ 3.6 確定）", title="t"),
+                   )
+        doc.insert(doc.index("### ★ B-001: t") + 1, "- **製品**: 開発環境")
+        block = hook.ledger_index(doc, known=self._KNOWN)
+        assert "| ID | 重要度 | 製品 | 行先 | 状態 | 件名 |" in block
+        rows = [[self._cells(r)[i] for i in (2, 3, 0)] for r in self._rows(block)]
+        assert rows == [["Link", "判断待ち", "B-002"], ["Field", "3.6", "B-004"],
+                        ["Field", "判断待ち", "B-003"], ["開発環境", "3.6", "B-001"]]
+        assert any(ln.startswith("製品＝Link 1 ／ Field 2 ／ 開発環境 1") for ln in block)
 
     def test_差し替えは印の間だけで無ければ最初の節の前へ(self, hook):
         main = ["# 台帳", "", "前書き", "", "## 🐞 バグ", "", "### ★ B-001: t"]
