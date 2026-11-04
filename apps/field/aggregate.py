@@ -44,11 +44,10 @@ from __future__ import annotations
 
 import bisect
 import csv
-import math
 import os
 import tempfile
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Iterable
 
@@ -60,6 +59,7 @@ from apps.field.session import (
     RxSample,
     SessionError,
     SessionHeader,
+    format_utc,
     parse_utc,
     rssi_saturated,
     to_dbm,
@@ -76,6 +76,14 @@ CHANNEL_MHZ = {
 # `sent_mask` が覆う周期の数（XML の uint32）。
 SENT_MASK_BITS = 32
 
+# 読み出しの手前にたまっていたとみなす遅れ [µs]（B-371）。受信機の時計で測った間隔より
+# PC の時刻がこれ以上遅れて届いたサンプルは、受信機の時計から届いた時刻を直す。
+# 普段の USB の揺れ（実機で 55 ms 幅）には触らない大きさで、ウィンドウの番号が
+# ずれ始める大きさ（2.4 GHz の送信間隔 100 ms の数個分）より小さい。
+STALE_LAG_US = 200_000
+
+_EPOCH = datetime(1970, 1, 1, tzinfo=timezone.utc)
+
 
 @dataclass(frozen=True)
 class Window:
@@ -91,7 +99,9 @@ class Window:
     unsent: int                 # TX が送らなかったと分かっている数
     meas_dbm: float | None      # 打ち切り・記録の欠落なら None
     noise_floor_raw_mean: float | None
-    first_pc_utc: str           # 届いた最初/最後の PC 時刻（空＝1 つも届かなかった）
+    # 届いた最初/最後の PC 時刻（空＝1 つも届かなかった）。読み出しの手前にたまっていた分は
+    # 受信機の時計から直した時刻（→ `arrival_times_us`・B-371）＝samples.csv の値と違うことがある。
+    first_pc_utc: str
     last_pc_utc: str
     # 受信が強すぎて生値が飽和した標本の数（B-361）。1 つでもあれば meas_dbm は None。
     saturated: int = 0
@@ -162,6 +172,7 @@ def aggregate(
             "受信サンプルが 1 つもないのでウィンドウを作れません（機材の設定を確かめてください）"
         )
     clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms, header.tx.radio.block_ms)
+    arrived = {s.seq: _format_us(us) for s, us in zip(ordered, clock.arrivals_us)}
     by_seq = {s.seq: s for s in ordered}
     gaps = link_gaps(ordered)
     unsent = unsent_cycles(ordered)
@@ -180,7 +191,7 @@ def aggregate(
             windows.append(
                 _make_window(
                     header, len(windows), (key_config, slot), start, per_window, got, lost,
-                    skipped,
+                    skipped, arrived,
                 )
             )
             start += per_window
@@ -285,40 +296,84 @@ class _SeqClock:
     相手のブロックの中に来たとき、まだ送っていない番号を「受からなかった」に数え、次の
     ブロックの番号（移動中に受けたもの）までウィンドウに入る。
     ⚠️ 整数の µs で計算する＝浮動小数の割り算だと、ちょうど k·間隔の所で 1 つ落ちる。
+
+    🔑 **基準の時刻は PC の時刻そのものではなく、届いた時刻**（→ `arrival_times_us`・B-371）。
+    ポートを開く前にたまっていた分は開いた時刻で刻まれる＝そのまま基準にすると、古い番号を
+    「いま送った番号」と取り違え、始まる前に送られて落ちた番号までウィンドウに入れる。
     """
 
     def __init__(self, samples: list[RxSample], interval_ms: int, block_ms: int = 0):
-        self._interval_s = interval_ms / 1000.0
         self._interval_us = interval_ms * 1000
         self._block_us = block_ms * 1000
         # 1 ブロックの周期数（block_ms ≥ 間隔はヘッダの検査が見ている）。
         self._per_block = block_ms // interval_ms if block_ms else 0
-        self._times: list[float] = []
-        self._seqs: list[int] = []
-        for s in samples:
-            moment = parse_utc(s.pc_utc).timestamp()
-            if self._times and moment < self._times[-1]:
-                # PC の時計が戻った（時刻合わせ）。直すと番号の対応が崩れる。
-                raise SessionError(
-                    f"サンプルの受信時刻が戻っています: seq {s.seq} の {s.pc_utc}"
-                )
-            self._times.append(moment)
-            self._seqs.append(s.seq)
+        self._times = arrival_times_us(samples)
+        self._seqs = [s.seq for s in samples]
+
+    @property
+    def arrivals_us(self) -> list[int]:
+        """サンプルごとの届いた時刻（`_EPOCH` からの µs・渡したサンプルの順）。"""
+        return list(self._times)
 
     def last_sent(self, moment: datetime) -> int:
-        t = moment.timestamp()
+        t = _to_us(moment)
         index = bisect.bisect_right(self._times, t) - 1
         index = max(index, 0)
         if not self._block_us:
-            offset = (t - self._times[index]) / self._interval_s
-            return self._seqs[index] + math.floor(offset)
+            return self._seqs[index] + (t - self._times[index]) // self._interval_us
         n = self._per_block
         period_us = 2 * self._block_us
         ref = self._seqs[index]
         ref_us = (ref // n) * period_us + (ref % n) * self._interval_us
-        tau = round((t - self._times[index]) * 1e6) + ref_us
+        tau = t - self._times[index] + ref_us
         cycle, rest = divmod(tau, period_us)
         return cycle * n + min(rest // self._interval_us, n - 1)
+
+
+def arrival_times_us(samples: list[RxSample]) -> list[int]:
+    """サンプルが PC に**届いた時刻**（`_EPOCH` からの µs・seq の昇順のサンプル）。B-371。
+
+    `pc_utc` は**読み出した時刻**で、届いた時刻と同じなのは読み出しの手前に何もたまって
+    いなかったときだけ。ポートを開く前に RX が流していた分は、開いた直後の 1 回の読み出しで
+    まとめて返り、全部が開いた時刻（＝セッションの開始時刻）で刻まれる（実機で 5〜14 秒古い）。
+
+    直し方＝**後ろから**たどり、次のサンプルの届いた時刻から受信機の時計（`radio_time_us`＝
+    起動からの µs）の差を引いた時刻より、`pc_utc` が `STALE_LAG_US` を超えて遅いサンプルは、
+    その時刻に直す。古い分が続いても、正しく刻まれた最初のサンプルから順に戻せる。
+      - 遅れがそれ以下（普段の USB の揺れ）は `pc_utc` のまま＝揺れの最小値へ寄せると、
+        長いセッションで PC と受信機の時計の進み方の差が積もる
+      - 受信機の時計が進んでいない所（受信機の再起動・時計の欄が 0 の古い記録）はつながない
+      - 直さないときも、次のサンプルの時刻より後にはしない（並びが戻ると時計が使えない）
+
+    ⛔ `pc_utc` そのものが戻っている並び（PC の時刻合わせ）は直さずに断る＝直すと番号の
+    対応が崩れる。
+    """
+    raw: list[int] = []
+    for s in samples:
+        moment = _to_us(parse_utc(s.pc_utc))
+        if raw and moment < raw[-1]:
+            raise SessionError(
+                f"サンプルの受信時刻が戻っています: seq {s.seq} の {s.pc_utc}"
+            )
+        raw.append(moment)
+    times = list(raw)
+    for i in range(len(samples) - 2, -1, -1):
+        radio_step = samples[i + 1].radio_time_us - samples[i].radio_time_us
+        if radio_step > 0:
+            chained = times[i + 1] - radio_step
+            if raw[i] - chained > STALE_LAG_US:
+                times[i] = chained
+                continue
+        times[i] = min(raw[i], times[i + 1])
+    return times
+
+
+def _to_us(moment: datetime) -> int:
+    return (moment - _EPOCH) // timedelta(microseconds=1)
+
+
+def _format_us(us: int) -> str:
+    return format_utc(_EPOCH + timedelta(microseconds=us))
 
 
 def _check_samples(header: SessionHeader, samples: list[RxSample]) -> None:
@@ -363,6 +418,7 @@ def _make_window(
     got: list[RxSample],
     link_lost: int,
     unsent: int,
+    arrived: dict[int, str],
 ) -> Window:
     config_id, spatial_slot = key
     radio_expected = seq_count - link_lost - unsent
@@ -389,8 +445,8 @@ def _make_window(
         unsent=unsent,
         meas_dbm=meas_dbm,
         noise_floor_raw_mean=noise,
-        first_pc_utc=got[0].pc_utc if got else "",
-        last_pc_utc=got[-1].pc_utc if got else "",
+        first_pc_utc=arrived[got[0].seq] if got else "",
+        last_pc_utc=arrived[got[-1].seq] if got else "",
         saturated=saturated,
     )
 

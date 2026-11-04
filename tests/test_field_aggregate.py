@@ -268,6 +268,54 @@ def test_a_block_not_a_multiple_of_the_interval():
     assert clock.last_sent(_BASE + timedelta(seconds=2.1)) == 10
 
 
+# --- 読み出しの手前にたまっていた分（B-371） ------------------------------------------
+
+
+def _backlog_then_live(stamp: float = 119.5) -> list[S.RxSample]:
+    """ポートを開く前にたまっていた 100〜109 が、開いた時刻 `stamp` の 1 回の読み出しで
+    まとめて届き、その後の 110〜119 は落ちて、120〜139 が普段どおり届いた形（実機の desk11）。"""
+    backlog = [replace(_sample(q), pc_utc=_t(stamp)) for q in range(100, 110)]
+    return backlog + [_sample(q) for q in range(120, 140)]
+
+
+def test_samples_read_late_are_put_back_at_their_arrival_time():
+    """まとめて届いた古い分の時刻は、受信機の時計から届いた時刻に直ること。"""
+    samples = _backlog_then_live()
+    got = A.arrival_times_us(samples)
+    assert got == [A._to_us(S.parse_utc(_t(s.seq))) for s in samples]
+
+
+def test_the_first_window_starts_after_the_backlog_not_inside_it():
+    """🔑 開始時刻に刻まれた古い分を時計の基準にしないこと（B-371）。
+
+    基準にすると「いま送った番号」を 109 と取り違え、始まる前に送られて落ちた 110〜119 を
+    受信 0 のウィンドウ＝打ち切り（偽の深い遮蔽）として本体へ渡す。
+    """
+    events = _events(("place", 119.5, 0), ("stop", 139.5, 0))
+    windows = A.aggregate(_header(), _backlog_then_live(), events)
+    assert [w.seq_start for w in windows] == [120, 130]
+    assert not any(w.censored for w in windows)
+
+
+def test_the_window_reports_the_corrected_arrival_time():
+    """ウィンドウの「届いた最初の時刻」も直した時刻を出すこと（samples.csv の値ではない）。"""
+    events = _events(("place", 99.5, 0), ("stop", 139.5, 0))
+    windows = A.aggregate(_header(), _backlog_then_live(), events)
+    assert windows[0].seq_start == 100
+    assert windows[0].first_pc_utc == _t(100)
+    assert windows[0].last_pc_utc == _t(109)
+
+
+def test_ordinary_usb_jitter_is_left_as_read():
+    """普段の揺れ（`STALE_LAG_US` 以下の遅れ）は直さないこと＝揺れの最小値へ寄せ続けると、
+    長いセッションで PC と受信機の時計の進み方の差が積もる。"""
+    samples = [_sample(q) for q in range(0, 10)]
+    samples[4] = replace(samples[4], pc_utc=_t(4.5))     # 50 ms 遅れて読めた
+    assert A.STALE_LAG_US > 50_000
+    got = A.arrival_times_us(samples)
+    assert got == [A._to_us(S.parse_utc(s.pc_utc)) for s in samples]
+
+
 # --- 打ち切り ----------------------------------------------------------------
 
 
