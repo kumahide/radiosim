@@ -622,6 +622,45 @@ def test_unsent_cycles_leave_the_denominator_so_the_window_is_not_censored():
     assert not windows[0].censored
 
 
+def _told_with_link_loss(seqs, unsent: set[int], dropped: dict[int, int]) -> list[S.RxSample]:
+    """`_told` に、受信機の通し番号（`sample_seq`）を足したもの。`dropped` は
+    `{seq: その手前で PC までに落ちた数}`＝その seq の通し番号をその数だけ進める。"""
+    out, n = [], 0
+    for s in _told(seqs, unsent):
+        n += dropped.get(s.seq, 0)
+        out.append(replace(s, sample_seq=n))
+        n += 1
+    return out
+
+
+def test_link_loss_next_to_unsent_cycles_is_credited_by_number_across_windows():
+    """🔑 B-372：151 と 162 の間の 10 番号のうち、162 の `sent_mask` が 160・161 を送らなかったと
+    言い、通し番号が 8 つ欠けた＝送った 8 つが全部 PC までの間で落ちた。番号で振れるので、
+    ウィンドウを跨いでも各ウィンドウの分母から引くこと（引かないと電波の欠けに数えられ、
+    [150, 160) が 2/10 の打ち切りになる）。"""
+    seqs = list(range(140, 152)) + list(range(162, 180))
+    samples = _told_with_link_loss(seqs, {160, 161}, {162: 8})
+    events = _events(("place", 139.5, 0), ("stop", 179.5, 0))
+    windows = A.aggregate(_header(), samples, events)
+    assert [w.seq_start for w in windows] == [140, 150, 160, 170]
+    assert [w.link_lost for w in windows] == [0, 8, 0, 0]
+    assert [w.unsent for w in windows] == [0, 0, 2, 0]
+    assert [w.receive_rate for w in windows] == [1.0, 1.0, 1.0, 1.0]
+    assert not any(w.censored for w in windows)
+
+
+def test_a_cycle_is_never_taken_out_of_the_denominator_twice():
+    """⚠️ 送らなかったと言う周期と、PC までの間で落ちた数が食い違う（落ちた数が送った番号の数を
+    超える）ときは、落ちた分をどこにも振らない＝同じ番号を「送らなかった」と「落ちた」の
+    両方で分母から引かない。"""
+    seqs = list(range(100, 104)) + list(range(107, 120))
+    # 104〜106 の 3 つが落ちたと通し番号は言うが、107 の mask は 105 を送らなかったと言う。
+    samples = _told_with_link_loss(seqs, {105}, {107: 3})
+    windows = A.aggregate(_header(), samples, _events(("place", 99.5, 0), ("stop", 119.5, 0)))
+    assert windows[0].unsent == 1 and windows[0].link_lost == 0
+    assert all(w.received + w.link_lost + w.unsent <= w.seq_count for w in windows)
+
+
 # --- 本体のバッチ CSV への受け渡し -------------------------------------------
 
 

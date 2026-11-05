@@ -174,8 +174,8 @@ def aggregate(
     clock = _SeqClock(ordered, header.tx.radio.tx_interval_ms, header.tx.radio.block_ms)
     arrived = {s.seq: _format_us(us) for s, us in zip(ordered, clock.arrivals_us)}
     by_seq = {s.seq: s for s in ordered}
-    gaps = link_gaps(ordered)
     unsent = unsent_cycles(ordered)
+    link_lost = _split_link_lost(link_gaps(ordered), unsent)
     key_config = header.rx.radio.config_id
 
     windows: list[Window] = []
@@ -186,7 +186,7 @@ def aggregate(
         while start + per_window - 1 <= last:
             span = range(start, start + per_window)
             got = [by_seq[q] for q in span if q in by_seq]
-            lost = _link_lost_in(gaps, start, per_window)
+            lost = link_lost.within(start, per_window)
             skipped = sum(1 for q in span if q in unsent)
             windows.append(
                 _make_window(
@@ -249,21 +249,42 @@ def link_lost_total(samples: list[RxSample]) -> int:
     return sum(lost for _a, _b, lost in link_gaps(samples))
 
 
-def _link_lost_in(gaps: list[tuple[int, int, int]], start: int, count: int) -> int:
-    """ウィンドウ `[start, start + count)` に振れる「PC までの間で落ちた数」。"""
-    end = start + count
-    total = 0
+@dataclass(frozen=True)
+class _LinkLost:
+    """PC までの間で落ちた分の、ウィンドウへの振り方（セッションで 1 回だけ作る）。"""
+
+    by_seq: frozenset[int]                  # 番号で分かる＝どのウィンドウの分か決まる seq
+    mixed: tuple[tuple[int, int, int], ...]  # 電波の欠けと混ざった `(前の seq, 次の seq, 落ちた数)`
+
+    def within(self, start: int, count: int) -> int:
+        """ウィンドウ `[start, start + count)` に振れる「PC までの間で落ちた数」。"""
+        end = start + count
+        total = sum(1 for q in range(start, end) if q in self.by_seq)
+        # 電波の欠けと混ざっているが、両端が同じウィンドウの中＝このウィンドウの分。
+        # ウィンドウを跨ぐものは振らない。振ると、本当は電波で欠けた分まで分母から消え、
+        # 受信率が高く見える。
+        total += sum(lost for a, b, lost in self.mixed if start <= a and b < end)
+        return total
+
+
+def _split_link_lost(gaps: list[tuple[int, int, int]], unsent: set[int]) -> _LinkLost:
+    """`link_gaps` の欠けを、番号で振れるものと混ざったものに分ける。
+
+    間の番号のうち TX が送らなかったと分かっている周期（`unsent_cycles`）は電波にも
+    PC までの間にも乗っていない＝**送った番号**だけを数える（B-372）。落ちた数がそれと
+    等しければ、送った番号は全部 PC までの間で落ちた＝どのウィンドウの分か番号で分かる。
+    送らなかった周期は by_seq に入れない＝`Window.unsent` と同じ番号を 2 回分母から引かない。
+    落ちた数が送った番号の数を超える（数が合わない）ものは、どこにも振らない。
+    """
+    by_seq: set[int] = set()
+    mixed = []
     for a, b, lost in gaps:
-        between = b - a - 1
-        if lost == between:
-            # 間の番号は全部 PC までの間で落ちた＝どのウィンドウの分か番号で分かる。
-            total += max(0, min(b, end) - max(a + 1, start))
-        elif lost < between and start <= a and b < end:
-            # 電波の欠けと混ざっているが、両端が同じウィンドウの中＝このウィンドウの分。
-            total += lost
-        # それ以外（ウィンドウを跨いで混ざっている・数が合わない）は振らない。振ると、
-        # 本当は電波で欠けた分まで分母から消え、受信率が高く見える。
-    return total
+        sent = [q for q in range(a + 1, b) if q not in unsent]
+        if lost == len(sent):
+            by_seq.update(sent)
+        elif lost < len(sent):
+            mixed.append((a, b, lost))
+    return _LinkLost(frozenset(by_seq), tuple(mixed))
 
 
 def _placements(events: list[Event]) -> list[tuple[int, datetime, datetime]]:
