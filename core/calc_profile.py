@@ -41,8 +41,10 @@ V2: str = "v2"
 #: この版が知っているプロファイル（**閉じた集合**・`.rsproj` の読みの許可値）。
 PROFILES: tuple[str, ...] = (V1, V2)
 
-#: 新しい計算の既定。
-DEFAULT_PROFILE: str = V1
+#: 新しい計算の既定（4.0 ステージ4 の最後のコミットで v2 へ切り替えた・2026-11-07 の経営者の決定）。
+#: ⚠️ 関数の引数の既定値（`profile=calc_profile.DEFAULT_PROFILE`）は import 時に束縛される
+#: ＝ここを書き換えれば一緒に動くが、走っている最中に差し替えても効かない。
+DEFAULT_PROFILE: str = V2
 
 #: プロファイルを持たない `.rsproj` の方式（判断点 ⑨）。
 #: ⚠️ **`DEFAULT_PROFILE` と分けて持つ**＝既定を v2 へ切り替えた後も、3.x のファイルは

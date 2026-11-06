@@ -55,14 +55,15 @@ CONSTRUCTIVE_GAIN_DB: float = 6.0
 ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("arms_resolvable", "反射点から両端まで `MIN_ARM_M` 以上（端へ寄る反射点は 10m の DEM で分解できない）",
                GUARD, ("MIN_ARM_M",), "tests/test_ground_reflection.py::test_reflection_near_end_returns_none"),
-    # ⚠️ **v2 では入口で確かめる**（`envelope_for_link`＝回折損 > 0 なら出さない・B-338）が、
-    # 既定の v1 は 3.9.x の方式のまま出す＝製品の既定が守っていないので、まだ open と名乗る。
-    # 既定を v2 へ切り替えるコミットで guard（`enforced_by=("envelope_for_link",)`）へ移す
+    # 🔑 **既定の v2 は入口で確かめる**（`envelope_for_link`＝回折損 > 0 なら出さない・B-338）。
+    # ⚠️ v1（3.x のプロジェクトを当時の数字で開く旧方式）は遮蔽を見ずに出す＝旧方式の再現として
+    # 意図して残す。製品の既定が v1 へ戻ったら open に戻す
     # ＝`tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions
-    # ::test_the_declaration_follows_the_default_profile` が、切り替えた日に赤で知らせる。
+    # ::test_the_declaration_follows_the_default_profile` が赤で知らせる。
     Assumption("both_rays_unobstructed", "直接波と反射波がどちらも地形に遮られない（2 波の干渉は両方が届く経路の話）",
-               OPEN, test="tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions"
-                          "::test_no_envelope_on_a_blocked_path",
+               GUARD, ("envelope_for_link",),
+               "tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions"
+               "::test_no_envelope_on_a_blocked_path",
                issue="B-338", origin="`experiments/phase0_two_ray.py`＝ドローン（機体は上空で直接波は常に届く）"),
 )
 

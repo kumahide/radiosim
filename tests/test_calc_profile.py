@@ -197,7 +197,7 @@ def test_terrain_csv_carries_the_stamp(tmp_path):
     params = _params(resolution="low")
     sim._save_terrain_csv(_terrain(params), str(tmp_path), params)
     rows = _rows(tmp_path / "terrain_profile.csv")
-    assert {r["calc_profile"] for r in rows} == {"v1"}
+    assert {r["calc_profile"] for r in rows} == {calc_profile.DEFAULT_PROFILE}
     assert {r["input_hash"] for r in rows} == {calc_profile.input_hash(params)}
 
 
@@ -219,7 +219,7 @@ def test_summary_csv_stamps_each_row_and_leaves_an_unparsed_row_empty(tmp_path):
     rows = _rows(tmp_path / "summary.csv")
     assert [r["input_hash"] for r in rows] == [
         calc_profile.input_hash(good.params), calc_profile.input_hash(other.params), ""]
-    assert [r["calc_profile"] for r in rows] == ["v1", "v1", ""]
+    assert [r["calc_profile"] for r in rows] == [calc_profile.DEFAULT_PROFILE] * 2 + [""]
 
 
 def _scenario_run() -> scn.ScenarioRun:
