@@ -171,6 +171,8 @@ class _ProjectMixin:
         # 切れる（ウィンドウの位置・スクロール位置・選択が失われる）のが代償で、そちらを
         # 取った。**凍結方式そのものは改版していない**＝ウィンドウが黙って書き換わることは
         # 起きない（バーを押さなければ画面は 1px も動かない）。
+        # ⚠️ **`self._project` を先に入れる**＝`_apply_sim_config` の末尾の読み取り欄
+        #    （`_update_resolution_readout`）が方式を `_current_calc_profile` から読む。
         self._project = doc
         self._apply_sim_config(doc.params)
         self._project_var.set(doc.meta.get("project_name", ""))
@@ -198,6 +200,14 @@ class _ProjectMixin:
         # 取る唯一の口**を通す＝セクションがすべて `None` の空 doc になるだけで、下の
         # `section is None` で全部 continue する（バーは 1 本も出ない＝同じ結果）。
         doc = self._project_doc()
+        # 🔑 **計算プロファイルだけはバーを待たずに運ぶ**（4.0 ステージ4）＝方式は
+        #    画面の入力ではなくプロジェクトの属性で、開いた窓が前の方式のまま実行すると
+        #    **帳票の刻印と画面の前提が食い違う**。方式の違う結果は各窓の口が消す
+        #    （同じ方式なら何も動かない）。
+        for attr in ("_batch_win", "_scenario_win", "_multihop_win"):
+            win = self._open_window(attr)
+            if win is not None:
+                win.adopt_calc_profile(doc.calc_profile)
         targets = (
             ("_batch_win",    doc.batch_rows,
              lambda win, rows=doc.batch_rows: win.replace_rows(rows)),

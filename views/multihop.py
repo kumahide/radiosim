@@ -450,6 +450,17 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
         # ではない**＝↻ を押した人は新しい前提を入れたつもりでいる。
         self._drop_stale_hop_results()
 
+    def adopt_calc_profile(self, profile: str) -> None:
+        """プロジェクトを開いたとき、その計算プロファイルを共通設定へ運ぶ（4.0 ステージ4）。
+
+        ⚠️ 方式は画面の入力ではないので ↻ を待たずに替える＝方式の違う区間結果は
+        指紋（`_common_fingerprint`）が変わるので消える。同じ方式なら何もしない。
+        """
+        if self._base_params.calc_profile == profile:
+            return
+        self._base_params = sim.with_calc_profile(self._base_params, profile)
+        self._drop_stale_hop_results()
+
     # ----------------------------------------------------------
     # 地点の増減
     # ----------------------------------------------------------

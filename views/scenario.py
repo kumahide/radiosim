@@ -396,6 +396,17 @@ class ScenarioWindow(tk.Toplevel):
         # `ベース ±` はベース値が動けば範囲も動く（取り込み直した値で引き直す）。
         self._sync_range_from_delta()
 
+    def adopt_calc_profile(self, profile: str) -> None:
+        """プロジェクトを開いたとき、その計算プロファイルを基底へ運ぶ（4.0 ステージ4）。
+
+        点数の読み取りは方式で変わる（v2 は双線形の置き方で刻む）ので引き直す。
+        ⚠️ **結果の一覧は消さない**＝一覧は実行済みの記録で、帳票に方式の刻印がある。
+        """
+        if self._base_params.calc_profile == profile:
+            return
+        self._base_params = sim.with_calc_profile(self._base_params, profile)
+        self._update_path_label()
+
     @staticmethod
     def _display(key: str, value) -> str:
         """内部値 → 画面表示（環境・回折モデルは i18n ラベル）。"""

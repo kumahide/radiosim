@@ -154,6 +154,28 @@ def test_old_project_stays_on_v1_after_the_default_moves(tmp_path, monkeypatch):
     assert project.load(path).calc_profile == "v2"
 
 
+def test_switching_the_profile_re_solves_the_sample_positions():
+    """🔑 方式だけ書き換えると標本の位置が古い方式のまま残る（v2 は双線形の置き方）。"""
+    v1 = _params(calc_profile="v1", resolution="high")
+    v2 = _params(calc_profile="v2", resolution="high")
+    assert v1.sample_fracs != v2.sample_fracs        # 差が無ければこの試験は何も見ていない
+    moved = sim.with_calc_profile(v1, "v2")
+    assert moved.calc_profile == "v2"
+    assert moved.sample_fracs == v2.sample_fracs
+    assert moved.sample_pixel_groups == v2.sample_pixel_groups
+    assert moved.num == v2.num
+    assert v1.calc_profile == "v1"                    # 元は変わらない
+    assert v1.sample_fracs == _params(calc_profile="v1", resolution="high").sample_fracs
+    with pytest.raises(ValueError):
+        sim.with_calc_profile(v1, "v99")
+
+
+def test_switching_the_profile_keeps_a_fixed_sample_count():
+    fixed = _params(calc_profile="v1", resolution="", samples="300")
+    moved = sim.with_calc_profile(fixed, "v2")
+    assert moved.num == 300 and moved.resolution == "" and moved.calc_profile == "v2"
+
+
 def test_profile_is_not_a_sim_key():
     """⚠️ 設定へ残ると、開いたファイルの方式が次の起動の既定に化ける。"""
     assert "calc_profile" not in config.SIM_KEYS

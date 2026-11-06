@@ -658,6 +658,35 @@ def clear_terrain_cache() -> None:
         _terrain_cache.clear()
 
 
+def _resolve_level_samples(p: SimParams) -> None:
+    """`p.resolution` と `p.calc_profile` から標本の位置を解き直す（`p` を書き換える）。
+
+    ⚠️ **複製にだけ使う**＝`SimParams.__init__` の段階ありの枝と同じ解き方。
+    段階が空（固定 N）なら位置は方式に依らないので触らない。
+    """
+    if not p.resolution:
+        return
+    bilinear = calc_profile.reads_bilinear(p.calc_profile)
+    p.sample_fracs = terrain_grid.path_sample_fractions(
+        p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, p.resolution, bilinear=bilinear)
+    p.sample_pixel_groups = terrain_grid.sample_pixel_groups(
+        p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx, p.resolution, bilinear=bilinear)
+    p.num = len(p.sample_fracs)
+
+
+def with_calc_profile(params: SimParams, profile: str) -> SimParams:
+    """`params` の計算プロファイルだけを `profile` へ替えた複製を返す（元は変えない）。
+
+    🔑 **属性の書き換えでは足りない**（B-339）＝v2 は双線形の置き方で刻むので、
+    方式を替えたら標本の位置（`sample_fracs`・`sample_pixel_groups`・`num`）も
+    解き直す。プロジェクトを開いたとき、開いている窓の共通設定へ方式を運ぶ口。
+    """
+    alt = copy.copy(params)
+    alt.calc_profile = calc_profile.require(profile)
+    _resolve_level_samples(alt)
+    return alt
+
+
 def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray:
     """`params` の座標で、`level`（`terrain_grid.RESOLUTION_KEYS`）の解像度の標高配列を
     同期取得する（3.4 ステージ4・感度計算の「解像度」軸専用）。
@@ -668,14 +697,7 @@ def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray
     """
     alt = copy.copy(params)
     alt.resolution = level
-    bilinear = calc_profile.reads_bilinear(params.calc_profile)   # 基準と同じ読み（B-339）
-    alt.sample_fracs = terrain_grid.path_sample_fractions(
-        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level,
-        bilinear=bilinear)
-    alt.sample_pixel_groups = terrain_grid.sample_pixel_groups(
-        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level,
-        bilinear=bilinear)
-    alt.num = len(alt.sample_fracs)
+    _resolve_level_samples(alt)   # 基準と同じ読み（B-339）
 
     out: list[np.ndarray] = []
     err: list[Exception] = []

@@ -426,9 +426,21 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
             meta = self._meta_provider()
             self._project_name_var.set(meta.get("project_name", ""))
             self._memo_var.set(meta.get("memo", ""))
+        # 🔴 方式もランチャーから取り込む（4.0 ステージ4）＝以前は ↻ が方式を
+        #    取り込まず、実行（`_read_base_params`）は窓を開いた時の方式のままだった。
+        if c.get("calc_profile"):
+            self.adopt_calc_profile(c["calc_profile"])
 
+    def adopt_calc_profile(self, profile: str) -> None:
+        """プロジェクトを開いたとき、その計算プロファイルを基底へ運ぶ（4.0 ステージ4）。
 
-
+        実行は `_read_base_params` が `self._base_params.calc_profile` を読む。
+        方式が変われば前の判定は結果でなくなるので消す。同じ方式なら何もしない。
+        """
+        if self._base_params.calc_profile == profile:
+            return
+        self._base_params = sim.with_calc_profile(self._base_params, profile)
+        self._clear_verdicts()
 
 
     # ⚠️ ここに `_on_destroy`（`unbind_all("<MouseWheel>")`）があったが、B-050 で

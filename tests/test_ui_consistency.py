@@ -32,6 +32,7 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from core import calc_profile
 from core import config
 from core import i18n
 from core import models
@@ -1582,6 +1583,56 @@ def _load_project_into(app, doc):
     app._project = doc
     app._apply_sim_config(doc.params)
     app._offer_project_to_open_windows()
+
+
+def test_loading_a_project_carries_its_calc_profile_to_open_windows():
+    """開いている 3 窓は、読んだプロジェクトの方式で実行すること（4.0 ステージ4）。
+
+    🔴 方式はバーを待たずに運ぶ＝前の方式のまま実行すると、帳票の刻印と画面の前提が
+    食い違う。方式が変わった窓では、前の方式で出した結果（区間結果・判定）を消す。
+    ⚠️ 標本の位置も方式で変わる（v2 は双線形の置き方）＝方式の名前だけでなく点数も見る。
+    """
+    pytest.importorskip("tkinter")
+    from report import project
+    root = make_themed_root()
+    root.withdraw()
+    try:
+        app = _launcher(root)
+        batch = app.ensure_batch_window()
+        app._on_open_scenario()
+        app._on_open_multihop()
+        scen, hop = app._scenario_win, app._multihop_win
+        root.update()
+        assert batch._base_params.calc_profile == calc_profile.DEFAULT_PROFILE == "v2"
+
+        pid = batch._row_entries[0][0].get().strip()
+        assert pid, "行に ID が無い＝判定を置けない（試験の前提）"
+        batch._clear_verdicts()
+        batch._set_row_verdict(pid, "OK")
+        hop._show_hop_result(1, _FakeHopResult())
+        root.update()
+        assert _hop_texts(hop)[0] == "OK"
+
+        _load_project_into(app, project.ProjectDoc(
+            params=dict(config.DEFAULT_CONFIG), calc_profile="v1"))
+        root.update()
+        want = sim.SimParams({**app._current_config(), "calc_profile": "v1"})
+        for win in (batch, scen, hop):
+            p = win._base_params
+            assert p.calc_profile == "v1", f"{type(win).__name__} が前の方式のまま"
+            assert (p.sample_fracs, p.num) == (want.sample_fracs, want.num), (
+                f"{type(win).__name__} の標本の位置が古い方式のまま")
+        assert scen._samples_var.get() == sim.sampling_readout(scen._base_params)
+        assert _hop_texts(hop)[0] == "", "方式が変わったのに区間結果が残っている"
+        assert batch._verdict_label(batch._row_frames[0]).cget("text") == "", (
+            "方式が変わったのに判定が残っている")
+
+        # ↻ も方式を取り込む（以前は複数経路の ↻ が方式を取り込んでいなかった）。
+        app._project.calc_profile = "v2"
+        batch._refresh_common_from_launcher()
+        assert batch._base_params.calc_profile == "v2"
+    finally:
+        root.destroy()
 
 
 def _notice_take_button(win):
