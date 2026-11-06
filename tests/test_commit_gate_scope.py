@@ -239,12 +239,15 @@ def _real_test_files() -> set[str]:
     書いていて、門（再帰・`*_test.py` も拾う）より狭く、正しい試験の追加で赤になった。
     pytest 自身の収集を基準にすれば、門の規則が pytest とずれたときも赤になる（独立の基準）。
     収集だけなら 2 秒ほど（2026-11-07 に 4462 本で測った）。
+    ⚠️ **`PYTEST_ADDOPTS` を子へ渡さない**（Codex 176 巡目）＝外から `-k` などの絞り込みを
+    付けて走らせると、子の収集まで絞られて期待値が欠け、正しい門でも赤になる。
     """
+    env = {k: v for k, v in os.environ.items() if k != "PYTEST_ADDOPTS"}
     r = subprocess.run(
         [sys.executable, "-m", "pytest", "--collect-only", "-q",
          "-p", "no:cacheprovider", "tests"],
         cwd=_REPO, capture_output=True, text=True, timeout=120,
-        env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
+        env={**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
     assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
     files = {line.split("::", 1)[0].replace("\\", "/")
              for line in r.stdout.splitlines() if "::" in line}
