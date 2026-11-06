@@ -37,6 +37,10 @@
 // re-running the same suite; and a version-line-only step from the last real
 // full pass is proven by the version string's readers (versionChain) — on the
 // push as well, or the saving would only move from the commit to the push.
+//
+// FULL MINUS (2026-11-07・O-030): a product-code commit (core/・report/ and
+// tests only) runs the full suite minus the old Tk screens' and the tools'
+// tests (fullMinusFor). The push is still the real full run.
 
 import { execFileSync } from "node:child_process";
 import { existsSync, readFileSync, readdirSync } from "node:fs";
@@ -280,6 +284,72 @@ export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {
   }
   (scope.scanners || []).forEach((t) => tests.add(t));
   return { name: [...names].join("+"), tests: [...tests] };
+}
+
+// FULL MINUS (O-030・2026-11-07): a commit of product code is still full — but
+// the old Tk screens (views/, retired at 4.0 stage 11) and the tools' own tests
+// (no product import) were 385 s of the 813 s suite. When EVERY path is under
+// `full_minus.prefixes` (core/・report/) or is a tests/test_*.py, the commit
+// runs every test file pytest would collect MINUS `skip_old_ui`/`skip_tools`,
+// with three things put back: a skipped file the commit itself changes, the
+// `tests_walkers` entries that live in a skipped file (when a test changed —
+// as in islandFor), and `keep` (single tests
+// of a skipped file that read the real product tree). ⚠️ Spelled as a LIST,
+// not as `--ignore`/`--deselect`: pytest lets those beat an explicit node id,
+// so the walkers inside test_window_fit.py would vanish with it (measured
+// 2026-11-07). git push stays full (commitPlan), so nothing leaves the machine
+// without the whole suite.
+export const FULL_MINUS = "full-minus";
+
+/** Every test file pytest collects under tests/ (testpaths; default
+ *  python_files `test_*.py` / `*_test.py`), repo-relative and sorted. */
+export function allTestFiles(cwd) {
+  const out = [];
+  const walk = (rel) => {
+    let entries = [];
+    try {
+      entries = readdirSync(join(cwd, rel), { withFileTypes: true });
+    } catch {
+      return;
+    }
+    for (const e of entries) {
+      if (e.name === "__pycache__" || e.name.startsWith(".")) continue;
+      const child = `${rel}/${e.name}`;
+      if (e.isDirectory()) walk(child);
+      else if (/^test_.*\.py$|_test\.py$/.test(e.name)) out.push(child);
+    }
+  };
+  walk("tests");
+  return out.sort();
+}
+
+/** The full-minus plan for `paths` ({name: FULL_MINUS, tests}), or null when
+ *  the commit does not qualify (→ full). Fail-closed: any path outside the
+ *  prefixes and tests/test_*.py, no product path at all, or no test file found. */
+export function fullMinusFor(scope, paths, cwd = process.cwd()) {
+  const fm = scope.full_minus;
+  if (!fm || !paths.length) return null;
+  const inProduct = (p) => (fm.prefixes || []).some((pre) => p.startsWith(pre));
+  if (!paths.some(inProduct)) return null;
+  if (!paths.every((p) => inProduct(p) || TEST_FILE.test(p))) return null;
+  const all = allTestFiles(cwd);
+  if (!all.length) return null;
+  const skip = new Set([...(fm.skip_old_ui || []), ...(fm.skip_tools || [])]);
+  paths.forEach((p) => skip.delete(p)); // a changed test always runs
+  const tests = new Set(all.filter((t) => !skip.has(t)));
+  // tests_walkers only when a test changed — the same rule as islandFor (B-368).
+  const walkers = paths.some((p) => TEST_FILE.test(p)) ? scope.tests_walkers || [] : [];
+  for (const t of [...walkers, ...(fm.keep || [])]) {
+    if (skip.has(t.split("::")[0])) tests.add(t);
+  }
+  return { name: FULL_MINUS, tests: [...tests] };
+}
+
+/** What a commit of `paths` runs: an island, the full-minus plan, or null
+ *  (→ the full suite). A push is always null. */
+export function commitPlan(scope, paths, cwd = process.cwd(), { push = false, versionOnly } = {}) {
+  if (push) return null;
+  return islandFor(scope, paths, cwd, { versionOnly }) ?? fullMinusFor(scope, paths, cwd);
 }
 
 /** An island's pytest targets, `tests/foo_*` expanded against tests/ (pytest
@@ -674,12 +744,14 @@ function main() {
       label = `版の字の読み手のテスト（${targets.length} 本・直前のフル合格から版の字の 1 行だけ）`;
       realFull = false;
     }
-  } else if (!isPush(command)) {
-    const island = islandFor(scope, commitPaths(cwd), cwd);
+  } else {
+    const island = commitPlan(scope, commitPaths(cwd), cwd, { push: isPush(command) });
     if (island) {
       targets = islandTargets(cwd, scope, island);
       key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
-      label = `部分テスト「${island.name}」（${targets.length} 本）`;
+      label = island.name === FULL_MINUS
+        ? `フルから旧画面と道具の試験を除いたもの（${targets.length} 本・O-030）`
+        : `部分テスト「${island.name}」（${targets.length} 本）`;
       realFull = false;
       if (isCachedPass(cwd, key)) return;
     }

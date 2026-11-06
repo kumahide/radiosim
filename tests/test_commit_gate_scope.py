@@ -205,6 +205,151 @@ class TestTheNewIslandsDoNotOverreach:
                     "『全体が緑』を証明すべき面を、数本のテストで済ませている")
 
 
+# --- O-030＝製品のコードだけのコミットは、フルから旧画面と道具の試験を引いたもの ------------
+
+def _commit_plan(paths: list[str], push: bool = False):
+    """実物の対応表と実物の tests/ に対して `commitPlan()` を評価する（`None`＝フル）。"""
+    src = _GATE.replace("\\", "/")
+    probe = os.path.join(_REPO, "_plan_probe.mjs")
+    with open(probe, "w", encoding="utf-8") as f:
+        f.write(f'import {{ commitPlan }} from "file:///{src}";\n')
+        f.write("import { readFileSync } from \"node:fs\";\n")
+        f.write(f"const scope = JSON.parse(readFileSync({json.dumps(_SCOPE)}, 'utf-8'));\n")
+        f.write(f"const p = commitPlan(scope, {json.dumps(paths)}, process.cwd(),"
+                f" {{ push: {json.dumps(push)}, versionOnly: false }});\n")
+        f.write("process.stdout.write(JSON.stringify(p));\n")
+    try:
+        r = subprocess.run(["node", probe], cwd=_REPO, capture_output=True, text=True, timeout=60)
+        assert r.returncode == 0, r.stderr
+        return json.loads(r.stdout)
+    finally:
+        os.remove(probe)
+
+
+def _skipped() -> list[str]:
+    fm = _scope()["full_minus"]
+    return fm["skip_old_ui"] + fm["skip_tools"]
+
+
+def _real_test_files() -> set[str]:
+    return {f"tests/{n}" for n in os.listdir(os.path.join(_REPO, "tests"))
+            if n.startswith("test_") and n.endswith(".py")}
+
+
+def _imported_roots(path: str) -> set[str]:
+    with open(path, encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=path)
+    roots = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and not node.level:
+            roots.add(node.module.split(".")[0])
+    return roots
+
+
+def _reads_the_real_product(fn_src: str) -> bool:
+    """引いたファイルの試験 1 本が、一時フォルダでなく本物の製品の木を読むか（字面で見る）。"""
+    return "_REPO" in fn_src and bool(re.search(
+        r"""["'](?:core|report|views)["'/]|versionReaders|productSources""", fn_src))
+
+
+class TestFullMinus:
+    """壊れ方 4 種で `full_minus` を見る（[[feedback-promote-recurring-checks]]）。"""
+
+    def test_a_core_only_commit_takes_full_minus(self):
+        """①一度も落ちない（＝いつもフルで速くならない）の対。"""
+        plan = _commit_plan(["core/models.py"])
+        assert plan and plan["name"] == "full-minus"
+        assert not set(plan["tests"]) & set(_skipped())
+
+    def test_a_core_and_test_commit_runs_the_walkers(self):
+        """試験を変えたコミットは tests_walkers を全部走らせる（B-368 と同じ）。"""
+        plan = _commit_plan(["core/models.py", "tests/test_models.py"])
+        assert plan and plan["name"] == "full-minus"
+        missing = [t for t in _scope()["tests_walkers"] if t not in plan["tests"]]
+        assert not missing, f"tests_walkers が抜ける: {missing}"
+
+    def test_nothing_but_the_two_lists_is_dropped(self):
+        """③間違ったものを要求する（＝一覧の外まで落ちる）の対＝引いたのは 2 つの一覧だけ。"""
+        plan = _commit_plan(["report/pdf.py"])
+        files = {t for t in plan["tests"] if "::" not in t}
+        assert files | set(_skipped()) == _real_test_files()
+        for kept in _scope()["full_minus"]["keep"]:
+            if kept.split("::")[0] in _skipped():
+                assert kept in plan["tests"], f"{kept} が戻っていない"
+
+    @pytest.mark.parametrize("paths", [
+        pytest.param(["core/models.py", "views/launcher.py"], id="画面"),
+        pytest.param(["core/models.py", "lang/ja.json"], id="文言"),
+        pytest.param(["core/models.py", "main.py"], id="起動"),
+        pytest.param(["core/models.py", "icon.png"], id="画面の資産"),
+        pytest.param(["core/models.py", "tests/conftest.py"], id="conftest"),
+        pytest.param(["core/models.py", "tests/data/x.json"], id="試験の入力"),
+        pytest.param(["core/models.py", "tests/table_fit.py"], id="試験の共有ヘルパ"),
+        pytest.param(["core/models.py", "pyproject.toml"], id="pytest の設定"),
+        pytest.param(["core/models.py", "requirements.txt"], id="依存"),
+        pytest.param(["core/models.py", "docs/manual_ja.md"], id="文書"),
+        pytest.param(["core/models.py", "tools/qa-hook/gate-scope.json"], id="ゲートの道具"),
+        pytest.param(["core/models.py", "apps/field/cli.py"], id="Field"),
+    ])
+    def test_any_other_face_falls_back_to_full(self, paths):
+        """②毎回鳴る（＝何でも絞れてフルの保証が消える）の対。"""
+        assert _commit_plan(paths) is None, f"{paths} がフルへ倒れない"
+
+    def test_a_changed_skipped_test_runs(self):
+        plan = _commit_plan(["core/dem.py", "tests/test_window_fit.py"])
+        assert "tests/test_window_fit.py" in plan["tests"]
+
+    def test_push_is_always_full(self):
+        """④鳴っても止まらない（＝push で絞られて全体が緑の証明が消える）の対。"""
+        assert _commit_plan(["core/models.py"], push=True) is None
+
+    def test_scanners_and_layer_checks_are_never_dropped(self):
+        scope = _scope()
+        must = set(scope["scanners"]) | {scope["always_tests"],
+                                         "tests/test_smoke.py", "tests/test_layers.py"}
+        assert not must & set(_skipped())
+
+    def test_every_listed_file_and_test_exists(self):
+        """一覧が腐って空振りしない（撤去の回に名前だけ残る、など）。"""
+        fm = _scope()["full_minus"]
+        for rel in _skipped():
+            assert os.path.exists(os.path.join(_REPO, rel)), f"{rel} が無い"
+        for node in fm["keep"]:
+            rel, name = node.split("::")
+            with open(os.path.join(_REPO, rel), encoding="utf-8") as f:
+                assert re.search(rf"^\s*def {name}\(", f.read(), re.M), f"{node} が無い"
+
+    def test_old_ui_list_is_only_old_ui_tests(self):
+        """skip_old_ui は旧画面（Tk）の試験だけ＝画面の部品を読まない計算の試験を混ぜない。"""
+        for rel in _scope()["full_minus"]["skip_old_ui"]:
+            roots = _imported_roots(os.path.join(_REPO, rel))
+            assert roots & {"views", "tkinter"}, f"{rel} は旧画面を読まない＝外す理由が無い"
+
+    def test_tools_list_does_not_import_the_product(self):
+        for rel in _scope()["full_minus"]["skip_tools"]:
+            roots = _imported_roots(os.path.join(_REPO, rel))
+            hit = roots & {"core", "report", "views", "apps", "main"}
+            assert not hit, f"{rel} が製品を import している: {hit}"
+
+    def test_tools_tests_that_read_the_real_product_are_kept(self):
+        """import しなくても、本物の製品の木を読む 1 本は keep で戻すこと。"""
+        keep = set(_scope()["full_minus"]["keep"])
+        found = set()
+        for rel in _scope()["full_minus"]["skip_tools"]:
+            path = os.path.join(_REPO, rel)
+            with open(path, encoding="utf-8") as f:
+                src = f.read()
+            for node in ast.walk(ast.parse(src, filename=path)):
+                if isinstance(node, ast.FunctionDef) and node.name.startswith("test_"):
+                    if _reads_the_real_product(ast.get_source_segment(src, node) or ""):
+                        found.add(f"{rel}::{node.name}")
+        assert "tests/test_pre_commit_gate.py::test_tests_that_hard_code_the_version_are_readers" \
+            in found, "検出器が空振りしている"
+        assert found <= keep, f"本物の製品を読むのに keep に無い: {sorted(found - keep)}"
+
+
 # --- 部分テストの tests が実態より薄くなっていないか（「無いことの検査」の対） -----------
 
 _DOCS_PATH = re.compile(r"^docs/[\w./-]+$")

@@ -39,7 +39,8 @@ def _node(script: str, cwd: str) -> str:
     path = os.path.join(cwd, "_probe_gate.mjs")
     with open(path, "w", encoding="utf-8") as f:
         f.write(f'import {{ commitPaths, islandFor, islandTargets, isCommitOrPush, isPush, '
-                f'versionLineOnly, versionReaders, versionChain }} from "file:///{src}";\n')
+                f'versionLineOnly, versionReaders, versionChain, fullMinusFor, commitPlan, '
+                f'allTestFiles }} from "file:///{src}";\n')
         cache = _CACHE.replace("\\", "/")
         f.write(f'import {{ cacheInputs, recordFullPass, lastFullPass }} from "file:///{cache}";\n')
         f.write(script)
@@ -119,6 +120,99 @@ class TestIslandTargets:
             "tests/test_field_a.py", "tests/test_field_b.py",
             "tests/test_layers.py", "tests/test_repo_hygiene.py",
         ]
+
+
+_FM_SCOPE = {
+    **_SCOPE_FIXTURE,
+    "full_prefixes": ["core/", "views/", "tests/conftest.py"],
+    "tests_walkers": ["tests/test_ui.py::test_walker"],
+    "full_minus": {"prefixes": ["core/"], "skip_old_ui": ["tests/test_ui.py"],
+                   "skip_tools": ["tests/test_tool.py"],
+                   "keep": ["tests/test_tool.py::test_reads_core", "tests/test_core.py::test_x"]},
+}
+
+
+def _fm_tree(root) -> None:
+    tests = root / "tests"
+    (tests / "sub").mkdir(parents=True)
+    (tests / "__pycache__").mkdir()
+    for rel in ["test_core.py", "test_ui.py", "test_tool.py", "test_layers.py", "conftest.py",
+                "helper.py", "sub/test_deep.py", "sub/deep_test.py", "__pycache__/test_old.py"]:
+        (tests / rel).write_text("", encoding="utf-8")
+
+
+def _fm(paths, tmp_path, *, push=False, scope=_FM_SCOPE):
+    out = _node(f"const p = commitPlan({json.dumps(scope)}, {json.dumps(paths)}, process.cwd(),"
+                f" {{ push: {json.dumps(push)}, versionOnly: false }});\n"
+                "process.stdout.write(JSON.stringify(p));\n", str(tmp_path))
+    return json.loads(out)
+
+
+class TestFullMinusFor:
+    """O-030＝製品のコードだけのコミットは「フルから旧画面と道具の試験を引いたもの」。"""
+
+    def test_all_test_files_walks_like_pytest(self, tmp_path):
+        _fm_tree(tmp_path)
+        got = json.loads(_node("process.stdout.write(JSON.stringify(allTestFiles(process.cwd())));\n",
+                               str(tmp_path)))
+        assert got == ["tests/sub/deep_test.py", "tests/sub/test_deep.py", "tests/test_core.py",
+                       "tests/test_layers.py", "tests/test_tool.py", "tests/test_ui.py"]
+
+    def test_core_only_is_full_minus_with_keep_put_back(self, tmp_path):
+        _fm_tree(tmp_path)
+        p = _fm(["core/a.py"], tmp_path)
+        assert p["name"] == "full-minus"
+        assert set(p["tests"]) == {
+            "tests/test_core.py", "tests/test_layers.py", "tests/sub/test_deep.py",
+            "tests/sub/deep_test.py",
+            "tests/test_tool.py::test_reads_core",  # 引いたファイルの中の keep
+        }  # keep の test_core.py::test_x は引いていないファイル＝ファイルごと走るので足さない
+
+    def test_a_changed_test_puts_the_walkers_back(self, tmp_path):
+        """試験を変えたコミットは、引いたファイルの中の走査系も走らせる（islandFor と同じ・B-368）。"""
+        _fm_tree(tmp_path)
+        p = _fm(["core/a.py", "tests/test_core.py"], tmp_path)
+        assert "tests/test_ui.py::test_walker" in p["tests"]
+        assert "tests/test_ui.py" not in p["tests"]
+
+    def test_a_changed_skipped_file_runs_whole(self, tmp_path):
+        _fm_tree(tmp_path)
+        p = _fm(["core/a.py", "tests/test_ui.py"], tmp_path)
+        assert "tests/test_ui.py" in p["tests"]
+        assert "tests/test_ui.py::test_walker" not in p["tests"]
+        assert "tests/test_tool.py" not in p["tests"]
+
+    @pytest.mark.parametrize("paths", [
+        pytest.param(["core/a.py", "views/w.py"], id="画面"),
+        pytest.param(["core/a.py", "tests/conftest.py"], id="conftest"),
+        pytest.param(["core/a.py", "tests/data/x.json"], id="試験の入力"),
+        pytest.param(["core/a.py", "tests/sub/test_deep.py"], id="tests 直下でない試験"),
+        pytest.param(["core/a.py", "notes/a.txt"], id="ほかの面と混ざる"),
+        pytest.param(["core2/a.py"], id="接頭辞は字の部分一致でない"),
+        pytest.param([], id="空"),
+    ])
+    def test_anything_else_falls_back_to_full(self, tmp_path, paths):
+        _fm_tree(tmp_path)
+        assert _fm(paths, tmp_path) is None
+
+    def test_tests_only_stays_on_the_islands_path(self, tmp_path):
+        """製品の面を含まないコミットは今までどおり islandFor の和集合（full_minus に入らない）。"""
+        _fm_tree(tmp_path)
+        assert _fm(["tests/test_core.py"], tmp_path)["name"] == "tests"
+
+    def test_push_is_always_full(self, tmp_path):
+        _fm_tree(tmp_path)
+        assert _fm(["core/a.py"], tmp_path, push=True) is None
+        assert _fm(["tests/test_core.py"], tmp_path, push=True) is None
+
+    def test_without_the_key_core_is_full(self, tmp_path):
+        """戻し方＝キーを消すと今の main の状態（製品のコードはフル）。"""
+        _fm_tree(tmp_path)
+        scope = {k: v for k, v in _FM_SCOPE.items() if k != "full_minus"}
+        assert _fm(["core/a.py"], tmp_path, scope=scope) is None
+
+    def test_no_tests_dir_is_full(self, tmp_path):
+        assert _fm(["core/a.py"], tmp_path) is None
 
 
 #: リポジトリを歩く字面。⚠️ **pytest の一時フォルダ（`tmp_path`）を歩く形は除く**
