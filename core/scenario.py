@@ -348,7 +348,7 @@ def run_scenario(
         try:
             t0 = time.perf_counter()
             phases.start(FETCH)
-            raw = _fetch_sync(base_params, phases)
+            raw, status = _fetch_sync(base_params, phases)
             terrain = models.calculate_terrain_profile(
                 raw_elevs=raw,
                 lat_tx=base_params.lat_tx, lon_tx=base_params.lon_tx,
@@ -360,6 +360,7 @@ def run_scenario(
                 #    ゲート（`TestScenarioBaseMatchesSingleRun`）。
                 frac_axis=base_params.sample_fracs,
             )
+            terrain.dem_status = status     # 標本ごとの事情（I-247）
             t_fetch = time.perf_counter() - t0
 
             phases.start(CALC)
@@ -389,14 +390,19 @@ def run_scenario(
     threading.Thread(target=_work, daemon=True).start()
 
 
-def _fetch_sync(params: sim.SimParams, phases: Phases) -> np.ndarray:
+def _fetch_sync(params: sim.SimParams,
+                phases: Phases) -> "tuple[np.ndarray, np.ndarray | None]":
     """標高取得（非同期 API を同期化）。**キャッシュ付きを使う**。
 
     バッチと同じく `fetch_elevations_cached` を通す＝同じ経路で条件を変えて
     何度も回すのが条件探索の使い方そのものなので、2 回目以降は取得が消える
     （設計哲学④＝外部 API に優しい）。
+
+    Returns:
+        `(raw_elevs, 標本ごとの dem.ElevStatus)`（後者は分からなければ None・I-247）。
     """
     out: list[np.ndarray] = []
+    status: list = [None]
     err: list[Exception] = []
     done = threading.Event()
     total = params.num
@@ -414,8 +420,9 @@ def _fetch_sync(params: sim.SimParams, phases: Phases) -> np.ndarray:
         on_progress=lambda n: phases.advance(n, total),
         on_complete=_on_complete,
         on_error=_on_error,
+        on_status=lambda v: status.__setitem__(0, v),
     )
     done.wait()
     if err:
         raise err[0]
-    return out[0]
+    return out[0], status[0]

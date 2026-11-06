@@ -1202,6 +1202,25 @@ class TestDemAcquiredFollowsTheTileActuallyUsed:
         # ウィンドウは on_complete で開く＝その時点で取得日が手元に無いと抱えられない
         assert box["order"] == ["acquired", "complete"], box["order"]
 
+    def test_sample_status_rides_with_the_elevations_and_the_cache(
+            self, default_params_dict, monkeypatch):
+        """I-247＝標本ごとの `ElevStatus` が取得日と同じ口で届き、地形キャッシュの命中でも
+        取った回の値が届く（命中で None や別の配列にならない）。"""
+        monkeypatch.setattr(dem, "_fetch_tile", self._fake_fetch_tile())
+        params = sim.SimParams(default_params_dict)
+        got = []
+        for _ in range(2):            # 2 回目は地形キャッシュに命中する
+            done = threading.Event()
+            sim.fetch_elevations_cached(
+                params, lambda n: None, lambda e: done.set(),
+                lambda ex: done.set(), on_status=got.append)
+            assert done.wait(timeout=10)
+        assert len(got) == 2 and got[0] is not None
+        assert got[0].shape == (params.num,)
+        assert set(got[0].tolist()) == {int(dem.ElevStatus.VALUE)}
+        np.testing.assert_array_equal(got[0], got[1])
+        assert got[0] is not got[1], "命中で同じ配列を手渡すと受け手の書き換えがキャッシュへ漏れる"
+
     def test_cache_hit_hands_over_the_date_of_the_fetch_that_filled_it(
             self, default_params_dict, monkeypatch):
         """地形キャッシュに命中した実行も、その地形を取った回の取得日を受け取ること

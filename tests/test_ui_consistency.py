@@ -780,7 +780,8 @@ def test_graph_window_keeps_the_dem_acquired_date_it_was_opened_with(monkeypatch
 
     acquired = ("2026-08-01", "2026-08-01")
 
-    def _fake_cached(params, on_progress, on_complete, on_error, on_acquired=None):
+    def _fake_cached(params, on_progress, on_complete, on_error, on_acquired=None,
+                     on_status=None):
         if on_acquired is not None:
             on_acquired(acquired)
         on_complete(np.full(params.num, 10.0))

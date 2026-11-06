@@ -304,6 +304,11 @@ class TerrainProfile:
     # 🔑 **標高を取った時点で確定し、標高と一緒に運ぶ**（B-213）＝保存時に座標や
     # キャッシュから引き直さない（`simulation.fetch_elevations_cached` の `on_acquired`）。
     dem_acquired:      "tuple[str, str] | None" = None
+    # 標本ごとの事情（`dem.ElevStatus` の `int8` 配列・I-247）＝`0.0` が海抜 0 m の値か、
+    # 404（全層でタイルが無い）か、無効画素か、通信の失敗（`nan`）か。運び方は取得日と同じ
+    # （`fetch_elevations_cached` の `on_status`）。判定へ渡すのは 4.0 ステージ6。
+    # 取得を経ていない地形（試験・探針）は None。
+    dem_status:        "np.ndarray | None" = None
 
     @property
     def frac_axis(self) -> np.ndarray:

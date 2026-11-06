@@ -890,15 +890,20 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
 
         # 取得日は on_complete の直前に同じスレッドで届く（B-213）＝標高と一緒にウィンドウへ渡す
         acquired: list = [None]
+        status: list = [None]      # 標本ごとの事情（I-247）＝取得日と同じ運び方
 
         def _on_acquired(value) -> None:
             acquired[0] = value
 
+        def _on_status(value) -> None:
+            status[0] = value
+
         def _on_complete(elevs) -> None:
             # ワーカースレッドから呼ばれる＝投函先が生きているとは限らない（B-061）
             dem_acquired = acquired[0]
+            dem_status = status[0]
             progress.post_to_ui(self.root, lambda: self._on_fetch_complete(
-                params, elevs, dem_acquired))
+                params, elevs, dem_acquired, dem_status))
 
         def _on_error(ex: Exception) -> None:
             progress.post_to_ui(self.root, lambda: self._on_fetch_error(ex))
@@ -909,10 +914,11 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             on_complete = _on_complete,
             on_error    = _on_error,
             on_acquired = _on_acquired,
+            on_status   = _on_status,
         )
 
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs,
-                           dem_acquired=None) -> None:
+                           dem_acquired=None, dem_status=None) -> None:
         self._progress_stop()
         self._run_btn.config(state="normal")
         # 実行でキャッシュが増えている＝開いている地図ウィンドウへ知らせる（B-265）。
@@ -955,6 +961,7 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             # `config.load_config()` を読み直さない（I-055 ②・2.7 スライス G2）。
             coord_format = self._coord_fmt_var.get(),
             dem_acquired = dem_acquired,
+            dem_status = dem_status,
             basemap_source_id = self._current_basemap_layer(),
         )
         # ウィンドウが出たので待機状態へ戻す。⚠️ 以前は `plt.show()` がここでブロック

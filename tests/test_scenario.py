@@ -362,9 +362,9 @@ class TestRunScenario:
         real_terrain = models.calculate_terrain_profile
         real_calc = sim.run_calculation
 
-        def _spy_fetch(params, on_progress, on_complete, on_error):
+        def _spy_fetch(params, on_progress, on_complete, on_error, **kw):
             fetches.append(1)
-            return real_fetch(params, on_progress, on_complete, on_error)
+            return real_fetch(params, on_progress, on_complete, on_error, **kw)
 
         def _spy_terrain(*a, **k):
             terrains.append(1)

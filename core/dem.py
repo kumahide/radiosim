@@ -22,6 +22,7 @@ dem.py
 infrastructure.py を config.py ＋ dem.py（本体）へ分割した際に切り出した DEM 層。
 """
 
+import enum
 import hashlib
 import io
 import math
@@ -51,7 +52,8 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
                GUARD, ("get_elevation", "network_failed"),
                "tests/test_dem.py::TestFailedTileNegativeCache"
                "::test_unexpected_exception_returns_nan_and_sets_network_failed"),
-    Assumption("zero_is_sea_level", "`0.0` は海抜 0 m・404（海上・日本域外）・無効画素を区別しない",
+    Assumption("zero_is_sea_level", "判定は `0.0` を海抜 0 m として使い、404（海上・日本域外）・無効画素と区別しない"
+               "（区別は標本ごとの `ElevStatus` が持つ＝判定へ渡すのは 4.0 ステージ6）",
                OPEN, issue="I-247"),
     Assumption("bilinear_stays_in_one_layer",
                "双線形の 4 近傍は、点を含む画素と同じ層からだけ取る（欠けた近傍は重みから外し、別の層で埋めない）",
@@ -375,6 +377,36 @@ def network_answered() -> bool:
     return bool(getattr(_network_answer, "flag", False))
 
 
+class ElevStatus(enum.IntEnum):
+    """標本 1 点の標高が**どう決まったか**（I-247・4.0 ステージ4）。
+
+    `get_elevation` の戻り値は `0.0` で 3 つの事情を同じ顔にする（海抜 0 m の正当な値を
+    含む）＝戻り値の意味は変えず、事情はこちらで持つ。判定へ渡すのは 4.0 ステージ6。
+    🔑 **不変条件**＝`FETCH_FAILED` ⟺ 戻り値が `nan` ⟺ `network_failed()`。
+    `NO_TILE`／`INVALID_PIXEL` ⟺ 戻り値が `0.0`。`VALUE` ⟺ それ以外。
+    ⚠️ **`INVALID_PIXEL` は「陸の欠損」と言い切れない**＝国土地理院の無効値の画素は
+    海岸のタイルの海の部分にも使われる（`_decode_gsi_dem`）。有効な画素の値がちょうど
+    `0.0` の点もここに入る（`elev != 0.0` で次の層へ降りる規則のまま）。
+    ⚠️ 値は CSV へ出さない（`elev_source` は変えない＝変更規約 2）＝内部と判定にだけ使う。
+    """
+    VALUE = 0          # どこかの層で有効な画素が取れた
+    NO_TILE = 1        # (a) 全層でタイルが無い（404＝海上・日本域外）・通信の失敗なし
+    INVALID_PIXEL = 2  # (b) どこかの層でタイルは取れたが、取れた層の画素がすべて無効値
+    FETCH_FAILED = 3   # 通信の失敗・想定外の例外（戻り値は `nan`）
+
+
+# 🔑 **直前の `get_elevation` の `ElevStatus`**（I-247）＝`network_failed()` と同じ口。
+_elev_status = threading.local()
+
+
+def last_elevation_status() -> ElevStatus:
+    """**このスレッドの直前の `get_elevation`** の標本の事情（`ElevStatus`）。
+
+    まだ 1 度も呼んでいないスレッドでは `FETCH_FAILED`（安全側＝値が無い）。
+    """
+    return getattr(_elev_status, "value", ElevStatus.FETCH_FAILED)
+
+
 def last_source_tile() -> "tuple | None":
     """**このスレッドの直前の `get_elevation`** が標高を返したタイルのキー
     `(layer_id, xtile, ytile)`。値を返さなかった（`nan`/`0.0`）なら None。"""
@@ -592,10 +624,9 @@ def get_elevation(
     `0.0`** を返す＝海抜 0m の正当な値・正常な海上経路を `nan` に巻き込まない
     （B-010 の鏡像の誤りをまた作らない）。
 
-    ⚠️ **`0.0` はいまも「海抜 0m」と「404 で取れなかった」を区別しない**（そこは
-    3.2 の対象外＝出力契約の `Elevation_m` は 3.3 まで意味を変えない、
-    `core/output_contract.py` の予告を参照）。区別できるようになったのは
-    「通信の失敗」の側だけ。呼ぶ側は `get_elevation()` → `network_failed()` と
+    ⚠️ **戻り値の `0.0` はいまも「海抜 0m」と「404 で取れなかった」と「無効画素」を
+    区別しない**（出力契約の `Elevation_m` の意味は変えない）。区別は直後の
+    `last_elevation_status()`（`ElevStatus`・I-247）が持つ。呼ぶ側は `get_elevation()` → `network_failed()` と
     続けて読めば、返ってきた値が `nan` かどうかと**同じ答え**が得られる
     （B-025 ②で先に立てた `network_failed()` をそのまま契約の判定に使い回す）。
     """
@@ -603,12 +634,15 @@ def get_elevation(
     _network_trouble.flag = False
     _network_answer.flag = False
     _source_tile.key = None
+    _elev_status.value = ElevStatus.FETCH_FAILED   # 安全側から始め、決まった所で書く
+    saw_tile = False       # どこかの層でタイルが取れたか（I-247 の (a)／(b) の分かれ目）
     try:
         for layer_id, zoom in src.layers:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
             arr = _layer_tile(src, layer_id, zoom, xtile, ytile)
             if arr is None:
                 continue
+            saw_tile = True
             elev = _decode_elevation(arr[py, px], src)
             if elev != 0.0:
                 if bilinear:
@@ -617,6 +651,7 @@ def get_elevation(
                 # 別レイヤ（や隣のタイル）で通信に失敗していても、値が取れたなら失敗ではない。
                 _network_trouble.flag = False
                 _source_tile.key = (src.source_id, layer_id, xtile, ytile)
+                _elev_status.value = ElevStatus.VALUE
                 return elev
             logger.debug(
                 "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
@@ -636,6 +671,9 @@ def get_elevation(
             "All DEM layers exhausted for lat=%.6f lon=%.6f (no network trouble, "
             "likely no coverage), returning 0.0", lat, lon,
         )
+        # (b) タイルはあったが画素が無効値／(a) 全層でタイルが無い（I-247）
+        _elev_status.value = (ElevStatus.INVALID_PIXEL if saw_tile
+                              else ElevStatus.NO_TILE)
         return 0.0
 
     except Exception as e:

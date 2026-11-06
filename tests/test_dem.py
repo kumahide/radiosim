@@ -294,6 +294,77 @@ class TestLastSourceTile:
 
 
 # ============================================================
+# last_elevation_status（I-247＝`0.0` の 3 つの事情と通信の失敗を標本ごとに分ける）
+# ============================================================
+class TestElevationStatus:
+
+    _LAT, _LON = 10.0, 20.0
+    _VALID = (0, 39, 16)             # 有効な標高（!= 0.0）になる画素
+
+    @pytest.fixture(autouse=True)
+    def clear_tile_cache(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+        yield
+        dem._tile_cache.clear()
+        dem._failed_tiles.clear()
+
+    def _tiles(self, monkeypatch, per_layer):
+        """層ごとに 'value'／'invalid'（無効値の画素）／'absent'（404）／'fail'（通信の失敗）。"""
+        def fake(layer_id, *_a):
+            kind = per_layer[[l for l, _z in dem.DEM_LAYERS].index(layer_id)]
+            if kind == "value":
+                return np.full((256, 256, 3), self._VALID, dtype=np.uint8)
+            if kind == "invalid":
+                return np.full((256, 256, 3), dem_sources.GSI_DEM.invalid_rgb,
+                               dtype=np.uint8)
+            if kind == "fail":
+                dem._network_trouble.flag = True
+            return None
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+
+    @pytest.mark.parametrize("per_layer, status", [
+        (("value", "absent", "absent"), dem.ElevStatus.VALUE),
+        (("fail", "absent", "value"), dem.ElevStatus.VALUE),
+        (("absent", "absent", "absent"), dem.ElevStatus.NO_TILE),
+        (("absent", "invalid", "absent"), dem.ElevStatus.INVALID_PIXEL),
+        (("invalid", "invalid", "invalid"), dem.ElevStatus.INVALID_PIXEL),
+        (("fail", "absent", "absent"), dem.ElevStatus.FETCH_FAILED),
+        (("fail", "invalid", "absent"), dem.ElevStatus.FETCH_FAILED),
+    ])
+    def test_status_follows_the_invariant(self, monkeypatch, per_layer, status):
+        """🔑 不変条件＝FETCH_FAILED ⟺ `nan` ⟺ `network_failed()`／NO_TILE・INVALID_PIXEL
+        ⟺ `0.0`／VALUE ⟺ それ以外（`ElevStatus` の docstring）。"""
+        self._tiles(monkeypatch, per_layer)
+        for bilinear in (False, True):
+            dem._tile_cache.clear()
+            elev = dem.get_elevation(self._LAT, self._LON, bilinear=bilinear)
+            got = dem.last_elevation_status()
+            assert got == status, (per_layer, bilinear, got)
+            assert (got == dem.ElevStatus.FETCH_FAILED) == math.isnan(elev) \
+                == dem.network_failed()
+            assert (got in (dem.ElevStatus.NO_TILE, dem.ElevStatus.INVALID_PIXEL)) \
+                == (elev == 0.0)
+
+    def test_unexpected_exception_is_fetch_failed(self, monkeypatch):
+        def boom(*_a):
+            raise RuntimeError("decode")
+        monkeypatch.setattr(dem, "_fetch_tile", boom)
+        assert math.isnan(dem.get_elevation(self._LAT, self._LON))
+        assert dem.last_elevation_status() == dem.ElevStatus.FETCH_FAILED
+
+    def test_does_not_carry_over_the_previous_sample(self, monkeypatch):
+        self._tiles(monkeypatch, ("value", "value", "value"))
+        dem.get_elevation(self._LAT, self._LON)
+        assert dem.last_elevation_status() == dem.ElevStatus.VALUE
+        self._tiles(monkeypatch, ("absent", "absent", "absent"))
+        dem._tile_cache.clear()
+        dem.get_elevation(self._LAT, self._LON)
+        assert dem.last_elevation_status() == dem.ElevStatus.NO_TILE
+
+
+# ============================================================
 # 単一ソース強制（3.4 ステージ1・I-147）
 # `core/dem.py` の `DEM_LAYERS` 直後の規則＝1 回の `get_elevation` 呼び出しは
 # 単一ソースの `layers` だけを降下し、プロバイダをまたいだ降下フォールバックを

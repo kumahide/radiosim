@@ -330,6 +330,9 @@ def fetch_elevations(
             raw_elevs: list[float] = [0.0] * params.num
             # 標本ごとに「標高を返したタイル」＝出所刻印「取得日」の根拠（B-213）
             source_tiles: list["tuple | None"] = [None] * params.num
+            # 標本ごとの事情（I-247）＝値あり・404・無効画素・通信の失敗。取れずに終わった
+            # 標本（例外）は安全側の `FETCH_FAILED` のまま。
+            statuses = np.full(params.num, int(dem.ElevStatus.FETCH_FAILED), dtype=np.int8)
             completed  = 0
             failures   = 0
             # 最後の成功からの連続失敗（B-370）＝打ち切りはこれで判断する。
@@ -353,6 +356,7 @@ def fetch_elevations(
                     failed = dem.network_failed()
                     answered = dem.network_answered()
                     source_tiles[idx] = dem.last_source_tile()
+                    statuses[idx] = int(dem.last_elevation_status())
                 except Exception as e:
                     failed = True
                     with lock:
@@ -433,6 +437,7 @@ def fetch_elevations(
             logger.info("Terrain fetch complete: %d samples", params.num)
             # 同じスレッドで直後に呼ぶ on_complete へだけ渡す（`last_dem_acquired`）
             _fetch_local.dem_acquired = _acquired_range(source_tiles)
+            _fetch_local.dem_status = statuses
             on_complete(np.array(raw_elevs))
 
         except Exception as ex:
@@ -452,16 +457,16 @@ def fetch_elevations(
 # 地形を使い回してしまい、選んだソースと違う地形で計算結果が出る。
 # ⚠️ **読み方も鍵に入れる**（B-339）＝v1 と v2 は同じ位置でも標高が違う（最近傍と双線形）。
 _TerrainCacheKey = tuple[float, float, float, float, int, str, str, bool]
-# 値は (raw_elevs, 取得日の範囲, 取得を始めたときの `dem._cache_epoch`)＝**取得日は
-# 標高と同じ項目に持つ**（B-213）。別の辞書に分けると寿命が別になり、片方だけ消える・
-# 上書きされる。
+# 値は (raw_elevs, 取得日の範囲, 取得を始めたときの `dem._cache_epoch`, 標本ごとの
+# `dem.ElevStatus`)＝**取得日と標本の事情は標高と同じ項目に持つ**（B-213・I-247）。
+# 別の辞書に分けると寿命が別になり、片方だけ消える・上書きされる。
 # 世代（B-288）＝タイルの無効化（強制再取得の置き換え・範囲削除・全削除）は
 # `dem._cache_epoch` を進める。引くときに今の世代と違う項目は使わない＝無効化より
 # 前に取った地形も、無効化と並んで取った地形も、無効化のあとの計算に出てこない。
 # ⚠️ 無効化の口ごとにこの辞書を消す形にしない＝強制再取得の口が抜けていた（B-288）し、
 # 消しても並んで走っていた計算が完了後に登録し直す。
 _terrain_cache: dict[_TerrainCacheKey,
-                     "tuple[np.ndarray, tuple[str, str] | None, int]"] = {}
+                     "tuple[np.ndarray, tuple[str, str] | None, int, np.ndarray | None]"] = {}
 _terrain_cache_lock = threading.Lock()
 
 
@@ -525,6 +530,14 @@ def last_dem_acquired() -> "tuple[str, str] | None":
     return value
 
 
+def last_dem_status() -> "np.ndarray | None":
+    """直前に `fetch_elevations` が `on_complete` を呼んだ取得の、標本ごとの
+    `dem.ElevStatus`（`int8` の配列・I-247）。読み方と寿命は `last_dem_acquired` と同じ。"""
+    value = getattr(_fetch_local, "dem_status", None)
+    _fetch_local.dem_status = None
+    return value
+
+
 def _is_total_dem_failure(raw_elevs: np.ndarray) -> bool:
     """全点が通信の失敗（`nan`）＝DEM が 1 点も取れなかった形か。
 
@@ -551,6 +564,7 @@ def fetch_elevations_cached(
     on_complete: Callable[[np.ndarray], None],
     on_error: Callable[[Exception], None],
     on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
+    on_status: "Callable[[np.ndarray | None], None] | None" = None,
 ) -> None:
     """
     キャッシュ付き標高取得。
@@ -563,6 +577,9 @@ def fetch_elevations_cached(
         on_acquired: その標高の DEM 取得日の範囲（`_acquired_range`・無ければ None）を
                      受け取る。**`on_complete` の直前に同じスレッドで 1 回だけ**呼ぶ
                      （B-213＝取得日は標高と一緒に結果へ運ぶ。保存時に引き直さない）。
+        on_status:   標本ごとの `dem.ElevStatus`（`int8` の配列・I-247）を受け取る。呼ぶ時機と
+                     運び方は `on_acquired` と同じ（受け手は `TerrainProfile.dem_status` へ載せる）。
+                     取得を差し替えた試験などで分からなければ None。
     """
     key = _terrain_cache_key(params)
 
@@ -587,10 +604,12 @@ def fetch_elevations_cached(
             params.lat_rx, params.lon_rx,
             params.num,
         )
-        elevs, acquired, _ = cached
+        elevs, acquired, _, status = cached
         # プログレスバーを満杯にしてから完了通知（UI の一貫性のため）
         on_progress(params.num)
         # 命中した地形を取った回の値＝同じタイルで計算しているので正しい
+        if on_status is not None:
+            on_status(None if status is None else status.copy())
         if on_acquired is not None:
             on_acquired(acquired)
         on_complete(elevs.copy())
@@ -599,6 +618,7 @@ def fetch_elevations_cached(
     # キャッシュミス → 実取得してキャッシュに保存
     def _on_complete_and_cache(raw_elevs: np.ndarray) -> None:
         acquired = last_dem_acquired()
+        status = last_dem_status()
         if _is_total_dem_failure(raw_elevs):
             # 取得が全滅した結果は保持しない（B-025）。結果自体は今までどおり
             # 返す＝ここで握り潰すと「何も起きない」になるため。呼び出し側への
@@ -617,7 +637,10 @@ def fetch_elevations_cached(
             logger.info("Terrain NOT cached: DEM tiles were invalidated during the fetch")
         else:
             with _terrain_cache_lock:
-                _terrain_cache[key] = (raw_elevs.copy(), acquired, epoch)
+                _terrain_cache[key] = (raw_elevs.copy(), acquired, epoch,
+                                       None if status is None else status.copy())
+        if on_status is not None:
+            on_status(status)
         if on_acquired is not None:
             on_acquired(acquired)
         on_complete(raw_elevs)

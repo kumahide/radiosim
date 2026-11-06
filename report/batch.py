@@ -466,8 +466,10 @@ def _process_one(
         # 保存時に引き直さない。🔴 これを落とすと report.txt から行が必ず消える
         # （Codex 100 巡目）。
         acquired: list = [None]
+        status: list = [None]      # 標本ごとの事情（I-247）＝取得日と同じ運び方
         raw_elevs = _fetch_sync(params, lambda done: on_progress(done, params.num),
-                                on_acquired=lambda v: acquired.__setitem__(0, v))
+                                on_acquired=lambda v: acquired.__setitem__(0, v),
+                                on_status=lambda v: status.__setitem__(0, v))
         terrain   = models.calculate_terrain_profile(
             raw_elevs = raw_elevs,
             lat_tx    = params.lat_tx,
@@ -478,6 +480,7 @@ def _process_one(
             frac_axis = params.sample_fracs,
         )
         terrain.dem_acquired = acquired[0]
+        terrain.dem_status = status[0]
         result = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
 
         path_dir = os.path.join(batch_dir, row.path_id)
@@ -570,13 +573,15 @@ def _fetch_sync(
     params:      sim.SimParams,
     on_progress: Callable[[int], None],
     on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
+    on_status:   "Callable[[np.ndarray | None], None] | None" = None,
 ) -> np.ndarray:
     """標高取得の非同期コールバックを threading.Event で同期化する。
 
     単一実行と同じく **キャッシュ付き**（fetch_elevations_cached）を使う。同一
     バッチの再実行や 1 行だけ直しての再実行で DEM 取得がまるごと消える。キーは
     座標＋サンプル数なので、行が違えばキャッシュも別（誤ヒットしない）。
-    `on_acquired` は `fetch_elevations_cached` へ素通しする（DEM 取得日・B-213）。
+    `on_acquired`・`on_status` は `fetch_elevations_cached` へ素通しする（DEM 取得日・
+    B-213／標本ごとの事情・I-247）。
     """
     result: list[np.ndarray] = []
     error:  list[Exception]  = []
@@ -596,6 +601,7 @@ def _fetch_sync(
         on_complete = _on_complete,
         on_error    = _on_error,
         on_acquired = on_acquired,
+        on_status   = on_status,
     )
     done.wait()
     if error:

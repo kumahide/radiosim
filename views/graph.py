@@ -87,6 +87,7 @@ def show_graph(
     coord_format: str = "dd",
     dem_acquired: "tuple[str, str] | None" = None,
     basemap_source_id: str = "pale",
+    dem_status: "np.ndarray | None" = None,
 ) -> "GraphWindow":
     """地形断面ウィンドウを開く（**ブロックしない**）。
 
@@ -102,6 +103,8 @@ def show_graph(
                       保存の report.txt に出す。ウィンドウを開いた後にキャッシュが消えても残る。
         basemap_source_id: レポート添付地図が追従する背景地図ソース（B-248）。
                       ランチャーが地図ウィンドウの選択を凍結して渡す。
+        dem_status:   `raw_elevs` の標本ごとの事情（`dem.ElevStatus`・I-247）＝取得日と同じく
+                      結果の地形が抱える。
     """
     mpl_fonts.apply_japanese_font()
     terrain = models.calculate_terrain_profile(
@@ -115,6 +118,7 @@ def show_graph(
         frac_axis = params.sample_fracs,
     )
     terrain.dem_acquired = dem_acquired
+    terrain.dem_status = dem_status
     return GraphWindow(parent, params, terrain, project_name, memo, on_close,
                        coord_format, basemap_source_id)
 
