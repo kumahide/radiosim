@@ -343,6 +343,7 @@ radiosim/
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
+    ├── test_dem_bilinear.py
     ├── test_dem_sources.py
     ├── test_tile_sources.py
     ├── test_batch.py
@@ -1219,6 +1220,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
+| `test_dem_bilinear.py`   | 計算プロファイル v2 の地形の読み（双線形・同じ層の 4 近傍・欠けた近傍の扱い）と標本の置き方・取得の配線 |
 | `test_dem_sources.py`    | DEM ソース宣言（URL テンプレート・デコード方式の列挙ディスパッチ・GSI/Terrarium/Mapbox Terrain-RGB の式） |
 | `test_tile_sources.py`   | 背景地図タイルソース宣言（URL/max_zoom/出典の検証・予約 ID・表示名重複の拒否） |
 | `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |

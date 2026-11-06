@@ -81,6 +81,16 @@ def require(profile: str) -> str:
     return profile
 
 
+def reads_bilinear(profile: str) -> bool:
+    """その方式が DEM を**双線形**で読むか（v2・B-339）。偽＝点を含む画素の値（v1）。
+
+    🔑 **読み方を決めるのはここ 1 か所**＝標本の置き方（`terrain_grid.path_sample_fractions`）
+    と標高の読み（`dem.get_elevation`）と地形のキャッシュの鍵が同じ答えを引く。
+    片方だけが v2 になると、v1 の縁の位置を双線形で読む（またはその逆）ことになる。
+    """
+    return require(profile) != V1
+
+
 def _digest(prefix: str, payload: bytes) -> str:
     return f"{prefix}-{hashlib.sha256(payload).hexdigest()[:_HASH_CHARS]}"
 

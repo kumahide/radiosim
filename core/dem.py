@@ -53,6 +53,11 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
                "::test_unexpected_exception_returns_nan_and_sets_network_failed"),
     Assumption("zero_is_sea_level", "`0.0` は海抜 0 m・404（海上・日本域外）・無効画素を区別しない",
                OPEN, issue="I-247"),
+    Assumption("bilinear_stays_in_one_layer",
+               "双線形の 4 近傍は、点を含む画素と同じ層からだけ取る（欠けた近傍は重みから外し、別の層で埋めない）",
+               GUARD, ("_bilinear_in_layer",),
+               "tests/test_dem_bilinear.py::TestBilinearRead"
+               "::test_a_missing_neighbour_tile_is_not_filled_from_another_layer"),
 )
 
 # ============================================================
@@ -477,9 +482,91 @@ def _cache_subdir_for(src: "dem_sources.DemSourceSpec", layer_id: str, xtile: in
     return os.path.join(source_layer_dir(src, layer_id), str(xtile))
 
 
+def _layer_tile(
+    src: "dem_sources.DemSourceSpec", layer_id: str, zoom: int, xtile: int, ytile: int,
+) -> "np.ndarray | None":
+    """層 1 つのタイル 1 枚の画素配列（メモリ→ディスク→通信の順）。取れなければ None。
+
+    ⚠️ **ロックの中で通信しない**（`_cache_lock` の註）＝辞書を見るときだけ持つ。
+    負キャッシュへの登録は `_fetch_tile` の側（404 のときだけ＝B-010）。
+    """
+    tile_key     = (src.source_id, layer_id, xtile, ytile)
+    cache_subdir = _cache_subdir_for(src, layer_id, xtile)
+    cache_path   = os.path.join(cache_subdir, f"{ytile}.png")
+
+    # ── キャッシュ確認（ロック保持は辞書参照のみ）────────────
+    with _cache_lock:
+        if tile_key in _failed_tiles:
+            return None
+        cached = _tile_cache.get(tile_key)
+        epoch = _cache_epoch
+    if cached is not None:
+        return cached
+
+    # ── キャッシュミス：ロックを解放してネットワーク取得 ─────
+    arr = _fetch_tile(layer_id, zoom, xtile, ytile, cache_subdir, cache_path, src)
+    if arr is None:
+        logger.debug(
+            "DEM layer '%s' unavailable at tile(%d,%d), trying next",
+            layer_id, xtile, ytile,
+        )
+        return None
+    with _cache_lock:
+        # 読んでいる間に無効化があったら載せない（B-286）＝この 1 回だけ使う。
+        if _cache_epoch == epoch:
+            _tile_cache.setdefault(tile_key, arr)  # 競合時は先着優先
+    return arr
+
+
+def _bilinear_in_layer(
+    src: "dem_sources.DemSourceSpec", layer_id: str, zoom: int,
+    lat: float, lon: float, home: tuple[int, int], home_arr: np.ndarray, home_elev: float,
+) -> float:
+    """その層の 4 近傍の画素の中心から双線形で読む（計算プロファイル v2・B-339）。
+
+    🔑 **画素の値は画素の中心の点の値**（国土地理院の数値標高モデル＝メッシュの中心点の
+    標高）＝中心を格子点とみなして間を補間する。
+    ⚠️ **層をまたいで混ぜない**＝隣のタイルも同じ層だけを引く（`DEM_LAYERS` 直後の規則と
+    同じ根＝1 点の値の中で基準がすり替わる）。
+    ⚠️ **無効な近傍（欠損の画素・取れない隣のタイル）は重みから外して残りで割る**＝点を
+    含む画素（`home`）は有効と分かっていて、重みは必ず 1/4 以上ある（点は自分の画素の
+    中心から縦横に半画素以内）。⚠️ 隣のタイルが通信の失敗で取れなかった標本は、その回だけ
+    近傍が欠けた値になる（取れた側の値で読む＝`nan` にはしない）。
+    """
+    wx, wy = lonlat_to_pixel(lat, lon, zoom)
+    limit = TILE_SIDE * (2 ** zoom) - 1
+    u, w = wx - 0.5, wy - 0.5
+    i0, j0 = math.floor(u), math.floor(w)
+    fx, fy = u - i0, w - j0
+    total = 0.0
+    weight = 0.0
+    for di, dj, wt in ((0, 0, (1.0 - fx) * (1.0 - fy)), (1, 0, fx * (1.0 - fy)),
+                       (0, 1, (1.0 - fx) * fy), (1, 1, fx * fy)):
+        if wt <= 0.0:
+            continue
+        gx = min(max(i0 + di, 0), limit)
+        gy = min(max(j0 + dj, 0), limit)
+        tile = (gx // TILE_SIDE, gy // TILE_SIDE)
+        arr = home_arr if tile == home else _layer_tile(src, layer_id, zoom, *tile)
+        if arr is None:
+            continue
+        elev = _decode_elevation(arr[gy % TILE_SIDE, gx % TILE_SIDE], src)
+        if elev == 0.0:
+            continue
+        total += wt * elev
+        weight += wt
+    # 丸めの端で自分の画素の重みが 0 に落ちた（理屈では起きない）ときは v1 の値。
+    return total / weight if weight > 0.0 else home_elev
+
+
+#: タイル 1 辺の画素数（`terrain_grid.TILE_PIXELS` と同じ値＝写しではなく別名）。
+TILE_SIDE: int = terrain_grid.TILE_PIXELS
+
+
 def get_elevation(
     lat: float, lon: float,
     source: "dem_sources.DemSourceSpec | None" = None,
+    *, bilinear: bool = False,
 ) -> float:
     """
     DEM PNG タイルから標高 [m] を取得する。
@@ -489,6 +576,10 @@ def get_elevation(
             **単一の計算経路の中で降下するのは常にこの 1 ソースの `layers` だけ**
             （`core/dem.py` の `DEM_LAYERS` 直後の規則＝プロバイダをまたいだ
             降下フォールバックをしない）。
+        bilinear: 双線形で読むか（計算プロファイル v2・B-339）。偽＝点を含む画素の値
+            （最近傍・v1）。🔑 **どの層が答えるかは両方で同じ**＝点を含む画素がその層で
+            有効なら、その層の中で読む（`_bilinear_in_layer`）。`nan`／`0.0` の規約も同じ。
+            ⚠️ 製品の経路は必ず渡す（`calc_profile.reads_bilinear`）＝既定は試験と探針のため。
 
     `source.layers` の順（高精度 → 低精度）に試み、
     タイル取得成功かつデコード値が有効（!= 0.0）なら返す。
@@ -515,51 +606,17 @@ def get_elevation(
     try:
         for layer_id, zoom in src.layers:
             xtile, ytile, px, py = _tile_coords(lat, lon, zoom)
-            tile_key     = (src.source_id, layer_id, xtile, ytile)
-            cache_subdir = _cache_subdir_for(src, layer_id, xtile)
-            cache_path   = os.path.join(cache_subdir, f"{ytile}.png")
-
-            # ── キャッシュ確認（ロック保持は辞書参照のみ）────────────
-            with _cache_lock:
-                if tile_key in _failed_tiles:
-                    continue
-                cached = _tile_cache.get(tile_key)
-                epoch = _cache_epoch
-
-            if cached is not None:
-                elev = _decode_elevation(cached[py, px], src)
-                if elev != 0.0:
-                    _network_trouble.flag = False
-                    _source_tile.key = tile_key
-                    return elev
-                logger.debug(
-                    "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",
-                    layer_id, lat, lon,
-                )
+            arr = _layer_tile(src, layer_id, zoom, xtile, ytile)
+            if arr is None:
                 continue
-
-            # ── キャッシュミス：ロックを解放してネットワーク取得 ─────
-            arr = _fetch_tile(layer_id, zoom, xtile, ytile, cache_subdir, cache_path, src)
-
-            # ── 取得結果を書き込み ────────────────────────────────────
-            #   arr is None のときの負キャッシュ登録は _fetch_tile 側で行う
-            #   （404 = 恒久欠落のときだけ。一時失敗は登録しない = B-010）。
-            with _cache_lock:
-                if arr is None:
-                    logger.debug(
-                        "DEM layer '%s' unavailable at tile(%d,%d), trying next",
-                        layer_id, xtile, ytile,
-                    )
-                    continue
-                # 読んでいる間に無効化があったら載せない（B-286）＝この 1 回だけ使う。
-                if _cache_epoch == epoch:
-                    _tile_cache.setdefault(tile_key, arr)  # 競合時は先着優先
-
             elev = _decode_elevation(arr[py, px], src)
             if elev != 0.0:
-                # 別レイヤで通信に失敗していても、値が取れたなら失敗ではない。
+                if bilinear:
+                    elev = _bilinear_in_layer(src, layer_id, zoom, lat, lon,
+                                              (xtile, ytile), arr, elev)
+                # 別レイヤ（や隣のタイル）で通信に失敗していても、値が取れたなら失敗ではない。
                 _network_trouble.flag = False
-                _source_tile.key = tile_key
+                _source_tile.key = (src.source_id, layer_id, xtile, ytile)
                 return elev
             logger.debug(
                 "DEM layer '%s' returned invalid pixel at (%.6f,%.6f), trying next",

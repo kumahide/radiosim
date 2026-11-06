@@ -249,11 +249,17 @@ _EDGE_INSET_PX: float = 1e-4
 
 def path_sample_fractions(
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+    *, bilinear: bool = False,
 ) -> list[float]:
     """経路上の標本位置を **0.0〜1.0 の並び**で返す（純関数・ネットワーク不使用）。
 
     「高」「中」＝**経路が通る DEM 画素を列挙し、各画素の弦の両端**（B-150）。
     「低」＝*粗いが速い*と名乗っている段階なので**等間隔のまま**（画素を飛ばすのが仕様）。
+
+    Args:
+        bilinear: 標高を双線形で読む実行か（計算プロファイル v2・B-339）。真なら
+            「高」「中」は**画素の縁と中心の格子線を跨ぐ点**に置く（`_lattice_fractions`）。
+            ⚠️ 製品の経路は必ず渡す（`calc_profile.reads_bilinear`）＝既定は試験と探針のため。
 
     ⚠️ **返すのは経路のパラメータ**（緯度・経度ではない）＝標本の位置を運ぶ器は
     これ 1 つにする。緯度経度は呼ぶ側が `tx + (rx - tx) * t` で作る（製品の
@@ -261,12 +267,13 @@ def path_sample_fractions(
 
     どの標本がどの画素セルに属すかは `sample_pixel_groups`（表示専用・B-160）。
     """
-    out, _ = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level)
+    out, _ = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level, bilinear)
     return out
 
 
 def sample_pixel_groups(
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+    *, bilinear: bool = False,
 ) -> "list[int] | None":
     """`path_sample_fractions` の各標本が属する画素セルの番号（表示専用・B-160）。
 
@@ -275,8 +282,10 @@ def sample_pixel_groups(
     対応表を渡すためだけに在る。「低」・固定 N・天井フォールバック（画素構造が無い、
     または崩した）実行では **None**＝呼ぶ側は `collapse_pixel_groups` に通せば、
     None のときは元の並びをそのまま返す。
+    ⚠️ **双線形（`bilinear`）でも None**（B-339）＝標高は画素の中で一定ではないので、
+    畳む階段がそもそも無い（畳むと地形の形を捨てる）。
     """
-    _, groups = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level)
+    _, groups = _path_sample_fractions_impl(lat_tx, lon_tx, lat_rx, lon_rx, level, bilinear)
     return groups
 
 
@@ -319,11 +328,12 @@ def collapse_pixel_groups(
 
 def _path_sample_fractions_impl(
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+    bilinear: bool = False,
 ) -> "tuple[list[float], list[int] | None]":
     """`path_sample_fractions` / `sample_pixel_groups` の共通実装。
 
     2 つ目の戻り値＝各標本が属する画素セルの番号（B-160）。画素構造が無い
-    （「低」・知らない語・天井フォールバック等）実行では None。
+    （「低」・知らない語・天井フォールバック等）実行と双線形の実行では None。
     """
     zoom = RESOLUTION_ZOOM.get(level)
     if zoom is None:
@@ -334,6 +344,9 @@ def _path_sample_fractions_impl(
     coords = (lat_tx, lon_tx, lat_rx, lon_rx)
     if not all(math.isfinite(v) for v in coords):
         return _uniform(SAMPLES_MIN), None
+
+    if bilinear:
+        return _lattice_fractions(lat_tx, lon_tx, lat_rx, lon_rx, zoom), None
 
     x0, y0 = lonlat_to_pixel(lat_tx, lon_tx, zoom)
     x1, y1 = lonlat_to_pixel(lat_rx, lon_rx, zoom)
@@ -383,6 +396,39 @@ def _path_sample_fractions_impl(
     if len(out) < SAMPLES_MIN:
         return _uniform(SAMPLES_MIN), None
     return out, groups
+
+
+def _lattice_fractions(
+    lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, zoom: int,
+) -> list[float]:
+    """双線形で読む実行の標本位置（計算プロファイル v2・B-339）。
+
+    🔑 **双線形の場を直線で切ると、画素の中心を結ぶ格子線（`k + 0.5`）を跨ぐところで
+    折れ、その間は 2 次式になる**。⇒ 置くのは①**折れ目**（中心の格子線を跨ぐ点）と
+    ②**その間の点**（画素の縁を跨ぐ点）＝2 次式の区間ごとにおおむね 3 点。
+    🔑 **①②の両方は「ズーム＋1 の画素の縁を跨ぐ点」とちょうど一致する**（Web メルカトルは
+    ズームを 1 上げると画素が縦横に 2 分割＝中心の線も縁の線になる）。⇒ 境界の解き方は
+    `_crossing_fractions` をそのまま使う（写しを作らない）。
+    ⚠️ **10m 層へ落ちた場所でも折れ目を取りこぼさない**＝z14 の中心の線は z15 の縁、
+    z14 の縁は z15 の偶数の縁なので、z15 の格子の並びに全部含まれる。
+    ⚠️ **縁の両側に 2 点置かない**＝最近傍と違って縁で値が跳ばない（v1 の内側へずらす量
+    `_EDGE_INSET_PX` は要らない）。点数は v1（1 画素に 2 点）とほぼ同じ。
+    """
+    grid = zoom + 1
+    x0, y0 = lonlat_to_pixel(lat_tx, lon_tx, grid)
+    x1, y1 = lonlat_to_pixel(lat_rx, lon_rx, grid)
+    span_px = math.hypot(x1 - x0, y1 - y0)
+    if span_px <= 0.0:
+        return _uniform(SAMPLES_MIN)
+    # 列挙の前に明らかな超過を落とす（理由は `_path_sample_fractions_impl` の同じ判定）。
+    if span_px > SAMPLES_CEILING:
+        return _uniform(SAMPLES_CEILING)
+    out = [0.0] + _crossing_fractions(x0, y0, x1, y1, lat_tx, lat_rx, grid) + [1.0]
+    if len(out) > SAMPLES_CEILING:
+        return _uniform(SAMPLES_CEILING)
+    if len(out) < SAMPLES_MIN:
+        return _uniform(SAMPLES_MIN)
+    return out
 
 
 def _crossing_fractions(

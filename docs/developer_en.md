@@ -344,6 +344,7 @@ radiosim/
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
+    ├── test_dem_bilinear.py
     ├── test_dem_sources.py
     ├── test_tile_sources.py
     ├── test_batch.py
@@ -1257,6 +1258,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
+| `test_dem_bilinear.py`   | Calculation profile v2 terrain reading (bilinear, 4 neighbours from the same layer, missing neighbours) plus its sample placement and fetch wiring |
 | `test_dem_sources.py`    | DEM source declarations (URL template, decode-method dispatch, GSI/Terrarium/Mapbox Terrain-RGB formulas) |
 | `test_tile_sources.py`   | Background map tile source declarations (URL/max_zoom/attribution validation, reserved IDs, duplicate display-name rejection) |
 | `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_process_one/_fetch_sync), HTML coords |

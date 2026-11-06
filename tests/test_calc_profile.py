@@ -391,7 +391,11 @@ def test_the_profile_reaches_the_calculation_and_the_sensitivity():
 def test_every_product_call_passes_the_profile():
     """🔒 既定へ落ちると、開いたプロジェクトと違う方式で黙って計算する（既定は試験と探針のため）。"""
     root = os.path.join(os.path.dirname(__file__), "..")
-    names = {"calculate_propagation", "scope_notes", "compute_link_sensitivity"}
+    # 呼ぶ口 → 方式を運ぶ引数の名前（B-339＝地形の読みと標本の置き方は `bilinear`）
+    names = {"calculate_propagation": "profile", "scope_notes": "profile",
+             "compute_link_sensitivity": "profile", "resolve_samples": "profile",
+             "path_sample_fractions": "bilinear", "sample_pixel_groups": "bilinear",
+             "get_elevation": "bilinear"}
     found, missing = 0, []
     for folder in ("core", "report", "views"):
         for base, _dirs, files in os.walk(os.path.join(root, folder)):
@@ -408,7 +412,7 @@ def test_every_product_call_passes_the_profile():
                     called = func.attr if isinstance(func, ast.Attribute) else getattr(func, "id", "")
                     if called in names:
                         found += 1
-                        if not any(k.arg == "profile" for k in node.keywords):
+                        if not any(k.arg == names[called] for k in node.keywords):
                             missing.append(f"{name}:{node.lineno}")
-    assert found >= 9
+    assert found >= 16
     assert missing == []

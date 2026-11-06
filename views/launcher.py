@@ -701,7 +701,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             readout.config(text=i18n.t("res_readout_unknown"))
             return
         level = self._resolution_key()
-        n, spacing = sim.resolve_samples(lat_tx, lon_tx, lat_rx, lon_rx, level)
+        n, spacing = sim.resolve_samples(lat_tx, lon_tx, lat_rx, lon_rx, level,
+                                         profile=self._current_calc_profile())
         # ⚠️ **「間隔」と名乗れるのは等間隔で刻む段階だけ**（B-150）＝「高」「中」は
         #    DEM 画素の縁に標本を置くので、出す数字は*画素の寸法*。
         readout.config(text=i18n.t(

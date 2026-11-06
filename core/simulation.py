@@ -45,6 +45,7 @@ logger = logging.getLogger("radiosim")
 # ============================================================
 def resolve_samples(
     lat_tx: float, lon_tx: float, lat_rx: float, lon_rx: float, level: str,
+    *, profile: str = calc_profile.DEFAULT_PROFILE,
 ) -> tuple[int, float]:
     """2 地点と解像度の段階から `(点数, 地形の刻み[m])` を返す（I-069）。
 
@@ -61,9 +62,12 @@ def resolve_samples(
 
     ⚠️ **天井（`SAMPLES_CEILING`）で等間隔へ落ちた実行も「画素の縁」ではない**
     （B-159）＝`samples_are_pixel_edges` は点数も見て判定するので、そこへ委ねる。
+    ⚠️ **点数は計算プロファイルで変わる**（v2 は双線形の置き方・B-339）＝画面は開いている
+    プロジェクトの方式を渡す（渡さないと出した N が実行と食い違う）。
     """
     fracs = terrain_grid.path_sample_fractions(
-        lat_tx, lon_tx, lat_rx, lon_rx, level)
+        lat_tx, lon_tx, lat_rx, lon_rx, level,
+        bilinear=calc_profile.reads_bilinear(profile))
     n = len(fracs)
     if terrain_grid.samples_are_pixel_edges(level, n):
         return n, terrain_grid.grid_step_m((lat_tx + lat_rx) / 2.0, level)
@@ -161,15 +165,23 @@ class SimParams:
         #    以前は点数だけを持ち、位置は使う側が `linspace` で作り直していた。
         #    画素の縁で刻むと位置は等間隔でなくなるので、**位置そのものを運ぶ**
         #    （作り直す面が 1 つでも残ると、そこだけ別の場所の標高を並べる）。
+        # 計算プロファイル（4.0 ステージ3）＝画面の入力ではなくプロジェクトの属性
+        # （`report/project.py` の `ProjectDoc.calc_profile`）。来なければ今の既定。
+        # ⚠️ **標本の位置より先に決める**（B-339）＝v2 は双線形の置き方で刻む。
+        self.calc_profile: str  = calc_profile.require(
+            c.get("calc_profile", calc_profile.DEFAULT_PROFILE))
+        bilinear = calc_profile.reads_bilinear(self.calc_profile)
         level = str(c.get("resolution", "") or "")
         if level:
             self.resolution: str = level
             self.sample_fracs: list[float] = terrain_grid.path_sample_fractions(
-                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution)
+                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution,
+                bilinear=bilinear)
             # 表示専用（B-160）＝断面図が画素の弦の両端 2 点をそのまま折れ線で結ぶと
             # 階段状に見える。物理には使わない対応表なので固定 N のときは持たない。
             self.sample_pixel_groups: "list[int] | None" = terrain_grid.sample_pixel_groups(
-                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution)
+                self.lat_tx, self.lon_tx, self.lat_rx, self.lon_rx, self.resolution,
+                bilinear=bilinear)
         else:
             self.resolution = ""
             n = max(terrain_grid.SAMPLES_MIN, int(c["samples"]))
@@ -186,10 +198,6 @@ class SimParams:
         # 未知の値（利用者が宣言ファイルから削除済み等）は `dem_sources.resolve()`
         # が国土地理院へフォールバックする＝ここでは文字列のまま持ち回るだけ。
         self.dem_source:  str   = c.get("dem_source", dem_sources.GSI_DEM.source_id)
-        # 計算プロファイル（4.0 ステージ3）＝画面の入力ではなくプロジェクトの属性
-        # （`report/project.py` の `ProjectDoc.calc_profile`）。来なければ今の既定。
-        self.calc_profile: str  = calc_profile.require(
-            c.get("calc_profile", calc_profile.DEFAULT_PROFILE))
 
 
 # ============================================================
@@ -317,6 +325,7 @@ def fetch_elevations(
             # 外で 1 回だけ）。未知の source_id は国土地理院へフォールバック
             # （`dem_sources.resolve` の契約）。
             dem_source = dem_sources.resolve(params.dem_source)
+            bilinear = calc_profile.reads_bilinear(params.calc_profile)   # B-339
 
             raw_elevs: list[float] = [0.0] * params.num
             # 標本ごとに「標高を返したタイル」＝出所刻印「取得日」の根拠（B-213）
@@ -337,7 +346,8 @@ def fetch_elevations(
                 failed = True          # 何が起きても finally で参照できる初期値
                 answered = False       # 通信が答えたか（B-370 ②）
                 try:
-                    raw_elevs[idx] = dem.get_elevation(la, lo, dem_source)
+                    raw_elevs[idx] = dem.get_elevation(la, lo, dem_source,
+                                                       bilinear=bilinear)
                     # 「取れなかった」は戻り値に出ない（0.0 は海抜 0m と同じ顔）。
                     # 直後に聞くのが唯一の判別手段＝B-025 ②。
                     failed = dem.network_failed()
@@ -440,7 +450,8 @@ def fetch_elevations(
 # ため、キャッシュキーには含めない。
 # ⚠️ **DEM ソースも鍵に入れる**（B-225）＝ソースを切り替えても前回ソースの
 # 地形を使い回してしまい、選んだソースと違う地形で計算結果が出る。
-_TerrainCacheKey = tuple[float, float, float, float, int, str, str]
+# ⚠️ **読み方も鍵に入れる**（B-339）＝v1 と v2 は同じ位置でも標高が違う（最近傍と双線形）。
+_TerrainCacheKey = tuple[float, float, float, float, int, str, str, bool]
 # 値は (raw_elevs, 取得日の範囲, 取得を始めたときの `dem._cache_epoch`)＝**取得日は
 # 標高と同じ項目に持つ**（B-213）。別の辞書に分けると寿命が別になり、片方だけ消える・
 # 上書きされる。
@@ -472,8 +483,11 @@ def _terrain_cache_key(params: SimParams) -> _TerrainCacheKey:
     # 取得する（実際に fetch_elevations_cached が使うのと同じ解決規則）ため、
     # 生の params.dem_source をそのまま鍵にすると同じ地形なのに別キー扱いになる。
     resolved_source = dem_sources.resolve(params.dem_source).source_id
+    # ⚠️ **プロファイルの字ではなく読み方を鍵にする**＝読みの同じ方式どうし（v2 と将来の
+    # v3 など）は同じ地形を使い回せる。
     return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
-            params.num, params.resolution, resolved_source)
+            params.num, params.resolution, resolved_source,
+            calc_profile.reads_bilinear(params.calc_profile))
 
 
 # 出所刻印「取得日」（3.3 ステージ4e）＝**標高を取った時点で確定させ、標高と一緒に
@@ -631,10 +645,13 @@ def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray
     """
     alt = copy.copy(params)
     alt.resolution = level
+    bilinear = calc_profile.reads_bilinear(params.calc_profile)   # 基準と同じ読み（B-339）
     alt.sample_fracs = terrain_grid.path_sample_fractions(
-        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level)
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level,
+        bilinear=bilinear)
     alt.sample_pixel_groups = terrain_grid.sample_pixel_groups(
-        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level)
+        params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx, level,
+        bilinear=bilinear)
     alt.num = len(alt.sample_fracs)
 
     out: list[np.ndarray] = []
