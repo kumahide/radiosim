@@ -44,6 +44,7 @@ import os
 import re
 import shutil
 import subprocess
+import sys
 
 import pytest
 
@@ -232,8 +233,23 @@ def _skipped() -> list[str]:
 
 
 def _real_test_files() -> set[str]:
-    return {f"tests/{n}" for n in os.listdir(os.path.join(_REPO, "tests"))
-            if n.startswith("test_") and n.endswith(".py")}
+    """pytest が実際に集める試験ファイルの集合＝見張りの期待値（B-375）。
+
+    ⚠️ 門の `allTestFiles()` と同じ規則を手で書き直さない＝前は「直下の `test_*.py`」と
+    書いていて、門（再帰・`*_test.py` も拾う）より狭く、正しい試験の追加で赤になった。
+    pytest 自身の収集を基準にすれば、門の規則が pytest とずれたときも赤になる（独立の基準）。
+    収集だけなら 2 秒ほど（2026-11-07 に 4462 本で測った）。
+    """
+    r = subprocess.run(
+        [sys.executable, "-m", "pytest", "--collect-only", "-q",
+         "-p", "no:cacheprovider", "tests"],
+        cwd=_REPO, capture_output=True, text=True, timeout=120,
+        env={**os.environ, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"})
+    assert r.returncode == 0, r.stdout[-2000:] + r.stderr[-2000:]
+    files = {line.split("::", 1)[0].replace("\\", "/")
+             for line in r.stdout.splitlines() if "::" in line}
+    assert files, "pytest の収集が空＝出力の形が変わった"
+    return files
 
 
 def _imported_roots(path: str) -> set[str]:
