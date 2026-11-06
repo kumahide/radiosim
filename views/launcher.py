@@ -7,6 +7,7 @@ views/launcher.py
 simulation・config・dem の各モジュールを呼ぶだけ。
 """
 
+import functools
 import os
 import threading
 import time
@@ -888,20 +889,13 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
                 v, i18n.t("status_fetching_pct").format(pct=pct)
             )
 
-        # 取得日は on_complete の直前に同じスレッドで届く（B-213）＝標高と一緒にウィンドウへ渡す
-        acquired: list = [None]
-        status: list = [None]      # 標本ごとの事情（I-247）＝取得日と同じ運び方
-
-        def _on_acquired(value) -> None:
-            acquired[0] = value
-
-        def _on_status(value) -> None:
-            status[0] = value
+        # 取得日（B-213）と標本ごとの事情（I-247）は on_complete の直前に同じスレッドで届く
+        # ＝標高と一緒にウィンドウへ渡す
+        got: dict = {"acquired": None, "status": None}
 
         def _on_complete(elevs) -> None:
             # ワーカースレッドから呼ばれる＝投函先が生きているとは限らない（B-061）
-            dem_acquired = acquired[0]
-            dem_status = status[0]
+            dem_acquired, dem_status = got["acquired"], got["status"]
             progress.post_to_ui(self.root, lambda: self._on_fetch_complete(
                 params, elevs, dem_acquired, dem_status))
 
@@ -913,8 +907,8 @@ class SimLauncher(_MenuMixin, _ProjectMixin, _ChildWindowsMixin):
             on_progress = _on_progress,
             on_complete = _on_complete,
             on_error    = _on_error,
-            on_acquired = _on_acquired,
-            on_status   = _on_status,
+            on_acquired = functools.partial(got.__setitem__, "acquired"),
+            on_status   = functools.partial(got.__setitem__, "status"),
         )
 
     def _on_fetch_complete(self, params: sim.SimParams, raw_elevs,

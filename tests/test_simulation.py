@@ -25,6 +25,7 @@ from unittest import mock
 import numpy as np
 import pytest
 
+from core import calc_profile
 from core import config
 from core import dem
 from core import dem_cache
@@ -115,11 +116,16 @@ class TestSimParams:
     ):
         """段階（高・中）を選んだ実行は `sample_pixel_groups` を
         `sample_fracs` と同じ長さで持つ（B-160＝表示側が畳むための対応表）。
+        ⚠️ v1（最寄り画素の読み）だけ＝v2 の双線形は画素の中で標高が一定でなく、
+        畳む階段が無いので None（B-339）。既定の方式に頼らず両方を決めて引く。
         """
         default_params_dict["resolution"] = "high"
+        default_params_dict["calc_profile"] = calc_profile.V1
         p = sim.SimParams(default_params_dict)
         assert p.sample_pixel_groups is not None
         assert len(p.sample_pixel_groups) == len(p.sample_fracs)
+        default_params_dict["calc_profile"] = calc_profile.V2
+        assert sim.SimParams(default_params_dict).sample_pixel_groups is None
 
 
 # ============================================================

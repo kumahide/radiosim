@@ -22,7 +22,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from core import calc_profile
-from core.assumptions import GUARD, OPEN, Assumption
+from core.assumptions import GUARD, Assumption
 
 C_LIGHT: float = 299_792_458.0
 

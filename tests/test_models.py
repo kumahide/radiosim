@@ -23,6 +23,7 @@ import pytest
 import sys, os
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
+from core import calc_profile
 from core import diffraction
 from core import models
 from core import terrain_grid
@@ -1092,16 +1093,23 @@ class TestScopeNotes:
         hi = models.GAS_RANGE_GHZ[1]
         assert "gas_extrapolated" in models.scope_notes((hi + 10.0) * 1000.0)
 
-    @pytest.mark.parametrize("freq_mhz,expected", [
-        (430.0, True),      # 1 GHz 未満＝係数の定義域の外
-        (2400.0, False),    # 1〜6 GHz＝本来の定義域
-        (5800.0, False),
-        (6000.0, True),     # 6 GHz 以上＝外側（同じ式を伸ばしている）
-        (24000.0, True),
+    @pytest.mark.parametrize("freq_mhz,extrapolated,discontinuous", [
+        (430.0, True, False),     # 1 GHz 未満＝v1 は定義域の外・v2 は畳んだので名乗らない
+        (2400.0, False, False),   # 1〜6 GHz＝本来の定義域
+        (5800.0, False, False),
+        (6000.0, True, True),     # 6 GHz 以上＝v1 は外側・v2 は境目の不連続を名乗る
+        (24000.0, True, True),
     ])
-    def test_the_vegetation_coefficient_branch_is_declared(self, freq_mhz, expected):
-        keys = models.scope_notes(freq_mhz, veg_h=5.0)
-        assert ("veg_extrapolated" in keys) is expected
+    def test_the_vegetation_coefficient_branch_is_declared(
+        self, freq_mhz, extrapolated, discontinuous
+    ):
+        """方式ごとに名乗る刻印（B-262）＝既定の方式に頼らず、v1 と v2 を両方決めて引く。"""
+        v1 = models.scope_notes(freq_mhz, veg_h=5.0, profile=calc_profile.V1)
+        assert ("veg_extrapolated" in v1) is extrapolated
+        assert "veg_discontinuous" not in v1
+        v2 = models.scope_notes(freq_mhz, veg_h=5.0, profile=calc_profile.V2)
+        assert ("veg_discontinuous" in v2) is discontinuous
+        assert "veg_extrapolated" not in v2
 
     def test_no_vegetation_note_when_no_vegetation_was_given(self):
         assert "veg_extrapolated" not in models.scope_notes(430.0, veg_h=0.0)
