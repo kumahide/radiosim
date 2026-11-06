@@ -943,6 +943,65 @@ class TestFailedTileNegativeCache:
         assert math.isnan(dem.get_elevation(34.5429, 132.4118))
         assert dem.network_failed(), "想定外の例外で不変条件が壊れている"
 
+    # ── 通信が答えたか（B-370 ②）＝キャッシュから読めた値と分ける ──────
+    def test_a_fetched_tile_is_reported_as_answered(self, monkeypatch):
+        """通信で 200 を得て値を返したら `network_answered()` が真。"""
+        self._mock_session(monkeypatch, lambda *a, **k: self._png_200())
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+        assert dem.network_answered(), "通信で取った値をキャッシュ由来と取り違えている"
+
+    def test_a_404_is_an_answer(self, monkeypatch):
+        """404（海上・域外）も相手が答えた＝外へ出られている。"""
+        self._mock_session(monkeypatch, lambda *a, **k: self._status(404))
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(0.0)
+        assert dem.network_answered(), "404 を「通信が届いていない」と取り違えている"
+
+    def test_a_network_failure_is_not_an_answer(self, monkeypatch):
+        """通信の失敗（例外）では立たない。"""
+        self._mock_session(
+            monkeypatch,
+            lambda *a, **k: (_ for _ in ()).throw(requests.RequestException("timeout")),
+        )
+        assert math.isnan(dem.get_elevation(34.5429, 132.4118))
+        assert not dem.network_answered()
+
+    def test_a_value_from_the_memory_cache_is_not_an_answer(self, monkeypatch):
+        """2 回目（メモリの写しから読む）は通信していない＝立たない。"""
+        fake = self._mock_session(monkeypatch, lambda *a, **k: self._png_200())
+        dem.get_elevation(34.5429, 132.4118)
+        calls = fake.get.call_count
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+        assert fake.get.call_count == calls, "前提が崩れた＝2 回目も通信している"
+        assert not dem.network_answered(), "キャッシュから読めた値を通信の答えに数えている"
+
+    def test_a_value_from_the_disk_cache_is_not_an_answer(self, monkeypatch):
+        """ディスクのタイルから読んだ値も通信していない＝立たない。"""
+        fake = self._mock_session(monkeypatch, lambda *a, **k: self._png_200())
+        dem.get_elevation(34.5429, 132.4118)
+        dem._tile_cache.clear()           # メモリの写しだけ落とす＝ディスクは残る
+        calls = fake.get.call_count
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+        assert fake.get.call_count == calls, "前提が崩れた＝ディスクから読まずに通信している"
+        assert not dem.network_answered(), "ディスクから読めた値を通信の答えに数えている"
+
+    def test_a_cached_value_after_a_failed_layer_is_not_an_answer(self, monkeypatch):
+        """先の層が通信に失敗し、後の層をキャッシュから読めても、通信は答えていない。
+
+        オフラインで粗い層だけキャッシュ済みの地域＝値は正しいが、外へ出られて
+        いる証拠にはならない（打ち切りの数え方を戻さない）。
+        """
+        def get_impl(*a, **k):
+            raise requests.RequestException("timeout")
+
+        self._mock_session(monkeypatch, get_impl)
+        last_layer, last_zoom = dem_sources.GSI_DEM.layers[-1]
+        xt, yt, _px, _py = dem._tile_coords(34.5429, 132.4118, last_zoom)
+        dem._tile_cache[(dem_sources.GSI_DEM.source_id, last_layer, xt, yt)] = (
+            np.full((256, 256, 3), (0, 39, 16), dtype=np.uint8))
+        assert dem.get_elevation(34.5429, 132.4118) == pytest.approx(100.0, abs=0.1)
+        assert not dem.network_failed()
+        assert not dem.network_answered(), "失敗した通信を「答えた」に数えている"
+
 
 # ============================================================
 # プロキシ / セッション管理

@@ -17,6 +17,7 @@ import io
 import os
 import json
 import logging
+import math
 import threading
 import types
 from unittest import mock
@@ -253,6 +254,9 @@ class TestDemCircuitBreaker:
     `get_elevation` が 0.0 を返しつつ「通信で失敗した」を別口で立てる。戻り値だけ
     0.0 にしたフェイクは**成功扱い**になる（既存テストのフェイクを壊さないための
     設計＝安全側）ので、それでは打ち切りを再現できない。
+    ⚠️ **成功は通信由来**（`dem.network_answered` も真）にする＝B-370 ②から、
+    キャッシュから読めた成功は失敗の連続を断たない（その形は
+    `TestDemCircuitBreakerAfterPartialSuccess`）。
     """
 
     def _run(self, params, *, elevation, failed, samples_seen=None):
@@ -264,13 +268,23 @@ class TestDemCircuitBreaker:
 
         out: dict = {}
         done = threading.Event()
+
+        def _complete(elevs: np.ndarray) -> None:
+            out["elevs"] = elevs
+            done.set()
+
+        def _error(ex: Exception) -> None:
+            out["error"] = ex
+            done.set()
+
         with mock.patch.object(dem, "get_elevation", _get), \
-             mock.patch.object(dem, "network_failed", failed):
+             mock.patch.object(dem, "network_failed", failed), \
+             mock.patch.object(dem, "network_answered", lambda: True):
             sim.fetch_elevations(
                 params      = params,
                 on_progress = lambda v: None,
-                on_complete = lambda e: (out.__setitem__("elevs", e), done.set()),
-                on_error    = lambda ex: (out.__setitem__("error", ex), done.set()),
+                on_complete = _complete,
+                on_error    = _error,
             )
             done.wait(timeout=10)
         return out
@@ -341,6 +355,129 @@ class TestDemCircuitBreaker:
         out = self._run(params, elevation=0.0, failed=lambda: False)
         assert "error" not in out, "海上の 0m を通信失敗と取り違えている"
         assert list(out["elevs"]) == [0.0] * params.num
+
+
+class _ScriptedDem:
+    """呼び出しの順に決めた結果を返す偽の DEM（B-370）。
+
+    `plan(i)` が i 回目の結果＝`"net"`（通信で取れた）・`"cache"`（キャッシュから
+    読めた）・`"fail"`（通信の失敗）。製品の `dem` と同じく「直前の結果」を
+    **スレッドごと**に持つ＝並列のワーカーが隣の標本の答えを読まない。失敗は
+    製品と同じ `nan`＋`network_failed()` が真。
+    """
+
+    def __init__(self, plan, n_ok: int = 0) -> None:
+        self.plan = plan
+        self.n_ok = n_ok          # 先頭で取れる回数（`first_ok` で作ったときだけ意味がある）
+        self.calls = 0
+        self._lock = threading.Lock()
+        self._local = threading.local()
+
+    @classmethod
+    def first_ok(cls, n_ok: int, source: str = "net") -> "_ScriptedDem":
+        """先頭の `n_ok` 回だけ `source` で取れ、以後は通信の失敗。"""
+        return cls(lambda i: source if i < n_ok else "fail", n_ok)
+
+    def get_elevation(self, la, lo, *_a):
+        with self._lock:
+            i = self.calls
+            self.calls += 1
+        kind = self.plan(i)
+        self._local.failed = kind == "fail"
+        self._local.answered = kind == "net"
+        return math.nan if kind == "fail" else 120.0
+
+    def network_failed(self) -> bool:
+        return bool(getattr(self._local, "failed", False))
+
+    def network_answered(self) -> bool:
+        return bool(getattr(self._local, "answered", False))
+
+
+class TestDemCircuitBreakerAfterPartialSuccess:
+    """片端だけ取れた経路でも、取れない状態が続いたら打ち切ること（B-370）。
+
+    再現の形＝送信点の付近だけキャッシュ済みで、オフラインで遠い受信点へ伸ばす。
+    以前の条件（`成功 0 件のまま失敗が敷居に達したら`）は、最初の数標本が取れた
+    だけで二度と閉じず、9 万標本を 1 つずつ通信で試し続けた（5 分を超えても
+    終わらなかった）。
+    """
+
+    def _run(self, params, fake):
+        out: dict = {}
+        done = threading.Event()
+
+        def _complete(elevs: np.ndarray) -> None:
+            out["elevs"] = elevs
+            done.set()
+
+        def _error(ex: Exception) -> None:
+            out["error"] = ex
+            done.set()
+
+        with mock.patch.object(dem, "get_elevation", fake.get_elevation), \
+             mock.patch.object(dem, "network_failed", fake.network_failed), \
+             mock.patch.object(dem, "network_answered", fake.network_answered):
+            sim.fetch_elevations(
+                params      = params,
+                on_progress = lambda v: None,
+                on_complete = _complete,
+                on_error    = _error,
+            )
+            assert done.wait(timeout=10), "取得が終わらない"
+        return out
+
+    @pytest.mark.parametrize("source", ["cache", "net"])
+    def test_a_few_early_successes_do_not_keep_the_run_going(
+            self, default_params_dict, source):
+        """先頭の数標本が取れても（キャッシュ由来でも通信由来でも）、その後の
+        失敗が続けば打ち切る。"""
+        default_params_dict["samples"] = "300"
+        params = sim.SimParams(default_params_dict)
+        fake = _ScriptedDem.first_ok(5, source)
+        out = self._run(params, fake)
+
+        assert "elevs" not in out, (
+            "取れない状態が続いているのに完走した＝打ち切りが働いていない（B-370）"
+        )
+        assert isinstance(out.get("error"), sim.DemUnreachableError), (
+            f"打ち切りの型が違う: {out.get('error')!r}"
+        )
+        limit = fake.n_ok + sim._DEM_FAILURE_LIMIT + sim._MAX_FETCH_WORKERS
+        assert fake.calls <= limit, (
+            f"打ち切りが遅すぎる（{fake.calls} 点も試した・上限 {limit}）"
+        )
+
+    def test_cached_values_between_failures_do_not_reset_the_count(
+            self, default_params_dict):
+        """キャッシュから読めた標本は、通信の失敗の連続を断ち切らない（B-370 ②）。
+
+        キャッシュ済みの地域と未取得の地域が交互に並ぶ形＝読めた標本を成功に
+        数えると失敗が「続けて」にならず、オフラインでも打ち切らない。
+        """
+        default_params_dict["samples"] = "300"
+        params = sim.SimParams(default_params_dict)
+        fake = _ScriptedDem(lambda i: "cache" if i % 2 == 0 else "fail")
+        out = self._run(params, fake)
+
+        assert isinstance(out.get("error"), sim.DemUnreachableError), (
+            "キャッシュから読めた標本が失敗の連続を断ち切っている＝打ち切らない（B-370 ②）"
+        )
+        limit = 2 * sim._DEM_FAILURE_LIMIT + 2 * sim._MAX_FETCH_WORKERS
+        assert fake.calls <= limit, (
+            f"打ち切りが遅すぎる（{fake.calls} 点も試した・上限 {limit}）"
+        )
+
+    def test_network_successes_between_failures_keep_the_run_going(
+            self, default_params_dict):
+        """通信で取れた標本は連続を断ち切る＝失敗が混じっても取れている実行は落とさない。"""
+        default_params_dict["samples"] = "300"
+        params = sim.SimParams(default_params_dict)
+        fake = _ScriptedDem(lambda i: "net" if i % 2 == 0 else "fail")
+        out = self._run(params, fake)
+
+        assert "error" not in out, f"取れているのに落ちた: {out.get('error')!r}"
+        assert len(out["elevs"]) == params.num
 
 
 # ============================================================

@@ -354,6 +354,22 @@ def network_failed() -> bool:
 _source_tile = threading.local()
 
 
+# 🔑 **直前の `get_elevation` で、通信が相手の答え（200 か 404）を得たか**（B-370 ②）。
+# 打ち切り（`simulation.fetch_elevations`）が「外へ出られている」証拠に数えるのは
+# これだけ＝キャッシュ（メモリ・ディスク）から読めた値は数えない。数えると、片端の
+# 地形がキャッシュ済みの経路をオフラインで計算したとき、読めた標本が失敗の連続を
+# 断ち切り続けて打ち切りが働かない。
+# ⚠️ 先の層が通信に失敗し、後の層をキャッシュから読めた標本は**立たない**＝値は
+# 正しいが、外へ出られている証拠ではない。記録は `_fetch_tile` が 200／404 を
+# 受けたときだけ、消すのは `get_elevation` の入口だけ（取得・キャッシュの挙動は変えない）。
+_network_answer = threading.local()
+
+
+def network_answered() -> bool:
+    """**このスレッドの直前の `get_elevation`** で、通信が 200 か 404 の答えを得たか。"""
+    return bool(getattr(_network_answer, "flag", False))
+
+
 def last_source_tile() -> "tuple | None":
     """**このスレッドの直前の `get_elevation`** が標高を返したタイルのキー
     `(layer_id, xtile, ytile)`。値を返さなかった（`nan`/`0.0`）なら None。"""
@@ -494,6 +510,7 @@ def get_elevation(
     """
     src = source if source is not None else dem_sources.GSI_DEM
     _network_trouble.flag = False
+    _network_answer.flag = False
     _source_tile.key = None
     try:
         for layer_id, zoom in src.layers:
@@ -740,6 +757,9 @@ def _fetch_tile(
             layer_id, zoom, xtile, ytile,
         )
         res = _get_session().get(url, timeout=5)
+
+        if res.status_code in (200, 404):
+            _network_answer.flag = True     # 相手が答えた（B-370 ②）
 
         if res.status_code == 200:
             img_data = res.content

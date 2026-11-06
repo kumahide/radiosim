@@ -199,13 +199,18 @@ class SimParams:
 # GSI サーバーへの過負荷とタイルキャッシュのロック競合を避けるため上限を設ける。
 _MAX_FETCH_WORKERS: int = 8
 
-# 打ち切りの敷居（B-025 ②）。**1 点も取れないまま通信の失敗がこの数に達したら
-# 中止する**。並列度と同じ数＝「最初の 1 巡が全滅した」ことを意味する。
+# 打ち切りの敷居（B-025 ②）。**最後の成功から通信の失敗がこの数だけ続いたら
+# 中止する**。並列度と同じ数＝「1 巡ぶんが続けて全滅した」ことを意味する。
 #
-# なぜ「1 点も取れないまま」を条件に足すか：数点の失敗は日常的に起こり得る
-# （タイル 1 枚のタイムアウト、混雑時の 429）。それで経路全体を落とすと、
-# 従来動いていた実行が突然エラーになる。**打ち切りたいのは「そもそも外へ出られて
-# いない」場合だけ**（Proxy 未設定・NW 断）で、その形は必ず「成功 0 件」になる。
+# なぜ「続けて」で数えるか：数点の失敗は日常的に起こり得る（タイル 1 枚の
+# タイムアウト、混雑時の 429）。それで経路全体を落とすと、従来動いていた実行が
+# 突然エラーになる。**打ち切りたいのは「外へ出られていない」場合だけ**
+# （Proxy 未設定・NW 断）で、その形は「失敗が途切れずに続く」になる。
+# ⚠️ **「成功 0 件のまま」では数えない**（B-370）＝以前はそう数えていたので、
+# 片端の地形がキャッシュ済みの経路をオフラインで計算すると、最初の数標本が
+# 取れただけで条件が二度と閉じず、残りの標本を 1 つずつ通信で試し続けた。
+# ⚠️ **連続を断つのは通信が答えた標本だけ**（`dem.network_answered`）＝キャッシュ
+# から読めた標本は数えない（読めても外へ出られている証拠にはならない）。
 #
 # ⚠️ 敷居を上げると待ち時間がそのまま伸びる＝1 点あたり最大 15 秒
 # （timeout 5 秒 × レイヤ 3 段）。8 点は並列に走るので、実測の体感は「1 巡 ＝
@@ -318,7 +323,9 @@ def fetch_elevations(
             source_tiles: list["tuple | None"] = [None] * params.num
             completed  = 0
             failures   = 0
-            successes  = 0
+            # 最後の成功からの連続失敗（B-370）＝打ち切りはこれで判断する。
+            # 失敗の総数（`failures`）は件数のログにだけ使う。
+            failure_streak = 0
             no_data    = 0         # 通信は通ったが値が無い（海上・域外・欠損画素）
             lock       = threading.Lock()
             abort      = threading.Event()
@@ -326,13 +333,15 @@ def fetch_elevations(
             worker_error: list[Exception] = []
 
             def _fetch_one(idx: int, la: float, lo: float) -> None:
-                nonlocal completed, failures, successes, no_data
+                nonlocal completed, failures, failure_streak, no_data
                 failed = True          # 何が起きても finally で参照できる初期値
+                answered = False       # 通信が答えたか（B-370 ②）
                 try:
                     raw_elevs[idx] = dem.get_elevation(la, lo, dem_source)
                     # 「取れなかった」は戻り値に出ない（0.0 は海抜 0m と同じ顔）。
                     # 直後に聞くのが唯一の判別手段＝B-025 ②。
                     failed = dem.network_failed()
+                    answered = dem.network_answered()
                     source_tiles[idx] = dem.last_source_tile()
                 except Exception as e:
                     failed = True
@@ -342,15 +351,22 @@ def fetch_elevations(
                     with lock:
                         completed += 1
                         if failed:
-                            failures  += 1
+                            failures       += 1
+                            failure_streak += 1
                         else:
-                            successes += 1
+                            # 連続を断つのは**通信が答えた**標本だけ（B-370 ②）＝
+                            # キャッシュから読めた標本は外へ出られている証拠ではない。
+                            if answered:
+                                failure_streak = 0
                             # 0.0 は `get_elevation` が値を見つけられなかった印
                             # （有効な値は 0.0 以外しか返さない）
                             if raw_elevs[idx] == 0.0:
                                 no_data += 1
                         on_progress(completed)
-                        if successes == 0 and failures >= _DEM_FAILURE_LIMIT:
+                        # ⚠️ 「成功が 0 件のまま」で数えない（B-370）＝片端がキャッシュ
+                        #   済みだと最初の数標本で条件が二度と閉じず、残りを 1 つずつ
+                        #   通信で試し続けた。
+                        if failure_streak >= _DEM_FAILURE_LIMIT:
                             abort.set()
 
             # 未取得の (idx, lat, lon) を積んだキュー＋ワーカー数ぶんの終了印。
@@ -385,9 +401,10 @@ def fetch_elevations(
 
             if abort.is_set():
                 logger.error(
-                    "Terrain fetch aborted: %d consecutive DEM failures with no "
-                    "success (check proxy settings). start=(%.6f,%.6f) end=(%.6f,%.6f)",
-                    failures, params.lat_tx, params.lon_tx,
+                    "Terrain fetch aborted: %d consecutive DEM failures since the "
+                    "last success (%d failures in total, check proxy settings). "
+                    "start=(%.6f,%.6f) end=(%.6f,%.6f)",
+                    failure_streak, failures, params.lat_tx, params.lon_tx,
                     params.lat_rx, params.lon_rx,
                 )
                 raise DemUnreachableError(dem_unreachable_message())
