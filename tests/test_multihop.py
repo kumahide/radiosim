@@ -738,6 +738,10 @@ class TestRouteSheet:
         )
         # positive control＝**同じ土俵で成果物が作れれば OK になる**こと。
         # これが無いと、他の理由（計算が落ちた等）で ERROR でも通ってしまう。
+        # ⚠️ 土俵は v1（OK／NG だけ）＝この試験の主題は成果物の欠落。v2 では前提で裏返る
+        # 区間が REVIEW になり、対照が OK を出さない（4.0 ステージ6）。
+        from core import calc_profile, simulation
+        base = simulation.with_calc_profile(base, calc_profile.V1)
         healthy = _run(tall, base, tmp_path, monkeypatch, stub_visuals=False)
         assert all(pr.status == "OK" for pr in healthy.hops) and healthy.ok, \
             "成果物が作れているのに OK にならない（この土俵が壊れている）"

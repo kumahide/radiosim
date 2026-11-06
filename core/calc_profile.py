@@ -101,6 +101,13 @@ def two_ray_needs_clear_path(profile: str) -> bool:
     return require(profile) != V1
 
 
+def reviews_assumptions(profile: str) -> bool:
+    """その方式が、前提で裏返る回線を REVIEW と言い、DEM の通信の失敗を ERROR と言うか
+    （v2・4.0 ステージ6・`core/verdict.py`）。偽（v1）＝3.9.x の方式＝基準の余裕度だけで OK／NG。
+    """
+    return require(profile) != V1
+
+
 def _digest(prefix: str, payload: bytes) -> str:
     return f"{prefix}-{hashlib.sha256(payload).hexdigest()[:_HASH_CHARS]}"
 

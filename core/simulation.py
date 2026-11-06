@@ -36,6 +36,7 @@ from core import models
 from core import output_contract
 from core import terrain_grid
 from core import units
+from core import verdict
 
 logger = logging.getLogger("radiosim")
 
@@ -758,6 +759,10 @@ def run_calculation(
         gain_rx  = params.gain_rx,
         sens     = params.sens,
     )
+    # 🔑 判定の口は 1 つ（4.0 ステージ6・判断点 ②）＝語はここで載せ、単一・バッチ・条件探索・
+    # 中継の各区間は `status` を読むだけ。
+    result.verdict = verdict.judge(terrain, h_tx, h_rx, params, _rain, result.actual_margin)
+    result.status = result.verdict.word
     return result
 
 

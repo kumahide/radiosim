@@ -146,7 +146,8 @@ class TestCorpusCoverage:
         assert {link["input"]["diff_method"] for link in LINKS} == {"single", "bullington"}
 
     def test_covers_both_verdicts(self):
-        assert {link["expected"]["status"] for link in LINKS} == {"OK", "NG"}
+        # 4.0 ステージ6＝v2 の判定は REVIEW を持つ（`core/verdict.py`）。ERROR は通信の失敗だけ。
+        assert {link["expected"]["status"] for link in LINKS} == {"OK", "NG", "REVIEW"}
 
     def test_covers_rain_on_and_off(self):
         rains = {link["input"]["rain_rate"] for link in LINKS}

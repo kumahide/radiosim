@@ -1032,7 +1032,7 @@ class TestRunCalculation:
     def test_status_ok_or_ng(self, flat_terrain, default_params_dict):
         params = sim.SimParams(default_params_dict)
         result = sim.run_calculation(flat_terrain, 30.0, 10.0, params)
-        assert result.status in ("OK", "NG")
+        assert result.status in ("OK", "NG", "REVIEW")      # v2 は REVIEW を持つ（4.0 ステージ6）
 
     def test_slant_dist_positive(self, flat_terrain, default_params_dict):
         params = sim.SimParams(default_params_dict)

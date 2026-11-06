@@ -374,13 +374,15 @@ class LinkBudgetResult:
     total_loss:    float
     p_rx:          float
     actual_margin: float
-    status:        str          # "OK" or "NG"
+    status:        str          # 判定の語＝`core/verdict.py` の語（ここでは基準の OK/NG）
     # 環境情報（表示用）
     current_k:     float
     blocked_ratio: float
     slant_dist_km: float
     diff_method:   str          # 使用した回折モデル ("single" | "bullington")
     env_type:      str          # 環境区分 ("urban"|"suburban"|"rural"|"los")
+    # 判定の中身（`verdict.Verdict`）＝`simulation.run_calculation` が `status` と一緒に載せる。
+    verdict:       "object | None" = None
 
 
 # ============================================================
