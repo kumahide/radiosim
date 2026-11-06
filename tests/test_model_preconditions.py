@@ -29,29 +29,53 @@ import pytest
 
 sys.path.insert(0, os.path.join(os.path.dirname(__file__), ".."))
 
-from core import ground_reflection
+from core import assumptions, calc_profile, ground_reflection, sensitivity
 from core import simulation as sim
 from tests.test_golden_links import LINKS, _params, _terrain
 
 
-def _build(link: dict):
+def _build(link: dict, profile: str = calc_profile.V1):
+    """コーパスの回線を組む。
+
+    🔑 **地形はコーパスの標本の位置で凍結し、方式だけ `profile` で通す**＝コーパスの標高は
+    v1 の置き方で取ってある（v2 の位置で組み直すと標高の並びと位置が食い違う）。
+    前提の述語が見るのは「方式が遮蔽をどう扱うか」なので、地形は同じでよい。
+    """
     params  = _params(link["input"])
     terrain = _terrain(link, params)
+    params.calc_profile = calc_profile.require(profile)
     result  = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
     return params, terrain, result
 
 
-def _cases(known: dict[str, str]) -> list:
-    """全回線を並べ、既知の反例だけに課題 ID つきの strict な xfail を付ける。"""
+def _envelope(params, terrain, result):
+    """本番の口（`sensitivity.compute_link_sensitivity`）が出す包絡線＝帳票 4 面と同じ呼び方。"""
+    return sensitivity.compute_link_sensitivity(
+        terrain, params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+        params.h_tx, params.h_rx, params.freq_mhz, params.veg_h, params.k_factor,
+        result.diff_method, result.env_type, params.rain_rate,
+        params.p_tx, params.gain_tx, params.gain_rx, params.sens,
+        profile=params.calc_profile,
+    ).ground_reflection
+
+
+def _cases(known: dict[str, dict[str, str]]) -> list:
+    """全回線×全方式を並べ、既知の反例だけに課題 ID つきの strict な xfail を付ける。
+
+    `known` は方式 → {回線 ID: 課題 ID}。
+    """
     ids = {link["id"] for link in LINKS}
-    stale = set(known) - ids
-    assert not stale, f"既知の反例の印が、コーパスに無い回線を指している: {sorted(stale)}"
+    for profile, per_link in known.items():
+        calc_profile.require(profile)
+        stale = set(per_link) - ids
+        assert not stale, f"既知の反例の印が、コーパスに無い回線を指している（{profile}）: {sorted(stale)}"
     return [
         pytest.param(
-            link, id=link["id"],
-            marks=([pytest.mark.xfail(strict=True, reason=known[link["id"]])]
-                   if link["id"] in known else []),
+            link, profile, id=f"{profile}-{link['id']}",
+            marks=([pytest.mark.xfail(strict=True, reason=known[profile][link["id"]])]
+                   if link["id"] in known.get(profile, {}) else []),
         )
+        for profile in calc_profile.PROFILES
         for link in LINKS
     ]
 
@@ -60,33 +84,80 @@ def _cases(known: dict[str, str]) -> list:
 # 地面反射の包絡線（core/ground_reflection.py）
 # ============================================================
 #: 前提「直接波と反射波がどちらも地形に遮られない」が成り立たないのに、
-#: 包絡線が出ている回線（2026-10-12 に数えた）。B-338 を直すと xpass になる。
+#: 包絡線が出ている回線（2026-10-12 に数えた）。
+#: 🔑 **v1 の印は外さない**＝旧プロジェクトを 3.9.x の数字で開くための旧方式の再現
+#: （B-338 は v2 の側だけで直した・2026-11-07）。v2 は印なし＝新しい反例は普通の赤。
 _ENVELOPE_ON_BLOCKED_PATH = {
-    "nagoya_grazing_900":         "B-338",
-    "short_veg_low_antenna_high": "B-338",
+    calc_profile.V1: {
+        "nagoya_grazing_900":         "B-338（v1＝3.9.x の方式の再現）",
+        "short_veg_low_antenna_high": "B-338（v1＝3.9.x の方式の再現）",
+    },
+    # v2＝印なし（2026-11-07 に印を付けて走らせ、2 本とも xpass の赤を見てから外した）。
 }
 
 
 class TestTwoRayEnvelopePreconditions:
 
-    @pytest.mark.parametrize("link", _cases(_ENVELOPE_ON_BLOCKED_PATH))
-    def test_no_envelope_on_a_blocked_path(self, link):
-        """🔴 **回折損 > 0 の回線では `compute_two_ray_envelope` が `None`** であること。
+    @pytest.mark.parametrize(("link", "profile"), _cases(_ENVELOPE_ON_BLOCKED_PATH))
+    def test_no_envelope_on_a_blocked_path(self, link, profile):
+        """🔴 **回折損 > 0 の回線では、本番の口が包絡線を出さない**こと。
 
         2 波の干渉は直接波と反射波が両方届く経路の話＝回折損が乗る（直接波が
         地形に遮られる）経路で幅を出すと、前提の成り立たない数字を製品の
         感度表に載せ、1 本の回線を見る面では「地面反射は含まない」の開示まで外す。
-        呼び方は本番（`sensitivity.compute_link_sensitivity`）と同じ引数。
+        呼ぶのは本番の口（`sensitivity.compute_link_sensitivity`）＝帳票 4 面と同じ。
         """
-        params, terrain, result = _build(link)
+        params, terrain, result = _build(link, profile)
         if result.diff_loss <= 0.0:
             return
-        envelope = ground_reflection.compute_two_ray_envelope(
-            terrain, params.h_tx, params.h_rx, params.freq_mhz)
+        envelope = _envelope(params, terrain, result)
         assert envelope is None, (
-            f"遮られた経路（回折損 {result.diff_loss:.1f} dB）に包絡線が出た: "
+            f"遮られた経路（回折損 {result.diff_loss:.1f} dB）に包絡線が出た（{profile}）: "
             f"反射点 {envelope.frac:.2f}・下側 {envelope.null_depth_db:.1f} dB"
         )
+
+    @pytest.mark.parametrize(("link", "profile"), _cases({}))
+    def test_v2_keeps_the_envelope_on_a_clear_path(self, link, profile):
+        """🔴 **見通しの回線（回折損 0）では、v1 と v2 が同じ包絡線を出す**こと。
+
+        B-338 の直しは遮られた経路だけを外す＝見通しの経路の幅まで消すと、
+        `None` を返すだけの実装でも上の試験が緑になる。
+        """
+        params, terrain, result = _build(link, profile)
+        if result.diff_loss > 0.0:
+            return
+        got  = _envelope(params, terrain, result)
+        bare = ground_reflection.compute_two_ray_envelope(
+            terrain, params.h_tx, params.h_rx, params.freq_mhz)
+        assert got == bare
+
+    def test_the_declaration_follows_the_default_profile(self):
+        """🔴 **宣言 `both_rays_unobstructed` の扱いが、製品の既定の方式と合っている**こと。
+
+        既定が v1 の間は、製品は遮られた経路にも包絡線を出す＝`OPEN` と名乗る。
+        既定を v2 へ切り替えたら、入口（`envelope_for_link`）で確かめる＝`GUARD` へ移す。
+        切り替えのコミットで宣言を直し忘れると、ここが赤になる（B-338）。
+        """
+        decl = {a.name: a for a in ground_reflection.ASSUMPTIONS}["both_rays_unobstructed"]
+        if calc_profile.two_ray_needs_clear_path(calc_profile.DEFAULT_PROFILE):
+            assert decl.handling == assumptions.GUARD
+            assert decl.enforced_by == ("envelope_for_link",)
+        else:
+            assert decl.handling == assumptions.OPEN
+            assert decl.issue == "B-338"
+
+    def test_v2_drops_the_envelope_only_on_the_known_blocked_links(self):
+        """🔴 **v1→v2 で包絡線が消える回線＝v1 の既知の反例と同じ集合**であること。
+
+        B-338 の v1→v2 の差（台帳の B-338）を数で固定する＝式や閾値が動いて、
+        消える回線が増減したら赤にして台帳の数え直しを求める。
+        """
+        dropped = set()
+        for link in LINKS:
+            env = {p: _envelope(*_build(link, p)) for p in calc_profile.PROFILES}
+            if env[calc_profile.V1] is not None and env[calc_profile.V2] is None:
+                dropped.add(link["id"])
+        assert dropped == set(_ENVELOPE_ON_BLOCKED_PATH[calc_profile.V1])
 
     def test_the_corpus_actually_exercises_the_precondition(self):
         """🔴 **述語が空振りしていない**こと＝コーパスに両方の形が揃っている。

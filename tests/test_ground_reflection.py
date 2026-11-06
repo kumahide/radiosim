@@ -73,6 +73,47 @@ def test_reflection_near_end_returns_none():
     assert env is None
 
 
+class TestEnvelopeForLink:
+    """製品の口 `envelope_for_link`＝方式で遮蔽の扱いを分ける（B-338）。"""
+
+    def _bare(self, link_id: str):
+        link = LINKS[link_id]
+        params = _params(link["input"])
+        terrain = _terrain(link, params)
+        return terrain, params, gr.compute_two_ray_envelope(
+            terrain, params.h_tx, params.h_rx, params.freq_mhz)
+
+    def test_v1_passes_through_even_on_a_blocked_path(self):
+        """v1＝3.9.x の方式＝回折損が乗っても素の式のまま出す（旧方式の再現）。"""
+        terrain, params, bare = self._bare("nagoya_grazing_900")
+        assert bare is not None
+        got = gr.envelope_for_link(terrain, params.h_tx, params.h_rx, params.freq_mhz,
+                                   diff_loss_db=10.0, profile="v1")
+        assert got == bare
+
+    def test_v2_drops_the_envelope_on_a_blocked_path(self):
+        """v2＝回折損 > 0 なら `None`（開示の言葉が残る）。"""
+        terrain, params, bare = self._bare("nagoya_grazing_900")
+        assert bare is not None
+        assert gr.envelope_for_link(terrain, params.h_tx, params.h_rx, params.freq_mhz,
+                                    diff_loss_db=0.01, profile="v2") is None
+
+    def test_v2_keeps_the_bare_envelope_on_a_clear_path(self):
+        """v2 でも見通し（回折損 0）なら素の式と同じ値。"""
+        terrain, params, bare = self._bare("tokyo_urban_2400")
+        assert bare is not None
+        got = gr.envelope_for_link(terrain, params.h_tx, params.h_rx, params.freq_mhz,
+                                   diff_loss_db=0.0, profile="v2")
+        assert got == bare
+
+    def test_unknown_profile_is_rejected(self):
+        """知らない方式を既定へ倒さない。"""
+        terrain, params, _ = self._bare("tokyo_urban_2400")
+        with pytest.raises(ValueError):
+            gr.envelope_for_link(terrain, params.h_tx, params.h_rx, params.freq_mhz,
+                                 diff_loss_db=0.0, profile="v9")
+
+
 def test_does_not_change_existing_pipeline():
     """このモジュールを import・呼び出しても既存の計算結果は1桁も動かない（回帰）。"""
     link = LINKS["tokyo_urban_2400"]

@@ -266,7 +266,9 @@ def compute_link_sensitivity(
         resolution_axis = AxisRange("resolution", baseline_margin, min(margins), max(margins))
 
     # ── 地面反射の包絡線 ────────────────────────────────────
-    envelope = ground_reflection.compute_two_ray_envelope(terrain, h_tx, h_rx, freq_mhz)
+    # 🔑 v2 は遮られた経路（基準の回折損 > 0）で出さない（B-338）＝開示の言葉が残る。
+    envelope = ground_reflection.envelope_for_link(
+        terrain, h_tx, h_rx, freq_mhz, diff_loss_db=prop.diff_loss, profile=profile)
 
     return SensitivityResult(
         baseline_margin   = baseline_margin,

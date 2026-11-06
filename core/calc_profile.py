@@ -91,6 +91,14 @@ def reads_bilinear(profile: str) -> bool:
     return require(profile) != V1
 
 
+def two_ray_needs_clear_path(profile: str) -> bool:
+    """その方式が、直接波の遮られた経路で地面反射の包絡線を出さないか（v2・B-338）。
+
+    偽（v1）＝3.4〜3.9.x の方式＝遮蔽を見ずに、腕の長さ（`MIN_ARM_M`）だけで出す。
+    """
+    return require(profile) != V1
+
+
 def _digest(prefix: str, payload: bytes) -> str:
     return f"{prefix}-{hashlib.sha256(payload).hexdigest()[:_HASH_CHARS]}"
 

@@ -21,6 +21,7 @@ from dataclasses import dataclass
 
 import numpy as np
 
+from core import calc_profile
 from core.assumptions import GUARD, OPEN, Assumption
 
 C_LIGHT: float = 299_792_458.0
@@ -54,6 +55,11 @@ CONSTRUCTIVE_GAIN_DB: float = 6.0
 ASSUMPTIONS: tuple[Assumption, ...] = (
     Assumption("arms_resolvable", "反射点から両端まで `MIN_ARM_M` 以上（端へ寄る反射点は 10m の DEM で分解できない）",
                GUARD, ("MIN_ARM_M",), "tests/test_ground_reflection.py::test_reflection_near_end_returns_none"),
+    # ⚠️ **v2 では入口で確かめる**（`envelope_for_link`＝回折損 > 0 なら出さない・B-338）が、
+    # 既定の v1 は 3.9.x の方式のまま出す＝製品の既定が守っていないので、まだ open と名乗る。
+    # 既定を v2 へ切り替えるコミットで guard（`enforced_by=("envelope_for_link",)`）へ移す
+    # ＝`tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions
+    # ::test_the_declaration_follows_the_default_profile` が、切り替えた日に赤で知らせる。
     Assumption("both_rays_unobstructed", "直接波と反射波がどちらも地形に遮られない（2 波の干渉は両方が届く経路の話）",
                OPEN, test="tests/test_model_preconditions.py::TestTwoRayEnvelopePreconditions"
                           "::test_no_envelope_on_a_blocked_path",
@@ -179,3 +185,28 @@ def compute_two_ray_envelope(
         null_depth_db        = depth_db,
         constructive_gain_db = CONSTRUCTIVE_GAIN_DB,
     )
+
+
+def envelope_for_link(
+    terrain,
+    h_tx: float,
+    h_rx: float,
+    freq_mhz: float,
+    *,
+    diff_loss_db: float,
+    profile: str,
+) -> "TwoRayEnvelope | None":
+    """製品の口＝計算の方式に従って、1 本の回線の包絡線を出すか決める（B-338）。
+
+    🔴 **v2 は直接波が地形に遮られた経路（回折損 > 0）で `None`**＝2 波の干渉は直接波と
+    反射波が両方届く経路の話。遮られた経路で幅を出すと、前提の成り立たない数字が感度表に
+    載り、1 本の回線の帳票では「地面反射は含まない」の開示まで外れる。
+    v1 は 3.4〜3.9.x の方式のまま＝遮蔽を見ない（旧プロジェクトを当時の数字で開く）。
+
+    Args:
+        diff_loss_db: 基準の回折損 [dB]（`models.calculate_propagation` の `diff_loss`）。
+        profile:      計算のプロファイル（`core.calc_profile`）。
+    """
+    if calc_profile.two_ray_needs_clear_path(profile) and diff_loss_db > 0.0:
+        return None
+    return compute_two_ray_envelope(terrain, h_tx, h_rx, freq_mhz)
