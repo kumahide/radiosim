@@ -46,6 +46,28 @@ if not exist "%RADIOSIM_PYTHON%" (
 )
 set "PY=%RADIOSIM_PYTHON%"
 
+rem ---- "link" / "link-installer" subcommands (4.0 stage 8d, ISSUES.md I-144):
+rem      the new UI ships on the python.org embeddable Python, not PyInstaller.
+rem      This is only a thin door: every check and every step lives in
+rem      buildtools\build_link.py (Japanese rationale there). It branches off
+rem      BEFORE the Tk 9 gate and the PyInstaller pass below, which belong to
+rem      the old UI only (kept until that UI is removed).
+rem      Usage: build.bat link            (portable zip)
+rem             build.bat link-installer  (Inno Setup installer)
+set "LINK_MODE="
+if /i "%~1"=="link" set "LINK_MODE=zip"
+if /i "%~1"=="link-installer" set "LINK_MODE=installer"
+if defined LINK_MODE (
+    "%PY%" "%~dp0buildtools\build_link.py" --mode %LINK_MODE%
+    if errorlevel 1 (
+        echo [ERROR] Link build failed. Check the error messages above.
+        pause
+        exit /b 1
+    )
+    endlocal
+    exit /b 0
+)
+
 set "DIST_DIR=%~dp0dist"
 set "WORK_DIR=%~dp0build"
 set "APP_DIR=%DIST_DIR%\RadioSimPro"
