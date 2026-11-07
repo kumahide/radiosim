@@ -233,6 +233,7 @@ BANDS: list[Band] = [
                     ("ground_reflection.py", "地面反射の振幅包絡線（2波干渉）",
                      "ground reflection envelope (two-ray)"),
                     ("sensitivity.py", "摂動再計算で余裕度の幅を出す", "perturbation re-run, margin range"),
+                    ("verdict.py", "判定の口（前提を振った全組み合わせ）", "verdict (every combination of assumptions)"),
                     ("residuals.py", "実測との残差を層別に集計", "measured residual, layered stats"),
                     ("disclosure.py", "帳票の開示の字（前提・適用範囲）", "report disclosure wording"),
                     ("calc_profile.py", "計算プロファイルと出所のハッシュ", "calculation profile, provenance hashes"),

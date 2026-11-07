@@ -146,6 +146,11 @@ TERRAIN_CSV_COLUMNS: tuple[str, ...] = (
 # （`core/dem.py` の不変条件）。この列が 0 より大きい経路は、地形の一部が
 # 「取れなかった穴」を含んだまま計算されている（穴は `elev_source` を持つ
 # `terrain_profile.csv` からしか特定できない＝単一シミュレーションのみ）。
+#
+# 🔁 `status` の値域が 4.0 で 4 語になった（3.0〜3.9.1 で予告どおり・規約 2）＝OK／REVIEW／NG／ERROR
+# （`summary.csv`・`hops.csv`・`scenario.csv` の 3 本・語を作るのは `core/verdict.py` だけ）。
+# OK は「評価した前提の範囲で成立」＝振っていない前提（解像度・DEM 標高の誤差）までは言わない。
+# 列名・位置・数値列（既定の前提の値）は変えていない。計算プロファイル `v1` は 3.9.x と同じ 3 語。
 SUMMARY_CSV_COLUMNS: tuple[str, ...] = (
     "id", "status", "freq_mhz", "gain_tx_dbi", "gain_rx_dbi",
     "h_tx", "h_rx",

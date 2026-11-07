@@ -928,12 +928,22 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ⚠️ **Free-text columns (`note` / `error` / `label`) are prefixed with `'` when the value starts with `=` `+` `@` and similar**, so spreadsheets do not evaluate them as formulas. Values that read as numbers (a negative margin, for instance) are written as they are.
 
+**The four `status` words** (calculation profile `v2`): the status is decided not by the single margin computed under the default assumptions, but by the margins of every combination of varied assumptions. What is varied: vegetation height (±30% of the value entered), area class (up to the neighbouring class), the diffraction method (single and Bullington) and how diffraction loss and vegetation loss are combined (their sum or the larger of the two), in every combination; plus the swing of the ground reflection (from the cancelling side to the reinforcing side), and one more run with missing land pixels of the elevation data filled from their neighbours.
+
+- `OK` = **the link closes within the assumptions evaluated** (margin ≥ 0 dB in every combination). Terrain resolution and the error of the DEM elevations are not varied, so they are not covered.
+- `NG` = margin < 0 dB in every combination.
+- `REVIEW` = **the result flips with the assumptions** (it closes under the default assumptions but fails in the worst combination, or fails under the defaults but closes in the best one). A site check is recommended.
+- `ERROR` = no status could be given (the calculation or the artifacts failed, or some terrain samples are missing because fetching them failed).
+- `margin_db` and the other numbers are always the values under the default assumptions, whatever the word.
+- Code that reads everything other than `OK` as a failure will also drop the `REVIEW` links. Treat `REVIEW` separately, as “check”.
+- Calculation profile `v1` (the 3.9.x method, used when an older project without a calculation profile is opened) decides `OK` / `NG` from the default margin alone, as 3.9.x did, and never gives `REVIEW`.
+
 #### `summary.csv` (Multiple Paths — **one row per path**)
 
 | Column | Unit | Meaning |
 | --- | --- | --- |
 | `id` | — | Path ID (the `id` of the input CSV) |
-| `status` | — | Status (`OK` / `NG` / `ERROR`) |
+| `status` | — | Status (`OK` / `REVIEW` / `NG` / `ERROR`; see “The four `status` words” above) |
 | `freq_mhz` | MHz | Frequency |
 | `gain_tx_dbi` | dBi | TX antenna gain |
 | `gain_rx_dbi` | dBi | RX antenna gain |
@@ -956,7 +966,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `samples` | points | How many terrain samples were taken for this link. It is **derived per row** from the resolution level and the path, so it differs from row to row within one CSV. Note that on "high" and "medium" the samples are **not evenly spaced** (they sit on DEM pixel edges, except when the count hits the upper limit; "low" keeps a 20 m even spacing), so **the individual spacings cannot be derived from this count** (only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`); the pixel size that actually applies is stated in the report's handling notes |
 | `horiz_m` | m | Horizontal distance between the two ends (integer). `slant_m` includes the antenna-height and elevation difference, so use this column — not `slant_m` — when you want the effective spacing (`horiz_m ÷ (samples − 1)` is still only an approximation for resolution levels whose samples are not evenly spaced) |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Legitimate sea-level (0 m) values and points where GSI simply has no data (404 — sea, outside Japan) are not counted |
-| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `calc_profile` | — | Calculation profile ID (`v2` is the 4.0 calculation method, `v1` the 3.9.x one). Empty on rows whose input could not be resolved |
 | `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ **A row may carry numbers even when `status` is `ERROR`** — the calculation went through and only the artifacts (graph, report) failed to be written. The `error` column says what is missing.
@@ -970,7 +980,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `hop_id` | — | Section ID |
 | `from` | — | Name of the waypoint the section starts at |
 | `to` | — | Name of the waypoint the section ends at |
-| `status` | — | Status of the section (`OK` / `NG` / `ERROR`) |
+| `status` | — | Status of the section (`OK` / `REVIEW` / `NG` / `ERROR`; see “The four `status` words” above) |
 | `freq_mhz` | MHz | Frequency |
 | `gain_tx_dbi` | dBi | TX antenna gain |
 | `gain_rx_dbi` | dBi | RX antenna gain |
@@ -984,10 +994,10 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `samples` | points | How many terrain samples were taken for this section. It is **derived per section** from the resolution level and the section (its length, bearing and latitude), so it differs between sections of one route |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). Each section fetches its own terrain, so this differs between sections |
-| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `calc_profile` | — | Calculation profile ID (`v2` is the 4.0 calculation method, `v1` the 3.9.x one). Empty on rows whose input could not be resolved |
 | `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
-⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status is that of the section with the smallest margin, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status takes the heaviest section status in the order `NG` > `REVIEW` > `OK`, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
 
 #### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
 
@@ -995,7 +1005,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | --- | --- | --- |
 | `label` | — | Condition name (the axis value in a sweep) |
 | `axis_value` | — | The condition name in compare mode (same value as `label`), or the axis value in a sweep |
-| `status` | — | Status (`OK` / `NG` / `ERROR`) |
+| `status` | — | Status (`OK` / `REVIEW` / `NG` / `ERROR`; see “The four `status` words” above) |
 | `rx_dbm` | dBm | RX level |
 | `margin_db` | dB | Margin |
 | `total_loss_db` | dB | Total loss |
@@ -1021,7 +1031,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `f1_depth_x` | ×F1 | F1 intrusion depth — how many F1 radii the obstruction reaches into the zone (**not capped**). When `f1_pct` reads 100, `1.00` means *exactly* full obstruction while `2.50` means it reaches 2.5 F1 radii past the line of sight |
 | `axis` | — | Name of the sweep axis (e.g. `freq_mhz`); empty in compare mode |
 | `dem_fail_pct` | % | Share of terrain samples where the DEM fetch failed because of a network problem or an unexpected error (such as a tile that could not be decoded) (**not capped**). The condition explorer fetches terrain once and holds it fixed while varying conditions, so **every row carries the same value** |
-| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `calc_profile` | — | Calculation profile ID (`v2` is the 4.0 calculation method, `v1` the 3.9.x one). Empty on rows whose input could not be resolved |
 | `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ Sweeping `freq_mhz` / `h_tx` / `h_rx` / `veg_h` still puts a same-named fixed column (e.g. `freq_mhz`) alongside `axis_value` — they mean different things: `axis_value` is the value being swept, while the fixed column is **the actual value used for every parameter in that row**.
@@ -1033,7 +1043,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `Distance_m` | m | Horizontal distance from the TX site (0.1 m resolution) |
 | `Elevation_m` | m | Elevation, raw — before the earth-curvature correction (0.01 m resolution). **A sample that could not be fetched because of a network problem or an unexpected error (such as a tile that could not be decoded) is an empty cell (NaN)** (announced in 3.2, applied in 3.3). ⚠️ **`0.0` is not always sea level** — points where GSI simply has no data (404 — sea, outside Japan) and pixels with missing data also come out as `0.0`, and their `elev_source` still names the source (`gsi_dem` and so on). The empty cell and `elev_source` mark only those failed fetches |
 | `elev_source` | — | Where this sample's elevation came from: the `source_id` of the DEM source actually used. Two values are reserved — `gsi_dem` (the built-in GSI DEM) and `unavailable` (could not be fetched; network problem or unexpected error) — and samples taken from an external source you declared carry that source's own `source_id` |
-| `calc_profile` | — | Calculation profile ID (`v1` is the 3.9.x calculation method). Empty on rows whose input could not be resolved |
+| `calc_profile` | — | Calculation profile ID (`v2` is the 4.0 calculation method, `v1` the 3.9.x one). Empty on rows whose input could not be resolved |
 | `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
 ⚠️ **The row count is exactly the number of terrain samples taken for that run** (derived from the resolution level and the path).
