@@ -3,13 +3,17 @@ tests/test_layers.py
 ====================
 **層をディレクトリで表した以上、その約束を機械が守る**（2.7 スライス H・I-058）。
 
-層は 3 つで、依存は一方向:
+層は 4 つで、依存は一方向:
 
-    views/  →  report/  →  core/
+    views/ ┐
+           ├→  report/  →  core/
+    webui/ ┘
 
 - `core/`   … 土台（計算・データ・設定）。画面も描画ライブラリも知らない。
 - `report/` … 出力を作る層（実行エンジンと成果物の生成）。ヘッドレス。
-- `views/`  … 画面（tkinter）。
+- `views/`  … 旧画面（tkinter）。
+- `webui/`  … 新しい画面（ローカルの HTTP と Edge・4.0 ステージ8）。`views/` と同じ位で、
+  2 つの画面は互いに引かない。
 - `main.py` … アプリの入口＝層ではない（起動して views を組み立てるだけ）。
 
 🔑 **これが「層をディレクトリにした」ことの中身**＝ディレクトリを作っただけでは
@@ -34,8 +38,10 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 # 下から順。数字が大きい層は小さい層に依存してよい（逆は不可）。
-_RANK = {"core": 0, "report": 1, "views": 2}
+_RANK = {"core": 0, "report": 1, "views": 2, "webui": 2}
 _LAYERS = tuple(_RANK)
+# 同じ位の画面の層（旧画面 `views/` と新しい画面 `webui/`）＝互いに引かない。
+_SCREEN_LAYERS = ("views", "webui")
 
 
 def _modules() -> dict[str, Path]:
@@ -136,6 +142,25 @@ def test_dependencies_flow_one_way(module):
         f"{module} が上の層を引いている: {upward}。"
         "依存は views → report → core の一方向で、2 つの層から使われるものは"
         "「下」へ置く（`shared/` のような箱は作らない）。"
+    )
+
+
+@pytest.mark.parametrize(
+    "module", sorted(m for m in _modules() if _layer_of(m) in _SCREEN_LAYERS))
+def test_the_two_screens_do_not_import_each_other(module):
+    """`views/`（旧画面）と `webui/`（新しい画面）は互いに引かない（4.0 ステージ8）。
+
+    ⚠️ 同じ位どうしは①の「上向き」の検査を通ってしまう＝ここで別に見る。旧画面は
+    4.x で畳む（I-144）ので、新しい画面が旧画面の名前を 1 つでも知ると畳めなくなる。
+    """
+    layer = _layer_of(module)
+    other = sorted(
+        dep for dep in _all_imports(_modules()[module])
+        if _layer_of(dep) in _SCREEN_LAYERS and _layer_of(dep) != layer
+    )
+    assert not other, (
+        f"{module} がもう一方の画面の層を引いている: {other}。"
+        "2 つの画面で使うものは `core/` か `report/` へ下ろす。"
     )
 
 

@@ -251,7 +251,7 @@ class TestEveryFaceThatShowsTheRatioAlsoShowsTheDepth:
     def _sources():
         root = os.path.join(os.path.dirname(__file__), "..")
         out = []
-        for layer in ("core", "report", "views"):
+        for layer in ("core", "report", "views", "webui"):
             d = os.path.join(root, layer)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".py") or name == "units.py":
@@ -387,7 +387,7 @@ class TestNobodyFormatsDbByHand:
     def _sources():
         root = os.path.join(os.path.dirname(__file__), "..")
         out = []
-        for layer in ("core", "report", "views"):
+        for layer in ("core", "report", "views", "webui"):
             d = os.path.join(root, layer)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".py") or name == "units.py":

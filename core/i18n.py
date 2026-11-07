@@ -838,6 +838,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "err_diff_method":      "diff_method must be one of",
         "err_label_start":      "TX Point",
         "err_label_end":        "RX Point",
+        # 新しい画面（webui・4.0 ステージ8）
+        "webui_computing":      "Updating the verdict…",
+        "webui_input":          "Waiting for input",
+        "webui_no_terrain":     "No terrain",
+        "webui_error":          "Could not calculate",
+        "webui_profile_later":  "The terrain profile will appear here.",
+        "webui_no_edge":        "Microsoft Edge was not found. The new screen opens in Edge.",
 
         # ===== Validation (batch) =====
         "verr_empty":           "Path list is empty.",
@@ -1635,6 +1642,13 @@ _STRINGS: dict[str, dict[str, str]] = {
         "err_diff_method":      "diff_method は次のいずれかです",
         "err_label_start":      "送信点",
         "err_label_end":        "受信点",
+        # 新しい画面（webui・4.0 ステージ8）
+        "webui_computing":      "判定を更新しています…",
+        "webui_input":          "入力待ち",
+        "webui_no_terrain":     "地形なし",
+        "webui_error":          "計算できませんでした",
+        "webui_profile_later":  "ここに地形の断面図が出ます。",
+        "webui_no_edge":        "Microsoft Edge が見つかりません。新しい画面は Edge で開きます。",
 
         # ===== Validation (batch) =====
         "verr_empty":           "経路リストが空です。",

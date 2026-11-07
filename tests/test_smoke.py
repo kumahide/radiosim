@@ -41,6 +41,7 @@ _HEADLESS_SAFE = (
     ["main"]
     + _layer_modules("core")
     + _layer_modules("report")
+    + _layer_modules("webui")
     + [
         "views.launcher", "views.batch_builder", "views.scenario",
         "views.map_window", "views.multihop", "views.dialogs",
@@ -85,7 +86,8 @@ def test_gui_module_imports(mod):
 # この継ぎ目は従来「規約」でしか守られていなかったので、Tier-0 ゲートに昇格する。
 # 本テストプロセス自体は上のスモークで views/tkinter を import 済みのため、
 # 素の子プロセスで検証する（テスト実行順に依存しない）。
-_HEADLESS_CORE = _layer_modules("core") + _layer_modules("report")
+# 新しい画面（`webui/`・4.0 ステージ8）も tkinter を引かない（I-144 の土台）。
+_HEADLESS_CORE = _layer_modules("core") + _layer_modules("report") + _layer_modules("webui")
 
 
 def test_core_imports_do_not_pull_tkinter():

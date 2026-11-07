@@ -231,7 +231,7 @@ class TestTheVocabulary:
         `FIX_KEYS` に足す。ここが縛るのは「足したのに宣言し忘れる」形。
         """
         used = set()
-        for folder in ("views", "core", "report"):
+        for folder in ("views", "webui", "core", "report"):
             for path in sorted((REPO / folder).glob("*.py")):
                 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                     key = _i18n_key(node) if isinstance(node, ast.Call) else None
@@ -243,7 +243,7 @@ class TestTheVocabulary:
     def test_every_fix_key_is_actually_used(self):
         """使われない一手を並べない（語彙は在庫ではなく実際の選択肢）。"""
         used = set()
-        for folder in ("views", "core", "report"):
+        for folder in ("views", "webui", "core", "report"):
             for path in sorted((REPO / folder).glob("*.py")):
                 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                     key = _i18n_key(node) if isinstance(node, ast.Call) else None

@@ -34,6 +34,8 @@ skips = ["B101"]
 # 以前はモジュール名を 19 件手で並べており、実際に一度腐った＝2.5a2 で
 # report.py を 3 分割したとき "report" が残り、出力層がまるごと計測外だった。
 # **ディレクトリ表現なら、割っても増やしても追従の作業が発生しない。**
+# ⚠️ `webui/`（新しい画面・4.0 ステージ8）は入れない＝床 85 % は持ち出す資産の層の値で、
+#    webui の起動側（Edge・`__main__`）は CI で走らない。webui の約束は `tests/test_webui.py`。
 source = ["core", "report"]
 omit   = ["views/*", "main.py"]   # GUI層（tkinter）はカバレッジ対象外
 

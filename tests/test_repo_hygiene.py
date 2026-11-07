@@ -300,7 +300,7 @@ _LINE_LIMIT_EXEMPT = {
 }
 
 # アプリの層（2.7 スライス H・I-058）。直下は入口（main.py）だけ。
-_LAYERS = ("core", "report", "views")
+_LAYERS = ("core", "report", "views", "webui")
 
 
 # ============================================================
@@ -480,7 +480,7 @@ def test_pyright_finds_no_type_errors_in_app_modules():
     targets = _ci_pyright_targets()
     # 3 層とも入っていること。**件数ではなく層で見る**（2.7 スライス H で対象が
     # ファイル 43 件からディレクトリ 3 つ＋α になった＝件数の下限は意味を失った）。
-    missing = {"core", "report", "views"} - set(targets)
+    missing = set(_LAYERS) - set(targets)
     assert not missing, (
         f"ci.yml の pyright が層を取りこぼしている: {sorted(missing)}（対象={targets}）"
     )
@@ -525,6 +525,8 @@ _CONFIG_READ_ALLOWED = {
     "core/config.py":     "定義そのもの",
     "main.py":            "起動時の読み込み（アプリの入口）",
     "views/launcher.py":  "凍結の出所＝ランチャーが読んで子ウィンドウへ渡す",
+    "webui/__main__.py":  "新しい画面の入口＝起動時に 1 度読んで AppState とサーバーへ渡す"
+                          "（4.0 ステージ8）",
     "core/env_facts.py":  "環境事実の収集層＝いまの設定そのものを事実として読む"
                           "（画面の凍結一貫性とは別の関心・3.2 ステージ5）",
 }

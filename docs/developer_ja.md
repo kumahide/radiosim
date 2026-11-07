@@ -297,6 +297,13 @@ radiosim/
 │   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
 │   └── batch_run.py      # バッチの実行と進捗（Mixin）
+├── webui/                # 新しい画面（ローカルの HTTP と Edge のアプリモード・4.0 ステージ8）。views と同じ位で互いに引かない
+│   ├── __main__.py       # `python -m webui` の入口（truststore→core の順・設定は読むだけ）
+│   ├── state.py          # 入力の集合と見出し（古い版の結果を今の判定に見せない）
+│   ├── worker.py         # 計算のスレッド 1 本（地形の取得は取り消せる）
+│   ├── server.py         # 127.0.0.1 だけで待つ HTTP（起動ごとの鍵・Host の検査・静的ファイル）
+│   ├── edge.py           # Edge を専用プロファイルのアプリモードで開く
+│   └── static/           # 画面の殻（HTML・JS・CSS・Leaflet）
 │
 │   # 本体とは別のアプリはここ。`apps/*` が引けるのは core/ だけ（アプリ同士は引かない）。
 │   # 本体（main.py と上の 3 層）はいまのところ直下に置いたまま。
@@ -393,6 +400,7 @@ radiosim/
     ├── test_write_locations.py
     ├── test_legacy_leftover_notice.py
     ├── test_smoke.py
+    ├── test_webui.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_experiments_probes.py
@@ -1273,6 +1281,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_write_locations.py` | OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判定（`portable.txt`）・Known Folder 解決の段階的フォールバック（API失敗→環境変数→既定）・旧配置からの移行（コピーのみ・旧は残す・新は上書きしない・キャッシュは移行対象外）（3.1） |
 | `test_legacy_leftover_notice.py` | 旧配置に残ったデータ（設定・過去の結果）を起動時に案内する画面側の配線（3.2）。`config.legacy_leftovers()` の検出結果が空なら何も出さない・見つかった分だけ本文に列挙する・見つかっていない側は本文に出さないことを見る |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
+| `test_webui.py`          | 新しい画面（`webui/`）の約束（見出しは今の版の入力の結果だけ・知らない入力の鍵を受けない・地形に効く欄で取得中の地形を取り消す・Host 違いと鍵なしは 403・静的ファイルの外へ出ない） |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
 | `test_experiments_probes.py` | 探針（`experiments/`）が製品と一緒に動いているかの静的ゲート。AST で拾った `core`/`report` の呼び出しがいまのシグネチャに `bind` できること・既定のコンソールで出せない字を`print` する探針が `sys.stdout` を作り直していること。⚠️ **探針は実行しない**（引数・データ・ネットワーク・実機の前提がまちまちで CI に載らない）＝**読むだけ**。照合できた呼び出しの数も数え、黙って通る経路を塞ぐ |

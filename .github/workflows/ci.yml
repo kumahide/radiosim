@@ -57,7 +57,7 @@ jobs:
       - name: Pyright (type check, app modules)
         run: >-
           pyright
-          core report views main.py
+          core report views webui main.py
           buildtools/check_bundle_imports.py
           buildtools/dev_check.py
 

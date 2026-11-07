@@ -196,7 +196,7 @@ class TestAllFlowsUseResolver:
         offenders = []
         # 直下＋3 層すべてを見る（2.7 スライス H で層がディレクトリになった）。
         paths = sorted(pathlib.Path(REPO_ROOT).glob("*.py"))
-        for layer in ("core", "report", "views"):
+        for layer in ("core", "report", "views", "webui"):
             paths += sorted(pathlib.Path(REPO_ROOT, layer).glob("*.py"))
         for path in paths:
             src = path.read_text(encoding="utf-8")
