@@ -330,10 +330,15 @@ def write_zip(root: str, zip_path: str) -> None:
                 zf.write(full, os.path.relpath(full, base))
 
 
+def installer_command(iscc: str, dist_dir: str) -> list[str]:
+    """ISCC へ渡す引数。木の場所（`LinkDir`）も渡す＝`--dist` を変えても同梱元と出力先がずれない。"""
+    return [iscc, f"/DAppVersion={version.APP_VERSION}",
+            f"/DLinkDir={os.path.join(dist_dir, APP_DIR_NAME)}",
+            f"/O{dist_dir}", os.path.join(REPO, "installer", "link.iss")]
+
+
 def build_installer(dist_dir: str, iscc: str) -> str:
-    iss = os.path.join(REPO, "installer", "link.iss")
-    subprocess.run([iscc, f"/DAppVersion={version.APP_VERSION}",  # nosec B603 ─ 宣言の ISCC
-                    f"/O{dist_dir}", iss], check=True)
+    subprocess.run(installer_command(iscc, dist_dir), check=True)  # nosec B603 ─ 宣言の ISCC
     setup = os.path.join(dist_dir, f"{APP_DIR_NAME}-Setup-{version.APP_VERSION}.exe")
     if not os.path.isfile(setup):
         raise BuildError(f"ISCC は成功を返したが、インストーラが無い: {setup}")

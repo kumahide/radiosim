@@ -111,6 +111,24 @@ class TestVersionAndFiles:
         assert bl.LAUNCHER_CMD.isascii()
 
 
+class TestInstallerCommand:
+    def test_tree_and_output_follow_the_same_dist(self, tmp_path):
+        """同梱元（`LinkDir`）と出力先（`/O`）が同じ `--dist` から出る＝`--dist` を変えてもずれない。"""
+        cmd = bl.installer_command("ISCC.exe", str(tmp_path))
+        assert f"/DLinkDir={tmp_path / bl.APP_DIR_NAME}" in cmd
+        assert f"/O{tmp_path}" in cmd
+        assert os.path.normcase(os.path.normpath(cmd[-1])) == os.path.normcase(
+            os.path.normpath(os.path.join(_ROOT, "installer", "link.iss")))
+
+    def test_iss_reads_the_tree_it_is_given(self):
+        """`link.iss` は `LinkDir` から同梱し、版の 4 数字もその木の `version.txt` から読む。"""
+        with open(os.path.join(_ROOT, "installer", "link.iss"), encoding="utf-8-sig") as f:
+            iss = f.read()
+        assert 'Source: "{#LinkDir}\\*"' in iss
+        assert '#define VerFile AddBackslash(LinkDir) + "version.txt"' in iss
+        assert f"OutputBaseFilename={bl.APP_DIR_NAME}-Setup-{{#AppVersion}}" in iss
+
+
 class TestBuildBatDoor:
     def _bat(self) -> str:
         with open(os.path.join(_ROOT, "build.bat"), encoding="ascii") as f:
