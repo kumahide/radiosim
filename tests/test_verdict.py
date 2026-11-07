@@ -144,6 +144,76 @@ def test_every_layer_maps_each_word_to_the_same_colour_key(word):
     assert len(set(report_common.VERDICT_CLASS.values())) == len(verdict.WORDS)
 
 
+class TestDisclosure:
+    """帳票の開示が判定の語の意味と裏返る前提を名乗る（`disclosure.verdict_lines`・判断点 ①）。"""
+
+    def _link(self, word):
+        return next(i for i in LINKS if _run(i).status == word)
+
+    def _review_link(self):
+        return self._link("REVIEW")
+
+    def test_v1_adds_nothing(self):
+        """v1 は 3.9 の帳票のまま＝前提を振っていないのに「評価した前提」と書かない。"""
+        from core import disclosure
+        r = _run("nara_ikoma", calc_profile.V1)
+        assert disclosure.verdict_lines([r.verdict]) == []
+        assert disclosure.handling_text((), verdicts=[r.verdict]) == disclosure.handling_text(())
+
+    def test_ok_names_what_was_and_was_not_varied(self):
+        from core import disclosure, i18n
+        from core.sensitivity import VEG_PERTURB_FRAC
+        lines = disclosure.verdict_lines([_run(self._link("OK")).verdict])
+        assert len(lines) == 1, "OK だけなら裏返る前提の行は出ない"
+        assert lines[0] == i18n.t("html_verdict_scope").format(pct=f"{VEG_PERTURB_FRAC * 100:g}")
+        assert "{" not in lines[0]
+
+    def test_review_lists_the_flipping_assumptions_on_every_face(self, tmp_path):
+        from core import disclosure, i18n
+        from report import report_common
+        link_id = self._review_link()
+        r = _run(link_id)
+        names = [i18n.t(f"html_verdict_axis_{a}") for a in r.verdict.flipped_by]
+        lines = disclosure.verdict_lines([r.verdict])
+        assert all(n in lines[1] for n in names) and "{" not in lines[1]
+        html = report_common.handling_section_html((), None, verdicts=[r.verdict])
+        assert all(n in html for n in names)
+        p = _params(LINKS[link_id]["input"])
+        sim._save_report(r, p, p.h_tx, p.h_rx, str(tmp_path))
+        text = (tmp_path / "report.txt").read_text(encoding="utf-8")
+        assert lines[1] in text
+
+    def test_several_rows_count_the_review_rows(self):
+        from core import disclosure, i18n
+        ok = _run(self._link("OK")).verdict
+        rev = _run(self._review_link()).verdict
+        lines = disclosure.verdict_lines([ok, rev, rev])
+        assert lines[1].startswith(i18n.t("html_verdict_flipped_n").split("{n}")[0])
+        assert "2" in lines[1]
+
+    def test_dem_samples_at_0m_are_counted(self):
+        """404 の点（0 m のまま使う）と無効画素の点を、行をまたいで足して名乗る。"""
+        from core import disclosure, i18n
+        link = LINKS["morioka_iwate"]
+        status = np.zeros(len(link["raw_elevs"]), dtype=np.int8)
+        status[3:6] = int(dem.ElevStatus.INVALID_PIXEL)
+        status[-1] = int(dem.ElevStatus.NO_TILE)
+        v = _run("morioka_iwate", status=status).verdict
+        lines = disclosure.verdict_lines([v, v])
+        assert i18n.t("html_verdict_no_tile").format(n=2) in lines
+        assert i18n.t("html_verdict_invalid_pixel").format(n=6) in lines
+        assert not any("html_verdict" in line for line in disclosure.verdict_lines([v]))
+
+    def test_every_report_face_passes_the_verdicts(self):
+        """🔒 面を足しても判定を渡し忘れない＝帳票の 4 面と report.txt。"""
+        root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        for rel in ("report/report_path.py", "report/report_summary.py",
+                    "report/report_multihop.py", "report/report_scenario.py",
+                    "core/simulation.py"):
+            with open(os.path.join(root, rel), encoding="utf-8") as f:
+                assert "verdicts=" in f.read(), rel
+
+
 def test_scenario_and_params_are_not_mutated():
     link = LINKS["nara_ikoma"]
     p = _params(link["input"])

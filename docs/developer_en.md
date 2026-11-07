@@ -837,7 +837,8 @@ FSPL       = 20×log₁₀(d) + 20×log₁₀(f) - 147.55   [dB]
 Total Loss = FSPL + Diff + Veg + Env + Rain + Gas   [dB]
 P_rx       = EIRP + G_rx - Total Loss               [dBm]
 Act Margin = P_rx - Sensitivity                     [dB]
-Status     = OK (≥ 0 dB) / NG (< 0 dB)
+Status     = OK (≥ 0 dB) / NG (< 0 dB)                 ← v1 (the 3.9 method)
+             v2: REVIEW if varying the assumptions flips it; ERROR if any terrain sample failed to download
 ```
 
 ---

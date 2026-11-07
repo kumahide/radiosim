@@ -95,7 +95,7 @@ def route_sheet_css() -> str:
 .sheet.multihop table.hops td.c-missing{color:""" + map_graphics.STATUS_HEX["ERROR"] + """;text-align:center}
 /* 全体判定を決めているホップ＝**一番苦しい区間**を目で拾えるようにする
    （次の一手はここに打つので、表の中で最初に見つかるべき行）。
-   🔴 **行の地は塗らない**（B-207）＝地の色は判定（OK / NG / ERROR）の印で、
+   🔴 **行の地は塗らない**（B-207）＝地の色は判定（OK / REVIEW / NG / ERROR）の印で、
    以前ここで塗っていた薄黄はバッチの台帳の「NG」と同じ色だった＝全区間 OK の
    経路で OK の行を NG と読ませていた。⇒ **行の左端の太線**（判定の色と
    ぶつからない見出しの色）で示し、表の下の凡例（`mh_worst_mark_note`）で言う。
@@ -394,6 +394,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
                 if pr.result is not None and pr.params is not None
             ),
             provenance=sim.provenance_line((pr.params, pr.terrain) for pr in run.hops),
+            verdicts=(pr.result.verdict for pr in run.hops if pr.result is not None),
         )
         + report_common.page_footer(i18n.t("mh_mode_label"))
         + '</section>'

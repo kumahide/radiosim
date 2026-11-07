@@ -981,6 +981,7 @@ def _save_report(
             ),
             dem_source_ids=params.dem_source,
             provenance=provenance_line([(params, terrain)]),
+            verdicts=[result.verdict],
         )
     )
     path = os.path.join(save_dir, "report.txt")

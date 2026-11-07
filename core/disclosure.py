@@ -26,6 +26,8 @@ from core import dem_sources
 from core import i18n
 from core import models
 from core import terrain_grid
+from core import verdict
+from core.sensitivity import VEG_PERTURB_FRAC
 
 
 def _m(value: float) -> str:
@@ -215,7 +217,42 @@ def provenance_line(calc_profiles, input_hashes, terrain_hashes) -> str:
     return " / ".join(fields)
 
 
-def handling_text(note_keys, dem_source_ids=None, provenance="") -> str:
+def verdict_lines(verdicts) -> list[str]:
+    """判定の語の意味と、裏返る前提・DEM の事情の点数（4.0 ステージ6・判断点 ①）。
+
+    🔑 **OK は「評価した前提の範囲で成立」**＝振った前提と振っていない前提（解像度
+    〔B-231〕・DEM 標高の誤差〔B-232〕）を帳票に名乗る。受け取った人は語の定義を見ない。
+    振り幅の数字は `core/verdict.py` が使う定数（`VEG_PERTURB_FRAC`）を差し込む。
+
+    Args:
+        verdicts: 帳票に載る行の `verdict.Verdict`（`None` は数えない）。前提を振って
+            いない行（v1）だけなら空＝3.9 の帳票のまま。
+
+    Returns:
+        1 行ずつの素の字（刻印の列の頭に並べる）。
+    """
+    vs = [v for v in verdicts if v is not None and v.reviewed]
+    if not vs:
+        return []
+    lines = [i18n.t("html_verdict_scope").format(pct=f"{VEG_PERTURB_FRAC * 100:g}")]
+    reviews = [v for v in vs if v.word == verdict.REVIEW]
+    if reviews:
+        names = set().union(*(v.flipped_by for v in reviews))
+        listed = "、".join if i18n.current_lang() == "ja" else ", ".join
+        text = listed(i18n.t(f"html_verdict_axis_{a}") for a in verdict.AXES if a in names)
+        lines.append(
+            i18n.t("html_verdict_flipped").format(list=text) if len(vs) == 1
+            else i18n.t("html_verdict_flipped_n").format(list=text, n=len(reviews)))
+    no_tile = sum(v.dem_no_tile for v in vs)
+    if no_tile:
+        lines.append(i18n.t("html_verdict_no_tile").format(n=no_tile))
+    invalid = sum(v.dem_invalid_pixel for v in vs)
+    if invalid:
+        lines.append(i18n.t("html_verdict_invalid_pixel").format(n=invalid))
+    return lines
+
+
+def handling_text(note_keys, dem_source_ids=None, provenance="", verdicts=()) -> str:
     """「結果の取扱に関する補足」セクションの**素のテキスト**（`report.txt` 用）。
 
     見出しは英字の角括弧＝`report.txt` の他のセクション（`[LINK BUDGET]` 等）と同じ字面に
@@ -225,8 +262,10 @@ def handling_text(note_keys, dem_source_ids=None, provenance="") -> str:
         dem_source_ids: `data_source_line()` へそのまま渡す（B-216）。渡さないと
             国土地理院と表示される。
         provenance: `provenance_line()` の 1 行。空なら出さない。
+        verdicts: `verdict_lines()` へ渡す判定（刻印の列の頭に並ぶ）。
     """
-    body = "\n".join(f"- {line}" for line in handling_lines(note_keys))
+    body = "\n".join(
+        f"- {line}" for line in verdict_lines(verdicts) + handling_lines(note_keys))
     return (
         "[NOTES ON HANDLING THIS RESULT]\n"
         f"{i18n.t('html_handling_title')}\n"

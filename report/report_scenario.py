@@ -418,6 +418,7 @@ def scenario_sheet_html(run: scn.ScenarioRun, project_name: str = "",
             [_point_input_hash(base, p) for p in run.points],
             [sim.terrain_hash(base, run.terrain)],
         ),
+        verdicts=(p.result.verdict for p in run.points if p.result is not None),
     )
 
     return f"""<section class="sheet scenario">

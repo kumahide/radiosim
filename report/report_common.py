@@ -753,6 +753,7 @@ def handling_section_html(
     sens_note: str = "",
     dem_source_ids=None,
     provenance: str = "",
+    verdicts=(),
 ) -> str:
     """「結果の取扱に関する補足」セクションの HTML 断片を返す（**4 種のシート共通**）。
 
@@ -771,10 +772,12 @@ def handling_section_html(
             固定文言だった名残の既定値）＝呼び出し側は必ず渡す。
         provenance: `disclosure.provenance_line()` の 1 行（計算プロファイルと 2 つの
             ハッシュ）。空なら出さない＝**帳票の面は必ず渡す**（`tests/test_calc_profile.py`）。
+        verdicts: この面の行の `verdict.Verdict`＝判定の語の意味と裏返る前提を列の頭に
+            並べる（`disclosure.verdict_lines`・4.0 ステージ6）。**帳票の面は必ず渡す**。
     """
     items = "".join(
         f"<li>{_html.escape(keep_unit_with_value(line))}</li>"
-        for line in disclosure.handling_lines(note_keys)
+        for line in disclosure.verdict_lines(verdicts) + disclosure.handling_lines(note_keys)
     )
     return (
         '<section class="handling">'

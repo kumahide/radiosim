@@ -410,6 +410,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
             if pr.result is not None and pr.params is not None
         ),
         provenance=sim.provenance_line((pr.params, pr.terrain) for pr in results),
+        verdicts=(pr.result.verdict for pr in results if pr.result is not None),
     )
 
     # 実測残差の層別表（3.4 ステージ6）＝実測値（`meas_dbm`）を 1 行でも入力したバッチ

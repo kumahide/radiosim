@@ -771,7 +771,8 @@ FSPL       = 20×log₁₀(d) + 20×log₁₀(f) - 147.55   [dB]
 Total Loss = FSPL + Diff + Veg + Env + Rain + Gas   [dB]
 P_rx       = EIRP + G_rx - Total Loss               [dBm]
 Act Margin = P_rx - Sensitivity                     [dB]
-Status     = OK (≥ 0 dB) / NG (< 0 dB)
+Status     = OK (≥ 0 dB) / NG (< 0 dB)                 ← v1 (the 3.9 method)
+             v2: REVIEW if varying the assumptions flips it; ERROR if any terrain sample failed to download
 ```
 
 ---
@@ -890,6 +891,7 @@ Saves to `results/batch_YYYYMMDD_HHMMSS/`:
   - **Ground reflection (two-ray interference)**: on a single-path report, when the specular point sits far enough from both ends for the DEM to estimate a spread, this note is replaced by a **range row** further down the same section (otherwise the "not modelled" note stays). Multiple Paths, relay, and condition-explorer reports always keep the "not modelled" note, since they cover more than one link at once. ⚠️ **Known limitation**: the range can also appear on paths where terrain blocks the direct wave (paths that carry diffraction loss) — the reflection point then lands on top of a ridge or levee, or on the flat ground in front of it. Two-ray interference only applies when both the direct and the reflected wave arrive, so on a link with diffraction loss, do not rely on this row; read it as "not modelled". This is planned to be fixed in the successor, RadioSim Link 1.0 (not in 3.x).
 - **Present when they apply**: the `Bullington` model reads low where two or more ridges are well separated, and the spherical-earth term is not included (on a single-path report, replaced by a range row further down the same section when that spread is available); rain or gaseous attenuation was **out of range and taken as 0 dB** (below 1 GHz); the vegetation coefficient was evaluated **outside its 1–6 GHz definition**; on links **with a vegetation height entered**, that where terrain blocks the path the diffraction loss and the vegetation attenuation are both charged (the total reads high — the safe side; also replaced by a range row further down when available). ⚠️ **A link with no rain assumed gets no rain note** — limits of things that were not calculated are not listed, and a link with no vegetation gets no vegetation note.
 - **Reports that hold several links on one sheet** (Multiple Paths, relay, explorer) show every note that applies to **at least one** of them.
+- **What the verdict words mean** (the 4.0 method — when any row is v2; at the top of the section): "OK and NG come out the same for every combination of the assumptions evaluated (vegetation height ±30%, environment class ±1 step, diffraction model, diffraction + vegetation combination, ground reflection, refilled invalid DEM pixels); REVIEW flips within them. Terrain resolution and DEM elevation error are not varied." When there are REVIEW rows, the **assumptions that flip them** are named; samples with no DEM tile (sea or outside Japan) or on invalid DEM pixels are counted as **computed at 0 m**.
 - A **calibration profile** field is shown. It always reads **not applied**: **results are not corrected with measured values**. The residuals table below only lists the difference between predicted and measured levels; it does not calibrate the model.
 - **Sensitivity range** (from 3.4): further down the same section, the margin's range of movement under uncertain inputs (see below).
 

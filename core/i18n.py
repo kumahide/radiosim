@@ -574,6 +574,26 @@ _STRINGS: dict[str, dict[str, str]] = {
         # ⚠️ 「実測と比べていない」とは書かない＝3.4 の実測残差表が同じシートに
         # 載る（B-244）。欠けているのは**実測による補正**のほう。
         "html_calib_none":      "not applied (not corrected with measurements)",
+        # 判定の語の意味（4.0 ステージ6・判断点 ①＝`disclosure.verdict_lines`）。
+        # 🔑 OK は「評価した前提の範囲で成立」＝振っていない前提も名乗る（B-231・B-232）。
+        "html_verdict_scope":
+            "Verdict: OK and NG come out the same for every combination of the assumptions "
+            "evaluated (vegetation height ±{pct}%, environment class ±1 step, diffraction "
+            "model, diffraction + vegetation combination, ground reflection, refilled invalid "
+            "DEM pixels); REVIEW flips within them — check on site. Terrain resolution and "
+            "DEM elevation error are not varied.",
+        "html_verdict_flipped":   "Assumptions that flip this REVIEW: {list}.",
+        "html_verdict_flipped_n": "Assumptions that flip the REVIEW rows ({n}): {list}.",
+        "html_verdict_axis_veg_h":             "vegetation height",
+        "html_verdict_axis_env_type":          "environment class",
+        "html_verdict_axis_diff_method":       "diffraction model",
+        "html_verdict_axis_diff_veg_compose":  "diffraction + vegetation combination",
+        "html_verdict_axis_ground_reflection": "ground reflection",
+        "html_verdict_axis_dem_invalid_pixel": "invalid DEM pixels",
+        "html_verdict_no_tile":
+            "{n} samples with no DEM tile (sea or outside Japan) were computed at 0 m.",
+        "html_verdict_invalid_pixel":
+            "{n} samples on invalid DEM pixels were computed at 0 m.",
 
         # ===== 感度表（3.4 ステージ6） =====
         # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
@@ -790,7 +810,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_worst_hop":         "Weakest section",
         "mh_section":           "Section",
         "mh_heights":           "Heights (TX / RX, m)",
-        "mh_worst_mark_note":   "The row with a thick bar at its left edge is the weakest section (the one that decides the overall verdict). Row shading shows each section's verdict (OK / NG / ERROR).",
+        "mh_worst_mark_note":   "The row with a thick bar at its left edge is the weakest section (the one that decides the overall verdict). Row shading shows each section's verdict (OK / REVIEW / NG / ERROR).",
         "mh_regenerative_note": "Each section is an independent link budget (regenerative relay): losses are not added across sections, and the overall verdict is the weakest section. If any section could not be judged (ERROR), the overall verdict is ERROR as well — not NG, which means the link does not close. Passive reflectors are out of scope.",
         "mh_err_too_few":       "A relay path needs at least 2 waypoints (TX and RX).",
         "mh_err_too_many":      "Too many sections (max {max}).",
@@ -1374,6 +1394,23 @@ _STRINGS: dict[str, dict[str, str]] = {
             "回折損が増えるため、「高」との実測差は最大 +407%",
         "html_calib_profile":   "較正プロファイル",
         "html_calib_none":      "未適用（実測による補正なし）",
+        "html_verdict_scope":
+            "判定：OK・NG は、評価した前提（植生高 ±{pct}%・環境区分 ±1 段・回折モデル・"
+            "回折損と植生減衰の合算・地面反射・DEM の無効画素の埋め直し）のどの組み合わせでも"
+            "同じ側に出た判定。REVIEW はその中で裏返る（現地確認）。地形の解像度と DEM 標高の"
+            "誤差は振っていない",
+        "html_verdict_flipped":   "この REVIEW を裏返す前提：{list}",
+        "html_verdict_flipped_n": "REVIEW の行（{n} 件）を裏返す前提：{list}",
+        "html_verdict_axis_veg_h":             "植生高",
+        "html_verdict_axis_env_type":          "環境区分",
+        "html_verdict_axis_diff_method":       "回折モデル",
+        "html_verdict_axis_diff_veg_compose":  "回折損と植生減衰の合算",
+        "html_verdict_axis_ground_reflection": "地面反射",
+        "html_verdict_axis_dem_invalid_pixel": "DEM の無効画素",
+        "html_verdict_no_tile":
+            "DEM のタイルが無い標本（海上・日本域外）{n} 点は標高 0 m として計算した",
+        "html_verdict_invalid_pixel":
+            "DEM の無効画素の標本 {n} 点は標高 0 m として計算した",
 
         # ===== 感度表（3.4 ステージ6 / B-219 で表を1列に再構成） =====
         "html_sensitivity_title": "入力の不確かさに対する感度",
@@ -1573,7 +1610,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_worst_hop":         "ワースト区間",
         "mh_section":           "区間",
         "mh_heights":           "アンテナ高 (送 / 受, m)",
-        "mh_worst_mark_note":   "左端に太線のある行がワースト区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / NG / ERROR）を表します。",
+        "mh_worst_mark_note":   "左端に太線のある行がワースト区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / REVIEW / NG / ERROR）を表します。",
         "mh_regenerative_note": "各区間は独立したリンクバジェットです（再生中継）。区間をまたいで損失は加算せず、全体判定は最も余裕の少ない区間で決まります。判定できなかった区間（ERROR）が 1 つでもあれば全体判定も ERROR です（回線が成立しない NG とは別物）。受動反射（反射板）は対象外です。",
         "mh_err_too_few":       "中継経路には地点が 2 つ以上必要です（送信点と受信点）。",
         "mh_err_too_many":      "区間が多すぎます（最大 {max}）。",

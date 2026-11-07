@@ -66,6 +66,7 @@ class Verdict:
     dem_no_tile:       int = 0               # 404（全層でタイルが無い）の標本の数
     dem_invalid_pixel: int = 0               # 無効画素の標本の数
     dem_fetch_failed:  int = 0               # 通信の失敗の標本の数
+    reviewed:          bool = False          # 前提を振る方式で判定した（v2）＝開示の字を出す
 
 
 def word_for_margin(margin: float) -> str:
@@ -153,7 +154,7 @@ def judge(terrain: models.TerrainProfile, h_tx: float, h_rx: float, params,
     raw = np.asarray(terrain.raw_elevs, dtype=float)
     if failed or bool(np.isnan(raw).any()):
         return Verdict(ERROR, base_margin, dem_no_tile=no_tile,
-                       dem_invalid_pixel=invalid, dem_fetch_failed=failed)
+                       dem_invalid_pixel=invalid, dem_fetch_failed=failed, reviewed=True)
 
     veg = params.veg_h
     vegs = [veg] if veg <= 0.0 else [veg * (1 - VEG_PERTURB_FRAC), veg, veg * (1 + VEG_PERTURB_FRAC)]
@@ -207,4 +208,4 @@ def judge(terrain: models.TerrainProfile, h_tx: float, h_rx: float, params,
         REVIEW if flips else base_word, base_margin,
         worst_margin=min(margins), best_margin=max(margins), flipped_by=flipped_by,
         combinations=n_combos, dem_no_tile=no_tile, dem_invalid_pixel=invalid,
-        dem_fetch_failed=failed)
+        dem_fetch_failed=failed, reviewed=True)
