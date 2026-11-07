@@ -21,6 +21,7 @@ import sys
 import tempfile
 
 from core import i18n
+from core import runtime_env
 from core import terrain_grid
 
 # ============================================================
@@ -48,7 +49,9 @@ def app_base_dir() -> str:
     書き込み先）。通常の（凍結・非ポータブル）書き込み先は `_config_base_dir()` /
     `cache_log_base_dir()` / `_results_dir()`（OS 標準の場所）を通る。
     """
-    if getattr(sys, "frozen", False):
+    if runtime_env.is_packaged():
+        # exe も embeddable も実行ファイルの隣＝embeddable のソースは `app\` の下に
+        # あるので、ソースの位置から数えると `portable.txt` を見失う（I-144）
         return os.path.dirname(sys.executable)
     return os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
@@ -61,12 +64,13 @@ def app_path(*parts: str) -> str:
 # ------------------------------------------------------------
 # ポータブル判定（3.1・旧未決 A-4）
 #   スクリプト実行は常にポータブル扱い＝結果・設定・キャッシュはリポジトリ配下
-#   に留まる（README がスクリプト版を「正式版」と位置づけている）。凍結時は
-#   exe の隣に `portable.txt` があるかどうかだけで決める＝分岐点はここ1箇所。
+#   に留まる（README がスクリプト版を「正式版」と位置づけている）。配布物
+#   （exe・embeddable＝`runtime_env.is_packaged()`）は実行ファイルの隣に
+#   `portable.txt` があるかどうかだけで決める＝分岐点はここ1箇所。
 # ------------------------------------------------------------
 def is_portable() -> bool:
     """ポータブル配置（exe／スクリプトの隣に書く）なら真。"""
-    if not getattr(sys, "frozen", False):
+    if not runtime_env.is_packaged():
         return True
     return os.path.isfile(app_path("portable.txt"))
 

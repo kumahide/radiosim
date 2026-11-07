@@ -32,6 +32,7 @@ import sys
 
 from core import config
 from core import dem_cache
+from core import runtime_env
 from core import version
 
 #: ログの座標を伏せる正規表現。`simulation.py` の 3 箇所が使う
@@ -125,11 +126,16 @@ def _system_dpi() -> "int | None":
 
 
 def environment_info() -> dict:
-    """OS／frozen／DPI／プロキシ設定の有無。座標や個人情報は含まない。"""
+    """OS／frozen／配布形／DPI／プロキシ設定の有無。座標や個人情報は含まない。
+
+    `frozen` は PyInstaller の exe だけ・`packaging` は exe／embeddable／source の
+    3 値（I-144）。`frozen` は前からある鍵なので残す。
+    """
     return {
         "platform": sys.platform,
         "python_version": sys.version.split()[0],
         "frozen": bool(getattr(sys, "frozen", False)),
+        "packaging": runtime_env.packaging(),
         "portable": config.is_portable(),
         "dpi": _system_dpi(),
         "proxy_configured": bool(config.load_config().get("proxy_url", "").strip()),

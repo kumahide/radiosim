@@ -137,9 +137,13 @@ class TestEnvironmentInfo:
     def test_has_expected_keys(self):
         info = env_facts.environment_info()
         assert set(info) == {
-            "platform", "python_version", "frozen", "portable", "dpi",
+            "platform", "python_version", "frozen", "packaging", "portable", "dpi",
             "proxy_configured",
         }
+
+    def test_packaging_is_source_under_the_test_interpreter(self, monkeypatch):
+        monkeypatch.setattr(env_facts.sys, "frozen", False, raising=False)
+        assert env_facts.environment_info()["packaging"] == "source"
 
     def test_proxy_configured_reflects_config(self, monkeypatch):
         monkeypatch.setattr(

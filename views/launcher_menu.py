@@ -29,6 +29,7 @@ from core import dem_sources
 from core import diagnostics
 from core import failure
 from core import i18n
+from core import runtime_env
 from core import simulation as sim
 from core import update_check
 from core import version
@@ -248,9 +249,9 @@ def update_available_message(rel: "update_check.Release", *,
     `auto`＝起動時の確認（I-179）から出たとき、止め方を入れ方の後ろへ足す
     （問い「開きますか」は最後に残す）。
     """
-    import sys
     if frozen is None:
-        frozen = bool(getattr(sys, "frozen", False))
+        # 配布物かどうか＝exe も embeddable も（I-144）。ソース実行だけが git の案内
+        frozen = runtime_env.is_packaged()
     if portable is None:
         portable = config.is_portable()
     if not frozen:

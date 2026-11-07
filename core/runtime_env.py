@@ -24,7 +24,8 @@ core/runtime_env.py
 モジュールは**利用者の起動には一切関与しない**。それでも「宣言と違えば止める」
 実装にしないのは、**開発機で exe を試すとき**（`RADIOSIM_PYTHON` は設定されて
 いて、走っているのは exe）に**利用者と同じ経路を塞いでしまう**から。
-⇒ `frozen` は最初に除外し、判定は「宣言がある × 素の Python × 食い違い」だけ。
+⇒ 配布物（`is_packaged()`＝exe と embeddable）は最初に除外し、判定は「宣言がある ×
+素の Python × 食い違い」だけ。
 
 ⚠️ **規則をここ 1 か所に置く**＝正規化（大小・区切り・シンボリックリンク）を
 `conftest` と `main.py` が別々に書くと、片方だけ直したときに**同じ質問に 2 つの
@@ -57,15 +58,58 @@ def same_interpreter(a: str, b: str) -> bool:
     return os.path.normcase(os.path.realpath(a)) == os.path.normcase(os.path.realpath(b))
 
 
+#: 配布形の 3 値（`packaging()` の答え）。
+PACKAGING_EXE = "exe"                 # PyInstaller で固めた exe（旧画面・ステージ11 の撤去まで）
+PACKAGING_EMBEDDABLE = "embeddable"   # python.org の embeddable Python に同梱（新しい画面・I-144）
+PACKAGING_SOURCE = "source"           # リポジトリのソースを素の Python で走らせている
+
+
+def _embeddable_pth_names(executable: str) -> tuple[str, ...]:
+    """embeddable Python が読む `._pth` の名（実行ファイルの隣を探す）。
+
+    CPython は `<実行ファイルの名>._pth` と `python{XY}._pth`（DLL の名）を探す
+    （`PC/getpathp.c` の規則）。`pythonw.exe` から起こしても後者で見つかる。
+    """
+    stem = os.path.splitext(os.path.basename(executable))[0]
+    xy = f"python{sys.version_info.major}{sys.version_info.minor}"
+    return (f"{stem}._pth", f"{xy}._pth")
+
+
+def packaging() -> str:
+    """いま走っている配布形＝`"exe"`／`"embeddable"`／`"source"`。
+
+    🔑 **配布されたかどうかの問いは `is_packaged()` 1 つに集める**（I-144）。
+    以前は各所が `sys.frozen` だけを見ていた＝embeddable で配ると「ソース実行」と
+    読まれ、ポータブル扱いで Program Files の隣へ設定を書こうとする。
+
+    embeddable の見分け＝実行ファイルの隣に `._pth` がある（素のインストールと
+    venv には無い・在ると `sys.path` がそのファイルの中身だけになる＝配布の形）。
+    """
+    if getattr(sys, "frozen", False):
+        return PACKAGING_EXE
+    exe = sys.executable or ""
+    if exe:
+        here = os.path.dirname(os.path.abspath(exe))
+        for name in _embeddable_pth_names(exe):
+            if os.path.isfile(os.path.join(here, name)):
+                return PACKAGING_EMBEDDABLE
+    return PACKAGING_SOURCE
+
+
+def is_packaged() -> bool:
+    """配布物として走っている（exe か embeddable）なら真。ソース実行は偽。"""
+    return packaging() != PACKAGING_SOURCE
+
+
 def interpreter_mismatch() -> tuple[str, str] | None:
     """宣言と食い違っているなら `(宣言, 実行中)`、問題なければ `None`。
 
-    `None` を返す条件は 3 つ＝①凍結（配布 exe）②宣言が無い（CI・他マシンの
+    `None` を返す条件は 3 つ＝①配布物（exe・embeddable）②宣言が無い（CI・他マシンの
     clone）③宣言と一致。⚠️ **宣言先が存在しないケースは食い違いとして返す**
     （`conftest` 側が「宣言が壊れているなら止める」と決めたのと同じ判断＝黙って
     無効になるゲートを作らない）。
     """
-    if getattr(sys, "frozen", False):
+    if is_packaged():
         return None
     declared = declared_interpreter()
     if not declared:

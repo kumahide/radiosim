@@ -6,8 +6,8 @@ OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判�
 
 tests/test_paths.py が守るのは「cwd 非依存」と「ポータブル配置は従来どおり」
 の 2 点。ここで守るのは 3.1 で足した分:
-  1. ポータブル判定（`is_portable`）＝スクリプト実行は常に真、凍結時は
-     `portable.txt` の有無だけで決まる
+  1. ポータブル判定（`is_portable`）＝スクリプト実行は常に真、配布物（exe・
+     embeddable）は `portable.txt` の有無だけで決まる。配布形の 3 値（`runtime_env`）
   2. Known Folder 解決の段階的フォールバック（API失敗 → 環境変数 → 既定）
   3. 書き込み先の基準がポータブル/非ポータブルで正しく分岐する
   4. 旧配置（exe／スクリプトの隣）からの移行＝コピーのみ・旧は残す・
@@ -17,6 +17,7 @@ tests/test_paths.py が守るのは「cwd 非依存」と「ポータブル配�
 import os
 
 from core import config
+from core import runtime_env
 
 
 # ============================================================
@@ -45,6 +46,67 @@ class TestPortableDetection:
         monkeypatch.setattr(config.sys, "executable", str(tmp_path / "RadioSimPro.exe"))
         (tmp_path / "portable.txt").mkdir()
         assert config.is_portable() is False
+
+    # --- embeddable Python（I-144・4.0 ステージ8d）＝`sys.frozen` は無く、
+    #     実行ファイルの隣に `._pth` がある。ソース実行と読むと Program Files の
+    #     隣へ設定を書こうとする（直す前の壊れ方）。
+    @staticmethod
+    def _embeddable(monkeypatch, tmp_path):
+        monkeypatch.setattr(config.sys, "frozen", False, raising=False)
+        monkeypatch.setattr(config.sys, "executable", str(tmp_path / "pythonw.exe"))
+        xy = f"python{config.sys.version_info.major}{config.sys.version_info.minor}"
+        (tmp_path / f"{xy}._pth").write_text("python315.zip\n.\napp\n", encoding="ascii")
+
+    def test_embeddable_without_marker_is_not_portable(self, monkeypatch, tmp_path):
+        self._embeddable(monkeypatch, tmp_path)
+        assert config.is_portable() is False
+
+    def test_embeddable_with_marker_is_portable(self, monkeypatch, tmp_path):
+        self._embeddable(monkeypatch, tmp_path)
+        (tmp_path / "portable.txt").write_text("", encoding="utf-8")
+        assert config.is_portable() is True
+
+    def test_embeddable_base_dir_is_next_to_the_interpreter(self, monkeypatch, tmp_path):
+        """ソースは `app\\` の下にあるが、基準は実行ファイルの隣（`portable.txt` の場所）。"""
+        self._embeddable(monkeypatch, tmp_path)
+        assert config.app_base_dir() == str(tmp_path)
+
+
+# ============================================================
+# 配布形の 3 値（`core.runtime_env.packaging`）
+# ============================================================
+class TestPackaging:
+
+    def test_frozen_is_exe(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(runtime_env.sys, "frozen", True, raising=False)
+        monkeypatch.setattr(runtime_env.sys, "executable", str(tmp_path / "RadioSimPro.exe"))
+        assert runtime_env.packaging() == runtime_env.PACKAGING_EXE
+        assert runtime_env.is_packaged() is True
+
+    def test_pth_next_to_the_interpreter_is_embeddable(self, monkeypatch, tmp_path):
+        """`<実行ファイルの名>._pth` でも見つける（CPython の探す 2 つの名の片方）。"""
+        monkeypatch.setattr(runtime_env.sys, "frozen", False, raising=False)
+        monkeypatch.setattr(runtime_env.sys, "executable", str(tmp_path / "python.exe"))
+        (tmp_path / "python._pth").write_text(".\n", encoding="ascii")
+        assert runtime_env.packaging() == runtime_env.PACKAGING_EMBEDDABLE
+        assert runtime_env.is_packaged() is True
+
+    def test_plain_interpreter_is_source(self, monkeypatch, tmp_path):
+        """`._pth` の無い Python（素のインストール・venv）はソース実行。"""
+        monkeypatch.setattr(runtime_env.sys, "frozen", False, raising=False)
+        monkeypatch.setattr(runtime_env.sys, "executable", str(tmp_path / "python.exe"))
+        (tmp_path / "pyvenv.cfg").write_text("home = x\n", encoding="ascii")
+        assert runtime_env.packaging() == runtime_env.PACKAGING_SOURCE
+        assert runtime_env.is_packaged() is False
+
+    def test_embeddable_never_warns_about_the_declared_interpreter(self, monkeypatch, tmp_path):
+        """開発機で embeddable の配布物を試すときも、宣言の食い違いを言わない（exe と同じ）。"""
+        monkeypatch.setattr(runtime_env.sys, "frozen", False, raising=False)
+        monkeypatch.setattr(runtime_env.sys, "executable", str(tmp_path / "pythonw.exe"))
+        xy = f"python{runtime_env.sys.version_info.major}{runtime_env.sys.version_info.minor}"
+        (tmp_path / f"{xy}._pth").write_text(".\n", encoding="ascii")
+        monkeypatch.setenv(runtime_env.DECLARED_ENV, "Z:/missing/python.exe")
+        assert runtime_env.interpreter_mismatch() is None
 
 
 # ============================================================
