@@ -982,20 +982,40 @@ class TestInstallerCodeIsReachable:
                 f"[Code] の {name} は Inno のイベント名でもなく、"
                 "どこからも呼ばれていない＝黙って死んでいる")
 
-    #: I-139 の選択肢（[CustomMessages] のキー名）と、それぞれが消す実体の目印。
-    #: 目印は core/config.py の保存先解決と 1 対 1 に対応する＝どちらかを動かしたら
-    #: 対がずれる（インストーラだけ古い場所を消しに行く事故を止める）。
-    _UNINSTALL_CHOICES = {
-        "UninstDataSettings": "{userappdata}\\RadioSim\\radiosim_conf.json",
-        "UninstDataCache":    "{localappdata}\\RadioSim",
-        "UninstDataResults":  "{userdocs}\\RadioSim",
-        "UninstDataLang":     "{userappdata}\\RadioSim\\lang",
+    #: I-139 の選択肢（[CustomMessages] のキー名）と、それぞれが消す実体（`.iss` の
+    #: 名前ごと）。実体は core/config.py の保存先解決と 1 対 1 に対応する＝どちらかを
+    #: 動かしたら対がずれる（インストーラだけ古い場所を消しに行く事故を止める）。
+    #: 本体（`radiosim`）は配った 3.9 の置き場のまま。Link（`link`）は 4.0 ステージ8e
+    #: で設定・ログ・結果を `RadioSim\\Link` の下へ分け、3.9 と共有の地形キャッシュを
+    #: 別の選択肢にした（`test_write_locations.py::TestWriteBaseSwitchesOnPortability`）。
+    _UNINSTALL_CHOICES_BY_ISS = {
+        "radiosim": {
+            "UninstDataSettings": "{userappdata}\\RadioSim\\radiosim_conf.json",
+            "UninstDataCache":    "{localappdata}\\RadioSim",
+            "UninstDataResults":  "{userdocs}\\RadioSim",
+            "UninstDataLang":     "{userappdata}\\RadioSim\\lang",
+        },
+        "link": {
+            "UninstDataSettings":    "{userappdata}\\RadioSim\\Link\\radiosim_conf.json",
+            "UninstDataLogs":        "{localappdata}\\RadioSim\\Link",
+            "UninstDataSharedCache": "{localappdata}\\RadioSim\\terrain_cache",
+            "UninstDataResults":     "{userdocs}\\RadioSim\\Link",
+            "UninstDataLang":        "{userappdata}\\RadioSim\\Link\\lang",
+        },
     }
 
-    @staticmethod
-    def _flatten_path_expr(line: str) -> str:
-        """[Code] のパス式を素の文字列へ潰す（`ConfigBase + '\\lang'` → 実体）。"""
-        line = line.replace("ConfigBase", "ExpandConstant('{userappdata}\\RadioSim')")
+    @property
+    def _UNINSTALL_CHOICES(self) -> "dict[str, str]":
+        return self._UNINSTALL_CHOICES_BY_ISS[self.ISS.stem]
+
+    def _flatten_path_expr(self, line: str) -> str:
+        """[Code] のパス式を素の文字列へ潰す（`ConfigBase + '\\lang'` → 実体）。
+
+        `ConfigBase` の値は `.iss` 自身の代入から読む（本体と Link で違う）。"""
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        m = re.search(r"ConfigBase := (ExpandConstant\('[^']*'\));", code)
+        assert m, "ConfigBase の代入が見つからない"
+        line = line.replace("ConfigBase", m.group(1))
         # `ExpandConstant('...')` を中身へ、`' + '` の連結を消す
         line = re.sub(r"ExpandConstant\('([^']*)'\)", r"'\1'", line)
         return line.replace("' + '", "")
@@ -1028,7 +1048,19 @@ class TestInstallerCodeIsReachable:
             line = next((ln for ln in code.splitlines() if f"'{key}'" in ln), None)
             assert line is not None, key
             flat = self._flatten_path_expr(line)
-            assert marker in flat, f"{key} の削除対象が {marker} ではない: {line!r}"
+            # 引用符ごと比べる＝`{localappdata}\\RadioSim` が `…\\RadioSim\\Link` の前方に
+            # 部分一致して通る（親ごと消す取り違えを見逃す）のを止める
+            assert f"'{marker}'" in flat, f"{key} の削除対象が {marker} ではない: {line!r}"
+
+    def test_lang_seed_marker_sits_next_to_the_settings_file(self):
+        """B-272 の印（`lang_seed_consumed.txt`）は設定ファイルと同じフォルダ＝
+        `core/config.py::_lang_seed_consumed_file`。設定の置き場を動かしたのに印の
+        削除だけ古い場所を指すと、「設定を消す」を選んでも印が残る。"""
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        m = re.search(r"DeleteFile\(ExpandConstant\('([^']*lang_seed_consumed\.txt)'\)\)", code)
+        assert m, "lang_seed_consumed.txt を消す行が無い"
+        settings = self._UNINSTALL_CHOICES["UninstDataSettings"]
+        assert m.group(1).rsplit("\\", 1)[0] == settings.rsplit("\\", 1)[0]
 
     def test_choice_count_fits_the_checkbox_array(self):
         """選択肢の数が、ダイアログのチェックボックス配列の上限を超えないこと。

@@ -153,48 +153,68 @@ class TestWriteBaseSwitchesOnPortability:
         monkeypatch.setattr(config, "is_portable", lambda: True)
         assert config._config_base_dir() == config.app_base_dir()
 
-    def test_config_base_is_appdata_radiosim_when_not_portable(self, monkeypatch):
+    def test_config_base_is_appdata_radiosim_link_when_not_portable(self, monkeypatch):
+        """4.0 ステージ8e: 設定は製品ごと＝`%APPDATA%\\RadioSim\\Link`。"""
         monkeypatch.setattr(config, "is_portable", lambda: False)
         monkeypatch.setattr(config, "_appdata_dir", lambda: r"C:\AppData\Roaming")
-        assert config._config_base_dir() == os.path.join(r"C:\AppData\Roaming", "RadioSim")
+        assert config._config_base_dir() == os.path.join(
+            r"C:\AppData\Roaming", "RadioSim", "Link")
 
-    def test_cache_log_base_is_app_base_dir_when_portable(self, monkeypatch):
+    def test_local_base_is_app_base_dir_when_portable(self, monkeypatch):
         monkeypatch.setattr(config, "is_portable", lambda: True)
-        assert config.cache_log_base_dir() == config.app_base_dir()
+        assert config.local_base_dir() == config.app_base_dir()
 
-    def test_cache_log_base_is_local_appdata_radiosim_when_not_portable(self, monkeypatch):
+    def test_local_base_is_local_appdata_radiosim_link_when_not_portable(self, monkeypatch):
+        """ログと Edge の専用プロファイルは製品ごと＝`%LOCALAPPDATA%\\RadioSim\\Link`。"""
         monkeypatch.setattr(config, "is_portable", lambda: False)
         monkeypatch.setattr(config, "_local_appdata_dir", lambda: r"C:\AppData\Local")
-        assert config.cache_log_base_dir() == os.path.join(r"C:\AppData\Local", "RadioSim")
+        assert config.local_base_dir() == os.path.join(
+            r"C:\AppData\Local", "RadioSim", "Link")
+
+    def test_shared_cache_base_is_app_base_dir_when_portable(self, monkeypatch):
+        monkeypatch.setattr(config, "is_portable", lambda: True)
+        assert config.shared_cache_base_dir() == config.app_base_dir()
+
+    def test_shared_cache_base_is_local_appdata_radiosim_when_not_portable(self, monkeypatch):
+        """地形と地図のキャッシュは Pro 3.9 と共有＝製品名を足さない（ステージ8e）。"""
+        monkeypatch.setattr(config, "is_portable", lambda: False)
+        monkeypatch.setattr(config, "_local_appdata_dir", lambda: r"C:\AppData\Local")
+        assert config.shared_cache_base_dir() == os.path.join(r"C:\AppData\Local", "RadioSim")
 
     def test_results_dir_is_app_path_results_when_portable(self, monkeypatch):
         monkeypatch.setattr(config, "is_portable", lambda: True)
         assert config._results_dir() == config.app_path("results")
 
-    def test_results_dir_is_documents_radiosim_when_not_portable(self, monkeypatch):
+    def test_results_dir_is_documents_radiosim_link_when_not_portable(self, monkeypatch):
         monkeypatch.setattr(config, "is_portable", lambda: False)
         monkeypatch.setattr(config, "_documents_dir", lambda: r"C:\Users\x\Documents")
-        assert config._results_dir() == os.path.join(r"C:\Users\x\Documents", "RadioSim")
+        assert config._results_dir() == os.path.join(
+            r"C:\Users\x\Documents", "RadioSim", "Link")
 
-    def test_config_and_cache_log_bases_differ_when_not_portable(self, monkeypatch):
-        """設定＝ローミング、キャッシュ・ログ＝ローカル。別のフォルダを指すこと。"""
+    def test_config_log_and_cache_bases_differ_when_not_portable(self, monkeypatch):
+        """設定＝ローミング、ログ＝ローカルの製品の下、キャッシュ＝ローカルの共有。
+        3 つとも別のフォルダを指し、ログの置き場は共有キャッシュの置き場の下にある
+        （Link をアンインストールしてログを消しても 3.9 と共有の地形は残せる）。"""
         monkeypatch.setattr(config, "is_portable", lambda: False)
         monkeypatch.setattr(config, "_appdata_dir", lambda: r"C:\AppData\Roaming")
         monkeypatch.setattr(config, "_local_appdata_dir", lambda: r"C:\AppData\Local")
-        assert config._config_base_dir() != config.cache_log_base_dir()
+        bases = {config._config_base_dir(), config.local_base_dir(),
+                 config.shared_cache_base_dir()}
+        assert len(bases) == 3
+        assert os.path.dirname(config.local_base_dir()) == config.shared_cache_base_dir()
 
     def test_user_lang_dir_is_app_path_lang_when_portable(self, monkeypatch):
         monkeypatch.setattr(config, "is_portable", lambda: True)
         assert config._user_lang_dir() == config.app_path("lang")
 
-    def test_user_lang_dir_is_appdata_radiosim_lang_when_not_portable(self, monkeypatch):
+    def test_user_lang_dir_is_appdata_radiosim_link_lang_when_not_portable(self, monkeypatch):
         """I-130: 非ポータブルでは書込禁止のことがある `LANG_DIR`（exe隣）ではなく、
-        設定と同じ `%APPDATA%\\RadioSim` 配下（利用者が書けることが保証された場所）
+        設定と同じ `%APPDATA%\\RadioSim\\Link` 配下（利用者が書けることが保証された場所）
         を使うこと。"""
         monkeypatch.setattr(config, "is_portable", lambda: False)
         monkeypatch.setattr(config, "_appdata_dir", lambda: r"C:\AppData\Roaming")
         assert config._user_lang_dir() == os.path.join(
-            r"C:\AppData\Roaming", "RadioSim", "lang")
+            r"C:\AppData\Roaming", "RadioSim", "Link", "lang")
 
 
 # ============================================================

@@ -55,7 +55,7 @@ def main() -> int:
         _fatal(i18n.t("webui_no_edge"))
         return 1
     listener = edge.Listener()
-    profile = os.path.join(config.cache_log_base_dir(), "edge_profile")
+    profile = os.path.join(config.local_base_dir(), "edge_profile")
     try:
         window = edge.open_window(browser, listener.url, profile)
     except OSError as e:

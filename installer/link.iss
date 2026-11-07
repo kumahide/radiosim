@@ -22,10 +22,10 @@
 ;   - portable.txt はビルド側が zip のときだけ作る（念のため下の Excludes にも）
 ;     ＝core.config.is_portable() は False、設定/キャッシュ/ログ/結果は OS 標準の
 ;     フォルダへ書く。
-;   ⚠️ 4.0 ステージ8e で設定・ログ・結果を %APPDATA%\RadioSim\Link などの下へ
-;     分ける（ステージ8 の着手の決定 ③・地形と地図のキャッシュは本体と共有）。
-;     それまでは本体と同じ場所を使う＝下の [Code] の削除の対象も本体と同じ。
-;     8e で分けるときに、この削除の対象（特に本体と共有するキャッシュ）も直す。
+;   🔑 本体と違い、設定・ログ・結果は RadioSim\Link の下へ書く（4.0 ステージ8e・
+;     着手の決定 ③）。地形と地図のキャッシュ（%LOCALAPPDATA%\RadioSim\terrain_cache）
+;     だけは RadioSim Pro 3.9 と共有する＝下の [Code] は共有のキャッシュを別の選択肢に
+;     分け、既定はオフ・「3.9 と共有」と書いて出す（2026-11-08 経営者の決定）。
 
 #ifndef AppVersion
   #define AppVersion "0.0.0-dev"
@@ -56,8 +56,8 @@
 
 [Setup]
 ; 固定 GUID（版が変わっても同じ値のまま＝アップグレードインストールの同一性判定に使う）。
-; 本体（RadioSim Pro）とは別の値＝並べて入る。⚠️ 4.0 ステージ8e の改名で決め直す
-; （それまでに配った Link のインストーラは無い＝a・b は配らない）。
+; 本体（RadioSim Pro）とは別の値＝並べて入る。8d で起こした値を 8e の改名でもそのまま
+; 据えた（配った Link のインストーラが無い＝決め直しても同じ）。⛔ 以後は変えない。
 AppId={{E45B60BB-825A-42EE-92DB-796FAA051C21}
 AppName={#AppName}
 AppVersion={#AppVersion}
@@ -128,13 +128,15 @@ japanese.DialogFontName=Yu Gothic UI
 japanese.WelcomeFontName=Yu Gothic UI
 
 [CustomMessages]
-; I-139: 削除対象を 4 種に割り、それぞれチェックボックスで選ばせる。
+; I-139: 削除対象を種類ごとに割り、それぞれチェックボックスで選ばせる（Link は 5 種＝
+; 本体の「キャッシュ・ログ」を、Link だけのログと 3.9 と共有の地形キャッシュに割った）。
 ; ⚠️ 見出し（UninstData*）は下の [Code] が **CustomMessages のキー名** として
 ; 文字列で参照する（DataNames に入る）＝キーを改名したら [Code] も直すこと。
 japanese.UninstDataTitle=RadioSim Link のデータの削除
 japanese.UninstDataIntro=下のデータはアンインストールしても残ります。この PC から消したいものだけチェックしてください。
 japanese.UninstDataSettings=UI 設定・最後に使用した入力値
-japanese.UninstDataCache=DEM タイルのディスクキャッシュ・ログ
+japanese.UninstDataLogs=ログ・画面の作業用データ
+japanese.UninstDataSharedCache=地形と背景地図のディスクキャッシュ（RadioSim Pro 3.9 と共有）
 japanese.UninstDataResults=保存パッケージの出力先
 japanese.UninstDataLang=追加した表示言語ファイル
 japanese.UninstDataHint=チェックを外したものはそのまま残り、次回インストール時に引き継がれます。
@@ -147,7 +149,8 @@ english.UninstDataFailed=The following data could not be deleted (a file is open
 english.UninstDataTitle=Remove RadioSim Link data
 english.UninstDataIntro=The data below is kept when you uninstall. Tick only what you want removed from this PC.
 english.UninstDataSettings=UI settings and last used input values
-english.UninstDataCache=DEM tile disk cache and logs
+english.UninstDataLogs=Logs and working data of the window
+english.UninstDataSharedCache=Terrain and background map disk cache (shared with RadioSim Pro 3.9)
 english.UninstDataResults=Saved result packages
 english.UninstDataLang=Display language files you added
 english.UninstDataHint=Anything left unticked stays on this PC and is picked up again by the next install.
@@ -380,14 +383,18 @@ begin
   DataPaths[N] := Path;
 end;
 
-{ 4 種の実体は core/config.py の保存先解決と 1 対 1 で対応する:
-    設定       %APPDATA%\RadioSim\radiosim_conf.json  … _config_base_dir()
-    キャッシュ %LOCALAPPDATA%\RadioSim\               … cache_log_base_dir()
-                 （terrain_cache\ と radiosim*.log しか置かないので丸ごと消す）
-    保存結果   ドキュメント\RadioSim\                  … _results_dir()
-    追加言語   %APPDATA%\RadioSim\lang\               … _user_lang_dir()
+{ 5 種の実体は core/config.py の保存先解決と 1 対 1 で対応する（4.0 ステージ8e）:
+    設定       %APPDATA%\RadioSim\Link\radiosim_conf.json  … _config_base_dir()
+    ログ       %LOCALAPPDATA%\RadioSim\Link\               … local_base_dir()
+                 （radiosim*.log と Edge の専用プロファイルしか置かないので丸ごと消す）
+    共有の地形 %LOCALAPPDATA%\RadioSim\terrain_cache\      … shared_cache_base_dir()
+                 （RadioSim Pro 3.9 と共有＝見出しにそう書く・既定はオフ）
+    保存結果   ドキュメント\RadioSim\Link\                  … _results_dir()
+    追加言語   %APPDATA%\RadioSim\Link\lang\               … _user_lang_dir()
   ⚠️ 設定と追加言語は**同じ親フォルダの中**なので、親ごと消してはいけない
      （片方だけ選んだときにもう片方まで消える）。
+  ⛔ 共有の地形の親（%LOCALAPPDATA%\RadioSim）を丸ごと消さない＝3.9 の
+     ログも、Link のログ（選ばなかったとき）も巻き添えになる。
   ⛔ このコメントに Inno の定数を波括弧つきで書かない: 波括弧はコメントの
      終端そのものなので、途中で閉じて残りが構文エラーになる（1710b9f と同型）。 }
 procedure CollectRemovableData;
@@ -396,11 +403,12 @@ var
 begin
   SetArrayLength(DataNames, 0);
   SetArrayLength(DataPaths, 0);
-  ConfigBase := ExpandConstant('{userappdata}\RadioSim');
-  AddRemovableData('UninstDataSettings', ConfigBase + '\radiosim_conf.json');
-  AddRemovableData('UninstDataCache',    ExpandConstant('{localappdata}\RadioSim'));
-  AddRemovableData('UninstDataResults',  ExpandConstant('{userdocs}\RadioSim'));
-  AddRemovableData('UninstDataLang',     ConfigBase + '\lang');
+  ConfigBase := ExpandConstant('{userappdata}\RadioSim\Link');
+  AddRemovableData('UninstDataSettings',    ConfigBase + '\radiosim_conf.json');
+  AddRemovableData('UninstDataLogs',        ExpandConstant('{localappdata}\RadioSim\Link'));
+  AddRemovableData('UninstDataSharedCache', ExpandConstant('{localappdata}\RadioSim\terrain_cache'));
+  AddRemovableData('UninstDataResults',     ExpandConstant('{userdocs}\RadioSim\Link'));
+  AddRemovableData('UninstDataLang',        ConfigBase + '\lang');
 end;
 
 { 折り返すラベルの中身と幅を、この順番でしか入れられないようにする（B-200）。
@@ -433,7 +441,7 @@ var
   { 上限は CollectRemovableData が積む種類の数。増やすときは**両方**直すこと
     （足りないと実行時に添字が飛ぶ＝コンパイルでは分からない）。
     ずれの検出は tests/test_config.py::test_choice_count_fits_the_checkbox_array。 }
-  Boxes: array[0..3] of TNewCheckBox;
+  Boxes: array[0..4] of TNewCheckBox;
   OkButton, CancelButton: TNewButton;
   I, Count, Y, ButtonWidth: Integer;
 begin
@@ -554,15 +562,20 @@ begin
         Failed := Failed + '  ' + Path + #13#10;
       { B-272: lang_seed_consumed.txt は radiosim_conf.json と同じ親フォルダの
         利用者データ（種を消費した記録）＝「設定」を消す選択に相乗りさせる。
-        単独の項目にすると 5 つめのチェックボックスが増えて画面が重くなる
+        単独の項目にすると 6 つめのチェックボックスが増えて画面が重くなる
         わりに、これ単体を残すか消すかを利用者が気にする理由が無い。 }
       if DataNames[I] = 'UninstDataSettings' then
-        DeleteFile(ExpandConstant('{userappdata}\RadioSim\lang_seed_consumed.txt'));
+        DeleteFile(ExpandConstant('{userappdata}\RadioSim\Link\lang_seed_consumed.txt'));
     end;
   end;
-  { 設定と追加言語を両方消すと %APPDATA%\RadioSim が空殻で残る。RemoveDir は
-    空のときしか成功しないので、片方だけ消した場合は何も起きない。 }
+  { 設定と追加言語を両方消すと %APPDATA%\RadioSim\Link が空殻で残る。RemoveDir は
+    空のときしか成功しないので、片方だけ消した場合は何も起きない。親の RadioSim は
+    3.9 の設定が無ければ空になる＝子から順に試す。ローカルとドキュメントの親も同じ
+    （3.9 のログや結果が残っていれば何も起きない）。 }
+  RemoveDir(ExpandConstant('{userappdata}\RadioSim\Link'));
   RemoveDir(ExpandConstant('{userappdata}\RadioSim'));
+  RemoveDir(ExpandConstant('{localappdata}\RadioSim'));
+  RemoveDir(ExpandConstant('{userdocs}\RadioSim'));
   if Failed <> '' then
     MsgBox(FmtMessage(CustomMessage('UninstDataFailed'), [Failed]),
            mbError, MB_OK);
@@ -574,9 +587,10 @@ end;
   ⛔ ここも波括弧を書かない: 定数の展開に見えるうえ、コメントなら途中で閉じる。 }
 function ManualCleanupPaths: string;
 begin
-  Result := '%APPDATA%\RadioSim' + #13#10
-          + '  %LOCALAPPDATA%\RadioSim' + #13#10
-          + '  %USERPROFILE%\Documents\RadioSim';
+  Result := '%APPDATA%\RadioSim\Link' + #13#10
+          + '  %LOCALAPPDATA%\RadioSim\Link' + #13#10
+          + '  %LOCALAPPDATA%\RadioSim\terrain_cache' + #13#10
+          + '  %USERPROFILE%\Documents\RadioSim\Link';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

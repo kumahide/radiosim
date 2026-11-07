@@ -47,7 +47,8 @@ def app_base_dir() -> str:
     🔑 **3.1 以降、これは「書き込み先そのもの」ではなくポータブル配置の基準**
     （旧配置の移行元・`portable.txt` の探索場所・LANG_DIR・スクリプト実行時の
     書き込み先）。通常の（凍結・非ポータブル）書き込み先は `_config_base_dir()` /
-    `cache_log_base_dir()` / `_results_dir()`（OS 標準の場所）を通る。
+    `local_base_dir()` / `shared_cache_base_dir()` / `_results_dir()`（OS 標準の
+    場所）を通る。
     """
     if runtime_env.is_packaged():
         # exe も embeddable も実行ファイルの隣＝embeddable のソースは `app\` の下に
@@ -137,20 +138,45 @@ def _documents_dir() -> str:
 #   がある）。キャッシュ・ログ＝%LOCALAPPDATA%（ローミング対象にすると企業
 #   環境で profile を壊す）。結果＝ドキュメント（利用者が自分で開きに行く
 #   成果物を隠しフォルダに置かない）。
+#   🔑 4.0（Link 1.0）から製品ごとに分ける（ステージ8e・2026-11-07 経営者の決定
+#   「地形は共有・設定は分ける」）＝設定・ログ・結果は `RadioSim\Link` の下、
+#   地形と地図のキャッシュだけは `%LOCALAPPDATA%\RadioSim` を Pro 3.9 と共有する
+#   （取り直しは時間がかかり、中身は製品によらない）。この木から旧画面の exe は
+#   配らないので、旧画面も Link の置き場を使う。旧 Pro の設定は移さない（連続性は
+#   配慮しない＝経営者の考え）。
 # ------------------------------------------------------------
+#: 製品ごとの置き場の名前（`RadioSim\<これ>`）。
+PRODUCT_DIR_NAME = "Link"
+
+
 def _config_base_dir() -> str:
-    return app_base_dir() if is_portable() else os.path.join(_appdata_dir(), "RadioSim")
+    if is_portable():
+        return app_base_dir()
+    return os.path.join(_appdata_dir(), "RadioSim", PRODUCT_DIR_NAME)
 
 
-def cache_log_base_dir() -> str:
-    """ログと DEM キャッシュが共有する基準（dem.py の CACHE_DIR もこれを通す）。"""
-    return app_base_dir() if is_portable() else os.path.join(_local_appdata_dir(), "RadioSim")
+def local_base_dir() -> str:
+    """製品だけが使うローカルの置き場＝ログと Edge の専用プロファイル。"""
+    if is_portable():
+        return app_base_dir()
+    return os.path.join(_local_appdata_dir(), "RadioSim", PRODUCT_DIR_NAME)
+
+
+def shared_cache_base_dir() -> str:
+    """製品をまたいで共有するキャッシュの基準（dem.py の CACHE_DIR がこれを通す）。
+
+    ⚠️ ここに製品名を足さない＝Pro 3.9 の `%LOCALAPPDATA%\\RadioSim\\terrain_cache`
+    と同じ場所を読み書きするのが目的。
+    """
+    if is_portable():
+        return app_base_dir()
+    return os.path.join(_local_appdata_dir(), "RadioSim")
 
 
 def _results_dir() -> str:
     if is_portable():
         return app_path("results")
-    return os.path.join(_documents_dir(), "RadioSim")
+    return os.path.join(_documents_dir(), "RadioSim", PRODUCT_DIR_NAME)
 
 
 def _user_lang_dir() -> str:
@@ -171,7 +197,7 @@ def _user_lang_dir() -> str:
 # ============================================================
 CONFIG_FILE = os.path.join(_config_base_dir(), "radiosim_conf.json")
 RESULTS_DIR = _results_dir()
-LOG_FILE    = os.path.join(cache_log_base_dir(), "radiosim.log")
+LOG_FILE    = os.path.join(local_base_dir(), "radiosim.log")
 #: 利用者が置く言語ファイル（`<コード>.json`）の置き場。**読むだけ**＝アプリは
 #: ここへ書き込まないので、無ければ無いまま（作りに行かない）。ポータブル・
 #: 非ポータブルを問わず exe／スクリプトの隣（同梱物を探す場所と同じ基準）。
@@ -200,7 +226,7 @@ USER_TILE_SOURCES_FILE = os.path.join(_config_base_dir(), "tile_sources.toml")
 #: 固定されていたため、非ポータブルで書込禁止の場所へ入れた場合に失敗が
 #: `except Exception: pass` で握り潰されていた（診断専用ログが**いちばん要る
 #: 場面で黙って消える**）。
-PROFILE_LOG_FILE = os.path.join(cache_log_base_dir(), "radiosim_profile.log")
+PROFILE_LOG_FILE = os.path.join(local_base_dir(), "radiosim_profile.log")
 
 
 # ============================================================

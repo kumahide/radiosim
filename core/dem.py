@@ -44,7 +44,7 @@ from core import terrain_grid
 from core import tile_sources
 from core import version
 from core.assumptions import GUARD, Assumption
-from core.config import cache_log_base_dir, logger
+from core.config import logger, shared_cache_base_dir
 
 #: 式（標高の復号）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
 ASSUMPTIONS: tuple[Assumption, ...] = (
@@ -66,11 +66,11 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
 
 # ============================================================
 # DEM タイルキャッシュのルートディレクトリ
-#   基準は config.cache_log_base_dir()（ポータブル＝exe／スクリプトの位置、
-#   非ポータブル＝%LOCALAPPDATA%\RadioSim）で cwd に依存しない（B-014）。
+#   基準は config.shared_cache_base_dir()（ポータブル＝exe／スクリプトの位置、
+#   非ポータブル＝%LOCALAPPDATA%\RadioSim＝Pro 3.9 と共有）で cwd に依存しない（B-014）。
 #   テストは dem.CACHE_DIR を monkeypatch して一時ディレクトリへ差し替える。
 # ============================================================
-CACHE_DIR = os.path.join(cache_log_base_dir(), "terrain_cache")
+CACHE_DIR = os.path.join(shared_cache_base_dir(), "terrain_cache")
 
 # ============================================================
 # DEM タイルクライアント
