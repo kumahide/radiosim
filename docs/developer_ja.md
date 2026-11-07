@@ -676,7 +676,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 
 ランチャーの **条件探索** ボタンで開きます（`views/scenario.py`）。**1 本の確定した経路を、条件を変えて掘る**画面で、計算側は `core/scenario.py` が持ちます。操作手順は [manual_ja.md](manual_ja.md) が詳しいので、ここでは実装の勘所を挙げます。
 
-- **地形は 1 回だけ取る**: `run_scenario()` は FETCH → CALC（→ RENDER）の順に進み、取得は先頭で 1 回。`_fetch_sync()` は `fetch_elevations_cached()` を通すので、同じ経路で条件を振り直しても DEM の再取得は起きません（これがこの画面の使い方そのもの）。
+- **地形は 1 回だけ取る**: `run_scenario()` は FETCH → CALC（→ RENDER）の順に進み、取得は先頭で 1 回。`engine.fetch_terrain()` は `fetch_elevations_cached()` を通すので、同じ経路で条件を振り直しても DEM の再取得は起きません（これがこの画面の使い方そのもの）。
 - **条件は「差分」で持つ**: `Condition` はベースからの上書き辞書で、変えられる欄は `scenario.OVERRIDABLE` が単一ソース。**座標と地形の解像度は入っていません**（経路そのものを比べるのは複数経路の仕事）。比較は最大 `MAX_COMPARE_CONDITIONS` 列。
 - **比較とスイープは同じ計算路を通る**: スイープは `linspace_values()` → `sweep_conditions(axis, values)` で `Condition` 列に落としてから `evaluate()` に渡します。軸は `SWEEP_AXES`、点数は `MAX_SWEEP_POINTS` が上限。**分岐しているのは入力の作り方だけ**で、評価と結果型（`ScenarioRun` / `ScenarioPoint`）は 1 本です。
 - **進捗は「フェーズ」を宣言する**: `Phase` / `Phases`（`FETCH` `CALC` `RENDER`）に重みを宣言し、レポート生成も `artifacts` としてワーカースレッド内の RENDER フェーズで回します。**完了後に View 側で生成しない**。GUI が固まるうえ、その時間が進捗率に現れないため（過去に 2 度踏んだ欠陥）。
@@ -1238,7 +1238,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_dem_bilinear.py`   | 計算プロファイル v2 の地形の読み（双線形・同じ層の 4 近傍・欠けた近傍の扱い）と標本の置き方・取得の配線 |
 | `test_dem_sources.py`    | DEM ソース宣言（URL テンプレート・デコード方式の列挙ディスパッチ・GSI/Terrarium/Mapbox Terrain-RGB の式） |
 | `test_tile_sources.py`   | 背景地図タイルソース宣言（URL/max_zoom/出典の検証・予約 ID・表示名重複の拒否） |
-| `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_process_one/_fetch_sync）・HTML 座標表記 |
+| `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_run_paths/_process_one）・HTML 座標表記 |
 | `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
 | `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
 | `test_map_window.py`     | 地図の安全破棄（after ループ停止の不変条件）＋破棄経路が close_map_safely に集約されていることの静的ガード |

@@ -3,7 +3,7 @@ tests/test_batch.py
 ===================
 batch.py のユニットテスト。
 対象: validate_rows / parse_csv / _make_params / 実行エンジン
-（run_batch / _process_one / _fetch_sync ＝ DEM 取得を monkeypatch し
+（run_batch / _run_paths / _process_one ＝ DEM 取得を monkeypatch し
 ネットワーク無しで同期検証）
 """
 
@@ -1090,7 +1090,7 @@ class TestReportV2AzEl:
 
 
 # ============================================================
-# 実行エンジン（run_batch / _run_thread / _process_one / _fetch_sync）
+# 実行エンジン（run_batch / _run_thread / _run_paths / _process_one）
 # ============================================================
 # sim.fetch_elevations の同期フェイク。バッチはワーカースレッドから呼ぶが、
 # コールバックを即時発火させることで threading.Event の同期化ごと検証する。
@@ -1102,7 +1102,8 @@ _FAIL_FREQ = 999.0
 _FAKE_GROUND_M = 10.0
 
 
-def _fake_fetch(params, on_progress, on_complete, on_error):
+def _fake_fetch(params, on_progress, on_complete, on_error, **_kw):
+    # `**_kw`＝取り消しの試験は `cancel` を渡す（立っていない Event でも渡る）
     on_progress(50)
     if params.freq_mhz == _FAIL_FREQ:
         on_error(RuntimeError("DEM fetch failed (fake)"))
@@ -1114,22 +1115,10 @@ def _fake_fetch(params, on_progress, on_complete, on_error):
         on_complete(np.full(params.num, _FAKE_GROUND_M))
 
 
-class TestFetchSync:
-
-    def test_returns_array_on_complete(self, default_params_dict, monkeypatch):
-        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
-        params = sim.SimParams(default_params_dict)
-        progress: list[int] = []
-        arr = batch._fetch_sync(params, progress.append)
-        assert isinstance(arr, np.ndarray)
-        assert len(arr) == params.num
-        assert progress == [50]   # on_progress が素通しされる
-
-    def test_raises_first_error(self, default_params_dict, monkeypatch):
-        monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
-        d = dict(default_params_dict, freq=str(_FAIL_FREQ))
-        with pytest.raises(RuntimeError, match="DEM fetch failed"):
-            batch._fetch_sync(sim.SimParams(d), lambda p: None)
+def _process(row, base, out_dir):
+    """1 行を `_run_paths`（取得・計算は `engine.run_paths`）で回し、その `PathResult` を返す。"""
+    [pr] = batch._run_paths([row], base, out_dir, None, None, None)
+    return pr
 
 
 class TestProcessOne:
@@ -1139,8 +1128,7 @@ class TestProcessOne:
         i18n.set_lang("en")
         monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
         base = sim.SimParams(default_params_dict)
-        pr = batch._process_one(_row(), base, str(tmp_path),
-                                lambda done, tot: None)
+        pr = _process(_row(), base, str(tmp_path))
         assert pr.ok and pr.error is None
         assert pr.terrain is not None and pr.params is not None
         assert pr.save_dir == os.path.join(str(tmp_path), "path01")
@@ -1157,7 +1145,7 @@ class TestProcessOne:
         """バッチの各 report.txt にも `DEM Acquired` が出ること（B-213 追補・Codex 100 巡目）。
 
         🔴 取得日を結果（`TerrainProfile.dem_acquired`）へ運ぶ形にしたとき、単一実行の
-        配線だけ直してバッチ（`_fetch_sync` → `_process_one`）を落とした＝バッチの
+        配線だけ直してバッチ（当時の `_fetch_sync` → `_process_one`）を落とした＝バッチの
         report.txt から行が必ず消えた。**本物の `fetch_elevations` を通し、タイルの
         読み込みと日付だけを差し替える**（`fetch_elevations` ごと差し替えると、取得日を
         確定するステップそのものを飛ばしてしまい、配線の抜けが見えない）。
@@ -1174,8 +1162,8 @@ class TestProcessOne:
             lambda *a, **k: np.full((256, 256, 3), valid, dtype=np.uint8))
         monkeypatch.setattr(dem, "tile_acquired_date", lambda key: "2026-08-01")
         try:
-            pr = batch._process_one(_row(), sim.SimParams(default_params_dict),
-                                    str(tmp_path), lambda done, tot: None)
+            pr = _process(_row(), sim.SimParams(default_params_dict),
+                          str(tmp_path))
         finally:
             dem._tile_cache.clear()
             dem._failed_tiles.clear()
@@ -1191,10 +1179,7 @@ class TestProcessOne:
         """DEM 取得失敗は例外を漏らさず PathResult(error=...) に封じ込める。"""
         monkeypatch.setattr(sim, "fetch_elevations", _fake_fetch)
         base = sim.SimParams(default_params_dict)
-        pr = batch._process_one(
-            _row(path_id="bad", freq_mhz=_FAIL_FREQ), base, str(tmp_path),
-            lambda done, tot: None,
-        )
+        pr = _process(_row(path_id="bad", freq_mhz=_FAIL_FREQ), base, str(tmp_path))
         assert not pr.ok
         assert isinstance(pr.error, RuntimeError)
         assert pr.save_dir == ""
@@ -1203,10 +1188,12 @@ class TestProcessOne:
 
 class TestRunBatch:
 
-    def _run(self, rows, tmp_path, default_params_dict, monkeypatch, fetch=None):
+    def _run(self, rows, tmp_path, default_params_dict, monkeypatch, fetch=None,
+             cancel=None, on_complete=None):
         """run_batch を実行し、全コールバックの記録を返す（完了まで待機）。
 
         fetch を渡すと標高取得のフェイクを差し替えられる（呼び出し回数の観測用）。
+        cancel・on_complete（1 行ごとの完了で呼ぶ）は取り消しの試験用。
         """
         i18n.set_lang("en")
         monkeypatch.setattr(sim, "fetch_elevations", fetch or _fake_fetch)
@@ -1233,12 +1220,33 @@ class TestRunBatch:
             rows, base,
             on_path_start    = lambda i, n, pid: ev["start"].append((i, n, pid)),
             on_path_progress = lambda done, tot: None,
-            on_path_complete = lambda i, n, pr: ev["complete"].append((i, n, pr)),
+            on_path_complete = lambda i, n, pr: (
+                ev["complete"].append((i, n, pr)),
+                on_complete and on_complete(i, n, pr)),
             on_batch_complete = _on_batch,
             on_error          = _on_error,
+            cancel            = cancel,
         )
         assert done.wait(timeout=30), "batch thread did not finish in time"
         return ev
+
+    def test_cancel_stops_before_the_next_path_without_a_traceback(
+            self, tmp_path, default_params_dict, monkeypatch, caplog):
+        """取り消しは次の行の手前で止まり、`Cancelled` が on_error へ渡る（4.0 ステージ6）。
+
+        失敗ではないので traceback（`logger.exception`）を残さず、サマリも作らない。
+        """
+        cancel = threading.Event()
+        rows = [_row(), _row(path_id="path02")]
+        with caplog.at_level("INFO", logger="radiosim"):
+            ev = self._run(rows, tmp_path, default_params_dict, monkeypatch,
+                           cancel=cancel, on_complete=lambda *a: cancel.set())
+        assert ev["start"] == [(1, 2, "path01")], "取り消した後の行へ進んだ"
+        assert ev["batch"] == []
+        assert len(ev["error"]) == 1 and isinstance(ev["error"][0], sim.Cancelled)
+        assert not [r for r in caplog.records if r.exc_info], \
+            "取り消しを失敗として traceback つきで残している"
+        assert any("Batch cancelled" in r.getMessage() for r in caplog.records)
 
     def test_happy_path_callbacks_and_summary(
             self, tmp_path, default_params_dict, monkeypatch):

@@ -19,9 +19,8 @@ from dataclasses import dataclass
 from datetime import datetime
 from typing import Callable
 
-import numpy as np
-
 from core import config
+from core import engine
 from core import i18n
 from core import models
 from core import simulation as sim
@@ -355,6 +354,7 @@ def run_batch(
     memo:              str = "",
     exclude_spot:      bool = False,
     basemap_source_id: str = "pale",
+    cancel:            "threading.Event | None" = None,
 ) -> None:
     """バッチ実行をバックグラウンドスレッドで開始する。
 
@@ -376,13 +376,16 @@ def run_batch(
 
     basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
     呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
+
+    cancel（省略できる `threading.Event`・4.0 ステージ6）が立つと次の行（取得中なら
+    次の標本）で止まり、`sim.Cancelled` が `on_error` へ渡る（サマリは作らない）。
     """
     threading.Thread(
         target = _run_thread,
         args   = (rows, base_params, on_path_start, on_path_progress,
                   on_path_complete, on_batch_complete, on_error, coord_format,
                   on_path_stage, project_name, memo, exclude_spot,
-                  basemap_source_id),
+                  basemap_source_id, cancel),
         daemon = True,
     ).start()
 
@@ -401,23 +404,20 @@ def _run_thread(
     memo:              str = "",
     exclude_spot:      bool = False,
     basemap_source_id: str = "pale",
+    cancel:            "threading.Event | None" = None,
 ) -> None:
     try:
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
         batch_dir = config.new_run_dir("batch", timestamp)
 
-        path_results: list[PathResult] = []
         total = len(rows)
         t_batch = time.perf_counter()
         logger.info("Batch started: %d paths → %s", total, batch_dir)
 
-        for i, row in enumerate(rows):
-            on_path_start(i + 1, total, row.path_id)
-            pr = _process_one(row, base_params, batch_dir, on_path_progress,
-                              coord_format, on_path_stage, project_name,
-                              basemap_source_id)
-            path_results.append(pr)
-            on_path_complete(i + 1, total, pr)
+        path_results = _run_paths(rows, base_params, batch_dir, on_path_start,
+                                  on_path_progress, on_path_complete,
+                                  coord_format, on_path_stage, project_name,
+                                  basemap_source_id, cancel)
 
         # サマリ生成もここ（ワーカースレッド）で行う。render_summary_map_b64 は
         # 背景地図タイルをネットワーク取得するため、GUI スレッドで呼ぶと数秒
@@ -442,47 +442,75 @@ def _run_thread(
                     time.perf_counter() - t_sum, batch_dir)
         on_batch_complete(batch_dir, path_results)
 
+    except sim.Cancelled as ex:
+        # 取り消しは失敗ではない（traceback を残さない）＝終わったことだけ on_error で返す
+        logger.info("Batch cancelled: %s", ex)
+        on_error(ex)
+
     except Exception as ex:
         logger.exception("Batch error: %s", ex)
         on_error(ex)
 
 
+def _run_paths(
+    rows:         list[PathRow],
+    base_params:  sim.SimParams,
+    out_dir:      str,
+    on_start:     "Callable[[int, int, str], None] | None",
+    on_progress:  "Callable[[int, int], None] | None",
+    on_complete:  "Callable[[int, int, PathResult], None] | None",
+    coord_format: str = "dd",
+    on_stage:     "Callable[[str], None] | None" = None,
+    project_name: str = "",
+    basemap_source_id: str = "pale",
+    cancel:       "threading.Event | None" = None,
+) -> list[PathResult]:
+    """行を 1 本ずつ取得・計算し（`engine.run_paths`）、成果物を作って `PathResult` を返す。
+
+    バッチと中継の共通の走り（中継は 1 ホップ＝1 行）。取得と計算は計算コアの呼び口、
+    成果物（保存・PNG・HTML・KML）だけがここ（4.0 ステージ6）。
+    ⚠️ `on_progress` は `(取得済み, その行の点数)`（I-069＝点数は行ごとに解かれる）。
+    `cancel` が立つと次の行（取得中なら次の標本）で `sim.Cancelled` が上がる。
+    """
+    results: list[PathResult] = []
+    total = len(rows)
+    for i, (row, outcome) in enumerate(engine.run_paths(
+            rows, lambda r: _make_params(r, base_params), cancel=cancel,
+            on_start=on_start, on_stage=on_stage, on_progress=on_progress,
+            label=lambda r: r.path_id)):
+        pr = _process_one(row, outcome, out_dir, coord_format, on_stage,
+                          project_name, basemap_source_id)
+        results.append(pr)
+        if on_complete:
+            on_complete(i + 1, total, pr)
+    return results
+
+
 def _process_one(
     row:         PathRow,
-    base:        sim.SimParams,
+    outcome:     engine.PathOutcome,
     batch_dir:   str,
-    on_progress: Callable[[int, int], None],
     coord_format: str = "dd",
     on_stage:     "Callable[[str], None] | None" = None,
     project_name: str = "",
     basemap_source_id: str = "pale",
 ) -> PathResult:
-    try:
-        params    = _make_params(row, base)
-        if on_stage:
-            on_stage("fetch")
-        # 分母（この行の点数）は params が決まって初めて分かる＝**進捗と一緒に渡す**。
-        # 取得日（出所刻印）は標高と一緒に受け取り、地形に載せる（B-213 追補）＝
-        # 保存時に引き直さない。🔴 これを落とすと report.txt から行が必ず消える
-        # （Codex 100 巡目）。
-        acquired: list = [None]
-        status: list = [None]      # 標本ごとの事情（I-247）＝取得日と同じ運び方
-        raw_elevs = _fetch_sync(params, lambda done: on_progress(done, params.num),
-                                on_acquired=lambda v: acquired.__setitem__(0, v),
-                                on_status=lambda v: status.__setitem__(0, v))
-        terrain   = models.calculate_terrain_profile(
-            raw_elevs = raw_elevs,
-            lat_tx    = params.lat_tx,
-            lon_tx    = params.lon_tx,
-            lat_rx    = params.lat_rx,
-            lon_rx    = params.lon_rx,
-            # ⚠️ **標高を読んだ位置をそのまま渡す**（B-150）＝等間隔ではない。
-            frac_axis = params.sample_fracs,
-        )
-        terrain.dem_acquired = acquired[0]
-        terrain.dem_status = status[0]
-        result = sim.run_calculation(terrain, params.h_tx, params.h_rx, params)
+    """取得と計算を終えた 1 行（`outcome`）の成果物を作る。
 
+    取得・計算で失敗した行は `outcome.error` に畳まれて来る（traceback は `engine` が
+    残した）＝今までどおり `PathResult(error=)` の 1 行にする。
+    ⛔ DEM に届かない（`DemUnreachableError`）・取り消し（`Cancelled`）は `engine.run_paths`
+    がここへ来る前に投げてバッチごと止める（B-025 ②＝届かないのは経路でなく環境の問題。
+    飲み込むと残りの行も同じ失敗で待ち時間を積み、「全行 ERR のレポート」で終わる）。
+    """
+    if outcome.error is not None:
+        return PathResult(row=row, result=None, error=outcome.error)
+    params, terrain, result = outcome.params, outcome.terrain, outcome.result
+    assert params is not None and terrain is not None and result is not None
+    try:
+        # 取得日（B-213 追補）と標本ごとの事情（I-247）は `engine.fetch_terrain` が地形に
+        # 載せてある＝保存時に引き直さない。🔴 取得日を落とすと report.txt から行が必ず
+        # 消える（Codex 100 巡目）。
         path_dir = os.path.join(batch_dir, row.path_id)
         os.makedirs(path_dir, exist_ok=True)
         sim._save_settings(params, params.h_tx, params.h_rx, path_dir)
@@ -519,18 +547,10 @@ def _process_one(
 
         return pr
 
-    except sim.DemUnreachableError:
-        # DEM に届かないのは**経路の問題ではなく環境の問題**なので、1 行の ERR に
-        # せず batch ごと止める（B-025 ②）。ここで飲み込むと、残りの経路も必ず
-        # 同じ失敗をしながら 1 経路ぶんの待ち時間を積み上げ、最後に「全行 ERR の
-        # レポート」を作って終わる＝ユーザーは何が悪いのか分からないまま待たされる。
-        # 上位（_run_thread の except）が on_error → ダイアログへ流す。
-        raise
-
     except Exception as ex:
         # ⚠️ **経路 1 本の失敗はここで畳まれ、バッチは完走する**（それが仕様）＝
         # 最上位の except には届かないので、**traceback はここで残すしかない**。
-        # 計算・保存・レポート描画の失敗が全部この経路へ入る。
+        # 保存・レポート描画の失敗がこの経路へ入る（取得・計算の失敗は engine が畳む）。
         # ⚠️ **失敗を「成功に紛れさせない」件（I-010）は別**＝ここが直っても、
         # 完了ダイアログが正常に出ることは変わらない。**残すのと見せるのは別の話。**
         logger.exception("Path '%s' failed: %s", row.path_id, ex)
@@ -567,43 +587,3 @@ def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:
         "calc_profile": base.calc_profile,  # 4.0 ステージ3
     }
     return sim.SimParams(c)
-
-
-def _fetch_sync(
-    params:      sim.SimParams,
-    on_progress: Callable[[int], None],
-    on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
-    on_status:   "Callable[[np.ndarray | None], None] | None" = None,
-) -> np.ndarray:
-    """標高取得の非同期コールバックを threading.Event で同期化する。
-
-    単一実行と同じく **キャッシュ付き**（fetch_elevations_cached）を使う。同一
-    バッチの再実行や 1 行だけ直しての再実行で DEM 取得がまるごと消える。キーは
-    座標＋サンプル数なので、行が違えばキャッシュも別（誤ヒットしない）。
-    `on_acquired`・`on_status` は `fetch_elevations_cached` へ素通しする（DEM 取得日・
-    B-213／標本ごとの事情・I-247）。
-    """
-    result: list[np.ndarray] = []
-    error:  list[Exception]  = []
-    done = threading.Event()
-
-    def _on_complete(e: np.ndarray) -> None:
-        result.append(e)
-        done.set()
-
-    def _on_error(ex: Exception) -> None:
-        error.append(ex)
-        done.set()
-
-    sim.fetch_elevations_cached(
-        params,
-        on_progress = on_progress,
-        on_complete = _on_complete,
-        on_error    = _on_error,
-        on_acquired = on_acquired,
-        on_status   = on_status,
-    )
-    done.wait()
-    if error:
-        raise error[0]
-    return result[0]

@@ -8,7 +8,7 @@ tests/test_multihop.py
     それを共有する（`PathRow` を直接編集させると二重入力できる＝⑦違反）。
   - **再生中継の意味論**＝ホップ間で損失を足さない／全体判定は min。
     ここが崩れると「受動反射を実装してしまった」ことになり、物理が変わる。
-  - 実行層は `batch._process_one` の流用であること（新規のループを増やさない）。
+  - 実行層は `batch._run_paths` の流用であること（新規のループを増やさない）。
 
 DEM 取得は monkeypatch で塞ぎ、ネットワーク無しで実行する。
 """
@@ -355,7 +355,7 @@ class TestRunMultihop:
             assert float(row["f1_pct"]) <= units.BLOCKED_RATIO_MAX
 
     def test_uses_the_batch_processor_for_each_hop(self):
-        """実行層は `batch._process_one` の流用であること（新規ループを増やさない）。
+        """実行層は `batch._run_paths` の流用であること（新規ループを増やさない）。
 
         ホップ 1 本＝バッチの 1 行、という等式が A-3 を軽くしている根拠なので、
         ここが独自実装に置き換わったら設計の前提が崩れている。
@@ -370,7 +370,7 @@ class TestRunMultihop:
             if isinstance(n, ast.Call) and isinstance(n.func, ast.Attribute)
             and isinstance(n.func.value, ast.Name)
         }
-        assert "batch._process_one" in calls, (
+        assert "batch._run_paths" in calls, (
             "ホップの実行がバッチの経路を通っていない"
             "（1 ホップ＝バッチの 1 行、という前提が崩れる）"
         )
@@ -1276,7 +1276,7 @@ def test_unsupported_topology_stops_before_fetching_terrain(monkeypatch):
         fetched.append(1)
         raise AssertionError("実行できないトポロジーで DEM を引いている")
 
-    monkeypatch.setattr(mh.batch, "_fetch_sync", _must_not_fetch,
+    monkeypatch.setattr(sim, "fetch_elevations_sync", _must_not_fetch,
                         raising=True)
 
     path = mh.MultiHopPath(
@@ -1311,7 +1311,7 @@ def test_unsupported_topology_still_reports_off_the_calling_thread(monkeypatch):
     def _must_not_fetch(*_a, **_kw):
         raise AssertionError("DEM を引いている")
 
-    monkeypatch.setattr(mh.batch, "_fetch_sync", _must_not_fetch, raising=True)
+    monkeypatch.setattr(sim, "fetch_elevations_sync", _must_not_fetch, raising=True)
     path = mh.MultiHopPath(
         path_id="r1", topology=mh.TOPOLOGY_STAR,
         waypoints=[mh.Waypoint(name=f"P{i}", lat=34.5 + i * 0.01,

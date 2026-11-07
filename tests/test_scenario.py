@@ -272,6 +272,20 @@ class TestEvaluate:
         scn.evaluate(terrain, base, conds, on_point=lambda d, t: seen.append((d, t)))
         assert seen == [(1, 3), (2, 3), (3, 3)]
 
+    def test_cancel_stops_before_the_next_condition(self, terrain, base):
+        """取り消しは次の条件の手前で `Cancelled` を投げる（4.0 ステージ6）。"""
+        cancel = threading.Event()
+        seen: list[int] = []
+        conds = [scn.Condition(str(i), {"h_tx": float(i)}) for i in (5, 15, 25)]
+
+        def _on_point(done, _total):
+            seen.append(done)
+            cancel.set()
+
+        with pytest.raises(sim.Cancelled):
+            scn.evaluate(terrain, base, conds, on_point=_on_point, cancel=cancel)
+        assert seen == [1], "取り消した後の条件を計算した"
+
 
 # ============================================================
 # スイープ軸

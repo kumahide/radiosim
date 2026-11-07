@@ -156,7 +156,8 @@ def test_per_path_failure_logs_traceback(tmp_path, default_params_dict,
 
     ⚠️ **最上位の except では代用できない**＝経路 1 本の失敗はここで
     `PathResult(ok=False)` に畳まれ、**バッチは完走する**（それが仕様）。
-    計算・保存・レポート描画の失敗は全部この経路へ入る。
+    保存・レポート描画の失敗はこの経路へ入る（取得・計算の失敗は `engine.run_paths` が
+    同じように畳む＝`tests/test_engine.py`）。
     """
     from report import report_path
 

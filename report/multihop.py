@@ -5,7 +5,7 @@ multihop.py
 
 **5 つ目の実行フロー**（既存 4＝単一 / バッチ / 地図 / 条件探索）。入力モデルが
 バッチと別（waypoint 列が source of truth）なので独立させたが、**1 ホップの実行は
-バッチの `_process_one` そのまま**＝実行層に新規はほとんど無い。
+バッチの `_run_paths` そのまま**＝実行層に新規はほとんど無い。
 
 中継方式＝**再生中継（受けて送り直す）に限定**（2026-07-31 ユーザー決定）
 ---------------------------------------------------------------------
@@ -419,6 +419,7 @@ def run_multihop(
     project_name:     str = "",
     memo:             str = "",
     basemap_source_id: str = "pale",
+    cancel:           "threading.Event | None" = None,
 ) -> None:
     """中継経路の実行をバックグラウンドスレッドで開始する。
 
@@ -430,12 +431,15 @@ def run_multihop(
 
     basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
     呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
+
+    cancel（省略できる `threading.Event`・4.0 ステージ6）が立つと次のホップ（取得中なら
+    次の標本）で止まり、`sim.Cancelled` が `on_error` へ渡る。
     """
     threading.Thread(
         target = _run_thread,
         args   = (path, base_params, on_hop_start, on_hop_progress,
                   on_hop_complete, on_complete, on_error, coord_format,
-                  on_hop_stage, project_name, memo, basemap_source_id),
+                  on_hop_stage, project_name, memo, basemap_source_id, cancel),
         daemon = True,
     ).start()
 
@@ -443,7 +447,7 @@ def run_multihop(
 def _run_thread(
     path, base_params, on_hop_start, on_hop_progress, on_hop_complete,
     on_complete, on_error, coord_format, on_hop_stage, project_name, memo,
-    basemap_source_id="pale",
+    basemap_source_id="pale", cancel=None,
 ) -> None:
     try:
         # ⛔ **実行できるかを最初に問う**（2026-08-04・独立レビュー Codex 7 巡目）。
@@ -465,17 +469,13 @@ def _run_thread(
         logger.info("Multihop started: %s (%d hops) → %s",
                     path.path_id, total, run_dir)
 
-        results: list[batch.PathResult] = []
-        for i, row in enumerate(rows):
-            on_hop_start(i + 1, total, row.path_id)
-            # **ホップ 1 本＝バッチの 1 行**（実行層はここで完全に流用する）。
-            pr = batch._process_one(row, base_params, run_dir, on_hop_progress,
-                                    coord_format, on_hop_stage, project_name,
-                                    basemap_source_id)
-            results.append(pr)
-            on_hop_complete(i + 1, total, pr)
+        # **ホップ 1 本＝バッチの 1 行**（実行層はここで完全に流用する）。
+        results = batch._run_paths(rows, base_params, run_dir, on_hop_start,
+                                   on_hop_progress, on_hop_complete,
+                                   coord_format, on_hop_stage, project_name,
+                                   basemap_source_id, cancel)
 
-        run = MultiHopRun(path=path, hops=results, save_dir=run_dir)
+        run =MultiHopRun(path=path, hops=results, save_dir=run_dir)
         _write_hops_csv(run, run_dir)
         # 合成シート（全体判定＋内訳）と連結レポート。**min だけを出さない**＝
         # 「どこが一番苦しいか」が分からないと次の一手（中継点を足す・空中線を
@@ -490,6 +490,11 @@ def _run_thread(
                     path.path_id, time.perf_counter() - t0,
                     overall_status(run))
         on_complete(run)
+
+    except sim.Cancelled as ex:
+        # 取り消しは失敗ではない（traceback を残さない）＝終わったことだけ on_error で返す
+        logger.info("Multihop cancelled: %s", ex)
+        on_error(ex)
 
     except Exception as ex:
         logger.exception("Multihop error: %s", ex)

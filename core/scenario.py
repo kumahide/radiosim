@@ -37,6 +37,7 @@ from typing import Callable
 import numpy as np
 
 from core import config
+from core import engine
 from core import i18n
 from core import models
 from core import simulation as sim
@@ -248,17 +249,20 @@ def evaluate(
     base:    sim.SimParams,
     conditions: list[Condition],
     on_point: "Callable[[int, int], None] | None" = None,
+    cancel:   "threading.Event | None" = None,
 ) -> list[ScenarioPoint]:
     """固定した terrain の上で条件を順に評価する（純計算・ネットワーク無し）。
 
     ここが 2.5 の心臓部＝「DEM 取得 1 回 + run_calculation を N 回」。
     terrain も base も**書き換えない**（→ モジュール docstring の不変条件）。
+    `cancel` が立てば次の条件へ進まず `sim.Cancelled` を投げる。
     """
     points: list[ScenarioPoint] = []
     total = len(conditions)
     for i, cond in enumerate(conditions, 1):
+        engine.raise_if_cancelled(cancel)
         p = _apply(base, cond.overrides)
-        result = sim.run_calculation(terrain, p.h_tx, p.h_rx, p)
+        result = engine.calculate(terrain, p)
         points.append(ScenarioPoint(
             label=cond.label, overrides=dict(cond.overrides),
             h_tx=p.h_tx, h_rx=p.h_rx, result=result,
@@ -324,8 +328,12 @@ def run_scenario(
     on_phase:    "Callable[[str], None] | None" = None,
     on_progress: "Callable[[int], None] | None" = None,
     artifacts:   "Callable[[ScenarioRun], None] | None" = None,
+    cancel:      "threading.Event | None" = None,
 ) -> None:
     """条件探索をバックグラウンドスレッドで実行する。
+
+    `cancel`（省略できる・4.0 ステージ6）が立つと、取得は次の標本から・計算は次の条件から
+    止まり、`sim.Cancelled` が `on_error` へ渡る（取り消した地形はキャッシュに載らない）。
 
     `artifacts` を渡すと**このワーカースレッドの中で** RENDER フェーズとして呼ぶ
     （レポート生成＝matplotlib Agg と文字列組み立てのみで tkinter に触れない）。
@@ -347,25 +355,19 @@ def run_scenario(
         try:
             t0 = time.perf_counter()
             phases.start(FETCH)
-            raw, status = _fetch_sync(base_params, phases)
-            terrain = models.calculate_terrain_profile(
-                raw_elevs=raw,
-                lat_tx=base_params.lat_tx, lon_tx=base_params.lon_tx,
-                lat_rx=base_params.lat_rx, lon_rx=base_params.lon_rx,
-                # ⚠️ **標高を読んだ位置をそのまま渡す**（B-150／落としたのが B-157）
-                #    ＝渡さないと等間隔として並べ直され、画素の縁で刻んだ標高が
-                #    別の距離に貼りつく。ここを落としても*この面の中だけ*を見る
-                #    テストは全部緑のままなので、守っているのは面をまたぐ一致の
-                #    ゲート（`TestScenarioBaseMatchesSingleRun`）。
-                frac_axis=base_params.sample_fracs,
-            )
-            terrain.dem_status = status     # 標本ごとの事情（I-247）
+            # キャッシュ付きの取得（同じ経路で条件を変えて何度も回すのが条件探索の使い方
+            # そのもの＝2 回目以降は取得が消える・設計哲学④）。⚠️ 標高を読んだ位置は
+            # `engine.fetch_terrain` がそのまま地形へ渡す（B-150／落としたのが B-157）＝
+            # 守っているのは面をまたぐ一致のゲート（`TestScenarioBaseMatchesSingleRun`）。
+            total = base_params.num
+            terrain = engine.fetch_terrain(
+                base_params, lambda n: phases.advance(n, total), cancel=cancel)
             t_fetch = time.perf_counter() - t0
 
             phases.start(CALC)
             t1 = time.perf_counter()
             points = evaluate(terrain, base_params, conditions,
-                              on_point=phases.advance)
+                              on_point=phases.advance, cancel=cancel)
             logger.info(
                 "Scenario complete: kind=%s points=%d (fetch %.2fs / calc %.3fs)",
                 kind, len(points), t_fetch, time.perf_counter() - t1,
@@ -382,46 +384,11 @@ def run_scenario(
                             time.perf_counter() - t2)
             phases.finish()
             on_complete(run)
+        except sim.Cancelled as ex:  # 取り消しは失敗ではない（traceback を残さない）
+            logger.info("Scenario cancelled: %s", ex)
+            on_error(ex)
         except Exception as ex:      # 失敗は呼び出し側へ 1 本化して渡す
             logger.exception("Scenario error: %s", ex)
             on_error(ex)
 
     threading.Thread(target=_work, daemon=True).start()
-
-
-def _fetch_sync(params: sim.SimParams,
-                phases: Phases) -> "tuple[np.ndarray, np.ndarray | None]":
-    """標高取得（非同期 API を同期化）。**キャッシュ付きを使う**。
-
-    バッチと同じく `fetch_elevations_cached` を通す＝同じ経路で条件を変えて
-    何度も回すのが条件探索の使い方そのものなので、2 回目以降は取得が消える
-    （設計哲学④＝外部 API に優しい）。
-
-    Returns:
-        `(raw_elevs, 標本ごとの dem.ElevStatus)`（後者は分からなければ None・I-247）。
-    """
-    out: list[np.ndarray] = []
-    status: list = [None]
-    err: list[Exception] = []
-    done = threading.Event()
-    total = params.num
-
-    def _on_complete(elevs: np.ndarray) -> None:
-        out.append(elevs)
-        done.set()
-
-    def _on_error(ex: Exception) -> None:
-        err.append(ex)
-        done.set()
-
-    sim.fetch_elevations_cached(
-        params,
-        on_progress=lambda n: phases.advance(n, total),
-        on_complete=_on_complete,
-        on_error=_on_error,
-        on_status=lambda v: status.__setitem__(0, v),
-    )
-    done.wait()
-    if err:
-        raise err[0]
-    return out[0], status[0]
