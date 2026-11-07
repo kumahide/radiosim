@@ -1020,3 +1020,26 @@ def fetch_basemap_tiles(
     work_q.join()
     return results
 
+
+def basemap_tile_png(source_id: str, z: int, x: int, y: int) -> "tuple[str, bytes | None]":
+    """背景地図の 1 枚を PNG のまま `(語, PNG)` で返す（新しい画面の `/tile/`＝外へ出るのはここ）。
+    語＝`cache`／`fetched`／`absent`（世界の外・404＝永久に無い）／`failed`（通信の失敗）。⚠️ 404 との
+    見分けはこのスレッドの印で（`_failed_tiles` の鍵はズームを持たず、別のズームの 404 と混ざる）。"""
+    src = _resolve_basemap_source(source_id)
+    if not (0 <= z <= src.max_zoom and 0 <= x < 2 ** z and 0 <= y < 2 ** z):
+        return "absent", None
+    subdir, path = _basemap_tile_path(src, z, x, y)
+    word = "cache"
+    if not os.path.isfile(path):
+        _network_trouble.flag, word = False, "fetched"
+        try:
+            arr = _fetch_tile(src.source_id, z, x, y, subdir, path, src)
+        except Exception:   # noqa: BLE001 ─ 復号の失敗も「取れなかった」に畳む
+            arr, _network_trouble.flag = None, True
+        if arr is None:
+            return ("failed" if _network_trouble.flag else "absent"), None
+    try:
+        with open(path, "rb") as f:
+            return word, f.read()
+    except OSError:
+        return "failed", None

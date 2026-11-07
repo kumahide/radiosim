@@ -63,6 +63,15 @@ def fetch_terrain(
     return terrain
 
 
+def terrain_key(params: sim.SimParams) -> tuple:
+    """`params` の地形を見分ける鍵＝同じ鍵なら地形を取り直さなくてよい（新しい画面の判定）。
+
+    `fetch_elevations_cached` のキャッシュと同じ鍵（端点・標本・段階・解決後の DEM ソース・
+    読み方）＝鍵を 2 つ持たない。
+    """
+    return sim._terrain_cache_key(params)
+
+
 def calculate(terrain: models.TerrainProfile,
               params: sim.SimParams) -> models.LinkBudgetResult:
     """地形の上で `params` の空中線高のまま計算する（判定の語も載る＝`run_calculation`）。"""

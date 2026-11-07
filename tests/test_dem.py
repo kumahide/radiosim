@@ -3094,3 +3094,57 @@ class TestCoverageScanWithCoarseSourceZoom:
         assert dem_cache._base_zoom(dem_sources.GSI_DEM) == 14
         assert dem_cache._base_zoom(None) == 14
         assert dem_cache._base_zoom(self.COARSE) == 12
+
+
+# ============================================================
+# 新しい画面の地図の口（4.0 ステージ8b）＝`basemap_tile_png` の 4 語
+# ============================================================
+class TestBasemapTilePng:
+    """`cache`／`fetched`／`absent`／`failed` を取り違えないこと。
+
+    🔑 404（そこに永久に無い）と通信の失敗を混ぜない＝混ぜると、オフラインの地図が
+    「何も無い場所」の顔で黙る（`_network_trouble` の註と同じ形の誤り）。
+    """
+
+    @pytest.fixture(autouse=True)
+    def _cache_dir(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(dem, "CACHE_DIR", str(tmp_path))
+
+    def _png(self) -> bytes:
+        from PIL import Image
+        buf = io.BytesIO()
+        Image.new("RGB", (2, 2), (1, 2, 3)).save(buf, format="PNG")
+        return buf.getvalue()
+
+    def test_outside_the_world_is_absent_without_fetching(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: pytest.fail("取得した"))
+        assert dem.basemap_tile_png("pale", 3, 8, 0) == ("absent", None)
+        assert dem.basemap_tile_png("pale", 3, 0, -1) == ("absent", None)
+
+    def test_cached_png_is_read_without_fetching(self, monkeypatch):
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: pytest.fail("取得した"))
+        subdir, path = dem._basemap_tile_path(dem._resolve_basemap_source("pale"), 5, 3, 4)
+        os.makedirs(subdir)
+        with open(path, "wb") as f:
+            f.write(self._png())
+        assert dem.basemap_tile_png("pale", 5, 3, 4) == ("cache", self._png())
+
+    def test_fetched_png_is_returned_as_written(self, monkeypatch):
+        def fake(_layer, _z, _x, _y, subdir, path, _src):
+            os.makedirs(subdir, exist_ok=True)
+            with open(path, "wb") as f:
+                f.write(self._png())
+            return np.zeros((2, 2, 3), dtype=np.uint8)
+        monkeypatch.setattr(dem, "_fetch_tile", fake)
+        assert dem.basemap_tile_png("pale", 5, 3, 4) == ("fetched", self._png())
+
+    def test_404_is_absent_and_network_failure_is_failed(self, monkeypatch):
+        dem._network_trouble.flag = True          # 前の呼び出しの残り＝下ろしてから呼ぶこと
+        monkeypatch.setattr(dem, "_fetch_tile", lambda *a, **k: None)
+        assert dem.basemap_tile_png("pale", 5, 3, 4) == ("absent", None)
+
+        def fail(*_a, **_k):
+            dem._network_trouble.flag = True
+            return None
+        monkeypatch.setattr(dem, "_fetch_tile", fail)
+        assert dem.basemap_tile_png("pale", 5, 3, 4) == ("failed", None)

@@ -109,3 +109,15 @@ class TestRunPaths:
         monkeypatch.setattr(sim, "fetch_elevations", _unreachable)
         with pytest.raises(sim.DemUnreachableError):
             list(engine.run_paths([35.0, 35.1], _params))
+
+
+class TestTerrainKey:
+    """`terrain_key`＝地形に効く欄だけで変わる（新しい画面が取り直すかの判定・4.0 ステージ8b）。"""
+
+    def test_same_path_same_key_and_heights_do_not_matter(self):
+        a, b = _params(), _params()
+        b.h_tx, b.freq_mhz = 99.0, 920.0
+        assert engine.terrain_key(a) == engine.terrain_key(b)
+
+    def test_moving_an_end_changes_the_key(self):
+        assert engine.terrain_key(_params(35.0)) != engine.terrain_key(_params(35.001))
