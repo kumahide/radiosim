@@ -18,9 +18,14 @@ def _rel(tag, *, pre=False, draft=False, url=None):
             "html_url": url or f"{_PAGE}tag/{tag}"}
 
 
-# 実際の応答の形（2026-09-26 に確かめた）＝正式は `3.6`・RC は `v3.6RC2`。
-_LIST = [_rel("3.6"), _rel("v3.6RC2", pre=True), _rel("v3.6RC1", pre=True),
-         _rel("3.5"), _rel("v3.5RC1", pre=True)]
+# Link のタグ（判断点 ⑯）＝「製品名の小文字-版の字」・`v` なし。
+_LIST = [_rel("link-1.1"), _rel("link-1.1RC2", pre=True), _rel("link-1.1RC1", pre=True),
+         _rel("link-1.0"), _rel("link-1.0RC1", pre=True)]
+
+# 同じリポジトリに並ぶ他の製品のタグ（Pro 3.9.x の実際の形＝正式は `3.9.1`・RC は
+# `v3.9RC1`）。接頭辞を外すと Link 1.x より新しく読める。
+_OTHERS = [_rel("3.9.1"), _rel("v3.9.1RC1", pre=True), _rel("v9.0"),
+           _rel("field-2.0"), _rel("drone-1.5"), _rel("Link-9.0"), _rel("link9.0")]
 
 
 def _newer(rels, current, include_pre=None) -> Release:
@@ -31,48 +36,61 @@ def _newer(rels, current, include_pre=None) -> Release:
 
 class TestPickNewer:
     def test_final_user_is_told_of_a_newer_final(self):
-        got = pick_newer(_LIST, "3.5")
-        assert got == Release("3.6", "3.6", f"{_PAGE}tag/3.6")
+        got = pick_newer(_LIST, "1.0")
+        assert got == Release("1.1", "link-1.1", f"{_PAGE}tag/link-1.1")
 
     def test_final_user_is_not_told_of_a_release_candidate(self):
-        assert pick_newer([_rel("v3.7RC1", pre=True), *_LIST], "3.6") is None
+        assert pick_newer([_rel("link-1.2RC1", pre=True), *_LIST], "1.1") is None
 
     def test_rc_tag_without_the_prerelease_flag_is_still_a_prerelease(self):
-        assert pick_newer([_rel("v3.7RC1"), *_LIST], "3.6") is None
+        assert pick_newer([_rel("link-1.2RC1"), *_LIST], "1.1") is None
 
     def test_rc_user_is_told_of_a_newer_rc(self):
-        assert _newer(_LIST, "3.6RC1").version == "3.6"   # 正式が RC より上
+        assert _newer(_LIST, "1.1RC1").version == "1.1"   # 正式が RC より上
 
     def test_rc_user_gets_the_largest_candidate(self):
-        got = _newer([_rel("v3.7RC2", pre=True), _rel("v3.7RC1", pre=True),
-                      *_LIST], "3.6RC2")
-        assert got.version == "3.7RC2" and got.tag == "v3.7RC2"
+        got = _newer([_rel("link-1.2RC2", pre=True), _rel("link-1.2RC1", pre=True),
+                      *_LIST], "1.1RC2")
+        assert got.version == "1.2RC2" and got.tag == "link-1.2RC2"
 
     def test_alpha_counts_as_a_prerelease_user(self):
-        assert _newer([_rel("v3.7RC1", pre=True)], "3.7a1").version == "3.7RC1"
+        assert _newer([_rel("link-1.2RC1", pre=True)], "1.2a1").version == "1.2RC1"
 
     def test_up_to_date_is_none(self):
-        assert pick_newer(_LIST, "3.6") is None
-        assert pick_newer(_LIST, "3.7a1") is None
+        assert pick_newer(_LIST, "1.1") is None
+        assert pick_newer(_LIST, "1.2a1") is None
 
     def test_drafts_unreadable_tags_and_foreign_urls_are_dropped(self):
-        rels = [_rel("9.0", draft=True), _rel("nightly"),
-                _rel("9.1", url="https://example.com/evil"), "junk", {}]
-        assert pick_newer(rels, "3.6") is None
+        rels = [_rel("link-9.0", draft=True), _rel("link-nightly"),
+                _rel("link-9.1", url="https://example.com/evil"), "junk", {}]
+        assert pick_newer(rels, "1.1") is None
+
+    # 判断点 ⑯＝同じリポジトリの他の製品のタグでは、どの版のどの選択でも知らせない。
+    @pytest.mark.parametrize("current", ["1.0a1", "1.0", "1.1RC1"])
+    @pytest.mark.parametrize("include_pre", [None, True, False])
+    def test_other_products_tags_are_never_told(self, current, include_pre):
+        assert pick_newer(_OTHERS, current, include_pre) is None
+
+    def test_link_is_found_among_other_products_tags(self):
+        assert _newer([*_OTHERS, *_LIST], "1.0").tag == "link-1.1"
+
+    def test_the_query_asks_for_the_most_releases_one_page_holds(self):
+        assert update_check.RELEASES_API.endswith("per_page=100")
 
     # I-180＝利用者が選んだら、いまの版より選択が勝つ。
     def test_final_user_who_opts_in_is_told_of_a_release_candidate(self):
-        rels = [_rel("v3.7RC1", pre=True), *_LIST]
-        assert _newer(rels, "3.6", include_pre=True).version == "3.7RC1"
+        rels = [_rel("link-1.2RC1", pre=True), *_LIST]
+        assert _newer(rels, "1.1", include_pre=True).version == "1.2RC1"
 
     def test_rc_user_who_opts_out_hears_only_of_finals(self):
-        rels = [_rel("v3.7RC2", pre=True), *_LIST]
-        assert pick_newer(rels, "3.7RC1", include_pre=False) is None
-        assert _newer([_rel("3.7"), *rels], "3.7RC1", include_pre=False).version == "3.7"
+        rels = [_rel("link-1.2RC2", pre=True), *_LIST]
+        assert pick_newer(rels, "1.2RC1", include_pre=False) is None
+        assert _newer([_rel("link-1.2"), *rels], "1.2RC1",
+                      include_pre=False).version == "1.2"
 
     def test_opting_out_also_drops_an_rc_tag_without_the_flag(self):
-        assert _newer([_rel("v3.7RC1"), *_LIST], "3.6RC1",
-                      include_pre=False).version == "3.6"
+        assert _newer([_rel("link-1.2RC1"), *_LIST], "1.1RC1",
+                      include_pre=False).version == "1.1"
 
 
 class TestWantPrerelease:
@@ -139,8 +157,8 @@ def session(monkeypatch):
 class TestFetch:
     def test_goes_through_the_app_session_with_a_timeout(self, session):
         s = session(res=_Res(body=_LIST))
-        got = update_check.check("3.5")
-        assert got is not None and got.version == "3.6"
+        got = update_check.check("1.0")
+        assert got is not None and got.version == "1.1"
         url, kw = s.calls[0]
         assert url == update_check.RELEASES_API and kw["timeout"] > 0
 
@@ -190,7 +208,7 @@ def test_dem_unreachable_text_is_unchanged_by_the_split(lang):
 
 
 class TestMessages:
-    _REL = Release("3.7", "3.7", f"{_PAGE}tag/3.7")
+    _REL = Release("1.2", "link-1.2", f"{_PAGE}tag/link-1.2")
 
     @pytest.mark.parametrize("frozen,portable,key", [
         (True, False, "update_how_installer"),
@@ -200,8 +218,8 @@ class TestMessages:
         i18n.set_lang("ja")
         msg = launcher_menu.update_available_message(
             self._REL, frozen=frozen, portable=portable)
-        assert i18n.t(key).format(tag="3.7") in msg
-        assert version.APP_VERSION in msg and "3.7" in msg
+        assert i18n.t(key).format(tag="link-1.2") in msg
+        assert version.APP_VERSION in msg and "1.2" in msg
 
     def test_rate_limit_says_wait(self):
         i18n.set_lang("ja")
@@ -320,7 +338,7 @@ def host(monkeypatch):
     return _make
 
 
-_NEW = Release("9.0", "9.0", f"{_PAGE}tag/9.0")
+_NEW = Release("9.0", "link-9.0", f"{_PAGE}tag/link-9.0")
 
 
 class TestStartupCheck:

@@ -26,6 +26,7 @@
   [ ] ⛔ インストーラをコンパイルしたのは Inno Setup 7 か（build.bat が版を確かめて止めるが、RADIOSIM_ISCC_ANY_VERSION=1 を宣言していると素通りする＝I-125）
   [ ] ⛔ 公開の**前に** push 済みか＝git status -sb が ahead を出していないこと（gh release create --target main が見るのは**リモートの** main。未 push だと 1 つ前のコミットにタグが打たれ、zip の中身とタグの指すソースが食い違う＝2026-08-16 の 2.8RC1 で実際に踏んだ。fetch して気づいたので、下の「直後」より 1 段手前に置く）
   [ ] ⛔ push を確かめた**後で** gh release create に zip とインストーラ exe の**両方**を渡した（この項目より前に release を作ると、1 つ上の「未 push のまま古い main にタグを打つ」を自分で誘発する）
+  [ ] ⛔ Link のタグは link-<版>（v なし＝link-1.0・link-1.0RC1・link-1.0.1＝core/version.py の TAG_PREFIX）。更新の確認は link- で始まるタグだけを読む＝綴りを外すと配った Link が新しい版を知らない。Field と Drone の Release は「Latest」にしない（--latest=false＝README のリンクは Link を指す）
 公開の直後にやること:
   [ ] ⛔ gh release view <tag> でアセットが 2 本（zip とインストーラ exe）あることを確認した（欠けていたら gh release upload <tag> <ファイル> で追加）— v3.1RC1 は zip 1 本のまま公開され、後から気づいた
   [ ] ⛔ 版を上げた直後の現在地表は「🚧 正式（未公開）」にした（公開するまで「✅ リリース済」と書かない・§アーカイブ へも落とさない）― 2026-09-23 にユーザー指摘。check 18 は公開したかを**正式版のタグ**で測る（version.py は「いま作っている版」であって公開の証跡ではない）。公開して git fetch --tags を打つと「✅ リリース済」へ直すよう鳴る

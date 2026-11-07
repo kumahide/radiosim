@@ -1749,6 +1749,19 @@ class TestDashboardStageMatchesVersion:
         assert any("未公開" in f for f in found), (
             "タグが無いのに「リリース済」が素通りした＝入口が published を渡していない")
 
+    def test_link_tags_are_read_as_the_lineage_version(self, memcheck, monkeypatch):
+        """判断点 ⑯＝Link 1.0 の公開の証跡は `link-1.0`・系列の版は `4.0`。"""
+        assert memcheck._lineage_tags(
+            ["3.9.1", "v3.9RC1", "link-1.0", "link-1.0RC1", "field-2.0"]) == [
+            "3.9.1", "v3.9RC1", "4.0", "4.0RC1"]
+        monkeypatch.setattr(memcheck, "_current_version", lambda: "4.0")
+        monkeypatch.setattr(memcheck, "_dashboard_rows",
+                            lambda: [(22, "| Link 1.0 | ✅ リリース済 | — |")])
+        monkeypatch.setattr(memcheck, "_git", lambda args: ["3.9.1", "link-1.0"])
+        assert not any("未公開" in f for f in memcheck.check_roadmap_stage())
+        monkeypatch.setattr(memcheck, "_git", lambda args: ["3.9.1", "field-4.0"])
+        assert any("未公開" in f for f in memcheck.check_roadmap_stage())
+
     def test_missing_row_is_flagged(self, memcheck):
         rows = self._rows("| 3.2 | ✅ リリース済 | — |")
         assert any("行が無い" in f for f in

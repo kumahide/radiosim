@@ -4,7 +4,7 @@ buildtools/deploy_qa_fixtures.py
 動作確認用の設定ファイル（`qa_fixtures/`）を、確認したい配置先へ配る。
 
 **なぜ要るか**＝宣言ファイル（`dem_sources.toml` / `tile_sources.toml`）の置き場は
-「設定フォルダ」で、ポータブル配置ではそれが **exe の隣**（`dist\\RadioSimPro\\`）に
+「設定フォルダ」で、ポータブル配置ではそれが **`pythonw.exe` の隣**（`dist\\RadioSimLink\\`）に
 なる。ここはビルドのたびに作り直されるので、手で置いた確認用の設定は毎回消える。
 ⇒ **正本をリポジトリの `qa_fixtures/` に置き、ビルド後にここから配る。**
 
@@ -13,9 +13,9 @@ buildtools/deploy_qa_fixtures.py
 
 使い方（`RADIOSIM_PYTHON` で実行する。cwd はリポジトリ直下）::
 
-    & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py            # dist\\RadioSimPro\\ へ
+    & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py            # dist\\RadioSimLink\\ へ
     & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py --repo     # ソース実行用（リポジトリ直下）
-    & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py --appdata  # インストーラ版用（%APPDATA%\\RadioSim）
+    & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py --appdata  # インストーラ版用（%APPDATA%\\RadioSim\\Link）
     & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py --target <dir>
     & "$env:RADIOSIM_PYTHON" buildtools\\deploy_qa_fixtures.py --remove   # 配ったものを片付ける
 
@@ -56,7 +56,10 @@ def _same_content(a: str, b: str) -> bool:
 
 
 def _portable_dist_dir() -> str:
-    return os.path.join(_REPO, "dist", "RadioSimPro")
+    """ポータブル版（`build.bat link`）の置き場＝名前は組み立てる道具に聞く（写さない）。"""
+    sys.path.insert(0, os.path.join(_REPO, "buildtools"))
+    import build_link                # noqa: PLC0415（置き場の名前に必要なだけ）
+    return os.path.join(_REPO, "dist", build_link.APP_DIR_NAME)
 
 
 def _appdata_config_dir() -> str:
@@ -82,7 +85,7 @@ def main(argv: "list[str] | None" = None) -> int:
     g.add_argument("--repo", action="store_true",
                    help="リポジトリ直下（ソースから main.py を実行して確認する場合）")
     g.add_argument("--appdata", action="store_true",
-                   help="インストーラ版の設定フォルダ（%%APPDATA%%\\RadioSim）")
+                   help="インストーラ版の設定フォルダ（%%APPDATA%%\\RadioSim\\Link）")
     g.add_argument("--target", help="配置先を直接指定する")
     ap.add_argument("--remove", action="store_true",
                     help="配った設定ファイルを消す（元の正本は消さない）")

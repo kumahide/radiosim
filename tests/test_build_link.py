@@ -91,8 +91,8 @@ class TestPth:
 
 class TestVersionAndFiles:
     def test_version_numbers_put_final_above_prerelease(self):
-        assert bl.version_numbers("4.0a1") == "4.0.0.0"
-        assert bl.version_numbers("4.0").endswith(".9999")
+        assert bl.version_numbers("2.1a1") == "2.1.0.0"
+        assert bl.version_numbers("2.1").endswith(".9999")
 
     @pytest.mark.parametrize("rel,skip", [
         ("numpy/_core/tests/test_x.py", True),

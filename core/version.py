@@ -8,11 +8,17 @@ version.py
 
 import re
 
-APP_NAME    = "RadioSim Pro"
-APP_VERSION = "4.0a1"
+APP_NAME    = "RadioSim Link"
+APP_VERSION = "1.0a1"
 APP_FULL    = f"{APP_NAME} {APP_VERSION}"
 COPYRIGHT   = "© 2026 BearValley AI Craftworks. All rights reserved."
 USER_AGENT  = f"Mozilla/5.0 RadioSim/{APP_VERSION}"
+
+# GitHub のタグの頭（判断点 ⑯）＝タグは「製品名の小文字-版の字」（`link-1.0`・
+# `link-1.0RC1`・`link-1.0.1`・`v` なし）。製品名は `APP_VERSION` に入れない。
+# 🔑 同じリポジトリに Pro 3.9.x（接頭辞なしの `3.9.1`・`v3.9RC1`）と Field・Drone の
+# タグが並ぶ＝更新の確認はこの頭のタグだけを読む（`core/update_check.py`）。
+TAG_PREFIX  = "link-"
 
 # 正式版に与える 4 つ目の数。**プレリリースの通し番号より必ず大きい**こと以外に
 # 意味は無い（RC は 1 桁台なので、桁を分けておけば衝突しない）。

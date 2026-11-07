@@ -387,7 +387,7 @@ def test_deny_messages_say_the_order_and_that_nothing_ran():
 # 規則の穴（テストに版の字を直書きする形）は下の見張りが止める。
 _VERSION_SRC = (
     'import re\n\n'
-    'APP_NAME    = "RadioSim Pro"\n'
+    'APP_NAME    = "RadioSim Link"\n'
     'APP_VERSION = "3.7"\n'
     'APP_FULL    = f"{APP_NAME} {APP_VERSION}"\n'
     'COPYRIGHT   = "c"\n\n\n'
@@ -406,7 +406,7 @@ class TestVersionLineOnly:
         (_bump(_VERSION_SRC).replace("\n", "\r\n"), True),          # 改行の形だけは差にしない
         (_bump(_VERSION_SRC).replace('"c"', '"d"'), False),         # 2 行
         (_bump(_VERSION_SRC) + "X = 1\n", False),                   # 行を足した
-        (_VERSION_SRC.replace('APP_NAME    = "RadioSim Pro"', 'APP_NAME    = "X"'), False),
+        (_VERSION_SRC.replace('APP_NAME    = "RadioSim Link"', 'APP_NAME    = "X"'), False),
         (_VERSION_SRC, False),                                      # 同じ
         (_bump(_VERSION_SRC, '"3.8a1"  # x'), False),               # 字面の外
         (_bump(_VERSION_SRC, 'f"{APP_NAME}"'), False),

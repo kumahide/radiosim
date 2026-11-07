@@ -1,6 +1,6 @@
 ---
 name: 不具合報告 / Bug report
-about: RadioSim Pro の不具合を報告する
+about: RadioSim（Link・Pro 3.9.x）の不具合を報告する
 title: ""
 labels: bug
 ---
@@ -32,5 +32,5 @@ whether to include them.
 
 ## 環境 / Environment
 
-- RadioSim Pro の版 / Version:
+- 製品と版（例 RadioSim Link 1.0・RadioSim Pro 3.9.1） / Product and version (e.g. RadioSim Link 1.0, RadioSim Pro 3.9.1):
 - インストール形式 / Install type: インストーラ版 / installer, ポータブル版 / portable, ソースから実行 / from source

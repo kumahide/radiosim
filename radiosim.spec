@@ -1,6 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 #
-# RadioSim Pro - PyInstaller spec ファイル
+# RadioSim Link（旧画面＝撤去まで） - PyInstaller spec ファイル
 #
 # ビルド方法: build.bat から起動する（環境の検証と出力先の指定を持っている）。
 #   直接叩く場合も、pytest を走らせている venv の python で:

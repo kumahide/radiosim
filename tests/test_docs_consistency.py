@@ -520,7 +520,7 @@ def _base_version() -> str:
 def test_readme_h1_matches_app_version(doc):
     if _ALPHA_RE.match(version.APP_VERSION):
         pytest.skip(f"alpha 段階（{version.APP_VERSION}）は README 追従免除")
-    expected = f"# RadioSim Pro {_base_version()}"
+    expected = f"# {version.APP_NAME} {_base_version()}"
     first_line = _read(doc).splitlines()[0].strip()
     assert first_line == expected, (
         f"{doc}: H1 is {first_line!r}, expected {expected!r} "

@@ -24,7 +24,9 @@ from dataclasses import dataclass
 from core import version
 
 #: 問い合わせ先（公開リポジトリ・認証なし＝IP あたり 1 時間 60 回）。新しい順に返る。
-RELEASES_API = "https://api.github.com/repos/kumahide/radiosim/releases?per_page=30"
+#: 🔑 100 件（API の上限）＝同じリポジトリに Pro 3.9.x・Field・Drone の Release が並ぶ。
+#: 30 件だと他の製品の Release が増えるほど Link の最新が一覧の外へ押し出される。
+RELEASES_API = "https://api.github.com/repos/kumahide/radiosim/releases?per_page=100"
 #: 開いてよいページの頭（応答の `html_url` がこれで始まらなければ捨てる＝
 #: 問い合わせの結果をそのままブラウザへ渡さない）。
 RELEASE_PAGE_PREFIX = "https://github.com/kumahide/radiosim/releases/"
@@ -36,8 +38,8 @@ TIMEOUT_S = 10
 @dataclass(frozen=True)
 class Release:
     """知らせる版 1 つ。"""
-    version: str       # タグから先頭の `v` を外した字（`3.6` / `3.6RC2`）
-    tag: str           # タグの字そのまま（`3.6` / `v3.6RC2`＝ソース実行の案内に使う）
+    version: str       # タグから頭の `link-` を外した字（`1.0` / `1.0RC2`）
+    tag: str           # タグの字そのまま（`link-1.0RC2`＝ソース実行の案内に使う）
     url: str           # リリースのページ
 
 
@@ -76,6 +78,9 @@ def pick_newer(releases: list, current: str = version.APP_VERSION,
     """応答の一覧から、`current` より新しい版のうち最大のものを返す（無ければ `None`）。
 
     - `draft` と、読めないタグ（`version_tuple` が `(0,0,0,0)`）は捨てる。
+    - 🔑 **`version.TAG_PREFIX`（`link-`）で始まるタグだけを読む**（判断点 ⑯）＝同じ
+      リポジトリの Pro 3.9.x（`3.9.1`・`v3.9RC1`）は `(3,9,1,9999)` と読めて Link 1.0
+      より新しく見える。Field・Drone のタグ（`field-`・`drone-`）も捨てる。
     - `include_pre` が偽なら、プレリリース（`prerelease` が真、またはタグが RC/a/b）は
       数えない。`None` は `current` で決める（正式なら偽・RC/a/b なら真）。
     - `html_url` が `RELEASE_PAGE_PREFIX` で始まらないものは捨てる。
@@ -91,7 +96,9 @@ def pick_newer(releases: list, current: str = version.APP_VERSION,
         if not isinstance(tag, str) or not isinstance(url, str) \
                 or not url.startswith(RELEASE_PAGE_PREFIX):
             continue
-        name = tag[1:] if tag[:1] in ("v", "V") else tag
+        if not tag.startswith(version.TAG_PREFIX):
+            continue
+        name = tag[len(version.TAG_PREFIX):]
         vt = version.version_tuple(name)
         if vt == (0, 0, 0, 0):
             continue

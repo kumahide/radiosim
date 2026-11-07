@@ -159,7 +159,7 @@ if /i "%MODE%"=="installer" (
 )
 
 echo ============================================================
-echo RadioSim Pro - Build Script (%MODE%)
+echo RadioSim Link - Build Script (%MODE%)
 echo ============================================================
 echo.
 
