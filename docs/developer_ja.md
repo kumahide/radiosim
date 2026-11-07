@@ -249,6 +249,7 @@ radiosim/
 │   ├── disclosure.py     # 帳票の「結果の取扱に関する補足」の字（前提・適用範囲の刻印・純関数）
 │   ├── calc_profile.py   # 計算プロファイル ID と、入力設定・地形のハッシュ（純関数）
 │   ├── verdict.py        # 判定の口（OK／REVIEW／NG／ERROR・前提を振った全組み合わせ・集約と件数）
+│   ├── engine.py         # 計算コアへの呼び口（取り消せる地形の取得・計算・作業面の 1 件ずつの実行）
 │   ├── runtime_env.py    # 実行環境の事実（frozen か・同梱物の根・書き込み先の解決）
 │   ├── env_facts.py      # 環境事実の収集層（版・設定・直近ログ・キャッシュ統計・環境情報。座標は伏せる）
 │   ├── diagnostics.py    # 診断パッケージの ZIP 生成（パス中のユーザー名を伏字化・成果物は既定除外）
@@ -372,6 +373,7 @@ radiosim/
     ├── test_output_contract.py
     ├── test_calc_profile.py
     ├── test_verdict.py
+    ├── test_engine.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_runner_logging.py
@@ -1247,6 +1249,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_version.py`        | 版の字 → Windows の 4 数字バージョン（`core.version.version_tuple`）。**a → b → RC → 正式が単調増加すること**を順序で検査し、正式版が同じ版の RC より数値で古くならないことを確かめる（変換は spec の中に在り、テストから触れなかった） |
 | `test_update_check.py`   | 更新の確認（`core/update_check.py`）。正式版の利用者には正式だけ・RC/a/b の利用者には RC も知らせること・下書きと読めないタグとリポジトリ外の URL を捨てること・回数の上限／届かない／読めないの見分け・配布形ごとの入れ方の文。起動時の確認＝既定オフ・1 日 1 回まで（試みた日を打つ前に記録）・最新と失敗は黙る・待つ間に手動で押すと答えを出す。プレリリースも知らせる＝触るまでは版で決まり・選んだらそちらが勝ち・手動と起動時の両方の問い合わせへ届く。DEM 取得失敗の文を 3 キーに割っても字が変わらないこと |
 | `test_calc_profile.py`   | 計算プロファイルと 2 つのハッシュ（入力の項目の網羅・値が動く入力と動かない入力・`.rsproj` の読み書きと旧ファイル・CSV の末尾 2 列・帳票の刻印） |
+| `test_engine.py`         | 計算コアへの呼び口（同期の取得は渡された引数だけを渡す・地形に取得日と標本ごとの事情を載せる・1 件ずつ順に返す・1 件の失敗は畳む・取り消しと DEM に届かないときは全体を止める） |
 | `test_verdict.py`        | 判定の口（4 語・前提を振った全組み合わせ・両向きの REVIEW・地面反射と無効画素の埋め直し・集約と件数・v1 は 3 語のまま・4 語が全層で同じ配色キー） |
 | `test_output_contract.py`| 成果物 CSV の列仕様（台帳が全書き手を数えているか・見出しが契約由来か・値の数が列数と合うか・条件探索の可変列） |
 | `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |

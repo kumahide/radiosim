@@ -221,6 +221,7 @@ BANDS: list[Band] = [
                 Card(("オーケストレーション", "Orchestration"), [[
                     ("simulation.py", "DEM 取得管理・地形・計算", "DEM fetch, terrain, calc"),
                     ("scenario.py", "条件探索の共有ランナー", "condition explorer runner"),
+                    ("engine.py", "計算コアへの呼び口（取り消せる）", "core entry points (cancellable)"),
                 ]]),
                 Card(("純粋（副作用ゼロ）", "Pure (no side effects)"), [[
                     ("models.py", "伝搬計算", "propagation calculation"),

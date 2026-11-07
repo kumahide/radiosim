@@ -109,10 +109,11 @@
   <text x="34" y="780" class="lname" fill="#7a4f16">core/ — the foundation (calculation, data, configuration)</text>
   <text x="1374" y="780" class="lrule" text-anchor="end">Imports neither tkinter nor matplotlib.</text>
   <g>
-    <rect class="card" x="34" y="804" width="481" height="76" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="34" y="804" width="481" height="96" rx="6" stroke="#f0dcbe"/>
     <text x="46" y="821" class="ctitle" fill="#7a4f16">Orchestration</text>
     <text x="46" y="842" class="mod">simulation.py</text> <text x="214" y="842" class="role">DEM fetch, terrain, calc</text>
     <text x="46" y="862" class="mod">scenario.py</text> <text x="214" y="862" class="role">condition explorer runner</text>
+    <text x="46" y="882" class="mod">engine.py</text> <text x="214" y="882" class="role">core entry points (cancellable)</text>
     <rect class="card" x="529" y="804" width="418" height="316" rx="6" stroke="#f0dcbe"/>
     <text x="541" y="821" class="ctitle" fill="#7a4f16">Pure (no side effects)</text>
     <text x="541" y="842" class="mod">models.py</text> <text x="709" y="842" class="role">propagation calculation</text>

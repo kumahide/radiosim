@@ -20,7 +20,7 @@ import os
 import queue
 import threading
 from datetime import datetime
-from typing import Callable
+from typing import Any, Callable
 
 import numpy as np
 
@@ -714,18 +714,20 @@ def with_calc_profile(params: SimParams, profile: str) -> SimParams:
     return alt
 
 
-def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray:
-    """`params` の座標で、`level`（`terrain_grid.RESOLUTION_KEYS`）の解像度の標高配列を
-    同期取得する（3.4 ステージ4・感度計算の「解像度」軸専用）。
+def fetch_elevations_sync(
+    params: SimParams,
+    on_progress: "Callable[[int], None] | None" = None,
+    *,
+    cancel: "threading.Event | None" = None,
+    on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
+    on_status: "Callable[[np.ndarray | None], None] | None" = None,
+) -> np.ndarray:
+    """`fetch_elevations_cached` を待って標高の配列を返す（失敗と `Cancelled` は投げる）。
 
-    `params` 自体は変更しない（別解像度用の複製を作って渡す）。`fetch_elevations_cached`
-    を通すので、DEM タイル自体は既にキャッシュ済みなら再取得は起きない
-    （`core/scenario.py::_fetch_sync` と同じパターンの同期化）。
+    バッチ・中継・条件探索・解像度の軸が同じ形で書いていた同期化の 1 か所（4.0 ステージ6）。
+    ⚠️ **渡された引数だけを渡す**＝取得を差し替える試験の偽物は `on_status`・`cancel` を
+    受けないものがある。
     """
-    alt = copy.copy(params)
-    alt.resolution = level
-    _resolve_level_samples(alt)   # 基準と同じ読み（B-339）
-
     out: list[np.ndarray] = []
     err: list[Exception] = []
     done = threading.Event()
@@ -738,12 +740,28 @@ def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray
         err.append(ex)
         done.set()
 
-    fetch_elevations_cached(alt, on_progress=lambda n: None,
-                             on_complete=_on_complete, on_error=_on_error)
+    extra: dict[str, Any] = {k: v for k, v in (("on_acquired", on_acquired),
+                                               ("on_status", on_status),
+                                               ("cancel", cancel)) if v is not None}
+    fetch_elevations_cached(params, on_progress or (lambda n: None),
+                            _on_complete, _on_error, **extra)
     done.wait()
     if err:
         raise err[0]
     return out[0]
+
+
+def fetch_elevations_for_resolution(params: SimParams, level: str) -> np.ndarray:
+    """`params` の座標で、`level`（`terrain_grid.RESOLUTION_KEYS`）の解像度の標高配列を
+    同期取得する（3.4 ステージ4・感度計算の「解像度」軸専用）。
+
+    `params` 自体は変更しない（別解像度用の複製を作って渡す）。キャッシュ付きの取得を
+    通すので、DEM タイル自体は既にキャッシュ済みなら再取得は起きない。
+    """
+    alt = copy.copy(params)
+    alt.resolution = level
+    _resolve_level_samples(alt)   # 基準と同じ読み（B-339）
+    return fetch_elevations_sync(alt)
 
 
 # ============================================================

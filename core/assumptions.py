@@ -57,6 +57,7 @@ FORMULA_FREE: dict[str, str] = {
     "dem_cache":        "タイルのキャッシュの棚卸し・削除（I/O）",
     "dem_prefetch":     "面での事前取得（I/O）＝標高の復号は `dem` が持つ",
     "dem_sources":      "DEM のソースの宣言（URL・層・復号の型）＝復号の式は `dem` が持つ",
+    "engine":           "地形の取得と計算を呼ぶ口（前提は呼ばれる式の側）",
     "diagnostics":      "診断の ZIP をまとめる（I/O）",
     "disclosure":       "刻印の文を組む（前提は各式の `ASSUMPTIONS` と `models.scope_notes`）",
     "env_facts":        "実行環境の事実を集める（I/O）",

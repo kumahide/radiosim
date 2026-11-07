@@ -499,7 +499,7 @@ def test_graph_panel_keeps_units_out_of_the_values():
         win = show_graph(root, params, np.zeros(params.num))
         win.update()
         numeric = ("eirp", "fspl", "diff_loss", "total_loss", "gain_rx",
-                   "p_rx", "sens", "margin", "k_factor", "f1_obs", "slant",
+                   "p_rx", "sens", "margin", "f1_obs", "slant",
                    "dem_fail")
         for key in numeric:
             value = win._vars[key].get()

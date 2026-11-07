@@ -109,10 +109,11 @@
   <text x="34" y="780" class="lname" fill="#7a4f16">core/ — 土台（計算・データ・設定）</text>
   <text x="1285" y="780" class="lrule" text-anchor="end">tkinter も matplotlib も引かない。</text>
   <g>
-    <rect class="card" x="34" y="804" width="425" height="76" rx="6" stroke="#f0dcbe"/>
+    <rect class="card" x="34" y="804" width="425" height="96" rx="6" stroke="#f0dcbe"/>
     <text x="46" y="821" class="ctitle" fill="#7a4f16">オーケストレーション</text>
     <text x="46" y="842" class="mod">simulation.py</text> <text x="214" y="842" class="role">DEM 取得管理・地形・計算</text>
     <text x="46" y="862" class="mod">scenario.py</text> <text x="214" y="862" class="role">条件探索の共有ランナー</text>
+    <text x="46" y="882" class="mod">engine.py</text> <text x="214" y="882" class="role">計算コアへの呼び口（取り消せる）</text>
     <rect class="card" x="473" y="804" width="399" height="316" rx="6" stroke="#f0dcbe"/>
     <text x="485" y="821" class="ctitle" fill="#7a4f16">純粋（副作用ゼロ）</text>
     <text x="485" y="842" class="mod">models.py</text> <text x="653" y="842" class="role">伝搬計算</text>

@@ -249,6 +249,7 @@ radiosim/
 │   ├── disclosure.py     # Wording of the "Notes on handling this result" section in the reports (assumptions, scope notes, pure functions)
 │   ├── calc_profile.py   # Calculation profile ID and the input-settings and terrain hashes (pure functions)
 │   ├── verdict.py        # The single verdict point (OK / REVIEW / NG / ERROR from every combination of varied assumptions, aggregation and counts)
+│   ├── engine.py         # The entry points into the calculation core (cancellable terrain fetch, calculation, one-item-at-a-time run of a workspace)
 │   ├── runtime_env.py    # Runtime facts (frozen or not, bundle root, resolved write targets)
 │   ├── env_facts.py      # Environment-facts collection layer (version, config, recent log, cache stats, env info; coordinates redacted)
 │   ├── diagnostics.py    # Builds the diagnostic-package zip (usernames masked in paths; artifacts opt-in)
@@ -373,6 +374,7 @@ radiosim/
     ├── test_output_contract.py
     ├── test_calc_profile.py
     ├── test_verdict.py
+    ├── test_engine.py
     ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_runner_logging.py
@@ -1285,6 +1287,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_version.py`        | Version string -> the Windows 4-number version (`core.version.version_tuple`). Checks the **ordering** a -> b -> RC -> final, so a final release never looks numerically older than its own RCs (the conversion used to live inside the spec, out of reach of any test) |
 | `test_update_check.py`   | Check for Updates (`core/update_check.py`). Final-release users hear only of final releases, RC/a/b users also of RCs; drafts, unreadable tags and URLs outside the repository are dropped; rate limit / unreachable / unreadable are told apart; the how-to-install sentence follows the distribution. The startup check is off by default, runs at most once a day (the attempt date is saved before the query), stays silent when up to date or on failure, and a manual click while it is pending shows its answer. Include Pre-releases: untouched follows the current version, a choice wins over it, and it reaches both the manual and the startup query. Splitting the DEM-unreachable message into 3 keys leaves its text unchanged |
 | `test_calc_profile.py`   | Calculation profile and the two hashes (every input accounted for, which inputs move the value and which do not, `.rsproj` read/write and old files, the last two CSV columns, the stamp on the reports) |
+| `test_engine.py`         | The entry points into the calculation core (the synchronous fetch passes only the given arguments, the terrain carries the acquisition dates and per-sample status, items come back one at a time in order, one failure is folded, cancelling or an unreachable DEM stops the whole run) |
 | `test_verdict.py`        | The single verdict point (four words, every combination of varied assumptions, REVIEW in both directions, ground reflection and filled invalid pixels, aggregation and counts, v1 keeps three words, the same colour key in every layer) |
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
 | `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
