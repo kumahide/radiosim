@@ -123,6 +123,28 @@ def test_invalid_pixel_that_flips_is_review():
     assert r.status == "REVIEW" and "dem_invalid_pixel" in r.verdict.flipped_by
 
 
+def test_a_flip_that_needs_two_assumptions_at_once_is_review(monkeypatch):
+    """🔑 全組み合わせ（I-235・宣言 `every_combination_not_one_axis`）＝植生高だけ・環境区分だけでは
+    裏返らず、2 つを同時に不利へ動かすと NG になる回線は REVIEW。1 軸ずつに戻すと OK が出る。
+    """
+    link = LINKS["nara_ikoma"]                 # 植生あり・環境区分は中ほど（±1 段が両側にある）
+    p = _params(link["input"])
+    t = models.calculate_terrain_profile(
+        raw_elevs=np.array(link["raw_elevs"], dtype=float),
+        lat_tx=p.lat_tx, lon_tx=p.lon_tx, lat_rx=p.lat_rx, lon_rx=p.lon_rx,
+        frac_axis=p.sample_fracs)
+
+    def fake_margins(terrain, h_tx, h_rx, params, rain_rate, *, veg_h, env_type, diff_method):
+        m = 1.0 - 0.6 * (veg_h != params.veg_h) - 0.6 * (env_type != params.env_type)
+        return m, m, 0.0
+
+    monkeypatch.setattr(verdict, "_margins", fake_margins)
+    monkeypatch.setattr(verdict.ground_reflection, "envelope_for_link", lambda *a, **k: None)
+    v = verdict.judge(t, p.h_tx, p.h_rx, p, p.rain_rate, base_margin=1.0)
+    assert v.word == "REVIEW" and v.worst_margin == pytest.approx(-0.2)
+    assert v.flipped_by == ("veg_h", "env_type")
+
+
 def test_golden_review_count_matches_the_stage6_measurement():
     """着手の測り（I-235 の「対応」＝31 本で REVIEW 13 本）と同じ数。"""
     words = [_run(i).status for i in LINKS]

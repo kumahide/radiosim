@@ -70,6 +70,5 @@ FORMULA_FREE: dict[str, str] = {
     "tile_sources":     "背景地図のタイルの宣言（純データ）",
     "units":            "数値の表記の変換だけ（距離・遮蔽率）",
     "update_check":     "新しい版の問い合わせ（I/O）",
-    "verdict":          "既存の式を前提を振って呼び、余裕度の符号で語を決めるだけ（前提は呼ばれる式の側・合成の後処理は `sensitivity` と同じ式）",
     "version":          "版と名前の単一ソース",
 }

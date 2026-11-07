@@ -33,6 +33,7 @@ from dataclasses import dataclass
 import numpy as np
 
 from core import calc_profile, dem, ground_reflection, models
+from core.assumptions import DISCLOSED, GUARD, Assumption
 from core.sensitivity import VEG_PERTURB_FRAC
 
 OK: str = "OK"
@@ -51,6 +52,23 @@ _SEVERITY: dict[str, int] = {OK: 0, REVIEW: 1, NG: 2}
 AXES: tuple[str, ...] = (
     "veg_h", "env_type", "diff_method", "diff_veg_compose",
     "ground_reflection", "dem_invalid_pixel",
+)
+
+#: 判定の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+ASSUMPTIONS: tuple[Assumption, ...] = (
+    Assumption("every_combination_not_one_axis",
+               "振る前提は全組み合わせで動かす＝どの前提も 1 つだけでは裏返らず、同時に動かすと裏返る回線も"
+               " REVIEW（1 軸ずつの幅〔`sensitivity`〕で語を決めない・I-235）",
+               GUARD, ("judge",),
+               "tests/test_verdict.py::test_a_flip_that_needs_two_assumptions_at_once_is_review"),
+    Assumption("invalid_pixel_is_refilled",
+               "無効画素の標本を 0 m のまま信じない＝前後の有効な標本で埋め直して裏返れば REVIEW（I-247）",
+               GUARD, ("fill_invalid_pixels",),
+               "tests/test_verdict.py::test_invalid_pixel_that_flips_is_review"),
+    Assumption("no_tile_is_sea_level",
+               "404（海上・日本域外）の標本は 0 m として判定に使い、点数を数えて開示が名乗る（I-247）",
+               DISCLOSED, ("judge",),
+               "tests/test_verdict.py::TestDisclosure::test_dem_samples_at_0m_are_counted"),
 )
 
 

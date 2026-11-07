@@ -33,9 +33,9 @@ from core import terrain_grid
 from core.assumptions import OPEN, Assumption
 
 #: 式（幅の出し方）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
+#: ⚠️ ここの幅は軸を 1 つずつ動かした表＝複数の前提が同時に不利な場合は見ない。判定（OK／NG／
+#: REVIEW）はこの幅を使わず、`verdict.judge` が全組み合わせで見る（I-235・宣言は `verdict.ASSUMPTIONS`）。
 ASSUMPTIONS: tuple[Assumption, ...] = (
-    Assumption("one_axis_at_a_time", "軸は 1 つずつ動かす＝複数の前提が同時に不利な場合の幅は保証しない",
-               OPEN, issue="I-235"),
     Assumption("resolution_axis_reaches_no_report", "解像度の軸は計算できても、どの帳票にも出ない",
                OPEN, issue="B-231"),
     Assumption("no_dem_elevation_axis", "DEM 標高 ±3 m の軸は一律シフトでは幅が常に 0 なので出さず、伏せたまま",

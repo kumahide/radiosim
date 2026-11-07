@@ -43,7 +43,7 @@ from core import dem_sources
 from core import terrain_grid
 from core import tile_sources
 from core import version
-from core.assumptions import GUARD, OPEN, Assumption
+from core.assumptions import GUARD, Assumption
 from core.config import cache_log_base_dir, logger
 
 #: 式（標高の復号）の前提（I-239・器と 3 値の意味は `core/assumptions.py`）。
@@ -52,9 +52,11 @@ ASSUMPTIONS: tuple[Assumption, ...] = (
                GUARD, ("get_elevation", "network_failed"),
                "tests/test_dem.py::TestFailedTileNegativeCache"
                "::test_unexpected_exception_returns_nan_and_sets_network_failed"),
-    Assumption("zero_is_sea_level", "判定は `0.0` を海抜 0 m として使い、404（海上・日本域外）・無効画素と区別しない"
-               "（区別は標本ごとの `ElevStatus` が持つ＝判定へ渡すのは 4.0 ステージ6）",
-               OPEN, issue="I-247"),
+    Assumption("zero_is_told_apart_from_sea_level",
+               "404（海上・日本域外）と無効画素の標本は `0.0` を返すが、標本ごとの `ElevStatus` で海抜 0 m の"
+               "値と見分ける（判定での扱いは `verdict.ASSUMPTIONS`＝I-247）",
+               GUARD, ("ElevStatus", "last_elevation_status"),
+               "tests/test_dem.py::TestElevationStatus::test_status_follows_the_invariant"),
     Assumption("bilinear_stays_in_one_layer",
                "双線形の 4 近傍は、点を含む画素と同じ層からだけ取る（欠けた近傍は重みから外し、別の層で埋めない）",
                GUARD, ("_bilinear_in_layer",),
