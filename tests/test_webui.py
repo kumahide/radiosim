@@ -8,12 +8,17 @@ tests/test_webui.py
 - 入力は知らない鍵を受けない（1 つでもあれば何も変えない）
 - 地形に効く欄が変わったら取得中の地形を取り消す・効かない欄では取り消さない
 - HTTP は `Host` 違いと鍵なしを 403 で断る・静的ファイルの外へ出ない
+- 起動の経路で通信の部品（`truststore`・`urllib3`・`requests`）を読まない（I-232）
 """
 
 from __future__ import annotations
 
 import http.client
 import json
+import os
+import pathlib
+import subprocess
+import sys
 import threading
 
 import pytest
@@ -298,3 +303,24 @@ def test_leaving_the_page_quits_unless_a_page_comes_back(monkeypatch):
         assert not quit_called.wait(0.3)
     finally:
         srv.httpd.server_close()
+
+
+_STARTUP_PATH = """
+import sys
+import webui.__main__ as m
+m._prepare_network()
+from core import dem
+from webui import edge, server, state, worker
+print(" ".join(k for k in ("truststore", "urllib3", "requests") if k in sys.modules))
+"""
+
+
+def test_the_startup_path_does_not_load_the_network_parts():
+    # I-232＝truststore・urllib3・requests は初めての通信まで読まない（約 0.13 秒）。
+    # requests の遅延は 3.15 の `__lazy_modules__`（core/dem.py）＝それより前は先に読む
+    root = pathlib.Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(root)}
+    out = subprocess.run([sys.executable, "-c", _STARTUP_PATH], env=env, cwd=root,
+                         capture_output=True, text=True, timeout=60, check=True).stdout.split()
+    expected = [] if sys.version_info >= (3, 15) else ["requests"]
+    assert out == expected

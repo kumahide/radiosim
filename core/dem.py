@@ -19,7 +19,6 @@ dem.py
 
 ネットワーク（requests）・PIL・numpy への依存はここに閉じ込める。ロギングだけは
 アプリ共通の logger（config.py）を借りる（config → dem の一方向依存・逆流なし）。
-infrastructure.py を config.py ＋ dem.py（本体）へ分割した際に切り出した DEM 層。
 """
 
 import enum
@@ -31,9 +30,10 @@ import queue
 import threading
 import time
 import urllib.request
-from typing import NamedTuple
-from typing import Protocol
+from typing import NamedTuple, Protocol
 from datetime import date
+
+__lazy_modules__ = ["requests"]  # 起動の経路で読まない（I-232＝3.15 の遅延 import・初めて使うときに読む）
 
 import numpy as np
 import requests
@@ -233,10 +233,21 @@ def set_proxy(url: str) -> None:
     logger.info("Proxy configured: %r", _proxy_url or "(system)")
 
 
+def _trust_os_certificates() -> None:
+    """初めての通信の直前に truststore を入れる（社内のプロキシの証明書を OS のストアで信じる）。
+    起動では入れない（I-232＝注入が `urllib3`・`requests` を読み WMI へ問う＝約 0.13 秒）。"""
+    try:
+        import truststore
+        truststore.inject_into_ssl()
+    except Exception:                                    # 無くても動く（OS の既定で信じる）
+        pass
+
+
 def _get_session() -> "requests.Session":
     global _http_session
     with _session_lock:
         if _http_session is None:
+            _trust_os_certificates()
             s = requests.Session()
             s.headers.update({"User-Agent": version.USER_AGENT})
             if _proxy_url:
@@ -849,10 +860,7 @@ def _fetch_tile(
         replace_existing = os.path.exists(cache_path)   # 在るのに読めない＝壊れている
 
     try:
-        logger.debug(
-            "Fetching tile: layer=%s zoom=%d x=%d y=%d",
-            layer_id, zoom, xtile, ytile,
-        )
+        logger.debug("Fetching tile: layer=%s zoom=%d x=%d y=%d", layer_id, zoom, xtile, ytile)
         res = _get_session().get(url, timeout=5)
 
         if res.status_code in (200, 404):
@@ -888,27 +896,19 @@ def _fetch_tile(
             # 恒久欠落 = 負キャッシュに登録して再リクエストを抑止。
             with _cache_lock:
                 _failed_tiles.add((src.source_id, layer_id, xtile, ytile))
-            logger.debug(
-                "tile absent (404) layer=%s tile=(%d,%d)",
-                layer_id, xtile, ytile,
-            )
+            logger.debug("tile absent (404) layer=%s tile=(%d,%d)", layer_id, xtile, ytile)
             return None
 
         # 404 以外の非 200（5xx/429 等）は一時失敗として扱い、負キャッシュには
         # 登録しない（次回リトライで取得し直せるようにする）。
-        logger.warning(
-            "tile: unexpected status %d layer=%s tile=(%d,%d)",
-            res.status_code, layer_id, xtile, ytile,
-        )
+        logger.warning("tile: unexpected status %d layer=%s tile=(%d,%d)",
+                       res.status_code, layer_id, xtile, ytile)
         _network_trouble.flag = True
         return None
 
     except requests.RequestException as e:
         # 一時失敗。負キャッシュには登録しない。
-        logger.warning(
-            "tile download failed: layer=%s tile=(%d,%d) error=%s",
-            layer_id, xtile, ytile, e,
-        )
+        logger.warning("tile download failed: layer=%s tile=(%d,%d) error=%s", layer_id, xtile, ytile, e)
         # ⚠️ `force` では古いキャッシュを返さない（B-284）＝呼び出し側は
         #   非 None を「取り直せた」と数えるので、更新できなかったタイルまで
         #   成功に入る。キャッシュ自体は消さずに残る。

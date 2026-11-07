@@ -9,6 +9,8 @@ import io
 import json
 import math
 import os
+import sys
+import types
 import unittest.mock as mock
 
 import numpy as np
@@ -1108,6 +1110,16 @@ class TestProxy:
         s1 = dem._get_session()
         s2 = dem._get_session()
         assert s1 is s2
+
+    def test_truststore_goes_in_before_the_first_session(self, monkeypatch):
+        """I-232＝起動では truststore を入れず、セッションを作る直前に入れる（社内のプロキシの証明書）。"""
+        seen = []
+        fake = types.ModuleType("truststore")
+        fake.inject_into_ssl = lambda: seen.append(dem._http_session)  # type: ignore[attr-defined]
+        monkeypatch.setitem(sys.modules, "truststore", fake)
+        dem.set_proxy("")
+        dem._get_session()
+        assert seen == [None]                              # 作る前に 1 度だけ
 
     def teardown_method(self):
         """各テスト後にセッションをリセットしてテスト間干渉を防ぐ。"""

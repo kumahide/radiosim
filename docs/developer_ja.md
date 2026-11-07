@@ -298,7 +298,7 @@ radiosim/
 │   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
 │   └── batch_run.py      # バッチの実行と進捗（Mixin）
 ├── webui/                # 新しい画面（ローカルの HTTP と Edge のアプリモード・4.0 ステージ8）。views と同じ位で互いに引かない
-│   ├── __main__.py       # `python -m webui` の入口（truststore→core の順・設定は読むだけ）
+│   ├── __main__.py       # `python -m webui` の入口（先に Edge を起こす・truststore は初めての通信の直前に `core/dem.py` が入れる・設定は読むだけ）
 │   ├── state.py          # 入力の集合と見出し（古い版の結果を今の判定に見せない）
 │   ├── worker.py         # 計算のスレッド 1 本（地形の取得は取り消せる）
 │   ├── server.py         # 127.0.0.1 だけで待つ HTTP（起動ごとの鍵・Host の検査・静的ファイル）

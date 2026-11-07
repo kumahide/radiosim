@@ -9,9 +9,11 @@ webui/__main__.py
    Edge の立ち上がりと重ねる。ページの接続はサーバーが応え始めるまで待ち行列で待つ
    （I-232 の実測・開発機・温まった状態＝Edge を起こすまで 0.19→0.03 秒・ページが
    状態を取りに来るまで 0.34→0.28 秒。いまはページがサーバーの準備を待つ＝残りは読み込み）
-3. truststore を入れる（社内のプロキシの証明書を OS の証明書ストアで信じる）
-4. `NO_PROXY` に `127.0.0.1` を足す（自分のサーバーへの道がプロキシへ行かない）
-5. その後で通信を使う `core` を読む（読んだ時点の通信の設定を固めるため）
+3. `NO_PROXY` に `127.0.0.1` を足す（自分のサーバーへの道がプロキシへ行かない）
+4. その後で通信を使う `core` を読む（読んだ時点の通信の設定を固めるため）
+
+truststore はここで入れない＝`core.dem` が初めての通信の直前に入れる（I-232＝起動の
+経路で `truststore`・`urllib3`・`requests` を読まない）。
 
 ⚠️ import されても起動しない（`main()` の中でだけ core を読む＝`tests/test_smoke.py` が
 ヘッドレスで import する）。設定は**読むだけ**＝`config.startup_lang` は設定が無いと
@@ -26,11 +28,6 @@ import threading
 
 
 def _prepare_network() -> None:
-    try:
-        import truststore
-        truststore.inject_into_ssl()
-    except Exception:                                    # 無くても動く（OS の既定で信じる）
-        pass
     hosts = [h for h in os.environ.get("NO_PROXY", "").split(",") if h.strip()]
     if "127.0.0.1" not in hosts:
         os.environ["NO_PROXY"] = ",".join(hosts + ["127.0.0.1"])

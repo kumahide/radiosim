@@ -298,7 +298,7 @@ radiosim/
 │   ├── batch_io.py       # Batch CSV import/export and template (mixin)
 │   └── batch_run.py      # Batch execution and progress (mixin)
 ├── webui/                # New screen (local HTTP + Edge app mode, 4.0 stage 8). Same rank as views; neither imports the other
-│   ├── __main__.py       # `python -m webui` entry (truststore before core; settings are read only)
+│   ├── __main__.py       # `python -m webui` entry (starts Edge first; `core/dem.py` injects truststore just before the first request; settings are read only)
 │   ├── state.py          # Input set and headline (never shows a result from an older input version)
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable)
 │   ├── server.py         # HTTP bound to 127.0.0.1 only (per-launch token, Host check, static files)
