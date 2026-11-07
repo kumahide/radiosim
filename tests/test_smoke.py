@@ -129,6 +129,31 @@ def test_tk_root_constructs():
         root.destroy()
 
 
+def test_tk_root_destroy_drains_window_events_first():
+    """試験の根は、壊す前に溜まった窓の出来事を流すこと（B-376）。
+
+    外れると、根を作り直す試験が積み重なったところで Tk 9 がアクセス違反で
+    プロセスごと落ちる（`conftest._drain_window_events_before_destroy`）。
+    包みが付いているかと、本当に流すか（列の末尾に積んだ仮想の出来事が、壊す前に
+    届く）の 2 つを見る。⚠️ `<Map>` では見られない＝トップレベルを地図に載せるのは
+    待ち時間の処理で、窓の出来事だけを流しても来ない。仮想の出来事も、地図に載る前の
+    窓には届かない＝先に `update()` で載せる（包みが無ければ届かないことは試験の外で
+    確かめた＝2026-11-08）。
+    """
+    tk = pytest.importorskip("tkinter")
+    assert getattr(tk.Tk.destroy, "_drains_window_events", False)
+    root = make_tk_root()
+    root.withdraw()
+    seen: list[str] = []
+    top = tk.Toplevel(root)
+    top.update()
+    top.bind("<<B376Probe>>", lambda _e: seen.append("probe"))
+    top.event_generate("<<B376Probe>>", when="tail")
+    assert not seen                     # 積んだだけ＝まだ届いていない
+    root.destroy()
+    assert seen, "壊す前に窓の出来事が流れていない"
+
+
 def test_report_meta_flows_from_launcher():
     """レポートの案件名・メモがランチャー（source of truth）→バッチへ伝播すること。
 

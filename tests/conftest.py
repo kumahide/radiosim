@@ -127,6 +127,54 @@ def pytest_configure(config):
     _require_declared_interpreter()
     _isolate_app_paths()
     _cap_double_quiet(config)
+    _drain_window_events_before_destroy()
+
+
+# ============================================================
+# 🔴 根を壊す前に、溜まった窓の出来事を流す（B-376・2026-11-08）
+# ============================================================
+# 試験は根（`tk.Tk()`）を 1 本ごとに作り直し、**一度も出来事を流さずに**
+# `root.destroy()` する。この形が積み重なると、Tk 9.0.4（Windows）は根の
+# `destroy` の中＝Tcl の C の側でアクセス違反になり、**プロセスごと落ちる**。
+# 実測（試験の外の再現・`views.launcher` で条件探索と中継の窓を開けて壊す）:
+#   - 根を作り直して 3〜6 回目で落ちる。落ちるのは毎回 `ScenarioWindow` の
+#     トップレベルを Tcl で壊す瞬間（子はもう壊れた後）。Python の呼び戻しは
+#     積まれていない＝Tk の中の壊れ方
+#   - 窓 1 つずつ・バッチとの組では落ちない。条件探索と中継の組で落ちる
+#   - **根が 1 つのまま**窓を 15 回開け閉めしても落ちない＝製品の形には出ない
+#   - 壊す前に `update()`、または窓の出来事だけ（`WINDOW_EVENTS|DONT_WAIT`）を
+#     流すと 12 回×4 度とも落ちない。`update_idletasks()` では落ちる
+# ⇒ 試験の側で、**どの試験の根にも**壊す前に窓の出来事を流す（列挙にすると、
+#    新しい GUI 試験を書いた人が忘れた瞬間に再発する＝上の GC の節と同じ理由）。
+#    流すのは窓の出来事だけ＝`after` の予約は走らせない（試験が待っていない
+#    呼び戻しを、後片付けの中で動かさない）。
+# ⚠️ 原因の全部は分かっていない＝同じ HEAD で前のセッションは通り、コードの
+#    変更なしに出た（メモリの置かれ方しだいで出る壊れ方と見ている）。
+_DRAIN_LIMIT = 1000   # 出来事が出来事を生み続けても、後片付けで止まらないように
+
+
+def _drain_window_events_before_destroy() -> None:
+    try:
+        import tkinter as tk
+        import _tkinter
+    except ImportError:                 # tkinter の無い環境＝GUI 試験は skip される
+        return
+    if getattr(tk.Tk.destroy, "_drains_window_events", False):
+        return
+    original = tk.Tk.destroy
+    flags = _tkinter.WINDOW_EVENTS | _tkinter.DONT_WAIT
+
+    def destroy(self):
+        try:
+            for _ in range(_DRAIN_LIMIT):
+                if not self.dooneevent(flags):
+                    break
+        except tk.TclError:
+            pass                        # 壊れかけの根でも、壊す本体は必ず呼ぶ
+        original(self)
+
+    destroy._drains_window_events = True  # type: ignore[attr-defined]
+    tk.Tk.destroy = destroy             # type: ignore[method-assign]
 
 
 def _cap_double_quiet(config) -> None:
