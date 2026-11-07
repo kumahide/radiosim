@@ -34,6 +34,7 @@ from urllib.parse import parse_qs, urlsplit
 
 from core import dem
 from core import i18n
+from webui.edge import Listener
 from webui.state import UnknownKeyError
 from webui.worker import Worker
 
@@ -77,17 +78,23 @@ class WebServer:
 
     def __init__(self, worker: Worker, *, basemap: str = "pale",
                  on_quit: "Callable[[], None] | None" = None,
-                 tile: "Callable[..., tuple[str, bytes | None]]" = dem.basemap_tile_png) -> None:
+                 tile: "Callable[..., tuple[str, bytes | None]]" = dem.basemap_tile_png,
+                 listener: "Listener | None" = None) -> None:
         self.worker = worker
-        self.token = secrets.token_urlsafe(24)
+        lis = listener or Listener()
+        self.token = lis.token
         self.basemap = basemap
         self._on_quit = on_quit
         self._tile = tile
         self._page_serial = 0
         self._serial_lock = threading.Lock()
-        self.httpd = ThreadingHTTPServer(("127.0.0.1", 0), _make_handler(self))
+        self.httpd = ThreadingHTTPServer(lis.address, _make_handler(self), bind_and_activate=False)
+        self.httpd.socket.close()                        # 先に待ち始めた受け口へ差し替える
+        self.httpd.socket = lis.sock
+        self.httpd.server_address = lis.address
+        self.httpd.server_name, self.httpd.server_port = lis.address
         self.httpd.daemon_threads = True
-        self.port = self.httpd.server_address[1]
+        self.port = lis.address[1]
 
     @property
     def url(self) -> str:
