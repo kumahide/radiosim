@@ -812,6 +812,21 @@ def _fake_ctypes(langid: int = 0, boom: bool = False):
     return mod
 
 
+#: `.iss` を読む試験がかけるインストーラ定義（I-144・4.0 ステージ8d）。本体（旧画面・
+#: exe）と Link（新しい画面・embeddable）は [Code] と [CustomMessages] を**写しで**持つ
+#: ＝片方だけ直して、もう片方に古い穴（B-186・B-188・B-192・B-200 …）が残るのを、
+#: 同じ試験を両方へかけて止める。版の 4 数字の出どころだけは 2 つで違う＝
+#: `TestInstallerVersionSource` が別々に縛る。
+_ISS_FILES = (ROOT / "installer" / "radiosim.iss", ROOT / "installer" / "link.iss")
+
+
+@pytest.fixture(params=_ISS_FILES, ids=lambda p: p.stem)
+def _each_iss(request):
+    """クラスの `self.ISS` を 2 つの `.iss` で差す（クラスに `usefixtures` で付ける）。"""
+    request.instance.ISS = request.param
+
+
+@pytest.mark.usefixtures("_each_iss")
 class TestInstallerLangSeedContract:
     """インストーラ（.iss）とアプリ（config.py）の**言語名の写し**が一致すること。
 
@@ -819,7 +834,7 @@ class TestInstallerLangSeedContract:
     その言語を選んだ人だけが黙って英語で起動する（実害が出るまで気づけない）。
     """
 
-    ISS = ROOT / "installer" / "radiosim.iss"
+    ISS: Path  # `_each_iss` が差す
 
     def _iss(self) -> str:
         return self.ISS.read_text(encoding="utf-8-sig")
@@ -828,7 +843,7 @@ class TestInstallerLangSeedContract:
         names = set(re.findall(r'^Name:\s*"([^"]+)";\s*MessagesFile:',
                                self._iss(), re.MULTILINE))
         assert names == set(config._INSTALLER_LANG_CODES), (
-            "installer/radiosim.iss の [Languages] と "
+            f"installer/{self.ISS.name} の [Languages] と "
             "config._INSTALLER_LANG_CODES がずれている")
 
     def test_installer_writes_the_seed_app_reads(self):
@@ -869,6 +884,7 @@ _ISS_FONT_OPTIONS = {
 }
 
 
+@pytest.mark.usefixtures("_each_iss")
 class TestInstallerJapaneseDialogFont:
     """日本語ウィザードを**日本語グリフを自前で持つフォント**で描くこと（B-192 / B-193）。
 
@@ -889,7 +905,7 @@ class TestInstallerJapaneseDialogFont:
     見た目も正常）＝ここで留めないと配布物になるまで気づけない。
     """
 
-    ISS = ROOT / "installer" / "radiosim.iss"
+    ISS: Path  # `_each_iss` が差す
 
     def _iss(self) -> str:
         return self.ISS.read_text(encoding="utf-8-sig")
@@ -901,7 +917,7 @@ class TestInstallerJapaneseDialogFont:
         m = re.search(rf"^japanese\.{option}\s*=\s*(.+?)\s*$",
                       iss, re.MULTILINE)
         assert m, (
-            f"installer/radiosim.iss の [LangOptions] に japanese.{option} が"
+            f"installer/{self.ISS.name} の [LangOptions] に japanese.{option} が"
             f"無い＝{where}が Inno の既定（Segoe UI）で描かれ、フォントリンクの"
             f"無い環境でトーフになる（B-192 / B-193）")
         assert m.group(1) in _JA_CAPABLE_UI_FONTS, (
@@ -927,6 +943,7 @@ _INNO_EVENT_FUNCTIONS = {
 }
 
 
+@pytest.mark.usefixtures("_each_iss")
 class TestInstallerCodeIsReachable:
     """`.iss` の [Code] に書いたルーチンが本当に呼ばれること（B-186）。
 
@@ -937,7 +954,7 @@ class TestInstallerCodeIsReachable:
     出ないまま出荷しかけた＝**テストが無ければ実機でしか気づけない**。
     """
 
-    ISS = ROOT / "installer" / "radiosim.iss"
+    ISS: Path  # `_each_iss` が差す
 
     def test_iss_is_utf8_with_bom(self):
         """ISCC は BOM が無い `.iss` を**システムの ANSI コードページ**で読む。
@@ -948,7 +965,7 @@ class TestInstallerCodeIsReachable:
         """
         head = self.ISS.read_bytes()[:3]
         assert head == b"\xef\xbb\xbf", (
-            "installer/radiosim.iss に UTF-8 BOM が無い＝日本語メッセージが "
+            f"installer/{self.ISS.name} に UTF-8 BOM が無い＝日本語メッセージが "
             "CP932 として読まれて文字化けする")
 
     def test_every_uncalled_routine_is_a_real_event_name(self):
@@ -1166,6 +1183,13 @@ class TestInstallerCodeIsReachable:
         assert "%APPDATA%" in body and "%LOCALAPPDATA%" in body
 
 
+def _iss_routine(iss: str, head: str) -> str:
+    """`.iss` の [Code] から、`head` で始まるルーチンの本体だけを切り出す。"""
+    body = iss.split("[Code]", 1)[1].split(head, 1)[1]
+    return re.split(r"\n(?:procedure|function) ", body, maxsplit=1)[0]
+
+
+@pytest.mark.usefixtures("_each_iss")
 class TestInstallerVersionCompare:
     """上書きインストールで版を比べ、上げる・同じ・下げるを知らせること（I-176）。
 
@@ -1173,11 +1197,12 @@ class TestInstallerVersionCompare:
     3.6 の上に 3.4 を入れても何も言わずに置き換わる。
 
     ⚠️ ここは配線だけを縛る。上げる・同じ・下げる（止まる／`/ALLOWDOWNGRADE` で
-    進む）の動きそのものは、pytest に ISCC が無いので実機で確かめた（2026-09-26・
-    3.5／3.6RC2／3.6 の本物の exe で組んだ試験用インストーラ 3 本・7 通り）。
+    進む）の動きそのものは、pytest に ISCC が無いので実機で確かめた（本体＝2026-09-26・
+    3.5／3.6RC2／3.6 の本物の exe で組んだ試験用インストーラ 3 本・7 通り。Link＝
+    2026-11-07・作業用フォルダへサイレントで新規／同じ／上げる／下げる／`/ALLOWDOWNGRADE`）。
     """
 
-    ISS = ROOT / "installer" / "radiosim.iss"
+    ISS: Path  # `_each_iss` が差す
 
     #: [CustomMessages] のキーと、[Code] が FmtMessage へ渡す引数の数。
     _MESSAGES = {
@@ -1194,8 +1219,7 @@ class TestInstallerVersionCompare:
         return self._iss().split("[Code]", 1)[1]
 
     def _routine(self, head: str) -> str:
-        body = self._code().split(head, 1)[1]
-        return re.split(r"\n(?:procedure|function) ", body, maxsplit=1)[0]
+        return _iss_routine(self._iss(), head)
 
     @pytest.mark.parametrize("key", sorted(_MESSAGES))
     def test_message_is_translated_with_the_same_placeholders(self, key):
@@ -1240,25 +1264,11 @@ class TestInstallerVersionCompare:
         assert "'/ALLOWDOWNGRADE'" in body
         assert "Result := False" in body
 
-    def test_both_versions_come_from_the_exe_file_version(self):
-        """新旧とも exe のファイルバージョン（4 数字）で比べる＝同じ出どころ。
-
-        今から入れる側は [Files] が同梱する exe から、前回の側はアンインストール
-        情報の App Path の exe から読む。AppVersion の文字列（3.6RC2 など）を
-        比べると、Pascal で version_tuple() を書き直すことになる。
-        """
-        iss = self._iss()
-        m = re.search(r'^#define NewVerNums GetVersionNumbersString\(AddBackslash\(SourcePath\)'
-                      r' \+ "([^"]+)" \+ AppExeName\)', iss, re.MULTILINE)
-        assert m, "NewVerNums が同梱の exe から読まれていない"
-        src = re.search(r'^Source:\s*"([^"]+)\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
-        assert src and src.group(1) == m.group(1), (
-            "NewVerNums を読む exe と [Files] が同梱するフォルダが違う")
-        code = self._code()
-        assert "StrToVersion('{#NewVerNums}'" in code
+    def test_both_versions_are_compared_as_packed_numbers(self):
+        """新旧とも 4 数字を packed にして比べる（出どころは `TestInstallerVersionSource`）。"""
+        assert "StrToVersion('{#NewVerNums}'" in self._code()
         detect = self._routine("procedure DetectPreviousVersion")
         assert "'Inno Setup: App Path'" in detect
-        assert "GetPackedVersion" in detect
         assert "ComparePackedVersion(NewPacked, PrevPacked)" in detect
 
     def test_previous_install_is_looked_up_by_the_same_app_id(self):
@@ -1270,3 +1280,53 @@ class TestInstallerVersionCompare:
         assert '{#SetupSetting("AppId")}_is1' in body
         detect = self._routine("procedure DetectPreviousVersion")
         assert detect.count("RegQueryStringValue(HKA, UninstallRegKey") == 2
+
+
+class TestInstallerVersionSource:
+    """版の 4 数字の**出どころ**（I-176）＝ここだけは本体と Link で違う。
+
+    新旧を同じ出どころから読まないと、比べている数字の意味がずれる（片方だけ
+    AppVersion の文字列〔3.6RC2 など〕にすると、Pascal で version_tuple() を
+    書き直すことになる）。
+    """
+
+    @staticmethod
+    def _read(name: str) -> str:
+        return (ROOT / "installer" / name).read_text(encoding="utf-8-sig")
+
+    def test_pro_both_versions_come_from_the_exe_file_version(self):
+        """本体＝新旧とも exe のファイルバージョン。
+
+        今から入れる側は [Files] が同梱する exe から、前回の側はアンインストール
+        情報の App Path の exe から読む。
+        """
+        iss = self._read("radiosim.iss")
+        m = re.search(r'^#define NewVerNums GetVersionNumbersString\(AddBackslash\(SourcePath\)'
+                      r' \+ "([^"]+)" \+ AppExeName\)', iss, re.MULTILINE)
+        assert m, "NewVerNums が同梱の exe から読まれていない"
+        src = re.search(r'^Source:\s*"([^"]+)\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
+        assert src and src.group(1) == m.group(1), (
+            "NewVerNums を読む exe と [Files] が同梱するフォルダが違う")
+        detect = _iss_routine(iss, "procedure DetectPreviousVersion")
+        assert "GetPackedVersion(AddBackslash(PrevDir) + '{#AppExeName}'" in detect
+
+    def test_link_both_versions_come_from_the_trees_version_txt(self):
+        """Link＝自前の exe が無い＝新旧とも木の `version.txt`（build_link.py が書く）。
+
+        今から入れる側は [Files] が同梱する `LinkDir` の `version.txt` を ISPP で読み、
+        前回の側はアンインストール情報の App Path の `version.txt` を [Code] で読む。
+        """
+        iss = self._read("link.iss")
+        assert re.search(r'^#define VerFile AddBackslash\(LinkDir\) \+ "version\.txt"$',
+                         iss, re.MULTILINE), "NewVerNums の元が LinkDir の version.txt でない"
+        assert re.search(r"^#define VerHandle FileOpen\(VerFile\)$", iss, re.MULTILINE)
+        assert re.search(r"^#define NewVerNums Trim\(FileRead\(VerHandle\)\)$",
+                         iss, re.MULTILINE)
+        src = re.search(r'^Source:\s*"([^"]+)\\\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
+        assert src and src.group(1) == "{#LinkDir}", (
+            "NewVerNums を読む木と [Files] が同梱する木が違う")
+        detect = _iss_routine(iss, "procedure DetectPreviousVersion")
+        assert re.search(r"LoadStringFromFile\(AddBackslash\(PrevDir\) \+ 'version\.txt',"
+                         r"\s*PrevNums\)", detect), "前回の側が App Path の version.txt を読んでいない"
+        assert "StrToVersion(Trim(String(PrevNums)), PrevPacked)" in detect
+        assert "GetPackedVersion" not in detect, "Link の木に exe は無い"
