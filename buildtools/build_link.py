@@ -40,6 +40,7 @@ import re
 import shutil
 import subprocess  # nosec B404 ─ 宣言された解釈系・展開した embeddable・ISCC だけを起こす
 import sys
+import xml.etree.ElementTree as ET  # nosec B405 ─ 読むのはリポジトリの brand.svg だけ
 import zipfile
 from collections.abc import Callable, Iterable
 
@@ -63,6 +64,16 @@ ISCC_BANNER = "Inno Setup 7 Command-Line Compiler"
 RUNTIME_DISTS = ("numpy", "pillow", "requests", "urllib3", "certifi", "charset-normalizer",
                  "idna", "truststore")
 APP_PACKAGES = ("core", "webui")
+
+#: ロゴとアイコンの元（I-238）。画面はそのまま描き、`icon.ico` は `<g id="icon">` から焼く。
+BRAND_SVG = os.path.join(REPO, "webui", "static", "brand.svg")
+ICON_ID = "icon"
+ICON_SIZES = (256, 128, 64, 48, 32, 16)
+_SVG_NS = "http://www.w3.org/2000/svg"
+_XLINK_NS = "http://www.w3.org/1999/xlink"
+#: Tk の SVG 読み（nanosvg）が描かずに黙って落とす要素＝アイコンの中に置かせない。
+_ICON_UNDRAWN = frozenset({"text", "tspan", "style", "image", "foreignObject"})
+ET.register_namespace("", _SVG_NS)
 
 #: 依存の配布物から写さないもの（実行に要らない＝試験・ヘッダ・型の控え）。
 _SKIP_PARTS = frozenset({"tests", "__pycache__", "include"})
@@ -162,6 +173,52 @@ def skip_file(rel: str) -> bool:
     return bool(_SKIP_PARTS.intersection(parts[:-1])) or rel.endswith(_SKIP_SUFFIX)
 
 
+def icon_svg(brand_text: str) -> str:
+    """`brand.svg` の `<g id="icon">` を、Tk の SVG 読みが描ける単独の SVG にする（I-238）。
+
+    nanosvg は `<use>` を描かないので、参照先（`mark`）の中身を `<g transform>` に展開する。
+    `<text>`・`<style>`・`<image>` は描かれずに黙って消える＝見つけたら止める。
+    """
+    root = ET.fromstring(brand_text)  # nosec B314 ─ リポジトリの brand.svg（外から来ない）
+    by_id = {el.get("id"): el for el in root.iter() if el.get("id")}
+    icon = by_id.get(ICON_ID)
+    if icon is None:
+        raise BuildError(f"brand.svg に <g id=\"{ICON_ID}\"> が無い")
+    box = (icon.get("data-viewbox") or "").split()
+    if len(box) != 4:
+        raise BuildError(f"<g id=\"{ICON_ID}\"> に data-viewbox（4 数字）が無い")
+
+    def local(tag: str) -> str:
+        return tag.rsplit("}", 1)[-1]
+
+    def expand(el: ET.Element, depth: int) -> list[ET.Element]:
+        name = local(el.tag)
+        if name in _ICON_UNDRAWN:
+            raise BuildError(f"アイコンの中に <{name}> がある＝Tk の SVG 読みは描かない（図形で書く）")
+        if name == "use":
+            href = el.get("href") or el.get(f"{{{_XLINK_NS}}}href") or ""
+            target = by_id.get(href[1:]) if href.startswith("#") else None
+            if target is None or depth > 8:
+                raise BuildError(f"アイコンの <use href=\"{href}\"> の参照先が無いか、深すぎる")
+            g = ET.Element(f"{{{_SVG_NS}}}g")
+            if el.get("transform"):
+                g.set("transform", el.get("transform"))
+            for child in target:
+                g.extend(expand(child, depth + 1))
+            return [g]
+        out = ET.Element(el.tag, {k: v for k, v in el.attrib.items()
+                                  if k != "id" and not k.startswith("data-")})
+        for child in el:
+            out.extend(expand(child, depth))
+        return [out]
+
+    svg = ET.Element(f"{{{_SVG_NS}}}svg", {"viewBox": " ".join(box),
+                                           "width": box[2], "height": box[3]})
+    for child in icon:
+        svg.extend(expand(child, 0))
+    return ET.tostring(svg, encoding="unicode")
+
+
 # ---------------------------------------------------------------------------
 # 確かめ（宣言・版・ISCC）
 # ---------------------------------------------------------------------------
@@ -238,14 +295,52 @@ def _copy_dist(name: str, vendor: str) -> None:
         shutil.copy2(src, dst)
 
 
-def _write_icon(root: str) -> None:
-    """`icon.png` から `icon.ico` を作って置く（ショートカットとアンインストールの一覧の絵）。"""
+def render_icon_pngs(svg: str, out_dir: str, sizes: Iterable[int] = ICON_SIZES) -> list[str]:
+    """単独の SVG を Tk 9 の SVG 読み（nanosvg）で寸法ごとの PNG に描き、パスを大きい順で返す。
+
+    縮めるのでなく寸法ごとに描き直す＝16 や 32 でも輪郭が滲まない（I-238）。Tk は宣言の
+    Python に入っている＝依存を足さない。build.bat の Tk 9 の関所は `link` より後ろなのでここで見る。
+    """
+    import tkinter as tk
+    if tk.TkVersion < 9:
+        raise BuildError(f"アイコンを描くには Tk 9 が要る（SVG を読む）: Tk {tk.TkVersion}")
+    paths = []
+    root = tk.Tk()
+    root.withdraw()
+    try:
+        for n in sorted(sizes, reverse=True):
+            img = tk.PhotoImage(master=root, data=svg, format=f"svg -scaletoheight {n}")
+            if (img.width(), img.height()) != (n, n):
+                raise BuildError(f"アイコンが正方形に描けない: {n} → {img.width()}x{img.height()}"
+                                 f"（{ICON_ID} の data-viewbox を正方形にする）")
+            path = os.path.join(out_dir, f"icon_{n}.png")
+            img.write(path, format="png")
+            paths.append(path)
+    finally:
+        root.destroy()
+    return paths
+
+
+def write_icon(dst: str, brand: str = BRAND_SVG) -> None:
+    """`brand.svg` のアイコンを `icon.ico`（6 寸法・透過あり）にして `dst` へ書く。"""
+    import tempfile
+
     from PIL import Image
-    png = os.path.join(REPO, "icon.png")
-    with Image.open(png) as img:
-        img.convert("RGBA").save(os.path.join(root, "icon.ico"), format="ICO",
-                                 sizes=[(256, 256), (128, 128), (64, 64), (48, 48), (32, 32),
-                                        (16, 16)])
+    with open(brand, encoding="utf-8") as f:
+        svg = icon_svg(f.read())
+    with tempfile.TemporaryDirectory() as tmp:
+        pngs = render_icon_pngs(svg, tmp)
+        imgs = []
+        for p in pngs:
+            with Image.open(p) as img:
+                imgs.append(img.convert("RGBA"))
+        # 寸法ごとに描いた絵をそのまま使う（append_images）＝Pillow に縮めさせない
+        imgs[0].save(dst, format="ICO", sizes=[im.size for im in imgs], append_images=imgs[1:])
+
+
+def _write_icon(root: str) -> None:
+    """ショートカットとアンインストールの一覧の絵（`icon.ico`）を木に置く。"""
+    write_icon(os.path.join(root, "icon.ico"))
 
 
 def build_tree(dist_dir: str, embed_zip: str, declared: str) -> str:

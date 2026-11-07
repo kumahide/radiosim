@@ -5,14 +5,16 @@ tests/test_build_link.py
 
 ビルドそのもの（embeddable の展開・依存の写し・ISCC）は重く外部の zip が要るので、ここでは
 **止める判断**だけを見る＝固定の読み方・版の食い違い・依存の閉包・`._pth` の中身・版の 4 数字・
-build.bat の入口の位置。
+build.bat の入口の位置。ほかに、ロゴとアイコンの元（`brand.svg`）から `icon.ico` を焼く部分（I-238）。
 """
 
 from __future__ import annotations
 
 import importlib.metadata as md
 import importlib.util
+import mimetypes
 import os
+import xml.etree.ElementTree as ET  # nosec B405 ─ リポジトリの SVG と試験の文字列だけ
 
 import pytest
 
@@ -127,6 +129,68 @@ class TestInstallerCommand:
         assert 'Source: "{#LinkDir}\\*"' in iss
         assert '#define VerFile AddBackslash(LinkDir) + "version.txt"' in iss
         assert f"OutputBaseFilename={bl.APP_DIR_NAME}-Setup-{{#AppVersion}}" in iss
+
+
+class TestBrandAndIcon:
+    """ロゴとアイコンの元は `webui/static/brand.svg` の 1 つ（I-238）。"""
+
+    def _brand(self) -> str:
+        with open(bl.BRAND_SVG, encoding="utf-8") as f:
+            return f.read()
+
+    def test_brand_has_the_logo_the_mark_and_the_icon(self):
+        root = ET.fromstring(self._brand())
+        ids = {el.get("id") for el in root.iter()}
+        assert {"logo", "mark", bl.ICON_ID} <= ids
+
+    def test_icon_svg_is_standalone_and_drawable_by_tk(self):
+        """抜き出した SVG に、nanosvg が描かない要素（`use`・`text`・`style`）が残らない。"""
+        svg = bl.icon_svg(self._brand())
+        root = ET.fromstring(svg)
+        tags = {el.tag.rsplit("}", 1)[-1] for el in root.iter()}
+        assert not tags & {"use", "text", "style", "defs"}
+        assert {"rect", "circle", "path"} <= tags
+        assert root.get("viewBox") == "0 0 256 256"
+        assert (root.get("width"), root.get("height")) == ("256", "256")
+
+    @pytest.mark.parametrize("inner,word", [
+        ('<text>x</text>', "text"),
+        ('<use href="#nowhere"/>', "nowhere"),
+    ])
+    def test_icon_with_undrawable_or_dangling_parts_stops(self, inner, word):
+        brand = (f'<svg xmlns="{bl._SVG_NS}"><g id="icon" data-viewbox="0 0 16 16">'
+                 f'{inner}</g></svg>')
+        with pytest.raises(bl.BuildError, match=word):
+            bl.icon_svg(brand)
+
+    def test_missing_icon_or_viewbox_stops(self):
+        with pytest.raises(bl.BuildError):
+            bl.icon_svg(f'<svg xmlns="{bl._SVG_NS}"><g id="logo"/></svg>')
+        with pytest.raises(bl.BuildError, match="data-viewbox"):
+            bl.icon_svg(f'<svg xmlns="{bl._SVG_NS}"><g id="icon"/></svg>')
+
+    def test_ico_has_six_sizes_with_transparent_corners(self, tmp_path):
+        """寸法ごとに Tk 9 で描いた 6 枚を持ち、角丸の外は透ける（地の四角で塗り潰さない）。"""
+        import tkinter as tk
+
+        from PIL import Image
+        if tk.TkVersion < 9:
+            pytest.skip("Tk 9 が無い（宣言の Python で回す）")
+        dst = tmp_path / "icon.ico"
+        try:
+            bl.write_icon(str(dst))
+        except tk.TclError as e:  # 画面の無い環境
+            pytest.skip(f"Tk を起こせない: {e}")
+        with Image.open(dst) as ico:
+            assert sorted(ico.info["sizes"]) == sorted((n, n) for n in bl.ICON_SIZES)
+            ico.size = (256, 256)
+            big = ico.copy().convert("RGBA")
+        assert big.getpixel((0, 0))[3] == 0
+        assert big.getpixel((128, 128))[3] == 255
+
+    def test_static_server_types_svg_as_an_image(self):
+        """画面の配信は `nosniff` を付ける＝型が違うと `<img>` が描かない。"""
+        assert mimetypes.guess_type(bl.BRAND_SVG)[0] == "image/svg+xml"
 
 
 class TestBuildBatDoor:

@@ -1276,7 +1276,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_errors.py`         | GUI のコールバックで起きた未捕捉例外が、**traceback 付きでログに残り**、ログの場所を書いたダイアログが出ること（連続発生でモーダルを積み上げない・ダイアログが出せなくてもログは残る） |
 | `test_failure_messages.py` | 失敗ダイアログの本文が**型**（何が起きた／次に何をすべきか／詳細）で組まれていること・「次の一手」の語彙が閉じていること・CSV 取り込みの検証が i18n を通っていること |
 | `test_bundle_imports.py` | 同梱漏れゲート自身のゲート（`2.6RC1` が落ちた実物の warn 行を fixture にし、`(conditional)`・`missing module`・許可リストでは鳴らないこと／レポート欠落を「合格」にしないことを固定） |
-| `test_build_link.py` | 新しい画面の配布を作る道具（`buildtools/build_link.py`）の止める判断＝固定の読み方・依存の閉包・`._pth` の中身・版の 4 数字・`build.bat link` の入口が旧画面の関所より前 |
+| `test_build_link.py` | 新しい画面の配布を作る道具（`buildtools/build_link.py`）の止める判断＝固定の読み方・依存の閉包・`._pth` の中身・版の 4 数字・`build.bat link` の入口が旧画面の関所より前・ロゴとアイコンの元（`webui/static/brand.svg`）から `icon.ico` を焼く部分 |
 | `test_qa_fixtures.py`    | 動作確認用の設定ファイル（`qa_fixtures/`）が製品の読み込み器で実際に読めること・DEM ソース欄が現れる条件（組み込み以外に 1 つ以上）を満たすこと・配る側（`buildtools/deploy_qa_fixtures.py`）の対象一覧と置き場の中身がずれないこと |
 | `test_dev_check.py`      | 検証ランナー自身のゲート（`buildtools/dev_check.py`）。**手書きの対応表が腐って黙って何も足さなくなる**のを検出し、範囲を絞っても静的検査のゲートが必ず足されること・カバレッジゲートが全件のときだけ掛かること・出力が要約に収まることを固定 |
 | `test_paths.py`          | 書き込み先パスの基準（設定・結果・ログ・DEM キャッシュがカレントディレクトリに依存しないこと・ポータブル配置では従来と同じ場所を指すこと・解決器を各所で再実装していないことの静的ガード）＋**テスト実行の隔離**（テストが開発機の実設定を読まず、実リポジトリへ書かないこと。定数・既定引数・ログの出口の 3 面） |
