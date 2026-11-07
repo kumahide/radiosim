@@ -184,7 +184,7 @@ def _user_lang_dir() -> str:
 
     ポータブル配置では `app_path("lang")` そのもの（exe／スクリプトの隣が
     そもそも書ける）。非ポータブル配置では `_config_base_dir()`（設定ファイルと
-    同じ場所＝`%APPDATA%\\RadioSim`）配下の `lang`＝**利用者が書けることが
+    同じ場所＝`%APPDATA%\\RadioSim\\Link`）配下の `lang`＝**利用者が書けることが
     保証されている場所**（設定の保存先と同じ根拠）。
     """
     if is_portable():
