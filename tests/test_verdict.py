@@ -129,6 +129,21 @@ def test_golden_review_count_matches_the_stage6_measurement():
     assert verdict.counts(words)["REVIEW"] == 13
 
 
+@pytest.mark.parametrize("word", verdict.WORDS)
+def test_every_layer_maps_each_word_to_the_same_colour_key(word):
+    """帳票の CSS クラス・旧画面の配色キー・表のセルの字が、4 語のどれでも同じ鍵に落ちる。
+
+    REVIEW を NG や ERR へ潰す対応表が 1 つでも残ると、同じ回線が面ごとに違う色になる。
+    """
+    from report import map_graphics, report_common
+    from views import theme
+    key = report_common.verdict_class(word)
+    assert key == theme.verdict_key(word) == theme.verdict_key(theme.verdict_label(word))
+    assert word in map_graphics.STATUS_HEX and word in report_common.VERDICT_ROW_BG
+    assert len(theme.verdict_label(word)) <= 3, "バッチ表の判定列（幅 4）に収まらない"
+    assert len(set(report_common.VERDICT_CLASS.values())) == len(verdict.WORDS)
+
+
 def test_scenario_and_params_are_not_mutated():
     link = LINKS["nara_ikoma"]
     p = _params(link["input"])

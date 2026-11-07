@@ -265,7 +265,6 @@ def path_sheet_css() -> str:
 .sheet.path .card{background:white;border:1px solid #eee;border-radius:8px;padding:0 14px;box-shadow:0 1px 3px rgba(0,0,0,.12);text-align:center;min-width:100px}
 .sheet.path .card .lbl{font-size:8px;color:#999;text-transform:uppercase}
 .sheet.path .card .val{font-size:14px;font-weight:bold;color:#333}
-.sheet.path .card.ok .val{color:#2e7d32}.sheet.path .card.ng .val{color:#c62828}
 .sheet.path .graph{width:100%;border-radius:6px;box-shadow:0 1px 4px rgba(0,0,0,.15);margin-bottom:3px}
 .sheet.path .map-note{color:#999;font-size:12px;font-style:italic;background:white;border-radius:8px;padding:10px 16px;box-shadow:0 1px 3px rgba(0,0,0,.12);margin-bottom:6px}
 .sheet.path .cols{display:flex;gap:16px;margin-bottom:2px}
@@ -288,7 +287,19 @@ def path_sheet_css() -> str:
 .sheet.path .sensitivity h5{font-size:9px;margin:4px 0 2px}
 .sheet.path .sensitivity .sn-lead,.sheet.path .sensitivity .sn-note,
 .sheet.path .sensitivity .sn-unchanged,.sheet.path .sensitivity .sn-ground-note{font-size:8px;margin:2px 0}
-"""
+""" + _card_verdict_css()
+
+
+def _card_verdict_css() -> str:
+    """判定のカードの字の色（4 語）＝地図の線と同じ `map_graphics.STATUS_HEX`（B-207）。
+
+    以前は OK と NG の 2 色を直に書き、REVIEW と ERROR を NG のクラスで塗っていた
+    （4.0 ステージ6）。行の地は持たない（このシートに判定の行は無い）。
+    """
+    from report import map_graphics      # PIL を読むのは使うときだけ
+    return "".join(
+        f".sheet.path .card.{cls} .val{{color:{map_graphics.STATUS_HEX[status]}}}"
+        for status, cls in report_common.VERDICT_CLASS.items()) + "\n"
 
 
 def path_sheet_html(
@@ -319,7 +330,7 @@ def path_sheet_html(
     """
     tx_coords = coords.format_pair(params.lat_tx, params.lon_tx, coord_format)
     rx_coords = coords.format_pair(params.lat_rx, params.lon_rx, coord_format)
-    status_cls  = "ok" if result.status == "OK" else "ng"
+    status_cls  = report_common.verdict_class(result.status)   # REVIEW は `rev`（4.0 ステージ6）
     model_label = (i18n.t("html_model_bullington")
                    if result.diff_method == "bullington"
                    else i18n.t("html_model_single"))
@@ -578,7 +589,8 @@ def save_path_kml(
     terrain_lons = terrain_grid.collapse_pixel_groups(list(lons), groups)
     terrain_elev = terrain_grid.collapse_pixel_groups(list(elev), groups)
 
-    los_color = "ff00aa00" if result.status == "OK" else "ff00a5ff"
+    # KML の色は aabbggrr。OK＝緑・REVIEW＝紫（`STATUS_HEX` の #6a1b9a）・ほかは橙（4.0 ステージ6）。
+    los_color = {"OK": "ff00aa00", "REVIEW": "ff9a1b6a"}.get(result.status, "ff00a5ff")
     path_id   = _html.escape(os.path.basename(save_dir))
     desc_esc  = _html.escape(
         f"Freq: {params.freq_mhz} MHz | "

@@ -100,7 +100,7 @@ def axis_label(axis: str) -> str:
 def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
     """スイープの折れ線（横軸＝振った量／縦軸＝マージン）を base64 PNG で返す。
 
-    しきい値（マージン 0 dB）に水平線を引き、点は判定で塗り分ける（OK=緑 / NG=橙）。
+    しきい値（マージン 0 dB）に水平線を引き、点は判定で塗り分ける（OK=緑 / NG=橙 / REVIEW=紫）。
     どこで足りるようになるかは色の変わり目と表で読む（注記は出さない＝2026-07-25
     ユーザー判断で「初めて OK」の明示は不要）。
 
@@ -124,13 +124,17 @@ def render_sweep_png_b64(run: scn.ScenarioRun) -> str:
 
     ax.axhline(0.0, color="#c62828", lw=1.2, linestyle="--")
     ax.plot(xs, ys, color="#1565c0", lw=2.0, marker="o", markersize=5)
-    # 判定で塗り分ける（OK=緑 / NG=橙）＝表の行色と同じ意味づけ。
-    ok_x  = [x for x, p in zip(xs, run.points) if p.ok]
-    ok_y  = [p.result.actual_margin for p in run.points if p.ok]
-    ng_x  = [x for x, p in zip(xs, run.points) if not p.ok]
-    ng_y  = [p.result.actual_margin for p in run.points if not p.ok]
-    ax.scatter(ok_x, ok_y, color="#2e7d32", zorder=3, s=42)
-    ax.scatter(ng_x, ng_y, color="#ef6c00", zorder=3, s=42)
+    # 判定で塗り分ける（OK=緑 / NG=橙 / REVIEW=紫 / ERROR=濃い橙）＝表の行色と同じ意味づけ。
+    # 🔑 語は `result.status` から `verdict_class` で引く（4.0 ステージ6）＝`p.ok` の二値で
+    # 分けると REVIEW の点が NG の色になる。
+    from report import map_graphics      # PIL を読むのは使うときだけ
+    colors = {"ok": "#2e7d32", "ng": "#ef6c00",
+              "rev": map_graphics.STATUS_HEX["REVIEW"], "err": map_graphics.STATUS_HEX["ERROR"]}
+    for cls, color in colors.items():
+        pts = [(x, p.result.actual_margin) for x, p in zip(xs, run.points)
+               if report_common.verdict_class(p.result.status) == cls]
+        if pts:
+            ax.scatter([x for x, _ in pts], [y for _, y in pts], color=color, zorder=3, s=42)
 
     # 深く塞がれた点はマージンが -1000 dB 級になり、線形軸だと**しきい値付近が
     # 潰れて読めない**（スイープの主眼はそこ）。振れ幅が大きいときだけ symlog に
@@ -255,7 +259,7 @@ def _compare_table(run: scn.ScenarioRun) -> str:
         vals = [getter(p) for p in pts]
         if isinstance(vals[0], str):                    # 判定行
             cells = "".join(
-                f"<td class='s-{'ok' if v == 'OK' else 'ng'}'>{v}</td>" for v in vals
+                f"<td class='s-{report_common.verdict_class(v)}'>{v}</td>" for v in vals
             )
         else:
             base = vals[0]
@@ -313,7 +317,7 @@ _SWEEP_DENSE_ROWS = 20
 
 def _sweep_row(p: scn.ScenarioPoint) -> str:
     r = p.result
-    cls = "ok" if p.ok else "ng"
+    cls = report_common.verdict_class(r.status)    # REVIEW・ERROR も自分の色（4.0 ステージ6）
     return (
         f"<tr class='{cls}'>"
         # ラベルは比較表のヘッダ（_compare_table）と同じくエスケープする。
@@ -332,7 +336,7 @@ def _sweep_row(p: scn.ScenarioPoint) -> str:
 def _sweep_table(run: scn.ScenarioRun) -> str:
     """スイープ表（1 行＝1 点・**常に 1 列**）。
 
-    判定で行色を塗る（OK=緑 / NG=橙）＝どこで足りるようになるかは色の変わり目で読む。
+    判定で行色を塗る（OK=緑 / NG=橙 / REVIEW=紫）＝どこで足りるようになるかは色の変わり目で読む。
     点数が多いときは高密度モード（`dense`）にして 1 枚へ収める。**横に分割しない**
     ＝連続的な変化を上から下へ追えることがスイープ表の価値だから。
     """

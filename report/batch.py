@@ -102,7 +102,7 @@ class PathResult:
 
     @property
     def status(self) -> str:
-        """この経路の判定＝`"OK"` / `"NG"` / `"ERROR"`。
+        """この経路の判定＝`"OK"` / `"NG"` / `"REVIEW"` / `"ERROR"`（REVIEW は v2・4.0 ステージ6）。
 
         🔑 **判定を作る場所はここだけ**（I-010 ③）。画面・台帳・CSV・KML・地図が
         それぞれ `pr.result is not None and pr.result.status == "OK"` を書いていた

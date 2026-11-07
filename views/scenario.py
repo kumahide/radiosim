@@ -914,7 +914,7 @@ class ScenarioWindow(tk.Toplevel):
                 units.format_db(p.result.p_rx),
                 units.format_db(p.result.actual_margin, signed=True),
                 p.result.status,
-            ), tags=("ok" if p.ok else "ng",))
+            ), tags=(theme.verdict_key(p.result.status),))   # REVIEW は紫（4.0 ステージ6）
 
     def _on_error(self, ex: Exception) -> None:
         self._running = False

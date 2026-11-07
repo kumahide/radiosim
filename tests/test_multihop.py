@@ -1368,6 +1368,22 @@ class TestOverallDisplay:
         assert key == mh.OVERALL_SHORTFALL_KEY
         assert text == "12.4", text
 
+    def test_review_chain_with_positive_margin_is_not_a_negative_shortfall(
+            self, base, tmp_path, monkeypatch):
+        """REVIEW の鎖は `run.ok` が偽でも基準の余裕度が正のことがある（4.0 ステージ6）。
+
+        `run.ok` で語を切ると「最大不足 −3.0」という負の不足量になる＝符号で切る。
+        """
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 8.0
+            h.result.status = "OK"
+        run.hops[1].result.actual_margin = 3.0
+        run.hops[1].result.status = "REVIEW"
+        assert not run.ok, "前提: REVIEW を含む鎖は ok が偽"
+        key, text = mh.overall_display(run, digits=1)
+        assert (key, text) == (mh.OVERALL_MARGIN_KEY, "+3.0")
+
     def test_an_unspeakable_overall_never_borrows_the_shortfall_wording(
             self, base, tmp_path, monkeypatch):
         """判定できない（ERR）ときに「最大不足 —」と書かない＝無い情報を語らない。"""
@@ -1421,6 +1437,19 @@ class TestOverallStatus:
             h.result.status = "OK"
         assert mh.overall_status(run) == "OK"
         run.hops[0].result.actual_margin = -12.4
+        run.hops[0].result.status = "NG"
+        assert mh.overall_status(run) == "NG"
+
+    def test_review_hop_makes_the_overall_review_and_ng_still_wins(
+            self, base, tmp_path, monkeypatch):
+        """集約は NG＞REVIEW＞OK（4.0 判断点 ①）＝OK＋REVIEW は REVIEW・NG が混じれば NG。"""
+        run = _run(_path(3), base, tmp_path, monkeypatch)
+        for h in run.hops:
+            h.result.actual_margin = 8.0
+            h.result.status = "OK"
+        run.hops[1].result.status = "REVIEW"
+        assert mh.overall_status(run) == "REVIEW"
+        run.hops[0].result.actual_margin = -2.0
         run.hops[0].result.status = "NG"
         assert mh.overall_status(run) == "NG"
 

@@ -1344,3 +1344,61 @@ def test_report_output_strings_never_use_the_equals_explanation_form(path):
         f"{path.name}: 成果物の文字列に「○○＝△△」の説明形が残っている"
         "（自然な日本語の文へ書き直すこと）: " + ", ".join(offenders)
     )
+
+
+# ============================================================
+# REVIEW を受ける所（4.0 ステージ6・判定契約 v2）
+# ============================================================
+class TestReviewIsItsOwnWord:
+    """REVIEW を NG の色やクラスへ潰さない＝帳票のどの面でも自分の語と色で出す。
+
+    以前は `"ok" if status == "OK" else "ng"` が各所にあり、REVIEW は NG の色で塗られた。
+    """
+
+    def test_summary_counts_review_in_its_own_card(
+            self, tmp_path, flat_terrain, default_params_dict):
+        i18n.set_lang("en")
+        params = sim.SimParams(default_params_dict)
+        prs = [batch.PathResult(row=batch.PathRow(pid, 34.5429, 132.4118, 34.5389, 132.4050,
+                                                  30.0, 10.0),
+                                result=_make_result(st), terrain=flat_terrain, params=params,
+                                save_dir=str(tmp_path))
+               for pid, st in (("p01", "REVIEW"), ("p02", "REVIEW"), ("p03", "OK"))]
+        html = report_summary.summary_sheet_html(prs)
+
+        def card(cls: str) -> str:
+            return html.split(f'<div class="card {cls}">', 1)[1].split('<div class="val">', 1)[1] \
+                .split("</div>", 1)[0]
+        assert (card("ok"), card("rev"), card("ng"), card("err")) == ("1", "2", "0", "0")
+        assert "<tr class='rev'" in html or '<tr class="rev"' in html, "台帳の行が rev で塗られていない"
+
+    def test_path_sheet_card_uses_the_review_class_and_colour(self, flat_terrain,
+                                                              default_params_dict):
+        css = report_path.path_sheet_css()
+        assert ".sheet.path .card.rev .val{color:#6a1b9a}" in css
+        assert ".sheet.path .card.ng .val{color:#c62828}" in css, "NG の色が変わった"
+        params = sim.SimParams(default_params_dict)
+        html = report_path.path_sheet_html(flat_terrain, _make_result("REVIEW"), params,
+                                           10.0, 10.0, img_b64="")
+        assert '<div class="card rev">' in html and '<div class="card ng">' not in html
+
+    def test_path_kml_draws_review_in_purple(self, tmp_path, flat_terrain, default_params_dict):
+        params = sim.SimParams(default_params_dict)
+        report_path.save_path_kml(flat_terrain, _make_result("REVIEW"), params, 10.0, 10.0,
+                                  str(tmp_path))
+        kml = next(tmp_path.glob("*.kml")).read_text(encoding="utf-8")
+        assert "ff9a1b6a" in kml and "ff00a5ff" not in kml
+
+    def test_scenario_rows_and_compare_cells_use_the_review_class(self, flat_terrain,
+                                                                   default_params_dict):
+        from core import scenario as scn
+        css = report_scenario.scenario_sheet_css()
+        assert ".sheet.scenario tr.rev{" in css and ".sheet.scenario .s-rev{" in css
+        p = scn.ScenarioPoint("A", {}, 10.0, 10.0, _make_result("REVIEW"))
+        row = report_scenario._sweep_row(p)
+        assert row.startswith("<tr class='rev'>") and "class='s-rev'>REVIEW<" in row
+        run = scn.ScenarioRun(kind="compare", base_params=sim.SimParams(default_params_dict),
+                              terrain=flat_terrain,
+                              points=[p, scn.ScenarioPoint("B", {}, 10.0, 10.0, _make_result("NG"))])
+        table = report_scenario._compare_table(run)
+        assert "class='s-rev'>REVIEW<" in table and "class='s-ng'>NG<" in table
