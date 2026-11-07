@@ -753,6 +753,67 @@ class TestTheVersionVocabularyComesFromTheRoadmap:
         assert audit["undeclared"] == [] and audit["ambiguous"] == []
 
 
+class TestThreeDigitVersionsAreReadWhole:
+    """🔴 **版の字を読む所は、`version.py` が名乗りうる版の字をすべて読める**（I-248・2026-11-07）。
+
+    3.9.1 を出した日から、`\\d+\\.\\d+` を書き写した 17 か所が 3 桁の版を `3.9` に丸めるか
+    読めなかった＝`destination_of("✅ 3.9.1 確定")` が `3.9` 行き・現在地表の `3.9.1` の行を
+    どの検査も飛ばしていた。⇒ 字面を両ファイルに 1 つ（`VER_LIT`）置いて組み立て直した。
+    下は読む口ごとに 1 つずつ＝字面を 2 桁へ戻すと全部落ちる（変異で確かめた）。
+    🔑 `Link 1.0`（判断点 ⑯＝§4.x の改番の先）も見出しと表の版として読む。
+    """
+
+    def test_the_literal_is_one_and_the_copies_agree(self, hook, memcheck):
+        assert hook.VER_LIT == memcheck._VER_LIT
+        assert hook.VER_PRODUCT == memcheck._VER_PRODUCT
+
+    def test_a_three_digit_declaration_is_its_own_destination(self, hook):
+        """I-248 の再現手順の期待結果そのもの。"""
+        assert hook.destination_of("✅ 3.9.1 確定") == ("assigned", ["3.9.1"])
+        assert hook.declared_versions("行き先＝`3.9.1`", frozenset()) == ["3.9.1"]
+
+    def test_a_unit_after_three_digits_does_not_backtrack_to_two(self, hook):
+        """単位で落ちたとき、後戻りして頭の `3.9` を版として拾わない。"""
+        assert hook.declared_versions("3.9.1 GHz 確定", frozenset({"3.9"})) == []
+
+    def test_the_current_version_keeps_its_patch(self, hook, memcheck):
+        assert memcheck._version_base("3.9.1") == "3.9.1"
+        assert memcheck._version_base("3.9.1RC1") == "3.9.1"
+        assert memcheck._version_base("4.0a1") == "4.0"
+        assert memcheck._VERSION_STAGE_RE.match("3.9.1RC1").groups() == ("3.9.1", "RC", "1")
+        assert hook._VERSION_STAGE.match("3.9.1").group(1) == "3.9.1"
+
+    def test_dashboard_rows_and_headings_read_three_digits_and_link(self, hook, memcheck):
+        assert memcheck._row_version("**3.9.1**") == "3.9.1"
+        assert memcheck._row_version("Link 1.0") == "1.0"
+        assert memcheck._row_version("3.0〜3.5") is None
+        assert memcheck._heading_version("## ✅ 3.9.1 — 開発終了") == "3.9.1"
+        assert memcheck._heading_version("## 🚧 Link 1.0 — 判定契約 v2") == "1.0"
+        assert memcheck._FMT_VERSION_H2_RE.match("## 🚧 Link 1.0 — 判定契約 v2")
+        assert hook._NEXT_VERSION_HEADING.match("## 🔜 Link 1.0.1 — x").group(1) == "1.0.1"
+        assert memcheck.roadmap_section(
+            ["## 🚧 Link 1.0 — 判定", "本文", "## ⬜ 4.x — 先"], "1.0") == ["## 🚧 Link 1.0 — 判定", "本文"]
+
+    def test_the_dashboard_row_of_a_three_digit_version_is_checked(self, memcheck):
+        """現在地表の `3.9.1` の行が、段階の検査に掛かること（以前は版の形に合わず黙った）。"""
+        rows = [(23, "| 3.9.1 | 🚧 ベータ | — |")]
+        got = memcheck.check_dashboard_stage(rows, "3.9.1", published=True)
+        assert got and "3.9.1" in got[0], got
+
+    def test_a_patch_row_does_not_demand_its_own_section(self, memcheck):
+        """3 桁の版は次のマイナーのセクションの行で追う設計＝H2 が無くても鳴らさない。"""
+        rows = [(23, "| 3.9.1 | 🚧 RC | — |"), (24, "| 4.0 | 🚧 アルファ | — |")]
+        headings = [(30, "## 🚧 4.0 — 判定"), (90, "## 🗄 アーカイブ")]
+        assert memcheck.check_section_placement(rows, headings, 90) == []
+
+    def test_prose_readers_take_three_digits_whole(self, memcheck):
+        assert memcheck._RELEASE_ENUM_RE.search("3.9.1 リリース済").group(0).startswith("3.9.1")
+        assert memcheck._DONE_EVIDENCE_RE.search("対応: 3.9.1 で直した").group(0) == "3.9.1"
+        assert memcheck._GROUNDWORK_RE.search("⏳布石（3.9.1）: x").group(2) == "3.9.1"
+        assert memcheck._TRIGGER_RES[0].search("確定は §3.9.1 の公開で").group(1) == "3.9.1"
+        assert memcheck._TRIGGER_RES[1].search("3.9.1 の公開で決める").group(1) == "3.9.1"
+
+
 class TestStrongAndWeakEvidenceAskForDifferentThings:
     """**宣言形は語彙を要求しない／素の言及は語彙で裏を取る**（2026-09-22・B-263）。
 
