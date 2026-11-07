@@ -885,9 +885,12 @@ def muted_foreground(widget: tk.Misc) -> str:
 # 8.8:1（どちらも ng と同等）。レポート HTML と帳票の地図もライトと同じ #bf360c
 # （`report/map_graphics.STATUS_RGB`＝B-207 で CSS 側の #e65100 をやめて一本化した。
 # #e65100 は白地でも 3.8:1 で、帳票の 9px の字には足りなかった）。
+# `rev`（REVIEW＝前提で裏返る・4.0 ステージ6）は旧画面が壊れない最低限＝帳票と同じ紫
+# （ライト #6a1b9a on #fafafa で 9.0:1／ダーク #ce93d8 on #1c1c1c で 7.1:1）。新しい画面の
+# 色と凡例はステージ9 で決め直す。
 _VERDICT = {
-    "light": {"ok": "#2e7d32", "ng": "#c62828", "err": "#bf360c"},
-    "dark":  {"ok": "#66bb6a", "ng": "#ef5350", "err": "#ffa726"},
+    "light": {"ok": "#2e7d32", "ng": "#c62828", "rev": "#6a1b9a", "err": "#bf360c"},
+    "dark":  {"ok": "#66bb6a", "ng": "#ef5350", "rev": "#ce93d8", "err": "#ffa726"},
 }
 
 
@@ -906,13 +909,29 @@ def verdict_colors(widget: tk.Misc) -> "dict[str, str]":
 
 
 def verdict_key(status: str) -> str:
-    """判定文字列（`"OK"` / `"NG"` / `"ERROR"`）→ 配色キー（`ok` / `ng` / `err`）。
+    """判定文字列（`"OK"` / `"NG"` / `"REVIEW"` / `"ERROR"`）→ 配色キー（`ok` / `ng` / `rev` / `err`）。
 
     **画面側で `if status == "OK"` を書かないための口**＝バッチ表・中継の区間表・
     結果一覧が同じ対応表を各自持つと、ERR を足したときに片方だけ直る
     （2.6 で「タグは付いているのに色が当たっていない」を踏んだのと同じクラス）。
     """
-    return {"OK": "ok", "NG": "ng"}.get(status, "err")
+    return _VERDICT_KEYS.get(status, "err")
+
+
+#: 判定の語・表のセルの字 → 配色キー。表のセルの字（`verdict_label`）からも引ける＝
+#: テーマ切替は表示中の字から色を引き直す（`REV`・`ERR` は字の側）。
+_VERDICT_KEYS = {"OK": "ok", "NG": "ng", "REVIEW": "rev", "REV": "rev"}
+
+
+def verdict_label(status: str) -> str:
+    """判定の語を表のセルへ出す字（`OK` / `NG` / `REV` / `ERR`）。
+
+    旧画面のバッチ表と中継の区間表が同じ字を出すための口（4.0 ステージ6＝REVIEW が
+    `ERR` と出ていた＝各窓が `{"OK","NG"}` の対応表を持っていた）。REVIEW を 3 文字に
+    詰めるのはバッチ表の判定列の幅（`batch_builder._WIDTHS` の 4）＝`ERR` と同じ字数に
+    収める（旧画面は壊れない最低限・判断点 ⑬）。
+    """
+    return {"OK": "OK", "NG": "NG", "REVIEW": "REV"}.get(status, "ERR")
 
 
 def apply_verdict_tags(tree: "ttk.Treeview") -> None:

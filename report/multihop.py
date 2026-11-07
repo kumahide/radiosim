@@ -49,6 +49,7 @@ from core import config
 from core import i18n
 from core import simulation as sim
 from core import units
+from core import verdict
 from report import batch
 
 logger = logging.getLogger("radiosim")
@@ -206,7 +207,11 @@ class MultiHopRun:
 
     @property
     def ok(self) -> bool:
-        """**全ホップが成立して初めて回線が成立する**（鎖は最も弱い輪で切れる）。"""
+        """**全ホップが成立して初めて回線が成立する**（鎖は最も弱い輪で切れる）。
+
+        ⚠️ REVIEW の区間がある鎖は成立と言い切れない＝偽（語は `overall_status` が
+        REVIEW と言う）。
+        """
         self._require_chain("ok")
         # 判定は `batch.PathResult.status` が単一ソース（I-010 ③）＝計算に失敗した
         # 区間だけでなく、**成果物が欠けた区間**もここで OK から外れる。
@@ -255,10 +260,11 @@ class MultiHopRun:
 
 
 def overall_status(run: MultiHopRun) -> str:
-    """全体判定の**語**（`"OK"` / `"NG"` / `"ERROR"`）＝**ここだけが作る**（B-071）。
+    """全体判定の**語**（`"OK"` / `"NG"` / `"REVIEW"` / `"ERROR"`）＝**ここだけが作る**（B-071）。
 
     🔑 **語彙は区間と同じ**（`batch.PathResult.status`）＝同じ成果物の中で、区間表・
-    件数カード・全体判定が**同じ 3 つの語**で話す。`run.ok` の**二値**から語を作ると
+    件数カード・全体判定が**同じ語**で話す。集約は `core.verdict.aggregate`
+    （NG＞REVIEW＞OK・ERROR は別扱い＝4.0 判断点 ①）＝バッチと条件探索と同じ規則。`run.ok` の**二値**から語を作ると
     `ERROR` が `NG` に潰れ、「計算できたが回線不成立」と「判定できなかった」が
     読み手に区別できなくなる（区間表と件数は `ERROR` と言っているのに、全体だけが
     `NG` と言う——同じ紙の上で食い違う）。
@@ -276,9 +282,8 @@ def overall_status(run: MultiHopRun) -> str:
     """
     require_runnable(run.path, "overall_status")   # 規則の出所は 1 か所
     # 判定の出所は `batch.PathResult.status`（I-010 ③）＝成果物が欠けた区間も含む。
-    if not run.hops or any(h.status == "ERROR" for h in run.hops):
-        return "ERROR"
-    return "OK" if run.ok else "NG"
+    # 空・ERROR を含む鎖は ERROR（`verdict.aggregate` の規則）。
+    return verdict.aggregate(h.status for h in run.hops)
 
 
 #: 集約カードの語（I-052）。**判定で切り替える**ので、キーを 2 つ持つ。
@@ -302,7 +307,10 @@ def overall_display(run: MultiHopRun, digits: int = 1) -> tuple[str, str]:
     margin = run.overall_margin
     if margin is None:
         return OVERALL_MARGIN_KEY, "—"
-    if run.ok:
+    # 🔑 語は数値の符号で切り替える（`run.ok` ではない）＝REVIEW の鎖は `ok` が偽でも
+    # 基準の余裕度が正のことがあり、`ok` で切ると「不足 −3.0」という負の不足量になる。
+    # REVIEW を含まない鎖では `ok` と同じ答え（全区間 OK ⇔ 最小の余裕度 ≥ 0）。
+    if margin >= 0:
         return OVERALL_MARGIN_KEY, f"{margin:+.{digits}f}"
     # 「不足 −12.4」は二重否定で読めない＝符号を反転して不足量そのものを出す。
     return OVERALL_SHORTFALL_KEY, f"{-margin:.{digits}f}"

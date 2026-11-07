@@ -26,6 +26,7 @@ from core import residuals as core_residuals
 from core import sensitivity
 from core import simulation as sim
 from core import units
+from core import verdict
 from core import version
 from report import map_graphics
 from report import report_common
@@ -281,9 +282,10 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
     """
     # 判定の出所は `PathResult.status` 1 か所（I-010 ③）＝ここで条件を書き直すと、
     # 成果物だけ失敗した経路が台帳で「OK」に数え直される。
-    ok_count  = sum(1 for pr in results if pr.status == "OK")
-    ng_count  = sum(1 for pr in results if pr.status == "NG")
-    err_count = sum(1 for pr in results if pr.status == "ERROR")
+    # 件数は `verdict.counts`（4 語の全部の鍵を持つ＝中継の内訳と同じ口・4.0 ステージ6）。
+    n = verdict.counts(pr.status for pr in results)
+    ok_count, ng_count, rev_count, err_count = (
+        n[verdict.OK], n[verdict.NG], n[verdict.REVIEW], n[verdict.ERROR])
     total     = len(results)
 
     rows_html = ""
@@ -460,6 +462,7 @@ def summary_sheet_html(results: list[PathResult], project_name: str = "",
 <div class="cards">
   <div class="card"><div class="lbl">{i18n.t('html_total')}</div><div class="val">{total}</div></div>
   <div class="card ok"><div class="lbl">{i18n.t('html_ok')}</div><div class="val">{ok_count}</div></div>
+  <div class="card rev"><div class="lbl">{i18n.t('html_review')}</div><div class="val">{rev_count}</div></div>
   <div class="card ng"><div class="lbl">{i18n.t('html_ng')}</div><div class="val">{ng_count}</div></div>
   <div class="card err"><div class="lbl">{i18n.t('html_error')}</div><div class="val">{err_count}</div></div>
 </div>

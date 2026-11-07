@@ -56,7 +56,7 @@ class BatchBuilderWindow(_TableMixin, _CsvMixin, _RunMixin, tk.Toplevel):
     # ない**ので、この規則の対象外とする。
     _CW = coords.DISPLAY_WIDTH_CHARS
     _ID_W = 13
-    # 判定列（添字 11）に入るのは `"OK"` / `"NG"` / `"ERR"`（`_set_row_verdict`）。
+    # 判定列（添字 11）に入るのは `"OK"` / `"NG"` / `"REV"` / `"ERR"`（`theme.verdict_label`）。
     # 6 は中身の倍で、ID を広げる原資はここから出した（実測 24px・ja/150%）。
     # ⚠️ **3 まで詰めてはいけない**＝`ERR` の 3 文字は大文字で平均字幅より広く、
     # 125% と 150% で切れる（実測 2026-08-12。原資を出した側を新しい見切れにした）。

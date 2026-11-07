@@ -28,6 +28,7 @@ from core import models
 from core import sensitivity
 from core import simulation as sim
 from core import units
+from core import verdict
 from report import map_graphics
 from report import multihop as mh
 from report import report_common
@@ -197,7 +198,7 @@ def _multihop_sensitivity(run: MultiHopRun, worst):
 
 
 def _verdict_class(status: str) -> str:
-    """判定の語（`OK` / `NG` / `ERROR`）→ この文書の CSS クラス（`ok` / `ng` / `err`）。
+    """判定の語（`OK` / `NG` / `REVIEW` / `ERROR`）→ この文書の CSS クラス（`ok` / `ng` / `rev` / `err`）。
 
     **区間の行と全体判定のカードが同じ対応表を見る**（B-071）＝片方だけに `err` が
     無いと、判定不能の全体カードが**不成立と同じ赤**で塗られる。画面側の同じ口は
@@ -236,9 +237,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
     overall_key, overall_val = mh.overall_display(run, digits=1)
     overall_txt = overall_val if overall_val == "—" else f"{overall_val} dB"
     # 判定の出所は `batch.PathResult.status` の 1 か所（I-010 ③）。
-    ok_count  = sum(1 for pr in run.hops if pr.status == "OK")
-    ng_count  = sum(1 for pr in run.hops if pr.status == "NG")
-    err_count = sum(1 for pr in run.hops if pr.status == "ERROR")
+    # 件数は `verdict.counts`（バッチの台帳と同じ口・4.0 ステージ6）。
+    n = verdict.counts(pr.status for pr in run.hops)
+    ok_count, ng_count, rev_count, err_count = (
+        n[verdict.OK], n[verdict.NG], n[verdict.REVIEW], n[verdict.ERROR])
 
     # 経路の並び。**鎖のときだけ「A → B → C」と読める**（星なら中心と枝の関係に
     # なるので、その表現はトポロジーを実際に使う版で決める＝ここは既定の鎖向け）。
@@ -256,10 +258,10 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         pid     = pr.row.path_id                 # validated: [A-Za-z0-9_-]+
         href    = f"#{pid}" if anchor_links else f"{pid}/report.html"
         r = pr.result
-        verdict = _verdict_class(pr.status)
-        # 行の地は判定（`tr.ok` / `tr.ng` / `tr.err`）、ワースト区間は `worst`
+        v_cls = _verdict_class(pr.status)
+        # 行の地は判定（`tr.ok` / `tr.ng` / `tr.rev` / `tr.err`）、ワースト区間は `worst`
         # （左端の太線）＝**2 つの印を別の手段で出す**（B-207）。
-        cls = verdict + (" worst" if pr is worst else "")
+        cls = v_cls + (" worst" if pr is worst else "")
         dem_mark = ""
         if pr.terrain is not None and pr.terrain.fail_pct > 0:
             dem_mark = " ⚠"
@@ -269,7 +271,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
             rows_html += (
                 f"<tr class='{cls}'><td>{i + 1}</td>"
                 f"<td class='c-name'>{wp_from} → {wp_to}</td>"
-                f"<td class='c-status s-{verdict}'>ERROR</td>"
+                f"<td class='c-status s-{v_cls}'>ERROR</td>"
                 f"<td class='c-reason' colspan='{len(_HOP_COL_KEYS) - 3}'>"
                 f"{_html.escape(report_common.keep_unit_with_value(str(pr.error)))}</td></tr>\n"
             )
@@ -296,7 +298,7 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
         rows_html += (
             f"<tr class='{cls}'><td>{i + 1}</td>"
             f"<td class='c-name'>{name_cell}</td>"
-            f"<td class='c-status s-{verdict}'>{pr.status}{dem_mark}</td>"
+            f"<td class='c-status s-{v_cls}'>{pr.status}{dem_mark}</td>"
             f"<td>{freq_disp}</td>"
             f"<td>{pr.row.h_tx:.1f} / {pr.row.h_rx:.1f}</td>"
             f"<td>{units.format_db(r.fspl)}</td>"
@@ -351,6 +353,8 @@ def route_sheet_html(run: MultiHopRun, project_name: str = "", memo: str = "",
           f'<div class="val">{worst_label}</div></div>'
         + f'<div class="card ok"><div class="lbl">{i18n.t("html_ok")}</div>'
           f'<div class="val">{ok_count}</div></div>'
+        + f'<div class="card rev"><div class="lbl">{i18n.t("html_review")}</div>'
+          f'<div class="val">{rev_count}</div></div>'
         + f'<div class="card ng"><div class="lbl">{i18n.t("html_ng")}</div>'
           f'<div class="val">{ng_count}</div></div>'
         + f'<div class="card err"><div class="lbl">{i18n.t("html_error")}</div>'

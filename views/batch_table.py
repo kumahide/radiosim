@@ -494,7 +494,7 @@ class _TableMixin(_HostBase):
                 self._run_inputs[pid] = self._row_values(entries)
 
     def _set_row_verdict(self, path_id: str, status: str) -> None:
-        """`path_id` の行へ判定を返す（`"OK"` / `"NG"` / `"ERROR"`）。
+        """`path_id` の行へ判定を返す（`"OK"` / `"NG"` / `"REVIEW"` / `"ERROR"`）。
 
         **行番号ではなく ID で引く**＝空行は `_read_table_rows` が飛ばすので、
         実行順の番号と表の行番号は一致しない。ID は `validate_rows` が大小を
@@ -522,7 +522,7 @@ class _TableMixin(_HostBase):
             lbl = self._verdict_label(frame)
             if lbl is None:
                 return
-            lbl.config(text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
+            lbl.config(text=theme.verdict_label(status),
                        foreground=theme.verdict_colors(lbl)[theme.verdict_key(status)])
             # **この判定を生んだ入力**を控える（B-058）。以後この値から変わった
             # ときだけ判定を消す＝移動キーや修飾キーでは消えない。

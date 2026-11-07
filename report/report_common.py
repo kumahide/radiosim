@@ -468,13 +468,13 @@ def html_document(doc_title: str, css: str, body: str) -> str:
 # ============================================================
 #: 判定ごとの行の地の色（字の色は `map_graphics.STATUS_HEX`）。**判定以外の意味で
 #: 行の地を塗らない**＝行を目立たせたいときは地の色でなく罫線などの別の手段を使う。
-VERDICT_ROW_BG = {"OK": "#f1f8e9", "NG": "#fff8e1", "ERROR": "#fce4ec"}
-#: 判定の語 → CSS クラス（`batch.PathResult.status` の 3 語）。
-VERDICT_CLASS = {"OK": "ok", "NG": "ng", "ERROR": "err"}
+VERDICT_ROW_BG = {"OK": "#f1f8e9", "NG": "#fff8e1", "REVIEW": "#f3e5f5", "ERROR": "#fce4ec"}
+#: 判定の語 → CSS クラス（`batch.PathResult.status` の 4 語＝`core.verdict.WORDS`）。
+VERDICT_CLASS = {"OK": "ok", "NG": "ng", "REVIEW": "rev", "ERROR": "err"}
 
 
 def verdict_class(status: str) -> str:
-    """判定の語（`OK` / `NG` / `ERROR`）→ CSS クラス（`ok` / `ng` / `err`）。
+    """判定の語（`OK` / `NG` / `REVIEW` / `ERROR`）→ CSS クラス（`ok` / `ng` / `rev` / `err`）。
 
     知らない語は `err`（判定できないものを OK / NG の色で塗らない＝B-071）。
     """

@@ -937,7 +937,7 @@ class MultiHopWindow(_MapSinkMixin, tk.Toplevel):
             text=units.format_db(r.actual_margin, signed=True)
             if r is not None else "—")
         cells["status"].config(
-            text={"OK": "OK", "NG": "NG"}.get(status, "ERR"),
+            text=theme.verdict_label(status),
             foreground=theme.verdict_colors(self)[theme.verdict_key(status)])
         # **この結果を生んだ入力**を控える（B-059）。以後この控えから変わった
         # ときだけ消える＝欄を覗いただけ・名前を直しただけでは消えない。
