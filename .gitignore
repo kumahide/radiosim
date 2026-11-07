@@ -32,6 +32,8 @@ icon.ico
 # 実行時に作られるデータ
 results/
 terrain_cache/
+# 新しい画面（webui）が Edge に渡す専用プロファイル（ログと同じ基準＝持ち運び型の配置では直下）
+edge_profile/
 
 # 利用者の設定とログ
 radiosim_conf.json

@@ -76,6 +76,20 @@ def test_progress_rides_on_computing_only_for_the_current_version():
     assert "done" not in st.headline()
 
 
+def test_progress_wakes_the_page_only_when_the_shown_percent_moves():
+    # 1 点ごとに起こすと 1 回の取得で千回を超えた（実機の 2217 点）＝画面の百分率が動くときだけ
+    st = AppState()
+    v = st.version
+    st.set_progress(v, 0, 2217)
+    rev = st.wait(0, 0)["revision"]
+    st.set_progress(v, 1, 2217)                          # 0% のまま
+    st.set_progress(v, 22, 2217)                         # 0% のまま
+    assert st.wait(0, 0)["revision"] == rev
+    assert st.headline()["done"] == 22                   # 値は最新を持つ
+    st.set_progress(v, 23, 2217)                         # 1% へ
+    assert st.wait(0, 0)["revision"] == rev + 1
+
+
 def test_computing_cannot_be_published():
     with pytest.raises(ValueError):
         AppState().publish(1, "computing")

@@ -26,6 +26,11 @@ from core import config
 KINDS = ("verdict", "input", "terrain", "error", "computing")
 
 
+def _pct(p: "tuple[int, int, int]") -> int:
+    """取得の進み具合を画面と同じ百分率の整数にする（`app.js` の `Math.floor`）。"""
+    return (100 * p[1]) // p[2] if p[2] > 0 else 0
+
+
 class UnknownKeyError(ValueError):
     """入力の集合に無い鍵、または文字列でない値を受けた。"""
 
@@ -84,8 +89,11 @@ class AppState:
         with self._cond:
             if version != self._version:
                 return
+            old = self._progress
             self._progress = (version, done, total)
-            self._bump()
+            # 画面が出すのは百分率の整数だけ＝1 点ごとに起こすと 1 回の取得で千回を超える（実測 2217 点）
+            if old is None or old[0] != version or _pct(old) != _pct(self._progress):
+                self._bump()
 
     def headline(self) -> "dict[str, Any]":
         with self._cond:
