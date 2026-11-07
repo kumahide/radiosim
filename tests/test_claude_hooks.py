@@ -4712,6 +4712,124 @@ def test_language_gate_is_wired_into_stop():
 
 
 # ============================================================
+# 経営者に会話を閉じる作業を頼む文（O-031）
+# ============================================================
+_CLOSE_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "close_request_gate.py"))
+
+
+@pytest.fixture(scope="module")
+def closegate():
+    """`.claude/close_request_gate.py` を単体モジュールとして読み込む。"""
+    if not os.path.exists(_CLOSE_PATH):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    spec = importlib.util.spec_from_file_location("_close_request_gate", _CLOSE_PATH)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["_close_request_gate"] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
+class TestCloseRequestGate:
+    """**経営者に会話を閉じる作業を頼む文だけを拾い、窓口が自分で閉じる文・課題を閉じる文は拾わない**
+    こと（線は 2026-11-07 の実測＝会話の記録 449 本で 42 件・本物 41 件）。"""
+
+    # ---- 拾う（会話の記録にあった実例・型ごと）--------------------------------
+    @pytest.mark.parametrize("kind, text", [
+        ("依頼", "お手数ですが、サイドバーから「窓口 34 本目」を閉じてください。"),
+        ("依頼", "56 本目を左の一覧から閉じていただけますか？"),
+        ("依頼", "28 本目をサイドバーから閉じてもらえますか？"),
+        ("依頼の予告", "もし閉じる操作が止められたら、26 本目が経営者に閉じるよう頼みます。"),
+        ("依頼の予告", "評価者の会話を閉じるお願いは前の番でしてあります。"),
+        ("問い", "このセッションはここで閉じていただいて大丈夫です。"),
+        ("問い", "57 本目を閉じますか？"),
+        ("手順", "残りの会話は、サイドバーで右クリックして閉じる形です。"),
+    ])
+    def test_request_is_caught(self, closegate, kind, text):
+        found = closegate.evidence(text)
+        assert found and found[0][0] == kind, (kind, found)
+
+    # ---- 拾わない --------------------------------------------------------
+    @pytest.mark.parametrize("text", [
+        "最初に、自分を切り離してから 57 本目を閉じます。",                   # 窓口が自分で閉じる
+        "古い窓口を閉じるのは新しい窓口の仕事で、経営者に閉じさせない。",     # 規則の説明
+        "`B-356` を閉じてよいかを問います。",                                  # 課題（会話を指す語が無い）
+        "I-252 はこれを確かめてから閉じます。",
+        "57 本目の「サイドバーから 56 本目を閉じてください」という文を是正した。",  # 引用
+        "57 本目は閉じられていません（画面に開いている）。次の番の頭でやり直します。",
+        "",
+    ])
+    def test_own_closing_is_not_caught(self, closegate, text):
+        assert not closegate.evidence(text), closegate.evidence(text)
+
+    def test_session_word_in_previous_sentence_counts(self, closegate):
+        assert closegate.evidence("窓口 56 本目がまだ残っています。お手すきのときに閉じてください。")
+
+    # ---- ターンの切り出し（wrap_up の問いを含む）------------------------------
+    @staticmethod
+    def _log(*entries):
+        return [json.dumps(e, ensure_ascii=False) for e in entries]
+
+    @staticmethod
+    def _wrap(ask, recap="済みました。"):
+        return {"type": "assistant", "message": {"content": [
+            {"type": "tool_use", "name": "mcp__ccd_turn__wrap_up", "input": {"ask": ask, "recap": recap}}]}}
+
+    def test_wrap_up_ask_is_judged(self, closegate):
+        lines = self._log({"type": "user", "message": {"content": "承認する"}},
+                          self._wrap("56 本目を左の一覧から閉じていただけますか？"))
+        assert closegate.verdict(closegate.turn_texts(lines))
+
+    def test_only_the_current_turn_is_judged(self, closegate):
+        lines = self._log(self._wrap("32 本目を閉じてもらえますか？"),
+                          {"type": "user", "message": {"content": "はい"}},
+                          {"type": "assistant", "message": {"content": [
+                              {"type": "text", "text": "32 本目は自分で閉じました。"}]}})
+        assert closegate.verdict(closegate.turn_texts(lines)) is None
+
+    def _run(self, payload):
+        proc = subprocess.run([sys.executable, _CLOSE_PATH], input=json.dumps(payload),
+                              capture_output=True, text=True, encoding="utf-8", timeout=30)
+        return proc.stdout
+
+    def test_blocks_through_the_hook(self, closegate, tmp_path):
+        log = tmp_path / "t.jsonl"
+        log.write_text("\n".join(self._log({"type": "user", "message": {"content": "お願いします"}})),
+                       encoding="utf-8")
+        out = json.loads(self._run({"transcript_path": str(log),
+                                    "last_assistant_message": "サイドバーから 57 本目を閉じてください。"}))
+        assert out["decision"] == "block" and "set_pinned" in out["reason"]
+
+    def test_reads_utf8_stdin_without_io_encoding(self, closegate):
+        """フックは `PYTHONIOENCODING` 無しで起動される＝既定の文字コードで読むと日本語が化けて素通りする。"""
+        env = {k: v for k, v in os.environ.items() if k not in ("PYTHONIOENCODING", "PYTHONUTF8")}
+        env["PYTHONUTF8"] = "0"   # 3.15 は UTF-8 が既定＝配線の `python`（3.14）と同じ読み方にそろえる
+        payload = json.dumps({"last_assistant_message": "サイドバーから 57 本目を閉じてください。"},
+                             ensure_ascii=False).encode("utf-8")
+        proc = subprocess.run([sys.executable, _CLOSE_PATH], input=payload, capture_output=True,
+                              env=env, timeout=30)
+        assert b'"decision": "block"' in proc.stdout, proc.stdout[:200]
+
+    def test_second_stop_never_blocks(self, closegate):
+        assert self._run({"last_assistant_message": "サイドバーから 57 本目を閉じてください。",
+                          "stop_hook_active": True}) == ""
+
+    def test_broken_input_never_blocks(self, closegate):
+        assert self._run({"transcript_path": "Z:/no/such/file.jsonl"}) == ""
+
+
+def test_close_request_gate_is_wired_into_stop():
+    """配線されていないゲートは無いのと同じ（`settings.local.json` の Stop に載っていること）。"""
+    path = os.path.abspath(os.path.join(_HOOK_DIR, "settings.local.json"))
+    if not os.path.exists(path):
+        pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+    with open(path, encoding="utf-8") as f:
+        hooks = json.load(f).get("hooks", {})
+    commands = [h.get("command", "") for g in hooks.get("Stop", []) for h in g.get("hooks", [])]
+    assert any("close_request_gate.py" in c for c in commands), commands
+
+
+# ============================================================
 # リレーを起こしたら終わりを見張る（I-230 の③）
 # ============================================================
 _RELAY_GATE_PATH = os.path.abspath(os.path.join(_HOOK_DIR, "relay_watch_gate.py"))
