@@ -249,6 +249,34 @@ class TestFetchElevations:
         done.wait(timeout=5)
         assert "ex" in errors
 
+    def test_cancel_stops_fetching_and_skips_the_cache(self, default_params_dict,
+                                                       monkeypatch):
+        """取り消すと次の標本から取りに行かず `Cancelled` で終わり、地形はキャッシュに
+        載らないこと（4.0 ステージ6・呼び口の取り消し）。"""
+        default_params_dict["samples"] = "200"
+        cancel = threading.Event()
+        fetched: list[int] = []
+
+        def _get(la, lo, *_a, **_k):
+            fetched.append(1)
+            cancel.set()             # 最初の標本で取り消す
+            return 100.0
+        monkeypatch.setattr(dem, "get_elevation", _get)
+        sim.clear_terrain_cache()
+        params = sim.SimParams(default_params_dict)
+        box: dict = {}
+        done = threading.Event()
+        sim.fetch_elevations_cached(
+            params, lambda v: None,
+            on_complete=lambda e: (box.setdefault("elevs", e), done.set()),
+            on_error=lambda ex: (box.setdefault("ex", ex), done.set()),
+            cancel=cancel)
+        assert done.wait(timeout=10)
+        assert isinstance(box.get("ex"), sim.Cancelled), box
+        assert "elevs" not in box
+        assert len(fetched) < params.num, "取り消した後も残りの標本を取りに行った"
+        assert sim._terrain_cache_key(params) not in sim._terrain_cache
+
 
 # ============================================================
 # DEM が取れないときの打ち切り（B-025 ②）

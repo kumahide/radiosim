@@ -252,6 +252,20 @@ def dem_unreachable_message() -> str:
                            hint=i18n.t("fix_network"))
 
 
+class Cancelled(RuntimeError):
+    """呼び出し側が取り消した（4.0 ステージ6・呼び口の取り消し）＝失敗ではない。
+
+    画面は黙って捨てる（古い入力の取得・実行を止めただけ）。取り消した地形はキャッシュに
+    載せない＝途中までの標高を次の計算へ出さない。
+    """
+
+
+def raise_if_cancelled(cancel: "threading.Event | None") -> None:
+    """`cancel` が立っていれば `Cancelled` を投げる（1 件・1 標本ごとに見る口）。"""
+    if cancel is not None and cancel.is_set():
+        raise Cancelled("cancelled by the caller")
+
+
 def sample_coords(params: SimParams) -> tuple[np.ndarray, np.ndarray]:
     """各標本の緯度・経度（`(lats, lons)`）＝**経路の定義はここ 1 か所**（B-150）。
 
@@ -291,9 +305,13 @@ def fetch_elevations(
     on_progress: Callable[[int], None],
     on_complete: Callable[[np.ndarray], None],
     on_error: Callable[[Exception], None],
+    cancel: "threading.Event | None" = None,
 ) -> None:
     """
     GSI DEM から標高を並列取得する。別スレッドで実行すること。
+
+    `cancel` が立つと、ワーカーは次の標本から取りに行かず、`on_error(Cancelled)` で終わる
+    （4.0 ステージ6＝古い入力の取得を止める・哲学④）。`on_complete` は呼ばない。
 
     固定 `_MAX_FETCH_WORKERS` 本の常駐ワーカーがキューから標本を引いて取得し、
     完了した件数を on_progress に通知する。結果は座標インデックス順に整列して返す。
@@ -398,7 +416,7 @@ def fetch_elevations(
                     item = work.get()
                     if item is None:
                         return
-                    if abort.is_set():
+                    if abort.is_set() or (cancel is not None and cancel.is_set()):
                         continue           # これ以上取得しない（待ち時間を捨てる）
                     _fetch_one(*item)
 
@@ -411,6 +429,10 @@ def fetch_elevations(
             for w in workers:
                 w.join()
 
+            if cancel is not None and cancel.is_set():
+                logger.info("Terrain fetch cancelled after %d of %d samples",
+                            completed, params.num)
+                raise_if_cancelled(cancel)
             if worker_error:
                 raise worker_error[0]
 
@@ -566,9 +588,11 @@ def fetch_elevations_cached(
     on_error: Callable[[Exception], None],
     on_acquired: "Callable[[tuple[str, str] | None], None] | None" = None,
     on_status: "Callable[[np.ndarray | None], None] | None" = None,
+    cancel: "threading.Event | None" = None,
 ) -> None:
     """
-    キャッシュ付き標高取得。
+    キャッシュ付き標高取得。`cancel` は `fetch_elevations` へ渡す（取り消した地形は
+    `on_complete` を通らないので、キャッシュにも載らない）。
 
     TX/RX 座標とサンプル数が前回と同じであれば DEM を再取得せず、
     キャッシュした raw_elevs を即座に on_complete へ渡す。
@@ -646,7 +670,9 @@ def fetch_elevations_cached(
             on_acquired(acquired)
         on_complete(raw_elevs)
 
-    fetch_elevations(params, on_progress, _on_complete_and_cache, on_error)
+    # 取り消しの無い呼び出しは 3.9 と同じ 4 引数で呼ぶ（差し替えた取得もそのまま受ける）
+    extra = {} if cancel is None else {"cancel": cancel}
+    fetch_elevations(params, on_progress, _on_complete_and_cache, on_error, **extra)
 
 
 def clear_terrain_cache() -> None:
