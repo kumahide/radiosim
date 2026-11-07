@@ -785,14 +785,14 @@ class TestThreeDigitVersionsAreReadWhole:
 
     def test_dashboard_rows_and_headings_read_three_digits_and_link(self, hook, memcheck):
         assert memcheck._row_version("**3.9.1**") == "3.9.1"
-        assert memcheck._row_version("Link 1.0") == "1.0"
+        assert memcheck._row_version("Link 1.0") == "4.0"      # 系列の版で読む（判断点 ⑯）
         assert memcheck._row_version("3.0〜3.5") is None
         assert memcheck._heading_version("## ✅ 3.9.1 — 開発終了") == "3.9.1"
-        assert memcheck._heading_version("## 🚧 Link 1.0 — 判定契約 v2") == "1.0"
+        assert memcheck._heading_version("## 🚧 Link 1.0 — 判定契約 v2") == "4.0"
         assert memcheck._FMT_VERSION_H2_RE.match("## 🚧 Link 1.0 — 判定契約 v2")
         assert hook._NEXT_VERSION_HEADING.match("## 🔜 Link 1.0.1 — x").group(1) == "1.0.1"
         assert memcheck.roadmap_section(
-            ["## 🚧 Link 1.0 — 判定", "本文", "## ⬜ 4.x — 先"], "1.0") == ["## 🚧 Link 1.0 — 判定", "本文"]
+            ["## 🚧 Link 1.0 — 判定", "本文", "## ⬜ Link 1.x — 先"], "4.0") == ["## 🚧 Link 1.0 — 判定", "本文"]
 
     def test_the_dashboard_row_of_a_three_digit_version_is_checked(self, memcheck):
         """現在地表の `3.9.1` の行が、段階の検査に掛かること（以前は版の形に合わず黙った）。"""
@@ -812,6 +812,59 @@ class TestThreeDigitVersionsAreReadWhole:
         assert memcheck._GROUNDWORK_RE.search("⏳布石（3.9.1）: x").group(2) == "3.9.1"
         assert memcheck._TRIGGER_RES[0].search("確定は §3.9.1 の公開で").group(1) == "3.9.1"
         assert memcheck._TRIGGER_RES[1].search("3.9.1 の公開で決める").group(1) == "3.9.1"
+
+
+class TestLinkVersionsReadAsLineage:
+    """🔑 **`Link X.Y` は数で比べるとき系列の版 `(X+3).Y` で読む**（判断点 ⑯・2026-11-08）。
+
+    台帳と版計画を `Link 1.0` へ改番すると、`1.0` のまま比べる口は 3.x より古い版と読み、
+    済んだ版の印・先の版の除外・布石・判断の期限が逆を向く。⇒ 入口で読み替え、表示だけ戻す。
+    ⚠️ check 24（改番の旧い意味）だけは生の行を読む＝`Link 1.0 ステージ` を旧い `4.0` と鳴らさない。
+    """
+
+    def test_the_copies_agree(self, hook, memcheck):
+        assert hook.LINK_OFFSET == memcheck._LINK_OFFSET
+        assert hook.LINK_VER_PAT == memcheck._LINK_VER_PAT
+
+    def test_to_lineage_and_back(self, hook, memcheck):
+        for raw, want in (("Link 1.0", "4.0"), ("`Link 1.0a1`", "`4.0a1`"),
+                          ("Link 1.0.1 確定", "4.0.1 確定"), ("## ⬜ Link 1.x — 先", "## ⬜ 4.x — 先"),
+                          ("3.9.1 と RadioSimLink 1.0", "3.9.1 と RadioSimLink 1.0")):
+            assert hook.to_lineage(raw) == want and memcheck._to_lineage(raw) == want
+            assert hook.to_lineage(want) == want            # 何度かけても同じ
+        assert hook.to_product("4.0a1") == "Link 1.0a1"
+        assert hook.to_product("3.9.1") == "3.9.1"
+
+    def test_the_app_version_of_link_is_the_lineage(self, hook):
+        link = 'APP_NAME    = "RadioSim Link"\nAPP_VERSION = "1.0a1"\n'
+        pro = 'APP_NAME    = "RadioSim Pro"\nAPP_VERSION = "4.0a1"\n'
+        assert hook.app_lineage_version(link, "1.0a1") == "4.0a1"
+        assert hook.app_lineage_version(pro, "4.0a1") == "4.0a1"
+
+    def test_a_link_destination_is_the_lineage(self, hook):
+        assert hook.destination_of("未着手（✅ 行き先＝`Link 1.0` に確定）") == ("assigned", ["4.0"])
+        assert hook.declared_versions("Link 1.0 で直す", frozenset({"4.0"})) == ["4.0"]
+        assert "4.0" in hook.known_versions(["## 🔜 Link 1.0 — 新しい画面"])
+
+    def test_the_index_shows_the_product_and_marks_past_versions(self, hook):
+        doc = _doc(_item("B-002", "対応中（行き先＝`3.9`）"),
+                   _item("B-001", "未着手（✅ 行き先＝Link 1.0 に確定）"))
+        block = hook.ledger_index(doc, known=frozenset({"3.9", "4.0"}), current="4.0a1")
+        rows = {r.split(" | ")[0].strip("| "): r.split(" | ")[3]
+                for r in block if r.startswith("| ") and not r.startswith("| ID ")}
+        assert rows == {"B-002": "⚠️ 3.9（済んだ版）", "B-001": "Link 1.0"}
+
+    def test_comparing_readers_take_link_as_later_than_3x(self, memcheck):
+        assert memcheck._names_version("## 🔜 Link 1.0 — x", "4.0")
+        assert memcheck.check_stale_triggers(["- 確定は Link 1.0 の a→b"], "4.0a1") == []
+        assert memcheck.check_stale_triggers(["- 確定は Link 1.0 の a→b"], "4.0")
+
+    def test_the_renumber_check_reads_raw_lines(self, memcheck):
+        roadmap = ["| 新 | 中身 | 旧 | 旧番号のまま残ると誤読する語 |", "|---|---|---|---|",
+                   "| Link 1.0 | 新しい画面 | 4.0 | `ステージ` |", "",
+                   "- Link 1.0 ステージ8 を進める", "- 4.0 ステージ8 を進める"]
+        got = memcheck.check_renumber_leftovers(roadmap, {})
+        assert len(got) == 1 and ":6 " in got[0], got
 
 
 class TestStrongAndWeakEvidenceAskForDifferentThings:
