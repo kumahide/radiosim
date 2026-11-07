@@ -324,7 +324,7 @@ class TestCalculatePropagation:
         r = models.calculate_propagation(flat_terrain, **self.PARAMS,
                                          diff_method=method)
         for field in (r.diff_loss, r.veg_loss, r.env_loss,
-                      r.blocked_ratio, r.slant_dist_km, r.current_k):
+                      r.blocked_ratio, r.slant_dist_km):
             assert math.isfinite(field)
 
     @pytest.mark.parametrize("method", ["single", "bullington"])
@@ -488,13 +488,6 @@ class TestCalculatePropagation:
                                          diff_method=method)
         assert 3.0 <= r.env_loss <= 30.0
 
-    # ── current_k は非負 ────────────────────────────────────────
-    @pytest.mark.parametrize("method", ["single", "bullington"])
-    def test_current_k_nonnegative(self, single_ridge_terrain, method):
-        r = models.calculate_propagation(single_ridge_terrain, **self.PARAMS,
-                                         diff_method=method)
-        assert r.current_k >= 0.0
-
     # ── slant_dist >= horiz_dist ─────────────────────────────────
     @pytest.mark.parametrize("method", ["single", "bullington"])
     def test_slant_dist_gte_horiz(self, flat_terrain, method):
@@ -512,7 +505,7 @@ class TestCalculateLinkBudget:
             diff_loss=10.0, veg_loss=5.0, env_loss=8.0,
             rain_loss=0.0,  gas_loss=0.0,
             blocked_ratio=50.0, slant_dist_km=3.0,
-            current_k=8.0, diff_method=diff_method, env_type=env_type,
+            diff_method=diff_method, env_type=env_type,
         )
 
     RADIO = dict(freq_mhz=2400.0, p_tx=20.0, gain_tx=3.0,
@@ -557,7 +550,7 @@ class TestCalculateLinkBudget:
             diff_loss=0.0, veg_loss=0.0, env_loss=3.0,
             rain_loss=0.0, gas_loss=0.0,
             blocked_ratio=0.0, slant_dist_km=0.1,
-            current_k=10.0, diff_method="single", env_type="los",
+            diff_method="single", env_type="los",
         )
         r = models.calculate_link_budget(prop, **self.RADIO)
         assert r.status == "OK"
@@ -567,7 +560,7 @@ class TestCalculateLinkBudget:
             diff_loss=80.0, veg_loss=40.0, env_loss=30.0,
             rain_loss=5.0,  gas_loss=1.0,
             blocked_ratio=200.0, slant_dist_km=50.0,
-            current_k=0.0, diff_method="bullington", env_type="urban",
+            diff_method="bullington", env_type="urban",
         )
         r = models.calculate_link_budget(prop, **self.RADIO)
         assert r.status == "NG"
@@ -579,7 +572,7 @@ class TestCalculateLinkBudget:
                 diff_loss=0.0, veg_loss=0.0, env_loss=3.0,
                 rain_loss=0.0, gas_loss=0.0,
                 blocked_ratio=0.0, slant_dist_km=km,
-                current_k=10.0, diff_method="single", env_type="los",
+                diff_method="single", env_type="los",
             )
             return models.calculate_link_budget(prop, **self.RADIO).fspl
 
@@ -589,7 +582,7 @@ class TestCalculateLinkBudget:
         r = models.calculate_link_budget(self._prop(), **self.RADIO)
         for val in (r.eirp, r.fspl, r.diff_loss, r.veg_loss, r.env_loss,
                     r.total_loss, r.p_rx, r.actual_margin,
-                    r.current_k, r.blocked_ratio, r.slant_dist_km):
+                    r.blocked_ratio, r.slant_dist_km):
             assert math.isfinite(val)
 
 
@@ -1155,15 +1148,25 @@ class TestScopeNotes:
         assert "diff_bullington" in models.scope_notes(430.0, diff_method="bullington")
         assert "diff_bullington" not in models.scope_notes(430.0, diff_method="single")
 
-    # ── 刻印 3 件（B-128 / B-132 / I-114・3.0a1 の着手順 11）────────
-    def test_the_rice_k_estimate_is_always_declared(self):
-        """I-114: **表示のライス K は根拠の無い推定**＝常に名乗ること。
+    # ── 刻印（B-128 / B-132・3.0a1 の着手順 11）＋ I-114 の欄の廃止（4.0）──
+    def test_the_rice_k_estimate_is_gone(self):
+        """I-114（4.0）: ライス K の現在値の欄は外した＝結果にも刻印にも帳票にも残さない。
 
-        ⚠️ 条件つきにしない＝`current_k` は毎回必ず出る量なので、
-        「計算していない項目の刻印は付けない」の例外ではなく**常に該当する**。
+        3.0〜3.9 は根拠の無い推定（`initial_k − diff_loss / 3`）として常に刻印で名乗っていた。
+        欄を外した後に刻印だけ残ると「出していない量」を名乗る（B-131 の原則の逆）。
         """
-        assert "rice_k_empirical" in models.SCOPE_ALWAYS
-        assert "rice_k_empirical" in models.scope_notes(2400.0)
+        import dataclasses
+        import inspect
+        from core import i18n
+        from core import simulation as sim
+        for cls in (models.PropagationResult, models.LinkBudgetResult):
+            assert "current_k" not in {f.name for f in dataclasses.fields(cls)}, cls
+        assert "rice_k_empirical" not in models.SCOPE_NOTE_ORDER
+        assert "rice_k_from_diffraction" not in {a.name for a in models.ASSUMPTIONS}
+        assert "Rice K" not in inspect.getsource(sim._save_report)
+        for lang in ("ja", "en"):
+            i18n.set_lang(lang)
+            assert i18n.t("pl_k_factor") == "pl_k_factor", "旧画面の欄の見出しが残っている"
 
     @pytest.mark.parametrize("veg_h,expected", [(0.0, False), (0.1, True), (25.0, True)])
     def test_the_serial_sum_is_declared_only_when_there_is_vegetation(

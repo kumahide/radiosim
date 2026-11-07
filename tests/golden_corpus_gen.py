@@ -126,13 +126,12 @@ LINKS: list[dict] = [
          sens=-95, veg_h=15, k=1.33, samples=240, env="rural", diff="bullington", rain=0),
 
     # --- かすめ（grazing）＝回折損が数 dB の帯（係数が最も見える所） ---
-    # 深く塞がれた回線は diff_loss が飽和し current_k も 0 に張り付くため、
-    # **0 < diff_loss < 数 dB／0 < current_k < initial_k の内挿帯**を必ず含める
-    # （この帯が無いと回折・K 推定の係数を変えてもコーパスが気づけない）。
+    # 深く塞がれた回線は diff_loss が飽和するため、**0 < diff_loss < 数 dB の帯**を必ず含める
+    # （この帯が無いと回折の係数を変えてもコーパスが気づけない）。
     # ⚠️ **h_tx は「帯に入る高さ」として選んだ値**（2026-08-26・B-130）＝回折モデルを
     #    Bullington へ差し替えたとき、標準の補正項のぶん下限が上がり、**この回線が
     #    帯から外れて被覆ゲートが鳴った**（40m で 6.01 dB・帯は 6 dB 未満）。
-    #    56m にすると diff_loss 3.11 dB / current_k 0.29 で帯の中に戻る。
+    #    56m にすると diff_loss 3.11 dB で帯の中に戻る。
     #    ⇒ **実在の鉄塔高ではなく、コーパスの被覆のための値。**
     dict(id="nagoya_grazing_900", start=(35.1709, 136.8815), end=(35.2286, 136.9067),
          h_tx=56, h_rx=10, freq=900, p_tx=20, gain_tx=9, gain_rx=9,
@@ -302,7 +301,7 @@ def build() -> dict:
                 "env_loss": result.env_loss, "rain_loss": result.rain_loss,
                 "gas_loss": result.gas_loss, "total_loss": result.total_loss,
                 "p_rx": result.p_rx, "actual_margin": result.actual_margin,
-                "status": result.status, "current_k": result.current_k,
+                "status": result.status,
                 "blocked_ratio": result.blocked_ratio,
                 "slant_dist_km": result.slant_dist_km,
                 "diff_method": result.diff_method, "env_type": result.env_type,

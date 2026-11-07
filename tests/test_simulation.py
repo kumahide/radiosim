@@ -1113,7 +1113,7 @@ def _make_result(diff_method="single", env_type="los"):
         env_loss=6.0, rain_loss=0.0, gas_loss=0.0,
         total_loss=106.0, p_rx=-83.0,
         actual_margin=2.0, status="OK",
-        current_k=10.0, blocked_ratio=0.0, slant_dist_km=1.0,
+        blocked_ratio=0.0, slant_dist_km=1.0,
         diff_method=diff_method, env_type=env_type,
     )
 

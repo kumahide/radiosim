@@ -142,7 +142,6 @@ SCOPE_ALWAYS: tuple[str, ...] = (
     "env_empirical",      # 環境損失は区分選択の経験値
     "ground_reflection",  # 地面反射（2 波干渉）は考慮していない
     "earth_k_fixed",      # 等価地球半径は標準大気に固定＝K が振れる時間帯を見ていない
-    "rice_k_empirical",   # 表示のライス K は回折損からの経験的な推定（I-114）
 )
 
 #: 解像度の段階ごとの刻印（B-128）。**段階ぶん 1 つずつ持つ**＝差し込みで受けると
@@ -161,7 +160,6 @@ SCOPE_NOTE_ORDER: tuple[str, ...] = (
     "env_empirical",
     "ground_reflection",
     "earth_k_fixed",
-    "rice_k_empirical",
     "diff_bullington",    # Bullington は離れた尾根で小さめに出る＋球面項が無い
 ) + SCOPE_RESOLUTION + (
     "rain_zeroed",        # 降雨: 範囲外につき 0 として扱った
@@ -198,8 +196,6 @@ ASSUMPTIONS: tuple[Assumption, ...] = tuple(
          ("ground_reflection",), "test_ground_reflection_is_declared", ""),
         ("standard_earth_k", "等価地球半径係数は標準大気の 4/3 に固定（K が下がる時間帯を見ない）",
          ("earth_k_fixed",), "test_the_earth_k_note_is_declared", ""),
-        ("rice_k_from_diffraction", "表示のライス K は回折損から `diff_loss / 3` で推定した経験値",
-         ("rice_k_empirical",), "test_the_rice_k_estimate_is_always_declared", "I-114"),
     )
 )
 
@@ -356,7 +352,6 @@ class PropagationResult:
     gas_loss:      float   # 大気減衰 [dB]  (ITU-R P.676-13 Annex 2)
     blocked_ratio: float   # Fresnel 第1ゾーン遮蔽率 [%]
     slant_dist_km: float   # スラント距離 [km]
-    current_k:     float   # 推定ライスKファクター（表示専用、計算不使用）
     diff_method:   str     # 使用した回折モデル ("single" | "bullington")
     env_type:      str     # 環境区分 ("urban"|"suburban"|"rural"|"los")
 
@@ -376,7 +371,6 @@ class LinkBudgetResult:
     actual_margin: float
     status:        str          # 判定の語＝`core/verdict.py` の語（ここでは基準の OK/NG）
     # 環境情報（表示用）
-    current_k:     float
     blocked_ratio: float
     slant_dist_km: float
     diff_method:   str          # 使用した回折モデル ("single" | "bullington")
@@ -567,6 +561,8 @@ def calculate_propagation(
     Fresnel 第1ゾーン・回折損・植生減衰・Env Loss・降雨減衰・大気減衰を計算する。
 
     Args:
+        initial_k  : 入力のライス K。⚠️ 4.0 から何にも使わない（I-114＝現在値の欄を外した）。
+                     呼び口の並びと旧画面の入力・保存の値を撤去まで変えないために受けるだけ
         diff_method: "single" = 単一障害物 Fresnel-Kirchhoff
                      "bullington" = Bullington 等価ナイフエッジ（P.526 §4.5.1・複数障害物）
                      ⚠️ 旧名 "deygout" も受ける（`normalize_diff_method`）
@@ -660,11 +656,8 @@ def calculate_propagation(
     #    （既定の計算で使う）ので、結果に載せる名もそれへ揃える。
     resolved_env_type = env_type if env_type in ENV_COEFFS else ENV_DEFAULT
     env_loss  = _env_loss(slant_dist_km, env_type)
-    # current_k: 表示・参考用のライスファクター推定値。
-    # ライスファクター K は見通し成分と散乱成分の電力比 [dB] であり、
-    # 障害物による回折損が増えると見通し成分が失われ K が低下する。
-    # diff_loss / 3 は経験的な低下量の近似係数（計算には使用しない）。
-    current_k = max(0.0, initial_k - (diff_loss / 3))
+    # ⚠️ 回折損からライス K の現在値を推定する欄（旧 `current_k = initial_k − diff_loss / 3`）は
+    #    4.0 で外した（I-114＝係数 3 に出典が無く、回折が主役の回線では 0 に張り付いて何も言えていない）。
 
     # 降雨減衰・大気減衰
     rain_loss = calculate_rain_loss(freq_mhz, slant_dist_km, rain_rate)
@@ -678,7 +671,6 @@ def calculate_propagation(
         gas_loss      = gas_loss,
         blocked_ratio = blocked_ratio,
         slant_dist_km = slant_dist_km,
-        current_k     = current_k,
         diff_method   = resolved_diff_method,
         env_type      = resolved_env_type,
     )
@@ -1029,7 +1021,6 @@ def calculate_link_budget(
         p_rx          = p_rx,
         actual_margin = actual_margin,
         status        = status,
-        current_k     = prop.current_k,
         blocked_ratio = prop.blocked_ratio,
         slant_dist_km = prop.slant_dist_km,
         diff_method   = prop.diff_method,

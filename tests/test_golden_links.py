@@ -54,7 +54,7 @@ TOL = 1e-6
 _NUMERIC_FIELDS = (
     "horiz_dist_km", "eirp", "fspl", "diff_loss", "veg_loss", "env_loss",
     "rain_loss", "gas_loss", "total_loss", "p_rx", "actual_margin",
-    "current_k", "blocked_ratio", "slant_dist_km",
+    "blocked_ratio", "slant_dist_km",
 )
 _TEXT_FIELDS = ("status", "diff_method", "env_type")
 
@@ -163,18 +163,14 @@ class TestCorpusCoverage:
         assert min(d) < 6.0 and max(d) > 25.0
 
     def test_covers_the_grazing_band(self):
-        """回折損が数 dB／current_k が内挿帯にある回線を必ず持つこと。
+        """回折損が数 dB の回線を必ず持つこと。
 
-        深く塞がれた回線は diff_loss が飽和し current_k も 0 に張り付くため、
-        **その領域だけのコーパスは回折・K 推定の係数変更を検出できない**
-        （実際、初版のコーパスは current_k が 1.33 か 0.0 しか取らず、
-        `initial_k - diff_loss/3` の係数を変えても全通過した）。
+        深く塞がれた回線は diff_loss が飽和するため、
+        **その領域だけのコーパスは回折の係数変更を検出できない**。
+        ⚠️ ライス K の現在値（旧 `current_k` の内挿帯）の検査は 4.0 で欄ごと外した（I-114）。
         """
         exp = [link["expected"] for link in LINKS]
         assert any(0.0 < e["diff_loss"] < 6.0 for e in exp),             "回折損が数 dB の「かすめ」回線が無い"
-        ks = [(e["current_k"], i["k_factor"])
-              for e, i in zip(exp, (link["input"] for link in LINKS))]
-        assert any(0.0 < k < k0 for k, k0 in ks),             "current_k が内挿帯（0 < k < initial_k）にある回線が無い"
 
     def test_no_vegetation_means_no_vegetation_loss(self):
         """**植生高 0m の回線は植生減衰 0 dB**（B-131 の回帰ゲート・コーパス側）。

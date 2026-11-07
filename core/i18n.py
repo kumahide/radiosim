@@ -357,7 +357,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_status":            "Status",
         "pl_env_type":          "Env Type",
         "pl_diff_model":        "Diff Model",
-        "pl_k_factor":          "K-Factor (est.)",
         "pl_f1_obs":            "F1 Obs",
         "pl_f1_depth":          "F1 Depth",
         "pl_slant_dist":        "Slant Dist",
@@ -551,9 +550,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_diff_veg_serial":
             "Shadowed stretches are charged both diffraction loss and vegetation "
             "attenuation — the total reads high (safe side), and is unverified.",
-        "html_scope_rice_k_empirical":
-            "Rice K: empirical estimate from the diffraction loss (display only, "
-            "not used in the calculation).",
         "html_scope_resolution_high":
             "Terrain sampled at the \"high\" resolution step: one sample at each edge "
             "of every 5 m-layer DEM pixel the path crosses "
@@ -1203,7 +1199,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_status":            "判定",
         "pl_env_type":          "環境区分",
         "pl_diff_model":        "回折モデル",
-        "pl_k_factor":          "ライスK（推定）",
         "pl_f1_obs":            "F1遮蔽率",
         "pl_f1_depth":          "F1侵入深さ",
         "pl_slant_dist":        "斜距離",
@@ -1379,8 +1374,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_scope_diff_veg_serial":
             "遮蔽区間：回折損と植生減衰を重ねて計上するため、"
             "合計は大きめ（安全側）に出る。合成方法自体は未検証",
-        "html_scope_rice_k_empirical":
-            "ライス K：回折損からの経験的な推定（表示のみ・計算には未使用）",
         "html_scope_resolution_high":
             "地形の解像度は「高」（経路が通る 5m 層 DEM 画素の縁ごとに標本を置いて計算・"
             "1 画素は日本で {px_lo}〜{px_hi} m）。段階を粗くすると回折損は小さく出るため、"

@@ -85,7 +85,7 @@ def _make_result(status: str = "OK") -> models.LinkBudgetResult:
         env_loss=6.0, rain_loss=0.0, gas_loss=0.0,
         total_loss=106.0, p_rx=-83.0,
         actual_margin=2.0, status=status,
-        current_k=10.0, blocked_ratio=0.0, slant_dist_km=1.0,
+        blocked_ratio=0.0, slant_dist_km=1.0,
         diff_method="single", env_type="los",
     )
 
@@ -869,7 +869,7 @@ class TestHandlingSectionContent:
     def test_public_docs_do_not_use_the_decimal_k_the_report_dropped(self):
         """B-220＝公開文書は帳票と同じ「K = 4/3」で書き、`1.33` を残さない。
 
-        ⚠️ `k_factor`/`current_k`（ライス K・別の量）の 1.33 は対象外＝
+        ⚠️ `k_factor`（ライス K・別の量）の 1.33 は対象外＝
         地球曲率の文脈（`K = 1.33`）だけを見る。
         """
         root = os.path.join(os.path.dirname(__file__), "..")
