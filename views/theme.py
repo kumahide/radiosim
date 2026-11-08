@@ -887,7 +887,7 @@ def muted_foreground(widget: tk.Misc) -> str:
 # #e65100 は白地でも 3.8:1 で、帳票の 9px の字には足りなかった）。
 # `rev`（REVIEW＝前提で裏返る・4.0 ステージ6）は旧画面が壊れない最低限＝帳票と同じ紫
 # （ライト #6a1b9a on #fafafa で 9.0:1／ダーク #ce93d8 on #1c1c1c で 7.1:1）。新しい画面の
-# 色と凡例はステージ9 で決め直す。
+# ダークの判定色もこの `dark` と同じ（Link 1.0 ステージ9d・`tests/test_webui.py` が比べる）。
 _VERDICT = {
     "light": {"ok": "#2e7d32", "ng": "#c62828", "rev": "#6a1b9a", "err": "#bf360c"},
     "dark":  {"ok": "#66bb6a", "ng": "#ef5350", "rev": "#ce93d8", "err": "#ffa726"},

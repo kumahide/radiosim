@@ -391,6 +391,31 @@ def test_the_profile_words_come_from_the_report():
         assert f'data-label="{key}"' in html
 
 
+def _css_vars(block: str) -> dict[str, str]:
+    import re
+    return {k: v.lower() for k, v in re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", block)}
+
+
+def test_the_verdict_colors_are_the_report_colors():
+    # 判定の色は帳票と同じ（ライト＝`STATUS_HEX`・ダーク＝旧画面の `_VERDICT["dark"]`）。
+    # 色は語に添えるだけ＝語ごとの規則が 4 語とも CSS にある（9d・色覚）
+    import re
+    from report import map_graphics
+    from views import theme
+    css = (pathlib.Path(webserver.STATIC_ROOT) / "style.css").read_text(encoding="utf-8")
+    root = re.search(r"^:root\s*\{(.*?)\}", css, flags=re.S | re.M).group(1)
+    dark = re.search(r"prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{(.*?)\}", css,
+                     flags=re.S).group(1)
+    names = {"OK": "ok", "NG": "ng", "REVIEW": "review", "ERROR": "err"}
+    keys = {"OK": "ok", "NG": "ng", "REVIEW": "rev", "ERROR": "err"}
+    light_vars, dark_vars = _css_vars(root), _css_vars(dark)
+    for word, name in names.items():
+        assert light_vars[name] == map_graphics.STATUS_HEX[word].lower(), word
+        assert dark_vars[name] == theme._VERDICT["dark"][keys[word]].lower(), word
+        assert f'[data-word="{word}"] #band-word {{ color: var(--{name}); }}' in css, word
+    assert set(names) == set(map_graphics.STATUS_HEX)
+
+
 def test_the_script_has_no_japanese():
     # 字はサーバーの表から＝JS と HTML に日本語を直書きしない（注記は除く）
     import re

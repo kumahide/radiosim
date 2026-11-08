@@ -3,9 +3,12 @@
   --fg: #1f2328;
   --muted: #59636e;
   --line: #d1d9e0;
-  --ok: #1a7f37;
-  --ng: #cf222e;
-  --review: #9a6700;
+  /* 判定の色＝帳票と同じ（`report/map_graphics.STATUS_HEX`）。ダークは旧画面と同じ
+     （`views/theme._VERDICT["dark"]`）。test_webui が CSS を読んで比べる。 */
+  --ok: #2e7d32;
+  --ng: #c62828;
+  --review: #6a1b9a;
+  --err: #bf360c;
   --wait: #59636e;
 }
 @media (prefers-color-scheme: dark) {
@@ -14,9 +17,10 @@
     --fg: #e6edf3;
     --muted: #9198a1;
     --line: #3d444d;
-    --ok: #3fb950;
-    --ng: #f85149;
-    --review: #d29922;
+    --ok: #66bb6a;
+    --ng: #ef5350;
+    --review: #ce93d8;
+    --err: #ffa726;
     --wait: #9198a1;
   }
 }
@@ -41,8 +45,14 @@ body {
 #band[data-kind="verdict"][data-word="OK"] { border-left-color: var(--ok); }
 #band[data-kind="verdict"][data-word="NG"] { border-left-color: var(--ng); }
 #band[data-kind="verdict"][data-word="REVIEW"] { border-left-color: var(--review); }
-#band[data-kind="terrain"], #band[data-kind="error"] { border-left-color: var(--ng); }
+#band[data-kind="verdict"][data-word="ERROR"],
+#band[data-kind="terrain"], #band[data-kind="error"] { border-left-color: var(--err); }
 #band-word { font-size: 20px; font-weight: 600; }
+/* 語も判定の色で書く＝色は語に添えるだけ（色だけに頼らない・語は必ず出る） */
+#band[data-kind="verdict"][data-word="OK"] #band-word { color: var(--ok); }
+#band[data-kind="verdict"][data-word="NG"] #band-word { color: var(--ng); }
+#band[data-kind="verdict"][data-word="REVIEW"] #band-word { color: var(--review); }
+#band[data-kind="verdict"][data-word="ERROR"] #band-word { color: var(--err); }
 #band { flex-wrap: wrap; row-gap: 2px; }
 #band-detail { color: var(--fg); font-variant-numeric: tabular-nums; }
 #band-range { color: var(--muted); font-variant-numeric: tabular-nums; }
