@@ -282,6 +282,13 @@ class TestFullMinus:
         assert plan and plan["name"] == "full-minus"
         assert not set(plan["tests"]) & set(_skipped())
 
+    def test_a_new_screen_commit_takes_full_minus(self):
+        """新しい画面（webui/）のコミットも旧画面（Tk）の試験を引く（2026-11-08・経営者の指摘
+        「フルスイートで Tk を回さないで」＝足すまでは、どの規則にも当たらず Tk 込みのフルに倒れていた）。"""
+        plan = _commit_plan(["webui/static/app.js", "webui/server.py", "tests/test_webui.py"])
+        assert plan and plan["name"] == "full-minus"
+        assert not set(plan["tests"]) & set(_scope()["full_minus"]["skip_old_ui"])
+
     def test_a_core_and_test_commit_runs_the_walkers(self):
         """試験を変えたコミットは tests_walkers を全部走らせる（B-368 と同じ）。"""
         plan = _commit_plan(["core/models.py", "tests/test_models.py"])

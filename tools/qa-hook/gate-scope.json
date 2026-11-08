@@ -111,13 +111,13 @@
 
   "_comment_full": "2026-09-23 に「フルが要る面を厳選する」形へ改めた（部分テスト 1 つに収まらなければフル、をやめた）。判定は pre-commit-gate.mjs の islandFor＝①変更が空／full_prefixes に 1 つでも当たる／どの規則にも当たらないパスがある → フル。②それ以外は和集合＝当たった部分テストの tests ＋ 変えた tests/test_*.py そのもの（＋ tests_walkers）＋ scoped_faces の読み手（その面の名前を本文に含むテスト）＋ scanners ＋ always_tests。⛔ full_prefixes は『全テストの前提を変える面』だけ＝製品コードと同梱資産・テストの共通部品・依存と pytest の設定。apps/ は入れない（2026-09-27）＝apps/field/ は本体が import しない別アプリなので部分テスト field で絞り、apps/ の下のほかのアプリは「どの規則にも当たらない」でフルへ倒れる。scoped_faces へ製品の面を足さない（見張り＝tests/test_commit_gate_scope.py）。例外は 1 つ＝core/version.py の差が `APP_VERSION = \"…\"` の 1 行だけのときは、版の字の読み手（pre-commit-gate.mjs の versionReaders＝規則で決める・見張り＝tests/test_pre_commit_gate.py）を足す面になる（I-185）。直前の本物のフル合格からの差がその 1 行だけなら、push でも読み手の合格をフルの証明として扱う。",
   "full_prefixes": [
-    "core/", "views/", "report/", "lang/", "main.py", "icon.png", "logo.png",
+    "core/", "views/", "report/", "webui/", "lang/", "main.py", "icon.png", "logo.png",
     "tests/conftest.py", "tests/data/", "tests/golden_corpus_gen.py", "tests/table_fit.py",
     "requirements", "pyproject.toml"
   ],
-  "_comment_full_minus": "O-030（2026-11-07・経営者が案 (b) を選んだ・承認は事前の独立評価の後）。pre-commit-gate.mjs の fullMinusFor だけが読む。コミットに入る変更が prefixes（core/・report/）と tests/test_*.py だけ（＝views/・lang/・main.py・画面の資産・tests/conftest.py・tests/data/・依存と pytest の設定を 1 つも含まない）のとき、tests/ の試験ファイルを全部並べ、skip_old_ui（撤去が決まった旧画面＝Tk の試験）と skip_tools（製品を import しない道具の試験）を引いて走らせる。戻すもの＝コミットで変えた試験ファイルそのもの・引いたファイルの中の tests_walkers・keep（引いたファイルの中で本物の製品の木を読む 1 本ずつ）。⚠️ 除外の引数（--ignore／--deselect）にしない＝名指しより強く、走査系まで消える。push は常にフル・CI はフル。期限＝4.0 ステージ11 で旧画面と試験を撤去する回に skip_old_ui を消す（新しい画面の試験はここへ入れない）。見張り＝tests/test_commit_gate_scope.py の TestFullMinus。戻し方＝このキーを消す。",
+  "_comment_full_minus": "O-030（2026-11-07・経営者が案 (b) を選んだ・承認は事前の独立評価の後）。pre-commit-gate.mjs の fullMinusFor だけが読む。コミットに入る変更が prefixes（core/・report/・webui/＝2026-11-08 に足した＝新しい画面は Tk を使わないのに、どの規則にも当たらずフル（Tk 込み）へ倒れていた・経営者の指摘「フルスイートで Tk を回さないで」）と tests/test_*.py だけ（＝views/・lang/・main.py・画面の資産・tests/conftest.py・tests/data/・依存と pytest の設定を 1 つも含まない）のとき、tests/ の試験ファイルを全部並べ、skip_old_ui（撤去が決まった旧画面＝Tk の試験）と skip_tools（製品を import しない道具の試験）を引いて走らせる。戻すもの＝コミットで変えた試験ファイルそのもの・引いたファイルの中の tests_walkers・keep（引いたファイルの中で本物の製品の木を読む 1 本ずつ）。⚠️ 除外の引数（--ignore／--deselect）にしない＝名指しより強く、走査系まで消える。push は常にフル・CI はフル。期限＝4.0 ステージ11 で旧画面と試験を撤去する回に skip_old_ui を消す（新しい画面の試験はここへ入れない）。見張り＝tests/test_commit_gate_scope.py の TestFullMinus。戻し方＝このキーを消す。",
   "full_minus": {
-    "prefixes": ["core/", "report/"],
+    "prefixes": ["core/", "report/", "webui/"],
     "skip_old_ui": [
       "tests/test_window_fit.py",
       "tests/test_ui_consistency.py",
