@@ -43,7 +43,12 @@ body {
 #band[data-kind="verdict"][data-word="REVIEW"] { border-left-color: var(--review); }
 #band[data-kind="terrain"], #band[data-kind="error"] { border-left-color: var(--ng); }
 #band-word { font-size: 20px; font-weight: 600; }
-#band-detail { color: var(--muted); }
+#band { flex-wrap: wrap; row-gap: 2px; }
+#band-detail { color: var(--fg); font-variant-numeric: tabular-nums; }
+#band-range { color: var(--muted); font-variant-numeric: tabular-nums; }
+#band-flipped { color: var(--muted); flex-basis: 100%; padding-left: 0; }
+#band-flipped:empty, #band-range:empty { display: none; }
+#band[data-kind="verdict"][data-word="REVIEW"] #band-flipped { color: var(--review); }
 main { flex: 1; display: flex; min-height: 0; }
 /* 入力の列は使える高さ約 990px の 1 画面に収める（ステージ5＝スクロールなし）。
    座標の欄だけ語の下に全幅・ほかは語の右に欄を置いて 1 行。 */

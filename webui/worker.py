@@ -24,9 +24,12 @@ import threading
 from typing import Any, Callable
 
 from core import config
+from core import disclosure
 from core import engine
+from core import i18n
 from core import simulation as sim
 from core import units
+from core.verdict import REVIEW
 from webui.profile import profile_fields
 from webui.state import AppState
 
@@ -53,6 +56,13 @@ def _verdict_fields(result: Any, params: Any = None) -> "dict[str, Any]":
         pairs += [(n, params, a) for n, a in _PARAM_NUMBERS]
     for name, obj, attr in pairs:
         fields[name] = round(float(getattr(obj, attr)), units.DB_DECIMALS)   # dB の桁は units
+    # 前提を振った余裕度の幅（ERROR・v1 は無い）と、REVIEW を裏返す前提（帳票と同じ字）
+    if verdict is not None and verdict.worst_margin is not None and verdict.best_margin is not None:
+        fields["worst"] = round(float(verdict.worst_margin), units.DB_DECIMALS)
+        fields["best"] = round(float(verdict.best_margin), units.DB_DECIMALS)
+    if verdict is not None and verdict.word == REVIEW and verdict.flipped_by:
+        fields["flipped"] = i18n.t("html_verdict_flipped").format(
+            list=disclosure.flipped_list_text(verdict.flipped_by))
     return fields
 
 

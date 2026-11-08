@@ -7,6 +7,7 @@ const DEBOUNCE_MS = 300;
 
 let labels = {};
 let breakdownRows = [];
+let dbDigits = 1;                          // dB の桁（サーバーの `units.DB_DECIMALS` で上書き）
 let revision = 0;
 let map = null;
 let path = null;
@@ -111,11 +112,20 @@ function showHeadline(h) {
   const band = document.getElementById("band");
   const word = document.getElementById("band-word");
   const detail = document.getElementById("band-detail");
+  const range = document.getElementById("band-range");
+  const flipped = document.getElementById("band-flipped");
   band.dataset.kind = h.kind;
   band.dataset.word = h.word || "";
+  range.textContent = "";
+  flipped.textContent = "";
   if (h.kind === "verdict") {
+    const dB = (v) => Number(v).toFixed(dbDigits);
     word.textContent = h.word;
-    detail.textContent = `${h.margin} dB · ${h.p_rx} dBm`;
+    detail.textContent = `${labels.margin || ""} ${dB(h.margin)} dB · ${labels.p_rx || ""} ${dB(h.p_rx)} dBm`;
+    if ("worst" in h && "best" in h) {
+      range.textContent = fmt(labels.margin_range || "", { worst: dB(h.worst), best: dB(h.best) });
+    }
+    flipped.textContent = h.flipped || "";   // REVIEW を裏返す前提（字はサーバーが帳票と同じ形で作る）
   } else if (h.kind === "computing") {
     word.textContent = labels.computing || "";
     detail.textContent = h.total
@@ -408,6 +418,7 @@ async function poll() {
         applyLabels();
         buildForm(s.form || []);
         buildBreakdown(s.breakdown || []);
+        if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;
         if (!map) initMap(s.basemap || "pale");
       }
       revision = s.revision;

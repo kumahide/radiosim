@@ -156,6 +156,10 @@ def labels() -> "dict[str, str]":
         "terrain": i18n.t("webui_no_terrain"),
         "error": i18n.t("webui_error"),
         "profile_later": i18n.t("webui_profile_later"),
+        # 判定の帯（語の横の数・前提を振った幅）
+        "margin": i18n.t("pl_act_margin"),
+        "p_rx": i18n.t("pl_rx_level"),
+        "margin_range": i18n.t("webui_margin_range"),
         # 断面図（帳票と同じ語＝成果物の語を画面でも使う）
         "legend_terrain": i18n.t("legend_terrain"),
         "legend_vegetation": i18n.t("legend_vegetation"),
@@ -236,6 +240,7 @@ class WebServer:
             snap["labels"] = labels()
             snap["form"] = form()
             snap["breakdown"] = breakdown()
+            snap["db_digits"] = units.DB_DECIMALS
             snap["basemap"] = self.basemap
         return snap
 

@@ -217,6 +217,15 @@ def provenance_line(calc_profiles, input_hashes, terrain_hashes) -> str:
     return " / ".join(fields)
 
 
+def flipped_list_text(names) -> str:
+    """裏返る前提の名前（`Verdict.flipped_by`）を語で並べる＝並びは `verdict.AXES` の順。
+
+    帳票（`verdict_lines`）と新しい画面の判定の帯（`webui/worker.py`）が同じ 1 本を引く。
+    """
+    listed = "、".join if i18n.current_lang() == "ja" else ", ".join
+    return listed(i18n.t(f"html_verdict_axis_{a}") for a in verdict.AXES if a in names)
+
+
 def verdict_lines(verdicts) -> list[str]:
     """判定の語の意味と、裏返る前提・DEM の事情の点数（4.0 ステージ6・判断点 ①）。
 
@@ -237,9 +246,7 @@ def verdict_lines(verdicts) -> list[str]:
     lines = [i18n.t("html_verdict_scope").format(pct=f"{VEG_PERTURB_FRAC * 100:g}")]
     reviews = [v for v in vs if v.word == verdict.REVIEW]
     if reviews:
-        names = set().union(*(v.flipped_by for v in reviews))
-        listed = "、".join if i18n.current_lang() == "ja" else ", ".join
-        text = listed(i18n.t(f"html_verdict_axis_{a}") for a in verdict.AXES if a in names)
+        text = flipped_list_text(set().union(*(v.flipped_by for v in reviews)))
         lines.append(
             i18n.t("html_verdict_flipped").format(list=text) if len(vs) == 1
             else i18n.t("html_verdict_flipped_n").format(list=text, n=len(reviews)))

@@ -161,6 +161,36 @@ def test_a_valid_input_publishes_a_verdict():
     assert head["margin"] == round(12.34, units.DB_DECIMALS)
 
 
+def test_a_review_carries_the_range_and_the_flipping_assumptions():
+    # 判定の帯（ステージ9c）＝前提を振った幅と、REVIEW を裏返す前提の 1 行（帳票と同じ字）
+    from core import disclosure, i18n
+    from core.verdict import Verdict
+
+    class _Review(_Result):
+        verdict = Verdict(word="REVIEW", base_margin=1.2, worst_margin=-2.04,
+                          best_margin=3.96, flipped_by=("veg_h", "diff_method"), reviewed=True)
+
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
+           calc=lambda t, p: _Review(), profile=_no_profile).step()
+    head = st.headline()
+    assert head["word"] == "REVIEW"
+    assert (head["worst"], head["best"]) == (round(-2.04, units.DB_DECIMALS),
+                                             round(3.96, units.DB_DECIMALS))
+    assert head["flipped"] == i18n.t("html_verdict_flipped").format(
+        list=disclosure.flipped_list_text({"veg_h", "diff_method"}))
+    lab = webserver.labels()
+    assert "{worst}" in lab["margin_range"] and "{best}" in lab["margin_range"]
+
+
+def test_ok_and_v1_carry_no_flipping_line():
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
+           calc=lambda t, p: _Result(), profile=_no_profile).step()
+    head = st.headline()
+    assert "flipped" not in head and "worst" not in head     # v1（verdict なし）は幅を出さない
+
+
 def test_unreachable_dem_publishes_a_terrain_headline():
     def fetch(p, cb, cancel):
         raise sim.DemUnreachableError("unreachable")
