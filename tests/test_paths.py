@@ -500,6 +500,7 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         self._finish_with(conftest, self._reporter({}), collected=1537, whole_suite=True)
 
         assert stamp.exists(), "回ったのに刻印が残らない＝release-check が毎回鳴る"
@@ -522,6 +523,7 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         # ⚠️ **全部 `whole_suite=True` から始める**＝位置引数を渡してしまうと、その 1 点
         # だけで弾かれ、`-k` や `--lf` の条件は**一度も試されないまま緑**になる
         # （最初にそう書いて実際に素通りした・2026-08-12）。
@@ -562,6 +564,17 @@ class TestUncoveredFacesAreReported:
         got = (tmp_path / "src.txt").read_text()
         assert (got == "ARGS") is narrowed, f"{argv} → {got}"
 
+    def test_a_run_without_the_old_ui_is_never_stamped(self, monkeypatch, tmp_path):
+        """I-255＝旧画面（Tk）を回していない実行は、全体が緑でも刻まない。"""
+        import conftest
+
+        stamp = tmp_path / "display_run.json"
+        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
+        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", False)
+        self._finish_with(conftest, self._reporter({}), collected=1537, whole_suite=True)
+        assert not stamp.exists(), "Tk を回していないのに「表示のある機械で全部通った」と刻んだ"
+
     def test_a_red_run_is_never_stamped(self, monkeypatch, tmp_path):
         """赤い実行を刻まないこと（通っていないものを「通った」と言わせない）。"""
         import conftest
@@ -569,6 +582,7 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
+        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         self._finish_with(conftest, self._reporter({}), collected=1537,
                           whole_suite=True, exitstatus=1)
         assert not stamp.exists()
@@ -1013,3 +1027,79 @@ class TestDoubleQuietIsCapped:
         assert "_warn_if_not_the_declared_interpreter" in called, (
             "main() が実行系の検査を呼んでいない＝起動のゲートが空振りする"
         )
+
+
+
+# ============================================================
+# 旧画面（Tk）の試験は、明示しない限り集めも走らせもしない（I-255）
+# ============================================================
+# 壁は `tests/conftest.py` の 2 枚＝①集める所（`skip_old_ui` のファイルを拾わない）
+# ②根を作る所（`tkinter.Tk` を作ろうとした試験は skip）。ここは両方と、一覧が
+# `tools/qa-hook/gate-scope.json` と同じものを指していることを見る。
+@pytest.mark.skipif(
+    __import__("conftest").OLD_UI_ENV in os.environ
+    and os.environ[__import__("conftest").OLD_UI_ENV] == "1",
+    reason="旧画面を明示して回す実行では、壁そのものが降りている")
+class TestOldUiWall:
+    REPO = pathlib.Path(__file__).resolve().parent.parent
+    SCOPE = REPO / "tools" / "qa-hook" / "gate-scope.json"
+
+    def _scope_list(self) -> "list[str]":
+        import conftest
+        import json
+
+        if not self.SCOPE.is_file():
+            pytest.skip(conftest.structural_skip("道具の置き場（tools/）が無い＝CI"))
+        return json.loads(self.SCOPE.read_text(encoding="utf-8"))["full_minus"]["skip_old_ui"]
+
+    def test_the_list_is_the_gate_scopes(self):
+        """一覧を二重に持たない＝conftest が読むのは gate-scope.json の skip_old_ui そのもの。"""
+        import conftest
+
+        listed = self._scope_list()
+        assert listed, "skip_old_ui が空＝壁①が何も止めない"
+        assert conftest._OLD_UI_FILES == frozenset(listed)
+        for rel in listed:
+            assert (self.REPO / rel).is_file(), f"{rel} が無い＝一覧が腐っている"
+
+    def test_missing_scope_is_an_empty_list(self, tmp_path):
+        """道具の置き場が無い機械（CI）では空＝壁②だけが立つ。"""
+        import conftest
+
+        assert conftest.old_ui_files(tmp_path / "nope.json") == frozenset()
+
+    def test_walking_the_tree_skips_every_old_ui_file(self):
+        import conftest
+
+        for rel in self._scope_list():
+            assert conftest.pytest_ignore_collect(self.REPO / rel, None) is True, rel
+        assert conftest.pytest_ignore_collect(self.REPO / "tests" / "test_batch.py", None) is None
+        assert conftest.pytest_ignore_collect(pathlib.Path("C:/elsewhere/x.py"), None) is None
+
+    def test_a_tk_root_is_skipped_not_built(self):
+        """壁②＝旧画面のファイルの外でも、根を作ろうとした所で skip になる（窓は出ない）。"""
+        import conftest
+
+        with pytest.raises(pytest.skip.Exception) as caught:
+            conftest.make_tk_root()
+        assert conftest.OLD_UI_SKIP_REASON in str(caught.value)
+        assert conftest.STRUCTURAL_SKIP in str(caught.value)
+
+    def test_collecting_the_whole_tree_finds_no_old_ui_file(self):
+        """変数なしで `tests` を集めると、旧画面のファイルが 1 本も無い（実物の収集）。"""
+        import conftest
+        import subprocess
+
+        listed = self._scope_list()
+        env = {k: v for k, v in os.environ.items()
+               if k not in (conftest.OLD_UI_ENV, "PYTEST_ADDOPTS")}
+        out = subprocess.run(
+            [sys.executable, "-m", "pytest", "--collect-only", "-q",
+             "-p", "no:cacheprovider", "tests"],
+            cwd=self.REPO, env={**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
+            capture_output=True, text=True, encoding="utf-8", timeout=300)
+        assert out.returncode == 0, out.stdout[-2000:] + out.stderr[-2000:]
+        ids = [line for line in out.stdout.splitlines() if "::" in line]
+        assert len(ids) > 1000, "収集が成り立っていない（本数が少なすぎる）"
+        leaked = sorted({i.split("::")[0].replace("\\", "/") for i in ids} & set(listed))
+        assert not leaked, f"旧画面の試験が集められた: {leaked}"

@@ -3820,6 +3820,36 @@ class TestNoLogsInTheRepoRoot:
         assert "scratchpad" in reason
 
 
+class TestOldUiKeyIsNeverTurned:
+    """I-255＝旧画面（Tk）の試験を走らせる鍵を、Claude のコマンドが立てない。"""
+
+    @pytest.mark.parametrize("command,tool", [
+        ("RADIOSIM_OLD_UI=1 python -m pytest tests", "Bash"),
+        ("export RADIOSIM_OLD_UI=1; python -m pytest", "Bash"),
+        ("env RADIOSIM_OLD_UI=1 pytest", "Bash"),
+        ('$env:RADIOSIM_OLD_UI = "1"; & $py -m pytest', "PowerShell"),
+        ("setx RADIOSIM_OLD_UI 1", "PowerShell"),
+        ("python -c \"import os; os.environ['RADIOSIM_OLD_UI']='1'\"", "Bash"),
+    ])
+    def test_setting_the_key_is_denied(self, detours, command, tool):
+        verdict = detours.check(command, tool)
+        assert verdict is not None and verdict[0] == "deny", command
+        assert "I-255" in verdict[1]
+
+    def test_a_commit_message_body_may_name_it(self, detours):
+        """ヒアドキュメントの本文はデータ＝本文で触れるのは止めない。"""
+        assert detours.check(
+            "git commit --file=- <<'EOF'\nRADIOSIM_OLD_UI の鍵\nEOF", "Bash") is None
+
+    def test_the_gates_drop_the_key_from_pytests_env(self):
+        """ゲート（Stop フック・コミット前・push 前）が pytest に渡す環境から鍵を消す。"""
+        path = os.path.join(_HOOK_DIR, "..", "tools", "qa-hook", "gate.mjs")
+        with open(path, encoding="utf-8") as fh:
+            src = fh.read()
+        body = src.split("export function pythonEnv()", 1)[1].split("\n}\n", 1)[0]
+        assert "delete env.RADIOSIM_OLD_UI" in body
+
+
 class TestPipeTailParsing:
     """`|` の読み取り（実データ 331 件のうち 121 件を誤分類した箇所）。"""
 

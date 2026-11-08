@@ -128,6 +128,84 @@ def pytest_configure(config):
     _isolate_app_paths()
     _cap_double_quiet(config)
     _drain_window_events_before_destroy()
+    _wall_off_tk_roots()
+
+
+# ============================================================
+# 🔴 旧画面（Tk）の試験は、明示しない限り走らせない（I-255・2026-11-09）
+# ============================================================
+# 試験のたびに Tk の窓が出て、経営者の画面を奪う。2026-11-08 と 11-09 に続けて
+# 起きた（コミットに `docs/` が 1 本混じり、ゲートの範囲の規則が外れて Tk 込みの
+# フルが走った）。経営者「まずは二度とTK回さない構造にしろ！！」。
+# ⇒ 口（コミット前・push 前・Stop フック・手で回す pytest）ごとに塞ぐのでなく、
+#    **全部の口が通る所＝この conftest** で止める。壁は 2 枚:
+#   ① 集める所＝`skip_old_ui`（`tools/qa-hook/gate-scope.json`＝一覧を二重に
+#      持たない）のファイルを、ディレクトリを歩いて集めるときに拾わない
+#   ② 根を作る所＝`tkinter.Tk` を作ろうとした試験は、その場で skip する
+#      （旧画面のファイルの外にも Tk の根を建てる試験がある＝batch・scenario など。
+#      製品のコードが中で根を作る形も、ここを必ず通る）
+# 走らせたいときは、人が `RADIOSIM_OLD_UI=1` を立てて回す。ゲートとフックは
+# この変数を立てない（`tools/qa-hook/gate.mjs` の `pythonEnv` が消す）。Claude が
+# 立てるコマンドは `.claude/no_shell_detours.py` が止める。
+# ⚠️ 表示依存の刻印（`.qa/display_run.json`）は、この変数を立てた実行でしか刻まない
+#    （Tk を回していない実行が「表示のある機械で全部通った」と言わないように）。
+# 期限＝4.0 ステージ11 で旧画面と試験を撤去する回に、この節ごと消す。
+OLD_UI_ENV = "RADIOSIM_OLD_UI"
+_OLD_UI_ALLOWED = os.environ.get(OLD_UI_ENV) == "1"
+_GATE_SCOPE = pathlib.Path(__file__).resolve().parent.parent / "tools" / "qa-hook" / "gate-scope.json"
+
+
+def old_ui_files(scope_path: "pathlib.Path" = _GATE_SCOPE) -> "frozenset[str]":
+    """旧画面の試験ファイル（リポジトリ相対・`/` 区切り）＝`gate-scope.json` の `skip_old_ui`。
+
+    道具の置き場（`tools/`）は git-ignore＝CI には無い。無いときは空を返す
+    （CI は `RADIOSIM_HEADLESS=1` で Tk の試験を元から skip している。開発機では
+    ②の壁が独立に窓を止める）。
+    """
+    try:
+        scope = json.loads(scope_path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return frozenset()
+    return frozenset(scope.get("full_minus", {}).get("skip_old_ui", []))
+
+
+_OLD_UI_FILES = old_ui_files()
+
+
+def pytest_ignore_collect(collection_path, config):
+    """壁①＝旧画面の試験ファイルを集めない（`RADIOSIM_OLD_UI=1` のときだけ集める）。"""
+    if _OLD_UI_ALLOWED:
+        return None
+    try:
+        rel = pathlib.Path(collection_path).resolve().relative_to(_REPO_ROOT).as_posix()
+    except ValueError:
+        return None
+    return True if rel in _OLD_UI_FILES else None
+
+
+#: 壁②で skip するときの理由（試験から照合する）。
+OLD_UI_SKIP_REASON = (
+    "旧画面（Tk）の根を作る試験は、既定で走らせない（I-255）"
+    f"＝走らせるなら人が {OLD_UI_ENV}=1 を立てて回す")
+
+
+def _wall_off_tk_roots() -> None:
+    """壁②＝`tkinter.Tk` の根を作ろうとした所で skip する。"""
+    if _OLD_UI_ALLOWED:
+        return
+    try:
+        import tkinter as tk
+    except ImportError:
+        return
+    if getattr(tk.Tk.__init__, "_walled_off", False):
+        return
+
+    def __init__(self, *args, **kwargs):
+        # ⚠️ `Skipped` は BaseException の側＝製品の `except Exception` に飲まれない。
+        pytest.skip(structural_skip(OLD_UI_SKIP_REASON), allow_module_level=True)
+
+    __init__._walled_off = True             # type: ignore[attr-defined]
+    tk.Tk.__init__ = __init__               # type: ignore[method-assign]
 
 
 # ============================================================
@@ -587,7 +665,9 @@ def pytest_sessionfinish(session, exitstatus):
                 yellow=True,
             )
             _write_step_summary(faces, total)
-        if exitstatus == 0 and not _HEADLESS_DECLARED and _is_whole_suite(session.config):
+        # I-255＝旧画面を回していない実行は刻まない（刻印が嘘をつかないように）。
+        if (exitstatus == 0 and not _HEADLESS_DECLARED and _OLD_UI_ALLOWED
+                and _is_whole_suite(session.config)):
             _stamp_display_run(total, faces)
 
     if exitstatus != 0:

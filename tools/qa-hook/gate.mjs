@@ -138,7 +138,11 @@ export function resolvePython() {
 // テストの日本語（assert のメッセージ等）が文字化けしたまま Claude と画面へ出ていた。
 // pre-commit-gate.mjs も同じ env で pytest を起動する（読み方を 1 か所にそろえる）。
 export function pythonEnv() {
-  return { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" };
+  // I-255: the gates never run the old Tk screens' tests — tests/conftest.py
+  // collects them only under RADIOSIM_OLD_UI=1, so drop it even if the shell has it.
+  const env = { ...process.env, PYTHONUTF8: "1", PYTHONIOENCODING: "utf-8" };
+  delete env.RADIOSIM_OLD_UI;
+  return env;
 }
 
 // Run a command, capturing stdout/stderr and exit code even on failure.

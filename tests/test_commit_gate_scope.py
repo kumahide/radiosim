@@ -252,7 +252,12 @@ def _real_test_files() -> set[str]:
     files = {line.split("::", 1)[0].replace("\\", "/")
              for line in r.stdout.splitlines() if "::" in line}
     assert files, "pytest の収集が空＝出力の形が変わった"
-    return files
+    # I-255＝ディレクトリの走査は旧画面（Tk）の試験ファイルを拾わない（tests/conftest.py の
+    # 壁①）。門の `allTestFiles()` はそれも数えるので、その一覧だけ足して比べる。
+    # ⚠️ 足すのは「収集から消えた分」だけ＝一覧にあって収集にも出るなら、壁①が外れている。
+    old_ui = set(_scope()["full_minus"]["skip_old_ui"])
+    assert not files & old_ui, f"旧画面の試験が集められた＝壁①が外れている: {sorted(files & old_ui)}"
+    return files | old_ui
 
 
 def _imported_roots(path: str) -> set[str]:
