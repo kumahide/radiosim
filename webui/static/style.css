@@ -45,42 +45,48 @@ body {
 #band-word { font-size: 20px; font-weight: 600; }
 #band-detail { color: var(--muted); }
 main { flex: 1; display: flex; min-height: 0; }
+/* 入力の列は使える高さ約 990px の 1 画面に収める（ステージ5＝スクロールなし）。
+   座標の欄だけ語の下に全幅・ほかは語の右に欄を置いて 1 行。 */
 #inputs {
-  width: 280px;
-  padding: 12px 16px;
+  width: 300px;
+  padding: 10px 16px;
   border-right: 1px solid var(--line);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   overflow-y: auto;
 }
-#form { display: flex; flex-direction: column; gap: 10px; }
+#form { display: flex; flex-direction: column; gap: 8px; }
 #inputs .group {
   border: 1px solid var(--line);
   border-radius: 4px;
   margin: 0;
-  padding: 6px 10px 10px;
+  padding: 4px 10px 8px;
   display: flex;
   flex-direction: column;
-  gap: 8px;
+  gap: 5px;
 }
 #inputs legend, #inputs summary { color: var(--fg); font-weight: 600; padding: 0 4px; }
 #inputs summary { cursor: pointer; }
-#inputs details:not([open]) { padding-bottom: 6px; }
-#inputs label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
+#inputs details:not([open]) { padding-bottom: 4px; }
+#inputs label { display: flex; color: var(--muted); }
+#inputs label.wide { flex-direction: column; gap: 2px; }
+#inputs label.row { align-items: center; justify-content: space-between; gap: 8px; }
 #inputs input, #inputs select {
   font: inherit;
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 4px;
-  padding: 4px 6px;
+  padding: 3px 6px;
 }
-#budget h2 { font-size: 14px; margin: 4px 0 6px; }
+#inputs label.row input { width: 84px; flex: none; text-align: right; }
+#inputs label.row select { width: 132px; flex: none; }
+#budget h2 { font-size: 14px; margin: 2px 0 4px; }
 #budget[data-stale="1"] #breakdown { opacity: 0.45; }
 #breakdown { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-#breakdown th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
-#breakdown td.num { text-align: right; padding: 2px 4px; }
+#breakdown th { text-align: left; font-weight: normal; color: var(--muted); padding: 1px 0; }
+#breakdown td.num { text-align: right; padding: 1px 4px; }
 #breakdown td.unit { color: var(--muted); width: 3em; }
 #breakdown tr[data-name="total_loss"] th, #breakdown tr[data-name="total_loss"] td,
 #breakdown tr[data-name="margin"] th, #breakdown tr[data-name="margin"] td {

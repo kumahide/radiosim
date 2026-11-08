@@ -26,6 +26,8 @@ function applyLabels() {
 // ---- 入力の列（サーバーの `form()` を並べる） ------------------------------
 function buildField(f) {
   const label = document.createElement("label");
+  // 座標（文字で打つ欄）は長い＝語の下に全幅。数と選択式は語の右に置いて 1 行（990px に収める）
+  label.className = f.mode === "text" ? "wide" : "row";
   const name = document.createElement("span");
   name.textContent = f.label;
   label.appendChild(name);
