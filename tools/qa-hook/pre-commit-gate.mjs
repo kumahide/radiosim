@@ -311,8 +311,8 @@ export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {
 // of a skipped file that read the real product tree). ⚠️ Spelled as a LIST,
 // not as `--ignore`/`--deselect`: pytest lets those beat an explicit node id,
 // so the walkers inside test_window_fit.py would vanish with it (measured
-// 2026-11-07). git push stays full (commitPlan), so nothing leaves the machine
-// without the whole suite.
+// 2026-11-07). git push drops only the old UI (pushPlanFor,
+// 2026-11-08); CI still runs the whole suite.
 export const FULL_MINUS = "full-minus";
 
 /** Every test file pytest collects under tests/ (testpaths; default
@@ -359,10 +359,30 @@ export function fullMinusFor(scope, paths, cwd = process.cwd()) {
   return { name: FULL_MINUS, tests: [...tests] };
 }
 
+// PUSH MINUS OLD UI (2026-11-08・the owner: "stop running Tk in the full suite"
+// → "push too"): a push runs every test file MINUS `skip_old_ui` only (the
+// tools' tests stay), with the walkers and `keep` inside a skipped file put
+// back. CI stays the whole suite. Null when there is no full_minus key or no
+// test file (→ the real full suite, fail-closed).
+export const PUSH_MINUS = "push-minus-old-ui";
+
+export function pushPlanFor(scope, cwd = process.cwd()) {
+  const fm = scope.full_minus;
+  if (!fm) return null;
+  const all = allTestFiles(cwd);
+  if (!all.length) return null;
+  const skip = new Set(fm.skip_old_ui || []);
+  const tests = new Set(all.filter((t) => !skip.has(t)));
+  for (const t of [...(scope.tests_walkers || []), ...(fm.keep || [])]) {
+    if (skip.has(t.split("::")[0])) tests.add(t);
+  }
+  return { name: PUSH_MINUS, tests: [...tests] };
+}
+
 /** What a commit of `paths` runs: an island, the full-minus plan, or null
- *  (→ the full suite). A push is always null. */
+ *  (→ the full suite). A push runs the push-minus-old-ui plan. */
 export function commitPlan(scope, paths, cwd = process.cwd(), { push = false, versionOnly } = {}) {
-  if (push) return null;
+  if (push) return pushPlanFor(scope, cwd);
   return islandFor(scope, paths, cwd, { versionOnly }) ?? fullMinusFor(scope, paths, cwd);
 }
 
@@ -793,7 +813,9 @@ function main() {
       key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
       label = island.name === FULL_MINUS
         ? `フルから旧画面と道具の試験を除いたもの（${targets.length} 本・O-030）`
-        : `部分テスト「${island.name}」（${targets.length} 本）`;
+        : island.name === PUSH_MINUS
+          ? `フルから旧画面（Tk）の試験を除いたもの（${targets.length} 本・push）`
+          : `部分テスト「${island.name}」（${targets.length} 本）`;
       realFull = false;
       if (isCachedPass(cwd, key)) return;
     }

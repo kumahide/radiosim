@@ -327,9 +327,13 @@ class TestFullMinus:
         plan = _commit_plan(["core/dem.py", "tests/test_window_fit.py"])
         assert "tests/test_window_fit.py" in plan["tests"]
 
-    def test_push_is_always_full(self):
-        """④鳴っても止まらない（＝push で絞られて全体が緑の証明が消える）の対。"""
-        assert _commit_plan(["core/models.py"], push=True) is None
+    def test_push_drops_only_the_old_ui(self):
+        """④鳴っても止まらない（＝push で旧画面より多く絞られる）の対。push は旧画面（Tk）の
+        試験だけを引く（2026-11-08・経営者の決定）＝道具の試験は残る。CI は今もフル。"""
+        plan = _commit_plan(["core/models.py"], push=True)
+        assert plan and plan["name"] == "push-minus-old-ui"
+        files = {t for t in plan["tests"] if "::" not in t}
+        assert files | set(_scope()["full_minus"]["skip_old_ui"]) == _real_test_files()
 
     def test_scanners_and_layer_checks_are_never_dropped(self):
         scope = _scope()

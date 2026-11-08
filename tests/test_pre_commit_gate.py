@@ -203,10 +203,25 @@ class TestFullMinusFor:
         _fm_tree(tmp_path)
         assert _fm(["tests/test_core.py"], tmp_path)["name"] == "tests"
 
-    def test_push_is_always_full(self, tmp_path):
+    def test_push_drops_only_the_old_ui(self, tmp_path):
+        """push は旧画面（Tk）の試験だけを引く（2026-11-08・経営者「push も Tk を引く」）。
+        道具の試験は残す・引いたファイルの中の走査系と keep は戻す。"""
         _fm_tree(tmp_path)
-        assert _fm(["core/a.py"], tmp_path, push=True) is None
-        assert _fm(["tests/test_core.py"], tmp_path, push=True) is None
+        for paths in (["core/a.py"], ["tests/test_core.py"], []):
+            p = _fm(paths, tmp_path, push=True)
+            assert p["name"] == "push-minus-old-ui"
+            assert set(p["tests"]) == {
+                "tests/test_core.py", "tests/test_layers.py", "tests/test_tool.py",
+                "tests/sub/test_deep.py", "tests/sub/deep_test.py",
+                "tests/test_ui.py::test_walker",
+            }
+
+    def test_push_without_the_key_is_full(self, tmp_path):
+        _fm_tree(tmp_path)
+        scope = {k: v for k, v in _FM_SCOPE.items() if k != "full_minus"}
+        assert _fm(["core/a.py"], tmp_path, push=True, scope=scope) is None
+        (tmp_path / "none").mkdir()
+        assert _fm(["core/a.py"], tmp_path / "none", push=True) is None   # 試験が 1 つも無い
 
     def test_without_the_key_core_is_full(self, tmp_path):
         """戻し方＝キーを消すと今の main の状態（製品のコードはフル）。"""

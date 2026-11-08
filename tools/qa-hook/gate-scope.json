@@ -115,7 +115,7 @@
     "tests/conftest.py", "tests/data/", "tests/golden_corpus_gen.py", "tests/table_fit.py",
     "requirements", "pyproject.toml"
   ],
-  "_comment_full_minus": "O-030（2026-11-07・経営者が案 (b) を選んだ・承認は事前の独立評価の後）。pre-commit-gate.mjs の fullMinusFor だけが読む。コミットに入る変更が prefixes（core/・report/・webui/＝2026-11-08 に足した＝新しい画面は Tk を使わないのに、どの規則にも当たらずフル（Tk 込み）へ倒れていた・経営者の指摘「フルスイートで Tk を回さないで」）と tests/test_*.py だけ（＝views/・lang/・main.py・画面の資産・tests/conftest.py・tests/data/・依存と pytest の設定を 1 つも含まない）のとき、tests/ の試験ファイルを全部並べ、skip_old_ui（撤去が決まった旧画面＝Tk の試験）と skip_tools（製品を import しない道具の試験）を引いて走らせる。戻すもの＝コミットで変えた試験ファイルそのもの・引いたファイルの中の tests_walkers・keep（引いたファイルの中で本物の製品の木を読む 1 本ずつ）。⚠️ 除外の引数（--ignore／--deselect）にしない＝名指しより強く、走査系まで消える。push は常にフル・CI はフル。期限＝4.0 ステージ11 で旧画面と試験を撤去する回に skip_old_ui を消す（新しい画面の試験はここへ入れない）。見張り＝tests/test_commit_gate_scope.py の TestFullMinus。戻し方＝このキーを消す。",
+  "_comment_full_minus": "O-030（2026-11-07・経営者が案 (b) を選んだ・承認は事前の独立評価の後）。pre-commit-gate.mjs の fullMinusFor だけが読む。コミットに入る変更が prefixes（core/・report/・webui/＝2026-11-08 に足した＝新しい画面は Tk を使わないのに、どの規則にも当たらずフル（Tk 込み）へ倒れていた・経営者の指摘「フルスイートで Tk を回さないで」）と tests/test_*.py だけ（＝views/・lang/・main.py・画面の資産・tests/conftest.py・tests/data/・依存と pytest の設定を 1 つも含まない）のとき、tests/ の試験ファイルを全部並べ、skip_old_ui（撤去が決まった旧画面＝Tk の試験）と skip_tools（製品を import しない道具の試験）を引いて走らせる。戻すもの＝コミットで変えた試験ファイルそのもの・引いたファイルの中の tests_walkers・keep（引いたファイルの中で本物の製品の木を読む 1 本ずつ）。⚠️ 除外の引数（--ignore／--deselect）にしない＝名指しより強く、走査系まで消える。push は旧画面（skip_old_ui）だけを引く（2026-11-08・経営者「push も Tk を引く」＝pushPlanFor）・CI はフル。期限＝4.0 ステージ11 で旧画面と試験を撤去する回に skip_old_ui を消す（新しい画面の試験はここへ入れない）。見張り＝tests/test_commit_gate_scope.py の TestFullMinus。戻し方＝このキーを消す。",
   "full_minus": {
     "prefixes": ["core/", "report/", "webui/"],
     "skip_old_ui": [
