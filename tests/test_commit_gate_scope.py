@@ -329,8 +329,8 @@ class TestFullMinus:
         assert _commit_plan(paths) is None, f"{paths} がフルへ倒れない"
 
     def test_a_changed_skipped_test_runs(self):
-        plan = _commit_plan(["core/dem.py", "tests/test_window_fit.py"])
-        assert "tests/test_window_fit.py" in plan["tests"]
+        plan = _commit_plan(["core/dem.py", "tests/test_claude_hooks.py"])
+        assert "tests/test_claude_hooks.py" in plan["tests"]
 
     def test_push_drops_only_the_old_ui(self):
         """④鳴っても止まらない（＝push で旧画面より多く絞られる）の対。push は旧画面（Tk）の

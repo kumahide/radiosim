@@ -3,18 +3,14 @@ tests/test_layers.py
 ====================
 **層をディレクトリで表した以上、その約束を機械が守る**（2.7 スライス H・I-058）。
 
-層は 4 つで、依存は一方向:
+層は 3 つで、依存は一方向:
 
-    views/ ┐
-           ├→  report/  →  core/
-    webui/ ┘
+    webui/  →  report/  →  core/
 
 - `core/`   … 土台（計算・データ・設定）。画面も描画ライブラリも知らない。
 - `report/` … 出力を作る層（実行エンジンと成果物の生成）。ヘッドレス。
-- `views/`  … 旧画面（tkinter）。
-- `webui/`  … 新しい画面（ローカルの HTTP と Edge・4.0 ステージ8）。`views/` と同じ位で、
-  2 つの画面は互いに引かない。
-- `main.py` … アプリの入口＝層ではない（起動して views を組み立てるだけ）。
+- `webui/`  … 画面（ローカルの HTTP と Edge・4.0 ステージ8）。入口は `webui/__main__.py`。
+  旧画面（`views/`・tkinter）と入口の `main.py` は 4.0 ステージ11a で撤去した。
 
 🔑 **これが「層をディレクトリにした」ことの中身**＝ディレクトリを作っただけでは
 規則にならない。以前の層の境界は手書きのリスト 3 本（カバレッジの `source`・
@@ -38,21 +34,18 @@ import pytest
 ROOT = Path(__file__).resolve().parent.parent
 
 # 下から順。数字が大きい層は小さい層に依存してよい（逆は不可）。
-_RANK = {"core": 0, "report": 1, "views": 2, "webui": 2}
+_RANK = {"core": 0, "report": 1, "webui": 2}
 _LAYERS = tuple(_RANK)
-# 同じ位の画面の層（旧画面 `views/` と新しい画面 `webui/`）＝互いに引かない。
-_SCREEN_LAYERS = ("views", "webui")
 
 
 def _modules() -> dict[str, Path]:
-    """`core.models` → そのパス。入口（`main`）も含む（最上位として扱う）。"""
+    """`core.models` → そのパス（入口の `webui/__main__.py` は `webui.__main__`）。"""
     mods = {
         f"{layer}.{p.stem}": p
         for layer in _LAYERS
         for p in sorted((ROOT / layer).glob("*.py"))
         if p.stem != "__init__"
     }
-    mods["main"] = ROOT / "main.py"
     return mods
 
 
@@ -123,7 +116,7 @@ def _is_type_checking(test: ast.expr) -> bool:
 # ============================================================
 @pytest.mark.parametrize("module", sorted(_modules()))
 def test_dependencies_flow_one_way(module):
-    """`views/` → `report/` → `core/` の向きだけ。逆流は無いこと。
+    """`webui/` → `report/` → `core/` の向きだけ。逆流は無いこと。
 
     ⚠️ **遅延 import も型注釈用の import も対象**＝「実行時には引いていない」は
     層の言い訳にならない。下の層が上の層の**名前を知っている**時点で、その 2 つは
@@ -132,35 +125,14 @@ def test_dependencies_flow_one_way(module):
     """
     path = _modules()[module]
     layer = _layer_of(module)
-    if layer not in _RANK:                          # main.py は最上位＝何でも引ける
-        return
     upward = sorted(
         dep for dep in _all_imports(path)
         if _RANK[_layer_of(dep)] > _RANK[layer]
     )
     assert not upward, (
         f"{module} が上の層を引いている: {upward}。"
-        "依存は views → report → core の一方向で、2 つの層から使われるものは"
+        "依存は webui → report → core の一方向で、2 つの層から使われるものは"
         "「下」へ置く（`shared/` のような箱は作らない）。"
-    )
-
-
-@pytest.mark.parametrize(
-    "module", sorted(m for m in _modules() if _layer_of(m) in _SCREEN_LAYERS))
-def test_the_two_screens_do_not_import_each_other(module):
-    """`views/`（旧画面）と `webui/`（新しい画面）は互いに引かない（4.0 ステージ8）。
-
-    ⚠️ 同じ位どうしは①の「上向き」の検査を通ってしまう＝ここで別に見る。旧画面は
-    4.x で畳む（I-144）ので、新しい画面が旧画面の名前を 1 つでも知ると畳めなくなる。
-    """
-    layer = _layer_of(module)
-    other = sorted(
-        dep for dep in _all_imports(_modules()[module])
-        if _layer_of(dep) in _SCREEN_LAYERS and _layer_of(dep) != layer
-    )
-    assert not other, (
-        f"{module} がもう一方の画面の層を引いている: {other}。"
-        "2 つの画面で使うものは `core/` か `report/` へ下ろす。"
     )
 
 
@@ -230,29 +202,8 @@ def test_core_knows_nothing_about_screens_or_plots(path):
     bad = sorted(_external_roots(path) & set(_CORE_FORBIDDEN))
     assert not bad, (
         f"core/{path.name} が {bad} を引いている。"
-        "画面と作図は `report/`（成果物）か `views/`（画面）の仕事で、"
+        "画面と作図は `report/`（成果物）か `webui/`（画面）の仕事で、"
         "`core/` はそのどちらも知らないまま持ち出せる状態に保つ。"
-    )
-
-
-@pytest.mark.parametrize(
-    "path",
-    sorted(
-        p for p in (ROOT / "views").glob("*.py")
-        if p.stem != "map_adapter"
-    ) + sorted((ROOT / "report").glob("*.py")),
-    ids=lambda p: p.name,
-)
-def test_only_map_adapter_imports_tkintermapview(path):
-    """`tkintermapview` を引けるのは `views/map_adapter.py` だけ（3.3 ステージ2）。
-
-    地図ライブラリの差し替え可能性（防火扉）は、import の集約点が1つで
-    あることでしか保てない。他のファイルが直接 import すると、差し替え時に
-    このファイルも探して書き換える羽目になる。
-    """
-    assert "tkintermapview" not in _external_roots(path), (
-        f"{path.relative_to(ROOT)} が tkintermapview を直接 import している。"
-        "`views/map_adapter.py` 経由にすること（`MapWidget` / `MapPolygon`）。"
     )
 
 
@@ -273,7 +224,7 @@ def test_the_layers_are_not_empty():
 # `apps/<名前>/` は本体とは別のアプリ（1 本目は実測補助）。規則は 3 つ:
 #   - `apps/*` → `core/` は可
 #   - `apps/*` → 他の `apps/*` は不可（アプリ同士が結ばれると分けて取り出せない）
-#   - `apps/*` → `report/` `views/` は不可（あれは本体というアプリの中身）
+#   - `apps/*` → `report/` `webui/` は不可（あれは本体というアプリの中身）
 # ⇒ **将来リポジトリを分けるとき「ディレクトリの移動だけで済む」状態**を保つ。
 # 逆向き（`core/` が apps を知る）は上の ① が既に見ている（core は最下層）。
 _APPS_ALLOWED_LAYERS = {"core"}
@@ -327,7 +278,7 @@ def test_apps_import_core_only(module):
     )
     assert not forbidden, (
         f"{module} が {forbidden} を引いている。"
-        f"`apps/` から引けるのは `core/` だけ（`report/` `views/` は本体というアプリの"
+        f"`apps/` から引けるのは `core/` だけ（`report/` `webui/` は本体というアプリの"
         "中身で、共有したいものは `core/` へ下ろす）。"
     )
     assert not other_apps, (
@@ -346,11 +297,11 @@ def test_apps_import_core_only(module):
 # ⚠️ 遅延 import・`importlib.import_module("…")`・`__import__("…")` も対象＝文字列で
 # 引いても名前を知っていることに変わりはない。
 _PRIVATE_ROOTS = frozenset({"radiosim_pro", "pro"})
-_PUBLIC_CODE_DIRS = ("core", "report", "views", "webui", "apps", "buildtools")
+_PUBLIC_CODE_DIRS = ("core", "report", "webui", "apps", "buildtools")
 
 
 def _public_code() -> list[Path]:
-    files = [ROOT / "main.py"]
+    files: list[Path] = []
     for d in _PUBLIC_CODE_DIRS:
         files += sorted((ROOT / d).rglob("*.py"))
     return files
@@ -398,7 +349,7 @@ def test_private_layer_is_not_committed_here():
 def test_the_private_guard_sees_the_screens():
     """⑤の対象が空でないこと＝新しい画面と土台の入口を必ず見ている（壊れ方①への備え）。"""
     seen = {str(p.relative_to(ROOT)).replace("\\", "/") for p in _public_code()}
-    assert {"main.py", "webui/__main__.py", "core/version.py",
+    assert {"webui/__main__.py", "core/version.py",
             "buildtools/build_link.py"} <= seen
 
 

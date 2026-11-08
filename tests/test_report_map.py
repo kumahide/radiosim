@@ -26,7 +26,7 @@ from report import report_map
 
 def _attribution_text(source_id: str = "pale") -> str:
     """いま焼かれる出典表記（製品と同じ解決器から引く＝B-248）。"""
-    return report_map._resolve_attribution(source_id)
+    return report_map.attribution_for(source_id)
 
 
 def _expected_badge(img: Image.Image) -> Image.Image:
@@ -392,11 +392,27 @@ class TestAttribution:
         return np.full((256, 256, 3), 200, dtype=np.uint8)
 
     def test_layer_to_source_text_is_single_sourced(self):
-        # UI（views/map_window.py の `_TILE_LAYERS`）と帳票が**同じ表**を引く。
+        # 画面の地図（webui）と帳票が**同じ 1 本**を引く。
         # ⚠️ ここが 2 つあると「航空写真を見ながら『出典: 淡色地図』」が生まれる。
-        from views import map_window
-        for key, layer in map_window._TILE_LAYERS.items():
-            assert layer.attr() == i18n.t(map_graphics.ATTR_KEYS[key])
+        # 4.0 ステージ11a＝旧画面（`views/map_window.py`）を消し、見る先を webui へ移した
+        # ＝そこで新しい画面の地図に出典が無かったと分かった（同じ回に直した）。
+        import pathlib
+
+        from webui import server as webserver
+        from webui.state import AppState
+        from webui.worker import Worker
+        for key in map_graphics.ATTR_KEYS:
+            srv = webserver.WebServer(Worker(AppState()), basemap=key)
+            try:
+                snap = srv.state_payload(0, timeout=0)
+            finally:
+                srv.httpd.server_close()
+            assert snap["basemap_attribution"] == i18n.t(map_graphics.ATTR_KEYS[key])
+            assert snap["basemap_attribution"] == report_map.attribution_for(key)
+        # 画面は受け取った字を地図の層へ渡している（配線が切れていないこと）
+        js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
+        assert "initMap(s.basemap || \"pale\", s.basemap_attribution)" in js
+        assert "attribution: escapeHtml(attribution" in js
 
     def test_every_tile_layer_has_a_source_text(self):
         # タイルを足したら出典も足さないと通らない（対で持つことの強制）。
@@ -408,15 +424,15 @@ class TestAttribution:
         """帳票が焼く文言が、**実際に選ばれた背景地図ソース**の出典であること。
 
         🔑 B-248＝帳票の背景地図は地図ウィンドウの選択（`basemap_source_id`）に
-        追従する。`_resolve_attribution()` が組み込み 2 種を正しく解決できて
+        追従する。`attribution_for()` が組み込み 2 種を正しく解決できて
         いることを、`map_graphics.ATTR_KEYS`（単一ソース）と突き合わせて見る。
         """
         for source_id, attr_key in map_graphics.ATTR_KEYS.items():
-            assert report_map._resolve_attribution(source_id) == i18n.t(attr_key)
+            assert report_map.attribution_for(source_id) == i18n.t(attr_key)
 
     def test_report_source_text_falls_back_to_pale_for_unknown_source(self):
         # 宣言を消した後など、未知の source_id は "pale" の出典へ落ちる。
-        assert (report_map._resolve_attribution("no-such-source")
+        assert (report_map.attribution_for("no-such-source")
                 == i18n.t(map_graphics.ATTR_KEYS["pale"]))
 
     def test_source_text_is_readable_not_tofu(self):

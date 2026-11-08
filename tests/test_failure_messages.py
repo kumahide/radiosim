@@ -231,7 +231,7 @@ class TestTheVocabulary:
         `FIX_KEYS` に足す。ここが縛るのは「足したのに宣言し忘れる」形。
         """
         used = set()
-        for folder in ("views", "webui", "core", "report"):
+        for folder in ("webui", "core", "report"):
             for path in sorted((REPO / folder).glob("*.py")):
                 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                     key = _i18n_key(node) if isinstance(node, ast.Call) else None
@@ -240,17 +240,32 @@ class TestTheVocabulary:
         assert used <= set(failure.FIX_KEYS), (
             f"閉じた語彙の外の `fix_*` を使っている: {sorted(used - set(failure.FIX_KEYS))}")
 
+    #: 旧画面（`views/`）と一緒に使い手が消えた一手＝新しい画面が同じ知らせを
+    #: 出すか、語彙から外すかを [[I-256]] で決める（4.0 ステージ11a）。
+    #: ⚠️ ここは**減るだけ**＝使い手が戻ったら下の試験が「まだ載っている」で落とす。
+    _AWAITING_WEBUI = frozenset({
+        "fix_check_input", "fix_edit_dem_sources_file", "fix_edit_lang_file",
+        "fix_edit_tile_sources_file", "fix_file_read", "fix_file_write",
+        "fix_retry_later", "fix_retry_or_log",
+    })
+
     def test_every_fix_key_is_actually_used(self):
         """使われない一手を並べない（語彙は在庫ではなく実際の選択肢）。"""
         used = set()
-        for folder in ("views", "webui", "core", "report"):
+        for folder in ("webui", "core", "report"):
             for path in sorted((REPO / folder).glob("*.py")):
                 for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
                     key = _i18n_key(node) if isinstance(node, ast.Call) else None
                     if key and key.startswith("fix_"):
                         used.add(key)
-        assert set(failure.FIX_KEYS) <= used, (
-            f"宣言だけで使われていない一手: {sorted(set(failure.FIX_KEYS) - used)}")
+        unused = set(failure.FIX_KEYS) - used - self._AWAITING_WEBUI
+        assert not unused, f"宣言だけで使われていない一手: {sorted(unused)}"
+        back = self._AWAITING_WEBUI & used
+        assert not back, (
+            f"使い手が戻った一手が保留の一覧に残っている＝`_AWAITING_WEBUI` から外す: "
+            f"{sorted(back)}")
+        assert self._AWAITING_WEBUI <= set(failure.FIX_KEYS), (
+            "語彙から外した一手が保留の一覧に残っている＝`_AWAITING_WEBUI` からも外す")
 
 
 # ============================================================

@@ -6,7 +6,6 @@ tests/conftest.py
 """
 
 import datetime
-import gc
 import json
 import logging
 import pathlib
@@ -14,8 +13,6 @@ import shutil
 import socket
 import subprocess
 import tempfile
-import time
-import typing
 
 import numpy as np
 import pytest
@@ -127,132 +124,6 @@ def pytest_configure(config):
     _require_declared_interpreter()
     _isolate_app_paths()
     _cap_double_quiet(config)
-    _drain_window_events_before_destroy()
-    _wall_off_tk_roots()
-
-
-# ============================================================
-# 🔴 旧画面（Tk）の試験は、明示しない限り走らせない（I-255・2026-11-09）
-# ============================================================
-# 試験のたびに Tk の窓が出て、経営者の画面を奪う。2026-11-08 と 11-09 に続けて
-# 起きた（コミットに `docs/` が 1 本混じり、ゲートの範囲の規則が外れて Tk 込みの
-# フルが走った）。経営者「まずは二度とTK回さない構造にしろ！！」。
-# ⇒ 口（コミット前・push 前・Stop フック・手で回す pytest）ごとに塞ぐのでなく、
-#    **全部の口が通る所＝この conftest** で止める。壁は 2 枚:
-#   ① 集める所＝`skip_old_ui`（`tools/qa-hook/gate-scope.json`＝一覧を二重に
-#      持たない）のファイルを、ディレクトリを歩いて集めるときに拾わない
-#   ② 根を作る所＝`tkinter.Tk` を作ろうとした試験は、その場で skip する
-#      （旧画面のファイルの外にも Tk の根を建てる試験がある＝batch・scenario など。
-#      製品のコードが中で根を作る形も、ここを必ず通る）
-# 走らせたいときは、人が `RADIOSIM_OLD_UI=1` を立てて回す。ゲートとフックは
-# この変数を立てない（`tools/qa-hook/gate.mjs` の `pythonEnv` が消す）。Claude が
-# 立てるコマンドは `.claude/no_shell_detours.py` が止める。
-# ⚠️ 表示依存の刻印（`.qa/display_run.json`）は、この変数を立てた実行でしか刻まない
-#    （Tk を回していない実行が「表示のある機械で全部通った」と言わないように）。
-# 期限＝4.0 ステージ11 で旧画面と試験を撤去する回に、この節ごと消す。
-OLD_UI_ENV = "RADIOSIM_OLD_UI"
-_OLD_UI_ALLOWED = os.environ.get(OLD_UI_ENV) == "1"
-_GATE_SCOPE = pathlib.Path(__file__).resolve().parent.parent / "tools" / "qa-hook" / "gate-scope.json"
-
-
-def old_ui_files(scope_path: "pathlib.Path" = _GATE_SCOPE) -> "frozenset[str]":
-    """旧画面の試験ファイル（リポジトリ相対・`/` 区切り）＝`gate-scope.json` の `skip_old_ui`。
-
-    道具の置き場（`tools/`）は git-ignore＝CI には無い。無いときは空を返す
-    （CI は `RADIOSIM_HEADLESS=1` で Tk の試験を元から skip している。開発機では
-    ②の壁が独立に窓を止める）。
-    """
-    try:
-        scope = json.loads(scope_path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return frozenset()
-    return frozenset(scope.get("full_minus", {}).get("skip_old_ui", []))
-
-
-_OLD_UI_FILES = old_ui_files()
-
-
-def pytest_ignore_collect(collection_path, config):
-    """壁①＝旧画面の試験ファイルを集めない（`RADIOSIM_OLD_UI=1` のときだけ集める）。"""
-    if _OLD_UI_ALLOWED:
-        return None
-    try:
-        rel = pathlib.Path(collection_path).resolve().relative_to(_REPO_ROOT).as_posix()
-    except ValueError:
-        return None
-    return True if rel in _OLD_UI_FILES else None
-
-
-#: 壁②で skip するときの理由（試験から照合する）。
-OLD_UI_SKIP_REASON = (
-    "旧画面（Tk）の根を作る試験は、既定で走らせない（I-255）"
-    f"＝走らせるなら人が {OLD_UI_ENV}=1 を立てて回す")
-
-
-def _wall_off_tk_roots() -> None:
-    """壁②＝`tkinter.Tk` の根を作ろうとした所で skip する。"""
-    if _OLD_UI_ALLOWED:
-        return
-    try:
-        import tkinter as tk
-    except ImportError:
-        return
-    if getattr(tk.Tk.__init__, "_walled_off", False):
-        return
-
-    def __init__(self, *args, **kwargs):
-        # ⚠️ `Skipped` は BaseException の側＝製品の `except Exception` に飲まれない。
-        pytest.skip(structural_skip(OLD_UI_SKIP_REASON), allow_module_level=True)
-
-    __init__._walled_off = True             # type: ignore[attr-defined]
-    tk.Tk.__init__ = __init__               # type: ignore[method-assign]
-
-
-# ============================================================
-# 🔴 根を壊す前に、溜まった窓の出来事を流す（B-376・2026-11-08）
-# ============================================================
-# 試験は根（`tk.Tk()`）を 1 本ごとに作り直し、**一度も出来事を流さずに**
-# `root.destroy()` する。この形が積み重なると、Tk 9.0.4（Windows）は根の
-# `destroy` の中＝Tcl の C の側でアクセス違反になり、**プロセスごと落ちる**。
-# 実測（試験の外の再現・`views.launcher` で条件探索と中継の窓を開けて壊す）:
-#   - 根を作り直して 3〜6 回目で落ちる。落ちるのは毎回 `ScenarioWindow` の
-#     トップレベルを Tcl で壊す瞬間（子はもう壊れた後）。Python の呼び戻しは
-#     積まれていない＝Tk の中の壊れ方
-#   - 窓 1 つずつ・バッチとの組では落ちない。条件探索と中継の組で落ちる
-#   - **根が 1 つのまま**窓を 15 回開け閉めしても落ちない＝製品の形には出ない
-#   - 壊す前に `update()`、または窓の出来事だけ（`WINDOW_EVENTS|DONT_WAIT`）を
-#     流すと 12 回×4 度とも落ちない。`update_idletasks()` では落ちる
-# ⇒ 試験の側で、**どの試験の根にも**壊す前に窓の出来事を流す（列挙にすると、
-#    新しい GUI 試験を書いた人が忘れた瞬間に再発する＝上の GC の節と同じ理由）。
-#    流すのは窓の出来事だけ＝`after` の予約は走らせない（試験が待っていない
-#    呼び戻しを、後片付けの中で動かさない）。
-# ⚠️ 原因の全部は分かっていない＝同じ HEAD で前のセッションは通り、コードの
-#    変更なしに出た（メモリの置かれ方しだいで出る壊れ方と見ている）。
-_DRAIN_LIMIT = 1000   # 出来事が出来事を生み続けても、後片付けで止まらないように
-
-
-def _drain_window_events_before_destroy() -> None:
-    try:
-        import tkinter as tk
-        import _tkinter
-    except ImportError:                 # tkinter の無い環境＝GUI 試験は skip される
-        return
-    if getattr(tk.Tk.destroy, "_drains_window_events", False):
-        return
-    original = tk.Tk.destroy
-    flags = _tkinter.WINDOW_EVENTS | _tkinter.DONT_WAIT
-
-    def destroy(self):
-        try:
-            for _ in range(_DRAIN_LIMIT):
-                if not self.dooneevent(flags):
-                    break
-        except tk.TclError:
-            pass                        # 壊れかけの根でも、壊す本体は必ず呼ぶ
-        original(self)
-
-    destroy._drains_window_events = True  # type: ignore[attr-defined]
-    tk.Tk.destroy = destroy             # type: ignore[method-assign]
 
 
 def _cap_double_quiet(config) -> None:
@@ -445,7 +316,7 @@ def _app_paths_stay_isolated():
 # skip 予算（2.7 スライス F で新設）
 # ============================================================
 # 🔴 **「ほとんど走らなかった」を終了コード 0 で返させない。**
-# 上の `_no_display` は Tk 由来の大量 skip を塞ぐが、**skip の出所は他にも増える**
+# 表示の無い環境の宣言（下の `_HEADLESS_DECLARED`）は大量 skip を塞ぐが、**skip の出所は他にも増える**
 # ので、理由を問わない網をもう 1 枚置く（[[feedback-promote-recurring-checks]]
 # ＝列挙で塞ぐ穴は名前 1 つで開く）。
 #
@@ -508,7 +379,7 @@ def _unexpected_skips(reporter) -> int:
 #   ①**報告**（どの環境でも）＝構造的 skip をファイル単位で数えて出す。CI では
 #     さらに GITHUB_STEP_SUMMARY へ書き、**実行ページを開けば読める**ようにする。
 #   ②**刻印**（表示のある機械だけ）＝フルスイートが緑で終わったとき、検査した
-#     `views/`・`tests/` の中身を `.qa/display_run.json` へ残す。release-check が
+#     `tests/` の中身を `.qa/display_run.json` へ残す（`views/` は 4.0 ステージ11a で撤去）。release-check が
 #     これを読み、HEAD の中身と違えば「表示依存の面は回っていない」と声に出す（B-294）。⚠️ **チェックリストの一行では
 #     足りない**＝読み飛ばしても何も残らない（それが 2026-08-11 の形）。
 _REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
@@ -591,7 +462,7 @@ def _is_whole_suite(config) -> bool:
 
 
 #: 表示依存の面として中身を刻む範囲（release-check.mjs の `DISPLAY_SCOPE` と同じ）。
-DISPLAY_SCOPE = ("views", "tests")
+DISPLAY_SCOPE = ("tests",)
 
 
 def _display_files(root: pathlib.Path) -> dict[str, str]:
@@ -665,8 +536,7 @@ def pytest_sessionfinish(session, exitstatus):
                 yellow=True,
             )
             _write_step_summary(faces, total)
-        # I-255＝旧画面を回していない実行は刻まない（刻印が嘘をつかないように）。
-        if (exitstatus == 0 and not _HEADLESS_DECLARED and _OLD_UI_ALLOWED
+        if (exitstatus == 0 and not _HEADLESS_DECLARED
                 and _is_whole_suite(session.config)):
             _stamp_display_run(total, faces)
 
@@ -716,11 +586,9 @@ def pytest_unconfigure(config):
 # 書いた人が忘れた瞬間に再発する。既定で塞ぎ、必要なら明示的に外す。
 #
 # 塞ぐのは「人の操作を待つ」「OS へ制御を渡す」の 2 種類:
-#   - views.dialogs の alert / confirm / choose（自前モーダル＝wait_window）
+#   - （旧画面の自前モーダル `views.dialogs` は 4.0 ステージ11a で画面ごと撤去）
 #   - os.startfile（ブラウザ・エクスプローラ起動）
-#   - tkinter.filedialog の各種（ファイル選択ダイアログ）
-# 応答は**最も安全な既定**＝confirm は False（「いいえ」）、choose は None
-# （キャンセル）、ファイル選択は "" （キャンセル）を返す。
+#   - （tkinter.filedialog は旧画面と一緒に撤去＝製品が tkinter を引かない・4.0 ステージ11a）
 #
 # 呼ばれた内容を検証したいテストは `dialog_calls` フィクスチャを受け取る。
 
@@ -745,30 +613,9 @@ def dialog_calls(request, monkeypatch):
         yield calls
         return
 
-    from tkinter import filedialog
-
-    from views import dialogs
-
-    def _alert(parent, title, message):
-        calls.append(("alert", title, message))
-
-    def _confirm(parent, title, message):
-        calls.append(("confirm", title, message))
-        return False                     # 既定は「いいえ」＝副作用の少ない側
-
-    def _choose(parent, title, message, options, cancel_label=None):
-        calls.append(("choose", title, message))
-        return None                      # 既定はキャンセル
-
-    monkeypatch.setattr(dialogs, "alert", _alert)
-    monkeypatch.setattr(dialogs, "confirm", _confirm)
-    monkeypatch.setattr(dialogs, "choose", _choose)
     monkeypatch.setattr(os, "startfile",
                         lambda path, *a, **k: calls.append(("startfile", str(path))),
                         raising=False)
-    for name in ("askopenfilename", "asksaveasfilename", "askdirectory"):
-        monkeypatch.setattr(filedialog, name,
-                            lambda *a, _n=name, **k: (calls.append((_n,)), "")[1])
     # matplotlib の `plt.show()` も入れ子 mainloop でブロックする（グラフウィンドウ）。
     # ⚠️ ここで pyplot を import しない（重い＝matplotlib を使わないテストにまで
     # 起動コストを乗せる）。既に読み込まれている時だけ塞ぐ＝グラフウィンドウへ到達し得る
@@ -828,49 +675,12 @@ def flat_terrain():
 
 
 # ============================================================
-# Tk ルート生成（間欠的な初期化失敗のリトライ）
+# 表示の無い環境の宣言（B-041 と同じ流儀）
 # ============================================================
-# この環境では Tk の初期化が間欠的に失敗する。**毎回違う .tcl が「読めない」と
-# 言われ、errno が "No error" や実在ファイルへの "no such file" になる**のが特徴で、
-# ファイル自体は存在しディスクにも余裕がある（実測）。リアルタイムスキャン等に
-# よる一過性の read 失敗と考えられ、アプリ側では根治できない。
-#
-# 放置すると表示依存テストが **黙って skip** される＝「緑に見えて実は GUI 配線を
-# 1つも検証していない」状態になり、本プロジェクトが最も警戒する失効ゲートそのもの
-# （[[feedback-promote-recurring-checks]]）。一過性なら再試行で通るので、skip へ
-# 倒す前に数回やり直す。それでも駄目なら従来どおり skip。
-
-_TK_INIT_ATTEMPTS = 5
-
-# 🔴 **skip は「表示が無い環境」でだけ正当**（＝ヘッドレス CI）。開発機で 5 回とも
-# 失敗したのなら、それは**一過性の失敗が収まらなかった**という結果であって、
-# 「この環境では検査しなくてよい」ではない。区別が付かないまま skip へ倒すと、
-# **大量 skip・終了コード 0 の「緑」**が出る（2026-08-07 に実測＝112 本中 106 本が
-# skip。しかも変異検証をその実行で回してしまい、壊した実装が「緑」と出た）。
-#
-# ⇒ **環境を宣言させる**（`RADIOSIM_PYTHON` と同じ流儀・B-041）。CI は
-# `RADIOSIM_HEADLESS=1` を宣言しているので従来どおり skip、宣言の無い環境では
-# **fail** させて緑に化けないようにする。
+# 🔴 **skip は「宣言された環境」でだけ正当**（＝ヘッドレス CI）。宣言の無い環境で
+# skip へ倒すと、**大量 skip・終了コード 0 の「緑」**が出る（2026-08-07 に実測）。
+# ⇒ CI は `RADIOSIM_HEADLESS=1` を宣言する。宣言の無い環境では fail させる。
 _HEADLESS_DECLARED = bool(os.environ.get("RADIOSIM_HEADLESS"))
-
-
-def _no_display(reason: str) -> "typing.NoReturn":
-    """表示が使えないときの終わり方（宣言された環境だけ skip・他は fail）。
-
-    ⚠️ **`NoReturn` の注釈は飾りではない**＝これが無いと `make_tk_root` の戻り値が
-    `Tk | None` に見え、**呼び出し側全部で `root.destroy()` が型エラーになる**。
-    """
-    if _HEADLESS_DECLARED:
-        # 宣言された環境の skip＝**構造的**（→ `STRUCTURAL_SKIP`）。予算はこれを
-        # 数えない＝「表示が無い」ことは実行の不健全さではないため。
-        pytest.skip(structural_skip(reason))
-    pytest.fail(
-        f"{reason}\n"
-        "＝表示があるはずの環境で Tk を起こせなかった。ヘッドレスで回すなら "
-        "`RADIOSIM_HEADLESS=1` を宣言すること（宣言の無い環境で skip へ倒すと、"
-        "GUI 配線を 1 つも検査しないまま『緑』になる）。",
-        pytrace=False,
-    )
 
 
 # ============================================================
@@ -882,7 +692,7 @@ def _no_display(reason: str) -> "typing.NoReturn":
 # 游ゴシック / メイリオ）なので、ubuntu の CI では 1 つも開けず必ず落ちる。
 # ⇒ 出典バーの実寸を測るゲート（B-135）は、**製品が動く機械の字**でしか意味を持たない。
 #
-# ⚠️ **skip は「宣言された環境」でだけ正当**（`_no_display` と同じ流儀）＝
+# ⚠️ **skip は「宣言された環境」でだけ正当**（`_HEADLESS_DECLARED` の流儀）＝
 # 開発機でフォントが引けないなら、それは**検査しなくてよい**ではなく**壊れている**。
 # 🔑 [[I-108]] の教訓＝*覆いが消える向きに壊さない*。この関数が飛ばすのは
 # 「Windows のフォントが原理的に無い機械」だけで、実機と開発機では必ず走る。
@@ -914,36 +724,6 @@ def require_burnable_font(text: str, px: int = 20) -> None:
 
 
 # ============================================================
-# Tk オブジェクトを次のテストへ持ち越さない（I-019 の根治・2.7a2）
-# ============================================================
-# 🔴 **`destroy()` は Tk オブジェクトを消さない。** tkinter は親子で相互参照する
-# ので、テストが `win.destroy(); root.destroy()` まで正しく書いても、Python 側の
-# オブジェクトは**循環ゴミとして生き残る**（実測 2026-08-07・test_multihop.py＝
-# 1 テストあたり 41〜97 個。内訳の例＝`Tk` 1・`StringVar` 26・`Frame` 26・
-# `PhotoImage` 1。`gc.collect()` を明示的に回すと全部消える＝GC 待ちだった）。
-#
-# 残ったゴミは「いつか誰かの GC」が拾う。**その誰かが製品のワーカースレッドだと、
-# 壊れる**:
-#
-#   ① `tkinter.Variable.__del__` は無条件に `self._tk.call("info", "exists", …)`
-#      を呼ぶ。CPython の `_tkinter` は**メインスレッド以外からの呼び出しを
-#      100ms×10 回待ってから** RuntimeError にする（実測 **1.036 秒/回**）。
-#      ⇒ StringVar 20 個をワーカーで回収させると **21.2 秒**（実測）。
-#      これが「レポート生成が 30 秒で終わらない」の正体で、`savefig` は無実。
-#   ② ゴミに `Tk` 本体（tkapp）が含まれると、Tcl インタプリタの解放が誤った
-#      スレッドで走り **`Tcl_AsyncDelete: async handler deleted by the wrong
-#      thread`** で **プロセスごと落ちる**（実測＝exit 3）。これが I-019 の見出しの
-#      `Current thread's C stack trace` そのもの。
-#
-# 実スイートで捕まえた証拠（2026-08-07・`-p no:randomly` の全体実行）＝落ちた
-# スレッドのスタックの先頭が **`Garbage-collecting`**（`Thread-374 (_work)` の中）。
-#
-# ⇒ **メインスレッドで、毎テスト、確定的に回収する。** ここで回収する限り
-#    `__del__` の Tcl 呼び出しはメインスレッドで一瞬に済み、ワーカーには何も残らない。
-#    列挙（「GUI テストにだけ付ける」）にしないのは、**新しい GUI テストを書いた人が
-#    忘れた瞬間に再発する**ため（→ [[feedback-promote-recurring-checks]]）。
-#    コストは実測 `gc.collect()` 1 回 8.9ms ＝全 1300 本で約 12 秒。
-# ============================================================
 # 表示言語がテストをまたいで漏れない（2.7a2 で昇格）
 # ============================================================
 # `i18n` の言語は**プロセス共有のグローバル**で、GUI を組むテストは軒並み
@@ -966,338 +746,3 @@ def _language_never_leaks():
     yield
     if i18n._lang != before:
         i18n.set_lang(before)
-
-
-@pytest.fixture(autouse=True)
-def _taskbar_is_never_the_dev_machines():
-    """**この機械のタスクバーを測定に混ぜない**（2026-08-18・B-084）。
-
-    `window_fit.usable_area()` は OS の作業領域（`rcWork`）から上限を決めるので、
-    既定のままだと**走らせた機械のタスクバーの高さ**がウィンドウの寸法に入る。すると
-    寸法ゲートの数字が機械ごとに変わり、[[project-real-world-env-vdi]] で 6 回
-    踏んだ「開発機で緑・実機で壊れる」を**測り方の側から作り直す**ことになる
-    （とくに開発機がたまたま FHD なら、`screen_size` を FHD へ差し替えている
-    既存ゲート 20 本以上の期待値が黙って動く）。
-
-    ⇒ **既定は「OS に何も聞けない」**＝`SCREEN_MARGIN` による従来の見積り。
-    作業領域そのものを見たいゲートは、`window_fit.work_areas` を明示的に
-    差し替えて**偽のタスクバー**を注入する（tests/test_window_fit.py）。
-    """
-    from views import window_fit
-
-    real = window_fit.work_areas
-    window_fit.work_areas = lambda: {}          # type: ignore[assignment]
-    try:
-        yield
-    finally:
-        window_fit.work_areas = real            # type: ignore[assignment]
-
-
-# ============================================================
-# 🔴 この機械そのものを測定に混ぜない（2026-08-24・I-108）
-# ============================================================
-# 🔑 **前提は主張ではない。** 寸法ゲートには「開いた直後はまだ溢れていない」の
-# ような**前提の行**があり、それは*走らせた機械の画面がそのウィンドウを持てるとき*にだけ
-# 成り立つ。2026-08-23 に実際に破れた＝表示スケール 150% の機械では条件探索の
-# 要求 `need=(843, 989)` に対し Tk が見る画面が **1707x960**（150% で縮む）しか
-# なく、装飾を引いた 921 で頭打ちする ⇒ **製品ではなく実行環境が QA ゲートを
-# 赤にした**（I-108・ブロッキングのフックが 150% のときだけ落ちた）。
-#
-# 上の `_taskbar_is_never_the_dev_machines` は同じ話の**タスクバーの口だけ**を
-# 塞いだものだった。機械が測定へ入り込む口は実測で 3 つある:
-#   ① 作業領域（タスクバーの実寸）… B-084 で塞いだ（上の fixture）
-#   ② **画面の大きさ**（`window_fit.screen_size`）… 表示スケールで縮む
-#   ③ **字が従う DPI**（`views.theme.window_dpi`）… `apply_fonts` の既定値で、
-#      これが動くと**必要量そのもの**（フォントの実測ピクセル）が動く
-# ⇒ ②③も**基準機（開発機 WQHD・100% ＝ 使える高さ 1350px）へ固定**する。
-#
-# ⚠️ **応急の手当て（前提を skip にする）では覆いが消える向きに壊れた**＝画面が
-# 狭い機械ほど検査が走らなくなり、[[project-real-world-env-vdi]]（実機は開発機
-# より 360px 低い）＝*いちばん壊れやすい機械でいちばん検査が薄い*。固定なら
-# **どの機械でも同じ本数が同じ数字で走る**。
-# ⚠️ 出荷先の条件（FHD・125%/150%）を見たいゲートは**従来どおり自分で差し替える**
-# （`_ship_on_fhd` 等・あとから当てた patch が勝つ）。ここは「何も指定しない
-# テストが黙って機械を読む」ことだけを止める。
-# ⚠️ **本物の機械を見たいテストは `@pytest.mark.real_machine`**（Tk と Win32 の
-# 座標系の突き合わせ）。数を増やさないこと＝付けたぶんだけ「この機械でしか意味の
-# ない検査」が戻る。台帳＝tests/test_window_fit.py の `_REAL_MACHINE_TESTS`。
-
-#: 測定の基準機＝開発機（WQHD・100%）。ここを動かすと寸法ゲートの数字が全部動く。
-REFERENCE_SCREEN = (2560, 1440)
-REFERENCE_DPI = 96
-
-
-def _pinned_screen(_win) -> "tuple[int, int]":
-    """基準機の画面（`window_fit.screen_size` の差し替え）。"""
-    return REFERENCE_SCREEN
-
-
-def _pinned_dpi(win) -> int:
-    """基準機の DPI（`views.theme.window_dpi` の差し替え）。
-
-    ⚠️ **答えだけを固定し、途中の副作用は本物のまま残す**（2026-08-24 に実測で
-    踏んだ）＝本物は `winfo_toplevel().winfo_id()` で Win32 にウィンドウのハンドルを聞く。
-    この呼び出しは**そのウィンドウを実体化させる**ので、省くと Tk が版組みを確定させる
-    *時点*がずれ、まだ表示していないウィンドウの最初の測定が **28px 太い**まま残った
-    （`grow_only` が floor に拾い、以後 3 本のゲートが赤）。
-    ⇒ 差し替えるのは「モニタが何と言ったか」だけにする。
-    """
-    try:
-        win.winfo_toplevel().winfo_id()
-    except Exception:
-        pass
-    return REFERENCE_DPI
-
-
-# 固定が**効いているか**をゲートから見分けるための印（値の一致だけで見ると、
-# たまたま基準機と同じ機械では固定を外しても緑になる＝壊れ方①）。
-_pinned_screen.is_the_pin = True                # type: ignore[attr-defined]
-_pinned_dpi.is_the_pin = True                   # type: ignore[attr-defined]
-
-
-#: 本物の口（最初のテストの setup で 1 度だけ捕まえる＝まだ誰も差し替えていない）。
-_REAL_DOORS: "dict[str, object]" = {}
-
-
-def _real_doors() -> "dict[str, object]":
-    from views import theme, window_fit
-
-    if not _REAL_DOORS:
-        _REAL_DOORS["screen"] = window_fit.screen_size
-        _REAL_DOORS["dpi"] = theme.window_dpi
-    return _REAL_DOORS
-
-
-@pytest.fixture(autouse=True)
-def _the_machine_is_never_the_dev_machines(request):
-    """**画面の大きさと DPI を基準機へ固定する**（2026-08-24・I-108）。
-
-    🔴 **後始末では直せない**（実測で踏んだ）＝`monkeypatch` は先に立ち上がる
-    autouse fixture（`dialog_calls`）が要求しているので、**その undo はここの
-    teardown より後に走る**。`monkeypatch.setattr(window_fit, "screen_size", …)`
-    を使う既存ゲートは 20 本以上あり、そこで捕まる「元の値」は*この固定*なので、
-    teardown で本物へ戻しても**直後に固定が入れ直される**＝以後ずっと漏れる。
-    実害＝`real_machine` のテストが**固定を見たまま緑**になっていた（壊れ方①）。
-    ⇒ **後始末に頼らず、毎テストの setup で入れ直す**（本物は最初に捕まえた
-    ものを使う）。次のテストが必ず正しい状態から始まるので、間の漏れは効かない。
-    """
-    from views import theme, window_fit
-
-    real = _real_doors()
-    want_real = "real_machine" in request.keywords
-    window_fit.screen_size = (                  # type: ignore[assignment]
-        real["screen"] if want_real else _pinned_screen)
-    theme.window_dpi = (                        # type: ignore[assignment]
-        real["dpi"] if want_real else _pinned_dpi)
-    yield
-
-
-# 表示環境の監視（`views.theme.watch_display`）は「静けさ」を待つ設計なので、
-# テストは**実時間**を待たされる。⇒ 待ち時間の定数を**同じ比のまま** 1/25 に縮める。
-# 🔴 **速さに賭けるのとは違う**（B-082 の教訓は保つ）＝待ち方は `pump_until`
-# （条件で待つ）のままで、縮めるのは「アプリが自分に課している間隔」だけ。
-# 実測＝これだけで test_theme が 16.2 → 8.4 秒（2026-08-23）。
-FAST_DISPLAY_MS = {
-    "_DISPLAY_DEBOUNCE_MS"    : 10,    # 実物 250
-    "_DISPLAY_LANDING_MS"     : 10,    # 実物 250
-    "_DISPLAY_DEBOUNCE_MAX_MS": 30,    # 実物 750
-    "_DISPLAY_SETTLE_MS"      : 32,    # 実物 800
-}
-
-
-@pytest.fixture(autouse=True)
-def _fast_display_constants(request, monkeypatch):
-    """既定で待ち時間を縮める。**実物の値で通す経路は `real_debounce` で残す。**
-
-    ⚠️ **既定を「速い方」にするのが要点**＝監視のテストを新しく書く人が「速くする
-    指定」を思い出す必要が無い（[[feedback-promote-recurring-checks]]＝思い出す
-    規則にしない）。逆に、**出荷する値そのもので通す 1 本**が明示的に手を挙げる
-    （`@pytest.mark.real_debounce`）。その 1 本が無いと「縮めた値でしか通らない
-    実装」が素通りする。
-    """
-    if "real_debounce" in request.keywords:
-        return                                     # 出荷する値そのもので走る
-    from views import theme as _theme
-    for name, value in FAST_DISPLAY_MS.items():
-        monkeypatch.setattr(_theme, name, value)
-
-
-@pytest.fixture(autouse=True)
-def _tk_garbage_never_escapes():
-    """テストが残した循環ゴミを、**メインスレッドで**片付けてから次へ進む。"""
-    yield
-    gc.collect()
-
-
-def make_tk_root(pytest_module=None):
-    """tkinter のルートを生成する。間欠的な初期化失敗は数回リトライする。
-
-    全て失敗したときだけ skip する（ヘッドレス CI もここに落ちる）。
-    """
-    import tkinter as tk
-
-    last = None
-    for _ in range(_TK_INIT_ATTEMPTS):
-        try:
-            return tk.Tk()
-        except tk.TclError as e:
-            last = e
-            time.sleep(0.05)
-    _no_display(f"no display available ({_TK_INIT_ATTEMPTS} 回試行): {last}")
-
-
-class PoisonedInterpreter(Exception):
-    """テーマ tcl が**途中まで**入った Tk インタプリタ（B-082②）。
-
-    直し方は「作り直す」しか無いので、**一過性の read 失敗とは別の例外**にする
-    （同じ `TclError` のままだと、呼ぶ側が待って直そうとしてしまう）。
-    """
-
-
-def make_themed_root(theme_name: str = "dark"):
-    """テーマとアプリのフォント設定まで済ませた Tk ルートを返す。
-
-    **ウィンドウの寸法を検証するテストは必ずこちらを使う**。素の Tk 既定フォントは実機
-    （sv_ttk の本文フォント）より小さく、そのまま測ると**実物より狭い前提**で
-    ゲートが緑になる。実際 2.5b2 で、条件探索の必要幅 947px を「テーマ無しなら
-    900px 未満」と測ってしまい、右端の条件列が見切れる実装を通した。
-
-    🔴 **汚れたインタプリタは捨てて作り直す**（B-082②）＝テーマ tcl が途中まで
-    入った Tk は、何度 `set_theme` を呼んでも直らない。**新しい Tk なら Tcl
-    インタプリタごと新品**なので、そこで読み直せば通る。
-    """
-    from views import theme as views_theme
-
-    root = make_sv_ttk_root()
-    set_theme(theme_name)
-    views_theme.apply_fonts(root)
-    return root
-
-
-def make_sv_ttk_root():
-    """sv_ttk のテーマ tcl を**読み込み済み**の Tk ルートを返す（テーマはまだ切り替えない）。
-
-    **`set_theme` を自分で呼ぶテストは `make_tk_root` ではなくこちらで建てる**（B-323）。
-    🔴 汚れたインタプリタ（B-082②）を捨てて作り直せるのは**ルートを建てる口だけ**＝
-    ルートを受け取ったテストが `set_theme` の中で汚れに気づいても、そのルートは
-    もう捨てられない（2026-10-03 に `test_tooltip_colors_are_legible` が赤になった）。
-    ⇒ 汚れうる唯一の段＝**sv.tcl の最初の source** を、作り直せるこの口で済ませる。
-    読み込み済みなら、以後の `set_theme` は `theme use` だけで source を通らない。
-
-    ⚠️ 読み込みの副作用は名前つきフォントの作成と `<<ThemeChanged>>` への結び付け
-    だけで、**テーマは切り替えない**（sv.tcl は `theme use` を読むだけ）。
-    """
-    import sv_ttk
-
-    last = None
-    for _ in range(_TK_INIT_ATTEMPTS):
-        root = make_tk_root()
-        try:
-            _retry_theme_tcl(lambda: sv_ttk.get_theme(root))
-        except PoisonedInterpreter as e:
-            last = e
-            root.destroy()                          # ⚠️ インタプリタごと捨てる
-            time.sleep(0.05)
-            continue
-        return root
-    _no_display(f"sv_ttk テーマを読み込めない（作り直し {_TK_INIT_ATTEMPTS} 回）: {last}")
-
-
-# 汚れたインタプリタの見分け方（B-082 の症状②）。⚠️ **この文字列は sv.tcl の
-# 再 source が返す Tcl のメッセージ**（"Theme sun-valley-light already exists"）。
-_THEME_ALREADY_EXISTS = "already exists"
-
-
-def _interpreter_is_poisoned(err: "Exception") -> bool:
-    """テーマ tcl の**途中まで**が既にこのインタプリタへ入っているか（B-082②）。
-
-    🔴 **待っても消えない失敗**。`sv_ttk._load_theme` は「読み込み済み」の印を
-    **source が最後まで通ったときだけ** Tk ルートに付ける。ところが `sv.tcl` は
-    `light.tcl` → `dark.tcl` の順に source し、**`dark.tcl` の画像読み込みで
-    一過性の read 失敗が起きる**と、`sun-valley-light` だけが作られた状態で
-    印が付かないまま抜ける。⇒ 次の試行は `light.tcl` を頭から回し、
-    `ttk::style theme create sun-valley-light` で **"already exists"** に
-    ぶつかる＝**リトライは原理的に成功しない**（2026-08-14 に 5 回とも空回り）。
-
-    ⚠️ **Tcl にテーマを消す手段は無い**ので、直し方は 1 つだけ＝
-    **そのインタプリタ（＝Tk ルート）を捨てて作り直す**（`make_themed_root`）。
-    """
-    return _THEME_ALREADY_EXISTS in str(err)
-
-
-def set_theme(name: str) -> None:
-    """sv_ttk のテーマを適用する。`sv.tcl` の間欠的な読み込み失敗を再試行する。
-
-    上の `make_tk_root` と同じ一過性の read 失敗（"couldn't read file ...: No error"）が
-    テーマ tcl の source でも起きる。ここで諦めると配色テストが落ちるので、
-    Tk 初期化と同じくリトライで吸収する。
-
-    ⛔ **ただし「既にある」はリトライの対象ではない**（B-082②）＝`_interpreter_is_poisoned`
-    の註のとおり、待っても消えない。**5 回空回りしてから読み込み失敗として
-    落ちる**と、原因が「読めなかった」に見えて調査が丸ごと逸れるので、
-    ここで**別の失敗として**打ち切る。
-
-    ⚠️ 汚れを受けて作り直せるのはルートを建てる口だけ＝ルートは
-    `make_sv_ttk_root`（または `make_themed_root`）で建てておくこと（B-323）。
-    """
-    import sv_ttk
-
-    _retry_theme_tcl(lambda: sv_ttk.set_theme(name))
-
-
-def _retry_theme_tcl(call) -> None:
-    """テーマ tcl に触る `call` を、一過性の read 失敗だけ再試行して呼ぶ（B-082②）。"""
-    import tkinter as tk
-
-    last = None
-    for _ in range(_TK_INIT_ATTEMPTS):
-        try:
-            call()
-            return
-        except tk.TclError as e:
-            last = e
-            if _interpreter_is_poisoned(e):
-                raise PoisonedInterpreter(str(e)) from e
-            time.sleep(0.05)
-    _no_display(f"sv_ttk テーマを読み込めない（{_TK_INIT_ATTEMPTS} 回試行）: {last}")
-
-
-# 表示環境の監視（`views.theme.watch_display`）を検証するテストは、**デバウンスを
-# 挟んだ非同期の通知**を待つ。ここを「決め打ちの締め切りまで `mainloop` を回す」
-# 形で書くと、機械の速さに結果を賭けることになる（B-082）。
-_PUMP_POLL_MS = 10
-
-
-def pump_until(root, done, timeout_ms: int = 5000, poll_ms: int = _PUMP_POLL_MS) -> bool:
-    """**条件が立つまで** Tk のイベントを回す（時間では待たない）。
-
-    ⚠️ **旧い書き方**＝`root.after(デバウンス + 80, root.quit)` → `root.mainloop()`。
-    これは「デバウンスの消化が締め切りに間に合う」ことに賭けている。実測した余裕は
-    **77ms しかなく**（B-082 の調査・単独実行 20 回）、デバウンスは `<Configure>`
-    が 1 つ来るたびに**測り直される**ので、`update()` の後にウィンドウの配置が確定して
-    もう 1 つ届けば、その場で締め切りを超える。⇒ **製品は正しいのにゲートだけが
-    赤くなる**（[[feedback-promote-recurring-checks]] の壊れ方②）。
-
-    ⛔ **待ち時間を延ばして誤魔化さない。** `timeout_ms` は「壊れているものを
-    赤くする」ための上限であって、**待ちの長さで結果が変わってはいけない**
-    （立つ条件なら 260ms 前後で返る）。
-
-    Args:
-        root: イベントを回す Tk ウィジェット。
-        done: 立ったかどうかを返す呼び出し可能。**副作用を持たせない**。
-        timeout_ms: 立たなかったと諦めるまでの上限。
-        poll_ms: 回す間隔。
-
-    Returns:
-        条件が立てば `True`、上限まで立たなければ `False`。⚠️ **戻り値は捨ててよい**
-        ＝呼び出し側は今までどおり assert で落ちる（上限まで待った後に、同じ
-        メッセージで赤くなる）。
-    """
-    deadline = time.monotonic() + timeout_ms / 1000
-    while True:
-        root.update()                                  # 溜まったイベント（`after` 含む）を消化
-        if done():
-            return True
-        if time.monotonic() >= deadline:
-            return False
-        time.sleep(poll_ms / 1000)

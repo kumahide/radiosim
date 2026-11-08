@@ -220,7 +220,9 @@ function scopedTests(cwd, allPaths) {
   for (const raw of allPaths) {
     const path = norm(raw);
     if (/^tests\/test_.*\.py$/.test(path)) {
-      targets.add(path); // a changed test is its own target
+      // a changed test is its own target — unless the change deleted it
+      // (pytest stops on a missing path: 4.0 stage 11a removed 11 old-UI tests)
+      if (existsSync(join(cwd, path))) targets.add(path);
       continue;
     }
     const own = ownTestFor(path);

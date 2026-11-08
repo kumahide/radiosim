@@ -27,9 +27,8 @@ from core import models              # noqa: E402
 from core import simulation as sim   # noqa: E402
 from core import terrain_grid as tg  # noqa: E402
 from core import units               # noqa: E402
-from views import frozen_common      # noqa: E402
 
-ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+ROOT =os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 # ============================================================
@@ -187,13 +186,15 @@ def test_no_window_resolves_the_sample_count_by_itself():
 
     🔑 見せる側が自前で解くと、**画面に出た N と実際に使われた N がずれる余地**が
     できる。しかもズレは誰にも見えない（両方それらしい数字に見える）。
-    ⇒ 面を列挙せず `views/` を走査する向きにしてある＝次に足した 1 ウィンドウでも効く。
+    ⇒ 面を列挙せず画面の層を走査する向きにしてある＝次に足した 1 面でも効く。
+    画面の層は `webui/`（旧画面 `views/` は 4.0 ステージ11a で撤去）。
     """
-    views = os.path.join(ROOT, "views")
+    screen = os.path.join(ROOT, "webui")
+    names = sorted(n for n in os.listdir(screen) if n.endswith(".py"))
+    assert names, "webui/ に .py が無い＝この検査は何も見ていない"
     offenders = [
-        name for name in sorted(os.listdir(views))
-        if name.endswith(".py")
-        and _calls_recommended_samples(os.path.join(views, name))
+        name for name in names
+        if _calls_recommended_samples(os.path.join(screen, name))
     ]
     assert not offenders, (
         f"{offenders} が点数を自分で解いている＝`simulation.resolve_samples` を"
@@ -328,21 +329,6 @@ def test_a_fixed_n_run_round_trips_only_for_direct_callers(tmp_path):
     # 🔑 **製品経路は固定 N を運ばない**ことを、そう書いてある側で確かめる
     #    （代役が本物より寛容だと、その差の分だけ検査は空振りする）。
     assert "samples" not in config.select_sim(saved)
-
-
-def test_the_band_does_not_invent_a_level_it_will_not_use():
-    """バーは、段階を持たない基底に**既定を差し込まない**こと（B-140）。
-
-    🔴 中継経路はバーを表示したうえで**基底をそのまま実行へ渡す**
-    （`run_multihop(path, self._base_params)`）ので、表示だけ「中」にすると
-    **バーの申告と実行がずれる**。⇒ 名乗れないものは名乗らない（`—`）。
-    """
-    shown = frozen_common.display_value("resolution", "")
-    assert shown == frozen_common.NOT_APPLICABLE
-    for level in tg.RESOLUTION_KEYS:
-        assert shown != i18n.t(f"res_{level}")
-    # 対の検査＝段階があるときは従来どおり表示ラベルを出す。
-    assert frozen_common.display_value("resolution", "high") == i18n.t("res_high")
 
 
 # ============================================================

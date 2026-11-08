@@ -366,6 +366,7 @@ class WebServer:
             snap["sheet_spec"] = sheet_spec()
             snap["db_digits"] = units.DB_DECIMALS
             snap["basemap"] = self.basemap
+            snap["basemap_attribution"] = exports.map_attribution(self.basemap)
         return snap
 
 

@@ -7,7 +7,7 @@ tests/test_release_check.py
 毎回鳴る網は、本当に赤いときの 🔴🔴 まで読み飛ばされる
 （[[feedback-promote-recurring-checks]] の壊れ方②）。
 
-- **B-294**＝表示依存の刻印は、検査した中身（作業ツリーの `views/`・`tests/`）を名札に
+- **B-294**＝表示依存の刻印は、検査した中身（作業ツリーの `tests/`＝`views/` は Link 1.0 ステージ11a で撤去）を名札に
   する。🔴 以前は `git rev-parse HEAD` を名札にしていた＝コミット前ゲートの全数実行は
   必ず親として刻まれ、push 前の助言が自分のコミットを見つけて鳴った。逆向きに、
   未コミットの変更で回してから戻すと嘘の ✅ になった。
@@ -55,7 +55,7 @@ def _node(repo, expr: str) -> str:
 
 @pytest.fixture()
 def repo(tmp_path, monkeypatch):
-    """views/ tests/ core/ を 1 本ずつ持つ、コミット 1 つの一時リポジトリ。
+    """tests/ に 2 本・core/ に 1 本を持つ、コミット 1 つの一時リポジトリ。
 
     `core.autocrlf=true`＝開発機と同じ設定（作業ツリーは CRLF・blob は LF）。
     """
@@ -67,7 +67,7 @@ def repo(tmp_path, monkeypatch):
     for k, v in (("user.email", "t@example.com"), ("user.name", "t"),
                  ("core.autocrlf", "true"), ("commit.gpgsign", "false")):
         _git(d, "config", k, v)
-    for rel in ("views/a.py", "tests/test_x.py", "core/m.py"):
+    for rel in ("tests/helper.py", "tests/test_x.py", "core/m.py"):
         (d / rel).parent.mkdir(parents=True, exist_ok=True)
         (d / rel).write_bytes(b"x = 1\r\n")
     _git(d, "add", "-A")
@@ -106,7 +106,7 @@ class TestDisplayStampNamesTheTestedContent:
     def test_the_pre_commit_gate_run_covers_the_commit_it_gates(self, repo):
         """🔴 B-294 の症状そのもの＝**コミット前**（HEAD はまだ親）に回した実行が、
         そのコミットを検査済みと認められること。"""
-        (repo / "views" / "a.py").write_bytes(b"x = 2\r\n")
+        (repo / "tests" / "helper.py").write_bytes(b"x = 2\r\n")
         _git(repo, "add", "-A")
         _stamp()                                # この時点の HEAD は親
         _git(repo, "commit", "-q", "-m", "gated")
@@ -118,12 +118,12 @@ class TestDisplayStampNamesTheTestedContent:
 
         🔴 commit を名札にしていたころは、HEAD と一致して ✅ と出た。
         """
-        (repo / "views" / "a.py").write_bytes(b"x = 2\r\n")
+        (repo / "tests" / "helper.py").write_bytes(b"x = 2\r\n")
         _stamp()
-        _git(repo, "checkout", "--", "views/a.py")
+        _git(repo, "checkout", "--", "tests/helper.py")
         line = _line(repo)
         assert "🔴🔴" in line and "✅" not in line, line
-        assert "views/a.py" in line
+        assert "tests/helper.py" in line
 
     def test_a_later_display_commit_rings(self, repo):
         _stamp()
@@ -132,7 +132,7 @@ class TestDisplayStampNamesTheTestedContent:
         assert "🔴🔴" in line and "1 ファイル" in line, line
 
     def test_a_commit_outside_the_scope_does_not_ring(self, repo):
-        """views/ tests/ 以外（CI が見る層）が動いただけでは鳴らさない＝毎コミット鳴る網にしない。"""
+        """tests/ 以外（CI が見る層）が動いただけでは鳴らさない＝毎コミット鳴る網にしない。"""
         _stamp()
         _commit(repo, "core/m.py")
         line = _line(repo)
@@ -148,7 +148,7 @@ class TestDisplayStampNamesTheTestedContent:
         assert "✅" in _line(repo)
 
     def test_a_file_deleted_from_the_worktree_is_not_counted_as_tested(self, repo):
-        (repo / "views" / "a.py").unlink()
+        (repo / "tests" / "helper.py").unlink()
         _stamp()                                # 消えたファイルで落ちないこと
         assert "🔴🔴" in _line(repo), "HEAD にはあるのに回っていないファイルを見落とした"
         _git(repo, "add", "-A")
@@ -161,7 +161,7 @@ class TestDisplayStampNamesTheTestedContent:
 
         head = json.loads(_node(repo, "JSON.stringify(rc.headDisplayFiles(process.cwd()))"))
         assert conftest._display_files(repo) == head
-        assert set(head) == {"views/a.py", "tests/test_x.py"}
+        assert set(head) == {"tests/helper.py", "tests/test_x.py"}
 
     def test_a_legacy_stamp_is_not_green(self, repo):
         """B-294 より前の刻印（commit しか無い）は中身で照らせない＝✅ と言わない。"""

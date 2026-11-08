@@ -523,8 +523,6 @@ def test_pyright_finds_no_type_errors_in_app_modules():
 # （[[feedback-promote-recurring-checks]] 実証10）。**読んでよい側を挙げる。**
 _CONFIG_READ_ALLOWED = {
     "core/config.py":     "定義そのもの",
-    "main.py":            "起動時の読み込み（アプリの入口）",
-    "views/launcher.py":  "凍結の出所＝ランチャーが読んで子ウィンドウへ渡す",
     "webui/__main__.py":  "新しい画面の入口＝起動時に 1 度読んで AppState とサーバーへ渡す"
                           "（4.0 ステージ8）",
     "core/env_facts.py":  "環境事実の収集層＝いまの設定そのものを事実として読む"
@@ -601,9 +599,9 @@ class TestConfigHasOneSource:
         知らなくても検出できることの両方を示す。
         """
         code = "cfg = config.load_config()\n"
-        assert direct_config_reads("views/launcher.py", code) == []
-        assert direct_config_reads("main.py", code) == []
-        assert direct_config_reads("views/まだ存在しないウィンドウ.py", code)
+        assert direct_config_reads("webui/__main__.py", code) == []
+        assert direct_config_reads("core/config.py", code) == []
+        assert direct_config_reads("webui/まだ存在しない面.py", code)
 
     def test_許可リストが実在する(self):
         missing = [n for n in _CONFIG_READ_ALLOWED if not (ROOT / n).exists()]
@@ -696,7 +694,7 @@ class TestAsyncWaitsAreConditional:
         「何を渡すか」の側を実在のファイル名で確かめる。
         """
         rels = [rel for rel, _ in _test_modules_with_text()]
-        assert "tests/test_theme.py" in rels            # テストは見る
+        assert "tests/test_smoke.py" in rels            # テストは見る
         assert "tests/conftest.py" not in rels          # 禁止例を説明する側は見ない
         assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
 
@@ -805,7 +803,7 @@ class TestTkRootsGoThroughConftest:
         仕事）なので、走査面に入れてはいけない。
         """
         rels = [rel for rel, _ in _test_modules_with_text()]
-        assert "tests/test_map_window.py" in rels       # テストは見る
+        assert "tests/test_smoke.py" in rels            # テストは見る
         assert "tests/conftest.py" not in rels          # 建てる側は見ない
         assert not [r for r in rels if not r.startswith("tests/")]   # 製品は見ない
 
@@ -856,7 +854,7 @@ def test_bandit_finds_nothing_at_medium_or_above():
 def test_bandit_targets_follow_the_ci_scope():
     """③ 見る範囲が CI と同じであること＝製品と実験は見る・除外と git の外は見ない。"""
     targets = _bandit_targets()
-    assert "main.py" in targets
+    assert "webui/__main__.py" in targets
     assert any(p.startswith("experiments/") for p in targets)
     assert not [p for p in targets if p.startswith(("tests/", ".claude/"))]
 

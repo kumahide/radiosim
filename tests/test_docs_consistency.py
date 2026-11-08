@@ -33,14 +33,13 @@ from core import version
 ROOT = Path(__file__).resolve().parent.parent
 
 # --- 正準リスト（実装＝真実）-------------------------------------------------
-VIEW_MODULES = sorted(p.name for p in (ROOT / "views").glob("*.py") if p.name != "__init__.py")
 TEST_FILES = sorted(p.name for p in (ROOT / "tests").glob("test_*.py"))
 # 層構成図とファイル構成ツリーに必ず現れるべき core/ report/ のモジュール。
 #
 # 🔴 **列挙をやめて実装から導く**（2026-08-15・②文書レビュー）＝以前は手書きの
 # allowlist で、**`core/runtime_env.py` が丸ごと抜けていた**（実ファイルと SVG には
 # 在るのに開発者文書のツリーに無く、しかもこのリストに無いので**検出できなかった**）。
-# ⇒ views/tests と同じく**ファイルシステムから導き**、図の抽象度で省くものだけを
+# ⇒ tests と同じく**ファイルシステムから導き**、図の抽象度で省くものだけを
 # 明示的に除く。**列挙で塞ぐ穴は、次に足す 1 本で開く。**
 #: 図の抽象度では省く設計のもの（ここだけが手書きで、増えたら理由を書く）。
 ARCH_EXCLUDED = {"__init__.py", "i18n.py", "version.py"}
@@ -101,7 +100,7 @@ def _deps() -> list[str]:
 @pytest.mark.parametrize("doc", DEV_DOCS)
 def test_file_tree_lists_all_modules(doc):
     tree = _section(_read(doc), ["ファイル構成", "File Structure"])
-    for name in VIEW_MODULES + CORE_ARCH_MODULES + APP_MODULES + TEST_FILES:
+    for name in CORE_ARCH_MODULES + APP_MODULES + TEST_FILES:
         assert name in tree, f"{doc}: file-structure tree is missing {name}"
 
 
@@ -135,7 +134,7 @@ def _architecture_text(doc: str) -> str:
 @pytest.mark.parametrize("doc", DEV_DOCS)
 def test_architecture_diagram_lists_all_modules(doc):
     arch = _architecture_text(doc)
-    for name in VIEW_MODULES + CORE_ARCH_MODULES:
+    for name in CORE_ARCH_MODULES:
         assert name in arch, f"{doc}: architecture layer diagram is missing {name}"
 
 
@@ -706,215 +705,6 @@ _MODE_DOCS = [
 ]
 
 
-def _map_mode_i18n_keys() -> list[str]:
-    """マップウィンドウのモードの i18n キーを**実装から**採る（`_menu_i18n_keys` と同型）。
-
-    ⚠️ ここに手書きの一覧を置かない。**2026-08-15 に実際そうなっていた**（B-090・
-    Codex 独立レビュー 7 巡目）＝`["map_mode_coords", "map_mode_append",
-    "map_mode_cache"]` の 3 件のまま中継点モードが対象外で、全文書から中継点の
-    記述が消えてもこのゲートは緑だった。**同じファイルの `_button_keys` の
-    コメントは既に「モード 4 つ」と書いており、4 と 3 が同居していた。**
-    ⇒ [[feedback-user-examples-are-classes]]＝列挙で塞いだ穴は次に足す 1 本で開く。
-    """
-    src = (ROOT / "views" / "map_window.py").read_text(encoding="utf-8")
-    m = re.search(r"for value, key in \[(.*?)\]:", src, re.S)
-    assert m, "views/map_window.py: モードのタプル列が見つからない（このゲートが空振りする）"
-    keys = re.findall(r'"([a-z0-9_]+)"\s*\)', m.group(1))
-    assert keys, "views/map_window.py: モードの i18n キーを 1 つも採れていない"
-    return keys
-
-
-_MENU_SECTION_HEADERS = ["メニュー", "Menus"]
-
-
-def _menu_i18n_keys() -> list[str]:
-    """`_build_menu` が実際に使っている i18n キーを**実装から**採る。
-
-    ⚠️ ここに手書きの一覧を置かない。列挙で塞いだ穴は**メニュー項目を 1 つ足した
-    瞬間に開く**（→ [[feedback-promote-recurring-checks]] の実証 10）。実装を単一
-    ソースにしておけば、項目を足した人が README も直すまでこのゲートが赤いままになる。
-    """
-    # ⚠️ 2.7 スライス A でメニューは `views/launcher_menu.py`（`SimLauncher` の
-    #    Mixin）へ移った。**ここが「見つからない」で落ちて教えた**＝場所を書いた
-    #    ゲートは、移動そのものを検出できる形になっている。
-    src = (ROOT / "views" / "launcher_menu.py").read_text(encoding="utf-8")
-    m = re.search(r"\n    def _build_menu\b.*?(?=\n    def )", src, re.S)
-    assert m, "views/launcher_menu.py: _build_menu が見つからない（このゲートが空振りする）"
-    body = m.group(0)
-    keys = set(re.findall(r'i18n\.t\("([a-z0-9_]+)"\)', body))
-    # f-string 経由（例: `i18n.t(f"coord_fmt_{value}")`）＝接頭辞を持つキー族を
-    # まるごと対象にする。ここも名前で拾うので、族に値が増えても追従する。
-    for prefix in re.findall(r'i18n\.t\(f"([a-z0-9_]+)\{', body):
-        keys |= {k for k in i18n._STRINGS["en"] if k.startswith(prefix)}
-    return sorted(keys)
-
-
-@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
-def test_menu_items_are_documented(doc, lang):
-    """メニューバーの**全項目**が、各 README の「メニュー」セクションに載っているか。
-
-    背景（2026-08-03・ユーザー指摘）: セクション名が「UI 設定」だったころ、載っていたのは
-    12 項目中 6 項目だけで、**ファイルメニュー 4 項目が丸ごと欠けていた**——
-    2.6 の目玉であるプロジェクト機能の唯一の入口が、メニュー表に 1 行も無い状態。
-    しかもセクションにはメニューでないもの（マップウィンドウ）が同居していた。
-    「実装にメニューを足したが README を直さなかった」は放置すれば必ず再発する型
-    なので、`test_map_mode_labels_listed` と同じ形のゲートにして止める。
-    """
-    section = _section(_read(doc), _MENU_SECTION_HEADERS)
-    for key in _menu_i18n_keys():
-        label = i18n._STRINGS[lang][key]
-        assert label in section, (
-            f"{doc}: メニュー項目 {label!r} ({key}) が「メニュー」セクションに載っていない"
-        )
-
-
-def test_the_map_mode_scanner_sees_every_mode():
-    """導出が**空振りしていない**ことを positive control で固定する（B-090）。
-
-    ⚠️ 手書きの一覧に戻す意図ではない。ここが止めるのは
-    「`for value, key in [...]` が動いて `re` が 0 件になり、
-    `test_map_mode_labels_listed` が**何も検査せず緑**になる」形
-    （[[feedback-radiosim-rules]]＝空振りするゲートは自分では言わない）。
-    """
-    keys = _map_mode_i18n_keys()
-    assert "map_mode_waypoints" in keys, "中継点モードを採れていない（B-090 の再発）"
-    assert len(keys) >= 4, f"モードが 4 つ未満しか採れていない: {keys}"
-    unknown = [k for k in keys if k not in i18n._STRINGS["en"]]
-    assert not unknown, f"i18n に無いキーを拾っている: {unknown}"
-
-
-@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
-def test_map_mode_labels_listed(doc, lang):
-    """マップウィンドウの全モードのボタンラベル（i18n が単一ソース）が各 README に
-    載っているか。連続追加モードの追加のようなモード新設を反映し忘れるのを捕捉する
-    （README が実際の UI ボタン名を名乗ることも保証する）。"""
-    text = _read(doc)
-    for key in _map_mode_i18n_keys():
-        label = i18n._STRINGS[lang][key]
-        assert label in text, f"{doc}: map mode label {label!r} ({key}) is not documented"
-
-
-# --- 文書が名乗るボタン名が、実装に在るか -------------------------------------
-# 🔑 **上の 2 つと向きが逆**。`test_menu_items_are_documented` と
-# `test_map_mode_labels_listed` は「実装のラベルが文書に載っているか」を見るので、
-# **ボタンを改名して文書を直し忘れた**場合は素通りする（古い名前が文書に残り、
-# 新しい名前がどこかに在れば緑）。2026-08-10 の 2.7RC1 実機確認でユーザーが
-# 指摘した 2 件——`▶ 実行`（I-029 で `▶` を落とした）と`個別シミュレーション
-# ボタン`（I-029 で「実行」へ改名）——は、まさにこの向きの穴だった。
-#
-# ⇒ **文書が「〜ボタン」と名指しした字は、i18n の実値に在ること。**
-_BUTTON_MENTION = {
-    # 「…」ボタン ／ **…** ボタン ／ 見出し末尾の「…ボタン」
-    "ja": [r"「([^」]{1,30})」\s*ボタン",
-           r"\*\*([^*]{1,30})\*\*\s*ボタン",
-           r"^#{2,4}\s*\d*\.?\s*(.{1,30}?)ボタン\s*$"],
-    # **…** button ／ "…" button ／ 見出しの `… Button`
-    "en": [r"\*\*([^*]{1,40})\*\*\s+button",
-           r'"([^"]{1,40})"\s+[Bb]utton',
-           r"^#{2,4}\s*\d*\.?\s*(?:The\s+)?[\"“]?(.{1,40}?)[\"”]?\s+Button\s*$"],
-}
-
-#: 実装に無くても文書に書いてよいボタン名。**理由を必ず書く**（空で始まっている）。
-_BUTTON_MENTION_ALLOWED: dict[str, str] = {}
-
-
-def _norm_label(s: str) -> str:
-    """比較用に空白と装飾を落とす（`↻ From Launcher` と `↻From Launcher` を同一視）。"""
-    return s.strip().strip("*「」\"“”").replace(" ", "").replace("　", "")
-
-
-def _button_keys() -> set[str]:
-    """**画面が使っている** i18n キーを実装から採る（`views/` に現れるものすべて）。
-
-    ⚠️ `i18n` の全値と照合してはいけない＝**成果物の語まで通ってしまう**。実例＝
-    `個別シミュレーション` は `html_single_mode`（レポートがモードを名乗る出力契約
-    の字）として今も i18n に在るので、全値と比べると「個別シミュレーションボタン」
-    という**存在しないボタン名が緑になる**（2026-08-10 に実際そうなった）。
-    ⇒ **`report/` からしか引かれないキーを入れない**ことがこのゲートの肝。
-
-    ⚠️ **`ttk.Button(text=i18n.t("…"))` の形だけを採ってはいけない**（2026-08-10・
-    Codex 独立レビュー P2）＝**実在するボタンの多くはキーが変数**で、
-    `views/map_window.py` のモード 4 つ（`map_mode_*`）も
-    `views/multihop.py` の `mh_add_point` / `mh_from_map` も**ループのタプル**から
-    渡る。AST で `Button` だけを追うと、これらを「実装に無いボタン」と誤判定して
-    **文書に正しいことを書けなくなる**（＝毎回鳴るゲート）。⇒ 拾うのは
-    **`views/` に現れる文字列リテラルのうち i18n のキーであるもの**。ボタン以外の
-    画面語も混ざるが、このゲートが問うのは「その字が画面に在るか」なので害はない。
-    """
-    known = set(i18n._STRINGS["en"])
-    keys: set[str] = set()
-    for path in (ROOT / "views").glob("*.py"):
-        for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
-            if (isinstance(node, ast.Constant) and isinstance(node.value, str)
-                    and node.value in known):
-                keys.add(node.value)
-    return keys
-
-
-def _implemented_labels(lang: str) -> set[str]:
-    strings = i18n._STRINGS[lang]
-    return {_norm_label(strings[k]) for k in _button_keys() if k in strings}
-
-
-def _button_mentions(text: str, lang: str) -> list[str]:
-    """文書が「〜ボタン」と名指ししている字を、実装に無いものだけ返す。"""
-    known = _implemented_labels(lang)
-    missing = []
-    for pattern in _BUTTON_MENTION[lang]:
-        for m in re.finditer(pattern, text, re.MULTILINE):
-            label = _norm_label(m.group(1))
-            if label and label not in known and label not in _BUTTON_MENTION_ALLOWED:
-                missing.append(m.group(1).strip())
-    return missing
-
-
-@pytest.mark.parametrize("doc,lang", _MODE_DOCS)
-def test_documented_button_names_exist_in_the_app(doc, lang):
-    """文書のボタン名が、i18n の実値として実在するか（改名の置き去りを捕捉）。
-
-    ゲートの壊れ方 3 点（[[feedback-promote-recurring-checks]]）:
-    - **一度も落ちない**: `test_the_button_scanner_catches_a_rename` が、改名前の
-      文言（`▶ 実行`）を毎回スキャンして赤くなることを確かめる。
-    - **毎回鳴る**: 例外は `_BUTTON_MENTION_ALLOWED`＝**0 件**で始めている。拾うのは
-      「〜ボタン」と明示した箇所だけなので、地の文の言い換えでは鳴らない。
-    - **間違ったものを要求している**: 要求は「**その字のボタンが在る**」であって
-      文言の良し悪しではない。ja / en それぞれの実値と照合するので、片方の言語だけ
-      直した状態も捕まる。
-    """
-    missing = _button_mentions(_read(doc), lang)
-    assert not missing, (
-        f"{doc}: 実装に無いボタン名を書いている（改名の置き去り）: {missing}"
-    )
-
-
-def test_the_button_scanner_catches_a_rename():
-    """改名前の文言をスキャナが必ず捕まえること（変異検証）。"""
-    assert _button_mentions("**▶ 実行** ボタンを押すと", "ja") == ["▶ 実行"]
-    assert _button_mentions("### 2. 個別シミュレーションボタン", "ja") == ["個別シミュレーション"]
-    assert _button_mentions("Click the **Relay Route** button.", "en") == ["Relay Route"]
-
-
-def test_the_button_scanner_accepts_the_real_labels():
-    """実在するラベルでは鳴らないこと（毎回鳴るゲートにしない）。"""
-    assert _button_mentions("**実行** ボタンを押すと", "ja") == []
-    assert _button_mentions("「↻ ランチャーから更新」ボタン", "ja") == []
-    assert _button_mentions("Click the **Relay Path** button.", "en") == []
-
-
-def test_the_button_scanner_accepts_labels_whose_key_is_a_variable():
-    """キーがループ変数で渡るボタンも「実在」と認めること（Codex P2・変異検証）。
-
-    `views/map_window.py` のモード 4 つと `views/multihop.py` の 2 つは、キーが
-    タプルから渡るので `Button(text=i18n.t("…"))` の形では拾えない。**文書が
-    これらを名指しできなくなる**のが誤検知の実害なので、両言語で確かめる。
-    """
-    for key in ("map_mode_append", "mh_add_point", "mh_from_map"):
-        assert key in _button_keys(), f"{key} が画面のキーとして拾えていない"
-        for lang, template in (("ja", "**{}** ボタン"), ("en", "the **{}** button")):
-            label = i18n._STRINGS[lang][key]
-            assert _button_mentions(template.format(label), lang) == []
-
-
 # --- 文書がウィンドウを名指しする「枠」に、実装のウィンドウ名が入っているか --------------------
 # 🔑 **上のボタン名ゲートより広い穴を、前置詞ではなく“位置”で塞ぐ**（I-079）。
 # `test_documented_button_names_exist_in_the_app` が見るのは「〜ボタン」と名指し
@@ -1040,13 +830,11 @@ def test_the_usage_frame_ignores_prose_that_merely_starts_alike():
 CI_WORKFLOW = ".github/workflows/ci.yml"
 
 # 直下に置いてよい `.py`（層に属さないもの）とその理由。
-_ROOT_PY_ALLOWED = {
-    "main.py": "アプリの入口＝層ではない（起動して views を組み立てるだけ）",
-}
+_ROOT_PY_ALLOWED: dict[str, str] = {}
 
 
 def test_no_app_module_sits_outside_a_layer():
-    """アプリのモジュールが `core/` `report/` `views/` のどれかに属すること。
+    """アプリのモジュールが `core/` `report/` `webui/` のどれかに属すること。
 
     直下へ 1 本置くだけで、その版のうちは誰も困らない。困るのは次の分割のとき
     で、**どの層のものか誰にも分からないまま参照だけ増える**（I-058 が消した
@@ -1057,8 +845,8 @@ def test_no_app_module_sits_outside_a_layer():
     )
     assert not stray, (
         f"層に属さないモジュールが直下にある: {stray}。"
-        "`core/`（土台）・`report/`（出力）・`views/`（画面）のどれかへ置くこと"
-        "（依存は views → report → core の一方向）。"
+        "`core/`（土台）・`report/`（出力）・`webui/`（画面）のどれかへ置くこと"
+        "（依存は webui → report → core の一方向）。"
     )
 
 
@@ -1219,11 +1007,18 @@ def test_public_docs_use_the_glossary_wording(doc):
 # `radiosim.spec` の同梱一覧から引く＝新しい日本語の同梱文書を足したら、
 # 何も書かなくてもこの検査に入る。
 def _bundled_paths() -> set[str]:
-    """`radiosim.spec` の `datas` が同梱するソース側のパス。"""
-    spec = (ROOT / "radiosim.spec").read_text(encoding="utf-8")
-    return {m.group(1).replace("\\", "/")
-            for m in re.finditer(
-                r'\(\s*"([^"]+\.(?:png|svg|md)|LICENSE)"\s*,\s*"[^"]*"\s*\)', spec)}
+    """利用者に届く文書と図（旧の `radiosim.spec` の `datas` と同じ集合をファイルから導く）。
+
+    🔑 4.0 ステージ11a で旧画面と `radiosim.spec` を撤去した。Link の配布に文書をどう載せるかは
+    ステージ11f で決める＝それまでは旧の同梱と同じ集合（`docs/` の文書と図・LICENSE・ロゴ）を
+    並べずに導く＝新しい文書を足したら何も書かなくても検査に入る性質は保つ。
+    `docs/screenshots.md` は同梱しない（`_PUBLIC_JA_EXTRAS` が別に持つ）。
+    """
+    found = {p.relative_to(ROOT).as_posix() for p in (ROOT / "docs").glob("*.md")}
+    found.discard("docs/screenshots.md")
+    found |= {p.relative_to(ROOT).as_posix() for p in (ROOT / "docs" / "images").glob("*")
+              if p.suffix in (".png", ".svg")}
+    return found | {"LICENSE", "icon.png", "logo.png"}
 
 
 _SVG_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
@@ -1519,7 +1314,7 @@ def test_images_in_the_bundled_manual_are_also_bundled(doc):
     bundled = _bundled_paths()
     missing = sorted(r for r in refs if r not in bundled)
     assert not missing, (
-        f"{doc} が参照する画像が radiosim.spec の datas に無い"
+        f"{doc} が参照する画像が 同梱の集合に無い"
         f"（exe の中だけ絵が出ない）: {missing}"
     )
 
@@ -1528,74 +1323,6 @@ def test_images_in_the_bundled_manual_are_also_bundled(doc):
 def test_images_in_the_bundled_manual_exist_on_disk(doc):
     for ref in sorted(_image_refs(doc)):
         assert (ROOT / ref).exists(), f"{doc}: 参照先が無い {ref}"
-
-
-def test_the_manual_viewer_inlines_any_bundled_image_not_just_the_logo(tmp_path):
-    """描画時の data URI 化が**画像 1 枚の決め打ちでない**こと。
-
-    Tier 1 の表示は一時ディレクトリへ HTML を書くので、相対パスの画像は必ず壊れる。
-    `logo.png` だけを畳む実装のままスクショを足すと、**新しい画像だけ黙って壊れる**。
-
-    ⚠️ **同梱物の外を読まないこと**は、**実在するファイル**で確かめる。存在しない
-    パスで試すと「無いから素通し」で緑になり、防御を外しても落ちない（最初の実装が
-    実際にそうなっていた＝理由なく通るテスト）。
-    """
-    from views.launcher_menu import inline_local_images
-
-    png = (ROOT / "logo.png").read_bytes()
-    base = tmp_path / "bundle"
-    (base / "docs" / "images").mkdir(parents=True)
-    (base / "logo.png").write_bytes(png)
-    (base / "docs" / "images" / "shot.png").write_bytes(png)
-    (tmp_path / "outside.png").write_bytes(png)          # **実在する**同梱物の外
-
-    # 図は SVG で持つ（層構成図）＝ラスタ画像だけ畳む実装だと**図だけ**出ない。
-    (base / "docs" / "images" / "arch.svg").write_text(
-        '<svg xmlns="http://www.w3.org/2000/svg"/>', encoding="utf-8")
-
-    body = ('<img src="logo.png">'
-            '<img src="docs/images/shot.png">'
-            '<img src="docs/images/arch.svg">'
-            '<img src="https://example.com/x.png">'
-            '<img src="../outside.png">')
-    out = inline_local_images(body, str(base))
-
-    assert out.count("data:image/png;base64,") == 2, "同梱画像が 2 枚とも畳まれていない"
-    assert "data:image/svg+xml;base64," in out, "同梱の SVG 図が畳まれていない"
-    assert 'src="https://example.com/x.png"' in out, "外部 URL を触っている"
-    assert 'src="../outside.png"' in out, "同梱物の外のファイルを読んでいる"
-
-
-def test_the_manual_viewer_resolves_images_from_the_document_not_the_root(tmp_path):
-    """画像の解決基準が**その文書のあるディレクトリ**であること（`docs/` 移設）。
-
-    マニュアルは `docs/manual_*.md` にあり、参照は Markdown の意味どおり
-    **その文書からの相対**（`images/…`・`../logo.png`）。⇒ 根から解決すると
-    **アプリでだけ絵が出ない**（GitHub では出るので気づきにくい）。
-
-    ⚠️ **境界は根のまま**＝`../logo.png` は同梱物の中なので畳み、そこからさらに
-    外へ出るものは畳まない。**この 2 つを 1 つのテストで見る**＝基準だけ動かして
-    境界も一緒に動かす直し方（＝任意のファイルを読める口）を落とすため。
-    """
-    from views.launcher_menu import inline_local_images
-
-    png = (ROOT / "logo.png").read_bytes()
-    base = tmp_path / "bundle"
-    (base / "docs" / "images").mkdir(parents=True)
-    (base / "logo.png").write_bytes(png)
-    (base / "docs" / "images" / "shot.png").write_bytes(png)
-    (tmp_path / "outside.png").write_bytes(png)          # **実在する**同梱物の外
-
-    body = ('<img src="images/shot.png">'                # docs/ からの相対
-            '<img src="../logo.png">'                    # 根へ戻る＝同梱物の中
-            '<img src="../../outside.png">')             # 根の外＝触らない
-    out = inline_local_images(body, str(base), str(base / "docs"))
-
-    assert out.count("data:image/png;base64,") == 2, (
-        "文書のあるディレクトリを基準に解決していない"
-        "（`images/…` と `../logo.png` の両方が畳まれること）"
-    )
-    assert 'src="../../outside.png"' in out, "同梱物の外のファイルを読んでいる"
 
 
 # ------------------------------------------------------------
@@ -1627,88 +1354,28 @@ def test_documents_linked_from_the_bundled_manual_are_also_bundled(doc):
     assert refs, f"{doc}: 他の文書へのリンクが 1 つも無い（この検査が空振りしている）"
     missing = sorted(r for r in refs if r not in _bundled_paths())
     assert not missing, (
-        f"{doc} が指す文書が radiosim.spec の datas に無い"
+        f"{doc} が指す文書が 同梱の集合に無い"
         f"（exe でだけリンクが消える）: {missing}"
     )
-
-
-def test_the_manual_viewer_rewrites_links_to_places_that_can_be_opened(tmp_path):
-    """`<a href>` の 3 分岐（一緒に書き出した文書 / 同梱ファイル / 開けない）。
-
-    ⚠️ **開けないものは「リンクを外して字だけ残す」**＝押せるのに何も起きない
-    リンクを作らない。外部 URL とページ内アンカーには触らない。
-    """
-    from views.launcher_menu import rewrite_local_links
-
-    base = tmp_path / "bundle"
-    (base / "docs").mkdir(parents=True)
-    (base / "docs" / "manual.md").write_text("x", encoding="utf-8")
-    (base / "LICENSE").write_text("MIT", encoding="utf-8")
-    (tmp_path / "outside.md").write_text("x", encoding="utf-8")   # **実在する**外
-    names = {str(base / "docs" / "manual.md"): "docs_manual.html"}
-
-    body = ('<a href="manual.md#使い方">M</a>'
-            '<a href="../LICENSE">L</a>'
-            '<a href="../../outside.md">O</a>'
-            '<a href="missing.md">X</a>'
-            '<a href="https://example.com">W</a>'
-            '<a href="#概要">A</a>')
-    out = rewrite_local_links(body, str(base), str(base / "docs"), names)
-
-    assert 'href="docs_manual.html#使い方"' in out, "同梱文書が一緒に書き出した先を向いていない"
-    assert 'href="file:///' in out and "LICENSE" in out, "同梱ファイルが file:// になっていない"
-    assert ">O<" not in out.replace("<a", "@a"), "同梱物の外へのリンクが残っている"
-    assert "outside.md" not in out and "missing.md" not in out, (
-        "開けないリンクが残っている（押せるのに何も起きない）"
-    )
-    assert "O" in out and "X" in out, "リンクを外すときに字まで消している"
-    assert 'href="https://example.com"' in out, "外部 URL を触っている"
-    assert 'href="#概要"' in out, "ページ内アンカーを触っている"
-
-
-def test_the_manual_viewer_writes_every_document_it_can_reach(tmp_path):
-    """辿れる文書が**一式**書き出され、相互リンクが両方向で開けること。
-
-    1 本だけ書き出すと、文書間のリンクは一時ディレクトリに相手がいないので必ず
-    死ぬ。⚠️ 相互参照（A ⇄ B）で**止まる**ことも一緒に見る（推移閉包を素朴に
-    たどると戻ってくる）。
-    """
-    from views.launcher_menu import render_doc_site
-
-    base = tmp_path / "bundle"
-    (base / "docs").mkdir(parents=True)
-    (base / "docs" / "a.md").write_text("[to b](b.md)", encoding="utf-8")
-    (base / "docs" / "b.md").write_text("[to a](a.md)", encoding="utf-8")
-    out = tmp_path / "out"
-    out.mkdir()
-
-    def _to_html(text):                     # markdown ライブラリを使わない最小の変換
-        return re.sub(r"\[([^\]]*)\]\(([^)]+)\)", r'<a href="\2">\1</a>', text)
-
-    entry = render_doc_site(str(base / "docs" / "a.md"), str(base), str(out),
-                            _to_html, "ja")
-
-    written = sorted(p.name for p in out.iterdir())
-    assert len(written) == 2, f"辿れる文書が一式そろっていない: {written}"
-    for name in written:
-        href = re.search(r'href="([^"]+)"', (out / name).read_text(encoding="utf-8"))
-        assert href, f"{name}: リンクが消えている"
-        assert (out / href.group(1)).exists(), (
-            f"{name}: リンク先 {href.group(1)} が書き出されていない"
-        )
-    assert Path(entry).name in written
 
 
 def test_the_license_text_ships_with_the_binary():
     """**配布物に `LICENSE` が入っている**こと。
 
-    MIT は「複製物に許諾表示を含めること」を求める。exe を受け取った利用者は
+    MIT は「複製物に許諾表示を含めること」を求める。配布物を受け取った利用者は
     リポジトリを見られないので、**同梱されていなければライセンス本文に触れられない**。
     ⚠️ 2026-08-09 まで実際に入っていなかった（README にライセンスを書き足そうとして
     発覚）＝**表記の不足ではなく配布の不備**。
+    🔑 4.0 ステージ11a で旧画面の `radiosim.spec` を撤去した＝いまの配布は
+    `buildtools/build_link.py` の `build_tree` が組む（同梱の集合は 11f で作り直す）。
     """
-    assert "LICENSE" in _bundled_paths(), (
-        "radiosim.spec の datas に LICENSE が無い（配布物にライセンス本文が入らない）"
+    path = ROOT / "buildtools" / "build_link.py"
+    text = path.read_text(encoding="utf-8")
+    fn = next(n for n in ast.parse(text).body
+              if isinstance(n, ast.FunctionDef) and n.name == "build_tree")
+    src = ast.get_source_segment(text, fn) or ""
+    assert '"LICENSE"' in src, (
+        "build_link.build_tree が LICENSE を写していない（配布物にライセンス本文が入らない）"
     )
 
 

@@ -81,13 +81,16 @@ _ATTR_KEY_PHOTO = "tm_attr_photo"
 _LatLon = tuple[float, float]
 
 
-def _resolve_attribution(source_id: str) -> str:
+def attribution_for(source_id: str) -> str:
     """`source_id` → 出典表記の文言（B-248）。
 
     組み込み（`pale`/`photo`）は i18n キー越し。宣言した外部ソースは
-    `spec.attribution`（生文字列・翻訳しない＝地図ウィンドウの
-    `_all_tile_layers()` と同じ扱い）。未知の `source_id` は `"pale"` へ
+    `spec.attribution`（生文字列・翻訳しない）。未知の `source_id` は `"pale"` へ
     フォールバック。
+
+    🔑 帳票へ焼く地図と画面の地図（`webui/server.py` が最初の状態に載せる）が
+    **この 1 本を引く**（B-133）＝航空写真を見ながら「出典: 淡色地図」を生まない。
+    4.0 ステージ11a で旧画面と一緒に私有の名前（`_resolve_attribution`）から改めた。
     """
     if source_id == "pale":
         return i18n.t(_ATTR_KEY_PALE)
@@ -122,7 +125,7 @@ def _paste_attribution(img: "Image.Image", text: str) -> None:
     `render_paths_map` の戻り値を使うので、ここ 1 か所で全面が満たされる。
 
     ⚠️ **文言はタイルのレイヤと対で保つ**＝地図ウィンドウの選択に追従する
-    （B-248）ので、呼び出し側が `_resolve_attribution(source_id)` で解決した
+    （B-248）ので、呼び出し側が `attribution_for(source_id)` で解決した
     ものをそのまま渡す（レイヤを替えた日に嘘の出典が焼かれないようにする）。
     """
     # 字の大きさは**この画像の幅**から決める（B-135）＝帳票では A4 幅へ縮めて
@@ -337,7 +340,7 @@ def render_path_map(
         arrow = map_graphics.north_arrow(-sin_a, -cos_a)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
-        _paste_attribution(cropped, _resolve_attribution(basemap_source_id))
+        _paste_attribution(cropped, attribution_for(basemap_source_id))
         return cropped
     except Exception:
         logger.warning("report_map: failed to render path map", exc_info=True)
@@ -524,7 +527,7 @@ def render_paths_map(
         arrow = map_graphics.north_arrow(0.0, -1.0)
         cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
 
-        _paste_attribution(cropped, _resolve_attribution(basemap_source_id))
+        _paste_attribution(cropped, attribution_for(basemap_source_id))
         return cropped
     except Exception:
         logger.warning("report_map: failed to render paths map", exc_info=True)

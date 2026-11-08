@@ -516,15 +516,26 @@ def test_unknown_fields_are_not_silently_dropped(tmp_path):
 def test_the_helper_is_not_bundled_with_the_main_app():
     """本体の配布物に `apps/` が混ざらないこと（対で置く「無いことの検査」）。
 
-    ⚠️ いま入っていないのは、`main.py` がこのアプリを引いていないからで、守っている
+    ⚠️ いま入っていないのは、配布の道具がこのアプリを引いていないからで、守っている
     からではない。⇒ 同梱一覧に名前が出たら落ちる形で固定する（別アプリを配るなら
     その版で**意図して**この検査を書き換える）。
+
+    4.0 ステージ11a で旧画面の `radiosim.spec` を消した＝見る先を新しい画面の配布の
+    道具（`buildtools/build_link.py` の `package_sources()`）へ移した。
     """
-    spec = Path(__file__).resolve().parent.parent / "radiosim.spec"
-    assert "apps/" not in spec.read_text(encoding="utf-8"), (
-        "radiosim.spec が apps/ を同梱しようとしている。"
-        "実測補助は本体とは別のアプリで、本体の配布物には入らない。"
-    )
+    import importlib.util                                      # noqa: PLC0415
+
+    script = Path(__file__).resolve().parent.parent / "buildtools" / "build_link.py"
+    spec = importlib.util.spec_from_file_location("build_link_for_field", script)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    bundled = module.package_sources()
+    assert bundled, "同梱する包みを 1 つも読めていない（走査が壊れた）"
+    for name, folder in bundled:
+        assert name != "apps" and "apps" not in Path(folder).parts, (
+            f"build_link.py が apps/ を同梱しようとしている: {name}={folder}。"
+            "実測補助は本体とは別のアプリで、本体の配布物には入らない。"
+        )
 
 
 def test_sample_columns_must_match(tmp_path):

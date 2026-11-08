@@ -168,12 +168,6 @@ class TestAllFlowsUseResolver:
         src = pathlib.Path(batch.__file__).read_text(encoding="utf-8")
         assert any(c in src for c in self._RESOLVER_CALLS)
 
-    def test_scenario_output_uses_resolver(self):
-        """条件探索（4 つ目のフロー）＝save_dir も解決器由来。"""
-        import views.scenario
-        src = pathlib.Path(views.scenario.__file__).read_text(encoding="utf-8")
-        assert any(c in src for c in self._RESOLVER_CALLS)
-
     # `sys.executable` を持ってよいファイルと、その理由。
     # ⚠️ **禁じているのは「exe の位置から*書き込み先*を決めること」**で、
     # `sys.executable` という字そのものではない。⇒ 別の用途で必要な file は
@@ -196,7 +190,7 @@ class TestAllFlowsUseResolver:
         offenders = []
         # 直下＋3 層すべてを見る（2.7 スライス H で層がディレクトリになった）。
         paths = sorted(pathlib.Path(REPO_ROOT).glob("*.py"))
-        for layer in ("core", "report", "views", "webui"):
+        for layer in ("core", "report", "webui"):
             paths += sorted(pathlib.Path(REPO_ROOT, layer).glob("*.py"))
         for path in paths:
             src = path.read_text(encoding="utf-8")
@@ -305,19 +299,25 @@ class TestGreenMeansItRan:
 
     # -- 網① 宣言された環境だけ skip ---------------------------
     def test_display_failure_is_a_skip_only_when_headless_is_declared(self, monkeypatch):
-        """宣言があれば skip（CI）・無ければ fail（開発機）。"""
-        import conftest
+        """宣言があれば skip（CI）・無ければ fail（開発機）。
 
+        表示に依る口はいま `require_burnable_font`（図に焼く字のフォント）だけ
+        （Tk の根を作る口は旧画面と一緒に撤去＝4.0 ステージ11a）。
+        """
+        import conftest
+        from report import map_graphics
+
+        monkeypatch.setattr(map_graphics, "load_font", lambda px, text: object())
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", True)
         with pytest.raises(BaseException) as declared:   # Skipped/Failed は BaseException
-            conftest._no_display("表示なし")
+            conftest.require_burnable_font("字")
         assert declared.errisinstance(_SKIPPED), (
             "ヘッドレスを宣言した環境で skip 以外になった＝CI が赤くなる"
         )
 
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
         with pytest.raises(BaseException) as undeclared:
-            conftest._no_display("表示なし")
+            conftest.require_burnable_font("字")
         assert not undeclared.errisinstance(_SKIPPED), (
             "表示があるはずの環境で skip へ倒している＝GUI 配線を 1 つも検査せずに"
             "緑になる（2026-08-07 に実測した事故そのもの）。"
@@ -500,14 +500,13 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
-        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         self._finish_with(conftest, self._reporter({}), collected=1537, whole_suite=True)
 
         assert stamp.exists(), "回ったのに刻印が残らない＝release-check が毎回鳴る"
         data = json.loads(stamp.read_text(encoding="utf-8"))
         assert data["ran"] == 1537
         assert len(data["commit"]) == 40, "commit を刻んでいない＝いつの木で回したか読めない"
-        # B-294＝照合の名札は中身（検査した views/ tests/ の blob）。
+        # B-294＝照合の名札は中身（検査した tests/ の blob）。
         assert "tests/conftest.py" in data["display_files"], "中身を刻んでいない＝HEAD と照合できない"
 
     def test_a_narrowed_run_is_never_stamped(self, monkeypatch, tmp_path):
@@ -523,7 +522,6 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
-        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         # ⚠️ **全部 `whole_suite=True` から始める**＝位置引数を渡してしまうと、その 1 点
         # だけで弾かれ、`-k` や `--lf` の条件は**一度も試されないまま緑**になる
         # （最初にそう書いて実際に素通りした・2026-08-12）。
@@ -564,17 +562,6 @@ class TestUncoveredFacesAreReported:
         got = (tmp_path / "src.txt").read_text()
         assert (got == "ARGS") is narrowed, f"{argv} → {got}"
 
-    def test_a_run_without_the_old_ui_is_never_stamped(self, monkeypatch, tmp_path):
-        """I-255＝旧画面（Tk）を回していない実行は、全体が緑でも刻まない。"""
-        import conftest
-
-        stamp = tmp_path / "display_run.json"
-        monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
-        monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
-        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", False)
-        self._finish_with(conftest, self._reporter({}), collected=1537, whole_suite=True)
-        assert not stamp.exists(), "Tk を回していないのに「表示のある機械で全部通った」と刻んだ"
-
     def test_a_red_run_is_never_stamped(self, monkeypatch, tmp_path):
         """赤い実行を刻まないこと（通っていないものを「通った」と言わせない）。"""
         import conftest
@@ -582,7 +569,6 @@ class TestUncoveredFacesAreReported:
         stamp = tmp_path / "display_run.json"
         monkeypatch.setattr(conftest, "DISPLAY_RUN_STAMP", stamp)
         monkeypatch.setattr(conftest, "_HEADLESS_DECLARED", False)
-        monkeypatch.setattr(conftest, "_OLD_UI_ALLOWED", True)   # I-255＝旧画面を回した実行
         self._finish_with(conftest, self._reporter({}), collected=1537,
                           whole_suite=True, exitstatus=1)
         assert not stamp.exists()
@@ -619,161 +605,6 @@ class TestUncoveredFacesAreReported:
         session.exitstatus = exitstatus
         conftest.pytest_sessionfinish(session, exitstatus)
         return session.exitstatus
-
-
-# ============================================================
-# Tk オブジェクトを次のテストへ持ち越さない（I-019）
-# ============================================================
-class TestTkGarbageDoesNotEscape:
-    """`destroy()` した Tk が**循環ゴミとして生き延びる**ことへの網。
-
-    生き延びたゴミを製品のワーカースレッドの GC が拾うと、Tcl をメインスレッド
-    外から叩く＝①1 個あたり約 1 秒ワーカーが止まる ②`Tk` 本体が混ざると
-    `Tcl_AsyncDelete` でプロセスごと落ちる（I-019 の `Current thread's C stack
-    trace`）。⇒ **毎テストの teardown で、メインスレッドで回収する。**
-
-    ⚠️ 検査するのは「conftest がゴミを片付けること」＝**回避策の配線**であって、
-    tkinter の実装ではない。①は前提が変わったら教えてくれる観測、②は「なぜ
-    メインスレッドなのか」を固定する（外すと回避策が意味を失うため）。
-    """
-
-    @staticmethod
-    def _make_tk_garbage(root, n_vars: int = 3):
-        """GUI テストと同じ形のゴミを作る＝destroy 済みなのに循環で残る一式。"""
-        import tkinter as tk
-
-        class _Win:                       # ウィンドウオブジェクトが widget を抱える形
-            frame: "tk.Frame"
-            vars: "list[tk.StringVar]"
-
-        win = _Win()
-        frame = tk.Frame(root)
-        win.frame = frame
-        win.vars = [tk.StringVar(master=root, value=f"v{i}") for i in range(n_vars)]
-        setattr(frame, "win", win)        # ← 循環（tkinter 自身も親子で循環する）
-        frame.destroy()
-
-    @staticmethod
-    def _live_tk_count() -> int:
-        import gc
-        import tkinter as tk
-
-        return sum(1 for o in gc.get_objects()
-                   if isinstance(o, (tk.Misc, tk.Variable, tk.Image)))
-
-    # -- 前提 ---------------------------------------------------
-    def test_destroy_alone_does_not_free_them(self):
-        """`destroy()` だけでは消えない（＝回避策が要る理由）。
-
-        CPython 側が直ってここが落ちるようになったら、**回避策を外してよい合図**。
-        """
-        import gc
-
-        from conftest import make_tk_root
-
-        root = make_tk_root()
-        try:
-            gc.collect()                                  # 先に場を掃く
-            before = self._live_tk_count()
-            self._make_tk_garbage(root)
-            gc.disable()                                  # 自動 GC を挟ませない
-            try:
-                assert self._live_tk_count() > before, (
-                    "destroy 済みの Tk オブジェクトが即座に消えた＝前提が変わった。"
-                    "conftest の _tk_garbage_never_escapes は不要になった可能性がある"
-                )
-                assert gc.collect() > 0, "循環ゴミとして残っていない"
-                assert self._live_tk_count() == before, (
-                    "gc.collect() でも消えない＝どこかが実参照を持っている"
-                )
-            finally:
-                gc.enable()
-        finally:
-            root.destroy()
-            gc.collect()
-
-    # -- なぜメインスレッドで回収するのか ------------------------
-    # ⚠️ このテストは**わざと**別スレッドで `__del__` を走らせるので、
-    #    `RuntimeError: main thread is not in main loop` が unraisable として出る
-    #    ＝検査対象そのもの。ここだけ黙らせる（他の場所で出たら本物の欠陥）。
-    @pytest.mark.filterwarnings("ignore::pytest.PytestUnraisableExceptionWarning")
-    def test_collecting_from_another_thread_stalls_it(self):
-        """別スレッドで回収すると Tcl 待ちで止まる（＝ワーカーに残せない）。
-
-        `_tkinter` はメインスレッド外からの呼び出しを 100ms×10 回待ってから
-        RuntimeError にする。**1 個で約 1 秒**＝GUI テストが残す 19〜31 個なら
-        20〜30 秒で、レポート生成の 30 秒待ちを丸ごと食い潰す（実測で確認済み）。
-        """
-        import gc
-        import threading
-        import time
-
-        from conftest import make_tk_root
-
-        root = make_tk_root()               # ルートは生かす＝パニックさせずに測る
-        try:
-            gc.collect()
-            self._make_tk_garbage(root, n_vars=1)
-            elapsed = {}
-
-            def _worker():
-                t0 = time.perf_counter()
-                gc.collect()
-                elapsed["dt"] = time.perf_counter() - t0
-
-            thread = threading.Thread(target=_worker, name="FakeReportWorker")
-            thread.start()
-            thread.join(timeout=30)
-            assert "dt" in elapsed, "ワーカーの GC が 30 秒で終わらなかった"
-            assert elapsed["dt"] > 0.5, (
-                f"別スレッドの GC が {elapsed['dt']:.2f} 秒で終わった＝Tcl 待ちが"
-                "無くなった。メインスレッドで回収する理由が消えたかを確認すること"
-            )
-        finally:
-            root.destroy()
-            gc.collect()
-
-    # -- 配線 ---------------------------------------------------
-    def test_teardown_collects_the_garbage(self):
-        """conftest の teardown が実際にゴミを回収すること（本丸）。
-
-        フィクスチャの本体を直に回す＝`gc.collect()` を消す変異でここが赤くなる。
-        """
-        import gc
-
-        import conftest
-        from conftest import make_tk_root
-
-        root = make_tk_root()
-        try:
-            gc.collect()
-            baseline = self._live_tk_count()
-
-            fixture = conftest._tk_garbage_never_escapes._get_wrapped_function()()
-            next(fixture)                                 # setup
-            self._make_tk_garbage(root)
-            gc.disable()                                  # 自動 GC に助けさせない
-            try:
-                assert self._live_tk_count() > baseline   # ゴミが積まれた
-                next(fixture, None)                       # ★ teardown
-                assert self._live_tk_count() == baseline, (
-                    "teardown を通ってもゴミが残った＝次のテスト（や製品の"
-                    "ワーカースレッド）へ Tk オブジェクトが漏れる"
-                )
-            finally:
-                gc.enable()
-        finally:
-            root.destroy()
-            gc.collect()
-
-    def test_the_cleanup_is_autouse(self):
-        """思い出す規則にしない＝全テストへ自動で掛かること。"""
-        import conftest
-
-        marker = conftest._tk_garbage_never_escapes._fixture_function_marker
-        assert marker.autouse, (
-            "autouse を外すと『新しい GUI テストを書いた人が忘れる』形に戻る"
-        )
 
 
 class TestLanguageDoesNotLeakBetweenTests:
@@ -1007,99 +838,3 @@ class TestDoubleQuietIsCapped:
         monkeypatch.setenv(runtime_env.DECLARED_ENV, "Z:/missing/python.exe")
         monkeypatch.setattr(sys, "frozen", True, raising=False)
         assert runtime_env.interpreter_mismatch() is None
-
-    def test_main_calls_the_check_when_it_starts(self):
-        """**`main()` がこの検査を呼んでいること**（判定があっても呼ばれなければ無意味）。
-
-        ⚠️ 実際に `main()` を走らせると Tk のループに入るので、呼び出しの有無は
-        構文木で見る（[[feedback-promote-recurring-checks]]＝「配線されているか」は
-        配線そのものを検査する）。
-        """
-        import ast
-
-        path = os.path.join(os.path.dirname(__file__), "..", "main.py")
-        with open(path, encoding="utf-8") as f:
-            tree = ast.parse(f.read())
-        main_fn = next(n for n in tree.body
-                       if isinstance(n, ast.FunctionDef) and n.name == "main")
-        called = {n.func.id for n in ast.walk(main_fn)
-                  if isinstance(n, ast.Call) and isinstance(n.func, ast.Name)}
-        assert "_warn_if_not_the_declared_interpreter" in called, (
-            "main() が実行系の検査を呼んでいない＝起動のゲートが空振りする"
-        )
-
-
-
-# ============================================================
-# 旧画面（Tk）の試験は、明示しない限り集めも走らせもしない（I-255）
-# ============================================================
-# 壁は `tests/conftest.py` の 2 枚＝①集める所（`skip_old_ui` のファイルを拾わない）
-# ②根を作る所（`tkinter.Tk` を作ろうとした試験は skip）。ここは両方と、一覧が
-# `tools/qa-hook/gate-scope.json` と同じものを指していることを見る。
-@pytest.mark.skipif(
-    __import__("conftest").OLD_UI_ENV in os.environ
-    and os.environ[__import__("conftest").OLD_UI_ENV] == "1",
-    reason="旧画面を明示して回す実行では、壁そのものが降りている")
-class TestOldUiWall:
-    REPO = pathlib.Path(__file__).resolve().parent.parent
-    SCOPE = REPO / "tools" / "qa-hook" / "gate-scope.json"
-
-    def _scope_list(self) -> "list[str]":
-        import conftest
-        import json
-
-        if not self.SCOPE.is_file():
-            pytest.skip(conftest.structural_skip("道具の置き場（tools/）が無い＝CI"))
-        return json.loads(self.SCOPE.read_text(encoding="utf-8"))["full_minus"]["skip_old_ui"]
-
-    def test_the_list_is_the_gate_scopes(self):
-        """一覧を二重に持たない＝conftest が読むのは gate-scope.json の skip_old_ui そのもの。"""
-        import conftest
-
-        listed = self._scope_list()
-        assert listed, "skip_old_ui が空＝壁①が何も止めない"
-        assert conftest._OLD_UI_FILES == frozenset(listed)
-        for rel in listed:
-            assert (self.REPO / rel).is_file(), f"{rel} が無い＝一覧が腐っている"
-
-    def test_missing_scope_is_an_empty_list(self, tmp_path):
-        """道具の置き場が無い機械（CI）では空＝壁②だけが立つ。"""
-        import conftest
-
-        assert conftest.old_ui_files(tmp_path / "nope.json") == frozenset()
-
-    def test_walking_the_tree_skips_every_old_ui_file(self):
-        import conftest
-
-        for rel in self._scope_list():
-            assert conftest.pytest_ignore_collect(self.REPO / rel, None) is True, rel
-        assert conftest.pytest_ignore_collect(self.REPO / "tests" / "test_batch.py", None) is None
-        assert conftest.pytest_ignore_collect(pathlib.Path("C:/elsewhere/x.py"), None) is None
-
-    def test_a_tk_root_is_skipped_not_built(self):
-        """壁②＝旧画面のファイルの外でも、根を作ろうとした所で skip になる（窓は出ない）。"""
-        import conftest
-
-        with pytest.raises(pytest.skip.Exception) as caught:
-            conftest.make_tk_root()
-        assert conftest.OLD_UI_SKIP_REASON in str(caught.value)
-        assert conftest.STRUCTURAL_SKIP in str(caught.value)
-
-    def test_collecting_the_whole_tree_finds_no_old_ui_file(self):
-        """変数なしで `tests` を集めると、旧画面のファイルが 1 本も無い（実物の収集）。"""
-        import conftest
-        import subprocess
-
-        listed = self._scope_list()
-        env = {k: v for k, v in os.environ.items()
-               if k not in (conftest.OLD_UI_ENV, "PYTEST_ADDOPTS")}
-        out = subprocess.run(
-            [sys.executable, "-m", "pytest", "--collect-only", "-q",
-             "-p", "no:cacheprovider", "tests"],
-            cwd=self.REPO, env={**env, "PYTHONUTF8": "1", "PYTHONIOENCODING": "utf-8"},
-            capture_output=True, text=True, encoding="utf-8", timeout=300)
-        assert out.returncode == 0, out.stdout[-2000:] + out.stderr[-2000:]
-        ids = [line for line in out.stdout.splitlines() if "::" in line]
-        assert len(ids) > 1000, "収集が成り立っていない（本数が少なすぎる）"
-        leaked = sorted({i.split("::")[0].replace("\\", "/") for i in ids} & set(listed))
-        assert not leaked, f"旧画面の試験が集められた: {leaked}"

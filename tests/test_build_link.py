@@ -285,15 +285,22 @@ class TestBuildBatDoor:
         with open(os.path.join(_ROOT, "build.bat"), encoding="ascii") as f:
             return f.read()
 
-    def test_link_branches_off_before_the_old_ui_gates(self):
-        """旧画面だけの関所（Tk 9・pip install・PyInstaller）より前に Python の道具へ渡す。"""
+    def test_the_only_build_is_the_python_tool(self):
+        """組み立ては Python の道具だけ＝旧画面の PyInstaller の口は残っていない（ステージ11a）。"""
         bat = self._bat()
         door = bat.index(r'buildtools\build_link.py" --mode %LINK_MODE%')
-        assert door < bat.index("tkinter.TkVersion >= 9")
-        assert door < bat.index("-m PyInstaller radiosim.spec")
         assert bat.index('set "PY=%RADIOSIM_PYTHON%"') < door
+        assert "PyInstaller radiosim.spec" not in bat
+        assert "tkinter.TkVersion" not in bat
 
     def test_both_subcommands_are_wired(self):
         bat = self._bat()
+        assert 'if "%~1"=="" set "LINK_MODE=zip"' in bat
         assert 'if /i "%~1"=="link" set "LINK_MODE=zip"' in bat
+        assert 'if /i "%~1"=="installer" set "LINK_MODE=installer"' in bat
         assert 'if /i "%~1"=="link-installer" set "LINK_MODE=installer"' in bat
+
+    def test_an_unknown_subcommand_stops(self):
+        """綴りを誤ったら zip へ倒さずに止める＝違う種類の配布物を黙って作らない。"""
+        bat = self._bat()
+        assert bat.index("if not defined LINK_MODE (") < bat.index(r'buildtools\build_link.py" --mode')

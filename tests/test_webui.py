@@ -414,23 +414,22 @@ def _css_vars(block: str) -> dict[str, str]:
 
 
 def test_the_verdict_colors_are_the_report_colors():
-    # 判定の色は帳票と同じ（ライト＝`STATUS_HEX`・ダーク＝旧画面の `_VERDICT["dark"]`）。
+    # 判定の色は帳票と同じ（ライト＝`STATUS_HEX`・ダーク＝この CSS が正典＝4 語とも別の色）。
     # 色は語に添えるだけ＝語ごとの規則が 4 語とも CSS にある（9d・色覚）
     import re
     from report import map_graphics
-    from views import theme
     css = (pathlib.Path(webserver.STATIC_ROOT) / "style.css").read_text(encoding="utf-8")
     root = re.search(r"^:root\s*\{(.*?)\}", css, flags=re.S | re.M).group(1)
     dark = re.search(r"prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{(.*?)\}", css,
                      flags=re.S).group(1)
     names = {"OK": "ok", "NG": "ng", "REVIEW": "review", "ERROR": "err"}
-    keys = {"OK": "ok", "NG": "ng", "REVIEW": "rev", "ERROR": "err"}
     light_vars, dark_vars = _css_vars(root), _css_vars(dark)
     for word, name in names.items():
         assert light_vars[name] == map_graphics.STATUS_HEX[word].lower(), word
-        assert dark_vars[name] == theme._VERDICT["dark"][keys[word]].lower(), word
+        assert name in dark_vars, word
         assert f'[data-word="{word}"] #band-word {{ color: var(--{name}); }}' in css, word
     assert set(names) == set(map_graphics.STATUS_HEX)
+    assert len({dark_vars[n] for n in names.values()}) == len(names), "ダークで 2 語が同じ色"
 
 
 def test_the_page_carries_the_product_name_and_the_brand():

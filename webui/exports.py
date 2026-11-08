@@ -99,6 +99,15 @@ def map_lines(headline: "dict[str, Any]", inputs: "dict[str, str]") -> "list[Any
     return [(tuple(it["tx"]), tuple(it["rx"]), it["word"], it["label"]) for it in items] or None
 
 
+def map_attribution(basemap: str) -> str:
+    """画面の地図に出す出典の字（B-133）＝帳票へ焼く地図と同じ 1 本（`report_map.attribution_for`）。
+
+    4.0 ステージ11a＝旧画面の地図は出典を出していたが、新しい画面の地図には無かった。
+    """
+    from report import report_map
+    return report_map.attribution_for(basemap)
+
+
 def map_png(lines: "list[Any]", basemap: str) -> "bytes | None":
     """線の並び → 地図の PNG（背景のタイルが取れなければ None＝帳票の「地図は取得できませんでした」）。"""
     import io

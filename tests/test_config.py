@@ -14,7 +14,6 @@ import sys
 import types
 import unittest.mock as mock
 from pathlib import Path
-from typing import Any
 
 import pytest
 
@@ -365,55 +364,6 @@ class TestPartialConfigSave:
         monkeypatch.setattr(config.json, "dump", mock.Mock(side_effect=OSError("read-only")))
         assert config.save_app({"lang": "en"}, path) is False
         assert config.save_sim({"freq": "900.0"}, path) is False
-
-
-# ============================================================
-# 言語を選んだ操作は、保存が通ったときだけ種を消費済みにする（B-299）
-# ============================================================
-class TestLangChoiceConsumesSeed:
-    """画面の 2 つの口（言語メニュー・アプリ設定の読込）を、偽の `self` で直に呼ぶ。"""
-
-    @pytest.fixture
-    def calls(self, monkeypatch):
-        pytest.importorskip("tkinter")
-        from views import launcher_menu                        # noqa: PLC0415
-        log: list[str] = []
-        monkeypatch.setattr(launcher_menu.config, "consume_lang_seed",
-                            lambda *a, **kw: log.append("consume"))
-        return log
-
-    @staticmethod
-    def _fake(**extra) -> Any:   # 画面の Mixin が見る属性だけを持つ偽物＝型は合わせない
-        alerts: list[str] = []
-        return types.SimpleNamespace(config={"lang": "ja", "theme": "system"},
-                                     alerts=alerts,
-                                     _alert=lambda title, _msg: alerts.append(title), **extra)
-
-    @pytest.mark.parametrize("saved, expected", [(True, ["consume"]), (False, [])])
-    def test_lang_menu(self, calls, monkeypatch, saved, expected):
-        from views import launcher_menu                        # noqa: PLC0415
-        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: saved)
-        launcher_menu._MenuMixin._on_lang_select(self._fake(), "en")
-        assert calls == expected
-
-    @pytest.mark.parametrize("payload, expected", [
-        ({"lang": "en"}, ["consume"]),
-        ({"theme": "dark"}, []),        # 言語を取り込んでいない＝印を書かない
-    ])
-    def test_load_app_settings(self, calls, monkeypatch, tmp_path, payload, expected):
-        from views import launcher_menu                        # noqa: PLC0415
-        settings = tmp_path / "settings.json"
-        settings.write_text(json.dumps(payload), encoding="utf-8")
-        monkeypatch.setattr(launcher_menu.filedialog, "askopenfilename",
-                            lambda **_kw: str(settings))
-        monkeypatch.setattr(launcher_menu.config, "save_app", lambda _c: True)
-        fake = self._fake(root=None, _theme_var=types.SimpleNamespace(set=lambda _v: None),
-                          _lang_var=types.SimpleNamespace(set=lambda _v: None),
-                          _on_theme=lambda _m: None)
-        launcher_menu._MenuMixin._on_load_app_settings(fake)
-        # 例外を握って警告に変える関数なので、偽の self の不備で素通りしていないことを先に見る。
-        assert launcher_menu.i18n.t("dlg_error") not in fake.alerts
-        assert calls == expected
 
 
 # ============================================================
@@ -812,12 +762,9 @@ def _fake_ctypes(langid: int = 0, boom: bool = False):
     return mod
 
 
-#: `.iss` を読む試験がかけるインストーラ定義（I-144・4.0 ステージ8d）。本体（旧画面・
-#: exe）と Link（新しい画面・embeddable）は [Code] と [CustomMessages] を**写しで**持つ
-#: ＝片方だけ直して、もう片方に古い穴（B-186・B-188・B-192・B-200 …）が残るのを、
-#: 同じ試験を両方へかけて止める。版の 4 数字の出どころだけは 2 つで違う＝
-#: `TestInstallerVersionSource` が別々に縛る。
-_ISS_FILES = (ROOT / "installer" / "radiosim.iss", ROOT / "installer" / "link.iss")
+#: `.iss` を読む試験がかけるインストーラ定義（I-144・4.0 ステージ8d）。旧画面の
+#: `radiosim.iss` は 4.0 ステージ11a で撤去した＝いまは Link の 1 つだけ。
+_ISS_FILES = (ROOT / "installer" / "link.iss",)
 
 
 @pytest.fixture(params=_ISS_FILES, ids=lambda p: p.stem)
@@ -985,16 +932,10 @@ class TestInstallerCodeIsReachable:
     #: I-139 の選択肢（[CustomMessages] のキー名）と、それぞれが消す実体（`.iss` の
     #: 名前ごと）。実体は core/config.py の保存先解決と 1 対 1 に対応する＝どちらかを
     #: 動かしたら対がずれる（インストーラだけ古い場所を消しに行く事故を止める）。
-    #: 本体（`radiosim`）は配った 3.9 の置き場のまま。Link（`link`）は 4.0 ステージ8e
+    #: 旧画面（`radiosim`）の対は 4.0 ステージ11a で外した。Link（`link`）は 4.0 ステージ8e
     #: で設定・ログ・結果を `RadioSim\\Link` の下へ分け、3.9 と共有の地形キャッシュを
     #: 別の選択肢にした（`test_write_locations.py::TestWriteBaseSwitchesOnPortability`）。
     _UNINSTALL_CHOICES_BY_ISS = {
-        "radiosim": {
-            "UninstDataSettings": "{userappdata}\\RadioSim\\radiosim_conf.json",
-            "UninstDataCache":    "{localappdata}\\RadioSim",
-            "UninstDataResults":  "{userdocs}\\RadioSim",
-            "UninstDataLang":     "{userappdata}\\RadioSim\\lang",
-        },
         "link": {
             "UninstDataSettings":    "{userappdata}\\RadioSim\\Link\\radiosim_conf.json",
             "UninstDataLogs":        "{localappdata}\\RadioSim\\Link",
@@ -1325,22 +1266,6 @@ class TestInstallerVersionSource:
     @staticmethod
     def _read(name: str) -> str:
         return (ROOT / "installer" / name).read_text(encoding="utf-8-sig")
-
-    def test_pro_both_versions_come_from_the_exe_file_version(self):
-        """本体＝新旧とも exe のファイルバージョン。
-
-        今から入れる側は [Files] が同梱する exe から、前回の側はアンインストール
-        情報の App Path の exe から読む。
-        """
-        iss = self._read("radiosim.iss")
-        m = re.search(r'^#define NewVerNums GetVersionNumbersString\(AddBackslash\(SourcePath\)'
-                      r' \+ "([^"]+)" \+ AppExeName\)', iss, re.MULTILINE)
-        assert m, "NewVerNums が同梱の exe から読まれていない"
-        src = re.search(r'^Source:\s*"([^"]+)\*";\s*DestDir:\s*"\{app\}"', iss, re.MULTILINE)
-        assert src and src.group(1) == m.group(1), (
-            "NewVerNums を読む exe と [Files] が同梱するフォルダが違う")
-        detect = _iss_routine(iss, "procedure DetectPreviousVersion")
-        assert "GetPackedVersion(AddBackslash(PrevDir) + '{#AppExeName}'" in detect
 
     def test_link_both_versions_come_from_the_trees_version_txt(self):
         """Link＝自前の exe が無い＝新旧とも木の `version.txt`（build_link.py が書く）。

@@ -11,18 +11,15 @@
     [["docs/glossary.md"], [
       "tests/test_i18n_glossary.py",
       "tests/test_i18n_external.py",
-      "tests/test_i18n_key_duplication.py",
-      "tests/test_i18n_no_hardcoded_ui_text.py"
+      "tests/test_i18n_key_duplication.py"
     ]],
     [["lang/", "core/i18n.py"], [
       "tests/test_i18n_external.py",
       "tests/test_i18n_glossary.py",
-      "tests/test_i18n_key_duplication.py",
-      "tests/test_i18n_no_hardcoded_ui_text.py"
+      "tests/test_i18n_key_duplication.py"
     ]],
     [["requirements", "pyproject.toml"], ["tests/test_env_consistency.py"]],
-    [["radiosim.spec"], ["tests/test_bundle_imports.py"]],
-    [["buildtools/"], ["tests/test_bundle_imports.py", "tests/test_dev_check.py"]],
+    [["buildtools/"], ["tests/test_dev_check.py"]],
     [[".claude/"], ["tests/test_claude_hooks.py"]],
     [["tools/qa-hook/"], [
       "tests/test_claude_hooks.py",
@@ -33,8 +30,7 @@
       "tests/test_release_check.py",
       "tests/test_hook_shim.py"
     ]],
-    [["tools/autorun/"], ["tests/test_autorun_tool.py"]],
-    [["views/"], ["tests/test_window_fit.py", "tests/test_ui_consistency.py"]]
+    [["tools/autorun/"], ["tests/test_autorun_tool.py"]]
   ],
 
   "_comment_commit_islands": "pre-commit-gate.mjs（git commit の直前）だけが読む。コミットに入る変更（作業ツリー対 HEAD・未追跡とリネーム元も含む）のうち部分テストの prefixes に当たるパスは、その部分テストの tests（`*` は tests/ 直下のファイル名の前方一致）を足す。フルになる条件は下の _comment_full。git push は常にフル（手元を出る前の最後の砦）。tests には、リポジトリ全体を走査するテスト（apps/ や全 .py・全追跡ファイルを歩くもの）を必ず入れる＝prefixes の中の変更でも落とし得るのはそれらだけ。⚠️ **`extra_gates` とは意味が違う**＝あちらは「この面を触ったら *足す* テスト」で完全性を主張していない（`views/` を触ったときに要るのは列挙した 2 本だけではない）。ここは「この面に収まるコミットは、列挙した tests で影響を言い尽くせる」という**明示の宣言**なので、迷ったら部分テストを作らない（fail-closed＝部分テストに収まらなければフル）。⛔ **製品コード（core/ views/ report/ …）の部分テストは作らない**＝そこが「全体が緑」を証明する必要のある面そのもの（下の full_minus は部分テストではない＝フルから旧画面と道具の試験だけを引いたもの・O-030）。⛔ **lang/ も部分テストにしない**＝文言の長さがウィンドウの必要寸法に効くので、影響は i18n のテストでは言い尽くせない（test_window_fit.py の面）。",
@@ -52,14 +48,13 @@
         "tests/test_i18n_glossary.py",
         "tests/test_i18n_external.py",
         "tests/test_i18n_key_duplication.py",
-        "tests/test_i18n_no_hardcoded_ui_text.py",
         "tests/test_dev_check.py",
         "tests/test_commit_gate_scope.py",
         "tests/test_layers.py",
         "tests/test_smoke.py",
-        "tests/test_bundle_imports.py",
         "tests/test_experiments_probes.py",
-        "tests/test_calc_profile.py"
+        "tests/test_calc_profile.py",
+        "tests/test_multihop.py"
       ]
     },
     {
@@ -87,7 +82,8 @@
         "tests/test_smoke.py",
         "tests/test_i18n_key_duplication.py",
         "tests/test_experiments_probes.py",
-        "tests/test_calc_profile.py"
+        "tests/test_calc_profile.py",
+        "tests/test_multihop.py"
       ]
     },
     {
@@ -104,7 +100,8 @@
         "tests/test_i18n_key_duplication.py",
         "tests/test_env_consistency.py",
         "tests/test_experiments_probes.py",
-        "tests/test_calc_profile.py"
+        "tests/test_calc_profile.py",
+        "tests/test_multihop.py"
       ]
     }
   ],
@@ -118,15 +115,7 @@
   "_comment_full_minus": "O-030（2026-11-07・経営者が案 (b) を選んだ・承認は事前の独立評価の後）。pre-commit-gate.mjs の fullMinusFor だけが読む。コミットに入る変更が prefixes（core/・report/・webui/＝2026-11-08 に足した＝新しい画面は Tk を使わないのに、どの規則にも当たらずフル（Tk 込み）へ倒れていた・経営者の指摘「フルスイートで Tk を回さないで」）と tests/test_*.py だけ（＝views/・lang/・main.py・画面の資産・tests/conftest.py・tests/data/・依存と pytest の設定を 1 つも含まない）のとき、tests/ の試験ファイルを全部並べ、skip_old_ui（撤去が決まった旧画面＝Tk の試験）と skip_tools（製品を import しない道具の試験）を引いて走らせる。戻すもの＝コミットで変えた試験ファイルそのもの・引いたファイルの中の tests_walkers・keep（引いたファイルの中で本物の製品の木を読む 1 本ずつ）。⚠️ 除外の引数（--ignore／--deselect）にしない＝名指しより強く、走査系まで消える。push は旧画面（skip_old_ui）だけを引く（2026-11-08・経営者「push も Tk を引く」＝pushPlanFor）・CI はフル。期限＝4.0 ステージ11 で旧画面と試験を撤去する回に skip_old_ui を消す（新しい画面の試験はここへ入れない）。見張り＝tests/test_commit_gate_scope.py の TestFullMinus。戻し方＝このキーを消す。",
   "full_minus": {
     "prefixes": ["core/", "report/", "webui/"],
-    "skip_old_ui": [
-      "tests/test_window_fit.py",
-      "tests/test_ui_consistency.py",
-      "tests/test_theme.py",
-      "tests/test_map_window.py",
-      "tests/test_title_bar.py",
-      "tests/test_progress.py",
-      "tests/test_cache_notify.py"
-    ],
+    "skip_old_ui": [],
     "skip_tools": [
       "tests/test_claude_hooks.py",
       "tests/test_qa_gate_cache.py",
@@ -150,8 +139,6 @@
   ],
   "tests_walkers": [
     "tests/test_commit_gate_scope.py",
-    "tests/test_pre_commit_gate.py",
-    "tests/test_window_fit.py::test_only_declared_tests_see_the_real_machine",
-    "tests/test_window_fit.py::test_no_test_asks_the_screen_behind_the_pin"
+    "tests/test_pre_commit_gate.py"
   ]
 }

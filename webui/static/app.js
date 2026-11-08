@@ -197,9 +197,21 @@ const pins = {};
 let cursor = null;
 let dragging = false;
 
-function initMap(basemap) {
+function escapeHtml(text) {
+  const box = document.createElement("span");
+  box.textContent = text;
+  return box.innerHTML;
+}
+
+function initMap(basemap, attribution) {
   map = L.map("map", { zoomControl: true });
-  L.tileLayer(`/tile/${basemap}/{z}/{x}/{y}.png`, { maxZoom: 18 }).addTo(map);
+  // 出典（B-133）＝地理院タイルの表示義務。字は帳票へ焼く地図と同じ 1 本（サーバが渡す）。
+  // 宣言した外部ソースの字は利用者のファイルの生の字＝HTML として読ませない。
+  // 前置き（Leaflet の名前と外のリンク）は出さない＝手元の道具から外へ誘わない。
+  map.attributionControl.setPrefix(false);
+  L.tileLayer(`/tile/${basemap}/{z}/{x}/{y}.png`, {
+    maxZoom: 18, attribution: escapeHtml(attribution || ""),
+  }).addTo(map);
   map.setView([35.0, 135.0], 5);
   cursor = L.marker([0, 0], {
     interactive: false, opacity: 0, keyboard: false,
@@ -1092,7 +1104,7 @@ async function poll() {
         buildForm(s.form || []);
         buildBreakdown(s.breakdown || []);
         if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;
-        if (!map) initMap(s.basemap || "pale");
+        if (!map) initMap(s.basemap || "pale", s.basemap_attribution);
         if (s.sheet_spec) {
           spec = s.sheet_spec;
           buildTabs();

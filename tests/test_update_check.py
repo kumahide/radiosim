@@ -1,14 +1,12 @@
 """更新の確認（I-178 段階 1・I-179 起動時の確認）と、その回に取り出した次の一手 `fix_network` の検査。"""
 
 import datetime
-from typing import Any, cast
 
 import pytest
 import requests
 
-from core import config, i18n, simulation as sim, update_check, version
+from core import config, i18n, simulation as sim, update_check
 from core.update_check import Release, UpdateCheckError, pick_newer
-from views import launcher_menu
 
 _PAGE = update_check.RELEASE_PAGE_PREFIX
 
@@ -207,37 +205,6 @@ def test_dem_unreachable_text_is_unchanged_by_the_split(lang):
     assert sim.dem_unreachable_message() == _OLD_DEM_UNREACHABLE[lang]
 
 
-class TestMessages:
-    _REL = Release("1.2", "link-1.2", f"{_PAGE}tag/link-1.2")
-
-    @pytest.mark.parametrize("frozen,portable,key", [
-        (True, False, "update_how_installer"),
-        (True, True, "update_how_portable"),
-        (False, False, "update_how_source")])
-    def test_how_to_install_follows_the_distribution(self, frozen, portable, key):
-        i18n.set_lang("ja")
-        msg = launcher_menu.update_available_message(
-            self._REL, frozen=frozen, portable=portable)
-        assert i18n.t(key).format(tag="link-1.2") in msg
-        assert version.APP_VERSION in msg and "1.2" in msg
-
-    def test_rate_limit_says_wait(self):
-        i18n.set_lang("ja")
-        msg = launcher_menu.update_failure_message(UpdateCheckError("rate_limited"))
-        assert i18n.t("fix_retry_later") in msg
-
-    def test_network_says_check_the_proxy_and_keeps_the_detail(self):
-        i18n.set_lang("ja")
-        msg = launcher_menu.update_failure_message(
-            UpdateCheckError("network", "ConnectionError: boom"))
-        assert i18n.t("fix_network") in msg and "ConnectionError: boom" in msg
-
-    def test_unexpected_says_retry_or_log(self):
-        i18n.set_lang("ja")
-        msg = launcher_menu.update_failure_message(KeyError("x"))
-        assert i18n.t("fix_retry_or_log") in msg and "KeyError" in msg
-
-
 class TestAutoDue:
     """起動時の確認（I-179）を今日打つか＝既定オフ・1 日 1 回まで。"""
     _TODAY = datetime.date(2026, 9, 26)
@@ -269,155 +236,3 @@ class TestAutoDue:
     def test_anything_but_on_is_off(self, value):
         assert not update_check.auto_due(
             {"update_check_auto": value, "update_check_last": ""}, self._TODAY)
-
-
-class _Root:
-    def __init__(self):
-        self.cursor = ""
-
-    def configure(self, cursor=""):
-        self.cursor = cursor
-
-
-class _Host(launcher_menu._MenuMixin):
-    """`SimLauncher` のうち更新の確認が使う面だけ。"""
-    saved: list
-    asked: list        # `check` に渡った `include_pre`（1 回の問い合わせに 1 つ）
-
-    def __init__(self, conf=None):
-        self.root = cast(Any, _Root())
-        self.config = dict(config.DEFAULT_CONFIG, **(conf or {}))
-        self.alerts, self.confirms = [], []
-
-    def _alert(self, title, message):
-        self.alerts.append(message)
-
-    def _confirm(self, title, message):
-        self.confirms.append(message)
-        return False
-
-
-class _Thread:
-    """`start()` で走らせず、`run_all()` で答えを返させる（問い合わせ中を作る）。"""
-    started: list = []
-
-    def __init__(self, target, **_kw):
-        self.target = target
-
-    def start(self):
-        _Thread.started.append(self.target)
-
-    @classmethod
-    def run_all(cls):
-        while cls.started:
-            cls.started.pop(0)()
-
-
-@pytest.fixture
-def host(monkeypatch):
-    _Thread.started = []
-    monkeypatch.setattr(launcher_menu.threading, "Thread", _Thread)
-    monkeypatch.setattr(launcher_menu.progress, "post_to_ui",
-                        lambda _root, fn: fn())
-    saved = []
-    monkeypatch.setattr(launcher_menu.config, "save_app",
-                        lambda values: saved.append(dict(values)) or True)
-    i18n.set_lang("ja")
-
-    def _make(answer, **conf):
-        def _check(current=version.APP_VERSION, include_pre=None):
-            h.asked.append(include_pre)
-            if isinstance(answer, BaseException):
-                raise answer
-            return answer
-        monkeypatch.setattr(update_check, "check", _check)
-        h = _Host(conf)
-        h.saved = saved
-        h.asked = []
-        return h
-    return _make
-
-
-_NEW = Release("9.0", "link-9.0", f"{_PAGE}tag/link-9.0")
-
-
-class TestStartupCheck:
-    def test_off_by_default_never_asks(self, host):
-        h = host(_NEW)
-        h._auto_check_updates()
-        assert _Thread.started == [] and h.saved == []
-
-    def test_records_the_day_before_asking_and_only_once(self, host):
-        h = host(None, update_check_auto="on")
-        h._auto_check_updates()
-        assert h.saved[-1]["update_check_last"] == datetime.date.today().isoformat()
-        assert len(_Thread.started) == 1
-        _Thread.run_all()
-        h._auto_check_updates()                   # 同じ日の 2 度目の起動
-        assert _Thread.started == [] and len(h.saved) == 1
-
-    @pytest.mark.parametrize("answer", [
-        None, UpdateCheckError("network", "boom"), UpdateCheckError("rate_limited"),
-        KeyError("x")])
-    def test_latest_and_failures_stay_silent(self, host, answer):
-        h = host(answer, update_check_auto="on")
-        h._auto_check_updates()
-        _Thread.run_all()
-        assert h.alerts == [] and h.confirms == [] and h.root.cursor == ""
-
-    def test_newer_version_asks_and_says_how_to_stop(self, host):
-        h = host(_NEW, update_check_auto="on")
-        h._auto_check_updates()
-        assert h.root.cursor == ""                # 起動時はカーソルを変えない
-        _Thread.run_all()
-        (msg,) = h.confirms
-        assert i18n.t("update_auto_note") in msg
-        assert msg.endswith(i18n.t("dlg_update_available").rsplit("\n\n", 1)[1])
-
-    def test_manual_press_while_startup_check_runs_shows_the_answer(self, host):
-        h = host(None, update_check_auto="on")
-        h._auto_check_updates()
-        h._on_check_updates()                     # 答えが来る前に利用者が押す
-        assert len(_Thread.started) == 1 and h.root.cursor == "watch"
-        _Thread.run_all()
-        assert len(h.alerts) == 1 and h.root.cursor == ""
-
-    def test_manual_check_has_no_startup_note(self, host):
-        h = host(_NEW)
-        h._on_check_updates()
-        _Thread.run_all()
-        (msg,) = h.confirms
-        assert i18n.t("update_auto_note") not in msg
-
-    def test_toggle_saves_the_choice(self, host):
-        h = host(None)
-        h._update_auto_var = type("V", (), {"get": lambda self: "on"})()
-        h._on_update_auto_toggle()
-        assert h.saved[-1]["update_check_auto"] == "on"
-
-
-class TestPrereleaseChoice:
-    """プレリリースも知らせるか（I-180）が、手動と起動時の両方の問い合わせへ届くこと。"""
-
-    @pytest.mark.parametrize("choice,expected", [
-        ("on", True), ("off", False),
-        ("", not version.is_final(version.APP_VERSION))])
-    def test_manual_check_passes_the_choice(self, host, choice, expected):
-        h = host(None, update_check_prerelease=choice)
-        h._on_check_updates()
-        _Thread.run_all()
-        assert h.asked == [expected]
-
-    @pytest.mark.parametrize("choice,expected", [("on", True), ("off", False)])
-    def test_startup_check_passes_the_choice(self, host, choice, expected):
-        h = host(None, update_check_auto="on", update_check_prerelease=choice)
-        h._auto_check_updates()
-        _Thread.run_all()
-        assert h.asked == [expected]
-
-    @pytest.mark.parametrize("value", ["on", "off"])
-    def test_toggle_fixes_the_choice(self, host, value):
-        h = host(None)
-        h._update_pre_var = type("V", (), {"get": lambda self: value})()
-        h._on_update_pre_toggle()
-        assert h.saved[-1]["update_check_prerelease"] == value

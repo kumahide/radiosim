@@ -12,8 +12,8 @@ rem  still exiting 0. This happened on 2026-07-30: the previous version of this
 rem  file had Japanese comments and worked only because its byte layout
 rem  happened to be safe - editing anything above a comment could break it.
 rem  The Japanese rationale for everything below lives in the README section on
-rem  setting up the development environment, and in ISSUES.md B-020. Keep the
-rem  prose there, not here.
+rem  setting up the development environment, in buildtools\build_link.py, and
+rem  in ISSUES.md B-020. Keep the prose there, not here.
 rem ============================================================
 
 rem ============================================================
@@ -46,42 +46,18 @@ if not exist "%RADIOSIM_PYTHON%" (
 )
 set "PY=%RADIOSIM_PYTHON%"
 
-rem ---- "link" / "link-installer" subcommands (4.0 stage 8d, ISSUES.md I-144):
-rem      the new UI ships on the python.org embeddable Python, not PyInstaller.
-rem      This is only a thin door: every check and every step lives in
-rem      buildtools\build_link.py (Japanese rationale there). It branches off
-rem      BEFORE the Tk 9 gate and the PyInstaller pass below, which belong to
-rem      the old UI only (kept until that UI is removed).
-rem      Usage: build.bat link            (portable zip)
-rem             build.bat link-installer  (Inno Setup installer)
-set "LINK_MODE="
-if /i "%~1"=="link" set "LINK_MODE=zip"
-if /i "%~1"=="link-installer" set "LINK_MODE=installer"
-if defined LINK_MODE (
-    "%PY%" "%~dp0buildtools\build_link.py" --mode %LINK_MODE%
-    if errorlevel 1 (
-        echo [ERROR] Link build failed. Check the error messages above.
-        pause
-        exit /b 1
-    )
-    endlocal
-    exit /b 0
-)
-
 set "DIST_DIR=%~dp0dist"
 set "WORK_DIR=%~dp0build"
-set "APP_DIR=%DIST_DIR%\RadioSimPro"
 
 rem ---- "clean" subcommand: wipe regenerable artifacts, caches, logs, zips ----
 rem Kept: the venv and the REPO-ROOT terrain_cache / results / basemap_pale /
 rem tools / .qa (source-run data; expensive to refetch or user-owned).
 rem
 rem NOT kept: everything under the build output root (DIST_DIR / WORK_DIR),
-rem INCLUDING the terrain_cache and results that the built exe created next to
+rem INCLUDING the terrain_cache and results that the built app created next to
 rem itself. Those belong to the build output and a normal build discards them
-rem too (see "Cleaning old build" below, which removes APP_DIR wholesale).
-rem Do not describe them as preserved - a 2026-08-04 review found the README
-rem promising exactly that while this block deleted them.
+rem too. Do not describe them as preserved - a 2026-08-04 review found the
+rem README promising exactly that while this block deleted them.
 rem Usage: build.bat clean
 if /i "%~1"=="clean" (
     echo [INFO] Cleaning build artifacts, caches, logs, and distribution zips...
@@ -94,7 +70,6 @@ if /i "%~1"=="clean" (
     rem node_modules and .git are not ours to clean. The wildcard is required:
     rem without it, dir lists the CONTENTS of .\__pycache__ instead of searching.
     for /f "delims=" %%D in ('dir /s /b /ad *__pycache__ 2^>nul ^| findstr /v /i /c:"\.venv" /c:"\node_modules\\" /c:"\.git\\"') do rmdir /s /q "%%D"
-    del /q RadioSimPro-*.zip 2>nul
     del /q build_log.txt 2>nul
     rem build_*.log: stray captures from before the log moved to build\build.log
     del /q build_*.log 2>nul
@@ -103,293 +78,36 @@ if /i "%~1"=="clean" (
     del /q .coverage 2>nul
     echo [OK] Clean complete.
     echo      kept    : venv / repo-root terrain_cache, results, basemap_pale / tools
-    echo      removed : build output incl. the exe's own terrain_cache and results
+    echo      removed : build output incl. the app's own terrain_cache and results
     endlocal
     exit /b 0
 )
 
-rem ---- "installer" subcommand: build the app, then wrap it in an Inno Setup
-rem installer instead of leaving it as a ZIP-shaped portable folder (3.1 stage
-rem 6). Everything below runs the same way in both modes except: the portable
-rem marker is skipped, and an Inno Setup pass runs after the PyInstaller build
-rem succeeds. Usage: build.bat installer
-set "MODE=zip"
-if /i "%~1"=="installer" set "MODE=installer"
-
-rem ---- Check the Inno Setup compiler BEFORE the PyInstaller run, not after
-rem it (same reason as the Tk 9 guard below: a four-minute build should not
-rem happen just to fail on an environment variable).
-if /i "%MODE%"=="installer" (
-    if not defined RADIOSIM_ISCC (
-        echo [ERROR] RADIOSIM_ISCC is not set.
-        echo         Point it at Inno Setup 7's compiler, then reopen the shell
-        echo         ^(install it with: winget install JRSoftware.InnoSetup.7^):
-        echo           setx RADIOSIM_ISCC "%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe"
-        echo         A machine-wide install puts it under
-        echo         C:\Program Files ^(x86^)\Inno Setup 7\ISCC.exe instead.
-        pause
-        exit /b 1
-    )
-    if not exist "%RADIOSIM_ISCC%" (
-        echo [ERROR] RADIOSIM_ISCC points at a file that does not exist:
-        echo           %RADIOSIM_ISCC%
-        pause
-        exit /b 1
-    )
-    rem  I-125: released installers are built with Inno Setup 7. The .iss
-    rem  deliberately uses nothing that 7 removed, so a RADIOSIM_ISCC still
-    rem  pointing at a 6.x compiler would compile happily and ship an
-    rem  installer built by the line upstream stopped updating - a silent
-    rem  mismatch, so this is a stop, not a note (same shape as the
-    rem  RADIOSIM_PYTHON declaration above). Declare
-    rem  RADIOSIM_ISCC_ANY_VERSION=1 to build with another major on purpose.
-    if not defined RADIOSIM_ISCC_ANY_VERSION (
-        "%RADIOSIM_ISCC%" 2>&1 | findstr /c:"Inno Setup 7 Command-Line Compiler" >nul
-        if errorlevel 1 (
-            echo [ERROR] RADIOSIM_ISCC is not an Inno Setup 7 compiler:
-            echo           %RADIOSIM_ISCC%
-            echo         Released installers are built with Inno Setup 7
-            echo         ^(winget install JRSoftware.InnoSetup.7^). Point
-            echo         RADIOSIM_ISCC at that ISCC.exe, or declare
-            echo         RADIOSIM_ISCC_ANY_VERSION=1 to build anyway.
-            pause
-            exit /b 1
-        )
-    )
-)
-
-echo ============================================================
-echo RadioSim Link - Build Script (%MODE%)
-echo ============================================================
-echo.
-
-echo [OK] Python ^(RADIOSIM_PYTHON^):
-"%PY%" --version
-echo      %PY%
-
-rem Tcl/Tk version gate (ISSUES.md B-163, inverted in 3.9). Since 3.9 the
-rem release is built and verified on CPython 3.15 + Tk 9.0, whose Tcl library
-rem lives inside tcl90.dll (zipfs), so no separate Tcl data directory has to
-rem be bundled. A Python that still ships Tk 8.6 (e.g. 3.14.4) would produce a
-rem different bundle layout that the 3.9 release was never verified with, and
-rem the Python version alone does not tell which Tk it ships (3.14.4 has 8.6,
-rem 3.14.7 has 9.0). Stop here instead of after a silent-looking green build.
-"%PY%" -c "import tkinter; import sys; sys.exit(0 if tkinter.TkVersion >= 9 else 1)"
-if errorlevel 1 (
-    echo [ERROR] RADIOSIM_PYTHON's Tcl/Tk is older than 9.0 ^(see ISSUES.md
-    echo         B-163^). Since 3.9 the release is built and verified with
-    echo         Tk 9.0 ^(CPython 3.15^). Recreate the venv from a Python that
-    echo         ships Tk 9 ^(verify with:
-    echo           python -c "import tkinter; print(tkinter.TkVersion)"^).
+rem ---- Build (4.0 stage 8d / stage 11a, ISSUES.md I-144): the app ships on
+rem      the python.org embeddable Python, not PyInstaller. This is only a thin
+rem      door: every check and every step lives in buildtools\build_link.py
+rem      (Japanese rationale there). The PyInstaller build of the old UI was
+rem      removed with that UI in stage 11a.
+rem      Usage: build.bat                  (portable zip; same as "link")
+rem             build.bat installer        (Inno Setup installer; same as "link-installer")
+rem      An unknown argument stops instead of falling back to the zip, so a typo
+rem      never builds the wrong kind of package.
+set "LINK_MODE="
+if "%~1"=="" set "LINK_MODE=zip"
+if /i "%~1"=="link" set "LINK_MODE=zip"
+if /i "%~1"=="installer" set "LINK_MODE=installer"
+if /i "%~1"=="link-installer" set "LINK_MODE=installer"
+if not defined LINK_MODE (
+    echo [ERROR] Unknown subcommand: %~1
+    echo         Use one of: ^(none^) / link / installer / link-installer / clean
     pause
     exit /b 1
 )
-
-echo.
-echo [INFO] Checking dependencies (pinned via requirements.txt / requirements-dev.txt)...
-rem Install both sets at their pins. PyInstaller is pinned in
-rem requirements-dev.txt because its bootloader ends up inside the shipped exe:
-rem an unpinned bundler means the release was built by whatever was newest.
-rem PYYAML_FORCE_LIBYAML=0: the PyYAML that bandit uses has no wheel for
-rem Python 3.15 and builds from source; skip its C extension so a machine
-rem without a C compiler does not stop here when the pin moves (CI does the same).
-set PYYAML_FORCE_LIBYAML=0
-"%PY%" -m pip install -r requirements.txt -r requirements-dev.txt --quiet
+"%PY%" "%~dp0buildtools\build_link.py" --mode %LINK_MODE%
 if errorlevel 1 (
-    echo [ERROR] Failed to install pinned dependencies.
+    echo [ERROR] Link build failed. Check the error messages above.
     pause
     exit /b 1
-)
-echo [OK] Dependencies OK
-echo [OK] PyInstaller:
-"%PY%" -m PyInstaller --version
-
-echo.
-echo [INFO] Cleaning old build...
-if exist "%APP_DIR%"              rmdir /s /q "%APP_DIR%"
-if exist "%WORK_DIR%\RadioSimPro" rmdir /s /q "%WORK_DIR%\RadioSimPro"
-echo [OK] Clean done
-
-echo.
-echo [INFO] Building... (this may take a few minutes)
-echo      dist : %DIST_DIR%
-echo      work : %WORK_DIR%
-echo.
-"%PY%" -m PyInstaller radiosim.spec --noconfirm --distpath "%DIST_DIR%" --workpath "%WORK_DIR%"
-
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Build failed. Check the error messages above.
-    pause
-    exit /b 1
-)
-
-rem ---- Gate: does the exe ship without a module that bundled code always
-rem      imports? Source-run QA cannot see this (the dev machine has the whole
-rem      stdlib), so this report is the only place it is visible. It was already
-rem      visible at 2.6RC1 build time and nobody read it - hence a gate, not a
-rem      note. Rationale in Japanese: buildtools\check_bundle_imports.py / ISSUES B-036.
-echo.
-echo [INFO] Checking the bundle for unconditionally-imported missing modules...
-"%PY%" buildtools\check_bundle_imports.py "%WORK_DIR%\radiosim\warn-radiosim.txt"
-if errorlevel 1 (
-    echo.
-    echo [ERROR] Build stopped: the exe would crash at run time. See above.
-    pause
-    exit /b 1
-)
-
-echo.
-echo [INFO] Creating runtime directories...
-if not exist "%APP_DIR%\terrain_cache" mkdir "%APP_DIR%\terrain_cache"
-if not exist "%APP_DIR%\results"       mkdir "%APP_DIR%\results"
-
-rem ---- Portable marker (3.1): the ZIP mode is still portable (the exe's own
-rem      folder is writable and the whole folder is meant to move as a unit),
-rem      so it must keep behaving like the pre-3.1 "next to the exe" layout.
-rem      core.config.is_portable() decides that per-file, by checking for this
-rem      marker next to the exe (its absence means "installed to a possibly
-rem      read-only location" -> OS-standard folders). The installer mode must
-rem      NOT ship this file, so it is only written in "zip" mode.
-if /i "%MODE%"=="zip" (
-    echo. > "%APP_DIR%\portable.txt"
-)
-
-rem ---- Optional code-signing hook (3.1 stage 6 / project-dormant-decisions memory).
-rem      Decided not to sign (2026-09-11, I-140) - this is only the
-rem      switch, so turning it on later needs one env var, not a script
-rem      rewrite. RADIOSIM_SIGNTOOL, if set, is called as:
-rem        "%RADIOSIM_SIGNTOOL%" <path-to-file-to-sign>
-rem      and must handle its own certificate/timestamp-server flags itself
-rem      (e.g. a small wrapper .bat around signtool.exe). Absent by default.
-if defined RADIOSIM_SIGNTOOL (
-    echo.
-    echo [INFO] Signing %APP_DIR%\RadioSimPro.exe ...
-    call "%RADIOSIM_SIGNTOOL%" "%APP_DIR%\RadioSimPro.exe"
-    if errorlevel 1 (
-        echo [ERROR] Code signing failed for RadioSimPro.exe.
-        pause
-        exit /b 1
-    )
-)
-
-rem ---- I-126: zip mode used to stop after printing "zip it yourself" and
-rem      leave the actual Compress-Archive to a human running a separate
-rem      command later. That gap let a stale zip (built before a same-session
-rem      doc fix) ship next to a freshly-rebuilt exe with nothing checking the
-rem      two agreed - caught only by a manual hash comparison right before
-rem      3.1RC2's publish. Building the zip here, from the APP_DIR this run
-rem      just produced, removes the human step instead of adding a check for
-rem      its absence.
-if /i "%MODE%"=="zip" (
-    echo.
-    echo [INFO] Creating distribution zip...
-    set "VERFILE=%TEMP%\radiosim_appver_%RANDOM%.txt"
-    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "!VERFILE!"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Failed to read APP_VERSION with "%PY%".
-        del "!VERFILE!" >nul 2>&1
-        pause
-        exit /b 1
-    )
-    set /p APP_VER=<"!VERFILE!"
-    del "!VERFILE!" >nul 2>&1
-    if not defined APP_VER (
-        echo.
-        echo [ERROR] APP_VERSION came back empty. Aborting the zip build.
-        pause
-        exit /b 1
-    )
-    set "ZIP_FILE=%DIST_DIR%\RadioSimPro-!APP_VER!.zip"
-    if exist "!ZIP_FILE!" del /q "!ZIP_FILE!"
-    powershell -NoProfile -Command "Compress-Archive -Path '%APP_DIR%' -DestinationPath '!ZIP_FILE!' -Force"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Zip creation failed. Check the error messages above.
-        pause
-        exit /b 1
-    )
-    if not exist "!ZIP_FILE!" (
-        echo.
-        echo [ERROR] Zip creation reported success but the file is missing:
-        echo           !ZIP_FILE!
-        pause
-        exit /b 1
-    )
-    echo [OK] Zip created: !ZIP_FILE!
-)
-
-echo.
-echo ============================================================
-echo [SUCCESS] Build complete!
-echo.
-echo Output : %APP_DIR%\
-echo Exe    : %APP_DIR%\RadioSimPro.exe
-echo.
-if /i "%MODE%"=="zip" (
-    echo Zip    : !ZIP_FILE!
-) else (
-    echo Continuing to the installer step below.
-)
-echo ============================================================
-echo.
-
-if /i "%MODE%"=="installer" (
-    echo [INFO] Building installer ^(Inno Setup^)...
-    rem Read APP_VERSION through a temp file (2026-09-05, Codex round71 P1).
-    rem   Inside the backquotes of `for /f`, quoting as "%PY%" breaks cmd parsing,
-    rem   and leaving it bare breaks on a Python path that contains spaces
-    rem   (C:\Program Files\... runs "C:\Program" and APP_VER reaches ISCC empty,
-    rem   so the Setup name and version come out wrong).
-    rem   => Drop the quoting tightrope; the plain "%PY%" form works here.
-    rem   The name carries %RANDOM% (2026-09-05, Codex round72 P2): a fixed name in
-    rem   %TEMP% is shared by every checkout and every build on the machine, so two
-    rem   builds at once would overwrite or delete each other's version file (and it
-    rem   would clobber an unrelated file that happens to have that name).
-    rem   Delete it on the failure path too, not only on success.
-    set "VERFILE=%TEMP%\radiosim_appver_%RANDOM%.txt"
-    "%PY%" -c "from core import version as v; print(v.APP_VERSION)" > "!VERFILE!"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Failed to read APP_VERSION with "%PY%".
-        del "!VERFILE!" >nul 2>&1
-        pause
-        exit /b 1
-    )
-    set /p APP_VER=<"!VERFILE!"
-    del "!VERFILE!" >nul 2>&1
-    if not defined APP_VER (
-        echo.
-        echo [ERROR] APP_VERSION came back empty. Aborting the installer build.
-        pause
-        exit /b 1
-    )
-    "%RADIOSIM_ISCC%" /DAppVersion="!APP_VER!" /O"%DIST_DIR%" "%~dp0installer\radiosim.iss"
-    if errorlevel 1 (
-        echo.
-        echo [ERROR] Installer build failed. Check the error messages above.
-        pause
-        exit /b 1
-    )
-    set "SETUP_EXE=%DIST_DIR%\RadioSimPro-Setup-!APP_VER!.exe"
-    if defined RADIOSIM_SIGNTOOL (
-        echo.
-        echo [INFO] Signing !SETUP_EXE! ...
-        call "%RADIOSIM_SIGNTOOL%" "!SETUP_EXE!"
-        if errorlevel 1 (
-            echo [ERROR] Code signing failed for the installer.
-            pause
-            exit /b 1
-        )
-    )
-    echo.
-    echo ============================================================
-    echo [SUCCESS] Installer complete!
-    echo.
-    echo Installer : !SETUP_EXE!
-    echo ============================================================
-    echo.
 )
 
 rem ---- Version-boundary advisory: RC/final builds create their tag server-side

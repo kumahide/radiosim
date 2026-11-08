@@ -154,12 +154,12 @@ function git(root, args) {
 // ⚠️ 助言専用のまま＝刻印が無くても止めない（このスクリプトは常に exit 0）。
 //
 // 🔒 **照らすのは commit ではなく中身**（B-294）＝刻印の `display_files`（検査した
-// 作業ツリーの views/ tests/ の「パス → blob」）と、HEAD の同じ範囲の blob を比べる。
+// 作業ツリーの tests/ の「パス → blob」）と、HEAD の同じ範囲の blob を比べる。
 // 🔴 以前は刻印の commit と HEAD を比べていた＝コミット前ゲートは作業ツリーのまま
-// 回すので刻印は必ず親を指し、自分のコミットの views/ tests/ を見つけて 🔴🔴 で鳴った。
+// 回すので刻印は必ず親を指し、自分のコミットの tests/ を見つけて 🔴🔴 で鳴った。
 // 逆向きに、未コミットの変更で回してから戻すと commit が一致して嘘の ✅ になった。
 // 作り方は tests/conftest.py の `_display_files` と対（範囲は `DISPLAY_SCOPE`）。
-export const DISPLAY_SCOPE = ["views", "tests"];
+export const DISPLAY_SCOPE = ["tests"]; // views/ は Link 1.0 ステージ11a で撤去
 
 export function headDisplayFiles(root) {
   const out = execFileSync("git", ["ls-tree", "-r", "-z", "HEAD", "--", ...DISPLAY_SCOPE], {
@@ -207,13 +207,13 @@ export function displayRunLine(root) {
   const differ = differingDisplayFiles(stamp.display_files, head);
   if (differ.length === 0) {
     return (
-      `[表示依存] ✅ HEAD の views/ tests/ はこの中身で回っている` +
+      `[表示依存] ✅ HEAD の tests/ はこの中身で回っている` +
       `（${when} / 実行 ${stamp.ran} 本）`
     );
   }
   const shown = differ.slice(0, 3).join(" ") + (differ.length > 3 ? " …" : "");
   return (
-    `\n🔴🔴 [表示依存] 刻印（${when}）は、HEAD と views/ tests/ の中身が\n` +
+    `\n🔴🔴 [表示依存] 刻印（${when}）は、HEAD と tests/ の中身が\n` +
     `        ${differ.length} ファイル違う（${shown}）＝**表示依存の面は\n` +
     "        この状態で 1 度も検査されていない**（CI では構造的に走らない）。\n" +
     '        → & "$env:RADIOSIM_PYTHON" -m pytest を最後まで回してから配ること。\n'

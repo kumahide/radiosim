@@ -138,7 +138,7 @@ class TestBlockedRatioFormattingIsNotScattered:
 
     _DISPLAY_MODULES = [
         "report/report_summary.py", "core/simulation.py",
-        "views/graph.py", "report/report_path.py",
+        "report/report_path.py",
     ]
 
     @pytest.mark.parametrize("mod", _DISPLAY_MODULES)
@@ -251,7 +251,7 @@ class TestEveryFaceThatShowsTheRatioAlsoShowsTheDepth:
     def _sources():
         root = os.path.join(os.path.dirname(__file__), "..")
         out = []
-        for layer in ("core", "report", "views", "webui"):
+        for layer in ("core", "report", "webui"):
             d = os.path.join(root, layer)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".py") or name == "units.py":
@@ -387,7 +387,7 @@ class TestNobodyFormatsDbByHand:
     def _sources():
         root = os.path.join(os.path.dirname(__file__), "..")
         out = []
-        for layer in ("core", "report", "views", "webui"):
+        for layer in ("core", "report", "webui"):
             d = os.path.join(root, layer)
             for name in sorted(os.listdir(d)):
                 if not name.endswith(".py") or name == "units.py":
