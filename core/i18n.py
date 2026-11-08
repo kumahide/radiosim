@@ -846,6 +846,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_profile_later":  "The terrain profile will appear here.",
         "webui_no_edge":        "Microsoft Edge was not found. The new screen opens in Edge.",
         "webui_grp_advanced":   "Details",
+        "webui_hint_start":     "e.g. 34.54, 132.41",
+        "webui_hint_end":       "e.g. 34.53, 132.41",
         "webui_margin_range":   "Across the assumptions: {worst} to {best} dB",
 
         # ===== Validation (batch) =====
@@ -1652,6 +1654,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_profile_later":  "ここに地形の断面図が出ます。",
         "webui_no_edge":        "Microsoft Edge が見つかりません。新しい画面は Edge で開きます。",
         "webui_grp_advanced":   "詳細",
+        "webui_hint_start":     "例: 34.54, 132.41",
+        "webui_hint_end":       "例: 34.53, 132.41",
         "webui_margin_range":   "前提を振った幅：{worst}〜{best} dB",
 
         # ===== Validation (batch) =====

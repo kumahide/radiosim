@@ -47,6 +47,7 @@ function buildField(f) {
     el.spellcheck = false;
     el.autocomplete = "off";
     el.inputMode = f.mode === "decimal" ? "decimal" : "text";
+    if (f.hint) el.placeholder = f.hint;   // 空にしたときだけ見える書式の例（I-237）
     el.addEventListener("input", onEdit);
   }
   el.dataset.key = f.key;

@@ -314,6 +314,23 @@ def test_every_choice_is_a_value_the_validator_accepts():
     assert seen == set(allowed)
 
 
+@pytest.mark.parametrize("lang", ["ja", "en"])
+def test_only_the_coordinates_carry_a_hint_that_parses(lang):
+    # I-237＝薄字の例は座標の 2 欄だけ（2026-11-08 経営者の選択）。例は打ち込めば通る形であること
+    from core import coords, i18n
+    before = i18n.current_lang()
+    i18n.set_lang(lang)
+    try:
+        hints = {f["key"]: f["hint"] for g in webserver.form() for f in g["fields"]
+                 if "hint" in f}
+    finally:
+        i18n.set_lang(before)
+    assert set(hints) == {"start", "end"}
+    for text in hints.values():
+        lat, lon = coords.parse_pair(text.split(" ", 1)[1])
+        assert 20 < lat < 46 and 122 < lon < 154, text
+
+
 def test_every_breakdown_row_has_a_value_in_the_verdict():
     st = AppState()
     Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,

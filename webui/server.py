@@ -83,6 +83,10 @@ _FORM = (
 #: 文字で打つ欄のうち、数を打つもの以外（座標）。
 _TEXT_KEYS = frozenset({"start", "end"})
 
+#: 空にしたとき欄に薄字で出す書式の例（I-237＝2026-11-08 経営者の選択「座標の 2 欄だけ」）。
+#: 数の欄は単位が語に・範囲が吹き出しにある＝付けない（⑧ 二度言わない）。
+_HINTS = {"start": "webui_hint_start", "end": "webui_hint_end"}
+
 #: 損失の内訳（入力の列の下）＝(見出しの鍵, 字の鍵, 単位)。上から足し引きの順。
 _BREAKDOWN = (
     ("eirp", "pl_eirp", "dBm"),
@@ -130,6 +134,8 @@ def form() -> "list[dict[str, Any]]":
             field: dict[str, Any] = {"key": key, "label": i18n.t(label)}
             if tip is not None:
                 field["tip"] = i18n.t(tip)
+            if key in _HINTS:
+                field["hint"] = i18n.t(_HINTS[key])
             if options is not None:
                 field["options"] = options
             else:
