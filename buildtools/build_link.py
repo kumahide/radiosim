@@ -29,6 +29,13 @@ Smart App Control に 2 回止められた（3.9.1RC1・4.0 の試作）のが�
   - 作った木の python.exe で `core` と `webui` の全モジュールを読み、読めなければ止める
     （開発機には全部が入っているので、ソース実行の試験ではこの漏れが見えない＝B-036 と同じ）
   - インストーラのとき `RADIOSIM_ISCC`＝Inno Setup 7（別の版は `RADIOSIM_ISCC_ANY_VERSION=1`）
+
+外の包み（4.0 ステージ8f・オープンコアの殻）:
+  `--package 名前=フォルダ`（繰り返せる）で、このリポジトリの外にある包みを `app\\` へ足し、
+  `--entry 名前` で起動の口（`pythonw.exe -m 名前`）をその包みへ替える。上に載る非公開の層が
+  この道具を借りて自分の配布を作るための口で、この道具はその包みの名前を知らない
+  （`tests/test_layers.py` の ⑤＝公開のコードは上に載る層を引かない）。
+  足した包みも作った木の python.exe で全モジュールを読む（漏れたら止める）。
 """
 
 from __future__ import annotations
@@ -64,6 +71,8 @@ ISCC_BANNER = "Inno Setup 7 Command-Line Compiler"
 RUNTIME_DISTS = ("numpy", "pillow", "requests", "urllib3", "certifi", "charset-normalizer",
                  "idna", "truststore")
 APP_PACKAGES = ("core", "webui")
+#: 起動の口の既定（`pythonw.exe -m webui`）。`--entry` で外の包みへ替えられる。
+DEFAULT_ENTRY = "webui"
 
 #: ロゴとアイコンの元（I-238）。画面はそのまま描き、`icon.ico` は `<g id="icon">` から焼く。
 BRAND_SVG = os.path.join(REPO, "webui", "static", "brand.svg")
@@ -84,7 +93,11 @@ INTERPRETER_PROBE = "import struct, sys; print(tuple(sys.version_info), struct.c
 
 #: ポータブル版の起こし方（zip のときだけ置く）。`start` で起こすので黒い窓は一瞬で閉じる。
 #: 作業フォルダを移さない＝基準は `pythonw.exe` の隣（`config.app_base_dir`）。
-LAUNCHER_CMD = '@echo off\r\nstart "" "%~dp0pythonw.exe" -m webui\r\n'
+def launcher_cmd(entry: str = DEFAULT_ENTRY) -> str:
+    return f'@echo off\r\nstart "" "%~dp0pythonw.exe" -m {entry}\r\n'
+
+
+LAUNCHER_CMD = launcher_cmd()
 
 
 class BuildError(Exception):
@@ -171,6 +184,38 @@ def skip_file(rel: str) -> bool:
     """依存の配布物のうち、写さないファイルか。"""
     parts = rel.replace("\\", "/").split("/")
     return bool(_SKIP_PARTS.intersection(parts[:-1])) or rel.endswith(_SKIP_SUFFIX)
+
+
+def package_sources(extra: Iterable[str] = (), base: str = REPO) -> list[tuple[str, str]]:
+    """`app\\` へ入れる包み＝`(名前, 元のフォルダ)`。公開側の 2 つ（`APP_PACKAGES`）が先。
+
+    `extra` は `名前=フォルダ`（`--package`）。フォルダは `base` からの相対でもよい。
+    名前が識別子でない・公開側や互いと重なる・`__init__.py` が無い、なら止める。
+    """
+    out = [(p, os.path.join(REPO, p)) for p in APP_PACKAGES]
+    for spec in extra:
+        name, sep, folder = spec.partition("=")
+        name, folder = name.strip(), folder.strip().strip('"')
+        if not sep or not name or not folder:
+            raise BuildError(f"--package は 名前=フォルダ の形で渡す: {spec!r}")
+        if not name.isidentifier():
+            raise BuildError(f"--package の名前が Python の包みの名前でない: {name!r}")
+        if any(name == n for n, _ in out):
+            raise BuildError(f"--package の名前が既にある包みと重なる: {name!r}")
+        path = os.path.abspath(os.path.join(base, folder))
+        if not os.path.isfile(os.path.join(path, "__init__.py")):
+            raise BuildError(f"--package {name} のフォルダに __init__.py が無い: {path}")
+        out.append((name, path))
+    return out
+
+
+def check_entry(entry: str, packages: Iterable[tuple[str, str]]) -> None:
+    """起動の口が、入れる包みのどれかで、`__main__.py` を持つこと。"""
+    found = dict(packages).get(entry)
+    if found is None:
+        raise BuildError(f"--entry {entry!r} が入れる包みに無い（--package で足す）")
+    if not os.path.isfile(os.path.join(found, "__main__.py")):
+        raise BuildError(f"--entry {entry} に __main__.py が無い＝`-m {entry}` で起こせない: {found}")
 
 
 def icon_svg(brand_text: str) -> str:
@@ -343,7 +388,8 @@ def _write_icon(root: str) -> None:
     write_icon(os.path.join(root, "icon.ico"))
 
 
-def build_tree(dist_dir: str, embed_zip: str, declared: str) -> str:
+def build_tree(dist_dir: str, embed_zip: str, declared: str,
+               packages: Iterable[tuple[str, str]] | None = None) -> str:
     root = os.path.join(dist_dir, APP_DIR_NAME)
     shutil.rmtree(root, ignore_errors=True)
     if os.path.exists(root):
@@ -369,8 +415,8 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str) -> str:
     vendor, app = os.path.join(root, "vendor"), os.path.join(root, "app")
     for name in RUNTIME_DISTS:
         _copy_dist(name, vendor)
-    for pkg in APP_PACKAGES:
-        shutil.copytree(os.path.join(REPO, pkg), os.path.join(app, pkg),
+    for pkg, src in (package_sources() if packages is None else packages):
+        shutil.copytree(src, os.path.join(app, pkg),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy2(os.path.join(REPO, "LICENSE"), root)
     _write_icon(root)
@@ -384,12 +430,12 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str) -> str:
     return root
 
 
-def smoke_import(root: str) -> None:
-    """作った木の python.exe で、`core` と `webui` の全モジュールを読む（起動はしない）。"""
+def smoke_import(root: str, names: Iterable[str] = APP_PACKAGES) -> None:
+    """作った木の python.exe で、入れた包み（既定は `core` と `webui`）の全モジュールを読む（起動はしない）。"""
     code = (
         "import importlib, pkgutil, sys\n"
         "bad = []\n"
-        f"for pkg in {APP_PACKAGES!r}:\n"
+        f"for pkg in {tuple(names)!r}:\n"
         "    mod = importlib.import_module(pkg)\n"
         "    for info in pkgutil.walk_packages(mod.__path__, pkg + '.'):\n"
         "        if info.name.endswith('__main__'):\n"
@@ -409,12 +455,12 @@ def smoke_import(root: str) -> None:
                          + (done.stdout + done.stderr).strip())
 
 
-def write_zip(root: str, zip_path: str) -> None:
+def write_zip(root: str, zip_path: str, entry: str = DEFAULT_ENTRY) -> None:
     """ポータブル版＝portable.txt と起動の .cmd を足して、フォルダごと固める。"""
     with open(os.path.join(root, "portable.txt"), "w", encoding="ascii") as f:
         f.write("\n")
     with open(os.path.join(root, f"{APP_DIR_NAME}.cmd"), "w", encoding="ascii", newline="") as f:
-        f.write(LAUNCHER_CMD)
+        f.write(launcher_cmd(entry))
     if os.path.exists(zip_path):
         os.remove(zip_path)
     base = os.path.dirname(root)
@@ -425,15 +471,19 @@ def write_zip(root: str, zip_path: str) -> None:
                 zf.write(full, os.path.relpath(full, base))
 
 
-def installer_command(iscc: str, dist_dir: str) -> list[str]:
-    """ISCC へ渡す引数。木の場所（`LinkDir`）も渡す＝`--dist` を変えても同梱元と出力先がずれない。"""
+def installer_command(iscc: str, dist_dir: str, entry: str = DEFAULT_ENTRY) -> list[str]:
+    """ISCC へ渡す引数。木の場所（`LinkDir`）も渡す＝`--dist` を変えても同梱元と出力先がずれない。
+
+    起動の口（`EntryModule`）も渡す＝ショートカットと最後の「起動する」が `-m <entry>` になる。
+    """
     return [iscc, f"/DAppVersion={version.APP_VERSION}",
             f"/DLinkDir={os.path.join(dist_dir, APP_DIR_NAME)}",
+            f"/DEntryModule={entry}",
             f"/O{dist_dir}", os.path.join(REPO, "installer", "link.iss")]
 
 
-def build_installer(dist_dir: str, iscc: str) -> str:
-    subprocess.run(installer_command(iscc, dist_dir), check=True)  # nosec B603 ─ 宣言の ISCC
+def build_installer(dist_dir: str, iscc: str, entry: str = DEFAULT_ENTRY) -> str:
+    subprocess.run(installer_command(iscc, dist_dir, entry), check=True)  # nosec B603 ─ 宣言の ISCC
     setup = os.path.join(dist_dir, f"{APP_DIR_NAME}-Setup-{version.APP_VERSION}.exe")
     if not os.path.isfile(setup):
         raise BuildError(f"ISCC は成功を返したが、インストーラが無い: {setup}")
@@ -447,24 +497,32 @@ def main(argv: list[str] | None = None) -> int:
     ap = argparse.ArgumentParser(description="RadioSim Link を embeddable Python で配布の形にする")
     ap.add_argument("--mode", choices=("zip", "installer"), default="zip")
     ap.add_argument("--dist", default=os.path.join(REPO, "dist"))
+    ap.add_argument("--package", action="append", default=[], metavar="名前=フォルダ",
+                    help="このリポジトリの外の包みを app へ足す（繰り返せる・相対は今のフォルダから）")
+    ap.add_argument("--entry", default=DEFAULT_ENTRY, metavar="名前",
+                    help=f"起動の口＝pythonw.exe -m 名前（既定 {DEFAULT_ENTRY}）")
     a = ap.parse_args(argv)
     try:
+        packages = package_sources(a.package, base=os.getcwd())
+        check_entry(a.entry, packages)
         declared = check_declared()
         embed_zip = check_embed_zip()
         iscc = check_iscc() if a.mode == "installer" else ""
         check_dependencies()
-        print(f"[INFO] {APP_DIR_NAME} {version.APP_VERSION}（{a.mode}）を作る")
+        print(f"[INFO] {APP_DIR_NAME} {version.APP_VERSION}（{a.mode}・-m {a.entry}）を作る")
         print(f"       embeddable : {embed_zip}")
+        for name, src in packages[len(APP_PACKAGES):]:
+            print(f"       外の包み   : {name} ← {src}")
         os.makedirs(a.dist, exist_ok=True)
-        root = build_tree(a.dist, embed_zip, declared)
-        smoke_import(root)
+        root = build_tree(a.dist, embed_zip, declared, packages)
+        smoke_import(root, [n for n, _ in packages])
         print(f"[OK] フォルダ : {root}")
         if a.mode == "zip":
             zip_path = os.path.join(a.dist, f"{APP_DIR_NAME}-{version.APP_VERSION}.zip")
-            write_zip(root, zip_path)
+            write_zip(root, zip_path, a.entry)
             print(f"[OK] zip     : {zip_path}")
         else:
-            print(f"[OK] インストーラ : {build_installer(a.dist, iscc)}")
+            print(f"[OK] インストーラ : {build_installer(a.dist, iscc, a.entry)}")
     except BuildError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         return 1

@@ -336,6 +336,72 @@ def test_apps_import_core_only(module):
     )
 
 
+# ============================================================
+# ⑤公開のコードは上に載る非公開の層を知らない（オープンコア・4.0 ステージ8f）
+# ============================================================
+# 🔑 非公開リポジトリ `radiosim-pro` の包み `radiosim_pro` は、このリポジトリの `core`・
+# `report`・`webui` を読んで上に載る。逆向き（公開側が非公開の名前を知る）は禁じる＝
+# 公開側が非公開の層の名前を 1 つでも知ると、①Lite が Pro 無しで動く保証が消える
+# ②「Pro の機能は非公開側にだけコミットする」が名前の漏れから崩れる（MIT で取り返せない）。
+# ⚠️ 遅延 import・`importlib.import_module("…")`・`__import__("…")` も対象＝文字列で
+# 引いても名前を知っていることに変わりはない。
+_PRIVATE_ROOTS = frozenset({"radiosim_pro", "pro"})
+_PUBLIC_CODE_DIRS = ("core", "report", "views", "webui", "apps", "buildtools")
+
+
+def _public_code() -> list[Path]:
+    files = [ROOT / "main.py"]
+    for d in _PUBLIC_CODE_DIRS:
+        files += sorted((ROOT / d).rglob("*.py"))
+    return files
+
+
+def _named_roots(path: Path) -> set[str]:
+    """import 文と、文字列で引く呼び出し（`import_module`・`__import__`）の最上位の名前。"""
+    tree = ast.parse(path.read_text(encoding="utf-8"))
+    roots: set[str] = set()
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            roots |= {a.name.split(".")[0] for a in node.names}
+        elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+            roots.add(node.module.split(".")[0])
+        elif isinstance(node, ast.Call) and node.args:
+            fn = node.func
+            name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+            arg = node.args[0]
+            if name in ("import_module", "__import__") and isinstance(arg, ast.Constant) \
+                    and isinstance(arg.value, str):
+                roots.add(arg.value.split(".")[0])
+    return roots
+
+
+@pytest.mark.parametrize("path", _public_code(), ids=lambda p: str(p.relative_to(ROOT)))
+def test_public_code_does_not_know_the_private_layer(path):
+    bad = sorted(_named_roots(path) & _PRIVATE_ROOTS)
+    assert not bad, (
+        f"{path.relative_to(ROOT)} が非公開の層 {bad} を引いている。"
+        "公開側は上に載る層を知らない＝Pro が足すものは Pro の側から公開側の口へ渡す"
+        "（公開側に要る口は、名前を知らない形〔引数・登録〕で作る）。"
+    )
+
+
+def test_private_layer_is_not_committed_here():
+    """非公開の包みのフォルダがこのリポジトリに無いこと（Pro のコードは非公開側にだけ）。"""
+    found = sorted(str(p.relative_to(ROOT)) for name in _PRIVATE_ROOTS
+                   for p in [ROOT / name] if p.exists())
+    assert not found, (
+        f"{found} がこのリポジトリにある。Pro のコードは非公開リポジトリ radiosim-pro にだけ"
+        "コミットする（公開リポジトリに入れたコードは MIT で取り返せない）。"
+    )
+
+
+def test_the_private_guard_sees_the_screens():
+    """⑤の対象が空でないこと＝新しい画面と土台の入口を必ず見ている（壊れ方①への備え）。"""
+    seen = {str(p.relative_to(ROOT)).replace("\\", "/") for p in _public_code()}
+    assert {"main.py", "webui/__main__.py", "core/version.py",
+            "buildtools/build_link.py"} <= seen
+
+
 def test_the_apps_guard_is_not_empty():
     """`apps/` に実体があること（0 件なら上の検査は緑のまま何も見ていない）。
 

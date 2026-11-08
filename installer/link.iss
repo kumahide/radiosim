@@ -12,7 +12,7 @@
 ; コンパイラ: Inno Setup 7（本体と同じ・I-125）。
 ;
 ; 起動方法: build.bat link-installer から（buildtools/build_link.py が
-; /DAppVersion= と /DLinkDir= と /O を渡す）。単体で ISCC にかける場合は
+; /DAppVersion= と /DLinkDir= と /DEntryModule= と /O を渡す）。単体で ISCC にかける場合は
 ; 下の #ifndef で "0.0.0-dev" と ..\dist\RadioSimLink が使われる。
 ;
 ; 配置方針は本体と同じ（3.1 ステージ1の保存先移設と対）:
@@ -33,6 +33,12 @@
 
 #ifndef LinkDir
   #define LinkDir AddBackslash(SourcePath) + "..\dist\RadioSimLink"
+#endif
+
+; 起動の口（4.0 ステージ8f）。build_link.py の --entry が /DEntryModule= で渡す＝上に載る
+; 非公開の層は自分の包みを起こす。単体で ISCC にかけたときは新しい画面（webui）。
+#ifndef EntryModule
+  #define EntryModule "webui"
 #endif
 
 #define AppName "RadioSim Link"
@@ -179,16 +185,16 @@ english.VerDowngradeAsk=You are about to install a version (%2) that is older th
 Source: "{#LinkDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs; Excludes: "portable.txt,RadioSimLink.cmd"
 
 [Icons]
-; 起動は pythonw.exe -m webui（自前の exe が無い）。作業フォルダを {app} にし、絵は木の icon.ico。
-Name: "{group}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m webui"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+; 起動は pythonw.exe -m {#EntryModule}（既定 webui・自前の exe が無い）。作業フォルダを {app} にし、絵は木の icon.ico。
+Name: "{group}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
 Name: "{group}\{cm:UninstallProgram,RadioSim Link}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m webui"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+Name: "{autodesktop}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\pythonw.exe"; Parameters: "-m webui"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,RadioSim Link}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,RadioSim Link}"; Flags: nowait postinstall skipifsilent
 
 [UninstallDelete]
 ; install_lang.txt は [Files] ではなく [Code] が作るので uninsdeletefile が使えない。

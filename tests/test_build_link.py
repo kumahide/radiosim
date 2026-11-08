@@ -113,12 +113,70 @@ class TestVersionAndFiles:
         assert bl.LAUNCHER_CMD.isascii()
 
 
+class TestOuterPackages:
+    """`--package 名前=フォルダ` と `--entry`＝上に載る非公開の層がこの道具を借りる口（ステージ8f）。"""
+
+    def _pkg(self, tmp_path, name="outer", main=True):
+        d = tmp_path / name
+        d.mkdir()
+        (d / "__init__.py").write_text("", encoding="utf-8")
+        if main:
+            (d / "__main__.py").write_text("", encoding="utf-8")
+        return d
+
+    def test_default_is_the_two_public_packages(self):
+        got = bl.package_sources()
+        assert [n for n, _ in got] == list(bl.APP_PACKAGES)
+        for name, src in got:  # core は __init__.py の無い名前空間の包み＝フォルダだけを見る
+            assert os.path.isdir(src) and os.path.basename(src) == name, name
+
+    def test_outer_package_comes_after_the_public_ones(self, tmp_path):
+        self._pkg(tmp_path)
+        got = bl.package_sources(["outer=outer"], base=str(tmp_path))
+        assert [n for n, _ in got] == [*bl.APP_PACKAGES, "outer"]
+        assert got[-1][1] == os.path.abspath(tmp_path / "outer")
+
+    @pytest.mark.parametrize("spec,why", [
+        ("outer", "名前=フォルダ"),
+        ("=outer", "名前=フォルダ"),
+        ("out-er=outer", "包みの名前でない"),
+        ("webui=outer", "重なる"),
+        ("other=missing", "__init__.py が無い"),
+    ])
+    def test_bad_package_spec_stops(self, tmp_path, spec, why):
+        self._pkg(tmp_path)
+        with pytest.raises(bl.BuildError, match=why):
+            bl.package_sources([spec], base=str(tmp_path))
+
+    def test_the_same_outer_name_twice_stops(self, tmp_path):
+        self._pkg(tmp_path)
+        with pytest.raises(bl.BuildError, match="重なる"):
+            bl.package_sources(["outer=outer", "outer=outer"], base=str(tmp_path))
+
+    def test_entry_must_be_a_package_with_main(self, tmp_path):
+        self._pkg(tmp_path)
+        self._pkg(tmp_path, "nomain", main=False)
+        pk = bl.package_sources(["outer=outer", "nomain=nomain"], base=str(tmp_path))
+        bl.check_entry(bl.DEFAULT_ENTRY, pk)
+        bl.check_entry("outer", pk)
+        with pytest.raises(bl.BuildError, match="入れる包みに無い"):
+            bl.check_entry("ghost", pk)
+        with pytest.raises(bl.BuildError, match="__main__.py が無い"):
+            bl.check_entry("nomain", pk)
+
+    def test_launcher_follows_the_entry(self):
+        assert bl.launcher_cmd("outer").endswith('"%~dp0pythonw.exe" -m outer\r\n')
+        assert bl.LAUNCHER_CMD == bl.launcher_cmd(bl.DEFAULT_ENTRY)
+
+
 class TestInstallerCommand:
     def test_tree_and_output_follow_the_same_dist(self, tmp_path):
         """同梱元（`LinkDir`）と出力先（`/O`）が同じ `--dist` から出る＝`--dist` を変えてもずれない。"""
         cmd = bl.installer_command("ISCC.exe", str(tmp_path))
         assert f"/DLinkDir={tmp_path / bl.APP_DIR_NAME}" in cmd
         assert f"/O{tmp_path}" in cmd
+        assert f"/DEntryModule={bl.DEFAULT_ENTRY}" in cmd
+        assert "/DEntryModule=outer" in bl.installer_command("ISCC.exe", str(tmp_path), "outer")
         assert os.path.normcase(os.path.normpath(cmd[-1])) == os.path.normcase(
             os.path.normpath(os.path.join(_ROOT, "installer", "link.iss")))
 
@@ -129,6 +187,14 @@ class TestInstallerCommand:
         assert 'Source: "{#LinkDir}\\*"' in iss
         assert '#define VerFile AddBackslash(LinkDir) + "version.txt"' in iss
         assert f"OutputBaseFilename={bl.APP_DIR_NAME}-Setup-{{#AppVersion}}" in iss
+
+    def test_iss_starts_the_entry_it_is_given(self):
+        """ショートカット 2 つと最後の「起動する」は `EntryModule` を起こす（既定は webui）。"""
+        with open(os.path.join(_ROOT, "installer", "link.iss"), encoding="utf-8-sig") as f:
+            iss = f.read()
+        assert f'#define EntryModule "{bl.DEFAULT_ENTRY}"' in iss
+        assert iss.count('Parameters: "-m {#EntryModule}"') == 3
+        assert 'Parameters: "-m webui"' not in iss
 
 
 class TestBrandAndIcon:
