@@ -58,6 +58,8 @@ body {
 #band-range { color: var(--muted); font-variant-numeric: tabular-nums; }
 #band-flipped { color: var(--muted); flex-basis: 100%; padding-left: 0; }
 #band-flipped:empty, #band-range:empty { display: none; }
+/* ロゴ（I-238）＝帯の 1 行目の右端。縦の場所を取らない（入力の列は 990px に収める） */
+#brand { height: 34px; margin: -4px 0 -4px auto; align-self: center; }
 #band[data-kind="verdict"][data-word="REVIEW"] #band-flipped { color: var(--review); }
 main { flex: 1; display: flex; min-height: 0; }
 /* 入力の列は使える高さ約 990px の 1 画面に収める（ステージ5＝スクロールなし）。

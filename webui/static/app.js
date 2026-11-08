@@ -393,6 +393,33 @@ function hookProfile() {
 }
 hookProfile();
 
+// ---- 窓の絵（I-238）＝`brand.svg` の `<g id="icon">` を単独の SVG にして favicon へ ----------
+// 元は brand.svg の 1 つ（exe の icon.ico も同じ `icon` から焼く）＝ここで絵を書き写さない。
+async function setFavicon() {
+  try {
+    const text = await (await fetch("brand.svg")).text();
+    const doc = new DOMParser().parseFromString(text, "image/svg+xml");
+    const icon = doc.getElementById("icon");
+    const defs = doc.querySelector("defs");
+    if (!icon || !defs) return;
+    const ns = "http://www.w3.org/2000/svg";
+    const svg = document.createElementNS(ns, "svg");
+    svg.setAttribute("viewBox", icon.getAttribute("data-viewbox") || "0 0 256 256");
+    svg.appendChild(defs.cloneNode(true));                 // `<use href="#mark">` の参照先
+    const use = document.createElementNS(ns, "use");
+    use.setAttribute("href", "#icon");
+    svg.appendChild(use);
+    const blob = new Blob([new XMLSerializer().serializeToString(svg)], { type: "image/svg+xml" });
+    const link = document.createElement("link");
+    link.rel = "icon";
+    link.href = URL.createObjectURL(blob);
+    document.head.appendChild(link);
+  } catch (e) {
+    // 絵が無くても画面は動く（窓の絵は既定のまま）
+  }
+}
+setFavicon();
+
 async function flush() {
   timer = null;
   const changes = Object.assign({}, pending);

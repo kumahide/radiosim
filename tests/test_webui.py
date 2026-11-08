@@ -416,6 +416,19 @@ def test_the_verdict_colors_are_the_report_colors():
     assert set(names) == set(map_graphics.STATUS_HEX)
 
 
+def test_the_page_carries_the_product_name_and_the_brand():
+    # 窓の題は製品名・ロゴは brand.svg をそのまま描く・窓の絵は同じ SVG の `icon` から（I-238）
+    from core import version
+    root = pathlib.Path(webserver.STATIC_ROOT)
+    html = (root / "index.html").read_text(encoding="utf-8")
+    assert f"<title>{version.APP_NAME}</title>" in html
+    assert '<img id="brand" src="brand.svg"' in html
+    js = (root / "app.js").read_text(encoding="utf-8")
+    assert 'fetch("brand.svg")' in js and 'getElementById("icon")' in js
+    svg = (root / "brand.svg").read_text(encoding="utf-8")
+    assert '<g id="icon"' in svg and "data-viewbox=" in svg
+
+
 def test_the_script_has_no_japanese():
     # 字はサーバーの表から＝JS と HTML に日本語を直書きしない（注記は除く）
     import re
