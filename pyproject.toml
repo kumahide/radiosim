@@ -37,7 +37,6 @@ skips = ["B101"]
 # ⚠️ `webui/`（新しい画面・4.0 ステージ8）は入れない＝床 85 % は持ち出す資産の層の値で、
 #    webui の起動側（Edge・`__main__`）は CI で走らない。webui の約束は `tests/test_webui.py`。
 source = ["core", "report"]
-omit   = ["views/*", "main.py"]   # GUI層（tkinter）はカバレッジ対象外
 
 [tool.coverage.report]
 show_missing = true

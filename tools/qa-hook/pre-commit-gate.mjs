@@ -301,18 +301,19 @@ export function islandFor(scope, paths, cwd = process.cwd(), { versionOnly } = {
 }
 
 // FULL MINUS (O-030・2026-11-07): a commit of product code is still full — but
-// the old Tk screens (views/, retired at 4.0 stage 11) and the tools' own tests
-// (no product import) were 385 s of the 813 s suite. When EVERY path is under
-// `full_minus.prefixes` (core/・report/) or is a tests/test_*.py, the commit
-// runs every test file pytest would collect MINUS `skip_old_ui`/`skip_tools`,
+// the tools' own tests (no product import) need not run for it. (The old Tk
+// screens' tests were the other half, `skip_old_ui`; they went with views/ at
+// 4.0 stage 11a, 2026-11-09.) When EVERY path is under `full_minus.prefixes`
+// (core/・report/・webui/) or is a tests/test_*.py, the commit
+// runs every test file pytest would collect MINUS `skip_tools`,
 // with three things put back: a skipped file the commit itself changes, the
 // `tests_walkers` entries that live in a skipped file (when a test changed —
 // as in islandFor), and `keep` (single tests
 // of a skipped file that read the real product tree). ⚠️ Spelled as a LIST,
 // not as `--ignore`/`--deselect`: pytest lets those beat an explicit node id,
 // so the walkers inside test_window_fit.py would vanish with it (measured
-// 2026-11-07). git push drops only the old UI (pushPlanFor,
-// 2026-11-08); CI still runs the whole suite.
+// 2026-11-07). git push runs the whole suite (the 2026-11-08 "push drops the
+// old UI" plan went with the old UI); so does CI.
 export const FULL_MINUS = "full-minus";
 
 /** Every test file pytest collects under tests/ (testpaths; default
@@ -348,7 +349,7 @@ export function fullMinusFor(scope, paths, cwd = process.cwd()) {
   if (!paths.every((p) => inProduct(p) || TEST_FILE.test(p))) return null;
   const all = allTestFiles(cwd);
   if (!all.length) return null;
-  const skip = new Set([...(fm.skip_old_ui || []), ...(fm.skip_tools || [])]);
+  const skip = new Set(fm.skip_tools || []);
   paths.forEach((p) => skip.delete(p)); // a changed test always runs
   const tests = new Set(all.filter((t) => !skip.has(t)));
   // tests_walkers only when a test changed — the same rule as islandFor (B-368).
@@ -359,30 +360,10 @@ export function fullMinusFor(scope, paths, cwd = process.cwd()) {
   return { name: FULL_MINUS, tests: [...tests] };
 }
 
-// PUSH MINUS OLD UI (2026-11-08・the owner: "stop running Tk in the full suite"
-// → "push too"): a push runs every test file MINUS `skip_old_ui` only (the
-// tools' tests stay), with the walkers and `keep` inside a skipped file put
-// back. CI stays the whole suite. Null when there is no full_minus key or no
-// test file (→ the real full suite, fail-closed).
-export const PUSH_MINUS = "push-minus-old-ui";
-
-export function pushPlanFor(scope, cwd = process.cwd()) {
-  const fm = scope.full_minus;
-  if (!fm) return null;
-  const all = allTestFiles(cwd);
-  if (!all.length) return null;
-  const skip = new Set(fm.skip_old_ui || []);
-  const tests = new Set(all.filter((t) => !skip.has(t)));
-  for (const t of [...(scope.tests_walkers || []), ...(fm.keep || [])]) {
-    if (skip.has(t.split("::")[0])) tests.add(t);
-  }
-  return { name: PUSH_MINUS, tests: [...tests] };
-}
-
 /** What a commit of `paths` runs: an island, the full-minus plan, or null
- *  (→ the full suite). A push runs the push-minus-old-ui plan. */
+ *  (→ the full suite). A push is always the full suite. */
 export function commitPlan(scope, paths, cwd = process.cwd(), { push = false, versionOnly } = {}) {
-  if (push) return pushPlanFor(scope, cwd);
+  if (push) return null;
   return islandFor(scope, paths, cwd, { versionOnly }) ?? fullMinusFor(scope, paths, cwd);
 }
 
@@ -812,10 +793,8 @@ function main() {
       targets = islandTargets(cwd, scope, island);
       key = keyFor(inputs, `island:${island.name}\n${targets.join("\n")}`);
       label = island.name === FULL_MINUS
-        ? `フルから旧画面と道具の試験を除いたもの（${targets.length} 本・O-030）`
-        : island.name === PUSH_MINUS
-          ? `フルから旧画面（Tk）の試験を除いたもの（${targets.length} 本・push）`
-          : `部分テスト「${island.name}」（${targets.length} 本）`;
+        ? `フルから道具の試験を除いたもの（${targets.length} 本・O-030）`
+        : `部分テスト「${island.name}」（${targets.length} 本）`;
       realFull = false;
       if (isCachedPass(cwd, key)) return;
     }

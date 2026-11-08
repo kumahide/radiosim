@@ -419,7 +419,7 @@ def test_every_product_call_passes_the_profile():
              "path_sample_fractions": "bilinear", "sample_pixel_groups": "bilinear",
              "get_elevation": "bilinear"}
     found, missing = 0, []
-    for folder in ("core", "report", "views", "webui"):
+    for folder in ("core", "report", "webui"):
         for base, _dirs, files in os.walk(os.path.join(root, folder)):
             for name in files:
                 if not name.endswith(".py"):

@@ -259,7 +259,7 @@ class TestRepoHygiene:
 
     def test_venvゲート_壊れ方2_毎回鳴る_ことがない(self, tmp_path):
         """②venv でないディレクトリでは沈黙すること。"""
-        for name in ("views", "tests", "terrain_cache"):
+        for name in ("webui", "tests", "terrain_cache"):
             (tmp_path / name).mkdir()
         (tmp_path / "requirements.txt").write_text("numpy\n", encoding="utf-8")
         assert venv_dirs_in_root(tmp_path) == []
@@ -299,8 +299,8 @@ _LINE_LIMIT_EXEMPT = {
     "core/i18n.py": "UI 文字列の辞書＝データ表。分割しても読む単位は変わらない",
 }
 
-# アプリの層（2.7 スライス H・I-058）。直下は入口（main.py）だけ。
-_LAYERS = ("core", "report", "views", "webui")
+# アプリの層（2.7 スライス H・I-058）。旧画面（views/）と入口の main.py は 4.0 ステージ11a で撤去した。
+_LAYERS = ("core", "report", "webui")
 
 
 # ============================================================

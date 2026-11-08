@@ -53,7 +53,9 @@ from core import failure
 from core import i18n
 
 REPO = Path(__file__).resolve().parent.parent
-VIEWS = REPO / "views"
+#: 失敗ダイアログを出す画面の層。旧画面（`views/`）は 4.0 ステージ11a で撤去した。新しい画面は
+#: いま `alert()` を呼ばない＝失敗の知らせを型に乗せるかは [[I-256]] の判断と同じ回に決める。
+SCREENS = (REPO / "webui",)
 
 #: 失敗の題（＝本文が型に乗っていなければならないダイアログ）。
 #: ⚠️ **手で数えない**＝`*_error` で終わる題のキーを i18n の表から拾い、
@@ -127,7 +129,7 @@ def scan(source: str, where: str) -> list:
 # ============================================================
 def test_every_failure_dialog_is_built_from_the_type():
     offenders = []
-    for path in sorted(VIEWS.glob("*.py")):
+    for path in sorted(p for d in SCREENS for p in d.glob("*.py")):
         offenders += scan(path.read_text(encoding="utf-8"), path.name)
     assert not offenders, (
         "失敗ダイアログの本文がその場で組まれている（I-100 の型を通していない）: "

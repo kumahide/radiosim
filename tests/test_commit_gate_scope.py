@@ -164,7 +164,7 @@ class TestTheNewIslandsDoNotOverreach:
     @pytest.mark.parametrize("paths", [
         pytest.param(["core/models.py"], id="製品コード"),
         pytest.param(["core/version.py"], id="版文字列＝リリースのコミット"),
-        pytest.param(["views/launcher.py"], id="画面"),
+        pytest.param(["webui/server.py"], id="画面"),
         pytest.param(["tests/conftest.py"], id="conftest＝全テストの入力"),
         pytest.param(["lang/ja.json"], id="文言＝長さがウィンドウ寸法に効く"),
         pytest.param(["tests/table_fit.py"], id="テストの共有ヘルパ"),
@@ -197,8 +197,8 @@ class TestTheNewIslandsDoNotOverreach:
         for name, prefix in prefixes:
             if (name, prefix) in allowed:
                 continue
-            for forbidden in ("core/", "views/", "report/", "lang/", "apps/",
-                              "main.py", "tests/conftest", "requirements",
+            for forbidden in ("core/", "report/", "webui/", "lang/", "apps/",
+                              "tests/conftest", "requirements",
                               "pyproject.toml"):
                 assert not (prefix.startswith(forbidden)
                             or forbidden.startswith(prefix)), (
@@ -206,7 +206,7 @@ class TestTheNewIslandsDoNotOverreach:
                     "『全体が緑』を証明すべき面を、数本のテストで済ませている")
 
 
-# --- O-030＝製品のコードだけのコミットは、フルから旧画面と道具の試験を引いたもの ------------
+# --- O-030＝製品のコードだけのコミットは、フルから道具の試験を引いたもの ------------
 
 def _commit_plan(paths: list[str], push: bool = False):
     """実物の対応表と実物の tests/ に対して `commitPlan()` を評価する（`None`＝フル）。"""
@@ -228,8 +228,7 @@ def _commit_plan(paths: list[str], push: bool = False):
 
 
 def _skipped() -> list[str]:
-    fm = _scope()["full_minus"]
-    return fm["skip_old_ui"] + fm["skip_tools"]
+    return _scope()["full_minus"]["skip_tools"]
 
 
 def _real_test_files() -> set[str]:
@@ -252,12 +251,7 @@ def _real_test_files() -> set[str]:
     files = {line.split("::", 1)[0].replace("\\", "/")
              for line in r.stdout.splitlines() if "::" in line}
     assert files, "pytest の収集が空＝出力の形が変わった"
-    # I-255＝ディレクトリの走査は旧画面（Tk）の試験ファイルを拾わない（tests/conftest.py の
-    # 壁①）。門の `allTestFiles()` はそれも数えるので、その一覧だけ足して比べる。
-    # ⚠️ 足すのは「収集から消えた分」だけ＝一覧にあって収集にも出るなら、壁①が外れている。
-    old_ui = set(_scope()["full_minus"]["skip_old_ui"])
-    assert not files & old_ui, f"旧画面の試験が集められた＝壁①が外れている: {sorted(files & old_ui)}"
-    return files | old_ui
+    return files
 
 
 def _imported_roots(path: str) -> set[str]:
@@ -275,7 +269,7 @@ def _imported_roots(path: str) -> set[str]:
 def _reads_the_real_product(fn_src: str) -> bool:
     """引いたファイルの試験 1 本が、一時フォルダでなく本物の製品の木を読むか（字面で見る）。"""
     return "_REPO" in fn_src and bool(re.search(
-        r"""["'](?:core|report|views)["'/]|versionReaders|productSources""", fn_src))
+        r"""["'](?:core|report|webui)["'/]|versionReaders|productSources""", fn_src))
 
 
 class TestFullMinus:
@@ -288,11 +282,13 @@ class TestFullMinus:
         assert not set(plan["tests"]) & set(_skipped())
 
     def test_a_new_screen_commit_takes_full_minus(self):
-        """新しい画面（webui/）のコミットも旧画面（Tk）の試験を引く（2026-11-08・経営者の指摘
-        「フルスイートで Tk を回さないで」＝足すまでは、どの規則にも当たらず Tk 込みのフルに倒れていた）。"""
+        """新しい画面（webui/）のコミットもフルから道具の試験を引いたもの（2026-11-08・経営者の指摘
+        「フルスイートで Tk を回さないで」＝足すまでは、どの規則にも当たらずフルに倒れていた）。"""
         plan = _commit_plan(["webui/static/app.js", "webui/server.py", "tests/test_webui.py"])
         assert plan and plan["name"] == "full-minus"
-        assert not set(plan["tests"]) & set(_scope()["full_minus"]["skip_old_ui"])
+        # 試験を変えたコミットなので tests_walkers は戻る（B-368）＝それ以外の道具の試験を見る
+        dropped = set(_skipped()) - set(_scope()["tests_walkers"])
+        assert dropped and not set(plan["tests"]) & dropped
 
     def test_a_core_and_test_commit_runs_the_walkers(self):
         """試験を変えたコミットは tests_walkers を全部走らせる（B-368 と同じ）。"""
@@ -311,9 +307,7 @@ class TestFullMinus:
                 assert kept in plan["tests"], f"{kept} が戻っていない"
 
     @pytest.mark.parametrize("paths", [
-        pytest.param(["core/models.py", "views/launcher.py"], id="画面"),
         pytest.param(["core/models.py", "lang/ja.json"], id="文言"),
-        pytest.param(["core/models.py", "main.py"], id="起動"),
         pytest.param(["core/models.py", "icon.png"], id="画面の資産"),
         pytest.param(["core/models.py", "tests/conftest.py"], id="conftest"),
         pytest.param(["core/models.py", "tests/data/x.json"], id="試験の入力"),
@@ -332,13 +326,12 @@ class TestFullMinus:
         plan = _commit_plan(["core/dem.py", "tests/test_claude_hooks.py"])
         assert "tests/test_claude_hooks.py" in plan["tests"]
 
-    def test_push_drops_only_the_old_ui(self):
-        """④鳴っても止まらない（＝push で旧画面より多く絞られる）の対。push は旧画面（Tk）の
-        試験だけを引く（2026-11-08・経営者の決定）＝道具の試験は残る。CI は今もフル。"""
-        plan = _commit_plan(["core/models.py"], push=True)
-        assert plan and plan["name"] == "push-minus-old-ui"
-        files = {t for t in plan["tests"] if "::" not in t}
-        assert files | set(_scope()["full_minus"]["skip_old_ui"]) == _real_test_files()
+    def test_push_is_the_full_suite(self):
+        """④鳴っても止まらない（＝push で何かが絞られる）の対。push はいつもフル
+        （2026-11-08 の「push は旧画面〔Tk〕だけ引く」は、旧画面の撤去〔4.0 ステージ11a〕で
+        引くものが無くなった＝計画ごと外した・2026-11-09）。CI もフル。"""
+        for paths in (["core/models.py"], ["docs/manual_ja.md"], []):
+            assert _commit_plan(paths, push=True) is None, f"{paths} の push が絞られた"
 
     def test_scanners_and_layer_checks_are_never_dropped(self):
         scope = _scope()
@@ -356,16 +349,10 @@ class TestFullMinus:
             with open(os.path.join(_REPO, rel), encoding="utf-8") as f:
                 assert re.search(rf"^\s*def {name}\(", f.read(), re.M), f"{node} が無い"
 
-    def test_old_ui_list_is_only_old_ui_tests(self):
-        """skip_old_ui は旧画面（Tk）の試験だけ＝画面の部品を読まない計算の試験を混ぜない。"""
-        for rel in _scope()["full_minus"]["skip_old_ui"]:
-            roots = _imported_roots(os.path.join(_REPO, rel))
-            assert roots & {"views", "tkinter"}, f"{rel} は旧画面を読まない＝外す理由が無い"
-
     def test_tools_list_does_not_import_the_product(self):
         for rel in _scope()["full_minus"]["skip_tools"]:
             roots = _imported_roots(os.path.join(_REPO, rel))
-            hit = roots & {"core", "report", "views", "apps", "main"}
+            hit = roots & {"core", "report", "webui", "apps"}
             assert not hit, f"{rel} が製品を import している: {hit}"
 
     def test_tools_tests_that_read_the_real_product_are_kept(self):

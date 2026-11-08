@@ -37,7 +37,7 @@ _ROOT = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _EXPERIMENTS = os.path.join(_ROOT, "experiments")
 
 #: 製品側＝ここに属するモジュールの呼び出しだけを照合する。
-_PRODUCT_ROOTS = ("core", "report", "views", "webui", "buildtools")
+_PRODUCT_ROOTS = ("core", "report", "webui", "buildtools")
 
 
 def _rel(path: str) -> str:
