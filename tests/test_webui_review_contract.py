@@ -111,6 +111,23 @@ def test_every_sheet_shows_the_same_review_in_rows_counts_csv_and_map(single, wo
     assert lines and {word for _, _, word, _ in lines} == {vd.REVIEW}
 
 
+def test_the_single_link_saves_the_same_review_in_its_csv_and_path_kml(single):
+    """1 回線の保存（10f＝2026-11-09 経営者）＝`summary.csv` の 1 行と旧画面と同じ `path.kml`。"""
+    _, w = _run("single", start=_TX, end=_RX, h_tx=_H_TX, h_rx=_H_RX)
+    got = w.sheet_run()
+    assert got is not None and got[0] == "single"
+    name, text = exports.sheet_csv(*got)
+    rows = list(csv.DictReader(io.StringIO(text, newline="")))
+    assert name == "summary.csv" and len(rows) == 1
+    assert rows[0]["status"] == vd.REVIEW and rows[0]["id"] == exports.SINGLE_PATH_ID
+    assert float(rows[0]["margin_db"]) == pytest.approx(single["margin"], abs=0.05)
+    assert rows[0]["h_tx"] == f"{float(_H_TX):.1f}"
+    name, kml = exports.sheet_kml(*got)
+    purple = _kml_abgr(map_graphics.STATUS_HEX[vd.REVIEW])
+    assert name == "path.kml" and "<name>LoS (REVIEW)</name>" in kml
+    assert f'<Style id="los"><LineStyle><color>{purple}</color>' in kml
+
+
 def test_the_batch_kml_puts_the_row_in_the_review_folder():
     _, w = _run("batch", _SHEETS["batch"][1])
     _, text = exports.sheet_kml(*w.sheet_run())

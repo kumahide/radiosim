@@ -562,7 +562,22 @@ def save_path_kml(
     h_rx:     float,
     save_dir: str,
 ) -> None:
-    """per-path の path.kml を生成する（Google Earth で 3D 表示可能）。
+    """per-path の path.kml を `save_dir` に書く（本文は `path_kml_text`・名前はフォルダ名）。"""
+    kml = path_kml_text(terrain, result, params, h_tx, h_rx, os.path.basename(save_dir))
+    with open(os.path.join(save_dir, "path.kml"), "w", encoding="utf-8") as f:
+        f.write(kml)
+
+
+def path_kml_text(
+    terrain:  models.TerrainProfile,
+    result:   models.LinkBudgetResult,
+    params:   sim.SimParams,
+    h_tx:     float,
+    h_rx:     float,
+    name:     str,
+) -> str:
+    """per-path の path.kml の本文（Google Earth で 3D 表示可能）。ファイルへ書くのは呼ぶ側
+    （旧画面の `save_path_kml`・新しい画面の 1 回線の保存＝Link 1.0 ステージ10f）。
 
     要素:
       - TX / RX Placemark
@@ -592,7 +607,7 @@ def save_path_kml(
 
     # KML の色は aabbggrr。OK＝緑・REVIEW＝紫（`STATUS_HEX` の #6a1b9a）・ほかは橙（4.0 ステージ6）。
     los_color = {"OK": "ff00aa00", "REVIEW": "ff9a1b6a"}.get(result.status, "ff00a5ff")
-    path_id   = _html.escape(os.path.basename(save_dir))
+    path_id   = _html.escape(name)
     desc_esc  = _html.escape(
         f"Freq: {params.freq_mhz} MHz | "
         f"RX: {units.format_db(result.p_rx, unit='dBm')} | "
@@ -702,6 +717,4 @@ def save_path_kml(
 
 </Document>
 </kml>"""
-
-    with open(os.path.join(save_dir, "path.kml"), "w", encoding="utf-8") as f:
-        f.write(kml)
+    return kml

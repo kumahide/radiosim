@@ -5,6 +5,7 @@ tests/test_webui_exports.py
 全件の結果を持ち、`webui.exports.sheet_csv` が旧画面と同じ書き手で出力契約の CSV を作る。
 `/api/sheet/csv` は全件そろう前は 409。判断点 ②＝CSV の件数と語が画面の表と同じ。
 KML（`summary.kml`）は複数経路だけ＝旧画面と同じ。REVIEW は自分のフォルダ（紫）。
+1 回線の CSV・`path.kml`（10f）は本物の計算コアで `test_webui_review_contract.py` が縛る。
 地図の画像は画面の地図と同じ線を帳票と同じ絵で焼く（`/api/image/map`＝判定の前は 409・背景が無ければ 503）。
 """
 
@@ -109,7 +110,7 @@ def test_the_scenario_csv_is_one_row_per_condition():
     assert [r["h_tx"] for r in rows] == ["10", "15", "40"]
 
 
-def test_no_run_before_the_step_after_an_edit_or_on_the_single_link():
+def test_no_run_before_the_step_or_after_an_edit():
     st = AppState()
     st.update({}, workspace="batch", sheets={"batch": [_ROW]})
     w = _worker(st)
@@ -244,7 +245,7 @@ def _post_csv(srv, path="/api/sheet/csv"):
 
 def test_the_api_answers_409_until_the_sheet_is_complete_then_the_csv(web):
     code, body = _post_csv(web)
-    assert code == 409 and body["message"]                       # 1 回線の面＝作業面の結果が無い
+    assert code == 409 and body["message"]                       # まだ計算していない
     web.worker.submit({}, workspace="batch", sheets={"batch": [_ROW]})
     web.worker.step()
     code, body = _post_csv(web)

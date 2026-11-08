@@ -189,7 +189,8 @@ class Worker:
     def sheet_run(self) -> "tuple[str, Any] | None":
         """今の版の作業面の全件の結果＝`(面, 中身)`。そろっていなければ None（保存の元・10d）。
 
-        中身＝複数経路は `batch.PathResult` の並び（表の順・誤りの行も ERROR の 1 件）・
+        中身＝1 回線は `(地形, SimParams, LinkBudgetResult)`（10f＝`report/` を読まない形で持つ・
+        I-232）・複数経路は `batch.PathResult` の並び（表の順・誤りの行も ERROR の 1 件）・
         中継は `multihop.MultiHopRun`・条件探索は `scenario.ScenarioRun`＝旧画面の書き手がそのまま読む形。
         """
         with self._lock:
@@ -256,6 +257,8 @@ class Worker:
             return
         if shape is not None:
             fields["profile"] = shape
+        # 保存の元（10f＝1 回線の CSV・KML）＝見出しより先に置く（作業面と同じ）
+        self._keep_run(version, "single", (self._terrain, params, result))
         self.state.publish(version, "verdict", **fields)
 
     # ---- 作業面 ------------------------------------------------------------

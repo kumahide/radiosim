@@ -516,7 +516,7 @@ def _make_handler(app: WebServer) -> type:
             if parts.path == "/api/sheet/csv":
                 self._body()                             # 読み捨てる（残すと次の要求として読まれる）
                 got = app.worker.sheet_run()
-                if got is None:                          # 計算中・入力待ち・1 回線の面
+                if got is None:                          # 計算中・入力待ち・古い版
                     return self._json(409, {"message": i18n.t("webui_no_result")})
                 name, text = exports.sheet_csv(*got)
                 return self._json(200, {"text": text, "name": name})

@@ -1067,9 +1067,13 @@ document.getElementById("proj-file").addEventListener("change", async (ev) => {
 });
 
 function buildProjTools() {
+  // 1 回線の結果の CSV・KML（10f＝旧画面の保存の `path.kml` を落とさない）＝作業面では表の道具が持つ
+  const single = (b) => { b.classList.add("single-only"); return b; };
   document.getElementById("proj-tools").replaceChildren(
     button(labels.open_project, openProject),
     button(labels.save_project, saveProject),
+    single(button(labels.save_csv, saveSheetCsv)),
+    single(button(labels.save_kml, saveSheetKml)),
     button(labels.save_map_png, saveMapPng),
     button(labels.save_profile_png, saveProfilePng),
   );

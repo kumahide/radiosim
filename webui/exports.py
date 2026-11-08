@@ -15,8 +15,28 @@ from __future__ import annotations
 from typing import Any
 
 
+#: 1 回線の結果の経路の名前（CSV の `id`・KML の文書名）＝面の表が無いので固定
+SINGLE_PATH_ID = "P1"
+
+
+def _single_result(run: Any) -> Any:
+    """1 回線の `(地形, SimParams, 結果)` → 複数経路と同じ `batch.PathResult` 1 件。"""
+    from report import batch
+    terrain, params, result = run
+    row = batch.PathRow(path_id=SINGLE_PATH_ID, lat_tx=params.lat_tx, lon_tx=params.lon_tx,
+                        lat_rx=params.lat_rx, lon_rx=params.lon_rx,
+                        h_tx=params.h_tx, h_rx=params.h_rx)
+    return batch.PathResult(row=row, result=result, terrain=terrain, params=params)
+
+
 def sheet_csv(workspace: str, run: Any) -> "tuple[str, str]":
-    """作業面の全件の結果 → `(ファイル名, CSV の本文)`。中身の形は `Worker.sheet_run` の docstring。"""
+    """作業面の全件の結果 → `(ファイル名, CSV の本文)`。中身の形は `Worker.sheet_run` の docstring。
+
+    1 回線＝複数経路と同じ `summary.csv` の 1 行（10f＝2026-11-09 経営者）。
+    """
+    if workspace == "single":
+        from report import report_summary
+        return "summary.csv", report_summary.summary_csv_text([_single_result(run)])
     if workspace == "batch":
         from report import report_summary
         return "summary.csv", report_summary.summary_csv_text(run)
@@ -29,14 +49,23 @@ def sheet_csv(workspace: str, run: Any) -> "tuple[str, str]":
     raise ValueError(f"no CSV for workspace: {workspace}")
 
 
-#: KML を出せる面＝旧画面にある分だけ（`summary.kml`）。中継と条件探索は旧画面にも KML が無い
-KML_WORKSPACES: "tuple[str, ...]" = ("batch",)
+#: KML を出せる面＝旧画面にある分だけ（1 回線の `path.kml`・複数経路の `summary.kml`）。
+#: 中継と条件探索は旧画面にも KML が無い
+KML_WORKSPACES: "tuple[str, ...]" = ("single", "batch")
 
 
 def sheet_kml(workspace: str, run: Any) -> "tuple[str, str] | None":
-    """作業面の全件の結果 → `(ファイル名, KML の本文)`。KML の無い面は None。"""
+    """作業面の全件の結果 → `(ファイル名, KML の本文)`。KML の無い面は None。
+
+    1 回線＝旧画面の保存と同じ `path.kml`（地形・見通し・フレネル・遮蔽区間＝10f）。
+    """
     if workspace not in KML_WORKSPACES:
         return None
+    if workspace == "single":
+        from report import report_path
+        terrain, params, result = run
+        return "path.kml", report_path.path_kml_text(terrain, result, params,
+                                                     params.h_tx, params.h_rx, SINGLE_PATH_ID)
     from report import report_summary
     return "summary.kml", report_summary.summary_kml_text(run)
 
