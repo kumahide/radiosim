@@ -77,6 +77,9 @@ DEFAULT_ENTRY = "webui"
 #: ロゴとアイコンの元（I-238）。画面はそのまま描き、`icon.ico` は `<g id="icon">` から焼く。
 BRAND_SVG = os.path.join(REPO, "webui", "static", "brand.svg")
 ICON_ID = "icon"
+#: 小さい寸法（`SMALL_ICON_MAX` 以下）は弧を減らした絵から描く＝細い弧が 1px に潰れない（ステージ9f）。
+SMALL_ICON_ID = "icon-small"
+SMALL_ICON_MAX = 16
 ICON_SIZES = (256, 128, 64, 48, 32, 16)
 _SVG_NS = "http://www.w3.org/2000/svg"
 _XLINK_NS = "http://www.w3.org/1999/xlink"
@@ -218,20 +221,20 @@ def check_entry(entry: str, packages: Iterable[tuple[str, str]]) -> None:
         raise BuildError(f"--entry {entry} に __main__.py が無い＝`-m {entry}` で起こせない: {found}")
 
 
-def icon_svg(brand_text: str) -> str:
-    """`brand.svg` の `<g id="icon">` を、Tk の SVG 読みが描ける単独の SVG にする（I-238）。
+def icon_svg(brand_text: str, icon_id: str = ICON_ID) -> str:
+    """`brand.svg` の `<g id="icon">`（または `icon_id`）を、Tk の SVG 読みが描ける単独の SVG にする（I-238）。
 
     nanosvg は `<use>` を描かないので、参照先（`mark`）の中身を `<g transform>` に展開する。
     `<text>`・`<style>`・`<image>` は描かれずに黙って消える＝見つけたら止める。
     """
     root = ET.fromstring(brand_text)  # nosec B314 ─ リポジトリの brand.svg（外から来ない）
     by_id = {el.get("id"): el for el in root.iter() if el.get("id")}
-    icon = by_id.get(ICON_ID)
+    icon = by_id.get(icon_id)
     if icon is None:
-        raise BuildError(f"brand.svg に <g id=\"{ICON_ID}\"> が無い")
+        raise BuildError(f"brand.svg に <g id=\"{icon_id}\"> が無い")
     box = (icon.get("data-viewbox") or "").split()
     if len(box) != 4:
-        raise BuildError(f"<g id=\"{ICON_ID}\"> に data-viewbox（4 数字）が無い")
+        raise BuildError(f"<g id=\"{icon_id}\"> に data-viewbox（4 数字）が無い")
 
     def local(tag: str) -> str:
         return tag.rsplit("}", 1)[-1]
@@ -340,8 +343,11 @@ def _copy_dist(name: str, vendor: str) -> None:
         shutil.copy2(src, dst)
 
 
-def render_icon_pngs(svg: str, out_dir: str, sizes: Iterable[int] = ICON_SIZES) -> list[str]:
+def render_icon_pngs(svg: str, out_dir: str, sizes: Iterable[int] = ICON_SIZES,
+                     small_svg: str | None = None) -> list[str]:
     """単独の SVG を Tk 9 の SVG 読み（nanosvg）で寸法ごとの PNG に描き、パスを大きい順で返す。
+
+    `small_svg` を渡すと、`SMALL_ICON_MAX` 以下の寸法はそちらから描く（弧を減らした絵）。
 
     縮めるのでなく寸法ごとに描き直す＝16 や 32 でも輪郭が滲まない（I-238）。Tk は宣言の
     Python に入っている＝依存を足さない。build.bat の Tk 9 の関所は `link` より後ろなのでここで見る。
@@ -354,7 +360,8 @@ def render_icon_pngs(svg: str, out_dir: str, sizes: Iterable[int] = ICON_SIZES) 
     root.withdraw()
     try:
         for n in sorted(sizes, reverse=True):
-            img = tk.PhotoImage(master=root, data=svg, format=f"svg -scaletoheight {n}")
+            src = small_svg if small_svg is not None and n <= SMALL_ICON_MAX else svg
+            img = tk.PhotoImage(master=root, data=src, format=f"svg -scaletoheight {n}")
             if (img.width(), img.height()) != (n, n):
                 raise BuildError(f"アイコンが正方形に描けない: {n} → {img.width()}x{img.height()}"
                                  f"（{ICON_ID} の data-viewbox を正方形にする）")
@@ -372,9 +379,10 @@ def write_icon(dst: str, brand: str = BRAND_SVG) -> None:
 
     from PIL import Image
     with open(brand, encoding="utf-8") as f:
-        svg = icon_svg(f.read())
+        text = f.read()
+    svg, small = icon_svg(text), icon_svg(text, SMALL_ICON_ID)
     with tempfile.TemporaryDirectory() as tmp:
-        pngs = render_icon_pngs(svg, tmp)
+        pngs = render_icon_pngs(svg, tmp, small_svg=small)
         imgs = []
         for p in pngs:
             with Image.open(p) as img:

@@ -219,6 +219,27 @@ class TestBrandAndIcon:
         assert root.get("viewBox") == "0 0 256 256"
         assert (root.get("width"), root.get("height")) == ("256", "256")
 
+    def test_small_icon_is_standalone_and_has_fewer_arcs(self):
+        """16px は弧を減らした絵から描く（ステージ9f）＝単独で描け、弧が大きい絵より少ない。"""
+        def arcs(svg: str) -> int:
+            return sum(1 for el in ET.fromstring(svg).iter() if el.tag.endswith("}path"))
+        small = bl.icon_svg(self._brand(), bl.SMALL_ICON_ID)
+        tags = {el.tag.rsplit("}", 1)[-1] for el in ET.fromstring(small).iter()}
+        assert not tags & {"use", "text", "style", "defs"}
+        assert ET.fromstring(small).get("viewBox") == "0 0 256 256"
+        assert 0 < arcs(small) < arcs(bl.icon_svg(self._brand()))
+
+    def test_logo_puts_link_after_sim_at_the_same_size(self):
+        """製品名は `RadioSim Link`＝「Link」は「Sim」と同じ字の大きさで同じ行（9f の答え）。"""
+        root = ET.fromstring(self._brand())
+        texts = {el.text: el for el in root.iter() if el.tag.endswith("}text")}
+        sim_m, link = texts["m"], texts["Link"]
+        assert link.get("class").split()[0] == sim_m.get("class").split()[0] == "word"
+        assert link.get("y") == sim_m.get("y")
+        assert float(link.get("x")) > float(sim_m.get("x")) + float(sim_m.get("textLength"))
+        left, _, width, _ = map(float, root.get("viewBox").split())
+        assert float(link.get("x")) + float(link.get("textLength")) <= left + width
+
     @pytest.mark.parametrize("inner,word", [
         ('<text>x</text>', "text"),
         ('<use href="#nowhere"/>', "nowhere"),
