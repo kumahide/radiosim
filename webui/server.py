@@ -146,7 +146,7 @@ def form() -> "list[dict[str, Any]]":
     return groups
 
 
-def breakdown() -> "list[dict[str, str]]":
+def breakdown() -> "list[dict[str, Any]]":
     """損失の内訳の行の表（値は見出しの同じ名前の欄・桁は `units.DB_DECIMALS`）。"""
     return [{"name": n, "label": i18n.t(k), "unit": u, "digits": units.DB_DECIMALS}
             for n, k, u in _BREAKDOWN]
