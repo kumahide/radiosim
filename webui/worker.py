@@ -24,7 +24,9 @@ webui/worker.py
   ＝全件そろえて 1 回で載せる
 - 全件そろったときだけ全体の語（`verdict.aggregate`＝NG＞REVIEW＞OK・ERROR か空なら ERROR）と
   語ごとの件数（`verdict.counts`）を載せる
-- 入力の誤り（面の字・値域・空の表）は `input` の見出し＋1 文＝地形を取る前に弾く
+- 入力の誤り（面の字・値域・空の表）は `input` の見出し＋1 文＝地形を取る前に弾く。
+  ⚠️ 複数経路の行の誤りだけは例外＝その行を ERROR＋1 文にし、ほかの行は計算する
+  （`sheets.batch_plan`・2026-11-08 経営者の決定）
 - 🔑 **作業面の実行中に版が進めば無条件に取り消す**（1 回線の「地形の鍵が違うときだけ」とは
   別）＝表の 1 字を直しても、走っている全件は古い入力の結果
 
@@ -267,36 +269,43 @@ class Worker:
 
     def _run_paths(self, version: int, inputs: dict, workspace: str, sheet: Any) -> None:
         from report import batch                         # matplotlib を引く＝ここで読む（I-232）
-        try:
-            if workspace == "batch":
-                rows = sheets_mod.batch_rows(sheet)
-                problems = batch.validate_rows(rows)
-                labels = [r.path_id for r in rows]
-            else:
-                from report import multihop as mh
+        # plan＝表の順の (行か None, 名前, 誤りの 1 文か None)。複数経路は誤りの行だけ ERROR
+        # （`sheets.batch_plan`）・中継は鎖なので形の誤りで全体を入力待ちにする
+        if workspace == "batch":
+            if not sheet:
+                raise _InputProblem(i18n.t("verr_empty"))
+            plan = sheets_mod.batch_plan(sheet)
+        else:
+            from report import multihop as mh
+            try:
                 path = sheets_mod.multihop_path(sheet)
-                problems = mh.validate_path(path)
-                rows = mh.hop_rows(path) if not problems else []
-                labels = [r.note for r in rows]          # 「P1 → 中継」
-        except ValueError as e:
-            raise _InputProblem(str(e)) from None
-        if problems:
-            raise _InputProblem(problems[0])
+            except ValueError as e:
+                raise _InputProblem(str(e)) from None
+            problems = mh.validate_path(path)
+            if problems:
+                raise _InputProblem(problems[0])
+            plan = [(r, r.note, None) for r in mh.hop_rows(path)]   # 「P1 → 中継」
         base = self._sheet_base(inputs)
         cancel = self._start_sheet(version)
         try:
             items: list = []
             shapes: list = []
-            outcomes = engine.run_paths(
-                rows, lambda row: batch._make_params(row, base), cancel=cancel,
+            outcomes = iter(engine.run_paths(
+                [row for row, _label, err in plan if err is None],
+                lambda row: batch._make_params(row, base), cancel=cancel,
                 on_progress=lambda done, num: self.state.set_progress(version, int(done), int(num)),
-                label=lambda row: row.path_id, fetch=self._fetch, calc=self._calc)
-            for (_row, out), label in zip(outcomes, labels):
-                items.append(_item_fields(label, out.result, out.params, out.error))
-                has_shape = out.terrain is not None and out.params is not None
-                shapes.append((out.terrain, out.params) if has_shape else None)
+                label=lambda row: row.path_id, fetch=self._fetch, calc=self._calc))
+            for _row, label, err in plan:
+                if err is not None:
+                    items.append(_item_fields(label, error=ValueError(err)))
+                    shapes.append(None)
+                else:
+                    _, out = next(outcomes)
+                    items.append(_item_fields(label, out.result, out.params, out.error))
+                    has_shape = out.terrain is not None and out.params is not None
+                    shapes.append((out.terrain, out.params) if has_shape else None)
                 self._keep_shapes(version, list(shapes))     # 載せる前に＝行を選べば出る
-                self._publish_sheet(version, workspace, list(items), len(rows))
+                self._publish_sheet(version, workspace, list(items), len(plan))
         finally:
             self._end_sheet()
 

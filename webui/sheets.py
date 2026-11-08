@@ -8,7 +8,7 @@ webui/sheets.py
 `state.AppState` の入力の集合。ここが持つのは、面ごとに増える入力（表・条件・点列）だけ。
 
 🔑 **画面の文字列のまま持つ**（`report.project.ScenarioSpec` と同じ流儀）＝打ちかけの値でも
-持てる・保存できる。型へは実行と保存のときに直す（`batch_rows`・`conditions`・
+持てる・保存できる。型へは実行と保存のときに直す（`batch_plan`／`batch_rows`・`conditions`・
 `multihop_path`）。値域の検査は型の側（`scenario.Condition`・`batch.validate_rows`・
 `multihop.validate_path`）が 1 か所で担う＝ここで二重に書かない。
 
@@ -147,11 +147,42 @@ def batch_rows(rows: "list[dict[str, str]]") -> list:
     return [batch._parse_csv_row(r, line) for line, r in enumerate(rows, start=1)]
 
 
+def batch_plan(rows: "list[dict[str, str]]") -> "list[tuple[Any, str, str | None]]":
+    """複数経路の表 → 行ごとの `(PathRow か None, 名前, 誤りの 1 文か None)`（表の順）。
+
+    🔑 **誤りの行だけ ERROR にし、ほかの行は計算する**（2026-11-08 経営者の決定）＝入力したら
+    すぐ計算する画面で、打ちかけの 1 行が全体を消さない（旧画面は誤りの行 1 つで全体を止めた）。
+    字の誤りは `batch._parse_csv_row`・値域は `batch.validate_rows` を 1 行ずつ＝検査の出所は 1 つ。
+    ID の重複（大小を区別しない＝B-013）は先に通った行を残し、後の行を ERROR にする。
+    名前は ID か、空なら `#行の番号`。空の表はここでは扱わない（呼ぶ側が入力待ちにする）。
+    """
+    from report import batch
+    plan: list[tuple[Any, str, str | None]] = []
+    seen: set[str] = set()
+    for line, raw in enumerate(rows, start=1):
+        label = raw.get("id", "").strip() or f"#{line}"
+        try:
+            row = batch._parse_csv_row(raw, line)
+        except ValueError as e:
+            plan.append((None, label, str(e)))
+            continue
+        problems = batch.validate_rows([row])
+        key = row.path_id.casefold()
+        if not problems and key in seen:
+            problems = [i18n.t("verr_duplicate_id").format(pid=row.path_id)]
+        if problems:
+            plan.append((None, label, problems[0]))
+            continue
+        seen.add(key)
+        plan.append((row, label, None))
+    return plan
+
+
 def batch_from_csv(text: str) -> "list[dict[str, str]]":
     """CSV の本文 → 複数経路の表（画面の文字列のまま）。
 
     見出しの読み方は `batch.parse_csv` と同じ（BOM・列名の前後空白と大小を寄せる・必須列）。
-    値はここでは検査しない＝表に載せて、実行のときに `batch_rows` が行の番号つきで弾く
+    値はここでは検査しない＝表に載せて、実行のときに `batch_plan` がその行だけを ERROR にする
     （打ちかけと同じ扱い＝読み込んだ後に表で直せる）。知らない列は捨てる。
     """
     import csv

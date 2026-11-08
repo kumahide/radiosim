@@ -355,18 +355,52 @@ def test_a_failing_row_is_an_error_item_and_the_overall_is_error():
     assert head["overall"] == vd.ERROR and head["counts"][vd.ERROR] == 1
 
 
-@pytest.mark.parametrize("sheet", [
-    [],                                                          # 空の表
-    [{**_ROW, "h_tx": "abc"}],                                   # 読めない数
-    [_ROW, dict(_ROW)],                                          # 同じ ID
-    [{**_ROW, "id": "a b"}],                                     # 使えない字
-])
-def test_a_bad_batch_is_an_input_headline_before_any_fetch(sheet):
+def test_an_empty_batch_is_an_input_headline_before_any_fetch():
     fetch = _Fetch()
-    st = _sheet_state("batch", sheet)
+    st = _sheet_state("batch", [])
     _worker(st, fetch=fetch).step()
     head = st.headline()
     assert head["kind"] == "input" and head["message"]
+    assert fetch.calls == 0
+
+
+@pytest.mark.parametrize("bad, word_in_message", [
+    ({**_ROW, "id": "B2", "h_tx": "abc"}, "abc"),                # 読めない数
+    ({**_ROW, "id": "B2", "start": "abc"}, "start"),             # 読めない座標
+    (dict(_ROW), "A1"),                                          # 同じ ID（後の行が ERROR）
+    ({**_ROW, "id": "a b"}, "a b"),                              # 使えない字
+    ({**_ROW, "id": "B2", "h_tx": "-5"}, "B2"),                  # 値域
+])
+def test_a_bad_row_is_an_error_item_and_the_other_rows_still_run(bad, word_in_message):
+    # 2026-11-08 経営者の決定＝誤りの行だけ ERROR・ほかの行は計算する（旧画面は全体を止めた）
+    fetch = _Fetch()
+    st = _sheet_state("batch", [_ROW, bad, {**_ROW, "id": "C3", "h_tx": "15"}])
+    w = _worker(st, fetch=fetch)
+    w.step()
+    head = st.headline()
+    assert head["kind"] == "sheet" and head["done"] == head["total"] == 3
+    assert [it["word"] for it in head["items"]] == [vd.OK, vd.ERROR, vd.REVIEW]
+    assert word_in_message in head["items"][1]["message"]
+    assert "tx" not in head["items"][1]                          # 地図に描かない
+    assert head["overall"] == vd.ERROR and head["counts"][vd.ERROR] == 1
+    assert fetch.calls == 2                                      # 誤りの行は地形を取らない
+    assert w._shapes[1][1] is None and w._shapes[1][2] is not None   # 誤りの行は断面の元が無い
+
+
+def test_a_row_with_no_id_is_named_by_its_line():
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": ""}])
+    _worker(st).step()
+    head = st.headline()
+    assert [it["label"] for it in head["items"]] == ["A1", "#2"]
+    assert head["items"][1]["word"] == vd.ERROR
+
+
+def test_every_row_bad_is_all_error_without_any_fetch():
+    fetch = _Fetch()
+    st = _sheet_state("batch", [{**_ROW, "h_tx": "abc"}])
+    _worker(st, fetch=fetch).step()
+    head = st.headline()
+    assert head["kind"] == "sheet" and head["overall"] == vd.ERROR
     assert fetch.calls == 0
 
 

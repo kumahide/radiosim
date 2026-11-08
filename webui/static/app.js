@@ -332,7 +332,10 @@ function drawProfile() {
     g.fillStyle = muted;
     g.textAlign = "center";
     const pick = workspace !== "single" && selected === null;
-    g.fillText((pick ? labels.pick_row : labels.profile_later) || "", w / 2, h / 2);
+    // 選んだ行が ERROR なら、断面の代わりにその 1 文（表では行の `title` にしか出ない）
+    const it = workspace !== "single" && selected !== null ? sheetItems[selected] : null;
+    const why = it && it.word === "ERROR" && it.message;
+    g.fillText((why || (pick ? labels.pick_row : labels.profile_later)) || "", w / 2, h / 2);
     return;
   }
   const p = profile;
