@@ -3,6 +3,8 @@ tests/test_webui_workspace.py
 =============================
 新しい画面の**作業面の入力**（Link 1.0 ステージ10a）＝`webui/sheets.py` と
 `state.AppState` の面・面の入力・`/api/inputs` の口。
+**作業面の実行**（ステージ10b）＝`Worker.step` が面ごとに回し、1 件ごとに `sheet` の見出しを
+載せる・全件そろったら集約と件数・入力の誤りは `input`・版が進めば取り消す。
 """
 
 from __future__ import annotations
@@ -18,6 +20,8 @@ import threading
 import pytest
 
 from core import scenario as scn
+from core import simulation as sim
+from core import verdict as vd
 from core.batch_csv_schema import CSV_COLUMNS
 from webui import server as webserver
 from webui import sheets
@@ -264,3 +268,219 @@ def test_the_api_takes_a_table_larger_than_the_old_limit(web):
     rows = [{**_ROW, "id": f"R{i}", "note": "x" * 40} for i in range(600)]
     assert len(json.dumps({"sheets": {"batch": rows}})) > 64 * 1024
     assert _post(web, {"sheets": {"batch": rows}})[0] == 200
+
+
+# ============================================================
+# 作業面の実行（ステージ10b）
+# ============================================================
+class _Word:
+    """語だけを持つ結果（`_verdict_fields` は `verdict` が無ければ `status` を読む）。"""
+    verdict = None
+    eirp = fspl = diff_loss = veg_loss = env_loss = rain_loss = gas_loss = total_loss = 0.0
+
+    def __init__(self, word: str, margin: float) -> None:
+        self.status, self.actual_margin, self.p_rx = word, margin, -80.0
+
+
+def _by_height(t, p):
+    """送信の高さで語を決める（10 m＝OK・15 m＝REVIEW・ほか＝NG）。"""
+    return _Word({10.0: vd.OK, 15.0: vd.REVIEW}.get(float(p.h_tx), vd.NG), float(p.h_tx))
+
+
+class _Fetch:
+    """地形の取得の偽物＝呼ばれた回数を数え、`hook` があれば取得の途中で呼ぶ。"""
+
+    def __init__(self, hook=None) -> None:
+        self.calls, self.hook = 0, hook
+
+    def __call__(self, p, cb, cancel):
+        self.calls += 1
+        if cb:
+            cb(int(p.num))
+        if self.hook:
+            self.hook(self.calls)
+        if cancel is not None and cancel.is_set():
+            raise sim.Cancelled()
+        return "terrain"
+
+
+def _worker(st, fetch=None, calc=_by_height):
+    return Worker(st, fetch=fetch or _Fetch(), key=lambda p: (p.lat_tx, p.lon_tx, p.lat_rx, p.lon_rx),
+                  calc=calc, profile=lambda t, p: None)
+
+
+def _sheet_state(workspace, sheet, **changes):
+    st = AppState()
+    st.update(changes, workspace=workspace, sheets={workspace: sheet})
+    return st
+
+
+def test_the_batch_runs_every_row_and_aggregates():
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "15"},
+                                {**_ROW, "id": "C3", "h_tx": "30"}])
+    _worker(st).step()
+    head = st.headline()
+    assert head["kind"] == "sheet" and head["workspace"] == "batch"
+    assert [it["label"] for it in head["items"]] == ["A1", "B2", "C3"]
+    assert [it["word"] for it in head["items"]] == [vd.OK, vd.REVIEW, vd.NG]
+    assert head["done"] == head["total"] == 3
+    assert head["overall"] == vd.NG                               # NG＞REVIEW＞OK
+    assert head["counts"] == {vd.OK: 1, vd.REVIEW: 1, vd.NG: 1, vd.ERROR: 0}
+    assert head["items"][0]["tx"] == [pytest.approx(34.40), pytest.approx(132.45)]
+    assert head["items"][0]["margin"] == 10.0
+
+
+def test_the_batch_publishes_each_row_and_the_overall_only_at_the_end():
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2"}])
+    seen = []
+    publish = st.publish
+    st.publish = lambda v, kind, **f: (seen.append(dict(f)), publish(v, kind, **f))
+    _worker(st).step()
+    assert [(f["done"], f["total"]) for f in seen] == [(1, 2), (2, 2)]
+    assert "overall" not in seen[0] and "counts" not in seen[0]
+    assert seen[1]["overall"] == vd.OK
+
+
+def test_a_failing_row_is_an_error_item_and_the_overall_is_error():
+    def calc(t, p):
+        if float(p.h_tx) == 30.0:
+            raise ZeroDivisionError("boom")
+        return _by_height(t, p)
+
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "30"}])
+    _worker(st, calc=calc).step()
+    head = st.headline()
+    assert head["items"][1]["word"] == vd.ERROR and "boom" in head["items"][1]["message"]
+    assert head["overall"] == vd.ERROR and head["counts"][vd.ERROR] == 1
+
+
+@pytest.mark.parametrize("sheet", [
+    [],                                                          # 空の表
+    [{**_ROW, "h_tx": "abc"}],                                   # 読めない数
+    [_ROW, dict(_ROW)],                                          # 同じ ID
+    [{**_ROW, "id": "a b"}],                                     # 使えない字
+])
+def test_a_bad_batch_is_an_input_headline_before_any_fetch(sheet):
+    fetch = _Fetch()
+    st = _sheet_state("batch", sheet)
+    _worker(st, fetch=fetch).step()
+    head = st.headline()
+    assert head["kind"] == "input" and head["message"]
+    assert fetch.calls == 0
+
+
+def test_the_batch_checks_the_common_settings_but_not_the_single_link_ends():
+    st = _sheet_state("batch", [_ROW], start="abc", end="abc")   # 1 回線の端点は飾り
+    _worker(st).step()
+    assert st.headline()["kind"] == "sheet"
+    st.update({"freq": "0"})
+    _worker(st).step()
+    head = st.headline()
+    assert head["kind"] == "input" and "[freq]" in head["message"]
+
+
+def test_the_relay_runs_each_hop_named_by_its_ends():
+    st = _sheet_state("multihop", {"path_id": "R1", "waypoints": _WAYPOINTS,
+                                   "hop_rf": [{}, {}]})
+    _worker(st).step()
+    head = st.headline()
+    assert head["kind"] == "sheet" and head["workspace"] == "multihop"
+    assert [it["label"] for it in head["items"]] == ["P1 → 中継", "中継 → 終点"]
+    assert [it["word"] for it in head["items"]] == [vd.OK, vd.REVIEW]
+    assert head["overall"] == vd.REVIEW
+
+
+def test_a_relay_with_one_point_is_an_input_headline():
+    st = _sheet_state("multihop", {"path_id": "R1", "waypoints": _WAYPOINTS[:1]})
+    _worker(st).step()
+    assert st.headline()["kind"] == "input"
+
+
+def test_compare_reuses_the_single_link_terrain_and_publishes_all_at_once():
+    fetch = _Fetch()
+    st = _sheet_state("scenario", {"compare": [{"h_tx": "15"}, {"h_tx": "40"}]}, h_tx="10")
+    w = _worker(st, fetch=fetch)
+    w.step()
+    head = st.headline()
+    assert head["kind"] == "sheet" and head["mode"] == "compare"
+    assert [it["word"] for it in head["items"]] == [vd.OK, vd.REVIEW, vd.NG]
+    assert head["items"][1]["overrides"] == {"h_tx": 15.0}
+    assert head["done"] == head["total"] == 3 and head["overall"] == vd.NG
+    st.update({}, sheets={"scenario": {"compare": [{"h_tx": "15"}]}})
+    w.step()
+    assert st.headline()["overall"] == vd.REVIEW
+    assert fetch.calls == 1                                      # 地形の鍵が同じ＝取り直さない
+
+
+def test_the_sweep_carries_its_axis_and_values():
+    st = _sheet_state("scenario", {"mode": "sweep", "sweep": {
+        "axis": "h_tx", "from": "10", "to": "20", "points": "3"}})
+    _worker(st).step()
+    head = st.headline()
+    assert head["mode"] == "sweep" and head["axis"] == "h_tx"
+    assert head["values"] == [10.0, 15.0, 20.0]
+    assert [it["word"] for it in head["items"]] == [vd.OK, vd.REVIEW, vd.NG]
+
+
+@pytest.mark.parametrize("spec, changes", [
+    ({"compare": [{"freq_mhz": "0"}]}, {}),                      # 条件の値域
+    ({"compare": []}, {"freq": "0"}),                             # 基準の値域
+    ({"compare": []}, {"start": "abc"}),                          # 1 回線の端点（条件探索は使う）
+])
+def test_a_bad_scenario_is_an_input_headline_before_any_fetch(spec, changes):
+    fetch = _Fetch()
+    st = _sheet_state("scenario", spec, **changes)
+    _worker(st, fetch=fetch).step()
+    assert st.headline()["kind"] == "input"
+    assert fetch.calls == 0
+
+
+def test_an_edit_during_the_batch_cancels_it_and_wakes_the_thread():
+    holder = {}
+
+    def hook(calls):
+        if calls == 1:                                           # 1 件目の取得の途中で表を直す
+            holder["w"].submit({}, sheets={"batch": [{**_ROW, "id": "Z9"}]})
+
+    fetch = _Fetch(hook)
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2"}])
+    w = holder["w"] = _worker(st, fetch=fetch)
+    w._wake.clear()
+    w.step()
+    assert st.headline()["kind"] == "computing"                   # 古い版の結果は見せない
+    assert w._wake.is_set() and fetch.calls == 1                  # 2 件目へ進まない
+    w.step()
+    head = st.headline()
+    assert [it["label"] for it in head["items"]] == ["Z9"]
+
+
+def test_an_edit_on_the_single_link_also_cancels_the_batch():
+    # 1 回線の「地形の鍵が違うときだけ」とは別＝作業面は版が進めば無条件に止める
+    holder = {}
+    fetch = _Fetch(lambda calls: holder["w"].submit({"rain_rate": "5"}) if calls == 1 else None)
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2"}])
+    w = holder["w"] = _worker(st, fetch=fetch)
+    w.step()
+    assert fetch.calls == 1 and st.headline()["kind"] == "computing"
+
+
+def test_an_unreachable_dem_stops_the_batch_with_a_terrain_headline():
+    def fetch(p, cb, cancel):
+        raise sim.DemUnreachableError("unreachable")
+
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2"}])
+    _worker(st, fetch=fetch).step()
+    head = st.headline()
+    assert head["kind"] == "terrain" and head["message"] == "unreachable"
+
+
+def test_the_first_fetch_shows_its_progress_until_the_first_row():
+    st = _sheet_state("batch", [_ROW])
+    seen = []
+
+    def hook(calls):
+        seen.append(st.headline())
+
+    _worker(st, fetch=_Fetch(hook)).step()
+    assert seen[0]["kind"] == "computing" and seen[0]["total"] > 0
+    assert seen[0]["done"] == seen[0]["total"]

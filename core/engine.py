@@ -99,6 +99,8 @@ def run_paths(
     on_stage: "Callable[[str], None] | None" = None,
     on_progress: "Callable[[int, int], None] | None" = None,
     label: "Callable[[T], str] | None" = None,
+    fetch: "Callable[..., models.TerrainProfile] | None" = None,
+    calc: "Callable[..., models.LinkBudgetResult] | None" = None,
 ) -> Iterator[tuple[T, PathOutcome]]:
     """`items` を 1 件ずつ取得して計算し、`(item, PathOutcome)` を順に返す（生成器）。
 
@@ -108,6 +110,8 @@ def run_paths(
     - ⛔ `DemUnreachableError` と `Cancelled` は外へ投げて全体を止める（B-025 ②＝届かないのは
       経路でなく環境の問題）。ほかの例外はその件の `PathOutcome(error=)` に畳む
       ＝traceback はここで残す（全体は完走するので、最上位の except に届かない）
+    - `fetch`・`calc` は取得と計算の差し替え（省略＝`fetch_terrain`・`calculate`）＝
+      新しい画面の計算のスレッドが自分の差し替えを渡す（試験はネットワークを使わない）
     """
     seq = list(items)
     total = len(seq)
@@ -116,10 +120,11 @@ def run_paths(
         name = label(item) if label else str(i + 1)
         if on_start:
             on_start(i + 1, total, name)
-        yield item, _run_one(item, make_params, name, cancel, on_stage, on_progress)
+        yield item, _run_one(item, make_params, name, cancel, on_stage, on_progress,
+                             fetch or fetch_terrain, calc or calculate)
 
 
-def _run_one(item, make_params, name, cancel, on_stage, on_progress) -> PathOutcome:
+def _run_one(item, make_params, name, cancel, on_stage, on_progress, fetch, calc) -> PathOutcome:
     params = terrain = None
     try:
         params = make_params(item)
@@ -129,9 +134,8 @@ def _run_one(item, make_params, name, cancel, on_stage, on_progress) -> PathOutc
         if on_progress:
             num = params.num
             progress = lambda done: on_progress(done, num)  # noqa: E731
-        terrain = fetch_terrain(params, progress, cancel=cancel)
-        return PathOutcome(params=params, terrain=terrain,
-                           result=calculate(terrain, params))
+        terrain = fetch(params, progress, cancel=cancel)
+        return PathOutcome(params=params, terrain=terrain, result=calc(terrain, params))
     except (sim.DemUnreachableError, Cancelled):
         raise
     except Exception as ex:

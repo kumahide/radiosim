@@ -4,8 +4,9 @@ webui/state.py
 新しい画面の**入力の集合と見出し**。
 
 - 入力＝`config.SIM_KEYS` の鍵だけ（知らない鍵は受けない）。値が変わったときだけ**版**を上げる。
-- 見出し＝判定の帯に出すもの。種類は 5 つ:
-  `verdict`（判定）・`input`（入力待ち＋1 文）・`terrain`（地形なし＋1 文）・`error`・`computing`。
+- 見出し＝判定の帯に出すもの。種類は 6 つ:
+  `verdict`（判定）・`sheet`（作業面の結果＝1 件ごとに載せ直す・ステージ10b）・
+  `input`（入力待ち＋1 文）・`terrain`（地形なし＋1 文）・`error`・`computing`。
   `computing` 以外は「どの版の入力で出したか」を持つ。
 
 🔒 **古い版の結果を今の判定に見せない**＝`headline()` は、結果の版が今の版と同じときだけ
@@ -29,7 +30,7 @@ from core import config
 from webui import sheets as sheets_mod
 
 #: 見出しの種類（JS もこの字で分ける）。
-KINDS = ("verdict", "input", "terrain", "error", "computing")
+KINDS = ("verdict", "sheet", "input", "terrain", "error", "computing")
 
 
 def _pct(p: "tuple[int, int, int]") -> int:

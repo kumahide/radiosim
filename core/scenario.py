@@ -250,19 +250,22 @@ def evaluate(
     conditions: list[Condition],
     on_point: "Callable[[int, int], None] | None" = None,
     cancel:   "threading.Event | None" = None,
+    calc:     "Callable[..., models.LinkBudgetResult] | None" = None,
 ) -> list[ScenarioPoint]:
     """固定した terrain の上で条件を順に評価する（純計算・ネットワーク無し）。
 
     ここが 2.5 の心臓部＝「DEM 取得 1 回 + run_calculation を N 回」。
     terrain も base も**書き換えない**（→ モジュール docstring の不変条件）。
     `cancel` が立てば次の条件へ進まず `sim.Cancelled` を投げる。
+    `calc` は計算の差し替え（省略＝`engine.calculate`＝新しい画面の試験が使う）。
     """
+    calc = calc or engine.calculate
     points: list[ScenarioPoint] = []
     total = len(conditions)
     for i, cond in enumerate(conditions, 1):
         engine.raise_if_cancelled(cancel)
         p = _apply(base, cond.overrides)
-        result = engine.calculate(terrain, p)
+        result = calc(terrain, p)
         points.append(ScenarioPoint(
             label=cond.label, overrides=dict(cond.overrides),
             h_tx=p.h_tx, h_rx=p.h_rx, result=result,
