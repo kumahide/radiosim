@@ -8,7 +8,7 @@ tests/test_webui_project.py
 - 画面の入力 → 文字列 → 画面の入力で、面の入力と入力の集合が戻る（座標は DD で書く）
 - 書いた文字列は `report.project.from_dict` が読める＝旧画面と同じファイル
 - 読めない値のある面はその面だけ書かず、警告で言う（旧画面と同じ流儀）
-- 既定と違う計算方式のファイルは断る（暫定＝黙って別の方式で計算しない）
+- 計算方式はファイルのまま開き、そのまま書く（3.x の v1 は v1 で計算する＝2026-11-08 経営者の決定）
 """
 
 from __future__ import annotations
@@ -60,11 +60,12 @@ def test_save_then_open_gives_back_the_inputs_and_the_sheets():
     sheets = _checked(_SHEETS)
     text, warnings = project_io.dump(inputs, sheets, {"project_name": "案件"})
     assert warnings == []
-    back, back_sheets, meta = project_io.load(text)
+    back, back_sheets, meta, profile = project_io.load(text)
     # 座標だけは DD の書式へ揃う（旧画面の `_coords_to_dd` と同じ）
     assert back == {**inputs, **{k: coords.to_dd_str(inputs[k]) for k in ("start", "end")}}
     assert back_sheets == sheets
     assert meta["project_name"] == "案件"
+    assert profile == calc_profile.DEFAULT_PROFILE
 
 
 def test_the_text_is_the_same_file_the_classic_screen_reads():
@@ -110,7 +111,7 @@ def test_an_unreadable_relay_point_drops_only_the_relay_with_a_warning():
 def test_opening_resets_the_inputs_the_file_does_not_have():
     data = json.loads(project_io.dump(_inputs(), _checked({}))[0])
     data["params"] = {"freq": "433"}
-    inputs, sheets, _ = project_io.load(json.dumps(data))
+    inputs, sheets, _, _ = project_io.load(json.dumps(data))
     assert inputs["freq"] == "433"
     assert inputs["h_tx"] == config.DEFAULT_CONFIG["h_tx"]
     assert set(inputs) == set(config.SIM_KEYS)
@@ -119,19 +120,39 @@ def test_opening_resets_the_inputs_the_file_does_not_have():
 
 def test_numbers_come_back_without_a_trailing_zero():
     text, _ = project_io.dump(_inputs(), _checked({"batch": [{**_ROW, "h_tx": "10.0"}]}))
-    _, sheets, _ = project_io.load(text)
+    _, sheets, _, _ = project_io.load(text)
     assert sheets["batch"][0]["h_tx"] == "10"
 
 
-def test_a_file_of_another_calculation_method_is_refused_by_name():
+def test_a_v1_file_opens_as_v1_and_is_saved_as_v1():
     data = json.loads(project_io.dump(_inputs(), _checked({}))[0])
     data["calc_profile"] = calc_profile.V1
-    with pytest.raises(project.ProjectError) as e:
-        project_io.load(json.dumps(data))
-    assert str(e.value) == i18n.t("proj_err_profile").format(profile="v1")
+    _, _, _, profile = project_io.load(json.dumps(data))
+    assert profile == calc_profile.V1
     del data["calc_profile"]                             # 方式の無い 3.x のファイル＝v1
-    with pytest.raises(project.ProjectError):
-        project_io.load(json.dumps(data))
+    inputs, sheets, _, profile = project_io.load(json.dumps(data))
+    assert profile == calc_profile.V1
+    text, _ = project_io.dump(inputs, sheets, None, profile)   # 開いて保存しても v1 のまま
+    assert json.loads(text)["calc_profile"] == calc_profile.V1
+
+
+def test_the_state_hands_the_method_to_the_calculation_and_to_the_terrain_key():
+    """方式は計算の写しから `SimParams` へ・地形の鍵（双線形か）も方式で変わる＝v2 の地形を使い回さない。"""
+    from core import simulation as sim
+    st = AppState()
+    v2 = sim.SimParams(st.snapshot()[1])
+    st.update({}, profile=calc_profile.V1)
+    v1 = sim.SimParams(st.snapshot()[1])
+    assert (v2.calc_profile, v1.calc_profile) == (calc_profile.V2, calc_profile.V1)
+    assert sim._terrain_cache_key(v1) != sim._terrain_cache_key(v2)
+    with pytest.raises(ValueError):
+        st.update({}, profile="v9")
+    assert st.document()[2] == calc_profile.V1          # 知らない方式は何も変えない
+
+
+def test_an_unknown_calculation_method_is_not_written():
+    with pytest.raises(ValueError):
+        project_io.dump(_inputs(), _checked({}), None, "v9")
 
 
 @pytest.mark.parametrize("text", ["", "{", "[]", json.dumps({"schema_version": 99}), "1" * 5000])
@@ -190,8 +211,27 @@ def test_the_api_saves_and_opens_a_project(web):
     before = web.worker.state.version
     code, body = _call(web, "/api/project/open", {"text": saved["text"]})
     assert code == 200 and body["version"] == before + 1
-    inputs, sheets = web.worker.state.document()
+    inputs, sheets, profile = web.worker.state.document()
     assert inputs["freq"] == "2400" and sheets["batch"][0]["id"] == "A1"
+    assert profile == calc_profile.DEFAULT_PROFILE
+
+
+def test_the_api_opens_a_v1_file_as_v1_and_a_v2_file_back_as_v2(web):
+    """v1 を開くと計算の写しも v1（`SimParams` が拾う）・画面の入力の写しには混ぜない。"""
+    data = json.loads(project_io.dump(_inputs(), _checked({}))[0])
+    data["calc_profile"] = calc_profile.V1
+    assert _call(web, "/api/project/open", {"text": json.dumps(data)})[0] == 200
+    st = web.worker.state
+    assert st.snapshot()[1]["calc_profile"] == calc_profile.V1
+    assert "calc_profile" not in st.wait(0, timeout=0)["inputs"]
+    assert st.wait(0, timeout=0)["calc_profile"] == calc_profile.V1
+    code, saved = _call(web, "/api/project/save")
+    assert json.loads(saved["text"])["calc_profile"] == calc_profile.V1
+    before = st.version
+    data["calc_profile"] = calc_profile.V2                 # 方式だけ違うファイル＝版が上がる
+    assert _call(web, "/api/project/open", {"text": json.dumps(data)})[0] == 200
+    assert st.version == before + 1
+    assert st.snapshot()[1]["calc_profile"] == calc_profile.V2
 
 
 def test_the_api_carries_the_opened_project_name_into_the_next_save(web):

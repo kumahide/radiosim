@@ -14,9 +14,9 @@ webui/project_io.py
 その面だけ保存せず、警告で知らせる**（入力途中でも保存できることを優先・黙って捨てない）。
 空の面（行の無い表・点の無い中継）は節ごと書かない。
 
-⚠️ 計算方式（`calc_profile`）＝新しい画面は今の既定（`DEFAULT_PROFILE`）でしか計算しない。
-既定と違う方式のファイル（3.x の `v1`）は**暫定で開くのを断る**（黙って別の方式で計算しない＝
-`calc_profile.require` と同じ考え）。どう開くかは経営者の判断待ち（版計画の 10d の行）。
+計算方式（`calc_profile`）＝**ファイルの方式のまま開き、そのまま書く**（2026-11-08 経営者の
+決定＝3.x の `.rsproj`（v1）は v1 で計算する）。方式は画面の欄ではない＝`AppState` が入力の
+集合と別に持つ。新規（開かずに始めた）は既定（v2）。
 """
 
 from __future__ import annotations
@@ -88,11 +88,13 @@ def _multihop_section(sheet: "dict[str, Any]") -> "tuple[Any, str | None]":
 
 
 def dump(inputs: "dict[str, str]", sheets: "dict[str, Any]",
-         meta: "dict[str, str] | None" = None) -> "tuple[str, list[str]]":
+         meta: "dict[str, str] | None" = None,
+         profile: str = calc_profile.DEFAULT_PROFILE) -> "tuple[str, list[str]]":
     """画面の入力 → (`.rsproj` の JSON の文字列, 警告の並び)。
 
     `inputs` は入力の集合（`AppState` の写し）・`sheets` は面の入力（`sheets.check` を通った形）・
-    `meta` は開いたファイルの案件名とメモ（新しい画面に欄は無い＝持ち越すだけ）。
+    `meta` は開いたファイルの案件名とメモ（新しい画面に欄は無い＝持ち越すだけ）・`profile` は
+    今の計算方式（開いたファイルの方式＝v1 を開いて保存しても v1 のまま）。
     座標は DD で書く（データ＝DD 原則＝旧画面の `_coords_to_dd` と同じ）。
     """
     from report import project
@@ -116,7 +118,7 @@ def dump(inputs: "dict[str, str]", sheets: "dict[str, Any]",
                                       compare=[dict(c) for c in sc["compare"]],
                                       sweep=dict(sc["sweep"])),
         multihop=path,
-        calc_profile=calc_profile.DEFAULT_PROFILE,
+        calc_profile=calc_profile.require(profile),
     )
     text = json.dumps(project.to_dict(doc), indent=2, ensure_ascii=False, allow_nan=False)
     return text, warnings
@@ -163,11 +165,12 @@ def _multihop_sheet(path: Any) -> "dict[str, Any]":
     }
 
 
-def load(text: str) -> "tuple[dict[str, str], dict[str, Any], dict[str, str]]":
-    """`.rsproj` の文字列 → (入力の集合の全部, 面の入力の全部, meta)。
+def load(text: str) -> "tuple[dict[str, str], dict[str, Any], dict[str, str], str]":
+    """`.rsproj` の文字列 → (入力の集合の全部, 面の入力の全部, meta, 計算方式)。
 
     読めない理由は `report.project.ProjectError`（画面の字）に畳む。入力の集合はファイルに無い
     鍵を既定へ戻す（開く＝前の入力を残さない）。ファイルに無い節は空の面にする。
+    計算方式はファイルのまま（方式の無い 3.x のファイルは `from_dict` が v1 と読む）。
     """
     from report import project
     try:
@@ -175,8 +178,6 @@ def load(text: str) -> "tuple[dict[str, str], dict[str, Any], dict[str, str]]":
     except ValueError as e:                              # 桁の大きい整数の素の ValueError も
         raise project.ProjectError(i18n.t("proj_err_broken").format(reason=e)) from e
     doc = project.from_dict(data)
-    if doc.calc_profile != calc_profile.DEFAULT_PROFILE:
-        raise project.ProjectError(i18n.t("proj_err_profile").format(profile=doc.calc_profile))
     inputs = {k: config.DEFAULT_CONFIG[k] for k in config.SIM_KEYS}
     inputs.update({k: v for k, v in doc.params.items() if k in inputs})
     sheets = sheets_mod.empty()
@@ -191,4 +192,4 @@ def load(text: str) -> "tuple[dict[str, str], dict[str, Any], dict[str, str]]":
         sheets = {name: sheets_mod.check(name, value) for name, value in sheets.items()}
     except sheets_mod.SheetError as e:                   # 条件の数・知らない上書きの鍵など
         raise project.ProjectError(i18n.t("proj_err_broken").format(reason=e)) from e
-    return inputs, sheets, dict(doc.meta)
+    return inputs, sheets, dict(doc.meta), doc.calc_profile

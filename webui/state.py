@@ -18,6 +18,11 @@ webui/state.py
 作業面（ステージ10a）＝今の面（`sheets.WORKSPACES`）と面ごとの入力（`sheets.SHEETS`）も
 同じ錠で持つ。入力の集合・面・面の入力のどれが変わっても版は 1 つ上がる（1 回の `update`
 で何を変えても 1 つ）＝結果の版の比べ方は 1 回線と同じ。
+
+計算方式（`calc_profile`・ステージ10d）＝画面の欄ではなく**開いたファイルの属性**（旧画面の
+`ProjectDoc.calc_profile` と同じ）。新規と v2 のファイルは既定（v2）・3.x の `.rsproj`（v1）は
+v1 のまま計算する（2026-11-08 経営者の決定）。入力の集合とは別に持ち（`update` は知らない鍵を
+断る）、計算のスレッドの写し（`snapshot`）にだけ混ぜる＝`SimParams(inputs)` が拾う。
 """
 
 from __future__ import annotations
@@ -26,6 +31,7 @@ import copy
 import threading
 from typing import Any
 
+from core import calc_profile
 from core import config
 from webui import sheets as sheets_mod
 
@@ -53,6 +59,7 @@ class AppState:
         self._inputs: dict[str, str] = base
         self._workspace: str = sheets_mod.WORKSPACES[0]
         self._sheets: dict[str, Any] = sheets_mod.empty()
+        self._profile: str = calc_profile.DEFAULT_PROFILE
         self._version = 1
         self._revision = 1
         self._result: "dict[str, Any] | None" = None     # 版つきの見出し
@@ -61,12 +68,13 @@ class AppState:
 
     # ---- 入力 -------------------------------------------------------------
     def update(self, changes: dict, *, workspace: "str | None" = None,
-               sheets: "dict | None" = None) -> int:
-        """変えた欄・面・面の入力を受け、今の版を返す。
+               sheets: "dict | None" = None, profile: "str | None" = None) -> int:
+        """変えた欄・面・面の入力・計算方式を受け、今の版を返す。
 
         全部を検査してから 1 回で反映する＝どこか 1 つでも形が違えば何も変えない
-        （知らない鍵は `UnknownKeyError`・面の形の誤りは `sheets.SheetError`）。
-        面の入力は面ごとに丸ごと差し替える（行の一部だけは送らない）。
+        （知らない鍵は `UnknownKeyError`・面の形の誤りは `sheets.SheetError`・知らない方式は
+        `ValueError`）。面の入力は面ごとに丸ごと差し替える（行の一部だけは送らない）。
+        方式を変えるのは `.rsproj` を開いたときだけ（画面に欄は無い）。
         """
         bad = sorted(str(k) for k, v in changes.items()
                      if k not in self._inputs or not isinstance(v, str))
@@ -76,35 +84,44 @@ class AppState:
             raise sheets_mod.SheetError(f"unknown workspace: {workspace!r}")
         if sheets is not None and not isinstance(sheets, dict):
             raise sheets_mod.SheetError("sheets: not an object")
+        if profile is not None:
+            calc_profile.require(profile)
         checked = {name: sheets_mod.check(name, value) for name, value in (sheets or {}).items()}
         with self._cond:
             changed = {k: v for k, v in changes.items() if self._inputs[k] != v}
             new_sheets = {n: v for n, v in checked.items() if self._sheets[n] != v}
             new_ws = workspace if workspace not in (None, self._workspace) else None
-            if changed or new_sheets or new_ws:
+            new_profile = profile if profile not in (None, self._profile) else None
+            if changed or new_sheets or new_ws or new_profile:
                 self._inputs.update(changed)
                 self._sheets.update(new_sheets)
                 if new_ws:
                     self._workspace = new_ws
+                if new_profile:
+                    self._profile = new_profile
                 self._version += 1
                 self._progress = None
                 self._bump()
             return self._version
 
     def snapshot(self) -> "tuple[int, dict[str, str]]":
-        """(今の版, 入力の写し)。計算のスレッドはこの写しで計算する。"""
+        """(今の版, 入力の写し＋`calc_profile`)。計算のスレッドはこの写しで計算する。
+
+        方式は写しにだけ混ぜる＝`SimParams(inputs)` が拾い、地形の鍵（双線形か）にも効く。
+        画面へ返す写し（`wait` の `inputs`）には混ぜない（欄ではない）。
+        """
         with self._cond:
-            return self._version, dict(self._inputs)
+            return self._version, {**self._inputs, "calc_profile": self._profile}
 
     def workspace_snapshot(self) -> "tuple[int, str, dict[str, Any]]":
         """(今の版, 今の作業面, 面の入力の写し)。入力の集合は `snapshot` と同じ版で読む。"""
         with self._cond:
             return self._version, self._workspace, copy.deepcopy(self._sheets)
 
-    def document(self) -> "tuple[dict[str, str], dict[str, Any]]":
-        """(入力の写し, 面の入力の写し) を 1 回の錠で＝`.rsproj` の保存が同じ版の 2 つを書く。"""
+    def document(self) -> "tuple[dict[str, str], dict[str, Any], str]":
+        """(入力の写し, 面の入力の写し, 計算方式) を 1 回の錠で＝`.rsproj` の保存が同じ版を書く。"""
         with self._cond:
-            return dict(self._inputs), copy.deepcopy(self._sheets)
+            return dict(self._inputs), copy.deepcopy(self._sheets), self._profile
 
     @property
     def version(self) -> int:
@@ -159,5 +176,6 @@ class AppState:
                 "inputs": dict(self._inputs),
                 "workspace": self._workspace,
                 "sheets": copy.deepcopy(self._sheets),
+                "calc_profile": self._profile,             # 欄ではない＝出すかは 10f で決める
                 "headline": self._headline_locked(),
             }

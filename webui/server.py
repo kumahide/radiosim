@@ -480,8 +480,8 @@ def _make_handler(app: WebServer) -> type:
                 version = app.worker.submit({}, sheets={"batch": rows})
                 return self._json(200, {"version": version, "rows": len(rows)})
             if parts.path == "/api/project/save":
-                inputs, sheets = app.worker.state.document()
-                text, warnings = project_io.dump(inputs, sheets, app.project_meta)
+                inputs, sheets, profile = app.worker.state.document()
+                text, warnings = project_io.dump(inputs, sheets, app.project_meta, profile)
                 return self._json(200, {"text": text, "name": project_io.filename(app.project_meta),
                                         "warnings": warnings})
             if parts.path == "/api/project/open":
@@ -491,11 +491,11 @@ def _make_handler(app: WebServer) -> type:
                     return self._json(400, {"error": "bad body"})
                 from report.project import ProjectError
                 try:
-                    inputs, sheets, meta = project_io.load(text)
+                    inputs, sheets, meta, profile = project_io.load(text)
                 except ProjectError as e:
                     return self._json(422, {"message": str(e)})
                 app.project_meta = meta
-                version = app.worker.submit(inputs, sheets=sheets)
+                version = app.worker.submit(inputs, sheets=sheets, profile=profile)
                 return self._json(200, {"version": version})
             self._send(404, b"not found", "text/plain; charset=utf-8")
 
