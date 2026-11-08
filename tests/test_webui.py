@@ -49,6 +49,11 @@ def _endpoints_key(params):
     return (params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx)
 
 
+def _no_profile(terrain, params):
+    """地形が文字列の偽物のとき＝断面図は作らない（断面図の試験は下の節）。"""
+    return None
+
+
 # ============================================================
 # 見出しの不変条件
 # ============================================================
@@ -140,7 +145,7 @@ def test_wait_returns_as_soon_as_something_changed():
 # ============================================================
 def test_invalid_input_publishes_an_input_headline():
     st = AppState({"h_tx": "abc"})
-    Worker(st, key=_endpoints_key, calc=lambda t, p: _Result()).step()
+    Worker(st, key=_endpoints_key, calc=lambda t, p: _Result(), profile=_no_profile).step()
     head = st.headline()
     assert head["kind"] == "input"
     assert "h_tx" in head["message"]
@@ -149,7 +154,7 @@ def test_invalid_input_publishes_an_input_headline():
 def test_a_valid_input_publishes_a_verdict():
     st = AppState()
     w = Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
-               calc=lambda t, p: _Result())
+               calc=lambda t, p: _Result(), profile=_no_profile)
     w.step()
     head = st.headline()
     assert head["kind"] == "verdict" and head["word"] == "OK"
@@ -161,7 +166,7 @@ def test_unreachable_dem_publishes_a_terrain_headline():
         raise sim.DemUnreachableError("unreachable")
 
     st = AppState()
-    Worker(st, fetch=fetch, key=_endpoints_key, calc=lambda t, p: _Result()).step()
+    Worker(st, fetch=fetch, key=_endpoints_key, calc=lambda t, p: _Result(), profile=_no_profile).step()
     assert st.headline()["kind"] == "terrain"
 
 
@@ -169,7 +174,7 @@ def test_terrain_is_fetched_once_while_only_the_link_budget_changes():
     calls = []
     st = AppState()
     w = Worker(st, fetch=lambda p, cb, cancel: calls.append(1) or "terrain",
-               key=_endpoints_key, calc=lambda t, p: _Result())
+               key=_endpoints_key, calc=lambda t, p: _Result(), profile=_no_profile)
     w.step()
     w.submit({"p_tx": "13.0"})
     w.step()
@@ -196,7 +201,7 @@ class _BlockingFetch:
 def _start_fetching():
     st = AppState()
     fetch = _BlockingFetch()
-    w = Worker(st, fetch=fetch, key=_endpoints_key, calc=lambda t, p: _Result())
+    w = Worker(st, fetch=fetch, key=_endpoints_key, calc=lambda t, p: _Result(), profile=_no_profile)
     th = threading.Thread(target=w.step, daemon=True)
     th.start()
     assert fetch.started.wait(5)
@@ -282,12 +287,65 @@ def test_every_choice_is_a_value_the_validator_accepts():
 def test_every_breakdown_row_has_a_value_in_the_verdict():
     st = AppState()
     Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
-           calc=lambda t, p: _Result()).step()
+           calc=lambda t, p: _Result(), profile=_no_profile).step()
     head = st.headline()
     rows = webserver.breakdown()
     assert [r["name"] for r in rows if r["name"] not in head] == []
     assert head["sens"] == float(st.snapshot()[1]["sens"])     # 入力から取る行
     assert all(r["label"] and r["unit"] for r in rows)
+
+
+# ============================================================
+# 断面図（Link 1.0 ステージ9b）
+# ============================================================
+def _real_terrain(n_override=None):
+    import numpy as np
+
+    from core import config, models
+    params = sim.SimParams(dict(config.DEFAULT_CONFIG))
+    n = len(params.sample_fracs)
+    raw = 50.0 + 20.0 * np.sin(np.linspace(0.0, 6.0, n))
+    terrain = models.calculate_terrain_profile(
+        raw, params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx,
+        frac_axis=params.sample_fracs)
+    return terrain, params
+
+
+def test_thinning_keeps_both_ends_and_the_limit():
+    from webui.profile import thin
+    for n in (1, 2, 1200, 1201, 2217, 5000):
+        idx = thin(n, 1200)
+        assert idx[0] == 0 and idx[-1] == n - 1
+        assert len(idx) <= 1200 and idx == sorted(set(idx))
+
+
+def test_the_profile_draws_the_same_lines_as_the_report():
+    from core import units
+    from webui.profile import MAX_POINTS, profile_fields
+    terrain, params = _real_terrain()
+    p = profile_fields(terrain, params)
+    assert len(p["ground"]) <= MAX_POINTS and len(p["d"]) <= MAX_POINTS
+    assert len(p["ground_d"]) == len(p["ground"])
+    assert len(p["d"]) == len(p["los"]) == len(p["f1"])
+    # 両端＝地表の折れ線と標本の線が空中線の足元に届く（B-160 の端の画素）
+    length = round(float(units.km_to_m(terrain.horiz_dist_km)), 2)
+    assert p["ground_d"][0] == 0.0 and p["ground_d"][-1] == length
+    assert p["d"][0] == 0.0 and p["d"][-1] == length
+    assert p["tx"][1] == p["ground"][0] and p["rx"][1] == p["ground"][-1]
+    # 見通し線は空中線の先から先へ
+    assert p["los"][0] == p["tx"][2] and p["los"][-1] == p["rx"][2]
+    assert p["tx"][2] == round(p["tx"][1] + params.h_tx, 2)
+    assert p["veg_h"] == params.veg_h
+
+
+def test_a_verdict_carries_the_profile():
+    terrain, params = _real_terrain()
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: terrain, key=_endpoints_key,
+           calc=lambda t, p: _Result()).step()
+    head = st.headline()
+    assert head["kind"] == "verdict"
+    assert len(json.dumps(head["profile"])) < 100_000      # 見出しは毎回送る
 
 
 def test_the_script_has_no_japanese():
@@ -307,7 +365,7 @@ def test_the_script_has_no_japanese():
 def web():
     st = AppState()
     w = Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
-               calc=lambda t, p: _Result())
+               calc=lambda t, p: _Result(), profile=_no_profile)
     srv = webserver.WebServer(w, tile=lambda s, z, x, y: ("absent", None))
     th = threading.Thread(target=srv.httpd.serve_forever, daemon=True)
     th.start()

@@ -27,6 +27,7 @@ from core import config
 from core import engine
 from core import simulation as sim
 from core import units
+from webui.profile import profile_fields
 from webui.state import AppState
 
 logger = logging.getLogger("radiosim")
@@ -64,9 +65,11 @@ class Worker:
         calc: "Callable[..., Any]" = engine.calculate,
         key: "Callable[[Any], Any]" = engine.terrain_key,
         validate: "Callable[[dict], list[str]]" = config.validate_config,
+        profile: "Callable[[Any, Any], dict | None]" = profile_fields,
     ) -> None:
         self.state = state
         self._fetch, self._calc, self._key, self._validate = fetch, calc, key, validate
+        self._profile = profile
         self._lock = threading.Lock()
         self._cancel: "threading.Event | None" = None    # 取得中の地形の取り消し
         self._fetch_key: Any = None                      # 取得中の地形の鍵
@@ -122,11 +125,15 @@ class Worker:
                 return
         try:
             result = self._calc(self._terrain, params)
+            fields = _verdict_fields(result, params)
+            shape = self._profile(self._terrain, params)   # 断面図（帳票と同じ線）
         except Exception as e:
             logger.exception("webui: 計算に失敗")
             self.state.publish(version, "error", message=str(e))
             return
-        self.state.publish(version, "verdict", **_verdict_fields(result, params))
+        if shape is not None:
+            fields["profile"] = shape
+        self.state.publish(version, "verdict", **fields)
 
     def _fetch_terrain(self, version: int, params: Any, key: Any) -> bool:
         cancel = threading.Event()
