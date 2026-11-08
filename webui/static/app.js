@@ -904,17 +904,17 @@ async function flushAll() {
 }
 
 // 選んだ場所へ 1 つ書く（Edge の `showSaveFilePicker`・無ければダウンロード）。書いた名前を返す。
-// 選ぶ画面を閉じたら null（何もしない）・書けなければ知らせの欄に赤で出して null
-async function saveTextFile(text, name, types, mime) {
+// 中身は文字列か Blob（画像）。選ぶ画面を閉じたら null（何もしない）・書けなければ知らせの欄に赤で出して null
+async function saveTextFile(data, name, types, mime) {
   try {
     if (window.showSaveFilePicker) {
       const h = await window.showSaveFilePicker({ suggestedName: name, types });
       const w = await h.createWritable();
-      await w.write(text);
+      await w.write(data);
       await w.close();
       return h.name;
     }
-    const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: mime })), download: name });
+    const a = el("a", { href: URL.createObjectURL(new Blob([data], { type: mime })), download: name });
     a.click();
     URL.revokeObjectURL(a.href);
     return name;
@@ -960,6 +960,77 @@ function saveSheetKml() {
   return saveSheetFile("/api/sheet/kml", KML_TYPES, "application/vnd.google-earth.kml+xml");
 }
 
+// ---- 画面の画像（10d）＝地図と断面図を別々に（2026-11-08 経営者） --------------------
+const PNG_TYPES = [{ description: "PNG", accept: { "image/png": [".png"] } }];
+
+// 地図＝帳票と同じ絵をサーバーが焼く（Leaflet の絵はタイルの canvas が無く PNG にできない）
+async function saveMapPng() {
+  projNote("");
+  await flushAll();
+  const r = await fetch("/api/image/map", { method: "POST", headers: HEAD, body: "{}" });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { projNote(d.message || d.error || String(r.status), true); return; }
+  const bytes = Uint8Array.from(atob(d.png), (c) => c.charCodeAt(0));
+  const name = await saveTextFile(new Blob([bytes], { type: "image/png" }), d.name, PNG_TYPES, "image/png");
+  if (name !== null) projNote(labels.file_saved.replace("{path}", name));
+}
+
+// 断面図の上の 1 行＝(左の字＝[名前]・語・余裕度, 語の色)。1 回線は判定の帯・作業面は選んだ行
+function profileCaption() {
+  if (workspace === "single") {
+    if (headline.kind !== "verdict") return null;
+    return [`${headline.word}  ${labels.margin || ""} ${dB(headline.margin)} dB`, headline.word];
+  }
+  const it = selected === null ? null : sheetItems[selected];
+  if (!it) return null;
+  const m = "margin" in it ? `  ${labels.margin || ""} ${dB(it.margin)} dB` : "";
+  return [`${it.label}  ${it.word}${m}`, it.word];
+}
+
+// 断面図＝画面の canvas に、上の 1 行（語と余裕度＋凡例）を足して PNG に（ホバーの線は描かない）
+async function saveProfilePng() {
+  projNote("");
+  const cap = profileCaption();
+  if (!profile || !cap) { projNote(labels.no_profile || "", true); return; }
+  const src = document.getElementById("profile-canvas");
+  const keep = hoverFrac;
+  hoverFrac = null;
+  drawProfile();
+  const dpr = window.devicePixelRatio || 1;
+  const head = Math.round(26 * dpr);
+  const out = el("canvas", { width: src.width, height: src.height + head });
+  const g = out.getContext("2d");
+  g.fillStyle = getComputedStyle(document.body).backgroundColor;
+  g.fillRect(0, 0, out.width, out.height);
+  g.drawImage(src, 0, head);
+  hoverFrac = keep;
+  drawProfile();
+  g.scale(dpr, dpr);
+  g.textBaseline = "middle";
+  g.font = '600 14px "Segoe UI", "Yu Gothic UI", sans-serif';
+  g.fillStyle = verdictColor(cap[1]);
+  g.textAlign = "left";
+  g.fillText(cap[0], PAD.l, 13);
+  // 凡例（画面では canvas の外の字＝画像だけ見ても線が読めるように右に並べる）
+  g.font = '12px "Segoe UI", "Yu Gothic UI", sans-serif';
+  let x = out.width / dpr - PAD.r;
+  [["legend_fresnel", "--pf-fresnel"], ["legend_los", "--pf-los"],
+    ["legend_vegetation", "--pf-vegetation"], ["legend_terrain", "--pf-terrain"]].forEach(([k, c]) => {
+    const t = labels[k] || "";
+    x -= g.measureText(t).width;
+    g.fillStyle = getComputedStyle(document.body).color;
+    g.fillText(t, x, 13);
+    x -= 16;
+    g.fillStyle = cssColor(c);
+    g.fillRect(x, 8, 11, 11);
+    x -= 14;
+  });
+  const blob = await new Promise((done) => out.toBlob(done, "image/png"));
+  if (!blob) { projNote(labels.no_profile || "", true); return; }
+  const name = await saveTextFile(blob, "profile.png", PNG_TYPES, "image/png");
+  if (name !== null) projNote(labels.file_saved.replace("{path}", name));
+}
+
 async function openProjectText(text) {
   projNote("");
   // 打ちかけは捨てる（開いたファイルを古い打ちかけで上書きしない）
@@ -999,6 +1070,8 @@ function buildProjTools() {
   document.getElementById("proj-tools").replaceChildren(
     button(labels.open_project, openProject),
     button(labels.save_project, saveProject),
+    button(labels.save_map_png, saveMapPng),
+    button(labels.save_profile_png, saveProfilePng),
   );
 }
 

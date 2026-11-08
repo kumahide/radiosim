@@ -23,12 +23,15 @@ webui/server.py
     POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
                                    （全件そろっていなければ 409＋画面の 1 文 `message`）
     POST /api/sheet/kml          … 同じく KML（`summary.kml`＝複数経路だけ・ほかの面は 409）
+    POST /api/image/map          … 今の版の地図の PNG `{"png"（base64）, "name"}`（帳票と同じ絵＝
+                                   判定が出る前は 409・背景が取れなければ 503＋画面の 1 文）
     GET  /tile/<src>/<z>/<x>/<y>.png … `dem.basemap_tile_png`
     POST /api/bye?t=<鍵>          … 窓を閉じた。2 秒のうちに次のページが来なければ終わる
 """
 
 from __future__ import annotations
 
+import base64
 import csv
 import json
 import logging
@@ -201,6 +204,9 @@ def labels() -> "dict[str, str]":
         # 作業面の成果物の保存（ステージ10d）
         "save_csv": i18n.t("webui_save_csv"),
         "save_kml": i18n.t("webui_save_kml"),
+        "save_map_png": i18n.t("webui_save_map_png"),
+        "save_profile_png": i18n.t("webui_save_profile_png"),
+        "no_profile": i18n.t("webui_no_profile"),
         "file_saved": i18n.t("webui_file_saved"),
         "tab_compare": i18n.t("scn_tab_compare"),
         "tab_sweep": i18n.t("scn_tab_sweep"),
@@ -286,6 +292,7 @@ class WebServer:
     def __init__(self, worker: Worker, *, basemap: str = "pale",
                  on_quit: "Callable[[], None] | None" = None,
                  tile: "Callable[..., tuple[str, bytes | None]]" = dem.basemap_tile_png,
+                 map_png: "Callable[[list, str], bytes | None]" = exports.map_png,
                  listener: "Listener | None" = None) -> None:
         self.worker = worker
         lis = listener or Listener()
@@ -293,6 +300,7 @@ class WebServer:
         self.basemap = basemap
         self._on_quit = on_quit
         self._tile = tile
+        self._map_png = map_png
         self._page_serial = 0
         self._serial_lock = threading.Lock()
         #: 開いた `.rsproj` の案件名とメモ（画面に欄は無い＝保存で持ち越すだけ）
@@ -304,6 +312,18 @@ class WebServer:
         self.httpd.server_name, self.httpd.server_port = lis.address
         self.httpd.daemon_threads = True
         self.port = lis.address[1]
+
+    def map_image(self) -> "tuple[int, dict[str, Any]]":
+        """今の版の地図の PNG（`/api/image/map` の `(状態, 本文)`）。"""
+        version, inputs = self.worker.state.snapshot()
+        head = self.worker.state.headline()
+        lines = exports.map_lines(head, inputs) if head.get("version") == version else None
+        if lines is None:
+            return 409, {"message": i18n.t("webui_no_result")}
+        png = self._map_png(lines, self.basemap)
+        if png is None:
+            return 503, {"message": i18n.t("html_map_unavailable")}
+        return 200, {"png": base64.b64encode(png).decode("ascii"), "name": "map.png"}
 
     @property
     def url(self) -> str:
@@ -509,6 +529,9 @@ def _make_handler(app: WebServer) -> type:
                 if made is None:                         # 中継・条件探索＝旧画面にも無い
                     return self._json(409, {"message": i18n.t("webui_no_kml")})
                 return self._json(200, {"text": made[1], "name": made[0]})
+            if parts.path == "/api/image/map":
+                self._body()                             # 読み捨てる（CSV と同じ）
+                return self._json(*app.map_image())
             if parts.path == "/api/project/open":
                 body = self._body()
                 text = body.get("text") if body is not None else None

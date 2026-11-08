@@ -5,12 +5,14 @@ tests/test_webui_exports.py
 全件の結果を持ち、`webui.exports.sheet_csv` が旧画面と同じ書き手で出力契約の CSV を作る。
 `/api/sheet/csv` は全件そろう前は 409。判断点 ②＝CSV の件数と語が画面の表と同じ。
 KML（`summary.kml`）は複数経路だけ＝旧画面と同じ。REVIEW は自分のフォルダ（紫）。
+地図の画像は画面の地図と同じ線を帳票と同じ絵で焼く（`/api/image/map`＝判定の前は 409・背景が無ければ 503）。
 """
 
 from __future__ import annotations
 
 import csv
 import http.client
+import base64
 import io
 import json
 import threading
@@ -178,10 +180,51 @@ def test_the_old_kml_writer_writes_the_text(tmp_path):
     assert written["REVIEW"] == [("C3", True)]                   # 旧画面も REVIEW を Error へ落とさない
 
 
+def test_the_map_lines_are_the_screen_lines_with_the_words():
+    st, _ = _run("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "abc"}, {**_ROW, "id": "C3", "h_tx": "15"}])
+    _, inputs = st.snapshot()
+    lines = exports.map_lines(st.headline(), inputs)
+    # 座標の無い誤りの行は描かない（画面と同じ）・語と名前は表の行
+    assert [(w, n) for _, _, w, n in lines] == [(vd.OK, "A1"), (vd.REVIEW, "C3")]
+    assert lines[0][:2] == ((34.40, 132.45), (34.42, 132.50))
+    st, _ = _run("scenario", {"compare": [{"h_tx": "15"}, {"h_tx": "40"}]}, h_tx="10")
+    got = st.headline()
+    lines = exports.map_lines(got, st.snapshot()[1])
+    assert len(lines) == 1 and lines[0][2] == got["overall"]    # 条件探索は 1 本を全体の語で
+
+
+def test_no_map_lines_before_the_sheet_is_complete_or_without_a_verdict():
+    assert exports.map_lines({"kind": "computing"}, {}) is None
+    got = {"kind": "sheet", "workspace": "batch", "done": 1, "total": 2,
+           "items": [{"label": "A1", "word": vd.OK, "tx": [34.4, 132.45], "rx": [34.42, 132.5]}]}
+    assert exports.map_lines(got, {}) is None
+    got = {**got, "done": 1, "total": 1, "items": [{"label": "B2", "word": vd.ERROR}]}
+    assert exports.map_lines(got, {}) is None                    # 描ける線が無い
+
+
+def test_the_map_png_is_the_report_paths_map(monkeypatch):
+    from PIL import Image
+
+    from report import report_map
+    got = {}
+
+    def fake(specs, basemap_source_id):
+        got["specs"], got["basemap"] = specs, basemap_source_id
+        return Image.new("RGB", (4, 2))
+    monkeypatch.setattr(report_map, "render_paths_map", fake)
+    png = exports.map_png([((34.4, 132.45), (34.42, 132.5), vd.REVIEW, "A1")], "std")
+    assert png.startswith(b"\x89PNG") and got["basemap"] == "std"
+    assert got["specs"] == [report_map.PathSpec(tx=(34.4, 132.45), rx=(34.42, 132.5),
+                                                status=vd.REVIEW, label="A1")]
+    monkeypatch.setattr(report_map, "render_paths_map", lambda specs, basemap_source_id: None)
+    assert exports.map_png([((0.0, 0.0), (0.0, 0.1), vd.OK, "")], "pale") is None
+
+
 @pytest.fixture
 def web():
     st = AppState()
-    srv = webserver.WebServer(_worker(st), tile=lambda s, z, x, y: ("absent", None))
+    srv = webserver.WebServer(_worker(st), tile=lambda s, z, x, y: ("absent", None),
+                              map_png=lambda lines, basemap: b"PNG:" + repr(lines).encode())
     th = threading.Thread(target=srv.httpd.serve_forever, daemon=True)
     th.start()
     yield srv
@@ -224,6 +267,21 @@ def test_the_kml_api_answers_for_the_batch_sheet_only(web):
     assert _kml_folders(body["text"])["OK"] == [("A1", True)]
 
 
+def test_the_map_api_answers_409_before_a_result_503_without_tiles_then_the_png(web):
+    code, body = _post_csv(web, "/api/image/map")
+    assert code == 409 and body["message"]                       # まだ判定が無い
+    web.worker.submit({}, workspace="batch", sheets={"batch": [_ROW]})
+    web.worker.step()
+    code, body = _post_csv(web, "/api/image/map")
+    assert code == 200 and body["name"] == "map.png"
+    png = base64.b64decode(body["png"])
+    assert png.startswith(b"PNG:") and b"'A1'" in png
+    web._map_png = lambda lines, basemap: None                   # 背景のタイルが取れない
+    code, body = _post_csv(web, "/api/image/map")
+    assert code == 503 and body["message"]
+
+
 def test_the_labels_carry_the_save_words():
     labels = webserver.labels()
     assert labels["save_csv"] and labels["save_kml"] and "{path}" in labels["file_saved"]
+    assert labels["save_map_png"] and labels["save_profile_png"] and labels["no_profile"]

@@ -856,6 +856,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_save_csv":       "Save Results CSV",
         "webui_save_kml":       "Save KML",
         "webui_no_kml":         "KML is saved only from the multi-path sheet.",
+        "webui_save_map_png":   "Save Map Image",
+        "webui_save_profile_png": "Save Profile Image",
+        "webui_no_profile":     "There is no terrain profile to save yet. On a sheet, select a row first.",
         "webui_no_result":      "The results are not complete yet. Save after the calculation finishes.",
         "webui_file_saved":     "Saved: {path}",
 
@@ -1673,6 +1676,9 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_save_csv":       "結果の CSV を保存",
         "webui_save_kml":       "KML を保存",
         "webui_no_kml":         "KML は複数経路の面だけで保存できます。",
+        "webui_save_map_png":   "地図の画像を保存",
+        "webui_save_profile_png": "断面図の画像を保存",
+        "webui_no_profile":     "保存する断面図がまだありません。作業面では先に行を選んでください。",
         "webui_no_result":      "結果がまだそろっていません。計算が終わってから保存してください。",
         "webui_file_saved":     "保存しました: {path}",
 
