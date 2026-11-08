@@ -8,13 +8,15 @@ webui/server.py
 - `/api/*` は起動ごとの鍵が要る＝`X-Token` の頭。`sendBeacon` の `/api/bye` だけは
   頭を付けられないので URL の `?t=<鍵>`
 - 静的ファイルは `webui/static/` の外へ出ない（`normpath` して根で始まるか）
-- 本文は 64 KiB まで
+- 本文は 1 MiB まで（複数経路の表を丸ごと送る＝1 行 150 バイトほどで数千行）
 
 口:
     GET  /                       … `static/index.html`
     GET  /<静的ファイル>
     GET  /api/state?after=N      … 長いポーリング（変化の数が N を越えたら返る）
-    POST /api/inputs             … `{"changes": {鍵: 値}}`＝変えた欄だけ
+    POST /api/inputs             … `{"changes": {鍵: 値}}`＝変えた欄だけ。作業面（ステージ10a）は
+                                   `"workspace": 面` と `"sheets": {面: 入力}`（面ごとに丸ごと）も
+                                   受ける＝3 つのどれか 1 つは要る・形の誤りは 400
     GET  /tile/<src>/<z>/<x>/<y>.png … `dem.basemap_tile_png`
     POST /api/bye?t=<鍵>          … 窓を閉じた。2 秒のうちに次のページが来なければ終わる
 """
@@ -39,13 +41,14 @@ from core import models
 from core import terrain_grid
 from core import units
 from webui.edge import Listener
+from webui.sheets import SheetError
 from webui.state import UnknownKeyError
 from webui.worker import Worker
 
 logger = logging.getLogger("radiosim")
 
 STATIC_ROOT = os.path.join(os.path.dirname(os.path.abspath(__file__)), "static")
-_MAX_BODY = 64 * 1024
+_MAX_BODY = 1024 * 1024
 _POLL_TIMEOUT_S = 20.0
 _LEAVE_GRACE_S = 2.0
 _TILE_RE = re.compile(r"^/tile/([a-z0-9_]+)/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
@@ -349,13 +352,20 @@ def _make_handler(app: WebServer) -> type:
                 return self._send(204, b"", "text/plain; charset=utf-8")
             if parts.path == "/api/inputs":
                 body = self._body()
-                changes = body.get("changes") if body is not None else None
-                if not isinstance(changes, dict):
+                if body is None or not ({"changes", "workspace", "sheets"} & set(body)):
+                    return self._json(400, {"error": "bad body"})
+                changes = body.get("changes", {})
+                workspace = body.get("workspace")
+                if not isinstance(changes, dict) or not (workspace is None
+                                                         or isinstance(workspace, str)):
                     return self._json(400, {"error": "bad body"})
                 try:
-                    version = app.worker.submit(changes)
+                    version = app.worker.submit(changes, workspace=workspace,
+                                                sheets=body.get("sheets"))
                 except UnknownKeyError as e:
                     return self._json(400, {"error": f"unknown: {e}"})
+                except SheetError as e:
+                    return self._json(400, {"error": f"sheet: {e}"})
                 return self._json(200, {"version": version})
             self._send(404, b"not found", "text/plain; charset=utf-8")
 

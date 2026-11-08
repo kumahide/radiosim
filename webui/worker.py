@@ -89,9 +89,13 @@ class Worker:
         self._wake.set()                                 # 起動したら 1 回は計算する
 
     # ---- HTTP のスレッドから ---------------------------------------------
-    def submit(self, changes: dict) -> int:
-        """入力を変え、地形に効く欄が変わったら取得中の地形を取り消す。今の版を返す。"""
-        version = self.state.update(changes)
+    def submit(self, changes: dict, *, workspace: "str | None" = None,
+               sheets: "dict | None" = None) -> int:
+        """入力を変え、地形に効く欄が変わったら取得中の地形を取り消す。今の版を返す。
+
+        作業面と面の入力（ステージ10a）は `state.update` へそのまま渡す（形の検査も向こう）。
+        """
+        version = self.state.update(changes, workspace=workspace, sheets=sheets)
         _, inputs = self.state.snapshot()
         new_key = self._key_or_none(inputs)
         with self._lock:

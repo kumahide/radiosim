@@ -300,6 +300,7 @@ radiosim/
 ├── webui/                # New screen (local HTTP + Edge app mode, 4.0 stage 8). Same rank as views; neither imports the other
 │   ├── __main__.py       # `python -m webui` entry (starts Edge first; `core/dem.py` injects truststore just before the first request; settings are read only)
 │   ├── state.py          # Input set and headline (never shows a result from an older input version)
+│   ├── sheets.py         # Workspace inputs (batch, scenario, relay held as screen strings; typed only to run or save)
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable)
 │   ├── profile.py        # Terrain profile data (same lines as the report; thinned to 1200 points)
 │   ├── server.py         # HTTP bound to 127.0.0.1 only (per-launch token, Host check, static files)
@@ -404,6 +405,7 @@ radiosim/
     ├── test_legacy_leftover_notice.py
     ├── test_smoke.py
     ├── test_webui.py
+    ├── test_webui_workspace.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_experiments_probes.py
@@ -1323,6 +1325,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_legacy_leftover_notice.py` | The screen-side wiring for the startup notice about data left behind at the old location (settings, past results) (3.2). Checks that nothing is shown when `config.legacy_leftovers()` finds nothing, that only what was found is listed in the body, and that a path that was not found never appears in the body |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_webui.py`          | New screen (`webui/`): the headline shows only results of the current input version, unknown input keys are rejected, a terrain-affecting edit cancels the running fetch, HTTP refuses a foreign Host or a missing token, static files cannot escape their root |
+| `test_webui_workspace.py` | New screen workspace inputs: one update bumps the version once whatever it changes, a bad shape is refused without changing anything, typing follows the old windows with the same error words, importing does not load `report` |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 | `test_experiments_probes.py` | Static gate keeping the probes under `experiments/` in step with the product. Calls into `core`/`report` collected via AST must `bind` against the current signature, and a probe printing characters the default console cannot encode must rebuild `sys.stdout`. The probes are never executed here (their argument, data, network and hardware prerequisites differ too much for CI) — they are only read. The number of calls actually checked is asserted too, so the gate cannot pass silently |

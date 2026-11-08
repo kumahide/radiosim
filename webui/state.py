@@ -13,14 +13,20 @@ webui/state.py
 
 画面は `wait(after)` の長いポーリングで変化を待つ＝変化の数（`revision`）が `after` を
 越えたら返る。
+
+作業面（ステージ10a）＝今の面（`sheets.WORKSPACES`）と面ごとの入力（`sheets.SHEETS`）も
+同じ錠で持つ。入力の集合・面・面の入力のどれが変わっても版は 1 つ上がる（1 回の `update`
+で何を変えても 1 つ）＝結果の版の比べ方は 1 回線と同じ。
 """
 
 from __future__ import annotations
 
+import copy
 import threading
 from typing import Any
 
 from core import config
+from webui import sheets as sheets_mod
 
 #: 見出しの種類（JS もこの字で分ける）。
 KINDS = ("verdict", "input", "terrain", "error", "computing")
@@ -44,6 +50,8 @@ class AppState:
             if k in base and isinstance(v, str):
                 base[k] = v
         self._inputs: dict[str, str] = base
+        self._workspace: str = sheets_mod.WORKSPACES[0]
+        self._sheets: dict[str, Any] = sheets_mod.empty()
         self._version = 1
         self._revision = 1
         self._result: "dict[str, Any] | None" = None     # 版つきの見出し
@@ -51,16 +59,32 @@ class AppState:
         self._cond = threading.Condition()
 
     # ---- 入力 -------------------------------------------------------------
-    def update(self, changes: dict) -> int:
-        """変えた欄だけを受け、今の版を返す。知らない鍵が 1 つでもあれば何も変えない。"""
+    def update(self, changes: dict, *, workspace: "str | None" = None,
+               sheets: "dict | None" = None) -> int:
+        """変えた欄・面・面の入力を受け、今の版を返す。
+
+        全部を検査してから 1 回で反映する＝どこか 1 つでも形が違えば何も変えない
+        （知らない鍵は `UnknownKeyError`・面の形の誤りは `sheets.SheetError`）。
+        面の入力は面ごとに丸ごと差し替える（行の一部だけは送らない）。
+        """
         bad = sorted(str(k) for k, v in changes.items()
                      if k not in self._inputs or not isinstance(v, str))
         if bad:
             raise UnknownKeyError(", ".join(bad))
+        if workspace is not None and workspace not in sheets_mod.WORKSPACES:
+            raise sheets_mod.SheetError(f"unknown workspace: {workspace!r}")
+        if sheets is not None and not isinstance(sheets, dict):
+            raise sheets_mod.SheetError("sheets: not an object")
+        checked = {name: sheets_mod.check(name, value) for name, value in (sheets or {}).items()}
         with self._cond:
             changed = {k: v for k, v in changes.items() if self._inputs[k] != v}
-            if changed:
+            new_sheets = {n: v for n, v in checked.items() if self._sheets[n] != v}
+            new_ws = workspace if workspace not in (None, self._workspace) else None
+            if changed or new_sheets or new_ws:
                 self._inputs.update(changed)
+                self._sheets.update(new_sheets)
+                if new_ws:
+                    self._workspace = new_ws
                 self._version += 1
                 self._progress = None
                 self._bump()
@@ -70,6 +94,11 @@ class AppState:
         """(今の版, 入力の写し)。計算のスレッドはこの写しで計算する。"""
         with self._cond:
             return self._version, dict(self._inputs)
+
+    def workspace_snapshot(self) -> "tuple[int, str, dict[str, Any]]":
+        """(今の版, 今の作業面, 面の入力の写し)。入力の集合は `snapshot` と同じ版で読む。"""
+        with self._cond:
+            return self._version, self._workspace, copy.deepcopy(self._sheets)
 
     @property
     def version(self) -> int:
@@ -122,5 +151,7 @@ class AppState:
                 "revision": self._revision,
                 "version": self._version,
                 "inputs": dict(self._inputs),
+                "workspace": self._workspace,
+                "sheets": copy.deepcopy(self._sheets),
                 "headline": self._headline_locked(),
             }
