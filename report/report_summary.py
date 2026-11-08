@@ -15,6 +15,8 @@ from __future__ import annotations
 
 import csv
 import html as _html
+import io
+import math
 import os
 from datetime import datetime
 from typing import TYPE_CHECKING
@@ -43,69 +45,81 @@ if TYPE_CHECKING:
 def _save_summary_csv(results: list[PathResult], batch_dir: str) -> None:
     path = os.path.join(batch_dir, "summary.csv")
     with open(path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        # 見出しは出力契約が単一ソース（→ core/output_contract.py）＝ここに列を
-        # 手書きすると「行に値を足したのに見出しを足し忘れる」がすり抜ける。
-        writer.writerow(list(output_contract.SUMMARY_CSV_COLUMNS))
-        for pr in results:
-            freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
-            gain_tx_val = units.csv_db(pr.params.gain_tx) if pr.params else ""
-            gain_rx_val = units.csv_db(pr.params.gain_rx) if pr.params else ""
-            h_tx_val = f"{pr.row.h_tx:.1f}"
-            h_rx_val = f"{pr.row.h_rx:.1f}"
-            if pr.result is not None:
-                r = pr.result
-                # status 列は `pr.status`＝成果物だけ失敗した経路も ERROR で出る
-                # （I-010）。**数値は残す**（計算は通っているので消す理由が無い）
-                # ＝何が欠けたかは末尾の error 列が持つ。
-                writer.writerow([
-                    report_common.csv_cell(pr.row.path_id), pr.status,
-                    freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
-                    # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**
-                    # なので、変えた版の CHANGELOG と公開文書に書いてある。
-                    units.csv_db(r.p_rx),          units.csv_db(r.actual_margin),
-                    units.csv_db(r.fspl),          units.csv_db(r.diff_loss),
-                    units.csv_db(r.veg_loss),      units.csv_db(r.env_loss),
-                    units.csv_db(r.rain_loss),     units.csv_db(r.gas_loss),
-                    units.csv_db(r.total_loss),
-                    units.csv_distance(r.slant_dist_km),
-                    units.csv_blocked_ratio(r.blocked_ratio),
-                    report_common.csv_cell(pr.row.note),
-                    report_common.csv_cell(pr.artifact_error)
-                    if pr.artifact_error is not None else "",
-                    # 末尾＝出力契約の規約 1（追加は末尾のみ）。`f1_pct` の隣では
-                    # ないので、並べて読むときは列名で引くこと（I-077）。
-                    units.csv_f1_depth(r.blocked_ratio),
-                    # 何点で刻んだ答えか（I-069）＝**行ごとに違う**。
-                    str(pr.params.num) if pr.params else "",
-                    # 水平距離（B-139）＝`slant_m` は斜距離なので、実効間隔を
-                    # 割り出すには水平距離が要る。標本は等間隔とは限らない
-                    # （B-150）ので、割り算はあくまで読む側の近似計算。
-                    units.csv_distance(pr.terrain.horiz_dist_km)
-                    if pr.terrain is not None else "",
-                    # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
-                    # `models.TerrainProfile.fail_pct`。
-                    units.csv_fail_pct(pr.terrain.fail_pct)
-                    if pr.terrain is not None else "",
-                    report_common.csv_calc_profile(pr.params),
-                    report_common.csv_input_hash(pr.params),
-                ])
-            else:
-                writer.writerow([
-                    report_common.csv_cell(pr.row.path_id), "ERROR",
-                    freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
-                    "", "", "", "", "", "", "", "", "", "", "",
-                    report_common.csv_cell(pr.row.note),
-                    report_common.csv_cell(pr.error),
-                    "",
-                    str(pr.params.num) if pr.params else "",
-                    units.csv_distance(pr.terrain.horiz_dist_km)
-                    if pr.terrain is not None else "",
-                    units.csv_fail_pct(pr.terrain.fail_pct)
-                    if pr.terrain is not None else "",
-                    report_common.csv_calc_profile(pr.params),
-                    report_common.csv_input_hash(pr.params),
-                ])
+        f.write(summary_csv_text(results))
+
+
+def _csv_height(value: float) -> str:
+    """空中線高の欄。有限でなければ空＝新しい画面の誤りの行（`webui/worker.py`）は高さを持たない。"""
+    return f"{value:.1f}" if math.isfinite(value) else ""
+
+
+def summary_csv_text(results: list[PathResult]) -> str:
+    """`summary.csv` の本文（行末 `\\r\\n`）。ファイルへ書くのは呼ぶ側（旧画面・新しい画面の保存）。"""
+    buf = io.StringIO(newline="")
+    writer = csv.writer(buf)
+    # 見出しは出力契約が単一ソース（→ core/output_contract.py）＝ここに列を
+    # 手書きすると「行に値を足したのに見出しを足し忘れる」がすり抜ける。
+    writer.writerow(list(output_contract.SUMMARY_CSV_COLUMNS))
+    for pr in results:
+        freq_val    = f"{pr.params.freq_mhz:.1f}" if pr.params else ""
+        gain_tx_val = units.csv_db(pr.params.gain_tx) if pr.params else ""
+        gain_rx_val = units.csv_db(pr.params.gain_rx) if pr.params else ""
+        h_tx_val = _csv_height(pr.row.h_tx)
+        h_rx_val = _csv_height(pr.row.h_rx)
+        if pr.result is not None:
+            r = pr.result
+            # status 列は `pr.status`＝成果物だけ失敗した経路も ERROR で出る
+            # （I-010）。**数値は残す**（計算は通っているので消す理由が無い）
+            # ＝何が欠けたかは末尾の error 列が持つ。
+            writer.writerow([
+                report_common.csv_cell(pr.row.path_id), pr.status,
+                freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
+                # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**
+                # なので、変えた版の CHANGELOG と公開文書に書いてある。
+                units.csv_db(r.p_rx),          units.csv_db(r.actual_margin),
+                units.csv_db(r.fspl),          units.csv_db(r.diff_loss),
+                units.csv_db(r.veg_loss),      units.csv_db(r.env_loss),
+                units.csv_db(r.rain_loss),     units.csv_db(r.gas_loss),
+                units.csv_db(r.total_loss),
+                units.csv_distance(r.slant_dist_km),
+                units.csv_blocked_ratio(r.blocked_ratio),
+                report_common.csv_cell(pr.row.note),
+                report_common.csv_cell(pr.artifact_error)
+                if pr.artifact_error is not None else "",
+                # 末尾＝出力契約の規約 1（追加は末尾のみ）。`f1_pct` の隣では
+                # ないので、並べて読むときは列名で引くこと（I-077）。
+                units.csv_f1_depth(r.blocked_ratio),
+                # 何点で刻んだ答えか（I-069）＝**行ごとに違う**。
+                str(pr.params.num) if pr.params else "",
+                # 水平距離（B-139）＝`slant_m` は斜距離なので、実効間隔を
+                # 割り出すには水平距離が要る。標本は等間隔とは限らない
+                # （B-150）ので、割り算はあくまで読む側の近似計算。
+                units.csv_distance(pr.terrain.horiz_dist_km)
+                if pr.terrain is not None else "",
+                # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
+                # `models.TerrainProfile.fail_pct`。
+                units.csv_fail_pct(pr.terrain.fail_pct)
+                if pr.terrain is not None else "",
+                report_common.csv_calc_profile(pr.params),
+                report_common.csv_input_hash(pr.params),
+            ])
+        else:
+            writer.writerow([
+                report_common.csv_cell(pr.row.path_id), "ERROR",
+                freq_val, gain_tx_val, gain_rx_val, h_tx_val, h_rx_val,
+                "", "", "", "", "", "", "", "", "", "", "",
+                report_common.csv_cell(pr.row.note),
+                report_common.csv_cell(pr.error),
+                "",
+                str(pr.params.num) if pr.params else "",
+                units.csv_distance(pr.terrain.horiz_dist_km)
+                if pr.terrain is not None else "",
+                units.csv_fail_pct(pr.terrain.fail_pct)
+                if pr.terrain is not None else "",
+                report_common.csv_calc_profile(pr.params),
+                report_common.csv_input_hash(pr.params),
+            ])
+    return buf.getvalue()
 
 
 # ============================================================

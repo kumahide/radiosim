@@ -92,6 +92,17 @@ def _item_fields(label: str, result: Any = None, params: Any = None,
     return item
 
 
+def _error_row(batch: Any, label: str, note: str) -> Any:
+    """複数経路の誤りの行（`PathRow` が作れなかった行）の控え＝名前と備考だけ。
+
+    座標と高さは NaN＝書き手が空にする（`summary.csv` の高さ・KML の Error の枝）。旧画面は
+    解析の誤りで全体を止めるので、この形の行は新しい画面だけが作る（判断点 ②＝件数が画面と同じ）。
+    """
+    nan = float("nan")
+    return batch.PathRow(path_id=label, lat_tx=nan, lon_tx=nan, lat_rx=nan, lon_rx=nan,
+                         h_tx=nan, h_rx=nan, note=note)
+
+
 class _InputProblem(Exception):
     """作業面の入力の誤り＝`input` の見出しの 1 文。"""
 
@@ -137,6 +148,7 @@ class Worker:
         self._terrain_key: Any = None
         self._sheet_cancel: "threading.Event | None" = None   # 作業面の実行の取り消し
         self._shapes: "tuple[int, list]" = (0, [])        # (版, 各件の (地形, 入力) か None)
+        self._runs: "tuple[int, str, Any]" = (0, "", None)   # (版, 面, 全件の結果)＝保存の元
         self._wake = threading.Event()
         self._wake.set()                                 # 起動したら 1 回は計算する
 
@@ -174,9 +186,25 @@ class Worker:
             logger.exception("webui: 行の断面図に失敗")
             return None
 
+    def sheet_run(self) -> "tuple[str, Any] | None":
+        """今の版の作業面の全件の結果＝`(面, 中身)`。そろっていなければ None（保存の元・10d）。
+
+        中身＝複数経路は `batch.PathResult` の並び（表の順・誤りの行も ERROR の 1 件）・
+        中継は `multihop.MultiHopRun`・条件探索は `scenario.ScenarioRun`＝旧画面の書き手がそのまま読む形。
+        """
+        with self._lock:
+            version, workspace, run = self._runs
+        if run is None or version != self.state.version:
+            return None
+        return workspace, run
+
     def _keep_shapes(self, version: int, shapes: list) -> None:
         with self._lock:
             self._shapes = (version, shapes)
+
+    def _keep_run(self, version: int, workspace: str, run: Any) -> None:
+        with self._lock:
+            self._runs = (version, workspace, run)
 
     def _key_or_none(self, inputs: dict) -> Any:
         if self._validate(inputs):
@@ -270,14 +298,15 @@ class Worker:
 
     def _run_paths(self, version: int, inputs: dict, workspace: str, sheet: Any) -> None:
         from report import batch                         # matplotlib を引く＝ここで読む（I-232）
+        from report import multihop as mh
         # plan＝表の順の (行か None, 名前, 誤りの 1 文か None)。複数経路は誤りの行だけ ERROR
         # （`sheets.batch_plan`）・中継は鎖なので形の誤りで全体を入力待ちにする
+        path: Any = None                                 # 中継の `MultiHopPath`（複数経路は無い）
         if workspace == "batch":
             if not sheet:
                 raise _InputProblem(i18n.t("verr_empty"))
             plan = sheets_mod.batch_plan(sheet)
         else:
-            from report import multihop as mh
             try:
                 path = sheets_mod.multihop_path(sheet)
             except ValueError as e:
@@ -291,21 +320,32 @@ class Worker:
         try:
             items: list = []
             shapes: list = []
+            results: list = []                           # 保存の元（`batch.PathResult`）
             outcomes = iter(engine.run_paths(
                 [row for row, _label, err in plan if err is None],
                 lambda row: batch._make_params(row, base), cancel=cancel,
                 on_progress=lambda done, num: self.state.set_progress(version, int(done), int(num)),
                 label=lambda row: row.path_id, fetch=self._fetch, calc=self._calc))
-            for _row, label, err in plan:
+            for i, (row, label, err) in enumerate(plan):
                 if err is not None:
                     items.append(_item_fields(label, error=ValueError(err)))
                     shapes.append(None)
+                    note = sheet[i].get("note", "") if workspace == "batch" else ""
+                    results.append(batch.PathResult(row=_error_row(batch, label, note),
+                                                    result=None, error=ValueError(err)))
                 else:
                     _, out = next(outcomes)
                     items.append(_item_fields(label, out.result, out.params, out.error))
                     has_shape = out.terrain is not None and out.params is not None
                     shapes.append((out.terrain, out.params) if has_shape else None)
+                    results.append(batch.PathResult(row=row, result=out.result, terrain=out.terrain,
+                                                    params=out.params, error=out.error))
                 self._keep_shapes(version, list(shapes))     # 載せる前に＝行を選べば出る
+                if len(results) == len(plan):            # 全件＝見出しより先に置く（保存が間に合う）
+                    if workspace == "batch":
+                        self._keep_run(version, workspace, results)
+                    else:
+                        self._keep_run(version, workspace, mh.MultiHopRun(path=path, hops=results))
                 self._publish_sheet(version, workspace, list(items), len(plan))
         finally:
             self._end_sheet()
@@ -340,6 +380,9 @@ class Worker:
         # 断面は全件が同じ地形＝空中線高の上書きだけが線を変える（`scenario._apply` と同じ入力）
         self._keep_shapes(version, [(self._terrain, scn._apply(params, c.overrides))
                                     for c in conds])
+        self._keep_run(version, "scenario", scn.ScenarioRun(
+            kind=spec["mode"], base_params=params, terrain=self._terrain, points=points,
+            axis=axis, axis_values=list(values)))
         self._publish_sheet(version, "scenario", items, len(conds),
                             mode=spec["mode"], axis=axis, values=list(values))
 

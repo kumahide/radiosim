@@ -68,6 +68,24 @@ def _writer_functions() -> dict[str, _FuncDef]:
 WRITERS = _writer_functions()
 
 
+def _file_name_sources(writer: str) -> list[str]:
+    """書き手と、それを呼ぶ同じモジュールの関数のソース（ファイル名はどちらかが持つ）。
+
+    書き手が本文だけを返す形（`summary_csv_text` など・新しい画面の保存が使う＝Link 1.0 ステージ10d）
+    では、ファイル名は呼ぶ側（旧画面の `_save_summary_csv` など）が持つ。
+    """
+    module, name = writer.split(":")
+    layer, stem = module.split(".")
+    tree = ast.parse((ROOT / layer / f"{stem}.py").read_text(encoding="utf-8"))
+    sources = [ast.unparse(WRITERS[writer])]
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != name:
+            if any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == name
+                   for c in ast.walk(node)):
+                sources.append(ast.unparse(node))
+    return sources
+
+
 def _writerow_calls(node) -> list[ast.Call]:
     return [
         n for n in ast.walk(node)
@@ -119,8 +137,9 @@ def test_registered_writer_exists_and_writes_that_file(contract):
         f"{contract.filename}: 台帳が指す書き手 {contract.writer} が見つからない"
         "（改名・移動したなら台帳も直すこと）"
     )
-    src = ast.unparse(WRITERS[contract.writer])
-    assert f"'{contract.filename}'" in src or f'"{contract.filename}"' in src, (
+    sources = _file_name_sources(contract.writer)
+    assert any(f"'{contract.filename}'" in src or f'"{contract.filename}"' in src
+               for src in sources), (
         f"{contract.writer} が書いているファイル名が台帳の {contract.filename} と違う"
     )
 

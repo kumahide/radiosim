@@ -214,18 +214,18 @@ CSV_CONTRACTS: tuple[CsvContract, ...] = (
         filename="summary.csv",
         row_meaning="1 行 = 1 回線",
         columns=SUMMARY_CSV_COLUMNS,
-        writer="report.report_summary:_save_summary_csv",
+        writer="report.report_summary:summary_csv_text",
     ),
     CsvContract(
         filename="hops.csv",
         row_meaning="1 行 = 1 区間（N 行で 1 経路）",
         columns=HOPS_CSV_COLUMNS,
-        writer="report.multihop:_write_hops_csv",
+        writer="report.multihop:hops_csv_text",
     ),
     CsvContract(
         filename="scenario.csv",
         row_meaning="1 行 = 1 条件（スイープでは 1 点）",
         columns=SCENARIO_CSV_COLUMNS,
-        writer="report.report_scenario:save_scenario_csv",
+        writer="report.report_scenario:scenario_csv_text",
     ),
 )

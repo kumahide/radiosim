@@ -607,6 +607,7 @@ function renderSheet() {
   if (workspace === "batch") renderBatch(tools, body);
   else if (workspace === "scenario") renderScenario(tools, body);
   else renderMultihop(tools, body);
+  tools.append(button(labels.save_csv, saveSheetCsv));   // 成果物の保存は道具の右端（10d）
   showSheetResults(headline);
 }
 
@@ -900,33 +901,53 @@ async function flushAll() {
   if (sheetTimer) { clearTimeout(sheetTimer); await flushSheet(); }
 }
 
+// 選んだ場所へ 1 つ書く（Edge の `showSaveFilePicker`・無ければダウンロード）。書いた名前を返す。
+// 選ぶ画面を閉じたら null（何もしない）・書けなければ知らせの欄に赤で出して null
+async function saveTextFile(text, name, types, mime) {
+  try {
+    if (window.showSaveFilePicker) {
+      const h = await window.showSaveFilePicker({ suggestedName: name, types });
+      const w = await h.createWritable();
+      await w.write(text);
+      await w.close();
+      return h.name;
+    }
+    const a = el("a", { href: URL.createObjectURL(new Blob([text], { type: mime })), download: name });
+    a.click();
+    URL.revokeObjectURL(a.href);
+    return name;
+  } catch (e) {
+    if (e && e.name === "AbortError") return null;     // 選ぶ画面を閉じた＝何もしない
+    projNote(e && e.message ? e.message : String(e), true);
+    return null;
+  }
+}
+
 async function saveProject() {
   projNote("");
   await flushAll();
   const r = await fetch("/api/project/save", { method: "POST", headers: HEAD, body: "{}" });
   if (!r.ok) { projNote(String(r.status), true); return; }
   const d = await r.json();
-  let name = d.name;
-  try {
-    if (window.showSaveFilePicker) {
-      const h = await window.showSaveFilePicker({ suggestedName: d.name, types: PROJ_TYPES() });
-      const w = await h.createWritable();
-      await w.write(d.text);
-      await w.close();
-      name = h.name;
-    } else {
-      const a = el("a", { href: URL.createObjectURL(new Blob([d.text], { type: "application/json" })), download: d.name });
-      a.click();
-      URL.revokeObjectURL(a.href);
-    }
-  } catch (e) {
-    if (e && e.name === "AbortError") return;          // 選ぶ画面を閉じた＝何もしない
-    projNote(e && e.message ? e.message : String(e), true);
-    return;
-  }
+  const name = await saveTextFile(d.text, d.name, PROJ_TYPES(), "application/json");
+  if (name === null) return;
   // 保存した旨（ファイル名）と、保存しなかった節の警告を 1 行に
   const warn = (d.warnings || []).join(" ");
   projNote([labels.proj_saved.replace("{path}", name).replace(/\s*\n\s*/g, " "), warn].filter(Boolean).join(" "), !!warn);
+}
+
+// 作業面の結果の CSV（出力契約の `summary.csv`／`scenario.csv`／`hops.csv`）＝中身はサーバーが作る。
+// 全件そろう前は 409＋1 文（知らせの欄に赤）
+const CSV_TYPES = [{ description: "CSV", accept: { "text/csv": [".csv"] } }];
+
+async function saveSheetCsv() {
+  projNote("");
+  await flushAll();
+  const r = await fetch("/api/sheet/csv", { method: "POST", headers: HEAD, body: "{}" });
+  const d = await r.json().catch(() => ({}));
+  if (!r.ok) { projNote(d.message || d.error || String(r.status), true); return; }
+  const name = await saveTextFile(d.text, d.name, CSV_TYPES, "text/csv");
+  if (name !== null) projNote(labels.file_saved.replace("{path}", name));
 }
 
 async function openProjectText(text) {

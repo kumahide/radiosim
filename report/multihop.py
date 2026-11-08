@@ -509,59 +509,67 @@ def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
     互換破壊の告知が要る。中継は「1 行 = 1 ホップ・N 行で 1 回線」という**別の
     形**なので、器を分けたほうが両方の意味が濁らない。
     """
+    path_csv = os.path.join(run_dir, "hops.csv")
+    with open(path_csv, "w", newline="", encoding="utf-8") as f:
+        f.write(hops_csv_text(run))
+
+
+def hops_csv_text(run: MultiHopRun) -> str:
+    """`hops.csv` の本文（行末 `\\r\\n`）。ファイルへ書くのは呼ぶ側（旧画面・新しい画面の保存）。"""
     import csv
+    import io
 
     from core import output_contract
     from report import report_common
 
-    path_csv = os.path.join(run_dir, "hops.csv")
-    with open(path_csv, "w", newline="", encoding="utf-8") as f:
-        w = csv.writer(f)
-        # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
-        w.writerow(list(output_contract.HOPS_CSV_COLUMNS))
-        for i, pr in enumerate(run.hops):
-            ends = hop_endpoints(run.path, i)
-            wp_from = ends[0].name if ends else ""
-            wp_to   = ends[1].name if ends else ""
-            r, p = pr.result, pr.params
-            w.writerow([
-                report_common.csv_cell(run.path.path_id), i + 1,
-                report_common.csv_cell(pr.row.path_id),
-                report_common.csv_cell(wp_from), report_common.csv_cell(wp_to),
-                # 判定は `pr.status` が単一ソース（I-010 ③）＝`r.status` を直に
-                # 読むと**成果物の失敗がこの列だけ素通りする**（画面と HTML は
-                # ERROR、CSV だけ OK）。台帳の 3 つの口で字が食い違わないよう、
-                # ここも同じ 1 か所から引く。
-                pr.status,
-                f"{p.freq_mhz:.1f}" if p else "",
-                units.format_db(p.gain_tx) if p else "",
-                units.format_db(p.gain_rx) if p else "",
-                f"{pr.row.h_tx:.1f}", f"{pr.row.h_rx:.1f}",
-                # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**。
-                units.csv_db(r.p_rx) if r else "",
-                units.csv_db(r.actual_margin) if r else "",
-                # ⚠️ **整形は `units` が単一ソース**（B-060）。手書きすると、
-                # ここのように「% を % で割り増す」誤りが静かに入る＝
-                # `blocked_ratio` は models の時点で既に **%**（`* 100` 済み）で、
-                # さらに 100 倍していた（画面 33.8% に対し CSV は 3381.3）。
-                # `csv_blocked_ratio` は 100% で頭打ちにする側の約束も持っている。
-                units.csv_distance(r.slant_dist_km) if r else "",
-                units.csv_blocked_ratio(r.blocked_ratio) if r else "",
-                # 理由も 2 種類ある（計算の失敗 `error` ／ 成果物の失敗
-                # `artifact_error`）＝`error` だけを見ると、ERROR と書いた行の
-                # 理由欄が空になる。バッチの `summary.csv` と同じ埋め方にする。
-                report_common.csv_cell(str(pr.error or pr.artifact_error or "")),
-                # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
-                # （F1 半径の何倍まで食い込んでいるか）＝I-077。
-                units.csv_f1_depth(r.blocked_ratio) if r else "",
-                # 何点で刻んだ答えか（I-069）＝**区間ごとに違う**（短い区間は
-                # 点が少なく、長い区間は多い＝同じ段階でもそうなるのが正しい）。
-                str(p.num) if p else "",
-                # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
-                # `models.TerrainProfile.fail_pct`。区間ごとに DEM 取得が
-                # 別なので、区間ごとに違う値になる（`summary.csv` と同じ形）。
-                units.csv_fail_pct(pr.terrain.fail_pct)
-                if pr.terrain is not None else "",
-                report_common.csv_calc_profile(p),
-                report_common.csv_input_hash(p),
-            ])
+    buf = io.StringIO(newline="")
+    w = csv.writer(buf)
+    # 見出しは出力契約が単一ソース（→ core/output_contract.py）。
+    w.writerow(list(output_contract.HOPS_CSV_COLUMNS))
+    for i, pr in enumerate(run.hops):
+        ends = hop_endpoints(run.path, i)
+        wp_from = ends[0].name if ends else ""
+        wp_to   = ends[1].name if ends else ""
+        r, p = pr.result, pr.params
+        w.writerow([
+            report_common.csv_cell(run.path.path_id), i + 1,
+            report_common.csv_cell(pr.row.path_id),
+            report_common.csv_cell(wp_from), report_common.csv_cell(wp_to),
+            # 判定は `pr.status` が単一ソース（I-010 ③）＝`r.status` を直に
+            # 読むと**成果物の失敗がこの列だけ素通りする**（画面と HTML は
+            # ERROR、CSV だけ OK）。台帳の 3 つの口で字が食い違わないよう、
+            # ここも同じ 1 か所から引く。
+            pr.status,
+            f"{p.freq_mhz:.1f}" if p else "",
+            units.format_db(p.gain_tx) if p else "",
+            units.format_db(p.gain_rx) if p else "",
+            f"{pr.row.h_tx:.1f}", f"{pr.row.h_rx:.1f}",
+            # 桁は `units.csv_db` が単一ソース（0.1 dB）＝**書式も出力契約**。
+            units.csv_db(r.p_rx) if r else "",
+            units.csv_db(r.actual_margin) if r else "",
+            # ⚠️ **整形は `units` が単一ソース**（B-060）。手書きすると、
+            # ここのように「% を % で割り増す」誤りが静かに入る＝
+            # `blocked_ratio` は models の時点で既に **%**（`* 100` 済み）で、
+            # さらに 100 倍していた（画面 33.8% に対し CSV は 3381.3）。
+            # `csv_blocked_ratio` は 100% で頭打ちにする側の約束も持っている。
+            units.csv_distance(r.slant_dist_km) if r else "",
+            units.csv_blocked_ratio(r.blocked_ratio) if r else "",
+            # 理由も 2 種類ある（計算の失敗 `error` ／ 成果物の失敗
+            # `artifact_error`）＝`error` だけを見ると、ERROR と書いた行の
+            # 理由欄が空になる。バッチの `summary.csv` と同じ埋め方にする。
+            report_common.csv_cell(str(pr.error or pr.artifact_error or "")),
+            # 末尾＝出力契約の規約 1（追加は末尾のみ）。頭打ちしない側の量
+            # （F1 半径の何倍まで食い込んでいるか）＝I-077。
+            units.csv_f1_depth(r.blocked_ratio) if r else "",
+            # 何点で刻んだ答えか（I-069）＝**区間ごとに違う**（短い区間は
+            # 点が少なく、長い区間は多い＝同じ段階でもそうなるのが正しい）。
+            str(p.num) if p else "",
+            # DEM 取得の失敗率（ISSUES.md B-025 ③）＝単一ソースは
+            # `models.TerrainProfile.fail_pct`。区間ごとに DEM 取得が
+            # 別なので、区間ごとに違う値になる（`summary.csv` と同じ形）。
+            units.csv_fail_pct(pr.terrain.fail_pct)
+            if pr.terrain is not None else "",
+            report_common.csv_calc_profile(p),
+            report_common.csv_input_hash(p),
+        ])
+    return buf.getvalue()

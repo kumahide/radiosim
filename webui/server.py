@@ -20,6 +20,8 @@ webui/server.py
     POST /api/project/save       … 今の入力と面を `.rsproj` の文字列で返す `{"text", "name", "warnings"}`
                                    （ファイルを書くのは画面＝ステージ10d）
     POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
+    POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
+                                   （全件そろっていなければ 409＋画面の 1 文 `message`）
     GET  /tile/<src>/<z>/<x>/<y>.png … `dem.basemap_tile_png`
     POST /api/bye?t=<鍵>          … 窓を閉じた。2 秒のうちに次のページが来なければ終わる
 """
@@ -44,6 +46,7 @@ from core import i18n
 from core import models
 from core import terrain_grid
 from core import units
+from webui import exports
 from webui import project_io
 from webui import sheets as sheets_mod
 from webui.edge import Listener
@@ -194,6 +197,9 @@ def labels() -> "dict[str, str]":
         "save_project": i18n.t("menu_save_project"),
         "proj_filetype": i18n.t("proj_filetype"),
         "proj_saved": i18n.t("proj_saved"),
+        # 作業面の成果物の保存（ステージ10d）
+        "save_csv": i18n.t("webui_save_csv"),
+        "file_saved": i18n.t("webui_file_saved"),
         "tab_compare": i18n.t("scn_tab_compare"),
         "tab_sweep": i18n.t("scn_tab_sweep"),
         "add_cond": i18n.t("scn_add_cond"),
@@ -480,10 +486,18 @@ def _make_handler(app: WebServer) -> type:
                 version = app.worker.submit({}, sheets={"batch": rows})
                 return self._json(200, {"version": version, "rows": len(rows)})
             if parts.path == "/api/project/save":
+                self._body()                             # 画面は `{}` を送る＝読み捨てる
                 inputs, sheets, profile = app.worker.state.document()
                 text, warnings = project_io.dump(inputs, sheets, app.project_meta, profile)
                 return self._json(200, {"text": text, "name": project_io.filename(app.project_meta),
                                         "warnings": warnings})
+            if parts.path == "/api/sheet/csv":
+                self._body()                             # 読み捨てる（残すと次の要求として読まれる）
+                got = app.worker.sheet_run()
+                if got is None:                          # 計算中・入力待ち・1 回線の面
+                    return self._json(409, {"message": i18n.t("webui_no_result")})
+                name, text = exports.sheet_csv(*got)
+                return self._json(200, {"text": text, "name": name})
             if parts.path == "/api/project/open":
                 body = self._body()
                 text = body.get("text") if body is not None else None
