@@ -410,6 +410,7 @@ radiosim/
     ├── test_webui_workspace.py
     ├── test_webui_exports.py
     ├── test_webui_project.py
+    ├── test_webui_review_contract.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_experiments_probes.py
@@ -1332,6 +1333,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_webui_workspace.py` | New screen workspace inputs: one update bumps the version once whatever it changes, a bad shape is refused without changing anything, typing follows the old windows with the same error words, importing does not load `report`; workspace runs: published item by item with the aggregate and counts once complete, input errors refused before any fetch, any newer version cancels unconditionally, the scenario reuses the single-link terrain |
 | `test_webui_project.py` | New screen `.rsproj` save and open: inputs and sheets survive the round trip, the same file the classic screen reads, coordinates in DD, an unreadable sheet is left out with a warning, a 3.x v1 file opens as v1 and saves as v1, the opened project name carries into the next save, an unreadable file is a 422 that changes nothing |
 | `test_webui_exports.py` | New screen workspace results CSV: batch, relay and scenario rows and words match the screen table, a bad row is one ERROR row, a newer version hides the old results, the same bytes as the classic writer, a 409 until every item is done; KML for the batch sheet only, with OK / REVIEW / NG / Error folders and no line for a row without coordinates; the map image draws the same lines as the screen, is a 409 before the verdict and a 503 without a background |
+| `test_webui_review_contract.py` | Decision point ② done condition: one link the real core judges REVIEW shows the same word, margin, counts, CSV status column and map line on the single link, batch, scenario and relay sheets, and lands in the REVIEW folder of the batch KML; the REVIEW purple is the same in the screen CSS and JS, the reports and both KML files |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 | `test_experiments_probes.py` | Static gate keeping the probes under `experiments/` in step with the product. Calls into `core`/`report` collected via AST must `bind` against the current signature, and a probe printing characters the default console cannot encode must rebuild `sys.stdout`. The probes are never executed here (their argument, data, network and hardware prerequisites differ too much for CI) — they are only read. The number of calls actually checked is asserted too, so the gate cannot pass silently |
