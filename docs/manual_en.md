@@ -513,7 +513,7 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 | ---------------------------- | ---------------------------------------------------------------- |
 | `summary.html`             | Summary report for all paths (a ledger, one row per path)        |
 | `summary.csv`              | Numerical results for all paths (spreadsheet-compatible; distances in metres) |
-| `summary.kml`              | Google Earth KML with OK / NG / Error color coding               |
+| `summary.kml`              | Google Earth KML with OK / REVIEW / NG / Error color coding      |
 | `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
 | `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
 | `{id}/profile.png`         | Terrain cross-section graph                                      |
