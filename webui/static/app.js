@@ -881,6 +881,96 @@ function onEdit(ev) {
   timer = setTimeout(flush, ev.target.tagName === "SELECT" ? 0 : DEBOUNCE_MS);
 }
 
+// ============================================================
+// `.rsproj` の開く・保存（ステージ10d）＝中身はサーバーが作る。JS はファイルの API で読み書きするだけ
+// （Edge の `showSaveFilePicker`／`showOpenFilePicker`・無ければダウンロードと `<input type=file>`）
+// ============================================================
+function projNote(text, isErr) {
+  const note = document.getElementById("proj-note");
+  note.className = isErr ? "err" : "";
+  note.textContent = text || "";
+  note.title = text || "";
+}
+
+const PROJ_TYPES = () => [{ description: labels.proj_filetype, accept: { "application/json": [".rsproj"] } }];
+
+// 打ちかけ（300ms 待ち）を先に送る＝保存する中身を画面に見えている値にそろえる
+async function flushAll() {
+  if (timer) { clearTimeout(timer); await flush(); }
+  if (sheetTimer) { clearTimeout(sheetTimer); await flushSheet(); }
+}
+
+async function saveProject() {
+  projNote("");
+  await flushAll();
+  const r = await fetch("/api/project/save", { method: "POST", headers: HEAD, body: "{}" });
+  if (!r.ok) { projNote(String(r.status), true); return; }
+  const d = await r.json();
+  let name = d.name;
+  try {
+    if (window.showSaveFilePicker) {
+      const h = await window.showSaveFilePicker({ suggestedName: d.name, types: PROJ_TYPES() });
+      const w = await h.createWritable();
+      await w.write(d.text);
+      await w.close();
+      name = h.name;
+    } else {
+      const a = el("a", { href: URL.createObjectURL(new Blob([d.text], { type: "application/json" })), download: d.name });
+      a.click();
+      URL.revokeObjectURL(a.href);
+    }
+  } catch (e) {
+    if (e && e.name === "AbortError") return;          // 選ぶ画面を閉じた＝何もしない
+    projNote(e && e.message ? e.message : String(e), true);
+    return;
+  }
+  // 保存した旨（ファイル名）と、保存しなかった節の警告を 1 行に
+  const warn = (d.warnings || []).join(" ");
+  projNote([labels.proj_saved.replace("{path}", name).replace(/\s*\n\s*/g, " "), warn].filter(Boolean).join(" "), !!warn);
+}
+
+async function openProjectText(text) {
+  projNote("");
+  // 打ちかけは捨てる（開いたファイルを古い打ちかけで上書きしない）
+  if (timer) { clearTimeout(timer); timer = null; }
+  Object.keys(pending).forEach((k) => delete pending[k]);
+  if (sheetTimer) { clearTimeout(sheetTimer); sheetTimer = null; }
+  dirty.clear();
+  const r = await fetch("/api/project/open", { method: "POST", headers: HEAD, body: JSON.stringify({ text }) });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    projNote(e.message || e.error || String(r.status), true);
+  }
+  // 開けたら画面はポーリング（`receiveSheets`／`showInputs`）で描き直る
+}
+
+async function openProject() {
+  if (!window.showOpenFilePicker) { document.getElementById("proj-file").click(); return; }
+  let file;
+  try {
+    const [h] = await window.showOpenFilePicker({ types: PROJ_TYPES() });
+    file = await h.getFile();
+  } catch (e) {
+    if (e && e.name === "AbortError") return;
+    projNote(e && e.message ? e.message : String(e), true);
+    return;
+  }
+  await openProjectText(await file.text());
+}
+
+document.getElementById("proj-file").addEventListener("change", async (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (f) await openProjectText(await f.text());
+});
+
+function buildProjTools() {
+  document.getElementById("proj-tools").replaceChildren(
+    button(labels.open_project, openProject),
+    button(labels.save_project, saveProject),
+  );
+}
+
 async function poll() {
   for (;;) {
     try {
@@ -890,6 +980,7 @@ async function poll() {
       if (s.labels) {
         labels = s.labels;
         applyLabels();
+        buildProjTools();
         buildForm(s.form || []);
         buildBreakdown(s.breakdown || []);
         if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;

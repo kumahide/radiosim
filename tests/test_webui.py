@@ -456,6 +456,16 @@ def test_the_script_has_no_japanese():
         assert cjk == [], name
 
 
+def test_every_label_the_script_uses_is_served():
+    # JS が引く `labels.X` はサーバーの表に全部ある（無いと画面に undefined が出る＝ボタンの字が消える）
+    import re
+    js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
+    used = set(re.findall(r"\blabels\.(\w+)", js))
+    assert {"open_project", "save_project", "proj_filetype", "proj_saved"} <= used
+    assert sorted(used - set(webserver.labels())) == []
+    assert "{path}" in webserver.labels()["proj_saved"]       # JS が差し替える置き場
+
+
 # ============================================================
 # HTTP
 # ============================================================

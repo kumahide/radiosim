@@ -24,7 +24,15 @@
     </section>
   </aside>
   <section id="view">
-    <nav id="tabs" role="tablist"></nav>
+    <div id="topbar">
+      <nav id="tabs" role="tablist"></nav>
+      <!-- `.rsproj` の開く・保存（どの面からでも）＝字は保存の警告と開けない理由 -->
+      <div id="proj">
+        <span id="proj-note"></span>
+        <span id="proj-tools"></span>
+        <input id="proj-file" type="file" accept=".rsproj" hidden>
+      </div>
+    </div>
     <div id="map"></div>
     <div id="lower">
       <!-- 作業面の表（1 回線の面では隠す）＝左。右は選んだ行の断面図 -->

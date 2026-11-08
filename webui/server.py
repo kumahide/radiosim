@@ -189,6 +189,11 @@ def labels() -> "dict[str, str]":
         "add_row": i18n.t("btn_add_row"),
         "del_row": i18n.t("menu_del"),
         "import_csv": i18n.t("btn_import_csv"),
+        # `.rsproj` の開く・保存（ステージ10d）＝旧画面のメニューと同じ語
+        "open_project": i18n.t("menu_open_project"),
+        "save_project": i18n.t("menu_save_project"),
+        "proj_filetype": i18n.t("proj_filetype"),
+        "proj_saved": i18n.t("proj_saved"),
         "tab_compare": i18n.t("scn_tab_compare"),
         "tab_sweep": i18n.t("scn_tab_sweep"),
         "add_cond": i18n.t("scn_add_cond"),
