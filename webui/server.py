@@ -33,7 +33,11 @@ from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
 from core import dem
+from core import dem_sources
 from core import i18n
+from core import models
+from core import terrain_grid
+from core import units
 from webui.edge import Listener
 from webui.state import UnknownKeyError
 from webui.worker import Worker
@@ -47,14 +51,105 @@ _LEAVE_GRACE_S = 2.0
 _TILE_RE = re.compile(r"^/tile/([a-z0-9_]+)/(\d{1,2})/(\d{1,7})/(\d{1,7})\.png$")
 
 
+#: 入力の列（Link 1.0 ステージ9a）＝(群の見出しの鍵, 「詳細」に畳むか, 欄の並び)。
+#: 欄＝(入力の鍵, 欄の語の鍵, 吹き出しの鍵)。選択式の欄は `_choices` が選択肢を返す。
+#: 🔑 `k_factor` は出さない（ステージ6 の決定④）＝入力の集合には残る（`state.AppState`）。
+_FORM = (
+    ("grp_site_info", False, (
+        ("start", "lbl_start", "tip_start"),
+        ("end", "lbl_end", "tip_end"),
+        ("h_tx", "lbl_h_tx", "tip_h_tx"),
+        ("h_rx", "lbl_h_rx", "tip_h_rx"),
+    )),
+    ("grp_radio_settings", False, (
+        ("freq", "lbl_freq", "tip_freq"),
+        ("p_tx", "lbl_p_tx", "tip_p_tx"),
+        ("gain_tx", "lbl_gain_tx", "tip_gain_tx"),
+        ("gain_rx", "lbl_gain_rx", "tip_gain_rx"),
+        ("sens", "lbl_sens", "tip_sens"),
+    )),
+    ("grp_environment", False, (
+        ("env_type", "lbl_env_type", None),
+        ("veg_h", "lbl_veg_h", "tip_veg_h"),
+        ("rain_rate", "lbl_rain", "tip_rain_rate"),
+    )),
+    ("webui_grp_advanced", True, (
+        ("diff_method", "lbl_diff_method", "tip_diff_method"),
+        ("resolution", "lbl_resolution", "tip_resolution"),
+        ("dem_source", "lbl_dem_source", None),
+    )),
+)
+
+#: 文字で打つ欄のうち、数を打つもの以外（座標）。
+_TEXT_KEYS = frozenset({"start", "end"})
+
+#: 損失の内訳（入力の列の下）＝(見出しの鍵, 字の鍵, 単位)。上から足し引きの順。
+_BREAKDOWN = (
+    ("eirp", "pl_eirp", "dBm"),
+    ("fspl", "pl_fspl", "dB"),
+    ("diff_loss", "pl_diff_loss", "dB"),
+    ("veg_loss", "pl_veg_loss", "dB"),
+    ("env_loss", "pl_env_loss", "dB"),
+    ("rain_loss", "pl_rain_loss", "dB"),
+    ("gas_loss", "pl_gas_loss", "dB"),
+    ("total_loss", "pl_total_loss", "dB"),
+    ("gain_rx", "pl_rx_ant_g", "dBi"),
+    ("p_rx", "pl_rx_level", "dBm"),
+    ("sens", "pl_threshold", "dBm"),
+    ("margin", "pl_act_margin", "dB"),
+)
+
+
+def _choices(key: str) -> "list[list[str]] | None":
+    """選択式の欄の [値, 語] の並び。文字で打つ欄は None。"""
+    if key == "env_type":
+        return [[k, i18n.t(f"env_{k}")] for k in models.ENV_KEYS]
+    if key == "diff_method":
+        return [["bullington", i18n.t("diff_opt_bullington")],
+                ["single", i18n.t("diff_opt_single")]]
+    if key == "resolution":
+        return [[k, i18n.t(f"res_{k}")] for k in terrain_grid.RESOLUTION_KEYS]
+    if key == "dem_source":
+        return [[s.source_id, s.display_name] for s in dem_sources.all_sources()]
+    return None
+
+
+def form() -> "list[dict[str, Any]]":
+    """入力の列の表（JS はこれを並べるだけ＝欄の順と語をここ 1 か所で持つ）。
+
+    - 選べる DEM ソースが 1 つなら DEM の欄を出さない（I-153）＝値は入力の集合に残る。
+    - 吹き出しの鍵が無い欄は吹き出しを付けない。
+    """
+    groups = []
+    for title, advanced, rows in _FORM:
+        fields = []
+        for key, label, tip in rows:
+            options = _choices(key)
+            if key == "dem_source" and options is not None and len(options) < 2:
+                continue
+            field: dict[str, Any] = {"key": key, "label": i18n.t(label)}
+            if tip is not None:
+                field["tip"] = i18n.t(tip)
+            if options is not None:
+                field["options"] = options
+            else:
+                field["mode"] = "text" if key in _TEXT_KEYS else "decimal"
+            fields.append(field)
+        groups.append({"title": i18n.t(title).strip(), "advanced": advanced,
+                       "fields": fields})
+    return groups
+
+
+def breakdown() -> "list[dict[str, str]]":
+    """損失の内訳の行の表（値は見出しの同じ名前の欄・桁は `units.DB_DECIMALS`）。"""
+    return [{"name": n, "label": i18n.t(k), "unit": u, "digits": units.DB_DECIMALS}
+            for n, k, u in _BREAKDOWN]
+
+
 def labels() -> "dict[str, str]":
     """画面の字の表（JS に日本語を直書きしない）。"""
     return {
-        "start": i18n.t("lbl_start"),
-        "end": i18n.t("lbl_end"),
-        "h_tx": i18n.t("lbl_h_tx"),
-        "h_rx": i18n.t("lbl_h_rx"),
-        "freq": i18n.t("lbl_freq"),
+        "budget": i18n.t("panel_link_budget"),
         "computing": i18n.t("webui_computing"),
         "fetching_pct": i18n.t("status_fetching_pct"),
         "input": i18n.t("webui_input"),
@@ -132,6 +227,8 @@ class WebServer:
         snap = self.worker.state.wait(after, timeout)
         if after == 0:                                   # 最初の 1 回だけ字の表を付ける
             snap["labels"] = labels()
+            snap["form"] = form()
+            snap["breakdown"] = breakdown()
             snap["basemap"] = self.basemap
         return snap
 

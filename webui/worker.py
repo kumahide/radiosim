@@ -32,15 +32,26 @@ from webui.state import AppState
 logger = logging.getLogger("radiosim")
 
 
-def _verdict_fields(result: Any) -> "dict[str, Any]":
-    """判定の帯に出す分だけ（断面図はステージ9）。"""
+#: 見出しに載せる数＝(見出しの名前, 結果の属性)。損失の内訳（`server.breakdown`）の値もここ。
+_RESULT_NUMBERS = (
+    ("margin", "actual_margin"), ("p_rx", "p_rx"), ("eirp", "eirp"), ("fspl", "fspl"),
+    ("diff_loss", "diff_loss"), ("veg_loss", "veg_loss"), ("env_loss", "env_loss"),
+    ("rain_loss", "rain_loss"), ("gas_loss", "gas_loss"), ("total_loss", "total_loss"),
+)
+#: 内訳の行のうち入力から取る数＝(見出しの名前, `SimParams` の属性)。
+_PARAM_NUMBERS = (("gain_rx", "gain_rx"), ("sens", "sens"))
+
+
+def _verdict_fields(result: Any, params: Any = None) -> "dict[str, Any]":
+    """判定の帯と損失の内訳に出す分。"""
     verdict = getattr(result, "verdict", None)
     word = verdict.word if verdict is not None else result.status
     fields: dict[str, Any] = {"word": word}
-    for name, attr in (("margin", "actual_margin"), ("p_rx", "p_rx"), ("fspl", "fspl"),
-                       ("diff_loss", "diff_loss"), ("veg_loss", "veg_loss"),
-                       ("total_loss", "total_loss")):
-        fields[name] = round(float(getattr(result, attr)), units.DB_DECIMALS)   # dB の桁は units
+    pairs = [(n, result, a) for n, a in _RESULT_NUMBERS]
+    if params is not None:
+        pairs += [(n, params, a) for n, a in _PARAM_NUMBERS]
+    for name, obj, attr in pairs:
+        fields[name] = round(float(getattr(obj, attr)), units.DB_DECIMALS)   # dB の桁は units
     return fields
 
 
@@ -115,7 +126,7 @@ class Worker:
             logger.exception("webui: 計算に失敗")
             self.state.publish(version, "error", message=str(e))
             return
-        self.state.publish(version, "verdict", **_verdict_fields(result))
+        self.state.publish(version, "verdict", **_verdict_fields(result, params))
 
     def _fetch_terrain(self, version: int, params: Any, key: Any) -> bool:
         cancel = threading.Event()

@@ -35,9 +35,13 @@ class _Result:
     verdict = None
     actual_margin = 12.34
     p_rx = -70.0
+    eirp = 23.0
     fspl = 100.0
     diff_loss = 3.0
     veg_loss = 0.0
+    env_loss = 0.0
+    rain_loss = 0.0
+    gas_loss = 0.0
     total_loss = 103.0
 
 
@@ -219,6 +223,84 @@ def test_changing_a_budget_field_keeps_the_running_fetch():
 
 
 # ============================================================
+# 入力の列と損失の内訳（Link 1.0 ステージ9a）
+# ============================================================
+def _form_keys(groups):
+    return [f["key"] for g in groups for f in g["fields"]]
+
+
+def test_the_form_lists_the_fields_in_the_agreed_order():
+    # 回線 → 無線機 → 環境 → 「詳細」（DEM は選べるソースが 1 つなら出さない＝I-153）
+    from core import dem_sources
+    groups = webserver.form()
+    assert [g["advanced"] for g in groups] == [False, False, False, True]
+    expected = ["start", "end", "h_tx", "h_rx",
+                "freq", "p_tx", "gain_tx", "gain_rx", "sens",
+                "env_type", "veg_h", "rain_rate",
+                "diff_method", "resolution"]
+    if len(dem_sources.all_sources()) > 1:
+        expected.append("dem_source")
+    assert _form_keys(groups) == expected
+
+
+def test_every_input_but_the_rice_k_is_on_the_form():
+    # ステージ6 の決定④＝ライス K の初期値（k_factor）は新しい画面に出さない。入力の集合には残る
+    from core import config
+    keys = _form_keys(webserver.form())
+    assert len(keys) == len(set(keys))
+    assert set(keys) | {"k_factor", "dem_source"} == set(config.SIM_KEYS)
+    assert "k_factor" in AppState().snapshot()[1]
+
+
+def test_the_dem_source_field_appears_only_with_a_choice(monkeypatch):
+    from core import dem_sources
+    one = dem_sources.all_sources()[:1]
+    monkeypatch.setattr(dem_sources, "all_sources", lambda: one)
+    assert "dem_source" not in _form_keys(webserver.form())
+    monkeypatch.setattr(dem_sources, "all_sources", lambda: one * 2)
+    assert "dem_source" in _form_keys(webserver.form())
+
+
+def test_every_choice_is_a_value_the_validator_accepts():
+    from core import config
+    allowed = {"env_type": config.VALID_ENV_TYPES, "diff_method": config.VALID_DIFF_METHODS,
+               "resolution": config.VALID_RESOLUTIONS}
+    seen = set()
+    for g in webserver.form():
+        for f in g["fields"]:
+            if f["key"] in allowed:
+                seen.add(f["key"])
+                values = [v for v, _ in f["options"]]
+                assert set(values) == set(allowed[f["key"]]), f["key"]
+                assert all(text for _, text in f["options"])
+                assert config.DEFAULT_CONFIG[f["key"]] in values
+            elif "options" not in f:
+                assert f["mode"] in ("text", "decimal")
+    assert seen == set(allowed)
+
+
+def test_every_breakdown_row_has_a_value_in_the_verdict():
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
+           calc=lambda t, p: _Result()).step()
+    head = st.headline()
+    rows = webserver.breakdown()
+    assert [r["name"] for r in rows if r["name"] not in head] == []
+    assert head["sens"] == float(st.snapshot()[1]["sens"])     # 入力から取る行
+    assert all(r["label"] and r["unit"] for r in rows)
+
+
+def test_the_script_has_no_japanese():
+    # 字はサーバーの表から＝JS と HTML に日本語を直書きしない（注記は除く）
+    import re
+    root = pathlib.Path(webserver.STATIC_ROOT)
+    for name, comment in (("app.js", r"//[^\n]*"), ("index.html", r"<!--.*?-->")):
+        text = re.sub(comment, "", (root / name).read_text(encoding="utf-8"), flags=re.S)
+        cjk = [ch for ch in text if "぀" <= ch <= "鿿"]
+        assert cjk == [], name
+
+
+# ============================================================
 # HTTP
 # ============================================================
 @pytest.fixture
@@ -266,6 +348,7 @@ def test_the_first_state_carries_the_labels(web):
     snap = json.loads(body)
     assert code == 200
     assert snap["labels"]["computing"]
+    assert snap["form"] and snap["breakdown"]
     assert snap["headline"]["kind"] in ("computing", "verdict")
 
 

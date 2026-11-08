@@ -54,14 +54,38 @@ main { flex: 1; display: flex; min-height: 0; }
   gap: 10px;
   overflow-y: auto;
 }
-#inputs label { display: flex; flex-direction: column; gap: 4px; color: var(--muted); }
-#inputs input {
+#form { display: flex; flex-direction: column; gap: 10px; }
+#inputs .group {
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  margin: 0;
+  padding: 6px 10px 10px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+#inputs legend, #inputs summary { color: var(--fg); font-weight: 600; padding: 0 4px; }
+#inputs summary { cursor: pointer; }
+#inputs details:not([open]) { padding-bottom: 6px; }
+#inputs label { display: flex; flex-direction: column; gap: 3px; color: var(--muted); }
+#inputs input, #inputs select {
   font: inherit;
   color: var(--fg);
   background: var(--bg);
   border: 1px solid var(--line);
   border-radius: 4px;
   padding: 4px 6px;
+}
+#budget h2 { font-size: 14px; margin: 4px 0 6px; }
+#budget[data-stale="1"] #breakdown { opacity: 0.45; }
+#breakdown { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+#breakdown th { text-align: left; font-weight: normal; color: var(--muted); padding: 2px 0; }
+#breakdown td.num { text-align: right; padding: 2px 4px; }
+#breakdown td.unit { color: var(--muted); width: 3em; }
+#breakdown tr[data-name="total_loss"] th, #breakdown tr[data-name="total_loss"] td,
+#breakdown tr[data-name="margin"] th, #breakdown tr[data-name="margin"] td {
+  border-top: 1px solid var(--line);
+  font-weight: 600;
 }
 #view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #map { flex: 1; min-height: 0; }
