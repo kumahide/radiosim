@@ -51,6 +51,7 @@ function buildField(f) {
     el.addEventListener("input", onEdit);
   }
   el.dataset.key = f.key;
+  label.dataset.key = f.key;
   if (f.tip) label.title = f.tip;
   label.appendChild(el);
   return label;
@@ -75,6 +76,20 @@ function buildForm(groups) {
     box.className = "group";
     g.fields.forEach((f) => box.appendChild(buildField(f)));
     root.appendChild(box);
+  });
+  scopeForm();
+}
+
+// 複数経路と中継では端点と空中線高を行（点）が持つ＝左の列の同じ欄は効かないので隠す
+// （欄が全部隠れた枠も隠す）。条件探索は左の列の値が基準＝隠さない
+const ROW_OWNED = { batch: ["start", "end", "h_tx", "h_rx"], multihop: ["start", "end", "h_tx", "h_rx"] };
+
+function scopeForm() {
+  const owned = ROW_OWNED[document.body.dataset.ws] || [];
+  document.querySelectorAll("#form .group").forEach((box) => {
+    const fields = box.querySelectorAll("label[data-key]");
+    fields.forEach((l) => { l.hidden = owned.includes(l.dataset.key); });
+    box.hidden = fields.length > 0 && [...fields].every((l) => l.hidden);
   });
 }
 
@@ -488,13 +503,15 @@ function gridTable(heads) {
   return [table, body];
 }
 
+// 結果の 3 列（判定・マージン・受信レベル）は名前の列のすぐ右＝入力の列が多くても横に送らずに見える
 const resultHeads = () => [labels.col_verdict, labels.margin, labels.p_rx];
+const withResults = (heads) => heads.slice(0, 1).concat(resultHeads(), heads.slice(1));
 
-// 結果の 3 列（判定・マージン・受信レベル）を持つ行＝件の番号で結果を差す
+// 結果の 3 列を持つ行（先頭の欄＝名前の後ろに差す）＝件の番号で結果を差す
 function itemRow(item, cells) {
-  const tr = el("tr", {}, cells);
+  const results = ["word result", "num result", "num result"].map((c) => td(undefined, c));
+  const tr = el("tr", {}, cells.slice(0, 1).concat(results, cells.slice(1)));
   tr.dataset.item = String(item);
-  ["word result", "num result", "num result"].forEach((c) => tr.append(td(undefined, c)));
   tr.addEventListener("click", () => selectRow(item));
   return tr;
 }
@@ -556,6 +573,7 @@ function setWorkspace(key) {
   const changed = key !== workspace;
   workspace = key;
   document.body.dataset.ws = key;
+  scopeForm();
   document.querySelectorAll("#tabs button").forEach((b) => {
     b.setAttribute("aria-selected", String(b.dataset.ws === key));
   });
@@ -609,7 +627,7 @@ function renderBatch(tools, body) {
     button(labels.import_csv, () => document.getElementById("csv-file").click()),
   );
   const cols = spec.batch;
-  const [table, tbody] = gridTable(cols.map((c) => c.label).concat(resultHeads()));
+  const [table, tbody] = gridTable(withResults(cols.map((c) => c.label)));
   rows.forEach((r, i) => {
     tbody.append(itemRow(i, cols.map((c) => {
       const cls = c.key === "start" || c.key === "end" ? "coord" : c.key === "note" || c.key === "id" ? "text" : "num";
@@ -658,7 +676,7 @@ function renderScenario(tools, body) {
       }, !sc.compare.length),
     );
     const cols = spec.compare;
-    const [table, tbody] = gridTable([""].concat(cols.map((c) => c.label), resultHeads()));
+    const [table, tbody] = gridTable(withResults([""].concat(cols.map((c) => c.label))));
     const choice = (c, v) => ((c.options || []).find(([k]) => k === v) || [v, v])[1];
     const base = itemRow(0, [td(labels.base, "name")].concat(cols.map((c) => td(choice(c, current[c.input] || ""), "num"))));
     base.className = "base";
@@ -679,7 +697,7 @@ function renderScenario(tools, body) {
     );
     tools.querySelectorAll("input").forEach((i) => { i.style.width = "64px"; });
     const axis = (spec.sweep_axes.find(([k]) => k === sw.axis) || ["", ""])[1];
-    const [table, tbody] = gridTable([axis].concat(resultHeads()));
+    const [table, tbody] = gridTable(withResults([axis]));
     tbody.id = "sweep-rows";
     body.append(table);
   }
@@ -724,7 +742,7 @@ function renderMultihop(tools, body) {
     pbody.append(tr);
   });
   const name = (i) => (pts[i] && pts[i].name.trim()) || `P${i + 1}`;
-  const [htable, hbody] = gridTable([labels.section].concat(spec.hops.map((c) => c.label), resultHeads()));
+  const [htable, hbody] = gridTable(withResults([labels.section].concat(spec.hops.map((c) => c.label))));
   mh.hop_rf.forEach((hop, i) => {
     hbody.append(itemRow(i, [td(`${name(i)} → ${name(i + 1)}`, "name")].concat(
       spec.hops.map((c) => td(cellInput(hop, c.key, "num", current[c.key] || ""))))));
@@ -769,10 +787,15 @@ function drawSheetLines(complete) {
   if (workspace === "single") return;
   const stale = document.getElementById("sheet").dataset.stale === "1";
   const bounds = [];
+  // 条件探索は全件が同じ経路＝1 本だけ（選んだ件の語・選んでいなければ全体の語）
+  const one = workspace === "scenario";
+  const whole = headline.kind === "sheet" && headline.overall ? headline.overall : "";
   sheetItems.forEach((it, i) => {
     if (!it.tx || !it.rx) return;
+    if (one && (selected !== null ? i !== selected : i !== 0)) return;
+    const word = one && selected === null ? whole : it.word;
     const line = L.polyline([it.tx, it.rx], {
-      color: verdictColor(it.word), weight: i === selected ? 6 : 3, opacity: stale ? 0.45 : 0.9,
+      color: verdictColor(word), weight: i === selected || one ? 6 : 3, opacity: stale ? 0.45 : 0.9,
     }).addTo(sheetLayer);
     line.on("click", () => selectRow(i));
     if (i === selected) {

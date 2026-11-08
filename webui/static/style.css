@@ -100,6 +100,9 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #inputs label.row input { width: 84px; flex: none; text-align: right; }
 #inputs label.row select { width: 132px; flex: none; }
+/* 作業面で効かない欄（`scopeForm`）と、1 回線だけの損失の内訳は隠す */
+#inputs label[hidden], #inputs .group[hidden] { display: none; }
+body:not([data-ws="single"]) #budget { display: none; }
 #budget h2 { font-size: 14px; margin: 2px 0 4px; }
 #budget[data-stale="1"] #breakdown { opacity: 0.45; }
 #breakdown { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }

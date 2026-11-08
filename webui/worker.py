@@ -324,7 +324,8 @@ class Worker:
             points = scn.evaluate(self._terrain, params, conds, cancel=cancel, calc=self._calc)
         finally:
             self._end_sheet()
-        items = [{**_item_fields(p.label, p.result), "overrides": dict(p.overrides)}
+        # 両端は全件が同じ経路（地図は 1 本＝選んだ件か全体の語の色で描く）
+        items = [{**_item_fields(p.label, p.result, params), "overrides": dict(p.overrides)}
                  for p in points]
         # 断面は全件が同じ地形＝空中線高の上書きだけが線を変える（`scenario._apply` と同じ入力）
         self._keep_shapes(version, [(self._terrain, scn._apply(params, c.overrides))
