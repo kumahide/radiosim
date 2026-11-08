@@ -27,6 +27,10 @@ webui/worker.py
 - 入力の誤り（面の字・値域・空の表）は `input` の見出し＋1 文＝地形を取る前に弾く
 - 🔑 **作業面の実行中に版が進めば無条件に取り消す**（1 回線の「地形の鍵が違うときだけ」とは
   別）＝表の 1 字を直しても、走っている全件は古い入力の結果
+
+行ごとの断面図（ステージ10c）＝見出しに全件の断面は載せない（1 件 1200 点×数十件で重い）。
+直近の作業面の各件の (地形, 入力) を版つきで手元に持ち、画面が行を選んだときに
+`profile_for(版, 件)` が 1 件だけ作る。版が今と違えば None（古い入力の断面を見せない）。
 """
 
 from __future__ import annotations
@@ -130,6 +134,7 @@ class Worker:
         self._terrain: Any = None
         self._terrain_key: Any = None
         self._sheet_cancel: "threading.Event | None" = None   # 作業面の実行の取り消し
+        self._shapes: "tuple[int, list]" = (0, [])        # (版, 各件の (地形, 入力) か None)
         self._wake = threading.Event()
         self._wake.set()                                 # 起動したら 1 回は計算する
 
@@ -150,6 +155,25 @@ class Worker:
                 self._sheet_cancel.set()
         self._wake.set()
         return version
+
+    def profile_for(self, version: int, item: int) -> "dict | None":
+        """作業面の `item` 件目の断面図（`version` が今の版で、その件に地形があるときだけ）。"""
+        with self._lock:
+            shapes_version, shapes = self._shapes
+        if version != shapes_version or version != self.state.version:
+            return None
+        if not 0 <= item < len(shapes) or shapes[item] is None:
+            return None
+        terrain, params = shapes[item]
+        try:
+            return self._profile(terrain, params)
+        except Exception:
+            logger.exception("webui: 行の断面図に失敗")
+            return None
+
+    def _keep_shapes(self, version: int, shapes: list) -> None:
+        with self._lock:
+            self._shapes = (version, shapes)
 
     def _key_or_none(self, inputs: dict) -> Any:
         if self._validate(inputs):
@@ -262,12 +286,16 @@ class Worker:
         cancel = self._start_sheet(version)
         try:
             items: list = []
+            shapes: list = []
             outcomes = engine.run_paths(
                 rows, lambda row: batch._make_params(row, base), cancel=cancel,
                 on_progress=lambda done, num: self.state.set_progress(version, int(done), int(num)),
                 label=lambda row: row.path_id, fetch=self._fetch, calc=self._calc)
             for (_row, out), label in zip(outcomes, labels):
                 items.append(_item_fields(label, out.result, out.params, out.error))
+                has_shape = out.terrain is not None and out.params is not None
+                shapes.append((out.terrain, out.params) if has_shape else None)
+                self._keep_shapes(version, list(shapes))     # 載せる前に＝行を選べば出る
                 self._publish_sheet(version, workspace, list(items), len(rows))
         finally:
             self._end_sheet()
@@ -298,6 +326,9 @@ class Worker:
             self._end_sheet()
         items = [{**_item_fields(p.label, p.result), "overrides": dict(p.overrides)}
                  for p in points]
+        # 断面は全件が同じ地形＝空中線高の上書きだけが線を変える（`scenario._apply` と同じ入力）
+        self._keep_shapes(version, [(self._terrain, scn._apply(params, c.overrides))
+                                    for c in conds])
         self._publish_sheet(version, "scenario", items, len(conds),
                             mode=spec["mode"], axis=axis, values=list(values))
 

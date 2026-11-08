@@ -849,6 +849,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_hint_start":     "e.g. 34.54, 132.41",
         "webui_hint_end":       "e.g. 34.53, 132.41",
         "webui_margin_range":   "Across the assumptions: {worst} to {best} dB",
+        "webui_ws_single":      "Single Link",
+        "webui_sheet_progress": "{done} / {total}",
+        "webui_pick_row":       "Select a row to see its terrain profile.",
+        "webui_col_verdict":    "Verdict",
 
         # ===== Validation (batch) =====
         "verr_empty":           "Path list is empty.",
@@ -1657,6 +1661,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_hint_start":     "例: 34.54, 132.41",
         "webui_hint_end":       "例: 34.53, 132.41",
         "webui_margin_range":   "前提を振った幅：{worst}〜{best} dB",
+        "webui_ws_single":      "1 回線",
+        "webui_sheet_progress": "{done} / {total} 件",
+        "webui_pick_row":       "行を選ぶと、その経路の断面図が出ます。",
+        "webui_col_verdict":    "判定",
 
         # ===== Validation (batch) =====
         "verr_empty":           "経路リストが空です。",

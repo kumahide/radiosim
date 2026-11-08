@@ -147,6 +147,31 @@ def batch_rows(rows: "list[dict[str, str]]") -> list:
     return [batch._parse_csv_row(r, line) for line, r in enumerate(rows, start=1)]
 
 
+def batch_from_csv(text: str) -> "list[dict[str, str]]":
+    """CSV の本文 → 複数経路の表（画面の文字列のまま）。
+
+    見出しの読み方は `batch.parse_csv` と同じ（BOM・列名の前後空白と大小を寄せる・必須列）。
+    値はここでは検査しない＝表に載せて、実行のときに `batch_rows` が行の番号つきで弾く
+    （打ちかけと同じ扱い＝読み込んだ後に表で直せる）。知らない列は捨てる。
+    """
+    import csv
+    import io
+    from report import batch
+    reader = csv.DictReader(io.StringIO(text.lstrip("﻿"), newline=""))
+    if reader.fieldnames is None:
+        raise ValueError(i18n.t("berr_no_header"))
+    missing = batch._REQUIRED_COLS - {batch._norm_key(c) for c in reader.fieldnames}
+    if missing:
+        raise ValueError(i18n.t("berr_missing_cols").format(cols=", ".join(sorted(missing))))
+    rows = []
+    for raw in reader:
+        row = batch._normalize_row(raw)
+        rows.append({k: row.get(k, "") for k in CSV_COLUMNS})
+    if not rows:
+        raise ValueError(i18n.t("berr_no_rows"))
+    return rows
+
+
 def conditions(spec: "dict[str, Any]") -> "tuple[list[scn.Condition], str, list[float]]":
     """条件探索の入力 → (条件の並び, 掃引の軸, 掃引の値)。比較では軸は空・値は空。
 

@@ -23,6 +23,7 @@ webui/server.py
 
 from __future__ import annotations
 
+import csv
 import json
 import logging
 import mimetypes
@@ -40,6 +41,7 @@ from core import i18n
 from core import models
 from core import terrain_grid
 from core import units
+from webui import sheets as sheets_mod
 from webui.edge import Listener
 from webui.sheets import SheetError
 from webui.state import UnknownKeyError
@@ -176,6 +178,73 @@ def labels() -> "dict[str, str]":
         "legend_fresnel": i18n.t("legend_fresnel"),
         "dist_axis": i18n.t("graph_dist_axis"),
         "alt_axis": i18n.t("graph_alt_axis"),
+        # 作業面（ステージ10c）＝旧画面と同じ語を使う（成果物と取扱説明書の語に合わせる）
+        "sheet_progress": i18n.t("webui_sheet_progress"),
+        "pick_row": i18n.t("webui_pick_row"),
+        "col_verdict": i18n.t("webui_col_verdict"),
+        "add_row": i18n.t("btn_add_row"),
+        "del_row": i18n.t("menu_del"),
+        "import_csv": i18n.t("btn_import_csv"),
+        "tab_compare": i18n.t("scn_tab_compare"),
+        "tab_sweep": i18n.t("scn_tab_sweep"),
+        "add_cond": i18n.t("scn_add_cond"),
+        "del_cond": i18n.t("scn_del_cond"),
+        "base": i18n.t("scn_base"),
+        "cond_n": i18n.t("scn_cond_n"),
+        "axis": i18n.t("scn_axis"),
+        "from": i18n.t("scn_from"),
+        "to": i18n.t("scn_to"),
+        "points": i18n.t("scn_points"),
+        "add_point": i18n.t("mh_add_point"),
+        "del_point": i18n.t("mh_del_point"),
+        "route_id": i18n.t("mh_route_id"),
+        "note": i18n.t("col_note"),
+        "waypoints": i18n.t("mh_waypoints").strip(),
+        "hops": i18n.t("mh_hops_group").strip(),
+        "hint_inherit": i18n.t("mh_hint_inherit"),
+        "section": i18n.t("mh_col_section"),
+    }
+
+
+#: 作業面の切り替え（上の並び）＝(面, 語の鍵)。並びは `sheets.WORKSPACES` と同じ（試験が縛る）。
+_WORKSPACE_LABELS = (
+    ("single", "webui_ws_single"),
+    ("batch", "batch_window_title"),
+    ("scenario", "scn_mode"),
+    ("multihop", "mh_window_title"),
+)
+
+#: 複数経路の表に出す列（旧画面の表と同じ 9 列）。CSV のほかの列（実測など）は表に出さず持つだけ。
+_BATCH_SHOWN = ("id", "start", "end", "h_tx", "h_rx", "freq", "gain_tx", "gain_rx", "note")
+
+#: 中継の点の欄と区間の欄＝(面の入力の鍵, 語の鍵)。
+_WAYPOINT_COLS = (("name", "mh_col_name"), ("coord", "mh_col_coord"), ("h", "mh_col_height"))
+_HOP_COLS = (("freq", "col_freq"), ("gain_tx", "col_gain_tx"), ("gain_rx", "col_gain_rx"))
+
+#: 条件探索の上書きの鍵 → 選択式の欄（入力の列と同じ選択肢）。
+_OVERRIDE_CHOICES = {"env_type": "env_type", "diff_method": "diff_method"}
+
+
+def sheet_spec() -> "dict[str, Any]":
+    """作業面の切り替えと表の列（JS はこれを並べるだけ＝列の順と語をここ 1 か所で持つ）。"""
+    from core import scenario as scn
+
+    def cols(pairs: "tuple[tuple[str, str], ...]") -> "list[dict[str, str]]":
+        return [{"key": k, "label": i18n.t(lab)} for k, lab in pairs]
+
+    compare = []
+    for key in scn.OVERRIDABLE:
+        col: dict[str, Any] = {"key": key, "label": i18n.t(f"scn_axis_{key}")}
+        if key in _OVERRIDE_CHOICES:
+            col["options"] = _choices(_OVERRIDE_CHOICES[key])
+        compare.append(col)
+    return {
+        "workspaces": [{"key": k, "label": i18n.t(lab)} for k, lab in _WORKSPACE_LABELS],
+        "batch": cols(tuple((k, f"col_{k}") for k in _BATCH_SHOWN)),
+        "compare": compare,
+        "sweep_axes": [[k, i18n.t(f"scn_axis_{k}")] for k in scn.SWEEP_AXES],
+        "waypoints": cols(_WAYPOINT_COLS),
+        "hops": cols(_HOP_COLS),
     }
 
 
@@ -249,6 +318,7 @@ class WebServer:
             snap["labels"] = labels()
             snap["form"] = form()
             snap["breakdown"] = breakdown()
+            snap["sheet_spec"] = sheet_spec()
             snap["db_digits"] = units.DB_DECIMALS
             snap["basemap"] = self.basemap
         return snap
@@ -313,6 +383,18 @@ def _make_handler(app: WebServer) -> type:
                 if after == 0:
                     app.page_seen()
                 return self._json(200, app.state_payload(after))
+            if parts.path == "/api/profile":
+                if not self._token_ok(query):
+                    return self._deny()
+                try:
+                    version = int((query.get("v") or [""])[0])
+                    item = int((query.get("item") or [""])[0])
+                except ValueError:
+                    return self._json(400, {"error": "bad query"})
+                shape = app.worker.profile_for(version, item)
+                if shape is None:                        # 版が古い・その件に地形が無い
+                    return self._json(404, {"error": "no profile"})
+                return self._json(200, {"version": version, "item": item, "profile": shape})
             m = _TILE_RE.match(parts.path)
             if m:
                 return self._serve_tile(m)
@@ -367,6 +449,19 @@ def _make_handler(app: WebServer) -> type:
                 except SheetError as e:
                     return self._json(400, {"error": f"sheet: {e}"})
                 return self._json(200, {"version": version})
+            if parts.path == "/api/batch_csv":
+                body = self._body()
+                text = body.get("text") if body is not None else None
+                if not isinstance(text, str):
+                    return self._json(400, {"error": "bad body"})
+                try:
+                    rows = sheets_mod.batch_from_csv(text)
+                except csv.Error as e:
+                    return self._json(422, {"message": str(e)})
+                except ValueError as e:                  # 見出し・必須列・空＝画面の字
+                    return self._json(422, {"message": str(e)})
+                version = app.worker.submit({}, sheets={"batch": rows})
+                return self._json(200, {"version": version, "rows": len(rows)})
             self._send(404, b"not found", "text/plain; charset=utf-8")
 
     return Handler

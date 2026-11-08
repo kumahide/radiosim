@@ -484,3 +484,90 @@ def test_the_first_fetch_shows_its_progress_until_the_first_row():
     _worker(st, fetch=_Fetch(hook)).step()
     assert seen[0]["kind"] == "computing" and seen[0]["total"] > 0
     assert seen[0]["done"] == seen[0]["total"]
+
+
+# ---- ステージ10c の裏側（行ごとの断面図・CSV の読み込み・表の列） --------------------
+def test_a_row_profile_comes_only_for_the_current_version():
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "15"}])
+    w = Worker(st, fetch=_Fetch(), key=lambda p: None, calc=_by_height,
+               profile=lambda t, p: {"h_tx": float(p.h_tx), "terrain": t})
+    w.step()
+    v = st.version
+    assert w.profile_for(v, 1) == {"h_tx": 15.0, "terrain": "terrain"}
+    assert w.profile_for(v, 2) is None                           # 無い件
+    assert w.profile_for(v - 1, 0) is None                       # 古い版
+    st.update({"freq": "925"})
+    assert w.profile_for(v, 0) is None                           # 版が進んだ＝古い入力の断面
+
+
+def test_a_failed_row_has_no_profile():
+    def calc(t, p):
+        if float(p.h_tx) == 15.0:
+            raise RuntimeError("boom")
+        return _by_height(t, p)
+    st = _sheet_state("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "15"}])
+    w = Worker(st, fetch=_Fetch(), key=lambda p: None, calc=calc, profile=lambda t, p: {"ok": 1})
+    w.step()
+    v = st.version
+    assert w.profile_for(v, 0) == {"ok": 1}
+    assert w.profile_for(v, 1) == {"ok": 1}                      # 地形はある＝計算だけ失敗
+
+
+def test_a_scenario_row_profile_uses_its_overridden_height():
+    st = _sheet_state("scenario", {"compare": [{"h_tx": "40"}]}, h_tx="10")
+    w = Worker(st, fetch=_Fetch(), key=lambda p: None, calc=_by_height,
+               profile=lambda t, p: float(p.h_tx))
+    w.step()
+    assert [w.profile_for(st.version, i) for i in (0, 1)] == [10.0, 40.0]
+
+
+def test_csv_text_becomes_the_batch_table_as_strings():
+    text = "\ufeffID, Start ,end,h_tx,h_rx,extra\nA1,\"34.4, 132.45\",\"34.41, 132.46\",10,5,x\n"
+    rows = sheets.batch_from_csv(text)
+    assert rows == [{**{k: "" for k in CSV_COLUMNS}, "id": "A1", "start": "34.4, 132.45",
+                     "end": "34.41, 132.46", "h_tx": "10", "h_rx": "5"}]
+
+
+@pytest.mark.parametrize("text", ["", "id,start\nA1,1\n", "id,start,end,h_tx,h_rx\n"])
+def test_a_bad_csv_is_a_message(text):
+    with pytest.raises(ValueError):
+        sheets.batch_from_csv(text)
+
+
+def _call(srv, method, path, body=None):
+    conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=10)
+    data = json.dumps(body).encode("utf-8") if body is not None else None
+    conn.request(method, path, body=data, headers={
+        "Host": f"127.0.0.1:{srv.port}", "X-Token": srv.token,
+        "Content-Type": "application/json"})
+    resp = conn.getresponse()
+    out = (resp.status, json.loads(resp.read() or b"{}"))
+    conn.close()
+    return out
+
+
+def test_the_api_imports_a_csv_into_the_batch_sheet(web):
+    code, body = _call(web, "POST", "/api/batch_csv",
+                       {"text": "id,start,end,h_tx,h_rx\nA1,\"1, 2\",\"1, 3\",10,5\n"})
+    assert code == 200 and body["rows"] == 1
+    _, _, sh = web.worker.state.workspace_snapshot()
+    assert sh["batch"][0]["id"] == "A1"
+    code, body = _call(web, "POST", "/api/batch_csv", {"text": "id\n"})
+    assert code == 422 and body["message"]
+    assert _call(web, "POST", "/api/batch_csv", {"text": 3})[0] == 400
+
+
+def test_the_api_answers_404_for_a_profile_it_does_not_have(web):
+    assert _call(web, "GET", f"/api/profile?v={web.worker.state.version}&item=0")[0] == 404
+    assert _call(web, "GET", "/api/profile?v=x&item=0")[0] == 400
+
+
+def test_the_sheet_spec_follows_the_workspaces_and_the_typed_side():
+    spec = webserver.sheet_spec()
+    assert [w["key"] for w in spec["workspaces"]] == list(sheets.WORKSPACES)
+    assert [c["key"] for c in spec["compare"]] == list(scn.OVERRIDABLE)
+    assert [k for k, _ in spec["sweep_axes"]] == list(scn.SWEEP_AXES)
+    assert {c["key"] for c in spec["batch"]} <= set(CSV_COLUMNS)
+    assert [c["key"] for c in spec["waypoints"]] == ["name", "coord", "h"]
+    assert all(c["label"] for part in ("batch", "compare", "waypoints", "hops")
+               for c in spec[part])
