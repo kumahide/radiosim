@@ -263,6 +263,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "proj_err_not_project": "This is not a RadioSim project file.",
         "proj_err_newer":       "Saved by a newer version of RadioSim (schema {ver}, supported {cur}). Update RadioSim to open it.",
         "proj_err_broken":      "Cannot read the project file: {reason}",
+        "proj_err_profile":     "This file uses the older calculation method ({profile}). This screen cannot open it yet; open it in the classic screen.",
         "dlg_select_app_settings": "Select a settings file (app settings only)",
         "dlg_success":          "Success",
 
@@ -1120,6 +1121,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "proj_err_not_project": "RadioSim のプロジェクトファイルではありません。",
         "proj_err_newer":       "より新しい版の RadioSim で保存されたファイルです（schema {ver} / 対応 {cur}）。RadioSim を更新してください。",
         "proj_err_broken":      "プロジェクトファイルを読めません: {reason}",
+        "proj_err_profile":     "旧い計算方式（{profile}）のファイルです。この画面ではまだ開けません。旧画面で開いてください。",
         "dlg_select_app_settings": "設定ファイルを選択（アプリ設定のみ）",
         "dlg_success":          "完了",
 

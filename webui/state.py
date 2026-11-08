@@ -101,6 +101,11 @@ class AppState:
         with self._cond:
             return self._version, self._workspace, copy.deepcopy(self._sheets)
 
+    def document(self) -> "tuple[dict[str, str], dict[str, Any]]":
+        """(入力の写し, 面の入力の写し) を 1 回の錠で＝`.rsproj` の保存が同じ版の 2 つを書く。"""
+        with self._cond:
+            return dict(self._inputs), copy.deepcopy(self._sheets)
+
     @property
     def version(self) -> int:
         with self._cond:

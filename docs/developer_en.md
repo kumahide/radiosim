@@ -301,6 +301,7 @@ radiosim/
 │   ├── __main__.py       # `python -m webui` entry (starts Edge first; `core/dem.py` injects truststore just before the first request; settings are read only)
 │   ├── state.py          # Input set and headline (never shows a result from an older input version)
 │   ├── sheets.py         # Workspace inputs (batch, scenario, relay held as screen strings; typed only to run or save)
+│   ├── project_io.py     # .rsproj save and open (screen inputs <-> ProjectDoc; the file format stays in report/project.py)
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable; workspaces run item by item)
 │   ├── profile.py        # Terrain profile data (same lines as the report; thinned to 1200 points)
 │   ├── server.py         # HTTP bound to 127.0.0.1 only (per-launch token, Host check, static files)
@@ -406,6 +407,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_webui.py
     ├── test_webui_workspace.py
+    ├── test_webui_project.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_experiments_probes.py
@@ -1326,6 +1328,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_webui.py`          | New screen (`webui/`): the headline shows only results of the current input version, unknown input keys are rejected, a terrain-affecting edit cancels the running fetch, HTTP refuses a foreign Host or a missing token, static files cannot escape their root |
 | `test_webui_workspace.py` | New screen workspace inputs: one update bumps the version once whatever it changes, a bad shape is refused without changing anything, typing follows the old windows with the same error words, importing does not load `report`; workspace runs: published item by item with the aggregate and counts once complete, input errors refused before any fetch, any newer version cancels unconditionally, the scenario reuses the single-link terrain |
+| `test_webui_project.py` | New screen `.rsproj` save and open: inputs and sheets survive the round trip, the same file the classic screen reads, coordinates in DD, an unreadable sheet is left out with a warning, another calculation method is refused, the opened project name carries into the next save, an unreadable file is a 422 that changes nothing |
 | `test_docs_consistency.py` | Docs vs code consistency (section-level module/test/dependency enumeration)     |
 | `test_env_consistency.py` | Runtime environment vs requirements.txt pins (all lines pinned, installed versions match) |
 | `test_experiments_probes.py` | Static gate keeping the probes under `experiments/` in step with the product. Calls into `core`/`report` collected via AST must `bind` against the current signature, and a probe printing characters the default console cannot encode must rebuild `sys.stdout`. The probes are never executed here (their argument, data, network and hardware prerequisites differ too much for CI) — they are only read. The number of calls actually checked is asserted too, so the gate cannot pass silently |

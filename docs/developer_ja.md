@@ -301,6 +301,7 @@ radiosim/
 │   ├── __main__.py       # `python -m webui` の入口（先に Edge を起こす・truststore は初めての通信の直前に `core/dem.py` が入れる・設定は読むだけ）
 │   ├── state.py          # 入力の集合と見出し（古い版の結果を今の判定に見せない）
 │   ├── sheets.py         # 作業面の入力（複数経路・条件探索・中継を画面の文字列のまま持ち、実行と保存のときに型へ直す）
+│   ├── project_io.py     # .rsproj の保存と開く（画面の入力と ProjectDoc の変換・ファイルの形は report/project.py）
 │   ├── worker.py         # 計算のスレッド 1 本（地形の取得は取り消せる・作業面は 1 件ずつ回す）
 │   ├── profile.py        # 断面図の数（帳票と同じ線・1200 点まで間引く）
 │   ├── server.py         # 127.0.0.1 だけで待つ HTTP（起動ごとの鍵・Host の検査・静的ファイル）
@@ -405,6 +406,7 @@ radiosim/
     ├── test_smoke.py
     ├── test_webui.py
     ├── test_webui_workspace.py
+    ├── test_webui_project.py
     ├── test_docs_consistency.py
     ├── test_env_consistency.py
     ├── test_experiments_probes.py
@@ -1288,6 +1290,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_webui.py`          | 新しい画面（`webui/`）の約束（見出しは今の版の入力の結果だけ・知らない入力の鍵を受けない・地形に効く欄で取得中の地形を取り消す・Host 違いと鍵なしは 403・静的ファイルの外へ出ない） |
 | `test_webui_workspace.py` | 新しい画面の作業面の入力（面と面の入力を 1 回の更新で版を 1 つ上げる・形の誤りは何も変えずに断る・型への変換は旧画面と同じ組み立てと同じ字の誤り・`report` を取り込みで引かない）と作業面の実行（1 件ごとに載せ全件そろって集約と件数・入力の誤りは取得の前に断る・版が進めば無条件に取り消す・条件探索は 1 回線の地形を使い回す） |
+| `test_webui_project.py` | 新しい画面の `.rsproj` の保存と開く（入力と面が往復で戻る・旧画面と同じファイル・座標は DD・読めない面はその面だけ書かず警告・既定と違う計算方式は断る・開いた案件名を次の保存へ持ち越す・読めなければ 422 で何も変えない） |
 | `test_docs_consistency.py` | ドキュメントと実装の整合（モジュール/テスト/依存の列挙網羅をセクション単位で検証） |
 | `test_env_consistency.py` | 実行環境と requirements.txt ピンの整合（全行ピン形式・実インストール版の一致） |
 | `test_experiments_probes.py` | 探針（`experiments/`）が製品と一緒に動いているかの静的ゲート。AST で拾った `core`/`report` の呼び出しがいまのシグネチャに `bind` できること・既定のコンソールで出せない字を`print` する探針が `sys.stdout` を作り直していること。⚠️ **探針は実行しない**（引数・データ・ネットワーク・実機の前提がまちまちで CI に載らない）＝**読むだけ**。照合できた呼び出しの数も数え、黙って通る経路を塞ぐ |

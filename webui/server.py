@@ -17,6 +17,9 @@ webui/server.py
     POST /api/inputs             … `{"changes": {鍵: 値}}`＝変えた欄だけ。作業面（ステージ10a）は
                                    `"workspace": 面` と `"sheets": {面: 入力}`（面ごとに丸ごと）も
                                    受ける＝3 つのどれか 1 つは要る・形の誤りは 400
+    POST /api/project/save       … 今の入力と面を `.rsproj` の文字列で返す `{"text", "name", "warnings"}`
+                                   （ファイルを書くのは画面＝ステージ10d）
+    POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
     GET  /tile/<src>/<z>/<x>/<y>.png … `dem.basemap_tile_png`
     POST /api/bye?t=<鍵>          … 窓を閉じた。2 秒のうちに次のページが来なければ終わる
 """
@@ -41,6 +44,7 @@ from core import i18n
 from core import models
 from core import terrain_grid
 from core import units
+from webui import project_io
 from webui import sheets as sheets_mod
 from webui.edge import Listener
 from webui.sheets import SheetError
@@ -278,6 +282,8 @@ class WebServer:
         self._tile = tile
         self._page_serial = 0
         self._serial_lock = threading.Lock()
+        #: 開いた `.rsproj` の案件名とメモ（画面に欄は無い＝保存で持ち越すだけ）
+        self.project_meta: dict[str, str] = {}
         self.httpd = ThreadingHTTPServer(lis.address, _make_handler(self), bind_and_activate=False)
         self.httpd.socket.close()                        # 先に待ち始めた受け口へ差し替える
         self.httpd.socket = lis.sock
@@ -468,6 +474,24 @@ def _make_handler(app: WebServer) -> type:
                     return self._json(422, {"message": str(e)})
                 version = app.worker.submit({}, sheets={"batch": rows})
                 return self._json(200, {"version": version, "rows": len(rows)})
+            if parts.path == "/api/project/save":
+                inputs, sheets = app.worker.state.document()
+                text, warnings = project_io.dump(inputs, sheets, app.project_meta)
+                return self._json(200, {"text": text, "name": project_io.filename(app.project_meta),
+                                        "warnings": warnings})
+            if parts.path == "/api/project/open":
+                body = self._body()
+                text = body.get("text") if body is not None else None
+                if not isinstance(text, str):
+                    return self._json(400, {"error": "bad body"})
+                from report.project import ProjectError
+                try:
+                    inputs, sheets, meta = project_io.load(text)
+                except ProjectError as e:
+                    return self._json(422, {"message": str(e)})
+                app.project_meta = meta
+                version = app.worker.submit(inputs, sheets=sheets)
+                return self._json(200, {"version": version})
             self._send(404, b"not found", "text/plain; charset=utf-8")
 
     return Handler
