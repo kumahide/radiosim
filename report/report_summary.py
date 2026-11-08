@@ -36,7 +36,7 @@ from report import report_map
 from report import report_path
 
 if TYPE_CHECKING:
-    from report.batch import PathResult
+    from report.batch import PathResult, PathRow
 
 
 # ============================================================
@@ -550,11 +550,33 @@ def save_report_all_html(results: list[PathResult], batch_dir: str,
 # サマリ KML
 # ============================================================
 def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
-    """全パスを OK / NG / Error フォルダ分けした summary.kml を生成する。"""
-    ok_xml = ng_xml = err_xml = ""
+    """全パスを判定でフォルダ分けした summary.kml を生成する（中身は `summary_kml_text`）。"""
+    with open(os.path.join(batch_dir, "summary.kml"), "w", encoding="utf-8") as f:
+        f.write(summary_kml_text(results))
+
+
+def _has_coords(row: PathRow) -> bool:
+    """送受の座標がそろっているか（新しい画面の誤りの行は NaN＝`webui.worker._error_row`）。"""
+    return all(math.isfinite(v) for v in (row.lat_tx, row.lon_tx, row.lat_rx, row.lon_rx))
+
+
+def summary_kml_text(results: list[PathResult]) -> str:
+    """全パスを OK / REVIEW / NG / Error のフォルダに分けた KML の本文（2 つの画面が共用）。
+
+    REVIEW は紫（`path.kml` と同じ `ff9a1b6a`＝4.0 判断点 ②）。座標の無い誤りの行は線を引かず、
+    名前と理由だけの Placemark を Error に置く（件数を台帳と画面の表にそろえる）。
+    """
+    ok_xml = rev_xml = ng_xml = err_xml = ""
 
     for pr in results:
         pid_esc = _html.escape(pr.row.path_id)
+        if not _has_coords(pr.row):
+            err_xml += (
+                f"    <Placemark><name>{pid_esc}</name>"
+                f"<description>{_html.escape(str(pr.error))}</description>"
+                f"<styleUrl>#err</styleUrl></Placemark>\n"
+            )
+            continue
         if pr.result is not None and pr.terrain is not None and pr.params is not None:
             tx_alt   = float(pr.terrain.raw_elevs[0])  + pr.params.h_tx
             rx_alt   = float(pr.terrain.raw_elevs[-1]) + pr.params.h_rx
@@ -571,7 +593,7 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
             )
             # 線は実測どおり引ける（地形がある）が、**振り分けは判定に従う**＝
             # 成果物が欠けた経路は Error フォルダへ入る（I-010・台帳と食い違わせない）。
-            style = {"OK": "ok", "NG": "ng"}.get(pr.status, "err")
+            style = {"OK": "ok", "REVIEW": "rev", "NG": "ng"}.get(pr.status, "err")
             pm = (
                 f"    <Placemark><name>{pid_esc}</name>"
                 f"<description>{desc_esc}</description>"
@@ -582,6 +604,8 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
             )
             if style == "ok":
                 ok_xml += pm
+            elif style == "rev":
+                rev_xml += pm
             elif style == "ng":
                 ng_xml += pm
             else:
@@ -603,18 +627,21 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
                 f"</LineString></Placemark>\n"
             )
 
-    kml = f"""<?xml version="1.0" encoding="UTF-8"?>
+    return f"""<?xml version="1.0" encoding="UTF-8"?>
 <kml xmlns="http://www.opengis.net/kml/2.2">
 <Document>
   <name>Batch Summary</name>
   <description>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | {version.APP_FULL}</description>
 
   <Style id="ok"><LineStyle><color>ff00aa00</color><width>3</width></LineStyle></Style>
+  <Style id="rev"><LineStyle><color>ff9a1b6a</color><width>3</width></LineStyle></Style>
   <Style id="ng"><LineStyle><color>ff00a5ff</color><width>3</width></LineStyle></Style>
   <Style id="err"><LineStyle><color>ff0000ff</color><width>3</width></LineStyle></Style>
 
   <Folder><name>OK</name><open>1</open>
 {ok_xml}  </Folder>
+  <Folder><name>REVIEW</name><open>1</open>
+{rev_xml}  </Folder>
   <Folder><name>NG</name><open>1</open>
 {ng_xml}  </Folder>
   <Folder><name>Error</name><open>0</open>
@@ -622,6 +649,3 @@ def save_summary_kml(results: list[PathResult], batch_dir: str) -> None:
 
 </Document>
 </kml>"""
-
-    with open(os.path.join(batch_dir, "summary.kml"), "w", encoding="utf-8") as f:
-        f.write(kml)

@@ -608,6 +608,8 @@ function renderSheet() {
   else if (workspace === "scenario") renderScenario(tools, body);
   else renderMultihop(tools, body);
   tools.append(button(labels.save_csv, saveSheetCsv));   // 成果物の保存は道具の右端（10d）
+  // KML は複数経路だけ（旧画面も `summary.kml` だけ＝中継・条件探索には無い）
+  if (workspace === "batch") tools.append(button(labels.save_kml, saveSheetKml));
   showSheetResults(headline);
 }
 
@@ -940,14 +942,22 @@ async function saveProject() {
 // 全件そろう前は 409＋1 文（知らせの欄に赤）
 const CSV_TYPES = [{ description: "CSV", accept: { "text/csv": [".csv"] } }];
 
-async function saveSheetCsv() {
+const KML_TYPES = [{ description: "KML", accept: { "application/vnd.google-earth.kml+xml": [".kml"] } }];
+
+// 作業面の成果物を 1 つ保存する（CSV・KML 共通）＝中身はサーバーが作る
+async function saveSheetFile(url, types, mime) {
   projNote("");
   await flushAll();
-  const r = await fetch("/api/sheet/csv", { method: "POST", headers: HEAD, body: "{}" });
+  const r = await fetch(url, { method: "POST", headers: HEAD, body: "{}" });
   const d = await r.json().catch(() => ({}));
   if (!r.ok) { projNote(d.message || d.error || String(r.status), true); return; }
-  const name = await saveTextFile(d.text, d.name, CSV_TYPES, "text/csv");
+  const name = await saveTextFile(d.text, d.name, types, mime);
   if (name !== null) projNote(labels.file_saved.replace("{path}", name));
+}
+
+function saveSheetCsv() { return saveSheetFile("/api/sheet/csv", CSV_TYPES, "text/csv"); }
+function saveSheetKml() {
+  return saveSheetFile("/api/sheet/kml", KML_TYPES, "application/vnd.google-earth.kml+xml");
 }
 
 async function openProjectText(text) {

@@ -854,6 +854,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_pick_row":       "Select a row to see its terrain profile.",
         "webui_col_verdict":    "Verdict",
         "webui_save_csv":       "Save Results CSV",
+        "webui_save_kml":       "Save KML",
+        "webui_no_kml":         "KML is saved only from the multi-path sheet.",
         "webui_no_result":      "The results are not complete yet. Save after the calculation finishes.",
         "webui_file_saved":     "Saved: {path}",
 
@@ -1669,6 +1671,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_pick_row":       "行を選ぶと、その経路の断面図が出ます。",
         "webui_col_verdict":    "判定",
         "webui_save_csv":       "結果の CSV を保存",
+        "webui_save_kml":       "KML を保存",
+        "webui_no_kml":         "KML は複数経路の面だけで保存できます。",
         "webui_no_result":      "結果がまだそろっていません。計算が終わってから保存してください。",
         "webui_file_saved":     "保存しました: {path}",
 

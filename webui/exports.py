@@ -27,3 +27,15 @@ def sheet_csv(workspace: str, run: Any) -> "tuple[str, str]":
         from report import report_scenario
         return "scenario.csv", report_scenario.scenario_csv_text(run)
     raise ValueError(f"no CSV for workspace: {workspace}")
+
+
+#: KML を出せる面＝旧画面にある分だけ（`summary.kml`）。中継と条件探索は旧画面にも KML が無い
+KML_WORKSPACES: "tuple[str, ...]" = ("batch",)
+
+
+def sheet_kml(workspace: str, run: Any) -> "tuple[str, str] | None":
+    """作業面の全件の結果 → `(ファイル名, KML の本文)`。KML の無い面は None。"""
+    if workspace not in KML_WORKSPACES:
+        return None
+    from report import report_summary
+    return "summary.kml", report_summary.summary_kml_text(run)

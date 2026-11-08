@@ -221,10 +221,12 @@ class TestSaveSummaryKml:
         text = self._render(tmp_path, [
             self._path_result("ok1", flat_terrain, default_params_dict, status="OK"),
             self._path_result("ng1", flat_terrain, default_params_dict, status="NG"),
+            self._path_result("rv1", flat_terrain, default_params_dict, status="REVIEW"),
             self._path_result("er1", flat_terrain, default_params_dict,
                               error=ValueError("DEM fetch failed")),
         ])
         assert self._folder_names(text, "OK") == ["ok1"]
+        assert self._folder_names(text, "REVIEW") == ["rv1"]    # Error へ落とさない（判断点 ②）
         assert self._folder_names(text, "NG") == ["ng1"]
         assert self._folder_names(text, "Error") == ["er1"]
 

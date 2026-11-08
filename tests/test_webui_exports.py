@@ -4,6 +4,7 @@ tests/test_webui_exports.py
 新しい画面の**作業面の成果物の保存**（Link 1.0 ステージ10d）＝`Worker.sheet_run` が今の版の
 全件の結果を持ち、`webui.exports.sheet_csv` が旧画面と同じ書き手で出力契約の CSV を作る。
 `/api/sheet/csv` は全件そろう前は 409。判断点 ②＝CSV の件数と語が画面の表と同じ。
+KML（`summary.kml`）は複数経路だけ＝旧画面と同じ。REVIEW は自分のフォルダ（紫）。
 """
 
 from __future__ import annotations
@@ -13,6 +14,7 @@ import http.client
 import io
 import json
 import threading
+import xml.etree.ElementTree as ET
 
 import pytest
 
@@ -33,6 +35,7 @@ _WAYPOINTS = [{"name": "", "coord": "34.40, 132.45", "h": "10"},
 class _Terrain:
     horiz_dist_km = 5.0
     fail_pct = 0.0
+    raw_elevs = (20.0, 30.0)                                     # KML の線の高さ（両端）
 
 
 class _Res:
@@ -124,6 +127,57 @@ def test_the_old_writer_writes_the_same_bytes_as_the_text(tmp_path):
     assert raw.count(b"\r\n") == 2 and b"\r\r\n" not in raw
 
 
+_KML = "{http://www.opengis.net/kml/2.2}"
+
+
+def _kml_folders(text):
+    """フォルダ名 → その中の (Placemark 名, 線があるか) の並び。"""
+    out = {}
+    for f in ET.fromstring(text).iter(_KML + "Folder"):
+        out[f.findtext(_KML + "name")] = [
+            (pm.findtext(_KML + "name"), pm.find(_KML + "LineString") is not None)
+            for pm in f.iter(_KML + "Placemark")]
+    return out
+
+
+def _kml(w):
+    made = exports.sheet_kml(*_got(w))
+    assert made is not None
+    return made
+
+
+def test_the_batch_kml_sorts_rows_into_the_four_words_with_review_in_purple():
+    st, w = _run("batch", [_ROW, {**_ROW, "id": "B2", "h_tx": "abc"},
+                           {**_ROW, "id": "C3", "h_tx": "15"}, {**_ROW, "id": "D4", "h_tx": "3"}])
+    name, text = _kml(w)
+    assert name == "summary.kml"
+    folders = _kml_folders(text)
+    assert list(folders) == ["OK", "REVIEW", "NG", "Error"]
+    assert folders == {"OK": [("A1", True)], "REVIEW": [("C3", True)], "NG": [("D4", True)],
+                       "Error": [("B2", False)]}                 # 座標の無い誤りの行は線を引かない
+    assert "ff9a1b6a" in text and "nan" not in text.lower()
+    # 判断点 ②＝件数と語が画面の表と同じ
+    words = {"OK": vd.OK, "REVIEW": vd.REVIEW, "NG": vd.NG, "Error": vd.ERROR}
+    got = {pm: words[f] for f, pms in folders.items() for pm, _ in pms}
+    assert got == {it["label"]: it["word"] for it in st.headline()["items"]}
+
+
+def test_the_relay_and_scenario_sheets_have_no_kml_as_in_the_old_screen():
+    _, w = _run("multihop", {"path_id": "R1", "waypoints": _WAYPOINTS, "hop_rf": [{}, {}]})
+    assert exports.sheet_kml(*_got(w)) is None
+    _, w = _run("scenario", {"compare": [{"h_tx": "15"}]}, h_tx="10")
+    assert exports.sheet_kml(*_got(w)) is None
+
+
+def test_the_old_kml_writer_writes_the_text(tmp_path):
+    _, w = _run("batch", [_ROW, {**_ROW, "id": "C3", "h_tx": "15"}])
+    results = _got(w)[1]
+    report_summary.save_summary_kml(results, str(tmp_path))
+    written = _kml_folders((tmp_path / "summary.kml").read_text(encoding="utf-8"))
+    assert written == _kml_folders(report_summary.summary_kml_text(results))
+    assert written["REVIEW"] == [("C3", True)]                   # 旧画面も REVIEW を Error へ落とさない
+
+
 @pytest.fixture
 def web():
     st = AppState()
@@ -135,9 +189,9 @@ def web():
     srv.httpd.server_close()
 
 
-def _post_csv(srv):
+def _post_csv(srv, path="/api/sheet/csv"):
     conn = http.client.HTTPConnection("127.0.0.1", srv.port, timeout=10)
-    conn.request("POST", "/api/sheet/csv", body=b"{}", headers={
+    conn.request("POST", path, body=b"{}", headers={
         "Host": f"127.0.0.1:{srv.port}", "X-Token": srv.token, "Content-Type": "application/json"})
     resp = conn.getresponse()
     out = (resp.status, json.loads(resp.read() or b"{}"))
@@ -155,6 +209,21 @@ def test_the_api_answers_409_until_the_sheet_is_complete_then_the_csv(web):
     assert _rows(body["text"])[0]["status"] == vd.OK
 
 
+def test_the_kml_api_answers_for_the_batch_sheet_only(web):
+    code, body = _post_csv(web, "/api/sheet/kml")
+    assert code == 409 and body["message"]                       # 結果が無い
+    web.worker.submit({}, workspace="multihop",
+                      sheets={"multihop": {"path_id": "R1", "waypoints": _WAYPOINTS, "hop_rf": [{}, {}]}})
+    web.worker.step()
+    code, body = _post_csv(web, "/api/sheet/kml")
+    assert code == 409 and body["message"] != _post_csv(web)[1].get("message")   # 面が違う旨
+    web.worker.submit({}, workspace="batch", sheets={"batch": [_ROW]})
+    web.worker.step()
+    code, body = _post_csv(web, "/api/sheet/kml")
+    assert code == 200 and body["name"] == "summary.kml"
+    assert _kml_folders(body["text"])["OK"] == [("A1", True)]
+
+
 def test_the_labels_carry_the_save_words():
     labels = webserver.labels()
-    assert labels["save_csv"] and "{path}" in labels["file_saved"]
+    assert labels["save_csv"] and labels["save_kml"] and "{path}" in labels["file_saved"]

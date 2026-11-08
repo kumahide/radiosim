@@ -22,6 +22,7 @@ webui/server.py
     POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
     POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
                                    （全件そろっていなければ 409＋画面の 1 文 `message`）
+    POST /api/sheet/kml          … 同じく KML（`summary.kml`＝複数経路だけ・ほかの面は 409）
     GET  /tile/<src>/<z>/<x>/<y>.png … `dem.basemap_tile_png`
     POST /api/bye?t=<鍵>          … 窓を閉じた。2 秒のうちに次のページが来なければ終わる
 """
@@ -199,6 +200,7 @@ def labels() -> "dict[str, str]":
         "proj_saved": i18n.t("proj_saved"),
         # 作業面の成果物の保存（ステージ10d）
         "save_csv": i18n.t("webui_save_csv"),
+        "save_kml": i18n.t("webui_save_kml"),
         "file_saved": i18n.t("webui_file_saved"),
         "tab_compare": i18n.t("scn_tab_compare"),
         "tab_sweep": i18n.t("scn_tab_sweep"),
@@ -498,6 +500,15 @@ def _make_handler(app: WebServer) -> type:
                     return self._json(409, {"message": i18n.t("webui_no_result")})
                 name, text = exports.sheet_csv(*got)
                 return self._json(200, {"text": text, "name": name})
+            if parts.path == "/api/sheet/kml":
+                self._body()                             # 読み捨てる（CSV と同じ）
+                got = app.worker.sheet_run()
+                if got is None:
+                    return self._json(409, {"message": i18n.t("webui_no_result")})
+                made = exports.sheet_kml(*got)
+                if made is None:                         # 中継・条件探索＝旧画面にも無い
+                    return self._json(409, {"message": i18n.t("webui_no_kml")})
+                return self._json(200, {"text": made[1], "name": made[0]})
             if parts.path == "/api/project/open":
                 body = self._body()
                 text = body.get("text") if body is not None else None
