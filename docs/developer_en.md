@@ -301,6 +301,7 @@ radiosim/
 │   ├── __main__.py       # `python -m webui` entry (starts Edge first; `core/dem.py` injects truststore just before the first request; settings are read only)
 │   ├── state.py          # Input set and headline (never shows a result from an older input version)
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable)
+│   ├── profile.py        # Terrain profile data (same lines as the report; thinned to 1200 points)
 │   ├── server.py         # HTTP bound to 127.0.0.1 only (per-launch token, Host check, static files)
 │   ├── edge.py           # Opens Edge in app mode with a dedicated profile
 │   └── static/           # Screen shell (HTML, JS, CSS, Leaflet)

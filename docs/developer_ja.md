@@ -301,6 +301,7 @@ radiosim/
 │   ├── __main__.py       # `python -m webui` の入口（先に Edge を起こす・truststore は初めての通信の直前に `core/dem.py` が入れる・設定は読むだけ）
 │   ├── state.py          # 入力の集合と見出し（古い版の結果を今の判定に見せない）
 │   ├── worker.py         # 計算のスレッド 1 本（地形の取得は取り消せる）
+│   ├── profile.py        # 断面図の数（帳票と同じ線・1200 点まで間引く）
 │   ├── server.py         # 127.0.0.1 だけで待つ HTTP（起動ごとの鍵・Host の検査・静的ファイル）
 │   ├── edge.py           # Edge を専用プロファイルのアプリモードで開く
 │   └── static/           # 画面の殻（HTML・JS・CSS・Leaflet）
