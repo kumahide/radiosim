@@ -55,6 +55,20 @@ import {
 const FULL_SCOPE = "full-suite";
 const MAX_OUT = 3000;
 
+// OWN TIME BUDGET (B-377・2026-11-08): when Claude Code's hook timeout fires,
+// the hook is killed and the command RUNS — a timeout is a non-blocking hook
+// error, and the killed gate cannot say anything. The full suite outgrew the
+// 900 s wiring (813 s at O-030, then over 900 s): 7 commits and the push of
+// Link 1.0 stage 9 each waited exactly 15 min and went through untested. So the
+// gate keeps its own clock, stops pytest itself before the wiring would, and
+// DENIES. The wiring's timeout must stay above this (watcher: the real-data
+// test in tests/test_pre_commit_gate.py::TestOwnBudget).
+export const GATE_BUDGET_MS = 1680 * 1000;
+export const REFUSE_OVER_BUDGET =
+  "⛔ コミット前提の試験が、ゲートの持ち時間（{min} 分）の内に終わりませんでした（B-377）。" +
+  "持ち時間を超えたら、試験を止めてコミットを断ります（時間切れで通すと、検査が丸ごと抜けます）。" +
+  "ほかに重い処理（別の会話のフルスイート・ビルド）が走っていないかを確かめてから、やり直してください。";
+
 // LEDGER FIRST (2026-09-26・I-179 の回): the real-data checks of the ledger
 // (ISSUES.md) and the roadmap/memory used to fail only at the END of the
 // 10-minute suite — twice in one commit ("済 without a real hash", then "✅
@@ -469,7 +483,18 @@ function shellValue(raw, tool) {
   else if (tool === "Bash") v = v.replace(/\\(.)/g, "$1"); // unquoted `\` escapes in bash
   if (quote !== "'" && /[$`%]/.test(v)) return null;
   if (v.startsWith("~")) return null;
-  return v;
+  return tool === "Bash" ? msysDrive(v) : v;
+}
+
+// B-377 (2026-11-08): Git Bash hands git `/d/dev/repo` as `D:/dev/repo` (MSYS
+// path conversion), but this hook starts git straight from node — no shell, no
+// conversion — so `git -C /d/dev/radiosim-repo commit` did not resolve here and
+// went through untested as "another repository" (3 commits of Link 1.0 stage 9).
+// Do the drive-letter part of that conversion; anything else it would convert
+// (`/tmp`, `/usr/…`) stays unresolved and is refused (REFUSE_UNRESOLVED).
+export function msysDrive(v, platform = process.platform) {
+  if (platform !== "win32") return v;
+  return v.replace(/^\/([A-Za-z])(?=\/|$)/, (_, d) => `${d.toUpperCase()}:`).replace(/^([A-Z]:)$/, "$1/");
 }
 
 /** A git step: `{sub, loc, opaque}` (`loc` = the location options to hand
@@ -523,6 +548,10 @@ export const REFUSE_CHDIR =
 export const REFUSE_OPAQUE =
   "⛔ コミット先の場所を、ゲートが解けない形で渡しています（`$変数`・`~`・`%X%`・`GIT_DIR=` など＝B-312）。" +
   "パスを字のまま書くか、作業ディレクトリをリポジトリに置いて素の `git commit` にしてください。";
+export const REFUSE_UNRESOLVED =
+  "⛔ `-C`／`--git-dir`／`--work-tree` で渡したコミット先を、ゲートがリポジトリとして解けませんでした（B-377）。" +
+  "解けない場所を「別のリポジトリ」として通すと、シェルが読み替えた先がこのリポジトリだったときに検査が丸ごと抜けます。" +
+  "Windows の形の絶対パス（`git -C D:/dev/radiosim-repo …`）で書くか、作業ディレクトリで素の `git commit` にしてください。";
 export const REFUSE_REWRITE =
   "⛔ `git commit`／`git push` の前に、作業ツリーを書き換え得る段があります（B-312）。" +
   "ゲートはコマンドの**前に** 1 回だけ走るので、検査するのは書き換える前の中身＝コミットされる中身と別物です。" +
@@ -558,6 +587,11 @@ export function commitTarget(command, cwd, tool = "Bash") {
   for (const i of writes) {
     if (gits[i].opaque) return { refuse: REFUSE_OPAQUE };
     const r = repoAt(cwd, gits[i].loc);
+    // B-377: a location option that does not resolve is not "another repo" —
+    // the shell may hand git a different path than the one read here. A bare
+    // `git commit` outside any repo is left alone: git resolves it from the
+    // same cwd and fails the same way.
+    if (!r && gits[i].loc.length) return { refuse: REFUSE_UNRESOLVED };
     if (!r || !samePath(r.common, own.common)) continue; // not a repo / another repo
     if (!roots.some((t) => samePath(t, r.top))) roots.push(r.top);
     lastOurs = i;
@@ -684,6 +718,10 @@ function requireStdinInput() {
 }
 
 function main() {
+  const deadline = Date.now() + GATE_BUDGET_MS;
+  const left = () => deadline - Date.now();
+  const overBudget = () =>
+    `${REFUSE_OVER_BUDGET.replace("{min}", String(Math.round(GATE_BUDGET_MS / 60000)))}\n${NOTHING_RAN}`;
   const input = requireStdinInput();
   if (!["Bash", "PowerShell"].includes(input.tool_name)) return;
   const command = (input.tool_input || {}).command || "";
@@ -714,7 +752,11 @@ function main() {
     return;
   }
 
-  const pre = runPytest(resolved.python, cwd, LEDGER_PREFLIGHT);
+  const pre = runPytest(resolved.python, cwd, LEDGER_PREFLIGHT, left());
+  if (pre.timedOut) {
+    deny(overBudget());
+    return;
+  }
   if (pre.code !== 0) {
     deny(`${LEDGER_ORDER}\n${NOTHING_RAN}\n\n\`\`\`\n${tail(pre.stdout + pre.stderr, MAX_OUT)}\n\`\`\``);
     return;
@@ -759,9 +801,14 @@ function main() {
 
   markStart(cwd, key);
   const started = Date.now();
-  const r = runPytest(resolved.python, cwd, targets);
+  const r = runPytest(resolved.python, cwd, targets, left());
   const ms = Date.now() - started;
 
+  if (r.timedOut) {
+    recordFinish(cwd, key, false, ms);
+    deny(`${overBudget()}\n（${label}・${Math.round(ms / 1000)} 秒で止めた）`);
+    return;
+  }
   if (r.code !== 0) {
     recordFinish(cwd, key, false, ms);
     deny(
@@ -784,7 +831,9 @@ export function versionChain(inputs, lastFull, versionText) {
   return versionLineOnly(lastFull.versionText, versionText);
 }
 
-function runPytest(python, cwd, args) {
+/** pytest with `args`, stopped after `timeoutMs` (B-377) →
+ *  {code, stdout, stderr, timedOut}. A stopped run is never a pass. */
+export function runPytest(python, cwd, args, timeoutMs = GATE_BUDGET_MS) {
   try {
     const stdout = execFileSync(python, ["-m", "pytest", ...args], {
       cwd,
@@ -792,13 +841,15 @@ function runPytest(python, cwd, args) {
       encoding: "utf-8",
       stdio: ["ignore", "pipe", "pipe"],
       maxBuffer: 10 * 1024 * 1024,
+      timeout: Math.max(1000, timeoutMs),
     });
-    return { code: 0, stdout, stderr: "" };
+    return { code: 0, stdout, stderr: "", timedOut: false };
   } catch (err) {
     return {
       code: typeof err.status === "number" ? err.status : 1,
       stdout: err.stdout || "",
       stderr: err.stderr || "",
+      timedOut: err.code === "ETIMEDOUT",
     };
   }
 }

@@ -20,10 +20,13 @@ import os
 import re
 import shutil
 import subprocess
+import sys
+import time
 
 import pytest
+from conftest import structural_skip
 
-_REPO = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+_REPO =os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
 _GATE = os.path.join(_REPO, "tools", "qa-hook", "pre-commit-gate.mjs")
 _SCOPE = os.path.join(_REPO, "tools", "qa-hook", "gate-scope.json")
 _CACHE = os.path.join(_REPO, "tools", "qa-hook", "pytest-cache.mjs")
@@ -656,7 +659,7 @@ def _ceiling_env(tmp_path) -> dict:
     return {**os.environ, "GIT_CEILING_DIRECTORIES": str(tmp_path)}
 
 
-_KINDS = ["REFUSE_UNREAD", "REFUSE_CHDIR", "REFUSE_OPAQUE", "REFUSE_REWRITE"]
+_KINDS = ["REFUSE_UNREAD", "REFUSE_CHDIR", "REFUSE_OPAQUE", "REFUSE_UNRESOLVED", "REFUSE_REWRITE"]
 
 
 def _targets(tmp_path, repo, cases) -> list:
@@ -700,6 +703,9 @@ class TestCommitTarget:
             # push
             ("git add -A && git commit -m x && git push", r, "Bash"): "r|push",
             # 解けない場所・作業ディレクトリを動かす
+            # B-377＝明示した場所が解けない＝「別のリポジトリ」として通さない
+            (f'git -C "{tmp_path / "no-such"}" commit -m x', r, "Bash"): "REFUSE_UNRESOLVED",
+            (f'git --git-dir="{tmp_path / "no-such"}" commit -m x', r, "PowerShell"): "REFUSE_UNRESOLVED",
             ("git -C $HOME/r commit -m x", r, "Bash"): "REFUSE_OPAQUE",
             ("git -C ~/r commit -m x", r, "Bash"): "REFUSE_OPAQUE",
             ("GIT_DIR=/x/.git git commit -m x", r, "Bash"): "REFUSE_OPAQUE",
@@ -729,12 +735,41 @@ class TestCommitTarget:
     @pytest.mark.skipif(os.name != "nt", reason="`\\` 区切りのパスは Windows でだけパスとして読める")
     def test_bash_drops_unquoted_backslashes_like_git_would_see(self, tmp_path):
         """bash は引用符なしの `\\` を落とす＝git に届くのは別のパス（git も同じく失敗する）。
-        PowerShell では `\\` はそのまま届く。"""
+        PowerShell では `\\` はそのまま届く。解けない場所は B-377 から断る（旧：素通し）。"""
         repo, _, outside = _hooked_repo(tmp_path)
         back = str(repo).replace("/", "\\")
         got = _targets(tmp_path, repo, [[f"git -C {back} commit -m x", str(outside), "Bash"],
                                         [f"git -C {back} commit -m x", str(outside), "PowerShell"]])
-        assert got == ["null", "r"]
+        assert got == ["REFUSE_UNRESOLVED", "r"]
+
+    @pytest.mark.skipif(os.name != "nt", reason="MSYS のドライブの書き方（/d/…）は Windows の Git Bash だけのもの")
+    def test_git_bash_drive_paths_are_this_repository(self, tmp_path):
+        """B-377 の実測の形＝`git -C /d/dev/radiosim-repo commit`。Git Bash は `/d/…` を
+        `D:/…` に読み替えて git に渡すので、コミットは本当にこのリポジトリへ入る。旧は
+        node から直に解いて null＝「別のリポジトリ」として何も検査せずに通した（3 本）。
+        PowerShell は読み替えない＝git にも解けない形なので断る。"""
+        repo, _, outside = _hooked_repo(tmp_path)
+        drive, rest = os.path.splitdrive(str(repo))
+        msys = f"/{drive[0].lower()}{rest.replace(os.sep, '/')}"
+        got = _targets(tmp_path, repo, [
+            [f"git -C {msys} add x && git -C {msys} commit -q -F - <<'EOF'\nm\nEOF", str(outside), "Bash"],
+            [f'git -C "{msys}" push', str(outside), "Bash"],
+            [f"git -C {msys} commit -m x", str(outside), "PowerShell"],
+        ])
+        assert got == ["r", "r|push", "REFUSE_UNRESOLVED"]
+
+    def test_msys_drive_is_read_only_on_windows(self, tmp_path):
+        src = _GATE.replace("\\", "/")
+        probe = tmp_path / "_probe_msys.mjs"
+        probe.write_text(
+            f'import {{ msysDrive }} from "file:///{src}";\n'
+            "process.stdout.write(JSON.stringify([\n"
+            "  msysDrive('/d/dev/r', 'win32'), msysDrive('/D', 'win32'), msysDrive('/tmp/x', 'win32'),\n"
+            "  msysDrive('/dev/r', 'win32'), msysDrive('D:/dev/r', 'win32'), msysDrive('/d/dev/r', 'linux'),\n"
+            "]));\n", encoding="utf-8")
+        out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                             check=True, timeout=60)
+        assert json.loads(out.stdout) == ["D:/dev/r", "D:/", "/tmp/x", "/dev/r", "D:/dev/r", "/d/dev/r"]
 
     def test_a_linked_worktree_is_this_repository(self, tmp_path):
         repo, _, outside = _hooked_repo(tmp_path)
@@ -864,3 +899,52 @@ class TestHookTreeFor:
         out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
                              check=True, timeout=60, env=_ceiling_env(tmp_path))
         assert json.loads(out.stdout) == ["r", "r", "r", "wt"]
+
+
+# ============================================================
+# B-377：ゲートは自分の持ち時間で止めて断る（配線の時間切れに殺されると通ってしまう）
+# ============================================================
+# 🔴 2026-11-08（Link 1.0 ステージ9）＝フルが配線の 900 秒を超え、7 本のコミットと
+# push が「ちょうど 15 分待って」検査なしで通った。Claude Code はフックの時間切れを
+# 止めない誤りとして扱い、殺されたゲートは何も言えない。
+class TestOwnBudget:
+    def _budget_ms(self, tmp_path) -> int:
+        src = _GATE.replace("\\", "/")
+        probe = tmp_path / "_probe_budget.mjs"
+        probe.write_text(f'import {{ GATE_BUDGET_MS }} from "file:///{src}";\n'
+                         "process.stdout.write(String(GATE_BUDGET_MS));\n", encoding="utf-8")
+        out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                             check=True, timeout=60)
+        return int(out.stdout)
+
+    def test_a_run_past_its_time_is_stopped_and_never_a_pass(self, tmp_path):
+        """持ち時間を過ぎた pytest は止まり、`timedOut` で返る（合格にしない）。"""
+        (tmp_path / "test_slow.py").write_text(
+            "import time\n\ndef test_slow():\n    time.sleep(30)\n", encoding="utf-8")
+        src = _GATE.replace("\\", "/")
+        probe = tmp_path / "_probe_run.mjs"
+        probe.write_text(
+            f'import {{ runPytest }} from "file:///{src}";\n'
+            f"const r = runPytest({json.dumps(sys.executable)}, {json.dumps(str(tmp_path))}, "
+            "['test_slow.py', '-q', '-p', 'no:cacheprovider'], 1500);\n"
+            "process.stdout.write(JSON.stringify({timedOut: r.timedOut, code: r.code}));\n",
+            encoding="utf-8")
+        started = time.monotonic()
+        out = subprocess.run(["node", str(probe)], capture_output=True, text=True, encoding="utf-8",
+                             check=True, timeout=60)
+        got = json.loads(out.stdout)
+        assert got["timedOut"] is True and got["code"] != 0
+        assert time.monotonic() - started < 25, "持ち時間で止まらず、試験の終わりまで待った"
+
+    def test_real_wiring_outlasts_the_gates_own_budget(self, tmp_path):
+        """配線の時間切れがゲートの持ち時間より 1 分以上長いこと＝ゲートが先に答える。
+        逆だと、配線がゲートを殺してコマンドを通す（B-377 の (B) そのもの）。"""
+        path = os.path.join(_REPO, ".claude", "settings.local.json")
+        if not os.path.exists(path):
+            pytest.skip(structural_skip(".claude/ は git-ignore（CI には存在しない）。"))
+        with open(path, encoding="utf-8") as f:
+            hooks = json.load(f).get("hooks", {})
+        wired = [h for g in hooks.get("PreToolUse", []) for h in g.get("hooks", [])
+                 if "pre-commit-gate.mjs" in h.get("command", "")]
+        assert len(wired) == 1, wired
+        assert wired[0].get("timeout", 60) * 1000 >= self._budget_ms(tmp_path) + 60_000, wired[0]
