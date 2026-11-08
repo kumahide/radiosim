@@ -13,7 +13,7 @@ tile_sources.py
 だけで、プロジェクト保存や条件探索の「条件」には入らない。
 
 🔑 **組み込み（国土地理院・淡色地図／航空写真）はこのモジュールに持たない**＝
-`views/map_window.py` の `_TILE_LAYERS` が引き続き持つ（label/attribution が
+`report/map_graphics.py` の `ATTR_KEYS`（出典表記）と `core/dem.py` の URL が持つ（表記が
 i18n キーで言語追従するため。DEM ソースの `GSI_DEM.display_name` のように
 固定文字列にすると英語 UI で日本語のまま出てしまう＝既存の翻訳を壊さない
 ための意図した非対称）。`all_sources()` が返すのは**利用者が宣言した分だけ**
@@ -51,7 +51,7 @@ class TileSourceSpec:
     terms_url: str
 
 
-#: 組み込み（`views/map_window.py` の `_TILE_LAYERS`）と衝突させない予約語。
+#: 組み込み（`report/map_graphics.py` の `ATTR_KEYS`）と衝突させない予約語。
 _RESERVED_SOURCE_IDS = frozenset({"pale", "photo"})
 
 #: `source_id` の許容書式＝英数字と `_-` のみ（`dem_sources.py` と同じ理由＝
@@ -167,7 +167,8 @@ def load_user_sources(path: str) -> "tuple[list[TileSourceSpec], list[tuple[str,
 def load_from(path: str) -> None:
     """`load_user_sources(path)` を呼び、結果をモジュール状態へ反映する。
 
-    起動時に 1 回呼ぶ（`main.py`）。以後 `all_sources()` はこの結果を参照する。
+    起動時に 1 回呼ぶ作り（呼んでいた旧画面の `main.py` は 4.0 で撤去・新しい画面が
+    呼ぶかは I-256 の判断待ち）。以後 `all_sources()` はこの結果を参照する。
     **読み込みに失敗しても例外を投げない**（起動を止めない）。
     """
     global _user_sources, _load_reports
@@ -182,7 +183,7 @@ def load_reports() -> list[tuple[str, str]]:
 def all_sources() -> tuple[TileSourceSpec, ...]:
     """利用者が宣言ファイルで足した背景地図タイルソースの一覧（組み込みは含まない）。
 
-    組み込み（淡色地図・航空写真）は `views/map_window.py:_TILE_LAYERS` が
+    組み込み（淡色地図・航空写真）は `report/map_graphics.py:ATTR_KEYS` が
     別に持つ＝呼び出し側でこの戻り値と合成する。
     """
     return tuple(_user_sources)

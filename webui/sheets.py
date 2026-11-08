@@ -133,7 +133,7 @@ def check(name: Any, value: Any) -> Any:
 # 型への変換（実行と保存のとき）＝誤りは画面の字の ValueError
 # ============================================================
 def _number(text: str, label: str) -> float:
-    """欄の文字列 → 数。読めない値は欄の名前つきで弾く（`views/scenario._number` と同じ字）。"""
+    """欄の文字列 → 数。読めない値は欄の名前つきで弾く（旧画面の `views/scenario._number` と同じ字）。"""
     try:
         return float(text)
     except ValueError:
@@ -234,7 +234,7 @@ def conditions(spec: "dict[str, Any]") -> "tuple[list[scn.Condition], str, list[
 
 
 def multihop_path(sheet: "dict[str, Any]") -> Any:
-    """中継の入力 → `MultiHopPath`（`views/multihop._collect_path` と同じ組み立て）。
+    """中継の入力 → `MultiHopPath`（旧画面の `views/multihop._collect_path` と同じ組み立て）。
 
     座標は `coords.parse_pair`（DD と DMS の両方）・名前が空なら `P{i}`・区間の空欄は共通設定を踏襲。
     中継の形（点の数・区間の数・高さの範囲）は `multihop.validate_path`。

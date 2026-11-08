@@ -42,7 +42,7 @@
     必須）ので、ファイルの中だけで可搬にはできない＝ここで人が書き換える。
 
     書き換えたらこのファイルをダブルクリックする。Sandbox の中で
-      C:\Users\WDAGUtilityAccount\Desktop\dist\RadioSimPro-Setup-<版>.exe
+      C:\Users\WDAGUtilityAccount\Desktop\dist\RadioSimLink-Setup-<版>.exe
     を実行する（デスクトップに dist が読み取り専用でマップされる）。
 
   ⚠️ 注意:

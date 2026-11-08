@@ -98,8 +98,8 @@ def effective_spacing(params: "SimParams") -> float:
     return terrain_grid.effective_spacing_m(dist_m, params.num)
 
 
-#: 点数と刻みを出す字のキー（`compact` の別に**両方**）。⚠️ **欄の幅を決める側**
-#: （`views.frozen_common.sampling_field_width`）がここを読む＝字を足したらこの表に
+#: 点数と刻みを出す字のキー（`compact` の別に**両方**）。⚠️ 欄の幅を決める側が
+#: ここを読む作り（旧画面の `sampling_field_width`＝4.0 で撤去）＝字を足したらこの表に
 #: 足す。足し忘れると**その字だけ欄からはみ出す**（B-149 と同じ形）。
 SAMPLING_READOUT_KEYS: dict[bool, tuple[str, str]] = {
     True:  ("res_fixed_value", "res_fixed_value_pixel"),   # 凍結バー（狭い）

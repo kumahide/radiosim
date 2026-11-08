@@ -10,5 +10,5 @@ webui/
 - `__main__.py` … `python -m webui` の入口
 
 🔑 **tkinter を引かない**（I-144 の「新しい画面は tkinter なし」）＝`tests/test_smoke.py` が縛る。
-層は `views/` と同じ位（`core/` と `report/` を引いてよい・`views/` とは互いに引かない）。
+層は画面の位（`core/` と `report/` を引いてよい・下からは引かれない＝`tests/test_layers.py`）。
 """

@@ -1,6 +1,6 @@
 ﻿; RadioSim Link - Inno Setup インストーラスクリプト（4.0 ステージ8d・I-144）
 ;
-; 本体（installer/radiosim.iss）の写しから作った。違いは 3 つだけ:
+; 旧画面のインストーラ（installer/radiosim.iss＝4.0 で撤去）の写しから作った。違いは 3 つ:
 ;   1. 同梱するのは embeddable Python の木（buildtools/build_link.py が作る
 ;      dist\RadioSimLink\）＝自前の exe が無い。起動は PSF の署名がある
 ;      pythonw.exe -m webui（PyInstaller の exe が Smart App Control に 2 回

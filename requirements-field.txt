@@ -1,8 +1,8 @@
 # RadioSim Field (apps/field) only — NOT part of the main app.
 #
 # Why a separate file:
-#   requirements.txt is what goes INTO the packaged RadioSim exe. The Field is a
-#   separate app that is never bundled (radiosim.spec must not reference apps/),
+#   requirements.txt is what goes INTO the packaged RadioSim Link. The Field is a
+#   separate app that is never bundled (buildtools/build_link.py copies only core/ and webui/),
 #   so its runtime needs stay out of the main app's dependency surface.
 #   The Field's tests do not need anything here (the serial port is only opened
 #   by `python -m apps.field.cli record`), so CI does not install this file.

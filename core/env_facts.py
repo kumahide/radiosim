@@ -111,7 +111,7 @@ def sanitized_config() -> dict[str, str]:
 def _system_dpi() -> "int | None":
     """システム全体の DPI（取れない環境・非 Windows では None）。
 
-    ウィンドウごとの実 DPI（`views/theme.py::window_dpi`）とは違い、**ウィンドウを
+    ウィンドウごとの実 DPI（旧画面の `window_dpi`＝4.0 で撤去）とは違い、**ウィンドウを
     持たずに**答えられる値だけを見る＝この層は tkinter を引かない
     （`tests/test_layers.py` が core の純度を検査する）。
     """

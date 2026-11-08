@@ -15,7 +15,7 @@ GUI・ネットワーク・ファイル I/O を一切持たない（models.py / 
 
 なぜ独立モジュールなのか:
   以前は距離書式が map_graphics.distance_text（PIL 描画モジュール）と
-  report.py / views/graph.py のインライン f-string に散在していた。置き場が
+  report.py / 旧画面の断面図（views/graph.py）のインライン f-string に散在していた。置き場が
   無いと次の距離表示追加でまた散るので、**表示単位の整形をここ 1 箇所へ**
   集約する（設計哲学⑦＝単一源泉の精神）。
 """

@@ -1,9 +1,10 @@
 """版の字 → Windows の 4 数字バージョン（`core.version.version_tuple`）。
 
-🔴 **このゲートが無かったから B-162 が出た**＝変換は `radiosim.spec` の中に在り、
-spec は PyInstaller が exec するファイルなのでテストから import できない。
+🔴 **このゲートが無かったから B-162 が出た**＝変換は旧画面の `radiosim.spec`（4.0 で撤去）の中に在り、
+spec は PyInstaller が exec するファイルなのでテストから import できなかった。
 ⇒ **どのゲートも見ていない場所に、配布物のメタデータを決める規則が置いてあった**。
-規則を `core/version.py` へ移し、ここで段階の順序そのものを検査する。
+規則を `core/version.py` へ移し、ここで段階の順序そのものを検査する（今の使い手は
+`buildtools/build_link.py` の version.txt＝インストーラの版比べ）。
 
 ⚠️ **見るのは「値」ではなく「順序」**＝定数を写した検査は、次に段階を増やした日に
 素通りする（[[feedback-promote-recurring-checks]] の壊れ方③）。

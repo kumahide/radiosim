@@ -287,7 +287,8 @@ def load_user_sources(path: str) -> "tuple[list[DemSourceSpec], list[tuple[str, 
 def load_from(path: str) -> None:
     """`load_user_sources(path)` を呼び、結果をモジュール状態へ反映する。
 
-    起動時に 1 回呼ぶ（`main.py`）。以後 `all_sources()`/`resolve()` はこの結果を
+    起動時に 1 回呼ぶ作り（呼んでいた旧画面の `main.py` は 4.0 で撤去・新しい画面が
+    呼ぶかは I-256 の判断待ち）。以後 `all_sources()`/`resolve()` はこの結果を
     参照する。**読み込みに失敗しても例外を投げない**（起動を止めない）。
     """
     global _user_sources, _load_reports

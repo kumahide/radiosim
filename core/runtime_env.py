@@ -10,7 +10,8 @@ core/runtime_env.py
 
   - `build.bat`      → 未設定なら即中止
   - `pytest`         → `tests/conftest.py` が宣言と食い違えば収集前に停止
-  - `python main.py` → **何も見ていない**
+  - `python -m webui` → **何も見ていない**（旧画面の `main.py` は起動時に警告していた。
+    新しい画面で知らせるかは I-256 の判断待ち）
 
 この機では素の `python` にも依存が入っており、**版だけが違う**（実測 2026-08-08＝
 どちらも Python 3.14.4 だが matplotlib は宣言環境 3.11.1 / 素の python 3.10.9）。
@@ -28,7 +29,7 @@ core/runtime_env.py
 素の Python × 食い違い」だけ。
 
 ⚠️ **規則をここ 1 か所に置く**＝正規化（大小・区切り・シンボリックリンク）を
-`conftest` と `main.py` が別々に書くと、片方だけ直したときに**同じ質問に 2 つの
+`conftest` と起動口が別々に書くと、片方だけ直したときに**同じ質問に 2 つの
 答え**が出る（B-046 の「同じ 21 文字が 3 か所」と同型）。
 """
 
@@ -59,7 +60,7 @@ def same_interpreter(a: str, b: str) -> bool:
 
 
 #: 配布形の 3 値（`packaging()` の答え）。
-PACKAGING_EXE = "exe"                 # PyInstaller で固めた exe（旧画面・ステージ11 の撤去まで）
+PACKAGING_EXE = "exe"                 # PyInstaller で固めた exe（旧画面の配布形＝4.0 で撤去。判定は残す）
 PACKAGING_EMBEDDABLE = "embeddable"   # python.org の embeddable Python に同梱（新しい画面・I-144）
 PACKAGING_SOURCE = "source"           # リポジトリのソースを素の Python で走らせている
 
@@ -128,5 +129,5 @@ def mismatch_message(declared: str, running: str) -> str:
         f"  実行 : {running}\n"
         "依存ライブラリの版が宣言環境と違う可能性があります"
         "（同じ Python でも版だけ違う状態は警告なしに起こります）。"
-        f'正式な起動は  & "$env:{DECLARED_ENV}" main.py  です。'
+        f'正式な起動は  & "$env:{DECLARED_ENV}" -m webui  です。'
     )

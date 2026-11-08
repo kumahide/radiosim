@@ -83,7 +83,7 @@ def main(argv: "list[str] | None" = None) -> int:
     ap = argparse.ArgumentParser(description=__doc__)
     g = ap.add_mutually_exclusive_group()
     g.add_argument("--repo", action="store_true",
-                   help="リポジトリ直下（ソースから main.py を実行して確認する場合）")
+                   help="リポジトリ直下（ソースから python -m webui で確認する場合）")
     g.add_argument("--appdata", action="store_true",
                    help="インストーラ版の設定フォルダ（%%APPDATA%%\\RadioSim\\Link）")
     g.add_argument("--target", help="配置先を直接指定する")

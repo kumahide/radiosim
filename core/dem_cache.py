@@ -28,7 +28,8 @@ from core.config import logger
 
 
 # 国土地理院のレベルラベル＝**既存の "5a"/"5b"/"dem" を1文字も変えない**
-# （`views/map_style.py` の `_LEVEL_COLORS` と地図色分けが直接依存している）。
+# （保存したプロジェクトと DEM の取得元の表示がこの字を持つ。旧画面の地図の
+# 色分け〔`_LEVEL_COLORS`〕も依存していた＝4.0 で撤去）。
 _GSI_LEVEL_LABELS: dict[str, str] = {
     "dem5a_png": "5a", "dem5b_png": "5b", "dem_png": "dem",
 }
@@ -416,7 +417,7 @@ def delete_tile_cache(
 
     # 淡色地図（basemap）タイルは範囲削除の対象にしない。範囲削除はマップ
     # ウィンドウで可視化される DEM カバレッジに対する操作であり、basemap は
-    # そこに表示されない（背景地図は tkintermapview 自前タイル・カバレッジ塗りは
+    # そこに表示されない（旧画面の背景地図は地図部品の自前タイル・カバレッジ塗りは
     # DEM のみ）。見えないものを範囲指定で黙って消すのを避け、件数表示
     # （count_cached_areas=DEM のみ）とも整合させる。basemap は「全キャッシュ
     # 削除」（delete_all_tile_cache）でのみ消える。
@@ -470,8 +471,8 @@ def get_basemap_cache_stats() -> dict:
     """背景地図（帳票サムネイル用の背景地図）キャッシュの枚数と総バイト数。
 
     I-155（3.5 ステージ3）＝`delete_all_tile_cache` のソース単位選択で「背景地図」を
-    独立した対象として扱うための対。地図ウィンドウプレビューの背景タイルは
-    `tkintermapview` が持ちこの層には含まれない（`fetch_basemap_tiles` の
+    独立した対象として扱うための対。画面の地図が表示に使う背景タイルは
+    この層には含まれない（`fetch_basemap_tiles` の
     ディスクキャッシュのみが対象）。
 
     B-248＝地図ウィンドウの選択に追従して `"pale"` 以外（`photo`／宣言した外部

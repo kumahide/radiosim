@@ -3,8 +3,8 @@
   --fg: #1f2328;
   --muted: #59636e;
   --line: #d1d9e0;
-  /* 判定の色＝帳票と同じ（`report/map_graphics.STATUS_HEX`）。ダークは旧画面と同じ
-     （`views/theme._VERDICT["dark"]`）。test_webui が CSS を読んで比べる。 */
+  /* 判定の色＝帳票と同じ（`report/map_graphics.STATUS_HEX`）。ダークは旧画面（4.0 で撤去）の
+     色を引き継いだ。test_webui が CSS を読んで、どの語も明暗の両方で色が分かれるかを見る。 */
   --ok: #2e7d32;
   --ng: #c62828;
   --review: #6a1b9a;

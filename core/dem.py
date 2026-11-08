@@ -142,8 +142,8 @@ BASEMAP_SUBDIR: str = "basemap_pale"
 #: 定数を読むこと。
 BASEMAP_EXTRA_SUBDIR: str = "basemap"
 
-# 組み込み背景地図の URL テンプレート（B-248・`views/map_window.py:_TILE_LAYERS`
-# と同じ値をここにも持つ）。⚠️ **表示名・出典表記は views 側が i18n 越しに持つ**
+# 組み込み背景地図の URL テンプレート（B-248）。⚠️ **表示名・出典表記は
+# `report/map_graphics.py` の `ATTR_KEYS` が i18n 越しに持つ**
 # （言語追従が要る）ので、ここは URL 解決専用＝重複はこの非対称のため意図的
 # （`core/tile_sources.py` の docstring と同じ理由）。
 _BASEMAP_BUILTIN_URLS: dict[str, str] = {

@@ -6,8 +6,8 @@
 リリース前チェックリスト（公開＝gh release 前に目視確認）:
   [ ] version.py APP_VERSION が目標版
   [ ] CHANGELOG.md に当該版セクション
-  [ ] ⚠ 公開文書 ×4 本文に新機能を反映 — 利用者向け(docs/manual_ja|en＝exe 同梱)を最優先、次に開発者向け(docs/developer_ja|en)。H1 の版もこの 4 本（入口の README.md は版を持たない）
-  （radiosim.spec の版は更新不要＝core.version から導出する。2026-08-13 に実物と照合）
+  [ ] ⚠ 公開文書 ×4 本文に新機能を反映 — 利用者向け(docs/manual_ja|en＝配布物に同梱)を最優先、次に開発者向け(docs/developer_ja|en)。H1 の版もこの 4 本（入口の README.md は版を持たない）
+  （インストーラの版〔version.txt〕は更新不要＝build_link.py が core.version から導出する）
   [ ] Tier-0 ゲート緑: pytest(test_docs_consistency 含む)/pyright/ruff/bandit
   [ ] ⛔ 表示のある機械でフルスイートを回した — 表示依存の面は CI で構造的に 1 本も走らない（ランナーに表示が無く、xvfb を足しても assert が Windows のフォント実測ピクセルなので同じ検査にならない）。回すと .qa/display_run.json へ自動で刻まれ、このスクリプトが上に字で出す（2026-08-12 に昇格＝B-074。2.7 のスケール追従ゲートは CI で skip・開発機で赤のまま RC と正式を通過した）
   [ ] ⛔ 独立レビュー(tools\codex_review\run.ps1 -Mode code -Base <前の正式タグ>)を受け、指摘を ISSUES.md へ起票し対応版を決めた — RC/正式はブロッキング(観点を指定せず生の差分を渡す/結果は原文で受ける/裏取りしてから受け入れる)。⚠ 1312 でシェルが起動できず「差分を読めない」と返った回は成果に数えず打ち直す。⚠ 直しを入れたら次の巡に必ず掛ける(2026-08-16＝私が足した検査そのものに穴があり、同日の次の巡が見つけた)
@@ -19,10 +19,10 @@
   [ ] 環境クイック確認: フック実働（SessionStart/Stop/pre-push）・残課題リスト（4b以降/2.4スコープ）の再確認
       ※ CI の状態はこのスクリプトが上に字で出す（2026-08-11 に昇格＝「CI 緑」の 1 行は読み飛ばされ、赤のまま RC と正式を通過した）
   [ ] 大版（X.0）または環境変動（マシン/Python/主要依存の更新）後の初リリースなら: フル環境監査を実施するか判断（前回=2026-10-13・検査面はメモリ feedback-version-boundary-review の §5 が正典）
-  [ ] 公開文書のスクショが現行版の画面と一致するか目視照合（docs/screenshots.md が構図の正典）— 撮影は RC1 の実機確認と同時に済ませ、ここでは見比べるだけ。動いていたら撮り直す。⛔ ビルドより前に差し替える（画像は spec の datas でファイルとして同梱されるので、ビルド後に差し替えても配布物には入らない＝2.3RC1 と同じ穴。⚠️ 同梱 README 内に base64 は無いのが正常＝畳むのは README ビューアが描画するとき）
-  [ ] dist 同梱の利用者向け文書（_internal\docs\manual_ja|en.md）が更新版か grep 確認・exe FileVersion が目標版
-  [ ] dist\RadioSimPro-X.Y[RCn].zip が存在し exe と同じ LastWriteTime か確認（3.2 ステージ11・I-126＝build.bat が zip も自動生成するようになったので、人が Compress-Archive する工程は無い。ここで見るのは作り忘れではなく取り違えの有無）
-  [ ] ⛔ 3.1以降: インストーラも別ビルド（build.bat installer）した — zipモードとは別に PyInstaller をやり直す仕様。RadioSimPro-Setup-X.Y[RCn].exe の存在・日時を確認（v3.1RC1 でこの工程が丸ごと抜け、gh release に zip しか上がらなかった）
+  [ ] 公開文書のスクショが現行版の画面と一致するか目視照合（docs/screenshots.md が構図の正典）— 撮影は RC1 の実機確認と同時に済ませ、ここでは見比べるだけ。動いていたら撮り直す。⛔ ビルドより前に差し替える（同梱する文書と画像はビルドのときに写すので、ビルド後に差し替えても配布物には入らない＝2.3RC1 と同じ穴）
+  [ ] dist\RadioSimLink\ に同梱した利用者向け文書が更新版か grep 確認・version.txt が目標版の 4 数字
+  [ ] dist\RadioSimLink-X.Y[RCn].zip が存在し dist\RadioSimLink\ と同じ頃の LastWriteTime か確認（build.bat が zip を作るので人が Compress-Archive する工程は無い。ここで見るのは作り忘れではなく取り違えの有無）
+  [ ] ⛔ インストーラも別ビルド（build.bat installer）した — zip とは別の実行で木を作り直す仕様。RadioSimLink-Setup-X.Y[RCn].exe の存在・日時を確認（v3.1RC1 でこの工程が丸ごと抜け、gh release に zip しか上がらなかった）
   [ ] ⛔ インストーラをコンパイルしたのは Inno Setup 7 か（build.bat が版を確かめて止めるが、RADIOSIM_ISCC_ANY_VERSION=1 を宣言していると素通りする＝I-125）
   [ ] ⛔ 公開の**前に** push 済みか＝git status -sb が ahead を出していないこと（gh release create --target main が見るのは**リモートの** main。未 push だと 1 つ前のコミットにタグが打たれ、zip の中身とタグの指すソースが食い違う＝2026-08-16 の 2.8RC1 で実際に踏んだ。fetch して気づいたので、下の「直後」より 1 段手前に置く）
   [ ] ⛔ push を確かめた**後で** gh release create に zip とインストーラ exe の**両方**を渡した（この項目より前に release を作ると、1 つ上の「未 push のまま古い main にタグを打つ」を自分で誘発する）

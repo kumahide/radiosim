@@ -26,7 +26,7 @@ _FINAL_RANK = 9999
 
 
 def version_tuple(v: str = APP_VERSION) -> tuple[int, int, int, int]:
-    """版の字を Windows の 4 数字バージョンへ直す（`radiosim.spec` の EXE 情報が使う）。
+    """版の字を Windows の 4 数字バージョンへ直す（`buildtools/build_link.py` の version.txt＝インストーラの版比べが使う）。
 
     `'2.0'` → `(2, 0, 0, 9999)` ／ `'2.1.3'` → `(2, 1, 3, 9999)` ／
     `'2.0RC2'` → `(2, 0, 0, 2)` ／ `'3.0a1'` `'3.0b1'` → `(3, 0, 0, 0)`。

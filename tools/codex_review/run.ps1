@@ -279,7 +279,7 @@ else {
 
     # 公開文書 6 本 ＋ CHANGELOG は実体をコピー（staging の外は見せない）
     # 🔴 **glossary.md は 2026-09-05 に足した（round73 が自分で気づいた）**＝画面に出る語の
-    #    正典で、しかも exe に同梱される（`radiosim.spec` の datas）のに**この面へ一度も
+    #    正典で、しかも旧画面の exe に同梱されていた（`radiosim.spec` の datas）のに**この面へ一度も
     #    渡していなかった**＝日英の用語整合だけが構造的に無検査だった。
     $docs = @(
         'README.md', 'CHANGELOG.md',

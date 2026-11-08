@@ -1,7 +1,7 @@
 # ビルド出力（build.bat が --distpath / --workpath で作る）。
 dist/
 build/
-RadioSimPro-*.zip
+RadioSimLink-*.zip
 
 # Nuitka の実測用スクラッチビルド（I-140 ステージ5・配布物ではない）
 nuitka_out/
