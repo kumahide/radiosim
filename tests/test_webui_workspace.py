@@ -19,6 +19,7 @@ import threading
 
 import pytest
 
+from core import config
 from core import scenario as scn
 from core import simulation as sim
 from core import verdict as vd
@@ -571,3 +572,7 @@ def test_the_sheet_spec_follows_the_workspaces_and_the_typed_side():
     assert [c["key"] for c in spec["waypoints"]] == ["name", "coord", "h"]
     assert all(c["label"] for part in ("batch", "compare", "waypoints", "hops")
                for c in spec[part])
+    assert {c["input"] for c in spec["compare"]} <= set(config.SIM_KEYS)
+    assert {c["key"] for c in spec["hops"]} <= set(config.SIM_KEYS)   # 区間の薄字＝共通設定
+    assert spec["limits"] == {"compare": scn.MAX_COMPARE_CONDITIONS,
+                              "waypoints": sheets.MAX_WAYPOINTS}

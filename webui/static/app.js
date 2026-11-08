@@ -109,6 +109,8 @@ function showBreakdown(h) {
 
 // ---- 見出し ---------------------------------------------------------------
 function showHeadline(h) {
+  headline = h;
+  showSheetResults(h);
   showProfile(h);
   const band = document.getElementById("band");
   const word = document.getElementById("band-word");
@@ -116,10 +118,16 @@ function showHeadline(h) {
   const range = document.getElementById("band-range");
   const flipped = document.getElementById("band-flipped");
   band.dataset.kind = h.kind;
-  band.dataset.word = h.word || "";
+  band.dataset.word = h.kind === "sheet" ? h.overall || "" : h.word || "";
   range.textContent = "";
   flipped.textContent = "";
-  if (h.kind === "verdict") {
+  if (h.kind === "sheet") {
+    // 作業面＝全件そろえば全体の語と語ごとの件数（0 件も言う）・途中は進み具合
+    word.textContent = h.overall || fmt(labels.sheet_progress || "", { done: h.done, total: h.total });
+    detail.textContent = h.counts
+      ? Object.keys(h.counts).map((k) => `${k} ${h.counts[k]}`).join(" · ")
+      : "";
+  } else if (h.kind === "verdict") {
     const dB = (v) => Number(v).toFixed(dbDigits);
     word.textContent = h.word;
     detail.textContent = `${labels.margin || ""} ${dB(h.margin)} dB · ${labels.p_rx || ""} ${dB(h.p_rx)} dBm`;
@@ -145,11 +153,12 @@ function parseLatLon(text) {
 }
 
 function showInputs(inputs) {
+  current = inputs;
   document.querySelectorAll("[data-key]").forEach((el) => {
     const key = el.dataset.key;
     if (document.activeElement !== el && !(key in pending)) el.value = inputs[key] || "";
   });
-  if (dragging) return;                    // ドラッグ中のピンを古い値へ戻さない
+  if (dragging || workspace !== "single") return;   // ドラッグ中のピンを古い値へ戻さない
   const a = parseLatLon(inputs.start);
   const b = parseLatLon(inputs.end);
   if (map && a && b) {
@@ -181,7 +190,11 @@ function initMap(basemap) {
     interactive: false, opacity: 0, keyboard: false,
     icon: L.divIcon({ className: "", iconSize: [10, 10], iconAnchor: [5, 5], html: '<div class="cursor"></div>' }),
   }).addTo(map);
-  new ResizeObserver(() => { map.invalidateSize(); drawProfile(); }).observe(document.getElementById("view"));
+  sheetLayer = L.layerGroup().addTo(map);
+  // 作業面を変えると下の段の高さが変わる＝地図と断面図の両方を見張る
+  const resized = new ResizeObserver(() => { map.invalidateSize(); drawProfile(); });
+  resized.observe(document.getElementById("map"));
+  resized.observe(document.getElementById("profile"));
 }
 
 const latLonText = (ll) => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
@@ -211,9 +224,20 @@ function makePin(key, text, at) {
   return marker;
 }
 
+// ホバーの位置を測る線の両端＝1 回線はピン・作業面は選んだ件の両端（無ければ null）
+function hoverEnds() {
+  if (workspace === "single") {
+    return pins.start ? [pins.start.getLatLng(), pins.end.getLatLng()] : null;
+  }
+  const it = selected === null ? null : sheetItems[selected];
+  return it && it.tx && it.rx ? [L.latLng(it.tx), L.latLng(it.rx)] : null;
+}
+
 function onPathHover(e) {
-  const a = map.latLngToLayerPoint(pins.start.getLatLng());
-  const b = map.latLngToLayerPoint(pins.end.getLatLng());
+  const ends = hoverEnds();
+  if (!ends) return;
+  const a = map.latLngToLayerPoint(ends[0]);
+  const b = map.latLngToLayerPoint(ends[1]);
   const p = e.layerPoint;
   const dx = b.x - a.x;
   const dy = b.y - a.y;
@@ -228,8 +252,14 @@ const PAD = { l: 56, r: 16, t: 10, b: 34 };
 
 function showProfile(h) {
   const box = document.getElementById("profile");
-  if (h.kind === "verdict" && h.profile) profile = h.profile;
-  box.dataset.stale = h.kind === "verdict" ? "" : "1";   // 古い断面は残して薄くする（内訳と同じ）
+  if (workspace === "single") {
+    if (h.kind === "verdict" && h.profile) profile = h.profile;
+    box.dataset.stale = h.kind === "verdict" ? "" : "1";   // 古い断面は残して薄くする（内訳と同じ）
+  } else {
+    // 作業面＝選んだ行の断面（`/api/profile` で版つきで取る）。版が進めば薄くする
+    box.dataset.stale = h.kind === "sheet" && profileFor === `${h.version}:${selected}` ? "" : "1";
+    fetchRowProfile(h);
+  }
   drawProfile();
 }
 
@@ -286,7 +316,8 @@ function drawProfile() {
   if (!profile) {
     g.fillStyle = muted;
     g.textAlign = "center";
-    g.fillText(labels.profile_later || "", w / 2, h / 2);
+    const pick = workspace !== "single" && selected === null;
+    g.fillText((pick ? labels.pick_row : labels.profile_later) || "", w / 2, h / 2);
     return;
   }
   const p = profile;
@@ -371,12 +402,12 @@ function drawProfile() {
 
 function setHover(frac) {
   hoverFrac = frac;
+  const ends = hoverEnds();
   if (cursor) {
-    if (frac === null || !pins.start) {
+    if (frac === null || !ends) {
       cursor.setOpacity(0);
     } else {
-      const a = pins.start.getLatLng();
-      const b = pins.end.getLatLng();
+      const [a, b] = ends;
       cursor.setLatLng([a.lat + (b.lat - a.lat) * frac, a.lng + (b.lng - a.lng) * frac]).setOpacity(1);
     }
   }
@@ -393,6 +424,395 @@ function hookProfile() {
   canvas.addEventListener("mouseleave", () => setHover(null));
 }
 hookProfile();
+
+// ---- 作業面（ステージ10c）＝切り替え・面の表・地図の全経路・行の断面図 ------------
+let spec = null;                           // サーバーの `sheet_spec()`
+let workspace = "single";
+let current = {};                          // 入力の集合（基準の行と区間の薄字）
+let sheets = null;                         // 面の入力＝画面で直した写し（送る元）
+const dirty = new Set();                   // 送りかけの面
+let sheetTimer = null;
+let inflight = 0;
+let wsPending = 0;
+let headline = { kind: "computing" };
+let sheetItems = [];                       // 直近の作業面の結果（表と地図）
+let sheetItemsWs = null;
+let selected = null;                       // 選んだ行（件の番号）
+let profileFor = null;                     // 手元の断面の "版:件"
+let sheetLayer = null;
+let fittedSig = "";
+
+const dB = (v) => Number(v).toFixed(dbDigits);
+
+function el(tag, props, children) {
+  const e = document.createElement(tag);
+  Object.assign(e, props || {});
+  (children || []).forEach((c) => e.append(c));
+  return e;
+}
+
+function button(text, onClick, disabled) {
+  const b = el("button", { type: "button", textContent: text || "", disabled: !!disabled });
+  b.addEventListener("click", onClick);
+  return b;
+}
+
+// 表の欄＝打ったら面の入力を丸ごと送る（300ms 待つ）
+function cellInput(obj, key, cls, placeholder) {
+  const i = el("input", { value: obj[key] || "", className: cls || "", spellcheck: false, autocomplete: "off" });
+  if (placeholder) i.placeholder = placeholder;
+  i.addEventListener("input", () => { obj[key] = i.value; markDirty(DEBOUNCE_MS); });
+  return i;
+}
+
+function cellSelect(obj, key, options, blank) {
+  const s = el("select");
+  if (blank) s.append(el("option", { value: "", textContent: "" }));
+  options.forEach(([v, t]) => s.append(el("option", { value: v, textContent: t })));
+  s.value = obj[key] || "";
+  s.addEventListener("change", () => { obj[key] = s.value; markDirty(0); });
+  return s;
+}
+
+function td(child, cls) {
+  const c = el("td", { className: cls || "" });
+  if (child !== undefined) c.append(child);
+  return c;
+}
+
+function gridTable(heads) {
+  const table = el("table", { className: "grid" });
+  table.append(el("thead", {}, [el("tr", {}, heads.map((h) => el("th", { textContent: h || "" })))]));
+  const body = el("tbody");
+  table.append(body);
+  return [table, body];
+}
+
+const resultHeads = () => [labels.col_verdict, labels.margin, labels.p_rx];
+
+// 結果の 3 列（判定・マージン・受信レベル）を持つ行＝件の番号で結果を差す
+function itemRow(item, cells) {
+  const tr = el("tr", {}, cells);
+  tr.dataset.item = String(item);
+  ["word result", "num result", "num result"].forEach((c) => tr.append(td(undefined, c)));
+  tr.addEventListener("click", () => selectRow(item));
+  return tr;
+}
+
+function markDirty(delay) {
+  dirty.add(workspace);
+  if (sheetTimer) clearTimeout(sheetTimer);
+  sheetTimer = setTimeout(flushSheet, delay);
+}
+
+async function flushSheet() {
+  sheetTimer = null;
+  const body = {};
+  dirty.forEach((name) => { body[name] = sheets[name]; });
+  dirty.clear();
+  inflight++;
+  try {
+    await postInputs({ sheets: body });
+  } finally {
+    inflight--;
+  }
+}
+
+function postInputs(body) {
+  return fetch("/api/inputs", { method: "POST", headers: HEAD, body: JSON.stringify(body) });
+}
+
+function sheetBusy() {
+  const a = document.activeElement;
+  const typing = a && document.getElementById("sheet").contains(a) && /^(INPUT|SELECT)$/.test(a.tagName);
+  return sheetTimer !== null || inflight > 0 || typing;
+}
+
+// ポーリングの面の入力＝表の中に焦点が無く送りかけも無いときだけ描き直す
+function receiveSheets(s) {
+  if (!s || (sheets && sheetBusy())) return;
+  if (sheets && JSON.stringify(s) === JSON.stringify(sheets)) return;
+  sheets = s;
+  renderSheet();
+}
+
+function buildTabs() {
+  const nav = document.getElementById("tabs");
+  nav.replaceChildren();
+  spec.workspaces.forEach((w) => {
+    const b = button(w.label, () => {
+      if (w.key === workspace) return;
+      setWorkspace(w.key);
+      wsPending++;                         // 送り終えるまでポーリングの古い面で戻さない
+      postInputs({ workspace: w.key }).finally(() => { wsPending--; });
+    });
+    b.setAttribute("role", "tab");
+    b.dataset.ws = w.key;
+    nav.append(b);
+  });
+}
+
+function setWorkspace(key) {
+  const changed = key !== workspace;
+  workspace = key;
+  document.body.dataset.ws = key;
+  document.querySelectorAll("#tabs button").forEach((b) => {
+    b.setAttribute("aria-selected", String(b.dataset.ws === key));
+  });
+  if (!changed) return;
+  selected = null;
+  profile = null;
+  profileFor = null;
+  hoverFrac = null;
+  if (key !== sheetItemsWs) sheetItems = [];
+  document.getElementById("sheet").hidden = key === "single";
+  document.getElementById("sheet-note").textContent = "";
+  [path, pins.start, pins.end].forEach((layer) => {
+    if (!layer || !map) return;
+    if (key === "single") layer.addTo(map); else map.removeLayer(layer);
+  });
+  if (key === "single") showInputs(current);
+  renderSheet();
+  drawSheetLines();
+  drawProfile();
+}
+
+function renderSheet() {
+  const tools = document.getElementById("sheet-tools");
+  const body = document.getElementById("sheet-body");
+  tools.replaceChildren();
+  body.replaceChildren();
+  if (workspace === "single" || !spec || !sheets) return;
+  if (workspace === "batch") renderBatch(tools, body);
+  else if (workspace === "scenario") renderScenario(tools, body);
+  else renderMultihop(tools, body);
+  showSheetResults(headline);
+}
+
+// 複数経路＝行の追加・削除（選んだ行・無ければ末尾）・CSV の読み込み
+function renderBatch(tools, body) {
+  const rows = sheets.batch;
+  tools.append(
+    button(labels.add_row, () => {
+      const used = rows.map((r) => parseInt(r.id, 10)).filter(Number.isFinite);
+      rows.push({ id: String(used.length ? Math.max(...used) + 1 : rows.length + 1) });
+      renderSheet();
+      markDirty(0);
+    }),
+    button(labels.del_row, () => {
+      rows.splice(selected !== null && selected < rows.length ? selected : rows.length - 1, 1);
+      selected = null;
+      renderSheet();
+      markDirty(0);
+    }, !rows.length),
+    el("span", { className: "sep" }),
+    button(labels.import_csv, () => document.getElementById("csv-file").click()),
+  );
+  const cols = spec.batch;
+  const [table, tbody] = gridTable(cols.map((c) => c.label).concat(resultHeads()));
+  rows.forEach((r, i) => {
+    tbody.append(itemRow(i, cols.map((c) => {
+      const cls = c.key === "start" || c.key === "end" ? "coord" : c.key === "note" || c.key === "id" ? "text" : "num";
+      return td(cellInput(r, c.key, cls));
+    })));
+  });
+  body.append(table);
+}
+
+async function importCsv(file) {
+  const note = document.getElementById("sheet-note");
+  note.className = "";
+  note.textContent = "";
+  const r = await fetch("/api/batch_csv", { method: "POST", headers: HEAD, body: JSON.stringify({ text: await file.text() }) });
+  if (!r.ok) {
+    const e = await r.json().catch(() => ({}));
+    note.textContent = e.message || e.error || String(r.status);   // 見出しの誤りは表の上に出す
+  }
+}
+
+document.getElementById("csv-file").addEventListener("change", (ev) => {
+  const f = ev.target.files[0];
+  ev.target.value = "";
+  if (f) importCsv(f);
+});
+
+// 条件探索＝比較（行＝条件・先頭の基準は読むだけ）と掃引（軸・開始・終了・点数）
+function renderScenario(tools, body) {
+  const sc = sheets.scenario;
+  const mode = (m, text) => {
+    const b = button(text, () => { sc.mode = m; renderSheet(); markDirty(0); });
+    b.setAttribute("aria-pressed", String(sc.mode === m));
+    return b;
+  };
+  tools.append(mode("compare", labels.tab_compare), mode("sweep", labels.tab_sweep), el("span", { className: "sep" }));
+  if (sc.mode === "compare") {
+    tools.append(
+      button(labels.add_cond, () => { sc.compare.push({}); renderSheet(); markDirty(0); },
+        sc.compare.length >= spec.limits.compare),
+      button(labels.del_cond, () => {
+        const at = selected !== null && selected >= 1 && selected <= sc.compare.length ? selected - 1 : sc.compare.length - 1;
+        sc.compare.splice(at, 1);
+        selected = null;
+        renderSheet();
+        markDirty(0);
+      }, !sc.compare.length),
+    );
+    const cols = spec.compare;
+    const [table, tbody] = gridTable([""].concat(cols.map((c) => c.label), resultHeads()));
+    const choice = (c, v) => ((c.options || []).find(([k]) => k === v) || [v, v])[1];
+    const base = itemRow(0, [td(labels.base, "name")].concat(cols.map((c) => td(choice(c, current[c.input] || ""), "num"))));
+    base.className = "base";
+    tbody.append(base);
+    sc.compare.forEach((cond, i) => {
+      tbody.append(itemRow(i + 1, [td(fmt(labels.cond_n || "", { n: i + 1 }), "name")].concat(cols.map((c) => td(
+        c.options ? cellSelect(cond, c.key, c.options, true) : cellInput(cond, c.key, "num", current[c.input] || ""),
+      )))));
+    });
+    body.append(table);
+  } else {
+    const sw = sc.sweep;
+    tools.append(
+      el("label", {}, [labels.axis || "", cellSelect(sw, "axis", spec.sweep_axes, false)]),
+      el("label", {}, [labels.from || "", cellInput(sw, "from", "num")]),
+      el("label", {}, [labels.to || "", cellInput(sw, "to", "num")]),
+      el("label", {}, [labels.points || "", cellInput(sw, "points", "num")]),
+    );
+    tools.querySelectorAll("input").forEach((i) => { i.style.width = "64px"; });
+    const axis = (spec.sweep_axes.find(([k]) => k === sw.axis) || ["", ""])[1];
+    const [table, tbody] = gridTable([axis].concat(resultHeads()));
+    tbody.id = "sweep-rows";
+    body.append(table);
+  }
+}
+
+// 掃引の行は結果の件から作る（入力は軸・範囲・点数だけ）
+function fillSweepRows() {
+  const tbody = document.getElementById("sweep-rows");
+  if (!tbody || tbody.children.length === sheetItems.length) return;
+  tbody.replaceChildren(...sheetItems.map((it, i) => itemRow(i, [td(it.label, "num")])));
+}
+
+// 中継＝経路 ID・備考・点の表（名前・座標・高さ）と区間の表（空欄は共通設定）
+function renderMultihop(tools, body) {
+  const mh = sheets.multihop;
+  const pts = mh.waypoints;
+  const syncHops = () => {
+    while (mh.hop_rf.length < Math.max(0, pts.length - 1)) mh.hop_rf.push({ freq: "", gain_tx: "", gain_rx: "" });
+    mh.hop_rf.length = Math.max(0, pts.length - 1);
+  };
+  let focusPoint = null;
+  tools.append(
+    el("label", {}, [labels.route_id || "", cellInput(mh, "path_id", "text")]),
+    el("label", {}, [labels.note || "", cellInput(mh, "note", "text")]),
+    el("span", { className: "sep" }),
+    button(labels.add_point, () => { pts.push({ name: "", coord: "", h: "" }); syncHops(); renderSheet(); markDirty(0); },
+      pts.length >= spec.limits.waypoints),
+    button(labels.del_point, () => {
+      const at = focusPoint !== null ? focusPoint : pts.length - 1;
+      pts.splice(at, 1);
+      mh.hop_rf.splice(Math.max(0, Math.min(at - 1, mh.hop_rf.length - 1)), 1);
+      syncHops();
+      selected = null;
+      renderSheet();
+      markDirty(0);
+    }, !pts.length),
+  );
+  const [ptable, pbody] = gridTable(spec.waypoints.map((c) => c.label));
+  pts.forEach((p, i) => {
+    const tr = el("tr", {}, spec.waypoints.map((c) => td(cellInput(p, c.key, c.key === "coord" ? "coord" : c.key === "h" ? "num" : "text"))));
+    tr.addEventListener("focusin", () => { focusPoint = i; });
+    pbody.append(tr);
+  });
+  const name = (i) => (pts[i] && pts[i].name.trim()) || `P${i + 1}`;
+  const [htable, hbody] = gridTable([labels.section].concat(spec.hops.map((c) => c.label), resultHeads()));
+  mh.hop_rf.forEach((hop, i) => {
+    hbody.append(itemRow(i, [td(`${name(i)} → ${name(i + 1)}`, "name")].concat(
+      spec.hops.map((c) => td(cellInput(hop, c.key, "num", current[c.key] || ""))))));
+  });
+  body.append(el("h3", { textContent: labels.waypoints || "" }), ptable,
+    el("h3", { textContent: labels.hops || "" }), el("div", { id: "hint", className: "hint", textContent: labels.hint_inherit || "" }), htable);
+}
+
+// 見出しの結果を表の結果の列へ（件の番号で差す）。今の面の今の版でなければ薄くする
+function showSheetResults(h) {
+  if (workspace === "single") return;
+  const fresh = h.kind === "sheet" && h.workspace === workspace;
+  if (fresh) {
+    sheetItems = h.items || [];
+    sheetItemsWs = workspace;
+  }
+  document.getElementById("sheet").dataset.stale = fresh ? "" : "1";
+  fillSweepRows();
+  document.querySelectorAll("#sheet-body tr[data-item]").forEach((tr) => {
+    const i = Number(tr.dataset.item);
+    const it = sheetItems[i];
+    const [w, m, p] = tr.querySelectorAll("td.result");
+    w.textContent = it ? it.word : "";
+    w.dataset.word = it ? it.word : "";
+    m.textContent = it && "margin" in it ? dB(it.margin) : "";
+    p.textContent = it && "p_rx" in it ? dB(it.p_rx) : "";
+    tr.title = (it && it.message) || "";
+    tr.setAttribute("aria-selected", String(i === selected));
+  });
+  drawSheetLines(fresh && h.done === h.total);
+}
+
+function verdictColor(word) {
+  const name = { OK: "--ok", NG: "--ng", REVIEW: "--review", ERROR: "--err" }[word] || "--wait";
+  return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+}
+
+// 地図＝各件の送信→受信を語の色で・選んだ件を太く。全件そろって座標の組が変われば全体へ合わせる
+function drawSheetLines(complete) {
+  if (!sheetLayer) return;
+  sheetLayer.clearLayers();
+  if (workspace === "single") return;
+  const stale = document.getElementById("sheet").dataset.stale === "1";
+  const bounds = [];
+  sheetItems.forEach((it, i) => {
+    if (!it.tx || !it.rx) return;
+    const line = L.polyline([it.tx, it.rx], {
+      color: verdictColor(it.word), weight: i === selected ? 6 : 3, opacity: stale ? 0.45 : 0.9,
+    }).addTo(sheetLayer);
+    line.on("click", () => selectRow(i));
+    if (i === selected) {
+      line.on("mousemove", onPathHover);
+      line.on("mouseout", () => setHover(null));
+    }
+    bounds.push(it.tx, it.rx);
+  });
+  const sig = JSON.stringify(bounds);
+  if (complete && bounds.length && sig !== fittedSig) {
+    fittedSig = sig;
+    map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 15 });
+  }
+}
+
+function selectRow(i) {
+  selected = i;
+  profile = null;
+  profileFor = null;
+  hoverFrac = null;
+  document.querySelectorAll("#sheet-body tr[data-item]").forEach((tr) => {
+    tr.setAttribute("aria-selected", String(Number(tr.dataset.item) === i));
+  });
+  drawSheetLines();
+  showProfile(headline);
+}
+
+// 選んだ行の断面図＝その件が今の版で済んでいれば 1 回だけ取る（版が変われば取り直す）
+async function fetchRowProfile(h) {
+  if (selected === null || h.kind !== "sheet" || h.workspace !== workspace) return;
+  if (selected >= (h.items || []).length) return;        // まだその件が済んでいない
+  const key = `${h.version}:${selected}`;
+  if (profileFor === key) return;
+  profileFor = key;
+  const r = await fetch(`/api/profile?v=${h.version}&item=${selected}`, { headers: HEAD });
+  if (profileFor !== key) return;                         // 待つ間に選び直した
+  profile = r.ok ? (await r.json()).profile : null;
+  document.getElementById("profile").dataset.stale = headline.version === h.version ? "" : "1";
+  drawProfile();
+}
 
 // ---- 窓の絵（I-238）＝`brand.svg` の `<g id="icon">` を単独の SVG にして favicon へ ----------
 // 元は brand.svg の 1 つ（exe の icon.ico も同じ `icon` から焼く）＝ここで絵を書き写さない。
@@ -448,8 +868,14 @@ async function poll() {
         buildBreakdown(s.breakdown || []);
         if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;
         if (!map) initMap(s.basemap || "pale");
+        if (s.sheet_spec) {
+          spec = s.sheet_spec;
+          buildTabs();
+        }
       }
       revision = s.revision;
+      receiveSheets(s.sheets);
+      if (!wsPending) setWorkspace(s.workspace || "single");
       showInputs(s.inputs);
       showHeadline(s.headline);
     } catch (e) {

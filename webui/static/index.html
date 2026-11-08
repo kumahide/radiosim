@@ -7,7 +7,7 @@
 <link rel="stylesheet" href="vendor/leaflet/leaflet.css">
 <link rel="stylesheet" href="style.css">
 </head>
-<body>
+<body data-ws="single">
 <header id="band" data-kind="computing">
   <span id="band-word"></span>
   <span id="band-detail"></span>
@@ -24,15 +24,25 @@
     </section>
   </aside>
   <section id="view">
+    <nav id="tabs" role="tablist"></nav>
     <div id="map"></div>
-    <div id="profile">
-      <ul id="legend">
-        <li class="terrain" data-label="legend_terrain"></li>
-        <li class="vegetation" data-label="legend_vegetation"></li>
-        <li class="los" data-label="legend_los"></li>
-        <li class="fresnel" data-label="legend_fresnel"></li>
-      </ul>
-      <canvas id="profile-canvas"></canvas>
+    <div id="lower">
+      <!-- 作業面の表（1 回線の面では隠す）＝左。右は選んだ行の断面図 -->
+      <div id="sheet" hidden>
+        <div id="sheet-tools"></div>
+        <div id="sheet-note"></div>
+        <div id="sheet-body"></div>
+        <input id="csv-file" type="file" accept=".csv,text/csv" hidden>
+      </div>
+      <div id="profile">
+        <ul id="legend">
+          <li class="terrain" data-label="legend_terrain"></li>
+          <li class="vegetation" data-label="legend_vegetation"></li>
+          <li class="los" data-label="legend_los"></li>
+          <li class="fresnel" data-label="legend_fresnel"></li>
+        </ul>
+        <canvas id="profile-canvas"></canvas>
+      </div>
     </div>
   </section>
 </main>

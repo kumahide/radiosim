@@ -223,6 +223,8 @@ _HOP_COLS = (("freq", "col_freq"), ("gain_tx", "col_gain_tx"), ("gain_rx", "col_
 
 #: 条件探索の上書きの鍵 → 選択式の欄（入力の列と同じ選択肢）。
 _OVERRIDE_CHOICES = {"env_type": "env_type", "diff_method": "diff_method"}
+#: 条件探索の上書きの鍵のうち、入力の集合と名前が違うもの（`scenario._apply` の読み替えと同じ）。
+_OVERRIDE_INPUTS = {"freq_mhz": "freq"}
 
 
 def sheet_spec() -> "dict[str, Any]":
@@ -234,7 +236,9 @@ def sheet_spec() -> "dict[str, Any]":
 
     compare = []
     for key in scn.OVERRIDABLE:
-        col: dict[str, Any] = {"key": key, "label": i18n.t(f"scn_axis_{key}")}
+        # `input`＝基準の行に出す入力の集合の鍵（空欄の薄字にも使う）
+        col: dict[str, Any] = {"key": key, "label": i18n.t(f"scn_axis_{key}"),
+                               "input": _OVERRIDE_INPUTS.get(key, key)}
         if key in _OVERRIDE_CHOICES:
             col["options"] = _choices(_OVERRIDE_CHOICES[key])
         compare.append(col)
@@ -245,6 +249,8 @@ def sheet_spec() -> "dict[str, Any]":
         "sweep_axes": [[k, i18n.t(f"scn_axis_{k}")] for k in scn.SWEEP_AXES],
         "waypoints": cols(_WAYPOINT_COLS),
         "hops": cols(_HOP_COLS),
+        # 足すボタンを止める数（越えた本文はサーバーが 400 で断る＝画面は手前で止める）
+        "limits": {"compare": scn.MAX_COMPARE_CONDITIONS, "waypoints": sheets_mod.MAX_WAYPOINTS},
     }
 
 

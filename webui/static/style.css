@@ -42,17 +42,18 @@ body {
   border-bottom: 1px solid var(--line);
   border-left: 6px solid var(--wait);
 }
-#band[data-kind="verdict"][data-word="OK"] { border-left-color: var(--ok); }
-#band[data-kind="verdict"][data-word="NG"] { border-left-color: var(--ng); }
-#band[data-kind="verdict"][data-word="REVIEW"] { border-left-color: var(--review); }
-#band[data-kind="verdict"][data-word="ERROR"],
+/* 作業面（`sheet`）は全体の語を `data-word` に入れる＝1 回線と同じ規則（ステージ10c） */
+#band[data-word="OK"] { border-left-color: var(--ok); }
+#band[data-word="NG"] { border-left-color: var(--ng); }
+#band[data-word="REVIEW"] { border-left-color: var(--review); }
+#band[data-word="ERROR"],
 #band[data-kind="terrain"], #band[data-kind="error"] { border-left-color: var(--err); }
 #band-word { font-size: 20px; font-weight: 600; }
 /* 語も判定の色で書く＝色は語に添えるだけ（色だけに頼らない・語は必ず出る） */
-#band[data-kind="verdict"][data-word="OK"] #band-word { color: var(--ok); }
-#band[data-kind="verdict"][data-word="NG"] #band-word { color: var(--ng); }
-#band[data-kind="verdict"][data-word="REVIEW"] #band-word { color: var(--review); }
-#band[data-kind="verdict"][data-word="ERROR"] #band-word { color: var(--err); }
+#band[data-word="OK"] #band-word { color: var(--ok); }
+#band[data-word="NG"] #band-word { color: var(--ng); }
+#band[data-word="REVIEW"] #band-word { color: var(--review); }
+#band[data-word="ERROR"] #band-word { color: var(--err); }
 #band { flex-wrap: wrap; row-gap: 2px; }
 #band-detail { color: var(--fg); font-variant-numeric: tabular-nums; }
 #band-range { color: var(--muted); font-variant-numeric: tabular-nums; }
@@ -60,7 +61,7 @@ body {
 #band-flipped:empty, #band-range:empty { display: none; }
 /* ロゴ（I-238）＝帯の 1 行目の右端。縦の場所を取らない（入力の列は 990px に収める） */
 #brand { height: 34px; margin: -4px 0 -4px auto; align-self: center; }
-#band[data-kind="verdict"][data-word="REVIEW"] #band-flipped { color: var(--review); }
+#band[data-word="REVIEW"] #band-flipped { color: var(--review); }
 main { flex: 1; display: flex; min-height: 0; }
 /* 入力の列は使える高さ約 990px の 1 画面に収める（ステージ5＝スクロールなし）。
    座標の欄だけ語の下に全幅・ほかは語の右に欄を置いて 1 行。 */
@@ -112,6 +113,95 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #map { flex: 1; min-height: 0; }
+/* 作業面の切り替え＝地図の上の 1 行（入力の列の高さを食わない・ステージ10c） */
+#tabs {
+  display: flex;
+  gap: 2px;
+  padding: 4px 8px 0;
+  border-bottom: 1px solid var(--line);
+}
+#tabs button {
+  font: inherit;
+  color: var(--muted);
+  background: transparent;
+  border: 1px solid transparent;
+  border-bottom: none;
+  border-radius: 4px 4px 0 0;
+  padding: 4px 14px;
+  margin-bottom: -1px;
+  cursor: pointer;
+}
+#tabs button[aria-selected="true"] {
+  color: var(--fg);
+  font-weight: 600;
+  background: var(--bg);
+  border-color: var(--line);
+}
+/* 下の段＝1 回線では断面図だけ。作業面では左に表・右に選んだ行の断面図（高さも広げる） */
+#lower { height: 30%; display: flex; border-top: 1px solid var(--line); min-height: 0; }
+body:not([data-ws="single"]) #lower { height: 42%; }
+#sheet {
+  flex: 0 0 58%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  border-right: 1px solid var(--line);
+}
+#sheet[hidden] { display: none; }
+#sheet-tools {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--line);
+}
+#sheet-tools label { display: flex; align-items: center; gap: 4px; color: var(--muted); }
+#sheet-tools .sep { flex: 1; }
+#sheet button, #sheet input, #sheet select {
+  font: inherit;
+  color: var(--fg);
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 4px;
+  padding: 2px 6px;
+}
+#sheet button { cursor: pointer; }
+#sheet button:disabled { color: var(--muted); cursor: default; }
+#sheet button[aria-pressed="true"] { font-weight: 600; border-color: var(--fg); }
+#sheet-note { padding: 4px 8px; color: var(--err); }
+#sheet-note:empty { display: none; }
+#sheet-body .hint { color: var(--muted); padding: 0 8px 2px; }
+#sheet-body { flex: 1; min-height: 0; overflow: auto; }
+#sheet-body h3 { font-size: 13px; margin: 8px 8px 2px; color: var(--fg); }
+.grid { border-collapse: collapse; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.grid th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  background: var(--bg);
+  color: var(--muted);
+  font-weight: normal;
+  text-align: left;
+  padding: 3px 4px;
+  border-bottom: 1px solid var(--line);
+}
+.grid td { padding: 1px 2px; border-bottom: 1px solid var(--line); }
+.grid td.name { padding: 1px 6px; color: var(--muted); }
+.grid td.num { text-align: right; padding: 1px 6px; }
+.grid td.word { font-weight: 600; padding: 1px 6px; }
+.grid input, .grid select { width: 64px; padding: 1px 4px; }
+.grid input.coord { width: 150px; }
+.grid input.text { width: 110px; }
+.grid input.num { text-align: right; }
+.grid tbody tr { cursor: pointer; }
+.grid tbody tr[aria-selected="true"] td { background: color-mix(in srgb, var(--fg) 10%, transparent); }
+.grid tr.base td { color: var(--muted); }
+#sheet[data-stale="1"] .grid td.result { opacity: 0.45; }
+.grid td.word[data-word="OK"] { color: var(--ok); }
+.grid td.word[data-word="NG"] { color: var(--ng); }
+.grid td.word[data-word="REVIEW"] { color: var(--review); }
+.grid td.word[data-word="ERROR"] { color: var(--err); }
 /* 断面図＝帳票（`report/report_path.py`）と同じ色。JS は canvas の色をここから読む。 */
 #profile {
   --pf-terrain: rgba(139, 69, 19, 0.4);
@@ -119,8 +209,8 @@ main { flex: 1; display: flex; min-height: 0; }
   --pf-los: #ff0000;
   --pf-fresnel: rgba(0, 255, 255, 0.25);
   --pf-antenna: #000000;
-  height: 30%;
-  border-top: 1px solid var(--line);
+  flex: 1;
+  min-width: 0;
   display: flex;
   flex-direction: column;
   color: var(--muted);
