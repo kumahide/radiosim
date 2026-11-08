@@ -125,8 +125,14 @@ main { flex: 1; display: flex; min-height: 0; }
   flex-direction: column;
   color: var(--muted);
 }
+/* ダークは地が暗く、帳票の不透明度（0.4・0.3）では地形と植生が沈む＝ダークだけ濃く
+   （2026-11-08 経営者の選択・ステージ9f）。色相は帳票のまま。 */
 @media (prefers-color-scheme: dark) {
-  #profile { --pf-antenna: var(--fg); }
+  #profile {
+    --pf-antenna: var(--fg);
+    --pf-terrain: rgba(139, 69, 19, 0.7);
+    --pf-vegetation: rgba(0, 128, 0, 0.55);
+  }
 }
 #legend {
   display: flex;
