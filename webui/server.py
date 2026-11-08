@@ -156,6 +156,13 @@ def labels() -> "dict[str, str]":
         "terrain": i18n.t("webui_no_terrain"),
         "error": i18n.t("webui_error"),
         "profile_later": i18n.t("webui_profile_later"),
+        # 断面図（帳票と同じ語＝成果物の語を画面でも使う）
+        "legend_terrain": i18n.t("legend_terrain"),
+        "legend_vegetation": i18n.t("legend_vegetation"),
+        "legend_los": i18n.t("legend_los"),
+        "legend_fresnel": i18n.t("legend_fresnel"),
+        "dist_axis": i18n.t("graph_dist_axis"),
+        "alt_axis": i18n.t("graph_alt_axis"),
     }
 
 

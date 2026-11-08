@@ -107,6 +107,7 @@ function showBreakdown(h) {
 
 // ---- 見出し ---------------------------------------------------------------
 function showHeadline(h) {
+  showProfile(h);
   const band = document.getElementById("band");
   const word = document.getElementById("band-word");
   const detail = document.getElementById("band-detail");
@@ -137,23 +138,250 @@ function showInputs(inputs) {
     const key = el.dataset.key;
     if (document.activeElement !== el && !(key in pending)) el.value = inputs[key] || "";
   });
+  if (dragging) return;                    // ドラッグ中のピンを古い値へ戻さない
   const a = parseLatLon(inputs.start);
   const b = parseLatLon(inputs.end);
   if (map && a && b) {
-    if (!path) {
-      path = L.polyline([a, b], { weight: 3 }).addTo(map);
-      map.fitBounds(path.getBounds(), { padding: [40, 40] });
-    } else {
-      path.setLatLngs([a, b]);
+    const first = !path;
+    if (first) {
+      path = L.polyline([a, b], { color: "#1f5fbf", weight: 3 }).addTo(map);
+      path.on("mousemove", onPathHover);
+      path.on("mouseout", () => setHover(null));
+      pins.start = makePin("start", "T", a);
+      pins.end = makePin("end", "R", b);
     }
+    path.setLatLngs([a, b]);
+    pins.start.setLatLng(a);
+    pins.end.setLatLng(b);
+    if (first) map.fitBounds(path.getBounds(), { padding: [60, 60], maxZoom: 15 });
   }
 }
+
+// ---- 地図 -----------------------------------------------------------------
+const pins = {};
+let cursor = null;
+let dragging = false;
 
 function initMap(basemap) {
   map = L.map("map", { zoomControl: true });
   L.tileLayer(`/tile/${basemap}/{z}/{x}/{y}.png`, { maxZoom: 18 }).addTo(map);
   map.setView([35.0, 135.0], 5);
+  cursor = L.marker([0, 0], {
+    interactive: false, opacity: 0, keyboard: false,
+    icon: L.divIcon({ className: "", iconSize: [10, 10], iconAnchor: [5, 5], html: '<div class="cursor"></div>' }),
+  }).addTo(map);
+  new ResizeObserver(() => { map.invalidateSize(); drawProfile(); }).observe(document.getElementById("view"));
 }
+
+const latLonText = (ll) => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+
+// 端点のピン＝ドラッグの間は欄と線だけ動かし、離したときに 1 回だけ送る（地形の取得は端点が決まったときだけ）
+function makePin(key, text, at) {
+  const marker = L.marker(at, {
+    draggable: true,
+    icon: L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11], html: `<div class="pin">${text}</div>` }),
+  }).addTo(map);
+  const field = () => document.querySelector(`[data-key="${key}"]`);
+  marker.on("dragstart", () => { dragging = true; });
+  marker.on("drag", (e) => {
+    const el = field();
+    if (el) el.value = latLonText(e.latlng);
+    path.setLatLngs([pins.start.getLatLng(), pins.end.getLatLng()]);
+  });
+  marker.on("dragend", () => {
+    dragging = false;
+    const value = latLonText(marker.getLatLng());
+    const el = field();
+    if (el) el.value = value;
+    pending[key] = value;
+    if (timer) clearTimeout(timer);
+    flush();
+  });
+  return marker;
+}
+
+function onPathHover(e) {
+  const a = map.latLngToLayerPoint(pins.start.getLatLng());
+  const b = map.latLngToLayerPoint(pins.end.getLatLng());
+  const p = e.layerPoint;
+  const dx = b.x - a.x;
+  const dy = b.y - a.y;
+  const len2 = dx * dx + dy * dy;
+  if (len2 > 0) setHover(Math.max(0, Math.min(1, ((p.x - a.x) * dx + (p.y - a.y) * dy) / len2)));
+}
+
+// ---- 断面図（地図と連動＝ホバーの位置を両方に出す） -----------------------
+let profile = null;
+let hoverFrac = null;
+const PAD = { l: 56, r: 16, t: 10, b: 34 };
+
+function showProfile(h) {
+  const box = document.getElementById("profile");
+  if (h.kind === "verdict" && h.profile) profile = h.profile;
+  box.dataset.stale = h.kind === "verdict" ? "" : "1";   // 古い断面は残して薄くする（内訳と同じ）
+  drawProfile();
+}
+
+function cssColor(name) {
+  return getComputedStyle(document.getElementById("profile")).getPropertyValue(name).trim();
+}
+
+// 目盛りの刻み＝1・2・5 × 10^n
+function niceStep(span, count) {
+  const raw = span / Math.max(1, count);
+  const mag = Math.pow(10, Math.floor(Math.log10(raw)));
+  const r = raw / mag;
+  return (r <= 1 ? 1 : r <= 2 ? 2 : r <= 5 ? 5 : 10) * mag;
+}
+
+function profileExtent(p) {
+  const ys = [];
+  p.ground.forEach((v) => { if (v !== null) { ys.push(v); if (p.veg_h) ys.push(v + p.veg_h); } });
+  p.los.forEach((v, i) => {
+    if (v !== null && p.f1[i] !== null) ys.push(v + p.f1[i], v - p.f1[i]);
+  });
+  ys.push(p.tx[2], p.rx[2]);
+  const finite = ys.filter(Number.isFinite);
+  let lo = Math.min(...finite);
+  let hi = Math.max(...finite);
+  const margin = Math.max((hi - lo) * 0.06, 2);
+  return [lo - margin, hi + margin];
+}
+
+// 地表の高さ（ホバーの字）＝折れ線を距離で補間
+function groundAt(p, d) {
+  const xs = p.ground_d;
+  let i = 1;
+  while (i < xs.length - 1 && xs[i] < d) i++;
+  const x0 = xs[i - 1], x1 = xs[i], y0 = p.ground[i - 1], y1 = p.ground[i];
+  if (y0 === null || y1 === null) return null;
+  return x1 > x0 ? y0 + ((y1 - y0) * (d - x0)) / (x1 - x0) : y0;
+}
+
+function drawProfile() {
+  const canvas = document.getElementById("profile-canvas");
+  const dpr = window.devicePixelRatio || 1;
+  const w = canvas.clientWidth;
+  const h = canvas.clientHeight;
+  if (!w || !h) return;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  const g = canvas.getContext("2d");
+  g.setTransform(dpr, 0, 0, dpr, 0, 0);
+  g.clearRect(0, 0, w, h);
+  const fg = getComputedStyle(document.body).color;
+  const muted = cssColor("color");
+  g.font = '12px "Segoe UI", "Yu Gothic UI", sans-serif';
+  if (!profile) {
+    g.fillStyle = muted;
+    g.textAlign = "center";
+    g.fillText(labels.profile_later || "", w / 2, h / 2);
+    return;
+  }
+  const p = profile;
+  const xMax = p.rx[0] || 1;
+  const [lo, hi] = profileExtent(p);
+  const px = (d) => PAD.l + (d / xMax) * (w - PAD.l - PAD.r);
+  const py = (v) => h - PAD.b - ((v - lo) / (hi - lo)) * (h - PAD.t - PAD.b);
+
+  // 目盛りと格子
+  g.lineWidth = 1;
+  g.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--line").trim();
+  g.fillStyle = muted;
+  const yStep = niceStep(hi - lo, 4);
+  g.textAlign = "right";
+  for (let v = Math.ceil(lo / yStep) * yStep; v <= hi; v += yStep) {
+    const y = py(v);
+    g.beginPath(); g.moveTo(PAD.l, y); g.lineTo(w - PAD.r, y); g.stroke();
+    g.fillText(String(Math.round(v)), PAD.l - 6, y + 4);
+  }
+  const xStep = niceStep(xMax, 8);
+  g.textAlign = "center";
+  for (let d = 0; d <= xMax + 1e-9; d += xStep) {
+    g.fillText(String(Math.round(d)), px(d), h - PAD.b + 14);
+  }
+  g.fillText(labels.dist_axis || "", PAD.l + (w - PAD.l - PAD.r) / 2, h - 4);
+  g.save();
+  g.translate(12, PAD.t + (h - PAD.t - PAD.b) / 2);
+  g.rotate(-Math.PI / 2);
+  g.fillText(labels.alt_axis || "", 0, 0);
+  g.restore();
+
+  // 地表と植生（帳票と同じ＝地表は下端から塗る・植生は地表の上に veg_h）
+  const area = (top, bottom, color) => {
+    g.beginPath();
+    p.ground_d.forEach((d, i) => (i ? g.lineTo(px(d), py(top(i))) : g.moveTo(px(d), py(top(i)))));
+    for (let i = p.ground_d.length - 1; i >= 0; i--) g.lineTo(px(p.ground_d[i]), py(bottom(i)));
+    g.closePath();
+    g.fillStyle = color;
+    g.fill();
+  };
+  const gr = (i) => (p.ground[i] === null ? lo : p.ground[i]);
+  area(gr, () => lo, cssColor("--pf-terrain"));
+  if (p.veg_h) area((i) => gr(i) + p.veg_h, gr, cssColor("--pf-vegetation"));
+
+  // 第 1 フレネルゾーン（標本の位置で ±F1）と見通し線
+  g.beginPath();
+  p.d.forEach((d, i) => (i ? g.lineTo(px(d), py(p.los[i] + p.f1[i])) : g.moveTo(px(d), py(p.los[i] + p.f1[i]))));
+  for (let i = p.d.length - 1; i >= 0; i--) g.lineTo(px(p.d[i]), py(p.los[i] - p.f1[i]));
+  g.closePath();
+  g.fillStyle = cssColor("--pf-fresnel");
+  g.fill();
+  g.beginPath();
+  g.setLineDash([6, 4]);
+  g.strokeStyle = cssColor("--pf-los");
+  g.lineWidth = 1.5;
+  p.d.forEach((d, i) => (i ? g.lineTo(px(d), py(p.los[i])) : g.moveTo(px(d), py(p.los[i]))));
+  g.stroke();
+  g.setLineDash([]);
+
+  // 空中線＝足元から絶対高まで
+  g.strokeStyle = cssColor("--pf-antenna");
+  g.lineWidth = 3;
+  [p.tx, p.rx].forEach(([d, foot, top]) => {
+    g.beginPath(); g.moveTo(px(d), py(foot)); g.lineTo(px(d), py(top)); g.stroke();
+  });
+
+  // ホバーの位置
+  if (hoverFrac !== null) {
+    const d = hoverFrac * xMax;
+    const x = px(d);
+    g.strokeStyle = fg;
+    g.lineWidth = 1;
+    g.beginPath(); g.moveTo(x, PAD.t); g.lineTo(x, h - PAD.b); g.stroke();
+    const ground = groundAt(p, d);
+    const text = `${Math.round(d)} m · ${labels.legend_terrain || ""} ${ground === null ? "-" : ground.toFixed(1)} m`;
+    g.fillStyle = fg;
+    const tw = g.measureText(text).width;
+    g.textAlign = "left";
+    g.fillText(text, Math.min(x + 6, w - PAD.r - tw), PAD.t + 12);
+  }
+}
+
+function setHover(frac) {
+  hoverFrac = frac;
+  if (cursor) {
+    if (frac === null || !pins.start) {
+      cursor.setOpacity(0);
+    } else {
+      const a = pins.start.getLatLng();
+      const b = pins.end.getLatLng();
+      cursor.setLatLng([a.lat + (b.lat - a.lat) * frac, a.lng + (b.lng - a.lng) * frac]).setOpacity(1);
+    }
+  }
+  drawProfile();
+}
+
+function hookProfile() {
+  const canvas = document.getElementById("profile-canvas");
+  canvas.addEventListener("mousemove", (e) => {
+    if (!profile) return;
+    const right = canvas.clientWidth - PAD.r;
+    setHover(Math.max(0, Math.min(1, (e.offsetX - PAD.l) / (right - PAD.l))));
+  });
+  canvas.addEventListener("mouseleave", () => setHover(null));
+}
+hookProfile();
 
 async function flush() {
   timer = null;

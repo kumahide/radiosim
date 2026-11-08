@@ -22,7 +22,15 @@
   </aside>
   <section id="view">
     <div id="map"></div>
-    <div id="profile"><span data-label="profile_later"></span></div>
+    <div id="profile">
+      <ul id="legend">
+        <li class="terrain" data-label="legend_terrain"></li>
+        <li class="vegetation" data-label="legend_vegetation"></li>
+        <li class="los" data-label="legend_los"></li>
+        <li class="fresnel" data-label="legend_fresnel"></li>
+      </ul>
+      <canvas id="profile-canvas"></canvas>
+    </div>
   </section>
 </main>
 <script src="vendor/leaflet/leaflet.js"></script>

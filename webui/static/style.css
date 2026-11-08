@@ -95,11 +95,62 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #view { flex: 1; display: flex; flex-direction: column; min-width: 0; }
 #map { flex: 1; min-height: 0; }
+/* 断面図＝帳票（`report/report_path.py`）と同じ色。JS は canvas の色をここから読む。 */
 #profile {
+  --pf-terrain: rgba(139, 69, 19, 0.4);
+  --pf-vegetation: rgba(0, 128, 0, 0.3);
+  --pf-los: #ff0000;
+  --pf-fresnel: rgba(0, 255, 255, 0.25);
+  --pf-antenna: #000000;
   height: 30%;
   border-top: 1px solid var(--line);
   display: flex;
-  align-items: center;
-  justify-content: center;
+  flex-direction: column;
   color: var(--muted);
+}
+@media (prefers-color-scheme: dark) {
+  #profile { --pf-antenna: var(--fg); }
+}
+#legend {
+  display: flex;
+  justify-content: flex-end;
+  gap: 14px;
+  margin: 0;
+  padding: 4px 16px 0;
+  list-style: none;
+  font-size: 12px;
+}
+#legend li::before {
+  content: "";
+  display: inline-block;
+  width: 14px;
+  height: 10px;
+  margin-right: 5px;
+  vertical-align: -1px;
+}
+#legend .terrain::before { background: var(--pf-terrain); }
+#legend .vegetation::before { background: var(--pf-vegetation); }
+#legend .los::before { height: 0; border-top: 2px dashed var(--pf-los); vertical-align: 3px; }
+#legend .fresnel::before { background: var(--pf-fresnel); }
+#profile[data-stale="1"] #profile-canvas { opacity: 0.45; }
+#profile-canvas { flex: 1; min-height: 0; width: 100%; display: block; }
+/* 端点のピン（地図）とホバーの位置 */
+.pin {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  border: 2px solid #ffffff;
+  background: #1f5fbf;
+  color: #ffffff;
+  font: 600 12px/18px "Segoe UI", sans-serif;
+  text-align: center;
+  box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
+  cursor: grab;
+}
+.cursor {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: #ff0000;
+  border: 2px solid #ffffff;
 }

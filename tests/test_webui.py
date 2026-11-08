@@ -348,6 +348,19 @@ def test_a_verdict_carries_the_profile():
     assert len(json.dumps(head["profile"])) < 100_000      # 見出しは毎回送る
 
 
+def test_the_profile_words_come_from_the_report():
+    # 断面図の凡例と軸は帳票と同じ語（成果物の語を画面でも使う）
+    from core import i18n
+    lab = webserver.labels()
+    for key in ("legend_terrain", "legend_vegetation", "legend_los", "legend_fresnel"):
+        assert lab[key] == i18n.t(key)
+    assert lab["dist_axis"] == i18n.t("graph_dist_axis")
+    assert lab["alt_axis"] == i18n.t("graph_alt_axis")
+    html = (pathlib.Path(webserver.STATIC_ROOT) / "index.html").read_text(encoding="utf-8")
+    for key in ("legend_terrain", "legend_vegetation", "legend_los", "legend_fresnel"):
+        assert f'data-label="{key}"' in html
+
+
 def test_the_script_has_no_japanese():
     # 字はサーバーの表から＝JS と HTML に日本語を直書きしない（注記は除く）
     import re
