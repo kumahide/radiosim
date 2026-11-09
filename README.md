@@ -14,7 +14,7 @@
 
 *A desktop propagation simulator for land mobile radio links: terrain profiles, diffraction loss, Fresnel zone clearance and link budgets, computed from **GSI DEM** (Geospatial Information Authority of Japan) elevation tiles fetched automatically. The only built-in elevation source and background map are GSI, but you can add external DEM and background map sources via declaration files to work outside Japan; the saved map image follows the background map selected at the top right of the map, so it works outside Japan too once you add an external source. English documentation: [docs/manual_en.md](docs/manual_en.md) (users) and [docs/developer_en.md](docs/developer_en.md) (developers).*
 
-<img src="docs/images/shot_profile.png" width="720" alt="地形断面グラフ。送受信点を結ぶ見通し線とフレネル第 1 ゾーンが地形に重ねて描かれ、遮蔽区間と受信レベル・マージンが表示されている">
+<img src="docs/images/shot_profile.png" width="720" alt="1 回線の画面。左の列に入力欄とリンクバジェット、上の帯に判定とマージン、右の上に送信点と受信点を結ぶ地図、右の下に見通し線とフレネル第 1 ゾーンを地形に重ねた断面図が出ている">
 
 ---
 
@@ -46,8 +46,8 @@
 - **日本語 / 英語 UI**・ダークモード対応
 - **表示言語を自分で足せる** — `<言語コード>.json` を置くと「設定」の枠の言語に現れます（置き場はインストール形態で異なり、**インストーラ版**は `%APPDATA%\RadioSim\Link\lang`、**ポータブル版**はアプリと同じフォルダの `lang`）。訳が無いキーは英語のまま出るので、全部を訳さなくても壊れません（**非公式な訳**という位置づけで、追加した言語では画面の見切れを保証しません）
 
-<img src="docs/images/shot_map.png" width="480" alt="地図上に送信点・受信点と経路が表示された画面。端点のピンをドラッグして座標を入れられる">
-<img src="docs/images/shot_batch.png" width="480" alt="複数経路の入力表。1 行 1 経路で、実行後の判定（OK / NG）と水平距離が各行に返っている">
+<img src="docs/images/shot_map.png" width="480" alt="地図上に送信点・受信点のピンと経路が表示された画面。端点のピンをドラッグして座標を入れられる">
+<img src="docs/images/shot_batch.png" width="480" alt="複数経路の画面。1 行 1 経路の表に、実行後の判定（OK / REVIEW / NG）とマージン・受信レベルが各行に返り、選んだ行の線が地図で太くなり、その断面が下に出ている">
 
 ## 計算モデル
 

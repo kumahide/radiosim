@@ -297,7 +297,7 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), ente
 
 ## Map
 
-![Map view with the transmit point, the receive point and the path between them](images/shot_map.png)
+![Map with pins on the transmit and receive points and the path between them; dragging an end pin enters its coordinates](images/shot_map.png)
 
 There is exactly one map, at the top of the right column, shared by all four workspaces. No separate window opens. The calculation works without the map; the map is a convenience for entering input and looking at results.
 
@@ -312,7 +312,7 @@ Clicking the map to pick coordinates, adding Multiple Paths rows or relay points
 
 ## Usage — Single Link
 
-![Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown](images/shot_profile.png)
+![Single Link screen: the input fields and the link budget in the left column, the verdict and margin in the top bar, the map joining the transmit and receive points at upper right, and the terrain profile with the line of sight and the first Fresnel zone at lower right](images/shot_profile.png)
 
 The Single Link workspace opens at startup. **There is no Run button.** When you change a field in the left column, the app waits a moment (about 0.3 s) and computes again; the verdict in the top bar, the Link Budget table in the left column and the profile change.
 
@@ -369,7 +369,7 @@ The input is **not written back** to `radiosim_conf.json` (it is only read at st
 
 ## Usage — Multiple Paths
 
-![Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run](images/shot_batch.png)
+![Multiple Paths screen: a table with one path per row, each returning its verdict (OK / REVIEW / NG), margin and RX level after the run; the selected row's line is drawn thicker on the map and its profile is shown below](images/shot_batch.png)
 
 Choose **Multiple Paths** in the workspace switch at the top of the right column, and a table appears below the map. **There is no Run button.** When you edit the table, the app waits a moment and computes every row again; results come back to the right end of each row (verdict, margin, RX level) as soon as that row is done. Once every row is in, the top bar shows the overall word and the count for each verdict word.
 
@@ -428,7 +428,7 @@ The following also matter but have no CSV column — keep them as separate notes
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
-![Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG](images/shot_scenario.png)
+![Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the verdict and margin side by side and only the last condition NG](images/shot_scenario.png)
 
 Choose **Condition Explorer** in the workspace switch at the top of the right column. This workspace is for **taking one fixed path and digging into it under different conditions**. The path comes from the left column (as in Single Link), and **terrain is fetched only once** — changing the conditions does not fetch the DEM again.
 
@@ -453,7 +453,7 @@ The verdict, margin and RX level come back to the right end of each row. The map
 
 ## Usage — Relay Path
 
-![Relay Path workspace: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table](images/shot_multihop.png)
+![Relay Path screen: three waypoints (transmit, relay, receive) with the verdict, margin and RX level returned per section in the table](images/shot_multihop.png)
 
 Choose **Relay Path** in the workspace switch at the top of the right column. This workspace is for **one link carried over relay points**: two points cannot see each other directly across a mountain, and a ridge (or another site) in between with a clear view can carry the traffic.
 

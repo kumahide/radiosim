@@ -493,7 +493,7 @@ http://proxy.example.com:8080
 
 ## Map
 
-<img src="images/shot_map.png" width="600" alt="Map view with the transmit point, the receive point and the path between them">
+<img src="images/shot_map.png" width="600" alt="Map with pins on the transmit and receive points and the path between them; dragging an end pin enters its coordinates">
 
 There is exactly one map, at the top right of the screen, shared by all four workspaces (`webui/static/app.js`, Leaflet). No separate window opens. The core simulation works without the map; the map is a convenience for entering input and looking at results.
 
@@ -508,7 +508,7 @@ Fetching the DEM tiles of an area ahead of time still lives in `core/dem_prefetc
 
 ## Usage — Single Link
 
-<img src="images/shot_profile.png" width="720" alt="Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown">
+<img src="images/shot_profile.png" width="720" alt="Single Link screen: the input fields and the link budget in the left column, the verdict and margin in the top bar, the map joining the transmit and receive points at upper right, and the terrain profile with the line of sight and the first Fresnel zone at lower right">
 
 The Single Link workspace opens at startup. **There is no Run button.** When you change a field in the left column, the screen waits a moment (`DEBOUNCE_MS`) and sends only the changed field to the server (`/api/inputs`); the computation thread (`webui/worker.py`) then recomputes with that version of the input.
 
@@ -567,7 +567,7 @@ Input is **not written back** to `radiosim_conf.json` (it is only read at startu
 
 ## Usage — Multiple Paths
 
-<img src="images/shot_batch.png" width="720" alt="Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run">
+<img src="images/shot_batch.png" width="720" alt="Multiple Paths screen: a table with one path per row, each returning its verdict (OK / REVIEW / NG), margin and RX level after the run; the selected row's line is drawn thicker on the map and its profile is shown below">
 
 Choose **Multiple Paths** in the workspace switch at the top right and a table appears under the map. Editing the table waits a moment, then sends the workspace's whole input (`sheets` in `/api/inputs`); every row is fetched and computed one at a time (`engine.run_paths`). Results come back to the right end of the table (verdict, margin, RX level) as each row finishes, and once every row is in, the top bar shows the overall word and the count for each word.
 
@@ -615,7 +615,7 @@ The map draws a line from each row's transmit point to its receive point in the 
 
 ## Usage — Condition Explorer (Compare / Sweep)
 
-<img src="images/shot_scenario.png" width="620" alt="Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG">
+<img src="images/shot_scenario.png" width="620" alt="Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the verdict and margin side by side and only the last condition NG">
 
 Choose **Condition Explorer** in the workspace switch at the top right. It is the workspace that **takes one fixed path and digs into it under different conditions**; the path is the left column's input (the same as Single Link), and the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
 
@@ -631,7 +631,7 @@ Choose **Condition Explorer** in the workspace switch at the top right. It is th
 
 ## Usage — Relay Path
 
-<img src="images/shot_multihop.png" width="620" alt="Relay Path workspace: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table">
+<img src="images/shot_multihop.png" width="620" alt="Relay Path screen: three waypoints (transmit, relay, receive) with the verdict, margin and RX level returned per section in the table">
 
 Choose **Relay Path** in the workspace switch at the top right. It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model lives in `report/multihop.py` and the run in `webui/worker.py` (computes the sections one at a time and gathers them into a `MultiHopRun`). The route ID and note sit above the tables; below them are the waypoint table (name, coordinates, height) and the per-section settings table (frequency, TX / RX gains; blanks inherit the common settings).
 
