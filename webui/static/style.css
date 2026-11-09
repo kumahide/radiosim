@@ -76,7 +76,14 @@ body {
 #settings input[type="text"] { flex: 1; }
 #settings .hint { color: var(--muted); font-size: 12px; margin: -4px 0 8px; }
 #settings .err { color: var(--err); font-size: 12px; }
-#settings .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+#settings .actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
+/* 「ファイル」の口（I-257 の C）＝ボタンを折り返して並べる・結果の 1 文は改行を残す */
+#settings h3 { margin: 14px 0 4px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+#settings .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
+#settings .confirm { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 6px 0;
+  max-width: 420px; font-size: 13px; }
+#settings .note, #settings .err { white-space: pre-line; max-width: 420px; }
+#settings .note { font-size: 12px; }
 /* 起動時の知らせ（I-256）＝帯の下・1 件 1 行・閉じられる */
 #notices:empty { display: none; }
 #notices > div { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px;

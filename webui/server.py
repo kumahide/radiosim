@@ -21,6 +21,13 @@ webui/server.py
                                    （ファイルを書くのは画面＝ステージ10d）
     POST /api/settings           … `{"key", "value"}`＝「設定」の枠の 1 項目を保存して効かせる
                                    `{"settings", "reload"}`（知らない鍵・選べる値の外は 400・I-257）
+    POST /api/settings/load_sim  … `{"text"}`＝パラメータ読込（sim の鍵だけ）`{"message", "version"}`
+    POST /api/settings/load_app  … `{"text"}`＝アプリ設定読込 `{"message", "settings", "reload"}`
+                                   （読めない JSON は 422＋画面の 1 文・I-257 の C）
+    POST /api/open_results       … 結果フォルダを（無ければ作って）開く
+    POST /api/lang_template      … 訳のひな形を `USER_LANG_DIR` へ書いてフォルダを開く `{"message"}`
+    POST /api/cache/breakdown    … 全キャッシュ削除の確認の中身（ソースが 2 つ以上なら選ばせる）
+    POST /api/cache/delete       … `{"sources": [ID…] | null, "basemap": 真偽}` `{"message"}`
     POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
     POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
                                    （全件そろっていなければ 409＋画面の 1 文 `message`）
@@ -46,6 +53,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from typing import Any, Callable
 from urllib.parse import parse_qs, urlsplit
 
+from core import config
 from core import dem
 from core import dem_sources
 from core import i18n
@@ -53,6 +61,7 @@ from core import models
 from core import terrain_grid
 from core import units
 from webui import exports
+from webui import files as files_mod
 from webui import project_io
 from webui import settings as settings_mod
 from webui import sheets as sheets_mod
@@ -297,8 +306,11 @@ class WebServer:
                  tile: "Callable[..., tuple[str, bytes | None]]" = dem.basemap_tile_png,
                  map_png: "Callable[[list, str], bytes | None]" = exports.map_png,
                  listener: "Listener | None" = None,
-                 app_cfg: "dict[str, str] | None" = None) -> None:
+                 app_cfg: "dict[str, str] | None" = None,
+                 opener: "Callable[[str], None] | None" = None) -> None:
         self.worker = worker
+        #: フォルダを開く（結果フォルダ・訳のひな形）＝試験は偽物を渡す
+        self.opener: "Callable[[str], None]" = opener or getattr(os, "startfile", lambda p: None)
         #: アプリの設定（`config.load_config()` の写し）＝「設定」の枠が書き換えて保存する
         self.app_cfg: dict[str, str] = app_cfg if app_cfg is not None else {}
         self._settings_lock = threading.Lock()
@@ -399,6 +411,49 @@ class WebServer:
                 self.basemap = self.app_cfg[key]
                 body["basemap"] = self.basemap_payload()
             return 200, body
+
+
+    def file_action(self, path: str, body: "dict[str, Any]") -> "tuple[int, dict[str, Any]]":
+        """「設定」の枠の「ファイル」の口（I-257 の C）。失敗は 422＋画面の 1 文 `message`。"""
+        text = body.get("text")
+        try:
+            if path == "/api/settings/load_sim":
+                if not isinstance(text, str):
+                    return 400, {"error": "bad body"}
+                version = self.worker.submit(files_mod.sim_changes(text))
+                return 200, {"message": i18n.t("dlg_settings_ok"), "version": version}
+            if path == "/api/settings/load_app":
+                if not isinstance(text, str):
+                    return 400, {"error": "bad body"}
+                values = config.select_app(files_mod.load_object(text))
+                with self._settings_lock:
+                    applied, reload = settings_mod.apply_many(self.app_cfg, values)
+                    if applied:
+                        self.basemap = self.app_cfg.get("basemap_layer", self.basemap)
+                    payload = settings_mod.payload(self.app_cfg)
+                word = "dlg_app_settings_ok" if applied else "dlg_app_settings_none"
+                return 200, {"message": i18n.t(word), "settings": payload, "reload": reload,
+                             "basemap": self.basemap_payload()}
+            if path == "/api/open_results":
+                files_mod.open_results(self.opener)
+                return 200, {"message": ""}
+            if path == "/api/lang_template":
+                return 200, {"message": files_mod.write_lang_template(self.opener)}
+            if path == "/api/cache/breakdown":
+                return 200, files_mod.cache_breakdown()
+            if path == "/api/cache/delete":
+                ids = body.get("sources")
+                if not (ids is None or (isinstance(ids, list) and all(isinstance(i, str) for i in ids))):
+                    return 400, {"error": "bad body"}
+                return 200, {"message": files_mod.cache_delete(ids, bool(body.get("basemap", True)))}
+        except files_mod.FileError as e:
+            return 422, {"message": str(e)}
+        return 404, {"error": "not found"}
+
+
+#: `file_action` が受ける口。
+_FILE_PATHS = frozenset({"/api/settings/load_sim", "/api/settings/load_app", "/api/open_results",
+                         "/api/lang_template", "/api/cache/breakdown", "/api/cache/delete"})
 
 
 def _make_handler(app: WebServer) -> type:
@@ -569,6 +624,11 @@ def _make_handler(app: WebServer) -> type:
                 if body is None or "key" not in body or "value" not in body:
                     return self._json(400, {"error": "bad body"})
                 return self._json(*app.apply_setting(body["key"], body["value"]))
+            if parts.path in _FILE_PATHS:
+                body = self._body()
+                if body is None:
+                    return self._json(400, {"error": "bad body"})
+                return self._json(*app.file_action(parts.path, body))
             if parts.path == "/api/project/open":
                 body = self._body()
                 text = body.get("text") if body is not None else None

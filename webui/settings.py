@@ -86,6 +86,12 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
             "proxy_hint": i18n.t("dlg_proxy_hint"),
             "update_check_auto": i18n.t("menu_check_updates_auto"),
             "update_check_prerelease": i18n.t("menu_check_updates_pre"),
+            "lang_template": i18n.t("btn_lang_template"),
+            "file": i18n.t("menu_file"),
+            "load_sim": i18n.t("menu_load_settings"),
+            "load_app": i18n.t("menu_load_app_settings"),
+            "open_results": i18n.t("menu_open_results"),
+            "delete_cache": i18n.t("menu_delete_all_cache"),
             "close": i18n.t("dlg_ok"),          # 1 つ替えるごとに保存する＝閉じるだけ
         },
     }
@@ -119,6 +125,41 @@ def _check(key: str, value: Any) -> str:
     if not isinstance(value, bool):
         raise SettingError(f"{key}: not a boolean")
     return _ON_OFF[0] if value else _ON_OFF[1]
+
+
+#: アプリ設定読込で取り込む鍵（ファイルは `on`/`off` の字で持つ起動時の確認は取り込まない＝旧と同じ）。
+FILE_KEYS = ("lang", "theme", "coord_format", "basemap_layer", "proxy_url")
+
+
+def apply_many(cfg: "dict[str, str]", values: dict) -> "tuple[bool, bool]":
+    """アプリ設定読込＝`FILE_KEYS` のうち選べる値だけを 1 回で保存して効かせる（旧
+    `_on_load_app_settings`）。返り値＝(1 つでも取り込んだか, 画面の読み直しが要るか)。
+
+    選べない値は黙って捨てる（他の鍵は取り込む）。1 つも無ければ保存しない。言語の種は
+    言語を取り込んだときだけ消費済みにする（B-299）。
+    """
+    from core import dem
+    from core import simulation as sim
+    got: dict[str, str] = {}
+    for key in FILE_KEYS:
+        if key not in values:
+            continue
+        try:
+            got[key] = _check(key, values[key])
+        except SettingError:
+            continue
+    if not got:
+        return False, False
+    reload = "lang" in got and got["lang"] != cfg.get("lang")
+    cfg.update(got)
+    if config.save_app(cfg) and "lang" in got:
+        config.consume_lang_seed()
+    if "lang" in got:
+        i18n.set_lang(got["lang"])
+    if "proxy_url" in got:
+        dem.set_proxy(got["proxy_url"])
+        sim.clear_terrain_cache()
+    return True, reload
 
 
 def apply(cfg: "dict[str, str]", key: str, value: Any) -> bool:

@@ -474,7 +474,9 @@ def web():
     st = AppState()
     w = Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
                calc=lambda t, p: _Result(), profile=_no_profile)
-    srv = webserver.WebServer(w, tile=lambda s, z, x, y: ("absent", None))
+    opened = []                                          # 本物のフォルダを開かない
+    srv = webserver.WebServer(w, tile=lambda s, z, x, y: ("absent", None), opener=opened.append)
+    srv.opened = opened
     th = threading.Thread(target=srv.httpd.serve_forever, daemon=True)
     th.start()
     yield srv
@@ -711,6 +713,112 @@ def test_the_basemap_switches_the_map_and_the_png(web, saved, monkeypatch):
     status, _ = _request(web, "POST", "/api/settings", token=web.token,
                          body={"key": "basemap_layer", "value": "nowhere"})
     assert status == 400 and web.basemap == "photo"
+
+
+# ---- 「設定」の枠の「ファイル」（I-257 の C） ------------------------------------
+def test_loading_parameters_takes_only_the_sim_keys(web, saved):
+    """sim の鍵だけ・値は字にする・選択式の知らない値は既定へ・回折の旧名は新名へ。"""
+    from core import config as cfg_mod
+    text = json.dumps({"freq": 920, "env_type": "moon", "diff_method": "deygout",
+                       "theme": "dark", "p_tx": True, "nested": {"a": 1}})
+    status, raw = _request(web, "POST", "/api/settings/load_sim", token=web.token, body={"text": text})
+    assert status == 200 and json.loads(raw)["message"]
+    _, inputs = web.worker.state.snapshot()
+    assert inputs["freq"] == "920"
+    assert inputs["env_type"] == cfg_mod.DEFAULT_CONFIG["env_type"]
+    assert inputs["diff_method"] == "bullington"
+    assert inputs["p_tx"] == cfg_mod.DEFAULT_CONFIG["p_tx"]      # 真偽は捨てる
+    assert "theme" not in web.app_cfg and saved["save"] == []           # app の鍵は取り込まない
+
+
+@pytest.mark.parametrize("text", ["{", "[1, 2]"])
+def test_an_unreadable_settings_file_says_so(web, text):
+    from core import i18n
+    status, raw = _request(web, "POST", "/api/settings/load_sim", token=web.token, body={"text": text})
+    assert status == 422 and i18n.t("fail_load_settings") in json.loads(raw)["message"]
+
+
+def test_loading_app_settings_keeps_the_good_values_only(web, saved):
+    text = json.dumps({"theme": "dark", "lang": "xx", "basemap_layer": "photo", "freq": "1"})
+    status, raw = _request(web, "POST", "/api/settings/load_app", token=web.token, body={"text": text})
+    body = json.loads(raw)
+    assert status == 200 and body["reload"] is False
+    assert body["settings"]["values"]["theme"] == "dark" and body["basemap"]["id"] == "photo"
+    assert web.basemap == "photo" and len(saved["save"]) == 1 and saved["seed"] == 0
+    assert "freq" not in web.app_cfg and "lang" not in web.app_cfg
+    from core import i18n
+    status, raw = _request(web, "POST", "/api/settings/load_app", token=web.token,
+                           body={"text": json.dumps({"theme": "neon"})})
+    assert json.loads(raw)["message"] == i18n.t("dlg_app_settings_none") and len(saved["save"]) == 1
+    status, raw = _request(web, "POST", "/api/settings/load_app", token=web.token,
+                           body={"text": json.dumps({"lang": "ja"})})
+    assert json.loads(raw)["reload"] is True and saved["seed"] == 1
+
+
+def test_the_results_folder_is_made_then_opened(web, monkeypatch, tmp_path):
+    from core import config as cfg_mod
+    target = tmp_path / "results"
+    monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(target))
+    status, _ = _request(web, "POST", "/api/open_results", token=web.token, body={})
+    assert status == 200 and target.is_dir() and web.opened == [str(target)]
+    blocker = tmp_path / "file"
+    blocker.write_text("x")
+    monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(blocker / "results"))
+    status, raw = _request(web, "POST", "/api/open_results", token=web.token, body={})
+    from core import i18n
+    assert status == 422 and i18n.t("fail_open_results") in json.loads(raw)["message"]
+
+
+def test_the_language_template_never_overwrites(web, monkeypatch, tmp_path):
+    from core import config as cfg_mod
+    monkeypatch.setattr(cfg_mod, "USER_LANG_DIR", str(tmp_path / "lang"))
+    for _ in range(2):
+        status, raw = _request(web, "POST", "/api/lang_template", token=web.token, body={})
+        assert status == 200
+    names = sorted(p.name for p in (tmp_path / "lang").iterdir())
+    assert names == ["_template (2).json", "_template.json"]
+    assert "_template (2).json" in json.loads(raw)["message"]
+    assert web.opened == [str(tmp_path / "lang")] * 2
+    assert json.loads((tmp_path / "lang" / "_template.json").read_text(encoding="utf-8"))["_name"] == "English"
+
+
+def test_deleting_the_cache_asks_per_source_only_when_there_are_several(web, monkeypatch):
+    from types import SimpleNamespace
+
+    from core import dem_cache
+    from core import dem_sources
+    calls = []
+    monkeypatch.setattr(dem_cache, "delete_all_tile_cache",
+                        lambda **kw: calls.append(kw) or {"deleted": 3})
+    monkeypatch.setattr(dem_cache, "get_cache_breakdown", lambda: {
+        "sources": [{"source_id": "gsi", "size_bytes": 1048576}], "basemap": {"size_bytes": 0}})
+    one = (SimpleNamespace(source_id="gsi", display_name="GSI"),)
+    monkeypatch.setattr(dem_sources, "all_sources", lambda: one)
+    status, raw = _request(web, "POST", "/api/cache/breakdown", token=web.token, body={})
+    assert status == 200 and json.loads(raw)["sources"] == [] and json.loads(raw)["basemap"] is None
+    status, raw = _request(web, "POST", "/api/cache/delete", token=web.token,
+                           body={"sources": None, "basemap": True})
+    assert status == 200 and "3" in json.loads(raw)["message"] and calls == [{}]
+    two = one + (SimpleNamespace(source_id="mine", display_name="Mine"),)
+    monkeypatch.setattr(dem_sources, "all_sources", lambda: two)
+    status, raw = _request(web, "POST", "/api/cache/breakdown", token=web.token, body={})
+    got = json.loads(raw)
+    assert [s["id"] for s in got["sources"]] == ["gsi", "mine"] and "1.0" in got["sources"][0]["label"]
+    _request(web, "POST", "/api/cache/delete", token=web.token,
+             body={"sources": ["mine", "ghost"], "basemap": False})
+    assert calls[-1] == {"sources": [two[1]], "include_basemap": False}
+    status, _ = _request(web, "POST", "/api/cache/delete", token=web.token, body={"sources": "mine"})
+    assert status == 400
+
+
+def test_the_settings_frame_labels_the_script_uses_are_served():
+    import re
+
+    from webui import settings as settings_mod
+    js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
+    body = js[js.index("function buildSettings"):js.index("function pickJsonText")]
+    used = set(re.findall(r"\bL\.(\w+)", body)) | set(re.findall(r'(?:choice|check)\("(\w+)"\)', body))
+    assert sorted(used - set(settings_mod.payload({})["labels"])) == []
 
 
 def test_the_ends_may_be_written_in_dms_and_compute_in_dd():

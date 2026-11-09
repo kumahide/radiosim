@@ -1225,9 +1225,67 @@ function buildSettings(st) {
   };
   const proxy = el("input", { type: "text", value: st.values.proxy_url || "", spellcheck: false, autocomplete: "off" });
   proxy.addEventListener("change", () => send("proxy_url", proxy.value));
+  // 「ファイル」の口（I-257 の C）＝結果の 1 文は `note`・失敗は `err`（どちらも枠の下）
+  const note = el("div", { className: "note", role: "status" });
+  const call = async (url, body) => {
+    err.textContent = "";
+    note.textContent = "";
+    try {
+      const r = await fetch(url, { method: "POST", headers: HEAD, body: JSON.stringify(body || {}) });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(d.message || d.error || String(r.status));
+      return d;
+    } catch (e) {
+      err.textContent = String((e && e.message) || e);
+      return null;
+    }
+  };
+  const say = (d) => { if (d && d.message) note.textContent = d.message; };
+  const loadFile = async (url) => {
+    const text = await pickJsonText();
+    if (text === null) return;
+    const d = await call(url, { text });
+    if (!d) return;
+    if (d.reload) { location.reload(); return; }
+    if (d.settings) {                              // アプリ設定＝枠を今の値で組み直す
+      buildSettings(d.settings);
+      setBasemap(d.basemap);
+      reformatCoords();
+      document.getElementById("settings").querySelector(".note").textContent = d.message;
+      return;
+    }
+    say(d);
+  };
+  const confirmBox = el("div", { className: "confirm", hidden: true });
+  const askDelete = async () => {
+    const d = await call("/api/cache/breakdown");
+    if (!d) return;
+    const picks = d.sources.map((s) => {
+      const c = el("input", { type: "checkbox", checked: true });
+      c.dataset.id = s.id;
+      return el("label", { className: "check" }, [c, el("span", { textContent: s.label })]);
+    });
+    const base = d.basemap === null ? null : el("input", { type: "checkbox", checked: true });
+    const done = async () => {
+      confirmBox.hidden = true;
+      const ids = d.sources.length ? picks.map((p) => p.querySelector("input"))
+        .filter((c) => c.checked).map((c) => c.dataset.id) : null;
+      say(await call("/api/cache/delete", { sources: ids, basemap: base ? base.checked : true }));
+    };
+    confirmBox.replaceChildren(
+      el("div", { textContent: d.confirm }),
+      ...picks,
+      ...(base ? [el("label", { className: "check" }, [base, el("span", { textContent: d.basemap })])] : []),
+      el("div", { className: "actions" }, [
+        button(d.cancel, () => { confirmBox.hidden = true; }), button(d.ok, done)]),
+    );
+    confirmBox.hidden = false;
+  };
   dlg.replaceChildren(
     el("h2", { textContent: L.title }),
     choice("lang"),
+    el("div", { className: "row" }, [
+      button(L.lang_template, async () => say(await call("/api/lang_template")))]),
     choice("theme"),
     choice("coord_format"),
     choice("basemap_layer"),
@@ -1235,9 +1293,38 @@ function buildSettings(st) {
     el("div", { className: "hint", textContent: L.proxy_hint }),
     check("update_check_auto"),
     check("update_check_prerelease"),
+    el("h3", { textContent: L.file }),
+    el("div", { className: "row" }, [
+      button(L.load_sim, () => loadFile("/api/settings/load_sim")),
+      button(L.load_app, () => loadFile("/api/settings/load_app")),
+      button(L.open_results, () => call("/api/open_results")),
+      button(L.delete_cache, askDelete),
+    ]),
+    confirmBox,
     err,
+    note,
     el("div", { className: "actions" }, [button(L.close, () => dlg.close())]),
   );
+}
+
+// 設定の JSON を 1 つ選んで本文を返す（選ぶ画面を閉じたら null）。無い環境は `<input type=file>`
+const JSON_TYPES = [{ description: "JSON", accept: { "application/json": [".json"] } }];
+async function pickJsonText() {
+  try {
+    if (window.showOpenFilePicker) {
+      const [h] = await window.showOpenFilePicker({ types: JSON_TYPES });
+      return await (await h.getFile()).text();
+    }
+    const input = el("input", { type: "file", accept: ".json,application/json" });
+    const file = await new Promise((done) => {
+      input.addEventListener("change", () => done(input.files[0] || null));
+      input.click();
+    });
+    return file ? await file.text() : null;
+  } catch (e) {
+    if (e && e.name === "AbortError") return null;
+    throw e;
+  }
 }
 document.getElementById("settings-btn").addEventListener("click", () => {
   const dlg = document.getElementById("settings");
