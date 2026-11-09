@@ -263,8 +263,10 @@ class TestEveryFaceThatShowsTheRatioAlsoShowsTheDepth:
 
     def test_the_scan_finds_faces_at_all(self):
         """ゲートが空振りしていないこと（呼び方を変えたら読み方も直す合図）。"""
+        # 下限 4＝帳票の面（`report_path`）を Pro へ移した（Link 1.0 ステージ11b）。
+        # 公開側に残る面＝単一の report.txt・hops.csv・scenario.csv・summary.csv
         faces = [n for n, t in self._sources() if _shows(t)[0]]
-        assert len(faces) >= 5, f"率を出す面を数え切れていない: {faces}"
+        assert len(faces) >= 4, f"率を出す面を数え切れていない: {faces}"
 
     def test_no_face_shows_the_ratio_alone(self):
         offenders = [n for n, t in self._sources()

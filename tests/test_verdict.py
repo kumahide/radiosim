@@ -152,20 +152,25 @@ def test_golden_review_count_matches_the_stage6_measurement():
 
 
 @pytest.mark.parametrize("word", verdict.WORDS)
-def test_every_layer_maps_each_word_to_the_same_colour_key(word):
-    """帳票の CSS クラス・地図の色・表の行の色が、4 語のどれでも別の鍵に落ちる。
+def test_the_map_image_gives_each_word_its_own_colour(word):
+    """地図の PNG の色が、4 語のどれでも別の色に落ちる。
 
-    REVIEW を NG や ERR へ潰す対応表が 1 つでも残ると、同じ回線が面ごとに違う色になる。
-    画面（webui）の色は `test_webui::test_the_verdict_colors_are_the_report_colors` が見る。
+    REVIEW を NG や ERR へ潰す対応表が残ると、同じ回線が面ごとに違う色になる。
+    画面（webui）の色は `test_webui::test_the_verdict_colors_are_the_map_colors` が見る。
+    帳票の CSS クラスと表の行の色は Pro へ移した（Link 1.0 ステージ11b）＝Pro 側の試験が
+    この表と突き合わせる。
     """
-    from report import map_graphics, report_common
-    assert report_common.verdict_class(word) == report_common.VERDICT_CLASS[word]
-    assert word in map_graphics.STATUS_HEX and word in report_common.VERDICT_ROW_BG
-    assert len(set(report_common.VERDICT_CLASS.values())) == len(verdict.WORDS)
+    from report import map_graphics
+    assert word in map_graphics.STATUS_RGB
+    assert set(map_graphics.STATUS_RGB) == set(verdict.WORDS)
+    assert len(set(map_graphics.STATUS_RGB.values())) == len(verdict.WORDS)
 
 
 class TestDisclosure:
-    """帳票の開示が判定の語の意味と裏返る前提を名乗る（`disclosure.verdict_lines`・判断点 ①）。"""
+    """開示が判定の語の意味と裏返る前提を名乗る（`disclosure.verdict_lines`・判断点 ①）。
+
+    帳票の面（HTML）に同じ行が載ることは Pro 側の同名の試験が見る（Link 1.0 ステージ11b）。
+    """
 
     def _link(self, word):
         return next(i for i in LINKS if _run(i).status == word)
@@ -188,16 +193,13 @@ class TestDisclosure:
         assert lines[0] == i18n.t("html_verdict_scope").format(pct=f"{VEG_PERTURB_FRAC * 100:g}")
         assert "{" not in lines[0]
 
-    def test_review_lists_the_flipping_assumptions_on_every_face(self, tmp_path):
+    def test_review_lists_the_flipping_assumptions_in_the_text_report(self, tmp_path):
         from core import disclosure, i18n
-        from report import report_common
         link_id = self._review_link()
         r = _run(link_id)
         names = [i18n.t(f"html_verdict_axis_{a}") for a in r.verdict.flipped_by]
         lines = disclosure.verdict_lines([r.verdict])
         assert all(n in lines[1] for n in names) and "{" not in lines[1]
-        html = report_common.handling_section_html((), None, verdicts=[r.verdict])
-        assert all(n in html for n in names)
         p = _params(LINKS[link_id]["input"])
         sim._save_report(r, p, p.h_tx, p.h_rx, str(tmp_path))
         text = (tmp_path / "report.txt").read_text(encoding="utf-8")
@@ -224,14 +226,11 @@ class TestDisclosure:
         assert i18n.t("html_verdict_invalid_pixel").format(n=6) in lines
         assert not any("html_verdict" in line for line in disclosure.verdict_lines([v]))
 
-    def test_every_report_face_passes_the_verdicts(self):
-        """🔒 面を足しても判定を渡し忘れない＝帳票の 4 面と report.txt。"""
+    def test_the_text_report_passes_the_verdicts(self):
+        """🔒 `report.txt` も判定を渡す（帳票の 4 面は Pro 側の試験が数える）。"""
         root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-        for rel in ("report/report_path.py", "report/report_summary.py",
-                    "report/report_multihop.py", "report/report_scenario.py",
-                    "core/simulation.py"):
-            with open(os.path.join(root, rel), encoding="utf-8") as f:
-                assert "verdicts=" in f.read(), rel
+        with open(os.path.join(root, "core", "simulation.py"), encoding="utf-8") as f:
+            assert "verdicts=" in f.read()
 
 
 def test_scenario_and_params_are_not_mutated():

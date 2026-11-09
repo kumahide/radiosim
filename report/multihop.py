@@ -1,11 +1,12 @@
 """
 multihop.py
 ===========
-中継点（ホップ）を挟む回線＝**A-3** の実行エンジン（ヘッドレス・UI 知識ゼロ）。
+中継点（ホップ）を挟む回線＝**A-3** の入力の型・検査・成果物 CSV（ヘッドレス・UI 知識ゼロ）。
 
-**5 つ目の実行フロー**（既存 4＝単一 / バッチ / 地図 / 条件探索）。入力モデルが
-バッチと別（waypoint 列が source of truth）なので独立させたが、**1 ホップの実行は
-バッチの `_run_paths` そのまま**＝実行層に新規はほとんど無い。
+入力モデルがバッチと別（waypoint 列が source of truth）なので独立させたが、**1 ホップの
+計算はバッチの 1 行そのまま**（`hop_rows` が `PathRow` へ展開する）＝物理に新規は無い。
+新しい画面（`webui/worker.py`）がホップごとに計算し、`hops.csv` は `hops_csv_text`。
+実行の糸（`_run_thread`）と中継の帳票は Pro へ移した（Link 1.0 ステージ11b）。
 
 中継方式＝**再生中継（受けて送り直す）に限定**（2026-07-31 ユーザー決定）
 ---------------------------------------------------------------------
@@ -36,23 +37,14 @@ multihop.py
 
 from __future__ import annotations
 
-import logging
 import math
-import os
-import threading
-import time
 from dataclasses import dataclass, field
-from datetime import datetime
-from typing import Callable
 
 from core import config
 from core import i18n
-from core import simulation as sim
 from core import units
-from core import verdict
 from report import batch
 
-logger = logging.getLogger("radiosim")
 
 # 中継経路の ID に許す長さ。**ホップ ID（`<id>_h1`）が出力ディレクトリ名になる**
 # ので、バッチの上限（16）から接尾辞ぶんを引いた値にする。
@@ -114,7 +106,7 @@ TOPOLOGIES = (TOPOLOGY_CHAIN, TOPOLOGY_STAR)
 #
 # 🔑 **`TOPOLOGIES` とは別物**（2026-08-05・I-066）。2.6 ではこの 2 つが**同じ 1 つの
 # 事実の別の面**として 3 か所に暗黙に散っており、`project.py`（読む）・
-# `views/multihop.py`（持つ）・`multihop.py`（実行する）は**どれも単体では筋が
+# 画面（持つ＝当時は旧画面の `views/multihop.py`）・`multihop.py`（実行する）は**どれも単体では筋が
 # 通るのに、繋ぐと「星の地点を鎖として計算し、保存で書き換える」**という壊れ方を
 # した（独立レビューで 3 巡かけて処方を 3 回変えた）。
 #
@@ -259,63 +251,6 @@ class MultiHopRun:
         return min(margins)
 
 
-def overall_status(run: MultiHopRun) -> str:
-    """全体判定の**語**（`"OK"` / `"NG"` / `"REVIEW"` / `"ERROR"`）＝**ここだけが作る**（B-071）。
-
-    🔑 **語彙は区間と同じ**（`batch.PathResult.status`）＝同じ成果物の中で、区間表・
-    件数カード・全体判定が**同じ語**で話す。集約は `core.verdict.aggregate`
-    （NG＞REVIEW＞OK・ERROR は別扱い＝4.0 判断点 ①）＝バッチと条件探索と同じ規則。`run.ok` の**二値**から語を作ると
-    `ERROR` が `NG` に潰れ、「計算できたが回線不成立」と「判定できなかった」が
-    読み手に区別できなくなる（区間表と件数は `ERROR` と言っているのに、全体だけが
-    `NG` と言う——同じ紙の上で食い違う）。
-
-    ⚠️ **`ok` を置き換えるものではない**＝`ok` は「鎖が成立したか」という真偽で、
-    集約規則（min）の意味論そのもの。こちらは**それを人に見せる語**で、`ok` が
-    答えられない第 3 の状態（判定不能）を持つ。⇒ 判定に使うのは `ok`、
-    画面と成果物に書くのは `overall_status`。
-
-    ⚠️ **区間が 1 つも無い実行も `ERROR`**＝判定の材料が無いことを「NG」と
-    言い切らない（`overall_margin` も同じ条件で `None` を返している）。
-
-    ⛔ **`run.ok` から語を作る式を、画面やレポートへ書き戻さないこと。**
-    `overall_display`（語と数値）と対で、**状態語もここが単一ソース**。
-    """
-    require_runnable(run.path, "overall_status")   # 規則の出所は 1 か所
-    # 判定の出所は `batch.PathResult.status`（I-010 ③）＝成果物が欠けた区間も含む。
-    # 空・ERROR を含む鎖は ERROR（`verdict.aggregate` の規則）。
-    return verdict.aggregate(h.status for h in run.hops)
-
-
-#: 集約カードの語（I-052）。**判定で切り替える**ので、キーを 2 つ持つ。
-OVERALL_MARGIN_KEY    = "mh_overall_margin"      # OK＝設計余裕の KPI
-OVERALL_SHORTFALL_KEY = "mh_overall_shortfall"   # NG＝あと何 dB 足りないか
-
-
-def overall_display(run: MultiHopRun, digits: int = 1) -> tuple[str, str]:
-    """集約カードの **(語の i18n キー, 表示する数値)** を返す（I-052）。
-
-    **同じ数字が答えている問いが、判定で変わる**——OK なら「あと何 dB 積めるか」
-    （連続量として意味を持つ）だが、NG なら要るのは「あと何 dB 足りないか」で、
-    `−12.4` を「余裕」と書いた数字は読み違えの元になる。⇒ **値の出所
-    （`overall_margin`）は変えず、語と符号だけを切り替える**。
-
-    ⚠️ ここを画面とレポートで別々に書くと、必ず片方だけ直る日が来る
-    （I-010 で「判定の出所が各所に散っていた」のと同じ壊れ方）。**単一ソース。**
-    ⚠️ 判定できない（`overall_margin is None`）ときは NG 側の語を使わない
-    ——不足量が分からないのに「最大不足 —」と書くのは、無い情報を語ってしまう。
-    """
-    margin = run.overall_margin
-    if margin is None:
-        return OVERALL_MARGIN_KEY, "—"
-    # 🔑 語は数値の符号で切り替える（`run.ok` ではない）＝REVIEW の鎖は `ok` が偽でも
-    # 基準の余裕度が正のことがあり、`ok` で切ると「不足 −3.0」という負の不足量になる。
-    # REVIEW を含まない鎖では `ok` と同じ答え（全区間 OK ⇔ 最小の余裕度 ≥ 0）。
-    if margin >= 0:
-        return OVERALL_MARGIN_KEY, f"{margin:+.{digits}f}"
-    # 「不足 −12.4」は二重否定で読めない＝符号を反転して不足量そのものを出す。
-    return OVERALL_SHORTFALL_KEY, f"{-margin:.{digits}f}"
-
-
 def hop_endpoints(path: MultiHopPath, index: int) -> "tuple[Waypoint, Waypoint] | None":
     """区間 `index` の両端の地点（範囲外なら None）。
 
@@ -328,12 +263,6 @@ def hop_endpoints(path: MultiHopPath, index: int) -> "tuple[Waypoint, Waypoint] 
         return None
     a, b = pairs[index]
     return path.waypoints[a], path.waypoints[b]
-
-
-def hop_label(path: MultiHopPath, index: int, fallback: str = "") -> str:
-    """区間 `index` の見出し（`A → B`）。範囲外なら `fallback`。"""
-    ends = hop_endpoints(path, index)
-    return f"{ends[0].name} → {ends[1].name}" if ends else fallback
 
 
 def hop_id(path_id: str, index: int) -> str:
@@ -406,116 +335,8 @@ def validate_path(path: MultiHopPath) -> list[str]:
     return errors
 
 
-def run_multihop(
-    path:             MultiHopPath,
-    base_params:      sim.SimParams,
-    on_hop_start:     Callable[[int, int, str], None],
-    on_hop_progress:  Callable[[int, int], None],
-    on_hop_complete:  Callable[[int, int, batch.PathResult], None],
-    on_complete:      Callable[[MultiHopRun], None],
-    on_error:         Callable[[Exception], None],
-    coord_format:     str = "dd",
-    on_hop_stage:     "Callable[[str], None] | None" = None,
-    project_name:     str = "",
-    memo:             str = "",
-    basemap_source_id: str = "pale",
-    cancel:           "threading.Event | None" = None,
-) -> None:
-    """中継経路の実行をバックグラウンドスレッドで開始する。
-
-    コールバックの形は `batch.run_batch` に揃えてある＝呼び出し側（View）が
-    進捗の受け取り方を作り直さずに済む（`ProgressPump` の使い方も同じ）。
-
-    ⚠️ **1 ホップ = 1 区間の DEM 取得**なので、取得量はホップ数に比例する（④）。
-    追い風＝隣接ホップは端点を共有し、タイルが重なるのでキャッシュが効きやすい。
-
-    basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
-    呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
-
-    cancel（省略できる `threading.Event`・4.0 ステージ6）が立つと次のホップ（取得中なら
-    次の標本）で止まり、`sim.Cancelled` が `on_error` へ渡る。
-    """
-    threading.Thread(
-        target = _run_thread,
-        args   = (path, base_params, on_hop_start, on_hop_progress,
-                  on_hop_complete, on_complete, on_error, coord_format,
-                  on_hop_stage, project_name, memo, basemap_source_id, cancel),
-        daemon = True,
-    ).start()
-
-
-def _run_thread(
-    path, base_params, on_hop_start, on_hop_progress, on_hop_complete,
-    on_complete, on_error, coord_format, on_hop_stage, project_name, memo,
-    basemap_source_id="pale", cancel=None,
-) -> None:
-    try:
-        # ⛔ **実行できるかを最初に問う**（2026-08-04・独立レビュー Codex 7 巡目）。
-        # ここに置く理由が 2 つある:
-        #   ① **DEM を引く前**＝引いてから落ちると時間も外部サーバーへの負荷も
-        #      無駄になる。出力ディレクトリも作らない。
-        #   ② **ワーカースレッドの中**＝`run_multihop` は「バックグラウンドで
-        #      開始する」API なので、ここだけ**呼び出し元スレッドで `on_error` を
-        #      呼ぶ**とコールバックの順序とスレッド契約が経路ごとに変わる
-        #      （再入の危険）。失敗の渡り方は他の失敗と同じ 1 本にする。
-        require_runnable(path, "run_multihop")
-
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        run_dir   = config.new_run_dir("multihop", timestamp)
-
-        rows  = hop_rows(path)
-        total = len(rows)
-        t0    = time.perf_counter()
-        logger.info("Multihop started: %s (%d hops) → %s",
-                    path.path_id, total, run_dir)
-
-        # **ホップ 1 本＝バッチの 1 行**（実行層はここで完全に流用する）。
-        results = batch._run_paths(rows, base_params, run_dir, on_hop_start,
-                                   on_hop_progress, on_hop_complete,
-                                   coord_format, on_hop_stage, project_name,
-                                   basemap_source_id, cancel)
-
-        run =MultiHopRun(path=path, hops=results, save_dir=run_dir)
-        _write_hops_csv(run, run_dir)
-        # 合成シート（全体判定＋内訳）と連結レポート。**min だけを出さない**＝
-        # 「どこが一番苦しいか」が分からないと次の一手（中継点を足す・空中線を
-        # 上げる）が決められない（②）。地図はバッチと同じ俯瞰図を流用する
-        # ＝端点が一致する N 本なので、そのまま折れ線に見える。
-        from report import report_multihop
-        from report import report_summary
-        map_b64 = report_summary.render_summary_map_b64(results, basemap_source_id)
-        report_multihop.save_route_html(run, project_name, memo, map_b64)
-        report_multihop.save_report_all_html(run, project_name, memo, map_b64)
-        logger.info("Multihop complete: %s in %.2fs (overall %s)",
-                    path.path_id, time.perf_counter() - t0,
-                    overall_status(run))
-        on_complete(run)
-
-    except sim.Cancelled as ex:
-        # 取り消しは失敗ではない（traceback を残さない）＝終わったことだけ on_error で返す
-        logger.info("Multihop cancelled: %s", ex)
-        on_error(ex)
-
-    except Exception as ex:
-        logger.exception("Multihop error: %s", ex)
-        on_error(ex)
-
-
-def _write_hops_csv(run: MultiHopRun, run_dir: str) -> None:
-    """ホップ別の台帳（`hops.csv`）。
-
-    **バッチの `summary.csv` とは別ファイルにする**（2026-08-01 ユーザー決定）＝
-    あちらは「1 行 = 1 回線」の出力契約で既に使われており、`group_id` 列を足すと
-    互換破壊の告知が要る。中継は「1 行 = 1 ホップ・N 行で 1 回線」という**別の
-    形**なので、器を分けたほうが両方の意味が濁らない。
-    """
-    path_csv = os.path.join(run_dir, "hops.csv")
-    with open(path_csv, "w", newline="", encoding="utf-8") as f:
-        f.write(hops_csv_text(run))
-
-
 def hops_csv_text(run: MultiHopRun) -> str:
-    """`hops.csv` の本文（行末 `\\r\\n`）。ファイルへ書くのは呼ぶ側（旧画面・新しい画面の保存）。"""
+    """`hops.csv` の本文（行末 `\\r\\n`）。ファイルへ書くのは呼ぶ側（新しい画面の保存・Pro の帳票）。"""
     import csv
     import io
 

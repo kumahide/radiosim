@@ -31,7 +31,7 @@ from typing import Any
 from core import coords
 from core import i18n
 from core import scenario as scn
-from core.batch_csv_schema import CSV_COLUMNS
+from core.batch_csv_schema import _REQUIRED_COLS, CSV_COLUMNS
 
 #: 作業面（JS もこの字で分ける）。先頭が起動したときの面。
 WORKSPACES = ("single", "batch", "scenario", "multihop")
@@ -181,7 +181,7 @@ def batch_plan(rows: "list[dict[str, str]]") -> "list[tuple[Any, str, str | None
 def batch_from_csv(text: str) -> "list[dict[str, str]]":
     """CSV の本文 → 複数経路の表（画面の文字列のまま）。
 
-    見出しの読み方は `batch.parse_csv` と同じ（BOM・列名の前後空白と大小を寄せる・必須列）。
+    見出しの読み方は Pro の `batch.parse_csv` と同じ（BOM・列名の前後空白と大小を寄せる・必須列）。
     値はここでは検査しない＝表に載せて、実行のときに `batch_plan` がその行だけを ERROR にする
     （打ちかけと同じ扱い＝読み込んだ後に表で直せる）。知らない列は捨てる。
     """
@@ -191,7 +191,7 @@ def batch_from_csv(text: str) -> "list[dict[str, str]]":
     reader = csv.DictReader(io.StringIO(text.lstrip("﻿"), newline=""))
     if reader.fieldnames is None:
         raise ValueError(i18n.t("berr_no_header"))
-    missing = batch._REQUIRED_COLS - {batch._norm_key(c) for c in reader.fieldnames}
+    missing = _REQUIRED_COLS - {batch._norm_key(c) for c in reader.fieldnames}
     if missing:
         raise ValueError(i18n.t("berr_missing_cols").format(cols=", ".join(sorted(missing))))
     rows = []

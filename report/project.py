@@ -22,7 +22,7 @@ CSV（`core.batch_csv_schema.CSV_COLUMNS`）は**人が Excel で編集する外
 `"34.5, 132.4"` の 1 セルに詰める。JSON でその形を真似ると**座標文字列の
 パースが 2 か所に増える**＝範囲・パースの出所が二重になる（B-016/B-018 と
 同型）。`.rsproj` は**アプリ内部の型の写し**にして、CSV 往復は従来どおり
-`batch.parse_csv` / `export_csv` が別に担う。
+CSV の読み書き（新しい画面の `webui/sheets.py`・Pro の `batch.parse_csv` / `export_csv`）が別に担う。
 
 セクションが無い（`None`）ことの意味
 ----------------------------
@@ -87,7 +87,7 @@ class ScenarioSpec:
     """条件探索の条件セット（**画面の文字列のまま**持つ）。
 
     値を保存時に数値へ変換しない理由＝条件探索のウィンドウが「値は文字列で持ち、実行時に
-    変換する」流儀（`views/scenario.py` の `_COMPARE_FIELDS`）だから。保存の瞬間に
+    変換する」流儀（旧画面の `views/scenario.py` の `_COMPARE_FIELDS` から続く）だから。保存の瞬間に
     パースを走らせると、**入力途中の値を保存できない**（保存はいつでも通るべき）。
     値域の検証は実行時に `scenario.Condition` が 1 か所で担う。
     """
@@ -555,7 +555,7 @@ def from_dict(data: dict) -> ProjectDoc:
                          for rf in raw["hop_rf"]],
             # 欠損＝鎖（`.rsproj` の「欠損は既定値」）。
             # ⚠️ **宣言済みの値だけ**（未知は破損）。⇒ 読めた値は**ウィンドウが保持し**
-            # （`views/multihop.py` の `_topology`）、実行してよいかは
+            # （当時は旧画面の `views/multihop.py` の `_topology`）、実行してよいかは
             # `multihop.require_runnable` が DEM を引く前に決める。
             # 🔴 **3 つが揃って初めて安全**（2026-08-04・Codex 7 巡目）＝読む側だけ
             # 直しても、ウィンドウが値を落とせば**星の地点を鎖として計算し**、保存で

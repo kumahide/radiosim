@@ -150,7 +150,7 @@ def data_source_line(dem_source_ids=None) -> str:
     出所（`dem_sources.resolve()`）は同じだが、**組み込みソース（国土地理院）
     の文字列は表示言語で訳す**（B-227）＝`display_name` は Japanese 固定文字列
     のため、英語帳票では地形断面図を描く matplotlib のフォント（英語モードでは
-    日本語フォントを適用しない＝`report/mpl_fonts.py`）に日本語グリフが無く
+    日本語フォントを適用しない＝Pro の `radiosim_pro/mpl_fonts.py`）に日本語グリフが無く
     豆腐化していた。`report.txt` は素のテキストなのでこの問題が起きず、
     宣言そのままの `display_name` を刻む（利用者が宣言したソースは訳しようが
     ないので、そちらは HTML 側もそのまま出す）。

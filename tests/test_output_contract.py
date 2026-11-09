@@ -33,11 +33,8 @@ ROOT = Path(__file__).resolve().parent.parent
 _FuncDef = ast.FunctionDef | ast.AsyncFunctionDef
 
 #: 台帳に載せない `csv.writer` と、その理由（**増やすなら理由を書く**）。
-_ALLOWED_UNREGISTERED = {
-    "report.batch:export_csv":
-        "入力 CSV＝アプリ自身が読み戻す交換フォーマットで、契約の向きが逆"
-        "（単一ソースは `core.batch_csv_schema.CSV_COLUMNS`）。成果物ではないので出力契約の"
-        "台帳には載せない（→ core/output_contract.py の冒頭）",
+_ALLOWED_UNREGISTERED: dict[str, str] = {
+    # 入力 CSV の書き手（`batch.export_csv`）は帳票と一緒に Pro へ移した（Link 1.0 ステージ11b）。
 }
 
 
@@ -72,7 +69,8 @@ def _file_name_sources(writer: str) -> list[str]:
     """書き手と、それを呼ぶ同じモジュールの関数のソース（ファイル名はどちらかが持つ）。
 
     書き手が本文だけを返す形（`summary_csv_text` など・新しい画面の保存が使う＝Link 1.0 ステージ10d）
-    では、ファイル名は呼ぶ側（旧画面の `_save_summary_csv` など）が持つ。
+    では、ファイル名は呼ぶ側が持つ＝公開側では新しい画面の `webui/exports.py`（帳票の側の
+    呼び手は Pro へ移した＝Link 1.0 ステージ11b）。
     """
     module, name = writer.split(":")
     layer, stem = module.split(".")
@@ -82,6 +80,12 @@ def _file_name_sources(writer: str) -> list[str]:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name != name:
             if any(isinstance(c, ast.Call) and isinstance(c.func, ast.Name) and c.func.id == name
                    for c in ast.walk(node)):
+                sources.append(ast.unparse(node))
+    callers = ast.parse((ROOT / "webui" / "exports.py").read_text(encoding="utf-8"))
+    for node in ast.walk(callers):
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            if any(isinstance(c, ast.Call) and isinstance(c.func, ast.Attribute)
+                   and c.func.attr == name for c in ast.walk(node)):
                 sources.append(ast.unparse(node))
     return sources
 

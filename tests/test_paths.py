@@ -162,10 +162,12 @@ class TestAllFlowsUseResolver:
     # これ自体が config.RESULTS_DIR 由来なので、どちらの呼び方でも解決器の上にいる。
     _RESOLVER_CALLS = ("config.RESULTS_DIR", "config.new_run_dir")
 
-    def test_batch_output_uses_resolver(self):
-        """バッチ＝run_batch の batch_dir は解決器由来。"""
-        from report import batch
-        src = pathlib.Path(batch.__file__).read_text(encoding="utf-8")
+    def test_results_folder_opener_uses_resolver(self):
+        """新しい画面の「結果フォルダを開く」は解決器由来。
+        バッチの実行（`run_batch` の `batch_dir`）は帳票と一緒に Pro へ移した
+        （Link 1.0 ステージ11b）＝同じ縛りは Pro の試験が持つ。"""
+        from webui import files
+        src = pathlib.Path(files.__file__).read_text(encoding="utf-8")
         assert any(c in src for c in self._RESOLVER_CALLS)
 
     # `sys.executable` を持ってよいファイルと、その理由。

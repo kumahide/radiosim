@@ -487,7 +487,7 @@ class TestDocsIslandCoversEveryTestThatReadsDocs:
         found = _tests_that_read_docs()
         for known in ("tests/test_docs_consistency.py",
                       "tests/test_i18n_glossary.py",
-                      "tests/test_report.py"):
+                      "tests/test_webui_docs.py"):   # 帳票の試験は Pro へ移した（Link 1.0 ステージ11b）
             assert known in found, f"{known} を拾えていない＝検出器が壊れている"
 
     def test_prose_only_mentions_are_not_counted(self):

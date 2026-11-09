@@ -257,19 +257,16 @@ radiosim/
 │   ├── failure.py        # The shape of failure messages (what happened / what to do next / details)
 │   ├── update_check.py   # Check for Updates (asks GitHub Releases; picking what to announce is a pure function)
 │   └── version.py        # Version information
-├── report/               # The layer that produces output: engines and artifacts (headless)
-│   ├── batch.py          # Batch execution engine (CSV I/O, validation, run)
-│   ├── multihop.py       # Relay path engine (A-3; waypoints to hops, min aggregation)
+├── report/               # The layer that produces output: workspace row types and deliverables (CSV, KML, map PNG, .rsproj), headless. The reports live in Pro (Link 1.0 stage 11b)
+│   ├── batch.py          # Multiple Paths row types and checks (PathRow, PathResult, reading one row, conversion to SimParams)
+│   ├── multihop.py       # Relay path (A-3) input types and checks (waypoints to hops, min aggregation, hops.csv)
 │   ├── project.py        # Project file (.rsproj) I/O — bundles the whole input set
-│   ├── residuals.py      # Extracts PathResult rows into core/residuals.py's residual samples (report → core, one direction)
-│   ├── report_common.py  # Shared report parts (A4 skeleton CSS, header/footer, document shell; pure)
-│   ├── report_path.py    # Per-path output generation (PNG/HTML/KML)
-│   ├── report_summary.py # Batch summary output generation (CSV/HTML/KML, all-pages document)
-│   ├── report_scenario.py # Condition explorer output (A4 line chart + table, CSV)
-│   ├── report_multihop.py # Relay path output (route sheet + per-hop sheets, hops.csv)
-│   ├── report_map.py     # Headless path-overlay map generation for reports
-│   ├── map_graphics.py   # Pure-PIL map overlay drawing (shared by UI and reports)
-│   └── mpl_fonts.py      # matplotlib Japanese font application (shared by graph/report)
+│   ├── report_common.py  # Shared deliverable parts (CSV cell sanitizing and the two trailing columns, text size burned into figures; pure)
+│   ├── report_path.py    # path.kml for a single link
+│   ├── report_summary.py # summary.csv and summary.kml for Multiple Paths
+│   ├── report_scenario.py # scenario.csv for the condition explorer
+│   ├── report_map.py     # Headless path-overlay map PNG and its attribution text
+│   └── map_graphics.py   # Pure-PIL map overlay drawing (single source of the verdict colors)
 ├── views/                # Screens (tkinter)
 │   ├── launcher.py       # Launcher window (core: input form, run, progress)
 │   ├── launcher_menu.py  # Launcher menu bar and its actions (mixin)
@@ -352,8 +349,6 @@ radiosim/
     ├── test_p526_reference.py  # Reference-case corpus (diffraction formulas vs. P.526 exact values and hand calculations)
     ├── test_sensitivity.py    # Perturbation re-run engine (3.4 step 4)
     ├── test_residuals.py      # Residual-vs-measurement calculation (3.4 step 5)
-    ├── test_report_residuals.py  # PathResult → residual sample extraction (3.4 step 5)
-    ├── test_report_sensitivity.py  # Sensitivity/residual table wiring in the reports (3.4 step 6)
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -386,7 +381,6 @@ radiosim/
     ├── test_calc_profile.py
     ├── test_verdict.py
     ├── test_engine.py
-    ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_runner_logging.py
     ├── test_theme.py
@@ -663,7 +657,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 - `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
 - Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
 - Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`, and the values read land on `batch.PathRow` attributes. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and `report/residuals.py` extracts the samples from `PathResult` for the Multiple Paths summary table. `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`, and the values read land on `batch.PathRow` attributes. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and they appear as a table in Pro's Multiple Paths summary report (Pro also extracts the samples). `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
 ### Common Settings (a snapshot of the launcher)
 
@@ -709,7 +703,7 @@ Open it with the **Condition Explorer** button in the launcher (views/scenario.p
 
 <img src="images/shot_multihop.png" width="620" alt="Relay Path window: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table">
 
-Open it with the **Relay Path** button in the launcher (views/multihop.py (removed in 4.0)). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model and the runner live in `report/multihop.py`.
+Open it with the **Relay Path** button in the launcher (views/multihop.py (removed in 4.0)). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model lives in `report/multihop.py`; the new screen's `webui/worker.py` runs it (computes the sections one at a time and gathers them into a `MultiHopRun`).
 
 - **A route is a point list plus a connection rule.** `MultiHopPath` holds `Waypoint`s and a per-section `HopRF`; sections are derived by `links(path)` so the meaning of the ordering is not re-spelled at every call site. **Height belongs to the waypoint only** — a relay has one antenna, so there is deliberately no way to give "RX height of the previous section" and "TX height of the next" different values. The cap is `MAX_HOPS`.
 - **Topology is declared in one place.** `TOPOLOGIES` lists chain and star, but **only `SUPPORTED_TOPOLOGIES` may actually run**; the read, write and run layers all consult that one tuple, and `require_runnable()` is the gate. The aggregates (`ok` / `worst` / `overall_margin`) carry **chain semantics**, so for anything else they refuse rather than quietly return a number (a min over a star means nothing).
@@ -1266,8 +1260,8 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | File                       | Coverage                                                                        |
 | -------------------------- | ------------------------------------------------------------------------------- |
 | `test_models.py`         | Terrain profile, diffraction, vegetation, rain, gas, link budget                |
-| `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, A4 sheet/CSV output) |
-| `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, hops.csv / route sheet) |
+| `test_scenario.py`       | Condition explorer (single DEM fetch + N conditions, phase progress, non-mutating overrides, axis selection) |
+| `test_multihop.py`       | Relay paths (waypoint-to-hop derivation, shared relay height, losses never chained, min aggregation, every layer refusing the same unsupported topologies) |
 | `test_project.py`        | Project files (`.rsproj` round-trip, app settings never imported, missing section means "not held", newer schema rejected, corrupt files) |
 | `test_field_session.py` | Measurement sessions of the field-measurement helper (`apps/field`): header round-trip, samples are append-only, the header is written atomically, endpoint positions accept both a session constant and a time series, time averaging and spatial averaging live in separate fields, raw values are never overwritten with converted ones, feeder loss is not folded into the conversion, a CLAS height is accepted only with a Fix solution, out-of-vocabulary values and an empty measurement-configuration ID are rejected |
 | `test_field_aggregate.py` | Window aggregation and censoring in the field-measurement helper (`apps/field`): windows are cut on sequence numbers, a partly received window yields no value, a window that received nothing still exists as a row, spatial-slot boundaries come from the operator log (what was lost just before a move or the stop does not disappear, a slot that received nothing still gets windows, samples received while moving go into no window), windows never cross a settings or spatial-slot change, the mean is taken in the dB domain, the TX feeder loss is not counted twice, the batch CSV is written atomically |
@@ -1285,17 +1279,15 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_p526_reference.py` | Reference-case corpus (a check that is not self-regression). Compares only the diffraction formulas the product uses against values fixed outside the product: the J(ν) approximation against exact Fresnel-integral values at 11 points (tolerance 0.15 dB), and three single knife-edge hand calculations plus four synthetic Bullington (P.526 §4.5.1) profiles (tolerance 0.01 dB). It also checks that typical slips (a constant, the earth bulge, a sign) turn red (4.0 step 1) |
 | `test_sensitivity.py`    | Perturbation re-run engine: every axis brackets the baseline, axes for inputs that are not in use stay absent, the diffraction/vegetation composition swap (sum vs. the larger of the two), multi-hop argmin flipping (3.4 step 4) |
 | `test_residuals.py`      | Residual-vs-measurement calculation: band/distance-band edges, the direction of the feeder-loss correction, per-layer (env class × band × distance band) median/IQR/count, spot-measurement exclusion (3.4 step 5) |
-| `test_report_residuals.py` | `PathResult` → residual sample extraction: rows with no measured value, or a failed calculation, are excluded (3.4 step 5) |
-| `test_report_sensitivity.py` | Sensitivity/residual table wiring in the reports: the ground-reflection disclosure swaps for the sensitivity row only when the envelope is available, the residual table stays hidden with zero samples, and neither the DEM-elevation axis nor the multi-hop argmin note is emitted (3.4 step 6) |
 | `test_simulation.py`     | DEM fetch (parallel, cache, error handling), calculation, save (report coords)  |
 | `test_config.py`         | Input validation, config I/O (app/sim split), i18n key coverage                 |
 | `test_dem.py`            | DEM decoding, tile fetch/prefetch, proxy/session, cache deletion/stats, coverage outline |
 | `test_dem_bilinear.py`   | Calculation profile v2 terrain reading (bilinear, 4 neighbours from the same layer, missing neighbours) plus its sample placement and fetch wiring |
 | `test_dem_sources.py`    | DEM source declarations (URL template, decode-method dispatch, GSI/Terrarium/Mapbox Terrain-RGB formulas) |
 | `test_tile_sources.py`   | Background map tile source declarations (URL/max_zoom/attribution validation, reserved IDs, duplicate display-name rejection) |
-| `test_batch.py`          | CSV parse, validation, _make_params, execution engine (run_batch/_run_paths/_process_one), HTML coords |
-| `test_report.py`         | KML generation (per-path/summary, lon-lat order, obstruction, XML escaping), PNG/HTML smoke, combined report (sheet CSS scoping, in-document anchors) |
-| `test_report_map.py`     | Report path-overlay map generation (zoom fit, tile stitch, rotation, crop)      |
+| `test_batch.py`          | CSV row validation, `_make_params` (per-row overrides and falling back to the base), obstruction segments, guarding CSV cells against formula injection |
+| `test_report.py`         | KML generation (lon-lat order, obstruction), every deliverable face carries the handling section, deliverable text never explains with the "=" form |
+| `test_report_map.py`     | Path map generation (lon/lat to pixel, bounding box, zoom choice within the tile cap) |
 | `test_coords.py`         | Coordinate conversion (DD/DMS parse, format, roundtrip, hemisphere sign, errors)|
 | `test_terrain_grid.py`   | Terrain resolution (level -> sample positions, level ordering, **no DEM pixel skipped in real tile coordinates and both chord edges sampled**, where the ceiling bites, a single place that resolves it, no numeric sample-count input) |
 | `test_units.py`          | Distance display formatting (km -> m, digit grouping, raw values for CSV, arrays)|
@@ -1305,8 +1297,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_engine.py`         | The entry points into the calculation core (the synchronous fetch passes only the given arguments, the terrain carries the acquisition dates and per-sample status, items come back one at a time in order, one failure is folded, cancelling or an unreachable DEM stops the whole run) |
 | `test_verdict.py`        | The single verdict point (four words, every combination of varied assumptions, REVIEW in both directions, ground reflection and filled invalid pixels, aggregation and counts, v1 keeps three words, the same colour key in every layer) |
 | `test_output_contract.py`| Column spec of the artifact CSVs (the registry counts every writer, headers come from the contract, one value per column, the variable column of the explorer) |
-| `test_mpl_fonts.py`      | matplotlib Japanese font application (language-aware, priority, no-font fallback)|
-| `test_runner_logging.py` | Background runs (batch / explorer / relay) log their failures **with a traceback** |
+| `test_runner_logging.py` | Background runs (explorer) log their failures **with a traceback** |
 | `test_i18n_glossary.py`  | On-screen wording gate (checks the glossary in [glossary.md](glossary.md) — **bilingual: every rule carries its English counterpart, and each row's `定義` cell ends with an English sentence; the `en` column is the wording to use on screen** — against every i18n string: no avoided synonym reaches the screen, every listed term is actually in use, and the table does not contradict itself) |
 | `test_i18n_key_duplication.py` | i18n key gate (**no two keys hold the same on-screen wording**; fixing only one of them would put two words on screen). Artifact wording — report HTML and plot images — is out of scope: aligning screen and artifact names belongs to the output-contract release |
 | `test_i18n_external.py` | Gate for **user-supplied languages** (`lang/<code>.json`). **The rejection side is the point**: keys whose placeholders (`{n}` …) differ from English, keys unknown to English, artifact wording (`html_*` / `pl_*`) and non-string values are not applied, and the bundled `ja` / `en` cannot be overridden. Also checks that untranslated keys fall back to English and that one broken file does not stop the others. Includes **one test that demonstrates the `KeyError` you would get if the check were removed** — if that reason ever disappears, that test fails and says so |

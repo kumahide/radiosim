@@ -11,7 +11,7 @@ residuals.py
 **report 側（`report/batch.py` の `PathRow`/`PathResult`）には依存しない**＝
 3.0 の項目 9 で踏んだ壁（core → report の逆流）を避けるため、この層は生の数値
 （predicted_dbm・measured_dbm など）だけを受け取る。`PathResult` からの抽出は
-report 側（`report/residuals.py`）が担う。
+Pro（`radiosim_pro/residuals.py`）が担う。
 
 帯域の境目は `models.VEG_COEFF_RANGE_GHZ`（植生減衰の係数の境目）を単一ソースに
 流用する＝3.4 が新しい境目を作ると、同じ周波数がセクションによって違う帯域に分類される。

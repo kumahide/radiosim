@@ -257,19 +257,16 @@ radiosim/
 │   ├── failure.py        # 失敗メッセージの型（何が起きた／次に何をすべきか／詳細）
 │   ├── update_check.py   # 更新の確認（GitHub Releases へ問い合わせ・知らせる版の選択は純関数）
 │   └── version.py        # バージョン情報
-├── report/               # 出力を作る層。実行エンジンと成果物の生成（ヘッドレス）
-│   ├── batch.py          # 複数経路の実行エンジン（CSV I/O・バリデーション・実行）
-│   ├── multihop.py       # 中継経路（A-3）の実行エンジン（waypoint→ホップ導出・min 集約）
+├── report/               # 出力を作る層。作業面の行の型と成果物（CSV・KML・地図の PNG・.rsproj）の生成（ヘッドレス）。帳票は Pro（Link 1.0 ステージ11b）
+│   ├── batch.py          # 複数経路の行の型と検査（PathRow・PathResult・1 行の読み取り・SimParams への変換）
+│   ├── multihop.py       # 中継経路（A-3）の入力の型と検査（waypoint→ホップ導出・min 集約・hops.csv）
 │   ├── project.py        # プロジェクトファイル（.rsproj）の読み書き。入力一式を束ねる
-│   ├── residuals.py      # PathResult → core/residuals.py の残差標本へ抽出（report→core の一方向）
-│   ├── report_common.py  # レポート共有部品（A4 骨格 CSS・ヘッダ/フッタ・文書外枠・純関数）
-│   ├── report_path.py    # 経路ごとの出力生成（PNG/HTML/KML）
-│   ├── report_summary.py # バッチのサマリ出力生成（CSV/HTML/KML・全ページ連結）
-│   ├── report_scenario.py # 条件探索の出力生成（A4 の折れ線＋表・CSV）
-│   ├── report_multihop.py # 中継経路の出力生成（合成シート＋ホップ別連結・hops.csv）
-│   ├── report_map.py     # レポート用 経路オーバーレイ地図のヘッドレス生成
-│   ├── map_graphics.py   # 地図オーバーレイ描画の純 PIL 実装（UI とレポートで共有）
-│   └── mpl_fonts.py      # matplotlib 日本語フォント適用（グラフ/レポート共通）
+│   ├── report_common.py  # 成果物の共有部品（CSV のセルの安全化と末尾 2 列・図に焼く字の大きさ・純関数）
+│   ├── report_path.py    # 1 回線の path.kml
+│   ├── report_summary.py # 複数経路の summary.csv と summary.kml
+│   ├── report_scenario.py # 条件探索の scenario.csv
+│   ├── report_map.py     # 経路を重ねた地図の PNG のヘッドレス生成と出典の字
+│   └── map_graphics.py   # 地図オーバーレイ描画の純 PIL 実装（判定の色の単一ソース）
 ├── views/                # 画面（tkinter）
 │   ├── launcher.py       # ランチャーウィンドウ（本体。入力フォーム・実行・進捗）
 │   ├── launcher_menu.py  # ランチャーのメニューバーとその操作（Mixin）
@@ -351,8 +348,6 @@ radiosim/
     ├── test_p526_reference.py  # 規格例照合コーパス（回折の式を P.526 の厳密値と手計算に突き合わせる）
     ├── test_sensitivity.py    # 摂動再計算エンジン（3.4 ステージ4）
     ├── test_residuals.py      # 実測との残差計算（3.4 ステージ5）
-    ├── test_report_residuals.py  # PathResult → 残差標本の抽出（3.4 ステージ5）
-    ├── test_report_sensitivity.py  # 感度表/残差表の帳票配線（3.4 ステージ6）
     ├── test_simulation.py
     ├── test_config.py
     ├── test_dem.py
@@ -385,7 +380,6 @@ radiosim/
     ├── test_calc_profile.py
     ├── test_verdict.py
     ├── test_engine.py
-    ├── test_mpl_fonts.py
     ├── test_progress.py
     ├── test_runner_logging.py
     ├── test_theme.py
@@ -660,7 +654,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 - `freq` / `gain_tx` / `gain_rx` を省略した場合は共通設定の値が使われます（**リンク識別属性**として経路ごとに変えられる）。環境区分・降雨強度・回折モデルは共通設定で一括指定します
 - `gain_tx` / `gain_rx` 列のない旧 CSV もそのまま読めます（後方互換・利得は共通設定を継承）
 - 列名は**大小文字と前後の空白を区別しません**（`ID,Start,…` でも読めます）。`id` は**大小文字を区別せず**一意である必要があります（`p01` と `P01` は同じ出力フォルダになるため重複として弾かれます）
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（列の単一ソースは `core/batch_csv_schema.py` の `CSV_COLUMNS`。読み込んだ値は `batch.PathRow` の属性に入る）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、複数経路のサマリレポートへ表として載る（`report/residuals.py` が `PathResult` から標本を抽出）。`meas_method` は `spot` / `mean` の想定値。複数経路画面の「スポット測定を統計から除外」チェックボックスで `spot` の行を集計から外せる（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)`）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` は実測突合せ用の任意列（列の単一ソースは `core/batch_csv_schema.py` の `CSV_COLUMNS`。読み込んだ値は `batch.PathRow` の属性に入る）。`meas_dbm` を入れた経路が1本でもあれば `core/residuals.py` が層別（環境区分×帯域×距離帯）の残差統計を計算し、Pro の複数経路のサマリ帳票へ表として載る（標本の抽出も Pro 側）。`meas_method` は `spot` / `mean` の想定値。複数経路画面の「スポット測定を統計から除外」チェックボックスで `spot` の行を集計から外せる（`core/residuals.py` の `compute_layered_stats(exclude_spot=True)`）。**記録は測定時にしかできない**ので、利用者向けの手順は[マニュアルの「実測との突合せに使う場合の記録項目」](manual_ja.md#実測との突合せに使う場合の記録項目)を参照
 
 ### 共通設定（ランチャーのスナップショット）
 
@@ -706,7 +700,7 @@ path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,サブ回線,,,,
 
 <img src="images/shot_multihop.png" width="620" alt="中継経路の画面。送信点・中継点・受信点の 3 地点と、区間ごとの受信レベル・マージン・判定が表に返っている">
 
-ランチャーの **中継経路** ボタンで開きます（views/multihop.py（4.0 で撤去））。**再生中継**（受けて送り直す）前提で、区間ごとに独立したリンクバジェットを計算します。モデルと実行は `report/multihop.py`。
+ランチャーの **中継経路** ボタンで開きます（views/multihop.py（4.0 で撤去））。**再生中継**（受けて送り直す）前提で、区間ごとに独立したリンクバジェットを計算します。モデルは `report/multihop.py`・実行は新しい画面の `webui/worker.py`（区間を 1 件ずつ計算して `MultiHopRun` にまとめる）。
 
 - **経路は点列＋接続規則で持つ**: `MultiHopPath` は `Waypoint` の列と区間ごとの `HopRF` を持ち、区間は `links(path)` が導出します（並びの意味を各所で書かない）。**高さは `Waypoint` にだけ**あり——中継点のアンテナは 1 本なので、前の区間の受信高と次の区間の送信高を別々に持てない形にしてあります。上限は `MAX_HOPS`。
 - **トポロジーの宣言は 1 か所**: `TOPOLOGIES` に鎖と星があり、**実際に走れるのは `SUPPORTED_TOPOLOGIES` だけ**。読む・書く・実行するの 3 層がこの 1 つを参照し、ゲートは `require_runnable()`。集約（`ok` / `worst` / `overall_margin`）は**鎖の意味論**なので、鎖以外では黙って数字を返さず止めます（星の min は意味を持たない）。
@@ -1228,8 +1222,8 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | テストファイル             | 主な対象                                                                   |
 | -------------------------- | -------------------------------------------------------------------------- |
 | `test_models.py`         | 地形プロファイル・回折損・植生・雨・大気・リンクバジェット                 |
-| `test_scenario.py`       | 条件探索（DEM 取得 1 回 + N 条件・フェーズの進捗・上書きの非破壊・A4 シート/CSV 出力）|
-| `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・hops.csv／合成シート）|
+| `test_scenario.py`       | 条件探索（DEM 取得 1 回 + N 条件・フェーズの進捗・上書きの非破壊・軸の選び方）|
+| `test_multihop.py`       | 中継経路（waypoint→ホップ導出・中継点の高さ共有・損失を連結しない・全体判定 min・対応する接続の形を全層が同じに断ること）|
 | `test_project.py`        | プロジェクトファイル（`.rsproj` の往復・app 設定を取り込まない・セクションの欠損は「持たない」・新しい schema の拒否・破損の扱い）|
 | `test_field_session.py` | 実測補助（`apps/field`）の測定セッション。ヘッダの往復・サンプルの追記のみ・ヘッダの原子的な書き込み・位置は定数と時系列の両方を許すこと・時間平均と空間平均が別の欄に在ること・生値を換算値で上書きしないこと・給電線損を換算に混ぜないこと・CLAS の高さは Fix 解のときだけ通すこと・語彙の外の値と空の測定構成 ID を保存しないこと |
 | `test_field_aggregate.py` | 実測補助（`apps/field`）のウィンドウの集計と打ち切り。ウィンドウの刻みはシーケンス番号・一部だけ届いたウィンドウは値を出さないこと・1 つも届かなかったウィンドウも行として残ること・置き場所の区切りは操作の記録から決めること（動かす直前と終了の直前に途絶えた分が消えない・1 つも受からなかった置き場所もウィンドウになる・移動中の受信はウィンドウに入れない）・設定と置き場所を跨いで平均しないこと・平均は dB 領域であること・TX 側の給電線損が二重に効かないこと・バッチ CSV の原子的な書き込み |
@@ -1247,17 +1241,15 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_p526_reference.py` | 規格例照合コーパス（自己回帰でない検証）。製品が使う回折の式だけを、製品の外で決まった値と比べる＝J(ν) の近似式を Fresnel 積分の数値積分の厳密値と 11 点（許容差 0.15 dB）・単一ナイフエッジの手計算 3 本と Bullington（P.526 §4.5.1）の合成断面 4 本（許容差 0.01 dB）。典型の書き損じ（定数・地球の丸み・符号）が赤になることも確かめる（4.0 ステージ1） |
 | `test_sensitivity.py`    | 摂動再計算エンジン。各軸が baseline を挟むこと・入力していない軸を出さないこと・回折損と植生減衰の合成規則差し替え（和⇄大きいほう）・標高を経路全体へ一律に動かしても余裕度が動かないこと・多ホップの argmin 入れ替わり（3.4 ステージ4） |
 | `test_residuals.py`      | 実測との残差計算。帯域/距離帯の境目・給電線損失の補正方向・層（環境区分×帯域×距離帯）ごとの中央値/IQR/件数・スポット測定の除外（3.4 ステージ5） |
-| `test_report_residuals.py` | `PathResult` → 残差標本の抽出。実測値の無い行／計算失敗行を除外すること（3.4 ステージ5） |
-| `test_report_sensitivity.py` | 感度表・残差表の帳票配線。地面反射の disclosure ⇔ 感度表の切り替え条件・残差表は標本 0 件で非表示・DEM 標高の軸と多ホップの argmin 注記を出さないこと（3.4 ステージ6） |
 | `test_simulation.py`     | DEM 取得（並列・キャッシュ・エラー）・計算・保存（report.txt 座標表記）    |
 | `test_config.py`         | 入力バリデーション・設定 I/O（app/sim 分離）・i18n キー網羅性                |
 | `test_dem.py`            | DEM デコード・タイル取得/事前取得・プロキシ/セッション・キャッシュ削除/統計・カバレッジ輪郭 |
 | `test_dem_bilinear.py`   | 計算プロファイル v2 の地形の読み（双線形・同じ層の 4 近傍・欠けた近傍の扱い）と標本の置き方・取得の配線 |
 | `test_dem_sources.py`    | DEM ソース宣言（URL テンプレート・デコード方式の列挙ディスパッチ・GSI/Terrarium/Mapbox Terrain-RGB の式） |
 | `test_tile_sources.py`   | 背景地図タイルソース宣言（URL/max_zoom/出典の検証・予約 ID・表示名重複の拒否） |
-| `test_batch.py`          | CSV パース・バリデーション・_make_params・実行エンジン（run_batch/_run_paths/_process_one）・HTML 座標表記 |
-| `test_report.py`         | KML 生成（per-path/サマリ・lon,lat 順・遮蔽区間・XML エスケープ）・PNG/HTML スモーク・連結レポート（シート CSS のスコープ・文書内アンカー） |
-| `test_report_map.py`     | レポート経路地図の生成（ズーム選択・タイルステッチ・回転・クロップ）       |
+| `test_batch.py`          | CSV の行の検証・`_make_params`（行ごとの上書きと基準値への戻り）・遮蔽区間の切り出し・CSV のセルの式注入の防ぎ |
+| `test_report.py`         | KML 生成（lon,lat 順・遮蔽区間）・成果物の全部の面に扱いの節があること・成果物の文言に「＝」で説明する形を使わないこと |
+| `test_report_map.py`     | 経路地図の生成（経緯度→画素・範囲の箱・タイル数の上限内のズーム選択）     |
 | `test_coords.py`         | 座標表記変換（DD/DMS パース・整形・往復・半球符号・不正入力）              |
 | `test_terrain_grid.py`   | 地形の解像度（段階→標本位置の解決・段階の順序・**実タイル座標で画素を飛ばさないこと／画素の縁の両方に標本が入ること**・天井の効く距離・解き方の口が 1 つであること・数で入れる口が復活しないこと） |
 | `test_units.py`          | 距離の表示整形（km → m 換算・桁区切り・CSV 用の生値・配列換算）            |
@@ -1267,8 +1259,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_engine.py`         | 計算コアへの呼び口（同期の取得は渡された引数だけを渡す・地形に取得日と標本ごとの事情を載せる・1 件ずつ順に返す・1 件の失敗は畳む・取り消しと DEM に届かないときは全体を止める） |
 | `test_verdict.py`        | 判定の口（4 語・前提を振った全組み合わせ・両向きの REVIEW・地面反射と無効画素の埋め直し・集約と件数・v1 は 3 語のまま・4 語が全層で同じ配色キー） |
 | `test_output_contract.py`| 成果物 CSV の列仕様（台帳が全書き手を数えているか・見出しが契約由来か・値の数が列数と合うか・条件探索の可変列） |
-| `test_mpl_fonts.py`      | matplotlib 日本語フォント適用（言語連動・優先順・フォント不在時の挙動）    |
-| `test_runner_logging.py` | バックグラウンド実行（バッチ / 条件探索 / 中継経路）の失敗が **traceback つき**でログに残ること |
+| `test_runner_logging.py` | バックグラウンド実行（条件探索）の失敗が **traceback つき**でログに残ること |
 | `test_i18n_glossary.py`  | 画面語彙のゲート（[glossary.md](glossary.md) の用語集と i18n の全文言を突き合わせる。使わない言い換えが画面に出ていないか・用語集が製品から浮いていないか・表自身が自己矛盾していないか） |
 | `test_i18n_key_duplication.py` | i18n キーのゲート（**画面に出る同じ字を 2 つのキーで持たない**。片方だけ直すと画面に 2 通りの語が出るため。成果物であるレポート HTML・グラフ画像の語は対象外で、画面と成果物の名前を揃えるのは出力の版の仕事） |
 | `test_i18n_external.py` | **利用者が足す言語**（`lang/<コード>.json`）のゲート。**採用しない側がコア**で、差し込み（`{n}` など）が英語と違うキー・英語に無いキー・成果物の語（`html_*` / `pl_*`）・文字列でない値は採用せず、同梱の `ja` / `en` は上書きさせない。未訳キーが英語へ落ちること、1 本が壊れていても他の言語が読めることも見る。**「弾かなければ実際に `KeyError` になる」ことを毎回実演する 1 本**を含む（この検査が要る理由そのものが消えたら、その 1 本が落ちて教える） |

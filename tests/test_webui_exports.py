@@ -23,7 +23,6 @@ import pytest
 
 from core import output_contract
 from core import verdict as vd
-from report import report_summary
 from webui import exports
 from webui import server as webserver
 from webui.state import AppState
@@ -121,15 +120,6 @@ def test_no_run_before_the_step_or_after_an_edit():
     assert w.sheet_run() is None
 
 
-def test_the_old_writer_writes_the_same_bytes_as_the_text(tmp_path):
-    _, w = _run("batch", [_ROW])
-    results = _got(w)[1]
-    report_summary._save_summary_csv(results, str(tmp_path))
-    raw = (tmp_path / "summary.csv").read_bytes()
-    assert raw == report_summary.summary_csv_text(results).encode("utf-8")
-    assert raw.count(b"\r\n") == 2 and b"\r\r\n" not in raw
-
-
 _KML = "{http://www.opengis.net/kml/2.2}"
 
 
@@ -170,15 +160,6 @@ def test_the_relay_and_scenario_sheets_have_no_kml_as_in_the_old_screen():
     assert exports.sheet_kml(*_got(w)) is None
     _, w = _run("scenario", {"compare": [{"h_tx": "15"}]}, h_tx="10")
     assert exports.sheet_kml(*_got(w)) is None
-
-
-def test_the_old_kml_writer_writes_the_text(tmp_path):
-    _, w = _run("batch", [_ROW, {**_ROW, "id": "C3", "h_tx": "15"}])
-    results = _got(w)[1]
-    report_summary.save_summary_kml(results, str(tmp_path))
-    written = _kml_folders((tmp_path / "summary.kml").read_text(encoding="utf-8"))
-    assert written == _kml_folders(report_summary.summary_kml_text(results))
-    assert written["REVIEW"] == [("C3", True)]                   # 旧画面も REVIEW を Error へ落とさない
 
 
 def test_the_map_lines_are_the_screen_lines_with_the_words():

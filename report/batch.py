@@ -1,34 +1,23 @@
 """
 batch.py
 ========
-バッチシミュレーション実行エンジン。
+複数経路（バッチ）の行の型と検査（UI 知識ゼロ）。
 
-UI 知識ゼロ — PathRow リストを受け取って全パスを順次処理する。
-CSV パース・エクスポート・バリデーション・実行を担う。
-出力生成は report_path.py（per-path）と report_summary.py（サマリ・連結）へ
-分離した（A4 骨格の共有部品は report_common.py）。
+`PathRow`（入力の 1 行）・`PathResult`（1 行の結果）・CSV の 1 行の読み取りと
+行の検査・行から `SimParams` を作る口を持つ。新しい画面（`webui/sheets.py`・
+`webui/worker.py`）と `.rsproj`（`project.py`）がここを引く。
+CSV ファイルの読み書き・実行の糸・帳票は Pro へ移した（Link 1.0 ステージ11b）。
 """
 
-import csv
 import math
-import os
 import re
-import threading
-import time
 from dataclasses import dataclass
-from datetime import datetime
-from typing import Callable
 
 from core import config
-from core import engine
 from core import i18n
 from core import models
 from core import simulation as sim
-from core.batch_csv_schema import CSV_COLUMNS, _REQUIRED_COLS
-from report import report_path
-from report import report_summary
 
-logger = __import__("logging").getLogger("radiosim")
 
 _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 
@@ -41,10 +30,8 @@ _PATH_ID_RE = re.compile(r"^[A-Za-z0-9_\-]+$")
 #   - `MAX_TYPED_ID_LEN` ＝ **人が表に打ち、表で読む**長さ。複数経路の ID 欄の
 #     幅と**同じ数でなければならない**（打てる長さと読める長さが食い違うと、
 #     `asaminami24` が `asaminami2` に読めて**別の ID として通用してしまう**）。
-#     ⇒ この定数が ID 欄の幅の単一ソースでもある（`views/batch_builder._WIDTHS`）。
-#     🔴 **上げるときは欄幅と画面の両方が要る**＝複数経路のウィンドウは FHD 150% で
-#     余裕 3px しかなく、周波数・利得・距離は見出しが床で 1px も出ない
-#     （実測 2026-08-12）。数字だけ上げると見切れゲートが赤くなる。
+#     🔴 **上げるときは表の欄の幅も要る**（旧画面〔Link 1.0 で撤去〕では ID 欄の
+#     幅の単一ソースだった＝FHD 150% で余裕 3px しかなかった・実測 2026-08-12）。
 #   - `_MAX_PATH_ID_LEN` ＝ **出力ディレクトリ名として許す**長さ。人は打たない＝
 #     中継が `route1_h8` のように**生成した** ID がここに収まればよく、表の欄幅
 #     とは無関係。`report/multihop.py` の上限（12）＋接尾辞（`_h8`）がこの中に
@@ -90,13 +77,13 @@ class PathResult:
     params:  sim.SimParams           | None = None
     save_dir: str                           = ""
     error:   Exception               | None = None
-    # 生成済みの A4 シート断片（report_path が詰める）。バッチ完了時に
+    # 生成済みの A4 シート断片（Pro の帳票が詰める）。バッチ完了時に
     # report_all.html へ連結するための保持で、失敗したパスは空のまま。
     sheet_html: str                         = ""
     # 成果物（PNG / report.html / KML）の生成に失敗したときの例外（I-010）。
     # **計算の失敗（`error`）とは別物**＝計算は通ったのに納品物だけが欠けた状態で、
     # 2026-08-03 に実機で現実になった（B-037＝`⚠ 0 ERR` で完走し詳細レポートだけ
-    # が無い）。`report_path.save_path_visuals` がここへ入れる。
+    # が無い）。Pro の帳票（`radiosim_pro/report_path.py`）がここへ入れる。
     artifact_error: Exception        | None = None
 
     @property
@@ -132,31 +119,6 @@ class PathResult:
 # 列の契約（列名・順序・必須/任意）は core/batch_csv_schema.py が単一ソース
 # （I-159＝RadioSim Field が apps 越しに report/ を import せず契約だけ読めるように）。
 # ドキュメント整合テストもそちらを単一ソースに README の CSV セクションを照合する。
-
-def parse_csv(csv_path: str) -> list[PathRow]:
-    """
-    CSV ファイルを PathRow リストに変換する。
-
-    必須列: id, start, end, h_tx, h_rx
-    省略可: freq, gain_tx, gain_rx, note
-    """
-    rows: list[PathRow] = []
-    with open(csv_path, newline="", encoding="utf-8-sig") as f:
-        reader = csv.DictReader(f)
-        if reader.fieldnames is None:
-            raise ValueError(i18n.t("berr_no_header"))
-        cols = {_norm_key(c) for c in reader.fieldnames}
-        missing = _REQUIRED_COLS - cols
-        if missing:
-            raise ValueError(i18n.t("berr_missing_cols").format(
-                cols=", ".join(sorted(missing))))
-
-        for line_no, raw in enumerate(reader, start=2):
-            rows.append(_parse_csv_row(_normalize_row(raw), line_no))
-
-    if not rows:
-        raise ValueError(i18n.t("berr_no_rows"))
-    return rows
 
 
 def _norm_key(key: str) -> str:
@@ -240,29 +202,6 @@ def _parse_csv_row(raw: dict, line: int) -> PathRow:
     )
 
 
-def export_csv(rows: list[PathRow], csv_path: str) -> None:
-    """PathRow リストを CSV ファイルに書き出す。"""
-    with open(csv_path, "w", newline="", encoding="utf-8") as f:
-        writer = csv.writer(f)
-        writer.writerow(CSV_COLUMNS)
-        for r in rows:
-            writer.writerow([
-                r.path_id,
-                f"{r.lat_tx}, {r.lon_tx}",
-                f"{r.lat_rx}, {r.lon_rx}",
-                r.h_tx,
-                r.h_rx,
-                r.freq_mhz if r.freq_mhz is not None else "",
-                r.gain_tx  if r.gain_tx  is not None else "",
-                r.gain_rx  if r.gain_rx  is not None else "",
-                r.note,
-                r.meas_dbm if r.meas_dbm is not None else "",
-                r.meas_method,
-                r.feeder_loss_db if r.feeder_loss_db is not None else "",
-                r.env_class,
-            ])
-
-
 # ============================================================
 # バリデーション
 # ============================================================
@@ -335,226 +274,6 @@ def validate_rows(
                 errors.append(i18n.t(msg_key).format(pid=pid, val=val))
 
     return errors
-
-
-# ============================================================
-# 実行エンジン
-# ============================================================
-def run_batch(
-    rows:              list[PathRow],
-    base_params:       sim.SimParams,
-    on_path_start:     Callable[[int, int, str], None],
-    on_path_progress:  Callable[[int, int], None],
-    on_path_complete:  Callable[[int, int, "PathResult"], None],
-    on_batch_complete: Callable[[str, list["PathResult"]], None],
-    on_error:          Callable[[Exception], None],
-    coord_format:      str = "dd",
-    on_path_stage:     "Callable[[str], None] | None" = None,
-    project_name:      str = "",
-    memo:              str = "",
-    exclude_spot:      bool = False,
-    basemap_source_id: str = "pale",
-    cancel:            "threading.Event | None" = None,
-) -> None:
-    """バッチ実行をバックグラウンドスレッドで開始する。
-
-    coord_format は per-path report.txt の人が読む座標表記のみに効く（既定 DD）。
-
-    成果物生成（PNG/HTML/KML・サマリ地図）もこのスレッド内で行う。report_* と
-    report_map は Figure+FigureCanvasAgg と PIL のみで tkinter に触れないため
-    ワーカースレッドから安全に呼べる（→ save_profile_png の docstring）。GUI を
-    固めないために必ずここで生成すること。project_name / memo はレポートの
-    ヘッダに載る自由文字列。exclude_spot は残差の層別表（`core/residuals.py`）
-    から `meas_method == "spot"` の標本を除くか（既定 False・B-233）。
-
-    on_path_stage は 1 パス内の段階通知（"fetch" / "render"）。所要時間の大半は
-    "render"（matplotlib 描画）なので、呼び出し側はこれで表示を切り替える。
-
-    ⚠️ **`on_path_progress` は `(取得済み, その行の点数)` の 2 つを渡す**（I-069）＝
-    地形の標本数は**行ごとに解かれる**ようになったので、呼び出し側が共通設定から
-    分母を持つことはできない（持たせると、長い行ほどバーが途中で止まって見える）。
-
-    basemap_source_id はレポート添付地図が追従する背景地図ソース（B-248）。
-    呼び出し元（ランチャー）が地図ウィンドウの選択を凍結して渡す。
-
-    cancel（省略できる `threading.Event`・4.0 ステージ6）が立つと次の行（取得中なら
-    次の標本）で止まり、`sim.Cancelled` が `on_error` へ渡る（サマリは作らない）。
-    """
-    threading.Thread(
-        target = _run_thread,
-        args   = (rows, base_params, on_path_start, on_path_progress,
-                  on_path_complete, on_batch_complete, on_error, coord_format,
-                  on_path_stage, project_name, memo, exclude_spot,
-                  basemap_source_id, cancel),
-        daemon = True,
-    ).start()
-
-
-def _run_thread(
-    rows:              list[PathRow],
-    base_params:       sim.SimParams,
-    on_path_start:     Callable[[int, int, str], None],
-    on_path_progress:  Callable[[int, int], None],
-    on_path_complete:  Callable[[int, int, "PathResult"], None],
-    on_batch_complete: Callable[[str, list["PathResult"]], None],
-    on_error:          Callable[[Exception], None],
-    coord_format:      str = "dd",
-    on_path_stage:     "Callable[[str], None] | None" = None,
-    project_name:      str = "",
-    memo:              str = "",
-    exclude_spot:      bool = False,
-    basemap_source_id: str = "pale",
-    cancel:            "threading.Event | None" = None,
-) -> None:
-    try:
-        timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        batch_dir = config.new_run_dir("batch", timestamp)
-
-        total = len(rows)
-        t_batch = time.perf_counter()
-        logger.info("Batch started: %d paths → %s", total, batch_dir)
-
-        path_results = _run_paths(rows, base_params, batch_dir, on_path_start,
-                                  on_path_progress, on_path_complete,
-                                  coord_format, on_path_stage, project_name,
-                                  basemap_source_id, cancel)
-
-        # サマリ生成もここ（ワーカースレッド）で行う。render_summary_map_b64 は
-        # 背景地図タイルをネットワーク取得するため、GUI スレッドで呼ぶと数秒
-        # 固まる（basemap は DEM と別キャッシュなので DEM が暖まっていても
-        # コールドになりうる）。
-        if on_path_stage:
-            on_path_stage("summary")
-        t_sum = time.perf_counter()
-        map_b64 = report_summary.render_summary_map_b64(path_results, basemap_source_id)
-        logger.info("Summary map complete in %.2fs", time.perf_counter() - t_sum)
-        report_summary.save_summary_html(path_results, batch_dir, project_name,
-                                         memo, map_b64, exclude_spot=exclude_spot)
-        # 全ページ連結レポート（Ctrl+P 一発で全パスぶんの PDF）。per-path の
-        # シート断片は実行中に PathResult へ溜めてあるので追加コストは連結のみ。
-        report_summary.save_report_all_html(path_results, batch_dir,
-                                            project_name, memo, map_b64,
-                                            exclude_spot=exclude_spot)
-        report_summary.save_summary_kml(path_results, batch_dir)
-        report_summary._save_summary_csv(path_results, batch_dir)
-        logger.info("Batch complete: %d paths in %.2fs (summary %.2fs) → %s",
-                    total, time.perf_counter() - t_batch,
-                    time.perf_counter() - t_sum, batch_dir)
-        on_batch_complete(batch_dir, path_results)
-
-    except sim.Cancelled as ex:
-        # 取り消しは失敗ではない（traceback を残さない）＝終わったことだけ on_error で返す
-        logger.info("Batch cancelled: %s", ex)
-        on_error(ex)
-
-    except Exception as ex:
-        logger.exception("Batch error: %s", ex)
-        on_error(ex)
-
-
-def _run_paths(
-    rows:         list[PathRow],
-    base_params:  sim.SimParams,
-    out_dir:      str,
-    on_start:     "Callable[[int, int, str], None] | None",
-    on_progress:  "Callable[[int, int], None] | None",
-    on_complete:  "Callable[[int, int, PathResult], None] | None",
-    coord_format: str = "dd",
-    on_stage:     "Callable[[str], None] | None" = None,
-    project_name: str = "",
-    basemap_source_id: str = "pale",
-    cancel:       "threading.Event | None" = None,
-) -> list[PathResult]:
-    """行を 1 本ずつ取得・計算し（`engine.run_paths`）、成果物を作って `PathResult` を返す。
-
-    バッチと中継の共通の走り（中継は 1 ホップ＝1 行）。取得と計算は計算コアの呼び口、
-    成果物（保存・PNG・HTML・KML）だけがここ（4.0 ステージ6）。
-    ⚠️ `on_progress` は `(取得済み, その行の点数)`（I-069＝点数は行ごとに解かれる）。
-    `cancel` が立つと次の行（取得中なら次の標本）で `sim.Cancelled` が上がる。
-    """
-    results: list[PathResult] = []
-    total = len(rows)
-    for i, (row, outcome) in enumerate(engine.run_paths(
-            rows, lambda r: _make_params(r, base_params), cancel=cancel,
-            on_start=on_start, on_stage=on_stage, on_progress=on_progress,
-            label=lambda r: r.path_id)):
-        pr = _process_one(row, outcome, out_dir, coord_format, on_stage,
-                          project_name, basemap_source_id)
-        results.append(pr)
-        if on_complete:
-            on_complete(i + 1, total, pr)
-    return results
-
-
-def _process_one(
-    row:         PathRow,
-    outcome:     engine.PathOutcome,
-    batch_dir:   str,
-    coord_format: str = "dd",
-    on_stage:     "Callable[[str], None] | None" = None,
-    project_name: str = "",
-    basemap_source_id: str = "pale",
-) -> PathResult:
-    """取得と計算を終えた 1 行（`outcome`）の成果物を作る。
-
-    取得・計算で失敗した行は `outcome.error` に畳まれて来る（traceback は `engine` が
-    残した）＝今までどおり `PathResult(error=)` の 1 行にする。
-    ⛔ DEM に届かない（`DemUnreachableError`）・取り消し（`Cancelled`）は `engine.run_paths`
-    がここへ来る前に投げてバッチごと止める（B-025 ②＝届かないのは経路でなく環境の問題。
-    飲み込むと残りの行も同じ失敗で待ち時間を積み、「全行 ERR のレポート」で終わる）。
-    """
-    if outcome.error is not None:
-        return PathResult(row=row, result=None, error=outcome.error)
-    params, terrain, result = outcome.params, outcome.terrain, outcome.result
-    assert params is not None and terrain is not None and result is not None
-    try:
-        # 取得日（B-213 追補）と標本ごとの事情（I-247）は `engine.fetch_terrain` が地形に
-        # 載せてある＝保存時に引き直さない。🔴 取得日を落とすと report.txt から行が必ず
-        # 消える（Codex 100 巡目）。
-        path_dir = os.path.join(batch_dir, row.path_id)
-        os.makedirs(path_dir, exist_ok=True)
-        sim._save_settings(params, params.h_tx, params.h_rx, path_dir)
-        sim._save_terrain_csv(terrain, path_dir, params)
-        sim._save_report(result, params, params.h_tx, params.h_rx, path_dir,
-                         coord_format, terrain)
-        pr = PathResult(
-            row      = row,
-            result   = result,
-            terrain  = terrain,
-            params   = params,
-            save_dir = path_dir,
-        )
-
-        # PNG/HTML/KML の生成はこのスレッドで行う（メインスレッド制約は無い＝
-        # save_profile_png が pyplot ではなく FigureCanvasAgg を使うため）。
-        # 1 パスの所要時間はほぼここが占めるので、GUI スレッドに載せると
-        # ウィンドウごと固まりプログレスバーの再描画も止まる。
-        # ⚠️ mpl_fonts.apply_japanese_font() が matplotlib.rcParams（グローバル）を
-        # 書き換えるため、パスの描画を並列化してはいけない（逐次実行を維持）。
-        # ガード: tests/test_batch.py::TestRunBatch::test_path_rendering_is_never_parallel
-        if on_stage:
-            on_stage("render")
-        # phase 境界ログ。B-006 の診断では「バッチで最も時間を食う区間」に
-        # ログ行が1つも無く、所要時間が最後まで測れなかった（→ 開発環境 C-b3②）。
-        t0 = time.perf_counter()
-        # 戻り値は `pr.artifact_error` と同じもの（save_path_visuals が pr へ
-        # 記録する）＝**呼び出し側が受け取り忘れても失敗が消えない**形にしてある
-        # （I-010・受け取り忘れは「静かに成功」に戻る唯一の道だった）。
-        report_path.save_path_visuals(pr, coord_format, project_name, basemap_source_id)
-        logger.info("Path '%s' render complete in %.2fs (%s)",
-                    row.path_id, time.perf_counter() - t0,
-                    "ok" if pr.artifact_error is None else "artifacts failed")
-
-        return pr
-
-    except Exception as ex:
-        # ⚠️ **経路 1 本の失敗はここで畳まれ、バッチは完走する**（それが仕様）＝
-        # 最上位の except には届かないので、**traceback はここで残すしかない**。
-        # 保存・レポート描画の失敗がこの経路へ入る（取得・計算の失敗は engine が畳む）。
-        # ⚠️ **失敗を「成功に紛れさせない」件（I-010）は別**＝ここが直っても、
-        # 完了ダイアログが正常に出ることは変わらない。**残すのと見せるのは別の話。**
-        logger.exception("Path '%s' failed: %s", row.path_id, ex)
-        return PathResult(row=row, result=None, error=ex)
 
 
 def _make_params(row: PathRow, base: sim.SimParams) -> sim.SimParams:

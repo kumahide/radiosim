@@ -16,7 +16,7 @@ sensitivity.py
   地面反射の包絡線（`core/ground_reflection.py`）。
   ⛔ **DEM 標高±は 3.4RC1 から出さない**（B-232＝一律シフトでは幅が原理的に
   ゼロで、帳票が「変化なし」と誤った開示を出していた）。多ホップの argmin も
-  同じ摂動を使うため注記ごと止めている（`report_multihop.py`）。設計し直しは 3.5。
+  同じ摂動を使うため注記ごと止めている（Pro の `radiosim_pro/report_multihop.py`）。設計し直しは 3.5。
 
 ステージ4 は**計算のみ**。帳票への表示配線はステージ6。
 """
@@ -119,7 +119,7 @@ def rebuild_terrain(
 ) -> models.TerrainProfile:
     """`terrain` と同じ緯度経度・曲率・標本位置のまま、標高だけ差し替えて作り直す。
 
-    🔑 **公開関数にした理由（ステージ6）**＝多ホップの argmin（`report_multihop.py`）が
+    🔑 **公開関数にした理由（ステージ6）**＝多ホップの argmin（Pro の `radiosim_pro/report_multihop.py`）が
     「全ホップへ同じ DEM オフセットを一括適用する」ために同じ再構築を要る。
     private のままだと帳票層が同じロジックを書き写すことになる（二重管理）。
     """
@@ -134,7 +134,7 @@ def rebuild_terrain(
 def shift_dem(terrain: models.TerrainProfile, delta_m: float) -> models.TerrainProfile:
     """`terrain` の標高を一律 `delta_m` だけ底上げ/沈める（緯度経度を使わない軽量版）。
 
-    🔑 **多ホップの argmin（ステージ6・`report_multihop.py`）専用**＝`rebuild_terrain` は
+    🔑 **多ホップの argmin（ステージ6・Pro の `radiosim_pro/report_multihop.py`）専用**＝`rebuild_terrain` は
     緯度経度から水平距離・曲率補正を作り直すが、DEM の系統誤差は**曲率と無関係に
     標高だけ動く**ので、既存の曲率補正量（`elevs_with_curve − raw_elevs`、`nan` は
     0 扱い）を保ったまま両方へ同じ量を足すだけでよい。`report.batch.PathResult`

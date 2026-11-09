@@ -3,9 +3,10 @@ map_graphics.py
 ===============
 地図オーバーレイ描画の純 PIL 実装（tkinter 非依存）。
 
-レポート地図生成（`report_map.py`・ヘッドレス）が使う単一ソース（旧画面の
-マップウィンドウ〔4.0 で撤去〕とも共有していた）。ここでは PIL の ``Image`` を
-返すだけにとどめ、画面への載せ方は呼び出し側で行う。
+地図の画像の生成（`report_map.py`・ヘッドレス）が使う単一ソース（旧画面の
+マップウィンドウ〔Link 1.0 で撤去〕とも共有していた）。ここでは PIL の ``Image`` を
+返すだけにとどめ、画面への載せ方は呼び出し側で行う。判定の色（`STATUS_RGB`）は
+新しい画面の CSS と Pro の帳票もここに合わせる。
 """
 
 import math
@@ -15,13 +16,12 @@ from PIL import Image, ImageDraw, ImageFont
 # 地図表現の基調色（ノード・パス線・ハロー・距離バッジ枠で共通）。淡色地図と
 # 航空写真のどちらの上でも沈まず、判定色（緑/赤）とも衝突しないシアン系を選んだ。
 MAP_CYAN     = (25, 181, 230)     # RGB
-MAP_CYAN_HEX = "#19B5E6"
 MARKER_TEXT   = "#0E7CA0"          # ラベル文字（淡色地図でも読める濃いシアン）
 
 # 判定ステータス別の経路色。台帳の判定の字（.s-ok / .s-ng / .s-err）とカードの
 # 数字も同じ色を使い、全パス地図の線と表の行が同じ色で対応づくようにする
 # （色の定義は HTML/PIL で二重管理せずここを単一ソースとする）。
-# ⚠️ **CSS 側は `STATUS_HEX` を `report_common.verdict_css` 経由で引く**＝以前は
+# ⚠️ **帳票の CSS（Pro）は同じ色を `STATUS_HEX` で引く**＝以前は
 # 「単一ソース」と書きながら CSS が色を直に書いており、ERROR だけ #e65100 と
 # #bf360c の 2 色になっていた（B-207）。
 #
@@ -35,24 +35,8 @@ STATUS_RGB = {
     "REVIEW": (106, 27, 154),  # #6a1b9a
     "ERROR":  (191, 54, 12),   # #bf360c
 }
-STATUS_HEX = {k: "#{:02x}{:02x}{:02x}".format(*v) for k, v in STATUS_RGB.items()}
 
-# 出典表記（B-133）。**地理院タイルは出典の表示義務がある**ので、タイルを描く面は
-# どれもこれを出す。⚠️ **レイヤ→表記の対応はここが単一ソース**＝画面の地図
-#（`webui/server.py` の `basemap_attribution`）と帳票（report_map）が同じ表を引く。片方だけ持つと「航空写真を
-# 見ながら『出典: 淡色地図』」という*事実と食い違う刻印*が生まれる（I-028）。
-ATTR_KEYS: dict[str, str] = {
-    "pale":  "tm_attr_pale",
-    "photo": "tm_attr_photo",
-}
 
-# 出典表記の配色。**背景を持たせるのは切り替え対策**＝淡色地図（明るい）と航空写真
-# （暗い・多色）では地の色が真逆で、地に直接描くとどちらかで必ず読めなくなる
-# （B-009＝ダークでツールチップが判読不能、と同型）。⚠️ ここは地図の上＝**アプリの
-# テーマではなくタイルの上での可読性**で決める（sv_ttk のダークに合わせると
-# 航空写真の暗部で沈む）。UI は Tk の色文字列として、帳票は PIL の RGB として使う。
-ATTR_FG = "#333333"
-ATTR_BG = "#FFFFFF"
 ATTR_FG_RGB = (0x33, 0x33, 0x33)
 ATTR_BG_RGB = (0xFF, 0xFF, 0xFF)
 
@@ -69,7 +53,7 @@ SELECT_RGB = (255, 145, 0)     # 琥珀色（淡色地図でも航空写真で�
 # 従来の候補だけだと「出典: 地理院タイル（淡色地図）」が**豆腐（□）で焼かれる**
 # ＝表示義務を満たさない画像が出来上がる（読めない刻印は無いのと同じ）。
 # ⚠️ ファイル名で引く（PIL は Windows のフォント置き場を名前で探す）＝
-# matplotlib 側（`mpl_fonts.py`）は**フォント名**で引くので候補表は共有できない。
+# matplotlib 側（Pro の `radiosim_pro/mpl_fonts.py`）は**フォント名**で引くので候補表は共有できない。
 _ASCII_FONTS = ("arialbd.ttf", "arial.ttf")
 _CJK_FONTS   = ("YuGothB.ttc", "YuGothM.ttc", "meiryob.ttc", "meiryo.ttc",
                 "msgothic.ttc")
@@ -142,45 +126,6 @@ def node_icon(hollow: bool, selected: bool = False) -> Image.Image:
     return img.resize((size, size), Image.Resampling.LANCZOS)
 
 
-def relay_icon(selected: bool = False) -> Image.Image:
-    """中継点（ホップの折れ点）のアイコン＝**ひし形**（RGBA PIL Image）。
-
-    送信点（塗りの丸）・受信点（白抜きの丸）と**形で**区別する。丸のまま濃淡や
-    大小で分けると、地図上で近接したときに見分けがつかない。ひし形は「経路の
-    折れ点」という意味にも合う。
-
-    ⚠️ 既定のマーカー（tkintermapview の赤い水滴）は使わない＝アプリの地図表現
-    （基調色のシアン系）から浮く。2026-08-01 の実機確認で指摘された。
-    """
-    size, scale = 22, 4
-    s = size * scale
-    img = Image.new("RGBA", (s, s), (0, 0, 0, 0))
-    d = ImageDraw.Draw(img)
-    c = s / 2
-    r, g, b = MAP_CYAN
-
-    # 淡いハロー（端点より控えめ＝主役は両端）。
-    d.ellipse([c - s * 0.44, c - s * 0.44, c + s * 0.44, c + s * 0.44],
-              fill=(r, g, b, 45))
-    if selected:
-        _selection_ring(d, c, s * 0.38, scale)
-    # 塗りのひし形＋白縁（淡色地図でのコントラスト確保）。
-    half = s * 0.30
-    pts = [(c, c - half), (c + half, c), (c, c + half), (c - half, c)]
-    d.polygon(pts, fill=(r, g, b, 255))
-    d.line(pts + [pts[0]], fill=(255, 255, 255, 255),
-           width=int(1.6 * scale), joint="curve")
-    return img.resize((size, size), Image.Resampling.LANCZOS)
-
-
-def distance_badge(text: str) -> Image.Image:
-    """距離テキストを半透明の角丸ピル背景に載せたバッジ画像（RGBA）を生成する。
-
-    淡色地図上でテキストを読みやすくするため、テキストごと PIL で描く。
-    """
-    return pill_badge(text)
-
-
 def pill_badge(
     text: str, *,
     outline: tuple[int, int, int] = MAP_CYAN,
@@ -247,7 +192,6 @@ def north_arrow(dx: float, dy: float) -> Image.Image:
     l, t, rr, bb = d.textbbox((0, 0), "N", font=font)
     d.text((nl_x - (rr - l) / 2 - l, nl_y - (bb - t) / 2 - t), "N", font=font, fill=ink)
     return img.resize((size, size), Image.Resampling.LANCZOS)
-
 
 
 def attribution_badge(text: str, font_px: float = 11.0,

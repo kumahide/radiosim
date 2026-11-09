@@ -29,9 +29,6 @@ from core import sensitivity
 from core import simulation as sim
 from report import batch
 from report import project
-from report import report_common
-from report import report_scenario
-from report import report_summary
 
 
 def _params(**over) -> sim.SimParams:
@@ -232,18 +229,6 @@ def _path_result(row_id="p", **over):
                             params=params, terrain=terrain)
 
 
-def test_summary_csv_stamps_each_row_and_leaves_an_unparsed_row_empty(tmp_path):
-    good = _path_result("a", freq="920.0")
-    other = _path_result("b", freq="2400.0")
-    failed = batch.PathResult(row=batch.PathRow("c", 0, 0, 0, 0, 1, 1), result=None,
-                              error=ValueError("x"))
-    report_summary._save_summary_csv([good, other, failed], str(tmp_path))
-    rows = _rows(tmp_path / "summary.csv")
-    assert [r["input_hash"] for r in rows] == [
-        calc_profile.input_hash(good.params), calc_profile.input_hash(other.params), ""]
-    assert [r["calc_profile"] for r in rows] == [calc_profile.DEFAULT_PROFILE] * 2 + [""]
-
-
 def _scenario_run() -> scn.ScenarioRun:
     base = _params(resolution="low")
     terrain = _terrain(base)
@@ -251,16 +236,6 @@ def _scenario_run() -> scn.ScenarioRun:
                   scn.Condition(label="高い", overrides={"freq_mhz": 920.0})]
     points = scn.evaluate(terrain, base, conditions)
     return scn.ScenarioRun(kind="compare", base_params=base, terrain=terrain, points=points)
-
-
-def test_scenario_csv_hashes_base_plus_overrides(tmp_path):
-    run = _scenario_run()
-    report_scenario.save_scenario_csv(run, str(tmp_path))
-    rows = _rows(tmp_path / "scenario.csv")
-    assert rows[0]["input_hash"] == calc_profile.input_hash(run.base_params)
-    assert rows[1]["input_hash"] == calc_profile.input_hash(_params(
-        resolution="low", freq="920.0"))
-    assert rows[0]["input_hash"] != rows[1]["input_hash"]
 
 
 # ------------------------------------------------------------
@@ -284,12 +259,6 @@ def test_mixed_profiles_are_not_hidden_behind_one():
     assert "v1, v2" in disclosure.provenance_line(["v2", "v1"], ["i1-a"], [])
 
 
-def test_handling_section_prints_the_line_only_when_given():
-    line = "計算プロファイル: v1"
-    assert line in report_common.handling_section_html((), None, provenance=line)
-    assert "hd-source\">計算" not in report_common.handling_section_html((), None)
-
-
 def test_report_txt_carries_the_stamp(tmp_path):
     good = _path_result()
     sim._save_report(good.result, good.params, good.params.h_tx, good.params.h_rx,
@@ -297,52 +266,6 @@ def test_report_txt_carries_the_stamp(tmp_path):
     text = (tmp_path / "report.txt").read_text(encoding="utf-8")
     assert calc_profile.input_hash(good.params) in text
     assert sim.terrain_hash(good.params, good.terrain) in text
-
-
-@pytest.fixture
-def stamp_spy(monkeypatch):
-    """帳票の面が `handling_section_html` へ渡す出所の 1 行を拾う（答えだけ見る）。"""
-    seen = []
-    real = report_common.handling_section_html
-
-    def spy(*args, **kwargs):
-        seen.append(kwargs.get("provenance", ""))
-        return real(*args, **kwargs)
-
-    monkeypatch.setattr(report_common, "handling_section_html", spy)
-    return seen
-
-
-def test_summary_sheet_stamps_the_ledger(stamp_spy):
-    first, second = _path_result("a"), _path_result("b", freq="920.0")
-    report_summary.summary_sheet_html([first, second])
-    combined = calc_profile.combined_hash(
-        [calc_profile.input_hash(first.params), calc_profile.input_hash(second.params)])
-    assert any(combined in line for line in stamp_spy)
-
-
-def test_scenario_sheet_stamps_one_terrain_and_all_conditions(stamp_spy):
-    run = _scenario_run()
-    report_scenario.scenario_sheet_html(run)
-    assert any(sim.terrain_hash(run.base_params, run.terrain) in line
-               and i18n.t("html_hash_combined").split("{")[0] in line
-               for line in stamp_spy)
-
-
-def test_every_report_face_passes_the_stamp():
-    """🔒 面を足しても刻印を忘れない＝`handling_section_html` の呼び手を全部数える。"""
-    root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-    callers = 0
-    for name in ("report_path.py", "report_summary.py", "report_multihop.py",
-                 "report_scenario.py"):
-        with open(os.path.join(root, "report", name), encoding="utf-8") as f:
-            text = f.read()
-        calls = text.count("report_common.handling_section_html(\n") + text.count(
-            "report_common.handling_section_html(\r\n")
-        assert calls == 1, name
-        assert "provenance=" in text, name
-        callers += calls
-    assert callers == 4
 
 
 # ------------------------------------------------------------
@@ -436,5 +359,6 @@ def test_every_product_call_passes_the_profile():
                         found += 1
                         if not any(k.arg == names[called] for k in node.keywords):
                             missing.append(f"{name}:{node.lineno}")
-    assert found >= 16
+    # 帳票の呼び口（5 か所）は Pro へ移した（Link 1.0 ステージ11b）＝Pro 側の同名の試験が数える
+    assert found >= 11
     assert missing == []

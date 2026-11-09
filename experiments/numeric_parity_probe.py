@@ -65,6 +65,13 @@ _SWEEP_RANGES: dict[str, tuple[float, float]] = {
 _COMPARE_K = (0.0, 1.0, 1.33, 10.0, 30.0)
 
 
+def _write_text(path: str, text: str) -> None:
+    # 帳票は Pro へ移した（Link 1.0 ステージ11b）＝公開側に残る `*_csv_text` で書く。
+    # 改行は製品の保存と同じ（`newline=""`＝CSV の字のまま）。
+    with open(path, "w", newline="", encoding="utf-8") as f:
+        f.write(text)
+
+
 def _params(inp: dict) -> sim.SimParams:
     # tests/test_golden_links.py の `_params` と同じ組み方（段階を持つ行は段階で）。
     return sim.SimParams({
@@ -157,7 +164,7 @@ def dump(out: str) -> None:
                                   points=points, axis=axis, axis_values=values)
             d = os.path.join(link_dir, f"sweep_{axis}")
             os.makedirs(d, exist_ok=True)
-            report_scenario.save_scenario_csv(run, d)
+            _write_text(os.path.join(d, "scenario.csv"), report_scenario.scenario_csv_text(run))
 
         points = scn.evaluate(terrain, params, compare)
         entry["compare"] = [_enc(p.result) for p in points]
@@ -165,7 +172,7 @@ def dump(out: str) -> None:
                               points=points)
         d = os.path.join(link_dir, "compare")
         os.makedirs(d, exist_ok=True)
-        report_scenario.save_scenario_csv(run, d)
+        _write_text(os.path.join(d, "scenario.csv"), report_scenario.scenario_csv_text(run))
 
         raw[lid] = entry
         path_results.append(PathResult(
@@ -174,7 +181,7 @@ def dump(out: str) -> None:
                         h_tx=params.h_tx, h_rx=params.h_rx),
             result=result, terrain=terrain, params=params))
 
-    report_summary._save_summary_csv(path_results, out)
+    _write_text(os.path.join(out, "summary.csv"), report_summary.summary_csv_text(path_results))
     with open(os.path.join(out, "raw.json"), "w", encoding="utf-8") as f:
         json.dump(raw, f, sort_keys=True)
     meta = {"python": sys.version, "numpy": np.__version__,

@@ -142,8 +142,8 @@ def test_dependencies_flow_one_way(module):
 def test_no_import_time_cycles():
     """import した瞬間に閉じる循環が無いこと（＝起動時の ImportError を防ぐ）。
 
-    ⚠️ **層の中の相互参照そのものは禁じていない**＝`report/` には
-    `multihop` ↔ `report_multihop` のような対がある。片方が遅延 import なので
+    ⚠️ **層の中の相互参照そのものは禁じていない**＝相互参照の対は片方を遅延 import
+    （関数の中の import＝`report/multihop.py` の `report_common` など）にすれば
     import 時には閉じない。ここが検出するのは**閉じてしまった**場合だけ。
     """
     graph = {name: _import_time_imports(p) for name, p in _modules().items()}

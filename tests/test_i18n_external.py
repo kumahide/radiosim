@@ -154,12 +154,13 @@ def test_a_retired_key_is_reported_instead_of_silently_composed(lang_dir):
     )
 
 
-#: 成果物（HTML レポート・断面図 PNG・グラフ）を組み立てるモジュール。
+#: 成果物（CSV・KML・地図の PNG）を組み立てるモジュール（HTML の帳票と断面図・グラフは
+#: Pro へ移した＝Link 1.0 ステージ11b・その語は Pro が `i18n.register_strings` で足す）。
 #: ⚠️ **`report/` を丸ごと走査しない**＝同じ層に居る `batch.py` / `multihop.py` /
 #: `project.py` は**画面に出す検証メッセージ**（`verr_*` 等）も持っており、それらは
 #: 開いてよい語だから（実測＝走査対象を層で切ると 20 キーを誤って締め出す）。
 _ARTIFACT_MODULES = (
-    "report_path.py", "report_multihop.py", "report_scenario.py",
+    "report_path.py", "report_scenario.py",
     "report_summary.py", "report_common.py", "report_map.py", "map_graphics.py",
 )
 def _a_key_with_only_n() -> str:

@@ -15,14 +15,12 @@ import csv
 import io
 import json
 import os
-import re
 
 import numpy as np
 import pytest
 
 from core import engine, models
 from core import verdict as vd
-from report import map_graphics, report_summary
 from webui import exports
 from webui.state import AppState
 from webui.worker import Worker
@@ -111,8 +109,30 @@ def test_every_sheet_shows_the_same_review_in_rows_counts_csv_and_map(single, wo
     assert lines and {word for _, _, word, _ in lines} == {vd.REVIEW}
 
 
+def test_the_batch_kml_puts_the_row_in_the_review_folder():
+    _, w = _run("batch", _SHEETS["batch"][1])
+    got = w.sheet_run()
+    assert got is not None
+    made = exports.sheet_kml(*got)
+    assert made is not None                         # 複数経路は KML を出せる面
+    _, text = made
+    folder = text.split("<name>REVIEW</name>", 1)[1].split("</Folder>", 1)[0]
+    assert "<name>P1</name>" in folder and "#rev" in folder
+
+
+def _kml_abgr(hex_rgb: str) -> str:
+    r, g, b = hex_rgb[1:3], hex_rgb[3:5], hex_rgb[5:7]
+    return f"ff{b}{g}{r}".lower()
+
+
+def _purple() -> str:
+    """REVIEW の色＝地図の PNG の表（帳票の `STATUS_HEX` は Pro へ移した＝Link 1.0 ステージ11b）。"""
+    from report import map_graphics
+    return "#%02x%02x%02x" % map_graphics.STATUS_RGB[vd.REVIEW]
+
+
 def test_the_single_link_saves_the_same_review_in_its_csv_and_path_kml(single):
-    """1 回線の保存（10f＝2026-11-09 経営者）＝`summary.csv` の 1 行と旧画面と同じ `path.kml`。"""
+    """1 回線の保存（10f＝2026-11-09 経営者）＝`summary.csv` の 1 行と `path.kml`。"""
     _, w = _run("single", start=_TX, end=_RX, h_tx=_H_TX, h_rx=_H_RX)
     got = w.sheet_run()
     assert got is not None and got[0] == "single"
@@ -123,26 +143,18 @@ def test_the_single_link_saves_the_same_review_in_its_csv_and_path_kml(single):
     assert float(rows[0]["margin_db"]) == pytest.approx(single["margin"], abs=0.05)
     assert rows[0]["h_tx"] == f"{float(_H_TX):.1f}"
     name, kml = exports.sheet_kml(*got)
-    purple = _kml_abgr(map_graphics.STATUS_HEX[vd.REVIEW])
     assert name == "path.kml" and "<name>LoS (REVIEW)</name>" in kml
-    assert f'<Style id="los"><LineStyle><color>{purple}</color>' in kml
+    assert f'<Style id="los"><LineStyle><color>{_kml_abgr(_purple())}</color>' in kml
 
 
-def test_the_batch_kml_puts_the_row_in_the_review_folder():
-    _, w = _run("batch", _SHEETS["batch"][1])
-    _, text = exports.sheet_kml(*w.sheet_run())
-    folder = text.split("<name>REVIEW</name>", 1)[1].split("</Folder>", 1)[0]
-    assert "<name>P1</name>" in folder and "#rev" in folder
+def test_review_is_one_purple_on_the_screen_the_map_image_and_both_kml():
+    """色＝画面の CSS・JS の対応表・地図の画像（`STATUS_RGB`）・2 つの KML が同じ紫。
 
-
-def _kml_abgr(hex_rgb: str) -> str:
-    r, g, b = hex_rgb[1:3], hex_rgb[3:5], hex_rgb[5:7]
-    return f"ff{b}{g}{r}".lower()
-
-
-def test_review_is_one_purple_on_the_screen_the_report_and_both_kml():
-    """色＝画面の CSS・JS の対応表・帳票と地図の画像（`STATUS_HEX`）・2 つの KML が同じ紫。"""
-    purple = map_graphics.STATUS_HEX[vd.REVIEW].lower()
+    帳票（Pro）の色が同じ表を引くことは Pro 側の試験が見る。
+    """
+    import re
+    from report import report_path, report_summary
+    purple = _purple()
     with open(os.path.join(_STATIC, "style.css"), encoding="utf-8") as f:
         css = f.read()
     with open(os.path.join(_STATIC, "app.js"), encoding="utf-8") as f:
@@ -153,7 +165,6 @@ def test_review_is_one_purple_on_the_screen_the_report_and_both_kml():
     assert 'REVIEW: "--review"' in js                                              # 地図の線
     kml = report_summary.summary_kml_text([])
     assert f'<Style id="rev"><LineStyle><color>{_kml_abgr(purple)}</color>' in kml
-    from report import report_path
     with open(report_path.__file__, encoding="utf-8") as f:
         assert f'"REVIEW": "{_kml_abgr(purple)}"' in f.read()                     # path.kml
 

@@ -1,32 +1,21 @@
 """
 report_map.py
 =============
-レポート（report.html）へ埋め込む「経路オーバーレイ地図」の静的画像を、
-完全ヘッドレス（tkinter 非依存・PIL のみ）で生成する。
+経路を重ねた地図の静的画像を、完全ヘッドレス（PIL のみ）で生成する。
 
-GSI 淡色地図タイルを取得・ステッチし、TX/RX マーカー・経路線・距離ラベルを
-重ねた 1 枚の PNG を返す。マップウィンドウ（views/map_window.py・UI）とは独立。
-描画の見た目は map_graphics に集約し UI と共有する。
+背景地図のタイルを取得・ステッチし、送受の点・経路線・判定の色を重ねた 1 枚の
+PNG を返す（`render_paths_map`＝N 経路・回転なし〔north-up〕で全端点の外接矩形を
+フィットさせる）。新しい画面の地図の PNG（`webui/exports.py`）がこれを焼き、
+画面の地図の出典の字も `attribution_for` を引く。描画の見た目は map_graphics に集約。
 
 設計判断（2026-06-15 確定）:
 - ズームは経路にフィットする最大ズームを「タイル枚数上限」付きで自動選択（外部API配慮）。
 - タイル取得率が閾値未満なら None を返す（呼び出し側は「地図取得不可」の注記を出す）。
-- オーバーレイは TX/RX マーカー＋経路線＋距離ラベルのみ。
-- 経路が常に水平（TX 左・RX 右）になるよう画像を回転し、北が上でなくなるため
-  方角の手がかりに北矢印を重ねる（2026-06-16）。回転で生じる余白（グレー）を
-  出さないよう、経路に沿った水平バンドの north-up 外接矩形ぶんを取得し、回転後に
-  バンドだけを切り出す。
-- 出力アスペクトは地形断面図に合わせ（`report_common.PROFILE_FIGSIZE` が単一ソース）、
-  レポートで縦に並べたとき同じ width:100% で高さが揃うようにする（2026-06-16）。
 
-2 種類の地図を生成する（2026-07-10）:
-- `render_path_map`   … per-path レポート用。1経路・経路を水平化する回転あり。
-- `render_paths_map`  … summary レポート用。N経路・**回転なし（north-up）**で
-  全端点の外接矩形をフィットさせ、ステータス色で塗り分ける。
+1 経路を水平に回した地図（`render_path_map`）と帳票へ埋める base64 の口は Pro へ
+移した（Link 1.0 ステージ11b）。
 """
 
-import base64
-import io
 import logging
 import math
 from typing import NamedTuple
@@ -36,9 +25,7 @@ from PIL import Image, ImageDraw
 
 from core import dem
 from core import i18n
-from core import models
 from core import tile_sources
-from core import units
 from report import map_graphics
 from report import report_common
 
@@ -50,20 +37,6 @@ _MISSING_RGB = (229, 229, 229)  # 取得できなかったタイルの淡グレ�
 # 回転後クロップのパラメータ（ピクセル）。
 _ICON_HALF      = 13     # node_icon は 26x26（map_graphics）→ マーカーがはみ出ない余白
 _MIN_HALF_PX    = 64     # 極短/退化経路でも確保する最小の半幅
-# バンド隅がタイル境界に整列したとき、回転の BICUBIC 端に出る 1–2px のグレー
-# フリンジを避けるため、最終バンドをこの px ぶん内側へ詰めて切り出す（バンドは
-# north-up 外接矩形ぶん取得済みで内側にあり、数 px の縮小は実害なし）。
-_CROP_INSET_PX  = 2
-# 回転リサンプルでラスター文字が甘くなるのを抑えるスーパーサンプル倍率
-# （×2 で高解像に回転→縮小）。追加のタイル取得は不要。
-_SUPERSAMPLE    = 2
-# 出力アスペクト比（幅/高さ）。レポートでは地形断面 PNG（`report_path` の
-# `Figure(figsize=(15, 4.5))`）と width:100% で縦に並ぶ。**断面図と同じ 15:4.5** に
-# してあるので、上下に並べたとき 2 枚の高さが揃う（2026-08-28 に 15:5 から変更＝
-# 縦の予算を詰めて縮小フィットの発火を止めた。それまでは断面図 15:6・地図 15:5 で
-# 高さが揃っていなかった）。⚠️ **片方だけ変えないこと**＝揃わなくなる。
-# half_h を half_w から決める。
-_OUTPUT_ASPECT  = report_common.PROFILE_FIGSIZE[0] / report_common.PROFILE_FIGSIZE[1]
 
 # 出典表記を置く隅の余白（px）。北矢印は右上に貼るので**右下**に置く
 # （地図出典の慣例位置でもある）。
@@ -118,13 +91,13 @@ def _clamp_zoom_range(
 def _paste_attribution(img: "Image.Image", text: str) -> None:
     """出典表記を画像の右下へ焼き込む（B-133）。
 
-    🔑 **地図を描く 2 つの関数が必ずここを通る**のが対応のコア＝出典が抜けたのは
+    🔑 **地図を描く関数が必ずここを通る**のが対応のコア＝出典が抜けたのは
     「UI の地図には出したが、同じ絵を帳票へ焼くもう一方の経路が引き継がなかった」
-    ためで、面ごとに書き足す形（per-path / summary / 中継の 3 か所）にすると
-    **4 つ目の地図を足した人がまた落とす**。3 面はいずれも `render_path_map` /
-    `render_paths_map` の戻り値を使うので、ここ 1 か所で全面が満たされる。
+    ためで、面ごとに書き足す形にすると**次の地図を足した人がまた落とす**。
+    地図を描く関数（公開側の `render_paths_map`・Pro の `render_path_map`）は
+    どれもここを通すので、1 か所で全面が満たされる。
 
-    ⚠️ **文言はタイルのレイヤと対で保つ**＝地図ウィンドウの選択に追従する
+    ⚠️ **文言はタイルのレイヤと対で保つ**＝背景地図の選択に追従する
     （B-248）ので、呼び出し側が `attribution_for(source_id)` で解決した
     ものをそのまま渡す（レイヤを替えた日に嘘の出典が焼かれないようにする）。
     """
@@ -140,225 +113,10 @@ def _paste_attribution(img: "Image.Image", text: str) -> None:
     )
 
 
-class _BandPx(NamedTuple):
-    """指定ズームでの「経路に沿った水平バンド」幾何（すべて world ピクセル）。
-
-    回転後はこのバンドをそのまま水平に切り出す。half_w/half_h はバンドの半幅/
-    半高（pad・最小値込み）で、回転は等長変換なので回転後フレームでも有効。
-    """
-    ax: float    # TX
-    ay: float
-    bx: float    # RX
-    by: float
-    mx: float    # 中点
-    my: float
-    ux: float    # TX→RX 単位ベクトル（退化時は東向き）
-    uy: float
-    px: float    # ux に直交する単位ベクトル
-    py: float
-    half_w: float
-    half_h: float
-
-
-def _band_px(
-    tx: _LatLon, rx: _LatLon, zoom: int, margin_frac: float,
-    aspect: float = _OUTPUT_ASPECT,
-) -> _BandPx:
-    """指定ズームでの経路バンド幾何を world ピクセルで求める。
-
-    half_w は経路長＋水平 pad で決め、half_h は出力アスペクト（幅/高さ）から
-    half_w/aspect で決める。これで出力画像の縦横比が aspect に固定され、レポート
-    で地形断面図と同じ width:100% にしたとき高さが揃う。
-    """
-    ax, ay = dem.lonlat_to_pixel(tx[0], tx[1], zoom)
-    bx, by = dem.lonlat_to_pixel(rx[0], rx[1], zoom)
-    path_len = math.hypot(bx - ax, by - ay)
-    if path_len < 1.0:                       # 退化/極近接 → 東向きに固定
-        ux, uy, path_len = 1.0, 0.0, 0.0
-    else:
-        ux, uy = (bx - ax) / path_len, (by - ay) / path_len
-    pad_x  = max(path_len * margin_frac, _MIN_HALF_PX) + _ICON_HALF
-    half_w = path_len / 2 + pad_x
-    half_h = half_w / aspect
-    return _BandPx(ax, ay, bx, by, (ax + bx) / 2, (ay + by) / 2,
-                   ux, uy, -uy, ux, half_w, half_h)
-
-
-def _coverage_tiles(band: _BandPx) -> tuple[int, int, int, int]:
-    """バンド4隅を内包する north-up タイル範囲 (x0, x1, y0, y1) を返す（両端含む）。
-
-    バンドは経路に沿って傾いているため、その north-up 外接矩形ぶんのタイルを
-    取得する。これで回転後にバンドを切り出してもグレーの欠けが出ない。
-    """
-    corners = [
-        (band.mx + s1 * band.ux * band.half_w + s2 * band.px * band.half_h,
-         band.my + s1 * band.uy * band.half_w + s2 * band.py * band.half_h)
-        for s1 in (-1, 1) for s2 in (-1, 1)
-    ]
-    xs = [c[0] for c in corners]
-    ys = [c[1] for c in corners]
-    return (math.floor(min(xs) / _TILE_PX), math.floor(max(xs) / _TILE_PX),
-            math.floor(min(ys) / _TILE_PX), math.floor(max(ys) / _TILE_PX))
-
-
-def choose_zoom(
-    tx: _LatLon, rx: _LatLon,
-    max_tiles: int = 32, min_zoom: int = 5, max_zoom: int = 18,
-    margin_frac: float = 0.15, aspect: float = _OUTPUT_ASPECT,
-) -> int:
-    """回転後バンドを覆う north-up タイル総数 <= max_tiles の最大ズームを選ぶ。
-
-    回転バンドの north-up 外接矩形は素の TX/RX bbox より広いため、同じ解像度
-    （ズーム）を保つには上限を従来(16)より大きく取る。basemap タイルは軽量＋
-    キャッシュ済みで、レポート保存時の一度きりの取得なので外部API負荷は小さい。
-    """
-    for zoom in range(max_zoom, min_zoom - 1, -1):
-        x0, x1, y0, y1 = _coverage_tiles(_band_px(tx, rx, zoom, margin_frac, aspect))
-        if (x1 - x0 + 1) * (y1 - y0 + 1) <= max_tiles:
-            return zoom
-    return min_zoom
-
-
-def render_path_map(
-    tx: _LatLon, rx: _LatLon, *,
-    max_tiles: int = 32, margin_frac: float = 0.15,
-    min_zoom: int = 5, max_zoom: int = 18,
-    min_fetch_frac: float = 0.6, aspect: float = _OUTPUT_ASPECT,
-    basemap_source_id: str = _DEFAULT_BASEMAP_SOURCE_ID,
-) -> "Image.Image | None":
-    """経路オーバーレイ地図を生成して PIL Image で返す。失敗時は None。
-
-    取得できたタイルの割合が min_fetch_frac 未満なら「地図取得不可」として
-    None を返す（灰色の欠けが目立つ中途半端な地図を黙って埋め込まない）。
-    出力アスペクト（幅/高さ）は aspect で固定（既定＝レポート断面図と同じ比）。
-
-    Args:
-        basemap_source_id: 地図ウィンドウの選択に追従する背景地図ソース
-            （B-248）。呼び出し元（ランチャー→report_path.py）が凍結して
-            渡した値をそのまま受ける（I-055 ②＝ここでは app 設定を読まない）。
-            既定は `"pale"`（旧来の固定挙動）。
-    """
-    try:
-        min_zoom, max_zoom = _clamp_zoom_range(basemap_source_id, min_zoom, max_zoom)
-        zoom = choose_zoom(tx, rx, max_tiles, min_zoom, max_zoom, margin_frac, aspect)
-        band = _band_px(tx, rx, zoom, margin_frac, aspect)
-        x0, x1, y0, y1 = _coverage_tiles(band)
-
-        # --- バンドの north-up 外接矩形ぶんを並列取得してステッチ ---
-        # 取得・キャッシュの所在は dem が所有（並列＝メインスレッドでも
-        # 逐次待ちで GUI を固めない）。座標だけ渡し、戻りの {(x,y):配列} を貼る。
-        # バンドより広く取るので、回転後に切り出してもグレーの欠けが出ない。
-        tiles = [(x, y) for x in range(x0, x1 + 1) for y in range(y0, y1 + 1)]
-        fetched = dem.fetch_basemap_tiles(tiles, zoom, basemap_source_id)
-
-        if len(fetched) < max(1, round(len(tiles) * min_fetch_frac)):
-            # 取得率が閾値未満（全滅含む）→ 地図なし（呼び出し側が注記を出す）
-            logger.warning(
-                "report_map: only %d/%d basemap tiles fetched; skipping map",
-                len(fetched), len(tiles),
-            )
-            return None
-
-        w = (x1 - x0 + 1) * _TILE_PX
-        h = (y1 - y0 + 1) * _TILE_PX
-        canvas = Image.new("RGB", (w, h), _MISSING_RGB)
-        for (x, y), arr in fetched.items():
-            tile = Image.fromarray(np.asarray(arr)).convert("RGB")
-            canvas.paste(tile, ((x - x0) * _TILE_PX, (y - y0) * _TILE_PX))
-
-        # --- 経路が水平（TX 左・RX 右）になるよう全体を回転 ---
-        # スーパーサンプル: 高解像（×_SUPERSAMPLE）でステッチを拡大→回転→クロップ
-        # →縮小する。回転リサンプルで GSI ラスター（地名・等高線の文字）が甘くなる
-        # のを抑える。オーバーレイ（マーカー/線/バッジ/北矢印）は縮小後の最終 1x で
-        # 描き、それ自身は鮮明さを保つ。
-        ss = _SUPERSAMPLE
-        big = (canvas if ss == 1
-               else canvas.resize((w * ss, h * ss), Image.Resampling.LANCZOS))
-        origin_x, origin_y = x0 * _TILE_PX, y0 * _TILE_PX
-        # big フレーム内の TX/RX/中点（= (world px − 原点) × ss）。
-        ax_b, ay_b = (band.ax - origin_x) * ss, (band.ay - origin_y) * ss
-        bx_b, by_b = (band.bx - origin_x) * ss, (band.by - origin_y) * ss
-        mx_b, my_b = (band.mx - origin_x) * ss, (band.my - origin_y) * ss
-        # path ベクトル角ぶん回す → TX→RX が水平右向きになる（atan2 の導出による）。
-        deg = math.degrees(math.atan2(by_b - ay_b, bx_b - ax_b))
-        rotated = big.rotate(
-            deg, resample=Image.Resampling.BICUBIC, expand=True,
-            fillcolor=_MISSING_RGB,
-        )
-
-        # PIL.rotate(expand=True) は入力中心を出力中心へ写す。これを使って任意点を
-        # 回転後座標へ再投影する（deg>0 = 反時計回り・y 下向き座標系）。
-        cin_x, cin_y = big.width / 2.0, big.height / 2.0
-        cout_x, cout_y = rotated.width / 2.0, rotated.height / 2.0
-        a = math.radians(deg)
-        cos_a, sin_a = math.cos(a), math.sin(a)
-
-        def _to_rotated(px: float, py: float) -> tuple[float, float]:
-            dx, dy = px - cin_x, py - cin_y
-            return (cout_x + dx * cos_a + dy * sin_a,
-                    cout_y - dx * sin_a + dy * cos_a)
-
-        txr = _to_rotated(ax_b, ay_b)
-        rxr = _to_rotated(bx_b, by_b)
-
-        # --- 経路中点を中心に、バンド半幅・半高ぴったりにクロップ（big フレーム） ---
-        # バンド ⊂ キャンバス なので回転 expand のグレー余白は入らない。
-        cmx, cmy = _to_rotated(mx_b, my_b)
-        inset = _CROP_INSET_PX * ss
-        left   = max(0, int(round(cmx - band.half_w * ss)) + inset)
-        right  = min(rotated.width,  int(round(cmx + band.half_w * ss)) - inset)
-        top    = max(0, int(round(cmy - band.half_h * ss)) + inset)
-        bottom = min(rotated.height, int(round(cmy + band.half_h * ss)) - inset)
-        cropped = rotated.crop((left, top, right, bottom))
-        if ss != 1:                    # 最終解像度へ縮小（LANCZOS でアンチエイリアス）
-            cropped = cropped.resize(
-                (cropped.width // ss, cropped.height // ss),
-                Image.Resampling.LANCZOS,
-            )
-
-        # --- オーバーレイ（縮小後の最終 1x 座標で描画） ---
-        def _shift(p: tuple[float, float]) -> tuple[int, int]:
-            return int(round((p[0] - left) / ss)), int(round((p[1] - top) / ss))
-
-        tx_px, rx_px = _shift(txr), _shift(rxr)
-        draw = ImageDraw.Draw(cropped)
-        draw.line([tx_px, rx_px], fill=map_graphics.MAP_CYAN_HEX, width=3)
-
-        for px_, hollow in ((tx_px, False), (rx_px, True)):
-            icon = map_graphics.node_icon(hollow)
-            cropped.paste(
-                icon, (px_[0] - icon.width // 2, px_[1] - icon.height // 2), icon
-            )
-
-        km = models.horizontal_distance_km(tx[0], tx[1], rx[0], rx[1])
-        badge = map_graphics.distance_badge(units.format_distance(km))
-        mid_x, mid_y = (tx_px[0] + rx_px[0]) // 2, (tx_px[1] + rx_px[1]) // 2
-        cropped.paste(badge, (mid_x - badge.width // 2, mid_y - badge.height // 2), badge)
-
-        # 回転で北が上でなくなるため方角の手がかりを右上隅に重ねる。
-        # 北（北上き画像で -y 方向）は回転後 (-sin a, -cos a) を向く。
-        arrow = map_graphics.north_arrow(-sin_a, -cos_a)
-        cropped.paste(arrow, (cropped.width - arrow.width - 6, 6), arrow)
-
-        _paste_attribution(cropped, attribution_for(basemap_source_id))
-        return cropped
-    except Exception:
-        logger.warning("report_map: failed to render path map", exc_info=True)
-        return None
-
-
-def render_path_map_b64(tx: _LatLon, rx: _LatLon, **kwargs) -> "str | None":
-    """render_path_map の結果を PNG → base64 文字列で返す。失敗時は None。"""
-    img = render_path_map(tx, rx, **kwargs)
-    if img is None:
-        return None
-    return _to_b64(img)
-
-
 # ============================================================
 # 全パス1枚地図（summary.html 用・north-up）
 # ============================================================
-# 単一パス地図（上）が「経路を水平化するため回転＋バンド切り出し」なのに対し、
+# 単一パス地図（Pro）が「経路を水平化するため回転＋バンド切り出し」なのに対し、
 # こちらは複数経路を俯瞰するため **回転しない**（north-up）。全端点の外接矩形を
 # 出力アスペクトへフィットさせるだけなので、回転由来の仕掛け（スーパーサンプル・
 # expand 余白・インセット）はどれも不要＝単一パス版より素直に書ける。
@@ -372,10 +130,10 @@ _MAX_PATH_LABELS = 16
 
 
 class PathSpec(NamedTuple):
-    """全パス地図に描く1経路。report.py が PathResult から詰め替えて渡す。
+    """全パス地図に描く1経路。呼ぶ側（`webui/exports.py`）が結果から詰め替えて渡す。
 
-    report_map は batch に依存しない（レイヤ順は batch → report → report_map）ため、
-    素のタプルで受ける。status は "OK" | "NG" | "ERROR"（map_graphics.STATUS_RGB）。
+    report_map は batch に依存しないため、素のタプルで受ける。
+    status は "OK" | "NG" | "REVIEW" | "ERROR"（map_graphics.STATUS_RGB）。
     """
     tx:     _LatLon
     rx:     _LatLon
@@ -451,7 +209,7 @@ def render_paths_map(
     呼び出し側が「地図取得不可」の注記を出す（単一パス地図と同じ方針）。
 
     Args:
-        basemap_source_id: `render_path_map` と同じ（B-248）。
+        basemap_source_id: 背景地図の `source_id`（B-248）＝タイルと出典の字の両方をこれで選ぶ。
     """
     if not paths:
         return None
@@ -534,20 +292,3 @@ def render_paths_map(
         return None
 
 
-def render_paths_map_b64(paths: "list[PathSpec]", **kwargs) -> "str | None":
-    """render_paths_map の結果を PNG → base64 文字列で返す。失敗時は None。"""
-    img = render_paths_map(paths, **kwargs)
-    if img is None:
-        return None
-    return _to_b64(img)
-
-
-def _to_b64(img: Image.Image) -> "str | None":
-    """PIL Image を PNG → base64 文字列にする。失敗時は None。"""
-    try:
-        buf = io.BytesIO()
-        img.save(buf, format="PNG")
-        return base64.b64encode(buf.getvalue()).decode()
-    except Exception:
-        logger.warning("report_map: failed to encode map", exc_info=True)
-        return None

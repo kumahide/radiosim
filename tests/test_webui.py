@@ -414,9 +414,10 @@ def _css_vars(block: str) -> dict[str, str]:
     return {k: v.lower() for k, v in re.findall(r"--([\w-]+):\s*(#[0-9a-fA-F]{6})\s*;", block)}
 
 
-def test_the_verdict_colors_are_the_report_colors():
-    # 判定の色は帳票と同じ（ライト＝`STATUS_HEX`・ダーク＝この CSS が正典＝4 語とも別の色）。
-    # 色は語に添えるだけ＝語ごとの規則が 4 語とも CSS にある（9d・色覚）
+def test_the_verdict_colors_are_the_map_colors():
+    # 判定の色は地図の PNG と同じ（ライト＝`STATUS_RGB`・ダーク＝この CSS が正典＝4 語とも別の色）。
+    # 色は語に添えるだけ＝語ごとの規則が 4 語とも CSS にある（9d・色覚）。
+    # 帳票（Pro）の色が同じ表を引くことは Pro 側の試験が見る（Link 1.0 ステージ11b）
     import re
     from report import map_graphics
     css = (pathlib.Path(webserver.STATIC_ROOT) / "style.css").read_text(encoding="utf-8")
@@ -426,10 +427,10 @@ def test_the_verdict_colors_are_the_report_colors():
     names = {"OK": "ok", "NG": "ng", "REVIEW": "review", "ERROR": "err"}
     light_vars, dark_vars = _css_vars(root), _css_vars(dark)
     for word, name in names.items():
-        assert light_vars[name] == map_graphics.STATUS_HEX[word].lower(), word
+        assert light_vars[name] == "#%02x%02x%02x" % map_graphics.STATUS_RGB[word], word
         assert name in dark_vars, word
         assert f'[data-word="{word}"] #band-word {{ color: var(--{name}); }}' in css, word
-    assert set(names) == set(map_graphics.STATUS_HEX)
+    assert set(names) == set(map_graphics.STATUS_RGB)
     assert len({dark_vars[n] for n in names.values()}) == len(names), "ダークで 2 語が同じ色"
 
 
