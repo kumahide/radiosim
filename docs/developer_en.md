@@ -494,100 +494,75 @@ http://proxy.example.com:8080
 
 ## Map
 
-<img src="images/shot_map.png" width="600" alt="Map view with the transmit point, the receive point and the path between them; clicking the map picks up coordinates">
+<img src="images/shot_map.png" width="600" alt="Map view with the transmit point, the receive point and the path between them">
 
-The **"Map" button** in the launcher (views/map_window.py (removed in 4.0)) opens an auxiliary window over the GSI pale map. The **map is a single app-wide instance owned by the launcher**, with a four-mode selector at the top. The core simulation works without the map; the map is a convenience layer. On opening it auto-zooms/centers to fit the path length of the current TX/RX. ⚠️ **The batch window can also open the map** ("Pick on map" opens it in the continuous-add mode; added in 2.7 — previously the flow could only be started from the map side).
+There is exactly one map, at the top right of the screen, shared by all four workspaces (`webui/static/app.js`, Leaflet). No separate window opens. The core simulation works without the map; the map is a convenience for entering input and looking at results.
 
-**All four modes draw by one rule**: a **line, endpoint icons (TX = filled / RX = hollow / relay = diamond) and a horizontal-distance badge at the midpoint**. ⚠️ **Modes do not get their own look** (unified on 2026-08-14 after user feedback). Append mode used to draw RX as a bearing arrowhead — an exception that existed so TX and RX stayed distinguishable *at identical coordinates*, from the era when Multiple Paths doubled as a relay. The Relay Path window took that use over, and only the now-groundless exception was left as an inconsistency. ⚠️ Only Pick Coordinates mode prints the `TX`/`RX` text labels: elsewhere there are N paths, and a label on every endpoint fills the map with text (identification is carried by the path ID on the distance badge, and by waypoint names).
+- **Single Link**: pins (T and R) mark the transmit and receive points, joined by a line. The first time both points are set, the map zooms to fit the whole path. **Dragging a pin enters its coordinates.** While you drag, only the coordinate field in the left column and the line move; **one computation is requested when you let go** (terrain is fetched only once an endpoint is settled). The coordinate field is the source of truth: editing it moves the pin there
+- **Multiple Paths, Condition Explorer and Relay Path**: each item in the workspace's table is drawn as a line from its transmit point to its receive point, colored by its verdict. The item selected in the table is drawn thicker, and clicking a line on the map selects that row in the table. Condition Explorer draws a single line, since every item shares the same path. Once every item is in and the set of coordinates has changed, the map zooms to fit them all
+- **Linked with the profile**: hovering over the profile marks that spot on the map. The other way round, hovering over a line on the map (the Single Link line, or the line of the item selected in the workspace) shows that spot on the profile
+- **Basemap**: switched in the box at the top right (pale map, aerial photo, and any basemap added through a declaration file). The choice is saved in the `basemap_layer` setting, and the saved map PNG uses the same background. Tiles are fetched through the local server (`/tile/` in `webui/server.py`) and kept in the cache. Attribution that must be shown appears at the bottom right of the map
 
-- **Pick Coordinates mode (default)**: click the map to fill **whichever site is still empty** (TX, then RX) and write it back to the launcher's TX / RX coordinate fields (the numeric fields are the source of truth). **Once both are set a plain click writes nothing** — from there you select a point and move it (below). Wired via `apply_map_pick` / `current_path_coords`, and edits to the fields (clearing, typing, loading a project) reach the map through `on_single_coords_changed` — the pick layer is a mirror of the numeric fields, like the other two layers. Without that notification, clearing a field left the marker on the map and the map kept believing both sites were set, so plain clicks stopped writing.
-- **Append to Multiple Paths mode**: selecting it opens (or raises) the Multiple Paths window; each TX→RX pair placed on the map appends one batch row and auto-resets (no "add row" needed). RF (frequency, gains, antenna heights) is frozen from the launcher at the moment of adding. The distance badge of a committed path **carries its path ID**, so a path on the map can be traced back to its row in the batch. Path row edits (delete, edit-commit, import, etc.) reflect on the map in real time. Wired via `append_path` / `existing_paths` (plus `update_path_point` for moving an endpoint).
-- **Add waypoints mode**: opened from the Relay Path window; every click places one waypoint (this is not the alternating TX/RX pick). Blank points are filled first, top to bottom; once none is blank, the click inserts a relay before the receiver (the same `_add_waypoint` contract as "Add point" in the waypoint table). Draws a polyline through the waypoints plus a **horizontal-distance badge per section**. ⚠️ **That distance appears nowhere else on screen** — the section table holds frequency, gains and results but no distance, and the report carries the *slant* distance (a separate term in the glossary). The map is a copy and not the source of truth, so it is redrawn from the window's waypoint list every time. Wired via `append_waypoint` / `waypoint_markers` (plus `update_waypoint` for moving a point); implemented in views/multihop_map.py (removed in 4.0).
-**Moving a point goes through a selection**: clicking a marker selects it (an amber ring, plus its name in the status bar), and **the next click on the map moves it there** (Esc cancels; a selection is spent by one move). ⛔ **Dragging is deliberately not used** — a plain drag is already the pan gesture, and taking it over would create the "I grabbed the map and a point moved" failure, i.e. input rewritten silently. One rule: **a plain click adds, a click after a selection edits**. ⚠️ **The marker must not be the only way in**: pan far enough and that single entry point sits off-screen, killing the whole re-placement flow. In Pick Coordinates and Append modes, **right-clicking the map** ("Place TX here" / "Place RX here") is an entry point that does not depend on where the marker is — you name the site, so nothing is rewritten silently. ⚠️ tkintermapview's own right-click menu (English, copy-coordinates) is **replaced**, not extended.
-
-What the map hands back to a window is a **position in the copy** (the index within `existing_paths()` / `waypoint_markers()`), never the window's row number — rows with unreadable coordinates never make it into the copy. The window resolves that position by the same rule and **checks the name (path ID / waypoint name) before writing**, refusing the move when they disagree (the same "is this really that input?" check used when results are written back into a row). ⚠️ **When the move is smaller than the terrain mesh (5 m) the status bar says so**, because a finer nudge can sample the same grid cell: the marker moves but the result may not change (where samples are placed is set by the terrain resolution level).
-
-- **Cache Management mode**: follows pan/zoom and shades cached areas by highest accuracy (green = 5 m LiDAR / yellow = 5 m photogrammetry / cyan = 10 m). Gestures: drag = pan / Ctrl + drag = download / Ctrl + Alt + drag = force re-download / Shift + Ctrl + drag = delete area, each with a confirmation dialog. Built on `dem_prefetch.prefetch_tiles` and related public APIs (moved out of `dem` in 3.0); a normal range download never re-downloads tiles that are already present and readable (unreadable ones are fetched again; since 3.0), while force re-download fetches existing tiles too. A GSI force re-download also removes 5b and 10 m tiles that are no longer read because the refetched upper layer has no voids left (since 3.7; a 10 m tile is removed only where all four of its 5 m children were refetched — a 10 m tile at the edge of the range is kept, since the area outside the range may still need it). Clear everything via **Settings > Delete All Cache**.
+Fetching the DEM tiles of an area ahead of time still lives in `core/dem_prefetch.py` (the new screen does not call it). Tiles already present and **readable** are not fetched again (out of consideration for the external servers). To delete the whole cache, use File (Delete All Cache...) in the Settings panel.
 
 ---
 
-## Usage — Single Mode
+## Usage — Single Link
 
 <img src="images/shot_profile.png" width="720" alt="Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown">
 
-### 1. Launcher Window
+The Single Link workspace opens at startup. **There is no Run button.** When you change a field in the left column, the screen waits a moment (`DEBOUNCE_MS`) and sends only the changed field to the server (`/api/inputs`); the computation thread (`webui/worker.py`) then recomputes with that version of the input.
 
-An input form is displayed on startup.
+### 1. The input fields in the left column
 
-#### Site Info
+The order and wording of the fields have one source, `_FORM` in `webui/server.py`; the screen (`webui/static/app.js`) only lays them out.
 
-| Field                   | Description                                                   |
-| ----------------------- | ------------------------------------------------------------- |
-| TX Coords (Lat, Lon)    | TX station latitude and longitude (e.g.`34.5429, 132.4118`) |
-| RX Coords (Lat, Lon)    | RX station latitude and longitude                             |
-| TX Antenna Height (m)   | TX antenna height above ground                                |
-| RX Antenna Height (m)   | RX antenna height above ground                                |
+| Group | Fields |
+| --- | --- |
+| Site Info | TX coords and RX coords (lat, lon), TX / RX antenna height (m) |
+| Radio Settings | Frequency (MHz), TX power (dBm), TX / RX antenna gain (dBi), sensitivity (dBm) |
+| Environment | Environment category (Urban / Suburban / Rural / LoS), vegetation height (m), rain rate (mm/h) |
+| Details (collapsed) | Diffraction model, terrain resolution, DEM source (shown only when two or more sources can be chosen) |
 
-#### Radio Settings
+- The two coordinate fields accept decimal degrees or degrees-minutes-seconds ([Coordinate Format (DD / DMS)](#coordinate-format-dd--dms)). A format example is shown in faint text only while a field is empty
+- Each field's tooltip gives its range. A value outside it does not go on to the computation; the top bar shows "Waiting for input" with a one-sentence reason (the check is `config.validate_config`; ranges are in [Input Parameters](#input-parameters))
+- There is no Rician K field. The value stays in the input set (`webui/state.py`) and is kept when a project file is read or written
+- **Terrain resolution** has three levels: High ~4 m px / Medium ~8 m px / Low 20 m spacing. ⚠️ **The level names the size of the pixel the samples are placed on**, not *which elevation data is read* (elevations always come from **the finest layer available**, whichever level you pick). The pixel is 3.3-4.4 m across depending on latitude, hence the "~". **You pick only the level; the app resolves the points.** "High" and "Medium" place a sample at **each edge of every DEM pixel the path crosses**, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("Low" alone keeps a 20 m even spacing and, as the *coarse but fast* level, skips pixels). On an extremely long path whose count hits the upper limit, "High" and "Medium" fall back to even spacing too. Default: Medium
 
-| Field                    | Description                                  |
-| ------------------------ | -------------------------------------------- |
-| Frequency (MHz)          | Frequency (1–100,000 MHz)                   |
-| TX Power (dBm)           | Transmit power                               |
-| TX/RX Antenna Gain (dBi) | Antenna gain                                 |
-| Sensitivity (dBm)        | Receiver sensitivity (minimum receive level) |
+The **Link Budget** table under the fields lists the terms from EIRP through total loss, RX level and sensitivity to margin, in the order they are added and subtracted (rows are `_BREAKDOWN`; values are the numbers of the same name in the headline). While the verdict is stale the table is drawn faded, to show the values are not those of the current input.
 
-#### Environment
+### 2. Fetching terrain and computing
 
-| Field                 | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
-| Vegetation Height (m) | Average height of vegetation or buildings along the path                                |
-| Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Terrain Resolution    | One of High ~4 m px / Medium ~8 m px / Low 20 m spacing. Note that the label names **the size of the pixel the samples are placed on**, not which elevation data is read: elevations always come from the finest layer available, whichever level you pick. The pixel is 3.3-4.4 m across Japan, hence the "~". **You pick the level; the app resolves the points.** "High" and "medium" place a sample at each edge of every DEM pixel the path crosses, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("low" alone keeps a 20 m even spacing and skips pixels by design). On an extremely long path whose count hits the upper limit, "high" and "medium" fall back to even spacing too. The resolved count and **the size of one pixel** are shown right below it. Default: Medium |
+There is one computation thread. One pass is: "take a copy of the version, check it, terrain, compute, publish it as that version's headline".
 
-### 2. The "Run" Button (Single Mode)
+1. **Terrain**: when the key built from the endpoints, samples, level and DEM source (`engine.terrain_key`) matches the terrain on hand, nothing is fetched again. Otherwise `engine.fetch_terrain` fetches an elevation for each sample (fetched tiles stay in the disk cache). If an input that changes the terrain key arrives during a fetch, the old fetch is cancelled; when only fields that do not affect terrain change, the fetch finishes and the computation uses the latest input
+2. **Computation**: `engine.calculate` is pure computation on top of the terrain and never touches the network. Changing an antenna height or the transmit power does not fetch terrain again, so the verdict comes back at once
 
-Clicking the button runs data retrieval in two phases.
+When the elevation server cannot be reached, the top bar shows "No terrain" with a one-sentence reason (the app does not quietly compute over flat terrain).
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This phase runs only while the built-in GSI source is selected** — for any other source the run path in views/launcher.py (removed in 4.0) skips it and goes straight to the calculation. With a DEM source added through a declaration file, only the points the elevation fetch needs are downloaded. To load an area into the cache ahead of time, use a range download in the map's Cache Management mode, which works for added DEM sources too from 3.6 (`_prefetch_generic` behind `dem_prefetch.prefetch_tiles`).
-2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates, sample count, resolution level and DEM source were used previously, cached data is loaded instantly.
+> **Date of the terrain data**: cached tiles are not fetched again, so the acquisition date carried on the terrain (`TerrainProfile.dem_acquired`) is not the run date but **the date the tiles the elevations were read from were saved on this PC** (the cache file's modification time, `dem.tile_acquired_date`). When the path spans several dates it is a range from oldest to newest. Computing this value never touches the network. To recompute with fresh tiles, delete them with Delete All Cache in the Settings panel and let it compute again.
 
-> **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC** (the cache file's modification time, `dem.tile_acquired_date`), not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). Computing this value never touches the network. To recompute with fresh tiles, force re-download that area in Cache Management mode.
+### 3. The verdict in the top bar
 
-### 3. Graph Window
+The bar at the top of the screen shows the verdict word (OK / REVIEW / NG / ERROR), the margin and the RX level. When varying the assumptions gives a spread, it shows that spread; on REVIEW it lists the assumptions that would flip the verdict (the server writes the text). 🔑 **The verdict in the bar is only ever one computed from the input now on screen.** While computing, it shows "Updating the verdict…" with the fetch progress, and no old verdict is left standing.
 
-After retrieval completes, the terrain cross-section graph is displayed.
+### 4. The profile
 
-#### Reading the Graph
+The terrain profile is drawn on a canvas at the bottom right (`drawProfile` in `app.js`; the shapes come from the server's `webui/profile.py`, built from the same lines as the report).
 
-| Element             | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| Brown fill          | Terrain (with earth curvature correction applied)        |
-| Green fill          | Vegetation layer (terrain elevation + vegetation height) |
-| Red dashed line     | Line of Sight (LoS)                                      |
-| Cyan band           | 1st Fresnel Zone                                         |
-| Black vertical bars | TX / RX antennas                                         |
+| Element | Description |
+| --- | --- |
+| Terrain | The ground with earth curvature correction (filled from the bottom) |
+| Vegetation | The vegetation height above the ground |
+| Line of sight | A dashed line joining the tips of the TX and RX antennas |
+| 1st Fresnel zone | A band of ±F1 around the line of sight at each sample |
+| Bars at both ends | The TX and RX antennas (from the foot to the tip) |
 
-#### Sliders
+Hovering shows the distance and ground elevation at that spot, and marks the same spot on the map ([Map](#map)).
 
-| Slider    | Range       | Description                           |
-| --------- | ----------- | ------------------------------------- |
-| TX Height | 0–150 m    | Adjust TX antenna height in real time |
-| RX Height | 0–150 m    | Adjust RX antenna height in real time |
-| Rain Rate | 0–100 mm/h | Adjust rain rate in real time         |
+### 5. Carrying input around
 
-Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
-
-#### The "SAVE PACKAGE" Button
-
-Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
-
-### 4. Automatic Saving of Input Values
-
-Input values are saved to `radiosim_conf.json` every time Single Mode runs, and restored on the next launch (no explicit save step).
-
-Importing from a file, and carrying an input set between machines, is done from the [File menu](#file) (**Load Parameters...** / **Open Project... / Save Project As...**).
+Input is **not written back** to `radiosim_conf.json` (it is only read at startup, so you start from the last 3.x input). To keep your work, use **Save Project As...** at the top of the right column ([Project Files (.rsproj)](#project-files-rsproj)); to take only the conditions from another settings file, use [File](#file) in the Settings panel (**Load Parameters...**). For saving results, see [Saving — where and what](#saving--where-and-what).
 
 ---
 
@@ -595,25 +570,21 @@ Importing from a file, and carrying an input set between machines, is done from 
 
 <img src="images/shot_batch.png" width="720" alt="Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run">
 
-Click the **Multiple Paths** button in the launcher to open the dedicated window.
+Choose **Multiple Paths** in the workspace switch at the top right and a table appears under the map. Editing the table waits a moment, then sends the workspace's whole input (`sheets` in `/api/inputs`); every row is fetched and computed one at a time (`engine.run_paths`). Results come back to the right end of the table (verdict, margin, RX level) as each row finishes, and once every row is in, the top bar shows the overall word and the count for each word.
 
-### Design: refine in Single, finalize in Multiple Paths
+### Design: one set of common input, rows carry only the paths
 
-**Single (the launcher) is where you refine conditions; Multiple Paths is where you produce deliverables from finalized conditions.** The launcher is the single source of truth, and each batch row is a **finalized link frozen by copying the launcher fields at the moment the row is added**.
+The radio and environment fields are one set shared by all four workspaces (the left column). In Multiple Paths the **endpoint and antenna height fields are hidden** (each row carries its own), and the remaining fields become the common settings for every row. A row whose frequency or gains are blank inherits the common settings. The table keeps the text exactly as typed (`webui/sheets.py`) and converts it to types only when running and saving.
 
 ### Input Methods
 
-**Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and cells edited in place.
+**Manual entry**: type the ID, coordinates, antenna heights, frequency, TX / RX gains and note into the table's cells. The table shows the 9 CSV columns (`_BATCH_SHOWN`); the measurement columns are kept but not shown.
 
-The **Dist(m)** column on the right is read-only and is computed from the TX/RX coordinates (refreshed whenever coordinates are committed). A mistyped coordinate shows up as an absurd distance, so the error is visible before you run the batch.
+- **+ Add Row**: adds a blank row at the end (its ID follows the numeric IDs already present)
+- **× Delete**: deletes the selected row (the last one if none is selected)
+- **Import CSV**: reads a CSV and replaces the table (`/api/batch_csv`). A header error is shown in one sentence above the table
 
-- **+ Add Row**: adds a row frozen from the current launcher fields (coordinates, frequency, gains, antenna heights).
-- **Right-click a row**: opens the per-row menu.
-  - **→ Send to Single**: loads that row's coordinates + RF into the launcher for adjustment.
-  - **⟳ Update RF from Launcher**: writes the launcher's current RF back into that row (**coordinates are preserved**).
-  - Duplicate / Delete.
-
-**CSV import**: Click the Template button to save a sample CSV, edit it, then import.
+⚠️ **An error in a row makes only that row ERROR**; the other rows are computed (`sheets.batch_plan`). The one-sentence error is kept on the row, and selecting the row shows it where the profile goes.
 
 #### CSV Format
 
@@ -627,34 +598,19 @@ path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link,-78.5,s
 path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 ```
 
-- `start` / `end` must be quoted because they contain a comma
-- `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings value when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings and apply to all paths
-- Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
-- Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
-- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements; the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`, and the values read land on `batch.PathRow` attributes. Once at least one path in the batch has `meas_dbm` set, `core/residuals.py` computes layered residual statistics (by environment class × band × distance band) and they appear as a table in Pro's Multiple Paths summary report (Pro also extracts the samples). `meas_method` is expected to be `spot` or `mean`. The Multiple Paths window's "Exclude spot measurements from stats" checkbox drops `spot` rows from the aggregate (`core/residuals.py`'s `compute_layered_stats(exclude_spot=True)`). **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
+- `start` / `end` take the form "lat, lon" and must be enclosed in double quotes
+- `freq` / `gain_tx` / `gain_rx` fall back to the common settings when omitted (they are **per-link identifying attributes** that may differ per path). Environment category, rain rate and diffraction model are set once in the common settings
+- Older CSVs without `gain_tx` / `gain_rx` columns still load as they are (backward compatible; gains inherit the common settings)
+- Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` are rejected as duplicates)
+- `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are optional columns for matching field measurements (the single source of the columns is `CSV_COLUMNS` in `core/batch_csv_schema.py`; the values read land on `batch.PathRow` attributes). `core/residuals.py` computes the layered residual statistics (environment class × band × distance band); the report that tabulates them is Pro's Multiple Paths summary report (Pro also uses `compute_layered_stats(exclude_spot=True)`, which leaves spot measurements out of the statistics). `meas_method` is expected to be `spot` or `mean`. **These can only be recorded at measurement time**, so see the manual's ["Recording field measurements"](manual_en.md#recording-field-measurements) for the user-facing procedure
 
-### Common Settings (a snapshot of the launcher)
+### Map and profile
 
-The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only** — a snapshot of the launcher (the source of truth). Use the **↻ From Launcher** button to pull in the launcher's current values.
+The map draws a line from each row's transmit point to its receive point in the verdict's color, and selecting a row draws it thicker. Clicking a line on the map selects that row, and the profile of the selected row alone is fetched from the server (`/api/profile`; the profiles of all rows are not carried in the headline).
 
-### Running and Results
+### Cancelling a run
 
-Click **Run** to process paths sequentially. The bar shows progress (done / total), and **each verdict is returned to the row that produced it**.
-
-On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
-
-| File                         | Contents                                                         |
-| ---------------------------- | ---------------------------------------------------------------- |
-| `summary.html`             | Summary report for all paths (a ledger, one row per path)        |
-| `summary.csv`              | Numerical results for all paths (spreadsheet-compatible)         |
-| `summary.kml`              | Google Earth KML with OK / REVIEW / NG / Error color coding      |
-| `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
-| `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
-| `{id}/profile.png`         | Terrain cross-section graph                                      |
-| `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
-| `{id}/settings.json`       | Per-path input parameters                                        |
-| `{id}/terrain_profile.csv` | Terrain profile data                                             |
-| `{id}/report.txt`          | Text-format link budget report                                   |
+🔑 **When the input version moves on during a run, every running item is cancelled and the run starts again on the new version** (even a one-character edit to the table would leave every running item with a result from the old input). This is a different rule from Single Link's "cancel only when the terrain key differs".
 
 ---
 
@@ -662,31 +618,31 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 <img src="images/shot_scenario.png" width="620" alt="Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG">
 
-Open it with the **Condition Explorer** button in the launcher (views/scenario.py (removed in 4.0)). It **takes one fixed path and digs into it under different conditions**; the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
+Choose **Condition Explorer** in the workspace switch at the top right. It is the workspace that **takes one fixed path and digs into it under different conditions**; the path is the left column's input (the same as Single Link), and the computation lives in `core/scenario.py`. For the step-by-step operation see [manual_en.md](manual_en.md) — what follows is the implementation side.
 
-- **Terrain is fetched once.** `run_scenario()` walks FETCH → CALC (→ RENDER), and the fetch happens once at the front. `engine.fetch_terrain()` goes through `fetch_elevations_cached()`, so re-running the same path with different conditions never re-downloads DEM — which is exactly how this screen is used.
-- **A condition is a delta.** `Condition` is an override dict on top of the base params, and `scenario.OVERRIDABLE` is the single source of what may be overridden. **Coordinates and terrain resolution are not in it** (comparing paths themselves is what Multiple Paths is for). Compare mode allows up to `MAX_COMPARE_CONDITIONS` columns.
-- **Compare and sweep share one computation path.** A sweep is turned into conditions first: `linspace_values()` → `sweep_conditions(axis, values)` → `evaluate()`. Axes are `SWEEP_AXES`, point count is capped by `MAX_SWEEP_POINTS`. **Only the input construction branches**; evaluation and the result types (`ScenarioRun` / `ScenarioPoint`) are single.
-- **Progress is declared as phases.** `Phase` / `Phases` (`FETCH`, `CALC`, `RENDER`) carry relative weights, and report generation runs inside the worker thread as the RENDER phase via `artifacts`. **Do not generate reports in the View after completion** — it freezes the GUI and that time never shows up in the progress bar (a defect this project has shipped twice).
-- **Validation precedes the fetch.** `validate_base()` rejects bad base values before any download (failing after the fetch throws away the user's wait). Conditions validate themselves in `Condition`.
-- **The window's own values are canonical.** Launcher values are frozen when the window opens and are **only pulled in when ↻ is pressed** — every window that takes its conditions from the launcher and computes them uses the values you can see. The map is an input tool and follows the launcher's coordinate fields as they change.
+- **Terrain is shared with Single Link.** Condition Explorer runs `scenario.evaluate()` on the terrain of the left column's input. When the terrain key is the same nothing is fetched again, so re-running the conditions never re-downloads DEM (which is exactly how this workspace is used). Evaluation is pure computation, so every item is gathered and published in one go
+- **A condition is a delta.** `Condition` is an override dict on top of the base, and `scenario.OVERRIDABLE` is the single source of the fields that may be overridden. **Coordinates and terrain resolution are not in it** (comparing paths themselves is what Multiple Paths is for). Compare allows up to `MAX_COMPARE_CONDITIONS` items
+- **The base is the left column.** The "Base" row at the top of the compare table only mirrors the left column's values and cannot be typed into. A blank in a condition follows the base, and the blank shows the base value in faint text
+- **Compare and sweep share one computation path.** The switch above the table picks compare (base plus conditions) or sweep (one axis, N points). A sweep holds only the axis, start, end and point count; `conditions` in `webui/sheets.py` lowers it into a list of `Condition`s via `linspace_values()` → `sweep_conditions(axis, values)` and passes that to `evaluate()`. Axes are `SWEEP_AXES`; the point count is capped by `MAX_SWEEP_POINTS`. **Only the input construction branches**; evaluation and the result types (`ScenarioRun` / `ScenarioPoint`) are single
+- **Validation precedes the fetch.** `validate_base()` rejects bad base values before the fetch (failing after the fetch throws away the user's wait). Conditions validate themselves in `Condition`
+- **One line on the map.** Every item shares the same path, so the map draws a single line (in the selected item's word color, or the overall word's color when nothing is selected). Every profile shares the same terrain; only an antenna height override changes the lines
+- `run_scenario()`, which runs from the fetch through to the reports (declaring the weights of fetch, computation and deliverables with `Phase` / `Phases` to report progress), still lives in `core/scenario.py`. The new screen does not use it
 
 ---
 
 ## Usage — Relay Path
 
-<img src="images/shot_multihop.png" width="620" alt="Relay Path window: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table">
+<img src="images/shot_multihop.png" width="620" alt="Relay Path workspace: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table">
 
-Open it with the **Relay Path** button in the launcher (views/multihop.py (removed in 4.0)). It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model lives in `report/multihop.py`; the new screen's `webui/worker.py` runs it (computes the sections one at a time and gathers them into a `MultiHopRun`).
+Choose **Relay Path** in the workspace switch at the top right. It assumes **regenerative relaying** (receive, then transmit again), so each section gets its own independent link budget. The model lives in `report/multihop.py` and the run in `webui/worker.py` (computes the sections one at a time and gathers them into a `MultiHopRun`). The route ID and note sit above the tables; below them are the waypoint table (name, coordinates, height) and the per-section settings table (frequency, TX / RX gains; blanks inherit the common settings).
 
-- **A route is a point list plus a connection rule.** `MultiHopPath` holds `Waypoint`s and a per-section `HopRF`; sections are derived by `links(path)` so the meaning of the ordering is not re-spelled at every call site. **Height belongs to the waypoint only** — a relay has one antenna, so there is deliberately no way to give "RX height of the previous section" and "TX height of the next" different values. The cap is `MAX_HOPS`.
-- **Topology is declared in one place.** `TOPOLOGIES` lists chain and star, but **only `SUPPORTED_TOPOLOGIES` may actually run**; the read, write and run layers all consult that one tuple, and `require_runnable()` is the gate. The aggregates (`ok` / `worst` / `overall_margin`) carry **chain semantics**, so for anything else they refuse rather than quietly return a number (a min over a star means nothing).
-- **The runner reuses batch.** `hop_rows(path)` lowers sections into `batch.PathRow`, and `run_multihop()` takes the same callback shape as `batch.run_batch()` (same `ProgressPump` usage). ⚠️ **One section = one DEM fetch**, so download volume scales with section count (adjacent sections share an endpoint, so tile caching does help).
-- **`batch.PathResult.status` is the single source of the verdict.** Not only a section whose computation failed but also **a section whose artifacts are missing** drops out of OK. The overall verdict is the tightest section — **losses are never summed**.
-- **`overall_display()` owns the wording of the summary card.** The same number is labelled "overall margin (smallest headroom)" when OK and "largest shortfall" when NG (sign flipped). Screen and report both take the wording from that one function.
-- **`overall_status()` owns the overall state word.** It returns the same **three values** a section does (`OK` / `NG` / `ERROR`), and it is `ERROR` whenever any section is. ⛔ Do not build the word out of the `run.ok` boolean — `ok` can only answer "did the chain close", so "could not be judged" collapses into "did not close" and the screen summary and the report card end up contradicting the section table and the ERR count inside the same deliverable (which is exactly how they were broken). Judge with `ok`; show `overall_status()`.
-- **Inserting and deleting a waypoint are each other's inverse.** The `＋` on a row inserts "the section **leaving** that point" as blank; the `×` drops the same section. Section variables are **reused by position**, so moving waypoints alone shifts the frequency and gains after the edit by one — **the screen still looks natural while a different section's settings are used for the computation**. A round trip (insert, then delete at the same position) is required by test to return exactly to the previous state.
-- **Relay points are meant to be placed, not dragged around to explore.** Moving one triggers a fresh fetch; sweeping heights or conditions is the Condition Explorer's job.
+- **A route is a point list plus a connection rule.** `MultiHopPath` holds a list of `Waypoint`s and a per-section `HopRF`; sections are derived by `links(path)` (so the meaning of the ordering is not re-spelled everywhere). **Height belongs to the `Waypoint` only** — a relay has one antenna, so there is deliberately no way to give the RX height of the previous section and the TX height of the next different values. The cap is `MAX_HOPS` (waypoints: `MAX_WAYPOINTS` in `webui/sheets.py`)
+- **Topology is declared in one place.** `TOPOLOGIES` lists chain and star, but **only `SUPPORTED_TOPOLOGIES` may actually run**. The read, write and run layers all consult that one declaration, and `require_runnable()` is the gate. The aggregates (`ok` / `worst` / `overall_margin`) carry **chain semantics**, so for anything other than a chain they stop rather than quietly return a number (a min over a star means nothing)
+- **The run layer is the same as Multiple Paths.** `hop_rows(path)` lowers the sections into `batch.PathRow`s, and the computation thread feeds them to the same `engine.run_paths()` as Multiple Paths. ⚠️ **One section = one DEM fetch**, so the volume fetched scales with the number of sections (adjacent sections share an endpoint, so the tile cache does help). A malformed waypoint puts the whole chain into "Waiting for input" (unlike the per-row ERROR of Multiple Paths)
+- **`batch.PathResult.status` is the single source of the verdict.** A section whose computation failed drops out of OK here. The overall verdict is the tightest section — **losses are never summed**
+- **`verdict.aggregate()` returns the overall word.** It uses the same words as a section, NG > REVIEW > OK, and **if any section is `ERROR`, so is the whole**. ⛔ Do not build the word out of the `run.ok` boolean — `ok` can only answer "did the chain close", so "could not be judged" collapses into "did not close" and disagrees with the section table and the way the counts are tallied
+- **Adding or removing a waypoint must not shift the section settings.** "+ Add point" appends at the end; "- Remove relay" drops the focused waypoint (the last one if none has focus) **together with the settings of the section coming into it**. Section settings are held by position, so removing only the waypoint would shift the frequency and gains of the later sections by one — **the screen would still look natural while computing with another section's settings**
+- **Relay points are meant to be placed, not moved around to explore.** Every move triggers a fresh fetch; sweeping heights or conditions is Condition Explorer's job
 
 ---
 
