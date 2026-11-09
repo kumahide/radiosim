@@ -216,9 +216,7 @@ python -m pip install -r requirements.txt
 
 ```
 radiosim/
-├── main.py               # エントリーポイント（層には属さない。起動して画面を組み立てるだけ）
-│
-│   # 層はディレクトリで表す。依存は views → report → core の一方向。
+│   # 層はディレクトリで表す。依存は webui → report → core の一方向。
 │   # 2 つの層から使われるものは「下」へ置く（`shared/` のような箱は作らない）。
 │
 ├── core/                 # 土台。計算・データ・設定。tkinter も matplotlib も引かない
@@ -262,47 +260,25 @@ radiosim/
 │   ├── report_scenario.py # 条件探索の scenario.csv
 │   ├── report_map.py     # 経路を重ねた地図の PNG のヘッドレス生成と出典の字
 │   └── map_graphics.py   # 地図オーバーレイ描画の純 PIL 実装（判定の色の単一ソース）
-├── views/                # 画面（tkinter）
-│   ├── launcher.py       # ランチャーウィンドウ（本体。入力フォーム・実行・進捗）
-│   ├── launcher_menu.py  # ランチャーのメニューバーとその操作（Mixin）
-│   ├── launcher_project.py # プロジェクト（.rsproj）の収集・保存・読込（Mixin）
-│   ├── launcher_windows.py # 子ウィンドウの開閉とウィンドウどうしの通知（Mixin）
-│   ├── tooltip.py        # 入力ヒントのツールチップ（ウィンドウに依存しない部品）
-│   ├── graph.py          # グラフウィンドウ（matplotlib + tkinter）
-│   ├── map_window.py     # 地図（本体。モード切替・地図ウィジェット）
-│   ├── map_picks.py      # 地点の指定と経路の描画（Mixin）
-│   ├── map_cache.py      # DEM キャッシュの範囲選択・取得・オーバーレイ（Mixin）
-│   ├── map_adapter.py    # tkintermapview への唯一の依存点（防火扉・3.3 ステージ2）
-│   ├── map_style.py      # 地図ウィンドウの描画定数（色・余白・ズーム）の単一ソース
-│   ├── dialogs.py        # 親ウィンドウ中央表示の共通モーダルダイアログ
-│   ├── errors.py         # GUI の未捕捉例外をログ＋ダイアログへ流す単一の受け皿
-│   ├── progress.py       # 進捗トランスポート（ワーカースレッド → メインスレッド）
-│   ├── theme.py          # 素の tk ウィジェットへ渡すテーマ色・UI フォント（sv_ttk 由来）
-│   ├── title_bar.py      # タイトルバー・ウィンドウ枠（Windows が描く領域）の配色を DWM へ申告する
-│   ├── window_fit.py     # ウィンドウの寸法と位置を決める唯一の実装（見切れ・画面外防止）
-│   ├── window_scroll.py  # 入らないときの逃げ道（中身が画面より大きいウィンドウのスクロール受け皿）
-│   ├── scenario.py       # 条件探索ウィンドウ（比較 / スイープ）
-│   ├── multihop.py       # 中継経路ウィンドウ（地点が入力面・区間は導出）
-│   ├── multihop_map.py   # 中継経路と地図の受け渡し（地点列の写し・地図からの追加/置き直し・Mixin）
-│   ├── frozen_common.py  # 凍結バー「共通設定」に何を出すかの単一ソース（複数経路・中継経路）
-│   ├── batch_builder.py  # 複数経路ウィンドウ（本体。共通設定・案件情報）
-│   ├── batch_table.py    # バッチの入力表（行の生成/複製/削除/並べ替え・Mixin）
-│   ├── batch_io.py       # バッチの CSV 入出力とテンプレート（Mixin）
-│   └── batch_run.py      # バッチの実行と進捗（Mixin）
-├── webui/                # 新しい画面（ローカルの HTTP と Edge のアプリモード・4.0 ステージ8）。views と同じ位で互いに引かない
+├── webui/                # 画面（ローカルの HTTP と Edge のアプリモード）。入口は `python -m webui`
 │   ├── __main__.py       # `python -m webui` の入口（先に Edge を起こす・truststore は初めての通信の直前に `core/dem.py` が入れる・設定は読むだけ）
 │   ├── state.py          # 入力の集合と見出し（古い版の結果を今の判定に見せない）
 │   ├── sheets.py         # 作業面の入力（複数経路・条件探索・中継を画面の文字列のまま持ち、実行と保存のときに型へ直す）
 │   ├── project_io.py     # .rsproj の保存と開く（画面の入力と ProjectDoc の変換・ファイルの形は report/project.py）
-│   ├── exports.py        # 作業面と 1 回線の成果物の本文（CSV・KML＝旧画面の書き手そのもの・1 回線は summary.csv の 1 行と path.kml・地図の PNG＝帳票の絵・ファイルを書くのは画面）
+│   ├── exports.py        # 作業面と 1 回線の成果物の本文（CSV・KML・地図の PNG。ファイルを書くのは画面）
 │   ├── worker.py         # 計算のスレッド 1 本（地形の取得は取り消せる・作業面は 1 件ずつ回す）
 │   ├── profile.py        # 断面図の数（帳票と同じ線・1200 点まで間引く）
+│   ├── settings.py       # 「設定」の枠（言語・テーマ・座標の表記・プロキシ・起動時の更新の確認・背景地図）
+│   ├── files.py          # 「設定」の枠のファイルの 4 つ（パラメータ読込・アプリ設定読込・結果フォルダを開く・全キャッシュ削除）と訳のひな形
+│   ├── support.py        # 「設定」の枠のヘルプ（更新の確認・診断パッケージ）
+│   ├── docs.py           # 「設定」の枠の説明書を開く（Markdown を HTML にして既定のブラウザで開く）
+│   ├── notices.py        # 起動時の知らせ（読み込めなかった言語・宣言ファイル・新しい版。地図の上の閉じられる帯）
 │   ├── server.py         # 127.0.0.1 だけで待つ HTTP（起動ごとの鍵・Host の検査・静的ファイル）
 │   ├── edge.py           # Edge を専用プロファイルのアプリモードで開く
 │   └── static/           # 画面の殻（HTML・JS・CSS・Leaflet）
 │
 │   # 本体とは別のアプリはここ。`apps/*` が引けるのは core/ だけ（アプリ同士は引かない）。
-│   # 本体（main.py と上の 3 層）はいまのところ直下に置いたまま。
+│   # 本体（上の 3 層）はいまのところ直下に置いたまま。
 │
 ├── apps/
 │   └── field/           # 実測補助（別アプリ・開発中。本体の配布物には入らない）
@@ -328,6 +304,13 @@ radiosim/
 │   ├── glossary.md       # 用語集（画面・レポートに出る語）。tests/test_i18n_glossary.py が守る
 │   ├── screenshots.md    # スクショの撮り方（座標・条件・期待値・配置先の正典）
 │   └── images/           # そのスクショと図（architecture_*.svg は層構成図）。exe にも同梱
+├── buildtools/           # ビルドと開発の道具（層には属さない）
+│   ├── build_link.py     # 配布物（embeddable の Python・vendor・zip・インストーラ）を組む。`build.bat` が呼ぶ
+│   ├── architecture_figure.py # 層構成図（docs/images/architecture_*.svg）を作る
+│   ├── dev_check.py      # 実装後の検証を 1 コマンドで（下の「テスト」）
+│   └── deploy_qa_fixtures.py # 動作確認用の設定ファイル（qa_fixtures/）を配置先へ配る
+├── installer/
+│   └── link.iss          # インストーラ（Inno Setup）の定義
 ├── README.md             # リポジトリの入口（GitHub で最初に読まれる 1 本）
 │
 │   # テストは**名前だけ**。説明は「テスト」セクションの表が正典（同じ説明を 2 か所で持たない）。
@@ -364,8 +347,6 @@ radiosim/
     ├── test_field_ntrip.py
     ├── test_project.py
     ├── test_report_map.py
-    ├── test_map_window.py
-    ├── test_cache_notify.py
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
@@ -375,19 +356,11 @@ radiosim/
     ├── test_calc_profile.py
     ├── test_verdict.py
     ├── test_engine.py
-    ├── test_progress.py
     ├── test_runner_logging.py
-    ├── test_theme.py
-    ├── test_title_bar.py
-    ├── test_window_fit.py
-    ├── test_errors.py
     ├── test_failure_messages.py
-    ├── test_bundle_imports.py
     ├── test_build_link.py
-    ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
     ├── test_i18n_key_duplication.py
-    ├── test_i18n_no_hardcoded_ui_text.py
     ├── test_i18n_external.py
     ├── test_layers.py
     ├── test_paths.py
@@ -422,7 +395,7 @@ radiosim/
 ## インストール・起動（ソースから実行）
 
 ```bash
-# リポジトリの中へ移る（requirements.txt と main.py はここにある）
+# リポジトリの中へ移る（requirements.txt と webui/ はここにある）
 cd radiosim
 
 # 依存ライブラリのインストール（版は requirements.txt が単一ソース。固定して配布物と揃える）
@@ -432,8 +405,8 @@ python -m pip install -r requirements.txt
 # Python 3.15 向けの wheel が無くソースから組むので、C 拡張を作らせない。下の「開発環境のセットアップ」と同じ）
 PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
-# 起動
-python main.py
+# 起動（Microsoft Edge のアプリモードで画面が開く）
+python -m webui
 ```
 
 初回起動時にプロジェクトルートへ以下のディレクトリが自動作成されます。
@@ -441,7 +414,8 @@ python main.py
 | ディレクトリ       | 内容                           |
 | ------------------ | ------------------------------ |
 | `terrain_cache/` | DEM タイルのディスクキャッシュ |
-| `results/`       | 保存パッケージの出力先         |
+
+Link は結果フォルダ（`results/`）へ書きません。成果物は保存のたびに選んだ場所へ 1 つずつ書きます。`results/` は 3.x の結果を探す口として、「設定」の枠の「結果フォルダを開く」で開けます（無ければ作ってから開く）。
 
 ---
 
