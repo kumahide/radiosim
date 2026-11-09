@@ -10,7 +10,8 @@ webui/settings.py
 扱う鍵（`KEYS`）＝言語・テーマ・座標の表記・プロキシ・起動時の更新の確認・プレリリースも知らせるか。
 - 座標の表記（`coord_format`＝`dd`／`dms`）＝ピンを動かしたときに欄へ書き戻す表記と、替えたときの
   端点の欄の書き換え（`app.js`）。欄はどちらの表記で書いても読む（2026-11-09 経営者の選択）。
-- 背景地図（`basemap_layer`）は地図の張り替えと一緒に入れる（I-257 の C）。
+- 背景地図（`basemap_layer`）＝淡色・航空写真＋宣言ファイルで足した背景地図（表示名は訳さない）。
+  サーバーが地図の PNG の背景も替え、画面は地図のタイルを張り直す（I-257 の C）。
 
 ⚠️ 起動の経路で網の部品を引かない（`test_the_startup_path_does_not_load_the_network_parts`）＝
 `dem`・`simulation`・`update_check` は関数の中で取り込む。
@@ -24,7 +25,7 @@ from core import config
 from core import i18n
 
 #: 画面が変える鍵（並びは枠の並び）。
-KEYS = ("lang", "theme", "coord_format", "proxy_url", "update_check_auto",
+KEYS = ("lang", "theme", "coord_format", "basemap_layer", "proxy_url", "update_check_auto",
         "update_check_prerelease")
 
 #: テーマの値と字の鍵（旧メニューと同じ 3 つ）。
@@ -32,6 +33,9 @@ THEMES = (("system", "menu_system"), ("light", "menu_light"), ("dark", "menu_dar
 
 #: 座標の表記の値と字の鍵（旧メニューと同じ 2 つ）。
 COORD_FORMATS = (("dd", "coord_fmt_dd"), ("dms", "coord_fmt_dms"))
+
+#: 組み込みの背景地図の値と字の鍵（旧画面の地図の窓と同じ 2 つ）。
+BASEMAPS = (("pale", "map_layer_pale"), ("photo", "map_layer_photo"))
 
 _ON_OFF = ("on", "off")
 
@@ -46,6 +50,13 @@ def languages() -> "list[list[str]]":
             *([code, name] for code, name in i18n.external_languages())]
 
 
+def basemaps() -> "list[list[str]]":
+    """背景地図の選択肢 `[[値, 表示名], …]`＝組み込み 2 つ ＋ 宣言ファイルのソース（名前は訳さない）。"""
+    from core import tile_sources
+    return [*([v, i18n.t(k)] for v, k in BASEMAPS),
+            *([s.source_id, s.display_name] for s in tile_sources.all_sources())]
+
+
 def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
     """枠の今の値・選択肢・字。`update_check_prerelease` は版に追従する既定を真偽に畳む。"""
     from core import update_check
@@ -54,6 +65,7 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
             "lang": cfg.get("lang", "en"),
             "theme": cfg.get("theme", "system"),
             "coord_format": cfg.get("coord_format", "dd"),
+            "basemap_layer": cfg.get("basemap_layer", "pale"),
             "proxy_url": cfg.get("proxy_url", ""),
             "update_check_auto": cfg.get("update_check_auto") == "on",
             "update_check_prerelease": update_check.want_prerelease(cfg),
@@ -62,12 +74,14 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
             "lang": languages(),
             "theme": [[v, i18n.t(k)] for v, k in THEMES],
             "coord_format": [[v, i18n.t(k)] for v, k in COORD_FORMATS],
+            "basemap_layer": basemaps(),
         },
         "labels": {
             "title": i18n.t("menu_settings"),
             "lang": i18n.t("menu_language"),
             "theme": i18n.t("menu_theme"),
             "coord_format": i18n.t("lbl_coord_format"),
+            "basemap_layer": i18n.t("map_layer_label"),
             "proxy_url": i18n.t("dlg_proxy_url_label"),
             "proxy_hint": i18n.t("dlg_proxy_hint"),
             "update_check_auto": i18n.t("menu_check_updates_auto"),
@@ -92,6 +106,10 @@ def _check(key: str, value: Any) -> str:
     if key == "coord_format":
         if value not in {v for v, _k in COORD_FORMATS}:
             raise SettingError(f"unknown coord_format: {value!r}")
+        return value
+    if key == "basemap_layer":
+        if value not in {v for v, _t in basemaps()}:
+            raise SettingError(f"unknown basemap_layer: {value!r}")
         return value
     if key == "proxy_url":
         if not isinstance(value, str) or "\n" in value or "\r" in value:

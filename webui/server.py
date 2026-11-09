@@ -372,10 +372,14 @@ class WebServer:
             snap["breakdown"] = breakdown()
             snap["sheet_spec"] = sheet_spec()
             snap["db_digits"] = units.DB_DECIMALS
-            snap["basemap"] = self.basemap
-            snap["basemap_attribution"] = exports.map_attribution(self.basemap)
+            snap["basemap"] = self.basemap_payload()
             snap["settings"] = self.settings_payload()
         return snap
+
+    def basemap_payload(self) -> "dict[str, Any]":
+        """画面の地図のタイルの元＝`{id, attribution, max_zoom}`（起動時と背景地図を替えたとき）。"""
+        return {"id": self.basemap, "attribution": exports.map_attribution(self.basemap),
+                "max_zoom": dem.basemap_max_zoom(self.basemap)}
 
     def settings_payload(self) -> "dict[str, Any]":
         with self._settings_lock:
@@ -390,7 +394,11 @@ class WebServer:
                 reload = settings_mod.apply(self.app_cfg, key, value)
             except settings_mod.SettingError as e:
                 return 400, {"error": str(e)}
-            return 200, {"settings": settings_mod.payload(self.app_cfg), "reload": reload}
+            body = {"settings": settings_mod.payload(self.app_cfg), "reload": reload}
+            if key == "basemap_layer":                   # 地図の PNG（`map_image`）もこの値を読む
+                self.basemap = self.app_cfg[key]
+                body["basemap"] = self.basemap_payload()
+            return 200, body
 
 
 def _make_handler(app: WebServer) -> type:

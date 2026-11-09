@@ -688,6 +688,31 @@ def test_the_coordinate_format_is_saved(web, saved):
     assert web.app_cfg["coord_format"] == "dms" and saved["save"][-1]["coord_format"] == "dms"
 
 
+def test_the_basemap_switches_the_map_and_the_png(web, saved, monkeypatch):
+    """背景地図＝保存し、画面の地図の元を返し、地図の PNG も同じ背景を読む（I-257 の C）。"""
+    from types import SimpleNamespace
+
+    from core import i18n
+    from core import tile_sources
+    monkeypatch.setattr(tile_sources, "all_sources",
+                        lambda: (SimpleNamespace(source_id="osm_local", display_name="My tiles"),))
+    status, raw = _request(web, "GET", "/api/state?after=0", token=web.token)
+    snap = json.loads(raw)
+    assert snap["basemap"]["id"] == "pale" and snap["basemap"]["max_zoom"] > 0
+    assert snap["settings"]["choices"]["basemap_layer"][:2] == [
+        ["pale", i18n.t("map_layer_pale")], ["photo", i18n.t("map_layer_photo")]]
+    assert ["osm_local", "My tiles"] in snap["settings"]["choices"]["basemap_layer"]
+    status, raw = _request(web, "POST", "/api/settings", token=web.token,
+                           body={"key": "basemap_layer", "value": "photo"})
+    assert status == 200
+    body = json.loads(raw)
+    assert body["basemap"]["id"] == "photo" and body["basemap"]["attribution"]
+    assert web.basemap == "photo" and saved["save"][-1]["basemap_layer"] == "photo"
+    status, _ = _request(web, "POST", "/api/settings", token=web.token,
+                         body={"key": "basemap_layer", "value": "nowhere"})
+    assert status == 400 and web.basemap == "photo"
+
+
 def test_the_ends_may_be_written_in_dms_and_compute_in_dd():
     """欄は度分秒でも書ける＝持つのは書いた字・計算の写しは十進度（I-257）。"""
     st = AppState()

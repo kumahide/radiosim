@@ -407,12 +407,12 @@ class TestAttribution:
                 snap = srv.state_payload(0, timeout=0)
             finally:
                 srv.httpd.server_close()
-            assert snap["basemap_attribution"] == i18n.t(map_graphics.ATTR_KEYS[key])
-            assert snap["basemap_attribution"] == report_map.attribution_for(key)
+            assert snap["basemap"]["attribution"] == i18n.t(map_graphics.ATTR_KEYS[key])
+            assert snap["basemap"]["attribution"] == report_map.attribution_for(key)
         # 画面は受け取った字を地図の層へ渡している（配線が切れていないこと）
         js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
-        assert "initMap(s.basemap || \"pale\", s.basemap_attribution)" in js
-        assert "attribution: escapeHtml(attribution" in js
+        assert "initMap(s.basemap || { id: \"pale\" })" in js
+        assert "attribution: escapeHtml(b.attribution" in js
 
     def test_every_tile_layer_has_a_source_text(self):
         # タイルを足したら出典も足さないと通らない（対で持つことの強制）。

@@ -244,15 +244,26 @@ function escapeHtml(text) {
   return box.innerHTML;
 }
 
-function initMap(basemap, attribution) {
+// 背景地図のタイル＝`{id, attribution, max_zoom}`（サーバーが渡す）。替えたら外して張り直す（I-257 の C）。
+// 出典（B-133）＝地理院タイルの表示義務。字は帳票へ焼く地図と同じ 1 本（サーバが渡す）。
+// 宣言した外部ソースの字は利用者のファイルの生の字＝HTML として読ませない。
+// ソースの最大ズームより先はタイルを拡大して見せる（`maxNativeZoom`＝無いタイルを取りに行かない）。
+let baseLayer = null;
+function setBasemap(b) {
+  if (!map || !b) return;
+  if (baseLayer) map.removeLayer(baseLayer);
+  baseLayer = L.tileLayer(`/tile/${b.id}/{z}/{x}/{y}.png`, {
+    maxZoom: 18, maxNativeZoom: Math.min(b.max_zoom || 18, 18),
+    attribution: escapeHtml(b.attribution || ""),
+  }).addTo(map);
+  baseLayer.bringToBack();
+}
+
+function initMap(basemap) {
   map = L.map("map", { zoomControl: true });
-  // 出典（B-133）＝地理院タイルの表示義務。字は帳票へ焼く地図と同じ 1 本（サーバが渡す）。
-  // 宣言した外部ソースの字は利用者のファイルの生の字＝HTML として読ませない。
   // 前置き（Leaflet の名前と外のリンク）は出さない＝手元の道具から外へ誘わない。
   map.attributionControl.setPrefix(false);
-  L.tileLayer(`/tile/${basemap}/{z}/{x}/{y}.png`, {
-    maxZoom: 18, attribution: escapeHtml(attribution || ""),
-  }).addTo(map);
+  setBasemap(basemap);
   map.setView([35.0, 135.0], 5);
   cursor = L.marker([0, 0], {
     interactive: false, opacity: 0, keyboard: false,
@@ -1191,6 +1202,7 @@ function buildSettings(st) {
         return;
       }
       applyTheme(body.settings.values.theme);
+      if (body.basemap) setBasemap(body.basemap);
       if (key === "coord_format") {
         coordFormat = body.settings.values.coord_format;
         reformatCoords();
@@ -1218,6 +1230,7 @@ function buildSettings(st) {
     choice("lang"),
     choice("theme"),
     choice("coord_format"),
+    choice("basemap_layer"),
     el("label", {}, [el("span", { textContent: L.proxy_url }), proxy]),
     el("div", { className: "hint", textContent: L.proxy_hint }),
     check("update_check_auto"),
@@ -1264,7 +1277,7 @@ async function poll() {
         buildForm(s.form || []);
         buildBreakdown(s.breakdown || []);
         if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;
-        if (!map) initMap(s.basemap || "pale", s.basemap_attribution);
+        if (!map) initMap(s.basemap || { id: "pale" });
         if (s.sheet_spec) {
           spec = s.sheet_spec;
           buildTabs();
