@@ -597,8 +597,8 @@ def test_batch_csv_columns_listed(doc):
 #
 # 🔑 **単一ソースは実装側**（`core/output_contract.py`）＝文書に書いた列を数えるのでは
 #    なく、**契約の列を文書に探す**。列を足した人が文書を直すまでここが赤いままになる。
-#: 3.x の見出し（保存パッケージ）と Link 1.0 の見出し（保存の口と中身）＝11f で書き換える間は両方を受ける
-_OUTPUT_SECTION_HEADERS = ["保存パッケージ", "Save Package", "保存の口と中身", "Saving — where and what"]
+#: 出力列の仕様を抱える節の見出し（Link 1.0 の「保存の口と中身」・言語ごと）
+_OUTPUT_SECTION_HEADERS = ["保存の口と中身", "Saving — where and what"]
 
 #: 変更規約が全 README に在ることの目印（言語ごと）。
 _CHANGE_POLICY_MARKERS = {
@@ -726,7 +726,7 @@ _MODE_DOCS = [
 #    枠の中身だけを検査するので、散文には**原理的に触れない**。
 _WINDOW_TITLE_KEYS = sorted(k for k in i18n._STRINGS["en"] if k.endswith("_window_title"))
 
-#: 「使い方 — X」の枠。X はウィンドウ名か、ランチャー（`html_single_mode`）。
+#: 「使い方 — X」の枠。X は画面の面の名前（`1 回線` / `Single Link` を含め、i18n に在る字）。
 _USAGE_FRAME = re.compile(r"^(?:使い方|Usage)\s*[—–-]\s*(.+?)\s*$")
 
 

@@ -373,26 +373,21 @@ The input is **not written back** to `radiosim_conf.json` (it is only read at st
 
 ![Multiple Paths input table, one path per row, with the verdict (OK / NG) and the horizontal distance returned to each row after the run](images/shot_batch.png)
 
-Click the **Multiple Paths** button in the launcher to open the dedicated window.
+Choose **Multiple Paths** in the workspace switch at the top of the right column, and a table appears below the map. **There is no Run button.** When you edit the table, the app waits a moment and computes every row again; results come back to the right end of each row (verdict, margin, RX level) as soon as that row is done. Once every row is in, the top bar shows the overall word and the count for each verdict word.
 
-### Design — refine in Single, commit in Multiple Paths
+### Design — one set of common inputs, the rows carry only the paths
 
-**Single (the launcher) is where you refine conditions; Multiple Paths is where you turn committed conditions into deliverables.** The launcher is the single source of truth, and each batch row is a **committed link frozen by copying the launcher fields at the moment the row was added**.
+The radio and environment fields are shared by all four workspaces (the left column). In the Multiple Paths workspace the **endpoint and antenna height fields are hidden** (each row carries its own), and the remaining fields become the common settings for every row. When a row's frequency or gain is blank, the common setting is used.
 
 ### Input Methods
 
-**Manual entry**: Type IDs, coordinates, antenna heights, frequencies, and TX/RX gains directly into the table. Rows can be added, deleted, reordered by drag and drop, and edited cell by cell.
+**Manual entry**: type the ID, coordinates, antenna heights, frequency, TX/RX gains and note into the table cells. The measurement columns (such as `meas_dbm` in the CSV below) are not shown in the table; they are only carried along.
 
-The **Dist (m)** column on the right is read-only and computed from the TX/RX coordinates (updated whenever a coordinate is committed). A mistyped coordinate shows up as an absurd distance, so it can be caught before running.
+- **+ Add Row**: adds an empty row at the end
+- **× Delete**: deletes the selected row (the last row if none is selected)
+- **Import CSV**: reads a CSV and replaces the table with it. A mistake in the header is shown as one sentence above the table
 
-- **+ Add row**: Adds a row that freezes a copy of the current launcher fields (coordinates, frequency, gains, antenna heights).
-- **Pick on map**: Opens the map in "Append to Multiple Paths" mode; every **TX → RX** pair you place adds one row (opening the map from this window is new in 2.7 — previously the flow could only be started from the map side).
-- **Right-click a row**: Opens a per-row menu.
-  - **→ Send to Single**: Loads that row's coordinates + RF into the launcher for adjustment.
-  - **⟳ Update RF from Single**: Writes the launcher's current RF back into that row (**coordinates are kept**).
-  - Duplicate / Delete.
-
-**CSV import**: Click the Template button to save a sample CSV, edit it, then import.
+⚠️ **A mistake in a row makes only that row ERROR**; the other rows are still computed. The one-sentence reason is carried on the row and appears where the profile is when you select it.
 
 #### CSV Format
 
@@ -406,46 +401,30 @@ path01,"34.54, 132.41","34.53, 132.40",30.0,10.0,2400,12.5,8.0,Main link,-78.5,s
 path02,"34.55, 132.42","34.52, 132.39",20.0,15.0,,,,Sub link,,,,
 ```
 
-- `start` / `end` must be quoted because they contain a comma
-- `freq` / `gain_tx` / `gain_rx` fall back to the Common Settings values when omitted (they are **per-link identifying attributes** that may differ per path). Env type, rain rate, and diffraction model are set globally in Common Settings
-- Legacy CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit Common Settings)
+- `start` / `end` take the form "lat, lon" and must be enclosed in double quotes
+- `freq` / `gain_tx` / `gain_rx` fall back to the common settings when omitted (they are **per-link identifying attributes** that may differ per path). Environment, rain rate and diffraction model are set once in the common settings
+- Older CSVs without `gain_tx` / `gain_rx` columns still load (backward compatible; gains inherit the common settings)
+- Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` are rejected as duplicates)
 - `meas_dbm` / `meas_method` / `feeder_loss_db` / `env_class` are for matching field measurements against the model. See "Recording field measurements" below
 
 #### Recording field measurements
 
-Filling in a measured receive level adds a **residuals-vs-measurement** table to the batch summary report (see "Sensitivity and residuals tables" below). **These values can only be recorded at measurement time** — they cannot be added later, so capture them on site.
+If you write receive levels measured on site into the CSV, Link carries them in the table and writes them out unchanged into the results CSV (the table of residuals against measurement appears in the Multiple Paths summary report of RadioSim Pro). **These values can only be recorded at measurement time** — they cannot be added later, so capture them on site whenever you measure.
 
 - `meas_dbm`: measured receive level (dBm)
 - `meas_method`: `spot` (a single-point reading) or `mean` (spatial average over multiple points). **Spot readings can be off by ±5-10 dB due to multipath**, so mark them as `spot` to keep them distinguishable when the data is later used for statistics
 - `feeder_loss_db`: feed-line loss (cable type, length, and connectors combined, dB)
-- `env_class`: self-assessed environment class (`urban` / `suburban` / `rural` / `los`). This is not visible in the DEM, so record it based on what you actually saw on site
+- `env_class`: self-assessed environment class (`urban` / `suburban` / `rural` / `los`). This is not visible in the DEM, so it should be judged by someone who saw the site
 - Enter the **actual installed height** in `h_tx` / `h_rx` — not the planned/design value
 
-The following also matter but have no dedicated CSV column — keep them as separate notes or photos so the measurement's value isn't lost later: date/time and weather, the receiver model and reading unit (dBm / S-meter / raw RSSI) and whether it was calibrated, transmit power and antenna models, and anything along the path the DEM doesn't show (buildings on a ridgeline, tree species/height, etc.).
-- Column names are **case-insensitive and ignore surrounding spaces** (`ID,Start,…` loads fine). `id` values must be unique **case-insensitively** (`p01` and `P01` would map to the same output folder, so they are rejected as duplicates)
+The following also matter but have no CSV column — keep them as separate notes or photos so the measurement's value isn't lost later: date/time and weather, the receiver model and reading unit (dBm / S-meter / raw RSSI) and whether it was calibrated, transmit power and antenna models, and anything along the path the DEM doesn't show (buildings on a ridgeline, tree species/height, etc.).
 
-### Common Settings (a snapshot of the launcher)
+### Map, profile and results
 
-The **Common Settings** panel at the top defines default values used whenever a per-path override is not specified. It is **read-only**, shown as a snapshot of the launcher (the source of truth). Use the **↻ From Launcher** button to pull in the launcher's current values.
-
-### Running and Results
-
-Click **Run** to process paths sequentially. The bar shows progress (done / total), and **each verdict is returned to the row that produced it**.
-
-On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
-
-| File                         | Contents                                                         |
-| ---------------------------- | ---------------------------------------------------------------- |
-| `summary.html`             | Summary report for all paths (a ledger, one row per path)        |
-| `summary.csv`              | Numerical results for all paths (spreadsheet-compatible; distances in metres) |
-| `summary.kml`              | Google Earth KML with OK / REVIEW / NG / Error color coding      |
-| `report_all.html`          | Summary + every path in one document (Ctrl+P prints them all)    |
-| `{id}/report.html`         | Per-path detailed report (terrain graph + path map embedded)     |
-| `{id}/profile.png`         | Terrain cross-section graph                                      |
-| `{id}/path.kml`            | 3D KML with terrain, LoS, Fresnel zone, and obstruction segments |
-| `{id}/settings.json`       | Per-path input parameters                                        |
-| `{id}/terrain_profile.csv` | Terrain profile data                                             |
-| `{id}/report.txt`          | Text-format link budget report                                   |
+- The map draws each row as a line from its transmit point to its receive point, colored by its verdict; the selected row is drawn thicker. Clicking a line on the map selects that row in the table
+- The profile shows the terrain of the selected row
+- 🔑 Editing the table or the left column while it is computing cancels the whole run in progress and starts again with the new input (results from the old input are not kept)
+- Save the results with **Save Results CSV** (`summary.csv`) and **Save KML** (`summary.kml`) at the right end of the table, each to a place you choose (→ [Saving — where and what](#saving--where-and-what))
 
 ---
 
@@ -453,112 +432,88 @@ On completion, the following are saved to `results/batch_YYYYMMDD_HHMMSS/`:
 
 ![Condition Explorer comparison view: one path under four conditions of differing frequency and gain, with the RX level and margin side by side and only the last condition NG](images/shot_scenario.png)
 
-A screen for **taking one fixed path and digging into it under different conditions**. Open it with the "Condition Explorer" button in the launcher. The path (coordinates) and the terrain resolution are fixed to the launcher values, so **terrain is fetched only once** and the N conditions are then computed on top of it (repeat runs on the same path do not re-fetch DEM).
+Choose **Condition Explorer** in the workspace switch at the top of the right column. This workspace is for **taking one fixed path and digging into it under different conditions**. The path comes from the left column (as in Single Link), and **terrain is fetched only once** — changing the conditions does not fetch the DEM again.
 
-The toggle at the top switches between two modes. After changing coordinates or parameters in the launcher, press **"↻ From Launcher"** at the top right to pull them in (**until you do, the run uses the values shown on screen** — what you see is what is computed).
+The toggle above the table switches between **Compare (base + N)** and **Sweep (1 axis, N points)**.
 
 ### Compare (base + N conditions)
 
-- The leftmost **Base** column is the launcher's current values (read-only) — the reference never moves.
-- In columns **Cond 1 ... Cond 5**, change only the fields you care about (they start as copies of the base). "+ Condition" adds up to 5 columns.
-- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and terrain resolution cannot be varied** (comparing different paths is what Multiple Paths is for).
-- The report is a difference table with **the delta from the base shown inside each cell** (e.g. `-76.4 (+13.6)`). Rows that differ are tinted.
+- Each row of the table is a condition. The **Base** row at the top only mirrors the left column and cannot be typed into
+- **+ Condition** adds rows, up to 5; **− Condition** removes one. Change only the fields you care about. A blank cell uses the base value, shown in faint text
+- You can vary frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate, environment and diffraction model. **Coordinates and terrain resolution cannot be varied** (comparing different paths is what Multiple Paths is for)
 
 ### Sweep (one axis, N points)
 
-- Pick an **axis** (antenna height, frequency, rain rate, ...), a range, and **Points** (2-41).
-- The range can be entered two ways: **From / To** (absolute values) or **Base ±** (swing around the current value). **Base ±** matches how the question is usually asked — "what happens within ±10 m of the current 30 m?". Switching between them keeps the span, and the range is always normalised to From / To internally (that is also what a project file stores).
-- The report contains **a line chart and a numeric table**. The chart draws the verdict threshold (0 dB margin) and colours each point by verdict (OK = green / NG = orange); the colour change is where the link starts to close. Even at the maximum 41 points the report stays on **a single A4 page** — the table stays a single column (rows are simply tightened), so the progression can be read straight down.
-- When the margin spans a huge range (deeply obstructed paths), the vertical axis switches to a log-like scale so the region around the threshold stays readable.
+- Set the **Axis** (frequency, TX power, TX/RX antenna gain, RX sensitivity, TX/RX antenna height, vegetation height, rain rate), **From**, **To** and **Points** (2-41)
+- Each row of the table is one point. Where the verdict color at the right end changes is the answer to "how high must the antenna be?"
 
-### Running and results
+### Results
 
-**Run** proceeds through terrain fetch -> condition calculation -> report generation, with the progress bar covering all three. On completion a dialog reports the output directory and offers to open the report (same flow as Single and Multiple Paths). To look at it later, use "Open Results" in the launcher.
-
-The following are saved to `results/scenario_YYYYMMDD_HHMMSS/`:
-
-| File              | Contents                                                          |
-| ----------------- | ----------------------------------------------------------------- |
-| `scenario.html` | Single-page A4 report (compare = difference table / sweep = chart + table) |
-| `scenario.csv`  | Numbers for every condition / point (spreadsheet-compatible)      |
+The verdict, margin and RX level come back to the right end of each row. The map draws a single path (every row shares it). Save the results with **Save Results CSV** (`scenario.csv`) to a place you choose (→ [Saving — where and what](#saving--where-and-what)).
 
 ---
 
 ## Usage — Relay Path
 
-![Relay Path window: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table](images/shot_multihop.png)
+![Relay Path workspace: three waypoints (transmit, relay, receive) with the RX level, margin and verdict returned per section in the table](images/shot_multihop.png)
 
-For **one link carried over relay points**. Open it with the **Relay Path** button in the launcher. Use it when two points cannot see each other directly and a ridge (or another site) in between can carry the traffic.
+Choose **Relay Path** in the workspace switch at the top of the right column. This workspace is for **one link carried over relay points**: two points cannot see each other directly across a mountain, and a ridge (or another site) in between with a clear view can carry the traffic.
 
 ### Assumption — regenerative relay
 
-Each relay point **receives and then transmits again**. That means:
+Each relay point **receives and then transmits again** (regenerative relay). That means:
 
 - Every section gets its own independent link budget — **section losses are never added together**.
-- **The overall verdict is decided by the tightest section.** The report shows the overall verdict **and** the per-section breakdown, because "it fails" is not actionable unless you can see which section is short.
+- **The overall verdict is decided by the tightest section.** Both the overall verdict **and** the per-section breakdown are shown, because without seeing which section is short you cannot decide whether to add a relay or raise an antenna.
 - **Passive reflectors are out of scope.** Their losses combine differently and are not part of this tool's calculation.
 
 ### Waypoints and sections
 
-- The **waypoint table** is the input surface. **The first point is the transmitter and the last is the receiver**; "Add point" inserts a relay **before the receiver**, so the order on screen is the order of the route. Each row shows its role (TX / relay / RX).
-- **The `＋` on a row inserts a relay directly below it** — to add one point in the middle you no longer have to delete the ones after it and retype them. The receiver row has no `＋` because the last point is fixed as the receiver. ⚠️ **Default names are not renumbered** (that would overwrite the entry of anyone who renamed `R1` to something meaningful); the order is carried by the rows and the role shown on each of them.
-- Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
-- Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Coordinate Display in the Settings panel. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
-- The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
-- The **Common Settings** panel at the top lists the **11 items** that feed the run (frequency, TX power, TX gain, RX gain, RX sensitivity / vegetation height, k-factor, terrain resolution, rain rate, environment type, diffraction model) — the same items, shown the same way, as in the Multiple Paths window. It is **read-only**, shown as a snapshot of the launcher (the source of truth), and **↻ From Launcher** pulls in the current values. ⚠️ Frequency and TX/RX gain can be overridden per section as described above, so what you see here is **the value inherited when the cell is blank**.
-- **Pick on map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
-- TX and RX start from **the launcher's coordinates as they were when the window opened** (relay points start empty).
-- Up to 7 relay points (8 sections).
+- Above the tables are the **Path ID** and **Note** fields
+- In the **Waypoints** table, enter a name, coordinates (lat, lon) and antenna height (m) for each point. **The first point is the transmitter and the last is the receiver**; the order of the rows is the order of the route
+- **+ Add point** adds a point at the end. **- Remove relay** deletes the selected point (the last one if none is selected) together with the settings of the section coming into it
+- Coordinates accept **either decimal degrees or degrees/minutes/seconds**. **Height belongs to the point only** — a relay has one antenna, so it must not be possible to enter one value as "RX height of the previous section" and another as "TX height of the next section"
+- The **Section Settings** table lets you override **frequency, TX gain and RX gain per section**. A blank cell inherits the common settings (the left column). This is for relays whose receive and transmit antennas differ
+- Up to 9 points (7 relays, 8 sections)
 
-> **⚠️ Relay points are meant to be placed, not dragged around to explore.** Each section fetches its own terrain data, so moving a point triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
+> **⚠️ Relay points are meant to be placed, not moved around to explore.** Each section fetches its own terrain data, so every move triggers a new download. Use the [Condition Explorer](#usage--condition-explorer-compare--sweep) to explore heights and conditions.
 
-### Running the route
+### Results
 
-**Run** processes the sections in order, filling the result list section by section (received level, margin, verdict), and finishes with the overall verdict (the tightest section).
+The result of each section (verdict, margin, RX level) comes back to the right end of the section table, and the overall verdict (the value of the tightest section) appears in the top bar.
 
-⚠️ **The overall verdict has the same three values as a section: OK / NG / ERR.** If even one section could not be judged (ERR), the overall verdict is **ERR** as well — which is not the same thing as "computed, but the link does not close" (NG). In that case the overall margin is shown as `—` rather than a number, because a path containing a section that could not be judged has no headroom to speak of. The section table shows which section is ERR.
+⚠️ **The overall verdict uses the same words as a section (OK / REVIEW / NG / ERROR).** If even one section could not be judged (ERROR), the overall verdict is **ERROR** as well — which is not the same thing as "computed, but the link does not close" (NG). In that case the overall margin is not a number either, because a path containing a section that could not be judged has no headroom to speak of. The section table shows which section is ERROR.
 
-The following are saved to `results/multihop_YYYYMMDD_HHMMSS/`:
-
-| File | Contents |
-| --- | --- |
-| `route.html` | Combined sheet: overall verdict, per-section breakdown, overview map |
-| `report_all.html` | Combined sheet + every section in one document (Ctrl+P for a single PDF) |
-| `hops.csv` | One row per section (spreadsheet-compatible) |
-| `{id}/` | Per-section package (same structure as Single Mode) |
+When a waypoint is malformed (unreadable coordinates and the like), no section is computed and the top bar shows "Waiting for input". Save the results with **Save Results CSV** (`hops.csv`) to a place you choose (→ [Saving — where and what](#saving--where-and-what)).
 
 ---
 
 ## Project Files (.rsproj)
 
-Bundles **the whole input set into one file** so you can pick the work up later. Use **Save Project As... / Open Project...** on the top bar.
+Bundles **the whole input set into one file** so you can pick the work up later. Use **Save Project As... / Open Project...** at the top of the right column (to the right of the workspace switch). Whichever workspace you are in, the inputs of all four are handled together.
 
 ### What is included
 
 | Included | Not included |
 | --- | --- |
-| Coordinates and all parameters (the launcher inputs) | **Results** (those belong to `results/`) |
-| Project info (name and free note) | **App settings** (theme, language, proxy, coordinate format) |
-| Multiple Paths rows | Window positions, sizes, open/closed state |
-| Explorer conditions (compare columns / sweep axis and range) | |
+| Coordinates and all parameters (the left column inputs) | **Results** (those are what [saving](#saving--where-and-what) is for) |
+| Project info (name and free note; Link has no field for them on screen, and the values from the opened file are carried over when you save) | **App settings** (theme, language, proxy, coordinate format) |
+| Multiple Paths rows | Window position and size |
+| Explorer conditions (compare rows / sweep axis and range) | |
 | Relay path waypoints and sections | |
 
 **Leaving out theme, language, proxy and coordinate format is deliberate** — opening a project you received from someone else must not switch your display language or your network settings.
 
 ### Saving
 
-- Open windows (batch / explorer / relay path) contribute their **current** values.
-- **Closed windows keep their contents too** — the previous values are carried forward, so closing the batch window before saving does not delete your rows.
-- Anything that is not a readable number is not written; the dialog tells you which part was skipped (so a broken file is never produced silently).
+- The default file name is made from the project name. Choose where to save in the file dialog.
+- A workspace holding a value that cannot be read as a number (Multiple Paths rows, Relay Path waypoints) is not saved, and a warning appears in the message area at the top of the right column (saving in the middle of your input comes first, and nothing is dropped silently).
 
 ### Opening
 
-- **Open windows are not closed.** A bar appears at the top of each of them, and the window's contents are replaced **only when you press "Apply to this window"** (nothing changes until you do). Dismiss the bar with `×`.
-- The launcher fields and project info are replaced immediately.
-- **Contents for closed windows appear when you open them** — this app freezes a window's inputs when it opens, and loading follows the same rule.
-- If you close a window without applying, **what you saw on screen wins** (that is what gets written on the next save).
-- A file is refused only when **its format is newer than this version understands** (saved by a newer RadioSim after the format changed). You are told, rather than having it silently mangled. A file saved by a newer version still opens as long as the format has not changed.
-- **Files saved by 3.x open in the successor, RadioSim Link 1.0.** They are calculated with the same method as 3.9.x (calculation profile v1) and stay on v1 when saved again; they move to the new method only when you switch them yourself. What is reproduced is the calculation method, not the past numbers themselves (re-fetching the elevation data can change the numbers). Files saved by 2.x open too, but they are calculated with the 3.9.x method.
+- The input and the three workspaces are **replaced all at once** (nothing of the previous input is kept). Fields missing from the file take their defaults, and workspaces missing from the file come up empty. Input you were typing just before opening is discarded.
+- A file is refused only when **its format is newer than this version understands** (saved by a newer version after the format changed). A file that cannot be read changes nothing, and the reason appears in the message area. A file saved by a newer version still opens as long as the format has not changed.
+- **Files saved by 3.x open in RadioSim Link 1.0.** They are calculated with the same method as 3.9.x (calculation profile v1) and stay on v1 when saved again. Input you start fresh is calculated with the new method (v2). What is reproduced is the calculation method, not the past numbers themselves (re-fetching the elevation data can change the numbers). Files saved by 2.x open too, but they are calculated with the 3.9.x method.
 
 ---
 
@@ -574,7 +529,6 @@ Bundles **the whole input set into one file** so you can pick the work up later.
 | Sensitivity       | -130                           | -20     | dBm    |
 | TX/RX Height      | 0                              | 500     | m      |
 | Vegetation Height | 0                              | 100     | m      |
-| Rician K-Factor   | 0                              | 30      | —     |
 | Terrain Resolution | High / Medium / Low           | —       | —      |
 | Rain Rate         | 0                              | 200     | mm/h   |
 | Env Type          | Urban / Suburban / Rural / LoS | —      |        |
@@ -726,15 +680,15 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 ### Caching Strategy
 
-- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up batch processing). ⚠️ **GSI only** — the step is skipped for DEM sources added via a declaration file
-- **Disk cache**: Tiles saved to `terrain_cache/`, persists across sessions
-- **Terrain cache**: If TX/RX coordinates, sample count, resolution level and DEM source match a previous run, DEM retrieval is skipped entirely (cleared on app restart, and also whenever you delete or force-refetch cached tiles, so the next calculation uses the refetched tiles)
+- **Tile prefetch**: At simulation start, all tiles within the TX/RX bounding box are pre-downloaded to the disk cache (supports offline use and speeds up Multiple Paths runs). ⚠️ **Only when the built-in GSI source is selected** — the step is skipped for DEM sources you added
+- **Disk cache**: Tiles saved to `terrain_cache/`, persists after the app is closed
+- **Terrain cache**: If TX/RX coordinates, sample count, resolution level and DEM source match a previous run, DEM retrieval is skipped (cleared on app restart, and also whenever you delete or force-refetch cached tiles, so the next calculation uses the refetched tiles)
 
 ### Adding a DEM Source (User Extension)
 
 The only built-in elevation data is the GSI (Geospatial Information Authority of Japan) DEM, but you can add your own DEM source — a remote XYZ PNG tile service using either the Terrarium or Mapbox Terrain-RGB decoding scheme — through a declaration file in the settings folder. **This extends coverage, not accuracy** (it is there so you can get elevation outside Japan, where GSI has no data — it is not a way to gain accuracy. The pixel size depends on the source's data and the zoom you declare, and the app does not check how fine the data really is; at zoom 12, as in the example below, one pixel is several tens of metres).
 
-⚠️ **The background map (pale map / aerial photo) is extended through a separate declaration file from the DEM source** (see "Adding a Background Map Source" below). Adding a DEM source alone does not change that picking coordinates by clicking the map, aerial-photo confirmation, and the path map embedded in reports remain Japan-only.
+⚠️ **The background map (pale map / aerial photo) is extended through a separate declaration file from the DEM source** (see "Adding a Background Map Source" below). Adding a DEM source alone leaves the map background (pale map / aerial photo) and the saved map PNG Japan-only.
 
 Create `dem_sources.toml` in the settings folder (the same folder as `radiosim_conf.json`) and add one `[[source]]` entry per source. Example (Terrarium, AWS Open Data Terrain Tiles):
 
@@ -754,13 +708,13 @@ terms_url = "https://github.com/tilezen/joerd/blob/master/docs/attribution.md"
 - `url_template`: must start with `https://` and contain `{z}`, `{x}` and `{y}` (also `{layer}` if you declare more than one layer).
 - `layers`: an array of `[layer_id, zoom]` pairs, listed from highest to lowest priority.
 
-After saving the file, restart the launcher and the **DEM Source** field itself appears in the Environment group, with the new source selectable (if there is no declaration file, or only the built-in GSI source could be loaded, this field is not shown at all). **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens.
+After saving the file, restart Link and the **DEM Source** field itself appears under Details (collapsed) in the left column, with the new source selectable (if there is no declaration file, or only the built-in GSI source could be loaded, this field is not shown at all). **Only one source is used per calculation** (a source never changes partway through a path). If part of a declaration is broken, only that entry is dropped and the app still starts (the error appears in the [notices at startup](#notices-at-startup)).
 
 ⚠️ **The vertical datum can differ between sources** — do not directly compare numbers from the same path computed with GSI and with an external source. ⚠️ Checking the terms of use is your own responsibility (see the `terms_url` for each source).
 
 ### Adding a Background Map Source (User Extension)
 
-The built-in background maps (pale map / aerial photo in the map window) stay fixed to GSI tiles, but you can add your own background-map source — a remote XYZ tile service — through a declaration file separate from the DEM source one. **The background map is display-only and does not affect calculation results** (it is a separate axis from the DEM source, which is fixed to one per calculation, and it is not part of the "conditions" saved with a project).
+The built-in background maps (pale map / aerial photo on the map) stay fixed to GSI tiles, but you can add your own background-map source — a remote XYZ tile service — through a declaration file separate from the DEM source one. **The background map is display-only and does not affect calculation results** (it is a separate axis from the DEM source, which is fixed to one per calculation, and it is not part of the "conditions" saved with a project).
 
 Create `tile_sources.toml` in the settings folder. Example:
 
@@ -778,69 +732,27 @@ terms_url = "https://www.openstreetmap.org/copyright"
 - `url`: must start with `https://` and contain `{z}`, `{x}` and `{y}`.
 - `max_zoom`: an integer from 1 to 22.
 
-After saving the file, reopen the map window and `display_name` appears as an added choice in the background selector Combobox at the top. If part of a declaration is broken, only that entry is dropped and the app still starts — the error is reported when the launcher opens. `attribution` is shown verbatim at the bottom-right of the map (unlike the built-in two, it is not translated). ⚠️ Checking the terms of use is your own responsibility — RadioSim prefetches and caches tiles, which may not be allowed by every tile server's terms.
+After saving the file, restart Link and `display_name` is added to the basemap box at the top right of the map. If part of a declaration is broken, only that entry is dropped and the app still starts (the error appears in the [notices at startup](#notices-at-startup)). `attribution` is shown verbatim at the bottom right of the map (unlike the built-in two, it is not translated). ⚠️ Checking the terms of use is your own responsibility — tiles are prefetched and cached, which may not be allowed by every tile server's terms.
 
 ---
 
-## Save Package
+## Saving — where and what
 
-### Single Mode
+Link does not write to a results folder (`results/`). Each time you press a save tool, it writes one file to the place you choose in the file save dialog (when the save dialog is not available, the file is written as a download). The saved name, or the reason it could not be saved, appears in the message area at the top of the right column.
 
-Saves to `results/YYYYMMDD_HHMMSS/`:
+| Tool | Where it is | What it writes (default name) |
+| --- | --- | --- |
+| **Open Project...** / **Save Project As...** | Top of the right column (from any workspace) | `.rsproj` (default name made from the project name) → [Project Files (.rsproj)](#project-files-rsproj) |
+| **Save Results CSV** | Single Link: top of the right column; other workspaces: right end of the table tools | Single Link and Multiple Paths: `summary.csv` (Single Link writes one row with path ID `P1`); Relay Path: `hops.csv`; Condition Explorer: `scenario.csv` (columns in the output contract below) |
+| **Save KML** | Single Link: top of the right column; Multiple Paths: right end of the table tools | Single Link: `path.kml` (terrain, line of sight, Fresnel zone and obstructed span in 3D); Multiple Paths: `summary.kml` (colored by verdict). Relay Path and Condition Explorer have no KML |
+| **Save Map Image** | Top of the right column | `map.png` (north up, lines in verdict colors; not saved when the background tiles cannot be fetched) |
+| **Save Profile Image** | Top of the right column | `profile.png` (the on-screen profile, with the verdict word, a one-line margin summary and a legend added) |
 
-| File                    | Contents                                                 |
-| ----------------------- | -------------------------------------------------------- |
-| `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report (single A4 page) with the terrain graph, a path map, and antenna initial aim AZ/EL embedded |
-| `path.kml`            | 3D KML for Google Earth                                  |
-| `settings.json`       | Complete input parameters (reloadable via Load Parameters... in the Settings panel) |
-| `terrain_profile.csv` | Terrain profile data                                     |
-| `report.txt`          | Text-format link budget report                           |
+- **CSV, KML and the map image can be saved once the results for the input now on screen are complete.** While computing, while waiting for input, or before every row is in, nothing is saved and the message area shows "The results are not complete yet. Save after the calculation finishes." For the profile image in the other workspaces, select a row first.
+- Just before saving, input you were typing is sent first, so that what is saved matches the values you see on screen.
+- The diagnostic package (ZIP) is saved from [Help](#help) in the Settings panel.
 
-> **A4 reports (v2)**: `report.html` / `summary.html` are rendered in a print-ready A4 portrait frame (`@page A4` / `@media print`) — **`report.html` always fits one page**, while the `summary.html` ledger **flows onto a second page once the rows no longer fit** (roughly **8–9 rows** with the overview map, or **about 14 rows** when the map could not be fetched — the profile thumbnails make each row taller than before, and the count also depends on the notes; see the note under "How to read the results" below). Open in a browser and use **Ctrl+P → "Save as PDF"** to get an A4 PDF with no extra software. Turn **"Headers and footers" off** in the print dialog (the report carries its own self-identifying header/footer with the project name, timestamp, and ID). The project name and free note come from the launcher's Project Info fields.
->
-> **Print all at once (`report_all.html`)**: choose **"Open all pages"** in the completion dialog to open it ("Open summary" opens `summary.html` as before). Multiple Paths runs also save `report_all.html`, which concatenates the summary ledger and every per-path report into one document. **Open it and press Ctrl+P to get the PDF for all pages at once** (the summary ledger first, then one A4 page per path). Clicking the **profile thumbnail** in the ledger's graph column jumps to that path inside the same document. `summary.html` and `{id}/report.html` are still written separately, so use those when you only need to share one path. The combined file gets large with many paths (each embeds its terrain profile).
->
-> **Path map**: `report.html` (single) embeds a static map with TX/RX, the path, and the distance on a background map; `summary.html` (batch) embeds an **all-paths overview map** (north-up, color-coded by verdict). The background map follows **whichever background source you last selected in the map window** (the pale map, the aerial photo, or an external source you added — see "Adding a Background Map Source"; from 3.6. Batch runs that never opened the map window still use the saved selection). Where map tiles cannot be fetched, the map is omitted with a short note and the report is still produced.
->
-> **Antenna initial aim (AZ/EL)**: the Site Info of `report.html` shows the true azimuth AZ and elevation EL to point at the far end, for both ends (geometry from existing data = initial values; do the final tuning on-site by maximizing RSSI). AZ is a **true** azimuth — to aim with a magnetic compass, correct for local declination (in Japan magnetic north is ~7-9° west of true north, varies by region).
-
-### Multiple Paths
-
-Saves to `results/batch_YYYYMMDD_HHMMSS/`:
-
-| File             | Contents                                         |
-| ---------------- | ------------------------------------------------ |
-| `summary.html` | All-path summary ledger                          |
-| `summary.csv`  | Numerical results for all paths                  |
-| `summary.kml`  | Google Earth KML for all paths                   |
-| `report_all.html` | Summary + every path in one printable document |
-| `{id}/`        | Per-path package (same structure as Single Mode) |
-
-
-### The "Notes on handling this result" section in the reports
-
-**Every report carries this section at the bottom** — the four HTML reports (single path, the Multiple Paths ledger, relay path, condition explorer) and `report.txt` — from 3.0 onwards. A report gets printed and handed on, and **the person who receives it reads neither this manual nor the notes on screen**. So the assumptions, and how far the formulas actually used reach, are written into the report itself.
-
-- **Always present**: elevations come from a **bare-earth model** (no buildings, no trees); vegetation height is **the single value entered**, applied along the whole path; environment loss is an **empirical figure taken from the area class**; Earth curvature uses the **standard-atmosphere factor K = 4/3, fixed**, so periods when refraction departs from it (sub-refraction, ducting) are not covered; and **the terrain resolution step this result was produced with** (a finer step raises the diffraction loss — up to +407% between the 20 m "low" step and the pixel-edge "high" step).
-  - **Ground reflection (two-ray interference)**: on a single-path report, when the specular point sits far enough from both ends for the DEM to estimate a spread, this note is replaced by a **range row** further down the same section (otherwise the "not modelled" note stays). Multiple Paths, relay, and condition-explorer reports always keep the "not modelled" note, since they cover more than one link at once. ⚠️ **Known limitation**: the range can also appear on paths where terrain blocks the direct wave (paths that carry diffraction loss) — the reflection point then lands on top of a ridge or levee, or on the flat ground in front of it. Two-ray interference only applies when both the direct and the reflected wave arrive, so on a link with diffraction loss, do not rely on this row; read it as "not modelled". The Link 1.0 method (calculation profile `v2`) does not show this range on paths that carry diffraction loss (the 3.9.x method `v1` still does).
-- **Present when they apply**: the `Bullington` model reads low where two or more ridges are well separated, and the spherical-earth term is not included (on a single-path report, replaced by a range row further down the same section when that spread is available); rain or gaseous attenuation was **out of range and taken as 0 dB** (below 1 GHz); the vegetation coefficient was evaluated **outside its 1–6 GHz definition** (the 3.9.x method `v1`; with the Link 1.0 method `v2`, at 6 GHz and above: "the value jumps at that boundary (unverified)"); on links **with a vegetation height entered**, that where terrain blocks the path the diffraction loss and the vegetation attenuation are both charged (the total reads high — the safe side; also replaced by a range row further down when available). ⚠️ **A link with no rain assumed gets no rain note** — limits of things that were not calculated are not listed, and a link with no vegetation gets no vegetation note.
-- **Reports that hold several links on one sheet** (Multiple Paths, relay, explorer) show every note that applies to **at least one** of them.
-- **What the verdict words mean** (the Link 1.0 method — when any row is v2; at the top of the section): "OK and NG come out the same for every combination of the assumptions evaluated (vegetation height ±30%, environment class ±1 step, diffraction model, diffraction + vegetation combination, ground reflection, refilled invalid DEM pixels); REVIEW flips within them. Terrain resolution and DEM elevation error are not varied." When there are REVIEW rows, the **assumptions that flip them** are named; samples with no DEM tile (sea or outside Japan) or on invalid DEM pixels are counted as **computed at 0 m**.
-- A **calibration profile** field is shown. It always reads **not applied**: **results are not corrected with measured values**. The residuals table below only lists the difference between predicted and measured levels; it does not calibrate the model.
-- **Sensitivity range** (from 3.4): further down the same section, the margin's range of movement under uncertain inputs (see below).
-
-⚠️ **No number changes because of this section** — it states what was already true. ⚠️ **How many rows the Multiple Paths ledger fits on one A4 page varies** with the length of this section and whether the overview map is present (measured: roughly **8–9 rows** with the overview map, **about 14 rows** without it; the rest flows onto a second page). **It is not a fixed count** — the set of scope notes changes with the conditions.
-
-### Sensitivity range and residuals table (from 3.4)
-
-The pass/fail verdict is a single value, but in practice it helps more to know how much margin there is and how far it could move given uncertain inputs. From 3.4, both are added to the reports. **Neither changes the calculation itself** — the existing pipeline is simply re-run with each input nudged, and the results are listed side by side as a range.
-
-**Sensitivity range** (heading "Sensitivity to input uncertainty", at the bottom of the "Notes on handling this result" section): shown on single-path, Multiple Paths, relay, and condition-explorer reports. It first states the baseline margin once, then lists one row each — for whichever apply to that link — as a margin range (dB): vegetation height (±30%), environment class (to the adjacent one), diffraction model (single ⇄ Bullington), how diffraction loss and vegetation attenuation are combined (summed ⇄ take-the-larger), and ground reflection (the two-ray interference spread). Inputs that make no measurable difference are grouped into one summary line instead of a row. On relay reports the rows describe the **weakest section** only (the other sections are not evaluated). On Multiple Paths and condition-explorer reports, this range is a **reference for the baseline condition only** (the other conditions are not evaluated).
-
-⚠️ **The uncertainty of the DEM elevation itself (±3 m) is not among these rows.** Antenna heights are measured from the ground, so shifting the whole terrain profile by the same amount leaves the line of sight and the terrain in exactly the same relative position — the range would always be zero. **A range for DEM reading error is therefore not yet available**: do not read the listed axes as covering every source of uncertainty (that the terrain resolution step moves the result is stated in the standing notes of the same section).
-
-**Residuals table** (heading "Measured-vs-predicted residuals"): shown on the Multiple Paths summary report. It only appears when at least one path in the batch has `meas_dbm` filled in, and shows the count, median, and spread (IQR) of the residual (predicted minus measured, after adding back the feed-line loss) for each **environment class × band × distance band** layer. Rows where `meas_method` is `spot` (single-point readings) can be dropped from the stats with the Multiple Paths window's "Exclude spot measurements from stats" checkbox (included by default). ⚠️ Spot readings can be off by ±5-10 dB due to multipath, so when they are not excluded, expect the median and IQR of a layer with many `spot` rows to be correspondingly wider (and skewed). The table is omitted entirely for batches with no measured values.
+> **About A4 reports**: the print reports (`report.html`, `summary.html`, `report_all.html` and so on), and the "Notes on handling this result" section, the sensitivity range and the measured-residuals table at their foot, are **RadioSim Pro reports** and are not part of Link. Link shows the spread from varying the assumptions, and on REVIEW the assumptions that would flip the verdict, in the top bar (→ [Accuracy Statement](#accuracy-statement)). For how to read reports saved by 3.x, see the 3.x manual.
 
 ### Output column specification (the output contract) and its change policy
 
@@ -993,16 +905,17 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ## Uninstall
 
-**Installer build**: Uninstall `RadioSimPro` from "Apps & features" (or the Start menu).
+**Installer build**: Uninstall `RadioSim Link` from "Apps & features" (or the Start menu).
 
 At the end of the uninstall you can choose, **by category**, which data to remove from this PC. **Only the boxes you tick are deleted**, and **nothing is ticked by default (everything is kept)**. Only categories that actually exist are listed.
 
 | Choice | What is deleted | What you lose |
 | --- | --- | --- |
-| UI settings and last used input values | `%APPDATA%\RadioSim\radiosim_conf.json` | The next install starts from the defaults |
-| DEM tile disk cache and logs | `%LOCALAPPDATA%\RadioSim\` | Elevation data is fetched again on the next run |
-| Saved result packages | `Documents\RadioSim\` | ⚠️ **Past results are gone** (they cannot be recreated) |
-| Display language files you added | `%APPDATA%\RadioSim\lang\` | Translations you added are gone (the bundled Japanese and English remain) |
+| UI settings and last used input values | `%APPDATA%\RadioSim\Link\radiosim_conf.json` | The next install starts from the defaults |
+| Logs and working data of the window | `%LOCALAPPDATA%\RadioSim\Link\` | The logs are gone. The working data of the window is recreated at the next start |
+| Terrain and background map disk cache (shared with RadioSim Pro 3.9) | `%LOCALAPPDATA%\RadioSim\terrain_cache\` | Elevation and background map tiles are fetched again next time. ⚠️ 3.9 uses the same cache, so 3.9 fetches them again too |
+| Saved result packages | `Documents\RadioSim\Link\` | ⚠️ Files placed inside are gone (Link's saving does not use this folder, but anything you put there yourself is deleted too) |
+| Display language files you added | `%APPDATA%\RadioSim\Link\lang\` | Translations you added are gone (the bundled Japanese and English remain) |
 
 Anything left unticked stays on this PC and is picked up again by the next install. If something could not be deleted (a file left open, for example), its path is shown.
 
@@ -1023,14 +936,14 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 - DEM horizontal resolution (5–10 m for the built-in GSI DEM; a DEM source you add may be coarser) is the hard ceiling for accuracy; individual building obstructions are not modeled
 - The Bullington method is an approximation for multiple obstacles. The calculations are not calibrated against measurements, so no error range (±N dB) can be given. **The combined loss of several overlapping obstacles has not been checked against measurements or a reference implementation**
-- 🔴 **Diffraction loss can come out too high or too low, and there is no way to tell in advance which paths are trustworthy.** Version 3.0 replaced the diffraction model with the **Bullington equivalent knife edge (ITU-R P.526 4.5.1)**, removing two defects: the divergence that drove mountain paths to hundreds or thousands of dB, and a **discontinuity that moved the result by 84 dB when vegetation height or antenna height changed by 1 m** (raising an antenna by 1 m made the diffraction loss 84 dB worse). **The possibility of being wrong has not gone away**: (1) the combined loss has only been placed alongside two structurally different methods (Epstein-Peterson and the previous custom implementation) to check its order of magnitude — it has **not been checked against measurements or a reference implementation**; (2) **where two or more ridges are well separated the result reads low** (a known property of this method, accepted by the standard that defines it); (3) on a single hill it now reads **higher** than before, by the standard correction term; (4) **a finer terrain resolution raises the diffraction loss** (up to +407% from the 20 m "low" step to the pixel-edge "high" step); note that sampling *within* "high" no longer has a step size to tune - DEM elevations are constant inside a pixel, so placing the samples on the pixel edges removes that degree of freedom entirely (measured: 27.02 dB at 210 pixel-edge samples against a converged 27.014 dB at 250 000 samples); (5) the **spherical-earth term is not included**, so a **long, flat path with low antennas beyond the radio horizon** (over sea or tidal flats) can read low — none of the 26 representative paths of the 3.0-era corpus met that condition (the links added since have not been checked for it), but **the product does not check for it**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you which paths are affected** — relief is not a predictor. ⚠️ **Fresnel blockage is capped at 100% everywhere it is shown** (screen, report, CSV) even though the internal raw value goes above it, so the percentage will not warn you.
-- 🛡 **What you can do about it**: switch "Diffraction Model" to `Single`, run the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Bullington) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only) and does not apply the standard correction term, so it **comes out lower than Bullington**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
+- 🔴 **Diffraction loss can come out too high or too low, and there is no way to tell in advance which paths are trustworthy.** Version 3.0 replaced the diffraction model with the **Bullington equivalent knife edge (ITU-R P.526 4.5.1)**, removing two defects: the divergence that drove mountain paths to hundreds or thousands of dB, and a **discontinuity that moved the result by 84 dB when vegetation height or antenna height changed by 1 m** (raising an antenna by 1 m made the diffraction loss 84 dB worse). **The possibility of being wrong has not gone away**: (1) the combined loss has only been placed alongside two structurally different methods (Epstein-Peterson and the previous custom implementation) to check its order of magnitude — it has **not been checked against measurements or a reference implementation**; (2) **where two or more ridges are well separated the result reads low** (a known property of this method, accepted by the standard that defines it); (3) on a single hill it now reads **higher** than before, by the standard correction term; (4) **a finer terrain resolution raises the diffraction loss** (up to +407% from the 20 m "low" step to the pixel-edge "high" step); note that sampling *within* "high" no longer has a step size to tune - DEM elevations are constant inside a pixel, so placing the samples on the pixel edges removes that degree of freedom entirely (measured: 27.02 dB at 210 pixel-edge samples against a converged 27.014 dB at 250 000 samples); (5) the **spherical-earth term is not included**, so a **long, flat path with low antennas beyond the radio horizon** (over sea or tidal flats) can read low — none of the 26 representative paths of the 3.0-era corpus met that condition (the links added since have not been checked for it), but **the product does not check for it**. ⚠️ **Neither the amount of relief nor the Fresnel blockage tells you which paths are affected** — relief is not a predictor. ⚠️ **Fresnel blockage is capped at 100% on screen and in the CSV** even though the internal raw value goes above it, so the percentage will not warn you.
+- 🛡 **What you can do about it**: switch "Diffraction Model" to `Single`, compute the path again, and compare the two numbers. **Where they differ substantially, do not trust the default (Bullington) value** — the verdict may read NG, but **you cannot tell from these numbers whether that NG is correct**. ⚠️ **This does not tell you which one is right.** A large gap means the result **depends heavily on the choice of model** — that is the diagnosis. **A small gap does not guarantee accuracy either**, since neither value has been checked against measurements or a reference implementation. ⚠️ `Single` does not represent the combined loss of several obstacles (it looks at one point only) and does not apply the standard correction term, so it **comes out lower than Bullington**. ⚠️ How that relates to the true value is equally unknown — it does not mean `Single` is the safer side
 - The vegetation model is empirical; species, density, and seasonal variation are not accounted for
 - Environmental loss coefficients are empirical; suitability for specific regions is not guaranteed
 
 ### Data Coverage
 
-- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map for the map window as described in "Adding a Background Map Source (User Extension)". **The map embedded in reports follows whichever background source you last selected in the map window** (from 3.6), so selecting an added background map source makes it appear outside Japan too
+- **The built-in DEM (GSI) covers Japan only.** GSI tiles do not cover areas outside Japan; with the DEM source left at GSI, coordinates outside Japan will return elevation 0 m. If you need elevation outside Japan, add an external source as described in "Adding a DEM Source (User Extension)". You can also add your own background map as described in "Adding a Background Map Source (User Extension)". **The saved map PNG also follows the basemap chosen at the top right of the map**, so selecting an added background map source makes it appear outside Japan too
 - `dem5a_png` / `dem5b_png` (5 m) do not cover the entire country; missing areas fall back to `dem_png` (10 m)
 - Ocean, lakes, and missing data areas are treated as elevation 0 m
 
@@ -1041,9 +954,8 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 ### Operation
 
-- Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
-- 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ 3.9 moved Tk from 8.6 to 9.0, and **we verified by measurement that 9.0 shows the same problem**
+- After rewriting a declaration file (DEM source or background map source), the change does not take effect until Link is restarted
 
 ---
 
@@ -1059,4 +971,4 @@ Please report bugs and feature requests via [GitHub Issues](https://github.com/k
 
 © 2026 BearValley AI Craftworks. All rights reserved.
 
-This software is distributed under the **MIT License**, commercial use included. The license text ships as `LICENSE`, next to `RadioSimPro.exe`.
+This software is distributed under the **MIT License**, commercial use included. The license text is in `LICENSE` in the install folder (for the portable build, the extracted folder).
