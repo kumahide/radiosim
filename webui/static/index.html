@@ -13,8 +13,13 @@
   <span id="band-detail"></span>
   <span id="band-range"></span>
   <img id="brand" src="brand.svg" alt="RadioSim Link">
+  <button id="settings-btn" type="button">&#x2699;</button>
   <span id="band-flipped"></span>
 </header>
+<!-- 起動時の知らせ（I-256）＝外部の訳・地形と背景の定義の却下・更新の知らせ -->
+<div id="notices" role="status"></div>
+<!-- 「設定」の枠（I-257）＝中身はサーバーの `settings` から組む -->
+<dialog id="settings"></dialog>
 <main>
   <aside id="inputs">
     <div id="form"></div>

@@ -1,4 +1,5 @@
 :root {
+  color-scheme: light;    /* ロゴ（brand.svg の prefers-color-scheme）も画面のテーマに合わせる */
   --bg: #ffffff;
   --fg: #1f2328;
   --muted: #59636e;
@@ -11,18 +12,19 @@
   --err: #bf360c;
   --wait: #59636e;
 }
-@media (prefers-color-scheme: dark) {
-  :root {
-    --bg: #0d1117;
-    --fg: #e6edf3;
-    --muted: #9198a1;
-    --line: #3d444d;
-    --ok: #66bb6a;
-    --ng: #ef5350;
-    --review: #ce93d8;
-    --err: #ffa726;
-    --wait: #9198a1;
-  }
+/* ダーク＝`data-theme` は画面（`app.js` の `applyTheme`）が付ける。「設定」のテーマが
+   システムなら OS の明暗に追従する（I-257）＝暗色の値はここ 1 か所だけ。 */
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg: #0d1117;
+  --fg: #e6edf3;
+  --muted: #9198a1;
+  --line: #3d444d;
+  --ok: #66bb6a;
+  --ng: #ef5350;
+  --review: #ce93d8;
+  --err: #ffa726;
+  --wait: #9198a1;
 }
 * { box-sizing: border-box; }
 html, body { height: 100%; margin: 0; }
@@ -61,6 +63,28 @@ body {
 #band-flipped:empty, #band-range:empty { display: none; }
 /* ロゴ（I-238）＝帯の 1 行目の右端。縦の場所を取らない（入力の列は 990px に収める） */
 #brand { height: 34px; margin: -4px 0 -4px auto; align-self: center; }
+/* 「設定」（I-257）＝ロゴの右。歯車の字だけ＝語は title と aria-label に */
+#settings-btn { align-self: center; font-size: 18px; line-height: 1; padding: 2px 6px;
+  background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--fg); cursor: pointer; }
+#settings { border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
+  padding: 16px; min-width: 340px; }
+#settings::backdrop { background: rgba(0, 0, 0, 0.3); }
+#settings h2 { margin: 0 0 12px; font-size: 16px; }
+#settings label { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
+#settings label > span { min-width: 120px; }
+#settings label.check > span { min-width: 0; }
+#settings input[type="text"] { flex: 1; }
+#settings .hint { color: var(--muted); font-size: 12px; margin: -4px 0 8px; }
+#settings .err { color: var(--err); font-size: 12px; }
+#settings .actions { display: flex; justify-content: flex-end; margin-top: 12px; }
+/* 起動時の知らせ（I-256）＝帯の下・1 件 1 行・閉じられる */
+#notices:empty { display: none; }
+#notices > div { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px;
+  border-bottom: 1px solid var(--line); white-space: pre-wrap; }
+#notices > div[data-kind="warn"] { border-left: 4px solid var(--err); }
+#notices > div[data-kind="info"] { border-left: 4px solid var(--wait); }
+#notices > div > span { flex: 1; }
+#notices button { background: none; border: none; color: var(--muted); cursor: pointer; }
 #band[data-word="REVIEW"] #band-flipped { color: var(--review); }
 main { flex: 1; display: flex; min-height: 0; }
 /* 入力の列は使える高さ約 990px の 1 画面に収める（ステージ5＝スクロールなし）。
@@ -245,12 +269,10 @@ body:not([data-ws="single"]) #lower { height: 42%; }
 }
 /* ダークは地が暗く、帳票の不透明度（0.4・0.3）では地形と植生が沈む＝ダークだけ濃く
    （2026-11-08 経営者の選択・ステージ9f）。色相は帳票のまま。 */
-@media (prefers-color-scheme: dark) {
-  #profile {
-    --pf-antenna: var(--fg);
-    --pf-terrain: rgba(139, 69, 19, 0.7);
-    --pf-vegetation: rgba(0, 128, 0, 0.55);
-  }
+:root[data-theme="dark"] #profile {
+  --pf-antenna: var(--fg);
+  --pf-terrain: rgba(139, 69, 19, 0.7);
+  --pf-vegetation: rgba(0, 128, 0, 0.55);
 }
 #legend {
   display: flex;

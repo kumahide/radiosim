@@ -420,8 +420,8 @@ def test_the_verdict_colors_are_the_report_colors():
     from report import map_graphics
     css = (pathlib.Path(webserver.STATIC_ROOT) / "style.css").read_text(encoding="utf-8")
     root = re.search(r"^:root\s*\{(.*?)\}", css, flags=re.S | re.M).group(1)
-    dark = re.search(r"prefers-color-scheme:\s*dark\)\s*\{\s*:root\s*\{(.*?)\}", css,
-                     flags=re.S).group(1)
+    dark = re.search(r'^:root\[data-theme="dark"\]\s*\{(.*?)\}', css,
+                     flags=re.S | re.M).group(1)
     names = {"OK": "ok", "NG": "ng", "REVIEW": "review", "ERROR": "err"}
     light_vars, dark_vars = _css_vars(root), _css_vars(dark)
     for word, name in names.items():

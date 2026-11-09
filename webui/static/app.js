@@ -1091,6 +1091,98 @@ function buildProjTools() {
   );
 }
 
+// ---- テーマ・「設定」の枠・起動時の知らせ（I-257・I-256） ---------------------
+// テーマ＝`<html data-theme>` を明暗のどちらかに決める（暗色の値は CSS の 1 か所だけ）。
+// システムなら OS の明暗に追従する。
+let themeChoice = "system";
+const darkQuery = window.matchMedia("(prefers-color-scheme: dark)");
+
+function applyTheme(choice) {
+  if (choice) themeChoice = choice;
+  const dark = themeChoice === "dark" || (themeChoice === "system" && darkQuery.matches);
+  document.documentElement.dataset.theme = dark ? "dark" : "light";
+  if (map) {                                     // canvas と地図の線は CSS の色を描いた時に読む
+    drawProfile();
+    drawSheetLines();
+  }
+}
+darkQuery.addEventListener("change", () => applyTheme());
+
+// 1 項目を替えるたびに保存する＝枠のボタンは閉じるだけ。言語は字の表を読み直す。
+function buildSettings(st) {
+  applyTheme(st.values.theme);
+  const L = st.labels;
+  const open = document.getElementById("settings-btn");
+  open.title = L.title;
+  open.setAttribute("aria-label", L.title);
+  const dlg = document.getElementById("settings");
+  const err = el("div", { className: "err", role: "alert" });
+  const send = async (key, value) => {
+    err.textContent = "";
+    try {
+      const r = await fetch("/api/settings", { method: "POST", headers: HEAD, body: JSON.stringify({ key, value }) });
+      const body = await r.json();
+      if (!r.ok) throw new Error(body.error || String(r.status));
+      if (body.reload) {
+        location.reload();
+        return;
+      }
+      applyTheme(body.settings.values.theme);
+    } catch (e) {
+      err.textContent = String((e && e.message) || e);
+    }
+  };
+  const choice = (key) => {
+    const s = el("select");
+    st.choices[key].forEach(([v, t]) => s.append(el("option", { value: v, textContent: t })));
+    s.value = st.values[key];
+    s.addEventListener("change", () => send(key, s.value));
+    return el("label", {}, [el("span", { textContent: L[key] }), s]);
+  };
+  const check = (key) => {
+    const c = el("input", { type: "checkbox", checked: !!st.values[key] });
+    c.addEventListener("change", () => send(key, c.checked));
+    return el("label", { className: "check" }, [c, el("span", { textContent: L[key] })]);
+  };
+  const proxy = el("input", { type: "text", value: st.values.proxy_url || "", spellcheck: false, autocomplete: "off" });
+  proxy.addEventListener("change", () => send("proxy_url", proxy.value));
+  dlg.replaceChildren(
+    el("h2", { textContent: L.title }),
+    choice("lang"),
+    choice("theme"),
+    el("label", {}, [el("span", { textContent: L.proxy_url }), proxy]),
+    el("div", { className: "hint", textContent: L.proxy_hint }),
+    check("update_check_auto"),
+    check("update_check_prerelease"),
+    err,
+    el("div", { className: "actions" }, [button(L.close, () => dlg.close())]),
+  );
+}
+document.getElementById("settings-btn").addEventListener("click", () => {
+  const dlg = document.getElementById("settings");
+  if (dlg.childElementCount) dlg.showModal();
+});
+
+// 知らせ＝サーバーは起動 1 回ぶんを全部返す。閉じた印はこのページだけが持つ。
+const dismissed = new Set();
+let noticeSig = "";
+
+function showNotices(list) {
+  const shown = (list || []).filter((n) => !dismissed.has(n.id));
+  const sig = shown.map((n) => n.id).join(",");
+  if (sig === noticeSig) return;                 // 長いポーリングのたびに組み直さない
+  noticeSig = sig;
+  document.getElementById("notices").replaceChildren(...shown.map((n) => {
+    const row = el("div", {}, [el("span", { textContent: n.text })]);
+    row.dataset.kind = n.kind;
+    row.append(button("×", () => {
+      dismissed.add(n.id);
+      showNotices(list);
+    }));
+    return row;
+  }));
+}
+
 async function poll() {
   for (;;) {
     try {
@@ -1109,8 +1201,10 @@ async function poll() {
           spec = s.sheet_spec;
           buildTabs();
         }
+        if (s.settings) buildSettings(s.settings);
       }
       revision = s.revision;
+      showNotices(s.notices);
       receiveSheets(s.sheets);
       if (!wsPending) setWorkspace(s.workspace || "single");
       showInputs(s.inputs);
@@ -1124,4 +1218,5 @@ async function poll() {
 window.addEventListener("pagehide", () => {
   navigator.sendBeacon(`/api/bye?t=${encodeURIComponent(TOKEN)}`);
 });
+applyTheme();                                    // 設定が届くまでは OS の明暗
 poll();
