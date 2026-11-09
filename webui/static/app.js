@@ -1185,6 +1185,34 @@ function reformatCoords() {
   flush();
 }
 
+// 背景地図の切り替え＝地図の右上（経営者の目視 2026-11-09＝設定の枠でなく、地図の上ですぐ替えられる所へ）。
+// 値は設定の `basemap_layer` と同じ 1 つ＝替えたら保存してタイルを張り直す。失敗したら選び直す前へ戻し、字は欄の下。
+let baseSwitch = null;
+function buildBaseSwitch(st, name, send) {
+  if (!map) return;
+  if (baseSwitch) map.removeControl(baseSwitch);
+  const pick = el("select", { title: name });
+  pick.setAttribute("aria-label", name);
+  st.choices.basemap_layer.forEach(([v, t]) => pick.append(el("option", { value: v, textContent: t })));
+  pick.value = st.values.basemap_layer;
+  const fail = el("div", { className: "err", role: "alert" });
+  let current = pick.value;
+  pick.addEventListener("change", async () => {
+    fail.textContent = "";
+    const ok = await send("basemap_layer", pick.value, (text) => { fail.textContent = text; });
+    if (ok) current = pick.value;
+    else pick.value = current;
+  });
+  baseSwitch = L.control({ position: "topright" });
+  baseSwitch.onAdd = () => {
+    const box = el("div", { className: "leaflet-bar basemap-switch" }, [pick, fail]);
+    L.DomEvent.disableClickPropagation(box);
+    L.DomEvent.disableScrollPropagation(box);
+    return box;
+  };
+  baseSwitch.addTo(map);
+}
+
 function buildSettings(st) {
   applyTheme(st.values.theme);
   coordFormat = st.values.coord_format || "dd";
@@ -1194,7 +1222,8 @@ function buildSettings(st) {
   open.setAttribute("aria-label", L.title);
   const dlg = document.getElementById("settings");
   const err = el("div", { className: "err", role: "alert" });
-  const send = async (key, value) => {
+  // 1 つ替えるたびに保存＝通れば true。失敗の字は `fail` へ（無ければ枠の下）
+  const send = async (key, value, fail) => {
     err.textContent = "";
     try {
       const r = await fetch("/api/settings", { method: "POST", headers: HEAD, body: JSON.stringify({ key, value }) });
@@ -1202,7 +1231,7 @@ function buildSettings(st) {
       if (!r.ok) throw new Error(body.error || String(r.status));
       if (body.reload) {
         location.reload();
-        return;
+        return true;
       }
       applyTheme(body.settings.values.theme);
       if (body.basemap) setBasemap(body.basemap);
@@ -1210,10 +1239,15 @@ function buildSettings(st) {
         coordFormat = body.settings.values.coord_format;
         reformatCoords();
       }
+      return true;
     } catch (e) {
-      err.textContent = String((e && e.message) || e);
+      const text = String((e && e.message) || e);
+      if (fail) fail(text);
+      else err.textContent = text;
+      return false;
     }
   };
+  buildBaseSwitch(st, L.basemap_layer, send);
   const choice = (key) => {
     const s = el("select");
     st.choices[key].forEach(([v, t]) => s.append(el("option", { value: v, textContent: t })));
@@ -1334,7 +1368,6 @@ function buildSettings(st) {
       button(L.lang_template, async () => say(await call("/api/lang_template")))]),
     choice("theme"),
     choice("coord_format"),
-    choice("basemap_layer"),
     el("label", {}, [el("span", { textContent: L.proxy_url }), proxy]),
     el("div", { className: "hint", textContent: L.proxy_hint }),
     check("update_check_auto"),

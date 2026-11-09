@@ -88,6 +88,12 @@ body {
 #settings .diag label { margin: 2px 0 2px 12px; }
 #settings .diag .list { max-height: 9em; overflow-y: auto; }
 #settings .note { font-size: 12px; }
+/* 背景地図の切り替え＝地図の右上（設定の枠から移した）。テーマの色に従う */
+.basemap-switch { background: var(--bg); color: var(--fg); padding: 4px; }
+.basemap-switch select { font: inherit; font-size: 12px; color: var(--fg); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 3px; }
+.basemap-switch .err { color: var(--err); font-size: 12px; max-width: 220px; white-space: pre-line; }
+.basemap-switch .err:empty { display: none; }
 /* 起動時の知らせ（I-256）＝帯の下・1 件 1 行・閉じられる */
 #notices:empty { display: none; }
 #notices > div { display: flex; gap: 8px; align-items: baseline; padding: 4px 16px;

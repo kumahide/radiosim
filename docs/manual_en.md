@@ -205,7 +205,6 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 │ [Export Translation Template...]
 │ Theme               [System ▼]
 │ Coordinate Display  [Decimal Degrees (DD) ▼]
-│ Basemap             [Pale map ▼]
 │ Proxy URL           [            ]
 │ ☐ Check for Updates at Startup
 │ ☐ Include Pre-releases
@@ -221,6 +220,7 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 
 - **Each change is saved as soon as you make it** (to `radiosim_conf.json`, so it persists across restarts). **OK** only closes the panel.
 - The result of a button ("Saved …" and the like) and the reason for a failure appear in one line at the bottom of the panel.
+- **The basemap** (Pale map / Aerial photo, plus your own) is not in the panel but in the **box at the top right of the map**. A change is saved at once and also changes the background of the map PNG you save → [Adding a Background Map Source](#adding-a-background-map-source-user-extension).
 - **Opening and saving a project** is not in the panel but in the tools on the top bar (**Open Project...** / **Save Project As...**) → [Project Files (.rsproj)](#project-files-rsproj).
 
 ### Settings
@@ -231,7 +231,6 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 | Export Translation Template... | —                    | Writes `_template.json` for a new translation into the language folder and opens that folder → [Adding your own UI language](#adding-your-own-ui-language) |
 | Theme              | System / Light / Dark            | Light or dark screen. "System" follows the Windows setting           |
 | Coordinate Display | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
-| Basemap            | Pale map / Aerial photo (plus your own) | Map background. Also changes the background of the map PNG you save → [Adding a Background Map Source](#adding-a-background-map-source-user-extension) |
 | Proxy URL          | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
 | Check for Updates at Startup | Checkbox               | When checked, the app makes the same query as Check for Updates... at startup, at most once a day. **Off by default** (so that the app does not reach out to the internet at every start on company networks or offline field sites). It tells you only when a newer version exists (in the bar above the map); when you are up to date or the query fails, it shows nothing |
 | Include Pre-releases | Checkbox                       | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
