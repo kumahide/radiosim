@@ -817,53 +817,21 @@ Layers are tried in order: `dem5a_png` → `dem5b_png` → `dem_png`. If a highe
 
 ---
 
-## Save Package
+## Saving — where and what
 
-### Single Mode
+Link does not write to a results folder (`results/`). Each press of a save tool writes one file to the place chosen in Edge's save dialog (`showSaveFilePicker`); when the save dialog is not available, it is written as a download. The content is built on the Python side (`webui/exports.py`, `webui/project_io.py`), and the screen (`saveTextFile` in `webui/static/app.js`) only writes it through the file API. The saved name, or the reason a save failed, appears in the notice area at the top of the right column.
 
-Saves to `results/YYYYMMDD_HHMMSS/`:
+| Tool | Where | File written (default name) | Built by |
+| --- | --- | --- | --- |
+| **Open Project...** / **Save Project As...** | Top of the right column (from any workspace) | `.rsproj` (the default name comes from the project name) | `webui/project_io.py` → [Project Files (.rsproj)](#project-files-rsproj) |
+| **Save Results CSV** | Single Link: top of the right column; workspaces: right end of the table's tools | Single Link and Multiple Paths: `summary.csv` (Single Link is one row with path ID `P1`); Relay Path: `hops.csv`; Condition Explorer: `scenario.csv` | `exports.sheet_csv` (the `*_csv_text` functions in `report/`; the columns are the output contract below) |
+| **Save KML** | Single Link: top of the right column; Multiple Paths: right end of the table's tools | Single Link: `path.kml` (terrain, line of sight, Fresnel zone, obstructed spans); Multiple Paths: `summary.kml`. Relay Path and Condition Explorer have no KML | `exports.sheet_kml` |
+| **Save Map Image** | Top of the right column | `map.png` (north up, lines in the verdict's color) | `exports.map_png` (Leaflet's picture does not hold its tiles in a canvas and cannot become a PNG, so the server renders it; nothing is saved if the background tiles cannot be fetched) |
+| **Save Profile Image** | Top of the right column | `profile.png` (the on-screen profile plus a line with the word and the margin, and a legend; the hover line is not drawn) | `saveProfilePng` in `app.js` (from the on-screen canvas) |
 
-| File                    | Contents                                                 |
-| ----------------------- | -------------------------------------------------------- |
-| `profile.png`         | Terrain cross-section graph (150 dpi)                    |
-| `report.html`         | Detailed report with the terrain graph and a path map embedded |
-| `path.kml`            | 3D KML for Google Earth                                  |
-| `settings.json`       | Complete input parameters (reloadable via File > Load Parameters) |
-| `terrain_profile.csv` | Terrain profile data                                     |
-| `report.txt`          | Text-format link budget report                           |
-
-### Multiple Paths
-
-Saves to `results/batch_YYYYMMDD_HHMMSS/`:
-
-| File             | Contents                                         |
-| ---------------- | ------------------------------------------------ |
-| `summary.html` | All-path summary ledger                          |
-| `summary.csv`  | Numerical results for all paths                  |
-| `summary.kml`  | Google Earth KML for all paths                   |
-| `report_all.html` | Summary + every path in one printable document |
-| `{id}/`        | Per-path package (same structure as Single Mode) |
-
-### Condition Explorer (compare / sweep)
-
-Saves to `results/scenario_YYYYMMDD_HHMMSS/`:
-
-| File              | Contents                                                     |
-| ----------------- | ------------------------------------------------------------ |
-| `scenario.html` | Single-page A4 (compare = difference table with in-cell deltas / sweep = chart + table) |
-| `scenario.csv`  | Numbers for every condition / point (machine-readable)        |
-
-### Relay Path
-
-Saves to `results/multihop_YYYYMMDD_HHMMSS/`:
-
-| File | Contents |
-| --- | --- |
-| `route.html` | Combined sheet (overall verdict = min, per-section breakdown, overview map) |
-| `report_all.html` | Combined sheet + every section in one printable document |
-| `hops.csv` | **One row per section** (a separate contract from the batch `summary.csv`; the file name and column names stay `hop*`) |
-| `{id}/` | Per-section package (same structure as Single Mode) |
-
+- **CSV, KML and the map image can be saved once the results for the input now on screen are all in.** While computing, while waiting for input, or before every item is in, nothing is saved and the notice area gives the reason in red (the server returns 409). For the profile image in a workspace, select a row first.
+- Just before saving, any half-typed input (the 300 ms wait) is sent first, so that what is saved matches the values visible on screen.
+- The diagnostic package (ZIP) is saved from [Help](#help) in the Settings panel.
 
 ### Output column specification (the output contract) and its change policy
 

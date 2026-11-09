@@ -598,7 +598,7 @@ def test_batch_csv_columns_listed(doc):
 # 🔑 **単一ソースは実装側**（`core/output_contract.py`）＝文書に書いた列を数えるのでは
 #    なく、**契約の列を文書に探す**。列を足した人が文書を直すまでここが赤いままになる。
 #: 3.x の見出し（保存パッケージ）と Link 1.0 の見出し（保存の口と中身）＝11f で書き換える間は両方を受ける
-_OUTPUT_SECTION_HEADERS = ["保存パッケージ", "Save Package", "保存の口と中身"]
+_OUTPUT_SECTION_HEADERS = ["保存パッケージ", "Save Package", "保存の口と中身", "Saving — where and what"]
 
 #: 変更規約が全 README に在ることの目印（言語ごと）。
 _CHANGE_POLICY_MARKERS = {
