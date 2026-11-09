@@ -405,6 +405,7 @@ radiosim/
     ├── test_write_locations.py
     ├── test_smoke.py
     ├── test_webui.py
+    ├── test_webui_docs.py
     ├── test_webui_workspace.py
     ├── test_webui_exports.py
     ├── test_webui_project.py
@@ -1280,6 +1281,7 @@ setx RADIOSIM_PYTHON D:\dev\radiosim\venv\Scripts\python.exe
 | `test_write_locations.py` | OS 標準の書き込み先（%APPDATA% 等）への移設・ポータブル判定（`portable.txt`）・Known Folder 解決の段階的フォールバック（API失敗→環境変数→既定）・旧配置からの移行（コピーのみ・旧は残す・新は上書きしない・キャッシュは移行対象外）（3.1） |
 | `test_smoke.py`          | 全モジュールの import 疎通・コアのヘッドレス純度（tkinter 不混入）＋tkinter ルート生成（ヘッドレスは skip）＋ネットワーク遮断ゲートの自己検査＋スレッド生成規約（ThreadPoolExecutor 不使用・daemon=True）の静的ガード |
 | `test_webui.py`          | 新しい画面（`webui/`）の約束（見出しは今の版の入力の結果だけ・知らない入力の鍵を受けない・地形に効く欄で取得中の地形を取り消す・Host 違いと鍵なしは 403・静的ファイルの外へ出ない） |
+| `test_webui_docs.py`     | 新しい画面の説明書を開く（同梱の画像は根の中だけ data URI へ畳む・文書間のリンクは一緒に書き出した先か同梱ファイルへ・開けないリンクは字だけ残す・辿れる文書を一式書き出す・配布物はマニュアルでソース実行は開発者向け文書・`markdown` が無ければ `.md` をそのまま開く・文書が無ければその 1 文） |
 | `test_webui_workspace.py` | 新しい画面の作業面の入力（面と面の入力を 1 回の更新で版を 1 つ上げる・形の誤りは何も変えずに断る・型への変換は旧画面と同じ組み立てと同じ字の誤り・`report` を取り込みで引かない）と作業面の実行（1 件ごとに載せ全件そろって集約と件数・入力の誤りは取得の前に断る・版が進めば無条件に取り消す・条件探索は 1 回線の地形を使い回す） |
 | `test_webui_project.py` | 新しい画面の `.rsproj` の保存と開く（入力と面が往復で戻る・旧画面と同じファイル・座標は DD・読めない面はその面だけ書かず警告・3.x の v1 は v1 のまま開いて v1 で書く・開いた案件名を次の保存へ持ち越す・読めなければ 422 で何も変えない） |
 | `test_webui_exports.py` | 新しい画面の作業面の結果の CSV（複数経路・中継・条件探索の件数と語が画面の表と同じ・誤りの行も ERROR の 1 行・版が進めば古い結果を出さない・旧画面の書き手と同じバイト・全件そろう前は 409）と KML（複数経路だけ・OK／REVIEW／NG／Error のフォルダ・座標の無い誤りの行は線なし）と地図の画像（画面と同じ線・判定の前は 409・背景が無ければ 503） |

@@ -406,6 +406,7 @@ radiosim/
     ├── test_write_locations.py
     ├── test_smoke.py
     ├── test_webui.py
+    ├── test_webui_docs.py
     ├── test_webui_workspace.py
     ├── test_webui_exports.py
     ├── test_webui_project.py
@@ -1318,6 +1319,7 @@ therefore live in `qa_fixtures/` and are deployed after the build**.
 | `test_write_locations.py` | Migration to OS-standard write locations (%APPDATA% etc.), portable detection (`portable.txt`), staged Known Folder fallback (API failure → env var → default), and migration from the legacy layout (copy only, legacy files kept, new files never overwritten, cache excluded from migration) (3.1) |
 | `test_smoke.py`          | Import smoke for all modules, core headless purity (no tkinter leak) + tkinter root construction (skipped when headless) + network-block gate self-check + static guard on thread creation rules (no ThreadPoolExecutor, daemon=True) |
 | `test_webui.py`          | New screen (`webui/`): the headline shows only results of the current input version, unknown input keys are rejected, a terrain-affecting edit cancels the running fetch, HTTP refuses a foreign Host or a missing token, static files cannot escape their root |
+| `test_webui_docs.py`     | New screen documentation viewer: bundled images inside the root are inlined as data URIs, links between documents point at the pages written alongside or at bundled files, links that cannot open keep only their text, every reachable document is written, packaged builds open the manual and source runs the developer guide, without `markdown` the `.md` opens as is, a missing document says so |
 | `test_webui_workspace.py` | New screen workspace inputs: one update bumps the version once whatever it changes, a bad shape is refused without changing anything, typing follows the old windows with the same error words, importing does not load `report`; workspace runs: published item by item with the aggregate and counts once complete, input errors refused before any fetch, any newer version cancels unconditionally, the scenario reuses the single-link terrain |
 | `test_webui_project.py` | New screen `.rsproj` save and open: inputs and sheets survive the round trip, the same file the classic screen reads, coordinates in DD, an unreadable sheet is left out with a warning, a 3.x v1 file opens as v1 and saves as v1, the opened project name carries into the next save, an unreadable file is a 422 that changes nothing |
 | `test_webui_exports.py` | New screen workspace results CSV: batch, relay and scenario rows and words match the screen table, a bad row is one ERROR row, a newer version hides the old results, the same bytes as the classic writer, a 409 until every item is done; KML for the batch sheet only, with OK / REVIEW / NG / Error folders and no line for a row without coordinates; the map image draws the same lines as the screen, is a 409 before the verdict and a 503 without a background |
