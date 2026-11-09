@@ -67,6 +67,11 @@ human reads is aligned.*
 **what is counted**, plus one English sentence); the matching English word; and the wordings
 that must never reach the screen (`/`-separated, `—` when there are none).*
 
+定義の頭の **〔帳票〕** は、いまは帳票（Pro）にだけ出る語の印（Link 1.0 で帳票だけの訳を Pro へ移した）。
+
+*A definition that starts with **〔帳票〕** marks a word that currently appears only in the
+reports (Pro); Link 1.0 moved the report-only wording to Pro.*
+
 ## 用語
 
 *The terms.*
@@ -74,7 +79,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 用語 | 定義 | en | 使わない言い換え |
 |---|---|---|---|
 | 区間 | 中継経路で隣り合う 2 地点を結ぶ 1 本の回線。数えるのは**リンクの本数**（「地点数 − 1」）。区間ごとに独立したリンクバジェットを持つ。 *One link between two adjacent waypoints of a relay path; what is counted is the number of links (waypoints − 1), and each section carries its own link budget.* | Section | ホップ / hop |
-| ワースト区間 | 中継経路で、全体判定を決めている区間（**最もマージンの小さい区間**）。画面・帳票とも同じ 1 語で呼ぶ。 *The section of a relay path that decides the overall verdict — the one with the smallest margin.* | Weakest section | 最も苦しい区間 / 律速区間 |
+| ワースト区間 | 〔帳票〕中継経路で、全体判定を決めている区間（**最もマージンの小さい区間**）。画面・帳票とも同じ 1 語で呼ぶ。 *The section of a relay path that decides the overall verdict — the one with the smallest margin.* | Weakest section | 最も苦しい区間 / 律速区間 |
 | 地点 | 中継経路が通る点すべて（送信点・中継点・受信点）。利用者が入力する面はこちらで、区間はここから導かれる。 *Every point a relay path runs through (TX, relay and RX points). This is what the user enters; sections are derived from it.* | Waypoint | ノード / node |
 | 中継点 | 地点のうち、送信点でも受信点でもないもの。 *A waypoint that is neither the TX nor the RX point.* | Relay | リレー |
 | マージン | 受信レベル − 受信感度（dB）。0 以上なら OK。 *RX level minus RX threshold, in dB; OK when zero or above.* | Margin | 余裕度 |
@@ -83,7 +88,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | 判定 | OK / REVIEW / NG / ERR の 4 値。前提（植生高・環境区分・回折の方式・回折と植生の合成・地面反射）を振った全部の組み合わせのマージンで決める＝**OK は評価した前提の範囲で成立**（どの組でも 0 以上）・NG はどの組でも 0 未満・**REVIEW は前提の取り方で裏返る**（現地確認を推奨）。幅は誤差ではなく前提依存性。ERR は**判定できなかった**（計算か成果物の生成の失敗・地形の取得の通信の失敗。レポートと CSV では `ERROR`）。計算プロファイル `v1` は 3.9.x と同じく既定のマージンだけで OK / NG。 *One of OK / REVIEW / NG / ERR, decided from the margins of every combination of varied assumptions (vegetation height, area class, diffraction method, how diffraction and vegetation combine, ground reflection): OK means the link closes within the assumptions evaluated (at least 0 in every combination); NG means below 0 in every combination; REVIEW means the result flips with the assumptions (a site check is recommended). The spread is dependence on assumptions, not error. ERR means no judgement was possible (`ERROR` in the reports and CSVs). Calculation profile `v1` uses the default margin alone, as 3.9.x did.* | Status | ステータス |
 | 全体判定 | 中継経路ぜんたいの判定。**区間と同じ語**（OK / REVIEW / NG / ERR）。区間の判定を **NG＞REVIEW＞OK** の順で重いほうへ寄せる（区間をまたいで損失は足さない）。判定できなかった区間（ERR）が 1 つでもあれば**全体も ERR**とし、「計算できたが回線が成立しない（NG）」とは区別する。 *The status of a whole relay path — the same three values as a section. The status of the section with the smallest margin becomes the overall one; losses are never summed across sections. A single ERR section makes the whole path ERR, which stays distinct from “computed, but the link does not close” (NG).* | Overall | 総合判定 |
 | 斜距離 | 送受アンテナ間の距離（**高低差を含む**）。 *Distance between the two antennas, height difference included.* | Slant Dist | 直線距離 |
-| 水平距離 | 送受地点を地表へ投影した距離（**高低差を含まない**）。 *Distance between the two sites projected onto the ground, height difference excluded.* | Horiz Dist | 地表距離 |
+| 水平距離 | 〔帳票〕送受地点を地表へ投影した距離（**高低差を含まない**）。 *Distance between the two sites projected onto the ground, height difference excluded.* | Horiz Dist | 地表距離 |
 | 総損失 | FSPL・回折・植生・環境・降雨・大気の各損失の合計（dB）。 *The sum of the FSPL, diffraction, vegetation, environment, rain and gas losses (dB).* | Total Loss | 伝搬損失 |
 | 伝搬環境 | 環境まわりの入力欄の**まとまりの見出し**（環境区分・降雨強度など）。**1 つの区分を指す語ではない**（→ 環境区分）。 *The heading over the group of environment inputs (env type, rain rate, …). It never names a single class (→ Env Type).* | Environment | — |
 | 環境区分 | 環境損失を決める 4 択（市街地 / 郊外 / 農村 / 見通し）。 *The four-way choice that sets the environment loss (urban / suburban / rural / line-of-sight).* | Env Type | 地域区分 / 環境タイプ |
@@ -94,7 +99,7 @@ that must never reach the screen (`/`-separated, `—` when there are none).*
 | F1遮蔽率 | 第 1 フレネルゾーンの断面のうち、地形・植生に遮られた割合（%）。 *The share of the first Fresnel zone cross-section blocked by terrain or vegetation (%).* | F1 Obs | フレネル遮蔽率 |
 | F1侵入深さ | 障害物が第 1 フレネルゾーンへ**どれだけ深く**食い込んでいるか。数えるのは **F1 半径の倍数**（×F1）で、**100% で頭打ちにしない**。遮蔽率が 100% でも、1.00 なら*ちょうど*完全遮蔽、2.50 なら半径の 2.5 倍まで突き抜けている。 *How deep an obstacle reaches into the first Fresnel zone, counted in multiples of the F1 radius (×F1) and never capped: 1.00 is exactly full obstruction, 2.50 reaches 2.5 radii past it.* | F1 Depth | 侵入率 / 遮蔽深さ |
 | 地形の解像度 | 地形を刻む細かさの段階（高: 約 4m 画素 / 中: 約 8m 画素 / 低: 20m 間隔）。⚠️ **名前が指すのは標本を置く画素の大きさ**で、*読む標高データの層*ではない（標高は段階によらず取れる中で最も細かい層から返る）。**利用者が選ぶのは段階だけ**で、点数はアプリが解く。⚠️ 「高」「中」は**その層の DEM 画素の縁ごと**に標本を置くため**等間隔ではない**（「低」だけ 20m の等間隔。点数が上限に当たる極端に長い経路では「高」「中」も等間隔に落ちる）。 *The step at which the terrain is sampled (High = ~4 m pixels / Medium = ~8 m pixels / Low = 20 m spacing). The name refers to the size of the pixel a sample is placed on, not to the elevation layer that answers (elevations always come from the finest layer available). The user picks the step only; the app resolves the points. "High" and "medium" sample at the edges of each DEM pixel — not evenly spaced (except on an extremely long path whose count hits the upper limit, where they fall back to even spacing).* | Terrain Resolution | 地形サンプル数 / 分解能 |
-| サンプル数 | 経路上で実際に標高を取った点の数。**解像度の段階と経路から決まる**結果であって、入力ではない（経路の長さだけでなく**向きと緯度**でも変わり、斜めの経路ほど多い）。⚠️ **個々の標本の間隔はこの点数からは割り出せない**（「高」「中」は等間隔ではないため〔点数が上限に当たったときを除く。「低」は 20m の等間隔〕。平均的な間隔だけは `horiz_m ÷ (samples − 1)` で近似できる）。 *How many points along the path an elevation was actually taken at — a result of the resolution step and the path (its bearing and latitude too, not just its length), never an input. The individual spacings cannot be derived from it (on "high" and "medium" the samples are not evenly spaced unless the count hits the upper limit; "low" keeps a 20 m even spacing); only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`.* | Samples | 標本数 |
+| サンプル数 | 〔帳票〕経路上で実際に標高を取った点の数。**解像度の段階と経路から決まる**結果であって、入力ではない（経路の長さだけでなく**向きと緯度**でも変わり、斜めの経路ほど多い）。⚠️ **個々の標本の間隔はこの点数からは割り出せない**（「高」「中」は等間隔ではないため〔点数が上限に当たったときを除く。「低」は 20m の等間隔〕。平均的な間隔だけは `horiz_m ÷ (samples − 1)` で近似できる）。 *How many points along the path an elevation was actually taken at — a result of the resolution step and the path (its bearing and latitude too, not just its length), never an input. The individual spacings cannot be derived from it (on "high" and "medium" the samples are not evenly spaced unless the count hits the upper limit; "low" keeps a 20 m even spacing); only the average spacing can be approximated, as `horiz_m ÷ (samples − 1)`.* | Samples | 標本数 |
 | 経路 | 送信点から受信点までの 1 本のつながり。中継経路なら途中の中継点も含む。 *One connection from the TX point to the RX point, relay points included when it is a relay path.* | Path | Route |
 | アンテナ高 | 地表からアンテナまでの高さ（m）。**地物の高さではない**（→ 植生高）。 *Height of the antenna above the ground (m) — not the height of anything standing on it (→ Vegetation Height).* | Antenna Height | 地上高 |
 | 開始 | 条件探索で**軸を掃引する範囲**の下端。⚠️ 経路の端（送信点・受信点）はこの語で呼ばない。 *The lower end of the swept range in the scenario window. The ends of a path (TX / RX point) are never called this.* | From | — |

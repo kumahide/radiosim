@@ -349,7 +349,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_f1_obs":            "F1 Obs",
         "pl_f1_depth":          "F1 Depth",
         "pl_slant_dist":        "Slant Dist",
-        "pl_dem_fail":          "DEM Fail",
 
         # ===== Env types =====
         "env_urban":            "Urban",
@@ -359,74 +358,23 @@ _STRINGS: dict[str, dict[str, str]] = {
         "env_unspecified":      "Unspecified",
 
         # ===== HTML per-path report =====
-        "html_path_title":      "Radio Link Report",
-        "html_generated":       "Generated",
-        "html_batch_mode":      "Multiple Paths",  # HTML footer (summary)
         "html_single_mode":     "Single Mode",  # HTML footer (per-path)
-        "html_report_memo":     "Note:",
-
-        # 単位の括り方。**言語ごとに字が違う**ので i18n が持つ（日本語は全角・
-        # 前の空白なし／英語は半角・前に空白）。ここを 1 か所にしておかないと、
-        # 画面とレポートで同じ量の単位が違う字で出る（2.8RC1 で実際にそうなった）。
-        "unit_wrap":            " ({unit})",
-        "html_status":          "Status",
-        "html_rx_level":        "RX Level",
-        "html_act_margin":      "Act Margin",
-        "html_total_loss":      "Total Loss",
-        "html_site_info":       "Site Info",
-        "html_tx_coords":       "TX Coords",
-        "html_rx_coords":       "RX Coords",
-        "html_tx_height":       "TX Height",
-        "html_rx_height":       "RX Height",
-        "html_slant_dist":      "Slant Dist",
-        "html_horiz_dist":      "Horiz Dist",
-        "html_aim_tx":          "TX aim (AZ/EL)",
-        "html_aim_rx":          "RX aim (AZ/EL)",
-        "html_map_title":       "Path Map",
         "html_map_unavailable": "Map unavailable (tiles could not be fetched).",
-        # 成果物（PNG / report.html / KML）の生成に失敗した経路の印（I-010）。
-        "html_artifact_missing": "no output",
-        "html_radio_settings":  "Radio Settings",
-        "html_frequency":       "Frequency",
-        "html_tx_power":        "TX Power",
-        "html_tx_gain":         "TX Gain",
-        "html_rx_gain":         "RX Gain",
-        "html_link_budget":     "Link Budget",
-        "html_eirp":            "EIRP",
-        "html_fspl":            "FSPL",
-        "html_diff_loss":       "Diff Loss",
-        "html_veg_loss":        "Veg Loss",
-        "html_env_loss":        "Env Loss",
-        "html_rain_loss":       "Rain Loss",
-        "html_gas_loss":        "Gas Loss",
-        "html_rx_ant_gain":     "RX Ant. Gain",
-        "html_threshold":       "Threshold",
-        "html_environment":     "Environment",
-        "html_env_type":        "Env Type",
-        "html_diff_model":      "Diff Model",
-        "html_rain_rate":       "Rain Rate",
-        "html_model_bullington": "Bullington",
-        "html_model_single":    "Single",
 
         # ===== Scenario explorer (A-1 compare / A-2 sweep) =====
         "scn_window_title":     "Condition Explorer",
         "scn_mode":             "Condition Explorer",
         "scn_tab_compare":      "Compare (base + N)",
         "scn_tab_sweep":        "Sweep (1 axis, N points)",
-        "scn_compare_title":    "Condition Comparison",
-        "scn_sweep_title":      "Parameter Sweep",
         # 枠名は `Path`＝「固定」は凍結方式の言い方で、🔒 のヒントが既に言っている
         # （同じ意味を 2 通りで言わない・I-048）。中身は col_start / col_end を
         # **共有**する＝バッチと同じ語で座標を呼ぶことを i18n の側で保証する。
         "scn_fixed_group":      " Path ",
-        "scn_fixed_path":       "Fixed path",   # レポート文中の表記＝据え置き
         # 凍結バーのラベル＝バッチの列と**同じ語**（`col_start` / `col_end`）。
         # 表記の注記「(lat, lon)」は付けない＝編集できない欄に入力の作法を書いても
         # 使い道が無く、バーの幅だけが伸びる（実測 +270px）。
         "scn_tx_coord":         "TX Coord",
         "scn_rx_coord":         "RX Coord",
-        "scn_samples":          "Samples",
-        "scn_margin_axis":      "Margin (dB)",
         "scn_base":             "Base",
         "scn_cond_n":           "Cond {n}",
         "scn_add_cond":         "+ Condition",
@@ -465,41 +413,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "scn_axis_diff_method": "Diffraction Model",
 
         # ===== HTML summary report =====
-        "html_batch_title":     "Multiple Paths Report",
-        # report_all.html（summary + all per-path sheets in one document）
-        "html_all_title":       "Multiple Paths Report (All Pages)",
-        "html_all_link":        "Print all pages at once (report_all.html)",
-        "html_total":           "Total",
-        "html_ok":              "OK",
-        "html_review":          "REVIEW",
-        "html_ng":              "NG",
-        "html_error":           "Error",
-        "html_col_id":          "ID",
-        "html_col_status":      "Status",
-        "html_col_freq":        "Freq (MHz)",
         "html_col_gain_tx":     "TX Gain (dBi)",
         "html_col_gain_rx":     "RX Gain (dBi)",
         "html_col_h_tx":        "h_tx (m)",
         "html_col_h_rx":        "h_rx (m)",
-        "html_col_rx":          "RX (dBm)",
-        "html_col_margin":      "Margin (dB)",
-        "html_col_fspl":        "FSPL",
         "html_col_diff":        "Diff",
         "html_col_veg":         "Veg",
         "html_col_env":         "Env",
         "html_col_rain":        "Rain",
         "html_col_gas":         "Gas",
-        "html_col_total_loss":  "Total Loss",
         "html_col_slant":       "Slant (m)",
-        "html_col_f1":          "F1 (%)",
-        "html_col_f1_depth":    "F1 Depth (×F1)",
-        "html_col_dem_fail":    "DEM Fail (%)",
         "html_col_note":        "Remarks",
-        "html_col_graph":       "Graph",
-        # DEM 取得に失敗した標本を含む経路（区間）の注記（I-143 決定 2）＝
-        # 台帳の下に 1 行だけ（列は持たない）。続けて "p03 (12.0 %), ..." が付く。
-        "html_dem_fail_notice":
-            "Paths with terrain-fetch failures: ",
 
         # ===== Notes on handling this result (3.0a1) =====
         # 🔑 **成果物が一人歩きした先で効くセクション**＝レポートを受け取った人は、公開文書も
@@ -580,67 +504,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_verdict_invalid_pixel":
             "{n} samples on invalid DEM pixels were computed at 0 m.",
 
-        # ===== 感度表（3.4 ステージ6） =====
-        # 🔑 **「無い」と書いた地面反射の行を「幅」に置き換える**（→ report_common.py
-        # の `handling_section_html` docstring）。モデルは変えず、既存パイプラインを
-        # 摂動条件で数回まわした余裕度の幅を示すだけ。
-        "html_sensitivity_title":
-            "Sensitivity to input uncertainty",
-        "html_sensitivity_lead":
-            "Baseline margin: {baseline}. Shows how much the margin moves when "
-            "each input is perturbed one at a time (the model itself is "
-            "unchanged; unchanged rows are grouped below).",
-        "html_sens_col_axis":     "Input",
-        "html_sens_col_range":    "Margin range (dB)",
-        "html_sens_unchanged":
-            "No measurable change: {list}",
-        "html_sens_axis_dem_elev":
-            "DEM elevation ±{m} m",
-        "html_sens_axis_veg_h":
-            "Vegetation height ±{pct}%",
-        "html_sens_axis_env_type":
-            "Environment class (to the adjacent one)",
-        "html_sens_axis_diff_method":
-            "Diffraction model: single knife-edge vs. Bullington",
-        "html_sens_axis_diff_veg_compose":
-            "Diffraction + vegetation loss: summed vs. larger-of",
-        "html_sens_axis_resolution":
-            "Terrain resolution step",
-        "html_sens_axis_ground_reflection":
-            "Ground reflection (two-ray envelope — a width, not a position)",
-        "html_sens_ground_reflection_note":
-            "This width is a rough estimate — destructive (lower bound) and "
-            "constructive (upper bound) interference from the grazing angle "
-            "and surface roughness at the specular point. It does not say "
-            "where a null actually falls.",
-        "html_sens_worst_hop":
-            "Row shown for the weakest section: {hop}.",
-        "html_sens_argmin_same":
-            "Perturbing {axis} the same way across every section leaves the "
-            "weakest section unchanged ({hop}).",
-        "html_sens_argmin_shift":
-            "Perturbing {axis} the same way across every section shifts the "
-            "weakest section to {hop} (baseline: {baseline_hop}).",
-        "html_sens_base_only":
-            "Reference value for the base condition only — the other points "
-            "on this report were not evaluated.",
-        "html_sens_worst_path":
-            "Row shown for the weakest path: {path}. The other paths in this "
-            "report were not evaluated.",
-
         # ===== 実測残差の層別表（3.4 ステージ6） =====
-        "html_residuals_title": "Measured-vs-predicted residuals, by layer",
-        "html_residuals_lead":
-            "Residual = predicted minus measured (feeder loss added back in). "
-            "Positive: the model reads high.",
-        "html_residuals_spot_excluded":
-            "Spot measurements are excluded from the stats below.",
-        "html_residuals_col_env":      "Environment",
-        "html_residuals_col_band":     "Band",
-        "html_residuals_col_distance": "Distance",
-        "html_residuals_col_n":        "n",
-        "html_residuals_col_median":   "Median (dB)",
-        "html_residuals_col_iqr":      "IQR (dB)",
 
         # 標高データの出典（B-134）＝**帳票と地形断面図の両方に出す 1 本の字**。
         # ⚠️ **これ以上長くしないこと**（B-135）＝断面図では距離軸のラベルと同じ行に
@@ -768,7 +632,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_waypoints":         " Waypoints ",
         "mh_hops_group":        " Section Settings ",
         "mh_result":            " Result ",
-        "mh_col_no":            "#",
         "mh_col_name":          "Name",
         "mh_col_coord":         "Coords (Lat, Lon)",
         "mh_col_height":        "Height (m)",
@@ -784,19 +647,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_err_no_map":        "The map is not available from here.",
         "map_mode_waypoints":   "Add waypoints",
         "map_status_waypoint":  "Waypoints: click the map to append a point to the relay path.",
-        "mh_report_title":      "Relay Path Report",
-        "mh_mode_label":        "Relay Path",
-        "mh_overall":           "Overall",
-        # 集約カードの語は**判定で変わる**（I-052）。同じ数字が答えている問いが
-        # OK と NG で別物なので、語のほうを切り替える（値の出所は変えない）。
-        "mh_overall_margin":    "Overall margin (worst)",
-        "mh_overall_shortfall": "Largest shortfall",
-        "mh_hops":              "Sections",
-        "mh_worst_hop":         "Weakest section",
-        "mh_section":           "Section",
-        "mh_heights":           "Heights (TX / RX, m)",
-        "mh_worst_mark_note":   "The row with a thick bar at its left edge is the weakest section (the one that decides the overall verdict). Row shading shows each section's verdict (OK / REVIEW / NG / ERROR).",
-        "mh_regenerative_note": "Each section is an independent link budget (regenerative relay): losses are not added across sections, and the overall verdict is the weakest section. If any section could not be judged (ERROR), the overall verdict is ERROR as well — not NG, which means the link does not close. Passive reflectors are out of scope.",
         "mh_err_too_few":       "A relay path needs at least 2 waypoints (TX and RX).",
         "mh_err_too_many":      "Too many sections (max {max}).",
         "mh_err_rf_count":      "Radio settings do not match the sections ({hops} section(s) / {rf} setting(s)).",
@@ -1203,7 +1053,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_f1_obs":            "F1遮蔽率",
         "pl_f1_depth":          "F1侵入深さ",
         "pl_slant_dist":        "斜距離",
-        "pl_dem_fail":          "DEM取得失敗率",
 
         # ===== Env types =====
         "env_urban":            "市街地",
@@ -1213,64 +1062,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "env_unspecified":      "未指定",
 
         # ===== HTML per-path report =====
-        "html_path_title":      "無線回線レポート",
-        "html_generated":       "生成日時",
-        "html_batch_mode":      "複数経路",
         "html_single_mode":     "個別シミュレーション",
-        "html_report_memo":     "メモ:",
-        "unit_wrap":            "（{unit}）",
-        "html_status":          "判定",
-        "html_rx_level":        "受信レベル",
-        "html_act_margin":      "マージン",
-        "html_total_loss":      "総損失",
-        "html_site_info":       "サイト情報",
-        "html_tx_coords":       "送信地点座標",
-        "html_rx_coords":       "受信地点座標",
-        "html_tx_height":       "送信アンテナ高",
-        "html_rx_height":       "受信アンテナ高",
-        "html_slant_dist":      "斜距離",
-        "html_horiz_dist":      "水平距離",
-        "html_aim_tx":          "TX指向 (AZ/EL)",
-        "html_aim_rx":          "RX指向 (AZ/EL)",
-        "html_map_title":       "経路地図",
         "html_map_unavailable": "地図は取得できませんでした（タイル未取得）。",
-        # 成果物（PNG / report.html / KML）の生成に失敗した経路の印（I-010）。
-        "html_artifact_missing": "成果物なし",
-        "html_radio_settings":  "無線設定",
-        "html_frequency":       "周波数",
-        "html_tx_power":        "送信電力",
-        "html_tx_gain":         "送信アンテナ利得",
-        "html_rx_gain":         "受信アンテナ利得",
-        "html_link_budget":     "リンクバジェット",
-        "html_eirp":            "EIRP",
-        "html_fspl":            "FSPL",
-        "html_diff_loss":       "回折損失",
-        "html_veg_loss":        "植生損失",
-        "html_env_loss":        "環境損失",
-        "html_rain_loss":       "降雨損失",
-        "html_gas_loss":        "大気損失",
-        "html_rx_ant_gain":     "受信アンテナ利得",
-        "html_threshold":       "受信感度",
-        "html_environment":     "伝搬環境",
-        "html_env_type":        "環境区分",
-        "html_diff_model":      "回折モデル",
-        "html_rain_rate":       "降雨強度",
-        "html_model_bullington": "Bullington",
-        "html_model_single":    "Single",
 
         # ===== 条件探索（A-1 比較 / A-2 スイープ） =====
         "scn_window_title":     "条件探索",
         "scn_mode":             "条件探索",
         "scn_tab_compare":      "比較（ベース＋条件）",
         "scn_tab_sweep":        "スイープ（1 軸 N 点）",
-        "scn_compare_title":    "条件比較レポート",
-        "scn_sweep_title":      "パラメータスイープレポート",
         "scn_fixed_group":      " 経路 ",
-        "scn_fixed_path":       "固定した経路",   # レポート文中の表記＝据え置き
         "scn_tx_coord":         "送信座標",
         "scn_rx_coord":         "受信座標",
-        "scn_samples":          "サンプル数",
-        "scn_margin_axis":      "マージン (dB)",
         "scn_base":             "ベース",
         "scn_cond_n":           "条件 {n}",
         "scn_add_cond":         "＋ 条件を追加",
@@ -1309,41 +1111,17 @@ _STRINGS: dict[str, dict[str, str]] = {
         "scn_axis_diff_method": "回折モデル",
 
         # ===== HTML summary report =====
-        "html_batch_title":     "複数経路レポート",
-        # report_all.html（サマリ＋全 per-path を 1 文書へ連結）
-        "html_all_title":       "複数経路レポート（全ページ）",
-        "html_all_link":        "全ページをまとめて印刷（report_all.html）",
-        "html_total":           "合計",
-        "html_ok":              "OK",
-        "html_review":          "REVIEW",
-        "html_ng":              "NG",
-        "html_error":           "エラー",
-        "html_col_id":          "ID",
-        "html_col_status":      "判定",
-        "html_col_freq":        "周波数 (MHz)",
         "html_col_gain_tx":     "送信利得 (dBi)",
         "html_col_gain_rx":     "受信利得 (dBi)",
         "html_col_h_tx":        "送信高 (m)",
         "html_col_h_rx":        "受信高 (m)",
-        "html_col_rx":          "受信レベル (dBm)",
-        "html_col_margin":      "マージン (dB)",
-        "html_col_fspl":        "FSPL (dB)",
         "html_col_diff":        "回折 (dB)",
         "html_col_veg":         "植生 (dB)",
         "html_col_env":         "環境 (dB)",
         "html_col_rain":        "降雨 (dB)",
         "html_col_gas":         "大気 (dB)",
-        "html_col_total_loss":  "総損失 (dB)",
         "html_col_slant":       "斜距離 (m)",
-        "html_col_f1":          "F1遮蔽 (%)",
-        "html_col_f1_depth":    "F1侵入深さ (×F1)",
-        "html_col_dem_fail":    "DEM失敗 (%)",
         "html_col_note":        "備考",
-        "html_col_graph":       "グラフ",
-        # DEM 取得に失敗した標本を含む経路（区間）の注記（I-143 決定 2）＝
-        # 台帳の下に 1 行だけ（列は持たない）。続けて「p03（12.0 %）、…」が付く。
-        "html_dem_fail_notice":
-            "地形の取得に失敗した標本を含む経路：",
 
         # ===== 結果の取扱に関する補足（3.0a1） =====
         "html_handling_title":  "結果の取扱に関する補足（机上のスクリーニング推定）",
@@ -1406,57 +1184,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "html_verdict_invalid_pixel":
             "DEM の無効画素の標本 {n} 点は標高 0 m として計算した",
 
-        # ===== 感度表（3.4 ステージ6 / B-219 で表を1列に再構成） =====
-        "html_sensitivity_title": "入力の不確かさに対する感度",
-        "html_sensitivity_lead":
-            "基準条件のマージンは {baseline}。主な入力を 1 つずつ振ったときの"
-            "マージンの変動幅を示す（モデル自体は変えていない。変化しない項目は"
-            "まとめて記す）。",
-        "html_sens_col_axis":     "入力",
-        "html_sens_col_range":    "変動幅 (dB)",
-        "html_sens_unchanged":
-            "変化なし：{list}",
-        "html_sens_axis_dem_elev":
-            "DEM 標高 ±{m} m",
-        "html_sens_axis_veg_h":
-            "植生高 ±{pct}%",
-        "html_sens_axis_env_type":
-            "環境区分（隣の区分へ）",
-        "html_sens_axis_diff_method":
-            "回折モデル：single ⇄ Bullington",
-        "html_sens_axis_diff_veg_compose":
-            "回折損と植生減衰の合算：足し合わせ ⇄ 大きい方のみ",
-        "html_sens_axis_resolution":
-            "地形の解像度の段階",
-        "html_sens_axis_ground_reflection":
-            "地面反射（2 波干渉の包絡線。ヌルの位置ではなく変動の幅を示す）",
-        "html_sens_ground_reflection_note":
-            "この幅は、鏡面反射点の擦過角と地表の粗さから見積もった、破壊的干渉（下限）"
-            "と建設的干渉（上限）の目安。ヌルが実際に起きる位置までは分からない。",
-        "html_sens_worst_hop":
-            "ワースト区間（{hop}）についての行。",
-        "html_sens_argmin_same":
-            "{axis} を全区間へ同じ向きで振っても、ワースト区間は変わらない（{hop}）。",
-        "html_sens_argmin_shift":
-            "{axis} を全区間へ同じ向きで振ると、ワースト区間が {hop} に変わる"
-            "（基準は {baseline_hop}）。",
-        "html_sens_base_only":
-            "ベース条件（1 点）だけの参考値。この帳票に載る他の条件は計算していない。",
-        "html_sens_worst_path":
-            "ワースト経路（{path}）についての行。この帳票の他の経路は計算していない。",
-
         # ===== 実測残差の層別表（3.4 ステージ6） =====
-        "html_residuals_title": "実測との残差（環境区分×帯域×距離帯）",
-        "html_residuals_lead":
-            "残差 = 予測 − 実測（給電線損失を補正した後の値）。正の値は予測が高め。",
-        "html_residuals_spot_excluded":
-            "スポット測定は以下の統計から除外しています。",
-        "html_residuals_col_env":      "環境区分",
-        "html_residuals_col_band":     "帯域",
-        "html_residuals_col_distance": "距離帯",
-        "html_residuals_col_n":        "件数",
-        "html_residuals_col_median":   "中央値 (dB)",
-        "html_residuals_col_iqr":      "ばらつき（四分位範囲、dB）",
 
         # 標高データの出典（B-134／B-216）
         "html_elev_source_prefix": "標高データの出典",
@@ -1577,7 +1305,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_waypoints":         " 地点 ",
         "mh_hops_group":        " 区間ごとの設定 ",
         "mh_result":            " 結果 ",
-        "mh_col_no":            "#",
         "mh_col_name":          "名前",
         "mh_col_coord":         "座標（緯度, 経度）",
         "mh_col_height":        "アンテナ高(m)",
@@ -1593,19 +1320,6 @@ _STRINGS: dict[str, dict[str, str]] = {
         "mh_err_no_map":        "このウィンドウからは地図を開けません。",
         "map_mode_waypoints":   "中継点を追加",
         "map_status_waypoint":  "中継点の追加: 地図をクリックすると経路に地点を足します。",
-        "mh_report_title":      "中継経路レポート",
-        "mh_mode_label":        "中継経路",
-        "mh_overall":           "全体判定",
-        # 集約カードの語は**判定で変わる**（I-052）。OK は「あと何 dB 積めるか」、
-        # NG は「あと何 dB 足りないか」＝問いが別物なので、語のほうを切り替える。
-        "mh_overall_margin":    "全体マージン（最小余裕）",
-        "mh_overall_shortfall": "最大不足",
-        "mh_hops":              "区間数",
-        "mh_worst_hop":         "ワースト区間",
-        "mh_section":           "区間",
-        "mh_heights":           "アンテナ高 (送 / 受, m)",
-        "mh_worst_mark_note":   "左端に太線のある行がワースト区間（全体判定を決めている区間）です。行の地の色は各区間の判定（OK / REVIEW / NG / ERROR）を表します。",
-        "mh_regenerative_note": "各区間は独立したリンクバジェットです（再生中継）。区間をまたいで損失は加算せず、全体判定は最も余裕の少ない区間で決まります。判定できなかった区間（ERROR）が 1 つでもあれば全体判定も ERROR です（回線が成立しない NG とは別物）。受動反射（反射板）は対象外です。",
         "mh_err_too_few":       "中継経路には地点が 2 つ以上必要です（送信点と受信点）。",
         "mh_err_too_many":      "区間が多すぎます（最大 {max}）。",
         "mh_err_rf_count":      "無線設定の数が区間数と合っていません（区間 {hops} / 設定 {rf}）。",
@@ -1696,12 +1410,10 @@ _STRINGS: dict[str, dict[str, str]] = {
 
 _lang = "en"
 
-
 def set_lang(lang: str) -> None:
     global _lang
     if lang in _STRINGS:
         _lang = lang
-
 
 def available_languages() -> list:
     """`set_lang()` が受ける言語コード＝同梱の 2 つ ＋ 読み込めた外部訳。
@@ -1717,7 +1429,6 @@ def available_languages() -> list:
     """
     return list(_STRINGS)
 
-
 def current_lang() -> str:
     """いま使っている言語コード。
 
@@ -1726,11 +1437,9 @@ def current_lang() -> str:
     """
     return _lang
 
-
 def t(key: str) -> str:
     """現在の言語でキーに対応する文字列を返す。未定義の場合は英語フォールバック。"""
     return _STRINGS.get(_lang, _STRINGS["en"]).get(key, _STRINGS["en"].get(key, key))
-
 
 # ============================================================
 # 外部の言語ファイル（利用者が足す訳）
@@ -1739,7 +1448,8 @@ def t(key: str) -> str:
 #: いま読めない言語の画面に居るので、英語名では自分の言語を見つけられない。
 _EXTERNAL_NAME_KEY = "_name"
 #: **開かないキー**＝成果物（HTML レポート・KML）の語。出力契約なので画面の都合で
-#: 動かさない。実測で `html_*` 70 + `pl_*` 18 = 88 キー。
+#: 動かさない（数は 3.x の実測＝`html_*` 70 + `pl_*` 18。帳票だけの鍵は Link 1.0
+#: ステージ11b で Pro へ移した）。
 #: ⚠️ **`env_` と `scn_axis_` は動的に組まれる**（`t(f"env_{result.env_type}")` /
 #: `t(f"scn_axis_{axis}")`）＝**キーの名前がコードのどこにも書かれていない**ので、
 #: 1 つずつ数える形では必ず落ちる。⇒ 族ごと締め出す（2026-08-16・B-101 の 2 巡目）。
@@ -1756,28 +1466,18 @@ _ARTIFACT_PREFIXES = ("html_", "pl_", "env_", "scn_axis_")
 #: 防ごうとせず、**`tests/test_i18n_external.py` が成果物モジュールの `t()` を
 #: 走査して、ここに無いキーがあれば落ちる**（規約でなくゲートで押さえる）。
 #:
-#: ⚠️ **8 キーは画面にも出る**（`graph_*` / `legend_*` / `scn_compare_title` /
-#: `scn_sweep_title`）。ただし**その「画面」は断面図・比較グラフそのもの**＝保存
-#: すれば同じ図が成果物になるので、開けば結局出力契約が動く。⇒ 締め出す側に置く。
+#: ⚠️ **6 キーは画面にも出る**（`graph_*` / `legend_*`）。ただし**その「画面」は
+#: 断面図そのもの**＝保存すれば同じ図が成果物になるので、開けば結局出力契約が動く。
+#: ⇒ 締め出す側に置く。
+#: 帳票（中継経路の HTML・条件探索のグラフ・単位の括り方など）だけの鍵は Link 1.0
+#: ステージ11b で Pro の `register_strings` へ移した＝足した鍵は `_REGISTERED_KEYS`
+#: で締め出す（ここには書かない）。
 _ARTIFACT_KEYS = frozenset({
     # 断面図（PNG＝成果物。画面に出ている図と同一）
     "graph_alt_axis", "graph_dist_axis",
     "legend_fresnel", "legend_los", "legend_terrain", "legend_vegetation",
-    # 中継経路の HTML レポート
-    "mh_hops", "mh_mode_label", "mh_overall",
-    "mh_regenerative_note", "mh_report_title", "mh_worst_hop",
-    "mh_worst_mark_note",
-    # 同上・**動的に引かれる分**（列の定数 `_HOP_COL_KEYS` と、判定で切り替わる
-    # 集約カードの語＝`report/multihop.py overall_display()` が出す 2 つ）。
-    # ⚠️ ここは*名前の形*が `mh_` で揃っているのに接頭辞にしていない＝`mh_err_*`
-    # （入力の検証メッセージ＝画面の語）が同じ形をしているため。
-    "mh_col_no", "mh_heights", "mh_section",
-    "mh_overall_margin", "mh_overall_shortfall",
-    # 条件探索のグラフ・レポート
-    "scn_compare_title", "scn_fixed_path", "scn_margin_axis",
-    "scn_mode", "scn_samples", "scn_sweep_title",
-    # 単位の括り方（画面と成果物で同じ字にするための単一ソース＝2.8RC1）
-    "unit_wrap",
+    # 条件探索の面の名前＝画面のタブにも出るが、帳票（Pro）の足にも焼く
+    "scn_mode",
     # 地図タイルの出典表記（B-133＝3.0b1 で帳票の地図にも焼くようになった）。
     # ⚠️ **画面（地図ウィンドウの右下）にも出るが、締め出す側に置く**＝同じ語が帳票の
     # 地図 PNG に焼き込まれ、**出典の表示義務を果たしているのはその字**だから。
@@ -1792,7 +1492,6 @@ _BUILTIN_LANGS = ("en", "ja")
 #: ＝成果物の語なので、外部訳では開かない（`validate_external` が `"artifact"` で
 #: 却下し、`translatable_keys` から除く）。
 _REGISTERED_KEYS: set = set()
-
 
 def register_strings(tables: dict) -> None:
     """別の部品（Pro の帳票）が持つ訳を同梱の表へ足す（Link 1.0 ステージ11b）。
@@ -1821,7 +1520,6 @@ def register_strings(tables: dict) -> None:
         _STRINGS[lang].update(table)
         _REGISTERED_KEYS.update(table)
 
-
 def _is_artifact_key(key: str) -> bool:
     """成果物の語か（外部訳で開かない鍵）。"""
     return (key.startswith(_ARTIFACT_PREFIXES) or key in _ARTIFACT_KEYS
@@ -1829,11 +1527,9 @@ def _is_artifact_key(key: str) -> bool:
 
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 
-
 def _placeholders(text: str) -> set:
     """`{dir}` `{n}` のような差し込み名の集合。"""
     return set(_PLACEHOLDER_RE.findall(text))
-
 
 def _format_signature(text: str) -> "set | None":
     """差し込み 1 つ 1 つの **(名前, 変換, 書式指定)** の集合（読めなければ `None`）。
@@ -1855,7 +1551,6 @@ def _format_signature(text: str) -> "set | None":
     except ValueError:
         return None                          # 書式として読めない＝採用しない
 
-
 class _AnyValue:
     """どんな書式指定にも応じる値（検査用）。属性・添字も自分を返す。"""
 
@@ -1868,13 +1563,11 @@ class _AnyValue:
     def __getitem__(self, key) -> "_AnyValue":
         return self
 
-
 class _AnyMapping(dict):
     """どの差し込み名にも `_AnyValue` を返す（名前の一致は別途見る）。"""
 
     def __missing__(self, key):                      # noqa: D105
         return _AnyValue()
-
 
 def _is_valid_format(text: str) -> bool:
     """`str.format()` に渡して壊れない書式文字列か（B-103）。
@@ -1899,7 +1592,6 @@ def _is_valid_format(text: str) -> bool:
     except (ValueError, KeyError, IndexError, AttributeError, TypeError):
         return False
     return True
-
 
 def validate_external(table: dict) -> tuple:
     """外部の訳 1 本を検査し、`(採用する訳, 却下した (キー, 理由) の列)` を返す。
@@ -1933,20 +1625,16 @@ def validate_external(table: dict) -> tuple:
             accepted[key] = value
     return accepted, rejected
 
-
 #: 直近の読み込みの報告＝`(コード, 表示名, 採用数, 却下した (キー, 理由) の列)`。
 _external_reports: list = []
-
 
 def external_reports() -> list:
     """直近の `load_external()` の報告（画面で知らせるのは呼び出し側の仕事）。"""
     return list(_external_reports)
 
-
 def external_languages() -> list:
     """言語メニューへ足す `(コード, 表示名)`。読み込めた言語だけが並ぶ。"""
     return [(code, name) for code, name, _n, _rej in _external_reports]
-
 
 def load_external(*dir_paths: str) -> list:
     """`<dir>/<コード>.json` を読み、**使える訳だけ**登録する。報告を返す。
@@ -2003,7 +1691,6 @@ def load_external(*dir_paths: str) -> list:
     _external_reports = list(merged.values())
     return external_reports()
 
-
 def translatable_keys() -> dict:
     """訳せるキーと英語の値（成果物の語＝`_is_artifact_key` は除く）。
 
@@ -2014,7 +1701,6 @@ def translatable_keys() -> dict:
         key: value for key, value in _STRINGS["en"].items()
         if not _is_artifact_key(key)
     }
-
 
 def write_template(path: str) -> None:
     """訳のひな形（全キー＋英語の値）を `path` へ JSON で書き出す（I-109）。

@@ -159,8 +159,17 @@ def test_avoided_wording_never_reaches_the_screen(term: Term):
 # ============================================================
 # 2. 用語集が製品から浮いていないこと
 # ============================================================
+#: 定義の頭の印＝帳票（Pro）にだけ出る語（Link 1.0 ステージ11b で帳票だけの訳を
+#: Pro の `register_strings` へ移した）。
+REPORT_ONLY_MARK = "〔帳票〕"
+
+
 @pytest.mark.parametrize("term", TERMS, ids=lambda t: t.ja)
 def test_each_term_is_actually_used_in_both_languages(term: Term):
+    # 〔帳票〕の語は、Pro が訳を足したとき（`_REGISTERED_KEYS` が空でない）だけ在否を見る
+    # ＝Pro の試験がこのモジュールを読み直して見る。公開側だけでは訳が無いので見ない。
+    if term.definition.startswith(REPORT_ONLY_MARK) and not i18n._REGISTERED_KEYS:
+        pytest.skip("帳票（Pro）だけの語＝Pro の試験で見る")
     used = {
         lang: any(_contains(word, shown)
                   for l, _key, shown in _shown_strings() if l == lang)
