@@ -418,7 +418,7 @@ The following directory is created automatically in the project root on first la
 | ------------------ | ------------------------------------- |
 | `terrain_cache/` | Disk cache for DEM tiles              |
 
-Link does not write into a results folder (`results/`). Each artifact is written, one at a time, where you choose when saving. `results/` remains as the place to look for 3.x results: "Open Results Folder" in the Settings panel opens it (creating it first if needed).
+Link does not write into a results folder (`results/`). Each artifact is written, one at a time, where you choose when saving. "Open Results Folder" in the Settings panel opens `results/` (`config.RESULTS_DIR` = `Documents\RadioSim\Link\`), creating it first if needed. ⚠️ This is not where 3.x saved its results (`Documents\RadioSim\`).
 
 ---
 
@@ -453,7 +453,7 @@ Home for operations that **reach out to files or the OS** (implemented in `webui
 | ------------------- | -------------------------------------------------------------------------- |
 | Load Parameters...  | Turns **simulation parameters only** from a settings file into input changes (`sim_changes`; app keys are discarded) |
 | Load App Settings... | Imports **only** the app keys the Settings panel holds (language, theme, coordinate display, background, proxy) from a settings file (`settings.apply_many`) |
-| Open Results Folder | Opens `results/` in Explorer (creates it first if missing). Link does not write there — it is the place to look for 3.x results |
+| Open Results Folder | Opens `results/` in Explorer (creates it first if missing). Link does not write there, and it is not where 3.x saved its results either |
 | Delete All Cache... | Deletes all downloaded DEM / map tiles (confirmed inside the panel). Only when there are two or more DEM sources does it ask which sources to delete |
 
 > **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter the Settings panel's items. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
