@@ -83,6 +83,10 @@ body {
 #settings .confirm { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 6px 0;
   max-width: 420px; font-size: 13px; }
 #settings .note, #settings .err { white-space: pre-line; max-width: 420px; }
+/* 「ヘルプ」の診断の小区画（I-257 の D）＝結果の一覧は長くなりうる＝枠の中で巻く */
+#settings h4 { margin: 8px 0 2px; font-size: 12px; }
+#settings .diag label { margin: 2px 0 2px 12px; }
+#settings .diag .list { max-height: 9em; overflow-y: auto; }
 #settings .note { font-size: 12px; }
 /* 起動時の知らせ（I-256）＝帯の下・1 件 1 行・閉じられる */
 #notices:empty { display: none; }

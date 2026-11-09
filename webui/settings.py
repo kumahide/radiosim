@@ -23,6 +23,7 @@ from typing import Any
 
 from core import config
 from core import i18n
+from core import version
 
 #: 画面が変える鍵（並びは枠の並び）。
 KEYS = ("lang", "theme", "coord_format", "basemap_layer", "proxy_url", "update_check_auto",
@@ -92,7 +93,14 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
             "load_app": i18n.t("menu_load_app_settings"),
             "open_results": i18n.t("menu_open_results"),
             "delete_cache": i18n.t("menu_delete_all_cache"),
-            "close": i18n.t("dlg_ok"),          # 1 つ替えるごとに保存する＝閉じるだけ
+            "help": i18n.t("menu_help"),
+            "open_docs": i18n.t("menu_open_readme"),
+            "diagnostics": i18n.t("menu_diagnostics"),
+            "check_updates": i18n.t("menu_check_updates"),
+            "about": i18n.t("menu_about"),
+            "about_text": i18n.t("dlg_about_msg").format(
+                app=version.APP_NAME, ver=version.APP_VERSION, copy=version.COPYRIGHT),
+            "close":i18n.t("dlg_ok"),          # 1 つ替えるごとに保存する＝閉じるだけ
         },
     }
 

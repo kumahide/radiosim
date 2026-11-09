@@ -28,6 +28,11 @@ webui/server.py
     POST /api/lang_template      … 訳のひな形を `USER_LANG_DIR` へ書いてフォルダを開く `{"message"}`
     POST /api/cache/breakdown    … 全キャッシュ削除の確認の中身（ソースが 2 つ以上なら選ばせる）
     POST /api/cache/delete       … `{"sources": [ID…] | null, "basemap": 真偽}` `{"message"}`
+    POST /api/help/docs          … 説明書を開く（`webui/docs.py`・無ければ 422＋画面の 1 文）
+    POST /api/help/check_updates … 更新の確認 `{"message"}`（答えを得られなければ 422）
+    POST /api/help/diagnostics   … 診断パッケージの小区画の中身（字・項目・結果の一覧・名前）
+    POST /api/help/diagnostics/zip … `{"facts": [..], "results": [..]}` → `{"zip"（base64）}`
+                                   （一覧の外の名前は 400＝結果フォルダの外を読ませない）
     POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
     POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
                                    （全件そろっていなければ 409＋画面の 1 文 `message`）
@@ -60,11 +65,13 @@ from core import i18n
 from core import models
 from core import terrain_grid
 from core import units
+from webui import docs as docs_mod
 from webui import exports
 from webui import files as files_mod
 from webui import project_io
 from webui import settings as settings_mod
 from webui import sheets as sheets_mod
+from webui import support
 from webui.edge import Listener
 from webui.sheets import SheetError
 from webui.state import UnknownKeyError
@@ -446,6 +453,17 @@ class WebServer:
                 if not (ids is None or (isinstance(ids, list) and all(isinstance(i, str) for i in ids))):
                     return 400, {"error": "bad body"}
                 return 200, {"message": files_mod.cache_delete(ids, bool(body.get("basemap", True)))}
+            if path == "/api/help/docs":
+                docs_mod.open_docs(self.opener)
+                return 200, {"message": ""}
+            if path == "/api/help/check_updates":
+                with self._settings_lock:
+                    cfg = dict(self.app_cfg)
+                return support.check_updates(cfg)
+            if path == "/api/help/diagnostics":
+                return 200, support.diagnostics_form()
+            if path == "/api/help/diagnostics/zip":
+                return support.diagnostics_zip(body.get("facts"), body.get("results"))
         except files_mod.FileError as e:
             return 422, {"message": str(e)}
         return 404, {"error": "not found"}
@@ -453,7 +471,9 @@ class WebServer:
 
 #: `file_action` が受ける口。
 _FILE_PATHS = frozenset({"/api/settings/load_sim", "/api/settings/load_app", "/api/open_results",
-                         "/api/lang_template", "/api/cache/breakdown", "/api/cache/delete"})
+                         "/api/lang_template", "/api/cache/breakdown", "/api/cache/delete",
+                         "/api/help/docs", "/api/help/check_updates", "/api/help/diagnostics",
+                         "/api/help/diagnostics/zip"})
 
 
 def _make_handler(app: WebServer) -> type:

@@ -110,11 +110,12 @@ def post_startup(state: Any) -> "list[int]":
 
 
 def update_available(rel: Any, *, frozen: "bool | None" = None,
-                     portable: "bool | None" = None) -> str:
-    """起動時の確認で新しい版が見つかったときの文（I-178・I-179）。
+                     portable: "bool | None" = None, auto: bool = True) -> str:
+    """新しい版が見つかったときの文（I-178・I-179）。
 
     入れ方の 1 文は配布形ごと（インストーラ版は置き換わる・ポータブル版は並べられる・
     ソース実行はタグ）。帯にリンクの器は無い＝リリースのページの URL を文に入れる。
+    `auto=False`＝「設定」の枠で押した確認（起動時の確認の切り方の 1 文を添えない）。
     """
     from core import config
     from core import runtime_env
@@ -129,9 +130,10 @@ def update_available(rel: Any, *, frozen: "bool | None" = None,
         how = i18n.t("update_how_portable")
     else:
         how = i18n.t("update_how_installer")
-    return i18n.t("dlg_update_title") + "\n" + i18n.t("webui_update_available").format(
+    text = i18n.t("webui_update_available").format(
         cur=version.APP_VERSION, new=rel.version, how=how, url=rel.url,
-        note=i18n.t("update_auto_note"))
+        note=i18n.t("update_auto_note") if auto else "")
+    return i18n.t("dlg_update_title") + "\n" + text.rstrip()
 
 
 def start_update_check(state: Any, cfg: "dict[str, str]", *,

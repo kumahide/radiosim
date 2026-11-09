@@ -811,6 +811,75 @@ def test_deleting_the_cache_asks_per_source_only_when_there_are_several(web, mon
     assert status == 400
 
 
+# ---- 「設定」の枠の「ヘルプ」（I-257 の D） ------------------------------------
+def test_the_manual_is_opened_and_a_missing_one_says_so(web, monkeypatch, tmp_path):
+    from core import config as cfg_mod
+    from core import i18n
+    monkeypatch.setattr(cfg_mod, "app_base_dir", lambda: str(tmp_path))
+    status, raw = _request(web, "POST", "/api/help/docs", token=web.token, body={})
+    assert status == 422 and json.loads(raw)["message"] == i18n.t("dlg_readme_missing")
+    assert web.opened == []
+    doc = tmp_path / i18n.t("readme_filename")
+    doc.parent.mkdir(parents=True, exist_ok=True)
+    doc.write_text("# RadioSim\n", encoding="utf-8")
+    status, _ = _request(web, "POST", "/api/help/docs", token=web.token, body={})
+    assert status == 200 and len(web.opened) == 1
+    assert web.opened[0].endswith((".html", ".md"))
+
+
+def test_checking_for_updates_answers_in_one_sentence(web, monkeypatch):
+    from types import SimpleNamespace
+
+    from core import i18n
+    from core import update_check
+    from core import version
+    answers = []
+    monkeypatch.setattr(update_check, "check", lambda **kw: answers.pop(0)(**kw))
+    answers.append(lambda **kw: None)
+    status, raw = _request(web, "POST", "/api/help/check_updates", token=web.token, body={})
+    assert status == 200 and version.APP_VERSION in json.loads(raw)["message"]
+    rel = SimpleNamespace(tag="link-9.9", version="9.9", url="https://example.invalid/r")
+    answers.append(lambda **kw: rel)
+    status, raw = _request(web, "POST", "/api/help/check_updates", token=web.token, body={})
+    text = json.loads(raw)["message"]
+    assert status == 200 and "9.9" in text and rel.url in text
+    assert i18n.t("update_auto_note") not in text           # 押した確認＝起動時の確認の 1 文は添えない
+
+    def fail(**kw):
+        raise update_check.UpdateCheckError("rate_limited")
+    answers.append(fail)
+    status, raw = _request(web, "POST", "/api/help/check_updates", token=web.token, body={})
+    assert status == 422 and i18n.t("fix_retry_later") in json.loads(raw)["message"]
+
+
+def test_the_diagnostics_zip_takes_only_listed_names(web, monkeypatch, tmp_path):
+    """結果は既定で入れない・一覧の外の名前は 400（結果フォルダの外を読ませない）。"""
+    import base64
+    import io
+    import zipfile
+
+    from core import config as cfg_mod
+    from core import diagnostics
+    results = tmp_path / "results"
+    (results / "run1").mkdir(parents=True)
+    (results / "run1" / "summary.csv").write_text("a,b\n", encoding="utf-8")
+    monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(results))
+    status, raw = _request(web, "POST", "/api/help/diagnostics", token=web.token, body={})
+    form = json.loads(raw)
+    assert status == 200 and form["results"] == ["run1"] and form["name"].endswith(".zip")
+    assert [f["id"] for f in form["facts"]] == list(diagnostics.FACT_ITEMS)
+    assert "{path}" in form["saved"]
+    for bad in ({"facts": ["secrets"], "results": []}, {"facts": [], "results": ["..\\x"]},
+                {"facts": "version", "results": []}):
+        assert _request(web, "POST", "/api/help/diagnostics/zip", token=web.token, body=bad)[0] == 400
+    status, raw = _request(web, "POST", "/api/help/diagnostics/zip", token=web.token,
+                           body={"facts": ["version"], "results": ["run1"]})
+    assert status == 200
+    with zipfile.ZipFile(io.BytesIO(base64.b64decode(json.loads(raw)["zip"]))) as z:
+        names = z.namelist()
+    assert "diagnostics.json" in names and any("summary.csv" in n for n in names)
+
+
 def test_the_settings_frame_labels_the_script_uses_are_served():
     import re
 

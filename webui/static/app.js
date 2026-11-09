@@ -969,7 +969,8 @@ async function flushAll() {
 
 // 選んだ場所へ 1 つ書く（Edge の `showSaveFilePicker`・無ければダウンロード）。書いた名前を返す。
 // 中身は文字列か Blob（画像）。選ぶ画面を閉じたら null（何もしない）・書けなければ知らせの欄に赤で出して null
-async function saveTextFile(data, name, types, mime) {
+// （出し先を替えるときは `onError(文)`＝「設定」の枠は枠の `err` へ出す）
+async function saveTextFile(data, name, types, mime, onError) {
   try {
     if (window.showSaveFilePicker) {
       const h = await window.showSaveFilePicker({ suggestedName: name, types });
@@ -984,7 +985,8 @@ async function saveTextFile(data, name, types, mime) {
     return name;
   } catch (e) {
     if (e && e.name === "AbortError") return null;     // 選ぶ画面を閉じた＝何もしない
-    projNote(e && e.message ? e.message : String(e), true);
+    const text = e && e.message ? e.message : String(e);
+    if (onError) onError(text); else projNote(text, true);
     return null;
   }
 }
@@ -1026,6 +1028,7 @@ function saveSheetKml() {
 
 // ---- 画面の画像（10d）＝地図と断面図を別々に（2026-11-08 経営者） --------------------
 const PNG_TYPES = [{ description: "PNG", accept: { "image/png": [".png"] } }];
+const ZIP_TYPES = [{ description: "ZIP", accept: { "application/zip": [".zip"] } }];
 
 // 地図＝帳票と同じ絵をサーバーが焼く（Leaflet の絵はタイルの canvas が無く PNG にできない）
 async function saveMapPng() {
@@ -1281,6 +1284,49 @@ function buildSettings(st) {
     );
     confirmBox.hidden = false;
   };
+  // 「ヘルプ」の口（I-257 の D）＝診断は保存の前に何が入るかを見せて選ばせる
+  // （環境事実は既定でチェック・結果は既定でチェックなし＝案件の座標が入る）
+  const diagBox = el("div", { className: "confirm diag", hidden: true });
+  const askDiagnostics = async () => {
+    confirmBox.hidden = true;
+    const d = await call("/api/help/diagnostics");
+    if (!d) return;
+    const pick = (value, text, on) => {
+      const c = el("input", { type: "checkbox", checked: on });
+      c.dataset.id = value;
+      return el("label", { className: "check" }, [c, el("span", { textContent: text })]);
+    };
+    const facts = d.facts.map((f) => pick(f.id, f.label, true));
+    const results = d.results.map((r) => pick(r, r, false));
+    const chosen = (picks) => picks.map((p) => p.querySelector("input"))
+      .filter((c) => c.checked).map((c) => c.dataset.id);
+    const save = async () => {
+      const z = await call("/api/help/diagnostics/zip", { facts: chosen(facts), results: chosen(results) });
+      if (!z) return;
+      const bytes = Uint8Array.from(atob(z.zip), (c) => c.charCodeAt(0));
+      const name = await saveTextFile(new Blob([bytes], { type: "application/zip" }), d.name, ZIP_TYPES,
+        "application/zip", (text) => { err.textContent = text; });
+      if (name === null) return;
+      diagBox.hidden = true;
+      note.textContent = d.saved.replace("{path}", name);
+    };
+    diagBox.replaceChildren(
+      el("div", { textContent: d.intro }),
+      el("h4", { textContent: d.facts_group }),
+      ...facts,
+      el("h4", { textContent: d.results_group }),
+      el("div", { className: "hint", textContent: d.results_hint }),
+      results.length ? el("div", { className: "list" }, results) : el("div", { className: "hint", textContent: d.no_results }),
+      el("div", { className: "actions" }, [
+        button(d.cancel, () => { diagBox.hidden = true; }), button(d.save, save)]),
+    );
+    diagBox.hidden = false;
+  };
+  const checkUpdates = async (b) => {
+    b.disabled = true;                              // 待つ間は二度押しさせない
+    try { say(await call("/api/help/check_updates")); } finally { b.disabled = false; }
+  };
+  const updatesBtn = button(L.check_updates, () => checkUpdates(updatesBtn));
   dlg.replaceChildren(
     el("h2", { textContent: L.title }),
     choice("lang"),
@@ -1298,9 +1344,17 @@ function buildSettings(st) {
       button(L.load_sim, () => loadFile("/api/settings/load_sim")),
       button(L.load_app, () => loadFile("/api/settings/load_app")),
       button(L.open_results, () => call("/api/open_results")),
-      button(L.delete_cache, askDelete),
+      button(L.delete_cache, () => { diagBox.hidden = true; askDelete(); }),
     ]),
     confirmBox,
+    el("h3", { textContent: L.help }),
+    el("div", { className: "row" }, [
+      button(L.open_docs, () => call("/api/help/docs")),
+      button(L.diagnostics, askDiagnostics),
+      updatesBtn,
+      button(L.about, () => { err.textContent = ""; note.textContent = L.about_text; }),
+    ]),
+    diagBox,
     err,
     note,
     el("div", { className: "actions" }, [button(L.close, () => dlg.close())]),

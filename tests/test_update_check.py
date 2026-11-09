@@ -205,6 +205,28 @@ def test_dem_unreachable_text_is_unchanged_by_the_split(lang):
     assert sim.dem_unreachable_message() == _OLD_DEM_UNREACHABLE[lang]
 
 
+class TestFailureMessage:
+    """答えを得られなかったときの本文（新しい画面の `webui/support.py`・旧画面の撤去で戻した 3 本）。"""
+
+    def test_rate_limit_says_wait(self):
+        from webui import support
+        i18n.set_lang("ja")
+        msg = support.update_failure_message(UpdateCheckError("rate_limited"))
+        assert i18n.t("fix_retry_later") in msg
+
+    def test_network_says_check_the_proxy_and_keeps_the_detail(self):
+        from webui import support
+        i18n.set_lang("ja")
+        msg = support.update_failure_message(UpdateCheckError("network", "ConnectionError: boom"))
+        assert i18n.t("fix_network") in msg and "ConnectionError: boom" in msg
+
+    def test_unexpected_says_retry_or_log(self):
+        from webui import support
+        i18n.set_lang("ja")
+        msg = support.update_failure_message(KeyError("x"))
+        assert i18n.t("fix_retry_or_log") in msg and "KeyError" in msg
+
+
 class TestAutoDue:
     """起動時の確認（I-179）を今日打つか＝既定オフ・1 日 1 回まで。"""
     _TODAY = datetime.date(2026, 9, 26)
