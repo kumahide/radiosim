@@ -67,6 +67,8 @@ def main() -> int:
     logger = config.setup_logging()
     _warn_if_not_the_declared_interpreter(logger)
     cfg = config.load_config()
+    # 外部の訳は言語を決める前に読む＝外部の言語コードを選んだ設定でも効く（I-256 の①）
+    i18n.load_external(config.LANG_DIR, config.USER_LANG_DIR)
     i18n.set_lang(cfg.get("lang", "en"))
 
     browser = edge.find_edge()
@@ -84,19 +86,27 @@ def main() -> int:
 
     _prepare_network()
     from core import dem
+    from core import dem_sources
+    from core import tile_sources
+    from webui import notices
     from webui.server import WebServer
     from webui.state import AppState
     from webui.worker import Worker
 
     dem.set_proxy(cfg.get("proxy_url", ""))
+    # 利用者の宣言ファイル（壊れた宣言だけを落として続ける・I-147・I-152）＝計算と地図より先
+    dem_sources.load_from(config.USER_DEM_SOURCES_FILE)
+    tile_sources.load_from(config.USER_TILE_SOURCES_FILE)
     stop = threading.Event()
     state = AppState(config.select_sim(cfg))
+    notices.post_startup(state)                      # 却下の知らせ（I-256 の①②）
     worker = Worker(state)
     server = WebServer(worker, basemap=cfg.get("basemap_layer", "pale"), on_quit=stop.set,
                        listener=listener, app_cfg=cfg)
     threading.Thread(target=worker.run_forever, args=(stop,), daemon=True).start()
     threading.Thread(target=server.httpd.serve_forever, daemon=True).start()
     logger.info("webui: http://127.0.0.1:%d/", server.port)
+    notices.start_update_check(state, cfg)           # 既定オフ・1 日 1 回まで（I-256 の⑤）
     try:
         edge.wait_window(window, stop)
     finally:

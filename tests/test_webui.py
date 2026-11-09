@@ -17,6 +17,7 @@ import http.client
 import json
 import os
 import pathlib
+import re
 import subprocess
 import sys
 import threading
@@ -575,7 +576,7 @@ import sys
 import webui.__main__ as m
 m._prepare_network()
 from core import dem
-from webui import edge, server, state, worker
+from webui import edge, notices, server, state, worker
 print(" ".join(k for k in ("truststore", "urllib3", "requests") if k in sys.modules))
 """
 
@@ -700,3 +701,63 @@ def test_the_ends_may_be_written_in_dms_and_compute_in_dd():
     assert st.wait(0, 0)["inputs"]["start"] == dms     # 画面へ返す欄の字は書き換えない
     doc_inputs, _sheets, _profile = st.document()
     assert doc_inputs["start"] == dms                  # 保存は `project_io.dump` が DD へ直す
+
+
+# ---- 起動時の知らせ（I-256 の①②⑤） ------------------------------------------
+def test_the_reject_reasons_match_the_validator():
+    """帯の説明表は `validate_external` が返す理由と 1 対 1（漏れた理由は説明できない）。"""
+    import inspect
+    from core import i18n
+    from webui import notices
+    src = inspect.getsource(i18n.validate_external) + inspect.getsource(i18n.load_external)
+    reasons = set(re.findall(r'"([a-z_]+)"\)[\])]', src))
+    assert reasons == set(notices.REJECT_REASON_KEYS)
+    for key in notices.REJECT_REASON_KEYS.values():
+        assert i18n.t(key) != key
+
+
+def test_rejected_translations_say_only_the_reasons_that_happened():
+    from core import i18n
+    from webui import notices
+    assert notices.rejected_translations([("fr", "Français", 10, [])]) is None
+    text = notices.rejected_translations([("fr", "Français", 3, [("btn_x", "unknown"), ("y", "unknown")])])
+    assert text.splitlines()[0] == i18n.t("lang_ext_title")
+    assert "Français" in text and i18n.t("lang_ext_why_unknown") in text
+    assert i18n.t("lang_ext_why_artifact") not in text
+    assert i18n.t("lang_ext_artifact_note") not in text   # 補足は出た理由にだけ
+    assert i18n.t("fix_edit_lang_file") in text
+
+
+def test_rejected_sources_name_the_file_to_fix():
+    from core import i18n
+    from webui import notices
+    assert notices.rejected_dem_sources([]) is None and notices.rejected_tile_sources([]) is None
+    dem = notices.rejected_dem_sources([("mydem", "dem_src_bad_id")])
+    tile = notices.rejected_tile_sources([("mytile", "dem_src_bad_id")])
+    assert "mydem" in dem and i18n.t("fix_edit_dem_sources_file") in dem
+    assert "mytile" in tile and i18n.t("fix_edit_tile_sources_file") in tile
+
+
+def test_the_startup_check_notices_only_a_new_version(monkeypatch, saved):
+    import datetime
+    from core import update_check
+    from webui import notices
+    rel = update_check.Release(version="9.9", tag="link-9.9", url="https://example.invalid/r")
+    day = datetime.date(2026, 11, 9)
+    st = AppState()
+    assert notices.start_update_check(st, {"update_check_auto": "off"}, today=day) is None
+    cfg = {"update_check_auto": "on"}
+    notices.start_update_check(st, cfg, today=day, check=lambda include_pre: rel).join(5)
+    assert cfg["update_check_last"] == "2026-11-09" and saved["save"]   # 打つ前に保存
+    got = st.wait(0, 0)["notices"]
+    assert len(got) == 1 and got[0]["kind"] == "info" and "9.9" in got[0]["text"]
+    assert rel.url in got[0]["text"]
+    assert notices.start_update_check(st, cfg, today=day) is None       # 同じ日に 2 度目は打たない
+
+    def fail(include_pre):
+        raise update_check.UpdateCheckError("network", "down")
+    st2 = AppState()
+    notices.start_update_check(st2, {"update_check_auto": "on"}, today=day, check=fail).join(5)
+    notices.start_update_check(st2, {"update_check_auto": "on"}, today=day,
+                               check=lambda include_pre: None).join(5)
+    assert st2.wait(0, 0)["notices"] == []                             # 失敗と「最新」は黙る

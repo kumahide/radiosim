@@ -126,8 +126,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "menu_check_updates_auto": "Check for Updates at Startup",
         "menu_check_updates_pre": "Include Pre-releases",
         "update_auto_note":     "This notice comes from the startup check (at most "
-                                "once a day). To stop it, uncheck Help > Check for "
-                                "Updates at Startup.",
+                                "once a day). To stop it, uncheck Check for Updates "
+                                "at Startup in Settings.",
         "menu_diagnostics":     "Save Diagnostic Package...",
         "dlg_diagnostics_title": "Diagnostic Package",
         "dlg_diagnostics_intro": "Pick what to include, then choose where to save "
@@ -834,6 +834,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_error":          "Could not calculate",
         "webui_profile_later":  "The terrain profile will appear here.",
         "webui_no_edge":        "Microsoft Edge was not found. The new screen opens in Edge.",
+        "webui_update_available": "A new version is available (current: {cur}, new: {new}).\n"
+                                  "{how}\nRelease page: {url}\n{note}",
         "webui_grp_advanced":   "Details",
         "webui_hint_start":     "e.g. 34.54, 132.41",
         "webui_hint_end":       "e.g. 34.53, 132.41",
@@ -984,11 +986,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "update_how_source":    "リポジトリからタグ {tag} を取得してください。",
         "menu_check_updates_auto": "起動時に更新を確認",
         "menu_check_updates_pre": "プレリリースも知らせる",
-        # ⚠️ Tk は空白でしか折らない＝1 文ずつ 1 行に収まる長さにし、文の間にだけ空白を
-        # 置く（長いと「。」が行頭へ落ちた＝2026-09-26 の画面確認）。数字と単位の間にも
-        # 空白を入れない（I-178 の画面の直し）。
-        "update_auto_note":     "起動時の確認（一日一回まで）による知らせです。 "
-                                "ヘルプの「起動時に更新を確認」を外すと止まります。",
+        "update_auto_note":     "起動時の確認（一日一回まで）による知らせです。"
+                                "設定の「起動時に更新を確認」を外すと止まります。",
         "menu_diagnostics":     "診断パッケージを保存...",
         "dlg_diagnostics_title": "診断パッケージ",
         "dlg_diagnostics_intro": "含める項目を選んでから、ZIP の保存先を指定して"
@@ -1644,6 +1643,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_error":          "計算できませんでした",
         "webui_profile_later":  "ここに地形の断面図が出ます。",
         "webui_no_edge":        "Microsoft Edge が見つかりません。新しい画面は Edge で開きます。",
+        "webui_update_available": "新しい版があります（お使いの版: {cur}・新しい版: {new}）。\n"
+                                  "{how}\nリリースのページ: {url}\n{note}",
         "webui_grp_advanced":   "詳細",
         "webui_hint_start":     "例: 34.54, 132.41",
         "webui_hint_end":       "例: 34.53, 132.41",

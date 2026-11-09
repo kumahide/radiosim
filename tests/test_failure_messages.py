@@ -246,8 +246,7 @@ class TestTheVocabulary:
     #: 出すか、語彙から外すかを [[I-256]] で決める（4.0 ステージ11a）。
     #: ⚠️ ここは**減るだけ**＝使い手が戻ったら下の試験が「まだ載っている」で落とす。
     _AWAITING_WEBUI = frozenset({
-        "fix_check_input", "fix_edit_dem_sources_file", "fix_edit_lang_file",
-        "fix_edit_tile_sources_file", "fix_file_read", "fix_file_write",
+        "fix_check_input", "fix_file_read", "fix_file_write",
         "fix_retry_later", "fix_retry_or_log",
     })
 
