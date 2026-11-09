@@ -42,11 +42,30 @@ def _fatal(message: str) -> None:
         pass
 
 
+def _warn_if_not_the_declared_interpreter(logger) -> bool:
+    """宣言と違う Python で起動していたら**ログと標準エラーへ**言う（止めない・I-256 の④）。
+
+    配布物は宣言を持たない＝`interpreter_mismatch()` が `None` を返し、ここは黙る
+    （開発機で `python -m webui` を別の Python で起こしたときだけ鳴る＝B-056）。
+    画面には出さない＝毎回出るものを目の前に置くと読まずに閉じる習慣がつく（旧画面と同じ判断）。
+    """
+    from core import runtime_env
+
+    pair = runtime_env.interpreter_mismatch()
+    if pair is None:
+        return False
+    message = runtime_env.mismatch_message(*pair)
+    logger.warning(message.replace("\n", " / "))
+    sys.stderr.write(f"[WARNING] {message}\n")
+    return True
+
+
 def main() -> int:
     from core import config, i18n
     from webui import edge
 
     logger = config.setup_logging()
+    _warn_if_not_the_declared_interpreter(logger)
     cfg = config.load_config()
     i18n.set_lang(cfg.get("lang", "en"))
 

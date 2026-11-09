@@ -553,6 +553,23 @@ def test_leaving_the_page_quits_unless_a_page_comes_back(monkeypatch):
         srv.httpd.server_close()
 
 
+def test_a_mismatched_interpreter_is_told_but_does_not_stop(monkeypatch, capsys):
+    # I-256 の④＝開発機で別の Python から起こしたら、ログと標準エラーへ言うだけ（止めない）
+    import logging
+
+    import webui.__main__ as m
+    from core import runtime_env
+
+    logger = logging.getLogger("radiosim.test_mismatch")
+    monkeypatch.setattr(runtime_env, "interpreter_mismatch", lambda: None)
+    assert m._warn_if_not_the_declared_interpreter(logger) is False
+    assert capsys.readouterr().err == ""
+    monkeypatch.setattr(runtime_env, "interpreter_mismatch", lambda: ("C:/a/python.exe", "C:/b/python.exe"))
+    assert m._warn_if_not_the_declared_interpreter(logger) is True
+    err = capsys.readouterr().err
+    assert "C:/a/python.exe" in err and "C:/b/python.exe" in err and "-m webui" in err
+
+
 _STARTUP_PATH = """
 import sys
 import webui.__main__ as m
