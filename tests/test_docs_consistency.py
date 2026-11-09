@@ -1576,7 +1576,23 @@ def test_no_unbacked_accuracy_claim(doc):
 _STATUS_NOTICE_DOCS = [*ALL_DOCS, "CHANGELOG.md"]
 
 
-@pytest.mark.parametrize("doc", _STATUS_NOTICE_DOCS)
+#: Link 1.0 ステージ11d で公開文書 4 本の予告を「Link 1.0 で変わったこと」へ書き換えた
+#: （I-189）。そちらの不変条件は「4 語に ERROR が入り、改名していないと言い、ERR と書かない」。
+#: CHANGELOG は 3.x の履歴として旧い予告のまま（11e で `CHANGELOG_3x.md` へ移して凍結）。
+_STATUS_CHANGED_MARKERS = ("（`OK` / `NG` / `REVIEW` / `ERROR`）", "(`OK` / `NG` / `REVIEW` / `ERROR`)")
+_ERROR_NOT_RENAMED = ("**`ERROR` は改名していません。**", "**`ERROR` is not renamed.**")
+
+
+@pytest.mark.parametrize("doc", ALL_DOCS)
+def test_status_change_note_keeps_error_among_the_four_words(doc):
+    lines = [ln for ln in _read(doc).splitlines() if any(m in ln for m in _STATUS_CHANGED_MARKERS)]
+    assert lines, f"{doc}: Link 1.0 の `status` の変更の文（4 語の並び）が見つからない"
+    line = lines[0]
+    assert any(m in line for m in _ERROR_NOT_RENAMED), f"{doc}: ERROR を改名していないと言っていない"
+    assert "**ERR**" not in line and "`ERR`" not in line, f"{doc}: 値を ERR と書いている（改名と読める）"
+
+
+@pytest.mark.parametrize("doc", ["CHANGELOG.md"])
 def test_status_notice_keeps_error_in_both_the_current_and_the_4_0_values(doc):
     lines = [ln for ln in _read(doc).splitlines() if "**REVIEW**" in ln]
     assert lines, f"{doc}: 4.0 の `status` 予告（**REVIEW**）が見つからない"
