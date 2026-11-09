@@ -982,33 +982,33 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 
 ## Project Files (.rsproj)
 
-A single JSON file that bundles **the whole input set**. Read and written from **File → Open Project / Save Project** in the launcher (implemented in [`project.py`](../report/project.py) — headless, never imports tkinter).
+A format that bundles **the whole input set** into one JSON file. It is read and written from **Open Project...** / **Save Project As...** at the top of the right column. The file's shape and the rules for reading and writing it belong to [`project.py`](../report/project.py) (headless); moving between it and the screen's input is handled by `webui/project_io.py`. The round trip with the screen is a JSON string, and the screen is what writes the file ([Saving — where and what](#saving--where-and-what)).
 
 ### What it bundles
 
 | Section | Contents |
 | --- | --- |
-| `meta` | Project name and free note |
-| `params` | Launcher sim parameters (coordinates always DD) |
-| `batch` | Batch rows, keyed by `PathRow` attribute names (not CSV column names) |
-| `scenario` | Explorer conditions, **kept as the on-screen strings** |
-| `multihop` | Relay waypoints and per-section RF |
+| `meta` | Project name and free note (Link's screen has no field for them; the values of an opened file are carried over when saving) |
+| `params` | The values of the input fields in the left column (coordinates always DD) |
+| `batch` | Multiple Paths rows (keyed by `PathRow` attribute names, not CSV column names) |
+| `scenario` | Condition Explorer's condition set (**kept as the on-screen strings**) |
+| `multihop` | Relay Path's list of waypoints and per-section RF |
+| `calc_profile` | The calculation profile ID (`v2` / `v1`) |
 
-**Never included**: results (that is what `results/` is for), app settings (theme / language / proxy / coordinate format), window geometry or open/closed state. App settings are excluded so that opening someone else's project cannot silently switch your language or proxy — both the reader and the writer go through `config.select_sim`.
+**Never included**: results (that is the job of the save tools), app settings (theme / language / proxy / coordinate format), window position and size. App settings are excluded so that opening someone else's project cannot switch your language or proxy the moment it opens; both the reader and the writer go through `config.select_sim`.
 
 ### Compatibility rules
 
 - `schema_version` is **a single integer for the whole document** (no per-section versions).
 - **Unknown keys are ignored, missing keys fall back to defaults, and a newer version is rejected** (the same style as `config.load_config`).
-- `app_version` / `saved_at` are provenance stamps and are **never used to decide how to read the file**.
-- **A missing section means "this window's state is unknown"**, not "the window is empty". The reader leaves it alone and the writer carries the previous value forward, so closing the batch window never produces a saved file with the rows deleted.
-- Values that are not readable numbers (NaN / Inf) are never written: that section is skipped and the UI says so, rather than emitting non-standard JSON.
+- `app_version` / `saved_at` are stamps and are **never used to decide how to read the file**.
+- Values that are not readable numbers (NaN / Inf) are never written (no non-standard JSON is produced).
+- **The calculation profile is opened as the file has it and written back as it is.** A 3.x file with no calculation profile opens as `v1` (the 3.9.x method) and stays `v1` when saved again. A newly started input uses the default, `v2`. The method is not a field on screen; it is held separately from the input set.
 
-### How loading works
+### How saving and opening work
 
-Loading **does not close the windows** (changed in 2.7). A `views.dialogs.show_notice` bar appears over each open window, and the contents are replaced by `replace_rows` / `apply_project_spec` / `apply_project_path` **only when its button is pressed**.
-
-⚠️ **This is not wired into the existing `↻ From Launcher` button.** That button touches only the frozen band (common settings / project info) and never the rows or points the user entered; adding the replacement there would cause the accident "I pressed it to refresh the common settings and my rows disappeared".
+- **Saving**: a workspace with unreadable values (Multiple Paths rows, relay waypoints) is left out of the save on its own, and a warning appears in the notice area (being able to save mid-input comes first, and nothing is dropped silently). A table with no rows and a relay with no waypoints are not written as sections at all.
+- **Opening**: the input and the three workspaces are **replaced all together** (nothing of the previous input is left). Input field keys missing from the file get their defaults, and sections missing from the file become empty workspaces. A file that cannot be read changes nothing, and the reason is shown in red in the notice area. Half-typed input from just before opening is discarded (so that old half-typed input does not overwrite the file just opened).
 
 ---
 
