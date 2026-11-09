@@ -99,15 +99,15 @@ This tool is intended solely for screening purposes — determining whether a fi
 
 ## Building the Windows Binary
 
-Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requires no Python installation on the target machine.
+The build lays out a distribution folder with python.org's **embeddable Python**, the dependencies and the product's sources. No exe of our own is produced: the app starts with `pythonw.exe -m webui`, which carries the Python Software Foundation's signature (Link 1.0 switched to this after Smart App Control blocked the PyInstaller-built exe twice). All the checks and steps live in `buildtools/build_link.py`; `build.bat` is its entry point.
 
 ### Prerequisites
 
-- Python 3.12 or later (developed and CI-tested on 3.15). ⚠️ **A release build needs a Python that ships Tk 9** (since 3.9; the Windows build of Python 3.15 ships Tk 9.0). The release is built and verified with Tk 9, and Tk 8.6 changes how the bundle is laid out, so `build.bat` checks the Tk version and stops. Patch releases of the same 3.14 line ship different Tk versions (3.14.4 has 8.6, 3.14.7 has 9.0), so the Python version number alone does not tell you (check it with `python -c "import tkinter; print(tkinter.TkVersion)"`)
-- **`RADIOSIM_PYTHON`** must point at the `python.exe` of the same virtual environment the tests run in (**required**). → [Development Environment](#development-environment)
-- PyInstaller and all dependencies are installed at their pinned versions by `build.bat`
+- **`RADIOSIM_PYTHON`** (**required**): the `python.exe` of the virtual environment the tests run in. Dependencies are copied from this Python's site-packages, so what ships is what was verified. → [Development Environment](#development-environment)
+- **`RADIOSIM_EMBED_ZIP`** (**required**): python.org's embeddable zip, for the same version as `RADIOSIM_PYTHON` (the extension modules in `vendor\` are built for that version, so a different version stops the build)
+- ⚠️ **The Python used for the build needs Tk 9**, because the icon is drawn from `webui/static/brand.svg` with Tk 9's SVG loading (the Windows build of Python 3.15 ships Tk 9.0; check it with `python -c "import tkinter; print(tkinter.TkVersion)"`). The distribution itself does not use Tk
 
-> **Why declare it instead of discovering it**: `build.bat` used to build with whatever Python was on `PATH`, so the binary shipped with transitive dependencies that differed from the ones pytest had verified — including the TLS CA bundle. Any search-or-fallback logic would make that mismatch succeed silently, so a missing `RADIOSIM_PYTHON` **stops the build**.
+> **Why declare it instead of discovering it**: `build.bat` used to build with whatever Python was on `PATH`, so the binary shipped with transitive dependencies that differed from the ones pytest had verified — including the TLS CA bundle. Any search-or-fallback logic would make that mismatch succeed silently, so a missing declaration **stops the build**.
 
 ### Build Steps
 
@@ -115,42 +115,45 @@ Uses PyInstaller to produce a self-contained EXE folder (onedir mode) that requi
 build.bat
 ```
 
-`build.bat` performs the following steps automatically:
+`buildtools/build_link.py` goes through these steps in order and aborts the build at the first mismatch:
 
 | Step | Action |
 | --- | --- |
-| 1 | Validate `RADIOSIM_PYTHON` (abort if unset or missing) and report the Python version |
-| 2 | Install pinned dependencies (`pip install -r requirements.txt -r requirements-dev.txt` — PyInstaller is pinned there too) |
-| 3 | Remove old build artifacts (`build/RadioSimPro/` and `dist/RadioSimPro/` under the output root) |
-| 4 | Run `python -m PyInstaller radiosim.spec --noconfirm --distpath … --workpath …` |
-| 5 | **Check the bundle for missing imports** (buildtools/check_bundle_imports.py (removed in 4.0)). **Aborts the build** if the exe excludes a module that bundled code imports unconditionally |
-| 6 | Create `terrain_cache/` and `results/` in the output folder |
+| 1 | Confirm it is running under `RADIOSIM_PYTHON`, and check that `RADIOSIM_EMBED_ZIP` exists and has the right version |
+| 2 | Extract the embeddable Python, and limit `python3XX._pth` to the standard library, `vendor` and `app` |
+| 3 | Copy the runtime dependencies into `vendor\`. Abort if a version differs from the pin in `requirements.txt`, or if the dependencies of a dependency are not closed within what is copied |
+| 4 | Copy `core/`, `report/` and `webui/` into `app\` and compile `.pyc`; add the bundled documents (the `.md` files and images reachable from the Japanese and English manuals), `LICENSE`, `icon.ico` and `version.txt` |
+| 5 | **Check for missing modules**: import every product module with the built tree's `python.exe`, and abort if any fails (the development machine has everything installed, so running from source never shows what is missing) |
+| 6 | Add `portable.txt` and the launcher `RadioSimLink.cmd`, and pack the zip |
 
 `build.bat clean` removes regenerable artifacts, caches, logs, and distribution zips.
 
 - **Kept**: the virtual environment and the **repo-root** `terrain_cache/`, `results/`, `basemap_pale/` (data from source runs — expensive to refetch, or user-owned)
-- **Removed**: everything under the build output root. ⚠️ **That includes the `terrain_cache/` and `results/` the built exe created next to itself** — they are part of the build output and a normal build recreates them anyway.
+- **Removed**: **everything** under the build output. ⚠️ **That includes the `terrain_cache/` and `results/` the app created next to itself when started from the distribution folder** — they are part of the build output and a normal build recreates them anyway.
 
 ### Output
 
-`dist/` next to the sources.
+`dist/` at the repository root.
 
 ```
 dist/
-└── RadioSimPro/
-    ├── RadioSimPro.exe   ← launch this
-    ├── _internal/        ← Python runtime and dependencies
-    ├── terrain_cache/
-    └── results/
+├── RadioSimLink/                  ← the distribution folder
+│   ├── python.exe / pythonw.exe   ← embeddable Python (standard library in a zip)
+│   ├── vendor/                    ← runtime dependencies
+│   ├── app/                       ← core / report / webui
+│   ├── docs/                      ← bundled documents
+│   └── LICENSE / icon.ico / version.txt
+├── RadioSimLink-<version>.zip     ← the portable build
+└── RadioSimLink-Setup-<version>.exe  ← with build.bat installer
 ```
+
+The version is read at run time from `core/version.py`'s `APP_VERSION` (do not copy it into this guide — a copy goes stale on the day the version is raised).
 
 ### Creating a Distribution Package
 
-`build.bat` (no arguments) **builds the ZIP itself**: compressing the `RadioSimPro/` output folder into `dist\RadioSimPro-<version>.zip` is now part of what `[SUCCESS]` means. The version comes from `core/version.py`'s `APP_VERSION` at build time (do not copy it into this document — a copy goes stale on the next release). There is no longer a separate `Compress-Archive` step for a human to run.
+`build.bat` (no arguments, or `build.bat link`) **builds the ZIP itself**: adding `portable.txt` and `RadioSimLink.cmd` to the distribution folder and packing it into `dist\RadioSimLink-<version>.zip` is part of the build. Users who extract the zip start the app from `RadioSimLink.cmd`.
 
-> ⚠️ **The ZIP name carries the version** — the published assets are named `RadioSimPro-<version>.zip` (for example `RadioSimPro-2.7.zip`). `build.bat` names it this way automatically.
-
-By default, `build.bat` produces the **portable ZIP layout** (a `portable.txt` marker bundled inside `RadioSimPro/`). `core.config.is_portable()` branches on whether this file exists (its absence means "the install location may be read-only", so the app writes to OS-standard locations such as `%APPDATA%` instead).
+`core.config.is_portable()` branches on whether `portable.txt` exists (its absence means "the install location may be read-only", so the app writes to OS-standard locations such as `%APPDATA%` instead).
 
 ### Building the Installer (Inno Setup)
 
@@ -158,32 +161,26 @@ By default, `build.bat` produces the **portable ZIP layout** (a `portable.txt` m
 build.bat installer
 ```
 
-Runs the same build as `build.bat`, then wraps it with installer/radiosim.iss (removed in 4.0) (Inno Setup) to produce `RadioSimPro-Setup-<version>.exe`. **`portable.txt` is not bundled** — the install is always treated as non-portable (settings, cache, logs, and results go to OS-standard locations).
+Builds the same distribution folder, then produces `RadioSimLink-Setup-<version>.exe` with `installer/link.iss` (Inno Setup) (`build.bat link-installer` does the same). **`portable.txt` is not bundled** — the install is always treated as non-portable (settings, cache, logs, and results go to OS-standard locations).
 
 - **Prerequisites**: [Inno Setup 7](https://jrsoftware.org/isinfo.php) installed (`winget install JRSoftware.InnoSetup.7`) and the environment variable `RADIOSIM_ISCC` pointing at the full path to `ISCC.exe`. A per-user install puts it in `%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe`, a machine-wide one in `C:\Program Files (x86)\Inno Setup 7\ISCC.exe` (set it with `setx RADIOSIM_ISCC "C:\...\ISCC.exe"` in cmd, or `setx RADIOSIM_ISCC "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"` in PowerShell — **`%LOCALAPPDATA%` is not expanded by PowerShell**, so pasting it there stores the literal string). The build aborts if it is unset or points at a nonexistent file.
-  - **Released installers are built with Inno Setup 7** — `build.bat` checks the compiler's major version and stops if it is not 7. `radiosim.iss` still compiles unchanged under 6.7.x (it uses none of the features 7 removed), so the check exists to stop a 6-built installer from shipping unnoticed (upstream development moved to 7 after 6.7.3, 2026-05-26). Declare `RADIOSIM_ISCC_ANY_VERSION=1` to build with another major version on purpose.
-- **Default install location**: `{autopf}` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
-- **Output**: same `dist/` folder as the regular build (`RadioSimPro-Setup-<version>.exe`).
-- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the same single call point signs the installer as well as the exe itself (left unsigned otherwise). Released builds are currently unsigned. ⚠️ **An unsigned build actually being blocked was confirmed on 2026-09-07** — Windows 11 Smart App Control (⚠️ **not limited to clean installs**; offered in certain regions only) refuses to run the setup body that the installer extracts into `%TEMP%` (see the troubleshooting table above). **Obtaining a certificate was declined (2026-09-11)**: a self-signed certificate does not help (Smart App Control requires a trusted signer or established reputation), and while free OV-class services (SignPath Foundation) and EV certificates both appear to clear the gate on paper, the ongoing external dependency was judged not worth it for a solo developer. The portable ZIP is the permanent guidance. ⚠️ **The ZIP is not a guaranteed way out, though**: the extracted `RadioSimPro.exe` goes through the same check, and on 2026-10-24 Smart App Control on the development machine blocked it as well (the guidance in that case is to ask the IT administrator — same section of the user manual).
+  - **Released installers are built with Inno Setup 7** — the build checks the compiler's version and stops if it is not 7. The gate exists to stop a 6-built installer from shipping unnoticed (upstream development moved to 7 after 6.7.3, 2026-05-26). Declare `RADIOSIM_ISCC_ANY_VERSION=1` to build with another version on purpose.
+- **Default install location**: `{autopf}\RadioSim Link` (`PrivilegesRequired=lowest` — falls back to the user's own profile without admin rights, or lets an admin choose).
+- **Output**: the same `dist/` as the distribution folder (`RadioSimLink-Setup-<version>.exe`).
+- **Signing**: if `RADIOSIM_SIGNTOOL` is defined, the installer is signed (left unsigned otherwise). Released builds are currently unsigned. ⚠️ **An unsigned build actually being blocked was confirmed on 2026-09-07** — Windows 11 Smart App Control (⚠️ **not limited to clean installs**; offered in certain regions only) refuses to run the setup body that the installer extracts into `%TEMP%` (see the troubleshooting table below). **Obtaining a certificate was declined (2026-09-11)**: a self-signed certificate does not help (Smart App Control requires a trusted signer or established reputation), and while free OV-class services (SignPath Foundation) and EV certificates both appear to clear the gate on paper, adding an external dependency to every release was judged not worth it for a solo developer. The portable ZIP is the permanent guidance. In 3.x the exe of our own extracted from the ZIP was blocked as well (confirmed on the development machine on 2026-10-24). From Link 1.0 the app starts with the signed `pythonw.exe`; if it is still blocked, users are told to ask their organization's administrator (same section of the user manual).
 
-### Key `radiosim.spec` Settings
+### Product name and outside packages
 
-| Setting | Details |
-| --- | --- |
-| `icon.png` → `icon.ico` | Auto-converted at build time; skipped if `icon.png` is absent |
-| EXE file properties | Auto-generated from `APP_VERSION` / `COPYRIGHT` in `version.py` |
-| `console=False` | No console window shown to the user |
-| UPX compression | Enabled only when UPX is installed |
-| `docs/manual_*.md` / `docs/developer_*.md` / `docs/glossary.md` / `docs/images/` / `logo.png` / `LICENSE` | Bundled into the binary; accessed via `sys._MEIPASS`. Documents reachable from the manual are bundled too — otherwise those links break only in the packaged build |
+A private layer on top borrows this tool to build its own distribution. `--product` changes the distribution's name (folder, zip, installer, the launcher `.cmd`, Start menu), and `--license` adds its license next to `LICENSE`. `--package name=folder` and `--entry name` add a package from outside this repository to `app\` and point the launcher at it (the public code does not know the names of the layers on top). ⛔ The installer's AppId and install location do not change, so that it replaces Lite in the same place and keeps its settings and cache.
 
 ### Troubleshooting
 
 | Symptom | Fix |
 | --- | --- |
-| `ModuleNotFoundError` on launch | Remove the module from `excludes`, or add it to `hiddenimports` in `radiosim.spec`, then rebuild |
-| Error messages not visible | Change `console=False` to `console=True` in `radiosim.spec` and rebuild |
-| SmartScreen warning on target machine | Expected for unsigned executables — click "More info" → "Run anyway" |
-| Installer aborts with "Error 4551: This file is blocked by application control policy" on target machine | **Not SmartScreen — an outright execution block, with no way to continue.** Windows 11 Smart App Control (⚠️ **not limited to clean installs** — there are several ways it ends up on, and we deliberately do not enumerate them; all that matters here is whether it is on right now on that machine) or an organization's application control policy is rejecting the unsigned `setup.tmp` that Inno Setup extracts into `%TEMP%`. **It is not a Mark-of-the-Web issue, so "Unblock" does nothing.** Point the user at the portable ZIP — this is the permanent guidance (code signing was evaluated and declined). ⚠️ The extracted exe goes through the same check, so it is not guaranteed to run either (if it is blocked too, the user should ask their IT administrator). See "When Windows blocks the installer" in `docs/manual_en.md` |
+| `ModuleNotFoundError` on launch | The build's missing-module check does not read imports inside functions. Add the missing distribution to the dependency list in `buildtools/build_link.py` (or `--runtime-dist` for an outside package) and rebuild |
+| Error messages not visible | Start `python.exe -m webui` from a command prompt in the distribution folder and the exception shows there (`pythonw.exe` has no console) |
+| SmartScreen warning on target machine | Expected for an unsigned installer — click "More info" → "Run anyway" |
+| Installer aborts with "Error 4551: This file is blocked by application control policy" on target machine | **Not SmartScreen — an outright execution block, with no way to continue.** Windows 11 Smart App Control (⚠️ **not limited to clean installs** — there are several ways it ends up on, and we deliberately do not enumerate them; all that matters here is whether it is on right now on that machine) or an organization's application control policy is rejecting the unsigned `setup.tmp` that Inno Setup extracts into `%TEMP%`. **It is not a Mark-of-the-Web issue, so "Unblock" does nothing.** Point the user at the portable ZIP — this is the permanent guidance (code signing was evaluated and declined). If that is blocked too, the user should ask their organization's administrator. See "When Windows blocks the installer" in `docs/manual_en.md` |
 | Checking whether this is happening on a given machine | `Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational` records the blocked file and policy ID under EventID `3033` / `3077`. Smart App Control state lives in `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy` under `VerifiedAndReputablePolicyState` (`0`=off / `1`=on and enforcing / `2`=evaluation) |
 
 ---
