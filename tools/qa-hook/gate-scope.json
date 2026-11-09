@@ -2,7 +2,7 @@
   "_comment": "gate.mjs（Stop フックの毎ターン pytest）と buildtools/dev_check.py が共に読む、変更ファイル→追加テストの対応表（I-154）。片方だけ書き換えて対応が腐るのを防ぐため、単一の出所をここに置く。左＝変更パスの前方一致（リポジトリ相対・`/` 区切り・git diff --name-only の形式）、右＝足すテスト。減らすことはしない。⚠️ **docs/ の行は『docs/ のパスを名指ししているテストは全部走らせる』という機械的な規則で決めている**（判断を入れない＝表が薄くなるのを防ぐ）ので、`test_dev_check.py` / `test_commit_gate_scope.py` のように*表そのものを検査していて docs の中身は読まない*ものも入る。見張りは tests/test_commit_gate_scope.py の `TestDocsIslandCoversEveryTestThatReadsDocs`。",
   "always_tests": "tests/test_repo_hygiene.py",
   "extra_gates": [
-    [["docs/", "README", "CHANGELOG.md"], [
+    [["docs/", "README", "CHANGELOG"], [
       "tests/test_docs_consistency.py",
       "tests/test_report.py",
       "tests/test_dev_check.py",
@@ -41,7 +41,7 @@
       "prefixes": [
         "docs/",
         "README.md",
-        "CHANGELOG.md"
+        "CHANGELOG"
       ],
       "tests": [
         "tests/test_build_link.py",

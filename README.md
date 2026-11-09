@@ -125,6 +125,7 @@ MIT ライセンスの無料ソフトです。商用利用も可能です（[LIC
 | 使い方（Windows バイナリ版の利用者向け） | [docs/manual_ja.md](docs/manual_ja.md) |
 | 開発者向け（構成・計算モデル詳細・アーキテクチャ） | [docs/developer_ja.md](docs/developer_ja.md) |
 | 変更履歴 | [CHANGELOG.md](CHANGELOG.md) |
+| 変更履歴（RadioSim Pro 3.9.1 まで） | [CHANGELOG_3x.md](CHANGELOG_3x.md) |
 | English — user manual | [docs/manual_en.md](docs/manual_en.md) |
 | English — for developers | [docs/developer_en.md](docs/developer_en.md) |
 
