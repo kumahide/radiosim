@@ -1,12 +1,11 @@
-# RadioSim Pro 3.9.1
+# RadioSim Link 1.0
 
 ![RadioSim Pro](../logo.png)
 
-> **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Open Documentation in the app's Settings panel shows.
+> **Intended reader**: users who run **RadioSim Link from a distribution (installer or ZIP)**. This is also the document that Open Documentation in the app's Settings panel shows.
 > To run it from source or work on the code, see [developer_en.md](developer_en.md).
 
-> 📣 **Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link".** The changes planned after 3.x (the `REVIEW` verdict and the rest of this manual's "Advance notice") arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only.
-> - **Project files (`.rsproj`) saved by 3.x open in Link 1.0** (→ [Project Files (.rsproj)](#project-files-rsproj)).
+> 📣 **RadioSim Link is the successor to RadioSim Pro 3.x.** Project files (`.rsproj`) saved by 3.x open in Link 1.0. When you open one, it is calculated the same way as in 3.9.x (→ [Project Files (.rsproj)](#project-files-rsproj)).
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -20,7 +19,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 3. [Installation &amp; Launch](#installation--launch)
 4. [The Settings panel](#the-settings-panel)
 5. [Map](#map)
-6. [Usage — Single Mode](#usage--single-mode)
+6. [Usage — Single Link](#usage--single-link)
 7. [Usage — Multiple Paths](#usage--multiple-paths)
 8. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
 9. [Usage — Relay Path](#usage--relay-path)
@@ -28,7 +27,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 11. [Input Parameters](#input-parameters)
 12. [Calculation Models](#calculation-models)
 13. [DEM Retrieval Logic](#dem-retrieval-logic)
-14. [Save Package](#save-package)
+14. [Saving — where and what](#saving--where-and-what)
 15. [Uninstall](#uninstall)
 16. [Known Limitations](#known-limitations)
 17. [Reporting Bugs](#reporting-bugs)
@@ -38,23 +37,25 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 
 ## Overview
 
-RadioSim Pro is a tool designed specifically for **pre-survey screening** in radio link design.
+RadioSim Link is a tool designed specifically for **pre-survey screening** in radio link design.
 Enter the coordinates, antenna heights, and radio settings for the TX (transmitter) and RX (receiver) stations, and the tool automatically retrieves GSI elevation data, draws a terrain cross-section, and determines link budget viability within seconds.
 
 ### Key Features
 
 #### Workflows — four, by what you want to find out
 
+Switch between them with the tabs at the top of the right column.
+
 | Workflow | What it answers |
 | --- | --- |
-| **Single Mode** | Does this one link close? Watch the terrain profile while you move antenna heights and rain rate on the spot |
+| **Single Link** | Does this one link close? Change an input and the verdict and the profile change on the spot |
 | **Multiple Paths** | Many links at once, with CSV in and out |
-| **Condition Explorer (compare / sweep)** | **Digs into one path.** Line up results under different conditions (base + up to 5), or sweep one axis over N points to see where the link starts to close — chart plus table. Terrain is fetched once |
+| **Condition Explorer (compare / sweep)** | **Digs into one path.** Line up results under different conditions in a table (base + up to 5), or sweep one axis over N points and see in the table where the link starts to close. Terrain is fetched once |
 | **Relay Path** | Bridges a link that will not close directly. Up to 7 relay points, a link budget per section, and **the overall verdict decided by the tightest section** (regenerative relay — each relay receives and transmits again) |
 
 #### Map
 
-- **Map** (4 modes): pick coordinates by clicking the map / continuously add paths from the map into Multiple Paths / place waypoints for a relay route / visualize, prefetch, and delete DEM cache
+- **Map**: one, at the top of the right column. Drag the endpoint pins (T and R) to enter coordinates, switch the background map at its top right, and hover over the profile to see that spot on the map
 
 #### Calculation models
 
@@ -65,25 +66,24 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 
-#### Output and reports
+#### Output
 
-- **A4 reports (v2)**: per-path / summary rendered in a print-ready A4 portrait frame (**the per-path report always fits one page**; the summary ledger flows onto a second page once it has enough rows). Export to PDF straight from the browser with Ctrl+P (no extra software). Self-identifying header/footer carrying the project name, timestamp, and ID
-- **Antenna initial aim (AZ/EL)**: true azimuth and elevation to point at the far end, shown for both ends in per-path reports (initial values; do the final tuning on-site by maximizing RSSI)
-- **Automatic path map** in HTML reports (TX/RX, path, and distance overlaid on a map)
-- **All-paths overview map** in the summary report (color-coded by verdict)
-- **Print the whole batch at once**: `report_all.html` concatenates the summary and every path into one document — a single Ctrl+P produces the PDF for all pages
-- Save results as a package (PNG / CSV / JSON / HTML / KML)
+- Results CSV of the workspaces (Multiple Paths, Condition Explorer, Relay Path) and KML (Single Link, Multiple Paths)
+- Images of the map and the profile (PNG)
+- No results folder is created. Each artifact is saved, one at a time, where you choose (→ [Saving — where and what](#saving--where-and-what))
+- Link has no A4 reports (print-ready reports are a RadioSim Pro feature)
 
 #### Reusing your input
 
-- **Project files (`.rsproj`)**: bundle coordinates, all parameters, project info, batch rows, explorer conditions and the relay path into **one file** and pick the work up later
-- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Multiple Paths reports
+- **Project files (`.rsproj`)**: bundle coordinates, all parameters, Multiple Paths rows, Condition Explorer conditions and the relay path into **one file** and pick the work up later
+- **Project info (name + free note)**: there are no fields for it on screen. The project info of an `.rsproj` you open is carried over when you save it again
 
 #### Interface
 
-- Real-time antenna height and rain rate sliders in the graph window
+- The verdict band (the verdict word, details and the range over varied assumptions) and the Link Budget table in the left column
+- The profile. Hover over it to see that spot on the map
 - Switchable coordinate notation (Decimal Degrees / Degrees Minutes Seconds)
-- Japanese / English UI — switchable from the Settings panel
+- Japanese / English UI
 - System-aware dark mode (Light / Dark / System auto)
 
 ### Accuracy Statement
@@ -106,30 +106,29 @@ This tool is intended solely for screening purposes — determining whether a fi
 
 ## Installation & Launch
 
-There are two distribution forms. Both are Windows binaries with identical features.
+There are two distribution forms, with identical features.
 
 ### Installer (recommended)
 
-1. Download `RadioSimPro-Setup-<version>.exe` from [Releases](https://github.com/kumahide/radiosim/releases) and run it.
+1. Download `RadioSimLink-Setup-<version>.exe` from [Releases](https://github.com/kumahide/radiosim/releases) and run it.
 2. Administrator rights are not required (by default it installs into your own user profile). Follow the prompts to finish.
-3. Launch `RadioSimPro` from the Start menu.
+3. Launch `RadioSim Link` from the Start menu.
 
-The installer build stores **settings, cache, logs, and results in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine. [Adding your own UI language](#adding-your-own-ui-language) uses one of these same locations (the "added UI language files" row below), so it carries the same guarantee.
+The installer build stores **settings, cache and logs in OS-standard locations** (table below). It never writes anything into the install folder beyond the files placed there at install time (nothing is added while the app runs), so installing under a write-protected location (e.g. under `Program Files`) works fine. [Adding your own UI language](#adding-your-own-ui-language) uses one of these same locations (the "added UI language files" row below), so it carries the same guarantee.
 
 | Contents                                        | Location                     |
 | ------------------------------------------------ | ----------------------------- |
-| UI settings and last-used input values (`radiosim_conf.json`) | `%APPDATA%\RadioSim\`        |
-| DEM tile disk cache, logs                        | `%LOCALAPPDATA%\RadioSim\`   |
-| Saved-package output (`results/`)                | `Documents\RadioSim\` (not a hidden folder, since you open it yourself) |
-| Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\lang\` |
-
-> If you are upgrading from the old layout (`radiosim_conf.json` / `results/` next to the exe), those are **copied** to the new locations on first launch (the old files are left in place; the DEM cache is not migrated since it can be regenerated). Once you've confirmed the new location has everything you need, you may delete the old copies manually.
+| UI settings (`radiosim_conf.json`) and the user-extension source files | `%APPDATA%\RadioSim\Link\`        |
+| Logs and working data of the window              | `%LOCALAPPDATA%\RadioSim\Link\`   |
+| Terrain and background map disk cache            | `%LOCALAPPDATA%\RadioSim\terrain_cache\` (shared with RadioSim Pro 3.9) |
+| Results folder (`results/`)                      | `Documents\RadioSim\Link\`. Link does not save there (each artifact is written where you choose when saving). Open Results Folder in the Settings panel opens it |
+| Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\Link\lang\` |
 
 ### Installing a different version over an existing one
 
-The installer build is **one per PC**. Running another version's installer on a PC that already has RadioSim **replaces** the contents of the same folder as before (no folder-selection page is shown). Settings, the terrain cache and saved results live in the locations in the table above, so they carry over as they are.
+The installer build is **one per PC**. Running another version's installer on a PC that already has it **replaces** the contents of the same folder as before (no folder-selection page is shown). Settings and the terrain cache live in the locations in the table above, so they carry over as they are.
 
-From 3.7 on, the installer compares against the installed version and tells you:
+The installer compares against the installed version and tells you (the version numbers in the examples are from 3.x):
 
 | Case | What you see |
 | --- | --- |
@@ -141,10 +140,8 @@ Going back to an older version means:
 
 - Project files saved with the newer version may not open in the older one, or may lose the items the newer version added.
 - Settings added in the newer version go back to their defaults once the older version saves its settings (installing the newer version again does not bring the old values back).
-- The terrain cache and saved results can be used as they are.
+- The terrain cache can be used as it is.
 
-> ⚠️ The confirmation comes from **the installer you are about to run**. Installers from 3.6 and earlier do not compare versions, so running one of them on a PC with 3.7 or later replaces it without asking.
->
 > For an unattended install (run with `/VERYSILENT` or similar), replacing with an older version is cancelled without a prompt (exit code 1). To go ahead anyway, add `/ALLOWDOWNGRADE`.
 
 To use several versions side by side, use the [Portable build (ZIP)](#portable-build-zip) instead of the installer.
@@ -178,20 +175,20 @@ This is **not SmartScreen — it is Windows refusing to run the file at all**. U
 
 ### Portable build (ZIP)
 
-1. Extract the distribution ZIP file (`RadioSimPro-<version>.zip`) to any folder.
+1. Extract the distribution ZIP file (`RadioSimLink-<version>.zip`) to any folder.
 2. Place the extracted folder wherever you like. The app can be moved freely.
 
-> **Note**: Do not modify the folder structure. `RadioSimPro.exe` cannot run as a standalone file.
+> **Note**: Do not modify the folder structure. Launch it with the bundled `RadioSimLink.cmd` (the Python inside runs the app, so files taken out of the folder will not run).
 
-The portable build ships with a `portable.txt` marker next to the exe, so settings, cache, logs, and results are all created **inside that same folder** (`terrain_cache/`, `results/`, `radiosim_conf.json`). This suits carrying the app on a USB drive.
+The portable build ships with a `portable.txt` marker, so settings, cache and logs are all created **inside the extracted folder** (`terrain_cache/`, `radiosim_conf.json` and so on). This suits carrying the app on a USB drive.
 
-**To use several versions side by side** (to compare results between versions, or to try a new version while your work stays on the current one), **extract each version's ZIP into its own folder**. Settings, cache, logs and results are then separate per folder, so the versions do not interfere with each other. The same holds when you run a portable copy alongside the installer build.
+**To use several versions side by side** (to compare results between versions, or to try a new version while your work stays on the current one), **extract each version's ZIP into its own folder**. Settings, cache and logs are then separate per folder, so the versions do not interfere with each other. The same holds when you run a portable copy alongside the installer build.
 
-> The installer build cannot hold several versions at once. Even with separate install folders, every version would share the same locations for settings, cache and saved results (the table above): an older version would read settings written by a newer one, and uninstalling would remove data they all share.
+> The installer build cannot hold several versions at once. Even with separate install folders, every version would share the same locations for settings and cache (the table above): an older version would read settings written by a newer one, and uninstalling would remove data they all share.
 
 ### Launch
 
-Launch the installer build from the Start menu, or double-click `RadioSimPro.exe` for the portable build.
+Launch the installer build from `RadioSim Link` in the Start menu, or double-click `RadioSimLink.cmd` for the portable build. The screen opens in Microsoft Edge's app mode.
 
 ---
 
@@ -221,7 +218,7 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 - **Each change is saved as soon as you make it** (to `radiosim_conf.json`, so it persists across restarts). **OK** only closes the panel.
 - The result of a button ("Saved …" and the like) and the reason for a failure appear in one line at the bottom of the panel.
 - **The basemap** (Pale map / Aerial photo, plus your own) is not in the panel but in the **box at the top right of the map**. A change is saved at once and also changes the background of the map PNG you save → [Adding a Background Map Source](#adding-a-background-map-source-user-extension).
-- **Opening and saving a project** is not in the panel but in the tools on the top bar (**Open Project...** / **Save Project As...**) → [Project Files (.rsproj)](#project-files-rsproj).
+- **Opening and saving a project** is not in the panel but at the top of the right column (to the right of the workspace switch: **Open Project...** / **Save Project As...**) → [Project Files (.rsproj)](#project-files-rsproj).
 
 ### Settings
 
@@ -265,7 +262,7 @@ When there is something to tell you at startup, a **bar appears above the map** 
 
 ### Adding your own UI language
 
-Besides Japanese and English you can **add a translation of your own**. Where you put it depends on which build you have — the **installer build** uses `%APPDATA%\RadioSim\lang`, the **portable build** uses a `lang` folder next to the app. Put `<language-code>.json` there and restart — the language then appears under **Language** in the Settings panel.
+Besides Japanese and English you can **add a translation of your own**. Where you put it depends on which build you have — the **installer build** uses `%APPDATA%\RadioSim\Link\lang`, the **portable build** uses a `lang` folder next to the app. Put `<language-code>.json` there and restart — the language then appears under **Language** in the Settings panel.
 
 ```json
 {
@@ -279,7 +276,7 @@ Besides Japanese and English you can **add a translation of your own**. Where yo
 - **You do not have to translate everything.** Only the keys you write are replaced; **the rest stay in English**. New keys added in later versions will not break your file.
 - You can get the key list from **Export Translation Template...** in the Settings panel, which writes `_template.json` (every key, with its English value). No save dialog appears: **it writes straight into the location above and opens that folder** (an existing file is not overwritten; the new one gets a name like `_template (2).json`). Edit the values and save it as `<language code>.json` in the same folder to finish. The same keys also live in the source file `core/i18n.py` (<https://github.com/kumahide/radiosim>), but ⚠️ **that file is not part of the binary (exe) distribution** — use the template export instead to check key names.
 - **Keep the placeholders — `{n}`, `{dir}` and friends — exactly as they appear in the English text.** A key whose placeholders differ **is not applied** (it stays English), and at startup you are told what was skipped **grouped by reason** (how many per reason, with up to three examples). ⚠️ **Nothing appears when everything was applied** — silence means "no problems", not "the file was ignored" (whether it loaded is visible under **Language** in the Settings panel). ⚠️ Applying such a translation would crash the app the moment that screen opens; **skipping it is what prevents that**. ⚠️ **The format spec inside a placeholder (the `.2f` in `{n:.2f}`) must match English too** — only the **position** in the sentence is yours to move.
-- **Words that appear in artifacts are out of scope.** This covers reports (HTML) and KML, and also **the wording inside the terrain profile and comparison graphs** (axis names, legends, titles, the way units are bracketed) and **the environment types** (Urban / Suburban / Rural / LoS). Artifact wording is a contract with whatever reads the files, so it does not move for the screen's convenience. ⚠️ **These also show on screen with the same wording**: a figure becomes an artifact as soon as you save it, and the environment wording is written into reports and profiles, so the on-screen side cannot be translated on its own.
+- **Words that appear in artifacts are out of scope.** This covers KML and CSV, and also **the wording inside the terrain profile and comparison graphs** (axis names, legends, titles, the way units are bracketed) and **the environment types** (Urban / Suburban / Rural / LoS). Artifact wording is a contract with whatever reads the files, so it does not move for the screen's convenience. ⚠️ **These also show on screen with the same wording**: a figure becomes an artifact as soon as you save it, and the environment wording is written into profiles, so the on-screen side cannot be translated on its own.
 - The bundled `ja` / `en` cannot be overridden (a `ja.json` is ignored).
 
 > ⚠️ **Layout is not guaranteed for languages you add.** Window sizes are verified against the length of the Japanese and English wording; longer wording may be clipped. Treat it as an **unofficial translation**.
@@ -302,169 +299,73 @@ If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), ente
 
 ## Map
 
-![Map view with the transmit point, the receive point and the path between them; clicking the map picks up coordinates](images/shot_map.png)
+![Map view with the transmit point, the receive point and the path between them](images/shot_map.png)
 
-The **"Map" button** at the bottom of the launcher opens an auxiliary window over the GSI pale map. The map is a single app-wide instance (owned by the launcher), and a **mode selector** at the top switches between four modes (Pick Coordinates / Continuous Add / Waypoints / Cache). The core simulation works without ever opening the map; the map is a convenience layer.
+There is exactly one map, at the top of the right column, shared by all four workspaces. No separate window opens. The calculation works without the map; the map is a convenience for entering input and looking at results.
 
-> On opening, it auto-zooms and centers to fit the path length of the currently set TX/RX.
+- **Single Link**: pins (T and R) mark the transmit and receive points, joined by a line. The first time both points are set, the map zooms to fit the whole path. **Dragging a pin enters its coordinates.** While you drag, only the coordinate field in the left column and the line move; **it computes once when you let go** (terrain is fetched again only once an endpoint is settled). Editing a coordinate field moves the pin there
+- **Multiple Paths, Condition Explorer and Relay Path**: each item in the workspace's table is drawn as a line from its transmit point to its receive point, colored by its verdict. The item selected in the table is drawn thicker, and clicking a line on the map selects that row in the table. Condition Explorer draws a single line, since every item shares the same path. Once every item is in and the set of coordinates has changed, the map zooms to fit them all
+- **Linked with the profile**: hovering over the profile marks that spot on the map. The other way round, hovering over a line on the map (the Single Link line, or the line of the item selected in the workspace) shows that spot on the profile
+- **Basemap**: switched in the box at the top right (pale map, aerial photo, and any basemap added through a declaration file). Your choice is used again at the next start, and the saved map image uses the same background. Attribution that must be shown appears at the bottom right of the map
 
-### Pick Coordinates mode (default)
-
-Click the map to fill **whichever site is still empty** (TX first, then RX); the picked points are written back to the launcher's TX / RX coordinate fields (the numeric fields are always the source of truth). Once both are set, a plain click no longer writes anything — select the marker you want to move (see below) so that re-placing one site never wipes the other.
-
-- Shows cyan endpoint markers (TX filled / RX hollow), a path line, and a distance label at the midpoint.
-- Dragging pans the map (coordinates update only on a committed click).
-- **Clearing or editing the launcher's coordinate fields updates the map straight away** (the numeric fields are the source of truth). Empty a field and a plain click places that site again.
-- **To place a site somewhere far away, right-click the map** ("Place TX here" / "Place RX here"). It works even when you have panned so far that the markers are off-screen, because you name the site instead of picking its marker.
-
-### Continuous Add mode
-
-A mode for stacking paths into Multiple Paths straight from the map. Selecting the **Append to Multiple Paths** mode opens (and raises) the Multiple Paths window; every time you place a **TX → RX** pair on the map, one row is appended to the batch and the map auto-resets for the next entry (no need to press "+ Add row" in the batch).
-
-- Each row's RF settings (frequency, antenna gains, antenna heights) are **frozen from the launcher values at the moment of adding**. The workflow is to fix your conditions in the launcher first, then stack paths.
-- All paths in the batch are drawn on the map, **drawn exactly as in Pick Coordinates mode**: a filled marker for TX, a hollow one for RX, the path line, and a distance label at its midpoint. The label carries the path ID, so you can tell which row of the batch each path belongs to. ⚠️ **Where TX and RX sit at nearly the same place the two markers overlap and cannot be told apart** — use the Relay Path window for those.
-- Row changes on the batch side (delete, clear all, CSV import, add, duplicate, committing a coordinate-cell edit) are reflected on the map in real time.
-- Closing the Multiple Paths window returns the map to Pick Coordinates mode.
-
-### Waypoints mode
-
-A mode for placing the points of a relay route from the map. Open the map from the Relay Path window and select the **Add waypoints** mode; each click places **one point** (this is not the alternating TX → RX pick of Pick Coordinates mode). Points whose coordinates are blank are filled first, top to bottom; once none is blank, the click inserts a relay **before the receiver** (the same place as "Add point" in the waypoint table).
-
-- The map draws the polyline through the points and a **horizontal-distance badge for every hop**.
-- ⚠️ **That horizontal distance appears on the map only.** The hop table has no distance column, and the report carries the **slant distance** (a different quantity).
-- The map is a mirror of the Relay Path window. Adding and removing points is driven from that window, and the map follows it.
-
-### Moving a point you have already placed
-
-In all three input modes you can adjust a point on the map: **click its marker to select it** — it gets an amber ring and the status bar names it ("waypoint R1 selected", "RX of path p1 selected") — then **click the map where it should go**. The selection is used up by that one move, and **Esc** cancels it.
-
-- The rule is one line: **a plain click adds a point, a click after a selection moves the selected one.**
-- In Pick Coordinates and Append modes you can also **right-click the map** ("Place TX here" / "Place RX here") — the way in when the marker is off-screen.
-- Dragging is still the map pan, on purpose: if dragging moved points, grabbing the map to scroll would silently rewrite your input.
-- The window remains the source of truth. If the point you selected has been deleted or reordered in the window meanwhile, the map refuses the move and asks you to select again — it never moves a different point instead.
-- ⚠️ **Elevation data is a grid (5–10 m for the built-in GSI DEM; a DEM source you add may be coarser). Where the calculation places its samples on that grid is set separately, by "Terrain Resolution" under Environment ("Low" samples every 20 m).** If you move a point less than the finest mesh (5 m), the status bar says so: the marker moves but the calculation can sample exactly the same ground and return the same result (on "Low" this can happen with larger moves too).
-
-### Cache Management mode
-
-Review the DEM tile cache and prefetch or delete tiles for any area — intended for downloading what you need for offline use before heading to a site with poor connectivity. Normal simulations already cache the tiles around each path automatically, so **you do not need to open this for everyday use**.
-
-**Coverage display (automatic)** — As you pan or zoom, cached areas are continuously shaded. The color reflects the highest accuracy already cached.
-
-| Color  | Accuracy                        |
-| ------ | ------------------------------- |
-| Green  | 5 m mesh (from airborne LiDAR)  |
-| Yellow | 5 m mesh (from photogrammetry)  |
-| Cyan   | 10 m mesh                       |
-
-Unshaded areas are not yet cached.
-
-If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM source"** dropdown appears next to the mode selector. Coverage display, range download, force re-download and range deletion all apply to whichever source you pick there (from 3.6; before that, range download and force re-download always targeted GSI). In that case the window's cache statistics show two lines: the tile count and size for the selected source, and the total cache (the whole cache folder). The size for a source covers everything deleting that source's cache would remove, including tiles fetched before the declaration was edited. The dropdown is hidden when GSI is the only available source, and the statistics then show the total on a single line.
-
-**Controls (mouse gestures)**
-
-| Gesture                       | Action                                  |
-| ----------------------------- | --------------------------------------- |
-| Drag                          | Pan the map                             |
-| Ctrl + drag                   | Select an area and download             |
-| Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
-| Shift + Ctrl + drag           | Delete the cache for an area            |
-
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Delete All Cache...** in the Settings panel to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap), each with its approximate size, so you can choose what to delete.
-
-> **Be considerate of the tile server**: Tiles are fetched from GSI's public servers (or from the provider of the source selected under "Target DEM source"). Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
-
-> ⚠️ **If you range-downloaded an area with a version before 3.7 and will use it offline, run the range download again.** Earlier versions did not fetch the 5 m (photogrammetry) and 10 m tiles beneath pixels that read exactly 0 m in the 5 m (airborne LiDAR) tile. The calculation reads the lower tile at such a pixel, so offline it cannot get an elevation there. From 3.8, the range download also checks the contents of the 5 m tiles already cached and fetches only the missing lower tiles (no force re-download needed).
+Clicking the map to pick coordinates, adding Multiple Paths rows or relay points from the map, and fetching the terrain of an area ahead of time (cache management) are not part of Link's screen. Terrain is fetched as the calculation needs it and kept in the cache. To delete the whole cache, use [File](#file) (Delete All Cache...) in the Settings panel.
 
 ---
 
-## Usage — Single Mode
+## Usage — Single Link
 
 ![Terrain profile chart: the line of sight and the first Fresnel zone drawn over the terrain, with the obstructed span, the RX level and the margin shown](images/shot_profile.png)
 
-### 1. Launcher Window
+The Single Link workspace opens at startup. **There is no Run button.** When you change a field in the left column, the app waits a moment (about 0.3 s) and computes again; the verdict in the top bar, the Link Budget table in the left column and the profile change.
 
-An input form is displayed on startup.
+### 1. The input fields in the left column
 
-#### Site Info
+| Group | Fields |
+| --- | --- |
+| Site Info | TX coords and RX coords (lat, lon, e.g. `34.5429, 132.4118`), TX / RX antenna height (m) |
+| Radio Settings | Frequency (MHz), TX power (dBm), TX / RX antenna gain (dBi), sensitivity (dBm, the minimum RX level) |
+| Environment | Environment category (Urban / Suburban / Rural / LoS), vegetation height (m), rain rate (mm/h) |
+| Details (collapsed) | Diffraction model, terrain resolution, DEM source (shown only when two or more sources can be chosen) |
 
-| Field                   | Description                                                   |
-| ----------------------- | ------------------------------------------------------------- |
-| TX Coords (Lat, Lon)    | TX station latitude and longitude (e.g.`34.5429, 132.4118`) |
-| RX Coords (Lat, Lon)    | RX station latitude and longitude                             |
-| TX Antenna Height (m)   | TX antenna height above ground                                |
-| RX Antenna Height (m)   | RX antenna height above ground                                |
+- The two coordinate fields accept decimal degrees or degrees-minutes-seconds ([Coordinate Format (DD / DMS)](#coordinate-format-dd--dms)). A format example is shown in faint text only while a field is empty
+- Each field's tooltip gives its range. A value outside it does not go on to the calculation; the top bar shows "Waiting for input" with a one-sentence reason (ranges are in [Input Parameters](#input-parameters))
+- **Vegetation height** is the **average canopy height** applied uniformly along the entire path. In urban areas you may enter a typical building height, but **individual building obstructions are not modeled** (see Known Limitations). It is purely an approximation as a uniform canopy
+- **Terrain resolution** has three levels: High ~4 m px / Medium ~8 m px / Low 20 m spacing. ⚠️ **The level names the size of the pixel the samples are placed on**, not *which elevation data is read* (elevations always come from **the finest layer available**, whichever level you pick). The pixel is 3.3-4.4 m across depending on latitude, hence the "~". **You pick only the level; the app resolves the points.** "High" and "Medium" place a sample at **each edge of every DEM pixel the path crosses**, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("Low" alone keeps a 20 m even spacing and, as the *coarse but fast* level, skips pixels). On an extremely long path whose count hits the upper limit, "High" and "Medium" fall back to even spacing too. Default: Medium
 
-#### Radio Settings
+The **Link Budget** table under the fields lists the terms from EIRP through total loss, RX level and sensitivity to margin, in the order they are added and subtracted. While the verdict is stale the table is drawn faded, to show the values are not those of the current input.
 
-| Field                    | Description                                  |
-| ------------------------ | -------------------------------------------- |
-| Frequency (MHz)          | Frequency (1–100,000 MHz)                   |
-| TX Power (dBm)           | Transmit power                               |
-| TX/RX Antenna Gain (dBi) | Antenna gain                                 |
-| Sensitivity (dBm)        | Receiver sensitivity (minimum receive level) |
+### 2. Fetching terrain and computing
 
-#### Environment
+- **Terrain**: when the endpoints, the resolution level and the DEM source are the same as before, nothing is fetched again. Elevations are fetched again only when they change (fetched tiles stay in the disk cache, so the second run over the same place is faster)
+- **Computation**: changing only fields that do not affect terrain, such as an antenna height or the transmit power, does not fetch terrain again, so the verdict comes back at once
 
-| Field                 | Description                                                                             |
-| --------------------- | --------------------------------------------------------------------------------------- |
-| Env Type              | Environment category (Urban / Suburban / Rural / LoS)                                   |
-| Vegetation Height (m) | Average **canopy** height, applied uniformly along the path. You may use building heights as a proxy in urban areas, but **individual buildings are not modelled** (see Known Limitations) — this is a uniform-canopy approximation |
-| Rician K-Factor (initial) | LOS/scatter power ratio. Display only — does not affect link budget calculation (default = 10.0) |
-| Terrain Resolution    | One of High ~4 m px / Medium ~8 m px / Low 20 m spacing. Note that the label names **the size of the pixel the samples are placed on**, not which elevation data is read: elevations always come from the finest layer available, whichever level you pick. The pixel is 3.3-4.4 m across Japan, hence the "~". **You pick the level; the app resolves the points.** "High" and "medium" place a sample at each edge of every DEM pixel the path crosses, so the samples are **not evenly spaced** and the count follows from the path's length, bearing and latitude ("low" alone keeps a 20 m even spacing and skips pixels by design). On an extremely long path whose count hits the upper limit, "high" and "medium" fall back to even spacing too. The resolved count and **the size of one pixel** are shown right below it. Default: Medium |
+When the elevation server cannot be reached, the top bar shows "No terrain" with a one-sentence reason (the app does not quietly compute over flat terrain).
 
-#### Project Info (optional)
+> **Date of the terrain data**: cached tiles are not fetched again, so the terrain acquisition date carried in saved results is not the run date but **the date the tiles the elevations were read from were saved on this PC** (when the path spans several dates, a range from oldest to newest). To recompute with fresh tiles, delete them with Delete All Cache in the Settings panel and let it compute again.
 
-| Field   | Description                                                             |
-| ------- | ---------------------------------------------------------------------- |
-| Project | Project name shown in the report header (applies to both Single and Multiple Paths reports) |
-| Note    | Free note. Shown on the **Single Mode report and the Multiple Paths summary page** (`summary.html` / `report_all.html`). **Not shown on per-path reports** — it describes the survey as a whole, so it is not repeated per path |
+### 3. The verdict in the top bar
 
-> Project Info is entered in the **launcher, which is the single source of truth**. Both Single Mode's saved report and Multiple Paths inherit these values. In Multiple Paths they are shown read-only (🔒) and pulled in with **"↻ From Launcher"**.
+The bar at the top of the screen shows the verdict word (OK / REVIEW / NG / ERROR), the margin and the RX level. When varying the assumptions gives a spread, it shows that spread; on REVIEW it lists the assumptions that would flip the verdict. 🔑 **The verdict in the bar is only ever one computed from the input now on screen.** While computing, it shows "Updating the verdict…" with the fetch progress, and no old verdict is left standing.
 
-### 2. The "Run" Button (Single Mode)
+### 4. The profile
 
-Clicking the button runs data retrieval in two phases.
+The terrain profile is drawn at the bottom right.
 
-1. **DEM tile prefetch**: All tiles within the TX/RX bounding box are downloaded to the disk cache (up to 8 threads). Already-cached tiles are skipped, so subsequent runs complete instantly. ⚠️ **This area-wide prefetch runs only with the built-in GSI source.** For DEM sources added via a declaration file the step is skipped, and only the points needed by the next elevation fetch are retrieved (to fill the cache up front, use range download in the map window's cache management mode, which works for added DEM sources from 3.6 onward).
-2. **Terrain elevation fetch**: Elevation is retrieved in parallel for each sample point (up to 8 threads). If the same TX/RX coordinates, sample count, resolution level and DEM source were used previously, cached data is loaded instantly.
+| Element | Description |
+| --- | --- |
+| Terrain | Ground surface with Earth curvature correction applied |
+| Vegetation | Vegetation height on top of the ground |
+| Line of sight | Dashed line joining the tips of the TX and RX antennas |
+| First Fresnel zone | The ±F1 band around the line of sight |
+| Vertical bars at both ends | The TX and RX antennas (from foot to tip) |
 
-> **Date of the terrain data**: cached tiles are not downloaded again, so the `DEM Acquired` line in `report.txt` records **the date the tiles the elevations were read from were saved on this PC**, not the run date (since 3.3; a range from oldest to newest when the path spans several dates, and no line at all when no date is known). To recompute with fresh tiles, force re-download that area in Cache Management mode.
+Hovering over it shows the distance and ground elevation at that spot, and marks the same spot on the map ([Map](#map)).
 
-### 3. Graph Window
+With "High" and "Medium", terrain samples sit on DEM pixel edges (see "Terrain resolution" above), but the profile (and the KML profile) **collapses the samples belonging to the same pixel to its centre** before joining them, so the outline is smooth. ⚠️ **This is a visual adjustment only** — diffraction loss and the other calculations use the uncollapsed samples, so no values change. "Low" is evenly spaced at 20 m and smooth to begin with, at the price of skipping fine relief.
 
-After retrieval completes, the terrain cross-section graph is displayed.
+### 5. Carrying your input
 
-#### Reading the Graph
-
-| Element             | Description                                              |
-| ------------------- | -------------------------------------------------------- |
-| Brown fill          | Terrain (with earth curvature correction applied)        |
-| Green fill          | Vegetation layer (terrain elevation + vegetation height) |
-| Red dashed line     | Line of Sight (LoS)                                      |
-| Cyan band           | 1st Fresnel Zone                                         |
-| Black vertical bars | TX / RX antennas                                         |
-
-On "high" and "medium", terrain samples are placed at DEM pixel boundaries (see "Terrain resolution" above), but this profile graph (and the terrain outline in report PNGs and KML) **collapses samples that share a pixel to that pixel's centre** before drawing the line, so the outline is smooth. ⚠️ **This is a display-only adjustment** — the underlying calculation (e.g. diffraction loss) still uses the uncollapsed sample list, so values are unaffected. The saved `terrain_profile.csv` writes the uncollapsed samples as-is, so its rows still form a staircase (see "Save Package" below). "Low" samples evenly every 20 m, so its line is already smooth — but it skips the fine relief.
-
-#### Sliders
-
-| Slider    | Range       | Description                           |
-| --------- | ----------- | ------------------------------------- |
-| TX Height | 0–150 m    | Adjust TX antenna height in real time |
-| RX Height | 0–150 m    | Adjust RX antenna height in real time |
-| Rain Rate | 0–100 mm/h | Adjust rain rate in real time         |
-
-Moving a slider triggers automatic recalculation after a 50 ms debounce delay.
-
-#### The "SAVE PACKAGE" Button
-
-Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package](#save-package)).
-
-### 4. Automatic Saving of Input Values
-
-Each time you run a Single Mode simulation, the input values are saved to `radiosim_conf.json` and restored on the next launch. **No explicit save action is needed.**
-
-To pull past conditions in from a file, or to carry a whole input set around, use [File](#file) in the Settings panel (**Load Parameters**) or **Save Project As** / **Open Project** on the top bar.
+The input is **not written back** to `radiosim_conf.json` (it is only read at startup, so you start from the last input of 3.x). To keep your work, use **Save Project As...** at the top of the right column ([Project Files (.rsproj)](#project-files-rsproj)); to take only the conditions from another settings file, use [File](#file) (**Load Parameters...**) in the Settings panel. For saving results, see [Saving — where and what](#saving--where-and-what).
 
 ---
 
