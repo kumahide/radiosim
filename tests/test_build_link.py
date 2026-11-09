@@ -145,6 +145,48 @@ class TestImportClosure:
         assert "webui.exports" in {f"webui.{n[:-3]}" for n in os.listdir(os.path.join(_ROOT, "webui"))}
 
 
+class TestDocFiles:
+    """同梱文書の閉包（ステージ11f）＝説明書が指す同梱物の中の文書と絵は、すべて木に入る。"""
+
+    def test_real_manuals_bring_their_links(self):
+        files = bl.doc_files()
+        assert {"docs/manual_ja.md", "docs/manual_en.md"} <= set(files)
+        # マニュアルが辿る先（開発者向け文書・用語集）も入る＝配布版でだけリンクが消えない
+        assert {"docs/developer_ja.md", "docs/glossary.md"} <= set(files)
+        assert all(f.endswith(bl.DOC_SUFFIXES) for f in files)
+        assert not any(f.endswith(".py") or f == "requirements.txt" for f in files)
+
+    def test_closure_follows_md_and_images_but_not_outside(self, tmp_path):
+        """壊れ方の確かめ＝列挙でなく辿る（新しい絵を 1 枚足しても漏れない）・外と源は入れない。"""
+        (tmp_path / "docs" / "images").mkdir(parents=True)
+        (tmp_path / "docs" / "images" / "new.png").write_bytes(b"x")
+        (tmp_path / "logo.png").write_bytes(b"x")
+        (tmp_path / "src.py").write_text("", encoding="utf-8")
+        (tmp_path / "docs" / "b.md").write_text('<img src="images/new.png">', encoding="utf-8")
+        (tmp_path / "docs" / "a.md").write_text(
+            "![l](../logo.png) [b](b.md#x) [s](../src.py) [o](../../out.md) "
+            "[w](https://example.com/a.md) [m](missing.md)", encoding="utf-8")
+        got = bl.doc_files(str(tmp_path), ["docs/a.md"])
+        assert got == ["docs/a.md", "docs/b.md", "docs/images/new.png", "logo.png"]
+
+    def test_missing_entry_stops_the_build(self, tmp_path):
+        with pytest.raises(bl.BuildError):
+            bl.doc_files(str(tmp_path), ["docs/manual_ja.md"])
+
+    def test_entries_are_what_the_settings_panel_opens(self):
+        """入口＝「ドキュメントを開く」が配布物で開く文書（`readme_binary_filename`）の日英。"""
+        from core import i18n
+        opened = set()
+        for lang in ("ja", "en"):
+            prev = i18n.current_lang()
+            try:
+                i18n.set_lang(lang)
+                opened.add(i18n.t("readme_binary_filename"))
+            finally:
+                i18n.set_lang(prev)
+        assert opened == set(bl.DOC_ENTRIES)
+
+
 class TestRuntimeDistOption:
     """`--runtime-dist`＝上に載る層が、公開側に無い依存（Pro の帳票の matplotlib）を足す口。"""
 

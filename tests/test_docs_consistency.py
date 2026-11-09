@@ -1007,18 +1007,18 @@ def test_public_docs_use_the_glossary_wording(doc):
 # `radiosim.spec` の同梱一覧から引く＝新しい日本語の同梱文書を足したら、
 # 何も書かなくてもこの検査に入る。
 def _bundled_paths() -> set[str]:
-    """利用者に届く文書と図（旧の `radiosim.spec` の `datas` と同じ集合をファイルから導く）。
+    """利用者に届く文書と図＝配布の木へ入る集合（`buildtools/build_link.py` の `doc_files` と `LICENSE`）。
 
-    🔑 4.0 ステージ11a で旧画面と `radiosim.spec` を撤去した。Link の配布に文書をどう載せるかは
-    ステージ11f で決める＝それまでは旧の同梱と同じ集合（`docs/` の文書と図・LICENSE・ロゴ）を
-    並べずに導く＝新しい文書を足したら何も書かなくても検査に入る性質は保つ。
+    🔑 ステージ11f で Link の配布の同梱を `doc_files`（マニュアル日英から辿れる `.md` と絵の閉包）
+    にした＝並べずに導く。新しい文書や絵をマニュアルから指せば、何も書かなくても検査に入る。
     `docs/screenshots.md` は同梱しない（`_PUBLIC_JA_EXTRAS` が別に持つ）。
     """
-    found = {p.relative_to(ROOT).as_posix() for p in (ROOT / "docs").glob("*.md")}
-    found.discard("docs/screenshots.md")
-    found |= {p.relative_to(ROOT).as_posix() for p in (ROOT / "docs" / "images").glob("*")
-              if p.suffix in (".png", ".svg")}
-    return found | {"LICENSE", "icon.png", "logo.png"}
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("build_link", ROOT / "buildtools" / "build_link.py")
+    assert spec and spec.loader
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return set(mod.doc_files(str(ROOT))) | {"LICENSE"}
 
 
 _SVG_COMMENT_RE = re.compile(r"<!--.*?-->", re.S)
@@ -1367,7 +1367,7 @@ def test_the_license_text_ships_with_the_binary():
     ⚠️ 2026-08-09 まで実際に入っていなかった（README にライセンスを書き足そうとして
     発覚）＝**表記の不足ではなく配布の不備**。
     🔑 4.0 ステージ11a で旧画面の `radiosim.spec` を撤去した＝いまの配布は
-    `buildtools/build_link.py` の `build_tree` が組む（同梱の集合は 11f で作り直す）。
+    `buildtools/build_link.py` の `build_tree` が組む（同梱文書は `doc_files`＝ステージ11f）。
     """
     path = ROOT / "buildtools" / "build_link.py"
     text = path.read_text(encoding="utf-8")

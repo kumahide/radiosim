@@ -3,6 +3,7 @@
   "always_tests": "tests/test_repo_hygiene.py",
   "extra_gates": [
     [["docs/", "README", "CHANGELOG"], [
+      "tests/test_build_link.py",
       "tests/test_docs_consistency.py",
       "tests/test_report.py",
       "tests/test_dev_check.py",

@@ -11,8 +11,8 @@ webui/docs.py
   （OS の既定のアプリ）。旧画面の 3 段目（窓の中の素の字）は器が無いので持たない。
 - 文書が無ければ `FileError`（`dlg_readme_missing`）。
 
-⚠️ Link の配布物は、まだ `docs/` と `markdown` を入れていない（ステージ11f の同梱文書の
-作り直しで入れる）＝それまで配布物では「文書が無い」の 1 文になる。
+配布物の木には、マニュアル日英から辿れる `.md` と絵を `buildtools/build_link.py` の `doc_files`
+が入れる（ステージ11f）。`markdown` は vendor に入る（B-380）。
 """
 
 from __future__ import annotations

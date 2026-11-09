@@ -13,7 +13,8 @@ build.bat は ASCII 専用なので、日本語の説明と判断はすべてこ
     vendor\\                         実行時の依存 9 つ（`RUNTIME_DISTS`）
     app\\core\\  app\\report\\  app\\webui\\  製品のソース（.py と、前もって作った .pyc）
     LICENSE・icon.ico・version.txt   version.txt＝`version_tuple()` の 4 数字（インストーラの版比べ＝I-176）
-  dist\\RadioSimLink-<版>.zip        zip のときだけ＝フォルダに portable.txt と RadioSimLink.cmd を足して固める
+    docs\\  logo.png など            同梱文書＝マニュアル日英から辿れる `.md` と絵（`doc_files`）
+  dist\\RadioSimLink-<版>.zip       zip のときだけ＝フォルダに portable.txt と RadioSimLink.cmd を足して固める
   dist\\RadioSimLink-Setup-<版>.exe  インストーラのとき（installer\\link.iss を ISCC 7 で）
 
 🔑 自前の exe を作らない＝起動は PSF の署名がある `pythonw.exe -m webui`。PyInstaller の exe が
@@ -89,6 +90,13 @@ RUNTIME_DISTS = ("numpy", "pillow", "requests", "urllib3", "certifi", "charset-n
 #: 読む＝起動の確かめ `smoke_import` だけでは漏れに気づかない・B-380）。漏れは
 #: `tests/test_build_link.py` の取り込みの閉包の試験が名前で言う。
 APP_PACKAGES = ("core", "report", "webui")
+#: 同梱文書の入口（「設定」の枠の「ドキュメントを開く」が開く＝`readme_binary_filename`）。
+#: 木へ入れるのは、ここから辿れる `.md` と画像の閉包（`doc_files`＝ステージ11f）。
+DOC_ENTRIES = ("docs/manual_ja.md", "docs/manual_en.md")
+#: 閉包に入れる形（`webui/docs.py` の `_INLINE_IMAGE_TYPES` と `.md`）。ソースや `requirements.txt`
+#: への参照は入れない＝説明書の画面がリンクを外して字だけ残す（`rewrite_local_links`）。
+DOC_SUFFIXES = (".md", ".png", ".jpg", ".jpeg", ".gif", ".svg")
+_DOC_REF_RE = re.compile(r'\]\(([^)\s]+)\)|src="([^"]+)"')
 #: 起動の口の既定（`pythonw.exe -m webui`）。`--entry` で外の包みへ替えられる。
 DEFAULT_ENTRY = "webui"
 
@@ -211,6 +219,41 @@ def pth_lines(stdlib_zips: Iterable[str]) -> list[str]:
     if len(zips) != 1:
         raise BuildError(f"標準ライブラリの zip が 1 つではない: {zips}")
     return [zips[0], ".", "vendor", "app"]
+
+
+def doc_files(base: str = REPO, entries: Iterable[str] = DOC_ENTRIES) -> list[str]:
+    """木へ入れる同梱文書＝`entries` から辿れる `.md` と画像（`base` からの相対・`/` 区切り）。
+
+    🔑 不変条件＝説明書が指す同梱物の中の文書と絵は、すべて木の中にある（3.x の spec は列挙で
+    持っていた＝次の 1 枚で穴が開く形）。`base` の外・実在しない・形が `DOC_SUFFIXES` の外は入れない。
+    `entries` が無ければ止める（説明書の無い配布物を作らない）。
+    """
+    root = os.path.abspath(base)
+    seen: set[str] = set()
+    todo = []
+    for e in entries:
+        full = os.path.abspath(os.path.join(root, e))
+        if not os.path.isfile(full):
+            raise BuildError(f"同梱文書の入口が無い: {full}")
+        todo.append(full)
+    while todo:
+        path = todo.pop()
+        if path in seen:
+            continue
+        seen.add(path)
+        if not path.lower().endswith(".md"):
+            continue
+        with open(path, encoding="utf-8") as f:
+            text = f.read()
+        for m in _DOC_REF_RE.finditer(text):
+            ref = (m.group(1) or m.group(2)).partition("#")[0]
+            if not ref or "://" in ref or ref.startswith(("data:", "mailto:")) or os.path.isabs(ref):
+                continue
+            target = os.path.abspath(os.path.join(os.path.dirname(path), ref))
+            if (os.path.commonpath([root, target]) == root and os.path.isfile(target)
+                    and target.lower().endswith(DOC_SUFFIXES)):
+                todo.append(target)
+    return sorted(os.path.relpath(p, root).replace(os.sep, "/") for p in seen)
 
 
 def version_numbers(v: str) -> str:
@@ -488,6 +531,10 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str,
         shutil.copytree(src, os.path.join(app, pkg),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
     shutil.copy2(os.path.join(REPO, "LICENSE"), root)  # = LICENSE_NAME（MIT・いつも同梱）
+    for rel in doc_files():                            # 説明書とそこから辿れる文書と絵
+        dst = os.path.join(root, *rel.split("/"))
+        os.makedirs(os.path.dirname(dst), exist_ok=True)
+        shutil.copy2(os.path.join(REPO, *rel.split("/")), dst)
     for extra in licenses:
         shutil.copy2(extra, root)
     _write_icon(root)
