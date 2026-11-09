@@ -98,13 +98,13 @@ TX（送信局）と RX（受信局）の座標・アンテナ高・無線設定
 
 ## Windows バイナリのビルド
 
-PyInstaller を使って Python 不要の単体 EXE フォルダ（onedir）を生成します。
+python.org の **embeddable Python** に、依存ライブラリと製品のソースを並べた配布フォルダを作ります。自前の exe は作らず、起動には Python Software Foundation の署名がある `pythonw.exe -m webui` を使います（PyInstaller で作った exe が Smart App Control に 2 回止められたため、Link 1.0 で切り替えました）。検査と手順はすべて `buildtools/build_link.py` にあり、`build.bat` はその入口です。
 
 ### 前提条件
 
-- Python 3.12 以上（開発・CI は 3.15 で検証）。⚠️ **配布ビルドには Tk 9 を同梱する Python が要ります**（3.9 から。Windows 版の Python 3.15 は Tk 9.0 を同梱しています）。配布物は Tk 9 で作って確かめており、Tk 8.6 では同梱の形が変わるため、`build.bat` が Tk の版を見て止めます。同じ 3.14 系でもパッチ版で Tk の版が違う（3.14.4 は 8.6・3.14.7 は 9.0）ので、Python の版番号では判断できません（`python -c "import tkinter; print(tkinter.TkVersion)"` で確かめられます）
-- **環境変数 `RADIOSIM_PYTHON`** に、テストを走らせている仮想環境の `python.exe` を指定してあること（**必須**）。→ [開発環境のセットアップ](#開発環境のセットアップ)
-- PyInstaller・依存ライブラリは `build.bat` が固定版で導入します
+- **環境変数 `RADIOSIM_PYTHON`**（**必須**）: テストを走らせている仮想環境の `python.exe`。依存ライブラリはこの Python の site-packages から写すので、検証した版と配る版が同じになります。→ [開発環境のセットアップ](#開発環境のセットアップ)
+- **環境変数 `RADIOSIM_EMBED_ZIP`**（**必須**）: python.org の embeddable の zip。`RADIOSIM_PYTHON` と同じ版のものを指定します（`vendor\` の拡張モジュールがその版用なので、版が違えば止まります）
+- ⚠️ **ビルドに使う Python に Tk 9 が要ります**。アイコンを `webui/static/brand.svg` から Tk 9 の SVG 読み込みで描くためです（Windows 版の Python 3.15 は Tk 9.0 を同梱しています。確かめ方は `python -c "import tkinter; print(tkinter.TkVersion)"`）。配布物の中では Tk を使いません
 
 > **なぜ環境変数で明示させるのか**：以前 `build.bat` は `PATH` の Python でビルドしており、pytest が検証した環境と推移的依存が食い違ったまま配布していました（TLS の CA バンドルを含む）。探索やフォールバックを持たせると食い違っても黙って成功するため、**未設定なら止める**設計にしています。
 
@@ -114,21 +114,21 @@ PyInstaller を使って Python 不要の単体 EXE フォルダ（onedir）を�
 build.bat
 ```
 
-`build.bat` は以下を自動で実行します。
+`buildtools/build_link.py` は次の順に進み、どこかで食い違えばビルドを中止します。
 
 | ステップ | 内容 |
 | --- | --- |
-| 1 | `RADIOSIM_PYTHON` の検証（未設定・実体なしなら中止）と Python 版の表示 |
-| 2 | 依存ライブラリを固定版で導入（`pip install -r requirements.txt -r requirements-dev.txt`。PyInstaller もこのピンに含まれる） |
-| 3 | 旧ビルド成果物の削除（出力先の `build/RadioSimPro/` `dist/RadioSimPro/`） |
-| 4 | `python -m PyInstaller radiosim.spec --noconfirm --distpath … --workpath …` |
-| 5 | **同梱漏れの検査**（buildtools/check_bundle_imports.py（4.0 で撤去））。同梱物が無条件に import するモジュールが exe から除外されていたら**ビルドを中止**する |
-| 6 | `terrain_cache/` `results/` ディレクトリを出力先に作成 |
+| 1 | `RADIOSIM_PYTHON` で走っていること、`RADIOSIM_EMBED_ZIP` の実体と版を確かめる |
+| 2 | embeddable を展開し、`python3XX._pth` で読む場所を標準ライブラリ・`vendor`・`app` だけにする |
+| 3 | 実行時の依存を `vendor\` へ写す。`requirements.txt` の固定と版が違うとき、依存の依存が写す物の中で閉じていないときは中止する |
+| 4 | `core/`・`report/`・`webui/` を `app\` へ写して `.pyc` を作り、同梱文書（マニュアル日英から辿れる `.md` と絵）・`LICENSE`・`icon.ico`・`version.txt` を置く |
+| 5 | **同梱漏れの検査**。作った木の `python.exe` で製品の全モジュールを読み、読めなければ中止する（開発機には全部入っているので、ソースから実行しても漏れは見えない） |
+| 6 | `portable.txt` と起動用の `RadioSimLink.cmd` を足して zip に固める |
 
 `build.bat clean` は再生成可能な生成物・キャッシュ・ログ・配布 zip を一掃します。
 
 - **残すもの**: 仮想環境と、**リポジトリ直下の** `terrain_cache/` `results/` `basemap_pale/`（ソース実行で貯めたデータで、取り直しが高価、または利用者のもの）
-- **消すもの**: ビルド出力の下は**すべて**。⚠️ **ビルドした exe が自分の隣に作った `terrain_cache/` `results/` も消えます**（これらはビルド出力の一部で、通常のビルドでも作り直されます）。
+- **消すもの**: ビルド出力の下は**すべて**。⚠️ **配布フォルダから起動したアプリが自分の隣に作った `terrain_cache/` `results/` も消えます**（これらはビルド出力の一部で、通常のビルドでも作り直されます）。
 
 ### 出力
 
@@ -136,20 +136,23 @@ build.bat
 
 ```
 dist/
-└── RadioSimPro/
-    ├── RadioSimPro.exe   ← 起動ファイル
-    ├── _internal/        ← Python ランタイム・依存ライブラリ
-    ├── terrain_cache/
-    └── results/
+├── RadioSimLink/                  ← 配布フォルダ
+│   ├── python.exe / pythonw.exe   ← embeddable Python（標準ライブラリは zip）
+│   ├── vendor/                    ← 実行時の依存ライブラリ
+│   ├── app/                       ← core / report / webui
+│   ├── docs/                      ← 同梱文書
+│   └── LICENSE / icon.ico / version.txt
+├── RadioSimLink-<版>.zip          ← ポータブル版
+└── RadioSimLink-Setup-<版>.exe    ← build.bat installer のとき
 ```
+
+版は `core/version.py` の `APP_VERSION` から実行時に取得します（この手順書に版を書き写さない。写すと版を上げた日に嘘になる）。
 
 ### 配布パッケージの作成
 
-`build.bat`（引数なし）が **ZIP まで自動で作ります**。ビルド出力の `RadioSimPro/` フォルダを `dist\RadioSimPro-<版>.zip` へ圧縮するところまでが `[SUCCESS]` の一部です。版は `core/version.py` の `APP_VERSION` から実行時に取得します（この手順書に版を書き写さない。写すと版を上げた日に嘘になる）。人が別途 `Compress-Archive` を叩く工程は無くなりました。
+`build.bat`（引数なし、または `build.bat link`）が **ZIP まで自動で作ります**。配布フォルダに `portable.txt` と `RadioSimLink.cmd` を足して `dist\RadioSimLink-<版>.zip` へ固めるところまでがビルドの一部です。zip を展開した利用者は `RadioSimLink.cmd` から起動します。
 
-> ⚠️ **ZIP の名前に版を入れる**。公開している資産名は `RadioSimPro-<版>.zip`（例: `RadioSimPro-2.7.zip`）です。この命名は `build.bat` が自動で行います。
-
-`build.bat` は既定で **ZIP 用のポータブル配置**（`portable.txt` を `RadioSimPro/` 直下へ同梱）を作ります。`core.config.is_portable()` はこのファイルの有無で分岐します（無ければ「インストール先が書込禁止かもしれない」と見なし、OS 標準の場所〔`%APPDATA%` 等〕へ書きます）。
+`core.config.is_portable()` は `portable.txt` の有無で分岐します（無ければ「インストール先が書込禁止かもしれない」と見なし、OS 標準の場所〔`%APPDATA%` 等〕へ書きます）。
 
 ### インストーラのビルド（Inno Setup）
 
@@ -157,32 +160,26 @@ dist/
 build.bat installer
 ```
 
-`build.bat` と同じビルドを行ったうえで、installer/radiosim.iss（4.0 で撤去）（Inno Setup）を使って `RadioSimPro-Setup-<版>.exe` を生成します。**`portable.txt` は同梱しません**（インストール先は常に非ポータブル扱いで、設定・キャッシュ・ログ・結果は OS 標準の場所）。
+同じ配布フォルダを作ったうえで、`installer/link.iss`（Inno Setup）を使って `RadioSimLink-Setup-<版>.exe` を生成します（`build.bat link-installer` も同じ）。**`portable.txt` は同梱しません**（インストール先は常に非ポータブル扱いで、設定・キャッシュ・ログ・結果は OS 標準の場所）。
 
 - **前提条件**: [Inno Setup 7](https://jrsoftware.org/isinfo.php) 導入済み（`winget install JRSoftware.InnoSetup.7`）＋環境変数 `RADIOSIM_ISCC` に `ISCC.exe` のフルパスを設定。導入先はユーザー単位なら `%LOCALAPPDATA%\Programs\Inno Setup 7\ISCC.exe`、マシン単位なら `C:\Program Files (x86)\Inno Setup 7\ISCC.exe` です（設定例は cmd なら `setx RADIOSIM_ISCC "C:\...\ISCC.exe"`、PowerShell なら `setx RADIOSIM_ISCC "$env:LOCALAPPDATA\Programs\Inno Setup 7\ISCC.exe"`。**`%LOCALAPPDATA%` は PowerShell では展開されない**ので、そのまま貼るとリテラルが保存されます）。未設定・実体なしならビルドを中止します。
-  - **配布ビルドは Inno Setup 7 系で作ります**。`build.bat` がコンパイラの版を確かめ、7 でなければ中止します。`radiosim.iss` は 6.7 系でもそのままコンパイルできますが（7 で廃止された機能を 1 つも使っていないため）、**黙って 6 で作った配布物が出てしまう**のを防ぐためのゲートです（上流の更新は 6.7.3〔2026-05-26〕を最後に 7 系へ移っています）。意図して別の版で作るときだけ `RADIOSIM_ISCC_ANY_VERSION=1` を宣言してください。
-- **インストール先の既定**: `{autopf}`（`PrivilegesRequired=lowest`。管理者権限が無ければユーザー配下、あればユーザーが選べる）。
-- **出力先**: ビルド出力と同じ `dist/`（`RadioSimPro-Setup-<版>.exe`）。
-- **署名**: `RADIOSIM_SIGNTOOL` が定義済みなら、exe 本体と同じ 1 か所の呼び出しでインストーラにも署名します（未定義なら未署名のまま）。現在の配布物は未署名です。⚠️ **「未署名では導入がブロックされる」状況は 2026-09-07 に実際に確認しました。** Windows 11 の Smart App Control（⚠️ **クリーンインストールした環境に限らない**・対象地域は限られる）が、インストーラが `%TEMP%` へ展開する本体を実行拒否します（上のトラブルシューティング表）。**証明書の取得は見送ると決定しました（2026-09-11）。** 自己署名では通らず（Smart App Control は信頼された署名者か評価を要求します）、無償の OV 系サービス（SignPath Foundation）や EV も文書上は通る見込みが立ちましたが、単独開発者が毎リリース外部依存を1つ増やすコストに見合わないと判断したためです。ポータブル版 ZIP の案内が恒久的な仕様です。⚠️ **ただし ZIP も確実な逃げ道ではありません。** ZIP を展開した `RadioSimPro.exe` も同じ判定を受け、2026-10-24 には開発機の Smart App Control がこちらも止めました。その場合は組織の管理者に相談するよう案内しています（利用者マニュアルの同じ節）。
+  - **配布ビルドは Inno Setup 7 系で作ります**。ビルドがコンパイラの版を確かめ、7 でなければ中止します。**黙って 6 で作った配布物が出てしまう**のを防ぐためのゲートです（上流の更新は 6.7.3〔2026-05-26〕を最後に 7 系へ移っています）。意図して別の版で作るときだけ `RADIOSIM_ISCC_ANY_VERSION=1` を宣言してください。
+- **インストール先の既定**: `{autopf}\RadioSim Link`（`PrivilegesRequired=lowest`。管理者権限が無ければユーザー配下、あればユーザーが選べる）。
+- **出力先**: 配布フォルダと同じ `dist/`（`RadioSimLink-Setup-<版>.exe`）。
+- **署名**: `RADIOSIM_SIGNTOOL` が定義済みならインストーラに署名します（未定義なら未署名のまま）。現在の配布物は未署名です。⚠️ **「未署名では導入がブロックされる」状況は 2026-09-07 に実際に確認しました。** Windows 11 の Smart App Control（⚠️ **クリーンインストールした環境に限らない**・対象地域は限られる）が、インストーラが `%TEMP%` へ展開する本体を実行拒否します（下のトラブルシューティング表）。**証明書の取得は見送ると決定しました（2026-09-11）。** 自己署名では通らず（Smart App Control は信頼された署名者か評価を要求します）、無償の OV 系サービス（SignPath Foundation）や EV も文書上は通る見込みが立ちましたが、単独開発者が毎リリース外部依存を1つ増やすコストに見合わないと判断したためです。ポータブル版 ZIP の案内が恒久的な仕様です。3.x では ZIP を展開した自前の exe も止められました（2026-10-24 に開発機で確認）。Link 1.0 からは起動に署名のある `pythonw.exe` を使いますが、それでも止まった場合は組織の管理者に相談するよう案内しています（利用者マニュアルの同じ節）。
 
-### `radiosim.spec` の主な設定
+### 製品名と外の包み
 
-| 設定 | 内容 |
-| --- | --- |
-| `icon.png` → `icon.ico` | ビルド時に自動変換。`icon.png` がなければスキップ |
-| EXE ファイルプロパティ | `version.py` の `APP_VERSION` / `COPYRIGHT` から自動生成 |
-| `console=False` | コンソールウィンドウを非表示 |
-| UPX 圧縮 | インストール済みの場合のみ有効 |
-| `docs/manual_*.md` / `docs/developer_*.md` / `docs/glossary.md` / `docs/images/` / `logo.png` / `LICENSE` | バイナリに同梱（`sys._MEIPASS` で参照）。マニュアルから辿れる文書も入れる（入っていないと配布版でだけリンクが切れる） |
+上に載る非公開の層は、この道具を借りて自分の配布を作ります。`--product` で配布の名前（フォルダ・zip・インストーラ・起動の `.cmd`・スタートメニュー）が替わり、`--license` でその許諾を `LICENSE` の隣へ足します。`--package 名前=フォルダ` と `--entry 名前` で、このリポジトリの外の包みを `app\` へ足して起動の口をそちらへ替えます（公開側のコードは上に載る層の名前を知りません）。⛔ インストーラの AppId とインストール先は替えません。同じ場所の Lite を置き換え、設定とキャッシュを引き継ぐためです。
 
 ### トラブルシューティング
 
 | 症状 | 対処 |
 | --- | --- |
-| `ModuleNotFoundError` が起動時に発生 | `radiosim.spec` の `excludes` から該当モジュールを外すか `hiddenimports` に追加してリビルド |
-| エラーメッセージが見えない | `radiosim.spec` の `console=False` を `console=True` に変更してリビルド |
-| SmartScreen 警告（配布先） | 署名なし EXE のため正常。「詳細情報」→「実行」で続行 |
-| インストーラが「エラー 4551: アプリケーション制御ポリシーによってこのファイルがブロックされました」で中止（配布先） | **SmartScreen ではなく実行拒否で続行不可**。Windows 11 の Smart App Control（⚠️ **クリーンインストールした環境に限らない**。有効になる経路は複数あり、**そこは数えない**。判定に要るのは「その機械で今オンかどうか」だけ）または組織のアプリケーション制御が、未署名の `setup.tmp`（Inno Setup が `%TEMP%` へ展開する本体）を弾いている。**MOTW ではないので「ブロックの解除」も効かない。** 恒久的な案内はポータブル版 ZIP（署名は見送りと決定済み）。⚠️ ZIP を展開した exe も同じ判定を受けるので、必ず通るとは限らない（止まったら組織の管理者へ相談するよう案内する）。詳細は `docs/manual_ja.md` の「インストーラが Windows に止められたとき」 |
+| `ModuleNotFoundError` が起動時に発生 | ビルドの同梱漏れの検査は、関数の中の import までは読みません。足りない配布物を `buildtools/build_link.py` の依存の一覧（外の包みなら `--runtime-dist`）に足してビルドし直す |
+| エラーメッセージが見えない | 配布フォルダでコマンドプロンプトから `python.exe -m webui` を起こすと、例外がそこに出る（`pythonw.exe` はコンソールを持たない） |
+| SmartScreen 警告（配布先） | 署名なしインストーラのため正常。「詳細情報」→「実行」で続行 |
+| インストーラが「エラー 4551: アプリケーション制御ポリシーによってこのファイルがブロックされました」で中止（配布先） | **SmartScreen ではなく実行拒否で続行不可**。Windows 11 の Smart App Control（⚠️ **クリーンインストールした環境に限らない**。有効になる経路は複数あり、**そこは数えない**。判定に要るのは「その機械で今オンかどうか」だけ）または組織のアプリケーション制御が、未署名の `setup.tmp`（Inno Setup が `%TEMP%` へ展開する本体）を弾いている。**MOTW ではないので「ブロックの解除」も効かない。** 恒久的な案内はポータブル版 ZIP（署名は見送りと決定済み）。それでも止まったら組織の管理者へ相談するよう案内する。詳細は `docs/manual_ja.md` の「インストーラが Windows に止められたとき」 |
 | 上記が自分の環境で起きているか確かめたい | `Get-WinEvent -LogName Microsoft-Windows-CodeIntegrity/Operational` の EventID `3033` / `3077` にブロックされたファイル名とポリシー ID が残る。Smart App Control の状態は `HKLM\SYSTEM\CurrentControlSet\Control\CI\Policy` の `VerifiedAndReputablePolicyState`（`0`=オフ / `1`=オン・適用 / `2`=評価モード） |
 
 ---
