@@ -216,9 +216,7 @@ python -m pip install -r requirements.txt
 
 ```
 radiosim/
-├── main.py               # Entry point (belongs to no layer — it just starts and wires the UI)
-│
-│   # Layers are directories. Dependencies run one way: views -> report -> core.
+│   # Layers are directories. Dependencies run one way: webui -> report -> core.
 │   # Anything used by two layers goes to the lower one (no `shared/` catch-all).
 │
 ├── core/                 # Foundation: calculation, data, config. Pulls neither tkinter nor matplotlib
@@ -262,41 +260,19 @@ radiosim/
 │   ├── report_scenario.py # scenario.csv for the condition explorer
 │   ├── report_map.py     # Headless path-overlay map PNG and its attribution text
 │   └── map_graphics.py   # Pure-PIL map overlay drawing (single source of the verdict colors)
-├── views/                # Screens (tkinter)
-│   ├── launcher.py       # Launcher window (core: input form, run, progress)
-│   ├── launcher_menu.py  # Launcher menu bar and its actions (mixin)
-│   ├── launcher_project.py # Project (.rsproj) collect / save / load (mixin)
-│   ├── launcher_windows.py # Child windows and cross-window notifications (mixin)
-│   ├── tooltip.py        # Input hint tooltip (standalone widget)
-│   ├── graph.py          # Graph window (matplotlib + tkinter)
-│   ├── map_window.py     # Map window (core: mode switching, map widget)
-│   ├── map_picks.py      # Picking sites and drawing paths (mixin)
-│   ├── map_cache.py      # DEM cache selection, download and overlay (mixin)
-│   ├── map_adapter.py    # Sole dependency point on tkintermapview (fire door, 3.3 stage 2)
-│   ├── map_style.py      # Single source of map drawing constants (colors, margins, zoom)
-│   ├── dialogs.py        # Shared modal dialogs centered on the parent window
-│   ├── errors.py         # Single sink that routes unhandled GUI exceptions to the log and a dialog
-│   ├── progress.py       # Progress transport (worker thread -> main thread)
-│   ├── theme.py          # Theme colors and UI fonts for plain tk widgets (sourced from sv_ttk)
-│   ├── title_bar.py      # Declares the title bar / window frame colors (drawn by Windows) to DWM
-│   ├── window_fit.py     # Single implementation of window size and position (clipping / off-screen guard)
-│   ├── window_scroll.py  # Scroll escape for windows whose content is larger than the screen
-│   ├── scenario.py       # Condition explorer window (compare / sweep)
-│   ├── multihop.py       # Relay path window (waypoints are the input surface; hops are derived)
-│   ├── multihop_map.py   # Relay path <-> map handoff (waypoint copy, append/move from the map; mixin)
-│   ├── frozen_common.py  # Single source for what the frozen "common settings" band shows
-│   ├── batch_builder.py  # Multiple Paths window (core: common settings, project info)
-│   ├── batch_table.py    # Batch input table (add/duplicate/remove/reorder rows) (mixin)
-│   ├── batch_io.py       # Batch CSV import/export and template (mixin)
-│   └── batch_run.py      # Batch execution and progress (mixin)
-├── webui/                # New screen (local HTTP + Edge app mode, 4.0 stage 8). Same rank as views; neither imports the other
+├── webui/                # The screen (local HTTP + Edge app mode). Entry point: `python -m webui`
 │   ├── __main__.py       # `python -m webui` entry (starts Edge first; `core/dem.py` injects truststore just before the first request; settings are read only)
 │   ├── state.py          # Input set and headline (never shows a result from an older input version)
 │   ├── sheets.py         # Workspace inputs (batch, scenario, relay held as screen strings; typed only to run or save)
 │   ├── project_io.py     # .rsproj save and open (screen inputs <-> ProjectDoc; the file format stays in report/project.py)
-│   ├── exports.py        # Workspace and single-link deliverable bodies (CSV and KML = the classic writers themselves; single link = one summary.csv row and path.kml; map PNG = the report drawing; the screen writes the file)
+│   ├── exports.py        # Workspace and single-link deliverable bodies (CSV, KML, map PNG; the screen writes the file)
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable; workspaces run item by item)
 │   ├── profile.py        # Terrain profile data (same lines as the report; thinned to 1200 points)
+│   ├── settings.py       # The Settings panel (language, theme, coordinate notation, proxy, update check at startup, background map)
+│   ├── files.py          # The panel's four File items (load parameters, load app settings, open results folder, clear all caches) and the translation template
+│   ├── support.py        # The panel's Help items (check for updates, diagnostic package)
+│   ├── docs.py           # The panel's Open Documentation (turns the Markdown into HTML and opens it in the default browser)
+│   ├── notices.py        # Notices at startup (languages or declaration files that failed to load, a new version; a dismissible band over the map)
 │   ├── server.py         # HTTP bound to 127.0.0.1 only (per-launch token, Host check, static files)
 │   ├── edge.py           # Opens Edge in app mode with a dedicated profile
 │   └── static/           # Screen shell (HTML, JS, CSS, Leaflet)
@@ -319,15 +295,22 @@ radiosim/
 │       │   ├── dialect.py # Reads the definition XML and builds the wire field order and CRCs
 │       │   ├── reader.py  # Splits a UART log into frames and turns them into received samples
 │       │   └── gen_c.py   # Generates the firmware's C header (with golden frames) from the definition XML
-│       └── firmware/     # Transmitter/receiver firmware (XIAO ESP32C6, ESP-IDF)
+│       └── firmware/     # Transmitter/receiver firmware (XIAO ESP32C6, ESP-IDF; steps in README.md)
 ├── docs/                 # Documentation (both developer- and user-facing; only README.md stays at the root)
 │   ├── developer_ja.md   # Japanese developer documentation
 │   ├── developer_en.md   # This file
 │   ├── manual_ja.md      # Japanese user manual (bundled into the exe; opened by Help → Open Documentation)
 │   ├── manual_en.md      # English user manual (same)
 │   ├── glossary.md       # Glossary of on-screen terms, bilingual (enforced by tests/test_i18n_glossary.py)
-│   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values)
+│   ├── screenshots.md    # How to shoot the screenshots (coordinates, conditions, expected values, where they go)
 │   └── images/           # Those screenshots and the figures (architecture_*.svg = the layer diagram); also bundled into the exe
+├── buildtools/           # Build and development tools (belong to no layer)
+│   ├── build_link.py     # Assembles the distribution (embeddable Python, vendor, zip, installer); called by `build.bat`
+│   ├── architecture_figure.py # Generates the layer diagram (docs/images/architecture_*.svg)
+│   ├── dev_check.py      # One command for post-change verification (see "Testing")
+│   └── deploy_qa_fixtures.py # Deploys the manual-verification config files (qa_fixtures/)
+├── installer/
+│   └── link.iss          # Installer definition (Inno Setup)
 ├── README.md             # Repository entry point (the one read first on GitHub)
 │
 │   # Tests are listed by **name only** — the "Testing" table is the source of truth
@@ -365,8 +348,6 @@ radiosim/
     ├── test_field_ntrip.py
     ├── test_project.py
     ├── test_report_map.py
-    ├── test_map_window.py
-    ├── test_cache_notify.py
     ├── test_coords.py
     ├── test_terrain_grid.py
     ├── test_units.py
@@ -376,19 +357,11 @@ radiosim/
     ├── test_calc_profile.py
     ├── test_verdict.py
     ├── test_engine.py
-    ├── test_progress.py
     ├── test_runner_logging.py
-    ├── test_theme.py
-    ├── test_title_bar.py
-    ├── test_window_fit.py
-    ├── test_errors.py
     ├── test_failure_messages.py
-    ├── test_bundle_imports.py
     ├── test_build_link.py
-    ├── test_ui_consistency.py
     ├── test_i18n_glossary.py
     ├── test_i18n_key_duplication.py
-    ├── test_i18n_no_hardcoded_ui_text.py
     ├── test_i18n_external.py
     ├── test_layers.py
     ├── test_paths.py
@@ -423,7 +396,7 @@ radiosim/
 ## Installation & Launch (from source)
 
 ```bash
-# Move into the repository (requirements.txt and main.py live here)
+# Move into the repository (requirements.txt and webui/ live here)
 cd radiosim
 
 # Install dependencies (requirements.txt is the single source of versions —
@@ -435,16 +408,17 @@ python -m pip install -r requirements.txt
 # so skip its C extension — same as "Development Environment" below)
 PYYAML_FORCE_LIBYAML=0 python -m pip install -r requirements-dev.txt
 
-# Launch
-python main.py
+# Launch (the screen opens in Microsoft Edge's app mode)
+python -m webui
 ```
 
-The following directories are created automatically in the project root on first launch:
+The following directory is created automatically in the project root on first launch:
 
 | Directory          | Contents                              |
 | ------------------ | ------------------------------------- |
 | `terrain_cache/` | Disk cache for DEM tiles              |
-| `results/`       | Output destination for saved packages |
+
+Link does not write into a results folder (`results/`). Each artifact is written, one at a time, where you choose when saving. `results/` remains as the place to look for 3.x results: "Open Results Folder" in the Settings panel opens it (creating it first if needed).
 
 ---
 
