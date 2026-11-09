@@ -203,17 +203,14 @@ python -m pip install -r requirements.txt
 
 **[`requirements.txt`](../requirements.txt) is the single source of versions** (pinned, so a source run gets what the binary ships). Installing by name leaves the versions floating and duplicates the table below.
 
-| Library    | Purpose                                                                                     |
-| ---------- | ------------------------------------------------------------------------------------------- |
-| numpy      | Vector computation for terrain and propagation calculations                                 |
-| matplotlib | Terrain profile graph and slider rendering                                                  |
-| requests   | HTTP retrieval of GSI DEM tiles                                                             |
-| Pillow     | PNG tile image decoding                                                                     |
-| sv-ttk     | Windows 11-style UI theme                                                                   |
-| darkdetect | System dark mode detection                                                                  |
-| markdown   | Documentation viewer (optional — the app works without it)                                        |
+| Library    | Purpose |
+| ---------- | ------- |
+| numpy      | Vector computation for terrain and propagation calculations |
+| matplotlib | Charts in the Pro reports (the public app does not use it; it stays listed because Pro uses the same pinned version) |
+| requests   | HTTP retrieval of GSI DEM tiles and the update check |
+| Pillow     | PNG tile image decoding and drawing the map images in the outputs |
+| markdown   | Turns the document into HTML for "Open Documentation" in the settings panel (optional — without it the `.md` file opens as is) |
 | truststore | SSL certificate verification in corporate proxy environments (optional — works without it) |
-| tkintermapview | Map window tile display (GSI pale map; the map feature degrades gracefully if absent) |
 
 ---
 
