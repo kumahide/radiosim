@@ -1,6 +1,6 @@
 # RadioSim Link 1.0
 
-![RadioSim Pro](../logo.png)
+![RadioSim Link](../webui/static/brand.svg)
 
 > **対象読者**: **配布物（インストーラか ZIP）で RadioSim Link を使う方**向けの操作マニュアルです。アプリの「設定」の枠の「ドキュメントを開く」で開くのもこの文書です。
 > ソースから動かす・中身に手を入れる場合は [developer_ja.md](developer_ja.md) を参照してください。

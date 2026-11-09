@@ -1,6 +1,6 @@
 # RadioSim Link 1.0
 
-![RadioSim Pro](../logo.png)
+![RadioSim Link](../webui/static/brand.svg)
 
 > **Intended reader**: users who run **RadioSim Link from a distribution (installer or ZIP)**. This is also the document that Open Documentation in the app's Settings panel shows.
 > To run it from source or work on the code, see [developer_en.md](developer_en.md).

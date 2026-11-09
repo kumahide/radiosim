@@ -1,4 +1,4 @@
-<img src="logo.png" width="200">
+<img src="webui/static/brand.svg" width="300" alt="RadioSim Link">
 
 # RadioSim Link — 地上無線回線の伝搬シミュレーター（国土地理院 DEM 自動取得）
 
