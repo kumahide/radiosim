@@ -26,9 +26,9 @@
 ;     インストール先は書込禁止になり得る前提。.pyc はビルドで前もって作る
 ;     （unchecked-hash）ので、起動のたびにインストール先へ書きに行かない。
 ;   - portable.txt はビルド側が zip のときだけ作る（念のため下の Excludes にも）
-;     ＝core.config.is_portable() は False、設定/キャッシュ/ログ/結果は OS 標準の
-;     フォルダへ書く。
-;   🔑 本体と違い、設定・ログ・結果は RadioSim\Link の下へ書く（4.0 ステージ8e・
+;     ＝core.config.is_portable() は False、設定/キャッシュ/ログは OS 標準の
+;     フォルダへ書く（成果物は保存のたびに利用者が選んだ場所へ書く）。
+;   🔑 本体と違い、設定・ログは RadioSim\Link の下へ書く（4.0 ステージ8e・
 ;     着手の決定 ③）。地形と地図のキャッシュ（%LOCALAPPDATA%\RadioSim\terrain_cache）
 ;     だけは RadioSim Pro 3.9 と共有する＝下の [Code] は共有のキャッシュを別の選択肢に
 ;     分け、既定はオフ・「3.9 と共有」と書いて出す（2026-11-08 経営者の決定）。
@@ -164,7 +164,6 @@ japanese.UninstDataIntro=下のデータはアンインストールしても残�
 japanese.UninstDataSettings=UI 設定・最後に使用した入力値
 japanese.UninstDataLogs=ログ・画面の作業用データ
 japanese.UninstDataSharedCache=地形と背景地図のディスクキャッシュ（RadioSim Pro 3.9 と共有）
-japanese.UninstDataResults=保存パッケージの出力先
 japanese.UninstDataLang=追加した表示言語ファイル
 japanese.UninstDataHint=チェックを外したものはそのまま残り、次回インストール時に引き継がれます。
 ; B-188: 管理者へ昇格したアンインストールでは、この案内だけ出して 1 件も消さない。
@@ -178,7 +177,6 @@ english.UninstDataIntro=The data below is kept when you uninstall. Tick only wha
 english.UninstDataSettings=UI settings and last used input values
 english.UninstDataLogs=Logs and working data of the window
 english.UninstDataSharedCache=Terrain and background map disk cache (shared with RadioSim Pro 3.9)
-english.UninstDataResults=Saved result packages
 english.UninstDataLang=Display language files you added
 english.UninstDataHint=Anything left unticked stays on this PC and is picked up again by the next install.
 ; I-176: 上書きインストールで版を比べた結果。%1＝インストール済みの版、%2＝今から入れる版。
@@ -426,14 +424,16 @@ begin
   DataPaths[N] := Path;
 end;
 
-{ 5 種の実体は core/config.py の保存先解決と 1 対 1 で対応する（4.0 ステージ8e）:
+{ 4 種の実体は core/config.py の保存先解決と 1 対 1 で対応する（4.0 ステージ8e）:
     設定       %APPDATA%\RadioSim\Link\radiosim_conf.json  … _config_base_dir()
     ログ       %LOCALAPPDATA%\RadioSim\Link\               … local_base_dir()
                  （radiosim*.log と Edge の専用プロファイルしか置かないので丸ごと消す）
     共有の地形 %LOCALAPPDATA%\RadioSim\terrain_cache\      … shared_cache_base_dir()
                  （RadioSim Pro 3.9 と共有＝見出しにそう書く・既定はオフ）
-    保存結果   ドキュメント\RadioSim\Link\                  … _results_dir()
     追加言語   %APPDATA%\RadioSim\Link\lang\               … _user_lang_dir()
+  ドキュメントの下（_results_dir()）は選択肢に出さない（B-381）＝Link は保存のたびに選んだ
+  場所へ書き、ドキュメント\RadioSim\Link\ は使わない。使わない場所を消させない
+  （利用者が自分で置いたファイルを巻き添えにしない）。
   ⚠️ 設定と追加言語は**同じ親フォルダの中**なので、親ごと消してはいけない
      （片方だけ選んだときにもう片方まで消える）。
   ⛔ 共有の地形の親（%LOCALAPPDATA%\RadioSim）を丸ごと消さない＝3.9 の
@@ -450,7 +450,6 @@ begin
   AddRemovableData('UninstDataSettings',    ConfigBase + '\radiosim_conf.json');
   AddRemovableData('UninstDataLogs',        ExpandConstant('{localappdata}\RadioSim\Link'));
   AddRemovableData('UninstDataSharedCache', ExpandConstant('{localappdata}\RadioSim\terrain_cache'));
-  AddRemovableData('UninstDataResults',     ExpandConstant('{userdocs}\RadioSim\Link'));
   AddRemovableData('UninstDataLang',        ConfigBase + '\lang');
 end;
 
@@ -613,12 +612,11 @@ begin
   end;
   { 設定と追加言語を両方消すと %APPDATA%\RadioSim\Link が空殻で残る。RemoveDir は
     空のときしか成功しないので、片方だけ消した場合は何も起きない。親の RadioSim は
-    3.9 の設定が無ければ空になる＝子から順に試す。ローカルとドキュメントの親も同じ
-    （3.9 のログや結果が残っていれば何も起きない）。 }
+    3.9 の設定が無ければ空になる＝子から順に試す。ローカルの親も同じ
+    （3.9 のログが残っていれば何も起きない）。ドキュメントの下は Link が使わないので触らない。 }
   RemoveDir(ExpandConstant('{userappdata}\RadioSim\Link'));
   RemoveDir(ExpandConstant('{userappdata}\RadioSim'));
   RemoveDir(ExpandConstant('{localappdata}\RadioSim'));
-  RemoveDir(ExpandConstant('{userdocs}\RadioSim'));
   if Failed <> '' then
     MsgBox(FmtMessage(CustomMessage('UninstDataFailed'), [Failed]),
            mbError, MB_OK);
@@ -632,8 +630,7 @@ function ManualCleanupPaths: string;
 begin
   Result := '%APPDATA%\RadioSim\Link' + #13#10
           + '  %LOCALAPPDATA%\RadioSim\Link' + #13#10
-          + '  %LOCALAPPDATA%\RadioSim\terrain_cache' + #13#10
-          + '  %USERPROFILE%\Documents\RadioSim\Link';
+          + '  %LOCALAPPDATA%\RadioSim\terrain_cache';
 end;
 
 procedure CurUninstallStepChanged(CurUninstallStep: TUninstallStep);

@@ -91,7 +91,6 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
             "file": i18n.t("menu_file"),
             "load_sim": i18n.t("menu_load_settings"),
             "load_app": i18n.t("menu_load_app_settings"),
-            "open_results": i18n.t("menu_open_results"),
             "delete_cache": i18n.t("menu_delete_all_cache"),
             "help": i18n.t("menu_help"),
             "open_docs": i18n.t("menu_open_readme"),

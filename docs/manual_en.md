@@ -121,7 +121,6 @@ The installer build stores **settings, cache and logs in OS-standard locations**
 | UI settings (`radiosim_conf.json`) and the user-extension source files | `%APPDATA%\RadioSim\Link\`        |
 | Logs and working data of the window              | `%LOCALAPPDATA%\RadioSim\Link\`   |
 | Terrain and background map disk cache            | `%LOCALAPPDATA%\RadioSim\terrain_cache\` (shared with RadioSim Pro 3.9) |
-| Results folder (`results/`)                      | `Documents\RadioSim\Link\`. Link does not save there (each artifact is written where you choose when saving). Open Results Folder in the Settings panel opens it |
 | Added UI language files (`lang\<language-code>.json`) | `%APPDATA%\RadioSim\Link\lang\` |
 
 ### Installing a different version over an existing one
@@ -207,7 +206,7 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 │ ☐ Include Pre-releases
 ├ File
 │ [Load Parameters...] [Load App Settings...]
-│ [Open Results Folder] [Delete All Cache...]
+│ [Delete All Cache...]
 ├ Help
 │ [Open Documentation] [Save Diagnostic Package...]
 │ [Check for Updates...] [About]
@@ -242,7 +241,6 @@ Operations that reach out to files or to the OS.
 | ------------------- | ------------------------------------------------------------------------------------------------- |
 | Load Parameters...  | Imports **simulation parameters only** from a settings file into the input fields               |
 | Load App Settings... | Imports **only** language, theme, coordinate display, basemap and proxy from a settings file (the two startup-check boxes are not imported) |
-| Open Results Folder | Opens the `results/` folder in Explorer (creates it first if it does not exist yet) |
 | Delete All Cache... | Deletes downloaded DEM / map tiles. A confirmation appears inside the panel; with two or more DEM sources you can pick what to delete |
 
 > **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects**. **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
@@ -914,7 +912,6 @@ At the end of the uninstall you can choose, **by category**, which data to remov
 | UI settings and last used input values | `%APPDATA%\RadioSim\Link\radiosim_conf.json` | The next install starts from the defaults |
 | Logs and working data of the window | `%LOCALAPPDATA%\RadioSim\Link\` | The logs are gone. The working data of the window is recreated at the next start |
 | Terrain and background map disk cache (shared with RadioSim Pro 3.9) | `%LOCALAPPDATA%\RadioSim\terrain_cache\` | Elevation and background map tiles are fetched again next time. ⚠️ 3.9 uses the same cache, so 3.9 fetches them again too |
-| Saved result packages | `Documents\RadioSim\Link\` | ⚠️ Files placed inside are gone (Link's saving does not use this folder, but anything you put there yourself is deleted too) |
 | Display language files you added | `%APPDATA%\RadioSim\Link\lang\` | Translations you added are gone (the bundled Japanese and English remain) |
 
 Anything left unticked stays on this PC and is picked up again by the next install. If something could not be deleted (a file left open, for example), its path is shown.

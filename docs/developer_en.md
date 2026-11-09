@@ -269,7 +269,7 @@ radiosim/
 │   ├── worker.py         # The single calculation thread (terrain fetch is cancellable; workspaces run item by item)
 │   ├── profile.py        # Terrain profile data (same lines as the report; thinned to 1200 points)
 │   ├── settings.py       # The Settings panel (language, theme, coordinate notation, proxy, update check at startup, background map)
-│   ├── files.py          # The panel's four File items (load parameters, load app settings, open results folder, clear all caches) and the translation template
+│   ├── files.py          # The panel's three File items (load parameters, load app settings, clear all caches) and the translation template
 │   ├── support.py        # The panel's Help items (check for updates, diagnostic package)
 │   ├── docs.py           # The panel's Open Documentation (turns the Markdown into HTML and opens it in the default browser)
 │   ├── notices.py        # Notices at startup (languages or declaration files that failed to load, a new version; a dismissible band over the map)
@@ -418,7 +418,7 @@ The following directory is created automatically in the project root on first la
 | ------------------ | ------------------------------------- |
 | `terrain_cache/` | Disk cache for DEM tiles              |
 
-Link does not write into a results folder (`results/`). Each artifact is written, one at a time, where you choose when saving. "Open Results Folder" in the Settings panel opens `results/` (`config.RESULTS_DIR` = `Documents\RadioSim\Link\`), creating it first if needed. ⚠️ This is not where 3.x saved its results (`Documents\RadioSim\`).
+Link does not write into a results folder (`results/`). Each artifact is written, one at a time, where you choose when saving. So the Settings panel has no "Open Results Folder", and the uninstaller does not offer anything under Documents for deletion.
 
 ---
 
@@ -453,7 +453,6 @@ Home for operations that **reach out to files or the OS** (implemented in `webui
 | ------------------- | -------------------------------------------------------------------------- |
 | Load Parameters...  | Turns **simulation parameters only** from a settings file into input changes (`sim_changes`; app keys are discarded) |
 | Load App Settings... | Imports **only** the app keys the Settings panel holds (language, theme, coordinate display, background, proxy) from a settings file (`settings.apply_many`) |
-| Open Results Folder | Opens `results/` in Explorer (creates it first if missing). Link does not write there, and it is not where 3.x saved its results either |
 | Delete All Cache... | Deletes all downloaded DEM / map tiles (confirmed inside the panel). Only when there are two or more DEM sources does it ask which sources to delete |
 
 > **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter the Settings panel's items. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).

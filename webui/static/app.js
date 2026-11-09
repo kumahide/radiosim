@@ -1376,7 +1376,6 @@ function buildSettings(st) {
     el("div", { className: "row" }, [
       button(L.load_sim, () => loadFile("/api/settings/load_sim")),
       button(L.load_app, () => loadFile("/api/settings/load_app")),
-      button(L.open_results, () => call("/api/open_results")),
       button(L.delete_cache, () => { diagBox.hidden = true; askDelete(); }),
     ]),
     confirmBox,

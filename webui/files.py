@@ -1,13 +1,13 @@
 """
 webui/files.py
 ==============
-新しい画面の「設定」の枠の **「ファイル」の 4 つと訳のひな形**＝旧画面のメニュー「ファイル」と
+新しい画面の「設定」の枠の **「ファイル」の 3 つと訳のひな形**＝旧画面のメニュー「ファイル」と
 「設定」の、ファイルや OS へ出る項目（I-257 の C）。
 
 - パラメータ読込（`sim_changes`）＝JSON の sim の鍵だけを入力の変更にする（app の鍵は捨てる）。
 - アプリ設定読込（`settings.apply_many`）＝app の鍵のうち「設定」の枠が持つものだけ。
-- 結果フォルダを開く（`open_results`）＝無ければ作ってから開く（B-273）。Link は結果フォルダへ
-  書かない＝3.x の結果と `settings.json` を探す口。
+- 旧画面の「結果フォルダを開く」は持たない（B-381＝Link は保存のたびに選んだ場所へ書き、
+  `config.RESULTS_DIR` へは書かない。開いても Link の結果にも 3.x の結果にも届かなかった）。
 - 全キャッシュ削除（`cache_breakdown`・`cache_delete`）＝DEM のソースが 2 つ以上のときだけ
   ソースごとに選ぶ（I-155・I-153 の「選択肢が 1 つなら出さない」）。
 - 訳のひな形（`write_lang_template`）＝ブラウザの保存の画面は初期フォルダを選べない（`startIn` は
@@ -77,16 +77,6 @@ def sim_changes(text: str) -> "dict[str, str]":
             text_value = config.DEFAULT_CONFIG[key]
         changes[key] = text_value
     return changes
-
-
-def open_results(opener: "Callable[[str], None]") -> None:
-    """結果フォルダを開く（無ければ作る）。作れなければ `FileError`（旧と同じ字）。"""
-    try:
-        os.makedirs(config.RESULTS_DIR, exist_ok=True)
-    except OSError as e:
-        raise FileError(failure.explain(e, what=i18n.t("fail_open_results"),
-                                        hint=i18n.t("fix_file_write"))) from e
-    opener(config.RESULTS_DIR)
 
 
 def _size_text(size_bytes: int) -> str:

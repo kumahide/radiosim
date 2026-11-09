@@ -940,7 +940,6 @@ class TestInstallerCodeIsReachable:
             "UninstDataSettings":    "{userappdata}\\RadioSim\\Link\\radiosim_conf.json",
             "UninstDataLogs":        "{localappdata}\\RadioSim\\Link",
             "UninstDataSharedCache": "{localappdata}\\RadioSim\\terrain_cache",
-            "UninstDataResults":     "{userdocs}\\RadioSim\\Link",
             "UninstDataLang":        "{userappdata}\\RadioSim\\Link\\lang",
         },
     }
@@ -1016,6 +1015,13 @@ class TestInstallerCodeIsReachable:
         assert m, "チェックボックス配列の宣言が見つからない"
         assert choices <= int(m.group(1)) + 1, (
             f"選択肢 {choices} 件に対し Boxes の上限が {int(m.group(1)) + 1} 件しかない")
+
+    def test_documents_are_never_offered_for_deletion(self):
+        """B-381＝Link はドキュメントの下へ書かない＝アンインストールでそこを消させない
+        （使わない場所を選ばせると、利用者が自分で置いたファイルが巻き添えになる）。"""
+        code = self.ISS.read_text(encoding="utf-8-sig").split("[Code]", 1)[1]
+        live = [ln for ln in code.splitlines() if "ExpandConstant(" in ln or "+ '" in ln]
+        assert not [ln for ln in live if "{userdocs}" in ln or "Documents" in ln], live
 
     def test_settings_and_lang_are_not_deleted_via_their_parent(self):
         """設定と追加言語は同じ親（%APPDATA%\\RadioSim）にいる＝親ごと消さないこと。

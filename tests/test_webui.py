@@ -770,18 +770,15 @@ def test_loading_app_settings_keeps_the_good_values_only(web, saved):
     assert json.loads(raw)["reload"] is True and saved["seed"] == 1
 
 
-def test_the_results_folder_is_made_then_opened(web, monkeypatch, tmp_path):
+def test_there_is_no_open_results_folder(web, monkeypatch, tmp_path):
+    """B-381＝Link は `RESULTS_DIR` へ書かない＝「結果フォルダを開く」の口ごと持たない。"""
     from core import config as cfg_mod
     target = tmp_path / "results"
     monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(target))
     status, _ = _request(web, "POST", "/api/open_results", token=web.token, body={})
-    assert status == 200 and target.is_dir() and web.opened == [str(target)]
-    blocker = tmp_path / "file"
-    blocker.write_text("x")
-    monkeypatch.setattr(cfg_mod, "RESULTS_DIR", str(blocker / "results"))
-    status, raw = _request(web, "POST", "/api/open_results", token=web.token, body={})
-    from core import i18n
-    assert status == 422 and i18n.t("fail_open_results") in json.loads(raw)["message"]
+    assert status == 404 and not target.exists() and web.opened == []
+    from webui import settings as settings_mod
+    assert "open_results" not in settings_mod.payload({})["labels"]
 
 
 def test_the_language_template_never_overwrites(web, monkeypatch, tmp_path):

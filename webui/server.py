@@ -24,7 +24,6 @@ webui/server.py
     POST /api/settings/load_sim  … `{"text"}`＝パラメータ読込（sim の鍵だけ）`{"message", "version"}`
     POST /api/settings/load_app  … `{"text"}`＝アプリ設定読込 `{"message", "settings", "reload"}`
                                    （読めない JSON は 422＋画面の 1 文・I-257 の C）
-    POST /api/open_results       … 結果フォルダを（無ければ作って）開く
     POST /api/lang_template      … 訳のひな形を `USER_LANG_DIR` へ書いてフォルダを開く `{"message"}`
     POST /api/cache/breakdown    … 全キャッシュ削除の確認の中身（ソースが 2 つ以上なら選ばせる）
     POST /api/cache/delete       … `{"sources": [ID…] | null, "basemap": 真偽}` `{"message"}`
@@ -330,7 +329,7 @@ class WebServer:
                  app_cfg: "dict[str, str] | None" = None,
                  opener: "Callable[[str], None] | None" = None) -> None:
         self.worker = worker
-        #: フォルダを開く（結果フォルダ・訳のひな形）＝試験は偽物を渡す
+        #: フォルダや文書を開く（訳のひな形・説明書）＝試験は偽物を渡す
         self.opener: "Callable[[str], None]" = opener or getattr(os, "startfile", lambda p: None)
         #: アプリの設定（`config.load_config()` の写し）＝「設定」の枠が書き換えて保存する
         self.app_cfg: dict[str, str] = app_cfg if app_cfg is not None else {}
@@ -455,9 +454,6 @@ class WebServer:
                 word = "dlg_app_settings_ok" if applied else "dlg_app_settings_none"
                 return 200, {"message": i18n.t(word), "settings": payload, "reload": reload,
                              "basemap": self.basemap_payload()}
-            if path == "/api/open_results":
-                files_mod.open_results(self.opener)
-                return 200, {"message": ""}
             if path == "/api/lang_template":
                 return 200, {"message": files_mod.write_lang_template(self.opener)}
             if path == "/api/cache/breakdown":
@@ -484,7 +480,7 @@ class WebServer:
 
 
 #: `file_action` が受ける口。
-_FILE_PATHS = frozenset({"/api/settings/load_sim", "/api/settings/load_app", "/api/open_results",
+_FILE_PATHS = frozenset({"/api/settings/load_sim", "/api/settings/load_app",
                          "/api/lang_template", "/api/cache/breakdown", "/api/cache/delete",
                          "/api/help/docs", "/api/help/check_updates", "/api/help/diagnostics",
                          "/api/help/diagnostics/zip"})
