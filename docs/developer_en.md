@@ -422,68 +422,73 @@ Link does not write into a results folder (`results/`). Each artifact is written
 
 ---
 
-## Menus
+## The Settings panel
 
-Three menus — **File / Settings / Help** (built in `_build_menu`, views/launcher_menu.py (removed in 4.0)). Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
+There is no menu bar. The **Settings button (gear)** at the right end of the top band opens a small panel with three groups: **Settings / File / Help**. The server hands over the panel's content (current values, choices, labels) in `webui/settings.py`'s `payload`, and the screen (`webui/static/app.js`) builds the panel from that alone. Labels come from the `i18n.py` dictionaries as the single source. Every item is listed below.
 
-### File
-
-Home for operations that **reach out of the app** (moved here from the launcher button row). ⚠️ Do not add buttons here — the button row already spends the FHD 100% (1080px screen) height budget and is a recurring source of clipping.
-
-| Item                | Description                                                              |
-| ------------------- | -------------------------------------------------------------------------- |
-| Open Project...     | Loads a `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
-| Save Project As...  | Writes the current input set to a `.rsproj` → same                        |
-| Load Parameters...  | Imports **simulation parameters only** from a settings file              |
-| Open Results Folder | Opens `results/` in Explorer (creates it first if missing)               |
+- **Each change is saved at once** (`settings.apply` checks it, then calls `config.save_app`). The panel's OK only closes it.
+- The outcome of a click, and the reason for a failure, come back as one sentence at the bottom of the panel (no dialogs).
+- **The background map** (`basemap_layer`) is switched not in the panel but in the box at the map's top right (it is saved through the same `settings.apply`) → [Map](#map).
+- **Opening and saving a project** are not in the panel either, but tools at the top of the right column (next to the workspace switch) → [Project Files (.rsproj)](#project-files-rsproj).
 
 ### Settings
 
-Selections are persisted to `radiosim_conf.json`.
+Selections are persisted to `radiosim_conf.json` (implemented in `webui/settings.py`; the keys it handles are `KEYS`).
 
 | Item                 | Options                     | Description                                                     |
 | -------------------- | --------------------------- | ----------------------------------------------------------------- |
-| Theme                | System / Light / Dark       | Window color theme                                                |
-| Language             | English / 日本語 (plus your own) | UI language (requires restart)                               |
-| Export Translation Template... | —                 | Item inside the Language submenu. Writes every translatable key and its English value as JSON → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
-| Coordinate Display         | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
-| Proxy Settings...    | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
-| Load App Settings... | —                           | Imports **only** theme, language and proxy from a settings file                     |
-| Delete All Cache...  | —                           | Deletes all downloaded DEM / map tiles (with confirmation)        |
+| Language             | English / 日本語 (plus your own) | UI language. Changing it reloads the screen (the screen's text is built from the table at startup) |
+| Export Translation Template... | —                 | Writes every translatable key and its English value as `_template.json` (`webui/files.py`'s `write_lang_template`). The browser's save dialog cannot choose its initial folder, so it writes straight into `USER_LANG_DIR` and never overwrites → [Adding your own UI language](../docs/manual_en.md#adding-your-own-ui-language) |
+| Theme                | System / Light / Dark       | The screen's light or dark look                                   |
+| Coordinate Display   | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** (`coords.py`) → below |
+| Proxy URL            | URL entry                   | Explicit HTTP proxy URL (blank = OS proxy settings) → below       |
+| Check for Updates at Startup | Checkbox | Off by default (only when `update_check_auto` is `"on"`). At startup, `webui/notices.py`'s `start_update_check` looks at `update_check.auto_due()` on a background thread; if true, the attempt date (`update_check_last`) is saved **before** the query, so a failure never causes a second query the same day. Only a newer version is announced, in the band over the map; up to date and failures go to the log only |
+| Include Pre-releases | Checkbox | `update_check_prerelease`: `"on"` / `"off"` is the user's choice; the default `""` means "decided by the current version" (`update_check.want_prerelease()`: off on a final release, on on RC/a/b). The check mark shows that resolved value. Toggling it fixes `"on"`/`"off"` from then on. Applies to both the manual and the startup check |
+
+### File
+
+Home for operations that **reach out to files or the OS** (implemented in `webui/files.py`).
+
+| Item                | Description                                                              |
+| ------------------- | -------------------------------------------------------------------------- |
+| Load Parameters...  | Turns **simulation parameters only** from a settings file into input changes (`sim_changes`; app keys are discarded) |
+| Load App Settings... | Imports **only** the app keys the Settings panel holds (language, theme, coordinate display, background, proxy) from a settings file (`settings.apply_many`) |
+| Open Results Folder | Opens `results/` in Explorer (creates it first if missing). Link does not write there — it is the place to look for 3.x results |
+| Delete All Cache... | Deletes all downloaded DEM / map tiles (confirmed inside the panel). Only when there are two or more DEM sources does it ask which sources to delete |
+
+> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter the Settings panel's items. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
 
 ### Help
 
 | Item        | Description                          |
 | ----------- | -------------------------------------- |
-| Open Documentation | Opens this document in a browser       |
-| Save Diagnostic Package... | `core/diagnostics.py` builds the zip (environment facts selected by default; `results/` artifacts opt-in) → [Help section of the user manual](../docs/manual_en.md#help) |
-| Check for Updates... | `core/update_check.py` asks GitHub Releases only when clicked (follows the proxy setting; one daemon thread + `post_to_ui`). If a newer version exists, asks whether to open the release page. Never downloads or replaces anything |
-| Check for Updates at Startup | Off by default (only when `update_check_auto` is `"on"`). At startup, if `update_check.auto_due()` is true, the attempt date (`update_check_last`) is saved **before** the query, so a failure never causes a second query the same day. Only a newer version is shown (the same confirmation as the manual check, plus a line on how to turn it off); up to date and failures go to the log only. Clicking the manual item while it is pending shows that answer as a manual check |
-| Include Pre-releases | `update_check_prerelease`: `"on"` / `"off"` is the user's choice; the default `""` means "decided by the current version" (`update_check.want_prerelease()`: off on a final release, on on RC/a/b). The check mark shows that resolved value. Toggling it fixes `"on"`/`"off"` from then on. Read on the UI thread and passed to `check(include_pre=...)` for both the manual and the startup check |
-| About       | Shows the version from `version.py`    |
+| Open Documentation | `webui/docs.py`. Turns the manual (in the distribution) or this document (running from source) into HTML with `markdown` and opens it in the default browser (if it cannot, the `.md` opens in the OS's default app) |
+| Save Diagnostic Package... | `webui/support.py` lists in the panel what will go in before saving (environment facts selected by default; `results/` artifacts not), and `core/diagnostics.py` builds the zip. Names sent from the screen are accepted only if they are in that list → [Help section of the user manual](../docs/manual_en.md#help) |
+| Check for Updates... | `core/update_check.py` asks GitHub Releases only when clicked (follows the proxy setting). Up to date, a newer version and failures all come back as one sentence at the bottom of the panel. Never downloads or replaces anything |
+| About       | Shows the version from `version.py` as one sentence at the bottom of the panel |
 
-> **"Load Parameters" and "Load App Settings" are mutually exclusive in scope** — the former covers simulation parameters, the latter theme, language and proxy. **Neither writes the other's territory** (so opening someone else's file never flips your display language or network settings).
+### Notices at startup
 
-> **The Map is not in the menus** — it opens from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
+`webui/notices.py`. Reports on translations and declaration files that failed to load, and a newer version found by the update check at startup, appear in **a dismissible band over the map** (they do not stop work and appear at every startup). The functions that build the text are pure, and the tests call them directly.
 
 ### Coordinate Format (DD / DMS)
 
 **A notation (display) setting, not an input mode.** `coords.parse_pair` accepts both DD and DMS leniently and everything is normalised to DD before the calculation (values reaching `simulation.SimParams` are always DD).
 
-Fields are reformatted on startup, on a notation switch, on settings/project load, and **on entry commit** (Enter / focus-out). ⚠️ **All three editable coordinate fields reformat on commit** (launcher views/launcher.py (removed in 4.0), Multiple Paths table views/batch_table.py (removed in 4.0), Multi-hop views/multihop.py (removed in 4.0) — aligned in 2.7): **the reformat itself is the acknowledgement that the parse succeeded**, and unreadable input is left as typed. ⚠️ The coordinates in Scenario Sweep (views/scenario.py (removed in 4.0)) are **read-only** (a frozen snapshot of the launcher), so they are outside this rule — they are only reformatted when `_update_path_label` redraws them.
+The screen owns the rewriting of the fields (`reformatCoords` in `webui/static/app.js`), and it runs **on a notation switch, on loading app settings, and when a map pin is moved (written back in the chosen notation)**. Only the TX and RX end-point fields are rewritten, and **unreadable input is left as typed** (not being reformatted is itself the sign that it was not read). ⚠️ Coordinates in the Multiple Paths, Condition Explorer and Relay Path tables are not rewritten (they are kept as typed, and `webui/sheets.py` converts them to types when running and saving).
 
 ### Proxy Settings
 
-If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL:
+If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), enter it in **Proxy URL** in the Settings panel:
 
 ```
 http://proxy.example.com:8080
 ```
 
-- Changes take effect immediately — no restart required
-- Leaving the field blank and clicking OK reverts to OS proxy settings (system settings / environment variables)
+- It takes effect as soon as it is confirmed (`dem.set_proxy`, and the remembered terrain is dropped) — no restart required
+- Leaving it blank reverts to OS proxy settings (system settings / environment variables)
 - `truststore` integration with the Windows certificate store is also active to handle corporate SSL inspection
-- If the elevation server is entirely unreachable, the run **aborts on consecutive failures** and asks the user, instead of quietly finishing on flat terrain
+- If the elevation server is entirely unreachable with no proxy set, the run **aborts on consecutive failures** and says so, instead of quietly finishing on flat terrain
 
 ---
 
