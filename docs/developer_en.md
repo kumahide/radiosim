@@ -1,9 +1,9 @@
-# RadioSim Pro 3.9.1
+# RadioSim Link 1.0
 
 > **Intended reader**: developers who run it from source or work on the code.
 > If you only want to know how to use the app, see [manual_en.md](manual_en.md).
 
-> 📣 **Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link".** The changes planned after 3.x (this guide's "Advance notice") arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only. `.rsproj` files saved by 3.x open in Link 1.0 (calculated with the same method as 3.9.x — see [manual_en.md](manual_en.md#project-files-rsproj)).
+> 📣 **RadioSim Link is the successor to RadioSim Pro 3.x.** `.rsproj` files saved by 3.x open in Link 1.0, and are then calculated with the same method as 3.9.x (see [manual_en.md](manual_en.md#project-files-rsproj)).
 
 A desktop simulator for screening radio link propagation characteristics before field surveys.
 Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial Information Authority of Japan (GSI) and visualizes terrain profiles, diffraction loss, vegetation attenuation, and link budgets in real time.
@@ -17,16 +17,16 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 3. [Requirements](#requirements)
 4. [File Structure](#file-structure)
 5. [Installation &amp; Launch (from source)](#installation--launch-from-source)
-6. [Menus](#menus)
+6. [The Settings panel](#the-settings-panel)
 7. [Map](#map)
-8. [Usage — Single Mode](#usage--single-mode)
+8. [Usage — Single Link](#usage--single-link)
 9. [Usage — Multiple Paths](#usage--multiple-paths)
 10. [Usage — Condition Explorer](#usage--condition-explorer-compare--sweep)
 11. [Usage — Relay Path](#usage--relay-path)
 12. [Input Parameters](#input-parameters)
 13. [Calculation Models](#calculation-models)
 14. [DEM Retrieval Logic](#dem-retrieval-logic)
-15. [Save Package](#save-package)
+15. [Saving — where and what](#saving--where-and-what)
 16. [Project Files (.rsproj)](#project-files-rsproj)
 17. [Architecture](#architecture)
 18. [Development Environment](#development-environment)
@@ -39,7 +39,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 
 ## Overview
 
-RadioSim Pro is a tool designed specifically for **pre-survey screening** in radio link design.
+RadioSim Link is a tool designed specifically for **pre-survey screening** in radio link design.
 Enter the coordinates, antenna heights, and radio settings for the TX (transmitter) and RX (receiver) stations, and the tool automatically retrieves GSI elevation data, draws a terrain cross-section, and determines link budget viability within seconds.
 
 ### Key Features
@@ -50,14 +50,16 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 
 | Flow | Implementation | Source of truth for input |
 | --- | --- | --- |
-| **Single Mode** | `simulation.py` | The launcher's input fields |
-| **Multiple Paths** | `batch.py` | The batch table (CSV I/O) |
+| **Single Link** | `simulation.py` | The input fields in the left column |
+| **Multiple Paths** | `batch.py` | The table on the workspace (CSV I/O) |
 | **Condition Explorer (compare / sweep)** | `scenario.py` | A pinned path plus a condition list. **One DEM fetch + N pure computations** (leaning on the pipeline being two-phase) |
 | **Relay Path** | `multihop.py` | The waypoint list; sections are derived. Regenerative relay model, so **the overall verdict is the min** (the tightest section), reported alongside the per-section breakdown |
 
+The screen is `webui/` (a local HTTP server opened in Edge's app mode). The four workspaces are switched at the top right, and `webui/worker.py` runs the calculations on a background thread.
+
 #### Map
 
-- **Map** (views/map_window.py (removed in 4.0), a single app-wide instance, 4 modes): pick coordinates / place waypoints / continuously add paths into Multiple Paths / visualize, prefetch, and delete DEM cache
+- **Map** (`webui/static/app.js`, Leaflet): one, at the top right. Drag the end-point pins (T, R) to enter coordinates (one calculation is requested when you let go); switch the background map at its top right; hover over the profile and that point shows on the map
 
 #### Calculation models (`models.py` — pure functions, zero side effects)
 
@@ -68,26 +70,25 @@ Also **the unit of class review** — when fixing a defect, always ask whether i
 - Environmental loss (4 categories: Urban / Suburban / Rural / LoS)
 - Rain attenuation (ITU-R P.838-3) and gaseous attenuation (ITU-R P.676-13 Annex 2)
 
-#### Output and reports (`report_*.py` — all headless)
+#### Output (`report/` builds the content and the screen writes it where you choose — all headless)
 
-- **A4 reports (v2)**: per-path / summary in a print-ready A4 portrait frame (`@page A4` + Ctrl+P for zero-dependency PDF; self-identifying header/footer). ⚠️ **Only the per-path report is guaranteed to fit one page** — the ledger paginates (the per-path shrink-to-fit cannot be applied to it, as it cuts the table across a page break)
-- **Antenna initial aim (AZ/EL)**: true azimuth/elevation to the far end, shown for both ends in per-path reports (geometry from existing data = initial values)
-- Automatic path map in HTML reports (TX/RX, path, and distance overlaid on a map)
-- **All-paths overview map** in the summary report (color-coded by verdict)
-- **Everything concatenated**: `report_all.html` carries the summary plus every path (for relays, every section)
-- Save results as a package (PNG / CSV / JSON / HTML / KML)
+- The workspace's results CSV (`summary.csv`, `hops.csv`, `scenario.csv`). Columns follow the output contract (`core/output_contract.py`)
+- KML (`path.kml` for Single Link, `summary.kml` for Multiple Paths)
+- PNG images of the map and the profile
+- No results folder is created (each artifact is saved, one at a time, where you choose). Link has no A4 reports (a RadioSim Pro feature)
 
 #### Reusing input
 
-- **Project files (`.rsproj`)**: coordinates, all parameters, project info, batch rows, explorer conditions and the waypoint list bundled into one file (**never results, never app settings**)
-- **Project info (name + free note)**: entered in the launcher and inherited by both Single and Multiple Paths reports
+- **Project files (`.rsproj`)**: coordinates, all parameters, batch rows, explorer conditions and the waypoint list bundled into one file (**never results, never app settings**)
+- **Project info (name + free note)**: the new screen has no fields for it. The project info of an opened `.rsproj` is carried over when you save it again
 
 #### Interface
 
-- Real-time antenna height and rain rate sliders in the graph window
+- The verdict band (the verdict word, its details, and the range from varying the assumptions) and the breakdown (link budget) in the left column
+- The terrain profile (`webui/profile.py` builds what is drawn). Hovering over it is linked to the map
 - Switchable coordinate notation (DD / DMS; `coords.py` is pure)
-- Japanese / English UI — switchable from the menu bar (`i18n.py` is the single source) — plus **user-supplied languages** (`lang/<code>.json`). `t()` has always fallen back to English per key, so an external table takes effect **only as far as it overrides**. ⛔ No plugin mechanism (one JSON shape, nothing else). ⚠️ **Artifact keys (`html_*` / `pl_*`) are not opened** — that would make the output contract vary per user. **A key whose placeholders (`{n}` …) differ from English is not applied, and the app says so at startup** (applying it would make `str.format` raise `KeyError` and take that screen down — nothing breaks silently)
-- System-aware dark mode (Light / Dark / System auto)
+- Japanese / English UI (`i18n.py` is the single source) — plus **user-supplied languages** (`lang/<code>.json`). `t()` has always fallen back to English per key, so an external table takes effect **only as far as it overrides**. ⛔ No plugin mechanism (one JSON shape, nothing else). ⚠️ **Artifact keys (`html_*` / `pl_*`) are not opened** — that would make the output contract vary per user. **A key whose placeholders (`{n}` …) differ from English is not applied, and the app says so on screen at startup** (applying it would make `str.format` raise `KeyError` and take that screen down — nothing breaks silently)
+- Theme (Light / Dark / System auto), switched in the Settings panel (⚙)
 
 ### Accuracy Statement
 
