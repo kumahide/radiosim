@@ -162,9 +162,50 @@ function showHeadline(h) {
   showBreakdown(h);
 }
 
+// 座標の欄＝十進度でも度分秒でも読む（`core/coords.py` の `_parse_one` と同じ規則・I-257）。
+// サーバーは計算の写しで同じ規則で十進度へ直す＝ここは線とピンを引くためだけの読み。
+const DMS_RE = /^\s*(\d+(?:\.\d+)?)\s*[°\s]\s*(?:(\d+(?:\.\d+)?)\s*['′\s]\s*)?(?:(\d+(?:\.\d+)?)\s*["″\s]?\s*)?([NSEWnsew])?\s*$/;
+const DD_RE = /^\s*[-+]?(?:\d+\.?\d*|\.\d+)(?:[eE][-+]?\d+)?\s*$/;
+
+function parseCoordPart(text) {
+  if (DD_RE.test(text)) return parseFloat(text);
+  const m = DMS_RE.exec(text);
+  if (!m) return NaN;
+  const value = parseFloat(m[1]) + parseFloat(m[2] || "0") / 60 + parseFloat(m[3] || "0") / 3600;
+  return m[4] && "SWsw".includes(m[4]) ? -value : value;
+}
+
 function parseLatLon(text) {
-  const parts = String(text).split(",").map((s) => parseFloat(s));
+  const parts = String(text).split(",").map(parseCoordPart);
   return parts.length === 2 && parts.every(Number.isFinite) ? parts : null;
+}
+
+// 度分秒＝秒は小数 1 桁・60.0 に丸まったら桁上げして秒は 0 に置く（`coords._format_dms_one`・B-034）
+function dmsPart(value, positive, negative) {
+  const hemi = value >= 0 ? positive : negative;
+  const v = Math.abs(value);
+  let deg = Math.trunc(v);
+  const remMin = (v - deg) * 60;
+  let minutes = Math.trunc(remMin);
+  let seconds = (remMin - minutes) * 60;
+  if (Math.round(seconds * 10) / 10 >= 60) {
+    seconds = 0;
+    minutes += 1;
+  }
+  if (minutes >= 60) {
+    minutes -= 60;
+    deg += 1;
+  }
+  const sec = seconds.toFixed(1).padStart(4, "0");
+  return `${deg}°${String(minutes).padStart(2, "0")}'${sec}"${hemi}`;
+}
+
+// 欄へ書き戻す表記＝設定の「座標の表記」（`coordFormat`）に従う
+let coordFormat = "dd";
+function coordText(lat, lng) {
+  return coordFormat === "dms"
+    ? `${dmsPart(lat, "N", "S")}, ${dmsPart(lng, "E", "W")}`
+    : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
 function showInputs(inputs) {
@@ -224,7 +265,7 @@ function initMap(basemap, attribution) {
   resized.observe(document.getElementById("profile"));
 }
 
-const latLonText = (ll) => `${ll.lat.toFixed(5)}, ${ll.lng.toFixed(5)}`;
+const latLonText = (ll) => coordText(ll.lat, ll.lng);
 
 // 端点のピン＝ドラッグの間は欄と線だけ動かし、離したときに 1 回だけ送る（地形の取得は端点が決まったときだけ）
 function makePin(key, text, at) {
@@ -1109,8 +1150,30 @@ function applyTheme(choice) {
 darkQuery.addEventListener("change", () => applyTheme());
 
 // 1 項目を替えるたびに保存する＝枠のボタンは閉じるだけ。言語は字の表を読み直す。
+// 座標の表記を替えたら端点の欄を新しい表記で書き直して送る（旧画面の `coords.reformat` と同じ＝
+// 読めない字はそのまま）。作業面の表の座標は書き換えない（旧画面も 1 回線の欄だけ）。
+function reformatCoords() {
+  const changes = {};
+  ["start", "end"].forEach((key) => {
+    const field = document.querySelector(`[data-key="${key}"]`);
+    if (!field) return;
+    const ll = parseLatLon(field.value);
+    if (!ll) return;
+    const text = coordText(ll[0], ll[1]);
+    if (text !== field.value) {
+      field.value = text;
+      changes[key] = text;
+    }
+  });
+  if (!Object.keys(changes).length) return;
+  Object.assign(pending, changes);
+  if (timer) clearTimeout(timer);
+  flush();
+}
+
 function buildSettings(st) {
   applyTheme(st.values.theme);
+  coordFormat = st.values.coord_format || "dd";
   const L = st.labels;
   const open = document.getElementById("settings-btn");
   open.title = L.title;
@@ -1128,6 +1191,10 @@ function buildSettings(st) {
         return;
       }
       applyTheme(body.settings.values.theme);
+      if (key === "coord_format") {
+        coordFormat = body.settings.values.coord_format;
+        reformatCoords();
+      }
     } catch (e) {
       err.textContent = String((e && e.message) || e);
     }
@@ -1150,6 +1217,7 @@ function buildSettings(st) {
     el("h2", { textContent: L.title }),
     choice("lang"),
     choice("theme"),
+    choice("coord_format"),
     el("label", {}, [el("span", { textContent: L.proxy_url }), proxy]),
     el("div", { className: "hint", textContent: L.proxy_hint }),
     check("update_check_auto"),

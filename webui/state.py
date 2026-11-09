@@ -33,6 +33,7 @@ from typing import Any
 
 from core import calc_profile
 from core import config
+from core import coords
 from webui import sheets as sheets_mod
 
 #: 見出しの種類（JS もこの字で分ける）。
@@ -114,9 +115,16 @@ class AppState:
 
         方式は写しにだけ混ぜる＝`SimParams(inputs)` が拾い、地形の鍵（双線形か）にも効く。
         画面へ返す写し（`wait` の `inputs`）には混ぜない（欄ではない）。
+
+        端点の座標は写しでだけ十進度へ直す（I-257＝欄は度分秒も書ける・`coords.to_dd_str`）。
+        持つのは利用者が書いた字のまま＝画面へ返す欄の字を書き換えない。読めない字はそのまま＝
+        判定は計算の側の入力の検査に任せる。
         """
         with self._cond:
-            return self._version, {**self._inputs, "calc_profile": self._profile}
+            inputs = {**self._inputs, "calc_profile": self._profile}
+        for key in ("start", "end"):
+            inputs[key] = coords.to_dd_str(inputs[key])
+        return self._version, inputs
 
     def workspace_snapshot(self) -> "tuple[int, str, dict[str, Any]]":
         """(今の版, 今の作業面, 面の入力の写し)。入力の集合は `snapshot` と同じ版で読む。"""

@@ -7,9 +7,9 @@ webui/settings.py
 - `apply(cfg, key, value)`＝検査 → `cfg` を書き換えて `config.save_app`。返り値は
   「読み直しが要るか」（言語を替えたとき＝画面の字は起動時の表から組む）。
 
-扱う鍵（`KEYS`）＝言語・テーマ・プロキシ・起動時の更新の確認・プレリリースも知らせるか。
-- 座標の表記（`coord_format`）は載せない＝効くのは帳票の人が読む座標だけで、帳票は
-  Pro へ移る（ステージ11b）。欄の読み（`app.js` の `parseLatLon`）は十進度だけ。
+扱う鍵（`KEYS`）＝言語・テーマ・座標の表記・プロキシ・起動時の更新の確認・プレリリースも知らせるか。
+- 座標の表記（`coord_format`＝`dd`／`dms`）＝ピンを動かしたときに欄へ書き戻す表記と、替えたときの
+  端点の欄の書き換え（`app.js`）。欄はどちらの表記で書いても読む（2026-11-09 経営者の選択）。
 - 背景地図（`basemap_layer`）は地図の張り替えと一緒に入れる（I-257 の C）。
 
 ⚠️ 起動の経路で網の部品を引かない（`test_the_startup_path_does_not_load_the_network_parts`）＝
@@ -24,10 +24,14 @@ from core import config
 from core import i18n
 
 #: 画面が変える鍵（並びは枠の並び）。
-KEYS = ("lang", "theme", "proxy_url", "update_check_auto", "update_check_prerelease")
+KEYS = ("lang", "theme", "coord_format", "proxy_url", "update_check_auto",
+        "update_check_prerelease")
 
 #: テーマの値と字の鍵（旧メニューと同じ 3 つ）。
 THEMES = (("system", "menu_system"), ("light", "menu_light"), ("dark", "menu_dark"))
+
+#: 座標の表記の値と字の鍵（旧メニューと同じ 2 つ）。
+COORD_FORMATS = (("dd", "coord_fmt_dd"), ("dms", "coord_fmt_dms"))
 
 _ON_OFF = ("on", "off")
 
@@ -49,6 +53,7 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
         "values": {
             "lang": cfg.get("lang", "en"),
             "theme": cfg.get("theme", "system"),
+            "coord_format": cfg.get("coord_format", "dd"),
             "proxy_url": cfg.get("proxy_url", ""),
             "update_check_auto": cfg.get("update_check_auto") == "on",
             "update_check_prerelease": update_check.want_prerelease(cfg),
@@ -56,11 +61,13 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
         "choices": {
             "lang": languages(),
             "theme": [[v, i18n.t(k)] for v, k in THEMES],
+            "coord_format": [[v, i18n.t(k)] for v, k in COORD_FORMATS],
         },
         "labels": {
             "title": i18n.t("menu_settings"),
             "lang": i18n.t("menu_language"),
             "theme": i18n.t("menu_theme"),
+            "coord_format": i18n.t("lbl_coord_format"),
             "proxy_url": i18n.t("dlg_proxy_url_label"),
             "proxy_hint": i18n.t("dlg_proxy_hint"),
             "update_check_auto": i18n.t("menu_check_updates_auto"),
@@ -81,6 +88,10 @@ def _check(key: str, value: Any) -> str:
     if key == "theme":
         if value not in {v for v, _k in THEMES}:
             raise SettingError(f"unknown theme: {value!r}")
+        return value
+    if key == "coord_format":
+        if value not in {v for v, _k in COORD_FORMATS}:
+            raise SettingError(f"unknown coord_format: {value!r}")
         return value
     if key == "proxy_url":
         if not isinstance(value, str) or "\n" in value or "\r" in value:

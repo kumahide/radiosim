@@ -615,6 +615,8 @@ def test_the_first_state_carries_the_settings(web):
     assert got["values"]["update_check_auto"] is False
     assert ["en", "English"] in got["choices"]["lang"]
     assert [v for v, _ in got["choices"]["theme"]] == ["system", "light", "dark"]
+    assert [v for v, _ in got["choices"]["coord_format"]] == ["dd", "dms"]
+    assert got["values"]["coord_format"] == "dd"
 
 
 def test_a_setting_round_trips_and_is_saved(web, saved):
@@ -630,7 +632,8 @@ def test_a_setting_round_trips_and_is_saved(web, saved):
 
 
 @pytest.mark.parametrize("body", [
-    {"key": "coord_format", "value": "dms"},           # 画面からは変えない鍵
+    {"key": "coord_format", "value": "dm"},
+    {"key": "calc_profile", "value": "v1"},            # 画面からは変えない鍵
     {"key": "theme", "value": "neon"},
     {"key": "lang", "value": "xx"},
     {"key": "update_check_auto", "value": "on"},       # 真偽で送る
@@ -674,3 +677,26 @@ def test_notices_ride_on_the_long_poll():
     assert snap["notices"] == [{"id": nid, "kind": "warn", "text": "lang/fr.json: rejected"}]
     with pytest.raises(ValueError):
         st.add_notice("fatal", "x")
+
+
+def test_the_coordinate_format_is_saved(web, saved):
+    status, raw = _request(web, "POST", "/api/settings", token=web.token,
+                           body={"key": "coord_format", "value": "dms"})
+    assert status == 200
+    assert json.loads(raw)["settings"]["values"]["coord_format"] == "dms"
+    assert web.app_cfg["coord_format"] == "dms" and saved["save"][-1]["coord_format"] == "dms"
+
+
+def test_the_ends_may_be_written_in_dms_and_compute_in_dd():
+    """欄は度分秒でも書ける＝持つのは書いた字・計算の写しは十進度（I-257）。"""
+    st = AppState()
+    dms = "34°32'34.4\"N, 132°24'42.5\"E"
+    st.update({"start": dms, "end": "nonsense"})
+    _, calc = st.snapshot()
+    lat, lon = (float(v) for v in calc["start"].split(","))
+    assert lat == pytest.approx(34 + 32 / 60 + 34.4 / 3600, abs=1e-6)
+    assert lon == pytest.approx(132 + 24 / 60 + 42.5 / 3600, abs=1e-6)
+    assert calc["end"] == "nonsense"                   # 読めない字はそのまま＝検査が断る
+    assert st.wait(0, 0)["inputs"]["start"] == dms     # 画面へ返す欄の字は書き換えない
+    doc_inputs, _sheets, _profile = st.document()
+    assert doc_inputs["start"] == dms                  # 保存は `project_io.dump` が DD へ直す
