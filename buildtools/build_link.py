@@ -6,7 +6,7 @@ buildtools/build_link.py
 `build.bat link`（ポータブル版の zip）と `build.bat link-installer`（インストーラ）の本体。
 build.bat は ASCII 専用なので、日本語の説明と判断はすべてここに置く（B-020 の規則）。
 
-作るもの（名前の `RadioSimLink` は仮＝ステージ8e の改名で決める）:
+作るもの（名前の `RadioSimLink` は Lite の既定＝`--product` で替わる・下の「製品名と許諾」）:
 
   dist\\RadioSimLink\\               python.exe・pythonw.exe・標準ライブラリの zip（embeddable の展開）
     python3XX._pth                  sys.path＝標準ライブラリ・`.`・`vendor`・`app` だけ
@@ -36,6 +36,13 @@ Smart App Control に 2 回止められた（3.9.1RC1・4.0 の試作）のが�
   この道具を借りて自分の配布を作るための口で、この道具はその包みの名前を知らない
   （`tests/test_layers.py` の ⑤＝公開のコードは上に載る層を引かない）。
   足した包みも作った木の python.exe で全モジュールを読む（漏れたら止める）。
+
+製品名と許諾（Link 1.0 ステージ11c・2026-11-09 経営者の決定）:
+  `--product "RadioSim Link Pro"` で、フォルダ・zip・インストーラ・起動の .cmd の名前（空白を抜いた
+  `RadioSimLinkPro`）と、インストーラの AppName・スタートメニュー・ショートカットの名前が替わる。
+  `--license ファイル` は、その許諾を木の `LICENSE`（MIT・いつも同梱）の隣へ写し、インストーラの
+  同意の画面にはそちらを出す。⛔ AppId とインストール先（`{autopf}\\RadioSim Link`）は替えない＝
+  同じ場所の Lite を置き換え、設定とキャッシュを引き継ぐ（保存先は `core.config.PRODUCT_DIR_NAME`）。
 """
 
 from __future__ import annotations
@@ -57,8 +64,12 @@ if REPO not in sys.path:
 
 from core import runtime_env, version  # noqa: E402  ─ 上の sys.path の後で読む
 
-#: 配布の名前（仮）。フォルダ・zip・インストーラ・起動の .cmd に使う＝8e の改名で 1 か所を替える。
+#: 製品名の既定（Lite）。`--product` で替わる（ステージ11c）。
+DEFAULT_PRODUCT = version.APP_NAME
+#: Lite の配布の名前＝フォルダ・zip・インストーラ・起動の .cmd（`dir_name(DEFAULT_PRODUCT)`）。
 APP_DIR_NAME = "RadioSimLink"
+#: いつも同梱する公開側の許諾（MIT）。`--license` の許諾はこの隣に足す。
+LICENSE_NAME = "LICENSE"
 
 EMBED_ENV = "RADIOSIM_EMBED_ZIP"
 ISCC_ENV = "RADIOSIM_ISCC"
@@ -110,6 +121,23 @@ class BuildError(Exception):
 # ---------------------------------------------------------------------------
 # 純粋な部分（tests/test_build_link.py が見る）
 # ---------------------------------------------------------------------------
+
+def dir_name(product: str) -> str:
+    """製品名 → 配布の名前（空白を抜く）。名前に使えない字は止める（ファイル名と ISCC の引数に入る）。"""
+    if not re.fullmatch(r"[A-Za-z][A-Za-z0-9]*(?: [A-Za-z0-9]+)*", product):
+        raise BuildError(f"製品名は英数字と 1 つずつの空白だけ: {product!r}")
+    return product.replace(" ", "")
+
+
+def license_source(path: str, base: str) -> str:
+    """`--license` のファイル（相対は `base` から）。無い・公開側の `LICENSE` と同じ名前は止める。"""
+    full = os.path.abspath(os.path.join(base, path))
+    if not os.path.isfile(full):
+        raise BuildError(f"--license のファイルが無い: {full}")
+    if os.path.basename(full).upper() == LICENSE_NAME:
+        raise BuildError(f"--license の名前が公開側の {LICENSE_NAME} と重なる: {full}")
+    return full
+
 
 def normalize(name: str) -> str:
     """配布物の名前を比べられる形へ（PEP 503＝大小・`-`・`_`・`.` を揃える）。"""
@@ -397,8 +425,9 @@ def _write_icon(root: str) -> None:
 
 
 def build_tree(dist_dir: str, embed_zip: str, declared: str,
-               packages: Iterable[tuple[str, str]] | None = None) -> str:
-    root = os.path.join(dist_dir, APP_DIR_NAME)
+               packages: Iterable[tuple[str, str]] | None = None, *,
+               name: str = APP_DIR_NAME, licenses: Iterable[str] = ()) -> str:
+    root = os.path.join(dist_dir, name)
     shutil.rmtree(root, ignore_errors=True)
     if os.path.exists(root):
         raise BuildError(f"前のビルドを消せない（開いているファイルがある？）: {root}")
@@ -426,7 +455,9 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str,
     for pkg, src in (package_sources() if packages is None else packages):
         shutil.copytree(src, os.path.join(app, pkg),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
-    shutil.copy2(os.path.join(REPO, "LICENSE"), root)
+    shutil.copy2(os.path.join(REPO, "LICENSE"), root)  # = LICENSE_NAME（MIT・いつも同梱）
+    for extra in licenses:
+        shutil.copy2(extra, root)
     _write_icon(root)
     with open(os.path.join(root, "version.txt"), "w", encoding="ascii", newline="\r\n") as f:
         f.write(version_numbers(version.APP_VERSION) + "\n")
@@ -463,11 +494,12 @@ def smoke_import(root: str, names: Iterable[str] = APP_PACKAGES) -> None:
                          + (done.stdout + done.stderr).strip())
 
 
-def write_zip(root: str, zip_path: str, entry: str = DEFAULT_ENTRY) -> None:
-    """ポータブル版＝portable.txt と起動の .cmd を足して、フォルダごと固める。"""
+def write_zip(root: str, zip_path: str, entry: str = DEFAULT_ENTRY, *,
+              name: str = APP_DIR_NAME) -> None:
+    """ポータブル版＝portable.txt と起動の .cmd（`<name>.cmd`）を足して、フォルダごと固める。"""
     with open(os.path.join(root, "portable.txt"), "w", encoding="ascii") as f:
         f.write("\n")
-    with open(os.path.join(root, f"{APP_DIR_NAME}.cmd"), "w", encoding="ascii", newline="") as f:
+    with open(os.path.join(root, f"{name}.cmd"), "w", encoding="ascii", newline="") as f:
         f.write(launcher_cmd(entry))
     if os.path.exists(zip_path):
         os.remove(zip_path)
@@ -479,20 +511,27 @@ def write_zip(root: str, zip_path: str, entry: str = DEFAULT_ENTRY) -> None:
                 zf.write(full, os.path.relpath(full, base))
 
 
-def installer_command(iscc: str, dist_dir: str, entry: str = DEFAULT_ENTRY) -> list[str]:
+def installer_command(iscc: str, dist_dir: str, entry: str = DEFAULT_ENTRY, *,
+                      product: str = DEFAULT_PRODUCT, license_name: str = LICENSE_NAME) -> list[str]:
     """ISCC へ渡す引数。木の場所（`LinkDir`）も渡す＝`--dist` を変えても同梱元と出力先がずれない。
 
     起動の口（`EntryModule`）も渡す＝ショートカットと最後の「起動する」が `-m <entry>` になる。
+    製品名（`AppName`）と配布の名前（`OutputName`）・同意の画面に出す許諾（`LicenseName`＝木の中の
+    ファイル名）も渡す（ステージ11c）。
     """
+    name = dir_name(product)
     return [iscc, f"/DAppVersion={version.APP_VERSION}",
-            f"/DLinkDir={os.path.join(dist_dir, APP_DIR_NAME)}",
+            f"/DLinkDir={os.path.join(dist_dir, name)}",
             f"/DEntryModule={entry}",
+            f"/DAppName={product}", f"/DOutputName={name}", f"/DLicenseName={license_name}",
             f"/O{dist_dir}", os.path.join(REPO, "installer", "link.iss")]
 
 
-def build_installer(dist_dir: str, iscc: str, entry: str = DEFAULT_ENTRY) -> str:
-    subprocess.run(installer_command(iscc, dist_dir, entry), check=True)  # nosec B603 ─ 宣言の ISCC
-    setup = os.path.join(dist_dir, f"{APP_DIR_NAME}-Setup-{version.APP_VERSION}.exe")
+def build_installer(dist_dir: str, iscc: str, entry: str = DEFAULT_ENTRY, *,
+                    product: str = DEFAULT_PRODUCT, license_name: str = LICENSE_NAME) -> str:
+    subprocess.run(installer_command(iscc, dist_dir, entry, product=product,  # nosec B603 ─ 宣言の ISCC
+                                     license_name=license_name), check=True)
+    setup = os.path.join(dist_dir, f"{dir_name(product)}-Setup-{version.APP_VERSION}.exe")
     if not os.path.isfile(setup):
         raise BuildError(f"ISCC は成功を返したが、インストーラが無い: {setup}")
     signtool = os.environ.get(SIGNTOOL_ENV, "").strip().strip('"')
@@ -509,28 +548,37 @@ def main(argv: list[str] | None = None) -> int:
                     help="このリポジトリの外の包みを app へ足す（繰り返せる・相対は今のフォルダから）")
     ap.add_argument("--entry", default=DEFAULT_ENTRY, metavar="名前",
                     help=f"起動の口＝pythonw.exe -m 名前（既定 {DEFAULT_ENTRY}）")
+    ap.add_argument("--product", default=DEFAULT_PRODUCT, metavar="製品名",
+                    help=f"窓の外に出る名前と配布の名前（既定 {DEFAULT_PRODUCT}）")
+    ap.add_argument("--license", default=None, metavar="ファイル",
+                    help=f"{LICENSE_NAME} の隣に足し、インストーラの同意の画面に出す許諾")
     a = ap.parse_args(argv)
     try:
+        name = dir_name(a.product)
+        extra = license_source(a.license, os.getcwd()) if a.license else None
         packages = package_sources(a.package, base=os.getcwd())
         check_entry(a.entry, packages)
         declared = check_declared()
         embed_zip = check_embed_zip()
         iscc = check_iscc() if a.mode == "installer" else ""
         check_dependencies()
-        print(f"[INFO] {APP_DIR_NAME} {version.APP_VERSION}（{a.mode}・-m {a.entry}）を作る")
+        print(f"[INFO] {name} {version.APP_VERSION}（{a.mode}・-m {a.entry}）を作る")
         print(f"       embeddable : {embed_zip}")
         for name, src in packages[len(APP_PACKAGES):]:
             print(f"       外の包み   : {name} ← {src}")
         os.makedirs(a.dist, exist_ok=True)
-        root = build_tree(a.dist, embed_zip, declared, packages)
+        root = build_tree(a.dist, embed_zip, declared, packages, name=name,
+                          licenses=[extra] if extra else [])
         smoke_import(root, [n for n, _ in packages])
         print(f"[OK] フォルダ : {root}")
         if a.mode == "zip":
-            zip_path = os.path.join(a.dist, f"{APP_DIR_NAME}-{version.APP_VERSION}.zip")
-            write_zip(root, zip_path, a.entry)
+            zip_path = os.path.join(a.dist, f"{name}-{version.APP_VERSION}.zip")
+            write_zip(root, zip_path, a.entry, name=name)
             print(f"[OK] zip     : {zip_path}")
         else:
-            print(f"[OK] インストーラ : {build_installer(a.dist, iscc, a.entry)}")
+            setup = build_installer(a.dist, iscc, a.entry, product=a.product,
+                                    license_name=os.path.basename(extra) if extra else LICENSE_NAME)
+            print(f"[OK] インストーラ : {setup}")
     except BuildError as e:
         print(f"[ERROR] {e}", file=sys.stderr)
         return 1

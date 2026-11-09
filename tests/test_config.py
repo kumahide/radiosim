@@ -1119,7 +1119,7 @@ class TestInstallerCodeIsReachable:
     #: ISCC が section tag として読む見出し（このファイルが実際に使うもの）。
     _ISS_SECTIONS = frozenset({
         "[Setup]", "[Languages]", "[LangOptions]", "[CustomMessages]",
-        "[Files]", "[Icons]", "[Tasks]", "[Run]", "[UninstallDelete]",
+        "[Files]", "[Icons]", "[Tasks]", "[Run]", "[InstallDelete]", "[UninstallDelete]",
         "[Code]",
     })
 

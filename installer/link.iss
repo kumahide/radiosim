@@ -12,8 +12,14 @@
 ; コンパイラ: Inno Setup 7（本体と同じ・I-125）。
 ;
 ; 起動方法: build.bat link-installer から（buildtools/build_link.py が
-; /DAppVersion= と /DLinkDir= と /DEntryModule= と /O を渡す）。単体で ISCC にかける場合は
-; 下の #ifndef で "0.0.0-dev" と ..\dist\RadioSimLink が使われる。
+; /DAppVersion= と /DLinkDir= と /DEntryModule= と /DAppName= と /DOutputName= と
+; /DLicenseName= と /O を渡す）。単体で ISCC にかける場合は下の #ifndef で "0.0.0-dev"・
+; ..\dist\RadioSimLink・Lite の名前・LICENSE が使われる。
+;
+; 🔑 製品名（Link 1.0 ステージ11c・2026-11-09 経営者の決定）: 上に載る非公開の層（Pro）は
+; build_link.py の --product と --license で AppName（窓の外の名前・スタートメニュー・ショート
+; カット）・OutputName（インストーラの名前）・同意の画面の許諾を替える。⛔ AppId と
+; DefaultDirName は替えない＝同じ場所の Lite を置き換え、設定とキャッシュを引き継ぐ。
 ;
 ; 配置方針は本体と同じ（3.1 ステージ1の保存先移設と対）:
 ;   - 既定で Program Files（管理者権限が無ければユーザー配下）へ入れる＝
@@ -31,8 +37,20 @@
   #define AppVersion "0.0.0-dev"
 #endif
 
+; 製品名と配布の名前（ステージ11c）。既定は Lite＝build_link.py の DEFAULT_PRODUCT と APP_DIR_NAME。
+#ifndef AppName
+  #define AppName "RadioSim Link"
+#endif
+#ifndef OutputName
+  #define OutputName "RadioSimLink"
+#endif
+; 同意の画面に出す許諾＝木の中のファイル名（build_link.py が LICENSE と --license を木へ写す）。
+#ifndef LicenseName
+  #define LicenseName "LICENSE"
+#endif
+
 #ifndef LinkDir
-  #define LinkDir AddBackslash(SourcePath) + "..\dist\RadioSimLink"
+  #define LinkDir AddBackslash(SourcePath) + "..\dist\" + OutputName
 #endif
 
 ; 起動の口（4.0 ステージ8f）。build_link.py の --entry が /DEntryModule= で渡す＝上に載る
@@ -41,7 +59,6 @@
   #define EntryModule "webui"
 #endif
 
-#define AppName "RadioSim Link"
 #define AppPublisher "BearValley AI Craftworks"
 #define AppURL "https://github.com/kumahide/radiosim"
 
@@ -51,13 +68,13 @@
 ; ⚠️ AppVersion の文字列（"1.0RC2" など）は比べない＝Pascal で version_tuple() を書き直すことになる。
 #define VerFile AddBackslash(LinkDir) + "version.txt"
 #if !FileExists(VerFile)
-  #error dist\RadioSimLink\version.txt が無い（先に build.bat link-installer で木を作る）
+  #error 木に version.txt が無い（先に build.bat link-installer で木を作る）
 #endif
 #define VerHandle FileOpen(VerFile)
 #define NewVerNums Trim(FileRead(VerHandle))
 #expr FileClose(VerHandle)
 #if NewVerNums == ""
-  #error dist\RadioSimLink\version.txt から版の 4 数字を読めない
+  #error 木の version.txt から版の 4 数字を読めない
 #endif
 
 [Setup]
@@ -71,13 +88,17 @@ AppPublisher={#AppPublisher}
 AppPublisherURL={#AppURL}
 AppSupportURL={#AppURL}
 AppUpdatesURL={#AppURL}
+; ⛔ インストール先は製品名に従わせない（Pro も Lite と同じ場所＝置き換え・ステージ11c）。
 DefaultDirName={autopf}\RadioSim Link
-DefaultGroupName=RadioSim Link
+DefaultGroupName={#AppName}
 DisableProgramGroupPage=yes
-LicenseFile=..\LICENSE
+; 前回のスタートメニューのフォルダを引き継がない＝Lite→Pro の置き換えで「RadioSim Link」の
+; フォルダのまま残らない（既定の yes だと前回の名前が勝つ）。古い方は [InstallDelete] が消す。
+UsePreviousGroup=no
+LicenseFile={#LinkDir}\{#LicenseName}
 OutputDir=..\dist
-; build_link.py の build_installer はこの名前（RadioSimLink-Setup-<版>.exe）を探す。
-OutputBaseFilename=RadioSimLink-Setup-{#AppVersion}
+; build_link.py の build_installer はこの名前（<OutputName>-Setup-<版>.exe）を探す。
+OutputBaseFilename={#OutputName}-Setup-{#AppVersion}
 Compression=lzma2
 SolidCompression=yes
 WizardStyle=modern
@@ -138,7 +159,7 @@ japanese.WelcomeFontName=Yu Gothic UI
 ; 本体の「キャッシュ・ログ」を、Link だけのログと 3.9 と共有の地形キャッシュに割った）。
 ; ⚠️ 見出し（UninstData*）は下の [Code] が **CustomMessages のキー名** として
 ; 文字列で参照する（DataNames に入る）＝キーを改名したら [Code] も直すこと。
-japanese.UninstDataTitle=RadioSim Link のデータの削除
+japanese.UninstDataTitle={#AppName} のデータの削除
 japanese.UninstDataIntro=下のデータはアンインストールしても残ります。この PC から消したいものだけチェックしてください。
 japanese.UninstDataSettings=UI 設定・最後に使用した入力値
 japanese.UninstDataLogs=ログ・画面の作業用データ
@@ -147,12 +168,12 @@ japanese.UninstDataResults=保存パッケージの出力先
 japanese.UninstDataLang=追加した表示言語ファイル
 japanese.UninstDataHint=チェックを外したものはそのまま残り、次回インストール時に引き継がれます。
 ; B-188: 管理者へ昇格したアンインストールでは、この案内だけ出して 1 件も消さない。
-japanese.UninstDataElevated=このアンインストールは管理者として実行されているため、RadioSim Link を使っていた利用者のデータの場所を特定できません（この PC から誤って別の人のデータを消さないよう、ここでは何も削除しません）。%n%n残るデータを消したい場合は、そのユーザーでサインインしてから次の場所を手動で削除してください:%n%n  %1
+japanese.UninstDataElevated=このアンインストールは管理者として実行されているため、{#AppName} を使っていた利用者のデータの場所を特定できません（この PC から誤って別の人のデータを消さないよう、ここでは何も削除しません）。%n%n残るデータを消したい場合は、そのユーザーでサインインしてから次の場所を手動で削除してください:%n%n  %1
 ; B-189: 消せなかったものを黙って成功にしない。
 japanese.UninstDataFailed=次のデータは削除できませんでした（ファイルが開かれている・アクセス権が無い等）。手動で削除してください:%n%n%1
-english.UninstDataElevated=This uninstall is running as an administrator, so it cannot tell where the data of the person who used RadioSim Link is stored. Nothing has been deleted, so that another user's data is not removed by mistake.%n%nTo remove the remaining data, sign in as that user and delete these locations by hand:%n%n  %1
+english.UninstDataElevated=This uninstall is running as an administrator, so it cannot tell where the data of the person who used {#AppName} is stored. Nothing has been deleted, so that another user's data is not removed by mistake.%n%nTo remove the remaining data, sign in as that user and delete these locations by hand:%n%n  %1
 english.UninstDataFailed=The following data could not be deleted (a file is open, permissions are missing, and so on). Please delete it by hand:%n%n%1
-english.UninstDataTitle=Remove RadioSim Link data
+english.UninstDataTitle=Remove {#AppName} data
 english.UninstDataIntro=The data below is kept when you uninstall. Tick only what you want removed from this PC.
 english.UninstDataSettings=UI settings and last used input values
 english.UninstDataLogs=Logs and working data of the window
@@ -182,19 +203,35 @@ english.VerDowngradeAsk=You are about to install a version (%2) that is older th
 ;  - portable.txt と RadioSimLink.cmd は build_link.py が zip のときだけ作る＝
 ;    通常は木に無い（念のため除外する＝手元で zip を作った後の木の取り違え対策）
 ; createallsubdirs は使わない（本体と同じ・空のフォルダを作らない）。
-Source: "{#LinkDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs; Excludes: "portable.txt,RadioSimLink.cmd"
+Source: "{#LinkDir}\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs; Excludes: "portable.txt,{#OutputName}.cmd"
 
 [Icons]
 ; 起動は pythonw.exe -m {#EntryModule}（既定 webui・自前の exe が無い）。作業フォルダを {app} にし、絵は木の icon.ico。
-Name: "{group}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
-Name: "{group}\{cm:UninstallProgram,RadioSim Link}"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\RadioSim Link"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
+Name: "{group}\{#AppName}"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"
+Name: "{group}\{cm:UninstallProgram,{#AppName}}"; Filename: "{uninstallexe}"
+Name: "{autodesktop}\{#AppName}"; Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; IconFilename: "{app}\icon.ico"; Tasks: desktopicon
 
 [Tasks]
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Run]
-Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,RadioSim Link}"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\pythonw.exe"; Parameters: "-m {#EntryModule}"; WorkingDir: "{app}"; Description: "{cm:LaunchProgram,{#AppName}}"; Flags: nowait postinstall skipifsilent
+
+[InstallDelete]
+; ステージ11c: 前に入っていた木の app と vendor を消してから入れる＝上書きでは消えたモジュールが
+; 残る（版の間で消したもの・Pro から Lite へ戻したときの Pro の包み）。木はビルドの度に作り直す
+; ので、入れる側が持つ物はこれで全部そろう。
+Type: filesandordirs; Name: "{app}\app"
+Type: filesandordirs; Name: "{app}\vendor"
+; もう一方の製品のショートカット（Lite と Pro は同じ AppId＝置き換えると名前の違う方が残る）。
+#if AppName != "RadioSim Link"
+Type: filesandordirs; Name: "{autoprograms}\RadioSim Link"
+Type: files; Name: "{autodesktop}\RadioSim Link.lnk"
+#endif
+#if AppName != "RadioSim Link Pro"
+Type: filesandordirs; Name: "{autoprograms}\RadioSim Link Pro"
+Type: files; Name: "{autodesktop}\RadioSim Link Pro.lnk"
+#endif
 
 [UninstallDelete]
 ; install_lang.txt は [Files] ではなく [Code] が作るので uninsdeletefile が使えない。

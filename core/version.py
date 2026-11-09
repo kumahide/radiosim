@@ -25,6 +25,19 @@ TAG_PREFIX  = "link-"
 _FINAL_RANK = 9999
 
 
+def set_app_name(name: str) -> None:
+    """製品名を差し替える（Link 1.0 ステージ11c・上に載る非公開の層が起動の最初に呼ぶ）。
+
+    窓の題（`webui/server.py` が `index.html` の `<title>` に入れる）・「設定」の枠の版の表示・
+    `APP_FULL` が変わる。⚠️ 保存先のフォルダ（`core.config.PRODUCT_DIR_NAME`）・タグの頭・
+    `USER_AGENT` は変えない＝同じ AppId で Lite を置き換え、設定とキャッシュを引き継ぐ
+    （2026-11-09 経営者の決定）。読む側は `version.APP_NAME` を毎回引く（`from` で写さない）。
+    """
+    global APP_NAME, APP_FULL
+    APP_NAME = name
+    APP_FULL = f"{APP_NAME} {APP_VERSION}"
+
+
 def version_tuple(v: str = APP_VERSION) -> tuple[int, int, int, int]:
     """版の字を Windows の 4 数字バージョンへ直す（`buildtools/build_link.py` の version.txt＝インストーラの版比べが使う）。
 

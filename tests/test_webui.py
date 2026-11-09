@@ -539,6 +539,20 @@ def test_static_files_are_served_and_cannot_escape(web):
     assert webserver.resolve_static("/index.html") is not None
 
 
+def test_window_title_follows_the_product_name(web, monkeypatch):
+    """窓の題（`<title>`）は `version.APP_NAME`＝Pro は `set_app_name` で替える（11c）。"""
+    from core import version
+
+    assert "<title>RadioSim Link</title>" in _request(web, "GET", "/")[1].decode("utf-8")
+    monkeypatch.setattr(version, "APP_NAME", version.APP_NAME)
+    monkeypatch.setattr(version, "APP_FULL", version.APP_FULL)
+    version.set_app_name("RadioSim Link Pro")
+    assert version.APP_FULL == f"RadioSim Link Pro {version.APP_VERSION}"
+    page = _request(web, "GET", "/")[1].decode("utf-8")
+    assert page.count("<title>RadioSim Link Pro</title>") == 1
+    assert "<title>RadioSim Link</title>" not in page
+
+
 def test_an_absent_tile_is_a_404(web):
     assert _request(web, "GET", "/tile/pale/5/28/12.png")[0] == 404
     assert _request(web, "GET", "/tile/../5/28/12.png")[0] in (403, 404)

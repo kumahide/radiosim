@@ -11,7 +11,7 @@ webui/server.py
 - 本文は 1 MiB まで（複数経路の表を丸ごと送る＝1 行 150 バイトほどで数千行）
 
 口:
-    GET  /                       … `static/index.html`
+    GET  /                       … `static/index.html`（`<title>` は `version.APP_NAME`＝`titled_page`）
     GET  /<静的ファイル>
     GET  /api/state?after=N      … 長いポーリング（変化の数が N を越えたら返る）
     POST /api/inputs             … `{"changes": {鍵: 値}}`＝変えた欄だけ。作業面（ステージ10a）は
@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import base64
 import csv
+import html
 import json
 import logging
 import mimetypes
@@ -65,6 +66,7 @@ from core import i18n
 from core import models
 from core import terrain_grid
 from core import units
+from core import version
 from webui import docs as docs_mod
 from webui import exports
 from webui import files as files_mod
@@ -303,6 +305,18 @@ def resolve_static(path: str, root: str = STATIC_ROOT) -> "str | None":
     if not full.startswith(os.path.normpath(root) + os.sep):
         return None
     return full if os.path.isfile(full) else None
+
+
+_TITLE_RE = re.compile(rb"<title>[^<]*</title>")
+
+
+def titled_page(page: bytes) -> bytes:
+    """`index.html` の `<title>`（＝Edge の窓の題）を `version.APP_NAME` にする（ステージ11c）。
+
+    Pro は起動の最初に `version.set_app_name` で名前を差し替える＝静的なファイルは Lite の名前のまま。
+    """
+    title = "<title>" + html.escape(version.APP_NAME) + "</title>"
+    return _TITLE_RE.sub(title.encode("utf-8"), page, count=1)
 
 
 class WebServer:
@@ -559,7 +573,10 @@ def _make_handler(app: WebServer) -> type:
             if ctype.startswith("text/") or ctype.endswith("javascript"):
                 ctype += "; charset=utf-8"
             with open(full, "rb") as f:
-                self._send(200, f.read(), ctype)
+                body = f.read()
+            if os.path.basename(full) == "index.html":
+                body = titled_page(body)
+            self._send(200, body, ctype)
 
         def _serve_tile(self, m: "re.Match[str]") -> None:
             src, z, x, y = m.group(1), int(m.group(2)), int(m.group(3)), int(m.group(4))

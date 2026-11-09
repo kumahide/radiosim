@@ -186,7 +186,42 @@ class TestInstallerCommand:
             iss = f.read()
         assert 'Source: "{#LinkDir}\\*"' in iss
         assert '#define VerFile AddBackslash(LinkDir) + "version.txt"' in iss
-        assert f"OutputBaseFilename={bl.APP_DIR_NAME}-Setup-{{#AppVersion}}" in iss
+        assert "OutputBaseFilename={#OutputName}-Setup-{#AppVersion}" in iss
+        assert f'#define OutputName "{bl.APP_DIR_NAME}"' in iss
+        assert f'#define AppName "{bl.DEFAULT_PRODUCT}"' in iss
+        assert '#define LicenseName "LICENSE"' in iss
+        assert "LicenseFile={#LinkDir}\\{#LicenseName}" in iss
+
+    def test_product_name_reaches_the_installer(self, tmp_path):
+        """`--product` は木・インストーラの名前と AppName を替え、AppId とインストール先は替えない（11c）。"""
+        cmd = bl.installer_command("ISCC.exe", str(tmp_path), "outer",
+                                   product="RadioSim Link Pro", license_name="LICENSE-PRO.txt")
+        assert f"/DLinkDir={tmp_path / 'RadioSimLinkPro'}" in cmd
+        assert {"/DAppName=RadioSim Link Pro", "/DOutputName=RadioSimLinkPro",
+                "/DLicenseName=LICENSE-PRO.txt"} <= set(cmd)
+        with open(os.path.join(_ROOT, "installer", "link.iss"), encoding="utf-8-sig") as f:
+            iss = f.read()
+        assert "DefaultDirName={autopf}\\RadioSim Link\n" in iss.replace("\r\n", "\n")
+        assert "AppId={{E45B60BB-825A-42EE-92DB-796FAA051C21}" in iss
+        assert "UsePreviousGroup=no" in iss
+
+    def test_lite_name_is_the_default(self):
+        assert bl.dir_name(bl.DEFAULT_PRODUCT) == bl.APP_DIR_NAME
+        assert bl.LICENSE_NAME == "LICENSE"   # build_tree は字で写す（test_docs_consistency が見る）
+
+    @pytest.mark.parametrize("bad", ["", " RadioSim", "RadioSim  Link", "Radio/Sim", "ラジオ"])
+    def test_bad_product_name_stops(self, bad):
+        with pytest.raises(bl.BuildError, match="製品名"):
+            bl.dir_name(bad)
+
+    def test_license_must_exist_and_not_shadow_mit(self, tmp_path):
+        (tmp_path / "LICENSE-PRO.txt").write_text("x", encoding="utf-8")
+        (tmp_path / "LICENSE").write_text("x", encoding="utf-8")
+        assert bl.license_source("LICENSE-PRO.txt", str(tmp_path)).endswith("LICENSE-PRO.txt")
+        with pytest.raises(bl.BuildError, match="無い"):
+            bl.license_source("ghost.txt", str(tmp_path))
+        with pytest.raises(bl.BuildError, match="重なる"):
+            bl.license_source("LICENSE", str(tmp_path))
 
     def test_iss_starts_the_entry_it_is_given(self):
         """ショートカット 2 つと最後の「起動する」は `EntryModule` を起こす（既定は webui）。"""
