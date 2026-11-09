@@ -24,6 +24,7 @@ tests/test_i18n_external.py
 """
 
 import ast
+import copy
 import json
 import os
 import sys
@@ -594,3 +595,78 @@ def test_rejections_are_reported_for_the_screen(lang_dir):
     code, name, accepted, rejected = i18n.external_reports()[0]
     assert (code, name, accepted) == ("fr", "Français", 1)
     assert [k for k, _r in rejected] == ["status_prefetch_pct"]
+
+# ============================================================
+# 5. 別の部品が訳を足す口（Link 1.0 ステージ11b＝帳票を Pro へ移した）
+# ============================================================
+# 縛ること＝同梱 2 言語だけを受ける・既にある鍵を別の値で上書きしない（同じ値は通す）・
+# 足した鍵は成果物の語＝外部訳では却下し、ひな形にも載せない。
+
+@pytest.fixture
+def clean_tables():
+    """`_STRINGS` と `_REGISTERED_KEYS` はモジュール全体の状態＝毎回戻す。"""
+    strings = copy.deepcopy(i18n._STRINGS)
+    registered = set(i18n._REGISTERED_KEYS)
+    yield
+    i18n._STRINGS.clear()
+    i18n._STRINGS.update(strings)
+    i18n._REGISTERED_KEYS.clear()
+    i18n._REGISTERED_KEYS.update(registered)
+    i18n.set_lang("en")
+
+
+_KEY = "zz_test_registered_title"
+
+
+def test_registered_keys_are_looked_up_in_both_languages(clean_tables):
+    i18n.register_strings({"en": {_KEY: "Report"}, "ja": {_KEY: "帳票"}})
+    i18n.set_lang("ja")
+    assert i18n.t(_KEY) == "帳票"
+    i18n.set_lang("en")
+    assert i18n.t(_KEY) == "Report"
+
+
+def test_registering_the_same_value_twice_is_allowed(clean_tables):
+    """読み直し（同じモジュールを 2 度 import する等）で落ちないこと。"""
+    tables = {"en": {_KEY: "Report"}, "ja": {_KEY: "帳票"}}
+    i18n.register_strings(tables)
+    i18n.register_strings(tables)
+    assert i18n.t(_KEY) == "Report"
+
+
+def test_an_existing_key_cannot_be_overwritten(clean_tables):
+    """🔴 公開側の画面語彙を別の値で書き換えさせない。"""
+    key = next(iter(i18n._STRINGS["en"]))
+    before = i18n._STRINGS["en"][key]
+    with pytest.raises(ValueError):
+        i18n.register_strings({"en": {key: before + " (changed)"}})
+    assert i18n._STRINGS["en"][key] == before
+
+
+def test_a_failed_registration_leaves_the_tables_untouched(clean_tables):
+    """全部を確かめてから書く＝途中の言語だけ足された状態を残さない。"""
+    key = next(iter(i18n._STRINGS["ja"]))
+    with pytest.raises(ValueError):
+        i18n.register_strings({"en": {_KEY: "Report"},
+                               "ja": {key: i18n._STRINGS["ja"][key] + "x"}})
+    assert _KEY not in i18n._STRINGS["en"]
+    assert _KEY not in i18n._REGISTERED_KEYS
+
+
+@pytest.mark.parametrize("tables", [
+    {"fr": {_KEY: "Rapport"}},
+    {"en": [(_KEY, "Report")]},
+    {"en": {_KEY: 1}},
+])
+def test_malformed_tables_are_rejected(clean_tables, tables):
+    with pytest.raises(ValueError):
+        i18n.register_strings(tables)
+    assert _KEY not in i18n._STRINGS["en"]
+
+
+def test_registered_keys_are_closed_to_external_translation(clean_tables):
+    """足した鍵は帳票の語＝外部訳で上書きさせず、ひな形にも出さない。"""
+    i18n.register_strings({"en": {_KEY: "Report"}, "ja": {_KEY: "帳票"}})
+    _accepted, rejected = i18n.validate_external({_KEY: "Rapport"})
+    assert dict(rejected).get(_KEY) == "artifact"
+    assert _KEY not in i18n.translatable_keys()

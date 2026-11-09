@@ -1788,6 +1788,45 @@ _ARTIFACT_KEYS = frozenset({
 #: 用語集ゲートが守っている画面語彙が黙って外れる）。
 _BUILTIN_LANGS = ("en", "ja")
 
+#: `register_strings` で足した鍵（Link 1.0 ステージ11b）。足すのは帳票（Pro）の語
+#: ＝成果物の語なので、外部訳では開かない（`validate_external` が `"artifact"` で
+#: 却下し、`translatable_keys` から除く）。
+_REGISTERED_KEYS: set = set()
+
+
+def register_strings(tables: dict) -> None:
+    """別の部品（Pro の帳票）が持つ訳を同梱の表へ足す（Link 1.0 ステージ11b）。
+
+    `tables` は `{"en": {鍵: 値}, "ja": {鍵: 値}}`。同梱の 2 言語だけを受ける
+    （外部訳の言語へ足すと、その言語の検査〔`validate_external`〕を素通りする）。
+
+    🔴 **既にある鍵を別の値で上書きしない**＝公開側の画面語彙を Pro が黙って
+    書き換えると、用語集ゲートが守っている語が外れる。⇒ 値が違えば `ValueError`。
+    同じ値は通す（Pro のモジュールを読み直しても落ちない）。全部を確かめてから
+    書く＝途中で落ちても表は元のまま。
+    """
+    for lang, table in tables.items():
+        if lang not in _BUILTIN_LANGS:
+            raise ValueError(f"register_strings: unsupported language {lang!r}")
+        if not isinstance(table, dict):
+            raise ValueError(f"register_strings: table for {lang!r} is not a dict")
+        base = _STRINGS[lang]
+        for key, value in table.items():
+            if not isinstance(key, str) or not isinstance(value, str):
+                raise ValueError(f"register_strings: non-text entry {key!r}")
+            if key in base and base[key] != value:
+                raise ValueError(
+                    f"register_strings: {lang}.{key} already has another value")
+    for lang, table in tables.items():
+        _STRINGS[lang].update(table)
+        _REGISTERED_KEYS.update(table)
+
+
+def _is_artifact_key(key: str) -> bool:
+    """成果物の語か（外部訳で開かない鍵）。"""
+    return (key.startswith(_ARTIFACT_PREFIXES) or key in _ARTIFACT_KEYS
+            or key in _REGISTERED_KEYS)
+
 _PLACEHOLDER_RE = re.compile(r"\{([^{}]*)\}")
 
 
@@ -1882,7 +1921,7 @@ def validate_external(table: dict) -> tuple:
             rejected.append((key, "not_text"))
         elif key not in base:
             rejected.append((key, "unknown"))
-        elif key.startswith(_ARTIFACT_PREFIXES) or key in _ARTIFACT_KEYS:
+        elif _is_artifact_key(key):
             rejected.append((key, "artifact"))
         elif not _is_valid_format(value):
             rejected.append((key, "placeholder"))
@@ -1966,14 +2005,14 @@ def load_external(*dir_paths: str) -> list:
 
 
 def translatable_keys() -> dict:
-    """訳せるキーと英語の値（成果物の語＝`_ARTIFACT_PREFIXES`/`_ARTIFACT_KEYS` は除く）。
+    """訳せるキーと英語の値（成果物の語＝`_is_artifact_key` は除く）。
 
     ここに載らないキーを外部訳ファイルに書いても `validate_external` が
     `"artifact"` で却下するだけなので、ひな形には最初から入れない（I-109）。
     """
     return {
         key: value for key, value in _STRINGS["en"].items()
-        if not key.startswith(_ARTIFACT_PREFIXES) and key not in _ARTIFACT_KEYS
+        if not _is_artifact_key(key)
     }
 
 
