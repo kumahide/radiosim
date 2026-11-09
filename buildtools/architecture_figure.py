@@ -78,24 +78,24 @@ class Band:
 
 GRID_COLUMNS = 3
 
-TITLE: Text = ("RadioSim Pro — レイヤー構成", "RadioSim Pro — Layer Structure")
-ARIA_TITLE: Text = ("RadioSim Pro レイヤー構成", "RadioSim Pro layer structure")
+TITLE: Text = ("RadioSim Link — レイヤー構成", "RadioSim Link — Layer Structure")
+ARIA_TITLE: Text = ("RadioSim Link レイヤー構成", "RadioSim Link layer structure")
 DESC: Text = (
-    "層は views / report / core の 3 つ。依存は views → report → core の一方向で、"
+    "層は webui / report / core の 3 つ。依存は webui → report → core の一方向で、"
     "各層に属するモジュールを役割つきで並べた図。",
-    "Three layers — views, report and core — with a one-way dependency from views "
+    "Three layers — webui, report and core — with a one-way dependency from webui "
     "to report to core, listing the modules of each layer with their role.",
 )
 LEAD: Text = (
-    "層はディレクトリで表す。依存は views → report → core の一方向で、2 つの層から"
+    "層はディレクトリで表す。依存は webui → report → core の一方向で、2 つの層から"
     "使うものは「下」へ置く（shared/ のような箱は作らない）。",
-    "Layers are directories. The dependency runs one way: views → report → core. "
+    "Layers are directories. The dependency runs one way: webui → report → core. "
     "Anything used by two layers moves down, never into a shared/ box.",
 )
 FOOTER: list[Text] = [
-    ("main.py は層に属さない（起動して views を組み立てるだけ）。層をまたぐ逆流と "
+    ("入口は webui/__main__.py（python -m webui）。層をまたぐ逆流と "
      "import 時の循環は tests/test_layers.py が機械で止める。",
-     "main.py belongs to no layer (it starts the app and assembles views). Upward "
+     "The entry point is webui/__main__.py (python -m webui). Upward "
      "dependencies and import-time cycles are stopped by tests/test_layers.py."),
     # ⚠️ 生成スクリプトの名前は書かない＝図は exe に同梱されるが、スクリプトは同梱
     # されない（同梱の読者に届かないファイルを名指ししない）。手順は同梱の開発者
@@ -115,56 +115,42 @@ GENERATED_NOTE: Text = (
 
 BANDS: list[Band] = [
     Band(
-        name=("views/ — 画面（tkinter）", "views/ — the screen (tkinter)"),
+        name=("webui/ — 画面（ローカルの HTTP と Edge）", "webui/ — the screen (local HTTP and Edge)"),
         rule=("副作用あり。計算と I/O は下の層へ委譲する。",
               "Has side effects. Delegates calculation and I/O downward."),
         fill="#eef2fb", stroke="#c3d0ec", ink="#24406e",
         rows=[
             [
-                Card(("ランチャー（本体＋ Mixin）", "Launcher (core + mixins)"), [[
-                    ("launcher.py", "本体（入力・実行・進捗）", "form, run, progress"),
-                    ("launcher_menu.py", "メニューバーと操作", "menu bar and its actions"),
-                    ("launcher_project.py", ".rsproj の保存・読込", ".rsproj save / load"),
-                    ("launcher_windows.py", "子ウィンドウの開閉と通知",
-                     "child windows, notifications"),
+                Card(("入口とサーバー", "Entry and server"), [[
+                    ("__main__.py", "入口（python -m webui）", "entry (python -m webui)"),
+                    ("server.py", "127.0.0.1 だけで待つ HTTP", "HTTP on 127.0.0.1 only"),
+                    ("edge.py", "Edge のアプリモード", "Edge in app mode"),
                 ]]),
-                Card(("地図（本体＋ Mixin）", "Map (core + mixins)"), [[
-                    ("map_window.py", "本体（モード切替）", "mode switching, widget"),
-                    ("map_picks.py", "地点の指定と経路の描画", "picking sites, drawing paths"),
-                    ("map_cache.py", "DEM キャッシュの操作", "DEM cache operations"),
-                    ("map_adapter.py", "tkintermapview の唯一の依存点",
-                     "sole dependency on tkintermapview"),
-                    ("map_style.py", "描画定数の単一ソース", "single source of constants"),
+                Card(("入力と計算", "Inputs and calculation"), [[
+                    ("state.py", "入力の集合と判定の見出し", "inputs and verdict headlines"),
+                    ("worker.py", "計算のスレッド 1 本", "the one calculation thread"),
+                    ("sheets.py", "作業面の入力（表・条件・点列）",
+                     "workspace inputs (rows, conditions)"),
+                    ("profile.py", "断面図の数", "profile chart data"),
                 ]]),
-                Card(("複数経路（本体＋ Mixin）", "Multiple Paths (core + mixins)"), [[
-                    ("batch_builder.py", "本体（共通設定・案件）", "common settings, case info"),
-                    ("batch_table.py", "入力表（行の操作）", "input table (row editing)"),
-                    ("batch_io.py", "CSV 入出力と雛形", "CSV import/export, template"),
-                    ("batch_run.py", "実行と進捗", "execution and progress"),
+                Card(("保存とファイル", "Saving and files"), [[
+                    ("project_io.py", ".rsproj の保存と開く", ".rsproj save / open"),
+                    ("exports.py", "成果物の本文（CSV・KML・PNG）", "artifact contents (CSV, KML, PNG)"),
+                    ("files.py", "設定の読込・結果フォルダ", "settings load, results folder"),
                 ]]),
             ],
             [
-                Card(("そのほかのウィンドウ", "Other windows"), [[
-                    ("graph.py", "グラフウィンドウ", "graph window"),
-                    ("scenario.py", "条件探索（比較 / スイープ）", "compare / sweep"),
-                    ("multihop.py", "中継経路（地点が入力面）", "relay path (waypoints in)"),
-                    ("multihop_map.py", "中継経路と地図の受け渡し", "relay path <-> map handoff"),
+                Card(("「設定」の枠と知らせ", "Settings panel and notices"), [[
+                    ("settings.py", "「設定」の枠の項目", "Settings panel items"),
+                    ("support.py", "更新の確認・診断パッケージ", "update check, diagnostics"),
+                    ("docs.py", "説明書を開く", "open the documentation"),
+                    ("notices.py", "起動時の知らせ", "startup notices"),
                 ]]),
-                Card(("全ウィンドウで共有する部品", "Shared by every window"), [
-                    [
-                        ("dialogs.py", "親中央のモーダル", "modals centered on the parent"),
-                        ("errors.py", "未捕捉例外の受け皿", "sink for unhandled exceptions"),
-                        ("progress.py", "進捗の伝送（キュー）", "progress transport (queue)"),
-                        ("frozen_common.py", "凍結バーの項目の単一ソース", "Frozen band’s item list"),
-                    ],
-                    [
-                        ("theme.py", "テーマ色・UI 書体", "theme colors, UI fonts"),
-                        ("window_fit.py", "ウィンドウの寸法（見切れ防止）",
-                         "window sizing (no clipping)"),
-                        ("tooltip.py", "入力ヒント", "input hints"),
-                        ("window_scroll.py", "入らない時の逃げ道", "scroll escape (too big)"),
-                        ("title_bar.py", "タイトルバー（OS 描画）", "title bar (drawn by the OS)"),
-                    ],
+                Notes([
+                    ("画面の字はサーバーが渡す（ページは字の表を持たない）。",
+                     "The server hands the page its wording (the page has no string table)"),
+                    ("判定の帯には、いま画面にある入力から出した結果だけを出す。",
+                     "— the verdict band shows only results computed from the inputs on screen."),
                 ]),
             ],
         ],
@@ -176,38 +162,31 @@ BANDS: list[Band] = [
         fill="#eefaf3", stroke="#bfe3d1", ink="#1c5c3f",
         rows=[
             [
-                Card(("実行エンジン", "Execution engines"), [[
-                    ("batch.py", "複数経路（CSV・一括実行）", "multiple paths (CSV + run)"),
+                Card(("入力の型と検査", "Input types and checks"), [[
+                    ("batch.py", "複数経路の行の型と検査", "multiple-path rows, checks"),
                     ("multihop.py", "中継経路（区間を導出・min）", "relay path (sections, min)"),
                     ("project.py", ".rsproj の読み書き", ".rsproj read / write"),
-                    ("residuals.py", "PathResult → 残差標本の抽出", "PathResult → residual samples"),
                 ]]),
                 Card(("成果物の生成", "Artifact generation"), [
                     [
-                        ("report_common.py", "A4 骨格・ヘッダ / フッタ", "A4 skeleton, header / footer"),
-                        ("report_path.py", "経路ごと（PNG/HTML/KML）", "per path (PNG/HTML/KML)"),
-                        ("report_summary.py", "サマリ・全ページ連結", "summary, all-pages document"),
+                        ("report_common.py", "セルの安全化・末尾 2 列", "cell safety, last 2 columns"),
+                        ("report_path.py", "経路ごと（path.kml）", "per path (path.kml)"),
+                        ("report_summary.py", "summary.csv・summary.kml", "summary.csv, summary.kml"),
                     ],
                     [
-                        ("report_scenario.py", "条件探索（折れ線＋表）", "line chart + table"),
-                        ("report_multihop.py", "中継（合成シート・hops.csv）", "relay sheet, hops.csv"),
+                        ("report_scenario.py", "条件探索（scenario.csv）", "scenarios (scenario.csv)"),
                         ("report_map.py", "経路地図（タイル取得＋合成）", "path map (tiles, stitched)"),
+                        ("map_graphics.py", "地図の重ね描き（純 PIL）", "map overlays (pure PIL)"),
                     ],
                 ]),
             ],
             [
-                Card(("共有する描画部品", "Shared drawing parts"), [[
-                    ("map_graphics.py", "地図の重ね描き（純 PIL）", "map overlays (pure PIL)"),
-                    ("mpl_fonts.py", "matplotlib 日本語書体", "matplotlib Japanese fonts"),
-                ]]),
                 Notes([
-                    ("画面（views/）とレポートが同じ絵を出すために、描画も「下」へ置いている。",
-                     "The screen (views/) and the reports must draw the same picture, "
-                     "so the drawing lives down here too"),
-                    ("つまり 2 つの層から使うものは、共有の箱ではなく下の層の住人にする。",
-                     "— what two layers share becomes a resident of the lower layer, "
-                     "not a shared/ box."),
-                ]),
+                    ("A4 の帳票は Pro へ移した。ここに残るのは、画面が保存する",
+                     "A4 reports moved to Pro. What stays here is what the screen saves"),
+                    ("成果物の本文（CSV・KML・地図の PNG）と入力の型だけ。",
+                     "— artifact contents (CSV, KML, map PNG) and the input types."),
+                ], span=3),
             ],
         ],
     ),
