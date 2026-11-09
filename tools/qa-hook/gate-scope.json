@@ -44,6 +44,7 @@
         "CHANGELOG.md"
       ],
       "tests": [
+        "tests/test_build_link.py",
         "tests/test_docs_consistency.py",
         "tests/test_report.py",
         "tests/test_i18n_glossary.py",
@@ -72,6 +73,7 @@
         "tests/test_hook_shim.py"
       ],
       "tests": [
+        "tests/test_build_link.py",
         "tests/test_claude_hooks.py",
         "tests/test_qa_gate_cache.py",
         "tests/test_pre_commit_gate.py",
@@ -95,6 +97,7 @@
         "tests/test_field_"
       ],
       "tests": [
+        "tests/test_build_link.py",
         "tests/test_field_*",
         "tests/test_layers.py",
         "tests/test_docs_consistency.py",

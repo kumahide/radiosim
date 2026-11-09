@@ -10,8 +10,8 @@ build.bat は ASCII 専用なので、日本語の説明と判断はすべてこ
 
   dist\\RadioSimLink\\               python.exe・pythonw.exe・標準ライブラリの zip（embeddable の展開）
     python3XX._pth                  sys.path＝標準ライブラリ・`.`・`vendor`・`app` だけ
-    vendor\\                         実行時の依存 8 つ（`RUNTIME_DISTS`）
-    app\\core\\  app\\webui\\           製品のソース（.py と、前もって作った .pyc）
+    vendor\\                         実行時の依存 9 つ（`RUNTIME_DISTS`）
+    app\\core\\  app\\report\\  app\\webui\\  製品のソース（.py と、前もって作った .pyc）
     LICENSE・icon.ico・version.txt   version.txt＝`version_tuple()` の 4 数字（インストーラの版比べ＝I-176）
   dist\\RadioSimLink-<版>.zip        zip のときだけ＝フォルダに portable.txt と RadioSimLink.cmd を足して固める
   dist\\RadioSimLink-Setup-<版>.exe  インストーラのとき（installer\\link.iss を ISCC 7 で）
@@ -25,9 +25,10 @@ Smart App Control に 2 回止められた（3.9.1RC1・4.0 の試作）のが�
   - `RADIOSIM_EMBED_ZIP`＝python.org の embeddable の zip。未設定・実体なしで止める。
     展開した python.exe の版が `RADIOSIM_PYTHON` と違えば止める（vendor の .pyd は cp3XX 用）
   - `requirements.txt` に固定のある依存は、写す版が固定と違えば止める
-  - 依存 8 つの `Requires-Dist` が 8 つの中で閉じていなければ止める（上流が依存を足したとき）
-  - 作った木の python.exe で `core` と `webui` の全モジュールを読み、読めなければ止める
-    （開発機には全部が入っているので、ソース実行の試験ではこの漏れが見えない＝B-036 と同じ）
+  - 写す依存の `Requires-Dist` が写す物の中で閉じていなければ止める（上流が依存を足したとき）
+  - 作った木の python.exe で `APP_PACKAGES` の全モジュールを読み、読めなければ止める
+    （開発機には全部が入っているので、ソース実行の試験ではこの漏れが見えない＝B-036 と同じ）。
+    ⚠️ 関数の中の import はここでは読まれない＝取り込みの閉包は試験で見る（B-380）
   - インストーラのとき `RADIOSIM_ISCC`＝Inno Setup 7（別の版は `RADIOSIM_ISCC_ANY_VERSION=1`）
 
 外の包み（4.0 ステージ8f・オープンコアの殻）:
@@ -36,6 +37,8 @@ Smart App Control に 2 回止められた（3.9.1RC1・4.0 の試作）のが�
   この道具を借りて自分の配布を作るための口で、この道具はその包みの名前を知らない
   （`tests/test_layers.py` の ⑤＝公開のコードは上に載る層を引かない）。
   足した包みも作った木の python.exe で全モジュールを読む（漏れたら止める）。
+  外の包みが公開側に無い依存を読むときは `--runtime-dist 配布物`（繰り返せる）で vendor へ足す
+  （固定と閉包の確かめは公開側の依存と同じ）。
 
 製品名と許諾（Link 1.0 ステージ11c・2026-11-09 経営者の決定）:
   `--product "RadioSim Link Pro"` で、フォルダ・zip・インストーラ・起動の .cmd の名前（空白を抜いた
@@ -79,9 +82,13 @@ ISCC_BANNER = "Inno Setup 7 Command-Line Compiler"
 
 #: 新しい画面が実行時に読む外部の部品（2026-11-07 に起動〜通信の後まで `sys.modules` で数えた）。
 #: 増やすときは `tests/test_build_link.py` の閉包の試験が、足りない依存を名前で言う。
+#: `markdown`＝「使い方」の枠（`webui/docs.py`）が関数の中で読む（2026-11-09 に足した・B-380）。
 RUNTIME_DISTS = ("numpy", "pillow", "requests", "urllib3", "certifi", "charset-normalizer",
-                 "idna", "truststore")
-APP_PACKAGES = ("core", "webui")
+                 "idna", "truststore", "markdown")
+#: `app\\` へ入れる公開側の包み。🔑 `report`＝CSV・KML・地図の PNG・`.rsproj`（`webui` が関数の中で
+#: 読む＝起動の確かめ `smoke_import` だけでは漏れに気づかない・B-380）。漏れは
+#: `tests/test_build_link.py` の取り込みの閉包の試験が名前で言う。
+APP_PACKAGES = ("core", "report", "webui")
 #: 起動の口の既定（`pythonw.exe -m webui`）。`--entry` で外の包みへ替えられる。
 DEFAULT_ENTRY = "webui"
 
@@ -218,7 +225,7 @@ def skip_file(rel: str) -> bool:
 
 
 def package_sources(extra: Iterable[str] = (), base: str = REPO) -> list[tuple[str, str]]:
-    """`app\\` へ入れる包み＝`(名前, 元のフォルダ)`。公開側の 2 つ（`APP_PACKAGES`）が先。
+    """`app\\` へ入れる包み＝`(名前, 元のフォルダ)`。公開側の包み（`APP_PACKAGES`）が先。
 
     `extra` は `名前=フォルダ`（`--package`）。フォルダは `base` からの相対でもよい。
     名前が識別子でない・公開側や互いと重なる・`__init__.py` が無い、なら止める。
@@ -328,16 +335,40 @@ def check_embed_zip() -> str:
     return path
 
 
-def check_dependencies() -> None:
+def runtime_dists(extra: Iterable[str] = ()) -> list[str]:
+    """写す依存＝公開側の `RUNTIME_DISTS` の後に `--runtime-dist`（上に載る層が足す物・重なりは捨てる）。"""
+    out = list(RUNTIME_DISTS)
+    have = {normalize(d) for d in out}
+    for name in extra:
+        name = name.strip()
+        if not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9._-]*", name):
+            raise BuildError(f"--runtime-dist の名前が配布物の名前でない: {name!r}")
+        if normalize(name) not in have:
+            out.append(name)
+            have.add(normalize(name))
+    return out
+
+
+def check_dependencies(dists: Iterable[str] = RUNTIME_DISTS) -> None:
+    dists = list(dists)
     with open(os.path.join(REPO, "requirements.txt"), encoding="utf-8") as f:
         pins = read_pins(f)
-    bad = pin_mismatches(RUNTIME_DISTS, pins, md.version)
+    absent = []
+    for name in dists:
+        try:
+            md.version(name)
+        except md.PackageNotFoundError:
+            absent.append(name)
+    if absent:
+        raise BuildError("写す依存が宣言の Python に入っていない:\n  " + "\n  ".join(absent))
+    bad = pin_mismatches(dists, pins, md.version)
     if bad:
         raise BuildError("依存の版が requirements.txt の固定と違う（pip install -r requirements.txt）:\n  "
                          + "\n  ".join(bad))
-    missing = missing_dependencies(RUNTIME_DISTS, lambda n: md.requires(n) or [])
+    missing = missing_dependencies(dists, lambda n: md.requires(n) or [])
     if missing:
-        raise BuildError("写す依存が閉じていない（RUNTIME_DISTS に足す）:\n  " + "\n  ".join(missing))
+        raise BuildError("写す依存が閉じていない（RUNTIME_DISTS か --runtime-dist に足す）:\n  "
+                         + "\n  ".join(missing))
 
 
 def check_iscc() -> str:
@@ -426,7 +457,8 @@ def _write_icon(root: str) -> None:
 
 def build_tree(dist_dir: str, embed_zip: str, declared: str,
                packages: Iterable[tuple[str, str]] | None = None, *,
-               name: str = APP_DIR_NAME, licenses: Iterable[str] = ()) -> str:
+               name: str = APP_DIR_NAME, licenses: Iterable[str] = (),
+               dists: Iterable[str] = RUNTIME_DISTS) -> str:
     root = os.path.join(dist_dir, name)
     shutil.rmtree(root, ignore_errors=True)
     if os.path.exists(root):
@@ -450,8 +482,8 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str,
         f.write("\n".join(pth_lines(stdlib)) + "\n")
 
     vendor, app = os.path.join(root, "vendor"), os.path.join(root, "app")
-    for name in RUNTIME_DISTS:
-        _copy_dist(name, vendor)
+    for dist in dists:
+        _copy_dist(dist, vendor)
     for pkg, src in (package_sources() if packages is None else packages):
         shutil.copytree(src, os.path.join(app, pkg),
                         ignore=shutil.ignore_patterns("__pycache__", "*.pyc"))
@@ -470,7 +502,7 @@ def build_tree(dist_dir: str, embed_zip: str, declared: str,
 
 
 def smoke_import(root: str, names: Iterable[str] = APP_PACKAGES) -> None:
-    """作った木の python.exe で、入れた包み（既定は `core` と `webui`）の全モジュールを読む（起動はしない）。"""
+    """作った木の python.exe で、入れた包み（既定は `APP_PACKAGES`）の全モジュールを読む（起動はしない）。"""
     code = (
         "import importlib, pkgutil, sys\n"
         "bad = []\n"
@@ -552,23 +584,28 @@ def main(argv: list[str] | None = None) -> int:
                     help=f"窓の外に出る名前と配布の名前（既定 {DEFAULT_PRODUCT}）")
     ap.add_argument("--license", default=None, metavar="ファイル",
                     help=f"{LICENSE_NAME} の隣に足し、インストーラの同意の画面に出す許諾")
+    ap.add_argument("--runtime-dist", action="append", default=[], metavar="配布物",
+                    help="外の包みが読む依存を vendor へ足す（繰り返せる・依存の依存も並べる）")
     a = ap.parse_args(argv)
     try:
         name = dir_name(a.product)
         extra = license_source(a.license, os.getcwd()) if a.license else None
         packages = package_sources(a.package, base=os.getcwd())
+        dists = runtime_dists(a.runtime_dist)
         check_entry(a.entry, packages)
         declared = check_declared()
         embed_zip = check_embed_zip()
         iscc = check_iscc() if a.mode == "installer" else ""
-        check_dependencies()
+        check_dependencies(dists)
         print(f"[INFO] {name} {version.APP_VERSION}（{a.mode}・-m {a.entry}）を作る")
         print(f"       embeddable : {embed_zip}")
-        for name, src in packages[len(APP_PACKAGES):]:
-            print(f"       外の包み   : {name} ← {src}")
+        for pkg, src in packages[len(APP_PACKAGES):]:  # ⚠️ `name`（配布の名前）を上書きしない
+            print(f"       外の包み   : {pkg} ← {src}")
+        for dist in dists[len(RUNTIME_DISTS):]:
+            print(f"       足す依存   : {dist}")
         os.makedirs(a.dist, exist_ok=True)
         root = build_tree(a.dist, embed_zip, declared, packages, name=name,
-                          licenses=[extra] if extra else [])
+                          licenses=[extra] if extra else [], dists=dists)
         smoke_import(root, [n for n, _ in packages])
         print(f"[OK] フォルダ : {root}")
         if a.mode == "zip":

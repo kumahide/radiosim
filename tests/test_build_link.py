@@ -58,7 +58,7 @@ class TestPins:
         with open(os.path.join(_ROOT, "requirements.txt"), encoding="utf-8") as f:
             pins = bl.read_pins(f)
         pinned = {d for d in bl.RUNTIME_DISTS if bl.normalize(d) in pins}
-        assert pinned == {"numpy", "pillow", "requests", "truststore"}
+        assert pinned == {"numpy", "pillow", "requests", "truststore", "markdown"}
 
 
 class TestDependencyClosure:
@@ -75,8 +75,117 @@ class TestDependencyClosure:
         assert out == ["d ← b"]
 
     def test_runtime_dists_are_closed_in_this_environment(self):
-        """宣言環境の依存 8 つが互いの中で閉じている（上流が依存を足したらここで落ちる）。"""
+        """宣言環境の依存が互いの中で閉じている（上流が依存を足したらここで落ちる）。"""
         assert bl.missing_dependencies(bl.RUNTIME_DISTS, lambda n: md.requires(n) or []) == []
+
+
+class TestImportClosure:
+    """配布の木に入る包みが読む名前は、すべて木の中にある（B-380）。
+
+    🔑 不変条件＝`APP_PACKAGES` のどのモジュールが**どこで**（関数の中でも）読む名前も、標準
+    ライブラリ（embeddable に無い tkinter などを除く）・`APP_PACKAGES`・`RUNTIME_DISTS` の
+    どれか。作った木の `smoke_import` はモジュールの頭しか読まない＝関数の中の import の漏れ
+    （ステージ10 で `webui` が `report` を読み始めたのに木へ入れていなかった）はここで捕まえる。
+    """
+
+    #: embeddable の標準ライブラリの zip に入っていないもの（Tk と、その上の道具）。
+    _NOT_IN_EMBEDDABLE = frozenset({"tkinter", "_tkinter", "turtle", "turtledemo", "idlelib"})
+
+    @staticmethod
+    def _roots(pkg: str, base: str = _ROOT) -> dict[str, str]:
+        import ast
+        out: dict[str, str] = {}
+        for top, _dirs, names in os.walk(os.path.join(base, pkg)):
+            for n in sorted(names):
+                if not n.endswith(".py"):
+                    continue
+                path = os.path.join(top, n)
+                with open(path, encoding="utf-8") as f:
+                    tree = ast.parse(f.read())
+                for node in ast.walk(tree):
+                    if isinstance(node, ast.Import):
+                        mods = [a.name for a in node.names]
+                    elif isinstance(node, ast.ImportFrom) and node.module and node.level == 0:
+                        mods = [node.module]
+                    else:
+                        continue
+                    for m in mods:
+                        out.setdefault(m.split(".")[0],
+                                       f"{os.path.relpath(path, base)}:{node.lineno}")
+        return out
+
+    def test_every_imported_name_ships_in_the_tree(self):
+        import sys
+        by_dist: dict[str, set[str]] = {}
+        for top, dists in md.packages_distributions().items():
+            for d in dists:
+                by_dist.setdefault(bl.normalize(d), set()).add(top)
+        shipped = set(bl.APP_PACKAGES)
+        for d in bl.RUNTIME_DISTS:
+            shipped |= by_dist.get(bl.normalize(d), set())
+        stdlib = set(sys.stdlib_module_names) - self._NOT_IN_EMBEDDABLE
+        bad = []
+        for pkg in bl.APP_PACKAGES:
+            for root, where in self._roots(pkg).items():
+                if root not in shipped and root not in stdlib:
+                    bad.append(f"{root}（{where}）")
+        assert bad == [], "配布の木に入らない名前を読んでいる: " + ", ".join(sorted(bad))
+
+    def test_the_gate_sees_imports_inside_functions(self, tmp_path):
+        """壊れ方の確かめ＝関数の中の import も数える（頭だけ読むと B-380 を見逃す）。"""
+        d = tmp_path / "pkg"
+        d.mkdir()
+        (d / "m.py").write_text("def f():\n    from report import batch\n    import tkinter\n"
+                                "    from . import sibling\n", encoding="utf-8")
+        assert set(self._roots("pkg", str(tmp_path))) == {"report", "tkinter"}
+
+    def test_report_is_in_the_tree(self):
+        """B-380 の当の漏れ＝`webui` が読む `report` が木に入る。"""
+        assert "report" in bl.APP_PACKAGES
+        assert "webui.exports" in {f"webui.{n[:-3]}" for n in os.listdir(os.path.join(_ROOT, "webui"))}
+
+
+class TestRuntimeDistOption:
+    """`--runtime-dist`＝上に載る層が、公開側に無い依存（Pro の帳票の matplotlib）を足す口。"""
+
+    def test_extra_dists_come_after_the_public_ones_without_duplicates(self):
+        got = bl.runtime_dists(["matplotlib", "Pillow", "cycler", "matplotlib"])
+        assert got == [*bl.RUNTIME_DISTS, "matplotlib", "cycler"]
+
+    @pytest.mark.parametrize("bad", ["", "a b", "-x", "x;y"])
+    def test_bad_names_stop(self, bad):
+        with pytest.raises(bl.BuildError):
+            bl.runtime_dists([bad])
+
+    def test_absent_dist_stops_before_copying(self):
+        with pytest.raises(bl.BuildError, match="入っていない"):
+            bl.check_dependencies([*bl.RUNTIME_DISTS, "no-such-dist-radiosim"])
+
+    def test_open_closure_names_the_option(self):
+        with pytest.raises(bl.BuildError, match="--runtime-dist"):
+            bl.check_dependencies([*bl.RUNTIME_DISTS, "matplotlib"])  # cycler などが無い
+
+    def test_main_keeps_the_product_name_with_outer_packages(self, tmp_path, monkeypatch):
+        """外の包みを表示する繰り返しが配布の名前を上書きしない（`dist\\radiosim_pro` ができた）。"""
+        d = tmp_path / "outer"
+        d.mkdir()
+        (d / "__init__.py").write_text("", encoding="utf-8")
+        (d / "__main__.py").write_text("", encoding="utf-8")
+        seen = {}
+        monkeypatch.chdir(tmp_path)
+        monkeypatch.setattr(bl, "check_declared", lambda: "py")
+        monkeypatch.setattr(bl, "check_embed_zip", lambda: "embed.zip")
+        monkeypatch.setattr(bl, "check_dependencies", lambda dists: None)
+
+        def fake_tree(dist_dir, embed_zip, declared, packages, *, name, licenses, dists):
+            seen.update(name=name, dists=list(dists))
+            raise bl.BuildError("ここで止める")
+        monkeypatch.setattr(bl, "build_tree", fake_tree)
+        rc = bl.main(["--dist", str(tmp_path / "dist"), "--package", "outer=outer",
+                      "--entry", "outer", "--product", "RadioSim Link Pro",
+                      "--runtime-dist", "cycler"])
+        assert rc == 1
+        assert seen == {"name": "RadioSimLinkPro", "dists": [*bl.RUNTIME_DISTS, "cycler"]}
 
 
 class TestPth:
