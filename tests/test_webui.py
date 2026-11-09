@@ -589,3 +589,88 @@ def test_the_startup_path_does_not_load_the_network_parts():
                          capture_output=True, text=True, timeout=60, check=True).stdout.split()
     expected = [] if sys.version_info >= (3, 15) else ["requests"]
     assert out == expected
+
+
+# ---- 「設定」の枠と知らせの帯（I-257・I-256） ---------------------------------
+@pytest.fixture
+def saved(monkeypatch):
+    """設定の保存を偽物にする（本物の設定ファイルへ書かない）＋言語を元へ戻す。"""
+    from core import config as cfg_mod
+    from core import i18n
+    calls = {"save": [], "seed": 0}
+    monkeypatch.setattr(cfg_mod, "save_app", lambda values: calls["save"].append(dict(values)) or True)
+    monkeypatch.setattr(cfg_mod, "consume_lang_seed", lambda: calls.__setitem__("seed", calls["seed"] + 1))
+    old = i18n.current_lang()
+    yield calls
+    i18n.set_lang(old)
+
+
+def test_the_first_state_carries_the_settings(web):
+    web.app_cfg.update({"lang": "en", "theme": "dark", "update_check_prerelease": "off"})
+    status, raw = _request(web, "GET", "/api/state?after=0", token=web.token)
+    assert status == 200
+    got = json.loads(raw)["settings"]
+    assert got["values"]["theme"] == "dark"
+    assert got["values"]["update_check_prerelease"] is False
+    assert got["values"]["update_check_auto"] is False
+    assert ["en", "English"] in got["choices"]["lang"]
+    assert [v for v, _ in got["choices"]["theme"]] == ["system", "light", "dark"]
+
+
+def test_a_setting_round_trips_and_is_saved(web, saved):
+    status, raw = _request(web, "POST", "/api/settings", token=web.token,
+                           body={"key": "theme", "value": "light"})
+    assert status == 200
+    body = json.loads(raw)
+    assert body["reload"] is False and body["settings"]["values"]["theme"] == "light"
+    assert web.app_cfg["theme"] == "light" and saved["save"][-1]["theme"] == "light"
+    status, raw = _request(web, "POST", "/api/settings", token=web.token,
+                           body={"key": "update_check_auto", "value": True})
+    assert status == 200 and web.app_cfg["update_check_auto"] == "on"
+
+
+@pytest.mark.parametrize("body", [
+    {"key": "coord_format", "value": "dms"},           # 画面からは変えない鍵
+    {"key": "theme", "value": "neon"},
+    {"key": "lang", "value": "xx"},
+    {"key": "update_check_auto", "value": "on"},       # 真偽で送る
+    {"key": "proxy_url", "value": "http://a\nb"},
+    {"value": "dark"},
+])
+def test_a_bad_setting_is_refused_and_not_saved(web, saved, body):
+    status, _ = _request(web, "POST", "/api/settings", token=web.token, body=body)
+    assert status == 400
+    assert saved["save"] == []
+
+
+def test_changing_the_language_asks_for_a_reload(web, saved):
+    status, raw = _request(web, "POST", "/api/settings", token=web.token,
+                           body={"key": "lang", "value": "ja"})
+    assert status == 200 and json.loads(raw)["reload"] is True
+    assert saved["seed"] == 1                          # 保存が通ったら種を消費済みに（B-299）
+    from core import i18n
+    assert i18n.current_lang() == "ja"
+
+
+def test_changing_the_proxy_reaches_the_terrain_fetch(web, saved, monkeypatch):
+    from core import dem
+    from core import simulation as sim
+    seen = []
+    monkeypatch.setattr(dem, "set_proxy", lambda url: seen.append(("proxy", url)))
+    monkeypatch.setattr(sim, "clear_terrain_cache", lambda: seen.append(("clear",)))
+    status, _ = _request(web, "POST", "/api/settings", token=web.token,
+                         body={"key": "proxy_url", "value": "  http://proxy:8080  "})
+    assert status == 200
+    assert seen == [("proxy", "http://proxy:8080"), ("clear",)]
+    assert web.app_cfg["proxy_url"] == "http://proxy:8080"
+
+
+def test_notices_ride_on_the_long_poll():
+    st = AppState()
+    rev = st.wait(0, 0)["revision"]
+    nid = st.add_notice("warn", "lang/fr.json: rejected")
+    snap = st.wait(rev, 1)                             # 知らせで起きる
+    assert snap["revision"] > rev
+    assert snap["notices"] == [{"id": nid, "kind": "warn", "text": "lang/fr.json: rejected"}]
+    with pytest.raises(ValueError):
+        st.add_notice("fatal", "x")

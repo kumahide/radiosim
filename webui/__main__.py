@@ -93,7 +93,7 @@ def main() -> int:
     state = AppState(config.select_sim(cfg))
     worker = Worker(state)
     server = WebServer(worker, basemap=cfg.get("basemap_layer", "pale"), on_quit=stop.set,
-                       listener=listener)
+                       listener=listener, app_cfg=cfg)
     threading.Thread(target=worker.run_forever, args=(stop,), daemon=True).start()
     threading.Thread(target=server.httpd.serve_forever, daemon=True).start()
     logger.info("webui: http://127.0.0.1:%d/", server.port)

@@ -38,6 +38,9 @@ from webui import sheets as sheets_mod
 #: 見出しの種類（JS もこの字で分ける）。
 KINDS = ("verdict", "sheet", "input", "terrain", "error", "computing")
 
+#: 知らせの種類（`info`＝更新の知らせなど・`warn`＝定義の却下など）。
+NOTICE_KINDS = ("info", "warn")
+
 
 def _pct(p: "tuple[int, int, int]") -> int:
     """取得の進み具合を画面と同じ百分率の整数にする（`app.js` の `Math.floor`）。"""
@@ -64,6 +67,8 @@ class AppState:
         self._revision = 1
         self._result: "dict[str, Any] | None" = None     # 版つきの見出し
         self._progress: "tuple[int, int, int] | None" = None   # (版, 取得済み, 点数)
+        self._notices: "list[dict[str, Any]]" = []
+        self._notice_seq = 0
         self._cond = threading.Condition()
 
     # ---- 入力 -------------------------------------------------------------
@@ -161,6 +166,20 @@ class AppState:
             head["done"], head["total"] = p[1], p[2]
         return head
 
+    # ---- 知らせ（起動時の言語・地形の定義の却下・更新の確認＝I-256） ----------
+    def add_notice(self, kind: str, text: str) -> int:
+        """画面の上の帯に出す知らせを 1 件足し、その番号を返す。
+
+        閉じた印は画面だけが持つ（読み直すと全部また出る＝起動 1 回ぶんの知らせ）。
+        """
+        if kind not in NOTICE_KINDS:
+            raise ValueError(kind)
+        with self._cond:
+            self._notice_seq += 1
+            self._notices.append({"id": self._notice_seq, "kind": kind, "text": str(text)})
+            self._bump()
+            return self._notice_seq
+
     # ---- 長いポーリング ---------------------------------------------------
     def _bump(self) -> None:
         self._revision += 1
@@ -178,4 +197,5 @@ class AppState:
                 "sheets": copy.deepcopy(self._sheets),
                 "calc_profile": self._profile,             # 欄ではない＝出すかは 10f で決める
                 "headline": self._headline_locked(),
+                "notices": [dict(n) for n in self._notices],
             }

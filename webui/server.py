@@ -19,6 +19,8 @@ webui/server.py
                                    受ける＝3 つのどれか 1 つは要る・形の誤りは 400
     POST /api/project/save       … 今の入力と面を `.rsproj` の文字列で返す `{"text", "name", "warnings"}`
                                    （ファイルを書くのは画面＝ステージ10d）
+    POST /api/settings           … `{"key", "value"}`＝「設定」の枠の 1 項目を保存して効かせる
+                                   `{"settings", "reload"}`（知らない鍵・選べる値の外は 400・I-257）
     POST /api/project/open       … `{"text"}`＝`.rsproj` の本文で入力と面を差し替える（読めなければ 422）
     POST /api/sheet/csv          … 今の版の作業面の結果を出力契約の CSV で返す `{"text", "name"}`
                                    （全件そろっていなければ 409＋画面の 1 文 `message`）
@@ -52,6 +54,7 @@ from core import terrain_grid
 from core import units
 from webui import exports
 from webui import project_io
+from webui import settings as settings_mod
 from webui import sheets as sheets_mod
 from webui.edge import Listener
 from webui.sheets import SheetError
@@ -293,8 +296,12 @@ class WebServer:
                  on_quit: "Callable[[], None] | None" = None,
                  tile: "Callable[..., tuple[str, bytes | None]]" = dem.basemap_tile_png,
                  map_png: "Callable[[list, str], bytes | None]" = exports.map_png,
-                 listener: "Listener | None" = None) -> None:
+                 listener: "Listener | None" = None,
+                 app_cfg: "dict[str, str] | None" = None) -> None:
         self.worker = worker
+        #: アプリの設定（`config.load_config()` の写し）＝「設定」の枠が書き換えて保存する
+        self.app_cfg: dict[str, str] = app_cfg if app_cfg is not None else {}
+        self._settings_lock = threading.Lock()
         lis = listener or Listener()
         self.token = lis.token
         self.basemap = basemap
@@ -367,7 +374,23 @@ class WebServer:
             snap["db_digits"] = units.DB_DECIMALS
             snap["basemap"] = self.basemap
             snap["basemap_attribution"] = exports.map_attribution(self.basemap)
+            snap["settings"] = self.settings_payload()
         return snap
+
+    def settings_payload(self) -> "dict[str, Any]":
+        with self._settings_lock:
+            return settings_mod.payload(self.app_cfg)
+
+    def apply_setting(self, key: Any, value: Any) -> "tuple[int, dict[str, Any]]":
+        """`/api/settings` の `(状態, 本文)`。知らない鍵・選べる値の外は 400。"""
+        if not isinstance(key, str):
+            return 400, {"error": "bad body"}
+        with self._settings_lock:
+            try:
+                reload = settings_mod.apply(self.app_cfg, key, value)
+            except settings_mod.SettingError as e:
+                return 400, {"error": str(e)}
+            return 200, {"settings": settings_mod.payload(self.app_cfg), "reload": reload}
 
 
 def _make_handler(app: WebServer) -> type:
@@ -533,6 +556,11 @@ def _make_handler(app: WebServer) -> type:
             if parts.path == "/api/image/map":
                 self._body()                             # 読み捨てる（CSV と同じ）
                 return self._json(*app.map_image())
+            if parts.path == "/api/settings":
+                body = self._body()
+                if body is None or "key" not in body or "value" not in body:
+                    return self._json(400, {"error": "bad body"})
+                return self._json(*app.apply_setting(body["key"], body["value"]))
             if parts.path == "/api/project/open":
                 body = self._body()
                 text = body.get("text") if body is not None else None
