@@ -2,7 +2,7 @@
 
 ![RadioSim Pro](../logo.png)
 
-> **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Help → Open Documentation shows inside the app.
+> **Intended reader**: users of the **Windows binary (`RadioSimPro.exe`)**. This is also the document that Open Documentation in the app's Settings panel shows.
 > To run it from source or work on the code, see [developer_en.md](developer_en.md).
 
 > 📣 **Development of RadioSim Pro ends with 3.9.1. Its successor is a separate app, "RadioSim Link".** The changes planned after 3.x (the `REVIEW` verdict and the rest of this manual's "Advance notice") arrive in Link 1.0 instead of a 4.0. Until Link 1.0 is officially released, 3.9.x receives fixes for critical bugs only.
@@ -18,7 +18,7 @@ Automatically retrieves DEM (Digital Elevation Model) data from the Geospatial I
 1. [Overview](#overview)
 2. [Requirements](#requirements)
 3. [Installation &amp; Launch](#installation--launch)
-4. [Menus](#menus)
+4. [The Settings panel](#the-settings-panel)
 5. [Map](#map)
 6. [Usage — Single Mode](#usage--single-mode)
 7. [Usage — Multiple Paths](#usage--multiple-paths)
@@ -83,7 +83,7 @@ Enter the coordinates, antenna heights, and radio settings for the TX (transmitt
 
 - Real-time antenna height and rain rate sliders in the graph window
 - Switchable coordinate notation (Decimal Degrees / Degrees Minutes Seconds)
-- Japanese / English UI — switchable from the menu bar
+- Japanese / English UI — switchable from the Settings panel
 - System-aware dark mode (Light / Dark / System auto)
 
 ### Accuracy Statement
@@ -195,9 +195,48 @@ Launch the installer build from the Start menu, or double-click `RadioSimPro.exe
 
 ---
 
-## Menus
+## The Settings panel
 
-The menu bar has three menus — **File / Settings / Help**. Every item is listed below.
+There is no menu bar. Click the **Settings button (gear)** at the right end of the top bar to open a small panel; the settings, file and help items all live there. Every item is listed below.
+
+```
+┌ Settings
+│ Language            [English ▼]
+│ [Export Translation Template...]
+│ Theme               [System ▼]
+│ Coordinate Display  [Decimal Degrees (DD) ▼]
+│ Basemap             [Pale map ▼]
+│ Proxy URL           [            ]
+│ ☐ Check for Updates at Startup
+│ ☐ Include Pre-releases
+├ File
+│ [Load Parameters...] [Load App Settings...]
+│ [Open Results Folder] [Delete All Cache...]
+├ Help
+│ [Open Documentation] [Save Diagnostic Package...]
+│ [Check for Updates...] [About]
+│ (one line for the result or the error)
+└ [OK]
+```
+
+- **Each change is saved as soon as you make it** (to `radiosim_conf.json`, so it persists across restarts). **OK** only closes the panel.
+- The result of a button ("Saved …" and the like) and the reason for a failure appear in one line at the bottom of the panel.
+- **Opening and saving a project** is not in the panel but in the tools on the top bar (**Open Project...** / **Save Project As...**) → [Project Files (.rsproj)](#project-files-rsproj).
+
+### Settings
+
+| Item               | Options                          | Description                                                        |
+| ------------------ | -------------------------------- | -------------------------------------------------------------------- |
+| Language           | English / 日本語 (plus your own) | Screen language. Picking one reloads the screen, which switches at once → [Adding your own UI language](#adding-your-own-ui-language) |
+| Export Translation Template... | —                    | Writes `_template.json` for a new translation into the language folder and opens that folder → [Adding your own UI language](#adding-your-own-ui-language) |
+| Theme              | System / Light / Dark            | Light or dark screen. "System" follows the Windows setting           |
+| Coordinate Display | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
+| Basemap            | Pale map / Aerial photo (plus your own) | Map background. Also changes the background of the map PNG you save → [Adding a Background Map Source](#adding-a-background-map-source-user-extension) |
+| Proxy URL          | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
+| Check for Updates at Startup | Checkbox               | When checked, the app makes the same query as Check for Updates... at startup, at most once a day. **Off by default** (so that the app does not reach out to the internet at every start on company networks or offline field sites). It tells you only when a newer version exists (in the bar above the map); when you are up to date or the query fails, it shows nothing |
+| Include Pre-releases | Checkbox                       | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
+
+> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Language** in the Settings panel). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (this takes effect once each time you reinstall). A plain restart does not change it — change it under **Language** in the Settings panel.
 
 ### File
 
@@ -205,44 +244,29 @@ Operations that reach out to files or to the OS.
 
 | Item                | Description                                                                                     |
 | ------------------- | ------------------------------------------------------------------------------------------------- |
-| Open Project...     | Loads a saved `.rsproj` and restores the whole input set → [Project Files (.rsproj)](#project-files-rsproj) |
-| Save Project As...  | Writes the current input set to a `.rsproj` → [Project Files (.rsproj)](#project-files-rsproj)   |
-| Load Parameters...  | Imports **simulation parameters only** from a settings file into the input form                 |
+| Load Parameters...  | Imports **simulation parameters only** from a settings file into the input fields               |
+| Load App Settings... | Imports **only** language, theme, coordinate display, basemap and proxy from a settings file (the two startup-check boxes are not imported) |
 | Open Results Folder | Opens the `results/` folder in Explorer (creates it first if it does not exist yet) |
+| Delete All Cache... | Deletes downloaded DEM / map tiles. A confirmation appears inside the panel; with two or more DEM sources you can pick what to delete |
 
-### Settings
-
-Your choices are saved to `radiosim_conf.json` and persist across restarts.
-
-| Item               | Options                          | Description                                                        |
-| ------------------ | -------------------------------- | -------------------------------------------------------------------- |
-| Theme              | System / Light / Dark            | Window color theme                                                   |
-| Language           | English / 日本語 (plus your own) | UI language (requires restart) → [Adding your own UI language](#adding-your-own-ui-language) |
-| Coordinate Display       | Decimal Degrees (DD) / Degrees Minutes Seconds (DMS) | How coordinates are **displayed** → see the note below |
-| Proxy Settings...  | URL entry                        | Explicit HTTP proxy URL (blank = use OS proxy settings) → see below  |
-| Load App Settings... | —                              | Imports **only** theme, language and proxy from a settings file                        |
-| Delete All Cache... | —                               | Deletes all downloaded DEM / map tiles (with confirmation)           |
-
-> **Language on the very first launch** — Until you choose one, the app looks at the **language you picked in the installer** (if you installed it that way), then at the **Windows display language**. If neither answers, it starts in English. ⚠️ **The first launch saves whichever language it settled on into the settings file, and that saved value wins from then on** (the same applies once you pick one under **Settings > Language**). If you **run the installer again** on a PC you have already used and pick a different language in its wizard, the app switches to that language the next time it starts (from 3.6, this takes effect once each time you reinstall, including when you install over 3.5 or earlier). A plain restart does not change it — change it under **Settings > Language**.
+> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects**. **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
 
 ### Help
 
 | Item         | Description                          |
 | ------------ | -------------------------------------- |
 | Open Documentation | Opens this document in a browser       |
-| Save Diagnostic Package... | Bundles version, settings, recent log, cache statistics, environment info, and storage paths into a zip. Coordinates, credentials, and usernames are masked; result files are unchecked by default (they may hold project data, so you choose what to include). Attach this to a bug report |
-| Check for Updates... | Asks GitHub's public release page only when you click it. If a newer version exists, shows its number and how to install it, and asks whether to open the release page (downloading and installing are left to your browser and you). Final-release users hear only of final releases; RC users also of RCs (you can change this with Include Pre-releases). Follows the Proxy Settings |
-| Check for Updates at Startup | When checked, the app makes the same query as Check for Updates... at startup, at most once a day. **Off by default** (so that the app does not reach out to the internet at every start on company networks or offline field sites). It tells you only when a newer version exists; when you are up to date or the query fails, it shows nothing |
-| Include Pre-releases | When checked, you are told of pre-releases (RCs) even on a final release; when unchecked, you hear only of final releases even on an RC. Applies to both Check for Updates... and Check for Updates at Startup. **Until you first touch it, it follows the version you use** (off on a final release, on on an RC). Once you change it, your choice stays even after you upgrade |
-| About        | Shows the installed version            |
+| Save Diagnostic Package... | Bundles version, settings, recent log, cache statistics, environment info, and storage paths into a zip. Clicking it first lists **what will go in**, inside the panel. Coordinates, credentials, and usernames are masked; result files are unchecked by default (they may hold project data, so you choose what to include). **Save** then asks where to save it. Attach this to a bug report |
+| Check for Updates... | Asks GitHub's public release page only when you click it, and shows the answer in the line at the bottom of the panel. If a newer version exists, you get its number and the URL of its release page (downloading and installing are left to your browser and you). Which versions you hear of follows Include Pre-releases. Follows the Proxy URL |
+| About        | Shows the installed version in the line at the bottom of the panel |
 
-> **"Load Parameters" vs "Load App Settings"** — the former imports **simulation parameters** (coordinates, frequency, antenna heights, …); the latter imports **how the app looks and connects** (theme, language, proxy). **Neither touches the other's territory**, so opening a file you received from someone else will never silently change your display language or network settings.
+### Notices at startup
 
-> **The Map is not in the menus** — open it from the **"Map" button** at the bottom of the launcher (→ [Map](#map)).
+When there is something to tell you at startup, a **bar appears above the map** (close it with ×). It shows, for example, a newer version (when Check for Updates at Startup is on), or entries the app did not accept from a translation you added or from a DEM / basemap source file. When there is nothing to say, no bar appears.
 
 ### Adding your own UI language
 
-Besides Japanese and English you can **add a translation of your own**. Where you put it depends on which build you have — the **installer build** uses `%APPDATA%\RadioSim\lang`, the **portable build** uses a `lang` folder next to the app. Put `<language-code>.json` there and restart — the language then appears under Settings > Language.
+Besides Japanese and English you can **add a translation of your own**. Where you put it depends on which build you have — the **installer build** uses `%APPDATA%\RadioSim\lang`, the **portable build** uses a `lang` folder next to the app. Put `<language-code>.json` there and restart — the language then appears under **Language** in the Settings panel.
 
 ```json
 {
@@ -254,8 +278,8 @@ Besides Japanese and English you can **add a translation of your own**. Where yo
 
 - `_name` is **the name shown in the language menu**. Write it in the language's own script — someone looking for their language is reading a screen they cannot read yet. Without it the file's code is shown instead.
 - **You do not have to translate everything.** Only the keys you write are replaced; **the rest stay in English**. New keys added in later versions will not break your file.
-- You can get the key list from **Settings > Language > Export Translation Template...**, which writes `_template.json` (every key, with its English value; the save dialog opens to the location above). Edit the values and save it as `<language code>.json` in the same folder to finish. The same keys also live in the source file `core/i18n.py` (<https://github.com/kumahide/radiosim>), but ⚠️ **that file is not part of the binary (exe) distribution** — use the template export instead to check key names.
-- **Keep the placeholders — `{n}`, `{dir}` and friends — exactly as they appear in the English text.** A key whose placeholders differ **is not applied** (it stays English), and at startup you are told what was skipped **grouped by reason** (how many per reason, with up to three examples). ⚠️ **Nothing appears when everything was applied** — silence means "no problems", not "the file was ignored" (whether it loaded is visible in **Settings > Language**). ⚠️ Applying such a translation would crash the app the moment that screen opens; **skipping it is what prevents that**. ⚠️ **The format spec inside a placeholder (the `.2f` in `{n:.2f}`) must match English too** — only the **position** in the sentence is yours to move.
+- You can get the key list from **Export Translation Template...** in the Settings panel, which writes `_template.json` (every key, with its English value). No save dialog appears: **it writes straight into the location above and opens that folder** (an existing file is not overwritten; the new one gets a name like `_template (2).json`). Edit the values and save it as `<language code>.json` in the same folder to finish. The same keys also live in the source file `core/i18n.py` (<https://github.com/kumahide/radiosim>), but ⚠️ **that file is not part of the binary (exe) distribution** — use the template export instead to check key names.
+- **Keep the placeholders — `{n}`, `{dir}` and friends — exactly as they appear in the English text.** A key whose placeholders differ **is not applied** (it stays English), and at startup you are told what was skipped **grouped by reason** (how many per reason, with up to three examples). ⚠️ **Nothing appears when everything was applied** — silence means "no problems", not "the file was ignored" (whether it loaded is visible under **Language** in the Settings panel). ⚠️ Applying such a translation would crash the app the moment that screen opens; **skipping it is what prevents that**. ⚠️ **The format spec inside a placeholder (the `.2f` in `{n:.2f}`) must match English too** — only the **position** in the sentence is yours to move.
 - **Words that appear in artifacts are out of scope.** This covers reports (HTML) and KML, and also **the wording inside the terrain profile and comparison graphs** (axis names, legends, titles, the way units are bracketed) and **the environment types** (Urban / Suburban / Rural / LoS). Artifact wording is a contract with whatever reads the files, so it does not move for the screen's convenience. ⚠️ **These also show on screen with the same wording**: a figure becomes an artifact as soon as you save it, and the environment wording is written into reports and profiles, so the on-screen side cannot be translated on its own.
 - The bundled `ja` / `en` cannot be overridden (a `ja.json` is ignored).
 
@@ -266,13 +290,14 @@ Besides Japanese and English you can **add a translation of your own**. Where yo
 This selects **how coordinates are displayed**. It is not an input mode switch.
 
 - **Input fields accept either notation.** With DMS selected you can still type `34.8, 132.6` (DD), and with DD selected you can still type `34°48'00.0"N, 132°36'00.0"E`. Everything is normalised to decimal degrees before the calculation runs.
-- **Fields are reformatted into the selected notation when you switch the format, when settings/a project are loaded, and when you commit an entry** (press Enter or move to another field). The reformatting itself is the acknowledgement that the value was read. **Input that could not be read stays exactly as you typed it** — that is the signal it was not accepted as a coordinate, so retype it.
+- **When you switch the format or load app settings**, the TX and RX coordinate fields are rewritten in the selected notation. **Moving a pin on the map** also writes the field back in the selected notation. **Input that could not be read stays exactly as you typed it** — that is the signal it was not accepted as a coordinate, so retype it.
+- Coordinates in tables such as Multiple Paths are not rewritten (they are used as typed).
 
 ### Proxy Settings
 
-If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), open **Settings > Proxy Settings** and enter the proxy URL (e.g. `http://proxy.example.com:8080`). Changes take effect immediately (no restart needed). Leave blank and click OK to revert to OS proxy settings.
+If DEM tile retrieval requires an HTTP proxy (e.g. on a corporate network), enter the proxy URL in **Proxy URL** in the Settings panel (e.g. `http://proxy.example.com:8080`). It takes effect as soon as you press Enter or leave the field (no restart needed). Leave it blank to revert to OS proxy settings.
 
-> If no proxy is configured and the elevation server is completely unreachable, the run **aborts after a dozen seconds or so** and a dialog asks you to check the proxy settings — it will not quietly finish and hand you flat terrain.
+> If no proxy is configured and the elevation server is completely unreachable, the run **aborts after a dozen seconds or so** and you are asked to check the proxy settings — it will not quietly finish and hand you flat terrain.
 
 ---
 
@@ -345,7 +370,7 @@ If you've declared DEM sources beyond GSI in your sources file, a **"Target DEM 
 | Ctrl + Alt + drag             | Force re-download an area (re-fetch all)|
 | Shift + Ctrl + drag           | Delete the cache for an area            |
 
-Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Settings > Delete All Cache** to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap), each with its approximate size, so you can choose what to delete.
+Downloads and deletions show a confirmation dialog with the estimated number of areas and size. Progress and results appear in the status bar. Use **Delete All Cache...** in the Settings panel to clear the entire cache. If you've registered more than one DEM source, that dialog lists a checkbox per source (plus one for the basemap), each with its approximate size, so you can choose what to delete.
 
 > **Be considerate of the tile server**: Tiles are fetched from GSI's public servers (or from the provider of the source selected under "Target DEM source"). Tiles already cached are never re-downloaded. Use force re-download over wide areas only when necessary.
 
@@ -440,7 +465,7 @@ Saves the current display state to `results/YYYYMMDD_HHMMSS/` (see [Save Package
 
 Each time you run a Single Mode simulation, the input values are saved to `radiosim_conf.json` and restored on the next launch. **No explicit save action is needed.**
 
-To pull past conditions in from a file, or to carry a whole input set around, use the [File menu](#file) (**Load Parameters** / **Save Project As** / **Open Project**).
+To pull past conditions in from a file, or to carry a whole input set around, use [File](#file) in the Settings panel (**Load Parameters**) or **Save Project As** / **Open Project** on the top bar.
 
 ---
 
@@ -578,7 +603,7 @@ Each relay point **receives and then transmits again**. That means:
 - The **waypoint table** is the input surface. **The first point is the transmitter and the last is the receiver**; "Add point" inserts a relay **before the receiver**, so the order on screen is the order of the route. Each row shows its role (TX / relay / RX).
 - **The `＋` on a row inserts a relay directly below it** — to add one point in the middle you no longer have to delete the ones after it and retype them. The receiver row has no `＋` because the last point is fixed as the receiver. ⚠️ **Default names are not renumbered** (that would overwrite the entry of anyone who renamed `R1` to something meaningful); the order is carried by the rows and the role shown on each of them.
 - Each waypoint has **coordinates and an antenna height**. **Relay rows carry an `×` so you can delete any single point** (TX and RX cannot be deleted, so they have no `×`). Deleting a relay also drops the settings of the section leaving that point; inserting one adds an empty section leaving it, so inserting and deleting at the same position returns you to where you were.
-- Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Settings > Coordinate Display. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
+- Coordinates accept **either decimal degrees or degrees/minutes/seconds**; committing an entry reformats it to the notation chosen in Coordinate Display in the Settings panel. **Height belongs to the point, not to the section** — a relay has one antenna, so it must not be possible to enter one height as "section 1 RX" and a different one as "section 2 TX".
 - The **section table** lets you override **frequency and TX/RX gain per section** (blank = use the common settings from the launcher), because the two antennas at a relay are often different.
 - The **Common Settings** panel at the top lists the **11 items** that feed the run (frequency, TX power, TX gain, RX gain, RX sensitivity / vegetation height, k-factor, terrain resolution, rain rate, environment type, diffraction model) — the same items, shown the same way, as in the Multiple Paths window. It is **read-only**, shown as a snapshot of the launcher (the source of truth), and **↻ From Launcher** pulls in the current values. ⚠️ Frequency and TX/RX gain can be overridden per section as described above, so what you see here is **the value inherited when the cell is blank**.
 - **Pick on map** switches the map into waypoint mode; each click fills the next waypoint. The map draws a polyline through the points in order and puts the **horizontal distance of each section** at the midpoint of its line — the section table has no distance column, so this is where you read how long a section is.
@@ -606,7 +631,7 @@ The following are saved to `results/multihop_YYYYMMDD_HHMMSS/`:
 
 ## Project Files (.rsproj)
 
-Bundles **the whole input set into one file** so you can pick the work up later. Use **File → Save Project / Open Project**.
+Bundles **the whole input set into one file** so you can pick the work up later. Use **Save Project As... / Open Project...** on the top bar.
 
 ### What is included
 
@@ -858,7 +883,7 @@ Saves to `results/YYYYMMDD_HHMMSS/`:
 | `profile.png`         | Terrain cross-section graph (150 dpi)                    |
 | `report.html`         | Detailed report (single A4 page) with the terrain graph, a path map, and antenna initial aim AZ/EL embedded |
 | `path.kml`            | 3D KML for Google Earth                                  |
-| `settings.json`       | Complete input parameters (reloadable via File > Load Parameters) |
+| `settings.json`       | Complete input parameters (reloadable via Load Parameters... in the Settings panel) |
 | `terrain_profile.csv` | Terrain profile data                                     |
 | `report.txt`          | Text-format link budget report                           |
 
@@ -1107,8 +1132,6 @@ The portable build keeps settings, cache, and results inside the extracted folde
 - Parameters cannot be changed while the graph window is open; close it first, then re-run
 - The terrain cache is cleared on restart; the disk cache persists across sessions
 - 🔴 **Restart RadioSim after changing the display scale** (if you change Windows "Scale and layout" **while the app is running**). Without a restart, dragging **the launcher** makes **its size drift continuously while you drag** — shrinking after you raise the scale, growing after you lower it. ⚠️ **Restarting restores the correct size.** ⚠️ **Only the launcher is affected** — we verified by measurement that resizable windows (map, batch, scenario, multi-hop, graph) do not drift. **Leave the launcher alone and you can keep working.** ⚠️ This does not happen if you have not changed the scale since launch (using several monitors is fine by itself). ⚠️ The cause is in the underlying GUI toolkit (Tk), not in the application: we verified by measurement that it cannot be worked around from our side (more than ten candidate workarounds were tried, none of them worked). ⚠️ 3.9 moved Tk from 8.6 to 9.0, and **we verified by measurement that 9.0 shows the same problem**
-- When monitors with different display scales are in use, moving a window to another monitor resizes the text of the whole application to match that scale. Only the menu bar strip (File / Settings / Help) is drawn by Windows, so it keeps the scale of the monitor its own window sits on and may look smaller (or larger) than the rest. This affects appearance only, not operation
-- After you change the Windows display scale, **until you sign in again**, the check mark (✓) in drop-down menus may be drawn thick and large so that it overlaps the text next to it, and the arrow (▸) that marks a submenu may disappear (for example Theme, Language and Coordinate Display in the Settings menu). **Signing out of Windows and signing back in fixes it** (restarting RadioSim does not). Both marks are drawn by the underlying GUI toolkit (Tk) with legacy Windows bitmaps, whose size is fixed by the display scale in effect when you signed in. This affects appearance only, not operation
 
 ---
 
@@ -1116,7 +1139,7 @@ The portable build keeps settings, cache, and results inside the extracted folde
 
 Please report bugs and feature requests via [GitHub Issues](https://github.com/kumahide/radiosim/issues).
 
-**Attach the zip created by Help → "Save Diagnostic Package..."** It bundles the version, settings, recent log, cache statistics, environment info, and storage paths; coordinates, credentials, and usernames in paths are masked automatically (see [Help](#help)). Result files are unchecked by default, so you choose whether to include project data.
+**Attach the zip created by "Save Diagnostic Package..." in the Settings panel.** It bundles the version, settings, recent log, cache statistics, environment info, and storage paths; coordinates, credentials, and usernames in paths are masked automatically (see [Help](#help)). Result files are unchecked by default, so you choose whether to include project data.
 
 ---
 
