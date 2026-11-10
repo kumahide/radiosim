@@ -5632,6 +5632,60 @@ class TestOrgRecordsCheck:
         assert src.index("check_org_records_real()") < src.index("blocking += dashboard")
 
 
+def _staged_log(stage_lines=("- 段階：試行中",), state="実装済み（試す）", num="048", extra=()):
+    """O-037 以降の節 1 つ＋規則の前の節（段階の行なし）＋済の節（段階の行なし）。"""
+    return [
+        "# 実績記録", "",
+        f"## O-{num} 段階を持つはずの節", f"- 状態：{state}", *stage_lines, *extra, "- 先行：なし", "",
+        "## O-036 段階の規則の前の節", "- 状態：進行中", "- 先行：なし", "",
+        "## O-040 済んだ節", "- 状態：済", "- 経営者受け入れ：2026-11-01「受け入れる」", "- 先行：なし",
+    ]
+
+
+class TestOrgStagesCheck:
+    """check 31＝済・中止でない節の段階の行（O-037）。2026-11-10 に O-048〜O-050 が
+    行なし・語の外のままダッシュボードで「未記録」になっていた。"""
+
+    @pytest.mark.parametrize("kw", [
+        {},
+        {"stage_lines": ("- 段階：試行中（設定済み・確かめ待ち）",)},   # 補足は括弧の中なら通す
+        {"stage_lines": (), "state": "済", "extra": ("- 経営者受け入れ：2026-11-10「受け入れる」",)},
+        {"stage_lines": (), "state": "中止", "extra": ("- 経営者中止：2026-11-10「やめます」",)},
+        {"stage_lines": (), "num": "036"},                               # 規則の前の節は求めない
+        {"stage_lines": (), "state": "評価済み"},                        # 状態が読めない節は parse が止める
+    ])
+    def test_passes(self, org, kw):
+        assert org.stage_errors(_staged_log(**kw)) == []
+
+    @pytest.mark.parametrize("kw, fragment", [
+        ({"stage_lines": ()}, "1 行（今は 0 行）"),                       # O-049・O-050 の形
+        ({"stage_lines": ("- 段階：試行中", "- 段階：適用")}, "1 行（今は 2 行）"),
+        ({"stage_lines": ("- 段階：設定済み・確かめ待ち",)}, "語の外"),   # O-048 の形
+        ({"stage_lines": ("- 段階：",)}, "語の外"),
+        ({"state": "進行中", "stage_lines": ("- 段階：実装済み",)}, "語の外"),
+    ])
+    def test_fails(self, org, kw, fragment):
+        errors = org.stage_errors(_staged_log(**kw))
+        assert len(errors) == 1 and errors[0].startswith("O-048: ") and fragment in errors[0]
+
+    def test_words_match_the_dashboard(self, org):
+        # ダッシュボードは語の外を黙って「未記録」にする＝語の一覧がずれると検査が嘘になる
+        path = os.path.join(_HOOK_DIR, "org", "tools", "dashboard_live.py")
+        spec = importlib.util.spec_from_file_location("dashboard_live_for_stages", path)
+        assert spec is not None and spec.loader is not None
+        dash = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(dash)
+        assert dash.STAGES == org.STAGES
+
+    def test_real_record_and_blocking(self, memcheck):
+        assert memcheck.check_org_stages(["O-048: x"]) == [
+            ".claude/org/work_log.md: O-048: x（O-037・check 31）"]
+        assert memcheck.check_org_stages_real() == []
+        import inspect
+        src = inspect.getsource(memcheck.main)
+        assert src.index("check_org_stages_real()") < src.index("blocking += dashboard")
+
+
 class TestGitHooksWired:
     """⑧ 配線の見張り＝`.git/hooks` は clone に来ない（CI では対象ごと飛ぶ）。外れたら赤。"""
 

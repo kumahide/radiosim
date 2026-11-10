@@ -42,6 +42,7 @@ import {
   pytestCacheKey, isCachedPass, recordPass, recordFinish,
   markStart, lastRunWasCut, lastDurationMs,
 } from "./pytest-cache.mjs";
+import { movedThisTurn, recordBaseline } from "./turn-baseline.mjs";
 
 const MAX_OUT = 2500; // cap pytest output fed back to Claude
 const MAX_ITEMS = 25; // cap linter findings fed back to Claude
@@ -399,7 +400,33 @@ async function main() {
   } catch {
     process.exit(0); // not a git repo
   }
-  if (entries.length === 0) process.exit(0);
+
+  // 2026-11-10: **この番で中身が動いたファイルだけ**を見る（turn-baseline.mjs）。
+  // 作業ツリーは会話どうしで共有なので、別の会話が書きかけで残した赤い `*.py` で、
+  // Python に触れていない会話まで毎番止められていた。番の初めの控えが無いとき
+  // （未配線・session_id 無し・読めない）は null＝今までどおり全部を見る。
+  const session = input.session_id;
+  const allNow = allPaths;
+  const finish = (code = 0) => {
+    // 番を通すときだけ控えを今に進める（block の再入では番の初めを起点のまま）。
+    try {
+      recordBaseline(cwd, session, allNow);
+    } catch {
+      /* 次の番は古い控え＝多く見る側に倒れるだけ */
+    }
+    process.exit(code);
+  };
+  let moved = null;
+  try {
+    moved = movedThisTurn(cwd, session, allPaths);
+  } catch {
+    moved = null;
+  }
+  if (moved) {
+    entries = entries.filter((e) => moved.has(e.path));
+    allPaths = allPaths.filter((p) => moved.has(p));
+  }
+  if (entries.length === 0) finish(0);
 
   // Deterministic gate (authoritative). LLM advisory runs at pre-push / on-demand.
   // An unusable interpreter is a gate FAILURE, not a reason to skip: "no gate
@@ -422,9 +449,10 @@ async function main() {
   // ⚠️ **合格しても黙らない**＝ゲート自身の不調（前回の run が帰ってこない／
   // スイートが上限に近づいている）は、合格の裏でこそ起きる。2026-08-23 の 15 日間の
   // 空白は「誰も何も言わなかった」ことで続いた。
-  if (notes) emit({ systemMessage: `[QA ゲート] ${notes}` });
-
-  process.exit(0);
+  if (notes) {
+    process.stdout.write(JSON.stringify({ systemMessage: `[QA ゲート] ${notes}` }) + "\n");
+  }
+  finish(0);
 }
 
 // ⚠️ **import しただけでゲートを走らせない**（2026-08-23 に踏んだ＝ヘルパーを

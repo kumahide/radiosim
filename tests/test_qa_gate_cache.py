@@ -617,3 +617,85 @@ class TestStdinDiagnostics:
         assert r.returncode == 0
         assert r.stdout == ""
         assert r.stderr == ""
+
+
+class TestOnlyThisTurnsChanges:
+    """2026-11-10＝**この番で中身が動いた `*.py` だけ**でゲートが止めること
+    （`tools/qa-hook/turn-baseline.mjs`）。
+
+    作業ツリーは会話どうしで共有なので、別の会話が書きかけで残した `*.py` で、
+    Python に触れていない会話まで毎番止められていた（窓口 122 本目の実測）。
+
+    写しのリポジトリでゲートを本当に起動する。`RADIOSIM_PYTHON` をわざと無い
+    ファイルにしておく＝**検査の対象が 1 つでも残ればゲートは「走れません」で
+    block する**ので、block の有無がそのまま「見たか／見なかったか」になる
+    （pyright も pytest も走らせずに済む）。
+
+    壊れ方 3 種：①一度も落ちない＝この番で触った `.py` は block（`test_..._is_checked`）
+    ②毎回鳴る＝他の会話の `.py` だけなら通す（`test_..._does_not_stop`）
+    ③控えが無いときに見逃す＝今までどおり全部を見る（`test_without_a_baseline_...`）。
+    """
+
+    def _repo(self, tmp_path):
+        d = tmp_path / "repo"
+        hook = d / "tools" / "qa-hook"
+        hook.mkdir(parents=True)
+        src = os.path.join(_REPO, "tools", "qa-hook")
+        for name in os.listdir(src):
+            if name.endswith((".mjs", ".json")):
+                shutil.copy(os.path.join(src, name), hook / name)
+        (d / "other.py").write_text("x = 1\n", encoding="utf-8")
+        (d / "mine.py").write_text("y = 1\n", encoding="utf-8")
+        _git(str(d), "init", "-q")
+        _git(str(d), "config", "user.email", "t@example.com")
+        _git(str(d), "config", "user.name", "t")
+        _git(str(d), "add", "-A")
+        _git(str(d), "commit", "-q", "-m", "init")
+        # 別の会話が書きかけで残した変更（番の初めの前からある）
+        (d / "other.py").write_text("x = 2\n", encoding="utf-8")
+        return d
+
+    def _node(self, d, script, payload):
+        env = {**os.environ, "RADIOSIM_PYTHON": str(d / "no-such-python.exe"),
+               "GIT_CEILING_DIRECTORIES": str(d.parent)}
+        return subprocess.run(["node", str(d / "tools" / "qa-hook" / script)],
+                              input=json.dumps({"cwd": str(d), **payload}), cwd=str(d),
+                              capture_output=True, text=True, encoding="utf-8",
+                              timeout=60, env=env)
+
+    def test_another_sessions_leftover_py_does_not_stop_the_turn(self, tmp_path):
+        d = self._repo(tmp_path)
+        assert self._node(d, "turn-baseline.mjs", {"session_id": "A"}).returncode == 0
+        r = self._node(d, "gate.mjs", {"session_id": "A"})
+        assert r.returncode == 0
+        assert r.stdout == "", r.stdout  # 何も走らせずに通す
+
+    def test_a_py_changed_in_this_turn_is_checked(self, tmp_path):
+        d = self._repo(tmp_path)
+        self._node(d, "turn-baseline.mjs", {"session_id": "A"})
+        (d / "mine.py").write_text("y = 2\n", encoding="utf-8")
+        r = self._node(d, "gate.mjs", {"session_id": "A"})
+        assert '"decision":"block"' in r.stdout
+
+    def test_editing_the_leftover_file_in_this_turn_is_checked(self, tmp_path):
+        d = self._repo(tmp_path)
+        self._node(d, "turn-baseline.mjs", {"session_id": "A"})
+        (d / "other.py").write_text("x = 3\n", encoding="utf-8")
+        assert '"decision":"block"' in self._node(d, "gate.mjs", {"session_id": "A"}).stdout
+
+    def test_another_sessions_baseline_does_not_count(self, tmp_path):
+        d = self._repo(tmp_path)
+        self._node(d, "turn-baseline.mjs", {"session_id": "B"})
+        assert '"decision":"block"' in self._node(d, "gate.mjs", {"session_id": "A"}).stdout
+
+    def test_without_a_baseline_everything_is_checked_as_before(self, tmp_path):
+        d = self._repo(tmp_path)
+        assert '"decision":"block"' in self._node(d, "gate.mjs", {}).stdout
+
+    def test_a_passing_stop_moves_the_baseline_to_the_end_of_the_turn(self, tmp_path):
+        """通知で始まった番（UserPromptSubmit が来ない）も、前の番の終わりを起点にする。"""
+        d = self._repo(tmp_path)
+        self._node(d, "turn-baseline.mjs", {"session_id": "A"})
+        assert self._node(d, "gate.mjs", {"session_id": "A"}).stdout == ""
+        # 番を通したあと、次の番の初めに控えが来なくても、他人の変更は動いていない
+        assert self._node(d, "gate.mjs", {"session_id": "A"}).stdout == ""
