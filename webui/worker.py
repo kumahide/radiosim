@@ -45,6 +45,7 @@ from core import config
 from core import disclosure
 from core import engine
 from core import i18n
+from core import models
 from core import simulation as sim
 from core import scenario as scn
 from core import units
@@ -57,7 +58,8 @@ from webui.state import AppState
 logger = logging.getLogger("radiosim")
 
 
-#: 見出しに載せる数＝(見出しの名前, 結果の属性)。損失の内訳（`server.breakdown`）の値もここ。
+#: 見出しに載せる数＝(見出しの名前, 結果の属性)。損失の内訳（`server.breakdown`）の値もここ
+#: （距離の項目は `_distance_fields` が別に足す）。
 _RESULT_NUMBERS = (
     ("margin", "actual_margin"), ("p_rx", "p_rx"), ("eirp", "eirp"), ("fspl", "fspl"),
     ("diff_loss", "diff_loss"), ("veg_loss", "veg_loss"), ("env_loss", "env_loss"),
@@ -89,7 +91,21 @@ def _item_fields(label: str, result: Any = None, params: Any = None,
     fields = _verdict_fields(result)
     item["word"] = fields["word"]
     item["margin"], item["p_rx"] = fields["margin"], fields["p_rx"]
+    if params is not None:                               # 選んだ行の「距離」の項目
+        item.update(_distance_fields(result, params))
     return item
+
+
+def _distance_fields(result: Any, params: Any) -> "dict[str, str]":
+    """「距離」の項目（`server.distances`）の値＝人が読む字（桁区切りあり）。
+
+    水平距離は地形の断面と同じ式（`models.calculate_terrain_profile` が使う
+    `horizontal_distance_km`）で端点から出す。
+    """
+    horiz_km = models.horizontal_distance_km(params.lat_tx, params.lon_tx,
+                                             params.lat_rx, params.lon_rx)
+    return {"slant": units.format_distance(result.slant_dist_km, unit=False),
+            "horiz": units.format_distance(horiz_km, unit=False)}
 
 
 def _error_row(batch: Any, label: str, note: str) -> Any:
@@ -117,6 +133,8 @@ def _verdict_fields(result: Any, params: Any = None) -> "dict[str, Any]":
         pairs += [(n, params, a) for n, a in _PARAM_NUMBERS]
     for name, obj, attr in pairs:
         fields[name] = round(float(getattr(obj, attr)), units.DB_DECIMALS)   # dB の桁は units
+    if params is not None:
+        fields.update(_distance_fields(result, params))
     # 前提を振った余裕度の幅（ERROR・v1 は無い）と、REVIEW を裏返す前提（帳票と同じ字）
     if verdict is not None and verdict.worst_margin is not None and verdict.best_margin is not None:
         fields["worst"] = round(float(verdict.worst_margin), units.DB_DECIMALS)

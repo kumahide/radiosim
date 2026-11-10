@@ -176,6 +176,7 @@ class _Result:
     verdict = None
     actual_margin = p_rx = eirp = fspl = diff_loss = veg_loss = 0.0
     env_loss = rain_loss = gas_loss = total_loss = 0.0
+    slant_dist_km = 1.5
 
 
 @pytest.fixture

@@ -348,6 +348,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_f1_obs":            "F1 Obs",
         "pl_f1_depth":          "F1 Depth",
         "pl_slant_dist":        "Slant Dist",
+        "pl_horiz_dist":        "Horiz Dist",
 
         # ===== Env types =====
         "env_urban":            "Urban",
@@ -678,6 +679,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 新しい画面（webui・4.0 ステージ8）
         "webui_computing":      "Updating the verdict…",
         "webui_input":          "Waiting for input",
+        "webui_distance":       "Distance",
         "webui_no_terrain":     "No terrain",
         "webui_error":          "Could not calculate",
         "webui_profile_later":  "The terrain profile will appear here.",
@@ -1052,6 +1054,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         "pl_f1_obs":            "F1遮蔽率",
         "pl_f1_depth":          "F1侵入深さ",
         "pl_slant_dist":        "斜距離",
+        "pl_horiz_dist":        "水平距離",
 
         # ===== Env types =====
         "env_urban":            "市街地",
@@ -1351,6 +1354,7 @@ _STRINGS: dict[str, dict[str, str]] = {
         # 新しい画面（webui・4.0 ステージ8）
         "webui_computing":      "判定を更新しています…",
         "webui_input":          "入力待ち",
+        "webui_distance":       "距離",
         "webui_no_terrain":     "地形なし",
         "webui_error":          "計算できませんでした",
         "webui_profile_later":  "ここに地形の断面図が出ます。",

@@ -139,6 +139,13 @@ _BREAKDOWN = (
     ("margin", "pl_act_margin", "dB"),
 )
 
+#: 距離の項目（リンクバジェットの下の別の表）＝(見出しの鍵, 字の鍵, 単位)。
+#: リンクバジェットの足し引きの項ではないので、同じ表に混ぜない（2026-11-10 経営者の指示）。
+_DISTANCES = (
+    ("slant", "pl_slant_dist", "m"),
+    ("horiz", "pl_horiz_dist", "m"),
+)
+
 
 def _choices(key: str) -> "list[list[str]] | None":
     """選択式の欄の [値, 語] の並び。文字で打つ欄は None。"""
@@ -188,10 +195,21 @@ def breakdown() -> "list[dict[str, Any]]":
             for n, k, u in _BREAKDOWN]
 
 
+def distances() -> "list[dict[str, Any]]":
+    """距離の項目の行の表（値は見出しの同じ名前の欄）。
+
+    見出しには整形済みの字（`units.format_distance`＝桁区切りあり）が載る＝`text` の行は
+    JS が桁をそろえずそのまま出す。
+    """
+    return [{"name": n, "label": i18n.t(k), "unit": u, "text": True}
+            for n, k, u in _DISTANCES]
+
+
 def labels() -> "dict[str, str]":
     """画面の字の表（JS に日本語を直書きしない）。"""
     return {
         "budget": i18n.t("panel_link_budget"),
+        "distance": i18n.t("webui_distance"),
         "computing": i18n.t("webui_computing"),
         "fetching_pct": i18n.t("status_fetching_pct"),
         "input": i18n.t("webui_input"),
@@ -407,6 +425,7 @@ class WebServer:
             snap["labels"] = labels()
             snap["form"] = form()
             snap["breakdown"] = breakdown()
+            snap["distances"] = distances()
             snap["sheet_spec"] = sheet_spec()
             snap["db_digits"] = units.DB_DECIMALS
             snap["basemap"] = self.basemap_payload()

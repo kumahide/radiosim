@@ -218,6 +218,7 @@ class _Result:
     verdict = None
     actual_margin = p_rx = eirp = fspl = diff_loss = veg_loss = 0.0
     env_loss = rain_loss = gas_loss = total_loss = 0.0
+    slant_dist_km = 1.5
 
 
 @pytest.fixture
@@ -278,6 +279,7 @@ class _Word:
     """語だけを持つ結果（`_verdict_fields` は `verdict` が無ければ `status` を読む）。"""
     verdict = None
     eirp = fspl = diff_loss = veg_loss = env_loss = rain_loss = gas_loss = total_loss = 0.0
+    slant_dist_km = 1.5
 
     def __init__(self, word: str, margin: float) -> None:
         self.status, self.actual_margin, self.p_rx = word, margin, -80.0
@@ -329,6 +331,11 @@ def test_the_batch_runs_every_row_and_aggregates():
     assert head["counts"] == {vd.OK: 1, vd.REVIEW: 1, vd.NG: 1, vd.ERROR: 0}
     assert head["items"][0]["tx"] == [pytest.approx(34.40), pytest.approx(132.45)]
     assert head["items"][0]["margin"] == 10.0
+    # 「距離」の項目は選んだ行の値＝1 件ごとに斜距離と水平距離（字は桁区切りの m）を持つ
+    from core import models
+    it = head["items"][0]
+    horiz = models.horizontal_distance_km(*it["tx"], *it["rx"])
+    assert it["slant"] == "1,500" and it["horiz"] == f"{round(horiz * 1000):,}"
 
 
 def test_the_batch_publishes_each_row_and_the_overall_only_at_the_end():

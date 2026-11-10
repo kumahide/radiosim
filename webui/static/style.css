@@ -141,17 +141,17 @@ main { flex: 1; display: flex; min-height: 0; }
 }
 #inputs label.row input { width: 84px; flex: none; text-align: right; }
 #inputs label.row select { width: 132px; flex: none; }
-/* 作業面で効かない欄（`scopeForm`）と、1 回線だけの損失の内訳は隠す */
+/* 作業面で効かない欄（`scopeForm`）と、1 回線だけの損失の内訳は隠す（距離の項目は作業面では選んだ行の値） */
 #inputs label[hidden], #inputs .group[hidden] { display: none; }
 body:not([data-ws="single"]) #budget { display: none; }
 /* 1 回線の結果の CSV・KML の釦（作業面では表の道具が同じ釦を持つ＝二重に出さない） */
 body:not([data-ws="single"]) .single-only { display: none; }
-#budget h2 { font-size: 14px; margin: 2px 0 4px; }
-#budget[data-stale="1"] #breakdown { opacity: 0.45; }
-#breakdown { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
-#breakdown th { text-align: left; font-weight: normal; color: var(--muted); padding: 1px 0; }
-#breakdown td.num { text-align: right; padding: 1px 4px; }
-#breakdown td.unit { color: var(--muted); width: 3em; }
+#budget h2, #distance h2 { font-size: 14px; margin: 2px 0 4px; }
+#budget[data-stale="1"] .readout, #distance[data-stale="1"] .readout { opacity: 0.45; }
+.readout { width: 100%; border-collapse: collapse; font-variant-numeric: tabular-nums; }
+.readout th { text-align: left; font-weight: normal; color: var(--muted); padding: 1px 0; }
+.readout td.num { text-align: right; padding: 1px 4px; }
+.readout td.unit { color: var(--muted); width: 3em; }
 #breakdown tr[data-name="total_loss"] th, #breakdown tr[data-name="total_loss"] td,
 #breakdown tr[data-name="margin"] th, #breakdown tr[data-name="margin"] td {
   border-top: 1px solid var(--line);

@@ -44,6 +44,7 @@ class _Result:
     rain_loss = 0.0
     gas_loss = 0.0
     total_loss = 103.0
+    slant_dist_km = 12.3456
 
 
 def _endpoints_key(params):
@@ -343,6 +344,27 @@ def test_every_breakdown_row_has_a_value_in_the_verdict():
     assert all(r["label"] and r["unit"] for r in rows)
 
 
+def test_the_distances_sit_in_their_own_table_below_the_link_budget():
+    # 斜距離（結果）と水平距離（端点から＝地形の断面と同じ式）は、リンクバジェットの項目に
+    # 混ぜず、その下の別の表に出す（2026-11-10 経営者の指示）。字は桁区切りの m
+    from core import models
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
+           calc=lambda t, p: _Result(), profile=_no_profile).step()
+    head = st.headline()
+    params = sim.SimParams(dict(st.snapshot()[1]))
+    rows = webserver.distances()
+    assert [r["name"] for r in rows] == ["slant", "horiz"]
+    assert all(r["text"] and r["label"] and r["unit"] == "m" for r in rows)
+    assert not {r["name"] for r in rows} & {r["name"] for r in webserver.breakdown()}
+    html = (pathlib.Path(webserver.STATIC_ROOT) / "index.html").read_text(encoding="utf-8")
+    assert html.index('id="breakdown"') < html.index('id="distances"')
+    assert webserver.labels()["distance"]
+    assert head["slant"] == "12,346"
+    horiz = models.horizontal_distance_km(params.lat_tx, params.lon_tx, params.lat_rx, params.lon_rx)
+    assert head["horiz"] == f"{round(horiz * 1000):,}"
+
+
 # ============================================================
 # 断面図（Link 1.0 ステージ9b）
 # ============================================================
@@ -546,7 +568,7 @@ def test_the_first_state_carries_the_labels(web):
     snap = json.loads(body)
     assert code == 200
     assert snap["labels"]["computing"]
-    assert snap["form"] and snap["breakdown"]
+    assert snap["form"] and snap["breakdown"] and snap["distances"]
     assert snap["headline"]["kind"] in ("computing", "verdict")
 
 

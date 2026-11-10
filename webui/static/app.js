@@ -6,7 +6,8 @@ const HEAD = { "X-Token": TOKEN, "Content-Type": "application/json" };
 const DEBOUNCE_MS = 300;
 
 let labels = {};
-let breakdownRows = [];
+// 結果の表（リンクバジェットと距離の項目）＝表の id → サーバーの行の表
+const readoutRows = { breakdown: [], distances: [] };
 let dbDigits = 1;                          // dB の桁（サーバーの `units.DB_DECIMALS` で上書き）
 let revision = 0;
 let map = null;
@@ -93,9 +94,9 @@ function scopeForm() {
   });
 }
 
-function buildBreakdown(rows) {
-  breakdownRows = rows;
-  const table = document.getElementById("breakdown");
+function buildReadout(id, rows) {
+  readoutRows[id] = rows;
+  const table = document.getElementById(id);
   table.replaceChildren();
   rows.forEach((r) => {
     const tr = document.createElement("tr");
@@ -112,14 +113,32 @@ function buildBreakdown(rows) {
   });
 }
 
-function showBreakdown(h) {
-  const fresh = h.kind === "verdict";
-  document.getElementById("budget").dataset.stale = fresh ? "" : "1";
-  if (!fresh) return;                      // 古い値は残して薄くする（今の版の値ではない）
-  breakdownRows.forEach((r) => {
-    const td = document.querySelector(`#breakdown tr[data-name="${r.name}"] td.num`);
-    if (td) td.textContent = r.name in h ? Number(h[r.name]).toFixed(r.digits) : "";
+// 結果の表の値を `src`（見出しか作業面の 1 件）から埋める。無い名前は空
+function fillReadout(id, src) {
+  readoutRows[id].forEach((r) => {
+    const td = document.querySelector(`#${id} tr[data-name="${r.name}"] td.num`);
+    if (!td) return;
+    if (!(r.name in src)) td.textContent = "";
+    else td.textContent = r.text ? String(src[r.name]) : Number(src[r.name]).toFixed(r.digits);
   });
+}
+
+function showBreakdown(h) {
+  if (workspace !== "single") { showRowDistances(); return; }
+  const fresh = h.kind === "verdict";
+  for (const id of ["budget", "distance"]) document.getElementById(id).dataset.stale = fresh ? "" : "1";
+  if (!fresh) return;                      // 古い値は残して薄くする（今の版の値ではない）
+  fillReadout("breakdown", h);
+  fillReadout("distances", h);
+}
+
+// 作業面の「距離」の項目＝選んだ行の値（断面図と同じく選んだ行に連動・選ぶ前は空）
+function showRowDistances() {
+  if (workspace === "single") return;
+  const fresh = !!headline && headline.kind === "sheet" && headline.workspace === workspace;
+  document.getElementById("distance").dataset.stale = fresh ? "" : "1";
+  const it = selected === null ? null : sheetItems[selected];
+  fillReadout("distances", it || {});
 }
 
 // ---- 見出し ---------------------------------------------------------------
@@ -782,6 +801,7 @@ function setWorkspace(key) {
   renderSheet();
   drawSheetLines();
   drawProfile();
+  if (key === "single") { if (headline) showBreakdown(headline); } else showRowDistances();
 }
 
 function renderSheet() {
@@ -1090,6 +1110,7 @@ function selectRow(i) {
   });
   drawSheetLines();
   showProfile(headline);
+  showRowDistances();
 }
 
 // 選んだ行の断面図＝その件が今の版で済んでいれば 1 回だけ取る（版が変われば取り直す）
@@ -1647,7 +1668,8 @@ async function poll() {
         applyLabels();
         buildProjTools();
         buildForm(s.form || []);
-        buildBreakdown(s.breakdown || []);
+        buildReadout("breakdown", s.breakdown || []);
+        buildReadout("distances", s.distances || []);
         if (Number.isInteger(s.db_digits)) dbDigits = s.db_digits;
         if (!map) initMap(s.basemap || { id: "pale" });
         if (s.sheet_spec) {
