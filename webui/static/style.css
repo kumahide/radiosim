@@ -327,8 +327,6 @@ body:not([data-ws="single"]) #lower { height: 42%; }
   box-shadow: 0 1px 3px rgba(0, 0, 0, 0.5);
   cursor: grab;
 }
-/* 面の入力から立てるピン（計算の結果を待たずに出す・ドラッグで動かせる） */
-.pin.draft { background: #5b7fb5; }
 /* 地図から地点を置くメニュー（4 つの面とも・置き先は面ごと） */
 .place-popup .leaflet-popup-content-wrapper,
 .place-popup .leaflet-popup-tip { background: var(--bg); color: var(--fg); }

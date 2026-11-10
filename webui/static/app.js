@@ -1017,10 +1017,30 @@ function makeDraftPin([at, text, write]) {
     draggable: true, keyboard: false,
     icon: L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11], html: `<div class="pin draft">${text}</div>` }),
   }).addTo(sheetLayer);
-  marker.on("dragstart", () => { dragging = true; });
-  marker.on("drag", (e) => write(e.latlng.wrap(), false));
+  // 1 回線のピンと同じ＝動かしている間は欄と線が一緒に動き、離したときに 1 回だけ送る。
+  // 線は結果の線のうち、つかんだ所を端に持つもの（複数経路は選んだ行・条件探索は 1 本・中継は前後の区間）
+  let ends = [];
+  marker.on("dragstart", () => {
+    dragging = true;
+    const from = marker.getLatLng();
+    ends = [];
+    sheetLayer.eachLayer((layer) => {
+      if (!(layer instanceof L.Polyline)) return;
+      if (workspace === "batch" && layer.item !== selected) return;   // 同じ地点を持つほかの行は動かさない
+      layer.getLatLngs().forEach((p, i) => { if (p.equals(from, 1e-6)) ends.push([layer, i]); });
+    });
+  });
+  marker.on("drag", (e) => {
+    write(e.latlng.wrap(), false);
+    ends.forEach(([line, i]) => {
+      const pts = line.getLatLngs();
+      pts[i] = e.latlng;
+      line.setLatLngs(pts);
+    });
+  });
   marker.on("dragend", () => {
     dragging = false;
+    ends = [];
     write(marker.getLatLng().wrap(), true);
   });
 }
@@ -1045,6 +1065,7 @@ function drawSheetLines(complete) {
       color: verdictColor(word), weight: i === selected || one ? 6 : 3, opacity: stale ? 0.45 : 0.9,
       bubblingMouseEvents: false,          // 線を押したら行を選ぶだけ（地点を置くメニューを開かない）
     }).addTo(sheetLayer);
+    line.item = i;                         // ピンを動かすとき、どの件の線かを見分ける
     line.on("click", () => selectRow(i));
     if (i === selected) {
       line.on("mousemove", onPathHover);
