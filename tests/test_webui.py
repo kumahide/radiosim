@@ -467,6 +467,35 @@ def test_every_label_the_script_uses_is_served():
     assert "{path}" in webserver.labels()["proj_saved"]       # JS が差し替える置き場
 
 
+def test_the_map_places_points_on_every_workspace():
+    # 地図から地点を置く＝左クリックと右クリックの両方を受け、4 つの面それぞれに置き先がある。
+    # メニューの TX／RX は旧画面の右クリックの語
+    import re
+    from core import i18n
+    from webui import sheets
+    lab = webserver.labels()
+    assert lab["place_tx"] == i18n.t("map_menu_place_tx")
+    assert lab["place_rx"] == i18n.t("map_menu_place_rx")
+    assert lab["map_new_row"] == i18n.t("webui_map_new_row")
+    assert "{n}" in lab["map_point_limit"]                     # JS が上限の数を差す置き場
+    js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
+    assert 'map.on("click contextmenu", onMapClick)' in js
+    found = re.search(r"function onMapClick\(e\) \{(.*?)\n\}", js, flags=re.S)
+    assert found, "onMapClick が見つからない"
+    handled = set(re.findall(r'workspace === "(\w+)"', found.group(1)))
+    assert handled == set(sheets.WORKSPACES)
+
+
+def test_the_script_finds_the_input_not_its_label():
+    # 左の列は `label` と中の欄の両方に同じ `data-key` がある＝`[data-key=…]` だけで探すと先に `label` が
+    # 当たり、ドラッグ中の座標や地図から置いた座標が見える欄へ入らない（2026-11-10 の地図の不具合）
+    import re
+    js = (pathlib.Path(webserver.STATIC_ROOT) / "app.js").read_text(encoding="utf-8")
+    code = re.sub(r"//[^\n]*", "", js)
+    bare = re.findall(r"""querySelector(?:All)?\(\s*[`'"]\[data-key""", code)
+    assert bare == []
+
+
 # ============================================================
 # HTTP
 # ============================================================

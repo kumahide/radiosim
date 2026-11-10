@@ -208,29 +208,35 @@ function coordText(lat, lng) {
     : `${lat.toFixed(5)}, ${lng.toFixed(5)}`;
 }
 
+// 左の列の入力欄（`input`／`select`）。⚠️ 包む `label` にも同じ `data-key` がある（`scopeForm` が使う）＝
+// `[data-key=…]` だけで探すと先に `label` が当たり、見えない所へ書いてしまう
+const FIELD = "#form :is(input, select)[data-key]";
+const fieldOf = (key) => document.querySelector(`#form :is(input, select)[data-key="${key}"]`);
+
 function showInputs(inputs) {
   current = inputs;
-  document.querySelectorAll("[data-key]").forEach((el) => {
+  document.querySelectorAll(FIELD).forEach((el) => {
     const key = el.dataset.key;
     if (document.activeElement !== el && !(key in pending)) el.value = inputs[key] || "";
   });
-  if (dragging || workspace !== "single") return;   // ドラッグ中のピンを古い値へ戻さない
-  const a = parseLatLon(inputs.start);
-  const b = parseLatLon(inputs.end);
-  if (map && a && b) {
-    const first = !path;
-    if (first) {
-      path = L.polyline([a, b], { color: "#1f5fbf", weight: 3 }).addTo(map);
-      path.on("mousemove", onPathHover);
-      path.on("mouseout", () => setHover(null));
-      pins.start = makePin("start", "T", a);
-      pins.end = makePin("end", "R", b);
-    }
-    path.setLatLngs([a, b]);
-    pins.start.setLatLng(a);
-    pins.end.setLatLng(b);
-    if (first) map.fitBounds(path.getBounds(), { padding: [60, 60], maxZoom: 15 });
+  if (!map || dragging || workspace !== "single") return;   // ドラッグ中のピンを古い値へ戻さない
+  // ピンは読めた端点ごとに立てる（片方だけでも出す＝地図から置いた 1 点目が見える）。線は 2 点そろってから
+  const at = { start: parseLatLon(inputs.start), end: parseLatLon(inputs.end) };
+  [["start", "T"], ["end", "R"]].forEach(([key, text]) => {
+    if (!at[key]) return;
+    if (pins[key]) pins[key].setLatLng(at[key]);
+    else pins[key] = makePin(key, text, at[key]);
+  });
+  if (!at.start || !at.end) return;
+  const first = !path;
+  if (first) {
+    path = L.polyline([at.start, at.end], { color: "#1f5fbf", weight: 3 }).addTo(map);
+    path.on("mousemove", onPathHover);
+    path.on("mouseout", () => setHover(null));
   }
+  path.setLatLngs([at.start, at.end]);
+  // 寄せるのは初めて 2 点がそろったときだけ＝地図から置いたときは、見えているかぎり縮尺を動かさない
+  if (first && shouldFit(path.getBounds())) map.fitBounds(path.getBounds(), { padding: [60, 60], maxZoom: 15 });
 }
 
 // ---- 地図 -----------------------------------------------------------------
@@ -274,6 +280,116 @@ function initMap(basemap) {
   const resized = new ResizeObserver(() => { map.invalidateSize(); drawProfile(); });
   resized.observe(document.getElementById("map"));
   resized.observe(document.getElementById("profile"));
+  // 地図から端点を置く（1 回線）。小窓が開いていた左クリックは閉じるだけ（同じ所に開き直さない）
+  map.on("preclick", () => { menuWasOpen = !!placeMenu && map.hasLayer(placeMenu); });
+  map.on("click contextmenu", onMapClick);
+}
+
+// ---- 地図から地点を置く（4 つの面とも） ---------------------------------------
+// 置き先は面ごと:
+// - 1 回線・条件探索＝左の列の送信・受信座標（条件探索は左の列が基準）
+// - 複数経路＝選んだ行の送信・受信座標（選んでいなければ、そこを TX にした行を足して選ぶ）
+// - 中継経路＝座標が空の地点を上から埋め、空が無ければ末尾に地点を足す
+// 左クリックは空の端点をその順に埋める。埋める所が無ければ（右クリックはいつも）置き先を選ぶメニューを出す。
+// 書く字は選んだ表記。左の列は待たずに 1 回だけ送り、表は面の入力を丸ごと送る（打ったときと同じ道）。
+let placeMenu = null;
+let menuWasOpen = false;
+let placedOnMap = false;            // 地図から置いた後は、全部が見えているかぎり寄せ直さない
+
+function fieldReadable(key) {
+  const field = fieldOf(key);
+  return !!(field && parseLatLon(field.value));
+}
+
+// 地図から置いた後に寄せるか＝見えている範囲から出たときだけ寄せる
+const shouldFit = (bounds) => !(placedOnMap && map.getBounds().contains(bounds));
+
+function placeEnd(key, ll) {
+  placedOnMap = true;
+  const value = latLonText(ll);
+  const field = fieldOf(key);
+  if (field) field.value = value;
+  pending[key] = value;
+  showInputs(Object.assign({}, current, { [key]: value }));   // 返事を待たずにピンを立てる
+  if (timer) clearTimeout(timer);
+  flush();
+  drawSheetLines();                                            // 条件探索の仮のピン
+}
+
+function openPlaceMenu(ll, items) {
+  const box = el("div", { className: "place-menu" },
+    items.map(([text, act]) => button(text, () => { map.closePopup(); act(); })));
+  placeMenu = L.popup({ closeButton: false, className: "place-popup", offset: [0, -4] })
+    .setLatLng(ll).setContent(box).openOn(map);
+}
+
+function placeOnForm(ll, left) {
+  if (left && !fieldReadable("start")) return placeEnd("start", ll);
+  if (left && !fieldReadable("end")) return placeEnd("end", ll);
+  openPlaceMenu(ll, [[labels.place_tx, () => placeEnd("start", ll)], [labels.place_rx, () => placeEnd("end", ll)]]);
+}
+
+function nextRowId(rows) {
+  const used = rows.map((r) => parseInt(r.id, 10)).filter(Number.isFinite);
+  return String(used.length ? Math.max(...used) + 1 : rows.length + 1);
+}
+
+function placeOnRow(ll, left) {
+  const rows = sheets.batch;
+  const row = selected !== null && selected < rows.length ? rows[selected] : null;
+  const setCell = (key) => {
+    placedOnMap = true;
+    row[key] = latLonText(ll);
+    renderSheet();
+    markDirty(0);
+  };
+  const newRow = () => {
+    placedOnMap = true;
+    // 高さは 1 回線の値を入れておく（空だとその行はすぐ ERROR＝地図に線が出ない）。ボタンで足す行は空のまま
+    rows.push({ id: nextRowId(rows), start: latLonText(ll), h_tx: current.h_tx || "", h_rx: current.h_rx || "" });
+    renderSheet();
+    selectRow(rows.length - 1);
+    markDirty(0);
+  };
+  if (!row) return newRow();
+  if (left && !parseLatLon(row.start || "")) return setCell("start");
+  if (left && !parseLatLon(row.end || "")) return setCell("end");
+  openPlaceMenu(ll, [[labels.place_tx, () => setCell("start")], [labels.place_rx, () => setCell("end")],
+    [labels.map_new_row, newRow]]);
+}
+
+function placeWaypoint(ll) {
+  const mh = sheets.multihop;
+  const pts = mh.waypoints;
+  const note = document.getElementById("sheet-note");
+  const empty = pts.find((p) => !parseLatLon(p.coord || ""));
+  let point = empty;
+  if (!point && pts.length >= spec.limits.waypoints) {
+    note.textContent = fmt(labels.map_point_limit || "", { n: spec.limits.waypoints });
+    return;
+  }
+  if (!point) {
+    point = { name: "", coord: "", h: "" };
+    pts.push(point);
+    syncHops(mh);
+  }
+  point.coord = latLonText(ll);
+  // 高さが空なら 1 回線の値を入れておく（先頭＝送信アンテナ高・ほか＝受信アンテナ高）。空のままだと計算できない
+  if (!String(point.h || "").trim()) point.h = (pts.indexOf(point) === 0 ? current.h_tx : current.h_rx) || "";
+  note.textContent = "";
+  placedOnMap = true;
+  renderSheet();
+  markDirty(0);
+}
+
+function onMapClick(e) {
+  const left = e.type === "click";
+  if (left && menuWasOpen) return;
+  const ll = e.latlng.wrap();
+  if (workspace === "single" || workspace === "scenario") placeOnForm(ll, left);
+  else if (!sheets || !spec) return;
+  else if (workspace === "batch") placeOnRow(ll, left);
+  else if (workspace === "multihop") placeWaypoint(ll);
 }
 
 const latLonText = (ll) => coordText(ll.lat, ll.lng);
@@ -284,12 +400,12 @@ function makePin(key, text, at) {
     draggable: true,
     icon: L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11], html: `<div class="pin">${text}</div>` }),
   }).addTo(map);
-  const field = () => document.querySelector(`[data-key="${key}"]`);
+  const field = () => fieldOf(key);
   marker.on("dragstart", () => { dragging = true; });
   marker.on("drag", (e) => {
     const el = field();
     if (el) el.value = latLonText(e.latlng);
-    path.setLatLngs([pins.start.getLatLng(), pins.end.getLatLng()]);
+    if (path) path.setLatLngs([pins.start.getLatLng(), pins.end.getLatLng()]);   // 線は 2 点そろってから
   });
   marker.on("dragend", () => {
     dragging = false;
@@ -306,7 +422,7 @@ function makePin(key, text, at) {
 // ホバーの位置を測る線の両端＝1 回線はピン・作業面は選んだ件の両端（無ければ null）
 function hoverEnds() {
   if (workspace === "single") {
-    return pins.start ? [pins.start.getLatLng(), pins.end.getLatLng()] : null;
+    return pins.start && pins.end ? [pins.start.getLatLng(), pins.end.getLatLng()] : null;
   }
   const it = selected === null ? null : sheetItems[selected];
   return it && it.tx && it.rx ? [L.latLng(it.tx), L.latLng(it.rx)] : null;
@@ -542,10 +658,14 @@ function button(text, onClick, disabled) {
 // 表の欄＝打ったら面の入力を丸ごと送る（300ms 待つ）
 function cellInput(obj, key, cls, placeholder) {
   const i = el("input", { value: obj[key] || "", className: cls || "", spellcheck: false, autocomplete: "off" });
+  i.cellOf = [obj, key];                   // 地図のピンが動かしている間に、この欄を探して字を替える
   if (placeholder) i.placeholder = placeholder;
   i.addEventListener("input", () => { obj[key] = i.value; markDirty(DEBOUNCE_MS); });
   return i;
 }
+
+const cellInputOf = (obj, key) => [...document.querySelectorAll("#sheet-body input")]
+  .find((i) => i.cellOf && i.cellOf[0] === obj && i.cellOf[1] === key);
 
 function cellSelect(obj, key, options, blank) {
   const s = el("select");
@@ -609,7 +729,8 @@ function postInputs(body) {
 function sheetBusy() {
   const a = document.activeElement;
   const typing = a && document.getElementById("sheet").contains(a) && /^(INPUT|SELECT)$/.test(a.tagName);
-  return sheetTimer !== null || inflight > 0 || typing;
+  // ピンを動かしている間もポーリングの面で差し替えない（つかんでいる行・点を古い写しにしない）
+  return sheetTimer !== null || inflight > 0 || typing || dragging;
 }
 
 // ポーリングの面の入力＝表の中に焦点が無く送りかけも無いときだけ描き直す
@@ -645,6 +766,7 @@ function setWorkspace(key) {
     b.setAttribute("aria-selected", String(b.dataset.ws === key));
   });
   if (!changed) return;
+  if (map) map.closePopup();                       // 地点を置くメニューの置き先は面ごとに違う
   selected = null;
   profile = null;
   profileFor = null;
@@ -682,8 +804,7 @@ function renderBatch(tools, body) {
   const rows = sheets.batch;
   tools.append(
     button(labels.add_row, () => {
-      const used = rows.map((r) => parseInt(r.id, 10)).filter(Number.isFinite);
-      rows.push({ id: String(used.length ? Math.max(...used) + 1 : rows.length + 1) });
+      rows.push({ id: nextRowId(rows) });
       renderSheet();
       markDirty(0);
     }),
@@ -780,26 +901,29 @@ function fillSweepRows() {
   tbody.replaceChildren(...sheetItems.map((it, i) => itemRow(i, [td(it.label, "num")])));
 }
 
+// 区間の表の行数を点の数 − 1 にそろえる（足りなければ空欄＝共通設定の行を足す）
+function syncHops(mh) {
+  const want = Math.max(0, mh.waypoints.length - 1);
+  while (mh.hop_rf.length < want) mh.hop_rf.push({ freq: "", gain_tx: "", gain_rx: "" });
+  mh.hop_rf.length = want;
+}
+
 // 中継＝経路 ID・備考・点の表（名前・座標・高さ）と区間の表（空欄は共通設定）
 function renderMultihop(tools, body) {
   const mh = sheets.multihop;
   const pts = mh.waypoints;
-  const syncHops = () => {
-    while (mh.hop_rf.length < Math.max(0, pts.length - 1)) mh.hop_rf.push({ freq: "", gain_tx: "", gain_rx: "" });
-    mh.hop_rf.length = Math.max(0, pts.length - 1);
-  };
   let focusPoint = null;
   tools.append(
     el("label", {}, [labels.route_id || "", cellInput(mh, "path_id", "text")]),
     el("label", {}, [labels.note || "", cellInput(mh, "note", "text")]),
     el("span", { className: "sep" }),
-    button(labels.add_point, () => { pts.push({ name: "", coord: "", h: "" }); syncHops(); renderSheet(); markDirty(0); },
+    button(labels.add_point, () => { pts.push({ name: "", coord: "", h: "" }); syncHops(mh); renderSheet(); markDirty(0); },
       pts.length >= spec.limits.waypoints),
     button(labels.del_point, () => {
       const at = focusPoint !== null ? focusPoint : pts.length - 1;
       pts.splice(at, 1);
       mh.hop_rf.splice(Math.max(0, Math.min(at - 1, mh.hop_rf.length - 1)), 1);
-      syncHops();
+      syncHops(mh);
       selected = null;
       renderSheet();
       markDirty(0);
@@ -850,11 +974,64 @@ function verdictColor(word) {
   return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 }
 
+// 面の入力から立てるピン＝計算の結果を待たずに置いた所が見え、ドラッグで動かせる
+// 複数経路＝選んだ行の T・R／中継＝各地点の番号／条件探索＝左の列の T・R
+// 各ピンは [位置, 字, 書き手]。書き手 `write(LatLng, 離したか)` は動かしている間は欄だけを替え、離したら送る
+function draftPins() {
+  const out = [];
+  const add = (text, label, write) => {
+    const at = parseLatLon(text || "");
+    if (at) out.push([at, label, write]);
+  };
+  // 表の行・点＝欄の字を替え、離したら面の入力を丸ごと送る（打ったときと同じ道）
+  const cell = (obj, key) => (ll, done) => {
+    obj[key] = latLonText(ll);
+    const input = cellInputOf(obj, key);
+    if (input) input.value = obj[key];
+    if (!done) return;
+    placedOnMap = true;
+    renderSheet();
+    markDirty(0);
+  };
+  // 左の列＝欄の字を替え、離したら 1 回だけ送る（1 回線のピンと同じ）
+  const field = (key) => (ll, done) => {
+    if (done) return placeEnd(key, ll);
+    const input = fieldOf(key);
+    if (input) input.value = latLonText(ll);
+  };
+  if (workspace === "batch" && sheets && selected !== null && sheets.batch[selected]) {
+    const row = sheets.batch[selected];
+    add(row.start, "T", cell(row, "start"));
+    add(row.end, "R", cell(row, "end"));
+  } else if (workspace === "multihop" && sheets) {
+    sheets.multihop.waypoints.forEach((p, i) => add(p.coord, String(i + 1), cell(p, "coord")));
+  } else if (workspace === "scenario") {
+    add(fieldOf("start") && fieldOf("start").value, "T", field("start"));
+    add(fieldOf("end") && fieldOf("end").value, "R", field("end"));
+  }
+  return out;
+}
+
+function makeDraftPin([at, text, write]) {
+  const marker = L.marker(at, {
+    draggable: true, keyboard: false,
+    icon: L.divIcon({ className: "", iconSize: [22, 22], iconAnchor: [11, 11], html: `<div class="pin draft">${text}</div>` }),
+  }).addTo(sheetLayer);
+  marker.on("dragstart", () => { dragging = true; });
+  marker.on("drag", (e) => write(e.latlng.wrap(), false));
+  marker.on("dragend", () => {
+    dragging = false;
+    write(marker.getLatLng().wrap(), true);
+  });
+}
+
 // 地図＝各件の送信→受信を語の色で・選んだ件を太く。全件そろって座標の組が変われば全体へ合わせる
+// ピンを動かしている間は描き直さない（つかんでいるピンを消さない）
 function drawSheetLines(complete) {
-  if (!sheetLayer) return;
+  if (!sheetLayer || dragging) return;
   sheetLayer.clearLayers();
   if (workspace === "single") return;
+  draftPins().forEach(makeDraftPin);
   const stale = document.getElementById("sheet").dataset.stale === "1";
   const bounds = [];
   // 条件探索は全件が同じ経路＝1 本だけ（選んだ件の語・選んでいなければ全体の語）
@@ -866,6 +1043,7 @@ function drawSheetLines(complete) {
     const word = one && selected === null ? whole : it.word;
     const line = L.polyline([it.tx, it.rx], {
       color: verdictColor(word), weight: i === selected || one ? 6 : 3, opacity: stale ? 0.45 : 0.9,
+      bubblingMouseEvents: false,          // 線を押したら行を選ぶだけ（地点を置くメニューを開かない）
     }).addTo(sheetLayer);
     line.on("click", () => selectRow(i));
     if (i === selected) {
@@ -877,7 +1055,7 @@ function drawSheetLines(complete) {
   const sig = JSON.stringify(bounds);
   if (complete && bounds.length && sig !== fittedSig) {
     fittedSig = sig;
-    map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 15 });
+    if (shouldFit(L.latLngBounds(bounds))) map.fitBounds(L.latLngBounds(bounds), { padding: [40, 40], maxZoom: 15 });
   }
 }
 
@@ -1169,7 +1347,7 @@ darkQuery.addEventListener("change", () => applyTheme());
 function reformatCoords() {
   const changes = {};
   ["start", "end"].forEach((key) => {
-    const field = document.querySelector(`[data-key="${key}"]`);
+    const field = fieldOf(key);
     if (!field) return;
     const ll = parseLatLon(field.value);
     if (!ll) return;

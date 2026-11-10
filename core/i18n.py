@@ -700,6 +700,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_no_profile":     "There is no terrain profile to save yet. On a sheet, select a row first.",
         "webui_no_result":      "The results are not complete yet. Save after the calculation finishes.",
         "webui_file_saved":     "Saved: {path}",
+        "webui_map_new_row":    "Add a row with TX here",
+        "webui_map_point_limit": "Up to {n} points. Remove a relay before adding one from the map.",
 
         # ===== Validation (batch) =====
         "verr_empty":           "Path list is empty.",
@@ -1371,6 +1373,8 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_no_profile":     "保存する断面図がまだありません。作業面では先に行を選んでください。",
         "webui_no_result":      "結果がまだそろっていません。計算が終わってから保存してください。",
         "webui_file_saved":     "保存しました: {path}",
+        "webui_map_new_row":    "ここを TX に行を追加",
+        "webui_map_point_limit": "地点は {n} 個までです。地図から足す前に、中継点を削除してください。",
 
         # ===== Validation (batch) =====
         "verr_empty":           "経路リストが空です。",

@@ -209,6 +209,11 @@ def labels() -> "dict[str, str]":
         "legend_fresnel": i18n.t("legend_fresnel"),
         "dist_axis": i18n.t("graph_dist_axis"),
         "alt_axis": i18n.t("graph_alt_axis"),
+        # 地図から地点を置くメニュー（4 つの面とも）＝TX／RX は旧画面の右クリックのメニューと同じ語
+        "place_tx": i18n.t("map_menu_place_tx"),
+        "place_rx": i18n.t("map_menu_place_rx"),
+        "map_new_row": i18n.t("webui_map_new_row"),
+        "map_point_limit": i18n.t("webui_map_point_limit"),
         # 作業面（ステージ10c）＝旧画面と同じ語を使う（成果物と取扱説明書の語に合わせる）
         "sheet_progress": i18n.t("webui_sheet_progress"),
         "pick_row": i18n.t("webui_pick_row"),
