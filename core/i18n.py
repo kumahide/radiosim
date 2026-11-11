@@ -692,6 +692,11 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_hint_start":     "e.g. 34.54, 132.41",
         "webui_hint_end":       "e.g. 34.53, 132.41",
         "webui_margin_range":   "Across the assumptions: {worst} to {best} dB",
+        "webui_row_range":      "{label}: margin {base} dB at the default assumptions; "
+                                "across the assumptions {worst} to {best} dB",
+        "webui_calc_profile":   "Calculation profile: {id}",
+        "webui_calc_profile_v1": "Calculation profile: v1 (3.9.x method: OK / NG from the "
+                                 "default-assumption margin only; assumptions are not varied)",
         "webui_ws_single":      "Single Link",
         "webui_sheet_progress": "{done} / {total}",
         "webui_pick_row":       "Select a row to see its terrain profile.",
@@ -1369,6 +1374,10 @@ _STRINGS: dict[str, dict[str, str]] = {
         "webui_hint_start":     "例: 34.54, 132.41",
         "webui_hint_end":       "例: 34.53, 132.41",
         "webui_margin_range":   "前提を振った幅：{worst}〜{best} dB",
+        "webui_row_range":      "{label}：既定の前提のマージン {base} dB・前提を振った幅 {worst}〜{best} dB",
+        "webui_calc_profile":   "計算プロファイル：{id}",
+        "webui_calc_profile_v1": "計算プロファイル：v1（3.9.x の方式。既定の前提のマージンだけで"
+                                 " OK / NG を決め、前提は振らない）",
         "webui_ws_single":      "1 回線",
         "webui_sheet_progress": "{done} / {total} 件",
         "webui_pick_row":       "行を選ぶと、その経路の断面図が出ます。",

@@ -60,7 +60,10 @@ body {
 #band-detail { color: var(--fg); font-variant-numeric: tabular-nums; }
 #band-range { color: var(--muted); font-variant-numeric: tabular-nums; }
 #band-flipped { color: var(--muted); flex-basis: 100%; padding-left: 0; }
-#band-flipped:empty, #band-range:empty { display: none; }
+/* 計算方式（B-383）＝常に名乗る・0 m の点数（B-385）＝前提の行の下に全幅 */
+#band-profile { color: var(--muted); }
+#band-notes { color: var(--muted); flex-basis: 100%; padding-left: 0; }
+#band-flipped:empty, #band-range:empty, #band-profile:empty, #band-notes:empty { display: none; }
 /* ロゴ（I-238）＝帯の 1 行目の右端。縦の場所を取らない（入力の列は 990px に収める） */
 #brand { height: 34px; margin: -4px 0 -4px auto; align-self: center; }
 /* 「設定」（I-257）＝ロゴの右。歯車の字だけ＝語は title と aria-label に */

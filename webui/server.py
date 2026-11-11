@@ -220,6 +220,9 @@ def labels() -> "dict[str, str]":
         "margin": i18n.t("pl_act_margin"),
         "p_rx": i18n.t("pl_rx_level"),
         "margin_range": i18n.t("webui_margin_range"),
+        "row_range": i18n.t("webui_row_range"),          # 作業面の選んだ行（B-384）
+        "calc_profile": i18n.t("webui_calc_profile"),    # 計算方式を常に名乗る（B-383）
+        "calc_profile_v1": i18n.t("webui_calc_profile_v1"),
         # 断面図（帳票と同じ語＝成果物の語を画面でも使う）
         "legend_terrain": i18n.t("legend_terrain"),
         "legend_vegetation": i18n.t("legend_vegetation"),

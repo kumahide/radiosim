@@ -185,6 +185,53 @@ def test_a_review_carries_the_range_and_the_flipping_assumptions():
     assert "{worst}" in lab["margin_range"] and "{best}" in lab["margin_range"]
 
 
+def test_a_sheet_row_carries_the_same_review_facts_as_the_band():
+    # B-384・B-385＝作業面の 1 行も、1 回線の帯と同じ口（`_verdict_fields`）の幅・前提・0 m の点数を持つ
+    # （複数経路・条件探索・中継の 3 面とも `_item_fields` を通る）
+    from core import disclosure, i18n
+    from core.verdict import Verdict
+    from webui.worker import _item_fields
+
+    class _Review(_Result):
+        verdict = Verdict(word="REVIEW", base_margin=1.2, worst_margin=-2.04, best_margin=3.96,
+                          flipped_by=("veg_h",), dem_no_tile=3, dem_invalid_pixel=2, reviewed=True)
+
+    item = _item_fields("asa2400", _Review())
+    assert item["word"] == "REVIEW"
+    assert (item["worst"], item["best"]) == (round(-2.04, units.DB_DECIMALS),
+                                             round(3.96, units.DB_DECIMALS))
+    assert item["flipped"] == i18n.t("html_verdict_flipped").format(
+        list=disclosure.flipped_list_text({"veg_h"}))
+    assert item["dem_notes"] == [i18n.t("html_verdict_no_tile").format(n=3),
+                                 i18n.t("html_verdict_invalid_pixel").format(n=2)]
+    lab = webserver.labels()
+    for k in ("{label}", "{base}", "{worst}", "{best}"):
+        assert k in lab["row_range"]
+
+
+def test_the_single_band_names_dem_samples_used_as_0m():
+    # B-385＝`no_tile_is_sea_level` は DISCLOSED＝画面の帯でも帳票と同じ字で点数を名乗る
+    from core import i18n
+    from core.verdict import Verdict
+
+    class _Sea(_Result):
+        verdict = Verdict(word="OK", base_margin=5.0, worst_margin=4.0, best_margin=6.0,
+                          dem_no_tile=7, reviewed=True)
+
+    st = AppState()
+    Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,
+           calc=lambda t, p: _Sea(), profile=_no_profile).step()
+    assert st.headline()["dem_notes"] == [i18n.t("html_verdict_no_tile").format(n=7)]
+
+
+def test_the_calc_profile_is_always_named():
+    # B-383＝状態の応答が計算方式を持ち、画面の字の表に v1／v2 の名乗りがある
+    st = AppState()
+    assert st.wait(-1, 0)["calc_profile"] == "v2"
+    lab = webserver.labels()
+    assert "{id}" in lab["calc_profile"] and "v1" in lab["calc_profile_v1"]
+
+
 def test_ok_and_v1_carry_no_flipping_line():
     st = AppState()
     Worker(st, fetch=lambda p, cb, cancel: "terrain", key=_endpoints_key,

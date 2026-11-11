@@ -149,12 +149,8 @@ function showHeadline(h) {
   const band = document.getElementById("band");
   const word = document.getElementById("band-word");
   const detail = document.getElementById("band-detail");
-  const range = document.getElementById("band-range");
-  const flipped = document.getElementById("band-flipped");
   band.dataset.kind = h.kind;
   band.dataset.word = h.kind === "sheet" ? h.overall || "" : h.word || "";
-  range.textContent = "";
-  flipped.textContent = "";
   if (h.kind === "sheet") {
     // 作業面＝全件そろえば全体の語と語ごとの件数（0 件も言う）・途中は進み具合
     word.textContent = h.overall || fmt(labels.sheet_progress || "", { done: h.done, total: h.total });
@@ -165,10 +161,6 @@ function showHeadline(h) {
     const dB = (v) => Number(v).toFixed(dbDigits);
     word.textContent = h.word;
     detail.textContent = `${labels.margin || ""} ${dB(h.margin)} dB · ${labels.p_rx || ""} ${dB(h.p_rx)} dBm`;
-    if ("worst" in h && "best" in h) {
-      range.textContent = fmt(labels.margin_range || "", { worst: dB(h.worst), best: dB(h.best) });
-    }
-    flipped.textContent = h.flipped || "";   // REVIEW を裏返す前提（字はサーバーが帳票と同じ形で作る）
   } else if (h.kind === "computing") {
     word.textContent = labels.computing || "";
     detail.textContent = h.total
@@ -178,7 +170,34 @@ function showHeadline(h) {
     word.textContent = labels[h.kind] || "";
     detail.textContent = h.message || "";
   }
+  showBandExtras();
   showBreakdown(h);
+}
+
+// 帯の判定の事情＝余裕度の幅・裏返る前提・0 m の点数（字はサーバーが帳票と同じ形で作る）と計算方式。
+// 1 回線は今の判定・作業面は選んだ行（B-384・判断点 ②＝どの面も同じ REVIEW の中身を表す）。
+// 選ぶ前・計算中・別の面の結果のときは出さない（古い行の事情を今の結果に見せない）
+function showBandExtras() {
+  const range = document.getElementById("band-range");
+  const flipped = document.getElementById("band-flipped");
+  const notes = document.getElementById("band-notes");
+  const h = headline || {};
+  let src = null;
+  if (workspace === "single") {
+    if (h.kind === "verdict") src = h;
+  } else if (h.kind === "sheet" && h.workspace === workspace && selected !== null) {
+    src = (h.items || [])[selected] || null;
+  }
+  const has = !!src && "worst" in src && "best" in src;
+  const r = has ? { worst: dB(src.worst), best: dB(src.best) } : null;
+  range.textContent = !has ? ""
+    : src === h ? fmt(labels.margin_range || "", r)
+    : fmt(labels.row_range || "", { ...r, label: src.label, base: dB(src.margin) });
+  flipped.textContent = (src && src.flipped) || "";
+  notes.textContent = ((src && src.dem_notes) || []).join(" · ");
+  document.getElementById("band-profile").textContent = calcProfile === "v1"
+    ? labels.calc_profile_v1 || ""
+    : fmt(labels.calc_profile || "", { id: calcProfile || "" });
 }
 
 // 座標の欄＝十進度でも度分秒でも読む（`core/coords.py` の `_parse_one` と同じ規則・I-257）。
@@ -652,6 +671,7 @@ let sheetTimer = null;
 let inflight = 0;
 let wsPending = 0;
 let headline = { kind: "computing" };
+let calcProfile = null;                    // 開いたファイルの計算方式（`v1`／`v2`・B-383）
 let sheetItems = [];                       // 直近の作業面の結果（表と地図）
 let sheetItemsWs = null;
 let selected = null;                       // 選んだ行（件の番号）
@@ -1111,6 +1131,7 @@ function selectRow(i) {
   drawSheetLines();
   showProfile(headline);
   showRowDistances();
+  showBandExtras();
 }
 
 // 選んだ行の断面図＝その件が今の版で済んでいれば 1 回だけ取る（版が変われば取り直す）
@@ -1268,7 +1289,11 @@ function profileCaption() {
     if (headline.kind !== "verdict") return null;
     return [`${headline.word}  ${labels.margin || ""} ${dB(headline.margin)} dB`, headline.word];
   }
-  const it = selected === null ? null : sheetItems[selected];
+  // 今の版・今の面の結果で、断面図もその行の今の版のものだけ（計算中の古い断面を結果の画像にしない・B-386）
+  const fresh = headline.kind === "sheet" && headline.workspace === workspace
+    && profileFor === `${headline.version}:${selected}`
+    && document.getElementById("profile").dataset.stale !== "1";
+  const it = selected === null || !fresh ? null : sheetItems[selected];
   if (!it) return null;
   const m = "margin" in it ? `  ${labels.margin || ""} ${dB(it.margin)} dB` : "";
   return [`${it.label}  ${it.word}${m}`, it.word];
@@ -1691,6 +1716,7 @@ async function poll() {
       receiveSheets(s.sheets);
       if (!wsPending) setWorkspace(s.workspace || "single");
       showInputs(s.inputs);
+      calcProfile = s.calc_profile || null;
       showHeadline(s.headline);
     } catch (e) {
       await new Promise((ok) => setTimeout(ok, 1000));

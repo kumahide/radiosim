@@ -91,6 +91,8 @@ def _item_fields(label: str, result: Any = None, params: Any = None,
     fields = _verdict_fields(result)
     item["word"] = fields["word"]
     item["margin"], item["p_rx"] = fields["margin"], fields["p_rx"]
+    # 1 回線の帯と同じ判定の事情（幅・裏返る前提・0 m の点数）＝選んだ行を帯に出す（B-384・B-385）
+    item.update({k: fields[k] for k in ("worst", "best", "flipped", "dem_notes") if k in fields})
     if params is not None:                               # 選んだ行の「距離」の項目
         item.update(_distance_fields(result, params))
     return item
@@ -142,6 +144,14 @@ def _verdict_fields(result: Any, params: Any = None) -> "dict[str, Any]":
     if verdict is not None and verdict.word == REVIEW and verdict.flipped_by:
         fields["flipped"] = i18n.t("html_verdict_flipped").format(
             list=disclosure.flipped_list_text(verdict.flipped_by))
+    # 標高データの無い標本を 0 m として使った点数（帳票の開示と同じ字＝`no_tile_is_sea_level`
+    # は DISCLOSED・B-385）。無効画素も同じ形で名乗る（帳票と同じ並び）
+    if verdict is not None:
+        notes = [i18n.t(key).format(n=n) for key, n in (
+            ("html_verdict_no_tile", verdict.dem_no_tile),
+            ("html_verdict_invalid_pixel", verdict.dem_invalid_pixel)) if n]
+        if notes:
+            fields["dem_notes"] = notes
     return fields
 
 
