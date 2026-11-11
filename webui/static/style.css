@@ -66,23 +66,35 @@ body {
 /* 「設定」（I-257）＝ロゴの右。歯車の字だけ＝語は title と aria-label に */
 #settings-btn { align-self: center; font-size: 18px; line-height: 1; padding: 2px 6px;
   background: none; border: 1px solid var(--line); border-radius: 4px; color: var(--fg); cursor: pointer; }
+/* 幅は固定＝結果の 1 文や確認が出ても枠の幅が揺れない。高さは画面に収めて中で巻く */
 #settings { border: 1px solid var(--line); border-radius: 6px; background: var(--bg); color: var(--fg);
-  padding: 16px; min-width: 340px; }
+  padding: 16px 20px; width: min(460px, calc(100vw - 32px)); max-height: calc(100vh - 32px); overflow-y: auto; }
 #settings::backdrop { background: rgba(0, 0, 0, 0.3); }
-#settings h2 { margin: 0 0 12px; font-size: 16px; }
-#settings label { display: flex; align-items: center; gap: 8px; margin: 8px 0; }
-#settings label > span { min-width: 120px; }
-#settings label.check > span { min-width: 0; }
-#settings input[type="text"] { flex: 1; }
-#settings .hint { color: var(--muted); font-size: 12px; margin: -4px 0 8px; }
+#settings h2 { margin: 0; font-size: 16px; }
+/* 区画（表示・通信・ファイル・ヘルプ）の見出しは同じ形＝上の線で区切る */
+#settings h3 { margin: 14px 0 8px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
+#settings label { display: flex; align-items: center; gap: 6px; margin: 8px 0; }
+#settings .hint { color: var(--muted); font-size: 12px; }
 #settings .err { color: var(--err); font-size: 12px; }
-#settings .actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 12px; }
-/* 「ファイル」の口（I-257 の C）＝ボタンを折り返して並べる・結果の 1 文は改行を残す */
-#settings h3 { margin: 14px 0 4px; padding-top: 10px; border-top: 1px solid var(--line); font-size: 13px; }
-#settings .row { display: flex; flex-wrap: wrap; gap: 6px; margin: 4px 0 8px; }
-#settings .confirm { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 6px 0;
-  max-width: 420px; font-size: 13px; }
-#settings .note, #settings .err { white-space: pre-line; max-width: 420px; }
+#settings .actions { display: flex; justify-content: flex-end; gap: 6px; margin-top: 14px; }
+/* 「表示」「通信」＝左に語・右に欄の 2 列。欄の幅は右の列いっぱいでそろえる */
+/* 名前は `.set-grid`＝入力の列の `.grid`（欄の幅 64px）と混ざらない */
+#settings .set-grid { display: grid; grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 12px; row-gap: 8px; align-items: center; }
+#settings .set-grid > h3 { grid-column: 1 / -1; margin: 8px 0 0; }
+#settings .set-grid > h3:first-child { margin-top: 14px; }
+#settings .set-grid > label.field { display: contents; }
+#settings .set-grid > label.check { grid-column: 2; margin: 0; }
+#settings .set-grid select, #settings .set-grid input[type="text"] { width: 100%; font: inherit; }
+#settings .set-grid .under { grid-column: 2; justify-self: start; }
+#settings .set-grid .hint.under { margin-top: -4px; }
+/* 「ファイル」「ヘルプ」＝同じ幅の 2 列。結果の 1 文は改行を残す */
+#settings .buttons { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; }
+#settings .buttons button { width: 100%; }
+#settings .confirm { border: 1px solid var(--line); border-radius: 4px; padding: 8px; margin: 8px 0 0;
+  font-size: 13px; }
+#settings .note, #settings .err { white-space: pre-line; }
+#settings .note:not(:empty), #settings .err:not(:empty) { margin-top: 10px; }
 /* 「ヘルプ」の診断の小区画（I-257 の D）＝結果の一覧は長くなりうる＝枠の中で巻く */
 #settings h4 { margin: 8px 0 2px; font-size: 12px; }
 #settings .diag label { margin: 2px 0 2px 12px; }

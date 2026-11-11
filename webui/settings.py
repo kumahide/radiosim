@@ -79,6 +79,8 @@ def payload(cfg: "dict[str, str]") -> "dict[str, Any]":
         },
         "labels": {
             "title": i18n.t("menu_settings"),
+            "display": i18n.t("settings_display"),
+            "network": i18n.t("settings_network"),
             "lang": i18n.t("menu_language"),
             "theme": i18n.t("menu_theme"),
             "coord_format": i18n.t("lbl_coord_format"),

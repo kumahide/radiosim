@@ -1468,12 +1468,15 @@ function buildSettings(st) {
     }
   };
   buildBaseSwitch(st, L.basemap_layer, send);
+  // 「表示」「通信」は 2 列の格子＝左に語・右に欄（`label.field` は格子へ子を出すだけ）。
+  // 語の無い行（ひな形のボタン・注記・チェック）は右の列にそろえる
+  const field = (text, control) => el("label", { className: "field" }, [el("span", { textContent: text }), control]);
   const choice = (key) => {
     const s = el("select");
     st.choices[key].forEach(([v, t]) => s.append(el("option", { value: v, textContent: t })));
     s.value = st.values[key];
     s.addEventListener("change", () => send(key, s.value));
-    return el("label", {}, [el("span", { textContent: L[key] }), s]);
+    return field(L[key], s);
   };
   const check = (key) => {
     const c = el("input", { type: "checkbox", checked: !!st.values[key] });
@@ -1583,24 +1586,29 @@ function buildSettings(st) {
   const updatesBtn = button(L.check_updates, () => checkUpdates(updatesBtn));
   dlg.replaceChildren(
     el("h2", { textContent: L.title }),
-    choice("lang"),
-    el("div", { className: "row" }, [
-      button(L.lang_template, async () => say(await call("/api/lang_template")))]),
-    choice("theme"),
-    choice("coord_format"),
-    el("label", {}, [el("span", { textContent: L.proxy_url }), proxy]),
-    el("div", { className: "hint", textContent: L.proxy_hint }),
-    check("update_check_auto"),
-    check("update_check_prerelease"),
+    el("div", { className: "set-grid" }, [
+      el("h3", { textContent: L.display }),
+      choice("lang"),
+      el("div", { className: "under" }, [
+        button(L.lang_template, async () => say(await call("/api/lang_template")))]),
+      choice("theme"),
+      choice("coord_format"),
+      el("h3", { textContent: L.network }),
+      field(L.proxy_url, proxy),
+      el("div", { className: "hint under", textContent: L.proxy_hint }),
+      check("update_check_auto"),
+      check("update_check_prerelease"),
+    ]),
+    // 「ファイル」「ヘルプ」のボタンは同じ幅の 2 列に並べる
     el("h3", { textContent: L.file }),
-    el("div", { className: "row" }, [
+    el("div", { className: "buttons" }, [
       button(L.load_sim, () => loadFile("/api/settings/load_sim")),
       button(L.load_app, () => loadFile("/api/settings/load_app")),
       button(L.delete_cache, () => { diagBox.hidden = true; askDelete(); }),
     ]),
     confirmBox,
     el("h3", { textContent: L.help }),
-    el("div", { className: "row" }, [
+    el("div", { className: "buttons" }, [
       button(L.open_docs, () => call("/api/help/docs")),
       button(L.diagnostics, askDiagnostics),
       updatesBtn,
