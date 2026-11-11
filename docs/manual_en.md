@@ -197,13 +197,16 @@ There is no menu bar. Click the **Settings button (gear)** at the right end of t
 
 ```
 ┌ Settings
-│ Language            [English ▼]
-│ [Export Translation Template...]
-│ Theme               [System ▼]
-│ Coordinate Display  [Decimal Degrees (DD) ▼]
-│ Proxy URL           [            ]
-│ ☐ Check for Updates at Startup
-│ ☐ Include Pre-releases
+├ Display
+│ Language            [English                 ▼]
+│                     [Export Translation Template...]
+│ Theme               [System                  ▼]
+│ Coordinate Display  [Decimal Degrees (DD)    ▼]
+├ Network
+│ Proxy URL           [                         ]
+│                     Leave blank to use system proxy settings.
+│                     ☐ Check for Updates at Startup
+│                     ☐ Include Pre-releases
 ├ File
 │ [Load Parameters...] [Load App Settings...]
 │ [Delete All Cache...]
