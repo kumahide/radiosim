@@ -166,7 +166,31 @@ def test_review_is_one_purple_on_the_screen_the_map_image_and_both_kml():
     kml = report_summary.summary_kml_text([])
     assert f'<Style id="rev"><LineStyle><color>{_kml_abgr(purple)}</color>' in kml
     with open(report_path.__file__, encoding="utf-8") as f:
-        assert f'"REVIEW": "{_kml_abgr(purple)}"' in f.read()                     # path.kml
+        assert "los_color = kml_color(result.status)" in f.read()                 # path.kml
+
+
+def test_every_word_has_one_color_in_both_kml_and_the_map_image():
+    """4 語の色＝2 つの KML が地図の画像（`STATUS_RGB`）と同じ（B-378）。
+
+    以前は KML が色を直に書いていて、NG＝橙・ERROR＝赤（画面と地図の画像は NG＝赤・
+    ERROR＝濃い橙）と向きが逆だった。`path.kml` は NG と ERROR を同じ橙で描いていた。
+    """
+    import re
+    from report import map_graphics, report_path, report_summary
+    style_ids = {vd.OK: "ok", vd.REVIEW: "rev", vd.NG: "ng", vd.ERROR: "err"}
+    assert set(style_ids) == set(vd.WORDS)
+    kml = report_summary.summary_kml_text([])
+    for word, sid in style_ids.items():
+        want = _kml_abgr("#%02x%02x%02x" % map_graphics.STATUS_RGB[word])
+        assert map_graphics.kml_color(word) == want, word
+        assert f'<Style id="{sid}"><LineStyle><color>{want}</color>' in kml, word
+    assert len({map_graphics.kml_color(w) for w in vd.WORDS}) == len(vd.WORDS)
+    assert map_graphics.kml_color("?") == map_graphics.kml_color(vd.ERROR)
+    # 判定の色を KML の本文に直に書かない（ほかの線＝地形・フレネル・遮蔽区間は判定の色でない）
+    for mod in (report_summary, report_path):
+        with open(mod.__file__, encoding="utf-8") as f:
+            src = f.read()
+        assert not re.search(r"<Style id=\"(ok|rev|ng|err|los)\"><LineStyle><color>[0-9a-f]{8}", src), mod
 
 
 def test_the_band_counts_name_every_word_in_the_report_order():

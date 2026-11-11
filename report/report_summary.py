@@ -22,6 +22,7 @@ from core import output_contract
 from core import units
 from core import version
 from report import report_common
+from report.map_graphics import kml_color
 
 if TYPE_CHECKING:
     from report.batch import PathResult, PathRow
@@ -109,7 +110,7 @@ def _has_coords(row: PathRow) -> bool:
 def summary_kml_text(results: list[PathResult]) -> str:
     """全パスを OK / REVIEW / NG / Error のフォルダに分けた KML の本文（2 つの画面が共用）。
 
-    REVIEW は紫（`path.kml` と同じ `ff9a1b6a`＝4.0 判断点 ②）。座標の無い誤りの行は線を引かず、
+    線の色は 4 語とも画面と地図の画像と同じ（`map_graphics.kml_color`＝B-378）。座標の無い誤りの行は線を引かず、
     名前と理由だけの Placemark を Error に置く（件数を台帳と画面の表にそろえる）。
     """
     ok_xml = rev_xml = ng_xml = err_xml = ""
@@ -179,10 +180,10 @@ def summary_kml_text(results: list[PathResult]) -> str:
   <name>Batch Summary</name>
   <description>Generated: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} | {version.APP_FULL}</description>
 
-  <Style id="ok"><LineStyle><color>ff00aa00</color><width>3</width></LineStyle></Style>
-  <Style id="rev"><LineStyle><color>ff9a1b6a</color><width>3</width></LineStyle></Style>
-  <Style id="ng"><LineStyle><color>ff00a5ff</color><width>3</width></LineStyle></Style>
-  <Style id="err"><LineStyle><color>ff0000ff</color><width>3</width></LineStyle></Style>
+  <Style id="ok"><LineStyle><color>{kml_color("OK")}</color><width>3</width></LineStyle></Style>
+  <Style id="rev"><LineStyle><color>{kml_color("REVIEW")}</color><width>3</width></LineStyle></Style>
+  <Style id="ng"><LineStyle><color>{kml_color("NG")}</color><width>3</width></LineStyle></Style>
+  <Style id="err"><LineStyle><color>{kml_color("ERROR")}</color><width>3</width></LineStyle></Style>
 
   <Folder><name>OK</name><open>1</open>
 {ok_xml}  </Folder>

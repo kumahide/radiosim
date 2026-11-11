@@ -17,6 +17,7 @@ from core import models
 from core import simulation as sim
 from core import terrain_grid
 from core import units
+from report.map_graphics import kml_color
 
 
 # ============================================================
@@ -88,8 +89,8 @@ def path_kml_text(
     terrain_lons = terrain_grid.collapse_pixel_groups(list(lons), groups)
     terrain_elev = terrain_grid.collapse_pixel_groups(list(elev), groups)
 
-    # KML の色は aabbggrr。OK＝緑・REVIEW＝紫（`map_graphics.STATUS_RGB` の #6a1b9a）・ほかは橙（4.0 ステージ6）。
-    los_color = {"OK": "ff00aa00", "REVIEW": "ff9a1b6a"}.get(result.status, "ff00a5ff")
+    # 見通し線の色＝判定の色（画面と地図の画像と同じ＝`map_graphics.kml_color`・B-378）。
+    los_color = kml_color(result.status)
     path_id   = _html.escape(name)
     desc_esc  = _html.escape(
         f"Freq: {params.freq_mhz} MHz | "

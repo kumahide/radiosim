@@ -37,6 +37,16 @@ STATUS_RGB = {
 }
 
 
+def kml_color(word: str) -> str:
+    """判定の語 → KML の線の色（aabbggrr・不透明）。知らない語は ERROR の色。
+
+    `summary.kml` と `path.kml` はこれだけを引く（B-378＝KML が色を直に書いていて、
+    NG と ERROR の赤と橙が画面・地図の画像と逆の向きだった）。
+    """
+    r, g, b = STATUS_RGB.get(word, STATUS_RGB["ERROR"])
+    return f"ff{b:02x}{g:02x}{r:02x}"
+
+
 ATTR_FG_RGB = (0x33, 0x33, 0x33)
 ATTR_BG_RGB = (0xFF, 0xFF, 0xFF)
 
