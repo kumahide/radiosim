@@ -544,7 +544,7 @@ When the elevation server cannot be reached, the top bar shows "No terrain" with
 
 ### 3. The verdict in the top bar
 
-The bar at the top of the screen shows the verdict word (OK / REVIEW / NG / ERROR), the margin and the RX level. When varying the assumptions gives a spread, it shows that spread; on REVIEW it lists the assumptions that would flip the verdict (the server writes the text). 🔑 **The verdict in the bar is only ever one computed from the input now on screen.** While computing, it shows "Updating the verdict…" with the fetch progress, and no old verdict is left standing.
+The bar at the top of the screen shows the verdict word (OK / REVIEW / NG / ERROR), the margin and the RX level. When varying the assumptions gives a spread, it shows that spread; on REVIEW it lists the assumptions that would flip the verdict (the server writes the text). If any samples had no elevation data and were computed as 0 m (at sea or outside Japan), or fell on invalid DEM pixels, the bar also gives their count. The calculation profile in use (normally `v2`; `v1` when a 3.x file is open) is always shown on the right of the bar. In a workspace it shows the same facts for the selected row (`worker._item_fields` copies them from `_verdict_fields`). 🔑 **The verdict in the bar is only ever one computed from the input now on screen.** While computing, it shows "Updating the verdict…" with the fetch progress, and no old verdict is left standing.
 
 ### 4. The profile
 
@@ -570,7 +570,7 @@ Input is **not written back** to `radiosim_conf.json` (it is only read at startu
 
 <img src="images/shot_batch.png" width="720" alt="Multiple Paths screen: a table with one path per row, each returning its verdict (OK / REVIEW / NG), margin and RX level after the run; the selected row's line is drawn thicker on the map and its profile is shown below">
 
-Choose **Multiple Paths** in the workspace switch at the top right and a table appears under the map. Editing the table waits a moment, then sends the workspace's whole input (`sheets` in `/api/inputs`); every row is fetched and computed one at a time (`engine.run_paths`). Results come back to the right end of the table (verdict, margin, RX level) as each row finishes, and once every row is in, the top bar shows the overall word and the count for each word.
+Choose **Multiple Paths** in the workspace switch at the top right and a table appears under the map. Editing the table waits a moment, then sends the workspace's whole input (`sheets` in `/api/inputs`); every row is fetched and computed one at a time (`engine.run_paths`). Results come back to the three columns right after the first column (verdict, margin, RX level) as each row finishes, and once every row is in, the top bar shows the overall word and the count for each word. Select a row and the top bar also shows that row's margin at the default assumptions, its range across the assumptions and the assumptions that flip it (the table's Margin is the value at the default assumptions).
 
 ### Design: one set of common input, rows carry only the paths
 
@@ -925,7 +925,7 @@ Spreadsheet formulas and roll-up scripts reference **column names and their orde
 | `calc_profile` | — | Calculation profile ID (`v2` is the Link 1.0 calculation method, `v1` the 3.9.x one). Empty on rows whose input could not be resolved |
 | `input_hash` | — | Hash of the input settings (text starting with `i1-`). The same value means the same inputs that determine the calculation. It leaves out the calculation profile and the terrain (the same settings can give different numbers once the elevation data is re-fetched). Empty on rows whose input could not be resolved |
 
-⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status takes the heaviest section status in the order `NG` > `REVIEW` > `OK`, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows this as `ERR`).
+⚠️ **Losses are never chained across sections** (a regenerative relay receives and transmits anew). The overall status takes the heaviest section status in the order `NG` > `REVIEW` > `OK`, and it is **`ERROR` whenever any section could not be judged (`ERROR`)** (the screen shows `ERROR` as well).
 
 #### `scenario.csv` (Condition Explorer — **one row per condition**, one per point in a sweep)
 
