@@ -28,6 +28,7 @@ PROMPTS = {
     "code": ROOT / "tools" / "codex_review" / "prompt_code.txt",
     "docs": ROOT / "tools" / "codex_review" / "prompt_docs.txt",
     "direction": ROOT / "tools" / "codex_review" / "prompt_direction.txt",
+    "ui": ROOT / "tools" / "codex_review" / "prompt_ui.txt",
 }
 # 入力文に置いてはいけない「具体的な指差し」の語（どの文書のどこが怪しいかを言う形）
 _POINTING = ("を重点的", "に注意して", "が怪しい", "を中心に")

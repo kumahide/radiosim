@@ -28,7 +28,8 @@
 
 .PARAMETER Mode
   code = ①コード面（差分）／ docs = ②ドキュメント/メモリ面／
-  direction = ③方向性（新しい版の着手前・渡す範囲は docs と同じで入力文だけが違う）
+  direction = ③方向性（新しい版の着手前・渡す範囲は docs と同じで入力文だけが違う）／
+  ui = ④画面の UI/UX（作業根はリポジトリ・画面のスクショを画像で添える＝2026-11-11 Link 1.0）
 
 .PARAMETER Base
   code のみ。比較元の ref（既定 HEAD~1）。RC/正式の工程 4b は前の正式タグを渡す。
@@ -63,7 +64,7 @@
 #>
 [CmdletBinding()]
 param(
-    [ValidateSet('code', 'docs', 'direction')][string]$Mode = 'code',
+    [ValidateSet('code', 'docs', 'direction', 'ui')][string]$Mode = 'code',
     [string]$Base = 'HEAD~1',
     [int]$Round = 0,
     [switch]$DryRun,
@@ -218,6 +219,19 @@ if ($Mode -eq 'code') {
     $prompt  = (Get-Content (Join-Path $toolDir 'prompt_code.txt') -Raw -Encoding UTF8).
                     Replace('{DIFF_PATH}', $relDiff).Replace('{BASE}', $Base)
 }
+elseif ($Mode -eq 'ui') {
+    # ④画面の UI/UX（2026-11-11・経営者の依頼「Link1.0 の UI/UX について Codex 評価」）。
+    # 作業根はリポジトリ＝画面のコード（webui/）と説明書・用語集を自分で歩いて読む。
+    # Codex は画面を動かせない（read-only・ブラウザなし）ので、いまの画面は
+    # docs/screenshots.md の手順で撮ったスクショ 5 枚を画像で添えて見せる。
+    # ⛔ 観点は prompt_ui.txt の 4 軸だけ＝その場で足さない。
+    $workRoot = $repoRoot
+    $shots = @('shot_profile.png', 'shot_map.png', 'shot_batch.png', 'shot_scenario.png', 'shot_multihop.png') |
+        ForEach-Object { Join-Path $repoRoot "docs\images\$_" }
+    foreach ($s in $shots) { if (-not (Test-Path $s)) { throw "添えるスクショが見つかりません: $s" } }
+    Write-Host ("添える画像: {0} 枚（docs\images\shot_*.png）" -f $shots.Count)
+    $prompt = Get-Content (Join-Path $toolDir 'prompt_ui.txt') -Raw -Encoding UTF8
+}
 else {
     # ⛔ ISSUES.md を渡さない（未修正の脆弱性・実機スクショを持つ）。
     #
@@ -323,7 +337,10 @@ $codexArgs = @(
     '-C', $workRoot,
     '-o', $rawPath
 )
-if ($Mode -ne 'code') { $codexArgs += '--skip-git-repo-check' }   # staging は git の外
+if ($Mode -in 'docs', 'direction') { $codexArgs += '--skip-git-repo-check' }   # staging は git の外
+if ($Mode -eq 'ui') { foreach ($s in $shots) { $codexArgs += @('-i', $s) } }
+# `-i` は複数の値を取るので、入力文が画像のパスと取り違えられないよう `--` で区切る
+$codexArgs += '--'
 $codexArgs += $prompt
 
 Write-Host ("Codex 実行中（{0} 巡目 / {1}）… 返答は原文のまま {2} へ落ちます" -f $Round, $Mode, $rawPath)
